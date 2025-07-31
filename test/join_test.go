@@ -2,7 +2,9 @@ package reindexer
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -98,6 +100,9 @@ const (
 	testJoinItemsNs    = "test_join_items"
 	testJoinedFieldNs  = "test_joined_field"
 
+	testItemsForModifyJoinNs = "test_items_for_modify_join"
+	testModifyJoinItemsNs    = "test_modify_join_items"
+
 	testExplainMainNs   = "test_explain_main"
 	testExplainJoinedNs = "test_explain_joined"
 
@@ -110,6 +115,9 @@ func init() {
 	tnamespaces[testItemsForJoinNs] = TestItem{}
 	tnamespaces[testJoinItemsNs] = TestJoinItem{}
 	tnamespaces[testJoinedFieldNs] = TestItemWithJoinedField{}
+
+	tnamespaces[testItemsForModifyJoinNs] = TestItem{}
+	tnamespaces[testModifyJoinItemsNs] = TestJoinItem{}
 
 	tnamespaces[testExplainMainNs] = explainNs{}
 	tnamespaces[testExplainJoinedNs] = explainNs{}
@@ -454,6 +462,195 @@ func checkExplainJoinOnInjections(t *testing.T, res []reindexer.ExplainJoinOnInj
 	}
 }
 
+func getAffectedItems(t *testing.T, q *reindexer.Query, ns *testNamespace) (affected []interface{}, unaffected []interface{}) {
+	affected, err := q.Exec().FetchAll()
+	require.NoError(t, err)
+	affectedPKs := make([][]interface{}, 0, len(affected))
+	for _, it := range affected {
+		affectedPKs = append(affectedPKs, getPKComposite(ns, reflect.Indirect(reflect.ValueOf(it))))
+	}
+
+	unaffected, err = DB.Query(q.Namespace).
+		Not().
+		Where(ns.pkIdxName, reindexer.SET, affectedPKs).
+		Sort(ns.pkIdxName, false).
+		Exec(t).FetchAll()
+	require.NoError(t, err)
+	return
+}
+
+func selectByPK(t *testing.T, items []interface{}, nsName string, ns *testNamespace) []interface{} {
+	ids := make([][]interface{}, 0, len(items))
+	for _, it := range items {
+		pks := getPKComposite(ns, reflect.Indirect(reflect.ValueOf(it)))
+		ids = append(ids, pks)
+	}
+	res, err := DB.Query(nsName).
+		Where(ns.pkIdxName, reindexer.SET, ids).
+		Sort(ns.pkIdxName, false).
+		Exec(t).FetchAll()
+	require.NoError(t, err)
+	return res
+}
+
+func TestJoinModifyQueries(t *testing.T) {
+	if len(DB.clusterList) > 0 {
+		t.Skip() // TODO: Enable after 2174
+	}
+
+	FillTestItems(testItemsForModifyJoinNs, 0, 5000, 20)
+	FillTestJoinItems(7000, 500, testModifyJoinItemsNs)
+
+	validateUpdateQuery := func(q *queryTest, addSetEntries func(*queryTest), transform func(*TestItem)) {
+		q.Sort(q.ns.pkIdxName, false)
+		qCopy1 := q.q.MakeCopy(DBD)
+		affected, unaffected := getAffectedItems(t, qCopy1, q.ns)
+		addSetEntries(q)
+		DB.SetSyncRequired()
+		updRes, err := q.Update().FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(updRes), len(affected))
+		require.Equal(t, unaffected, selectByPK(t, unaffected, q.namespace, q.ns))
+		selRes := selectByPK(t, affected, q.namespace, q.ns)
+		require.Equal(t, selRes, updRes)
+
+		for _, oldIt := range affected {
+			item := oldIt.(*TestItem)
+			item.Prices = nil
+			item.Pricesx = nil
+			transform(oldIt.(*TestItem))
+		}
+		require.Equal(t, selRes, affected)
+
+		log.Printf("Update with joins: affected rows: %v, unaffected rows: %v\n", len(affected), len(unaffected))
+	}
+
+	t.Run("update queries with not inner join", func(t *testing.T) {
+		q := DB.Query(testItemsForModifyJoinNs).
+			Where("GENRE", reindexer.GE, 1).
+			Limit(10)
+		q.Not().OpenBracket()
+		q.InnerJoin(DB.Query(
+			testModifyJoinItemsNs,
+		).Where("DEVICE", reindexer.EQ, "android").
+			Limit(0), "some random name").
+			On("PRICE_ID", reindexer.SET, "ID")
+		q.CloseBracket().Debug(reindexer.TRACE)
+
+		newName := randString()
+		newYear := rand.Int()
+
+		validateUpdateQuery(q,
+			func(qt *queryTest) { qt.Set("name", newName).Set("year", newYear) },
+			func(item *TestItem) {
+				item.Year, item.Name = newYear, newName
+			})
+
+	})
+
+	t.Run("update queries with self not inner join", func(t *testing.T) {
+		q := DB.Query(testItemsForModifyJoinNs).
+			Where("GENRE", reindexer.GE, 2).
+			Limit(20)
+		q.Not().OpenBracket()
+		q.InnerJoin(DB.Query(
+			testItemsForModifyJoinNs,
+		).Where("GENRE", reindexer.EQ, 2),
+			"some random name").
+			On("ID", reindexer.SET, "ID")
+		q.CloseBracket().Debug(reindexer.TRACE)
+
+		newName := randString()
+		newYear := rand.Int()
+
+		validateUpdateQuery(q,
+			func(qt *queryTest) { qt.Set("company_name", newName).Set("year", newYear) },
+			func(item *TestItem) {
+				item.Year, item.CompanyName = newYear, newName
+			})
+	})
+
+	t.Run("update queries with multiple inner joins", func(t *testing.T) {
+		qj1 := DB.Query(testModifyJoinItemsNs).Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
+		qj2 := DB.Query(testModifyJoinItemsNs).Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
+		qj3 := DB.Query(testModifyJoinItemsNs).Where("DEVICE", reindexer.EQ, "iphone")
+
+		q := DB.Query(testItemsForModifyJoinNs).Limit(11).Debug(reindexer.TRACE)
+		q.InnerJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
+		q.InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
+		q.InnerJoin(qj3, "PRICESX").On("LOCATION", reindexer.LT, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
+
+		newName := randString()
+		newYear := rand.Int()
+
+		validateUpdateQuery(q,
+			func(qt *queryTest) { qt.Set("company_name", newName).Set("year", newYear) },
+			func(item *TestItem) {
+				item.Year, item.CompanyName = newYear, newName
+			})
+
+	})
+
+	// Delete queries
+	validateDeleteQuery := func(q *queryTest) {
+		q.Sort(q.ns.pkIdxName, false)
+		qCopy1 := q.q.MakeCopy(DBD)
+		affected, unaffected := getAffectedItems(t, qCopy1, q.ns)
+		DB.SetSyncRequired()
+		delCnt, err := q.Delete()
+		require.NoError(t, err)
+		require.Equal(t, delCnt, len(affected))
+		require.Equal(t, unaffected, selectByPK(t, unaffected, q.namespace, q.ns))
+		selRes := selectByPK(t, affected, q.namespace, q.ns)
+		require.Equal(t, len(selRes), 0)
+
+		log.Printf("Delete with join: affected rows: %v, unaffected rows: %v\n", len(affected), len(unaffected))
+	}
+
+	t.Run("delete queries with not inner join", func(t *testing.T) {
+		q := DB.Query(testItemsForModifyJoinNs).
+			Where("GENRE", reindexer.GE, 1).
+			Limit(10)
+		q.Not().OpenBracket()
+		q.InnerJoin(DB.Query(
+			testModifyJoinItemsNs,
+		).Where("DEVICE", reindexer.EQ, "android").
+			Limit(0), "some random name").
+			On("PRICE_ID", reindexer.SET, "ID")
+		q.CloseBracket().Debug(reindexer.TRACE)
+
+		validateDeleteQuery(q)
+	})
+
+	t.Run("delete queries with self not inner join", func(t *testing.T) {
+		q := DB.Query(testItemsForModifyJoinNs).
+			Where("GENRE", reindexer.GE, 2).
+			Limit(20)
+		q.Not().OpenBracket()
+		q.InnerJoin(DB.Query(
+			testItemsForModifyJoinNs,
+		).Where("GENRE", reindexer.EQ, 2),
+			"some random name").
+			On("ID", reindexer.SET, "ID")
+		q.CloseBracket().Debug(reindexer.TRACE)
+
+		validateDeleteQuery(q)
+	})
+
+	t.Run("delete queries with multiple inner joins", func(t *testing.T) {
+		qj1 := DB.Query(testModifyJoinItemsNs).Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
+		qj2 := DB.Query(testModifyJoinItemsNs).Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
+		qj3 := DB.Query(testModifyJoinItemsNs).Where("DEVICE", reindexer.EQ, "iphone")
+
+		q := DB.Query(testItemsForModifyJoinNs).Limit(11).Debug(reindexer.TRACE)
+		q.InnerJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
+		q.InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
+		q.InnerJoin(qj3, "PRICESX").On("LOCATION", reindexer.LT, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
+
+		validateDeleteQuery(q)
+	})
+}
+
 func TestJoin(t *testing.T) {
 	FillTestItems(testItemsForJoinNs, 0, 10000, 20)
 	FillTestJoinItems(7000, 500, testJoinItemsNs)
@@ -796,9 +993,9 @@ func TestStrictJoinHandlers(t *testing.T) {
 	cfg.Net.RPCAddr = "0:17174"
 	cfg.Storage.Path = ""
 
-	db := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg), reindexer.WithStrictJoinHandlers())
+	db, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg), reindexer.WithStrictJoinHandlers())
+	require.NoError(t, err)
 	defer db.Close()
-	assert.NoError(t, db.Status().Err)
 
 	initNsForStrictJoinHandlers(t, db, nsMain, 5)
 	initNsForStrictJoinHandlers(t, db, nsJoined, 20)

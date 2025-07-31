@@ -16,22 +16,26 @@ namespace reindexer {
 class TagsMatcher;
 class PayloadType;
 class WrSerializer;
+
+namespace builders {
 class ProtobufSchemaBuilder;
+}  // namespace builders
+using builders::ProtobufSchemaBuilder;
 
 std::string_view kvTypeToJsonSchemaType(KeyValueType type);
 
 class FieldProps {
 public:
 	FieldProps() = default;
-	FieldProps(KeyValueType _type, bool _isArray = false, bool _isRequired = false, bool _allowAdditionalProps = false,
-			   const std::string& _xGoType = {})
+	FieldProps(KeyValueType _type, IsArray _isArray = IsArray_False, IsRequired _isRequired = IsRequired_False,
+			   AllowAdditionalProps _allowAdditionalProps = AllowAdditionalProps_False, const std::string& _xGoType = {})
 		: type(kvTypeToJsonSchemaType(_type)),
 		  xGoType(_xGoType),
 		  isArray(_isArray),
 		  isRequired(_isRequired),
 		  allowAdditionalProps(_allowAdditionalProps) {}
-	FieldProps(std::string _type, bool _isArray = false, bool _isRequired = false, bool _allowAdditionalProps = false,
-			   const std::string& _xGoType = {})
+	FieldProps(std::string _type, IsArray _isArray = IsArray_False, IsRequired _isRequired = IsRequired_False,
+			   AllowAdditionalProps _allowAdditionalProps = AllowAdditionalProps_False, const std::string& _xGoType = {})
 		: type(std::move(_type)),
 		  xGoType(_xGoType),
 		  isArray(_isArray),

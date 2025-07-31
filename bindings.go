@@ -3,6 +3,7 @@ package reindexer
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -250,7 +251,7 @@ func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, tota
 }
 
 func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool) (result bindings.RawBuffer, err error) {
-	// Ordering in q.nsArray is matter ad must correspond to the ordering in C++
+	// Ordering in q.nsArray is matter and must correspond to the ordering in C++
 	if ns, err := db.getNS(q.Namespace); err == nil {
 		q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 	} else {
@@ -268,17 +269,7 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 		}
 	}
 
-	for _, sq := range q.joinQueries {
-		if ns, err := db.getNS(sq.Namespace); err == nil {
-			q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
-		} else {
-			return nil, err
-		}
-
-		ser.PutVarCUInt(sq.joinType)
-		ser.Append(sq.ser)
-		ser.PutVarCUInt(queryEnd)
-	}
+	db.appendJoinQueries(q, &ser)
 
 	for _, mq := range q.mergedQueries {
 		ser.PutVarCUInt(merge)
@@ -383,7 +374,15 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Query.Delete", q.Namespace)).ObserveDuration()
 	}
 
-	ns, err := db.getNS(q.Namespace)
+	// Ordering in q.nsArray is matter and must correspond to the ordering in C++
+	if ns, err := db.getNS(q.Namespace); err == nil {
+		q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
+	} else {
+		return 0, err
+	}
+
+	q.ser.PutVarCUInt(queryEnd)
+	err := db.appendJoinQueries(q, &q.ser)
 	if err != nil {
 		return 0, err
 	}
@@ -397,7 +396,7 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 	ser := newSerializer(result.GetBuf())
 	// skip total count
 	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
-		ns.cjsonState.ReadPayloadType(&ser.Serializer, db.binding, ns.name)
+		q.nsArray[0].cjsonState.ReadPayloadType(&ser.Serializer, db.binding, q.nsArray[0].name)
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
@@ -413,6 +412,21 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 	return rawQueryParams.count, err
 }
 
+func (db *reindexerImpl) appendJoinQueries(q *Query, ser *cjson.Serializer) error {
+	for _, sq := range q.joinQueries {
+		if ns, err := db.getNS(sq.Namespace); err == nil {
+			q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
+		} else {
+			return err
+		}
+
+		ser.PutVarCUInt(sq.joinType)
+		ser.Append(sq.ser)
+		ser.PutVarCUInt(queryEnd)
+	}
+	return nil
+}
+
 // Execute query
 func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 	if db.otelTracer != nil {
@@ -423,7 +437,15 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Query.Update", q.Namespace)).ObserveDuration()
 	}
 
-	ns, err := db.getNS(q.Namespace)
+	// Ordering in q.nsArray is matter and must correspond to the ordering in C++
+	if ns, err := db.getNS(q.Namespace); err == nil {
+		q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
+	} else {
+		return errIterator(err)
+	}
+
+	q.ser.PutVarCUInt(queryEnd)
+	err := db.appendJoinQueries(q, &q.ser)
 	if err != nil {
 		return errIterator(err)
 	}
@@ -436,7 +458,7 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 	ser := newSerializer(result.GetBuf())
 	// skip total count
 	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
-		ns.cjsonState.ReadPayloadType(&ser.Serializer, db.binding, ns.name)
+		q.nsArray[0].cjsonState.ReadPayloadType(&ser.Serializer, db.binding, q.nsArray[0].name)
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
@@ -450,12 +472,15 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 		panic("Internal error: data after end of update query result")
 	}
 
-	q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 	return newIterator(ctx, q.db, q.Namespace, q, result, q.nsArray, nil, nil, nil)
 }
 
 // Execute query
 func (db *reindexerImpl) updateQueryTx(ctx context.Context, q *Query, tx *Tx) *Iterator {
+	if q.root != nil || len(q.joinQueries) != 0 {
+		return errIterator(errors.New("Update queries in transactions does not support joined queries"))
+	}
+
 	if db.otelTracer != nil {
 		defer db.startTracingSpan(ctx, "Reindexer.Tx.Query.Update", otelattr.String("rx.ns", q.Namespace)).End()
 	}
@@ -470,6 +495,10 @@ func (db *reindexerImpl) updateQueryTx(ctx context.Context, q *Query, tx *Tx) *I
 
 // Execute query
 func (db *reindexerImpl) deleteQueryTx(ctx context.Context, q *Query, tx *Tx) (int, error) {
+	if q.root != nil || len(q.joinQueries) != 0 {
+		return 0, errors.New("Delete queries in transactions does not support joined queries")
+	}
+
 	if db.otelTracer != nil {
 		defer db.startTracingSpan(ctx, "Reindexer.Tx.Query.Delete", otelattr.String("rx.ns", q.Namespace)).End()
 	}

@@ -50,6 +50,11 @@
 #define RX_POST_LMBD_ALWAYS_INLINE
 #endif
 
+// Unused variables handling
+#define _rx_unfold(macro, macro_arg) macro(macro_arg)
+#define _rx_unused_impl(x) [[maybe_unused]] decltype(auto) _##x
+#define rx_unused _rx_unfold(_rx_unused_impl, __LINE__)
+
 // Targets
 #if defined(_MSC_VER) || !defined(REINDEXER_WITH_SSE)
 #define RX_AVX_TARGET_ATTR

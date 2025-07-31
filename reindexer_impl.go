@@ -254,7 +254,10 @@ func (db *reindexerImpl) getAsyncReplicationStat(ctx context.Context) (*bindings
 
 	for _, dsn := range dsns {
 		dsn := fmt.Sprintf("%s://%s%s", dsn.Scheme, dsn.Host, dsn.Path)
-		db := NewReindex(dsn)
+		db, err := NewReindex(dsn)
+		if err != nil {
+			continue
+		}
 		defer db.Close()
 		resp, err := db.Query("#config").
 			WhereString("type", EQ, bindings.ReplicationTypeAsync).
@@ -866,43 +869,39 @@ func loglevelToString(logLevel int) string {
 
 // setDefaultQueryDebug sets default debug level for queries to namespaces
 func (db *reindexerImpl) setDefaultQueryDebug(ctx context.Context, namespace string, level int) error {
-	citem := &DBConfigItem{Type: "namespaces"}
 	item, err := db.query(ConfigNamespaceName).WhereString("type", EQ, "namespaces").ExecCtx(ctx).FetchOne()
-	if err != nil {
+	if err != nil && err != ErrNotFound {
 		return err
 	}
-
-	citem = item.(*DBConfigItem)
-	defaultCfg := DBNamespacesConfig{
-		JoinCacheMode:           "off",
-		StartCopyPolicyTxSize:   10000,
-		CopyPolicyMultiplier:    5,
-		TxSizeToAlwaysCopy:      100000,
-		OptimizationTimeout:     800,
-		OptimizationSortWorkers: 4,
-		WALSize:                 4000000,
+	citem := &DBConfigItem{Type: "namespaces"}
+	if err == nil {
+		citem = item.(*DBConfigItem)
 	}
-	found := false
 
+	defaultCfg := DefaultDBNamespaceConfig("*")
+	found := false
 	if citem.Namespaces == nil {
 		namespaces := make([]DBNamespacesConfig, 0, 1)
 		citem.Namespaces = &namespaces
 	}
 
+nss_loop:
 	for i := range *citem.Namespaces {
 		switch (*citem.Namespaces)[i].Namespace {
 		case namespace:
 			(*citem.Namespaces)[i].LogLevel = loglevelToString(level)
 			found = true
+			break nss_loop
 		case "*":
-			defaultCfg = (*citem.Namespaces)[i]
+			tmp := (*citem.Namespaces)[i]
+			defaultCfg = &tmp
 		}
 	}
 	if !found {
 		nsCfg := defaultCfg
 		nsCfg.Namespace = namespace
 		nsCfg.LogLevel = loglevelToString(level)
-		*citem.Namespaces = append(*citem.Namespaces, nsCfg)
+		*citem.Namespaces = append(*citem.Namespaces, *nsCfg)
 	}
 	return db.upsert(ctx, ConfigNamespaceName, citem)
 }

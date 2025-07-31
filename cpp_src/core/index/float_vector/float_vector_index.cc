@@ -19,14 +19,14 @@ FloatVectorIndex::FloatVectorIndex(const IndexDef& idef, PayloadType&& pt, Field
 	metric_ = idef.Opts().FloatVector().Metric();
 }
 
-void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, StringsHolder& stringsHolder, bool& clearCache) {
+void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder& stringsHolder, bool& clearCache) {
 	assertrx_dbg(keys.size() == 1);
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
 	if (emptyValues_.Unsorted().Find(id)) {
 		emptyValues_.Unsorted().Erase(id);	// ignore result
 		memStat_.uniqKeysCount = emptyValues_.Unsorted().IsEmpty() ? 0 : 1;
 	} else {
-		Delete(keys[0], id, stringsHolder, clearCache);
+		Delete(keys[0], id, mustExist, stringsHolder, clearCache);
 	}
 }
 
@@ -114,7 +114,7 @@ IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) noexcept {
 }
 
 namespace {
-EmbedderCachePerfStat GetEmbedderPerfStat(const std::shared_ptr<const Embedder>& embedder, std::string_view tag) {
+EmbedderCachePerfStat GetEmbedderPerfStat(const std::shared_ptr<const EmbedderBase>& embedder, std::string_view tag) {
 	if (!embedder || tag.empty()) {
 		return {};
 	}

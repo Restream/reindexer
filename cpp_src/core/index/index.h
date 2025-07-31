@@ -66,8 +66,8 @@ public:
 	virtual ~Index() = default;
 	virtual Variant Upsert(const Variant& key, IdType id, bool& clearCache) = 0;
 	virtual void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) = 0;
-	virtual void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) = 0;
-	virtual void Delete(const VariantArray& keys, IdType id, StringsHolder&, bool& clearCache) = 0;
+	virtual void Delete(const Variant& key, IdType id, reindexer::MustExist mustExist, StringsHolder&, bool& clearCache) = 0;
+	virtual void Delete(const VariantArray& keys, IdType id, reindexer::MustExist mustExist, StringsHolder&, bool& clearCache) = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const SelectContext&,
 									   const RdxContext&) = 0;

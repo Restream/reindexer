@@ -2,7 +2,6 @@
 
 #include <string>
 #include "core/keyvalue/variant.h"
-#include "tools/rvector.h"
 
 namespace reindexer {
 
@@ -19,7 +18,7 @@ public:
 	[[nodiscard]] RX_ALWAYS_INLINE std::string_view text() const noexcept { return std::string_view(text_.data(), text_.size()); }
 
 	token_type type = TokenSymbol;
-	RVector<char, 20> text_;
+	h_vector<char, 20> text_;
 };
 
 class tokenizer {

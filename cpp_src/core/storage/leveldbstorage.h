@@ -50,10 +50,13 @@ public:
 	}
 	void Remove(std::string_view key) override { batchWrite_.Delete(leveldb::Slice(key.data(), key.size())); }
 	void Clear() override { batchWrite_.Clear(); }
+	void Id(uint64_t id) noexcept override { batchId_ = id; }
+	uint64_t Id() const noexcept override { return batchId_; }
 
 private:
 	leveldb::WriteBatch batchWrite_;
 	friend class LevelDbStorage;
+	uint64_t batchId_;
 };
 
 class LevelDbComparator : public Comparator {

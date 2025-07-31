@@ -18,12 +18,12 @@ void UpdatesObservers::SendAsyncEventOnly(updates::UpdateRecord&& rec) {
 }
 
 Error UpdatesObservers::SendUpdate(updates::UpdateRecord&& rec, std::function<void()> beforeWaitF, const RdxContext& ctx) {
-	cluster::UpdatesContainer recs;
+	UpdatesContainer recs;
 	recs.emplace_back(std::move(rec));
 	return SendUpdates(std::move(recs), std::move(beforeWaitF), ctx);
 }
 
-Error UpdatesObservers::SendUpdates(cluster::UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) {
+Error UpdatesObservers::SendUpdates(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) {
 	if (recs.empty()) {
 		return {};
 	}
@@ -38,12 +38,12 @@ Error UpdatesObservers::SendUpdates(cluster::UpdatesContainer&& recs, std::funct
 }
 
 Error UpdatesObservers::SendAsyncUpdate(updates::UpdateRecord&& rec, const RdxContext& ctx) {
-	cluster::UpdatesContainer recs(1);
+	UpdatesContainer recs(1);
 	recs[0] = std::move(rec);
 	return SendAsyncUpdates(std::move(recs), ctx);
 }
 
-Error UpdatesObservers::SendAsyncUpdates(cluster::UpdatesContainer&& recs, const RdxContext& ctx) {
+Error UpdatesObservers::SendAsyncUpdates(UpdatesContainer&& recs, const RdxContext& ctx) {
 	if (recs.empty()) {
 		return {};
 	}
@@ -57,7 +57,7 @@ Error UpdatesObservers::SendAsyncUpdates(cluster::UpdatesContainer&& recs, const
 	return replicator_.ReplicateAsync(std::move(recs), ctx);
 }
 
-EventsContainer UpdatesObservers::convertUpdatesContainer(const cluster::UpdatesContainer& data) {
+EventsContainer UpdatesObservers::convertUpdatesContainer(const UpdatesContainer& data) {
 	EventsContainer copy;
 	copy.reserve(data.size());
 	for (auto& d : data) {

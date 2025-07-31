@@ -146,7 +146,7 @@
 
 <!-- tocstop -->
 
-> Version 5.4.0
+> Version 5.5.0
 
 ## Overview
 
@@ -6508,6 +6508,13 @@ This operation will return detailed information about database memory consumptio
       cache_size?: integer
       // Total memory size, occupation by index optimizer (in bytes)
       index_optimizer_memory?: integer
+      // Total memory size, occupied by the AsyncStorage (in bytes)
+      inmemory_storage_size?: integer
+    }
+    // Summary of total async storage memory consumption
+    storage: {
+      // Total memory size, occupied by synchronous proxy map of the AsyncStorage (in bytes)
+      proxy_size?: integer
     }
     // Join cache stats. Stores results of selects to right table by ON condition
     join_cache?: CacheMemStats
@@ -8712,8 +8719,12 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   log_level?: integer
   // Maximum documents count which will be processed in merge query results. Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed
   merge_limit?: integer
-  // List of symbols, which will be treated as word part, all other symbols will be treated as word separators
-  extra_word_symbols?: string //default: -/+
+  // List of symbols, which will be treated as word part delimiters
+  word_part_delimiters?: string //default: -/+_`'
+  // Min word part size to indexate and search
+  min_word_part_size?: integer //default: 3
+  // List of symbols, which will be treated as word part, all other symbols will be treated as word separators, extra_word_symbols will be replenished with word_part_delimiters automatically at startup
+  extra_word_symbols?: string //default: -/+_`'
   stop_words: {
     // Stop word
     word?: string
@@ -8824,6 +8835,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     translit_proc?: integer
     // Relevancy of the synonym match
     synonyms_proc?: integer
+    // Relevancy of the delimited word part match
+    delimited_proc?: integer
   }
   // Text tokenization algorithm. 'fast' - splits text by spaces, special characters and unsupported UTF-8 symbols. Each token is a combination of letters from supported UTF-8 subset, numbers and extra word symbols. 'mmseg_cn' - algorithm based on friso implementation of mmseg for Chinese and English
   splitter?: enum[fast, mmseg_cn] //default: fast
@@ -9382,6 +9395,13 @@ string[]
       cache_size?: integer
       // Total memory size, occupation by index optimizer (in bytes)
       index_optimizer_memory?: integer
+      // Total memory size, occupied by the AsyncStorage (in bytes)
+      inmemory_storage_size?: integer
+    }
+    // Summary of total async storage memory consumption
+    storage: {
+      // Total memory size, occupied by synchronous proxy map of the AsyncStorage (in bytes)
+      proxy_size?: integer
     }
     // Join cache stats. Stores results of selects to right table by ON condition
     join_cache?: CacheMemStats
@@ -9515,6 +9535,13 @@ string[]
     cache_size?: integer
     // Total memory size, occupation by index optimizer (in bytes)
     index_optimizer_memory?: integer
+    // Total memory size, occupied by the AsyncStorage (in bytes)
+    inmemory_storage_size?: integer
+  }
+  // Summary of total async storage memory consumption
+  storage: {
+    // Total memory size, occupied by synchronous proxy map of the AsyncStorage (in bytes)
+    proxy_size?: integer
   }
   // Join cache stats. Stores results of selects to right table by ON condition
   join_cache?: CacheMemStats

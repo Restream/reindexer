@@ -14,7 +14,8 @@ IndexStore<Point>::IndexStore(const IndexDef& idef, PayloadType&& payloadType, F
 }
 
 template <>
-void IndexStore<key_string>::Delete(const Variant& key, IdType /*id*/, StringsHolder& strHolder, bool& /*clearCache*/) {
+void IndexStore<key_string>::Delete(const Variant& key, [[maybe_unused]] IdType id, [[maybe_unused]] MustExist mustExist,
+									StringsHolder& strHolder, bool& /*clearCache*/) {
 	assertrx_dbg(!IsFulltext());
 	if (key.Type().Is<KeyValueType::Null>()) {
 		return;
@@ -23,7 +24,7 @@ void IndexStore<key_string>::Delete(const Variant& key, IdType /*id*/, StringsHo
 		return;
 	}
 	auto keyIt = str_map.find(std::string_view(key));
-	// assertf(keyIt != str_map.end(), "Delete non-existent key from index '{}' id={}", name_, id);
+	assertf(!mustExist || keyIt != str_map.end(), "Delete non-existent key from index '{}' id={}", name_, id);
 	if (keyIt == str_map.end()) {
 		return;
 	}
@@ -37,23 +38,23 @@ void IndexStore<key_string>::Delete(const Variant& key, IdType /*id*/, StringsHo
 	}
 }
 template <typename T>
-void IndexStore<T>::Delete(const Variant& /*key*/, IdType /* id */, StringsHolder&, bool& /*clearCache*/) {
+void IndexStore<T>::Delete(const Variant& /*key*/, IdType /* id */, MustExist, StringsHolder&, bool& /*clearCache*/) {
 	assertrx_dbg(!IsFulltext());
 }
 
 template <typename T>
-void IndexStore<T>::Delete(const VariantArray& keys, IdType id, StringsHolder& strHolder, bool& clearCache) {
+void IndexStore<T>::Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) {
 	if (keys.empty()) {
-		Delete(Variant{}, id, strHolder, clearCache);
+		Delete(Variant{}, id, mustExist, strHolder, clearCache);
 	} else {
 		for (const auto& key : keys) {
-			Delete(key, id, strHolder, clearCache);
+			Delete(key, id, mustExist, strHolder, clearCache);
 		}
 	}
 }
 
 template <>
-void IndexStore<Point>::Delete(const VariantArray& /*keys*/, IdType /*id*/, StringsHolder&, bool& /*clearCache*/) {
+void IndexStore<Point>::Delete(const VariantArray& /*keys*/, IdType /*id*/, MustExist, StringsHolder&, bool& /*clearCache*/) {
 	assertrx(0);
 }
 

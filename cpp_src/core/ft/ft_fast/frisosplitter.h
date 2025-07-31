@@ -192,13 +192,13 @@ public:
 		pool.clear();
 		convertCounter = 0;
 	}
-	const std::vector<std::string_view>& GetResults() override {
+	const std::vector<WordWithPos>& GetResults() override {
 		FrisoTokenEntry token;
 		while (next_mmseg_token(token)) {
 			wordsOffset.emplace_back(token);
 		}
 		for (const auto& tok : wordsOffset) {
-			words.push_back(tokenWord(tok));
+			words.emplace_back(tokenWord(tok), words.size());
 		}
 		return words;
 	}
@@ -215,7 +215,7 @@ private:
 	const unsigned int kHitsWordLen = 64;
 	std::string_view str;  // text to tokenize
 
-	std::vector<std::string_view> words;
+	std::vector<WordWithPos> words;
 	std::vector<FrisoTokenEntry> wordsOffset;
 
 	const FrisoTextSplitter& splitter_;

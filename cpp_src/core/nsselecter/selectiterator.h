@@ -8,7 +8,7 @@ namespace reindexer {
 
 /// Allows to iterate over a result of selecting
 /// data for one certain key.
-class SelectIterator : public SelectKeyResult {
+class [[nodiscard]] SelectIterator : public SelectKeyResult {
 public:
 	enum {
 		Forward,
@@ -43,7 +43,7 @@ public:
 
 		isReverse_ = reverse;
 		const auto begIt = begin();
-		lastIt_ = begIt;
+		lastPos_ = 0;
 
 		for (auto it = begIt, endIt = end(); it != endIt; ++it) {
 			if (it->isRange_) {
@@ -93,7 +93,7 @@ public:
 		} else if (sz == 1 && begIt->indexForwardIter_) {
 			type_ = UnbuiltSortOrdersIndex;
 			begIt->indexForwardIter_->Start(reverse);
-		} else if (isUnsorted) {
+		} else if (isUnsorted_) {
 			type_ = Unsorted;
 		} else if (sz == 1) {
 			if (!isReverse_) {
@@ -150,7 +150,7 @@ public:
 	}
 
 	/// Sets Unsorted iteration mode
-	RX_ALWAYS_INLINE void SetUnsorted() noexcept { isUnsorted = true; }
+	RX_ALWAYS_INLINE void SetUnsorted() noexcept { isUnsorted_ = true; }
 
 	/// Current rowId
 	RX_ALWAYS_INLINE IdType Val() const noexcept {
@@ -177,8 +177,8 @@ public:
 			case Unsorted:
 			case UnbuiltSortOrdersIndex:
 			default:
-				assertrx_throw(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
-				return lastIt_->it_ - lastIt_->begin_ - 1;
+				assertrx_throw(!operator[](lastPos_).useBtree_ && (type_ != UnbuiltSortOrdersIndex));
+				return operator[](lastPos_).it_ - operator[](lastPos_).begin_ - 1;
 		}
 	}
 
@@ -193,14 +193,14 @@ public:
 			if (fwdIter->Value() == rowId) {
 				fwdIter->ExcludeLastSet();
 			}
-		} else if (!End() && lastIt_ != end() && lastVal_ == rowId) {
-			assertrx_throw(!lastIt_->isRange_);
-			if (lastIt_->useBtree_) {
-				lastIt_->itset_ = lastIt_->setend_;
-				lastIt_->ritset_ = lastIt_->setrend_;
+		} else if (!End() && lastPos_ != size() && lastVal_ == rowId) {
+			assertrx_throw(!operator[](lastPos_).isRange_);
+			if (operator[](lastPos_).useBtree_) {
+				operator[](lastPos_).itset_ = operator[](lastPos_).setend_;
+				operator[](lastPos_).ritset_ = operator[](lastPos_).setrend_;
 			} else {
-				lastIt_->it_ = lastIt_->end_;
-				lastIt_->rit_ = lastIt_->rend_;
+				operator[](lastPos_).it_ = operator[](lastPos_).end_;
+				operator[](lastPos_).rit_ = operator[](lastPos_).rend_;
 			}
 		}
 	}
@@ -276,7 +276,7 @@ protected:
 					it->itset_ = it->set_->upper_bound(lastVal_);
 					if (it->itset_ != it->setend_ && *it->itset_ < minVal) {
 						minVal = *it->itset_;
-						lastIt_ = it;
+						lastPos_ = it - begin();
 					}
 				}
 			} else {
@@ -285,7 +285,7 @@ protected:
 
 					if (it->rIt_ != it->rEnd_ && it->rIt_ < minVal) {
 						minVal = it->rIt_;
-						lastIt_ = it;
+						lastPos_ = it - begin();
 					}
 
 				} else if (!it->isRange_ && it->it_ != it->end_) {
@@ -293,7 +293,7 @@ protected:
 					}
 					if (it->it_ != it->end_ && *it->it_ < minVal) {
 						minVal = *it->it_;
-						lastIt_ = it;
+						lastPos_ = it - begin();
 					}
 				}
 			}
@@ -313,21 +313,21 @@ protected:
 				}
 				if (it->ritset_ != it->setrend_ && *it->ritset_ > maxVal) {
 					maxVal = *it->ritset_;
-					lastIt_ = it;
+					lastPos_ = it - begin();
 				}
 			} else if (it->isRange_ && it->rrIt_ != it->rrEnd_) {
 				it->rrIt_ = std::max(it->rrEnd_, std::min(it->rrIt_, lastVal_ - 1));
 
 				if (it->rrIt_ != it->rrEnd_ && it->rrIt_ > maxVal) {
 					maxVal = it->rrIt_;
-					lastIt_ = it;
+					lastPos_ = it - begin();
 				}
 			} else if (!it->isRange_ && !it->useBtree_ && it->rit_ != it->rend_) {
 				for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal_; ++it->rit_) {
 				}
 				if (it->rit_ != it->rend_ && *it->rit_ > maxVal) {
 					maxVal = *it->rit_;
-					lastIt_ = it;
+					lastPos_ = it - begin();
 				}
 			}
 		}
@@ -413,22 +413,21 @@ protected:
 	bool nextUnbuiltSortOrders() noexcept { return begin()->indexForwardIter_->Next(); }
 	// Unsorted next implementation
 	bool nextUnsorted() noexcept {
-		const auto endIt = end();
-		if (lastIt_ == endIt) {
+		if (lastPos_ == size()) {
 			return false;
 		}
-		if (lastIt_->it_ == lastIt_->end_) {
-			++lastIt_;
-			while (lastIt_ != endIt) {
-				if (lastIt_->it_ != lastIt_->end_) {
-					lastVal_ = *(lastIt_->it_++);
+		if (operator[](lastPos_).it_ == operator[](lastPos_).end_) {
+			++lastPos_;
+			while (lastPos_ < size()) {
+				if (operator[](lastPos_).it_ != operator[](lastPos_).end_) {
+					lastVal_ = *(operator[](lastPos_).it_++);
 					return true;
 				}
-				++lastIt_;
+				++lastPos_;
 			}
 			return false;
 		}
-		lastVal_ = *(lastIt_->it_++);
+		lastVal_ = *(operator[](lastPos_).it_++);
 		return true;
 	}
 
@@ -445,14 +444,13 @@ protected:
 		return false;
 	}
 
-	bool isUnsorted = false;
+	bool isUnsorted_ = false;
 	bool isReverse_ = false;
 	ForcedFirst forcedFirst_ = ForcedFirst_False;
 	bool isNotOperation_ = false;
 	int type_ = 0;
-	iterator lastIt_ = nullptr;
+	size_t lastPos_ = 0;
 	IdType lastVal_ = INT_MIN;
-	IdType end_ = 0;
 	int matchedCount_ = 0;
 };
 

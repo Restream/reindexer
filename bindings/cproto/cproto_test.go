@@ -20,7 +20,44 @@ import (
 	"github.com/restream/reindexer/v5/test/helpers"
 )
 
+type testServer struct {
+	l     net.Listener
+	conns []net.Conn
+}
+
 var benchmarkSeed = flag.Int64("seed", time.Now().Unix(), "seed number for random")
+
+func (s *testServer) acceptLoop() {
+	for {
+		conn, err := s.l.Accept()
+		if err != nil {
+			return
+		}
+		s.conns = append(s.conns, conn)
+	}
+}
+
+func (s *testServer) Close() {
+	s.l.Close()
+}
+
+func runTestServer() (s *testServer, addr *url.URL, err error) {
+	startPort := 40000
+	var l net.Listener
+	var port int
+	for port = startPort; port < startPort+10; port++ {
+		if l, err = net.Listen("tcp", fmt.Sprintf(":%d", port)); err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return
+	}
+	s = &testServer{l: l}
+	go s.acceptLoop()
+	addr, _ = url.Parse(fmt.Sprintf("cproto://127.0.0.1:%d", port))
+	return
+}
 
 func BenchmarkGetConn(b *testing.B) {
 	srv1 := helpers.TestServer{T: nil, RpcPort: "6651", HttpPort: "9951", DbName: "cproto", SrvType: helpers.ServerTypeBuiltin}
@@ -125,72 +162,32 @@ func TestCprotoStatus(t *testing.T) {
 	})
 }
 
-func runTestServer() (s *testServer, addr *url.URL, err error) {
-	startPort := 40000
-	var l net.Listener
-	var port int
-	for port = startPort; port < startPort+10; port++ {
-		if l, err = net.Listen("tcp", fmt.Sprintf(":%d", port)); err == nil {
-			break
-		}
-	}
-	if err != nil {
-		return
-	}
-	s = &testServer{l: l}
-	go s.acceptLoop()
-	addr, _ = url.Parse(fmt.Sprintf("cproto://127.0.0.1:%d", port))
-	return
-}
-
-type testServer struct {
-	l     net.Listener
-	conns []net.Conn
-}
-
-func (s *testServer) acceptLoop() {
-	for {
-		conn, err := s.l.Accept()
-		if err != nil {
-			return
-		}
-		s.conns = append(s.conns, conn)
-	}
-}
-
-func (s *testServer) Close() {
-	s.l.Close()
-}
-
 func TestStatusError(t *testing.T) {
 	expectedError := "failed to connect with provided dsn; dial tcp 127.0.0.1:6661: connect: connection refused"
 
 	srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "reindex_test_status_db", SrvType: helpers.ServerTypeBuiltin}
 	defer srv1.Clean()
 
-	dsn := fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort)
-	db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
-	assert.NotNil(t, db)
-	defer db.Close()
-
 	// Check for connection error - server not started
-	status := db.Status()
-	assert.Equal(t, expectedError, status.Err.Error())
+	dsn := fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort)
+	_, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+	assert.ErrorContains(t, err, expectedError)
 
 	// Start server
-	err := srv1.Run()
+	err = srv1.Run()
 	assert.NoError(t, err)
 
 	// Check no error after server run
-	status = db.Status()
-	assert.NoError(t, status.Err)
+	db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+	require.NoError(t, err)
+	defer db.Close()
 
 	// Stop server
 	err = srv1.Stop()
 	assert.NoError(t, err)
 
 	// Check for connection error - server stopped
-	status = db.Status()
+	status := db.Status()
 	assert.Equal(t, expectedError, status.Err.Error())
 }
 
@@ -216,17 +213,13 @@ func TestInvalidDSNFromGetStatus(t *testing.T) {
 			"failed to connect with provided dsn; dial tcp: missing address",
 		},
 	}
+
 	for _, tt := range tests {
 		testname := fmt.Sprintf("Test for dsn: %s", tt.dsn)
 		t.Run(testname, func(t *testing.T) {
 			dsn := fmt.Sprintf(tt.dsn)
-			db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
-			assert.NotNil(t, db)
-
-			status := db.Status()
-			assert.Equal(t, status.Err.Error(), tt.want)
-
-			db.Close()
+			_, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+			assert.ErrorContains(t, err, tt.want)
 		})
 	}
 }

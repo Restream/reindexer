@@ -323,7 +323,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 		while (!terminate) {
 			std::array<float, kDimension> buf;
 			::rndFloatVector(buf);
-			auto k = rand() % 20 + 10;
+			auto k = rand() % 100 + 10;
 			const auto result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameHnsw, reindexer::ConstFloatVectorView{buf},
 																			 reindexer::HnswSearchParams{}.K(k).Ef(k)));
 			checkOrdering(result, reindexer::VectorMetric::Cosine);
@@ -398,9 +398,10 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 		reindexer::QueryResults qr;
 		auto err = rt.reindexer->CommitTransaction(tx, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
 
-	std::this_thread::sleep_for(std::chrono::seconds(1));
+	std::this_thread::sleep_for(std::chrono::seconds(3));
 	for (auto& th : selectThreads) {
 		terminate = true;
 		th.join();

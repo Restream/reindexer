@@ -13,6 +13,8 @@ class PayloadType;
 class TagsMatcher;
 class WrSerializer;
 
+namespace builders {
+
 class ProtobufSchemaBuilder {
 public:
 	ProtobufSchemaBuilder();
@@ -27,7 +29,6 @@ public:
 	void Field(std::string_view name, TagName, const FieldProps& props);
 	ProtobufSchemaBuilder Object(TagName, std::string_view name, bool buildTypesOnly = false,
 								 const std::function<void(ProtobufSchemaBuilder& self)>& = nullptr);
-
 	void End();
 
 private:
@@ -40,5 +41,6 @@ private:
 	TagsMatcher* tm_{nullptr};
 	ObjType type_{ObjType::TypeObject};
 };
-
+}  // namespace builders
+using builders::ProtobufSchemaBuilder;
 }  // namespace reindexer

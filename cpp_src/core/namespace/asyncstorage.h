@@ -2,12 +2,17 @@
 
 #include <deque>
 #include <mutex>
+#include <numeric>
+#include <optional>
 #include "core/storage/idatastorage.h"
+#include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
 #include "estl/mutex.h"
+#include "estl/shared_mutex.h"
 #include "tools/assertrx.h"
 #include "tools/clock.h"
 #include "tools/flagguard.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 
@@ -37,6 +42,7 @@ class AsyncStorage {
 public:
 	static constexpr uint32_t kLimitToAdviceBatching = 1000;
 	static constexpr auto kStorageReopenPeriod = std::chrono::seconds(15);
+	constexpr static uint32_t kFlushChunckSize = 11000;
 
 	using AdviceGuardT = CounterGuardAIRL32;
 	using ClockT = system_clock_w;
@@ -72,7 +78,7 @@ public:
 
 		void RemoveThisKey(const StorageOpts& opts) {
 			assertrx(ConstCursor::lck_.owns_lock());
-			storage_->removeSync(opts, ConstCursor::c_->Key());
+			storage_->modifySync<ModifyOp::Remove>(opts, ConstCursor::c_->Key());
 		}
 
 	private:
@@ -96,7 +102,7 @@ public:
 		std::unique_lock<MutexType> storageLck_;
 	};
 
-	AsyncStorage() = default;
+	AsyncStorage() : proxy_(*this) {}
 	AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& storageLock);
 
 	Error Open(datastorage::StorageType storageType, std::string_view nsName, const std::string& path, const StorageOpts& opts);
@@ -104,18 +110,36 @@ public:
 	Cursor GetCursor(StorageOpts& opts);
 	ConstCursor GetCursor(StorageOpts& opts) const;
 	// Tries to write synchronously, hovewer will perform an async write for copied namespace and in case of storage errors
-	void WriteSync(const StorageOpts& opts, std::string_view key, std::string_view value);
+	void WriteSync(const StorageOpts& opts, std::string_view key, std::string_view value) {
+		std::lock_guard lck(storageMtx_);
+		modifySync<ModifyOp::Write>(opts, key, value);
+	}
 	// Tries to remove synchronously, hovewer will perform an async deletion for copied namespace and in case of storage errors
-	void RemoveSync(const StorageOpts& opts, std::string_view key);
+	void RemoveSync(const StorageOpts& opts, std::string_view key) {
+		std::lock_guard lck(storageMtx_);
+		modifySync<ModifyOp::Remove>(opts, key);
+	}
+
 	void Remove(std::string_view key) {
 		std::lock_guard lck(storageMtx_);
-		remove(false, key);
+		modifyAsync<ModifyOp::Remove>(key);
 	}
+
 	void Write(std::string_view key, std::string_view data) {
 		std::lock_guard lck(storageMtx_);
-		write(false, key, data);
+		modifyAsync<ModifyOp::Write>(key, data);
 	}
+
 	Error Read(const StorageOpts& opts, std::string_view key, std::string& value) const {
+		auto [proxyValue, err] = proxy_.Find(key);
+		if (!err.ok()) {
+			return err;
+		}
+		if (proxyValue) {
+			value = std::move(*proxyValue);
+			return err;
+		}
+
 		std::lock_guard lck(storageMtx_);
 		if (storage_) {
 			return storage_->Read(opts, key, value);
@@ -147,8 +171,17 @@ public:
 	AdviceGuardT AdviceBatching() noexcept { return AdviceGuardT(batchingAdvices_); }
 	void SetForceFlushLimit(uint32_t limit) noexcept { forceFlushLimit_.store(limit, std::memory_order_relaxed); }
 
+	void WithProxy(bool withProxy) noexcept {
+		withProxy_ = withProxy;
+		if (!withProxy) {
+			proxy_.Clear();
+		}
+	}
+	[[nodiscard]] bool WithProxy() const noexcept { return withProxy_; }
+	[[nodiscard]] size_t GetProxyMemStat() const noexcept { return proxy_.AllocatedSize(); }
+
 private:
-	constexpr static uint32_t kFlushChunckSize = 11000;
+	enum class ModifyOp { Write, Remove };
 	constexpr static uint32_t kMaxRecycledChunks = 3;
 	class UpdatesPtrT : public datastorage::UpdatesCollection::Ptr {
 	public:
@@ -184,52 +217,66 @@ private:
 	void clearUpdates();
 	void flush(const StorageFlushOpts& opts);
 	void beginNewUpdatesChunk();
-	void write(bool fromSyncCall, std::string_view key, std::string_view value) {
-		asyncOp(fromSyncCall, [this](std::string_view k, std::string_view v) { curUpdatesChunck_->Put(k, v); }, key, value);
+
+	template <ModifyOp op>
+	void modifyAsyncImpl(std::string_view k, std::optional<std::string_view> v = std::nullopt) {
+		if constexpr (op == ModifyOp::Write) {
+			curUpdatesChunck_->Put(k, *v);
+		} else {
+			curUpdatesChunck_->Remove(k);
+		}
+
+		proxy_.Add(k, v);
 	}
-	void removeSync(const StorageOpts& opts, std::string_view key) {
-		syncOp(
-			[this, &opts](std::string_view k) {
-				throwOnStorageCopy();
-				return storage_->Delete(opts, k);
-			},
-			[this](std::string_view k) { remove(true, k); }, key);
+
+	template <ModifyOp op>
+	Error modifySyncImpl(const StorageOpts& opts, std::string_view k, std::optional<std::string_view> v = std::nullopt) {
+		throwOnStorageCopy();
+
+		Error err;
+		if constexpr (op == ModifyOp::Write) {
+			err = storage_->Write(opts, k, *v);
+		} else {
+			err = storage_->Delete(opts, k);
+		}
+
+		if (err.ok()) {
+			proxy_.Delete(k);
+		}
+		return err;
 	}
-	void remove(bool fromSyncCall, std::string_view key) {
-		asyncOp(fromSyncCall, [this](std::string_view k) { curUpdatesChunck_->Remove(k); }, key);
-	}
-	template <typename StorageCall, typename... Args>
-	void asyncOp(bool fromSyncCall, StorageCall&& call, const Args&... args) {
+
+	template <ModifyOp op>
+	void modifyAsync(std::string_view k, std::optional<std::string_view> v = std::nullopt) {
 		if (storage_) {
 			totalUpdatesCount_.fetch_add(1, std::memory_order_release);
-			call(args...);
-			if (fromSyncCall) {
-				lastBatchWithSyncUpdates_ = finishedUpdateChuncks_.size();
-			}
+			modifyAsyncImpl<op>(k, v);
 			if (++curUpdatesChunck_.updatesCount == kFlushChunckSize) {
 				beginNewUpdatesChunk();
 			}
 		}
 	}
-	template <typename AsyncCall, typename SyncCall, typename... Args>
-	void syncOp(SyncCall&& syncCall, AsyncCall&& asyncCall, const Args&... args) {
+
+	template <ModifyOp op>
+	void modifySync(const StorageOpts& opts, std::string_view k, std::optional<std::string_view> v = std::nullopt) {
 		if (!isCopiedNsStorage_ && lastFlushError_.ok()) {
 			if (storage_) {
 				Error err;
 				try {
-					err = syncCall(args...);
+					err = modifySyncImpl<op>(opts, k, v);
 				} catch (Error& e) {
 					err = std::move(e);
 				}
 				if (!err.ok()) {
 					scheduleFilesReopen(std::move(err));
-					asyncCall(args...);
+					modifyAsync<op>(k, v);
 				}
 			}
 			return;
 		}
-		asyncCall(args...);
+		modifyAsync<op>(k, v);
 	}
+
 	void throwOnStorageCopy() const {
 		if (isCopiedNsStorage_) {
 			throw Error(errLogic, "Unable to perform this operation with copied storage");
@@ -247,7 +294,6 @@ private:
 		path_.clear();
 		lastFlushError_ = Error();
 		reopenTs_ = TimepointT();
-		lastBatchWithSyncUpdates_ = -1;
 		updateStatusCache();
 	}
 	void tryReopenStorage();
@@ -298,9 +344,118 @@ private:
 	h_vector<UpdatesPtrT, kMaxRecycledChunks> recycled_;
 	std::atomic<int32_t> batchingAdvices_ = {0};
 	std::atomic<uint32_t> forceFlushLimit_ = {0};
-	int32_t lastBatchWithSyncUpdates_ = -1;	 // This is required to avoid reordering between sync and async records
 	Error lastFlushError_;
 	TimepointT reopenTs_;
+
+	std::atomic<size_t> batchIdCounter_ = 0;
+	struct Proxy {
+		Proxy(AsyncStorage& storage) noexcept : storage_(storage) {}
+
+		void Add(std::string_view k, std::optional<std::string_view> v) {
+			if (!storage_.withProxy_.load(std::memory_order_relaxed)) {
+				return;
+			}
+
+			auto key = std::string(k);
+			auto value = v ? std::optional<std::string>{*v} : std::nullopt;
+
+			std::lock_guard lck(mtx_);
+			map_[storage_.curUpdatesChunck_->Id()].insert(std::move(key), std::move(value));
+		}
+
+		void Delete(std::string_view k) {
+			if (!storage_.withProxy_.load(std::memory_order_relaxed)) {
+				return;
+			}
+
+			auto hash = hash_str{}(k);
+			std::lock_guard lck(mtx_);
+			for (auto& [batchId, map] : map_) {
+				map.erase(k, hash);
+			}
+		}
+
+		void Erase(size_t batchId) {
+			if (!storage_.withProxy_.load(std::memory_order_relaxed)) {
+				return;
+			}
+
+			std::lock_guard lck(mtx_);
+			map_.erase(batchId);
+		}
+
+		void Clear() noexcept {
+			std::lock_guard lck(mtx_);
+			map_ = {};
+		}
+
+		std::pair<std::optional<std::string>, Error> Find(std::string_view key) const {
+			if (!storage_.withProxy_.load(std::memory_order_relaxed)) {
+				return {};
+			}
+
+			shared_lock lck(mtx_);
+
+			std::optional<std::string> res;
+			auto find = [&, hash = hash_str{}(key)](const auto& map) {
+				if (auto it = map.find(key, hash); it != map.end()) {
+					res = it.value();
+					return true;
+				}
+				return false;
+			};
+
+			if (auto it = std::find_if(map_.rbegin(), map_.rend(), [&find](const auto& pair) { return find(pair.second); });
+				it != map_.rend()) {
+				return {res, res ? Error() : Error(errNotFound, "Key not found in async storage")};
+			}
+			return {};
+		}
+
+		size_t AllocatedSize() const noexcept {
+			shared_lock lck(mtx_);
+			return std::accumulate(map_.begin(), map_.end(), map_.size() * sizeof(decltype(map_)::node_type),
+								   [](auto res, const auto& pair) { return res + pair.second.allocated_mem_size(); });
+		}
+
+	private:
+		mutable shared_timed_mutex mtx_;
+		using ProxyBatchBase = fast_hash_map<std::string, std::optional<std::string>, hash_str, equal_str, less_str>;
+		class [[nodiscard]] ProxyBatch : ProxyBatchBase {
+		public:
+			using ProxyBatchBase::find;
+			using ProxyBatchBase::end;
+
+			void insert(std::string&& key, std::optional<std::string>&& value) {
+				auto keyCapacity = key.capacity();
+				auto valCapacity = value ? value->capacity() : 0;
+				if (auto it = ProxyBatchBase::find(key); it != ProxyBatchBase::end()) {
+					auto oldValCapacity = it->second ? it->second->capacity() : 0;
+					it->second = std::move(value);
+					allocated_ += valCapacity - oldValCapacity;
+				} else {
+					ProxyBatchBase::operator[](std::move(key)) = std::move(value);
+					allocated_ += keyCapacity + valCapacity;
+				}
+			}
+			void erase(const std::string_view& key, size_t precalcHash) {
+				if (auto it = ProxyBatchBase::find(key, precalcHash); it != ProxyBatchBase::end()) {
+					auto capacityToDecrease = it->first.capacity() + (it->second ? it->second->capacity() : 0);
+					ProxyBatchBase::erase(it);
+					allocated_ -= capacityToDecrease;
+				}
+			}
+
+			[[nodiscard]] size_t allocated_mem_size() const noexcept { return allocated_ + ProxyBatchBase::allocated_mem_size(); }
+
+		private:
+			size_t allocated_ = 0;
+		};
+
+		std::map<size_t, ProxyBatch> map_;
+		AsyncStorage& storage_;
+	} proxy_;
+	std::atomic_bool withProxy_ = false;
 };
 
 }  // namespace reindexer

@@ -229,9 +229,8 @@ static void addToJSON(JsonBuilder& builder, const ConditionInjection& injCond) {
 	jsonSel.Put("new_condition"sv, injCond.newCond);
 }
 
-static std::string addToJSON(JsonBuilder& builder, const JoinOnInjection& injCond) {
+static void addToJSON(JsonBuilder& builder, const JoinOnInjection& injCond) {
 	auto jsonSel = builder.Object();
-	std::string name{injCond.rightNsName};
 	using namespace std::string_view_literals;
 
 	jsonSel.Put("namespace"sv, injCond.rightNsName);
@@ -249,8 +248,6 @@ static std::string addToJSON(JsonBuilder& builder, const JoinOnInjection& injCon
 			addToJSON(jsonCondInjections, cond);
 		}
 	}
-
-	return name;
 }
 
 std::string ExplainCalc::GetJSON() {

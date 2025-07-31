@@ -10,11 +10,18 @@
 namespace reindexer {
 namespace DistinctHelpers {
 
-using FieldsValue = RVector<Variant, 2>;
+using FieldsValue = h_vector<Variant, 2>;
 
-using DataType = std::variant<std::span<const bool>, std::span<const int64_t>, std::span<const double>, std::span<const float>,
-							  std::span<const std::string_view>, std::span<const int32_t>, std::span<const Uuid>, std::span<const p_string>,
-							  VariantArray>;
+struct DataType {
+	DataType() = default;
+	template <typename T>
+	DataType(T&& d, IsArray a) noexcept : data(std::move(d)), isArray(a) {}
+	std::variant<std::span<const bool>, std::span<const int64_t>, std::span<const double>, std::span<const float>,
+				 std::span<const std::string_view>, std::span<const int32_t>, std::span<const Uuid>, std::span<const p_string>,
+				 VariantArray>
+		data;
+	IsArray isArray = IsArray_False;
+};
 
 enum class [[nodiscard]] IsCompositeSupported : bool { Yes = true, No = false };
 template <IsCompositeSupported isCompositeSupported>
@@ -105,15 +112,13 @@ struct [[nodiscard]] LessDistinctVector {
 			const bool res = v1[i].Type().EvaluateOneOf(
 				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
 						  KeyValueType::Int, KeyValueType::Uuid>) {
-					return v1[i].Compare<NotComparable::Return>(v2[i]) == ComparationResult::Lt ? true : false;
+					return v1[i].Compare<NotComparable::Return>(v2[i]) == ComparationResult::Lt;
 				},
 				[&](KeyValueType::Composite) -> bool {
 					if constexpr (isCompositeSupported == IsCompositeSupported::Yes) {
 						const PayloadValue& l = static_cast<const PayloadValue&>(v1[i]);
 						const PayloadValue& r = static_cast<const PayloadValue&>(v2[i]);
-						return ConstPayload(type_, l).Compare<WithString::No, NotComparable::Return>(r, fields_) == ComparationResult::Lt
-								   ? true
-								   : false;
+						return ConstPayload(type_, l).Compare<WithString::No, NotComparable::Return>(r, fields_) == ComparationResult::Lt;
 					} else {
 						throw_as_assert;
 					}

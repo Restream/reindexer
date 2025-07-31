@@ -95,7 +95,9 @@ namespaces: []`
 		_, err = f.Write([]byte(config))
 		require.NoError(t, err)
 	}
-	return reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, serverConfig))
+	rx, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, serverConfig))
+	require.NoError(t, err)
+	return rx
 }
 
 func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, startupCfg *startupConfig) (*reindexer.Reindexer, func()) {
@@ -218,12 +220,10 @@ func StartupServerFromBinary(t *testing.T, serverConfig *config.ServerConfig, cp
 func AwaitServerStartup(t *testing.T, dsn string) (*reindexer.Reindexer, error) {
 	var err error
 	for i := 0; i < 20; i++ {
-		rx := reindexer.NewReindex(dsn)
-		status := rx.Status()
-		if status.Err == nil {
+		rx, err := reindexer.NewReindex(dsn)
+		if err == nil {
 			return rx, nil
 		}
-		err = status.Err
 		time.Sleep(time.Second * 1)
 	}
 	return nil, err
@@ -308,13 +308,13 @@ func TestStorageCompatibility(t *testing.T) {
 		}
 
 		readDataFromCurrentServer := func() []interface{} {
-			rxFollower := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgFollower))
-			require.NoError(t, rxFollower.Status().Err)
+			rxFollower, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgFollower))
+			require.NoError(t, err)
 			defer rxFollower.Close()
-			rxLeader := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgLeader))
-			require.NoError(t, rxLeader.Status().Err)
+			rxLeader, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgLeader))
+			require.NoError(t, err)
 			defer rxLeader.Close()
-			err := rxLeader.RegisterNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
+			err = rxLeader.RegisterNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)
 			err = rxFollower.RegisterNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)

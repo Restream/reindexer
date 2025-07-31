@@ -1,5 +1,6 @@
 ﻿#include "fastindextext.h"
 #include <memory>
+#include "core/ft/filters/compositewordssplitter.h"
 #include "core/ft/filters/kblayout.h"
 #include "core/ft/filters/synonyms.h"
 #include "core/ft/filters/translit.h"
@@ -34,9 +35,10 @@ void FastIndexText<T>::initHolder(FtFastConfig& cfg) {
 			assertrx(0);
 	}
 	holder_->stemmers_.clear();
-	holder_->translit_.reset(new Translit);
-	holder_->kbLayout_.reset(new KbLayout);
-	holder_->synonyms_.reset(new Synonyms);
+	holder_->translit_ = std::make_unique<Translit>();
+	holder_->kbLayout_ = std::make_unique<KbLayout>();
+	holder_->compositeWordsSplitter_ = std::make_unique<CompositeWordsSplitter>(cfg.splitOptions);
+	holder_->synonyms_ = std::make_unique<Synonyms>();
 	for (const char** lang = stemLangs; *lang; ++lang) {
 		holder_->stemmers_.emplace(*lang, *lang);
 	}
@@ -70,7 +72,8 @@ Variant FastIndexText<T>::Upsert(const Variant& key, IdType id, bool& clearCache
 }
 
 template <typename T>
-void FastIndexText<T>::Delete(const Variant& key, IdType id, StringsHolder& strHolder, bool& clearCache) {
+void FastIndexText<T>::Delete(const Variant& key, IdType id, [[maybe_unused]] MustExist mustExist, StringsHolder& strHolder,
+							  bool& clearCache) {
 	if rx_unlikely (key.Type().Is<KeyValueType::Null>()) {
 		this->empty_ids_.Unsorted().Erase(id);	// ignore result
 		this->isBuilt_ = false;
@@ -87,8 +90,8 @@ void FastIndexText<T>::Delete(const Variant& key, IdType id, StringsHolder& strH
 	int delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '{}' id={},key={}", this->name_,
-			id, key.As<std::string>());
+	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt || !mustExist,
+			"Delete non-existent id from index '{}' id={}, key={}", this->name_, id, key.As<std::string>());
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
@@ -534,13 +537,13 @@ void FastIndexText<T>::SetOpts(const IndexOpts& opts) {
 	auto& newCfg = *getConfig();
 
 	if (!eq_c(oldCfg.stopWords, newCfg.stopWords) || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
-		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols ||
+		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.splitOptions != newCfg.splitOptions ||
 		oldCfg.synonyms != newCfg.synonyms || oldCfg.maxTypos != newCfg.maxTypos || oldCfg.optimization != newCfg.optimization ||
 		oldCfg.splitterType != newCfg.splitterType) {
 		logFmt(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
 		this->isBuilt_ = false;
 		if (oldCfg.optimization != newCfg.optimization || oldCfg.splitterType != newCfg.splitterType ||
-			oldCfg.extraWordSymbols != newCfg.extraWordSymbols) {
+			oldCfg.splitOptions != newCfg.splitOptions) {
 			initHolder(newCfg);
 		} else {
 			this->holder_->Clear();

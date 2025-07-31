@@ -95,12 +95,12 @@ private:
 	[[nodiscard]] int modifyItemsTxJSON(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
 	[[nodiscard]] int queryResults(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults = false,
 								   unsigned limit = kDefaultLimit, unsigned offset = kDefaultOffset);
-	[[nodiscard]] int queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-							bool withColumns, int width = 0);
-	[[nodiscard]] int queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-							 bool withColumns, int width = 0);
-	[[nodiscard]] int queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-						 bool withColumns, int width = 0);
+	[[nodiscard]] int queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit,
+										  unsigned offset, bool withColumns, int width = 0);
+	[[nodiscard]] int queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit,
+										   unsigned offset, bool withColumns, int width = 0);
+	[[nodiscard]] int queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit,
+									   unsigned offset, bool withColumns, int width = 0);
 	[[nodiscard]] int queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, unsigned limit, unsigned offset);
 	template <typename Builder>
 	void queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData, bool isQueryResults,

@@ -3,7 +3,7 @@
 #include "core/payload/payloadtype.h"
 #include "core/schema.h"
 
-namespace reindexer {
+namespace reindexer::builders {
 
 using namespace std::string_view_literals;
 
@@ -48,13 +48,13 @@ std::pair<std::string_view, KeyValueType> ProtobufSchemaBuilder::jsonSchemaTypeT
 		return {"string"sv, KeyValueType::String{}};
 	} else if (props.type == "integer"sv) {
 		if (tm_ && pt_) {
-			TagsPath& tagsPath = fieldsTypes_->tagsPath_;
+			const TagsPath& tagsPath = fieldsTypes_->tagsPath_;
 			const auto field = tm_->tags2field(tagsPath);
 			if (field.IsRegularIndex() && field.ValueType().Is<KeyValueType::Int>()) {
-				return {"int64"sv, KeyValueType::Int{}};
+				return {"sint64"sv, KeyValueType::Int{}};
 			}
 		}
-		return {"int64"sv, KeyValueType::Int64{}};
+		return {"sint64"sv, KeyValueType::Int64{}};
 	} else if (props.type == "number"sv) {
 		return {"double"sv, KeyValueType::Double{}};
 	} else if (props.type == "boolean"sv) {
@@ -130,4 +130,4 @@ void ProtobufSchemaBuilder::writeField(std::string_view name, std::string_view t
 	}
 }
 
-}  // namespace reindexer
+}  // namespace reindexer::builders

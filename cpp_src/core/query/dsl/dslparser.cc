@@ -542,7 +542,7 @@ static void parseMergeQueries(const JsonValue& mergeQueries, Query& query) {
 
 static void parseAggregation(const JsonValue& aggregation, Query& query) {
 	checkJsonValueType(aggregation, "Aggregation"sv, JsonTag::OBJECT);
-	RVector<std::string, 1> fields;
+	h_vector<std::string, 1> fields;
 	AggType type = AggUnknown;
 	SortingEntries sortingEntries;
 	unsigned limit{QueryEntry::kDefaultLimit};

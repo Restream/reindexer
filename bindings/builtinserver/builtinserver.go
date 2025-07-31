@@ -80,11 +80,23 @@ func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, option
 
 	for _, option := range options {
 		switch v := option.(type) {
+		// Each builtin option has to be handled here explicitly to avoid warning about 'unknown' builtin options
+		case bindings.OptionBuiltinAllocatorConfig:
+			// nothing
+		case bindings.OptionBuiltinMaxUpdatesSize:
+			// nothing
 		case bindings.OptionPrometheusMetrics:
+			// nothing
 		case bindings.OptionOpenTelemetry:
+			// nothing
+		case bindings.OptionStrictJoinHandlers:
+			// nothing
 		case bindings.OptionCgoLimit:
+			// nothing
 		case bindings.OptionBuiltintCtxWatch:
+			// nothing
 		case bindings.ConnectOptions:
+			// nothing
 		case bindings.OptionBuiltinWithServer:
 			if v.StartupTimeout != 0 {
 				startupTimeout = v.StartupTimeout
@@ -95,6 +107,8 @@ func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, option
 			if v.ShutdownTimeout != 0 {
 				server.shutdownTimeout = v.ShutdownTimeout
 			}
+		case bindings.OptionReindexerInstance:
+			fmt.Printf("Unexpected internal builtinserver option: %#v\n", option)
 		default:
 			fmt.Printf("Unknown builtinserver option: %#v\n", option)
 		}

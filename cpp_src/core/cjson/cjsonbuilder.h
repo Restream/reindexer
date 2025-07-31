@@ -6,7 +6,7 @@
 #include "tagsmatcher.h"
 
 namespace reindexer {
-
+namespace builders {
 class CJsonBuilder {
 public:
 	CJsonBuilder(WrSerializer& ser, ObjType = ObjType::TypeObject, const TagsMatcher* tm = nullptr, TagName tagName = TagName::Empty());
@@ -138,4 +138,6 @@ private:
 	TagType itemType_ = TAG_OBJECT;
 };
 
+}  // namespace builders
+using builders::CJsonBuilder;
 }  // namespace reindexer

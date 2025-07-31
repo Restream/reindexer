@@ -15,8 +15,8 @@ public:
 
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) override;
-	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override;
-	void Delete(const VariantArray& keys, IdType id, StringsHolder&, bool& clearCache) override;
+	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
+	void Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
 	void Commit() override;
@@ -42,7 +42,8 @@ public:
 protected:
 	unordered_str_map<int> str_map;
 
-	using IdxDataT = std::conditional_t<std::is_same_v<T, key_string>, std::string_view, T>;
+	using IdxDataT =
+		std::conditional_t<std::is_same_v<T, bool>, unsigned char, std::conditional_t<std::is_same_v<T, key_string>, std::string_view, T>>;
 	h_vector<IdxDataT> idx_data;
 
 	IndexMemStat memStat_;

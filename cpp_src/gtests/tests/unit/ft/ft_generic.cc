@@ -1,5 +1,6 @@
 #include <gtest/gtest-param-test.h>
 #include <fstream>
+#include <ranges>
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/ft_fast/frisosplitter.h"
@@ -833,6 +834,24 @@ TEST_P(FTGenericApi, SelectWithSeveralGroup) {
 						  {"!one three two four!", ""},
 						  {"word !three one two four! word", ""}},
 						 false);
+}
+
+TEST_P(FTGenericApi, SelectWithGroupAndTyposInComposite) {
+	Init(GetDefaultConfig());
+
+	Add("nm1", "Слово пацана", "Слава Никитин");
+	Add("nm1", "Слава Ильин", "Слово пацана 2");
+	Add("nm1", "Слова пацана", "На асфальте");
+	Add("nm1", "Слово реального пацана", "Слово Славы");
+	Add("nm1", "Слава труду слова", "Слово слава пацану");
+	Add("nm1", "Слово слава пацану", "Слава труду слова");
+
+	CheckAllPermutations("", {"'=слова~ пацана~'"}, "",
+						 {{"!Слово пацана!", "Слава Никитин"},
+						  {"Слава Ильин", "!Слово пацана! 2"},
+						  {"!Слова пацана!", "На асфальте"},
+						  {"Слава труду слова", "Слово !слава пацану!"},
+						  {"Слово !слава пацану!", "Слава труду слова"}});
 }
 
 TEST_P(FTGenericApi, NumberToWordsSelect) {
@@ -1924,7 +1943,9 @@ TEST_P(FTGenericApi, FrisoTest) {
 			res.push_back(word.As<std::string>());
 		}
 		task->SetText(str);
-		const std::vector<std::string_view>& words = task->GetResults();
+		const std::vector<reindexer::WordWithPos>& entrances = task->GetResults();
+		auto words = entrances | std::views::transform([](const auto& e) { return e.word; });
+
 		ASSERT_EQ(words.size(), res.size()) << "id=" << id << " " << PrintArray(words, "words ") << " " << PrintArray(res, "res ");
 		for (size_t j = 0; j < words.size(); j++) {
 			ASSERT_EQ(words[j], res[j]) << "id=" << id << " j=" << j << " splitWords[j]=" << words[j] << " res[j]=" << res[j];

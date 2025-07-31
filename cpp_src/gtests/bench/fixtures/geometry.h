@@ -1,14 +1,13 @@
 #pragma once
 
 #include <string>
-#include <vector>
 
 #include "base_fixture.h"
 
 class Geometry : private BaseFixture {
 public:
 	~Geometry() override = default;
-	Geometry(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	Geometry(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 	}
 

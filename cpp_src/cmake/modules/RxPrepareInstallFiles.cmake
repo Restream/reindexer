@@ -66,7 +66,7 @@ if (NOT WIN32)
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
-    "tools/verifying_updater.h" "tools/customlocal.h" "tools/clock.h" "tools/rvector.h"
+    "tools/verifying_updater.h" "tools/customlocal.h" "tools/clock.h" "tools/enum_compare.h" 
     "estl/concepts.h"
     "core/reindexer.h" "core/type_consts.h" "core/type_formats.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"

@@ -6,6 +6,7 @@
 #include "tagsmatcher.h"
 
 namespace reindexer {
+namespace builders {
 
 class CsvBuilder;
 
@@ -151,5 +152,7 @@ private:
 	std::vector<std::pair<int, int>> positions_;
 	int curTagPos_ = -1;
 };
-
+}  // namespace builders
+using builders::CsvBuilder;
+using builders::CsvOrdering;
 }  // namespace reindexer

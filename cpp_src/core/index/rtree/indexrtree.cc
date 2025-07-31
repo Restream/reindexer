@@ -96,10 +96,10 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
-void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const VariantArray& keys, IdType id, StringsHolder& strHolder,
-																	 bool& clearCache) {
+void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const VariantArray& keys, IdType id, MustExist mustExist,
+																	 StringsHolder& strHolder, bool& clearCache) {
 	if (keys.empty() || keys.IsNullValue()) {
-		return Delete(Variant{}, id, strHolder, clearCache);
+		return Delete(Variant{}, id, mustExist, strHolder, clearCache);
 	}
 	int delcnt = 0;
 	const Point point = static_cast<Point>(keys);
@@ -115,7 +115,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '{}' id={},key={} ({})", this->name_, id,
+	assertf(!mustExist || this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '{}' id={}, key={} ({})", this->name_, id,
 			Variant(keys).template As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
 

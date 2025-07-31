@@ -5,6 +5,7 @@
 #include "estl/defines.h"
 #include "sort/pdqsort.hpp"
 #include "tools/logger.h"
+#include "tools/scope_guard.h"
 #include "tools/serializer.h"
 
 namespace {
@@ -36,83 +37,163 @@ constexpr int kMaxStemSkipLen = 1;
 constexpr bool kVariantsWithDifLength = (kMinStemRellevantLen - kMaxStemSkipLen) > 2;
 
 template <typename IdCont>
-void Selector<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RVector<FtBoundVariantEntry, 4>* lowRelVariants,
-									   size_t termIdx, const std::vector<std::string>& langs, const FtDSLQuery& dsl,
-									   std::vector<SynonymsDsl>* synonymsDsl) {
-	const FtDSLEntry& term = dsl[termIdx];
-	variants.clear();
+void Selector<IdCont>::applyStemmers(const std::string& pattern, int proc, const std::vector<std::string>& langs, const FtDslOpts& termOpts,
+									 bool keepSuffForStemmedVars, std::vector<FtVariantEntry>& variants,
+									 h_vector<FtBoundVariantEntry, 4>* lowRelVariants, std::string& buffer) {
+	std::string& stemstr = buffer;
 
-	std::vector<FtDSLVariant> variantsUtf16{{term.pattern, holder_.cfg_->rankingConfig.fullMatch}};
-	variantsUtf16.reserve(256);
+	if (termOpts.op == OpNot && termOpts.suff) {
+		// More strict match for negative (excluding) suffix terms
+		if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
+			logFmt(LogInfo, "Skipping stemming for '{}{}{}'", termOpts.suff ? "*" : "", pattern, termOpts.pref ? "*" : "");
+		}
+		return;
+	}
 
-	if (synonymsDsl && (!holder_.cfg_->enableNumbersSearch || !term.opts.number)) {
-		// Make translit and kblayout variants
-		if (holder_.cfg_->enableTranslit && !term.opts.exact) {
-			holder_.translit_->GetVariants(term.pattern, variantsUtf16, holder_.cfg_->rankingConfig.translit);
+	for (auto& lang : langs) {
+		auto stemIt = holder_.stemmers_.find(lang);
+		if (stemIt == holder_.stemmers_.end()) {
+			throw Error(errParams, "Stemmer for language {} is not available", lang);
 		}
-		if (holder_.cfg_->enableKbLayout && !term.opts.exact) {
-			holder_.kbLayout_->GetVariants(term.pattern, variantsUtf16, holder_.cfg_->rankingConfig.kblayout);
+		stemstr = "";
+		stemIt->second.stem(pattern, stemstr);
+		if (pattern == stemstr || stemstr.empty()) {
+			continue;
 		}
-		// Synonyms
-		if (rx_likely(term.opts.op != OpNot)) {
-			holder_.synonyms_->GetVariants(term.pattern, variantsUtf16, holder_.cfg_->rankingConfig.synonyms);
-			holder_.synonyms_->PostProcess(term, dsl, termIdx, *synonymsDsl, holder_.cfg_->rankingConfig.kblayout);
+
+		const auto charsCount = getUTF8StringCharactersCount(stemstr);
+		if (charsCount <= kMaxStemSkipLen) {
+			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
+				logFmt(LogInfo, "Skipping too short stemmer's term '{}{}*'", termOpts.suff && keepSuffForStemmedVars ? "*" : "", stemstr);
+			}
+			continue;
+		}
+		FtDslOpts opts = termOpts;
+		opts.pref = true;
+
+		if (!keepSuffForStemmedVars) {
+			opts.suff = false;
+		}
+
+		const auto charCount = getUTF8StringCharactersCount(stemstr);
+		if (charCount >= kMinStemRellevantLen || !lowRelVariants) {
+			variants.emplace_back(
+				std::move(stemstr), std::move(opts),
+				std::max(proc - holder_.cfg_->rankingConfig.stemmerPenalty, BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty),
+				charsCount);
+		} else {
+			lowRelVariants->emplace_back(
+				std::move(stemstr), std::move(opts),
+				std::max(proc - holder_.cfg_->rankingConfig.stemmerPenalty, BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty),
+				charsCount);
+		}
+	}
+}
+
+template <typename IdCont>
+void Selector<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, h_vector<FtBoundVariantEntry, 4>* lowRelVariants,
+									   size_t termIdx, const std::vector<std::string>& langs, FtDSLQuery& dsl,
+									   std::vector<SynonymsDsl>* synonymsDsl, std::vector<std::wstring>* variantsForTypos) {
+	const BaseFTConfig::BaseRankingConfig& rankingConfig = holder_.cfg_->rankingConfig;
+	const std::wstring& pattern = dsl[termIdx].pattern;
+	FtDslOpts& opts = dsl[termIdx].opts;
+	const StopWordsSetT& stopWords = holder_.cfg_->stopWords;
+
+	if (pattern.empty()) {
+		return;
+	}
+
+	variants.resize(0);
+	std::string variantPattern, buffer;
+	utf16_to_utf8(pattern, variantPattern);
+	variants.emplace_back(variantPattern, opts, rankingConfig.fullMatch, -1);
+	if (!opts.exact) {
+		applyStemmers(variantPattern, rankingConfig.fullMatch, langs, opts, true, variants, lowRelVariants, buffer);
+	}
+
+	if (holder_.cfg_->enableNumbersSearch && opts.number) {
+		return;
+	}
+
+	if (!synonymsDsl) {
+		return;
+	}
+
+	ITokenFilter::ResultsStorage allVariants;
+	fast_hash_map<std::wstring, size_t> patternsUsed;
+
+	if (holder_.cfg_->enableTranslit && !opts.exact) {
+		holder_.translit_->GetVariants(pattern, allVariants, rankingConfig.translit, patternsUsed);
+	}
+
+	if (holder_.cfg_->enableKbLayout && !opts.exact) {
+		holder_.kbLayout_->GetVariants(pattern, allVariants, rankingConfig.kblayout, patternsUsed);
+	}
+
+	if (opts.op != OpNot) {
+		holder_.synonyms_->GetVariants(pattern, allVariants, rankingConfig.synonyms, patternsUsed);
+		holder_.synonyms_->AddOneToManySynonyms(pattern, opts, dsl, termIdx, *synonymsDsl, rankingConfig.synonyms);
+	}
+
+	if (!opts.exact) {
+		ITokenFilter::ResultsStorage variantsDelimited;
+		fast_hash_map<std::wstring, size_t> variantPatternsUsed;
+		variantsDelimited.reserve(20);
+		holder_.compositeWordsSplitter_->GetVariants(pattern, variantsDelimited, rankingConfig.delimited, variantPatternsUsed);
+		for (auto& v : variantsDelimited) {
+			if (opts.typos) {
+				if (variantsForTypos) {
+					variantsForTypos->emplace_back(v.pattern);
+				}
+			}
+
+			holder_.synonyms_->GetVariants(v.pattern, allVariants, std::min(rankingConfig.synonyms, rankingConfig.delimited), patternsUsed);
+
+			{
+				const bool prefSaved = opts.pref;
+				if (v.prefAndStemmersForbidden) {
+					opts.pref = false;
+				}
+				auto prefGuard = reindexer::MakeScopeGuard([&]() { opts.pref = prefSaved; });
+
+				holder_.synonyms_->AddOneToManySynonyms(v.pattern, opts, dsl, termIdx, *synonymsDsl,
+														std::min(rankingConfig.synonyms, rankingConfig.delimited));
+			}
+
+			AddOrUpdateVariant(allVariants, patternsUsed, std::move(v));
 		}
 	}
 
-	// Apply stemmers
-	std::string tmpstr, stemstr;
-	for (auto& v : variantsUtf16) {
-		utf16_to_utf8(v.pattern, tmpstr);
-		if (tmpstr.empty()) {
-			continue;
+	std::string patternWithoutDelims;
+	for (auto& v : allVariants) {
+		utf16_to_utf8(v.pattern, variantPattern);
+		const bool prefSaved = opts.pref;
+		if (v.prefAndStemmersForbidden) {
+			opts.pref = false;
 		}
-		variants.emplace_back(tmpstr, term.opts, v.proc, -1);
-		if (!term.opts.exact) {
-			if (term.opts.op == OpNot && term.opts.suff) {
-				// More strict match for negative (excluding) suffix terms
-				if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-					logFmt(LogInfo, "Skipping stemming for '{}{}{}'", term.opts.suff ? "*" : "", tmpstr, term.opts.pref ? "*" : "");
-				}
+		auto prefGuard = reindexer::MakeScopeGuard([&]() { opts.pref = prefSaved; });
+
+		// stop words doesn't present in index, so we need to check it only in case of prefix or suffix search
+		if (opts.pref || opts.suff) {
+			if (variantPattern.empty()) {
 				continue;
 			}
-			for (auto& lang : langs) {
-				auto stemIt = holder_.stemmers_.find(lang);
-				if (stemIt == holder_.stemmers_.end()) {
-					throw Error(errParams, "Stemmer for language {} is not available", lang);
-				}
-				stemstr.clear();
-				stemIt->second.stem(tmpstr, stemstr);
-				if (tmpstr != stemstr && !stemstr.empty()) {
-					const auto charsCount = getUTF8StringCharactersCount(stemstr);
-					if (charsCount <= kMaxStemSkipLen) {
-						if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-							logFmt(LogInfo, "Skipping too short stemmer's term '{}{}*'",
-								   term.opts.suff && &v != &variantsUtf16[0] ? "*" : "", stemstr);
-						}
-						continue;
-					}
-					FtDslOpts opts = term.opts;
-					opts.pref = true;
 
-					if (&v != &variantsUtf16[0]) {
-						opts.suff = false;
-					}
+			if (auto it = stopWords.find(variantPattern); it != stopWords.end() && it->type == StopWord::Type::Stop) {
+				continue;
+			}
 
-					const auto charCount = getUTF8StringCharactersCount(stemstr);
-					if (charCount >= kMinStemRellevantLen || !lowRelVariants) {
-						variants.emplace_back(std::move(stemstr), std::move(opts),
-											  std::max(v.proc - holder_.cfg_->rankingConfig.stemmerPenalty,
-													   BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty),
-											  charsCount);
-					} else {
-						lowRelVariants->emplace_back(std::move(stemstr), std::move(opts),
-													 std::max(v.proc - holder_.cfg_->rankingConfig.stemmerPenalty,
-															  BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty),
-													 charsCount);
-					}
+			if (holder_.cfg_->splitOptions.ContainsDelims(variantPattern)) {
+				holder_.cfg_->splitOptions.RemoveDelims(variantPattern, patternWithoutDelims);
+				if (auto it = stopWords.find(patternWithoutDelims); it != stopWords.end() && it->type == StopWord::Type::Stop) {
+					continue;
 				}
 			}
+		}
+
+		variants.emplace_back(variantPattern, opts, v.proc, -1);
+		if (!opts.exact && !v.prefAndStemmersForbidden) {
+			applyStemmers(variantPattern, v.proc, langs, opts, false, variants, lowRelVariants, buffer);
 		}
 	}
 }
@@ -126,15 +207,15 @@ MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, RankSo
 	ctx.rawResults.reserve(dsl.size());
 	// STEP 2: Search dsl terms for each variant
 	std::vector<SynonymsDsl> synonymsDsl;
-	holder_.synonyms_->PreProcess(dsl, synonymsDsl, holder_.cfg_->rankingConfig.synonyms);
+	holder_.synonyms_->AddManyToManySynonyms(dsl, synonymsDsl, holder_.cfg_->rankingConfig.synonyms);
 	if (!inTransaction) {
 		ThrowOnCancel(rdxCtx);
 	}
 	for (size_t i = 0; i < dsl.size(); ++i) {
 		const auto irrVariantsCount = ctx.lowRelVariants.size();
-
+		ctx.variantsForTypos.resize(0);
 		// Prepare term variants (original + translit + stemmed + kblayout + synonym)
-		this->prepareVariants(ctx.variants, &ctx.lowRelVariants, i, holder_.cfg_->stemmers, dsl, &synonymsDsl);
+		this->prepareVariants(ctx.variants, &ctx.lowRelVariants, i, holder_.cfg_->stemmers, dsl, &synonymsDsl, &ctx.variantsForTypos);
 		auto v = ctx.GetWordsMapPtr(dsl[i].opts);
 		ctx.rawResults.emplace_back(std::move(dsl[i]), v);
 		TextSearchResults& res = ctx.rawResults.back();
@@ -154,7 +235,7 @@ MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, RankSo
 		if (res.term.opts.typos) {
 			// Lookup typos from typos_ map and fill results
 			TyposHandler h(*holder_.cfg_);
-			size_t vidsCount = h.Process(ctx.rawResults, holder_, res.term);
+			size_t vidsCount = h.Process(ctx.rawResults, holder_, res.term.pattern, ctx.variantsForTypos);
 			if (res.term.opts.op == OpOr) {
 				ctx.totalORVids += vidsCount;
 			}
@@ -176,7 +257,7 @@ MergeType Selector<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, RankSo
 		FtSelectContext synCtx;
 		synCtx.rawResults.reserve(synDsl.dsl.size());
 		for (size_t i = 0; i < synDsl.dsl.size(); ++i) {
-			prepareVariants(synCtx.variants, nullptr, i, holder_.cfg_->stemmers, synDsl.dsl, nullptr);
+			prepareVariants(synCtx.variants, nullptr, i, holder_.cfg_->stemmers, synDsl.dsl, nullptr, nullptr);
 			if rx_unlikely (holder_.cfg_->logLevel >= LogInfo) {
 				WrSerializer wrSer;
 				for (auto& variant : synCtx.variants) {
@@ -1010,7 +1091,7 @@ void Selector<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 					present[vid] = true;
 					idoffsets[vid] = merged.size() - 1;
 					if constexpr (isGroupMergeWithAreas<MergedIdRelGroupType>()) {
-						RVector<std::pair<typename MergedIdRelGroupType::TypeTParam, int>, 4> posTmp;
+						h_vector<std::pair<typename MergedIdRelGroupType::TypeTParam, int>, 4> posTmp;
 						posTmp.reserve(relid.Size());
 						for (const auto& p : relid.Pos()) {
 							if constexpr (std::is_same_v<MergedIdRelGroupType, MergedIdRelGroupArea<IdRelType::PosType>>) {
@@ -1118,77 +1199,85 @@ void Selector<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResul
 
 template <typename IdCont>
 size_t Selector<IdCont>::TyposHandler::Process(std::vector<TextSearchResults>& rawResults, const DataHolder<IdCont>& holder,
-											   const FtDSLEntry& term) {
+											   const std::wstring& pattern, const std::vector<std::wstring>& variantsForTypos) {
 	TextSearchResults& res = rawResults.back();
 	const unsigned curRawResultIdx = rawResults.size() - 1;
-	const size_t patternSize = utf16_to_utf8_size(term.pattern);
+
 	size_t totalVids = 0;
 	for (auto& step : holder.steps) {
 		typos_context tctx[kMaxTyposInWord];
 		const decltype(step.typosHalf_)* typoses[2]{&step.typosHalf_, &step.typosMax_};
 		int matched = 0, skipped = 0, vids = 0;
-		mktypos(
-			tctx, term.pattern, maxTyposInWord_, holder.cfg_->maxTypoLen,
-			[&, this](std::string_view typo, int level, const typos_context::TyposVec& positions) {
-				for (const auto* typos : typoses) {
-					const auto typoRng = typos->equal_range(typo);
-					for (auto typoIt = typoRng.first; typoIt != typoRng.second; ++typoIt) {
-						const WordTypo wordTypo = typoIt->second;
-						const int tcount = std::max(positions.size(), wordTypo.positions.size());  // Each letter switch equals to 1 typo
-						const auto& step = holder.GetStep(wordTypo.word);
-						auto wordIdSfx = holder.GetSuffixWordId(wordTypo.word, step);
-						if (positions.size() > wordTypo.positions.size() &&
-							(positions.size() - wordTypo.positions.size()) > int(maxExtraLetts_)) {
-							logTraceF(LogInfo, " skipping typo '{}' of word '{}': to many extra letters ({})", typoIt->first,
-									  step.suffixes_.word_at(wordIdSfx), positions.size() - wordTypo.positions.size());
+
+		auto callback = [&res, &curRawResultIdx, &holder, &typoses, &totalVids, &matched, &skipped, &vids, this](
+							std::string_view typo, int level, const typos_context::TyposVec& positions,
+							const std::wstring_view typoPattern) {
+			const size_t patternSize = utf16_to_utf8_size(typoPattern);
+			for (const auto* typos : typoses) {
+				const auto typoRng = typos->equal_range(typo);
+				for (auto typoIt = typoRng.first; typoIt != typoRng.second; ++typoIt) {
+					const WordTypo wordTypo = typoIt->second;
+					const int tcount = std::max(positions.size(), wordTypo.positions.size());  // Each letter switch equals to 1 typo
+					const auto& step = holder.GetStep(wordTypo.word);
+					auto wordIdSfx = holder.GetSuffixWordId(wordTypo.word, step);
+					if (positions.size() > wordTypo.positions.size() &&
+						(positions.size() - wordTypo.positions.size()) > int(maxExtraLetts_)) {
+						logTraceF(LogInfo, " skipping typo '{}' of word '{}': to many extra letters ({})", typoIt->first,
+								  step.suffixes_.word_at(wordIdSfx), positions.size() - wordTypo.positions.size());
+						++skipped;
+						continue;
+					}
+					if (wordTypo.positions.size() > positions.size() &&
+						(wordTypo.positions.size() - positions.size()) > int(maxMissingLetts_)) {
+						logTraceF(LogInfo, " skipping typo '{}' of word '{}': to many missing letters ({})", typoIt->first,
+								  step.suffixes_.word_at(wordIdSfx), wordTypo.positions.size() - positions.size());
+						++skipped;
+						continue;
+					}
+					if (!isWordFitMaxTyposDist(wordTypo, positions)) {
+						const bool needMaxLettPermCheck = useMaxTypoDist_ && (!useMaxLettPermDist_ || maxLettPermDist_ > maxTypoDist_);
+						if (!needMaxLettPermCheck ||
+							!isWordFitMaxLettPerm(step.suffixes_.word_at(wordIdSfx), wordTypo, typoPattern, positions)) {
+							logTraceF(LogInfo, " skipping typo '{}' of word '{}' due to max_typos_distance settings", typoIt->first,
+									  step.suffixes_.word_at(wordIdSfx));
 							++skipped;
 							continue;
-						}
-						if (wordTypo.positions.size() > positions.size() &&
-							(wordTypo.positions.size() - positions.size()) > int(maxMissingLetts_)) {
-							logTraceF(LogInfo, " skipping typo '{}' of word '{}': to many missing letters ({})", typoIt->first,
-									  step.suffixes_.word_at(wordIdSfx), wordTypo.positions.size() - positions.size());
-							++skipped;
-							continue;
-						}
-						if (!isWordFitMaxTyposDist(wordTypo, positions)) {
-							const bool needMaxLettPermCheck = useMaxTypoDist_ && (!useMaxLettPermDist_ || maxLettPermDist_ > maxTypoDist_);
-							if (!needMaxLettPermCheck ||
-								!isWordFitMaxLettPerm(step.suffixes_.word_at(wordIdSfx), wordTypo, term.pattern, positions)) {
-								logTraceF(LogInfo, " skipping typo '{}' of word '{}' due to max_typos_distance settings", typoIt->first,
-										  step.suffixes_.word_at(wordIdSfx));
-								++skipped;
-								continue;
-							}
-						}
-
-						const uint8_t wordLength = step.suffixes_.word_len_at(wordIdSfx);
-						const int proc =
-							std::max(holder.cfg_->rankingConfig.typo -
-										 tcount * holder.cfg_->rankingConfig.typoPenalty /
-											 std::max((wordLength - tcount) / 3, BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty),
-									 1);
-						const auto it = res.foundWords->find(wordTypo.word);
-						if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
-							const auto& hword = holder.GetWordById(wordTypo.word);
-							res.push_back({&hword.vids, typoIt->first, proc});
-							res.idsCnt_ += hword.vids.size();
-							res.foundWords->emplace(wordTypo.word, std::make_pair(curRawResultIdx, res.size() - 1));
-
-							logTraceF(LogInfo, " matched typo '{}' of word '{}', {} ids, {}%", typoIt->first,
-									  step.suffixes_.word_at(wordIdSfx), hword.vids.size(), proc);
-							++matched;
-							vids += hword.vids.size();
-							totalVids += hword.vids.size();
-						} else {
-							++skipped;
 						}
 					}
-					if (dontUseMaxTyposForBoth_ && level == 1 && typo.size() != patternSize) {
-						return;
+
+					const uint8_t wordLength = step.suffixes_.word_len_at(wordIdSfx);
+					const int proc =
+						std::max(holder.cfg_->rankingConfig.typo -
+									 tcount * holder.cfg_->rankingConfig.typoPenalty /
+										 std::max((wordLength - tcount) / 3, BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty),
+								 1);
+					const auto it = res.foundWords->find(wordTypo.word);
+					if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
+						const auto& hword = holder.GetWordById(wordTypo.word);
+						res.push_back({&hword.vids, typoIt->first, proc});
+						res.idsCnt_ += hword.vids.size();
+						res.foundWords->emplace(wordTypo.word, std::make_pair(curRawResultIdx, res.size() - 1));
+
+						logTraceF(LogInfo, " matched typo '{}' of word '{}', {} ids, {}%", typoIt->first, step.suffixes_.word_at(wordIdSfx),
+								  hword.vids.size(), proc);
+						++matched;
+						vids += hword.vids.size();
+						totalVids += hword.vids.size();
+					} else {
+						++skipped;
 					}
 				}
-			});
+				if (dontUseMaxTyposForBoth_ && level == 1 && typo.size() != patternSize) {
+					return;
+				}
+			}
+		};
+
+		mktypos(tctx, pattern, maxTyposInWord_, holder.cfg_->maxTypoLen, callback);
+		for (const auto& varForTypo : variantsForTypos) {
+			mktypos(tctx, varForTypo, maxTyposInWord_, holder.cfg_->maxTypoLen, callback);
+		}
+
 		if rx_unlikely (holder.cfg_->logLevel >= LogInfo) {
 			logFmt(LogInfo, "Lookup typos, matched {} typos, with {} vids, skipped {}", matched, vids, skipped);
 		}
@@ -1261,7 +1350,7 @@ bool Selector<IdCont>::TyposHandler::isWordFitMaxTyposDist(const WordTypo& found
 
 template <typename IdCont>
 bool Selector<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found,
-														  const std::wstring& currentWord, const typos_context::TyposVec& current) {
+														  const std::wstring_view currentWord, const typos_context::TyposVec& current) {
 	if (found.positions.size() == 0) {
 		return true;
 	}
@@ -1508,7 +1597,7 @@ void Selector<IdCont>::printVariants(const FtSelectContext& ctx, const TextSearc
 	if (res.term.opts.typos) {
 		typos_context tctx[kMaxTyposInWord];
 		mktypos(tctx, res.term.pattern, holder_.cfg_->MaxTyposInWord(), holder_.cfg_->maxTypoLen,
-				[&wrSer](std::string_view typo, int, const typos_context::TyposVec& positions) {
+				[&wrSer](std::string_view typo, int, const typos_context::TyposVec& positions, const std::wstring_view) {
 					wrSer << typo;
 					wrSer << ":(";
 					for (unsigned j = 0, sz = positions.size(); j < sz; ++j) {

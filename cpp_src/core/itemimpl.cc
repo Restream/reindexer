@@ -69,11 +69,10 @@ void ItemImpl::SetField(int field, const VariantArray& krs, NeedCreate needCopy)
 			floatVectorsHolder_.reserve(floatVectorsHolder_.size() + krs.size());
 			for (auto& kr : krs) {
 				const ConstFloatVectorView vect{kr};
-				if (vect.IsEmpty()) {
-					krsCopy.emplace_back(vect);
-				} else {
-					floatVectorsHolder_.Add(vect);
+				if (floatVectorsHolder_.Add(vect)) {
 					krsCopy.emplace_back(floatVectorsHolder_.Back());
+				} else {
+					krsCopy.emplace_back(vect);
 				}
 			}
 		}
@@ -456,8 +455,9 @@ void ItemImpl::CopyIndexedVectorsValuesFrom(IdType id, const FloatVectorsIndexes
 	} else {
 		floatVectorsHolder_.reserve(indexes.size());
 		for (auto& indexP : indexes) {
-			floatVectorsHolder_.Add(indexP.ptr->GetFloatVector(id));
-			pl.Set(indexP.ptField, Variant{floatVectorsHolder_.Back()});
+			if (floatVectorsHolder_.Add(indexP.ptr->GetFloatVector(id))) {
+				pl.Set(indexP.ptField, Variant{floatVectorsHolder_.Back()});
+			}
 		}
 	}
 }
@@ -468,7 +468,7 @@ bool isFieldEmpty(const Payload& pl, int field) {
 	return vec.IsEmpty();
 }
 
-bool checkEmbedderAllowed(const Payload& pl, int field, const Embedder& embedder) {
+bool checkEmbedderAllowed(const Payload& pl, int field, const UpsertEmbedder& embedder) {
 	switch (embedder.Strategy()) {
 		case EmbedderConfig::Strategy::Always:
 			return true;
@@ -495,7 +495,7 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 		unsafe_ = false;
 
 		// one document - one input vector of VariantArray
-		std::vector<VariantArray> source;
+		std::vector<std::pair<std::string, VariantArray>> source;
 
 		for (int field = 1, numFields = payloadType_.NumFields(); field < numFields; ++field) {
 			auto embedder = payloadType_.Field(field).Embedder();
@@ -514,7 +514,7 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 			for (const auto& fld : embedder->Fields()) {
 				VariantArray data;
 				pl.Get(fld, data);
-				source.emplace_back(std::move(data));
+				source.emplace_back(fld, std::move(data));
 			}
 
 			// ToDo in real life, work with several embedded devices requires asynchrony. Now we have only one, at all

@@ -53,22 +53,23 @@ void FloatVectorsHolderMap::add(const FloatVectorsIndexes& floatVectorsIndexes, 
 			checkPayloadVectorField(payload, idx);
 			if (filter.ContainsVector(idx.ptField)) {
 				auto vect = idx.ptr->GetFloatVector(id);
-				if (vect.IsEmpty()) {
-					continue;
+				if (floatVectorsHolder.Add(std::move(vect))) {
+					payload.Set(idx.ptField, Variant{ConstFloatVectorView{floatVectorsHolder.Back()}});
 				}
-				floatVectorsHolder.Add(std::move(vect));
-				payload.Set(idx.ptField, Variant{ConstFloatVectorView{floatVectorsHolder.Back()}});
 			}
 		}
 		if (floatVectorsHolder.empty()) {
 			vectorsById.erase(idIt);
 		}
 	} else {
-		for (size_t i = 0, s = floatVectorsIndexes.size(); i < s; ++i) {
-			const auto& idx = floatVectorsIndexes[i];
+		unsigned fieldNum = 0;
+		for (const auto& idx : floatVectorsIndexes) {
 			checkPayloadVectorField(payload, idx);
 			if (filter.ContainsVector(idx.ptField)) {
-				payload.Set(idx.ptField, Variant{floatVectorsHolder.Get(i)});
+				if (idx.ptr->GetFloatVectorView(id).IsEmpty()) {
+					continue;
+				}
+				payload.Set(idx.ptField, Variant{floatVectorsHolder.Get(fieldNum++)});
 			}
 		}
 	}

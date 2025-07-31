@@ -33,7 +33,7 @@ public:
 					  const RdxContext&) override;
 	IndexMemStat GetMemStat(const RdxContext&) override;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
-	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override;
+	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	void SetOpts(const IndexOpts& opts) override;
 	FtMergeStatuses GetFtMergeStatuses(const RdxContext& rdxCtx) override {
 		this->build(rdxCtx);

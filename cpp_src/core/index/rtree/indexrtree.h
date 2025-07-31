@@ -18,7 +18,7 @@ public:
 	using IndexUnordered<Map>::Upsert;
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) override;
 	using IndexUnordered<Map>::Delete;
-	void Delete(const VariantArray& keys, IdType id, StringsHolder&, bool& clearCache) override;
+	void Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexRTree>(*this); }
 };

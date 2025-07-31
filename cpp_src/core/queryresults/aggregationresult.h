@@ -20,7 +20,13 @@ struct JsonNode;
 
 namespace reindexer {
 class WrSerializer;
+
+namespace builders {
 class ProtobufSchemaBuilder;
+class ProtobufBuilder;
+}  // namespace builders
+using builders::ProtobufBuilder;
+using builders::ProtobufSchemaBuilder;
 
 struct Parameters {
 	constexpr static std::string_view Value() noexcept;
@@ -141,6 +147,12 @@ private:
 	static AggregationResult from(Node root);
 
 	std::optional<double> value_ = std::nullopt;
+
+	template <typename Builder, typename Fields>
+	void serialiseDistinct(Builder& builder, const Fields& parametersFields) const;
+
+	template <typename Fields>
+	void serialiseDistinct(ProtobufBuilder& builder, const Fields& parametersFields) const;
 };
 
 }  // namespace reindexer

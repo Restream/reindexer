@@ -4,10 +4,12 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
+#include "core/namespace/asyncstorage.h"
 #include "core/system_ns_names.h"
 #include "estl/fast_hash_set.h"
 #include "gtests/tools.h"
 #include "ns_api.h"
+#include "tools/fsops.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/timetools.h"
@@ -33,17 +35,19 @@ TEST_F(NsApi, TupleColumnSize) {
 	auto memstats = getMemStat(*rt.reindexer, default_namespace);
 	const VariantArray sizes(memstats["indexes.column_size"]);
 	const VariantArray names(memstats["indexes.name"]);
-	constexpr int kMaxEmptyColumnSize = 32;	 // Platform dependant
+	[[maybe_unused]] constexpr int kMaxEmptyColumnSize = 32;  // Platform dependant
+#ifndef REINDEX_DEBUG_CONTAINERS
 	ASSERT_EQ(sizes.size(), 4);
+	EXPECT_LE(sizes[0].As<int>(), kMaxEmptyColumnSize);
+	EXPECT_LE(sizes[3].As<int>(), kMaxEmptyColumnSize);
+	EXPECT_GT(sizes[1].As<int>(), kDataCount);
+	EXPECT_GT(sizes[2].As<int>(), kDataCount);
+#endif	// REINDEX_DEBUG_CONTAINERS
 	ASSERT_EQ(names.size(), 4);
 	EXPECT_EQ(names[0].As<std::string>(), "-tuple");
-	EXPECT_LE(sizes[0].As<int>(), kMaxEmptyColumnSize);
 	EXPECT_EQ(names[1].As<std::string>(), idIdxName);
-	EXPECT_GT(sizes[1].As<int>(), kDataCount);
 	EXPECT_EQ(names[2].As<std::string>(), "date");
-	EXPECT_GT(sizes[2].As<int>(), kDataCount);
 	EXPECT_EQ(names[3].As<std::string>(), kNoColumnIdx);
-	EXPECT_LE(sizes[3].As<int>(), kMaxEmptyColumnSize);
 }
 
 TEST_F(NsApi, IndexDrop) {
@@ -1763,9 +1767,9 @@ TEST_F(NsApi, UpdateHeterogeneousArray) {
 
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET non_indexed_array_field = [1, null])");
-		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
-						R"("indexed_array_field":[],"non_indexed_array_field":[1,null])", "non_indexed_array_field",
-						{Variant(int64_t(1)), Variant()}, "Checking set heterogeneous non-indexed array with null", resCount);
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[1,null])",
+						"non_indexed_array_field", {Variant(int64_t(1)), Variant()},
+						"Checking set heterogeneous non-indexed array with null", resCount);
 	}
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET non_indexed_array_field = [1,-2,3])");
@@ -1868,9 +1872,9 @@ TEST_F(NsApi, UpdateHeterogeneousArray) {
 	}
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET indexed_array_field = ['333', 33])");
-		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs, R"("indexed_array_field":[333,33],"non_indexed_array_field":3.14)",
-						"indexed_array_field", {Variant(333), Variant(33)},
-						"Checking overwrite indexed array field with heterogeneous array", resCount);
+		validateResults(rt.reindexer, kQueryDummy, query, kEmptyArraysNs,
+						R"("indexed_array_field":[333,33],"non_indexed_array_field":3.14)", "indexed_array_field",
+						{Variant(333), Variant(33)}, "Checking overwrite indexed array field with heterogeneous array", resCount);
 	}
 }
 
@@ -2133,7 +2137,7 @@ TEST_F(NsApi, UpdateArrayIndexFieldWithSeveralJsonPaths) {
 
 	auto makeFieldsList = [&fieldsValues](const reindexer::fast_hash_set<int>& indexes, OpT type) {
 		auto quote = type == OpT::Insert ? '"' : '\'';
-		std::vector<std::string> Values::*list = type == OpT::Insert ? &Values::valsList : &Values::newValsList;
+		std::vector<std::string> Values::* list = type == OpT::Insert ? &Values::valsList : &Values::newValsList;
 		const auto fieldsListTmplt = fmt::runtime(type == OpT::Insert ? R"("{}field{}": [{}])" : R"({}field{} = [{}])");
 		std::string fieldsList;
 		for (int idx : indexes) {
@@ -3473,4 +3477,227 @@ TEST_F(NsApi, SparseComparatorConversion) {
 	results = rt.GetSerializedQrItems(qr);
 	ASSERT_EQ(results.size(), 1);
 	EXPECT_EQ(results[0], R"j({"id":0,"sparse_field":"100"})j");
+}
+
+TEST(AsyncStorage, SyncReadSimpleTest) {
+	using namespace reindexer;
+	constexpr static int kTestBatchSize = AsyncStorage::kFlushChunckSize + 100;
+
+	AsyncStorage storage;
+	const auto kStoragePath = fs::JoinPath(fs::GetTempDir(), "AsyncStorage.SyncReadSimpleTest/");
+	fs::RmDirAll(kStoragePath);
+	auto err = storage.Open(datastorage::StorageType::LevelDB, {}, kStoragePath, StorageOpts{}.CreateIfMissing());
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto test = [&storage]() {
+		enum State { BeforeFlush, AfterFlush, AfterRemove };
+		auto read = [&](State state) {
+			for (int i = 0; i < kTestBatchSize; ++i) {
+				const bool mustBeFound = state == AfterFlush || (storage.WithProxy() && state == BeforeFlush);
+				auto expected = mustBeFound ? std::to_string(i) : std::string{};
+
+				std::string value;
+				auto err = storage.Read(StorageOpts{}, std::to_string(i), value);
+				ASSERT_EQ(err.code(), mustBeFound ? errOK : errNotFound) << err.what();
+				ASSERT_EQ(value, expected);
+			}
+		};
+
+		for (int i = 0; i < kTestBatchSize; ++i) {
+			storage.Write(std::to_string(i), std::to_string(i));
+		}
+
+		read(BeforeFlush);
+		storage.Flush(StorageFlushOpts{});
+		read(AfterFlush);
+
+		for (int i = 0; i < kTestBatchSize; ++i) {
+			if (storage.WithProxy()) {
+				storage.Remove(std::to_string(i));
+			} else {
+				storage.RemoveSync(StorageOpts{}, std::to_string(i));
+			}
+		}
+		read(AfterRemove);
+	};
+
+	test();
+	storage.WithProxy(true);
+	test();
+}
+
+TEST(AsyncStorage, SyncReadConcurrentTest) {
+	using namespace reindexer;
+	constexpr static int kTestBatchSize = AsyncStorage::kFlushChunckSize + 100;
+#ifndef REINDEX_WITH_TSAN
+	const size_t limit = 1'000'000;
+#else
+	const size_t limit = 100'000;
+#endif
+	AsyncStorage storage;
+	const auto kStoragePath = fs::JoinPath(fs::GetTempDir(), "AsyncStorage.SyncReadConcurrentTest/");
+	fs::RmDirAll(kStoragePath);
+	auto err = storage.Open(datastorage::StorageType::LevelDB, {}, kStoragePath, StorageOpts{}.CreateIfMissing());
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	storage.WithProxy(true);
+
+	std::atomic_bool stopped = false;
+	auto flushThread = std::thread([&storage, &stopped] {
+		while (!stopped) {
+			storage.Flush(StorageFlushOpts{});
+			std::this_thread::sleep_for(std::chrono::milliseconds(200 + std::rand() % 100));
+		}
+
+		storage.Flush(StorageFlushOpts{});
+	});
+
+	std::atomic<size_t> inserted = 0;
+
+	auto writeReadThread = std::thread([&inserted, &stopped, &storage] {
+		while (inserted.load(std::memory_order_acquire) < limit) {
+			auto from = inserted.load(std::memory_order_acquire);
+			auto to = from + kTestBatchSize;
+			for (size_t i = from; i < to; ++i) {
+				storage.Write(std::to_string(i), std::to_string(i));
+				inserted.fetch_add(1, std::memory_order_release);
+			}
+
+			Error err;
+			std::string value;
+			for (size_t i = from; i < to; ++i) {
+				err = storage.Read(StorageOpts{}, std::to_string(i), value);
+				ASSERT_TRUE(err.ok()) << err.what();
+				ASSERT_EQ(value, std::to_string(i));
+			}
+
+			std::this_thread::sleep_for(std::chrono::milliseconds(50 + std::rand() % 50));
+		}
+		stopped = true;
+	});
+
+	auto readThread = std::thread([&inserted, &stopped, &storage] {
+		while (!stopped) {
+			auto lim = inserted.load(std::memory_order_acquire);
+			auto from = lim ? std::rand() % lim : 0;
+			auto to = std::min(from + 10 * kTestBatchSize, lim);
+			std::string value;
+			for (size_t i = from; i < to; ++i) {
+				auto err = storage.Read(StorageOpts{}, std::to_string(i), value);
+				ASSERT_TRUE(err.ok()) << err.what();
+				ASSERT_EQ(value, std::to_string(i));
+			}
+		}
+	});
+
+	writeReadThread.join();
+	readThread.join();
+	flushThread.join();
+
+	std::string value;
+	for (size_t i = 0; i < inserted; ++i) {
+		err = storage.Read(StorageOpts{}, std::to_string(i), value);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(std::to_string(i), value);
+	}
+
+	for (size_t i = 0; i < inserted; ++i) {
+		storage.RemoveSync(StorageOpts{}, std::to_string(i));
+	}
+
+	for (size_t i = 0; i < inserted; ++i) {
+		err = storage.Read(StorageOpts{}, std::to_string(i), value);
+		ASSERT_EQ(err.code(), errNotFound) << err.what();
+	}
+}
+
+TEST(AsyncStorage, ConsistReadWriteRemoveTest) {
+	using namespace reindexer;
+	constexpr static int kTestBatchSize = AsyncStorage::kFlushChunckSize + 100;
+	enum class State { NotInit = -2, Unset = -1 };
+
+	AsyncStorage storage;
+	const auto kStoragePath = fs::JoinPath(fs::GetTempDir(), "AsyncStorage.SyncReadConcurrentTest/");
+	fs::RmDirAll(kStoragePath);
+	auto err = storage.Open(datastorage::StorageType::LevelDB, {}, kStoragePath, StorageOpts{}.CreateIfMissing());
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	storage.WithProxy(true);
+
+	const size_t limit = 100'000;
+	std::vector<std::atomic<int>> checkKeyValues(limit);
+	for (size_t i = 0; i < limit; ++i) {
+		checkKeyValues[i] = int(State::NotInit);
+	}
+
+	std::atomic_bool stopped = false;
+	auto flushThread = std::thread([&storage, &stopped] {
+		while (!stopped) {
+			storage.Flush(StorageFlushOpts{});
+			std::this_thread::sleep_for(std::chrono::milliseconds(200 + std::rand() % 100));
+		}
+
+		storage.Flush(StorageFlushOpts{});
+	});
+
+	auto write = [&](int idx) {
+		auto value = std::rand() % 1000;
+		storage.Write(std::to_string(idx), std::to_string(value));
+		checkKeyValues[idx].store(value, std::memory_order_release);
+	};
+
+	auto remove = [&](int idx) {
+		storage.Remove(std::to_string(idx));
+		checkKeyValues[idx].store(int(State::Unset), std::memory_order_release);
+	};
+
+	auto read = [&](int idx) {
+		std::string value;
+		auto expected = checkKeyValues[idx].load(std::memory_order_acquire);
+		auto err = storage.Read(StorageOpts{}, std::to_string(idx), value);
+
+		if (State(expected) == State::NotInit || State(expected) == State::Unset) {
+			ASSERT_EQ(err.code(), errNotFound) << fmt::format("i = {}, expected={}, value = {} err = {}", idx, expected, value, err.what());
+		} else {
+			ASSERT_EQ(value, std::to_string(expected));
+		}
+	};
+
+	using testScenario = std::vector<std::function<void(int)>>;
+	std::vector<testScenario> scenarioChains{
+		testScenario{write, read},		 testScenario{write, read, remove, read}, testScenario{remove, read, write, read},
+		testScenario{read, write, read}, testScenario{read, remove, read},		  testScenario{read},
+	};
+
+	auto mainThread = std::thread([&] {
+		while (!stopped) {
+			const auto from = std::rand() % (limit - kTestBatchSize - 1);
+			for (size_t i = from; i < from + kTestBatchSize; ++i) {
+				auto scenario = scenarioChains[std::rand() % scenarioChains.size()];
+				for (auto& op : scenario) {
+					op(i);
+				}
+			}
+		}
+	});
+
+	auto checkFillingThread = std::thread([&]() {
+		while (!stopped) {
+			auto filledCount = std::count_if(checkKeyValues.begin(), checkKeyValues.end(), [](const auto& value) {
+				return value.load(std::memory_order_acquire) != int(State::NotInit);
+			});
+			if (float(filledCount) / float(limit) > 0.9) {
+				stopped = true;
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		}
+	});
+
+	flushThread.join();
+	mainThread.join();
+	checkFillingThread.join();
+
+	for (size_t i = 0; i < limit; ++i) {
+		read(i);
+	}
 }

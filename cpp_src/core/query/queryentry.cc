@@ -146,7 +146,7 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 		case CondLe:
 			checkArgsCount(1);
 			if (values[0].IsNullValue()) {
-				throw Error{errLogic, "Condition {} cannot have null argument", CondTypeToStr(cond)};
+				throw Error{errLogic, "Conditions CondGe|CondGt|CondLt|CondLe can't have null argument", CondTypeToStr(cond)};
 			}
 			break;
 		case CondLike:
@@ -160,7 +160,7 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 		case CondDWithin:
 			checkArgsCount(2);
 			if (values[0].IsNullValue() || values[1].IsNullValue()) {
-				throw Error{errLogic, "Condition {} cannot have null argument", CondTypeToStr(cond)};
+				throw Error{errLogic, "Condition {} can't have null argument", CondTypeToStr(cond)};
 			}
 			break;
 		case CondKnn:
@@ -170,7 +170,8 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 template void VerifyQueryEntryValues<VerifyQueryEntryFlags::null>(CondType, const VariantArray&);
 template void VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(CondType, const VariantArray&);
 
-void QueryEntry::adjust() noexcept {
+bool QueryEntry::adjust(AdjustMode mode) noexcept {
+	bool adjusted = false;
 	switch (condition_) {
 		case CondEq:
 		case CondSet:
@@ -182,14 +183,20 @@ void QueryEntry::adjust() noexcept {
 			if (it == values_.end()) {
 				break;
 			} else if (it == values_.begin()) {
-				values_.clear();
-				condition_ = CondEmpty;
-			} else {
-				values_.erase(it, values_.end());
-				if (values_.size() == 1) {
-					condition_ = CondEq;
+				if (mode != AdjustMode::DryRun) {
+					values_.clear();
+					condition_ = CondEmpty;
 				}
-				needIsNull_ = true;
+				adjusted = true;
+			} else {
+				if (mode != AdjustMode::DryRun) {
+					values_.erase(it, values_.cend());
+					if (values_.size() == 1) {
+						condition_ = CondEq;
+					}
+					needIsNull_ = true;
+				}
+				adjusted = true;
 			}
 		}
 		case CondAny:
@@ -204,6 +211,7 @@ void QueryEntry::adjust() noexcept {
 		case CondKnn:
 			break;
 	}
+	return adjusted;
 }
 
 std::string QueryEntry::Dump() const {
@@ -230,16 +238,36 @@ std::string QueryEntry::Dump() const {
 
 std::string QueryEntry::DumpBrief() const {
 	WrSerializer ser;
-	{
-		ser << FieldName() << ' ' << Condition() << ' ';
-		const bool severalValues = (Values().size() > 1);
-		if (severalValues) {
-			ser << "(...)";
-		} else {
+	ser << FieldName() << ' ' << Condition() << ' ';
+	switch (Values().size()) {
+		case 0:
+			break;
+		case 1:
 			ser << '\'' << Values().front().As<std::string>() << '\'';
-		}
+			break;
+		default:
+			ser << "(...)";
+			break;
 	}
 	return std::string(ser.Slice());
+}
+
+bool QueryEntry::TryUpdateInplace(VariantArray& newValues) noexcept {
+	if (needIsNull_) {
+		return false;
+	}
+	std::swap(values_, newValues);
+	if (!adjust(AdjustMode::DryRun)) {
+		try {
+			Verify();
+			return true;
+			// NOLINTBEGIN(bugprone-empty-catch)
+		} catch (...) {
+		}
+		// NOLINTEND(bugprone-empty-catch)
+	}
+	std::swap(values_, newValues);
+	return false;
 }
 
 AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, SortingEntries&& sort, unsigned limit, unsigned offset)
@@ -466,8 +494,21 @@ bool QueryEntries::checkIfSatisfyCondition(const BetweenFieldsQueryEntry& qEntry
 bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType condition, const VariantArray& rValues) {
 	switch (condition) {
 		case CondAny:
+			for (const Variant& value : lValues) {
+				if (!value.IsNullValue()) {
+					return true;
+				}
+			}
 			return !lValues.empty();
 		case CondEmpty:
+			if rx_unlikely (lValues.IsObjectValue()) {
+				return false;
+			}
+			for (const Variant& value : lValues) {
+				if (value.IsNullValue()) {
+					return true;
+				}
+			}
 			return lValues.empty();
 		case CondEq:
 		case CondSet:
@@ -692,19 +733,21 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 				switch (entryCondition) {
 					case CondEq:
 					case CondSet:
-					case CondAllSet:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondSet, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondAllSet: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondSet, qe.Values(), injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondLt:
 					case CondLe:
 					case CondGt:
-					case CondGe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondGe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondRange:
 					case CondAny:
 					case CondEmpty:
@@ -722,11 +765,12 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 					case CondLt:
 					case CondLe:
 					case CondGt:
-					case CondGe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondGe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondRange:
 					case CondAny:
 					case CondEmpty:
@@ -745,23 +789,26 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 							break;
 						}
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt,
-											VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
-											injectedFrom);
-						++injectedCount;
-						++position;
+						const auto inserted = Emplace<QueryEntry>(
+							position, OpAnd, fieldName, CondLt,
+							VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 					} break;
 					case CondLt:
-					case CondLe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondLe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
-					case CondRange:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, VariantArray{qe.Values()[1]}, injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondRange: {
+						const auto inserted =
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, VariantArray{qe.Values()[1]}, injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondGt:
 					case CondGe:
 					case CondAny:
@@ -781,27 +828,31 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 							break;
 						}
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe,
-											VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
-											injectedFrom);
-						++injectedCount;
-						++position;
+						const auto inserted = Emplace<QueryEntry>(
+							position, OpAnd, fieldName, CondLe,
+							VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 					} break;
-					case CondLt:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondLt: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
-					case CondLe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondLe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, qe.Values(), injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
-					case CondRange:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, VariantArray{qe.Values()[1]}, injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondRange: {
+						const auto inserted =
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, VariantArray{qe.Values()[1]}, injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondGt:
 					case CondGe:
 					case CondAny:
@@ -821,23 +872,26 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 							break;
 						}
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt,
-											VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
-											injectedFrom);
-						++injectedCount;
-						++position;
+						const auto inserted = Emplace<QueryEntry>(
+							position, OpAnd, fieldName, CondGt,
+							VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 					} break;
 					case CondGt:
-					case CondGe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondGe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
-					case CondRange:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, VariantArray{qe.Values()[0]}, injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondRange: {
+						const auto inserted =
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, VariantArray{qe.Values()[0]}, injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondLt:
 					case CondLe:
 					case CondAny:
@@ -857,27 +911,31 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 							break;
 						}
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe,
-											VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
-											injectedFrom);
-						++injectedCount;
-						++position;
+						const auto inserted = Emplace<QueryEntry>(
+							position, OpAnd, fieldName, CondGe,
+							VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 					} break;
-					case CondGt:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondGt: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
-					case CondGe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondGe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, qe.Values(), injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
-					case CondRange:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, VariantArray{qe.Values()[0]}, injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondRange: {
+						const auto inserted =
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, VariantArray{qe.Values()[0]}, injectedFrom);
+						injectedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondLt:
 					case CondLe:
 					case CondAny:

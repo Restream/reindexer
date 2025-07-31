@@ -1,7 +1,6 @@
 #pragma once
 
 #include "baseftconfig.h"
-#include "tools/rvector.h"
 
 namespace reindexer {
 
@@ -56,7 +55,7 @@ struct FtFastConfig : public BaseFTConfig {
 
 	enum class Splitter { Fast, MMSegCN } splitterType = Splitter::Fast;
 
-	RVector<FtFastFieldConfig, 8> fieldsCfg;
+	h_vector<FtFastFieldConfig, 8> fieldsCfg;
 	enum class Optimization { CPU, Memory } optimization = Optimization::Memory;
 	bool enablePreselectBeforeFt = false;
 	int MaxTyposInWord() const noexcept { return (maxTypos / 2) + (maxTypos % 2); }

@@ -39,12 +39,13 @@ func serverUp(t *testing.T, cfg map[string]string, serverID int, ns []string) *r
 		},
 	}
 	opts = append(opts, reindexer.WithServerConfig(5*time.Second, srvCfg))
-	rx := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", cfg["db"]), opts...)
+	rx, err := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", cfg["db"]), opts...)
+	require.NoError(t, err)
 	for i := range ns {
 		rx.OpenNamespace(ns[i], reindexer.DefaultNamespaceOptions(), Data{})
 	}
 
-	err := rx.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+	err = rx.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
 		Type:        "replication",
 		Replication: &reindexer.DBReplicationConfig{ServerID: serverID, ClusterID: 2},
 	})
@@ -66,7 +67,8 @@ func TestSlaveEmptyStorage(t *testing.T) {
 	cfgSlave.Net.RPCAddr = "0:26535"
 	cfgSlave.Storage.Path = path.Join(helpers.GetTmpDBDir(), "reindex_slave2")
 	os.RemoveAll(cfgSlave.Storage.Path)
-	rxSlave := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgSlave))
+	rxSlave, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgSlave))
+	require.NoError(t, err)
 
 	stream := rxSlave.Subscribe(events.DefaultEventsStreamOptions().
 		WithNamespaceOperationEvents())
@@ -79,7 +81,8 @@ func TestSlaveEmptyStorage(t *testing.T) {
 	cfgMaster.Net.RPCAddr = "0:26534"
 	cfgMaster.Storage.Path = path.Join(helpers.GetTmpDBDir(), "reindex_master1")
 	os.RemoveAll(cfgMaster.Storage.Path)
-	rxMaster := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgMaster))
+	rxMaster, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgMaster))
+	require.NoError(t, err)
 	{
 		f, err := os.OpenFile(cfgMaster.Storage.Path+"/xxx/replication.conf", os.O_RDWR|os.O_CREATE, 0644)
 		assert.NoError(t, err)
@@ -109,7 +112,7 @@ nodes:
 	nsOption := reindexer.DefaultNamespaceOptions()
 	nsOption.NoStorage()
 
-	err := rxMaster.OpenNamespace(nsName, nsOption, TestItemStorage{})
+	err = rxMaster.OpenNamespace(nsName, nsOption, TestItemStorage{})
 	assert.NoError(t, err)
 	err = rxSlave.OpenNamespace(nsName, nsOption, TestItemStorage{})
 	assert.NoError(t, err)

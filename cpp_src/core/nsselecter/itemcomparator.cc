@@ -5,11 +5,12 @@
 
 namespace {
 
-constexpr static size_t kNotComputed{std::numeric_limits<size_t>::max()};
+constexpr size_t kNotComputed{std::numeric_limits<size_t>::max()};
 
 struct FieldsCompRes {
 	size_t firstDifferentFieldIdx{kNotComputed};
-	reindexer::ComparationResult fieldsCmpRes;
+	reindexer::ComparationResult fieldsCmpRes{reindexer::ComparationResult::NotComparable};
+
 	[[nodiscard]] reindexer::ComparationResult GetResult(reindexer::Desc desc) noexcept {
 		if (firstDifferentFieldIdx == 0) {
 			return desc ? -fieldsCmpRes : fieldsCmpRes;
@@ -108,7 +109,7 @@ private:
 
 class ItemComparator::FrontInserter {
 public:
-	FrontInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
+	explicit FrontInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
 	void expr(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByExpression{desc}); }
 	void fields(TagsPath&& tp) { comparator_.fields_.push_front(std::move(tp)); }
 	void fields(Joined& joined, TagsPath&& tp) { joined.fields.push_front(std::move(tp)); }
@@ -164,11 +165,8 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 						   }
 						   insert.fields(jns, std::move(tagsPath));
 						   insert.joined(e.nsIdx, e.data.desc);
-						   if (fieldIdx != IndexValueType::SetByJsonPath) {
-							   insert.collateOpts(jns, &ns.indexes_[fieldIdx]->Opts().collateOpts_);
-						   } else {
-							   insert.collateOpts(jns, nullptr);
-						   }
+						   insert.collateOpts(
+							   jns, (fieldIdx == IndexValueType::SetByJsonPath) ? nullptr : &ns.indexes_[fieldIdx]->Opts().collateOpts_);
 					   } else {
 						   const auto& idx = *ns.indexes_[fieldIdx];
 						   if (idx.Opts().IsArray()) {

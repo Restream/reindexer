@@ -209,6 +209,66 @@ func TestRaceConditions(t *testing.T) {
 			}
 		}
 	}
+	updater := func() {
+		for {
+			select {
+			case <-done:
+				wg.Done()
+				return
+			default:
+				isUpdate := rand.Int()%100 >= 50
+
+				ctx, cancel := context.WithCancel(context.Background())
+				if rand.Int()%100 > 90 {
+					q := DB.Query(testItemsRaceNs)
+					if isUpdate {
+						q.Set("name", randString()).Set("company_name", randString()).Limit(5)
+					} else {
+						q.Limit(1)
+					}
+
+					qj1 := DB.Query(testJoinItemsRaceNs).Where("device", reindexer.EQ, "ottstb").Sort("name", false)
+					qj2 := DB.Query(testJoinItemsRaceNs).Where("device", reindexer.EQ, "android")
+					qj3 := DB.Query(testJoinItemsRaceNs).Where("device", reindexer.EQ, "iphone")
+					q.InnerJoin(qj1, "prices").On("price_id", reindexer.SET, "id")
+					q.InnerJoin(qj2, "pricesx").On("location", reindexer.EQ, "location").On("price_id", reindexer.SET, "id")
+					q.InnerJoin(qj3, "pricesx").On("location", reindexer.LT, "location").Or().On("price_id", reindexer.SET, "id")
+
+					if isUpdate {
+						q.UpdateCtx(ctx).FetchAll()
+					} else {
+						q.DeleteCtx(ctx)
+					}
+				} else if rand.Int()%100 > 90 {
+					q := DB.Query(testJoinItemsRaceNs)
+					if isUpdate {
+						q.Set("name", randString()).Set("device", randDevice()).Limit(5)
+					} else {
+						q.Limit(1)
+					}
+					qj := DB.Query(testItemsRaceNs)
+
+					if rand.Int()%100 >= 50 {
+						qj.Where("genre", reindexer.SET, []int{1, 2})
+					} else {
+						qj.Where("genre", reindexer.GE, 2)
+					}
+					qj.JoinHandler("prices", func(field string, item interface{}, subitems []interface{}) bool {
+						return false
+					})
+					q.InnerJoin(qj, "prices").On("id", reindexer.SET, "price_id")
+
+					if isUpdate {
+						q.UpdateCtx(ctx).FetchAll()
+					} else {
+						q.DeleteCtx(ctx)
+					}
+				}
+				cancel()
+				time.Sleep(1 * time.Millisecond)
+			}
+		}
+	}
 	openCloser := func() {
 		for {
 			select {
@@ -234,6 +294,10 @@ func TestRaceConditions(t *testing.T) {
 		go reader()
 		wg.Add(1)
 		go openCloser()
+		if len(DB.clusterList) == 0 { // TODO: Remove this check after #2174
+			wg.Add(1)
+			go updater()
+		}
 	}
 	subsWg := sync.WaitGroup{}
 	subsDone := make(chan bool)
@@ -356,6 +420,69 @@ func TestRaceConditionsTx(t *testing.T) {
 		}
 	}
 
+	updater := func() {
+		for {
+			select {
+			case <-done:
+				wg.Done()
+				return
+			default:
+				ctx, cancel := context.WithCancel(context.Background())
+				if rand.Int()%100 > 90 {
+					q := DB.Query(testItemsRaceTxNs).
+						Set("name", randString()).
+						Set("company_name", randString()).
+						Limit(5)
+
+					qj1 := DB.Query(testJoinItemsRaceTxNs).Where("device", reindexer.EQ, "ottstb").Sort("name", false)
+					qj3 := DB.Query(testJoinItemsRaceTxNs).Where("device", reindexer.EQ, "iphone")
+					q.InnerJoin(qj1, "prices").On("price_id", reindexer.SET, "id")
+					q.InnerJoin(qj3, "pricesx").On("location", reindexer.LT, "location").Or().On("price_id", reindexer.SET, "id")
+
+					q.UpdateCtx(ctx).FetchAll()
+				} else if rand.Int()%100 > 90 {
+					q := DB.Query(testJoinItemsRaceTxNs).
+						Set("name", randString()).
+						Set("device", randDevice()).
+						Limit(5)
+					qj := DB.Query(testItemsRaceTxNs)
+
+					if rand.Int()%100 >= 33 {
+						qj.Where("genre", reindexer.SET, []int{1, 2})
+					} else if rand.Int()%100 >= 33 {
+						qj.Where("genre", reindexer.GE, 2)
+					} else {
+						qj.Where("id", reindexer.SET,
+							[]int{rand.Intn(2000), rand.Intn(2000), rand.Intn(2000), rand.Intn(2000), rand.Intn(2000)})
+					}
+					qj.JoinHandler("prices", func(field string, item interface{}, subitems []interface{}) bool {
+						return false
+					})
+					q.InnerJoin(qj, "prices").On("id", reindexer.SET, "price_id")
+
+					q.UpdateCtx(ctx).FetchAll()
+				} else if rand.Int()%100 > 90 {
+					q := DB.Query(testItemsRaceTxNs).
+						Set("name", randString()).
+						Set("device", randDevice()).
+						Limit(1)
+					qj := DB.Query(testItemsRaceTxNs)
+
+					if rand.Int()%100 >= 50 {
+						qj.Where("genre", reindexer.SET, []int{1, 2})
+					} else {
+						qj.Where("genre", reindexer.GE, 2)
+					}
+					q.InnerJoin(qj, "prices").On("id", reindexer.SET, "id")
+
+					q.UpdateCtx(ctx).FetchAll()
+				}
+				cancel()
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+	}
+
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go writer()
@@ -365,6 +492,12 @@ func TestRaceConditionsTx(t *testing.T) {
 		go txWriter()
 		wg.Add(1)
 		go deleter()
+		if len(DB.clusterList) == 0 { // TODO: Remove this check after #2174
+			if i%2 == 0 {
+				wg.Add(1)
+				go updater()
+			}
+		}
 	}
 	subsWg := sync.WaitGroup{}
 	subsDone := make(chan bool)

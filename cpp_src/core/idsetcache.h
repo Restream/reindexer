@@ -1,10 +1,8 @@
 #pragma once
 
-#include <bitset>
 #include "core/idset.h"
 #include "core/keyvalue/variant.h"
 #include "core/lrucache.h"
-#include "core/payload/fieldsset.h"
 #include "core/type_consts_helpers.h"
 
 namespace reindexer {

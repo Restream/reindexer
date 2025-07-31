@@ -1,6 +1,7 @@
 #pragma once
 
 #include <variant>
+#include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/querystat.h"
 
@@ -10,8 +11,9 @@ class FtFunctionsHolder;
 
 class RxSelector {
 	struct NsLockerItem {
-		explicit NsLockerItem(NamespaceImpl::Ptr ins = {}) noexcept : ns(std::move(ins)), count(1) {}
-		NamespaceImpl::Ptr ns;
+		explicit NsLockerItem(NamespaceImpl::Ptr ins, Namespace::Ptr n) noexcept : nsImpl(std::move(ins)), ns(std::move(n)), count(1) {}
+		NamespaceImpl::Ptr nsImpl;
+		Namespace::Ptr ns;
 		NamespaceImpl::Locker::RLockT nsLck;
 		unsigned count = 1;
 	};
@@ -34,41 +36,41 @@ public:
 			// Clean (ns may will release, if locker holds last ref)
 		}
 
-		void Add(NamespaceImpl::Ptr&& ns) {
+		void Add(NamespaceImpl::Ptr&& nsImpl, Namespace::Ptr ns) {
 			assertrx(!locked_);
 			for (auto it = begin(), e = end(); it != e; ++it) {
-				if (it->ns.get() == ns.get()) {
+				if (it->nsImpl.get() == nsImpl.get()) {
 					++(it->count);
 					return;
 				}
 			}
 
-			emplace_back(std::move(ns));
+			emplace_back(std::move(nsImpl), std::move(ns));
 		}
-		void Delete(const NamespaceImpl::Ptr& ns) noexcept {
+		void Delete(const NamespaceImpl::Ptr& nsImpl) {
 			for (auto it = begin(), e = end(); it != e; ++it) {
-				if (it->ns.get() == ns.get()) {
+				if (it->nsImpl.get() == nsImpl.get()) {
 					if (!--(it->count)) {
 						erase(it);
 					}
 					return;
 				}
 			}
-			assertrx(0);
+			assertrx_throw(false);
 		}
 		void Lock() {
 			boost::sort::pdqsort_branchless(
 				begin(), end(), [](const NsLockerItem& lhs, const NsLockerItem& rhs) noexcept { return lhs.ns.get() < rhs.ns.get(); });
 			for (auto it = begin(), e = end(); it != e; ++it) {
-				it->nsLck = it->ns->rLock(context_);
+				it->nsLck = it->nsImpl->rLock(context_);
 			}
 			locked_ = true;
 		}
 
 		NamespaceImpl::Ptr Get(const std::string& name) noexcept {
 			for (auto it = begin(), e = end(); it != e; ++it) {
-				if (iequals(it->ns->name_, name)) {
-					return it->ns;
+				if (iequals(it->nsImpl->name_, name)) {
+					return it->nsImpl;
 				}
 			}
 			return NamespaceImpl::Ptr();
@@ -79,16 +81,119 @@ public:
 		const Context& context_;
 	};
 
-	template <typename T, typename QueryType>
-	static void DoSelect(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, NsLocker<T>& locks,
+	class NsLockerWItem {
+	public:
+		explicit NsLockerWItem(Namespace::Ptr ns = {}, bool isWLock = false) noexcept : ns_(std::move(ns)), count_(1), isWLock_(isWLock) {}
+		Namespace::Ptr ns_;
+		NamespaceImpl::Ptr nsImpl_;
+		std::variant<NamespaceImpl::Locker::RLockT, NamespaceImpl::Locker::WLockT> nsLck_;
+		unsigned count_ = 1;
+		bool isWLock_ = false;
+	};
+
+	class NsLockerW {
+	public:
+		NsLockerW(const RdxContext& context) noexcept : context_(context) {}
+		~NsLockerW() {
+			// Unlock first
+			for (auto it = nsList.rbegin(), re = nsList.rend(); it != re; ++it) {
+				// Some namespaces may be in unlocked state in case of the exception during Lock() call
+				std::visit(overloaded{[this](NamespaceImpl::Locker::RLockT& v) {
+										  if (v.owns_lock()) {
+											  v.unlock();
+										  } else {
+											  assertrx(!locked_);
+										  }
+									  },
+									  [](NamespaceImpl::Locker::WLockT&) {}},
+						   it->nsLck_);
+			}
+			// Clean(ns may will release, if locker holds last ref)
+		}
+
+		NamespaceImpl::Ptr Get(std::string_view name) noexcept {
+			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
+				if (iequals(std::string_view(it->nsImpl_->name_), name)) {
+					return it->nsImpl_;
+				}
+			}
+			return NamespaceImpl::Ptr();
+		}
+
+		void Add(Namespace::Ptr&& ns, bool wLock) {
+			assertrx(!locked_);
+			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
+				if (it->ns_.get() == ns.get()) {
+					++(it->count_);
+					return;
+				}
+			}
+
+			nsList.emplace_back(std::move(ns), wLock);
+		}
+		void Delete(const NamespaceImpl::Ptr& ns) {
+			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
+				if (it->nsImpl_.get() == ns.get()) {
+					if (!--(it->count_)) {
+						nsList.erase(it);
+					}
+					return;
+				}
+			}
+			assertrx_throw(false);
+		}
+		template <typename QueryStatCalculatorT>
+		void Lock(QueryStatCalculatorT& statCalculator) {
+			assertrx(!locked_);
+			boost::sort::pdqsort_branchless(nsList.begin(), nsList.end(), [](const NsLockerWItem& lhs, const NsLockerWItem& rhs) noexcept {
+				return lhs.ns_.get() < rhs.ns_.get();
+			});
+			NamespaceImpl::Ptr mainNsImpl;
+			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
+				if (it->isWLock_) {
+					Namespace::GetWrLockData wd = it->ns_->GetWrLock(statCalculator, context_);
+					it->nsLck_ = std::move(wd.lock);
+					it->nsImpl_ = std::move(wd.nsImpl);
+					it->nsImpl_->updateSelectTime();
+				} else {
+					it->nsImpl_ = it->ns_->GetMainNs();
+					it->nsImpl_->updateSelectTime();
+					it->nsLck_ = it->nsImpl_->rLock(context_);
+				}
+			}
+			locked_ = true;
+		}
+
+		std::pair<NamespaceImpl::Locker::WLockT, NamespaceImpl::Ptr> Unlock() {
+			assertrx(locked_);
+			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
+				if (it->isWLock_) {
+					return {std::move(std::get<1>(it->nsLck_)), it->nsImpl_};
+				}
+			}
+			throw_as_assert;
+		}
+
+	private:
+		NamespaceImpl::Ptr mainNs;
+		h_vector<NsLockerWItem, 4> nsList;
+		bool locked_ = false;
+		const RdxContext& context_;
+	};
+
+	template <typename LockerType, typename QueryType>
+	static void DoSelect(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, LockerType& locks,
 						 FtFunctionsHolder& func, const RdxContext& ctx, QueryStatCalculator<QueryType>& queryStatCalculator);
+
+	static void DoPreSelectForUpdateDelete(const Query& q, LocalQueryResults& result, NsLockerW& locks, bool fvHolderFromResult,
+										   const RdxContext& ctx);
 
 private:
 	struct QueryResultsContext;
 
-	template <typename T>
-	static JoinedSelectors prepareJoinedSelectors(const Query& q, LocalQueryResults& result, NsLocker<T>& locks, FtFunctionsHolder& func,
-												  std::vector<QueryResultsContext>&, const RdxContext& ctx);
+	template <typename Locker>
+	static JoinedSelectors prepareJoinedSelectors(const Query& q, LocalQueryResults& result, Locker& locks, FtFunctionsHolder& func,
+												  std::vector<QueryResultsContext>&, SetLimit0ForChangeJoin limit0, const RdxContext& ctx);
 	template <typename T>
 	[[nodiscard]] static std::vector<SubQueryExplain> preselectSubQueries(Query& mainQuery,
 																		  std::vector<LocalQueryResults>& queryResultsHolder, NsLocker<T>&,

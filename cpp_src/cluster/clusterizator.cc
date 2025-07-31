@@ -123,6 +123,10 @@ Error ClusterManager::Replicate(UpdatesContainer&& recs, std::function<void()> b
 		// Update can't be replicated to cluster from another node, so may only be replicated to async replicas
 		res = updatesQueue_.PushAsync(std::move(recs));
 	}
+
+	if (!res.first.ok()) {
+		logWarn("Error while Pushing updates queue: {}", res.first.what());
+	}
 	if (res.second) {
 		return res.first;
 	}
@@ -141,6 +145,11 @@ Error ClusterManager::ReplicateAsync(UpdatesContainer&& recs, const RdxContext& 
 		// Update can't be replicated to cluster from another node, so may only be replicated to async replicas
 		res = updatesQueue_.PushAsync(std::move(recs));
 	}
+
+	if (!res.first.ok()) {
+		logWarn("Error while Pushing updates queue: {}", res.first.what());
+	}
+
 	return {};	// This namespace is not taking part in any replication
 }
 

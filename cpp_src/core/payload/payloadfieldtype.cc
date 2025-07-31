@@ -23,8 +23,10 @@ EmbedderConfig::Strategy convert(FloatVectorIndexOpts::EmbedderOpts::Strategy st
 	return {};
 }
 
-std::shared_ptr<const reindexer::Embedder> createEmbedder(std::string_view nsName, std::string_view idxName, const std::optional<FloatVectorIndexOpts::EmbedderOpts>& cfg,
-				 const std::shared_ptr<EmbeddersCache>& embeddersCache) {
+template <class T>
+std::shared_ptr<T> createEmbedder(std::string_view nsName, std::string_view idxName,
+								  const std::optional<FloatVectorIndexOpts::EmbedderOpts>& cfg,
+								  const std::shared_ptr<EmbeddersCache>& embeddersCache) {
 	if (!cfg.has_value()) {
 		return {};
 	}
@@ -35,7 +37,7 @@ std::shared_ptr<const reindexer::Embedder> createEmbedder(std::string_view nsNam
 					   opts.pool.write_timeout_ms};
 	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + toLower(idxName) : toLower(opts.name);
 	embeddersCache->IncludeTag(opts.cacheTag);
-	return std::make_shared<const reindexer::Embedder>(embedderName, idxName, std::move(embedderCfg), std::move(poolCfg), embeddersCache);
+	return std::make_shared<T>(embedderName, idxName, std::move(embedderCfg), std::move(poolCfg), embeddersCache);
 }
 
 }  // namespace
@@ -94,8 +96,8 @@ void PayloadFieldType::createEmbedders(std::string_view nsName, const std::optio
 		return;
 	}
 	const auto& cfg = embeddingOpts.value();
-	embedder_ = createEmbedder(nsName, name_, cfg.upsertEmbedder, embeddersCache);
-	queryEmbedder_ = createEmbedder(nsName, name_, cfg.queryEmbedder, embeddersCache);
+	embedder_ = createEmbedder<const reindexer::UpsertEmbedder>(nsName, name_, cfg.upsertEmbedder, embeddersCache);
+	queryEmbedder_ = createEmbedder<const reindexer::QueryEmbedder>(nsName, name_, cfg.queryEmbedder, embeddersCache);
 }
 
 }  // namespace reindexer

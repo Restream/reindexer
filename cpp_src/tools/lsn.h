@@ -10,7 +10,10 @@ struct JsonNode;
 
 namespace reindexer {
 
+namespace builders {
 class JsonBuilder;
+}  // namespace builders
+using builders::JsonBuilder;
 
 // lsn format
 // server id  counter

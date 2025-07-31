@@ -125,7 +125,8 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 				if (vect.empty()) {
 					return Variant{ConstFloatVectorView{}};
 				} else if (floatVectorsHolder) {
-					floatVectorsHolder->Add(ConstFloatVectorView{vect});
+					[[maybe_unused]] bool added = floatVectorsHolder->Add(ConstFloatVectorView{vect});
+					assertrx_dbg(added);
 					return Variant{floatVectorsHolder->Back()};
 				} else {
 					return Variant{ConstFloatVectorView{std::span<const float>{vect}}, Variant::hold};

@@ -12,7 +12,7 @@ FullTextMergeLimit::FullTextMergeLimit(Reindexer* db, const std::string& name, s
 	static IndexOpts ftIndexOpts;
 	ftCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
 	ftCfg.stopWords = {};
-	ftCfg.extraWordSymbols = "1234567890";
+	ftCfg.splitOptions.SetSymbols("1234567890", "");
 	ftCfg.mergeLimit = 0x1FFFFFF;
 	ftCfg.maxTypos = 0;
 	ftIndexOpts.SetConfig(IndexFastFT, ftCfg.GetJSON({}));

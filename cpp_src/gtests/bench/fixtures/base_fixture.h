@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <memory>
 
+#include "allocs_tracker.h"
 #include "core/namespacedef.h"
 #include "core/reindexer.h"
 #include "sequence.h"
@@ -27,7 +28,7 @@ public:
 		}
 	}
 
-	BaseFixture(Reindexer* db, const std::string& name, size_t maxItems, size_t idStart = 1, bool useBenchamrkPrefixName = true)
+	BaseFixture(Reindexer* db, std::string_view name, size_t maxItems, size_t idStart = 1, bool useBenchamrkPrefixName = true)
 		: db_(db),
 		  nsdef_(name),
 		  id_seq_(std::make_shared<Sequence>(idStart, maxItems, 1)),
@@ -38,6 +39,31 @@ public:
 	void RegisterAllCases();
 
 protected:
+	template <unsigned maxPercentage = 10>
+	class [[nodiscard]] LowSelectivityItemsCounter {
+	public:
+		explicit LowSelectivityItemsCounter(State& state) noexcept : state_{state} {}
+		virtual ~LowSelectivityItemsCounter() {
+			const auto percentageOfEmptyResults = (100 * emptyResultsCount_) / state_.iterations();
+			if (percentageOfEmptyResults > maxPercentage) {
+				const auto err = "Percentage of empty results " + std::to_string(percentageOfEmptyResults) + "% is more than " +
+								 std::to_string(maxPercentage) + '%';
+				state_.SkipWithError(err.c_str());
+			}
+		}
+		void Add(const reindexer::QueryResults& qres) noexcept {
+			if (qres.Count() == 0) {
+				++emptyResultsCount_;
+			}
+		}
+
+	protected:
+		State& state_;
+
+	private:
+		size_t emptyResultsCount_{0};
+	};
+
 	void Insert(State& state);
 	void Update(State& state);
 
@@ -57,6 +83,17 @@ protected:
 											std::forward<Args>(args)...);
 	}
 
+	void benchQuery(auto queryGenerator, benchmark::State& state, auto& itemsCounter) {
+		benchmark::AllocsTracker allocsTracker(state);
+		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+			reindexer::QueryResults qres;
+			auto err = db_->Select(queryGenerator(), qres);
+			if rx_unlikely (!err.ok()) {
+				state.SkipWithError(err.what());
+			}
+			itemsCounter.Add(qres);
+		}
+	}
 	std::string RandString();
 
 	const std::string letters = "abcdefghijklmnopqrstuvwxyz";

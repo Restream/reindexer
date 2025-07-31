@@ -13,6 +13,10 @@ using reindexer::Variant;
 using reindexer::VariantArray;
 using reindexer::p_string;
 
+namespace reindexer {
+class Reindexer;
+}  // namespace reindexer
+
 namespace internal {
 
 template <typename T>
@@ -125,3 +129,5 @@ std::vector<T> randomNumArray(int count, int start, int region) {
 std::string FormatString(const char* msg, va_list args);
 std::string FormatString(const char* msg, ...);
 std::string HumanReadableNumber(size_t number, bool si, const std::string& unitLabel = "");
+
+std::shared_ptr<reindexer::Reindexer> InitBenchDB(std::string_view dbDir);

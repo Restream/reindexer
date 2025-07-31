@@ -25,7 +25,6 @@ public:
 	IndexDef(std::string name, JsonPaths, ::IndexType, IndexOpts, int64_t expireAfter);
 	IndexDef(std::string name, std::string indexType, std::string fieldType, IndexOpts opts);
 	IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexOpts opts);
-	bool IsEqual(const IndexDef& other, IndexComparison cmpType) const;
 	void GetJSON(WrSerializer& ser, ExtraIndexDescription withExtras = ExtraIndexDescription_False) const;
 	[[nodiscard]] ::IndexType IndexType() const { return DetermineIndexType(name_, indexType_, fieldType_); }
 	[[nodiscard]] const std::string& Name() const& noexcept { return name_; }
@@ -67,6 +66,17 @@ public:
 	auto IndexTypeStr() const&& = delete;
 	auto FieldType() const&& = delete;
 	auto Opts() const&& = delete;
+
+	enum class [[nodiscard]] Diff : uint8_t {
+		Name = 1,
+		JsonPaths = 1 << 1,
+		IndexType = 1 << 2,
+		FieldType = 1 << 3,
+		ExpireAfter = 1 << 4,
+	};
+
+	using DiffResult = compare_enum::Diff<IndexDef::Diff, IndexOpts::ParamsDiff, IndexOpts::OptsDiff, FloatVectorIndexOpts::Diff>;
+	DiffResult Compare(const IndexDef& o) const noexcept;
 
 private:
 	void initFromIndexType(::IndexType);

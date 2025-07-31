@@ -15,24 +15,46 @@ class RdxContext;
 class EmbeddersCache;
 struct EmbedderCachePerfStat;
 
-class [[nodiscard]] Embedder final {
+class [[nodiscard]] EmbedderBase {
 public:
-	Embedder(std::string_view name, std::string_view fieldName, EmbedderConfig&& config, PoolConfig&& poolConfig,
-			 const std::shared_ptr<EmbeddersCache>& cache);
-	~Embedder() noexcept = default;
+	virtual ~EmbedderBase() noexcept = default;
 
-	Embedder() = delete;
-	Embedder(const Embedder&) = delete;
-	Embedder(Embedder&&) noexcept = delete;
-	Embedder& operator=(const Embedder&) = delete;
-	Embedder& operator=(Embedder&&) noexcept = delete;
+	EmbedderBase() = delete;
+	EmbedderBase(const EmbedderBase&) = delete;
+	EmbedderBase(EmbedderBase&&) noexcept = delete;
+	EmbedderBase& operator=(const EmbedderBase&) = delete;
+	EmbedderBase& operator=(EmbedderBase&&) noexcept = delete;
 
-	[[nodiscard]] std::string_view Name() const& noexcept { return name_; }
-	[[nodiscard]] auto Name() const&& noexcept = delete;
+	[[nodiscard]] EmbedderCachePerfStat GetPerfStat(std::string_view tag) const;
+
+protected:
+	EmbedderBase(std::string_view name, std::string_view format, std::string_view fieldName, EmbedderConfig&& config,
+				 PoolConfig&& poolConfig, const std::shared_ptr<EmbeddersCache>& cache);
+
+	const std::string name_;
+	const std::string fieldName_;
+	const std::string serverPath_;
+	const std::shared_ptr<EmbeddersCache> cache_;
+	const EmbedderConfig config_;
+	std::unique_ptr<ConnectorPool> pool_;
+};
+
+class [[nodiscard]] UpsertEmbedder final : public EmbedderBase {
+public:
+	UpsertEmbedder(std::string_view name, std::string_view fieldName, EmbedderConfig&& config, PoolConfig&& poolConfig,
+				   const std::shared_ptr<EmbeddersCache>& cache);
+	~UpsertEmbedder() noexcept override = default;
+
+	UpsertEmbedder() = delete;
+	UpsertEmbedder(const UpsertEmbedder&) = delete;
+	UpsertEmbedder(UpsertEmbedder&&) noexcept = delete;
+	UpsertEmbedder& operator=(const UpsertEmbedder&) = delete;
+	UpsertEmbedder& operator=(UpsertEmbedder&&) noexcept = delete;
+
 	[[nodiscard]] std::string_view FieldName() const& noexcept { return fieldName_; }
 	[[nodiscard]] auto FieldName() const&& noexcept = delete;
 
-	void Calculate(const RdxContext& ctx, std::span<const std::vector<VariantArray>> sources,
+	void Calculate(const RdxContext& ctx, std::span<const std::vector<std::pair<std::string, VariantArray>>> sources,
 				   h_vector<ConstFloatVector, 1>& products) const;
 
 	[[nodiscard]] const h_vector<std::string, 1>& Fields() const& noexcept { return config_.fields; }
@@ -41,19 +63,23 @@ public:
 	[[nodiscard]] EmbedderConfig::Strategy Strategy() const noexcept { return config_.strategy; }
 	[[nodiscard]] bool IsAuxiliaryField(std::string_view fieldName) const noexcept;
 
-	[[nodiscard]] EmbedderCachePerfStat GetPerfStat(std::string_view tag) const;
-
-	[[nodiscard]] bool IsEqual(const EmbedderConfig& embedderCfg, const PoolConfig& poolCfg) const noexcept;
-
 private:
-	void checkFields(std::span<const std::vector<VariantArray>> sources) const;
+	void checkFields(std::span<const std::vector<std::pair<std::string, VariantArray>>> sources) const;
+};
 
-	const std::string name_;
-	const std::string fieldName_;
-	const std::string serverPath_;
-	const std::shared_ptr<EmbeddersCache> cache_;
-	const EmbedderConfig config_;
-	std::unique_ptr<ConnectorPool> pool_;
+class [[nodiscard]] QueryEmbedder final : public EmbedderBase {
+public:
+	QueryEmbedder(std::string_view name, std::string_view fieldName, EmbedderConfig&& config, PoolConfig&& poolConfig,
+				  const std::shared_ptr<EmbeddersCache>& cache);
+	~QueryEmbedder() noexcept override = default;
+
+	QueryEmbedder() = delete;
+	QueryEmbedder(const UpsertEmbedder&) = delete;
+	QueryEmbedder(QueryEmbedder&&) noexcept = delete;
+	QueryEmbedder& operator=(const QueryEmbedder&) = delete;
+	QueryEmbedder& operator=(QueryEmbedder&&) noexcept = delete;
+
+	void Calculate(const RdxContext& ctx, const std::string& text, h_vector<ConstFloatVector, 1>& products) const;
 };
 
 }  // namespace reindexer

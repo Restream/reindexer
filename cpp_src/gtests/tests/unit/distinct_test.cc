@@ -60,6 +60,10 @@ TEST_F(DistinctApi, Verify) {
 	verify();
 	insertItem(R"#({"id":11,"v0":["50","51","52"],"v1":[6.12],"v2":["202","201"]})#");
 	verify();
+	insertItem(R"#({"id":12,"v0":["55","56","57"],"v1":6.15,"v2":"202"})#");
+	verify();
+	insertItem(R"#({"id":13,"v0":["61","62","63"],"v1":6.15})#");
+	verify();
 
 	insertItem(R"#({"id":100,"vi1":10,"vi2":"str1"})#");
 	auto verifyIndex = [this]() {

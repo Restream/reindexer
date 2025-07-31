@@ -194,6 +194,8 @@ func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...
 			// nothing
 		case bindings.OptionBuiltinWithServer:
 			// nothing
+		case bindings.OptionStrictJoinHandlers:
+			// nothing
 		case bindings.OptionCgoLimit:
 			cgoLimit = v.CgoLimit
 		case bindings.OptionReindexerInstance:

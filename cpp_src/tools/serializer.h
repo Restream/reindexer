@@ -24,11 +24,11 @@ class chunk;
 constexpr auto kTrueSV = std::string_view("true");
 constexpr auto kFalseSV = std::string_view("false");
 
-class Serializer {
+class [[nodiscard]] Serializer {
 public:
 	Serializer(const void* buf, size_t len) noexcept : buf_(static_cast<const uint8_t*>(buf)), len_(len), pos_(0) {}
 	explicit Serializer(std::string_view buf) noexcept : buf_(reinterpret_cast<const uint8_t*>(buf.data())), len_(buf.length()), pos_(0) {}
-	bool Eof() const noexcept { return pos_ >= len_; }
+	[[nodiscard]] bool Eof() const noexcept { return pos_ >= len_; }
 	[[nodiscard]] RX_ALWAYS_INLINE KeyValueType GetKeyValueType() { return KeyValueType::FromNumber(GetVarUInt()); }
 	[[nodiscard]] Variant GetVariant() {
 		const KeyValueType type = GetKeyValueType();
@@ -143,7 +143,7 @@ public:
 
 		checkbound(pos_, l, len_);
 		pos_ += l;
-		return unzigzag64(parse_uint64(l, buf_ + pos_ - l));
+		return parse_int64(l, buf_ + pos_ - l);
 	}
 	RX_ALWAYS_INLINE uint64_t GetVarUInt() {  // -V1071
 		auto l = scan_varint(len_ - pos_, buf_ + pos_);
@@ -164,13 +164,13 @@ public:
 		return {reinterpret_cast<const char*>(buf_ + pos_ - l), std::string_view::size_type(l)};
 	}
 	p_string GetPVString();
-	p_string GetPSlice();
+	[[nodiscard]] p_string GetPSlice();
 	[[nodiscard]] Uuid GetStrUuid() { return Uuid{GetVString()}; }
 	RX_ALWAYS_INLINE bool GetBool() { return bool(GetVarUInt()); }
-	size_t Pos() const noexcept { return pos_; }
+	[[nodiscard]] size_t Pos() const noexcept { return pos_; }
 	void SetPos(size_t p) noexcept { pos_ = p; }
-	const uint8_t* Buf() const noexcept { return buf_; }
-	size_t Len() const noexcept { return len_; }
+	[[nodiscard]] const uint8_t* Buf() const noexcept { return buf_; }
+	[[nodiscard]] size_t Len() const noexcept { return len_; }
 	void Reset() noexcept { pos_ = 0; }
 
 private:
@@ -182,7 +182,7 @@ private:
 	[[noreturn]] void throwUnderflowError(uint64_t pos, uint64_t need, uint64_t len);
 	[[noreturn]] void throwScanIntError(std::string_view type);
 	[[noreturn]] void throwUnknownTypeError(std::string_view type);
-	Variant getPVStringVariant();
+	[[nodiscard]] Variant getPVStringVariant();
 	const v_string_hdr* getPVStringPtr();
 
 	const uint8_t* buf_{nullptr};
@@ -246,7 +246,7 @@ public:
 
 		return *this;
 	}
-	bool HasAllocatedBuffer() const noexcept { return buf_ != inBuf_ && !hasExternalBuf_; }
+	[[nodiscard]] bool HasAllocatedBuffer() const noexcept { return buf_ != inBuf_ && !hasExternalBuf_; }
 
 	RX_ALWAYS_INLINE void PutKeyValueType(KeyValueType t) { PutVarUint(t.ToNumber()); }
 	void PutVariant(const Variant& kv) {
@@ -498,8 +498,8 @@ public:
 		memcpy(&buf_[len_], slice.data(), slice.size());
 		len_ += slice.size();
 	}
-	RX_ALWAYS_INLINE uint8_t* Buf() const noexcept { return buf_; }
-	std::unique_ptr<uint8_t[]> DetachBuf() {
+	[[nodiscard]] RX_ALWAYS_INLINE uint8_t* Buf() const noexcept { return buf_; }
+	[[nodiscard]] std::unique_ptr<uint8_t[]> DetachBuf() {
 		std::unique_ptr<uint8_t[]> ret;
 
 		if (!HasAllocatedBuffer()) {
@@ -514,8 +514,8 @@ public:
 		hasExternalBuf_ = false;
 		return ret;
 	}
-	std::unique_ptr<uint8_t[]> DetachLStr();
-	chunk DetachChunk() {
+	[[nodiscard]] std::unique_ptr<uint8_t[]> DetachLStr();
+	[[nodiscard]] chunk DetachChunk() {
 		chunk ch;
 		if (!HasAllocatedBuffer()) {
 			ch.append_strict(Slice());
@@ -529,8 +529,8 @@ public:
 		return ch;
 	}
 	void Reset(size_t len = 0) noexcept { len_ = len; }
-	size_t Len() const noexcept { return len_; }
-	size_t Cap() const noexcept { return cap_; }
+	[[nodiscard]] size_t Len() const noexcept { return len_; }
+	[[nodiscard]] size_t Cap() const noexcept { return cap_; }
 	void Reserve(size_t cap) {
 		if (cap > cap_) {
 			auto b = std::make_unique<uint8_t[]>(cap);

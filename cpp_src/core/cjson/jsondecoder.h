@@ -6,7 +6,10 @@
 
 namespace reindexer {
 
+namespace builders {
 class CJsonBuilder;
+}  // namespace builders
+using builders::CJsonBuilder;
 
 namespace item_fields_validator {
 

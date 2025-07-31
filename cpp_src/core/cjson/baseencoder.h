@@ -8,11 +8,18 @@
 namespace reindexer {
 
 class TagsMatcher;
-class CsvBuilder;
 class FieldsFilter;
+
+namespace builders {
+class CsvBuilder;
 class ProtobufBuilder;
 class CJsonBuilder;
 class MsgPackBuilder;
+}  // namespace builders
+using builders::CsvBuilder;
+using builders::ProtobufBuilder;
+using builders::CJsonBuilder;
+using builders::MsgPackBuilder;
 
 class [[nodiscard]] IEncoderDatasourceWithJoins {
 public:

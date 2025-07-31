@@ -14,6 +14,7 @@ option(WITH_TSAN "Enable ThreadSanitized build" OFF)
 option(WITH_GCOV "Enable instrumented code coverage build" OFF)
 option(WITH_STDLIB_DEBUG "Enable compiler's debug flags for stdlib behaviour validation (gcc/clang)" OFF)
 option(WITH_LTO "Enable LTO (Release/RelWithDebInfo build only)" OFF)
+option(WITH_DEBUG_CONTAINERS "Enable extra debug" OFF)
 
 if(WIN32)
   option(WITH_CPPTRACE "Enable CppTrace" ON)
@@ -59,7 +60,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.4.0")
+set (REINDEXER_VERSION_DEFAULT "5.5.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -293,6 +294,11 @@ if(ENABLE_SSE)
   else()
     message("SSE compiler flags were disabled for the current platform")
   endif()
+endif()
+
+if(WITH_DEBUG_CONTAINERS OR WITH_STDLIB_DEBUG)
+  message("Building reindexer with debug containers")
+  add_definitions(-DREINDEX_DEBUG_CONTAINERS)
 endif()
 
 include_directories(${REINDEXER_SOURCE_PATH})

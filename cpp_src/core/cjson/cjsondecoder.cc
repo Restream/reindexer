@@ -70,8 +70,9 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 									vect.RawData()[i] = rdser.GetVarint();
 								}
 							}
-							floatVectorsHolder.Add(std::move(vect));
-							vectView = floatVectorsHolder.Back();
+							if (floatVectorsHolder.Add(std::move(vect))) {
+								vectView = floatVectorsHolder.Back();
+							}
 						}
 						objectScalarIndexes_.set(indexNumber);	// Indexed float vector is treated as scalar value
 						pl.Set(indexNumber, Variant{vectView});

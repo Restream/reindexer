@@ -22,7 +22,7 @@ class IvfIndex final : public FloatVectorIndex {
 public:
 	IvfIndex(const IndexDef&, PayloadType&&, FieldsSet&&, LogCreation);
 
-	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override;
+	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	using Base::Delete;
 
 	std::unique_ptr<Index> Clone(size_t newCapacity) const override;

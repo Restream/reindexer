@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cmath>
-
 #include <benchmark/benchmark.h>
 
 #include "debug/allocdebug.h"

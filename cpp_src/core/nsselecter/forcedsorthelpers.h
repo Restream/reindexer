@@ -63,11 +63,9 @@ public:
 		} else if (iter->second != cost_ - 1) {
 			static constexpr auto errMsg = "Forced sort value '{}' is duplicated. Deduplicated by the first occurrence.";
 			if constexpr (std::is_same_v<V, Variant>) {
-				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
-				logFmt(LogInfo, errMsg, value.template As<std::string>());
+				logFmt(LogInfo, errMsg, iter->first.template As<std::string>());
 			} else {
-				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
-				logFmt(LogInfo, errMsg, Variant{std::forward<V>(value)}.template As<std::string>());
+				logFmt(LogInfo, errMsg, Variant{iter->first}.template As<std::string>());
 			}
 		}
 	}

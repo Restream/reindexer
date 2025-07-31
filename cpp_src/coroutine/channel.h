@@ -128,10 +128,10 @@ private:
 
 	std::pair<T, bool> pop_impl() {
 		if (data_size_) {
-			auto obj = std::move(buf_[r_ptr_]);
+			size_t r_cur = r_ptr_;
 			r_ptr_ = (r_ptr_ + 1) % buf_.size();
 			--data_size_;
-			return std::make_pair(std::move(obj), true);
+			return std::make_pair(std::move(buf_[r_cur]), true);
 		}
 		return std::make_pair(T(), false);
 	}

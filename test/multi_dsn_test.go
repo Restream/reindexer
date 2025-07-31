@@ -43,8 +43,8 @@ func TestReconnectWithStrategy(t *testing.T) {
 			defer servers[2].Clean()
 			helpers.CreateCluster(t, servers, ns, MultiDSNItem{})
 
-			db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategySynchronized, true))
-			require.NotNil(t, db)
+			db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategySynchronized, true))
+			require.NoError(t, err)
 
 			require.NoError(t, db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{}))
 			itemExp := MultiDSNItem{Name: "some_name"}
@@ -92,10 +92,10 @@ func TestReconnectWithStrategy(t *testing.T) {
 			defer servers[2].Clean()
 
 			helpers.CreateReplication(t, servers[0], servers[1:], ns, MultiDSNItem{})
-			db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategyPrefferRead, true))
-			require.NotNil(t, db)
+			db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategyPrefferRead, true))
+			require.NoError(t, err)
 
-			err := db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
+			err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 			require.NoError(t, err)
 			itemExp := MultiDSNItem{Name: "some_name"}
 			err = db.Upsert(ns, itemExp)
@@ -136,9 +136,9 @@ func TestReconnectWithStrategy(t *testing.T) {
 		servers[0].Run()
 		servers[1].Run()
 
-		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategyPrefferRead, true))
-		require.NotNil(t, db)
-		err := db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
+		db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategyPrefferRead, true))
+		require.NoError(t, err)
+		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)
 		require.Equal(t, servers[0].GetRpcAddr(), db.Status().CProto.ConnAddr)
 		require.NoError(t, servers[0].Stop())
@@ -177,8 +177,8 @@ func TestMultipleDSN(t *testing.T) {
 		defer srv2.Clean()
 		defer srv3.Clean()
 
-		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
-		require.NotNil(t, db)
+		db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+		require.NoError(t, err)
 
 		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)
@@ -232,12 +232,11 @@ func TestMultipleDSN(t *testing.T) {
 		}
 
 		errExp := "failed to connect with provided dsn; dial tcp 127.0.0.1:6671: connect: connection refused; dial tcp 127.0.0.1:6672: connect: connection refused; dial tcp 127.0.0.1:6673: connect: connection refused"
-		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
-		require.NotNil(t, db)
+		db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+		require.ErrorContains(t, err, errExp)
 
-		err := db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
-		require.Error(t, err)
-		assert.Equal(t, errExp, err.Error())
+		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
+		require.ErrorContains(t, err, errExp)
 	})
 
 	t.Run("should be possible Close(), after all srv stopped", func(t *testing.T) {
@@ -253,8 +252,8 @@ func TestMultipleDSN(t *testing.T) {
 		require.NoError(t, err)
 		err = srv2.Run()
 		require.NoError(t, err)
-		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
-		require.NotNil(t, db)
+		db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+		require.NoError(t, err)
 
 		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)
@@ -290,8 +289,8 @@ func TestMultipleDSN(t *testing.T) {
 		dsn := []string{srv.GetDSN()}
 		err := srv.Run()
 		require.NoError(t, err)
-		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
-		require.NotNil(t, db)
+		db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+		require.NoError(t, err)
 
 		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), TestItemPk{})
 		require.NoError(t, err)
@@ -361,8 +360,8 @@ func TestRaceConditionsMultiDSN(t *testing.T) {
 		defer srv1.Clean()
 		defer srv2.Clean()
 
-		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
-		require.NotNil(t, db)
+		db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+		require.NoError(t, err)
 
 		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)
@@ -404,8 +403,8 @@ func TestRaceConditionsMultiDSN(t *testing.T) {
 		defer srv1.Clean()
 		defer srv2.Clean()
 
-		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategyPrefferRead, true))
-		require.NotNil(t, db)
+		db, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithReconnectionStrategy(reindexer.ReconnectStrategyPrefferRead, true))
+		require.NoError(t, err)
 
 		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 		require.NoError(t, err)

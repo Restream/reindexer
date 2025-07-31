@@ -141,6 +141,13 @@ public:
 			assertrx_dbg(other.normCoefs_);
 			const size_t copyCount = other.maxElements_ * sizeof(MTYPE);
 			std::memcpy(normCoefs_.get(), other.normCoefs_.get(), copyCount);
+#if RX_WITH_STDLIB_DEBUG
+			std::scoped_lock lck(mtx_, other.mtx_);
+			const auto it = initialized_.equal_range(other.maxElements_).second;
+			auto initCopy = other.initialized_;
+			initCopy.insert(it, initialized_.end());
+			initialized_ = std::move(initCopy);
+#endif	// RX_WITH_STDLIB_DEBUG
 		}
 	}
 	RX_ALWAYS_INLINE void AddNorm(const void* v, unsigned id) noexcept {

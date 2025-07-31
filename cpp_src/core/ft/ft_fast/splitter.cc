@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, std::string_view extraWordSymbols) {
+static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, const SplitOptions& splitOptions) {
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	auto it = str.begin();
@@ -14,12 +14,12 @@ static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPo
 	for (; it != endIt;) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != endIt && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != endIt && !splitOptions.IsWordSymbol(ch)) {
 			wordStartIt = it;
 			ch = utf8::unchecked::next(it);
 		}
 
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
+		while (splitOptions.IsWordSymbol(ch)) {
 			wordEndIt = it;
 			if (it == endIt) {
 				break;
@@ -44,7 +44,7 @@ static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPo
 			ch = utf8::unchecked::next(it);
 		}
 
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
+		while (splitOptions.IsWordSymbol(ch)) {
 			wordEndIt = it;
 			if (it == endIt) {
 				break;
@@ -58,12 +58,8 @@ static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPo
 
 ISplitterTask::~ISplitterTask() = default;
 
-const std::vector<std::string_view>& SplitterTaskFast::GetResults() {
-	SplitOptions opts;
-	opts.extraWordSymbols = splitter_.GetExtraWordsSymbols();
-	opts.removeDiacriticsMask = splitter_.GetRemoveDiacriticsMask();
-
-	split(text_, convertedText_, words_, opts);
+const std::vector<WordWithPos>& SplitterTaskFast::GetResults() {
+	split(text_, convertedText_, words_, splitter_.GetSplitOptions());
 	return words_;
 }
 
@@ -73,8 +69,7 @@ std::pair<int, int> SplitterTaskFast::Convert(unsigned int wordPosStart, unsigne
 		lastOffset_ = 0;
 	}
 
-	auto ret =
-		word2Pos(text_.substr(lastOffset_), wordPosStart - lastWordPos_, wordPosEnd - lastWordPos_, splitter_.GetExtraWordsSymbols());
+	auto ret = word2Pos(text_.substr(lastOffset_), wordPosStart - lastWordPos_, wordPosEnd - lastWordPos_, splitter_.GetSplitOptions());
 	ret.first += lastOffset_;
 	ret.second += lastOffset_;
 	lastOffset_ = ret.first;
@@ -83,15 +78,15 @@ std::pair<int, int> SplitterTaskFast::Convert(unsigned int wordPosStart, unsigne
 }
 
 void SplitterTaskFast::WordToByteAndCharPos(int wordPosition, WordPosition& out) {
-	out = wordToByteAndCharPos<WordPosition>(text_, wordPosition, splitter_.GetExtraWordsSymbols());
+	out = wordToByteAndCharPos<WordPosition>(text_, wordPosition, splitter_.GetSplitOptions());
 }
 
 void SplitterTaskFast::WordToByteAndCharPos(int wordPosition, WordPositionEx& out) {
-	out = wordToByteAndCharPos<WordPositionEx>(text_, wordPosition, splitter_.GetExtraWordsSymbols());
+	out = wordToByteAndCharPos<WordPositionEx>(text_, wordPosition, splitter_.GetSplitOptions());
 }
 
 template <typename Pos>
-Pos SplitterTaskFast::wordToByteAndCharPos(std::string_view str, int wordPosition, std::string_view extraWordSymbols) {
+Pos SplitterTaskFast::wordToByteAndCharPos(std::string_view str, int wordPosition, const SplitOptions& splitOptions) {
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	Pos wp;
@@ -105,7 +100,7 @@ Pos SplitterTaskFast::wordToByteAndCharPos(std::string_view str, int wordPositio
 			wp.start.ch++;
 		}
 		// skip not word symbols
-		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != str.end() && !splitOptions.IsWordSymbol(ch)) {
 			wordStartIt = it;
 			ch = utf8::unchecked::next(it);
 			if constexpr (needChar) {
@@ -115,7 +110,7 @@ Pos SplitterTaskFast::wordToByteAndCharPos(std::string_view str, int wordPositio
 		if constexpr (needChar) {
 			wp.end.ch = wp.start.ch;
 		}
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
+		while (splitOptions.IsWordSymbol(ch)) {
 			wordEndIt = it;
 			if constexpr (needChar) {
 				wp.end.ch++;
@@ -145,9 +140,9 @@ Pos SplitterTaskFast::wordToByteAndCharPos(std::string_view str, int wordPositio
 	return wp;
 }
 template WordPositionEx SplitterTaskFast::wordToByteAndCharPos<WordPositionEx>(std::string_view str, int wordPosition,
-																			   std::string_view extraWordSymbols);
+																			   const SplitOptions& splitOptions);
 template WordPosition SplitterTaskFast::wordToByteAndCharPos<WordPosition>(std::string_view str, int wordPosition,
-																		   std::string_view extraWordSymbols);
+																		   const SplitOptions& splitOptions);
 
 std::shared_ptr<ISplitterTask> FastTextSplitter::CreateTask() const { return std::make_shared<SplitterTaskFast>(SplitterTaskFast(*this)); }
 

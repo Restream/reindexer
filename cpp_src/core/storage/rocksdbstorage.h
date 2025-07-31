@@ -49,10 +49,13 @@ public:
 	}
 	void Remove(std::string_view key) override { batchWrite_.Delete(rocksdb::Slice(key.data(), key.size())); }
 	void Clear() override { batchWrite_.Clear(); }
+	void Id(uint64_t id) noexcept override { batchId_ = id; }
+	uint64_t Id() const noexcept override { return batchId_; }
 
 private:
 	rocksdb::WriteBatch batchWrite_;
 	friend class RocksDbStorage;
+	uint64_t batchId_;
 };
 
 class RocksDbComparator : public Comparator {

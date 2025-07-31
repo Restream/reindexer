@@ -198,12 +198,12 @@ type Item struct {
 
 func main() {
 	// Init a database instance and choose the binding (builtin)
-	db := reindexer.NewReindex("builtin:///tmp/reindex/testdb")
+	db, err := reindexer.NewReindex("builtin:///tmp/reindex/testdb")
 
 	// OR - Init a database instance and choose the binding (connect to server via TCP sockets)
 	// Database should be created explicitly via reindexer_tool or via WithCreateDBIfMissing option:
 	// If server security mode is enabled, then username and password are mandatory
-	// db := reindexer.NewReindex("cproto://user:pass@127.0.0.1:6534/testdb", reindexer.WithCreateDBIfMissing())
+	// db, err := reindexer.NewReindex("cproto://user:pass@127.0.0.1:6534/testdb", reindexer.WithCreateDBIfMissing())
 
 	// OR - Init a database instance and choose the binding (connect to server via TCP sockets with TLS support
 	// using cprotos-protocol and a package tls from the standard GO library)
@@ -213,18 +213,23 @@ func main() {
 	// tlsConfig := tls.Config{
 	// 	/*required options*/
 	// }
-	// db := reindexer.NewReindex("cprotos://user:pass@127.0.0.1:6535/testdb", reindexer.WithCreateDBIfMissing(), reindexer.WithTLSConfig(&tlsConfig))
+	// db, err := reindexer.NewReindex("cprotos://user:pass@127.0.0.1:6535/testdb", reindexer.WithCreateDBIfMissing(), reindexer.WithTLSConfig(&tlsConfig))
 
 	// OR - Init a database instance and choose the binding (connect to server via unix domain sockets)
 	// Unix domain sockets are available on the unix systems only (socket file has to be explicitly set on the server's side with '--urpcaddr' option)
 	// Database should be created explicitly via reindexer_tool or via WithCreateDBIfMissing option:
 	// If server security mode is enabled, then username and password are mandatory
-	// db := reindexer.NewReindex("ucproto://user:pass@/tmp/reindexer.socket:/testdb", reindexer.WithCreateDBIfMissing())
+	// db, err := reindexer.NewReindex("ucproto://user:pass@/tmp/reindexer.socket:/testdb", reindexer.WithCreateDBIfMissing())
 
 	// OR - Init a database instance and choose the binding (builtin, with bundled server)
 	// serverConfig := config.DefaultServerConfig ()
 	// If server security mode is enabled, then username and password are mandatory
-	// db := reindexer.NewReindex("builtinserver://user:pass@testdb",reindexer.WithServerConfig(100*time.Second, serverConfig))
+	// db, err := reindexer.NewReindex("builtinserver://user:pass@testdb",reindexer.WithServerConfig(100*time.Second, serverConfig))
+
+	// Check the error after rx instance init
+	if err != nil {
+		panic(err)
+	}
 
 	// Create new namespace with name 'items', which will store structs of type 'Item'
 	db.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), Item{})
@@ -276,7 +281,7 @@ func main() {
 		fmt.Println(*elem)
 	}
 	// Check the error
-	if err := iterator.Error(); err != nil {
+	if err = iterator.Error(); err != nil {
 		panic(err)
 	}
 }
@@ -595,7 +600,7 @@ Fields of the joined namespaces must be written like this: `joined_namespace.fie
 
 `ST_Distance()` means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
 
-`hash()` or `hash(seed)` means get hash (uint32) from record id. If `seed` is not specified, it is generated randomly. This function is usefull to randomize sroting order.
+`hash()` or `hash(seed)` means get hash (uint32) from record id. If `seed` is not specified, it is generated randomly. This function is usefully to randomize sorting order.
 
 In SQL query sort expression must be quoted.
 
@@ -1117,12 +1122,12 @@ Reindexer does not support `ANTI JOIN` SQL construction, however, it supports lo
 query := db.Query("items_with_join").
 	Not().
 	OpenBracket(). // Brackets are essential here for NOT to work
-		InnerJoin(
-		db.Query("actors").
-			WhereBool("is_visible", reindexer.EQ, true),
-		"actors").
-		On("id", reindexer.EQ, "id")
-	CloseBracket()
+query.InnerJoin(
+	db.Query("actors").
+		WhereBool("is_visible", reindexer.EQ, true),
+	"actors").
+	On("id", reindexer.EQ, "id")
+query.CloseBracket() // CloseBracket has to be applied to the main query and can't be called directly after On()
 ```
 ```SQL
 SELECT * FROM items_with_join
@@ -1368,12 +1373,12 @@ A namespace row is considered unique if
 - One of the array values is unique
 - Composite value `v1+v2+..` is unique
 All unique values (including all array values) are added to the distinct aggregation result
-2. If multiple fields are specified (Scalar fields and arrays are supported. The fields must be all arrays or scalars)
+2. If multiple fields are specified (Scalar fields and arrays are supported.)
 A table row is considered unique if
 - Scalar `v1+v2+..` is unique
-- Arrays are padded with empty values up to the same length. It turns out to be a rectangular table. Each row of the `v1[i]+v2[i]+...` table is taken, and it checks whether there is such a value in the list of unique values.
+- Arrays are padded with empty values up to the same length. Scalars are represented as arrays of maximum length with the same value. It turns out to be a rectangular table. Each row of the `v1[i]+v2[i]+...` table is taken, and it checks whether there is such a value in the list of unique values.
  If at least one of these values is unique, then the string is considered unique.
-The aggregation result adds up all the unique values `v1[i]+v2[i]+...`. It is worth noting that for non-index values, the sameness of the type (array or scalar) is checked within a single row of the namespace.
+The aggregation result adds up all the unique values `v1[i]+v2[i]+...`. 
 
 
 ### Search in array fields with matching array indexes
@@ -1781,7 +1786,7 @@ To enable generation of OpenTelemetry tracing spans for all exported client side
 pass `reindexer.WithOpenTelemetry()` option when creating a Reindexer DB instance:
 
 ```go
-db := reindexer.NewReindex("cproto://user:pass@127.0.0.1:6534/testdb", reindexer.WithOpenTelemetry())
+db, err := reindexer.NewReindex("cproto://user:pass@127.0.0.1:6534/testdb", reindexer.WithOpenTelemetry())
 ```
 
 All client side calls on the `db` instance will generate OpenTelemetry spans with the name of the performed

@@ -4,6 +4,7 @@
 #include "core/keyvalue/p_string.h"
 #include "core/namespace/float_vectors_indexes.h"
 #include "core/payload/payloadiface.h"
+#include "keyvalue/float_vectors_holder.h"
 #include "updates/updaterecord.h"
 
 namespace reindexer {
@@ -14,13 +15,13 @@ class UpdateEntry;
 
 class ItemModifier {
 public:
-	ItemModifier(const std::vector<UpdateEntry>&, NamespaceImpl& ns, h_vector<updates::UpdateRecord, 2>& replUpdates, const NsContext& ctx);
+	ItemModifier(const std::vector<UpdateEntry>&, NamespaceImpl& ns, UpdatesContainer& replUpdates, const NsContext& ctx);
 	ItemModifier(const ItemModifier&) = delete;
 	ItemModifier& operator=(const ItemModifier&) = delete;
 	ItemModifier(ItemModifier&&) = delete;
 	ItemModifier& operator=(ItemModifier&&) = delete;
 
-	[[nodiscard]] bool Modify(IdType itemId, const NsContext& ctx, h_vector<updates::UpdateRecord, 2>& pendedRepl);
+	[[nodiscard]] bool Modify(IdType itemId, const NsContext& ctx, UpdatesContainer& pendedRepl);
 	PayloadValue& GetPayloadValueBackup() { return rollBackIndexData_.GetPayloadValueBackup(); }
 
 private:
@@ -68,16 +69,15 @@ private:
 	};
 
 	void modifyField(IdType itemId, FieldData& field, Payload& pl, VariantArray& values);
-	void modifyCJSON(IdType itemId, FieldData& field, VariantArray& values, h_vector<updates::UpdateRecord, 2>& pendedRepl,
-					 const NsContext&);
+	void modifyCJSON(IdType itemId, FieldData& field, VariantArray& values, UpdatesContainer& pendedRepl, const NsContext&);
 	void modifyIndexValues(IdType itemId, const FieldData& field, VariantArray& values, Payload& pl);
 
 	void deleteItemFromComposite(IdType itemId, auto& indexesCacheCleaner);
 	void insertItemIntoComposite(IdType itemId, auto& indexesCacheCleaner);
 
-	void getEmbeddingData(const Payload& pl, const Embedder& embedder, std::vector<VariantArray>& data) const;
+	void getEmbeddingData(const Payload& pl, const UpsertEmbedder& embedder, std::vector<VariantArray>& data) const;
 	std::vector<std::pair<int, std::vector<VariantArray>>> getEmbeddersSourceData(const Payload& pl) const;
-	bool skipEmbedder(const Embedder& embedder) const;
+	bool skipEmbedder(const UpsertEmbedder& embedder) const;
 	void updateEmbedding(IdType itemId, const RdxContext& rdxContext, Payload& pl,
 						 const std::vector<std::pair<int, std::vector<VariantArray>>>& embeddersData);
 
@@ -91,13 +91,7 @@ private:
 	class IndexRollBack {
 	public:
 		IndexRollBack(int indexCount) { data_.resize(indexCount); }
-		void Reset(PayloadValue& pv) {
-			pvSave_ = pv;
-			pvSave_.Clone();
-			std::fill(data_.begin(), data_.end(), false);
-			cjsonChanged_ = false;
-			pkModified_ = false;
-		}
+		void Reset(IdType itemId, const PayloadType& pt, const PayloadValue& pv, FloatVectorsIndexes&& fvIndexes);
 		void IndexChanged(size_t index, IsPk isPk) noexcept {
 			data_[index] = true;
 			pkModified_ = pkModified_ || isPk;
@@ -116,6 +110,7 @@ private:
 	private:
 		std::vector<bool> data_;
 		PayloadValue pvSave_;
+		FloatVectorsHolderVector floatVectorsHolder_;
 		bool cjsonChanged_ = false;
 		bool pkModified_ = false;
 	};

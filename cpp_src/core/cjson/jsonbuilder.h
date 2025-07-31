@@ -6,6 +6,7 @@
 #include "tagsmatcher.h"
 
 namespace reindexer {
+namespace builders {
 class JsonBuilder {
 public:
 	JsonBuilder() noexcept : ser_(nullptr), tm_(nullptr) {}
@@ -140,4 +141,6 @@ private:
 	bool emitTrailingForFloat_ = true;
 };
 
+}  // namespace builders
+using builders::JsonBuilder;
 }  // namespace reindexer

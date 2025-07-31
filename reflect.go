@@ -141,6 +141,18 @@ func isIndexFloatVector(idxType string) bool {
 	return idxType == "hnsw" || idxType == "vec_bf" || idxType == "ivf"
 }
 
+func copyParsedPointer(parsed *map[string]bool) *map[string]bool {
+	var parsedCopy *map[string]bool
+	if parsed != nil {
+		m := make(map[string]bool, len(*parsed))
+		for key, value := range *parsed {
+			m[key] = value
+		}
+		parsedCopy = &m
+	}
+	return parsedCopy
+}
+
 func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int, parsed *map[string]bool) (err error) {
 	if len(jsonBasePath) != 0 && !strings.HasSuffix(jsonBasePath, ".") {
 		jsonBasePath = jsonBasePath + "."
@@ -278,7 +290,7 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 				return fmt.Errorf("joined index must be a slice of structs/pointers, but it is a single struct (index name: '%s', field name: '%s', jsonpath: '%s')",
 					reindexPath, field.Name, jsonPath)
 			}
-			if err := parseIndexesImpl(indexDefs, t, subArray, reindexPath, jsonPath, joined, parsed); err != nil {
+			if err := parseIndexesImpl(indexDefs, t, subArray, reindexPath, jsonPath, joined, copyParsedPointer(parsed)); err != nil {
 				return err
 			}
 		} else if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) &&
@@ -286,7 +298,7 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 			// Check if field nested slice of struct
 			if opts.isJoined && len(idxName) > 0 {
 				(*joined)[idxName] = st.Field(i).Index
-			} else if err := parseIndexesImpl(indexDefs, t.Elem(), true, reindexPath, jsonPath, joined, parsed); err != nil {
+			} else if err := parseIndexesImpl(indexDefs, t.Elem(), true, reindexPath, jsonPath, joined, copyParsedPointer(parsed)); err != nil {
 				return err
 			}
 		} else if len(idxName) > 0 {

@@ -29,6 +29,11 @@ Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 }
 
 Error Transaction::Modify(Query&& query, lsn_t lsn) {
+	try {
+		query.VerifyForUpdateTransaction();
+	} catch (std::exception& err) {
+		return err;
+	}
 	if (impl_) {
 		return impl_->Modify(std::move(query), lsn);
 	}

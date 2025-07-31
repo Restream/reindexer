@@ -111,8 +111,9 @@ void ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Prot
 				if (count != f.FloatVectorDimension().Value()) {
 					throwUnexpectedArraySizeForFloatVectorError("protobuf"sv, f, count);
 				}
-				floatVectorsHolder.Add(std::move(vect));
-				vectView = floatVectorsHolder.Back();
+				if (floatVectorsHolder.Add(std::move(vect))) {
+					vectView = floatVectorsHolder.Back();
+				}
 			}
 			pl.Set(indexNumber, Variant{vectView});
 			builder.ArrayRef(item.tagName, indexNumber, count);

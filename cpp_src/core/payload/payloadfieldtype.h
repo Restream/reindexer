@@ -15,7 +15,8 @@ namespace reindexer {
 
 class Index;
 class IndexDef;
-class Embedder;
+class QueryEmbedder;
+class UpsertEmbedder;
 class EmbeddersCache;
 
 // Type of field
@@ -47,8 +48,8 @@ public:
 	[[nodiscard]] const std::vector<std::string>& JsonPaths() const& noexcept { return jsonPaths_; }
 	void AddJsonPath(const std::string& jsonPath) { jsonPaths_.push_back(jsonPath); }
 	[[nodiscard]] std::string ToString() const;
-	[[nodiscard]] std::shared_ptr<const reindexer::Embedder> Embedder() const { return embedder_; }
-	[[nodiscard]] std::shared_ptr<const reindexer::Embedder> QueryEmbedder() const { return queryEmbedder_; }
+	[[nodiscard]] std::shared_ptr<const reindexer::UpsertEmbedder> Embedder() const { return embedder_; }
+	[[nodiscard]] std::shared_ptr<const reindexer::QueryEmbedder> QueryEmbedder() const { return queryEmbedder_; }
 
 	[[nodiscard]] auto Name() const&& = delete;
 	[[nodiscard]] auto JsonPaths() const&& = delete;
@@ -63,8 +64,8 @@ private:
 	size_t offset_{0};
 	uint32_t arrayDims_{0};
 	reindexer::IsArray isArray_{IsArray_False};
-	std::shared_ptr<const reindexer::Embedder> embedder_;
-	std::shared_ptr<const reindexer::Embedder> queryEmbedder_;
+	std::shared_ptr<const reindexer::UpsertEmbedder> embedder_;
+	std::shared_ptr<const reindexer::QueryEmbedder> queryEmbedder_;
 };
 
 }  // namespace reindexer

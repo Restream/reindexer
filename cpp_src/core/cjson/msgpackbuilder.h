@@ -13,7 +13,7 @@ struct JsonNode;
 }
 
 namespace reindexer {
-
+namespace builders {
 class MsgPackBuilder {
 public:
 	MsgPackBuilder(WrSerializer& wrser, ObjType type, size_t size);
@@ -265,5 +265,6 @@ private:
 	ObjType type_;
 	int* tagIndex_;
 };
-
+}  // namespace builders
+using builders::MsgPackBuilder;
 }  // namespace reindexer

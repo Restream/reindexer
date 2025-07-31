@@ -971,8 +971,8 @@ func (q *Query) Delete() (int, error) {
 // DeleteCtx will execute query, and delete items, matches query
 // On success return number of deleted elements
 func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
-	if q.root != nil || len(q.joinQueries) != 0 {
-		return 0, errors.New("Delete does not support joined queries")
+	if q.root != nil {
+		q = q.root
 	}
 
 	if q.closed {
@@ -1122,8 +1122,8 @@ func (q *Query) Update() *Iterator {
 // UpdateCtx will execute query, and update fields in items, which matches query
 // On success return number of update elements
 func (q *Query) UpdateCtx(ctx context.Context) *Iterator {
-	if q.root != nil || len(q.joinQueries) != 0 {
-		return errIterator(errors.New("Update does not support joined queries"))
+	if q.root != nil {
+		q = q.root
 	}
 	if q.closed {
 		q.panicTrace("Update call on already closed query. You should create new Query")

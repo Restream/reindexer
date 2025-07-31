@@ -1,19 +1,18 @@
 #pragma once
 
 #include <fstream>
-#include <random>
 #include <string>
 #include <vector>
 
 #include "base_fixture.h"
 #include "core/ft/config/ftfastconfig.h"
-#include "helpers.h"
+#include "ft_base.h"
 #include "tools/clock.h"
 #include "tools/fsops.h"
 
 // #define ENABLE_TIME_TRACKER
 
-class FullText : private BaseFixture {
+class FullText : private BaseFixture, private reindexer::bench::FullTextBase {
 public:
 	virtual ~FullText() {}
 	FullText(Reindexer* db, const std::string& name, size_t maxItems);
@@ -78,20 +77,12 @@ private:
 	void AlternatingUpdatesAndSelectsByComposite(benchmark::State&);
 	void AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark::State&);
 
-	std::string CreatePhrase();
-
-	std::string MakePrefixWord();
-	std::string MakeSuffixWord();
-	std::string MakeTypoWord();
-
-	std::wstring GetRandomUTF16WordByLength(size_t minLen = 4);
-
-	std::vector<std::string> GetRandomCountries(size_t cnt = 5);
+	[[nodiscard]] std::vector<std::string> GetRandomCountries(size_t cnt = 5);
 	reindexer::Item MakeLowDiversityItem(int id);
 
-	std::vector<std::string> words_;
 	std::vector<std::string> words2_;
 	std::vector<std::string> countries_;
+
 	struct Values {
 		Values(std::string s1, std::string s2, std::string f1, std::string f2) noexcept
 			: search1{std::move(s1)}, search2{std::move(s2)}, field1{std::move(f1)}, field2{std::move(f2)} {}
@@ -219,8 +210,6 @@ private:
 	const std::string kLowDiversityIndexName_ = "search_ld";
 
 	size_t raw_data_sz_ = 0;
-	std::mt19937 randomEngine_{1};
-	std::uniform_int_distribution<int> randomGenerator_{};
 
 	NamespaceDef lowWordsDiversityNsDef_;
 };

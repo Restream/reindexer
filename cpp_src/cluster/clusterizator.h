@@ -60,6 +60,8 @@ public:
 	void SetClusterReplicatonLogLevel(LogLevel level) noexcept;
 
 private:
+	constexpr std::string_view logModuleName() noexcept { return std::string_view("clusterizator"); }
+
 	static bool replicationIsNotRequired(const UpdatesContainer& recs) noexcept;
 	void validateConfig() const;
 
@@ -70,6 +72,7 @@ private:
 	AsyncDataReplicator asyncReplicator_;
 	net::ev::async terminateAsync_;
 	std::atomic<bool> enabled_ = {false};
+	Logger log_;
 };
 
 }  // namespace cluster

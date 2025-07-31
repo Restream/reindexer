@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.4.0
+  version: 5.5.0
 servers:
 - url: /api/v1
 tags:
@@ -4545,11 +4545,22 @@ components:
           description: "Maximum documents count which will be processed in merge query\
             \ results. Increasing this value may refine ranking of queries with high\
             \ frequency words, but will decrease search speed"
+        word_part_delimiters:
+          type: string
+          description: List of symbols, which will be treated as word part delimiters
+          default: -/+_`'
+        min_word_part_size:
+          type: integer
+          description: Min word part size to indexate and search
+          default: 3
+          minimum: 1
+          maximum: 100
         extra_word_symbols:
           type: string
           description: "List of symbols, which will be treated as word part, all other\
-            \ symbols will be treated as word separators"
-          default: -/+
+            \ symbols will be treated as word separators, extra_word_symbols will be replenished\
+            \ with word_part_delimiters automatically at startup"
+          default: -/+_`'
         stop_words:
           type: array
           description: List of objects of stop words. Words from this list will be
@@ -4826,6 +4837,11 @@ components:
               minimum: 0
               type: integer
               description: Relevancy of the synonym match
+            delimited_proc:
+              maximum: 500
+              minimum: 0
+              type: integer
+              description: Relevancy of the delimited word part match
           description: Config for subterm proc rank.
         splitter:
           type: string
@@ -5368,7 +5384,17 @@ components:
             index_optimizer_memory:
               type: integer
               description: "Total memory size, occupation by index optimizer (in bytes)"
+            inmemory_storage_size:
+              type: integer
+              description: "Total memory size, occupied by the AsyncStorage (in bytes)"
           description: Summary of total namespace memory consumption
+        storage:
+          type: object
+          properties:
+            proxy_size:
+              type: integer
+              description: "Total memory size, occupied by synchronous proxy map of the AsyncStorage (in bytes)"
+          description: "Summary of total async storage memory consumption"
         join_cache:
           $ref: '#/components/schemas/JoinCacheMemStats'
         query_cache:

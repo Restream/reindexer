@@ -26,6 +26,8 @@ and three types of metrics for calculating the measure of similarity of vectors:
 For all types of vector indexes, the `metric` and the `dimension` should be explicitly specified.
 Vectors of only the specified dimension can be inserted and searched in the index.
 
+Optionally `radius` could be specified for filtering vectors by metric.
+
 The initial size `start_size` can optionally be specified for `brute force` и `hnsw` indexes, which helps to avoid reallocation and reindexing.
 The optimal value is equal to the size of the fully filled index.
 A much larger `start_size` value will result in memory overuse, while a much smaller `start_size` value will slow down inserts.
@@ -60,7 +62,7 @@ type Item struct {
 	VecBF   []float32     `reindex:"vec_bf,vec_bf,start_size=1000,metric=l2,dimension=1000"`
 	// In case of an array, `dimension` is taken to be equal to the size of the array.
 	VecHnsw [2048]float32 `reindex:"vec_hnsw,hnsw,m=16,ef_construction=200,start_size=1000,metric=inner_product,multithreading=1"`
-	VecIvf  [1024]float32 `reindex:"vec_ivf,ivf,centroids_count=80,metric=cosine"`
+	VecIvf  [1024]float32 `reindex:"vec_ivf,ivf,centroids_count=80,metric=cosine,radius=0.5"`
 }
 ```
 
@@ -70,6 +72,7 @@ ivfOpts := reindexer.FloatVectorIndexOpts {
 	Metric:         "l2",
 	Dimension:      1024,
 	CentroidsCount: 32,
+	Radius:         1e20,
 }
 indexDef := reindexer.IndexDef {
 	Name:       "vec",
@@ -139,51 +142,77 @@ It is also optionally possible to configure a connection `pool`:
   + `read_timeout_ms` - Timeout reading data from embedding service (milliseconds). Optional, minimum 500, default 5000
   + `write_timeout_ms` - Timeout writing data from embedding service (milliseconds). Optional, minimum 500, default 5000
 
-Upsert embedder used in Insert/Update/Upsert operations. Query embedder starts with `WhereKNN`, sending a string as the search value. The embedding process: sends JSON values for all fields involved in the embedding to the specified URL.
+Upsert embedder used in Insert/Update/Upsert operations, send format is json: /api/v1/embedder/*NAME*/produce?format=json.
+Query embedder starts with `WhereKNN`, sending a string as the search value (?format=text).
+The embedding process: sends JSON values for all fields involved in the embedding to the specified URL.
 For one requested vector:
 ```json
-{"data":[["field1Val", "field2Val", "field3Val"]]}
+{"data":[{"field0":val0, "field1":val1, "field2":[val20, val21, ...], ...}]
 ```
 Or a batch for several:
 ```json
-{"data":[["fieldVal00", "field01Val", "field02Val"], ..., ["fieldValN0", "fieldN1Val", "fieldN2Val"]]}
+{"data":[{"field0":val0, "field1":[val10, val11], ...}, ..., {"field0":val0, "field1":[], ...}]}
+```
+Query embedder format for single and for package for multiple:
+```json
+{"data":["WhereKNN input search text", ...]}
+```
+For information on request/response formats, [openapi spec](embedders_api.yaml).
+As a response, the produce should always return an array of arrays of objects to support subsequent chunking:
+```json
+[
+  "_comment": "One array corresponds to one object/string that came to produce",
+  [
+    "_comment": "One such object corresponds to one chunk. At this stage, there should always be one chunk, and the data from the 'chunk' itself will be ignored - only the vector from the embedding field will be used",
+    {
+      "chunk": "some data",
+      "embedding": [ 1.1, 0.7, ...]
+    },
+    {
+      "chunk": "more data",
+      "embedding": [ 0.1, -1.0, ...]
+    },
+    ...
+  ],
+  ...
+]
 ```
 
 - Go
 ```go
-embeddingPoolOpts := reindexer.EmbedderConnectionPool{
-	Connections:    20,
-	ConnectTimeout: 100,
+connectConfig := &bindings.EmbedderConnectionPoolConfig{
+	Connections:    3,
+	ConnectTimeout: 500,
+	ReadTimeout:    500,
+	WriteTimeout:   500,
 }
-upsertEmbedderOpts := reindexer.UpsertEmbedder{
-	Name:                   "UpsertEmbedder",
-	URL:                    "http://127.0.0.1:9088/embedder",
-	Fields:                 []string{"strIdxField1", "strIdxField2"},
-	EmbeddingStrategy:      "empty_only",
-	EmbedderConnectionPool: embeddingPoolOpts,
+embedderConfig := &bindings.EmbedderConfig{
+	URL:                  "http://127.0.0.1:8000",
+	Fields:               []string{"name", "value"},
+	CacheTag:             "HNSW",
+	EmbeddingStrategy:    "always",
+	ConnectionPoolConfig: connectConfig,
 }
-queryEmbedderOpts := DefaultQueryEmbedderConfig("http://127.0.0.1:9088/embedder")
-embeddingOpts := reindexer.Embedding{
-	UpsertEmbedder: upsertEmbedderOpts,
-	QueryEmbedder: queryEmbedderOpts,
+embeddingConfig := &bindings.EmbeddingConfig{
+	UpsertEmbedder: embedderConfig,
 }
 hnswSTOpts := reindexer.FloatVectorIndexOpts{
 	Metric:             "inner_product",
 	Dimension:          1024,
-	M:                  32,
+	M:                  8,
 	EfConstruction:     100,
-	StartSize:          200,
-	MultithreadingMode: 0,
-	Embedding:          embeddingOpts,
+	StartSize:          256,
+	MultithreadingMode: 1,
+	EmbeddingConfig:    embeddingConfig,
 }
-indexDef = reindexer.IndexDef{
+indexDef := reindexer.IndexDef{
 	Name:      "vec",
 	JSONPaths: []string{"vec"},
 	IndexType: "hnsw",
 	FieldType: "float_vector",
 	Config:    hnswSTOpts,
 }
-err := DB.AddIndex("ns_name", indexDef)
+err := DB.AddIndex("embedding_hnws", indexDef)
 if err != nil {
 	panic(err)
 }
@@ -236,6 +265,9 @@ item := reindexer.DBConfigItem{
 	Embedders: &nsConfig,
 }
 err := DB.Upsert(reindexer.ConfigNamespaceName, item)
+if err != nil {
+	panic(err)
+}
 ```
 - SQL
 ```SQL
@@ -291,16 +323,15 @@ Result:
 Supported filtering operations on floating-point vector fields are `KNN`, `Empty`, and `Any`.
 It is not possible to use multiple `KNN` filters in a query, and it is impossible to combine filtering by `KNN` and fulltext.
 
-Parameters set for `KNN`-query depends on the specific index type. The only required parameter for `KNN` is `k` - the maximum number of documents returned from the index for subsequent filtering.
+Parameters set for `KNN`-query depends on the specific index type. It is required to specify `k` or `radius` (or both) for every index type. `k` is the maximum number of documents returned from the index for subsequent filtering.
 
-> #### Range search
-> In addition to the parameter `k`, the query results can also be filtered by a `rank`-value using the parameter, wich called `radius`. It's named so because, under the `L2`-metric, it restricts vectors from query result to a sphere of the specified radius.
->
-> *Note: To avoid confusion, for performance optimization, the ranks of vectors in the query result are actually squared distances to the query vector. Thus, while the parameter is called `radius`, the passed value is interpreted as the squared distance.*
->
-> - For the `L2`-metric, vectors are discarded if their ranks are greater than the `radius`-parameter value.
-> - For `cosine` and `inner product` metrics, the logic is reversed: vectors with rank-values less than the threshold are discarded. The `radius`-parameter can also take negative values for these metrics.
-> Both parameters (`k` and `radius`) can be specified together, or only one of them may be used.
+In addition to the parameter `k` (or instead it), the query results can also be filtered by a `rank`-value using the parameter `radius`. It's named so because, under the `L2`-metric, it restricts vectors from query result to a sphere of the specified radius.
+
+*Note: To avoid confusion, in case of `L2`-metric, for performance optimization, the ranks of vectors in the query result are actually squared distances to the query vector. Thus, while the parameter is called `radius`, the passed value is interpreted as the squared distance.*
+
+- For the `L2`-metric, vectors are discarded if their ranks are greater than the `radius`-parameter value.
+- For `cosine` and `inner product` metrics, the logic is reversed: vectors with rank-values less than the threshold are discarded. The `radius`-parameter can also take negative values for these metrics.
+Both parameters (`k` and `radius`) can be specified together, or only one of them may be used.
 
 When searching by `hnsw` index, you can additionally specify the `ef` parameter.
 Increasing this parameter allows you to get a higher quality result (recall rate), but at the same time slows down the search.
@@ -322,17 +353,14 @@ SELECT * FROM test_ns WHERE KNN(vec_ivf, [2.4, 3.5, ...], k=100, nprobe=10)
 The `knn` query parameters are passed in the `reindexer.BaseKnnSearchParam` structure, or in specific structures for each index type: `reindexer.IndexBFSearchParam`, `reindexer.IndexHnswSearchParam` or `reindexer.IndexIvfSearchParam`.
 There are factory methods for constructing them:
 ```go
-func NewIndexBFSearchParam(baseParam *BaseKnnSearchParam) (*IndexBFSearchParam, error)
-func NewIndexHnswSearchParam(ef int, baseParam *BaseKnnSearchParam) (*IndexHnswSearchParam, error)
-func NewIndexIvfSearchParam(nprobe int, baseParam *BaseKnnSearchParam) (*IndexIvfSearchParam, error)
+func NewIndexBFSearchParam(baseParam BaseKnnSearchParam) (*IndexBFSearchParam, error)
+func NewIndexHnswSearchParam(ef int, baseParam BaseKnnSearchParam) (*IndexHnswSearchParam, error)
+func NewIndexIvfSearchParam(nprobe int, baseParam BaseKnnSearchParam) (*IndexIvfSearchParam, error)
 ```
 ```go
 knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(4291)
 // knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(4291).SetRadius(31.2)
 // knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetRadius(31.2)
-if err != nil {
-	panic(err)
-}
 // brute force
 db.Query("test_ns").WhereKnn("vec_bf", []float32{2.4, 3.5, ...}, knnBaseSearchParams)
 // hnsw
@@ -365,23 +393,25 @@ SELECT * FROM test_ns WHERE KNN(vec_ivf, '<text to embed calculate>', k=100, npr
 - Go
 ```go
 knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(4291)
-if err != nil {
-    panic(err)
-}
 // brute force
-db.Query("test_ns").WhereKnnString("vec_bf", "<text to embed calculate>", knnBaseSearchParams)
+it := db.Query("test_ns").WhereKnnString("vec_bf", "<text to embed calculate>", knnBaseSearchParams).Exec()
+defer it.Close()
+
 // hnsw
 hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(100000, knnBaseSearchParams)
 if err != nil {
     panic(err)
 }
-db.Query("test_ns").WhereKnnString("vec_hnsw", "<text to embed calculate>", hnswSearchParams)
+it := db.Query("test_ns").WhereKnnString("vec_hnsw", "<text to embed calculate>", hnswSearchParams).Exec()
+defer it.Close()
+
 // ivf
 ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, knnBaseSearchParams)
 if err != nil {
     panic(err)
 }
-db.Query("test_ns").WhereKnnString("vec_ivf", "<text to embed calculate>", ivfSearchParams)
+it := db.Query("test_ns").WhereKnnString("vec_ivf", "<text to embed calculate>", ivfSearchParams).Exec()
+defer it.Close()
 ```
 -HTTP
 ```http request
@@ -413,9 +443,6 @@ SELECT *, RANK() FROM test_ns WHERE KNN(vec_bf, [2.4, 3.5, ...], k=200)
 ```
 ```go
 knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(200)
-if err != nil {
-	panic(err)
-}
 db.Query("test_ns").WithRank().WhereKnn("vec_bf", []float32{2.4, 3.5, ...}, knnBaseSearchParams)
 ```
 Result:
@@ -431,9 +458,6 @@ SELECT * FROM test_ns WHERE KNN(vec_hnsw, [2.4, 3.5, ...], k=100, ef=150)
 ```
 ```go
 knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(100)
-if err != nil {
-	panic(err)
-}
 hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(150, knnBaseSearchParams)
 if err != nil {
 	panic(err)
@@ -446,9 +470,6 @@ SELECT *, RANK() FROM test_ns WHERE KNN(vec_bf, [2.4, 3.5, ...], k=100)
 ```
 ```go
 knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(100)
-if err != nil {
-	panic(err)
-}
 db.Query("test_ns").
 	WithRank().
 	WhereKnn("vec_bf", []float32{2.4, 3.5, ...}, knnBaseSearchParams)
@@ -459,9 +480,6 @@ SELECT *, vectors() FROM test_ns WHERE KNN(vec_ivf, [2.4, 3.5, ...], k=200, npro
 ```
 ```go
 knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(100)
-if err != nil {
-	panic(err)
-}
 ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(32, knnBaseSearchParams)
 if err != nil {
 	panic(err)
@@ -476,9 +494,6 @@ SELECT *, VecBF FROM test_ns WHERE id > 5 AND KNN(vec_ivf, [2.4, 3.5, ...], k=30
 ```
 ```go
 knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(300)
-if err != nil {
-	panic(err)
-}
 ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(32, knnBaseSearchParams)
 if err != nil {
 	panic(err)
@@ -501,9 +516,6 @@ ORDER BY 'rank() * 10 - id' DESC
 ```
 ```go
 knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(10000)
-if err != nil {
-	panic(err)
-}
 ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(32, knnBaseSearchParams)
 if err != nil {
 	panic(err)

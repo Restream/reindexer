@@ -132,9 +132,6 @@ token tokenizer::next_token(flags flgs) {
 		++pos_;
 	}
 
-	// null terminate it
-	res.text_.reserve(res.text_.size() + 1);
-	*(res.text_.begin() + res.text_.size()) = 0;
 	skip_space();
 	return res;
 }

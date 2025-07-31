@@ -222,7 +222,9 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 		}
 		storageType = srcNs.storage_.GetType();
 		srcNs.storage_.Close();
-		fs::RmDirAll(dbpath);
+		if (fs::RmDirAll(dbpath) != 0) {
+			logFmt(LogError, "Failed to remove folder {}, error : {}", dbpath, strerror(errno));
+		}
 		int renameRes = fs::Rename(srcDbpath, dbpath);
 		if (renameRes < 0) {
 			if (dst) {

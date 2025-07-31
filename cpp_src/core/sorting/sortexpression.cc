@@ -357,22 +357,22 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name)) {
 					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Distance between two identical indexes");
 				}
-				Append({op, negative},
-					   DistanceBetweenJoinedIndexesSameNs{jNsIdx1, std::move(parsedIndexName1.name), std::move(parsedIndexName2.name)});
+				rx_unused = Append({op, negative}, DistanceBetweenJoinedIndexesSameNs{jNsIdx1, std::move(parsedIndexName1.name),
+																					  std::move(parsedIndexName2.name)});
 			} else {
-				Append({op, negative},
-					   DistanceBetweenJoinedIndexes{jNsIdx1, std::move(parsedIndexName1.name),
-													static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
-													std::move(parsedIndexName2.name)});
+				rx_unused = Append({op, negative}, DistanceBetweenJoinedIndexes{
+													   jNsIdx1, std::move(parsedIndexName1.name),
+													   static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
+													   std::move(parsedIndexName2.name)});
 			}
 		} else {
 			skipSpaces();
 			if (!expr.empty() && expr[0] == '(') {
 				const auto point = parsePoint(expr, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
-				Append({op, negative}, DistanceJoinedIndexFromPoint{jNsIdx1, std::move(parsedIndexName1.name), point});
+				rx_unused = Append({op, negative}, DistanceJoinedIndexFromPoint{jNsIdx1, std::move(parsedIndexName1.name), point});
 			} else {
-				Append({op, negative},
-					   DistanceBetweenIndexAndJoinedIndex{std::move(parsedIndexName2.name), jNsIdx1, std::move(parsedIndexName1.name)});
+				rx_unused = Append({op, negative}, DistanceBetweenIndexAndJoinedIndex{std::move(parsedIndexName2.name), jNsIdx1,
+																					  std::move(parsedIndexName1.name)});
 			}
 		}
 	} else if (!expr.empty() && expr[0] == '(') {
@@ -389,11 +389,11 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Allowed only one function inside ST_Geometry");
 		}
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
-			Append({op, negative},
-				   DistanceJoinedIndexFromPoint{static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
-												std::move(parsedIndexName2.name), point});
+			rx_unused = Append({op, negative}, DistanceJoinedIndexFromPoint{
+												   static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
+												   std::move(parsedIndexName2.name), point});
 		} else {
-			Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName2.name), point});
+			rx_unused = Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName2.name), point});
 		}
 	} else {
 		if (expr.empty() || expr[0] != ',') {
@@ -403,20 +403,21 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		skipSpaces();
 		const auto parsedIndexName2 = parseIndexName(expr, joinedSelectors, fullExpr);
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
-			Append({op, negative},
-				   DistanceBetweenIndexAndJoinedIndex{std::move(parsedIndexName1.name),
-													  static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
-													  std::move(parsedIndexName2.name)});
+			rx_unused = Append({op, negative}, DistanceBetweenIndexAndJoinedIndex{
+												   std::move(parsedIndexName1.name),
+												   static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
+												   std::move(parsedIndexName2.name)});
 		} else {
 			skipSpaces();
 			if (!expr.empty() && expr[0] == '(') {
 				const auto point = parsePoint(expr, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
-				Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName1.name), point});
+				rx_unused = Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName1.name), point});
 			} else {
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name)) {
 					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Distance between two identical indexes");
 				}
-				Append({op, negative}, DistanceBetweenIndexes{std::move(parsedIndexName1.name), std::move(parsedIndexName2.name)});
+				rx_unused =
+					Append({op, negative}, DistanceBetweenIndexes{std::move(parsedIndexName1.name), std::move(parsedIndexName2.name)});
 			}
 		}
 	}
@@ -450,9 +451,9 @@ void SortExpression::parseRank(std::string_view& expr, const std::vector<T>& joi
 			expr.remove_prefix(countOfCharsParsedAsDouble);
 			skipSpaces();
 		}
-		Append<RankNamed>({op, negative}, std::move(rankIndexName.name), defaultValue);
+		rx_unused = Append<RankNamed>({op, negative}, std::move(rankIndexName.name), defaultValue);
 	} else {
-		Append<Rank>({op, negative});
+		rx_unused = Append<Rank>({op, negative});
 	}
 }
 
@@ -503,17 +504,17 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				auto parsedIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
 				if (parsedIndexName.joinedSelectorIt == joinedSelectors.cend()) {
 					skipSpaces();
-					Append<SortExprFuncs::Index>({op, negative}, std::move(parsedIndexName.name));
+					rx_unused = Append<SortExprFuncs::Index>({op, negative}, std::move(parsedIndexName.name));
 				} else {
 					auto dist = static_cast<size_t>(parsedIndexName.joinedSelectorIt - joinedSelectors.cbegin());
-					Append<JoinedIndex>({op, negative}, dist, std::move(parsedIndexName.name));
+					rx_unused = Append<JoinedIndex>({op, negative}, dist, std::move(parsedIndexName.name));
 				}
 				*containIndexOrFunction = true;
 			} else {
 				int countOfCharsParsedAsDouble = 0;
 				const double value = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
 				if (countOfCharsParsedAsDouble != 0) {
-					Append<Value>({op, false}, negative ? -value : value);
+					rx_unused = Append<Value>({op, false}, negative ? -value : value);
 					expr.remove_prefix(countOfCharsParsedAsDouble);
 				} else {
 					auto parsedIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
@@ -557,9 +558,9 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 										throwParseError(fullExpr, expr.data() - fullExpr.data(), "Rank constant of RRF must be >= 1"sv);
 									}
 									skipSpaces();
-									Append<Rrf>({OpPlus, false}, rankConst);
+									rx_unused = Append<Rrf>({OpPlus, false}, rankConst);
 								} else {
-									Append<Rrf>({OpPlus, false});
+									rx_unused = Append<Rrf>({OpPlus, false});
 								}
 								*isRrf = true;
 							} else if (funcName == "abs"sv) {
@@ -573,12 +574,12 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 								uint32_t seed = 0;
 								auto [ptr, ec] = std::from_chars(expr.data(), expr.data() + expr.size(), seed);
 								if (ec == std::errc()) {
-									Append({op, negative}, SortExprFuncs::SortHash{seed});
+									rx_unused = Append({op, negative}, SortExprFuncs::SortHash{seed});
 									expr.remove_prefix(ptr - expr.data());
 								} else if (ec == std::errc::result_out_of_range) {
 									throwParseError(fullExpr, expr.data() - fullExpr.data(), "Number is out of range"sv);
 								} else {
-									Append({op, negative}, SortExprFuncs::SortHash{});
+									rx_unused = Append({op, negative}, SortExprFuncs::SortHash{});
 								}
 								skipSpaces();
 							} else {
@@ -589,12 +590,12 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 							}
 							expr.remove_prefix(1);
 						} else {
-							Append<SortExprFuncs::Index>({op, negative}, std::move(parsedIndexName.name));
+							rx_unused = Append<SortExprFuncs::Index>({op, negative}, std::move(parsedIndexName.name));
 						}
 					} else {
-						Append<JoinedIndex>({op, negative},
-											static_cast<size_t>(parsedIndexName.joinedSelectorIt - joinedSelectors.cbegin()),
-											std::move(parsedIndexName.name));
+						rx_unused = Append<JoinedIndex>({op, negative},
+														static_cast<size_t>(parsedIndexName.joinedSelectorIt - joinedSelectors.cbegin()),
+														std::move(parsedIndexName.name));
 					}
 					*containIndexOrFunction = true;
 				}
@@ -801,23 +802,25 @@ std::string ProxiedSortExpression::getJsonPath(std::string_view columnName, int 
 
 void ProxiedSortExpression::fill(SortExpression::const_iterator it, SortExpression::const_iterator endIt, const NamespaceImpl& ns) {
 	for (; it != endIt; ++it) {
-		it->Visit([](const auto&) { throw Error{errQueryExec, "JOIN is unsupported in proxied query"sv}; },
-				  [&](const SortExpressionBracket& b) {
-					  OpenBracket(it->operation, b.IsAbs());
-					  fill(it.cbegin(), it.cend(), ns);
-					  CloseBracket();
-				  },
-				  [&](const Value& v) { Append(it->operation, v); },
-				  [&](const SortExprFuncs::Index& i) { Append<ProxiedField>(it->operation, getJsonPath(i.column, i.index, ns)); },
-				  [&](const Rank&) { Append<Rank>(it->operation); }, [&](const RankNamed& r) { Append(it->operation, r); },
-				  [&](const SortExprFuncs::SortHash& sh) { Append(it->operation, sh); },
-				  [&](const DistanceFromPoint& i) {
-					  Append<ProxiedDistanceFromPoint>(it->operation, getJsonPath(i.column, i.index, ns), i.point);
-				  },
-				  [&](const DistanceBetweenIndexes& i) {
-					  Append<ProxiedDistanceBetweenFields>(it->operation, getJsonPath(i.column1, i.index1, ns),
-														   getJsonPath(i.column2, i.index2, ns));
-				  });
+		it->Visit(
+			[](const auto&) { throw Error{errQueryExec, "JOIN is unsupported in proxied query"sv}; },
+			[&](const SortExpressionBracket& b) {
+				OpenBracket(it->operation, b.IsAbs());
+				fill(it.cbegin(), it.cend(), ns);
+				CloseBracket();
+			},
+			[&](const Value& v) { rx_unused = Append(it->operation, v); },
+			[&](const SortExprFuncs::Index& i) { rx_unused = Append<ProxiedField>(it->operation, getJsonPath(i.column, i.index, ns)); },
+			[&](const Rank&) { rx_unused = Append<Rank>(it->operation); },
+			[&](const RankNamed& r) { rx_unused = Append(it->operation, r); },
+			[&](const SortExprFuncs::SortHash& sh) { rx_unused = Append(it->operation, sh); },
+			[&](const DistanceFromPoint& i) {
+				rx_unused = Append<ProxiedDistanceFromPoint>(it->operation, getJsonPath(i.column, i.index, ns), i.point);
+			},
+			[&](const DistanceBetweenIndexes& i) {
+				rx_unused = Append<ProxiedDistanceBetweenFields>(it->operation, getJsonPath(i.column1, i.index1, ns),
+																 getJsonPath(i.column2, i.index2, ns));
+			});
 	}
 }
 

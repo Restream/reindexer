@@ -63,11 +63,11 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
 		class DummyClusterManager final : public reindexer::cluster::IDataReplicator, public reindexer::cluster::IDataSyncer {
-			Error Replicate(reindexer::cluster::UpdatesContainer&&, std::function<void()> f, const reindexer::RdxContext&) override {
+			Error Replicate(reindexer::UpdatesContainer&&, std::function<void()> f, const reindexer::RdxContext&) override {
 				f();
 				return {};
 			}
-			Error ReplicateAsync(reindexer::cluster::UpdatesContainer&&, const reindexer::RdxContext&) override { return {}; }
+			Error ReplicateAsync(reindexer::UpdatesContainer&&, const reindexer::RdxContext&) override { return {}; }
 			void AwaitInitialSync(const reindexer::NamespaceName&, const reindexer::RdxContext&) const override {}
 			void AwaitInitialSync(const reindexer::RdxContext&) const override {}
 			bool IsInitialSyncDone(const reindexer::NamespaceName&) const override { return true; }

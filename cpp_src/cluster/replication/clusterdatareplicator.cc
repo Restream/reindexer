@@ -12,7 +12,10 @@ ClusterDataReplicator::ClusterDataReplicator(ClusterDataReplicator::UpdatesQueue
 				   [this](uint32_t uid, bool online) {
 					   UpdatesContainer recs;
 					   recs.emplace_back(updates::URType::NodeNetworkCheck, uid, online);
-					   updatesQueue_.PushNowait(std::move(recs));
+					   std::pair<Error, bool> res = updatesQueue_.PushNowait(std::move(recs));
+					   if (!res.first.ok()) {
+						   logWarn("Error while PushNowait: {}", res.first.what());
+					   }
 				   }),
 	  updatesQueue_(q),
 	  sharedSyncState_(s),

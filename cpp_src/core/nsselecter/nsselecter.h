@@ -42,13 +42,13 @@ private:
 	template <typename JoinPreResultCtx>
 	struct LoopCtx {
 		LoopCtx(SelectIteratorContainer& sIt, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& ctx, const QueryPreprocessor& qpp,
-				RVector<Aggregator, 4>& agg, ExplainCalc& expl)
+				h_vector<Aggregator, 4>& agg, ExplainCalc& expl)
 			: qres(sIt), sctx(ctx), qPreproc(qpp), aggregators(agg), explain(expl) {}
 		SelectIteratorContainer& qres;
 		bool calcTotal = false;
 		SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx;
 		const QueryPreprocessor& qPreproc;
-		RVector<Aggregator, 4>& aggregators;
+		h_vector<Aggregator, 4>& aggregators;
 		ExplainCalc& explain;
 		unsigned start = QueryEntry::kDefaultOffset;
 		unsigned count = QueryEntry::kDefaultLimit;
@@ -70,9 +70,9 @@ private:
 	void calculateSortExpressions(RankT, IdType rowId, IdType properRowId, SelectCtx&, const LocalQueryResults&);
 	template <bool aggregationsOnly, typename JoinPreResultCtx>
 	void addSelectResult(RankT, IdType rowId, IdType properRowId, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx,
-						 RVector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool needAggsCalc, bool preselectForFt);
+						 h_vector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool needAggsCalc, bool preselectForFt);
 
-	RVector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
+	h_vector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
 	void setLimitAndOffset(ItemRefVector& result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, RankedTypeQuery, IndexValueType rankedIndexNo,
 							   bool availableSelectBySortIndex) const;
@@ -81,6 +81,7 @@ private:
 									   SkipSortingEntry&, StrictMode);
 	void getSortIndexValue(const SortingContext& sortCtx, IdType rowId, VariantArray& value, RankT, const joins::NamespaceResults*,
 						   const JoinedSelectors&, int shardId);
+	const CollateOpts& getSortIndexCollateOpts(const SortingContext& sortCtx, const JoinedSelectors&);
 	void processLeftJoins(LocalQueryResults& qr, SelectCtx& sctx, size_t startPos, const RdxContext&);
 	[[nodiscard]] bool checkIfThereAreLeftJoins(SelectCtx& sctx) const;
 	template <typename It, typename JoinPreResultCtx>
@@ -95,9 +96,10 @@ private:
 	void checkStrictModeAgg(StrictMode strictMode, std::string_view name, const NamespaceName& nsName,
 							const TagsMatcher& tagsMatcher) const;
 
-	void writeAggregationResultMergeSubQuery(LocalQueryResults& result, RVector<Aggregator, 4>&& aggregators, SelectCtx& ctx);
+	void writeAggregationResultMergeSubQuery(LocalQueryResults& result, h_vector<Aggregator, 4>&& aggregators, SelectCtx& ctx);
 	[[noreturn]] RX_NO_INLINE void throwIncorrectRowIdInSortOrders(int rowId, const Index& firstSortIndex,
 																   const SelectIterator& firstIterator);
+	[[noreturn]] RX_NO_INLINE void throwUnexpectedItemID(IdType rowId, IdType properRowId);
 	template <typename JoinPreResultCtx>
 	void holdFloatVectors(LocalQueryResults&, SelectCtxWithJoinPreSelect<JoinPreResultCtx>&, size_t offset, const FieldsFilter&) const;
 	NamespaceImpl* ns_;

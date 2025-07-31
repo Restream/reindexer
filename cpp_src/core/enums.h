@@ -65,6 +65,11 @@ BOOL_ENUM(Changed)
 BOOL_ENUM(Desc)
 BOOL_ENUM(ExtraIndexDescription)
 BOOL_ENUM(NeedCreate)
+BOOL_ENUM(IsRequired)
+BOOL_ENUM(AllowAdditionalProps)
+BOOL_ENUM(MustExist)
+BOOL_ENUM(PrefAndStemmersForbidden)
+BOOL_ENUM(SetLimit0ForChangeJoin)
 
 #undef BOOL_ENUM
 

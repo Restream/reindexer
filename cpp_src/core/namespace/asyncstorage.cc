@@ -13,7 +13,7 @@ void AsyncStorage::Close() {
 	reset();
 }
 
-AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& storageLock) : isCopiedNsStorage_{true} {
+AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& storageLock) : isCopiedNsStorage_{true}, proxy_(*this) {
 	if (!storageLock.OwnsThisFlushMutex(o.flushMtx_)) {
 		throw Error(errLogic, "Storage must be locked during copying (flush mutex)");
 	}
@@ -69,21 +69,6 @@ AsyncStorage::ConstCursor AsyncStorage::GetCursor(StorageOpts& opts) const {
 	return ConstCursor(std::move(lck), std::unique_ptr<datastorage::Cursor>(storage_->GetCursor(opts)));
 }
 
-void AsyncStorage::WriteSync(const StorageOpts& opts, std::string_view key, std::string_view value) {
-	std::lock_guard lck(storageMtx_);
-	syncOp(
-		[this, &opts](std::string_view k, std::string_view v) {
-			throwOnStorageCopy();
-			return storage_->Write(opts, k, v);
-		},
-		[this](std::string_view k, std::string_view v) { write(true, k, v); }, key, value);
-}
-
-void AsyncStorage::RemoveSync(const StorageOpts& opts, std::string_view key) {
-	std::lock_guard lck(storageMtx_);
-	removeSync(opts, key);
-}
-
 void AsyncStorage::Flush(const StorageFlushOpts& opts) {
 	// Flush must be performed in single thread
 	std::lock_guard flushLck(flushMtx_);
@@ -125,9 +110,6 @@ void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT
 			totalUpdatesCount_.fetch_add(src.curUpdatesChunck_.updatesCount, std::memory_order_release);
 			src.totalUpdatesCount_.fetch_sub(src.curUpdatesChunck_.updatesCount, std::memory_order_release);
 			finishedUpdateChuncks_.push_front(std::move(src.curUpdatesChunck_));
-			if (lastBatchWithSyncUpdates_ >= 0) {
-				++lastBatchWithSyncUpdates_;
-			}
 		}
 		while (src.finishedUpdateChuncks_.size()) {
 			auto& upd = src.finishedUpdateChuncks_.back();
@@ -135,10 +117,8 @@ void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT
 			src.totalUpdatesCount_.fetch_sub(upd.updatesCount, std::memory_order_release);
 			finishedUpdateChuncks_.push_front(std::move(upd));
 			src.finishedUpdateChuncks_.pop_back();
-			if (lastBatchWithSyncUpdates_ >= 0) {
-				++lastBatchWithSyncUpdates_;
-			}
 		}
+		batchIdCounter_.store(src.batchIdCounter_, std::memory_order_release);
 		src.storage_.reset();
 		// Do not update lockfree status here to avoid status flickering on ns copying
 	}
@@ -150,6 +130,7 @@ void AsyncStorage::clearUpdates() {
 	curUpdatesChunck_.reset();
 	recycled_.clear();
 	totalUpdatesCount_.store(0, std::memory_order_release);
+	batchIdCounter_.store(0, std::memory_order_release);
 }
 
 void AsyncStorage::flush(const StorageFlushOpts& opts) {
@@ -196,9 +177,7 @@ void AsyncStorage::flush(const StorageFlushOpts& opts) {
 				uptr.updatesCount = 0;
 
 				lck.lock();
-				if (lastBatchWithSyncUpdates_ >= 0) {
-					--lastBatchWithSyncUpdates_;
-				}
+				proxy_.Erase(uptr->Id());
 				recycleUpdatesCollection(std::move(uptr));
 			};
 
@@ -246,6 +225,7 @@ AsyncStorage::UpdatesPtrT AsyncStorage::createUpdatesCollection() noexcept {
 		} else {
 			ret.reset(storage_->GetUpdatesCollection());
 		}
+		ret->Id(batchIdCounter_.fetch_add(1, std::memory_order_acq_rel));
 	}
 	return ret;
 }

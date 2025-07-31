@@ -1,16 +1,10 @@
 #include <iostream>
 
 #include <benchmark/benchmark.h>
-#include "core/reindexer.h"
-#include "tools/fsops.h"
 #include "tools/reporter.h"
 
 #include "args/args.hpp"
 #include "ft_fixture.h"
-#include "ft_merge_limit.h"
-
-using std::shared_ptr;
-using reindexer::Reindexer;
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 const int kItemsInBenchDataset = 1'000;
@@ -22,23 +16,12 @@ const int kItemsInBenchDataset = 100'000;
 
 // NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
 int main(int argc, char** argv) {
-	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/ft_bench_test");
-	if (reindexer::fs::RmDirAll(storagePath) < 0 && errno != ENOENT) {
-		std::cerr << "Could not clean working dir '" << storagePath << "'.";
-		std::cerr << "Reason: " << strerror(errno) << std::endl;
-
-		return 1;
-	}
-
-	auto DB = std::make_shared<Reindexer>();
-	auto err = DB->Connect("builtin://" + storagePath);
-	if (!err.ok()) {
-		return err.code();
-	}
+	using namespace std::string_view_literals;
+	auto DB = InitBenchDB("ft_bench_test"sv);
 
 	FullText ft(DB.get(), "fulltext", kItemsInBenchDataset);
 
-	err = ft.Initialize();
+	auto err = ft.Initialize();
 	if (!err.ok()) {
 		return err.code();
 	}

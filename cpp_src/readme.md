@@ -207,7 +207,11 @@ Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i
 Go binding for reindexer is using [prometheus/client_golang](https://github.com/prometheus/client_golang) to collect some metrics (RPS and request's latency) from client's side. Pass `WithPrometheusMetrics()`-option to enable metrics collecting:
 ```
 // Create DB connection for cproto-mode with metrics enabled
-db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometheusMetrics())
+db, err := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometheusMetrics())
+// Check status of the created DB instance
+if err != nil {
+	panic(err)
+}
 // Register prometheus handle for your HTTP-server to be able to get metrics from the outside
 http.Handle("/metrics", promhttp.Handler())
 ```
@@ -392,11 +396,11 @@ syntax = "proto3";
 
 // Message with document schema from namespace test_ns_1603265619355
 message test_ns_1603265619355 {
-	int64 test_3 = 3;
-	int64 test_4 = 4;
-	int64 test_5 = 5;
-	int64 test_2 = 2;
-	int64 test_1 = 1;
+	sint64 test_3 = 3;
+	sint64 test_4 = 4;
+	sint64 test_5 = 5;
+	sint64 test_2 = 2;
+	sint64 test_1 = 1;
 }
 // Possible item schema variants in QueryResults or in ModifyResults
 message ItemsUnion {
@@ -411,24 +415,27 @@ message QueryResults {
 	repeated string namespaces = 2;
 	bool cache_enabled = 3;
 	string explain = 4;
-	int64 total_items = 5;
-	int64 query_total_items = 6;
+	sint64 total_items = 5;
+	sint64 query_total_items = 6;
 	message Columns {
 		string name = 1;
 		double width_percents = 2;
-		int64 max_chars = 3;
-		int64 width_chars = 4;
+		sint64 max_chars = 3;
+		sint64 width_chars = 4;
 	}
 	repeated Columns columns = 7;
 	message AggregationResults {
 		double value = 1;
 		string type = 2;
 		message Facets {
-			int64 count = 1;
+			sint64 count = 1;
 			repeated string values = 2;
 		}
 		repeated Facets facets = 3;
-		repeated string distincts = 4;
+		message Distincts {
+			repeated string values = 2;
+		}
+		repeated Distincts distincts = 4;
 		repeated string fields = 5;
 	}
 	repeated AggregationResults aggregations = 8;
@@ -437,14 +444,14 @@ message QueryResults {
 // - PUT/POST/DELETE api/v1/db/:db/namespaces/:ns/items
 message ModifyResults {
 	repeated ItemsUnion items = 1;
-	int64 updated = 2;
+	sint64 updated = 2;
 	bool success = 3;
 }
 // The ErrorResponse message is schema of http API methods response on error condition
 // With non 200 http status code
 message ErrorResponse {
 	bool success = 1;
-	int64 response_code = 2;
+	sint64 response_code = 2;
 	string description = 3;
 }
 ```

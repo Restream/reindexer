@@ -9,6 +9,7 @@ class Client;
 
 namespace reindexer {
 
+class chunk;
 class ConnectorPool;
 
 class [[nodiscard]] HttpConnector final {
@@ -28,7 +29,7 @@ public:
 		bool ok{false};
 		std::string content;
 	};
-	Response Send(const std::string& path, std::string_view json);
+	Response Send(const std::string& path, chunk&& json);
 
 private:
 	friend ConnectorPool;

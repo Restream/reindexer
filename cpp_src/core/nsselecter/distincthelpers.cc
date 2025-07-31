@@ -9,29 +9,36 @@ namespace DistinctHelpers {
 	values.reserve(rowLen);
 	bool isNullValue = true;
 
-	const auto process = [&](const auto& vv) {
-		if (dataIndex < vv.size()) {
-			values.push_back(Variant(vv[dataIndex]));
-			isNullValue = false;
+	const auto process = [&](const auto& vv, reindexer::IsArray isArray) {
+		if (isArray) {
+			if (dataIndex < vv.size()) {
+				values.emplace_back(vv[dataIndex]);
+				isNullValue = false;
+			} else {
+				values.emplace_back();
+			}
 		} else {
-			values.push_back(Variant{});
+			if (vv.size()) {
+				values.emplace_back(vv[0]);
+				isNullValue = false;
+			} else {
+				values.emplace_back();
+			}
 		}
 	};
 	for (unsigned int k = 0; k < rowLen; k++) {
-		std::visit(
-			overloaded{[&](const std::span<const bool>& vv) { process(vv); }, [&](const std::span<const int64_t>& vv) { process(vv); },
-					   [&](const std::span<const double>& vv) { process(vv); }, [&](const std::span<const float>& vv) { process(vv); },
-					   [&](const std::span<const int32_t>& vv) { process(vv); }, [&](const std::span<const Uuid>& vv) { process(vv); },
-					   [&](const std::span<const p_string>& vv) { process(vv); }, [&](const VariantArray& vv) { process(vv); },
-					   [&](const std::span<const std::string_view>& vv) {
-						   if (dataIndex < vv.size()) {
-							   values.push_back(Variant(p_string(&vv[dataIndex])));
-							   isNullValue = false;
-						   } else {
-							   values.push_back(Variant{});
-						   }
-					   }},
-			data[k]);
+		std::visit(overloaded{[&](const concepts::SpanFromOneOf<const bool, const int32_t, const int64_t, const double, const float,
+																const Uuid, const p_string> auto& vv) { process(vv, data[k].isArray); },
+							  [&](const VariantArray& vv) { process(vv, data[k].isArray); },
+							  [&](const std::span<const std::string_view>& vv) {
+								  if (dataIndex < vv.size()) {
+									  values.emplace_back(p_string(&vv[dataIndex]));
+									  isNullValue = false;
+								  } else {
+									  values.emplace_back();
+								  }
+							  }},
+				   data[k].data);
 	}
 	return isNullValue;
 }

@@ -193,11 +193,20 @@ void AggregationResult::GetProtobufSchema(ProtobufSchemaBuilder& builder) {
 	{
 		ProtobufSchemaBuilder facets = results.Object(fields.Facets(), "Facets");
 		facets.Field(Parameters::Count(), fields.Count(), FieldProps{KeyValueType::Int{}});
-		facets.Field(Parameters::Values(), fields.Values(), FieldProps{KeyValueType::String{}, true});
+		facets.Field(Parameters::Values(), fields.Values(), FieldProps{KeyValueType::String{}, IsArray_True});
 	}
-	results.Field(Parameters::Facets(), fields.Facets(), FieldProps{KeyValueType::Tuple{}, true, false, false, "Facets"});
-	results.Field(Parameters::Distincts(), fields.Distincts(), FieldProps{KeyValueType::String{}, true});
-	results.Field(Parameters::Fields(), fields.Fields(), FieldProps{KeyValueType::String{}, true});
+	results.Field(Parameters::Facets(), fields.Facets(),
+				  FieldProps{KeyValueType::Tuple{}, IsArray_True, IsRequired_False, AllowAdditionalProps_False, "Facets"});
+
+	{
+		ProtobufSchemaBuilder distincts = results.Object(fields.Facets(), "Distincts");
+		distincts.Field(Parameters::Values(), fields.Values(), FieldProps{KeyValueType::String{}, IsArray_True});
+	}
+
+	results.Field(Parameters::Distincts(), fields.Distincts(),
+				  FieldProps{KeyValueType::Tuple{}, IsArray_True, IsRequired_False, AllowAdditionalProps_False, "Distincts"});
+
+	results.Field(Parameters::Fields(), fields.Fields(), FieldProps{KeyValueType::String{}, IsArray_True});
 	results.End();
 }
 
@@ -220,26 +229,7 @@ void AggregationResult::get(Builder& builder, const Fields& parametersFields) co
 	}
 
 	if (!distincts_.empty()) {
-		if (std::is_same_v<ProtobufBuilder, Builder> && GetDistinctColumnCount() > 1) {
-			throw Error(errParseProtobuf, "protobuf is not supported for distinct with multiple fields");
-		}
-		auto distinctsArray = builder.Array(parametersFields.Distincts(), GetDistinctRowCount());
-		const unsigned dc = GetDistinctRowCount();
-
-		if (GetDistinctColumnCount() == 1) {
-			for (unsigned i = 0; i < dc; i++) {
-				std::span<const Variant> row = GetDistinctRow(i);
-				distinctsArray.Put(TagName::Empty(), row[0].As<std::string>(payloadType_, distinctsFields_));
-			}
-		} else {
-			for (unsigned i = 0; i < dc; i++) {
-				std::span<const Variant> row = GetDistinctRow(i);
-				auto distinctsSubArray = distinctsArray.Array(std::string_view{}, row.size());
-				for (const auto& vv : row) {
-					distinctsSubArray.Put(TagName::Empty(), vv.As<std::string>());
-				}
-			}
-		}
+		serialiseDistinct(builder, parametersFields);
 	}
 
 	auto fieldsArray = builder.Array(parametersFields.Fields(), fields_.size());
@@ -247,6 +237,41 @@ void AggregationResult::get(Builder& builder, const Fields& parametersFields) co
 		fieldsArray.Put(TagName::Empty(), v);
 	}
 	fieldsArray.End();
+}
+
+template <typename Fields>
+void AggregationResult::serialiseDistinct(ProtobufBuilder& builder, const Fields& parametersFields) const {
+	auto distinctsArray = builder.Array(parametersFields.Distincts(), GetDistinctRowCount());
+	const unsigned dc = GetDistinctRowCount();
+	for (unsigned i = 0; i < dc; i++) {
+		auto DistinctRowObj = distinctsArray.Object(TagName::Empty(), 1);
+		std::span<const Variant> row = GetDistinctRow(i);
+		auto distinctsSubArray = DistinctRowObj.Array(parametersFields.Values(), row.size());
+		for (const auto& vv : row) {
+			distinctsSubArray.Put(TagName::Empty(), vv.As<std::string>(payloadType_, distinctsFields_));
+		}
+	}
+}
+
+template <typename Builder, typename Fields>
+void AggregationResult::serialiseDistinct(Builder& builder, const Fields& parametersFields) const {
+	auto distinctsArray = builder.Array(parametersFields.Distincts(), GetDistinctRowCount());
+	const unsigned dc = GetDistinctRowCount();
+
+	if (GetDistinctColumnCount() == 1) {
+		for (unsigned i = 0; i < dc; i++) {
+			std::span<const Variant> row = GetDistinctRow(i);
+			distinctsArray.Put(TagName::Empty(), row[0].As<std::string>(payloadType_, distinctsFields_));
+		}
+	} else {
+		for (unsigned i = 0; i < dc; i++) {
+			std::span<const Variant> row = GetDistinctRow(i);
+			auto distinctsSubArray = distinctsArray.Array(std::string_view{}, row.size());
+			for (const auto& vv : row) {
+				distinctsSubArray.Put(TagName::Empty(), vv.As<std::string>());
+			}
+		}
+	}
 }
 
 }  // namespace reindexer

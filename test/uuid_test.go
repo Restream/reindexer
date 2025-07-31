@@ -86,13 +86,18 @@ func init() {
 	tnamespaces[testUuidItemCreateNs] = TestUuidStruct{}
 }
 
-func configureAndStartServer(httpaddr string, rpcaddr string, path string) *reindexer.Reindexer {
+func configureAndStartServer(t *testing.T, httpaddr string, rpcaddr string, path string) *reindexer.Reindexer {
 	cfg := config.DefaultServerConfig()
 	cfg.Net.HTTPAddr = httpaddr
 	cfg.Net.RPCAddr = rpcaddr
 	cfg.Storage.Path = path
+	cfg.Logger.LogLevel = "trace"
+	cfg.Logger.ServerLog = "stdout"
+	cfg.Logger.CoreLog = "stdout"
+	cfg.Logger.RPCLog = "stdout"
 	os.RemoveAll(cfg.Storage.Path)
-	rx := reindexer.NewReindex("builtinserver://uudb", reindexer.WithServerConfig(time.Second*100, cfg))
+	rx, err := reindexer.NewReindex("builtinserver://uudb", reindexer.WithServerConfig(time.Second*100, cfg))
+	require.NoError(t, err)
 	return rx
 }
 
@@ -302,7 +307,7 @@ func TestUuidClientCproto(t *testing.T) {
 	const ns = testUuidCprotoConnectNs
 
 	t.Run("test add uuid index on non-indexed string", func(t *testing.T) {
-		rx1 := configureAndStartServer("0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "rx_uuid1"))
+		rx1 := configureAndStartServer(t, "0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "rx_uuid1"))
 		defer rx1.Close()
 		require.NoError(t, rx1.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoIdx{}))
 
@@ -312,7 +317,8 @@ func TestUuidClientCproto(t *testing.T) {
 		}
 		item := upsertUniqueTestUuidStructNoIdx(t, rx1, ns, 50, &uuids)
 
-		rx2 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		rx2, err := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		require.NoError(t, err)
 		defer rx2.Close()
 		require.NoError(t, rx2.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoIdx{}))
 
@@ -323,12 +329,13 @@ func TestUuidClientCproto(t *testing.T) {
 			assert.EqualValues(t, it1.Object(), item)
 		}
 
-		rx3 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		rx3, err := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		require.NoError(t, err)
 		defer rx3.Close()
 		require.NoError(t, rx3.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoIdx{}))
 
 		// add uuid index on string field
-		err := rx3.AddIndex(ns, reindexer.IndexDef{
+		err = rx3.AddIndex(ns, reindexer.IndexDef{
 			Name: "uuid", JSONPaths: []string{"uuid"}, IndexType: "hash", FieldType: "uuid"})
 		require.NoError(t, err)
 
@@ -350,7 +357,7 @@ func TestUuidClientCproto(t *testing.T) {
 	})
 
 	t.Run("test update index from string to uuid", func(t *testing.T) {
-		rx1 := configureAndStartServer("0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "rx_uuid2"))
+		rx1 := configureAndStartServer(t, "0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "rx_uuid2"))
 		defer rx1.Close()
 		require.NoError(t, rx1.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoTag{}))
 
@@ -360,7 +367,8 @@ func TestUuidClientCproto(t *testing.T) {
 		}
 		item := upsertUniqueTestUuidStructNoTag(t, rx1, ns, 50, &uuids)
 
-		rx2 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		rx2, err := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		require.NoError(t, err)
 		defer rx2.Close()
 		require.NoError(t, rx2.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoTag{}))
 
@@ -371,12 +379,13 @@ func TestUuidClientCproto(t *testing.T) {
 			assert.EqualValues(t, it1.Object(), item)
 		}
 
-		rx3 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		rx3, err := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		require.NoError(t, err)
 		defer rx3.Close()
 		require.NoError(t, rx3.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoTag{}))
 
 		// update index field type from string to uuid
-		err := rx3.UpdateIndex(ns, reindexer.IndexDef{
+		err = rx3.UpdateIndex(ns, reindexer.IndexDef{
 			Name: "uuid", JSONPaths: []string{"uuid"}, IndexType: "hash", FieldType: "uuid"})
 		require.NoError(t, err)
 
@@ -400,9 +409,9 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 	const ns = testUuidBuiltinserverConnectNs
 
 	t.Run("test add uuid index on non-indexed string", func(t *testing.T) {
-		rx1 := configureAndStartServer("0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "reindex_uuid11"))
+		rx1 := configureAndStartServer(t, "0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "reindex_uuid11"))
 		defer rx1.Close()
-		rx2 := configureAndStartServer("0:29189", "0:26635", path.Join(helpers.GetTmpDBDir(), "reindex_uuid12"))
+		rx2 := configureAndStartServer(t, "0:29189", "0:26635", path.Join(helpers.GetTmpDBDir(), "reindex_uuid12"))
 		defer rx2.Close()
 		helpers.ConfigureReplication(t, rx1, "leader", nil, []reindexer.DBAsyncReplicationNode{{DSN: "cproto://127.0.0.1:26635/uudb", Namespaces: nil}})
 		helpers.ConfigureReplication(t, rx2, "follower", nil, nil)
@@ -430,7 +439,8 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 			assert.EqualValues(t, it1.Object(), item)
 		}
 
-		rx3 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		rx3, err := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		require.NoError(t, err)
 		defer rx3.Close()
 		require.NoError(t, rx3.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoIdx{}))
 
@@ -461,9 +471,9 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 	})
 
 	t.Run("test update index from string to uuid", func(t *testing.T) {
-		rx1 := configureAndStartServer("0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "reindex_uuid11"))
+		rx1 := configureAndStartServer(t, "0:29188", "0:26634", path.Join(helpers.GetTmpDBDir(), "reindex_uuid11"))
 		defer rx1.Close()
-		rx2 := configureAndStartServer("0:29189", "0:26635", path.Join(helpers.GetTmpDBDir(), "reindex_uuid12"))
+		rx2 := configureAndStartServer(t, "0:29189", "0:26635", path.Join(helpers.GetTmpDBDir(), "reindex_uuid12"))
 		defer rx2.Close()
 		helpers.ConfigureReplication(t, rx1, "leader", nil, []reindexer.DBAsyncReplicationNode{{DSN: "cproto://127.0.0.1:26635/uudb", Namespaces: nil}})
 		helpers.ConfigureReplication(t, rx2, "follower", nil, nil)
@@ -491,7 +501,8 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 			assert.EqualValues(t, it1.Object(), item)
 		}
 
-		rx3 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		rx3, err := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
+		require.NoError(t, err)
 		defer rx3.Close()
 		require.NoError(t, rx3.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoTag{}))
 

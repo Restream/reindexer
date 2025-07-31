@@ -31,7 +31,10 @@ void NamespaceMemStat::GetJSON(WrSerializer& ser) const {
 		.Put("data_size", Total.dataSize)
 		.Put("indexes_size", Total.indexesSize)
 		.Put("cache_size", Total.cacheSize)
-		.Put("index_optimizer_memory", Total.indexOptimizerMemory);
+		.Put("index_optimizer_memory", Total.indexOptimizerMemory)
+		.Put("inmemory_storage_size", Total.inmemoryStorageSize);
+
+	builder.Object("storage").Put("proxy_size", Storage.proxySize);
 
 	if (type.empty() || type == kNamespaceStatType) {
 		{

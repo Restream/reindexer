@@ -220,14 +220,6 @@ enum {
 	kResultsFlagMaxValue
 };
 
-typedef enum IndexOpt {
-	kIndexOptPK = 1 << 7,
-	kIndexOptArray = 1 << 6,
-	kIndexOptDense = 1 << 5,
-	kIndexOptSparse = 1 << 3,
-	kIndexOptNoColumn = 1 << 2,
-} IndexOpt;
-
 typedef enum StotageOpt {
 	kStorageOptEnabled = 1 << 0,
 	kStorageOptDropOnFileFormatError = 1 << 1,

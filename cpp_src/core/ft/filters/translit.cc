@@ -1,6 +1,4 @@
 #include "translit.h"
-#include <assert.h>
-#include <memory.h>
 #include <span>
 
 namespace reindexer {
@@ -10,7 +8,8 @@ Translit::Translit() {
 	PrepareEnglish();
 }
 
-void Translit::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) {
+void Translit::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorage& result, int proc,
+						   fast_hash_map<std::wstring, size_t>& patternsUsed) {
 	std::wstring strings[maxTranslitVariants];
 	Context ctx;
 	if (data.length()) {
@@ -21,15 +20,15 @@ void Translit::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& 
 
 	for (size_t i = 0; i < data.length(); ++i) {
 		wchar_t symbol = data[i];
-		if (symbol >= ruLettersStartUTF16 && symbol <= ruLettersStartUTF16 + ruAlfavitSize - 1) {  // russian symbol
+		if (symbol >= ruLettersStartUTF16 && symbol <= ruLettersStartUTF16 + ruAlphabetSize - 1) {	// russian symbol
 			for (int j = 0; j < maxTranslitVariants; ++j) {
-				assertrx(symbol >= ruLettersStartUTF16 && symbol - ruLettersStartUTF16 < ruAlfavitSize);
+				assertrx(symbol >= ruLettersStartUTF16 && symbol - ruLettersStartUTF16 < ruAlphabetSize);
 				strings[j] += ru_buf_[symbol - ruLettersStartUTF16][j];
 			}
 
 			ctx.Clear();
 
-		} else if (symbol >= enLettersStartUTF16 && symbol < enLettersStartUTF16 + enAlfavitSize) {	 // en symbol
+		} else if (symbol >= enLettersStartUTF16 && symbol < enLettersStartUTF16 + engAlphabetSize) {  // en symbol
 			for (int j = 0; j < maxTranslitVariants; ++j) {
 				auto sym = GetEnglish(symbol, j, ctx);
 				if (sym.second) {
@@ -58,15 +57,20 @@ void Translit::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& 
 				break;
 			}
 		}
-		if (current.length() && (lastResultIdx < 0 || current != result[lastResultIdx].pattern)) {
+
+		if (current.empty()) {
+			continue;
+		}
+
+		if ((lastResultIdx < 0 || current != result[lastResultIdx].pattern)) {
 			lastResultIdx = result.size();
-			result.emplace_back(std::move(current), proc);
+			AddOrUpdateVariant(result, patternsUsed, {std::move(current), proc, PrefAndStemmersForbidden_False});
 		}
 	}
 }
 
 std::pair<uint8_t, wchar_t> Translit::GetEnglish(wchar_t symbol, size_t variant, Context& ctx) {
-	assertrx(symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < enAlfavitSize);
+	assertrx(symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < engAlphabetSize);
 
 	if (variant == 1 && ctx.GetCount() > 0) {
 		auto sym = en_d_buf_[ctx.GetLast()][symbol - enLettersStartUTF16];
@@ -74,7 +78,7 @@ std::pair<uint8_t, wchar_t> Translit::GetEnglish(wchar_t symbol, size_t variant,
 			return {1, sym};
 		}
 	} else if (variant == 2 && ctx.GetCount() > 1) {
-		auto sym = en_t_buf_[ctx.GetPrevios()][ctx.GetLast()][symbol - enLettersStartUTF16];
+		auto sym = en_t_buf_[ctx.GetPrevious()][ctx.GetLast()][symbol - enLettersStartUTF16];
 		ctx.Set(symbol - enLettersStartUTF16);
 		if (sym) {
 			return {2, sym};
@@ -86,6 +90,7 @@ std::pair<uint8_t, wchar_t> Translit::GetEnglish(wchar_t symbol, size_t variant,
 	}
 	return {0, en_buf_[symbol - enLettersStartUTF16]};
 }
+
 void Translit::Context::Set(unsigned short num) {
 	if (total_count_ > 0) {
 		num_[1] = num_[0];
@@ -97,14 +102,15 @@ void Translit::Context::Set(unsigned short num) {
 		++total_count_;
 	}
 }
+
 unsigned short Translit::Context::GetLast() const { return num_[0]; }
-unsigned short Translit::Context::GetPrevios() const { return num_[1]; }
+unsigned short Translit::Context::GetPrevious() const { return num_[1]; }
 unsigned short Translit::Context::GetCount() const { return total_count_; }
 
 void Translit::Context::Clear() { total_count_ = 0; }
 
 void Translit::PrepareRussian() {
-	for (int i = 0; i < ruAlfavitSize; ++i) {
+	for (int i = 0; i < ruAlphabetSize; ++i) {
 		for (int j = 0; j < maxTranslitVariants; ++j) {
 			ru_buf_[i][j] = L"";
 		}
@@ -153,7 +159,7 @@ void Translit::PrepareRussian() {
 	ru_buf_[31][1] = L"ya";	  // я
 	ru_buf_[31][2] = L"q";	  // я
 
-	for (int i = 0; i < ruAlfavitSize; ++i) {
+	for (int i = 0; i < ruAlphabetSize; ++i) {
 		for (int j = 0; j < maxTranslitVariants; ++j) {
 			if (ru_buf_[i][j].empty()) {
 				ru_buf_[i][j] = ru_buf_[i][0];
@@ -163,7 +169,7 @@ void Translit::PrepareRussian() {
 }
 
 bool Translit::CheckIsEn(wchar_t symbol) {
-	return (symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < enAlfavitSize);
+	return (symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < engAlphabetSize);
 }
 
 void Translit::PrepareEnglish() {
@@ -171,7 +177,7 @@ void Translit::PrepareEnglish() {
 	memset(en_d_buf_, 0, sizeof(en_d_buf_));
 	memset(en_t_buf_, 0, sizeof(en_t_buf_));
 
-	for (int i = 0; i < ruAlfavitSize; ++i) {
+	for (int i = 0; i < ruAlphabetSize; ++i) {
 		for (int j = 0; j < maxTranslitVariants; ++j) {
 			size_t length = ru_buf_[i][j].size();
 
@@ -179,7 +185,7 @@ void Translit::PrepareEnglish() {
 				wchar_t sym = ru_buf_[i][j][0];
 
 				if (CheckIsEn(sym)) {
-					assertrx(sym != 0 && sym >= enLettersStartUTF16 && sym - enLettersStartUTF16 < enAlfavitSize);
+					assertrx(sym != 0 && sym >= enLettersStartUTF16 && sym - enLettersStartUTF16 < engAlphabetSize);
 					en_buf_[ru_buf_[i][j][0] - enLettersStartUTF16] = wchar_t(i + ruLettersStartUTF16);
 				}
 
@@ -188,8 +194,8 @@ void Translit::PrepareEnglish() {
 				wchar_t symSecond = ru_buf_[i][j][1];
 
 				if (CheckIsEn(symFirst) && CheckIsEn(symSecond)) {
-					assertrx(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < enAlfavitSize);
-					assertrx(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < enAlfavitSize);
+					assertrx(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < engAlphabetSize);
+					assertrx(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < engAlphabetSize);
 
 					en_d_buf_[ru_buf_[i][j][0] - enLettersStartUTF16][ru_buf_[i][j][1] - enLettersStartUTF16] =
 						wchar_t(i + ruLettersStartUTF16);
@@ -201,9 +207,9 @@ void Translit::PrepareEnglish() {
 				wchar_t symThird = ru_buf_[i][j][1];
 
 				if (CheckIsEn(symFirst) && CheckIsEn(symSecond) && CheckIsEn(symThird)) {
-					assertrx(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < enAlfavitSize);
-					assertrx(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < enAlfavitSize);
-					assertrx(symThird != 0 && symThird >= enLettersStartUTF16 && symThird - enLettersStartUTF16 < enAlfavitSize);
+					assertrx(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < engAlphabetSize);
+					assertrx(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < engAlphabetSize);
+					assertrx(symThird != 0 && symThird >= enLettersStartUTF16 && symThird - enLettersStartUTF16 < engAlphabetSize);
 					en_t_buf_[ru_buf_[i][j][0] - enLettersStartUTF16][ru_buf_[i][j][1] - enLettersStartUTF16]
 							 [ru_buf_[i][j][2] - enLettersStartUTF16] = wchar_t(i + ruLettersStartUTF16);
 				}

@@ -18,7 +18,7 @@ public:
 		ConnectorProxy& operator=(const ConnectorProxy&) noexcept = delete;
 		ConnectorProxy& operator=(ConnectorProxy&&) noexcept = delete;
 
-		explicit ConnectorProxy(ConnectorProxy&&) noexcept;
+		ConnectorProxy(ConnectorProxy&&) noexcept;
 
 		~ConnectorProxy();
 
@@ -39,7 +39,6 @@ public:
 
 	[[nodiscard]] std::pair<Error, ConnectorProxy> GetConnector(const RdxContext& ctx) noexcept;
 	void ReleaseConnection(const ConnectorProxy& proxy);
-	[[nodiscard]] bool IsEqual(const PoolConfig& config) const noexcept { return config_ == config; }
 
 private:
 	std::mutex mtx_;

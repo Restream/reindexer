@@ -68,14 +68,14 @@ public:
 	[[nodiscard]] Error GetProtobuf(WrSerializer& wrser);
 
 	[[nodiscard]] const PayloadType& Type() const& noexcept { return payloadType_; }
-	[[nodiscard]] PayloadValue& Value()& noexcept { return payloadValue_; }
-	[[nodiscard]] PayloadValue& RealValue()& noexcept { return realValue_; }
+	[[nodiscard]] PayloadValue& Value() & noexcept { return payloadValue_; }
+	[[nodiscard]] PayloadValue& RealValue() & noexcept { return realValue_; }
 	[[nodiscard]] Payload GetPayload() noexcept { return Payload(payloadType_, payloadValue_); }
 	[[nodiscard]] ConstPayload GetConstPayload() const noexcept { return ConstPayload(payloadType_, payloadValue_); }
 	[[nodiscard]] std::shared_ptr<const Schema> GetSchema() const noexcept { return schema_; }
 
 	[[nodiscard]] TagsMatcher& tagsMatcher() noexcept { return tagsMatcher_; }
-	[[nodiscard]] std::shared_ptr<const Schema>& schema()& noexcept { return schema_; }
+	[[nodiscard]] std::shared_ptr<const Schema>& schema() & noexcept { return schema_; }
 
 	void SetPrecepts(std::vector<std::string>&& precepts) {
 		precepts_ = std::move(precepts);

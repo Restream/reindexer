@@ -271,7 +271,7 @@ std::string DBConfigProvider::GetAsyncReplicationToken(std::string_view nsName) 
 	return {};
 }
 
-bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) const {
+void DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) const {
 	using namespace std::string_view_literals;
 	shared_lock<shared_timed_mutex> lk(mtx_);
 	auto it = namespacesData_.find(nsName);
@@ -280,10 +280,9 @@ bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConf
 	}
 	if (it == namespacesData_.end()) {
 		data = {};
-		return false;
+		return;
 	}
 	data = it->second;
-	return true;
 }
 
 Error ProfilingConfigData::FromDefault() noexcept {

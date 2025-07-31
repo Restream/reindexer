@@ -373,10 +373,6 @@ public:
 		memcpy((data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_), &label, sizeof(labeltype));
 	}
 
-	inline labeltype* getExternalLabeLp(tableint internal_id) const {
-		return (labeltype*)(data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_);
-	}
-
 	inline char* getDataByInternalId(tableint internal_id) const {
 		return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
 	}
@@ -456,20 +452,20 @@ public:
 			}
 			size_t size = getListCount((linklistsizeint*)data);
 			tableint* datal = (tableint*)(data + 1);
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)	// Asan reports overflow on prefetch
+#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
 			_mm_prefetch((char*)(visited_array + *(data + 1)), _MM_HINT_T0);
 			_mm_prefetch((char*)(visited_array + *(data + 1) + 64), _MM_HINT_T0);
 			_mm_prefetch(getDataByInternalId(*datal), _MM_HINT_T0);
 			_mm_prefetch(getDataByInternalId(*(datal + 1)), _MM_HINT_T0);
-#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)
+#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 
 			for (size_t j = 0; j < size; j++) {
 				tableint candidate_id = *(datal + j);
 //                    if (candidate_id == 0) continue;
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)	// Asan reports overflow on prefetch
+#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
 				_mm_prefetch((char*)(visited_array + *(datal + j + 1)), _MM_HINT_T0);
 				_mm_prefetch(getDataByInternalId(*(datal + j + 1)), _MM_HINT_T0);
-#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)
+#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 				if (visited_array[candidate_id] == visited_array_tag) {
 					continue;
 				}
@@ -566,21 +562,21 @@ public:
 				metric_distance_computations += size;
 			}
 
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)	// Asan reports overflow on prefetch
+#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
 			_mm_prefetch((char*)(visited_array + *(data + 1)), _MM_HINT_T0);
 			_mm_prefetch((char*)(visited_array + *(data + 1) + 64), _MM_HINT_T0);
 			_mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
 			_mm_prefetch((char*)(data + 2), _MM_HINT_T0);
-#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)
+#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 
 			for (size_t j = 1; j <= size; j++) {
 				int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)	// Asan reports overflow on prefetch
+#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
 				_mm_prefetch((char*)(visited_array + *(data + j + 1)), _MM_HINT_T0);
 				_mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
 							 _MM_HINT_T0);	////////////
-#endif										// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)
+#endif										// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 				if (!(visited_array[candidate_id] == visited_array_tag)) {
 					visited_array[candidate_id] = visited_array_tag;
 
@@ -643,7 +639,6 @@ public:
 		const size_t M) {
 		static_assert(concurrentUpdates == ExpectConcurrentUpdates::No || isSynchronizationPossible<LockerT>(),
 					  "Unable to handle concurrent updates without synchronization");
-		using data_updates_shared_lock = typename LockerT::template shared_lock<typename UpdateLockVecT::MutexT>;
 		if (top_candidates.size() < M) {
 			return;
 		}
@@ -665,13 +660,7 @@ public:
 			bool good = true;
 
 			for (std::pair<dist_t, tableint> second_pair : return_list) {
-				data_updates_shared_lock lck1, lck2;
-				if constexpr (concurrentUpdates == ExpectConcurrentUpdates::Yes) {
-					lck1 = LockerT::MakeSharedLock(data_updates_locks_[std::min(curent_pair.second, second_pair.second)]);
-					if (curent_pair.second != second_pair.second) {
-						lck2 = LockerT::MakeSharedLock(data_updates_locks_[std::max(curent_pair.second, second_pair.second)]);
-					}
-				}
+				auto [lck1, lck2] = getSharedDataUpdateLocksFor<LockerT, concurrentUpdates>(curent_pair.second, second_pair.second);
 				dist_t curdist = fstdistfunc_(getDataByInternalId(second_pair.second), second_pair.second,
 											  getDataByInternalId(curent_pair.second), curent_pair.second);
 				if (curdist < dist_to_query) {
@@ -706,12 +695,26 @@ public:
 	}
 
 	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
+	auto getSharedDataUpdateLocksFor(tableint id1, tableint id2) noexcept {
+		using data_updates_shared_lock = typename LockerT::template shared_lock<typename UpdateLockVecT::MutexT>;
+		data_updates_shared_lock lck1, lck2;
+		if constexpr (concurrentUpdates == ExpectConcurrentUpdates::Yes) {
+			lck1 = LockerT::MakeSharedLock(data_updates_locks_[std::min(id1, id2)]);
+			if (id1 != id2) {
+				lck2 = LockerT::MakeSharedLock(data_updates_locks_[std::max(id1, id2)]);
+			}
+		}
+		return std::make_pair(std::move(lck1), std::move(lck2));
+	}
+
+	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
 	tableint mutuallyConnectNewElement(
 		tableint cur_c,
 		std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>& top_candidates,
 		int level, bool isUpdate) {
 		static_assert(concurrentUpdates == ExpectConcurrentUpdates::No || isSynchronizationPossible<LockerT>(),
 					  "Unable to handle concurrent updates without synchronization");
+
 		size_t Mcurmax = level ? maxM_ : maxM0_;
 		getNeighborsByHeuristic2<LockerT, concurrentUpdates>(top_candidates, M_);
 		if (top_candidates.size() > M_) {
@@ -801,15 +804,19 @@ public:
 				} else {
 					// finding the "weakest" element to replace it with the new one
 					const auto id2 = selectedNeighbors[idx];
-					dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c), cur_c, getDataByInternalId(selectedNeighbors[idx]), id2);
+					dist_t d_max = 0;
+					{
+						auto [lck1, lck2] = getSharedDataUpdateLocksFor<LockerT, concurrentUpdates>(cur_c, id2);
+						d_max = fstdistfunc_(getDataByInternalId(cur_c), cur_c, getDataByInternalId(id2), id2);
+					}
 					// Heuristic:
 					std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidates;
 					candidates.emplace(d_max, cur_c);
 
 					for (size_t j = 0; j < sz_link_list_other; j++) {
-						const auto id1 = data[j], id2 = selectedNeighbors[idx];
-						candidates.emplace(
-							fstdistfunc_(getDataByInternalId(data[j]), id1, getDataByInternalId(selectedNeighbors[idx]), id2), data[j]);
+						const auto id1 = data[j];
+						auto [lck1, lck2] = getSharedDataUpdateLocksFor<LockerT, concurrentUpdates>(id1, id2);
+						candidates.emplace(fstdistfunc_(getDataByInternalId(data[j]), id1, getDataByInternalId(id2), id2), data[j]);
 					}
 
 					getNeighborsByHeuristic2<LockerT, concurrentUpdates>(candidates, Mcurmax);
@@ -1158,7 +1165,7 @@ public:
 		reindexer::CounterGuardAIR32 updatesCounter;
 		if (is_vacant_place) {
 			internal_id_replaced = *deleted_elements.begin();
-			deleted_elements.erase(internal_id_replaced);
+			deleted_elements.erase(deleted_elements.begin());
 			num_deleted_ -= 1;
 			updatesCounter = reindexer::CounterGuardAIR32(concurrent_updates_counter_);
 		}
@@ -1200,12 +1207,12 @@ public:
 					markDeletedInternal(internal_id_replaced);
 					std::lock_guard lock_table = LockerT::MakeLockGuard(label_lookup_lock);
 					label_lookup_.erase(label);
+				} else {
+					// Handling direct deleted_elements.erase called above (even if element is marked as 'deleted'
+					auto [_, inserted] = deleted_elements.emplace(internal_id_replaced);
+					num_deleted_ += int(inserted);
 				}
-				// Handling direct deleted_elements.erase called above
-				auto [_, inserted] = deleted_elements.emplace(internal_id_replaced);
-				if (inserted) {
-					num_deleted_ -= 1;
-				}
+
 				throw;
 			}
 		}
@@ -1343,9 +1350,9 @@ public:
 					_mm_prefetch(getDataByInternalId(*datal), _MM_HINT_T0);
 #endif	// REINDEXER_WITH_SSE
 					for (int i = 0; i < size; i++) {
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)	// Asan reports overflow on prefetch
+#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
 						_mm_prefetch(getDataByInternalId(*(datal + i + 1)), _MM_HINT_T0);
-#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN)
+#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 						tableint cand = datal[i];
 
 						dist_t d;
@@ -1478,7 +1485,7 @@ public:
 		memset(data_level0_memory_ + cur_c * size_data_per_element_, 0, size_data_per_element_);
 
 		// Initialisation of the data and label
-		memcpy(getExternalLabeLp(cur_c), &label, sizeof(labeltype));
+		setExternalLabel(cur_c, label);
 		memcpy(getDataByInternalId(cur_c), data_point, data_size_);
 
 		if (curlevel) {

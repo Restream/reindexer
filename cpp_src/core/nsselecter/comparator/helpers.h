@@ -81,7 +81,7 @@ template <typename T>
 		throw Error{errQueryExec, "Too many arguments for condition {}", CondTypeToStr(cond)};
 	}
 	const auto& val = values[i];
-	assertrx_dbg(!val.IsNullValue());
+	assertrx_throw(!val.IsNullValue());
 	return GetValue<T>(val);
 }
 

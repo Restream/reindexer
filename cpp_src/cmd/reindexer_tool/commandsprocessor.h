@@ -3,6 +3,7 @@
 #include "core/namespacedef.h"
 #include "core/rdxcontext.h"
 #include "dumpoptions.h"
+#include "estl/fast_hash_set.h"
 #include "iotools.h"
 #include "vendor/urlparser/urlparser.h"
 
@@ -22,14 +23,16 @@ typedef std::function<replxx::Replxx::completions_t(const std::string& input, in
 #endif	// REINDEX_WITH_REPLXX
 
 class DumpFileIndex;
+using StringsSetT = reindexer::fast_hash_set<std::string, reindexer::hash_str, reindexer::equal_str, reindexer::less_str>;
 
 template <typename DBInterface>
 class [[nodiscard]] CommandsProcessor {
 public:
 	template <typename... Args>
-	CommandsProcessor(const std::string& outFileName, const std::string& inFileName, unsigned numThreads, unsigned transactionSize,
-					  Args... args)
+	CommandsProcessor(const std::string& outFileName, const std::string& inFileName, const std::vector<std::string>& selectedNamespaces,
+					  unsigned numThreads, unsigned transactionSize, Args... args)
 		: inFileName_(inFileName),
+		  selectedNamespaces_(selectedNamespaces.begin(), selectedNamespaces.end()),
 		  output_(outFileName),
 		  db_(std::move(args)...),
 		  numThreads_(numThreads),
@@ -102,7 +105,7 @@ private:
 
 	class [[nodiscard]] CancelContext : public reindexer::IRdxCancelContext {
 	public:
-		CancelContext() : cancelType_(reindexer::CancelType::None) {}
+		CancelContext() = default;
 		CancelContext(const CancelContext& ctx) = delete;
 		CancelContext& operator=(const CancelContext& ctx) = delete;
 
@@ -138,6 +141,8 @@ private:
 	}
 	URI uri_;
 	std::string inFileName_;
+
+	const StringsSetT selectedNamespaces_;
 	Output output_;
 	std::unordered_map<std::string, std::string> variables_;
 	CancelContext cancelCtx_;

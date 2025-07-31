@@ -15,11 +15,68 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type fixture struct {
+	*NetCProto
+	mockConns       []*MockConnection
+	mockConnFactory *MockConnFactory
+}
+
 var ctx = context.Background()
+
 var dsns = []url.URL{
 	{Host: "127.0.0.1:6531", Scheme: "cproto", Path: "db"},
 	{Host: "127.0.0.1:6532", Scheme: "cproto", Path: "db"},
 	{Host: "127.0.0.1:6533", Scheme: "cproto", Path: "db"},
+}
+
+func newFixture(t *testing.T) *fixture {
+	mockConnFactory := NewMockConnFactory(t)
+
+	fx := &fixture{
+		NetCProto: &NetCProto{
+			dsn: dsn{
+				connFactory:       mockConnFactory,
+				allowUnknownNodes: true,
+			},
+			pool: pool{},
+		},
+		mockConnFactory: mockConnFactory,
+	}
+	return fx
+}
+
+func (fx *fixture) addDSNs(t *testing.T, dsns []url.URL) {
+	for _, u := range dsns {
+		fx.dsn.urls = append(fx.dsn.urls, u)
+		mock := NewMockConnection(t)
+		fx.pool.sharedConns = append(fx.pool.sharedConns, mock)
+		fx.mockConns = append(fx.mockConns, mock)
+	}
+}
+
+func (fx *fixture) createStat() *bindings.ReplicationStat {
+	return &bindings.ReplicationStat{
+		Type: "cluster",
+		Nodes: []bindings.ReplicationNodeStat{
+			{
+				DSN:            fmt.Sprintf("%s://%s/%s", fx.dsn.urls[0].Scheme, fx.dsn.urls[0].Host, fx.dsn.urls[2].Path),
+				IsSynchronized: true,
+				Status:         clusterNodeStatusOnline,
+				Role:           clusterNodeRoleLeader,
+			}, {
+				DSN:            fmt.Sprintf("%s://%s/%s", fx.dsn.urls[1].Scheme, fx.dsn.urls[1].Host, fx.dsn.urls[2].Path),
+				IsSynchronized: true,
+				Status:         clusterNodeStatusOnline,
+				Role:           clusterNodeRoleFollower,
+			}, {
+				DSN:            fmt.Sprintf("%s://%s/%s", fx.dsn.urls[2].Scheme, fx.dsn.urls[2].Host, fx.dsn.urls[2].Path),
+				IsSynchronized: true,
+				Status:         clusterNodeStatusOnline,
+				Role:           clusterNodeRoleFollower,
+			},
+		},
+	}
+
 }
 
 func TestNextDSN(t *testing.T) {
@@ -32,6 +89,7 @@ func TestNextDSN(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, fx.dsn.urls[1].Host, fx.getActiveDSN().Host)
 		})
+
 		t.Run("should get first if current is last idx", func(t *testing.T) {
 			fx := newFixture(t)
 			fx.addDSNs(t, dsns)
@@ -43,6 +101,7 @@ func TestNextDSN(t *testing.T) {
 			}
 		})
 	})
+
 	t.Run("for reconnectStrategyRandom", func(t *testing.T) {
 		t.Run("should get random url", func(t *testing.T) {
 			fx := newFixture(t)
@@ -119,6 +178,7 @@ func TestNextDSN(t *testing.T) {
 			assert.Contains(t, []string{fx.dsn.urls[1].Host, fx.dsn.urls[2].Host}, fx.getActiveDSN().Host)
 		})
 	})
+
 	t.Run("for reconnectStrategyPrefferWrite", func(t *testing.T) {
 		t.Run("should get leader", func(t *testing.T) {
 			fx := newFixture(t)
@@ -135,6 +195,7 @@ func TestNextDSN(t *testing.T) {
 			assert.Equal(t, fx.dsn.urls[0].Host, fx.getActiveDSN().Host)
 		})
 	})
+
 	t.Run("for reconnectStrategyPrefferRead", func(t *testing.T) {
 		t.Run("type cluster", func(t *testing.T) {
 			t.Run("should get follower", func(t *testing.T) {
@@ -170,6 +231,7 @@ func TestNextDSN(t *testing.T) {
 			})
 		})
 	})
+
 	t.Run("should add new cluster dsn to url list", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.addDSNs(t, dsns)
@@ -194,6 +256,7 @@ func TestNextDSN(t *testing.T) {
 		assert.Len(t, fx.dsn.urls, 4)
 		assert.Equal(t, fx.dsn.urls[3].Host, fx.getActiveDSN().Host)
 	})
+
 	t.Run("should error if not found dsn", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.addDSNs(t, dsns)
@@ -209,7 +272,6 @@ func TestNextDSN(t *testing.T) {
 		err := fx.nextDSN(ctx, fx.dsn.reconnectionStrategy, stat)
 		require.EqualError(t, err, "can't find cluster node for reconnect")
 	})
-
 }
 
 func TestConnectDSN(t *testing.T) {
@@ -268,6 +330,7 @@ func TestGetConn(t *testing.T) {
 		_, err := fx.getConnection(ctx)
 		require.NoError(t, err)
 	})
+
 	t.Run("should not get stat for random strategy", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.dsn.reconnectionStrategy = reconnectStrategyRandom
@@ -292,60 +355,4 @@ func TestGetConn(t *testing.T) {
 		_, err := fx.getConnection(ctx)
 		require.NoError(t, err)
 	})
-}
-
-type fixture struct {
-	*NetCProto
-	mockConns       []*MockConnection
-	mockConnFactory *MockConnFactory
-}
-
-func newFixture(t *testing.T) *fixture {
-	mockConnFactory := NewMockConnFactory(t)
-
-	fx := &fixture{
-		NetCProto: &NetCProto{
-			dsn: dsn{
-				connFactory:       mockConnFactory,
-				allowUnknownNodes: true,
-			},
-			pool: pool{},
-		},
-		mockConnFactory: mockConnFactory,
-	}
-	return fx
-}
-
-func (fx *fixture) addDSNs(t *testing.T, dsns []url.URL) {
-	for _, u := range dsns {
-		fx.dsn.urls = append(fx.dsn.urls, u)
-		mock := NewMockConnection(t)
-		fx.pool.sharedConns = append(fx.pool.sharedConns, mock)
-		fx.mockConns = append(fx.mockConns, mock)
-	}
-}
-
-func (fx *fixture) createStat() *bindings.ReplicationStat {
-	return &bindings.ReplicationStat{
-		Type: "cluster",
-		Nodes: []bindings.ReplicationNodeStat{
-			{
-				DSN:            fmt.Sprintf("%s://%s/%s", fx.dsn.urls[0].Scheme, fx.dsn.urls[0].Host, fx.dsn.urls[2].Path),
-				IsSynchronized: true,
-				Status:         clusterNodeStatusOnline,
-				Role:           clusterNodeRoleLeader,
-			}, {
-				DSN:            fmt.Sprintf("%s://%s/%s", fx.dsn.urls[1].Scheme, fx.dsn.urls[1].Host, fx.dsn.urls[2].Path),
-				IsSynchronized: true,
-				Status:         clusterNodeStatusOnline,
-				Role:           clusterNodeRoleFollower,
-			}, {
-				DSN:            fmt.Sprintf("%s://%s/%s", fx.dsn.urls[2].Scheme, fx.dsn.urls[2].Host, fx.dsn.urls[2].Path),
-				IsSynchronized: true,
-				Status:         clusterNodeStatusOnline,
-				Role:           clusterNodeRoleFollower,
-			},
-		},
-	}
-
 }

@@ -362,6 +362,15 @@ private:
 // Current implementation requires 3 allocations for each point
 inline Variant::Variant(Point p) : Variant{VariantArray{p}} {}
 
+namespace concepts {
+
+template <typename T>
+concept ConvertibleToVariant = std::is_constructible_v<Variant, T>;
+
+template <typename T>
+concept ConvertibleToVariantArray = std::is_constructible_v<VariantArray, T>;
+
+}  // namespace concepts
 }  // namespace reindexer
 
 namespace std {

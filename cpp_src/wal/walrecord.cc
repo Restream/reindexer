@@ -173,7 +173,7 @@ static std::string_view wrecType2Str(WALRecType t) {
 	return "<Unknown>"sv;
 }
 
-WrSerializer& WALRecord::Dump(WrSerializer& ser, const std::function<std::string(std::string_view)>& cjsonViewer) const {
+void WALRecord::Dump(WrSerializer& ser, const std::function<std::string(std::string_view)>& cjsonViewer) const {
 	ser << wrecType2Str(type);
 	if (inTransaction) {
 		ser << " InTransaction";
@@ -185,13 +185,15 @@ WrSerializer& WALRecord::Dump(WrSerializer& ser, const std::function<std::string
 		case WalInitTransaction:
 		case WalCommitTransaction:
 		case WalResetLocalWal:
-			return ser;
+			return;
 		case WalItemUpdate:
 		case WalShallowItem:
-			return ser << " rowId=" << id;
+			ser << " rowId=" << id;
+			return;
 		case WalNamespaceRename:
 		case WalTagsMatcher:
-			return ser << ' ' << data;
+			ser << ' ' << data;
+			return;
 		case WalUpdateQuery:
 		case WalIndexAdd:
 		case WalIndexDrop:
@@ -200,15 +202,20 @@ WrSerializer& WALRecord::Dump(WrSerializer& ser, const std::function<std::string
 		case WalForceSync:
 		case WalWALSync:
 		case WalSetSchema:
-			return ser << ' ' << data;
+			ser << ' ' << data;
+			return;
 		case WalPutMeta:
-			return ser << ' ' << itemMeta.key << "=" << itemMeta.value;
+			ser << ' ' << itemMeta.key << "=" << itemMeta.value;
+			return;
 		case WalDeleteMeta:
-			return ser << ' ' << itemMeta.key;
+			ser << ' ' << itemMeta.key;
+			return;
 		case WalItemModify:
-			return ser << (itemModify.modifyMode == ModeDelete ? " Delete " : " Update ") << cjsonViewer(itemModify.itemCJson);
+			ser << (itemModify.modifyMode == ModeDelete ? " Delete " : " Update ") << cjsonViewer(itemModify.itemCJson);
+			return;
 		case WalRawItem:
-			return ser << (" rowId=") << rawItem.id << ": " << cjsonViewer(rawItem.itemCJson);
+			ser << (" rowId=") << rawItem.id << ": " << cjsonViewer(rawItem.itemCJson);
+			return;
 	}
 	fprintf(stderr, "reindexer error: unexpected WAL rec type %d\n", int(type));
 	std::abort();

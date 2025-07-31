@@ -6,12 +6,13 @@
 #include "core/type_consts_helpers.h"
 #include "estl/h_vector.h"
 #include "sortingprioritiestable.h"
+#include "tools/enum_compare.h"
 
-namespace reindexer {
+namespace reindexer::builders {
 class JsonBuilder;
-}  // namespace reindexer
+}  // namespace reindexer::builders
 
-struct CollateOpts {
+struct [[nodiscard]] CollateOpts {
 	explicit CollateOpts(CollateMode mode = CollateNone) noexcept : mode(mode) {}
 	explicit CollateOpts(const std::string& sortOrderUTF8);
 
@@ -21,7 +22,14 @@ struct CollateOpts {
 	void Dump(T& os) const;
 };
 
-enum class [[nodiscard]] IndexComparison { Full, SkipConfig, BasicCompatibilityOnly };
+enum [[nodiscard]] IndexOpt : uint8_t {
+	kIndexOptPK = 1 << 7,
+	kIndexOptArray = 1 << 6,
+	kIndexOptDense = 1 << 5,
+	kIndexOptSparse = 1 << 3,
+	kIndexOptNoColumn = 1 << 2,
+};
+
 enum class [[nodiscard]] MultithreadingMode { SingleThread, MultithreadTransactions };
 
 class [[nodiscard]] FloatVectorIndexOpts {
@@ -116,15 +124,20 @@ public:
 		return *this;
 	}
 	FloatVectorIndexOpts&& SetEmbedding(EmbeddingOpts embedding) && noexcept { return std::move(SetEmbedding(embedding)); }
-	[[nodiscard]] bool operator==(const FloatVectorIndexOpts& o) const noexcept {
-		// NOTE: without embedding_
-		return dimension_ == o.dimension_ && startSize_ == o.startSize_ && M_ == o.M_ && efConstruction_ == o.efConstruction_ &&
-			   nCentroids_ == o.nCentroids_ && multithreadingMode_ == o.multithreadingMode_ && metric_ == o.metric_;
-	}
 	void Validate(IndexType);
 	static FloatVectorIndexOpts ParseJson(IndexType, std::string_view json);
 	[[nodiscard]] std::string GetJson() const;
-	void GetJson(reindexer::JsonBuilder&) const;
+	void GetJson(reindexer::builders::JsonBuilder&) const;
+
+	enum class [[nodiscard]] Diff : uint8_t {
+		Base = 1,
+		Embedding = 1 << 1,
+		Radius = 1 << 2,
+		Full = (Radius << 1) - 1,
+	};
+
+	using DiffResult = compare_enum::Diff<FloatVectorIndexOpts::Diff>;
+	DiffResult Compare(const FloatVectorIndexOpts& o) const noexcept;
 
 private:
 	FloatVectorDimensionInt dimension_{0};
@@ -191,7 +204,6 @@ struct IndexOpts {
 	CollateMode GetCollateMode() const noexcept { return collateOpts_.mode; }
 	reindexer::SortingPrioritiesTable GetCollateSortOrder() const noexcept { return collateOpts_.sortOrderTable; }
 
-	bool IsEqual(const IndexOpts& other, IndexComparison cmpType) const noexcept;
 	bool IsFloatVector() const noexcept { return floatVector_.has_value(); }
 
 	size_t HeapSize() const noexcept { return config_.size(); }
@@ -212,6 +224,17 @@ struct IndexOpts {
 	uint8_t options;
 	CollateOpts collateOpts_;
 	RTreeIndexType rtreeType_ = RStar;
+
+	using OptsDiff = IndexOpt;
+
+	enum class [[nodiscard]] ParamsDiff : uint8_t {
+		CollateOpts = 1,
+		RTreeIndexType = 1 << 1,
+		Config = 1 << 2,
+	};
+
+	using DiffResult = compare_enum::Diff<IndexOpts::ParamsDiff, IndexOpts::OptsDiff, FloatVectorIndexOpts::Diff>;
+	DiffResult Compare(const IndexOpts& o) const noexcept;
 
 private:
 	std::string config_ = "{}";

@@ -6,8 +6,6 @@
 namespace reindexer {
 namespace cluster {
 
-using UpdatesContainer = h_vector<updates::UpdateRecord, 2>;
-
 struct IDataReplicator {
 	virtual Error Replicate(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) = 0;
 	virtual Error ReplicateAsync(UpdatesContainer&& recs, const RdxContext& ctx) = 0;

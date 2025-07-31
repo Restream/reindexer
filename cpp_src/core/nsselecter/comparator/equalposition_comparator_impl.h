@@ -192,10 +192,6 @@ template <>
 class EqualPositionComparatorTypeImpl<key_string> {
 public:
 	EqualPositionComparatorTypeImpl(const CollateOpts& collate) : valuesS_(collate), collate_{collate} {}
-	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = default;
-	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = default;
-	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
-	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 
 	void SetValues(CondType cond, const VariantArray& values) {
 		assertrx_throw(valuesS_.empty());

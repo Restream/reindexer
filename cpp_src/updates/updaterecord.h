@@ -294,4 +294,7 @@ private:
 };
 
 }  // namespace updates
+
+using UpdatesContainer = h_vector<updates::UpdateRecord, 2>;
+
 }  // namespace reindexer

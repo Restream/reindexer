@@ -142,7 +142,12 @@ public:
 	[[nodiscard]] FloatVectorDimension Dimension() const noexcept { return dimension_; }
 	[[nodiscard]] bool IsEmpty() const noexcept { return *this == nullptr; }
 
-	static FloatVectorImpl CreateNotInitialized(FloatVectorDimension dimension) { return FloatVectorImpl(dimension); }
+	static FloatVectorImpl CreateNotInitialized(FloatVectorDimension dimension) {
+		if rx_likely (!dimension.IsZero()) {
+			return FloatVectorImpl(dimension);
+		}
+		return FloatVectorImpl();
+	}
 
 	auto Span() const&& = delete;
 	auto View() const&& = delete;

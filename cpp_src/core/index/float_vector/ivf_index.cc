@@ -119,13 +119,13 @@ Variant IvfIndex::upsert(ConstFloatVectorView vect, IdType id, bool& clearCache)
 
 Variant IvfIndex::upsertConcurrent(ConstFloatVectorView, IdType, bool&) { throw Error(errLogic, "IVF indexes do not support upsertions"); }
 
-void IvfIndex::Delete(const Variant&, IdType id, StringsHolder&, bool&) {
+void IvfIndex::Delete(const Variant&, IdType id, [[maybe_unused]] MustExist mustExist, StringsHolder&, bool&) {
 	if (map_) {
 		const faiss::idx_t faissId = id;
 		map_->remove_ids(faiss::IDSelectorArray{1, &faissId});
 	} else {
 		const auto it = rowId2N_.find(id);
-		assertrx_throw(it != rowId2N_.end());
+		assertrx_throw(!mustExist || it != rowId2N_.end());
 		const faiss::idx_t faissId = it->second;
 		space_->remove_ids(faiss::IDSelectorArray{1, &faissId});
 		assertrx_throw(it->second < n2RowId_.size());
@@ -219,7 +219,8 @@ static void search(base_idset& idset, const IVFSearchArgsRange& args, const auto
 	}
 }
 
-static void searchRaw(const IVFSearchArgsRange& args, const auto& map, IvfKnnRawResult& rawResults, VectorMetric metric, const auto& prepareId) {
+static void searchRaw(const IVFSearchArgsRange& args, const auto& map, IvfKnnRawResult& rawResults, VectorMetric metric,
+					  const auto& prepareId) {
 	map->range_search(1, args.keyData, args.radius, args.result, args.params);
 	auto& rangeRes = *args.result;
 	auto size = rangeRes.lims[1] - rangeRes.lims[0];

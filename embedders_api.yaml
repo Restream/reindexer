@@ -26,11 +26,10 @@ paths:
             type: string
             enum:
               - json
-              - base64
               - text
         - name: "name"
           in: path
-          description: "Embedder's name"
+          description: "Embedder name"
           required: true
           schema:
             type: string
@@ -46,13 +45,11 @@ paths:
                 data:
                   oneOf:
                     - $ref: "#/components/schemas/JSONDataArray"
-                    - $ref: "#/components/schemas/Base64DataArray"
                     - $ref: "#/components/schemas/TextDataArray"
                   discriminator:
                     propertyName: format
                     mapping:
                       json: JSONDataArray
-                      base64: Base64DataArray
                       text: TextDataArray
       responses:
         200:
@@ -73,7 +70,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusResponse"
-        
 
 components:
   schemas:    
@@ -94,25 +90,23 @@ components:
       type: array
       items:
         type: string
-
-    Base64DataArray:
-      description: "Base64-encoded binary data for embedding"
-      type: array
-      items:
-        type: string
+        example: "some user query"
 
     JSONDataArray:
       description: "JSON with target fields for embedding"
       type: array
       items:
         type: object
+        description: "Each object contains fields (names and values) of the document. List of those fields has to be configured in the index embedding config"
+        example:
+          field1: value1
+          field2: [1,2,3]
 
     EmbedderProduceResponse:
       type: object
       required:
-        - database
-        - product
-      description: "Products arrya created by Embedder"
+        - products
+      description: "Products array created by Embedder"
       properties:
         products:
           type: array
@@ -120,7 +114,19 @@ components:
             type: array
             description: "Single embedder calculation result"
             items:
-              type: number
-              format: float
-              example: -1.7
+              type: object
+              required:
+                - chunk
+                - embedding
+              properties:
+                chunk:
+                  type: string
+                  description: "Single chunk. Currently this value will be ignored and may be empty string"
+                embedding:
+                  type: array
+                  description: "Result embedding for the chunk"
+                  items:
+                    type: number
+                    format: float
+                    example: -1.7
 

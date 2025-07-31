@@ -9,7 +9,7 @@ const auto kCProtoTimeoutSec = 300.;
 
 ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Dispatcher& dispatcher, bool enableStat, bool enableCustomBalancing)
 	: net::ConnectionST(std::move(s), loop, enableStat, kConnReadbufSize, kConnWriteBufSize, kCProtoTimeoutSec),
-	  maxPendingUpdates_(kConnWriteBufSize * 0.8),
+	  maxPendingUpdates_(size_t(kConnWriteBufSize * 0.8f)),
 	  dispatcher_(dispatcher),
 	  balancingType_(enableCustomBalancing ? BalancingType::NotSet : BalancingType::None) {
 	assertrx(maxPendingUpdates_ > 0);
@@ -74,7 +74,7 @@ void ServerConnection::handleRPC(Context& ctx) {
 	Error err = dispatcher_.Handle(ctx);
 
 	if (!ctx.respSent) {
-		responceRPC(ctx, err, Args());
+		responseRPC(ctx, err, Args());
 	}
 }
 
@@ -92,9 +92,9 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 
 		if (hdr.magic != kCprotoMagic) {
 			try {
-				responceRPC(ctx, Error(errParams, "Invalid cproto magic {:08x}", int(hdr.magic)), Args());
+				responseRPC(ctx, Error(errParams, "Invalid cproto magic {:08x}", int(hdr.magic)), Args());
 			} catch (std::exception& err) {
-				fprintf(stderr, "reindexer error: responceRPC unexpected error: %s\n", err.what());
+				fprintf(stderr, "reindexer error: responseRPC unexpected error: %s\n", err.what());
 			}
 			BaseConnT::closeConn_ = true;
 			return BaseConnT::ReadResT::Default;
@@ -102,12 +102,12 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 
 		if (hdr.version < kCprotoMinCompatVersion) {
 			try {
-				responceRPC(
+				responseRPC(
 					ctx,
 					Error(errParams, "Unsupported cproto version {:04x}. This server expects reindexer client v1.9.8+", int(hdr.version)),
 					Args());
 			} catch (std::exception& err) {
-				fprintf(stderr, "reindexer error: responceRPC unexpected error: %s\n", err.what());
+				fprintf(stderr, "reindexer error: responseRPC unexpected error: %s\n", err.what());
 			}
 			BaseConnT::closeConn_ = true;
 			return BaseConnT::ReadResT::Default;
@@ -119,7 +119,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 		enableSnappy_ = (hdr.version >= kCprotoMinSnappyVersion) && hdr.compressed;
 #endif
 
-		// Rebalance connection, when first message was recieved
+		// Rebalance connection, when first message was received
 		if rx_unlikely (balancingType_ == BalancingType::NotSet) {
 			balancingType_ = (hdr.dedicatedThread && hdr.version >= kCprotoMinDedicatedThreadsVersion) ? BalancingType::Dedicated
 																									   : BalancingType::Shared;
@@ -204,7 +204,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 						if (shardIdValue < std::numeric_limits<int>::min()) {
 							throw Error(errLogic, "Unexpected shard ID values: {}", shardIdValue);
 						}
-						ctx.call->shardId = shardIdValue;
+						ctx.call->shardId = int(shardIdValue);
 						ctx.call->shardingParallelExecution = false;
 					} else {
 						ctx.call->shardId = int(shardIdValue & ~kShardingFlagsMask);
@@ -277,9 +277,9 @@ static chunk packRPC(chunk chunk, Context& ctx, const Error& status, const Args&
 	return ser.DetachChunk();
 }
 
-void ServerConnection::responceRPC(Context& ctx, const Error& status, const Args& args) {
+void ServerConnection::responseRPC(Context& ctx, const Error& status, const Args& args) {
 	if rx_unlikely (ctx.respSent) {
-		fprintf(stderr, "reindexer warning: RPC responce already sent\n");
+		fprintf(stderr, "reindexer warning: RPC response already sent\n");
 		return;
 	}
 
@@ -306,16 +306,16 @@ void ServerConnection::responceRPC(Context& ctx, const Error& status, const Args
 }
 
 void ServerConnection::handleException(Context& ctx, const Error& err) noexcept {
-	// Exception occurs on unrecoverable error. Send responce, and drop connection
+	// Exception occurs on unrecoverable error. Send response, and drop connection
 	fprintf(stderr, "reindexer error: dropping RPC-connection. Reason: %s\n", err.what());
 	try {
 		if (!ctx.respSent) {
-			responceRPC(ctx, err, Args());
+			responseRPC(ctx, err, Args());
 		}
 	} catch (std::exception& e) {
-		fprintf(stderr, "reindexer error: responceRPC unexpected error: %s\n", e.what());
+		fprintf(stderr, "reindexer error: responseRPC unexpected error: %s\n", e.what());
 	} catch (...) {
-		fprintf(stderr, "reindexer error: responceRPC unexpected error (unknow exception)\n");
+		fprintf(stderr, "reindexer error: responseRPC unexpected error (unknown exception)\n");
 	}
 	BaseConnT::closeConn_ = true;
 }

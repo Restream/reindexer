@@ -29,10 +29,15 @@ type ReindexerWrapper struct {
 }
 
 func NewReindexWrapper(dsn string, cluster arrayFlags, leaderServerID int, options ...interface{}) *ReindexerWrapper {
+	rx, err := reindexer.NewReindex(dsn, options...)
+	if err != nil {
+		panic(err)
+	}
+
 	if cluster != nil {
-		return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: false, dsn: dsn, syncedStatus: 0, leaderServerID: leaderServerID}
+		return &ReindexerWrapper{Reindexer: *rx, isMaster: false, dsn: dsn, syncedStatus: 0, leaderServerID: leaderServerID}
 	} else {
-		return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: true, dsn: dsn, syncedStatus: 0, leaderServerID: 0}
+		return &ReindexerWrapper{Reindexer: *rx, isMaster: true, dsn: dsn, syncedStatus: 0, leaderServerID: 0}
 	}
 }
 

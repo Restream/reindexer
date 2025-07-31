@@ -50,7 +50,7 @@ void FuzzyIndexText<T>::commitFulltextImpl() {
 		this->vdocs_.push_back({doc.second.get(), {}, {}});
 #endif
 		for (auto& r : res) {
-			engine_.AddData(r.first, this->vdocs_.size() - 1, r.second, this->cfg_->extraWordSymbols);
+			engine_.AddData(r.first, this->vdocs_.size() - 1, r.second, this->cfg_->splitOptions);
 		}
 	}
 	engine_.Commit();

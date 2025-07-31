@@ -83,6 +83,7 @@ type queryTest struct {
 type testNamespace struct {
 	items     map[string]interface{}
 	pkIdx     [][]int
+	pkIdxName string
 	fieldsIdx map[string][][]int
 	jsonPaths map[string]string
 }
@@ -1469,6 +1470,31 @@ func getPK(ns *testNamespace, val reflect.Value) string {
 	return buf.String()
 }
 
+func getPKComposite(ns *testNamespace, val reflect.Value) []interface{} {
+	res := make([]interface{}, 0)
+
+	for _, idx := range ns.pkIdx {
+		v := val.FieldByIndex(idx)
+
+		switch v.Kind() {
+		case reflect.Bool:
+			res = append(res, v.Bool())
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			res = append(res, v.Int())
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			res = append(res, v.Uint())
+		case reflect.Float64, reflect.Float32:
+			res = append(res, v.Float())
+		case reflect.String:
+			res = append(res, v.String())
+		default:
+			panic(fmt.Errorf("invalid pk field type: '%s'", v.Kind().String()))
+		}
+	}
+
+	return res
+}
+
 func getValuesForIndex(qt *queryTest, item interface{}, index string) []reflect.Value {
 	fields, _ := qt.ns.getField(index)
 	return getValues(item, fields)
@@ -1664,16 +1690,17 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 		ns.jsonPaths[idxName] = jsonPath
 
 		tk := field.Type.Kind()
-		isPk := len(tags) > 2 && strings.Index(tags[2], "pk") >= 0
+		isPk := len(tags) > 2 && strings.Contains(tags[2], "pk")
 
 		if tk == reflect.Struct {
-			if len(idxName) > 0 && len(tags) > 2 && strings.Index(tags[2], "composite") >= 0 {
+			if len(idxName) > 0 && len(tags) > 2 && strings.Contains(tags[2], "composite") {
 				subIdxs := strings.Split(idxName, "+")
 				ns.fieldsIdx[reindexPath] = make([][]int, len(subIdxs))
 				for j, subIdx := range subIdxs {
 					ns.fieldsIdx[reindexPath][j] = indexes[subIdx]
 					if isPk {
 						ns.pkIdx = append(ns.pkIdx, indexes[subIdx])
+						ns.pkIdxName = idxName
 					}
 				}
 			} else {
@@ -1688,6 +1715,7 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 
 		if isPk {
 			ns.pkIdx = append(ns.pkIdx, path)
+			ns.pkIdxName = idxName
 		}
 
 		if (len(idxName)) > 0 || nonIndexField {

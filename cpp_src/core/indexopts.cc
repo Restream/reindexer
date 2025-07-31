@@ -172,8 +172,9 @@ void validateEmbedderOpts(const FloatVectorIndexOpts::EmbedderOpts& opts, std::s
 
 	const static std::regex re(R"(^(http[s]?)://[0-9a-z\.-]+(:[1-9][0-9]*)?(/[^\s]*)*$)");
 	if (!std::regex_match(opts.endpointUrl, re)) {
-		throw reindexer::Error{errParams,	   "Configuration '{}:{}' contain field '{}' with unexpected value: '{}'", kEmbedding, name, kEmbedderURL,
-							   opts.endpointUrl};
+		throw reindexer::Error{errParams,	 "Configuration '{}:{}' contain field '{}' with unexpected value: '{}'",
+							   kEmbedding,	 name,
+							   kEmbedderURL, opts.endpointUrl};
 	}
 
 	if (opts.pool.connections < 1) {
@@ -191,7 +192,7 @@ void validateEmbedderOpts(const FloatVectorIndexOpts::EmbedderOpts& opts, std::s
 	validateEmbedderPollTMOpt(opts.pool.write_timeout_ms, 500, name, kConnectorPoolWriteTO);
 }
 
-void getJsonEmbedderConfig(const FloatVectorIndexOpts::EmbedderOpts& opts, reindexer::JsonBuilder& json) {
+void getJsonEmbedderConfig(const FloatVectorIndexOpts::EmbedderOpts& opts, reindexer::builders::JsonBuilder& json) {
 	json.Put(kEmbedderURL, opts.endpointUrl);
 	if (!opts.cacheTag.empty()) {
 		json.Put(kEmbedderCacheTag, opts.cacheTag);
@@ -372,13 +373,13 @@ FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::str
 std::string FloatVectorIndexOpts::GetJson() const {
 	reindexer::WrSerializer ser;
 	{
-		reindexer::JsonBuilder json{ser};
+		reindexer::builders::JsonBuilder json{ser};
 		GetJson(json);
 	}
 	return std::string{ser.Slice()};
 }
 
-void FloatVectorIndexOpts::GetJson(reindexer::JsonBuilder& json) const {
+void FloatVectorIndexOpts::GetJson(reindexer::builders::JsonBuilder& json) const {
 	using namespace std::string_view_literals;
 
 	json.Put("dimension"sv, uint32_t(dimension_));
@@ -431,30 +432,33 @@ IndexOpts::IndexOpts(uint8_t flags, CollateMode mode, RTreeIndexType rtreeType)
 IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags, RTreeIndexType rtreeType)
 	: options(flags), collateOpts_(sortOrderUTF8), rtreeType_(rtreeType) {}
 
-bool IndexOpts::IsEqual(const IndexOpts& other, IndexComparison cmpType) const noexcept {
-	auto thisCopy = *this;
-	thisCopy.Dense(*other.IsDense());
-	thisCopy.NoIndexColumn(*other.IsNoIndexColumn());
+IndexOpts::DiffResult IndexOpts::Compare(const IndexOpts& o) const noexcept {
+	auto res = DiffResult{}
+				   .Set<OptsDiff::kIndexOptPK>(IsPK() == o.IsPK())
+				   .Set<OptsDiff::kIndexOptArray>(IsArray() == o.IsArray())
+				   .Set<OptsDiff::kIndexOptDense>(IsDense() == o.IsDense())
+				   .Set<OptsDiff::kIndexOptSparse>(IsSparse() == o.IsSparse())
+				   .Set<OptsDiff::kIndexOptNoColumn>(IsNoIndexColumn() == o.IsNoIndexColumn())
+				   .Set<ParamsDiff::CollateOpts>(collateOpts_.mode == o.collateOpts_.mode &&
+												 collateOpts_.sortOrderTable.GetSortOrderCharacters() ==
+													 collateOpts_.sortOrderTable.GetSortOrderCharacters())
+				   .Set<ParamsDiff::RTreeIndexType>(rtreeType_ == o.rtreeType_)
+				   .Set<ParamsDiff::Config>(config_ == o.config_);
 
-	// compare without config and 'IsDense' and 'IsNoIndexColumn' and 'floatVector_.embedding_' options
-	const bool baseEqual =
-		thisCopy.options == other.options && collateOpts_.mode == other.collateOpts_.mode &&
-		collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters() &&
-		rtreeType_ == other.rtreeType_ && floatVector_ == other.floatVector_;
-	if (!baseEqual) {
-		return false;
+	if (floatVector_ && o.floatVector_) {
+		res.Set(floatVector_->Compare(*o.floatVector_));
+	} else if (floatVector_ || o.floatVector_) {
+		res.Set(FloatVectorIndexOpts::Diff::Full);
 	}
-	switch (cmpType) {
-		case IndexComparison::BasicCompatibilityOnly:
-			return true;
-		case IndexComparison::SkipConfig:
-			return IsDense() == other.IsDense() && IsNoIndexColumn() == other.IsNoIndexColumn();
-		case IndexComparison::Full:
-		default:
-			return IsDense() == other.IsDense() && IsNoIndexColumn() == other.IsNoIndexColumn() && config_ == other.config_ &&
-				   floatVector_.has_value() == other.floatVector_.has_value() &&
-				   (!floatVector_.has_value() || floatVector_.value().Embedding() == other.floatVector_.value().Embedding());
-	}
+	return res;
+}
+
+FloatVectorIndexOpts::DiffResult FloatVectorIndexOpts::Compare(const FloatVectorIndexOpts& o) const noexcept {
+	return DiffResult{}
+		.Set<Diff::Base>(dimension_ == o.dimension_ && startSize_ == o.startSize_ && M_ == o.M_ && efConstruction_ == o.efConstruction_ &&
+						 nCentroids_ == o.nCentroids_ && multithreadingMode_ == o.multithreadingMode_ && metric_ == o.metric_)
+		.Set<Diff::Embedding>(embedding_ == o.embedding_)
+		.Set<Diff::Radius>(radius_ == o.radius_);
 }
 
 void IndexOpts::validateForFloatVector() const {
@@ -482,7 +486,7 @@ IndexOpts& IndexOpts::SetFloatVector(IndexType idxType, FloatVectorIndexOpts fv)
 	floatVector_ = fv;
 	reindexer::WrSerializer ser;
 	{
-		reindexer::JsonBuilder config{ser};
+		reindexer::builders::JsonBuilder config{ser};
 		floatVector_->GetJson(config);
 	}
 	config_ = ser.Slice();

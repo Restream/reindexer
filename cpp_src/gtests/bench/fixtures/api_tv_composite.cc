@@ -1,4 +1,5 @@
 #include "api_tv_composite.h"
+#include "allocs_tracker.h"
 #include "core/keyvalue/variant.h"
 #include "core/query/query.h"
 #include "helpers.h"

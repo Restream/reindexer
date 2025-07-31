@@ -1,5 +1,4 @@
 #include "selectiterator.h"
-#include <cmath>
 
 namespace reindexer {
 

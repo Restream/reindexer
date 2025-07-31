@@ -10,7 +10,11 @@
 namespace reindexer {
 
 class WrSerializer;
+
+namespace builders {
 class JsonBuilder;
+}  // namespace builders
+using builders::JsonBuilder;
 
 }  // namespace reindexer
 

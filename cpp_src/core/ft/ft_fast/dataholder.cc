@@ -18,12 +18,12 @@ size_t IDataHolder::GetMemStat() {
 void IDataHolder::Clear() {
 	steps.resize(1);
 	steps.front().clear();
-	avgWordsCount_.clear();
-	vdocs_.clear();
-	vdocsTexts.clear();
+	avgWordsCount_.resize(0);
+	vdocs_.resize(0);
+	vdocsTexts.resize(0);
 	vdocsOffset_ = 0;
 	szCnt = 0;
-	rowId2Vdoc_.clear();
+	rowId2Vdoc_.resize(0);
 }
 
 std::string IDataHolder::Dump() const {
@@ -95,7 +95,7 @@ size_t DataHolder<IdCont>::GetMemStat() {
 template <typename IdCont>
 void DataHolder<IdCont>::Clear() {
 	IDataHolder::Clear();
-	words_.clear();
+	words_.resize(0);
 }
 
 template <typename IdCont>
@@ -131,7 +131,7 @@ template <typename IdCont>
 DataHolder<IdCont>::DataHolder(FtFastConfig* c) {
 	cfg_ = c;
 	if (cfg_->splitterType == FtFastConfig::Splitter::Fast) {
-		splitter_ = make_intrusive<FastTextSplitter>(cfg_->extraWordSymbols, cfg_->removeDiacriticsMask);
+		splitter_ = make_intrusive<FastTextSplitter>(cfg_->splitOptions);
 	} else if (cfg_->splitterType == FtFastConfig::Splitter::MMSegCN) {
 		splitter_ = make_intrusive<FrisoTextSplitter>();
 	} else {

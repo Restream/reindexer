@@ -94,9 +94,8 @@ func (srv *TestServer) Run() error {
 		}
 		srv.proc = cmd
 	case ServerTypeBuiltin:
-		db := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", srv.GetDbName()), reindexer.WithServerConfig(100*time.Second, cfg))
+		db, err := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", srv.GetDbName()), reindexer.WithServerConfig(100*time.Second, cfg))
 		srv.db = db
-		err := srv.db.Status().Err
 		if srv.T != nil {
 			require.NoError(srv.T, err)
 		} else if err != nil {
@@ -188,9 +187,9 @@ func CreateCluster(t *testing.T, servers []*TestServer, nsName string, nsItem in
 		wg.Add(1)
 		go func(srv *TestServer, i int, wg *sync.WaitGroup) {
 			require.NoError(t, srv.Run())
-			dbTmp := reindexer.NewReindex(srv.GetDSN(), reindexer.WithCreateDBIfMissing())
+			dbTmp, err := reindexer.NewReindex(srv.GetDSN(), reindexer.WithCreateDBIfMissing())
+			require.NoError(t, err)
 			defer dbTmp.Close()
-			require.NotNil(t, dbTmp)
 			dbTmp.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), nsItem)
 
 			replicationConf := ReplicationConf{
@@ -211,23 +210,21 @@ func CreateCluster(t *testing.T, servers []*TestServer, nsName string, nsItem in
 
 func CreateReplication(t *testing.T, master *TestServer, slaves []*TestServer, nsName string, nsItem interface{}) {
 	require.NoError(t, master.Run())
-	masterDb := reindexer.NewReindex(master.GetDSN(), reindexer.WithCreateDBIfMissing())
+	masterDb, err := reindexer.NewReindex(master.GetDSN(), reindexer.WithCreateDBIfMissing())
+	require.NoError(t, err)
 	defer masterDb.Close()
-	require.NotNil(t, masterDb)
-	require.NoError(t, masterDb.Status().Err)
 
-	err := masterDb.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), nsItem)
+	err = masterDb.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), nsItem)
 	require.NoError(t, err)
 
 	var slaveDbs []*reindexer.Reindexer
 	var nodes []reindexer.DBAsyncReplicationNode
 	for i := range slaves {
 		require.NoError(t, slaves[i].Run())
-		db := reindexer.NewReindex(slaves[i].GetDSN(), reindexer.WithCreateDBIfMissing())
+		db, err := reindexer.NewReindex(slaves[i].GetDSN(), reindexer.WithCreateDBIfMissing())
+		require.NoError(t, err)
 		defer db.Close()
-		require.NotNil(t, db)
-		require.NoError(t, db.Status().Err)
-		err := db.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions(), nsItem)
+		err = db.OpenNamespace(nsName, reindexer.DefaultNamespaceOptions(), nsItem)
 		require.NoError(t, err)
 		slaveDbs = append(slaveDbs, db)
 
@@ -247,7 +244,7 @@ func ConfigureReplication(t *testing.T, rx *reindexer.Reindexer, role string, ns
 			Namespaces:        ns,
 			Nodes:             nodes,
 			RetrySyncInterval: 100,
-			LogLevel:          "info",
+			LogLevel:          "trace",
 		},
 	})
 	require.NoError(t, err)

@@ -7,6 +7,7 @@
 #include "core/enums.h"
 #include "core/storage/storagefactory.h"
 #include "core/system_ns_names.h"
+#include "estl/chunk.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
@@ -44,93 +45,62 @@ Error Adapter::VectorFromJSON(const StrorageKeyT& json, ValuesT& result) noexcep
 	return {};
 }
 
-Error Adapter::KeyFromJSON(const StrorageKeyT& json, KeyT& key) noexcept {
-	assertrx_dbg(!json.empty());
-	key.resize(0);
-
-	try {
-		gason::JsonParser parser;
-		auto root = parser.Parse(json);
-		keyFromJSON(root, key);
-	} catch (const std::exception& e) {
-		return {errParseJson, "Embed source adapter can't parse key '{}': {}", json, e.what()};
-	} catch (...) {
-		return {errParseJson, "Embed source adapter can't parse key '{}'", json};
-	}
-	return {};
-}
-
-StrorageKeyT Adapter::ConvertKeyToView(const KeyT& key) {
+Adapter::Adapter(const BaseKeyT& source) {
 	WrSerializer ser;
-	{
-		JsonBuilder json{ser};
-		auto arrNodeDoc = json.Array(kDataFieldName);
-		// NOTE: now only one
-		auto arrNodeItem = arrNodeDoc.Array(TagName::Empty());
-		for (const auto& part : key) {
-			for (const auto& item : part) {
-				arrNodeItem.Put(TagName::Empty(), item);
-			}
-		}
-		arrNodeItem.End();
-		arrNodeDoc.End();
-	}
-	return StrorageKeyT{ser.Slice()};
-}
-
-Adapter::Adapter(std::span<const std::vector<VariantArray>> sources) {
-	BaseKeyT src;
-	KeyT requestSrc;
-	std::vector<BaseKeyT> fieldData;
-	WrSerializer ser;
-	{
-		JsonBuilder json{ser};
-		auto arrNodeDoc = json.Array(kDataFieldName);
-		for (const auto& docSource : sources) {
-			requestSrc.resize(0);
-			auto arrNodeItem = arrNodeDoc.Array(TagName::Empty());
-			for (const auto& itemSource : docSource) {
-				fieldData.resize(0);
-				for (const auto& item : itemSource) {
-					src = item.As<BaseKeyT>();
-					fieldData.emplace_back(src);
-					arrNodeItem.Put(TagName::Empty(), src);
-				}
-				requestSrc.emplace_back(fieldData);
-			}
-			arrNodeItem.End();
-			sources_.emplace_back(requestSrc);
-		}
-		arrNodeDoc.End();
+	{  // [text0]
+		JsonBuilder json{ser, ObjType::TypePlain};
+		json.Put(TagName::Empty(), source);
 	}
 	view_ = std::string{ser.Slice()};
 }
 
-const KeyT& Adapter::Key() const& noexcept {
-	// NOTE: now batch mode not implemented - use first
-	assertrx_dbg(sources_.size() == 1);
-	return sources_.front();
+Adapter::Adapter(std::span<const std::vector<std::pair<std::string, VariantArray>>> sources) {
+	WrSerializer ser;
+	{  // {'fld0':text,'fld1':[Val0,Val1,...],...}
+		JsonBuilder json{ser, ObjType::TypePlain};
+		for (const auto& docSource : sources) {
+			auto arrNodeItem = json.Object(TagName::Empty());
+			for (const auto& itemSource : docSource) {
+				if (!itemSource.second.IsArrayValue() && itemSource.second.size() == 1) {
+					arrNodeItem.Put(itemSource.first, itemSource.second.front());
+				} else {
+					auto arrNode = arrNodeItem.Array(itemSource.first);
+					for (const auto& item : itemSource.second) {
+						arrNode.Put(TagName::Empty(), item);
+					}
+				}
+			}
+			arrNodeItem.End();
+		}
+	}
+	view_ = std::string{ser.Slice()};
+}
+
+[[nodiscard]] chunk Adapter::Content() const {
+	WrSerializer ser;
+	{  // {'data':[*view_*]}
+		JsonBuilder json{ser};
+		auto arrNodeDoc = json.Array(kDataFieldName);
+		arrNodeDoc.Raw(view_);
+	}
+	return ser.DetachChunk();
 }
 
 void Adapter::vectorFromJSON(const gason::JsonNode& root, ValuesT& result) {
-	thread_local static std::vector<float> values(kProductDimension);
+	using namespace std::string_view_literals;
+	static thread_local std::vector<float> values(kProductDimension);
 	for (auto products : root[kResultDataName]) {
 		values.resize(0);
 		for (auto product : products) {
-			values.emplace_back(product.As<double>());
+			// auto chunk = product["chunk"sv].As<std::string>();
+			for (auto val : product["embedding"sv]) {
+				values.emplace_back(val.As<double>());
+			}
+			if (!result.empty()) {
+				throw Error(errLogic, "Chunks are not supported: {}", product["embedding"sv].As<std::string>());
+			}
+			result.emplace_back(values);
 		}
-		result.emplace_back(std::span<float>{values});
-	}
-}
-
-void Adapter::keyFromJSON(const gason::JsonNode& root, KeyT& result) {
-	thread_local static std::vector<BaseKeyT> values(kProductDimension);
-	for (auto products : root[kDataFieldName]) {
-		values.resize(0);
-		for (auto product : products) {
-			values.emplace_back(product.As<BaseKeyT>());
-		}
-		result.emplace_back(values);
 	}
 }
 
@@ -165,34 +135,20 @@ public:
 
 private:
 	[[nodiscard]] uint32_t initBaseSize() const noexcept;
-	[[nodiscard]] uint32_t calculateItemSize(const embedding::KeyT& key) const noexcept;
+	[[nodiscard]] uint32_t calculateItemSize(const embedding::StrorageKeyT& key) const noexcept;
 	[[nodiscard]] uint32_t calculateStorageItemSize(std::string_view key, uint64_t valueSize) const noexcept;
 	[[nodiscard]] uint32_t calculateStorageItemSize(std::string_view key, std::string_view value) noexcept;
 	void loadStorage();
 	Error activateStorage(datastorage::StorageType type, const std::string& storageFile);
 
-	struct [[nodiscard]] Hasher {
-		size_t operator()(const embedding::KeyT& vec) const noexcept {
-			size_t hash = 0;
-			for (const auto& vecInner : vec) {
-				for (const auto& str : vecInner) {
-					hash ^= std::hash<std::string>()(str) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-				}
-			}
-			return hash;
-		}
-	};
-	struct [[nodiscard]] EqualComparator {
-		bool operator()(const embedding::KeyT& lhs, const embedding::KeyT& rhs) const noexcept { return lhs == rhs; }
-	};
-
 	const CacheTag tag_;
 	const size_t capacity_{0};
 	const uint32_t hitToCache_{0};
 
-	using OrderQueue = std::list<std::pair<embedding::KeyT, uint32_t>>;
+	using OrderQueue = std::list<std::pair<embedding::StrorageKeyT, uint32_t>>;
 	OrderQueue queue_;
-	tsl::sparse_map<embedding::KeyT, OrderQueue::iterator, Hasher, EqualComparator> map_;
+	using SearchMap = tsl::sparse_map<embedding::StrorageKeyT, OrderQueue::iterator>;
+	SearchMap map_;
 
 	std::unique_ptr<datastorage::IDataStorage> storage_;
 	std::string storagePath_;
@@ -269,7 +225,7 @@ std::optional<embedding::ValueT> EmbeddersLRUCache::Get(const embedding::Adapter
 
 	{
 		std::lock_guard lck(cacheMtx_);
-		const auto it = map_.find(srcAdapter.Key());
+		const auto it = map_.find(srcAdapter.View());
 		if (it == map_.end()) {
 			misses_.fetch_add(1u, std::memory_order_relaxed);
 			return std::nullopt;
@@ -310,7 +266,7 @@ void EmbeddersLRUCache::Put(const embedding::Adapter& srcAdapter, const embeddin
 
 	{
 		std::lock_guard lck(cacheMtx_);
-		const auto& key = srcAdapter.Key();
+		const auto& key = srcAdapter.View();
 		const auto it = map_.find(key);
 		if (it != map_.end()) {
 			++it->second->second;
@@ -322,20 +278,19 @@ void EmbeddersLRUCache::Put(const embedding::Adapter& srcAdapter, const embeddin
 				map_.erase(keyToRemove);
 				queue_.pop_back();
 
-				auto view = embedding::Adapter::ConvertKeyToView(keyToRemove);
 				std::shared_lock lckStorage(storageMtx_);
-				auto err = storage_->Delete(opts, view);
+				auto err = storage_->Delete(opts, keyToRemove);
 				lckStorage.unlock();
 				if (!err.ok()) {
 					throw err;
 				}
-				totalStorageSize_.fetch_sub(calculateStorageItemSize(view, valueSize_.load(std::memory_order_relaxed)),
+				totalStorageSize_.fetch_sub(calculateStorageItemSize(keyToRemove, valueSize_.load(std::memory_order_relaxed)),
 											std::memory_order_relaxed);
 			}
 
 			static constexpr uint32_t kInitCounterValue{1};
 			queue_.emplace_front(key, kInitCounterValue);
-			map_[key] = queue_.begin();
+			map_.emplace(key, queue_.begin());
 
 			totalCacheSize_ += calculateItemSize(key);
 			hitToCache = kInitCounterValue;
@@ -368,7 +323,7 @@ void EmbeddersLRUCache::Clear(NeedCreate createStorage) noexcept {
 		totalCacheSize_ = initBaseSize();
 		{
 			std::scoped_lock lck{cacheMtx_, storageMtx_};
-			tsl::sparse_map<embedding::KeyT, OrderQueue::iterator, Hasher, EqualComparator>().swap(map_);
+			SearchMap().swap(map_);
 			OrderQueue().swap(queue_);
 			if (storage_) {
 				totalStorageSize_.store(0, std::memory_order_relaxed);
@@ -458,13 +413,9 @@ uint32_t EmbeddersLRUCache::initBaseSize() const noexcept {
 	return sizeof(EmbeddersLRUCache) + sizeof(CacheTag) + tag_.Tag().capacity() * sizeof(tag_.Tag().front());
 }
 
-uint32_t EmbeddersLRUCache::calculateItemSize(const embedding::KeyT& key) const noexcept {
-	static constexpr uint32_t kListDataConstSize = sizeof(std::pair<embedding::KeyT, uint32_t>) + 2 * sizeof(void*);
-
-	size_t keySize = 0;
-	for (const auto& k : key) {
-		keySize += sizeof(embedding::BaseKeyT) + k.capacity() * sizeof(embedding::BaseKeyT::value_type);
-	}
+uint32_t EmbeddersLRUCache::calculateItemSize(const embedding::StrorageKeyT& key) const noexcept {
+	static constexpr uint32_t kListDataConstSize = sizeof(std::pair<embedding::StrorageKeyT, uint32_t>) + 2 * sizeof(void*);
+	size_t keySize = sizeof(embedding::StrorageKeyT) + key.capacity() * sizeof(embedding::StrorageKeyT::value_type);
 	return 2 * keySize + kListDataConstSize + sizeof(OrderQueue::iterator);
 }
 
@@ -491,17 +442,11 @@ void EmbeddersLRUCache::loadStorage() {
 			continue;
 		}
 
-		embedding::KeyT key;
-		auto err = embedding::Adapter::KeyFromJSON(storageKey, key);
-		if (!err.ok()) {
-			throw err;
-		}
-
-		queue_.emplace_back(key, hitToCache_);
+		queue_.emplace_back(storageKey, hitToCache_);
 		auto iter = queue_.end();
 		--iter;
-		map_[key] = iter;
-		totalCacheSize_ += calculateItemSize(key);
+		map_[storageKey] = iter;
+		totalCacheSize_ += calculateItemSize(storageKey);
 		totalStorageSize_.fetch_add(calculateStorageItemSize(storageKey, dbIter->Value()), std::memory_order_relaxed);
 	}
 
@@ -638,7 +583,6 @@ void EmbeddersCache::Put(const CacheTag& tag, const embedding::Adapter& srcAdapt
 	}
 
 	logFmt(LogWarning, "Put. Embedder cache tag '{}' not found", tag);
-	return;
 }
 
 bool EmbeddersCache::IsActive() const noexcept {

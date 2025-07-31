@@ -12,7 +12,11 @@
 namespace reindexer {
 
 class Query;
+
+namespace builders {
 struct CsvOrdering;
+}  // namespace builders
+using builders::CsvOrdering;
 
 namespace net {
 namespace cproto {

@@ -22,7 +22,7 @@ void LocalQueryResults::AddNamespace(NamespaceImplPtr ns, [[maybe_unused]] bool 
 	auto strHolder = ns->strHolder();
 	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder& nsData) { return nsData.ns == nsPtr; });
 	if (it != nsData_.cend()) {
-		assertrx(it->strHolder.get() == strHolder.get());
+		assertrx(it->StrHolderPtr() == strHolder.get());
 		return;
 	}
 	nsData_.emplace_back(std::move(ns), std::move(strHolder));
@@ -33,7 +33,7 @@ void LocalQueryResults::AddNamespace(NamespaceImpl* ns, [[maybe_unused]] bool no
 	auto strHolder = ns->strHolder();
 	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder& nsData) { return nsData.ns == ns; });
 	if (it != nsData_.cend()) {
-		assertrx(it->strHolder.get() == strHolder.get());
+		assertrx(it->StrHolderPtr() == strHolder.get());
 		return;
 	}
 	nsData_.emplace_back(ns, std::move(strHolder));
@@ -62,8 +62,10 @@ struct LocalQueryResults::Context {
 	lsn_t nsIncarnationTag_;
 };
 
+#ifndef REINDEX_DEBUG_CONTAINERS
 static_assert(LocalQueryResults::kSizeofContext >= sizeof(LocalQueryResults::Context),
 			  "LocalQueryResults::kSizeofContext should >= sizeof(LocalQueryResults::Context)");
+#endif	// REINDEX_DEBUG_CONTAINERS
 
 LocalQueryResults::LocalQueryResults() = default;
 LocalQueryResults::LocalQueryResults(LocalQueryResults&& obj) noexcept = default;
@@ -499,6 +501,8 @@ int LocalQueryResults::getNsNumber(int nsid) const noexcept {
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
 
+int LocalQueryResults::getMergedNSCount() const noexcept { return ctxs.size(); }
+
 void LocalQueryResults::addNSContext(const PayloadType& type, const TagsMatcher& tagsMatcher, const FieldsFilter& filter,
 									 std::shared_ptr<const Schema> schema, lsn_t nsIncarnationTag) {
 	nonCacheableData = nonCacheableData || filter.HasTagsPaths();
@@ -512,10 +516,10 @@ void LocalQueryResults::addNSContext(const QueryResults& baseQr, size_t nsid, ls
 }
 
 LocalQueryResults::NsDataHolder::NsDataHolder(LocalQueryResults::NamespaceImplPtr&& _ns, StringsHolderPtr&& strHldr) noexcept
-	: nsPtr_{std::move(_ns)}, ns(nsPtr_.get()), strHolder{std::move(strHldr)} {}
+	: ns(_ns.get()), nsPtr_{std::move(_ns)}, strHolder_{std::move(strHldr)} {}
 
 LocalQueryResults::NsDataHolder::NsDataHolder(NamespaceImpl* _ns, StringsHolderPtr&& strHldr) noexcept
-	: ns(_ns), strHolder(std::move(strHldr)) {}
+	: ns(_ns), strHolder_(std::move(strHldr)) {}
 
 template class LocalQueryResults::IteratorImpl<const LocalQueryResults>;
 template class LocalQueryResults::IteratorImpl<LocalQueryResults>;

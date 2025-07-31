@@ -169,10 +169,7 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, const std::
 	}
 
 	// STEP 1: Parse search query dsl
-	FtDSLQueryOptions dslOpts{.stopWords = this->cfg_->stopWords,
-							  .extraWordSymbols = this->cfg_->extraWordSymbols,
-							  .removeDiacriticsMask = this->cfg_->removeDiacriticsMask};
-	FtDSLQuery dsl(this->ftFields_, dslOpts);
+	FtDSLQuery dsl(this->ftFields_, cfg_->stopWords, cfg_->splitOptions);
 	dsl.Parse(keys[0].As<p_string>());
 
 	IdSet::Ptr mergedIds = Select(ftCtx, std::move(dsl), inTransaction, rankSortType, std::move(mergeStatuses), useExternSt, rdxCtx);

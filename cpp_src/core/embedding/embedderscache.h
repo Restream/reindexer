@@ -14,6 +14,7 @@
 
 namespace reindexer {
 
+class chunk;
 class EmbeddersLRUCache;
 
 namespace embedding {
@@ -21,25 +22,20 @@ using ValueT = ConstFloatVector;
 using ValuesT = h_vector<ValueT, 1>;
 using StrorageKeyT = std::string;
 using BaseKeyT = std::string;
-using KeyT = std::vector<std::vector<BaseKeyT>>;
 
 class [[nodiscard]] Adapter final {
 public:
 	static Error VectorFromJSON(const StrorageKeyT& json, ValuesT& result) noexcept;
-	static Error KeyFromJSON(const StrorageKeyT& json, KeyT& result) noexcept;
-	static StrorageKeyT ConvertKeyToView(const KeyT& key);
 
-	Adapter(std::span<const std::vector<VariantArray>> sources);
-	[[nodiscard]] const KeyT& Key() const& noexcept;
-	auto Key() const&& = delete;
+	explicit Adapter(const BaseKeyT& source);
+	explicit Adapter(std::span<const std::vector<std::pair<std::string, VariantArray>>> sources);
 	[[nodiscard]] const StrorageKeyT& View() const& noexcept { return view_; }
-	auto View() const&& = delete;
+	[[nodiscard]] auto View() const&& = delete;
+	[[nodiscard]] chunk Content() const;
 
 private:
 	static void vectorFromJSON(const gason::JsonNode& root, ValuesT& result);
-	static void keyFromJSON(const gason::JsonNode& root, KeyT& result);
 
-	std::vector<KeyT> sources_;
 	StrorageKeyT view_;
 };
 }  // namespace embedding

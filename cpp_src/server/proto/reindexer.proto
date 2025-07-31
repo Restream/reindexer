@@ -128,7 +128,7 @@ message Index {
 	string indexType = 3;
 	string fieldType = 4;
 	IndexOptions options = 5;
-	int64 expireAfter = 6;	// TTL (in seconds)
+	sint64 expireAfter = 6;	// TTL (in seconds)
 }
 
 message AddIndexRequest {
@@ -237,8 +237,8 @@ message QueryResultsResponse {
 	bytes data = 1;
 	// Options for returned buffer.
 	message QueryResultsOptions {
-		int64 totalItems = 1;
-		int64 queryTotalItems = 2;
+		sint64 totalItems = 1;
+		sint64 queryTotalItems = 2;
 		bool cacheEnabled = 3;
 		string explain = 4;
 	}
@@ -254,7 +254,7 @@ enum StorageType { StorageTypeLevelDB = 0; StorageTypeRocksDB = 1; };
 // message Connection options
 message ConnectOptions {
 	reserved 4;
-	int64 expectedClusterID = 1;
+	sint64 expectedClusterID = 1;
 	bool openNamespaces = 2;
 	bool allowNamespaceErrors = 3;
 	bool disableReplication = 5;
@@ -396,20 +396,20 @@ message MetadataKeysResponse {
 	ErrorResponse errorResponse = 2;
 }
 
-message CommitTransactionRequest { int64 id = 1; }
-message RollbackTransactionRequest { int64 id = 1; }
+message CommitTransactionRequest { sint64 id = 1; }
+message RollbackTransactionRequest { sint64 id = 1; }
 
 // Transaction data.
 message TransactionIdResponse {
 	// Operation status
 	ErrorResponse status = 1;
 	// unique transaction ID
-	int64 id = 2;
+	sint64 id = 2;
 }
 
 // Transaction Item message
 message AddTxItemRequest {
-	int64 id = 1;
+	sint64 id = 1;
 	// mode
 	ModifyMode mode = 2;
 	// encoding type

@@ -14,8 +14,10 @@ import (
 const (
 	testFtCfgNs = "ft_cfg_check"
 	// does not need to be used in init()
-	testConfigNs      = "ns_with_config"
-	testEmptyConfigNs = "ns_without_config"
+	testConfigNs               = "ns_with_config"
+	testEmptyConfigNs          = "ns_without_config"
+	testDeletedDefaultConfigNs = "ns_with_deleted_default_config"
+	testEmptyDefaultConfigNs   = "ns_with_empty_default_config"
 )
 
 func init() {
@@ -36,12 +38,54 @@ func TestDBMSVersion(t *testing.T) {
 }
 
 func TestSetDefaultQueryDebug(t *testing.T) {
+
+	getCurrentNsConfig := func(t *testing.T) (config *reindexer.DBConfigItem, defaultNsConfig *reindexer.DBNamespacesConfig) {
+		item, err := DB.Reindexer.Query(reindexer.ConfigNamespaceName).
+			WhereString("type", reindexer.EQ, "namespaces").
+			Exec().FetchOne()
+		require.NoError(t, err)
+		config = item.(*reindexer.DBConfigItem)
+		require.NotNil(t, config)
+
+		for _, nsCfg := range *config.Namespaces {
+			if nsCfg.Namespace == "*" {
+				defaultNsConfig = &nsCfg
+				return
+			}
+		}
+		return
+	}
+	setNsConfig := func(t *testing.T, config *reindexer.DBConfigItem) {
+		err := DB.Reindexer.Upsert(reindexer.ConfigNamespaceName, config)
+		require.NoError(t, err)
+	}
+	validateUpdatedConfig := func(t *testing.T, ns string, expectedCfg *reindexer.DBNamespacesConfig, expectedNsItems int) {
+		found := false
+		item, err := DB.Reindexer.Query(reindexer.ConfigNamespaceName).
+			WhereString("type", reindexer.EQ, "namespaces").
+			Exec().FetchOne()
+		require.NoError(t, err)
+		dbCfg := item.(*reindexer.DBConfigItem)
+		assert.Equal(t, len(*dbCfg.Namespaces), expectedNsItems)
+		for _, nsCfg := range *dbCfg.Namespaces {
+			if nsCfg.Namespace == ns {
+				assert.Equal(t, *expectedCfg, nsCfg)
+				found = true
+				break
+			}
+		}
+
+		assert.True(t, found)
+	}
+
 	t.Run("set debug level to exist ns config", func(t *testing.T) {
 		const ns = testConfigNs
 
-		item, err := DB.Reindexer.Query(reindexer.ConfigNamespaceName).WhereString("type", reindexer.EQ, "namespaces").Exec().FetchOne()
+		item, err := DB.Reindexer.Query(reindexer.ConfigNamespaceName).
+			WhereString("type", reindexer.EQ, "namespaces").
+			Exec().FetchOne()
 		require.NoError(t, err)
-		ncCfgExp := reindexer.DBNamespacesConfig{
+		nsCfgExp := reindexer.DBNamespacesConfig{
 			Namespace:               ns,
 			LogLevel:                "trace",
 			JoinCacheMode:           "on",
@@ -52,66 +96,90 @@ func TestSetDefaultQueryDebug(t *testing.T) {
 			WALSize:                 200000 + rand.Int63n(1000000),
 		}
 		dbCfg := item.(*reindexer.DBConfigItem)
-		*dbCfg.Namespaces = append(*dbCfg.Namespaces, ncCfgExp)
+		*dbCfg.Namespaces = append(*dbCfg.Namespaces, nsCfgExp)
 		err = DB.Reindexer.Upsert(reindexer.ConfigNamespaceName, dbCfg)
 		require.NoError(t, err)
 
 		err = DB.SetDefaultQueryDebug(ns, 1)
 		require.NoError(t, err)
 
-		found := false
-		item, err = DB.Reindexer.Query(reindexer.ConfigNamespaceName).WhereString("type", reindexer.EQ, "namespaces").Exec().FetchOne()
-		require.NoError(t, err)
-		dbCfg = item.(*reindexer.DBConfigItem)
-		for _, nsCfg := range *dbCfg.Namespaces {
-			if nsCfg.Namespace == ns {
-				assert.Equal(t, "error", nsCfg.LogLevel) // check changed from 'trace' to 'error'
-
-				ncCfgExp.LogLevel = nsCfg.LogLevel
-				assert.Equal(t, ncCfgExp, nsCfg)
-				found = true
-				break
-			}
-		}
-
-		assert.True(t, found)
+		nsItemsInConfig := len(*dbCfg.Namespaces) // Namespaces count was not changed
+		nsCfgExp.LogLevel = "error"
+		validateUpdatedConfig(t, ns, &nsCfgExp, nsItemsInConfig)
 	})
 
 	t.Run("copy config from * if config not exist", func(t *testing.T) {
 		const ns = testEmptyConfigNs
 
-		item, err := DB.Reindexer.Query(reindexer.ConfigNamespaceName).WhereString("type", reindexer.EQ, "namespaces").Exec().FetchOne()
-		require.NoError(t, err)
-		dbCfg := item.(*reindexer.DBConfigItem)
+		dbCfg, defaultCfg := getCurrentNsConfig(t)
+		require.NotNil(t, defaultCfg)
+		nsItemsInConfig := len(*dbCfg.Namespaces) + 1 // Current namespace has to be added to the others
 
-		var defaultCfg reindexer.DBNamespacesConfig
-		for _, nsCfg := range *dbCfg.Namespaces {
-			if nsCfg.Namespace == "*" {
-				defaultCfg = nsCfg
-			}
-		}
-		require.Equal(t, "*", defaultCfg.Namespace)
+		err := DB.SetDefaultQueryDebug(ns, 1)
+		require.NoError(t, err)
+
+		defaultCfg.LogLevel = "error"
+		defaultCfg.Namespace = ns
+		validateUpdatedConfig(t, ns, defaultCfg, nsItemsInConfig)
+	})
+
+	t.Run("set default config if 'namespaces' item does not exist", func(t *testing.T) {
+		const ns = testDeletedDefaultConfigNs
+
+		backupCfg, defCfg := getCurrentNsConfig(t)
+		require.NotNil(t, defCfg)
+
+		defaultCfg := reindexer.DefaultDBNamespaceConfig("*")
+		assert.Equal(t, defaultCfg.LogLevel, "none")
+		require.Equal(t, *defCfg, *defaultCfg)
+
+		// Restore config after the test
+		defer setNsConfig(t, backupCfg)
+
+		count, err := DB.Reindexer.Query(reindexer.ConfigNamespaceName).
+			WhereString("type", reindexer.EQ, "namespaces").
+			Delete()
+		require.NoError(t, err)
+		require.Equal(t, count, 1)
 
 		err = DB.SetDefaultQueryDebug(ns, 1)
 		require.NoError(t, err)
 
-		found := false
-		item, err = DB.Reindexer.Query(reindexer.ConfigNamespaceName).WhereString("type", reindexer.EQ, "namespaces").Exec().FetchOne()
+		assert.Equal(t, "none", defaultCfg.LogLevel)
+		defaultCfg.LogLevel = "error"
+		defaultCfg.Namespace = ns
+		nsItemsInConfig := 1 // Only current namespace
+		validateUpdatedConfig(t, ns, defaultCfg, nsItemsInConfig)
+	})
+
+	t.Run("set default config if 'namespaces' item exist, but empty", func(t *testing.T) {
+		const ns = testEmptyDefaultConfigNs
+
+		backupCfg, defCfg := getCurrentNsConfig(t)
+		require.NotNil(t, defCfg)
+
+		defaultCfg := reindexer.DefaultDBNamespaceConfig("*")
+		assert.Equal(t, defaultCfg.LogLevel, "none")
+		require.Equal(t, *defCfg, *defaultCfg)
+
+		// Restore config after the test
+		defer setNsConfig(t, backupCfg)
+
+		updatedItems, err := DB.Reindexer.Query(reindexer.ConfigNamespaceName).
+			Drop("namespaces").
+			WhereString("type", reindexer.EQ, "namespaces").
+			Update().FetchAll()
 		require.NoError(t, err)
-		dbCfg = item.(*reindexer.DBConfigItem)
-		for _, nsCfg := range *dbCfg.Namespaces {
-			if nsCfg.Namespace == ns {
-				assert.Equal(t, "none", defaultCfg.LogLevel)
-				assert.Equal(t, "error", nsCfg.LogLevel) // check changed from 'none' to 'error'
+		require.Equal(t, len(updatedItems), 1)
 
-				nsCfg.LogLevel, nsCfg.Namespace = defaultCfg.LogLevel, defaultCfg.Namespace
-				assert.Equal(t, defaultCfg, nsCfg)
-				found = true
-				break
-			}
-		}
+		err = DB.SetDefaultQueryDebug(ns, 2)
+		require.NoError(t, err)
 
-		assert.True(t, found)
+		assert.Equal(t, "none", defaultCfg.LogLevel)
+		defaultCfg.LogLevel = "warning"
+		defaultCfg.Namespace = ns
+		nsItemsInConfig := 1 // Only current namespace
+		validateUpdatedConfig(t, ns, defaultCfg, nsItemsInConfig)
 	})
 }
 

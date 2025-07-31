@@ -30,9 +30,9 @@ public:
 		this->isBuilt_ = false;
 		return Base::Upsert(key, id, clearCache);
 	}
-	void Delete(const Variant& key, IdType id, StringsHolder& strHolder, bool& clearCache) override final {
+	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) override final {
 		this->isBuilt_ = false;
-		Base::Delete(key, id, strHolder, clearCache);
+		Base::Delete(key, id, mustExist, strHolder, clearCache);
 	}
 	FtMergeStatuses GetFtMergeStatuses(const RdxContext& rdxCtx) override final {
 		this->build(rdxCtx);

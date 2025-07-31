@@ -16,7 +16,12 @@
 namespace reindexer {
 
 class Query;
+
+namespace builders {
 class JsonBuilder;
+}  // namespace builders
+using builders::JsonBuilder;
+
 template <typename T>
 class PayloadIface;
 using ConstPayload = PayloadIface<const PayloadValue>;
@@ -96,36 +101,35 @@ public:
 	static constexpr unsigned kDefaultLimit = UINT_MAX;
 	static constexpr unsigned kDefaultOffset = 0;
 
-	template <typename Str, typename VA,
-			  std::enable_if_t<std::is_constructible_v<std::string, Str> && std::is_constructible_v<VariantArray, VA>>* = nullptr>
+	template <concepts::ConvertibleToString Str, concepts::ConvertibleToVariantArray VA>
 	QueryEntry(Str&& fieldName, CondType cond, VA&& v, size_t injectedFrom = NotInjected)
 		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, injectedFrom_{injectedFrom} {
-		adjust();
+		rx_unused = adjust(AdjustMode::Default);
 		Verify();
 	}
 	template <concepts::ConvertibleToString Str>
 	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(IsDistinct_True) {
-		adjust();
+		rx_unused = adjust(AdjustMode::Default);
 		Verify();
 	}
-	template <typename VA, std::enable_if_t<std::is_constructible_v<VariantArray, VA>>* = nullptr>
+	template <concepts::ConvertibleToVariantArray VA>
 	QueryEntry(QueryField&& field, CondType cond, VA&& v) : QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond} {
-		adjust();
+		rx_unused = adjust(AdjustMode::Default);
 		Verify();
 	}
 	QueryEntry(QueryField&& field, CondType cond, IgnoreEmptyValues) : QueryField(std::move(field)), condition_(cond) {
-		adjust();
-		verifyIgnoringEmptyValues();
+		rx_unused = adjust(AdjustMode::Default);
+		VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(condition_, values_);
+	}
+	template <concepts::ConvertibleToVariantArray VA>
+	QueryEntry(const QueryEntry& qe, CondType cond, VA&& v) : QueryField{qe}, values_{std::forward<VA>(v)}, condition_(cond) {
+		rx_unused = adjust(AdjustMode::Default);
+		Verify();
 	}
 	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
 	[[nodiscard]] const VariantArray& Values() const& noexcept { return values_; }
 	[[nodiscard]] VariantArray&& Values() && noexcept { return std::move(values_); }
-	[[nodiscard]] auto UpdatableValues(IgnoreEmptyValues) & noexcept {
-		return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_, &QueryEntry::verifyIgnoringEmptyValues>{*this};
-	}
-	[[nodiscard]] auto UpdatableValues() & noexcept {
-		return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_, &QueryEntry::verifyNotIgnoringEmptyValues>{*this};
-	}
+	[[nodiscard]] auto UpdatableValues() & noexcept { return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_>{*this}; }
 	[[nodiscard]] IsDistinct Distinct() const noexcept { return distinct_; }
 	void Distinct(IsDistinct d) noexcept { distinct_ = d; }
 	using QueryField::IndexNo;
@@ -170,14 +174,15 @@ public:
 	[[nodiscard]] bool IsInjectedFrom(size_t joinedQueryNo) const noexcept { return injectedFrom_ == joinedQueryNo; }
 	[[nodiscard]] bool NeedIsNull() const noexcept { return needIsNull_; }
 	void ResetNeedIsNull() noexcept { needIsNull_ = false; }
+	[[nodiscard]] bool TryUpdateInplace(VariantArray& newValues) noexcept;
 
 	auto Values() const&& = delete;
 	auto FieldData() const&& = delete;
 
 private:
-	void verifyIgnoringEmptyValues() const { VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(condition_, values_); }
-	void verifyNotIgnoringEmptyValues() const { VerifyQueryEntryValues(condition_, values_); }
-	void adjust() noexcept;
+	enum class AdjustMode { Default, DryRun };
+
+	[[nodiscard]] bool adjust(AdjustMode mode) noexcept;
 
 	VariantArray values_;
 	CondType condition_{CondAny};
@@ -471,14 +476,19 @@ template <>
 class QueryEntriesTree::PostProcessor<QueryEntry> {
 public:
 	static constexpr bool NoOp = false;
-	[[nodiscard]] RX_ALWAYS_INLINE static bool RequiresProcess(const QueryEntry& qe) noexcept { return qe.NeedIsNull(); }
-	static void Process(QueryEntry& qe, QueryEntriesTree& tree, size_t pos) {
-		assertrx_dbg(RequiresProcess(qe));
-		tree.Emplace<QueryEntry>(pos + 1, qe.Condition() == CondAllSet ? OpAnd : OpOr, qe.FieldName(), CondEmpty, VariantArray{});
+	[[nodiscard]] static size_t Process(QueryEntriesTree& tree, size_t pos) {
+		assertrx_dbg(tree.Is<QueryEntry>(pos));
+		auto& qe = tree.Get<QueryEntry>(pos);
+		if rx_likely (!qe.NeedIsNull()) {
+			return 0;
+		}
+		qe.ResetNeedIsNull();
+		const auto inserted =
+			tree.Emplace<QueryEntry>(pos + 1, qe.Condition() == CondAllSet ? OpAnd : OpOr, qe.FieldName(), CondEmpty, VariantArray{});
 		const OpType op = tree.GetOperation(pos);
 		tree.SetOperation(OpAnd, pos);
-		qe.ResetNeedIsNull();
-		tree.EncloseInBracket(pos, pos + 2, op);
+		tree.EncloseInBracket(pos, pos + 1 + inserted, op);
+		return inserted + 1;  // +1 position for the bracket
 	}
 };
 
@@ -548,7 +558,7 @@ struct SortingEntry {
 	int index = IndexValueType::NotSet;
 };
 
-struct SortingEntries : public RVector<SortingEntry, 1> {};
+struct SortingEntries : public h_vector<SortingEntry, 1> {};
 
 class AggregateEntry {
 public:

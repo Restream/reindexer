@@ -17,7 +17,7 @@
 
 namespace reindexer {
 
-QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, const RVector<Aggregator, 4>& aggregators, NamespaceImpl* ns,
+QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, const h_vector<Aggregator, 4>& aggregators, NamespaceImpl* ns,
 									 const SelectCtx& ctx)
 	: QueryEntries(std::move(queries)),
 	  ns_(*ns),
@@ -48,8 +48,8 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, const RVector<Aggre
 				desc_ = sEntry.desc;
 				QueryField fld{sEntry.expression};
 				SetQueryField(fld, ns_);
-				Append<ForcedSortOptimizationQueryEntry>(desc_ ? OpNot : OpAnd, std::move(fld),
-														 query_.ForcedSortOrder().size() == 1 ? CondEq : CondSet, std::move(values));
+				rx_unused = Append<ForcedSortOptimizationQueryEntry>(
+					desc_ ? OpNot : OpAnd, std::move(fld), query_.ForcedSortOrder().size() == 1 ? CondEq : CondSet, std::move(values));
 			}
 		}
 	}
@@ -122,7 +122,7 @@ bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool&
 		assertrx_dbg(ftEntry_.has_value());
 		// false-positive
 		// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
-		Append(OpAnd, std::move(*ftEntry_));
+		rx_unused = Append(OpAnd, std::move(*ftEntry_));
 		ftEntry_ = std::nullopt;
 		matchedAtLeastOnce = false;
 		equalPositions.clear();
@@ -271,12 +271,13 @@ std::pair<size_t, Changed> QueryPreprocessor::removeAlwaysFalse(size_t begin, si
 					Erase(i, i + 1);
 					++deleted;
 					break;
-				case OpNot:
-					SetValue(i, AlwaysTrue{});
+				case OpNot: {
+					rx_unused = SetValue(i, AlwaysTrue{});
 					SetOperation(OpAnd, i);
 					changed = Changed_True;
 					++i;
 					break;
+				}
 				case OpAnd:
 					if (i + 1 < end - deleted && GetOperation(i + 1) == OpOr) {
 						Erase(i, i + 1);
@@ -324,8 +325,10 @@ std::pair<size_t, Changed> QueryPreprocessor::removeAlwaysTrue(size_t begin, siz
 			const auto [d, ch] = removeAlwaysTrue(i + 1, Next(i));
 			deleted += d;
 			if (Size(i) == 1) {
-				SetValue(i, AlwaysTrue{});
+				const auto inserted = SetValue(i, AlwaysTrue{});
 				changed = Changed_True;
+				prev = i;
+				i += inserted;
 			} else {
 				prev = i;
 				i = Next(i);
@@ -353,13 +356,14 @@ std::pair<size_t, Changed> QueryPreprocessor::removeAlwaysTrue(size_t begin, siz
 						}
 					}
 					break;
-				case OpNot:
-					SetValue(i, AlwaysFalse{});
+				case OpNot: {
+					const auto inserted = SetValue(i, AlwaysFalse{});
 					SetOperation(OpAnd, i);
 					changed = Changed_True;
 					prev = i;
-					++i;
+					i += inserted;
 					break;
+				}
 				case OpOr: {
 					size_t n = i;
 					size_t prevN = prev;
@@ -796,7 +800,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesSetSet(QueryE
 																		  size_t position, const CmpArgs&... args) {
 	// intersect 2 queryentries on the same index
 	if rx_unlikely (lqe.Values().empty() || rqe.Values().empty()) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 	auto&& [first, second] = lqe.Values().size() < rqe.Values().size() ? std::make_pair(std::move(lqe).Values(), std::move(rqe).Values())
@@ -812,7 +816,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesSetSet(QueryE
 				return MergeResult::Merged;
 			}
 		}
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	} else {
 		VariantArray setValues;
@@ -852,7 +856,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesSetSet(QueryE
 			}
 		}
 		if rx_unlikely (setValues.empty()) {
-			SetValue(position, AlwaysFalse{});
+			rx_unused = SetValue(position, AlwaysFalse{});
 			return MergeResult::Annihilated;
 		}
 		lqe.SetCondAndValues(CondSet, std::move(setValues));  // NOLINT (bugprone-use-after-move)
@@ -865,7 +869,7 @@ template <QueryPreprocessor::ValuesType vt, typename... CmpArgs>
 QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesAllSetSet(NeedSwitch needSwitch, QueryEntry& allSet, QueryEntry& set,
 																			 IsDistinct distinct, size_t position, const CmpArgs&... args) {
 	if rx_unlikely (allSet.Values().empty() || set.Values().empty()) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 	const MergeEqualT<vt> equalTo{args...};
@@ -873,7 +877,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesAllSetSet(Nee
 	const Variant& lv = *lvIt;
 	for (auto it = lvIt + 1, endIt = allSet.Values().end(); it != endIt; ++it) {
 		if (!equalTo(lv, *it)) {
-			SetValue(position, AlwaysFalse{});
+			rx_unused = SetValue(position, AlwaysFalse{});
 			return MergeResult::Annihilated;
 		}
 	}
@@ -885,7 +889,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesAllSetSet(Nee
 			return MergeResult::Merged;
 		}
 	}
-	SetValue(position, AlwaysFalse{});
+	rx_unused = SetValue(position, AlwaysFalse{});
 	return MergeResult::Annihilated;
 }
 
@@ -893,7 +897,7 @@ template <QueryPreprocessor::ValuesType vt, typename... CmpArgs>
 QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesAllSetAllSet(QueryEntry& lqe, QueryEntry& rqe, IsDistinct distinct,
 																				size_t position, const CmpArgs&... args) {
 	if rx_unlikely (lqe.Values().empty() || rqe.Values().empty()) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 	const MergeEqualT<vt> equalTo{args...};
@@ -901,13 +905,13 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesAllSetAllSet(
 	const Variant& lv = *lvIt;
 	for (auto it = lvIt + 1, endIt = lqe.Values().end(); it != endIt; ++it) {
 		if (!equalTo(lv, *it)) {
-			SetValue(position, AlwaysFalse{});
+			rx_unused = SetValue(position, AlwaysFalse{});
 			return MergeResult::Annihilated;
 		}
 	}
 	for (const Variant& rv : rqe.Values()) {
 		if (!equalTo(lv, rv)) {
-			SetValue(position, AlwaysFalse{});
+			rx_unused = SetValue(position, AlwaysFalse{});
 			return MergeResult::Annihilated;
 		}
 	}
@@ -919,7 +923,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesAllSetAllSet(
 QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesAny(NeedSwitch needSwitch, QueryEntry& any, QueryEntry& notAny,
 																	   IsDistinct distinct, size_t position) {
 	if (notAny.Condition() == CondEmpty) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 	notAny.Distinct(distinct);
@@ -934,7 +938,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesSetNotSet(Nee
 																			 F filter, IsDistinct distinct, size_t position,
 																			 MergeOrdered mergeOrdered) {
 	if rx_unlikely (set.Values().empty()) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 	{
@@ -943,7 +947,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesSetNotSet(Nee
 		values.erase(std::remove_if(values.begin(), values.end(), filter), values.end());
 	}
 	if rx_unlikely (set.Values().empty()) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 	if (mergeOrdered == MergeOrdered::No || set.Values().size() == 1) {
@@ -962,7 +966,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesAllSetNotSet(
 																				QueryEntry& notSet, F filter, IsDistinct distinct,
 																				size_t position, const CmpArgs&... args) {
 	if rx_unlikely (allSet.Values().empty()) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 	const MergeEqualT<vt> equalTo{args...};
@@ -970,12 +974,12 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesAllSetNotSet(
 	const Variant& lv = *lvIt;
 	for (auto it = lvIt + 1, endIt = allSet.Values().end(); it != endIt; ++it) {
 		if (!equalTo(lv, *it)) {
-			SetValue(position, AlwaysFalse{});
+			rx_unused = SetValue(position, AlwaysFalse{});
 			return MergeResult::Annihilated;
 		}
 	}
 	if (filter(lv)) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 	QueryEntry& dst = needSwitch == NeedSwitch::Yes ? notSet : allSet;
@@ -1021,7 +1025,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesLtGt(QueryEnt
 	if (MergeLessT<vt>{args...}(gtV, ltV)) {
 		return MergeResult::NotMerged;
 	} else {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 }
@@ -1035,7 +1039,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesLeGe(NeedSwit
 	QueryEntry& target = needSwitch == NeedSwitch::Yes ? ge : le;
 	QueryEntry& source = needSwitch == NeedSwitch::Yes ? le : ge;
 	if (less(leV, geV)) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	} else if (less(geV, leV)) {
 		target.SetCondAndValues(CondRange, VariantArray{std::move(ge).Values()[0], std::move(le).Values()[0]});
@@ -1054,7 +1058,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesRangeLt(NeedS
 	const Variant& rngR = range.Values()[1];
 	const MergeLessT<vt> less{args...};
 	if (!less(rngL, ltV)) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	} else if (less(rngR, ltV)) {
 		range.Distinct(distinct);
@@ -1075,7 +1079,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesRangeGt(NeedS
 	const Variant& rngR = range.Values()[1];
 	const MergeLessT<vt> less{args...};
 	if (!less(gtV, rngR)) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	} else if (less(gtV, rngL)) {
 		range.Distinct(distinct);
@@ -1097,7 +1101,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesRangeLe(NeedS
 	const MergeLessT<vt> less{args...};
 	QueryEntry& target = needSwitch == NeedSwitch::Yes ? le : range;
 	if (less(leV, rngL)) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	} else if (MergeEqualT<vt>{args...}(leV, rngL)) {
 		target.SetCondAndValues(CondEq, std::move(le).Values());
@@ -1123,7 +1127,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesRangeGe(NeedS
 	const MergeLessT<vt> less{args...};
 	QueryEntry& target = needSwitch == NeedSwitch::Yes ? ge : range;
 	if (less(rngR, geV)) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	} else if (MergeEqualT<vt>{args...}(geV, rngR)) {
 		target.SetCondAndValues(CondEq, std::move(ge).Values());
@@ -1147,7 +1151,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesRange(QueryEn
 	QueryEntry& left = less(lqe.Values()[0], rqe.Values()[0]) ? rqe : lqe;
 	QueryEntry& right = less(rqe.Values()[1], lqe.Values()[1]) ? rqe : lqe;
 	if (less(right.Values()[1], left.Values()[0])) {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	} else if (MergeEqualT<vt>{args...}(left.Values()[0], right.Values()[1])) {
 		lqe.SetCondAndValues(CondEq, VariantArray::Create(std::move(left).Values()[0]));
@@ -1185,7 +1189,7 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntriesDWithin(Query
 	} else if (DWithin(lp, rp, ld + rd)) {
 		return MergeResult::NotMerged;
 	} else {
-		SetValue(position, AlwaysFalse{});
+		rx_unused = SetValue(position, AlwaysFalse{});
 		return MergeResult::Annihilated;
 	}
 }
@@ -1229,9 +1233,10 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntries(size_t lhs, 
 						distinct, lhs, mergeOrdered);
 				case CondAny:
 					return mergeQueryEntriesAny(NeedSwitch::No, rqe, lqe, distinct, lhs);
-				case CondEmpty:
-					SetValue(lhs, AlwaysFalse{});
+				case CondEmpty: {
+					rx_unused = SetValue(lhs, AlwaysFalse{});
 					return MergeResult::Annihilated;
+				}
 				case CondDWithin:
 				case CondLike:
 				case CondKnn:
@@ -1268,9 +1273,10 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntries(size_t lhs, 
 						distinct, lhs, args...);
 				case CondAny:
 					return mergeQueryEntriesAny(NeedSwitch::No, rqe, lqe, distinct, lhs);
-				case CondEmpty:
-					SetValue(lhs, AlwaysFalse{});
+				case CondEmpty: {
+					rx_unused = SetValue(lhs, AlwaysFalse{});
 					return MergeResult::Annihilated;
+				}
 				case CondDWithin:
 				case CondLike:
 				case CondKnn:
@@ -1298,9 +1304,10 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntries(size_t lhs, 
 					return mergeQueryEntriesLtGt<vt>(lqe, rqe, lhs, args...);
 				case CondRange:
 					return mergeQueryEntriesRangeLt<vt>(NeedSwitch::Yes, rqe, lqe, distinct, lhs, args...);
-				case CondEmpty:
-					SetValue(lhs, AlwaysFalse{});
+				case CondEmpty: {
+					rx_unused = SetValue(lhs, AlwaysFalse{});
 					return MergeResult::Annihilated;
+				}
 				case CondDWithin:
 				case CondLike:
 				case CondKnn:
@@ -1329,9 +1336,10 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntries(size_t lhs, 
 					return mergeQueryEntriesRangeLe<vt>(NeedSwitch::Yes, rqe, lqe, distinct, lhs, args...);
 				case CondAny:
 					return mergeQueryEntriesAny(NeedSwitch::No, rqe, lqe, distinct, lhs);
-				case CondEmpty:
-					SetValue(lhs, AlwaysFalse{});
+				case CondEmpty: {
+					rx_unused = SetValue(lhs, AlwaysFalse{});
 					return MergeResult::Annihilated;
+				}
 				case CondDWithin:
 				case CondLike:
 				case CondKnn:
@@ -1359,9 +1367,10 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntries(size_t lhs, 
 					return mergeQueryEntriesRangeGt<vt>(NeedSwitch::Yes, rqe, lqe, distinct, lhs, args...);
 				case CondAny:
 					return mergeQueryEntriesAny(NeedSwitch::No, rqe, lqe, distinct, lhs);
-				case CondEmpty:
-					SetValue(lhs, AlwaysFalse{});
+				case CondEmpty: {
+					rx_unused = SetValue(lhs, AlwaysFalse{});
 					return MergeResult::Annihilated;
+				}
 				case CondDWithin:
 				case CondLike:
 				case CondKnn:
@@ -1390,9 +1399,10 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntries(size_t lhs, 
 					return mergeQueryEntriesRangeGe<vt>(NeedSwitch::Yes, rqe, lqe, distinct, lhs, args...);
 				case CondAny:
 					return mergeQueryEntriesAny(NeedSwitch::No, rqe, lqe, distinct, lhs);
-				case CondEmpty:
-					SetValue(lhs, AlwaysFalse{});
+				case CondEmpty: {
+					rx_unused = SetValue(lhs, AlwaysFalse{});
 					return MergeResult::Annihilated;
+				}
 				case CondDWithin:
 				case CondLike:
 				case CondKnn:
@@ -1424,9 +1434,10 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntries(size_t lhs, 
 					return mergeQueryEntriesRange<vt>(lqe, rqe, distinct, lhs, args...);
 				case CondAny:
 					return mergeQueryEntriesAny(NeedSwitch::No, rqe, lqe, distinct, lhs);
-				case CondEmpty:
-					SetValue(lhs, AlwaysFalse{});
+				case CondEmpty: {
+					rx_unused = SetValue(lhs, AlwaysFalse{});
 					return MergeResult::Annihilated;
+				}
 				case CondDWithin:
 				case CondLike:
 				case CondKnn:
@@ -1448,9 +1459,10 @@ QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntries(size_t lhs, 
 				case CondDWithin:
 				case CondLike:
 				case CondAny:
-				case CondKnn:
-					SetValue(lhs, AlwaysFalse{});
+				case CondKnn: {
+					rx_unused = SetValue(lhs, AlwaysFalse{});
 					return MergeResult::Annihilated;
+				}
 				case CondEmpty:
 					lqe.Distinct(distinct);
 					return MergeResult::Merged;
@@ -1489,7 +1501,7 @@ template QueryPreprocessor::MergeResult QueryPreprocessor::mergeQueryEntries<Que
 																													MergeOrdered,
 																													const CollateOpts&);
 
-void QueryPreprocessor::AddDistinctEntries(const RVector<Aggregator, 4>& aggregators) {
+void QueryPreprocessor::AddDistinctEntries(const h_vector<Aggregator, 4>& aggregators) {
 	bool wasAdded = false;
 	for (auto& ag : aggregators) {
 		if (ag.Type() != AggDistinct) {
@@ -1497,13 +1509,13 @@ void QueryPreprocessor::AddDistinctEntries(const RVector<Aggregator, 4>& aggrega
 		}
 		assertrx_throw(ag.Names().size() >= 1);
 		if (ag.Names().size() == 1) {
-			Append<QueryEntry>(wasAdded ? OpOr : OpAnd, ag.Names()[0], QueryEntry::DistinctTag{});
-			auto& qe = Get<QueryEntry>(LastAppendedElement());
+			QueryEntry qe{ag.Names()[0], QueryEntry::DistinctTag{}};
 			SetQueryField(qe.FieldData(), ns_);
 			checkStrictMode(qe.FieldData());
+			rx_unused = Append(wasAdded ? OpOr : OpAnd, std::move(qe));
 		} else {
 			FieldsSet fields = ag.GetFieldSet();
-			Append<DistinctQueryEntry>(wasAdded ? OpOr : OpAnd, std::move(fields));
+			rx_unused = Append<DistinctQueryEntry>(wasAdded ? OpOr : OpAnd, std::move(fields));
 		}
 		wasAdded = true;
 	}
@@ -1664,28 +1676,34 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 }
 
 template <typename JS>
-void QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS>& joinedSelectors, WrSerializer& ser) const {
-	{
-		for (auto it = from; it < to; it = Next(it)) {
-			if (it != from || container_[it].operation != OpAnd) {
-				ser << container_[it].operation << ' ';
-			}
-			container_[it].Visit([](OneOf<SubQueryEntry, SubQueryFieldEntry>) { throw_as_assert; },
-								 [&](const QueryEntriesBracket& b) {
-									 ser << "(";
-									 briefDump(it + 1, Next(it), joinedSelectors, ser);
-									 dumpEqualPositions(0, ser, b.equalPositions);
-									 ser << ")";
-								 },
-								 [&ser](const QueryEntry& qe) { ser << qe.DumpBrief() << ' '; },
-								 [&joinedSelectors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinedSelectors) << ' '; },
-								 [&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << ' '; },
-								 [&ser](const AlwaysFalse&) { ser << "AlwaysFalse" << ' '; },
-								 [&ser](const AlwaysTrue&) { ser << "AlwaysTrue" << ' '; },
-								 [&ser](const DistinctQueryEntry& qe) { ser << qe.Dump() << ' '; },
-								 [&ser](const KnnQueryEntry& qe) { ser << qe.Dump() << ' '; });
+size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS>& joinedSelectors, WrSerializer& ser) const {
+	size_t totalQeValues = 0;
+	for (auto it = from; it < to; it = Next(it)) {
+		if (it != from || container_[it].operation != OpAnd) {
+			ser << container_[it].operation << ' ';
 		}
+		container_[it].Visit([](OneOf<SubQueryEntry, SubQueryFieldEntry>) { throw_as_assert; },
+							 [&](const QueryEntriesBracket& b) {
+								 ser << "(";
+								 briefDump(it + 1, Next(it), joinedSelectors, ser);
+								 dumpEqualPositions(0, ser, b.equalPositions);
+								 ser << ")";
+							 },
+							 [&ser, &totalQeValues](const QueryEntry& qe) {
+								 ser << qe.DumpBrief() << ' ';
+								 totalQeValues += qe.Values().size();
+							 },
+							 [&joinedSelectors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinedSelectors) << ' '; },
+							 [&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << ' '; },
+							 [&ser](const AlwaysFalse&) { ser << "AlwaysFalse" << ' '; },
+							 [&ser](const AlwaysTrue&) { ser << "AlwaysTrue" << ' '; },
+							 [&ser](const DistinctQueryEntry& qe) { ser << qe.Dump() << ' '; },
+							 [&ser, &totalQeValues](const KnnQueryEntry& qe) {
+								 ser << qe.Dump() << ' ';
+								 totalQeValues += 1;
+							 });
 	}
+	return totalQeValues;
 }
 
 template <typename ExplainPolicy>
@@ -1860,8 +1878,15 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 							case CondLt:
 							case CondLe:
 							case CondGt:
-							case CondGe:
-								joinedSelector.itemQuery_.Entries().Get<QueryEntry>(i).FieldType().EvaluateOneOf(
+							case CondGe: {
+								const auto& qe = joinedSelector.itemQuery_.Entries().Get<QueryEntry>(i);
+								if (qe.IsFieldIndexed() && IsFullText(joinedSelector.RightNs()->indexes_[qe.IndexNo()]->Type())) {
+									skip = true;
+									explainEntry.Skipped("Skipped due to condition Lt|Le|Gt|Ge|Range with fulltext index"sv);
+									break;
+								}
+
+								qe.FieldType().EvaluateOneOf(
 									[&skip, &explainEntry](
 										OneOf<KeyValueType::String, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid,
 											  KeyValueType::Null, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept {
@@ -1872,10 +1897,18 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 									[](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
 											 KeyValueType::Float>) noexcept {});
 								break;
+							}
 							case CondEq:
 							case CondSet:
-							case CondAllSet:
-								joinedSelector.itemQuery_.Entries().Get<QueryEntry>(i).FieldType().EvaluateOneOf(
+							case CondAllSet: {
+								const auto& qe = joinedSelector.itemQuery_.Entries().Get<QueryEntry>(i);
+								if (qe.IsFieldIndexed() && IsFullText(joinedSelector.RightNs()->indexes_[qe.IndexNo()]->Type())) {
+									skip = true;
+									explainEntry.Skipped("Skipped due to condition Eq|Set|AllSet with fulltext index"sv);
+									break;
+								}
+
+								qe.FieldType().EvaluateOneOf(
 									[&skip, &explainEntry](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) noexcept {
 										skip = true;
 										explainEntry.Skipped("Skipped due to condition Eq|Set|AllSet with composite index"sv);
@@ -1888,6 +1921,7 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 											 KeyValueType::Float, KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null,
 											 KeyValueType::Undefined>) noexcept {});
 								break;
+							}
 						}
 						if (!skip) {
 							std::string explainSelect;
@@ -1905,12 +1939,13 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 						}
 					}
 					if (!values.empty()) {
-						Emplace<QueryEntry>(cur, operation, QueryField(joinEntry.LeftFieldData()), queryCondition, std::move(values));
-						explainEntry.Succeed(Get<QueryEntry>(cur));
-						maxIterations.insert(maxIterations.begin() + cur, embracedMaxIterations);
-						initIndexedQueries(cur, cur + 1);
-						++cur;
-						++count;
+						const auto inserted =
+							Emplace<QueryEntry>(cur, operation, QueryField(joinEntry.LeftFieldData()), queryCondition, std::move(values));
+						explainEntry.Succeed([&](WrSerializer& ser) { return briefDump(cur, cur + inserted, js, ser); });
+						maxIterations.insert(maxIterations.begin() + cur, inserted, embracedMaxIterations);
+						initIndexedQueries(cur, cur + inserted);
+						cur += inserted;
+						count += inserted;
 						prevIsSkipped = false;
 					} else {
 						explainEntry.Skipped("Skipped as cannot obtain values from right namespace"sv);
@@ -1950,7 +1985,7 @@ class JoinOnExplainDisabled {
 		OnEntryExplain() noexcept = default;
 
 		RX_ALWAYS_INLINE void InitialCondition(const QueryJoinEntry&, const JoinedSelector&) const noexcept {}
-		RX_ALWAYS_INLINE void Succeed(const QueryEntry&) const noexcept {}
+		RX_ALWAYS_INLINE void Succeed(const std::function<size_t(WrSerializer&)>&) const noexcept {}
 		RX_ALWAYS_INLINE void Skipped(std::string_view) const noexcept {}
 		RX_ALWAYS_INLINE void OrChainPart(bool) const noexcept {}
 		RX_ALWAYS_INLINE void ExplainSelect(std::string&&, AggType) const noexcept {}
@@ -1981,11 +2016,12 @@ class JoinOnExplainEnabled {
 		void InitialCondition(const QueryJoinEntry& joinEntry, const JoinedSelector& joinedSelector) {
 			explainEntry_.initCond = joinEntry.DumpCondition(joinedSelector);
 		}
-		void Succeed(const QueryEntry& newEntry) {
+		void Succeed(const std::function<size_t(WrSerializer&)>& setInjectedCond) {
 			explainEntry_.succeed = true;
 			explainEntry_.reason = "";
-			explainEntry_.newCond = newEntry.DumpBrief();
-			explainEntry_.valuesCount = newEntry.Values().size();
+			WrSerializer wser;
+			explainEntry_.valuesCount = setInjectedCond(wser);
+			explainEntry_.newCond = std::string(trimSpaces(wser.Slice()));
 		}
 
 		void Skipped(std::string_view reason) noexcept {

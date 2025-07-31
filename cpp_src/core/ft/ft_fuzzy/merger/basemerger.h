@@ -14,7 +14,7 @@ class RdxContext;
 namespace search_engine {
 
 struct IDCtx {
-	const reindexer::RVector<reindexer::IdRelType::PosType, 3>* data;
+	const reindexer::h_vector<reindexer::IdRelType::PosType, 3>* data;
 	int pos;
 	double* max_proc{nullptr};
 	size_t total_size;

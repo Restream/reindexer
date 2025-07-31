@@ -19,13 +19,12 @@ func init() {
 }
 
 func TestBaseTLS(t *testing.T) {
-	db := reindexer.NewReindex("cprotos://127.0.0.1:6535/test" /*reindexer.WithTLSConfig(&tls.Config{})*/)
-	require.NotNil(t, db)
-	require.Nil(t, db.Status().Err)
+	db, err := reindexer.NewReindex("cprotos://127.0.0.1:6535/test" /*reindexer.WithTLSConfig(&tls.Config{})*/)
+	require.NoError(t, err)
 	defer db.Close()
 
 	checkData := "Some TLS Data"
-	err := db.RegisterNamespace(testTlsNs, reindexer.DefaultNamespaceOptions(), testDummyObject{})
+	err = db.RegisterNamespace(testTlsNs, reindexer.DefaultNamespaceOptions(), testDummyObject{})
 	require.Nil(t, err)
 
 	tx, err := db.BeginTx(testTlsNs)

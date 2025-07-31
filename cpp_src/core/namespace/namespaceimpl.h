@@ -240,7 +240,6 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 	};
 
 public:
-	using UpdatesContainer = h_vector<updates::UpdateRecord, 2>;
 	enum OptimizationState : int { NotOptimized, OptimizedPartially, OptimizationCompleted };
 	enum class FieldChangeType { Add = 1, Delete = -1 };
 	enum class InvalidationType : int { Valid, Readonly, OverwrittenByUser, OverwrittenByReplicator };
@@ -446,7 +445,7 @@ public:
 		return storage_.GetStatusCached().err;
 	}
 	void RebuildFreeItemsStorage(const RdxContext& ctx);
-	std::shared_ptr<const reindexer::Embedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const;
+	std::shared_ptr<const reindexer::QueryEmbedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const;
 
 private:
 	struct SysRecordsVersions {
@@ -491,8 +490,10 @@ private:
 	void markUpdated(IndexOptimization requestedOptimization);
 	void scheduleIndexOptimization(IndexOptimization requestedOptimization) noexcept;
 	Item newItem();
-	void doUpdate(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext& ctx);
-	void doDelete(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext& ctx);
+	void doUpdate(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
+	void doUpdateTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
+	void doDelete(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
+	void doDeleteTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
 	void doUpsert(ItemImpl& item, IdType id, bool doUpdate, TransactionContext* txCtx);
 	void modifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void deleteItem(Item& item, UpdatesContainer& pendedRepl, const NsContext& ctx);

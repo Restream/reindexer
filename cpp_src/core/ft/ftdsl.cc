@@ -3,18 +3,16 @@
 namespace reindexer {
 
 // Format: see fulltext.md
-static bool is_term(int ch, const std::string& extraWordSymbols) noexcept {
-	return IsAlpha(ch) || IsDigit(ch) ||
-		   extraWordSymbols.find(ch) != std::string::npos
+static bool is_term(int ch, const SplitOptions& opts) noexcept {
+	return opts.IsWordSymbol(ch)
 		   // wrong kb layout
 		   || ch == '[' || ch == ';' || ch == ',' || ch == '.';
 }
 
 static bool is_quote(int ch) noexcept { return ch == '\'' || ch == '\"'; }
 
-static bool needToSkip(int ch, const std::string& extraWordSymbols) noexcept {
-	return !is_term(ch, extraWordSymbols) && ch != '+' && ch != '-' && ch != '*' && ch != '\'' && ch != '\"' && ch != '@' && ch != '=' &&
-		   ch != '\\';
+static bool needToSkip(int ch, const SplitOptions& opts) noexcept {
+	return !is_term(ch, opts) && ch != '+' && ch != '-' && ch != '*' && ch != '\'' && ch != '\"' && ch != '@' && ch != '=' && ch != '\\';
 }
 
 void FtDSLQuery::Parse(std::string_view q) {
@@ -92,8 +90,8 @@ void FtDSLQuery::closeGroup(wchar_t*& str, int groupTermCounter, int groupCounte
 	}
 	assertrx_throw(groupTermCounter <= int(size()));
 	if (groupTermCounter > 1) {
-		for (auto fteIt = end() - 1; --groupTermCounter >= 0; --fteIt) {
-			if (groupTermCounter > 0) {
+		for (auto fteIt = rbegin(); groupTermCounter > 0; ++fteIt, --groupTermCounter) {
+			if (groupTermCounter > 1) {
 				fteIt->opts.distance = distance;
 			}
 			fteIt->opts.groupNum = groupCounter;
@@ -113,7 +111,7 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 	fieldsOpts.insert(fieldsOpts.end(), std::max(int(fields_.size()), 1), {1.0, false});
 
 	while (*str) {
-		while (*str && needToSkip(*str, options_.extraWordSymbols)) {
+		while (*str && needToSkip(*str, splitOptions_)) {
 			++str;
 		}
 
@@ -159,7 +157,7 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 			}
 		}
 
-		while (*str && needToSkip(*str, options_.extraWordSymbols)) {
+		while (*str && needToSkip(*str, splitOptions_)) {
 			++str;
 		}
 
@@ -186,12 +184,14 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 					throw Error(errParseDSL, "Expected symbol after \\ , but found nothing");
 				}
 				*str = ToLower(*str);
-				if (FitsMask(*str, options_.removeDiacriticsMask)) {
+				if (splitOptions_.NeedToRemoveDiacritics(*str)) {
 					*str = RemoveDiacritic(*str);
 				}
-			} else if (is_term(*str, options_.extraWordSymbols)) {
+			} else if (inGroup && *str == groupQuote) {
+				break;
+			} else if (is_term(*str, splitOptions_)) {
 				*str = ToLower(*str);
-				if (FitsMask(*str, options_.removeDiacriticsMask)) {
+				if (splitOptions_.NeedToRemoveDiacritics(*str)) {
 					*str = RemoveDiacritic(*str);
 				}
 			} else {
@@ -218,8 +218,15 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 		fte.opts.number = is_number(utf8str);
 		// Setting up this flag before stopWords check, to prevent error on DSL with stop word + NOT
 		hasAnythingExceptNot = hasAnythingExceptNot || (fte.opts.op != OpNot && groupTermCounter == 0);
-		if (auto it = options_.stopWords.find(utf8str); it != options_.stopWords.end() && it->type == StopWord::Type::Stop) {
+		if (auto it = stopWords_.find(utf8str); it != stopWords_.end() && it->type == StopWord::Type::Stop) {
 			continue;
+		}
+
+		if (splitOptions_.ContainsDelims(utf8str)) {
+			std::string patternWithoutDelims = splitOptions_.RemoveDelims(utf8str);
+			if (auto it = stopWords_.find(patternWithoutDelims); it != stopWords_.end() && it->type == StopWord::Type::Stop) {
+				continue;
+			}
 		}
 
 		maxPatternLen = (fte.pattern.length() > maxPatternLen) ? fte.pattern.length() : maxPatternLen;
@@ -275,7 +282,7 @@ void FtDSLQuery::parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_v
 		return;
 	}
 
-	std::string fname = utf16_to_utf8(std::wstring(beg, end - beg));
+	std::string fname = utf16_to_utf8(std::wstring_view(beg, std::distance(beg, end)));
 	auto f = fields_.find(fname);
 	if (f == fields_.end()) {
 		throw Error(errLogic, "Field '{}',is not included to full text index", fname);

@@ -114,7 +114,7 @@ void ProtobufBuilder::put(TagName tagName, int val) {
 		if (type_ != ObjType::TypeArray) {
 			putFieldHeader(tagName, PBUF_TYPE_VARINT);
 		}
-		ser_->PutVarUint(val);
+		ser_->PutVarint(val);
 	}
 }
 
@@ -143,7 +143,7 @@ void ProtobufBuilder::put(TagName tagName, int64_t val) {
 		if (type_ != ObjType::TypeArray) {
 			putFieldHeader(tagName, PBUF_TYPE_VARINT);
 		}
-		ser_->PutVarUint(val);
+		ser_->PutVarint(val);
 	}
 }
 

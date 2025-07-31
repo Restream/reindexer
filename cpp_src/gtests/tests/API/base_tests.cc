@@ -368,6 +368,7 @@ TEST_F(ReindexerApi, DistinctMultiColumn) {
 
 	struct row {
 		std::vector<reindexer::Variant> vals;
+		row() = default;
 		row(std::span<const reindexer::Variant> d) : vals(d.begin(), d.end()) {}
 		bool operator<(const row& other) const {
 			assertrx(other.vals.size() == vals.size());
@@ -396,7 +397,7 @@ TEST_F(ReindexerApi, DistinctMultiColumn) {
 		arrays.resize(rows[0].size());
 		std::vector<bool> mask;
 		mask.resize(arrays.size(), true);
-		int maxArraySize = 0;
+		unsigned maxArraySize = 0;
 		for (const auto& r : rows) {
 			bool isAdd = false;
 			for (unsigned int i = 0; i < r.size(); i++) {
@@ -436,8 +437,32 @@ TEST_F(ReindexerApi, DistinctMultiColumn) {
 		err = rt.reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 		if (maxArraySize > 0) {
-			for (const auto& r : rows) {
-				data.insert(row{r});
+			for (unsigned int i = 0; i < arrays.size(); i++) {
+				if (arrays[i].size() > 0) {
+					if (asVal && arrays[i].size() == 1) {
+						builder.Put("v" + std::to_string(i), arrays[i][0]);
+					} else {
+						auto a = builder.Array("v" + std::to_string(i));
+						for (const auto& p : arrays[i]) {
+							a.Put(reindexer::TagName::Empty(), p);
+						}
+					}
+				}
+			}
+			for (unsigned k = 0; k < maxArraySize; ++k) {
+				row r1;
+				for (unsigned i = 0; i < arrays.size(); ++i) {
+					if (arrays[i].size() == 1 && asVal) {
+						r1.vals.emplace_back(arrays[i][0]);
+					} else {
+						if (k < arrays[i].size()) {
+							r1.vals.emplace_back(arrays[i][k]);
+						} else {
+							r1.vals.emplace_back(Variant{});
+						}
+					}
+				}
+				data.insert(r1);
 			}
 		}
 	};
@@ -459,7 +484,7 @@ TEST_F(ReindexerApi, DistinctMultiColumn) {
 		ASSERT_EQ(agr0.GetType(), AggDistinct);
 		{
 			const auto& f = agr0.GetFields();
-			reindexer::RVector<std::string, 1> fieldsToCompare{distinctFields.begin(), distinctFields.end()};
+			reindexer::h_vector<std::string, 1> fieldsToCompare{distinctFields.begin(), distinctFields.end()};
 			ASSERT_EQ(f, fieldsToCompare);
 			ASSERT_EQ(agr0.GetDistinctRowCount(), distinctCount);
 			std::set<row> q;
@@ -529,6 +554,20 @@ TEST_F(ReindexerApi, DistinctMultiColumn) {
 					std::vector{Variant{"52"}, Variant{}, Variant{}}},
 				   false);
 		check(10, 13);
+	}
+	{
+		insertItem(12,
+				   {std::vector{Variant{"55"}, Variant{6.15}, Variant{"202"}}, std::vector{Variant{"56"}, Variant{}, Variant{}},
+					std::vector{Variant{"57"}, Variant{}, Variant{}}},
+				   true);
+		check(11, 16);
+	}
+	{
+		insertItem(13,
+				   {std::vector{Variant{"61"}, Variant{6.15}, Variant{}}, std::vector{Variant{"62"}, Variant{}, Variant{}},
+					std::vector{Variant{"63"}, Variant{}, Variant{}}},
+				   true);
+		check(12, 19);
 	}
 }
 
@@ -1192,43 +1231,28 @@ TEST_F(ReindexerApi, SortByHash) {
 }
 
 TEST_F(ReindexerApi, SortByUnorderedIndexes) {
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"valueInt", "hash", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"valueString", "hash", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"valueStringASCII", "hash", "string", IndexOpts().SetCollateMode(CollateASCII)});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"valueStringNumeric", "hash", "string", IndexOpts().SetCollateMode(CollateNumeric)});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"valueStringUTF8", "hash", "string", IndexOpts().SetCollateMode(CollateUTF8)});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"valueInt", "hash", "int", IndexOpts()});
+	rt.AddIndex(default_namespace, {"valueString", "hash", "string", IndexOpts()});
+	rt.AddIndex(default_namespace, {"valueStringASCII", "hash", "string", IndexOpts().SetCollateMode(CollateASCII)});
+	rt.AddIndex(default_namespace, {"valueStringNumeric", "hash", "string", IndexOpts().SetCollateMode(CollateNumeric)});
+	rt.AddIndex(default_namespace, {"valueStringUTF8", "hash", "string", IndexOpts().SetCollateMode(CollateUTF8)});
 
 	std::deque<int> allIntValues;
-	std::set<std::string> allStrValues;
-	std::set<std::string, CollateComparer<CollateASCII>> allStrValuesASCII;
-	std::set<std::string, CollateComparer<CollateNumeric>> allStrValuesNumeric;
-	std::set<std::string, CollateComparer<CollateUTF8>> allStrValuesUTF8;
+	std::multiset<std::string> allStrValues;
+	std::multiset<std::string, CollateComparer<CollateASCII>> allStrValuesASCII;
+	std::multiset<std::string, CollateComparer<CollateNumeric>> allStrValuesNumeric;
+	std::multiset<std::string, CollateComparer<CollateUTF8>> allStrValuesUTF8;
 
 	for (int i = 0; i < 100; ++i) {
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Item item(rt.NewItem(default_namespace));
 
 		item["id"] = i;
 		item["valueInt"] = i;
 		allIntValues.push_front(i);
 
-		std::string strCollateNone = RandString().c_str();
+		std::string strCollateNone = RandString();
 		allStrValues.insert(strCollateNone);
 		item["valueString"] = strCollateNone;
 
@@ -1243,21 +1267,17 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 		allStrValuesUTF8.insert(strCollateNone);
 		item["valueStringUTF8"] = strCollateNone;
 
-		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 
 	bool descending = true;
 	const unsigned offset = 5;
 	const unsigned limit = 30;
 
-	QueryResults sortByIntQr;
-	Query sortByIntQuery{Query(default_namespace, offset, limit).Sort("valueInt", descending)};
-	err = rt.reindexer->Select(sortByIntQuery, sortByIntQr);
-	EXPECT_TRUE(err.ok()) << err.what();
+	auto sortByIntQr = rt.Select(Query(default_namespace, offset, limit).Sort("valueInt", descending));
 
 	std::deque<int> selectedIntValues;
-	for (auto it : sortByIntQr) {
+	for (auto& it : sortByIntQr) {
 		Item item(it.GetItem(false));
 		int value = item["valueInt"].Get<int>();
 		selectedIntValues.push_back(value);
@@ -1265,62 +1285,32 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 
 	EXPECT_TRUE(std::equal(allIntValues.begin() + offset, allIntValues.begin() + offset + limit, selectedIntValues.begin()));
 
-	QueryResults sortByStrQr, sortByASCIIStrQr, sortByNumericStrQr, sortByUTF8StrQr;
-	Query sortByStrQuery{Query(default_namespace).Sort("valueString", !descending)};				// -V547
-	Query sortByASSCIIStrQuery{Query(default_namespace).Sort("valueStringASCII", !descending)};		// -V547
-	Query sortByNumericStrQuery{Query(default_namespace).Sort("valueStringNumeric", !descending)};	// -V547
-	Query sortByUTF8StrQuery{Query(default_namespace).Sort("valueStringUTF8", !descending)};		// -V547
-
-	err = rt.reindexer->Select(sortByStrQuery, sortByStrQr);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->Select(sortByASSCIIStrQuery, sortByASCIIStrQr);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->Select(sortByNumericStrQuery, sortByNumericStrQr);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->Select(sortByUTF8StrQuery, sortByUTF8StrQr);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	auto collectQrStringFieldValues = [](const QueryResults& qr, const char* fieldName, std::vector<std::string>& selectedStrValues) {
-		selectedStrValues.clear();
-		for (auto it : qr) {
+	auto validateOrdering = [](std::string_view fieldName, reindexer::QueryResults& qr, auto& expectedOrdering) {
+		SCOPED_TRACE(fieldName);
+		std::vector<std::string> selectedStrValues;
+		for (auto& it : qr) {
 			Item item(it.GetItem(false));
-			selectedStrValues.push_back(item[fieldName].As<std::string>());
+			selectedStrValues.emplace_back(item[fieldName].As<std::string>());
+		}
+
+		ASSERT_EQ(selectedStrValues.size(), expectedOrdering.size());
+		auto itSorted(expectedOrdering.cbegin());
+		for (size_t pos = 0; pos < selectedStrValues.size(); ++pos) {
+			EXPECT_EQ(selectedStrValues[pos], *itSorted++) << "Pos: " << pos;
 		}
 	};
 
-	std::vector<std::string> selectedStrValues;
-	{
-		auto itSortedStr(allStrValues.begin());
-		collectQrStringFieldValues(sortByStrQr, "valueString", selectedStrValues);
-		for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
-			EXPECT_EQ(*it, *itSortedStr++);
-		}
-	}
+	auto sortByStrQr = rt.Select(Query(default_namespace).Sort("valueString", !descending));
+	validateOrdering("valueString", sortByStrQr, allStrValues);
 
-	{
-		auto itSortedStr = allStrValuesASCII.begin();
-		collectQrStringFieldValues(sortByASCIIStrQr, "valueStringASCII", selectedStrValues);
-		for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
-			EXPECT_EQ(*it, *itSortedStr++);
-		}
-	}
+	auto sortByASCIIStrQr = rt.Select(Query(default_namespace).Sort("valueStringASCII", !descending));
+	validateOrdering("valueStringASCII", sortByASCIIStrQr, allStrValuesASCII);
 
-	auto itSortedNumericStr = allStrValuesNumeric.cbegin();
-	collectQrStringFieldValues(sortByNumericStrQr, "valueStringNumeric", selectedStrValues);
-	for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
-		EXPECT_EQ(*it, *itSortedNumericStr++);
-	}
+	auto sortByNumericStrQr = rt.Select(Query(default_namespace).Sort("valueStringNumeric", !descending));
+	validateOrdering("valueStringNumeric", sortByNumericStrQr, allStrValuesNumeric);
 
-	{
-		auto itSortedStr = allStrValuesUTF8.cbegin();
-		collectQrStringFieldValues(sortByUTF8StrQr, "valueStringUTF8", selectedStrValues);
-		for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
-			EXPECT_EQ(*it, *itSortedStr++);
-		}
-	}
+	auto sortByUTF8StrQr = rt.Select(Query(default_namespace).Sort("valueStringUTF8", !descending));
+	validateOrdering("valueStringUTF8", sortByUTF8StrQr, allStrValuesUTF8);
 }
 
 TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
@@ -2564,7 +2554,7 @@ TEST_F(ReindexerApi, DefautlIndexDefJSON) {
 	ASSERT_NO_THROW(empty.GetJSON(ser));
 	const auto newDef = reindexer::IndexDef::FromJSON(ser.Slice());
 	ASSERT_TRUE(newDef) << newDef.error().what();
-	ASSERT_TRUE(empty.IsEqual(*newDef, IndexComparison::Full)) << ser.Slice();
+	ASSERT_TRUE(empty.Compare(*newDef).Equal()) << ser.Slice();
 }
 
 TEST_F(ReindexerApi, NamespaceStorageRaceTest) {

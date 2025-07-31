@@ -2083,9 +2083,10 @@ func TestQrIdleTimeout(t *testing.T) {
 	FillTestItemsWithFunc(ns, 0, nsSize, 0, newTestItemSimple)
 
 	t.Run("check if qr wil be correctly reused after connections drop", func(t *testing.T) {
-		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
+		db, err := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
+		require.NoError(t, err)
 		db.SetLogger(testLogger)
-		err := db.RegisterNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
+		err = db.RegisterNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const qrCount = 32
 		const fetchCount = 1
@@ -2102,7 +2103,8 @@ func TestQrIdleTimeout(t *testing.T) {
 
 		// Drop connection without QRs close
 		db.Close()
-		db = reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1))
+		db, err = reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1))
+		require.NoError(t, err)
 		err = db.RegisterNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 
@@ -2121,10 +2123,11 @@ func TestQrIdleTimeout(t *testing.T) {
 	})
 
 	t.Run("concurrent query results timeouts", func(t *testing.T) {
-		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(16), reindexer.WithDedicatedServerThreads())
+		db, err := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(16), reindexer.WithDedicatedServerThreads())
+		require.NoError(t, err)
 		defer db.Close()
 		db.SetLogger(testLogger)
-		err := db.RegisterNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
+		err = db.RegisterNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const fillingRoutines = 5
 		const readingRoutines = 4
@@ -2201,10 +2204,11 @@ func TestQrIdleTimeout(t *testing.T) {
 	})
 
 	t.Run("check if timed out query results will be reused after client's qr buffer overflow", func(t *testing.T) {
-		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
+		db, err := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
+		require.NoError(t, err)
 		defer db.Close()
 		db.SetLogger(testLogger)
-		err := db.RegisterNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
+		err = db.RegisterNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const qrCount = 256
 		const fetchCount = 1

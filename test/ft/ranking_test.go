@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/restream/reindexer/v5"
 	_ "github.com/restream/reindexer/v5/bindings/builtin"
@@ -16,7 +17,8 @@ func doRankingTest(t *testing.T, indexType string) {
 
 	totalSearchQuality := 0.0
 
-	rx := reindexer.NewReindex(*dsn)
+	rx, err := reindexer.NewReindex(*dsn)
+	require.NoError(t, err)
 	defer rx.Close()
 
 	testCases := ParseRankingTestCases()

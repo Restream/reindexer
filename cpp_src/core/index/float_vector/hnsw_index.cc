@@ -147,17 +147,17 @@ Variant HnswIndexBase<hnswlib::HierarchicalNSWMT>::upsertConcurrent(ConstFloatVe
 }
 
 template <>
-void HnswIndexBase<hnswlib::BruteforceSearch>::Delete(const Variant&, IdType id, StringsHolder&, bool&) {
+void HnswIndexBase<hnswlib::BruteforceSearch>::Delete(const Variant&, IdType id, MustExist, StringsHolder&, bool&) {
 	map_->removePoint(id);
 }
 
 template <>
-void HnswIndexBase<hnswlib::HierarchicalNSWMT>::Delete(const Variant&, IdType id, StringsHolder&, bool&) {
+void HnswIndexBase<hnswlib::HierarchicalNSWMT>::Delete(const Variant&, IdType id, MustExist, StringsHolder&, bool&) {
 	map_->markDelete(id);
 }
 
 template <>
-void HnswIndexBase<hnswlib::HierarchicalNSWST>::Delete(const Variant&, IdType id, StringsHolder&, bool&) {
+void HnswIndexBase<hnswlib::HierarchicalNSWST>::Delete(const Variant&, IdType id, MustExist, StringsHolder&, bool&) {
 	map_->markDelete(id);
 }
 

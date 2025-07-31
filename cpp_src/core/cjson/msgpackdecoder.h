@@ -11,7 +11,11 @@ namespace reindexer {
 class TagsMatcher;
 class WrSerializer;
 class FloatVectorsHolderVector;
+
+namespace builders {
 class CJsonBuilder;
+}  // namespace builders
+using builders::CJsonBuilder;
 
 class MsgPackDecoder {
 public:

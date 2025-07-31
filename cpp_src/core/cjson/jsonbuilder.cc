@@ -1,6 +1,6 @@
 #include "jsonbuilder.h"
 
-namespace reindexer {
+namespace reindexer::builders {
 
 JsonBuilder::JsonBuilder(WrSerializer& ser, ObjType type, const TagsMatcher* tm, bool emitTrailingForFloat)
 	: ser_(&ser), tm_(tm), type_(type), emitTrailingForFloat_(emitTrailingForFloat) {
@@ -97,4 +97,4 @@ JsonBuilder& JsonBuilder::Put(std::string_view name, const Variant& kv, int offs
 	return *this;
 }
 
-}  // namespace reindexer
+}  // namespace reindexer::builders

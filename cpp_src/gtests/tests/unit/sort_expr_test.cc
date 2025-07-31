@@ -73,57 +73,82 @@ DistanceBetweenJoinedIndexes Distance(size_t ns1, const char* c1, size_t ns2, co
 DistanceBetweenJoinedIndexesSameNs Distance(size_t ns, const char* c1, const char* c2) noexcept { return {ns, c1, c2}; }
 DistanceBetweenIndexAndJoinedIndex Distance(const char* c, size_t ns, const char* jc) noexcept { return {c, ns, jc}; }
 
-static void append(SortExpression& se, char op, const char* field) { se.Append({operation(op), false}, SortExprFuncs::Index{field}); }
+static void append(SortExpression& se, char op, const char* field) {
+	[[maybe_unused]] auto inserted = se.Append({operation(op), false}, SortExprFuncs::Index{field});
+	assertrx(inserted == 1);
+}
 static void append(SortExpression& se, char op, char neg, const char* field) {
 	assertrx(neg == '-');
 	(void)neg;
-	se.Append({operation(op), true}, SortExprFuncs::Index{field});
+	[[maybe_unused]] auto inserted = se.Append({operation(op), true}, SortExprFuncs::Index{field});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, const Joined& join) {
-	se.Append({operation(op), false}, SortExprFuncs::JoinedIndex{join.nsIdx, join.column});
+	[[maybe_unused]] auto inserted = se.Append({operation(op), false}, SortExprFuncs::JoinedIndex{join.nsIdx, join.column});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, char neg, const Joined& join) {
 	assertrx(neg == '-');
 	(void)neg;
-	se.Append({operation(op), true}, SortExprFuncs::JoinedIndex{join.nsIdx, join.column});
+	[[maybe_unused]] auto inserted = se.Append({operation(op), true}, SortExprFuncs::JoinedIndex{join.nsIdx, join.column});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, reindexer::concepts::OneOf<int, double> auto value) {
-	se.Append({operation(op), false}, SortExprFuncs::Value(value));
+	[[maybe_unused]] auto inserted = se.Append({operation(op), false}, SortExprFuncs::Value(value));
+	assertrx(inserted == 1);
 }
-static void append(SortExpression& se, char op, RankFunction) { se.Append({operation(op), false}, SortExprFuncs::Rank{}); }
+static void append(SortExpression& se, char op, RankFunction) {
+	[[maybe_unused]] auto inserted = se.Append({operation(op), false}, SortExprFuncs::Rank{});
+	assertrx(inserted == 1);
+}
 static void append(SortExpression& se, char op, RankNamed r) {
-	se.Append({operation(op), false}, SortExprFuncs::RankNamed{r.index, r.defaultValue});
+	[[maybe_unused]] auto inserted = se.Append({operation(op), false}, SortExprFuncs::RankNamed{r.index, r.defaultValue});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, const SortHashFunction& h) {
-	se.Append({operation(op), false}, h.seed.has_value() ? SortExprFuncs::SortHash{h.seed.value()} : SortExprFuncs::SortHash{});
+	[[maybe_unused]] auto inserted =
+		se.Append({operation(op), false}, h.seed.has_value() ? SortExprFuncs::SortHash{h.seed.value()} : SortExprFuncs::SortHash{});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, char neg, RankFunction) {
 	assertrx(neg == '-');
 	(void)neg;
-	se.Append({operation(op), true}, SortExprFuncs::Rank{});
+	[[maybe_unused]] auto inserted = se.Append({operation(op), true}, SortExprFuncs::Rank{});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, char neg, RankNamed r) {
 	assertrx(neg == '-');
 	(void)neg;
-	se.Append({operation(op), true}, SortExprFuncs::RankNamed{r.index, r.defaultValue});
+	[[maybe_unused]] auto inserted = se.Append({operation(op), true}, SortExprFuncs::RankNamed{r.index, r.defaultValue});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, DistanceBetweenIndexes d) {
-	se.Append({operation(op), false}, SortExprFuncs::DistanceBetweenIndexes{d.column1, d.column2});
+	[[maybe_unused]] auto inserted = se.Append({operation(op), false}, SortExprFuncs::DistanceBetweenIndexes{d.column1, d.column2});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, DistanceBetweenJoinedIndexes d) {
-	se.Append({operation(op), false}, SortExprFuncs::DistanceBetweenJoinedIndexes{d.nsIdx1, d.column1, d.nsIdx2, d.column2});
+	[[maybe_unused]] auto inserted =
+		se.Append({operation(op), false}, SortExprFuncs::DistanceBetweenJoinedIndexes{d.nsIdx1, d.column1, d.nsIdx2, d.column2});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, DistanceBetweenJoinedIndexesSameNs d) {
-	se.Append({operation(op), false}, SortExprFuncs::DistanceBetweenJoinedIndexesSameNs{d.nsIdx, d.column1, d.column2});
+	[[maybe_unused]] auto inserted =
+		se.Append({operation(op), false}, SortExprFuncs::DistanceBetweenJoinedIndexesSameNs{d.nsIdx, d.column1, d.column2});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, DistanceIndexPoint d) {
-	se.Append({operation(op), false}, SortExprFuncs::DistanceFromPoint{d.column, d.point});
+	[[maybe_unused]] auto inserted = se.Append({operation(op), false}, SortExprFuncs::DistanceFromPoint{d.column, d.point});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, DistanceJoinedIndexPoint d) {
-	se.Append({operation(op), false}, SortExprFuncs::DistanceJoinedIndexFromPoint{d.nsIdx, d.column, d.point});
+	[[maybe_unused]] auto inserted =
+		se.Append({operation(op), false}, SortExprFuncs::DistanceJoinedIndexFromPoint{d.nsIdx, d.column, d.point});
+	assertrx(inserted == 1);
 }
 static void append(SortExpression& se, char op, DistanceBetweenIndexAndJoinedIndex d) {
-	se.Append({operation(op), false}, SortExprFuncs::DistanceBetweenIndexAndJoinedIndex{d.column, d.nsIdx, d.jColumn});
+	[[maybe_unused]] auto inserted =
+		se.Append({operation(op), false}, SortExprFuncs::DistanceBetweenIndexAndJoinedIndex{d.column, d.nsIdx, d.jColumn});
+	assertrx(inserted == 1);
 }
 
 struct OpenAbs {

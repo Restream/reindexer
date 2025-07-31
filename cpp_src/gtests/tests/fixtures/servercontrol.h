@@ -121,8 +121,8 @@ public:
 		// Force sync (restart leader's replicator)
 		void ForceSync();
 		// Reset replication role for the node
-		void ResetReplicationRole(const std::string& ns = std::string());
-		reindexer::Error TryResetReplicationRole(const std::string& ns);
+		void ResetReplicationRole(std::string_view ns = std::string_view());
+		reindexer::Error TryResetReplicationRole(std::string_view ns);
 		// Set cluster leader
 		void SetClusterLeader(int leaderId);
 		void SetReplicationLogLevel(LogLevel, std::string_view type);

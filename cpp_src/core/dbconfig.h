@@ -203,7 +203,7 @@ public:
 	const fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str>& GetEmbeddersConfig() const;
 	cluster::AsyncReplConfigData GetAsyncReplicationConfig() const;
 	ReplicationConfigData GetReplicationConfig() const;
-	bool GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) const;
+	void GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) const;
 	LongQueriesLoggingParams GetSelectLoggingParams() const noexcept {
 		return profilingData_.longSelectLoggingParams.load(std::memory_order_relaxed);
 	}

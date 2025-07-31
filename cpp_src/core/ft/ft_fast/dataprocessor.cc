@@ -241,6 +241,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 		const size_t fin = ctx->to;
 		const bool enableNumbersSearch = cfg->enableNumbersSearch;
 		const word_hash h;
+		std::string wordWithoutDelims;
 		auto task = textSplitter->CreateTask();
 		for (VDocIdType j = start; j < fin; ++j) {
 			const size_t vdocId = offset + j;
@@ -254,26 +255,31 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 				const int rfield = vdocsText[field].second;
 				assertrx(rfield < fieldscount);
 
-				const std::vector<std::string_view>& words = task->GetResults();
-				vdoc.wordsCount[rfield] = words.size();
+				const std::vector<WordWithPos>& entrances = task->GetResults();
+				vdoc.wordsCount[rfield] = entrances.size();
 
-				int insertPos = -1;
-				for (auto word : words) {
-					++insertPos;
-					const auto whash = h(word);
-					if (!word.length() || cfg->stopWords.find(word, whash) != cfg->stopWords.end()) {
+				for (const auto& e : entrances) {
+					const auto whash = h(e.word);
+					if (e.word.empty() || cfg->stopWords.find(e.word, whash) != cfg->stopWords.end()) {
 						continue;
 					}
 
-					auto [idxIt, emplaced] = ctx->words_um.try_emplace_prehashed(whash, word);
+					if (cfg->splitOptions.ContainsDelims(e.word)) {
+						cfg->splitOptions.RemoveDelims(e.word, wordWithoutDelims);
+						if (cfg->stopWords.find(wordWithoutDelims) != cfg->stopWords.end()) {
+							continue;
+						}
+					}
+
+					auto [idxIt, emplaced] = ctx->words_um.try_emplace_prehashed(whash, e.word);
 					(void)emplaced;
-					const int mfcnt = idxIt->second.vids_.Add(vdocId, insertPos, rfield);
+					const int mfcnt = idxIt->second.vids_.Add(vdocId, e.pos, rfield);
 					if (mfcnt > vdoc.mostFreqWordCount[rfield]) {
 						vdoc.mostFreqWordCount[rfield] = mfcnt;
 					}
 
-					if (enableNumbersSearch && is_number(word)) {
-						buildVirtualWord(word, ctx->words_um, vdocId, field, insertPos, virtualWords);
+					if (enableNumbersSearch && is_number(e.word)) {
+						buildVirtualWord(e.word, ctx->words_um, vdocId, field, e.pos, virtualWords);
 					}
 				}
 			}
@@ -324,7 +330,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	}
 	exwr.RethrowException();
 
-	bgThreads.Add([this]() noexcept { std::vector<RVector<std::pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts); });
+	bgThreads.Add([this]() noexcept { std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts); });
 	bgThreads.Add([this]() noexcept { std::vector<std::unique_ptr<std::string>>().swap(holder_.bufStrs_); });
 
 	// Calculate avg words count per document for bm25 calculation
@@ -397,9 +403,9 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 			}
 			const auto wordId = holder_.BuildWordId(wordPos++);
 			mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-					typos_context::CallBack{[&typosHalf, wordId](std::string_view typo, int, const typos_context::TyposVec& positions) {
-						typosHalf.emplace(typo, WordTypo{wordId, positions});
-					}});
+					typos_context::CallBack{
+						[&typosHalf, wordId](std::string_view typo, int, const typos_context::TyposVec& positions,
+											 const std::wstring_view) { typosHalf.emplace(typo, WordTypo{wordId, positions}); }});
 		}
 	} else {
 		assertrx_throw(maxTyposInWord == halfMaxTypos + 1);
@@ -420,11 +426,18 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 							continue;
 						}
 						const auto wordId = holder_.BuildWordId(wordPos++);
+
+						struct {
+							reindexer::WordIdType wordId_;
+							decltype(typosMax)& typosMax_;
+							size_t wordStringSize_;
+						} callbackCtx{wordId, typosMax, wordString->size()};
+
 						mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-								typos_context::CallBack{[wordId, &typosMax, wordString](std::string_view typo, int level,
-																						const typos_context::TyposVec& positions) {
-									if (level <= 1 && typo.size() != wordString->size()) {
-										typosMax.emplace(typo, WordTypo{wordId, positions});
+								typos_context::CallBack{[&callbackCtx](std::string_view typo, int level,
+																	   const typos_context::TyposVec& positions, const std::wstring_view) {
+									if (level <= 1 && typo.size() != callbackCtx.wordStringSize_) {
+										callbackCtx.typosMax_.emplace(typo, WordTypo{callbackCtx.wordId_, positions});
 									}
 								}});
 					}
@@ -445,13 +458,20 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 					continue;
 				}
 				const auto wordId = holder_.BuildWordId(wordPos++);
+
+				struct {
+					reindexer::WordIdType wordId_;
+					decltype(typosHalf)& typosHalf_;
+					size_t wordStringSize_;
+				} callbackCtx{wordId, typosHalf, wordString->size()};
+
 				mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-						typos_context::CallBack{
-							[wordId, &typosHalf, wordString](std::string_view typo, int level, const typos_context::TyposVec& positions) {
-								if (level > 1 || typo.size() == wordString->size()) {
-									typosHalf.emplace(typo, WordTypo{wordId, positions});
-								}
-							}});
+						typos_context::CallBack{[&callbackCtx](std::string_view typo, int level, const typos_context::TyposVec& positions,
+															   const std::wstring_view) {
+							if (level > 1 || typo.size() == callbackCtx.wordStringSize_) {
+								callbackCtx.typosHalf_.emplace(typo, WordTypo{callbackCtx.wordId_, positions});
+							}
+						}});
 			}
 		} catch (...) {
 			exwr.SetException(std::current_exception());

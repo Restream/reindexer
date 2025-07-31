@@ -2,7 +2,6 @@
 
 #include "stopwords/types.h"
 #include "tools/rhashmap.h"
-#include "tools/rvector.h"
 
 namespace reindexer {
 
@@ -40,10 +39,15 @@ struct FtDSLEntry {
 #endif
 struct FtDSLVariant {
 	FtDSLVariant() = default;
-	FtDSLVariant(std::wstring p, int pr) noexcept : pattern{std::move(p)}, proc{pr} {}
+	FtDSLVariant(FtDSLVariant&&) = default;
+	FtDSLVariant(std::wstring p, int pr, PrefAndStemmersForbidden psForbidden) noexcept
+		: pattern{std::move(p)}, proc{pr}, prefAndStemmersForbidden(psForbidden) {}
+
+	reindexer::FtDSLVariant& operator=(FtDSLVariant&& rhs) = default;
 
 	std::wstring pattern;
 	int proc = 0;
+	PrefAndStemmersForbidden prefAndStemmersForbidden = PrefAndStemmersForbidden_False;
 };
 #if !defined(__clang__) && !defined(_MSC_VER)
 #pragma GCC diagnostic pop
@@ -51,20 +55,12 @@ struct FtDSLVariant {
 
 struct StopWord;
 
-struct [[nodiscard]] FtDSLQueryOptions {
-	const StopWordsSetT& stopWords;
-	const std::string& extraWordSymbols;
-	SymbolTypeMask removeDiacriticsMask = 0;
-};
-
-class FtDSLQuery : public RVector<FtDSLEntry> {
+class FtDSLQuery : public h_vector<FtDSLEntry> {
 public:
-	FtDSLQuery(const RHashMap<std::string, int>& fields, const StopWordsSetT& stopWords, const std::string& extraWordSymbols) noexcept
-		: fields_(fields), options_{stopWords, extraWordSymbols, 0} {}
+	FtDSLQuery(const RHashMap<std::string, int>& fields, const StopWordsSetT& stopWords, const SplitOptions& splitOptions) noexcept
+		: fields_(fields), stopWords_(stopWords), splitOptions_(splitOptions) {}
 
-	FtDSLQuery(const RHashMap<std::string, int>& fields, const FtDSLQueryOptions options) noexcept : fields_(fields), options_(options) {}
-
-	FtDSLQuery CopyCtx() const noexcept { return {fields_, options_}; }
+	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, splitOptions_}; }
 	void Parse(std::string_view q);
 
 private:
@@ -76,7 +72,8 @@ private:
 	std::function<int(const std::string&)> resolver_;
 
 	const RHashMap<std::string, int>& fields_;
-	const FtDSLQueryOptions options_;
+	const StopWordsSetT& stopWords_;
+	const SplitOptions& splitOptions_;
 };
 
 }  // namespace reindexer

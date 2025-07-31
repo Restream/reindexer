@@ -7,6 +7,7 @@ import (
 	"github.com/restream/reindexer/v5"
 	_ "github.com/restream/reindexer/v5/bindings/builtin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -42,7 +43,8 @@ func setNsCopyConfigs(namespace string, rx *reindexer.Reindexer) error {
 
 func doSearchTest(t *testing.T, indexType string) {
 
-	rx := reindexer.NewReindex(*dsn)
+	rx, err := reindexer.NewReindex(*dsn)
+	require.NoError(t, err)
 	defer rx.Close()
 
 	for i, testC := range ParseBasicTestCases() {
@@ -91,7 +93,8 @@ func doSearchTest(t *testing.T, indexType string) {
 }
 
 func doFTIndexCopy(t *testing.T, indexType string) {
-	rx := reindexer.NewReindex(*dsn)
+	rx, err := reindexer.NewReindex(*dsn)
+	require.NoError(t, err)
 	defer rx.Close()
 
 	const ns = testFtIndexCopyNs
@@ -102,7 +105,7 @@ func doFTIndexCopy(t *testing.T, indexType string) {
 	)
 
 	createReindexDbInstance(rx, ns, indexType, thrashCount+dataCount)
-	err := setNsCopyConfigs(ns, rx)
+	err = setNsCopyConfigs(ns, rx)
 	assert.NoError(t, err)
 
 	fillTestItemsTx(ns, 0, dataCount, "data", rx)
@@ -136,14 +139,15 @@ func TestFTIndexCopy(t *testing.T) {
 }
 
 func TestFTSynonymsAfterTx(t *testing.T) {
-	rx := reindexer.NewReindex(*dsn)
+	rx, err := reindexer.NewReindex(*dsn)
+	require.NoError(t, err)
 	defer rx.Close()
 
 	const ns = testFtSynonymsFfterTxNs
 
 	const dataCount = 50000
 
-	err := rx.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TextItem{})
+	err = rx.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TextItem{})
 	assert.NoError(t, err)
 
 	config := reindexer.DefaultFtFastConfig()

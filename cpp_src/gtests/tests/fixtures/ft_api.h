@@ -66,7 +66,6 @@ protected:
 	struct FTDSLQueryParams {
 		reindexer::RHashMap<std::string, int> fields;
 		reindexer::StopWordsSetT stopWords;
-		std::string extraWordSymbols = "-/+";
 	};
 	int counter_ = 0;
 	ReindexerTestApi<reindexer::Reindexer> rt;

@@ -1,5 +1,4 @@
 #include <csignal>
-#include <limits>
 #include "args/args.hpp"
 #include "client/reindexer.h"
 #include "commandsprocessor.h"
@@ -15,7 +14,7 @@ namespace reindexer_tool {
 using args::Options;
 
 constexpr int kSingleThreadCoroCount = 200;
-static int llevel;
+static int llevel = 0;
 
 static void InstallLogLevel(const std::vector<std::string>& args) {
 	try {
@@ -79,12 +78,13 @@ int main(int argc, char* argv[]) {
 										 Options::Single | Options::Global);
 	args::ValueFlag<std::string> outFileName(progOptions, "FILENAME", "Send query results to file", {'o', "output"}, "",
 											 Options::Single | Options::Global);
+
 	args::ValueFlag<std::string> dumpMode(progOptions, "DUMP_MODE",
 										  "Dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'",
 										  {"dump-mode"}, "", Options::Single | Options::Global);
 
 	args::ValueFlag<unsigned> connThreads(progOptions, "INT=1..65535", "Number of threads(connections) used by db connector",
-										  {'t', "threads"}, 1, Options::Single | Options::Global);
+										  {'t', "threads"}, 4, Options::Single | Options::Global);
 
 	args::ValueFlag<unsigned> maxTransactionSize(progOptions, "INT=1..100000",
 												 "Max transaction size used by db connector(0 - no transactions)", {"txs", "txsize"}, 0,
@@ -101,6 +101,13 @@ int main(int argc, char* argv[]) {
 
 	args::ValueFlag<std::string> appName(progOptions, "Application name", "Application name that will be used in login info",
 										 {'a', "appname"}, "reindexer_tool", Options::Single | Options::Global);
+
+	args::ValueFlagList<std::string> selectedNamespaces(progOptions, "Namespaces selected",
+														"List of namespaces for which commands from file will be executed. Selecting all "
+														"namespaces if list is empty. Commands for non-selected namespaces will be skipped."
+														"\nExample: \"reindexer_tool -n collections -n karaoke_genres\""
+														"\nwill execute commands only for collections and karaoke_genres namespaces",
+														{'n', "namespaces"}, {});
 
 	args::GlobalOptions globals(parser, progOptions);
 
@@ -182,14 +189,16 @@ int main(int argc, char* argv[]) {
 		const unsigned int numThreads = args::get(connThreads);
 		const unsigned int numConnects = numThreads;
 		const unsigned int transactionSize = args::get(maxTransactionSize);
-		CommandsProcessor<reindexer::client::Reindexer> commandsProcessor(
-			args::get(outFileName), args::get(fileName), args::get(connThreads), transactionSize, config, numConnects, numThreads);
+		CommandsProcessor<reindexer::client::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
+																		  args::get(selectedNamespaces), args::get(connThreads),
+																		  transactionSize, config, numConnects, numThreads);
 		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
 		if (err.ok()) {
 			runError = commandsProcessor.Run(args::get(command), args::get(dumpMode));
 		}
 	} else if (checkIfStartsWithCS("builtin://"sv, dsn)) {
-		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(connThreads), 0);
+		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
+																  args::get(selectedNamespaces), args::get(connThreads), 0);
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
 		if (err.ok()) {
 			runError = commandsProcessor.Run(args::get(command), args::get(dumpMode));

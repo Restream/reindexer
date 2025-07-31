@@ -86,9 +86,18 @@ void Query::VerifyForUpdate() const {
 	if (!subQueries_.empty()) {
 		throw Error{errQueryExec, "UPDATE and DELETE query cannot contain subqueries"};
 	}
+	for (const auto& jq : joinQueries_) {
+		if (jq.joinType != JoinType::InnerJoin) {
+			throw Error{errQueryExec, "UPDATE and DELETE query can contain only inner join"};
+		}
+	}
+}
+
+void Query::VerifyForUpdateTransaction() const {
 	if (!joinQueries_.empty()) {
 		throw Error{errQueryExec, "UPDATE and DELETE query cannot contain join"};
 	}
+	VerifyForUpdate();
 }
 
 Query::Query(Query&& other) noexcept = default;
@@ -180,7 +189,7 @@ void Query::Join(JoinedQuery&& jq) & {
 			nextOp_ = OpOr;
 			[[fallthrough]];
 		case JoinType::InnerJoin:
-			entries_.Append(nextOp_, JoinQueryEntry(joinQueries_.size()));
+			rx_unused = entries_.Append(nextOp_, JoinQueryEntry(joinQueries_.size()));
 			nextOp_ = OpAnd;
 			break;
 	}
@@ -231,14 +240,14 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				const OpType op = OpType(ser.GetVarUInt());
 				const CondType condition = CondType(ser.GetVarUInt());
 				VariantArray values = deserializeValues(ser, condition);
-				entries_.Append<QueryEntry>(op, std::string{fieldName}, condition, std::move(values));
+				rx_unused = entries_.Append<QueryEntry>(op, std::string{fieldName}, condition, std::move(values));
 				break;
 			}
 			case QueryKnnCondition: {
 				const auto fieldName = ser.GetVString();
 				const OpType op = OpType(ser.GetVarUInt());
 				const auto vect = ser.GetFloatVectorView();
-				entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
+				rx_unused = entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
 				break;
 			}
 			case QueryKnnConditionExt: {
@@ -248,12 +257,13 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				switch (fmt) {
 					case KnnQueryEntry::DataFormatType::String: {
 						const auto text = ser.GetVString();
-						entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, std::string(text), KnnSearchParams::Deserialize(ser));
+						rx_unused = entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, std::string(text),
+																   KnnSearchParams::Deserialize(ser));
 						break;
 					}
 					case KnnQueryEntry::DataFormatType::Vector: {
 						const auto vect = ser.GetFloatVectorView();
-						entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
+						rx_unused = entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
 						break;
 					}
 					case KnnQueryEntry::DataFormatType::None:
@@ -267,17 +277,17 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				std::string firstField{ser.GetVString()};
 				CondType condition = static_cast<CondType>(ser.GetVarUInt());
 				std::string secondField{ser.GetVString()};
-				entries_.Append<BetweenFieldsQueryEntry>(op, std::move(firstField), condition, std::move(secondField));
+				rx_unused = entries_.Append<BetweenFieldsQueryEntry>(op, std::move(firstField), condition, std::move(secondField));
 				break;
 			}
 			case QueryAlwaysFalseCondition: {
 				const OpType op = OpType(ser.GetVarUInt());
-				entries_.Append<AlwaysFalse>(op);
+				rx_unused = entries_.Append<AlwaysFalse>(op);
 				break;
 			}
 			case QueryAlwaysTrueCondition: {
 				const OpType op = OpType(ser.GetVarUInt());
-				entries_.Append<AlwaysTrue>(op);
+				rx_unused = entries_.Append<AlwaysTrue>(op);
 				break;
 			}
 			case QueryJoinCondition: {
@@ -285,14 +295,13 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				assertrx(type != JoinType::LeftJoin);
 				JoinQueryEntry joinEntry(ser.GetVarUInt());
 				hasJoinConditions = true;
-				// NOLINTNEXTLINE(performance-move-const-arg)
-				entries_.Append((type == JoinType::OrInnerJoin) ? OpOr : OpAnd, std::move(joinEntry));
+				rx_unused = entries_.Append((type == JoinType::OrInnerJoin) ? OpOr : OpAnd, std::move(joinEntry));
 				break;
 			}
 			case QueryAggregation: {
 				const AggType type = static_cast<AggType>(ser.GetVarUInt());
 				size_t fieldsCount = ser.GetVarUInt();
-				RVector<std::string, 1> fields;
+				h_vector<std::string, 1> fields;
 				fields.reserve(fieldsCount);
 				while (fieldsCount--) {
 					fields.emplace_back(std::string(ser.GetVString()));
@@ -326,7 +335,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 			case QueryDistinct: {
 				const auto fieldName = ser.GetVString();
 				if (!fieldName.empty()) {
-					entries_.Append<QueryEntry>(OpAnd, std::string{fieldName}, QueryEntry::DistinctTag{});
+					rx_unused = entries_.Append<QueryEntry>(OpAnd, std::string{fieldName}, QueryEntry::DistinctTag{});
 				}
 				break;
 			}
@@ -673,7 +682,7 @@ Query Query::Deserialize(Serializer& ser) {
 			Query& q = nested ? res.mergeQueries_.back() : res;
 			if (joinType != JoinType::LeftJoin && !hasJoinConditions) {
 				const size_t joinIdx = res.joinQueries_.size();
-				res.entries_.Append<JoinQueryEntry>((joinType == JoinType::OrInnerJoin) ? OpOr : OpAnd, joinIdx);
+				rx_unused = res.entries_.Append<JoinQueryEntry>((joinType == JoinType::OrInnerJoin) ? OpOr : OpAnd, joinIdx);
 			}
 			q.joinQueries_.emplace_back(std::move(q1));
 			q.adoptNested(q.joinQueries_.back());

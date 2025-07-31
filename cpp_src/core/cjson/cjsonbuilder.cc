@@ -1,7 +1,7 @@
 #include "cjsonbuilder.h"
 #include "sparse_validator.h"
 
-namespace reindexer {
+namespace reindexer::builders {
 
 using namespace item_fields_validator;
 
@@ -167,4 +167,4 @@ void CJsonBuilder::Array(TagName tagName, Serializer& ser, TagType tagType, int 
 	}
 }
 
-}  // namespace reindexer
+}  // namespace reindexer::builders

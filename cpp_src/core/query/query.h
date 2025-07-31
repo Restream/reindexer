@@ -101,13 +101,11 @@ public:
 	/// @param cond - type of condition.
 	/// @param val - value of index to be compared with.
 	/// @return Query object ready to be executed.
-	template <typename Str, typename Input, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr,
-			  std::enable_if_t<std::is_constructible_v<Variant, Input>>* = nullptr>
+	template <concepts::ConvertibleToString Str, concepts::ConvertibleToVariant Input>
 	Query& Where(Str&& field, CondType cond, Input&& val) & {
 		return Where(std::forward<Str>(field), cond, VariantArray{Variant{std::forward<Input>(val)}});
 	}
-	template <typename Str, typename Input, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr,
-			  std::enable_if_t<std::is_constructible_v<Variant, Input>>* = nullptr>
+	template <concepts::ConvertibleToString Str, concepts::ConvertibleToVariant Input>
 	[[nodiscard]] Query&& Where(Str&& field, CondType cond, Input&& val) && {
 		return std::move(Where(std::forward<Str>(field), cond, VariantArray{Variant{std::forward<Input>(val)}}));
 	}
@@ -124,7 +122,7 @@ public:
 		for (auto it = l.begin(); it != l.end(); it++) {
 			values.emplace_back(*it);
 		}
-		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(values));
+		rx_unused = entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(values));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -145,7 +143,7 @@ public:
 		for (auto it = l.begin(); it != l.end(); it++) {
 			values.emplace_back(*it);
 		}
-		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(values));
+		rx_unused = entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(values));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -161,7 +159,7 @@ public:
 	/// @return Query object ready to be executed.
 	template <concepts::ConvertibleToString Str>
 	Query& Where(Str&& field, CondType cond, VariantArray l) & {
-		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(l));
+		rx_unused = entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(l));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -188,7 +186,7 @@ public:
 		for (auto it = l.begin(); it != l.end(); it++) {
 			values.emplace_back(*it);
 		}
-		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(idx), cond, std::move(values));
+		rx_unused = entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(idx), cond, std::move(values));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -203,7 +201,7 @@ public:
 		for (auto it = v.begin(); it != v.end(); it++) {
 			values.emplace_back(*it);
 		}
-		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(idx), cond, std::move(values));
+		rx_unused = entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(idx), cond, std::move(values));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -213,7 +211,7 @@ public:
 	}
 	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
 	Query& WhereBetweenFields(Str1&& firstIdx, CondType cond, Str2&& secondIdx) & {
-		entries_.Append<BetweenFieldsQueryEntry>(nextOp_, std::forward<Str1>(firstIdx), cond, std::forward<Str2>(secondIdx));
+		rx_unused = entries_.Append<BetweenFieldsQueryEntry>(nextOp_, std::forward<Str1>(firstIdx), cond, std::forward<Str2>(secondIdx));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -224,7 +222,7 @@ public:
 
 	template <concepts::ConvertibleToString Str>
 	Query& DWithin(Str&& field, Point p, double distance) & {
-		entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), CondDWithin, VariantArray::Create(p, distance));
+		rx_unused = entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), CondDWithin, VariantArray::Create(p, distance));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -252,7 +250,7 @@ public:
 			}
 		}
 		q.Strict(strictMode_).Debug(debugLevel_).Explain(explain_);
-		entries_.Append<SubQueryEntry>(nextOp_, cond, subQueries_.size(), std::move(values));
+		rx_unused = entries_.Append<SubQueryEntry>(nextOp_, cond, subQueries_.size(), std::move(values));
 		PopBackQEGuard guard{&entries_};
 		adoptNested(q);
 		subQueries_.emplace_back(std::move(q));
@@ -271,11 +269,11 @@ public:
 	[[nodiscard]] Query&& Where(Query&& q, CondType cond, std::initializer_list<T> values) && {
 		return std::move(Where(std::move(q), cond, VariantArray::Create(values)));
 	}
-	template <typename Input, std::enable_if_t<std::is_constructible_v<Variant, Input>>* = nullptr>
+	template <concepts::ConvertibleToVariantArray Input>
 	[[nodiscard]] Query& Where(Query&& q, CondType cond, Input&& val) & {
 		return Where(std::move(q), cond, VariantArray{Variant{std::forward<Input>(val)}});
 	}
-	template <typename Input, std::enable_if_t<std::is_constructible_v<Variant, Input>>* = nullptr>
+	template <concepts::ConvertibleToVariantArray Input>
 	[[nodiscard]] Query&& Where(Query&& q, CondType cond, Input&& val) && {
 		return std::move(Where(std::move(q), cond, VariantArray{Variant{std::forward<Input>(val)}}));
 	}
@@ -291,7 +289,7 @@ public:
 			(!q.aggregations_.empty() && (q.aggregations_[0].Type() == AggCount || q.aggregations_[0].Type() == AggCountCached))) {
 			q.Limit(0);
 		}
-		entries_.Append<SubQueryFieldEntry>(nextOp_, std::forward<Str>(field), cond, subQueries_.size());
+		rx_unused = entries_.Append<SubQueryFieldEntry>(nextOp_, std::forward<Str>(field), cond, subQueries_.size());
 		PopBackQEGuard guard{&entries_};
 		adoptNested(q);
 		subQueries_.emplace_back(std::move(q));
@@ -310,7 +308,7 @@ public:
 			throw Error(errLogic, "NOT operation is not allowed with knn condition");
 		}
 		params.Validate();
-		entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str>(field), std::move(vec), std::move(params));
+		rx_unused = entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str>(field), std::move(vec), std::move(params));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -332,7 +330,7 @@ public:
 			throw Error(errLogic, "NOT operation is not allowed with knn condition");
 		}
 		params.Validate();
-		entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str1>(field), std::forward<Str2>(data), std::move(params));
+		rx_unused = entries_.Append<KnnQueryEntry>(nextOp_, std::forward<Str1>(field), std::forward<Str2>(data), std::move(params));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -947,13 +945,20 @@ public:
 
 	[[nodiscard]] auto NsName() const&& = delete;
 	[[nodiscard]] const QueryEntries& Entries() const noexcept { return entries_; }
-	template <typename T>
-	[[nodiscard]] T& GetUpdatableEntry(size_t i) & noexcept {
-		return entries_.Get<T>(i);
-	}
+	/// Sets new entry value
+	/// @param i - entry's offset
+	/// @param args - construction arguments for the new entry
+	/// @return actual count of the inserted entries
 	template <typename T, typename... Args>
-	void SetEntry(size_t i, Args&&... args) {
-		entries_.SetValue(i, T{std::forward<Args>(args)...});
+	[[nodiscard]] size_t SetEntry(size_t i, Args&&... args) {
+		return entries_.SetValue(i, T{std::forward<Args>(args)...});
+	}
+	/// Tries to update values of the query entry without creation of the new entries
+	/// @param i - entry's offset
+	/// @param values - new values. Also return old values in case of success
+	/// @return true - in case of success, false - in case if in-place update is not possible
+	[[nodiscard]] bool TryUpdateQueryEntryInplace(size_t i, VariantArray& values) {
+		return entries_.TryUpdateInplace<QueryEntry>(i, values);
 	}
 	void UpdateField(UpdateEntry&& ue) & { updateFields_.emplace_back(std::move(ue)); }
 
@@ -964,12 +969,12 @@ public:
 	void ReserveQueryEntries(size_t s) & { entries_.Reserve(s); }
 	template <typename T, typename... Args>
 	Query& AppendQueryEntry(OpType op, Args&&... args) & {
-		entries_.Append<T>(op, std::forward<Args>(args)...);
+		rx_unused = entries_.Append<T>(op, std::forward<Args>(args)...);
 		return *this;
 	}
 	template <typename T, typename... Args>
 	Query&& AppendQueryEntry(OpType op, Args&&... args) && {
-		entries_.Append<T>(op, std::forward<Args>(args)...);
+		rx_unused = entries_.Append<T>(op, std::forward<Args>(args)...);
 		return std::move(*this);
 	}
 	void SetLastOperation(OpType op) & { entries_.SetLastOperation(op); }
@@ -980,6 +985,7 @@ public:
 	[[nodiscard]] const FieldsNamesFilter& SelectFilters() const& noexcept { return selectFilter_; }
 	void AddJoinQuery(JoinedQuery&&);
 	void VerifyForUpdate() const;
+	void VerifyForUpdateTransaction() const;
 	template <InjectionDirection injectionDirection>
 	size_t InjectConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
 											const QueryEntries& joinedQueryEntries, size_t joinedQueryNo,

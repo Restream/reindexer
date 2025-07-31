@@ -84,7 +84,7 @@ private:
 
 	class DistinctChangeChecker {
 	public:
-		DistinctChangeChecker(const Aggregator& aggregator) noexcept : aggregator_(aggregator) {}
+		explicit DistinctChangeChecker(const Aggregator& aggregator) noexcept : aggregator_(aggregator) {}
 		[[nodiscard]] bool operator()() noexcept {
 			assertrx_dbg(aggregator_.Type() == AggType::AggDistinct);
 			assertrx_dbg(aggregator_.distincts_);
@@ -101,16 +101,6 @@ private:
 	void getData(const PayloadValue& item, std::vector<DistinctHelpers::DataType>& data, size_t& maxIndex) {
 		data.resize(0);
 		data.reserve(fields_.size());
-		enum class [[nodiscard]] IsArray { No, True, False } isArrayVal = IsArray::No;
-		auto checkFieldArray = [&isArrayVal](int i, bool isArrayVariant) {
-			IsArray isArrayCur = isArrayVariant ? IsArray::True : IsArray::False;
-			if (isArrayVal == IsArray::No) {
-				isArrayVal = isArrayCur;
-			} else if (isArrayVal != isArrayCur) {
-				throw Error(errQueryExec, "Fields in Distinct can be either arrays or not (Cheker). Field number {}", i);
-			}
-		};
-
 		ConstPayload pv{payloadType_, item};
 		maxIndex = 0;
 		size_t tagPathIndx = 0;
@@ -120,15 +110,11 @@ private:
 				const TagsPath& tagsPath = fields_.getTagsPath(tagPathIndx);
 				tagPathIndx++;
 				pv.GetByJsonPath(tagsPath, b, KeyValueType::Undefined{});
-				if (!b.empty()) {
-					checkFieldArray(i, b.IsArrayValue());
-				}
 			} else {
 				pv.Get(fields_[i], b);
-				checkFieldArray(i, b.IsArrayValue());
 			}
 			maxIndex = std::max(maxIndex, size_t(b.size()));
-			data.emplace_back(std::move(b));
+			data.emplace_back(std::move(b), IsArray(b.IsArrayValue()));
 		}
 	}
 	using HashSetVariantRelax =
@@ -136,7 +122,7 @@ private:
 					  DistinctHelpers::CompareVariantVector<DistinctHelpers::IsCompositeSupported::Yes>,
 					  DistinctHelpers::LessDistinctVector<DistinctHelpers::IsCompositeSupported::Yes>>;
 	std::unique_ptr<HashSetVariantRelax> distincts_;
-	bool compositeIndexFields_;
+	const bool compositeIndexFields_;
 };
 
 }  // namespace reindexer

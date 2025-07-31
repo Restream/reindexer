@@ -48,12 +48,13 @@ func TestMain(m *testing.M) {
 
 func TestShardingIDs(t *testing.T) {
 
-	rx := reindexer.NewReindex(*dsn, reindexer.WithCreateDBIfMissing())
+	rx, err := reindexer.NewReindex(*dsn, reindexer.WithCreateDBIfMissing())
+	require.NoError(t, err)
 	defer rx.Close()
 
 	const testNamespace = "ns"
 
-	err := rx.OpenNamespace(testNamespace, reindexer.DefaultNamespaceOptions(), TestItemSharding{})
+	err = rx.OpenNamespace(testNamespace, reindexer.DefaultNamespaceOptions(), TestItemSharding{})
 	assert.NoError(t, err, "Can't open namespace \"%s\" what=", testNamespace, err)
 
 	index := 0

@@ -5,7 +5,8 @@
 
 namespace reindexer {
 
-void Synonyms::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) {
+void Synonyms::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorage& result, int proc,
+						   fast_hash_map<std::wstring, size_t>& patternsUsed) {
 	if (one2one_.empty()) {
 		return;
 	}
@@ -15,7 +16,7 @@ void Synonyms::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& 
 		return;
 	}
 	for (const auto& ait : *it->second) {
-		result.emplace_back(ait, proc);
+		AddOrUpdateVariant(result, patternsUsed, {ait, proc, PrefAndStemmersForbidden_False});
 	}
 }
 
@@ -34,7 +35,7 @@ void Synonyms::addDslEntries(std::vector<SynonymsDsl>& synonymsDsl, const Multip
 static FtDslOpts makeOptsForAlternatives(const FtDslOpts& termOpts, int proc) {
 	FtDslOpts result;
 	result.op = OpAnd;
-	result.boost = termOpts.boost * proc / 100.0;
+	result.boost = termOpts.boost * proc / 100.0f;
 	result.termLenBoost = termOpts.termLenBoost;
 	result.fieldsOpts = termOpts.fieldsOpts;
 	result.qpos = termOpts.qpos;
@@ -42,7 +43,7 @@ static FtDslOpts makeOptsForAlternatives(const FtDslOpts& termOpts, int proc) {
 }
 
 static void addOptsForAlternatives(FtDslOpts& opts, const FtDslOpts& termOpts, int proc) {
-	opts.boost += termOpts.boost * proc / 100.0;
+	opts.boost += termOpts.boost * proc / 100.0f;
 	opts.termLenBoost += termOpts.termLenBoost;
 	assertrx(opts.fieldsOpts.size() == termOpts.fieldsOpts.size());
 	for (size_t i = 0, end = opts.fieldsOpts.size(); i != end; ++i) {
@@ -62,58 +63,62 @@ static void divOptsForAlternatives(FtDslOpts& opts, size_t size) {
 	opts.qpos /= size;
 }
 
-void Synonyms::PostProcess(const FtDSLEntry& term, const FtDSLQuery& dsl, size_t termIdx, std::vector<SynonymsDsl>& synonymsDsl,
-						   int proc) const {
-	if (term.opts.groupNum != -1) {
+void Synonyms::AddOneToManySynonyms(const std::wstring& pattern, const FtDslOpts& opts, const FtDSLQuery& dsl, size_t termIdx,
+									std::vector<SynonymsDsl>& synonymsDsl, int proc) const {
+	if (opts.groupNum != -1) {
 		// Skip multiword synonyms for phrase search
 		return;
 	}
-	auto it = one2many_.find(term.pattern);
-	if (it == one2many_.end()) {
-		return;
+
+	if (auto it = one2many_.find(pattern); it != one2many_.end()) {
+		assertrx_throw(it->second);
+		addDslEntries(synonymsDsl, *it->second, makeOptsForAlternatives(opts, proc), {termIdx}, dsl);
 	}
-
-	const auto opts = makeOptsForAlternatives(term.opts, proc);
-
-	assertrx(it->second);
-	addDslEntries(synonymsDsl, *it->second, opts, {termIdx}, dsl);
 }
 
-void Synonyms::PreProcess(const FtDSLQuery& dsl, std::vector<SynonymsDsl>& synonymsDsl, int proc) const {
-	for (const auto& multiSynonyms : many2any_) {
-		bool match = !multiSynonyms.first.empty();
-		FtDslOpts opts;
-		std::vector<size_t> termsIdx;
-		for (auto termIt = multiSynonyms.first.cbegin(); termIt != multiSynonyms.first.cend(); ++termIt) {
-			const auto isAppropriateEntry = [&termIt](const FtDSLEntry& dslEntry) {
-				return dslEntry.opts.op != OpNot && dslEntry.opts.groupNum == -1 && dslEntry.pattern == *termIt;
-			};
-			const auto dslIt = std::find_if(dsl.cbegin(), dsl.cend(), isAppropriateEntry);
-			if (dslIt == dsl.cend()) {
-				match = false;
-				break;
-			} else {
-				if (termIt == multiSynonyms.first.cbegin()) {
-					opts = makeOptsForAlternatives(dslIt->opts, proc);
-				} else {
-					addOptsForAlternatives(opts, dslIt->opts, proc);
-				}
-				size_t idx = dslIt - dsl.cbegin();
+void Synonyms::addPhraseAlternatives(const FtDSLQuery& dsl, const h_vector<std::wstring, 2>& phrase,
+									 const MultipleAlternativesCont& phraseAlternatives, std::vector<SynonymsDsl>& synonymsDsl, int proc) {
+	FtDslOpts opts;
+	std::vector<size_t> termsIdx;
+
+	for (auto termIt = phrase.begin(); termIt != phrase.end(); ++termIt) {
+		const auto isAppropriateEntry = [&termIt](const FtDSLEntry& dslEntry) {
+			return dslEntry.opts.op != OpNot && dslEntry.opts.groupNum == -1 && dslEntry.pattern == *termIt;
+		};
+		const auto dslIt = std::find_if(dsl.cbegin(), dsl.end(), isAppropriateEntry);
+		// phrase not found
+		if (dslIt == dsl.end()) {
+			return;
+		}
+
+		if (termIt == phrase.cbegin()) {
+			opts = makeOptsForAlternatives(dslIt->opts, proc);
+		} else {
+			addOptsForAlternatives(opts, dslIt->opts, proc);
+		}
+
+		// Probably we don't need this?
+		size_t idx = dslIt - dsl.cbegin();
+		termsIdx.push_back(idx);
+		for (++idx; idx < dsl.size(); ++idx) {
+			if (isAppropriateEntry(dsl[idx])) {
 				termsIdx.push_back(idx);
-				for (++idx; idx < dsl.size(); ++idx) {
-					if (isAppropriateEntry(dsl[idx])) {
-						termsIdx.push_back(idx);
-					}
-				}
 			}
 		}
-		if (match) {
-			divOptsForAlternatives(opts, multiSynonyms.first.size());
-			assertrx(multiSynonyms.second);
-			addDslEntries(synonymsDsl, *multiSynonyms.second, opts, termsIdx, dsl);
-		}
+	}
+
+	divOptsForAlternatives(opts, phrase.size());
+	addDslEntries(synonymsDsl, phraseAlternatives, opts, termsIdx, dsl);
+}
+
+void Synonyms::AddManyToManySynonyms(const FtDSLQuery& dsl, std::vector<SynonymsDsl>& synonymsDsl, int proc) const {
+	for (const auto& multiSynonyms : many2any_) {
+		assertrx_throw(!multiSynonyms.first.empty());
+		assertrx_throw(multiSynonyms.second);
+		addPhraseAlternatives(dsl, multiSynonyms.first, *multiSynonyms.second.get(), synonymsDsl, proc);
 	}
 }
+
 void Synonyms::SetConfig(BaseFTConfig* cfg) {
 	one2one_.clear();
 	one2many_.clear();
@@ -125,7 +130,7 @@ void Synonyms::SetConfig(BaseFTConfig* cfg) {
 		auto singleAlternatives = std::make_shared<SingleAlternativeCont>();
 		auto multipleAlternatives = std::make_shared<MultipleAlternativesCont>();
 		for (const auto& alt : synonym.alternatives) {
-			split(alt, buf, resultOfSplit, cfg->extraWordSymbols);
+			split(alt, buf, resultOfSplit, cfg->splitOptions);
 			if (resultOfSplit.size() == 1) {
 				singleAlternatives->emplace_back(std::move(resultOfSplit[0]));
 			} else if (resultOfSplit.size() > 1) {
@@ -137,7 +142,7 @@ void Synonyms::SetConfig(BaseFTConfig* cfg) {
 			}
 		}
 		for (const auto& token : synonym.tokens) {
-			split(token, buf, resultOfSplit, cfg->extraWordSymbols);
+			split(token, buf, resultOfSplit, cfg->splitOptions);
 			if (resultOfSplit.size() == 1) {
 				if (!singleAlternatives->empty()) {
 					const auto res = one2one_.emplace(resultOfSplit[0], singleAlternatives);
@@ -163,7 +168,7 @@ void Synonyms::SetConfig(BaseFTConfig* cfg) {
 					for (const std::wstring& singleAlt : *singleAlternatives) {
 						multAlt->push_back({singleAlt});
 					}
-					many2any_.emplace_back(RVector<std::wstring, 2>{resultOfSplit.begin(), resultOfSplit.end()}, std::move(multAlt));
+					many2any_.emplace_back(h_vector<std::wstring, 2>{resultOfSplit.begin(), resultOfSplit.end()}, std::move(multAlt));
 				}
 				if (!multipleAlternatives->empty()) {
 					if (singleAlternatives->empty()) {

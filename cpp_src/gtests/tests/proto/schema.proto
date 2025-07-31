@@ -2,15 +2,15 @@ syntax = "proto3";
 
 message Person {
   string name = 1;
-  int32 id = 2;
-  int32 age = 3;
-  int32 weight = 4;
+  sint32 id = 2;
+  sint32 age = 3;
+  sint32 weight = 4;
   string email = 5;
 
   message Address {
     message PhoneNumber {
       string number = 1;
-      int32 type = 2;
+      sint32 type = 2;
     }
     message Home {
       string city = 1;
@@ -22,9 +22,9 @@ message Person {
   }
 
   Address address = 6;
-  repeated int32 friends = 7;
+  repeated sint32 friends = 7;
   double salary = 8;
-  repeated int32 bonuses = 9 [packed=true];
+  repeated sint32 bonuses = 9 [packed=true];
 
   repeated double indexedPackedDouble = 10 [packed=true];
   repeated string indexedUnpackedDouble = 11 [packed=false];

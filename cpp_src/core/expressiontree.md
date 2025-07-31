@@ -246,15 +246,24 @@ const_iterator ExpressionTree::cend() const;
 ```c++
 const_iterator ExpressionTree::begin_of_current_bracket() const
 ```
-- Append an operand to the end or to the beginning of the expression. `T` must be one of `Ts...` types:
+- Append an operand to the end or to the beginning of the expression. `T` must be one of `Ts...` types. Returns actual number of the inserted entries (method may create additional entries during the postprocessing):
 ```c++
-void ExpressionTree::Append<T>(OperationType, const T&);
-void ExpressionTree::Append<T>(OperationType, T&&);
-void ExpressionTree::AppendFront<T>(OperationType, T&&);
+size_t ExpressionTree::Append<T>(OperationType, const T&);
+size_t ExpressionTree::Append<T>(OperationType, T&&);
+size_t ExpressionTree::AppendFront<T>(OperationType, T&&);
 ```
-- Append deep or lazy copy of a part of another expression. !Warning! lazy copy should not live over the original expression:
+- Append deep copy of a part of another expression:
 ```c++
 void ExpressionTree::Append(const_iterator begin, const_iterator end);
+```
+  Inserts/emplaces new element on the requested position. Returns actual number of the inserted entries (method may create additional entries during the postprocessing):
+```c++
+size_t ExpressionTree::Insert<T>(size_t pos, OperationType, T&&);
+size_t ExpressionTree::Emplace<T, Args...>(size_t pos, OperationType, T&&, Args&&...);
+```
+  Inserts new element after the requested position. Returns actual number of the inserted entries (method may create additional entries during the postprocessing):
+```c++
+size_t ExpressionTree::InsertAfter<T>(size_t pos, OperationType, T&&);
 ```
 - Start and finish subexpression. `args...` are forwarded to constructor of `SubTree`:
 ```c++
@@ -294,4 +303,8 @@ template <typename Visitor>
 void ExpressionTree::VisitForEach(const Visitor&) const;
 template <typename Visitor>
 void ExpressionTree::VisitForEach(const Visitor&);
+```
+  Tries to update entry with new values without new entries creation if possible (). Returns 'true' on success. Returns old values in 'values' param on success:
+```c++
+bool TryUpdateInplace(size_t pos, U& values);
 ```

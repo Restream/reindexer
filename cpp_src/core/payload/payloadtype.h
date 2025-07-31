@@ -4,12 +4,10 @@
 #include <string>
 #include <vector>
 #include "estl/cow.h"
-#include "estl/h_vector.h"
 #include "payloadfieldtype.h"
 
 namespace reindexer {
 
-class Embedder;
 class PayloadTypeImpl;
 
 class [[nodiscard]] PayloadType : public shared_cow_ptr<PayloadTypeImpl> {

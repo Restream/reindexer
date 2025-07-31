@@ -24,7 +24,7 @@ class QueryPreprocessor : private QueryEntries {
 public:
 	enum class [[nodiscard]] ValuesType : bool { Scalar, Composite };
 
-	QueryPreprocessor(QueryEntries&&, const RVector<Aggregator, 4>&, NamespaceImpl*, const SelectCtx&);
+	QueryPreprocessor(QueryEntries&&, const h_vector<Aggregator, 4>&, NamespaceImpl*, const SelectCtx&);
 	const QueryEntries& GetQueryEntries() const& noexcept { return *this; }
 	auto GetQueryEntries() const&& = delete;
 	Changed LookupQueryIndexes() {
@@ -52,7 +52,7 @@ public:
 		return Changed{substituteCompositeIndexes(0, container_.size() - hasForcedSortOptimizationQueryEntry()) != 0};
 	}
 	void InitIndexedQueries() { initIndexedQueries(0, Size()); }
-	void AddDistinctEntries(const RVector<Aggregator, 4>&);
+	void AddDistinctEntries(const h_vector<Aggregator, 4>&);
 	[[nodiscard]] bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder,
 										  bool needCalcTotal);
 	[[nodiscard]] unsigned Start() const noexcept { return start_; }
@@ -180,7 +180,7 @@ private:
 	[[nodiscard]] bool containsJoin(size_t) noexcept;
 
 	template <typename JS>
-	void briefDump(size_t from, size_t to, const std::vector<JS>& joinedSelectors, WrSerializer& ser) const;
+	size_t briefDump(size_t from, size_t to, const std::vector<JS>& joinedSelectors, WrSerializer& ser) const;
 
 	bool hasForcedSortOptimizationQueryEntry() const noexcept { return Size() && container_.back().Is<ForcedSortOptimizationQueryEntry>(); }
 	void addDistinctEntries(const h_vector<Aggregator, 4>&);

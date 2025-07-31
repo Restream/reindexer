@@ -9,7 +9,11 @@ namespace reindexer {
 
 class WrSerializer;
 class Serializer;
+
+namespace builders {
 class JsonBuilder;
+}  // namespace builders
+using builders::JsonBuilder;
 
 namespace detail {
 template <typename Derived>

@@ -288,36 +288,29 @@ func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options .
 			// nothing
 		case bindings.OptionOpenTelemetry:
 			// nothing
+		case bindings.OptionStrictJoinHandlers:
+			// nothing
 		case bindings.OptionConnPoolSize:
 			connPoolSize = v.ConnPoolSize
-
 		case bindings.OptionConnPoolLoadBalancing:
 			connPoolLBAlgorithm = v.Algorithm
-
 		case bindings.OptionRetryAttempts:
 			binding.retryAttempts = v
-
 		case bindings.OptionTimeouts:
 			binding.timeouts = v
-
 		case bindings.OptionConnect:
 			binding.connectOpts = v
-
 		case bindings.OptionCompression:
 			binding.compression = v
-
 		case bindings.OptionAppName:
 			binding.appName = v.AppName
-
 		case bindings.OptionDedicatedThreads:
 			binding.dedicatedThreads = v
-
 		case bindings.OptionReconnectionStrategy:
 			binding.dsn.reconnectionStrategy = v.Strategy
 			binding.dsn.allowUnknownNodes = v.AllowUnknownNodes
 		case bindings.OptionTLS:
 			binding.tls = v
-
 		default:
 			fmt.Printf("Unknown cproto option: %#v\n", option)
 		}

@@ -134,9 +134,9 @@ protected:
 						}
 					}
 					if (res) {
-						query.SetEntry<reindexer::AlwaysTrue>(i);
+						rx_unused = query.SetEntry<reindexer::AlwaysTrue>(i);
 					} else {
-						query.SetEntry<reindexer::AlwaysFalse>(i);
+						rx_unused = query.SetEntry<reindexer::AlwaysFalse>(i);
 					}
 				},
 				[&](const reindexer::SubQueryFieldEntry& sqe) {
@@ -164,7 +164,7 @@ protected:
 						ASSERT_TRUE(qr.GetAggregationResults()[0].GetValue().has_value());
 						values.emplace_back(*qr.GetAggregationResults()[0].GetValue());
 					}
-					query.SetEntry<reindexer::QueryEntry>(i, sqe.FieldName(), sqe.Condition(), std::move(values));
+					rx_unused = query.SetEntry<reindexer::QueryEntry>(i, sqe.FieldName(), sqe.Condition(), std::move(values));
 				});
 		}
 		auto joinedSelectors = getJoinedSelectors(query);
@@ -489,7 +489,7 @@ private:
 			for (const auto& v : distincts[i].fieldNames) {
 				reindexer::VariantArray fieldValue = item[v];
 				maxIndex = std::max(maxIndex, size_t(fieldValue.size()));
-				fieldValues.emplace_back(fieldValue);
+				fieldValues.emplace_back(fieldValue, reindexer::IsArray(fieldValue.IsArrayValue()));
 			}
 			if (maxIndex == 0) {
 				return false;

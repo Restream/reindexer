@@ -1,6 +1,6 @@
 #pragma once
 #include <memory>
-#include "baseseacher.h"
+#include "basesearcher.h"
 #include "core/ft/config/ftfuzzyconfig.h"
 #include "core/ft/ftdsl.h"
 #include "dataholder/basebuildedholder.h"
@@ -22,15 +22,14 @@ public:
 	SearchEngine& operator=(const SearchEngine&) = delete;
 
 	SearchResult Search(const reindexer::FtDSLQuery& dsl, bool inTransaction, const reindexer::RdxContext&);
-	void Rebuild();
-	void AddData(std::string_view src_data, const IdType id, int field, const std::string& extraWordSymbols);
+
+	void AddData(std::string_view src_data, const IdType id, int field, const reindexer::SplitOptions& splitOptions);
 	void Commit();
 
 private:
 	BaseHolder::Ptr holder_;
-	BaseSearcher seacher_;
-	size_t last_max_id_;
-	bool commited_;
+	BaseSearcher searcher_;
+	bool committed_ = false;
 };
 
 }  // namespace search_engine

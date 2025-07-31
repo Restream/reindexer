@@ -9,20 +9,43 @@
 
 namespace reindexer {
 
+struct p_string;
+class Uuid;
 class [[nodiscard]] KeyValueType {
 public:
 	// When add new type change name of function Is<> and update ForAllTypes and ForAnyType
-	struct Int64 {};
-	struct Double {};
-	struct Float {};
-	struct String {};
-	struct Bool {};
+	struct Int64 {
+		using ViewType = int64_t;
+		using PayloadFieldValueType = ViewType;
+	};
+	struct Double {
+		using ViewType = double;
+		using PayloadFieldValueType = ViewType;
+	};
+	struct Float {
+		using ViewType = float;
+		using PayloadFieldValueType = ViewType;
+	};
+	struct String {
+		using ViewType = std::string_view;
+		using PayloadFieldValueType = p_string;
+	};
+	struct Bool {
+		using ViewType = bool;
+		using PayloadFieldValueType = ViewType;
+	};
 	struct Null {};
-	struct Int {};
+	struct Int {
+		using ViewType = int32_t;
+		using PayloadFieldValueType = ViewType;
+	};
 	struct Undefined {};
 	struct Composite {};
 	struct Tuple {};
-	struct Uuid {};
+	struct Uuid {
+		using ViewType = reindexer::Uuid;
+		using PayloadFieldValueType = ViewType;
+	};
 	struct FloatVector {};
 
 private:

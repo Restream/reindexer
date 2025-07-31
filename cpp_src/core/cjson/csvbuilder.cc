@@ -1,7 +1,6 @@
 #include "csvbuilder.h"
 
-namespace reindexer {
-
+namespace reindexer::builders {
 CsvBuilder::CsvBuilder(ObjType type, const CsvBuilder& parent)
 	: ser_(parent.ser_),
 	  tm_(parent.tm_),
@@ -217,5 +216,4 @@ CsvBuilder& CsvBuilder::Put(std::string_view name, const Variant& kv, int offset
 		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) { assertrx_throw(false); });
 	return *this;
 }
-
-}  // namespace reindexer
+}  // namespace reindexer::builders

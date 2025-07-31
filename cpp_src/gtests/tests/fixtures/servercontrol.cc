@@ -727,12 +727,12 @@ void ServerControl::Interface::ForceSync() {
 	api.Upsert(kConfigNamespace, item);
 }
 
-void ServerControl::Interface::ResetReplicationRole(const std::string& ns) {
+void ServerControl::Interface::ResetReplicationRole(std::string_view ns) {
 	auto err = TryResetReplicationRole(ns);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-Error ServerControl::Interface::TryResetReplicationRole(const std::string& ns) {
+Error ServerControl::Interface::TryResetReplicationRole(std::string_view ns) {
 	BaseApi::QueryResultsType res;
 	Error err;
 	auto item = api.NewItem(kConfigNamespace);

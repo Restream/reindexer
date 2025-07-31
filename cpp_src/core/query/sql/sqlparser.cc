@@ -157,7 +157,7 @@ int SQLParser::selectParse(tokenizer& parser) {
 					if (tok.type != TokenName) {
 						throw Error(errParseSQL, "Expected field name, but found '{}' in query, {}", tok.text(), parser.where());
 					}
-					RVector<std::string, 1> fields{{std::string(tok.text())}};
+					h_vector<std::string, 1> fields{{std::string(tok.text())}};
 					tok = parser.next_token();
 					for (tok = parser.peek_token(); tok.type == TokenSymbol && tok.text() == ","sv; tok = parser.peek_token()) {
 						parser.next_token();
@@ -698,7 +698,7 @@ void SQLParser::parseModifyConditions(tokenizer& parser) {
 		auto tok = peekSqlToken(parser, ModifyConditionsStart);
 		if (tok.text() == "where"sv) {
 			parser.next_token();
-			parseWhere<Nested::Yes>(parser);
+			parseWhere<Nested::No>(parser);
 		} else if (tok.text() == "limit"sv) {
 			parser.next_token();
 			tok = parser.next_token();

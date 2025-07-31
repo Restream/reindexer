@@ -130,7 +130,18 @@ type NamespaceMemStat struct {
 		CacheSize int64 `json:"cache_size"`
 		// Total memory size, occupied by index optimizer (in bytes)
 		IndexOptimizerMemory int64 `json:"index_optimizer_memory"`
+		// Total memory size, occupied by the AsyncStorage (in bytes)
+		InmemoryStorageSize int64 `json:"inmemory_storage_size"`
 	} `json:"total"`
+	// Summary of total async storage memory consumption
+	Storage struct {
+		// Total memory size, occupied by synchronous proxy map of the AsyncStorage (in bytes)
+		ProxySize int64 `json:"proxy_size"`
+		// Total memory consumption of async batches in the AsyncStorage (in bytes)
+		// TODO: Uncomment affter calculation async batches size in the AsyncStorage
+		// AsyncBatchesSize int64 `json:"async_batches_size"`
+	} `json:"storage"`
+
 	// Replication status of namespace
 	Replication *struct {
 		// Last Log Sequence Number (LSN) of applied namespace modification
@@ -703,4 +714,41 @@ func (db *Reindexer) GetNamespaceMemStat(namespace string) (*NamespaceMemStat, e
 		return nil, err
 	}
 	return desc.(*NamespaceMemStat), nil
+}
+
+func DefaultDBNamespaceConfig(namespace string) *DBNamespacesConfig {
+	const kDefaultCacheSizeLimit = 1024 * 1024 * 128
+	const kDefaultHitCountToCache = 2
+
+	cacheCfg := &NamespaceCacheConfig{
+		IdxIdsetCacheSize:     kDefaultCacheSizeLimit,
+		IdxIdsetHitsToCache:   kDefaultHitCountToCache,
+		FTIdxCacheSize:        kDefaultCacheSizeLimit,
+		FTIdxHitsToCache:      kDefaultHitCountToCache,
+		JoinCacheSize:         2 * kDefaultCacheSizeLimit,
+		JoinHitsToCache:       kDefaultHitCountToCache,
+		QueryCountCacheSize:   kDefaultCacheSizeLimit,
+		QueryCountHitsToCache: kDefaultHitCountToCache,
+	}
+
+	return &DBNamespacesConfig{
+		Namespace:                     namespace,
+		LogLevel:                      "none",
+		JoinCacheMode:                 "off",
+		StrictMode:                    "names",
+		StartCopyPolicyTxSize:         10000,
+		CopyPolicyMultiplier:          5,
+		TxSizeToAlwaysCopy:            100000,
+		TxVecInsertionThreads:         4,
+		OptimizationTimeout:           800,
+		OptimizationSortWorkers:       4,
+		WALSize:                       4000000,
+		MinPreselectSize:              1000,
+		MaxPreselectSize:              1000,
+		MaxPreselectPart:              0.1,
+		MaxIterationsIdSetPreResult:   20000,
+		ANNStorageCacheBuildTimeoutMs: 5000,
+		SyncStorageFlushLimit:         20000,
+		CacheConfig:                   cacheCfg,
+	}
 }

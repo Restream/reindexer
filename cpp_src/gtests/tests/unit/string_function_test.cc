@@ -26,7 +26,7 @@ static std::string randString() {
 	result.reserve(len + 1);
 	while (result.size() < len) {
 		const size_t f = rand() % symbols.size();
-		result += reindexer::utf16_to_utf8({symbols[f]});
+		result += reindexer::utf16_to_utf8(std::wstring_view(&symbols[f], 1));
 	}
 	return result;
 }
@@ -45,7 +45,7 @@ static std::string randLikePattern() {
 				result += '_';
 			} else {
 				const size_t f = rand() % symbols.size();
-				result += reindexer::utf16_to_utf8({symbols[f]});
+				result += reindexer::utf16_to_utf8(std::wstring_view(&symbols[f], 1));
 			}
 		}
 	}

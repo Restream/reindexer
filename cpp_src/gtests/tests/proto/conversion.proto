@@ -1,6 +1,6 @@
 syntax = "proto3";
 
 message conversion_namespace {
-int64 id = 2;
-repeated int64 numbers = 1 [packed=true];
+sint64 id = 2;
+repeated sint64 numbers = 1 [packed=true];
 }

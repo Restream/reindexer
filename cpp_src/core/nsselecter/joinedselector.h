@@ -136,7 +136,7 @@ public:
 	JoinedSelector(JoinType joinType, NamespaceImpl::Ptr leftNs, NamespaceImpl::Ptr rightNs, JoinCacheRes&& joinRes, Query&& itemQuery,
 				   FieldsFilter fieldsFilter, LocalQueryResults& result, const JoinedQuery& joinQuery, JoinPreResultExecuteCtx&& preSelCtx,
 				   uint32_t joinedFieldIdx, FtFunctionsHolder& selectFunctions, bool inTransaction, int64_t lastUpdateTime,
-				   const RdxContext& rdxCtx)
+				   SetLimit0ForChangeJoin limit0, const RdxContext& rdxCtx)
 		: joinType_(joinType),
 		  called_(0),
 		  matched_(0),
@@ -153,7 +153,8 @@ public:
 		  rdxCtx_(rdxCtx),
 		  optimized_(false),
 		  inTransaction_{inTransaction},
-		  lastUpdateTime_{lastUpdateTime} {
+		  lastUpdateTime_{lastUpdateTime},
+		  limit0_(limit0) {
 #ifndef NDEBUG
 		for (const auto& jqe : joinQuery_.joinEntries_) {
 			assertrx_throw(jqe.FieldsHaveBeenSet());
@@ -214,6 +215,7 @@ private:
 	bool inTransaction_ = false;
 	int64_t lastUpdateTime_ = 0;
 	ExplainCalc::Duration selectTime_ = ExplainCalc::Duration::zero();
+	SetLimit0ForChangeJoin limit0_ = SetLimit0ForChangeJoin_False;
 };
 using JoinedSelectors = std::vector<JoinedSelector>;
 

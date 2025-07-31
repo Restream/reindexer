@@ -159,7 +159,13 @@ struct NamespaceMemStat {
 		size_t indexesSize = 0;
 		size_t cacheSize = 0;
 		size_t indexOptimizerMemory = 0;
+		size_t inmemoryStorageSize = 0;
 	} Total;
+	struct {
+		size_t proxySize = 0;
+		// TODO: Uncomment affter calculation async batches size in the AsyncStorage + add in calc of Total.inmemoryStorageSize
+		// size_t asyncBatchesSize = 0;
+	} Storage;
 	ReplicationStat replication;
 	LRUCacheMemStat joinCache;
 	LRUCacheMemStat queryCache;

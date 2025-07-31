@@ -95,8 +95,7 @@ void Node::Reconnect(net::ev::dynamic_loop& loop, const ReplThreadConfig& config
 		connObserverId.reset();
 	}
 	client.Stop();
-	client::ConnectOpts opts;
-	opts.CreateDBIfMissing().WithExpectedClusterID(config.ClusterID);
+	const auto opts = client::ConnectOpts().CreateDBIfMissing().WithExpectedClusterID(config.ClusterID);
 	auto err = client.Connect(dsn, loop, opts);
 	(void)err;	// ignored; Error will be checked during the further requests
 }
@@ -322,7 +321,10 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 						UpdatesContainer recs;
 						recs.emplace_back(updates::URType::NodeNetworkCheck, node.uid, false);
 						node.requireResync = true;
-						updates_->template PushAsync<true>(std::move(recs));
+						std::pair<Error, bool> res = updates_->template PushAsync<true>(std::move(recs));
+						if (!res.first.ok()) {
+							logWarn("Error while Pushing updates queue: {}", res.first.what());
+						}
 					}
 				});
 				if (connObserverId.has_value()) {
@@ -517,6 +519,10 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 							logTrace("{}:{} Switching role for '{}' on remote node", serverId_, node.uid, ns.name);
 							err = node.client.WithEmitterServerId(serverId_).SetClusterOperationStatus(
 								ns.name, ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
+							if (err.ok()) {
+								// Renew remote replState after role switch to avoid races between remote's users and replication
+								err = node.client.GetReplState(ns.name, replState);
+							}
 						}
 					}
 				} else {

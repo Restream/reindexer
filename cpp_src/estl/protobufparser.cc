@@ -20,7 +20,7 @@ ProtobufValue ProtobufParser::ReadValue() {
 			if (itemType.Is<KeyValueType::Bool>()) {
 				return {Variant(bool(object_.ser.GetVarUInt())), tagName, itemType, isArray};
 			} else {
-				return {Variant(int64_t(object_.ser.GetVarUInt())), tagName, itemType, isArray};
+				return {Variant(object_.ser.GetVarint()), tagName, itemType, isArray};
 			}
 		case PBUF_TYPE_FLOAT32:
 		case PBUF_TYPE_FLOAT64:
@@ -33,8 +33,8 @@ ProtobufValue ProtobufParser::ReadValue() {
 }
 
 Variant ProtobufParser::ReadArrayItem(KeyValueType fieldType) {
-	return fieldType.EvaluateOneOf([&](KeyValueType::Int64) { return Variant(int64_t(object_.ser.GetVarUInt())); },
-								   [&](KeyValueType::Int) { return Variant(int(object_.ser.GetVarUInt())); },
+	return fieldType.EvaluateOneOf([&](KeyValueType::Int64) { return Variant(int64_t(object_.ser.GetVarint())); },
+								   [&](KeyValueType::Int) { return Variant(int(object_.ser.GetVarint())); },
 								   [&](KeyValueType::Double) { return Variant(object_.ser.GetDouble()); },
 								   [&](KeyValueType::Float) { return Variant(object_.ser.GetFloat()); },
 								   [&](KeyValueType::Bool) { return Variant(object_.ser.GetBool()); },

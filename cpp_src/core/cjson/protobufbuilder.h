@@ -23,6 +23,8 @@ enum ProtobufTypes {
 	PBUF_TYPE_FLOAT32 = 5,
 };
 
+namespace builders {
+
 class ProtobufBuilder {
 public:
 	ProtobufBuilder() noexcept
@@ -110,7 +112,7 @@ public:
 	ProtobufBuilder Array(TagName tagName, int = KUnknownFieldSize) { return ArrayNotPacked(tagName); }
 
 	void Array(TagName tagName, Serializer& rdser, TagType tagType, int count) {
-		if (tagType == TAG_VARINT || tagType == TAG_DOUBLE || tagType == TAG_BOOL) {
+		if (tagType == TAG_VARINT || tagType == TAG_DOUBLE || tagType == TAG_FLOAT || tagType == TAG_BOOL) {
 			auto array = ArrayPacked(tagName);
 			while (count--) {
 				packItem(tagName, tagType, rdser, array);
@@ -172,4 +174,6 @@ private:
 	static void packItem(TagName, TagType, Serializer&, ProtobufBuilder& array);
 };
 
+}  // namespace builders
+using builders::ProtobufBuilder;
 }  // namespace reindexer

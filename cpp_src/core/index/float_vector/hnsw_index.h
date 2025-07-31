@@ -17,7 +17,7 @@ class HnswIndexBase final : public FloatVectorIndex {
 public:
 	HnswIndexBase(const IndexDef&, PayloadType&&, FieldsSet&&, size_t currentNsSize, LogCreation);
 
-	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override;
+	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	using FloatVectorIndex::Delete;
 
 	std::unique_ptr<Index> Clone(size_t newCapacity) const override;

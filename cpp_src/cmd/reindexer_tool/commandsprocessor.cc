@@ -116,9 +116,17 @@ private:
 	size_t numProcessors_ = 0;
 };
 
+static std::string_view removeQuotes(std::string_view str) {
+	if (str.size() > 1 && str.front() == '\'' && str.back() == '\'') {
+		return str.substr(1, str.size() - 2);
+	}
+
+	return str;
+}
+
 class [[nodiscard]] DumpFileIndex {
 public:
-	Error Indexate(const std::string& filename) noexcept {
+	Error Indexate(const std::string& filename, const StringsSetT& selectedNamespaces) noexcept {
 		try {
 			std::lock_guard<std::mutex> lock(dumpLock_);
 			headCommands_.resize(0);
@@ -131,6 +139,7 @@ public:
 			std::string command;
 			std::streampos commandPos;
 			size_t lineNum = 0;
+			bool lastNamespaceSelected = true;
 
 			while (commandPos = file.tellg(), std::getline(file, command)) {
 				++lineNum;
@@ -139,6 +148,18 @@ public:
 				}
 
 				if (reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kDumpingNamespacePrefix, command)) {
+					LineParser parser(command);
+					parser.NextToken();
+					parser.NextToken();
+					parser.NextToken();
+					std::string_view nsName = removeQuotes(parser.NextToken());
+
+					if (nsName.empty()) {
+						return Error(errLogic, "Incorrect namespace name in dump file command: {}", command);
+					}
+
+					lastNamespaceSelected = selectedNamespaces.empty() || selectedNamespaces.find(nsName) != selectedNamespaces.end();
+
 					nsDumps_.emplace_back();
 					continue;
 				}
@@ -151,7 +172,9 @@ public:
 					continue;
 				}
 
-				nsDumps_.back().ProcessCommand(std::move(command), lineNum, commandPos);
+				if (lastNamespaceSelected) {
+					nsDumps_.back().ProcessCommand(std::move(command), lineNum, commandPos);
+				}
 			}
 			return errOK;
 		}
@@ -184,7 +207,8 @@ public:
 
 			std::sort(namespacesPriority.begin(), namespacesPriority.end(), [&](size_t lhs, size_t rhs) {
 				return nsDumps_[lhs].numProcessors_ < nsDumps_[rhs].numProcessors_ ||
-					   nsDumps_[lhs].GetProgress() < nsDumps_[rhs].GetProgress();
+					   (nsDumps_[lhs].numProcessors_ == nsDumps_[rhs].numProcessors_ &&
+						nsDumps_[lhs].GetProgress() < nsDumps_[rhs].GetProgress());
 			});
 
 			for (size_t nsIndex : namespacesPriority) {
@@ -343,11 +367,10 @@ public:
 		count_ += increment;
 	}
 
-	void Done(const Error& err, uint64_t lineNum = 0) noexcept {
+	void Done(const Error& err) noexcept {
 		std::lock_guard<std::mutex> lock(mutex_);
 		if (!err.ok()) {
 			err_ = err;
-			errLineNum_ = lineNum;
 		}
 		--count_;
 		if (count_ <= 0) {
@@ -366,15 +389,9 @@ public:
 		return err_;
 	}
 
-	[[nodiscard]] int64_t ErrorLineNum() const noexcept {
-		std::lock_guard<std::mutex> lock(mutex_);
-		return errLineNum_;
-	}
-
 private:
 	int count_ = 0;
 	reindexer::Error err_;
-	uint64_t errLineNum_ = 0;
 	mutable std::mutex mutex_;
 	std::condition_variable cv_;
 };
@@ -388,21 +405,18 @@ public:
 
 	void Add(int) const noexcept {}
 
-	void Done(const Error& err, uint64_t lineNum = 0) noexcept {
+	void Done(const Error& err) noexcept {
 		if (!err.ok()) {
 			err_ = err;
-			errLineNum_ = lineNum;
 		}
 	}
 
 	void Wait() const noexcept {}
 
 	reindexer::Error Error() const noexcept { return err_; }
-	[[nodiscard]] uint64_t ErrorLineNum() const noexcept { return errLineNum_; }
 
 private:
 	reindexer::Error err_;
-	uint64_t errLineNum_ = 0;
 };
 
 template <typename DBInterface>
@@ -450,9 +464,9 @@ void CommandsProcessor<DBInterface>::setDumpMode(const std::string& mode) {
 	dumpMode_ = DumpOptions::ModeFromStr(mode);
 }
 
-static void printError(const Error& err) { std::cerr << "ERROR: " << err.what() << std::endl; }
+static void printError(const Error& err) { std::cerr << fmt::format("ERROR: {}\n", err.what()); }
 static void printWarning(const std::string& msg) { std::cerr << "Warning: " << msg << std::endl; }
-static void printError(uint64_t lineNum, const Error& err) { std::cerr << "LINE: " << lineNum << " ERROR: " << err.what() << std::endl; }
+static void printError(const Error& err, uint64_t lineNum) { std::cerr << fmt::format("LINE: {} ERROR: {}\n", lineNum, err.what()); }
 
 template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std::string& dumpMode) noexcept {
@@ -477,8 +491,12 @@ Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std:
 				return err;
 			}
 			DumpFileIndex dumpFileIdx;
-			if (Error err = dumpFileIdx.Indexate(inFileName_); !err.ok()) {
+			if (Error err = dumpFileIdx.Indexate(inFileName_, selectedNamespaces_); !err.ok()) {
 				printError(err);
+				if (!selectedNamespaces_.empty()) {
+					printWarning("Can not parse file sequentially because of selected namespaces set, ending...");
+					return err;
+				}
 				printWarning("Input file does not look like a dump file, file will be parsed sequentially");
 				fromFile(infile);
 				return errOK;
@@ -725,7 +743,7 @@ void CommandsProcessor<DBInterface>::fromFile(std::istream& infile) {
 			}
 
 			if (Error err = process(nextCmd); !err.ok()) {
-				printError(lineNum, err);
+				printError(err, lineNum);
 				throw err;
 			}
 		}
@@ -749,7 +767,7 @@ void CommandsProcessor<DBInterface>::fromDumpFile(std::ifstream& infile, DumpFil
 	for (const std::pair<std::string, uint64_t>& nextCmd : dumpFileIdx.GetHeadCommands()) {
 		size_t lineNum = nextCmd.second;
 		if (Error err = process(nextCmd.first); !err.ok()) {
-			printError(lineNum, err);
+			printError(err, lineNum);
 			throw err;
 		}
 	}
@@ -772,10 +790,6 @@ void CommandsProcessor<DBInterface>::fromDumpFile(std::ifstream& infile, DumpFil
 			if (!parallelCommands.empty()) {
 				errs[threadIdx] = parallelUpsertCommands(parallelCommands);
 				dumpFileIdx.ProcessingEnded(nsUsed);
-			}
-			if (!errs[threadIdx].ok()) {
-				abort = true;
-				return;
 			}
 		} while (!parallelCommands.empty() && !abort);
 	};
@@ -1211,15 +1225,9 @@ template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::parallelUpsertCommands(const std::vector<std::pair<std::string, uint64_t>>& commands) noexcept {
 	try {
 		assertrx_throw(fromFile_);
-		Error err;
-		uint64_t lineNum = 0;
+		Error lastErr;
 		WaitGroup<DBInterface> wg;
-		auto cleanup = reindexer::MakeScopeGuard([&wg, &err, &lineNum]() {
-			wg.Wait();
-			if (!err.ok()) {
-				printError(lineNum, err);
-			}
-		});
+		auto cleanup = reindexer::MakeScopeGuard([&wg]() { wg.Wait(); });
 
 		std::vector<typename DBInterface::ItemType> items(commands.size());
 		std::vector<std::string> nsNames(commands.size());
@@ -1233,7 +1241,7 @@ Error CommandsProcessor<DBInterface>::parallelUpsertCommands(const std::vector<s
 
 		for (size_t i = 0; i < commands.size(); ++i) {
 			const std::string& command = commands[i].first;
-			lineNum = commands[i].second;
+			const size_t lineNum = commands[i].second;
 
 			bool needSkip = false;
 			parseCommand(command, nsNames[i], cmdBody, needSkip);
@@ -1244,13 +1252,12 @@ Error CommandsProcessor<DBInterface>::parallelUpsertCommands(const std::vector<s
 
 			if (trSize > 0 && (trSize >= transactionSize_ || nsNames[i] != trNsName)) {
 				wg.Wait();
-				if (err = wg.Error(); !err.ok()) {
-					lineNum = wg.ErrorLineNum();
-					return err;
+				if (Error err = wg.Error(); !err.ok()) {
+					lastErr = err;
 				}
 
-				if (err = db().CommitTransaction(*tr, qr); !err.ok()) {
-					lineNum = 0;
+				if (Error err = db().CommitTransaction(*tr, qr); !err.ok()) {
+					printError(err);
 					return err;
 				}
 
@@ -1269,40 +1276,54 @@ Error CommandsProcessor<DBInterface>::parallelUpsertCommands(const std::vector<s
 				items[i] = db().NewItem(nsNames[i]);
 			}
 
-			if (err = items[i].Status(); !err.ok()) {
-				return err;
+			if (Error err = items[i].Status(); !err.ok()) {
+				printError(err, lineNum);
+				lastErr = err;
+				continue;
 			}
 
-			err = items[i].Unsafe().FromJSON(cmdBody);
-			if (!err.ok()) {
-				return err;
+			if (Error err = items[i].Unsafe().FromJSON(cmdBody); !err.ok()) {
+				printError(err, lineNum);
+				lastErr = err;
+				continue;
 			}
 
+			auto completeCallback = [&wg, lineNum](const Error& e) {
+				if (!e.ok()) {
+					printError(e, lineNum);
+				}
+				wg.Done(e);
+			};
+
+			Error err;
 			if (useTransaction) {
-				err = tr->Upsert(std::move(items[i]), [&wg, lineNum](const Error& e) { wg.Done(e, lineNum); });
+				err = tr->Upsert(std::move(items[i]), completeCallback);
 			} else {
-				err = db().WithCompletion([&wg, lineNum](const Error& e) { wg.Done(e, lineNum); }).Upsert(nsNames[i], items[i]);
+				err = db().WithCompletion(completeCallback).Upsert(nsNames[i], items[i]);
 			}
 
 			if (!err.ok()) {
-				return err;
+				printError(err);
 			} else {
 				wg.Add(1);
 			}
 		}
 
 		wg.Wait();
-		if (err = wg.Error(); !err.ok()) {
-			lineNum = wg.ErrorLineNum();
-			return err;
+		if (Error err = wg.Error(); !err.ok()) {
+			lastErr = err;
 		}
 
-		if (trSize > 0) {
-			lineNum = 0;
-			return db().CommitTransaction(*tr, qr);
+		if (lastErr.ok() && trSize > 0) {
+			if (Error err = db().CommitTransaction(*tr, qr); !err.ok()) {
+				printError(err);
+				return err;
+			}
+
+			return errOK;
 		}
 
-		return errOK;
+		return lastErr;
 	}
 	CATCH_AND_RETURN;
 }

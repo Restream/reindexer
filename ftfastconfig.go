@@ -78,6 +78,10 @@ type FtBaseRanking struct {
 	// Values range: [0,500]
 	// Default: 95
 	Synonyms int `json:"synonyms_proc"`
+	// Relevancy of the delimited word part match
+	// Values range: [0,500]
+	// Default: 80
+	Delimited int `json:"delimited_proc"`
 }
 
 type StopWord struct {
@@ -174,6 +178,10 @@ type FtFastConfig struct {
 	EnableWarmupOnNsCopy bool `json:"enable_warmup_on_ns_copy"`
 	// Extra symbols, which will be treated as parts of word to addition to letters and digits
 	ExtraWordSymbols string `json:"extra_word_symbols"`
+	// Symbols, which will be treated as word part delimiters
+	WordPartDelimiters string `json:"word_part_delimiters"`
+	// Min word part size to indexate and search
+	MinWordPartSize int `json:"min_word_part_size"`
 	// Ratio of summation of ranks of match one term in several fields
 	SumRanksByFieldsRatio float64 `json:"sum_ranks_by_fields_ratio"`
 	// Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited
@@ -223,13 +231,15 @@ func DefaultFtFastConfig() FtFastConfig {
 		EnableTranslit:          true,
 		EnableKbLayout:          true,
 		LogLevel:                0,
-		ExtraWordSymbols:        "/-+",
+		ExtraWordSymbols:        "-/+_`'",
+		WordPartDelimiters:      "-/+_`'",
+		MinWordPartSize:         3,
 		SumRanksByFieldsRatio:   0.0,
 		MaxAreasInDoc:           5,
 		MaxTotalAreasToCache:    -1,
 		Optimization:            "Memory",
 		EnablePreselectBeforeFt: false,
-		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95},
+		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95, Delimited: 80},
 		Bm25Config:              &Bm25ConfigType{Bm25k1: 2.0, Bm25b: 0.75, Bm25Type: "rx_bm25"},
 	}
 }

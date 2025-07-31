@@ -1,5 +1,6 @@
 #include "core/embedding/httpconnector.h"
 
+#include "estl/chunk.h"
 // #define CPPHTTPLIB_OPENSSL_SUPPORT // ToDo
 #include "vendor/cpp-httplib/httplib.h"
 
@@ -33,12 +34,12 @@ bool HttpConnector::Connect(size_t connect_timeout_ms, size_t read_timeout_ms, s
 	return client_->is_valid();
 }
 
-HttpConnector::Response HttpConnector::Send(const std::string& path, std::string_view json) {
+HttpConnector::Response HttpConnector::Send(const std::string& path, chunk&& json) {
 	if (!client_) {
 		return {false, "Connect before"};
 	}
 
-	auto res = client_->Post(path, {}, json.data(), json.size(), kContentType, nullptr);
+	auto res = client_->Post(path, {}, reinterpret_cast<char*>(json.data()), json.size(), kContentType, nullptr);
 
 	Response response;
 	if (res) {

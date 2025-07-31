@@ -13,10 +13,6 @@ namespace reindexer {
 class FieldsComparator {
 public:
 	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
-	FieldsComparator(const FieldsComparator&) = default;
-	FieldsComparator(FieldsComparator&&) = default;
-	FieldsComparator& operator=(const FieldsComparator&) = delete;
-	FieldsComparator& operator=(FieldsComparator&&) = default;
 
 	bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		if (ctx_.size() == 1) {

@@ -1,4 +1,4 @@
-#include "baseseacher.h"
+#include "basesearcher.h"
 #include "core/ft/ft_fuzzy/advacedpackedvec.h"
 #include "core/ft/ftdsl.h"
 #include "core/rdxcontext.h"
@@ -12,7 +12,7 @@ namespace search_engine {
 
 using namespace reindexer;
 
-void BaseSearcher::AddSeacher(ITokenFilter::Ptr&& seacher) { searchers_.push_back(std::move(seacher)); }
+void BaseSearcher::AddSearcher(ITokenFilter::Ptr&& searcher) { searchers_.push_back(std::move(searcher)); }
 
 std::pair<bool, size_t> BaseSearcher::GetData(const BaseHolder::Ptr& holder, unsigned int i, wchar_t* buf, const wchar_t* src_data,
 											  size_t data_size) {
@@ -46,7 +46,7 @@ std::pair<bool, size_t> BaseSearcher::GetData(const BaseHolder::Ptr& holder, uns
 }
 
 size_t BaseSearcher::ParseData(const BaseHolder::Ptr& holder, const std::wstring& src_data, int& max_id, int& min_id,
-							   std::vector<FirstResult>& rusults, const FtDslOpts& opts, double proc) {
+							   std::vector<FirstResult>& results, const FtDslOpts& opts, double proc) {
 	wchar_t res_buf[maxFuzzyFTBufferSize];
 	size_t total_size = 0;
 	size_t size = src_data.size();
@@ -66,7 +66,7 @@ size_t BaseSearcher::ParseData(const BaseHolder::Ptr& holder, const std::wstring
 			}
 			double final_proc = double(holder->cfg_.bufferSize * holder->cfg_.startDecreeseBoost - cont.second) /
 								double(holder->cfg_.bufferSize * holder->cfg_.startDecreeseBoost);
-			rusults.push_back(FirstResult{&it->second, &opts, static_cast<int>(i), proc * final_proc});
+			results.push_back(FirstResult{&it->second, &opts, static_cast<int>(i), proc * final_proc});
 		}
 		i++;
 	} while (cont.first);
@@ -77,7 +77,7 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr& holder, const FtDSLQue
 								   const reindexer::RdxContext& rdxCtx) {
 	size_t data_size = 0;
 
-	std::vector<FtDSLVariant> data;
+	ITokenFilter::ResultsStorage data;
 	std::pair<PosType, ProcType> pos;
 	pos.first = 0;
 
@@ -90,15 +90,16 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr& holder, const FtDSLQue
 	}
 	for (auto& term : dsl) {
 		data_size += ParseData(holder, term.pattern, max_id, min_id, results, term.opts, 1);
+		fast_hash_map<std::wstring, size_t> patternsUsed;
 
 		if (holder->cfg_.enableTranslit) {
-			searchers_[0]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.translit);
+			searchers_[0]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.translit, patternsUsed);
 
 			ParseData(holder, data[0].pattern, max_id, min_id, results, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 		if (holder->cfg_.enableKbLayout) {
 			data.clear();
-			searchers_[1]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.kblayout);
+			searchers_[1]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.kblayout, patternsUsed);
 			ParseData(holder, data[0].pattern, max_id, min_id, results, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 	}
@@ -126,7 +127,7 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr& holder, const FtDSLQue
 }
 
 void BaseSearcher::AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, const IdType id, int field,
-							const std::string& extraWordSymbols) {
+							const reindexer::SplitOptions& splitOptions) {
 #ifdef FULL_LOG_FT
 	words.push_back(std::make_pair(id, *src_data));
 #endif
@@ -137,7 +138,7 @@ void BaseSearcher::AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, 
 	pos.first = 0;
 	std::wstring utf16str;
 	std::vector<std::wstring> wrds;
-	split(src_data, utf16str, wrds, extraWordSymbols);
+	split(src_data, utf16str, wrds, splitOptions);
 	wchar_t res_buf[maxFuzzyFTBufferSize];
 	size_t total_size = 0;
 	for (auto& term : wrds) {

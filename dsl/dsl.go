@@ -24,10 +24,13 @@ however some of the fields are not implemented or may have a little bit differen
 - if 'value' is 'null' and 'cond' is not 'any'/'empty', then this filter will be skipped
 
 Usage:
-rxDB := reindexer.NewReindex(...)
+rxDB, err := reindexer.NewReindex(...)
+if err != nil {
+	panic(err)
+}
 jsonDSL := "{...}" // Contains JSON string, corresponding the DSL's format
 var dslQ dsl.DSL
-err := json.Unmarshal([]byte(jsonDSL), &dslQ)
+err = json.Unmarshal([]byte(jsonDSL), &dslQ)
 // OR: dslQ, err := dsl.DecodeJSON([]byte(jsonDSL))
 // DecodeJSON allows to use dsl's strict mode for the main json object (json.Unmarshal performs strict checks for the internal objects only)
 q, err := rxDB.QueryFrom(dslQ)

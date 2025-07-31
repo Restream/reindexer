@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +32,11 @@ type TestItemBench struct {
 	UuidStr    string          `reindex:"uuid_str,hash"`
 }
 
+type TestItemBenchKnn struct {
+	ID   int       `reindex:"id,,pk"`
+	Vect []float32 `reindex:"vect,-"`
+}
+
 type TestJoinCtx struct {
 	allPrices []*TestJoinItem
 }
@@ -40,7 +47,74 @@ const (
 	testBenchItemsNs                = "test_bench_items"
 	testBenchItemsInsertJsonNs      = "test_bench_items_insert_json"
 	testBenchItemsInsertNs          = "test_bench_items_insert"
+	benchKnnNsPrefix                = "bench_knn_"
 )
+
+func knnBenchNsName(indexType string, metric string) string {
+	var builder strings.Builder
+	builder.WriteString(benchKnnNsPrefix)
+	builder.WriteString(indexType)
+	builder.WriteString("_")
+	builder.WriteString(metric)
+	return builder.String()
+}
+
+func newKnnItem(id int) TestItemBenchKnn {
+	return TestItemBenchKnn{
+		ID:   id,
+		Vect: randVect(kBenchFloatVectorDimension),
+	}
+}
+
+func initKnnNs(indexType string, metric string) {
+	ns := knnBenchNsName(indexType, metric)
+	DBD.DropNamespace(ns)
+	if err := DBD.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemBenchKnn{}); err != nil {
+		panic(fmt.Sprintf("Namespace: %s, err: %s", ns, err.Error()))
+	}
+	fvIndexOpts := reindexer.FloatVectorIndexOpts{
+		Metric: metric,
+		Dimension: kBenchFloatVectorDimension,
+	}
+	if indexType == "hnsw" {
+		fvIndexOpts.M = 16
+		fvIndexOpts.EfConstruction = 200
+		fvIndexOpts.MultithreadingMode = 1
+		fvIndexOpts.StartSize = kBenchKnnNsSize
+	} else if indexType == "ivf" {
+		fvIndexOpts.CentroidsCount = kBenchKnnNsSize / 100
+	} else {
+		panic(fmt.Sprintf("Cannot define fv index type: %s", ns))
+	}
+	fvIndexDef := reindexer.IndexDef {
+		Name: "vect",
+		JSONPaths: []string{"Vect"},
+		IndexType: indexType,
+		FieldType: "float_vector",
+		Config: fvIndexOpts,
+	}
+	if err := DBD.UpdateIndex(ns, fvIndexDef); err != nil {
+		panic(fmt.Sprintf("Add index into namespace: %s, err: %s", ns, err.Error()))
+	}
+	for i := 0; i < kBenchKnnNsSize; {
+		tx := DBD.MustBeginTx(ns)
+		for j := 0; j < kBenchKnnTxSize && i < kBenchKnnNsSize; j++ {
+			tx.Insert(newKnnItem(i))
+			i++
+		}
+		if err := tx.Commit(); err != nil {
+			panic(fmt.Sprintf("Fill namespace: %s, err: %s", ns, err.Error()))
+		}
+	}
+}
+
+func initKnn() {
+	for _, indexType := range []string{"hnsw", "ivf"} {
+		for _, metric := range []string{"l2", "cosine", "inner_product"} {
+			initKnnNs(indexType, metric)
+		}
+	}
+}
 
 func init() {
 	rand.Seed(*benchmarkSeed)
@@ -161,6 +235,7 @@ func BenchmarkPrepare(b *testing.B) {
 	DBD.SetLogger(nil)
 	FillTestItemsBench(0, *benchmarkSeedCount, 10)
 	FillTestJoinItems(7000, 500, "test_join_items")
+	initKnn()
 }
 
 func BenchmarkSimpleInsert(b *testing.B) {
@@ -746,4 +821,127 @@ func BenchmarkSelectByIdxAndUpdate(b *testing.B) {
 		FillTestItemsBench(i, 1, 10)
 		DBD.Query(testBenchItemsNs).WhereInt("year", reindexer.EQ, 2010).Limit(1).GetJson()
 	}
+}
+
+func generateBenchKnnParams(indexType string) reindexer.KnnSearchParam {
+	if indexType == "hnsw" {
+		hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(kBenchKnnK, reindexer.BaseKnnSearchParam{}.SetK(kBenchKnnK))
+		if err != nil {
+			panic(fmt.Sprintf("Cannot generate knn search params for index %s", indexType))
+		}
+		return hnswSearchParams
+	} else if indexType == "ivf" {
+		ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, reindexer.BaseKnnSearchParam{}.SetK(kBenchKnnK))
+		if err != nil {
+			panic(fmt.Sprintf("Cannot generate knn search params for index %s", indexType))
+		}
+		return ivfSearchParams
+	} else {
+		panic(fmt.Sprintf("Unknown fv index type: %s", indexType))
+	}
+}
+
+func benchmarkKnn(b *testing.B, indexType string, metric string) {
+	ns := knnBenchNsName(indexType, metric)
+	knnParams := generateBenchKnnParams(indexType)
+	for i := 0; i < b.N; i++ {
+		DBD.Query(ns).
+			WhereKnn("vect", randVect(kBenchFloatVectorDimension), knnParams).
+			MustExec().
+			FetchAll()
+	}
+}
+
+func BenchmarkKnnHnswIP(b *testing.B) {
+	benchmarkKnn(b, "hnsw", "inner_product")
+}
+
+func BenchmarkKnnHnswCosine(b *testing.B) {
+	benchmarkKnn(b, "hnsw", "cosine")
+}
+
+func BenchmarkKnnHnswL2(b *testing.B) {
+	benchmarkKnn(b, "hnsw", "l2")
+}
+
+func BenchmarkKnnIvfIP(b *testing.B) {
+	benchmarkKnn(b, "ivf", "inner_product")
+}
+
+func BenchmarkKnnIvfCosine(b *testing.B) {
+	benchmarkKnn(b, "ivf", "cosine")
+}
+
+func BenchmarkKnnIvfL2(b *testing.B) {
+	benchmarkKnn(b, "ivf", "l2")
+}
+
+func benchmarkKnnWithVectors(b *testing.B, indexType string, metric string) {
+	ns := knnBenchNsName(indexType, metric)
+	knnParams := generateBenchKnnParams(indexType)
+	for i := 0; i < b.N; i++ {
+		DBD.Query(ns).
+			SelectAllFields().
+			WhereKnn("vect", randVect(kBenchFloatVectorDimension), knnParams).
+			MustExec().
+			FetchAll()
+	}
+}
+
+func BenchmarkKnnHnswIPWithVectors(b *testing.B) {
+	benchmarkKnnWithVectors(b, "hnsw", "inner_product")
+}
+
+func BenchmarkKnnHnswCosineWithVectors(b *testing.B) {
+	benchmarkKnnWithVectors(b, "hnsw", "cosine")
+}
+
+func BenchmarkKnnHnswL2WithVectors(b *testing.B) {
+	benchmarkKnnWithVectors(b, "hnsw", "l2")
+}
+
+func BenchmarkKnnIvfIPWithVectors(b *testing.B) {
+	benchmarkKnnWithVectors(b, "ivf", "inner_product")
+}
+
+func BenchmarkKnnIvfCosineWithVectors(b *testing.B) {
+	benchmarkKnnWithVectors(b, "ivf", "cosine")
+}
+
+func BenchmarkKnnIvfL2WithVectors(b *testing.B) {
+	benchmarkKnnWithVectors(b, "ivf", "l2")
+}
+
+func benchmarkFloatVectorInsert(b *testing.B, indexType string, metric string) {
+	ns := knnBenchNsName(indexType, metric)
+	for i := 0; i < b.N; i++ {
+		_, err := DBD.Insert(ns, newKnnItem(i + kBenchKnnNsSize))
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func BenchmarkInsertHnswIP(b *testing.B) {
+	benchmarkFloatVectorInsert(b, "hnsw", "inner_product")
+}
+
+func BenchmarkInsertHnswCosine(b *testing.B) {
+	benchmarkFloatVectorInsert(b, "hnsw", "cosine")
+}
+
+func BenchmarkInsertHnswL2(b *testing.B) {
+	benchmarkFloatVectorInsert(b, "hnsw", "l2")
+}
+
+func BenchmarkInsertIvfIP(b *testing.B) {
+	benchmarkFloatVectorInsert(b, "ivf", "inner_product")
+}
+
+func BenchmarkInsertIvfCosine(b *testing.B) {
+	benchmarkFloatVectorInsert(b, "ivf", "cosine")
+}
+
+func BenchmarkInsertIvfL2(b *testing.B) {
+	benchmarkFloatVectorInsert(b, "ivf", "l2")
 }

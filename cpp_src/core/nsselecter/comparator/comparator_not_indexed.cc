@@ -107,8 +107,7 @@ template <CondType Cond>
 }  // namespace comparators
 
 [[nodiscard]] std::string ComparatorNotIndexed::ConditionStr() const {
-	assertrx_dbg(dynamic_cast<const ImplVariantType*>(impl_.get()));
-	return std::visit([&](const auto& impl) { return impl.ConditionStr(); }, *static_cast<const ImplVariantType*>(impl_.get()));
+	return std::visit([&](const auto& impl) { return impl.ConditionStr(); }, impl_);
 }
 
 ComparatorNotIndexed::ImplVariantType ComparatorNotIndexed::createImpl(CondType cond, const VariantArray& values,

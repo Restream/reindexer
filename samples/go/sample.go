@@ -26,15 +26,15 @@ func main() {
 	cfg := config.DefaultServerConfig()
 	cfg.Storage.Path = "path/to/rx_storage"
 	// Initialize reindexer binding in builtinserver mode
-	db := reindexer.NewReindex("builtinserver://rdx_test_db", reindexer.WithServerConfig(time.Second*100, cfg))
+	db, err := reindexer.NewReindex("builtinserver://rdx_test_db", reindexer.WithServerConfig(time.Second*100, cfg))
 	// Check if DB was initialized correctly
-	if db.Status().Err != nil {
-		panic(db.Status().Err)
+	if err != nil {
+		panic(err)
 	}
 	defer db.Close()
 
 	// Create or open namespace with indexes and schema from struct TestItem
-	err := db.OpenNamespace(NsName, reindexer.DefaultNamespaceOptions(), TestItem{})
+	err = db.OpenNamespace(NsName, reindexer.DefaultNamespaceOptions(), TestItem{})
 	if err != nil {
 		panic(err)
 	}

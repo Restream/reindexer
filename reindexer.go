@@ -210,20 +210,26 @@ func (v *AggregationResult) UnmarshalJSON(bytes []byte) error {
 	return nil
 }
 
-// NewReindex Create new instanse of Reindexer DB
-// Returns pointer to created instance
-// The absolute path for Windows builtin should look like 'builtin://C:/my/folder/db'
-func NewReindex(dsn interface{}, options ...interface{}) *Reindexer {
+// Status will return current db status
+func (db *Reindexer) Status() bindings.Status {
+	return db.impl.getStatus(db.ctx)
+}
+
+// NewReindex creates a new instance of Reindexer.
+// Returns created instance and error if occurred (e.g., DB locked or unreachable).
+// In case of CPROTO binding this error may be temporary (e.g., remote server is unavailable) and Reindexer object is still usebale,
+// despite this error (binding will try to perform reconnect on the next call).
+// The absolute path for Windows builtin should look like 'builtin://C:/my/folder/db'.
+func NewReindex(dsn interface{}, options ...interface{}) (*Reindexer, error) {
 	rx := &Reindexer{
 		impl: newReindexImpl(dsn, options...),
 		ctx:  context.TODO(),
 	}
-	return rx
-}
 
-// Status will return current db status
-func (db *Reindexer) Status() bindings.Status {
-	return db.impl.getStatus(db.ctx)
+	if err := rx.Status().Err; err != nil {
+		return rx, err
+	}
+	return rx, nil
 }
 
 // SetLogger sets logger interface for output reindexer logs

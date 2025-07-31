@@ -423,7 +423,7 @@ NamespaceImpl::RollBack_recreateCompositeIndexes<needRollBack> NamespaceImpl::re
 		std::unique_ptr<Index>& index(indexes_[i]);
 		if (IsComposite(index->Type())) {
 			IndexDef indexDef{index->Name(), {}, index->Type(), index->Opts()};
-			createCompositeFieldsSet<FieldsSet, RVector<std::string, 1>>(indexDef.Name(), index->Fields(), fields);
+			createCompositeFieldsSet<FieldsSet, h_vector<std::string, 1>>(indexDef.Name(), index->Fields(), fields);
 			auto newIndex{Index::New(indexDef, PayloadType{payloadType_}, FieldsSet{fields}, config_.cacheConfig, itemsCount())};
 			rollbacker.SaveIndex(std::move(index));
 			std::swap(index, newIndex);
@@ -640,7 +640,7 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		// update tuple
 		oldValue.Get(0, skrefsDel, Variant::hold);
 		bool needClearCache{false};
-		tuple.Delete(skrefsDel, rowId, *strHolder_, needClearCache);
+		tuple.Delete(skrefsDel, rowId, MustExist_True, *strHolder_, needClearCache);
 		newItem.GetPayload().Get(0, skrefsUps);
 		krefs.resize(0);
 		tuple.Upsert(krefs, skrefsUps, rowId, needClearCache);
@@ -655,7 +655,7 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		if constexpr (fieldChangeType == FieldChangeType::Delete) {
 			oldValue.Get(changedField, skrefsDel, Variant::hold);
 			needClearCache = false;
-			index.Delete(skrefsDel, rowId, *strHolder_, needClearCache);
+			index.Delete(skrefsDel, rowId, MustExist_True, *strHolder_, needClearCache);
 			if (needClearCache) {
 				indexesCacheCleaner.Add(index);
 			}
@@ -1564,41 +1564,14 @@ void NamespaceImpl::doAddIndex(const IndexDef& indexDef, bool skipEqualityCheck,
 }
 
 bool NamespaceImpl::updateIndex(const IndexDef& indexDef, bool disableTmVersionInc) {
-	const std::string& indexName = indexDef.Name();
+	IndexDef foundIndex = getIndexDefinition(indexDef.Name());
 
-	IndexDef foundIndex = getIndexDefinition(indexName);
-
-	if (indexDef.IsEqual(foundIndex, IndexComparison::SkipConfig)) {
-		// Index has not been changed
-		if (!indexDef.IsEqual(foundIndex, IndexComparison::Full)) {
-			if (foundIndex.Opts().IsFloatVector()) {
-				// Only embedding changed
-				if (indexDef.Opts().FloatVector().Embedding() != foundIndex.Opts().FloatVector().Embedding()) {
-					verifyUpsertEmbedder("update", indexDef);
-					const auto idx = getIndexByName(indexName);
-					auto& index = *indexes_[idx].get();
-					PayloadFieldType f(name_.ToLower(), index, indexDef, embeddersCache_);
-					f.SetOffset(payloadType_.Field(idx).Offset());
-					payloadType_.Replace(idx, std::move(f));
-					index.SetOpts(indexDef.Opts());
-					return true;
-				}
-			} else {
-				// Only index config changed
-				// Just call SetOpts for any index type except vector indexes
-				auto& index = *indexes_[getIndexByName(indexName)].get();
-				index.SetOpts(indexDef.Opts());
-				index.ClearCache();
-				clearNamespaceCaches();
-				return true;
-			}
-		} else {
-			return false;
-		}
+	if (indexDef.Compare(foundIndex).Equal()) {
+		return false;
 	}
 
-	verifyUpdateIndex(indexDef);
 	if (!IndexFastUpdate::Try(*this, foundIndex, indexDef)) {
+		verifyUpdateIndex(indexDef);
 		dropIndex(indexDef, disableTmVersionInc);
 		addIndex(indexDef, disableTmVersionInc);
 	}
@@ -1690,6 +1663,28 @@ void NamespaceImpl::createCompositeFieldsSet(const std::string& idxName, const P
 	assertrx(fields.getJsonPathsLength() == fields.getTagsPathsLength());
 }
 
+static bool BasicCompatibilityOnly(IndexDef::DiffResult diff) {
+	// clang-format off
+	return 
+		diff.AllOfIsEqual(
+			IndexDef::Diff::Name,
+			IndexDef::Diff::IndexType,
+			IndexDef::Diff::FieldType,
+			IndexDef::Diff::JsonPaths,
+			IndexDef::Diff::ExpireAfter,
+
+			IndexOpts::OptsDiff::kIndexOptPK,
+			IndexOpts::OptsDiff::kIndexOptSparse,
+			IndexOpts::OptsDiff::kIndexOptArray,
+
+			IndexOpts::ParamsDiff::CollateOpts,
+			IndexOpts::ParamsDiff::RTreeIndexType,
+			
+			FloatVectorIndexOpts::Diff::Base
+		);
+	// clang-format on
+}
+
 bool NamespaceImpl::checkIfSameIndexExists(const IndexDef& indexDef, bool* requireTtlUpdate) {
 	auto idxNameIt = indexesNames_.find(indexDef.Name());
 	if (idxNameIt != indexesNames_.end()) {
@@ -1700,7 +1695,7 @@ bool NamespaceImpl::checkIfSameIndexExists(const IndexDef& indexDef, bool* requi
 			}
 			oldIndexDef.SetExpireAfter(indexDef.ExpireAfter());
 		}
-		if (indexDef.IsEqual(oldIndexDef, IndexComparison::BasicCompatibilityOnly)) {
+		if (BasicCompatibilityOnly(indexDef.Compare(oldIndexDef))) {
 			return true;
 		}
 		throw Error(errConflict, "Index '{}.{}' already exists with different settings", name_, indexDef.Name());
@@ -1804,7 +1799,7 @@ void NamespaceImpl::doDelete(IdType id, TransactionContext* txCtx) {
 		// No txCtx modification required for composite indexes
 
 		bool needClearCache{false};
-		indexes_[field]->Delete(Variant(items_[id]), id, *strHolder_, needClearCache);
+		indexes_[field]->Delete(Variant(items_[id]), id, MustExist_True, *strHolder_, needClearCache);
 		if (needClearCache) {
 			indexesCacheCleaner.Add(*indexes_[field]);
 		}
@@ -1837,7 +1832,7 @@ void NamespaceImpl::doDelete(IdType id, TransactionContext* txCtx) {
 		if (!IsVectorMTTxItem) {
 			// Delete value from index
 			bool needClearCache{false};
-			index.Delete(skrefs, id, *strHolder_, needClearCache);
+			index.Delete(skrefs, id, MustExist_True, *strHolder_, needClearCache);
 			if (needClearCache) {
 				indexesCacheCleaner.Add(index);
 			}
@@ -2060,9 +2055,9 @@ void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& r
 					qr.AddNamespace(this, true);
 					auto& data = std::get<TransactionQueryStep>(step.data_);
 					if (data.query->type_ == QueryDelete) {
-						doDelete(*data.query, qr, pendedRepl, NsContext(ctx).InTransaction(step.lsn_, txCtxPtr));
+						doDeleteTr(qr, pendedRepl, *data.query, NsContext(ctx).InTransaction(step.lsn_, txCtxPtr));
 					} else {
-						doUpdate(*data.query, qr, pendedRepl, NsContext(ctx).InTransaction(step.lsn_, txCtxPtr));
+						doUpdateTr(qr, pendedRepl, *data.query, NsContext(ctx).InTransaction(step.lsn_, txCtxPtr));
 					}
 					break;
 				}
@@ -2225,7 +2220,7 @@ void NamespaceImpl::doUpsert(ItemImpl& item, IdType id, bool doUpdate, Transacti
 			if (!isMultithreadTxInsertion || !txCtx->TryGetValue(field, id).has_value()) {
 				// No txCtx modification required here
 				bool needClearCache{false};
-				index.Delete(krefs, id, *strHolder_, needClearCache);
+				index.Delete(krefs, id, MustExist_True, *strHolder_, needClearCache);
 				if (needClearCache) {
 					indexesCacheCleaner.Add(index);
 				}
@@ -2267,7 +2262,7 @@ void NamespaceImpl::doUpsert(ItemImpl& item, IdType id, bool doUpdate, Transacti
 				continue;
 			}
 			// Delete from composite indexes first
-			indexes_[field2]->Delete(oldData, id, *strHolder_, needClearCache);
+			indexes_[field2]->Delete(oldData, id, MustExist_True, *strHolder_, needClearCache);
 		}
 		indexes_[field2]->Upsert(Variant{plData}, id, needClearCache);
 		if (needClearCache) {
@@ -2341,12 +2336,9 @@ void NamespaceImpl::deleteItem(Item& item, UpdatesContainer& pendedRepl, const N
 					ritem->RealValue().Clone();
 					Payload pl(payloadType_, ritem->RealValue());
 					for (const auto& fvIdx : fvIndexes) {
-						auto fv = fvIdx.ptr->GetFloatVector(id);
-						if (fv.IsEmpty()) {
-							continue;
+						if (ritem->floatVectorsHolder_.Add(fvIdx.ptr->GetFloatVector(id))) {
+							pl.Set(fvIdx.ptField, Variant(ritem->floatVectorsHolder_.Back()));
 						}
-						ritem->floatVectorsHolder_.Add(std::move(fv));
-						pl.Set(fvIdx.ptField, Variant(ritem->floatVectorsHolder_.Back()));
 					}
 				}
 			}
@@ -2649,7 +2641,7 @@ Item NamespaceImpl::newItem() {
 	return Item(impl_.release());
 }
 
-void NamespaceImpl::doUpdate(const Query& query, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext& ctx) {
+void NamespaceImpl::doUpdateTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx) {
 	NsSelecter selecter(this);
 	SelectCtxWithJoinPreSelect selCtx(query, nullptr, nullptr);
 	FtFunctionsHolder func;
@@ -2659,7 +2651,10 @@ void NamespaceImpl::doUpdate(const Query& query, LocalQueryResults& result, Upda
 	selCtx.inTransaction = ctx.IsInTransaction();
 	selCtx.selectBeforeUpdate = true;
 	selecter(result, selCtx, ctx.rdxContext);
+	doUpdate(result, pendedRepl, query, ctx);
+}
 
+void NamespaceImpl::doUpdate(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx) {
 	ActiveQueryScope queryScope(query, QueryUpdate, optimizationState_, strHolder_.get());
 	const auto tmStart = system_clock_w::now();
 
@@ -2811,9 +2806,9 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool stat
 	}
 }
 
-void NamespaceImpl::doDelete(const Query& q, LocalQueryResults& result, UpdatesContainer& pendedRepl, const NsContext& ctx) {
+void NamespaceImpl::doDeleteTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx) {
 	NsSelecter selecter(this);
-	SelectCtxWithJoinPreSelect selCtx(q, nullptr, &result.GetFloatVectorsHolder());
+	SelectCtxWithJoinPreSelect selCtx(query, nullptr, &result.GetFloatVectorsHolder());
 	selCtx.contextCollectingMode = true;
 	selCtx.requiresCrashTracking = true;
 	selCtx.inTransaction = ctx.IsInTransaction();
@@ -2822,8 +2817,11 @@ void NamespaceImpl::doDelete(const Query& q, LocalQueryResults& result, UpdatesC
 	selCtx.functions = &func;
 	selecter(result, selCtx, ctx.rdxContext);
 	assertrx(result.IsNamespaceAdded(this));
+	doDelete(result, pendedRepl, query, ctx);
+}
 
-	ActiveQueryScope queryScope(q, QueryDelete, optimizationState_, strHolder_.get());
+void NamespaceImpl::doDelete(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx) {
+	ActiveQueryScope queryScope(query, QueryDelete, optimizationState_, strHolder_.get());
 	const auto tmStart = system_clock_w::now();
 	const auto oldTmV = tagsMatcher_.version();
 	for (const auto& it : result.Items()) {
@@ -2849,7 +2847,7 @@ void NamespaceImpl::doDelete(const Query& q, LocalQueryResults& result, UpdatesC
 								repl_.nsVersion, ctx.EmitterServerId(), std::move(cjson));
 	}
 	// }
-	if (q.GetDebugLevel() >= LogInfo) {
+	if (query.GetDebugLevel() >= LogInfo) {
 		logFmt(LogInfo, "Deleted {} items in {} µs", result.Count(), duration_cast<microseconds>(system_clock_w::now() - tmStart).count());
 	}
 }
@@ -2884,18 +2882,16 @@ void NamespaceImpl::checkClusterStatus(lsn_t originLsn) const {
 	}
 }
 
-void NamespaceImpl::checkSnapshotLSN(lsn_t /*lsn*/) {
-	// FIXME: Some of the cluster tests may flack. Disbaled until bugfix
-
+void NamespaceImpl::checkSnapshotLSN(lsn_t lsn) {
 	// Just in case of some unexcpected scenarious
-	// const static bool kDisableSnapshotCheck = std::getenv("REINDEXER_NO_SNAPSHOT_CHECK");
-	// if rx_unlikely (!kDisableSnapshotCheck && wal_.LastLSN().Counter() > lsn.Counter()) {
-	// 	// Do not expect to get this error in tests scenarious
-	// 	assertrx_dbg(false);
-	// 	throw Error(errParams,
-	// 				"Target namespace has unexpected LSN counter: {}. First LSN in snapshot chunk is {}. Snapshot's data are incompatible",
-	// 				wal_.LastLSN(), lsn);
-	// }
+	const static bool kDisableSnapshotCheck = std::getenv("REINDEXER_NO_SNAPSHOT_CHECK");
+	if rx_unlikely (!kDisableSnapshotCheck && wal_.LastLSN().Counter() > lsn.Counter()) {
+		// Do not expect to get this error in tests scenarious
+		assertrx_dbg(false);
+		throw Error(errParams,
+					"Target namespace has unexpected LSN counter: {}. First LSN in snapshot chunk is {}. Snapshot's data are incompatible",
+					wal_.LastLSN(), lsn);
+	}
 }
 
 // NOLINTNEXTLINE(bugprone-exception-escape) Termination here is better, than incosistent state of the user's data
@@ -2985,6 +2981,8 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext& ctx) {
 	ret.Total.dataSize = itemsDataSize_ + items_.capacity() * sizeof(PayloadValue);
 	ret.Total.cacheSize = ret.joinCache.totalSize + ret.queryCache.totalSize;
 	ret.Total.indexOptimizerMemory = nsUpdateSortedContextMemory_.load(std::memory_order_relaxed);
+	ret.Storage.proxySize = storage_.GetProxyMemStat();
+	ret.Total.inmemoryStorageSize = ret.Storage.proxySize;
 	ret.indexes.reserve(indexes_.size());
 	for (const auto& idx : indexes_) {
 		ret.indexes.emplace_back(idx->GetMemStat(ctx));
@@ -3372,7 +3370,9 @@ void NamespaceImpl::EnableStorage(const std::string& path, StorageOpts opts, Sto
 			if (storage_.IsValid()) {
 				storage_.Destroy();
 			} else {
-				fs::RmDirAll(dbpath);
+				if (fs::RmDirAll(dbpath) != 0) {
+					logFmt(LogError, "Failed to remove folder {}, error : {}", dbpath, strerror(errno));
+				}
 			}
 		}
 		throw;
@@ -3547,7 +3547,7 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext* ctx) {
 		LocalQueryResults qr;
 		qr.AddNamespace(this, true);
 		auto q = Query(name_).Where(index->Name(), CondLt, expirationThreshold);
-		doDelete(q, qr, pendedRepl, nsCtx);
+		doDeleteTr(qr, pendedRepl, q, nsCtx);
 		if (qr.Count()) {
 			logFmt(LogInfo, "[{}] {} items were removed: TTL({}) has expired", name_, qr.Count(), index->Name());
 		}
@@ -3734,6 +3734,11 @@ void NamespaceImpl::RebuildIVFIndex(std::string_view index, float dataPart, cons
 
 void NamespaceImpl::DeleteStorage(const RdxContext& ctx) {
 	auto wlck = simpleWLock(ctx);
+	if (!repl_.temporary) {
+		// Should not be able to delete non-temporary follower's storage with user's request
+		checkClusterRole(ctx.GetOriginLSN());
+	}
+
 	storage_.Destroy();
 }
 
@@ -3743,6 +3748,7 @@ void NamespaceImpl::CloseStorage(const RdxContext& ctx) {
 	UpdateANNStorageCache(skipTimeCheck, RdxContext());
 
 	storage_.Flush(StorageFlushOpts().WithImmediateReopen());
+
 	auto wlck = simpleWLock(ctx);
 
 	saveReplStateToStorage(true);
@@ -4055,7 +4061,7 @@ void NamespaceImpl::replicateAsync(updates::UpdateRecord&& rec, const RdxContext
 	}
 }
 
-void NamespaceImpl::replicateAsync(NamespaceImpl::UpdatesContainer&& recs, const RdxContext& ctx) {
+void NamespaceImpl::replicateAsync(UpdatesContainer&& recs, const RdxContext& ctx) {
 	if (!repl_.temporary) {
 		auto err = observers_.SendAsyncUpdates(std::move(recs), ctx);
 		if (!err.ok()) {
@@ -4103,7 +4109,7 @@ std::set<std::string> NamespaceImpl::GetFTIndexes(const RdxContext& ctx) const {
 	return ret;
 }
 
-std::shared_ptr<const reindexer::Embedder> NamespaceImpl::QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const {
+std::shared_ptr<const reindexer::QueryEmbedder> NamespaceImpl::QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const {
 	auto rlck = rLock(ctx);
 
 	int idxNo = NotSet;

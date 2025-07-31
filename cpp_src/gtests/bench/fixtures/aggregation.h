@@ -1,14 +1,13 @@
 #pragma once
 
 #include <string>
-#include <vector>
 
 #include "base_fixture.h"
 
 class Aggregation : protected BaseFixture {
 public:
 	~Aggregation() override = default;
-	Aggregation(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	Aggregation(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 		nsdef_.AddIndex("int_data", "hash", "int", IndexOpts());
 		nsdef_.AddIndex("int_array_data", "hash", "int", IndexOpts().Array());

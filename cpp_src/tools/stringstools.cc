@@ -15,6 +15,9 @@
 
 namespace reindexer {
 
+const char* kDefaultExtraWordsSymbols = "-/+_`'";
+const char* kDefaultWordPartDelimiters = "-/+_`'";
+
 namespace stringtools_impl {
 
 static std::string_view urldecode2(char* buf, std::string_view str) {
@@ -75,6 +78,123 @@ constexpr static auto kStrictModes = frozen::make_unordered_map<std::string_view
 	frozen::nocase_hash_str{}, frozen::nocase_equal_str{});
 
 }  // namespace stringtools_impl
+
+bool SplitOptions::IsWord(std::string_view str) const noexcept {
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
+		if (!IsWordSymbol(utf8::unchecked::next(it))) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void SplitOptions::RemoveDelims(std::string_view str, std::string& res) const {
+	res.resize(str.length());
+	auto resBegin = res.begin();
+	auto resIt = res.begin();
+
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
+		uint32_t ch = utf8::unchecked::next(it);
+		if (!IsWordPartDelimiter(ch)) {
+			resIt = utf8::unchecked::append(ch, resIt);
+		}
+	}
+
+	res.resize(std::distance(resBegin, resIt));
+}
+
+std::string SplitOptions::RemoveDelims(std::string_view str) const {
+	std::string buf;
+	RemoveDelims(str, buf);
+	return buf;
+}
+
+bool SplitOptions::ContainsDelims(std::string_view str) const {
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
+		if (IsWordPartDelimiter(utf8::unchecked::next(it))) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool SplitOptions::ContainsDelims(std::wstring_view str) const {
+	return std::ranges::any_of(str, [this](auto ch) { return IsWordPartDelimiter(ch); });
+}
+
+std::string SplitOptions::RemoveAccentsAndDiacritics(std::string_view str) const {
+	if (!removeDiacriticsMask_) {
+		return std::string(str);
+	}
+
+	std::string buf;
+	buf.resize(str.length());
+	auto bufBegin = buf.begin();
+	auto bufIt = buf.begin();
+
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
+		uint32_t ch = utf8::unchecked::next(it);
+		if (NeedToRemoveDiacritics(ch)) {
+			ch = RemoveDiacritic(ch);
+		}
+		if (ch != 0) {
+			bufIt = utf8::unchecked::append(ch, bufIt);
+		}
+	}
+
+	buf.resize(std::distance(bufBegin, bufIt));
+	return buf;
+}
+
+static void setMask(std::vector<bool>& mask, uint32_t ch) noexcept {
+	if (ch < UINT16_MAX) {
+		if (mask.size() < ch + 1) {
+			mask.resize(ch + 1);
+		}
+		mask[ch] = true;
+	}
+}
+
+void SplitOptions::SetSymbols(std::string_view extraWordSymbols, std::string_view wordPartDelimiters) {
+	extraWordSymbolsMask_.resize(0);
+	wordPartDelimitersMask_.resize(0);
+	extraWordSymbolsMask_.reserve(128);
+	wordPartDelimitersMask_.reserve(128);
+
+	hasDelims_ = !wordPartDelimiters.empty();
+
+	if (!extraWordSymbols.empty()) {
+		for (auto it = extraWordSymbols.begin(); it != extraWordSymbols.end();) {
+			auto ch = utf8::unchecked::next(it);
+			setMask(extraWordSymbolsMask_, ch);
+		}
+	}
+
+	if (!wordPartDelimiters.empty()) {
+		for (auto it = wordPartDelimiters.begin(); it != wordPartDelimiters.end();) {
+			auto ch = utf8::unchecked::next(it);
+			setMask(wordPartDelimitersMask_, ch);
+			setMask(extraWordSymbolsMask_, ch);
+		}
+	}
+}
+
+static std::string bitmaskAsString(const std::vector<bool>& mask) {
+	std::string res;
+	std::wstring str;
+	for (size_t i = 0; i < mask.size(); ++i) {
+		if (mask[i]) {
+			str.push_back(wchar_t(i));
+		}
+	}
+	utf16_to_utf8(str, res);
+	return res;
+}
+
+std::string SplitOptions::GetExtraWordSymbols() const { return bitmaskAsString(extraWordSymbolsMask_); }
+std::string SplitOptions::GetWordPartDelimiters() const { return bitmaskAsString(wordPartDelimitersMask_); }
 
 std::string toLower(std::string_view src) {
 	std::string ret;
@@ -194,7 +314,7 @@ std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst) {
 	return dst;
 }
 
-std::string& utf16_to_utf8(const std::wstring& src, std::string& dst) {
+std::string& utf16_to_utf8(const std::wstring_view src, std::string& dst) {
 	dst.resize(src.length() * 4);
 	auto end = utf8::unchecked::utf32to8(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
@@ -205,11 +325,11 @@ std::wstring utf8_to_utf16(std::string_view src) {
 	std::wstring dst;
 	return utf8_to_utf16(src, dst);
 }
-std::string utf16_to_utf8(const std::wstring& src) {
+std::string utf16_to_utf8(const std::wstring_view src) {
 	std::string dst;
 	return utf16_to_utf8(src, dst);
 }
-size_t utf16_to_utf8_size(const std::wstring& src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
+size_t utf16_to_utf8_size(const std::wstring_view src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
 
 // This functions calculate how many bytes takes limit symbols in UTF8 forward
 size_t calcUtf8After(std::string_view str, size_t limit) noexcept {
@@ -229,11 +349,11 @@ std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit
 	for (ptr = str.data(), strEnd = str.data() + str.size(); limit && ptr < strEnd; limit--) {
 		uint32_t c = utf8::unchecked::next(ptr);
 		if (IsDiacritic(c)) {
-			limit++;
+			++limit;
 			continue;
 		}
 
-		charCounter++;
+		++charCounter;
 		for (ptrDelims = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelims < delimsEnd;) {
 			uint32_t d = utf8::unchecked::next(ptrDelims);
 			if (c == d) {
@@ -272,10 +392,10 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t 
 	for (; limit && ptr > str; limit--) {
 		uint32_t c = utf8::unchecked::prior(ptr);
 		if (IsDiacritic(c)) {
-			limit++;
+			++limit;
 			continue;
 		}
-		charCounter++;
+		++charCounter;
 		for (ptrDelim = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelim < delimsEnd;) {
 			uint32_t d = utf8::unchecked::next(ptrDelim);
 			if (c == d) {
@@ -287,29 +407,54 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t 
 	return std::make_pair(str + pos - ptr, charCounter);
 }
 
-void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, const SplitOptions& options) {
+void split(std::string_view str, std::string& buf, std::vector<WordWithPos>& words, const SplitOptions& options) {
 	// assuming that the 'ToLower' function and the 'check for replacement' function should not change the character size in bytes
-	buf.resize(str.length());
+	// allocating additional memory to avoid resizing
+	buf.resize(2 * str.length());
+	std::string::iterator bufIt = buf.begin();
 	words.resize(0);
-	auto bufIt = buf.begin();
+	unsigned wordPos = 0;
 
 	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (!IsAlpha(ch) && !IsDigit(ch) && options.extraWordSymbols.find(ch) == std::string::npos && it != endIt) {
+		// word can't begin from quote even if quotes present in extra_word_symbols
+		while (!options.IsWordSymbol(ch) && it != endIt) {
 			ch = utf8::unchecked::next(it);
 		}
 
-		const auto begIt = bufIt;
-		while (IsAlpha(ch) || IsDigit(ch) || options.extraWordSymbols.find(ch) != std::string::npos) {
+		auto wordBeginIt = bufIt;
+		auto wordPartBeginIt = bufIt;
+		size_t wordPartLength = 0;
+		size_t numPartsFound = 0;
+
+		while (options.IsWordSymbol(ch)) {
 			ch = ToLower(ch);
-			if (FitsMask(ch, options.removeDiacriticsMask)) {
+			if (options.NeedToRemoveDiacritics(ch)) {
 				ch = RemoveDiacritic(ch);
+			}
+			const bool isDelimiter = options.IsWordPartDelimiter(ch);
+
+			// add all delimited parts
+			if (isDelimiter) {
+				if (wordPartBeginIt != bufIt) {
+					numPartsFound++;
+					if (wordPartLength >= options.GetMinPartSize()) {
+						words.emplace_back(std::string_view(&(*wordPartBeginIt), std::distance(wordPartBeginIt, bufIt)), wordPos);
+					}
+				}
 			}
 
 			if (ch != 0) {
 				bufIt = utf8::unchecked::append(ch, bufIt);
+				++wordPartLength;
 			}
+
+			if (isDelimiter) {
+				wordPartBeginIt = bufIt;
+				wordPartLength = 0;
+			}
+
 			if (it != endIt) {
 				ch = utf8::unchecked::next(it);
 			} else {
@@ -317,26 +462,58 @@ void split(std::string_view str, std::string& buf, std::vector<std::string_view>
 			}
 		}
 
-		if (begIt != bufIt) {
-			words.emplace_back(&(*begIt), bufIt - begIt);
+		// add last part
+		if (wordPartBeginIt != bufIt) {
+			numPartsFound++;
+			if (wordPartBeginIt != wordBeginIt && wordPartLength >= options.GetMinPartSize()) {
+				words.emplace_back(std::string_view(&(*wordPartBeginIt), std::distance(wordPartBeginIt, bufIt)), wordPos);
+			}
 		}
+
+		// add word
+		const size_t wordLen = std::distance(wordBeginIt, bufIt);
+		if (wordBeginIt != bufIt) {
+			words.emplace_back(std::string_view(&(*wordBeginIt), wordLen), wordPos);
+		}
+
+		// add word without delims
+		if (numPartsFound > 1) {
+			const auto wordEndIt = bufIt;
+
+			for (auto wordIt = wordBeginIt; wordIt != wordEndIt;) {
+				const uint32_t wordCh = utf8::unchecked::next(wordIt);
+				if (!options.IsWordPartDelimiter(wordCh)) {
+					bufIt = utf8::unchecked::append(wordCh, bufIt);
+				}
+			}
+
+			if (bufIt != wordEndIt) {
+				size_t newWordLen = std::distance(wordEndIt, bufIt);
+				words.emplace_back(std::string_view(&(*wordEndIt), newWordLen), wordPos);
+			}
+		}
+
+		++wordPos;
 	}
+
+	buf.resize(std::distance(buf.begin(), bufIt));
 }
 
-void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, std::string_view extraWordSymbols) {
+void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, const SplitOptions& options) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
 		while (it != utf16str.end() && !IsAlpha(*it) && !IsDigit(*it)) {
-			it++;
+			++it;
 		}
 
 		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || extraWordSymbols.find(*it) != std::string::npos)) {
+		while (it != utf16str.end() && options.IsWordSymbol(*it)) {
 			*it = ToLower(*it);
 			++it;
 		}
 		size_t sz = it - begIt;
+
 		if (sz) {
 			words.emplace_back(&*begIt, &*(begIt + sz));
 		}
@@ -808,6 +985,18 @@ Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size
 	} catch (const utf8::exception&) {
 		return getBytePosInMultilineString<false>(str, line, charPos, bytePos);
 	}
+}
+
+std::string_view trimSpaces(std::string_view str) noexcept {
+	size_t left = 0, right = str.size();
+	while (left < right && std::isspace(str[left])) {
+		++left;
+	}
+	while (right > left && std::isspace(str[right - 1])) {
+		--right;
+	}
+
+	return str.substr(left, right - left);
 }
 
 }  // namespace reindexer

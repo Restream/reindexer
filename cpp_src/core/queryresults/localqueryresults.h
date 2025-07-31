@@ -19,7 +19,12 @@ class NsContext;
 struct ResultFetchOpts;
 struct ItemImplRawData;
 class NamespaceImpl;
+
+namespace builders {
 struct CsvOrdering;
+}  // namespace builders
+using builders::CsvOrdering;
+
 class FieldsFilter;
 
 namespace joins {
@@ -177,7 +182,7 @@ public:
 	PayloadType& getPayloadType(int nsid) noexcept;
 	std::shared_ptr<const Schema> getSchema(int nsid) const noexcept;
 	int getNsNumber(int nsid) const noexcept;
-	int getMergedNSCount() const noexcept { return ctxs.size(); }
+	int getMergedNSCount() const noexcept;
 	ItemRefVector& Items() & noexcept { return items_; }
 	const ItemRefVector& Items() const& noexcept { return items_; }
 	auto Items() && = delete;
@@ -218,12 +223,13 @@ private:
 		NsDataHolder& operator=(const NsDataHolder&) = delete;
 		NsDataHolder& operator=(NsDataHolder&&) = default;
 
+		const StringsHolderPtr::element_type* StrHolderPtr() const& noexcept { return strHolder_.get(); }
+
+		const NamespaceImpl* ns;
+
 	private:
 		NamespaceImplPtr nsPtr_;
-
-	public:
-		const NamespaceImpl* ns;
-		StringsHolderPtr strHolder;
+		StringsHolderPtr strHolder_;
 	};
 
 	h_vector<NsDataHolder, 1> nsData_;

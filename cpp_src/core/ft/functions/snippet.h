@@ -56,7 +56,7 @@ private:
 	std::string_view rightBound_;
 	std::string_view markerBefore_;
 	std::string_view markerAfter_;
-	RVector<Area, 10> zonesList_;
+	h_vector<Area, 10> zonesList_;
 };
 
 class [[nodiscard]] SnippetN : public Snippet {};

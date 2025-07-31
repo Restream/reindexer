@@ -62,7 +62,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 	}
 }
 
-void SnapshotHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, h_vector<updates::UpdateRecord, 2>& repl) {
+void SnapshotHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, UpdatesContainer& repl) {
 	ChunkContext ctx;
 	ctx.wal = ch.IsWAL();
 	ctx.shallow = ch.IsShallow();
@@ -74,7 +74,7 @@ void SnapshotHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSy
 	ns_.storage_.TryForceFlush();
 }
 
-void SnapshotHandler::applyRecord(const SnapshotRecord& snRec, const ChunkContext& ctx, h_vector<updates::UpdateRecord, 2>& pendedRepl) {
+void SnapshotHandler::applyRecord(const SnapshotRecord& snRec, const ChunkContext& ctx, UpdatesContainer& pendedRepl) {
 	if (ctx.shallow) {
 		auto unpacked = snRec.Unpack();
 		applyShallowRecord(snRec.LSN(), unpacked.type, snRec.Record(), ctx);
@@ -121,8 +121,7 @@ void SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const Packe
 	throw Error(errParams, "Unexpected record type for shallow record: {}", type);
 }
 
-void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx,
-									  h_vector<updates::UpdateRecord, 2>& pendedRepl) {
+void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, const ChunkContext& chCtx, UpdatesContainer& pendedRepl) {
 	if (chCtx.wal && !lsn.isEmpty()) {
 		ns_.checkSnapshotLSN(lsn);
 	}
@@ -193,13 +192,13 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 			const Query q = Query::FromSQL(rec.data);
 			switch (q.type_) {
 				case QueryDelete:
-					result.AddNamespace(&ns_, true);
-					ns_.doDelete(q, result, pendedRepl, ctx);
-					break;
+					// TODO disabled due to #1771
+					// Query can contain join query
+					throw Error(errLogic, "Unexpected WAL update Query {}\n", rec.data);
+
 				case QueryUpdate:
-					result.AddNamespace(&ns_, true);
-					ns_.doUpdate(q, result, pendedRepl, ctx);
-					break;
+					// TODO disabled due to #1771
+					throw Error(errLogic, "Unexpected WAL update Query {}\n", rec.data);
 				case QueryTruncate:
 					ns_.doTruncate(pendedRepl, ctx);
 					break;

@@ -100,7 +100,7 @@ public:
 		for (size_t i = indexes.firstCompositePos(); i < size_t(indexes.totalSize()) && i < data.size(); ++i) {
 			if (data[i]) {
 				bool needClearCache{false};
-				indexes[i]->Delete(Variant(plValue), itemId_, *modifier_.ns_.strHolder(), needClearCache);
+				indexes[i]->Delete(Variant(plValue), itemId_, MustExist_False, *modifier_.ns_.strHolder(), needClearCache);
 				if (needClearCache) {
 					indexesCacheCleaner.Add(*indexes[i]);
 				}
@@ -122,7 +122,8 @@ public:
 				} else {
 					cpl.Get(i, vals);
 				}
-				indexes[i]->Delete(vals, itemId_, *modifier_.ns_.strHolder(), needClearCache);
+
+				indexes[i]->Delete(vals, itemId_, MustExist_False, *modifier_.ns_.strHolder(), needClearCache);
 				if (needClearCache) {
 					indexesCacheCleaner.Add(*indexes[i]);
 				}
@@ -151,7 +152,7 @@ public:
 		if (modifier_.rollBackIndexData_.IsCjsonChanged()) {
 			const Variant& v = cjsonKref.front();
 			bool needClearCache{false};
-			indexes[0]->Delete(v, itemId_, *modifier_.ns_.strHolder(), needClearCache);
+			indexes[0]->Delete(v, itemId_, MustExist_True, *modifier_.ns_.strHolder(), needClearCache);
 			VariantArray keys;
 			plSave.Get(0, keys);
 			indexes[0]->Upsert(res, keys, itemId_, needClearCache);
@@ -255,8 +256,8 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 	appendAffectedIndexes(ns, affectedComposites);
 }
 
-ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, NamespaceImpl& ns,
-						   h_vector<updates::UpdateRecord, 2>& replUpdates, const NsContext& ctx)
+ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, NamespaceImpl& ns, UpdatesContainer& replUpdates,
+						   const NsContext& ctx)
 	: ns_(ns),
 	  updateEntries_(updateEntries),
 	  rollBackIndexData_(ns_.indexes_.totalSize()),
@@ -285,14 +286,14 @@ ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, Namesp
 	ns_.replicateTmUpdateIfRequired(replUpdates, oldTmV, ctx);
 }
 
-[[nodiscard]] bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, h_vector<updates::UpdateRecord, 2>& replUpdates) {
+[[nodiscard]] bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, UpdatesContainer& replUpdates) {
 	PayloadValue& pv = ns_.items_[itemId];
 	Payload pl(ns_.payloadType_, pv);
 	pv.Clone(pl.RealSize());
 
 	auto embeddersData = getEmbeddersSourceData(pl);
 
-	rollBackIndexData_.Reset(pv);
+	rollBackIndexData_.Reset(itemId, ns_.payloadType_, pv, ns_.getVectorIndexes());
 	RollBack_ModifiedPayload rollBack = RollBack_ModifiedPayload(*this, itemId);
 	FunctionExecutor funcExecutor(ns_, replUpdates);
 	ExpressionEvaluator ev(ns_.payloadType_, ns_.tagsMatcher_, funcExecutor);
@@ -338,8 +339,7 @@ ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, Namesp
 	return rollBackIndexData_.IsPkModified();
 }
 
-void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values, h_vector<updates::UpdateRecord, 2>& replUpdates,
-							   const NsContext& ctx) {
+void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values, UpdatesContainer& replUpdates, const NsContext& ctx) {
 	PayloadValue& plData = ns_.items_[id];
 	const PayloadTypeImpl& pti(*ns_.payloadType_.get());
 	Payload pl(pti, plData);
@@ -404,7 +404,7 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 		if ((fieldIdx == 0) && (cjsonCache_.Size() > 0)) {
 			bool needClearCache{false};
 			rollBackIndexData_.CjsonChanged();
-			index.Delete(Variant(cjsonCache_.Get()), id, *strHolder, needClearCache);
+			index.Delete(Variant(cjsonCache_.Get()), id, MustExist_True, *strHolder, needClearCache);
 			if (needClearCache) {
 				indexesCacheCleaner.Add(index);
 			}
@@ -432,7 +432,7 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 
 			bool needClearCache{false};
 			rollBackIndexData_.IndexChanged(fieldIdx, index.Opts().IsPK());
-			index.Delete(ns_.krefs, id, *strHolder, needClearCache);
+			index.Delete(ns_.krefs, id, MustExist_True, *strHolder, needClearCache);
 			if (needClearCache) {
 				indexesCacheCleaner.Add(index);
 			}
@@ -463,7 +463,7 @@ void ItemModifier::deleteItemFromComposite(IdType itemId, auto& indexesCacheClea
 			bool needClearCache{false};
 			const auto& compositeIdx = ns_.indexes_[i];
 			rollBackIndexData_.IndexAndCJsonChanged(i, compositeIdx->Opts().IsPK());
-			compositeIdx->Delete(Variant(ns_.items_[itemId]), itemId, *strHolder, needClearCache);
+			compositeIdx->Delete(Variant(ns_.items_[itemId]), itemId, MustExist_True, *strHolder, needClearCache);
 			if (needClearCache) {
 				indexesCacheCleaner.Add(*compositeIdx);
 			}
@@ -559,7 +559,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 
 		bool needClearCache{false};
 		auto& tupleIdx = ns_.indexes_[0];
-		tupleIdx->Delete(oldTupleValue, itemId, *strHolder, needClearCache);
+		tupleIdx->Delete(oldTupleValue, itemId, MustExist_True, *strHolder, needClearCache);
 		auto tupleValue = tupleIdx->Upsert(item.GetField(0), itemId, needClearCache);
 		if (needClearCache) {
 			indexesCacheCleaner.Add(*tupleIdx);
@@ -638,7 +638,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 			bool needClearCache{false};
 			rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
 
-			index.Delete(ns_.skrefs, itemId, *strHolder, needClearCache);
+			index.Delete(ns_.skrefs, itemId, MustExist_True, *strHolder, needClearCache);
 			if (needClearCache) {
 				indexesCacheCleaner.Add(index);
 			}
@@ -707,7 +707,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 		if (!ns_.skrefs.empty()) {
 			bool needClearCache{false};
 			rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
-			index.Delete(ns_.skrefs, itemId, *strHolder, needClearCache);
+			index.Delete(ns_.skrefs, itemId, MustExist_True, *strHolder, needClearCache);
 			if (needClearCache) {
 				indexesCacheCleaner.Add(index);
 			}
@@ -725,7 +725,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 	}
 }
 
-void ItemModifier::getEmbeddingData(const Payload& pl, const Embedder& embedder, std::vector<VariantArray>& data) const {
+void ItemModifier::getEmbeddingData(const Payload& pl, const UpsertEmbedder& embedder, std::vector<VariantArray>& data) const {
 	VariantArray fldData;
 	data.resize(0);
 	for (const auto& field : embedder.Fields()) {
@@ -749,7 +749,7 @@ std::vector<std::pair<int, std::vector<VariantArray>>> ItemModifier::getEmbedder
 	return data;
 }
 
-bool ItemModifier::skipEmbedder(const Embedder& embedder) const {
+bool ItemModifier::skipEmbedder(const UpsertEmbedder& embedder) const {
 	// auto-embed disabled when requesting with special values for embedded field
 	const auto embedderIdx = ns_.payloadType_.FieldByName(embedder.FieldName());
 	for (const FieldData& field : fieldsToModify_) {
@@ -768,7 +768,7 @@ void ItemModifier::updateEmbedding(IdType itemId, const RdxContext& rdxContext, 
 	}
 
 	VariantArray data;
-	std::vector<VariantArray> source;
+	std::vector<std::pair<std::string, VariantArray>> source;
 
 	std::vector<VariantArray> updatedEmbeddingData;
 	for (size_t i = 0, s = embeddersData.size(); i < s; ++i) {
@@ -787,7 +787,7 @@ void ItemModifier::updateEmbedding(IdType itemId, const RdxContext& rdxContext, 
 		if (embeddersData[i].second != updatedEmbeddingData) {
 			for (const auto& fld : embedder.Fields()) {
 				pl.Get(fld, data);
-				source.push_back(std::move(data));
+				source.emplace_back(fld, std::move(data));
 			}
 
 			// ToDo in real life, work with several embedded devices requires asynchrony. Now we have only one, at all
@@ -802,6 +802,24 @@ void ItemModifier::updateEmbedding(IdType itemId, const RdxContext& rdxContext, 
 			modifyField(itemId, fldData, pl, krs);
 		}
 	}
+}
+
+void ItemModifier::IndexRollBack::Reset(IdType itemId, const PayloadType& pt, const PayloadValue& pv, FloatVectorsIndexes&& fvIndexes) {
+	pvSave_ = pv;
+	pvSave_.Clone();
+	floatVectorsHolder_ = FloatVectorsHolderVector();
+	Payload pl{pt, pvSave_};
+	for (auto& fvIdx : fvIndexes) {
+		auto fv = fvIdx.ptr->GetFloatVector(itemId);
+		if (floatVectorsHolder_.Add(std::move(fv))) {
+			pl.Set(fvIdx.ptField, Variant{floatVectorsHolder_.Back()});
+		} else {
+			pl.Set(fvIdx.ptField, Variant{ConstFloatVectorView{}});
+		}
+	}
+	std::fill(data_.begin(), data_.end(), false);
+	cjsonChanged_ = false;
+	pkModified_ = false;
 }
 
 }  // namespace reindexer

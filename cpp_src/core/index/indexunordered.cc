@@ -191,6 +191,12 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 		keyIt = this->idx_map.insert({static_cast<key_type>(key), typename T::mapped_type()}).first;
 	} else {
 		delMemStat(keyIt);
+		if (this->opts_.IsPK()) {
+			WrSerializer wrser;
+			wrser << "Can't insert item in PK index, duplicate key - ";
+			key.Dump(wrser, CheckIsStringPrintable::No);
+			throw Error(errLogic, wrser.Slice());
+		}
 	}
 
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
@@ -206,7 +212,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 }
 
 template <typename T>
-void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& strHolder, bool& clearCache) {
+void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) {
 	if (key.IsNullValue()) {
 		this->empty_ids_.Unsorted().Erase(id);	// ignore result
 		this->isBuilt_ = false;
@@ -224,8 +230,9 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& str
 		cache_.ResetImpl();
 		clearCache = true;
 	}
-	assertf(delcnt || this->opts_.IsArray() || this->Opts().IsSparse(), "Delete non-existing id from index '{}' id={},key={} ({})",
-			this->name_, id, key.As<std::string>(this->payloadType_, this->Fields()),
+	assertf(!mustExist || delcnt || this->opts_.IsArray() || this->Opts().IsSparse(),
+			"Delete non-existing id from index '{}' id={}, key={} ({})", this->name_, id,
+			key.As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
 	if (keyIt == idx_map.end()) {
 		return;
@@ -247,7 +254,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, StringsHolder& str
 	}
 
 	if (!this->IsFulltext()) {
-		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, strHolder, clearCache);
+		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, mustExist, strHolder, clearCache);
 	}
 }
 
@@ -304,7 +311,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		// Get set of keys or single key
 		case CondEq:
 		case CondSet: {
-			assertrx_dbg(std::none_of(keys.cbegin(), keys.cend(), [](const auto& key) { return key.IsNullValue(); }));
+			assertrx_throw(std::none_of(keys.cbegin(), keys.cend(), [](const auto& key) noexcept { return key.IsNullValue(); }));
 
 			struct {
 				T* i_map;

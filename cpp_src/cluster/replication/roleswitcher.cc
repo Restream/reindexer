@@ -461,8 +461,7 @@ Error RoleSwitcher::appendNsNamesFrom(RxT& rx, NsNamesHashSetT& set) {
 }
 
 void RoleSwitcher::connectNodes() {
-	client::ConnectOpts opts;
-	opts.CreateDBIfMissing().WithExpectedClusterID(cfg_.clusterId);
+	const auto opts = client::ConnectOpts().CreateDBIfMissing().WithExpectedClusterID(cfg_.clusterId);
 	for (auto& node : nodes_) {
 		auto err = node.client.Connect(node.dsn, loop_, opts);
 		(void)err;	// ignore. Error will be handled during the further requests

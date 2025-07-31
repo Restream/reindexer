@@ -61,8 +61,9 @@ public:
 
 	int Erase(IdType id) {
 		auto d = std::equal_range(begin(), end(), id);
+		int count = std::distance(d.second, d.first);
 		base_idset::erase(d.first, d.second);
-		return d.second - d.first;
+		return count;
 	}
 
 	void Commit() const noexcept {}
@@ -208,8 +209,9 @@ public:
 	int Erase(IdType id) {
 		if (!set_) {
 			auto d = std::equal_range(begin(), end(), id);
+			int count = std::distance(d.second, d.first);
 			base_idset::erase(d.first, d.second);
-			return d.second - d.first;
+			return count;
 		}
 
 		clear<false>();

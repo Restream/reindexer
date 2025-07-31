@@ -47,7 +47,7 @@ struct RaftInfo;
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<timed_mutex, MutexMark::ReindexerStats>;
-	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
+	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg arg, Args&&... args);
 	template <auto MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg&&, Args&&...);
@@ -323,7 +323,7 @@ private:
 	Error readClusterConfigFile();
 	Error readShardingConfigFile();
 	void saveNewShardingConfigFile(const cluster::ShardingConfig& config) const;
-	void checkClusterRole(std::string_view nsName, lsn_t originLsn) const;
+	void checkDBClusterRole(std::string_view nsName, lsn_t originLsn) const;
 	void setClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx);
 	std::string generateTemporaryNamespaceName(std::string_view baseName);
 	Error enableStorage(const std::string& storagePath);
@@ -348,6 +348,10 @@ private:
 							const RdxContext& ctx, std::optional<Query>& queryCopy);
 
 	std::optional<Query> embedQuery(const Query& query, const RdxContext& ctx);
+
+	template <QueryType TP>
+	Error modifyQ(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx,
+				  void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&));
 
 	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 

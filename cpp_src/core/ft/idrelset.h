@@ -2,9 +2,9 @@
 
 #include <limits.h>
 #include <algorithm>
+#include "estl/h_vector.h"
 #include "estl/packed_vector.h"
 #include "sort/pdqsort.hpp"
-#include "tools/rvector.h"
 
 namespace reindexer {
 
@@ -80,7 +80,7 @@ public:
 			pos_.begin(), pos_.end(),
 			[](const IdRelType::PosType& lhs, const IdRelType::PosType& rhs) noexcept { return lhs.pos() < rhs.pos(); });
 	}
-	const RVector<PosType, 3>& Pos() const noexcept { return pos_; }
+	const h_vector<PosType, 3>& Pos() const noexcept { return pos_; }
 	uint64_t UsedFieldsMask() const noexcept { return usedFieldsMask_; }
 	size_t HeapSize() const noexcept { return heapSize(pos_); }
 
@@ -96,7 +96,7 @@ private:
 		}
 	}
 
-	RVector<PosType, 3> pos_;
+	h_vector<PosType, 3> pos_;
 	uint64_t usedFieldsMask_ = 0;  // fields that occur in pos_
 	VDocIdType id_ = 0;			   // index of the document in which the word occurs
 };

@@ -198,9 +198,14 @@ void IndexDef::SetOpts(IndexOpts&& opts) {
 	opts_ = std::move(opts);
 }
 
-bool IndexDef::IsEqual(const IndexDef& other, IndexComparison cmpType) const {
-	return name_ == other.name_ && jsonPaths_ == other.jsonPaths_ && IndexType() == other.IndexType() && fieldType_ == other.fieldType_ &&
-		   opts_.IsEqual(other.opts_, cmpType) && expireAfter_ == other.expireAfter_;
+IndexDef::DiffResult IndexDef::Compare(const IndexDef& o) const noexcept {
+	return DiffResult{}
+		.Set<Diff::Name>(name_ == o.name_)
+		.Set<Diff::JsonPaths>(jsonPaths_ == o.jsonPaths_)
+		.Set<Diff::IndexType>(IndexType() == o.IndexType())
+		.Set<Diff::FieldType>(fieldType_ == o.fieldType_)
+		.Set<Diff::ExpireAfter>(expireAfter_ == o.expireAfter_)
+		.Set(opts_.Compare(o.opts_));
 }
 
 ::IndexType IndexDef::DetermineIndexType(std::string_view indexName, std::string_view indexType, std::string_view fieldType) {

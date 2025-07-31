@@ -12,6 +12,7 @@ import (
 	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
 	"github.com/restream/reindexer/v5/test/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type ScvTestItem struct {
@@ -33,9 +34,9 @@ func TestBuiltinServer(t *testing.T) {
 	cfg1.Storage.Path = path.Join(helpers.GetTmpDBDir(), "reindex_builtinserver_test1")
 	os.RemoveAll(cfg1.Storage.Path)
 
-	rx1 := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg1))
+	rx1, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg1))
+	require.NoError(t, err)
 	defer rx1.Close()
-	assert.NoError(t, rx1.Status().Err)
 	assert.NoError(t, rx1.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
 
 	cfg2 := config.DefaultServerConfig()
@@ -44,14 +45,14 @@ func TestBuiltinServer(t *testing.T) {
 	cfg2.Storage.Path = path.Join(helpers.GetTmpDBDir(), "reindex_builtinserver_test2")
 	os.RemoveAll(cfg2.Storage.Path)
 
-	rx2 := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg2))
+	rx2, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg2))
+	require.NoError(t, err)
 	defer rx2.Close()
-	assert.NoError(t, rx2.Status().Err)
 	assert.NoError(t, rx2.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
 
-	rx3 := reindexer.NewReindex("cproto://127.0.0.1:26535/xxx")
+	rx3, err := reindexer.NewReindex("cproto://127.0.0.1:26535/xxx")
+	require.NoError(t, err)
 	defer rx3.Close()
-	assert.NoError(t, rx3.Status().Err)
 	assert.NoError(t, rx3.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
 
 	unixSocketPath := path.Join(helpers.GetTmpDBDir(), "reindexer_builtinserver_test.sock")
@@ -62,13 +63,19 @@ func TestBuiltinServer(t *testing.T) {
 	cfg4.Net.UnixRPCAddr = unixSocketPath
 	os.RemoveAll(cfg4.Storage.Path)
 
-	rx4 := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg4))
+	rx4, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg4))
+	require.NoError(t, err)
 	defer rx4.Close()
-	assert.NoError(t, rx4.Status().Err)
 	assert.NoError(t, rx4.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
 
-	rx5 := reindexer.NewReindex(fmt.Sprintf("ucproto://%s:/xxx", unixSocketPath))
+	rx5, err := reindexer.NewReindex(fmt.Sprintf("ucproto://%s:/xxx", unixSocketPath))
+	require.NoError(t, err)
 	defer rx5.Close()
-	assert.NoError(t, rx5.Status().Err)
 	assert.NoError(t, rx5.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
+
+	cfg4.Net.HTTPAddr = "0:29091"
+	cfg4.Net.RPCAddr = "0:26537"
+	db, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg4))
+	require.NotNil(t, db)
+	require.ErrorContains(t, err, "Cannot enable storage for namespace '#config' on path")
 }

@@ -21,14 +21,14 @@ public:
 	Error Remove(IEventsObserver& observer) { return eventsListener_.Remove(observer); }
 	void SendAsyncEventOnly(updates::UpdateRecord&& rec);
 	Error SendUpdate(updates::UpdateRecord&& rec, std::function<void()> beforeWaitF, const RdxContext& ctx);
-	Error SendUpdates(cluster::UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx);
+	Error SendUpdates(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx);
 	Error SendAsyncUpdate(updates::UpdateRecord&& rec, const RdxContext& ctx);
-	Error SendAsyncUpdates(cluster::UpdatesContainer&& recs, const RdxContext& ctx);
+	Error SendAsyncUpdates(UpdatesContainer&& recs, const RdxContext& ctx);
 	void SetEventsServerID(int serverID) noexcept { eventsListener_.SetEventsServerID(serverID); }
 	void SetEventsShardID(int shardID) noexcept { eventsListener_.SetEventsShardID(shardID); }
 
 private:
-	EventsContainer convertUpdatesContainer(const cluster::UpdatesContainer& data);
+	EventsContainer convertUpdatesContainer(const UpdatesContainer& data);
 
 	cluster::IDataReplicator& replicator_;
 	EventsListener eventsListener_;

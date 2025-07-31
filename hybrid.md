@@ -10,14 +10,18 @@
 
 # Queries
 
-Reindexer supports hybrid search by full text and knn in one query.
+Reindexer supports hybrid search by full text and knn in one query. Fulltext and KNN conditions may be combined with `AND` or `OR` logical operators:
 ```SQL
+-- Requires both fulltext and KNN matches in the result documents
 SELECT * FROM ns WHERE ft_idx = "search_str" AND KNN(vec_idx, [2.4, 3.5, ...], k=100)
+-- Requires fulltext, KNN or both matches in the result documents
+SELECT * FROM ns WHERE ft_idx = "search_str" OR KNN(vec_idx, [2.4, 3.5, ...], k=100)
 ```
 In hybrid search, there must be exactly one full text condition and exactly one knn condition.\
 In this case, full text and knn conditions must be inside the same bracket or outside the brackets:
 ```SQL
 SELECT * FROM ns WHERE (ft_idx = "search_str" AND id > 50 AND KNN(vec_idx, [2.4, 3.5, ...], k=100)) AND id < 10000
+SELECT * FROM ns WHERE (ft_idx = "search_str" OR KNN(vec_idx, [2.4, 3.5, ...], k=100) AND id > 50 ) AND id < 10000
 ```
 Placing full text and knn conditions in different brackets is prohibited:
 ```SQL

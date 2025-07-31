@@ -158,8 +158,9 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 									throwUnexpectedArrayTypeForFloatVectorError("msgpack"sv, f);
 							}
 						}
-						floatVectorsHolder.Add(std::move(vect));
-						vectView = floatVectorsHolder.Back();
+						if (floatVectorsHolder.Add(std::move(vect))) {
+							vectView = floatVectorsHolder.Back();
+						}
 					}
 					pl.Set(indexNumber, Variant{vectView});
 				} else {

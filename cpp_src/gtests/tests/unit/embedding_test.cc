@@ -941,9 +941,9 @@ TEST_F(EmbeddingTest, ConfigUpdateOnlyEmbedders) try {
 			const auto& idx = idxs[i++];
 			ASSERT_EQ(idx.Name(), index.Name());
 			if (index.Name() == kFieldNameIvf) {
-				ASSERT_TRUE(updateIdx.IsEqual(index, IndexComparison::Full));
+				ASSERT_TRUE(updateIdx.Compare(index).Equal());
 			} else {
-				ASSERT_TRUE(index.IsEqual(idx, IndexComparison::Full));
+				ASSERT_TRUE(index.Compare(idx).Equal());
 			}
 		}
 	}
@@ -1003,10 +1003,10 @@ TEST_F(EmbeddingTest, ConfigUpdate) try {
 			auto it = std::ranges::find_if(idxs, [&index](const reindexer::IndexDef& dec) { return index.Name() == dec.Name(); });
 			ASSERT_TRUE(it != idxs.end());
 			if (index.Name() == kFieldNameIvf) {
-				ASSERT_TRUE(updateIdx.IsEqual(index, IndexComparison::Full));
+				ASSERT_TRUE(updateIdx.Compare(index).Equal());
 				ASSERT_TRUE(ns.indexes.back().Name() == it->Name());
 			} else {
-				ASSERT_TRUE(index.IsEqual(*it, IndexComparison::Full));
+				ASSERT_TRUE(index.Compare(*it).Equal());
 			}
 		}
 	}

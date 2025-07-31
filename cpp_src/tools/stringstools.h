@@ -16,6 +16,9 @@
 
 namespace reindexer {
 
+extern const char* kDefaultExtraWordsSymbols;
+extern const char* kDefaultWordPartDelimiters;
+
 std::string escapeString(std::string_view str);
 std::string unescapeString(std::string_view str);
 KeyValueType detectValueType(std::string_view value);
@@ -57,18 +60,77 @@ Container& split(const typename Container::value_type& str, std::string_view del
 	return tokens;
 }
 
-struct SplitOptions {
-	std::string_view extraWordSymbols;
-	SymbolTypeMask removeDiacriticsMask = 0;
+struct [[nodiscard]] SplitOptions {
+public:
+	SplitOptions() { SetSymbols(kDefaultExtraWordsSymbols, kDefaultWordPartDelimiters); }
+
+	[[nodiscard]] bool HasDelims() const noexcept { return hasDelims_; }
+
+	[[nodiscard]] bool IsWordPartDelimiter(uint32_t ch) const noexcept {
+		if (ch >= wordPartDelimitersMask_.size()) {
+			return false;
+		}
+		return wordPartDelimitersMask_[ch];
+	}
+	[[nodiscard]] bool IsWordSymbol(uint32_t ch) const noexcept { return IsAlpha(ch) || IsDigit(ch) || isExtraWordSymbol(ch); }
+
+	[[nodiscard]] bool IsWord(std::string_view str) const noexcept;
+
+	[[nodiscard]] bool ContainsDelims(const std::string_view str) const;
+	[[nodiscard]] bool ContainsDelims(const std::wstring_view str) const;
+	void RemoveDelims(std::string_view str, std::string& res) const;
+	[[nodiscard]] std::string RemoveDelims(std::string_view str) const;
+	[[nodiscard]] std::string RemoveAccentsAndDiacritics(std::string_view str) const;
+
+	[[nodiscard]] bool NeedToRemoveDiacritics(wchar_t ch) const noexcept { return FitsMask(ch, removeDiacriticsMask_); }
+
+	[[nodiscard]] bool operator==(const SplitOptions& rhs) const noexcept = default;
+
+	[[nodiscard]] bool operator!=(const SplitOptions& rhs) const noexcept { return !(*this == rhs); }
+
+	void SetSymbols(std::string_view extraWordSymbols, std::string_view wordPartDelimiters);
+	void SetMinPartSize(size_t minPartSize) noexcept { minPartSize_ = minPartSize > 0 ? minPartSize : 1; }
+	void SetRemoveDiacriticsMask(SymbolTypeMask removeDiacriticsMask) noexcept { removeDiacriticsMask_ = removeDiacriticsMask; }
+
+	[[nodiscard]] SymbolTypeMask GetRemoveDiacriticsMask() const noexcept { return removeDiacriticsMask_; }
+	[[nodiscard]] size_t GetMinPartSize() const noexcept { return minPartSize_; }
+
+	std::string GetExtraWordSymbols() const;
+	std::string GetWordPartDelimiters() const;
+
+private:
+	[[nodiscard]] bool isExtraWordSymbol(uint32_t ch) const noexcept {
+		if (ch >= extraWordSymbolsMask_.size()) {
+			return false;
+		}
+		return extraWordSymbolsMask_[ch];
+	}
+
+	SymbolTypeMask removeDiacriticsMask_ = kRemoveAllDiacriticsMask;
+	size_t minPartSize_ = 3;
+
+	std::vector<bool> extraWordSymbolsMask_;
+	std::vector<bool> wordPartDelimitersMask_;
+	bool hasDelims_ = false;
+};
+
+struct WordWithPos {
+	std::string_view word;
+	size_t pos = 0;
+
+	WordWithPos() = default;
+	WordWithPos(std::string_view word, size_t pos) : word(word), pos(pos) {}
 };
 
 void split(const std::string& utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words);
-void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, std::string_view extraWordSymbols);
-void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, const SplitOptions& options);
+void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, const SplitOptions& options);
+void split(std::string_view str, std::string& buf, std::vector<WordWithPos>& words, const SplitOptions& options);
 [[nodiscard]] size_t calcUtf8After(std::string_view s, size_t limit) noexcept;
 [[nodiscard]] std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit, std::string_view delims) noexcept;
 [[nodiscard]] size_t calcUtf8Before(const char* str, int pos, size_t limit) noexcept;
 [[nodiscard]] std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t limit, std::string_view delims) noexcept;
+
+[[nodiscard]] std::string_view trimSpaces(std::string_view str) noexcept;
 
 int getUTF8StringCharactersCount(std::string_view str) noexcept;
 
@@ -134,10 +196,10 @@ template <>
 }
 
 std::wstring utf8_to_utf16(std::string_view src);
-std::string utf16_to_utf8(const std::wstring& src);
-size_t utf16_to_utf8_size(const std::wstring& src);
+std::string utf16_to_utf8(const std::wstring_view src);
+size_t utf16_to_utf8_size(const std::wstring_view src);
 std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst);
-std::string& utf16_to_utf8(const std::wstring& src, std::string& dst);
+std::string& utf16_to_utf8(const std::wstring_view src, std::string& dst);
 
 inline bool is_number(std::string_view str) noexcept {
 	uint16_t i = 0;

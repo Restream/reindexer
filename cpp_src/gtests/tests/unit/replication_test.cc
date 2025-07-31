@@ -700,3 +700,44 @@ TEST_F(ReplicationLoadApi, LogLevel) {
 	stop = true;
 	th.join();
 }
+
+#ifndef REINDEX_WITH_TSAN
+// TSAN reports lock order inversion here, but it's fine, because of the top level locks.
+// Skip the test for TSAN to avoid global suppression for this case.
+TEST_F(ReplicationLoadApi, FollowerNamespaceOperations) {
+	// Check available namespace operations on the async follower
+	constexpr std::string_view kNsSome = "some";
+	constexpr std::string_view kNsSome2 = "some2";
+	constexpr std::string_view kNsSome3 = "some3";
+	InitNs();
+	WaitSync(kNsSome);
+
+	auto follower = GetSrv(1)->api.reindexer;
+	// Replicated namespace drop is not allowed
+	auto err = follower->DropNamespace(kNsSome);
+	ASSERT_EQ(err.code(), errWrongReplicationData) << err.what();
+	// Replicated namespace open is allowed
+	err = follower->OpenNamespace(kNsSome);
+	ASSERT_TRUE(err.ok()) << err.what();
+	// Own namespace open is allowed
+	err = follower->OpenNamespace(kNsSome2);
+	ASSERT_TRUE(err.ok()) << err.what();
+	// Rename of the replicated namespace is not allowed
+	err = follower->RenameNamespace(kNsSome, std::string(kNsSome2));
+	ASSERT_EQ(err.code(), errWrongReplicationData) << err.what();
+	// Rename to the replicated namespace is not allowed
+	err = follower->RenameNamespace(kNsSome2, std::string(kNsSome));
+	ASSERT_EQ(err.code(), errWrongReplicationData) << err.what();
+	// Rename of the own namespace is allowed
+	err = follower->RenameNamespace(kNsSome2, std::string(kNsSome3));
+	ASSERT_TRUE(err.ok()) << err.what();
+	// Own namespace drop is allowed
+	err = follower->DropNamespace(kNsSome3);
+	ASSERT_TRUE(err.ok()) << err.what();
+	// Replicated namespace drop is allowed after role reset
+	err = GetSrv(1)->TryResetReplicationRole(kNsSome);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = follower->DropNamespace(kNsSome);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+#endif	// REINDEX_WITH_TSAN

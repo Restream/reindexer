@@ -29,6 +29,8 @@
 #include "debug/backtrace.h"
 #include "debug/terminate_handler.h"
 
+#include "core/nsselecter/nsselecter.h"
+
 static std::once_flag initTerminateHandlerFlag;
 
 using namespace std::placeholders;
@@ -464,7 +466,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		{
 			auto wlck = nsLock_.DataWLock(rdxCtx, nsDef.name);
 
-			checkClusterRole(nsDef.name, rdxCtx.GetOriginLSN());
+			checkDBClusterRole(nsDef.name, rdxCtx.GetOriginLSN());
 
 			auto [it, inserted] = namespaces_.insert({nsDef.name, ns});
 			if (!inserted) {
@@ -527,7 +529,7 @@ Error ReindexerImpl::DropNamespace(std::string_view nsName, const RdxContext& rd
 }
 
 std::string ReindexerImpl::generateTemporaryNamespaceName(std::string_view baseName) {
-	return '@' + std::string(baseName) + "_tmp_" + randStringAlph(kTmpNsPostfixLen);
+	return fmt::format("@{}_tmp_{}", baseName, randStringAlph(kTmpNsPostfixLen));
 }
 
 Error ReindexerImpl::CreateTemporaryNamespace(std::string_view baseName, std::string& resultName, const StorageOpts& opts, lsn_t nsVersion,
@@ -573,7 +575,7 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 		const bool isTemporary = replState.temporary;
 
 		if (!isTemporary) {
-			checkClusterRole(nsName, ctx.GetOriginLSN());
+			checkDBClusterRole(nsName, ctx.GetOriginLSN());
 		}
 
 		if (dropStorage) {
@@ -673,7 +675,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, IsDBInitCall isDBInitC
 				return awaitReplication(nsIt->second, std::move(wlck));
 			}
 
-			checkClusterRole(name, rdxCtx.GetOriginLSN());
+			checkDBClusterRole(name, rdxCtx.GetOriginLSN());
 
 			const lsn_t version = setNsVersion(ns, replOpts, rdxCtx);
 
@@ -800,7 +802,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 		auto nsCreationLock = nsLock_.CreationLock(srcNsName, dstNsName, rdxCtx);
 		auto wlck = nsLock_.DataWLock(rdxCtx, srcNsName);
 
-		checkClusterRole(srcNsName, rdxCtx.GetOriginLSN());
+		checkDBClusterRole(srcNsName, rdxCtx.GetOriginLSN());
 
 		auto srcIt = namespaces_.find(srcNsName);
 		if (srcIt == namespaces_.end()) {
@@ -865,12 +867,19 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 				srcNs->Rename(dstNsName, storagePath_, replicateCb, rdxCtx);
 			}
 		} catch (...) {
-			if (auto actualName = srcNs->GetName(RdxContext()); !iequals(actualName, dstNsName)) {
+			const RdxContext dummyCtx;
+			auto actualSrcName = srcNs->GetName(dummyCtx);
+			auto actualDstName = dstNs ? dstNs->GetName(dummyCtx) : NamespaceName();
+			if (!iequals(actualSrcName, dstNsName)) {
 				// Can not cancel here
 				wlck.lock(ignore_cancel_ctx{});
 
-				namespaces_.erase(dstNsName);
-				namespaces_[std::string(actualName)] = srcNs;
+				if (!actualDstName.empty() && iequals(actualDstName, dstNsName)) {
+					namespaces_[dstNsName] = std::move(dstNs);
+				} else {
+					namespaces_.erase(dstNsName);
+				}
+				namespaces_[std::string(actualSrcName)] = std::move(srcNs);
 			}
 			throw;
 		}
@@ -927,7 +936,7 @@ void ReindexerImpl::saveNewShardingConfigFile(const cluster::ShardingConfig& con
 	}
 }
 
-void ReindexerImpl::checkClusterRole(std::string_view nsName, lsn_t originLsn) const {
+void ReindexerImpl::checkDBClusterRole(std::string_view nsName, lsn_t originLsn) const {
 	if (!clusterManager_->NamespaceIsInClusterConfig(nsName)) {
 		return;
 	}
@@ -1026,15 +1035,48 @@ Error ReindexerImpl::Update(std::string_view nsName, Item& item, const RdxContex
 Error ReindexerImpl::Update(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) {
 	APPLY_NS_FUNCTION2(true, Update, item, qr);
 }
-
-Error ReindexerImpl::Update(const Query& q, LocalQueryResults& result, const RdxContext& rdxCtx) {
+template <QueryType TP>
+Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx,
+							 void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&)) {
 	try {
-		q.VerifyForUpdate();
-		auto queryCopy = embedQuery(q, rdxCtx);
-		const Query& query = queryCopy ? *queryCopy : q;
-		const std::string& nsName = q.NsName();
-		auto ns = getNamespace(nsName, rdxCtx);
-		ns->Update(query, result, rdxCtx);
+		const std::string& nsName = query.NsName();
+		{
+			Namespace::Ptr mainNs = getNamespace(query.NsName(), rdxCtx);
+			query.VerifyForUpdate();
+			auto queryCopy = embedQuery(query, rdxCtx);
+
+			const bool isWalQuery = query.IsWALQuery();
+			auto mainNsImpl = isWalQuery ? mainNs->awaitMainNs(rdxCtx) : mainNs->getMainNs();
+			PerfStatCalculatorMT calc(mainNsImpl->updatePerfCounter_, mainNsImpl->enablePerfCounters_);
+
+			const Query& q = queryCopy ? *queryCopy : query;
+			auto params = configProvider_.GetUpdDelLoggingParams();
+			const bool isEnabled = params.thresholdUs >= 0 && !isSystemNamespaceNameFast(q.NsName());
+			QueryStatCalculator statCalculator = QueryStatCalculator(long_actions::MakeLogger<TP>(q, std::move(params)), isEnabled);
+			std::pair<NamespaceImpl::Locker::WLockT, NamespaceImpl::Ptr> unlockData;
+
+			{
+				RxSelector::NsLockerW locks(rdxCtx);
+				locks.Add(std::move(mainNs), true);
+				query.WalkNested(false, false, false, [this, &locks, &rdxCtx, &nsName](const Query& q) {
+					const std::string& name = q.NsName();
+					if (!iequals(nsName, name)) {
+						auto nsWrp = getNamespace(q.NsName(), rdxCtx);
+						locks.Add(std::move(nsWrp), false);
+					}
+				});
+				locks.Lock(statCalculator);
+
+				RxSelector::DoPreSelectForUpdateDelete(q, result, locks, TP == QueryType::QueryUpdate ? false : true, rdxCtx);
+				unlockData = locks.Unlock();
+			}
+
+			UpdatesContainer pendedRepl;
+			NsContext nsCtx(rdxCtx);
+
+			(*(unlockData.second).*fn)(result, pendedRepl, query, nsCtx);
+			unlockData.second->replicate(std::move(pendedRepl), std::move(unlockData.first), true, std::move(statCalculator), nsCtx);
+		}
 		if (isSystemNamespaceNameFast(nsName)) {
 			RdxContext rdxCtxNoCancel = rdxCtx.NoCancel();
 			rdxCtxNoCancel.WithNoWaitSync(true);
@@ -1048,7 +1090,11 @@ Error ReindexerImpl::Update(const Query& q, LocalQueryResults& result, const Rdx
 	} catch (const std::exception& ex) {
 		return {errLogic, ex.what()};
 	}
-	return {};
+	return Error{};
+}
+
+Error ReindexerImpl::Update(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx) {
+	return modifyQ<QueryType::QueryUpdate>(query, result, rdxCtx, &NamespaceImpl::doUpdate);
 }
 
 Error ReindexerImpl::Upsert(std::string_view nsName, Item& item, const RdxContext& ctx) { APPLY_NS_FUNCTION1(true, Upsert, item); }
@@ -1108,19 +1154,8 @@ Error ReindexerImpl::Delete(std::string_view nsName, Item& item, LocalQueryResul
 	APPLY_NS_FUNCTION2(false, Delete, item, qr);
 }
 
-Error ReindexerImpl::Delete(const Query& q, LocalQueryResults& result, const RdxContext& ctx) {
-	try {
-		q.VerifyForUpdate();
-		auto queryCopy = embedQuery(q, ctx);
-		const Query& query = queryCopy ? *queryCopy : q;
-		const std::string_view nsName = query.NsName();
-		APPLY_NS_FUNCTION2(false, Delete, query, result);
-	} catch (const Error& err) {
-		return err;
-	} catch (const std::exception& ex) {
-		return {errLogic, ex.what()};
-	}
-	return {};
+Error ReindexerImpl::Delete(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx) {
+	return modifyQ<QueryType::QueryDelete>(query, result, rdxCtx, &NamespaceImpl::doDelete);
 }
 
 Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const RdxContext& rdxCtx) {
@@ -1166,7 +1201,7 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 		}
 		// Lookup and lock namespaces_
 		mainNs->updateSelectTime();
-		locks.Add(std::move(mainNs));
+		locks.Add(std::move(mainNs), std::move(mainNsWrp));
 		struct {
 			bool isWalQuery;
 			RxSelector::NsLocker<const RdxContext>& locks;
@@ -1176,7 +1211,7 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 			auto nsWrp = getNamespace(q.NsName(), refs.ctx);
 			auto ns = refs.isWalQuery ? nsWrp->awaitMainNs(refs.ctx) : nsWrp->getMainNs();
 			ns->updateSelectTime();
-			refs.locks.Add(std::move(ns));
+			refs.locks.Add(std::move(ns), std::move(nsWrp));
 		});
 
 		auto queryCopy = embedQuery(q, rdxCtx);
@@ -1208,17 +1243,16 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 
 namespace {
 struct EmbeddingData {
-	EmbeddingData(size_t id, const std::shared_ptr<const Embedder>& e, const KnnQueryEntry& kqe) : entryId(id), embedder(e), qe(kqe) {}
+	EmbeddingData(size_t id, const std::shared_ptr<const QueryEmbedder>& e, const KnnQueryEntry& kqe) : entryId(id), embedder(e), qe(kqe) {}
 
 	size_t entryId{std::numeric_limits<size_t>::max()};
-	std::shared_ptr<const Embedder> embedder;
+	std::shared_ptr<const QueryEmbedder> embedder;
 	const KnnQueryEntry& qe;
 };
 
 h_vector<ConstFloatVector, 1> calculateEmbedding(const EmbeddingData& embed, const RdxContext& ctx) {
 	h_vector<ConstFloatVector, 1> products;
-	std::vector<VariantArray> source{VariantArray{Variant(embed.qe.Data())}};
-	embed.embedder->Calculate(ctx, std::span{&source, 1}, products);
+	embed.embedder->Calculate(ctx, embed.qe.Data(), products);
 	if (products.size() != 1) {
 		throw Error(errNotValid, "Unable to generate vector values with incorrect embedding result for index '{}'", embed.qe.FieldName());
 	}
@@ -1249,7 +1283,9 @@ std::optional<Q> ReindexerImpl::embedKNNQueries(const Q& query, const RdxContext
 		queryCopy.emplace(query);
 		for (const auto& embed : embedHolder) {
 			auto products = calculateEmbedding(embed, ctx);
-			queryCopy->template SetEntry<KnnQueryEntry>(embed.entryId, embed.qe.FieldName(), products.front(), embed.qe.Params());
+			[[maybe_unused]] auto inserted =
+				queryCopy->template SetEntry<KnnQueryEntry>(embed.entryId, embed.qe.FieldName(), products.front(), embed.qe.Params());
+			assertrx_throw(inserted == 1);
 		}
 	}
 	return queryCopy;
@@ -2470,7 +2506,8 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 	schemaBuilder.Object(TagName::Empty(), "ItemsUnion", false, [&](ProtobufSchemaBuilder& obj) {
 		ser << "oneof item {\n";
 		for (auto& ns : nses) {
-			obj.Field(ns.nsName, TagName(ns.nsNumber), FieldProps{KeyValueType::Tuple{}, false, false, false, ns.objName});
+			obj.Field(ns.nsName, TagName(ns.nsNumber),
+					  FieldProps{KeyValueType::Tuple{}, IsArray_False, IsRequired_False, AllowAdditionalProps_False, ns.objName});
 		}
 		ser << "}\n";
 	});
@@ -2481,8 +2518,8 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 	ser << "// - GET/POST api/v1/db/:db/sqlquery\n";
 	schemaBuilder.Object(TagName::Empty(), "QueryResults", false, [](ProtobufSchemaBuilder& obj) {
 		obj.Field(kParamItems, kProtoQueryResultsFields.at(kParamItems),
-				  FieldProps{KeyValueType::Tuple{}, true, false, false, "ItemsUnion"});
-		obj.Field(kParamNamespaces, kProtoQueryResultsFields.at(kParamNamespaces), FieldProps{KeyValueType::String{}, true});
+				  FieldProps{KeyValueType::Tuple{}, IsArray_True, IsRequired_False, AllowAdditionalProps_False, "ItemsUnion"});
+		obj.Field(kParamNamespaces, kProtoQueryResultsFields.at(kParamNamespaces), FieldProps{KeyValueType::String{}, IsArray_True});
 		obj.Field(kParamCacheEnabled, kProtoQueryResultsFields.at(kParamCacheEnabled), FieldProps{KeyValueType::Bool{}});
 		obj.Field(kParamExplain, kProtoQueryResultsFields.at(kParamExplain), FieldProps{KeyValueType::String{}});
 		obj.Field(kParamTotalItems, kProtoQueryResultsFields.at(kParamTotalItems), FieldProps{KeyValueType::Int{}});
@@ -2496,18 +2533,18 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 		});
 
 		obj.Field(kParamColumns, kProtoQueryResultsFields.at(kParamColumns),
-				  FieldProps{KeyValueType::Tuple{}, true, false, false, "Columns"});
+				  FieldProps{KeyValueType::Tuple{}, IsArray_True, IsRequired_False, AllowAdditionalProps_False, "Columns"});
 
 		AggregationResult::GetProtobufSchema(obj);
 		obj.Field(kParamAggregations, kProtoQueryResultsFields.at(kParamAggregations),
-				  FieldProps{KeyValueType::Tuple{}, true, false, false, "AggregationResults"});
+				  FieldProps{KeyValueType::Tuple{}, IsArray_True, IsRequired_False, AllowAdditionalProps_False, "AggregationResults"});
 	});
 
 	ser << "// The ModifyResults message is schema of http API methods response:\n";
 	ser << "// - PUT/POST/DELETE api/v1/db/:db/namespaces/:ns/items\n";
 	schemaBuilder.Object(TagName::Empty(), "ModifyResults", false, [](ProtobufSchemaBuilder& obj) {
 		obj.Field(kParamItems, kProtoModifyResultsFields.at(kParamItems),
-				  FieldProps{KeyValueType::Tuple{}, true, false, false, "ItemsUnion"});
+				  FieldProps{KeyValueType::Tuple{}, IsArray_True, IsRequired_False, AllowAdditionalProps_False, "ItemsUnion"});
 		obj.Field(kParamUpdated, kProtoModifyResultsFields.at(kParamUpdated), FieldProps{KeyValueType::Int{}});
 		obj.Field(kParamSuccess, kProtoModifyResultsFields.at(kParamSuccess), FieldProps{KeyValueType::Bool{}});
 	});

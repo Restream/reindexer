@@ -118,7 +118,7 @@ bool Writer::TryUpdateNextPart(RLockT&& lock, AsyncStorage& storage, UpdateInfo&
 }
 
 std::pair<int, const Index*> Writer::getPKField() const noexcept {
-	for (unsigned i = 0, size = ns_.indexes_.firstSparsePos(); i < size; ++i) {
+	for (unsigned i = 0, size = ns_.indexes_.size(); i < size; ++i) {
 		auto idx = ns_.indexes_[i].get();
 		const auto& opts = idx->Opts();
 		if (opts.IsPK() && !opts.IsSparse() && !opts.IsArray()) {
@@ -324,10 +324,10 @@ std::optional<Reader::CachedIndex> Reader::GetNextCachedIndex() {
 	}
 
 	Serializer ser(dataSlice);
-	ser.GetUInt8();	 // version
+	[[maybe_unused]] uint8_t version = ser.GetUInt8();
 	const std::chrono::nanoseconds lastUpdate{ser.GetUInt64()};
-	ser.GetSlice();	 // PK index def
-	ser.GetSlice();	 // ANN index def
+	[[maybe_unused]] std::string_view pkIndexDef = ser.GetSlice();
+	[[maybe_unused]] std::string_view annIndexDef = ser.GetSlice();
 
 	ret.emplace();
 	ret->name = std::move(meta.name);
@@ -348,7 +348,7 @@ bool Reader::checkIndexDef(Serializer& ser, unsigned int field, std::string_view
 		return false;
 	}
 	const IndexDef indexDef = getIndexDefinitionF(field);
-	if (!indexDef.IsEqual(*cachedIndexDef, IndexComparison::Full)) {
+	if (!indexDef.Compare(*cachedIndexDef).Equal()) {
 		WrSerializer indexDefJson;
 		indexDef.GetJSON(indexDefJson);
 		logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): different {} index definitions:\ncached:{}\nvs\ncurrent:{}", nsName_, keySlice,

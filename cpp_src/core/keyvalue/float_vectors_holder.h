@@ -23,19 +23,19 @@ public:
 	using Base::empty;
 	using Base::resize;
 
-	void Add(FloatVector&& vect) {
-		assertrx_dbg(!vect.IsEmpty());
+	[[nodiscard]] bool Add(FloatVector&& vect) {
 		if (vect.IsEmpty()) {
-			return;
+			return false;
 		}
 		emplace_back(std::move(vect));
+		return true;
 	}
-	void Add(ConstFloatVectorView vect) {
-		assertrx_dbg(!vect.IsEmpty());
+	[[nodiscard]] bool Add(ConstFloatVectorView vect) {
 		if (vect.IsEmpty()) {
-			return;
+			return false;
 		}
 		emplace_back(std::move(vect));
+		return true;
 	}
 	ConstFloatVectorView Back() const noexcept { return ConstFloatVectorView{back()}; }
 	ConstFloatVectorView Get(size_t i) const noexcept { return ConstFloatVectorView{operator[](i)}; }

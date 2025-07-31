@@ -3,7 +3,7 @@
 #include "tools/serializer.h"
 #include "vendor/gason/gason.h"
 
-namespace reindexer {
+namespace reindexer::builders {
 
 MsgPackBuilder::MsgPackBuilder(WrSerializer& wrser, ObjType type, size_t size)
 	: tm_(nullptr), tagsLengths_(nullptr), type_(type), tagIndex_(nullptr) {
@@ -161,4 +161,4 @@ void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNo
 	}
 }
 
-}  // namespace reindexer
+}  // namespace reindexer::builders

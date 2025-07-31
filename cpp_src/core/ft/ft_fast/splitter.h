@@ -11,7 +11,7 @@ class ISplitterTask {
 public:
 	virtual ~ISplitterTask();
 	virtual void SetText(std::string_view t) noexcept = 0;
-	virtual const std::vector<std::string_view>& GetResults() = 0;
+	virtual const std::vector<WordWithPos>& GetResults() = 0;
 	virtual std::pair<int, int> Convert(unsigned int wordPosStart, unsigned int wordPosEnd) = 0;
 	virtual void WordToByteAndCharPos(int wordPosition, WordPosition& out) = 0;
 	virtual void WordToByteAndCharPos(int wordPosition, WordPositionEx& out) = 0;
@@ -26,7 +26,7 @@ public:
 		text_ = t;
 		words_.clear();
 	}
-	const std::vector<std::string_view>& GetResults() override;
+	const std::vector<WordWithPos>& GetResults() override;
 	std::pair<int, int> Convert(unsigned int wordPosStart, unsigned int wordPosEnd) override;
 
 	void WordToByteAndCharPos(int wordPosition, WordPosition& out) override;
@@ -38,10 +38,10 @@ private:
 	SplitterTaskFast(const FastTextSplitter& s) : splitter_(s) {}
 
 	template <typename Pos>
-	Pos wordToByteAndCharPos(std::string_view str, int wordPosition, std::string_view extraWordSymbols);
+	Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const SplitOptions& splitOptions);
 
 	std::string_view text_;
-	std::vector<std::string_view> words_;  // string_view point to convertedText_
+	std::vector<WordWithPos> words_;  // string_view point to convertedText_
 	std::string convertedText_;
 	unsigned int lastWordPos_ = 0, lastOffset_ = 0;
 	const FastTextSplitter& splitter_;
@@ -54,14 +54,11 @@ public:
 
 class FastTextSplitter final : public ISplitter {
 public:
-	FastTextSplitter(const std::string& extraWordSymbols, SymbolTypeMask removeDiacriticsMask)
-		: extraWordSymbols_(extraWordSymbols), removeDiacriticsMask_(removeDiacriticsMask) {}
+	FastTextSplitter(const SplitOptions opts) : opts_(opts) {}
 	[[nodiscard]] std::shared_ptr<ISplitterTask> CreateTask() const override;
-	[[nodiscard]] std::string_view GetExtraWordsSymbols() const noexcept { return extraWordSymbols_; }
-	[[nodiscard]] SymbolTypeMask GetRemoveDiacriticsMask() const noexcept { return removeDiacriticsMask_; }
+	[[nodiscard]] const SplitOptions& GetSplitOptions() const noexcept { return opts_; }
 
 private:
-	const std::string extraWordSymbols_;
-	SymbolTypeMask removeDiacriticsMask_ = 0;
+	const SplitOptions opts_;
 };
 }  // namespace reindexer
