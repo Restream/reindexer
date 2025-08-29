@@ -57,7 +57,7 @@ public:
 	void SetNameTag(TagName nameTag) noexcept { nameTag_ = nameTag; }
 
 private:
-	enum : int32_t { ForAllItems = -2 };
+	enum [[nodiscard]] : int32_t { ForAllItems = -2 };
 	TagName nameTag_{TagName::Empty()};
 	int32_t index_ = IndexValueType::NotSet;
 };
@@ -161,7 +161,7 @@ private:
 
 namespace std {
 template <>
-struct hash<reindexer::TagsPath> {
+struct [[nodiscard]] hash<reindexer::TagsPath> {
 public:
 	size_t operator()(const reindexer::TagsPath& v) const noexcept {
 		return reindexer::_Hash_bytes(v.data(), v.size() * sizeof(typename reindexer::TagsPath::value_type));

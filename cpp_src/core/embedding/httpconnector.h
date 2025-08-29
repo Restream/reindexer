@@ -21,8 +21,8 @@ public:
 	HttpConnector& operator=(HttpConnector&&) noexcept = delete;
 	~HttpConnector();
 
-	[[nodiscard]] bool Connect(size_t connect_timeout_ms, size_t read_timeout_ms, size_t write_timeout_ms);
-	[[nodiscard]] bool Connected() const;
+	bool Connect(size_t connect_timeout_ms, size_t read_timeout_ms, size_t write_timeout_ms);
+	bool Connected() const;
 	void Disconnect();
 
 	struct [[nodiscard]] Response {

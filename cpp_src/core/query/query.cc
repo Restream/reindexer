@@ -83,11 +83,8 @@ void Query::checkSubQueryWithData() const {
 }
 
 void Query::VerifyForUpdate() const {
-	if (!subQueries_.empty()) {
-		throw Error{errQueryExec, "UPDATE and DELETE query cannot contain subqueries"};
-	}
 	for (const auto& jq : joinQueries_) {
-		if (jq.joinType != JoinType::InnerJoin) {
+		if (!(jq.joinType == JoinType::InnerJoin || jq.joinType == JoinType::OrInnerJoin)) {
 			throw Error{errQueryExec, "UPDATE and DELETE query can contain only inner join"};
 		}
 	}
@@ -352,7 +349,11 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				}
 				forcedSortOrder_.reserve(cnt);
 				while (cnt--) {
-					forcedSortOrder_.push_back(ser.GetVariant().EnsureHold());
+					auto v = ser.GetVariant();
+					if (v.IsNullValue()) {
+						throw Error(errParams, "Null-values are not supported in forced sorting");
+					}
+					forcedSortOrder_.emplace_back(std::move(v.EnsureHold()));
 				}
 				break;
 			}
@@ -376,7 +377,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				calcTotal_ = CalcTotalMode(ser.GetVarUInt());
 				break;
 			case QuerySelectFilter:
-				selectFilter_.Add(ser.GetVString());
+				selectFilter_.Add(ser.GetVString(), *this);
 				break;
 			case QueryEqualPosition: {
 				const unsigned bracketPosition = ser.GetVarUInt();
@@ -434,7 +435,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				std::string field(ser.GetVString());
 				bool hasExpressions = false;
 				auto numValues = ser.GetVarUInt();
-				val.MarkArray(ser.GetVarUInt() == 1);
+				rx_unused = val.MarkArray(ser.GetVarUInt() == 1);
 				while (numValues--) {
 					hasExpressions = ser.GetVarUInt();
 					val.emplace_back(ser.GetVariant().EnsureHold());

@@ -4,9 +4,9 @@
 #include "reindexer_api.h"
 #include "vendor/gason/gason.h"
 
-class TransactionApi : public ReindexerApi {
+class [[nodiscard]] TransactionApi : public ReindexerApi {
 public:
-	struct DataRange {
+	struct [[nodiscard]] DataRange {
 		int from;
 		int till;
 		std::string data;
@@ -21,7 +21,7 @@ public:
 		Error err = reindexer.OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(reindexer, default_namespace,
-							   {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
+							   {IndexDeclaration{kFieldId, "tree", "int", IndexOpts().PK(), 0},
 								IndexDeclaration{kFieldData, "text", "string",
 												 IndexOpts().SetConfig(IndexFastFT, R"xxx({"enable_warmup_on_ns_copy":false})xxx"), 0},
 								IndexDeclaration{kFieldData1, "text", "string",
@@ -30,11 +30,25 @@ public:
 												 IndexOpts().SetConfig(IndexFastFT, R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0}});
 	}
 
+	void SetTxCopyConfigs([[maybe_unused]] Reindexer& reindexer) {
+#if defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_TSAN)
+		QueryResults qr;
+		auto err = reindexer.Update(Query(reindexer::kConfigNamespace)
+										.Set("namespaces[*].tx_size_to_always_copy", 8000)
+										.Set("namespaces[*].start_copy_policy_tx_size", 2000)
+										.Where("type", CondEq, "namespaces"),
+									qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+#endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_TSAN)
+	}
+
 	Item MakeItem(Reindexer& reindexer, int id, const std::string& baseData) {
 		Item item = reindexer.NewItem(default_namespace);
 		if (item.Status().ok()) {
-			item["id"] = id;
-			item["data"] = baseData + "_" + std::to_string(id);
+			item[kFieldId] = id;
+			item[kFieldData] = fmt::format("{}_{}_{}", kFieldData, baseData, id);
+			item[kFieldData1] = fmt::format("{}_{}_{}", kFieldData1, baseData, id);
+			item[kFieldData2] = fmt::format("{}_{}_{}", kFieldData2, baseData, id);
 		}
 		return item;
 	}
@@ -57,12 +71,12 @@ public:
 		return qr.TotalCount();
 	}
 
-	void SelectData(Reindexer& reindexer, int fromMax, int tillMax) {
-		int from = fromMax ? (random() % fromMax + 1) : 0;
-		int till = random() % (tillMax - from) + (from + 1);
+	void SelectData(Reindexer& reindexer, int tillMax, int limit) {
+		int from = tillMax ? (random() % tillMax) : 0;
+		int till = (tillMax > from) ? (random() % (tillMax - from) + (from + 1)) : (from + 1);
 		QueryResults qr;
-		Error err =
-			reindexer.Select(Query(default_namespace).Where(kFieldId, CondGe, Variant(from)).Where(kFieldId, CondLe, Variant(till)), qr);
+		const auto q = Query(default_namespace).Where(kFieldId, CondGe, Variant(from)).Where(kFieldId, CondLe, Variant(till)).Limit(limit);
+		Error err = reindexer.Select(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 

@@ -16,7 +16,7 @@ namespace joins {
 class NamespaceResults;
 
 /// Offset in 'items_' for left Ns item
-struct ItemOffset {
+struct [[nodiscard]] ItemOffset {
 	ItemOffset() noexcept : field(0), offset(0), size(0) {}
 	ItemOffset(uint32_t f, uint32_t o, uint32_t s) noexcept : field(f), offset(o), size(s) {}
 	bool operator==(const ItemOffset& other) const noexcept { return field == other.field && offset == other.offset && size == other.size; }
@@ -32,7 +32,7 @@ struct ItemOffset {
 using ItemOffsets = h_vector<ItemOffset, 1>;
 
 /// Result of joining entire NamespaceImpl
-class NamespaceResults {
+class [[nodiscard]] NamespaceResults {
 public:
 	/// Move-insertion of LocalQueryResults (for n-th joined field)
 	/// ItemRefs into our results container
@@ -69,11 +69,11 @@ private:
 };
 
 /// Results of joining all the namespaces (in case of merge queries)
-class Results : public std::vector<NamespaceResults> {};
+class [[nodiscard]] Results : public std::vector<NamespaceResults> {};
 
 /// Joined field iterator for Item
 /// of left NamespaceImpl (main ns).
-class JoinedFieldIterator {
+class [[nodiscard]] JoinedFieldIterator {
 public:
 	using reference = ItemRef&;
 	using const_reference = const ItemRef&;
@@ -118,7 +118,7 @@ private:
 
 /// Left namespace (main ns) iterator.
 /// Iterates over joined fields (if there are some) of item.
-class ItemIterator {
+class [[nodiscard]] ItemIterator {
 public:
 	ItemIterator(const NamespaceResults* parent, IdType rowid) noexcept : joinRes_(parent), rowid_(rowid) {}
 

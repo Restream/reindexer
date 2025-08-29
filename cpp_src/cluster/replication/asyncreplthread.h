@@ -6,7 +6,7 @@ namespace reindexer::cluster {
 
 class SharedSyncState;
 
-class AsyncThreadParam {
+class [[nodiscard]] AsyncThreadParam {
 public:
 	AsyncThreadParam(const std::vector<AsyncReplNodeConfig>* n, AsyncReplicationMode replMode, SharedSyncState& syncState);
 	AsyncThreadParam(AsyncThreadParam&& o) = default;
@@ -29,7 +29,7 @@ private:
 	SharedSyncState& syncState_;
 };
 
-class AsyncReplThread {
+class [[nodiscard]] AsyncReplThread {
 public:
 	using BaseT = ReplThread<AsyncThreadParam>;
 	AsyncReplThread(int serverId, ReindexerImpl& thisNode, std::shared_ptr<BaseT::UpdatesQueueT>,

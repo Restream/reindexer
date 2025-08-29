@@ -7,9 +7,9 @@ namespace reindexer {
 
 class FieldsFilter;
 
-class FieldsExtractor {
+class [[nodiscard]] FieldsExtractor {
 public:
-	class FieldParams {
+	class [[nodiscard]] FieldParams {
 	public:
 		int& index;
 		int& length;
@@ -170,7 +170,7 @@ public:
 	void Null(int, Args...) = delete;
 
 private:
-	enum class PathType { AllItems, WithIndex, Other };
+	enum class [[nodiscard]] PathType { AllItems, WithIndex, Other };
 	PathType pathNotToType(const IndexedPathNode& pathNode) noexcept {
 		return pathNode.IsForAllItems()						  ? PathType::AllItems
 			   : (pathNode.Index() == IndexValueType::NotSet) ? PathType::Other

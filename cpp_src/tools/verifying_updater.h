@@ -4,8 +4,8 @@
 
 namespace reindexer {
 
-template <typename BT, typename FT, FT BT::* field>
-class VerifyingUpdater {
+template <typename BT, typename FT, FT BT::*field>
+class [[nodiscard]] VerifyingUpdater {
 	using BaseType = BT;
 	using FieldType = FT;
 

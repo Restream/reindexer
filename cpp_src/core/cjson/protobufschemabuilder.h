@@ -15,7 +15,7 @@ class WrSerializer;
 
 namespace builders {
 
-class ProtobufSchemaBuilder {
+class [[nodiscard]] ProtobufSchemaBuilder {
 public:
 	ProtobufSchemaBuilder();
 	ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsTypes* fieldsTypes, ObjType type, std::string_view name = std::string_view(),
@@ -33,7 +33,7 @@ public:
 
 private:
 	void writeField(std::string_view name, std::string_view type, TagName);
-	std::pair<std::string_view, KeyValueType> jsonSchemaTypeToProtobufType(const FieldProps& props) const;
+	[[nodiscard]] std::pair<std::string_view, KeyValueType> jsonSchemaTypeToProtobufType(const FieldProps& props) const;
 
 	WrSerializer* ser_{nullptr};
 	SchemaFieldsTypes* fieldsTypes_{nullptr};

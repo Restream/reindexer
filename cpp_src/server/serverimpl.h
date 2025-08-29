@@ -23,7 +23,7 @@ class DBManager;
 struct IDBManagerStatsCollector;
 struct IRPCServerStatsCollector;
 
-class ServerImpl {
+class [[nodiscard]] ServerImpl {
 	using SinkMap = std::unordered_map<std::string, std::shared_ptr<spdlog::sinks::reopen_file_sink_st>>;
 
 public:

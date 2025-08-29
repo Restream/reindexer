@@ -11,7 +11,7 @@ namespace client {
 class Transaction;
 }  // namespace client
 
-class TransactionImpl {
+class [[nodiscard]] TransactionImpl {
 public:
 	TransactionImpl(LocalTransaction&& ltx) : data_(std::move(ltx.data_)), tx_{std::move(ltx.tx_)}, status_(std::move(ltx.err_)) {}
 	TransactionImpl(LocalTransaction&& ltx, client::Reindexer&& clusterLeader)
@@ -41,7 +41,7 @@ public:
 	static LocalTransaction Transform(TransactionImpl& tx);
 
 private:
-	struct Empty {};
+	struct [[nodiscard]] Empty {};
 	using ProxiedTxPtr = std::unique_ptr<ProxiedTransaction>;
 	using TxStepsPtr = std::unique_ptr<TransactionSteps>;
 	using RxClientT = client::Reindexer;
@@ -54,7 +54,7 @@ private:
 	void initProxiedTxIfRequired();
 	void updateTagsMatcherIfNecessary(Item& item);
 
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	std::unique_ptr<SharedTransactionData> data_;
 	sharding::LocatorServiceAdapter shardingRouter_;
 	std::variant<Empty, TxStepsPtr, ProxiedTxPtr, RxClientT> tx_;

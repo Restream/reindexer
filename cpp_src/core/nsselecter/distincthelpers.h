@@ -12,7 +12,7 @@ namespace DistinctHelpers {
 
 using FieldsValue = h_vector<Variant, 2>;
 
-struct DataType {
+struct [[nodiscard]] DataType {
 	DataType() = default;
 	template <typename T>
 	DataType(T&& d, IsArray a) noexcept : data(std::move(d)), isArray(a) {}
@@ -28,7 +28,7 @@ template <IsCompositeSupported isCompositeSupported>
 struct [[nodiscard]] DistinctHasher {
 	DistinctHasher() = default;
 	DistinctHasher(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(fields) {}
-	[[nodiscard]] size_t operator()(const DistinctHelpers::FieldsValue& vals) const {
+	size_t operator()(const DistinctHelpers::FieldsValue& vals) const {
 		(void)vals;
 		int h = 0;
 		for (const auto& v : vals) {
@@ -59,7 +59,7 @@ template <IsCompositeSupported isCompositeSupported>
 struct [[nodiscard]] CompareVariantVector {
 	CompareVariantVector() = default;
 	CompareVariantVector(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(fields) {}
-	[[nodiscard]] bool operator()(const DistinctHelpers::FieldsValue& v1, const DistinctHelpers::FieldsValue& v2) const {
+	bool operator()(const DistinctHelpers::FieldsValue& v1, const DistinctHelpers::FieldsValue& v2) const {
 		assertrx_throw(v1.size() == v2.size());
 		for (unsigned i = 0; i < v1.size(); i++) {
 			if (!v1[i].Type().IsSame(v2[i].Type())) {
@@ -100,7 +100,7 @@ template <IsCompositeSupported isCompositeSupported>
 struct [[nodiscard]] LessDistinctVector {
 	LessDistinctVector() = default;
 	LessDistinctVector(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(fields) {}
-	[[nodiscard]] bool operator()(const DistinctHelpers::FieldsValue& v1, const DistinctHelpers::FieldsValue& v2) const {
+	bool operator()(const DistinctHelpers::FieldsValue& v1, const DistinctHelpers::FieldsValue& v2) const {
 		assertrx_throw(v1.size() == v2.size());
 		for (unsigned i = 0; i < v1.size(); i++) {
 			if (!v1[i].Type().IsSame(v2[i].Type())) {
@@ -136,7 +136,7 @@ private:
 	FieldsSet fields_;
 };
 
-[[nodiscard]] bool GetMultiFieldValue(const std::vector<DataType>& data, unsigned long dataIndex, unsigned int rowLen, FieldsValue& values);
+bool GetMultiFieldValue(const std::vector<DataType>& data, unsigned long dataIndex, unsigned int rowLen, FieldsValue& values);
 
 }  // namespace DistinctHelpers
 }  // namespace reindexer

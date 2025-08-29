@@ -10,26 +10,26 @@
 
 namespace reindexer {
 
-struct l_string_hdr {
+struct [[nodiscard]] l_string_hdr {
 	uint32_t length;
 	char data[1];
 };
 
-struct v_string_hdr {
+struct [[nodiscard]] v_string_hdr {
 	uint8_t data[1];
 };
 
-struct l_msgpack_hdr {
+struct [[nodiscard]] l_msgpack_hdr {
 	uint32_t size;
 	const char* ptr;
 };
 
-struct json_string_ftr {
+struct [[nodiscard]] json_string_ftr {
 	const char* data;
 };
 
 // Dark
-struct p_string {
+struct [[nodiscard]] p_string {
 	// ptr points to c null-terminated string
 	constexpr static uint64_t tagCstr = 0x0ULL;
 	// ptr points to 4 byte string len header, followed by string's char array
@@ -202,7 +202,7 @@ inline std::span<char> giftStr(p_string s) noexcept {
 }  // namespace reindexer
 namespace std {
 template <>
-struct hash<reindexer::p_string> {
+struct [[nodiscard]] hash<reindexer::p_string> {
 public:
 	size_t operator()(const reindexer::p_string& str) const noexcept { return reindexer::_Hash_bytes(str.data(), str.length()); }
 };

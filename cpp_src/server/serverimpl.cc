@@ -269,11 +269,11 @@ int ServerImpl::run() {
 #elif REINDEX_WITH_JEMALLOC
 		if (alloc_ext::JEMallocIsAvailable()) {
 			size_t val = 0, sz = sizeof(size_t);
-			alloc_ext::mallctl("config.prof", &val, &sz, NULL, 0);
+			rx_unused = alloc_ext::mallctl("config.prof", &val, &sz, NULL, 0);
 			if (!val) {
 				logger_.warn("debug.pprof is enabled, but jemalloc compiled without profiling support. Heap profiling is not possible.");
 			} else {
-				alloc_ext::mallctl("opt.prof", &val, &sz, NULL, 0);
+				rx_unused = alloc_ext::mallctl("opt.prof", &val, &sz, NULL, 0);
 				if (!val) {
 					logger_.warn(
 						"debug.pprof is enabled, but jemmalloc profiler is off. Heap profiling is not possible. export "

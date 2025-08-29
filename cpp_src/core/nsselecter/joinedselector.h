@@ -9,7 +9,7 @@
 
 namespace reindexer {
 
-struct PreselectProperties {
+struct [[nodiscard]] PreselectProperties {
 	PreselectProperties(int64_t qresMaxIts, int64_t maxItersIdSetPreResult) noexcept
 		: qresMaxIterations{qresMaxIts}, maxIterationsIdSetPreResult{maxItersIdSetPreResult} {}
 
@@ -20,8 +20,8 @@ struct PreselectProperties {
 	const int64_t maxIterationsIdSetPreResult;
 };
 
-struct JoinPreResult {
-	class Values : public ItemRefVector {
+struct [[nodiscard]] JoinPreResult {
+	class [[nodiscard]] Values : public ItemRefVector {
 	public:
 		Values(const PayloadType& pt, const TagsMatcher& tm) noexcept : payloadType{pt}, tagsMatcher{tm} {}
 		Values(Values&& other) noexcept
@@ -62,7 +62,7 @@ struct JoinPreResult {
 		bool preselectAllowed_ = true;
 	};
 
-	struct SortOrderContext {
+	struct [[nodiscard]] SortOrderContext {
 		const Index* index = nullptr;  // main ordered index with built sort order mapping
 		SortingEntry sortingEntry;	   // main sorting entry for the ordered index
 	};
@@ -79,9 +79,9 @@ struct JoinPreResult {
 	std::string explainPreSelect;
 };
 
-enum class JoinPreSelectMode { Empty, Build, Execute, ForInjection, InjectionRejected };
+enum class [[nodiscard]] JoinPreSelectMode { Empty, Build, Execute, ForInjection, InjectionRejected };
 
-class JoinPreResultBuildCtx {
+class [[nodiscard]] JoinPreResultBuildCtx {
 public:
 	explicit JoinPreResultBuildCtx(JoinPreResult::Ptr r) noexcept : result_{std::move(r)} {}
 	JoinPreResult& Result() & noexcept { return *result_; }
@@ -93,7 +93,7 @@ private:
 	JoinPreResult::Ptr result_;
 };
 
-class JoinPreResultExecuteCtx {
+class [[nodiscard]] JoinPreResultExecuteCtx {
 public:
 	explicit JoinPreResultExecuteCtx(JoinPreResult::CPtr r) noexcept : result_{std::move(r)}, mode_{JoinPreSelectMode::Execute} {}
 	explicit JoinPreResultExecuteCtx(JoinPreResult::CPtr r, int maxIters) noexcept
@@ -126,7 +126,7 @@ struct DistanceBetweenJoinedIndexesSameNs;
 class NsSelecter;
 class QueryPreprocessor;
 
-class JoinedSelector {
+class [[nodiscard]] JoinedSelector {
 	friend SortExpression;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend NsSelecter;
@@ -174,7 +174,10 @@ public:
 	int64_t LastUpdateTime() const noexcept { return lastUpdateTime_; }
 	const JoinedQuery& JoinQuery() const noexcept { return joinQuery_; }
 	int Called() const noexcept { return called_; }
-	int Matched() const noexcept { return matched_; }
+	int Matched(bool invert) const noexcept {
+		assertrx_dbg(called_ >= matched_);
+		return invert ? (called_ - matched_) : matched_;
+	}
 	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer&, int* maxIterations, unsigned sortId, const FtFunction::Ptr&,
 											 const RdxContext&);
 	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() noexcept { return 200; }
@@ -190,10 +193,9 @@ public:
 	auto PreResultPtr() const&& = delete;
 
 private:
-	[[nodiscard]] VariantArray readValuesFromPreResult(const QueryJoinEntry&) const;
+	VariantArray readValuesFromPreResult(const QueryJoinEntry&) const;
 	template <typename Cont, typename Fn>
-	[[nodiscard]] VariantArray readValuesOfRightNsFrom(const Cont& from, const Fn& createPayload, const QueryJoinEntry&,
-													   const PayloadType&) const;
+	VariantArray readValuesOfRightNsFrom(const Cont& from, const Fn& createPayload, const QueryJoinEntry&, const PayloadType&) const;
 	void selectFromRightNs(LocalQueryResults& joinItemR, const Query&, FloatVectorsHolderMap*, bool& found, bool& matchedAtLeastOnce);
 	void selectFromPreResultValues(LocalQueryResults& joinItemR, const Query&, bool& found, bool& matchedAtLeastOnce) const;
 

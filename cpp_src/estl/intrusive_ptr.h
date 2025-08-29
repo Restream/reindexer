@@ -163,7 +163,7 @@ inline int intrusive_ptr_ref_count(const intrusive_atomic_rc_wrapper<T>* x) noex
 }
 
 template <typename T>
-class intrusive_atomic_rc_wrapper : public T {
+class [[nodiscard]] intrusive_atomic_rc_wrapper : public T {
 public:
 	template <typename... Args>
 	intrusive_atomic_rc_wrapper(Args&&... args) : T(std::forward<Args>(args)...) {}
@@ -206,7 +206,7 @@ inline int intrusive_ptr_ref_count(intrusive_rc_wrapper<T>* x) noexcept {
 }
 
 template <typename T>
-class intrusive_rc_wrapper : public T {
+class [[nodiscard]] intrusive_rc_wrapper : public T {
 public:
 	template <typename... Args>
 	intrusive_rc_wrapper(Args&&... args) : T(std::forward<Args>(args)...) {}
@@ -221,7 +221,7 @@ private:
 	friend int intrusive_ptr_ref_count<>(intrusive_rc_wrapper<T>* x) noexcept;
 };
 
-class intrusive_atomic_rc_base {
+class [[nodiscard]] intrusive_atomic_rc_base {
 public:
 	intrusive_atomic_rc_base& operator=(const intrusive_atomic_rc_base&) = delete;
 	virtual ~intrusive_atomic_rc_base() = default;
@@ -257,7 +257,7 @@ inline int intrusive_ptr_ref_count(const intrusive_atomic_rc_base* x) noexcept {
 	return x ? x->refcount.load(std::memory_order_acquire) : 0;
 }
 
-class intrusive_rc_base {
+class [[nodiscard]] intrusive_rc_base {
 public:
 	intrusive_rc_base& operator=(const intrusive_rc_base&) = delete;
 	virtual ~intrusive_rc_base() = default;
@@ -297,13 +297,13 @@ intrusive_ptr<T> make_intrusive(Args&&... args) {
 namespace std {
 
 template <typename T>
-struct hash<reindexer::intrusive_atomic_rc_wrapper<T>> {
+struct [[nodiscard]] hash<reindexer::intrusive_atomic_rc_wrapper<T>> {
 public:
 	size_t operator()(const reindexer::intrusive_atomic_rc_wrapper<T>& obj) const { return hash<T>()(obj); }
 };
 
 template <typename T>
-struct hash<reindexer::intrusive_ptr<T>> {
+struct [[nodiscard]] hash<reindexer::intrusive_ptr<T>> {
 public:
 	size_t operator()(const reindexer::intrusive_ptr<T>& obj) const { return hash<T>()(*obj); }
 };

@@ -6,7 +6,7 @@
 namespace reindexer {
 
 template <bool GuardValue>
-class FlagGuard {
+class [[nodiscard]] FlagGuard {
 public:
 	FlagGuard(bool& flag) noexcept : flag_(flag) { flag_ = GuardValue; }
 	~FlagGuard() {
@@ -19,7 +19,7 @@ private:
 };
 
 template <typename CounterT>
-class NACounterGuard {
+class [[nodiscard]] NACounterGuard {
 public:
 	NACounterGuard() = default;
 	NACounterGuard(const NACounterGuard&) = delete;
@@ -52,7 +52,7 @@ private:
 };
 
 template <typename CounterT, std::memory_order MemoryOrdering>
-class CounterGuard {
+class [[nodiscard]] CounterGuard {
 public:
 	CounterGuard() = default;
 	CounterGuard(const CounterGuard&) = delete;

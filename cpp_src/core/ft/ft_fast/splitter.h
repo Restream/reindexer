@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-class ISplitterTask {
+class [[nodiscard]] ISplitterTask {
 public:
 	virtual ~ISplitterTask();
 	virtual void SetText(std::string_view t) noexcept = 0;
@@ -19,7 +19,7 @@ public:
 
 class FastTextSplitter;
 
-class SplitterTaskFast final : public ISplitterTask {
+class [[nodiscard]] SplitterTaskFast final : public ISplitterTask {
 public:
 	void SetText(std::string_view t) noexcept override {
 		convertedText_.clear();
@@ -47,16 +47,16 @@ private:
 	const FastTextSplitter& splitter_;
 };
 
-class ISplitter : public intrusive_atomic_rc_base {
+class [[nodiscard]] ISplitter : public intrusive_atomic_rc_base {
 public:
 	virtual std::shared_ptr<ISplitterTask> CreateTask() const = 0;
 };
 
-class FastTextSplitter final : public ISplitter {
+class [[nodiscard]] FastTextSplitter final : public ISplitter {
 public:
 	FastTextSplitter(const SplitOptions opts) : opts_(opts) {}
-	[[nodiscard]] std::shared_ptr<ISplitterTask> CreateTask() const override;
-	[[nodiscard]] const SplitOptions& GetSplitOptions() const noexcept { return opts_; }
+	std::shared_ptr<ISplitterTask> CreateTask() const override;
+	const SplitOptions& GetSplitOptions() const noexcept { return opts_; }
 
 private:
 	const SplitOptions opts_;

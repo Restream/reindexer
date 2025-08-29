@@ -6,14 +6,14 @@
 
 namespace reindexer {
 
-enum SnapshotRecordOpts {
+enum [[nodiscard]] SnapshotRecordOpts {
 	kShallowSnapshotChunk = 1 << 0,
 	kWALSnapshotChunk = 1 << 1,
 	kTxSnapshotChunk = 1 << 2,
 	kLastSnapshotChunk = 1 << 3
 };
 
-class SnapshotRecord {
+class [[nodiscard]] SnapshotRecord {
 public:
 	SnapshotRecord() = default;
 	SnapshotRecord(lsn_t lsn, PackedWALRecord&& wrec) : lsn_(lsn), rec_(std::move(wrec)) {}
@@ -28,7 +28,7 @@ private:
 	PackedWALRecord rec_;
 };
 
-class SnapshotChunk {
+class [[nodiscard]] SnapshotChunk {
 public:
 	const std::vector<SnapshotRecord>& Records() const noexcept { return records; }
 
@@ -51,12 +51,12 @@ private:
 	uint16_t opts_ = 0;
 };
 
-enum SnapshotOptsEnum {
+enum [[nodiscard]] SnapshotOptsEnum {
 	kSnapshotWithDataCount = 1 << 0,
 	kSnapshotWithClusterStatus = 1 << 1,
 };
 
-struct SnapshotOpts {
+struct [[nodiscard]] SnapshotOpts {
 	explicit SnapshotOpts(ExtendedLsn _from = ExtendedLsn(), int64_t _maxWalDepthOnForceSync = -1) noexcept
 		: from(_from), maxWalDepthOnForceSync(_maxWalDepthOnForceSync) {}
 

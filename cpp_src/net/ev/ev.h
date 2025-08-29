@@ -40,7 +40,7 @@ class dynamic_loop;
 
 #ifdef HAVE_POSIX_LOOP
 #ifdef HAVE_EVENT_FD
-class loop_posix_base {
+class [[nodiscard]] loop_posix_base {
 public:
 	void enable_asyncs();
 	void send_async();
@@ -54,7 +54,7 @@ protected:
 	dynamic_loop* owner_ = nullptr;
 };
 #else	// HAVE_EVENT_FD
-class loop_posix_base {
+class [[nodiscard]] loop_posix_base {
 public:
 	void enable_asyncs();
 	void send_async();
@@ -70,7 +70,7 @@ protected:
 #endif	// HAVE_EVENT_FD
 
 class loop_poll_backend_private;
-class loop_poll_backend : public loop_posix_base {
+class [[nodiscard]] loop_poll_backend : public loop_posix_base {
 public:
 	loop_poll_backend();
 	~loop_poll_backend();
@@ -85,7 +85,7 @@ protected:
 };
 
 class loop_select_backend_private;
-class loop_select_backend : public loop_posix_base {
+class [[nodiscard]] loop_select_backend : public loop_posix_base {
 public:
 	loop_select_backend();
 	~loop_select_backend();
@@ -102,7 +102,7 @@ protected:
 
 #ifdef HAVE_EPOLL_LOOP
 class loop_epoll_backend_private;
-class loop_epoll_backend : public loop_posix_base {
+class [[nodiscard]] loop_epoll_backend : public loop_posix_base {
 public:
 	loop_epoll_backend();
 	~loop_epoll_backend();
@@ -119,7 +119,7 @@ protected:
 
 #ifdef HAVE_WSA_LOOP
 class loop_wsa_backend_private;
-class loop_wsa_backend {
+class [[nodiscard]] loop_wsa_backend {
 public:
 	loop_wsa_backend();
 	~loop_wsa_backend();
@@ -142,7 +142,7 @@ class io;
 class timer;
 class async;
 class sig;
-class dynamic_loop {
+class [[nodiscard]] dynamic_loop {
 	friend class loop_ref;
 	friend class loop_epoll_backend;
 	friend class loop_poll_backend;
@@ -207,7 +207,7 @@ protected:
 	void set_coro_cb();
 	void remove_coro_cb() noexcept;
 
-	struct fd_handler {
+	struct [[nodiscard]] fd_handler {
 		int emask_ = 0;
 		int idx = -1;
 		io* watcher_ = nullptr;
@@ -240,7 +240,7 @@ protected:
 #endif
 };
 
-class loop_ref {
+class [[nodiscard]] loop_ref {
 	friend class io;
 	friend class timer;
 	friend class sig;
@@ -303,7 +303,7 @@ protected:
 	dynamic_loop* loop_ = nullptr;
 };
 
-class io {
+class [[nodiscard]] io {
 	friend class dynamic_loop;
 
 public:
@@ -339,7 +339,7 @@ protected:
 	}
 	std::function<void(io& watcher, int events)> func_ = nullptr;
 };
-class timer {
+class [[nodiscard]] timer {
 	friend class dynamic_loop;
 
 public:
@@ -370,7 +370,7 @@ public:
 	steady_clock_w::time_point deadline_;
 
 protected:
-	struct coro_t {};
+	struct [[nodiscard]] coro_t {};
 	timer(coro_t) noexcept : in_coro_storage_(true) {}
 
 	void callback(int tv) {
@@ -398,7 +398,7 @@ void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
 	auto id = coroutine::current();
 	if (id) {
 		timer tm(timer::coro_t{});
-		tm.set([id](timer&, int) { coroutine::resume(id); });
+		tm.set([id](timer&, int) { rx_unused = coroutine::resume(id); });
 		tm.set(*this);
 		const double awaitTime = std::chrono::duration_cast<std::chrono::microseconds>(dur).count();
 		tm.start(awaitTime / 1e6);
@@ -422,7 +422,7 @@ void dynamic_loop::granular_sleep(std::chrono::duration<Rep1, Period1> dur, std:
 	}
 }
 
-class sig {
+class [[nodiscard]] sig {
 	friend class dynamic_loop;
 
 public:
@@ -461,7 +461,7 @@ protected:
 	int signum_ = 0;
 };
 
-class async {
+class [[nodiscard]] async {
 	friend class dynamic_loop;
 
 public:

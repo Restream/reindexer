@@ -8,12 +8,12 @@
 #include "tools/dsn.h"
 #include "tools/fsops.h"
 
-class RPCClientTestApi : public ::testing::Test {
+class [[nodiscard]] RPCClientTestApi : public ::testing::Test {
 public:
 	virtual ~RPCClientTestApi() = default;
 
 protected:
-	class CancelRdxContext : public reindexer::IRdxCancelContext {
+	class [[nodiscard]] CancelRdxContext : public reindexer::IRdxCancelContext {
 	public:
 		reindexer::CancelType GetCancelType() const noexcept override {
 			return canceld_.load() ? reindexer::CancelType::Explicit : reindexer::CancelType::None;
@@ -26,7 +26,7 @@ protected:
 		std::atomic<bool> canceld_ = {false};
 	};
 
-	class TestServer {
+	class [[nodiscard]] TestServer {
 	public:
 		TestServer(const RPCServerConfig& conf) : terminate_(false), serverIsReady_(false), conf_(conf) {}
 		void Start(const std::string& addr, Error errOnLogin = Error());
@@ -75,7 +75,7 @@ public:
 	static const uint16_t kDefaultHttpPort = 33333;
 
 private:
-	struct ServerData {
+	struct [[nodiscard]] ServerData {
 		ServerData() { server.reset(new reindexer_server::Server()); }
 
 		std::unique_ptr<reindexer_server::Server> server;

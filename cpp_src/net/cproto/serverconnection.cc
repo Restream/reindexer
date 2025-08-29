@@ -42,7 +42,7 @@ void ServerConnection::Attach(ev::dynamic_loop& loop) {
 void ServerConnection::SendEvent(chunk&& ch) {
 	bool notify = false;
 	{
-		std::lock_guard lck(updatesMtx_);
+		lock_guard lck(updatesMtx_);
 		notify = updates_.empty();
 		updates_.emplace_back(std::move(ch));
 		currentUpdatesCnt_.fetch_add(1, std::memory_order_acq_rel);
@@ -144,7 +144,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			return BaseConnT::ReadResT::Default;
 		}
 
-		BaseConnT::rdBuf_.erase(sizeof(hdr));
+		rx_unused = BaseConnT::rdBuf_.erase(sizeof(hdr));
 
 		auto it = BaseConnT::rdBuf_.tail();
 		if (it.size() < size_t(hdr.len)) {
@@ -231,7 +231,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			handleException(ctx, Error(errLogic, "Unknown exception"));
 		}
 
-		BaseConnT::rdBuf_.erase(hdr.len);
+		rx_unused = BaseConnT::rdBuf_.erase(hdr.len);
 	}
 	return BaseConnT::ReadResT::Default;
 }
@@ -324,7 +324,7 @@ void ServerConnection::sendUpdates() {
 	assertrx_dbg(maxPendingUpdates_ >= BaseConnT::wrBuf_.size_atomic() + pendingUpdates());
 	std::vector<chunk> updates;
 	{
-		std::lock_guard lck(updatesMtx_);
+		lock_guard lck(updatesMtx_);
 		updates.swap(updates_);
 	}
 
@@ -369,7 +369,7 @@ void ServerConnection::sendUpdates() {
 		[[maybe_unused]] auto res = currentUpdatesCnt_.fetch_sub(cnt, std::memory_order_acq_rel);
 		assertrx_dbg(res >= int64_t(cnt));
 	} else {
-		std::lock_guard lck(updatesMtx_);
+		lock_guard lck(updatesMtx_);
 		updates_.insert(updates_.begin(), std::make_move_iterator(updates.begin() + cnt), std::make_move_iterator(updates.end()));
 		currentUpdatesCnt_.store(updates_.size(), std::memory_order_release);
 	}

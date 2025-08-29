@@ -2,6 +2,12 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+#define REINDEX_CPP_NODISCARD [[nodiscard]]
+#else
+#define REINDEX_CPP_NODISCARD
+#endif
+
 typedef enum TagType {
 	TAG_VARINT = 0,
 	TAG_DOUBLE = 1,
@@ -111,7 +117,7 @@ typedef enum CondType {
 	CondKnn = 12,
 } CondType;
 
-enum ErrorCode {
+enum REINDEX_CPP_NODISCARD ErrorCode {
 	errOK = 0,
 	errParseSQL = 1,
 	errQueryExec = 2,
@@ -158,23 +164,23 @@ enum ErrorCode {
 	errInvalidDefConfigs = 43,
 };
 
-enum SchemaType { JsonSchemaType, ProtobufSchemaType };
+enum REINDEX_CPP_NODISCARD SchemaType { JsonSchemaType, ProtobufSchemaType };
 
-enum QueryType { QuerySelect, QueryDelete, QueryUpdate, QueryTruncate };
+enum REINDEX_CPP_NODISCARD QueryType { QuerySelect, QueryDelete, QueryUpdate, QueryTruncate };
 
-enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
+enum REINDEX_CPP_NODISCARD OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
 
-enum ArithmeticOpType { OpPlus = 0, OpMinus = 1, OpMult = 2, OpDiv = 3 };
+enum REINDEX_CPP_NODISCARD ArithmeticOpType { OpPlus = 0, OpMinus = 1, OpMult = 2, OpDiv = 3 };
 
-enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggDistinct, AggCount, AggCountCached, AggUnknown = -1 };
+enum REINDEX_CPP_NODISCARD AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggDistinct, AggCount, AggCountCached, AggUnknown = -1 };
 
-enum JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
+enum REINDEX_CPP_NODISCARD JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
 
 enum CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
 
-enum DataFormat { FormatJson, FormatCJson, FormatMsgPack };
+enum REINDEX_CPP_NODISCARD DataFormat { FormatJson, FormatCJson, FormatMsgPack };
 
-enum QueryResultItemType {
+enum REINDEX_CPP_NODISCARD QueryResultItemType {
 	QueryResultEnd = 0,
 	QueryResultAggregation = 1,
 	QueryResultExplain = 2,
@@ -186,15 +192,15 @@ enum QueryResultItemType {
 
 enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
 
-enum StrictMode { StrictModeNotSet = 0, StrictModeNone, StrictModeNames, StrictModeIndexes };
+enum REINDEX_CPP_NODISCARD StrictMode { StrictModeNotSet = 0, StrictModeNone, StrictModeNames, StrictModeIndexes };
 
-enum RankFormat { SingleFloatValue = 0 };  // For the future hybrid queries
+enum REINDEX_CPP_NODISCARD RankFormat { SingleFloatValue = 0 };	 // For the future hybrid queries
 
 typedef int IdType;
 typedef unsigned SortType;
 
-static const SortType SortIdUnfilled = -1;
-static const SortType SortIdUnexists = -2;
+static const SortType SortIdNotFilled = -1;
+static const SortType SortIdNotExists = -2;
 
 typedef enum LogLevel { LogNone, LogError, LogWarning, LogInfo, LogTrace } LogLevel;
 
@@ -233,7 +239,7 @@ typedef enum StotageOpt {
 
 enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
 
-enum FieldModifyMode {
+enum REINDEX_CPP_NODISCARD FieldModifyMode {
 	FieldModeSet = 0,
 	FieldModeDrop = 1,
 	FieldModeSetJson = 2,
@@ -241,7 +247,7 @@ enum FieldModifyMode {
 	FieldModeArrayPushFront = 4,
 };
 
-enum ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
+enum REINDEX_CPP_NODISCARD ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
 
 typedef struct StorageOpts {
 #ifdef __cplusplus
@@ -350,10 +356,10 @@ typedef struct ConnectOpts {
 	int expectedClusterID;
 } ConnectOpts;
 
-enum IndexValueType { NotSet = -1, SetByJsonPath = -2 };
-enum ShardingAlgorithmType { ByValue, ByRange };
+enum REINDEX_CPP_NODISCARD IndexValueType { NotSet = -1, SetByJsonPath = -2 };
+enum REINDEX_CPP_NODISCARD ShardingAlgorithmType { ByValue, ByRange };
 
-enum BindingCapability {
+enum REINDEX_CPP_NODISCARD BindingCapability {
 	kBindingCapabilityQrIdleTimeouts = 1,
 	kBindingCapabilityResultsWithShardIDs = 1 << 1,
 	kBindingCapabilityIncarnationTags = 1 << 2,
@@ -382,10 +388,13 @@ typedef struct RPCQrId {
 
 #ifdef __cplusplus
 namespace ShardingKeyType {
-enum ShardingKey { ProxyOff = -2, NotSetShard = -1 };
+enum REINDEX_CPP_NODISCARD ShardingKey { ProxyOff = -2, NotSetShard = -1 };
 }
 namespace ShardingSourceId {
-enum SourceId { NotSet = -1 };
+enum REINDEX_CPP_NODISCARD SourceId { NotSet = -1 };
+}
+namespace reindexer {
+enum class REINDEX_CPP_NODISCARD OptimizationState : int { None, Partial, Completed, Error };
 }
 #endif
 

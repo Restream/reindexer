@@ -1,4 +1,5 @@
 #include "knn_fixture.h"
+#include <thread>
 #include "allocs_tracker.h"
 #include "core/ft/config/ftfastconfig.h"
 #include "gtests/tools.h"
@@ -29,7 +30,7 @@ static constexpr size_t kNsSize = 100'000;
 #endif	// REINDEX_WITH_TSAN
 
 template <IndexType, VectorMetric>
-[[nodiscard]] static consteval float radius() noexcept;
+static consteval float radius() noexcept;
 
 #if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(RX_WITH_STDLIB_DEBUG)
 
@@ -275,36 +276,36 @@ template <IndexType, VectorMetric, KnnParams>
 struct KnnSearchParams;
 
 template <VectorMetric metric>
-struct KnnSearchParams<IndexType::Hnsw, metric, KnnParams::K> {
+struct [[nodiscard]] KnnSearchParams<IndexType::Hnsw, metric, KnnParams::K> {
 	reindexer::KnnSearchParams operator()() const noexcept { return HnswSearchParams{}.Ef(kK).K(kK); }
 };
 
 template <VectorMetric metric>
-struct KnnSearchParams<IndexType::Hnsw, metric, KnnParams::K_Radius> {
+struct [[nodiscard]] KnnSearchParams<IndexType::Hnsw, metric, KnnParams::K_Radius> {
 	reindexer::KnnSearchParams operator()() const noexcept {
 		return HnswSearchParams{}.Ef(kK).K(kK).Radius(radius<IndexType::Hnsw, metric>());
 	}
 };
 
 template <VectorMetric metric>
-struct KnnSearchParams<IndexType::Hnsw, metric, KnnParams::Radius> {
+struct [[nodiscard]] KnnSearchParams<IndexType::Hnsw, metric, KnnParams::Radius> {
 	reindexer::KnnSearchParams operator()() const noexcept { return HnswSearchParams{}.Ef(kK).Radius(radius<IndexType::Hnsw, metric>()); }
 };
 
 template <VectorMetric metric>
-struct KnnSearchParams<IndexType::Ivf, metric, KnnParams::K> {
+struct [[nodiscard]] KnnSearchParams<IndexType::Ivf, metric, KnnParams::K> {
 	reindexer::KnnSearchParams operator()() const noexcept { return IvfSearchParams{}.NProbe(kNProbe).K(kK); }
 };
 
 template <VectorMetric metric>
-struct KnnSearchParams<IndexType::Ivf, metric, KnnParams::K_Radius> {
+struct [[nodiscard]] KnnSearchParams<IndexType::Ivf, metric, KnnParams::K_Radius> {
 	reindexer::KnnSearchParams operator()() const noexcept {
 		return IvfSearchParams{}.NProbe(kNProbe).K(kK).Radius(radius<IndexType::Ivf, metric>());
 	}
 };
 
 template <VectorMetric metric>
-struct KnnSearchParams<IndexType::Ivf, metric, KnnParams::Radius> {
+struct [[nodiscard]] KnnSearchParams<IndexType::Ivf, metric, KnnParams::Radius> {
 	reindexer::KnnSearchParams operator()() const noexcept {
 		return IvfSearchParams{}.NProbe(kNProbe).Radius(radius<IndexType::Ivf, metric>());
 	}

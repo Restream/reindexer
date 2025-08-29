@@ -28,7 +28,7 @@ constexpr auto kStatusCmdTimeout = std::chrono::seconds(3);
 constexpr size_t kMaxRetriesOnRoleSwitchAwait = 50;
 constexpr auto kRoleSwitchStepTime = std::chrono::milliseconds(150);
 
-struct NodeData {
+struct [[nodiscard]] NodeData {
 	int serverId = -1;
 	int electionsTerm = 0;
 	DSN dsn;
@@ -39,8 +39,8 @@ struct NodeData {
 	void GetJSON(WrSerializer& ser) const;
 };
 
-struct RaftInfo {
-	enum class Role : uint8_t { None, Leader, Follower, Candidate };
+struct [[nodiscard]] RaftInfo {
+	enum class [[nodiscard]] Role : uint8_t { None, Leader, Follower, Candidate };
 	int32_t leaderId = -1;
 	Role role = Role::None;
 
@@ -55,7 +55,7 @@ struct RaftInfo {
 	static Role RoleFromStr(std::string_view);
 };
 
-struct ClusterNodeConfig {
+struct [[nodiscard]] ClusterNodeConfig {
 	int GetServerID() const noexcept { return serverId; }
 	const DSN& GetRPCDsn() const noexcept { return dsn; }
 	const DSN& GetManagementDsn() const noexcept { return dsn; }
@@ -68,12 +68,12 @@ struct ClusterNodeConfig {
 };
 
 struct AsyncReplConfigData;
-enum class AsyncReplicationMode { Default, FromClusterLeader };
-enum class MaskingDSN : bool { Disabled = false, Enabled = true };
+enum class [[nodiscard]] AsyncReplicationMode { Default, FromClusterLeader };
+enum class [[nodiscard]] MaskingDSN : bool { Disabled = false, Enabled = true };
 
-class AsyncReplNodeConfig {
+class [[nodiscard]] AsyncReplNodeConfig {
 public:
-	class NamespaceListImpl {
+	class [[nodiscard]] NamespaceListImpl {
 	public:
 		NamespaceListImpl() {}
 		NamespaceListImpl(NsNamesHashSetT&& n) : data(std::move(n)) {}
@@ -144,18 +144,18 @@ constexpr size_t kDefaultClusterProxyConnCount = 8;
 constexpr size_t kDefaultClusterProxyCoroPerConn = 4;
 constexpr size_t kDefaultClusterProxyConnThreads = 2;
 
-struct ClusterConfigData {
+struct [[nodiscard]] ClusterConfigData {
 	Error FromYAML(const std::string& yaml);
 
-	[[nodiscard]] bool operator==(const ClusterConfigData& rdata) const noexcept = default;
+	bool operator==(const ClusterConfigData& rdata) const noexcept = default;
 
-	unsigned int GetNodeIndexForServerId(int serverId) const {
+	bool NodeIndexExistsForServerId(int serverId) const noexcept {
 		for (unsigned int i = 0; i < nodes.size(); ++i) {
 			if (nodes[i].serverId == serverId) {
-				return i;
+				return true;
 			}
 		}
-		throw Error(errLogic, "Cluster config. Cannot find node index for ServerId({})", serverId);
+		return false;
 	}
 
 	std::vector<ClusterNodeConfig> nodes;
@@ -182,12 +182,12 @@ constexpr uint32_t kDefaultShardingProxyConnCount = 8;
 constexpr uint32_t kDefaultShardingProxyCoroPerConn = 8;
 constexpr uint32_t kDefaultShardingProxyConnThreads = 4;
 
-struct ShardingConfig {
+struct [[nodiscard]] ShardingConfig {
 	static constexpr unsigned serverIdPos = 53;
 	static constexpr int64_t serverIdMask = (((1ll << 10) - 1) << serverIdPos);	 // 01111111111000...000
 	static constexpr auto kDefaultRollbackTimeout = std::chrono::seconds(30);
 
-	struct Key {
+	struct [[nodiscard]] Key {
 		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& shards, KeyValueType& valuesType,
 					   std::vector<sharding::Segment<Variant>>& checkVal);
 		Error FromJSON(const gason::JsonNode&, KeyValueType& valuesType, std::vector<sharding::Segment<Variant>>& checkVal);
@@ -207,7 +207,7 @@ struct ShardingConfig {
 		Error checkValue(const sharding::Segment<Variant>& val, KeyValueType& valuesType,
 						 const std::vector<sharding::Segment<Variant>>& checkVal);
 	};
-	struct Namespace {
+	struct [[nodiscard]] Namespace {
 		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& shards);
 		Error FromJSON(const gason::JsonNode&);
 		void GetYAML(YAML::Node&) const;
@@ -245,9 +245,9 @@ inline bool operator!=(const ShardingConfig& l, const ShardingConfig& r) { retur
 bool operator==(const ShardingConfig::Key&, const ShardingConfig::Key&);
 bool operator==(const ShardingConfig::Namespace&, const ShardingConfig::Namespace&);
 
-struct AsyncReplConfigData {
+struct [[nodiscard]] AsyncReplConfigData {
 	using NamespaceList = AsyncReplNodeConfig::NamespaceList;
-	enum class Role { None, Leader, Follower };
+	enum class [[nodiscard]] Role { None, Leader, Follower };
 
 	Error FromDefault() noexcept;
 	Error FromYAML(const std::string& yml);

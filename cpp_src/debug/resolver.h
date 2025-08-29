@@ -8,7 +8,7 @@ namespace reindexer {
 
 namespace debug {
 
-class TraceEntry {
+class [[nodiscard]] TraceEntry {
 public:
 	/// Construct entry with address. Also try to resolve symbol by dl
 	/// @param addr Address of entry
@@ -43,7 +43,7 @@ public:
 
 static inline std::ostream& operator<<(std::ostream& os, const TraceEntry& e) { return e.Dump(os); }
 
-class TraceResolver {
+class [[nodiscard]] TraceResolver {
 public:
 	static std::unique_ptr<TraceResolver> New();
 	virtual ~TraceResolver() = default;

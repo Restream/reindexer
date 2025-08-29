@@ -6,6 +6,7 @@
 
 namespace reindexer {
 
+void Serializer::SkipPVString() { rx_unused = getPVStringPtr(); }
 p_string Serializer::GetPVString() { return p_string(getPVStringPtr()); }
 
 p_string Serializer::GetPSlice() {

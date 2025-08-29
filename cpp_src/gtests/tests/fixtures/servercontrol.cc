@@ -5,7 +5,7 @@
 #include "core/formatters/lsn_fmt.h"
 #include "core/system_ns_names.h"
 #include "estl/gift_str.h"
-#include "gtests/tools.h"
+#include "estl/lock.h"
 #include "systemhelpers.h"
 #include "tools/crypt.h"
 #include "tools/fsops.h"

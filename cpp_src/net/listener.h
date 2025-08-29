@@ -2,9 +2,9 @@
 
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
+#include "estl/mutex.h"
 #include "iserverconnection.h"
 #include "net/ev/ev.h"
 #include "socket.h"
@@ -13,7 +13,7 @@
 namespace reindexer {
 namespace net {
 
-class IListener {
+class [[nodiscard]] IListener {
 public:
 	virtual ~IListener() = default;
 	/// Bind listener to specified host:port
@@ -24,7 +24,7 @@ public:
 	virtual void Stop() noexcept = 0;
 };
 
-struct ConnPtrEqual {
+struct [[nodiscard]] ConnPtrEqual {
 	using is_transparent = void;
 
 	bool operator()(const IServerConnection* lhs, const std::unique_ptr<IServerConnection>& rhs) const noexcept { return lhs == rhs.get(); }
@@ -34,14 +34,14 @@ struct ConnPtrEqual {
 	}
 };
 
-struct ConnPtrHash {
+struct [[nodiscard]] ConnPtrHash {
 	using transparent_key_equal = ConnPtrEqual;
 
 	size_t operator()(const IServerConnection* ptr) const noexcept { return std::hash<uintptr_t>()(uintptr_t(ptr)); }
 	size_t operator()(const std::unique_ptr<IServerConnection>& ptr) const noexcept { return std::hash<uintptr_t>()(uintptr_t(ptr.get())); }
 };
 
-enum class ListenerType {
+enum class [[nodiscard]] ListenerType {
 	/// In shared mode each listener (except the first one) running in own detached thread and
 	/// able to accept/handle connections by himself. Connections may migrate between listeners only
 	/// after rebalance() call.
@@ -58,7 +58,7 @@ enum class ListenerType {
 
 /// Network listener implementation
 template <ListenerType LT>
-class Listener final : public IListener {
+class [[nodiscard]] Listener final : public IListener {
 public:
 	/// Constructs new listener object.
 	/// @param loop - ev::loop of caller's thread, listener's socket will be bound to that loop.
@@ -88,8 +88,8 @@ private:
 	// May lock shared_->mtx_. Should not be called under external lock.
 	void startup_shared_thread();
 
-	struct Shared {
-		class Worker {
+	struct [[nodiscard]] Shared {
+		class [[nodiscard]] Worker {
 		public:
 			Worker(std::shared_ptr<Shared> shared, std::unique_ptr<IServerConnection> conn);
 			~Worker();
@@ -113,7 +113,7 @@ private:
 		std::atomic<int> sharedListenersCount_{0};
 		std::atomic<int> connsCountOnSharedListeners_{0};
 		std::vector<Listener*> listeners_;
-		std::mutex mtx_;
+		mutex mtx_;
 		ConnectionFactory connFactory_;
 		std::atomic<bool> terminating_;
 		std::string addr_;
@@ -121,7 +121,7 @@ private:
 		steady_clock_w::time_point ts_;
 		std::vector<Worker*> dedicatedWorkers_;
 	};
-	class ListeningThreadData {
+	class [[nodiscard]] ListeningThreadData {
 	public:
 		ListeningThreadData(std::shared_ptr<Shared> shared) : listener_(loop_, shared), shared_(std::move(shared)) { assertrx(shared_); }
 
@@ -156,7 +156,7 @@ private:
 };
 
 /// Network listener implementation
-class ForkedListener final : public IListener {
+class [[nodiscard]] ForkedListener final : public IListener {
 public:
 	/// Constructs new listener object.
 	/// @param loop - ev::loop of caller's thread, listener's socket will be bound to that loop.
@@ -174,7 +174,7 @@ protected:
 	void io_accept(ev::io& watcher, int revents);
 	void async_cb(ev::async& watcher);
 
-	struct Worker {
+	struct [[nodiscard]] Worker {
 		Worker(std::unique_ptr<IServerConnection>&& conn, ev::async& async) : conn(std::move(conn)), async(&async) {}
 		Worker(Worker&& other) noexcept : conn(std::move(other.conn)), async(other.async) {}
 		Worker& operator=(Worker&& other) noexcept {
@@ -191,7 +191,7 @@ protected:
 
 	openssl::SslCtxPtr sslCtx_;
 	lst_socket sock_;
-	std::mutex mtx_;
+	mutex mtx_;
 	ConnectionFactory connFactory_;
 	std::atomic<bool> terminating_{false};
 	std::string addr_;

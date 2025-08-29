@@ -24,8 +24,8 @@
 #include "test_helpers.h"
 #include "tools/string_regexp_functions.h"
 
-class QueriesVerifier : public virtual ::testing::Test {
-	struct PkHash {
+class [[nodiscard]] QueriesVerifier : public virtual ::testing::Test {
+	struct [[nodiscard]] PkHash {
 		size_t operator()(const std::vector<reindexer::VariantArray> pk) const noexcept {
 			size_t ret = pk.size();
 			for (const auto& k : pk) {
@@ -36,7 +36,7 @@ class QueriesVerifier : public virtual ::testing::Test {
 	};
 
 protected:
-	struct FieldData {
+	struct [[nodiscard]] FieldData {
 		std::string name;
 		reindexer::KeyValueType type;
 	};
@@ -46,7 +46,7 @@ protected:
 		Verify(qr.ToLocalQr(), std::move(q), rx);
 	}
 
-	struct DistinctData {
+	struct [[nodiscard]] DistinctData {
 		DistinctData(std::vector<std::string> fn) : values(), fieldNames(std::move(fn)) {}
 		reindexer::fast_hash_set<reindexer::DistinctHelpers::FieldsValue,
 								 reindexer::DistinctHelpers::DistinctHasher<reindexer::DistinctHelpers::IsCompositeSupported::No>,
@@ -102,7 +102,7 @@ protected:
 				i,
 				reindexer::Skip<reindexer::QueryEntry, reindexer::QueryEntriesBracket, reindexer::BetweenFieldsQueryEntry,
 								reindexer::JoinQueryEntry, reindexer::AlwaysTrue, reindexer::AlwaysFalse, reindexer::KnnQueryEntry,
-								reindexer::DistinctQueryEntry>{},
+								reindexer::MultiDistinctQueryEntry>{},
 				[&](const reindexer::SubQueryEntry& sqe) {
 					auto subQuery = query.GetSubQuery(sqe.QueryIndex());
 					if (sqe.Condition() == CondAny || sqe.Condition() == CondEmpty) {
@@ -425,7 +425,7 @@ private:
 					return checkCondition(item, qe, indexesFields);
 				},
 				[](const reindexer::AlwaysFalse&) noexcept { return false; }, [](const reindexer::AlwaysTrue&) noexcept { return true; },
-				[](const reindexer::DistinctQueryEntry&) -> bool {
+				[](const reindexer::MultiDistinctQueryEntry&) -> bool {
 					assertrx(false);
 					std::abort();
 				});
@@ -729,7 +729,7 @@ private:
 		}
 	}
 
-	enum class BetweenFields : bool { Yes = true, No = false };
+	enum class [[nodiscard]] BetweenFields : bool { Yes = true, No = false };
 
 	template <BetweenFields betweenFields>
 	static auto compare(const reindexer::Variant& v, const reindexer::Variant& k, const CollateOpts& opts,
@@ -1021,7 +1021,7 @@ private:
 						  [] RX_PRE_LMBD_ALWAYS_INLINE(
 							  reindexer::OneOf<const reindexer::QueryEntry, reindexer::BetweenFieldsQueryEntry, reindexer::AlwaysFalse,
 											   reindexer::AlwaysTrue, reindexer::SubQueryEntry, reindexer::SubQueryFieldEntry,
-											   reindexer::KnnQueryEntry, reindexer::DistinctQueryEntry>)
+											   reindexer::KnnQueryEntry, reindexer::MultiDistinctQueryEntry>)
 
 							  RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; })) {
 				return true;
@@ -1102,7 +1102,7 @@ private:
 					  },
 					  [](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; },
 					  [](const reindexer::AlwaysTrue&) { TestCout() << "Always True"; },
-					  [](const reindexer::DistinctQueryEntry& qe) { TestCout() << qe.Dump(); },
+					  [](const reindexer::MultiDistinctQueryEntry& qe) { TestCout() << qe.Dump(); },
 					  [](const reindexer::KnnQueryEntry& qe) { TestCout() << qe.Dump(); });
 		}
 		TestCout() << ")";

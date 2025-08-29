@@ -38,7 +38,7 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 
 		index = std::move(newIndex);
 
-		ns.updateSortedIdxCount();
+		ns.indexOptimizer_.UpdateSortedIdxCount(ns.indexes_);
 		ns.markUpdated(IndexOptimization::Full);
 	} else if (indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::Embedding, FloatVectorIndexOpts::Diff::Radius,
 										  IndexOpts::ParamsDiff::Config)) {

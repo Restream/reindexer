@@ -80,6 +80,12 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query4CondRangeTotal", &ApiTvSimple::Query4CondRangeTotal, this)->Iterations(kQuery4CondIters);
 	Register("Query4CondRangeCachedTotal", &ApiTvSimple::Query4CondRangeCachedTotal, this)->Iterations(kQuery4CondIters);
 
+	Register("QueryForcedSortHash", &ApiTvSimple::QueryForcedSortHash, this);
+	Register("QueryForcedSortTree", &ApiTvSimple::QueryForcedSortTree, this);
+	Register("QueryForcedSortDistinctHash", &ApiTvSimple::QueryForcedSortDistinctHash, this);
+	Register("QueryForcedSortDistinctLowSelectivityHash", &ApiTvSimple::QueryForcedSortDistinctLowSelectivityHash, this);
+	Register("QueryForcedSortDistinctTree", &ApiTvSimple::QueryForcedSortDistinctTree, this);
+
 #if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	Register("Query2CondIdSet10", &ApiTvSimple::Query2CondIdSet10, this);
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
@@ -211,7 +217,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 		if (!mItem.Status().ok()) {
 			return mItem.Status();
 		}
-		mItem.Unsafe();
+		rx_unused = mItem.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld(wrSer_);
 		bld.Put("id", i);
@@ -230,7 +236,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 		if (!rItem.Status().ok()) {
 			return rItem.Status();
 		}
-		rItem.Unsafe();
+		rx_unused = rItem.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld2(wrSer_);
 		bld2.Put("id", i);
@@ -253,7 +259,7 @@ reindexer::Item ApiTvSimple::MakeStrItem() {
 	static int id = 0;
 	reindexer::Item item = db_->NewItem(stringSelectNs_);
 	if (item.Status().ok()) {
-		item.Unsafe();
+		rx_unused = item.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld(wrSer_);
 		bld.Put("id", id++);
@@ -288,13 +294,13 @@ reindexer::Item ApiTvSimple::MakeStrItem() {
 reindexer::Item ApiTvSimple::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
-	item.Unsafe();
+	rx_unused = item.Unsafe();
 
 	auto startTime = random<int>(0, 50000);
 
 	item["id"] = id_seq_->Next();
 	item["genre"] = random<int64_t>(0, 49);
-	item["year"] = random<int>(2000, 2049);
+	item["year"] = random<int>(kMinYear, kMaxYear);
 	item["packages"] = packages_.at(random<size_t>(0, packages_.size() - 1));
 	item["countries"] = countries_.at(random<size_t>(0, countries_.size() - 1));
 	item["age"] = random<int>(0, 4);
@@ -870,6 +876,83 @@ void ApiTvSimple::SubQueryAggregate(benchmark::State& state) {
 	}
 }
 
+void ApiTvSimple::QueryForcedSortHash(State& state) {
+	AllocsTracker allocsTracker(state);
+	const auto forcedSort = generateForcedSort(id_seq_->Start(), id_seq_->Current(), 10);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Where("age", CondLt, 2).Sort("id", false, forcedSort).Limit(20);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimple::QueryForcedSortTree(State& state) {
+	// 'year' has low selectivity, so we are not getting any benefits from tree-index here.
+	// Hovewer, 'year'-index shows much better performance in the distinct-version of this benchmark (QueryForcedSortDistinctTree)
+	AllocsTracker allocsTracker(state);
+	const auto forcedSort = generateForcedSort(kMinYear, kMaxYear, 5);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Where("age", CondLt, 2).Sort("year", false, forcedSort).Limit(20);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimple::QueryForcedSortDistinctHash(State& state) {
+	AllocsTracker allocsTracker(state);
+	const auto forcedSort = generateForcedSort(id_seq_->Start(), id_seq_->Current(), 10);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("uuid_str").Where("age", CondLt, 2).Sort("id", false, forcedSort).Limit(20);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimple::QueryForcedSortDistinctLowSelectivityHash(State& state) {
+	AllocsTracker allocsTracker(state);
+	const auto forcedSort = generateForcedSort(id_seq_->Start(), id_seq_->Current(), 10);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("start_time").Where("age", CondLt, 2).Sort("id", false, forcedSort).Limit(20);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimple::QueryForcedSortDistinctTree(State& state) {
+	AllocsTracker allocsTracker(state);
+	const auto forcedSort = generateForcedSort(kMinYear, kMaxYear, 5);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("uuid_str").Where("age", CondLt, 2).Sort("year", false, forcedSort).Limit(20);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
 void ApiTvSimple::Query2CondInnerJoin2Cond(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
@@ -1426,4 +1509,20 @@ void ApiTvSimple::query2CondIdSet(benchmark::State& state, const std::vector<std
 			state.SkipWithError(err.what());
 		}
 	}
+}
+
+std::vector<Variant> ApiTvSimple::generateForcedSort(int minVal, int maxVal, unsigned int cnt) {
+	std::vector<Variant> res;
+	res.reserve(cnt);
+	reindexer::fast_hash_set<int> uvals;
+	assertrx(maxVal >= minVal);
+	unsigned diff = maxVal - minVal;
+	assertrx(diff > cnt);
+	while (uvals.size() < cnt) {
+		uvals.emplace(minVal + rand() % diff);
+	}
+	for (auto val : uvals) {
+		res.emplace_back(val);
+	}
+	return res;
 }

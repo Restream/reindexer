@@ -13,9 +13,9 @@ class Node;
 
 namespace reindexer_server {
 
-enum class ServerMode { Standalone, Builtin };
+enum class [[nodiscard]] ServerMode { Standalone, Builtin };
 
-struct ServerConfig {
+struct [[nodiscard]] ServerConfig {
 	// This timeout is required to avoid locks, when raft leader does not exist
 	constexpr static auto kDefaultHttpWriteTimeout = std::chrono::seconds(60);
 

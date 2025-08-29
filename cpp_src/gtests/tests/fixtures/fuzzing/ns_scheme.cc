@@ -9,7 +9,7 @@ namespace fuzzing {
 void NsScheme::NewItem(reindexer::WrSerializer& ser, RandomGenerator& rnd, const std::vector<Index>& indexes) {
 	ser.Reset();
 	if (rnd.RndErr()) {
-		enum Err : uint8_t { Zero, Random, END = Random };
+		enum [[nodiscard]] Err : uint8_t { Zero, Random, END = Random };
 		switch (rnd.RndWhich<Err, 1, 1>()) {
 			case Zero:
 				return;

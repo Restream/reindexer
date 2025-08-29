@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-class LocalTransaction {
+class [[nodiscard]] LocalTransaction {
 public:
 	LocalTransaction(NamespaceName nsName, const PayloadType& pt, const TagsMatcher& tm, const FieldsSet& pf,
 					 std::shared_ptr<const Schema> schema, lsn_t lsn)
@@ -51,13 +51,11 @@ public:
 						"transaction creation)");
 		}
 	}
-	[[nodiscard]] size_t CalculateNewCapacity(size_t currentSize) const noexcept {
-		return tx_ ? tx_->CalculateNewCapacity(currentSize) : currentSize;
-	}
-	[[nodiscard]] unsigned DeletionsCount() const noexcept { return tx_ ? tx_->DeletionsCount() : 0; }
-	[[nodiscard]] unsigned ExpectedInsertionsCount() const noexcept { return tx_ ? tx_->ExpectedInsertionsCount() : 0; }
-	[[nodiscard]] unsigned UpdateQueriesCount() const noexcept { return tx_ ? tx_->UpdateQueriesCount() : 0; }
-	[[nodiscard]] unsigned DeleteQueriesCount() const noexcept { return tx_ ? tx_->DeleteQueriesCount() : 0; }
+	size_t CalculateNewCapacity(size_t currentSize) const noexcept { return tx_ ? tx_->CalculateNewCapacity(currentSize) : currentSize; }
+	unsigned DeletionsCount() const noexcept { return tx_ ? tx_->DeletionsCount() : 0; }
+	unsigned ExpectedInsertionsCount() const noexcept { return tx_ ? tx_->ExpectedInsertionsCount() : 0; }
+	unsigned UpdateQueriesCount() const noexcept { return tx_ ? tx_->UpdateQueriesCount() : 0; }
+	unsigned DeleteQueriesCount() const noexcept { return tx_ ? tx_->DeleteQueriesCount() : 0; }
 
 private:
 	LocalTransaction(std::unique_ptr<SharedTransactionData>&& d, std::unique_ptr<TransactionSteps>&& tx, Error&& e)

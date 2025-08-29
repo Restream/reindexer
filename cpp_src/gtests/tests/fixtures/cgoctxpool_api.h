@@ -14,9 +14,9 @@ std::ostream& operator<<(std::ostream& os, const CancelType& cancel) { return os
 
 namespace CGOCtxPoolTests {
 
-class CGOCtxPoolApi : public ::testing::Test {
+class [[nodiscard]] CGOCtxPoolApi : public ::testing::Test {
 protected:
-	enum class MultiThreadTestMode { Simple, Synced };
+	enum class [[nodiscard]] MultiThreadTestMode { Simple, Synced };
 
 	unique_ptr<ContextsPoolImpl<CancelContextImpl>> createCtxPool(size_t baseSize) {
 		return unique_ptr<ContextsPoolImpl<CancelContextImpl>>(new ContextsPoolImpl<CancelContextImpl>(baseSize));

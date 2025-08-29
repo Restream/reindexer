@@ -4,7 +4,7 @@
 #include "core/queryresults/queryresults.h"
 #include "reindexertestapi.h"
 
-class FTApi : public ::testing::TestWithParam<reindexer::FtFastConfig::Optimization> {
+class [[nodiscard]] FTApi : public ::testing::TestWithParam<reindexer::FtFastConfig::Optimization> {
 public:
 	enum { NS1 = 1, NS2 = 2, NS3 = 4 };
 	void Init(const reindexer::FtFastConfig& ftCfg, unsigned nses = NS1, const std::string& storage = std::string());
@@ -33,7 +33,7 @@ public:
 	}
 	reindexer::QueryResults SimpleSelect3(std::string_view word) { return SimpleSelect("nm3", "ft", word, true); }
 
-	reindexer::Error Delete(int id);
+	void Delete(int id);
 	reindexer::QueryResults SimpleCompositeSelect(std::string_view word);
 	reindexer::QueryResults CompositeSelectField(const std::string& field, std::string_view word);
 	reindexer::QueryResults StressSelect(std::string_view word);
@@ -59,11 +59,11 @@ public:
 protected:
 	virtual std::string_view GetDefaultNamespace() noexcept = 0;
 
-	struct Data {
+	struct [[nodiscard]] Data {
 		std::string ft1;
 		std::string ft2;
 	};
-	struct FTDSLQueryParams {
+	struct [[nodiscard]] FTDSLQueryParams {
 		reindexer::RHashMap<std::string, int> fields;
 		reindexer::StopWordsSetT stopWords;
 	};

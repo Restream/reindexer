@@ -8,7 +8,7 @@
 
 namespace reindexer {
 
-struct QueryCountCacheVal {
+struct [[nodiscard]] QueryCountCacheVal {
 	QueryCountCacheVal() = default;
 	QueryCountCacheVal(size_t total) noexcept : totalCount(total) {}
 
@@ -21,7 +21,7 @@ struct QueryCountCacheVal {
 constexpr uint8_t kCountCachedKeyMode =
 	SkipMergeQueries | SkipLimitOffset | SkipAggregations | SkipSortEntries | SkipExtraParams | SkipLeftJoinQueries;
 
-class QueryCacheKey {
+class [[nodiscard]] QueryCacheKey {
 public:
 	using BufT = h_vector<uint8_t, 256>;
 
@@ -54,13 +54,13 @@ private:
 	BufT buf_;
 };
 
-struct EqQueryCacheKey {
+struct [[nodiscard]] EqQueryCacheKey {
 	bool operator()(const QueryCacheKey& lhs, const QueryCacheKey& rhs) const noexcept {
 		return (lhs.buf().size() == rhs.buf().size()) && (memcmp(lhs.buf().data(), rhs.buf().data(), lhs.buf().size()) == 0);
 	}
 };
 
-struct HashQueryCacheKey {
+struct [[nodiscard]] HashQueryCacheKey {
 	size_t operator()(const QueryCacheKey& q) const noexcept {
 		uint64_t hash[2];
 		MurmurHash3_x64_128(q.buf().data(), q.buf().size(), 0, &hash);

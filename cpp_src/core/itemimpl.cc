@@ -12,6 +12,7 @@
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufdecoder.h"
 #include "core/embedding/embedder.h"
+#include "core/expressiontree.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
@@ -484,6 +485,17 @@ bool checkEmbedderAllowed(const Payload& pl, int field, const UpsertEmbedder& em
 	}
 	return false;
 }
+
+int checkEmbedderCalcField(const PayloadType& payloadType, std::string_view indexName, std::string_view fieldName) {
+	int fieldId = 0;
+	if (!payloadType.FieldByName(fieldName, fieldId)) {
+		throw Error(errLogic,
+					"Cannot automatically embed value in index field named '{}'. The auxiliary field '{}' was not found or is a composite "
+					"or sparse field. Embedding is supported only for scalar index fields",
+					indexName, fieldName);
+	}
+	return fieldId;
+}
 }  // namespace
 
 void ItemImpl::Embed(const RdxContext& ctx) {
@@ -512,8 +524,10 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 
 			source.resize(0);
 			for (const auto& fld : embedder->Fields()) {
+				int fldId = checkEmbedderCalcField(payloadType_, embedder->FieldName(), fld);
+
 				VariantArray data;
-				pl.Get(fld, data);
+				pl.Get(fldId, data);
 				source.emplace_back(fld, std::move(data));
 			}
 

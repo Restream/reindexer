@@ -6,7 +6,7 @@ namespace reindexer {
 class NamespaceImpl;
 class IndexDef;
 
-struct IndexFastUpdate {
+struct [[nodiscard]] IndexFastUpdate {
 	static bool Try(NamespaceImpl& ns, const IndexDef& from, const IndexDef& to);
 	static bool RelaxedEqual(const IndexDef& from, const IndexDef& to);
 

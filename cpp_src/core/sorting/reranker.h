@@ -43,12 +43,12 @@ public:
 	template <concepts::OneOf<Base, RerankerLinear, RerankerRRF> R>
 	Reranker(R&& rr, reindexer::Desc desc) noexcept : Base{std::forward<R>(rr)}, desc_{desc} {}
 
-	[[nodiscard]] const Base& AsVariant() const& noexcept { return *this; }
+	const Base& AsVariant() const& noexcept { return *this; }
 	auto AsVariant() const&& = delete;
-	[[nodiscard]] reindexer::Desc Desc() const noexcept { return desc_; }
+	reindexer::Desc Desc() const noexcept { return desc_; }
 
 	static Reranker Default() noexcept;
-	[[nodiscard]] bool IsRRF() const noexcept { return std::holds_alternative<RerankerRRF>(AsVariant()); }
+	bool IsRRF() const noexcept { return std::holds_alternative<RerankerRRF>(AsVariant()); }
 
 private:
 	const reindexer::Desc desc_{Desc_True};

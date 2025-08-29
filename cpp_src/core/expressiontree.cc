@@ -14,7 +14,7 @@ size_t ExpressionTree<OperationType, SubTree, holdSize, Ts...>::mergeEntries(Mer
 		nextSrc = Next(src);
 		const auto mergeResult =
 			container_[src].Visit(overloaded{[](const Merger::InvalidEntries&) -> MergeResult { throw_as_assert; },
-											 [dst, src, this](Merger::SkippingEntries) {
+											 [dst, src, this](const Merger::SkippingEntries&) {
 												 if (dst != src) {
 													 container_[dst] = std::move(container_[src]);
 												 }
@@ -68,14 +68,14 @@ size_t ExpressionTree<OperationType, SubTree, holdSize, Ts...>::mergeEntries(Mer
 class [[nodiscard]] QueryPreprocessor::Merger {
 public:
 	explicit Merger(QueryPreprocessor& qPreproc) noexcept : qPreproc_{qPreproc} {}
-	[[nodiscard]] QueryPreprocessor& MergingTree() noexcept { return qPreproc_; }
+	QueryPreprocessor& MergingTree() noexcept { return qPreproc_; }
 
 	using InvalidEntries = OneOf<SubQueryEntry, SubQueryFieldEntry>;
-	using SkippingEntries = OneOf<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, DistinctQueryEntry>;
+	using SkippingEntries = OneOf<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, MultiDistinctQueryEntry>;
 	using MergingEntry = QueryEntry;
 
 	MergeResult Merge(QueryEntry& entry, uint16_t dst, uint16_t src, OpType nextOp, bool last, Changed) {
-		if (entry.IsFieldIndexed()) {
+		if (entry.IsFieldIndexed() && !entry.ForcedSortOptEntry()) {
 			// try to merge entries with AND operator
 			if (qPreproc_.GetOperation(src) == OpAnd && (last || nextOp != OpOr)) {
 				if (size_t(entry.IndexNo()) >= iidx_.size()) {
@@ -121,7 +121,7 @@ std::pair<size_t, Changed> QueryPreprocessor::lookupQueryIndexes(uint16_t srcEnd
 class [[nodiscard]] SortExpression::Merger {
 public:
 	explicit Merger(Base& tree) noexcept : tree_{tree} {}
-	[[nodiscard]] Base& MergingTree() noexcept { return tree_; }
+	Base& MergingTree() noexcept { return tree_; }
 
 	struct InvalidEntries;
 	using SkippingEntries =
@@ -157,7 +157,7 @@ Changed SortExpression::multiplyConstants() {
 	ConstantsMultiplier constMultiplier{*this};
 	const size_t deleted = mergeEntries(constMultiplier, 0, 0, Size(), changed);
 	if (deleted > 0) {
-		container_.erase(container_.end() - deleted, container_.end());
+		rx_unused = container_.erase(container_.end() - deleted, container_.end());
 	}
 	return Changed{deleted > 0} || changed;
 }
@@ -214,7 +214,7 @@ Changed SortExpression::sumConstants() {
 	ConstantsSummer constSummer{*this};
 	const size_t deleted = mergeEntries(constSummer, 0, 0, Size(), changed);
 	if (deleted > 0) {
-		container_.erase(container_.end() - deleted, container_.end());
+		rx_unused = container_.erase(container_.end() - deleted, container_.end());
 	}
 	return Changed{deleted > 0} || changed;
 }

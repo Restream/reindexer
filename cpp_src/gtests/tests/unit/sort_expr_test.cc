@@ -23,45 +23,45 @@ ArithmeticOpType operation(char ch) {
 	}
 }
 
-struct RankFunction {
+struct [[nodiscard]] RankFunction {
 } Rank;
-struct RankNamed {
+struct [[nodiscard]] RankNamed {
 	RankNamed(const char* idx, double defaultVal = 0.0) noexcept : index{idx}, defaultValue{defaultVal} {}
 	const char* index;
 	double defaultValue;
 };
-struct SortHashFunction {
+struct [[nodiscard]] SortHashFunction {
 	std::optional<uint32_t> seed;
 };
-struct Joined {
+struct [[nodiscard]] Joined {
 	size_t nsIdx;
 	const char* column;
 };
-struct DistanceIndexPoint {
+struct [[nodiscard]] DistanceIndexPoint {
 	const char* column;
 	Point point;
 };
-struct DistanceBetweenIndexes {
+struct [[nodiscard]] DistanceBetweenIndexes {
 	const char* column1;
 	const char* column2;
 };
-struct DistanceBetweenJoinedIndexes {
+struct [[nodiscard]] DistanceBetweenJoinedIndexes {
 	size_t nsIdx1;
 	const char* column1;
 	size_t nsIdx2;
 	const char* column2;
 };
-struct DistanceBetweenJoinedIndexesSameNs {
+struct [[nodiscard]] DistanceBetweenJoinedIndexesSameNs {
 	size_t nsIdx;
 	const char* column1;
 	const char* column2;
 };
-struct DistanceBetweenIndexAndJoinedIndex {
+struct [[nodiscard]] DistanceBetweenIndexAndJoinedIndex {
 	const char* column;
 	size_t nsIdx;
 	const char* jColumn;
 };
-struct DistanceJoinedIndexPoint {
+struct [[nodiscard]] DistanceJoinedIndexPoint {
 	size_t nsIdx;
 	const char* column;
 	Point point;
@@ -151,11 +151,11 @@ static void append(SortExpression& se, char op, DistanceBetweenIndexAndJoinedInd
 	assertrx(inserted == 1);
 }
 
-struct OpenAbs {
+struct [[nodiscard]] OpenAbs {
 } Abs;
-struct OpenBracket {
+struct [[nodiscard]] OpenBracket {
 } Open;
-struct CloseBracket {
+struct [[nodiscard]] CloseBracket {
 } Close;
 
 template <typename T, typename... Args>
@@ -230,8 +230,8 @@ static SortExpression makeExpr(Args... args) {
 }  // namespace
 
 TEST(StringFunctions, SortExpressionParse) {
-	enum Result { SUCCESS, FAIL };
-	struct Case {
+	enum [[nodiscard]] Result { SUCCESS, FAIL };
+	struct [[nodiscard]] Case {
 		Case(const char* e, std::vector<JoinedNsNameMock> js, SortExpression se)
 			: expression{e}, joinedSelectors{std::move(js)}, expected{std::move(se)}, result{SUCCESS} {}
 		Case(const char* e, std::vector<JoinedNsNameMock> js, Result r)
@@ -481,6 +481,7 @@ TEST(StringFunctions, SortExpressionParse) {
 				  "v", '+', "u", Close, '+', 48, '*', "u", '+', 24, '*', "v")}};
 	for (const auto& tC : testCases) {
 		if (tC.result == FAIL) {
+			// NOLINTNEXTLINE (bugprone-unused-return-value)
 			EXPECT_THROW(SortExpression::Parse(tC.expression, tC.joinedSelectors), reindexer::Error) << tC.expression;
 		} else {
 			try {

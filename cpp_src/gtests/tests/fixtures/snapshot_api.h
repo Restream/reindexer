@@ -8,9 +8,9 @@
 #include "rpcclient_api.h"
 #include "vendor/gason/gason.h"
 
-class SnapshotTestApi : public RPCClientTestApi {
+class [[nodiscard]] SnapshotTestApi : public RPCClientTestApi {
 protected:
-	struct NsDataState {
+	struct [[nodiscard]] NsDataState {
 		lsn_t lsn;
 		lsn_t nsVersion;
 		uint64_t dataHash = 0;
@@ -18,13 +18,13 @@ protected:
 	};
 
 	void SetUp() {
-		fs::RmDirAll(kBaseTestsetDbPath);
+		rx_unused = fs::RmDirAll(kBaseTestsetDbPath);
 		StartServer();
 	}
 	void TearDown() {
 		[[maybe_unused]] auto err = RPCClientTestApi::StopAllServers();
 		assertf(err.ok(), "{}", err.what());
-		fs::RmDirAll(kBaseTestsetDbPath);
+		rx_unused = fs::RmDirAll(kBaseTestsetDbPath);
 	}
 
 	void StartServer() {

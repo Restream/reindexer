@@ -11,7 +11,7 @@
 namespace reindexer {
 
 template <class T>
-class EqualPositionComparatorTypeImpl {
+class [[nodiscard]] EqualPositionComparatorTypeImpl {
 	using ValuesSet = fast_hash_set<T>;
 	using AllSetValuesSet = fast_hash_set<const T*>;
 
@@ -108,7 +108,7 @@ private:
 };
 
 template <>
-class EqualPositionComparatorTypeImpl<Uuid> {
+class [[nodiscard]] EqualPositionComparatorTypeImpl<Uuid> {
 	using ValuesSet = fast_hash_set<Uuid>;
 	using AllSetValuesSet = fast_hash_set<const Uuid*>;
 
@@ -189,7 +189,7 @@ private:
 };
 
 template <>
-class EqualPositionComparatorTypeImpl<key_string> {
+class [[nodiscard]] EqualPositionComparatorTypeImpl<key_string> {
 public:
 	EqualPositionComparatorTypeImpl(const CollateOpts& collate) : valuesS_(collate), collate_{collate} {}
 
@@ -198,7 +198,7 @@ public:
 		assertrx_throw(allSetValuesS_.empty());
 
 		for (Variant key : values) {
-			key.convert(KeyValueType::String{});
+			rx_unused = key.convert(KeyValueType::String{});
 			addValue(cond, static_cast<key_string>(key));
 		}
 	}
@@ -247,7 +247,7 @@ public:
 	h_vector<key_string, 1> values_;
 	std::string_view cachedValueSV_;
 
-	class key_string_set : public tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string> {
+	class [[nodiscard]] key_string_set : public tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string> {
 	public:
 		key_string_set(const CollateOpts& opts)
 			: tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string>(
@@ -273,13 +273,13 @@ private:
 };
 
 template <>
-class EqualPositionComparatorTypeImpl<PayloadValue> {
+class [[nodiscard]] EqualPositionComparatorTypeImpl<PayloadValue> {
 public:
 	EqualPositionComparatorTypeImpl() = delete;
 };
 
 template <>
-class EqualPositionComparatorTypeImpl<Point> {
+class [[nodiscard]] EqualPositionComparatorTypeImpl<Point> {
 public:
 	void SetValues(const VariantArray& values) {
 		if (values.size() != 2) {

@@ -12,7 +12,7 @@
 
 // #define ENABLE_TIME_TRACKER
 
-class FullText : private BaseFixture, private reindexer::bench::FullTextBase {
+class [[nodiscard]] FullText : private BaseFixture, private reindexer::bench::FullTextBase {
 public:
 	virtual ~FullText() {}
 	FullText(Reindexer* db, const std::string& name, size_t maxItems);
@@ -21,7 +21,7 @@ public:
 	void RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount);
 
 private:
-	enum class FTBuildType { Full, Incremental };
+	enum class [[nodiscard]] FTBuildType { Full, Incremental };
 
 	virtual reindexer::Item MakeItem(benchmark::State&) override;
 
@@ -83,7 +83,7 @@ private:
 	std::vector<std::string> words2_;
 	std::vector<std::string> countries_;
 
-	struct Values {
+	struct [[nodiscard]] Values {
 		Values(std::string s1, std::string s2, std::string f1, std::string f2) noexcept
 			: search1{std::move(s1)}, search2{std::move(s2)}, field1{std::move(f1)}, field2{std::move(f2)} {}
 		std::string search1;
@@ -93,7 +93,7 @@ private:
 	};
 	std::vector<Values> values_;
 
-	class RegisterWrapper {
+	class [[nodiscard]] RegisterWrapper {
 	public:
 		RegisterWrapper(std::optional<size_t> iterationCoun) noexcept : iterationCoun_(iterationCoun) {}
 		void SetOptions(Benchmark* b) {
@@ -114,11 +114,11 @@ private:
 #define TIMEMEASURE()
 #endif
 
-	class TimeTracker {
+	class [[nodiscard]] TimeTracker {
 	public:
 		TimeTracker(const std::string& fileName) : fileName_(fileName) { timeOfTest_.reserve(10000); }
 
-		class TimeMeasure {
+		class [[nodiscard]] TimeMeasure {
 		public:
 			TimeMeasure(TimeTracker& t) : timeTracker_(t), t1_(reindexer::system_clock_w::now()) {}
 			~TimeMeasure() {

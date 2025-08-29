@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-class StackUnwinding {
+class [[nodiscard]] StackUnwinding {
 public:
 	StackUnwinding() noexcept = default;
 	StackUnwinding(const StackUnwinding&) = delete;
@@ -19,7 +19,7 @@ private:
 };
 
 template <typename F1, typename F2>
-class ScopeGuard {
+class [[nodiscard]] ScopeGuard {
 public:
 	template <typename _F1, typename _F2>
 	ScopeGuard(_F1&& onConstruct, _F2&& onDestruct) noexcept : onDestruct_(std::forward<_F2>(onDestruct)) {

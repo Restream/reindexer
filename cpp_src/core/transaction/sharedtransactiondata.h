@@ -10,7 +10,7 @@ namespace reindexer {
 
 class ItemImpl;
 
-class SharedTransactionData {
+class [[nodiscard]] SharedTransactionData {
 public:
 	SharedTransactionData(NamespaceName&& _nsName, lsn_t _lsn, Transaction::ClockT::time_point _startTime, const PayloadType& pt,
 						  const TagsMatcher& tm, const FieldsSet& pf, std::shared_ptr<const Schema> schema)

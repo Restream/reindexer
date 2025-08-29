@@ -23,7 +23,7 @@ using NsArray = h_vector<Namespace*, 1>;
 class ReindexerImpl;
 class Reindexer;
 
-class QueryResults {
+class [[nodiscard]] QueryResults {
 public:
 	QueryResults(int fetchFlags = 0, int fetchAmount = 0) noexcept : results_(fetchFlags, fetchAmount) {}
 	// This constructor enables lazy parsing for aggregations and explain results. This mode is usefull for raw buffer qr's proxying on
@@ -35,10 +35,10 @@ public:
 	QueryResults& operator=(QueryResults&& obj) = default;
 	~QueryResults();
 
-	class Iterator : public CoroQueryResults::Iterator {
+	class [[nodiscard]] Iterator : public CoroQueryResults::Iterator {
 	public:
 		Iterator(const QueryResults& r, int idx, int pos, int nextPos, ResultSerializer::ItemParams itemParams) noexcept
-			: CoroQueryResults::Iterator{&r.results_, idx, pos, nextPos, itemParams, {}}, r_(&r) {}
+			: CoroQueryResults::Iterator{r.results_, idx, pos, nextPos, std::move(itemParams)}, r_(&r) {}
 		Iterator& operator*() { return *this; }
 		Iterator& operator++() noexcept {
 			try {
@@ -51,12 +51,13 @@ public:
 					const_cast<QueryResults*>(r_)->fetchNextResults();
 					pos_ = 0;
 				}
-			} catch (const Error& err) {
-				const_cast<CoroQueryResults*>(qr_)->i_.status_ = err;
+			} catch (std::exception& err) {
+				const_cast<CoroQueryResults*>(qr_)->i_.status_ = std::move(err);
 			}
 			return *this;
 		}
 
+	private:
 		const QueryResults* r_;
 	};
 

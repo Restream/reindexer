@@ -8,9 +8,9 @@
 namespace reindexer {
 
 template <class T>
-class BtreeIndexIteratorImpl {
+class [[nodiscard]] BtreeIndexIteratorImpl {
 public:
-	enum class IdsetType { Plain = 0, Btree };
+	enum class [[nodiscard]] IdsetType { Plain = 0, Btree };
 
 	explicit BtreeIndexIteratorImpl(const T& idxMap) : idxMap_(idxMap) {}
 	virtual ~BtreeIndexIteratorImpl() = default;
@@ -42,6 +42,8 @@ public:
 			case IdsetType::Plain:
 				shiftPlainIdsetToBegin();
 				break;
+			default:
+				std::abort();
 		}
 	}
 
@@ -53,6 +55,8 @@ public:
 			case IdsetType::Plain:
 				shiftPlainIdsetToNext();
 				break;
+			default:
+				std::abort();
 		}
 	}
 	bool isIdsetOver() const noexcept {
@@ -125,7 +129,7 @@ protected:
 };
 
 template <class T>
-class BtreeIndexForwardIteratorImpl : public BtreeIndexIteratorImpl<T> {
+class [[nodiscard]] BtreeIndexForwardIteratorImpl : public BtreeIndexIteratorImpl<T> {
 public:
 	using Base = BtreeIndexIteratorImpl<T>;
 	explicit BtreeIndexForwardIteratorImpl(const T& idxMap) : Base(idxMap) {
@@ -220,7 +224,7 @@ private:
 };
 
 template <class T>
-class BtreeIndexReverseIteratorImpl : public BtreeIndexIteratorImpl<T> {
+class [[nodiscard]] BtreeIndexReverseIteratorImpl : public BtreeIndexIteratorImpl<T> {
 public:
 	using Base = BtreeIndexIteratorImpl<T>;
 	explicit BtreeIndexReverseIteratorImpl(const T& idxMap) : Base(idxMap) {

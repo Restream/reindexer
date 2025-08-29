@@ -23,13 +23,13 @@ class NamespaceImpl;
 class RanksHolder;
 class Reranker;
 
-struct JoinSelectIterator {
+struct [[nodiscard]] JoinSelectIterator {
 	size_t joinIndex;
 	double Cost() const noexcept { return std::numeric_limits<float>::max(); }
 	void Dump(WrSerializer&, const std::vector<JoinedSelector>&) const;
 };
 
-struct SelectIteratorsBracket : private Bracket {
+struct [[nodiscard]] SelectIteratorsBracket : private Bracket {
 	using Bracket::Bracket;
 	using Bracket::Size;
 	using Bracket::Append;
@@ -41,9 +41,9 @@ struct SelectIteratorsBracket : private Bracket {
 class [[nodiscard]] KnnRawSelectResult {
 public:
 	KnnRawSelectResult(KnnRawResult&& raw, int idxNo) noexcept : rawResult_{std::move(raw)}, indexNo_{idxNo} {}
-	[[nodiscard]] int IndexNo() const noexcept { return indexNo_; }
-	[[nodiscard]] const KnnRawResult& RawResult() const& noexcept { return rawResult_; }
-	[[nodiscard]] KnnRawResult& RawResult() & noexcept { return rawResult_; }
+	int IndexNo() const noexcept { return indexNo_; }
+	const KnnRawResult& RawResult() const& noexcept { return rawResult_; }
+	KnnRawResult& RawResult() & noexcept { return rawResult_; }
 
 	auto RawResult() const&& = delete;
 
@@ -84,8 +84,45 @@ public:
 	void SetExpectMaxIterations(int expectedIterations);
 	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, RankedTypeQuery, RankSortType, const NamespaceImpl&,
 									   FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
-	template <bool reverse, bool hasComparators>
-	bool Process(PayloadValue&, bool* finish, IdType* rowId, IdType, bool match);
+	template <bool reverse>
+	RX_ALWAYS_INLINE bool Process(const PayloadValue& pv, bool* finish, IdType* rowId, IdType properRowId, bool match) {
+		const auto rowIdV = *rowId;
+		if (auto it = begin(); checkIfSatisfyAllConditions(++it, end(), pv, finish, rowIdV, properRowId, match)) {
+			// Check distinct condition:
+			// Exclude last sets of id from each query result, so duplicated keys will
+			// be removed
+			VisitForEach(
+				[](const KnnRawSelectResult&) { throw_as_assert; },
+				Skip<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue, EqualPositionComparator>{},
+				[rowIdV](SelectIterator& sit) {
+					if (sit.IsDistinct()) {
+						sit.ExcludeLastSet(rowIdV);
+					}
+				},
+				Restricted<ComparatorNotIndexed, ComparatorDistinctMulti,
+						   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
+					[&pv, properRowId](auto& comp) { comp.ExcludeDistinctValues(pv, properRowId); }));
+
+			if rx_likely (preservedDistincts_.Empty()) {
+				return true;
+			}
+
+			// Check distinct conditions, preserved from the previous execution stage
+			if (checkIfSatisfyAllConditions(preservedDistincts_.begin(), preservedDistincts_.end(), pv, finish, rowIdV, properRowId,
+											match)) {
+				preservedDistincts_.VisitForEach(
+					Restricted<SelectIterator, KnnRawSelectResult>{}([](const auto&) { throw_as_assert; }),
+					Skip<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue, EqualPositionComparator>{},
+					Restricted<
+						ComparatorNotIndexed, ComparatorDistinctMulti,
+						Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
+						[&pv, properRowId](auto& comp) { comp.ExcludeDistinctValues(pv, properRowId); }));
+				return true;
+			}
+		}
+		*rowId = getNextItemId<reverse>(cbegin(), cend(), rowIdV);
+		return false;
+	}
 
 	bool IsSelectIterator(size_t i) const noexcept {
 		assertrx_throw(i < Size());
@@ -106,15 +143,9 @@ public:
 					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
 				[] RX_PRE_LMBD_ALWAYS_INLINE(const auto& comp) RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); }));
 	}
-	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<JoinedSelector>* js) const {
-		explainJSON(cbegin(), cend(), iters, builder, js);
-	}
+	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<JoinedSelector>* js) const;
 
-	void Clear() {
-		clear();
-		maxIterations_ = std::numeric_limits<int>::max();
-		wasZeroIterations_ = false;
-	}
+	void Clear(bool preserveDistincts);
 	int GetMaxIterations(bool withZero = false) const noexcept { return (withZero && wasZeroIterations_) ? 0 : maxIterations_; }
 	std::string Dump() const;
 	static bool IsExpectingOrderedResults(const QueryEntry& qe) noexcept {
@@ -130,12 +161,7 @@ private:
 	double cost(std::span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;
 	double cost(std::span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	void moveJoinsToTheBeginningOfORs(std::span<unsigned> indexes, unsigned from, unsigned to);
-	// Check idset must be 1st
-	template <bool reverse>
-	bool checkIfSatisfyCondition(SelectIterator&, bool* finish, IdType rowId);
-	bool checkIfSatisfyCondition(JoinSelectIterator&, PayloadValue&, IdType properRowId, bool match);
-	template <bool reverse, bool hasComparators>
-	bool checkIfSatisfyAllConditions(iterator begin, iterator end, PayloadValue&, bool* finish, IdType rowId, IdType properRowId,
+	bool checkIfSatisfyAllConditions(iterator begin, iterator end, const PayloadValue&, bool* finish, IdType rowId, IdType properRowId,
 									 bool match);
 	static std::string explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder& builder,
 								   const std::vector<JoinedSelector>*);
@@ -146,9 +172,10 @@ private:
 	bool haveJoins(size_t i) const noexcept;
 
 	SelectKeyResults processQueryEntry(const QueryEntry& qe, const NamespaceImpl& ns, StrictMode strictMode);
-	SelectKeyResults processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns, unsigned sortId,
-									   RankedTypeQuery, RankSortType, FtFunction::Ptr& selectFnc, RanksHolder::Ptr&, reindexer::IsRanked&,
-									   IsSparse&, QueryPreprocessor& qPreproc, const RdxContext&);
+	h_vector<SelectKeyResults, 2> processQueryEntry(const QueryEntry& qe, bool enableSortIndexOptimize, const NamespaceImpl& ns,
+													unsigned sortId, RankedTypeQuery, RankSortType, FtFunction::Ptr& selectFnc,
+													RanksHolder::Ptr&, reindexer::IsRanked&, IsSparse&, QueryPreprocessor& qPreproc,
+													const RdxContext&);
 	SelectKeyResult processKnnQueryEntry(const KnnQueryEntry&, const NamespaceImpl&, RanksHolder::Ptr&, const RdxContext&);
 	KnnRawResult processKnnQueryEntryRaw(const KnnQueryEntry&, const NamespaceImpl&, const RdxContext&);
 	template <bool left>
@@ -159,11 +186,12 @@ private:
 	using EqualPositions = h_vector<size_t, 4>;
 	void processEqualPositions(const std::vector<EqualPositions>& equalPositions, const NamespaceImpl& ns, const QueryEntries& queries);
 	static std::vector<EqualPositions> prepareEqualPositions(const QueryEntries& queries, size_t begin, size_t end);
-	[[nodiscard]] static std::pair<iterator, iterator> findFirstRanked(iterator begin, iterator end, const NamespaceImpl&);
-	[[nodiscard]] static bool isRanked(const_iterator, const NamespaceImpl&);
+	static std::pair<iterator, iterator> findFirstRanked(iterator begin, iterator end, const NamespaceImpl&);
+	static bool isRanked(const_iterator, const NamespaceImpl&);
 	static void throwIfNotFt(const QueryEntries&, size_t i, const NamespaceImpl&);
 	template <bool desc>
 	void mergeRanked(RanksHolder::Ptr&, const Reranker&, const NamespaceImpl&);
+	bool hasDistinctComparatorsFromPreviousStage() const noexcept { return !preservedDistincts_.Empty(); }
 
 	/// @return end() if empty or last opened bracket is empty
 	iterator lastAppendedOrClosed() {
@@ -186,6 +214,8 @@ private:
 	SelectCtx* ctx_;
 	int maxIterations_;
 	bool wasZeroIterations_;
+	struct : Base {
+	} preservedDistincts_;
 };
 
 }  // namespace reindexer

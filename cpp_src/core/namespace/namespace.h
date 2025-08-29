@@ -1,9 +1,8 @@
 ﻿#pragma once
 
 #include <thread>
-#include <type_traits>
-#include "core/queryresults/queryresults.h"
-#include "core/querystat.h"
+#include "core/queryresults/fields_filter.h"
+#include "core/queryresults/localqueryresults.h"
 #include "core/transaction/txstats.h"
 #include "estl/timed_mutex.h"
 #include "namespaceimpl.h"
@@ -13,7 +12,7 @@ namespace reindexer {
 
 class Embedder;
 
-class Namespace {
+class [[nodiscard]] Namespace {
 	template <auto fn, typename... Args>
 	auto nsFuncWrapper(Args&&... args) const {
 		while (true) {
@@ -227,7 +226,7 @@ public:
 		return nsFuncWrapper<&NamespaceImpl::QueryEmbedder>(fieldName, ctx);
 	}
 
-	struct GetWrLockData {
+	struct [[nodiscard]] GetWrLockData {
 		NamespaceImpl::Locker::WLockT lock;
 		NamespaceImpl::Ptr nsImpl;
 	};
@@ -282,11 +281,11 @@ private:
 	void doRename(const Namespace::Ptr& dst, std::string_view newName, const std::string& storagePath,
 				  const std::function<void(std::function<void()>)>& replicateCb, const RdxContext& ctx);
 	NamespaceImpl::Ptr atomicLoadMainNs() const {
-		std::lock_guard<spinlock> lck(nsPtrSpinlock_);
+		lock_guard lck(nsPtrSpinlock_);
 		return ns_;
 	}
 	void atomicStoreMainNs(NamespaceImpl* ns) {
-		std::lock_guard<spinlock> lck(nsPtrSpinlock_);
+		lock_guard lck(nsPtrSpinlock_);
 		ns_.reset(ns);
 	}
 

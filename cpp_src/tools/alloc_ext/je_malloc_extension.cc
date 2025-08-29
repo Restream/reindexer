@@ -5,7 +5,6 @@
 #ifndef _WIN32
 #include <dlfcn.h>
 #include <stdlib.h>
-#include <mutex>
 #endif	// _WIN32
 #endif	// REINDEX_WITH_JEMALLOC && !defined(_WIN32)
 

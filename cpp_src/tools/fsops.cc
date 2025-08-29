@@ -1,19 +1,18 @@
-
 #include "fsops.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include <mutex>
 
 #include "errors.h"
+#include "estl/lock.h"
 #include "estl/shared_mutex.h"
 #include "tools/oscompat.h"
 
 namespace reindexer {
 namespace fs {
 
-[[nodiscard]] int MkDirAll(const std::string& path) noexcept {
+int MkDirAll(const std::string& path) noexcept {
 	try {
 		std::string tmpStr = path;
 		char *p = nullptr, *tmp = tmpStr.data();
@@ -77,7 +76,7 @@ int RmDirAll(const std::string& path) noexcept {
 #endif
 }
 
-[[nodiscard]] int ReadFile(const std::string& path, std::string& content) noexcept {
+int ReadFile(const std::string& path, std::string& content) noexcept {
 	try {
 		FILE* f = fopen(path.c_str(), "rb");
 		if (!f) {
@@ -95,7 +94,7 @@ int RmDirAll(const std::string& path) noexcept {
 	}
 }
 
-[[nodiscard]] int64_t WriteFile(const std::string& path, std::string_view content) noexcept {
+int64_t WriteFile(const std::string& path, std::string_view content) noexcept {
 	FILE* f = fopen(path.c_str(), "w");
 	if (!f) {
 		return -1;
@@ -106,7 +105,7 @@ int RmDirAll(const std::string& path) noexcept {
 	return static_cast<int64_t>((written > 0) ? content.size() : written);
 }
 
-[[nodiscard]] int ReadDir(const std::string& path, std::vector<DirEntry>& content) noexcept {
+int ReadDir(const std::string& path, std::vector<DirEntry>& content) noexcept {
 #ifndef _WIN32
 	struct dirent* entry;
 	auto dir = opendir(path.c_str());
@@ -185,7 +184,7 @@ std::string GetCwd() {
 static std::string tmpDir;
 static shared_timed_mutex tmpDirMtx;
 
-std::string GetTempDir() {
+std::string GetTempDir() RX_REQUIRES(!tmpDirMtx) {
 	{
 		shared_lock lck(tmpDirMtx);
 		if (!tmpDir.empty()) {
@@ -207,7 +206,7 @@ std::string GetTempDir() {
 }
 
 void SetTempDir(std::string&& dir) noexcept {
-	std::lock_guard lck(tmpDirMtx);
+	lock_guard lck(tmpDirMtx);
 	tmpDir = std::move(dir);
 }
 
@@ -269,7 +268,7 @@ TimeStats StatTime(const std::string& path) {
 	return {-1, -1, -1};
 }
 
-[[nodiscard]] bool DirectoryExists(const std::string& directory) noexcept {
+bool DirectoryExists(const std::string& directory) noexcept {
 	if (!directory.empty()) {
 #ifdef _WIN32
 		if (_access(directory.c_str(), 0) == 0) {
@@ -292,7 +291,7 @@ TimeStats StatTime(const std::string& path) {
 	return false;
 }
 
-Error TryCreateDirectory(const std::string& dir) {
+Error TryCreateDirectory(const std::string& dir) RX_REQUIRES(!tmpDirMtx) {
 	using reindexer::fs::MkDirAll;
 	using reindexer::fs::DirectoryExists;
 	using reindexer::fs::GetTempDir;

@@ -6,13 +6,13 @@ namespace reindexer {
 
 struct FtDslOpts;
 
-struct SynonymsDsl {
+struct [[nodiscard]] SynonymsDsl {
 	SynonymsDsl(FtDSLQuery&& dsl_, const std::vector<size_t>& termsIdx_) : dsl{std::move(dsl_)}, termsIdx{termsIdx_} {}
 	FtDSLQuery dsl;
 	std::vector<size_t> termsIdx;
 };
 
-class Synonyms final : public ITokenFilter {
+class [[nodiscard]] Synonyms final : public ITokenFilter {
 public:
 	using Ptr = std::unique_ptr<Synonyms>;
 

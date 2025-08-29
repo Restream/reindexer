@@ -11,7 +11,7 @@ namespace reindexer {
 /// Sorting priorities table for CollateCustom
 /// sorting mode. Input string looks like: "А-ЯA-Z0-9..."
 /// and sets sorting priority for charachers in an output.
-class SortingPrioritiesTable {
+class [[nodiscard]] SortingPrioritiesTable {
 public:
 	/// Default constructor.
 	SortingPrioritiesTable() = default;

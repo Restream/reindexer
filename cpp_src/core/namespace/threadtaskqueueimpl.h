@@ -4,7 +4,7 @@
 #include "sparse-map/sparse_hash.h"
 
 namespace reindexer {
-class ThreadTaskQueueImpl : public tsl::detail_sparse_hash::ThreadTaskQueue {
+class [[nodiscard]] ThreadTaskQueueImpl : public tsl::detail_sparse_hash::ThreadTaskQueue {
 public:
 	virtual void AddTask(std::function<void()> f) override { queue_.emplace_back(std::move(f)); }
 	std::function<void()> GetTask() {

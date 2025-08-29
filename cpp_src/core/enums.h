@@ -5,31 +5,31 @@
 
 namespace reindexer {
 
-#define BOOL_ENUM(Name)                                                                                       \
-	class [[nodiscard]] Name {                                                                                \
-	public:                                                                                                   \
-		constexpr explicit Name(bool v) noexcept : value_{v} {}                                               \
-		constexpr Name& operator|=(bool other) & noexcept {                                                   \
-			value_ |= other;                                                                                  \
-			return *this;                                                                                     \
-		}                                                                                                     \
-		constexpr Name& operator|=(Name other) & noexcept { return operator|=(other.value_); }                \
-		constexpr Name& operator&=(bool other) & noexcept {                                                   \
-			value_ &= other;                                                                                  \
-			return *this;                                                                                     \
-		}                                                                                                     \
-		constexpr Name operator!() const noexcept { return Name{!value_}; }                                   \
-		constexpr Name operator||(Name other) const noexcept { return Name{value_ || other.value_}; }         \
-		constexpr Name operator&&(Name other) const noexcept { return Name{value_ && other.value_}; }         \
-		[[nodiscard]] constexpr bool operator==(Name other) const noexcept { return value_ == other.value_; } \
-		[[nodiscard]] constexpr bool operator!=(Name other) const noexcept { return !operator==(other); }     \
-		[[nodiscard]] explicit constexpr operator bool() const noexcept { return value_; }                    \
-		[[nodiscard]] constexpr bool operator*() const noexcept { return value_; }                            \
-                                                                                                              \
-	private:                                                                                                  \
-		bool value_;                                                                                          \
-	};                                                                                                        \
-	static constexpr Name Name##_True = Name(true);                                                           \
+#define BOOL_ENUM(Name)                                                                               \
+	class [[nodiscard]] Name {                                                                        \
+	public:                                                                                           \
+		constexpr explicit Name(bool v) noexcept : value_{v} {}                                       \
+		constexpr Name& operator|=(bool other) & noexcept {                                           \
+			value_ |= other;                                                                          \
+			return *this;                                                                             \
+		}                                                                                             \
+		constexpr Name& operator|=(Name other) & noexcept { return operator|=(other.value_); }        \
+		constexpr Name& operator&=(bool other) & noexcept {                                           \
+			value_ &= other;                                                                          \
+			return *this;                                                                             \
+		}                                                                                             \
+		constexpr Name operator!() const noexcept { return Name{!value_}; }                           \
+		constexpr Name operator||(Name other) const noexcept { return Name{value_ || other.value_}; } \
+		constexpr Name operator&&(Name other) const noexcept { return Name{value_ && other.value_}; } \
+		constexpr bool operator==(Name other) const noexcept { return value_ == other.value_; }       \
+		constexpr bool operator!=(Name other) const noexcept { return !operator==(other); }           \
+		explicit constexpr operator bool() const noexcept { return value_; }                          \
+		constexpr bool operator*() const noexcept { return value_; }                                  \
+                                                                                                      \
+	private:                                                                                          \
+		bool value_;                                                                                  \
+	};                                                                                                \
+	static constexpr Name Name##_True = Name(true);                                                   \
 	static constexpr Name Name##_False = Name(false);
 
 BOOL_ENUM(IsRanked)
@@ -61,10 +61,13 @@ BOOL_ENUM(IsDBInitCall)
 BOOL_ENUM(LogCreation)
 BOOL_ENUM(SkipSortingEntry)
 BOOL_ENUM(IsDistinct)
+BOOL_ENUM(IsForcedSortOptEntry)
 BOOL_ENUM(Changed)
 BOOL_ENUM(Desc)
 BOOL_ENUM(ExtraIndexDescription)
 BOOL_ENUM(NeedCreate)
+BOOL_ENUM(SkipLock)
+BOOL_ENUM(LockUniquely)
 BOOL_ENUM(IsRequired)
 BOOL_ENUM(AllowAdditionalProps)
 BOOL_ENUM(MustExist)
@@ -101,10 +104,10 @@ public:
 	explicit operator uint32_t() const noexcept { return value_; }
 	explicit operator uint16_t() const noexcept { return value_; }
 
-	[[nodiscard]] bool operator==(const FloatVectorDimension&) const noexcept = default;
-	[[nodiscard]] bool operator!=(const FloatVectorDimension&) const noexcept = default;
-	[[nodiscard]] value_type Value() const noexcept { return value_; }
-	[[nodiscard]] bool IsZero() const noexcept { return value_ == 0; }
+	bool operator==(const FloatVectorDimension&) const noexcept = default;
+	bool operator!=(const FloatVectorDimension&) const noexcept = default;
+	value_type Value() const noexcept { return value_; }
+	bool IsZero() const noexcept { return value_ == 0; }
 
 private:
 	value_type value_{0};
@@ -114,9 +117,9 @@ class [[nodiscard]] TagName {
 public:
 	using value_type = uint16_t;
 
-	struct Hash : public std::hash<value_type> {
+	struct [[nodiscard]] Hash : public std::hash<value_type> {
 		using Base = std::hash<value_type>;
-		[[nodiscard]] bool operator()(TagName v) const noexcept { return Base::operator()(v.value_); }
+		bool operator()(TagName v) const noexcept { return Base::operator()(v.value_); }
 	};
 
 	constexpr explicit TagName(uint64_t v) : value_(v) {
@@ -128,9 +131,9 @@ public:
 
 	static constexpr TagName Empty() noexcept { return {}; }
 
-	[[nodiscard]] constexpr bool IsEmpty() const noexcept { return value_ == 0; }
-	[[nodiscard]] constexpr auto operator<=>(const TagName&) const noexcept = default;
-	[[nodiscard]] constexpr value_type AsNumber() const noexcept { return value_; }
+	constexpr bool IsEmpty() const noexcept { return value_ == 0; }
+	constexpr auto operator<=>(const TagName&) const noexcept = default;
+	constexpr value_type AsNumber() const noexcept { return value_; }
 
 private:
 	constexpr TagName() noexcept = default;

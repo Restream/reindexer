@@ -8,9 +8,9 @@
 
 namespace reindexer {
 
-class SingleIndexData {
+class [[nodiscard]] SingleIndexData {
 public:
-	struct Vector {
+	struct [[nodiscard]] Vector {
 		using Type = float;
 		Vector(FloatVectorDimension dimensions) noexcept : id{-1}, vec{FloatVector::CreateNotInitialized(dimensions)} {}
 
@@ -49,7 +49,7 @@ public:
 		}
 		return std::make_pair(ConstFloatVectorView{vecRef.vec}, added);
 	}
-	[[nodiscard]] bool Delete(IdType id) {
+	bool Delete(IdType id) {
 		if (auto found = mapping_.find(id); found != mapping_.end()) {
 			const size_t vecID = found->second;
 			mapping_.erase(found);
@@ -95,12 +95,12 @@ private:
 class LocalTransaction;
 class NamespaceImpl;
 
-class TransactionContext {
+class [[nodiscard]] TransactionContext {
 public:
 	TransactionContext(const NamespaceImpl& ns, const LocalTransaction& tx);
 
-	[[nodiscard]] bool HasMultithreadIndexes() const noexcept { return !indexesData_.empty(); }
-	[[nodiscard]] ConstFloatVectorView Upsert(int field, IdType id, ConstFloatVectorView data) {
+	bool HasMultithreadIndexes() const noexcept { return !indexesData_.empty(); }
+	ConstFloatVectorView Upsert(int field, IdType id, ConstFloatVectorView data) {
 		if (auto indexData = getIndexData(field); indexData) {
 			auto [vec, sizeChanged] = indexData->Upsert(id, data);
 			buckets_ += size_t(sizeChanged);
@@ -108,13 +108,13 @@ public:
 		}
 		return ConstFloatVectorView();
 	}
-	[[nodiscard]] bool Delete(int field, IdType id) {
+	bool Delete(int field, IdType id) {
 		if (auto indexData = getIndexData(field); indexData) {
 			return indexData->Delete(id);
 		}
 		return false;
 	}
-	[[nodiscard]] std::optional<ConstFloatVectorView> TryGetValue(int field, IdType id) {
+	std::optional<ConstFloatVectorView> TryGetValue(int field, IdType id) {
 		if (auto indexData = getIndexData(field); indexData) {
 			return indexData->TryGetValue(id);
 		}
@@ -147,7 +147,7 @@ private:
 	size_t buckets_{0};
 };
 
-class TransactionConcurrentInserter {
+class [[nodiscard]] TransactionConcurrentInserter {
 public:
 	TransactionConcurrentInserter(NamespaceImpl& ns, size_t threads) noexcept : ns_{ns}, threads_{threads} {}
 

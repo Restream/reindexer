@@ -1,3 +1,37 @@
+# Version 5.6.0 (29.08.2025)
+## Core
+- [fea] Added subqueries and `or inner join` support for [UPDATE](readme.md#update-queries-with-inner-joins-and-subqueries) and [DELETE](readme.md#delete-queries) queries
+- [fea] Added more informative error message in case of unsuccessful index creation
+- [fea] Improved [anti-join](#anti-join) handling (excessive braces do not required anymore)
+- [fea] Added more strict validation for incorrect conditions with LEFT JOINS
+- [fea] Improved protobuf/msgpack content validation
+- [fea] Added more strict validation for [UPDATE-queries](#update-queries) targeting non-array fields
+- [fix] Fixed SQL/DSL(JSON) parsing of `NOT`-operator inside JOIN's ON-clause
+- [fix] Fixed case-insensitive namespaces names in DSL(JSON) queries
+- [fix] Fixed automatic indexes substitution for array-indexes with multiple `jsonpaths` and `sparse`-indexes
+- [fix] Fixed compatibility in empty arrays JOINs
+- [fix] Fixed incorrect LIMIT handling in queries with combination of array-field [DISTINCT/multi-DISTINCT](readme.md#aggregations) and [forced sort](readme.md#forced-sort)
+- [fix] Fixed `matched` field value in `explain` results for conditions with `NOT` operators
+
+## Vector indexes
+- [fea] Added automatic fallback in [hybrid query](hybrid.md), when [embedder](float_vector.md#embedding-configuration) is not available. This query will be executed as pure fulltext query without KNN-part
+- [fix] Fixed incorrect handling of the deleted vectors by [KNN-conditions](float_vector.md#knn-search) with `radius`
+- [fix] Changed [embedders](float_vector.md#embedding-configuration) validation logic to avoid indexes creation error on startup
+
+## Replication
+- [fea] Added proxying for UPDATE and DELETE queries with subqueries and inner joins
+
+## Reindexer tool
+- [fea] Added [storage convertion tool](cpp_src/readme.md#converting-storage-type-for-existing-database)
+
+## Deploy
+- [upd] Added deployment for `debian:13` (trixie)
+- [upd] Removed deployment for `debian:11` (bookworm)
+
+## Face
+- [fea] Added new fields to fulltext index config (`keep_diacritics`, `min_word_part_size` and `word_part_delimiters`)
+- [fix] Fixed ms measure for statistics column titles
+
 # Version 5.5.0 (31.07.2025)
 ## Core
 - [fea] Added support for `INNER JOIN` (as filters) in `UPDATE`/`DELETE`-queries, including queries with self-joins (`UPDATE ns1 SET v=1 INNER JOIN ns1 ON ns1.idx IN ns1.allowed_ids INNER JOIN ns2 ON ns1.prices = ns2.price_id`)
@@ -396,7 +430,7 @@
 
 ## Reindexer tool
 - [fix] Fixed possible hang in interactive mode on Windows
-
+## Replication
 # Version 4.16.0 *beta* (26.07.2024)
 
 ## Reindexer server

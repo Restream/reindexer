@@ -9,8 +9,8 @@ namespace reindexer {
 
 class FtFunctionsHolder;
 
-class RxSelector {
-	struct NsLockerItem {
+class [[nodiscard]] RxSelector {
+	struct [[nodiscard]] NsLockerItem {
 		explicit NsLockerItem(NamespaceImpl::Ptr ins, Namespace::Ptr n) noexcept : nsImpl(std::move(ins)), ns(std::move(n)), count(1) {}
 		NamespaceImpl::Ptr nsImpl;
 		Namespace::Ptr ns;
@@ -20,7 +20,7 @@ class RxSelector {
 
 public:
 	template <typename Context>
-	class NsLocker : private h_vector<NsLockerItem, 4> {
+	class [[nodiscard]] NsLocker : private h_vector<NsLockerItem, 4> {
 	public:
 		explicit NsLocker(const Context& context) noexcept : context_(context) {}
 		~NsLocker() {
@@ -81,7 +81,7 @@ public:
 		const Context& context_;
 	};
 
-	class NsLockerWItem {
+	class [[nodiscard]] NsLockerWItem {
 	public:
 		explicit NsLockerWItem(Namespace::Ptr ns = {}, bool isWLock = false) noexcept : ns_(std::move(ns)), count_(1), isWLock_(isWLock) {}
 		Namespace::Ptr ns_;
@@ -91,7 +91,7 @@ public:
 		bool isWLock_ = false;
 	};
 
-	class NsLockerW {
+	class [[nodiscard]] NsLockerW {
 	public:
 		NsLockerW(const RdxContext& context) noexcept : context_(context) {}
 		~NsLockerW() {
@@ -185,8 +185,8 @@ public:
 	static void DoSelect(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, LockerType& locks,
 						 FtFunctionsHolder& func, const RdxContext& ctx, QueryStatCalculator<QueryType>& queryStatCalculator);
 
-	static void DoPreSelectForUpdateDelete(const Query& q, LocalQueryResults& result, NsLockerW& locks, bool fvHolderFromResult,
-										   const RdxContext& ctx);
+	static void DoPreSelectForUpdateDelete(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, NsLockerW& locks,
+										   FloatVectorsHolderMap* fvHolder, const RdxContext& ctx);
 
 private:
 	struct QueryResultsContext;
@@ -194,19 +194,22 @@ private:
 	template <typename Locker>
 	static JoinedSelectors prepareJoinedSelectors(const Query& q, LocalQueryResults& result, Locker& locks, FtFunctionsHolder& func,
 												  std::vector<QueryResultsContext>&, SetLimit0ForChangeJoin limit0, const RdxContext& ctx);
-	template <typename T>
-	[[nodiscard]] static std::vector<SubQueryExplain> preselectSubQueries(Query& mainQuery,
-																		  std::vector<LocalQueryResults>& queryResultsHolder, NsLocker<T>&,
-																		  FtFunctionsHolder&, const RdxContext&);
-	template <typename T>
-	[[nodiscard]] static bool selectSubQuery(const Query& subQuery, const Query& mainQuery, NsLocker<T>&, FtFunctionsHolder&,
-											 std::vector<SubQueryExplain>&, const RdxContext&);
-	template <typename T>
-	[[nodiscard]] static VariantArray selectSubQuery(const Query& subQuery, const Query& mainQuery, NsLocker<T>&, LocalQueryResults&,
-													 FtFunctionsHolder&, std::variant<std::string, size_t> fieldOrKeys,
-													 std::vector<SubQueryExplain>&, const RdxContext&);
+	template <typename LockerT>
+	static std::vector<SubQueryExplain> preselectSubQueries(Query& mainQuery, std::vector<LocalQueryResults>& queryResultsHolder, LockerT&,
+															FtFunctionsHolder&, const RdxContext&);
+	template <typename LockerT>
+	static bool selectSubQuery(const Query& subQuery, const Query& mainQuery, LockerT&, FtFunctionsHolder&, std::vector<SubQueryExplain>&,
+							   const RdxContext&);
+	template <typename LockerT>
+	static VariantArray selectSubQuery(const Query& subQuery, const Query& mainQuery, LockerT&, LocalQueryResults&, FtFunctionsHolder&,
+									   std::variant<std::string, size_t> fieldOrKeys, std::vector<SubQueryExplain>&, const RdxContext&);
 	static StoredValuesOptimizationStatus isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns,
 																					 const Query& mainQ);
+
+	template <typename LockerType>
+	static void preselectSubQuriesMain(const Query& q, std::optional<Query>& queryCopy, LockerType& locks, FtFunctionsHolder& func,
+									   std::vector<SubQueryExplain>& subQueryExplains, ExplainCalc::Duration& preselectTimeTotal,
+									   std::vector<LocalQueryResults>& queryResultsHolder, LogLevel logLevel, const RdxContext& ctx);
 };
 
 }  // namespace reindexer

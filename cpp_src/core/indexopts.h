@@ -36,7 +36,7 @@ class [[nodiscard]] FloatVectorIndexOpts {
 	using FloatVectorDimensionInt = reindexer::FloatVectorDimension::value_type;
 
 public:
-	struct PoolOpts {
+	struct [[nodiscard]] PoolOpts {
 		size_t connections{10};
 		size_t connect_timeout_ms{300};
 		size_t read_timeout_ms{5'000};
@@ -44,21 +44,21 @@ public:
 
 		bool operator==(const PoolOpts& o) const noexcept = default;
 	};
-	struct EmbedderOpts {
+	struct [[nodiscard]] EmbedderOpts {
 		std::string endpointUrl;
 		std::string name;
 		std::string cacheTag;
 		reindexer::h_vector<std::string, 1> fields;
-		enum class Strategy : uint8_t { Always, EmptyOnly, Strict } strategy{Strategy::Always};
+		enum class [[nodiscard]] Strategy : uint8_t { Always, EmptyOnly, Strict } strategy{Strategy::Always};
 		PoolOpts pool{};
 
-		[[nodiscard]] bool operator==(const EmbedderOpts& o) const noexcept = default;
+		bool operator==(const EmbedderOpts& o) const noexcept = default;
 	};
-	struct EmbeddingOpts {
+	struct [[nodiscard]] EmbeddingOpts {
 		std::optional<EmbedderOpts> upsertEmbedder;
 		std::optional<EmbedderOpts> queryEmbedder;
 
-		[[nodiscard]] bool operator==(const EmbeddingOpts& o) const noexcept = default;
+		bool operator==(const EmbeddingOpts& o) const noexcept = default;
 	};
 
 	FloatVectorIndexOpts() = default;
@@ -126,7 +126,7 @@ public:
 	FloatVectorIndexOpts&& SetEmbedding(EmbeddingOpts embedding) && noexcept { return std::move(SetEmbedding(embedding)); }
 	void Validate(IndexType);
 	static FloatVectorIndexOpts ParseJson(IndexType, std::string_view json);
-	[[nodiscard]] std::string GetJson() const;
+	std::string GetJson() const;
 	void GetJson(reindexer::builders::JsonBuilder&) const;
 
 	enum class [[nodiscard]] Diff : uint8_t {
@@ -155,8 +155,8 @@ private:
 /// sort order table which is not possible
 /// to link in C-GO version because of templates
 /// in memory.h and unordered_map.h
-struct IndexOpts {
-	enum RTreeIndexType : uint8_t { Linear = 0, Quadratic = 1, Greene = 2, RStar = 3 };
+struct [[nodiscard]] IndexOpts {
+	enum [[nodiscard]] RTreeIndexType : uint8_t { Linear = 0, Quadratic = 1, Greene = 2, RStar = 3 };
 	explicit IndexOpts(uint8_t flags = 0, CollateMode mode = CollateNone, RTreeIndexType = RStar);
 	explicit IndexOpts(const std::string& sortOrderUTF8, uint8_t flags = 0, RTreeIndexType = RStar);
 
@@ -169,21 +169,21 @@ struct IndexOpts {
 	bool HasConfig() const noexcept { return !config_.empty(); }
 
 	IndexOpts& PK(bool value = true) &;
-	[[nodiscard]] IndexOpts&& PK(bool value = true) && { return std::move(PK(value)); }
+	IndexOpts&& PK(bool value = true) && { return std::move(PK(value)); }
 	IndexOpts& Array(bool value = true) &;
-	[[nodiscard]] IndexOpts&& Array(bool value = true) && { return std::move(Array(value)); }
+	IndexOpts&& Array(bool value = true) && { return std::move(Array(value)); }
 	IndexOpts& Dense(bool value = true) & noexcept;
-	[[nodiscard]] IndexOpts&& Dense(bool value = true) && noexcept { return std::move(Dense(value)); }
+	IndexOpts&& Dense(bool value = true) && noexcept { return std::move(Dense(value)); }
 	IndexOpts& NoIndexColumn(bool value = true) & noexcept;
-	[[nodiscard]] IndexOpts&& NoIndexColumn(bool value = true) && noexcept { return std::move(NoIndexColumn(value)); }
+	IndexOpts&& NoIndexColumn(bool value = true) && noexcept { return std::move(NoIndexColumn(value)); }
 	IndexOpts& Sparse(bool value = true) &;
-	[[nodiscard]] IndexOpts&& Sparse(bool value = true) && { return std::move(Sparse(value)); }
+	IndexOpts&& Sparse(bool value = true) && { return std::move(Sparse(value)); }
 	IndexOpts& RTreeType(RTreeIndexType) & noexcept;
-	[[nodiscard]] IndexOpts&& RTreeType(RTreeIndexType type) && noexcept { return std::move(RTreeType(type)); }
+	IndexOpts&& RTreeType(RTreeIndexType type) && noexcept { return std::move(RTreeType(type)); }
 	IndexOpts& SetCollateMode(CollateMode mode) & noexcept;
-	[[nodiscard]] IndexOpts&& SetCollateMode(CollateMode mode) && noexcept { return std::move(SetCollateMode(mode)); }
+	IndexOpts&& SetCollateMode(CollateMode mode) && noexcept { return std::move(SetCollateMode(mode)); }
 	IndexOpts& SetCollateSortOrder(reindexer::SortingPrioritiesTable&& sortOrder) & noexcept;
-	[[nodiscard]] IndexOpts&& SetCollateSortOrder(reindexer::SortingPrioritiesTable&& sortOrder) && noexcept {
+	IndexOpts&& SetCollateSortOrder(reindexer::SortingPrioritiesTable&& sortOrder) && noexcept {
 		return std::move(SetCollateSortOrder(std::move(sortOrder)));
 	}
 	template <typename Str, std::enable_if_t<std::is_assignable_v<std::string, Str>>* = nullptr>
@@ -196,7 +196,7 @@ struct IndexOpts {
 		return *this;
 	}
 	template <typename Str, std::enable_if_t<std::is_assignable_v<std::string, Str>>* = nullptr>
-	[[nodiscard]] IndexOpts&& SetConfig(IndexType indexType, Str&& config) && {
+	IndexOpts&& SetConfig(IndexType indexType, Str&& config) && {
 		return std::move(SetConfig(indexType, std::forward<Str>(config)));
 	}
 	const std::string& Config() const& noexcept { return config_; }

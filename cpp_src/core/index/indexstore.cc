@@ -34,7 +34,7 @@ void IndexStore<key_string>::Delete(const Variant& key, [[maybe_unused]] IdType 
 		const auto staticSizeApproximate = size_t(float(sizeof(unordered_str_map<int>::value_type)) / str_map.max_load_factor());
 		memStat_.dataSize -= staticSizeApproximate + strSize;
 		strHolder.Add(std::move(keyIt->first), strSize);
-		str_map.template erase<no_deep_clean>(keyIt);
+		rx_unused = str_map.template erase<no_deep_clean>(keyIt);
 	}
 }
 template <typename T>
@@ -108,7 +108,7 @@ void IndexStore<T>::Upsert(VariantArray& result, const VariantArray& keys, IdTyp
 		return;
 	}
 	if (keys.empty()) {
-		Upsert(Variant{}, id, clearCache);
+		rx_unused = Upsert(Variant{}, id, clearCache);
 	} else {
 		result.reserve(keys.size());
 		for (const auto& key : keys) {

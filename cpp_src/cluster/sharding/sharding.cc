@@ -21,7 +21,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 	for (auto it = q.Entries().cbegin(), next = it, end = q.Entries().cend(); it != end; ++it) {
 		++next;
 		it->Visit(
-			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry, DistinctQueryEntry, KnnQueryEntry>{},
+			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry, MultiDistinctQueryEntry, KnnQueryEntry>{},
 			[&](const QueryEntry& qe) {
 				if (containsKey) {
 					if (keys_.IsShardIndex(ns, qe.FieldName())) {
@@ -38,7 +38,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 						if (hostId == ShardingKeyType::ProxyOff) {
 							hostId = id;
 							shardKey = qe.Values()[0];
-							shardKey.EnsureHold();
+							rx_unused = shardKey.EnsureHold();
 						} else if (hostId != id) {
 							throw Error(errLogic, "Shard key from other node");
 						}
@@ -64,7 +64,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 			[&](const Bracket&) {
 				for (auto i = it.cbegin().PlainIterator(), end = it.cend().PlainIterator(); i != end; ++i) {
 					i->Visit(
-						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry, DistinctQueryEntry, KnnQueryEntry>{},
+						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry, MultiDistinctQueryEntry, KnnQueryEntry>{},
 						[&](const QueryEntry& qe) {
 							if (keys_.IsShardIndex(ns, qe.FieldName())) {
 								throw Error(errLogic, "Shard key condition cannot be included in bracket");
@@ -184,7 +184,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::Connect(int shardId, Error& 
 	const auto reconnectTs = connections_.reconnectTs;
 	rlk.unlock();
 
-	std::unique_lock wlk(connections_.m);
+	unique_lock wlk(connections_.m);
 	if (connections_.shutdown) {
 		reconnectStatus = connections_.status;
 		return {};
@@ -232,7 +232,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 		auto conn = connections_[i];
 		auto& c = *conn;
 		auto err = c.WithCompletion([i, stData, conn = std::move(conn)](const Error& err) {
-						std::lock_guard lck(stData->mtx);
+						lock_guard lck(stData->mtx);
 						++stData->completed;
 						if (err.ok()) {
 							stData->onlineIdx = i;
@@ -243,12 +243,12 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 						}
 					}).Status(true);
 		if (!err.ok()) {
-			std::lock_guard lck(stData->mtx);
+			lock_guard lck(stData->mtx);
 			++stData->completed;
 		}
 	}
 	const Query q = Query(std::string(kReplicationStatsNamespace)).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
-	std::unique_lock lck(stData->mtx);
+	unique_lock lck(stData->mtx);
 	stData->cv.wait(lck, [stData] { return stData->onlineIdx >= 0 || stData->completed == stData->statuses.size(); });
 	const int idx = stData->onlineIdx;
 	lck.unlock();
@@ -362,8 +362,8 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 				for (auto& k : keys) {
 					for (auto& [l, r, _] : k.values) {
 						(void)_;
-						l.convert(fieldType, nullptr, nullptr);
-						r.convert(fieldType, nullptr, nullptr);
+						rx_unused = l.convert(fieldType, nullptr, nullptr);
+						rx_unused = r.convert(fieldType, nullptr, nullptr);
 					}
 				}
 			} catch (const Error& err) {
@@ -464,7 +464,7 @@ ConnectionsPtr LocatorService::GetShardsConnections(std::string_view ns, int sha
 	ConnectionsPtr connections = getConnectionsFromCache(ns, shardId, rebuildCache);
 	lk.unlock();
 	if (rebuildCache) {
-		std::unique_lock lck(m_);
+		unique_lock lck(m_);
 		connections = getConnectionsFromCache(ns, shardId, rebuildCache);
 		if (rebuildCache) {
 			connections = rebuildConnectionsVector(ns, shardId, status);
@@ -606,7 +606,7 @@ Connections::Connections(const Connections& obj) noexcept
 	: base(obj), actualIndex(obj.actualIndex), reconnectTs(obj.reconnectTs), status(obj.status), shutdown(obj.shutdown) {}
 
 void Connections::Shutdown() {
-	std::lock_guard lck(m);
+	lock_guard lck(m);
 	if (!shutdown) {
 		for (auto& conn : *this) {
 			conn->Stop();

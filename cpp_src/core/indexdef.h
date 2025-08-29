@@ -18,7 +18,7 @@ class WrSerializer;
 
 using JsonPaths = std::vector<std::string>;
 
-class IndexDef {
+class [[nodiscard]] IndexDef {
 public:
 	explicit IndexDef(std::string name) noexcept : name_{std::move(name)} { Validate(); }
 	IndexDef(std::string name, JsonPaths jsonPaths, std::string indexType, std::string fieldType, IndexOpts opts, int64_t expireAfter = 0);
@@ -26,13 +26,13 @@ public:
 	IndexDef(std::string name, std::string indexType, std::string fieldType, IndexOpts opts);
 	IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexOpts opts);
 	void GetJSON(WrSerializer& ser, ExtraIndexDescription withExtras = ExtraIndexDescription_False) const;
-	[[nodiscard]] ::IndexType IndexType() const { return DetermineIndexType(name_, indexType_, fieldType_); }
-	[[nodiscard]] const std::string& Name() const& noexcept { return name_; }
-	[[nodiscard]] const reindexer::JsonPaths& JsonPaths() const& noexcept { return jsonPaths_; }
-	[[nodiscard]] const std::string& IndexTypeStr() const& noexcept { return indexType_; }
-	[[nodiscard]] const std::string& FieldType() const& noexcept { return fieldType_; }
-	[[nodiscard]] const IndexOpts& Opts() const& noexcept { return opts_; }
-	[[nodiscard]] int64_t ExpireAfter() const noexcept { return expireAfter_; }
+	::IndexType IndexType() const { return DetermineIndexType(name_, indexType_, fieldType_); }
+	const std::string& Name() const& noexcept { return name_; }
+	const reindexer::JsonPaths& JsonPaths() const& noexcept { return jsonPaths_; }
+	const std::string& IndexTypeStr() const& noexcept { return indexType_; }
+	const std::string& FieldType() const& noexcept { return fieldType_; }
+	const IndexOpts& Opts() const& noexcept { return opts_; }
+	int64_t ExpireAfter() const noexcept { return expireAfter_; }
 
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
 	void SetName(Str&& name) {
@@ -81,7 +81,7 @@ public:
 private:
 	void initFromIndexType(::IndexType);
 	static void validate(::IndexType, size_t jsonPathsCount, const IndexOpts&);
-	[[nodiscard]] bool isSortable() const noexcept;
+	bool isSortable() const noexcept;
 
 	std::string name_;
 	reindexer::JsonPaths jsonPaths_;
@@ -91,7 +91,7 @@ private:
 	int64_t expireAfter_ = 0;
 };
 
-[[nodiscard]] bool isStore(IndexType type) noexcept;
-[[nodiscard]] bool validateIndexName(std::string_view name, IndexType type) noexcept;
+bool isStore(IndexType type) noexcept;
+bool validateIndexName(std::string_view name, IndexType type) noexcept;
 
 }  // namespace reindexer

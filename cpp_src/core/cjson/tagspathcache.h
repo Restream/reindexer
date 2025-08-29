@@ -11,7 +11,7 @@
 namespace reindexer {
 
 class [[nodiscard]] FieldProperties {
-	struct NotIndexedT {};
+	struct [[nodiscard]] NotIndexedT {};
 
 public:
 	static constexpr NotIndexedT kNotIndexed{};
@@ -20,15 +20,15 @@ public:
 					reindexer::IsSparse isSparse) noexcept
 		: indexNumber_(indexNumber), arrayDim_(arrayDim), valueType_{valueType}, isIndexed_{true}, isArray_{isArray}, isSparse_{isSparse} {}
 
-	[[nodiscard]] bool IsIndexed() const noexcept { return isIndexed_; }
-	[[nodiscard]] bool IsRegularIndex() const noexcept { return isIndexed_ && !isSparse_; }
-	[[nodiscard]] bool IsSparseIndex() const noexcept { return isIndexed_ && isSparse_; }
+	bool IsIndexed() const noexcept { return isIndexed_; }
+	bool IsRegularIndex() const noexcept { return isIndexed_ && !isSparse_; }
+	bool IsSparseIndex() const noexcept { return isIndexed_ && isSparse_; }
 	reindexer::IsArray IsArray() const noexcept { return isArray_; }
 	reindexer::IsSparse IsSparse() const noexcept { return isSparse_; }
-	[[nodiscard]] int IndexNumber() const noexcept { return (isIndexed_ && !isSparse_) ? indexNumber_ : -1; }
-	[[nodiscard]] int SparseNumber() const noexcept { return indexNumber_; }
+	int IndexNumber() const noexcept { return (isIndexed_ && !isSparse_) ? indexNumber_ : -1; }
+	int SparseNumber() const noexcept { return indexNumber_; }
 	KeyValueType ValueType() const noexcept { return valueType_; }
-	[[nodiscard]] uint32_t ArrayDim() const noexcept { return arrayDim_; }
+	uint32_t ArrayDim() const noexcept { return arrayDim_; }
 
 private:
 	int indexNumber_{-1};
@@ -101,7 +101,7 @@ public:
 	}
 
 	void Clear() noexcept { entries_.clear(); }
-	[[nodiscard]] bool Empty() const noexcept { return entries_.empty(); }
+	bool Empty() const noexcept { return entries_.empty(); }
 
 private:
 	struct [[nodiscard]] CacheEntry {

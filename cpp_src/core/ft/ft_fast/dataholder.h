@@ -19,7 +19,7 @@ namespace reindexer {
 class RdxContext;
 
 // unique document in the namespace (if different rows contain the same text document, then it will correspond to one vdoc)
-struct VDocEntry {
+struct [[nodiscard]] VDocEntry {
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::string keyDoc;
 #endif
@@ -31,7 +31,7 @@ struct VDocEntry {
 
 // documents for the word
 template <typename IdCont>
-class PackedWordEntry {
+class [[nodiscard]] PackedWordEntry {
 public:
 	PackedWordEntry() noexcept = default;
 	PackedWordEntry(const PackedWordEntry&) = delete;
@@ -44,7 +44,7 @@ public:
 	// Necessary for correct rebuilding of the last step
 	size_t cur_step_pos = 0;
 };
-class WordEntry {
+class [[nodiscard]] WordEntry {
 public:
 	WordEntry() noexcept = default;
 	WordEntry(const IdRelSet& _vids) : vids_(_vids) {}
@@ -58,9 +58,9 @@ public:
 
 	IdRelSet vids_;
 };
-enum ProcessStatus { FullRebuild, RecommitLast, CreateNew };
+enum [[nodiscard]] ProcessStatus { FullRebuild, RecommitLast, CreateNew };
 
-struct WordTypo {
+struct [[nodiscard]] WordTypo {
 	WordTypo() = default;
 	explicit WordTypo(WordIdType w) noexcept : word(w) {}
 	explicit WordTypo(WordIdType w, const typos_context::TyposVec& p) noexcept : word(w), positions(p) {}
@@ -76,9 +76,9 @@ struct WordTypo {
 
 static_assert(sizeof(WordTypo) <= 8, "This size is matter for overall size of the typos map");
 
-class IDataHolder {
+class [[nodiscard]] IDataHolder {
 public:
-	struct CommitStep {
+	struct [[nodiscard]] CommitStep {
 		CommitStep() : wordOffset_(0) {}
 
 		CommitStep(const CommitStep&) = delete;
@@ -196,7 +196,7 @@ public:	 // TODO: #1688 Fix private class data isolation here
 };
 
 template <typename IdCont>
-class DataHolder : public IDataHolder {
+class [[nodiscard]] DataHolder : public IDataHolder {
 public:
 	explicit DataHolder(FtFastConfig* c);
 	void Process(size_t fieldSize, bool multithread) final;

@@ -5,6 +5,7 @@
 
 #include <unordered_map>
 #include "core/transaction/transaction.h"
+#include "estl/mutex.h"
 #include "net/ev/ev.h"
 #include "tools/serializer.h"
 
@@ -18,7 +19,7 @@ class Reindexer;
 
 namespace grpc {
 
-class ReindexerService : public Reindexer::Service {
+class [[nodiscard]] ReindexerService : public Reindexer::Service {
 public:
 	using Base = Reindexer::Service;
 	ReindexerService(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout, reindexer::net::ev::dynamic_loop& loop);
@@ -68,7 +69,7 @@ public:
 									   ErrorResponse* response) override;
 
 private:
-	struct TxData {
+	struct [[nodiscard]] TxData {
 		std::shared_ptr<Transaction> tx;
 		steady_clock_w::time_point txDeadline;
 		std::string dbName, nsName;
@@ -92,7 +93,7 @@ private:
 	Error getTx(uint64_t id, TxData& txData);
 
 	reindexer_server::DBManager& dbMgr_;
-	std::mutex m_;
+	mutex m_;
 	std::unordered_map<uint64_t, TxData> transactions_;
 	uint64_t txID_ = {0};
 	const std::chrono::seconds txIdleTimeout_;

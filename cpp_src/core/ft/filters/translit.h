@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-class Translit : public ITokenFilter {
+class [[nodiscard]] Translit : public ITokenFilter {
 public:
 	Translit();
 
@@ -15,7 +15,7 @@ private:
 	void PrepareRussian();
 	void PrepareEnglish();
 
-	struct Context {
+	struct [[nodiscard]] Context {
 		Context() : total_count_(0), num_{0} {}
 
 		void Set(unsigned short num);

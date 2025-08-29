@@ -59,7 +59,7 @@ void PayloadIface<T>::get(int field, VariantArray& keys, HoldT h) const {
 			PayloadFieldValue pv(fieldType, arrPtr + i * elemSize);
 			keys.push_back(pv.Get(h));
 		}
-		keys.MarkArray();
+		rx_unused = keys.MarkArray();
 	} else {
 		keys.push_back(Field(field).Get(h));
 	}
@@ -100,7 +100,7 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher& tags
 			if (tagsPath.back().IsWithIndex()) {
 				kvs.Clear();
 				kvs.emplace_back(Get(fieldIdx, tagsPath.back().Index()));
-				kvs.MarkArray();
+				rx_unused = kvs.MarkArray();
 				return;
 			}
 		}
@@ -673,7 +673,7 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 void PayloadIface<T>::setArray(int field, const VariantArray& keys, Append append) {
 	if (keys.IsNullValue()) {
-		ResizeArray(field, 0, append);
+		rx_unused = ResizeArray(field, 0, append);
 		return;
 	}
 

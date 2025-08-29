@@ -5,7 +5,7 @@ namespace reindexer::net::cproto {
 
 class Args;
 class Writer;
-class RPCEventsPusher : public reindexer::IEventsObserver {
+class [[nodiscard]] RPCEventsPusher : public reindexer::IEventsObserver {
 public:
 	void SetWriter(Writer* writer) noexcept { writer_ = writer; }
 

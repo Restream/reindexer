@@ -1,13 +1,15 @@
 #include "core/embedding/embedderscache.h"
 
 #include <list>
-#include <mutex>
 #include <optional>
 #include "core/cjson/jsonbuilder.h"
 #include "core/enums.h"
 #include "core/storage/storagefactory.h"
 #include "core/system_ns_names.h"
 #include "estl/chunk.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
+#include "estl/shared_mutex.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
@@ -76,7 +78,7 @@ Adapter::Adapter(std::span<const std::vector<std::pair<std::string, VariantArray
 	view_ = std::string{ser.Slice()};
 }
 
-[[nodiscard]] chunk Adapter::Content() const {
+chunk Adapter::Content() const {
 	WrSerializer ser;
 	{  // {'data':[*view_*]}
 		JsonBuilder json{ser};
@@ -119,14 +121,14 @@ public:
 
 	Error EnableStorage(const std::string& storagePathRoot, datastorage::StorageType type) noexcept;
 
-	[[nodiscard]] std::optional<embedding::ValueT> Get(const embedding::Adapter& srcAdapter);
+	std::optional<embedding::ValueT> Get(const embedding::Adapter& srcAdapter);
 	void Put(const embedding::Adapter& srcAdapter, const embedding::ValuesT& values);
 
 	void Clear(NeedCreate recreateStorage) noexcept;
 
-	[[nodiscard]] EmbeddersCacheMemStat GetMemStat() const;
-	[[nodiscard]] LRUCachePerfStat GetPerfStat() const;
-	[[nodiscard]] bool IsActive() const noexcept;
+	EmbeddersCacheMemStat GetMemStat() const;
+	LRUCachePerfStat GetPerfStat() const;
+	bool IsActive() const noexcept;
 
 	void ResetPerfStat() noexcept;
 
@@ -134,10 +136,10 @@ public:
 	void Dump(T& os, std::string_view step, std::string_view offset) const;
 
 private:
-	[[nodiscard]] uint32_t initBaseSize() const noexcept;
-	[[nodiscard]] uint32_t calculateItemSize(const embedding::StrorageKeyT& key) const noexcept;
-	[[nodiscard]] uint32_t calculateStorageItemSize(std::string_view key, uint64_t valueSize) const noexcept;
-	[[nodiscard]] uint32_t calculateStorageItemSize(std::string_view key, std::string_view value) noexcept;
+	uint32_t initBaseSize() const noexcept;
+	uint32_t calculateItemSize(const embedding::StrorageKeyT& key) const noexcept;
+	uint32_t calculateStorageItemSize(std::string_view key, uint64_t valueSize) const noexcept;
+	uint32_t calculateStorageItemSize(std::string_view key, std::string_view value) noexcept;
 	void loadStorage();
 	Error activateStorage(datastorage::StorageType type, const std::string& storageFile);
 
@@ -160,8 +162,8 @@ private:
 	std::atomic_uint64_t hits_{0};
 	std::atomic_uint64_t misses_{0};
 
-	mutable std::mutex cacheMtx_;
-	mutable std::shared_mutex storageMtx_;
+	mutable mutex cacheMtx_;
+	mutable shared_mutex storageMtx_;
 };
 
 EmbeddersLRUCache::EmbeddersLRUCache(CacheTag tag, size_t capacity, uint32_t hitToCache)
@@ -172,7 +174,7 @@ EmbeddersLRUCache::EmbeddersLRUCache(CacheTag tag, size_t capacity, uint32_t hit
 }
 
 bool EmbeddersLRUCache::IsActive() const noexcept {
-	std::shared_lock lck(storageMtx_);
+	shared_lock lck(storageMtx_);
 	return ((capacity_ > 0) && storage_);
 }
 
@@ -187,7 +189,7 @@ Error EmbeddersLRUCache::EnableStorage(const std::string& storagePathRoot, datas
 	}
 
 	std::string storageFile;
-	std::unique_lock lck(storageMtx_);
+	unique_lock lck(storageMtx_);
 	if (!storagePath_.empty()) {
 		return {errParams, "Embedders cache storage is already enabled"};
 	}
@@ -224,7 +226,7 @@ std::optional<embedding::ValueT> EmbeddersLRUCache::Get(const embedding::Adapter
 	}
 
 	{
-		std::lock_guard lck(cacheMtx_);
+		lock_guard lck(cacheMtx_);
 		const auto it = map_.find(srcAdapter.View());
 		if (it == map_.end()) {
 			misses_.fetch_add(1u, std::memory_order_relaxed);
@@ -240,7 +242,7 @@ std::optional<embedding::ValueT> EmbeddersLRUCache::Get(const embedding::Adapter
 	std::string value;
 	{
 		static constexpr StorageOpts opts;
-		std::shared_lock lck(storageMtx_);
+		shared_lock lck(storageMtx_);
 		const auto err = storage_->Read(opts, srcAdapter.View(), value);
 		if (!err.ok()) {
 			misses_.fetch_add(1u, std::memory_order_relaxed);
@@ -265,7 +267,7 @@ void EmbeddersLRUCache::Put(const embedding::Adapter& srcAdapter, const embeddin
 	uint32_t hitToCache = hitInitVal;
 
 	{
-		std::lock_guard lck(cacheMtx_);
+		lock_guard lck(cacheMtx_);
 		const auto& key = srcAdapter.View();
 		const auto it = map_.find(key);
 		if (it != map_.end()) {
@@ -278,7 +280,7 @@ void EmbeddersLRUCache::Put(const embedding::Adapter& srcAdapter, const embeddin
 				map_.erase(keyToRemove);
 				queue_.pop_back();
 
-				std::shared_lock lckStorage(storageMtx_);
+				shared_lock lckStorage(storageMtx_);
 				auto err = storage_->Delete(opts, keyToRemove);
 				lckStorage.unlock();
 				if (!err.ok()) {
@@ -304,7 +306,7 @@ void EmbeddersLRUCache::Put(const embedding::Adapter& srcAdapter, const embeddin
 		wrser.PutFloatVectorView(values.front().View());
 		auto val = wrser.Slice();
 
-		std::shared_lock lck(storageMtx_);
+		shared_lock lck(storageMtx_);
 		const auto err = storage_->Write(opts, srcAdapter.View(), val);
 		lck.unlock();
 		if (!err.ok()) {
@@ -322,7 +324,7 @@ void EmbeddersLRUCache::Clear(NeedCreate createStorage) noexcept {
 	try {
 		totalCacheSize_ = initBaseSize();
 		{
-			std::scoped_lock lck{cacheMtx_, storageMtx_};
+			scoped_lock lck{cacheMtx_, storageMtx_};
 			SearchMap().swap(map_);
 			OrderQueue().swap(queue_);
 			if (storage_) {
@@ -359,7 +361,7 @@ EmbeddersCacheMemStat EmbeddersLRUCache::GetMemStat() const {
 	cache.emptyCount = 0;
 	cache.hitCountLimit = hitToCache_;
 	{
-		std::shared_lock lck(storageMtx_);
+		shared_lock lck(storageMtx_);
 		stats.storageSize = totalStorageSize_.load(std::memory_order_relaxed);
 		stats.storagePath = storagePath_;
 		stats.storageEnabled = !storagePath_.empty();
@@ -367,7 +369,7 @@ EmbeddersCacheMemStat EmbeddersLRUCache::GetMemStat() const {
 		stats.storageOK = (storageStatus_ == kStorageStatusOK || storageStatus_ == kStorageStatusDisabled) && !stats.storagePath.empty();
 	}
 	{
-		std::lock_guard lck(cacheMtx_);
+		lock_guard lck(cacheMtx_);
 		cache.totalSize = totalCacheSize_ + storagePath_.capacity() * sizeof(std::string::value_type) +
 						  storageStatus_.capacity() * sizeof(std::string::value_type);
 		cache.itemsCount = map_.size();
@@ -494,7 +496,7 @@ EmbeddersCache::~EmbeddersCache() = default;
 
 Error EmbeddersCache::UpdateConfig(fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str> config) {
 	try {
-		std::unique_lock lk(mtx_);
+		unique_lock lk(mtx_);
 		if (!config_.has_value() || *config_ != config) {
 			h_vector<CacheTag, 1> tags;
 			if (config_.has_value()) {
@@ -527,7 +529,7 @@ Error EmbeddersCache::EnableStorage(const std::string& storagePathRoot, datastor
 		return errOK;
 	}
 
-	std::unique_lock lk(mtx_);
+	unique_lock lk(mtx_);
 	if (!storagePath_.empty()) {
 		return {errParams, "Embedders cache storage is already enabled"};
 	}
@@ -548,7 +550,7 @@ Error EmbeddersCache::EnableStorage(const std::string& storagePathRoot, datastor
 }
 
 void EmbeddersCache::IncludeTag(std::string_view tag) {
-	std::unique_lock lk(mtx_);
+	unique_lock lk(mtx_);
 	includeTag(CacheTag{tag});
 }
 
@@ -558,7 +560,7 @@ std::optional<embedding::ValueT> EmbeddersCache::Get(const CacheTag& tag, const 
 	}
 
 	{
-		std::shared_lock lk(mtx_);
+		shared_lock lk(mtx_);
 		const auto it = caches_.find(tag, tag.Hash());
 		if (it != caches_.end()) {
 			return it->second->Get(srcAdapter);
@@ -575,7 +577,7 @@ void EmbeddersCache::Put(const CacheTag& tag, const embedding::Adapter& srcAdapt
 	}
 
 	{
-		std::shared_lock lk(mtx_);
+		shared_lock lk(mtx_);
 		const auto it = caches_.find(tag, tag.Hash());
 		if (it != caches_.end()) {
 			return it->second->Put(srcAdapter, values);
@@ -586,7 +588,7 @@ void EmbeddersCache::Put(const CacheTag& tag, const embedding::Adapter& srcAdapt
 }
 
 bool EmbeddersCache::IsActive() const noexcept {
-	std::shared_lock lk(mtx_);
+	shared_lock lk(mtx_);
 	for (const auto& cache : caches_) {
 		if (cache.second->IsActive()) {
 			return true;
@@ -596,7 +598,7 @@ bool EmbeddersCache::IsActive() const noexcept {
 }
 
 NamespaceMemStat EmbeddersCache::GetMemStat() const {
-	std::shared_lock lk(mtx_);
+	shared_lock lk(mtx_);
 	NamespaceMemStat stats;
 	stats.name = NamespaceName{kEmbeddersPseudoNamespace};
 	stats.type = NamespaceMemStat::kEmbeddersStatType;
@@ -621,7 +623,7 @@ NamespaceMemStat EmbeddersCache::GetMemStat() const {
 }
 
 EmbedderCachePerfStat EmbeddersCache::GetPerfStat(std::string_view tag) const {
-	std::shared_lock lk(mtx_);
+	shared_lock lk(mtx_);
 	CacheTag tg(tag);
 	auto it = caches_.find(tg, tg.Hash());
 	if (it == caches_.end()) {
@@ -638,7 +640,7 @@ EmbedderCachePerfStat EmbeddersCache::GetPerfStat(std::string_view tag) const {
 }
 
 void EmbeddersCache::ResetPerfStat() noexcept {
-	std::shared_lock lk(mtx_);
+	shared_lock lk(mtx_);
 	for (const auto& cache : caches_) {
 		cache.second->ResetPerfStat();
 	}
@@ -649,7 +651,7 @@ void EmbeddersCache::Clear(std::string_view tag) {
 		throw Error(errParams, "Attempt to clear cache with unspecified cache_tag");
 	}
 
-	std::shared_lock lk(mtx_);
+	shared_lock lk(mtx_);
 	const bool forAny = (kWildcard == tag);
 	for (const auto& cache : caches_) {
 		if (forAny || (cache.first.Tag() == tag)) {
@@ -664,7 +666,7 @@ void EmbeddersCache::Dump(T& os, std::string_view step, std::string_view offset)
 	newOffset += step;
 
 	os << offset << "{\n" << newOffset << "EmbeddersCache: [\n";
-	std::shared_lock lk(mtx_);
+	shared_lock lk(mtx_);
 	bool first = true;
 	for (const auto& cache : caches_) {
 		os << newOffset << step << cache.first << ":";

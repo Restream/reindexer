@@ -13,7 +13,7 @@ using std::chrono::milliseconds;
 
 enum class CancelType : uint8_t { None = 0, Explicit, Timeout };
 
-struct IRdxCancelContext {
+struct [[nodiscard]] IRdxCancelContext {
 	virtual CancelType GetCancelType() const noexcept = 0;
 	virtual bool IsCancelable() const noexcept = 0;
 	virtual std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept = 0;
@@ -43,7 +43,7 @@ void ThrowOnCancel(const Context& ctx, std::string_view errMsg = std::string_vie
 	throw Error(errCanceled, errMsg.empty() ? kDefaultCancelError : errMsg);
 }
 
-class RdxDeadlineContext : public IRdxCancelContext {
+class [[nodiscard]] RdxDeadlineContext : public IRdxCancelContext {
 public:
 	using ClockT = steady_clock_w;
 	using time_point = typename ClockT::time_point;
@@ -205,7 +205,7 @@ private:
 	const lsn_t originLsn_;
 	int emitterServerId_ = -1;
 	int shardId_ = ShardingKeyType::NotSetShard;
-	enum class HoldT : uint8_t { kHold, kPtr, kEmpty } holdStatus_;
+	enum class [[nodiscard]] HoldT : uint8_t { kHold, kPtr, kEmpty } holdStatus_;
 	bool shardingParallelExecution_ = false;
 	mutable bool noWaitSync_ = false;  // FIXME: Create SyncContext and move this parameter into it
 	key_string replToken_;
@@ -213,7 +213,7 @@ private:
 
 class QueryResults;
 
-class InternalRdxContext {
+class [[nodiscard]] InternalRdxContext {
 public:
 	InternalRdxContext() noexcept {}
 	InternalRdxContext(const InternalRdxContext&) = default;

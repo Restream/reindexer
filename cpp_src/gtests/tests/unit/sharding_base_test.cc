@@ -8,7 +8,10 @@
 #include "core/itemimpl.h"
 #include "core/queryresults/queryresults.h"
 #include "core/system_ns_names.h"
+#include "estl/condition_variable.h"
 #include "estl/gift_str.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "estl/tuple_utils.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tests/unit/csv2jsonconverter.h"
@@ -1645,7 +1648,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithActualConfigTest) {
 	for (int shardId = 0; shardId < shardsCount; ++shardId) {
 		std::next_permutation(nodeIds.begin(), nodeIds.end());
 		auto& shard = svc_[shardId];
-		shard[0].Get()->GetReplicationStats("cluster");	 // Await replication startup
+		rx_unused = shard[0].Get()->GetReplicationStats("cluster");	 // Await replication startup
 		for (size_t i = 0; i < nodeIds.size(); ++i) {
 			const bool useIncorrectCfg = (i != nodeIds.size() - 1);
 			auto& localCfg = useIncorrectCfg ? configIncorrect : config;
@@ -1928,8 +1931,8 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 	for (auto thCnt : threadsCountVec) {
 		std::atomic<unsigned> requests = {0};
 		std::vector<std::thread> threads;
-		std::condition_variable cv;
-		std::mutex mtx;
+		reindexer::condition_variable cv;
+		reindexer::mutex mtx;
 		bool ready = false;
 		for (unsigned i = 0; i < thCnt; ++i) {
 			std::shared_ptr<client::Reindexer> rx = std::make_shared<client::Reindexer>();
@@ -1939,7 +1942,7 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			threads.emplace_back([&q, rx, &requests, &cv, &mtx, &ready] {
-				std::unique_lock lck(mtx);
+				reindexer::unique_lock lck(mtx);
 				cv.wait(lck, [&ready] { return ready; });
 				lck.unlock();
 				while (++requests < kTotalRequestsCount) {
@@ -1951,7 +1954,7 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 		}
 
 		// <Start profiling here>
-		std::unique_lock lck(mtx);
+		reindexer::unique_lock lck(mtx);
 		ready = true;
 		const auto beg = steady_clock_w::now();
 		cv.notify_all();
@@ -2411,7 +2414,7 @@ TEST_F(ShardingApi, ConfigYaml) {
 		}
 	}
 
-	struct TestCase {
+	struct [[nodiscard]] TestCase {
 		std::string yaml;
 		std::variant<Cfg, Error> expected;
 		std::optional<std::string> yamlForCompare = std::nullopt;
@@ -3019,9 +3022,9 @@ TEST_F(ShardingApi, ConfigJson) {
 }
 
 TEST_F(ShardingApi, ConfigKeyValues) {
-	struct shardInfo {
+	struct [[nodiscard]] shardInfo {
 		bool result;
-		struct Key {
+		struct [[nodiscard]] Key {
 			Key(const char* c_str) : left(std::string(c_str)) {}
 			Key(std::string&& left, std::string&& right) : left(std::move(left)), right(std::move(right)) {}
 			std::string left, right;
@@ -3312,7 +3315,7 @@ TEST_F(ShardingApi, SelectOffsetLimit) {
 	Fill(kNsName, rx, "key1", kMaxCountOnShard, kMaxCountOnShard);
 	Fill(kNsName, rx, "key2", kMaxCountOnShard * 2, kMaxCountOnShard);
 
-	struct LimitOffsetCase {
+	struct [[nodiscard]] LimitOffsetCase {
 		unsigned offset;
 		unsigned limit;
 		unsigned count;
@@ -3369,7 +3372,7 @@ template <>
 class CompareFields<>;
 
 template <typename T>
-class CompareFields<T> {
+class [[nodiscard]] CompareFields<T> {
 public:
 	CompareFields(std::string_view f, std::vector<T> v = {}) : field_{f}, forcedValues_{std::move(v)} {}
 	int operator()(reindexer::client::QueryResults::Iterator& it) {
@@ -3407,7 +3410,7 @@ private:
 };
 
 template <typename T, typename... Ts>
-class CompareFields<T, Ts...> : private CompareFields<Ts...> {
+class [[nodiscard]] CompareFields<T, Ts...> : private CompareFields<Ts...> {
 	using Base = CompareFields<Ts...>;
 	template <typename>
 	using string_view = std::string_view;
@@ -3453,7 +3456,7 @@ private:
 };
 
 template <typename... Ts>
-class CompareExpr {
+class [[nodiscard]] CompareExpr {
 public:
 	CompareExpr(std::vector<std::string>&& fields, std::function<double(Ts...)>&& f) : fields_{std::move(fields)}, func_{std::move(f)} {}
 	int operator()(reindexer::client::QueryResults::Iterator& it) { return impl(it, std::index_sequence_for<Ts...>{}); }
@@ -3474,7 +3477,7 @@ private:
 	std::function<double(Ts...)> func_;
 };
 
-class ShardingApi::CompareShardId {
+class [[nodiscard]] ShardingApi::CompareShardId {
 public:
 	CompareShardId(const ShardingApi& api) noexcept : api_{api} {}
 	int operator()(reindexer::client::QueryResults::Iterator& it) {
@@ -3506,7 +3509,7 @@ TEST_F(ShardingApi, OrderBy) {
 	Init(std::move(cfg));
 	const size_t tableSize = rand() % 200 + 1;
 	Fill(default_namespace, 0, 0, tableSize);
-	struct SortCase {
+	struct [[nodiscard]] SortCase {
 		std::string expression;
 		std::variant<std::vector<int>, std::vector<std::string>, std::vector<std::tuple<int, std::string>>,
 					 std::vector<std::tuple<std::string, int>>>
@@ -3589,7 +3592,7 @@ TEST_F(ShardingApi, OrderBy) {
 		 {},
 		 CompareExpr<int, int>{{kFieldDataInt, kSparseFieldDataInt}, [](int data, int sparse) { return 5.0 * sparse + data / 4.0; }}},
 	};
-	struct TestCase {
+	struct [[nodiscard]] TestCase {
 		TestCase(const SortCase& sc, bool d = ((rand() % 2) == 0)) : sort{sc}, desc{d} {}
 		SortCase sort;
 		bool desc;

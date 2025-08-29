@@ -45,11 +45,13 @@ about reindexer server and HTTP API refer to
   - [Counting](#counting)
   - [Text pattern search with LIKE condition](#text-pattern-search-with-like-condition)
   - [Update queries](#update-queries)
+    - [Update queries with inner joins and subqueries](#update-queries-with-inner-joins-and-subqueries)
     - [Update field with object](#update-field-with-object)
     - [Remove field via update-query](#remove-field-via-update-query)
     - [Update array elements by indexes](#update-array-elements-by-indexes)
     - [Concatenate arrays](#concatenate-arrays)
     - [Remove array elements by values](#remove-array-elements-by-values)
+  - [Delete queries](#delete-queries)
   - [Transactions and batch update](#transactions-and-batch-update)
     - [Synchronous mode](#synchronous-mode)
     - [Async batch mode](#async-batch-mode)
@@ -752,8 +754,7 @@ Generally for full text search with reasonable speed we recommend to use fulltex
 UPDATE queries are used to modify existing items of a namespace.
 There are several kinds of update queries: updating existing fields, adding new fields and dropping existing non-indexed fields.
 
-UPDATE Sql-Syntax
-
+General UPDATE SQL-Syntax:
 ```sql
 UPDATE nsName
 SET field1 = value1, field2 = value2, ..
@@ -802,6 +803,31 @@ Example of using Update queries in golang code:
 db.Query("items").Where("id", reindexer.EQ, 40).Set("field1", value1).Set("field2", value2).Update()
 ```
 - there can be multiple `.Set` expressions - one for a field. Also, it is possible to combine several `Set...` expressions of different types in one query, like this: `Set().SetExpression().SetObject()...`
+
+#### Update queries with inner joins and subqueries
+
+Inner join and subquery may also be used as WHERE-condition.  Inner joins don't actually joining items, but will be applied as filtering condition.
+
+SQL syntax:
+```sql
+UPDATE ns SET val = 100 WHERE INNER JOIN (SELECT * FROM join_ns WHERE id > 100) ON ns.id = join_ns.id
+UPDATE ns SET val = 100 WHERE field = (SELECT id FROM subq_ns WHERE val = 200)
+```
+Go syntax:
+```go
+db.Query(items).
+	OpenBracket()
+		q.InnerJoin(DB.Query(joinItems).Where("id", reindexer.GT, 100)).
+		On("ID", reindexer.EQ, "ID")
+	q.CloseBracket().
+	Set("val", 100).Update()
+
+DB.Query(items).
+	Where("field", reindexer.EQ,
+		DB.Query(subq_ns).Select("id").Where("val", reindexer.EQ, 200)
+	).
+	Set("val", 100).Update()
+```
 
 #### Update field with object
 
@@ -968,6 +994,38 @@ UPDATE NS SET integer_array = array_remove(integer_array, integer_array2) || arr
 db.Query("main_ns").SetExpression("integer_array", "[3] || array_remove(integer_array, integer_array2) || integer_array3 || array_remove(integer_array, [8,1]) || [2,4]").Update()
 ```
 
+### Delete queries
+
+Reindexer also supports `delete`-queries. Those queries may contain conditions, inner joins and subqueries. Inner joins don't actually joining items, but will be applied as filtering condition.
+
+SQL syntax for delete queries:
+```sql
+DELETE FROM ns WHERE field = 111
+DELETE FROM ns WHERE id < 5 OR INNER JOIN ns_join ON ns.id = ns_join.id
+DELETE FROM ns WHERE id < 5 OR INNER JOIN (SELECT * FROM ns_join WHERE age > 18) ON ns.id = ns_join.id
+DELETE FROM ns WHERE id = (SELECT id FROM sub_ns WHERE age < 13)
+```
+
+Go syntax for delete queries:
+```go
+// Delete query with INNER JOIN
+DB.Query(ns).Where("id", reindexer.EQ, 1).
+	OpenBracket().
+		InnerJoin(
+			DB.Query(join_ns).Where("DEVICE", reindexer.EQ, "android"), 
+			"some random name").
+		On("PRICE_ID", reindexer.SET, "ID")
+	CloseBracket().
+	Delete()
+
+// Delete query with subquery
+DB.Query(ns).
+	Where("ID", reindexer.EQ,
+		DB.Query(sub_ns).Select("id").Where("age", reindexer.LT, 13)
+	).
+	Delete()
+```
+
 ### Transactions and batch update
 
 Reindexer supports transactions. Transaction are performs atomic namespace update. There are synchronous and async transaction available. To start transaction method `db.BeginTx()` is used. This method creates transaction object, which provides usual Update/Upsert/Insert/Delete interface for application.
@@ -1117,26 +1175,18 @@ Note that usually `Or` operator implements short-circuiting for `Where` conditio
 
 #### Anti-join
 
-Reindexer does not support `ANTI JOIN` SQL construction, however, it supports logical operations with JOINs. In fact `NOT (INNER JOIN ...)` is totally equivalent to the `ANTI JOIN`:
+Reindexer does not support `ANTI JOIN` SQL construction, however, it supports logical operations with JOINs. In fact `NOT INNER JOIN ...` is totally equivalent to the `ANTI JOIN`:
 ```go
 query := db.Query("items_with_join").
 	Not().
-	OpenBracket(). // Brackets are essential here for NOT to work
-query.InnerJoin(
+	InnerJoin(
 	db.Query("actors").
 		WhereBool("is_visible", reindexer.EQ, true),
 	"actors").
 	On("id", reindexer.EQ, "id")
-query.CloseBracket() // CloseBracket has to be applied to the main query and can't be called directly after On()
 ```
 ```SQL
-SELECT * FROM items_with_join
-WHERE
-	NOT (
-		INNER JOIN (
-			SELECT * FROM actors WHERE is_visible = true
-		) ON items_with_join.id = actors.id
-	)
+SELECT * FROM items_with_join WHERE NOT INNER JOIN (SELECT * FROM actors WHERE is_visible = true) ON items_with_join.id = actors.id
 ```
 
 #### Joinable interface

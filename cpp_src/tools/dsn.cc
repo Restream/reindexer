@@ -26,7 +26,7 @@ DSN& DSN::WithDb(std::string&& db) & {
 	bool dbEmpty = false;
 	if (parsed_.scheme() == "ucproto"sv) {
 		std::vector<std::string_view> pathParts;
-		reindexer::split(std::string_view(parsed_.path()), ":", true, pathParts);
+		rx_unused = reindexer::split(std::string_view(parsed_.path()), ":", true, pathParts);
 		dbEmpty = pathParts.size() < 2 || pathParts.back() == "/"sv;
 	} else if (parsed_.scheme() == "cproto"sv || parsed_.scheme() == "cprotos"sv) {
 		dbEmpty = parsed_.db().empty();

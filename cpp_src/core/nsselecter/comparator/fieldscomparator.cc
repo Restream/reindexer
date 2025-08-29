@@ -9,8 +9,8 @@
 
 namespace {
 
-class ArrayAdapter {
-	class ConstIterator {
+class [[nodiscard]] ArrayAdapter {
+	class [[nodiscard]] ConstIterator {
 	public:
 		ConstIterator(const ArrayAdapter& aa, size_t i) noexcept : aa_{aa}, index_{i} {}
 		ConstIterator& operator++() noexcept {

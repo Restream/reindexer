@@ -6,9 +6,9 @@
 #include "gtests/tools.h"
 #include "reindexertestapi.h"
 
-class FloatVector : public ::testing::TestWithParam<reindexer::VectorMetric> {
+class [[nodiscard]] FloatVector : public ::testing::TestWithParam<reindexer::VectorMetric> {
 protected:
-	enum class HasIndex : bool { Yes = true, No = false };
+	enum class [[nodiscard]] HasIndex : bool { Yes = true, No = false };
 
 	void SetUp() override;
 

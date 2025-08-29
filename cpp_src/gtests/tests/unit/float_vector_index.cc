@@ -2,6 +2,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest-param-test.h>
 #include <random>
+#include <thread>
 #include "core/cjson/jsonbuilder.h"
 #include "gtests/tests/gtest_cout.h"
 #include "tools/errors.h"
@@ -14,10 +15,9 @@ static constexpr std::string_view kFieldNameRegular = "regular_field"sv;
 
 void FloatVector::SetUp() {
 	auto dir = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "/FloatVectorTest");
-	reindexer::fs::RmDirAll(dir);
+	rx_unused = reindexer::fs::RmDirAll(dir);
 	rt.reindexer = std::make_shared<reindexer::Reindexer>();
-	auto err = rt.reindexer->Connect("builtin://" + dir);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Connect("builtin://" + dir);
 }
 
 static void checkOrdering(const reindexer::QueryResults& qr, reindexer::VectorMetric metric, std::optional<float> radius = std::nullopt) {
@@ -162,7 +162,7 @@ reindexer::Item FloatVector::newItemFromJson(std::string_view nsName, std::strin
 		} else {
 			switch (rand() % 3) {
 				case 0:
-					json.Array(fieldName);
+					json.AddArray(fieldName);
 					break;
 				case 1:
 					json.Null(fieldName);
@@ -192,7 +192,7 @@ void FloatVector::upsertItems(std::string_view nsName, std::string_view fieldNam
 	}
 }
 
-enum class QueryWith : size_t { OnlyK, KandR, OnlyR };
+enum class [[nodiscard]] QueryWith : size_t { OnlyK, KandR, OnlyR };
 
 template <size_t Dimension, typename SearchParamGetterT>
 void FloatVector::runMultithreadQueries(size_t threads, size_t queriesPerThread, std::string_view nsName, std::string_view fieldName,
@@ -339,8 +339,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 			}
 		}
 
-		auto tx = rt.reindexer->NewTransaction(kNsName);
-		ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+		auto tx = rt.NewTransaction(kNsName);
 		std::unordered_set<int> emptyVectors;
 		int totalNewItems = 0;
 		for (size_t j = 0; j < unsigned(rand() % 50 + 250); ++j) {
@@ -395,9 +394,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 			++id;
 			++totalNewItems;
 		}
-		reindexer::QueryResults qr;
-		auto err = rt.reindexer->CommitTransaction(tx, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx_unused = rt.CommitTransaction(tx);
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
 

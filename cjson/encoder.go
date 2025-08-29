@@ -415,7 +415,6 @@ func ParseUuid(str string) (res [2]uint64, err error) {
 			return generateError(ch, str)
 		}
 		res[1] |= num
-		break
 	case 36:
 		if str[8] != '-' || str[13] != '-' || str[18] != '-' || str[23] != '-' {
 			err = fmt.Errorf("Invalid UUID format: '%s'", str)
@@ -582,7 +581,6 @@ func ParseUuid(str string) (res [2]uint64, err error) {
 			return generateError(ch, str)
 		}
 		res[1] |= num
-		break
 	default:
 		err = fmt.Errorf("UUID should consist of 32 hexadecimal digits: '%s'", str)
 		return

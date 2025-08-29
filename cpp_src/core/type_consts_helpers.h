@@ -7,12 +7,12 @@
 
 namespace reindexer {
 
-[[nodiscard]] CondType InvertJoinCondition(CondType);
-[[nodiscard]] CondType InvertNotCondition(CondType);
-[[nodiscard]] std::string_view CondTypeToStr(CondType);
-[[nodiscard]] std::string_view CondTypeToStrShort(CondType);
-[[nodiscard]] std::string_view TagTypeToStr(TagType);
-[[nodiscard]] std::string_view AggTypeToStr(AggType) noexcept;
+CondType InvertJoinCondition(CondType);
+CondType InvertNotCondition(CondType);
+std::string_view CondTypeToStr(CondType);
+std::string_view CondTypeToStrShort(CondType);
+std::string_view TagTypeToStr(TagType);
+std::string_view AggTypeToStr(AggType) noexcept;
 RankOrdering ToRankOrdering(RankedTypeQuery);
 RankedTypeQuery ToRankedTypeQuery(VectorMetric);
 
@@ -155,7 +155,7 @@ constexpr bool IsFloatVector(IndexType type) noexcept {
 /// Get readable Join Type
 /// @param type - join type
 /// @returns string with join type name
-[[nodiscard]] std::string_view JoinTypeName(JoinType type);
+std::string_view JoinTypeName(JoinType type);
 
 }  // namespace reindexer
 

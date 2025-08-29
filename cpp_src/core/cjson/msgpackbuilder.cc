@@ -39,14 +39,13 @@ void MsgPackBuilder::Array(TagName tagName, Serializer& ser, TagType tagType, in
 	}
 }
 
-MsgPackBuilder& MsgPackBuilder::Json(std::string_view name, std::string_view arg) {
+void MsgPackBuilder::Json(std::string_view name, std::string_view arg) {
 	gason::JsonParser parser;
 	auto root = parser.Parse(arg);
 	appendJsonObject(name, root);
-	return *this;
 }
 
-MsgPackBuilder& MsgPackBuilder::End() {
+void MsgPackBuilder::End() {
 	switch (type_) {
 		case ObjType::TypeObjectArray:
 		case ObjType::TypeArray:
@@ -59,7 +58,6 @@ MsgPackBuilder& MsgPackBuilder::End() {
 			break;
 	}
 	type_ = ObjType::TypePlain;
-	return *this;
 }
 
 void MsgPackBuilder::init(int size) {

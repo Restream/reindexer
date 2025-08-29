@@ -8,7 +8,7 @@
 
 namespace reindexer {
 
-struct QueryResults::MergedData {
+struct [[nodiscard]] QueryResults::MergedData {
 	MergedData(const std::string& ns, bool _haveRank, bool _needOutputRank)
 		: pt(ns, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, IsArray_False)}),
 		  haveRank(_haveRank),
@@ -22,7 +22,7 @@ struct QueryResults::MergedData {
 	bool needOutputRank = false;
 };
 
-struct QueryResults::JoinResStorage {
+struct [[nodiscard]] QueryResults::JoinResStorage {
 	void Clear() {
 		jr.Clear();
 		joinedRawData.clear();
@@ -33,7 +33,7 @@ struct QueryResults::JoinResStorage {
 };
 
 template <typename DataT>
-struct QueryResults::ItemDataStorage {
+struct [[nodiscard]] QueryResults::ItemDataStorage {
 	ItemDataStorage(int64_t newIdx, DataT&& d = DataT()) : idx(newIdx), data(std::move(d)) {}
 	void Clear() {
 		data.Clear();
@@ -438,10 +438,12 @@ bool QueryResults::HaveJoined() const noexcept {
 	switch (type_) {
 		case Type::None:
 			return false;
-		case Type::Local:
+		case Type::Local: {
 			assertrx_dbg(local_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-			return local_->qr.joined_.size();
+			auto& joined = local_->qr.joined_;
+			return !joined.empty() && std::any_of(joined.begin(), joined.end(), [](const auto& j) noexcept { return j.TotalItems(); });
+		}
 		case Type::SingleRemote:
 			return remote_[0]->qr.HaveJoined();
 		case Type::MultipleRemote:
@@ -504,6 +506,15 @@ Error QueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) {
 	} catch (Error& e) {
 		return e;
 	}
+}
+
+Expected<std::string> QueryResults::Iterator::GetJSON() {
+	WrSerializer wrser;
+	Error err = GetJSON(wrser, false);
+	if (!err.ok()) {
+		return Unexpected(std::move(err));
+	}
+	return std::string(wrser.Slice());
 }
 
 Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
@@ -627,7 +638,7 @@ void QueryResults::QrMetaData<QrT>::ResetJoinStorage(int64_t idx) const {
 	}
 }
 
-[[nodiscard]] Error QueryResults::Iterator::GetCSV(WrSerializer& ser, CsvOrdering& ordering) noexcept {
+Error QueryResults::Iterator::GetCSV(WrSerializer& ser, CsvOrdering& ordering) noexcept {
 	try {
 		return std::visit(overloaded{[&ser, &ordering](auto it) { return it.GetCSV(ser, ordering); }}, getVariantIt());
 	}
@@ -652,17 +663,17 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 		}
 
 		auto& rqr = *qr_->remote_[0];
+		const auto& ritItemParams = rit.GetItemParams();
 		if (storage || !rqr.CheckIfNsJoinStorageHasSameIdx(idx_)) {
 			try {
 				rqr.ResetJoinStorage(idx_);
-
 				const auto& qData = qr_->qData_;
-				if (rit.itemParams_.nsid >= int(qData->joinedSize)) {
+				if (ritItemParams.nsid >= int(qData->joinedSize)) {
 					return reindexer::joins::ItemIterator::CreateEmpty();
 				}
 				rqr.NsJoinRes()->data.jr.SetJoinedSelectorsCount(qData->joinedSize);
 
-				auto jField = qr_->GetJoinedField(rit.itemParams_.nsid);
+				auto jField = qr_->GetJoinedField(ritItemParams.nsid);
 				for (size_t i = 0; i < joinedData.size(); ++i, ++jField) {
 					LocalQueryResults qrJoined;
 					const auto& joinedItems = joinedData[i];
@@ -685,7 +696,7 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 							}
 						}
 					}
-					rqr.NsJoinRes()->data.jr.Insert(rit.itemParams_.id, i, std::move(qrJoined));
+					rqr.NsJoinRes()->data.jr.Insert(ritItemParams.id, i, std::move(qrJoined));
 				}
 			} catch (...) {
 				if (rqr.NsJoinRes()) {
@@ -695,7 +706,7 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 			}
 		}
 
-		return joins::ItemIterator(&(rqr.NsJoinRes()->data.jr), rit.itemParams_.id);
+		return joins::ItemIterator(&(rqr.NsJoinRes()->data.jr), ritItemParams.id);
 	}
 	// Distributed queries can not have joins
 	return reindexer::joins::ItemIterator::CreateEmpty();
@@ -717,7 +728,7 @@ QueryResults::ItemDataStorage<QueryResults::ItemRefCache>& QueryResults::QrMetaD
 	return *itemRefData_;
 }
 
-class SortExpressionComparator {
+class [[nodiscard]] SortExpressionComparator {
 public:
 	SortExpressionComparator(SortExpression&& se, const NamespaceImpl& ns)
 		: localExpression_{std::move(se)}, proxiedExpression_{localExpression_, ns} {}
@@ -752,8 +763,8 @@ private:
 	ProxiedSortExpression proxiedExpression_;
 };
 
-class FieldComparator {
-	struct RelaxedCompare {
+class [[nodiscard]] FieldComparator {
+	struct [[nodiscard]] RelaxedCompare {
 		bool operator()(const Variant& lhs, const Variant& rhs) const {
 			return lhs.RelaxCompare<WithString::No, NotComparable::Throw>(rhs) == ComparationResult::Eq;
 		}
@@ -825,8 +836,8 @@ private:
 	fast_hash_map<Variant, size_t, std::hash<Variant>, RelaxedCompare> forcedValues_;
 };
 
-class QueryResults::CompositeFieldForceComparator {
-	struct RelaxedCompare {
+class [[nodiscard]] QueryResults::CompositeFieldForceComparator {
+	struct [[nodiscard]] RelaxedCompare {
 		bool operator()(const Variant& lhs, const Variant& rhs) const {
 			return lhs.RelaxCompare<WithString::No, NotComparable::Throw>(rhs) == ComparationResult::Eq;
 		}
@@ -969,7 +980,7 @@ public:
 	}
 
 private:
-	struct ValuesByField {
+	struct [[nodiscard]] ValuesByField {
 		std::string fieldName;
 		int fieldIdx = IndexValueType::SetByJsonPath;
 		fast_hash_map<Variant, h_vector<size_t, 4>, std::hash<Variant>, RelaxedCompare> values;
@@ -977,7 +988,7 @@ private:
 	h_vector<ValuesByField, 4> fields_;
 };
 
-class QueryResults::Comparator {
+class [[nodiscard]] QueryResults::Comparator {
 public:
 	Comparator(QueryResults& qr, const Query& q, const NamespaceImpl& ns) : qr_{qr} {
 		assertrx(q.GetSortingEntries().size() > 0);
@@ -1414,9 +1425,9 @@ Error QueryResults::Iterator::getCJSONviaJSON(WrSerializer& wrser, bool withHdrL
 	if (err.ok()) {
 		if (withHdrLen) {
 			auto slicePosSaver = wrser.StartSlice();
-			itemImpl.GetCJSON(wrser);
+			rx_unused = itemImpl.GetCJSON(wrser);
 		} else {
-			itemImpl.GetCJSON(wrser);
+			rx_unused = itemImpl.GetCJSON(wrser);
 		}
 	}
 	return err;

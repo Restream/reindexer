@@ -6,9 +6,9 @@
 
 namespace reindexer {
 
-enum class ComparationResult : unsigned { Eq = 1, Lt = 2, Le = Eq | Lt, Gt = 4, Ge = Eq | Gt, NotComparable = 8 };
+enum class [[nodiscard]] ComparationResult : unsigned { Eq = 1, Lt = 2, Le = Eq | Lt, Gt = 4, Ge = Eq | Gt, NotComparable = 8 };
 
-[[nodiscard]] RX_ALWAYS_INLINE bool IsValid(ComparationResult r) noexcept {
+RX_ALWAYS_INLINE bool IsValid(ComparationResult r) noexcept {
 	using UnderlyingType = std::underlying_type_t<ComparationResult>;
 	const auto res = static_cast<UnderlyingType>(r);
 	return (res == static_cast<UnderlyingType>(ComparationResult::Eq)) || (res == static_cast<UnderlyingType>(ComparationResult::Lt)) ||
@@ -17,7 +17,7 @@ enum class ComparationResult : unsigned { Eq = 1, Lt = 2, Le = Eq | Lt, Gt = 4, 
 		   (res == static_cast<UnderlyingType>(ComparationResult::NotComparable));
 }
 
-[[nodiscard]] RX_ALWAYS_INLINE bool operator&(ComparationResult lhs, ComparationResult rhs) noexcept {
+RX_ALWAYS_INLINE bool operator&(ComparationResult lhs, ComparationResult rhs) noexcept {
 	using UnderlyingType = std::underlying_type_t<ComparationResult>;
 #ifdef RX_WITH_STDLIB_DEBUG
 	assert(IsValid(lhs));
@@ -28,7 +28,7 @@ enum class ComparationResult : unsigned { Eq = 1, Lt = 2, Le = Eq | Lt, Gt = 4, 
 
 // convert Lt <-> Gt and Le <-> Ge
 // others values does not change
-[[nodiscard]] RX_ALWAYS_INLINE ComparationResult operator-(ComparationResult v) noexcept {
+RX_ALWAYS_INLINE ComparationResult operator-(ComparationResult v) noexcept {
 	using UnderlyingType = std::underlying_type_t<ComparationResult>;
 	static constexpr auto ltOrGt = static_cast<UnderlyingType>(ComparationResult::Lt) | static_cast<UnderlyingType>(ComparationResult::Gt);
 	const auto res = static_cast<UnderlyingType>(v);

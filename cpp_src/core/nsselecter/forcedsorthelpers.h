@@ -8,7 +8,7 @@
 
 namespace reindexer::force_sort_helpers {
 
-class ForcedSortMap {
+class [[nodiscard]] ForcedSortMap {
 public:
 	using mapped_type = size_t;
 
@@ -23,16 +23,16 @@ public:
 		throwIfNotSupportedValueType(k);
 		data_.emplace(std::move(k), v);
 	}
-	[[nodiscard]] std::pair<Iterator, bool> emplace(Variant k, mapped_type v) & {
+	std::pair<Iterator, bool> emplace(Variant k, mapped_type v) & {
 		throwIfNotSupportedValueType(k);
 		const auto [iter, success] = data_.emplace(std::move(k), v);
 		return std::make_pair(Iterator{iter}, success);
 	}
-	[[nodiscard]] bool contain(const Variant& k) const {
+	bool contain(const Variant& k) const {
 		throwIfNotSupportedValueType(k);
 		return data_.find(k) != data_.cend();
 	}
-	[[nodiscard]] mapped_type get(const Variant& k) const {
+	mapped_type get(const Variant& k) const {
 		throwIfNotSupportedValueType(k);
 		const auto it = data_.find(k);
 		assertrx_throw(it != data_.cend());
@@ -53,7 +53,7 @@ private:
 };
 
 template <typename Map>
-class ForcedMapInserter {
+class [[nodiscard]] ForcedMapInserter {
 public:
 	explicit ForcedMapInserter(Map& m) noexcept : map_{m} {}
 	template <typename V>
@@ -76,7 +76,7 @@ private:
 };
 
 template <bool desc, typename ValueGetter>
-class ForcedPartitionerIndexed {
+class [[nodiscard]] ForcedPartitionerIndexed {
 public:
 	ForcedPartitionerIndexed(int idx, const ValueGetter& valueGetter, const fast_hash_map<Variant, std::ptrdiff_t>& sortMap) noexcept
 		: valueGetter_{valueGetter}, sortMap_{sortMap}, idx_{idx} {}
@@ -100,7 +100,7 @@ private:
 };
 
 template <bool desc, typename ValueGetter>
-class ForcedPartitionerIndexedJsonPath {
+class [[nodiscard]] ForcedPartitionerIndexedJsonPath {
 public:
 	ForcedPartitionerIndexedJsonPath(const TagsPath& tagsPath, KeyValueType indexKVT, const std::string_view fieldName,
 									 const ValueGetter& valueGetter, const fast_hash_map<Variant, std::ptrdiff_t>& sortMap) noexcept
@@ -133,7 +133,7 @@ private:
 };
 
 template <bool desc, typename ValueGetter>
-class ForcedPartitionerNotIndexed {
+class [[nodiscard]] ForcedPartitionerNotIndexed {
 public:
 	ForcedPartitionerNotIndexed(const TagsPath& tagsPath, const ValueGetter& valueGetter, const ForcedSortMap& sortMap) noexcept
 		: valueGetter_{valueGetter}, sortMap_{sortMap}, tagsPath_{tagsPath} {}
@@ -157,7 +157,7 @@ private:
 };
 
 template <bool desc, typename ValueGetter>
-class ForcedPartitionerComposite {
+class [[nodiscard]] ForcedPartitionerComposite {
 public:
 	ForcedPartitionerComposite(const ValueGetter& valueGetter, unordered_payload_map<std::ptrdiff_t, false>& sortMap) noexcept
 		: valueGetter_{valueGetter}, sortMap_{sortMap} {}
@@ -199,7 +199,7 @@ RX_ALWAYS_INLINE bool forceCompareImpl(const ItemRef& lhs, size_t lhsPos, const 
 }
 
 template <bool desc, bool multiColumnSort, typename ValueGetter>
-class ForcedComparatorIndexed {
+class [[nodiscard]] ForcedComparatorIndexed {
 public:
 	ForcedComparatorIndexed(int idx, const ValueGetter& valueGetter, const ItemComparator& compare,
 							const fast_hash_map<Variant, std::ptrdiff_t>& sortMap) noexcept
@@ -232,7 +232,7 @@ private:
 };
 
 template <bool desc, bool multiColumnSort, typename ValueGetter>
-class ForcedComparatorIndexedJsonPath {
+class [[nodiscard]] ForcedComparatorIndexedJsonPath {
 public:
 	ForcedComparatorIndexedJsonPath(const TagsPath& tagsPath, KeyValueType indexKVT, const ValueGetter& valueGetter,
 									const ItemComparator& compare, const fast_hash_map<Variant, std::ptrdiff_t>& sortMap) noexcept
@@ -273,7 +273,7 @@ private:
 };
 
 template <bool desc, bool multiColumnSort, typename ValueGetter>
-class ForcedComparatorNotIndexed {
+class [[nodiscard]] ForcedComparatorNotIndexed {
 public:
 	ForcedComparatorNotIndexed(const TagsPath& tagsPath, const ValueGetter& valueGetter, const ItemComparator& compare,
 							   const ForcedSortMap& sortMap) noexcept
@@ -299,7 +299,7 @@ private:
 };
 
 template <bool desc, bool multiColumnSort, typename ValueGetter>
-class ForcedComparatorComposite {
+class [[nodiscard]] ForcedComparatorComposite {
 public:
 	ForcedComparatorComposite(const ValueGetter& valueGetter, const ItemComparator& compare,
 							  const unordered_payload_map<std::ptrdiff_t, false>& sortMap) noexcept

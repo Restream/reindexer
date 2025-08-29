@@ -20,7 +20,7 @@ namespace net::http {
 #undef DELETE
 #endif
 
-enum HttpStatusCode {
+enum [[nodiscard]] HttpStatusCode {
 	StatusContinue = 100,
 	StatusOK = 200,
 	StatusCreated = 201,
@@ -46,7 +46,7 @@ enum HttpStatusCode {
 	StatusGatewayTimeout = 504,
 };
 
-enum HttpMethod : int {
+enum [[nodiscard]] HttpMethod : int {
 	kMethodUnknown = -1,
 	kMethodGET = 0,
 	kMethodPOST,
@@ -117,14 +117,14 @@ struct [[nodiscard]] Request {
 
 class [[nodiscard]] Writer {
 public:
-	enum class WriteMode { Default = 0, PreChunkedBody = 1 };
-	virtual ssize_t Write(chunk&& ch, WriteMode mode = WriteMode::Default) = 0;
-	virtual ssize_t Write(std::string_view data) = 0;
+	enum class [[nodiscard]] WriteMode { Default = 0, PreChunkedBody = 1 };
+	virtual void Write(chunk&& ch, WriteMode mode = WriteMode::Default) = 0;
+	virtual void Write(std::string_view data) = 0;
 	virtual chunk GetChunk() = 0;
 
-	virtual bool SetHeader(const Header& hdr) = 0;
-	virtual bool SetRespCode(int code) = 0;
-	virtual bool SetContentLength(size_t len) = 0;
+	virtual void SetHeader(const Header& hdr) = 0;
+	virtual void SetRespCode(int code) = 0;
+	virtual void SetContentLength(size_t len) = 0;
 
 	virtual int RespCode() = 0;
 	virtual ssize_t Written() = 0;
@@ -133,9 +133,9 @@ public:
 
 class [[nodiscard]] Reader {
 public:
-	[[nodiscard]] virtual ssize_t Read(void* buf, size_t size) = 0;
-	[[nodiscard]] virtual std::string Read(size_t size = INT_MAX) = 0;
-	[[nodiscard]] virtual ssize_t Pending() const = 0;
+	virtual ssize_t Read(void* buf, size_t size) = 0;
+	virtual std::string Read(size_t size = INT_MAX) = 0;
+	virtual ssize_t Pending() const = 0;
 	virtual ~Reader() = default;
 };
 
@@ -147,16 +147,16 @@ static constexpr std::string_view kGzSuffix(".gz");
 
 struct [[nodiscard]] Context {
 	int JSON(int code, std::string_view slice) const;
-	[[nodiscard]] int JSON(int code, chunk&& chunk) const;
-	[[nodiscard]] int CSV(int code, chunk&& chunk) const;
+	int JSON(int code, chunk&& chunk) const;
+	int CSV(int code, chunk&& chunk) const;
 	void MSGPACK(int code, std::string_view slice) const;
-	[[nodiscard]] int MSGPACK(int code, chunk&& chunk) const;
+	int MSGPACK(int code, chunk&& chunk) const;
 	void Protobuf(int code, std::string_view slice) const;
-	[[nodiscard]] int Protobuf(int code, chunk&& chunk) const;
+	int Protobuf(int code, chunk&& chunk) const;
 	int String(int code, std::string_view slice) const;
-	[[nodiscard]] int String(int code, chunk&& chunk) const;
-	[[nodiscard]] int File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache) const;
-	[[nodiscard]] int Redirect(std::string_view url) const;
+	int String(int code, chunk&& chunk) const;
+	int File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache) const;
+	int Redirect(std::string_view url) const;
 
 	Request* request{nullptr};
 	Writer* writer{nullptr};

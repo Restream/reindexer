@@ -1,4 +1,7 @@
 #include "networkmonitor.h"
+#include <thread>
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "sharding.h"
 
 namespace reindexer {
@@ -8,7 +11,7 @@ constexpr auto kRetryInterval = std::chrono::seconds(1);
 
 void NetworkMonitor::Configure(ConnectionsMap& hostsConnections, std::chrono::seconds defaultTimeout,
 							   std::chrono::milliseconds statusCallTimeout) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	succeed_.clear();
 	hostsConnections_ = &hostsConnections;
 	connectionsTotal_ = 0;
@@ -25,7 +28,7 @@ Error NetworkMonitor::AwaitShards(const RdxContext& ctx) noexcept {
 		const RdxDeadlineContext deadlineCtx(defaultTimeout_, ctx.GetCancelCtx());
 		std::unique_ptr<const RdxContext> defaultCtx;
 
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		if (defaultTimeout_.count() <= 0) {
 			return Error();
 		}
@@ -68,7 +71,7 @@ Error NetworkMonitor::AwaitShards(const RdxContext& ctx) noexcept {
 }
 
 void NetworkMonitor::Shutdown() {
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	terminated_ = true;
 	lck.unlock();
 	cv_.notify_all();
@@ -86,7 +89,7 @@ void NetworkMonitor::sendStatusRequests() {
 		for (auto& conn : connListP.second) {
 			auto err = conn->WithTimeout(statusCallTimeout_)
 						   .WithCompletion([this, idx = connListP.first](const Error& e) {
-							   std::unique_lock lck(mtx_);
+							   unique_lock lck(mtx_);
 							   ++executed_;
 							   if (e.ok()) {
 								   succeed_.emplace(idx);
@@ -105,7 +108,7 @@ void NetworkMonitor::sendStatusRequests() {
 	}
 }
 
-Error NetworkMonitor::awaitStatuses(std::unique_lock<std::recursive_mutex>& lck, const RdxContext& ctx) {
+Error NetworkMonitor::awaitStatuses(unique_lock<recursive_mutex>& lck, const RdxContext& ctx) {
 	if (inProgress_) {
 		assertrx(ctx.IsCancelable());
 		cv_.wait(lck, [this] { return areStatusesReady(); }, ctx);

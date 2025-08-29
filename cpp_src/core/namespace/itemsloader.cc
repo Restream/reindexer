@@ -13,7 +13,7 @@ ItemsLoader::LoadData ItemsLoader::Load() {
 		try {
 			reading();
 		} catch (...) {
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			loadingData_.ex = std::current_exception();
 			terminated_ = true;
 			cv_.notify_all();
@@ -23,7 +23,7 @@ ItemsLoader::LoadData ItemsLoader::Load() {
 		try {
 			insertion();
 		} catch (...) {
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			loadingData_.ex = std::current_exception();
 			terminated_ = true;
 			cv_.notify_all();
@@ -104,7 +104,7 @@ void ItemsLoader::reading() {
 			minLSN = std::min(minLSN, l.Counter());
 			dataSlice = dataSlice.substr(sizeof(lsn));
 
-			std::unique_lock lck(mtx_);
+			unique_lock lck(mtx_);
 			cv_.wait(lck, [this] { return !items_.IsFull() || terminated_; });
 			if (terminated_) {
 				return;
@@ -170,7 +170,7 @@ void ItemsLoader::reading() {
 		}
 	}
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	terminated_ = true;
 	loadingData_.maxLSN = maxLSN;
 	loadingData_.minLSN = minLSN;
@@ -195,9 +195,9 @@ void ItemsLoader::insertion() {
 	VariantArray krefs, skrefs;
 	const unsigned totalIndexesSize = ns_.indexes_.totalSize();
 	const unsigned compositeIndexesSize = ns_.indexes_.compositeIndexesSize();
-	dummy_mutex dummyMtx;
+	DummyMutex dummyMtx;
 	do {
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		if (items_.IsFull()) {
 			requireNotification = true;
 		}
@@ -298,7 +298,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 				ConstFloatVectorView vec = ConstFloatVectorView(vecVar);
 				if (vec.IsEmpty()) {
 					bool clearCache = false;
-					ns_.indexes_[cachedIndex->field]->Upsert(vecVar, id, clearCache);
+					rx_unused = ns_.indexes_[cachedIndex->field]->Upsert(vecVar, id, clearCache);
 				} else {
 					vec.Strip();
 					tmp[0] = Variant{vec};
@@ -386,7 +386,7 @@ void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned
 		// Put value to payload
 		// Array values may reallocate payload, so must be synchronized via mutex
 		if (pl.Type().Field(field).IsArray()) {
-			std::lock_guard lck(mtx);
+			lock_guard lck(mtx);
 			pl.Set(field, krefs);
 		} else {
 			if (krefs.size() != 1) {
@@ -420,7 +420,7 @@ void IndexInserters::Run(unsigned threadsCnt) {
 
 void IndexInserters::Stop() {
 	if (threads_.size()) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		shared_.terminate = true;
 		cvReady_.notify_all();
 	}
@@ -431,7 +431,7 @@ void IndexInserters::Stop() {
 }
 
 void IndexInserters::AwaitIndexesBuild() {
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	cvDone_.wait(lck, [this] { return readyThreads_ == threads_.size(); });
 	if (!status_.ok()) {
 		throw status_;
@@ -439,7 +439,7 @@ void IndexInserters::AwaitIndexesBuild() {
 }
 
 void IndexInserters::BuildSimpleIndexesAsync(unsigned startId, std::span<ItemsLoader::ItemData> newItems, std::span<PayloadValue> nsItems) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	shared_.newItems = newItems;
 	shared_.nsItems = nsItems;
 	shared_.startId = startId;
@@ -450,7 +450,7 @@ void IndexInserters::BuildSimpleIndexesAsync(unsigned startId, std::span<ItemsLo
 }
 
 void IndexInserters::BuildCompositeIndexesAsync() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	shared_.composite = true;
 	readyThreads_ = 0;
 	++iteration_;
@@ -465,7 +465,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 
 	while (true) {
 		try {
-			std::unique_lock lck(mtx_);
+			unique_lock lck(mtx_);
 			cvReady_.wait(lck, [this, thisLoopIteration] { return shared_.terminate || iteration_ > thisLoopIteration; });
 			if (shared_.terminate) {
 				return;
@@ -482,7 +482,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 					const auto& plData = shared_.nsItems[i];
 					for (unsigned field = firstCompositeIndex + threadId - kTIDOffset; field < totalIndexes; field += threadsCnt) {
 						bool needClearCache{false};
-						indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
+						rx_unused = indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
 					}
 				}
 			} else {
@@ -499,7 +499,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 						}
 					}
 				} else {
-					dummy_mutex dummyMtx;
+					DummyMutex dummyMtx;
 					for (unsigned i = 0; i < shared_.newItems.size(); ++i) {
 						const auto id = startId + i;
 						auto& item = shared_.newItems[i].impl;

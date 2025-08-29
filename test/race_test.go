@@ -294,10 +294,8 @@ func TestRaceConditions(t *testing.T) {
 		go reader()
 		wg.Add(1)
 		go openCloser()
-		if len(DB.clusterList) == 0 { // TODO: Remove this check after #2174
-			wg.Add(1)
-			go updater()
-		}
+		wg.Add(1)
+		go updater()
 	}
 	subsWg := sync.WaitGroup{}
 	subsDone := make(chan bool)
@@ -492,12 +490,11 @@ func TestRaceConditionsTx(t *testing.T) {
 		go txWriter()
 		wg.Add(1)
 		go deleter()
-		if len(DB.clusterList) == 0 { // TODO: Remove this check after #2174
-			if i%2 == 0 {
-				wg.Add(1)
-				go updater()
-			}
+		if i%2 == 0 {
+			wg.Add(1)
+			go updater()
 		}
+
 	}
 	subsWg := sync.WaitGroup{}
 	subsDone := make(chan bool)

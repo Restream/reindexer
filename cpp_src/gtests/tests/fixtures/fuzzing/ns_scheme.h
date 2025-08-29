@@ -23,10 +23,10 @@ namespace fuzzing {
 class RandomGenerator;
 class Index;
 
-class NsScheme {
-	struct Node {
+class [[nodiscard]] NsScheme {
+	struct [[nodiscard]] Node {
 		using Children = std::vector<Node>;
-		struct Child {
+		struct [[nodiscard]] Child {
 			Child(FieldType t) noexcept : type{t} {}
 			FieldType type;
 			std::vector<size_t> indexes;

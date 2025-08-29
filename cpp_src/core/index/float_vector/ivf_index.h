@@ -16,7 +16,7 @@ namespace reindexer {
 
 class IvfKnnRawResult;
 
-class IvfIndex final : public FloatVectorIndex {
+class [[nodiscard]] IvfIndex final : public FloatVectorIndex {
 	using Base = FloatVectorIndex;
 
 public:
@@ -53,7 +53,7 @@ private:
 	static std::unique_ptr<faiss::IndexFlat> newSpace(size_t dimension, VectorMetric);
 	void clearMap() noexcept;
 	constexpr static size_t ivfTrainingSize(size_t nCentroids) noexcept { return nCentroids * 39; }
-	[[nodiscard]] faiss::MetricType faissMetric() const noexcept;
+	faiss::MetricType faissMetric() const noexcept;
 	void reconstruct(IdType, FloatVector&) const;
 	static void trainIdx(faiss::IndexIVFFlat& idx, const float* vecs, const float* norms, size_t vecsCount);
 

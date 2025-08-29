@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-struct WordIdTypeBit {
+struct [[nodiscard]] WordIdTypeBit {
 	uint32_t step_num : 6;	// index in the array of the index build steps (IDataHolder::steps)
 	uint32_t id : 26;		// index in the array of the unique words (DataHolder::words_)
 };
@@ -15,7 +15,7 @@ static_assert(WordIdTypeBit{.step_num = kWordIdMaxStepVal, .id = 0}.step_num == 
 static_assert(WordIdTypeBit{.step_num = 0, .id = kWordIdMaxIdVal}.id == kWordIdMaxIdVal, "Bitfield overflow");
 static_assert(WordIdTypeBit{.step_num = 0, .id = kWordIdEmptyIdVal}.id == kWordIdEmptyIdVal, "Bitfield overflow");
 
-union WordIdType {
+union [[nodiscard]] WordIdType {
 	WordIdTypeBit b;
 	uint32_t data = 0;
 
@@ -29,18 +29,18 @@ union WordIdType {
 	}
 };
 
-struct WordIdTypeHash {
+struct [[nodiscard]] WordIdTypeHash {
 	std::size_t operator()(const WordIdType& k) const noexcept { return std::hash<uint32_t>()(k.data); }
 };
 
-struct WordIdTypeEqual {
+struct [[nodiscard]] WordIdTypeEqual {
 	bool operator()(const WordIdType& lhs, const WordIdType& rhs) const noexcept { return lhs.data == rhs.data; }
 };
 
-struct WordIdTypeLess {
+struct [[nodiscard]] WordIdTypeLess {
 	bool operator()(const WordIdType& lhs, const WordIdType& rhs) const noexcept { return lhs.data < rhs.data; }
 };
 
-enum class FtUseExternStatuses : bool { Yes, No };
+enum class [[nodiscard]] FtUseExternStatuses : bool { Yes, No };
 
 }  // namespace reindexer

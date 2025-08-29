@@ -5,8 +5,8 @@
 bool WithSecurity() noexcept;
 std::string TLSPath() noexcept;
 
-struct TestUserDataFactory {
-	struct User {
+struct [[nodiscard]] TestUserDataFactory {
+	struct [[nodiscard]] User {
 		std::string login;
 		std::string password;
 	};

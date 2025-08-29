@@ -51,7 +51,7 @@ namespace detail {
 	static auto sym() { return instance().impl_.sym##_; }
 
 #define OPENSSL_CREATE_CLASS(CLASS, LIB_NAME, EXPAND_MACRO)                                                             \
-	class CLASS {                                                                                                       \
+	class [[nodiscard]] CLASS {                                                                                         \
 	public:                                                                                                             \
 		static bool available() {                                                                                       \
 			static auto& inst = instance();                                                                             \
@@ -84,7 +84,7 @@ namespace detail {
 			  }()) {}                                                                                                   \
                                                                                                                         \
 		reindexer::Error status_;                                                                                       \
-		struct Impl {                                                                                                   \
+		struct [[nodiscard]] Impl {                                                                                     \
 			static constexpr auto load = [](const char* name) {                                                         \
 				auto res = ::LOAD_LIB(name);                                                                            \
 				if (!res) {                                                                                             \

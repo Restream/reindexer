@@ -7,7 +7,7 @@ namespace reindexer::cluster {
 
 class SharedSyncState;
 
-class ClusterThreadParam {
+class [[nodiscard]] ClusterThreadParam {
 public:
 	ClusterThreadParam(const NsNamesHashSetT* namespaces, coroutine::channel<bool>& ch, SharedSyncState& st, SynchronizationList& syncList,
 					   std::function<void()> cb);
@@ -35,7 +35,7 @@ private:
 	SynchronizationList& syncList_;
 };
 
-class ClusterReplThread {
+class [[nodiscard]] ClusterReplThread {
 public:
 	ClusterReplThread(int serverId, ReindexerImpl& thisNode, const NsNamesHashSetT*,
 					  std::shared_ptr<updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>>, SharedSyncState&,

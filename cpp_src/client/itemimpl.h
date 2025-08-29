@@ -6,7 +6,7 @@ namespace reindexer {
 namespace client {
 
 template <typename C>
-class ItemImpl : public ItemImplBase {
+class [[nodiscard]] ItemImpl : public ItemImplBase {
 public:
 	ItemImpl() = default;
 	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, C* client, std::chrono::milliseconds requestTimeout)
@@ -19,7 +19,7 @@ public:
 	ItemImpl<C>& operator=(const ItemImpl<C>&) = delete;
 
 private:
-	[[nodiscard]] Error tryToUpdateTagsMatcher() override final;
+	Error tryToUpdateTagsMatcher() override final;
 
 	std::chrono::milliseconds requestTimeout_ = std::chrono::milliseconds{0};
 	C* client_ = nullptr;

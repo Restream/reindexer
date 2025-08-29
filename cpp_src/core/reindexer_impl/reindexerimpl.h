@@ -9,6 +9,7 @@
 #include "core/dbconfig.h"
 #include "core/namespace/bgnamespacedeleter.h"
 #include "core/namespace/namespace.h"
+#include "core/querystat.h"
 #include "core/rdxcontext.h"
 #include "core/reindexerconfig.h"
 #include "core/transaction/transaction.h"
@@ -44,10 +45,10 @@ class ClusterThreadParam;
 struct RaftInfo;
 }  // namespace cluster
 
-class ReindexerImpl {
+class [[nodiscard]] ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<timed_mutex, MutexMark::ReindexerStats>;
-	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg arg, Args&&... args);
 	template <auto MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg&&, Args&&...);
@@ -55,22 +56,22 @@ class ReindexerImpl {
 public:
 	using Completion = std::function<void(const Error& err)>;
 
-	struct CallbackT {
-		enum class Type { System, User };
-		struct EmptyT {};
-		struct SourceIdT {
+	struct [[nodiscard]] CallbackT {
+		enum class [[nodiscard]] Type { System, User };
+		struct [[nodiscard]] EmptyT {};
+		struct [[nodiscard]] SourceIdT {
 			int64_t sourceId;
 		};
 		using ExtrasT = std::variant<EmptyT, SourceIdT>;
 		using Value = std::function<void(const gason::JsonNode& action, const ExtrasT& extras, const RdxContext& ctx)>;
-		struct Key {
+		struct [[nodiscard]] Key {
 			std::string_view key;
 			Type type;
 
 			bool operator==(const Key& other) const noexcept { return key == other.key && type == other.type; }
 			bool operator<(const Key& other) const noexcept { return key < other.key && type < other.type; }
 		};
-		struct Hash {
+		struct [[nodiscard]] Hash {
 			std::size_t operator()(Key key) const noexcept { return std::hash<std::string_view>{}(key.key); }
 		};
 	};
@@ -150,7 +151,7 @@ private:
 	using ShardinConfigPtr = intrusive_ptr<const intrusive_atomic_rc_wrapper<cluster::ShardingConfig>>;
 	using NsCreationLockerT = MutexSet<RdxContext, MutexMark::StorageDirOps, 61>;
 
-	class BackgroundThread {
+	class [[nodiscard]] BackgroundThread {
 	public:
 		~BackgroundThread() { Stop(); }
 
@@ -176,20 +177,20 @@ private:
 		net::ev::dynamic_loop loop_;
 	};
 
-	class StatsLocker {
+	class [[nodiscard]] StatsLocker {
 	public:
 		using StatsLockT = contexted_unique_lock<StatsSelectMutex, const RdxContext>;
 
 		StatsLocker();
-		[[nodiscard]] StatsLockT LockIfRequired(std::string_view sysNsName, const RdxContext&);
+		StatsLockT LockIfRequired(std::string_view sysNsName, const RdxContext&);
 
 	private:
 		std::unordered_map<std::string_view, StatsSelectMutex, nocase_hash_str, nocase_equal_str> mtxMap_;
 	};
 
-	class Locker {
+	class [[nodiscard]] Locker {
 	public:
-		class NsWLock {
+		class [[nodiscard]] NsWLock {
 		public:
 			NsWLock(Mutex& mtx, const RdxContext& ctx, bool isCL) : impl_(mtx, ctx), isClusterLck_(isCL) {}
 			void lock() { impl_.lock(); }
@@ -279,7 +280,7 @@ private:
 	Error getLeaderDsn(DSN& dsn, unsigned short serverId, const cluster::RaftInfo& info);
 	Error insertDontUpdateSystemNS(std::string_view nsName, Item& item, const RdxContext& ctx);
 	FilterNsNamesT detectFilterNsNames(const Query& q);
-	[[nodiscard]] StatsLocker::StatsLockT syncSystemNamespaces(std::string_view sysNsName, const FilterNsNamesT&, const RdxContext& ctx);
+	StatsLocker::StatsLockT syncSystemNamespaces(std::string_view sysNsName, const FilterNsNamesT&, const RdxContext& ctx);
 	void createSystemNamespaces();
 	void handleDropANNCacheAction(const gason::JsonNode& action, const RdxContext& ctx);
 	void handleRebuildIVFIndexAction(const gason::JsonNode& action, const RdxContext& ctx);
@@ -299,7 +300,7 @@ private:
 	Error tryLoadConfFromFile(const std::string& filename);
 	template <const char* type, typename ConfigT>
 	Error tryLoadConfFromYAML(const std::string& yamlConf);
-	[[nodiscard]] Error tryLoadShardingConf(const RdxContext& ctx = RdxContext()) noexcept;
+	Error tryLoadShardingConf(const RdxContext& ctx = RdxContext()) noexcept;
 
 	void backgroundRoutine(net::ev::dynamic_loop& loop);
 	void storageFlushingRoutine(net::ev::dynamic_loop& loop);
@@ -319,7 +320,7 @@ private:
 	std::vector<std::string> getNamespacesNames(const RdxContext& ctx);
 	Error renameNamespace(std::string_view srcNsName, const std::string& dstNsName, bool fromReplication = false, bool skipResync = false,
 						  const RdxContext& ctx = RdxContext());
-	[[nodiscard]] bool isSystemNamespaceNameStrict(std::string_view name) noexcept;
+	bool isSystemNamespaceNameStrict(std::string_view name) noexcept;
 	Error readClusterConfigFile();
 	Error readShardingConfigFile();
 	void saveNewShardingConfigFile(const cluster::ShardingConfig& config) const;
@@ -328,17 +329,17 @@ private:
 	std::string generateTemporaryNamespaceName(std::string_view baseName);
 	Error enableStorage(const std::string& storagePath);
 
-	[[nodiscard]] Error saveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext& ctx) noexcept;
-	[[nodiscard]] Error applyShardingCfgCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
-	[[nodiscard]] Error resetOldShardingConfig(int64_t sourceId, const RdxContext& ctx) noexcept;
-	[[nodiscard]] Error resetShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
-	[[nodiscard]] Error rollbackShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
+	Error saveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext& ctx) noexcept;
+	Error applyShardingCfgCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
+	Error resetOldShardingConfig(int64_t sourceId, const RdxContext& ctx) noexcept;
+	Error resetShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
+	Error rollbackShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept;
 
 	template <typename PreReplFunc, typename... Args>
-	[[nodiscard]] Error shardingConfigReplAction(const RdxContext& ctx, const PreReplFunc& func, Args&&... args) noexcept;
+	Error shardingConfigReplAction(const RdxContext& ctx, const PreReplFunc& func, Args&&... args) noexcept;
 
 	template <typename... Args>
-	[[nodiscard]] Error shardingConfigReplAction(const RdxContext& ctx, updates::URType type, Args&&... args) noexcept;
+	Error shardingConfigReplAction(const RdxContext& ctx, updates::URType type, Args&&... args) noexcept;
 
 	template <concepts::OneOf<Query, JoinedQuery> Q>
 	std::optional<Q> embedKNNQueries(const Q& query, const RdxContext& ctx);
@@ -371,12 +372,12 @@ private:
 	atomic_unique_ptr<cluster::ClusterConfigData> clusterConfig_;
 	struct {
 		auto Get() const noexcept {
-			std::lock_guard lk(m_);
+			lock_guard lk(m_);
 			return config_;
 		}
 
 		void Set(std::optional<cluster::ShardingConfig>&& other) noexcept {
-			std::lock_guard lk(m_);
+			lock_guard lk(m_);
 			config_.reset(other ? new intrusive_atomic_rc_wrapper<cluster::ShardingConfig>(std::move(*other)) : nullptr);
 			if (handler_) {
 				handler_(config_);
@@ -384,11 +385,11 @@ private:
 		}
 
 		explicit operator bool() const noexcept {
-			std::lock_guard lk(m_);
+			lock_guard lk(m_);
 			return config_;
 		}
 		void setHandled(std::function<void(const ShardinConfigPtr&)>&& handler) {
-			std::lock_guard lk(m_);
+			lock_guard lk(m_);
 			assertrx_dbg(!handler_);
 			handler_ = std::move(handler);
 		}

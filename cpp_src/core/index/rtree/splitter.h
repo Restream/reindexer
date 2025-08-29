@@ -6,7 +6,7 @@
 namespace reindexer {
 
 template <typename Entry, typename Node, typename Traits, typename Iterator, size_t MaxEntries>
-class Splitter {
+class [[nodiscard]] Splitter {
 protected:
 	Splitter(Entry&& appendingEntry, Node& sourceNode, Iterator* it) noexcept
 		: appendingEntry_{std::move(appendingEntry)}, srcNode_{sourceNode}, insertedIt_{it} {

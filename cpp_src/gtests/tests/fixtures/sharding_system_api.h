@@ -2,7 +2,7 @@
 
 #include "sharding_api.h"
 
-class ShardingSystemApi : public ShardingApi {
+class [[nodiscard]] ShardingSystemApi : public ShardingApi {
 public:
 	const Defaults& GetDefaults() const override {
 		static Defaults def{19200, 20200, reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "rx_test/ShardingSystemApi")};

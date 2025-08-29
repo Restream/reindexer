@@ -7,7 +7,7 @@
 
 namespace reindexer {
 namespace builders {
-class JsonBuilder {
+class [[nodiscard]] JsonBuilder {
 public:
 	JsonBuilder() noexcept : ser_(nullptr), tm_(nullptr) {}
 	JsonBuilder(WrSerializer& ser, ObjType type = ObjType::TypeObject, const TagsMatcher* tm = nullptr, bool emitTrailingForFloat = true);
@@ -27,6 +27,7 @@ public:
 	JsonBuilder Object(std::string_view name = {}, int size = KUnknownFieldSize);
 	JsonBuilder Object(TagName tagName, int size = KUnknownFieldSize) { return Object(getNameByTag(tagName), size); }
 
+	void AddArray(std::string_view name, int size = KUnknownFieldSize) { rx_unused = Array(name, size); }
 	JsonBuilder Array(std::string_view name, int size = KUnknownFieldSize);
 	JsonBuilder Array(TagName tagName, int size = KUnknownFieldSize) { return Array(getNameByTag(tagName), size); }
 
@@ -60,50 +61,47 @@ public:
 		}
 	}
 
-	JsonBuilder& Put(std::string_view name, const Variant& arg, int offset = 0);
-	JsonBuilder& Put(std::string_view name, std::string_view arg, int offset = 0);
-	JsonBuilder& Put(std::string_view name, Uuid arg, int offset = 0);
-	JsonBuilder& Put(std::string_view name, const char* arg, int offset = 0) { return Put(name, std::string_view(arg), offset); }
+	void Put(std::string_view name, const Variant& arg, int offset = 0);
+	void Put(std::string_view name, std::string_view arg, int offset = 0);
+	void Put(std::string_view name, Uuid arg, int offset = 0);
+	void Put(std::string_view name, const char* arg, int offset = 0) { return Put(name, std::string_view(arg), offset); }
 	template <typename T, typename std::enable_if<std::is_integral<T>::value>::type* = nullptr>
-	JsonBuilder& Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
+	void Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
 		putName(name);
 		(*ser_) << arg;
-		return *this;
 	}
 	template <typename T, typename std::enable_if<std::is_floating_point<T>::value>::type* = nullptr>
-	JsonBuilder& Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
+	void Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
 		putName(name);
 		if (emitTrailingForFloat_) {
 			(*ser_) << arg;
 		} else {
 			ser_->PutFPStrNoTrailing(arg);
 		}
-		return *this;
 	}
 	template <typename T>
-	JsonBuilder& Put(TagName tagName, const T& arg, int offset = 0) {
-		return Put(getNameByTag(tagName), arg, offset);
+	void Put(TagName tagName, const T& arg, int offset = 0) {
+		Put(getNameByTag(tagName), arg, offset);
 	}
 
 	template <typename T, std::enable_if_t<!std::is_arithmetic_v<T> && !std::is_constructible_v<std::string_view, T>>* = nullptr>
-	JsonBuilder& Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
+	void Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
 		putName(name);
 		std::ostringstream sstream;
 		sstream << arg;
 		ser_->PrintJsonString(sstream.str());
-		return *this;
 	}
 
-	JsonBuilder& Raw(TagName tagName, std::string_view arg) { return Raw(getNameByTag(tagName), arg); }
-	JsonBuilder& Raw(std::string_view name, std::string_view arg);
-	JsonBuilder& Raw(std::string_view arg) { return Raw(std::string_view{}, arg); }
-	JsonBuilder& Json(std::string_view name, std::string_view arg) { return Raw(name, arg); }
-	JsonBuilder& Json(std::string_view arg) { return Raw(arg); }
+	void Raw(TagName tagName, std::string_view arg) { return Raw(getNameByTag(tagName), arg); }
+	void Raw(std::string_view name, std::string_view arg);
+	void Raw(std::string_view arg) { return Raw(std::string_view{}, arg); }
+	void Json(std::string_view name, std::string_view arg) { return Raw(name, arg); }
+	void Json(std::string_view arg) { return Raw(arg); }
 
-	JsonBuilder& Null(TagName tagName) { return Null(getNameByTag(tagName)); }
-	JsonBuilder& Null(std::string_view name);
+	void Null(TagName tagName) { return Null(getNameByTag(tagName)); }
+	void Null(std::string_view name);
 
-	JsonBuilder& End();
+	void End();
 
 	template <typename... Args>
 	void Object(int, Args...) = delete;
@@ -132,7 +130,7 @@ public:
 
 private:
 	void putName(std::string_view name);
-	std::string_view getNameByTag(TagName);
+	[[nodiscard]] std::string_view getNameByTag(TagName);
 
 	WrSerializer* ser_;
 	const TagsMatcher* tm_;

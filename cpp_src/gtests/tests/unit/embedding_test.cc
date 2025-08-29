@@ -1,5 +1,6 @@
 #include "gtests/tests/fixtures/embedding_test.h"
 #include <gmock/gmock.h>
+#include "client/itemimpl.h"
 #include "core/system_ns_names.h"
 #include "gtests/tools.h"
 #include "tools/errors.h"
@@ -627,14 +628,18 @@ TEST_F(EmbeddingTest, NegativeWrongField) try {
 	embedding.upsertEmbedder = embedder;
 
 	rt.OpenNamespace(kNsName);
-	auto err = rt.reindexer->AddIndex(
-		kNsName, {kFieldNameIvf,
-				  {kFieldNameIvf},
-				  "float_vector",
-				  IndexOpts{}.SetFloatVector(
-					  IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding))});
-	ASSERT_EQ(err.what(), "Cannot add field with name '" + kFieldNameIvf + "' to namespace '" + kNsName + "'. Auxiliary field '" +
-							  kFieldNameNone + "' not found");
+	rt.AddIndex(kNsName,
+				{kFieldNameIvf,
+				 {kFieldNameIvf},
+				 "float_vector",
+				 IndexOpts{}.SetFloatVector(
+					 IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding))});
+	Item item(rt.NewItem(kNsName));
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	auto err = rt.reindexer->Upsert(kNsName, item);
+	ASSERT_EQ(err.what(), "Cannot automatically embed value in index field named '" + kFieldNameIvf + "'. The auxiliary field '" +
+							  kFieldNameNone +
+							  "' was not found or is a composite or sparse field. Embedding is supported only for scalar index fields");
 }
 CATCH_AND_ASSERT
 
@@ -655,15 +660,18 @@ TEST_F(EmbeddingTest, NegativeSparseField) try {
 	rt.OpenNamespace(kNsName);
 	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
 										IndexDeclaration{kFieldNameSparse, "hash", "string", IndexOpts{}.Sparse(), 0}});
-	auto err = rt.reindexer->AddIndex(
-		kNsName, {kFieldNameIvf,
-				  {kFieldNameIvf},
-				  "float_vector",
-				  IndexOpts{}.SetFloatVector(
-					  IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding))});
-	ASSERT_EQ(err.what(), "Cannot add index '" + kFieldNameIvf + "' in namespace '" + kNsName +
-							  "'. Support for embedding only for scalar index fields. Using field '" + kFieldNameSparse +
-							  "' is sparse, so embedding is not supported");
+	rt.AddIndex(kNsName,
+				{kFieldNameIvf,
+				 {kFieldNameIvf},
+				 "float_vector",
+				 IndexOpts{}.SetFloatVector(
+					 IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding))});
+	Item item(rt.NewItem(kNsName));
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	auto err = rt.reindexer->Upsert(kNsName, item);
+	ASSERT_EQ(err.what(), "Cannot automatically embed value in index field named '" + kFieldNameIvf + "'. The auxiliary field '" +
+							  kFieldNameSparse +
+							  "' was not found or is a composite or sparse field. Embedding is supported only for scalar index fields");
 }
 CATCH_AND_ASSERT
 
@@ -686,15 +694,18 @@ TEST_F(EmbeddingTest, NegativeCompositeField) try {
 	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 										IndexDeclaration{kFieldNameFirst, "hash", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameComposite, "text", "composite", IndexOpts(), 0}});
-	auto err = rt.reindexer->AddIndex(
-		kNsName, {kFieldNameIvf,
-				  {kFieldNameIvf},
-				  "float_vector",
-				  IndexOpts{}.SetFloatVector(
-					  IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding))});
-	ASSERT_EQ(err.what(), "Cannot add index '" + kFieldNameIvf + "' in namespace '" + kNsName +
-							  "'. Support for embedding only for scalar index fields. Using field '" + kFieldNameComposite +
-							  "' for embedding is invalid");
+	rt.AddIndex(kNsName,
+				{kFieldNameIvf,
+				 {kFieldNameIvf},
+				 "float_vector",
+				 IndexOpts{}.SetFloatVector(
+					 IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding))});
+	Item item(rt.NewItem(kNsName));
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	auto err = rt.reindexer->Upsert(kNsName, item);
+	ASSERT_EQ(err.what(), "Cannot automatically embed value in index field named '" + kFieldNameIvf + "'. The auxiliary field '" +
+							  kFieldNameComposite +
+							  "' was not found or is a composite or sparse field. Embedding is supported only for scalar index fields");
 }
 CATCH_AND_ASSERT
 
@@ -784,7 +795,7 @@ TEST_F(EmbeddingTest, NegativeWrongFieldConfigUpdate) try {
 		IndexOpts{}.SetFloatVector(IndexIvf,
 								   FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding)));
 	auto err = rt.reindexer->UpdateIndex(kNsName, updateIdx);
-	ASSERT_EQ(err.what(), "Cannot add field with name '" + kFieldNameIvf + "' to namespace '" + kNsName + "'. Auxiliary field '" +
+	ASSERT_EQ(err.what(), "Cannot update index field named '" + kFieldNameIvf + "' in namespace '" + kNsName + "'. Auxiliary field '" +
 							  kFieldNameNone + "' not found");
 }
 CATCH_AND_ASSERT
@@ -820,7 +831,7 @@ TEST_F(EmbeddingTest, NegativeSparseFieldConfigUpdate) try {
 		IndexOpts{}.SetFloatVector(IndexIvf,
 								   FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding)));
 	auto err = rt.reindexer->UpdateIndex(kNsName, updateIdx);
-	ASSERT_EQ(err.what(), "Cannot update index '" + kFieldNameIvf + "' in namespace '" + kNsName +
+	ASSERT_EQ(err.what(), "Cannot update index field named '" + kFieldNameIvf + "' in namespace '" + kNsName +
 							  "'. Support for embedding only for scalar index fields. Using field '" + kFieldNameSparse +
 							  "' is sparse, so embedding is not supported");
 }
@@ -856,8 +867,8 @@ TEST_F(EmbeddingTest, NegativeCompositeFieldConfigUpdate) try {
 		IndexOpts{}.SetFloatVector(IndexIvf,
 								   FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding)));
 	auto err = rt.reindexer->UpdateIndex(kNsName, updateIdx);
-	ASSERT_EQ(err.what(), "Cannot update index '" + kFieldNameIvf + "' in namespace '" + kNsName +
-							  "'. Support for embedding only for scalar index fields. Using field '" + kFieldNameComposite +
+	ASSERT_EQ(err.what(), "Cannot update index field named '" + kFieldNameIvf + "' in namespace '" + kNsName +
+							  "'. Support for embedding only for scalar index fields. Using composite field '" + kFieldNameComposite +
 							  "' for embedding is invalid");
 }
 CATCH_AND_ASSERT
@@ -932,9 +943,7 @@ TEST_F(EmbeddingTest, ConfigUpdateOnlyEmbedders) try {
 								   FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements).SetEmbedding(embedding)));
 	rt.UpdateIndex(kNsName, updateIdx);
 
-	std::vector<reindexer::NamespaceDef> nsList;
-	auto err = rt.reindexer->EnumNamespaces(nsList, reindexer::EnumNamespacesOpts().HideSystem());
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto nsList = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().HideSystem());
 	for (const auto& ns : nsList) {
 		uint32_t i = 0;
 		for (const auto& index : ns.indexes) {
@@ -995,9 +1004,7 @@ TEST_F(EmbeddingTest, ConfigUpdate) try {
 																				  .SetMetric(reindexer::VectorMetric::L2)));
 	rt.UpdateIndex(kNsName, updateIdx);
 
-	std::vector<reindexer::NamespaceDef> nsList;
-	auto err = rt.reindexer->EnumNamespaces(nsList, reindexer::EnumNamespacesOpts().HideSystem());
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto nsList = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().HideSystem());
 	for (const auto& ns : nsList) {
 		for (const auto& index : ns.indexes) {
 			auto it = std::ranges::find_if(idxs, [&index](const reindexer::IndexDef& dec) { return index.Name() == dec.Name(); });

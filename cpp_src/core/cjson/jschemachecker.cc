@@ -93,7 +93,7 @@ Error JsonSchemaChecker::createTypeTable(std::string_view json) {
 	addSimpleType("boolean");
 
 	try {
-		createType(root, rootTypeName_);
+		rx_unused = createType(root, rootTypeName_);
 	} catch (const Error& e) {
 		return e;
 	}
@@ -125,7 +125,7 @@ Error JsonSchemaChecker::Check(gason::JsonNode node) {
 	return checkScheme(node, nType, path, rootTypeName_);
 }
 
-struct PathPop {
+struct [[nodiscard]] PathPop {
 	PathPop(std::string& path) : pathStack(path), len(path.size()) {}
 	~PathPop() { pathStack.resize(len); }
 	std::string& pathStack;

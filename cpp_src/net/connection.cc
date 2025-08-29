@@ -1,5 +1,6 @@
 #include "connection.h"
 #include <errno.h>
+#include "estl/mutex.h"
 
 namespace reindexer {
 namespace net {
@@ -231,8 +232,8 @@ void Connection<Mutex>::async_cb(ev::async&) {
 	callback(io_, ev::WRITE);
 }
 
-template class Connection<reindexer::dummy_mutex>;
-template class Connection<std::mutex>;
+template class Connection<reindexer::DummyMutex>;
+template class Connection<reindexer::mutex>;
 
 }  // namespace net
 }  // namespace reindexer

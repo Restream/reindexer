@@ -13,12 +13,12 @@ namespace reindexer {
 class Serializer;
 class WrSerializer;
 
-class CJsonDecoder {
+class [[nodiscard]] CJsonDecoder {
 public:
 	using StrHolderT = h_vector<key_string, 16>;
 
 	explicit CJsonDecoder(TagsMatcher& tagsMatcher, StrHolderT& storage) noexcept : tagsMatcher_(tagsMatcher), storage_(storage) {}
-	class SkipFilter {
+	class [[nodiscard]] SkipFilter {
 	public:
 		SkipFilter MakeCleanCopy() const noexcept { return SkipFilter(); }
 		SkipFilter MakeSkipFilter() const noexcept { return SkipFilter(); }
@@ -27,7 +27,7 @@ public:
 		RX_ALWAYS_INLINE bool match(const TagsPath&) const noexcept { return false; }
 	};
 
-	class DefaultFilter {
+	class [[nodiscard]] DefaultFilter {
 	public:
 		DefaultFilter(const FieldsFilter* fieldsFilter) noexcept : fieldsFilter_{fieldsFilter} {}
 		DefaultFilter MakeCleanCopy() const noexcept { return DefaultFilter(fieldsFilter_); }
@@ -44,7 +44,7 @@ public:
 		const FieldsFilter* fieldsFilter_{nullptr};
 	};
 
-	class IndexedSkipFilter {
+	class [[nodiscard]] IndexedSkipFilter {
 	public:
 		explicit IndexedSkipFilter(const FieldsSet& f) noexcept : f_(&f) {}
 		IndexedSkipFilter MakeCleanCopy() const noexcept { return IndexedSkipFilter(*f_); }
@@ -57,7 +57,7 @@ public:
 		const FieldsSet* f_{nullptr};
 	};
 
-	class RestrictingFilter {
+	class [[nodiscard]] RestrictingFilter {
 	public:
 		RestrictingFilter(const FieldsSet& f) noexcept : f_(&f), match_(true) {}
 
@@ -86,7 +86,7 @@ public:
 		bool match_{false};
 	};
 
-	class DefaultRecoder {
+	class [[nodiscard]] DefaultRecoder {
 	public:
 		static RX_ALWAYS_INLINE DefaultRecoder MakeCleanCopy() noexcept { return DefaultRecoder(); }
 		RX_ALWAYS_INLINE bool Recode(Serializer&, WrSerializer&) const { return false; }
@@ -98,7 +98,7 @@ public:
 		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath&) noexcept { return tagType; }
 	};
 
-	class CustomRecoder {
+	class [[nodiscard]] CustomRecoder {
 	public:
 		CustomRecoder(Recoder& r) noexcept : r_(&r), needToRecode_(false) {}
 
@@ -131,8 +131,8 @@ public:
 		Recoder* r_{nullptr};
 		bool needToRecode_{false};
 	};
-	struct NamedTagOpt {};
-	struct NamelessTagOpt {};
+	struct [[nodiscard]] NamedTagOpt {};
+	struct [[nodiscard]] NamelessTagOpt {};
 
 	template <typename Filter, typename Recoder = DefaultRecoder>
 	void Decode(Payload& pl, Serializer& rdSer, WrSerializer& wrSer, FloatVectorsHolderVector& floatVectorsHolder, Filter filter = Filter(),
@@ -166,7 +166,7 @@ private:
 	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 	[[noreturn]] void throwTagReferenceError(ctag, const Payload&);
 
-	[[nodiscard]] Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
+	Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
 
 	TagsMatcher& tagsMatcher_;
 	TagsPath tagsPath_;

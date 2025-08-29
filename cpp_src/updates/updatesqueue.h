@@ -2,23 +2,24 @@
 
 #include <deque>
 #include <optional>
-#include <unordered_map>
+#include <thread>
 #include "core/rdxcontext.h"
 #include "estl/contexted_cond_var.h"
 #include "estl/fast_hash_set.h"
 #include "estl/h_vector.h"
+#include "estl/lock.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
 namespace updates {
 
-enum class ReplicationResult { None, Approved, Error };
+enum class [[nodiscard]] ReplicationResult { None, Approved, Error };
 
 #define uq_rtfmt(f, ...) return fmt::format("[updates:{}] " f, logModuleName(), __VA_ARGS__)
 
 template <typename T, typename StatsCollectorT, typename LoggerT>
-class UpdatesQueue {
+class [[nodiscard]] UpdatesQueue {
 public:
 	using HashT = nocase_hash_str;
 	using CompareT = nocase_equal_str;
@@ -29,18 +30,18 @@ public:
 	constexpr static uint64_t kMaxApproves = kMaxReplicas;
 	constexpr static uint64_t kMaxErrors = kMaxReplicas;
 	template <typename U, uint16_t kBatch>
-	class QueueEntry {
+	class [[nodiscard]] QueueEntry {
 	public:
-		struct DroppedUpdatesT {};
-		struct UpdatesStatus {
+		struct [[nodiscard]] DroppedUpdatesT {};
+		struct [[nodiscard]] UpdatesStatus {
 			bool requireResult = false;
 			bool requireErasure = false;
 			bool hasEnoughApproves = false;
 			Error result;
 		};
 
-		struct Value {
-			struct Counters {
+		struct [[nodiscard]] Value {
+			struct [[nodiscard]] Counters {
 				uint64_t replicatedToEmitter : 1;
 				uint64_t requireResult : 1;
 				uint64_t replicas : 16;
@@ -237,19 +238,19 @@ public:
 		  stats_(std::move(statsCollector)) {}
 
 	void AddDataNotifier(std::thread::id id, std::function<void()> n) {
-		std::unique_lock<std::mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		newDataNotifiers_[id].n = std::move(n);
 	}
 	void RemoveDataNotifier(std::thread::id id) {
-		std::unique_lock<std::mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		newDataNotifiers_.erase(id);
 	}
 	uint64_t GetNextUpdateID() const noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		return getNextUpdateID();
 	}
 	UpdatePtr Read(uint64_t id, std::optional<std::thread::id> notifier) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (updatedDropRecord_ && id <= updatedDropRecord_->ID()) {
 			return updatedDropRecord_;
 		}
@@ -273,7 +274,7 @@ public:
 		return queue_[idx];
 	}
 	void SetWritable(bool isWritable, Error&& err) {
-		std::unique_lock<std::mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		if (!isWritable) {
 			invalidationErr_ = std::move(err);
 			int64_t lastUpdateId = -1;
@@ -317,7 +318,7 @@ public:
 		localData.dataSize = data.size();
 		std::deque<UpdatePtr> dropped;
 
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		if (invalidated_) {
 			return std::make_pair(invalidationErr_, false);
 		}
@@ -355,7 +356,7 @@ public:
 	std::pair<Error, bool> PushAsync(UpdatesContainerT&& data) {
 		std::deque<UpdatePtr> dropped;
 		{
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			if (invalidated_) {
 				return std::make_pair(invalidationErr_, false);
 			}
@@ -393,7 +394,7 @@ public:
 	const uint64_t MaxDataSize = 0;
 
 private:
-	struct DataNotifier {
+	struct [[nodiscard]] DataNotifier {
 		std::function<void()> n;
 		bool awaitsData = false;
 	};
@@ -452,7 +453,7 @@ private:
 		return id;
 	}
 	void onResult(uint64_t id, Error&& err) {
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		const auto idx = tryGetIdx(id);
 		if (idx < 0) {
 			return;
@@ -478,10 +479,10 @@ private:
 		}
 	}
 	void eraseReplicated() noexcept {
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		eraseReplicated(lck);
 	}
-	void eraseReplicated(std::unique_lock<std::mutex>& lck) noexcept {
+	void eraseReplicated(unique_lock<mutex>& lck) noexcept RX_NO_THREAD_SAFETY_ANALYSIS {
 		while (queue_.size() && queue_.front()->isAllResultsSent() && queue_.front()->IsFullyErased()) {
 			auto updPtr = queue_.front();
 			queue_.pop_front();
@@ -553,7 +554,7 @@ private:
 		}
 	}
 
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	contexted_cond_var condResultReady_;
 	std::unordered_map<std::thread::id, DataNotifier> newDataNotifiers_;
 	bool invalidated_ = false;

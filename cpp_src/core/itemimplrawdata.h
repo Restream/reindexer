@@ -9,7 +9,7 @@
 
 namespace reindexer {
 
-struct ItemImplRawData {
+struct [[nodiscard]] ItemImplRawData {
 	using HolderT = h_vector<key_string, 16>;
 
 	ItemImplRawData() = default;

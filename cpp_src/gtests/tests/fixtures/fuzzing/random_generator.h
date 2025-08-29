@@ -21,7 +21,7 @@ namespace fuzzing {
 
 class NsScheme;
 
-class RandomGenerator {
+class [[nodiscard]] RandomGenerator {
 	using ErrFactorInt = uint32_t;
 
 public:
@@ -139,7 +139,7 @@ public:
 	char RndChar() { return rndChar_(gen_); }
 	bool NeedThisNode(reindexer::IsSparse sparse) { return sparse ? RndBool(0.5) : !RndErr(); }
 	int RndIntValue() {
-		enum Size : uint8_t { Short, Long, END = Long };
+		enum [[nodiscard]] Size : uint8_t { Short, Long, END = Long };
 		switch (RndWhich<Size, 1, 1>()) {
 			case Short:
 				return RndInt(-50, 50);
@@ -151,7 +151,7 @@ public:
 		}
 	}
 	int64_t RndInt64Value() {
-		enum Size : uint8_t { Short, Long, END = Long };
+		enum [[nodiscard]] Size : uint8_t { Short, Long, END = Long };
 		switch (RndWhich<Size, 1, 1>()) {
 			case Short:
 				return rndInt64(-50, 50);
@@ -165,7 +165,7 @@ public:
 	int64_t RndTtlValue();
 	bool RndBool(double p) { return rndBool_(gen_, BoolRndParams{p}); }
 	double RndDoubleValue() {
-		enum Size : uint8_t { Short, Long, END = Long };
+		enum [[nodiscard]] Size : uint8_t { Short, Long, END = Long };
 		switch (RndWhich<Size, 1, 1>()) {
 			case Short:
 				return rndDouble_(gen_, DoubleRndParams{0.0, 10.0});
@@ -180,7 +180,7 @@ public:
 		static constexpr char availableChars[] = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
 		static const IntRndParams availableRndParams{0, sizeof(availableChars) - 2};
 		std::string res;
-		enum Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
+		enum [[nodiscard]] Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
 		switch (RndWhich<Size, 10'000, 100'000, 10, 1>()) {
 			case Short:
 				res.resize(RndInt(0, 5));

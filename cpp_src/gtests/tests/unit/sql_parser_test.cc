@@ -3,7 +3,7 @@
 #include "core/query/query.h"
 #include "core/query/sql/sqlparser.h"
 
-struct SQLParserTests : public ::testing::TestWithParam<std::string> {};
+struct [[nodiscard]] SQLParserTests : public ::testing::TestWithParam<std::string> {};
 
 // --gtest_filter=*/SQLParserTests.NumberInDoubleQuotesParsedCorrectly/*
 TEST_P(SQLParserTests, NumberInDoubleQuotesParsedCorrectly) { EXPECT_NO_THROW(auto q = reindexer::SQLParser::Parse(GetParam())); }
@@ -61,7 +61,7 @@ INSTANTIATE_TEST_SUITE_P(Delete, SQLParserTests,
 										   "DELETE FROM ns WHERE \"123\" = 123 AND \"abc123\" = 'some_value' AND \"123abc123\" = 123",
 										   "DELETE FROM ns WHERE \"123\" = 123 AND \"abc123\" = \"123abc123\" AND \"123abc123\" = 123"));
 
-struct SQLParserWhere : public ::testing::TestWithParam<std::pair<std::string, std::string>> {};
+struct [[nodiscard]] SQLParserWhere : public ::testing::TestWithParam<std::pair<std::string, std::string>> {};
 
 TEST_P(SQLParserWhere, CheckWhereError) {
 	auto [sql, errString] = GetParam();

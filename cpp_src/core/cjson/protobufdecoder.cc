@@ -11,7 +11,7 @@ namespace reindexer {
 
 using namespace item_fields_validator;
 
-void ArraysStorage::UpdateArraySize(TagName tagName, int field) { GetArray(tagName, field); }
+void ArraysStorage::UpdateArraySize(TagName tagName, int field) { rx_unused = GetArray(tagName, field); }
 
 CJsonBuilder& ArraysStorage::GetArray(TagName tagName, int field) {
 	assertrx(!indexes_.empty());
@@ -51,6 +51,9 @@ template <typename Validator>
 void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue item, const Validator& validator) {
 	using namespace std::string_view_literals;
 	const auto field = tm_.tags2field(tagsPath_);
+	if rx_unlikely (item.itemType.Is<KeyValueType::Composite>()) {
+		throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), "protobuf"sv);
+	}
 	auto value = item.value.convert(item.itemType);
 	if (field.IsRegularIndex()) {
 		const auto indexNumber = field.IndexNumber();
@@ -168,6 +171,9 @@ void ProtobufDecoder::decode(Payload& pl, CJsonBuilder& builder, const ProtobufV
 				   SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tm_, isInArray(),
 								   "protobuf"sv});
 		} else {
+			if rx_unlikely (field.IsIndexed() && item.itemType.Is<KeyValueType::Composite>()) {
+				throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), "protobuf"sv);
+			}
 			decode(pl, builder, item, floatVectorsHolder, kNoValidation);
 		}
 	} else {

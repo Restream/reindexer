@@ -17,7 +17,7 @@ struct FtFuncStruct;
 
 class [[nodiscard]] FuncNone {
 public:
-	[[nodiscard]] bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>&) noexcept { return false; }
+	bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>&) noexcept { return false; }
 };
 
 struct [[nodiscard]] FtFuncStruct : public ParsedQueryFunction {
@@ -47,7 +47,7 @@ public:
 	/// @param indexNo - number of index.
 	/// @return pointer to a function context or null if some error happened.
 	FtCtx::Ptr CreateCtx(int indexNo, const RanksHolder::Ptr&);
-	[[nodiscard]] bool Empty() const noexcept;
+	bool Empty() const noexcept;
 
 private:
 	FtCtx::Ptr createCtx(FtFuncStruct& data, FtCtx::Ptr ctx, IndexType index_type, const RanksHolder::Ptr&);

@@ -12,9 +12,9 @@ struct JsonNode;
 
 namespace reindexer {
 
-class BaseFTConfig {
+class [[nodiscard]] BaseFTConfig {
 public:
-	struct Synonym {
+	struct [[nodiscard]] Synonym {
 		std::vector<std::string> tokens;
 		std::vector<std::string> alternatives;
 		bool operator==(const Synonym& other) const { return tokens == other.tokens && alternatives == other.alternatives; }
@@ -38,7 +38,7 @@ public:
 
 	SplitOptions splitOptions;
 
-	struct BaseRankingConfig {
+	struct [[nodiscard]] BaseRankingConfig {
 		static constexpr int kMinProcAfterPenalty = 1;
 		// Relevancy of full word match
 		int fullMatch = 100;

@@ -19,7 +19,7 @@ typename LRUCacheImpl<K, V, HashT, EqualT>::Iterator LRUCacheImpl<K, V, HashT, E
 		return Iterator();
 	}
 
-	std::lock_guard lk(lock_);
+	lock_guard lk(lock_);
 
 	auto [it, emplaced] = items_.try_emplace(key);
 	if (emplaced) {
@@ -46,7 +46,7 @@ void LRUCacheImpl<K, V, HashT, EqualT>::Put(const K& key, V&& v) {
 		return;
 	}
 
-	std::lock_guard lk(lock_);
+	lock_guard lk(lock_);
 	auto it = items_.find(key);
 	if (it == items_.end()) {
 		return;
@@ -57,7 +57,7 @@ void LRUCacheImpl<K, V, HashT, EqualT>::Put(const K& key, V&& v) {
 
 	++putCount_;
 
-	eraseLRU();
+	rx_unused = eraseLRU();
 
 	if rx_unlikely (putCount_ * 16 > getCount_ && eraseCount_) {
 		logFmt(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount={},putCount={},getCount={},hitCountToCache={}",
@@ -103,22 +103,20 @@ RX_ALWAYS_INLINE bool LRUCacheImpl<K, V, HashT, EqualT>::eraseLRU() {
 }
 
 template <typename K, typename V, typename HashT, typename EqualT>
-bool LRUCacheImpl<K, V, HashT, EqualT>::clearAll() {
-	const bool res = !items_.empty();
+void LRUCacheImpl<K, V, HashT, EqualT>::clearAll() {
 	totalCacheSize_ = 0;
 	std::unordered_map<K, Entry, HashT, EqualT>().swap(items_);
 	LRUList().swap(lru_);
 	getCount_ = 0;
 	putCount_ = 0;
 	eraseCount_ = 0;
-	return res;
 }
 
 template <typename K, typename V, typename HashT, typename EqualT>
 LRUCacheMemStat LRUCacheImpl<K, V, HashT, EqualT>::GetMemStat() const {
 	LRUCacheMemStat ret;
 
-	std::lock_guard lk(lock_);
+	lock_guard lk(lock_);
 	ret.totalSize = totalCacheSize_;
 	ret.itemsCount = items_.size();
 	// for (auto &item : items_) {
@@ -132,7 +130,7 @@ LRUCacheMemStat LRUCacheImpl<K, V, HashT, EqualT>::GetMemStat() const {
 
 template <typename K, typename V, typename HashT, typename EqualT>
 void LRUCacheImpl<K, V, HashT, EqualT>::Clear() {
-	std::lock_guard lk(lock_);
+	lock_guard lk(lock_);
 	clearAll();
 }
 

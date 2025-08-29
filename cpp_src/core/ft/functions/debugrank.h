@@ -11,7 +11,7 @@ class ItemRef;
 
 class [[nodiscard]] DebugRank {
 public:
-	[[nodiscard]] bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder) const;
+	bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder) const;
 };
 
 }  // namespace reindexer

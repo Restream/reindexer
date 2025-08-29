@@ -86,7 +86,7 @@ uint32_t RPCQrWatcher::removeExpired(uint32_t now, uint32_t from, uint32_t to) {
 				qrs.uid.store(newUID, std::memory_order_release);
 				++expiredCnt;
 
-				std::lock_guard lck(mtx_);
+				lock_guard lck(mtx_);
 				putFreeID(i);
 			}
 		}

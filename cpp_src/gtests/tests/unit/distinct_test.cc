@@ -29,10 +29,8 @@ TEST_F(DistinctApi, Verify) {
 		saveItem(std::move(item), default_namespace);
 	};
 	auto verify = [this]() {
-		Query q{Query::FromSQL("SELECT distinct(v0,v1,v2),* from " + default_namespace)};
-		reindexer::QueryResults res;
-		Error err = rt.reindexer->Select(q, res);
-		ASSERT_TRUE(err.ok()) << err.what() << '\n' << q.GetSQL();
+		auto q = Query::FromSQL("SELECT distinct(v0,v1,v2),* from " + default_namespace);
+		auto res = rt.Select(q);
 		Verify(res, std::move(q), *rt.reindexer);
 	};
 
@@ -67,10 +65,8 @@ TEST_F(DistinctApi, Verify) {
 
 	insertItem(R"#({"id":100,"vi1":10,"vi2":"str1"})#");
 	auto verifyIndex = [this]() {
-		Query q{Query::FromSQL("SELECT distinct(vi1,vi2),* from " + default_namespace)};
-		reindexer::QueryResults res;
-		Error err = rt.reindexer->Select(q, res);
-		ASSERT_TRUE(err.ok()) << err.what() << '\n' << q.GetSQL();
+		auto q = Query::FromSQL("SELECT distinct(vi1,vi2),* from " + default_namespace);
+		auto res = rt.Select(q);
 		Verify(res, std::move(q), *rt.reindexer);
 	};
 	verifyIndex();

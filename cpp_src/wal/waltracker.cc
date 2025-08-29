@@ -80,7 +80,7 @@ bool WALTracker::Resize(int64_t sz) {
 	initPositions(sz, minLSN, maxLSN);
 	for (auto lsn = minLSN; lsn <= maxLSN; ++lsn) {
 		auto pos = lsn % oldSz;
-		Set(WALRecord(std::span<uint8_t>(oldRecords[pos])), lsn_t(lsn, oldRecords[pos].server), true);
+		rx_unused = Set(WALRecord(std::span<uint8_t>(oldRecords[pos])), lsn_t(lsn, oldRecords[pos].server), true);
 	}
 	return true;
 }
@@ -114,7 +114,7 @@ void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage& 
 	initPositions(sz, minLSN, maxLSN);
 	// Fill records from storage
 	for (auto& rec : data) {
-		Set(WALRecord(std::string_view(rec.second)), rec.first, true);
+		rx_unused = Set(WALRecord(std::string_view(rec.second)), rec.first, true);
 	}
 }
 

@@ -6,7 +6,7 @@ namespace reindexer {
 namespace coroutine {
 
 /// @class Allows to await specified number of coroutines
-class wait_group {
+class [[nodiscard]] wait_group {
 public:
 	/// Add specified number of coroutines to wait
 	void add(size_t cnt) noexcept { wait_cnt_ += cnt; }
@@ -46,7 +46,7 @@ private:
 };
 
 /// @class Allows to call done() method for wait_group on guards destruction
-class wait_group_guard {
+class [[nodiscard]] wait_group_guard {
 public:
 	wait_group_guard(wait_group& wg) noexcept : wg_(wg) {}
 	~wait_group_guard() { wg_.done(); }

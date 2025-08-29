@@ -1,13 +1,17 @@
 #include "activity_context.h"
-#include "activitylog.h"
+#include "estl/lock.h"
 #include "tools/stringstools.h"
+
+#ifdef RX_LOGACTIVITY
+#include "activitylog.h"
+#endif
 
 namespace reindexer {
 
 using namespace std::string_view_literals;
 
 void ActivityContainer::Register(const RdxActivityContext* context) {
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	const auto res = cont_.insert(context);
 	lck.unlock();
 
@@ -19,7 +23,7 @@ void ActivityContainer::Register(const RdxActivityContext* context) {
 }
 
 void ActivityContainer::Unregister(const RdxActivityContext* context) {
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	const auto count = cont_.erase(context);
 	lck.unlock();
 
@@ -35,7 +39,7 @@ void ActivityContainer::Reregister(const RdxActivityContext* oldCtx, const RdxAc
 		return;
 	}
 
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	const auto eraseCount = cont_.erase(oldCtx);
 	const auto insertRes = cont_.insert(newCtx);
 	lck.unlock();
@@ -51,14 +55,14 @@ void ActivityContainer::Reregister(const RdxActivityContext* oldCtx, const RdxAc
 
 void ActivityContainer::Reset() {
 #ifdef RX_LOGACTIVITY
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	log_.Reset();
 #endif
 }
 
 #ifdef RX_LOGACTIVITY
 void ActivityContainer::AddOperation(const RdxActivityContext* ctx, Activity::State st, bool start) {
-	std::unique_lock<std::mutex> lck(mtx_);
+	unique_lock lck(mtx_);
 	log_.AddOperation(ctx, st, start);
 }
 #endif
@@ -66,7 +70,7 @@ void ActivityContainer::AddOperation(const RdxActivityContext* ctx, Activity::St
 std::vector<Activity> ActivityContainer::List([[maybe_unused]] int serverId) {
 	std::vector<Activity> ret;
 	{
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 
 #ifdef RX_LOGACTIVITY
 		log_.Dump(serverId);
@@ -81,7 +85,7 @@ std::vector<Activity> ActivityContainer::List([[maybe_unused]] int serverId) {
 }
 
 std::optional<std::string> ActivityContainer::QueryForIpConnection(int id) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 
 	for (const RdxActivityContext* ctx : cont_) {
 		if (ctx->CheckConnectionId(id)) {

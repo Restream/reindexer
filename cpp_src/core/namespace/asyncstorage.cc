@@ -5,19 +5,19 @@
 namespace reindexer {
 
 void AsyncStorage::Close() {
-	std::lock_guard flushLck(flushMtx_);
+	lock_guard flushLck(flushMtx_);
 	flush(StorageFlushOpts().WithImmediateReopen());
 
-	std::lock_guard lck(storageMtx_);
+	lock_guard lck(storageMtx_);
 	clearUpdates();
 	reset();
 }
 
-AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& storageLock) : isCopiedNsStorage_{true}, proxy_(*this) {
-	if (!storageLock.OwnsThisFlushMutex(o.flushMtx_)) {
+AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLock& storageLock) : isCopiedNsStorage_{true}, proxy_(*this) {
+	if (!storageLock.OwnsThis(o.flushMtx_)) {
 		throw Error(errLogic, "Storage must be locked during copying (flush mutex)");
 	}
-	if (!storageLock.OwnsThisStorageMutex(o.storageMtx_)) {
+	if (!storageLock.OwnsThis(o.storageMtx_)) {
 		throw Error(errLogic, "Storage must be locked during copying (updates mutex)");
 	}
 	storage_ = o.storage_;
@@ -28,7 +28,7 @@ AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& stora
 }
 
 Error AsyncStorage::Open(datastorage::StorageType storageType, std::string_view nsName, const std::string& path, const StorageOpts& opts) {
-	auto lck = FullLock();
+	FullLock lck{flushMtx_, storageMtx_};
 
 	throwOnStorageCopy();
 
@@ -46,7 +46,7 @@ Error AsyncStorage::Open(datastorage::StorageType storageType, std::string_view 
 }
 
 void AsyncStorage::Destroy() {
-	auto lck = FullLock();
+	FullLock lck{flushMtx_, storageMtx_};
 
 	throwOnStorageCopy();
 
@@ -58,46 +58,46 @@ void AsyncStorage::Destroy() {
 }
 
 AsyncStorage::Cursor AsyncStorage::GetCursor(StorageOpts& opts) {
-	std::unique_lock lck(storageMtx_);
+	unique_lock lck(storageMtx_);
 	throwOnStorageCopy();
 	return Cursor(std::move(lck), std::unique_ptr<datastorage::Cursor>(storage_->GetCursor(opts)), *this);
 }
 
 AsyncStorage::ConstCursor AsyncStorage::GetCursor(StorageOpts& opts) const {
-	std::unique_lock lck(storageMtx_);
+	unique_lock lck(storageMtx_);
 	throwOnStorageCopy();
 	return ConstCursor(std::move(lck), std::unique_ptr<datastorage::Cursor>(storage_->GetCursor(opts)));
 }
 
 void AsyncStorage::Flush(const StorageFlushOpts& opts) {
 	// Flush must be performed in single thread
-	std::lock_guard flushLck(flushMtx_);
+	lock_guard flushLck(flushMtx_);
 	statusCache_.UpdatePart(bool(storage_.get()), path_);  // Actualize cache part. Just in case
 	flush(opts);
 }
 
 std::string AsyncStorage::GetPath() const noexcept {
-	std::lock_guard lck(storageMtx_);
+	lock_guard lck(storageMtx_);
 	return path_;
 }
 
 datastorage::StorageType AsyncStorage::GetType() const noexcept {
-	std::lock_guard lck(storageMtx_);
+	lock_guard lck(storageMtx_);
 	if (storage_) {
 		return storage_->Type();
 	}
 	return datastorage::StorageType::LevelDB;
 }
 
-void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT& storageLock) {
-	if (!storageLock.OwnsThisFlushMutex(src.flushMtx_)) {
+void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLock& storageLock) {
+	if (!storageLock.OwnsThis(src.flushMtx_)) {
 		throw Error(errLogic, "Storage must be locked during updates inheritance (flush mutex)");
 	}
-	if (!storageLock.OwnsThisStorageMutex(src.storageMtx_)) {
+	if (!storageLock.OwnsThis(src.storageMtx_)) {
 		throw Error(errLogic, "Storage must be locked during updates inheritance (updates mutex)");
 	}
 
-	std::lock_guard lck(storageMtx_);
+	lock_guard lck(storageMtx_);
 
 	if (!isCopiedNsStorage_) {
 		throw Error(errLogic, "Updates inheritance is supposed to work with copied storages");
@@ -143,7 +143,7 @@ void AsyncStorage::flush(const StorageFlushOpts& opts) {
 	UpdatesPtrT uptr;
 	try {
 		if (totalUpdatesCount_.load(std::memory_order_acquire)) {
-			std::unique_lock lck(storageMtx_, std::defer_lock_t());
+			unique_lock lck(storageMtx_, std::defer_lock);
 			if (!lastFlushError_.ok()) {
 				if (reopenTs_ > ClockT::now_coarse() && !opts.IsWithImmediateReopen()) {
 					throw lastFlushError_;
@@ -152,7 +152,7 @@ void AsyncStorage::flush(const StorageFlushOpts& opts) {
 				}
 			}
 
-			auto flushChunk = [this, &lck](UpdatesPtrT&& uptr) {
+			auto flushChunk = [this, &lck](UpdatesPtrT&& uptr) RX_REQUIRES(storageMtx_) RX_NO_THREAD_SAFETY_ANALYSIS {
 				assertrx(lck.owns_lock());
 				lck.unlock();
 

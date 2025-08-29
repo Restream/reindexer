@@ -11,7 +11,7 @@ struct ProtobufValue;
 struct ProtobufObject;
 class FloatVectorsHolderVector;
 
-class ArraysStorage {
+class [[nodiscard]] ArraysStorage {
 public:
 	explicit ArraysStorage(TagsMatcher& tm) noexcept : tm_(tm) {}
 	ArraysStorage(const ArraysStorage&) = delete;
@@ -26,7 +26,7 @@ public:
 	void onObjectBuilt(CJsonBuilder& parent);
 
 private:
-	struct ArrayData {
+	struct [[nodiscard]] ArrayData {
 		ArrayData(TagsMatcher* tm, TagName tagName, int _field) : field(_field), size(0), builder(ser, ObjType::TypeArray, tm, tagName) {}
 		ArrayData(const ArrayData&) = delete;
 		ArrayData(ArrayData&&) = delete;
@@ -42,7 +42,7 @@ private:
 	TagsMatcher& tm_;
 };
 
-class CJsonProtobufObjectBuilder {
+class [[nodiscard]] CJsonProtobufObjectBuilder {
 public:
 	CJsonProtobufObjectBuilder(ArraysStorage& arraysStorage, WrSerializer& ser, TagsMatcher* tm = nullptr,
 							   TagName tagName = TagName::Empty())
@@ -67,7 +67,7 @@ private:
 	ArraysStorage& arraysStorage_;
 };
 
-class ProtobufDecoder {
+class [[nodiscard]] ProtobufDecoder {
 public:
 	ProtobufDecoder(TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema) noexcept
 		: tm_(tagsMatcher), schema_(std::move(schema)), arraysStorage_(tm_) {}

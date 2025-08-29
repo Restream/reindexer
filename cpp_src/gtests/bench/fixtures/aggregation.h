@@ -4,7 +4,7 @@
 
 #include "base_fixture.h"
 
-class Aggregation : protected BaseFixture {
+class [[nodiscard]] Aggregation : protected BaseFixture {
 public:
 	~Aggregation() override = default;
 	Aggregation(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {

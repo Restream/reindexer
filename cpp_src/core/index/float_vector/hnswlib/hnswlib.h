@@ -22,22 +22,23 @@
 #include "tools/normalize.h"
 
 #if RX_WITH_STDLIB_DEBUG
-#include <mutex>
 #include <set>
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #endif	// RX_WITH_STDLIB_DEBUG
 
 namespace hnswlib {
 typedef uint32_t labeltype;
 
 // This can be extended to store state for filtering (e.g. from a std::set)
-class BaseFilterFunctor {
+class [[nodiscard]] BaseFilterFunctor {
 public:
 	virtual bool operator()(hnswlib::labeltype id) { return true; }
 	virtual ~BaseFilterFunctor() {}
 };
 
 template <typename dist_t>
-class BaseSearchStopCondition {
+class [[nodiscard]] BaseSearchStopCondition {
 public:
 	virtual void add_point_to_result(labeltype label, const void* datapoint, dist_t dist) = 0;
 
@@ -55,7 +56,7 @@ public:
 };
 
 template <typename T>
-class pairGreater {
+class [[nodiscard]] pairGreater {
 public:
 	bool operator()(const T& p1, const T& p2) { return p1.first > p2.first; }
 };
@@ -73,7 +74,7 @@ static void readBinaryPOD(std::istream& in, T& podRef) {
 template <typename MTYPE>
 using DISTFUNC = MTYPE (*)(const void*, const void*, const void*) noexcept;
 
-enum class MetricType {
+enum class [[nodiscard]] MetricType {
 	NONE,
 	L2,
 	INNER_PRODUCT,
@@ -81,14 +82,14 @@ enum class MetricType {
 };
 
 template <typename MTYPE>
-struct DistCalculatorParam {
+struct [[nodiscard]] DistCalculatorParam {
 	DISTFUNC<MTYPE> f{nullptr};
 	MetricType metric{MetricType::NONE};
 	size_t dims{0};
 };
 
 template <typename MTYPE>
-class DistCalculator {
+class [[nodiscard]] DistCalculator {
 public:
 	DistCalculator() = default;
 	DistCalculator(DistCalculatorParam<MTYPE>&& param, size_t maxElements) : maxElements_{maxElements}, param_{std::move(param)} {
@@ -108,7 +109,7 @@ public:
 
 	DistCalculator& operator=(DistCalculator&& other) noexcept {
 		if (&other != this) {
-			std::scoped_lock lck(mtx_, other.mtx_);
+			reindexer::scoped_lock lck(mtx_, other.mtx_);
 			maxElements_ = other.maxElements_;
 			param_ = std::move(other.param_);
 			normCoefs_ = std::move(other.normCoefs_);
@@ -142,7 +143,7 @@ public:
 			const size_t copyCount = other.maxElements_ * sizeof(MTYPE);
 			std::memcpy(normCoefs_.get(), other.normCoefs_.get(), copyCount);
 #if RX_WITH_STDLIB_DEBUG
-			std::scoped_lock lck(mtx_, other.mtx_);
+			reindexer::scoped_lock lck(mtx_, other.mtx_);
 			const auto it = initialized_.equal_range(other.maxElements_).second;
 			auto initCopy = other.initialized_;
 			initCopy.insert(it, initialized_.end());
@@ -156,7 +157,7 @@ public:
 			assertrx_dbg(normCoefs_);
 			normCoefs_[id] = reindexer::ann::CalculateL2Module(static_cast<const MTYPE*>(v), int32_t(param_.dims));
 #if RX_WITH_STDLIB_DEBUG
-			std::lock_guard lck(mtx_);
+			reindexer::lock_guard lck(mtx_);
 			initialized_.emplace(id);
 #endif	// RX_WITH_STDLIB_DEBUG
 		} else {
@@ -170,7 +171,7 @@ public:
 			assertrx_dbg(normCoefs_);
 			normCoefs_.get()[newId] = normCoefs_.get()[oldId];
 #if RX_WITH_STDLIB_DEBUG
-			std::lock_guard lck(mtx_);
+			reindexer::lock_guard lck(mtx_);
 			assertrx_dbg(initialized_.find(oldId) != initialized_.end());
 			initialized_.erase(oldId);
 			initialized_.emplace(newId);
@@ -183,7 +184,7 @@ public:
 		assertrx_dbg(id < maxElements_);
 #if RX_WITH_STDLIB_DEBUG
 		if (param_.metric == MetricType::COSINE) {
-			std::lock_guard lck(mtx_);
+			reindexer::lock_guard lck(mtx_);
 			assertrx_dbg(initialized_.find(id) != initialized_.end());
 			initialized_.erase(id);
 		} else {
@@ -200,7 +201,7 @@ public:
 			assertrx(id2 < maxElements_);
 #if RX_WITH_STDLIB_DEBUG
 			{
-				std::lock_guard lck(mtx_);
+				reindexer::lock_guard lck(mtx_);
 				assertrx_dbg(initialized_.find(id1) != initialized_.end());
 				assertrx_dbg(initialized_.find(id2) != initialized_.end());
 			}
@@ -219,7 +220,7 @@ public:
 			assertrx_dbg(id < maxElements_);
 #if RX_WITH_STDLIB_DEBUG
 			{
-				std::lock_guard lck(mtx_);
+				reindexer::lock_guard lck(mtx_);
 				assertrx_dbg(initialized_.find(id) != initialized_.end());
 			}
 #endif	// RX_WITH_STDLIB_DEBUG
@@ -235,13 +236,13 @@ private:
 	DistCalculatorParam<MTYPE> param_;
 	std::unique_ptr<MTYPE[]> normCoefs_;
 #if RX_WITH_STDLIB_DEBUG
-	mutable std::mutex mtx_;
+	mutable reindexer::mutex mtx_;
 	std::set<unsigned> initialized_;
 #endif	// RX_WITH_STDLIB_DEBUG
 };
 
 template <typename MTYPE>
-class SpaceInterface {
+class [[nodiscard]] SpaceInterface {
 public:
 	// virtual void search(void *);
 	virtual size_t get_data_size() noexcept = 0;
@@ -253,12 +254,12 @@ public:
 	virtual ~SpaceInterface() {}
 };
 
-struct ResizeResult {
+struct [[nodiscard]] ResizeResult {
 	const void* oldPosition;
 	const void* newPosition;
 };
 
-class IWriter {
+class [[nodiscard]] IWriter {
 public:
 	virtual void PutVarUInt(uint64_t) = 0;
 	virtual void PutVarUInt(uint32_t) = 0;
@@ -267,7 +268,7 @@ public:
 	virtual void PutVString(std::string_view) = 0;
 	virtual void AppendPKByID(labeltype) = 0;
 };
-class IReader {
+class [[nodiscard]] IReader {
 public:
 	virtual uint64_t GetVarUInt() = 0;
 	virtual int64_t GetVarInt() = 0;

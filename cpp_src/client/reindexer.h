@@ -18,7 +18,7 @@ namespace client {
 
 class ReindexerImpl;
 
-class Reindexer {
+class [[nodiscard]] Reindexer {
 public:
 	/// Completion routine
 	using Completion = std::function<void(const Error& err)>;
@@ -241,6 +241,7 @@ public:
 	typedef Item ItemT;
 	typedef Transaction TransactionT;
 	typedef ReindexerConfig ConfigT;
+	typedef ConnectOpts ConnectOptsT;
 
 private:
 	friend QueryResults;

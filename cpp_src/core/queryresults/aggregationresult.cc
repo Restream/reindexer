@@ -32,7 +32,7 @@ constexpr auto kParametersFieldNumbers = frozen::make_unordered_map<frozen::stri
 // clang-format on
 using ParametersFieldsNumbers = decltype(kParametersFieldNumbers);
 
-struct ParameterFieldGetter {
+struct [[nodiscard]] ParameterFieldGetter {
 	std::string_view at(std::string_view field) const { return field; }
 };
 

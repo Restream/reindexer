@@ -1,4 +1,7 @@
 #include "core/cjson/jsonbuilder.h"
+#include "estl/condition_variable.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "gtests/tests/gtest_cout.h"
 #include "sharding_system_api.h"
 
@@ -96,7 +99,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 		return rx.Upsert(default_namespace, item);
 	};
 
-	struct RxWithStatus {
+	struct [[nodiscard]] RxWithStatus {
 		std::shared_ptr<client::Reindexer> client = std::make_shared<client::Reindexer>();
 		std::atomic<int> errors = 0;
 	};
@@ -245,9 +248,9 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 	cfg.nodesInCluster = 1;
 	Init(std::move(cfg));
 
-	std::mutex mtx;
+	reindexer::mutex mtx;
 	bool ready = false;
-	std::condition_variable cv;
+	reindexer::condition_variable cv;
 	const std::vector<std::string> kNamespaces = {default_namespace, kNewNs};
 
 	for (size_t shard = 1; shard < kShards; ++shard) {
@@ -259,7 +262,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 	tds.reserve(kThreads);
 	for (size_t i = 0; i < kThreads; ++i) {
 		tds.emplace_back([&] {
-			std::unique_lock lck(mtx);
+			unique_lock lck(mtx);
 			cv.wait(lck, [&ready] { return ready; });
 			lck.unlock();
 			for (auto& ns : kNamespaces) {
@@ -269,7 +272,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 		});
 	}
 
-	std::unique_lock lck(mtx);
+	unique_lock lck(mtx);
 	ready = true;
 	lck.unlock();
 	cv.notify_all();

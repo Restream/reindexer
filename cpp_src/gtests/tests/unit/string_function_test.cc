@@ -135,12 +135,9 @@ TEST(StringFunctions, ToLowerUTF8ByteLen) {
 TEST_F(ReindexerApi, LikeWithFullTextIndex) {
 	// Define structure of the Namespace, where one of
 	// the indexes is of type 'text' (Full text)
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"id", {"id"}, "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"name", {"name"}, "text", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", {"id"}, "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"name", {"name"}, "text", "string", IndexOpts()});
 
 	// Insert 100 items to newly created Namespace
 	std::vector<std::string> content;
@@ -154,8 +151,8 @@ TEST_F(ReindexerApi, LikeWithFullTextIndex) {
 
 	// Make sure query with 'Like' operator to FT index leads to error
 	QueryResults qr;
-	err = rt.reindexer->Select(Query(default_namespace).Where("name", CondLike, "%" + content[rand() % content.size()]), qr);
-	ASSERT_TRUE(!err.ok());
+	auto err = rt.reindexer->Select(Query(default_namespace).Where("name", CondLike, "%" + content[rand() % content.size()]), qr);
+	ASSERT_FALSE(err.ok());
 }
 
 TEST_F(ReindexerApi, NumToText) {

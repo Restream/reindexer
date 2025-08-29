@@ -25,7 +25,7 @@ public:
 	EmbedderBase& operator=(const EmbedderBase&) = delete;
 	EmbedderBase& operator=(EmbedderBase&&) noexcept = delete;
 
-	[[nodiscard]] EmbedderCachePerfStat GetPerfStat(std::string_view tag) const;
+	EmbedderCachePerfStat GetPerfStat(std::string_view tag) const;
 
 protected:
 	EmbedderBase(std::string_view name, std::string_view format, std::string_view fieldName, EmbedderConfig&& config,
@@ -51,17 +51,17 @@ public:
 	UpsertEmbedder& operator=(const UpsertEmbedder&) = delete;
 	UpsertEmbedder& operator=(UpsertEmbedder&&) noexcept = delete;
 
-	[[nodiscard]] std::string_view FieldName() const& noexcept { return fieldName_; }
-	[[nodiscard]] auto FieldName() const&& noexcept = delete;
+	std::string_view FieldName() const& noexcept { return fieldName_; }
+	auto FieldName() const&& noexcept = delete;
 
 	void Calculate(const RdxContext& ctx, std::span<const std::vector<std::pair<std::string, VariantArray>>> sources,
 				   h_vector<ConstFloatVector, 1>& products) const;
 
-	[[nodiscard]] const h_vector<std::string, 1>& Fields() const& noexcept { return config_.fields; }
-	[[nodiscard]] auto Fields() const&& noexcept = delete;
+	const h_vector<std::string, 1>& Fields() const& noexcept { return config_.fields; }
+	auto Fields() const&& noexcept = delete;
 
-	[[nodiscard]] EmbedderConfig::Strategy Strategy() const noexcept { return config_.strategy; }
-	[[nodiscard]] bool IsAuxiliaryField(std::string_view fieldName) const noexcept;
+	EmbedderConfig::Strategy Strategy() const noexcept { return config_.strategy; }
+	bool IsAuxiliaryField(std::string_view fieldName) const noexcept;
 
 private:
 	void checkFields(std::span<const std::vector<std::pair<std::string, VariantArray>>> sources) const;

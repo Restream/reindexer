@@ -26,23 +26,23 @@ bool IsANNCacheEnabledByEnv() noexcept {
 }
 
 void UpdateInfo::Update(const std::string& idx, nanoseconds lastUpdateTime) noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	infoMap_[idx].lastUpdateTime = lastUpdateTime;
 }
 
 void UpdateInfo::Remove(std::string_view idx) noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	infoMap_.erase(idx);
 }
 
 UpdateInfo::nanoseconds UpdateInfo::LastUpdateTime(std::string_view idx) const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	const auto found = infoMap_.find(idx);
 	return (found != infoMap_.end()) ? found->second.lastUpdateTime : UpdateInfo::nanoseconds(0);
 }
 
 void UpdateInfo::Clear() noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	infoMap_.clear();
 }
 
@@ -203,7 +203,7 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 	: storage_{storage}, nsName_{nsName} {
 	assertrx(nameToField);
 	if (!storage_.IsValid()) {
-		assertrx_dbg(false);  // Do not expecting this error in test scenarious
+		assertrx_dbg(false);  // Do not expecting this error in test scenarios
 		throw Error(errParams, "Storage for '{}' is not valid. Unable to read ANN cache");
 	}
 
@@ -223,21 +223,21 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 			std::string_view keySlice = dbIter->Key();
 			auto dotPos = keySlice.find_first_of('.');
 			if (dotPos == std::string_view::npos) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarious
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): incorrect key format", nsName_, keySlice);
 				keysToRemove.emplace_back(keySlice);
 				continue;
 			}
 			std::string_view indexName = keySlice.substr(dotPos + 1);
 			if (indexName.empty()) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarious
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): empty index name", nsName_, keySlice);
 				keysToRemove.emplace_back(keySlice);
 				continue;
 			}
 			std::string_view dataSlice = dbIter->Value();
 			if (dataSlice.size() < kHdrSize) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarious
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): no version or last update time data", nsName_, keySlice);
 				keysToRemove.emplace_back(keySlice);
 				continue;
@@ -245,14 +245,14 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 			Serializer ser(dataSlice);
 			const auto version = ser.GetUInt8();
 			if (version != kANNCacheFormatVersion) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarious
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): unsupported format version {}", nsName_, keySlice, version);
 				keysToRemove.emplace_back(keySlice);
 				continue;
 			}
 			const auto cachedLastUpdate = nanoseconds(ser.GetUInt64());
 			if (cachedLastUpdate != lastUpdate) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarious
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): outdated: {{required_last_update: {}, found_last_update: {}}}",
 					   nsName_, keySlice, lastUpdate.count(), cachedLastUpdate.count());
 				keysToRemove.emplace_back(keySlice);
@@ -262,7 +262,7 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 
 			const int field = nameToField(indexName);
 			if (field >= kMaxIndexes || field < 0) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarious
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): unable to map index name to index field number (got {})", nsName_,
 					   keySlice, field);
 				keysToRemove.emplace_back(keySlice);
@@ -271,13 +271,13 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 
 			// Check PK
 			if (!checkIndexDef(ser, pkField, keySlice, "PK", getIndexDefinitionF)) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarious
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				keysToRemove.emplace_back(keySlice);
 				continue;
 			}
 			// Check ANN
 			if (!checkIndexDef(ser, unsigned(field), keySlice, "ANN", getIndexDefinitionF)) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarious
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				keysToRemove.emplace_back(keySlice);
 				continue;
 			}
@@ -297,7 +297,7 @@ std::optional<Reader::CachedIndex> Reader::GetNextCachedIndex() {
 	CachedIndexMeta meta;
 
 	{
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (cachedMeta_.empty()) {
 			return ret;
 		}

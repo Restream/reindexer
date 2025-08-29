@@ -14,7 +14,7 @@ static void printPkValue(const Item::FieldRef& f, WrSerializer& ser) {
 	f.operator Variant().Dump(ser);
 }
 
-static WrSerializer& printPkFields(const Item& item, WrSerializer& ser) {
+static void printPkFields(const Item& item, WrSerializer& ser) {
 	size_t jsonPathIdx = 0;
 	const FieldsSet fields = item.PkFields();
 	for (auto it = fields.begin(); it != fields.end(); ++it) {
@@ -29,7 +29,6 @@ static WrSerializer& printPkFields(const Item& item, WrSerializer& ser) {
 			printPkValue(item[field], ser);
 		}
 	}
-	return ser;
 }
 
 Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ShardingProxy(std::move(cfg))), owner_(true) {

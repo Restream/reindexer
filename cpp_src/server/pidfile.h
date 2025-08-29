@@ -13,7 +13,7 @@
 
 namespace reindexer_server {
 
-class PidFile {
+class [[nodiscard]] PidFile {
 public:
 	PidFile(const std::string& name = std::string(), pid_t pid = -1) : file_(-1) {
 		if (!name.empty()) {

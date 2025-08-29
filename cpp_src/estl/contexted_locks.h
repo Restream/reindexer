@@ -1,20 +1,16 @@
 #pragma once
 
 #include <chrono>
-#include <mutex>
 
 #include "tools/assertrx.h"
 
 using std::chrono::milliseconds;
-using std::try_to_lock_t;
-using std::defer_lock_t;
-using std::adopt_lock_t;
 
 namespace reindexer {
 
 constexpr milliseconds kDefaultCondChkTime = milliseconds(50);
 
-struct ignore_cancel_ctx {};
+struct [[nodiscard]] ignore_cancel_ctx {};
 
 template <typename _Mutex, typename Context>
 class [[nodiscard]] contexted_unique_lock {
@@ -26,13 +22,14 @@ public:
 		: _M_mtx(&__mtx), _M_owns(false), _M_context(&__context), _M_chkTimeout(__chkTimeout) {
 		lock();
 	}
-	explicit contexted_unique_lock(MutexType& __mtx, defer_lock_t, Context& __context,
+	explicit contexted_unique_lock(MutexType& __mtx, std::defer_lock_t, Context& __context,
 								   milliseconds __chkTimeout = kDefaultCondChkTime) noexcept
 		: _M_mtx(&__mtx), _M_owns(false), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
-	explicit contexted_unique_lock(MutexType& __mtx, adopt_lock_t, Context& __context,
+	explicit contexted_unique_lock(MutexType& __mtx, std::adopt_lock_t, Context& __context,
 								   milliseconds __chkTimeout = kDefaultCondChkTime) noexcept
 		: _M_mtx(&__mtx), _M_owns(true), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
-	explicit contexted_unique_lock(MutexType& __mtx, try_to_lock_t, Context& __context, milliseconds __chkTimeout = kDefaultCondChkTime)
+	explicit contexted_unique_lock(MutexType& __mtx, std::try_to_lock_t, Context& __context,
+								   milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(__mtx.try_lock()), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
 	contexted_unique_lock(contexted_unique_lock&& lck) noexcept
 		: _M_mtx(lck._M_mtx), _M_owns(lck._M_owns), _M_context(lck._M_context), _M_chkTimeout(lck._M_chkTimeout) {
@@ -135,10 +132,11 @@ public:
 		: _M_mtx(&__mtx), _M_owns(false), _M_context(&__context), _M_chkTimeout(__chkTimeout) {
 		lock();
 	}
-	explicit contexted_shared_lock(MutexType& __mtx, adopt_lock_t, Context& __context,
+	explicit contexted_shared_lock(MutexType& __mtx, std::adopt_lock_t, Context& __context,
 								   milliseconds __chkTimeout = kDefaultCondChkTime) noexcept
 		: _M_mtx(&__mtx), _M_owns(true), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
-	explicit contexted_shared_lock(MutexType& __mtx, try_to_lock_t, Context& __context, milliseconds __chkTimeout = kDefaultCondChkTime)
+	explicit contexted_shared_lock(MutexType& __mtx, std::try_to_lock_t, Context& __context,
+								   milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(__mtx.try_lock_shared()), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
 	contexted_shared_lock(contexted_shared_lock&& lck) noexcept
 		: _M_mtx(lck._M_mtx), _M_owns(lck._M_owns), _M_context(lck._M_context), _M_chkTimeout(lck._M_chkTimeout) {

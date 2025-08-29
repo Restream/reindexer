@@ -7,18 +7,18 @@
 namespace reindexer {
 
 template <typename CharT, typename V>
-class suffix_map {
+class [[nodiscard]] suffix_map {
 	typedef size_t size_type;
 	typedef unsigned char char_type;
 
-	class value_type : public std::pair<const CharT*, V> {
+	class [[nodiscard]] value_type : public std::pair<const CharT*, V> {
 	public:
 		value_type(std::pair<const CharT*, V>&& v) noexcept : std::pair<const CharT*, V>(std::move(v)) {}
 		value_type(const std::pair<const CharT*, V>& v) : std::pair<const CharT*, V>(v) {}
 		const value_type* operator->() const noexcept { return this; }
 	};
 
-	class iterator {
+	class [[nodiscard]] iterator {
 		friend class suffix_map;
 
 	public:

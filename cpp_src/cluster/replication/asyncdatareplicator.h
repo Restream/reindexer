@@ -3,6 +3,7 @@
 #include "asyncreplthread.h"
 #include "cluster/logger.h"
 #include "core/dbconfig.h"
+#include "estl/mutex.h"
 #include "updatesqueuepair.h"
 
 namespace reindexer {
@@ -10,7 +11,7 @@ namespace cluster {
 
 class ClusterManager;
 
-class AsyncDataReplicator {
+class [[nodiscard]] AsyncDataReplicator {
 public:
 	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
 
@@ -36,7 +37,7 @@ private:
 	static NsNamesHashSetT getMergedNsConfig(const AsyncReplConfigData& config);
 
 	ReplicationStatsCollector statsCollector_;
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	UpdatesQueueT& updatesQueue_;
 	SharedSyncState& syncState_;
 	ReindexerImpl& thisNode_;

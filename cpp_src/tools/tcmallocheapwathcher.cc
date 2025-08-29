@@ -3,7 +3,6 @@
 
 #include <gperftools/malloc_extension.h>
 #include <cmath>
-#include <mutex>
 
 namespace reindexer {
 

@@ -95,7 +95,7 @@ bool loop_posix_base::check_async(int fd) {
 #endif	// HAVE_POSIX_LOOP
 
 #ifdef HAVE_SELECT_LOOP
-class loop_select_backend_private {
+class [[nodiscard]] loop_select_backend_private {
 public:
 	fd_set rfds_, wfds_;
 	int maxfd_;
@@ -170,7 +170,7 @@ int loop_select_backend::capacity() noexcept { return FD_SETSIZE; }
 #endif
 
 #ifdef HAVE_POLL_LOOP
-class loop_poll_backend_private {
+class [[nodiscard]] loop_poll_backend_private {
 public:
 	std::vector<pollfd> fds_;
 	bool wasErased_;
@@ -247,7 +247,7 @@ int loop_poll_backend::capacity() { return 500000; }
 
 #ifdef HAVE_EPOLL_LOOP
 
-class loop_epoll_backend_private {
+class [[nodiscard]] loop_epoll_backend_private {
 public:
 	int ctlfd_ = -1;
 	std::vector<epoll_event> events_;
@@ -313,12 +313,12 @@ int loop_epoll_backend::runonce(int64_t t) {
 #endif
 
 #ifdef HAVE_WSA_LOOP
-struct win_fd {
+struct [[nodiscard]] win_fd {
 	HANDLE hEvent = INVALID_HANDLE_VALUE;
 	int fd = -1;
 };
 
-class loop_wsa_backend_private {
+class [[nodiscard]] loop_wsa_backend_private {
 public:
 	std::vector<win_fd> wfds_;
 	HANDLE hAsyncEvent = INVALID_HANDLE_VALUE;
@@ -530,7 +530,7 @@ void dynamic_loop::run() {
 		h_vector<coroutine::routine_t, 5> yielded_tasks;
 		std::swap(yielded_tasks, yielded_tasks_);
 		for (auto id : yielded_tasks) {
-			coroutine::resume(id);
+			rx_unused = coroutine::resume(id);
 		}
 		yielded_tasks.clear();
 	}
@@ -678,7 +678,7 @@ void dynamic_loop::set_coro_cb() {
 	[[maybe_unused]] bool res = coroutine::set_loop_completion_callback([this](coroutine::routine_t id) {
 		auto found = std::find(running_tasks_.begin(), running_tasks_.end(), id);
 		assertrx(found != running_tasks_.end());
-		running_tasks_.erase(found);
+		rx_unused = running_tasks_.erase(found);
 		if (new_tasks_.empty() && running_tasks_.empty()) {
 			coroTid_ = std::thread::id();
 			break_loop();

@@ -14,7 +14,7 @@ using StoreIndexKeyType = std::conditional_t<
 	std::conditional_t<std::is_same_v<typename Map::key_type, key_string_with_hash>, key_string, typename Map::key_type>>;
 
 template <typename Map>
-class IndexUnordered : public IndexStore<StoreIndexKeyType<Map>> {
+class [[nodiscard]] IndexUnordered : public IndexStore<StoreIndexKeyType<Map>> {
 	using Base = IndexStore<StoreIndexKeyType<Map>>;
 
 public:
@@ -32,7 +32,7 @@ public:
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType cond, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
 	void Commit() override;
-	void UpdateSortedIds(const UpdateSortedContext&) override;
+	void UpdateSortedIds(const IUpdateSortedContext&) override;
 	bool IsSupportSortedIdsBuild() const noexcept override { return true; }
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexUnordered<Map>>(*this); }
 	IndexMemStat GetMemStat(const RdxContext&) override;

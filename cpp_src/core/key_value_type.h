@@ -14,39 +14,39 @@ class Uuid;
 class [[nodiscard]] KeyValueType {
 public:
 	// When add new type change name of function Is<> and update ForAllTypes and ForAnyType
-	struct Int64 {
+	struct [[nodiscard]] Int64 {
 		using ViewType = int64_t;
 		using PayloadFieldValueType = ViewType;
 	};
-	struct Double {
+	struct [[nodiscard]] Double {
 		using ViewType = double;
 		using PayloadFieldValueType = ViewType;
 	};
-	struct Float {
+	struct [[nodiscard]] Float {
 		using ViewType = float;
 		using PayloadFieldValueType = ViewType;
 	};
-	struct String {
+	struct [[nodiscard]] String {
 		using ViewType = std::string_view;
 		using PayloadFieldValueType = p_string;
 	};
-	struct Bool {
+	struct [[nodiscard]] Bool {
 		using ViewType = bool;
 		using PayloadFieldValueType = ViewType;
 	};
-	struct Null {};
-	struct Int {
+	struct [[nodiscard]] Null {};
+	struct [[nodiscard]] Int {
 		using ViewType = int32_t;
 		using PayloadFieldValueType = ViewType;
 	};
-	struct Undefined {};
-	struct Composite {};
-	struct Tuple {};
-	struct Uuid {
+	struct [[nodiscard]] Undefined {};
+	struct [[nodiscard]] Composite {};
+	struct [[nodiscard]] Tuple {};
+	struct [[nodiscard]] Uuid {
 		using ViewType = reindexer::Uuid;
 		using PayloadFieldValueType = ViewType;
 	};
-	struct FloatVector {};
+	struct [[nodiscard]] FloatVector {};
 
 private:
 	template <template <typename> typename T>
@@ -59,30 +59,30 @@ private:
 		T<Undefined>::value || T<Composite>::value || T<Tuple>::value || T<Uuid>::value || T<FloatVector>::value || T<Float>::value;
 
 	template <typename F, typename... Fs>
-	struct IsNoexcept {
+	struct [[nodiscard]] IsNoexcept {
 		template <typename T>
-		struct Overloaded {
+		struct [[nodiscard]] Overloaded {
 			static constexpr bool value = noexcept(std::declval<overloaded<F, Fs...>>()(std::declval<T>()));
 		};
 	};
 	template <typename F>
-	struct IsNoexcept<F> {
+	struct [[nodiscard]] IsNoexcept<F> {
 		template <typename T>
-		struct Overloaded {
+		struct [[nodiscard]] Overloaded {
 			static constexpr bool value = noexcept(std::declval<overloaded<F>>()(std::declval<T>()));
 		};
 	};
 
 	template <typename... Fs>
-	struct OneOf {
+	struct [[nodiscard]] OneOf {
 		template <typename A>
-		struct IsInvocable {
+		struct [[nodiscard]] IsInvocable {
 			static constexpr bool value = std::disjunction_v<std::is_invocable<Fs, A>...>;
 		};
 	};
 
 	template <typename T, typename Visitor>
-	class VisitorWrapper {
+	class [[nodiscard]] VisitorWrapper {
 	public:
 		explicit RX_ALWAYS_INLINE VisitorWrapper(Visitor& v) noexcept : visitor_{v} {}
 		template <typename... Ts>
@@ -94,7 +94,7 @@ private:
 		Visitor& visitor_;
 	};
 
-	enum class KVT : uint8_t {
+	enum class [[nodiscard]] KVT : uint8_t {
 		Int64 = TAG_VARINT,
 		Double = TAG_DOUBLE,
 		String = TAG_STRING,
@@ -159,8 +159,7 @@ public:
 	}
 
 	template <typename... Fs>
-	[[nodiscard]] RX_ALWAYS_INLINE auto EvaluateOneOf(overloaded<Fs...> f) const
-		noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
+	RX_ALWAYS_INLINE auto EvaluateOneOf(overloaded<Fs...> f) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
 		static_assert(ForAnyType<OneOf<Fs...>::template IsInvocable>);
 		switch (value_) {
 			case KVT::Int64:
@@ -192,7 +191,7 @@ public:
 		std::abort();
 	}
 	template <typename... Fs>
-	[[nodiscard]] RX_ALWAYS_INLINE auto EvaluateOneOf(Fs... fs) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
+	RX_ALWAYS_INLINE auto EvaluateOneOf(Fs... fs) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
 		return EvaluateOneOf(overloaded<Fs...>{std::move(fs)...});
 	}
 	template <typename Visitor>
@@ -244,16 +243,16 @@ public:
 	}
 
 	template <typename T>
-	[[nodiscard]] RX_ALWAYS_INLINE bool Is() const noexcept {  // TODO
+	RX_ALWAYS_INLINE bool Is() const noexcept {	 // TODO
 		static constexpr KeyValueType v{T{}};
 		return v.value_ == value_;
 	}
 	template <typename T1, typename T2, typename... Ts>
-	[[nodiscard]] RX_ALWAYS_INLINE bool IsOneOf() const noexcept {
+	RX_ALWAYS_INLINE bool IsOneOf() const noexcept {
 		return ((Is<T1>() || Is<T2>()) || ... || Is<Ts>());
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
-	[[nodiscard]] RX_ALWAYS_INLINE TagType ToTagType() const {
+	RX_ALWAYS_INLINE bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
+	RX_ALWAYS_INLINE TagType ToTagType() const {
 		switch (value_) {
 			case KVT::Int64:
 			case KVT::Int:
@@ -279,7 +278,7 @@ public:
 		}
 		throwKVTException("Unexpected value type", Name());
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE bool IsNumeric() const noexcept {
+	RX_ALWAYS_INLINE bool IsNumeric() const noexcept {
 		switch (value_) {
 			case KVT::Int64:
 			case KVT::Double:
@@ -299,12 +298,12 @@ public:
 		assertrx(0);
 		std::abort();
 	}
-	[[nodiscard]] std::string_view Name() const noexcept;
+	std::string_view Name() const noexcept;
 
 	template <typename T>
 	static KeyValueType From();
 
-	[[nodiscard]] RX_ALWAYS_INLINE static KeyValueType FromNumber(int n) {
+	RX_ALWAYS_INLINE static KeyValueType FromNumber(int n) {
 		switch (n) {
 			case static_cast<int>(KVT::Int64):
 			case static_cast<int>(KVT::Double):
@@ -323,7 +322,7 @@ public:
 				throwKVTException("Invalid int value for KeyValueType", n);
 		}
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE int ToNumber() const noexcept { return static_cast<int>(value_); }
+	RX_ALWAYS_INLINE int ToNumber() const noexcept { return static_cast<int>(value_); }
 
 private:
 	[[noreturn]] static void throwKVTException(std::string_view msg, std::string_view param);

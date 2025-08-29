@@ -8,25 +8,23 @@
 #include "core/queryresults/joinresults.h"
 #include "core/system_ns_names.h"
 #include "estl/gift_str.h"
+#include "estl/lock.h"
 #include "estl/shared_mutex.h"
 #include "gason/gason.h"
 #include "reindexer_api.h"
 #include "tools/fsops.h"
 #include "tools/serializer.h"
 
-class JoinSelectsApi : public ReindexerApi {
+class [[nodiscard]] JoinSelectsApi : public ReindexerApi {
 protected:
 	using BookId = int;
 	using FieldName = std::string;
 	using QueryResultRow = std::map<FieldName, reindexer::VariantArray>;
 	using QueryResultRows = std::map<BookId, QueryResultRow>;
 
-	void Init(const std::string& dbName = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_test")) {
-		Error err;
-
+	void Init(const std::string& dbName = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_test")) RX_REQUIRES(!authorsMutex) {
 		reindexer::fs::RmDirAll(dbName);
-		err = rt.reindexer->Connect("builtin://" + dbName);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Connect("builtin://" + dbName);
 
 		rt.OpenNamespace(authors_namespace);
 		rt.OpenNamespace(books_namespace);
@@ -59,7 +57,7 @@ protected:
 		FillAuthorsNamespace(10);
 	}
 
-	void SetUp() override {
+	void SetUp() override RX_REQUIRES(!authorsMutex) {
 		ReindexerApi::SetUp();
 		Init();
 	}
@@ -74,7 +72,7 @@ protected:
 		}
 	}
 
-	void FillAuthorsNamespace(int32_t count) {
+	void FillAuthorsNamespace(int32_t count) RX_REQUIRES(!authorsMutex) {
 		int authorIdValue = 0;
 		{
 			reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -93,7 +91,7 @@ protected:
 			Upsert(authors_namespace, item);
 
 			{
-				std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+				reindexer::unique_lock lck(authorsMutex);
 				authorsIds.push_back(authorIdValue);
 			}
 		}
@@ -105,7 +103,7 @@ protected:
 		Upsert(authors_namespace, bestItem);
 
 		{
-			std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+			reindexer::unique_lock lck(authorsMutex);
 			if (std::find_if(authorsIds.begin(), authorsIds.end(), [this](int id) { return DostoevskyAuthorId == id; }) ==
 				authorsIds.end()) {
 				authorsIds.push_back(DostoevskyAuthorId);
@@ -124,7 +122,7 @@ protected:
 		ASSERT_EQ(removed, count);
 	}
 
-	void FillBooksNamespace(int32_t since, int32_t count) {
+	void FillBooksNamespace(int32_t since, int32_t count) RX_REQUIRES(!authorsMutex) {
 		int authorIdIdx = 0;
 		{
 			reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -449,7 +447,7 @@ protected:
 	const std::string genres_namespace = "genres_namespace";
 	const std::string location_namespace = "location_namespace";
 
-	struct Genre {
+	struct [[nodiscard]] Genre {
 		int id;
 		std::string name;
 	};

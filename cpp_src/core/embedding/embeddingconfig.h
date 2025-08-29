@@ -11,7 +11,7 @@ struct [[nodiscard]] PoolConfig {
 	size_t connect_timeout_ms{300};
 	size_t read_timeout_ms{5'000};
 	size_t write_timeout_ms{5'000};
-	[[nodiscard]] bool operator==(const PoolConfig& other) const noexcept = default;
+	bool operator==(const PoolConfig& other) const noexcept = default;
 };
 
 class [[nodiscard]] CacheTag final {
@@ -27,36 +27,36 @@ public:
 	CacheTag& operator=(const CacheTag&) noexcept = delete;
 	CacheTag& operator=(CacheTag&&) noexcept = default;
 
-	[[nodiscard]] const std::string& Tag() const& noexcept { return tag_; }
-	[[nodiscard]] auto Tag() const&& = delete;
-	[[nodiscard]] size_t Hash() const noexcept { return hash_; }
-	[[nodiscard]] bool operator==(const CacheTag& other) const noexcept = default;
+	const std::string& Tag() const& noexcept { return tag_; }
+	auto Tag() const&& = delete;
+	size_t Hash() const noexcept { return hash_; }
+	bool operator==(const CacheTag& other) const noexcept = default;
 
 private:
 	std::string tag_;
 	size_t hash_{0};
 };
-struct CacheTagHash {
-	[[nodiscard]] std::size_t operator()(const CacheTag& tag) const noexcept { return tag.Hash(); }
+struct [[nodiscard]] CacheTagHash {
+	std::size_t operator()(const CacheTag& tag) const noexcept { return tag.Hash(); }
 };
-struct CacheTagEqual {
-	[[nodiscard]] bool operator()(const CacheTag& lhs, const CacheTag& rhs) const noexcept { return lhs.Tag() == rhs.Tag(); }
+struct [[nodiscard]] CacheTagEqual {
+	bool operator()(const CacheTag& lhs, const CacheTag& rhs) const noexcept { return lhs.Tag() == rhs.Tag(); }
 };
-struct CacheTagLess {
-	[[nodiscard]] bool operator()(const CacheTag& lhs, const CacheTag& rhs) const noexcept { return lhs.Tag() < rhs.Tag(); }
+struct [[nodiscard]] CacheTagLess {
+	bool operator()(const CacheTag& lhs, const CacheTag& rhs) const noexcept { return lhs.Tag() < rhs.Tag(); }
 };
 
 struct [[nodiscard]] EmbedderConfig {
 	CacheTag tag;
 	reindexer::h_vector<std::string, 1> fields;
-	enum class Strategy { Always, EmptyOnly, Strict } strategy{Strategy::Always};
-	[[nodiscard]] bool operator==(const EmbedderConfig& other) const noexcept = default;
+	enum class [[nodiscard]] Strategy { Always, EmptyOnly, Strict } strategy{Strategy::Always};
+	bool operator==(const EmbedderConfig& other) const noexcept = default;
 };
 
 }  // namespace reindexer
 
 template <>
-struct fmt::formatter<reindexer::CacheTag> : public fmt::formatter<std::string_view> {
+struct [[nodiscard]] fmt::formatter<reindexer::CacheTag> : public fmt::formatter<std::string_view> {
 	template <typename ContextT>
 	auto format(const reindexer::CacheTag& tag, ContextT& ctx) const {
 		return fmt::formatter<std::string_view>::format(tag.Tag(), ctx);

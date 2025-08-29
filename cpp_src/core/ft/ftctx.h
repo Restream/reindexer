@@ -24,7 +24,7 @@ intrusive_ptr<T> static_ctx_pointer_cast(const intrusive_ptr<U>& r) noexcept {
 }
 
 template <typename VariantType, typename T, std::size_t index = 0>
-[[nodiscard]] constexpr std::size_t variant_index() {
+constexpr std::size_t variant_index() {
 	static_assert(std::variant_size_v<VariantType> > index, "Type not found in variant");
 	if constexpr (std::is_same_v<std::variant_alternative_t<index, VariantType>, T>) {
 		return index;
@@ -79,8 +79,8 @@ public:
 	template <typename InputIterator, typename AreaType>
 	void Add(InputIterator begin, InputIterator end, RankT, const std::vector<bool>& mask, AreasInDocument<AreaType>&& holder);
 
-	[[nodiscard]] RanksHolder& Ranks() & noexcept { return *data_->ranks; }
-	[[nodiscard]] const RanksHolder& Ranks() const& noexcept { return *data_->ranks; }
+	RanksHolder& Ranks() & noexcept { return *data_->ranks; }
+	const RanksHolder& Ranks() const& noexcept { return *data_->ranks; }
 	auto Ranks() const&& = delete;
 	RanksHolder::Ptr RanksPtr() const noexcept { return data_->ranks; }
 

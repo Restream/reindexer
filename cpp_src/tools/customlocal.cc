@@ -4897,7 +4897,7 @@ constexpr std::pair<uint16_t, uint16_t> kAlphabet[] = {
 	// clang-format on
 };
 
-struct SymbolDecomposition {
+struct [[nodiscard]] SymbolDecomposition {
 	uint16_t originalSymbol = 0;
 	uint16_t diacritic = 0;
 };

@@ -7,7 +7,7 @@ namespace reindexer {
 
 class WrSerializer;
 
-struct ShardedMeta {
+struct [[nodiscard]] ShardedMeta {
 	ShardedMeta(int _shardId = ShardingKeyType::ProxyOff, std::string&& _data = std::string())
 		: shardId(_shardId), data(std::move(_data)) {}
 

@@ -5,7 +5,7 @@
 
 #include "base_fixture.h"
 
-class ApiTvSimpleComparators : private BaseFixture {
+class [[nodiscard]] ApiTvSimpleComparators : private BaseFixture {
 public:
 	virtual ~ApiTvSimpleComparators() {}
 	ApiTvSimpleComparators(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {

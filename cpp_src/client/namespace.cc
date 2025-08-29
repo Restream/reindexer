@@ -1,7 +1,7 @@
-
 #include "client/namespace.h"
 #include "client/itemimpl.h"
 #include "client/rpcclient.h"
+#include "estl/lock.h"
 
 namespace reindexer {
 namespace client {
@@ -12,20 +12,20 @@ Namespace::Namespace(std::string _name)
 	  tagsMatcher_(payloadType, {}) {}
 
 Item Namespace::NewItem() {
-	shared_lock<shared_timed_mutex> lk(lck_);
+	shared_lock lk{mtx_};
 	auto impl = new ItemImpl<RPCClient>(payloadType, tagsMatcher_, nullptr, std::chrono::milliseconds(0));
 	return Item(impl);
 }
 
 template <typename ClientT>
 Item Namespace::NewItem(ClientT& client, std::chrono::milliseconds execTimeout) {
-	shared_lock<shared_timed_mutex> lk(lck_);
+	shared_lock lk(mtx_);
 	auto impl = new ItemImpl<ClientT>(payloadType, tagsMatcher_, &client, execTimeout);
 	return Item(impl);
 }
 
 void Namespace::TryReplaceTagsMatcher(TagsMatcher&& tm, bool checkVersion) {
-	std::lock_guard lk(lck_);
+	lock_guard lk(mtx_);
 	if (checkVersion && tagsMatcher_.version() >= tm.version() && tagsMatcher_.stateToken() == tm.stateToken()) {
 		return;
 	}

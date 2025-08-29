@@ -5,11 +5,10 @@
 
 namespace reindexer {
 
-class ComparatorNotIndexedDistinct {
+class [[nodiscard]] ComparatorNotIndexedDistinct {
 public:
-	[[nodiscard]] RX_ALWAYS_INLINE bool Compare(const Variant& v) const { return values_.find(v) == values_.cend(); }
+	RX_ALWAYS_INLINE bool Compare(const Variant& v) const { return values_.find(v) == values_.cend(); }
 	void ExcludeValues(Variant&& v) { values_.emplace(std::move(v)); }
-	void ClearValues() noexcept { values_.clear(); }
 
 private:
 	using SetType = fast_hash_set<Variant>;

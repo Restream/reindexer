@@ -3,6 +3,7 @@
 #include <fstream>
 #include <memory>
 #include <thread>
+#include "estl/lock.h"
 
 namespace search_engine {
 using std::chrono::seconds;
@@ -27,7 +28,7 @@ void FullTextDumper::LogFinalData(const reindexer::LocalQueryResults& result) {
 	}
 	tmp_buffer.push_back("_______________________________________");
 
-	std::lock_guard<std::mutex> lk(cv_m);
+	reindexer::lock_guard lk(cv_m);
 	buffer_.insert(buffer_.end(), tmp_buffer.begin(), tmp_buffer.end());
 	new_info_ = true;
 }
@@ -37,7 +38,7 @@ void FullTextDumper::Log(const std::string& data) {
 	}
 
 	startThread();
-	std::lock_guard<std::mutex> lk(cv_m);
+	reindexer::lock_guard lk(cv_m);
 	buffer_.push_back(data);
 	new_info_ = true;
 }
@@ -54,7 +55,7 @@ void FullTextDumper::AddResultData(const std::string& reqest) {
 
 	tmp_buffer.push_back("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
 
-	std::lock_guard<std::mutex> lk(cv_m);
+	reindexer::lock_guard lk(cv_m);
 	buffer_.insert(buffer_.end(), tmp_buffer.begin(), tmp_buffer.end());
 	new_info_ = true;
 }
@@ -66,7 +67,7 @@ void FullTextDumper::startThread() {
 		cv.notify_all();
 		writer_->join();
 		writer_.reset();
-		std::lock_guard<std::mutex> lk(cv_m);
+		reindexer::lock_guard lk(cv_m);
 		buffer_.clear();
 	}
 
@@ -89,7 +90,7 @@ void FullTextDumper::writeToFile() {
 
 			while (size != 0 && file.is_open()) {
 				{
-					std::lock_guard<std::mutex> lk(cv_m);
+					reindexer::lock_guard lk(cv_m);
 					data = buffer_.front();
 					buffer_.pop_front();
 					size = buffer_.size();
@@ -106,7 +107,7 @@ void FullTextDumper::writeToFile() {
 			return;
 		}
 
-		std::unique_lock<std::mutex> lk(cv_m);
+		reindexer::unique_lock lk(cv_m);
 		if (cv.wait_for(lk, seconds(write_timeout_seconds), [this] { return stoped_.load(); })) {
 			return;
 		};

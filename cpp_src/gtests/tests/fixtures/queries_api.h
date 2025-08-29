@@ -28,7 +28,7 @@ public:
 	using Query::Distinct;
 };
 
-class QueriesApi : public ReindexerApi, public QueriesVerifier {
+class [[nodiscard]] QueriesApi : public ReindexerApi, public QueriesVerifier {
 public:
 	void SetUp() override {
 		ReindexerApi::SetUp();
@@ -213,7 +213,7 @@ public:
 	void initConditionsNs();
 	void FillConditionsNs();
 	void CheckConditions();
-	enum class NullAllowed : bool { Yes = true, No = false };
+	enum class [[nodiscard]] NullAllowed : bool { Yes = true, No = false };
 	void checkAllConditions(const std::string& fieldName, reindexer::KeyValueType fieldType, NullAllowed);
 	void initUUIDNs();
 	void FillUUIDNs();
@@ -226,10 +226,8 @@ public:
 
 	template <typename Q, typename... Args>
 	void ExecuteAndVerify(Q&& query, Args&&... args) {
-		reindexer::QueryResults qr;
 		query.Explain();
-		Error err = rt.reindexer->Select(query, qr);
-		ASSERT_TRUE(err.ok()) << err.what() << '\n' << query.GetSQL();
+		auto qr = rt.Select(query);
 		if constexpr (std::is_rvalue_reference_v<decltype(query)>) {
 			Verify(qr, std::move(query), *rt.reindexer);
 		} else {
@@ -249,8 +247,7 @@ public:
 	template <typename Q, typename... Args>
 	void ExecuteAndVerify(Q&& query, QueryResults& qr, Args&&... args) {
 		query.Explain();
-		Error err = rt.reindexer->Select(query, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Select(query, qr);
 		if constexpr (std::is_rvalue_reference_v<decltype(query)>) {
 			Verify(qr, std::move(query), *rt.reindexer);
 		} else {
@@ -542,7 +539,7 @@ protected:
 
 	void FillComparatorsNamespace() {
 		for (size_t i = 0; i < 1000; ++i) {
-			Item item(rt.reindexer->NewItem(comparatorsNs));
+			Item item(rt.NewItem(comparatorsNs));
 			item[kFieldNameId] = static_cast<int>(i);
 			item[kFieldNameColumnInt] = rand();
 			item[kFieldNameColumnInt64] = static_cast<int64_t>(rand());
@@ -574,16 +571,14 @@ protected:
 	}
 
 	void FillDefaultNamespaceTransaction(int start, int count, int packagesCount) {
-		auto tr = rt.reindexer->NewTransaction(default_namespace);
+		auto tr = rt.NewTransaction(default_namespace);
 
 		for (int i = 0; i < count; ++i) {
 			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
 			auto err = tr.Insert(std::move(item));
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
-		QueryResults res;
-		auto err = rt.reindexer->CommitTransaction(tr, res);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx_unused = rt.CommitTransaction(tr);
 	}
 
 	int GetcurrBtreeIdsetsValue(int id) {
@@ -877,8 +872,7 @@ protected:
 	}
 
 	void InitNSObj() {
-		Error err = rt.reindexer->OpenNamespace(nsWithObject);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(nsWithObject);
 		DefineNamespaceDataset(nsWithObject, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
 		reindexer::WrSerializer ser;
 		for (int i = 0; i < 10; ++i) {
@@ -942,17 +936,12 @@ protected:
 									   facetLimit, facetOffset)};
 		Query checkQuery = Query(default_namespace);
 
-		reindexer::QueryResults testQr;
-		err = rt.reindexer->Select(testQuery, testQr);
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		reindexer::QueryResults checkQr;
-		err = rt.reindexer->Select(checkQuery, checkQr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto testQr = rt.Select(testQuery);
+		auto checkQr = rt.Select(checkQuery);
 
 		double yearSum = 0.0;
 		int packagesMin = std::numeric_limits<int>::max();
-		struct MultifieldFacetItem {
+		struct [[nodiscard]] MultifieldFacetItem {
 			std::string name;
 			int year;
 			bool operator<(const MultifieldFacetItem& other) const {

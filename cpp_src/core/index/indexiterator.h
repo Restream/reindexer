@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-class IndexIteratorBase {
+class [[nodiscard]] IndexIteratorBase {
 public:
 	virtual ~IndexIteratorBase() = default;
 	virtual void Start(bool reverse) = 0;
@@ -16,7 +16,7 @@ public:
 	virtual void SetMaxIterations(size_t iters) noexcept = 0;
 };
 
-class IndexIterator : public intrusive_atomic_rc_wrapper<IndexIteratorBase> {
+class [[nodiscard]] IndexIterator : public intrusive_atomic_rc_wrapper<IndexIteratorBase> {
 public:
 	using Ptr = intrusive_ptr<IndexIterator>;
 };

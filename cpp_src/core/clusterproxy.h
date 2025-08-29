@@ -1,9 +1,10 @@
 #pragma once
 
-#include <condition_variable>
 #include "client/reindexer.h"
 #include "cluster/config.h"
 #include "core/reindexer_impl/reindexerimpl.h"
+#include "estl/condition_variable.h"
+#include "estl/mutex.h"
 
 namespace reindexer {
 
@@ -12,44 +13,45 @@ struct ShardingControlRequestData;
 struct ShardingControlResponseData;
 }  // namespace sharding
 
-class ClusterProxy {
+class [[nodiscard]] ClusterProxy {
 public:
 	ClusterProxy(ReindexerConfig cfg, ActivityContainer& activities, ReindexerImpl::CallbackMap&& proxyCallbacks);
 	~ClusterProxy();
 	Error Connect(const std::string& dsn, ConnectOpts opts = ConnectOpts());
-	Error OpenNamespace(std::string_view nsName, const StorageOpts& opts, const NsReplicationOpts& replOpts, const RdxContext& ctx);
-	Error AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts, const RdxContext& ctx);
-	Error CloseNamespace(std::string_view nsName, const RdxContext& ctx);
-	Error DropNamespace(std::string_view nsName, const RdxContext& ctx);
-	Error TruncateNamespace(std::string_view nsName, const RdxContext& ctx);
-	Error RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const RdxContext& ctx);
-	Error AddIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx);
-	Error UpdateIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx);
-	Error DropIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx);
-	Error SetSchema(std::string_view nsName, std::string_view schema, const RdxContext& ctx);
+	Error OpenNamespace(std::string_view nsName, const StorageOpts& opts, const NsReplicationOpts& replOpts, const RdxContext& ctx)
+		RX_REQUIRES(!mtx_);
+	Error AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error CloseNamespace(std::string_view nsName, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error DropNamespace(std::string_view nsName, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error TruncateNamespace(std::string_view nsName, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error AddIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error UpdateIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error DropIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error SetSchema(std::string_view nsName, std::string_view schema, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Error GetSchema(std::string_view nsName, int format, std::string& schema, const RdxContext& ctx);
 	Error EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const RdxContext& ctx);
-	Error Insert(std::string_view nsName, Item& item, const RdxContext& ctx);
-	Error Insert(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx);
-	Error Update(std::string_view nsName, Item& item, const RdxContext& ctx);
-	Error Update(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx);
-	Error Update(const Query& q, LocalQueryResults& qr, const RdxContext& ctx);
-	Error Upsert(std::string_view nsName, Item& item, const RdxContext& ctx);
-	Error Upsert(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx);
-	Error Delete(std::string_view nsName, Item& item, const RdxContext& ctx);
-	Error Delete(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx);
-	Error Delete(const Query& q, LocalQueryResults& qr, const RdxContext& ctx);
-	Error Select(const Query& q, LocalQueryResults& qr, const RdxContext& ctx);
+	Error Insert(std::string_view nsName, Item& item, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Insert(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Update(std::string_view nsName, Item& item, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Update(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Update(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Upsert(std::string_view nsName, Item& item, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Upsert(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Delete(std::string_view nsName, Item& item, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Delete(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Delete(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Select(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Item NewItem(std::string_view nsName, const RdxContext& ctx) { return impl_.NewItem(nsName, ctx); }
 
-	Transaction NewTransaction(std::string_view nsName, const RdxContext& ctx);
+	Transaction NewTransaction(std::string_view nsName, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Error CommitTransaction(Transaction& tr, QueryResults& qr, bool txExpectsSharding, const RdxContext& ctx);
 	Error RollBackTransaction(Transaction& tr, const RdxContext& ctx);
 
 	Error GetMeta(std::string_view nsName, const std::string& key, std::string& data, const RdxContext& ctx);
-	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const RdxContext& ctx);
+	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const RdxContext& ctx);
-	Error DeleteMeta(std::string_view nsName, const std::string& key, const RdxContext& ctx);
+	Error DeleteMeta(std::string_view nsName, const std::string& key, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions, const RdxContext& ctx);
 	Error Status() noexcept;
@@ -83,7 +85,7 @@ public:
 	void SaveNewShardingConfigFile(const cluster::ShardingConfig& config) const;
 
 	Error ShardingControlRequest(const sharding::ShardingControlRequestData& request, sharding::ShardingControlResponseData& response,
-								 const RdxContext& ctx);
+								 const RdxContext& ctx) RX_REQUIRES(!mtx_);
 
 	Error SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg);
 	Error UnsubscribeUpdates(IEventsObserver& observer);
@@ -103,10 +105,10 @@ private:
 	using LocalQueryActionFT = Error (ReindexerImpl::*)(const Query&, LocalQueryResults&, const RdxContext&);
 	using ProxiedQueryActionFT = Error (client::Reindexer::*)(const Query&, client::QueryResults&) noexcept;
 
-	class ConnectionsMap {
+	class [[nodiscard]] ConnectionsMap {
 	public:
 		void SetParams(int clientThreads, int clientConns, int clientConnConcurrency);
-		std::shared_ptr<client::Reindexer> Get(const DSN& dsn);
+		std::shared_ptr<client::Reindexer> Get(const DSN& dsn) RX_REQUIRES(!mtx_);
 		void Shutdown();
 
 	private:
@@ -126,13 +128,13 @@ private:
 	std::atomic<unsigned short> sId_;
 	std::optional<int> replCfgHandlerID_;
 
-	std::condition_variable processPingEvent_;
-	std::mutex processPingEventMutex_;
+	condition_variable processPingEvent_;
+	mutex processPingEventMutex_;
 	int lastPingLeaderId_ = -1;
 	std::atomic_bool connected_ = false;
 
 	int getServerIDRel() const noexcept { return sId_.load(std::memory_order_relaxed); }
-	std::shared_ptr<client::Reindexer> getLeader(const cluster::RaftInfo& info);
+	std::shared_ptr<client::Reindexer> getLeader(const cluster::RaftInfo& info) RX_REQUIRES(!mtx_);
 	void resetLeader();
 	template <typename R>
 	ErrorCode getErrCode(const Error& err, R& r);
@@ -146,12 +148,12 @@ private:
 	}
 
 	template <auto ClientMethod, auto ImplMethod, typename... Args>
-	Error shardingControlRequestAction(const RdxContext& ctx, Args&&... args) noexcept;
+	Error shardingControlRequestAction(const RdxContext& ctx, Args&&... args) noexcept RX_REQUIRES(!mtx_);
 
 	template <typename Fn, Fn fn, typename R, typename... Args>
 	R localCall(const RdxContext& ctx, Args&... args);
 	template <typename Fn, Fn fn, typename R, typename FnA, typename... Args>
-	R proxyCall(const RdxContext& ctx, std::string_view nsName, const FnA& action, Args&... args);
+	R proxyCall(const RdxContext& ctx, std::string_view nsName, const FnA& action, Args&... args) RX_REQUIRES(!mtx_);
 	template <typename FnL, FnL fnl, typename... Args>
 	Error baseFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, Args&&... args);
 	template <ProxiedItemSimpleActionFT fnl>

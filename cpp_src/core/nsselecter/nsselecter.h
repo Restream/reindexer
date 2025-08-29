@@ -9,7 +9,7 @@
 namespace reindexer {
 
 template <typename JoinPreSelCtx>
-struct SelectCtxWithJoinPreSelect : public SelectCtx {
+struct [[nodiscard]] SelectCtxWithJoinPreSelect : public SelectCtx {
 	explicit SelectCtxWithJoinPreSelect(const Query& query, const Query* parentQuery, JoinPreSelCtx preSel,
 										FloatVectorsHolderMap* fvHolder) noexcept
 		: SelectCtx(query, parentQuery, fvHolder), preSelect{std::move(preSel)} {}
@@ -17,7 +17,7 @@ struct SelectCtxWithJoinPreSelect : public SelectCtx {
 };
 
 template <>
-struct SelectCtxWithJoinPreSelect<void> : public SelectCtx {
+struct [[nodiscard]] SelectCtxWithJoinPreSelect<void> : public SelectCtx {
 	explicit SelectCtxWithJoinPreSelect(const Query& query, const Query* parentQuery, FloatVectorsHolderMap* fvHolder) noexcept
 		: SelectCtx(query, parentQuery, fvHolder) {}
 };
@@ -27,7 +27,7 @@ class ItemComparator;
 class ExplainCalc;
 class QueryPreprocessor;
 
-class NsSelecter {
+class [[nodiscard]] NsSelecter {
 	template <typename It>
 	class MainNsValueGetter;
 	class JoinedNsValueGetter;
@@ -40,10 +40,11 @@ public:
 
 private:
 	template <typename JoinPreResultCtx>
-	struct LoopCtx {
+	struct [[nodiscard]] LoopCtx {
 		LoopCtx(SelectIteratorContainer& sIt, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& ctx, const QueryPreprocessor& qpp,
 				h_vector<Aggregator, 4>& agg, ExplainCalc& expl)
 			: qres(sIt), sctx(ctx), qPreproc(qpp), aggregators(agg), explain(expl) {}
+
 		SelectIteratorContainer& qres;
 		bool calcTotal = false;
 		SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx;
@@ -56,14 +57,13 @@ private:
 		bool calcAggsImmediately = true;
 	};
 
-	template <bool reverse, bool haveComparators, bool aggregationsOnly, typename ResultsT, typename JoinPreResultCtx>
+	template <bool reverse, bool aggregationsOnly, typename ResultsT, typename JoinPreResultCtx>
 	void selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, const RdxContext&);
 	template <bool desc, bool multiColumnSort, typename It>
-	[[nodiscard]] It applyForcedSort(It begin, It end, const ItemComparator&, const SelectCtx& ctx, const joins::NamespaceResults*);
+	It applyForcedSort(It begin, It end, const ItemComparator&, const SelectCtx& ctx, const joins::NamespaceResults*);
 	template <bool desc, bool multiColumnSort, typename It, typename ValueGetter>
-	[[nodiscard]] static It applyForcedSortImpl(NamespaceImpl&, It begin, It end, const ItemComparator&,
-												const std::vector<Variant>& forcedSortOrder, const std::string& fieldName,
-												const ValueGetter&);
+	static It applyForcedSortImpl(NamespaceImpl&, It begin, It end, const ItemComparator&, const std::vector<Variant>& forcedSortOrder,
+								  const std::string& fieldName, const ValueGetter&);
 	template <typename It>
 	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator&, const SelectCtx& ctx);
 
@@ -83,16 +83,15 @@ private:
 						   const JoinedSelectors&, int shardId);
 	const CollateOpts& getSortIndexCollateOpts(const SortingContext& sortCtx, const JoinedSelectors&);
 	void processLeftJoins(LocalQueryResults& qr, SelectCtx& sctx, size_t startPos, const RdxContext&);
-	[[nodiscard]] bool checkIfThereAreLeftJoins(SelectCtx& sctx) const;
+	bool checkIfThereAreLeftJoins(SelectCtx& sctx) const;
 	template <typename It, typename JoinPreResultCtx>
 	void sortResults(LoopCtx<JoinPreResultCtx>& sctx, It begin, It end, const SortingOptions& sortingOptions,
 					 const joins::NamespaceResults*);
 
-	[[nodiscard]] size_t calculateNormalCost(const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
-	[[nodiscard]] size_t calculateOptimizedCost(size_t costNormal, const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
-	[[nodiscard]] bool isSortOptimizationEffective(const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
-	[[nodiscard]] static bool validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName,
-											const TagsMatcher& tagsMatcher);
+	size_t calculateNormalCost(const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
+	size_t calculateOptimizedCost(size_t costNormal, const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
+	bool isSortOptimizationEffective(const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
+	static bool validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName, const TagsMatcher& tagsMatcher);
 	void checkStrictModeAgg(StrictMode strictMode, std::string_view name, const NamespaceName& nsName,
 							const TagsMatcher& tagsMatcher) const;
 

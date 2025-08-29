@@ -2,16 +2,14 @@
 
 #include "reindexer_api.h"
 
-class CompositeIndexesApi : public ReindexerApi {
+class [[nodiscard]] CompositeIndexesApi : public ReindexerApi {
 public:
 	enum CompositeIndexType { CompositeIndexHash, CompositeIndexBTree };
 
 public:
 	void SetUp() override {
 		ReindexerApi::SetUp();
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
+		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts(), 0},
 												   IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts(), 0},
 												   IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts(), 0},
@@ -50,10 +48,7 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	void dropIndex(const std::string& name) {
-		Error err = rt.reindexer->DropIndex(default_namespace, reindexer::IndexDef{name});
-		EXPECT_TRUE(err.ok()) << err.what();
-	}
+	void dropIndex(const std::string& name) { rt.DropIndex(default_namespace, name); }
 
 	static std::string getCompositeIndexName(std::initializer_list<std::string> indexes) {
 		size_t i = 0;
@@ -80,22 +75,15 @@ public:
 	}
 
 	QueryResults execAndCompareQuery(const Query& query) {
-		QueryResults qr;
-		auto err = rt.reindexer->Select(query, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
-		assert(err.ok());
-
-		QueryResults qrSql;
-		auto sqlQuery = query.GetSQL();
-		err = rt.reindexer->Select(query.GetSQL(), qrSql);
-		EXPECT_TRUE(err.ok()) << err.what();
-		assert(err.ok());
+		auto qr = rt.Select(query);
+		const auto sqlQuery = query.GetSQL();
+		auto qrSql = rt.ExecSQL(sqlQuery);
 		EXPECT_EQ(qr.Count(), qrSql.Count()) << "SQL: " << sqlQuery;
 		for (auto it = qr.begin(), itSql = qrSql.begin(); it != qr.end() && itSql != qrSql.end(); ++it, ++itSql) {
 			EXPECT_TRUE(it.Status().ok()) << it.Status().what();
 			assert(it.Status().ok());
 			reindexer::WrSerializer ser, serSql;
-			err = it.GetCJSON(ser);
+			auto err = it.GetCJSON(ser);
 			EXPECT_TRUE(err.ok()) << err.what();
 			assert(err.ok());
 			err = itSql.GetCJSON(serSql);

@@ -1,7 +1,6 @@
 #include "reindexer_c.h"
 
 #include <string.h>
-#include <mutex>
 
 #include "cgocancelcontextpool.h"
 #include "core/cjson/baseencoder.h"
@@ -95,11 +94,11 @@ static uint32_t span2arr(std::span<chunk> d, reindexer_buffer* out, uint32_t out
 static std::string str2c(reindexer_string gs) { return std::string(reinterpret_cast<const char*>(gs.p), gs.n); }
 static std::string_view str2cv(reindexer_string gs) noexcept { return std::string_view(reinterpret_cast<const char*>(gs.p), gs.n); }
 
-struct QueryResultsWrapper : QueryResults {
+struct [[nodiscard]] QueryResultsWrapper : QueryResults {
 	WrResultSerializer ser;
 	QueryResults::ProxiedRefsStorage proxiedRefsStorage;
 };
-struct TransactionWrapper {
+struct [[nodiscard]] TransactionWrapper {
 	TransactionWrapper(Transaction&& tr) : tr_(std::move(tr)) {}
 	WrResultSerializer ser_;
 	Transaction tr_;
@@ -109,7 +108,7 @@ static std::atomic<int> serializedResultsCount{0};
 static sync_pool<QueryResultsWrapper, kQueryResultsPoolSize, kMaxConcurrentQueries> res_pool;
 static CGOCtxPool ctx_pool(kCtxArrSize);
 
-struct put_results_to_pool {
+struct [[nodiscard]] put_results_to_pool {
 	void operator()(QueryResultsWrapper* res) const {
 		std::unique_ptr<QueryResultsWrapper> results{res};
 		results->Clear();
@@ -123,7 +122,7 @@ struct put_results_to_pool {
 	}
 };
 
-struct query_results_ptr : public std::unique_ptr<QueryResultsWrapper, put_results_to_pool> {
+struct [[nodiscard]] query_results_ptr : public std::unique_ptr<QueryResultsWrapper, put_results_to_pool> {
 	query_results_ptr() noexcept = default;
 	query_results_ptr(std::unique_ptr<QueryResultsWrapper>&& ptr) noexcept
 		: std::unique_ptr<QueryResultsWrapper, put_results_to_pool>{ptr.release()} {}
@@ -155,7 +154,7 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 							 .fetchOffset = 0,
 							 .fetchLimit = INT_MAX,
 							 .withAggregations = true});
-		result->ser.PutResultsRaw(*result, &rawBufOut);
+		rx_unused = result->ser.PutResultsRaw(*result, &rawBufOut);
 		out->len = rawBufOut.size() ? rawBufOut.size() : result->ser.Len();
 		out->data = rawBufOut.size() ? uintptr_t(rawBufOut.data()) : uintptr_t(result->ser.Buf());
 	} else {
@@ -168,7 +167,7 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 							 .fetchOffset = 0,
 							 .fetchLimit = INT_MAX,
 							 .withAggregations = true});
-		result->ser.PutResults(*result, bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
+		rx_unused = result->ser.PutResults(*result, bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
 		out->len = result->ser.Len();
 		out->data = uintptr_t(result->ser.Buf());
 	}

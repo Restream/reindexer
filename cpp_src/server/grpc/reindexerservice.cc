@@ -6,6 +6,7 @@
 #include "core/queryresults/joinresults.h"
 #include "core/reindexer.h"
 #include "core/type_consts.h"
+#include "estl/lock.h"
 #include "server/dbmanager.h"
 #include "tools/logger.h"
 
@@ -535,7 +536,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 						continue;
 					}
 
-					size_t joinedField = item.qr_->GetJoinedField(item.GetNsID());
+					size_t joinedField = item.GetJoinedField();
 					for (auto it = jIt.begin(), end = jIt.end(); it != end; ++it, ++joinedField) {
 						const auto itemsCnt = it.ItemsCount();
 						wrser.PutVarUint(itemsCnt);
@@ -806,7 +807,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 			txData.nsName = request->nsname();
 			txData.tx = std::make_shared<Transaction>(std::move(tr));
 			txData.txDeadline = steady_clock_w::now_coarse() + txIdleTimeout_;
-			std::lock_guard<std::mutex> lck(m_);
+			lock_guard lck(m_);
 			transactions_.emplace(txID, std::move(txData));
 		}
 	}
@@ -819,7 +820,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 
 void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
 	auto now = steady_clock_w::now_coarse();
-	std::lock_guard<std::mutex> lck(m_);
+	lock_guard lck(m_);
 	for (auto it = transactions_.begin(); it != transactions_.end();) {
 		if (it->second.txDeadline <= now) {
 			auto ctx = reindexer_server::MakeSystemAuthContext();
@@ -840,7 +841,7 @@ void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
 }
 
 Error ReindexerService::getTx(uint64_t id, TxData& txData) {
-	std::unique_lock<std::mutex> lck(m_);
+	unique_lock lck(m_);
 	auto it = transactions_.find(id);
 	if (it == transactions_.end()) {
 		lck.unlock();
@@ -946,7 +947,7 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 			assertrx(rx);
 			status = rx->CommitTransaction(*txData.tx, qr);
 			{
-				std::lock_guard<std::mutex> lck(m_);
+				lock_guard lck(m_);
 				transactions_.erase(request->id());
 			}
 		}
@@ -967,7 +968,7 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 			assertrx(rx);
 			status = rx->RollBackTransaction(*txData.tx);
 			{
-				std::lock_guard<std::mutex> lck(m_);
+				lock_guard lck(m_);
 				transactions_.erase(request->id());
 			}
 		}
@@ -1028,7 +1029,7 @@ Error ReindexerService::execSqlQueryByType(QueryResults& res, const SelectSqlReq
 }  // namespace grpc
 }  // namespace reindexer
 
-struct grpc_data {
+struct [[nodiscard]] grpc_data {
 	std::unique_ptr<reindexer::grpc::ReindexerService> service_;
 	std::unique_ptr<::grpc::Server> grpcServer_;
 };

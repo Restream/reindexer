@@ -1,9 +1,10 @@
 #include "sharedsyncstate.h"
+#include "estl/lock.h"
 
 namespace reindexer::cluster {
 
 void SharedSyncState::MarkSynchronized(NamespaceName name) {
-	std::unique_lock<MtxT> lck(mtx_);
+	unique_lock lck(mtx_);
 	assertrx_dbg(!name.empty());
 	if (current_.role == RaftInfo::Role::Leader) {
 		auto res = synchronized_.emplace(std::move(name));
@@ -15,7 +16,7 @@ void SharedSyncState::MarkSynchronized(NamespaceName name) {
 }
 
 void SharedSyncState::MarkSynchronized() noexcept {
-	std::unique_lock<MtxT> lck(mtx_);
+	unique_lock lck(mtx_);
 	if (current_.role == RaftInfo::Role::Leader) {
 		++initialSyncDoneCnt_;
 		lck.unlock();
@@ -24,7 +25,7 @@ void SharedSyncState::MarkSynchronized() noexcept {
 }
 
 void SharedSyncState::Reset(ContainerT requireSynchronization, size_t replThreadsCnt, bool enabled) noexcept {
-	std::lock_guard<MtxT> lck(mtx_);
+	lock_guard lck(mtx_);
 	requireSynchronization_ = std::move(requireSynchronization);
 	synchronized_.clear();
 	enabled_ = enabled;
@@ -36,7 +37,7 @@ void SharedSyncState::Reset(ContainerT requireSynchronization, size_t replThread
 }
 
 RaftInfo SharedSyncState::TryTransitRole(RaftInfo expected) noexcept {
-	std::unique_lock<MtxT> lck(mtx_);
+	unique_lock lck(mtx_);
 	if (expected == next_) {
 		if (current_.role == RaftInfo::Role::Leader && current_.role != next_.role) {
 			synchronized_.clear();
@@ -51,13 +52,13 @@ RaftInfo SharedSyncState::TryTransitRole(RaftInfo expected) noexcept {
 }
 
 void SharedSyncState::SetRole(RaftInfo info) noexcept {
-	std::lock_guard<MtxT> lck(mtx_);
+	lock_guard lck(mtx_);
 	next_ = std::move(info);
 }
 
 void SharedSyncState::SetTerminated() noexcept {
 	{
-		std::lock_guard<MtxT> lck(mtx_);
+		lock_guard lck(mtx_);
 		terminated_ = true;
 		next_ = current_ = RaftInfo();
 	}

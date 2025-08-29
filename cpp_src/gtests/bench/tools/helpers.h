@@ -20,7 +20,7 @@ class Reindexer;
 namespace internal {
 
 template <typename T>
-struct to_array_helper {
+struct [[nodiscard]] to_array_helper {
 	static VariantArray to_array(const std::vector<T>& vec) {
 		VariantArray krs;
 		krs.reserve(vec.size());
@@ -32,7 +32,7 @@ struct to_array_helper {
 };
 
 template <>
-struct to_array_helper<std::string> {
+struct [[nodiscard]] to_array_helper<std::string> {
 	static VariantArray to_array(const std::vector<std::string>& vec) {
 		VariantArray krs;
 		krs.reserve(vec.size());

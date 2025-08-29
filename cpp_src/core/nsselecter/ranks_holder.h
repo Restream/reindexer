@@ -52,11 +52,11 @@ public:
 		ranks_ = std::move(ranks);
 	}
 	void Reserve(size_t size) { ranks_.reserve(size); }
-	[[nodiscard]] size_t Size() const noexcept { return ranks_.size(); }
-	[[nodiscard]] bool Empty() const noexcept { return ranks_.empty(); }
-	[[nodiscard]] std::span<const RankT> GetRanksSpan() const& noexcept { return ranks_; }
+	size_t Size() const noexcept { return ranks_.size(); }
+	bool Empty() const noexcept { return ranks_.empty(); }
+	std::span<const RankT> GetRanksSpan() const& noexcept { return ranks_; }
 	auto GetRanksSpan() const&& = delete;
-	[[nodiscard]] std::span<const size_t> GetPositionsSpan() const& noexcept { return positions_; }
+	std::span<const size_t> GetPositionsSpan() const& noexcept { return positions_; }
 	auto GetPositionsSpan() const&& = delete;
 	void InitRRFPositions() {
 		assertrx_throw(positions_.empty());

@@ -16,7 +16,7 @@ namespace client {
 class Namespace;
 class RPCClient;
 
-class CoroTransaction {
+class [[nodiscard]] CoroTransaction {
 public:
 	CoroTransaction() noexcept : CoroTransaction(Error()) {}
 	~CoroTransaction();
@@ -72,7 +72,7 @@ private:
 	net::cproto::CoroClientConnection* getConn() const noexcept;
 	void setStatus(Error&& status) noexcept { i_.status_ = std::move(status); }
 
-	struct Impl {
+	struct [[nodiscard]] Impl {
 		Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
 			 std::shared_ptr<Namespace>&& ns, int emitterServerId) noexcept;
 		Impl(Error&& status) noexcept;

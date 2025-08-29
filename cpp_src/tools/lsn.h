@@ -19,7 +19,7 @@ using builders::JsonBuilder;
 // server id  counter
 // SSS        NNN NNN NNN NNN NNN (18 decimal digits)
 
-struct LSNUnpacked {
+struct [[nodiscard]] LSNUnpacked {
 	int16_t server;
 	int64_t counter;
 };
@@ -69,19 +69,19 @@ public:
 	bool operator==(lsn_t o) const noexcept { return payload_ == o.payload_; }
 	bool operator!=(lsn_t o) const noexcept { return payload_ != o.payload_; }
 
-	int64_t SetServer(int16_t server) {
+	void SetServer(int16_t server) {
 		validateServerId(server);
 		payload_ = server * kMaxCounter + Counter();
-		return payload_;
 	}
-	int64_t SetCounter(int64_t counter) {
+
+	void SetCounter(int64_t counter) {
 		validateCounter(counter);
 		if (counter < 0) {
 			counter = kDefaultCounter;
 		}
 		payload_ = Server() * kMaxCounter + counter;
-		return payload_;
 	}
+
 	int64_t Counter() const noexcept { return payload_ % kMaxCounter; }
 	int16_t Server() const noexcept { return payload_ / kMaxCounter; }
 	LSNUnpacked Unpack() const noexcept { return {.server = Server(), .counter = Counter()}; }
@@ -125,7 +125,7 @@ private:
 
 std::ostream& operator<<(std::ostream& o, const reindexer::lsn_t& sv);
 
-class ExtendedLsn {
+class [[nodiscard]] ExtendedLsn {
 public:
 	ExtendedLsn() = default;
 	ExtendedLsn(lsn_t nsVersion, lsn_t lsn) noexcept : nsVersion_(nsVersion), lsn_(lsn) {}

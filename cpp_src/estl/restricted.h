@@ -10,7 +10,7 @@ struct Template;
 
 // CRTP Base
 template <typename Derived, typename Arg>
-class RestrictedImplBase {
+class [[nodiscard]] RestrictedImplBase {
 	RX_ALWAYS_INLINE const Derived& asDerived() const noexcept { return static_cast<const Derived&>(*this); }
 	RX_ALWAYS_INLINE Derived& asDerived() noexcept { return static_cast<Derived&>(*this); }
 
@@ -47,13 +47,13 @@ public:
 };
 
 template <typename Derived, template <typename> typename Templ, typename... Args>
-class RestrictedImplBase<Derived, Template<Templ, Args...>> : public RestrictedImplBase<Derived, Templ<Args>>... {
+class [[nodiscard]] RestrictedImplBase<Derived, Template<Templ, Args...>> : public RestrictedImplBase<Derived, Templ<Args>>... {
 public:
 	using RestrictedImplBase<Derived, Templ<Args>>::operator()...;
 };
 
 template <typename F, typename... Args>
-class RestrictedImpl : public RestrictedImplBase<RestrictedImpl<F, Args...>, Args>... {
+class [[nodiscard]] RestrictedImpl : public RestrictedImplBase<RestrictedImpl<F, Args...>, Args>... {
 public:
 	using Func = F;
 	RestrictedImpl(Func&& f) noexcept(std::is_nothrow_move_constructible_v<Func>) : func_{std::move(f)} {}
@@ -69,7 +69,7 @@ private:
 };
 
 template <typename... Ts>
-class Restricted {
+class [[nodiscard]] Restricted {
 public:
 	template <typename F>
 	RX_ALWAYS_INLINE auto operator()(F&& f) const

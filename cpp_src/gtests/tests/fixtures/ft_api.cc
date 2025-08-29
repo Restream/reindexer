@@ -2,13 +2,10 @@
 
 void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std::string& storage) {
 	rt.reindexer = std::make_shared<reindexer::Reindexer>();
-
-	auto err = rt.reindexer->Connect("builtin://" + storage);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Connect("builtin://" + storage);
 
 	if (nses & NS1) {
-		const reindexer::Error err = rt.reindexer->OpenNamespace("nm1");
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace("nm1");
 		rt.DefineNamespaceDataset(
 			"nm1", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
@@ -16,21 +13,19 @@ void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std:
 		SetFTConfig(ftCfg);
 	}
 	if (nses & NS2) {
-		const reindexer::Error err = rt.reindexer->OpenNamespace("nm2");
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace("nm2");
 		rt.DefineNamespaceDataset(
 			"nm2", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
 	}
 	if (nses & NS3) {
-		reindexer::Error err = rt.reindexer->OpenNamespace("nm3");
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace("nm3");
 		rt.DefineNamespaceDataset(
 			"nm3", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0}, IndexDeclaration{"ft3", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft1+ft2+ft3=ft", "text", "composite", IndexOpts(), 0}});
-		err = SetFTConfig(ftCfg, "nm3", "ft", {"ft1", "ft2", "ft3"});
+		auto err = SetFTConfig(ftCfg, "nm3", "ft", {"ft1", "ft2", "ft3"});
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 }
@@ -46,7 +41,7 @@ reindexer::FtFastConfig FTApi::GetDefaultConfig(size_t fieldsCount) {
 }
 
 void FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg) {
-	const reindexer::Error err = SetFTConfig(ftCfg, "nm1", "ft3", {"ft1", "ft2"});
+	auto err = SetFTConfig(ftCfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
@@ -58,11 +53,7 @@ reindexer::Error FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg, std::s
 	for (size_t i = 0, size = fields.size(); i < size; ++i) {
 		fieldsMap.emplace(fields[i], i);
 	}
-	std::vector<reindexer::NamespaceDef> nses;
-	auto err = rt.reindexer->EnumNamespaces(nses, reindexer::EnumNamespacesOpts().WithFilter(ns));
-	if (!err.ok()) {
-		return err;
-	}
+	auto nses = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().WithFilter(ns));
 	const auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
 								 [&index](const reindexer::IndexDef& idef) { return idef.Name() == index; });
 	auto opts = it->Opts();
@@ -152,59 +143,42 @@ void FTApi::AddInBothFields(std::string_view ns, std::string_view w1, std::strin
 
 reindexer::QueryResults FTApi::SimpleSelect(std::string_view ns, std::string_view index, std::string_view dsl, bool withHighlight) {
 	auto q{reindexer::Query(ns).Where(index, CondEq, std::string(dsl)).WithRank()};
-	reindexer::QueryResults res;
 	if (withHighlight) {
 		q.AddFunction(fmt::format("{} = highlight(!,!)", index));
 	}
-	auto err = rt.reindexer->Select(q, res);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	return res;
+	return rt.Select(q);
 }
 
-reindexer::Error FTApi::Delete(int id) {
-	reindexer::Item item = rt.NewItem("nm1");
+void FTApi::Delete(int id) {
+	auto item = rt.NewItem("nm1");
 	item["id"] = id;
-
-	return this->rt.reindexer->Delete("nm1", item);
+	rt.Delete("nm1", item);
 }
 
 reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string_view word) {
 	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
-	reindexer::QueryResults res;
 	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, word)};
 	mqr.AddFunction("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
 
 	qr.Merge(std::move(mqr));
 	qr.AddFunction("ft3 = highlight(<b>,</b>)");
-	auto err = rt.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	return res;
+	return rt.Select(qr);
 }
 
 reindexer::QueryResults FTApi::CompositeSelectField(const std::string& field, std::string_view word) {
 	const auto query = fmt::format("@{} {}", field, word);
 	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, query)};
-	reindexer::QueryResults res;
 	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, query)};
 	mqr.AddFunction(field + " = snippet(<b>,\"\"</b>,3,2,,d)");
 
 	qr.Merge(std::move(mqr));
 	qr.AddFunction(field + " = highlight(<b>,</b>)");
-	auto err = rt.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	return res;
+	return rt.Select(qr);
 }
 
 reindexer::QueryResults FTApi::StressSelect(std::string_view word) {
 	const auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
-	reindexer::QueryResults res;
-	auto err = rt.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	return res;
+	return rt.Select(qr);
 }
 
 std::vector<std::string> FTApi::CreateAllPermutatedQueries(const std::string& queryStart, std::vector<std::string> words,

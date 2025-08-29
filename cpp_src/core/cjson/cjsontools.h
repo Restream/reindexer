@@ -13,9 +13,9 @@ void copyCJsonValue(TagType, const Variant& value, WrSerializer&);
 void putCJsonRef(TagType, TagName, int tagField, const VariantArray& values, WrSerializer&);
 void putCJsonValue(TagType, TagName, const VariantArray& values, WrSerializer&);
 
-[[nodiscard]] TagType arrayKvType2Tag(const VariantArray& values);
+TagType arrayKvType2Tag(const VariantArray& values);
 void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>* fieldsArrayOffsets = nullptr);
-[[nodiscard]] Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
+Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
 
 [[noreturn]] void throwUnexpectedArrayError(std::string_view fieldName, KeyValueType fieldType, std::string_view parserName);
 [[noreturn]] void throwUnexpectedArraySizeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef, size_t size);

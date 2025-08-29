@@ -15,7 +15,7 @@ namespace client {
 /// CoroReindexer should be used via multiple coroutins in single thread, while ev-loop is running.
 /// *Resources lifetime*: All resources aquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
 /// semantics, and have independent lifetime<br>
-class RaftClient {
+class [[nodiscard]] RaftClient {
 public:
 	using NodeData = cluster::NodeData;
 	using RaftInfo = cluster::RaftInfo;

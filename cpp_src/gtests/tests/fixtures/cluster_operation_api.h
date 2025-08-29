@@ -15,7 +15,7 @@ class dynamic_loop;
 }
 using reindexer::net::ev::dynamic_loop;
 
-class ClusterOperationApi : public ::testing::Test {
+class [[nodiscard]] ClusterOperationApi : public ::testing::Test {
 public:
 	static constexpr auto kMaxServerStartTime = std::chrono::seconds(15);
 	static constexpr auto kMaxSyncTime = std::chrono::seconds(25);
@@ -31,22 +31,22 @@ public:
 	void SetUp() override;
 	void TearDown() override;
 
-	struct Defaults {
+	struct [[nodiscard]] Defaults {
 		size_t defaultRpcPort;
 		size_t defaultHttpPort;
 		std::string baseTestsetDbPath;
 	};
 
 	virtual const Defaults& GetDefaults() const;
-	struct NamespaceData {
+	struct [[nodiscard]] NamespaceData {
 		std::string name;
 		lsn_t expectedLsn;
 		lsn_t expectedNsVersion;
 	};
 
-	class Cluster {
+	class [[nodiscard]] Cluster {
 	public:
-		struct DataParam {
+		struct [[nodiscard]] DataParam {
 			bool emptyVector = false;
 		};
 

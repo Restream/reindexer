@@ -24,7 +24,7 @@ using FieldsPath = std::variant<TagsPath, IndexedTagsPath>;
 
 using ScalarIndexesSetT = std::bitset<kMaxIndexes>;
 
-class IndexesFieldsSet {
+class [[nodiscard]] IndexesFieldsSet {
 public:
 	IndexesFieldsSet() noexcept = default;
 	IndexesFieldsSet(int f) { push_back(f); }
@@ -47,7 +47,7 @@ private:
 	std::bitset<kMaxIndexes> mask_;
 };
 
-class FieldsSet : protected base_fields_set {
+class [[nodiscard]] FieldsSet : protected base_fields_set {
 public:
 	using base_fields_set::begin;
 	using base_fields_set::end;
@@ -285,7 +285,7 @@ private:
 	h_vector<std::string, 1> jsonPaths_;
 
 	template <typename T>
-	class DumpFieldsPath {
+	class [[nodiscard]] DumpFieldsPath {
 	public:
 		DumpFieldsPath(T& os) noexcept : os_{os} {}
 		void operator()(const TagsPath& tp) const {

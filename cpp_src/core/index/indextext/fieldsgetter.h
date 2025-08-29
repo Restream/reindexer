@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-class FieldsGetter {
+class [[nodiscard]] FieldsGetter {
 public:
 	FieldsGetter(const FieldsSet& fields, const PayloadType& plt, KeyValueType type) : fields_(fields), plt_(plt), type_(type) {}
 

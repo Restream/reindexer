@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-class Snapshot {
+class [[nodiscard]] Snapshot {
 public:
 	Snapshot() = default;
 	Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, uint64_t expectedDataCount, ClusterOperationStatus clusterStatus);
@@ -19,7 +19,7 @@ public:
 	Snapshot& operator=(Snapshot&&) noexcept;
 	~Snapshot();
 
-	class Iterator {
+	class [[nodiscard]] Iterator {
 	public:
 		Iterator(Iterator&&) = default;
 		Iterator(const Iterator& it) noexcept : sn_(it.sn_), idx_(it.idx_) {}
@@ -55,12 +55,12 @@ public:
 	std::string Dump();
 
 private:
-	struct Chunk {
+	struct [[nodiscard]] Chunk {
 		bool txChunk = false;
 		std::vector<ItemRef> items;
 	};
 
-	class ItemsContainer {
+	class [[nodiscard]] ItemsContainer {
 	public:
 		void AddItem(ItemRef&& item);
 		void SetVectorsHolder(FloatVectorsHolderMap&& map) noexcept { vectorsHolder_ = std::move(map); }

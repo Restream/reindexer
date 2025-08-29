@@ -17,7 +17,7 @@ class StringsHolder;
 class FieldsFilter;
 
 template <typename T>
-class PayloadIface {
+class [[nodiscard]] PayloadIface {
 	template <typename U>
 	friend class PayloadIface;
 
@@ -30,8 +30,8 @@ public:
 	void Get(int field, VariantArray&, Variant::HoldT) const;
 	void Get(int field, VariantArray&) const;
 	// Get element by field and array index
-	[[nodiscard]] Variant Get(int field, int idx, Variant::HoldT) const;
-	[[nodiscard]] Variant Get(int field, int idx) const;
+	Variant Get(int field, int idx, Variant::HoldT) const;
+	Variant Get(int field, int idx) const;
 
 	// Get array as span of typed elements
 	template <typename Elem>
@@ -137,7 +137,7 @@ public:
 	void GetByJsonPath(const IndexedTagsPath& jsonPath, VariantArray&, KeyValueType expectedType) const;
 	void GetByFieldsSet(const FieldsSet&, VariantArray&, KeyValueType expectedType,
 						const h_vector<KeyValueType, 4>& expectedCompositeTypes) const;
-	[[nodiscard]] Variant GetComposite(const FieldsSet&, const h_vector<KeyValueType, 4>& expectedTypes) const;
+	Variant GetComposite(const FieldsSet&, const h_vector<KeyValueType, 4>& expectedTypes) const;
 	VariantArray GetIndexedArrayData(const IndexedTagsPath& jsonPath, int field, int& offset, int& size) const;
 
 	// Get fields count
@@ -194,7 +194,7 @@ public:
 	void GetJSON(const TagsMatcher& tm, WrSerializer& ser, const FieldsFilter&);
 
 private:
-	enum class HoldPolicy : bool { Hold, NoHold };
+	enum class [[nodiscard]] HoldPolicy : bool { Hold, NoHold };
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
 	T CopyWithNewOrUpdatedFields(PayloadType t);
 
@@ -209,7 +209,7 @@ private:
 	template <typename HoldT>
 	void get(int field, VariantArray&, HoldT h) const;
 	template <typename HoldT>
-	[[nodiscard]] Variant get(int field, int idx, HoldT h) const;
+	Variant get(int field, int idx, HoldT h) const;
 	template <typename HoldT>
 	void get(std::string_view field, VariantArray&, HoldT h) const;
 

@@ -4,6 +4,7 @@
 #include "cluster/consts.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/system_ns_names.h"
+#include "estl/mutex.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 #include "vendor/gason/gason.h"
@@ -262,13 +263,13 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 		const std::string dsn =
 			fmt::format("cproto://127.0.0.1:{}/{}", cluster.GetNode(followerId)->RpcPort(), cluster.GetNode(followerId)->DbName());
 
-		struct NsData {
+		struct [[nodiscard]] NsData {
 			std::string name;
 			unsigned dataCount;
 		};
 
 		std::atomic<int> nsCounter{0};
-		std::mutex mtx;
+		reindexer::mutex mtx;
 		std::vector<NsData> namespaces;
 
 		auto txInsertions = exceptionWrapper([&] {
@@ -279,7 +280,7 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 				ASSERT_TRUE(err.ok()) << err.what();
 				std::string nsName = fmt::format("ns_tx_{}", nsCounter.fetch_add(1));
 				{
-					std::lock_guard lck(mtx);
+					lock_guard lck(mtx);
 					namespaces.emplace_back(NsData{nsName, 3000});
 				}
 				err = rx.DropNamespace(nsName);
@@ -314,7 +315,7 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 				ASSERT_TRUE(err.ok()) << err.what();
 				std::string nsName = fmt::format("ns_{}", nsCounter.fetch_add(1));
 				{
-					std::lock_guard lck(mtx);
+					lock_guard lck(mtx);
 					namespaces.emplace_back(NsData{nsName, 4000});
 				}
 				err = rx.DropNamespace(nsName);

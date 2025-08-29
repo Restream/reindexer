@@ -27,12 +27,13 @@ void NamespaceMemStat::GetJSON(WrSerializer& ser) const {
 
 	builder.Put("optimization_completed", optimizationCompleted);
 
-	builder.Object("total")
-		.Put("data_size", Total.dataSize)
-		.Put("indexes_size", Total.indexesSize)
-		.Put("cache_size", Total.cacheSize)
-		.Put("index_optimizer_memory", Total.indexOptimizerMemory)
-		.Put("inmemory_storage_size", Total.inmemoryStorageSize);
+	auto total = builder.Object("total");
+	total.Put("data_size", Total.dataSize);
+	total.Put("indexes_size", Total.indexesSize);
+	total.Put("cache_size", Total.cacheSize);
+	total.Put("index_optimizer_memory", Total.indexOptimizerMemory);
+	total.Put("inmemory_storage_size", Total.inmemoryStorageSize);
+	total.End();
 
 	builder.Object("storage").Put("proxy_size", Storage.proxySize);
 
@@ -260,7 +261,7 @@ void ReplicationState::FromJSON(std::span<char> json) {
 		dataCount = root["data_count"].As<int>();
 		updatedUnixNano = root["updated_unix_nano"].As<uint64_t>();
 		token = root["admissible_token"].As<std::string>();
-		LoadLsn(nsVersion, root["ns_version"]);
+		rx_unused = LoadLsn(nsVersion, root["ns_version"]);
 		auto clStatusNode = root["clusterization_status"];
 		if (!clStatusNode.empty()) {
 			clusterStatus.FromJSON(clStatusNode);

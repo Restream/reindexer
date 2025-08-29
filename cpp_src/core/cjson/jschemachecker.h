@@ -9,7 +9,7 @@
 
 namespace reindexer {
 
-class JsonSchemaChecker {
+class [[nodiscard]] JsonSchemaChecker {
 public:
 	explicit JsonSchemaChecker(std::string_view json, std::string rootTypeName);
 	JsonSchemaChecker(){};
@@ -17,21 +17,21 @@ public:
 	Error Check(gason::JsonNode node);
 
 private:
-	struct SubElement {
+	struct [[nodiscard]] SubElement {
 		std::string typeName;
 		int typeIndex = -1;
 		bool required = false;
 		bool array = false;
 	};
 
-	struct ValAppearance {
+	struct [[nodiscard]] ValAppearance {
 		ValAppearance() : required(false), notExist(true) {}
 		ValAppearance(bool required) : required(required), notExist(true) {}
 		bool required;	// false if not required or already exist in struct
 		bool notExist;	// true if not exist on struct
 	};
 
-	struct TypeDescr {
+	struct [[nodiscard]] TypeDescr {
 		void init() {
 			for (unsigned int i = 0; i < subElementsTable.size(); ++i) {
 				subElementsIndex.insert(std::make_pair(subElementsTable[i].first, i));

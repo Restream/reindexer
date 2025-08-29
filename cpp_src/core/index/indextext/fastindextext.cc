@@ -75,7 +75,7 @@ template <typename T>
 void FastIndexText<T>::Delete(const Variant& key, IdType id, [[maybe_unused]] MustExist mustExist, StringsHolder& strHolder,
 							  bool& clearCache) {
 	if rx_unlikely (key.Type().Is<KeyValueType::Null>()) {
-		this->empty_ids_.Unsorted().Erase(id);	// ignore result
+		rx_unused = this->empty_ids_.Unsorted().Erase(id);
 		this->isBuilt_ = false;
 		return;
 	}
@@ -169,8 +169,8 @@ typename MergeType::iterator FastIndexText<T>::unstableRemoveIf(MergeType& md, i
 	}
 }
 
-[[nodiscard]] static bool lessRank(RankT lhs, RankT rhs) noexcept { return lhs < rhs; }
-[[nodiscard]] static bool lessRank(RanksHolder::RankPos lhs, RanksHolder::RankPos rhs) noexcept { return lhs.rank < rhs.rank; }
+static bool lessRank(RankT lhs, RankT rhs) noexcept { return lhs < rhs; }
+static bool lessRank(RanksHolder::RankPos lhs, RanksHolder::RankPos rhs) noexcept { return lhs.rank < rhs.rank; }
 
 template <typename T>
 template <auto(RanksHolder::*rankGetter)>

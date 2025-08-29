@@ -16,7 +16,7 @@ template <typename T>
 struct Compare;
 
 template <>
-struct Compare<reindexer::Point> {
+struct [[nodiscard]] Compare<reindexer::Point> {
 	bool operator()(reindexer::Point lhs, reindexer::Point rhs) const noexcept {
 		if (lhs.X() == rhs.X()) {
 			return lhs.Y() < rhs.Y();
@@ -26,14 +26,14 @@ struct Compare<reindexer::Point> {
 };
 
 template <typename T>
-struct Compare<reindexer::RMapValue<T, size_t>> {
+struct [[nodiscard]] Compare<reindexer::RMapValue<T, size_t>> {
 	bool operator()(const reindexer::RMapValue<T, size_t>& lhs, const reindexer::RMapValue<T, size_t>& rhs) const noexcept {
 		return lhs.second < rhs.second;
 	}
 };
 
 template <typename RTree>
-class SearchVisitor : public RTree::Visitor {
+class [[nodiscard]] SearchVisitor : public RTree::Visitor {
 public:
 	bool operator()(const typename RTree::value_type& v) override {
 		const auto it = data_.find(v);
@@ -54,7 +54,7 @@ private:
 };
 
 template <typename RTree>
-class DeleteVisitor : public RTree::Visitor {
+class [[nodiscard]] DeleteVisitor : public RTree::Visitor {
 public:
 	DeleteVisitor(const reindexer::Rectangle& r) : rect_{r} {}
 	bool operator()(const typename RTree::value_type& v) override { return rect_.Contain(RTree::traits::GetPoint(v)); }

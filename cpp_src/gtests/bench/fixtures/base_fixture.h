@@ -18,7 +18,7 @@ using benchmark::internal::Benchmark;
 using reindexer::NamespaceDef;
 using reindexer::Reindexer;
 
-class BaseFixture {
+class [[nodiscard]] BaseFixture {
 public:
 	virtual ~BaseFixture() {
 		assertrx(db_);

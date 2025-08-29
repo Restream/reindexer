@@ -1,4 +1,5 @@
 #include <fstream>
+#include <thread>
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
@@ -20,11 +21,11 @@
 
 using namespace reindexer;
 
-class ReplicationConfigTests : public ::testing::Test {
+class [[nodiscard]] ReplicationConfigTests : public ::testing::Test {
 public:
 	using ItemType = typename reindexer::Reindexer::ItemT;
 	using QueryResultsType = typename reindexer::Reindexer::QueryResultsT;
-	enum class ConfigType { File, Namespace };
+	enum class [[nodiscard]] ConfigType { File, Namespace };
 
 	const std::chrono::milliseconds kReplicationConfLoadDelay = std::chrono::milliseconds(1200);
 	const std::string kSimpleReplConfigStoragePath = fs::JoinPath(fs::GetTempDir(), "reindex/simple_replicationConf_tests/");
@@ -42,7 +43,7 @@ public:
 	const reindexer::ReplicationConfigData invalidReplConf1000{1000, 2, {}};
 	const reindexer::ReplicationConfigData fallbackReplConf{0, 2, {}};
 
-	void SetUp() override { fs::RmDirAll(kStoragePath); }
+	void SetUp() override { rx_unused = fs::RmDirAll(kStoragePath); }
 	void TearDown() override {}
 
 	void WriteConfigFile(const std::string& path, const std::string& configYaml) {

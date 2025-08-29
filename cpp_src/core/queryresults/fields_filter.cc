@@ -13,7 +13,7 @@ FieldsFilter::FieldsFilter(const FieldsNamesFilter& filter, const NamespaceImpl&
 	}
 	for (const auto& fld : filter.Fields()) {
 		int idx = IndexValueType::NotSet;
-		const auto foundIdx = ns.getIndexByJsonPath(fld, idx);
+		const auto foundIdx = ns.tryGetIndexByJsonPath(fld, idx);
 		if (foundIdx) {
 			if (ns.indexes_[idx]->IsFloatVector()) {
 				if (!allVectorFields_) {

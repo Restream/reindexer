@@ -24,9 +24,9 @@ namespace reindexer_server {
 using namespace reindexer::net;
 using namespace reindexer;
 
-enum class RPCSocketT : bool { Unx, TCP };
+enum class [[nodiscard]] RPCSocketT : bool { Unx, TCP };
 
-struct RPCClientData final : public cproto::ClientData {
+struct [[nodiscard]] RPCClientData final : public cproto::ClientData {
 	~RPCClientData();
 	h_vector<RPCQrId, 8> results;
 	h_vector<std::pair<Snapshot, bool>, 1> snapshots;
@@ -43,7 +43,7 @@ struct RPCClientData final : public cproto::ClientData {
 	bool subscribed;
 };
 
-class RPCServer {
+class [[nodiscard]] RPCServer {
 public:
 	RPCServer(DBManager& dbMgr, LoggerWrapper& logger, IClientsStats* clientsStats, const ServerConfig& serverConfig,
 			  IStatsWatcher* statsCollector = nullptr);

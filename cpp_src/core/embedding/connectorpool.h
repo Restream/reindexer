@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include "core/embedding/embeddingconfig.h"
 #include "estl/contexted_cond_var.h"
+#include "estl/mutex.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -37,11 +38,11 @@ public:
 	explicit ConnectorPool(PoolConfig&& config);
 	~ConnectorPool();
 
-	[[nodiscard]] std::pair<Error, ConnectorProxy> GetConnector(const RdxContext& ctx) noexcept;
+	std::pair<Error, ConnectorProxy> GetConnector(const RdxContext& ctx) noexcept;
 	void ReleaseConnection(const ConnectorProxy& proxy);
 
 private:
-	std::mutex mtx_;
+	mutex mtx_;
 	contexted_cond_var cond_;
 
 	const PoolConfig config_;

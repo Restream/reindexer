@@ -94,7 +94,7 @@ reindexer::Error ApiTvSimpleSparse::Initialize() {
 reindexer::Item ApiTvSimpleSparse::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be stored in app
-	item.Unsafe();
+	rx_unused = item.Unsafe();
 
 	auto startTime = random<int>(0, 50000);
 
@@ -424,7 +424,6 @@ void ApiTvSimpleSparse::QueryInnerJoinPreselectByValues(benchmark::State& state)
 		q.Limit(20)
 			.Sort("year", false)
 			.Where("limit", CondRange, {counter_ - 256, counter_ - 1})
-			.Where("location", CondAny, VariantArray{})
 			.LeftJoin("location", "location", CondSet, std::move(q4join));
 
 		QueryResults qres;
@@ -442,11 +441,7 @@ void ApiTvSimpleSparse::QueryInnerJoinNoPreselect(benchmark::State& state) {
 		q4join.Where("device", CondSet, {"ottstb", "smarttv", "stb"});
 
 		Query q(nsdef_.name);
-		q.Limit(20)
-			.Sort("year", false)
-			.Where("year", CondRange, {2010, 2030})
-			.Where("location", CondAny, VariantArray{})
-			.LeftJoin("location", "location", CondSet, std::move(q4join));
+		q.Limit(20).Sort("year", false).Where("year", CondRange, {2010, 2030}).LeftJoin("location", "location", CondSet, std::move(q4join));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);

@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-class AdditionalDatasource final : public IAdditionalDatasource<JsonBuilder> {
+class [[nodiscard]] AdditionalDatasource final : public IAdditionalDatasource<JsonBuilder> {
 public:
 	AdditionalDatasource(RankT r, IEncoderDatasourceWithJoins* jds) noexcept : joinsDs_(jds), withRank_(true), rank_(r) {}
 	AdditionalDatasource(IEncoderDatasourceWithJoins* jds) noexcept : joinsDs_(jds) {}
@@ -23,7 +23,7 @@ private:
 	RankT rank_{};
 };
 
-class AdditionalDatasourceShardId final : public IAdditionalDatasource<JsonBuilder> {
+class [[nodiscard]] AdditionalDatasourceShardId final : public IAdditionalDatasource<JsonBuilder> {
 public:
 	AdditionalDatasourceShardId(int shardId) noexcept : shardId_(shardId) {}
 	void PutAdditionalFields(JsonBuilder& builder) const override { builder.Put("#shard_id", shardId_); }
@@ -33,7 +33,7 @@ private:
 	int shardId_;
 };
 
-class AdditionalDatasourceCSV final : public IAdditionalDatasource<CsvBuilder> {
+class [[nodiscard]] AdditionalDatasourceCSV final : public IAdditionalDatasource<CsvBuilder> {
 public:
 	AdditionalDatasourceCSV(IEncoderDatasourceWithJoins* jds) noexcept : joinsDs_(jds) {}
 	void PutAdditionalFields(CsvBuilder&) const override {}

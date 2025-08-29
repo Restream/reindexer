@@ -1,20 +1,20 @@
 #pragma once
 
 #include <atomic>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
 #include "activity.h"
+#include "estl/marked_mutex.h"
 #include "estl/mutex.h"
 
 namespace reindexer {
 
 class RdxActivityContext;
 
-class ActivityContainer {
+class [[nodiscard]] ActivityContainer {
 public:
 	void Register(const RdxActivityContext*);
 	void Unregister(const RdxActivityContext*);
@@ -31,7 +31,7 @@ private:
 	ActivityContainerLog log_;
 #endif
 private:
-	std::mutex mtx_;
+	mutex mtx_;
 	std::unordered_set<const RdxActivityContext*> cont_;
 };
 
@@ -41,12 +41,12 @@ private:
 ///		BeforeIndexWork
 ///		BeforeSelectLoop
 ///		CheckConnectionId
-class RdxActivityContext {
+class [[nodiscard]] RdxActivityContext {
 	constexpr static unsigned kStateShift = 3u;
 	constexpr static unsigned kStateMask = (1u << kStateShift) - 1u;
 	friend class RdxContext;
 
-	class Ward {
+	class [[nodiscard]] Ward {
 	public:
 		Ward(RdxActivityContext* cont, Activity::State state) noexcept : context_(cont) {
 			if (context_) {

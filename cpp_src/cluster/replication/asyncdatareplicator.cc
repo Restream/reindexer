@@ -14,7 +14,7 @@ AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, 
 	  clusterManager_(clusterManager) {}
 
 void AsyncDataReplicator::Configure(AsyncReplConfigData config) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if ((config_.has_value() && config_.value() != config) || !config_.has_value()) {
 		stop();
 		config_ = std::move(config);
@@ -22,7 +22,7 @@ void AsyncDataReplicator::Configure(AsyncReplConfigData config) {
 }
 
 void AsyncDataReplicator::Configure(ReplicationConfigData config) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if ((baseConfig_.has_value() && baseConfig_.value() != config) || !baseConfig_.has_value()) {
 		stop();
 		baseConfig_ = std::move(config);
@@ -30,14 +30,14 @@ void AsyncDataReplicator::Configure(ReplicationConfigData config) {
 }
 
 bool AsyncDataReplicator::IsExpectingStartup() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return isExpectingStartup();
 }
 
 void AsyncDataReplicator::Run() {
 	auto localNamespaces = getLocalNamespaces();
 	{
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (!isExpectingStartup()) {
 			log_.Warn([] { return "AsyncDataReplicator: startup is not expected"; });
 			return;
@@ -81,7 +81,7 @@ void AsyncDataReplicator::Run() {
 }
 
 void AsyncDataReplicator::Stop(bool resetConfig) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	stop();
 	if (resetConfig) {
 		config_.reset();
@@ -105,7 +105,7 @@ bool AsyncDataReplicator::NamespaceIsInAsyncConfig(std::string_view nsName) cons
 	const UpdatesQueueT::HashT h;
 	const size_t hash = h(nsName);
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return updatesQueue_.GetAsyncQueue()->TokenIsInWhiteList(nsName, hash);
 }
 

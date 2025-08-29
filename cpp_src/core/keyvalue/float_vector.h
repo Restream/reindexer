@@ -22,14 +22,14 @@ public:
 		assertrx_dbg(Dimension().Value() == data.size());
 		assertrx_dbg(Dimension().IsZero() || Data() == data.data());
 	}
-	[[nodiscard]] FloatVectorDimension Dimension() const noexcept {
+	FloatVectorDimension Dimension() const noexcept {
 		return FloatVectorDimension(payload_ >> kDimensionOffset);	// NOLINT(*EnumCastOutOfRange)
 	}
-	[[nodiscard]] T* Data() const noexcept {
+	T* Data() const noexcept {
 		assertrx(!IsEmpty() && !IsStripped());
 		return reinterpret_cast<T*>(payload_ & kPtrMask);
 	}
-	[[nodiscard]] uint64_t Payload() const noexcept { return payload_; }
+	uint64_t Payload() const noexcept { return payload_; }
 	std::span<const UnderlingT> Span() const noexcept {
 		if (IsEmpty()) {
 			return {};
@@ -38,12 +38,12 @@ public:
 			return {Data(), Dimension().Value()};
 		}
 	}
-	[[nodiscard]] bool IsEmpty() const noexcept { return payload_ == 0; }
-	[[nodiscard]] bool IsStrippedOrEmpty() const noexcept { return (payload_ & kPtrMask) == 0; }
-	[[nodiscard]] bool IsStripped() const noexcept { return IsStrippedOrEmpty() && !IsEmpty(); }
+	bool IsEmpty() const noexcept { return payload_ == 0; }
+	bool IsStrippedOrEmpty() const noexcept { return (payload_ & kPtrMask) == 0; }
+	bool IsStripped() const noexcept { return IsStrippedOrEmpty() && !IsEmpty(); }
 
 	static FloatVectorImplView FromUint64(uint64_t v) noexcept { return FloatVectorImplView{v}; }
-	[[nodiscard]] uint64_t Hash() const noexcept {
+	uint64_t Hash() const noexcept {
 		static constexpr std::hash<FloatVectorDimension::value_type> hashDim;
 		static constexpr std::hash<UnderlingT> hashData;
 		if (IsStripped()) {
@@ -139,8 +139,8 @@ public:
 		assertrx(!IsEmpty());
 		return this->release();
 	}
-	[[nodiscard]] FloatVectorDimension Dimension() const noexcept { return dimension_; }
-	[[nodiscard]] bool IsEmpty() const noexcept { return *this == nullptr; }
+	FloatVectorDimension Dimension() const noexcept { return dimension_; }
+	bool IsEmpty() const noexcept { return *this == nullptr; }
 
 	static FloatVectorImpl CreateNotInitialized(FloatVectorDimension dimension) {
 		if rx_likely (!dimension.IsZero()) {

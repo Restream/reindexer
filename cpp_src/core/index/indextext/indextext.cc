@@ -105,11 +105,11 @@ void IndexText<T>::ResetIndexPerfStat() {
 
 template <typename T>
 void IndexText<T>::build(const RdxContext& rdxCtx) {
-	smart_lock<Mutex> lck(mtx_, rdxCtx);
+	smart_lock lckNonUnique(mtx_, rdxCtx, NonUnique);
 	if (!this->isBuilt_) {
 		// non atomic upgrade mutex to unique
-		lck.unlock();
-		lck = smart_lock<Mutex>(mtx_, rdxCtx, true);
+		lckNonUnique.unlock();
+		smart_lock lckUnique(mtx_, rdxCtx, Unique);
 		if (!this->isBuilt_) {
 			CommitFulltext();
 		}

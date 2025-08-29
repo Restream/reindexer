@@ -4,7 +4,7 @@
 #include "tools/lsn.h"
 
 template <>
-struct fmt::formatter<reindexer::lsn_t> {
+struct [[nodiscard]] fmt::formatter<reindexer::lsn_t> {
 	template <typename ContextT>
 	constexpr auto parse(ContextT& ctx) {
 		return ctx.begin();

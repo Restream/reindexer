@@ -10,7 +10,7 @@ namespace builders {
 
 class CsvBuilder;
 
-struct CsvOrdering {
+struct [[nodiscard]] CsvOrdering {
 	CsvOrdering(std::vector<TagName> ordering) : ordering_(std::move(ordering)) {
 		if (ordering_.empty()) {
 			return;
@@ -30,7 +30,7 @@ private:
 	WrSerializer buf_;
 };
 
-class CsvBuilder {
+class [[nodiscard]] CsvBuilder {
 public:
 	CsvBuilder() = default;
 
@@ -78,31 +78,30 @@ public:
 		}
 	}
 
-	CsvBuilder& Put(std::string_view name, const Variant& arg, int offset = 0);
-	CsvBuilder& Put(std::string_view name, std::string_view arg, int offset = 0);
-	CsvBuilder& Put(std::string_view name, Uuid arg, int offset = 0);
-	CsvBuilder& Put(std::string_view name, const char* arg, int offset = 0) { return Put(name, std::string_view(arg), offset); }
+	void Put(std::string_view name, const Variant& arg, int offset = 0);
+	void Put(std::string_view name, std::string_view arg, int offset = 0);
+	void Put(std::string_view name, Uuid arg, int offset = 0);
+	void Put(std::string_view name, const char* arg, int offset = 0) { return Put(name, std::string_view(arg), offset); }
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type* = nullptr>
-	CsvBuilder& Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
+	void Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
 		putName(name);
 		(*ser_) << arg;
-		return *this;
 	}
 	template <typename T>
-	CsvBuilder& Put(TagName tagName, const T& arg, int offset = 0) {
-		return Put(getNameByTag(tagName), arg, offset);
+	void Put(TagName tagName, const T& arg, int offset = 0) {
+		Put(getNameByTag(tagName), arg, offset);
 	}
 
-	CsvBuilder& Raw(TagName tagName, std::string_view arg) { return Raw(getNameByTag(tagName), arg); }
-	CsvBuilder& Raw(std::string_view name, std::string_view arg);
-	CsvBuilder& Raw(std::string_view arg) { return Raw(std::string_view{}, arg); }
-	CsvBuilder& Json(std::string_view name, std::string_view arg) { return Raw(name, arg); }
-	CsvBuilder& Json(std::string_view arg) { return Raw(arg); }
+	void Raw(TagName tagName, std::string_view arg) { Raw(getNameByTag(tagName), arg); }
+	void Raw(std::string_view name, std::string_view arg);
+	void Raw(std::string_view arg) { Raw(std::string_view{}, arg); }
+	void Json(std::string_view name, std::string_view arg) { Raw(name, arg); }
+	void Json(std::string_view arg) { Raw(arg); }
 
-	CsvBuilder& Null(TagName tagName) { return Null(getNameByTag(tagName)); }
-	CsvBuilder& Null(std::string_view name);
+	void Null(TagName tagName) { Null(getNameByTag(tagName)); }
+	void Null(std::string_view name);
 
-	CsvBuilder& End();
+	void End();
 
 	template <typename... Args>
 	void Object(int, Args...) = delete;
@@ -133,7 +132,7 @@ private:
 	CsvBuilder(ObjType type, const CsvBuilder& parent);
 
 	void putName(std::string_view name);
-	std::string_view getNameByTag(TagName tagName);
+	[[nodiscard]] std::string_view getNameByTag(TagName tagName);
 	void tmProcessing(std::string_view name);
 	void postProcessing();
 

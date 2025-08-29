@@ -9,7 +9,7 @@ namespace reindexer_tool {
 
 using reindexer::Error;
 
-class Output {
+class [[nodiscard]] Output {
 public:
 	Output() : isCout_(true), errState_(0) {}
 	Output(const std::string& filePath) : f_(filePath, std::ios::out | std::ios::trunc), isCout_(filePath.empty()) {
@@ -32,7 +32,7 @@ private:
 	int errState_;
 };
 
-class LineParser {
+class [[nodiscard]] LineParser {
 public:
 	LineParser(std::string_view line) : line_(line), cur_(line.data()) {}
 	std::string_view NextToken() {

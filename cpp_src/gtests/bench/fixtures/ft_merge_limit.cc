@@ -67,7 +67,7 @@ std::unordered_set<int> FullTextMergeLimit::generateDistrib(int count) {
 
 reindexer::Item FullTextMergeLimit::MakeItem(benchmark::State&) {
 	auto item = db_->NewItem(nsdef_.name);
-	item.Unsafe(false);
+	rx_unused = item.Unsafe(false);
 	return item;
 }
 
@@ -92,7 +92,7 @@ void FullTextMergeLimit::Insert(State& state) {
 				state.SkipWithError(item.Status().what());
 				continue;
 			}
-			item.Unsafe(true);
+			rx_unused = item.Unsafe(true);
 			phrase.clear();
 			for (unsigned m = 0; m < indexes.size(); m++) {
 				if (indexes[m][h]) {

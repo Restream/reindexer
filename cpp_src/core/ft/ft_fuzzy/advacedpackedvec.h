@@ -5,7 +5,7 @@ namespace reindexer {
 class IdRelSet;
 class IdRelType;
 
-class AdvacedPackedVec : public packed_vector<IdRelType> {
+class [[nodiscard]] AdvacedPackedVec : public packed_vector<IdRelType> {
 public:
 	AdvacedPackedVec(IdRelSet&& data);
 

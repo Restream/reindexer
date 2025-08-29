@@ -3,7 +3,9 @@
 #include <memory>
 #include "client/reindexer.h"
 #include "cluster/config.h"
+#include "estl/condition_variable.h"
 #include "estl/fast_hash_map.h"
+#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "networkmonitor.h"
 #include "shardingkeys.h"
@@ -21,7 +23,7 @@ namespace sharding {
 
 using ShardConnectionsContainer = h_vector<std::shared_ptr<client::Reindexer>, kHvectorConnStack>;
 
-class RoutingStrategy {
+class [[nodiscard]] RoutingStrategy {
 public:
 	explicit RoutingStrategy(const cluster::ShardingConfig& config);
 	~RoutingStrategy() = default;
@@ -39,7 +41,7 @@ private:
 	ShardingKeys keys_;
 };
 
-class Connections : public std::vector<std::shared_ptr<client::Reindexer>> {
+class [[nodiscard]] Connections : public std::vector<std::shared_ptr<client::Reindexer>> {
 public:
 	using base = std::vector<std::shared_ptr<client::Reindexer>>;
 	Connections() = default;
@@ -54,7 +56,7 @@ public:
 	bool shutdown = false;
 };
 
-struct ShardConnection : std::shared_ptr<client::Reindexer> {
+struct [[nodiscard]] ShardConnection : std::shared_ptr<client::Reindexer> {
 	using base = std::shared_ptr<client::Reindexer>;
 	ShardConnection() = default;
 	ShardConnection(base&& c, int id) : base(static_cast<base&&>(c)), shardID(id) {}
@@ -70,27 +72,27 @@ private:
 using ConnectionsVector = h_vector<ShardConnection, kHvectorConnStack>;
 using ConnectionsPtr = std::shared_ptr<ConnectionsVector>;
 
-class IConnectStrategy {
+class [[nodiscard]] IConnectStrategy {
 public:
 	virtual ~IConnectStrategy() = default;
 	virtual std::shared_ptr<client::Reindexer> Connect(int shardID, Error& status) = 0;
 };
 
-class ConnectStrategy : public IConnectStrategy {
+class [[nodiscard]] ConnectStrategy : public IConnectStrategy {
 public:
 	ConnectStrategy(const cluster::ShardingConfig& config_, Connections& connections, int thisShard) noexcept;
 	~ConnectStrategy() override = default;
 	std::shared_ptr<client::Reindexer> Connect(int shardID, Error& reconnectStatus) override final;
 
 private:
-	struct SharedStatusData {
+	struct [[nodiscard]] SharedStatusData {
 		SharedStatusData(size_t cnt) : statuses(cnt, false) {}
 
 		size_t completed = 0;
 		int onlineIdx = -1;
 		std::vector<bool> statuses;
-		std::mutex mtx;
-		std::condition_variable cv;
+		mutex mtx;
+		condition_variable cv;
 	};
 
 	std::shared_ptr<client::Reindexer> doReconnect(int shardID, Error& reconnectStatus);
@@ -101,7 +103,7 @@ private:
 	int thisShard_;
 };
 
-class LocatorService {
+class [[nodiscard]] LocatorService {
 public:
 	LocatorService(ClusterProxy& rx, cluster::ShardingConfig config);
 	~LocatorService() { Shutdown(); }
@@ -119,9 +121,9 @@ public:
 	std::pair<ShardIDsContainer, Variant> GetShardIdKeyPair(const Query& q) const { return routingStrategy_.GetHostsIdsKeyPair(q); }
 	std::shared_ptr<client::Reindexer> GetShardConnection(std::string_view ns, int shardId, Error& status);
 
-	ConnectionsPtr GetShardsConnections(std::string_view ns, int shardId, Error& status);
-	ConnectionsPtr GetShardsConnectionsWithId(const Query& q, Error& status);
-	ConnectionsPtr GetShardsConnections(Error& status) { return GetShardsConnections("", -1, status); }
+	ConnectionsPtr GetShardsConnections(std::string_view ns, int shardId, Error& status) RX_REQUIRES(!m_);
+	ConnectionsPtr GetShardsConnectionsWithId(const Query& q, Error& status) RX_REQUIRES(!m_);
+	ConnectionsPtr GetShardsConnections(Error& status) RX_REQUIRES(!m_) { return GetShardsConnections("", -1, status); }
 	ConnectionsPtr GetAllShardsConnections(Error& status);
 	ShardConnection GetShardConnectionWithId(std::string_view ns, const Item& item, Error& status) {
 		int shardId = routingStrategy_.GetHostIdKeyPair(ns, item).first;

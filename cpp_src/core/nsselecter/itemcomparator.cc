@@ -7,11 +7,11 @@ namespace {
 
 constexpr size_t kNotComputed{std::numeric_limits<size_t>::max()};
 
-struct FieldsCompRes {
+struct [[nodiscard]] FieldsCompRes {
 	size_t firstDifferentFieldIdx{kNotComputed};
 	reindexer::ComparationResult fieldsCmpRes{reindexer::ComparationResult::NotComparable};
 
-	[[nodiscard]] reindexer::ComparationResult GetResult(reindexer::Desc desc) noexcept {
+	reindexer::ComparationResult GetResult(reindexer::Desc desc) noexcept {
 		if (firstDifferentFieldIdx == 0) {
 			return desc ? -fieldsCmpRes : fieldsCmpRes;
 		} else {
@@ -81,7 +81,7 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 					  ctx_.sortingContext.entries[0].AsVariant());
 }
 
-class ItemComparator::BackInserter {
+class [[nodiscard]] ItemComparator::BackInserter {
 public:
 	explicit BackInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
 	void expr(Desc desc) { comparator_.comparators_.emplace_back(CompareByExpression{desc}); }
@@ -107,7 +107,7 @@ private:
 	ItemComparator& comparator_;
 };
 
-class ItemComparator::FrontInserter {
+class [[nodiscard]] ItemComparator::FrontInserter {
 public:
 	explicit FrontInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
 	void expr(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByExpression{desc}); }

@@ -17,7 +17,7 @@ using builders::JsonBuilder;
 
 namespace detail {
 template <typename Derived>
-class KnnSearchParamsCRTPBase {
+class [[nodiscard]] KnnSearchParamsCRTPBase {
 public:
 	Derived&& Radius(std::optional<float> radius) && noexcept { return std::move(Radius(std::move(radius))); }
 	Derived& Radius(std::optional<float> radius) & noexcept {
@@ -39,7 +39,7 @@ public:
 	void Serialize(WrSerializer&, Type) const;
 	static Derived Deserialize(Serializer&, size_t version);
 	std::string Dump() const;
-	enum class SerializeMask : uint8_t { K = 1 << 0, Radius = K << 1 };
+	enum class [[nodiscard]] SerializeMask : uint8_t { K = 1 << 0, Radius = K << 1 };
 
 private:
 	std::optional<size_t> k_;
@@ -53,12 +53,12 @@ private:
  * KnnSearchParamsBase{}.Radius(3.f)
  * KnnSearchParamsBase{}.K(20).Radius(3.f)
  */
-class KnnSearchParamsBase : public detail::KnnSearchParamsCRTPBase<KnnSearchParamsBase> {};
+class [[nodiscard]] KnnSearchParamsBase : public detail::KnnSearchParamsCRTPBase<KnnSearchParamsBase> {};
 
 /** Struct with parameters for search in HNSWBruteForce-index
  * Usage as for base structure
  */
-class BruteForceSearchParams : private detail::KnnSearchParamsCRTPBase<BruteForceSearchParams> {
+class [[nodiscard]] BruteForceSearchParams : private detail::KnnSearchParamsCRTPBase<BruteForceSearchParams> {
 	using Base = KnnSearchParamsCRTPBase<BruteForceSearchParams>;
 	friend Base;
 
@@ -82,7 +82,7 @@ public:
  * HnswSearchParams{}.Radius(3.f)
  * HnswSearchParams{}.Radius(3.f).Ef(2)
  */
-class HnswSearchParams : private detail::KnnSearchParamsCRTPBase<HnswSearchParams> {
+class [[nodiscard]] HnswSearchParams : private detail::KnnSearchParamsCRTPBase<HnswSearchParams> {
 	using Base = KnnSearchParamsCRTPBase<HnswSearchParams>;
 	friend Base;
 
@@ -113,7 +113,7 @@ private:
  * IvfSearchParams{}.Radius(3.f)
  * IvfSearchParams{}.Radius(3.f).NProbe(2)
  */
-class IvfSearchParams : private detail::KnnSearchParamsCRTPBase<IvfSearchParams> {
+class [[nodiscard]] IvfSearchParams : private detail::KnnSearchParamsCRTPBase<IvfSearchParams> {
 	using Base = KnnSearchParamsCRTPBase<IvfSearchParams>;
 	friend Base;
 
@@ -137,7 +137,7 @@ private:
 	size_t nprobe_ = 1;
 };
 
-class KnnSearchParams : private std::variant<KnnSearchParamsBase, BruteForceSearchParams, HnswSearchParams, IvfSearchParams> {
+class [[nodiscard]] KnnSearchParams : private std::variant<KnnSearchParamsBase, BruteForceSearchParams, HnswSearchParams, IvfSearchParams> {
 	using Base = std::variant<KnnSearchParamsBase, BruteForceSearchParams, HnswSearchParams, IvfSearchParams>;
 	const Base& toVariant() const& noexcept { return *this; }
 	using Base::Base;

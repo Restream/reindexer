@@ -12,11 +12,11 @@ struct JsonNode;
 
 namespace reindexer {
 
-class EventSubscriberConfig {
+class [[nodiscard]] EventSubscriberConfig {
 public:
 	using EventsSetT = fast_hash_set<updates::URType>;
 
-	struct StreamConfig {
+	struct [[nodiscard]] StreamConfig {
 		using SetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 
 		explicit StreamConfig(uint16_t _id) : id(_id) {}
@@ -38,7 +38,7 @@ public:
 	};
 	using StreamsContainerT = std::vector<StreamConfig>;
 
-	[[nodiscard]] Error FromJSON(std::span<char> json) noexcept;
+	Error FromJSON(std::span<char> json) noexcept;
 	void FromJSON(const gason::JsonNode& root);
 	void GetJSON(WrSerializer& ser) const;
 

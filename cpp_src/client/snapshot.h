@@ -7,7 +7,7 @@
 namespace reindexer {
 namespace client {
 
-class Snapshot {
+class [[nodiscard]] Snapshot {
 public:
 	Snapshot() = default;
 	Snapshot(const Snapshot&) = delete;
@@ -16,7 +16,7 @@ public:
 	Snapshot& operator=(Snapshot&&) noexcept;
 	~Snapshot();
 
-	class Iterator {
+	class [[nodiscard]] Iterator {
 	public:
 		Iterator(const Snapshot* sn, size_t idx) noexcept : sn_(sn), idx_(idx) {}
 		const SnapshotChunk& Chunk() const noexcept { return sn_->i_.data_; }
@@ -56,7 +56,7 @@ private:
 		i_.id_ = -1;
 	}
 
-	struct Impl {
+	struct [[nodiscard]] Impl {
 		Impl() = default;
 		Impl(net::cproto::CoroClientConnection* conn, int id, int64_t count, int64_t rawCount, lsn_t nsVersion,
 			 std::chrono::milliseconds timeout) noexcept;

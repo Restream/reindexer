@@ -10,7 +10,7 @@ ClusterManager::ClusterManager(ReindexerImpl& thisNode, size_t maxUpdatesSize)
 	  asyncReplicator_(updatesQueue_, sharedSyncState_, thisNode, *this) {}
 
 void ClusterManager::Configure(ReplicationConfigData replConfig) {
-	std::unique_lock<std::mutex> lck(mtx_);
+	unique_lock lck(mtx_);
 	if (!enabled_.load(std::memory_order_acquire)) {
 		return;
 	}
@@ -19,7 +19,7 @@ void ClusterManager::Configure(ReplicationConfigData replConfig) {
 }
 
 void ClusterManager::Configure(ClusterConfigData clusterConfig) {
-	std::unique_lock<std::mutex> lck(mtx_);
+	unique_lock lck(mtx_);
 	if (!enabled_.load(std::memory_order_acquire)) {
 		return;
 	}
@@ -27,7 +27,7 @@ void ClusterManager::Configure(ClusterConfigData clusterConfig) {
 }
 
 void ClusterManager::Configure(AsyncReplConfigData asyncConfig) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!enabled_.load(std::memory_order_acquire)) {
 		return;
 	}
@@ -35,17 +35,17 @@ void ClusterManager::Configure(AsyncReplConfigData asyncConfig) {
 }
 
 bool ClusterManager::IsExpectingAsyncReplStartup() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return enabled_.load(std::memory_order_acquire) && asyncReplicator_.IsExpectingStartup();
 }
 
 bool ClusterManager::IsExpectingClusterStartup() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return enabled_.load(std::memory_order_acquire) && clusterReplicator_.IsExpectingStartup();
 }
 
 Error ClusterManager::StartClusterRepl() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	try {
 		if (!enabled_.load(std::memory_order_acquire)) {
 			return Error(errLogic, "ClusterManager is disabled");
@@ -59,7 +59,7 @@ Error ClusterManager::StartClusterRepl() {
 }
 
 Error ClusterManager::StartAsyncRepl() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	try {
 		if (!enabled_.load(std::memory_order_acquire)) {
 			return Error(errLogic, "ClusterManager is disabled");
@@ -73,17 +73,17 @@ Error ClusterManager::StartAsyncRepl() {
 }
 
 void ClusterManager::StopCluster() noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	clusterReplicator_.Stop();
 }
 
 void ClusterManager::StopAsyncRepl() noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	asyncReplicator_.Stop();
 }
 
 void ClusterManager::Stop(bool disable) noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	clusterReplicator_.Stop(disable);
 	asyncReplicator_.Stop(disable);
 	if (disable) {

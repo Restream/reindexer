@@ -1,6 +1,5 @@
 #pragma once
 
-#include <bitset>
 #include <limits>
 #include <vector>
 #include "core/idset.h"
@@ -23,8 +22,8 @@ class StringsHolder;
 struct NamespaceCacheConfigData;
 class FtFunction;
 
-class Index {
-	struct SelectFuncCtx {
+class [[nodiscard]] Index {
+	struct [[nodiscard]] SelectFuncCtx {
 		SelectFuncCtx(FtFunction& func, RanksHolder::Ptr& r, int idxNo) noexcept : selectFunc{func}, ranks{r}, indexNo{idxNo} {}
 		FtFunction& selectFunc;
 		RanksHolder::Ptr& ranks;
@@ -32,7 +31,7 @@ class Index {
 	};
 
 public:
-	struct SelectOpts {
+	struct [[nodiscard]] SelectOpts {
 		SelectOpts()
 			: itemsCountInNamespace(0),
 			  maxIterations(std::numeric_limits<int>::max()),
@@ -53,7 +52,7 @@ public:
 		unsigned inTransaction : 1;
 		unsigned rankSortType : 3;
 	};
-	struct SelectContext {
+	struct [[nodiscard]] SelectContext {
 		SelectOpts opts;
 		std::optional<SelectFuncCtx> selectFuncCtx;
 	};
@@ -79,16 +78,16 @@ public:
 	// NOLINTEND(*-unnecessary-value-param)
 	virtual void Commit() = 0;
 	virtual void CommitFulltext() {}
-	virtual void MakeSortOrders(UpdateSortedContext&) {}
+	virtual void MakeSortOrders(IUpdateSortedContext&) {}
 
-	virtual void UpdateSortedIds(const UpdateSortedContext& ctx) = 0;
+	virtual void UpdateSortedIds(const IUpdateSortedContext& ctx) = 0;
 	virtual bool IsSupportSortedIdsBuild() const noexcept = 0;
 	virtual size_t Size() const noexcept { return 0; }
 	virtual std::unique_ptr<Index> Clone(size_t newCapacity) const = 0;
 	virtual bool IsOrdered() const noexcept { return false; }
 	virtual bool IsFulltext() const noexcept { return false; }
 	virtual bool IsUuid() const noexcept { return false; }
-	[[nodiscard]] virtual reindexer::FloatVectorDimension FloatVectorDimension() const noexcept {
+	virtual reindexer::FloatVectorDimension FloatVectorDimension() const noexcept {
 		assertrx(0);
 		std::abort();
 	}
@@ -122,7 +121,7 @@ public:
 	const IndexOpts& Opts() const { return opts_; }
 	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }
 	void SetFields(FieldsSet&& fields) { fields_ = std::move(fields); }
-	[[nodiscard]] SortType SortId() const noexcept { return sortId_; }
+	SortType SortId() const noexcept { return sortId_; }
 	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
 	virtual FtMergeStatuses GetFtMergeStatuses(const RdxContext&) {
 		assertrx(0);

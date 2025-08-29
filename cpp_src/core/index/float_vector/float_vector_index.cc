@@ -23,7 +23,7 @@ void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, MustExist mus
 	assertrx_dbg(keys.size() == 1);
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
 	if (emptyValues_.Unsorted().Find(id)) {
-		emptyValues_.Unsorted().Erase(id);	// ignore result
+		rx_unused = emptyValues_.Unsorted().Erase(id);
 		memStat_.uniqKeysCount = emptyValues_.Unsorted().IsEmpty() ? 0 : 1;
 	} else {
 		Delete(keys[0], id, mustExist, stringsHolder, clearCache);
@@ -83,7 +83,7 @@ Variant FloatVectorIndex::UpsertConcurrent(const Variant& key, IdType id, bool& 
 	}
 	const ConstFloatVectorView vect{key};
 	if (vect.IsEmpty()) {
-		std::unique_lock lck(emptyValuesInsertionMtx_);
+		unique_lock lck(emptyValuesInsertionMtx_);
 		return upsertEmptyVectImpl(id);
 	}
 	checkVectorDims(vect, "upsert"sv);
@@ -178,7 +178,7 @@ void FloatVectorIndex::checkForSelect(ConstFloatVectorView key) const {
 }
 
 Variant FloatVectorIndex::upsertEmptyVectImpl(IdType id) {
-	emptyValues_.Unsorted().Add(id, IdSet::Auto, sortedIdxCount_);	// ignore result
+	rx_unused = emptyValues_.Unsorted().Add(id, IdSet::Auto, sortedIdxCount_);
 	memStat_.uniqKeysCount = 1;
 	return Variant{ConstFloatVectorView{}};
 }

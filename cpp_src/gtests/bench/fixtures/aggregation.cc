@@ -41,7 +41,7 @@ reindexer::Error Aggregation::Initialize() {
 reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
-	item.Unsafe();
+	rx_unused = item.Unsafe();
 
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);

@@ -16,21 +16,21 @@ struct SortingEntries;
 class UpdateEntry;
 using EqualPosition_t = h_vector<std::string, 2>;
 
-class SQLParser {
+class [[nodiscard]] SQLParser {
 	class ParserContextsAppendGuard;
-	enum class Nested : bool { Yes = true, No = false };
+	enum class [[nodiscard]] Nested : bool { Yes = true, No = false };
 
 public:
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
 	/// @return parsed query
-	[[nodiscard]] static Query Parse(std::string_view sql);
+	static Query Parse(std::string_view sql);
 
 protected:
 	explicit SQLParser(Query& q) noexcept : query_(q) {}
 	/// Sql parser context
-	struct SqlParsingCtx {
-		struct SuggestionData {
+	struct [[nodiscard]] SqlParsingCtx {
+		struct [[nodiscard]] SuggestionData {
 			SuggestionData(std::string tok, SqlTokenType tokType) : token(std::move(tok)), tokenType(tokType) {}
 			std::string token;
 			SqlTokenType tokenType = Start;
@@ -68,34 +68,30 @@ protected:
 
 	/// Parses filter part of sql query.
 	/// @param parser - tokenizer object instance.
-	/// @return always returns zero.
 	template <Nested>
-	int selectParse(tokenizer& parser);
+	void selectParse(tokenizer& parser);
 
 	/// Parses filter part of sql delete query.
 	/// @param parser - tokenizer object instance.
-	/// @return always returns zero.
-	int deleteParse(tokenizer& parser);
+	void deleteParse(tokenizer& parser);
 
 	/// Parses filter part of sql update query.
 	/// @param parser - tokenizer object instance.
-	/// @return always returns zero.
-	int updateParse(tokenizer& parser);
+	void updateParse(tokenizer& parser);
 
 	/// Parses filter part of sql truncate query.
 	/// @param parser - tokenizer object instance.
-	/// @return always returns zero.
-	int truncateParse(tokenizer& parser);
+	void truncateParse(tokenizer& parser);
 
 	/// Parse where entries
 	template <Nested>
-	int parseWhere(tokenizer& parser);
+	void parseWhere(tokenizer& parser);
 	template <typename T>
 	void parseWhereCondition(tokenizer&, T&& firstArg, OpType);
 
 	/// Parse order by
 	template <typename Sortable>
-	int parseOrderBy(tokenizer& parser, Sortable&);
+	void parseOrderBy(tokenizer& parser, Sortable&);
 
 	/// Parse join entries
 	void parseJoin(JoinType type, tokenizer& tok);

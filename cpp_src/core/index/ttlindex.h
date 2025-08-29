@@ -8,7 +8,7 @@ namespace reindexer {
 /// Stores UNIX timestamps, items expire after:
 /// IndexDef::expireAfter_ (seconds) + item value itself
 template <typename T>
-class TtlIndex : public IndexOrdered<T> {
+class [[nodiscard]] TtlIndex : public IndexOrdered<T> {
 public:
 	TtlIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 		: IndexOrdered<T>(idef, std::move(payloadType), std::move(fields), cacheCfg), expireAfter_(idef.ExpireAfter()) {}

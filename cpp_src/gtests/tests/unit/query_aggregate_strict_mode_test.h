@@ -8,12 +8,12 @@
 #include "rpc_test_client.h"
 
 template <typename Client>
-struct QueryResType {
+struct [[nodiscard]] QueryResType {
 	using type = reindexer::client::QueryResults;
 };
 
 template <>
-struct QueryResType<reindexer::client::CoroReindexer> {
+struct [[nodiscard]] QueryResType<reindexer::client::CoroReindexer> {
 	using type = reindexer::client::CoroQueryResults;
 };
 
@@ -58,7 +58,7 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 	// To verify that when aggregating by a nonexistent field, null optional will be received in the AggregationResult
 	const std::array<AggType, 6> aggTypes{AggType::AggSum, AggType::AggAvg,	  AggType::AggMin,
 										  AggType::AggMax, AggType::AggCount, AggType::AggCountCached};
-	enum StrictError { Ok, ErrName, ErrIndex };
+	enum [[nodiscard]] StrictError { Ok, ErrName, ErrIndex };
 
 	const std::map<AggType, double> results{
 		{AggType::AggSum, 499500.},	 // 1/2 * (0 + 999) * 1000 - by the formula of the sum of the arithmetic progression

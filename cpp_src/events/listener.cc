@@ -35,8 +35,8 @@ Error EventsListener::AddOrUpdate(IEventsObserver& observer, EventSubscriberConf
 		return Remove(observer);
 	}
 
-	std::lock_guard subUnsubLck(subUnsubMtx_);
-	std::lock_guard lck(mtx_);
+	lock_guard subUnsubLck(subUnsubMtx_);
+	lock_guard lck(mtx_);
 
 	auto it = subs_.find(&observer);
 	bool emplaced = false;
@@ -65,8 +65,8 @@ Error EventsListener::AddOrUpdate(IEventsObserver& observer, EventSubscriberConf
 }
 
 Error EventsListener::Remove(IEventsObserver& observer) {
-	std::lock_guard subUnsubLck(subUnsubMtx_);
-	std::unique_lock lck(mtx_);
+	lock_guard subUnsubLck(subUnsubMtx_);
+	unique_lock lck(mtx_);
 	if (auto found = subs_.find(&observer); found != subs_.end()) {
 		std::optional<uint64_t> updatesDropBoundry;
 		const auto removedNextUpdateId = found->second.nextUpdateId;
@@ -113,7 +113,7 @@ Error EventsListener::Remove(IEventsObserver& observer) {
 }
 
 void EventsListener::Stop() {
-	std::lock_guard subUnsubLck(subUnsubMtx_);
+	lock_guard subUnsubLck(subUnsubMtx_);
 	stop();
 }
 

@@ -14,7 +14,7 @@ namespace reindexer {
 /// contains only 1 IdSet for one of the following keys:
 /// 10, 11, 12, 13, ... 19 (For example all rowIds for
 /// the value '10').
-class SingleSelectKeyResult {
+class [[nodiscard]] SingleSelectKeyResult {
 	friend class SelectIterator;
 	friend class SelectKeyResult;
 
@@ -140,13 +140,13 @@ protected:
 /// i.e. for condition "A>=10 && A<20" there will be
 /// 10 SingleSelectKeyResult objects (for each of the
 /// following keys: 10, 11, 12, 13, ... 19).
-class SelectKeyResult : public h_vector<SingleSelectKeyResult, 1> {
+class [[nodiscard]] SelectKeyResult : public h_vector<SingleSelectKeyResult, 1> {
 public:
 	constexpr static size_t kMinSetsForHeapSort = 16;
 	constexpr static size_t kSelectionSortIdsCount = 500;
 	constexpr static size_t kMinSetsForGenericSort = 30;
 
-	struct MergeOptions {
+	struct [[nodiscard]] MergeOptions {
 		bool genericSort;
 		bool shrinkResult;
 	};
@@ -333,7 +333,7 @@ private:
 		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 		mergedIds->reserve(idsCount);
 
-		struct IdSetGreater {
+		struct [[nodiscard]] IdSetGreater {
 			bool operator()(const value_type* l, const value_type* r) noexcept {
 				const auto lval = l->useBtree_ ? *(l->itset_) : *(l->it_);
 				const auto rval = r->useBtree_ ? *(r->itset_) : *(r->it_);
@@ -441,6 +441,7 @@ public:
 	SelectKeyResults(ComparatorNotIndexed&& comp) noexcept : Base{std::move(comp)} {}
 	void Clear() noexcept { std::get<SelectKeyResultsVector>(*this).clear(); }
 	void EmplaceBack(SelectKeyResult&& sr) { std::get<SelectKeyResultsVector>(*this).emplace_back(std::move(sr)); }
+	[[nodiscard]] bool IsComparator() const noexcept { return !std::holds_alternative<SelectKeyResultsVector>(AsVariant()); }
 	SelectKeyResult&& Front() && noexcept { return std::move(std::get<SelectKeyResultsVector>(*this).front()); }
 	const Base& AsVariant() const& noexcept { return *this; }
 	Base& AsVariant() & noexcept { return *this; }

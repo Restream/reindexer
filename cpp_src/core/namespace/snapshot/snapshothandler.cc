@@ -96,12 +96,15 @@ void SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const Packe
 		case WalCommitTransaction:
 		case WalSetSchema:
 		case WalUpdateQuery:
+			// NOLINTNEXTLINE (bugprone-unused-return-value)
 			ns_.wal_.Add(type, prec, lsn);
 			return;
 		case WalShallowItem:
+			// NOLINTNEXTLINE (bugprone-unused-return-value)
 			ns_.wal_.Add(WALRecord(WalItemUpdate, WALRecord(prec).id, chCtx.tx), lsn);
 			return;
 		case WalItemUpdate:
+			// NOLINTNEXTLINE (bugprone-unused-return-value)
 			ns_.wal_.Add(WALRecord(WalEmpty, WALRecord(prec).id, chCtx.tx), lsn);
 			return;
 		case WalReplState:
@@ -128,7 +131,7 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 
 	Item item;
 	NsContext ctx(dummyCtx_);
-	ctx.InSnapshot(lsn, chCtx.wal, false, chCtx.initialLeaderSync);
+	rx_unused = ctx.InSnapshot(lsn, chCtx.wal, false, chCtx.initialLeaderSync);
 	auto rec = snRec.Unpack();
 	switch (rec.type) {
 		// Modify item
@@ -172,7 +175,7 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 		case WalIndexUpdate: {
 			auto iDef = IndexDef::FromJSON(giftStr(rec.data));
 			if (iDef) {
-				ns_.doUpdateIndex(*iDef, pendedRepl, ctx);
+				rx_unused = ns_.doUpdateIndex(*iDef, pendedRepl, ctx);
 				ns_.saveIndexesToStorage();
 			} else {
 				throw iDef.error();
@@ -246,6 +249,7 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 			}
 			break;
 		case WalEmpty:
+			// NOLINTNEXTLINE (bugprone-unused-return-value)
 			ns_.wal_.Add(WALRecord(WalEmpty), lsn);
 			break;
 		case WalReplState:
@@ -349,7 +353,7 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 
 	LocalQueryResults qr;
 	NsContext nsCtx = NsContext(rdxCtx);
-	nsCtx.InSnapshot(ch.Records().back().LSN(), ch.IsWAL(), ch.IsLastChunk(), isInitialLeaderSync);
+	rx_unused = nsCtx.InSnapshot(ch.Records().back().LSN(), ch.IsWAL(), ch.IsLastChunk(), isInitialLeaderSync);
 	auto ltx = Transaction::Transform(std::move(tx));
 	ns_.CommitTransaction(ltx, qr, nsCtx);
 }

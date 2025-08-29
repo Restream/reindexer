@@ -2,7 +2,7 @@
 
 #include "reindexer_api.h"
 
-class CollateCustomModeAPI : public ReindexerApi {
+class [[nodiscard]] CollateCustomModeAPI : public ReindexerApi {
 protected:
 	void PrepareNs(const std::shared_ptr<Reindexer>& reindexer, const std::string& nsName, const std::string& sortOrder,
 				   const std::vector<std::string_view>& sourceTable) {
@@ -23,16 +23,14 @@ protected:
 			item[kFieldID] = static_cast<int>(i);
 			item[kFieldName] = sourceTable[i];
 
-			err = rt.reindexer->Upsert(nsName, item);
-			EXPECT_TRUE(err.ok()) << err.what();
+			rt.Upsert(nsName, item);
 		}
 	}
 
 	void SortByName(QueryResults& qr) {
 		Query query{default_namespace};
 		query.Sort(kFieldName, false);
-		Error err = rt.reindexer->Select(query, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Select(query, qr);
 	}
 
 	void CompareResults(const QueryResults& qr, const std::vector<std::string_view>& sortedTable) {

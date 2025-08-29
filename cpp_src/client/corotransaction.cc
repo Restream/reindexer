@@ -12,9 +12,9 @@ namespace reindexer::client {
 CoroTransaction::~CoroTransaction() {
 	if (!IsFree()) {
 		try {
-			getConn()->Call({net::cproto::kCmdRollbackTx, i_.requestTimeout_, i_.execTimeout_, lsn_t(), -1, ShardingKeyType::NotSetShard,
-							 nullptr, false, i_.sessionTs_},
-							i_.txId_);
+			rx_unused = getConn()->Call({net::cproto::kCmdRollbackTx, i_.requestTimeout_, i_.execTimeout_, lsn_t(), -1,
+										 ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+										i_.txId_);
 		} catch (std::exception& e) {
 			fprintf(stderr, "reindexer error: unexpected exception in ~CoroTransaction: %s\n", e.what());
 			assertrx_dbg(false);

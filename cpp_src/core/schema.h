@@ -24,7 +24,7 @@ using builders::ProtobufSchemaBuilder;
 
 std::string_view kvTypeToJsonSchemaType(KeyValueType type);
 
-class FieldProps {
+class [[nodiscard]] FieldProps {
 public:
 	FieldProps() = default;
 	FieldProps(KeyValueType _type, IsArray _isArray = IsArray_False, IsRequired _isRequired = IsRequired_False,
@@ -58,12 +58,12 @@ public:
 
 class Schema;
 
-struct SchemaFieldType {
+struct [[nodiscard]] SchemaFieldType {
 	KeyValueType type_{KeyValueType::Undefined{}};
 	bool isArray_{false};
 };
 
-class SchemaFieldsTypes {
+class [[nodiscard]] SchemaFieldsTypes {
 public:
 	void AddObject(std::string objectType);
 	void AddField(KeyValueType type, bool isArray);
@@ -81,7 +81,7 @@ private:
 	int generatedObjectsNames = {0};
 };
 
-class PrefixTree {
+class [[nodiscard]] PrefixTree {
 public:
 	using PathT = h_vector<std::string, 10>;
 
@@ -98,7 +98,7 @@ public:
 	class PrefixTreeNode;
 	using map = fast_hash_map<std::string, std::unique_ptr<PrefixTreeNode>, hash_str, equal_str, less_str>;
 
-	class PrefixTreeNode {
+	class [[nodiscard]] PrefixTreeNode {
 	public:
 		PrefixTreeNode() = default;
 		PrefixTreeNode(FieldProps&& p) : props(std::move(p)) {}
@@ -120,7 +120,7 @@ private:
 	SchemaFieldsTypes fieldsTypes_;
 };
 
-class Schema {
+class [[nodiscard]] Schema {
 public:
 	Schema() = default;
 	explicit Schema(std::string_view json);

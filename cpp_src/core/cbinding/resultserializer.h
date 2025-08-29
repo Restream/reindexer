@@ -7,7 +7,7 @@ namespace reindexer {
 
 class QueryResults;
 
-struct ResultFetchOpts {
+struct [[nodiscard]] ResultFetchOpts {
 	int flags;
 	std::span<int32_t> ptVersions;
 	unsigned fetchOffset;
@@ -15,7 +15,7 @@ struct ResultFetchOpts {
 	bool withAggregations;
 };
 
-class WrResultSerializer : public WrSerializer {
+class [[nodiscard]] WrResultSerializer : public WrSerializer {
 public:
 	WrResultSerializer(
 		const ResultFetchOpts& opts = {.flags = 0, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = 0, .withAggregations = true})

@@ -2,18 +2,20 @@
 
 #include "core/namespace/namespacestat.h"
 #include "core/perfstatcounter.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "localtransaction.h"
 
 namespace reindexer {
 
-class TxStatCounter {
+class [[nodiscard]] TxStatCounter {
 	using QuantityCounter = QuantityCounterST<size_t>;
 
 public:
 	void Count(const LocalTransaction& tx) {
 		using std::chrono::duration_cast;
 		using std::chrono::microseconds;
-		std::unique_lock<std::mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		prepCounter_.Count(duration_cast<microseconds>(Transaction::ClockT::now() - tx.GetStartTime()).count());
 		stepsCounter_.Count(tx.GetSteps().size());
 	}
@@ -23,7 +25,7 @@ public:
 		QuantityCounter::Stats stepsStats;
 		QuantityCounter::Stats prepStats;
 		{
-			std::unique_lock<std::mutex> lck(mtx_);
+			unique_lock lck(mtx_);
 			stepsStats = stepsCounter_.Get();
 			prepStats = prepCounter_.Get();
 		}
@@ -37,7 +39,7 @@ public:
 	}
 
 	void Reset() {
-		std::unique_lock<std::mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		stepsCounter_.Reset();
 		prepCounter_.Reset();
 	}
@@ -45,7 +47,7 @@ public:
 private:
 	QuantityCounter stepsCounter_;
 	QuantityCounter prepCounter_;
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 };
 
 }  // namespace reindexer

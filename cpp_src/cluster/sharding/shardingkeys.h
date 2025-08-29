@@ -22,13 +22,13 @@ namespace sharding {
 constexpr size_t kHvectorConnStack = 9;
 using ShardIDsContainer = h_vector<int, kHvectorConnStack>;
 
-class ShardingKeys {
+class [[nodiscard]] ShardingKeys {
 public:
-	struct Variant4Segment : Variant {
+	struct [[nodiscard]] Variant4Segment : Variant {
 		bool isRightBound = false;
 	};
 
-	struct BaseCompare {
+	struct [[nodiscard]] BaseCompare {
 		bool IsInt(const Variant& lhs, const Variant& rhs) const noexcept {
 			return (lhs.Type().Is<KeyValueType::Int64>() && rhs.Type().Is<KeyValueType::Int>()) ||
 				   (lhs.Type().Is<KeyValueType::Int>() && rhs.Type().Is<KeyValueType::Int64>());
@@ -41,7 +41,7 @@ public:
 		}
 	};
 
-	struct FastHashMapCompare : BaseCompare {
+	struct [[nodiscard]] FastHashMapCompare : BaseCompare {
 		bool operator()(const Variant& lhs, const Variant& rhs) const { return compare(lhs, rhs); }
 
 	private:
@@ -55,7 +55,7 @@ public:
 		}
 	};
 
-	struct MapCompare : BaseCompare {
+	struct [[nodiscard]] MapCompare : BaseCompare {
 		using is_transparent = void;
 
 		bool operator()(const Variant4Segment& lhs, const Variant4Segment& rhs) const { return compare(lhs, rhs); }
@@ -78,7 +78,7 @@ public:
 
 	using ValuesData = std::variant<VariantHashMap, Variant4SegmentMap>;
 
-	struct ShardIndexWithValues {
+	struct [[nodiscard]] ShardIndexWithValues {
 		std::string_view name;
 		const ValuesData* values;
 	};
@@ -102,7 +102,7 @@ public:
 
 private:
 	using NsName = std::string_view;
-	struct NsData {
+	struct [[nodiscard]] NsData {
 		std::string_view indexName;
 		ValuesData keysToShard;
 		int defaultShard;

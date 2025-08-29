@@ -81,7 +81,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-jammy`, `ubuntu-noble`
+Available distros: `debian-bullseye`, `debian-trixie`, `ubuntu-jammy`, `ubuntu-noble`
 
 ### Redos
 
@@ -364,6 +364,17 @@ To configure storage type for Go bindings either `bindings.ConnectOptions` (for 
 
 Reindexer will try to autodetect RocksDB library and its dependencies at compile time if CMake flag `ENABLE_ROCKSDB` was passed (enabled by default).
 If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` in order to link with go-applications and go-bindings.
+
+### Converting storage type for existing database
+
+Storage type may be converted by stopping reindexer_server and passing command line option to reindexer_tool like this:   
+
+```sh
+reindexer_tool --dsn builtin:///tmp/rx/dbase_name --convfmt rocksdb --convbackup /tmp/rx_backup/dbase_name
+```
+
+After executing this command, the database storage in the directory specified by the `dsn` option (DSN has to be `builtin://`) will be converted to the type specified by `convfmt`.
+The new type must differ from the current type, or the command will terminate with an error. Currently, two storage types are supported: `rocksdb` and `leveldb`. The optional `convbackup` argument specifies a directory where the original storage will be backed up, if necessary.
 
 ### Data transport formats
 

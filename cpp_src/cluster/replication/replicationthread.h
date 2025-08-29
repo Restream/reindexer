@@ -18,7 +18,7 @@ namespace cluster {
 
 constexpr size_t kUpdatesContainerOverhead = 48;
 
-struct ReplThreadConfig {
+struct [[nodiscard]] ReplThreadConfig {
 	ReplThreadConfig() = default;
 	ReplThreadConfig(const ReplicationConfigData& baseConfig, const AsyncReplConfigData& config);
 	ReplThreadConfig(const ReplicationConfigData& baseConfig, const ClusterConfigData& config);
@@ -37,7 +37,7 @@ struct ReplThreadConfig {
 	std::string LeaderReplToken;
 };
 
-struct UpdateApplyStatus {
+struct [[nodiscard]] UpdateApplyStatus {
 	UpdateApplyStatus(Error&& _err = Error(), updates::URType _type = updates::URType::None) noexcept : err(std::move(_err)), type(_type) {}
 	template <typename BehaviourParamT>
 	bool IsHaveToResync() const noexcept;
@@ -47,7 +47,7 @@ struct UpdateApplyStatus {
 };
 
 namespace repl_thread_impl {
-class NamespaceData {
+class [[nodiscard]] NamespaceData {
 public:
 	void UpdateLsnOnRecord(const updates::UpdateRecord& rec);
 
@@ -57,7 +57,7 @@ public:
 	bool isClosed = false;
 };
 
-struct Node {
+struct [[nodiscard]] Node {
 	using UpdatesChT = coroutine::channel<bool>;
 
 	Node(int _serverId, uint32_t _uid, const client::ReindexerConfig& config) noexcept : serverId(_serverId), uid(_uid), client(config) {}
@@ -77,7 +77,7 @@ struct Node {
 }  // namespace repl_thread_impl
 
 template <typename BehaviourParamT>
-class ReplThread {
+class [[nodiscard]] ReplThread {
 public:
 	using UpdatesQueueT = updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>;
 	using Node = repl_thread_impl::Node;
@@ -115,7 +115,7 @@ private:
 																 bool currentlyOnline, const updates::UpdateRecord& rec) noexcept;
 
 	Error syncNamespace(Node&, const NamespaceName&, const ReplicationStateV2& followerState);
-	[[nodiscard]] Error syncShardingConfig(Node& node) noexcept;
+	Error syncShardingConfig(Node& node) noexcept;
 	UpdateApplyStatus nodeUpdatesHandlingLoop(Node& node) noexcept;
 	bool handleUpdatesWithError(Node& node, const Error& err);
 	Error checkIfReplicationAllowed(Node& node, LogLevel& logLevel);

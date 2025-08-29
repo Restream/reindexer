@@ -1,14 +1,12 @@
 #include <gtest/gtest.h>
 #include "reindexer_api.h"
 
-class CompositeUpdate : public ReindexerApi {
+class [[nodiscard]] CompositeUpdate : public ReindexerApi {
 public:
 	void SetUp() override {
 		using namespace std::string_literals;
 		ReindexerApi::SetUp();
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
+		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(
 			default_namespace,
 			{IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{kFieldV1, "hash", "int", IndexOpts(), 0},
@@ -30,42 +28,35 @@ public:
 	static constexpr char kFieldArray[] = "array";
 
 	void ExecuteAndCheckResult(const Query& q, const std::string& item) {
+		SCOPED_TRACE(q.GetSQL());
 		reindexer::QueryResults res;
 		Error err;
 		switch (q.type_) {
 			case QuerySelect:
-				err = rt.reindexer->Select(q, res);
+				res = rt.Select(q);
 				break;
 			case QueryUpdate:
-				err = rt.reindexer->Update(q, res);
+				rt.Update(q, res);
 				break;
 			case QueryDelete:
-				err = rt.reindexer->Delete(q, res);
+				rt.Delete(q, res);
 				break;
 			case QueryTruncate:
 				assertrx(false);
 		}
-		ASSERT_TRUE(err.ok()) << err.what() << " q=" << q.GetSQL();
 		if (!item.empty()) {
 			ASSERT_EQ(res.Count(), 1);
 			reindexer::WrSerializer ser;
 			auto err = res.begin().GetJSON(ser, false);
 			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(std::string(ser.c_str()), item);
+			ASSERT_EQ(ser.Slice(), item);
 		} else {
 			ASSERT_EQ(res.Count(), 0);
 		}
 	}
 
 private:
-	void fillDefaultNs() {
-		auto item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-		Error err = item.FromJSON(R"({"id":1, "array":[1,2,3], "v1": 1, "v2":200, "v3":1000, "v4":"v4"})");
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+	void fillDefaultNs() { rt.UpsertJSON(default_namespace, R"({"id":1, "array":[1,2,3], "v1": 1, "v2":200, "v3":1000, "v4":"v4"})"); }
 };
 
 TEST_F(CompositeUpdate, CompositeAndArray) {

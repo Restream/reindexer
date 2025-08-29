@@ -5,7 +5,7 @@
 namespace reindexer {
 
 template <typename Entry, typename Node, typename Traits, typename Iterator, size_t MaxEntries, size_t MinEntries, typename Child>
-class GuttmanSplitter : protected Splitter<Entry, Node, Traits, Iterator, MaxEntries> {
+class [[nodiscard]] GuttmanSplitter : protected Splitter<Entry, Node, Traits, Iterator, MaxEntries> {
 	using Base = Splitter<Entry, Node, Traits, Iterator, MaxEntries>;
 
 protected:

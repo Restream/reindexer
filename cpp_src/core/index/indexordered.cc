@@ -170,30 +170,30 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 }
 
 template <typename T>
-void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
+void IndexOrdered<T>::MakeSortOrders(IUpdateSortedContext& ctx) {
 	logFmt(LogTrace, "IndexOrdered::MakeSortOrders ({})", this->name_);
-	auto& ids2Sorts = ctx.ids2Sorts();
+	auto& ids2Sorts = ctx.Ids2Sorts();
 	size_t totalIds = 0;
 	for (auto it : ids2Sorts) {
-		if (it != SortIdUnexists) {
+		if (it != SortIdNotExists) {
 			totalIds++;
 		}
 	}
 
-	this->sortId_ = ctx.getCurSortId();
+	this->sortId_ = ctx.GetCurSortId();
 	this->sortOrders_.resize(totalIds);
 	size_t idx = 0;
 	for (auto& keyIt : this->idx_map) {
 		// assert (keyIt.second.size());
 		for (auto id : keyIt.second.Unsorted()) {
-			if rx_unlikely (id >= int(ids2Sorts.size()) || ids2Sorts[id] == SortIdUnexists) {
+			if rx_unlikely (id >= int(ids2Sorts.size()) || ids2Sorts[id] == SortIdNotExists) {
 				logFmt(
 					LogError,
 					"Internal error: Index '{}' is broken. Item with key '{}' contains id={}, which is not present in allIds,totalids={}\n",
 					this->name_, Variant(keyIt.first).As<std::string>(), id, totalIds);
 				assertrx(0);
 			}
-			if (ids2Sorts[id] == SortIdUnfilled) {
+			if (ids2Sorts[id] == SortIdNotFilled) {
 				ids2Sorts[id] = idx;
 				this->sortOrders_[idx++] = id;
 			}
@@ -201,7 +201,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext& ctx) {
 	}
 	// fill non-existent indexes
 	for (auto it = ids2Sorts.begin(), beg = ids2Sorts.begin(), end = ids2Sorts.end(); it != end; ++it) {
-		if (*it == SortIdUnfilled) {
+		if (*it == SortIdNotFilled) {
 			*it = idx;
 			this->sortOrders_[idx++] = it - beg;
 		}

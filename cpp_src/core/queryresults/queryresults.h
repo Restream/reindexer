@@ -26,15 +26,15 @@ const std::string_view kWALParamItem = "item";
 /// Random access is supported for LocalQueryResults only.
 /// QueryResults cannot be externaly changed or deleted even in case of changing origin data in DB.<br>
 
-class QueryResults {
+class [[nodiscard]] QueryResults {
 	template <typename DataT>
 	struct ItemDataStorage;
 	template <typename QrItT>
 	static Error fillItemImpl(QrItT&, ItemImpl& itemImpl, bool convertViaJSON);
 
 public:
-	enum class Type { None, Local, SingleRemote, MultipleRemote, Mixed };
-	struct ItemRefCache {
+	enum class [[nodiscard]] Type { None, Local, SingleRemote, MultipleRemote, Mixed };
+	struct [[nodiscard]] ItemRefCache {
 		ItemRefCache() = default;
 		ItemRefCache(IdType id, RankT, uint16_t nsid, ItemImpl&& i, bool raw);
 		ItemRefCache(IdType id, uint16_t nsid, ItemImpl&& i, bool raw);
@@ -49,7 +49,7 @@ public:
 
 private:
 	template <typename QrT>
-	class QrMetaData {
+	class [[nodiscard]] QrMetaData {
 	public:
 		QrMetaData(QrT&& _qr, int shardID);
 		QrMetaData(const QrMetaData&) = delete;
@@ -91,7 +91,7 @@ private:
 public:
 	using NamespaceImplPtr = intrusive_ptr<NamespaceImpl>;
 
-	QueryResults(int flags = 0);
+	explicit QueryResults(int flags = 0);
 	~QueryResults();
 	QueryResults(QueryResults&&);
 	QueryResults(const QueryResults&) = delete;
@@ -300,13 +300,14 @@ public:
 		flags_ = flags;
 	}
 
-	class Iterator {
+	class [[nodiscard]] Iterator {
 	public:
 		Iterator() = default;
 		Iterator(const QueryResults* qr, int64_t idx, std::optional<LocalQueryResults::ConstIterator> localIt)
 			: qr_(qr), idx_(idx), localIt_(std::move(localIt)) {}
 
 		Error GetJSON(WrSerializer& wrser, bool withHdrLen = true);
+		Expected<std::string> GetJSON();
 		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetProtobuf(WrSerializer& wrser, bool withHdrLen = true);
@@ -363,6 +364,7 @@ public:
 			} constexpr static rawGetter;
 			return std::visit(rawGetter, getVariantIt());
 		}
+		size_t GetJoinedField() const { return qr_->GetJoinedField(GetNsID()); }
 		Iterator& operator++();
 		Iterator& operator+(uint32_t delta) {
 			switch (qr_->type_) {
@@ -429,9 +431,6 @@ public:
 		}
 		Iterator& operator*() noexcept { return *this; }
 
-		const QueryResults* qr_;
-		int64_t idx_;
-
 	private:
 		template <bool isRanked>
 		auto getItemRef(std::vector<ItemRefCache>* storage);
@@ -493,6 +492,8 @@ public:
 			}
 		}
 
+		const QueryResults* qr_{nullptr};
+		int64_t idx_{0};
 		// Iterator for Qr with Type::Local. It may be used to iterate in any direction independantly from main query results
 		std::optional<LocalQueryResults::ConstIterator> localIt_;
 	};
@@ -528,7 +529,7 @@ private:
 	void beginImpl() const;
 	void setFlags(int flags) noexcept { flags_ = flags; }
 
-	struct QueryData {
+	struct [[nodiscard]] QueryData {
 		bool isWalQuery = false;
 		uint16_t joinedSize = 0;
 		h_vector<uint16_t, 8> mergedJoinedSizes;
@@ -545,7 +546,7 @@ private:
 	int flags_ = 0;
 	std::optional<QueryData> qData_;
 	std::unique_ptr<std::set<int, Comparator>> orderedQrs_;
-	struct BeginContainer {
+	struct [[nodiscard]] BeginContainer {
 		BeginContainer() = default;
 		BeginContainer(BeginContainer&&) noexcept {}
 		BeginContainer& operator=(BeginContainer&&) noexcept {

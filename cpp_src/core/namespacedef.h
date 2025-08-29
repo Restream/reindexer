@@ -15,7 +15,7 @@ class WrSerializer;
 class RdxContext;
 class Namespace;
 
-struct NamespaceDef {
+struct [[nodiscard]] NamespaceDef {
 	NamespaceDef() = default;
 	explicit NamespaceDef(std::string_view iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
 		: name(iname), storage(istorage) {}
@@ -57,14 +57,14 @@ public:
 	std::string schemaJson = "{}";
 };
 
-enum EnumNamespacesOpt {
+enum [[nodiscard]] EnumNamespacesOpt {
 	kEnumNamespacesWithClosed = 1,
 	kEnumNamespacesOnlyNames = 1 << 1,
 	kEnumNamespacesHideSystem = 1 << 2,
 	kEnumNamespacesHideTemporary = 1 << 3,
 };
 
-struct EnumNamespacesOpts {
+struct [[nodiscard]] EnumNamespacesOpts {
 	EnumNamespacesOpts() : options_(0) {}
 
 	bool IsWithClosed() const noexcept { return options_ & kEnumNamespacesWithClosed; }
@@ -106,7 +106,7 @@ struct EnumNamespacesOpts {
 	uint16_t options_;
 };
 
-struct NsReplicationOpts {
+struct [[nodiscard]] NsReplicationOpts {
 	Error FromJSON(std::span<char> json);
 	void FromJSON(const gason::JsonNode& root);
 	void GetJSON(WrSerializer&) const;

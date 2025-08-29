@@ -5,7 +5,7 @@
 #include "base_fixture.h"
 #include "core/system_ns_names.h"
 
-class ApiTvSimple : private BaseFixture {
+class [[nodiscard]] ApiTvSimple : private BaseFixture {
 public:
 	virtual ~ApiTvSimple() {}
 	ApiTvSimple(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
@@ -27,7 +27,7 @@ public:
 	reindexer::Error Initialize() override;
 
 private:
-	class IndexCacheSetter {
+	class [[nodiscard]] IndexCacheSetter {
 	public:
 		constexpr static unsigned kVeryLargeHitsValue = 1000000;
 
@@ -128,11 +128,22 @@ private:
 	void Query4CondRangeDropCache(State& state);
 	void Query4CondRangeDropCacheTotal(State& state);
 	void Query4CondRangeDropCacheCachedTotal(State& state);
+
 	void SubQueryEq(State&);
 	void SubQuerySet(State&);
 	void SubQueryAggregate(State&);
 
+	void QueryForcedSortHash(State&);
+	void QueryForcedSortTree(State&);
+	void QueryForcedSortDistinctHash(State&);
+	void QueryForcedSortDistinctLowSelectivityHash(State&);
+	void QueryForcedSortDistinctTree(State&);
+
 	void query2CondIdSet(State& state, const std::vector<std::vector<int>>& idsets);
+	std::vector<Variant> generateForcedSort(int minVal, int maxVal, unsigned cnt);
+
+	constexpr static int kMinYear = 2000;
+	constexpr static int kMaxYear = 2049;
 
 	std::vector<std::string> countries_;
 	std::vector<std::string> countryLikePatterns_;

@@ -22,7 +22,7 @@ namespace ann_storage_cache {
 std::string GetStorageKey(std::string_view name) noexcept;
 bool IsANNCacheEnabledByEnv() noexcept;
 
-class UpdateInfo {
+class [[nodiscard]] UpdateInfo {
 public:
 	using nanoseconds = std::chrono::nanoseconds;
 
@@ -32,15 +32,15 @@ public:
 	void Clear() noexcept;
 
 private:
-	struct SingleUpdateInfo {
+	struct [[nodiscard]] SingleUpdateInfo {
 		nanoseconds lastUpdateTime{0};
 	};
 
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	tsl::sparse_map<std::string, SingleUpdateInfo, nocase_hash_str, nocase_equal_str> infoMap_;
 };
 
-class Writer {
+class [[nodiscard]] Writer {
 public:
 	using milliseconds = std::chrono::milliseconds;
 	using nanoseconds = std::chrono::nanoseconds;
@@ -52,7 +52,7 @@ public:
 	bool TryUpdateNextPart(RLockT&& lock, AsyncStorage& storage, UpdateInfo& updateInfo, const std::atomic_int32_t& cancel);
 
 private:
-	struct StorageCacheWriteResult {
+	struct [[nodiscard]] StorageCacheWriteResult {
 		Error err;
 		bool isCacheable = false;
 	};
@@ -66,14 +66,14 @@ private:
 	unsigned curIndex_{0};
 };
 
-class Reader {
+class [[nodiscard]] Reader {
 public:
 	using nanoseconds = std::chrono::nanoseconds;
 
 	Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned pkField, AsyncStorage&,
 		   std::function<int(std::string_view)>&& nameToField, const std::function<IndexDef(size_t)>& getIndexDefinitionF);
 
-	struct CachedIndex {
+	struct [[nodiscard]] CachedIndex {
 		size_t field;
 		std::chrono::nanoseconds lastUpdate;
 		std::string name;
@@ -87,14 +87,14 @@ private:
 	bool checkIndexDef(Serializer& ser, unsigned field, std::string_view keySlice, std::string_view indexType,
 					   const std::function<IndexDef(size_t)>& getIndexDefinitionF);
 
-	struct CachedIndexMeta {
+	struct [[nodiscard]] CachedIndexMeta {
 		size_t field;
 		std::string name;
 	};
 
 	std::bitset<kMaxIndexes> cachedIndexes_;
 	std::vector<CachedIndexMeta> cachedMeta_;
-	std::mutex mtx_;
+	mutex mtx_;
 	AsyncStorage& storage_;
 	std::string_view nsName_;
 };

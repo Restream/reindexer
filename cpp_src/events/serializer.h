@@ -5,11 +5,11 @@
 
 namespace reindexer {
 
-class UpdateSerializer {
+class [[nodiscard]] UpdateSerializer {
 public:
 	explicit UpdateSerializer(WrSerializer& ser) noexcept : ser_(ser) {}
 
-	[[nodiscard]] chunk Serialize(uint32_t streamsMask, const EventsSerializationOpts& opts, const EventRecord& rec) {
+	chunk Serialize(uint32_t streamsMask, const EventsSerializationOpts& opts, const EventRecord& rec) {
 		ser_.Reset();
 
 		ser_.PutVarUint(opts.Version());

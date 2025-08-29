@@ -31,7 +31,7 @@ static uint64_t xgetbv(uint32_t index) {
 
 namespace reindexer {
 
-class CPUInfo {
+class [[nodiscard]] CPUInfo {
 public:
 	static CPUInfo& Init() noexcept {
 		thread_local CPUInfo info;
@@ -192,7 +192,7 @@ void CheckRequiredSSESupport() {
 	}
 }
 
-enum class InstructionType { SSE, AVX, AVX2, AVX512f };
+enum class [[nodiscard]] InstructionType { SSE, AVX, AVX2, AVX512f };
 
 static InstructionType initAllowedInstructionsType() noexcept {
 	static const auto kTargetInstructionsPtr = std::getenv("RX_TARGET_INSTRUCTIONS");

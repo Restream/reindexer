@@ -2,6 +2,7 @@
 #include "args/args.hpp"
 #include "client/reindexer.h"
 #include "commandsprocessor.h"
+#include "convert_tool.h"
 #include "core/reindexer.h"
 #include "debug/backtrace.h"
 #include "reindexer_version.h"
@@ -10,6 +11,18 @@
 #include "tools/logger.h"
 
 namespace reindexer_tool {
+
+#ifdef REINDEX_WITH_LEVELDB
+const bool kLevelDBAvailable = true;
+#else	// REINDEX_WITH_LEVELDB
+const bool kLevelDBAvailable = false;
+#endif	// REINDEX_WITH_LEVELDB
+
+#ifdef REINDEX_WITH_ROCKSDB
+const bool kRocksDBAvailable = true;
+#else	// REINDEX_WITH_ROCKSDB
+const bool kRocksDBAvailable = false;
+#endif	// REINDEX_WITH_ROCKSDB
 
 using args::Options;
 
@@ -30,7 +43,7 @@ static void InstallLogLevel(const std::vector<std::string>& args) {
 	}
 
 	reindexer::logInstallWriter(
-		[](int level, char* buf) {
+		[](int level, const char* buf) {
 			if (level <= llevel) {
 				std::cout << buf << std::endl;
 			}
@@ -52,7 +65,7 @@ int main(int argc, char* argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	struct Version : std::runtime_error {
+	struct [[nodiscard]] Version : std::runtime_error {
 		using std::runtime_error::runtime_error;
 	};
 
@@ -98,6 +111,24 @@ int main(int argc, char* argv[]) {
 							  Options::Single | Options::Global);
 
 	args::Flag repair(progOptions, "", "Try to repair storage", {'r', "repair"});
+
+	std::string availableFormats;
+	if (kLevelDBAvailable) {
+		availableFormats = reindexer::datastorage::kLevelDBName;
+	}
+	if (kRocksDBAvailable) {
+		if (!availableFormats.empty()) {
+			availableFormats += ", ";
+		}
+		availableFormats += reindexer::datastorage::kRocksDBName;
+	}
+
+	args::ValueFlag<std::string> convertFormat(
+		progOptions, "FORMAT", std::string("Try to convert storage into selected format (available formats: ") + availableFormats + ")",
+		{"convfmt"});
+
+	args::ValueFlag<std::string> convertBackupFolder(progOptions, "FOLDER", "folder to backup original data before converting",
+													 {"convbackup"});
 
 	args::ValueFlag<std::string> appName(progOptions, "Application name", "Application name that will be used in login info",
 										 {'a', "appname"}, "reindexer_tool", Options::Single | Options::Global);
@@ -158,6 +189,32 @@ int main(int argc, char* argv[]) {
 		} else {
 			dsn = "cproto://reindexer:reindexer@127.0.0.1:6534/" + db;
 		}
+	}
+
+	std::string convFmt = args::get(convertFormat);
+	std::string convBackup = args::get(convertBackupFolder);
+	if (!convFmt.empty()) {
+		if (!kRocksDBAvailable) {
+			std::cerr << "Error! Can't convert, rocksdb is not available in current build." << std::endl;
+			return 1;
+		}
+
+		if (!kLevelDBAvailable) {
+			std::cerr << "Error! Can't convert, leveldb is not available in current build." << std::endl;
+			return 1;
+		}
+
+		err = ConvertTool::ConvertStorage(dsn, convFmt, convBackup);
+		if (!err.ok()) {
+			std::cerr << err.what() << std::endl;
+			return 1;
+		}
+		return 0;
+	}
+
+	if (!convBackup.empty()) {
+		std::cerr << "convbackup option can not be used without correct convfmt" << std::endl;
+		return 1;
 	}
 
 	if (repair && args::get(repair)) {

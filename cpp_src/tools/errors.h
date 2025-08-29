@@ -191,24 +191,24 @@ public:
 		}
 	}
 
-	[[nodiscard]] const char* what() const noexcept override { return whatStr().c_str(); }
-	[[nodiscard]] const std::string& whatStr() const& noexcept {
+	const char* what() const noexcept override { return whatStr().c_str(); }
+	const std::string& whatStr() const& noexcept {
 		static const std::string noerr("");
 		return what_ ? *what_ : noerr;
 	}
-	[[nodiscard]] std::string whatStr() && noexcept {
+	std::string whatStr() && noexcept {
 		if (what_) {
 			return std::move(*what_);
 		} else {
 			return {};
 		}
 	}
-	[[nodiscard]] ErrorCode code() const noexcept { return code_; }
-	[[nodiscard]] bool ok() const noexcept { return code_ == errOK; }
+	ErrorCode code() const noexcept { return code_; }
+	bool ok() const noexcept { return code_ == errOK; }
 
 	explicit operator bool() const noexcept { return !ok(); }
-	[[nodiscard]] bool operator==(const Error& other) const noexcept { return code() == other.code() && whatStr() == other.whatStr(); }
-	[[nodiscard]] bool operator!=(const Error& other) const noexcept { return !(*this == other); }
+	bool operator==(const Error& other) const noexcept { return code() == other.code() && whatStr() == other.whatStr(); }
+	bool operator!=(const Error& other) const noexcept { return !(*this == other); }
 
 private:
 	WhatPtr what_;

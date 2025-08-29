@@ -2,15 +2,16 @@
 
 #include <unordered_map>
 #include "cluster_operation_api.h"
+#include "estl/mutex.h"
 
-class ClusterOperationProxyApi : public ClusterOperationApi {
+class [[nodiscard]] ClusterOperationProxyApi : public ClusterOperationApi {
 public:
-	class ItemTracker {
+	class [[nodiscard]] ItemTracker {
 	public:
 		using ClockT = reindexer::system_clock_w;
 
 		~ItemTracker() { assert(validated_); }
-		struct ItemInfo {
+		struct [[nodiscard]] ItemInfo {
 			ItemInfo(int _itemCounter, int _serverId, std::string _threadName)
 				: itemCounter(_itemCounter), serverId(_serverId), threadName(std::move(_threadName)) {
 				ItemAdd = ClockT::now();
@@ -79,7 +80,7 @@ public:
 		void Validate(reindexer::client::QueryResults& qr);
 
 	private:
-		std::mutex mtx_;
+		reindexer::mutex mtx_;
 		std::unordered_map<std::string, ItemInfo> commitedItems_;
 		std::unordered_map<std::string, ItemInfo> errorItems_;
 		std::unordered_map<std::string, ItemInfo> unknownItems_;

@@ -10,7 +10,7 @@ namespace reindexer {
 
 class BaseFTConfig;
 
-class ITokenFilter {
+class [[nodiscard]] ITokenFilter {
 public:
 	using Ptr = std::unique_ptr<ITokenFilter>;
 	typedef h_vector<FtDSLVariant, 32> ResultsStorage;

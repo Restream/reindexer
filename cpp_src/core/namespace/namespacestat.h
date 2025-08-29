@@ -12,7 +12,7 @@ namespace reindexer {
 
 class WrSerializer;
 
-struct LRUCacheMemStat {
+struct [[nodiscard]] LRUCacheMemStat {
 	void GetJSON(JsonBuilder& builder) const;
 
 	size_t totalSize = 0;
@@ -21,7 +21,7 @@ struct LRUCacheMemStat {
 	size_t hitCountLimit = 0;
 };
 
-struct IndexMemStat {
+struct [[nodiscard]] IndexMemStat {
 	void GetJSON(JsonBuilder& builder) const;
 	std::string name;
 	size_t uniqKeysCount = 0;
@@ -42,7 +42,7 @@ struct IndexMemStat {
 	}
 };
 
-struct EmbeddersCacheMemStat {
+struct [[nodiscard]] EmbeddersCacheMemStat {
 	void GetJSON(JsonBuilder& builder) const;
 	std::string tag;
 	size_t capacity = 0;
@@ -54,13 +54,13 @@ struct EmbeddersCacheMemStat {
 	uint64_t storageSize = 0;
 };
 
-struct ClusterOperationStatus {
+struct [[nodiscard]] ClusterOperationStatus {
 	void GetJSON(WrSerializer& ser) const;
 	void GetJSON(JsonBuilder& builder) const;
 	Error FromJSON(std::span<char> json);
 	void FromJSON(const gason::JsonNode& root);
 
-	enum class Role { None, ClusterReplica, SimpleReplica };
+	enum class [[nodiscard]] Role { None, ClusterReplica, SimpleReplica };
 
 	std::string_view RoleStr() const noexcept {
 		using namespace std::string_view_literals;
@@ -79,8 +79,8 @@ struct ClusterOperationStatus {
 	Role role = Role::None;
 };
 
-struct ReplicationState {
-	enum class Status { None, Idle, Error, Fatal, Syncing };
+struct [[nodiscard]] ReplicationState {
+	enum class [[nodiscard]] Status { None, Idle, Error, Fatal, Syncing };
 
 	virtual ~ReplicationState() = default;
 
@@ -112,7 +112,7 @@ struct ReplicationState {
 };
 
 // TODO: Rename this
-struct ReplicationStateV2 {
+struct [[nodiscard]] ReplicationStateV2 {
 	constexpr static int64_t kNoDataCount = -1;
 
 	bool HasDataCount() const noexcept { return dataCount != kNoDataCount; }
@@ -130,7 +130,7 @@ struct ReplicationStateV2 {
 	ClusterOperationStatus clusterStatus;
 };
 
-struct ReplicationStat final : public ReplicationState {
+struct [[nodiscard]] ReplicationStat final : public ReplicationState {
 	void GetJSON(JsonBuilder& builder) const override;
 
 	size_t walCount = 0;
@@ -138,7 +138,7 @@ struct ReplicationStat final : public ReplicationState {
 	int16_t serverId = 0;
 };
 
-struct NamespaceMemStat {
+struct [[nodiscard]] NamespaceMemStat {
 	static constexpr std::string_view kNamespaceStatType{"namespace"};
 	static constexpr std::string_view kEmbeddersStatType{"embedders"};
 
@@ -173,8 +173,8 @@ struct NamespaceMemStat {
 	std::vector<EmbeddersCacheMemStat> embedders;
 };
 
-struct LRUCachePerfStat {
-	enum class State { DoesNotExist, Active, Inactive };
+struct [[nodiscard]] LRUCachePerfStat {
+	enum class [[nodiscard]] State { DoesNotExist, Active, Inactive };
 
 	void GetJSON(JsonBuilder& builder) const;
 	uint64_t TotalQueries() const noexcept;
@@ -185,7 +185,7 @@ struct LRUCachePerfStat {
 	uint64_t misses = 0;
 };
 
-struct PerfStat {
+struct [[nodiscard]] PerfStat {
 	void GetJSON(JsonBuilder& builder) const;
 
 	size_t totalHitCount;
@@ -199,7 +199,7 @@ struct PerfStat {
 	size_t maxTimeUs;
 };
 
-struct TxPerfStat {
+struct [[nodiscard]] TxPerfStat {
 	void GetJSON(JsonBuilder& builder) const;
 	void FromJSON(const gason::JsonNode& node);
 
@@ -219,13 +219,13 @@ struct TxPerfStat {
 	size_t maxCopyTimeUs;
 };
 
-struct EmbedderCachePerfStat : LRUCachePerfStat {
+struct [[nodiscard]] EmbedderCachePerfStat : LRUCachePerfStat {
 	void GetJSON(JsonBuilder& builder) const;
 
 	std::string tag;
 };
 
-struct IndexPerfStat {
+struct [[nodiscard]] IndexPerfStat {
 	IndexPerfStat() = default;
 	IndexPerfStat(const std::string& n, PerfStat&& s, PerfStat&& c) : name(n), selects(std::move(s)), commits(std::move(c)) {}
 
@@ -239,7 +239,7 @@ struct IndexPerfStat {
 	EmbedderCachePerfStat queryEmbedderCache;
 };
 
-struct NamespacePerfStat {
+struct [[nodiscard]] NamespacePerfStat {
 	void GetJSON(WrSerializer& ser) const;
 
 	NamespaceName name;

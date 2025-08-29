@@ -5,7 +5,7 @@
 
 #include "base_fixture.h"
 
-class ApiTvSimpleSparse : private BaseFixture {
+class [[nodiscard]] ApiTvSimpleSparse : private BaseFixture {
 public:
 	virtual ~ApiTvSimpleSparse() {}
 	ApiTvSimpleSparse(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {

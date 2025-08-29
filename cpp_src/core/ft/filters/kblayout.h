@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-class KbLayout final : public ITokenFilter {
+class [[nodiscard]] KbLayout final : public ITokenFilter {
 public:
 	KbLayout();
 	void GetVariants(const std::wstring& data, ITokenFilter::ResultsStorage& result, int proc,

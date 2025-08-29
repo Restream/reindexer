@@ -8,9 +8,9 @@ using reindexer::fast_hash_map;
 using reindexer::WrSerializer;
 using reindexer::DSN;
 
-struct InitShardingConfig {
+struct [[nodiscard]] InitShardingConfig {
 	using ShardingConfig = reindexer::cluster::ShardingConfig;
-	class Namespace {
+	class [[nodiscard]] Namespace {
 	public:
 		Namespace(std::string n, bool wd = false) : name(std::move(n)), withData(wd) {}
 
@@ -41,11 +41,11 @@ struct InitShardingConfig {
 	std::shared_ptr<std::map<int, std::vector<DSN>>> shardsMap;
 };
 
-class ShardingApi : public ReindexerApi {
+class [[nodiscard]] ShardingApi : public ReindexerApi {
 public:
 	using ShardingConfig = reindexer::cluster::ShardingConfig;
 	static const std::string_view kConfigTemplate;
-	enum class ApplyType : bool { Shared, Local };
+	enum class [[nodiscard]] ApplyType : bool { Shared, Local };
 
 	void Init(InitShardingConfig c = InitShardingConfig());
 
@@ -80,7 +80,7 @@ public:
 
 protected:
 	class CompareShardId;
-	struct Defaults {
+	struct [[nodiscard]] Defaults {
 		size_t defaultRpcPort;
 		size_t defaultHttpPort;
 		std::string baseTestsetDbPath;

@@ -9,7 +9,7 @@
 
 namespace reindexer {
 
-class Point {
+class [[nodiscard]] Point {
 public:
 	Point() noexcept : x_(0.0), y_(0.0) {}
 	explicit Point(double x, double y) : x_(x), y_(y) {
@@ -47,12 +47,12 @@ inline bool approxEqual(double lhs, double rhs) noexcept {
 inline bool operator==(Point lhs, Point rhs) noexcept { return approxEqual(lhs.X(), rhs.X()) && approxEqual(lhs.Y(), rhs.Y()); }
 inline bool operator!=(Point lhs, Point rhs) noexcept { return !(lhs == rhs); }
 
-struct point_strict_equal {
+struct [[nodiscard]] point_strict_equal {
 	bool operator()(const Point& lhs, const Point& rhs) const noexcept {
 		return std::equal_to<double>()(lhs.X(), rhs.X()) && std::equal_to<double>()(lhs.Y(), rhs.Y());
 	}
 };
-struct point_strict_less {
+struct [[nodiscard]] point_strict_less {
 	bool operator()(const Point& lhs, const Point& rhs) const noexcept { return lhs.X() < rhs.X() || lhs.Y() < rhs.Y(); }
 };
 
@@ -60,7 +60,7 @@ inline bool DWithin(Point lhs, Point rhs, double distance) noexcept {
 	return (lhs.X() - rhs.X()) * (lhs.X() - rhs.X()) + (lhs.Y() - rhs.Y()) * (lhs.Y() - rhs.Y()) <= distance * distance;
 }
 
-class Rectangle {
+class [[nodiscard]] Rectangle {
 public:
 	Rectangle() noexcept : left_{}, right_{}, bottom_{}, top_{} {}
 	Rectangle(Point a, Point b) noexcept
@@ -103,7 +103,7 @@ inline Rectangle boundRect(const Rectangle& r, Point p) noexcept {
 	return {std::min(r.Left(), p.X()), std::max(r.Right(), p.X()), std::min(r.Bottom(), p.Y()), std::max(r.Top(), p.Y())};
 }
 
-class Circle {
+class [[nodiscard]] Circle {
 public:
 	Circle() noexcept = default;
 	Circle(Point c, double r) : center_(c), radius_(r) { assertrx(radius_ >= 0.0); }
@@ -148,7 +148,7 @@ inline bool intersect(const Rectangle& r, const Circle& c) noexcept {
 namespace std {
 
 template <>
-struct hash<reindexer::Point> {
+struct [[nodiscard]] hash<reindexer::Point> {
 	size_t operator()(reindexer::Point p) const noexcept { return (hash<double>()(p.X()) << 1) ^ hash<double>()(p.Y()); }
 };
 

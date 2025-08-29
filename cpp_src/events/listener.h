@@ -15,16 +15,16 @@
 
 namespace reindexer {
 
-class EventsListener : public IExternalEventsListener {
+class [[nodiscard]] EventsListener : public IExternalEventsListener {
 public:
 	EventsListener(const std::string& dbName, size_t maxUpdatesQueueSize);
 	~EventsListener() override;
 
-	[[nodiscard]] Error SendEvents(EventsContainer&& recs) override final {
+	Error SendEvents(EventsContainer&& recs) override final RX_REQUIRES(!mtx_) {
 		shared_lock lck(mtx_);
 		return updatesQueue_.template PushAsync<true>(std::move(recs)).first;
 	}
-	[[nodiscard]] bool HasListenersFor(const NamespaceName& ns) const noexcept override final {
+	bool HasListenersFor(const NamespaceName& ns) const noexcept override final RX_REQUIRES(!mtx_) {
 		if (subsCount_.load(std::memory_order_acquire) == 0) {
 			return false;
 		}
@@ -43,8 +43,8 @@ public:
 		return commonFilter_.nss->empty() || commonFilter_.nss->find(ns) != commonFilter_.nss->end();
 	}
 
-	[[nodiscard]] Error AddOrUpdate(IEventsObserver& observer, EventSubscriberConfig&& cfg);
-	[[nodiscard]] Error Remove(IEventsObserver& observer);
+	Error AddOrUpdate(IEventsObserver& observer, EventSubscriberConfig&& cfg);
+	Error Remove(IEventsObserver& observer);
 
 	void SetEventsServerID(int serverID) noexcept { serverID_.store(serverID, std::memory_order_relaxed); }
 	void SetEventsShardID(int shardID) noexcept { shardID_.store(shardID, std::memory_order_relaxed); }
@@ -55,11 +55,11 @@ private:
 	using UpdatesQueueT = updates::UpdatesQueue<EventRecord, cluster::ReplicationStatsCollector, cluster::Logger>;
 	using NSSetT = fast_hash_set<NamespaceName, NamespaceNameHash, NamespaceNameEqual, NamespaceNameLess>;
 
-	struct DBNamespaces {
+	struct [[nodiscard]] DBNamespaces {
 		std::optional<NSSetT> nss;
 		bool withConfigNamespace = false;
 	};
-	class ObserverInfo {
+	class [[nodiscard]] ObserverInfo {
 	public:
 		explicit ObserverInfo(uint32_t _uid) : uid(_uid) {}
 
@@ -75,7 +75,7 @@ private:
 	void stop();
 	void rebuildCommonFilter();
 	void eventsLoop() noexcept;
-	void handleUpdates();
+	void handleUpdates() RX_REQUIRES(!mtx_);
 	void eraseUpdatesOnUnsubscribe(uint32_t uid, uint64_t from, uint64_t to, uint32_t replicas);
 	uint32_t buildStreamsMask(const ObserverInfo& observer, const EventRecord& rec) noexcept;
 
@@ -89,7 +89,7 @@ private:
 	std::atomic<int32_t> subsCount_ = {0};
 	SubscribersMapT subs_;
 	mutable shared_timed_mutex mtx_;
-	mutable std::mutex subUnsubMtx_;
+	mutable mutex subUnsubMtx_;
 	DBNamespaces commonFilter_;
 	const std::string dbName_;
 	std::atomic<int> serverID_ = {-1};

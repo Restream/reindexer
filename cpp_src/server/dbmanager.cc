@@ -1,7 +1,6 @@
-#include <mutex>
-
 #include "dbmanager.h"
 #include "estl/gift_str.h"
+#include "estl/lock.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
 #include "tools/catch_and_return.h"
@@ -21,7 +20,7 @@ static const std::string kUsersJSONFilename = "users.json";
 DBManager::DBManager(const ServerConfig& config, IClientsStats* clientsStats)
 	: config_(config), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
 
-Error DBManager::Init() {
+Error DBManager::Init() RX_NO_THREAD_SAFETY_ANALYSIS {
 	if (config_.EnableSecurity) {
 		auto status = readUsers();
 		if (!status.ok()) {
@@ -71,17 +70,18 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 		return Error();
 	};
 
-	smart_lock<Mutex> lck(mtx_, dummyCtx);
-	auto it = dbs_.find(dbName);
-	if (it != dbs_.end()) {
-		status = dbConnect(it->second.get());
-		if (!status.ok()) {
-			return status;
+	{
+		smart_lock<Mutex> lck(mtx_, dummyCtx, NonUnique);
+		auto it = dbs_.find(dbName);
+		if (it != dbs_.end()) {
+			status = dbConnect(it->second.get());
+			if (!status.ok()) {
+				return status;
+			}
+			auth.db_ = it->second.get();
+			return Error();
 		}
-		auth.db_ = it->second.get();
-		return Error();
 	}
-	lck.unlock();
 
 	if (!canCreate) {
 		return Error(errNotFound, "Database '{}' not found", dbName);
@@ -93,8 +93,8 @@ Error DBManager::OpenDatabase(const std::string& dbName, AuthContext& auth, bool
 		return Error(errParams, "Database name '{}' contains invalid character. Only alphas, digits,'_','-', are allowed", dbName);
 	}
 
-	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);
-	it = dbs_.find(dbName);
+	smart_lock<Mutex> lck(mtx_, dummyCtx, Unique);
+	auto it = dbs_.find(dbName);
 	if (it != dbs_.end()) {
 		status = dbConnect(it->second.get());
 		if (!status.ok()) {
@@ -156,13 +156,13 @@ Error DBManager::DropDatabase(AuthContext& auth) {
 	}
 	const std::string& dbName = auth.dbName_;
 
-	std::unique_lock<shared_timed_mutex> lck(mtx_);
+	reindexer::unique_lock lck(mtx_);
 	auto it = dbs_.find(dbName);
 	if (it == dbs_.end()) {
 		return Error(errParams, "Database {} not found", dbName);
 	}
 	dbs_.erase(it);
-	fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
+	rx_unused = fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
 	auth.ResetDB();
 
 	return {};
@@ -171,7 +171,7 @@ Error DBManager::DropDatabase(AuthContext& auth) {
 std::vector<std::string> DBManager::EnumDatabases() {
 	std::vector<std::string> dbs;
 
-	shared_lock<shared_timed_mutex> lck(mtx_);
+	reindexer::shared_lock lck(mtx_);
 	dbs.reserve(dbs_.size());
 	for (const auto& it : dbs_) {
 		dbs.emplace_back(it.first);
@@ -180,7 +180,7 @@ std::vector<std::string> DBManager::EnumDatabases() {
 }
 
 void DBManager::ShutdownClusters() {
-	std::unique_lock lck(mtx_);
+	reindexer::unique_lock lck(mtx_);
 	if (!clustersShutDown_) {
 		for (auto& db : dbs_) {
 			auto err = db.second->ShutdownCluster();

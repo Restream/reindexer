@@ -274,6 +274,8 @@ func newTestTx(db *ReindexerWrapper, namespace string) *txTest {
 }
 
 func newTestTxCtx(ctx context.Context, db *ReindexerWrapper, namespace string) *txTest {
+	testNamespacesMtx.RLock()
+	defer testNamespacesMtx.RUnlock()
 	tx := &txTest{namespace: namespace, db: db, ns: testNamespaces[namespace]}
 	tx.tx = db.WithContext(ctx).MustBeginTx(namespace)
 	return tx
@@ -920,30 +922,28 @@ func (qt *queryTest) ExecCtx(t *testing.T, ctx context.Context) *reindexer.Itera
 }
 
 // Exec query, and full scan check items returned items
-func (qt *queryTest) ExecAndVerify(t *testing.T) *reindexer.Iterator {
+func (qt *queryTest) ExecAndVerify(t *testing.T) *reindexer.ExplainResults {
 	return qt.ExecAndVerifyCtx(t, context.Background())
 }
 
 // Exec query with context, and full scan check items returned items
-func (qt *queryTest) ExecAndVerifyCtx(t *testing.T, ctx context.Context) *reindexer.Iterator {
+func (qt *queryTest) ExecAndVerifyCtx(t *testing.T, ctx context.Context) *reindexer.ExplainResults {
 	defer qt.close()
 	it := qt.ManualClose().ExecCtx(t, ctx)
 	require.NoError(t, it.Error())
 	qt.totalCount = it.TotalCount()
 	aggregations := it.AggResults()
+	explain, err := it.GetExplainResults()
+	require.NoError(t, err)
 	it.AllowUnsafe(true)
-	defer it.Close()
-	items := make([]interface{}, 0, it.Count())
-	for it.Next() {
-		items = append(items, it.Object())
-	}
-	require.NoError(t, it.Error())
+
+	items, err := it.FetchAll()
+	require.NoError(t, err)
 
 	qt.Verify(t, items, aggregations, true)
 	//	logger.Printf(reindexer.INFO, "%s -> %d\n", qt.toString(), len(items))
-	_ = items
 
-	return it
+	return explain
 }
 
 func (qt *queryTest) MustExec(t *testing.T, handClose ...bool) *reindexer.Iterator {
@@ -1418,6 +1418,73 @@ func getValues(item interface{}, fieldIdx [][]int) (ret []reflect.Value) {
 	return ret
 }
 
+// getValuesByPath extracts all values matching a JSON path from a struct
+func getValuesByPath(item interface{}, jsonpath string) []reflect.Value {
+	segments := strings.Split(jsonpath, ".")
+
+	results := make([]reflect.Value, 0)
+	crawlByPath(reflect.ValueOf(item), segments, 0, &results)
+	return results
+}
+
+// crawlByPath recursively searches for values at the specified path
+func crawlByPath(v reflect.Value, segments []string, depth int, results *[]reflect.Value) {
+	for v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			crawlByPath(v.Index(i), segments, depth, results)
+		}
+	case reflect.Map:
+		if depth < len(segments) {
+			for _, key := range v.MapKeys() {
+				if key.String() == segments[depth] {
+					crawlByPath(v.MapIndex(key), segments, depth+1, results)
+				}
+			}
+		}
+	case reflect.Struct:
+		t := v.Type()
+		currentSegment := segments[depth]
+
+		for i := 0; i < t.NumField(); i++ {
+			field := t.Field(i)
+			// Skip unexported fields
+			if field.PkgPath != "" {
+				continue
+			}
+			tagStr := field.Tag.Get("json")
+			if tagStr == "-" {
+				continue
+			}
+			var fieldName string
+			if tagStr != "" {
+				fieldName = strings.SplitN(tagStr, ",", 2)[0]
+			} else {
+				fieldName = field.Name
+			}
+
+			if fieldName == currentSegment {
+				if depth == len(segments)-1 {
+					*results = append(*results, v.Field(i))
+				} else {
+					crawlByPath(v.Field(i), segments, depth+1, results)
+				}
+			}
+		}
+	default:
+		if depth == len(segments) {
+			*results = append(*results, v)
+		}
+	}
+}
+
 func (qt *queryTestEntryTree) getEntryByIndexName(index string) *queryTestEntry {
 	for _, d := range qt.data {
 		switch d.dataType {
@@ -1878,7 +1945,12 @@ func checkValue(t *testing.T, v reflect.Value, cond int, keys []reflect.Value) b
 }
 
 func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item interface{}) bool {
-	vals := getValues(item, cond.fieldIdx)
+	var vals []reflect.Value
+	if len(cond.fieldIdx) > 0 {
+		vals = getValues(item, cond.fieldIdx)
+	} else {
+		vals = getValuesByPath(item, cond.index)
+	}
 
 	switch cond.condition {
 	case reindexer.EMPTY:
@@ -1890,7 +1962,7 @@ func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item 
 		return checkDWithin(reindexer.Point{vals[0].Float(), vals[1].Float()}, reindexer.Point{cond.keys[0].Float(), cond.keys[1].Float()}, cond.keys[2].Float())
 	}
 
-	if len(vals) > 1 && len(cond.fieldIdx) > 1 {
+	if len(vals) > 1 && len(cond.fieldIdx) > 1 && reflect.TypeOf(cond.ikeys).ConvertibleTo(reflect.TypeOf([]interface{}(nil))) {
 		return checkCompositeCondition(t, vals, cond, item)
 	}
 

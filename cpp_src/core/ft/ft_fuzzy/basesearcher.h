@@ -14,7 +14,7 @@ class RdxContext;
 
 namespace search_engine {
 
-class BaseSearcher {
+class [[nodiscard]] BaseSearcher {
 public:
 	void AddSearcher(reindexer::ITokenFilter::Ptr&& searcher);
 	void AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, const IdType id, int field,

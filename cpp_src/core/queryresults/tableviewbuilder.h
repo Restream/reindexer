@@ -12,7 +12,7 @@
 
 namespace reindexer {
 
-struct ColumnData {
+struct [[nodiscard]] ColumnData {
 	int type = 0;
 	int entries = 0;
 	int widthCh = 0;
@@ -24,7 +24,7 @@ struct ColumnData {
 	bool PossibleToBreakTheLine() const noexcept;
 };
 
-class TableCalculator {
+class [[nodiscard]] TableCalculator {
 public:
 	using Header = std::list<std::string>;
 	using Row = std::unordered_map<std::string, std::string>;
@@ -48,7 +48,7 @@ private:
 	const int outputWidth_;
 };
 
-class TableViewBuilder {
+class [[nodiscard]] TableViewBuilder {
 public:
 	TableViewBuilder() = default;
 	TableViewBuilder(const TableViewBuilder&) = delete;

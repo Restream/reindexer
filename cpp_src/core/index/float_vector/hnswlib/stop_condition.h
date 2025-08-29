@@ -11,7 +11,7 @@
 namespace hnswlib {
 
 template <typename DOCIDTYPE>
-class BaseMultiVectorSpace : public SpaceInterface<float> {
+class [[nodiscard]] BaseMultiVectorSpace : public SpaceInterface<float> {
 public:
 	virtual DOCIDTYPE get_doc_id(const void* datapoint) = 0;
 
@@ -19,7 +19,7 @@ public:
 };
 
 template <typename DOCIDTYPE>
-class MultiVectorL2Space final : public BaseMultiVectorSpace<DOCIDTYPE> {
+class [[nodiscard]] MultiVectorL2Space final : public BaseMultiVectorSpace<DOCIDTYPE> {
 	DISTFUNC<float> fstdistfunc_;
 	size_t data_size_;
 	size_t vector_size_;
@@ -58,7 +58,7 @@ public:
 };
 
 template <typename DOCIDTYPE>
-class MultiVectorInnerProductSpace final : public BaseMultiVectorSpace<DOCIDTYPE> {
+class [[nodiscard]] MultiVectorInnerProductSpace final : public BaseMultiVectorSpace<DOCIDTYPE> {
 	DISTFUNC<float> fstdistfunc_;
 	size_t data_size_;
 	size_t vector_size_;
@@ -96,7 +96,7 @@ public:
 };
 
 template <typename DOCIDTYPE, typename dist_t>
-class MultiVectorSearchStopCondition final : public BaseSearchStopCondition<dist_t> {
+class [[nodiscard]] MultiVectorSearchStopCondition final : public BaseSearchStopCondition<dist_t> {
 	size_t curr_num_docs_;
 	size_t num_docs_to_search_;
 	size_t ef_collection_;
@@ -164,7 +164,7 @@ public:
 };
 
 template <typename dist_t>
-class EpsilonSearchStopCondition final : public BaseSearchStopCondition<dist_t> {
+class [[nodiscard]] EpsilonSearchStopCondition final : public BaseSearchStopCondition<dist_t> {
 	float epsilon_;
 	size_t min_num_candidates_;
 	size_t max_num_candidates_;

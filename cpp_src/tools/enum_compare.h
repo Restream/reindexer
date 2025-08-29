@@ -66,7 +66,7 @@ public:
 
 private:
 	template <typename Enum>
-	struct Mask {
+	struct [[nodiscard]] Mask {
 		std::underlying_type_t<Enum> value = 0;
 	};
 
@@ -80,7 +80,7 @@ private:
 		return static_cast<Mask<Enum>&>(diff_).value;
 	}
 
-	struct : Mask<Enums>... {
+	struct [[nodiscard]] : Mask<Enums>... {
 	} diff_;
 };
 }  // namespace compare_enum

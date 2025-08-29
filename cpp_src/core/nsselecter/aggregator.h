@@ -33,31 +33,21 @@ public:
 	Aggregator& operator=(const Aggregator&) = delete;
 	Aggregator& operator=(Aggregator&&) = delete;
 
-	[[nodiscard]] AggType Type() const noexcept { return aggType_; }
-	[[nodiscard]] const h_vector<std::string, 1>& Names() const& noexcept {
+	AggType Type() const noexcept { return aggType_; }
+	const h_vector<std::string, 1>& Names() const& noexcept {
 		assertrx_throw(isValid_);
 		return names_;
 	}
 	auto Names() const&& = delete;
 
-	[[nodiscard]] bool DistinctChanged() noexcept {
-		assertrx_throw(isValid_);
-		return distinctChecker_();
-	}
-	[[nodiscard]] const FieldsSet& GetFieldSet() const& noexcept {
+	const FieldsSet& GetFieldSet() const& noexcept {
 		assertrx_throw(isValid_);
 		return fields_;
 	}
 	auto GetFieldSet() const&& = delete;
 
-	void ResetDistinctSet() {
-		assertrx_throw(isValid_);
-		assertrx_throw(this->Type() == AggType::AggDistinct);
-		distincts_->clear();
-	}
-
 private:
-	enum class Direction { Desc = -1, Asc = 1 };
+	enum class [[nodiscard]] Direction { Desc = -1, Asc = 1 };
 	class MultifieldComparator;
 	class SinglefieldComparator;
 	struct MultifieldOrderedMap;
@@ -81,22 +71,6 @@ private:
 
 	std::vector<DistinctHelpers::DataType> distinctDataVector_;
 	bool isValid_ = true;
-
-	class DistinctChangeChecker {
-	public:
-		explicit DistinctChangeChecker(const Aggregator& aggregator) noexcept : aggregator_(aggregator) {}
-		[[nodiscard]] bool operator()() noexcept {
-			assertrx_dbg(aggregator_.Type() == AggType::AggDistinct);
-			assertrx_dbg(aggregator_.distincts_);
-			size_t prev = lastCheckSize_;
-			lastCheckSize_ = aggregator_.distincts_->size();
-			return aggregator_.distincts_->size() > prev;
-		}
-
-	private:
-		const Aggregator& aggregator_;
-		size_t lastCheckSize_ = 0;
-	} distinctChecker_;
 
 	void getData(const PayloadValue& item, std::vector<DistinctHelpers::DataType>& data, size_t& maxIndex) {
 		data.resize(0);

@@ -12,7 +12,7 @@ namespace client {
 
 class RPCClient;
 
-class ItemImplBase {
+class [[nodiscard]] ItemImplBase {
 public:
 	// Construct empty item
 	ItemImplBase() = default;

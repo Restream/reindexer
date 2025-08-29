@@ -5,7 +5,7 @@
 
 namespace reindexer::estl {
 
-class Charset {
+class [[nodiscard]] Charset {
 public:
 	constexpr Charset(std::initializer_list<uint8_t> list) {
 		for (const auto& c : list) {

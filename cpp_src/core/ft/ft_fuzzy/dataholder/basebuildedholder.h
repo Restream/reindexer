@@ -11,13 +11,13 @@
 namespace search_engine {
 
 #ifndef DEBUG_FT
-struct DataStructHash {
+struct [[nodiscard]] DataStructHash {
 	inline size_t operator()(const std::wstring& ent) const noexcept { return reindexer::Hash(ent); }
 };
-struct DataStructEQ {
+struct [[nodiscard]] DataStructEQ {
 	inline bool operator()(const std::wstring& ent, const std::wstring& ent1) const noexcept { return ent == ent1; }
 };
-struct DataStructLess {
+struct [[nodiscard]] DataStructLess {
 	inline bool operator()(const std::wstring& ent, const std::wstring& ent1) const noexcept { return ent < ent1; }
 };
 template <typename T1>
@@ -25,7 +25,7 @@ using data_map = tsl::hopscotch_map<std::wstring, T1, DataStructHash, DataStruct
 typedef reindexer::fast_hash_set<std::wstring, DataStructHash, DataStructEQ> data_set;
 
 #else
-struct DataStructHash {
+struct [[nodiscard]] DataStructHash {
 	inline size_t operator()(const uint32_t ent) const { return ent; }
 };
 
@@ -36,7 +36,7 @@ typedef reindexer::fast_hash_set<uint32_t, DataStructHash> data_set;
 typedef data_map<reindexer::AdvacedPackedVec>::iterator DIt;
 typedef reindexer::fast_hash_map<int, reindexer::fast_hash_map<int, uint32_t>> word_size_map;
 
-class BaseHolder {
+class [[nodiscard]] BaseHolder {
 public:
 	typedef shared_ptr<BaseHolder> Ptr;
 	BaseHolder() {}

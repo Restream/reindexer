@@ -10,9 +10,9 @@
 
 namespace reindexer {
 
-class TagsMatcher {
+class [[nodiscard]] TagsMatcher {
 public:
-	struct unsafe_empty_t {};
+	struct [[nodiscard]] unsafe_empty_t {};
 	TagsMatcher(unsafe_empty_t) noexcept : wasUpdated_(false) {}
 	TagsMatcher(PayloadType payloadType, std::span<std::unique_ptr<Index>> sparseIndexes,
 				int32_t stateToken = tools::RandomGenerator::gets32())

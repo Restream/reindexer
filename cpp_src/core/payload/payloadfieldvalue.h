@@ -10,9 +10,9 @@
 namespace reindexer {
 
 // Helper field's' value object
-class PayloadFieldValue {
+class [[nodiscard]] PayloadFieldValue {
 public:
-	struct Array {
+	struct [[nodiscard]] Array {
 		unsigned offset;
 		int len;
 	};

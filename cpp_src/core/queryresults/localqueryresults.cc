@@ -45,7 +45,7 @@ void LocalQueryResults::RemoveNamespace(const NamespaceImpl* ns) {
 	nsData_.erase(it);
 }
 
-struct LocalQueryResults::Context {
+struct [[nodiscard]] LocalQueryResults::Context {
 	Context() = default;
 	Context(PayloadType type, TagsMatcher tagsMatcher, FieldsFilter fieldsFilter, std::shared_ptr<const Schema> schema,
 			lsn_t nsIncarnationTag)
@@ -142,7 +142,7 @@ int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 	return ctxIndex;
 }
 
-class LocalQueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
+class [[nodiscard]] LocalQueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
 public:
 	EncoderDatasourceWithJoins(const joins::ItemIterator& joinedItemIt, const ContextsVector& ctxs,
 							   ConstIterator::NsNamesCache& nsNamesCache, int ctxIdx, size_t nsid, size_t joinedCount)

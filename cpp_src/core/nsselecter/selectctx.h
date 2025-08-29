@@ -10,7 +10,7 @@ class Query;
 class FtFunctionsHolder;
 class FloatVectorsHolderMap;
 
-struct SelectCtx {
+struct [[nodiscard]] SelectCtx {
 	explicit SelectCtx(const Query& query_, const Query* parentQuery_, FloatVectorsHolderMap* fvHolder) noexcept
 		: query(query_), parentQuery(parentQuery_), floatVectorsHolder(fvHolder) {}
 	const Query& query;

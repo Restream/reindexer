@@ -7,7 +7,7 @@
 
 namespace reindexer {
 namespace builders {
-class CJsonBuilder {
+class [[nodiscard]] CJsonBuilder {
 public:
 	CJsonBuilder(WrSerializer& ser, ObjType = ObjType::TypeObject, const TagsMatcher* tm = nullptr, TagName tagName = TagName::Empty());
 	CJsonBuilder() noexcept : tm_(nullptr), ser_(nullptr), type_(ObjType::TypePlain) {}
@@ -78,19 +78,19 @@ public:
 
 	void Write(std::string_view data) { ser_->Write(data); }
 
-	CJsonBuilder& Put(TagName, bool, int offset = 0);
-	CJsonBuilder& Put(TagName, int, int offset = 0);
-	CJsonBuilder& Put(TagName, int64_t, int offset = 0);
-	CJsonBuilder& Put(TagName, double, int offset = 0);
-	CJsonBuilder& Put(TagName, float, int offset = 0);
-	CJsonBuilder& Put(TagName, std::string_view, int offset = 0);
-	CJsonBuilder& Put(TagName, Uuid, int offset = 0);
-	CJsonBuilder& Ref(TagName, const KeyValueType&, int field);
-	CJsonBuilder& ArrayRef(TagName, int field, int count);
-	CJsonBuilder& Null(TagName = TagName::Empty());
-	CJsonBuilder& Put(TagName, const Variant& kv, int offset = 0);
-	CJsonBuilder& Put(TagName tagName, const char* arg, int offset = 0) { return Put(tagName, std::string_view(arg), offset); }
-	CJsonBuilder& End() {
+	void Put(TagName, bool, int offset = 0);
+	void Put(TagName, int, int offset = 0);
+	void Put(TagName, int64_t, int offset = 0);
+	void Put(TagName, double, int offset = 0);
+	void Put(TagName, float, int offset = 0);
+	void Put(TagName, std::string_view, int offset = 0);
+	void Put(TagName, Uuid, int offset = 0);
+	void Ref(TagName, const KeyValueType&, int field);
+	void ArrayRef(TagName, int field, int count);
+	void Null(TagName = TagName::Empty());
+	void Put(TagName, const Variant& kv, int offset = 0);
+	void Put(TagName tagName, const char* arg, int offset = 0) { return Put(tagName, std::string_view(arg), offset); }
+	void End() {
 		switch (type_) {
 			case ObjType::TypeArray:
 				*(reinterpret_cast<carraytag*>(ser_->Buf() + savePos_)) = carraytag(count_, itemType_);
@@ -105,10 +105,9 @@ public:
 				break;
 		}
 		type_ = ObjType::TypePlain;
-		return *this;
 	}
 
-	ObjType Type() const noexcept { return type_; }
+	[[nodiscard]] ObjType Type() const noexcept { return type_; }
 
 	template <typename... Args>
 	void Object(int, Args...) = delete;

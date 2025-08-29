@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include <atomic>
 #include <deque>
 #include <memory>
 #include <vector>
@@ -9,7 +8,6 @@
 #include "cluster/idatareplicator.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/dbconfig.h"
-#include "core/index/keyentry.h"
 #include "core/item.h"
 #include "core/joincache.h"
 #include "core/namespacedef.h"
@@ -27,6 +25,7 @@
 #include "estl/syncpool.h"
 #include "events/observer.h"
 #include "float_vectors_indexes.h"
+#include "index_optimizer.h"
 #include "namespacename.h"
 #include "stringsholder.h"
 #include "wal/waltracker.h"
@@ -72,7 +71,7 @@ namespace SortExprFuncs {
 struct DistanceBetweenJoinedIndexesSameNs;
 }  // namespace SortExprFuncs
 
-class NsContext {
+class [[nodiscard]] NsContext {
 public:
 	explicit NsContext(const RdxContext& rdxCtx) noexcept : rdxContext(rdxCtx) {}
 	NsContext& InTransaction(lsn_t stepLsn, TransactionContext* _txCtx) noexcept {
@@ -119,7 +118,7 @@ namespace composite_substitution_helpers {
 class CompositeSearcher;
 }
 
-enum class StoredValuesOptimizationStatus : int8_t {
+enum class [[nodiscard]] StoredValuesOptimizationStatus : int8_t {
 	DisabledByCompositeIndex,
 	DisabledByFullTextIndex,
 	DisabledByJoinedFieldSort,
@@ -127,9 +126,7 @@ enum class StoredValuesOptimizationStatus : int8_t {
 	Enabled
 };
 
-enum class IndexOptimization : int8_t { Partial, Full };
-
-class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*performance.Padding) Padding does not
+class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // NOLINT(*performance.Padding) Padding does not
 	// matter for this class
 	class RollBack_insertIndex;
 	template <typename>
@@ -139,7 +136,7 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 	class RollBack_recreateCompositeIndexes;
 	template <NeedRollBack needRollBack>
 	class RollBack_updateItems;
-	class IndexesCacheCleaner {
+	class [[nodiscard]] IndexesCacheCleaner {
 	public:
 		explicit IndexesCacheCleaner(const NamespaceImpl& ns) noexcept : ns_{ns} {}
 		IndexesCacheCleaner(const IndexesCacheCleaner&) = delete;
@@ -181,31 +178,6 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 	friend class FloatVectorsHolderMap;
 	friend class FieldsFilter;
 
-	class NSUpdateSortedContext final : public UpdateSortedContext {
-	public:
-		NSUpdateSortedContext(const NamespaceImpl& ns, SortType curSortId)
-			: ns_(ns), sorted_indexes_(ns_.getSortedIdxCount()), curSortId_(curSortId) {
-			ids2Sorts_.reserve(ns.items_.size());
-			ids2SortsMemSize_ = ids2Sorts_.capacity() * sizeof(SortType);
-			ns.nsUpdateSortedContextMemory_.fetch_add(ids2SortsMemSize_);
-			for (IdType i = 0; i < IdType(ns_.items_.size()); i++) {
-				ids2Sorts_.push_back(ns_.items_[i].IsFree() ? SortIdUnexists : SortIdUnfilled);
-			}
-		}
-		~NSUpdateSortedContext() override { ns_.nsUpdateSortedContextMemory_.fetch_sub(ids2SortsMemSize_); }
-		int getSortedIdxCount() const noexcept override { return sorted_indexes_; }
-		SortType getCurSortId() const noexcept override { return curSortId_; }
-		const std::vector<SortType>& ids2Sorts() const noexcept override { return ids2Sorts_; }
-		std::vector<SortType>& ids2Sorts() noexcept override { return ids2Sorts_; }
-
-	private:
-		const NamespaceImpl& ns_;
-		const int sorted_indexes_{0};
-		const IdType curSortId_{-1};
-		std::vector<SortType> ids2Sorts_;
-		int64_t ids2SortsMemSize_{0};
-	};
-
 	class [[nodiscard]] IndexesStorage final : public std::vector<std::unique_ptr<Index>> {
 	public:
 		using Base = std::vector<std::unique_ptr<Index>>;
@@ -234,20 +206,19 @@ class NamespaceImpl final : public intrusive_atomic_rc_base {  // NOLINT(*perfor
 		const NamespaceImpl& ns_;
 	};
 
-	class Items final : public std::vector<PayloadValue> {
+	class [[nodiscard]] Items final : public std::vector<PayloadValue> {
 	public:
 		bool exists(IdType id) const noexcept { return id < IdType(size()) && !(*this)[id].IsFree(); }
 	};
 
 public:
-	enum OptimizationState : int { NotOptimized, OptimizedPartially, OptimizationCompleted };
-	enum class FieldChangeType { Add = 1, Delete = -1 };
-	enum class InvalidationType : int { Valid, Readonly, OverwrittenByUser, OverwrittenByReplicator };
+	enum class [[nodiscard]] FieldChangeType { Add = 1, Delete = -1 };
+	enum class [[nodiscard]] InvalidationType : int { Valid, Readonly, OverwrittenByUser, OverwrittenByReplicator };
 
 	using Ptr = intrusive_ptr<NamespaceImpl>;
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
 
-	class Locker {
+	class [[nodiscard]] Locker {
 	public:
 		class [[nodiscard]] NsWLock {
 		public:
@@ -260,6 +231,7 @@ public:
 			NsWLock(NsWLock&&) = default;
 			NsWLock& operator=(const NsWLock&) = delete;
 			NsWLock& operator=(NsWLock&&) = default;
+			~NsWLock() = default;
 			void lock() { impl_.lock(); }
 			void unlock() { impl_.unlock(); }
 			bool owns_lock() const { return impl_.owns_lock(); }
@@ -448,14 +420,14 @@ public:
 	std::shared_ptr<const reindexer::QueryEmbedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const;
 
 private:
-	struct SysRecordsVersions {
+	struct [[nodiscard]] SysRecordsVersions {
 		uint64_t idxVersion{0};
 		uint64_t tagsVersion{0};
 		uint64_t replVersion{0};
 		uint64_t schemaVersion{0};
 	};
 
-	struct PKModifyRevertData {
+	struct [[nodiscard]] PKModifyRevertData {
 		PKModifyRevertData(PayloadValue& p, lsn_t l) : pv(p), lsn(l) {}
 		PayloadValue& pv;
 		lsn_t lsn;
@@ -464,15 +436,15 @@ private:
 	friend struct IndexFastUpdate;
 
 	int getIndexByName(std::string_view index) const;
-	int getScalarIndexByName(std::string_view name) const;
+	int tryGetScalarIndexByName(std::string_view name) const;
 	bool tryGetIndexByName(std::string_view name, int& index) const noexcept;
-	bool getIndexByNameOrJsonPath(std::string_view name, int& index) const;
-	bool getIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
-	bool getScalarIndexByName(std::string_view name, int& index) const noexcept;
-	bool getSparseIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
+	bool tryGetScalarIndexByName(std::string_view name, int& index) const noexcept;
+	// Those functions does not return indexes with multiple jsonpaths, when searching by jsonpath
+	bool tryGetIndexByNameOrJsonPath(std::string_view name, int& index) const;
+	bool tryGetIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
 	FloatVectorsIndexes getVectorIndexes() const;
 	FloatVectorsIndexes getVectorIndexes(const PayloadType& pt) const;
-	[[nodiscard]] bool haveFloatVectorsIndexes() const noexcept { return !floatVectorsIndexesPositions_.empty(); }
+	bool haveFloatVectorsIndexes() const noexcept { return !floatVectorsIndexesPositions_.empty(); }
 	ReplicationState getReplState() const;
 	std::string sysRecordName(std::string_view sysTag, uint64_t version);
 	void writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t& version, bool direct);
@@ -488,7 +460,6 @@ private:
 	void initWAL(int64_t minLSN, int64_t maxLSN);
 
 	void markUpdated(IndexOptimization requestedOptimization);
-	void scheduleIndexOptimization(IndexOptimization requestedOptimization) noexcept;
 	Item newItem();
 	void doUpdate(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
 	void doUpdateTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
@@ -502,12 +473,12 @@ private:
 	void tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl& item, IdType rowId, const FloatVectorsIndexes& vectorIndexes,
 								 WrSerializer& pk, WrSerializer& data) noexcept;
 	template <NeedRollBack needRollBack, FieldChangeType fieldChangeType>
-	[[nodiscard]] RollBack_updateItems<needRollBack> updateItems(const PayloadType& oldPlType, int changedField);
+	RollBack_updateItems<needRollBack> updateItems(const PayloadType& oldPlType, int changedField);
 	void fillSparseIndex(Index&, std::string_view jsonPath);
 	void doDelete(IdType id, TransactionContext* txCtx);
 	void doTruncate(UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void optimizeIndexes(const NsContext&);
-	[[nodiscard]] RollBack_insertIndex insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string& realName);
+	RollBack_insertIndex insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string& realName);
 	void addIndex(const IndexDef& indexDef, bool disableTmVersionInc, bool skipEqualityCheck = false);
 	void doAddIndex(const IndexDef& indexDef, bool skipEqualityCheck, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void addCompositeIndex(const IndexDef& indexDef);
@@ -515,6 +486,7 @@ private:
 	template <typename PathsT, typename JsonPathsContainerT>
 	void createCompositeFieldsSet(const std::string& idxName, const PathsT& paths, FieldsSet& fields);
 	void verifyCompositeIndex(const IndexDef& indexDef) const;
+	void verifyEmbeddingFields(const h_vector<std::string, 1>& fields, std::string_view fieldName, std::string_view action) const;
 	void verifyUpsertEmbedder(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpsertIndex(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpdateIndex(const IndexDef& indexDef) const;
@@ -533,7 +505,7 @@ private:
 					   int oldTmVersion, std::optional<PKModifyRevertData>&& modifyData, UpdatesContainer& pendedRepl);
 
 	template <NeedRollBack needRollBack>
-	[[nodiscard]] RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(size_t startIdx, size_t endIdx);
+	RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(size_t startIdx, size_t endIdx);
 	NamespaceDef getDefinition() const;
 	IndexDef getIndexDefinition(const std::string& indexName) const;
 	IndexDef getIndexDefinition(size_t i) const;
@@ -549,8 +521,6 @@ private:
 	RX_ALWAYS_INLINE VariantArray getPkKeys(const ConstPayload& cpl, Index* pkIndex, int fieldNum);
 	void checkUniquePK(const ConstPayload& cpl, bool inTransaction, const RdxContext& ctx);
 
-	int getSortedIdxCount() const noexcept;
-	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl* ritem, UpdatesContainer& replUpdates, const NsContext& ctx);
 
 	void putToJoinCache(JoinCacheRes& res, std::shared_ptr<const JoinPreResult> preResult) const;
@@ -589,11 +559,11 @@ private:
 	void checkSnapshotLSN(lsn_t lsn);
 	void replicateTmUpdateIfRequired(UpdatesContainer& pendedRepl, int oldTmVersion, const NsContext& ctx) noexcept;
 
-	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
+	bool SortOrdersBuilt() const noexcept { return indexOptimizer_.IsOptimizationCompleted(); }
 
 	int64_t correctMaxIterationsIdSetPreResult(int64_t maxIterationsIdSetPreResult) const;
 	void rebuildIndexesToCompositeMapping() noexcept;
-	[[nodiscard]] uint64_t calculateItemHash(IdType rowId, int removedIdxId = -1) const noexcept;
+	uint64_t calculateItemHash(IdType rowId, int removedIdxId = -1) const noexcept;
 
 	IndexesStorage indexes_;
 	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> indexesNames_;
@@ -631,7 +601,7 @@ private:
 
 	void DumpIndex(std::ostream& os, std::string_view index, const RdxContext& ctx) const;
 
-	NamespaceImpl(const NamespaceImpl& src, size_t newCapacity, AsyncStorage::FullLockT& storageLock);
+	NamespaceImpl(const NamespaceImpl& src, size_t newCapacity, AsyncStorage::FullLock& storageLock);
 
 	bool isSystem() const noexcept { return isSystemNamespaceNameFast(name_); }
 	IdType createItem(size_t realSize, IdType suggestedId, const NsContext& ctx);
@@ -683,6 +653,7 @@ private:
 		return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1));
 	}
 	void clearNamespaceCaches();
+	[[noreturn]] void throwIndexUpsertErrorWithPKInfo(const ConstPayload&, const std::exception&);
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic_bool enablePerfCounters_{false};
@@ -708,11 +679,10 @@ private:
 
 	size_t itemsDataSize_{0};
 
-	std::atomic_int optimizationState_{OptimizationState::NotOptimized};
+	IndexOptimizer indexOptimizer_;
 	StringsHolderPtr strHolder_;
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
 	std::chrono::seconds lastExpirationCheckTs_{0};
-	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_{0};
 	std::atomic<bool> dbDestroyed_{false};
 	lsn_t incarnationTag_;	// Determines unique namespace incarnation for the correct go cache invalidation
 	UpdatesObservers& observers_;

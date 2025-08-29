@@ -12,11 +12,11 @@ struct msgpack_object;
 namespace reindexer {
 namespace client {
 
-class ResultSerializer : public Serializer {
+class [[nodiscard]] ResultSerializer : public Serializer {
 public:
 	using Serializer::Serializer;
-	enum Option { LazyMode = 0x1, ClearAggregations = 0x1 << 1 };
-	class Options {
+	enum [[nodiscard]] Option { LazyMode = 0x1, ClearAggregations = 0x1 << 1 };
+	class [[nodiscard]] Options {
 	public:
 		explicit Options(unsigned v = 0) noexcept : v_(v) {}
 
@@ -27,7 +27,7 @@ public:
 		unsigned v_;
 	};
 
-	struct ItemParams {
+	struct [[nodiscard]] ItemParams {
 		IdType id = -1;
 		uint16_t nsid = 0;
 		RankT rank{};
@@ -37,7 +37,7 @@ public:
 		int shardId = ShardingKeyType::ProxyOff;
 	};
 
-	struct QueryParams {
+	struct [[nodiscard]] QueryParams {
 		int totalcount = 0;
 		int qcount = 0;
 		int count = 0;
@@ -49,8 +49,8 @@ public:
 		int shardId = ShardingKeyType::ProxyOff;
 	};
 
-	struct ParsingData {
-		struct Range {
+	struct [[nodiscard]] ParsingData {
+		struct [[nodiscard]] Range {
 			unsigned begin = 0;
 			unsigned end = 0;
 		};

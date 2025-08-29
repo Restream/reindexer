@@ -10,7 +10,7 @@
 
 namespace reindexer {
 
-enum WALRecType : unsigned {
+enum [[nodiscard]] WALRecType : unsigned {
 	WalEmpty = 0,
 	WalReplState = 1,
 	WalItemUpdate = 2,
@@ -39,7 +39,7 @@ inline constexpr int format_as(WALRecType v) noexcept { return int(v); }
 class WrSerializer;
 struct WALRecord;
 
-struct WALRecord {
+struct [[nodiscard]] WALRecord {
 	explicit WALRecord(std::span<const uint8_t>);
 	explicit WALRecord(std::string_view sv);
 	explicit WALRecord(WALRecType _type = WalEmpty, IdType _id = 0, bool inTx = false) : type(_type), id(_id), inTransaction(inTx) {}
@@ -74,13 +74,13 @@ struct WALRecord {
 	bool inTransaction = false;
 };
 
-struct PackedWALRecord : public h_vector<uint8_t, 12> {
+struct [[nodiscard]] PackedWALRecord : public h_vector<uint8_t, 12> {
 	using h_vector<uint8_t, 12>::h_vector;
 	void Pack(const WALRecord& rec);
 };
 
 #pragma pack(push, 1)
-struct MarkedPackedWALRecord : public PackedWALRecord {
+struct [[nodiscard]] MarkedPackedWALRecord : public PackedWALRecord {
 	MarkedPackedWALRecord(int16_t s) noexcept : server{s} {
 		assertrx_dbg(server >= lsn_t::kMinServerIDValue);
 		assertrx_dbg(server <= lsn_t::kMaxServerIDValue);

@@ -93,7 +93,7 @@ const uint32_t kCprotoMinSnappyVersion = 0x103;
 const uint32_t kCprotoMinDedicatedThreadsVersion = 0x103;
 
 #pragma pack(push, 1)
-struct CProtoHeader {
+struct [[nodiscard]] CProtoHeader {
 	uint32_t magic;
 	uint16_t version : 10;
 	uint16_t compressed : 1;

@@ -2,6 +2,7 @@
 
 #include "core/namespace/namespaceimpl.h"
 #include "core/queryresults/joinresults.h"
+#include "estl/algorithm.h"
 #include "estl/restricted.h"
 #include "nsselecter.h"
 #include "vendor/sparse-map/sparse_set.h"
@@ -113,6 +114,9 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, Float
 #endif	// RX_WITH_STDLIB_DEBUG
 
 		payload.GetByFieldsSet(je.LeftFields(), values, je.LeftFieldType(), je.LeftCompositeFieldsTypes());
+
+		values.erase(unstable_remove_if(values.begin(), values.end(), [](const Variant& v) noexcept { return v.IsNullValue(); }),
+					 values.cend());
 		if (values.empty() || !itemQueryPtr->TryUpdateQueryEntryInplace(i, values)) {
 			if (itemQueryPtr == &itemQuery_) {
 				itemQueryCopy = std::make_unique<Query>(itemQuery_);
@@ -193,23 +197,16 @@ VariantArray JoinedSelector::readValuesOfRightNsFrom(const Cont& data, const Fn&
 				continue;
 			}
 			pl.GetByFieldsSet(entry.RightFields(), values, entry.RightFieldType(), entry.RightCompositeFieldsTypes());
-			if (values.empty() && res.empty()) {
-				res.emplace_back();	 // null
-			}
 			if (!leftFieldType.Is<KeyValueType::Undefined>() && !leftFieldType.Is<KeyValueType::Composite>()) {
 				for (Variant& v : values) {
 					if (!v.IsNullValue()) {
 						set.insert(std::move(v.convert(leftFieldType)));
-					} else if (res.empty()) {
-						res.emplace_back();
 					}
 				}
 			} else {
 				for (Variant& v : values) {
 					if (!v.IsNullValue()) {
 						set.insert(std::move(v));
-					} else if (res.empty()) {
-						res.emplace_back();
 					}
 				}
 			}
@@ -260,18 +257,18 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		}
 
 		// Avoiding to use 'GetByJsonPath' during values extraction
-		// TODO: Sometimes this substitution may be effective even with 'GetByJsonPath', so we should allow user to hint this optimization.
-		bool hasSparse = false;
+		// TODO: Sometimes this substitution may be effective even with 'GetByJsonPath', so we should allow user to hint this
+		// optimization.
+		bool hasSparseInRightField = false;
 		for (int field : joinEntry.RightFields()) {
 			if (field == SetByJsonPath) {
-				hasSparse = true;
+				hasSparseInRightField = true;
 				break;
 			}
 		}
-		if (hasSparse) {
+		if (hasSparseInRightField) {
 			continue;
 		}
-
 		const VariantArray values =
 			std::visit(overloaded{[&](const IdSet& preselected) {
 									  const std::vector<IdType>* sortOrders = nullptr;
@@ -301,21 +298,23 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		selectContext.opts.inTransaction = inTransaction_;
 
 		auto selectResults = leftIndex->SelectKey(values, CondSet, sortId, selectContext, rdxCtx);
-		if (auto* selRes = std::get_if<SelectKeyResultsVector>(&selectResults)) {
-			bool wasAppended = false;
-			for (SelectKeyResult& res : *selRes) {
-				SelectIterator selIter{std::move(res), IsDistinct_False, std::string(joinEntry.LeftFieldName()), joinEntry.LeftIdxNo()};
-				const int curIterations = selIter.GetMaxIterations();
-				if (curIterations && curIterations < *maxIterations) {
-					*maxIterations = curIterations;
-				}
-				rx_unused = iterators.Append(OpAnd, std::move(selIter));
-				wasAppended = true;
-			}
-			if (wasAppended) {
-				++optimized;
-			}
+		auto* selRes = std::get_if<SelectKeyResultsVector>(&selectResults);
+		if (!selRes || selRes->empty()) {
+			continue;
 		}
+
+		SelectIterator selIter{std::move(*selRes->begin()), IsDistinct_False, std::string(joinEntry.LeftFieldName()),
+							   joinEntry.LeftIdxNo()};
+		for (auto it = selRes->begin() + 1, end = selRes->end(); it != end; ++it) {
+			selIter.Append(std::move(*it));
+		}
+		const int curIterations = selIter.GetMaxIterations();
+		if (curIterations && curIterations < *maxIterations) {
+			*maxIterations = curIterations;
+		}
+		rx_unused = iterators.Append(OpAnd, std::move(selIter));
+
+		++optimized;
 	}
 	optimized_ = (optimized == joinQuery_.joinEntries_.size());
 }

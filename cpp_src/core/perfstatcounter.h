@@ -1,15 +1,16 @@
 #pragma once
 
 #include <cstdlib>
-#include <mutex>
 #include <vector>
+#include "estl/dummy_mutex.h"
+#include "estl/lock.h"
 #include "estl/mutex.h"
 #include "tools/clock.h"
 
 namespace reindexer {
 
 template <typename Mutex>
-class PerfStatCounter {
+class [[nodiscard]] PerfStatCounter {
 public:
 	PerfStatCounter();
 	void Hit(std::chrono::microseconds time) noexcept;
@@ -18,7 +19,7 @@ public:
 	void Reset() noexcept;
 	template <class T>
 	T Get() noexcept {
-		std::lock_guard<Mutex> lck(mtx_);
+		lock_guard lck(mtx_);
 		lap();
 		return T{.totalHitCount = totalHitCount_,
 				 .totalAvgTimeUs = size_t(totalTime_.count() / (totalHitCount_ ? totalHitCount_ : 1)),
@@ -52,11 +53,11 @@ private:
 	mutable Mutex mtx_;
 };
 
-using PerfStatCounterMT = PerfStatCounter<std::mutex>;
-using PerfStatCounterST = PerfStatCounter<dummy_mutex>;
+using PerfStatCounterMT = PerfStatCounter<mutex>;
+using PerfStatCounterST = PerfStatCounter<DummyMutex>;
 
 template <typename Mutex>
-class PerfStatCalculator {
+class [[nodiscard]] PerfStatCalculator {
 public:
 	PerfStatCalculator(PerfStatCounter<Mutex>& counter, bool enable) noexcept : counter_(&counter), enable_(enable) {
 		if (enable_) {
@@ -87,13 +88,13 @@ private:
 	PerfStatCounter<Mutex>* counter_;
 	bool enable_;
 };
-using PerfStatCalculatorMT = PerfStatCalculator<std::mutex>;
-using PerfStatCalculatorST = PerfStatCalculator<dummy_mutex>;
+using PerfStatCalculatorMT = PerfStatCalculator<mutex>;
+using PerfStatCalculatorST = PerfStatCalculator<DummyMutex>;
 
 template <typename IntT, typename Mutex>
-class QuantityCounter {
+class [[nodiscard]] QuantityCounter {
 public:
-	struct Stats {
+	struct [[nodiscard]] Stats {
 		double avg = 0.0;
 		IntT minValue = 0;
 		IntT maxValue = 0;
@@ -101,7 +102,7 @@ public:
 	};
 
 	void Count(IntT quantity) noexcept {
-		std::unique_lock<Mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		stats_.avg = (stats_.avg * stats_.hitsCount + quantity) / (stats_.hitsCount + 1);
 		if (stats_.hitsCount++) {
 			if (quantity < stats_.minValue) {
@@ -114,11 +115,11 @@ public:
 		}
 	}
 	Stats Get() const noexcept {
-		std::unique_lock<Mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		return stats_;
 	}
 	void Reset() noexcept {
-		std::unique_lock<Mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		stats_ = Stats();
 	}
 
@@ -127,8 +128,8 @@ private:
 	Stats stats_;
 };
 template <typename IntT>
-using QuantityCounterMT = QuantityCounter<IntT, std::mutex>;
+using QuantityCounterMT = QuantityCounter<IntT, mutex>;
 template <typename IntT>
-using QuantityCounterST = QuantityCounter<IntT, dummy_mutex>;
+using QuantityCounterST = QuantityCounter<IntT, DummyMutex>;
 
 }  // namespace reindexer

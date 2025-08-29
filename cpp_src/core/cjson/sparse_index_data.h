@@ -12,12 +12,12 @@ class FieldsSet;
 struct [[nodiscard]] SparseIndexData {
 	SparseIndexData(std::string n, IndexType idxType, KeyValueType t, IsArray a, const FieldsSet& fs);
 
-	[[nodiscard]] bool operator==(const SparseIndexData& other) const& noexcept {
+	bool operator==(const SparseIndexData& other) const& noexcept {
 		return name == other.name && dataType.IsSame(other.dataType) && indexType == other.indexType && isArray == other.isArray &&
 			   paths == other.paths;
 	}
 
-	[[nodiscard]] size_t ArrayDim() const noexcept { return indexType == IndexRTree ? 2 : 0; }
+	size_t ArrayDim() const noexcept { return indexType == IndexRTree ? 2 : 0; }
 
 	std::string name;
 	KeyValueType dataType;

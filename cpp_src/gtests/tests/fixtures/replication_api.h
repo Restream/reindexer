@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include <mutex>
 #include "estl/shared_mutex.h"
 #include "servercontrol.h"
 
@@ -14,7 +13,7 @@ const auto kMaxServerStartTime = std::chrono::seconds(15);
 const auto kMaxSyncTime = std::chrono::seconds(15);
 const auto kMaxForceSyncCmdTime = std::chrono::seconds(10);
 
-class ReplicationApi : public ::testing::Test {
+class [[nodiscard]] ReplicationApi : public ::testing::Test {
 public:
 	ReplicationApi();
 
@@ -50,5 +49,5 @@ public:
 private:
 	const std::string kStoragePath;
 	std::vector<ServerControl> svc_;
-	mutable std::mutex m_;
+	mutable reindexer::mutex m_;
 };

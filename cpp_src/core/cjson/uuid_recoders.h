@@ -5,10 +5,10 @@
 namespace reindexer {
 
 template <bool Array>
-class RecoderUuidToString final : public Recoder {
+class [[nodiscard]] RecoderUuidToString final : public Recoder {
 public:
 	explicit RecoderUuidToString(TagsPath tp) noexcept : tagsPath_{std::move(tp)} {}
-	[[nodiscard]] TagType Type([[maybe_unused]] TagType oldTagType) noexcept override {
+	TagType Type([[maybe_unused]] TagType oldTagType) noexcept override {
 		if constexpr (Array) {
 			assertrx(oldTagType == TAG_ARRAY);
 			return TAG_ARRAY;
@@ -19,8 +19,8 @@ public:
 	}
 	void Recode(Serializer&, WrSerializer&) const override;
 	void Recode(Serializer&, Payload&, TagName, WrSerializer&) override { assertrx(false); }
-	[[nodiscard]] bool Match(int) const noexcept override { return false; }
-	[[nodiscard]] bool Match(const TagsPath& tp) const noexcept override { return tagsPath_ == tp; }
+	bool Match(int) const noexcept override { return false; }
+	bool Match(const TagsPath& tp) const noexcept override { return tagsPath_ == tp; }
 	void Prepare(IdType) noexcept override {}
 
 private:
@@ -43,18 +43,18 @@ inline void RecoderUuidToString<true>::Recode(Serializer& rdser, WrSerializer& w
 	}
 }
 
-class RecoderStringToUuidArray final : public Recoder {
+class [[nodiscard]] RecoderStringToUuidArray final : public Recoder {
 public:
 	explicit RecoderStringToUuidArray(int f) noexcept : field_{f} {}
-	[[nodiscard]] TagType Type(TagType oldTagType) override {
+	TagType Type(TagType oldTagType) override {
 		fromNotArrayField_ = oldTagType != TAG_ARRAY;
 		if (fromNotArrayField_ && oldTagType != TAG_STRING) {
 			throw Error(errLogic, "Cannot convert not string field to UUID");
 		}
 		return TAG_ARRAY;
 	}
-	[[nodiscard]] bool Match(int f) const noexcept override { return f == field_; }
-	[[nodiscard]] bool Match(const TagsPath&) const noexcept override { return false; }
+	bool Match(int f) const noexcept override { return f == field_; }
+	bool Match(const TagsPath&) const noexcept override { return false; }
 	void Recode(Serializer&, WrSerializer&) const override { assertrx(false); }
 	void Recode(Serializer& rdser, Payload& pl, TagName tagName, WrSerializer& wrser) override {
 		if (fromNotArrayField_) {
@@ -85,10 +85,10 @@ private:
 	bool fromNotArrayField_{false};
 };
 
-class RecoderStringToUuid final : public Recoder {
+class [[nodiscard]] RecoderStringToUuid final : public Recoder {
 public:
 	explicit RecoderStringToUuid(int f) noexcept : field_{f} {}
-	[[nodiscard]] TagType Type(TagType oldTagType) override {
+	TagType Type(TagType oldTagType) override {
 		if (oldTagType == TAG_ARRAY) {
 			throw Error(errLogic, "Cannot convert array field to not array UUID");
 		} else if (oldTagType != TAG_STRING) {
@@ -96,8 +96,8 @@ public:
 		}
 		return TAG_UUID;
 	}
-	[[nodiscard]] bool Match(int f) const noexcept override { return f == field_; }
-	[[nodiscard]] bool Match(const TagsPath&) const noexcept override { return false; }
+	bool Match(int f) const noexcept override { return f == field_; }
+	bool Match(const TagsPath&) const noexcept override { return false; }
 	void Recode(Serializer&, WrSerializer&) const override { assertrx(false); }
 	void Recode(Serializer& rdser, Payload& pl, TagName tagName, WrSerializer& wrser) override {
 		pl.Set(field_, Variant{rdser.GetStrUuid()}, Append_True);

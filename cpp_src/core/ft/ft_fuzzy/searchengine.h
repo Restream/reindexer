@@ -11,7 +11,7 @@ class RdxContext;
 
 namespace search_engine {
 
-class SearchEngine {
+class [[nodiscard]] SearchEngine {
 public:
 	typedef std::shared_ptr<SearchEngine> Ptr;
 

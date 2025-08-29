@@ -1,12 +1,10 @@
 ﻿#pragma once
 
 #include <string.h>
-#include <mutex>
 #include "connectinstatscollector.h"
 #include "coroutine/coroutine.h"
 #include "estl/cbuf.h"
 #include "net/socket.h"
-#include "tools/ssize_t.h"
 
 namespace reindexer {
 namespace net {
@@ -17,11 +15,11 @@ constexpr int k_sock_closed_err = -1;
 constexpr int k_connect_timeout_err = -2;
 constexpr int k_connect_ssl_err = -3;
 
-class manual_connection {
+class [[nodiscard]] manual_connection {
 public:
 	using async_cb_t = std::function<void(int err, size_t cnt, std::span<char> buf)>;
 
-	enum class conn_state { init, connecting, connected };
+	enum class [[nodiscard]] conn_state { init, connecting, connected };
 
 	manual_connection(size_t rd_buf_size, bool enable_stat);
 	virtual ~manual_connection() = default;
@@ -65,7 +63,7 @@ public:
 	int socket_last_error() const noexcept { return sock_.last_error(); }
 
 private:
-	class transfer_data {
+	class [[nodiscard]] transfer_data {
 	public:
 		void set_expected(size_t expected) noexcept {
 			expected_size_ = expected;
@@ -80,7 +78,7 @@ private:
 		size_t transfered_size_ = 0;
 	};
 
-	struct async_data {
+	struct [[nodiscard]] async_data {
 		bool empty() const noexcept { return cb == nullptr; }
 		void set_cb(std::span<char> _buf, async_cb_t _cb) noexcept {
 			assertrx(!cb);
@@ -97,10 +95,10 @@ private:
 		std::span<char> buf;
 	};
 
-	struct empty_switch_policy {
+	struct [[nodiscard]] empty_switch_policy {
 		void operator()(async_data& /*data*/) {}
 	};
-	struct suspend_switch_policy {
+	struct [[nodiscard]] suspend_switch_policy {
 		void operator()(async_data& data) {
 			while (!data.empty()) {
 				coroutine::suspend();

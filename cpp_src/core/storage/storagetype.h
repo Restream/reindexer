@@ -6,7 +6,7 @@
 namespace reindexer {
 namespace datastorage {
 
-enum class StorageType : uint8_t { LevelDB = 0, RocksDB = 1 };
+enum class [[nodiscard]] StorageType : uint8_t { LevelDB = 0, RocksDB = 1 };
 
 const char kLevelDBName[] = "leveldb";
 const char kRocksDBName[] = "rocksdb";

@@ -7,17 +7,17 @@
 
 namespace reindexer {
 
-class UpdateSortedContext {
+class [[nodiscard]] IUpdateSortedContext {
 public:
-	virtual ~UpdateSortedContext() = default;
-	virtual int getSortedIdxCount() const noexcept = 0;
-	virtual SortType getCurSortId() const noexcept = 0;
-	virtual const std::vector<SortType>& ids2Sorts() const noexcept = 0;
-	virtual std::vector<SortType>& ids2Sorts() noexcept = 0;
+	virtual ~IUpdateSortedContext() = default;
+	virtual int GetSortedIdxCount() const noexcept = 0;
+	virtual SortType GetCurSortId() const noexcept = 0;
+	virtual const std::vector<SortType>& Ids2Sorts() const& noexcept = 0;
+	virtual std::vector<SortType>& Ids2Sorts() & noexcept = 0;
 };
 
 template <typename IdSetT>
-class KeyEntry {
+class [[nodiscard]] KeyEntry {
 public:
 	IdSetT& Unsorted() noexcept { return ids_; }
 	const IdSetT& Unsorted() const noexcept { return ids_; }
@@ -31,18 +31,23 @@ public:
 				ids_.size());
 		return IdSetCRef(ids_.data() + sortId * ids_.size(), ids_.size());
 	}
-	void UpdateSortedIds(const UpdateSortedContext& ctx) {
-		ids_.reserve((ctx.getSortedIdxCount() + 1) * ids_.size());
-		assertrx(ctx.getCurSortId());
-
-		auto idsAsc = Sorted(ctx.getCurSortId());
+	void UpdateSortedIds(const IUpdateSortedContext& ctx) {
+		const auto expectedCapacity = (ctx.GetSortedIdxCount() + 1) * ids_.size();
+		// Checking expectedCapacity. We can not reallocate here to avoid incorrect idset iterators in the concurrent queries
+		if rx_unlikely (ids_.capacity() < expectedCapacity) {
+			throw Error(errAssert, "Unexpected ids capacity: ids_.capacity()={},getSortedIdxCount={},ids_.size()={},expectedCapacity={}",
+						ids_.capacity(), ctx.GetSortedIdxCount(), ids_.size(), expectedCapacity);
+		}
+		const auto curSortId = ctx.GetCurSortId();
+		assertrx_throw(curSortId);
+		auto idsAsc = Sorted(curSortId);
 
 		size_t idx = 0;
-		const auto& ids2Sorts = ctx.ids2Sorts();
+		const auto& ids2Sorts = ctx.Ids2Sorts();
 		[[maybe_unused]] const IdType maxRowId = IdType(ids2Sorts.size());
 		// For all ids of current key
 		for (auto rowid : ids_) {
-			assertf(rowid < maxRowId, "id={},ctx.ids2Sorts().size()={}", rowid, maxRowId);
+			assertf(rowid < maxRowId, "id={},ctx.Ids2Sorts().size()={}", rowid, maxRowId);
 			idsAsc[idx++] = ids2Sorts[rowid];
 		}
 		boost::sort::pdqsort_branchless(idsAsc.begin(), idsAsc.end());

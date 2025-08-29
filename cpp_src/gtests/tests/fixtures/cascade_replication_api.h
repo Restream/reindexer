@@ -2,7 +2,7 @@
 #include "servercontrol.h"
 #include "tools/fsops.h"
 
-class CascadeReplicationApi : public ::testing::Test {
+class [[nodiscard]] CascadeReplicationApi : public ::testing::Test {
 protected:
 	void SetUp() override;
 	void TearDown() override;
@@ -10,7 +10,7 @@ protected:
 public:
 	using ServerPtr = ServerControl::Interface::Ptr;
 
-	class TestNamespace1 {
+	class [[nodiscard]] TestNamespace1 {
 	public:
 		TestNamespace1(const ServerPtr& srv, std::string_view nsName = "ns1");
 
@@ -22,7 +22,7 @@ public:
 		const std::string nsName_;
 	};
 
-	class Cluster {
+	class [[nodiscard]] Cluster {
 	public:
 		Cluster(int baseServerId, std::vector<ServerControl> nodes = std::vector<ServerControl>())
 			: nodes_(std::move(nodes)), baseServerId_(baseServerId) {}
@@ -45,7 +45,7 @@ public:
 	void WaitSync(const ServerPtr& s1, const ServerPtr& s2, const std::string& nsName) { ServerControl::WaitSync(s1, s2, nsName); }
 	void ValidateNsList(const ServerPtr& s, const std::vector<std::string>& expected);
 
-	class FollowerConfig {
+	class [[nodiscard]] FollowerConfig {
 	public:
 		FollowerConfig(int lid, std::optional<std::vector<std::string>> nss = std::optional<std::vector<std::string>>())
 			: leaderId(lid), nsList(std::move(nss)) {}

@@ -15,7 +15,7 @@ using hs_sc_set_prime = tsl::hopscotch_sc_set<K, H, P, L, std::allocator<K>, 62,
 // May still be used, when you're sure about collisions count and don't want to implements 'less' functor.
 // Uses prime_growth_policy for resizing
 template <typename K, typename H = void, typename P = void>
-class fast_hash_set_l : public hs_set_prime<K, H, P> {
+class [[nodiscard]] fast_hash_set_l : public hs_set_prime<K, H, P> {
 public:
 	static_assert(!std::is_same_v<H, void>, "Hash functor must be specialized exlicitly");
 	static_assert(!std::is_same_v<P, void>, "EqualTo functor must be specialized exlicitly");
@@ -32,7 +32,7 @@ public:
 };
 
 template <typename K>
-class fast_hash_set_l<K> : public fast_hash_set_l<K, std::hash<K>, std::equal_to<K>> {
+class [[nodiscard]] fast_hash_set_l<K> : public fast_hash_set_l<K, std::hash<K>, std::equal_to<K>> {
 public:
 	using Base = fast_hash_set_l<K, std::hash<K>, std::equal_to<K>>;
 	using Base::Base;
@@ -41,7 +41,7 @@ public:
 };
 
 template <typename K, typename H>
-class fast_hash_set_l<K, H> : public fast_hash_set_l<K, H, std::equal_to<K>> {
+class [[nodiscard]] fast_hash_set_l<K, H> : public fast_hash_set_l<K, H, std::equal_to<K>> {
 public:
 	using Base = fast_hash_set_l<K, H, std::equal_to<K>>;
 	using Base::Base;
@@ -53,7 +53,7 @@ public:
 // fast_hash_map_l.
 // Uses prime_growth_policy for resizing
 template <typename K, typename H = void, typename P = void, typename L = void>
-class fast_hash_set_s : public hs_sc_set_prime<K, H, P, L> {
+class [[nodiscard]] fast_hash_set_s : public hs_sc_set_prime<K, H, P, L> {
 public:
 	static_assert(!std::is_same_v<H, void>, "Hash functor must be specialized exlicitly");
 	static_assert(!std::is_same_v<P, void>, "EqualTo functor must be specialized exlicitly");
@@ -68,7 +68,7 @@ public:
 };
 
 template <typename K>
-class fast_hash_set_s<K> : public fast_hash_set_s<K, std::hash<K>, std::equal_to<K>, std::less<K>> {
+class [[nodiscard]] fast_hash_set_s<K> : public fast_hash_set_s<K, std::hash<K>, std::equal_to<K>, std::less<K>> {
 public:
 	using Base = fast_hash_set_s<K, std::hash<K>, std::equal_to<K>, std::less<K>>;
 	using Base::Base;
@@ -76,7 +76,7 @@ public:
 };
 
 template <typename K, typename H>
-class fast_hash_set_s<K, H> : public fast_hash_set_s<K, H, std::equal_to<K>, std::less<K>> {
+class [[nodiscard]] fast_hash_set_s<K, H> : public fast_hash_set_s<K, H, std::equal_to<K>, std::less<K>> {
 public:
 	using Base = fast_hash_set_s<K, H, std::equal_to<K>, std::less<K>>;
 	using Base::Base;

@@ -7,6 +7,7 @@
 #include "core/namespace/namespacestat.h"
 #include "core/namespacedef.h"
 #include "core/schema.h"
+#include "estl/dummy_mutex.h"
 #include "estl/gift_str.h"
 #include "gason/gason.h"
 #include "tools/catch_and_return.h"
@@ -17,7 +18,7 @@ namespace reindexer {
 namespace client {
 
 RPCClient::RPCClient(const ReindexerConfig& config, INamespaces::PtrT sharedNamespaces)
-	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : INamespaces::PtrT(new NamespacesImpl<dummy_mutex>())), config_(config) {
+	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : INamespaces::PtrT(new NamespacesImpl<DummyMutex>())), config_(config) {
 	reindexer::CheckRequiredSSESupport();
 
 	conn_.SetConnectionStateHandler([this](Error err) { onConnectionState(std::move(err)); });
@@ -32,7 +33,7 @@ Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::C
 		return Error(errLogic, "Coroutine client's Connect can't be called from main routine (coroutine ID is 0). DSN: {}", dsn);
 	}
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (conn_.IsRunning()) {
 		return Error(errLogic, "Client is already started. DSN: {}", dsn);
 	}
@@ -61,7 +62,7 @@ Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::C
 
 void RPCClient::Stop() {
 	if (conn_.IsRunning()) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		terminate_ = true;
 		conn_.Stop();
 		loop_ = nullptr;
@@ -721,8 +722,8 @@ Error RPCClient::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, 
 								count > 0 ? p_string(args[4]) : p_string(), config_.NetTimeout);
 			const unsigned nextArgNum = count > 0 ? 5 : 4;
 			if (args.size() >= nextArgNum + 1) {
-				snapshot.ClusterOperationStat(ClusterOperationStatus{.leaderId = int(args[nextArgNum]),
-																 .role = reindexer::ClusterOperationStatus::Role(int(args[nextArgNum + 1]))});
+				snapshot.ClusterOperationStat(ClusterOperationStatus{
+					.leaderId = int(args[nextArgNum]), .role = reindexer::ClusterOperationStatus::Role(int(args[nextArgNum + 1]))});
 			}
 		}
 	} catch (const Error& err) {

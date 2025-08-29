@@ -67,7 +67,7 @@ RandomGenerator::RandomGenerator(ErrFactorType errorFactor) : gen_{createRandomE
 
 size_t RandomGenerator::FieldsCount(bool firstLevel) {
 	if (RndErr()) {
-		enum Err : uint8_t { Zero, TooMany, END = TooMany };
+		enum [[nodiscard]] Err : uint8_t { Zero, TooMany, END = TooMany };
 		switch (RndWhich<Err, 1, 1>()) {
 			case Zero:
 				return 0;
@@ -78,7 +78,7 @@ size_t RandomGenerator::FieldsCount(bool firstLevel) {
 		}
 	}
 	if (firstLevel) {
-		enum Size : uint8_t { Normal, Long, END = Long };
+		enum [[nodiscard]] Size : uint8_t { Normal, Long, END = Long };
 		switch (RndWhich<Size, 10'000, 1>()) {
 			case Normal:
 				return RndInt(1, 9);
@@ -104,7 +104,7 @@ std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generate
 		const bool withErr = RndErr();
 		if (withErr) {
 			size_t len;
-			enum Err : uint8_t { Dublicate, ZeroLength, TooLong, NormalLength, END = NormalLength };
+			enum [[nodiscard]] Err : uint8_t { Dublicate, ZeroLength, TooLong, NormalLength, END = NormalLength };
 			switch (RndWhich<Err, 1, 1, 1, 1>()) {
 				case Dublicate:
 					if (!generatedNames.empty()) {
@@ -189,7 +189,7 @@ FieldPath RandomGenerator::RndField(const NsScheme& nsScheme) {
 	FieldPath res;
 	do {
 		if (withErr) {
-			enum Err : uint8_t { Break, Continue, END = Continue };
+			enum [[nodiscard]] Err : uint8_t { Break, Continue, END = Continue };
 			switch (RndWhich<Err, 1, 1>()) {
 				case Break:
 					return res;
@@ -214,7 +214,7 @@ FieldPath RandomGenerator::RndScalarField(const NsScheme& nsScheme) {
 	FieldPath res;
 	do {
 		if (withErr) {
-			enum Err : uint8_t { Break, Continue, END = Continue };
+			enum [[nodiscard]] Err : uint8_t { Break, Continue, END = Continue };
 			switch (RndWhich<Err, 1, 1>()) {
 				case Break:
 					return res;
@@ -323,7 +323,7 @@ size_t RandomGenerator::ArraySize() {
 	if (RndErr()) {
 		return RndInt(0, 100'000);
 	}
-	enum Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
+	enum [[nodiscard]] Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
 	switch (RndWhich<Size, 10'000, 100'000, 10, 1>()) {
 		case Short:
 			return RndInt(0, 5);
@@ -341,7 +341,7 @@ size_t RandomGenerator::ArraySize() {
 
 size_t RandomGenerator::IndexesCount() {
 	if (RndErr()) {
-		enum Err : uint8_t { Zero, TooMany, END = TooMany };
+		enum [[nodiscard]] Err : uint8_t { Zero, TooMany, END = TooMany };
 		switch (RndWhich<Err, 1, 1>()) {
 			case Zero:
 				return 0;
@@ -369,7 +369,7 @@ size_t RandomGenerator::IndexesCount() {
 
 size_t RandomGenerator::compositeIndexSize(size_t scalarIndexesCount) {
 	if (RndErr()) {
-		enum Err : uint8_t { Zero, /*One,*/ TooMany, END = TooMany };
+		enum [[nodiscard]] Err : uint8_t { Zero, /*One,*/ TooMany, END = TooMany };
 		switch (RndWhich<Err, 1, /*1,*/ 1>()) {
 			case Zero:
 				return 0;
@@ -432,7 +432,7 @@ std::string RandomGenerator::rndStrUuidValue(bool noErrors) {
 	static constexpr std::string_view hexChars = "0123456789aAbBcCdDeEfF";
 	static constexpr std::string_view notAvailableChars = "_ghijklmnopqrstuvwxyzGHIJKLMNOPQRSTUVWXYZ";
 	static constexpr unsigned uuidDelimPositions[] = {8, 13, 18, 23};
-	enum Err : uint8_t { NoErrors, Empty, Short, Long, TooLong, WrongVariant, WrongChar, END = WrongChar };
+	enum [[nodiscard]] Err : uint8_t { NoErrors, Empty, Short, Long, TooLong, WrongVariant, WrongChar, END = WrongChar };
 	Err err = NoErrors;
 	if (!noErrors && RndErr()) {
 		err = RndWhich<Err, 0, 1, 1, 1, 1, 1, 1>();

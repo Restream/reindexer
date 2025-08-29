@@ -1,6 +1,8 @@
 #include "perfstatcounter.h"
 #include <cmath>
 #include <numeric>
+#include "estl/defines.h"
+#include "estl/mutex.h"
 
 namespace reindexer {
 
@@ -13,7 +15,7 @@ PerfStatCounter<Mutex>::PerfStatCounter() {
 
 template <typename Mutex>
 void PerfStatCounter<Mutex>::Hit(std::chrono::microseconds time) noexcept {
-	std::lock_guard<Mutex> lck(mtx_);
+	lock_guard lck(mtx_);
 	totalTime_ += time;
 	calcTime_ += time;
 	++calcHitCount_;
@@ -43,7 +45,7 @@ void PerfStatCounter<Mutex>::Hit(std::chrono::microseconds time) noexcept {
 
 template <typename Mutex>
 void PerfStatCounter<Mutex>::LockHit(std::chrono::microseconds time) noexcept {
-	std::lock_guard<Mutex> lck(mtx_);
+	lock_guard lck(mtx_);
 	calcLockTime_ += time;
 	totalLockTime_ += time;
 }
@@ -51,7 +53,7 @@ void PerfStatCounter<Mutex>::LockHit(std::chrono::microseconds time) noexcept {
 template <typename Mutex>
 void PerfStatCounter<Mutex>::Reset() noexcept {
 	static const PerfStatCounter<Mutex> defaultCounter;
-	std::lock_guard<Mutex> lck(mtx_);
+	lock_guard lck(mtx_);
 	totalHitCount_ = defaultCounter.totalHitCount_;
 	totalTime_ = defaultCounter.totalTime_;
 	totalLockTime_ = defaultCounter.totalLockTime_;
@@ -93,7 +95,7 @@ void PerfStatCounter<Mutex>::lap() noexcept {
 	lastValuesUs_.resize(0);
 }
 
-template class PerfStatCounter<std::mutex>;
-template class PerfStatCounter<dummy_mutex>;
+template class PerfStatCounter<reindexer::mutex>;
+template class PerfStatCounter<DummyMutex>;
 
 }  // namespace reindexer

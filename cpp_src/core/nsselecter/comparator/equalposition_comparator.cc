@@ -35,6 +35,7 @@ void EqualPositionComparator::bindField(const std::string& name, F field, const 
 }
 
 bool EqualPositionComparator::Compare(const PayloadValue& pv, IdType /*rowId*/) {
+	++totalCalls_;
 	ConstPayload pl(payloadType_, pv);
 	size_t len = INT_MAX;
 
@@ -55,6 +56,7 @@ bool EqualPositionComparator::Compare(const PayloadValue& pv, IdType /*rowId*/) 
 		}
 	}
 
+	bool res = false;
 	for (size_t i = 0; i < len; ++i) {
 		bool cmpRes = true;
 		for (size_t j = 0; j < fields_.size(); ++j) {
@@ -66,10 +68,12 @@ bool EqualPositionComparator::Compare(const PayloadValue& pv, IdType /*rowId*/) 
 		}
 
 		if (cmpRes) {
-			return true;
+			res = true;
+			break;
 		}
 	}
-	return false;
+	matchedCount_ += int(res);
+	return res;
 }
 
 bool EqualPositionComparator::compareField(size_t field, const Variant& v) {

@@ -9,7 +9,7 @@
 
 namespace reindexer {
 
-class ItemRef {
+class [[nodiscard]] ItemRef {
 public:
 	ItemRef() noexcept : id_(0), raw_(0), valueInitialized_(false), nsid_(0) {}
 	ItemRef(IdType id, const PayloadValue& value, uint16_t nsid = 0, bool raw = false) noexcept
@@ -130,7 +130,7 @@ private:
 
 static_assert(sizeof(ItemRef) <= 16, "This size is essential from performance perspective");
 
-class ItemRefRanked : private ItemRef {
+class [[nodiscard]] ItemRefRanked : private ItemRef {
 public:
 	template <typename... Args>
 	ItemRefRanked(RankT r, Args&&... args) : ItemRef{std::forward<Args>(args)...}, rank_{r} {}
@@ -147,18 +147,18 @@ class [[nodiscard]] ItemRefVariant : public std::variant<ItemRef, ItemRefRanked>
 	using Base = std::variant<ItemRef, ItemRefRanked>;
 
 public:
-	[[nodiscard]] const ItemRef& NotRanked() const& noexcept {
+	const ItemRef& NotRanked() const& noexcept {
 		return std::visit(overloaded{[](const ItemRef& v) noexcept -> const ItemRef& { return v; },
 									 [](const ItemRefRanked& v) noexcept -> const ItemRef& { return v.NotRanked(); }},
 						  AsVariant());
 	}
-	[[nodiscard]] const ItemRefRanked& Ranked() const& {
+	const ItemRefRanked& Ranked() const& {
 		return std::visit(
 			overloaded{[](const ItemRef&) -> const ItemRefRanked& { throw Error{errLogic, "Get rank from result of not ranked query"}; },
 					   [](const ItemRefRanked& r) noexcept -> const ItemRefRanked& { return r; }},
 			AsVariant());
 	}
-	[[nodiscard]] RankT Rank() const {
+	RankT Rank() const {
 		return std::visit(overloaded{[](const ItemRef&) -> RankT { throw Error{errLogic, "Get rank from result of not ranked query"}; },
 									 [](const ItemRefRanked& r) noexcept { return r.Rank(); }},
 						  AsVariant());
@@ -263,33 +263,33 @@ class [[nodiscard]] ItemRefVector {
 		}
 
 		template <typename I, typename IR>
-		[[nodiscard]] bool operator==(IteratorImpl<I, IR> other) const noexcept {
+		bool operator==(IteratorImpl<I, IR> other) const noexcept {
 			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			return std::visit([other](auto lhs) noexcept { return lhs == std::get<decltype(lhs)>(other); }, asVariant());
 		}
 		template <typename I, typename IR>
-		[[nodiscard]] bool operator!=(IteratorImpl<I, IR> other) const noexcept {
+		bool operator!=(IteratorImpl<I, IR> other) const noexcept {
 			return !operator==(other);
 		}
 		template <typename I, typename IR>
-		[[nodiscard]] bool operator<(IteratorImpl<I, IR> other) const noexcept {
+		bool operator<(IteratorImpl<I, IR> other) const noexcept {
 			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			return std::visit([other](auto lhs) noexcept { return lhs < std::get<decltype(lhs)>(other); }, asVariant());
 		}
 		template <typename I, typename IR>
-		[[nodiscard]] bool operator>=(IteratorImpl<I, IR> other) const noexcept {
+		bool operator>=(IteratorImpl<I, IR> other) const noexcept {
 			return !operator<(other);
 		}
 		template <typename I, typename IR>
-		[[nodiscard]] bool operator<=(IteratorImpl<I, IR> other) const noexcept {
+		bool operator<=(IteratorImpl<I, IR> other) const noexcept {
 			return other >= *this;
 		}
 
-		[[nodiscard]] IteratorImpl operator*() const noexcept { return *this; }
+		IteratorImpl operator*() const noexcept { return *this; }
 
 		NotRankedIt NotRanked() const { return std::get<NotRankedIt>(*this); }
 		RankedIt Ranked() const { return std::get<RankedIt>(*this); }
-		[[nodiscard]] ItemRefRef GetItemRef() const noexcept {
+		ItemRefRef GetItemRef() const noexcept {
 			return std::visit(overloaded{[](NotRankedIt it) noexcept -> ItemRefRef { return *it; },
 										 [](RankedIt it) noexcept -> ItemRefRef { return it->NotRanked(); }},
 							  asVariant());
@@ -319,34 +319,32 @@ public:
 				   b.asVariant());
 	}
 
-	[[nodiscard]] const ItemRef& GetItemRef(size_t i) const& noexcept {
+	const ItemRef& GetItemRef(size_t i) const& noexcept {
 		return std::visit(overloaded{[i](const NotRankedVec& v) noexcept -> const ItemRef& { return v[i]; },
 									 [i](const RankedVec& v) noexcept -> const ItemRef& { return v[i].NotRanked(); }},
 						  variant_);
 	}
-	[[nodiscard]] ItemRef& GetItemRef(size_t i) & noexcept {
-		return const_cast<ItemRef&>(const_cast<const ItemRefVector&>(*this).GetItemRef(i));
-	}
-	[[nodiscard]] const ItemRefRanked& GetItemRefRanked(size_t i) const& {
+	ItemRef& GetItemRef(size_t i) & noexcept { return const_cast<ItemRef&>(const_cast<const ItemRefVector&>(*this).GetItemRef(i)); }
+	const ItemRefRanked& GetItemRefRanked(size_t i) const& {
 		return std::visit(overloaded{[](const NotRankedVec&) -> const ItemRefRanked& {
 										 throw Error{errLogic, "Get rank from result of not ranked query"};
 									 },
 									 [i](const RankedVec& v) noexcept -> const ItemRefRanked& { return v[i]; }},
 						  variant_);
 	}
-	[[nodiscard]] ItemRefRanked& GetItemRefRanked(size_t i) & {
+	ItemRefRanked& GetItemRefRanked(size_t i) & {
 		return const_cast<ItemRefRanked&>(const_cast<const ItemRefVector&>(*this).GetItemRefRanked(i));
 	}
 	ItemRefVariant GetItemRefVariant(size_t i) const {
 		return std::visit([i](const auto& v) { return ItemRefVariant{v[i]}; }, variant_);
 	}
 
-	[[nodiscard]] const ItemRef& Back() const& noexcept {
+	const ItemRef& Back() const& noexcept {
 		return std::visit(overloaded{[](const RankedVec& v) noexcept -> const ItemRef& { return v.back().NotRanked(); },
 									 [](const NotRankedVec& v) noexcept -> const ItemRef& { return v.back(); }},
 						  variant_);
 	}
-	[[nodiscard]] ItemRef& Back() & noexcept {
+	ItemRef& Back() & noexcept {
 		return std::visit(overloaded{[](RankedVec& v) noexcept -> ItemRef& { return v.back().NotRanked(); },
 									 [](NotRankedVec& v) noexcept -> ItemRef& { return v.back(); }},
 						  variant_);
@@ -373,13 +371,13 @@ public:
 		return std::visit([](auto& v) noexcept { return MoveIterator{std::make_move_iterator(v.end())}; }, variant_);
 	}
 
-	[[nodiscard]] size_t Size() const noexcept {
+	size_t Size() const noexcept {
 		return std::visit([](const auto& v) noexcept { return v.size(); }, variant_);
 	}
-	[[nodiscard]] size_t Capacity() const noexcept {
+	size_t Capacity() const noexcept {
 		return std::visit([](const auto& v) noexcept { return v.capacity(); }, variant_);
 	}
-	[[nodiscard]] bool Empty() const noexcept {
+	bool Empty() const noexcept {
 		return std::visit([](const auto& v) noexcept { return v.empty(); }, variant_);
 	}
 	void Reserve(size_t s) {
@@ -479,7 +477,7 @@ private:
 namespace std {
 
 template <typename T1, typename T2>
-struct iterator_traits<reindexer::ItemRefVector::IteratorImpl<T1, T2>> {
+struct [[nodiscard]] iterator_traits<reindexer::ItemRefVector::IteratorImpl<T1, T2>> {
 	using iterator_category = random_access_iterator_tag;
 	using difference_type = std::ptrdiff_t;
 };

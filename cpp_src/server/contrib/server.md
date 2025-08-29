@@ -146,7 +146,7 @@
 
 <!-- tocstop -->
 
-> Version 5.5.0
+> Version 5.6.0
 
 ## Overview
 
@@ -8721,7 +8721,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   merge_limit?: integer
   // List of symbols, which will be treated as word part delimiters
   word_part_delimiters?: string //default: -/+_`'
-  // Min word part size to indexate and search
+  // Min word part size for indexing and searching
   min_word_part_size?: integer //default: 3
   // List of symbols, which will be treated as word part, all other symbols will be treated as word separators, extra_word_symbols will be replenished with word_part_delimiters automatically at startup
   extra_word_symbols?: string //default: -/+_`'

@@ -2,6 +2,7 @@
 
 #include "cluster/config.h"
 #include "core/dbconfig.h"
+#include "estl/mutex.h"
 #include "idatareplicator.h"
 #include "net/ev/ev.h"
 #include "replication/asyncdatareplicator.h"
@@ -13,7 +14,7 @@ class ReindexerImpl;
 
 namespace cluster {
 
-class ClusterManager : public IDataReplicator, public IDataSyncer {
+class [[nodiscard]] ClusterManager : public IDataReplicator, public IDataSyncer {
 public:
 	ClusterManager(ReindexerImpl& thisNode, size_t maxUpdatesSize);
 
@@ -65,7 +66,7 @@ private:
 	static bool replicationIsNotRequired(const UpdatesContainer& recs) noexcept;
 	void validateConfig() const;
 
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	UpdatesQueuePair<updates::UpdateRecord> updatesQueue_;
 	SharedSyncState sharedSyncState_;
 	ClusterDataReplicator clusterReplicator_;

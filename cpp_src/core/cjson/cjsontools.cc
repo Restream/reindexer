@@ -274,21 +274,25 @@ void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, std:
 static void skipCjsonValue(TagType type, Serializer& cjson) {
 	switch (type) {
 		case TAG_VARINT:
+			// NOLINTNEXTLINE (bugprone-unused-return-value)
 			cjson.GetVarint();
 			break;
 		case TAG_DOUBLE:
+			// NOLINTNEXTLINE (bugprone-unused-return-value)
 			cjson.GetDouble();
 			break;
 		case TAG_STRING:
-			cjson.GetPVString();
+			cjson.SkipPVString();
 			break;
 		case TAG_BOOL:
+			// NOLINTNEXTLINE (bugprone-unused-return-value)
 			cjson.GetVarUInt();
 			break;
 		case TAG_UUID:
-			cjson.GetUuid();
+			cjson.SkipUuid();
 			break;
 		case TAG_FLOAT:
+			// NOLINTNEXTLINE (bugprone-unused-return-value)
 			cjson.GetFloat();
 			break;
 		case TAG_NULL:

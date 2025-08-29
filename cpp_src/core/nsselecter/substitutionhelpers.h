@@ -8,7 +8,7 @@ namespace reindexer {
 
 namespace composite_substitution_helpers {
 
-class CompositeValuesCountLimits {
+class [[nodiscard]] CompositeValuesCountLimits {
 public:
 	uint32_t operator[](uint32_t fieldsCount) const noexcept {
 		if rx_unlikely (fieldsCount >= limits_.size()) {
@@ -23,9 +23,9 @@ private:
 	std::array<uint32_t, 6> limits_ = {0, 0, 300, 1000, 2000, 4000};
 };
 
-class CompositeSearcher {
+class [[nodiscard]] CompositeSearcher {
 public:
-	struct IndexData {
+	struct [[nodiscard]] IndexData {
 		IndexData(int field, int _idx, uint16_t entry) : fields(field), idx(_idx), entries{entry} {}
 
 		IndexesFieldsSet fields;
@@ -156,7 +156,7 @@ private:
 };
 
 // EntriesRange - query entries range. [from; to)
-class EntriesRange {
+class [[nodiscard]] EntriesRange {
 public:
 	EntriesRange(uint16_t from, uint16_t to) : from_(from), to_(to) {
 		if (to_ <= from_) {
@@ -187,7 +187,7 @@ private:
 };
 
 // EntriesRanges - contains ordered vector of entries ranges. Ranges can not intercept with each other
-class EntriesRanges : h_vector<EntriesRange, 8> {
+class [[nodiscard]] EntriesRanges : h_vector<EntriesRange, 8> {
 public:
 	using Base = h_vector<EntriesRange, 8>;
 

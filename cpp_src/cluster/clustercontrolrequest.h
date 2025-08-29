@@ -10,14 +10,14 @@ struct JsonNode;
 
 namespace reindexer {
 
-struct SetClusterLeaderCommand {
+struct [[nodiscard]] SetClusterLeaderCommand {
 	int leaderServerId = -1;
 	void GetJSON(JsonBuilder& json) const;
 	void FromJSON(const gason::JsonNode& payload);
 };
 
-struct ClusterControlRequestData {
-	enum class Type { Empty = 0, ChangeLeader = 1 };
+struct [[nodiscard]] ClusterControlRequestData {
+	enum class [[nodiscard]] Type { Empty = 0, ChangeLeader = 1 };
 
 	ClusterControlRequestData() = default;
 	ClusterControlRequestData(SetClusterLeaderCommand&& value) : type(Type::ChangeLeader), data(std::move(value)) {}

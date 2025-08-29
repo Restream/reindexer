@@ -1,7 +1,9 @@
 #include "tools/logger.h"
-#include <mutex>
+#include "core/type_consts.h"
+#include "estl/lock.h"
 #include "estl/mutex.h"
 #include "estl/shared_mutex.h"
+#include "estl/spin_lock.h"
 
 namespace reindexer {
 
@@ -18,7 +20,7 @@ RX_ALWAYS_INLINE void write(int level, char* buf) {
 	}
 }
 
-void logPrintImpl(int level, char* buf) {
+void logPrintImpl(int level, char* buf) RX_REQUIRES(!g_LoggerMtx) {
 	switch (g_MtLogger.load(std::memory_order_relaxed)) {
 		case LoggerPolicy::NotInit:
 		case LoggerPolicy::WithLocks: {
@@ -35,8 +37,8 @@ void logPrintImpl(int level, char* buf) {
 void logInstallWriter(LogWriter writer, LoggerPolicy policy, int globalLogLevel) {
 	std::string errorText;
 
-	static std::mutex g_LoggerPolicyMtx;
-	std::unique_lock lck(g_LoggerPolicyMtx);
+	static mutex g_LoggerPolicyMtx;
+	unique_lock lck(g_LoggerPolicyMtx);
 
 	const auto curPolicy = logger_details::g_MtLogger.load(std::memory_order_relaxed);
 	if (curPolicy != LoggerPolicy::NotInit && policy != curPolicy) {
@@ -57,7 +59,7 @@ void logInstallWriter(LogWriter writer, LoggerPolicy policy, int globalLogLevel)
 	logger_details::g_LogLevel.store(globalLogLevel, std::memory_order_relaxed);
 
 	if (curPolicy == LoggerPolicy::WithLocks || policy == LoggerPolicy::WithLocks) {
-		std::lock_guard logLck(logger_details::g_LoggerMtx);
+		lock_guard logLck(logger_details::g_LoggerMtx);
 		logger_details::g_logWriter = std::move(writer);
 	} else {
 		logger_details::g_logWriter = std::move(writer);

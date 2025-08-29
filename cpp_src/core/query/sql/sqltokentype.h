@@ -1,7 +1,7 @@
 #pragma once
 
 namespace reindexer {
-enum SqlTokenType {
+enum [[nodiscard]] SqlTokenType {
 	Start = 0,
 	SelectSqlToken,
 	DeleteSqlToken,

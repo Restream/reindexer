@@ -6,7 +6,7 @@
 namespace reindexer {
 namespace cluster {
 
-class ReplicationStatsCollector {
+class [[nodiscard]] ReplicationStatsCollector {
 public:
 	ReplicationStatsCollector() = default;
 	ReplicationStatsCollector(std::string type) : counter_(new ReplicationStatCounter(std::move(type))), owner_(true) {}
@@ -128,9 +128,9 @@ private:
 	bool owner_ = false;
 };
 
-class SyncTimeCounter {
+class [[nodiscard]] SyncTimeCounter {
 public:
-	enum class Type { ForceSync, WalSync, InitialForceSync, InitialWalSync };
+	enum class [[nodiscard]] Type { ForceSync, WalSync, InitialForceSync, InitialWalSync };
 
 	SyncTimeCounter(Type type, ReplicationStatsCollector& statsCollector) noexcept
 		: tmStart_(steady_clock_w::now()), statsCollector_(statsCollector), type_(type) {}

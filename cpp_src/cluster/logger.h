@@ -18,7 +18,7 @@ static_assert(false, "Macros conflict");
 #define logWarn(f, ...) log_.Warn([&] { rtfmt(f, __VA_ARGS__); })
 #define logError(f, ...) log_.Error([&] { rtfmt(f, __VA_ARGS__); })
 
-class Logger {
+class [[nodiscard]] Logger {
 public:
 	Logger(LogLevel minOutputLogLevel = LogInfo) noexcept : minOutputLogLevel_(minOutputLogLevel) {}
 

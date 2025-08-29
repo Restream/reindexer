@@ -13,29 +13,29 @@ public:
 	FieldsFilter(const FieldsNamesFilter&, const NamespaceImpl&);
 
 	template <unsigned hvSize>
-	[[nodiscard]] bool Match(const IndexedTagsPathImpl<hvSize>& tagsPath) const noexcept {
+	bool Match(const IndexedTagsPathImpl<hvSize>& tagsPath) const noexcept {
 		return allRegularFields_ || regularFields_.match(tagsPath);
 	}
-	[[nodiscard]] bool HasTagsPaths() const noexcept {
+	bool HasTagsPaths() const noexcept {
 		return (!allRegularFields_ && regularFields_.getTagsPathsLength()) || (!allVectorFields_ && vectorFields_.getTagsPathsLength());
 	}
-	[[nodiscard]] bool HasStars() const noexcept { return allRegularFields_ || allVectorFields_; }
-	[[nodiscard]] bool HasVectors() const noexcept { return allVectorFields_ || !vectorFields_.empty(); }
+	bool HasStars() const noexcept { return allRegularFields_ || allVectorFields_; }
+	bool HasVectors() const noexcept { return allVectorFields_ || !vectorFields_.empty(); }
 
-	[[nodiscard]] bool ContainsVector(int idx) const noexcept { return allVectorFields_ || vectorFields_.contains(idx); }
+	bool ContainsVector(int idx) const noexcept { return allVectorFields_ || vectorFields_.contains(idx); }
 
-	[[nodiscard]] bool ContainsVector(const TagsPath& path) const noexcept { return allVectorFields_ || vectorFields_.contains(path); }
+	bool ContainsVector(const TagsPath& path) const noexcept { return allVectorFields_ || vectorFields_.contains(path); }
 
-	[[nodiscard]] const FieldsSet& RegularFields() const& noexcept {
+	const FieldsSet& RegularFields() const& noexcept {
 		assertrx_dbg(!allRegularFields_);
 		return regularFields_;
 	}
-	[[nodiscard]] const FieldsSet* TryRegularFields() const& noexcept { return allRegularFields_ ? nullptr : &regularFields_; }
-	[[nodiscard]] const FieldsSet& VectorFields() const& noexcept {
+	const FieldsSet* TryRegularFields() const& noexcept { return allRegularFields_ ? nullptr : &regularFields_; }
+	const FieldsSet& VectorFields() const& noexcept {
 		assertrx_dbg(!allVectorFields_);
 		return vectorFields_;
 	}
-	[[nodiscard]] const FieldsSet* TryVectorFields() const& noexcept { return allVectorFields_ ? nullptr : &vectorFields_; }
+	const FieldsSet* TryVectorFields() const& noexcept { return allVectorFields_ ? nullptr : &vectorFields_; }
 
 	static FieldsFilter AllFields() noexcept { return FieldsFilter{true, true}; }
 

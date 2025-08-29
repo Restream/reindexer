@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <mutex>
 #include <type_traits>
 #include "core/index/payload_map.h"
 #include "core/index/string_map.h"
@@ -11,23 +10,23 @@
 namespace reindexer {
 
 template <typename T>
-class UpdateTracker {
+class [[nodiscard]] UpdateTracker {
 public:
 	// UpdateTracker is storing unique index key values, wich has been updated, and not commited
 	// For non-trivial types like key_string or PayloadType - payload pointer comparator is used.
 
 	template <typename T1>
-	struct hash_ptr {
+	struct [[nodiscard]] hash_ptr {
 		size_t operator()(const T1& obj) const noexcept { return std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(obj.get())); }
 	};
 	template <typename T1>
-	struct equal_ptr {
+	struct [[nodiscard]] equal_ptr {
 		bool operator()(const T1& lhs, const T1& rhs) const noexcept {
 			return reinterpret_cast<uintptr_t>(lhs.get()) == reinterpret_cast<uintptr_t>(rhs.get());
 		}
 	};
 	template <typename T1>
-	struct less_ptr {
+	struct [[nodiscard]] less_ptr {
 		bool operator()(const T1& lhs, const T1& rhs) const noexcept {
 			return reinterpret_cast<uintptr_t>(lhs.get()) < reinterpret_cast<uintptr_t>(rhs.get());
 		}

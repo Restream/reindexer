@@ -5,7 +5,7 @@
 namespace reindexer {
 
 template <typename T>
-class IndexStore : public Index {
+class [[nodiscard]] IndexStore : public Index {
 public:
 	IndexStore(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields)
 		: Index(idef, std::move(payloadType), std::move(fields)) {
@@ -20,7 +20,7 @@ public:
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
 	void Commit() override;
-	void UpdateSortedIds(const UpdateSortedContext& /*ctx*/) override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
+	void UpdateSortedIds(const IUpdateSortedContext& /*ctx*/) override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
 	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexStore<T>>(*this); }
 	IndexMemStat GetMemStat(const RdxContext&) override;
@@ -35,9 +35,9 @@ public:
 	bool IsColumnIndexDisabled() const noexcept { return opts_.IsArray() || opts_.IsSparse() || opts_.IsNoIndexColumn(); }
 
 	template <typename, typename = void>
-	struct HasAddTask : std::false_type {};
+	struct [[nodiscard]] HasAddTask : std::false_type {};
 	template <typename H>
-	struct HasAddTask<H, std::void_t<decltype(std::declval<H>().add_destroy_task(nullptr))>> : public std::true_type {};
+	struct [[nodiscard]] HasAddTask<H, std::void_t<decltype(std::declval<H>().add_destroy_task(nullptr))>> : public std::true_type {};
 
 protected:
 	unordered_str_map<int> str_map;

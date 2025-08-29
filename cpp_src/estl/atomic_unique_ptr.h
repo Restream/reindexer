@@ -5,7 +5,7 @@
 namespace reindexer {
 
 template <class T>
-class atomic_unique_ptr {
+class [[nodiscard]] atomic_unique_ptr {
 	using pointer = T*;
 	std::atomic<pointer> ptr;
 

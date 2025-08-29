@@ -9,7 +9,7 @@ class WrSerializer;
 
 namespace reindexer_tool {
 
-struct DumpOptions {
+struct [[nodiscard]] DumpOptions {
 	enum class Mode { FullNode, ShardedOnly, LocalOnly };
 
 	Mode mode;

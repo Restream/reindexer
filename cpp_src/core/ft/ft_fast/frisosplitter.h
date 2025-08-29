@@ -31,7 +31,7 @@
 #include "tools/stringstools.h"
 
 namespace reindexer {
-enum FrisoLexType {
+enum [[nodiscard]] FrisoLexType {
 	__LEX_CJK_WORDS__ = 0,
 	__LEX_CJK_UNITS__ = 1,
 	__LEX_ECM_WORDS__ = 2,	// english and chinese mixed words.
@@ -48,7 +48,7 @@ enum FrisoLexType {
 	__LEX_MAX = 19
 };
 
-struct WordInf {
+struct [[nodiscard]] WordInf {
 	FrisoLexType type = __LEX_UNKNOW_WORDS__;
 	std::string word;
 	unsigned int wordChars = 0;
@@ -56,12 +56,12 @@ struct WordInf {
 	unsigned int fre = 0;
 };
 
-struct WordPos {
+struct [[nodiscard]] WordPos {
 	size_t length = 0;
 	size_t offset = 0;
 };
 
-class FrisoTokenEntry {
+class [[nodiscard]] FrisoTokenEntry {
 public:
 	FrisoTokenEntry() = default;
 	FrisoTokenEntry(FrisoLexType t, WordPos _inStorage, WordPos _inOrigin, WordPos _inSymbols) noexcept
@@ -78,7 +78,7 @@ private:
 	WordPos inSymbols_;
 };
 
-class StringBuffer {
+class [[nodiscard]] StringBuffer {
 public:
 	void Reserve(size_t s) { modifiedTextWords_.reserve(s); }
 	void NewWord() noexcept { modifiedTextWordsIndex_ = modifiedTextWords_.size(); }
@@ -98,7 +98,7 @@ private:
 	size_t modifiedTextWordsIndex_ = 0;
 };
 
-struct FrisoConfig {
+struct [[nodiscard]] FrisoConfig {
 	static constexpr unsigned int kKeepPuncLen = 13;
 	uint16_t max_len = 5;			  // the max match length (4 - 7).
 	uint16_t mix_len = 2;			  // the max length for the CJK words in a mix string.
@@ -107,7 +107,7 @@ struct FrisoConfig {
 	char kpuncs[kKeepPuncLen] = {0};  // keep punctuations buffer.
 };
 
-class EqualF {
+class [[nodiscard]] EqualF {
 public:
 	using is_transparent = void;
 	template <typename T1, typename T2>
@@ -121,7 +121,7 @@ private:
 	bool equal(const WordInf& v1, std::string_view v2) const noexcept { return v1.word == v2; }
 };
 
-class LessF {
+class [[nodiscard]] LessF {
 public:
 	using is_transparent = void;
 	template <typename T1, typename T2>
@@ -135,7 +135,7 @@ private:
 	bool less(const WordInf& v1, std::string_view v2) const noexcept { return v1.word < v2; }
 };
 
-class HashF {
+class [[nodiscard]] HashF {
 public:
 	using is_transparent = void;
 	template <typename T1>
@@ -149,14 +149,14 @@ private:
 	size_t hash(std::string_view v) const noexcept { return hash_str()(v); }
 };
 
-class Dictionary {
+class [[nodiscard]] Dictionary {
 public:
 	using DictTable = fast_hash_set<WordInf, HashF, EqualF, LessF>;
 	Dictionary();
 	const DictTable& operator[](unsigned indx) const;
 
 private:
-	struct LexFileInfo {
+	struct [[nodiscard]] LexFileInfo {
 		FrisoLexType type;
 		std::string name;
 	};
@@ -171,7 +171,7 @@ private:
 
 class FrisoTextSplitter;
 
-struct FrisoChunkEntry {
+struct [[nodiscard]] FrisoChunkEntry {
 	h_vector<const WordInf*, 3> words;
 	uint32_t length = 0;
 	float average_word_length = 0.0;
@@ -179,7 +179,7 @@ struct FrisoChunkEntry {
 	float single_word_dmf = 0.0;
 };
 
-class FrisoTask final : public ISplitterTask {
+class [[nodiscard]] FrisoTask final : public ISplitterTask {
 public:
 	void SetText(std::string_view t) noexcept override {
 		str = t;
@@ -251,7 +251,7 @@ private:
 	void convert_work_apply(bool& convert);
 };
 
-class FrisoTextSplitter final : public ISplitter {
+class [[nodiscard]] FrisoTextSplitter final : public ISplitter {
 public:
 	FrisoTextSplitter() = default;
 	~FrisoTextSplitter() = default;

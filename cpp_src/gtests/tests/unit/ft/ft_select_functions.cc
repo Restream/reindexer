@@ -5,12 +5,12 @@
 
 using namespace std::string_view_literals;
 
-class FTSelectFunctionsApi : public FTApi {
+class [[nodiscard]] FTSelectFunctionsApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_select_fn_default_namespace"; }
 };
 
-class FTSelectFunctionsApiF : public FTSelectFunctionsApi {
+class [[nodiscard]] FTSelectFunctionsApiF : public FTSelectFunctionsApi {
 public:
 	reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2) override {
 		reindexer::FtFastConfig cfg(fieldsCount);
@@ -250,12 +250,10 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 	{
 		reindexer::Query q("nm1");
 		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim=',')");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		reindexer::WrSerializer wrSer;
-		err = res.begin().GetJSON(wrSer, false);
+		auto err = res.begin().GetJSON(wrSer, false);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(wrSer.Slice(), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
 	}
@@ -264,12 +262,10 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		reindexer::Query q("nm1");
 		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>' , 		'</b>'
 																											,5	,5 ,       pre_delim=','))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		reindexer::WrSerializer wrSer;
-		err = res.begin().GetJSON(wrSer, false);
+		auto err = res.begin().GetJSON(wrSer, false);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(wrSer.Slice(), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
 	}
@@ -277,13 +273,11 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 	{
 		reindexer::Query q("nm1");
 		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,pre_delim=' g ', post_delim='h'))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":" g  two <b>three</b> gg <b>three</b> empth g mpty <b>three</b>h"})S");
 		}
@@ -293,13 +287,11 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 		q.Select({"ft1"})
 			.Where("ft1", CondEq, "three")
 			.AddFunction(R"S(ft1=snippet_n('<b>','</b>','5',5,post_delim='h',pre_delim=' g '))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":" g  two <b>three</b> gg <b>three</b> empth g mpty <b>three</b>h"})S");
 		}
@@ -307,13 +299,11 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 	{
 		reindexer::Query q("nm1");
 		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,post_delim='h'))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":" two <b>three</b> gg <b>three</b> empthmpty <b>three</b>h"})S");
 		}
@@ -321,13 +311,11 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 	{
 		reindexer::Query q("nm1");
 		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,pre_delim='!'))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":"! two <b>three</b> gg <b>three</b> empt !mpty <b>three</b> "})S");
 		}
@@ -353,13 +341,11 @@ TEST_P(FTSelectFunctionsApi, SnippetNOthers) {
 	auto check = [&](int index, const std::string& find, const std::string& fun, std::string_view answer) {
 		reindexer::Query q("nm1");
 		q.Select({"ft1"}).Where("ft1", CondEq, find).Where("id", CondEq, index).AddFunction(fun);
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), answer);
 		}
@@ -402,13 +388,11 @@ TEST_P(FTSelectFunctionsApi, SnippetNOffset) {
 	auto check = [&](int index, const std::string& find, const std::string& fun, std::string_view answer) {
 		reindexer::Query q("nm1");
 		q.Select({"ft1"}).Where("ft1", CondEq, find).Where("id", CondEq, index).AddFunction(fun);
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), answer);
 		}
@@ -467,13 +451,11 @@ TEST_P(FTSelectFunctionsApi, SnippetNBounds) {
 	auto check = [&](int index, const std::string& find, const std::string& fun, std::string_view answer) {
 		reindexer::Query q("nm1");
 		q.Select({"ft1"}).Where("ft1", CondEq, find).Where("id", CondEq, index).AddFunction(fun);
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), answer);
 		}
@@ -490,6 +472,24 @@ TEST_P(FTSelectFunctionsApi, SnippetNBounds) {
 	check(id3, "one", R"S(ft1=snippet_n('','',2,6,with_area=1,left_bound='!'))S", R"S({"ft1":"[3,13]d one g!hj "})S");
 	check(id3, "one", R"S(ft1=snippet_n('','',2,4,with_area=1,left_bound='!'))S", R"S({"ft1":"[3,12]d one g!h "})S");
 	check(id3, "one", R"S(ft1=snippet_n('','',5,5,with_area=1,left_bound='!',right_bound='|'))S", R"S({"ft1":"[0,13]as|d one g!hj "})S");
+}
+
+TEST_P(FTSelectFunctionsApi, RankAsField) {
+	auto ftCfg = GetDefaultConfig();
+	Init(ftCfg);
+	Add("one two three gg three empty empty empty empty three"sv);
+
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").Select({"ft1", "rank()"});
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(res.Count(), 1);
+		reindexer::Expected<std::string> json = res.begin().GetJSON();
+		EXPECT_TRUE(json.has_value()) << json.error().what();
+		EXPECT_EQ(json.value(), R"#({"ft1":"one two three gg three empty empty empty empty three","rank()":93.0})#");
+	}
 }
 
 #if !defined(REINDEX_WITH_TSAN)
@@ -544,9 +544,7 @@ TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
 	{
 		reindexer::Query q("nm1");
 		q.Select({"ft1"}).Where("ft3", CondEq, "test~").AddFunction(R"(ft1=snippet(!,!,1000000,1000000,,))");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), kItemCount);
 		for (auto& r : res) {
 			auto item = r.GetItem();

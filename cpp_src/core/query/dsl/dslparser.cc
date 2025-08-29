@@ -17,7 +17,7 @@ using namespace std::string_view_literals;
 namespace dsl {
 using gason::JsonValue;
 
-enum class Root {
+enum class [[nodiscard]] Root {
 	Namespace,
 	Limit,
 	Offset,
@@ -38,13 +38,13 @@ enum class Root {
 	Local,
 };
 
-enum class Sort { Desc, Field, Values };
-enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset, SelectFilter };
-enum class JoinEntry { LeftField, RightField, Cond, Op };
-enum class Aggregation { Fields, Type, Sort, Limit, Offset };
-enum class EqualPosition { Positions };
-enum class UpdateField { Name, Type, Values, IsArray };
-enum class UpdateFieldType { Object, Expression, Value };
+enum class [[nodiscard]] Sort { Desc, Field, Values };
+enum class [[nodiscard]] JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset, SelectFilter };
+enum class [[nodiscard]] JoinEntry { LeftField, RightField, Cond, Op };
+enum class [[nodiscard]] Aggregation { Fields, Type, Sort, Limit, Offset };
+enum class [[nodiscard]] EqualPosition { Positions };
+enum class [[nodiscard]] UpdateField { Name, Type, Values, IsArray };
+enum class [[nodiscard]] UpdateFieldType { Object, Expression, Value };
 
 template <typename T, std::size_t N>
 constexpr auto MakeFastStrMap(const std::pair<std::string_view, T> (&items)[N]) {
@@ -196,7 +196,7 @@ void parseValues(const JsonValue& values, Array& kvs, std::string_view fieldName
 				++objectsCount;
 			} else if (elem.value.getTag() != JsonTag::JSON_NULL) {
 				kv = jsonValue2Variant(elem.value, KeyValueType::Undefined{}, fieldName, nullptr, ConvertToString_False, ConvertNull_False);
-				kv.EnsureHold();
+				rx_unused = kv.EnsureHold();
 			}
 			kvs.emplace_back(std::move(kv));
 		}
@@ -206,7 +206,7 @@ void parseValues(const JsonValue& values, Array& kvs, std::string_view fieldName
 		}
 	} else if (values.getTag() != JsonTag::JSON_NULL) {
 		Variant kv(jsonValue2Variant(values, KeyValueType::Undefined{}, fieldName, nullptr, ConvertToString_False, ConvertNull_False));
-		kv.EnsureHold();
+		rx_unused = kv.EnsureHold();
 		kvs.emplace_back(std::move(kv));
 	}
 }
@@ -640,6 +640,7 @@ static void parseUpdateFields(const JsonValue& updateFields, Query& query) {
 				}
 				case UpdateField::IsArray:
 					checkJsonValueType(value, name, JsonTag::JTRUE, JsonTag::JFALSE);
+					// NOLINTNEXTLINE (bugprone-unused-return-value)
 					values.MarkArray(value.getTag() == JsonTag::JTRUE);
 					break;
 				case UpdateField::Values:

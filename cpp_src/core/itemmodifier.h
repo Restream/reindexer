@@ -13,7 +13,7 @@ class NsContext;
 class NamespaceImpl;
 class UpdateEntry;
 
-class ItemModifier {
+class [[nodiscard]] ItemModifier {
 public:
 	ItemModifier(const std::vector<UpdateEntry>&, NamespaceImpl& ns, UpdatesContainer& replUpdates, const NsContext& ctx);
 	ItemModifier(const ItemModifier&) = delete;
@@ -21,12 +21,12 @@ public:
 	ItemModifier(ItemModifier&&) = delete;
 	ItemModifier& operator=(ItemModifier&&) = delete;
 
-	[[nodiscard]] bool Modify(IdType itemId, const NsContext& ctx, UpdatesContainer& pendedRepl);
+	bool Modify(IdType itemId, const NsContext& ctx, UpdatesContainer& pendedRepl);
 	PayloadValue& GetPayloadValueBackup() { return rollBackIndexData_.GetPayloadValueBackup(); }
 
 private:
 	using CompositeFlags = h_vector<bool, 32>;
-	class FieldData {
+	class [[nodiscard]] FieldData {
 	public:
 		FieldData(const UpdateEntry& entry, NamespaceImpl& ns, CompositeFlags& affectedComposites);
 		const UpdateEntry& Details() const noexcept { return entry_; }
@@ -46,10 +46,10 @@ private:
 		IndexedTagsPath tagsPath_;
 		std::optional<IndexedTagsPath> tagsPathWithLastIndex_;
 		int fieldIndex_{IndexValueType::SetByJsonPath};
-		int arrayIndex_;
-		bool isIndex_;
+		int arrayIndex_{IndexValueType::NotSet};
+		bool isIndex_{false};
 	};
-	struct CJsonCache {
+	struct [[nodiscard]] CJsonCache {
 		CJsonCache() = default;
 		void Assign(std::string_view str) {
 			if (data_.capacity() < DefaultCJsonSize) {
@@ -88,7 +88,7 @@ private:
 
 	class RollBack_ModifiedPayload;
 
-	class IndexRollBack {
+	class [[nodiscard]] IndexRollBack {
 	public:
 		IndexRollBack(int indexCount) { data_.resize(indexCount); }
 		void Reset(IdType itemId, const PayloadType& pt, const PayloadValue& pv, FloatVectorsIndexes&& fvIndexes);

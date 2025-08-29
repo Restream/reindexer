@@ -34,7 +34,7 @@ namespace client {
 class Transaction;
 }
 
-class Transaction {
+class [[nodiscard]] Transaction {
 public:
 	using ClockT = system_clock_w;
 	using TimepointT = ClockT::time_point;

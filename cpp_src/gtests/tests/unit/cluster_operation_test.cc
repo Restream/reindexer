@@ -1,5 +1,6 @@
 #include "cluster/consts.h"
 #include "cluster_operation_api.h"
+#include "estl/mutex.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 #include "yaml-cpp/yaml.h"
@@ -813,7 +814,7 @@ TEST_F(ClusterOperationApi, NamespaceOperationsOnlineReplication) {
 		TestCout() << "Leader id is " << leaderId << std::endl;
 
 		std::vector<NamespaceData> existingNamespaces;
-		std::mutex mtx;
+		reindexer::mutex mtx;
 		auto nsOperationsSequenceF = ([&cluster, leaderId, &existingNamespaces, &mtx, &kBaseNsName](size_t tid) {
 			size_t id = 1;
 			{
@@ -824,7 +825,7 @@ TEST_F(ClusterOperationApi, NamespaceOperationsOnlineReplication) {
 				cluster.FillData(leaderId, kNsName, 0, dataCount);
 				const auto state = cluster.GetNode(leaderId)->GetState(kNsName);
 				ASSERT_EQ(state.nsVersion.Server(), leaderId);
-				std::lock_guard<std::mutex> lck(mtx);
+				lock_guard lck(mtx);
 				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 4, leaderId), state.nsVersion});
 			}
 			++id;
@@ -850,7 +851,7 @@ TEST_F(ClusterOperationApi, NamespaceOperationsOnlineReplication) {
 				cluster.FillData(leaderId, kNsName, 0, dataCount);
 				const auto state = cluster.GetNode(leaderId)->GetState(kNsName);
 				ASSERT_EQ(state.nsVersion.Server(), leaderId);
-				std::lock_guard<std::mutex> lck(mtx);
+				lock_guard lck(mtx);
 				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 4, leaderId), state.nsVersion});
 			}
 		});

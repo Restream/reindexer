@@ -7,7 +7,7 @@
 namespace reindexer {
 
 namespace namespace_name_impl {
-class NamespaceNameImpl {
+class [[nodiscard]] NamespaceNameImpl {
 public:
 	using HasherT = nocase_hash_str;
 
@@ -43,7 +43,7 @@ private:
 };
 }  // namespace namespace_name_impl
 
-class NamespaceName {
+class [[nodiscard]] NamespaceName {
 	using ValueT = intrusive_atomic_rc_wrapper<namespace_name_impl::NamespaceNameImpl>;
 
 public:
@@ -61,7 +61,7 @@ private:
 
 inline bool operator==(const NamespaceName& lhs, const NamespaceName& rhs) noexcept { return lhs.ToLower() == rhs.ToLower(); }
 
-struct NamespaceNameEqual {
+struct [[nodiscard]] NamespaceNameEqual {
 	using is_transparent = void;
 
 	bool operator()(const NamespaceName& lhs, const NamespaceName& rhs) const noexcept { return lhs == rhs; }
@@ -70,7 +70,7 @@ struct NamespaceNameEqual {
 	bool operator()(std::string_view lhs, const NamespaceName& rhs) const noexcept { return iequals(lhs, rhs); }
 };
 
-struct NamespaceNameLess {
+struct [[nodiscard]] NamespaceNameLess {
 	using is_transparent = void;
 
 	bool operator()(const NamespaceName& lhs, const NamespaceName& rhs) const noexcept { return lhs.ToLower() < rhs.ToLower(); }
@@ -79,7 +79,7 @@ struct NamespaceNameLess {
 	bool operator()(std::string_view lhs, const NamespaceName& rhs) const noexcept { return iless(lhs, rhs); }
 };
 
-struct NamespaceNameHash {
+struct [[nodiscard]] NamespaceNameHash {
 	using is_transparent = void;
 
 	size_t operator()(std::string_view hs) const noexcept { return namespace_name_impl::NamespaceNameImpl::HasherT()(hs); }

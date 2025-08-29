@@ -35,7 +35,7 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 		point = keys[1].As<Point>();
 		distance = keys[0].As<double>();
 	}
-	class Visitor : public Map::Visitor {
+	class [[nodiscard]] Visitor : public Map::Visitor {
 	public:
 		Visitor(SortType sId, unsigned distinct, unsigned iCountInNs, SelectKeyResult& r)
 			: sortId_{sId}, itemsCountInNs_{distinct ? 0u : iCountInNs}, res_{r} {}
@@ -67,7 +67,7 @@ template <typename KeyEntryT, template <typename, typename, typename, typename, 
 void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray& result, const VariantArray& keys, IdType id,
 																	 bool& clearCache) {
 	if (keys.empty() || keys.IsNullValue()) {
-		Upsert(Variant{}, id, clearCache);
+		rx_unused = Upsert(Variant{}, id, clearCache);
 		return;
 	}
 	if rx_unlikely (keys.size() != 2) {

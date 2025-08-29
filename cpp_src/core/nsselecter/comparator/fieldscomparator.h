@@ -10,11 +10,12 @@
 
 namespace reindexer {
 
-class FieldsComparator {
+class [[nodiscard]] FieldsComparator {
 public:
 	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
 
 	bool Compare(const PayloadValue& item, IdType /*rowId*/) {
+		++totalCalls_;
 		if (ctx_.size() == 1) {
 			const bool res = compare(item, ctx_[0]);
 			matchedCount_ += int(res);
@@ -83,17 +84,20 @@ public:
 			setField(ctx_[0].rCtx_, fset, type, isArray);
 		}
 	}
-	int GetMatchedCount() const noexcept { return matchedCount_; }
+	int GetMatchedCount(bool invert) const noexcept {
+		assertrx_dbg(totalCalls_ >= matchedCount_);
+		return invert ? (totalCalls_ - matchedCount_) : matchedCount_;
+	}
 
 private:
-	struct FieldContext {
+	struct [[nodiscard]] FieldContext {
 		FieldsSet fields_;
 		KeyValueType type_ = KeyValueType::Undefined{};
 		IsArray isArray_ = IsArray_False;
 		unsigned offset_ = 0;
 		unsigned sizeof_ = 0;
 	};
-	struct Context {
+	struct [[nodiscard]] Context {
 		FieldContext lCtx_;
 		FieldContext rCtx_;
 	};
@@ -153,11 +157,12 @@ private:
 	}
 
 	std::string name_;
-	CondType condition_;
+	int totalCalls_{0};
 	int matchedCount_{0};
+	std::vector<Context> ctx_;
+	CondType condition_;
 	PayloadType payloadType_;
 	const CollateOpts* collateOpts_{nullptr};
-	std::vector<Context> ctx_;
 	bool leftFieldSet_{false};
 };
 

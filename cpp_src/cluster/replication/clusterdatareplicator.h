@@ -11,7 +11,7 @@
 namespace reindexer {
 namespace cluster {
 
-class ClusterDataReplicator {
+class [[nodiscard]] ClusterDataReplicator {
 public:
 	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
 
@@ -50,7 +50,7 @@ private:
 	ReplicationStatsCollector statsCollector_;
 	enum ClusterCommandId { kNoCommand = -1, kCmdSetDesiredLeader = 0 };
 
-	struct ClusterCommand {
+	struct [[nodiscard]] ClusterCommand {
 		ClusterCommand() = default;
 		ClusterCommand(ClusterCommandId c, int server, bool _send, std::promise<Error> p)
 			: id(c), serverId(server), send(_send), result(std::move(p)) {}
@@ -65,14 +65,14 @@ private:
 		std::promise<Error> result;
 	};
 
-	class CommandQuery {
+	class [[nodiscard]] CommandQuery {
 	public:
 		void AddCommand(ClusterCommand&& c) {
-			std::lock_guard<std::mutex> lk(lock_);
+			lock_guard lk(lock_);
 			commands_.push(std::move(c));
 		}
-		[[nodiscard]] bool GetCommand(ClusterCommand& c) noexcept {
-			std::lock_guard<std::mutex> lk(lock_);
+		bool GetCommand(ClusterCommand& c) noexcept {
+			lock_guard lk(lock_);
 			if (commands_.empty()) {
 				return false;
 			}
@@ -82,14 +82,14 @@ private:
 		}
 
 	private:
-		std::mutex lock_;
+		mutex lock_;
 		std::queue<ClusterCommand> commands_;
 	};
 
 	net::ev::dynamic_loop loop_;
 	std::thread raftThread_;
 	std::thread roleSwitchThread_;
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	std::atomic<bool> restartElections_ = {false};
 
 	CommandQuery commands_;

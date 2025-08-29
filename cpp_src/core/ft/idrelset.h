@@ -13,7 +13,7 @@ static constexpr int kMaxFtCompositeFields = 63;
 
 // the position of the word in the document (the index of the word in the field (pos), the field in which the word field was
 // encountered (field)
-class IdRelType {
+class [[nodiscard]] IdRelType {
 public:
 	explicit IdRelType(VDocIdType id = 0) noexcept : id_(id) {}
 	IdRelType(IdRelType&&) noexcept = default;
@@ -34,7 +34,7 @@ public:
 
 	void reserve(int s) { pos_.reserve(s); }
 	bool empty() const noexcept { return pos_.empty(); }
-	struct PosType {
+	struct [[nodiscard]] PosType {
 		static const int posBits = 24;
 		PosType() = default;
 		PosType(int pos, int field) noexcept : fpos(pos | (field << posBits)) {}
@@ -101,14 +101,14 @@ private:
 	VDocIdType id_ = 0;			   // index of the document in which the word occurs
 };
 
-struct PosTypeDebug : public IdRelType::PosType {
+struct [[nodiscard]] PosTypeDebug : public IdRelType::PosType {
 	PosTypeDebug() = default;
 	explicit PosTypeDebug(const IdRelType::PosType& pos, const std::string& inf) : IdRelType::PosType(pos), info(inf) {}
 	explicit PosTypeDebug(const IdRelType::PosType& pos, std::string&& inf) noexcept : IdRelType::PosType(pos), info(std::move(inf)) {}
 	std::string info;
 };
 
-class IdRelSet : public std::vector<IdRelType> {
+class [[nodiscard]] IdRelSet : public std::vector<IdRelType> {
 public:
 	int Add(VDocIdType id, int pos, int field) {
 		if (id > max_id_) {
@@ -134,7 +134,7 @@ public:
 
 using PackedIdRelVec = packed_vector<IdRelType>;
 
-class IdRelVec : public std::vector<IdRelType> {
+class [[nodiscard]] IdRelVec : public std::vector<IdRelType> {
 public:
 	size_t heap_size() const noexcept {
 		size_t res = capacity() * sizeof(IdRelType);

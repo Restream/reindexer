@@ -88,7 +88,7 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		defaultFieldCfg.positionBoost = root["position_boost"].As<>(defaultFieldCfg.positionBoost, 0.0, 10.0);
 		defaultFieldCfg.positionWeight = root["position_weight"].As<>(defaultFieldCfg.positionWeight, 0.0, 1.0);
 
-		fieldsCfg.insert(fieldsCfg.end(), fields.size() ? fields.size() : 1, defaultFieldCfg);
+		rx_unused = fieldsCfg.insert(fieldsCfg.end(), fields.size() ? fields.size() : 1, defaultFieldCfg);
 
 		const auto& fieldsCfgNode = root["fields"];
 		if (!fieldsCfgNode.empty() && begin(fieldsCfgNode.value) != end(fieldsCfgNode.value)) {

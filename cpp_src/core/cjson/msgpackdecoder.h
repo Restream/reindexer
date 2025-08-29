@@ -17,7 +17,7 @@ class CJsonBuilder;
 }  // namespace builders
 using builders::CJsonBuilder;
 
-class MsgPackDecoder {
+class [[nodiscard]] MsgPackDecoder {
 public:
 	explicit MsgPackDecoder(TagsMatcher& tagsMatcher) noexcept : tm_(tagsMatcher) {}
 	Error Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset, FloatVectorsHolderVector&) noexcept;

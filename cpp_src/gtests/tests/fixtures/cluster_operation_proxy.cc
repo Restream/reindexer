@@ -6,7 +6,7 @@
 using namespace reindexer;
 
 void ClusterOperationProxyApi::ItemTracker::AddCommited(std::string&& json, ItemInfo&& info) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	ASSERT_EQ(commitedItems_.count(json), 0) << json;
 	info.serialCounter = counter;
 	counter++;
@@ -14,8 +14,8 @@ void ClusterOperationProxyApi::ItemTracker::AddCommited(std::string&& json, Item
 }
 
 void ClusterOperationProxyApi::ItemTracker::AddTxData(std::unordered_map<std::string, ItemInfo>& into,
-													std::vector<std::pair<std::string, ItemInfo> >& items, int txNum, ItemInfo&& txInfo) {
-	std::lock_guard lck(mtx_);
+													  std::vector<std::pair<std::string, ItemInfo> >& items, int txNum, ItemInfo&& txInfo) {
+	lock_guard lck(mtx_);
 	txInfo.serialCounter = counter;
 	counter++;
 	into.emplace(std::make_pair("TxBefore_" + std::to_string(txNum), std::move(txInfo)));
@@ -28,7 +28,7 @@ void ClusterOperationProxyApi::ItemTracker::AddTxData(std::unordered_map<std::st
 }
 
 void ClusterOperationProxyApi::ItemTracker::AddError(std::string&& json, ItemInfo&& info) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	ASSERT_EQ(errorItems_.count(json), 0) << json;
 	info.serialCounter = counter;
 	errorItems_.emplace(std::make_pair(std::move(json), std::move(info)));
@@ -36,7 +36,7 @@ void ClusterOperationProxyApi::ItemTracker::AddError(std::string&& json, ItemInf
 }
 
 void ClusterOperationProxyApi::ItemTracker::AddUnknown(std::string&& json, ItemInfo&& info) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	ASSERT_EQ(unknownItems_.count(json), 0) << json;
 	info.serialCounter = counter;
 	unknownItems_.emplace(std::make_pair(std::move(json), std::move(info)));

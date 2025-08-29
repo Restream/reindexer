@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/index/index.h"
+#include "estl/mutex.h"
 
 namespace reindexer {
 
@@ -8,7 +9,7 @@ class KnnCtx;
 class KnnSearchParams;
 class KnnRawResult;
 
-class FloatVectorIndex : public Index {
+class [[nodiscard]] FloatVectorIndex : public Index {
 public:
 	using VecDataGetterF = std::function<IdType(const VariantArray& pk, void*)>;
 	using PKGetterF = std::function<VariantArray(IdType)>;
@@ -16,7 +17,7 @@ public:
 protected:
 	FloatVectorIndex(const FloatVectorIndex&);
 
-	class WriterBase {
+	class [[nodiscard]] WriterBase {
 	protected:
 		WriterBase(WrSerializer& ser, PKGetterF&& getPK, bool isCompositePK) noexcept
 			: ser_{ser}, getPK_{std::move(getPK)}, isCompositePK_{isCompositePK} {}
@@ -30,7 +31,7 @@ protected:
 		const bool isCompositePK_;
 	};
 
-	class LoaderBase {
+	class [[nodiscard]] LoaderBase {
 	protected:
 		LoaderBase(VecDataGetterF&& getVectorData, bool isCompositePK) noexcept
 			: getVectorData_{std::move(getVectorData)}, isCompositePK_{isCompositePK} {}
@@ -62,7 +63,7 @@ protected:
 	};
 
 public:
-	struct StorageCacheWriteResult {
+	struct [[nodiscard]] StorageCacheWriteResult {
 		Error err;
 		bool isCacheable = false;
 	};
@@ -77,7 +78,7 @@ public:
 	SelectKeyResult Select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&, const RdxContext&) const;
 	KnnRawResult SelectRaw(ConstFloatVectorView, const KnnSearchParams&, const RdxContext&) const;
 	void Commit() override final;
-	void UpdateSortedIds(const UpdateSortedContext&) noexcept override final { assertrx_dbg(!IsSupportSortedIdsBuild()); }
+	void UpdateSortedIds(const IUpdateSortedContext&) override final { assertrx_dbg(!IsSupportSortedIdsBuild()); }
 	bool IsSupportSortedIdsBuild() const noexcept override final { return false; }
 	const void* ColumnData() const noexcept override final { return nullptr; }
 	bool HoldsStrings() const noexcept override final { return false; }
@@ -86,12 +87,10 @@ public:
 	IndexPerfStat GetIndexPerfStat() override;
 	FloatVector GetFloatVector(IdType) const;
 	ConstFloatVectorView GetFloatVectorView(IdType) const;
-	[[nodiscard]] uint64_t GetHash(IdType rowId) const { return GetFloatVectorView(rowId).Hash(); }
-	[[nodiscard]] reindexer::FloatVectorDimension Dimension() const noexcept {
-		return reindexer::FloatVectorDimension(Opts().FloatVector().Dimension());
-	}
+	uint64_t GetHash(IdType rowId) const { return GetFloatVectorView(rowId).Hash(); }
+	reindexer::FloatVectorDimension Dimension() const noexcept { return reindexer::FloatVectorDimension(Opts().FloatVector().Dimension()); }
 	RankedTypeQuery RankedType() const noexcept override final { return ToRankedTypeQuery(metric_); }
-	[[nodiscard]] reindexer::FloatVectorDimension FloatVectorDimension() const noexcept override final { return Dimension(); }
+	reindexer::FloatVectorDimension FloatVectorDimension() const noexcept override final { return Dimension(); }
 	virtual StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 													const std::atomic_int32_t& cancel) noexcept = 0;
 	virtual Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVecData) = 0;
@@ -113,7 +112,7 @@ private:
 
 	IndexMemStat memStat_;
 	Index::KeyEntry emptyValues_;
-	std::mutex emptyValuesInsertionMtx_;  // Mutex for multithreading insertion into emptyValues_
+	mutex emptyValuesInsertionMtx_;	 // Mutex for multithreading insertion into emptyValues_
 
 protected:
 	VectorMetric metric_;

@@ -10,7 +10,7 @@ namespace reindexer {
 class Schema;
 class TagsMatcher;
 
-struct ProtobufValue {
+struct [[nodiscard]] ProtobufValue {
 	ProtobufValue();
 	ProtobufValue(Variant&& _value, TagName _tagName, KeyValueType itemType, bool isArray);
 
@@ -64,7 +64,7 @@ struct ProtobufValue {
 
 class ProtobufParser;
 
-struct ProtobufObject {
+struct [[nodiscard]] ProtobufObject {
 	ProtobufObject(std::string_view _buf, const Schema& _schema, TagsPath& tagsPath, TagsMatcher& tm)
 		: ser(_buf), schema(_schema), tagsPath(tagsPath), tm(tm) {}
 	ProtobufObject(const ProtobufObject&) = delete;
@@ -78,7 +78,7 @@ struct ProtobufObject {
 	TagsMatcher& tm;
 };
 
-class ProtobufParser {
+class [[nodiscard]] ProtobufParser {
 public:
 	explicit ProtobufParser(ProtobufObject& obj) : object_(obj) {}
 	ProtobufParser(const ProtobufParser&) = delete;

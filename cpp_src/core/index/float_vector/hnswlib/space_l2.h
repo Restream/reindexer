@@ -55,7 +55,7 @@ static float L2SqrSIMD4ExtResiduals(const void* pVect1v, const void* pVect2v, co
 }
 #endif	// REINDEXER_WITH_SSE
 
-class L2Space final : public SpaceInterface<float> {
+class [[nodiscard]] L2Space final : public SpaceInterface<float> {
 	DISTFUNC<float> fstdistfunc_;
 	size_t data_size_;
 	size_t dim_;
@@ -127,7 +127,7 @@ static int L2SqrI(const void* __restrict pVect1, const void* __restrict pVect2, 
 }
 FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 
-class L2SpaceI final : public SpaceInterface<int> {
+class [[nodiscard]] L2SpaceI final : public SpaceInterface<int> {
 	DISTFUNC<int> fstdistfunc_;
 	size_t data_size_;
 	size_t dim_;

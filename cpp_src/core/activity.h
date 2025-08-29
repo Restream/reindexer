@@ -7,14 +7,14 @@ namespace reindexer {
 
 class WrSerializer;
 
-struct Activity {
+struct [[nodiscard]] Activity {
 	unsigned id;
 	int connectionId;
 	std::string activityTracer;
 	std::string user;
 	std::string query;
 	system_clock_w::time_point startTime;
-	enum State : unsigned {
+	enum [[nodiscard]] State : unsigned {
 		InProgress = 0,
 		WaitLock,
 		Sending,

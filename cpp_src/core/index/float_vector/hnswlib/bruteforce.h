@@ -10,7 +10,7 @@
 
 namespace hnswlib {
 template <typename dist_t>
-class BruteforceSearch {
+class [[nodiscard]] BruteforceSearch {
 	template <typename K, typename V>
 	using HashMapT = tsl::hopscotch_sc_map<K, V, std::hash<K>, std::equal_to<K>, std::less<K>, std::allocator<std::pair<const K, V>>, 30,
 										   false, tsl::mod_growth_policy<std::ratio<3, 2>>>;

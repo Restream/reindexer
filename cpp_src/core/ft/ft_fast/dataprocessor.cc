@@ -7,6 +7,7 @@
 #include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
+#include "tools/thread_exception_wrapper.h"
 
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
@@ -190,7 +191,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	uint32_t maxIndexWorkers = getMaxBuildWorkers(multithread);
 	size_t szCnt = 0;
 	auto& vdocsTexts = holder_.vdocsTexts;
-	struct context {
+	struct [[nodiscard]] context {
 		words_map words_um;
 		std::thread thread;
 		size_t from;
@@ -362,7 +363,7 @@ template <typename IdCont>
 void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, int rfield, size_t insertPos,
 											 std::vector<std::string_view>& container) {
 	auto& vdoc(holder_.vdocs_[docType]);
-	NumToText::convert(word, container);
+	rx_unused = NumToText::convert(word, container);
 	for (const auto numberWord : container) {
 		WordEntry wentry;
 		auto idxIt = words_um.emplace(numberWord, std::move(wentry)).first;

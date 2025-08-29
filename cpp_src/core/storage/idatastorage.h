@@ -19,14 +19,14 @@ class UpdatesCollection;
 /// Particular state of DB. Iterators created with
 /// this handle will all observe a stable snapshot
 /// of the current DB.
-class Snapshot {
+class [[nodiscard]] Snapshot {
 public:
 	virtual ~Snapshot() = default;
 	using Ptr = shared_ptr<const Snapshot>;
 };
 
 /// Low-level data storage abstraction.
-class IDataStorage {
+class [[nodiscard]] IDataStorage {
 public:
 	virtual ~IDataStorage() = default;
 
@@ -109,7 +109,7 @@ public:
 /// Buffer for a Batch Write.
 /// Holds a collection of updates
 /// to apply to Storage.
-class UpdatesCollection {
+class [[nodiscard]] UpdatesCollection {
 public:
 	virtual ~UpdatesCollection() = default;
 
@@ -135,7 +135,7 @@ public:
 
 /// Cursor to iterate
 /// over a Storage.
-class Cursor {
+class [[nodiscard]] Cursor {
 public:
 	virtual ~Cursor() = default;
 
@@ -175,7 +175,7 @@ public:
 
 /// Comparator object. Used for iterating
 /// over a Storage along with a Cursor object.
-class Comparator {
+class [[nodiscard]] Comparator {
 public:
 	virtual ~Comparator() = default;
 

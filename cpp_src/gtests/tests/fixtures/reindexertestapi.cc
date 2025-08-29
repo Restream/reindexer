@@ -54,6 +54,12 @@ void ReindexerTestApi<DB>::DefineNamespaceDataset(DB& rx, std::string_view ns, s
 }
 
 template <typename DB>
+void ReindexerTestApi<DB>::Connect(const std::string& dsn, const ConnectOptsType& opts) {
+	auto err = reindexer->Connect(dsn, opts);
+	ASSERT_TRUE(err.ok()) << err.what() << "; dsn: " << dsn;
+}
+
+template <typename DB>
 typename ReindexerTestApi<DB>::ItemType ReindexerTestApi<DB>::NewItem(std::string_view ns) {
 	ItemType item = reindexer->WithTimeout(kBasicTimeout).NewItem(ns);
 	EXPECT_TRUE(item.Status().ok()) << item.Status().what() << "; namespace: " << ns;
@@ -63,6 +69,30 @@ typename ReindexerTestApi<DB>::ItemType ReindexerTestApi<DB>::NewItem(std::strin
 template <typename DB>
 void ReindexerTestApi<DB>::OpenNamespace(std::string_view ns, const StorageOpts& storage) {
 	auto err = reindexer->WithTimeout(kBasicTimeout).OpenNamespace(ns, storage);
+	ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns;
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::CloseNamespace(std::string_view ns) {
+	auto err = reindexer->WithTimeout(kBasicTimeout).CloseNamespace(ns);
+	ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns;
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::DropNamespace(std::string_view ns) {
+	auto err = reindexer->WithTimeout(kBasicTimeout).DropNamespace(ns);
+	ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns;
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::AddNamespace(const reindexer::NamespaceDef& def) {
+	auto err = reindexer->WithTimeout(kBasicTimeout).AddNamespace(def);
+	ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << def.name;
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::TruncateNamespace(std::string_view ns) {
+	auto err = reindexer->WithTimeout(kBasicTimeout).TruncateNamespace(ns);
 	ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns;
 }
 
@@ -90,6 +120,20 @@ template <typename DB>
 void ReindexerTestApi<DB>::DropIndex(std::string_view ns, std::string_view name) {
 	auto err = reindexer->DropIndex(ns, reindexer::IndexDef(std::string(name)));
 	ASSERT_TRUE(err.ok()) << err.what() << "; namespace: " << ns << "; name: " << name;
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::Insert(std::string_view ns, ItemType& item) {
+	assertrx(!!item);
+	auto err = reindexer->WithTimeout(kBasicTimeout).Insert(ns, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::Insert(std::string_view ns, ItemType& item, QueryResultsType& qr) {
+	assertrx(!!item);
+	auto err = reindexer->WithTimeout(kBasicTimeout).Insert(ns, item, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 template <typename DB>
@@ -131,6 +175,16 @@ void ReindexerTestApi<DB>::UpsertJSON(std::string_view ns, std::string_view json
 }
 
 template <typename DB>
+void ReindexerTestApi<DB>::InsertJSON(std::string_view ns, std::string_view json) {
+	auto item = NewItem(ns);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what() << "; " << json;
+	auto err = item.FromJSON(json);
+	ASSERT_TRUE(err.ok()) << err.what() << "; " << json;
+	err = reindexer->WithTimeout(kBasicTimeout).Insert(ns, item);
+	ASSERT_TRUE(err.ok()) << err.what() << "; " << json;
+}
+
+template <typename DB>
 void ReindexerTestApi<DB>::Update(const reindexer::Query& q, QueryResultsType& qr) {
 	auto err = reindexer->WithTimeout(kBasicTimeout).Update(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryUpdate);
@@ -164,6 +218,14 @@ typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::Select(con
 }
 
 template <typename DB>
+typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::ExecSQL(std::string_view sql) {
+	QueryResultsType qr;
+	auto err = reindexer->WithTimeout(kBasicTimeout).Select(sql, qr);
+	EXPECT_TRUE(err.ok()) << err.what() << "; " << sql;
+	return qr;
+}
+
+template <typename DB>
 void ReindexerTestApi<DB>::Delete(std::string_view ns, ItemType& item) {
 	assertrx(!!item);
 	auto err = reindexer->WithTimeout(kBasicTimeout).Delete(ns, item);
@@ -189,6 +251,35 @@ template <typename DB>
 void ReindexerTestApi<DB>::Delete(const reindexer::Query& q, QueryResultsType& qr) {
 	auto err = reindexer->WithTimeout(kBasicTimeout).Delete(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryDelete);
+}
+
+template <typename DB>
+std::vector<reindexer::NamespaceDef> ReindexerTestApi<DB>::EnumNamespaces(reindexer::EnumNamespacesOpts opts) {
+	std::vector<reindexer::NamespaceDef> defs;
+	auto err = reindexer->WithTimeout(kBasicTimeout).EnumNamespaces(defs, opts);
+	EXPECT_TRUE(err.ok()) << err.what();
+	return defs;
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName) {
+	auto err = reindexer->WithTimeout(kBasicTimeout).RenameNamespace(srcNsName, dstNsName);
+	EXPECT_TRUE(err.ok()) << err.what();
+}
+
+template <typename DB>
+typename ReindexerTestApi<DB>::TransactionType ReindexerTestApi<DB>::NewTransaction(std::string_view ns) {
+	auto tx = reindexer->WithTimeout(kBasicTimeout).NewTransaction(ns);
+	EXPECT_TRUE(tx.Status().ok()) << tx.Status().what();
+	return tx;
+}
+
+template <typename DB>
+typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::CommitTransaction(TransactionType& tx) {
+	QueryResultsType qr;
+	auto err = reindexer->WithTimeout(kBasicTimeout).CommitTransaction(tx, qr);
+	EXPECT_TRUE(err.ok()) << err.what();
+	return qr;
 }
 
 template <typename DB>
@@ -241,6 +332,20 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 		}
 	}
 	return state;
+}
+
+template <typename DB>
+void ReindexerTestApi<DB>::SetSchema(std::string_view ns, std::string_view schema) {
+	auto err = reindexer->WithTimeout(kBasicTimeout).SetSchema(ns, schema);
+	ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << ns << "; schema: " << schema;
+}
+
+template <typename DB>
+std::string ReindexerTestApi<DB>::GetSchema(std::string_view ns, int format) {
+	std::string out;
+	auto err = reindexer->WithTimeout(kBasicTimeout).GetSchema(ns, format, out);
+	EXPECT_TRUE(err.ok()) << err.what() << "; ns: " << ns << "; format: " << format;
+	return out;
 }
 
 template <typename DB>

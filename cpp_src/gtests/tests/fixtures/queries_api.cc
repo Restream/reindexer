@@ -56,31 +56,26 @@ void QueriesApi::CheckMergeQueriesWithLimit() {
 
 	qr.Clear();
 	q = Query{default_namespace}.Merge(Query{joinNs}).Limit(10);
-	err = rt.reindexer->Select(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Select(q, qr);
 	EXPECT_EQ(qr.Count(), 10);
 	EXPECT_EQ(qr.GetMergedNSCount(), 2);
 
 	qr.Clear();
 	q = Query{default_namespace}.Merge(Query{joinNs}).Offset(10);
-	err = rt.reindexer->Select(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Select(q, qr);
 	EXPECT_EQ(qr.GetMergedNSCount(), 2);
 
 	q = Query{default_namespace}
 			.Where(kFieldNameDescription, CondEq, RandString())
 			.Merge(Query{joinNs}.Where(kFieldNameDescription, CondEq, RandString()));
 	qr.Clear();
-	err = rt.reindexer->Select(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Select(q, qr);
 	EXPECT_EQ(qr.GetMergedNSCount(), 2);
 }
 
 void QueriesApi::CheckMergeQueriesWithAggregation() {
 	auto AggSelect = [this](const Query& q, AggType tp, double& val) -> void {
-		QueryResults qr;
-		Error err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		auto aggs = qr.GetAggregationResults();
 		ASSERT_EQ(aggs.size(), 1);
 		ASSERT_TRUE(aggs[0].GetValue().has_value());
@@ -102,12 +97,9 @@ void QueriesApi::CheckMergeQueriesWithAggregation() {
 		AggSelect(Query{testSimpleNs}.Aggregate(AggCount, {}), AggCount, c4);
 		double c5;
 		AggSelect(Query{default_namespace}.Aggregate(AggCount, {}).Merge(Query{joinNs}).Merge(Query{testSimpleNs}), AggCount, c5);
-		{
-			QueryResults qr;
-			Error err = rt.reindexer->Select(Query{default_namespace}.ReqTotal().Merge(Query{joinNs}).Merge(Query{testSimpleNs}), qr);
-			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(qr.TotalCount(), c5);
-		}
+
+		auto qr = rt.Select(Query{default_namespace}.ReqTotal().Merge(Query{joinNs}).Merge(Query{testSimpleNs}));
+		ASSERT_EQ(qr.TotalCount(), c5);
 		ASSERT_EQ(c1 + c2, c3);
 		ASSERT_EQ(c1 + c2 + c4, c5);
 	}
@@ -126,11 +118,9 @@ void QueriesApi::CheckMergeQueriesWithAggregation() {
 		Query q5 = Query::FromSQL(fmt::format("SELECT count(*) FROM {} MERGE (SELECT * FROM {}) MERGE (SELECT * FROM {})",
 											  default_namespace, joinNs, testSimpleNs));
 		AggSelect(q5, AggCount, c5);
-		{
-			QueryResults qr;
-			Error err = rt.reindexer->Select(Query{default_namespace}.CachedTotal().Merge(Query{joinNs}).Merge(Query{testSimpleNs}), qr);
-			ASSERT_EQ(qr.TotalCount(), c5);
-		}
+
+		auto qr = rt.Select(Query{default_namespace}.CachedTotal().Merge(Query{joinNs}).Merge(Query{testSimpleNs}));
+		ASSERT_EQ(qr.TotalCount(), c5);
 		ASSERT_EQ(c1 + c2, c3);
 		ASSERT_EQ(c1 + c2 + c4, c5);
 	}
@@ -233,9 +223,7 @@ void QueriesApi::CheckMergeQueriesWithAggregation() {
 					  .Aggregate(AggMin, {"id"})
 					  .Merge(Query{joinNs})
 					  .Merge(Query{testSimpleNs});
-		QueryResults qr;
-		Error err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		ASSERT_EQ(qr.GetAggregationResults().size(), 3);
 		for (auto a : {AggSum, AggCount, AggMin}) {
 			int exist = 0;
@@ -257,9 +245,7 @@ void QueriesApi::CheckMergeQueriesWithAggregation() {
 
 		Query q =
 			Query{default_namespace}.Aggregate(AggCount, {}).Aggregate(AggCountCached, {}).Merge(Query{joinNs}).Merge(Query{testSimpleNs});
-		QueryResults qr;
-		Error err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		auto& aggs = qr.GetAggregationResults();
 		ASSERT_EQ(aggs.size(), 1);
 		ASSERT_EQ(aggs[0].GetType(), AggCount);
@@ -283,10 +269,8 @@ static std::string createIndexName(const std::string& fieldType, const std::stri
 }
 
 void QueriesApi::initConditionsNs() {
-	auto err = rt.reindexer->OpenNamespace(conditionsNs);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(conditionsNs, {kFieldNameId, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(conditionsNs);
+	rt.AddIndex(conditionsNs, {kFieldNameId, "hash", "int", IndexOpts{}.PK()});
 	addIndexFields(conditionsNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
 	for (const auto& fit : fieldIndexTypes) {
 		for (const auto& it : fit.indexTypes) {
@@ -297,8 +281,7 @@ void QueriesApi::initConditionsNs() {
 					}
 					const std::string fieldType{fit.fieldType.Name()};
 					const std::string indexName{createIndexName(fieldType, it, isArray, isSparse)};
-					err = rt.reindexer->AddIndex(conditionsNs, {indexName, it, fieldType, IndexOpts{}.Array(isArray).Sparse(isSparse)});
-					ASSERT_TRUE(err.ok()) << err.what();
+					rt.AddIndex(conditionsNs, {indexName, it, fieldType, IndexOpts{}.Array(isArray).Sparse(isSparse)});
 					addIndexFields(conditionsNs, indexName, {{indexName, fit.fieldType}});
 				}
 			}
@@ -308,8 +291,7 @@ void QueriesApi::initConditionsNs() {
 }
 
 void QueriesApi::initUUIDNs() {
-	const auto err = rt.reindexer->OpenNamespace(uuidNs);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(uuidNs);
 	DefineNamespaceDataset(
 		uuidNs,
 		{
@@ -387,7 +369,7 @@ void QueriesApi::FillConditionsNs() {
 				}
 			}
 		}
-		Item item = rt.reindexer->NewItem(conditionsNs);
+		Item item(rt.NewItem(conditionsNs));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		const auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -455,7 +437,7 @@ void QueriesApi::FillUUIDNs() {
 	static size_t lastId = 0;
 	reindexer::WrSerializer ser;
 	for (size_t i = lastId; i < uuidNsSize + lastId; ++i) {
-		Item item = rt.reindexer->NewItem(uuidNs);
+		Item item(rt.NewItem(uuidNs));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		if (rand() % 2) {
 			ser.Reset();
@@ -546,13 +528,8 @@ void QueriesApi::CheckUUIDQueries() {
 }
 
 void QueriesApi::checkSqlQuery(std::string_view sqlQuery, Query&& checkQuery) {
-	QueryResults sqlQr;
-	Error err = rt.reindexer->Select(sqlQuery, sqlQr);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	QueryResults checkQr;
-	err = rt.reindexer->Select(checkQuery, checkQr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto sqlQr = rt.ExecSQL(sqlQuery);
+	auto checkQr = rt.Select(checkQuery);
 
 	CompareQueryResults(sqlQuery, sqlQr, checkQr);
 	Verify(checkQr, std::move(checkQuery), *rt.reindexer);
@@ -619,13 +596,8 @@ void QueriesApi::checkDslQuery(std::string_view dslQuery, Query&& checkQuery) {
 	Query parsedQuery;
 	ASSERT_NO_THROW(parsedQuery = Query::FromJSON(dslQuery));
 
-	QueryResults dslQr;
-	auto err = rt.reindexer->Select(parsedQuery, dslQr);
-	ASSERT_TRUE(err.ok()) << "Query: " << dslQuery << "; err: " << err.what();
-
-	QueryResults checkQr;
-	err = rt.reindexer->Select(checkQuery, checkQr);
-	ASSERT_TRUE(err.ok()) << "Query: " << dslQuery << "; err: " << err.what();
+	auto dslQr = rt.Select(parsedQuery);
+	auto checkQr = rt.Select(checkQuery);
 
 	CompareQueryResults(dslQuery, dslQr, checkQr);
 	Verify(checkQr, std::move(checkQuery), *rt.reindexer);

@@ -14,7 +14,7 @@ class Snapshot;
 namespace reindexer {
 namespace datastorage {
 
-class RocksDbStorage final : public IDataStorage {
+class [[nodiscard]] RocksDbStorage final : public IDataStorage {
 public:
 	RocksDbStorage();
 
@@ -42,7 +42,7 @@ private:
 	std::unique_ptr<rocksdb::DB> db_;
 };
 
-class RocksDbBatchBuffer final : public UpdatesCollection {
+class [[nodiscard]] RocksDbBatchBuffer final : public UpdatesCollection {
 public:
 	void Put(std::string_view key, std::string_view value) override {
 		batchWrite_.Put(rocksdb::Slice(key.data(), key.size()), rocksdb::Slice(value.data(), value.size()));
@@ -58,12 +58,12 @@ private:
 	uint64_t batchId_;
 };
 
-class RocksDbComparator : public Comparator {
+class [[nodiscard]] RocksDbComparator : public Comparator {
 public:
 	int Compare(std::string_view a, std::string_view b) const override final;
 };
 
-class RocksDbIterator final : public Cursor {
+class [[nodiscard]] RocksDbIterator final : public Cursor {
 public:
 	explicit RocksDbIterator(rocksdb::Iterator* iterator) noexcept : iterator_(iterator) {}
 
@@ -84,7 +84,7 @@ private:
 	RocksDbComparator comparator_;
 };
 
-class RocksDbSnapshot final : public Snapshot {
+class [[nodiscard]] RocksDbSnapshot final : public Snapshot {
 public:
 	explicit RocksDbSnapshot(const rocksdb::Snapshot* snapshot) noexcept;
 

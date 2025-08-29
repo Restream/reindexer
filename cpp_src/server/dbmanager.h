@@ -4,7 +4,7 @@
 #include "authmanager.h"
 #include "core/reindexer.h"
 #include "core/storage/storagetype.h"
-#include "estl/mutex.h"
+#include "estl/marked_mutex.h"
 #include "estl/shared_mutex.h"
 #include "server/config.h"
 #include "tools/crypt.h"
@@ -22,7 +22,7 @@ namespace reindexer_server {
 using namespace reindexer;
 
 /// Possible user roles
-enum UserRole {
+enum [[nodiscard]] UserRole {
 	kUnauthorized,	   /// User is not authorized
 	kRoleNone,		   /// User is authenticated, but has no any rights
 	kRoleDataRead,	   /// User can read data from database
@@ -38,7 +38,7 @@ enum UserRole {
 std::string_view UserRoleName(UserRole role) noexcept;
 
 /// Record about user credentials
-struct UserRecord {
+struct [[nodiscard]] UserRecord {
 	std::string login;								  /// User's login
 	std::string hash;								  /// User's password or hash
 	std::string salt;								  /// Password salt
@@ -52,12 +52,12 @@ class AuthContext;
 static AuthContext MakeSystemAuthContext();
 
 /// Context of user authentication
-class AuthContext {
+class [[nodiscard]] AuthContext {
 	friend DBManager;
 	friend AuthContext MakeSystemAuthContext();
 
 public:
-	class UserLogin {
+	class [[nodiscard]] UserLogin {
 	public:
 		UserLogin() noexcept = default;
 
@@ -84,7 +84,7 @@ public:
 		expectedClusterID_ = clusterID;
 	}
 
-	enum class CalledFrom { Core, RPCServer, HTTPServer, GRPC };
+	enum class [[nodiscard]] CalledFrom { Core, RPCServer, HTTPServer, GRPC };
 
 	/// Check if required role meets role from context, and get pointer to Reindexer DB object
 	/// @param role - Requested role one of UserRole enum
@@ -127,7 +127,7 @@ protected:
 static inline AuthContext MakeSystemAuthContext() { return AuthContext(kRoleSystem); }
 
 /// Database manager. Control's available databases, users and their roles
-class DBManager {
+class [[nodiscard]] DBManager {
 public:
 	/// Construct DBManager
 	/// @param config - server config reference
@@ -150,19 +150,19 @@ public:
 	/// @param auth - AuthContext filled with user credentials or already authorized AuthContext
 	/// @param canCreate - true: Create database, if not exists; false: return error, if database not exists
 	/// @return Error - error object
-	Error OpenDatabase(const std::string& dbName, AuthContext& auth, bool canCreate);
+	Error OpenDatabase(const std::string& dbName, AuthContext& auth, bool canCreate) RX_REQUIRES(!mtx_);
 	/// Drop database from disk storage and memory. Reindexer DB object will be destroyed
 	/// @param auth - Authorized AuthContext, with valid Reindexer DB object and reasonable role
 	/// @return Error - error object
-	Error DropDatabase(AuthContext& auth);
+	Error DropDatabase(AuthContext& auth) RX_REQUIRES(!mtx_);
 	/// Check if security disabled
 	/// @return bool - true: security checks are disabled; false: security checks are enabled
 	bool IsNoSecurity() { return !config_.EnableSecurity; }
 	/// Enum list of available databases
 	/// @return names of available databases
-	std::vector<std::string> EnumDatabases();
+	std::vector<std::string> EnumDatabases() RX_REQUIRES(!mtx_);
 
-	void ShutdownClusters();
+	void ShutdownClusters() RX_REQUIRES(!mtx_);
 
 private:
 	friend class AuthManager;
@@ -172,9 +172,9 @@ private:
 	Error readUsersJSON() noexcept;
 	Error createDefaultUsersYAML() noexcept;
 	static UserRole userRoleFromString(std::string_view strRole);
-	Error loadOrCreateDatabase(const std::string& name, bool allowDBErrors, const AuthContext& auth = AuthContext());
+	Error loadOrCreateDatabase(const std::string& name, bool allowDBErrors, const AuthContext& auth = AuthContext()) RX_REQUIRES(mtx_);
 
-	std::unordered_map<std::string, std::unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
+	std::unordered_map<std::string, std::unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_ RX_GUARDED_BY(mtx_);
 	std::unordered_map<std::string, UserRecord> users_;
 	const ServerConfig& config_;
 	Mutex mtx_;
@@ -197,7 +197,7 @@ std::enable_if_t<std::is_same_v<UserLoginT, AuthContext::UserLogin>, Cout>& oper
 }  // namespace reindexer_server
 
 template <>
-struct fmt::formatter<reindexer_server::AuthContext::UserLogin> {
+struct [[nodiscard]] fmt::formatter<reindexer_server::AuthContext::UserLogin> {
 	template <typename ContextT>
 	constexpr auto parse(ContextT& ctx) {
 		return ctx.begin();

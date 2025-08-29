@@ -16,7 +16,7 @@ class TagsMatcher;
 constexpr uint64_t kTypeBit = 0x3;
 constexpr uint64_t kTypeMask = (uint64_t(1) << kTypeBit) - uint64_t(1);
 
-enum ProtobufTypes {
+enum [[nodiscard]] ProtobufTypes {
 	PBUF_TYPE_VARINT = 0,
 	PBUF_TYPE_FLOAT64 = 1,
 	PBUF_TYPE_LENGTHENCODED = 2,
@@ -25,7 +25,7 @@ enum ProtobufTypes {
 
 namespace builders {
 
-class ProtobufBuilder {
+class [[nodiscard]] ProtobufBuilder {
 public:
 	ProtobufBuilder() noexcept
 		: type_(ObjType::TypePlain),
@@ -54,26 +54,22 @@ public:
 	void SetTagsPath(const TagsPath* tagsPath) noexcept { tagsPath_ = tagsPath; }
 
 	template <typename T>
-	ProtobufBuilder& Put(TagName tagName, const T& val, int /*offset*/ = 0) {
+	void Put(TagName tagName, const T& val, int /*offset*/ = 0) {
 		put(tagName, val);
-		return *this;
 	}
 	template <typename T>
-	ProtobufBuilder& Put(int tagName, const T& val, int offset = 0) {
-		return Put(TagName(tagName), val, offset);
+	void Put(int tagName, const T& val, int offset = 0) {
+		Put(TagName(tagName), val, offset);
 	}
 
 	template <typename T>
-	ProtobufBuilder& Put(std::string_view tagName, const T& val, int /*offset*/ = 0) {
+	void Put(std::string_view tagName, const T& val, int /*offset*/ = 0) {
 		assertrx_throw(tm_);
 		put(tm_->name2tag(tagName), val);
-		return *this;
 	}
 
 	template <typename T>
-	ProtobufBuilder& Null(T) noexcept {
-		return *this;
-	}
+	void Null(T) noexcept {}
 
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value ||
 												  std::is_same<T, bool>::value>::type* = nullptr>
@@ -151,7 +147,7 @@ public:
 	void ArrayNotPacked(int) = delete;
 
 private:
-	std::pair<KeyValueType, bool> getExpectedFieldType() const;
+	[[nodiscard]] std::pair<KeyValueType, bool> getExpectedFieldType() const;
 	void put(TagName, bool);
 	void put(TagName, int);
 	void put(TagName, int64_t);
@@ -169,7 +165,7 @@ private:
 	WrSerializer::VStringHelper sizeHelper_;
 	TagName itemsFieldIndex_{TagName::Empty()};
 
-	TagName getFieldTag(TagName) const;
+	[[nodiscard]] TagName getFieldTag(TagName) const;
 	void putFieldHeader(TagName, ProtobufTypes);
 	static void packItem(TagName, TagType, Serializer&, ProtobufBuilder& array);
 };

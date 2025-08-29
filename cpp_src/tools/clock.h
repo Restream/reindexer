@@ -12,7 +12,7 @@
 
 namespace reindexer {
 
-class system_clock_w : public std::chrono::system_clock {
+class [[nodiscard]] system_clock_w : public std::chrono::system_clock {
 public:
 	using std::chrono::system_clock::duration;
 	using std::chrono::system_clock::rep;
@@ -43,7 +43,7 @@ public:
 	}
 };
 
-class steady_clock_w : public std::chrono::steady_clock {
+class [[nodiscard]] steady_clock_w : public std::chrono::steady_clock {
 public:
 	using std::chrono::steady_clock::duration;
 	using std::chrono::steady_clock::rep;

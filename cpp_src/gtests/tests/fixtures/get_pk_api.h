@@ -16,12 +16,12 @@ using reindexer::h_vector;
 using reindexer::NamespaceDef;
 using reindexer::Query;
 
-class ExtractPK : public testing::Test {
+class [[nodiscard]] ExtractPK : public testing::Test {
 public:
 	using QueryResults = reindexer::QueryResults;
 	using Reindexer = reindexer::Reindexer;
 	using Item = reindexer::Item;
-	struct Data {
+	struct [[nodiscard]] Data {
 		int id;
 		int fk_id;
 		std::string_view name;

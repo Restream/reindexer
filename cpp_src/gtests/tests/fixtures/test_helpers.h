@@ -4,7 +4,7 @@
 #include "core/query/query.h"
 #include "gtests/tests/gtest_cout.h"
 
-struct QueryWatcher {
+struct [[nodiscard]] QueryWatcher {
 	~QueryWatcher() {
 		if (::testing::Test::HasFailure()) {
 			reindexer::WrSerializer ser;

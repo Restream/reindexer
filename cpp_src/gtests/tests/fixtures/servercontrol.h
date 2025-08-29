@@ -4,6 +4,7 @@
 
 #include "cluster/stats/replicationstats.h"
 #include "core/namespace/namespacenamemap.h"
+#include "estl/lock.h"
 #include "estl/shared_mutex.h"
 #include "reindexertestapi.h"
 #include "server/server.h"
@@ -14,10 +15,10 @@ const bool kTestServersInSeparateProcesses = true;
 const bool kTestServersInSeparateProcesses = false;
 #endif
 
-struct AsyncReplicationConfigTest {
+struct [[nodiscard]] AsyncReplicationConfigTest {
 	using NsSet = std::unordered_set<std::string, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
 
-	struct Node {
+	struct [[nodiscard]] Node {
 		Node(reindexer::DSN _dsn, std::optional<NsSet> _nsList = std::optional<NsSet>());
 		bool operator==(const Node& node) const noexcept { return dsn == node.dsn && nsList == node.nsList; }
 		bool operator!=(const Node& node) const noexcept { return !(*this == node); }
@@ -59,7 +60,7 @@ using BaseApi = ReindexerTestApi<reindexer::client::Reindexer>;
 
 void WriteConfigFile(const std::string& path, const std::string& configYaml);
 
-struct ServerControlConfig {
+struct [[nodiscard]] ServerControlConfig {
 	ServerControlConfig(size_t _id, unsigned short _rpcPort, unsigned short _httpPort, std::string _storagePath, std::string _dbName,
 						bool _enableStats = true, size_t _maxUpdatesSize = 0, bool _asServerProcess = kTestServersInSeparateProcesses)
 		: id(_id),
@@ -81,12 +82,12 @@ struct ServerControlConfig {
 	bool disableNetworkTimeout = false;
 };
 
-class ServerControl {
+class [[nodiscard]] ServerControl {
 public:
 	const unsigned short kDefaultHttpPort = 5555;
 
 	const size_t kMaxServerStartTimeSec = 20;
-	enum class ConfigType { File, Namespace };
+	enum class [[nodiscard]] ConfigType { File, Namespace };
 
 	static std::string getTestLogPath();
 
@@ -98,7 +99,7 @@ public:
 	~ServerControl();
 	void Stop();
 
-	struct Interface {
+	struct [[nodiscard]] Interface {
 		typedef std::shared_ptr<Interface> Ptr;
 
 		Interface(std::atomic_bool& stopped, ServerControlConfig config);
@@ -198,7 +199,7 @@ public:
 		constexpr static std::string_view kUsersYAMLFilename = "users.yml";
 	};
 	// Get server - wait means wait until server starts if no server
-	Interface::Ptr Get(bool wait = true);
+	Interface::Ptr Get(bool wait = true) RX_REQUIRES(!mtx_);
 	void InitServer(ServerControlConfig config);
 	void InitServerWithConfig(ServerControlConfig config, const YAML::Node& ReplicationConfig, const YAML::Node& ClusterConfig,
 							  const YAML::Node& ShardingConfig, const YAML::Node& AsyncReplicationConfig);
@@ -211,7 +212,7 @@ public:
 
 private:
 	typedef reindexer::shared_lock<reindexer::shared_timed_mutex> RLock;
-	typedef std::unique_lock<reindexer::shared_timed_mutex> WLock;
+	typedef reindexer::unique_lock<reindexer::shared_timed_mutex> WLock;
 
 	reindexer::shared_timed_mutex mtx_;
 	std::shared_ptr<Interface> interface;

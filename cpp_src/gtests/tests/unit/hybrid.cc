@@ -40,10 +40,8 @@ void HybridTest::SetUp() {
 	constexpr static size_t kEfConsruction = 200;
 
 	auto dir = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "/HybridTest");
-	reindexer::fs::RmDirAll(dir);
-	auto err = rt.reindexer->Connect("builtin://" + dir);
-	ASSERT_TRUE(err.ok()) << err.what();
-
+	rx_unused = reindexer::fs::RmDirAll(dir);
+	rt.Connect("builtin://" + dir);
 	rt.OpenNamespace(kNsName);
 	rt.DefineNamespaceDataset(
 		kNsName, {

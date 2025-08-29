@@ -306,11 +306,6 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 	rjoin, err := qjoin.MustExec(t).FetchAll()
 	require.NoError(t, err)
 
-	// for _, rr := range rjoin {
-	// 	item := rr.(*TestItem)
-	// 	log.Printf("%#v %d -> %#d,%#d\n", item.PricesIDs, item.LocationID, len(item.Pricesx), len(item.Prices))
-	// }
-
 	// Verify join results with manual join
 	r1, err := DB.Query(testItemsForJoinNs).Where("genre", reindexer.EQ, 10).MustExec(t).FetchAll()
 	require.NoError(t, err)
@@ -494,10 +489,6 @@ func selectByPK(t *testing.T, items []interface{}, nsName string, ns *testNamesp
 }
 
 func TestJoinModifyQueries(t *testing.T) {
-	if len(DB.clusterList) > 0 {
-		t.Skip() // TODO: Enable after 2174
-	}
-
 	FillTestItems(testItemsForModifyJoinNs, 0, 5000, 20)
 	FillTestJoinItems(7000, 500, testModifyJoinItemsNs)
 
@@ -545,7 +536,28 @@ func TestJoinModifyQueries(t *testing.T) {
 			func(item *TestItem) {
 				item.Year, item.Name = newYear, newName
 			})
+	})
 
+	t.Run("update queries with not inner join II: without brackets", func(t *testing.T) {
+		q := DB.Query(testItemsForModifyJoinNs).
+			Where("GENRE", reindexer.GE, 1).
+			Limit(10)
+		q.Not()
+		q.InnerJoin(DB.Query(
+			testModifyJoinItemsNs,
+		).Where("DEVICE", reindexer.EQ, "android").
+			Limit(0), "some random name").
+			On("PRICE_ID", reindexer.SET, "ID")
+		q.Debug(reindexer.TRACE)
+
+		newName := randString()
+		newYear := rand.Int()
+
+		validateUpdateQuery(q,
+			func(qt *queryTest) { qt.Set("name", newName).Set("year", newYear) },
+			func(item *TestItem) {
+				item.Year, item.Name = newYear, newName
+			})
 	})
 
 	t.Run("update queries with self not inner join", func(t *testing.T) {
@@ -559,6 +571,28 @@ func TestJoinModifyQueries(t *testing.T) {
 			"some random name").
 			On("ID", reindexer.SET, "ID")
 		q.CloseBracket().Debug(reindexer.TRACE)
+
+		newName := randString()
+		newYear := rand.Int()
+
+		validateUpdateQuery(q,
+			func(qt *queryTest) { qt.Set("company_name", newName).Set("year", newYear) },
+			func(item *TestItem) {
+				item.Year, item.CompanyName = newYear, newName
+			})
+	})
+
+	t.Run("update queries with self not inner join II: without brackets", func(t *testing.T) {
+		q := DB.Query(testItemsForModifyJoinNs).
+			Where("GENRE", reindexer.GE, 2).
+			Limit(20)
+		q.Not()
+		q.InnerJoin(DB.Query(
+			testItemsForModifyJoinNs,
+		).Where("GENRE", reindexer.EQ, 2),
+			"some random name").
+			On("ID", reindexer.SET, "ID")
+		q.Debug(reindexer.TRACE)
 
 		newName := randString()
 		newYear := rand.Int()
@@ -622,6 +656,21 @@ func TestJoinModifyQueries(t *testing.T) {
 		validateDeleteQuery(q)
 	})
 
+	t.Run("delete queries with not inner join II: without brackets", func(t *testing.T) {
+		q := DB.Query(testItemsForModifyJoinNs).
+			Where("GENRE", reindexer.GE, 1).
+			Limit(10)
+		q.Not()
+		q.InnerJoin(DB.Query(
+			testModifyJoinItemsNs,
+		).Where("DEVICE", reindexer.EQ, "android").
+			Limit(0), "some random name").
+			On("PRICE_ID", reindexer.SET, "ID")
+		q.Debug(reindexer.TRACE)
+
+		validateDeleteQuery(q)
+	})
+
 	t.Run("delete queries with self not inner join", func(t *testing.T) {
 		q := DB.Query(testItemsForModifyJoinNs).
 			Where("GENRE", reindexer.GE, 2).
@@ -633,6 +682,21 @@ func TestJoinModifyQueries(t *testing.T) {
 			"some random name").
 			On("ID", reindexer.SET, "ID")
 		q.CloseBracket().Debug(reindexer.TRACE)
+
+		validateDeleteQuery(q)
+	})
+
+	t.Run("delete queries with self not inner join II: without brackets", func(t *testing.T) {
+		q := DB.Query(testItemsForModifyJoinNs).
+			Where("GENRE", reindexer.GE, 2).
+			Limit(20)
+		q.Not()
+		q.InnerJoin(DB.Query(
+			testItemsForModifyJoinNs,
+		).Where("GENRE", reindexer.EQ, 2),
+			"some random name").
+			On("ID", reindexer.SET, "ID")
+		q.Debug(reindexer.TRACE)
 
 		validateDeleteQuery(q)
 	})
@@ -849,7 +913,7 @@ func TestExplainJoin(t *testing.T) {
 			Method:      "index",
 			Keys:        1,
 			Comparators: 0,
-			Matched:     1,
+			Matched:     4,
 		},
 		{
 			Field: "(id and inner_join test_explain_joined)",

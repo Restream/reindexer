@@ -4,7 +4,7 @@
 #include "index.h"
 #include "tools/assertrx.h"
 
-struct FieldPathHash {
+struct [[nodiscard]] FieldPathHash {
 	size_t operator()(const fuzzing::FieldPath& fp) const noexcept {
 		constexpr static std::hash<size_t> hasher;
 		size_t ret = fp.size();

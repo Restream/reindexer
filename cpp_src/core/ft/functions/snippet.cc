@@ -98,12 +98,12 @@ void Snippet::addSnippet(std::string& resultString, std::string_view data, const
 	resultString.append(postDelim_);
 }
 
-struct Areas {
+struct [[nodiscard]] Areas {
 	Area zoneArea;
 	Area snippetArea;
 };
 
-struct AreasEx : public Areas {
+struct [[nodiscard]] AreasEx : public Areas {
 	Area snippetAreaChar;
 };
 

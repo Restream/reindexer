@@ -27,10 +27,10 @@ public:
 	explicit QueryFunction(const ParsedQueryFunction&);
 	explicit QueryFunction(ParsedQueryFunction&&);
 
-	[[nodiscard]] Base& AsVariant() & { return *this; }
-	[[nodiscard]] const Base& AsVariant() const& { return *this; }
+	Base& AsVariant() & { return *this; }
+	const Base& AsVariant() const& { return *this; }
 
-	[[nodiscard]] std::string_view FieldName() const& noexcept { return fieldName_; }
+	std::string_view FieldName() const& noexcept { return fieldName_; }
 
 	auto AsVariant() const&& = delete;
 	auto FieldName() const&& = delete;

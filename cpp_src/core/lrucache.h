@@ -1,9 +1,10 @@
 #pragma once
 
 #include <list>
-#include <mutex>
 #include <unordered_map>
 #include "estl/atomic_unique_ptr.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "namespace/namespacestat.h"
 
 namespace reindexer {
@@ -11,12 +12,12 @@ namespace reindexer {
 constexpr size_t kElemSizeOverhead = 256;
 
 template <typename K, typename V, typename HashT, typename EqualT>
-class LRUCacheImpl {
+class [[nodiscard]] LRUCacheImpl {
 public:
 	using Key = K;
 	using Value = V;
 	LRUCacheImpl(size_t sizeLimit, uint32_t hitCount) noexcept;
-	struct Iterator {
+	struct [[nodiscard]] Iterator {
 		Iterator(bool k = false, const V& v = V()) : valid(k), val(v) {}
 		Iterator(const Iterator& other) = delete;
 		Iterator& operator=(const Iterator& other) = delete;
@@ -44,7 +45,7 @@ public:
 		std::string newOffset{offset};
 		newOffset += step;
 		os << "{\n" << newOffset << "totalCacheSize: ";
-		std::lock_guard lock{lock_};
+		lock_guard lock{lock_};
 		os << totalCacheSize_ << ",\n"
 		   << newOffset << "cacheSizeLimit: " << cacheSizeLimit_ << ",\n"
 		   << newOffset << "hitCountToCache: " << hitCountToCache_ << ",\n"
@@ -75,7 +76,7 @@ public:
 
 private:
 	typedef std::list<const K*> LRUList;
-	struct Entry {
+	struct [[nodiscard]] Entry {
 		V val;
 		typename LRUList::iterator lruPos;
 		int hitCount = 0;
@@ -86,11 +87,11 @@ private:
 	};
 
 	bool eraseLRU();
-	bool clearAll();
+	void clearAll();
 
 	std::unordered_map<K, Entry, HashT, EqualT> items_;
 	LRUList lru_;
-	mutable std::mutex lock_;
+	mutable mutex lock_;
 	size_t totalCacheSize_;
 	const size_t cacheSizeLimit_;
 	uint32_t hitCountToCache_;
@@ -98,10 +99,10 @@ private:
 	uint64_t getCount_ = 0, putCount_ = 0, eraseCount_ = 0;
 };
 
-enum class LRUWithAtomicPtr : bool { Yes, No };
+enum class [[nodiscard]] LRUWithAtomicPtr : bool { Yes, No };
 
 template <typename CacheT, LRUWithAtomicPtr withAtomicPtr>
-class LRUCache {
+class [[nodiscard]] LRUCache {
 	using CachePtrT = std::conditional_t<withAtomicPtr == LRUWithAtomicPtr::Yes, atomic_unique_ptr<CacheT>, std::unique_ptr<CacheT>>;
 
 public:
@@ -176,7 +177,7 @@ private:
 		return CachePtrT(new CacheT(std::forward<Args>(args)...));
 	}
 
-	class Stats {
+	class [[nodiscard]] Stats {
 	public:
 		Stats(uint64_t _hits = 0, uint64_t _misses = 0) noexcept : hits{_hits}, misses{_misses} {}
 		Stats(const Stats& o) : hits(o.hits.load(std::memory_order_relaxed)), misses(o.misses.load(std::memory_order_relaxed)) {}

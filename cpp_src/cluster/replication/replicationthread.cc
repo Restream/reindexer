@@ -223,7 +223,7 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 			if (!terminateCh_.opened()) {
 				terminateCh_.reopen();
 			}
-			terminateCh_.pop();
+			rx_unused = terminateCh_.pop();
 		}
 
 		wg.wait();
@@ -381,7 +381,7 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 }
 
 template <>
-[[nodiscard]] Error ReplThread<ClusterThreadParam>::syncShardingConfig(Node& node) noexcept {
+Error ReplThread<ClusterThreadParam>::syncShardingConfig(Node& node) noexcept {
 	///////////////////////////////  ATTENTION!  /////////////////////////////////
 	///////// This	 specialization	  	is	 necessary because clang-tyde ////////
 	///////// falsely 	diagnoses 	the private	member access error here, ////////
@@ -611,17 +611,17 @@ std::tuple<bool, UpdateApplyStatus> ReplThread<BehaviourParamT>::handleNetworkCh
 			err = node.client.WithTimeout(kStatusCmdTimeout).Status(true);
 			hadActualNetworkCheck = true;
 		}
-		updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
+		rx_unused = updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
 		return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(std::move(err), updates::URType::NodeNetworkCheck));
 	}
-	updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
+	rx_unused = updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
 	return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(Error(), updates::URType::NodeNetworkCheck));
 }
 
 template <typename BehaviourParamT>
 Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName& nsName, const ReplicationStateV2& followerState) {
 	try {
-		class TmpNsGuard {
+		class [[nodiscard]] TmpNsGuard {
 		public:
 			TmpNsGuard(client::CoroReindexer& client, int serverId, const Logger& log) : client_(client), serverId_(serverId), log_(log) {}
 			// NOLINTNEXTLINE(bugprone-exception-escape) Exceptions in logging are unlikely
@@ -810,7 +810,7 @@ template <typename BehaviourParamT>
 UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& node) noexcept {
 	logInfo("{}:{} Start updates handling loop", serverId_, node.uid);
 
-	struct Context {
+	struct [[nodiscard]] Context {
 		UpdatesQueueT::UpdatePtr updPtr;
 		NamespaceData* nsData;
 		uint16_t offset;
@@ -899,7 +899,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 				const auto& nsName = it.NsName();
 				if constexpr (!isClusterReplThread()) {
 					if (!bhvParam_.IsNamespaceInConfig(node.uid, nsName)) {
-						updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
+						rx_unused = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
 						bhvParam_.OnUpdateSucceed(node.uid, updatePtr->ID() + offset);
 						continue;
 					}
@@ -917,8 +917,8 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 						"version: {}, last synced lsn: {}",
 						serverId_, node.uid, nsName, int(it.Type()), updatePtr->ID() + offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
 						nsData.latestLsn.NsVersion(), nsData.latestLsn.LSN());
-					updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, it.EmitterServerID() == node.serverId,
-											   Error());
+					rx_unused = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
+														   it.EmitterServerID() == node.serverId, Error());
 					continue;
 				}
 				if (nsData.tx.IsFree() && it.IsRequiringTx()) {
@@ -1006,7 +1006,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 			bhvParam_.OnAllUpdatesReplicated(node.uid, int64_t(node.nextUpdateId) - 1);
 			logTrace("{}:{} Awaiting updates...", serverId_, node.uid);
 		}
-		updatesNotifier.pop();
+		rx_unused = updatesNotifier.pop();
 	}
 	if (terminate_) {
 		logTrace("{}: updates handling loop was terminated", serverId_);
@@ -1021,7 +1021,7 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 	bool hadErrorOnLastUpdate = false;
 
 	if (!updatesNotifier.empty()) {
-		updatesNotifier.pop();
+		rx_unused = updatesNotifier.pop();
 	}
 	do {
 		updatePtr = updates_->Read(node.nextUpdateId, std::this_thread::get_id());

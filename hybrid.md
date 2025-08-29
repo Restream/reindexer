@@ -13,20 +13,25 @@
 Reindexer supports hybrid search by full text and knn in one query. Fulltext and KNN conditions may be combined with `AND` or `OR` logical operators:
 ```SQL
 -- Requires both fulltext and KNN matches in the result documents
-SELECT * FROM ns WHERE ft_idx = "search_str" AND KNN(vec_idx, [2.4, 3.5, ...], k=100)
+SELECT * FROM ns WHERE ft_idx = 'search_str' AND KNN(vec_idx, [2.4, 3.5, ...], k=100)
 -- Requires fulltext, KNN or both matches in the result documents
-SELECT * FROM ns WHERE ft_idx = "search_str" OR KNN(vec_idx, [2.4, 3.5, ...], k=100)
+SELECT * FROM ns WHERE ft_idx = 'search_str' OR KNN(vec_idx, [2.4, 3.5, ...], k=100)
 ```
 In hybrid search, there must be exactly one full text condition and exactly one knn condition.\
 In this case, full text and knn conditions must be inside the same bracket or outside the brackets:
 ```SQL
-SELECT * FROM ns WHERE (ft_idx = "search_str" AND id > 50 AND KNN(vec_idx, [2.4, 3.5, ...], k=100)) AND id < 10000
-SELECT * FROM ns WHERE (ft_idx = "search_str" OR KNN(vec_idx, [2.4, 3.5, ...], k=100) AND id > 50 ) AND id < 10000
+SELECT * FROM ns WHERE (ft_idx = 'search_str' AND id > 50 AND KNN(vec_idx, [2.4, 3.5, ...], k=100)) AND id < 10000
+SELECT * FROM ns WHERE (ft_idx = 'search_str' OR KNN(vec_idx, [2.4, 3.5, ...], k=100) AND id > 50 ) AND id < 10000
 ```
 Placing full text and knn conditions in different brackets is prohibited:
 ```SQL
-SELECT * FROM ns WHERE (ft_idx = "search_str" AND id > 100) OR (KNN(vec_idx, [2.4, 3.5, ...], k=100) AND id < 100)
+SELECT * FROM ns WHERE (ft_idx = 'search_str' AND id > 100) OR (KNN(vec_idx, [2.4, 3.5, ...], k=100) AND id < 100)
 ```
+Possible use auto-embedding query with hybrid search (Need to configure [Query embedder](float_vector.md#embedding-configuration) for `vec_idx`):
+```SQL
+SELECT * FROM ns WHERE (ft_idx = 'search_str' AND id > 100) OR (KNN(vec_idx, '*SOME TEXT FOR SEARCH VECTOR GENERATION*', k=100) AND id < 100)
+```
+In this case, if the Embedding service does not respond, the KNN request will be ignored (fallback logic - skip unapproachable, the resulting error is logged with a warning level)
 
 # Reranking
 
@@ -37,7 +42,7 @@ By default `RRF()` is used.
 
 Reciprocal rank fusion `RRF` reranking expression may be specified as follows:
 ```SQL
-SELECT * FROM ns WHERE ft_idx = "search_str" AND KNN(vec_idx, [2.4, 3.5, ...], k=100)
+SELECT * FROM ns WHERE ft_idx = 'search_str' AND KNN(vec_idx, [2.4, 3.5, ...], k=100)
    ORDER BY 'RRF(rank_const=120)'
 ```
 `rank_const` is optional, default value is 60, and minimum value is 1.\
@@ -47,7 +52,7 @@ rank = 1.0 / (rank_const + pos_ft) + 1.0 / (rank_const + pos_knn)
 ```
 where `pos_ft` and `pos_knn` are documents' positions in the results of the queries
 ```SQL
-SELECT * FROM ns WHERE ft_idx = "search_str"
+SELECT * FROM ns WHERE ft_idx = 'search_str'
 ```
 and
 ```SQL
@@ -59,7 +64,7 @@ respectively.
 
 Another supported reranking expression is linear function based on the full text and knn ranks.
 ```SQL
-SELECT * FROM ns WHERE ft_idx = "search_str" OR KNN(vec_idx, [2.4, 3.5, ...], k=100)
+SELECT * FROM ns WHERE ft_idx = 'search_str' OR KNN(vec_idx, [2.4, 3.5, ...], k=100)
    ORDER BY '30 * rank(ft_idx) + 50 * rank(vec_idx, 100.0) + 100'
 ```
 where `rank(index_name, default_rank)` is rank of full text or knn condition, `default_rank` is optional default rank in case of absence of result for a certain condition, default value is 0.0.

@@ -83,9 +83,13 @@ static void checkIndexData([[maybe_unused]] int idxNo, [[maybe_unused]] const Fi
 	}
 }
 
-void QueryField::SetIndexData(int idxNo, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
+void QueryField::SetIndexData(int idxNo, std::string_view /*idxName*/, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
 							  QueryField::CompositeTypesVecT&& compositeFieldsTypes) & {
 	checkIndexData(idxNo, fields, fieldType, compositeFieldsTypes);
+	// FIXME: This is correct logic, but it breaks equal_positions compatibility. We should find some workaround
+	// if (!iequals(fieldName_, idxName)) {
+	// 	fieldName_ = std::string(idxName);
+	// }
 	idxNo_ = idxNo;
 	fieldsSet_ = std::move(fields);
 	fieldType_ = fieldType;
@@ -108,7 +112,7 @@ bool QueryField::HaveEmptyField() const noexcept {
 
 bool QueryEntry::operator==(const QueryEntry& other) const noexcept {
 	return QueryField::operator==(other) && condition_ == other.condition_ && distinct_ == other.distinct_ &&
-		   needIsNull_ == other.needIsNull_ &&
+		   forcedSortOptEntry_ == other.forcedSortOptEntry_ && needIsNull_ == other.needIsNull_ &&
 		   values_.RelaxCompare<WithString::Yes, NotComparable::Return>(other.values_) == ComparationResult::Eq;
 }
 
@@ -190,7 +194,7 @@ bool QueryEntry::adjust(AdjustMode mode) noexcept {
 				adjusted = true;
 			} else {
 				if (mode != AdjustMode::DryRun) {
-					values_.erase(it, values_.cend());
+					rx_unused = values_.erase(it, values_.cend());
 					if (values_.size() == 1) {
 						condition_ = CondEq;
 					}
@@ -232,6 +236,9 @@ std::string QueryEntry::Dump() const {
 	}
 	if (severalValues) {
 		ser << ')';
+	}
+	if (ForcedSortOptEntry()) {
+		ser << " [forced sort optimization entry]";
 	}
 	return std::string{ser.Slice()};
 }
@@ -411,7 +418,7 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 				ser.PutVarUint(op);
 				serialize(entry.Condition(), entry.Values(), ser);
 			},
-			[](const DistinctQueryEntry&) { assertrx_throw(false); },
+			[](const MultiDistinctQueryEntry&) { assertrx_throw(false); },
 			[&ser, op](const JoinQueryEntry& jqe) {
 				ser.PutVarUint(QueryJoinCondition);
 				ser.PutVarUint((op == OpAnd) ? JoinType::InnerJoin : JoinType::OrInnerJoin);
@@ -469,7 +476,7 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const DistinctQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const MultiDistinctQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const KnnQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept -> bool { throw_as_assert; }	 // TODO
 		);
 		result = (lastResult != (it->operation == OpNot));
@@ -1058,7 +1065,7 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 				  [&joinedSelectors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
 				  [&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << '\n'; },
 				  [&ser](const AlwaysFalse&) { ser << "AlwaysFalse\n"; }, [&ser](const AlwaysTrue&) { ser << "AlwaysTrue\n"; },
-				  [&ser](const DistinctQueryEntry& qe) { ser << qe.Dump() << "\n"; },
+				  [&ser](const MultiDistinctQueryEntry& qe) { ser << qe.Dump() << "\n"; },
 				  [&ser](const KnnQueryEntry& qe) { ser << qe.Dump() << '\n'; });
 	}
 }

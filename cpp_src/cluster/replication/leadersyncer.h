@@ -5,6 +5,7 @@
 #include "cluster/stats/relicationstatscollector.h"
 #include "core/namespace/namespacestat.h"
 #include "estl/elist.h"
+#include "estl/mutex.h"
 #include "net/ev/ev.h"
 #include "sharedsyncstate.h"
 #include "tools/lsn.h"
@@ -17,10 +18,10 @@ namespace cluster {
 
 class Logger;
 
-class LeaderSyncQueue {
+class [[nodiscard]] LeaderSyncQueue {
 public:
-	struct Entry {
-		struct NodeData {
+	struct [[nodiscard]] Entry {
+		struct [[nodiscard]] NodeData {
 			bool HasDataCount() const noexcept { return count != ReplicationStateV2::kNoDataCount; }
 
 			uint64_t hash = 0;
@@ -46,16 +47,16 @@ public:
 	LeaderSyncQueue(size_t maxSyncsPerNode) : maxSyncsPerNode_(maxSyncsPerNode) {}
 
 	void Refill(elist<Entry>&& entries) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		entries_ = std::move(entries);
 		currentSyncsPerNode_.clear();
 	}
 	size_t Size() {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		return entries_.size();
 	}
 	void SyncDone(uint32_t nodeId) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		auto found = currentSyncsPerNode_.find(nodeId);
 		assert(found != currentSyncsPerNode_.end());
 		assert(found->second != 0);
@@ -64,7 +65,7 @@ public:
 		}
 	}
 	bool TryToGetEntry(int32_t preferredNodeId, Entry& out, uint32_t& outIdx) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (preferredNodeId >= 0) {
 			const auto found = currentSyncsPerNode_.find(uint32_t(preferredNodeId));
 			if (found == currentSyncsPerNode_.end() || found->second >= int(maxSyncsPerNode_)) {
@@ -105,14 +106,14 @@ public:
 
 private:
 	const size_t maxSyncsPerNode_;
-	std::mutex mtx_;
+	mutex mtx_;
 	elist<Entry> entries_;
 	std::map<uint32_t, int> currentSyncsPerNode_;
 };
 
-class LeaderSyncThread {
+class [[nodiscard]] LeaderSyncThread {
 public:
-	struct Config {
+	struct [[nodiscard]] Config {
 		const std::vector<DSN>& dsns;
 		int64_t maxWALDepthOnForceSync;
 		int clusterId;
@@ -154,9 +155,9 @@ private:
 	std::once_flag& actShardingCfg_;
 };
 
-class LeaderSyncer {
+class [[nodiscard]] LeaderSyncer {
 public:
-	struct Config {
+	struct [[nodiscard]] Config {
 		const std::vector<DSN>& dsns;
 		int64_t maxWALDepthOnForceSync;
 		int clusterId;
@@ -170,7 +171,7 @@ public:
 	LeaderSyncer(const Config& cfg, const Logger& l) noexcept : syncQueue_(cfg.maxSyncsPerNode), cfg_(cfg), log_(l) {}
 
 	void Terminate() noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		for (auto& th : threads_) {
 			th.Terminate();
 		}
@@ -183,7 +184,7 @@ private:
 
 	LeaderSyncQueue syncQueue_;
 	const Config cfg_;
-	std::mutex mtx_;
+	mutex mtx_;
 	std::deque<LeaderSyncThread> threads_;
 	const Logger& log_;
 };

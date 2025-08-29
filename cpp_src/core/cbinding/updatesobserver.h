@@ -1,12 +1,13 @@
 #pragma once
 
 #include "estl/chunk_buf.h"
+#include "estl/mutex.h"
 #include "events/iexternal_listener.h"
 #include "events/serializer.h"
 
 namespace reindexer {
 
-class BufferedUpdateObserver : public IEventsObserver {
+class [[nodiscard]] BufferedUpdateObserver : public IEventsObserver {
 public:
 	explicit BufferedUpdateObserver(size_t capacity) : queue_(capacity), capacity_(queue_.capacity()) {}
 
@@ -17,11 +18,11 @@ public:
 		assertrx_dbg(queue_.capacity() - queue_.size() >= 1);
 		queue_.write(user.Serialize(streamsMask, opts, rec));
 	}
-	[[nodiscard]] std::span<chunk> TryReadUpdates() noexcept { return queue_.tail(); }
+	std::span<chunk> TryReadUpdates() noexcept { return queue_.tail(); }
 	void EraseUpdates(size_t count) noexcept { queue_.erase_chunks(count); }
 
 private:
-	chain_buf<std::mutex> queue_;
+	chain_buf<mutex> queue_;
 	const size_t capacity_;
 };
 

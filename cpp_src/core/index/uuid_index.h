@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-class UuidIndex : public IndexUnordered<unordered_uuid_map<Index::KeyEntryPlain>> {
+class [[nodiscard]] UuidIndex : public IndexUnordered<unordered_uuid_map<Index::KeyEntryPlain>> {
 	using Base = IndexUnordered<unordered_uuid_map<Index::KeyEntryPlain>>;
 
 public:

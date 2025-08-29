@@ -4,7 +4,7 @@
 
 using namespace std::string_view_literals;
 
-class FTDSLParserApi : public FTApi {
+class [[nodiscard]] FTDSLParserApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_dsl_default_namespace"; }
 

@@ -14,7 +14,7 @@ struct JsonNode;
 
 namespace reindexer {
 namespace builders {
-class MsgPackBuilder {
+class [[nodiscard]] MsgPackBuilder {
 public:
 	MsgPackBuilder(WrSerializer& wrser, ObjType type, size_t size);
 	MsgPackBuilder(msgpack_packer& packer, ObjType type, size_t size);
@@ -32,8 +32,9 @@ public:
 	MsgPackBuilder& operator=(MsgPackBuilder&&) = delete;
 
 	void SetTagsMatcher(const TagsMatcher* tm) noexcept { tm_ = tm; }
-	MsgPackBuilder Raw(std::string_view, std::string_view) noexcept { return MsgPackBuilder(); }
-	MsgPackBuilder Raw(std::string_view v) noexcept { return Raw(std::string_view{}, v); }
+
+	void Raw(std::string_view, std::string_view) noexcept {}
+	void Raw(std::string_view) noexcept {}
 
 	template <typename N, typename T>
 	void Array(N tagName, std::span<T> data, int /*offset*/ = 0) {
@@ -96,15 +97,14 @@ public:
 	MsgPackBuilder Object() { return Object(std::string_view{}); }
 
 	template <typename T>
-	MsgPackBuilder& Null(T tagName) {
+	void Null(T tagName) {
 		skipTag();
 		packKeyName(tagName);
 		packNil();
-		return *this;
 	}
 
 	template <typename T, typename N>
-	MsgPackBuilder& Put(N tagName, const T& arg, int /*offset*/ = 0) {
+	void Put(N tagName, const T& arg, int /*offset*/ = 0) {
 		if (isArray()) {
 			skipTag();
 		}
@@ -114,11 +114,10 @@ public:
 		if (isArray()) {
 			skipTag();
 		}
-		return *this;
 	}
 
 	template <typename N>
-	MsgPackBuilder& Put(N tagName, Uuid arg) {
+	void Put(N tagName, Uuid arg) {
 		if (isArray()) {
 			skipTag();
 		}
@@ -128,11 +127,10 @@ public:
 		if (isArray()) {
 			skipTag();
 		}
-		return *this;
 	}
 
 	template <typename T>
-	MsgPackBuilder& Put(T tagName, const Variant& kv, int offset = 0) {
+	void Put(T tagName, const Variant& kv, int offset = 0) {
 		if (isArray()) {
 			skipTag();
 		}
@@ -154,13 +152,12 @@ public:
 		if (isArray()) {
 			skipTag();
 		}
-		return *this;
 	}
 
-	MsgPackBuilder& Json(std::string_view name, std::string_view arg);
-	MsgPackBuilder& Json(std::string_view arg) { return Json(std::string_view{}, arg); }
+	void Json(std::string_view name, std::string_view arg);
+	void Json(std::string_view arg) { Json(std::string_view{}, arg); }
 
-	MsgPackBuilder& End();
+	void End();
 
 	template <typename... Args>
 	void Object(int, Args...) = delete;
@@ -216,7 +213,7 @@ private:
 		packValue(std::string_view{buf, Uuid::kStrFormLen});
 	}
 
-	bool isArray() const { return type_ == ObjType::TypeArray || type_ == ObjType::TypeObjectArray; }
+	[[nodiscard]] bool isArray() const { return type_ == ObjType::TypeArray || type_ == ObjType::TypeObjectArray; }
 
 	void checkIfCorrectArray(std::string_view) const {}
 
@@ -238,7 +235,7 @@ private:
 		}
 	}
 
-	int getTagSize() {
+	[[nodiscard]] int getTagSize() {
 		if (tagsLengths_) {
 			return (*tagsLengths_)[(*tagIndex_)++];
 		}

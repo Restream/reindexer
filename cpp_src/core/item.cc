@@ -109,7 +109,7 @@ Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>;
 	if (field_ < 0) {
 		VariantArray krs;
-		krs.MarkArray();
+		rx_unused = krs.MarkArray();
 		krs.reserve(arr.size());
 		std::transform(arr.begin(), arr.end(), std::back_inserter(krs), [](const T& t) { return Variant(t); });
 		itemImpl_->SetField(jsonPath_, krs);

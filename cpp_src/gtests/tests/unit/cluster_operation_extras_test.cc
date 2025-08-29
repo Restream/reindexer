@@ -24,7 +24,7 @@ TEST_F(ClusterOperationExtrasApi, SpecifyClusterNamespaceList) {
 		ASSERT_NE(leaderId, -1);
 		TestCout() << "Leader id is " << leaderId << std::endl;
 
-		struct NodeData {
+		struct [[nodiscard]] NodeData {
 			size_t nodeId;
 			size_t dataCount;
 		};

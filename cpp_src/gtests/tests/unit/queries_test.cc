@@ -33,8 +33,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		int itemsCount = 0;
 		auto& items = insertedItems_[default_namespace];
 		for (auto it = items.begin(); it != items.end();) {
-			Error err = rt.reindexer->Delete(default_namespace, it->second);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Delete(default_namespace, it->second);
 			it = items.erase(it);
 			if (++itemsCount == 4000) {
 				break;
@@ -46,8 +45,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 
 		itemsCount = 0;
 		for (auto it = items.begin(); it != items.end();) {
-			Error err = rt.reindexer->Delete(default_namespace, it->second);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Delete(default_namespace, it->second);
 			it = items.erase(it);
 			if (++itemsCount == 5000) {
 				break;
@@ -57,8 +55,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		for (size_t i = 0; i < 5000; ++i) {
 			auto itToRemove = items.begin();
 			if (itToRemove != items.end()) {
-				Error err = rt.reindexer->Delete(default_namespace, itToRemove->second);
-				ASSERT_TRUE(err.ok()) << err.what();
+				rt.Delete(default_namespace, itToRemove->second);
 				items.erase(itToRemove);
 			}
 			FillDefaultNamespace(rand() % 100, 1, 0);
@@ -67,16 +64,14 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 				itToRemove = items.begin();
 				std::advance(itToRemove, rand() % std::min(100, int(items.size())));
 				if (itToRemove != items.end()) {
-					Error err = rt.reindexer->Delete(default_namespace, itToRemove->second);
-					ASSERT_TRUE(err.ok()) << err.what();
+					rt.Delete(default_namespace, itToRemove->second);
 					items.erase(itToRemove);
 				}
 			}
 		}
 
 		for (auto it = items.begin(); it != items.end();) {
-			Error err = rt.reindexer->Delete(default_namespace, it->second);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Delete(default_namespace, it->second);
 			it = items.erase(it);
 		}
 
@@ -113,10 +108,8 @@ TEST_F(QueriesApi, QueriesConditions) {
 TEST_F(QueriesApi, UuidQueries) {
 	FillUUIDNs();
 	// hack to obtain not index not string uuid fields
-	/*auto err = rt.reindexer->DropIndex(uuidNs, {kFieldNameUuidNotIndex2});  // TODO uncomment this #1470
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->DropIndex(uuidNs, {kFieldNameUuidNotIndex3});
-	ASSERT_TRUE(err.ok()) << err.what();*/
+	/*rt.DropIndex(uuidNs, {kFieldNameUuidNotIndex2});  // TODO uncomment this #1470
+	rt.DropIndex(uuidNs, {kFieldNameUuidNotIndex3});*/
 	CheckUUIDQueries();
 }
 
@@ -187,7 +180,7 @@ TEST_F(QueriesApi, TransactionStress) {
 
 TEST_F(QueriesApi, SqlParseGenerate) {
 	using namespace std::string_literals;
-	enum Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
+	enum [[nodiscard]] Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
 	struct {
 		std::string sql;
 		std::variant<Query, Error> expected;
@@ -345,7 +338,7 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 
 TEST_F(QueriesApi, DslGenerateParse) {
 	using namespace std::string_literals;
-	enum Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
+	enum [[nodiscard]] Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
 	struct {
 		std::string dsl;
 		std::variant<Query, Error> expected;
@@ -754,9 +747,7 @@ TEST_F(QueriesApi, StrictModeTest) {
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
 		EXPECT_EQ(err.code(), errStrictMode);
-		qr.Clear();
-		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		qr = rt.Select(query.Strict(StrictModeNone));
 		Verify(qr, Query(testSimpleNs), *rt.reindexer);
 		qr.Clear();
 	}
@@ -768,9 +759,7 @@ TEST_F(QueriesApi, StrictModeTest) {
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
 		EXPECT_EQ(err.code(), errStrictMode);
-		qr.Clear();
-		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		qr = rt.Select(query.Strict(StrictModeNone));
 		EXPECT_EQ(qr.Count(), 0);
 	}
 }
@@ -833,10 +822,8 @@ TEST_F(QueriesApi, JoinByNotIndexField) {
 
 	reindexer::WrSerializer ser;
 	for (const auto& nsName : {leftNs, rightNs}) {
-		Error err = rt.reindexer->OpenNamespace(nsName);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(nsName);
+		rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
 		for (int i = 0; i < kItemsCount; ++i) {
 			ser.Reset();
 			reindexer::JsonBuilder json{ser};
@@ -845,23 +832,20 @@ TEST_F(QueriesApi, JoinByNotIndexField) {
 				json.Put("f", i);
 			}
 			json.End();
-			Item item = rt.reindexer->NewItem(nsName);
+			Item item(rt.NewItem(nsName));
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			err = item.FromJSON(ser.Slice());
+			auto err = item.FromJSON(ser.Slice());
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 			Upsert(nsName, item);
 		}
 	}
-	reindexer::QueryResults qr;
-	Error err = rt.reindexer->Select(
-		Query(leftNs).Strict(StrictModeNames).Join(InnerJoin, Query(rightNs).Where("id", CondGe, 5)).On("f", CondEq, "f"), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(Query(leftNs).Strict(StrictModeNames).Join(InnerJoin, Query(rightNs).Where("id", CondGe, 5)).On("f", CondEq, "f"));
 	const int expectedIds[] = {5, 7, 9};
 	ASSERT_EQ(qr.Count(), sizeof(expectedIds) / sizeof(int));
 	unsigned i = 0;
 	for (auto& it : qr) {
-		Item item = it.GetItem(false);
+		Item item(it.GetItem(false));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		VariantArray values = item["id"];
 		ASSERT_EQ(values.size(), 1);
@@ -871,26 +855,22 @@ TEST_F(QueriesApi, JoinByNotIndexField) {
 
 TEST_F(QueriesApi, AllSet) {
 	const std::string nsName = "allset_ns";
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	reindexer::WrSerializer ser;
 	reindexer::JsonBuilder json{ser};
 	json.Put("id", 0);
 	json.Array("array", {0, 1, 2});
 	json.End();
-	Item item = rt.reindexer->NewItem(nsName);
+	Item item(rt.NewItem(nsName));
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	err = item.FromJSON(ser.Slice());
+	auto err = item.FromJSON(ser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	Upsert(nsName, item);
 	Query q{nsName};
 	q.Where("array", CondAllSet, {0, 1, 2});
-	reindexer::QueryResults qr;
-	err = rt.reindexer->Select(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(q);
 	EXPECT_EQ(qr.Count(), 1);
 }
 
@@ -898,13 +878,11 @@ TEST_F(QueriesApi, SetByTreeIndex) {
 	// Execute query with sort and set condition by btree index
 	const std::string nsName = "set_by_tree_ns";
 	constexpr int kMaxID = 20;
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
 	setPkFields(nsName, {"id"});
 	for (int id = kMaxID; id != 0; --id) {
-		Item item = rt.NewItem(nsName);
+		Item item(rt.NewItem(nsName));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		item["id"] = id;
 		Upsert(nsName, item);
@@ -972,10 +950,8 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 	std::array<const std::string, 3> nsNames = {"csv_test1", "csv_test2", "csv_test3"};
 
 	auto openNs = [this](std::string_view nsName) {
-		Error err = rt.reindexer->OpenNamespace(nsName);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(nsName);
+		rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	};
 
 	for (auto& nsName : nsNames) {
@@ -1039,9 +1015,7 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 		"type": "object"
 	})!";
 
-	auto err = rt.reindexer->SetSchema(nsNames[0], jsonschema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
+	rt.SetSchema(nsNames[0], jsonschema);
 	int fieldNum = 0;
 	const auto addItem = [&fieldNum, this](int id, std::string_view nsName, bool needJoinField = true) {
 		reindexer::WrSerializer ser;
@@ -1081,7 +1055,7 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 				}
 			}
 		}
-		Item item = rt.reindexer->NewItem(nsName);
+		Item item(rt.NewItem(nsName));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -1099,9 +1073,7 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 	Query q = Query{nsNames[0]};
 	q.Join(LeftJoin, "join_field", "join_field", CondEq, OpAnd, Query(nsNames[1]));
 	q.Join(LeftJoin, "id", "join_field", CondEq, OpAnd, Query(nsNames[2]));
-	reindexer::QueryResults qr;
-	err = rt.reindexer->Select(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(q);
 
 	for (auto& ordering : std::array<reindexer::CsvOrdering, 2>{qr.GetSchema(0)->MakeCsvTagOrdering(qr.GetTagsMatcher(0)),
 																qr.ToLocalQr().MakeCSVTagOrdering(std::numeric_limits<int>::max(), 0)}) {
@@ -1117,7 +1089,7 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 
 		reindexer::WrSerializer serCsv, serJson;
 		for (auto& q : qr) {
-			err = q.GetCSV(serCsv, ordering);
+			auto err = q.GetCSV(serCsv, ordering);
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			err = q.GetJSON(serJson, false);
@@ -1183,12 +1155,9 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 TEST_F(QueriesApi, ConvertStringToDoubleDuringSorting) {
 	using namespace std::string_literals;
 	const std::string nsName = "ns_convert_string_to_double_during_sorting";
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"str_idx", {"str_idx"}, "hash", "string", IndexOpts{}});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.AddIndex(nsName, reindexer::IndexDef{"str_idx", {"str_idx"}, "hash", "string", IndexOpts{}});
 
 	const auto addItem = [&](int id, std::string_view strIdx, std::string_view strFld) {
 		reindexer::WrSerializer ser;
@@ -1198,9 +1167,9 @@ TEST_F(QueriesApi, ConvertStringToDoubleDuringSorting) {
 			json.Put("str_idx", strIdx);
 			json.Put("str_fld", strFld);
 		}
-		Item item = rt.reindexer->NewItem(nsName);
+		Item item(rt.NewItem(nsName));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-		err = item.FromJSON(ser.Slice());
+		auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		Upsert(nsName, item);
@@ -1218,9 +1187,7 @@ TEST_F(QueriesApi, ConvertStringToDoubleDuringSorting) {
 
 	for (const auto& f : {"str_idx"s, "str_fld"s}) {
 		Query q = Query{nsName}.Where("id", CondLt, 5).Sort("2 * "s + f, false).Strict(StrictModeNames);
-		reindexer::QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		int prevId = 10;
 		for (auto& it : qr) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
@@ -1235,7 +1202,7 @@ TEST_F(QueriesApi, ConvertStringToDoubleDuringSorting) {
 	for (const auto& f : {"str_idx"s, "str_fld"s}) {
 		Query q = Query{nsName}.Where("id", CondGt, 5).Sort("2 * "s + f, false).Strict(StrictModeNames);
 		reindexer::QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
+		auto err = rt.reindexer->Select(q, qr);
 		EXPECT_FALSE(err.ok());
 		EXPECT_THAT(err.what(), testing::MatchesRegex("Can't convert '.*' to number"));
 	}
@@ -1272,7 +1239,7 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 				obj.Put("nested_value", v);
 			}
 		}
-		Item item = rt.reindexer->NewItem(fillingNs);
+		Item item(rt.NewItem(fillingNs));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		const auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -1368,16 +1335,12 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 TEST_F(QueriesApi, SortByJoinedNsDifferentTypes) {
 	const std::string nsMain{"sort_by_joined_ns_different_types_main"};
 	const std::string nsRight{"sort_by_joined_ns_different_types_right"};
-	Error err = rt.reindexer->OpenNamespace(nsMain);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsMain, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->OpenNamespace(nsRight);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsRight, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsMain);
+	rt.AddIndex(nsMain, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.OpenNamespace(nsRight);
+	rt.AddIndex(nsRight, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	for (int id = 0; id < 1000; ++id) {
-		Item item = rt.reindexer->NewItem(nsMain);
+		Item item(rt.NewItem(nsMain));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		item["id"] = id;
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
@@ -1390,11 +1353,8 @@ TEST_F(QueriesApi, SortByJoinedNsDifferentTypes) {
 
 TEST_F(QueriesApi, SortByFieldWithDifferentTypes) {
 	const std::string nsName{"sort_by_field_different_types"};
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	sortByNsDifferentTypesImpl(nsName, Query{nsName}, "");
 }
 
@@ -1484,9 +1444,7 @@ TEST_F(QueriesApi, DistinctWithDuplicatesWhereCondTest) {
 		auto it = std::unique(values.begin(), values.end());
 		values.erase(it, values.end());
 
-		QueryResults qr;
-		auto err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		ASSERT_EQ(qr.Count(), values.size());
 
 		unsigned int rows = qr.GetAggregationResults().front().GetDistinctRowCount();
@@ -1517,25 +1475,22 @@ TEST_F(QueriesApi, DistinctWithDuplicatesWhereCondTest) {
 
 TEST_F(QueriesApi, ExtraSpacesUpdateSQL) {
 	{
+		SCOPED_TRACE("ExtraSpacesUpdateSQL Step 1");
 		Query updateQuery = Query::FromSQL(
 			R"(update #config set "profiling.long_queries_logging.update_delete" = {"threshold_us":11, "normalized":false} where "type"='profiling')");
-		QueryResults qrUpdate;
-		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
-		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 1";
+		rx_unused = rt.Update(updateQuery);
 	}
 	{
+		SCOPED_TRACE("ExtraSpacesUpdateSQL Step 2");
 		Query updateQuery = Query::FromSQL(
 			R"(update #config set "profiling.long_queries_logging.update_delete"={ "threshold_us" : 11, "normalized":false } where "type"='profiling')");
-		QueryResults qrUpdate;
-		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
-		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 2";
+		rx_unused = rt.Update(updateQuery);
 	}
 	{
+		SCOPED_TRACE("ExtraSpacesUpdateSQL Step 3");
 		Query updateQuery = Query::FromSQL(
 			R"(update #config set "profiling.long_queries_logging.update_delete"={  "threshold_us" : 11,  "normalized": false } where "type" = 'profiling')");
-		QueryResults qrUpdate;
-		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
-		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 3";
+		rx_unused = rt.Update(updateQuery);
 	}
 }
 

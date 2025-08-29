@@ -12,7 +12,7 @@ namespace reindexer {
 class AsyncStorage;
 
 /// WAL trakcer
-class WALTracker {
+class [[nodiscard]] WALTracker {
 public:
 	explicit WALTracker(int64_t sz);
 	WALTracker(const WALTracker&) = delete;
@@ -69,7 +69,7 @@ public:
 	void Reset();
 
 	/// Iterator for WAL records
-	class iterator {
+	class [[nodiscard]] iterator {
 	public:
 		iterator& operator++() noexcept {
 			++idx_;

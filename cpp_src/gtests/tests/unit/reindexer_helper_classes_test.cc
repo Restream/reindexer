@@ -4,15 +4,15 @@
 #include "fmt/format.h"
 #include "tools/enum_compare.h"
 
-#define TEST_ENUM(name)         \
-	enum class name : uint8_t { \
-		none = 0,               \
-		v1 = 1,                 \
-		v2 = 1 << 1,            \
-		v3 = 1 << 2,            \
-		v4 = 1 << 3,            \
-		v5 = 1 << 4,            \
-		v6 = 1 << 5,            \
+#define TEST_ENUM(name)                       \
+	enum class [[nodiscard]] name : uint8_t { \
+		none = 0,                             \
+		v1 = 1,                               \
+		v2 = 1 << 1,                          \
+		v3 = 1 << 2,                          \
+		v4 = 1 << 3,                          \
+		v5 = 1 << 4,                          \
+		v6 = 1 << 5,                          \
 	};
 
 #define ALL_ENUMS(E) E::v1, E::v2, E::v3, E::v4, E::v5, E::v6
@@ -27,7 +27,7 @@ static void DiffFromMask(auto& diff, Enum mask) {
 	Set<ALL_ENUMS(Enum)>(diff, mask);
 }
 
-enum class Bits { Unset, Set };
+enum class [[nodiscard]] Bits { Unset, Set };
 
 template <auto... e>
 static auto tupleFromMask(auto mask, Bits bits) {

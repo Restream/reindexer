@@ -2,15 +2,12 @@
 
 #include "reindexer_api.h"
 
-class BtreeIdsetsApi : public ReindexerApi {
+class [[nodiscard]] BtreeIdsetsApi : public ReindexerApi {
 public:
 	void SetUp() override {
 		ReindexerApi::SetUp();
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace(joinedNsName);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(default_namespace);
+		rt.OpenNamespace(joinedNsName);
 
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
 												   IndexDeclaration{kFieldOne, "hash", "string", IndexOpts(), 0},
@@ -28,7 +25,7 @@ protected:
 		int currIntValue = rand() % 100000;
 		std::string currStrValue = RandString();
 		for (int i = 0; i < 10000; ++i) {
-			Item item(rt.reindexer->NewItem(default_namespace));
+			Item item(rt.NewItem(default_namespace));
 			EXPECT_TRUE(!!item);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
@@ -53,7 +50,7 @@ protected:
 	void FillJoinedNs() {
 		int currValue = rand() % 10000;
 		for (int i = 0; i < 5000; ++i) {
-			Item item(rt.reindexer->NewItem(joinedNsName));
+			Item item(rt.NewItem(joinedNsName));
 			EXPECT_TRUE(!!item);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 

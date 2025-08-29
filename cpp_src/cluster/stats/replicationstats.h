@@ -1,16 +1,16 @@
 #pragma once
 
-#include <mutex>
 #include <optional>
 #include "cluster/config.h"
 #include "estl/fast_hash_map.h"
-#include "estl/mutex.h"
+#include "estl/lock.h"
 #include "estl/shared_mutex.h"
+#include "estl/spin_lock.h"
 
 namespace reindexer {
 namespace cluster {
 
-struct SyncStats {
+struct [[nodiscard]] SyncStats {
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
 	bool operator==(const SyncStats& r) const noexcept = default;
@@ -21,7 +21,7 @@ struct SyncStats {
 	size_t avgTimeUs;
 };
 
-struct InitialSyncStats {
+struct [[nodiscard]] InitialSyncStats {
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
 	bool operator==(const InitialSyncStats& r) const noexcept = default;
@@ -32,9 +32,9 @@ struct InitialSyncStats {
 	size_t totalTimeUs;
 };
 
-struct NodeStats {
-	enum class Status { None, Offline, Online, RaftError };
-	enum class SyncState { None, Syncing, AwaitingResync, OnlineReplication, InitialLeaderSync };
+struct [[nodiscard]] NodeStats {
+	enum class [[nodiscard]] Status { None, Offline, Online, RaftError };
+	enum class [[nodiscard]] SyncState { None, Syncing, AwaitingResync, OnlineReplication, InitialLeaderSync };
 
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
@@ -52,7 +52,7 @@ struct NodeStats {
 	Error lastError;
 };
 
-struct ReplicationStats {
+struct [[nodiscard]] ReplicationStats {
 	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& builder) const;
@@ -72,7 +72,7 @@ struct ReplicationStats {
 	LogLevel logLevel;
 };
 
-struct SyncStatsCounter {
+struct [[nodiscard]] SyncStatsCounter {
 	void Hit(std::chrono::microseconds time) noexcept;
 	void Reset() noexcept;
 	SyncStats Get() const;
@@ -83,7 +83,7 @@ struct SyncStatsCounter {
 	mutable spinlock mtx_;
 };
 
-struct NodeStatsCounter {
+struct [[nodiscard]] NodeStatsCounter {
 	NodeStatsCounter(DSN d, std::vector<std::string> nss) : dsn(std::move(d)), namespaces(std::move(nss)) {}
 	void OnUpdateApplied(int64_t updateId) noexcept { lastAppliedUpdateId_.store(updateId, std::memory_order_relaxed); }
 	void OnStatusChanged(NodeStats::Status st) noexcept { status.store(st, std::memory_order_relaxed); }
@@ -103,14 +103,14 @@ struct NodeStatsCounter {
 	mutable spinlock mtx_;
 };
 
-class ReplicationStatCounter {
+class [[nodiscard]] ReplicationStatCounter {
 public:
 	static constexpr size_t kLeaderUID = std::numeric_limits<size_t>::max();
 
 	ReplicationStatCounter(std::string t) : type_(std::move(t)) {}
 	template <typename NodeT>
 	void Init(const std::vector<NodeT>& nodes) {
-		std::lock_guard wlck(mtx_);
+		lock_guard wlck(mtx_);
 		nodeCounters_.clear();
 		thisNode_.reset();
 		nodeCounters_.reserve(nodes.size());
@@ -120,7 +120,7 @@ public:
 	}
 	template <typename NodeT>
 	void Init(const NodeT& thisNode, const std::vector<NodeT>& nodes, const std::vector<std::string>& namespaces) {
-		std::lock_guard wlck(mtx_);
+		lock_guard wlck(mtx_);
 		nodeCounters_.clear();
 		thisNode_.emplace(thisNode.GetRPCDsn(), namespaces);
 		thisNode_->serverId.store(thisNode.serverId, std::memory_order_relaxed);
@@ -141,7 +141,7 @@ public:
 		lastPushedUpdateId_.store(updateId, std::memory_order_relaxed);
 		allocatedUpdatesSizeBytes_.fetch_add(size, std::memory_order_relaxed);
 	}
-	void OnUpdateApplied(size_t nodeId, int64_t updateId) const noexcept {
+	void OnUpdateApplied(size_t nodeId, int64_t updateId) const noexcept RX_REQUIRES(!mtx_) {
 		shared_lock rlck(mtx_);
 		auto found = nodeCounters_.find(nodeId);
 		if (found != nodeCounters_.end()) {
@@ -159,12 +159,12 @@ public:
 		lastErasedUpdateId_.store(updateId, std::memory_order_relaxed);
 		allocatedUpdatesSizeBytes_.fetch_sub(size, std::memory_order_relaxed);
 	}
-	void OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept;
-	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) noexcept;
-	void OnServerIdChanged(size_t nodeId, int serverId) const noexcept;
-	void SaveNodeError(size_t nodeId, const Error& lastError) noexcept;
+	void OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept RX_REQUIRES(!mtx_);
+	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) noexcept RX_REQUIRES(!mtx_);
+	void OnServerIdChanged(size_t nodeId, int serverId) const noexcept RX_REQUIRES(!mtx_);
+	void SaveNodeError(size_t nodeId, const Error& lastError) noexcept RX_REQUIRES(!mtx_);
 	void Clear() noexcept;
-	ReplicationStats Get() const;
+	ReplicationStats Get() const RX_REQUIRES(!mtx_);
 
 private:
 	static int64_t getUpdatesCountById(int64_t lastPushedId, int64_t lastErasedId) noexcept;

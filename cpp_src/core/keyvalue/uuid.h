@@ -15,7 +15,7 @@ class Uuid;
 namespace std {
 
 template <>
-struct hash<reindexer::Uuid> {
+struct [[nodiscard]] hash<reindexer::Uuid> {
 	size_t operator()(const reindexer::Uuid&) const noexcept;
 };
 
@@ -23,7 +23,7 @@ struct hash<reindexer::Uuid> {
 
 namespace reindexer {
 
-class Uuid {
+class [[nodiscard]] Uuid {
 	friend std::hash<Uuid>;
 	friend class Variant;
 	friend struct hash_uuid;
@@ -56,9 +56,9 @@ public:
 
 	template <typename... Ts>
 	explicit Uuid(Ts...) = delete;
-	[[nodiscard]] explicit operator std::string() const;
-	[[nodiscard]] explicit operator key_string() const;
-	[[nodiscard]] ComparationResult Compare(const Uuid& other) const noexcept {
+	explicit operator std::string() const;
+	explicit operator key_string() const;
+	ComparationResult Compare(const Uuid& other) const noexcept {
 		if (data_[0] == other.data_[0]) {
 			return data_[1] == other.data_[1] ? ComparationResult::Eq
 											  : (data_[1] < other.data_[1] ? ComparationResult::Lt : ComparationResult::Gt);
@@ -66,21 +66,19 @@ public:
 			return data_[0] < other.data_[0] ? ComparationResult::Lt : ComparationResult::Gt;
 		}
 	}
-	[[nodiscard]] bool operator==(Uuid other) const noexcept { return data_[0] == other.data_[0] && data_[1] == other.data_[1]; }
-	[[nodiscard]] bool operator!=(Uuid other) const noexcept { return !operator==(other); }
-	[[nodiscard]] bool operator<(Uuid other) const noexcept {
-		return data_[0] == other.data_[0] ? data_[1] < other.data_[1] : data_[0] < other.data_[0];
-	}
-	[[nodiscard]] bool operator>(Uuid other) const noexcept { return other.operator<(*this); }
-	[[nodiscard]] bool operator<=(Uuid other) const noexcept { return !other.operator<(*this); }
-	[[nodiscard]] bool operator>=(Uuid other) const noexcept { return !operator<(other); }
+	bool operator==(Uuid other) const noexcept { return data_[0] == other.data_[0] && data_[1] == other.data_[1]; }
+	bool operator!=(Uuid other) const noexcept { return !operator==(other); }
+	bool operator<(Uuid other) const noexcept { return data_[0] == other.data_[0] ? data_[1] < other.data_[1] : data_[0] < other.data_[0]; }
+	bool operator>(Uuid other) const noexcept { return other.operator<(*this); }
+	bool operator<=(Uuid other) const noexcept { return !other.operator<(*this); }
+	bool operator>=(Uuid other) const noexcept { return !operator<(other); }
 
-	[[nodiscard]] static std::optional<Uuid> TryParse(std::string_view) noexcept;
+	static std::optional<Uuid> TryParse(std::string_view) noexcept;
 	void PutToStr(std::span<char>) const noexcept;
 
 private:
 	explicit Uuid(uint64_t v1, uint64_t v2) noexcept : data_{v1, v2} {}
-	[[nodiscard]] uint64_t operator[](unsigned i) const noexcept {
+	uint64_t operator[](unsigned i) const noexcept {
 		assertrx(i < 2);
 		return data_[i];
 	}

@@ -15,7 +15,7 @@ namespace reindexer {
 class Serializer;
 class WrSerializer;
 
-class ctag {
+class [[nodiscard]] ctag {
 	friend class reindexer::Serializer;
 	friend class reindexer::WrSerializer;
 
@@ -43,12 +43,12 @@ public:
 		assertrx(tagField + 1 < (1 << kFieldBits));
 	}
 
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr TagType Type() const noexcept { return typeImpl(tag_); }
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr TagName Name() const noexcept { return nameImpl(tag_); }
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr int Field() const noexcept { return fieldImpl(tag_); }
+	RX_ALWAYS_INLINE constexpr TagType Type() const noexcept { return typeImpl(tag_); }
+	RX_ALWAYS_INLINE constexpr TagName Name() const noexcept { return nameImpl(tag_); }
+	RX_ALWAYS_INLINE constexpr int Field() const noexcept { return fieldImpl(tag_); }
 
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator==(ctag other) const noexcept { return tag_ == other.tag_; }
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator!=(ctag other) const noexcept { return !operator==(other); }
+	RX_ALWAYS_INLINE constexpr bool operator==(ctag other) const noexcept { return tag_ == other.tag_; }
+	RX_ALWAYS_INLINE constexpr bool operator!=(ctag other) const noexcept { return !operator==(other); }
 
 private:
 	RX_ALWAYS_INLINE explicit constexpr ctag(uint32_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} {
@@ -57,16 +57,12 @@ private:
 	RX_ALWAYS_INLINE explicit constexpr ctag(uint64_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} {
 		assertrx_dbg(tag == tag_);
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr static TagType typeImpl(uint32_t tag) noexcept {
+	RX_ALWAYS_INLINE constexpr static TagType typeImpl(uint32_t tag) noexcept {
 		return static_cast<TagType>((tag & kTypeMask) | ((tag >> kType1Offset) & kInvertedTypeMask));
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr static TagName nameImpl(uint32_t tag) noexcept {
-		return TagName((tag >> kTypeBits) & kNameMask);
-	}
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr static int fieldImpl(uint32_t tag) noexcept {
-		return int((tag >> kFieldOffset) & kFieldMask) - 1;
-	}
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr uint32_t asNumber() const noexcept { return tag_; }
+	RX_ALWAYS_INLINE constexpr static TagName nameImpl(uint32_t tag) noexcept { return TagName((tag >> kTypeBits) & kNameMask); }
+	RX_ALWAYS_INLINE constexpr static int fieldImpl(uint32_t tag) noexcept { return int((tag >> kFieldOffset) & kFieldMask) - 1; }
+	RX_ALWAYS_INLINE constexpr uint32_t asNumber() const noexcept { return tag_; }
 
 	uint32_t tag_;
 };
@@ -77,7 +73,7 @@ constexpr ctag kCTagEnd{TAG_END};
 // TTTTTTTTNNNNNNNNNNNNNNNNNNNNNNNN
 // TTT - 6 bit type: one of TAG_VARINT,TAG_BOOL,TAG_STRING,TAG_DOUBLE,TAG_OBJECT. tag of array elements
 // NNN - 24 bit: count of elements in array
-class carraytag {
+class [[nodiscard]] carraytag {
 	friend class reindexer::Serializer;
 	friend class reindexer::WrSerializer;
 
@@ -90,22 +86,22 @@ public:
 	RX_ALWAYS_INLINE constexpr carraytag(uint32_t count, TagType tag) noexcept : atag_(count | (uint32_t(tag) << kCountBits)) {
 		assertrx(count < (uint32_t(1) << kCountBits));
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr TagType Type() const noexcept { return typeImpl(atag_); }
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr uint32_t Count() const noexcept { return countImpl(atag_); }
+	RX_ALWAYS_INLINE constexpr TagType Type() const noexcept { return typeImpl(atag_); }
+	RX_ALWAYS_INLINE constexpr uint32_t Count() const noexcept { return countImpl(atag_); }
 
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator==(carraytag other) const noexcept { return atag_ == other.atag_; }
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator!=(carraytag other) const noexcept { return !operator==(other); }
+	RX_ALWAYS_INLINE constexpr bool operator==(carraytag other) const noexcept { return atag_ == other.atag_; }
+	RX_ALWAYS_INLINE constexpr bool operator!=(carraytag other) const noexcept { return !operator==(other); }
 
 private:
 	RX_ALWAYS_INLINE explicit constexpr carraytag(uint32_t atag) noexcept : carraytag{countImpl(atag), typeImpl(atag)} {
 		assertrx_dbg(atag == atag_);
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE constexpr uint32_t asNumber() const noexcept { return atag_; }
-	[[nodiscard]] RX_ALWAYS_INLINE static constexpr TagType typeImpl(uint32_t atag) noexcept {
+	RX_ALWAYS_INLINE constexpr uint32_t asNumber() const noexcept { return atag_; }
+	RX_ALWAYS_INLINE static constexpr TagType typeImpl(uint32_t atag) noexcept {
 		assertrx_dbg(((atag >> kCountBits) & kTypeMask) <= kMaxTagType);
 		return static_cast<TagType>((atag >> kCountBits) & kTypeMask);	// NOLINT(*EnumCastOutOfRange)
 	}
-	[[nodiscard]] RX_ALWAYS_INLINE static constexpr uint32_t countImpl(uint32_t atag) noexcept { return atag & kCountMask; }
+	RX_ALWAYS_INLINE static constexpr uint32_t countImpl(uint32_t atag) noexcept { return atag & kCountMask; }
 
 	uint32_t atag_;
 };

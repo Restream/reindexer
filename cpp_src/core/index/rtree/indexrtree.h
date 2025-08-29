@@ -7,7 +7,7 @@ namespace reindexer {
 
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
-class IndexRTree : public IndexUnordered<GeometryMap<KeyEntryT, Splitter, MaxEntries, MinEntries>> {
+class [[nodiscard]] IndexRTree : public IndexUnordered<GeometryMap<KeyEntryT, Splitter, MaxEntries, MinEntries>> {
 	using Map = GeometryMap<KeyEntryT, Splitter, MaxEntries, MinEntries>;
 
 public:

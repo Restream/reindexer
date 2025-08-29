@@ -139,7 +139,7 @@ void IvfIndex::Delete(const Variant&, IdType id, [[maybe_unused]] MustExist must
 	}
 }
 
-struct IVFSearchArgsKnn {
+struct [[nodiscard]] IVFSearchArgsKnn {
 	const float* keyData;
 	size_t k;
 	faiss::IVFSearchParameters& params;
@@ -172,15 +172,15 @@ static void searchRaw(const IVFSearchArgsKnn& args, const auto& map, const auto&
 		}
 		id = prepareId(id);
 	}
-	ids.erase(ids.begin() + i, ids.end());
-	dists.erase(dists.begin() + i, dists.end());
+	rx_unused = ids.erase(ids.begin() + i, ids.end());
+	rx_unused = dists.erase(dists.begin() + i, dists.end());
 }
 
 static void searchRaw(const IVFSearchArgsKnn& args, const faiss::IndexIVFFlat& map) {
 	map.search(1, args.keyData, args.k, args.rawResults.Dists().data(), args.rawResults.Ids().data(), &args.params);
 }
 
-struct IVFSearchArgsRange {
+struct [[nodiscard]] IVFSearchArgsRange {
 	const float* keyData;
 	float radius;
 	faiss::RangeSearchResult* result;
@@ -488,7 +488,7 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 		return res;
 	}
 
-	class SerializerWriter final : public faiss::IOWriter, private WriterBase {
+	class [[nodiscard]] SerializerWriter final : public faiss::IOWriter, private WriterBase {
 	public:
 		SerializerWriter(std::string _name, WrSerializer& ser, PKGetterF&& getPK, bool isCompositePK) noexcept
 			: faiss::IOWriter(), WriterBase{ser, std::move(getPK), isCompositePK} {
@@ -538,7 +538,7 @@ Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDat
 		return Error(errParams, "IvfIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
 	}
 
-	class ViewReader final : public faiss::IOReader, private LoaderBase {
+	class [[nodiscard]] ViewReader final : public faiss::IOReader, private LoaderBase {
 	public:
 		ViewReader(std::string _name, std::string_view view, VecDataGetterF&& getVectorData, bool isCompositePK) noexcept
 			: faiss::IOReader(), LoaderBase{std::move(getVectorData), isCompositePK}, view_{view} {

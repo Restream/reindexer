@@ -28,7 +28,7 @@ class ProtobufBuilder;
 using builders::ProtobufBuilder;
 using builders::ProtobufSchemaBuilder;
 
-struct Parameters {
+struct [[nodiscard]] Parameters {
 	constexpr static std::string_view Value() noexcept;
 	constexpr static std::string_view Type() noexcept;
 	constexpr static std::string_view Facets() noexcept;
@@ -39,7 +39,7 @@ struct Parameters {
 };
 
 template <typename T, typename K>
-class ParametersFields {
+class [[nodiscard]] ParametersFields {
 public:
 	explicit ParametersFields(const T& fieldsStorage) : fieldsStorage_(fieldsStorage) {}
 
@@ -55,7 +55,7 @@ private:
 	const T& fieldsStorage_;
 };
 
-struct FacetResult {
+struct [[nodiscard]] FacetResult {
 	FacetResult(const h_vector<std::string, 1>& v, int c) noexcept : values(v), count(c) {}
 	FacetResult() noexcept : count(0) {}
 
@@ -81,43 +81,43 @@ public:
 	static Expected<AggregationResult> FromMsgPack(std::span<char> msgpack) {
 		return FromMsgPack(std::string_view(msgpack.data(), msgpack.size()));
 	}
-	[[nodiscard]] double GetValueOrZero() const noexcept { return value_ ? *value_ : 0; }
-	[[nodiscard]] std::optional<double> GetValue() const noexcept { return value_; }
-	[[nodiscard]] AggType GetType() const noexcept { return type_; }
+	double GetValueOrZero() const noexcept { return value_ ? *value_ : 0; }
+	std::optional<double> GetValue() const noexcept { return value_; }
+	AggType GetType() const noexcept { return type_; }
 	void UpdateValue(double value) noexcept { value_ = value; }
 
-	[[nodiscard]] const std::vector<FacetResult>& GetFacets() const& noexcept { return facets_; }
+	const std::vector<FacetResult>& GetFacets() const& noexcept { return facets_; }
 	auto GetFacets() const&& = delete;
 
-	[[nodiscard]] static AggType StrToAggType(std::string_view type);
+	static AggType StrToAggType(std::string_view type);
 	static void GetProtobufSchema(ProtobufSchemaBuilder&);
 
-	[[nodiscard]] bool IsEquals(const AggregationResult& other) { return (type_ == other.type_ && fields_ == other.fields_); }
+	bool IsEquals(const AggregationResult& other) { return (type_ == other.type_ && fields_ == other.fields_); }
 
-	[[nodiscard]] const PayloadType& GetPayloadType() const& noexcept { return payloadType_; }
+	const PayloadType& GetPayloadType() const& noexcept { return payloadType_; }
 	auto GetPayloadType() const&& = delete;
-	[[nodiscard]] const FieldsSet& GetDistinctFields() const& noexcept { return distinctsFields_; }
+	const FieldsSet& GetDistinctFields() const& noexcept { return distinctsFields_; }
 	auto GetDistinctFields() const&& = delete;
 
-	[[nodiscard]] std::span<const Variant> GetDistinctRow(unsigned index) const {
+	std::span<const Variant> GetDistinctRow(unsigned index) const {
 		if ((index + 1) * fields_.size() > distincts_.size()) {
 			throw Error(errLogic, std::string("Incorrect distinct index ") + std::to_string(index));
 		}
 		return std::span{distincts_.begin() + index * fields_.size(), fields_.size()};
 	}
-	[[nodiscard]] unsigned int GetDistinctRowCount() const { return distincts_.size() / fields_.size(); }
-	[[nodiscard]] unsigned int GetDistinctColumnCount() const noexcept { return fields_.size(); }
+	unsigned int GetDistinctRowCount() const { return distincts_.size() / fields_.size(); }
+	unsigned int GetDistinctColumnCount() const noexcept { return fields_.size(); }
 
 	template <typename T>
-	[[nodiscard]] T As(unsigned int row, unsigned int column) const {
+	T As(unsigned int row, unsigned int column) const {
 		return distincts_[row * fields_.size() + column].As<T>(payloadType_, distinctsFields_);
 	}
 
-	[[nodiscard]] const h_vector<std::string, 1>& GetFields() const& noexcept { return fields_; }
+	const h_vector<std::string, 1>& GetFields() const& noexcept { return fields_; }
 	auto GetFields() const&& = delete;
 
 	template <typename S>
-	[[nodiscard]] S& DumpFields(S& os) {
+	S& DumpFields(S& os) {
 		os << '[';
 		bool first = true;
 		for (const auto& f : fields_) {

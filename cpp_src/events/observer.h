@@ -10,7 +10,7 @@ class ItemImpl;
 class IndexDef;
 class IExternalEventsListener;
 
-class UpdatesObservers {
+class [[nodiscard]] UpdatesObservers {
 public:
 	UpdatesObservers(const std::string& dbName, cluster::IDataReplicator& replicator, size_t maxUpdatesQueueSize)
 		: replicator_(replicator), eventsListener_(dbName, maxUpdatesQueueSize) {}

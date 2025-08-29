@@ -119,7 +119,7 @@ std::ostream& TraceEntry::Dump(std::ostream& os) const {
 }
 
 #if REINDEX_WITH_LIBBACKTRACE
-class TraceResolverLibbacktrace : public TraceResolver {
+class [[nodiscard]] TraceResolverLibbacktrace : public TraceResolver {
 public:
 	TraceResolverLibbacktrace() { init(); }
 
@@ -129,10 +129,7 @@ public:
 	}
 
 protected:
-	bool init() {
-		state_ = backtrace_create_state("/proc/self/exe", 1, errorCallback, NULL);
-		return true;
-	}
+	void init() { state_ = backtrace_create_state("/proc/self/exe", 1, errorCallback, NULL); }
 	static void errorCallback(void* /*data*/, const char* msg, int errnum) {
 		std::cerr << "libbacktarce error:" << msg << " " << errnum << std::endl;
 	}
@@ -157,7 +154,7 @@ std::unique_ptr<TraceResolver> TraceResolver::New() { return std::unique_ptr<Tra
 
 #elif REINDEX_WITH_APPLE_SYMBOLICATION
 
-class TraceResolverApple : public TraceResolver {
+class [[nodiscard]] TraceResolverApple : public TraceResolver {
 public:
 	TraceResolverApple() { init(); }
 	~TraceResolverApple() { CSRelease(cs_); }
@@ -215,7 +212,7 @@ protected:
 		return ok;
 	}
 
-	struct CSTypeRef {
+	struct [[nodiscard]] CSTypeRef {
 		void* csCppData;
 		void* csCppObj;
 	};

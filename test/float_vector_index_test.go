@@ -236,8 +236,7 @@ func TestHnswMT(t *testing.T) {
 
 	vec := randVect(kTestFloatVectorDimension)
 	test := func(radiusProcessing RadiusProcessingF) {
-		query := newTestQuery(DB, ns).WhereKnn("vec", vec, hnswSearchParams).Select("Vec")
-		query.q.WithRank()
+		query := newTestQuery(DB, ns).WhereKnn("vec", vec, hnswSearchParams).Select("Vec", "rank()")
 		it := query.Exec(t)
 		require.NoError(t, it.Error())
 		defer it.Close()

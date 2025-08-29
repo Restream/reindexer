@@ -2,23 +2,23 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <mutex>
 #include <span>
 #include <string_view>
 #include <vector>
 #include "chunk.h"
+#include "lock.h"
 #include "tools/assertrx.h"
 #include "tools/errors.h"
 
 namespace reindexer {
 
 template <typename Mutex>
-class chain_buf {
+class [[nodiscard]] chain_buf {
 public:
 	chain_buf(size_t cap) : ring_(cap) {}
 	void write(chunk&& ch) {
 		if (ch.size()) {
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			const auto new_head = (head_ + 1) % ring_.size();
 			if (new_head == tail_) {
 				throw Error(errLogic, "Chain buffer overflow (max size is {})", ring_.size());
@@ -36,12 +36,12 @@ public:
 		write(std::move(chunk));
 	}
 	std::span<chunk> tail() noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		size_t cnt = ((tail_ > head_) ? ring_.size() : head_) - tail_;
 		return std::span<chunk>(ring_.data() + tail_, cnt);
 	}
 	void erase(size_t nread) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		nread = std::min(data_size_, nread);
 		data_size_ -= nread;
 		while (nread) {
@@ -59,7 +59,7 @@ public:
 		assertrx_dbg(size_atomic() == size_impl());
 	}
 	void erase_chunks(size_t count) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		const auto erase_count = std::min(count, size_impl());
 		for (count = erase_count; count > 0; --count) {
 			assertrx(head_ != tail_);
@@ -73,7 +73,7 @@ public:
 	}
 	chunk get_chunk() noexcept {
 		chunk ret;
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (free_.size()) {
 			ret = std::move(free_.back());
 			free_.pop_back();
@@ -82,23 +82,23 @@ public:
 	}
 
 	size_t size() const noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		return size_impl();
 	}
 
 	size_t size_atomic() const noexcept { return size_.load(std::memory_order_acquire); }
 
 	size_t data_size() const noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		return data_size_;
 	}
 
 	size_t capacity() const noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		return ring_.size() - 1;
 	}
 	void clear() noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		head_ = tail_ = data_size_ = 0;
 		size_.store(0, std::memory_order_release);
 		assertrx_dbg(size_atomic() == size_impl());

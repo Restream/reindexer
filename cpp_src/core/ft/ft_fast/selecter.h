@@ -9,26 +9,26 @@
 namespace reindexer {
 
 // Final information about found document
-struct MergeInfo {
+struct [[nodiscard]] MergeInfo {
 	IdType id;	   // Virtual id of merged document (index in vdocs)
 	int32_t proc;  // Rank of document
 	uint32_t areaIndex = std::numeric_limits<uint32_t>::max();
 	int8_t field;  // Field index, where was match
 };
 
-struct MergeDataBase : public std::vector<MergeInfo> {
+struct [[nodiscard]] MergeDataBase : public std::vector<MergeInfo> {
 	virtual ~MergeDataBase() = default;
 	int maxRank = 0;
 };
 
 template <typename AreaType>
-struct MergeData : public MergeDataBase {
+struct [[nodiscard]] MergeData : public MergeDataBase {
 	using AT = AreaType;
 	std::vector<AreasInDocument<AreaType>> vectorAreas;
 };
 
 template <typename IdCont>
-class Selector {
+class [[nodiscard]] Selector {
 	typedef fast_hash_map<WordIdType, std::pair<size_t, size_t>, WordIdTypeHash, WordIdTypeEqual, WordIdTypeLess> FoundWordsType;
 
 public:
@@ -36,7 +36,7 @@ public:
 		: holder_(holder), fieldSize_(fieldSize), maxAreasInDoc_(maxAreasInDoc) {}
 
 	// Intermediate information about document found at current merge step. Used only for queries with 2 or more terms
-	struct MergedIdRel {
+	struct [[nodiscard]] MergedIdRel {
 		explicit MergedIdRel(IdRelType&& c, int r, int q) : next(std::move(c)), rank(r), qpos(q) {}
 		explicit MergedIdRel(int r, int q) : rank(r), qpos(q) {}
 		MergedIdRel(MergedIdRel&&) noexcept = default;
@@ -46,14 +46,14 @@ public:
 		int32_t qpos;	 // Position in query
 	};
 
-	struct MergedIdRelGroup : public MergedIdRel {
+	struct [[nodiscard]] MergedIdRelGroup : public MergedIdRel {
 		explicit MergedIdRelGroup(IdRelType&& c, int r, int q) : MergedIdRel(r, q), posTmp(std::move(c)) {}
 		MergedIdRelGroup(MergedIdRelGroup&&) noexcept = default;
 		IdRelType posTmp;  // Group only. Collect all positions for subpatterns and index into vector we merged with
 	};
 
 	template <typename PosT>
-	struct MergedIdRelGroupArea : public MergedIdRel {
+	struct [[nodiscard]] MergedIdRelGroupArea : public MergedIdRel {
 		using TypeTParam = PosT;
 		MergedIdRelGroupArea(IdRelType&& c, int r, int q, h_vector<std::pair<PosT, int>, 4>&& p)
 			: MergedIdRel(std::move(c), r, q), posTmp(std::move(p)) {}
@@ -68,13 +68,13 @@ public:
 	MergeType Process(FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
 private:
-	struct TextSearchResult {
+	struct [[nodiscard]] TextSearchResult {
 		const IdCont* vids;		   // indexes of documents (vdoc) containing the given word + position + field
 		std::string_view pattern;  // word,translit,.....
 		int proc;
 	};
 
-	struct TermRankInfo {
+	struct [[nodiscard]] TermRankInfo {
 		int32_t termRank = 0;
 		double bm25Norm = 0.0;
 		double termLenBoost = 0.0;
@@ -92,7 +92,7 @@ private:
 		}
 	};
 
-	struct FtVariantEntry {
+	struct [[nodiscard]] FtVariantEntry {
 		FtVariantEntry() = default;
 		FtVariantEntry(std::string p, FtDslOpts o, int pr, int c) : pattern{std::move(p)}, opts{std::move(o)}, proc{pr}, charsCount{c} {}
 
@@ -110,7 +110,7 @@ private:
 	};
 
 	// text search results for a single token (word) in a search query
-	class TextSearchResults : public h_vector<TextSearchResult, 8> {
+	class [[nodiscard]] TextSearchResults : public h_vector<TextSearchResult, 8> {
 	public:
 		TextSearchResults(FtDSLEntry&& t, FoundWordsType* fwPtr) : term(std::move(t)), foundWords(fwPtr) { assertrx(foundWords); }
 		void SwitchToInternalWordsMap() noexcept {
@@ -132,13 +132,13 @@ private:
 		std::unique_ptr<FoundWordsType> foundWordsPersonal_;
 	};
 
-	struct FtBoundVariantEntry : public FtVariantEntry {
+	struct [[nodiscard]] FtBoundVariantEntry : public FtVariantEntry {
 		using FtVariantEntry::FtVariantEntry;
 
 		int rawResultIdx = -1;
 	};
 
-	struct FtSelectContext {
+	struct [[nodiscard]] FtSelectContext {
 		FoundWordsType* GetWordsMapPtr(const FtDslOpts& opts) {
 			if (opts.op == OpAnd) {
 				if (!foundWordsSharedAND) {
@@ -166,7 +166,7 @@ private:
 		size_t totalORVids = 0;
 	};
 
-	class TyposHandler {
+	class [[nodiscard]] TyposHandler {
 	public:
 		TyposHandler(const FtFastConfig& cfg) noexcept
 			: maxTyposInWord_(cfg.MaxTyposInWord()),

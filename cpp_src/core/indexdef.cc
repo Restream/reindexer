@@ -19,7 +19,7 @@ static constexpr auto kCondsGeom = {"DWITHIN"sv};
 static constexpr auto kCondsVector = {"KNN"sv, "ANY"sv, "EMPTY"sv};
 static constexpr std::initializer_list<std::string_view> kCondsDummy = {};
 
-class IndexInfo {
+class [[nodiscard]] IndexInfo {
 public:
 	constexpr IndexInfo(std::string_view fieldType, std::string_view indexType, std::initializer_list<std::string_view> conditions) noexcept
 		: fieldType_{fieldType}, indexType_{indexType}, conditions_{conditions} {}
@@ -325,14 +325,15 @@ void IndexDef::GetJSON(WrSerializer& ser, ExtraIndexDescription withExtras) cons
 	Validate();
 	JsonBuilder builder(ser);
 
-	builder.Put("name"sv, name_)
-		.Put("field_type"sv, fieldType_)
-		.Put("index_type"sv, indexType_)
-		.Put("is_pk"sv, *opts_.IsPK())
-		.Put("is_array"sv, *opts_.IsArray())
-		.Put("is_dense"sv, *opts_.IsDense())
-		.Put("is_no_column", *opts_.IsNoIndexColumn())
-		.Put("is_sparse"sv, *opts_.IsSparse());
+	builder.Put("name"sv, name_);
+	builder.Put("field_type"sv, fieldType_);
+	builder.Put("index_type"sv, indexType_);
+	builder.Put("is_pk"sv, *opts_.IsPK());
+	builder.Put("is_array"sv, *opts_.IsArray());
+	builder.Put("is_dense"sv, *opts_.IsDense());
+	builder.Put("is_no_column", *opts_.IsNoIndexColumn());
+	builder.Put("is_sparse"sv, *opts_.IsSparse());
+
 	if (indexType_ == "rtree"sv || fieldType_ == "point"sv) {
 		switch (opts_.RTreeType()) {
 			case IndexOpts::Linear:
@@ -352,9 +353,11 @@ void IndexDef::GetJSON(WrSerializer& ser, ExtraIndexDescription withExtras) cons
 				abort();
 		}
 	}
-	builder.Put("collate_mode"sv, kAvailableCollates.at(opts_.GetCollateMode()))
-		.Put("sort_order_letters"sv, opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters())
-		.Put("expire_after"sv, expireAfter_);
+
+	builder.Put("collate_mode"sv, kAvailableCollates.at(opts_.GetCollateMode()));
+	builder.Put("sort_order_letters"sv, opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters());
+	builder.Put("expire_after"sv, expireAfter_);
+
 	if (opts_.IsFloatVector()) {
 		auto config = builder.Object("config"sv);
 		opts_.FloatVector().GetJson(config);

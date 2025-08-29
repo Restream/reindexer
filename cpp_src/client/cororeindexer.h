@@ -33,7 +33,7 @@ class Snapshot;
 /// CoroReindexer should be used via multiple coroutines in single thread, while ev-loop is running.
 /// *Resources lifetime*: All resources acquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
 /// semantics, and have independent lifetime<br>
-class CoroReindexer {
+class [[nodiscard]] CoroReindexer {
 public:
 	using ConnectionStateHandlerT = std::function<void(const Error&)>;
 
@@ -275,6 +275,7 @@ public:
 	typedef Item ItemT;
 	typedef ReindexerConfig ConfigT;
 	typedef CoroTransaction TransactionT;
+	typedef ConnectOpts ConnectOptsT;
 
 private:
 	CoroReindexer(RPCClient* impl, InternalRdxContext&& ctx) noexcept : impl_(impl), ctx_(std::move(ctx)) {}

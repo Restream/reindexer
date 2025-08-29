@@ -9,12 +9,12 @@
 namespace reindexer {
 
 template <typename CharT, typename V, bool Multi = false>
-class flat_str_map {
+class [[nodiscard]] flat_str_map {
 protected:
 	using base_holder_t = std::vector<CharT>;
 	using string_view_t = std::string_view;
 
-	class holder_t : public base_holder_t {
+	class [[nodiscard]] holder_t : public base_holder_t {
 	public:
 		string_view_t get(size_t pos) const {
 			auto ptr = reinterpret_cast<const uint8_t*>(base_holder_t::data() + pos);
@@ -31,7 +31,7 @@ protected:
 		}
 	};
 
-	struct equal_flat_str_map {
+	struct [[nodiscard]] equal_flat_str_map {
 		using is_transparent = void;
 		equal_flat_str_map(const holder_t* buf) noexcept : buf_(buf) {}
 		bool operator()(size_t lhs, size_t rhs) const { return buf_->get(lhs) == buf_->get(rhs); }
@@ -42,7 +42,7 @@ protected:
 		const holder_t* buf_;
 	};
 
-	struct hash_flat_str_map {
+	struct [[nodiscard]] hash_flat_str_map {
 		using is_transparent = void;
 		hash_flat_str_map(const holder_t* buf) noexcept : buf_(buf) {}
 		size_t operator()(string_view_t hs) const noexcept { return _Hash_bytes(hs.data(), hs.length()); }
@@ -65,7 +65,7 @@ public:
 	flat_str_map& operator=(flat_str_map&& rhs) noexcept = default;
 
 	template <typename VV>
-	class value_type : public std::pair<string_view_t, VV> {
+	class [[nodiscard]] value_type : public std::pair<string_view_t, VV> {
 	public:
 		value_type(string_view_t k, VV v) : std::pair<string_view_t, VV>(k, v) {}
 		const value_type* operator->() const { return this; }
@@ -73,7 +73,7 @@ public:
 	};
 
 	template <typename map_type, typename map_iterator, typename value_type>
-	class base_iterator {
+	class [[nodiscard]] base_iterator {
 		friend class flat_str_map;
 
 	public:
@@ -242,7 +242,7 @@ protected:
 	std::unique_ptr<holder_t> holder_;
 	// Underlying map container
 	std::unique_ptr<hash_map> map_;
-	struct multi_node {
+	struct [[nodiscard]] multi_node {
 		multi_node(const V& v, int n) : val(v), next(n) {}
 		multi_node(V&& v, int n) noexcept : val(std::move(v)), next(n) {}
 

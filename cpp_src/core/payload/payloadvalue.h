@@ -12,10 +12,10 @@
 namespace reindexer {
 
 // The full item's payload object. It must be speed & size optimized
-class PayloadValue {
+class [[nodiscard]] PayloadValue {
 public:
 	typedef std::atomic<int32_t> refcounter;
-	struct dataHeader {
+	struct [[nodiscard]] dataHeader {
 		dataHeader() noexcept : refcount(1), cap(0), lsn(-1) {}
 
 #ifdef RX_WITH_STDLIB_DEBUG

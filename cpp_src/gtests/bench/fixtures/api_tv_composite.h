@@ -5,7 +5,7 @@
 
 #include "base_fixture.h"
 
-class ApiTvComposite : private BaseFixture {
+class [[nodiscard]] ApiTvComposite : private BaseFixture {
 public:
 	ApiTvComposite(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts())

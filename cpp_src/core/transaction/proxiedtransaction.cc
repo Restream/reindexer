@@ -4,6 +4,7 @@
 #include "core/item.h"
 #include "core/itemimpl.h"
 #include "core/queryresults/queryresults.h"
+#include "estl/lock.h"
 #include "tools/clusterproxyloghelper.h"
 #include "transactionimpl.h"
 
@@ -14,7 +15,7 @@ Error ProxiedTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 	bool itemFromCache = false;
 	try {
 		{
-			std::unique_lock lck(mtx_);
+			unique_lock lck(mtx_);
 			if (itemCache_.isValid) {
 				itemFromCache = true;
 				clientItem = client::Item(
@@ -58,14 +59,14 @@ Error ProxiedTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 			return err;
 		}
 
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		itemCache_.isValid = false;
 		lck.unlock();
 
 		return tx_.modify(std::move(clientItem), mode, client::InternalRdxContext(lsn, nullptr, shardId_));
 	}
 	if (!itemFromCache) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		itemCache_.pt = clientItem.impl_->Type();
 		itemCache_.tm = clientItem.impl_->tagsMatcher();
 		itemCache_.isValid = true;
@@ -107,7 +108,7 @@ Error ProxiedTransaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 		return err;
 	}
 	{
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		itemCache_.isValid = false;
 	}
 	return tx_.setTagsMatcher(std::move(tm),
@@ -158,7 +159,7 @@ Error ProxiedTransaction::Commit(int serverId, QueryResults& result, const RdxCo
 }
 
 void ProxiedTransaction::AsyncData::AddNewAsyncRequest() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!err_.ok()) {
 		throw err_;
 	}
@@ -166,7 +167,7 @@ void ProxiedTransaction::AsyncData::AddNewAsyncRequest() {
 }
 
 void ProxiedTransaction::AsyncData::OnAsyncRequestDone(const Error& e) noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!e.ok()) {
 		err_ = e;
 	}
@@ -177,7 +178,7 @@ void ProxiedTransaction::AsyncData::OnAsyncRequestDone(const Error& e) noexcept 
 }
 
 Error ProxiedTransaction::AsyncData::AwaitAsyncRequests() noexcept {
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	cv_.wait(lck, [this] { return asyncRequests_ == 0; });
 	return err_;
 }

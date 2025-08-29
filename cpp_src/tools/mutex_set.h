@@ -2,14 +2,14 @@
 
 #include <array>
 #include "estl/contexted_locks.h"
-#include "estl/mutex.h"
+#include "estl/marked_mutex.h"
 #include "estl/timed_mutex.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
 
 template <typename CtxT, MutexMark mark, size_t size>
-class MutexSet {
+class [[nodiscard]] MutexSet {
 	using MutexT = MarkedMutex<timed_mutex, mark>;
 	using UniqueLockT = contexted_unique_lock<MutexT, const CtxT>;
 	using HasherT = nocase_hash_str;
@@ -21,7 +21,7 @@ public:
 		}
 	}
 
-	class Locks {
+	class [[nodiscard]] Locks {
 	public:
 		Locks() = default;
 		Locks(MutexT& mtx, const CtxT& ctx) { lck1_ = UniqueLockT(mtx, ctx); }

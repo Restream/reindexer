@@ -1,8 +1,10 @@
-#include <condition_variable>
 #include "client/cororeindexer.h"
 #include "client/reindexer.h"
 #include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
+#include "estl/condition_variable.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "gtest/gtest.h"
 #include "gtests/tests/fixtures/servercontrol.h"
 #include "gtests/tools.h"
@@ -16,7 +18,7 @@ const int kSyncCoroRxTestMaxIndex = 1000;
 static const size_t kSyncCoroRxTestDefaultRpcPort = 8999;
 static const size_t kSyncCoroRxTestDefaultHttpPort = 9888;
 
-struct SyncCoroRxHelpers {
+struct [[nodiscard]] SyncCoroRxHelpers {
 	static const std::string kStrValue;
 
 	template <typename RxT>
@@ -41,7 +43,7 @@ const std::string SyncCoroRxHelpers::kStrValue = "aaaaaaaaaaaaaaa";
 TEST(SyncCoroRx, BaseTest) {
 	// Base test for Reindexer client
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TestSyncCoroRx");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	// server creation and configuration
 	ServerControl server;
 	const std::string_view nsName = "ns";
@@ -87,7 +89,7 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 	const int kFetchAmount = 100;
 	constexpr uint32_t kConnsCount = 2;
 	constexpr uint32_t kThreadsCount = 2;
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	// server creation and configuration
 	ServerControl server;
 	const std::string_view nsName = "ns";
@@ -147,7 +149,7 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 
 TEST(SyncCoroRx, TestSyncCoroRx) {
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TestSyncCoroRx");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	reindexer::client::Reindexer client;
@@ -178,7 +180,7 @@ TEST(SyncCoroRx, TestSyncCoroRx) {
 
 TEST(SyncCoroRx, DISABLED_TestSyncCoroRxNThread) {
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TestSyncCoroRxNThread");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	reindexer::client::Reindexer client;
@@ -228,7 +230,7 @@ TEST(SyncCoroRx, DISABLED_TestSyncCoroRxNThread) {
 TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 	// for comparing synchcororeindexer client and single-threaded coro client
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TestCoroRxNCoroutine");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
@@ -272,7 +274,7 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 
 TEST(SyncCoroRx, RxClientNThread) {
 	const auto kStoragePath = fs::JoinPath(fs::GetTempDir(), "reindex/RxClientNThread");
-	reindexer::fs::RmDirAll(kStoragePath);
+	rx_unused = reindexer::fs::RmDirAll(kStoragePath);
 	const std::string kDbName = "db";
 	const std::string kNsName = "ns_test";
 	ServerControl server;
@@ -349,7 +351,7 @@ TEST(SyncCoroRx, RxClientNThread) {
 
 TEST(SyncCoroRx, StopWhileWriting) {
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/StopWhileWriting");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	const std::string kNsName = "ns_test";
@@ -442,10 +444,10 @@ TEST(SyncCoroRx, StopWhileWriting) {
 TEST(SyncCoroRx, AsyncCompletions) {
 	// Check if async completions are actually asynchronous
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/AsyncCompletions");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	const std::string kNsNames = "ns_test";
-	std::condition_variable cv;
-	std::mutex mtx;
+	reindexer::condition_variable cv;
+	reindexer::mutex mtx;
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	auto client = server.Get()->api.reindexer;
@@ -480,7 +482,7 @@ TEST(SyncCoroRx, AsyncCompletions) {
 						  std::this_thread::sleep_for(kStep);
 					  }
 					  assert(done.load());
-					  std::unique_lock lck(mtx);
+					  unique_lock lck(mtx);
 					  if (++counter == kItemsCount) {
 						  lck.unlock();
 						  cv.notify_one();
@@ -490,7 +492,7 @@ TEST(SyncCoroRx, AsyncCompletions) {
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	done = true;
-	std::unique_lock lck(mtx);
+	unique_lock lck(mtx);
 	auto res = cv.wait_for(lck, std::chrono::seconds(20), [&counter] { return counter == kItemsCount; });
 	ASSERT_TRUE(res) << "counter = " << counter;
 }
@@ -498,7 +500,7 @@ TEST(SyncCoroRx, AsyncCompletions) {
 TEST(SyncCoroRx, AsyncCompletionsStop) {
 	// Check if async completions are properlu handled during client's termination
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/AsyncCompletionsStop");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	const std::string kNsNames = "ns_test";
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
@@ -530,7 +532,7 @@ TEST(SyncCoroRx, AsyncCompletionsStop) {
 TEST(SyncCoroRx, TxInvalidation) {
 	// Check if client transaction becomes invalid after reconnect
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TxInvalidation");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	const std::string kNsNames = "ns_test";
 	const std::string kItemContent = R"json({"id": 1})json";
 	const std::string kExpectedErrorText1 =
@@ -613,7 +615,7 @@ TEST(SyncCoroRx, TxInvalidation) {
 TEST(SyncCoroRx, QrInvalidation) {
 	// Check if client QRs become invalid after reconnect
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/QrInvalidation");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	const std::string kNsNames = "ns_test";
 	const std::string kExpectedErrorText1 =
 		"Connection was broken and all associated snapshots, queryresults and transaction were invalidated";
@@ -676,7 +678,7 @@ TEST(SyncCoroRx, QrInvalidation) {
 TEST(SyncCoroRx, QRWithMultipleIterationLoops) {
 	// Check if iterator has error status if user attempts to iterate over qrs, which were already fetched
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/QRWithMultipleIterationLoops");
-	reindexer::fs::RmDirAll(kTestDbPath);
+	rx_unused = reindexer::fs::RmDirAll(kTestDbPath);
 	const std::string kNsName = "ns_test";
 	constexpr unsigned kFetchCount = 50;
 	constexpr unsigned kNsSize = kFetchCount * 3;

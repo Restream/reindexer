@@ -45,24 +45,29 @@ using namespace std::string_view_literals;
 // This method is for simple modify-requests, proxied by cluster (and for #replicationstats request)
 // This QR's can contain only items and aggregations from single namespace
 void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults, LocalQueryResults& result) {
-	QueryResults qr;
 	if (clientResults.HaveJoined()) {
-		throw Error(errLogic, "JOIN queries are not supported by Cluster Proxy");
-	}
-	if (clientResults.GetMergedNSCount() > 1) {
-		throw Error(errLogic, "MERGE queries are not supported by Cluster Proxy");
+		throw Error(errLogic, "Queries with non-empty joined data are not supported by Cluster Proxy");
 	}
 	if (result.getMergedNSCount() != 0 || result.totalCount != 0) {
-		throw Error(errLogic, "Query results merging is not supported by Cluster Proxy");
+		throw Error(errLogic, "Target query resutls are not empty. Query results merging is not supported by Cluster Proxy");
 	}
 
 	const auto itemsCnt = clientResults.Count();
-	if (clientResults.GetMergedNSCount() > 0) {
-		auto& incTags = clientResults.GetIncarnationTags()[0].tags;
-		if (itemsCnt || incTags.size()) {
-			result.addNSContext(clientResults.GetPayloadType(0), clientResults.GetTagsMatcher(0), FieldsFilter(), nullptr,
-								incTags.size() ? incTags[0] : lsn_t());
+	for (int nsid = 0, nss = clientResults.GetMergedNSCount(); nsid < nss; ++nsid) {
+		auto& incTagsVec = clientResults.GetIncarnationTags();
+		lsn_t incTag;
+		if (!incTagsVec.empty()) {
+			if rx_unlikely (incTagsVec.size() != 1) {
+				throw Error(errLogic, "Unexpected incarnation tags count {} for single-node query", incTagsVec.size());
+			}
+			if rx_likely (incTagsVec[0].tags.size() > unsigned(nsid)) {
+				incTag = incTagsVec[0].tags[nsid];
+			} else if (itemsCnt) {
+				throw Error(errLogic, "Missing incarnation tag for ns id {} in non-empty result", nsid);
+			}
 		}
+		result.addNSContext(clientResults.GetPayloadType(nsid), clientResults.GetTagsMatcher(nsid), FieldsFilter(), nullptr,
+							std::move(incTag));
 	}
 	result.explainResults = clientResults.GetExplainResults();
 	result.aggregationResults = clientResults.GetAggregationResults();
@@ -71,35 +76,28 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults,
 		return;
 	}
 
-	RdxContext dummyCtx;
-	auto& localPt = result.getPayloadType(0);
-	auto& localTm = result.getTagsMatcher(0);
-	auto cNamespaces = clientResults.GetNamespaces();
-	for (auto it = clientResults.begin(), itEnd = clientResults.end(); it != itEnd; ++it) {
-		auto item = it.GetItem();
-		if (!item.Status().ok()) {
-			throw item.Status();
+	const auto& pt = result.getPayloadType(0);
+	const auto& tm = result.getTagsMatcher(0);
+	const auto cNamespaces = clientResults.GetNamespaces();
+	WrSerializer wser;
+	for (auto& it : clientResults) {
+		if rx_unlikely (it.GetNSID() != 0) {
+			throw Error(errLogic,
+						"Unexpected items from non-main namespace ({}). Cluster proxy does not support proxying for joined/merged items",
+						cNamespaces.at(it.GetNSID()));
 		}
-		if (!item) {
-			Item itemServer = impl_.NewItem(cNamespaces[0], dummyCtx);
-			result.AddItemNoHold(itemServer, lsn_t());
-			continue;
-		}
-
-		ItemImpl itemimpl(localPt, localTm);
-		Error err = itemimpl.FromJSON(item.GetJSON());
+		wser.Reset();
+		auto err = it.GetCJSON(wser, false);
 		if (!err.ok()) {
 			throw err;
 		}
 
-		if (itemimpl.tagsMatcher().isUpdated()) {
-			WrSerializer wrser;
-			itemimpl.tagsMatcher().serialize(wrser);
-			Serializer ser(wrser.Slice());
-			localTm.deserialize(ser, itemimpl.tagsMatcher().version(), itemimpl.tagsMatcher().stateToken());
-		}
-		itemimpl.Value().SetLSN(item.GetLSN());
-		result.AddItemRef(it.itemParams_.rank, it.itemParams_.id, itemimpl.Value(), it.itemParams_.nsid, true);
+		ItemImpl itemimpl(pt, tm);
+		itemimpl.FromCJSON(wser.Slice());
+
+		const auto& itemParams = it.GetItemParams();
+		itemimpl.Value().SetLSN(itemParams.lsn);
+		result.AddItemRef(itemParams.rank, itemParams.id, itemimpl.Value(), itemParams.nsid, true);
 		result.SaveRawData(std::move(itemimpl));
 	}
 }
@@ -129,7 +127,7 @@ std::shared_ptr<client::Reindexer> ClusterProxy::getLeader(const cluster::RaftIn
 			return leader_;
 		}
 	}
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (info.leaderId == leaderId_) {
 		return leader_;
 	}
@@ -150,7 +148,7 @@ std::shared_ptr<client::Reindexer> ClusterProxy::getLeader(const cluster::RaftIn
 }
 
 void ClusterProxy::resetLeader() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	leader_.reset();
 	leaderId_ = -1;
 }
@@ -439,7 +437,7 @@ Error ClusterProxy::SuggestLeader(const cluster::NodeData& suggestion, cluster::
 Error ClusterProxy::LeadersPing(const cluster::NodeData& leader) {
 	Error err = impl_.LeadersPing(leader);
 	if (err.ok()) {
-		std::unique_lock<std::mutex> lck(processPingEventMutex_);
+		unique_lock lck(processPingEventMutex_);
 		lastPingLeaderId_ = leader.serverId;
 		lck.unlock();
 		processPingEvent_.notify_all();
@@ -621,7 +619,7 @@ Error ClusterProxy::UnsubscribeUpdates(IEventsObserver& observer) {
 }
 
 void ClusterProxy::ConnectionsMap::SetParams(int clientThreads, int clientConns, int clientConnConcurrency) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	clientThreads_ = clientThreads > 0 ? clientThreads : cluster::kDefaultClusterProxyConnThreads;
 	clientConns_ = clientConns > 0 ? (std::min(uint32_t(clientConns), kMaxClusterProxyConnCount)) : cluster::kDefaultClusterProxyConnCount;
 	clientConnConcurrency_ = clientConnConcurrency > 0 ? (std::min(uint32_t(clientConnConcurrency), kMaxClusterProxyConnConcurrency))
@@ -645,7 +643,7 @@ std::shared_ptr<client::Reindexer> ClusterProxy::ConnectionsMap::Get(const DSN& 
 	cfg.EnableCompression = true;
 	cfg.RequestDedicatedThread = true;
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	cfg.SyncRxCoroCount = clientConnConcurrency_;
 	if (shutdown_) {
 		throw Error(errTerminated, "Proxy is already shut down");
@@ -664,7 +662,7 @@ std::shared_ptr<client::Reindexer> ClusterProxy::ConnectionsMap::Get(const DSN& 
 }
 
 void ClusterProxy::ConnectionsMap::Shutdown() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	shutdown_ = true;
 	for (auto& conn : conns_) {
 		conn.second->Stop();
@@ -766,7 +764,7 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 			if (info.role != cluster::RaftInfo::Role::Follower) {
 				return r;
 			}
-			std::unique_lock<std::mutex> lck(processPingEventMutex_);
+			unique_lock lck(processPingEventMutex_);
 			auto waitRes = processPingEvent_.wait_for(lck, cluster::kLeaderPingInterval * 10);	// Awaiting ping from current leader
 			if (waitRes == std::cv_status::timeout || lastPingLeaderId_ != ctx.GetOriginLSN().Server()) {
 				return r;
@@ -837,8 +835,11 @@ Error ClusterProxy::resultFollowerAction(const RdxContext& ctx, LeaderRefT clien
 		if (!err.ok()) {
 			return err;
 		}
-		if (!query.GetJoinQueries().empty() || !query.GetMergeQueries().empty() || !query.GetSubQueries().empty()) {
-			return Error(errLogic, "Unable to proxy query with JOIN, MERGE or SUBQUERY");
+		if (!query.GetMergeQueries().empty()) {
+			return Error(errLogic, "Unable to proxy query with MERGE");
+		}
+		if (!query.GetJoinQueries().empty() && query.Type() == QuerySelect) {
+			return Error(errLogic, "Unable to proxy SELECT query with JOIN");
 		}
 		clientToCoreQueryResults(clientResults, qr);
 		return err;

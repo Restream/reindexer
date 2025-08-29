@@ -180,7 +180,7 @@ type FtFastConfig struct {
 	ExtraWordSymbols string `json:"extra_word_symbols"`
 	// Symbols, which will be treated as word part delimiters
 	WordPartDelimiters string `json:"word_part_delimiters"`
-	// Min word part size to indexate and search
+	// Min word part size for indexing and searching
 	MinWordPartSize int `json:"min_word_part_size"`
 	// Ratio of summation of ranks of match one term in several fields
 	SumRanksByFieldsRatio float64 `json:"sum_ranks_by_fields_ratio"`

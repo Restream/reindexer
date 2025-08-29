@@ -13,10 +13,10 @@ class LocatorServiceAdapter;
 class LocatorService;
 }  // namespace sharding
 
-class ShardingProxy {
+class [[nodiscard]] ShardingProxy {
 public:
 	ShardingProxy(ReindexerConfig cfg);
-	Error Connect(const std::string& dsn, ConnectOpts opts);
+	Error Connect(const std::string& dsn, ConnectOpts opts) RX_REQUIRES(!connectMtx_);
 	Error OpenNamespace(std::string_view nsName, const StorageOpts& opts, const NsReplicationOpts& replOpts, const RdxContext& ctx);
 	Error AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts, const RdxContext& ctx);
 	Error CloseNamespace(std::string_view nsName, const RdxContext& ctx);
@@ -162,7 +162,7 @@ private:
 
 	bool needProxyWithinCluster(const RdxContext& ctx);
 
-	enum class ConfigResetFlag { RollbackApplied = 0, ResetExistent = 1 };
+	enum class [[nodiscard]] ConfigResetFlag { RollbackApplied = 0, ResetExistent = 1 };
 	// Resetting the existing sharding configs on other shards before applying the new one OR
 	// Rollback (perhaps) applied candidate after unsuccessful applyNewShardingConfig on other shards
 	template <ConfigResetFlag resetFlag>
@@ -172,7 +172,7 @@ private:
 	void obtainConfigForResetRouting(std::optional<cluster::ShardingConfig>& config, ConfigResetFlag resetFlag,
 									 const RdxContext& ctx) const;
 
-	struct NamespaceDataChecker {
+	struct [[nodiscard]] NamespaceDataChecker {
 		NamespaceDataChecker(const cluster::ShardingConfig::Namespace& ns, int thisShardId) noexcept : ns_(ns), thisShardId_(thisShardId) {}
 		void Check(ShardingProxy& proxy, const RdxContext& ctx);
 
@@ -195,10 +195,10 @@ private:
 	using RLocker = contexted_shared_lock<Mutex, const RdxContext>;
 	using WLocker = contexted_unique_lock<Mutex, const RdxContext>;
 
-	struct ShardingRouter {
+	struct [[nodiscard]] ShardingRouter {
 	private:
 		template <typename Locker, typename LocatorServiceSharedPtr>
-		struct ShardingRouterTSWrapper {
+		struct [[nodiscard]] ShardingRouterTSWrapper {
 			const auto& operator->() const noexcept { return locatorService_; }
 			ShardingRouterTSWrapper(Locker lock, LocatorServiceSharedPtr& locatorService) noexcept
 				: lock_(std::move(lock)), locatorService_(locatorService) {}
@@ -222,10 +222,10 @@ private:
 
 	public:
 		auto SharedLock(const RdxContext& ctx) const { return ShardingRouterTSWrapper{RLocker(mtx_, ctx), locatorService_}; }
-		auto SharedLock() const { return ShardingRouterTSWrapper{shared_lock(mtx_), locatorService_}; }
+		auto SharedLock() const RX_REQUIRES(!mtx_) { return ShardingRouterTSWrapper{shared_lock(mtx_), locatorService_}; }
 
 		auto UniqueLock(const RdxContext& ctx) { return ShardingRouterTSWrapper{WLocker(mtx_, ctx), locatorService_}; }
-		auto UniqueLock() { return ShardingRouterTSWrapper{std::unique_lock(mtx_), locatorService_}; }
+		auto UniqueLock() { return ShardingRouterTSWrapper{unique_lock(mtx_), locatorService_}; }
 
 		auto SharedPtr(const RdxContext& ctx) const;
 
@@ -236,10 +236,10 @@ private:
 
 	ShardingRouter shardingRouter_;
 
-	struct ConfigCandidate {
+	struct [[nodiscard]] ConfigCandidate {
 	private:
 		template <typename Locker, typename ConfigCandidateType>
-		struct ConfigCandidateTSWrapper {
+		struct [[nodiscard]] ConfigCandidateTSWrapper {
 			ConfigCandidateTSWrapper(Locker&& lock, ConfigCandidateType& configCandidate) noexcept
 				: lock_(std::move(lock)), configCandidate_(configCandidate) {}
 
@@ -257,8 +257,8 @@ private:
 		auto SharedLock(const RdxContext& ctx) const { return ConfigCandidateTSWrapper{RLocker(mtx_, ctx), *this}; }
 		auto UniqueLock(const RdxContext& ctx) { return ConfigCandidateTSWrapper{WLocker(mtx_, ctx), *this}; }
 
-		auto SharedLock() const { return ConfigCandidateTSWrapper{shared_lock(mtx_), *this}; }
-		auto UniqueLock() { return ConfigCandidateTSWrapper{std::unique_lock(mtx_), *this}; }
+		auto SharedLock() const RX_REQUIRES(!mtx_) { return ConfigCandidateTSWrapper{shared_lock(mtx_), *this}; }
+		auto UniqueLock() { return ConfigCandidateTSWrapper{unique_lock(mtx_), *this}; }
 
 		bool NeedStopReseter() const;
 		bool TryResetConfig();

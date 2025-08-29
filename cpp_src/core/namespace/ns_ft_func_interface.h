@@ -9,7 +9,7 @@ class NamespaceImpl;
 class Index;
 class FieldsSet;
 
-class NsFtFuncInterface {
+class [[nodiscard]] NsFtFuncInterface {
 public:
 	explicit NsFtFuncInterface(const NamespaceImpl& nm) noexcept : nm_(nm) {}
 	bool getIndexByName(std::string_view name, int& index) const noexcept;

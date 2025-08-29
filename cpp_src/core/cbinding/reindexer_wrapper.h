@@ -12,7 +12,7 @@ namespace reindexer {
 
 constexpr size_t kBuiltinUpdatesBufSize = 8192;
 
-struct ReindexerWrapper {
+struct [[nodiscard]] ReindexerWrapper {
 	ReindexerWrapper(ReindexerConfig&& cfg) : rx(std::move(cfg)), builtinUpdatesObs(kBuiltinUpdatesBufSize) {}
 	ReindexerWrapper(Reindexer&& rx) : rx(std::move(rx)), builtinUpdatesObs(kBuiltinUpdatesBufSize) {}
 	~ReindexerWrapper() {
@@ -25,7 +25,7 @@ struct ReindexerWrapper {
 	BufferedUpdateObserver builtinUpdatesObs;
 };
 
-class WrapersMap {
+class [[nodiscard]] WrapersMap {
 public:
 	std::pair<ReindexerWrapper*, bool> try_emplace(reindexer_server::Server* sptr, Reindexer* rptr) {
 		assertrx_dbg(rptr);
@@ -35,7 +35,7 @@ public:
 		const auto uiSrvPtr = reinterpret_cast<uintptr_t>(sptr);
 		const auto srvHash = HashT()(uiSrvPtr);
 
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 
 		auto rmapPair = map_.try_emplace_prehashed(srvHash, uiSrvPtr);
 		auto& rmap = rmapPair.first->second;
@@ -51,7 +51,7 @@ public:
 		const auto uiSptr = reinterpret_cast<uintptr_t>(sptr);
 		assertrx_dbg(sptr);
 
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		map_.erase(uiSptr);
 	}
 
@@ -61,7 +61,7 @@ private:
 	using HashT = std::hash<uintptr_t>;
 	using RMapT = fast_hash_map<uintptr_t, intrusive_ptr<intrusive_rc_wrapper<ReindexerWrapper>>, HashT>;
 
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	// Values of this map will be exposed outside of the class, so they must remain unchanged after map resizing
 	fast_hash_map_l<uintptr_t, RMapT, HashT> map_;
 };

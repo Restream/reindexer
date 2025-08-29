@@ -8,22 +8,24 @@ ComparatorDistinctMulti::ComparatorDistinctMulti(
 	: fNames_(fieldNames), payloadType_(payloadType), dataSource_(std::move(rawData)) {}
 
 bool ComparatorDistinctMulti::Compare(const PayloadValue& item, IdType rowId) {
+	++totalCalls_;
 	ConstPayload pv{payloadType_, item};
 	lastData_.rowId = rowId;
 	getData(item, lastData_.data, lastData_.maxIndex, rowId);
+	bool res = false;
 	for (unsigned int i = 0; i < lastData_.maxIndex; i++) {
 		const bool isNullValue = DistinctHelpers::GetMultiFieldValue(lastData_.data, i, fNames_.size(), rowValues_);
 		if (isNullValue) {
-			return false;
+			break;
 		}
 		if (values_.find(rowValues_) == values_.end()) {
-			return true;
+			res = true;
+			break;
 		}
 	}
-	return false;
+	matchedCount_ += int(res);
+	return res;
 }
-
-void ComparatorDistinctMulti::ClearDistinctValues() noexcept { values_.clear(); }
 
 void ComparatorDistinctMulti::ExcludeDistinctValues(const PayloadValue& item, IdType rowId) {
 	ConstPayload pv{payloadType_, item};

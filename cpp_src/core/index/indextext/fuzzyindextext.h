@@ -6,7 +6,7 @@
 namespace reindexer {
 
 template <typename T>
-class FuzzyIndexText : public IndexText<T> {
+class [[nodiscard]] FuzzyIndexText : public IndexText<T> {
 	using Base = IndexText<T>;
 
 public:

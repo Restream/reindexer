@@ -7,7 +7,7 @@
 
 namespace reindexer {
 template <typename T>
-class packed_vector {
+class [[nodiscard]] packed_vector {
 public:
 	typedef T value_type;
 	typedef unsigned size_type;
@@ -18,7 +18,7 @@ public:
 
 	using store_container = std::vector<uint8_t>;
 	packed_vector() noexcept : size_(0) {}
-	class iterator {
+	class [[nodiscard]] iterator {
 	public:
 		iterator(const packed_vector* pv, store_container::const_iterator it) : pv_(pv), it_(it), unpacked_(0) { unpack(); }
 

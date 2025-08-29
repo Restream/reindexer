@@ -19,7 +19,7 @@ using reindexer::QueryCountCacheVal;
 using reindexer::EqQueryCacheKey;
 using reindexer::kCountCachedKeyMode;
 
-struct CacheJoinedSelectorMock {
+struct [[nodiscard]] CacheJoinedSelectorMock {
 	std::string_view RightNsName() const noexcept { return rightNsName; }
 	int64_t LastUpdateTime() const noexcept { return lastUpdateTime; }
 
@@ -34,7 +34,7 @@ TEST(LruCache, SimpleTest) {
 	constexpr int kDoubleJoinNsCount = 5;
 	constexpr int kIterCount = 3000;
 
-	struct QueryCacheData {
+	struct [[nodiscard]] QueryCacheData {
 		const CacheJoinedSelectorsMock* JoinedSelectorsPtr() const noexcept { return joinedSelectors.size() ? &joinedSelectors : nullptr; }
 
 		Query q;

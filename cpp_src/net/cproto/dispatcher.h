@@ -14,7 +14,7 @@ namespace cproto {
 
 using std::chrono::milliseconds;
 
-struct RPCCall {
+struct [[nodiscard]] RPCCall {
 	RPCCall(CmdCode cmd_, uint32_t seq_, Args args_, milliseconds execTimeout_, lsn_t lsn_, int emitterServerId_, int shardId_,
 			bool shardingParallelExecution_)
 		: cmd{cmd_},
@@ -36,13 +36,13 @@ struct RPCCall {
 	bool shardingParallelExecution;
 };
 
-struct ClientData {
+struct [[nodiscard]] ClientData {
 	virtual ~ClientData() = default;
 };
 
 struct Context;
 
-class Writer {
+class [[nodiscard]] Writer {
 public:
 	virtual ~Writer() = default;
 	virtual size_t AvailableEventsSpace() noexcept = 0;
@@ -53,7 +53,7 @@ public:
 	virtual std::shared_ptr<reindexer::net::connection_stat> GetConnectionStat() noexcept = 0;
 };
 
-struct Context {
+struct [[nodiscard]] Context {
 	void Return(const Args& args, const Error& status = Error()) { writer->WriteRPCReturn(*this, args, status); }
 	void SetClientData(std::unique_ptr<ClientData>&& data) noexcept { writer->SetClientData(std::move(data)); }
 	ClientData* GetClientData() noexcept { return writer->GetClientData(); }
@@ -66,7 +66,7 @@ struct Context {
 };
 
 /// Reindexer cproto RPC dispatcher implementation.
-class Dispatcher {
+class [[nodiscard]] Dispatcher {
 public:
 	/// Add handler for command.
 	/// @param cmd - Command code
@@ -139,10 +139,10 @@ public:
 
 private:
 	template <typename>
-	struct is_optional : public std::false_type {};
+	struct [[nodiscard]] is_optional : public std::false_type {};
 
 	template <typename T>
-	struct is_optional<std::optional<T>> : public std::true_type {};
+	struct [[nodiscard]] is_optional<std::optional<T>> : public std::true_type {};
 
 	template <typename T, std::enable_if_t<!is_optional<T>::value, int> = 0>
 	static T get_arg(const Args& args, size_t index, const Context& ctx) {
@@ -177,7 +177,7 @@ private:
 	}
 
 	template <typename K, typename... Args>
-	class FuncWrapper {
+	class [[nodiscard]] FuncWrapper {
 	public:
 		FuncWrapper(K* o, Error (K::*f)(Context&, Args...)) noexcept : obj_{o}, func_{f} {}
 		Error operator()(Context& ctx) const { return impl(ctx, std::index_sequence_for<Args...>{}); }

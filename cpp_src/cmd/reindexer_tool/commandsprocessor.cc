@@ -1,14 +1,17 @@
 #include "commandsprocessor.h"
 
-#include <condition_variable>
 #include <iomanip>
+#include <thread>
 
 #include "client/reindexer.h"
 #include "cluster/config.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/reindexer.h"
 #include "core/system_ns_names.h"
+#include "estl/condition_variable.h"
 #include "estl/gift_str.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "tableviewscroller.h"
 #include "tools/catch_and_return.h"
 #include "tools/fsops.h"
@@ -102,7 +105,7 @@ public:
 		}
 	}
 
-	[[nodiscard]] size_t GetProgress() const { return (1000 * nextUpsertIdx_) / (numUpserts_ + 1); }
+	size_t GetProgress() const { return (1000 * nextUpsertIdx_) / (numUpserts_ + 1); }
 
 private:
 	std::pair<std::string, uint64_t> addCommand_;
@@ -128,7 +131,7 @@ class [[nodiscard]] DumpFileIndex {
 public:
 	Error Indexate(const std::string& filename, const StringsSetT& selectedNamespaces) noexcept {
 		try {
-			std::lock_guard<std::mutex> lock(dumpLock_);
+			reindexer::lock_guard lock(dumpLock_);
 			headCommands_.resize(0);
 			nsDumps_.resize(0);
 			std::ifstream file(filename);
@@ -149,9 +152,9 @@ public:
 
 				if (reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kDumpingNamespacePrefix, command)) {
 					LineParser parser(command);
-					parser.NextToken();
-					parser.NextToken();
-					parser.NextToken();
+					rx_unused = parser.NextToken();
+					rx_unused = parser.NextToken();
+					rx_unused = parser.NextToken();
 					std::string_view nsName = removeQuotes(parser.NextToken());
 
 					if (nsName.empty()) {
@@ -181,8 +184,8 @@ public:
 		CATCH_AND_RETURN;
 	}
 
-	[[nodiscard]] std::vector<std::pair<std::string, uint64_t>> GetHeadCommands() {
-		std::lock_guard<std::mutex> lock(dumpLock_);
+	std::vector<std::pair<std::string, uint64_t>> GetHeadCommands() {
+		reindexer::lock_guard lock(dumpLock_);
 		std::vector<std::pair<std::string, uint64_t>> res = headCommands_;
 		for (const NamespaceIndex& ns : nsDumps_) {
 			res.push_back(ns.addCommand_);
@@ -197,7 +200,7 @@ public:
 					 size_t& nsUsed) noexcept {
 		try {
 			commands.resize(0);
-			std::lock_guard<std::mutex> lock(dumpLock_);
+			reindexer::lock_guard lock(dumpLock_);
 
 			std::vector<size_t> namespacesPriority;
 			namespacesPriority.reserve(nsDumps_.size());
@@ -226,7 +229,7 @@ public:
 	}
 
 	void ProcessingEnded(size_t nsIndex) {
-		std::lock_guard<std::mutex> lock(dumpLock_);
+		reindexer::lock_guard lock(dumpLock_);
 		assertrx_dbg(nsDumps_[nsIndex].numProcessors_ > 0);
 		nsDumps_[nsIndex].numProcessors_--;
 	}
@@ -234,11 +237,11 @@ public:
 private:
 	std::vector<std::pair<std::string, uint64_t>> headCommands_;
 	std::vector<NamespaceIndex> nsDumps_;
-	std::mutex dumpLock_;
+	reindexer::mutex dumpLock_;
 };
 
 template <typename DBInterface>
-struct CommandsProcessor<DBInterface>::CommandDefinition {
+struct [[nodiscard]] CommandsProcessor<DBInterface>::CommandDefinition {
 	std::string_view command;
 	std::string_view description;
 	void (CommandsProcessor::*handler)(std::string_view);
@@ -363,12 +366,12 @@ public:
 	void operator=(WaitGroup&) = delete;
 
 	void Add(int increment = 1) noexcept {
-		std::lock_guard<std::mutex> lock(mutex_);
+		reindexer::lock_guard lock(mutex_);
 		count_ += increment;
 	}
 
 	void Done(const Error& err) noexcept {
-		std::lock_guard<std::mutex> lock(mutex_);
+		reindexer::lock_guard lock(mutex_);
 		if (!err.ok()) {
 			err_ = err;
 		}
@@ -379,21 +382,21 @@ public:
 	}
 
 	void Wait() noexcept {
-		std::unique_lock<std::mutex> lock(mutex_);
+		reindexer::unique_lock lock(mutex_);
 		assertrx_dbg(count_ >= 0);
 		cv_.wait(lock, [this] { return count_ <= 0; });
 	}
 
 	reindexer::Error Error() const noexcept {
-		std::lock_guard<std::mutex> lock(mutex_);
+		reindexer::lock_guard lock(mutex_);
 		return err_;
 	}
 
 private:
 	int count_ = 0;
 	reindexer::Error err_;
-	mutable std::mutex mutex_;
-	std::condition_variable cv_;
+	mutable reindexer::mutex mutex_;
+	reindexer::condition_variable cv_;
 };
 
 template <>
@@ -667,7 +670,7 @@ Error CommandsProcessor<DBInterface>::interactive() noexcept {
 }
 
 template <typename DBInterface>
-[[nodiscard]] bool CommandsProcessor<DBInterface>::isHavingReplicationConfig(WrSerializer& wser, std::string_view type) {
+bool CommandsProcessor<DBInterface>::isHavingReplicationConfig(WrSerializer& wser, std::string_view type) {
 	try {
 		Query q;
 		typename DBInterface::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
@@ -700,7 +703,7 @@ template <typename DBInterface>
 }
 
 template <typename DBInterface>
-[[nodiscard]] bool CommandsProcessor<DBInterface>::isHavingReplicationConfig() {
+bool CommandsProcessor<DBInterface>::isHavingReplicationConfig() {
 	using namespace std::string_view_literals;
 	if (uri_.db().empty()) {
 		return false;
@@ -990,7 +993,7 @@ void CommandsProcessor<DBInterface>::queryResultsToJson(std::ostream& o, const t
 }
 
 template <typename QueryResultsT>
-[[nodiscard]] std::vector<std::string> ToJSONVector(const QueryResultsT& r) {
+std::vector<std::string> ToJSONVector(const QueryResultsT& r) {
 	std::vector<std::string> vec;
 	vec.reserve(r.Count());
 	reindexer::WrSerializer ser;
@@ -1142,7 +1145,7 @@ void CommandsProcessor<DBInterface>::commandSelect(std::string_view command) {
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandUpsert(std::string_view command) {
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 
 	const std::string nsName = reindexer::unescapeString(parser.NextToken());
 
@@ -1189,7 +1192,7 @@ void CommandsProcessor<DBInterface>::parseCommand(const std::string& command, st
 	needSkip = false;
 	cmdBody.resize(0);
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 	nsName = reindexer::unescapeString(parser.NextToken());
 
 	if (!parser.CurPtr().empty() && (parser.CurPtr())[0] == '[') {
@@ -1339,7 +1342,7 @@ void CommandsProcessor<DBInterface>::commandUpdateSQL(std::string_view command) 
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandDelete(std::string_view command) {
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 
 	const auto nsName = reindexer::unescapeString(parser.NextToken());
 
@@ -1360,7 +1363,7 @@ void CommandsProcessor<DBInterface>::commandDeleteSQL(std::string_view command) 
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 
 	std::vector<NamespaceDef> allNsDefs, doNsDefs;
 	const auto dumpMode = dumpMode_.load();
@@ -1451,12 +1454,12 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandNamespaces(std::string_view command) {
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 
 	std::string_view subCommand = parser.NextToken();
 
 	if (iequals(subCommand, "add")) {
-		parser.NextToken();	 // nsName
+		rx_unused = parser.NextToken();	 // nsName
 
 		NamespaceDef def("");
 		Error err = def.FromJSON(reindexer::giftStr(parser.CurPtr()));
@@ -1498,7 +1501,7 @@ void CommandsProcessor<DBInterface>::commandNamespaces(std::string_view command)
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandMeta(std::string_view command) {
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 	std::string_view subCommand = parser.NextToken();
 
 	if (iequals(subCommand, "put")) {
@@ -1528,7 +1531,7 @@ void CommandsProcessor<DBInterface>::commandMeta(std::string_view command) {
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandHelp(std::string_view command) {
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 	std::string_view subCommand = parser.NextToken();
 
 	if (!subCommand.length()) {
@@ -1562,7 +1565,7 @@ void CommandsProcessor<DBInterface>::commandQuit(std::string_view) {
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandSet(std::string_view command) {
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 
 	std::string_view variableName = parser.NextToken();
 	std::string_view variableValue = parser.NextToken();
@@ -1585,7 +1588,7 @@ template <>
 void CommandsProcessor<reindexer::client::Reindexer>::commandProcessDatabases(std::string_view command) {
 	using namespace std::string_view_literals;
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 	std::string_view subCommand = parser.NextToken();
 	assertrx(uri_.scheme() == "cproto"sv || uri_.scheme() == "cprotos"sv || uri_.scheme() == "ucproto"sv);
 	if (subCommand == "list"sv) {
@@ -1657,9 +1660,8 @@ void CommandsProcessor<DBInterface>::filterNamespacesByDumpMode(std::vector<Name
 
 	if (mode == DumpOptions::Mode::LocalOnly) {
 		for (auto& shNs : cfg.namespaces) {
-			const auto found = std::find_if(defs.begin(), defs.end(), [&shNs](const NamespaceDef& nsDef) {
-				return reindexer::toLower(nsDef.name) == reindexer::toLower(shNs.ns);
-			});
+			const auto found =
+				std::find_if(defs.begin(), defs.end(), [&shNs](const NamespaceDef& nsDef) { return iequals(nsDef.name, shNs.ns); });
 			if (found != defs.end()) {
 				defs.erase(found);
 			}
@@ -1668,9 +1670,8 @@ void CommandsProcessor<DBInterface>::filterNamespacesByDumpMode(std::vector<Name
 		defs.erase(std::remove_if(defs.begin(), defs.end(),
 								  [&cfg](const NamespaceDef& nsDef) {
 									  const auto found = std::find_if(
-										  cfg.namespaces.begin(), cfg.namespaces.end(), [&nsDef](const ShardingConfig::Namespace& shNs) {
-											  return reindexer::toLower(nsDef.name) == reindexer::toLower(shNs.ns);
-										  });
+										  cfg.namespaces.begin(), cfg.namespaces.end(),
+										  [&nsDef](const ShardingConfig::Namespace& shNs) { return iequals(nsDef.name, shNs.ns); });
 									  return found == cfg.namespaces.end();
 								  }),
 				   defs.end());
@@ -1680,7 +1681,7 @@ void CommandsProcessor<DBInterface>::filterNamespacesByDumpMode(std::vector<Name
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandBench(std::string_view command) {
 	LineParser parser(command);
-	parser.NextToken();
+	rx_unused = parser.NextToken();
 
 	const std::string_view benchTimeToken = parser.NextToken();
 	const int benchTime = benchTimeToken.empty() ? kBenchDefaultTime : reindexer::stoi(benchTimeToken);
@@ -1739,7 +1740,10 @@ void CommandsProcessor<DBInterface>::seedBenchItems() {
 		items[numCollected] = db().NewItem(kBenchNamespace);
 		WrSerializer& ser = sers[numCollected];
 		ser.Reset();
-		JsonBuilder(ser).Put("id", i).Put("data", i);
+		auto bld = JsonBuilder(ser);
+		bld.Put("id", i);
+		bld.Put("data", i);
+		bld.End();
 		throwIfError(items[numCollected].Unsafe().FromJSON(ser.Slice()));
 		++numCollected;
 	}
@@ -1846,7 +1850,7 @@ void CommandsProcessor<DBInterface>::getMergedSerialMeta(DBInterface& db, std::s
 }
 
 template <typename DBInterface>
-[[nodiscard]] reindexer::DSN CommandsProcessor<DBInterface>::getCurrentDsn(bool withPath) const {
+reindexer::DSN CommandsProcessor<DBInterface>::getCurrentDsn(bool withPath) const {
 	using namespace std::string_view_literals;
 	std::string dsn(uri_.scheme() + "://");
 	if (!uri_.password().empty() && !uri_.username().empty()) {
@@ -1854,7 +1858,7 @@ template <typename DBInterface>
 	}
 	if (uri_.scheme() == "ucproto"sv) {
 		std::vector<std::string_view> pathParts;
-		reindexer::split(std::string_view(uri_.path()), ":", true, pathParts);
+		rx_unused = reindexer::split(std::string_view(uri_.path()), ":", true, pathParts);
 		std::string_view dbName;
 		if (pathParts.size() >= 2) {
 			dbName = pathParts.back().substr(1);  // ignore '/' in dbName

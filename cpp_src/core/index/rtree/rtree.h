@@ -19,7 +19,7 @@ class [[nodiscard]] RectangleTree {
 
 public:
 	struct [[nodiscard]] Visitor {
-		[[nodiscard]] virtual bool operator()(const T&) = 0;
+		virtual bool operator()(const T&) = 0;
 		virtual ~Visitor() noexcept = default;
 	};
 
@@ -29,13 +29,13 @@ private:
 	template <typename NodeBaseT>
 	class [[nodiscard]] Iterator {
 		template <typename U>
-		struct LeafTraits {
+		struct [[nodiscard]] LeafTraits {
 			using value_type = T;
 			using leaf_type = Leaf;
 			using node_base_type = U;
 		};
 		template <typename U>
-		struct LeafTraits<const U> {
+		struct [[nodiscard]] LeafTraits<const U> {
 			using value_type = const T;
 			using leaf_type = const Leaf;
 			using node_base_type = U;
@@ -60,14 +60,10 @@ private:
 			leaf_ = other.leaf_;
 			return *this;
 		}
-		[[nodiscard]] value_type& operator*() const noexcept { return leaf_->data_[pos_]; }
-		[[nodiscard]] value_type* operator->() const noexcept { return &operator*(); }
-		[[nodiscard]] bool operator==(const Iterator<node_base_type>& other) const noexcept {
-			return pos_ == other.pos_ && leaf_ == other.leaf_;
-		}
-		[[nodiscard]] bool operator==(const Iterator<const node_base_type>& other) const noexcept {
-			return pos_ == other.pos_ && leaf_ == other.leaf_;
-		}
+		value_type& operator*() const noexcept { return leaf_->data_[pos_]; }
+		value_type* operator->() const noexcept { return &operator*(); }
+		bool operator==(const Iterator<node_base_type>& other) const noexcept { return pos_ == other.pos_ && leaf_ == other.leaf_; }
+		bool operator==(const Iterator<const node_base_type>& other) const noexcept { return pos_ == other.pos_ && leaf_ == other.leaf_; }
 		Iterator& operator++() noexcept {
 			assertrx(pos_ < leaf_->data_.size());
 			++pos_;
@@ -107,23 +103,22 @@ private:
 	public:
 		explicit NodeBase(const Rectangle& r = {}) noexcept : Rectangle{r} {}
 		virtual ~NodeBase() noexcept = default;
-		[[nodiscard]] const Rectangle& BoundRect() const noexcept { return *this; }
+		const Rectangle& BoundRect() const noexcept { return *this; }
 		void SetBoundRect(const Rectangle& r) noexcept { this->Rectangle::operator=(r); }
-		[[nodiscard]] virtual bool IsLeaf() const noexcept = 0;
-		[[nodiscard]] const Node* Parent() const noexcept { return parent_; }
-		[[nodiscard]] Node* Parent() noexcept { return parent_; }
+		virtual bool IsLeaf() const noexcept = 0;
+		const Node* Parent() const noexcept { return parent_; }
+		Node* Parent() noexcept { return parent_; }
 		void SetParent(Node* p) noexcept { parent_ = p; }
-		[[nodiscard]] virtual double AreaIncrease(const Rectangle&) const noexcept = 0;
-		[[nodiscard]] virtual bool IsFull() const noexcept = 0;
-		[[nodiscard]] virtual size_t Size() const noexcept = 0;
-		[[nodiscard]] virtual bool Empty() const noexcept = 0;
-		[[nodiscard]] virtual std::unique_ptr<NodeBase> Clone() const = 0;
+		virtual double AreaIncrease(const Rectangle&) const noexcept = 0;
+		virtual bool IsFull() const noexcept = 0;
+		virtual size_t Size() const noexcept = 0;
+		virtual bool Empty() const noexcept = 0;
+		virtual std::unique_ptr<NodeBase> Clone() const = 0;
 
-		[[nodiscard]] virtual std::pair<std::unique_ptr<NodeBase>, std::unique_ptr<NodeBase>> insert(T&&, iterator& insertedIt,
-																									 bool splitAvailable) = 0;
-		[[nodiscard]] virtual std::pair<bool, bool> DeleteOneIf(Visitor&) = 0;
-		[[nodiscard]] virtual bool DWithin(Point, double distance, RectangleTree::Visitor&) const noexcept = 0;
-		[[nodiscard]] virtual bool ForEach(RectangleTree::Visitor&) const noexcept = 0;
+		virtual std::pair<std::unique_ptr<NodeBase>, std::unique_ptr<NodeBase>> insert(T&&, iterator& insertedIt, bool splitAvailable) = 0;
+		virtual std::pair<bool, bool> DeleteOneIf(Visitor&) = 0;
+		virtual bool DWithin(Point, double distance, RectangleTree::Visitor&) const noexcept = 0;
+		virtual bool ForEach(RectangleTree::Visitor&) const noexcept = 0;
 
 		virtual const_iterator cbegin() const noexcept = 0;
 		virtual const_iterator begin() const noexcept = 0;
@@ -132,10 +127,10 @@ private:
 		virtual const_iterator end() const noexcept = 0;
 		virtual iterator end() noexcept = 0;
 
-		[[nodiscard]] virtual std::pair<iterator, bool> find(Point) noexcept = 0;
-		[[nodiscard]] virtual std::pair<const_iterator, bool> find(Point) const noexcept = 0;
+		virtual std::pair<iterator, bool> find(Point) noexcept = 0;
+		virtual std::pair<const_iterator, bool> find(Point) const noexcept = 0;
 
-		[[nodiscard]] virtual bool Check(const Node* parent) const noexcept = 0;
+		virtual bool Check(const Node* parent) const noexcept = 0;
 
 	private:
 		Node* parent_ = nullptr;
@@ -150,11 +145,11 @@ private:
 		Leaf(const Leaf& other) : NodeBase{other.BoundRect()}, data_{other.data_} {}
 		Leaf(Leaf&& other) noexcept : NodeBase{other.BoundRect()}, data_{std::move(other.data_)} {}
 		using Container = h_vector<T, MaxEntries>;
-		[[nodiscard]] bool IsLeaf() const noexcept override { return true; }
-		[[nodiscard]] bool IsFull() const noexcept override { return data_.size() == MaxEntries; }
-		[[nodiscard]] size_t Size() const noexcept override { return data_.size(); }
-		[[nodiscard]] bool Empty() const noexcept override { return data_.empty(); }
-		[[nodiscard]] std::unique_ptr<NodeBase> Clone() const override { return std::unique_ptr<NodeBase>{new Leaf{*this}}; }
+		bool IsLeaf() const noexcept override { return true; }
+		bool IsFull() const noexcept override { return data_.size() == MaxEntries; }
+		size_t Size() const noexcept override { return data_.size(); }
+		bool Empty() const noexcept override { return data_.empty(); }
+		std::unique_ptr<NodeBase> Clone() const override { return std::unique_ptr<NodeBase>{new Leaf{*this}}; }
 
 		const_iterator cbegin() const noexcept override { return {this, 0}; }
 		const_iterator begin() const noexcept override { return cbegin(); }
@@ -163,17 +158,16 @@ private:
 		const_iterator end() const noexcept override { return cend(); }
 		iterator end() noexcept override { return {this, data_.size()}; }
 
-		[[nodiscard]] std::pair<iterator, bool> find(Point p) noexcept override {
+		std::pair<iterator, bool> find(Point p) noexcept override {
 			const auto it = std::find_if(data_.begin(), data_.end(), [p](const T& v) { return p == Traits::GetPoint(v); });
 			return {{this, size_t(std::distance(data_.begin(), it))}, it != data_.end()};
 		}
-		[[nodiscard]] std::pair<const_iterator, bool> find(Point p) const noexcept override {
+		std::pair<const_iterator, bool> find(Point p) const noexcept override {
 			const auto it = std::find_if(data_.cbegin(), data_.cend(), [p](const T& v) { return p == Traits::GetPoint(v); });
 			return {{this, size_t(std::distance(data_.begin(), it))}, it != data_.cend()};
 		}
 
-		[[nodiscard]] std::pair<std::unique_ptr<NodeBase>, std::unique_ptr<NodeBase>> insert(T&& v, iterator& insertedIt,
-																							 bool splitAvailable) override {
+		std::pair<std::unique_ptr<NodeBase>, std::unique_ptr<NodeBase>> insert(T&& v, iterator& insertedIt, bool splitAvailable) override {
 			if (data_.size() < MaxEntries) {
 				if (data_.empty()) {
 					this->SetBoundRect(boundRect(Traits::GetPoint(v)));
@@ -191,7 +185,7 @@ private:
 			}
 		}
 
-		[[nodiscard]] bool DWithin(Point p, double distance, RectangleTree::Visitor& visitor) const noexcept override {
+		bool DWithin(Point p, double distance, RectangleTree::Visitor& visitor) const noexcept override {
 			for (const auto& v : data_) {
 				if (reindexer::DWithin(Traits::GetPoint(v), p, distance)) {
 					if (visitor(v)) {
@@ -201,7 +195,7 @@ private:
 			}
 			return false;
 		}
-		[[nodiscard]] bool ForEach(RectangleTree::Visitor& visitor) const noexcept override {
+		bool ForEach(RectangleTree::Visitor& visitor) const noexcept override {
 			for (const auto& v : data_) {
 				if (visitor(v)) {
 					return true;
@@ -210,7 +204,7 @@ private:
 			return false;
 		}
 
-		[[nodiscard]] std::pair<bool, bool> DeleteOneIf(Visitor& visitor) override {
+		std::pair<bool, bool> DeleteOneIf(Visitor& visitor) override {
 			for (auto it = data_.begin(), end = data_.end(); it != end; ++it) {
 				if (visitor(*it)) {
 					data_.erase(it);
@@ -239,14 +233,14 @@ private:
 			}
 		}
 
-		[[nodiscard]] double AreaIncrease(const reindexer::Rectangle& r) const noexcept override {
+		double AreaIncrease(const reindexer::Rectangle& r) const noexcept override {
 			if (data_.empty()) {
 				return r.Area();
 			}
 			return SplitterT::AreaIncrease(this->BoundRect(), r);
 		}
 
-		[[nodiscard]] bool Check(const Node* parent) const noexcept override {
+		bool Check(const Node* parent) const noexcept override {
 			if (parent != this->Parent()) {
 				return false;
 			}
@@ -312,8 +306,8 @@ private:
 			}
 		}
 
-		[[nodiscard]] bool IsLeaf() const noexcept override { return false; }
-		[[nodiscard]] bool IsFull() const noexcept override {
+		bool IsLeaf() const noexcept override { return false; }
+		bool IsFull() const noexcept override {
 			if (data_.size() < MaxEntries) {
 				return false;
 			}
@@ -324,14 +318,14 @@ private:
 			}
 			return true;
 		}
-		[[nodiscard]] size_t Size() const noexcept override {
+		size_t Size() const noexcept override {
 			size_t result = 0;
 			for (const auto& n : data_) {
 				result += n->Size();
 			}
 			return result;
 		}
-		[[nodiscard]] bool Empty() const noexcept override {
+		bool Empty() const noexcept override {
 			for (const auto& n : data_) {
 				if (!n->Empty()) {
 					return false;
@@ -339,7 +333,7 @@ private:
 			}
 			return true;
 		}
-		[[nodiscard]] std::unique_ptr<NodeBase> Clone() const override { return std::unique_ptr<NodeBase>{new Node{*this}}; }
+		std::unique_ptr<NodeBase> Clone() const override { return std::unique_ptr<NodeBase>{new Node{*this}}; }
 
 		const_iterator cbegin() const noexcept override {
 			assertrx(!data_.empty());
@@ -360,7 +354,7 @@ private:
 			return data_.back()->end();
 		}
 
-		[[nodiscard]] std::pair<iterator, bool> find(Point p) noexcept override {
+		std::pair<iterator, bool> find(Point p) noexcept override {
 			for (auto& n : data_) {
 				if (n->BoundRect().Contain(p)) {
 					const auto res = n->find(p);
@@ -371,7 +365,7 @@ private:
 			}
 			return {{nullptr, {}}, false};
 		}
-		[[nodiscard]] std::pair<const_iterator, bool> find(Point p) const noexcept override {
+		std::pair<const_iterator, bool> find(Point p) const noexcept override {
 			for (auto& n : data_) {
 				if (n->BoundRect().Contain(p)) {
 					const auto res = n->find(p);
@@ -428,7 +422,7 @@ private:
 			return false;
 		}
 
-		[[nodiscard]] std::pair<bool, bool> DeleteOneIf(Visitor& visitor) override {
+		std::pair<bool, bool> DeleteOneIf(Visitor& visitor) override {
 			for (size_t i = 0; i < data_.size(); ++i) {
 				const auto deletionResult{data_[i]->DeleteOneIf(visitor)};
 				if (deletionResult.first) {
@@ -444,12 +438,12 @@ private:
 			return {false, false};
 		}
 
-		[[nodiscard]] double AreaIncrease(const reindexer::Rectangle& r) const noexcept override {
+		double AreaIncrease(const reindexer::Rectangle& r) const noexcept override {
 			assertrx(!data_.empty());
 			return SplitterT::AreaIncrease(this->BoundRect(), r);
 		}
 
-		[[nodiscard]] bool Check(const Node* parent) const noexcept override {
+		bool Check(const Node* parent) const noexcept override {
 			if (parent != this->Parent()) {
 				return false;
 			}
@@ -565,9 +559,9 @@ public:
 	using traits = Traits;
 
 	RectangleTree() { root_.insert(std::unique_ptr<NodeBase>{new Leaf}); }
-	[[nodiscard]] size_t size() const noexcept { return root_.Size(); }
-	[[nodiscard]] bool empty() const noexcept { return root_.Empty(); }
-	[[nodiscard]] std::pair<iterator, bool> insert(T&& v) {
+	size_t size() const noexcept { return root_.Size(); }
+	bool empty() const noexcept { return root_.Empty(); }
+	std::pair<iterator, bool> insert(T&& v) {
 		const auto findRes = root_.find(Traits::GetPoint(v));
 		if (findRes.second) {
 			return {findRes.first, false};
@@ -588,7 +582,7 @@ public:
 		}
 		return inserted;
 	}
-	[[nodiscard]] bool DeleteOneIf(Visitor& visitor) { return root_.DeleteOneIf(visitor).first; }
+	bool DeleteOneIf(Visitor& visitor) { return root_.DeleteOneIf(visitor).first; }
 	void erase(iterator it) { it.leaf_->erase(it.leaf_->data_.begin() + it.pos_); }
 
 	const_iterator cbegin() const noexcept { return root_.cbegin(); }
@@ -614,7 +608,7 @@ public:
 	}
 	void DWithin(Point p, double distance, RectangleTree::Visitor& visitor) const { root_.DWithin(p, distance, visitor); }
 
-	[[nodiscard]] bool Check() const noexcept { return root_.Check(nullptr); }
+	bool Check() const noexcept { return root_.Check(nullptr); }
 
 private:
 	Node root_;

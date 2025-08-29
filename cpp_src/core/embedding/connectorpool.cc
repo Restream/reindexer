@@ -1,6 +1,7 @@
 #include "core/embedding/connectorpool.h"
 #include "core/embedding/httpconnector.h"
 #include "core/rdxcontext.h"
+#include "estl/lock.h"
 
 namespace reindexer {
 
@@ -52,7 +53,7 @@ ConnectorPool::~ConnectorPool() = default;
 
 std::pair<Error, ConnectorPool::ConnectorProxy> ConnectorPool::GetConnector(const RdxContext& ctx) noexcept {
 	try {
-		std::unique_lock lock(mtx_);
+		unique_lock lock(mtx_);
 		if (idle_.empty()) {
 			cond_.wait(lock, [this]() noexcept { return !idle_.empty(); }, ctx);
 		}
@@ -88,11 +89,11 @@ void ConnectorPool::ReleaseConnection(const ConnectorProxy& proxy) {
 
 	bool notify = false;
 	{
-		std::unique_lock lock{mtx_};
+		unique_lock lock{mtx_};
 		notify = idle_.empty();
 
 		if (auto it = busy_.find(proxy.connector_); it != busy_.end()) {
-			CheckConnect(*it->second, config_);
+			rx_unused = CheckConnect(*it->second, config_);
 			idle_.insert(busy_.extract(it));
 		}
 	}

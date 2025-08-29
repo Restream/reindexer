@@ -10,7 +10,7 @@ namespace reindexer {
 class HnswKnnRawResult;
 
 template <template <typename> typename Map>
-class HnswIndexBase final : public FloatVectorIndex {
+class [[nodiscard]] HnswIndexBase final : public FloatVectorIndex {
 	using Base = FloatVectorIndex;
 	using FloatType = float;
 

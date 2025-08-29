@@ -1,17 +1,18 @@
 #pragma once
 
-#include <condition_variable>
 #include "core/itemimpl.h"
+#include "estl/condition_variable.h"
+#include "estl/mutex.h"
 #include "namespaceimpl.h"
 
 namespace reindexer {
 
-class ItemsLoader {
+class [[nodiscard]] ItemsLoader {
 public:
 	constexpr static unsigned kBufferSize = 3000;
 	constexpr static unsigned kReadSize = kBufferSize / 2;
 
-	struct LoadData {
+	struct [[nodiscard]] LoadData {
 		int64_t maxLSN = -1;
 		int64_t minLSN = std::numeric_limits<int64_t>::max();
 		Error lastErr;
@@ -31,7 +32,7 @@ public:
 
 private:
 	template <typename T>
-	class InplaceRingBuf {
+	class [[nodiscard]] InplaceRingBuf {
 	public:
 		template <typename... Args>
 		InplaceRingBuf(size_t cap, const Args&... args) noexcept {
@@ -79,17 +80,17 @@ private:
 		std::vector<T> ring_;
 	};
 
-	struct SliceStorage {
+	struct [[nodiscard]] SliceStorage {
 		unsigned len = 0;
 		std::unique_ptr<char[]> data;
 	};
-	struct ItemData {
+	struct [[nodiscard]] ItemData {
 		ItemData(const PayloadType& type, const TagsMatcher& tagsMatcher) : impl(type, tagsMatcher) {}
 
 		ItemImpl impl;
 		PayloadValue preallocPl;  // Payload, which will be emplaced into namespace
 	};
-	struct ANNIndexInfo {
+	struct [[nodiscard]] ANNIndexInfo {
 		size_t field;
 		size_t dims;
 	};
@@ -107,8 +108,8 @@ private:
 	friend class IndexInserters;
 
 	NamespaceImpl& ns_;
-	std::mutex mtx_;
-	std::condition_variable cv_;
+	mutex mtx_;
+	condition_variable cv_;
 	InplaceRingBuf<ItemData> items_;
 	std::vector<SliceStorage> slices_;
 	bool terminated_ = false;
@@ -121,7 +122,7 @@ private:
 	fast_hash_map<size_t, std::vector<std::unique_ptr<uint8_t[]>>> vectorsData_;
 };
 
-class IndexInserters {
+class [[nodiscard]] IndexInserters {
 public:
 	IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt, const ann_storage_cache::Reader* annCache);
 	~IndexInserters() { Stop(); }
@@ -133,7 +134,7 @@ public:
 	void BuildCompositeIndexesAsync();
 
 private:
-	struct SharedData {
+	struct [[nodiscard]] SharedData {
 		std::span<ItemsLoader::ItemData> newItems;
 		std::span<PayloadValue> nsItems;
 		unsigned startId = 0;
@@ -143,22 +144,22 @@ private:
 
 	void insertionLoop(unsigned threadId) noexcept;
 	void onItemsHandled() noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (++readyThreads_ == threads_.size()) {
 			cvDone_.notify_one();
 		}
 	}
 	void onException(Error e) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		status_ = std::move(e);
 		if (++readyThreads_ == threads_.size()) {
 			cvDone_.notify_one();
 		}
 	}
 
-	std::mutex mtx_;
-	std::condition_variable cvReady_;
-	std::condition_variable cvDone_;
+	mutex mtx_;
+	condition_variable cvReady_;
+	condition_variable cvDone_;
 	unsigned iteration_{0};
 	NamespaceImpl::IndexesStorage& indexes_;
 	const PayloadType pt_;

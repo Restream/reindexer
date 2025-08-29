@@ -39,14 +39,14 @@ public:
 };
 
 template <typename Builder>
-class IAdditionalDatasource {
+class [[nodiscard]] IAdditionalDatasource {
 public:
 	virtual void PutAdditionalFields(Builder&) const = 0;
 	virtual IEncoderDatasourceWithJoins* GetJoinsDatasource() noexcept = 0;
 };
 
 template <typename Builder>
-class BaseEncoder {
+class [[nodiscard]] BaseEncoder {
 public:
 	explicit BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsFilter* filter);
 	void Encode(ConstPayload& pl, Builder& builder,
@@ -61,7 +61,7 @@ private:
 	constexpr static bool kWithTagsPathTracking = std::is_same_v<ProtobufBuilder, Builder>;
 	constexpr static bool kWithFieldExtractor = std::is_same_v<FieldsExtractor, Builder>;
 
-	struct DummyTagsPathScope {
+	struct [[nodiscard]] DummyTagsPathScope {
 		DummyTagsPathScope(TagsPath&, TagName) noexcept {}
 	};
 	using PathScopeT = std::conditional_t<kWithTagsPathTracking, TagsPathScope<TagsPath>, DummyTagsPathScope>;

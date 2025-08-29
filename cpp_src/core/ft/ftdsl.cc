@@ -108,7 +108,7 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 	wchar_t groupQuote = '\'';
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
 	std::string utf8str;
-	fieldsOpts.insert(fieldsOpts.end(), std::max(int(fields_.size()), 1), {1.0, false});
+	rx_unused = fieldsOpts.insert(fieldsOpts.end(), std::max(int(fields_.size()), 1), {1.0, false});
 
 	while (*str) {
 		while (*str && needToSkip(*str, splitOptions_)) {

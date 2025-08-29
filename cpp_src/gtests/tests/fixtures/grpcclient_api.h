@@ -5,6 +5,7 @@
 
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
+#include <thread>
 #include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/cjsondecoder.h"
 #include "core/payload/payloadiface.h"
@@ -13,10 +14,10 @@
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
-class GrpcClientApi : public ReindexerApi {
+class [[nodiscard]] GrpcClientApi : public ReindexerApi {
 public:
 	void SetUp() {
-		reindexer::fs::RmDirAll(kStoragePath);
+		rx_unused = reindexer::fs::RmDirAll(kStoragePath);
 		YAML::Node y;
 		y["storage"]["path"] = kStoragePath;
 		y["logger"]["loglevel"] = "none";

@@ -2,7 +2,7 @@
 
 #include <optional>
 #include "core/dbconfig.h"
-#include "estl/mutex.h"
+#include "estl/marked_mutex.h"
 #include "tools/clock.h"
 
 namespace reindexer {
@@ -14,10 +14,10 @@ class ExplainCalc;
 namespace long_actions {
 
 template <typename T>
-struct ActionWrapper {};
+struct [[nodiscard]] ActionWrapper {};
 
 // to store durations for different MutexMark types and methods calls in one array
-enum class DurationStorageIdx : unsigned {
+enum class [[nodiscard]] DurationStorageIdx : unsigned {
 	DbManager = 0u,
 	IndexText,
 	Namespace,
@@ -31,7 +31,7 @@ enum class DurationStorageIdx : unsigned {
 	StorageSize	 // This must be the last element
 };
 
-constexpr DurationStorageIdx DurationStorageIdxCast(MutexMark mark) {
+consteval DurationStorageIdx DurationStorageIdxCast(MutexMark mark) noexcept {
 	switch (mark) {
 		case MutexMark::DbManager:
 			return DurationStorageIdx::DbManager;
@@ -52,7 +52,7 @@ constexpr DurationStorageIdx DurationStorageIdxCast(MutexMark mark) {
 	}
 }
 
-enum class ExplainDuration {
+enum class [[nodiscard]] ExplainDuration {
 	Total,
 	Prepare,
 	Indexes,
@@ -63,9 +63,9 @@ enum class ExplainDuration {
 };
 
 template <QueryType Enum>
-struct QueryEnum2Type : std::integral_constant<QueryType, Enum> {};
+struct [[nodiscard]] QueryEnum2Type : std::integral_constant<QueryType, Enum> {};
 
-struct LockDurationStorage {
+struct [[nodiscard]] LockDurationStorage {
 	using ArrayT = std::array<std::optional<std::chrono::microseconds>, size_t(DurationStorageIdx::StorageSize)>;
 	ArrayT durationStorage = {};
 	void Add(DurationStorageIdx idx, std::chrono::microseconds time) {
@@ -74,25 +74,25 @@ struct LockDurationStorage {
 	}
 };
 
-struct QueryParams {
+struct [[nodiscard]] QueryParams {
 	const Query& query;
 	LongQueriesLoggingParams loggingParams;
 };
 
-struct TransactionParams {
+struct [[nodiscard]] TransactionParams {
 	const LocalTransaction& tx;
 	LongTxLoggingParams thresholds;
 	const bool& wasCopied;
 };
 
 template <>
-struct ActionWrapper<LocalTransaction> : TransactionParams, LockDurationStorage {
+struct [[nodiscard]] ActionWrapper<LocalTransaction> : TransactionParams, LockDurationStorage {
 	template <typename... Args>
 	ActionWrapper(Args&&... args) : TransactionParams{std::forward<Args>(args)...}, LockDurationStorage() {}
 };
 
 template <>
-struct ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>> : QueryParams {
+struct [[nodiscard]] ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>> : QueryParams {
 	template <typename... Args>
 	ActionWrapper(Args&&... args) : QueryParams{std::forward<Args>(args)...} {}
 
@@ -108,19 +108,19 @@ private:
 };
 
 template <>
-struct ActionWrapper<QueryEnum2Type<QueryType::QueryUpdate>> : QueryParams, LockDurationStorage {
+struct [[nodiscard]] ActionWrapper<QueryEnum2Type<QueryType::QueryUpdate>> : QueryParams, LockDurationStorage {
 	template <typename... Args>
 	ActionWrapper(Args&&... args) : QueryParams{std::forward<Args>(args)...}, LockDurationStorage{} {}
 };
 
 template <>
-struct ActionWrapper<QueryEnum2Type<QueryType::QueryDelete>> : QueryParams, LockDurationStorage {
+struct [[nodiscard]] ActionWrapper<QueryEnum2Type<QueryType::QueryDelete>> : QueryParams, LockDurationStorage {
 	template <typename... Args>
 	ActionWrapper(Args&&... args) : QueryParams{std::forward<Args>(args)...}, LockDurationStorage{} {}
 };
 
 template <typename T>
-struct Logger {
+struct [[nodiscard]] Logger {
 	Logger() = default;
 	static constexpr bool isEnabled = !std::is_empty_v<ActionWrapper<T>>;
 

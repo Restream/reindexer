@@ -199,7 +199,7 @@ void JsonDecoder::decodeJsonSparse(Payload* pl, CJsonBuilder& builder, const gas
 			for (const auto& elem : v) {
 				if (elem.value.getTag() == gason::JsonTag::OBJECT) {
 					decodeJson(pl, arrNode, elem.value, TagName::Empty(), floatVectorsHolder, matched);
-					arrayElementsValidation.Elem();
+					rx_unused = arrayElementsValidation.Elem();
 				} else {
 					Variant value = jsonValue2Variant(elem.value, arrayElementsValidation.Type(), arrayElementsValidation.Name(), nullptr,
 													  ConvertToString_True, ConvertNull_False);
@@ -224,7 +224,7 @@ void JsonDecoder::decodeJsonSparse(Payload* pl, CJsonBuilder& builder, const gas
 	}
 }
 
-class TagsPathGuard {
+class [[nodiscard]] TagsPathGuard {
 public:
 	TagsPathGuard(TagsPath& tagsPath, TagName tagName) : tagsPath_(tagsPath) { tagsPath_.emplace_back(tagName); }
 	~TagsPathGuard() { tagsPath_.pop_back(); }

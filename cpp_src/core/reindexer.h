@@ -39,7 +39,7 @@ struct ShardingControlResponseData;
 /// *Fork behavior*: Reindexer creates few service threads: for data flushing and normalization in background.
 /// If application calls `fork` after using Reindexer, then resources associated with that threads will leak
 /// Therefore it is strongly recommended, *do not* call fork after Reindexer creation.
-class Reindexer {
+class [[nodiscard]] Reindexer {
 public:
 	/// Completion routine
 	using Completion = std::function<void(const Error& err)>;
@@ -382,6 +382,7 @@ public:
 	typedef Item ItemT;
 	typedef Transaction TransactionT;
 	typedef ReindexerConfig ConfigT;
+	typedef ConnectOpts ConnectOptsT;
 
 	Error DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index) noexcept;
 

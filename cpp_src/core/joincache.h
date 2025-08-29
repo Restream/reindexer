@@ -8,7 +8,7 @@
 #include "vendor/murmurhash/MurmurHash3.h"
 namespace reindexer {
 
-struct JoinCacheKey {
+struct [[nodiscard]] JoinCacheKey {
 	JoinCacheKey() = default;
 	JoinCacheKey(JoinCacheKey&& other) = default;
 	JoinCacheKey(const JoinCacheKey& other) = default;
@@ -31,12 +31,12 @@ struct JoinCacheKey {
 
 	h_vector<uint8_t, 256> buf_;
 };
-struct equal_join_cache_key {
+struct [[nodiscard]] equal_join_cache_key {
 	bool operator()(const JoinCacheKey& lhs, const JoinCacheKey& rhs) const {
 		return (lhs.buf_.size() == rhs.buf_.size() && memcmp(lhs.buf_.data(), rhs.buf_.data(), lhs.buf_.size()) == 0);
 	}
 };
-struct hash_join_cache_key {
+struct [[nodiscard]] hash_join_cache_key {
 	size_t operator()(const JoinCacheKey& cache) const {
 		uint64_t hash[2];
 		MurmurHash3_x64_128(cache.buf_.data(), cache.buf_.size(), 0, &hash);
@@ -46,7 +46,7 @@ struct hash_join_cache_key {
 
 struct JoinPreResult;
 
-struct JoinCacheVal {
+struct [[nodiscard]] JoinCacheVal {
 	JoinCacheVal() = default;
 	size_t Size() const noexcept { return ids ? (sizeof(*ids.get()) + ids->heap_size()) : 0; }
 	bool IsInitialized() const noexcept { return inited; }
@@ -59,7 +59,7 @@ struct JoinCacheVal {
 
 using JoinCache = LRUCache<LRUCacheImpl<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>, LRUWithAtomicPtr::No>;
 
-struct JoinCacheRes {
+struct [[nodiscard]] JoinCacheRes {
 	bool haveData = false;
 	bool needPut = false;
 

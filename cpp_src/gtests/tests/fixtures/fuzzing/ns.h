@@ -7,7 +7,7 @@ namespace fuzzing {
 
 class Index;
 
-class Ns {
+class [[nodiscard]] Ns {
 public:
 	Ns(std::string name, RandomGenerator::ErrFactorType errorFactor);
 	const std::vector<Index>& GetIndexes() const& noexcept { return indexes_; }

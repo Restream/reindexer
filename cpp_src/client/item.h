@@ -29,7 +29,7 @@ class ReindexerImpl;
 /// *Thread safety*: Item is thread safe against Reindexer, but not thread safe itself.
 /// Usage of single Item from different threads will race
 
-class Item {
+class [[nodiscard]] Item {
 public:
 	/// Construct empty Item
 	Item();

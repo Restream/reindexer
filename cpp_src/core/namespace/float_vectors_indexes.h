@@ -6,7 +6,7 @@ namespace reindexer {
 
 class FloatVectorIndex;
 
-struct FloatVectorIndexData {
+struct [[nodiscard]] FloatVectorIndexData {
 	size_t ptField;
 	const FloatVectorIndex* ptr;
 };

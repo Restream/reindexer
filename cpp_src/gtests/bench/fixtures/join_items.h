@@ -2,7 +2,7 @@
 
 #include "base_fixture.h"
 
-class JoinItems : private BaseFixture {
+class [[nodiscard]] JoinItems : private BaseFixture {
 public:
 	virtual ~JoinItems() {}
 

@@ -11,7 +11,7 @@ namespace client {
 
 class InternalRdxContext;
 
-class Transaction {
+class [[nodiscard]] Transaction {
 public:
 	using Completion = std::function<void(const Error& err)>;
 	Error Insert(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeInsert, lsn); }

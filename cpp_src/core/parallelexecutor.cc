@@ -33,8 +33,8 @@ Error ParallelExecutor::createIntegralError(std::vector<std::pair<Error, int>>& 
 Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, const sharding::ConnectionsVector& connections,
 								   const RdxContext& ctx,
 								   std::function<Error(const Query&, LocalQueryResults&, const RdxContext&)>&& localAction) {
-	std::condition_variable cv;
-	std::mutex mtx;
+	condition_variable cv;
+	mutex mtx;
 
 	size_t clientCompl = 0;
 
@@ -60,7 +60,7 @@ Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, con
 
 			Error err = clientData.connection.Select(query, clientData.results);
 			if (!err.ok()) {
-				std::lock_guard lck(mtx);
+				lock_guard lck(mtx);
 				clientErrors.emplace_back(std::move(err), shardId);
 			}
 		} else {
@@ -71,13 +71,13 @@ Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, con
 			if (status.ok()) {
 				result.AddQr(std::move(lqr), localShardId_, false);
 			} else {
-				std::lock_guard lck(mtx);
+				lock_guard lck(mtx);
 				clientErrors.emplace_back(std::move(status), localShardId_);
 			}
 		}
 	}
 	if (clientCount) {
-		std::unique_lock lck(mtx);
+		unique_lock lck(mtx);
 		cv.wait(lck, [&clientCompl, clientCount] { return clientCompl == clientCount; });
 		Error status = createIntegralError(clientErrors, isLocalCall ? clientCount + 1 : clientCount);
 		if (!status.ok()) {
@@ -108,8 +108,8 @@ Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, con
 }
 
 void ParallelExecutor::completionFunction(size_t clientCount, size_t& clientCompl, std::vector<std::pair<Error, int>>& clientErrors,
-										  int shardId, std::mutex& mtx, std::condition_variable& cv, const Error& err) {
-	std::lock_guard lck(mtx);
+										  int shardId, mutex& mtx, condition_variable& cv, const Error& err) {
+	lock_guard lck(mtx);
 	clientCompl++;
 	if (!err.ok()) {
 		clientErrors.emplace_back(err, shardId);

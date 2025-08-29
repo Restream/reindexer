@@ -38,7 +38,7 @@ constexpr static auto kOpMap = frozen::make_unordered_map<OpType, std::string_vi
 constexpr static auto kReqTotalValues = frozen::make_unordered_map<CalcTotalMode, std::string_view>(
 	{{ModeNoTotal, "disabled"sv}, {ModeAccurateTotal, "enabled"sv}, {ModeCachedTotal, "cached"sv}});
 
-enum class QueryScope { Main, Subquery };
+enum class [[nodiscard]] QueryScope { Main, Subquery };
 
 template <typename T, size_t N>
 std::string_view get(const frozen::unordered_map<T, std::string_view, N>& m, const T& key) {
@@ -54,7 +54,10 @@ static void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& bui
 	auto arrNode = builder.Array("sort"sv);
 
 	for (const SortingEntry& sortingEntry : sortingEntries) {
-		arrNode.Object().Put("field"sv, sortingEntry.expression).Put("desc"sv, *sortingEntry.desc);
+		auto obj = arrNode.Object();
+		obj.Put("field"sv, sortingEntry.expression);
+		obj.Put("desc"sv, *sortingEntry.desc);
+		obj.End();
 	}
 }
 
@@ -368,7 +371,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				node.Put("first_field"sv, qe.LeftFieldName());
 				node.Put("second_field"sv, qe.RightFieldName());
 			},
-			[](const DistinctQueryEntry&) {}, [&node](const KnnQueryEntry& qe) { qe.ToDsl(node); });
+			[](const MultiDistinctQueryEntry&) {}, [&node](const KnnQueryEntry& qe) { qe.ToDsl(node); });
 	}
 }
 

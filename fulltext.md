@@ -388,7 +388,7 @@ Several parameters of full text search engine can be configured from application
 |   |      Bm25Config       |  struct  | Document ranking function parameters  [More...](#basic-document-ranking-algorithms)                                                                                                                                                                                                                                               |               |
 |   |     SplitterType      |  string  | Text breakdown algorithm. Available values: 'mmseg_cn' and 'fast'                                                                                                                                                                                                                                                                    |    "fast"     |
 |   |  WordPartDelimiters   |  string  | Symbols, which will be treated as word part delimiters     |    "-/+_`'"     |
-|   |   MinWordPartSize     |    int   | Min word part size to indexate and search     |      3       |
+|   |   MinWordPartSize     |    int   | Min word part size for indexing and searching     |      3       |
 
 ### Stopwords details
 The list item can be either a string or a structure containing a string (the stopword) and a bool attribute (`is_morpheme`) indicating whether the stopword can be part of a word that can be shown in query-results.

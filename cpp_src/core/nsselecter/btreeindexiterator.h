@@ -8,7 +8,7 @@
 namespace reindexer {
 
 template <class T>
-class BtreeIndexIterator final : public IndexIterator {
+class [[nodiscard]] BtreeIndexIterator final : public IndexIterator {
 public:
 	explicit BtreeIndexIterator(const T& idxMap) noexcept : idxMap_(idxMap), first_(idxMap.begin()), last_(idxMap.end()) {}
 	BtreeIndexIterator(const T& idxMap, const typename T::iterator& first, const typename T::iterator& last) noexcept
@@ -21,10 +21,10 @@ public:
 		} else {
 			impl_ = std::make_shared<BtreeIndexForwardIteratorImpl<T>>(idxMap_, first_, last_);
 		}
+		impl_->shiftToBegin();
 		if (impl_->getSize() == 0) {
 			return;
 		}
-		impl_->shiftToBegin();
 		impl_->shiftIdsetToBegin();
 	}
 
@@ -76,7 +76,7 @@ private:
 	const typename T::const_iterator first_;
 	const typename T::const_iterator last_;
 
-	struct CachedIters {
+	struct [[nodiscard]] CachedIters {
 		bool Valid(size_t limitIters) const noexcept {
 			return fullyScanned || (limitIters <= value && value != std::numeric_limits<size_t>::max());
 		}

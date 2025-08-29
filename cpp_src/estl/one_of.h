@@ -6,14 +6,14 @@
 namespace reindexer {
 
 template <typename T, typename... Ts>
-class OneOf : private OneOf<T>, private OneOf<Ts...> {
+class [[nodiscard]] OneOf : private OneOf<T>, private OneOf<Ts...> {
 public:
 	using OneOf<T>::OneOf;
 	using OneOf<Ts...>::OneOf;
 };
 
 template <typename T>
-class OneOf<T> {
+class [[nodiscard]] OneOf<T> {
 protected:
 	OneOf() noexcept = default;
 
@@ -24,7 +24,7 @@ public:
 };
 
 template <template <typename> typename Templ, typename... Ts>
-class OneOf<Template<Templ, Ts...>> : private OneOf<Templ<Ts>...> {
+class [[nodiscard]] OneOf<Template<Templ, Ts...>> : private OneOf<Templ<Ts>...> {
 public:
 	using OneOf<Templ<Ts>...>::OneOf;
 };

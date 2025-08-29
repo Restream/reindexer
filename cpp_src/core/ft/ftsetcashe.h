@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-struct FtIdSetCacheVal {
+struct [[nodiscard]] FtIdSetCacheVal {
 	FtIdSetCacheVal() = default;
 	FtIdSetCacheVal(IdSet::Ptr&& i) noexcept : ids(std::move(i)) {}
 	FtIdSetCacheVal(IdSet::Ptr&& i, FtCtxData::Ptr&& c) noexcept : ids(std::move(i)), ctx(std::move(c)) {}

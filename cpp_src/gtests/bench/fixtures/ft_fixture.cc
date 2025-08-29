@@ -222,7 +222,7 @@ reindexer::Item FullText::MakeLowDiversityItem(int id) {
 
 reindexer::Item FullText::MakeItem(benchmark::State&) {
 	auto item = db_->NewItem(nsdef_.name);
-	item.Unsafe(false);
+	rx_unused = item.Unsafe(false);
 
 	auto phrase = CreatePhrase();
 	auto countries = GetRandomCountries();
@@ -958,7 +958,7 @@ void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::Stat
 	bld.Put("rand", rand());
 	bld.End();
 	auto item = db_->NewItem(alternatingNs_);
-	item.Unsafe(false);
+	rx_unused = item.Unsafe(false);
 	if (!item.Status().ok()) {
 		state.SkipWithError(item.Status().what());
 		return;

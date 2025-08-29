@@ -24,7 +24,7 @@ class RdxContext;
 /// not changed externally, even in case, when data in database was changed, or deleted. *Thread safety*: Item is thread safe against
 /// Reindexer, but not thread safe itself. Usage of single Item from different threads will race
 
-class Item {
+class [[nodiscard]] Item {
 public:
 	/// Construct empty Item
 	Item() noexcept : impl_(nullptr), status_(errNotValid) {}
@@ -154,7 +154,7 @@ public:
 	Error GetMsgPack(WrSerializer& wrser) & noexcept;
 	/// Packs data in msgpack format
 	/// @return data slice with MsgPack
-	[[nodiscard]] std::string_view GetMsgPack() &;
+	std::string_view GetMsgPack() &;
 
 	/// Packs item data to Protobuf
 	/// @param wrser - buffer to serialize data to
@@ -165,27 +165,27 @@ public:
 	/// with Item
 	/// @param withTagsMatcher - need to serialize TagsMatcher
 	/// @return data slice with CJSON
-	[[nodiscard]] std::string_view GetCJSON(bool withTagsMatcher = false);
+	std::string_view GetCJSON(bool withTagsMatcher = false);
 	/// Serialize item to JSON.<br>
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
-	[[nodiscard]] std::string_view GetJSON();
+	std::string_view GetJSON();
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
 	Error Status() const noexcept { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
-	[[nodiscard]] int GetID() const noexcept { return id_; }
+	int GetID() const noexcept { return id_; }
 	/// Get internal shardId of item
 	/// @return shardId of item
-	[[nodiscard]] int GetShardID() const noexcept { return shardId_; }
+	int GetShardID() const noexcept { return shardId_; }
 	/// Get internal version of item
 	/// @return version of item
-	[[nodiscard]] lsn_t GetLSN();
+	lsn_t GetLSN();
 	/// Get count of indexed field
 	/// @return count of  field
-	[[nodiscard]] int NumFields() const;
+	int NumFields() const;
 	/// Get field by number
 	/// @param field - number of field. Must be >= 0 && < NumFields
 	/// @return FieldRef which contains reference to indexed field
@@ -197,24 +197,24 @@ public:
 	/// Get field's name tag
 	/// @param name - field name
 	/// @return name's numeric tag value
-	[[nodiscard]] TagName GetFieldTag(std::string_view name) const;
+	TagName GetFieldTag(std::string_view name) const;
 	/// Get field's index by name
 	/// @param name - field name
 	/// @return name's numeric field value
-	[[nodiscard]] int GetFieldIndex(std::string_view name) const;
+	int GetFieldIndex(std::string_view name) const;
 	/// Get PK fields
-	[[nodiscard]] FieldsSet PkFields() const;
+	FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
 	void SetPrecepts(std::vector<std::string> precepts) &;
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
-	[[nodiscard]] bool IsTagsUpdated() const noexcept;
+	bool IsTagsUpdated() const noexcept;
 	/// Get state token
 	/// @return Current state token
-	[[nodiscard]] int GetStateToken() const noexcept;
+	int GetStateToken() const noexcept;
 	/// Check is item valid. If is not valid, then any further operations with item will raise nullptr dereference
-	[[nodiscard]] bool operator!() const noexcept { return impl_ == nullptr; }
+	bool operator!() const noexcept { return impl_ == nullptr; }
 	/// Enable Unsafe Mode<br>.
 	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>

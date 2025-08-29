@@ -8,7 +8,7 @@ namespace reindexer {
 class NamespaceImpl;
 class Namespace;
 
-class SnapshotHandler {
+class [[nodiscard]] SnapshotHandler {
 public:
 	SnapshotHandler(NamespaceImpl& ns) : ns_(ns) {}
 
@@ -16,7 +16,7 @@ public:
 	void ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, UpdatesContainer& repl);
 
 private:
-	struct ChunkContext {
+	struct [[nodiscard]] ChunkContext {
 		bool wal = false;
 		bool shallow = false;
 		bool tx = false;
@@ -31,7 +31,7 @@ private:
 	RdxContext dummyCtx_;
 };
 
-class SnapshotTxHandler {
+class [[nodiscard]] SnapshotTxHandler {
 public:
 	SnapshotTxHandler(Namespace& ns) : ns_(ns) {}
 	void ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& rdxCtx);

@@ -7,7 +7,7 @@
 namespace reindexer {
 
 constexpr size_t kVersionDigitsCount = 3;
-class SemVersion {
+class [[nodiscard]] SemVersion {
 public:
 	SemVersion() = default;
 	SemVersion(std::string_view version) { parse(version); }

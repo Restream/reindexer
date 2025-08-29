@@ -12,7 +12,7 @@ class [[nodiscard]] IdSetCacheKey {
 
 public:
 	struct [[nodiscard]] Equal {
-		[[nodiscard]] bool operator()(const IdSetCacheKey& lhs, const IdSetCacheKey& rhs) const noexcept {
+		bool operator()(const IdSetCacheKey& lhs, const IdSetCacheKey& rhs) const noexcept {
 			try {
 				return lhs.cond_ == rhs.cond_ && lhs.sort_ == rhs.sort_ && *lhs.keys_ == *rhs.keys_;
 			} catch (...) {
@@ -21,7 +21,7 @@ public:
 		}
 	};
 	struct [[nodiscard]] Hash {
-		[[nodiscard]] size_t operator()(const IdSetCacheKey& s) const noexcept {
+		size_t operator()(const IdSetCacheKey& s) const noexcept {
 			return (size_t(s.cond_) << 8) ^ (size_t(s.sort_) << 16) ^ s.keys_->Hash();
 		}
 	};
@@ -59,8 +59,8 @@ public:
 		return *this;
 	}
 
-	[[nodiscard]] size_t Size() const noexcept { return sizeof(IdSetCacheKey) + keys_->size() * sizeof(VariantArray::value_type); }
-	[[nodiscard]] SortType Sort() const noexcept { return sort_; }
+	size_t Size() const noexcept { return sizeof(IdSetCacheKey) + keys_->size() * sizeof(VariantArray::value_type); }
+	SortType Sort() const noexcept { return sort_; }
 
 	template <typename T>
 	friend T& operator<<(T& os, const IdSetCacheKey& k) {

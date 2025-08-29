@@ -23,7 +23,7 @@ ClusterDataReplicator::ClusterDataReplicator(ClusterDataReplicator::UpdatesQueue
 	  roleSwitcher_(sharedSyncState_, syncList_, thisNode, statsCollector_, log_) {}
 
 void ClusterDataReplicator::Configure(ClusterConfigData config) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if ((config_.has_value() && config_.value() != config) || !config_.has_value()) {
 		stop();
 		config_ = std::move(config);
@@ -34,7 +34,7 @@ void ClusterDataReplicator::Configure(ClusterConfigData config) {
 }
 
 void ClusterDataReplicator::Configure(ReplicationConfigData config) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if ((baseConfig_.has_value() && baseConfig_.value() != config) || !baseConfig_.has_value()) {
 		stop();
 		baseConfig_ = std::move(config);
@@ -45,12 +45,12 @@ void ClusterDataReplicator::Configure(ReplicationConfigData config) {
 }
 
 bool ClusterDataReplicator::IsExpectingStartup() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return isExpectingStartup();
 }
 
 void ClusterDataReplicator::Run() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!isExpectingStartup()) {
 		log_.Warn([] { rtstr("ClusterDataReplicator: startup is not expected"); });
 		return;
@@ -174,7 +174,7 @@ void ClusterDataReplicator::Run() {
 }
 
 void ClusterDataReplicator::Stop(bool resetConfig) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	stop();
 	if (resetConfig) {
 		config_.reset();
@@ -182,7 +182,7 @@ void ClusterDataReplicator::Stop(bool resetConfig) {
 }
 
 Error ClusterDataReplicator::SuggestLeader(const NodeData& suggestion, NodeData& response) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!isRunning()) {
 		return Error(errNotValid, "Cluster replicator is not running");
 	}
@@ -194,7 +194,7 @@ Error ClusterDataReplicator::SuggestLeader(const NodeData& suggestion, NodeData&
 }
 
 Error ClusterDataReplicator::SetDesiredLeaderId(int nextServerId, bool sendToOtherNodes) {
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	if (!isRunning()) {
 		return Error(errNotValid, "Cluster replicator is not running");
 	}
@@ -208,7 +208,7 @@ Error ClusterDataReplicator::SetDesiredLeaderId(int nextServerId, bool sendToOth
 }
 
 Error ClusterDataReplicator::LeadersPing(const NodeData& leader) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!isRunning()) {
 		return Error(errNotValid, "Cluster replicator is not running");
 	}
@@ -227,7 +227,7 @@ bool ClusterDataReplicator::NamespaceIsInClusterConfig(std::string_view nsName) 
 		return false;
 	}
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!config_.has_value()) {
 		return false;
 	}

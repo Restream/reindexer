@@ -9,7 +9,7 @@ namespace client {
 
 using std::chrono::milliseconds;
 
-class InternalRdxContext {
+class [[nodiscard]] InternalRdxContext {
 public:
 	typedef std::function<void(const Error& err)> Completion;
 	explicit InternalRdxContext(const IRdxCancelContext* cancelCtx, Completion cmpl = nullptr, milliseconds execTimeout = milliseconds(0),

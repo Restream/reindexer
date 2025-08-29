@@ -14,7 +14,7 @@ class ItemRef;
 class PayloadType;
 class FieldsFilter;
 
-class FloatVectorsHolderVector : private h_vector<FloatVector, 1> {
+class [[nodiscard]] FloatVectorsHolderVector : private h_vector<FloatVector, 1> {
 	using Base = h_vector<FloatVector, 1>;
 
 public:
@@ -23,14 +23,14 @@ public:
 	using Base::empty;
 	using Base::resize;
 
-	[[nodiscard]] bool Add(FloatVector&& vect) {
+	bool Add(FloatVector&& vect) {
 		if (vect.IsEmpty()) {
 			return false;
 		}
 		emplace_back(std::move(vect));
 		return true;
 	}
-	[[nodiscard]] bool Add(ConstFloatVectorView vect) {
+	bool Add(ConstFloatVectorView vect) {
 		if (vect.IsEmpty()) {
 			return false;
 		}
@@ -41,10 +41,10 @@ public:
 	ConstFloatVectorView Get(size_t i) const noexcept { return ConstFloatVectorView{operator[](i)}; }
 };
 
-class FloatVectorsHolderMap {
+class [[nodiscard]] FloatVectorsHolderMap {
 	using VectorsById = fast_hash_map<IdType, FloatVectorsHolderVector>;
 
-	struct NsFloatVectorsHolder {
+	struct [[nodiscard]] NsFloatVectorsHolder {
 		NsFloatVectorsHolder(FloatVectorsIndexes&& fvIdx) noexcept : fvIndexes{std::move(fvIdx)} {}
 		FloatVectorsIndexes fvIndexes;
 		VectorsById vectorsById;
@@ -53,7 +53,7 @@ class FloatVectorsHolderMap {
 public:
 	template <typename It>
 	void Add(const NamespaceImpl&, It begin, It end, const FieldsFilter&);
-	[[nodiscard]] bool Empty() const noexcept {
+	bool Empty() const noexcept {
 		if (!vectorsByNs_.has_value()) {
 			return true;
 		}

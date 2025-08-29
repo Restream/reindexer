@@ -17,17 +17,17 @@ using namespace std::string_view_literals;
 Query SQLParser::Parse(std::string_view q) {
 	tokenizer parser(q);
 	Query query;
-	SQLParser{query}.Parse(parser);
+	rx_unused = SQLParser{query}.Parse(parser);
 	return query;
 }
 
 bool SQLParser::reachedAutocompleteToken(tokenizer& parser, const token& tok) const {
-	size_t pos = parser.getPos() + tok.text().length();
+	const size_t pos = parser.getPos() + tok.text().length();
 	return pos > ctx_.suggestionsPos;
 }
 
 token SQLParser::peekSqlToken(tokenizer& parser, SqlTokenType tokenType, bool toLower) {
-	token tok = parser.peek_token(toLower ? tokenizer::flags::to_lower : tokenizer::flags::no_flags);
+	auto tok = parser.peek_token(toLower ? tokenizer::flags::to_lower : tokenizer::flags::no_flags);
 	const bool eof = ((parser.getPos() + tok.text().length()) == parser.length());
 	if (ctx_.autocompleteMode && reachedAutocompleteToken(parser, tok)) {
 		size_t tokenLen = 0;
@@ -56,30 +56,30 @@ int SQLParser::Parse(tokenizer& parser) {
 		ctx_.suggestions.emplace_back(std::string(), Start);
 		return 0;
 	}
-	token tok = peekSqlToken(parser, Start);
+	auto tok = peekSqlToken(parser, Start);
 	if (tok.text() == "explain"sv) {
 		query_.Explain();
-		parser.next_token();
+		parser.skip_token();
 		tok = peekSqlToken(parser, StartAfterExplain);
 		if (tok.text() == "local"sv) {
 			query_.Local();
-			parser.next_token();
+			parser.skip_token();
 			tok = peekSqlToken(parser, StartAfterLocalExplain);
 		}
 	} else if (tok.text() == "local"sv) {
 		query_.Local();
-		parser.next_token();
+		parser.skip_token();
 		tok = peekSqlToken(parser, StartAfterLocal);
 		if (tok.text() == "explain"sv) {
 			query_.Explain();
-			parser.next_token();
+			parser.skip_token();
 			tok = peekSqlToken(parser, StartAfterLocalExplain);
 		}
 	}
 
 	if (tok.text() == "select"sv) {
 		query_.type_ = QuerySelect;
-		parser.next_token();
+		parser.skip_token();
 		selectParse<Nested::No>(parser);
 	} else if (query_.IsLocal()) {
 		throw Error(errParams, "Syntax error at or near '{}', {}; only SELECT query could be LOCAL", tok.text(), parser.where());
@@ -110,7 +110,7 @@ int SQLParser::Parse(tokenizer& parser) {
 }
 
 template <SQLParser::Nested nested>
-int SQLParser::selectParse(tokenizer& parser) {
+void SQLParser::selectParse(tokenizer& parser) {
 	// Get filter
 	token tok;
 	bool wasSelectFilter = false;
@@ -119,7 +119,7 @@ int SQLParser::selectParse(tokenizer& parser) {
 		auto name = parser.next_token();
 		tok = peekSqlToken(parser, FromSqlToken);
 		if (tok.text() == "("sv) {
-			parser.next_token();
+			parser.skip_token();
 			tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
 			if (name.text() == "count"sv) {
 				query_.CalcTotal(ModeAccurateTotal);
@@ -160,7 +160,7 @@ int SQLParser::selectParse(tokenizer& parser) {
 					h_vector<std::string, 1> fields{{std::string(tok.text())}};
 					tok = parser.next_token();
 					for (tok = parser.peek_token(); tok.type == TokenSymbol && tok.text() == ","sv; tok = parser.peek_token()) {
-						parser.next_token();
+						parser.skip_token();
 						tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
 						if (tok.type != TokenName) {
 							throw Error(errParseSQL, "Expected field name, but found '{}' in query, {}", tok.text(), parser.where());
@@ -171,24 +171,21 @@ int SQLParser::selectParse(tokenizer& parser) {
 					AggregateEntry entry{agg, std::move(fields)};
 					for (tok = parser.peek_token(); tok.text() != ")"sv; tok = parser.peek_token()) {
 						if (tok.text() == "order"sv) {
-							parser.next_token();
-							std::vector<Variant> orders;
+							parser.skip_token();
 							SortingEntries sortingEntries;
 							parseOrderBy(parser, entry);
-							if (!orders.empty()) {
-							}
 							for (auto s : sortingEntries) {
 								entry.AddSortingEntry(std::move(s));
 							}
 						} else if (tok.text() == "limit"sv) {
-							parser.next_token();
+							parser.skip_token();
 							tok = parser.next_token();
 							if (tok.type != TokenNumber) {
 								throw Error(errParseSQL, "Expected number, but found '{}' in query, {}", tok.text(), parser.where());
 							}
 							entry.SetLimit(stoi(tok.text()));
 						} else if (tok.text() == "offset"sv) {
-							parser.next_token();
+							parser.skip_token();
 							tok = parser.next_token();
 							if (tok.type != TokenNumber) {
 								throw Error(errParseSQL, "Expected number, but found '{}' in query, {}", tok.text(), parser.where());
@@ -207,9 +204,8 @@ int SQLParser::selectParse(tokenizer& parser) {
 			if (tok.text() != ")"sv) {
 				throw Error(errParams, "Expected ')', but found '{}', {}", tok.text(), parser.where());
 			}
-			parser.next_token();
+			parser.skip_token();
 			tok = peekSqlToken(parser, FromSqlToken);
-
 		} else if (name.text() != "*"sv) {
 			if (!query_.CanAddSelectFilter()) {
 				throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
@@ -231,63 +227,67 @@ int SQLParser::selectParse(tokenizer& parser) {
 		tok = parser.next_token();
 	}
 
-	peekSqlToken(parser, FromSqlToken);
-	if (parser.next_token().text() != "from"sv) {
+	rx_unused = peekSqlToken(parser, FromSqlToken);
+	tok = parser.next_token();
+	if (tok.text() != "from"sv) {
 		throw Error(errParams, "Expected 'FROM', but found '{}' in query, {}", tok.text(), parser.where());
 	}
 
-	peekSqlToken(parser, NamespaceSqlToken);
-	query_.SetNsName(parser.next_token().text());
+	auto nameWithCase = peekSqlToken(parser, NamespaceSqlToken, false);
+	parser.skip_token();
+	query_.SetNsName(nameWithCase.text());
 	ctx_.updateLinkedNs(query_.NsName());
 
 	do {
 		tok = peekSqlToken(parser, nested == Nested::Yes ? NestedSelectConditionsStart : SelectConditionsStart);
 		if (tok.text() == "where"sv) {
-			parser.next_token();
+			parser.skip_token();
 			parseWhere<nested>(parser);
 		} else if (tok.text() == "limit"sv) {
-			parser.next_token();
+			parser.skip_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber) {
 				throw Error(errParseSQL, "Expected number, but found '{}' in query, {}", tok.text(), parser.where());
 			}
 			query_.Limit(stoi(tok.text()));
 		} else if (tok.text() == "offset"sv) {
-			parser.next_token();
+			parser.skip_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber) {
 				throw Error(errParseSQL, "Expected number, but found '{}' in query, {}", tok.text(), parser.where());
 			}
 			query_.Offset(stoi(tok.text()));
 		} else if (tok.text() == "order"sv) {
-			parser.next_token();
+			parser.skip_token();
 			parseOrderBy(parser, query_);
 			ctx_.updateLinkedNs(query_.NsName());
 		} else if constexpr (nested == Nested::No) {
 			if (tok.text() == "join"sv) {
-				parser.next_token();
+				parser.skip_token();
 				parseJoin(JoinType::LeftJoin, parser);
 			} else if (tok.text() == "left"sv) {
-				parser.next_token();
-				peekSqlToken(parser, LeftSqlToken);
-				if (parser.next_token().text() != "join"sv) {
+				parser.skip_token();
+				rx_unused = peekSqlToken(parser, LeftSqlToken);
+				tok = parser.next_token();
+				if (tok.text() != "join"sv) {
 					throw Error(errParseSQL, "Expected JOIN, but found '{}' in query, {}", tok.text(), parser.where());
 				}
 				parseJoin(JoinType::LeftJoin, parser);
 			} else if (tok.text() == "inner"sv) {
-				parser.next_token();
-				peekSqlToken(parser, InnerSqlToken);
-				if (parser.next_token().text() != "join"sv) {
+				parser.skip_token();
+				rx_unused = peekSqlToken(parser, InnerSqlToken);
+				tok = parser.next_token();
+				if (tok.text() != "join"sv) {
 					throw Error(errParseSQL, "Expected JOIN, but found '{}' in query, {}", tok.text(), parser.where());
 				}
 				auto jtype = (query_.NextOp() == OpOr) ? JoinType::OrInnerJoin : JoinType::InnerJoin;
 				query_.And();
 				parseJoin(jtype, parser);
 			} else if (tok.text() == "merge"sv) {
-				parser.next_token();
+				parser.skip_token();
 				parseMerge(parser);
 			} else if (tok.text() == "or"sv) {
-				parser.next_token();
+				parser.skip_token();
 				query_.Or();
 			} else {
 				break;
@@ -296,7 +296,6 @@ int SQLParser::selectParse(tokenizer& parser) {
 			break;
 		}
 	} while (!parser.end());
-	return 0;
 }
 
 template <typename T>
@@ -310,7 +309,7 @@ static void moveAppend(T& dst, T& src) {
 	}
 }
 
-class SQLParser::ParserContextsAppendGuard {
+class [[nodiscard]] SQLParser::ParserContextsAppendGuard {
 public:
 	ParserContextsAppendGuard(SqlParsingCtx& mainCtx, SqlParsingCtx& nestedCtx) noexcept : mainCtx_{mainCtx}, nestedCtx_{nestedCtx} {}
 	~ParserContextsAppendGuard() {
@@ -345,7 +344,7 @@ Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComp
 		}
 	}
 
-	std::string_view value = tok.text();
+	const std::string_view value = tok.text();
 	if (tok.type == TokenName) {
 		if (iequals(value, "true"sv)) {
 			return Variant{true};
@@ -358,7 +357,7 @@ Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComp
 				return Variant{};
 			}
 		} else if (allowField) {
-			return Variant();
+			return Variant{};
 		}
 	}
 
@@ -370,30 +369,30 @@ Variant token2kv(const token& tok, tokenizer& parser, CompositeAllowed allowComp
 }
 
 template <typename Sortable>
-int SQLParser::parseOrderBy(tokenizer& parser, Sortable& sortable) {
+void SQLParser::parseOrderBy(tokenizer& parser, Sortable& sortable) {
 	// Just skip token (BY)
-	peekSqlToken(parser, BySqlToken);
-	parser.next_token();
+	rx_unused = peekSqlToken(parser, BySqlToken);
+	parser.skip_token();
+	token tok, nameWithCase;
 	for (;;) {
-		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken);
-		auto tok = parser.next_token(tokenizer::flags::in_order_by);
-		if (tok.type != TokenName && tok.type != TokenString) {
-			throw Error(errParseSQL, "Expected name, but found '{}' in query, {}", tok.text(), parser.where());
+		nameWithCase = peekSqlToken(parser, FieldNameSqlToken, false);
+		if (nameWithCase.type != TokenName && nameWithCase.type != TokenString) {
+			throw Error(errParseSQL, "Expected name, but found '{}' in query, {}", nameWithCase.text(), parser.where());
 		}
-		std::vector<Variant> forcedSortOrder;
+		tok = parser.next_token(tokenizer::flags::in_order_by);
 		std::string sortExpression(tok.text());
-		bool desc = false;
 		if (sortExpression.empty()) {
 			throw Error(errParseSQL, "Order by expression should not be empty, {}", parser.where());
 		}
 		tok = peekSqlToken(parser, SortDirectionSqlToken);
-		if (tok.text() == "("sv && nameWithCase.text() == "field"sv) {
-			parser.next_token();
-			tok = peekSqlToken(parser, FieldNameSqlToken, false);
-			if (tok.type != TokenName) {
-				throw Error(errParseSQL, "Expected name, but found '{}' in query, {}", tok.text(), parser.where());
+		std::vector<Variant> forcedSortOrder;
+		if (tok.text() == "("sv && iequals(nameWithCase.text(), "field"sv)) {
+			parser.skip_token();
+			nameWithCase = peekSqlToken(parser, FieldNameSqlToken, false);
+			if (nameWithCase.type != TokenName) {
+				throw Error(errParseSQL, "Expected name, but found '{}' in query, {}", nameWithCase.text(), parser.where());
 			}
-			sortExpression = tok.text();
+			sortExpression = nameWithCase.text();
 			tok = parser.next_token(tokenizer::flags::no_flags);
 			for (;;) {
 				tok = parser.next_token();
@@ -409,9 +408,10 @@ int SQLParser::parseOrderBy(tokenizer& parser, Sortable& sortable) {
 			tok = parser.peek_token();
 		}
 
+		bool desc = false;
 		if (tok.text() == "asc"sv || tok.text() == "desc"sv) {
 			desc = tok.text() == "desc"sv;
-			parser.next_token();
+			parser.skip_token();
 		}
 		if constexpr (std::is_same_v<Sortable, AggregateEntry>) {
 			if (!forcedSortOrder.empty()) {
@@ -422,31 +422,27 @@ int SQLParser::parseOrderBy(tokenizer& parser, Sortable& sortable) {
 			sortable.Sort(std::move(sortExpression), desc, std::move(forcedSortOrder));
 		}
 
-		auto nextToken = parser.peek_token();
-		if (nextToken.text() != ","sv) {
+		tok = parser.peek_token();
+		if (tok.text() != ","sv) {
 			break;
 		}
-		parser.next_token();
+		parser.skip_token();
 	}
-	return 0;
 }
 
-int SQLParser::deleteParse(tokenizer& parser) {
+void SQLParser::deleteParse(tokenizer& parser) {
 	// Get filter
-	token tok;
-
-	peekSqlToken(parser, FromSqlToken);
+	auto tok = peekSqlToken(parser, FromSqlToken);
 	if (parser.next_token().text() != "from"sv) {
 		throw Error(errParams, "Expected 'FROM', but found '{}' in query, {}", tok.text(), parser.where());
 	}
 
-	peekSqlToken(parser, NamespaceSqlToken);
-	query_.SetNsName(parser.next_token().text());
+	tok = peekSqlToken(parser, NamespaceSqlToken, false);
+	parser.skip_token();
+	query_.SetNsName(tok.text());
 	ctx_.updateLinkedNs(query_.NsName());
 
 	parseModifyConditions(parser);
-
-	return 0;
 }
 
 static void addUpdateValue(const token& tok, tokenizer& parser, UpdateEntry& updateField) {
@@ -457,7 +453,7 @@ static void addUpdateValue(const token& tok, tokenizer& parser, UpdateEntry& upd
 			updateField.Values().push_back(Variant());
 		} else if (tok.text() == "{"sv) {
 			try {
-				size_t jsonPos = parser.getPrevPos();
+				const size_t jsonPos = parser.getPrevPos();
 				std::string json(parser.begin() + jsonPos, parser.length() - jsonPos);
 				size_t jsonLength = 0;
 				gason::JsonParser jsonParser;
@@ -473,7 +469,7 @@ static void addUpdateValue(const token& tok, tokenizer& parser, UpdateEntry& upd
 				if (parser.end()) {
 					return true;
 				}
-				token nextTok = parser.peek_token();
+				auto nextTok = parser.peek_token();
 				bool result = (nextTok.text() == "where"sv) || (nextTok.text() == "order"sv) || (nextTok.text() == "limit"sv) ||
 							  (nextTok.text() == "offset"sv) || (!inArray && nextTok.text() == "]"sv) ||
 							  (!inArray && nextTok.text() == ","sv);
@@ -514,8 +510,9 @@ void SQLParser::parseArray(tokenizer& parser, std::string_view tokText, UpdateEn
 		throw Error(errParams, "Expected '[' after field parameter, not {}", tokText);
 	}
 
+	token nextTok;
 	for (;;) {
-		auto nextTok = parser.next_token(tokenizer::flags::no_flags);
+		nextTok = parser.next_token(tokenizer::flags::no_flags);
 		if (nextTok.text() == "]"sv) {
 			if (updateField && updateField->Values().empty()) {
 				break;
@@ -566,7 +563,7 @@ void SQLParser::parseCommand(tokenizer& parser) const {
 	tok = parser.next_token();
 	// try parse as scalar value
 	if ((tok.type == TokenNumber) || (tok.type == TokenString) || (tok.type == TokenName)) {
-		token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_True, NullAllowed_False);  // ignore result
+		rx_unused = token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_True, NullAllowed_False);
 	} else {
 		parseArray(parser, tok.text(), nullptr);
 	}
@@ -579,7 +576,7 @@ void SQLParser::parseCommand(tokenizer& parser) const {
 	// parse of possible concatenation
 	tok = parser.peek_token(tokenizer::flags::no_flags);
 	while (tok.text() == "|"sv) {
-		parser.next_token();
+		parser.skip_token();
 		tok = parser.next_token();
 		if (tok.text() != "|"sv) {
 			throw Error(errLogic, "Expected '|', not '{}'", tok.text());
@@ -597,24 +594,24 @@ void SQLParser::parseCommand(tokenizer& parser) const {
 }
 
 UpdateEntry SQLParser::parseUpdateField(tokenizer& parser) {
-	token tok = peekSqlToken(parser, FieldNameSqlToken, false);
+	auto tok = peekSqlToken(parser, FieldNameSqlToken, false);
 	if (tok.type != TokenName) {
 		throw Error(errParseSQL, "Expected field name but found '{}' in query {}", tok.text(), parser.where());
 	}
 	UpdateEntry updateField{tok.text(), {}};
 
-	parser.next_token();
+	parser.skip_token();
 	tok = parser.next_token();
 	if (tok.text() != "="sv) {
 		throw Error(errParams, "Expected '=' but found '{}' in query, '{}'", tok.text(), parser.where());
 	}
 
-	size_t startPos = parser.getPos();
+	const size_t startPos = parser.getPos();
 	bool withArrayExpressions = false;
 
 	tok = parser.next_token(tokenizer::flags::no_flags);
 	if (tok.text() == "["sv) {
-		updateField.Values().MarkArray();
+		rx_unused = updateField.Values().MarkArray();
 		parseArray(parser, tok.text(), &updateField);
 		updateField.SetIsExpression(false);
 	} else if (tok.text() == "array_remove"sv || tok.text() == "array_remove_once"sv) {
@@ -628,7 +625,7 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer& parser) {
 
 	tok = parser.peek_token(tokenizer::flags::no_flags);
 	while (tok.text() == "|"sv) {
-		parser.next_token();
+		parser.skip_token();
 		tok = parser.next_token();
 		if (tok.text() != "|"sv) {
 			throw Error(errLogic, "Expected '|', not '{}'", tok.text());
@@ -651,34 +648,34 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer& parser) {
 	return updateField;
 }
 
-int SQLParser::updateParse(tokenizer& parser) {
-	parser.next_token();
+void SQLParser::updateParse(tokenizer& parser) {
+	parser.skip_token();
 
-	token tok = peekSqlToken(parser, NamespaceSqlToken);
+	auto tok = peekSqlToken(parser, NamespaceSqlToken, false);
 	query_.SetNsName(tok.text());
 	ctx_.updateLinkedNs(query_.NsName());
-	parser.next_token();
+	parser.skip_token();
 
 	tok = peekSqlToken(parser, UpdateOptionsSqlToken);
 	if (tok.text() == "set"sv) {
-		parser.next_token();
+		parser.skip_token();
 		while (!parser.end()) {
 			query_.UpdateField(parseUpdateField(parser));
 			tok = parser.peek_token();
 			if (tok.text() != ","sv) {
 				break;
 			}
-			parser.next_token();
+			parser.skip_token();
 		}
 	} else if (tok.text() == "drop"sv) {
 		while (!parser.end()) {
-			parser.next_token();
+			parser.skip_token();
 			tok = peekSqlToken(parser, FieldNameSqlToken, false);
 			if (tok.type != TokenName) {
 				throw Error(errParseSQL, "Expected field name but found '{}' in query {}", tok.text(), parser.where());
 			}
 			query_.Drop(std::string(tok.text()));
-			parser.next_token();
+			parser.skip_token();
 			tok = parser.peek_token();
 			if (tok.text() != ","sv) {
 				break;
@@ -689,32 +686,31 @@ int SQLParser::updateParse(tokenizer& parser) {
 	}
 
 	parseModifyConditions(parser);
-
-	return 0;
 }
 
 void SQLParser::parseModifyConditions(tokenizer& parser) {
+	token tok;
 	while (!parser.end()) {
-		auto tok = peekSqlToken(parser, ModifyConditionsStart);
+		tok = peekSqlToken(parser, ModifyConditionsStart);
 		if (tok.text() == "where"sv) {
-			parser.next_token();
+			parser.skip_token();
 			parseWhere<Nested::No>(parser);
 		} else if (tok.text() == "limit"sv) {
-			parser.next_token();
+			parser.skip_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber) {
 				throw Error(errParseSQL, "Expected number, but found '{}' in query, {}", tok.text(), parser.where());
 			}
 			query_.Limit(stoi(tok.text()));
 		} else if (tok.text() == "offset"sv) {
-			parser.next_token();
+			parser.skip_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber) {
 				throw Error(errParseSQL, "Expected number, but found '{}' in query, {}", tok.text(), parser.where());
 			}
 			query_.Offset(stoi(tok.text()));
 		} else if (tok.text() == "order"sv) {
-			parser.next_token();
+			parser.skip_token();
 			parseOrderBy(parser, query_);
 			ctx_.updateLinkedNs(query_.NsName());
 		} else {
@@ -723,13 +719,12 @@ void SQLParser::parseModifyConditions(tokenizer& parser) {
 	}
 }
 
-int SQLParser::truncateParse(tokenizer& parser) {
-	parser.next_token();
-	token tok = peekSqlToken(parser, NamespaceSqlToken);
+void SQLParser::truncateParse(tokenizer& parser) {
+	parser.skip_token();
+	auto tok = peekSqlToken(parser, NamespaceSqlToken, false);
 	query_.SetNsName(tok.text());
 	ctx_.updateLinkedNs(query_.NsName());
-	parser.next_token();
-	return 0;
+	parser.skip_token();
 }
 
 static bool isCondition(std::string_view text) noexcept {
@@ -774,11 +769,11 @@ void SQLParser::parseWhereCondition(tokenizer& parser, T&& firstArg, OpType op) 
 	} else {
 		condition = getCondType(tok.text());
 	}
-	parser.next_token();
+	parser.skip_token();
 
 	// Value
 	if (ctx_.autocompleteMode) {
-		peekSqlToken(parser, WhereFieldValueSqlToken, false);
+		rx_unused = peekSqlToken(parser, WhereFieldValueSqlToken, false);
 	}
 	tok = parser.next_token();
 	if (iequals(tok.text(), "null"sv) || iequals(tok.text(), "empty"sv)) {
@@ -828,15 +823,13 @@ void SQLParser::parseWhereCondition(tokenizer& parser, T&& firstArg, OpType op) 
 }
 
 template <SQLParser::Nested nested>
-int SQLParser::parseWhere(tokenizer& parser) {
-	token tok;
+void SQLParser::parseWhere(tokenizer& parser) {
+	auto tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
+
 	OpType nextOp = OpAnd;
-
-	tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
-
 	if (iequals(tok.text(), "not"sv)) {
 		nextOp = OpNot;
-		parser.next_token();
+		parser.skip_token();
 	}
 	int openBracketsCount = 0;
 	bool expectSecondLogicalOperand = false;
@@ -847,11 +840,11 @@ int SQLParser::parseWhere(tokenizer& parser) {
 	};
 	while (!parser.end()) {
 		tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
-		parser.next_token(tokenizer::flags::no_flags);
+		parser.skip_token(tokenizer::flags::no_flags);
 		while (tok.type == TokenName && iequals(tok.text(), "equal_position"sv)) {
 			parseEqualPositions(parser);
 			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
-			parser.next_token(tokenizer::flags::no_flags);
+			parser.skip_token(tokenizer::flags::no_flags);
 		}
 		expectSecondLogicalOperand = false;
 		if (tok.text() == "("sv) {
@@ -861,12 +854,15 @@ int SQLParser::parseWhere(tokenizer& parser) {
 				parseWhereCondition(parser, parseSubQuery(parser), nextOp);
 				nextOp = OpAnd;
 			} else {
+				if (nextOp != OpAnd && iequals(tok.text(), "left"sv)) {
+					throw Error(errParseSQL, "Left join with {} operation", OpTypeToStr(nextOp));
+				}
 				query_.NextOp(nextOp);
 				query_.OpenBracket();
 				++openBracketsCount;
 				if (iequals(tok.text(), "not"sv)) {
 					nextOp = OpNot;
-					parser.next_token();
+					parser.skip_token();
 				} else {
 					nextOp = OpAnd;
 				}
@@ -883,20 +879,24 @@ int SQLParser::parseWhere(tokenizer& parser) {
 			} else if constexpr (nested == Nested::No) {
 				if (iequals(tok.text(), "join"sv)) {
 					parseJoin(JoinType::LeftJoin, parser);
-
 				} else if (iequals(tok.text(), "left"sv)) {
-					peekSqlToken(parser, LeftSqlToken);
-					if (parser.next_token().text() != "join"sv) {
+					if (nextOp != OpAnd) {
+						throw Error(errParseSQL, "Left join with {} operation", OpTypeToStr(nextOp));
+					}
+					rx_unused = peekSqlToken(parser, LeftSqlToken);
+					tok = parser.next_token();
+					if (tok.text() != "join"sv) {
 						throw Error(errParseSQL, "Expected JOIN, but found '{}' in query, {}", tok.text(), parser.where());
 					}
 					parseJoin(JoinType::LeftJoin, parser);
 				} else if (iequals(tok.text(), "inner"sv)) {
-					peekSqlToken(parser, InnerSqlToken);
-					if (parser.next_token().text() != "join"sv) {
+					rx_unused = peekSqlToken(parser, InnerSqlToken);
+					tok = parser.next_token();
+					if (tok.text() != "join"sv) {
 						throw Error(errParseSQL, "Expected JOIN, but found '{}' in query, {}", tok.text(), parser.where());
 					}
 					auto jtype = nextOp == OpOr ? JoinType::OrInnerJoin : JoinType::InnerJoin;
-					query_.And();
+					query_.NextOp(nextOp);
 					parseJoin(jtype, parser);
 				} else {
 					parseWhereCondition(parser, std::string{tok.text()}, nextOp);
@@ -915,7 +915,7 @@ int SQLParser::parseWhere(tokenizer& parser) {
 
 		tok = parser.peek_token();
 		while (tok.text() == "equal_position"sv) {
-			parser.next_token();
+			parser.skip_token();
 			parseEqualPositions(parser);
 			tok = parser.peek_token();
 		}
@@ -924,10 +924,10 @@ int SQLParser::parseWhere(tokenizer& parser) {
 			throwIfExpectSecondLogicalOperand();
 			query_.CloseBracket();
 			--openBracketsCount;
-			parser.next_token();
+			parser.skip_token();
 			tok = parser.peek_token();
 			while (tok.text() == "equal_position"sv) {
-				parser.next_token();
+				parser.skip_token();
 				parseEqualPositions(parser);
 				tok = parser.peek_token();
 			}
@@ -938,18 +938,18 @@ int SQLParser::parseWhere(tokenizer& parser) {
 			throwIfExpectSecondLogicalOperand();
 			nextOp = OpAnd;
 			expectSecondLogicalOperand = true;
-			parser.next_token();
+			parser.skip_token();
 			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedAndSqlToken : AndSqlToken, false);
 			if (iequals(tok.text(), "not"sv)) {
-				parser.next_token();
+				parser.skip_token();
 				nextOp = OpNot;
 			} else {
 				continue;
 			}
 		} else if (iequals(tok.text(), "or"sv)) {
 			throwIfExpectSecondLogicalOperand();
-			parser.next_token();
-			peekSqlToken(parser, FieldNameSqlToken);
+			parser.skip_token();
+			rx_unused = peekSqlToken(parser, FieldNameSqlToken);
 			nextOp = OpOr;
 			expectSecondLogicalOperand = true;
 		} else if (!iequals(tok.text(), "join"sv) && !iequals(tok.text(), "inner"sv) && !iequals(tok.text(), "left"sv)) {
@@ -961,7 +961,6 @@ int SQLParser::parseWhere(tokenizer& parser) {
 	if (query_.Entries().Empty()) {
 		throw Error(errParseSQL, "Expected condition after 'WHERE'");
 	}
-	return 0;
 }
 
 void SQLParser::parseEqualPositions(tokenizer& parser) {
@@ -971,7 +970,7 @@ void SQLParser::parseEqualPositions(tokenizer& parser) {
 	}
 	EqualPosition_t fieldNames;
 	for (;;) {
-		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken);
+		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken, false);
 		tok = parser.next_token(tokenizer::flags::no_flags);
 		if (tok.type != TokenName) {
 			throw Error(errParseSQL, "Expected name, but found '{}' in query, {}", tok.text(), parser.where());
@@ -997,7 +996,7 @@ Point SQLParser::parseGeomFromText(tokenizer& parser) const {
 	if (tok.type != TokenString) {
 		throw Error(errParseSQL, "Expected text, but found '{}', {}", tok.text(), parser.where());
 	}
-	std::string_view tokenText = tok.text();
+	const std::string_view tokenText = tok.text();
 	std::string_view str = skipSpace(tokenText);
 	if (!checkIfStartsWith("point"sv, str)) {
 		throw Error(errParseSQL, "Expected geometry object, but found '{}', {}", tok.text(), parser.where());
@@ -1008,8 +1007,8 @@ Point SQLParser::parseGeomFromText(tokenizer& parser) const {
 					str, tok.text(), parser.where());
 	}
 	str = skipSpace(str.substr(1));
-	size_t pos;
-	double x, y;
+	size_t pos = 0;
+	double x = 0.0, y = 0.0;
 	try {
 		x = std::stod(std::string(str), &pos);
 	} catch (...) {
@@ -1051,8 +1050,8 @@ static auto parseNumber(const auto& begin, const auto& end, T& value) {
 	if constexpr (std::is_floating_point_v<T>) {
 		using namespace double_conversion;
 		static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
-		int countOfCharsParsedAsDouble;
-		value = converter.StringToDouble(begin, end - begin, &countOfCharsParsedAsDouble);
+		int countOfCharsParsedAsDoubleDummy = 0;
+		value = converter.StringToDouble(begin, end - begin, &countOfCharsParsedAsDoubleDummy);
 	} else if constexpr (std::is_integral_v<T>) {
 		return std::from_chars(begin, end, value).ec;
 	}
@@ -1062,7 +1061,7 @@ static auto parseNumber(const auto& begin, const auto& end, T& value) {
 template <typename T>
 void SQLParser::parseSingleKnnParam(tokenizer& parser, std::optional<T>& param, std::string_view paramName) {
 	if (param.has_value()) {
-		throw Error(errParseSQL, "Dublicate KNN parameter '{}': {}", paramName, parser.where());
+		throw Error(errParseSQL, "Duplicate KNN parameter '{}': {}", paramName, parser.where());
 	}
 	auto tok = parser.next_token();
 	if (tok.text() != "="sv) {
@@ -1084,9 +1083,10 @@ void SQLParser::parseSingleKnnParam(tokenizer& parser, std::optional<T>& param, 
 KnnSearchParams SQLParser::parseKnnParams(tokenizer& parser) {
 	std::optional<size_t> k, ef, nprobe;
 	std::optional<float> radius;
+	token tok;
 	do {
-		peekSqlToken(parser, KnnParamsToken);
-		auto tok = parser.next_token();
+		rx_unused = peekSqlToken(parser, KnnParamsToken);
+		tok = parser.next_token();
 		if (tok.text() == KnnSearchParams::kKName) {
 			parseSingleKnnParam(parser, k, KnnSearchParams::kKName);
 		} else if (tok.text() == KnnSearchParams::kRadiusName) {
@@ -1131,7 +1131,7 @@ void SQLParser::parseKnn(tokenizer& parser, OpType nextOp) {
 	if (tok.text() != "("sv) {
 		throw Error(errParseSQL, "Expected '(', but found '{}', {}", tok.text(), parser.where());
 	}
-	peekSqlToken(parser, GeomFieldSqlToken);
+	rx_unused = peekSqlToken(parser, GeomFieldSqlToken);
 	tok = parser.next_token();
 	if (tok.type != TokenName) {
 		throw Error(errParseSQL, "Expected field name, but found '{}', {}", tok.text(), parser.where());
@@ -1166,10 +1166,10 @@ void SQLParser::parseKnn(tokenizer& parser, OpType nextOp) {
 		if (tok.type != TokenNumber) {
 			throw Error(errParseSQL, "Expected number, but found '{}', {}", tok.text(), parser.where());
 		}
-		int countOfCharsParsedAsDouble;
+		int countOfCharsParsedAsDoubleDummy = 0;
 		vec.push_back(0);
 		try {
-			vec.back() = converter.StringToDouble(tok.text().data(), tok.text().size(), &countOfCharsParsedAsDouble);
+			vec.back() = converter.StringToDouble(tok.text().data(), tok.text().size(), &countOfCharsParsedAsDoubleDummy);
 		} catch (...) {
 			throw Error(errParseSQL, "Expected number, but found '{}', {}", tok.text(), parser.where());
 		}
@@ -1191,16 +1191,16 @@ void SQLParser::parseKnn(tokenizer& parser, OpType nextOp) {
 }
 
 void SQLParser::parseDWithin(tokenizer& parser, OpType nextOp) {
-	Point point;
-	std::string field;
-
 	auto tok = parser.next_token();
 	if (tok.text() != "("sv) {
 		throw Error(errParseSQL, "Expected '(', but found '{}', {}", tok.text(), parser.where());
 	}
 
-	peekSqlToken(parser, GeomFieldSqlToken);
+	rx_unused = peekSqlToken(parser, GeomFieldSqlToken);
 	tok = parser.next_token();
+
+	Point point;
+	std::string field;
 	if (iequals(tok.text(), "st_geomfromtext"sv)) {
 		point = parseGeomFromText(parser);
 	} else {
@@ -1212,7 +1212,7 @@ void SQLParser::parseDWithin(tokenizer& parser, OpType nextOp) {
 		throw Error(errParseSQL, "Expected ',', but found '{}', {}", tok.text(), parser.where());
 	}
 
-	peekSqlToken(parser, GeomFieldSqlToken);
+	rx_unused = peekSqlToken(parser, GeomFieldSqlToken);
 	tok = parser.next_token();
 	if (iequals(tok.text(), "st_geomfromtext"sv)) {
 		if (field.empty()) {
@@ -1257,10 +1257,10 @@ void SQLParser::parseJoin(JoinType type, tokenizer& parser) {
 		jparser.ctx_.foundPossibleSuggestions = ctx_.foundPossibleSuggestions;
 		jparser.ctx_.possibleSuggestionDetectedInThisClause = ctx_.possibleSuggestionDetectedInThisClause;
 	}
-	peekSqlToken(parser, NamespaceSqlToken);
+	auto nameWithCase = peekSqlToken(parser, NamespaceSqlToken, false);
 	auto tok = parser.next_token();
 	if (tok.text() == "("sv) {
-		peekSqlToken(parser, SelectSqlToken);
+		rx_unused = peekSqlToken(parser, SelectSqlToken);
 		tok = parser.next_token();
 		if (tok.text() != "select"sv) {
 			throw Error(errParseSQL, "Expected 'SELECT', but found '{}', {}", tok.text(), parser.where());
@@ -1273,7 +1273,7 @@ void SQLParser::parseJoin(JoinType type, tokenizer& parser) {
 			throw Error(errParseSQL, "Expected ')', but found '{}', {}", tok.text(), parser.where());
 		}
 	} else {
-		jquery.SetNsName(tok.text());
+		jquery.SetNsName(nameWithCase.text());
 		ctx_.updateLinkedNs(jquery.NsName());
 	}
 	jquery.joinType = type;
@@ -1294,7 +1294,7 @@ void SQLParser::parseMerge(tokenizer& parser) {
 	}
 	auto tok = parser.next_token();
 	if (tok.text() == "("sv) {
-		peekSqlToken(parser, SelectSqlToken);
+		rx_unused = peekSqlToken(parser, SelectSqlToken);
 		tok = parser.next_token();
 		if (tok.text() != "select"sv) {
 			throw Error(errParseSQL, "Expected 'SELECT', but found '{}', {}", tok.text(), parser.where());
@@ -1313,7 +1313,7 @@ void SQLParser::parseMerge(tokenizer& parser) {
 }
 
 std::string SQLParser::parseJoinedFieldName(tokenizer& parser, std::string& name) {
-	auto tok = peekSqlToken(parser, JoinedFieldNameSqlToken);
+	auto tok = peekSqlToken(parser, JoinedFieldNameSqlToken, false);
 	if (tok.type != TokenName) {
 		throw Error(errParseSQL, "Expected name, but found '{}', {}", tok.text(), parser.where());
 	}
@@ -1324,11 +1324,11 @@ std::string SQLParser::parseJoinedFieldName(tokenizer& parser, std::string& name
 	}
 	name = std::string(tok.text().substr(0, dotPos));
 
-	tok = peekSqlToken(parser, FieldNameSqlToken);
+	tok = peekSqlToken(parser, FieldNameSqlToken, false);
 	if (tok.type != TokenName) {
 		throw Error(errParseSQL, "Expected name, but found '{}', {}", tok.text(), parser.where());
 	}
-	parser.next_token();
+	parser.skip_token();
 	ctx_.updateLinkedNs(name);
 	return std::string(tok.text().substr(dotPos + 1));
 }
@@ -1338,29 +1338,35 @@ void SQLParser::parseJoinEntries(tokenizer& parser, const std::string& mainNs, J
 	if (tok.text() != "on"sv) {
 		throw Error(errParseSQL, "Expected 'ON', but found '{}', {}", tok.text(), parser.where());
 	}
-	parser.next_token();
+	parser.skip_token();
 
 	tok = parser.peek_token();
 
-	bool braces = tok.text() == "("sv;
-	if (braces) {
-		parser.next_token();
+	const bool brackets = tok.text() == "("sv;
+	if (brackets) {
+		parser.skip_token();
 	}
 
 	while (!parser.end()) {
 		tok = peekSqlToken(parser, OpSqlToken);
 		if (tok.text() == "or"sv) {
 			jquery.Or();
-			parser.next_token();
+			parser.skip_token();
 			tok = parser.peek_token();
 		} else if (tok.text() == "and"sv) {
 			jquery.And();
-			parser.next_token();
+			parser.skip_token();
 			tok = parser.peek_token();
 		}
 
-		if (braces && tok.text() == ")"sv) {
-			parser.next_token();
+		if (tok.text() == "not"sv) {
+			jquery.Not();
+			parser.skip_token();
+			tok = parser.peek_token();
+		}
+
+		if (brackets && tok.text() == ")"sv) {
+			parser.skip_token();
 			return;
 		}
 
@@ -1383,7 +1389,7 @@ void SQLParser::parseJoinEntries(tokenizer& parser, const std::string& mainNs, J
 
 		jquery.joinEntries_.emplace_back(jquery.NextOp(), condition, std::move(fld1), std::move(fld2), reverseNamespacesOrder);
 		jquery.And();
-		if (!braces) {
+		if (!brackets) {
 			return;
 		}
 	}

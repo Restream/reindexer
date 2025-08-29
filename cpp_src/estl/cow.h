@@ -1,14 +1,12 @@
 #pragma once
 
 #include <stdio.h>
-#include <memory>
-
 #include "estl/intrusive_ptr.h"
 
 namespace reindexer {
 
 template <typename T>
-class shared_cow_ptr {
+class [[nodiscard]] shared_cow_ptr {
 public:
 	explicit shared_cow_ptr(intrusive_ptr<intrusive_atomic_rc_wrapper<T>>&& ptr) noexcept : payload_(std::move(ptr)) {}
 	shared_cow_ptr() noexcept = default;

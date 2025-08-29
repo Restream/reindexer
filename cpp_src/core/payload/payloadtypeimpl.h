@@ -22,35 +22,35 @@ public:
 	explicit PayloadTypeImpl(std::string name, std::initializer_list<PayloadFieldType> fields = {})
 		: fields_(fields), name_(std::move(name)) {}
 
-	[[nodiscard]] const PayloadFieldType& Field(int field) const& noexcept {
+	const PayloadFieldType& Field(int field) const& noexcept {
 		assertf(field < NumFields(), "{}: {}, {}", name_, field, NumFields());
 		return fields_[field];
 	}
 
-	[[nodiscard]] const std::string& Name() const& noexcept { return name_; }
+	const std::string& Name() const& noexcept { return name_; }
 	void SetName(std::string name) noexcept { name_ = std::move(name); }
-	[[nodiscard]] int NumFields() const noexcept { return fields_.size(); }
+	int NumFields() const noexcept { return fields_.size(); }
 	void Add(PayloadFieldType f);
 	void Drop(std::string_view field);
 	void Replace(int field, PayloadFieldType f);
-	[[nodiscard]] int FieldByName(std::string_view field) const;
-	[[nodiscard]] bool FieldByName(std::string_view name, int& field) const noexcept;
-	[[nodiscard]] bool Contains(std::string_view field) const noexcept { return fieldsByName_.find(field) != fieldsByName_.end(); }
-	[[nodiscard]] int FieldByJsonPath(std::string_view jsonPath) const noexcept;
-	[[nodiscard]] const std::vector<int>& StrFields() const& noexcept { return strFields_; }
+	int FieldByName(std::string_view field) const;
+	bool FieldByName(std::string_view name, int& field) const noexcept;
+	bool Contains(std::string_view field) const noexcept { return fieldsByName_.find(field) != fieldsByName_.end(); }
+	int FieldByJsonPath(std::string_view jsonPath) const noexcept;
+	const std::vector<int>& StrFields() const& noexcept { return strFields_; }
 
 	void serialize(WrSerializer& ser) const;
 	void deserialize(Serializer& ser);
 
-	[[nodiscard]] size_t TotalSize() const noexcept;
-	[[nodiscard]] std::string ToString() const;
+	size_t TotalSize() const noexcept;
+	std::string ToString() const;
 	void Dump(std::ostream&, std::string_view step, std::string_view offset) const;
 
-	[[nodiscard]] std::string_view CheckEmbeddersAuxiliaryField(std::string_view fieldName) const;
+	std::string_view CheckEmbeddersAuxiliaryField(std::string_view fieldName) const;
 
-	[[nodiscard]] auto Field(int) const&& = delete;
-	[[nodiscard]] auto Name() const&& = delete;
-	[[nodiscard]] auto StrFields() const&& = delete;
+	auto Field(int) const&& = delete;
+	auto Name() const&& = delete;
+	auto StrFields() const&& = delete;
 
 private:
 	void checkNewJsonPathBeforeAdd(const PayloadFieldType& fieldType, const std::string& jsonPath) const;

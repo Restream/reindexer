@@ -17,7 +17,7 @@ using namespace std::string_view_literals;
 using reindexer::fast_hash_map;
 using reindexer::Query;
 
-class FTGenericApi : public FTApi {
+class [[nodiscard]] FTGenericApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_generic_default_namespace"; }
 
@@ -25,8 +25,7 @@ protected:
 		assertrx(from <= to);
 		std::vector<std::string> items;
 		items.reserve(to - from);
-		auto err = rt.reindexer->OpenNamespace(ns);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(ns);
 		rt.DefineNamespaceDataset(
 			ns, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"data", "hash", "string", IndexOpts(), 0}});
 		reindexer::WrSerializer ser;
@@ -40,7 +39,7 @@ protected:
 			if (outItems) {
 				(*outItems)[i] = ser.Slice();
 			}
-			err = item.FromJSON(ser.Slice());
+			auto err = item.FromJSON(ser.Slice());
 			ASSERT_TRUE(err.ok()) << err.what();
 			rt.Upsert(ns, item);
 		}
@@ -145,14 +144,12 @@ TEST_P(FTGenericApi, MergeWithSameNSAndSelectFunctions) {
 		for (const auto& field : {std::string("ft1"), std::string("ft2")}) {
 			auto dsl = fmt::format("@{} {}", field, query);
 			auto qr{reindexer::Query("nm1").Where("ft3", CondEq, dsl)};
-			reindexer::QueryResults res;
 			auto mqr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(dsl))};
 			mqr.AddFunction(field + " = snippet(<xxx>,\"\"</xf>,3,2,,d)");
 
 			qr.Merge(std::move(mqr));
 			qr.AddFunction(field + " = highlight(<b>,</b>)");
-			auto err = rt.reindexer->Select(qr, res);
-			EXPECT_TRUE(err.ok()) << err.what();
+			auto res = rt.Select(qr);
 
 			std::unordered_set<std::string_view> data{"An <b>entity</b> is <b>something</b>|"sv,
 													  "An <xxx>entity</xf> is <xxx>something</xf>|d"sv,
@@ -288,13 +285,11 @@ TEST_P(FTGenericApi, DebugInfo) {
 		q.Where("ft3", CondEq, "маша");
 		q.AddFunction("ft3 = debug_rank()");
 		q.Select({"ft1"});
-		reindexer::QueryResults res;
-		auto err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
 		auto it = res.begin();
 		reindexer::WrSerializer wrSer;
-		err = it.GetJSON(wrSer, false);
+		auto err = it.GetJSON(wrSer, false);
 		ASSERT_TRUE(err.ok()) << err.what();
 		// clang-format off
         std::vector<std::string> dataCompare={R"({"ft1":
@@ -310,13 +305,11 @@ TEST_P(FTGenericApi, DebugInfo) {
 		q.Where("ft3", CondEq, "коля сеня");
 		q.AddFunction("ft3 = debug_rank()");
 		q.Select({"ft1"});
-		reindexer::QueryResults res;
-		auto err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
 		auto it = res.begin();
 		reindexer::WrSerializer wrSer;
-		err = it.GetJSON(wrSer, false);
+		auto err = it.GetJSON(wrSer, false);
 		ASSERT_TRUE(err.ok()) << err.what();
 		// clang-format off
 		std::vector<std::string> dataCompare={R"({"ft1":
@@ -354,15 +347,13 @@ R"##({"ft1":"слово
             };
 		// clang-format on
 		removeLineEnd(dataCompare);
-		reindexer::QueryResults res;
-		auto err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 2);
 
 		size_t i = 0;
 		for (auto it : res) {
 			reindexer::WrSerializer wrSer;
-			err = it.GetJSON(wrSer, false);
+			auto err = it.GetJSON(wrSer, false);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(dataCompare[i], wrSer.Slice());
 			i++;
@@ -392,14 +383,12 @@ R"###({"ft1":"слово начало
 		// clang-format on
 		removeLineEnd(dataCompare);
 
-		reindexer::QueryResults res;
-		auto err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 2);
 		size_t i = 0;
 		for (auto it : res) {
 			reindexer::WrSerializer wrSer;
-			err = it.GetJSON(wrSer, false);
+			auto err = it.GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(dataCompare[i], wrSer.Slice());
 			i++;
@@ -411,13 +400,11 @@ R"###({"ft1":"слово начало
 		q.Where("ft3", CondEq, "жил~ пил");
 		q.Select({"ft1"});
 		q.AddFunction("ft3 = debug_rank()");
-		reindexer::QueryResults res;
-		auto err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
 		auto it = res.begin();
 		reindexer::WrSerializer wrSer;
-		err = it.GetJSON(wrSer, false);
+		auto err = it.GetJSON(wrSer, false);
 		ASSERT_TRUE(err.ok()) << err.what();
 		//clang-format off
 		std::vector<std::string> dataCompare = {
@@ -867,10 +854,8 @@ TEST_P(FTGenericApi, NumberToWordsSelect) {
 
 	auto select = [this](int id, const std::string& ftQuery, const std::string& result) {
 		auto q{reindexer::Query("nm1").Where("ft3", CondEq, std::string(ftQuery)).And().Where("id", CondEq, id).WithRank()};
-		reindexer::QueryResults res;
 		q.AddFunction("ft3 = highlight(!,!)");
-		auto err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
 		auto item = res.begin().GetItem();
 		std::string val = item["ft1"].As<std::string>();
@@ -913,15 +898,13 @@ TEST_P(FTGenericApi, HugeNumberToWordsSelect2) {
 	// Add a record with a huge number
 	Add("1127343121521906522180408440"sv, ""sv);
 	// Execute FT query, where search words are set as strings
-	reindexer::QueryResults qr;
-	const std::string searchWord =
+	const std::string_view searchWord =
 		"+один +октиллион +сто +двадцать +семь +септиллионов +триста +сорок +три +секстиллиона +сто +двадцать +один +квинтиллион "
 		"+пятьсот "
 		"+двадцать +один +квадриллион +девятьсот +шесть +триллионов +пятьсот +двадцать +два +миллиарда +сто +восемьдесят +миллионов "
 		"+четыреста +восемь +тысяч +четыреста +сорок";
 	auto q{reindexer::Query("nm1").Where("ft3", CondEq, searchWord)};
-	auto err = rt.reindexer->Select(q, qr);
-	EXPECT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(q);
 	// Make sure it has found absolutely nothing
 	ASSERT_EQ(qr.Count(), 0);
 }
@@ -947,8 +930,7 @@ TEST_P(FTGenericApi, DeleteTest) {
 	data.insert(Add("Food prices soared in the aftermath of the drought"sv));
 	data.insert(Add("In the aftermath of the war ..."sv));
 
-	const auto err = Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
-	ASSERT_TRUE(err.ok()) << err.what();
+	Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
 	res = SimpleSelect("entity");
 
 	// TODO: add validation
@@ -964,10 +946,7 @@ TEST_P(FTGenericApi, RebuildAfterDeletion) {
 
 	auto selectF = [this](const std::string& word) {
 		const auto q{reindexer::Query("nm1").Where("ft1", CondEq, word)};
-		reindexer::QueryResults res;
-		auto err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
-		return res;
+		return rt.Select(q);
 	};
 
 	std::unordered_map<std::string, int> data;
@@ -982,8 +961,7 @@ TEST_P(FTGenericApi, RebuildAfterDeletion) {
 	auto res = selectF("entity");
 	ASSERT_EQ(res.Count(), 3);
 
-	err = Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
-	ASSERT_TRUE(err.ok()) << err.what();
+	Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
 	res = selectF("entity");
 	ASSERT_EQ(res.Count(), 2);
 }
@@ -1348,8 +1326,7 @@ TEST_P(FTGenericApi, SetFtFieldsCfgErrors) {
 	EXPECT_FALSE(err.ok());
 	EXPECT_STREQ(err.what(), "Field 'ft' is not included to full text index");
 
-	err = rt.reindexer->OpenNamespace("nm3");
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace("nm3");
 	rt.DefineNamespaceDataset(
 		"nm3", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft", "text", "string", IndexOpts(), 0}});
 	// Задаем уникальный конфиг для единственного поля ft в индексе ft
@@ -1636,15 +1613,13 @@ TEST_P(FTGenericApi, InvalidDSLErrors) {
 		// Empty DSL is allowed
 		qr.Clear();
 		q = Query("nm1").Where("ft3", CondEq, "");
-		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Select(q, qr);
 		EXPECT_EQ(qr.Count(), 0);
 
 		// Stop-word + 'minus' have to return empty response, to avoid random errors for user
 		qr.Clear();
 		q = Query("nm1").Where("ft3", CondEq, "-word1 teststopword -word2");
-		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Select(q, qr);
 		EXPECT_EQ(qr.Count(), 0);
 	}
 }
@@ -1672,14 +1647,12 @@ TEST_P(FTGenericApi, JoinsWithFtPreselect) {
 		Query(kMainNs).Where("ft3", CondEq, "word2").InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 1));
 	const auto expectedJoinedJSON = fmt::format(R"json("joined_{}":[{}])json", kJoinedNs, joinedNsItems[firstId]);
 	for (unsigned i = 0; i < kQueryRepetitions; ++i) {
-		QueryResults qr;
-		auto err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		ASSERT_EQ(qr.Count(), 1);
 		auto item = qr.begin().GetItem();
 		ASSERT_EQ(item["id"].As<int>(), firstId);
 		reindexer::WrSerializer wser;
-		err = qr.begin().GetJSON(wser, false);
+		auto err = qr.begin().GetJSON(wser, false);
 		ASSERT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(wser.Slice().find(expectedJoinedJSON) != std::string_view::npos)
 			<< "Expecting substring '" << expectedJoinedJSON << "', but json was: '" << wser.Slice() << "'. Iteration: " << i;
@@ -1713,9 +1686,7 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 							.Where("id", CondEq, lastId - 1)
 							.CloseBracket()
 							.Explain();
-		QueryResults qr;
-		auto err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		EXPECT_EQ(qr.Count(), 2);
 		// Check explain's content
 		YAML::Node root = YAML::Load(qr.GetExplainResults());
@@ -1737,9 +1708,7 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 							.Where("id", CondEq, lastId - 1)
 							.CloseBracket()
 							.Explain();
-		QueryResults qr;
-		auto err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		EXPECT_EQ(qr.Count(), 2);
 		// Check explain's content
 		YAML::Node root = YAML::Load(qr.GetExplainResults());
@@ -1779,8 +1748,9 @@ TEST_P(FTGenericApi, TotalCountWithFtPreselect) {
 			SetFTConfig(cfg);
 		}
 		std::string_view kPreselectStr = preselect ? " (with ft preselect) " : " (no ft preselect) ";
+		SCOPED_TRACE(kPreselectStr);
 
-		struct Case {
+		struct [[nodiscard]] Case {
 			Query query;
 			int limit;
 			int expectedTotalCount;
@@ -1823,23 +1793,20 @@ TEST_P(FTGenericApi, TotalCountWithFtPreselect) {
 
 		for (auto& c : cases) {
 			c.query.ReqTotal();
+			SCOPED_TRACE(c.query.GetSQL());
 			// Execute initial query
 			{
-				QueryResults qr;
-				auto err = rt.reindexer->Select(c.query, qr);
-				ASSERT_TRUE(err.ok()) << kPreselectStr << err.what() << "\n" << c.query.GetSQL();
-				EXPECT_EQ(qr.Count(), c.expectedTotalCount) << kPreselectStr << c.query.GetSQL();
-				EXPECT_EQ(qr.TotalCount(), c.expectedTotalCount) << kPreselectStr << c.query.GetSQL();
+				auto qr = rt.Select(c.query);
+				EXPECT_EQ(qr.Count(), c.expectedTotalCount);
+				EXPECT_EQ(qr.TotalCount(), c.expectedTotalCount);
 			}
 
 			// Execute query with limit
 			const Query q = Query(c.query).Limit(c.limit);
 			{
-				QueryResults qr;
-				auto err = rt.reindexer->Select(q, qr);
-				ASSERT_TRUE(err.ok()) << kPreselectStr << err.what() << "\n" << c.query.GetSQL();
-				EXPECT_EQ(qr.Count(), c.limit) << kPreselectStr << c.query.GetSQL();
-				EXPECT_EQ(qr.TotalCount(), c.expectedTotalCount) << kPreselectStr << c.query.GetSQL();
+				auto qr = rt.Select(q);
+				EXPECT_EQ(qr.Count(), c.limit);
+				EXPECT_EQ(qr.TotalCount(), c.expectedTotalCount);
 			}
 		}
 	}
@@ -2044,10 +2011,8 @@ TEST_P(FTGenericApi, FrisoTextPostprocess) {
 
 	{
 		auto q{reindexer::Query("nm1").Where("ft3", CondEq, "大家").WithRank()};
-		reindexer::QueryResults res;
 		q.AddFunction("ft3 = snippet(<,>,2,2,'#','#')");
-		auto err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
 		auto item = res.begin().GetItem();
 		std::string json = item["ft1"].As<std::string>();
@@ -2058,10 +2023,8 @@ TEST_P(FTGenericApi, FrisoTextPostprocess) {
 		std::vector<std::pair<std::string, std::string>> tests = {{"為", "{[2,3]<b>為</b>!"}, {"大家", "{[12,14]<b>大家</b>!"}};
 		for (const auto& t : tests) {
 			auto q{reindexer::Query("nm1").Where("ft3", CondEq, t.first).WithRank()};
-			reindexer::QueryResults res;
 			q.AddFunction("ft3 = snippet_n('<b>','</b>',0,0,pre_delim='{',post_delim='!', with_area=1, left_bound='|',right_bound='|')");
-			auto err = rt.reindexer->Select(q, res);
-			EXPECT_TRUE(err.ok()) << err.what();
+			auto res = rt.Select(q);
 			ASSERT_EQ(res.Count(), 1);
 			auto item = res.begin().GetItem();
 			std::string json = item["ft1"].As<std::string>();
@@ -2070,10 +2033,8 @@ TEST_P(FTGenericApi, FrisoTextPostprocess) {
 	}
 	{
 		auto q{reindexer::Query("nm1").Where("ft3", CondEq, "大家 查").WithRank()};
-		reindexer::QueryResults res;
 		q.AddFunction("ft3 = debug_rank()");
-		auto err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
 		auto item = res.begin().GetItem();
 		std::string json = item["ft1"].As<std::string>();

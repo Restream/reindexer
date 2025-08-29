@@ -49,7 +49,7 @@ CsvBuilder::~CsvBuilder() noexcept(false) {
 
 std::string_view CsvBuilder::getNameByTag(TagName tagName) { return tagName.IsEmpty() ? std::string_view{} : tm_->tag2name(tagName); }
 
-CsvBuilder& CsvBuilder::End() {
+void CsvBuilder::End() {
 	if (!positions_.empty()) {
 		postProcessing();
 	}
@@ -73,8 +73,6 @@ CsvBuilder& CsvBuilder::End() {
 	}
 
 	type_ = ObjType::TypePlain;
-
-	return *this;
 }
 
 CsvBuilder CsvBuilder::Object(std::string_view name, int /*size*/) {
@@ -171,7 +169,7 @@ void CsvBuilder::postProcessing() {
 	*ser_ << buf_->Slice();
 }
 
-CsvBuilder& CsvBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
+void CsvBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
 	putName(name);
 
 	std::string_view optQuote = level_ > 0 ? "\"" : "";
@@ -179,28 +177,24 @@ CsvBuilder& CsvBuilder::Put(std::string_view name, std::string_view arg, int /*o
 	(*ser_).PrintJsonString(arg, WrSerializer::PrintJsonStringMode::QuotedQuote);
 
 	(*ser_) << optQuote;
-	return *this;
 }
 
-CsvBuilder& CsvBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
+void CsvBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
 	putName(name);
 	ser_->PrintJsonUuid(arg);
-	return *this;
 }
 
-CsvBuilder& CsvBuilder::Raw(std::string_view name, std::string_view arg) {
+void CsvBuilder::Raw(std::string_view name, std::string_view arg) {
 	putName(name);
 	(*ser_) << arg;
-	return *this;
 }
 
-CsvBuilder& CsvBuilder::Null(std::string_view name) {
+void CsvBuilder::Null(std::string_view name) {
 	putName(name);
 	(*ser_) << "null";
-	return *this;
 }
 
-CsvBuilder& CsvBuilder::Put(std::string_view name, const Variant& kv, int offset) {
+void CsvBuilder::Put(std::string_view name, const Variant& kv, int offset) {
 	kv.Type().EvaluateOneOf(
 		[&](KeyValueType::Int) { Put(name, int(kv), offset); }, [&](KeyValueType::Int64) { Put(name, int64_t(kv), offset); },
 		[&](KeyValueType::Double) { Put(name, double(kv), offset); }, [&](KeyValueType::Float) { Put(name, float(kv), offset); },
@@ -214,6 +208,5 @@ CsvBuilder& CsvBuilder::Put(std::string_view name, const Variant& kv, int offset
 		},
 		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); },
 		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) { assertrx_throw(false); });
-	return *this;
 }
 }  // namespace reindexer::builders

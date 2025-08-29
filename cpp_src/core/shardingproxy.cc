@@ -6,6 +6,7 @@
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "cluster/stats/replicationstats.h"
 #include "estl/gift_str.h"
+#include "estl/lock.h"
 #include "estl/smart_lock.h"
 #include "parallelexecutor.h"
 #include "tools/catch_and_return.h"
@@ -126,7 +127,7 @@ Error ShardingProxy::Connect(const std::string& dsn, ConnectOpts opts) {
 		bool connected = connected_.load(std::memory_order_acquire);
 		// Expecting for the first time Connect is being called under exlusive lock.
 		// And all the subsequent calls will be perfomed under shared locks.
-		smart_lock lck(connectMtx_, !connected);
+		smart_lock lck(connectMtx_, LockUniquely{!connected});
 
 		Error err = impl_.Connect(dsn, opts);
 		if (!err.ok()) {
@@ -500,7 +501,7 @@ void ShardingProxy::saveShardingCfgCandidateImpl(cluster::ShardingConfig config,
 }
 
 Query ShardingProxy::NamespaceDataChecker::query() const {
-	using NextOp = Query& (Query::*)()&;
+	using NextOp = Query& (Query::*)() &;
 	const bool isDefault = ns_.defaultShard == thisShardId_;
 	auto nextOp = isDefault ? NextOp(&Query::Or) : NextOp(&Query::Not);
 
@@ -1756,7 +1757,7 @@ bool ShardingProxy::ConfigCandidate::NeedStopReseter() const {
 	if (!reseterEnabled_) {
 		return true;
 	}
-	if (auto lock = std::unique_lock(mtx_, std::try_to_lock_t{})) {
+	if (auto lock = unique_lock(mtx_, std::try_to_lock)) {
 		return !config_;
 	}
 	return false;
@@ -1766,7 +1767,7 @@ bool ShardingProxy::ConfigCandidate::TryResetConfig() {
 	if (!reseterEnabled_) {
 		return true;
 	}
-	if (auto lock = std::unique_lock(mtx_, std::try_to_lock_t{})) {
+	if (auto lock = unique_lock(mtx_, std::try_to_lock)) {
 		config_ = std::nullopt;
 		logFmt(LogWarning, "Timeout for applying the new sharding config. Config candidate removed. Source - {}", sourceId_);
 		return true;

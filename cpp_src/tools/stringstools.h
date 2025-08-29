@@ -24,10 +24,10 @@ std::string unescapeString(std::string_view str);
 KeyValueType detectValueType(std::string_view value);
 Variant stringToVariant(std::string_view value);
 
-[[nodiscard]] RX_ALWAYS_INLINE constexpr bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
-[[nodiscard]] RX_ALWAYS_INLINE constexpr bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
-[[nodiscard]] RX_ALWAYS_INLINE constexpr bool issign(char c) noexcept { return (c == '+' || c == '-'); }
-[[nodiscard]] RX_ALWAYS_INLINE constexpr char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
+RX_ALWAYS_INLINE constexpr bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+RX_ALWAYS_INLINE constexpr bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
+RX_ALWAYS_INLINE constexpr bool issign(char c) noexcept { return (c == '+' || c == '-'); }
+RX_ALWAYS_INLINE constexpr char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 std::string toLower(std::string_view src);
 inline std::string_view skipSpace(std::string_view str) {
 	size_t i = 0;
@@ -64,42 +64,42 @@ struct [[nodiscard]] SplitOptions {
 public:
 	SplitOptions() { SetSymbols(kDefaultExtraWordsSymbols, kDefaultWordPartDelimiters); }
 
-	[[nodiscard]] bool HasDelims() const noexcept { return hasDelims_; }
+	bool HasDelims() const noexcept { return hasDelims_; }
 
-	[[nodiscard]] bool IsWordPartDelimiter(uint32_t ch) const noexcept {
+	bool IsWordPartDelimiter(uint32_t ch) const noexcept {
 		if (ch >= wordPartDelimitersMask_.size()) {
 			return false;
 		}
 		return wordPartDelimitersMask_[ch];
 	}
-	[[nodiscard]] bool IsWordSymbol(uint32_t ch) const noexcept { return IsAlpha(ch) || IsDigit(ch) || isExtraWordSymbol(ch); }
+	bool IsWordSymbol(uint32_t ch) const noexcept { return IsAlpha(ch) || IsDigit(ch) || isExtraWordSymbol(ch); }
 
-	[[nodiscard]] bool IsWord(std::string_view str) const noexcept;
+	bool IsWord(std::string_view str) const noexcept;
 
-	[[nodiscard]] bool ContainsDelims(const std::string_view str) const;
-	[[nodiscard]] bool ContainsDelims(const std::wstring_view str) const;
+	bool ContainsDelims(const std::string_view str) const;
+	bool ContainsDelims(const std::wstring_view str) const;
 	void RemoveDelims(std::string_view str, std::string& res) const;
-	[[nodiscard]] std::string RemoveDelims(std::string_view str) const;
-	[[nodiscard]] std::string RemoveAccentsAndDiacritics(std::string_view str) const;
+	std::string RemoveDelims(std::string_view str) const;
+	std::string RemoveAccentsAndDiacritics(std::string_view str) const;
 
-	[[nodiscard]] bool NeedToRemoveDiacritics(wchar_t ch) const noexcept { return FitsMask(ch, removeDiacriticsMask_); }
+	bool NeedToRemoveDiacritics(wchar_t ch) const noexcept { return FitsMask(ch, removeDiacriticsMask_); }
 
-	[[nodiscard]] bool operator==(const SplitOptions& rhs) const noexcept = default;
+	bool operator==(const SplitOptions& rhs) const noexcept = default;
 
-	[[nodiscard]] bool operator!=(const SplitOptions& rhs) const noexcept { return !(*this == rhs); }
+	bool operator!=(const SplitOptions& rhs) const noexcept { return !(*this == rhs); }
 
 	void SetSymbols(std::string_view extraWordSymbols, std::string_view wordPartDelimiters);
 	void SetMinPartSize(size_t minPartSize) noexcept { minPartSize_ = minPartSize > 0 ? minPartSize : 1; }
 	void SetRemoveDiacriticsMask(SymbolTypeMask removeDiacriticsMask) noexcept { removeDiacriticsMask_ = removeDiacriticsMask; }
 
-	[[nodiscard]] SymbolTypeMask GetRemoveDiacriticsMask() const noexcept { return removeDiacriticsMask_; }
-	[[nodiscard]] size_t GetMinPartSize() const noexcept { return minPartSize_; }
+	SymbolTypeMask GetRemoveDiacriticsMask() const noexcept { return removeDiacriticsMask_; }
+	size_t GetMinPartSize() const noexcept { return minPartSize_; }
 
 	std::string GetExtraWordSymbols() const;
 	std::string GetWordPartDelimiters() const;
 
 private:
-	[[nodiscard]] bool isExtraWordSymbol(uint32_t ch) const noexcept {
+	bool isExtraWordSymbol(uint32_t ch) const noexcept {
 		if (ch >= extraWordSymbolsMask_.size()) {
 			return false;
 		}
@@ -114,7 +114,7 @@ private:
 	bool hasDelims_ = false;
 };
 
-struct WordWithPos {
+struct [[nodiscard]] WordWithPos {
 	std::string_view word;
 	size_t pos = 0;
 
@@ -125,61 +125,55 @@ struct WordWithPos {
 void split(const std::string& utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words);
 void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, const SplitOptions& options);
 void split(std::string_view str, std::string& buf, std::vector<WordWithPos>& words, const SplitOptions& options);
-[[nodiscard]] size_t calcUtf8After(std::string_view s, size_t limit) noexcept;
-[[nodiscard]] std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit, std::string_view delims) noexcept;
-[[nodiscard]] size_t calcUtf8Before(const char* str, int pos, size_t limit) noexcept;
-[[nodiscard]] std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t limit, std::string_view delims) noexcept;
+size_t calcUtf8After(std::string_view s, size_t limit) noexcept;
+std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit, std::string_view delims) noexcept;
+size_t calcUtf8Before(const char* str, int pos, size_t limit) noexcept;
+std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t limit, std::string_view delims) noexcept;
 
-[[nodiscard]] std::string_view trimSpaces(std::string_view str) noexcept;
+std::string_view trimSpaces(std::string_view str) noexcept;
 
 int getUTF8StringCharactersCount(std::string_view str) noexcept;
 
-struct TextOffset {
+struct [[nodiscard]] TextOffset {
 	int byte = 0;
 	int ch = 0;
 };
 
-struct WordPositionEx {
+struct [[nodiscard]] WordPositionEx {
 	TextOffset start;
 	TextOffset end;
 	void SetBytePosition(int s, int e) noexcept {
 		start.byte = s;
 		end.byte = e;
 	}
-	[[nodiscard]] int StartByte() const noexcept { return start.byte; }
-	[[nodiscard]] int EndByte() const noexcept { return end.byte; }
+	int StartByte() const noexcept { return start.byte; }
+	int EndByte() const noexcept { return end.byte; }
 };
 
-struct WordPosition {
+struct [[nodiscard]] WordPosition {
 	int start;
 	int end;
 	void SetBytePosition(int s, int e) noexcept {
 		start = s;
 		end = e;
 	}
-	[[nodiscard]] int StartByte() const noexcept { return start; }
-	[[nodiscard]] int EndByte() const noexcept { return end; }
+	int StartByte() const noexcept { return start; }
+	int EndByte() const noexcept { return end; }
 };
 
 template <CollateMode collateMode>
-[[nodiscard]] ComparationResult collateCompare(std::string_view lhs, std::string_view rhs,
-											   const SortingPrioritiesTable& sortOrderTable) noexcept;
+ComparationResult collateCompare(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable& sortOrderTable) noexcept;
 template <>
-[[nodiscard]] ComparationResult collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs,
-															 const SortingPrioritiesTable&) noexcept;
+ComparationResult collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] ComparationResult collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs,
-															const SortingPrioritiesTable&) noexcept;
+ComparationResult collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] ComparationResult collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs,
-															   const SortingPrioritiesTable&) noexcept;
+ComparationResult collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] ComparationResult collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs,
-															  const SortingPrioritiesTable&) noexcept;
+ComparationResult collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] ComparationResult collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs,
-															const SortingPrioritiesTable&) noexcept;
-[[nodiscard]] inline ComparationResult collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts) noexcept {
+ComparationResult collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
+inline ComparationResult collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts) noexcept {
 	switch (collateOpts.mode) {
 		case CollateASCII:
 			return collateCompare<CollateASCII>(lhs, rhs, collateOpts.sortOrderTable);
@@ -198,8 +192,8 @@ template <>
 std::wstring utf8_to_utf16(std::string_view src);
 std::string utf16_to_utf8(const std::wstring_view src);
 size_t utf16_to_utf8_size(const std::wstring_view src);
-std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst);
-std::string& utf16_to_utf8(const std::wstring_view src, std::string& dst);
+void utf8_to_utf16(std::string_view src, std::wstring& dst);
+void utf16_to_utf8(const std::wstring_view src, std::string& dst);
 
 inline bool is_number(std::string_view str) noexcept {
 	uint16_t i = 0;
@@ -222,8 +216,8 @@ std::string float_to_str(float v);
 void float_vector_to_str(ConstFloatVectorView view, WrSerializer& ser);
 std::string float_vector_to_str(ConstFloatVectorView view);
 
-[[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
-[[nodiscard]] bool validateUserNsName(std::string_view name) noexcept;
+bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
+bool validateUserNsName(std::string_view name) noexcept;
 RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && (name[0] == '#'); }
 RX_ALWAYS_INLINE bool isSystemNamespaceNameFastReplication(std::string_view name) noexcept {
 	return !name.empty() && (name[0] == '#' || name[0] == '@' || name[0] == '!');
@@ -254,32 +248,32 @@ inline constexpr bool iless(std::string_view lhs, std::string_view rhs) noexcept
 	return lhs.size() < rhs.size();
 }
 
-enum class CaseSensitive : bool { No, Yes };
+enum class [[nodiscard]] CaseSensitive : bool { No, Yes };
 template <CaseSensitive sensitivity>
-[[nodiscard]] bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept;
-[[nodiscard]] RX_ALWAYS_INLINE bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept {
+bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept;
+RX_ALWAYS_INLINE bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept {
 	return checkIfStartsWith<CaseSensitive::No>(pattern, src);
 }
-[[nodiscard]] RX_ALWAYS_INLINE bool checkIfStartsWithCS(std::string_view pattern, std::string_view src) noexcept {
+RX_ALWAYS_INLINE bool checkIfStartsWithCS(std::string_view pattern, std::string_view src) noexcept {
 	return checkIfStartsWith<CaseSensitive::Yes>(pattern, src);
 }
 
 template <CaseSensitive sensitivity>
-[[nodiscard]] bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept;
+bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept;
 RX_ALWAYS_INLINE bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept {
 	return checkIfEndsWith<CaseSensitive::No>(pattern, src);
 }
 
-[[nodiscard]] bool isPrintable(std::string_view str) noexcept;
-[[nodiscard]] bool isBlank(std::string_view token) noexcept;
-[[nodiscard]] bool endsWith(const std::string& source, std::string_view ending) noexcept;
-[[nodiscard]] std::string& ensureEndsWith(std::string& source, std::string_view ending);
+bool isPrintable(std::string_view str) noexcept;
+bool isBlank(std::string_view token) noexcept;
+bool endsWith(const std::string& source, std::string_view ending) noexcept;
+std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
 Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
 
-[[nodiscard]] std::string randStringAlph(size_t len);
+std::string randStringAlph(size_t len);
 
-struct nocase_equal_str {
+struct [[nodiscard]] nocase_equal_str {
 	using is_transparent = void;
 
 	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return iequals(lhs, rhs); }
@@ -288,7 +282,7 @@ struct nocase_equal_str {
 	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return iequals(lhs, rhs); }
 };
 
-struct nocase_less_str {
+struct [[nodiscard]] nocase_less_str {
 	using is_transparent = void;
 
 	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return iless(lhs, rhs); }
@@ -297,14 +291,14 @@ struct nocase_less_str {
 	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return iless(lhs, rhs); }
 };
 
-struct nocase_hash_str {
+struct [[nodiscard]] nocase_hash_str {
 	using is_transparent = void;
 
 	size_t operator()(std::string_view hs) const noexcept { return collateHash<CollateASCII>(hs); }
 	size_t operator()(const std::string& hs) const noexcept { return collateHash<CollateASCII>(hs); }
 };
 
-struct less_str {
+struct [[nodiscard]] less_str {
 	using is_transparent = void;
 
 	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return lhs < rhs; }
@@ -313,7 +307,7 @@ struct less_str {
 	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return lhs < rhs; }
 };
 
-struct equal_str {
+struct [[nodiscard]] equal_str {
 	using is_transparent = void;
 
 	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
@@ -322,7 +316,7 @@ struct equal_str {
 	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
 };
 
-struct hash_str {
+struct [[nodiscard]] hash_str {
 	using is_transparent = void;
 
 	size_t operator()(std::string_view hs) const noexcept { return collateHash<CollateNone>(hs); }
@@ -338,10 +332,10 @@ constexpr size_t kTmpNsPostfixLen = 20;
 constexpr std::string_view kTmpNsSuffix = "_tmp_";
 constexpr char kTmpNsPrefix = '@';
 RX_ALWAYS_INLINE bool isTmpNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && name[0] == kTmpNsPrefix; }
-[[nodiscard]] inline std::string createTmpNamespaceName(std::string_view baseName) {
+inline std::string createTmpNamespaceName(std::string_view baseName) {
 	return std::string({kTmpNsPrefix}).append(baseName).append(kTmpNsSuffix).append(randStringAlph(kTmpNsPostfixLen));
 }
-[[nodiscard]] inline std::string_view demangleTmpNamespaceName(std::string_view tmpNsName) noexcept {
+inline std::string_view demangleTmpNamespaceName(std::string_view tmpNsName) noexcept {
 	if (tmpNsName.size() < kTmpNsPostfixLen + kTmpNsSuffix.size() + 1) {
 		return tmpNsName;
 	}

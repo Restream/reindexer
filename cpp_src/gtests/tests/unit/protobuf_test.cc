@@ -46,15 +46,9 @@ TEST_F(ReindexerApi, ProtobufConversionTest) {
 	// clang-format on
 
 	const std::string_view nsName = "conversion_namespace";
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->SetSchema(nsName, schema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	std::string protobufSchema;
-	err = rt.reindexer->GetSchema(nsName, ProtobufSchemaType, protobufSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsName);
+	rt.SetSchema(nsName, schema);
+	rx_unused = rt.GetSchema(nsName, ProtobufSchemaType);
 
 	std::vector<double> numbers;
 
@@ -70,10 +64,9 @@ TEST_F(ReindexerApi, ProtobufConversionTest) {
 	}
 	jsonBuilder.End();
 
-	Item item = rt.reindexer->NewItem(nsName);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	Item item(rt.NewItem(nsName));
 
-	err = item.FromJSON(wrser.Slice());
+	auto err = item.FromJSON(wrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::WrSerializer rrser;
@@ -128,18 +121,10 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 			  }
 			})z";
 	// clang-format on
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, reindexer::IndexDef("id", {"id"}, "hash", "int", IndexOpts().PK()));
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->SetSchema(default_namespace, schema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	std::string protobufSchema;
-	err = rt.reindexer->GetSchema(default_namespace, ProtobufSchemaType, protobufSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, reindexer::IndexDef("id", {"id"}, "hash", "int", IndexOpts().PK()));
+	rt.SetSchema(default_namespace, schema);
+	rx_unused = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
 	std::vector<int> numVals;
 	std::vector<std::string> stringVals;
@@ -167,18 +152,16 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 	}
 	jsonBuilder.End();
 
-	Item item = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	Item item(rt.NewItem(default_namespace));
 
-	err = item.FromJSON(wrser.Slice());
+	auto err = item.FromJSON(wrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::WrSerializer rrser;
 	err = item.GetProtobuf(rrser);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	Item item2 = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
+	Item item2(rt.NewItem(default_namespace));
 	err = item2.FromProtobuf(rrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what() << wrser.Slice();
 	ASSERT_TRUE(item.GetJSON() == item2.GetJSON()) << item.GetJSON() << std::endl << std::endl << item2.GetJSON() << std::endl;
@@ -198,8 +181,7 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 }
 
 TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
 
 	// clang-format off
     const std::string jsonschema = R"xxx(
@@ -348,12 +330,8 @@ TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
                                    }    )xxx";
 	// clang-format on
 
-	err = rt.reindexer->SetSchema(default_namespace, jsonschema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	std::string protobufSchema;
-	err = rt.reindexer->GetSchema(default_namespace, ProtobufSchemaType, protobufSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.SetSchema(default_namespace, jsonschema);
+	rx_unused = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
 	reindexer::WrSerializer wrser;
 	reindexer::JsonBuilder jsonBuilder(wrser);
@@ -401,17 +379,16 @@ TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
 	collection.End();
 	jsonBuilder.End();
 
-	Item item = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	Item item(rt.NewItem(default_namespace));
 
-	err = item.FromJSON(wrser.Slice());
+	auto err = item.FromJSON(wrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::WrSerializer rrser;
 	err = item.GetProtobuf(rrser);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	Item item2 = rt.reindexer->NewItem(default_namespace);
+	Item item2(rt.NewItem(default_namespace));
 	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
 	err = item2.FromProtobuf(rrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -688,25 +665,18 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
                           )xxx";
 	// clang-format on
 
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
 
-	err = rt.reindexer->AddIndex(
-		default_namespace, reindexer::IndexDef("indexedPackedDouble", {"indexedPackedDouble"}, "tree", "double", IndexOpts().Array()));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(default_namespace,
+				reindexer::IndexDef("indexedPackedDouble", {"indexedPackedDouble"}, "tree", "double", IndexOpts().Array()));
 
-	err = rt.reindexer->AddIndex(
-		default_namespace, reindexer::IndexDef("indexedUnpackedDouble", {"indexedUnpackedDouble"}, "tree", "string", IndexOpts().Array()));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(default_namespace,
+				reindexer::IndexDef("indexedUnpackedDouble", {"indexedUnpackedDouble"}, "tree", "string", IndexOpts().Array()));
 
-	err = rt.reindexer->SetSchema(default_namespace, jsonSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.SetSchema(default_namespace, jsonSchema);
+	rx_unused = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
-	std::string protobufSchema;
-	err = rt.reindexer->GetSchema(default_namespace, ProtobufSchemaType, protobufSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	reindexer::Item nsItem = rt.reindexer->NewItem(default_namespace);
+	Item nsItem(rt.NewItem(default_namespace));
 	ASSERT_TRUE(nsItem.Status().ok()) << nsItem.Status().what();
 
 	reindexer::WrSerializer wrser;
@@ -768,20 +738,19 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 
 	builder.End();
 
-	Item item1 = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item1.Status().ok()) << item1.Status().what();
+	Item item1(rt.NewItem(default_namespace));
 
-	err = item1.FromProtobuf(wrser.Slice());
+	auto err = item1.FromProtobuf(wrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	Item item2 = rt.reindexer->NewItem(default_namespace);
+	Item item2(rt.NewItem(default_namespace));
 	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
 
 	err = item2.FromJSON(item1.GetJSON());
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(item1.GetJSON() == item2.GetJSON());
 
-	Item item3 = rt.reindexer->NewItem(default_namespace);
+	Item item3(rt.NewItem(default_namespace));
 	ASSERT_TRUE(item3.Status().ok()) << item3.Status().what();
 
 	reindexer::WrSerializer protobufSer;

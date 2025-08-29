@@ -9,7 +9,7 @@ class NamespaceImpl;
 struct SelectCtx;
 class ItemRef;
 
-class ItemComparator {
+class [[nodiscard]] ItemComparator {
 public:
 	ItemComparator(const NamespaceImpl& ns, const SelectCtx& ctx, const joins::NamespaceResults* jr) noexcept
 		: ns_(ns), ctx_(ctx), joinResults_(jr) {}
@@ -18,7 +18,7 @@ public:
 	ItemComparator& operator=(const ItemComparator&) = delete;
 	ItemComparator& operator=(ItemComparator&&) = delete;
 
-	[[nodiscard]] bool operator()(const ItemRef& lhs, const ItemRef& rhs) const;
+	bool operator()(const ItemRef& lhs, const ItemRef& rhs) const;
 
 	void BindForForcedSort();
 	void BindForGeneralSort();
@@ -30,17 +30,17 @@ private:
 
 	class BackInserter;
 	class FrontInserter;
-	struct CompareByField {
+	struct [[nodiscard]] CompareByField {
 		Desc desc;
 	};
-	struct CompareByJoinedField {
+	struct [[nodiscard]] CompareByJoinedField {
 		size_t joinedNs;
 		Desc desc;
 	};
-	struct CompareByExpression {
+	struct [[nodiscard]] CompareByExpression {
 		Desc desc;
 	};
-	struct Joined {
+	struct [[nodiscard]] Joined {
 		const JoinedSelector* joinedSelector{nullptr};
 		FieldsSet fields;
 		h_vector<const CollateOpts*, 1> collateOpts;

@@ -143,7 +143,7 @@ size_t heap_size<key_string_with_hash>(const key_string_with_hash& kt) {
 	return kt.heap_size();
 }
 
-struct DeepClean {
+struct [[nodiscard]] DeepClean {
 	template <typename T>
 	void operator()(T& v) const {
 		free_node(v.first);
@@ -214,7 +214,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) {
 	if (key.IsNullValue()) {
-		this->empty_ids_.Unsorted().Erase(id);	// ignore result
+		rx_unused = this->empty_ids_.Unsorted().Erase(id);
 		this->isBuilt_ = false;
 		cache_.ResetImpl();
 		clearCache = true;
@@ -330,10 +330,20 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 					selectorWasSkipped = true;
 					return true;
 				}
+				std::optional<fast_hash_set<uintptr_t>> dedupSet;
+				if (ctx.opts.distinct && ctx.keys.size() > 1) {
+					dedupSet.emplace(ctx.keys.size());
+				}
 				res.reserve(ctx.keys.size());
 				for (const auto& key : ctx.keys) {
 					auto keyIt = ctx.i_map->find(static_cast<ref_type>(key));
 					if (keyIt != ctx.i_map->end()) {
+						if (dedupSet.has_value()) {
+							auto res = dedupSet->emplace(uintptr_t(&(keyIt->second)));
+							if rx_unlikely (!res.second) {
+								continue;
+							}
+						}
 						res.emplace_back(keyIt->second, ctx.sortId);
 						idsCount += keyIt->second.Unsorted().Size();
 					}
@@ -435,7 +445,7 @@ void IndexUnordered<T>::Commit() {
 }
 
 template <typename T>
-void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext& ctx) {
+void IndexUnordered<T>::UpdateSortedIds(const IUpdateSortedContext& ctx) {
 	assertrx_dbg(IsSupportSortedIdsBuild());
 
 	logFmt(LogTrace, "IndexUnordered::UpdateSortedIds ({}) {} uniq keys, {} empty", this->name_, this->idx_map.size(),

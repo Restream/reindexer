@@ -6,7 +6,7 @@ namespace reindexer_tool {
 
 class Output;
 
-class TableViewScroller {
+class [[nodiscard]] TableViewScroller {
 public:
 	TableViewScroller(reindexer::TableViewBuilder& tableBuilder, int linesOnPage);
 	void Scroll(Output& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled);

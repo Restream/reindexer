@@ -208,7 +208,7 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 }
 
 template <typename T>
-struct ParseIndexNameResult {
+struct [[nodiscard]] ParseIndexNameResult {
 	typename std::vector<T>::const_iterator joinedSelectorIt;
 	std::string name;
 };
@@ -239,10 +239,10 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 
 		++pos;
 		joinedSelectorIt = std::find_if(joinedSelectors.cbegin(), joinedSelectors.cend(),
-										[namespaceName](const T& js) { return namespaceName == js.RightNsName(); });
+										[namespaceName](const T& js) { return iequals(namespaceName, js.RightNsName()); });
 		if (joinedSelectorIt != joinedSelectors.cend()) {
 			if (std::find_if(joinedSelectorIt + 1, joinedSelectors.cend(),
-							 [namespaceName](const T& js) { return namespaceName == js.RightNsName(); }) != joinedSelectors.cend()) {
+							 [namespaceName](const T& js) { return iequals(namespaceName, js.RightNsName()); }) != joinedSelectors.cend()) {
 				throwParseError(fullExpr, pos - fullExpr.data(),
 								"Sorting by namespace which has been joined more than once: '" + std::string(namespaceName) + "'.");
 			}
@@ -354,7 +354,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		const auto parsedIndexName2 = parseIndexName(expr, joinedSelectors, fullExpr);
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
 			if (parsedIndexName1.joinedSelectorIt == parsedIndexName2.joinedSelectorIt) {
-				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name)) {
+				if (iequals(parsedIndexName1.name, parsedIndexName2.name)) {
 					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Distance between two identical indexes");
 				}
 				rx_unused = Append({op, negative}, DistanceBetweenJoinedIndexesSameNs{jNsIdx1, std::move(parsedIndexName1.name),
@@ -413,7 +413,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 				const auto point = parsePoint(expr, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
 				rx_unused = Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName1.name), point});
 			} else {
-				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name)) {
+				if (iequals(parsedIndexName1.name, parsedIndexName2.name)) {
 					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Distance between two identical indexes");
 				}
 				rx_unused =
@@ -843,7 +843,7 @@ void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const N
 	assertrx_throw(!column.empty());
 	indexNo = IndexValueType::SetByJsonPath;
 	// FIXME: Sparse index will not be found if jsonpath does not equal to index name
-	if (ns.getIndexByNameOrJsonPath(column, indexNo)) {
+	if (ns.tryGetIndexByNameOrJsonPath(column, indexNo)) {
 		const auto& index = *ns.indexes_[indexNo];
 		if (isRanked) {
 			if (!index.IsFloatVector() && !IsFullText(index.Type())) {

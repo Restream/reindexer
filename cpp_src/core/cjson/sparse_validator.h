@@ -54,7 +54,8 @@ public:
 	void operator()(std::string_view v) const {
 		validateArrayFieldRestrictions(Name(), isArray_, arrayDim_, 1, parserName_);
 		using namespace std::string_view_literals;
-		type_.EvaluateOneOf([](OneOf<KeyValueType::Undefined, KeyValueType::String>) noexcept {}, [v](KeyValueType::Uuid) { Uuid{v}; },
+		type_.EvaluateOneOf([](OneOf<KeyValueType::Undefined, KeyValueType::String>) noexcept {},
+							[v](KeyValueType::Uuid) { rx_unused = Uuid{v}; },
 							[&](OneOf<KeyValueType::Int, KeyValueType::Double, KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Tuple,
 									  KeyValueType::Composite, KeyValueType::Null, KeyValueType::FloatVector, KeyValueType::Float>) {
 								throwUnexpected(Name(), type_, "string"sv, parserName_);

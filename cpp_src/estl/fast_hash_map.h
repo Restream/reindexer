@@ -16,7 +16,7 @@ using hs_sc_map_prime = tsl::hopscotch_sc_map<K, E, H, P, L, std::allocator<std:
 // but is's able to get advantage from moving keys and fast_hash_map_s don't.
 // Uses prime_growth_policy for resizing.
 template <typename K, typename E, typename H = void, typename P = void>
-class fast_hash_map_l : public hs_map_prime<K, E, H, P> {
+class [[nodiscard]] fast_hash_map_l : public hs_map_prime<K, E, H, P> {
 public:
 	static_assert(!std::is_same_v<H, void>, "Hash functor must be specialized exlicitly");
 	static_assert(!std::is_same_v<P, void>, "EqualTo functor must be specialized exlicitly");
@@ -33,7 +33,7 @@ public:
 };
 
 template <typename K, typename E>
-class fast_hash_map_l<K, E> : public fast_hash_map_l<K, E, std::hash<K>, std::equal_to<K>> {
+class [[nodiscard]] fast_hash_map_l<K, E> : public fast_hash_map_l<K, E, std::hash<K>, std::equal_to<K>> {
 public:
 	using Base = fast_hash_map_l<K, E, std::hash<K>, std::equal_to<K>>;
 	using Base::Base;
@@ -42,7 +42,7 @@ public:
 };
 
 template <typename K, typename E, typename H>
-class fast_hash_map_l<K, E, H> : public fast_hash_map_l<K, E, H, std::equal_to<K>> {
+class [[nodiscard]] fast_hash_map_l<K, E, H> : public fast_hash_map_l<K, E, H, std::equal_to<K>> {
 public:
 	using Base = fast_hash_map_l<K, E, H, std::equal_to<K>>;
 	using Base::Base;
@@ -54,7 +54,7 @@ public:
 // moving it, however in works better with a bad hash-function, than fast_hash_map_l.
 // Uses prime_growth_policy for resizing
 template <typename K, typename E, typename H = void, typename P = void, typename L = void>
-class fast_hash_map_s : public hs_sc_map_prime<K, E, H, P, L> {
+class [[nodiscard]] fast_hash_map_s : public hs_sc_map_prime<K, E, H, P, L> {
 public:
 	static_assert(!std::is_same_v<H, void>, "Hash functor must be specialized exlicitly");
 	static_assert(!std::is_same_v<P, void>, "EqualTo functor must be specialized exlicitly");
@@ -69,7 +69,7 @@ public:
 };
 
 template <typename K, typename E>
-class fast_hash_map_s<K, E> : public fast_hash_map_s<K, E, std::hash<K>, std::equal_to<K>, std::less<K>> {
+class [[nodiscard]] fast_hash_map_s<K, E> : public fast_hash_map_s<K, E, std::hash<K>, std::equal_to<K>, std::less<K>> {
 public:
 	using Base = fast_hash_map_s<K, E, std::hash<K>, std::equal_to<K>, std::less<K>>;
 	using Base::Base;
@@ -78,7 +78,7 @@ public:
 };
 
 template <typename K, typename E, typename H>
-class fast_hash_map_s<K, E, H> : public fast_hash_map_s<K, E, H, std::equal_to<K>, std::less<K>> {
+class [[nodiscard]] fast_hash_map_s<K, E, H> : public fast_hash_map_s<K, E, H, std::equal_to<K>, std::less<K>> {
 public:
 	using Base = fast_hash_map_s<K, E, H, std::equal_to<K>, std::less<K>>;
 	using Base::Base;
@@ -88,7 +88,8 @@ public:
 
 // fast_hash_map attempts to choose between fast_hash_map_s and fast_hash_map_l depending on Key(K) type and is_using_sc_version_v trait
 template <typename K, typename E, typename H = void, typename P = void, typename L = void>
-class fast_hash_map : public std::conditional_t<is_using_sc_version_v<K>, fast_hash_map_s<K, E, H, P, L>, fast_hash_map_l<K, E, H, P>> {
+class [[nodiscard]] fast_hash_map
+	: public std::conditional_t<is_using_sc_version_v<K>, fast_hash_map_s<K, E, H, P, L>, fast_hash_map_l<K, E, H, P>> {
 public:
 	using Base = std::conditional_t<is_using_sc_version_v<K>, fast_hash_map_s<K, E, H, P, L>, fast_hash_map_l<K, E, H, P>>;
 	using Base::Base;
@@ -97,7 +98,7 @@ public:
 };
 
 template <typename K, typename E>
-class fast_hash_map<K, E> : public fast_hash_map<K, E, std::hash<K>, std::equal_to<K>, std::less<K>> {
+class [[nodiscard]] fast_hash_map<K, E> : public fast_hash_map<K, E, std::hash<K>, std::equal_to<K>, std::less<K>> {
 public:
 	using Base = fast_hash_map<K, E, std::hash<K>, std::equal_to<K>, std::less<K>>;
 	using Base::Base;
@@ -106,7 +107,7 @@ public:
 };
 
 template <typename K, typename E, typename H>
-class fast_hash_map<K, E, H> : public fast_hash_map<K, E, H, std::equal_to<K>, std::less<K>> {
+class [[nodiscard]] fast_hash_map<K, E, H> : public fast_hash_map<K, E, H, std::equal_to<K>, std::less<K>> {
 public:
 	using Base = fast_hash_map<K, E, H, std::equal_to<K>, std::less<K>>;
 	using Base::Base;

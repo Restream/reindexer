@@ -5,12 +5,12 @@
 
 namespace reindexer {
 
-struct FtDslFieldOpts {
+struct [[nodiscard]] FtDslFieldOpts {
 	float boost = 1.0;
 	bool needSumRank = false;
 };
 
-struct FtDslOpts {
+struct [[nodiscard]] FtDslOpts {
 	bool suff = false;
 	bool pref = false;
 	bool typos = false;
@@ -25,7 +25,7 @@ struct FtDslOpts {
 	int qpos = 0;
 };
 
-struct FtDSLEntry {
+struct [[nodiscard]] FtDSLEntry {
 	FtDSLEntry() = default;
 	FtDSLEntry(std::wstring&& p, FtDslOpts&& o) : pattern{std::move(p)}, opts{std::move(o)} {}
 	FtDSLEntry(const std::wstring& p, const FtDslOpts& o) : pattern{p}, opts{o} {}
@@ -37,7 +37,7 @@ struct FtDSLEntry {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
-struct FtDSLVariant {
+struct [[nodiscard]] FtDSLVariant {
 	FtDSLVariant() = default;
 	FtDSLVariant(FtDSLVariant&&) = default;
 	FtDSLVariant(std::wstring p, int pr, PrefAndStemmersForbidden psForbidden) noexcept
@@ -55,7 +55,7 @@ struct FtDSLVariant {
 
 struct StopWord;
 
-class FtDSLQuery : public h_vector<FtDSLEntry> {
+class [[nodiscard]] FtDSLQuery : public h_vector<FtDSLEntry> {
 public:
 	FtDSLQuery(const RHashMap<std::string, int>& fields, const StopWordsSetT& stopWords, const SplitOptions& splitOptions) noexcept
 		: fields_(fields), stopWords_(stopWords), splitOptions_(splitOptions) {}

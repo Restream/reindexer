@@ -6,12 +6,13 @@
 
 #include <string.h>
 #include <deque>
-#include <mutex>
+#include "estl/lock.h"
+#include "estl/mutex.h"
 
 namespace hnswlib {
 typedef unsigned short int vl_type;
 
-class VisitedList {
+class [[nodiscard]] VisitedList {
 public:
 	vl_type curV;
 	vl_type* mass;
@@ -39,9 +40,9 @@ public:
 //
 /////////////////////////////////////////////////////////
 
-class VisitedListPool {
+class [[nodiscard]] VisitedListPool {
 	std::deque<VisitedList*> pool;
-	mutable std::mutex poolguard;
+	mutable reindexer::mutex poolguard;
 	int numelements;
 
 public:
@@ -55,7 +56,7 @@ public:
 	VisitedList* getFreeVisitedList() {
 		VisitedList* rez;
 		{
-			std::unique_lock lock(poolguard);
+			reindexer::unique_lock lock(poolguard);
 			if (pool.size() > 0) {
 				rez = pool.front();
 				pool.pop_front();
@@ -70,13 +71,13 @@ public:
 	}
 
 	void releaseVisitedList(VisitedList* vl) {
-		std::lock_guard lock(poolguard);
+		reindexer::lock_guard lock(poolguard);
 		pool.push_front(vl);
 	}
 
 	// Approximate values
 	size_t allocatedMemSize() const noexcept {
-		std::lock_guard lock(poolguard);
+		reindexer::lock_guard lock(poolguard);
 		return pool.size() * (numelements * sizeof(vl_type) + sizeof(VisitedList));
 	}
 

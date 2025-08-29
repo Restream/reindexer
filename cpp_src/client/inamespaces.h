@@ -8,7 +8,7 @@ namespace client {
 
 class Namespace;
 
-class INamespaces {
+class [[nodiscard]] INamespaces {
 public:
 	using IntrusiveT = intrusive_atomic_rc_wrapper<INamespaces>;
 	using PtrT = intrusive_ptr<IntrusiveT>;

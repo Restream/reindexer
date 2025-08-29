@@ -3,9 +3,9 @@
 #include "gtest/gtest.h"
 #include "tools/stringstools.h"
 
-class CustomStrCompareApi : public virtual ::testing::Test {
+class [[nodiscard]] CustomStrCompareApi : public virtual ::testing::Test {
 public:
-	enum class ComparisonResult { Less, Greater, Equal };
+	enum class [[nodiscard]] ComparisonResult { Less, Greater, Equal };
 	static std::string_view ComparisonResultToString(ComparisonResult r) {
 		switch (r) {
 			case ComparisonResult::Less:
@@ -18,7 +18,7 @@ public:
 		return "<unknown>";
 	}
 
-	struct StringTestCase {
+	struct [[nodiscard]] StringTestCase {
 		std::string str1;
 		std::string str2;
 		ComparisonResult expectedResult;
@@ -155,8 +155,8 @@ TEST(ConversionStringToNumber, DetectValueTypeTest) {
 	constexpr auto DoubleV = KeyValueType{KeyValueType::Double{}};
 	constexpr auto StringV = KeyValueType{KeyValueType::String{}};
 
-	struct TestCase {
-		struct Empty {};
+	struct [[nodiscard]] TestCase {
+		struct [[nodiscard]] Empty {};
 		TestCase(std::string_view value, KeyValueType expectedType, std::variant<int64_t, double, Empty> expectedValue = Empty{})
 			: value(value),
 			  expectedType(expectedType),

@@ -2,6 +2,7 @@
 #include <bitset>
 #include "cjson/jsonbuilder.h"
 #include "defnsconfigs.h"
+#include "estl/lock.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
 #include "tools/catch_and_return.h"
@@ -49,7 +50,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 
 	std::string errLogString;
 	try {
-		smart_lock<shared_timed_mutex> lk(mtx_, true);
+		smart_lock lk(mtx_, Unique);
 
 		ProfilingConfigData profilingDataSafe;
 		const auto& profilingNode = root["profiling"sv];
@@ -177,7 +178,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 		result = {ErrorCode::errParseJson, "DBConfigProvider: {}", errLogString};
 	} else if (typesChanged.size() > 0) {
 		// notifying handlers under shared_lock so none of them go out of scope
-		smart_lock<shared_timed_mutex> lk(mtx_, false);
+		smart_lock lk(mtx_, NonUnique);
 
 		for (unsigned changedType = 0; changedType < typesChanged.size(); ++changedType) {
 			if (!typesChanged.test(changedType)) {
@@ -208,7 +209,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 
 Error DBConfigProvider::GetConfigParseErrors() const {
 	using namespace std::string_view_literals;
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
+	smart_lock lk(mtx_, NonUnique);
 	if (!profilingDataLoadResult_.ok() || !namespacesDataLoadResult_.ok() || !asyncReplicationDataLoadResult_.ok() ||
 		!replicationDataLoadResult_.ok() || !embeddersDataLoadResult_.ok()) {
 		std::string errLogString(profilingDataLoadResult_.whatStr());
@@ -224,18 +225,18 @@ Error DBConfigProvider::GetConfigParseErrors() const {
 }
 
 void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> handler) {
-	std::lock_guard<shared_timed_mutex> lk(mtx_);
+	lock_guard lk(mtx_);
 	handlers_[cfgType] = std::move(handler);
 }
 
 int DBConfigProvider::setHandler(std::function<void(const ReplicationConfigData&)> handler) {
-	smart_lock<shared_timed_mutex> lk(mtx_, true);
+	smart_lock<shared_timed_mutex> lk(mtx_, Unique);
 	replicationConfigDataHandlers_[++handlersCounter_] = std::move(handler);
 	return handlersCounter_;
 }
 
 void DBConfigProvider::unsetHandler(int id) {
-	smart_lock<shared_timed_mutex> lk(mtx_, true);
+	smart_lock<shared_timed_mutex> lk(mtx_, Unique);
 	replicationConfigDataHandlers_.erase(id);
 }
 
@@ -249,7 +250,7 @@ ReplicationConfigData DBConfigProvider::GetReplicationConfig() const {
 }
 
 cluster::AsyncReplConfigData DBConfigProvider::GetAsyncReplicationConfig() const {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
+	smart_lock<shared_timed_mutex> lk(mtx_, NonUnique);
 	return asyncReplicationData_;
 }
 
@@ -261,7 +262,7 @@ Error DBConfigProvider::CheckAsyncReplicationToken(std::string_view nsName, std:
 }
 
 std::string DBConfigProvider::GetAsyncReplicationToken(std::string_view nsName) const {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
+	smart_lock<shared_timed_mutex> lk(mtx_, NonUnique);
 	const auto& tokens = replicationData_.admissibleTokens;
 	if (auto it = tokens.find(nsName); it != tokens.end()) {
 		return it->second;
@@ -440,19 +441,24 @@ void ProfilingConfigData::GetJSON(JsonBuilder& jb) const {
 	const auto select_lg_params = longSelectLoggingParams.load(std::memory_order_relaxed);
 	const auto update_delete_lg_params = longUpdDelLoggingParams.load(std::memory_order_relaxed);
 	const auto transaction_lg_params = longTxLoggingParams.load(std::memory_order_relaxed);
-	jb.Object("long_queries_logging"sv)
-		.Object("select"sv)
-		.Put("threshold_us"sv, select_lg_params.thresholdUs)
-		.Put("normalized"sv, bool(select_lg_params.normalized))
-		.End()
-		.Object("update_delete"sv)
-		.Put("threshold_us"sv, update_delete_lg_params.thresholdUs)
-		.Put("normalized"sv, bool(update_delete_lg_params.normalized))
-		.End()
-		.Object("transaction"sv)
-		.Put("threshold_us"sv, transaction_lg_params.thresholdUs)
-		.Put("avg_step_threshold_us"sv, transaction_lg_params.avgTxStepThresholdUs)
-		.End();
+	auto lql = jb.Object("long_queries_logging"sv);
+
+	auto select = lql.Object("select"sv);
+	select.Put("threshold_us"sv, select_lg_params.thresholdUs);
+	select.Put("normalized"sv, bool(select_lg_params.normalized));
+	select.End();
+
+	auto updateDelete = lql.Object("update_delete"sv);
+	updateDelete.Put("threshold_us"sv, update_delete_lg_params.thresholdUs);
+	updateDelete.Put("normalized"sv, bool(update_delete_lg_params.normalized));
+	updateDelete.End();
+
+	auto transaction = lql.Object("transaction"sv);
+	transaction.Put("threshold_us"sv, transaction_lg_params.thresholdUs);
+	transaction.Put("avg_step_threshold_us"sv, transaction_lg_params.avgTxStepThresholdUs);
+	transaction.End();
+
+	lql.End();
 }
 
 Error ReplicationConfigData::FromDefault() noexcept {
@@ -484,8 +490,6 @@ Error ReplicationConfigData::FromYAML(const std::string& yaml) {
 			return {ErrorCode::errParams, "ReplicationConfigData: YAML parsing error: '{}'", err.whatStr()};
 		}
 		admissibleTokens = getAdmissibleTokens(root["admissible_replication_tokens"]);
-	} catch (const YAML::Exception& ex) {
-		return {ErrorCode::errParseYAML, "ReplicationConfigData: YAML parsing error: '{}'", ex.what()};
 	} catch (const std::exception& err) {
 		return {ErrorCode::errParseYAML, "ReplicationConfigData: YAML parsing error: '{}'", err.what()};
 	}
@@ -496,8 +500,6 @@ Error ReplicationConfigData::FromJSON(std::string_view json) {
 	try {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
-	} catch (const gason::Exception& ex) {
-		return {ErrorCode::errParseJson, "ReplicationConfigData: {}\n", ex.what()};
 	} catch (const std::exception& err) {
 		return {ErrorCode::errParseJson, "ReplicationConfigData: {}\n", err.what()};
 	}
@@ -766,15 +768,16 @@ void NamespaceConfigData::GetJSON(JsonBuilder& jb) const {
 	jb.Put("sync_storage_flush_limit"sv, syncStorageFlushLimit);
 	jb.Put("ann_storage_cache_build_timeout_ms"sv, annStorageCacheBuildTimeout);
 
-	jb.Object("cache"sv)
-		.Put("index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize)
-		.Put("index_idset_hits_to_cache"sv, cacheConfig.idxIdsetHitsToCache)
-		.Put("ft_index_cache_size"sv, cacheConfig.ftIdxCacheSize)
-		.Put("ft_index_hits_to_cache"sv, cacheConfig.ftIdxHitsToCache)
-		.Put("joins_preselect_cache_size"sv, cacheConfig.joinCacheSize)
-		.Put("joins_preselect_hit_to_cache"sv, cacheConfig.joinHitsToCache)
-		.Put("query_count_cache_size"sv, cacheConfig.queryCountCacheSize)
-		.Put("query_count_hit_to_cache"sv, cacheConfig.queryCountHitsToCache);
+	auto c = jb.Object("cache"sv);
+	c.Put("index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize);
+	c.Put("index_idset_hits_to_cache"sv, cacheConfig.idxIdsetHitsToCache);
+	c.Put("ft_index_cache_size"sv, cacheConfig.ftIdxCacheSize);
+	c.Put("ft_index_hits_to_cache"sv, cacheConfig.ftIdxHitsToCache);
+	c.Put("joins_preselect_cache_size"sv, cacheConfig.joinCacheSize);
+	c.Put("joins_preselect_hit_to_cache"sv, cacheConfig.joinHitsToCache);
+	c.Put("query_count_cache_size"sv, cacheConfig.queryCountCacheSize);
+	c.Put("query_count_hit_to_cache"sv, cacheConfig.queryCountHitsToCache);
+	c.End();
 }
 
 Error EmbeddersConfigData::FromDefault(std::vector<EmbeddersConfigData>& defaultEmbeddersConfs) noexcept {

@@ -8,7 +8,7 @@ namespace client {
 
 using std::chrono::milliseconds;
 
-struct ReindexerConfig {
+struct [[nodiscard]] ReindexerConfig {
 	explicit ReindexerConfig(int _FetchAmount = 10000, int _ReconnectAttempts = 0, milliseconds _NetTimeout = milliseconds(0),
 							 bool _EnableCompression = false, bool _RequestDedicatedThread = false, std::string _appName = "CPP-client",
 							 unsigned int _syncRxCoroCount = 10, std::string _replToken = {})

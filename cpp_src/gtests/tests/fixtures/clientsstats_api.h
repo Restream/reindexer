@@ -5,7 +5,7 @@
 #include "client/cororeindexer.h"
 #include "server/server.h"
 
-class ClientsStatsApi : public ::testing::Test {
+class [[nodiscard]] ClientsStatsApi : public ::testing::Test {
 public:
 	void TearDown() override;
 

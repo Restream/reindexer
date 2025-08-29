@@ -38,7 +38,8 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				auto nsRlck = statCalculator.CreateLock(*nsl, &NamespaceImpl::rLock, ctx.rdxContext);
 				tx.ValidatePK(nsl->pkFields());
 
-				auto storageLock = statCalculator.CreateLock(nsl->storage_, &AsyncStorage::FullLock);
+				decltype(statCalculator)::LoggableLock<AsyncStorage::FullLock> storageLock{nsl->storage_.flushMtx_,
+																						   nsl->storage_.storageMtx_, statCalculator};
 
 				cg.Reset();
 				auto lvectorIndexes = nsl->getVectorIndexes();
@@ -68,7 +69,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 					auto err = ns_->observers_.SendUpdate(
 						updates::UpdateRecord{updates::URType::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
 											  ctx.EmitterServerId()},
-						[&clonerLck, &storageLock, &nsRlck]() {
+						[&clonerLck, &storageLock, &nsRlck]() RX_NO_THREAD_SAFETY_ANALYSIS {
 							storageLock.unlock();
 							nsRlck.unlock();
 							clonerLck.unlock();

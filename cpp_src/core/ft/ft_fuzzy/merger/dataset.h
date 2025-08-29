@@ -5,7 +5,7 @@
 namespace search_engine {
 
 template <class T, class Base = uint16_t>
-class DataSet {
+class [[nodiscard]] DataSet {
 public:
 	DataSet(int minval, int maxval) : minval_(minval), exists_(maxval - minval + 1, false), offsets_(maxval - minval + 1) {
 		data_ = std::make_shared<std::vector<T>>();

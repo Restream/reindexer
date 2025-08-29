@@ -209,7 +209,7 @@ void ReplicationStats::GetJSON(WrSerializer& ser) const {
 }
 
 void SyncStatsCounter::Hit(std::chrono::microseconds time) noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	totalTimeUs += time.count();
 	++count;
 	if (maxTimeUs < time.count()) {
@@ -218,7 +218,7 @@ void SyncStatsCounter::Hit(std::chrono::microseconds time) noexcept {
 }
 
 void SyncStatsCounter::Reset() noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	count = 0;
 	maxTimeUs = 0;
 	totalTimeUs = 0;
@@ -227,7 +227,7 @@ void SyncStatsCounter::Reset() noexcept {
 SyncStats SyncStatsCounter::Get() const {
 	SyncStats stats;
 	{
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		stats.count = count;
 		stats.maxTimeUs = maxTimeUs;
 		stats.avgTimeUs = totalTimeUs / (count ? count : 1);
@@ -236,12 +236,12 @@ SyncStats SyncStatsCounter::Get() const {
 }
 
 void NodeStatsCounter::SaveLastError(const Error& err) noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	lastError = err;
 }
 
 Error NodeStatsCounter::GetLastError() const {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return lastError;
 }
 
@@ -299,7 +299,7 @@ void ReplicationStatCounter::Clear() noexcept {
 	initialForceSyncs_.Reset();
 	initialWalSyncs_.Reset();
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	nodeCounters_.clear();
 	updatesDrops_.store(0, std::memory_order_relaxed);
 	lastPushedUpdateId_.store(-1, std::memory_order_relaxed);

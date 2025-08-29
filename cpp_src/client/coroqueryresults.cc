@@ -15,9 +15,9 @@ using namespace reindexer::net;
 CoroQueryResults::~CoroQueryResults() {
 	if (holdsRemoteData()) {
 		try {
-			i_.conn_->Call({cproto::kCmdCloseResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard,
-							nullptr, false, i_.sessionTs_},
-						   i_.queryID_.main, i_.queryID_.uid);
+			rx_unused = i_.conn_->Call({cproto::kCmdCloseResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1,
+										ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+									   i_.queryID_.main, i_.queryID_.uid);
 		} catch (std::exception& e) {
 			fprintf(stderr, "reindexer error: unexpected exception in ~CoroQueryResults: %s\n", e.what());
 			assertrx_dbg(false);
@@ -345,7 +345,7 @@ void CoroQueryResults::Iterator::getCSVFromCJSON(std::string_view cjson, WrSeria
 	encoder.Encode(cjson, builder);
 }
 
-[[nodiscard]] Error CoroQueryResults::Iterator::GetCSV(WrSerializer& wrser, CsvOrdering& ordering) noexcept {
+Error CoroQueryResults::Iterator::GetCSV(WrSerializer& wrser, CsvOrdering& ordering) noexcept {
 	try {
 		checkIdx();
 		readNext();

@@ -294,7 +294,7 @@ bool WrResultSerializer::PutResults(QueryResults& result, const BindingCapabilit
 			auto jIt = rowIt.GetJoined(storage);
 			PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
 			if (jIt.getJoinedItemsCount() > 0) {
-				size_t joinedField = rowIt.qr_->GetJoinedField(rowIt.GetNsID());
+				size_t joinedField = rowIt.GetJoinedField();
 				for (auto it = jIt.begin(), end = jIt.end(); it != end; ++it, ++joinedField) {
 					PutVarUint(it.ItemsCount());
 					if (it.ItemsCount() == 0) {

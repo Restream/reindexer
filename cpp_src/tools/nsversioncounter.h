@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-class NsVersionCounter {
+class [[nodiscard]] NsVersionCounter {
 public:
 	void SetServer(int server) noexcept { counter_.SetServer(server); }
 	lsn_t GetNext() noexcept {

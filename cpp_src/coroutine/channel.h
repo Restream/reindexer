@@ -11,7 +11,7 @@ namespace coroutine {
 /// @class Buffered channel, which allows to asynchronously send data between coroutines
 /// The behaviour is similar to Golang's buffered channels
 template <typename T>
-class channel {
+class [[nodiscard]] channel {
 public:
 	/// Creates channel with required capacity
 	channel(size_t cap = 1) : buf_(cap) {

@@ -20,16 +20,16 @@ class FieldsSet;
 class VariantArray;
 class Uuid;
 
-enum class WithString : bool { No = false, Yes = true };
-enum class NotComparable : bool { Throw = false, Return = true };
-enum class CheckIsStringPrintable : bool { No = false, Yes = true };
+enum class [[nodiscard]] WithString : bool { No = false, Yes = true };
+enum class [[nodiscard]] NotComparable : bool { Throw = false, Return = true };
+enum class [[nodiscard]] CheckIsStringPrintable : bool { No = false, Yes = true };
 
-class Variant {
+class [[nodiscard]] Variant {
 	friend Uuid;
 
 public:
-	struct NoHoldT {};
-	struct HoldT {};
+	struct [[nodiscard]] NoHoldT {};
+	struct [[nodiscard]] HoldT {};
 
 	static constexpr HoldT hold{};
 	static constexpr NoHoldT noHold{};
@@ -134,10 +134,10 @@ public:
 	explicit operator FloatVectorView() noexcept;
 
 	template <typename T>
-	[[nodiscard]] T As() const;
+	T As() const;
 
 	template <typename T>
-	[[nodiscard]] T As(const PayloadType&, const FieldsSet&) const;
+	T As(const PayloadType&, const FieldsSet&) const;
 
 	bool operator==(const Variant& other) const {
 		return Type().IsSame(other.Type()) && Compare<NotComparable::Throw>(other) == ComparationResult::Eq;
@@ -165,12 +165,12 @@ public:
 	}
 
 	Variant& convert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) &;
-	[[nodiscard]] Variant convert(KeyValueType type, const PayloadType* pt = nullptr, const FieldsSet* fs = nullptr) && {
+	Variant convert(KeyValueType type, const PayloadType* pt = nullptr, const FieldsSet* fs = nullptr) && {
 		return std::move(convert(type, pt, fs));
 	}
-	[[nodiscard]] Variant convert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&;
-	[[nodiscard]] std::optional<Variant> tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&;
-	[[nodiscard]] bool tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) &;
+	Variant convert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&;
+	std::optional<Variant> tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&;
+	bool tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) &;
 	auto tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&& = delete;
 	VariantArray getCompositeValues() const;
 
@@ -178,12 +178,15 @@ public:
 
 	template <typename T>
 	void Dump(T& os, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	template <typename T>
+	void Dump(T& os, const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	std::string Dump(CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	std::string Dump(const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 
-	class Less {
+	class [[nodiscard]] Less {
 	public:
 		Less(const CollateOpts& collate) noexcept : collate_{&collate} {}
-		[[nodiscard]] bool operator()(const Variant& lhs, const Variant& rhs) const {
+		bool operator()(const Variant& lhs, const Variant& rhs) const {
 			return lhs.Compare<NotComparable::Throw>(rhs, *collate_) == ComparationResult::Lt;
 		}
 
@@ -191,17 +194,17 @@ public:
 		const CollateOpts* collate_;
 	};
 
-	class EqualTo {
+	class [[nodiscard]] EqualTo {
 	public:
 		EqualTo(const CollateOpts& collate) noexcept : collate_{&collate} {}
-		[[nodiscard]] bool operator()(const Variant& lhs, const Variant& rhs) const {
+		bool operator()(const Variant& lhs, const Variant& rhs) const {
 			return lhs.Compare<NotComparable::Throw>(rhs, *collate_) == ComparationResult::Eq;
 		}
 
 	private:
 		const CollateOpts* collate_;
 	};
-	[[nodiscard]] bool DoHold() const noexcept { return !isUuid() && variant_.hold; }
+	bool DoHold() const noexcept { return !isUuid() && variant_.hold; }
 
 private:
 	bool isUuid() const noexcept { return uuid_.isUuid != 0; }
@@ -221,7 +224,7 @@ private:
 	template <NotComparable notComparable>
 	ComparationResult relaxCompareWithString(std::string_view) const noexcept(notComparable == NotComparable::Return);
 
-	struct Var {
+	struct [[nodiscard]] Var {
 		Var(uint8_t isu, uint8_t h, KeyValueType t) noexcept : isUuid{isu}, hold{h}, type{t} {}
 		Var(uint8_t isu, uint8_t h, KeyValueType t, bool b) noexcept : isUuid{isu}, hold{h}, type{t}, value_bool{b} {}
 		Var(uint8_t isu, uint8_t h, KeyValueType t, int i) noexcept : isUuid{isu}, hold{h}, type{t}, value_int{i} {}
@@ -246,7 +249,7 @@ private:
 			// key_string h_value_string;
 		};
 	};
-	struct UUID {
+	struct [[nodiscard]] UUID {
 		uint8_t isUuid : 1;
 		uint8_t v0 : 7;
 		uint8_t vs[7];
@@ -279,7 +282,7 @@ key_string Variant::As<key_string>() const;
 template <>
 ConstFloatVectorView Variant::As<ConstFloatVectorView>() const;
 
-class VariantArray : public h_vector<Variant, 2> {
+class [[nodiscard]] VariantArray : public h_vector<Variant, 2> {
 	using Base = h_vector<Variant, 2>;
 
 public:
@@ -325,7 +328,10 @@ public:
 	bool IsNullValue() const noexcept { return size() == 1 && front().IsNullValue(); }
 	template <typename T>
 	void Dump(T& os, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	template <typename T>
+	void Dump(T& os, const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	std::string Dump(CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	std::string Dump(const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	template <WithString, NotComparable>
 	ComparationResult RelaxCompare(const VariantArray& other, const CollateOpts& = CollateOpts{}) const;
 	ComparationResult CompareNoExcept(const VariantArray& other, const CollateOpts& = CollateOpts{}) const noexcept;
@@ -375,7 +381,7 @@ concept ConvertibleToVariantArray = std::is_constructible_v<VariantArray, T>;
 
 namespace std {
 template <>
-struct hash<reindexer::Variant> {
+struct [[nodiscard]] hash<reindexer::Variant> {
 	size_t operator()(const reindexer::Variant& kv) const { return kv.Hash(); }
 };
 }  // namespace std

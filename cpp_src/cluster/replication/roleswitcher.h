@@ -16,9 +16,9 @@ namespace cluster {
 
 class Logger;
 
-class RoleSwitcher {
+class [[nodiscard]] RoleSwitcher {
 public:
-	struct Config {
+	struct [[nodiscard]] Config {
 		bool enableCompression = false;
 		int clusterId = 0;
 		int serverId = -1;
@@ -37,7 +37,7 @@ public:
 	void SetTerminationFlag(bool val) noexcept;
 
 private:
-	struct Node {
+	struct [[nodiscard]] Node {
 		DSN dsn;
 		client::CoroReindexer client;
 	};
@@ -78,7 +78,7 @@ private:
 	bool timerIsCanceled_ = false;
 	Config cfg_;
 
-	std::mutex mtx_;
+	mutex mtx_;
 	std::unique_ptr<LeaderSyncer> syncer_;
 	const Logger& log_;
 };

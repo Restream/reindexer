@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-class EventRecord : public updates::UpdateRecord {
+class [[nodiscard]] EventRecord : public updates::UpdateRecord {
 	using ClockT = system_clock_w;
 
 public:
@@ -23,16 +23,16 @@ private:
 
 using EventsContainer = h_vector<EventRecord, 2>;
 
-class IExternalEventsListener {
+class [[nodiscard]] IExternalEventsListener {
 public:
 	virtual Error SendEvents(EventsContainer&& recs) = 0;
 	virtual bool HasListenersFor(const NamespaceName& ns) const noexcept = 0;
 	virtual ~IExternalEventsListener() {}
 };
 
-enum SubscriptionDataType { kSubscriptionDataTypeNone = 0 };
+enum [[nodiscard]] SubscriptionDataType { kSubscriptionDataTypeNone = 0 };
 constexpr static uint32_t kEventDataFormatMask = 0x7;
-enum EventsSerializationOpt {
+enum [[nodiscard]] EventsSerializationOpt {
 	// 3 bits for data format
 	kEventsSerializationOptWithDbName = 1 << 3,
 	kEventsSerializationOptWithShardID = 1 << 4,
@@ -41,7 +41,7 @@ enum EventsSerializationOpt {
 	kEventsSerializationOptWithTimestamp = 1 << 7,
 };
 
-class EventsSerializationOpts {
+class [[nodiscard]] EventsSerializationOpts {
 public:
 	explicit EventsSerializationOpts(int32_t version) noexcept : version_(version) {}
 
@@ -100,7 +100,7 @@ private:
 	int32_t serverID_ = -1;
 };
 
-class IEventsObserver {
+class [[nodiscard]] IEventsObserver {
 public:
 	virtual ~IEventsObserver() = default;
 	virtual size_t AvailableEventsSpace() noexcept = 0;

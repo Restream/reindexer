@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-struct NsIncarnationTagData {
+struct [[nodiscard]] NsIncarnationTagData {
 	int shardId = ShardingKeyType::NotSetShard;
 	h_vector<lsn_t, 3> tags;
 };

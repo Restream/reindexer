@@ -307,27 +307,27 @@ Variant stringToVariant(std::string_view value) {
 				 KeyValueType::FloatVector>) noexcept { return Variant(); });
 }
 
-std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst) {
+void utf8_to_utf16(std::string_view src, std::wstring& dst) {
 	dst.resize(src.length());
 	auto end = utf8::unchecked::utf8to32(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
-	return dst;
 }
 
-std::string& utf16_to_utf8(const std::wstring_view src, std::string& dst) {
+void utf16_to_utf8(const std::wstring_view src, std::string& dst) {
 	dst.resize(src.length() * 4);
 	auto end = utf8::unchecked::utf32to8(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
-	return dst;
 }
 
 std::wstring utf8_to_utf16(std::string_view src) {
 	std::wstring dst;
-	return utf8_to_utf16(src, dst);
+	utf8_to_utf16(src, dst);
+	return dst;
 }
 std::string utf16_to_utf8(const std::wstring_view src) {
 	std::string dst;
-	return utf16_to_utf8(src, dst);
+	utf16_to_utf8(src, dst);
+	return dst;
 }
 size_t utf16_to_utf8_size(const std::wstring_view src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
 
@@ -744,7 +744,7 @@ int fast_strftime(char* buf, const tm* tm) {
 	return d - buf;
 }
 
-[[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept {
+bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept {
 	if (!name.length()) {
 		return false;
 	}
@@ -753,7 +753,7 @@ int fast_strftime(char* buf, const tm* tm) {
 	});
 }
 
-[[nodiscard]] bool validateUserNsName(std::string_view name) noexcept {
+bool validateUserNsName(std::string_view name) noexcept {
 	if (!name.length()) {
 		return false;
 	}
@@ -863,9 +863,28 @@ int64_t stoll(std::string_view sl) {
 	return ret;
 }
 
+namespace {
+template <typename FPT>
+int fp_spec_to_str_impl(FPT v, char* buf, int capacity) {
+	if (!std::isnan(v) && !std::isinf(v)) {
+		return 0;
+	}
+	static const std::string strNull = "null";
+	const auto sz = strNull.size();
+	(void)capacity;
+	assertrx_dbg(sz < size_t(capacity));
+	memcpy(buf, strNull.c_str(), sizeof(std::string::value_type) * sz);
+	return sz;
+}
+}  // namespace
+
 template <typename FPT>
 int fp_to_str_impl(FPT v, char* buf, int capacity) {
-	(void)capacity;
+	auto sz = fp_spec_to_str_impl(v, buf, capacity);
+	if (sz > 0) {
+		return sz;
+	}
+
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	auto p = buf;
 	do {
@@ -885,7 +904,11 @@ int fp_to_str_impl(FPT v, char* buf, int capacity) {
 
 template <typename FPT>
 int fp_to_str_no_trailing_impl(FPT v, char* buf, int capacity) {
-	(void)capacity;
+	auto sz = fp_spec_to_str_impl(v, buf, capacity);
+	if (sz > 0) {
+		return sz;
+	}
+
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	assertrx_dbg(end - buf < capacity);
 	return end - buf;

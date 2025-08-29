@@ -9,7 +9,7 @@ namespace reindexer_server {
 
 using namespace reindexer::net;
 
-class Prometheus {
+class [[nodiscard]] Prometheus {
 public:
 	template <typename T>
 	using PFamily = prometheus::Family<T>;

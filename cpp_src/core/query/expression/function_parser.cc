@@ -52,7 +52,7 @@ void QueryFunctionParser::parsePositionalAndNamedArgs(tokenizer& parser, ParsedQ
 	}
 	std::string argFirstPart;
 	std::string argSecondPart;
-	enum class NamedArgState { Name = 0, Eq = 1, Val = 2, End = 3, End2 = 4 };
+	enum class [[nodiscard]] NamedArgState { Name = 0, Eq = 1, Val = 2, End = 3, End2 = 4 };
 	NamedArgState expectedToken = NamedArgState::Name;
 
 	while (!parser.end()) {
@@ -207,7 +207,7 @@ void QueryFunctionParser::parseFunctionImpl(tokenizer& parser, ParsedQueryFuncti
 	tok = parser.next_token(tokenizer::flags::no_flags);
 	if (tok.text() == "("sv) {
 		if (parser.peek_token(tokenizer::flags::no_flags).text() == ")"sv) {
-			parser.next_token(tokenizer::flags::no_flags);
+			parser.skip_token(tokenizer::flags::no_flags);
 			parsedQueryFunction.isFunction = true;
 		} else {
 			std::string arg;

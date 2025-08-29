@@ -10,7 +10,7 @@
 namespace reindexer {
 namespace updates {
 
-struct ItemReplicationRecord {
+struct [[nodiscard]] ItemReplicationRecord {
 	ItemReplicationRecord(chunk&& _ch) noexcept : ch(std::move(_ch)) {}
 	ItemReplicationRecord(const ItemReplicationRecord&) = delete;
 	ItemReplicationRecord& operator=(const ItemReplicationRecord&) = delete;
@@ -19,7 +19,7 @@ struct ItemReplicationRecord {
 	const chunk ch;
 };
 
-struct TagsMatcherReplicationRecord {
+struct [[nodiscard]] TagsMatcherReplicationRecord {
 	TagsMatcherReplicationRecord(TagsMatcher&& t, size_t ts) noexcept : tm(std::move(t)), tmSize(ts) {}
 	TagsMatcherReplicationRecord(const TagsMatcherReplicationRecord&) = delete;
 	TagsMatcherReplicationRecord& operator=(const TagsMatcherReplicationRecord&) = delete;
@@ -29,7 +29,7 @@ struct TagsMatcherReplicationRecord {
 	const size_t tmSize;
 };
 
-struct IndexReplicationRecord {
+struct [[nodiscard]] IndexReplicationRecord {
 	IndexReplicationRecord(IndexDef&& i) noexcept : idef(std::make_unique<const IndexDef>(std::move(i))) {}
 	IndexReplicationRecord(const IndexReplicationRecord&) = delete;
 	IndexReplicationRecord& operator=(const IndexReplicationRecord&) = delete;
@@ -38,7 +38,7 @@ struct IndexReplicationRecord {
 	std::unique_ptr<const IndexDef> idef;
 };
 
-struct MetaReplicationRecord {
+struct [[nodiscard]] MetaReplicationRecord {
 	MetaReplicationRecord(std::string&& k, std::string&& v) noexcept : key(std::move(k)), value(std::move(v)) {}
 	MetaReplicationRecord(const MetaReplicationRecord&) = delete;
 	MetaReplicationRecord& operator=(const MetaReplicationRecord&) = delete;
@@ -48,7 +48,7 @@ struct MetaReplicationRecord {
 	const std::string value;
 };
 
-struct QueryReplicationRecord {
+struct [[nodiscard]] QueryReplicationRecord {
 	QueryReplicationRecord(std::string&& s) noexcept : sql(std::move(s)) {}
 	QueryReplicationRecord(const QueryReplicationRecord&) = delete;
 	QueryReplicationRecord& operator=(const QueryReplicationRecord&) = delete;
@@ -57,7 +57,7 @@ struct QueryReplicationRecord {
 	const std::string sql;
 };
 
-struct SchemaReplicationRecord {
+struct [[nodiscard]] SchemaReplicationRecord {
 	SchemaReplicationRecord(std::string&& s) noexcept : schema(std::move(s)) {}
 	SchemaReplicationRecord(const SchemaReplicationRecord&) = delete;
 	SchemaReplicationRecord& operator=(const SchemaReplicationRecord&) = delete;
@@ -66,7 +66,7 @@ struct SchemaReplicationRecord {
 	const std::string schema;
 };
 
-struct AddNamespaceReplicationRecord {
+struct [[nodiscard]] AddNamespaceReplicationRecord {
 	AddNamespaceReplicationRecord(NamespaceDef&& nd, int64_t st) noexcept
 		: def(std::make_unique<const NamespaceDef>(std::move(nd))), stateToken(st) {}
 	AddNamespaceReplicationRecord(const AddNamespaceReplicationRecord&) = delete;
@@ -77,7 +77,7 @@ struct AddNamespaceReplicationRecord {
 	const int64_t stateToken;
 };
 
-struct RenameNamespaceReplicationRecord {
+struct [[nodiscard]] RenameNamespaceReplicationRecord {
 	RenameNamespaceReplicationRecord(std::string&& dst) noexcept : dstNsName(std::move(dst)) {}
 	RenameNamespaceReplicationRecord(const RenameNamespaceReplicationRecord&) = delete;
 	RenameNamespaceReplicationRecord& operator=(const RenameNamespaceReplicationRecord&) = delete;
@@ -86,7 +86,7 @@ struct RenameNamespaceReplicationRecord {
 	const std::string dstNsName;
 };
 
-struct NodeNetworkCheckRecord {
+struct [[nodiscard]] NodeNetworkCheckRecord {
 	NodeNetworkCheckRecord(uint32_t nu, bool o) noexcept : nodeUid(nu), online(o) {}
 	NodeNetworkCheckRecord(const NodeNetworkCheckRecord&) = delete;
 	NodeNetworkCheckRecord& operator=(const NodeNetworkCheckRecord&) = delete;
@@ -96,7 +96,7 @@ struct NodeNetworkCheckRecord {
 	const bool online;
 };
 
-struct SaveNewShardingCfgRecord {
+struct [[nodiscard]] SaveNewShardingCfgRecord {
 	SaveNewShardingCfgRecord(std::string&& c, int64_t s) noexcept : config(std::move(c)), sourceId(s) {}
 	SaveNewShardingCfgRecord(const SaveNewShardingCfgRecord&) = delete;
 	SaveNewShardingCfgRecord& operator=(const SaveNewShardingCfgRecord&) = delete;
@@ -106,7 +106,7 @@ struct SaveNewShardingCfgRecord {
 	const int64_t sourceId;
 };
 
-struct ApplyNewShardingCfgRecord {
+struct [[nodiscard]] ApplyNewShardingCfgRecord {
 	ApplyNewShardingCfgRecord(int64_t s) noexcept : sourceId(s) {}
 	ApplyNewShardingCfgRecord(const ApplyNewShardingCfgRecord&) = delete;
 	ApplyNewShardingCfgRecord& operator=(const ApplyNewShardingCfgRecord&) = delete;
@@ -115,7 +115,7 @@ struct ApplyNewShardingCfgRecord {
 	const int64_t sourceId;
 };
 
-struct ResetShardingCfgRecord {
+struct [[nodiscard]] ResetShardingCfgRecord {
 	ResetShardingCfgRecord(int64_t s) noexcept : sourceId(s) {}
 	ResetShardingCfgRecord(const ResetShardingCfgRecord&) = delete;
 	ResetShardingCfgRecord& operator=(const ResetShardingCfgRecord&) = delete;
@@ -124,7 +124,7 @@ struct ResetShardingCfgRecord {
 	const int64_t sourceId;
 };
 
-enum class URType : int {
+enum class [[nodiscard]] URType : int {
 	None = 0,
 	ItemUpdate = 1,
 	ItemUpsert = 2,
@@ -166,8 +166,8 @@ enum class URType : int {
 	DeleteMeta = 38,
 };
 
-struct UpdateRecord {
-	enum class ClonePolicy : bool {
+struct [[nodiscard]] UpdateRecord {
+	enum class [[nodiscard]] ClonePolicy : bool {
 		WithoutEmitter = 0,
 		WithEmitter = 1,
 	};
@@ -175,7 +175,7 @@ struct UpdateRecord {
 		std::variant<ItemReplicationRecord, IndexReplicationRecord, MetaReplicationRecord, QueryReplicationRecord, SchemaReplicationRecord,
 					 AddNamespaceReplicationRecord, RenameNamespaceReplicationRecord, NodeNetworkCheckRecord, TagsMatcherReplicationRecord,
 					 SaveNewShardingCfgRecord, ApplyNewShardingCfgRecord, ResetShardingCfgRecord>>;
-	struct UpdatesDropT {};
+	struct [[nodiscard]] UpdatesDropT {};
 
 	UpdateRecord() = default;
 	UpdateRecord(UpdatesDropT) noexcept : type_(URType::ResyncOnUpdatesDrop) {}

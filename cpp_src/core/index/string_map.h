@@ -10,7 +10,7 @@
 
 namespace reindexer {
 
-struct less_key_string {
+struct [[nodiscard]] less_key_string {
 	using is_transparent = void;
 
 	less_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
@@ -26,7 +26,7 @@ struct less_key_string {
 	CollateOpts collateOpts_;
 };
 
-class key_string_with_hash : public key_string {
+class [[nodiscard]] key_string_with_hash : public key_string {
 public:
 	key_string_with_hash() noexcept : key_string() {}
 	key_string_with_hash(key_string s, CollateMode cm)
@@ -43,7 +43,7 @@ private:
 	uint32_t hash_ = 0;
 };
 
-struct equal_key_string {
+struct [[nodiscard]] equal_key_string {
 	using is_transparent = void;
 
 	equal_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
@@ -61,7 +61,7 @@ private:
 	CollateOpts collateOpts_;
 };
 
-struct hash_key_string {
+struct [[nodiscard]] hash_key_string {
 	using is_transparent = void;
 
 	hash_key_string(CollateMode collateMode = CollateNone) noexcept : collateMode_(collateMode) {}
@@ -120,7 +120,7 @@ private:
 };
 
 template <typename T1>
-class str_map : public btree::btree_map<key_string, T1, less_key_string> {
+class [[nodiscard]] str_map : public btree::btree_map<key_string, T1, less_key_string> {
 	using base_tree_map = btree::btree_map<key_string, T1, less_key_string>;
 
 public:
@@ -159,7 +159,7 @@ public:
 	}
 };
 
-struct hash_uuid {
+struct [[nodiscard]] hash_uuid {
 	size_t operator()(Uuid uuid) const noexcept {
 		constexpr static hash_int<uint64_t> intHasher;
 		return intHasher(uuid.data_[0]) ^ (intHasher(uuid.data_[1]) << 19) ^ (intHasher(uuid.data_[1]) >> 23);
@@ -186,7 +186,7 @@ public:
 };
 
 template <typename K, typename T1>
-class number_map : public btree::btree_map<K, T1> {
+class [[nodiscard]] number_map : public btree::btree_map<K, T1> {
 	using base_tree_map = btree::btree_map<K, T1>;
 
 public:
@@ -202,7 +202,7 @@ public:
 };
 
 template <bool deepClean>
-struct StringMapEntryCleaner {
+struct [[nodiscard]] StringMapEntryCleaner {
 	StringMapEntryCleaner(StringsHolder& strHolder, bool needSaveExpiredStrings) noexcept
 		: strHolder_{strHolder}, needSaveExpiredStrings_{needSaveExpiredStrings} {}
 

@@ -16,7 +16,7 @@ Error LeaderSyncer::Sync(elist<LeaderSyncQueue::Entry>&& entries, SharedSyncStat
 	Error err;
 	const LeaderSyncThread::Config thCfg{cfg_.dsns,		cfg_.maxWALDepthOnForceSync, cfg_.clusterId,
 										 cfg_.serverId, cfg_.enableCompression,		 cfg_.netTimeout};
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	syncQueue_.Refill(std::move(entries));
 	assert(threads_.empty());
 	std::once_flag onceUpdShardingCfg;

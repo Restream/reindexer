@@ -5,6 +5,7 @@
 #include "cluster/config.h"
 #include "cluster/consts.h"
 #include "cluster/stats/relicationstatscollector.h"
+#include "estl/mutex.h"
 #include "tools/catch_and_return.h"
 
 namespace reindexer {
@@ -15,7 +16,7 @@ namespace cluster {
 
 class Logger;
 
-class RaftManager {
+class [[nodiscard]] RaftManager {
 public:
 	using ClockT = steady_clock_w;
 
@@ -24,9 +25,9 @@ public:
 
 	void SetTerminateFlag(bool val) noexcept { terminate_ = val; }
 	void Configure(const ReplicationConfigData&, const ClusterConfigData&);
-	[[nodiscard]] std::optional<RaftInfo::Role> RunElectionsRound() noexcept;
-	[[nodiscard]] bool LeaderIsAvailable(ClockT::time_point now) const noexcept;
-	[[nodiscard]] bool FollowersAreAvailable() const;
+	std::optional<RaftInfo::Role> RunElectionsRound() noexcept;
+	bool LeaderIsAvailable(ClockT::time_point now) const noexcept;
+	bool FollowersAreAvailable() const;
 	int32_t GetLeaderId() const noexcept { return getLeaderId(voteData_.load()); }
 	RaftInfo::Role GetRole() const noexcept { return getRole(voteData_.load()); }
 	int32_t GetTerm() const noexcept { return getTerm(voteData_.load()); }
@@ -40,15 +41,15 @@ public:
 	void AwaitTermination();
 
 private:
-	class NextServerId {
+	class [[nodiscard]] NextServerId {
 	public:
 		void SetNextServerId(int id) noexcept {
-			std::lock_guard lock(mtx);
+			lock_guard lock(mtx);
 			nextServerId_ = id;
 			startPoint_ = ClockT::now();
 		}
 		int GetNextServerId() noexcept {
-			std::lock_guard lock(mtx);
+			lock_guard lock(mtx);
 			if (nextServerId_ != -1 && ClockT::now() - startPoint_ > kDesiredLeaderTimeout) {
 				nextServerId_ = -1;
 			}
@@ -56,12 +57,12 @@ private:
 		}
 
 	private:
-		std::mutex mtx;
+		mutex mtx;
 		int nextServerId_ = -1;
 		ClockT::time_point startPoint_;
 	};
 
-	struct RaftNode {
+	struct [[nodiscard]] RaftNode {
 		RaftNode(const client::ReindexerConfig& config, DSN _dsn, uint32_t _uid, int _serverId)
 			: client(config), dsn(std::move(_dsn)), uid(_uid), serverId(_serverId) {}
 		client::RaftClient client;
@@ -72,7 +73,7 @@ private:
 		int serverId = -1;
 	};
 
-	class DesiredLeaderIdSender {
+	class [[nodiscard]] DesiredLeaderIdSender {
 	public:
 		DesiredLeaderIdSender(net::ev::dynamic_loop&, const std::vector<RaftNode>&, int serverId, int nextServerId, const Logger&);
 		~DesiredLeaderIdSender() {

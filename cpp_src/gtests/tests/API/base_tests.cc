@@ -51,8 +51,7 @@ TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
 }
 
 TEST_F(ReindexerApi, AddNamespace) {
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_EQ(true, err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 
 	const auto item = getMemStat(*rt.reindexer, default_namespace);
 	ASSERT_EQ(item["storage_ok"].As<bool>(), false);
@@ -61,50 +60,42 @@ TEST_F(ReindexerApi, AddNamespace) {
 }
 
 TEST_F(ReindexerApi, AddNamespace_CaseInsensitive) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
 
 	std::string upperNS(default_namespace);
 	std::transform(default_namespace.begin(), default_namespace.end(), upperNS.begin(), [](int c) { return std::toupper(c); });
 
-	err = rt.reindexer->AddNamespace(reindexer::NamespaceDef(upperNS));
+	auto err = rt.reindexer->AddNamespace(reindexer::NamespaceDef(upperNS));
 	ASSERT_FALSE(err.ok()) << "Somehow namespace '" << upperNS << "' was added. But namespace '" << default_namespace << "' already exists";
 }
 
 TEST_F(ReindexerApi, AddExistingNamespace) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
 
-	err = rt.reindexer->AddNamespace(reindexer::NamespaceDef(default_namespace, StorageOpts().Enabled(false)));
+	auto err = rt.reindexer->AddNamespace(reindexer::NamespaceDef(default_namespace, StorageOpts().Enabled(false)));
 	ASSERT_FALSE(err.ok()) << err.what();
 }
 
 TEST_F(ReindexerApi, RenameNamespace) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok());
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 	for (int i = 0; i < 10; ++i) {
-		Item item(rt.reindexer->NewItem(default_namespace));
+		Item item(rt.NewItem(default_namespace));
 		ASSERT_TRUE(!!item);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = i;
 		item["column1"] = i + 100;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 
 	const std::string renameNamespace("rename_namespace");
 	const std::string existingNamespace("existing_namespace");
 
-	err = rt.reindexer->OpenNamespace(existingNamespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(existingNamespace);
 
 	auto testInList = [&](std::string_view testNamespaceName, bool inList) {
-		std::vector<reindexer::NamespaceDef> namespacesList;
-		err = rt.reindexer->EnumNamespaces(namespacesList, reindexer::EnumNamespacesOpts());
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto namespacesList = rt.EnumNamespaces(reindexer::EnumNamespacesOpts());
 		auto r = std::find_if(namespacesList.begin(), namespacesList.end(),
 							  [testNamespaceName](const reindexer::NamespaceDef& d) { return d.name == testNamespaceName; });
 		if (inList) {
@@ -115,15 +106,13 @@ TEST_F(ReindexerApi, RenameNamespace) {
 	};
 
 	auto getRowsInJSON = [&](std::string_view namespaceName, std::vector<std::string>& resStrings, reindexer::TagsMatcher& tm) {
-		QueryResults result;
-		auto err = rt.reindexer->Select(Query(namespaceName), result);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto result = rt.Select(Query(namespaceName));
 		resStrings.clear();
 		tm = result.GetTagsMatcher(0);
 		for (auto it = result.begin(); it != result.end(); ++it) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 			reindexer::WrSerializer sr;
-			err = it.GetJSON(sr, false);
+			auto err = it.GetJSON(sr, false);
 			ASSERT_TRUE(err.ok()) << err.what();
 			std::string_view sv = sr.Slice();
 			resStrings.emplace_back(sv.data(), sv.size());
@@ -135,8 +124,7 @@ TEST_F(ReindexerApi, RenameNamespace) {
 	getRowsInJSON(default_namespace, resStringsBeforeTest, tmBeforeTest);
 
 	// ok
-	err = rt.reindexer->RenameNamespace(default_namespace, renameNamespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.RenameNamespace(default_namespace, renameNamespace);
 	testInList(renameNamespace, true);
 	testInList(default_namespace, false);
 	getRowsInJSON(renameNamespace, resStrings, tm);
@@ -145,8 +133,7 @@ TEST_F(ReindexerApi, RenameNamespace) {
 	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to equal name
-	err = rt.reindexer->RenameNamespace(renameNamespace, renameNamespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.RenameNamespace(renameNamespace, renameNamespace);
 	testInList(renameNamespace, true);
 	getRowsInJSON(renameNamespace, resStrings, tm);
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
@@ -154,7 +141,7 @@ TEST_F(ReindexerApi, RenameNamespace) {
 	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to empty namespace
-	err = rt.reindexer->RenameNamespace(renameNamespace, "");
+	auto err = rt.reindexer->RenameNamespace(renameNamespace, "");
 	ASSERT_FALSE(err.ok()) << err.what();
 	testInList(renameNamespace, true);
 	getRowsInJSON(renameNamespace, resStrings, tm);
@@ -172,8 +159,7 @@ TEST_F(ReindexerApi, RenameNamespace) {
 	ASSERT_EQ(tm.version(), tmBeforeTest.version());
 
 	// rename to existing namespace
-	err = rt.reindexer->RenameNamespace(renameNamespace, existingNamespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.RenameNamespace(renameNamespace, existingNamespace);
 	testInList(renameNamespace, false);
 	testInList(existingNamespace, true);
 	getRowsInJSON(existingNamespace, resStrings, tm);
@@ -183,11 +169,8 @@ TEST_F(ReindexerApi, RenameNamespace) {
 }
 
 TEST_F(ReindexerApi, AddIndex) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 }
 
 TEST_F(ReindexerApi, DistinctDiffType) {
@@ -198,46 +181,38 @@ TEST_F(ReindexerApi, DistinctDiffType) {
 	auto vInt = hashInt(vString);
 	ASSERT_EQ(vString, vInt) << "hash not equals";
 
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 
 	{
-		Item item(rt.reindexer->NewItem(default_namespace));
+		Item item(rt.NewItem(default_namespace));
 		ASSERT_TRUE(!!item);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = 1;
 		item["column1"] = int64_t(vInt);
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 	{
-		Item item(rt.reindexer->NewItem(default_namespace));
+		Item item(rt.NewItem(default_namespace));
 		ASSERT_TRUE(!!item);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = 2;
 		item["column1"] = stringVal;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 	{
-		Item item(rt.reindexer->NewItem(default_namespace));
+		Item item(rt.NewItem(default_namespace));
 		ASSERT_TRUE(!!item);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = 3;
 		item["column1"] = stringVal;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 
-	QueryResults result;
-	err = rt.reindexer->Select("select column1, distinct(column1) from test_namespace;", result);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto result = rt.ExecSQL("select column1, distinct(column1) from test_namespace;");
 	ASSERT_EQ(result.Count(), 2);
 	std::set<std::string> BaseVals = {"{\"column1\":" + std::to_string(int64_t(vInt)) + "}", "{\"column1\":\"abc\"}"};
 	std::set<std::string> Vals;
@@ -251,122 +226,95 @@ TEST_F(ReindexerApi, DistinctDiffType) {
 }
 
 TEST_F(ReindexerApi, DistinctCompositeIndex) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"v1", "-", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"v2", "-", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"v1", "-", "int", IndexOpts()});
+	rt.AddIndex(default_namespace, {"v2", "-", "int", IndexOpts()});
 
 	reindexer::IndexDef indexDeclr{"v1+v2", reindexer::JsonPaths({"v1", "v2"}), "hash", "composite", IndexOpts()};
-	err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
-	EXPECT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(default_namespace, indexDeclr);
 
 	{
-		Item item = NewItem(default_namespace);
+		Item item(NewItem(default_namespace));
 		item["id"] = 1;
 		item["v1"] = 2;
 		item["v2"] = 3;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 	{
-		Item item = NewItem(default_namespace);
+		Item item(NewItem(default_namespace));
 		item["id"] = 2;
 		item["v1"] = 2;
 		item["v2"] = 3;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 
 	Query q{default_namespace};
 	q.Distinct("v1+v2");
 	{
-		QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		EXPECT_EQ(qr.Count(), 1);
 	}
 
 	{
-		Item item = NewItem(default_namespace);
+		Item item(NewItem(default_namespace));
 		item["id"] = 3;
 		item["v1"] = 3;
 		item["v2"] = 2;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 	{
-		QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		EXPECT_EQ(qr.Count(), 2);
 	}
 	{
-		Item item = NewItem(default_namespace);
+		Item item(NewItem(default_namespace));
 		item["id"] = 4;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 
 	{
-		Item item = NewItem(default_namespace);
+		Item item(NewItem(default_namespace));
 		item["id"] = 5;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 	{
-		QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		EXPECT_EQ(qr.Count(), 3);
 	}
 	{
-		Item item = NewItem(default_namespace);
+		Item item(NewItem(default_namespace));
 		item["id"] = 6;
 		item["v1"] = 3;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 	{
-		Item item = NewItem(default_namespace);
+		Item item(NewItem(default_namespace));
 		item["id"] = 7;
 		item["v1"] = 3;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 	{
-		QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		EXPECT_EQ(qr.Count(), 4);
 	}
 	{
-		Item item = NewItem(default_namespace);
+		Item item(NewItem(default_namespace));
 		item["id"] = 8;
 		item["v1"] = 4;
-		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 	{
-		QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		EXPECT_EQ(qr.Count(), 5);
 	}
 }
 
 TEST_F(ReindexerApi, DistinctMultiColumn) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	struct row {
+	struct [[nodiscard]] row {
 		std::vector<reindexer::Variant> vals;
 		row() = default;
 		row(std::span<const reindexer::Variant> d) : vals(d.begin(), d.end()) {}
@@ -392,7 +340,7 @@ TEST_F(ReindexerApi, DistinctMultiColumn) {
 		if (rows.empty()) {
 			return;
 		}
-		Item item = NewItem(default_namespace);
+		Item item(NewItem(default_namespace));
 		std::vector<std::vector<reindexer::Variant>> arrays;
 		arrays.resize(rows[0].size());
 		std::vector<bool> mask;
@@ -432,10 +380,9 @@ TEST_F(ReindexerApi, DistinctMultiColumn) {
 			}
 		}
 		builder.End();
-		Error err = item.FromJSON(ser.Slice());
+		auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 		if (maxArraySize > 0) {
 			for (unsigned int i = 0; i < arrays.size(); i++) {
 				if (arrays[i].size() > 0) {
@@ -474,9 +421,7 @@ TEST_F(ReindexerApi, DistinctMultiColumn) {
 		Query q{default_namespace};
 
 		q.Distinct("v0"sv, "v1"sv, "v2"sv);
-		QueryResults qr;
-		Error err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		ASSERT_EQ(qr.Count(), count);
 		const std::vector<reindexer::AggregationResult>& agr = qr.GetAggregationResults();
 		ASSERT_EQ(agr.size(), 1);
@@ -572,13 +517,9 @@ TEST_F(ReindexerApi, DistinctMultiColumn) {
 }
 
 TEST_F(ReindexerApi, CompositeIndexCreationError) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"x", "hash", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"x", "hash", "int", IndexOpts()});
 
 	constexpr std::string_view kExpectedErrMsgField =
 		"Composite indexes over non-indexed field ('{}') are not supported yet (except for full-text indexes). Create at least column "
@@ -586,44 +527,42 @@ TEST_F(ReindexerApi, CompositeIndexCreationError) {
 	{
 		// Attempt to create composite over 2 non-index fields
 		reindexer::IndexDef indexDeclr{"v1+v2", reindexer::JsonPaths({"v1", "v2"}), "hash", "composite", IndexOpts()};
-		err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
+		auto err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
 		EXPECT_EQ(err.code(), errParams) << err.what();
 		EXPECT_EQ(err.whatStr(), fmt::format(kExpectedErrMsgField, "v1"));
 	}
 	{
 		// Attempt to create composite over 1 index and 1 non-index fields
 		reindexer::IndexDef indexDeclr{"id+v2", reindexer::JsonPaths({"id", "v2"}), "hash", "composite", IndexOpts()};
-		err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
+		auto err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
 		EXPECT_EQ(err.code(), errParams) << err.what();
 		EXPECT_EQ(err.whatStr(), fmt::format(kExpectedErrMsgField, "v2"));
 	}
 	{
 		// Attempt to create composite over 1 index and 1 non-index fields
 		reindexer::IndexDef indexDeclr{"v2+id", reindexer::JsonPaths({"v2", "id"}), "hash", "composite", IndexOpts()};
-		err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
+		auto err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
 		EXPECT_EQ(err.code(), errParams) << err.what();
 		EXPECT_EQ(err.whatStr(), fmt::format(kExpectedErrMsgField, "v2"));
 	}
 	{
 		// Attempt to create sparse composite index
 		reindexer::IndexDef indexDeclr{"id+x", reindexer::JsonPaths({"id", "x"}), "hash", "composite", IndexOpts().Sparse()};
-		err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
+		auto err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
 		EXPECT_EQ(err.code(), errParams) << err.what();
 		EXPECT_STREQ(err.what(), "Composite index cannot be sparse. Use non-sparse composite instead");
 	}
 }
 
 TEST_F(ReindexerApi, AddIndex_CaseInsensitive) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
 
 	std::string idxName = "IdEnTiFiCaToR";
-	err = rt.reindexer->AddIndex(default_namespace, {idxName, "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok());
+	rt.AddIndex(default_namespace, {idxName, "hash", "int", IndexOpts().PK()});
 
 	// check adding index named in lower case
 	idxName = "identificator";
-	err = rt.reindexer->AddIndex(default_namespace, {idxName, "hash", "int64", IndexOpts().PK()});
+	auto err = rt.reindexer->AddIndex(default_namespace, {idxName, "hash", "int64", IndexOpts().PK()});
 	ASSERT_FALSE(err.ok()) << "Somehow index 'identificator' was added. But index 'IdEnTiFiCaToR' already exists";
 
 	// check adding index named in upper case
@@ -631,30 +570,24 @@ TEST_F(ReindexerApi, AddIndex_CaseInsensitive) {
 	err = rt.reindexer->AddIndex(default_namespace, {idxName, "hash", "int64", IndexOpts().PK()});
 	ASSERT_FALSE(err.ok()) << "Somehow index 'IDENTIFICATOR' was added. But index 'IdEnTiFiCaToR' already exists";
 
-	// check case insensitive field access
-	Item item = rt.reindexer->NewItem(default_namespace);
+	// check case-insensitive field access
+	Item item(rt.NewItem(default_namespace));
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	ASSERT_NO_THROW(item[idxName] = 1234);
 }
 
 TEST_F(ReindexerApi, AddExistingIndex) {
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 }
 
 TEST_F(ReindexerApi, AddUnacceptablePKIndex) {
 	const std::string kIdxName = "id";
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 
 	// Try to add an array as a PK
-	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK().Array()});
+	auto err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK().Array()});
 	ASSERT_EQ(err.code(), errParams) << err.what();
 
 	// Try to add a store indexes of few types as a PKs
@@ -680,19 +613,16 @@ TEST_F(ReindexerApi, AddUnacceptablePKIndex) {
 	ASSERT_EQ(err.code(), errParams) << err.what();
 
 	// Add valid index with the same name
-	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK()});
 }
 
 TEST_F(ReindexerApi, UpdateToUnacceptablePKIndex) {
 	const std::string kIdxName = "id";
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK()});
 
 	// Try to update to an array as a PK
-	err = rt.reindexer->UpdateIndex(default_namespace, {kIdxName, "tree", "int", IndexOpts().PK().Array()});
+	auto err = rt.reindexer->UpdateIndex(default_namespace, {kIdxName, "tree", "int", IndexOpts().PK().Array()});
 	ASSERT_EQ(err.code(), errParams) << err.what();
 
 	// Try to update to a store indexes of few types as a PKs
@@ -703,15 +633,13 @@ TEST_F(ReindexerApi, UpdateToUnacceptablePKIndex) {
 	}
 
 	// Update to a valid index with the same name
-	err = rt.reindexer->UpdateIndex(default_namespace, {kIdxName, "tree", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.UpdateIndex(default_namespace, {kIdxName, "tree", "int", IndexOpts().PK()});
 }
 
 TEST_F(ReindexerApi, IndexNameValidation) {
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	// Index names with cirillic characters are not allowed
-	err = rt.reindexer->AddIndex(default_namespace, {"индекс", "hash", "int", IndexOpts().PK()});
+	auto err = rt.reindexer->AddIndex(default_namespace, {"индекс", "hash", "int", IndexOpts().PK()});
 	ASSERT_EQ(err.code(), errParams) << err.what();
 	err = rt.reindexer->AddIndex(default_namespace, {"idд", "hash", "int", IndexOpts().PK()});
 	ASSERT_EQ(err.code(), errParams) << err.what();
@@ -726,28 +654,20 @@ TEST_F(ReindexerApi, IndexNameValidation) {
 }
 
 TEST_F(ReindexerApi, AddExistingIndexWithDiffType) {
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int64", IndexOpts().PK()});
+	auto err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int64", IndexOpts().PK()});
 	ASSERT_EQ(err.code(), errConflict) << err.what();
 }
 
 TEST_F(ReindexerApi, CloseNamespace) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->CloseNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.CloseNamespace(default_namespace);
 
 	QueryResults qr;
-	err = rt.reindexer->Select(Query(default_namespace), qr);
+	auto err = rt.reindexer->Select(Query(default_namespace), qr);
 	ASSERT_FALSE(err.ok()) << "Namespace '" << default_namespace << "' open. But must be closed";
 }
 
@@ -780,14 +700,10 @@ TEST_F(ReindexerApi, DeleteNonExistingNamespace) {
 }
 
 TEST_F(ReindexerApi, NewItem) {
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled());
-
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	Item item(rt.reindexer->NewItem(default_namespace));
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled());
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
+	Item item(rt.NewItem(default_namespace));
 	ASSERT_TRUE(!!item);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 }
@@ -797,29 +713,22 @@ TEST_F(ReindexerApi, GetItemFromQueryResults) {
 	initializeDefaultNs();
 	std::vector<std::pair<int, std::string>> data;
 	while (data.size() < kItemsCount) {
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Item item(rt.NewItem(default_namespace));
 		data.emplace_back(data.size(), RandString());
 		item["id"] = data.back().first;
 		item["value"] = data.back().second;
-		auto err = rt.reindexer->Insert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Insert(default_namespace, item);
 	}
-	reindexer::QueryResults qr;
-	auto err = rt.reindexer->Select(Query(default_namespace).Sort("id", false), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(Query(default_namespace).Sort("id", false));
 	ASSERT_EQ(qr.Count(), kItemsCount);
 	// items in QueryResults are valid after the ns is destroyed
-	err = rt.reindexer->TruncateNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->DropNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.TruncateNamespace(default_namespace);
+	rt.DropNamespace(default_namespace);
 
 	size_t i = 0;
 	for (auto it = qr.begin(), end = qr.end(); it != end; ++it, ++i) {
 		ASSERT_LT(i, data.size());
-		auto item = it.GetItem();
+		Item item(it.GetItem());
 		ASSERT_TRUE(!!item);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		EXPECT_EQ(item["id"].As<int>(), data[i].first);
@@ -830,95 +739,73 @@ TEST_F(ReindexerApi, GetItemFromQueryResults) {
 	data.clear();
 	initializeDefaultNs();
 	{
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Item item(rt.NewItem(default_namespace));
 		data.emplace_back(data.size(), RandString());
 		item["id"] = data.back().first;
 		item["value"] = data.back().second;
-		err = rt.reindexer->Insert(default_namespace, item, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Insert(default_namespace, item, qr);
 		ASSERT_EQ(qr.Count(), data.size());
 
-		item = rt.reindexer->NewItem(default_namespace);
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item = rt.NewItem(default_namespace);
 		data.emplace_back(data.size(), RandString());
 		item["id"] = data.back().first;
 		item["value"] = data.back().second;
-		err = rt.reindexer->Upsert(default_namespace, item, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item, qr);
 		ASSERT_EQ(qr.Count(), data.size());
 
-		item = rt.reindexer->NewItem(default_namespace);
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item = rt.NewItem(default_namespace);
 		data.emplace_back(data.back().first, RandString());
 		item["id"] = data.back().first;
 		item["value"] = data.back().second;
-		err = rt.reindexer->Upsert(default_namespace, item, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item, qr);
 		ASSERT_EQ(qr.Count(), data.size());
 
-		item = rt.reindexer->NewItem(default_namespace);
+		item = rt.NewItem(default_namespace);
 		ASSERT_TRUE(!!item);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		data.emplace_back(data.size(), RandString());
 		item["id"] = data.back().first;
 		item["value"] = data.back().second;
-		err = rt.reindexer->Insert(default_namespace, item, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Insert(default_namespace, item, qr);
 		ASSERT_EQ(qr.Count(), data.size());
 
-		item = rt.reindexer->NewItem(default_namespace);
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item = rt.NewItem(default_namespace);
 		data.emplace_back(data.back().first, RandString());
 		item["id"] = data.back().first;
 		item["value"] = data.back().second;
-		err = rt.reindexer->Update(default_namespace, item, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Update(default_namespace, item, qr);
 		ASSERT_EQ(qr.Count(), data.size());
 
-		item = rt.reindexer->NewItem(default_namespace);
+		item = rt.NewItem(default_namespace);
 		ASSERT_TRUE(!!item);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		data.emplace_back(data.back());
 		item["id"] = data.back().first;
 		item["value"] = RandString();
-		err = rt.reindexer->Delete(default_namespace, item, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Delete(default_namespace, item, qr);
 		ASSERT_EQ(qr.Count(), data.size());
 
-		item = rt.reindexer->NewItem(default_namespace);
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item = rt.NewItem(default_namespace);
 		item["id"] = static_cast<int>(data.size());
 		item["value"] = RandString();
-		err = rt.reindexer->Update(default_namespace, item, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Update(default_namespace, item, qr);
 		ASSERT_EQ(qr.Count(), data.size());
 
-		item = rt.reindexer->NewItem(default_namespace);
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item = rt.NewItem(default_namespace);
 		item["id"] = static_cast<int>(data.size());
 		item["value"] = RandString();
-		err = rt.reindexer->Delete(default_namespace, item, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Delete(default_namespace, item, qr);
 		ASSERT_EQ(qr.Count(), data.size());
 	}
-	err = rt.reindexer->TruncateNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->DropNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.TruncateNamespace(default_namespace);
+	rt.DropNamespace(default_namespace);
 
 	ASSERT_EQ(qr.Count(), 6);
 	ASSERT_EQ(qr.Count(), data.size());
 	i = 0;
 	for (auto it = qr.begin(), end = qr.end(); it != end; ++it, ++i) {
 		ASSERT_LT(i, data.size());
-		auto item = it.GetItem();
+		Item item(it.GetItem());
 		ASSERT_TRUE(!!item);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		EXPECT_EQ(item["id"].As<int>(), data[i].first);
@@ -930,15 +817,11 @@ TEST_F(ReindexerApi, NewItem_CaseInsensitiveCheck) {
 	int idVal = 1000;
 	std::string valueVal = "value";
 
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled());
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled());
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
 
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	auto item = rt.reindexer->NewItem(default_namespace);
+	auto item = rt.NewItem(default_namespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	ASSERT_NO_THROW(item["ID"] = 1000);
 	ASSERT_NO_THROW(item["VaLuE"] = "value");
@@ -947,51 +830,38 @@ TEST_F(ReindexerApi, NewItem_CaseInsensitiveCheck) {
 }
 
 TEST_F(ReindexerApi, Insert) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
 
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	Item item(rt.NewItem(default_namespace));
+	auto err = item.FromJSON(R"_({"id":1234, "value" : "value"})_");
 	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Insert(default_namespace, item);
 
-	err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	Item item(rt.reindexer->NewItem(default_namespace));
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-	err = item.FromJSON(R"_({"id":1234, "value" : "value"})_");
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->Insert(default_namespace, item);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	QueryResults qr;
-	err = rt.reindexer->Select(Query(default_namespace), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(Query(default_namespace));
 	ASSERT_EQ(qr.Count(), 1);
 
-	// check item consist and check case insensitive access to field by name
-	Item selItem = qr.begin().GetItem(false);
+	// check item consist and check case-insensitive access to field by name
+	Item selItem(qr.begin().GetItem(false));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<std::string>(), "value"));
 }
 
 TEST_F(ReindexerApi, ItemJSONWithDouble) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
-	Item item = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	Item item(rt.NewItem(default_namespace));
 
 	{
 		const std::string kJSON = R"_({"id":1234,"double":0.0})_";
-		err = item.FromJSON(kJSON);
+		auto err = item.FromJSON(kJSON);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(item.GetJSON(), kJSON);
 	}
 
 	{
 		const std::string kJSON = R"_({"id":1234,"double":0.1})_";
-		err = item.FromJSON(kJSON);
+		auto err = item.FromJSON(kJSON);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(item.GetJSON(), kJSON);
 	}
@@ -1000,19 +870,12 @@ TEST_F(ReindexerApi, ItemJSONWithDouble) {
 TEST_F(ReindexerApi, WithTimeoutInterface) {
 	using std::chrono::milliseconds;
 
-	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
+	Item item(rt.NewItem(default_namespace));
 
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	Item item(rt.reindexer->NewItem(default_namespace));
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-	err = item.FromJSON(R"_({"id":1234, "value" : "value"})_");
+	auto err = item.FromJSON(R"_({"id":1234, "value" : "value"})_");
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->WithTimeout(milliseconds(1000)).Insert(default_namespace, item);
@@ -1023,8 +886,8 @@ TEST_F(ReindexerApi, WithTimeoutInterface) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), 1);
 
-	// check item consist and check case insensitive access to field by name
-	Item selItem = qr.begin().GetItem(false);
+	// check item consist and check case-insensitive access to field by name
+	Item selItem(qr.begin().GetItem(false));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<std::string>(), "value"));
 
@@ -1034,27 +897,18 @@ TEST_F(ReindexerApi, WithTimeoutInterface) {
 }
 
 template <CollateMode collateMode>
-struct CollateComparer {
+struct [[nodiscard]] CollateComparer {
 	bool operator()(const std::string& lhs, const std::string& rhs) const {
 		return reindexer::collateCompare<collateMode>(lhs, rhs, reindexer::SortingPrioritiesTable()) == reindexer::ComparationResult::Lt;
 	}
 };
 
 TEST_F(ReindexerApi, SortByMultipleColumns) {
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"column1", "tree", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"column2", "tree", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"column3", "hash", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"column1", "tree", "int", IndexOpts()});
+	rt.AddIndex(default_namespace, {"column2", "tree", "string", IndexOpts()});
+	rt.AddIndex(default_namespace, {"column3", "hash", "int", IndexOpts()});
 
 	const std::vector<std::string> possibleValues = {
 		"apple",	 "arrangment", "agreement", "banana",	"bull",	 "beech", "crocodile", "crucifix", "coat",	   "day",
@@ -1064,17 +918,13 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	int sameOldValue = 0;
 	int stringValuedIdx = 0;
 	for (int i = 0; i < 100; ++i) {
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
+		Item item(rt.NewItem(default_namespace));
 		item["id"] = i;
 		item["column1"] = sameOldValue;
 		item["column2"] = possibleValues[stringValuedIdx];
 		item["column3"] = rand() % 30;
 
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 
 		if (i % 5 == 0) {
 			sameOldValue += 5;
@@ -1088,17 +938,15 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	const size_t offset = 23;
 	const size_t limit = 61;
 
-	QueryResults qr;
 	Query query{Query(default_namespace, offset, limit).Sort("column1", true).Sort("column2", false).Sort("column3", false)};
-	err = rt.reindexer->Select(query, qr);
-	EXPECT_TRUE(err.ok()) << err.what();
-	EXPECT_TRUE(qr.Count() == limit) << qr.Count();
+	auto qr = rt.Select(query);
+	EXPECT_EQ(qr.Count(), limit);
 
 	PrintQueryResults(default_namespace, qr);
 
 	std::vector<Variant> lastValues(query.GetSortingEntries().size());
 	for (auto& it : qr) {
-		Item item = it.GetItem(false);
+		Item item(it.GetItem(false));
 
 		std::vector<reindexer::ComparationResult> cmpRes(query.GetSortingEntries().size());
 		std::fill(cmpRes.begin(), cmpRes.end(), reindexer::ComparationResult::Lt);
@@ -1130,70 +978,51 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	}
 
 	// Check sql parser work correctness
-	QueryResults qrSql;
-	std::string sqlQuery = ("select * from test_namespace order by column2 asc, column3 desc");
-	err = rt.reindexer->Select(sqlQuery, qrSql);
-	EXPECT_TRUE(err.ok()) << err.what();
+	rx_unused = rt.ExecSQL("select * from test_namespace order by column2 asc, column3 desc");
 }
 
 TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"f1", "tree", "string", IndexOpts()});
+	rt.AddIndex(default_namespace, {"f2", "tree", "int", IndexOpts()});
 
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"f1", "tree", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"f2", "tree", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	const std::vector<std::string> srcStrValues = {
+	const std::vector<std::string_view> srcStrValues = {
 		"A", "A", "B", "B", "B", "C", "C",
 	};
 	const std::vector<int> srcIntValues = {1, 2, 4, 3, 5, 7, 6};
 
 	for (size_t i = 0; i < srcIntValues.size(); ++i) {
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
+		Item item(rt.NewItem(default_namespace));
 		item["id"] = static_cast<int>(i);
 		item["f1"] = srcStrValues[i];
 		item["f2"] = srcIntValues[i];
 
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 	const size_t offset = 4;
 	const size_t limit = 3;
 
-	QueryResults qr;
 	Query query{Query(default_namespace, offset, limit).Sort("f1", false).Sort("f2", false)};
-	err = rt.reindexer->Select(query, qr);
-	EXPECT_TRUE(err.ok()) << err.what();
-	EXPECT_TRUE(qr.Count() == limit) << qr.Count();
+	auto qr = rt.Select(query);
+	EXPECT_EQ(qr.Count(), limit) << qr.Count();
 
 	const std::vector<int> properRes = {5, 6, 7};
 	size_t i = 0;
 	for (auto& it : qr) {
-		Item item = it.GetItem(false);
+		Item item(it.GetItem(false));
 		Variant kr = item["f2"];
-		EXPECT_TRUE(static_cast<int>(kr) == properRes[i]);
+		EXPECT_EQ(static_cast<int>(kr), properRes[i]);
 		++i;
 	}
 }
 
 TEST_F(ReindexerApi, SortByHash) {
 	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-
 	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 
 	for (int i = 0; i < 1000; ++i) {
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Item item(rt.NewItem(default_namespace));
 		item["id"] = i;
 		rt.Upsert(default_namespace, item);
 	}
@@ -1201,11 +1030,9 @@ TEST_F(ReindexerApi, SortByHash) {
 	auto getIds = [&](const std::string& sortExpr, std::vector<int>& ids) {
 		Query q{default_namespace};
 		q.Sort(sortExpr, true);
-		QueryResults qr;
-		Error err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		for (auto& it : qr) {
-			auto item = it.GetItem();
+			Item item(it.GetItem());
 			int id = item["id"].As<int>();
 			ids.emplace_back(id);
 		}
@@ -1317,37 +1144,28 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	constexpr std::string_view secondNamespace = "test_namespace_2";
 	std::vector<int> secondNamespacePKs;
 
-	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"fk", "hash", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"fk", "hash", "int", IndexOpts()});
 
 	{
-		err = rt.reindexer->OpenNamespace(secondNamespace, StorageOpts().Enabled(false));
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->AddIndex(secondNamespace, {"pk", "hash", "int", IndexOpts().PK()});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(secondNamespace, StorageOpts().Enabled(false));
+		rt.AddIndex(secondNamespace, {"pk", "hash", "int", IndexOpts().PK()});
 
 		for (int i = 0; i < 50; ++i) {
-			Item item(rt.reindexer->NewItem(secondNamespace));
+			Item item(rt.NewItem(secondNamespace));
 			ASSERT_TRUE(!!item);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 			secondNamespacePKs.push_back(i);
 			item["pk"] = i;
 
-			err = rt.reindexer->Upsert(secondNamespace, item);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Upsert(secondNamespace, item);
 		}
 	}
 
 	for (int i = 0; i < 100; ++i) {
-		Item item(rt.reindexer->NewItem(default_namespace));
+		Item item(rt.NewItem(default_namespace));
 		ASSERT_TRUE(!!item);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
@@ -1356,9 +1174,9 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 		int fk = secondNamespacePKs[rand() % (secondNamespacePKs.size() - 1)];
 		item["fk"] = fk;
 
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
+
 	bool descending = true;
 	const unsigned offset = 10;
 	const unsigned limit = 40;
@@ -1367,10 +1185,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	Query joinQuery{Query(default_namespace, offset, limit).Sort("id", descending)};
 	joinQuery.InnerJoin("fk", "pk", CondEq, std::move(querySecondNamespace));
 
-	QueryResults queryResult;
-	err = rt.reindexer->Select(joinQuery, queryResult);
-	EXPECT_TRUE(err.ok()) << err.what();
-
+	auto queryResult = rt.Select(joinQuery);
 	for (auto it : queryResult) {
 		auto itemIt = it.GetJoined();
 		EXPECT_TRUE(itemIt.getJoinedItemsCount() > 0);
@@ -1612,21 +1427,21 @@ TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
 	EXPECT_EQ(sql2, q4.GetSQL());
 }
 
-class CanceledRdxContext : public reindexer::IRdxCancelContext {
+class [[nodiscard]] CanceledRdxContext : public reindexer::IRdxCancelContext {
 public:
 	reindexer::CancelType GetCancelType() const noexcept override { return reindexer::CancelType::Explicit; }
 	bool IsCancelable() const noexcept override { return true; }
 	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
 };
 
-class DummyRdxContext : public reindexer::IRdxCancelContext {
+class [[nodiscard]] DummyRdxContext : public reindexer::IRdxCancelContext {
 public:
 	reindexer::CancelType GetCancelType() const noexcept override { return reindexer::CancelType::None; }
 	bool IsCancelable() const noexcept override { return false; }
 	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
 };
 
-class FakeRdxContext : public reindexer::IRdxCancelContext {
+class [[nodiscard]] FakeRdxContext : public reindexer::IRdxCancelContext {
 public:
 	reindexer::CancelType GetCancelType() const noexcept override { return reindexer::CancelType::None; }
 	bool IsCancelable() const noexcept override { return true; }
@@ -1634,19 +1449,12 @@ public:
 };
 
 TEST_F(ReindexerApi, ContextCancelingTest) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
 
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	Item item(rt.reindexer->NewItem(default_namespace));
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-	err = item.FromJSON(R"_({"id":1234, "value" : "value"})_");
+	Item item(rt.NewItem(default_namespace));
+	auto err = item.FromJSON(R"_({"id":1234, "value" : "value"})_");
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	// Canceled insert
@@ -1688,10 +1496,9 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 	item["value"] = "value1";
 	err = rt.reindexer->WithContext(&canceledCtx).Upsert(default_namespace, item);
 	ASSERT_TRUE(err.code() == errCanceled);
-	err = rt.reindexer->Select(Query(default_namespace), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Select(Query(default_namespace), qr);
 	ASSERT_EQ(qr.Count(), 1);
-	Item selItem = qr.begin().GetItem(false);
+	Item selItem(qr.begin().GetItem(false));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<std::string>(), "value"));
 	qr.Clear();
@@ -1699,8 +1506,7 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 	// Canceled update
 	err = rt.reindexer->WithContext(&canceledCtx).Update(default_namespace, item);
 	ASSERT_TRUE(err.code() == errCanceled);
-	err = rt.reindexer->Select(Query(default_namespace), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Select(Query(default_namespace), qr);
 	ASSERT_EQ(qr.Count(), 1);
 	selItem = qr.begin().GetItem(false);
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
@@ -1718,15 +1524,13 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 	err = rt.reindexer->WithContext(&canceledCtx).Delete(Query(default_namespace), qr);
 	ASSERT_TRUE(err.code() == errCanceled);
 	qr.Clear();
-	err = rt.reindexer->Select(Query(default_namespace), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Select(Query(default_namespace), qr);
 	ASSERT_EQ(qr.Count(), 1);
 	qr.Clear();
 
 	err = rt.reindexer->WithContext(&fakeCtx).Delete(default_namespace, item);
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->Select(Query(default_namespace), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Select(Query(default_namespace), qr);
 	ASSERT_EQ(qr.Count(), 0);
 }
 
@@ -1792,11 +1596,8 @@ TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {
 }
 
 TEST_F(ReindexerApi, SchemaSuggestions) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->OpenNamespace("second_ns");
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.OpenNamespace("second_ns");
 
 	// clang-format off
 	constexpr std::string_view jsonschema = R"xxx(
@@ -1865,7 +1666,7 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 	  "type": "object"
 	})xxx";
 	// clang-format on
-	err = rt.reindexer->SetSchema(default_namespace, jsonschema);
+	auto err = rt.reindexer->SetSchema(default_namespace, jsonschema);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->SetSchema("second_ns", jsonschema2);
@@ -1960,7 +1761,7 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 }
 
 TEST_F(ReindexerApi, LoggerWriteInterruptTest) {
-	struct Logger {
+	struct [[nodiscard]] Logger {
 		Logger() {
 			spdlog::drop_all();
 			spdlog::init_thread_pool(16384, 1);
@@ -2017,27 +1818,21 @@ TEST_F(ReindexerApi, IntToStringIndexUpdate) {
 	const std::string kFieldId = "id";
 	const std::string kFieldNumeric = "numeric";
 
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {kFieldId, "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {kFieldNumeric, "tree", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {kFieldId, "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {kFieldNumeric, "tree", "int", IndexOpts()});
 
 	for (int i = 0; i < 100; ++i) {
-		Item item(rt.reindexer->NewItem(default_namespace));
+		Item item(rt.NewItem(default_namespace));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item[kFieldId] = i;
 		item[kFieldNumeric] = i * 2;
 
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(default_namespace, item);
 	}
 
-	err = rt.reindexer->UpdateIndex(default_namespace, {kFieldNumeric, "tree", "string", IndexOpts()});
+	auto err = rt.reindexer->UpdateIndex(default_namespace, {kFieldNumeric, "tree", "string", IndexOpts()});
 	EXPECT_FALSE(err.ok());
 	EXPECT_STREQ(err.what(), "Cannot convert key from type int to string");
 
@@ -2046,7 +1841,7 @@ TEST_F(ReindexerApi, IntToStringIndexUpdate) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	for (auto it : qr) {
-		Item item = it.GetItem(false);
+		Item item(it.GetItem(false));
 		Variant v = item[kFieldNumeric];
 		EXPECT_TRUE(v.Type().Is<reindexer::KeyValueType::Int>()) << v.Type().Name();
 	}
@@ -2057,7 +1852,9 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 
 	std::string sql = "select id, distinct(year) from test_namespace";
 	EXPECT_NO_THROW(q = Query::FromSQL(sql));
-	EXPECT_NO_THROW(Query::FromJSON(q.GetJSON()));
+
+	Query qJSON;
+	EXPECT_NO_THROW(qJSON = Query::FromJSON(q.GetJSON()));
 
 	q = Query().Select({"id"});
 	EXPECT_NO_THROW(q.Aggregate(AggDistinct, {"year"}, {}));
@@ -2067,7 +1864,7 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 	q = Query(default_namespace).Select({"id"});
 	q.aggregations_.emplace_back(reindexer::AggregateEntry{AggMax, {"year"}});
 	try {
-		Query::FromJSON(q.GetJSON());
+		rx_unused = Query::FromJSON(q.GetJSON());
 	} catch (Error& err) {
 		EXPECT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), reindexer::kAggregationWithSelectFieldsMsgError);
@@ -2080,7 +1877,7 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 	q = Query(default_namespace).Select({"id", "name"});
 	EXPECT_THROW(q.Aggregate(AggFacet, {"year"}, {}), Error);
 	try {
-		Query::FromJSON(fmt::format(R"({{"namespace":"{}",
+		rx_unused = Query::FromJSON(fmt::format(R"({{"namespace":"{}",
 	"limit":-1,
 	"offset":0,
 	"req_total":"disabled",
@@ -2102,7 +1899,7 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 			"fields":["year"]
 		}}
 	]}})",
-									default_namespace));
+												default_namespace));
 	} catch (Error& err) {
 		EXPECT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), reindexer::kAggregationWithSelectFieldsMsgError);
@@ -2115,81 +1912,67 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 }
 
 TEST_F(ReindexerApi, InsertIncorrectItemWithJsonPathsDuplication) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	Item oldTagsItemCJSON(rt.NewItem(default_namespace));
+	Item oldTagsItemJSON(rt.NewItem(default_namespace));
 
-	Item oldTagsItemCJSON = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(oldTagsItemCJSON.Status().ok()) << oldTagsItemCJSON.Status().what();
-	Item oldTagsItemJSON = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(oldTagsItemJSON.Status().ok()) << oldTagsItemJSON.Status().what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"value", reindexer::JsonPaths{"value1"}, "hash", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(default_namespace, {"value", reindexer::JsonPaths{"value1"}, "hash", "string", IndexOpts()});
 
 	{
-		// Check item unmarshaled from json
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-		err = item.FromJSON(R"_({"id":0,"value1":"v","obj":{"id":11},"value1":"p"})_");
+		// Check item unmarshalled from json
+		Item item(rt.NewItem(default_namespace));
+		auto err = item.FromJSON(R"_({"id":0,"value1":"v","obj":{"id":11},"value1":"p"})_");
 		EXPECT_EQ(err.code(), errLogic) << err.what();
 	}
 	{
 		// Check item unmarshaled from cjson (with correct tags)
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Item item(rt.NewItem(default_namespace));
 		constexpr char cjson[] = {0x06, 0x08, 0x00, 0x12, 0x01, 0x70, 0x12, 0x01, 0x70, 0x07};
-		err = item.FromCJSON(std::string_view(cjson, sizeof(cjson)));
+		auto err = item.FromCJSON(std::string_view(cjson, sizeof(cjson)));
 		ASSERT_EQ(err.code(), errLogic);
 	}
 	{
 		// Check item unmarshaled from msgpack
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Item item(rt.NewItem(default_namespace));
 		constexpr uint8_t msgpack[] = {0xDF, 0x00, 0x00, 0x00, 0x04, 0xA2, 0x69, 0x64, 0x00, 0xA6, 0x76, 0x61, 0x6C, 0x75,
 									   0x65, 0x31, 0xA1, 0x76, 0xA3, 0x6F, 0x62, 0x6A, 0xDF, 0x00, 0x00, 0x00, 0x01, 0xA2,
 									   0x69, 0x64, 0x0B, 0xA6, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31, 0xA1, 0x70};
 		size_t offset = 0;
-		err = item.FromMsgPack(std::string_view(reinterpret_cast<const char*>(msgpack), sizeof(msgpack)), offset);
+		auto err = item.FromMsgPack(std::string_view(reinterpret_cast<const char*>(msgpack), sizeof(msgpack)), offset);
 		EXPECT_EQ(err.code(), errLogic) << err.what();
 	}
 	{
-		// Check item unmarshaled from msgpack (different encoding)
-		Item item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		// Check item unmarshalled from msgpack (different encoding)
+		Item item(rt.NewItem(default_namespace));
 		constexpr uint8_t msgpack[] = {0x84, 0xA2, 0x69, 0x64, 0x00, 0xA6, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31, 0xA1, 0x70, 0xA3, 0x6F,
 									   0x62, 0x6A, 0x81, 0xA2, 0x69, 0x64, 0x0B, 0xA6, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31, 0xA1, 0x70};
 		size_t offset = 0;
-		err = item.FromMsgPack(std::string_view(reinterpret_cast<const char*>(msgpack), sizeof(msgpack)), offset);
+		auto err = item.FromMsgPack(std::string_view(reinterpret_cast<const char*>(msgpack), sizeof(msgpack)), offset);
 		EXPECT_EQ(err.code(), errLogic) << err.what();
 	}
 
 	{
-		// Check item unmarshaled from cjson (with outdated tags)
+		// Check item unmarshalled from cjson (with outdated tags)
 		constexpr char cjson[] = {0x07, 0x13, 0x00, 0x00, 0x00, 0x06, 0x08, 0x00, 0x12, 0x01, 0x76, 0x1E, 0x08, 0x16, 0x07, 0x12, 0x01,
 								  0x70, 0x07, 0x03, 0x02, 0x69, 0x64, 0x06, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31, 0x03, 0x6F, 0x62, 0x6A};
-		err = oldTagsItemCJSON.FromCJSON(std::string_view(cjson, sizeof(cjson)));
+		auto err = oldTagsItemCJSON.FromCJSON(std::string_view(cjson, sizeof(cjson)));
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = rt.reindexer->Insert(default_namespace, oldTagsItemCJSON);
 		ASSERT_EQ(err.code(), errLogic);
 
-		QueryResults qr;
-		err = rt.reindexer->Select(Query(default_namespace), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(Query(default_namespace));
 		ASSERT_EQ(qr.Count(), 0);
 	}
 	{
 		// Check item unmarshaled from json with outdated tags
-		err = oldTagsItemJSON.FromJSON(R"_({"id":0,"value1":"v","obj":{"id":11},"value1":"p"})_");
+		auto err = oldTagsItemJSON.FromJSON(R"_({"id":0,"value1":"v","obj":{"id":11},"value1":"p"})_");
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = rt.reindexer->Insert(default_namespace, oldTagsItemJSON);
 		ASSERT_EQ(err.code(), errLogic);
 
-		QueryResults qr;
-		err = rt.reindexer->Select(Query(default_namespace), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(Query(default_namespace));
 		ASSERT_EQ(qr.Count(), 0);
 	}
 }
@@ -2202,7 +1985,7 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 	rt.AddIndex(default_namespace, {"v1", "tree", "int", IndexOpts().Sparse()});
 	rt.AddIndex(default_namespace, {"v2", "tree", "string", IndexOpts()});
 
-	struct ItemData {
+	struct [[nodiscard]] ItemData {
 		ItemData() = default;
 		ItemData(unsigned int _id, unsigned int _v1, const std::string& _v2) : id(_id), v1(_v1), v2(_v2) {}
 		unsigned int id = 0;
@@ -2217,8 +2000,7 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 		item["id"] = int(data.back().id);
 		item["v1"] = int(data.back().v1);
 		item["v2"] = data.back().v2;
-		auto err = rt.reindexer->Insert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Insert(default_namespace, item);
 	}
 
 	{
@@ -2236,7 +2018,7 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 
 		unsigned int i = 0;
 		for (auto it : qr) {
-			auto item = it.GetItem();
+			Item item(it.GetItem());
 			ASSERT_EQ(item["id"].As<int>(), data[i].id);
 			ASSERT_EQ(item["v1"].As<int>(), data[i].v1);
 			ASSERT_EQ(item["v2"].As<std::string>(), data[i].v2);
@@ -2246,14 +2028,11 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 }
 
 TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 
 	static int id = 0;
-	enum class Order { InsertThenAddIndex, AddIndexThenUpdate };
+	enum class [[nodiscard]] Order { InsertThenAddIndex, AddIndexThenUpdate };
 
 	auto testImpl = [this](Order order) {
 		std::srand(std::time(0));
@@ -2261,36 +2040,24 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 		auto indexName = fmt::format("data_{}", id);
 		auto indexPaths = order == Order::AddIndexThenUpdate ? reindexer::JsonPaths{"n." + indexName} : reindexer::JsonPaths{indexName};
 		auto insert = [this]<typename... Args>(fmt::format_string<Args...> tmplt, Args&&... args) {
-			Item item(rt.reindexer->NewItem(default_namespace));
-			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			Item item(rt.NewItem(default_namespace));
 			auto err = item.FromJSON(fmt::format(tmplt, std::forward<decltype(args)>(args)...));
 			ASSERT_TRUE(err.ok()) << err.what();
-			err = rt.reindexer->Insert(default_namespace, item);
-			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Insert(default_namespace, item);
 		};
 
 		auto update = [&] {
-			QueryResults qr;
-			auto err = rt.reindexer->Select(
-				fmt::format("UPDATE {} SET n = {{\"{}\":{}}} where id = {}", default_namespace, indexName, value, id), qr);
-			ASSERT_TRUE(err.ok()) << err.what();
+			auto qr = rt.ExecSQL(fmt::format("UPDATE {} SET n = {{\"{}\":{}}} where id = {}", default_namespace, indexName, value, id));
 			ASSERT_EQ(qr.Count(), 1);
 		};
 
-		auto addIndex = [&] {
-			auto err = rt.reindexer->AddIndex(default_namespace, {indexName, std::move(indexPaths), "hash", "string", IndexOpts()});
-			ASSERT_TRUE(err.ok()) << err.what();
-		};
+		auto addIndex = [&] { rt.AddIndex(default_namespace, {indexName, std::move(indexPaths), "hash", "string", IndexOpts()}); };
 
 		auto checkResult = [&](const std::string& searchIndex, const std::string& searchValue) {
-			QueryResults qr;
-			auto err = rt.reindexer->Select(Query(default_namespace).Where(searchIndex, CondEq, searchValue), qr);
-			ASSERT_TRUE(err.ok()) << err.what();
-
+			auto qr = rt.Select(Query(default_namespace).Where(searchIndex, CondEq, searchValue));
 			ASSERT_EQ(qr.Count(), 1);
 
-			auto item = qr.begin().GetItem();
+			Item item(qr.begin().GetItem());
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 			ASSERT_TRUE(Variant(item[indexName]).Type().Is<reindexer::KeyValueType::String>()) << Variant(item[indexName]).Type().Name();
 			ASSERT_EQ(item[indexName].As<std::string>(), std::to_string(value));
@@ -2320,7 +2087,7 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 
 TEST_F(ReindexerApi, MetaIndexTest) {
 	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/meta_index_test/");
-	reindexer::fs::RmDirAll(storagePath);  // ignore result
+	rx_unused = reindexer::fs::RmDirAll(storagePath);
 
 	auto rx = std::make_unique<Reindexer>();
 	auto err = rx->Connect("builtin://" + storagePath);
@@ -2441,7 +2208,7 @@ TEST_F(ReindexerApi, QueryResultsLSNTest) {
 	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 
 	for (int i = 0; i < kDataCount; ++i) {
-		auto item = rt.NewItem(default_namespace);
+		Item item(rt.NewItem(default_namespace));
 		item["id"] = i;
 		rt.Upsert(default_namespace, item);
 	}
@@ -2464,7 +2231,7 @@ TEST_F(ReindexerApi, QueryResultsLSNTest) {
 		ASSERT_EQ(updated, 1);
 		const auto deleted = rt.Delete(Query(default_namespace).Where("id", CondEq, 1));
 		ASSERT_EQ(deleted, 1);
-		auto delItem = rt.NewItem(default_namespace);
+		Item delItem(rt.NewItem(default_namespace));
 		delItem["id"] = 2;
 		rt.Delete(default_namespace, delItem);
 		rt.UpsertJSON(default_namespace, R"j({"id":3, "data":"modified_3"})j");
@@ -2472,8 +2239,7 @@ TEST_F(ReindexerApi, QueryResultsLSNTest) {
 
 	{
 		// Modify data via transaction
-		auto tx = rt.reindexer->NewTransaction(default_namespace);
-		ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+		auto tx = rt.NewTransaction(default_namespace);
 
 		auto updQ = Query(default_namespace).Where("id", CondEq, 4).Set("data", {Variant{"modified_4"sv}});
 		updQ.type_ = QueryUpdate;
@@ -2494,16 +2260,13 @@ TEST_F(ReindexerApi, QueryResultsLSNTest) {
 		updItem["data"] = "modified_7";
 		err = tx.Update(std::move(updItem));
 		ASSERT_TRUE(err.ok()) << err.what();
-		QueryResults qr;
-		err = rt.reindexer->CommitTransaction(tx, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx_unused = rt.CommitTransaction(tx);
 	}
 
 	// Truncate all remaining data
-	auto err = rt.reindexer->TruncateNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.TruncateNamespace(default_namespace);
 
-	// Check, that LSNs did not changed for the existing Qr
+	// Check, that LSNs did not change for the existing Qr
 	for (size_t i = 0; i < kDataCount; ++i) {
 		auto lsn = (local.begin() + i).GetLSN();
 		ASSERT_EQ(lsn, lsns[i]) << i;
@@ -2537,12 +2300,10 @@ TEST_F(ReindexerApi, SelectNull) {
 		EXPECT_STREQ(err.what(), "The 'is NULL' condition is supported only by 'sparse' or 'array' indexes");
 
 		qr.Clear();
-		err = rt.reindexer->Select(Query(default_namespace).Where("store_num", CondSet, Variant()), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Select(Query(default_namespace).Where("store_num", CondSet, Variant()), qr);
 
 		qr.Clear();
-		err = rt.reindexer->Select(Query(default_namespace).Where("not_indexed", CondSet, VariantArray{Variant(1234), Variant()}), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Select(Query(default_namespace).Where("not_indexed", CondSet, VariantArray{Variant(1234), Variant()}), qr);
 
 		AwaitIndexOptimization(default_namespace);
 	}
@@ -2559,7 +2320,7 @@ TEST_F(ReindexerApi, DefautlIndexDefJSON) {
 
 TEST_F(ReindexerApi, NamespaceStorageRaceTest) {
 	const std::string kBaseTestsStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/ns_storage_race_test/");
-	reindexer::fs::RmDirAll(kBaseTestsStoragePath);
+	rx_unused = reindexer::fs::RmDirAll(kBaseTestsStoragePath);
 	auto rx = std::make_unique<Reindexer>();
 	auto err = rx->Connect("builtin://" + kBaseTestsStoragePath);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -2625,7 +2386,7 @@ TEST_F(ReindexerApi, AlignedPayload) {
 	// Tests TSAN's warning with specific payload's alignment.
 	// Check issue #2061 for details.
 	const std::string kBaseTestsStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/payload_race_test/");
-	reindexer::fs::RmDirAll(kBaseTestsStoragePath);
+	rx_unused = reindexer::fs::RmDirAll(kBaseTestsStoragePath);
 	auto rx = std::make_unique<Reindexer>();
 	auto err = rx->Connect("builtin://" + kBaseTestsStoragePath);
 	ASSERT_TRUE(err.ok()) << err.what();

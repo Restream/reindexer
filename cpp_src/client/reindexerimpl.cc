@@ -1,6 +1,7 @@
 #include "client/reindexerimpl.h"
 #include "client/connectionspool.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
+#include "estl/dummy_mutex.h"
 #include "tools/catch_and_return.h"
 #include "tools/dsn.h"
 
@@ -27,14 +28,14 @@ ReindexerImpl::ReindexerImpl(const ReindexerConfig& conf, uint32_t connCount, ui
 		workers_.emplace_back(conns);
 	}
 	sharedNamespaces_ = (workers_.size() > 1) ? INamespaces::PtrT(new NamespacesImpl<shared_timed_mutex>())
-											  : INamespaces::PtrT(new NamespacesImpl<dummy_mutex>());
+											  : INamespaces::PtrT(new NamespacesImpl<DummyMutex>());
 	commandsQueue_.Init(workers_);
 }
 
 ReindexerImpl::~ReindexerImpl() { stop(); }
 
 Error ReindexerImpl::Connect(const DSN& dsn, const client::ConnectOpts& opts) {
-	std::lock_guard lock(workersMtx_);
+	lock_guard lock(workersMtx_);
 	if (workers_.size() && workers_[0].th.joinable()) {
 		return Error(errLogic, "Client is already started. DSN: {}", dsn);
 	}
@@ -59,7 +60,7 @@ Error ReindexerImpl::Connect(const DSN& dsn, const client::ConnectOpts& opts) {
 }
 
 void ReindexerImpl::Stop() {
-	std::lock_guard lock(workersMtx_);
+	lock_guard lock(workersMtx_);
 	requiresStatusCheck_.store(true, std::memory_order_relaxed);
 	stop();
 }
@@ -831,9 +832,11 @@ ReindexerImpl::WorkerThread::WorkerThread(uint32_t _connCount) : connCount(_conn
 ReindexerImpl::WorkerThread::~WorkerThread() = default;
 
 void ReindexerImpl::CommandsQueue::Get(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds) {
-	assertrx(tid < thData_.size());
-	auto& thD = thData_[tid];
-	std::lock_guard lck(mtx_);
+	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
+		assertrx(tid < thData_.size());
+		return thData_[tid];
+	}();
+	lock_guard lck(mtx_);
 	if (thD.personalQueue.size()) {
 		std::swap(thD.personalQueue, cmds);
 		thD.reqCnt.fetch_add(cmds.size(), std::memory_order_relaxed);
@@ -849,13 +852,15 @@ void ReindexerImpl::CommandsQueue::Get(uint32_t tid, h_vector<DatabaseCommand, 1
 }
 
 void ReindexerImpl::CommandsQueue::OnCmdDone(uint32_t tid) {
-	assertrx(tid < thData_.size());
-	auto& thD = thData_[tid];
+	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
+		assertrx(tid < thData_.size());
+		return thData_[tid];
+	}();
 	thD.reqCnt.fetch_sub(1, std::memory_order_release);
 }
 
 void ReindexerImpl::CommandsQueue::Init(std::deque<WorkerThread>& threads) {
-	std::lock_guard<std::mutex> lock(mtx_);
+	lock_guard lock(mtx_);
 	assertrx(thData_.empty());
 	for (auto& th : threads) {
 		thData_.emplace_back(th.commandAsync);
@@ -863,9 +868,11 @@ void ReindexerImpl::CommandsQueue::Init(std::deque<WorkerThread>& threads) {
 }
 
 void ReindexerImpl::CommandsQueue::Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds) {
-	assertrx(tid < thData_.size());
-	auto& thD = thData_[tid];
-	std::lock_guard<std::mutex> lock(mtx_);
+	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
+		assertrx(tid < thData_.size());
+		return thData_[tid];
+	}();
+	lock_guard lock(mtx_);
 	std::swap(thD.personalQueue, cmds);
 	thD.reqCnt.store(0, std::memory_order_relaxed);
 	while (sharedQueue_.size()) {
@@ -877,19 +884,21 @@ void ReindexerImpl::CommandsQueue::Invalidate(uint32_t tid, h_vector<DatabaseCom
 }
 
 void ReindexerImpl::CommandsQueue::SetValid() {
-	std::lock_guard<std::mutex> lock(mtx_);
+	lock_guard lock(mtx_);
 	isValid_ = true;
 }
 
 void ReindexerImpl::CommandsQueue::ClearConnectionsMapping() {
-	std::lock_guard<std::mutex> lock(mtx_);
+	lock_guard lock(mtx_);
 	thByConns_.clear();
 }
 
 void ReindexerImpl::CommandsQueue::RegisterConn(uint32_t tid, const void* conn, uint32_t connIdx) {
-	assertrx(tid < thData_.size());
-	auto& thD = thData_[tid];
-	std::lock_guard<std::mutex> lock(mtx_);
+	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
+		assertrx(tid < thData_.size());
+		return thData_[tid];
+	}();
+	lock_guard lock(mtx_);
 	const auto res = thByConns_.emplace(conn, ConnMeta{.threadData = &thD, .connIdx = connIdx});
 	assertrx(res.second);
 	(void)res;

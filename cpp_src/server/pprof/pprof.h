@@ -10,7 +10,7 @@ using std::string;
 using namespace reindexer::net;
 using reindexer::WrSerializer;
 
-class Pprof {
+class [[nodiscard]] Pprof {
 public:
 	void Attach(http::Router& router);
 

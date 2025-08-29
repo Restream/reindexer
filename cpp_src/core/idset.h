@@ -15,10 +15,9 @@ namespace reindexer {
 using base_idset = h_vector<IdType, 3>;	 // const_iterator must be trivial (used in union)
 using base_idsetset = btree::btree_set<int>;
 
-class IdSetPlain : protected base_idset {
+class [[nodiscard]] IdSetPlain : protected base_idset {
 public:
 	using iterator = base_idset::const_iterator;
-	using base_idset::clear;
 	using base_idset::size;
 	using base_idset::empty;
 	using base_idset::data;
@@ -37,7 +36,7 @@ public:
 	using base_idset::const_iterator;
 	using base_idset::operator[];
 
-	enum EditMode {
+	enum [[nodiscard]] EditMode {
 		Ordered,   // Keep idset ordered, and ready to select (insert is slow O(logN)+O(N))
 		Auto,	   // Prepare idset for fast ordering by commit (insert is fast O(logN))
 		Unordered  // Just add id, commit and erase is impossible
@@ -67,15 +66,45 @@ public:
 	}
 
 	void Commit() const noexcept {}
-	[[nodiscard]] bool IsCommitted() const noexcept { return true; }
-	[[nodiscard]] bool IsEmpty() const noexcept { return empty(); }
-	[[nodiscard]] size_t Size() const noexcept { return size(); }
-	[[nodiscard]] size_t BTreeSize() const noexcept { return 0; }
-	[[nodiscard]] const base_idsetset* BTree() const noexcept { return nullptr; }
+	bool IsCommitted() const noexcept { return true; }
+	bool IsEmpty() const noexcept { return empty(); }
+	size_t Size() const noexcept { return size(); }
+	size_t BTreeSize() const noexcept { return 0; }
+	const base_idsetset* BTree() const noexcept { return nullptr; }
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
-	[[nodiscard]] std::string Dump() const;
+	std::string Dump() const;
 
 	IdSetPlain(base_idset&& idset) noexcept : base_idset(std::move(idset)) {}
+
+	// Explicit construtors implementations to preserve IdSet's capacity (it's required for background indexes optimization)
+	IdSetPlain(IdSetPlain&& other) noexcept : base_idset() {
+		[[maybe_unused]] auto otherCapacity = other.capacity();
+		static_cast<base_idset&>(*this).swap(static_cast<base_idset&>(other));
+		assertrx_dbg(capacity() == otherCapacity);
+	}
+	IdSetPlain(const IdSetPlain& other) : base_idset() {
+		reserve(other.capacity());
+		insert(cbegin(), other.cbegin(), other.cend());
+		assertrx_dbg(capacity() == other.capacity());
+	}
+	IdSetPlain& operator=(const IdSetPlain& other) {
+		if (this != &other) {
+			clear();
+			shrink_to_fit();
+			reserve(other.capacity());
+			insert(cbegin(), other.cbegin(), other.cend());
+		}
+		assertrx_dbg(capacity() == other.capacity());
+		return *this;
+	}
+	IdSetPlain& operator=(IdSetPlain&& other) noexcept {
+		[[maybe_unused]] auto otherCapacity = other.capacity();
+		if (this != &other) {
+			this->swap(other);
+		}
+		assertrx_dbg(capacity() == otherCapacity);
+		return *this;
+	}
 };
 
 std::ostream& operator<<(std::ostream&, const IdSetPlain&);
@@ -83,7 +112,7 @@ std::ostream& operator<<(std::ostream&, const IdSetPlain&);
 // maximum size of idset without building btree
 const int kMaxPlainIdsetSize = 16;
 
-class IdSet : public IdSetPlain {
+class [[nodiscard]] IdSet : public IdSetPlain {
 	friend class SingleSelectKeyResult;
 
 public:
@@ -110,7 +139,7 @@ public:
 	}
 	static Ptr BuildFromUnsorted(base_idset&& ids) {
 		boost::sort::pdqsort_branchless(ids.begin(), ids.end());
-		ids.erase(std::unique(ids.begin(), ids.end()), ids.end());	// TODO: It would be better to integrate unique into sort
+		ids.erase(std::unique(ids.begin(), ids.end()), ids.cend());	 // TODO: It would be better to integrate unique into sort
 		return make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>(std::move(ids));
 	}
 	bool Add(IdType id, EditMode editMode, int sortedIdxCount) {
@@ -198,7 +227,7 @@ public:
 		}
 	}
 
-	[[nodiscard]] bool Find(IdType id) const {
+	bool Find(IdType id) const {
 		if (!set_) {
 			return (std::find(begin(), end(), id) != end());
 		}
@@ -228,11 +257,11 @@ public:
 
 		usingBtree_.store(false, std::memory_order_release);
 	}
-	[[nodiscard]] bool IsCommitted() const noexcept { return !usingBtree_.load(std::memory_order_acquire); }
-	[[nodiscard]] bool IsEmpty() const noexcept { return empty() && (!set_ || set_->empty()); }
-	[[nodiscard]] size_t Size() const noexcept { return usingBtree_.load(std::memory_order_acquire) ? set_->size() : size(); }
-	[[nodiscard]] size_t BTreeSize() const noexcept { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
-	[[nodiscard]] const base_idsetset* BTree() const noexcept { return set_.get(); }
+	bool IsCommitted() const noexcept { return !usingBtree_.load(std::memory_order_acquire); }
+	bool IsEmpty() const noexcept { return empty() && (!set_ || set_->empty()); }
+	size_t Size() const noexcept { return usingBtree_.load(std::memory_order_acquire) ? set_->size() : size(); }
+	size_t BTreeSize() const noexcept { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
+	const base_idsetset* BTree() const noexcept { return set_.get(); }
 	void ReserveForSorted(int sortedIdxCount) { reserve(((set_ ? set_->size() : size())) * (sortedIdxCount + 1)); }
 
 protected:

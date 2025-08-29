@@ -3,7 +3,7 @@
 
 using namespace std::string_view_literals;
 
-class FTSynonymsApi : public FTApi {
+class [[nodiscard]] FTSynonymsApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_synonyms_default_namespace"; }
 };

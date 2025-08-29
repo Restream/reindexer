@@ -6,7 +6,7 @@
 #include "tools/logger.h"
 
 template <typename counter_t>
-class AllocsTracer {
+class [[nodiscard]] AllocsTracer {
 public:
 	counter_t alloced_sz;
 	counter_t alloced_cnt;
@@ -58,8 +58,8 @@ static void traced_delete(const void* ptr) {
 
 void allocdebug_init() {
 	if (reindexer::alloc_ext::TCMallocIsAvailable() && reindexer::alloc_ext::TCMallocHooksAreAvailable()) {
-		reindexer::alloc_ext::MallocHook_AddNewHook(traced_new);
-		reindexer::alloc_ext::MallocHook_AddDeleteHook(traced_delete);
+		rx_unused = reindexer::alloc_ext::MallocHook_AddNewHook(traced_new);
+		rx_unused = reindexer::alloc_ext::MallocHook_AddDeleteHook(traced_delete);
 		ismt = false;
 	} else {
 		logFmt(LogWarning,
@@ -69,8 +69,8 @@ void allocdebug_init() {
 
 void allocdebug_init_mt() {
 	if (reindexer::alloc_ext::TCMallocIsAvailable() && reindexer::alloc_ext::TCMallocHooksAreAvailable()) {
-		reindexer::alloc_ext::MallocHook_AddNewHook(traced_new_mt);
-		reindexer::alloc_ext::MallocHook_AddDeleteHook(traced_delete_mt);
+		rx_unused = reindexer::alloc_ext::MallocHook_AddNewHook(traced_new_mt);
+		rx_unused = reindexer::alloc_ext::MallocHook_AddDeleteHook(traced_delete_mt);
 		ismt = true;
 	} else {
 		logFmt(LogWarning,

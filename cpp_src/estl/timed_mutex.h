@@ -17,10 +17,58 @@
 #endif	// __APPLE__
 
 #include <chrono>
+#include "thread_annotation_attributes.h"
 
 #if REINDEX_USE_STD_TIMED_MUTEX
 #include <mutex>
+
+namespace reindexer {
+
+#ifdef RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
+template <typename>
+class lock_guard;
+template <typename>
+class unique_lock;
+template <typename>
+class shared_lock;
+template <typename, typename>
+class contexted_unique_lock;
+template <typename, typename>
+class contexted_shared_lock;
+template <typename...>
+class scoped_lock;
+
+namespace details {
+template <typename>
+struct BaseMutexImpl;
+}  // namespace details
+
+class [[nodiscard]] RX_CAPABILITY("mutex") timed_mutex : private std::timed_mutex {
+	using Base = std::timed_mutex;
+
+	friend shared_lock<timed_mutex>;
+	friend lock_guard<timed_mutex>;
+	friend unique_lock<timed_mutex>;
+	friend details::BaseMutexImpl<timed_mutex>;
+	template <typename, typename>
+	friend class contexted_unique_lock;
+	template <typename, typename>
+	friend class contexted_shared_lock;
+	template <typename...>
+	friend class scoped_lock;
+
+public:
+	const timed_mutex& operator!() const& noexcept { return *this; }
+	auto operator!() const&& = delete;
+};
+
+#else	// RX_THREAD_SAFETY_ANALYSIS_ENABLE
 using std::timed_mutex;
+#endif	// RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
+}  // namespace reindexer
+
 #else
 #include <errno.h>
 #include <pthread.h>
@@ -29,7 +77,7 @@ using std::timed_mutex;
 
 namespace reindexer {
 
-class __timed_mutex_pthread {
+class [[nodiscard]] __timed_mutex_pthread {
 #ifdef PTHREAD_MUTEX_INITIALIZER
 	pthread_mutex_t _M_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -78,8 +126,48 @@ public:
 	void* native_handle() noexcept { return &_M_lock; }
 };
 
-class timed_mutex : public __timed_mutex_pthread {
-public:
+#ifdef RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
+template <typename>
+class lock_guard;
+template <typename>
+class unique_lock;
+template <typename>
+class shared_lock;
+template <typename>
+class smart_lock;
+template <typename, typename>
+class contexted_unique_lock;
+template <typename, typename>
+class contexted_shared_lock;
+template <typename...>
+class scoped_lock;
+
+namespace details {
+template <typename>
+struct BaseMutexImpl;
+}  // namespace details
+
+#endif	// RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
+class [[nodiscard]] RX_CAPABILITY("mutex") timed_mutex : RX_MUTEX_ACCESS __timed_mutex_pthread {
+
+#ifdef RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
+	friend shared_lock<timed_mutex>;
+	friend lock_guard<timed_mutex>;
+	friend unique_lock<timed_mutex>;
+	friend details::BaseMutexImpl<timed_mutex>;
+	template <typename>
+	friend class smart_lock;
+	template <typename, typename>
+	friend class contexted_unique_lock;
+	template <typename, typename>
+	friend class contexted_shared_lock;
+
+#endif	// RX_THREAD_SAFETY_ANALYSIS_ENABLE
+
+	RX_MUTEX_ACCESS:
 	template <class Rep, class Period>
 	bool try_lock_for(const std::chrono::duration<Rep, Period>& duration) {
 		return try_lock_until(__clock::now_coarse() + duration);
@@ -110,6 +198,7 @@ public:
 private:
 	using __clock = system_clock_w;
 };
+
 }  // namespace reindexer
 
 #endif

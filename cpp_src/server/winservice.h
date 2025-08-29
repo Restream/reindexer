@@ -10,7 +10,7 @@
 
 namespace reindexer_server {
 
-class WinService {
+class [[nodiscard]] WinService {
 public:
 	WinService(const std::string& name, const std::string& displayName, std::function<void(void)> run, std::function<void(void)> terminate,
 			   std::function<bool(void)> status);

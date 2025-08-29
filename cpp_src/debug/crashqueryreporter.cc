@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-struct QueryDebugContext {
+struct [[nodiscard]] QueryDebugContext {
 	bool HasTrackedQuery() const noexcept { return mainQuery || externQuery || parentQuery || !externSql.empty(); }
 	std::string_view GetMainSQL(std::string& storage) const noexcept {
 		try {
@@ -43,7 +43,7 @@ struct QueryDebugContext {
 	const Query* externQuery = nullptr;
 	std::string_view externSql;
 	const Query* parentQuery = nullptr;
-	const std::atomic<int>* nsOptimizationState = nullptr;
+	const std::atomic<OptimizationState>* nsOptimizationState = nullptr;
 	ExplainCalc* explainCalc = nullptr;
 	const std::atomic<int>* nsLockerState = nullptr;
 	StringsHolder* nsStrHolder = nullptr;
@@ -53,7 +53,7 @@ struct QueryDebugContext {
 
 thread_local QueryDebugContext g_queryDebugCtx;
 
-ActiveQueryScope::ActiveQueryScope(SelectCtx& ctx, const std::atomic<int>& nsOptimizationState, ExplainCalc& explainCalc,
+ActiveQueryScope::ActiveQueryScope(SelectCtx& ctx, const std::atomic<OptimizationState>& nsOptimizationState, ExplainCalc& explainCalc,
 								   const std::atomic<int>& nsLockerState, StringsHolder* strHolder) noexcept
 	: type_(ctx.requiresCrashTracking ? Type::CoreQueryTracker : Type::NoTracking) {
 	if (ctx.requiresCrashTracking) {
@@ -67,7 +67,7 @@ ActiveQueryScope::ActiveQueryScope(SelectCtx& ctx, const std::atomic<int>& nsOpt
 	}
 }
 
-ActiveQueryScope::ActiveQueryScope(const Query& q, QueryType realQueryType, const std::atomic<int>& nsOptimizationState,
+ActiveQueryScope::ActiveQueryScope(const Query& q, QueryType realQueryType, const std::atomic<OptimizationState>& nsOptimizationState,
 								   StringsHolder* strHolder) noexcept
 	: type_(Type::CoreQueryTracker) {
 	g_queryDebugCtx.mainQuery = &q;
@@ -120,15 +120,17 @@ ActiveQueryScope::~ActiveQueryScope() {
 	}
 }
 
-static std::string_view nsOptimizationStateName(int state) {
+static std::string_view nsOptimizationStateName(OptimizationState state) {
 	using namespace std::string_view_literals;
 	switch (state) {
-		case NamespaceImpl::NotOptimized:
+		case OptimizationState::None:
 			return "Not optimized"sv;
-		case NamespaceImpl::OptimizedPartially:
+		case OptimizationState::Partial:
 			return "Optimized Partially"sv;
-		case NamespaceImpl::OptimizationCompleted:
+		case OptimizationState::Completed:
 			return "Optimization completed"sv;
+		case OptimizationState::Error:
+			return "Unexpected optimization error"sv;
 		default:
 			return "<Unknown>"sv;
 	}
@@ -167,7 +169,7 @@ void PrintCrashedQuery(std::ostream& out) {
 	}
 	if (g_queryDebugCtx.nsLockerState) {
 		out << " NS.locker state: ";
-		nsInvalidationStateName(g_queryDebugCtx.nsLockerState->load());
+		out << nsInvalidationStateName(g_queryDebugCtx.nsLockerState->load());
 		out << std::endl;
 	}
 	if (g_queryDebugCtx.nsStrHolder) {

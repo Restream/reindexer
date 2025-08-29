@@ -49,7 +49,6 @@ void PayloadTypeImpl::Dump(std::ostream& os, std::string_view step, std::string_
 
 void PayloadTypeImpl::Add(PayloadFieldType f) {
 	checkNewNameBeforeAdd(f);
-	checkEmbedderFields(f);
 	// Unique name -> just add field
 	f.SetOffset(TotalSize());
 	const int fieldNo = int(fields_.size());
@@ -176,7 +175,7 @@ void PayloadTypeImpl::deserialize(Serializer& ser) {
 	fieldsByJsonPath_.clear();
 	strFields_.clear();
 
-	ser.GetVarUInt();
+	[[maybe_unused]] const uint64_t exportHdrOffset = ser.GetVarUInt();
 
 	const uint64_t count = ser.GetVarUInt();
 	fields_.reserve(count);

@@ -11,7 +11,7 @@
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
-class MsgPackCprotoApi : public ReindexerApi {
+class [[nodiscard]] MsgPackCprotoApi : public ReindexerApi {
 public:
 	using Reindexer = reindexer::client::Reindexer;
 	using QueryResults = reindexer::client::QueryResults;
@@ -22,7 +22,7 @@ public:
 
 	void SetUp() {
 		using reindexer::client::RPCDataFormat;
-		reindexer::fs::RmDirAll(kDbPath);
+		rx_unused = reindexer::fs::RmDirAll(kDbPath);
 		YAML::Node y;
 		y["storage"]["path"] = kDbPath;
 		y["logger"]["loglevel"] = "none";

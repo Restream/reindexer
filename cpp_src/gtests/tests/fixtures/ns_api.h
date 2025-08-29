@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 #include "reindexer_api.h"
 
-class NsApi : public ReindexerApi {
+class [[nodiscard]] NsApi : public ReindexerApi {
 protected:
 	void DefineDefaultNamespace() {
 		rt.OpenNamespace(default_namespace);
@@ -36,10 +36,8 @@ protected:
 	}
 
 	void AddUnindexedData() {
-		Error err = rt.reindexer->AddIndex(default_namespace, reindexer::IndexDef("objects.more.array", {"objects.more.array"}, "hash",
-																				  "int64", IndexOpts().Array(), 100000000000));
-		ASSERT_TRUE(err.ok()) << err.what();
-
+		rt.AddIndex(default_namespace,
+					reindexer::IndexDef("objects.more.array", {"objects.more.array"}, "hash", "int64", IndexOpts().Array(), 100000000000));
 		constexpr auto jsonPattern =
 			R"json({{"id": {},
 			"int_field":1,
@@ -113,8 +111,7 @@ protected:
 		item["ft21"] = RandString();
 		item["ft22"] = RandString();
 		item["ft23"] = RandString();
-		auto err = rt.reindexer->Insert(truncate_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Insert(truncate_namespace, item);
 	}
 
 	void TruncateNamespace(const std::function<Error(const std::string&)>& truncate) {

@@ -52,7 +52,7 @@ static_assert(false, "Macro conflict");
 	}
 #endif	// logFmt
 
-enum class LoggerPolicy : int { NotInit, WithLocks, WithoutLocks };
+enum class [[nodiscard]] LoggerPolicy : int { NotInit, WithLocks, WithoutLocks };
 void logInstallWriter(LogWriter writer, LoggerPolicy mode, int globalLogLevel);
 
 }  // namespace reindexer

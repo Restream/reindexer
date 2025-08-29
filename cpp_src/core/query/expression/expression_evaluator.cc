@@ -13,14 +13,14 @@ namespace {
 constexpr char kWrongFieldTypeError[] = "Only integral type non-array fields are supported in arithmetical expressions: {}";
 constexpr char kScalarsInConcatenationError[] = "Unable to use scalar values in the arrays concatenation expressions: {}";
 
-enum class Command : int {
+enum class [[nodiscard]] Command : int {
 	ArrayRemove = 1,
 	ArrayRemoveOnce,
 };
 }  // namespace
 
 void ExpressionEvaluator::captureArrayContent(tokenizer& parser) {
-	arrayValues_.MarkArray();
+	rx_unused = arrayValues_.MarkArray();
 	token tok = parser.next_token(tokenizer::flags::no_flags);
 	if (tok.text() == "]"sv) {
 		return;
@@ -73,7 +73,7 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer
 			return handleTokenName(parser, v, nonIntAllowed, outTok, ctx);
 		case TokenString:
 			if (strAllowed == StringAllowed::Yes) {
-				arrayValues_.MarkArray();
+				rx_unused = arrayValues_.MarkArray();
 				arrayValues_.emplace_back(token2kv(outTok, parser, CompositeAllowed_False, FieldAllowed_False, NullAllowed_True));
 				return {.value = Variant{}, .type = PrimaryToken::Type::Array};
 			} else {
@@ -97,7 +97,7 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer
 	if (type_.FieldByName(outTok.text(), field)) {
 		if (type_.Field(field).IsArray()) {
 			pv.Get(field, fieldValues);
-			arrayValues_.MarkArray();
+			rx_unused = arrayValues_.MarkArray();
 			for (Variant& val : fieldValues) {
 				arrayValues_.emplace_back(std::move(val));
 			}
@@ -254,15 +254,16 @@ void ExpressionEvaluator::handleCommand(tokenizer& parser, const PayloadValue& v
 				return item.RelaxCompare<WithString::Yes, NotComparable::Return>(elem) == ComparationResult::Eq;
 			});
 			if (it != values.end()) {
-				values.erase(it);
+				rx_unused = values.erase(it);
 			}
 		} else {
 			// remove elements from array
-			values.erase(std::remove_if(values.begin(), values.end(),
-										[&item](const auto& elem) {
-											return item.RelaxCompare<WithString::Yes, NotComparable::Return>(elem) == ComparationResult::Eq;
-										}),
-						 values.end());
+			rx_unused = values.erase(std::remove_if(values.begin(), values.end(),
+													[&item](const auto& elem) {
+														return item.RelaxCompare<WithString::Yes, NotComparable::Return>(elem) ==
+															   ComparationResult::Eq;
+													}),
+									 values.end());
 		}
 	}
 	// move results array to class member
@@ -296,7 +297,7 @@ double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const P
 	}
 
 	while (tok.text() == "|"sv) {
-		parser.next_token();
+		parser.skip_token();
 		tok = parser.next_token();
 		if rx_unlikely (tok.text() != "|"sv) {
 			throw Error(errParams, "Expected '|', not '{}'", tok.text());
@@ -328,11 +329,11 @@ double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, 
 		}
 		state_ = StateMultiplyAndDivide;
 		if (tok.text() == "*"sv) {
-			parser.next_token(tokenizer::flags::treat_sign_as_token);
+			parser.skip_token(tokenizer::flags::treat_sign_as_token);
 			left *= performMultiplicationAndDivision(parser, v, tok, ctx);
 		} else {
 			// tok.text() == "/"sv
-			parser.next_token(tokenizer::flags::treat_sign_as_token);
+			parser.skip_token(tokenizer::flags::treat_sign_as_token);
 			const double val = performMultiplicationAndDivision(parser, v, tok, ctx);
 			if (val == 0) {
 				throw Error(errLogic, "Division by zero!");
@@ -353,11 +354,11 @@ double ExpressionEvaluator::performSumAndSubtracting(tokenizer& parser, const Pa
 		}
 		state_ = StateSumAndSubtract;
 		if (tok.text() == "+"sv) {
-			parser.next_token(tokenizer::flags::treat_sign_as_token);
+			parser.skip_token(tokenizer::flags::treat_sign_as_token);
 			left += performMultiplicationAndDivision(parser, v, tok, ctx);
 		} else {
 			// tok.text() == "-"sv
-			parser.next_token(tokenizer::flags::treat_sign_as_token);
+			parser.skip_token(tokenizer::flags::treat_sign_as_token);
 			left -= performMultiplicationAndDivision(parser, v, tok, ctx);
 		}
 	}

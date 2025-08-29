@@ -67,7 +67,7 @@ Error RPCServerFake::Select(cproto::Context& ctx, p_string /*query*/, int /*flag
 	std::this_thread::sleep_for(conf_.selectDelay);
 	int qrId;
 	{
-		std::lock_guard lock{qrMutex_};
+		lock_guard lock{qrMutex_};
 		if (usedQrIds_.size() >= kQueryResultsPoolSize) {
 			return Error{errLogic, "Too many parallel queries"};
 		}
@@ -92,7 +92,7 @@ Error RPCServerFake::CloseResults(cproto::Context& ctx, int reqId, std::optional
 		ctx.respSent = true;
 	}
 	{
-		std::lock_guard lock{qrMutex_};
+		lock_guard lock{qrMutex_};
 		const auto it = usedQrIds_.find(reqId);
 		if (it == usedQrIds_.end()) {
 			return Error(errLogic, "ReqId {} not found", reqId);
@@ -105,7 +105,7 @@ Error RPCServerFake::CloseResults(cproto::Context& ctx, int reqId, std::optional
 }
 
 size_t RPCServerFake::OpenedQRCount() {
-	std::lock_guard lock{qrMutex_};
+	lock_guard lock{qrMutex_};
 	return usedQrIds_.size();
 }
 

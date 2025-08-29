@@ -12,7 +12,7 @@ using namespace item_fields_validator;
 
 const std::string_view kWrongFieldsAmountMsg = "Number of fields for update should be > 0";
 
-class CJsonModifier::Context {
+class [[nodiscard]] CJsonModifier::Context {
 public:
 	Context(const IndexedTagsPath& fieldPath, const VariantArray& v, WrSerializer& ser, std::string_view tuple, FieldModifyMode m,
 			FloatVectorsHolderVector& fvHolder, const Payload* pl = nullptr)
@@ -30,7 +30,7 @@ public:
 		}
 		fieldsArrayOffsets.fill(0);
 	}
-	[[nodiscard]] bool IsForAllItems() const noexcept { return isForAllItems_; }
+	bool IsForAllItems() const noexcept { return isForAllItems_; }
 
 	const VariantArray& value;
 	WrSerializer& wrser;
@@ -51,7 +51,7 @@ private:
 void CJsonModifier::SetFieldValue(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser,
 								  const Payload& pl, FloatVectorsHolderVector& floatVectorsHolder) {
 	auto ctx = initState(tuple, fieldPath, val, ser, &pl, FieldModifyMode::FieldModeSet, floatVectorsHolder);
-	updateFieldInTuple(ctx);
+	rx_unused = updateFieldInTuple(ctx);
 	if (!ctx.fieldUpdated && !ctx.IsForAllItems()) {
 		throw Error(errParams, "[SetFieldValue] Requested field or array's index was not found");
 	}
@@ -60,7 +60,7 @@ void CJsonModifier::SetFieldValue(std::string_view tuple, const IndexedTagsPath&
 void CJsonModifier::SetObject(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser,
 							  const Payload& pl, FloatVectorsHolderVector& floatVectorsHolder) {
 	auto ctx = initState(tuple, fieldPath, val, ser, &pl, FieldModifyMode::FieldModeSetJson, floatVectorsHolder);
-	buildCJSON(ctx);
+	rx_unused = buildCJSON(ctx);
 	if (!ctx.fieldUpdated && !ctx.IsForAllItems()) {
 		throw Error(errParams, "[SetObject] Requested field or array's index was not found");
 	}
@@ -69,7 +69,7 @@ void CJsonModifier::SetObject(std::string_view tuple, const IndexedTagsPath& fie
 void CJsonModifier::RemoveField(std::string_view tuple, const IndexedTagsPath& fieldPath, WrSerializer& wrser) {
 	thread_local FloatVectorsHolderVector floatVectorsHolder;
 	auto ctx = initState(tuple, fieldPath, {}, wrser, nullptr, FieldModeDrop, floatVectorsHolder);
-	dropFieldInTuple(ctx);
+	rx_unused = dropFieldInTuple(ctx);
 }
 
 CJsonModifier::Context CJsonModifier::initState(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val,
@@ -302,7 +302,7 @@ void CJsonModifier::updateArray(TagType atagType, uint32_t count, TagName tagNam
 		switch (atagType) {
 			case TAG_OBJECT: {
 				TagsPathScope<IndexedTagsPath> pathScopeObj(ctx.currObjPath, tagName, i);
-				updateFieldInTuple(ctx);
+				rx_unused = updateFieldInTuple(ctx);
 				break;
 			}
 			case TAG_VARINT:
@@ -374,7 +374,7 @@ void CJsonModifier::copyArray(TagName tagName, Context& ctx) {
 		switch (atagType) {
 			case TAG_OBJECT: {
 				TagsPathScope<IndexedTagsPath> pathScopeObj(ctx.currObjPath, tagName, i);
-				updateFieldInTuple(ctx);
+				rx_unused = updateFieldInTuple(ctx);
 				break;
 			}
 			case TAG_VARINT:
@@ -524,7 +524,7 @@ bool CJsonModifier::dropFieldInTuple(Context& ctx) {
 			switch (atagType) {
 				case TAG_OBJECT: {
 					TagsPathScope<IndexedTagsPath> pathScopeObj(ctx.currObjPath, tagName, i);
-					dropFieldInTuple(ctx);
+					rx_unused = dropFieldInTuple(ctx);
 					break;
 				}
 				case TAG_VARINT:
@@ -628,7 +628,7 @@ bool CJsonModifier::buildCJSON(Context& ctx) {
 				switch (atag.Type()) {
 					case TAG_OBJECT: {
 						TagsPathScope<IndexedTagsPath> pathScopeObj(ctx.currObjPath, tagName);
-						buildCJSON(ctx);
+						rx_unused = buildCJSON(ctx);
 						break;
 					}
 					case TAG_VARINT:

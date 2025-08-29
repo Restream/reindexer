@@ -6,7 +6,7 @@
 namespace reindexer {
 namespace client {
 
-struct ConnectionsPoolData {
+struct [[nodiscard]] ConnectionsPoolData {
 	ConnectionsPoolData(size_t connCount, const ReindexerConfig& cfg, INamespaces::PtrT sharedNss) {
 		assert(connCount);
 		assert(sharedNss);
@@ -21,7 +21,7 @@ struct ConnectionsPoolData {
 };
 
 template <typename CmdT>
-class Connection {
+class [[nodiscard]] Connection {
 public:
 	static constexpr auto kConnectionChSize = 100;
 	Connection(RPCClient& _rx) : rx(_rx), cmdCh_(kConnectionChSize) {}
@@ -48,7 +48,7 @@ private:
 };
 
 template <typename CmdT>
-class ConnectionsPool {
+class [[nodiscard]] ConnectionsPool {
 public:
 	ConnectionsPool(ConnectionsPoolData& data) noexcept : data_(data) {
 		for (auto& c : data_.clients) {

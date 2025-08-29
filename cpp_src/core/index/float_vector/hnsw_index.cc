@@ -122,7 +122,7 @@ void HnswIndexBase<Map>::clearMap() noexcept {
 template <template <typename> typename Map>
 Variant HnswIndexBase<Map>::upsert(ConstFloatVectorView vect, IdType id, bool& clearCache) {
 	if (map_->getCurrentElementCount() >= map_->getMaxElements()) {
-		map_->resizeIndex(newSize(map_->getMaxElements()));
+		rx_unused = map_->resizeIndex(newSize(map_->getMaxElements()));
 	}
 	clearCache = true;
 	map_->addPointNoLock(vect.Data(), id);
@@ -292,7 +292,7 @@ template <template <typename> typename Map>
 void HnswIndexBase<Map>::GrowFor(size_t newElementsCount) {
 	const auto requiredSize = newElementsCount + map_->getCurrentElementCount();
 	if (requiredSize > map_->getMaxElements()) {
-		map_->resizeIndex(requiredSize);
+		rx_unused = map_->resizeIndex(requiredSize);
 	}
 }
 
@@ -312,7 +312,7 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 		return res;
 	}
 
-	class Writer final : public hnswlib::IWriter, private WriterBase {
+	class [[nodiscard]] Writer final : public hnswlib::IWriter, private WriterBase {
 	public:
 		Writer(std::string_view name, WrSerializer& ser, PKGetterF&& getPK, bool isCompositePK) noexcept
 			: hnswlib::IWriter(), WriterBase{ser, std::move(getPK), isCompositePK}, name_{name} {}
@@ -370,7 +370,7 @@ Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isComposite
 		return Error(errParams, "HNSWIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
 	}
 
-	class Reader final : public hnswlib::IReader, private LoaderBase {
+	class [[nodiscard]] Reader final : public hnswlib::IReader, private LoaderBase {
 	public:
 		Reader(std::string_view name, std::string_view data, VecDataGetterF&& getVectorData, bool isCompositePK) noexcept
 			: hnswlib::IReader(), LoaderBase{std::move(getVectorData), isCompositePK}, name_{name}, ser_{data} {}

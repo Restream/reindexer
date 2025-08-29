@@ -5,7 +5,7 @@
 namespace reindexer {
 namespace client {
 
-class RPCTestClient {
+class [[nodiscard]] RPCTestClient {
 public:
 	RPCTestClient() : impl_(ReindexerConfig(), 1, 1) {}
 	Error Connect(const DSN& dsn, const client::ConnectOpts& opts) { return impl_.Connect(dsn, opts); }

@@ -8,8 +8,8 @@
 
 namespace reindexer {
 
-struct typos_context {
-	class TyposVec {
+struct [[nodiscard]] typos_context {
+	class [[nodiscard]] TyposVec {
 	public:
 		using value_type = int8_t;
 		using size_type = uint8_t;

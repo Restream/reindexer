@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-struct TerminalSize {
+struct [[nodiscard]] TerminalSize {
 	int width = 0;
 	int height = 0;
 };

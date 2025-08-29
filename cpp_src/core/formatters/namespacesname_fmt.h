@@ -4,4 +4,4 @@
 #include "fmt/format.h"
 
 template <>
-struct fmt::formatter<reindexer::NamespaceName> : public fmt::formatter<std::string_view> {};
+struct [[nodiscard]] fmt::formatter<reindexer::NamespaceName> : public fmt::formatter<std::string_view> {};

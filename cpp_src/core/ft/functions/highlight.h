@@ -11,7 +11,7 @@ class key_string;
 
 class [[nodiscard]] Highlight {
 public:
-	[[nodiscard]] bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder) const;
+	bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder) const;
 };
 
 }  // namespace reindexer

@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-class EqualPositionComparator {
+class [[nodiscard]] EqualPositionComparator {
 public:
 	EqualPositionComparator(const PayloadType& payloadType) : payloadType_{payloadType}, name_{"EqualPositions"} {}
 
@@ -15,11 +15,14 @@ public:
 	void BindField(const std::string& name, const FieldsPath&, const VariantArray&, CondType);
 	bool Compare(const PayloadValue&, IdType);
 	bool IsBinded() noexcept { return !ctx_.empty(); }
-	[[nodiscard]] int GetMatchedCount() const noexcept { return matchedCount_; }
-	[[nodiscard]] int FieldsCount() const noexcept { return ctx_.size(); }
-	[[nodiscard]] const std::string& Name() const& noexcept { return name_; }
-	[[nodiscard]] const std::string& Dump() const& noexcept { return Name(); }
-	[[nodiscard]] double Cost(double expectedIterations) const noexcept {
+	int GetMatchedCount(bool invert) const noexcept {
+		assertrx_dbg(totalCalls_ >= matchedCount_);
+		return invert ? (totalCalls_ - matchedCount_) : matchedCount_;
+	}
+	int FieldsCount() const noexcept { return ctx_.size(); }
+	const std::string& Name() const& noexcept { return name_; }
+	const std::string& Dump() const& noexcept { return Name(); }
+	double Cost(double expectedIterations) const noexcept {
 		const auto jsonPathComparators = fields_.getTagsPathsLength();
 		// Comparatos with non index fields must have much higher cost, than comparators with index fields
 		return jsonPathComparators
@@ -35,7 +38,7 @@ private:
 	template <typename F>
 	void bindField(const std::string& name, F field, const VariantArray&, CondType, const CollateOpts&);
 
-	struct Context {
+	struct [[nodiscard]] Context {
 		Context(const CollateOpts& collate) : cmpString{collate} {}
 		CondType cond;
 		EqualPositionComparatorTypeImpl<bool> cmpBool;
@@ -47,11 +50,12 @@ private:
 		EqualPositionComparatorTypeImpl<Uuid> cmpUuid;
 	};
 
-	std::vector<Context> ctx_;
-	FieldsSet fields_;
-	PayloadType payloadType_;
-	std::string name_;
+	int totalCalls_{0};
 	int matchedCount_{0};
+	PayloadType payloadType_;
+	FieldsSet fields_;
+	std::vector<Context> ctx_;
+	std::string name_;
 };
 
 }  // namespace reindexer

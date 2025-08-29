@@ -2,7 +2,7 @@
 
 #include "reindexertestapi.h"
 
-class HybridTest : public ::testing::TestWithParam<reindexer::VectorMetric> {
+class [[nodiscard]] HybridTest : public ::testing::TestWithParam<reindexer::VectorMetric> {
 protected:
 	static constexpr std::string_view kNsName = "hybrid_ns";
 	static constexpr std::string_view kFieldNameId = "id";

@@ -14,6 +14,7 @@
 #include <utility>
 #include "debug_macros.h"
 #include "estl/defines.h"
+#include "tools/assertrx.h"
 #include "trivial_reverse_iterator.h"
 #endif	// !REINDEX_DEBUG_CONTAINERS
 
@@ -21,7 +22,7 @@ namespace reindexer {
 #ifdef REINDEX_DEBUG_CONTAINERS
 
 template <typename T, int holdSize = 4, unsigned objSize = sizeof(T)>
-class h_vector : public std::vector<T> {
+class [[nodiscard]] h_vector : public std::vector<T> {
 public:
 	typedef unsigned size_type;
 
@@ -566,6 +567,14 @@ public:
 		is_hdata_ = true;
 		return res;
 	}
+	// This implementation also transfers capacity values
+	void swap(h_vector& other) noexcept {
+		[[maybe_unused]] auto cap1 = capacity();
+		[[maybe_unused]] auto cap2 = other.capacity();
+		std::swap(*this, other);
+		assertrx(capacity() == cap2);
+		assertrx(other.capacity() == cap1);
+	}
 
 protected:
 	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_) : e_.data_; }
@@ -590,7 +599,7 @@ protected:
 	}
 
 #pragma pack(push, 1)
-	struct edata {
+	struct [[nodiscard]] edata {
 		pointer data_;
 		size_type cap_;
 	};

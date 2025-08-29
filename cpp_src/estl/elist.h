@@ -8,7 +8,7 @@ namespace reindexer {
 // For some older libstdc++ implementation, std::list::size() has O(N) complection
 // (for example, Centos7 with devtoolsets is affected to this issue)
 template <typename T, typename Allocator = std::allocator<T>>
-class elist {
+class [[nodiscard]] elist {
 public:
 	using iterator = typename std::list<T, Allocator>::iterator;
 	using const_iterator = typename std::list<T, Allocator>::const_iterator;

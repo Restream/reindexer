@@ -1,4 +1,5 @@
 #include "reindexer_api.h"
+#include <thread>
 #include "core/system_ns_names.h"
 
 using namespace reindexer;

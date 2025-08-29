@@ -651,7 +651,7 @@ ComparationResult Variant::relaxCompareWithString(std::string_view str) const no
 	}
 }
 
-class Comparator {
+class [[nodiscard]] Comparator {
 public:
 	explicit Comparator(const Variant& v1, const Variant& v2) noexcept : v1_{v1}, v2_{v2} {}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Bool) const noexcept {
@@ -872,7 +872,7 @@ Variant Variant::convert(KeyValueType type, const PayloadType* payloadType, cons
 		return *this;
 	}
 	Variant dst(*this);
-	dst.convert(type, payloadType, fields);
+	rx_unused = dst.convert(type, payloadType, fields);
 	return dst;
 }
 
@@ -903,13 +903,13 @@ Variant& Variant::convert(KeyValueType type, const PayloadType* payloadType, con
 		[&](KeyValueType::Composite) {
 			variant_.type.EvaluateOneOf(
 				[&](KeyValueType::Tuple) {
-					assertrx(payloadType && fields);
+					assertrx_throw(payloadType && fields);
 					convertToComposite(*payloadType, *fields);
 				},
 				[](KeyValueType::Composite) noexcept {},
 				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
 						  KeyValueType::String, KeyValueType::Uuid>) {
-					assertrx(payloadType && fields);
+					assertrx_throw(payloadType && fields);
 					Variant tmp{VariantArray{std::move(*this)}};
 					tmp.convertToComposite(*payloadType, *fields);
 					*this = std::move(tmp);
@@ -1295,7 +1295,7 @@ Variant::operator const PayloadValue&() const noexcept {
 }
 
 template <typename T>
-void Variant::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
+void Variant::Dump(T& os, const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) const {
 	if (isUuid()) {
 		os << Uuid{*this};
 	} else {
@@ -1312,8 +1312,14 @@ void Variant::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
 			[&](KeyValueType::Int64) { os << this->operator int64_t(); }, [&](KeyValueType::Double) { os << this->operator double(); },
 			[&](KeyValueType::Float) { os << this->operator float(); }, [&](KeyValueType::Tuple) { getCompositeValues().Dump(os); },
 			[&](KeyValueType::Uuid) { os << Uuid{*this}; }, [&](KeyValueType::FloatVector) { os << "[??]"; },
-			[&](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>) { os << "??"; });
+			[&](KeyValueType::Composite) { os << (pt ? As<std::string>(pt, fieldsSet) : "??"); },
+			[&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) { os << "??"; });
 	}
+}
+
+template <typename T>
+void Variant::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
+	Dump(os, PayloadType{}, FieldsSet{}, checkPrintableString);
 }
 
 template void Variant::Dump(WrSerializer&, CheckIsStringPrintable) const;
@@ -1321,15 +1327,20 @@ template void Variant::Dump(std::ostream&, CheckIsStringPrintable) const;
 template void Variant::Dump(std::stringstream&, CheckIsStringPrintable) const;
 
 template <typename T>
-void VariantArray::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
+void VariantArray::Dump(T& os, const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) const {
 	os << '{';
 	for (auto& arg : *this) {
 		if (&arg != &at(0)) {
 			os << ", ";
 		}
-		arg.Dump(os, checkPrintableString);
+		arg.Dump(os, pt, fieldsSet, checkPrintableString);
 	}
 	os << '}';
+}
+
+template <typename T>
+void VariantArray::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
+	Dump(os, PayloadType{}, FieldsSet{}, checkPrintableString);
 }
 
 template void VariantArray::Dump(WrSerializer&, CheckIsStringPrintable) const;
@@ -1337,14 +1348,24 @@ template void VariantArray::Dump(std::ostream&, CheckIsStringPrintable) const;
 template void VariantArray::Dump(std::stringstream&, CheckIsStringPrintable) const;
 
 template <typename T>
-static std::string dumpImpl(T&& obj, CheckIsStringPrintable checkPrintableString) {
+static std::string dumpImpl(T&& obj, const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) {
 	std::stringstream ss;
-	obj.Dump(ss, checkPrintableString);
+	obj.Dump(ss, pt, fieldsSet, checkPrintableString);
 	return ss.str();
 }
 
-std::string Variant::Dump(CheckIsStringPrintable checkPrintableString) const { return dumpImpl(*this, checkPrintableString); }
-std::string VariantArray::Dump(CheckIsStringPrintable checkPrintableString) const { return dumpImpl(*this, checkPrintableString); }
+std::string Variant::Dump(CheckIsStringPrintable checkPrintableString) const {
+	return dumpImpl(*this, PayloadType{}, FieldsSet{}, checkPrintableString);
+}
+std::string Variant::Dump(const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) const {
+	return dumpImpl(*this, pt, fieldsSet, checkPrintableString);
+}
+std::string VariantArray::Dump(CheckIsStringPrintable checkPrintableString) const {
+	return dumpImpl(*this, PayloadType{}, FieldsSet{}, checkPrintableString);
+}
+std::string VariantArray::Dump(const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) const {
+	return dumpImpl(*this, pt, fieldsSet, checkPrintableString);
+}
 
 VariantArray::operator Point() const {
 	if (size() != 2) {

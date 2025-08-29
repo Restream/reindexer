@@ -7,7 +7,7 @@
 namespace reindexer {
 
 template <typename Map>
-class FastIndexText final : public IndexText<Map> {
+class [[nodiscard]] FastIndexText final : public IndexText<Map> {
 	using Base = IndexText<Map>;
 
 public:

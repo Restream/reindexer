@@ -4,19 +4,17 @@
 #include "core/system_ns_names.h"
 #include "reindexer_api.h"
 
-class SelectorPlanTest : public ReindexerApi {
+class [[nodiscard]] SelectorPlanTest : public ReindexerApi {
 public:
 	void SetUp() override {
 		ReindexerApi::SetUp();
 
-		Error err = rt.reindexer->OpenNamespace(btreeNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(btreeNs);
 		DefineNamespaceDataset(
 			btreeNs,
 			{IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{kFieldTree1, "tree", "int", IndexOpts(), 0},
 			 IndexDeclaration{kFieldTree2, "tree", "int", IndexOpts(), 0}, IndexDeclaration{kFieldHash, "hash", "int", IndexOpts(), 0}});
-		err = rt.reindexer->OpenNamespace(unbuiltBtreeNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(unbuiltBtreeNs);
 		DefineNamespaceDataset(
 			unbuiltBtreeNs,
 			{IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{kFieldTree1, "tree", "int", IndexOpts(), 0},

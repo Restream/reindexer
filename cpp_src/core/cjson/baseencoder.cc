@@ -91,7 +91,7 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 		}
 
 		size_t endPos = 0;
-		computeObjectLength(tagsLengths_, 0, endPos);
+		rx_unused = computeObjectLength(tagsLengths_, 0, endPos);
 	}
 	return tagsLengths_;
 }
@@ -106,7 +106,7 @@ void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoi
 	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(rowid), &ds->GetJoinedItemFieldsFilter(rowid));
 	for (size_t i = 0; i < itemsCount; ++i) {
 		ConstPayload pl(ds->GetJoinedItemPayload(rowid, i));
-		subEnc.GetTagsMeasures(pl, nullptr);
+		rx_unused = subEnc.GetTagsMeasures(pl, nullptr);
 	}
 }
 
@@ -236,12 +236,12 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 						auto arrNode = builder.Array(tagName);
 						for (size_t i = 0; i < atagCount; ++i) {
 							indexedTagsPath_.back().SetIndex(i);
-							encode(pl, rdser, arrNode, true);
+							rx_unused = encode(pl, rdser, arrNode, true);
 						}
 					} else {
 						thread_local static Builder arrNode;
 						for (size_t i = 0; i < atagCount; ++i) {
-							encode(pl, rdser, arrNode, false);
+							rx_unused = encode(pl, rdser, arrNode, false);
 						}
 					}
 				} else if (visible) {
@@ -343,7 +343,7 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 				if (atagType == TAG_OBJECT) {
 					for (size_t i = 0; i < atagCount; i++) {
 						tagsLengths_.push_back(StartArrayItem);
-						collectTagsSizes(pl, rdser);
+						rx_unused = collectTagsSizes(pl, rdser);
 						tagsLengths_.push_back(EndArrayItem);
 					}
 				} else {

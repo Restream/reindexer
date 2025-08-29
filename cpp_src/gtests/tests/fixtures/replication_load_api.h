@@ -6,7 +6,7 @@
 #include "gtests/tools.h"
 #include "replication_api.h"
 
-class ReplicationLoadApi : public ReplicationApi {
+class [[nodiscard]] ReplicationLoadApi : public ReplicationApi {
 public:
 	void InitNs() {
 		counter_ = 0;

@@ -5,7 +5,7 @@
 
 namespace {
 
-[[nodiscard]] static int toSigned(reindexer::ComparationResult compRes) noexcept {
+static int toSigned(reindexer::ComparationResult compRes) noexcept {
 	using UnderlyingType = std::underlying_type_t<reindexer::ComparationResult>;
 	const auto res = static_cast<UnderlyingType>(compRes);
 	return static_cast<int>(res & (static_cast<UnderlyingType>(reindexer::ComparationResult::Lt) |
@@ -62,7 +62,7 @@ static void copy(It begin, It end, std::vector<FacetResult>& facets) {
 	}
 }
 
-class Aggregator::MultifieldComparator {
+class [[nodiscard]] Aggregator::MultifieldComparator {
 public:
 	MultifieldComparator(const h_vector<SortingEntry, 1>&, const FieldsSet&, const PayloadType&);
 	bool HaveCompareByCount() const { return haveCompareByCount; }
@@ -70,7 +70,7 @@ public:
 	bool operator()(const std::pair<PayloadValue, int>& lhs, const std::pair<PayloadValue, int>& rhs) const;
 
 private:
-	struct CompOpts {
+	struct [[nodiscard]] CompOpts {
 		CompOpts() : direction{Direction::Asc} {}
 		CompOpts(const FieldsSet& fs, Direction d) : fields{fs}, direction{d} {}
 		FieldsSet fields;  // if empty - compare by count
@@ -83,7 +83,7 @@ private:
 	void insertField(size_t toIdx, const FieldsSet& from, size_t fromIdx, int& tagsPathIdx);
 };
 
-class Aggregator::SinglefieldComparator {
+class [[nodiscard]] Aggregator::SinglefieldComparator {
 	enum CompareBy { ByValue, ByCount };
 
 public:
@@ -95,7 +95,7 @@ public:
 	bool operator()(const std::pair<Variant, int>& lhs, const std::pair<Variant, int>& rhs) const;
 
 private:
-	struct CompOpts {
+	struct [[nodiscard]] CompOpts {
 		CompOpts() = default;
 		CompOpts(CompareBy compBy, Direction direc) : compareBy(compBy), direction(direc) {}
 		CompareBy compareBy;
@@ -132,7 +132,7 @@ Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEnt
 	}
 	if (compOpts_.size() > 1 && compOpts_.back().fields.empty()) {
 		auto end = compOpts_.end();
-		compOpts_.erase(--end);
+		rx_unused = compOpts_.erase(--end);
 	}
 	for (const auto& opt : compOpts_) {
 		if (opt.fields.empty()) {
@@ -184,7 +184,7 @@ void Aggregator::MultifieldComparator::insertField(size_t toIdx, const FieldsSet
 	}
 }
 
-struct Aggregator::MultifieldOrderedMap : public btree::btree_map<PayloadValue, int, Aggregator::MultifieldComparator> {
+struct [[nodiscard]] Aggregator::MultifieldOrderedMap : public btree::btree_map<PayloadValue, int, Aggregator::MultifieldComparator> {
 	using Base = btree::btree_map<PayloadValue, int, MultifieldComparator>;
 	using Base::Base;
 	MultifieldOrderedMap() = delete;
@@ -237,7 +237,6 @@ Aggregator::Aggregator(const PayloadType& payloadType, const FieldsSet& fields, 
 	  names_(names),
 	  limit_(limit),
 	  offset_(offset),
-	  distinctChecker_(*this),
 	  compositeIndexFields_(compositeIndexFields) {
 	switch (aggType_) {
 		case AggFacet:

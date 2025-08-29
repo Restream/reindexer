@@ -23,7 +23,7 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 		tagName = tag.Name();
 		assertrx_dbg(!tagName.IsEmpty());
 		// Check if tag exists
-		(void)tagsMatcher_.tag2name(tagName);
+		rx_unused = tagsMatcher_.tag2name(tagName);
 		tagsPath_.emplace_back(tagName);
 	}
 
@@ -168,7 +168,7 @@ void CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 	}
 }
 
-[[nodiscard]] Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer& rdser, KeyValueType fieldType) {
+Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer& rdser, KeyValueType fieldType) {
 	if (fieldType.Is<KeyValueType::String>() && tagType != TagType::TAG_STRING) {
 		auto& back = storage_.emplace_back(rdser.GetRawVariant(KeyValueType{tagType}).As<key_string>());
 		return Variant(p_string(back), Variant::noHold);

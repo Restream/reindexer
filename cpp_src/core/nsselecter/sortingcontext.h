@@ -46,18 +46,18 @@ struct [[nodiscard]] SortingContext {
 		using Base = std::variant<FieldEntry, JoinedFieldEntry, ExpressionEntry>;
 		using Base::Base;
 		reindexer::Desc Desc() const;
-		[[nodiscard]] const Base& AsVariant() const& noexcept { return *this; }
+		const Base& AsVariant() const& noexcept { return *this; }
 		auto AsVariant() const&& = delete;
 	};
 
-	[[nodiscard]] int sortId() const noexcept {
+	int sortId() const noexcept {
 		if (!enableSortOrders) {
 			return 0;
 		}
 		const Index* sortIdx = sortIndex();
 		return sortIdx ? int(sortIdx->SortId()) : 0;
 	}
-	[[nodiscard]] Index* sortIndex() const noexcept {
+	Index* sortIndex() const noexcept {
 		if (entries.empty()) {
 			return nullptr;
 		}
@@ -67,7 +67,7 @@ struct [[nodiscard]] SortingContext {
 		}
 		return nullptr;
 	}
-	[[nodiscard]] const Index* sortIndexIfOrdered() const noexcept {
+	const Index* sortIndexIfOrdered() const noexcept {
 		if (entries.empty() || !isIndexOrdered() || !enableSortOrders) {
 			return nullptr;
 		}
@@ -77,14 +77,14 @@ struct [[nodiscard]] SortingContext {
 		}
 		return nullptr;
 	}
-	[[nodiscard]] const FieldEntry* sortFieldEntryIfOrdered() const noexcept {
+	const FieldEntry* sortFieldEntryIfOrdered() const noexcept {
 		if (entries.empty() || !isIndexOrdered() || !enableSortOrders) {
 			return nullptr;
 		}
 		return std::get_if<FieldEntry>(&entries[0]);
 	}
-	[[nodiscard]] bool isOptimizationEnabled() const noexcept { return (uncommitedIndex >= 0) && sortIndex(); }
-	[[nodiscard]] bool isIndexOrdered() const noexcept {
+	bool isOptimizationEnabled() const noexcept { return (uncommitedIndex >= 0) && sortIndex(); }
+	bool isIndexOrdered() const noexcept {
 		if (entries.empty()) {
 			return false;
 		}
@@ -94,7 +94,7 @@ struct [[nodiscard]] SortingContext {
 		}
 		return false;
 	}
-	[[nodiscard]] const Entry& getFirstColumnEntry() const noexcept {
+	const Entry& getFirstColumnEntry() const noexcept {
 		assertrx_throw(!entries.empty());
 		return entries[0];
 	}
@@ -118,7 +118,7 @@ struct [[nodiscard]] SortingContext {
 	std::vector<h_vector<double, 32>> exprResults;
 };
 
-struct SortingOptions {
+struct [[nodiscard]] SortingOptions {
 	SortingOptions(const SortingContext& sortingContext) noexcept
 		: forcedMode{sortingContext.forcedMode},
 		  multiColumn{sortingContext.entries.size() > 1},
@@ -137,9 +137,7 @@ struct SortingOptions {
 			}
 		}
 	}
-	[[nodiscard]] bool postLoopSortingRequired() const noexcept {
-		return multiColumn || usingGeneralAlgorithm || forcedMode || haveExpression;
-	}
+	bool postLoopSortingRequired() const noexcept { return multiColumn || usingGeneralAlgorithm || forcedMode || haveExpression; }
 
 	bool byBtreeIndex = false;
 	bool usingGeneralAlgorithm = true;

@@ -7,14 +7,14 @@
 namespace reindexer {
 
 template <NotComparable notComparable>
-struct RelaxedComparator {
+struct [[nodiscard]] RelaxedComparator {
 	static bool equal(const Variant& lhs, const Variant& rhs) {
 		return lhs.RelaxCompare<WithString::Yes, notComparable>(rhs) == ComparationResult::Eq;
 	}
 };
 
 template <NotComparable notComparable>
-struct RelaxedHasher {
+struct [[nodiscard]] RelaxedHasher {
 	constexpr static size_t indexesCount = notComparable == NotComparable::Return ? 8 : 7;
 	static std::pair<size_t, size_t> hash(const Variant& v) noexcept(notComparable == NotComparable::Return) {
 		return v.Type().EvaluateOneOf(

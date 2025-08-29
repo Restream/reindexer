@@ -21,7 +21,7 @@ void BaseHolder::AddDada(const wchar_t* key, VDocIdType id, int pos, int field) 
 		it = res.first;
 	}
 
-	it->second.Add(id, pos, field);
+	rx_unused = it->second.Add(id, pos, field);
 
 #else
 	uint32_t current_hash = reindexer::HashTreGram(key);
@@ -30,7 +30,7 @@ void BaseHolder::AddDada(const wchar_t* key, VDocIdType id, int pos, int field) 
 		auto res = tmp_data_.emplace(current_hash, IdRelSet());
 		it = res.first;
 	}
-	it->second.Add(id, pos, field);
+	rx_unused = it->second.Add(id, pos, field);
 #endif
 }
 

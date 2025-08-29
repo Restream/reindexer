@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-[[nodiscard]] CondType InvertJoinCondition(CondType cond) {
+CondType InvertJoinCondition(CondType cond) {
 	switch (cond) {
 		case CondSet:
 			return CondSet;
@@ -30,7 +30,7 @@ namespace reindexer {
 	throw Error(errForbidden, "Not invertible conditional operator '{}({})' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
 }
 
-[[nodiscard]] CondType InvertNotCondition(CondType cond) {
+CondType InvertNotCondition(CondType cond) {
 	switch (cond) {
 		case CondGt:
 			return CondLe;
@@ -54,7 +54,7 @@ namespace reindexer {
 	throw Error(errForbidden, "Not invertible conditional operator '{}({})' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
 }
 
-[[nodiscard]] std::string_view CondTypeToStr(CondType t) {
+std::string_view CondTypeToStr(CondType t) {
 	using namespace std::string_view_literals;
 	switch (t) {
 		case CondAny:
@@ -87,7 +87,7 @@ namespace reindexer {
 	throw Error{errNotValid, "Invalid condition type: {}", int(t)};
 }
 
-[[nodiscard]] std::string_view CondTypeToStrShort(CondType cond) {
+std::string_view CondTypeToStrShort(CondType cond) {
 	using namespace std::string_view_literals;
 	switch (cond) {
 		case CondAny:
@@ -120,7 +120,7 @@ namespace reindexer {
 	throw Error{errNotValid, "Invalid condition type: {}", int(cond)};
 }
 
-[[nodiscard]] std::string_view TagTypeToStr(TagType t) {
+std::string_view TagTypeToStr(TagType t) {
 	using namespace std::string_view_literals;
 	switch (t) {
 		case TAG_VARINT:
@@ -147,7 +147,7 @@ namespace reindexer {
 	throw Error{errNotValid, "Invalid tag type: {}", int(t)};
 }
 
-[[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept {
+std::string_view AggTypeToStr(AggType t) noexcept {
 	using namespace std::string_view_literals;
 	switch (t) {
 		case AggMin:
@@ -172,7 +172,7 @@ namespace reindexer {
 	return "unknown"sv;
 }
 
-[[nodiscard]] std::string_view JoinTypeName(JoinType type) {
+std::string_view JoinTypeName(JoinType type) {
 	using namespace std::string_view_literals;
 
 	switch (type) {

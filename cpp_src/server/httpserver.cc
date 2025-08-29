@@ -844,18 +844,18 @@ int HTTPServer::Check(http::Context& ctx) {
 
 			uint64_t epoch = 1;
 			sz = sizeof(epoch);
-			alloc_ext::mallctl("epoch", &epoch, &sz, &epoch, sz);
+			rx_unused = alloc_ext::mallctl("epoch", &epoch, &sz, &epoch, sz);
 
-			alloc_ext::mallctl("stats.resident", &val, &sz, NULL, 0);
+			rx_unused = alloc_ext::mallctl("stats.resident", &val, &sz, NULL, 0);
 			builder.Put("heap_size", val);
 
-			alloc_ext::mallctl("stats.allocated", &val, &sz, NULL, 0);
+			rx_unused = alloc_ext::mallctl("stats.allocated", &val, &sz, NULL, 0);
 			builder.Put("current_allocated_bytes", val);
 
-			alloc_ext::mallctl("stats.active", &val1, &sz, NULL, 0);
+			rx_unused = alloc_ext::mallctl("stats.active", &val1, &sz, NULL, 0);
 			builder.Put("pageheap_free", val1 - val);
 
-			alloc_ext::mallctl("stats.retained", &val, &sz, NULL, 0);
+			rx_unused = alloc_ext::mallctl("stats.retained", &val, &sz, NULL, 0);
 			builder.Put("pageheap_unmapped", val);
 		}
 #elif REINDEX_WITH_GPERFTOOLS
@@ -1836,7 +1836,7 @@ std::string HTTPServer::getNameFromJson(std::string_view json) {
 }
 
 std::shared_ptr<Transaction> HTTPServer::getTx(const std::string& dbName, std::string_view txId) {
-	std::lock_guard lck(txMtx_);
+	lock_guard lck(txMtx_);
 	auto found = txMap_.find(txId);
 	if (found == txMap_.end()) {
 		throw http::HttpStatus(Error(errNotFound, "Invalid tx id"sv));
@@ -1857,7 +1857,7 @@ std::string HTTPServer::addTx(std::string dbName, Transaction&& tx) {
 	txInfo.dbName = std::move(dbName);
 	txInfo.txDeadline = now + serverConfig_.TxIdleTimeout;
 
-	std::lock_guard lck(txMtx_);
+	lock_guard lck(txMtx_);
 	auto result = txMap_.try_emplace(txId, std::move(txInfo));
 	if (!result.second) {
 		throw Error(errLogic, "Tx id conflict");
@@ -1866,7 +1866,7 @@ std::string HTTPServer::addTx(std::string dbName, Transaction&& tx) {
 }
 
 void HTTPServer::removeTx(const std::string& dbName, std::string_view txId) {
-	std::lock_guard lck(txMtx_);
+	lock_guard lck(txMtx_);
 	const auto found = txMap_.find(txId);
 	if (found == txMap_.end() || !iequals(found.value().dbName, dbName)) {
 		throw Error(errNotFound, "Invalid tx id");
@@ -1877,7 +1877,7 @@ void HTTPServer::removeTx(const std::string& dbName, std::string_view txId) {
 void HTTPServer::removeExpiredTx() {
 	const auto now = TxDeadlineClock::now_coarse();
 
-	std::lock_guard lck(txMtx_);
+	lock_guard lck(txMtx_);
 	for (auto it = txMap_.begin(); it != txMap_.end();) {
 		if (it->second.txDeadline <= now) {
 			auto ctx = MakeSystemAuthContext();
@@ -1902,7 +1902,7 @@ int HTTPServer::getAuth(http::Context& ctx, AuthContext& auth, const std::string
 
 	if (authHeader.length() < 6) {
 		ctx.writer->SetHeader({"WWW-Authenticate"sv, R"(Basic realm="reindexer")"});
-		ctx.String(http::StatusUnauthorized, "Forbidden"sv);
+		rx_unused = ctx.String(http::StatusUnauthorized, "Forbidden"sv);
 		return -1;
 	}
 
@@ -1918,7 +1918,7 @@ int HTTPServer::getAuth(http::Context& ctx, AuthContext& auth, const std::string
 	const auto err = dbMgr_.Login(dbName, auth);
 	if (!err.ok()) {
 		ctx.writer->SetHeader({"WWW-Authenticate"sv, R"(Basic realm="reindexer")"});
-		ctx.String(http::StatusUnauthorized, err.whatStr());
+		rx_unused = ctx.String(http::StatusUnauthorized, err.whatStr());
 		return -1;
 	}
 

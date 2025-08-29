@@ -3,12 +3,12 @@
 
 namespace {
 
-[[nodiscard]] std::string anyComparatorCondStr() {
+std::string anyComparatorCondStr() {
 	using namespace std::string_literals;
 	return "IS NOT NULL"s;
 }
 
-[[nodiscard]] std::string emptyComparatorCondStr() {
+std::string emptyComparatorCondStr() {
 	using namespace std::string_literals;
 	return "IS NULL"s;
 }
@@ -36,7 +36,7 @@ ComparatorNotIndexedImplBase<CondSet>::ComparatorNotIndexedImplBase(const Varian
 		assertrx_dbg(!v.IsNullValue());
 		auto t = v.Type();
 		if rx_likely (t.Is<KeyValueType::String>() || t.Is<KeyValueType::Uuid>() || t.IsNumeric()) {
-			values_.insert(v);
+			rx_unused = values_.insert(v);
 		} else {
 			throw Error{errQueryExec, "Value type in CondSet for non indexed field must be string, numeric or uuid. Value type is '{}'",
 						t.Name()};
@@ -61,21 +61,21 @@ reindexer::comparators::ComparatorNotIndexedImpl<CondAllSet, false>::ComparatorN
 	int i = 0;
 	for (const Variant& v : values) {
 		assertrx_dbg(!v.IsNullValue());
-		values_.emplace(v, i);
+		rx_unused = values_.emplace(v, i);
 		++i;
 	}
 }
 
 template <CondType Cond>
-[[nodiscard]] std::string ComparatorNotIndexedImplBase<Cond>::ConditionStr() const {
+std::string ComparatorNotIndexedImplBase<Cond>::ConditionStr() const {
 	return fmt::format("{} {}", CondToStr<Cond>(), value_.As<std::string>());
 }
 
-[[nodiscard]] std::string ComparatorNotIndexedImplBase<CondRange>::ConditionStr() const {
+std::string ComparatorNotIndexedImplBase<CondRange>::ConditionStr() const {
 	return fmt::format("RANGE({} {})", value1_.As<std::string>(), value2_.As<std::string>());
 }
 
-[[nodiscard]] std::string ComparatorNotIndexedImplBase<CondSet>::ConditionStr() const {
+std::string ComparatorNotIndexedImplBase<CondSet>::ConditionStr() const {
 	using namespace std::string_literals;
 	if (values_.empty()) {
 		return "IN []"s;
@@ -84,19 +84,19 @@ template <CondType Cond>
 	}
 }
 
-[[nodiscard]] std::string ComparatorNotIndexedImplBase<CondLike>::ConditionStr() const { return fmt::format("LIKE \"{}\"", valueView_); }
+std::string ComparatorNotIndexedImplBase<CondLike>::ConditionStr() const { return fmt::format("LIKE \"{}\"", valueView_); }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondAny, false>::ConditionStr() const { return anyComparatorCondStr(); }
+std::string ComparatorNotIndexedImpl<CondAny, false>::ConditionStr() const { return anyComparatorCondStr(); }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondAny, true>::ConditionStr() const { return anyComparatorCondStr(); }
+std::string ComparatorNotIndexedImpl<CondAny, true>::ConditionStr() const { return anyComparatorCondStr(); }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondEmpty, false>::ConditionStr() const { return emptyComparatorCondStr(); }
+std::string ComparatorNotIndexedImpl<CondEmpty, false>::ConditionStr() const { return emptyComparatorCondStr(); }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondDWithin, false>::ConditionStr() const {
+std::string ComparatorNotIndexedImpl<CondDWithin, false>::ConditionStr() const {
 	return fmt::format("DWITHIN(POINT({:.4f} {:.4f}), {:.4f})", point_.X(), point_.Y(), distance_);
 }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondAllSet, false>::ConditionStr() const {
+std::string ComparatorNotIndexedImpl<CondAllSet, false>::ConditionStr() const {
 	if (values_.empty()) {
 		return fmt::format("ALLSET []");
 	} else {
@@ -106,7 +106,7 @@ template <CondType Cond>
 
 }  // namespace comparators
 
-[[nodiscard]] std::string ComparatorNotIndexed::ConditionStr() const {
+std::string ComparatorNotIndexed::ConditionStr() const {
 	return std::visit([&](const auto& impl) { return impl.ConditionStr(); }, impl_);
 }
 

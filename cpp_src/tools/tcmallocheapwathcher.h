@@ -14,7 +14,7 @@ class MallocExtension;
 
 namespace reindexer {
 
-class TCMallocHeapWathcher {
+class [[nodiscard]] TCMallocHeapWathcher {
 public:
 	TCMallocHeapWathcher();
 	explicit TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio);

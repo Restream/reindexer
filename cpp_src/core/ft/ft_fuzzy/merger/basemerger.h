@@ -13,7 +13,7 @@ class RdxContext;
 
 namespace search_engine {
 
-struct IDCtx {
+struct [[nodiscard]] IDCtx {
 	const reindexer::h_vector<reindexer::IdRelType::PosType, 3>* data;
 	int pos;
 	double* max_proc{nullptr};
@@ -23,14 +23,14 @@ struct IDCtx {
 	double proc;
 	word_size_map* sizes{nullptr};
 };
-struct ResultMerger {
+struct [[nodiscard]] ResultMerger {
 	int src_pos;
 	int boost;
 	int pos;
 	double proc;
 };
 
-class MergedData {
+class [[nodiscard]] MergedData {
 public:
 	MergedData(size_t id, const IDCtx& ctx) : id_(id) {
 		size_it_ = ctx.sizes->find(id_);
@@ -50,26 +50,26 @@ private:
 	ResultMerger prev_;
 	word_size_map::iterator size_it_;
 };
-struct SearchResult {
+struct [[nodiscard]] SearchResult {
 	std::shared_ptr<std::vector<MergedData>> data_;
 	double max_proc_;
 };
 
-struct FirstResult {
+struct [[nodiscard]] FirstResult {
 	const reindexer::AdvacedPackedVec* data{nullptr};
 	const reindexer::FtDslOpts* opts{nullptr};
 	int pos;
 	double proc;
 };
 
-struct MergeCtx {
+struct [[nodiscard]] MergeCtx {
 	std::vector<FirstResult>* results{nullptr};
 	const reindexer::FtFuzzyConfig* cfg{nullptr};
 	size_t total_size;
 	word_size_map* sizes{nullptr};
 };
 
-class BaseMerger {
+class [[nodiscard]] BaseMerger {
 public:
 	BaseMerger(int max_id, int min_id);
 

@@ -10,23 +10,21 @@ using reindexer::KnnSearchParams;
 using reindexer::VectorMetric;
 using reindexer::Reindexer;
 
-class VectorStorageApi : public virtual ::testing::Test {
+class [[nodiscard]] VectorStorageApi : public virtual ::testing::Test {
 protected:
 	void SetUp() override {
 		const std::string kDir = getTestStoragePath();
 		const std::string kDsn = getDSN();
 		deletedIds_.clear();
 		rt.reindexer.reset();
-		reindexer::fs::RmDirAll(kDir);
+		rx_unused = reindexer::fs::RmDirAll(kDir);
 		rt.reindexer = std::make_shared<Reindexer>();
-		auto err = rt.reindexer->Connect(kDsn);
-		ASSERT_TRUE(err.ok()) << err.what();
-
+		rt.Connect(kDsn);
 		rt.OpenNamespace(kNsName, StorageOpts().Enabled().CreateIfMissing());
 	}
 	void TearDown() override {}
 
-	struct JsonResults {
+	struct [[nodiscard]] JsonResults {
 		std::vector<std::string> items;
 		std::vector<reindexer::RankT> ranks;
 	};
@@ -134,8 +132,7 @@ protected:
 	void reloadStorage() {
 		rt.reindexer.reset();
 		rt.reindexer = std::make_shared<Reindexer>();
-		auto err = rt.reindexer->Connect(getDSN());
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Connect(getDSN());
 	}
 	void validateResults(const JsonResults& expected, const JsonResults& actual) {
 		ASSERT_EQ(expected.items.size(), actual.items.size());
@@ -222,7 +219,7 @@ TEST_F(VectorStorageApi, FloatStorageReload) try {
 	constexpr static auto kQueriesCount = 20;
 	constexpr std::string_view kNoIdx = "none";
 
-	struct IndexParams {
+	struct [[nodiscard]] IndexParams {
 		std::string_view name;
 		size_t dims;
 		KnnSearchParams params;

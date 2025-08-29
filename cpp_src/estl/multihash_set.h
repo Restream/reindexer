@@ -8,7 +8,7 @@
 namespace reindexer {
 
 template <typename S, typename K, typename Derived, size_t N, typename H, typename C>
-class MultiHashSetImpl {
+class [[nodiscard]] MultiHashSetImpl {
 public:
 	using StoringType = S;
 	using KeyType = K;
@@ -22,7 +22,7 @@ public:
 			i.resize(capacity_);
 		}
 	}
-	[[nodiscard]] bool empty() const noexcept { return data_.empty(); }
+	bool empty() const noexcept { return data_.empty(); }
 	template <typename... Args>
 	std::pair<Iterator, bool> emplace(Args&&... args) {
 		return insert(StoringType{std::forward<Args>(args)...});
@@ -69,7 +69,7 @@ public:
 		++size_;
 		return std::make_pair(data_.cbegin() + s, true);
 	}
-	[[nodiscard]] Iterator find(const KeyType& k) const {
+	Iterator find(const KeyType& k) const {
 		auto [firstIdx, hash] = H::hash(k);
 		assertrx_throw(firstIdx < indexes_.size());
 		hash %= capacity_;
@@ -96,9 +96,9 @@ public:
 		}
 		return cend();
 	}
-	[[nodiscard]] Iterator cbegin() const noexcept { return data_.cbegin(); }
-	[[nodiscard]] Iterator cend() const noexcept { return data_.cend(); }
-	[[nodiscard]] size_t size() const noexcept { return data_.size(); }
+	Iterator cbegin() const noexcept { return data_.cbegin(); }
+	Iterator cend() const noexcept { return data_.cend(); }
+	size_t size() const noexcept { return data_.size(); }
 
 private:
 	StoreType data_;
@@ -108,7 +108,7 @@ private:
 };
 
 template <typename T, size_t N, typename H, typename C>
-class MultiHashSet : private MultiHashSetImpl<T, T, MultiHashSet<T, N, H, C>, N, H, C> {
+class [[nodiscard]] MultiHashSet : private MultiHashSetImpl<T, T, MultiHashSet<T, N, H, C>, N, H, C> {
 	using Base = MultiHashSetImpl<T, T, MultiHashSet<T, N, H, C>, N, H, C>;
 
 public:

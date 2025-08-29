@@ -4,7 +4,7 @@
 
 #include "base_fixture.h"
 
-class Geometry : private BaseFixture {
+class [[nodiscard]] Geometry : private BaseFixture {
 public:
 	~Geometry() override = default;
 	Geometry(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {

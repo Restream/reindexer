@@ -51,7 +51,7 @@ private:
 	void setDumpMode(const std::string& mode);
 	Error getSuggestions(const std::string& input, std::vector<std::string>& suggestions) noexcept;
 	void loadVariables();
-	[[nodiscard]] reindexer::DSN getCurrentDsn(bool withPath = false) const;
+	reindexer::DSN getCurrentDsn(bool withPath = false) const;
 	void queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
 
 	void commandSelect(std::string_view);
@@ -75,8 +75,8 @@ private:
 	void seedBenchItems();
 	void bench(unsigned int numThreads, int benchTime);
 
-	[[nodiscard]] bool isHavingReplicationConfig();
-	[[nodiscard]] bool isHavingReplicationConfig(reindexer::WrSerializer& wser, std::string_view type);
+	bool isHavingReplicationConfig();
+	bool isHavingReplicationConfig(reindexer::WrSerializer& wser, std::string_view type);
 
 	Error interactive() noexcept;
 	void fromFile(std::istream& in);
@@ -109,13 +109,11 @@ private:
 		CancelContext(const CancelContext& ctx) = delete;
 		CancelContext& operator=(const CancelContext& ctx) = delete;
 
-		[[nodiscard]] bool IsCancelable() const noexcept override final { return true; }
-		[[nodiscard]] reindexer::CancelType GetCancelType() const noexcept override final {
-			return cancelType_.load(std::memory_order_acquire);
-		}
-		[[nodiscard]] std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
+		bool IsCancelable() const noexcept override final { return true; }
+		reindexer::CancelType GetCancelType() const noexcept override final { return cancelType_.load(std::memory_order_acquire); }
+		std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
 
-		[[nodiscard]] bool IsCancelled() const { return cancelType_.load(std::memory_order_acquire) == reindexer::CancelType::Explicit; }
+		bool IsCancelled() const { return cancelType_.load(std::memory_order_acquire) == reindexer::CancelType::Explicit; }
 		void Cancel() noexcept { cancelType_.store(reindexer::CancelType::Explicit, std::memory_order_release); }
 		void Reset() noexcept { cancelType_.store(reindexer::CancelType::None, std::memory_order_release); }
 
@@ -125,7 +123,7 @@ private:
 
 	class [[nodiscard]] URI : public httpparser::UrlParser {
 	public:
-		[[nodiscard]] std::string db() const {
+		std::string db() const {
 			if (scheme() == "ucproto") {
 				std::vector<std::string_view> pathParts;
 				reindexer::split(std::string_view(path()), ":", true, pathParts);
@@ -135,8 +133,8 @@ private:
 		}
 	};
 
-	[[nodiscard]] DBInterface db() { return db_.WithContext(&cancelCtx_); }
-	[[nodiscard]] DBInterface parametrizedDb() {
+	DBInterface db() { return db_.WithContext(&cancelCtx_); }
+	DBInterface parametrizedDb() {
 		return (!fromFile_ || dumpMode_ == DumpOptions::Mode::ShardedOnly) ? db() : db().WithShardId(ShardingKeyType::ProxyOff, false);
 	}
 	URI uri_;

@@ -37,7 +37,7 @@ class ItemIterator;
 /// LocalQueryResults cannot be externally changed or deleted even in case of changing origin data in DB.<br>
 /// *Thread safety*: LocalQueryResults is thread safe.
 
-class LocalQueryResults {
+class [[nodiscard]] LocalQueryResults {
 	template <typename QR>
 	class [[nodiscard]] IteratorImpl {
 	public:
@@ -201,7 +201,7 @@ public:
 		return std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder& nsData) { return nsData.ns == ns; }) !=
 			   nsData_.cend();
 	}
-	[[nodiscard]] FloatVectorsHolderMap& GetFloatVectorsHolder() & noexcept { return floatVectorsHolder_; }
+	FloatVectorsHolderMap& GetFloatVectorsHolder() & noexcept { return floatVectorsHolder_; }
 
 	std::string explainResults;
 
@@ -214,7 +214,7 @@ private:
 	std::vector<ItemImplRawData> rawDataHolder_;
 	friend class FtFunctionsHolder;
 
-	class NsDataHolder {
+	class [[nodiscard]] NsDataHolder {
 	public:
 		NsDataHolder(NamespaceImplPtr&& _ns, StringsHolderPtr&& strHldr) noexcept;
 		NsDataHolder(NamespaceImpl* _ns, StringsHolderPtr&& strHldr) noexcept;

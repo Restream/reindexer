@@ -4,11 +4,11 @@
 
 using namespace reindexer;
 
-void CascadeReplicationApi::SetUp() { fs::RmDirAll(kBaseTestsetDbPath); }
+void CascadeReplicationApi::SetUp() { rx_unused = fs::RmDirAll(kBaseTestsetDbPath); }
 
 void CascadeReplicationApi::TearDown()	// -V524
 {
-	fs::RmDirAll(kBaseTestsetDbPath);
+	rx_unused = fs::RmDirAll(kBaseTestsetDbPath);
 }
 
 void CascadeReplicationApi::ValidateNsList(const CascadeReplicationApi::ServerPtr& s, const std::vector<std::string>& expected) {

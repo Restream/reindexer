@@ -17,7 +17,7 @@
 namespace reindexer {
 
 #pragma pack(push, 1)
-class key_string_impl {
+class [[nodiscard]] key_string_impl {
 public:
 	using size_type = uint32_t;
 
@@ -60,7 +60,7 @@ private:
 	}
 
 	mutable std::atomic<int32_t> refcounter_;
-	struct export_hdr {
+	struct [[nodiscard]] export_hdr {
 		size_type len;
 	} export_hdr_;
 	char data_[];
@@ -71,7 +71,7 @@ static_assert(sizeof(key_string_impl) == 8, "Impl class must be a header of fixe
 static_assert(sizeof(std::atomic<int32_t>) == sizeof(int8_t[4]),
 			  "refcounter in cbinding (struct reindexer_string) is reserved via int8_t array. Sizes must be same");
 
-class key_string {
+class [[nodiscard]] key_string {
 public:
 	using const_iterator = const char*;
 	using iterator = const_iterator;
@@ -150,7 +150,7 @@ inline static bool operator==(const key_string& lhs, std::string_view rhs) noexc
 inline static bool operator==(std::string_view lhs, const key_string& rhs) noexcept { return std::string_view(rhs) == lhs; }
 
 template <>
-struct is_recommends_sc_hash_map<key_string> {
+struct [[nodiscard]] is_recommends_sc_hash_map<key_string> {
 	constexpr static bool value = true;
 };
 
@@ -158,7 +158,7 @@ struct is_recommends_sc_hash_map<key_string> {
 
 namespace std {
 template <>
-struct hash<reindexer::key_string> {
+struct [[nodiscard]] hash<reindexer::key_string> {
 public:
 	size_t operator()(const reindexer::key_string& obj) const noexcept { return hash<std::string_view>()(obj); }
 };

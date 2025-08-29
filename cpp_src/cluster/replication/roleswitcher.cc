@@ -55,7 +55,7 @@ void RoleSwitcher::Run(std::vector<DSN>&& dsns, RoleSwitcher::Config&& cfg) {
 }
 
 void RoleSwitcher::OnRoleChanged() noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (syncer_) {
 		syncer_->Terminate();
 	}
@@ -63,7 +63,7 @@ void RoleSwitcher::OnRoleChanged() noexcept {
 }
 
 void RoleSwitcher::SetTerminationFlag(bool val) noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	terminate_ = val;
 	if (val) {
 		if (syncer_) {
@@ -74,7 +74,7 @@ void RoleSwitcher::SetTerminationFlag(bool val) noexcept {
 }
 
 void RoleSwitcher::await() {
-	awaitCh_.pop();
+	rx_unused = awaitCh_.pop();
 	if (!isTerminated()) {
 		handleRoleSwitch();
 	}
@@ -274,7 +274,7 @@ void RoleSwitcher::initialLeadersSync() {
 		}
 	}
 	{
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		if (terminate_) {
 			throw Error(errCanceled, "Terminated");
 		}

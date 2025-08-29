@@ -18,7 +18,7 @@
 #include <fmt/printf.h>
 #include "tools/assertrx.h"
 
-struct TLSDummy {
+struct [[nodiscard]] TLSDummy {
 	template <typename... Args>
 	const TLSDummy& operator()(Args&&...) const noexcept {
 		assertrx(false);
@@ -39,7 +39,7 @@ Cout& operator<<(Cout& cout, TLSDummy) {
 }
 
 template <>
-struct fmt::formatter<TLSDummy> {
+struct [[nodiscard]] fmt::formatter<TLSDummy> {
 	template <typename ContextT>
 	constexpr auto parse(ContextT& ctx) {
 		return ctx.begin();

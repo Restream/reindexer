@@ -16,8 +16,11 @@
 #include "vendor/hopscotch/hopscotch_sc_map.h"
 #include "visited_list_pool.h"
 
+#include "core/enums.h"
+#include "estl/lock.h"
 #include "estl/mutex.h"
 #include "estl/shared_mutex.h"
+#include "estl/spin_lock.h"
 #include "tools/flagguard.h"
 #include "tools/logger.h"
 
@@ -26,13 +29,13 @@ typedef uint32_t tableint;
 typedef uint32_t linklistsizeint;
 static_assert(sizeof(linklistsizeint) == sizeof(tableint), "Internal link lists logic requires the same size for this types");
 
-enum class Synchronization { None, OnInsertions };
+enum class [[nodiscard]] Synchronization { None, OnInsertions };
 
-enum class ExpectConcurrentUpdates : bool { No, Yes };
+enum class [[nodiscard]] ExpectConcurrentUpdates : bool { No, Yes };
 
-class LabelOpsMutexLocks {
+class [[nodiscard]] LabelOpsMutexLocks {
 public:
-	using MutexT = std::mutex;
+	using MutexT = reindexer::mutex;
 
 	LabelOpsMutexLocks() = default;
 	LabelOpsMutexLocks(tableint max_locks) : mtxs_(max_locks) {}
@@ -49,16 +52,18 @@ private:
 	mutable std::vector<MutexT> mtxs_;
 };
 
-class DummyMutex {
+class [[nodiscard]] DummyMutex {
 public:
 	constexpr void lock() const noexcept {}
 	constexpr void lock_shared() const noexcept {}
 	constexpr bool try_lock() const noexcept { return true; }
 	constexpr void unlock() const noexcept {}
 	constexpr void unlock_shared() const noexcept {}
+	const DummyMutex& operator!() const& noexcept { return *this; }
+	auto operator!() const&& = delete;
 };
 
-class LabelOpsDummyLocks {
+class [[nodiscard]] LabelOpsDummyLocks {
 public:
 	using MutexT = DummyMutex;
 
@@ -73,7 +78,7 @@ private:
 	mutable MutexT mtx_;
 };
 
-class UpdateOpsMutexLocks {
+class [[nodiscard]] UpdateOpsMutexLocks {
 public:
 	using MutexT = reindexer::read_write_spinlock;
 
@@ -89,75 +94,90 @@ private:
 
 using UpdateOpsDummyLocks = LabelOpsDummyLocks;
 
-struct RegularLocker {
+struct [[nodiscard]] DummyLocker {
 	template <typename Mtx>
-	using unique_lock = std::unique_lock<Mtx>;
-	template <typename Mtx>
-	using lock_guard = std::lock_guard<Mtx>;
-#if REINDEX_USE_STD_SHARED_MUTEX
-	template <typename Mtx>
-	using shared_lock = std::shared_lock<Mtx>;
-#else
-	template <typename Mtx>
-	using shared_lock = reindexer::shared_lock<Mtx>;
-#endif
+	struct [[maybe_unused]] DummyLock {
+		explicit DummyLock(auto&&...) noexcept {}
+		void unlock() const noexcept {}
+		void lock() const noexcept {}
+	};
 
 	template <typename Mtx>
-	static unique_lock<Mtx> MakeUniqueLock(Mtx& mtx) noexcept {
-		return unique_lock<Mtx>(mtx);
-	}
+	using UniqueLock = DummyLock<Mtx>;
 	template <typename Mtx>
-	static unique_lock<Mtx> MakeUniqueLock(Mtx& mtx, std::defer_lock_t) noexcept {
-		return unique_lock<Mtx>(mtx, std::defer_lock_t{});
-	}
+	using LockGuard = DummyLock<Mtx>;
 	template <typename Mtx>
-	static lock_guard<Mtx> MakeLockGuard(Mtx& mtx) noexcept {
-		return lock_guard<Mtx>(mtx);
-	}
+	using SharedLock = DummyLock<Mtx>;
 
-	template <typename Mtx>
-	static shared_lock<Mtx> MakeSharedLock(Mtx& mtx) noexcept {
-		return shared_lock<Mtx>(mtx);
-	}
+	template <ExpectConcurrentUpdates>
+	using Concurrent = DummyLocker;
 };
 
-struct DummyLocker {
+class [[nodiscard]] RegularLocker {
+public:
 	template <typename Mtx>
-	using unique_lock = std::unique_lock<DummyMutex>;
+	struct [[nodiscard]] RX_SCOPED_CAPABILITY UniqueLock : public reindexer::unique_lock<Mtx> {
+		using Base = reindexer::unique_lock<Mtx>;
+		explicit UniqueLock(Mtx& mtx) RX_ACQUIRE(mtx) : Base{mtx} {}
+		explicit UniqueLock(Mtx& mtx, std::defer_lock_t) RX_EXCLUDES(!mtx) : Base{mtx, std::defer_lock} {}
+		explicit UniqueLock(Mtx& mtx, reindexer::SkipLock skipLock) RX_ACQUIRE(mtx) : Base{mtx, std::defer_lock} {
+			if (!skipLock) {
+				Base::lock();
+			}
+		}
+		void unlock() RX_RELEASE() { Base::unlock(); }
+		~UniqueLock() RX_RELEASE() = default;
+	};
 	template <typename Mtx>
-	using lock_guard = std::lock_guard<DummyMutex>;
-#if REINDEX_USE_STD_SHARED_MUTEX
-	template <typename Mtx>
-	using shared_lock = std::shared_lock<DummyMutex>;
-#else
-	template <typename Mtx>
-	using shared_lock = reindexer::shared_lock<DummyMutex>;
-#endif
+	struct [[nodiscard]] RX_SCOPED_CAPABILITY LockGuard : public reindexer::lock_guard<Mtx> {
+		explicit LockGuard(Mtx& mtx) RX_ACQUIRE(mtx) : reindexer::lock_guard<Mtx>{mtx} {}
+		~LockGuard() RX_RELEASE() = default;
+	};
 
 	template <typename Mtx>
-	static unique_lock<Mtx> MakeUniqueLock(Mtx&) noexcept {
-		static DummyMutex mtx;
-		return unique_lock<DummyMutex>(mtx);
-	}
+	class [[nodiscard]] RX_SCOPED_CAPABILITY SharedLock : public reindexer::shared_lock<Mtx> {
+		using Base = reindexer::shared_lock<Mtx>;
+
+	public:
+		explicit SharedLock(Mtx& mtx) RX_ACQUIRE_SHARED(mtx) : Base{mtx} {}
+		explicit SharedLock(Mtx& mtx, std::defer_lock_t) noexcept RX_EXCLUDES(mtx) : Base{mtx, std::defer_lock} {}
+		~SharedLock() RX_RELEASE() = default;
+	};
+
+	template <ExpectConcurrentUpdates>
+	struct Concurrent;
+};
+
+template <>
+struct [[nodiscard]] RegularLocker::Concurrent<ExpectConcurrentUpdates::Yes> {
 	template <typename Mtx>
-	static unique_lock<Mtx> MakeUniqueLock(Mtx&, std::defer_lock_t) noexcept {
-		static DummyMutex mtx;
-		return unique_lock<DummyMutex>(mtx, std::defer_lock_t{});
-	}
+	struct [[nodiscard]] RX_SCOPED_CAPABILITY SharedLock : public RegularLocker::SharedLock<Mtx> {
+		using Base = RegularLocker::SharedLock<Mtx>;
+		explicit SharedLock(Mtx& mtx) noexcept RX_ACQUIRE_SHARED(mtx) : Base{mtx} {}
+		explicit SharedLock(Mtx& mtx, std::defer_lock_t) noexcept RX_EXCLUDES(mtx) : Base{mtx, std::defer_lock} {}
+		explicit SharedLock(Mtx& mtx, reindexer::SkipLock skipLock) noexcept RX_ACQUIRE_SHARED(mtx) : Base{mtx, std::defer_lock} {
+			if (!skipLock) {
+				Base::lock();
+			}
+		}
+		~SharedLock() RX_RELEASE() = default;
+	};
+};
+
+template <>
+struct [[nodiscard]] RegularLocker::Concurrent<ExpectConcurrentUpdates::No> {
 	template <typename Mtx>
-	static lock_guard<Mtx> MakeLockGuard(Mtx&) noexcept {
-		static DummyMutex mtx;
-		return lock_guard<DummyMutex>(mtx);
-	}
-	template <typename Mtx>
-	static shared_lock<DummyMutex> MakeSharedLock(Mtx&) noexcept {
-		static DummyMutex mtx;
-		return shared_lock<DummyMutex>(mtx);
-	}
+	struct [[nodiscard]] SharedLock {
+		explicit SharedLock(Mtx&) noexcept {}
+		explicit SharedLock(Mtx&, std::defer_lock_t) noexcept {}
+		explicit SharedLock(Mtx&, reindexer::SkipLock) noexcept {}
+		void lock() const noexcept {}
+		void unlock() const noexcept {}
+	};
 };
 
 template <typename dist_t, Synchronization synchronization>
-class HierarchicalNSW {
+class [[nodiscard]] HierarchicalNSW {
 	template <typename K, typename V>
 	using HashMapT = tsl::hopscotch_sc_map<K, V, std::hash<K>, std::equal_to<K>, std::less<K>, std::allocator<std::pair<const K, V>>, 30,
 										   false, tsl::mod_growth_policy<std::ratio<3, 2>>>;
@@ -167,7 +187,7 @@ class HierarchicalNSW {
 
 	using LockVecT = std::conditional_t<synchronization == Synchronization::None, LabelOpsDummyLocks, LabelOpsMutexLocks>;
 	using UpdateLockVecT = std::conditional_t<synchronization == Synchronization::None, UpdateOpsDummyLocks, UpdateOpsMutexLocks>;
-	using GlobalMutextT = std::conditional_t<synchronization == Synchronization::None, DummyMutex, std::mutex>;
+	using GlobalMutextT = std::conditional_t<synchronization == Synchronization::None, DummyMutex, reindexer::mutex>;
 
 public:
 	static const unsigned char DELETE_MARK = 0x01;
@@ -357,7 +377,7 @@ public:
 		return ret;
 	}
 
-	struct CompareByFirst {
+	struct [[nodiscard]] CompareByFirst {
 		constexpr bool operator()(const std::pair<dist_t, tableint>& a, const std::pair<dist_t, tableint>& b) const noexcept {
 			return a.first < b.first;
 		}
@@ -378,11 +398,12 @@ public:
 	}
 
 	template <typename LockerT>
-	int getRandomLevel(double reverse_size) {
+	int getRandomLevel(double reverse_size) RX_REQUIRES(!generator_lock_) {
+		using LockGuard = typename LockerT::template LockGuard<GlobalMutextT>;
 		std::uniform_real_distribution<double> distribution(0.0, 1.0);
 		double val;
 		{
-			std::lock_guard lck = LockerT::MakeLockGuard(generator_lock_);
+			LockGuard lck{generator_lock_};
 			val = distribution(level_generator_);
 		}
 		double r = -log(val) * reverse_size;
@@ -401,7 +422,9 @@ public:
 		tableint ep_id, const void* data_point, tableint data_point_id, int layer) {
 		static_assert(concurrentUpdates == ExpectConcurrentUpdates::No || isSynchronizationPossible<LockerT>(),
 					  "Unable to handle concurrent updates without synchronization");
-		using data_updates_shared_lock = typename LockerT::template shared_lock<typename UpdateLockVecT::MutexT>;
+		using SharedLock =
+			typename LockerT::template Concurrent<concurrentUpdates>::template SharedLock<typename UpdateOpsMutexLocks::MutexT>;
+		using LockGuard = typename LockerT::template LockGuard<typename LockVecT::MutexT>;
 
 		VisitedList* vl = visited_list_pool_->getFreeVisitedList();
 		vl_type* visited_array = vl->mass;
@@ -416,10 +439,7 @@ public:
 
 		dist_t lowerBound;
 		{
-			data_updates_shared_lock lck;
-			if constexpr (concurrentUpdates == ExpectConcurrentUpdates::Yes) {
-				lck = LockerT::MakeSharedLock(data_updates_locks_[ep_id]);
-			}
+			SharedLock lck{data_updates_locks_[ep_id]};
 			if (!isMarkedDeleted(ep_id)) {
 				dist_t dist = fstdistfunc_(data_point, data_point_id, getDataByInternalId(ep_id), ep_id);
 				top_candidates.emplace(dist, ep_id);
@@ -441,7 +461,7 @@ public:
 
 			tableint curNodeNum = curr_el_pair.second;
 
-			std::lock_guard lock = LockerT::MakeLockGuard(link_list_locks_[curNodeNum]);
+			LockGuard lock{link_list_locks_[curNodeNum]};
 
 			int* data;	// = (int *)(linkList0_ + curNodeNum * size_links_per_element0_);
 			if (layer == 0) {
@@ -471,10 +491,7 @@ public:
 				}
 				visited_array[candidate_id] = visited_array_tag;
 
-				data_updates_shared_lock lck;
-				if constexpr (concurrentUpdates == ExpectConcurrentUpdates::Yes) {
-					lck = LockerT::MakeSharedLock(data_updates_locks_[candidate_id]);
-				}
+				SharedLock lck{data_updates_locks_[candidate_id]};
 				dist_t dist1 = fstdistfunc_(data_point, data_point_id, getDataByInternalId(candidate_id), candidate_id);
 				if (top_candidates.size() < ef_construction_ || lowerBound > dist1) {
 					candidateSet.emplace(-dist1, candidate_id);
@@ -639,6 +656,8 @@ public:
 		const size_t M) {
 		static_assert(concurrentUpdates == ExpectConcurrentUpdates::No || isSynchronizationPossible<LockerT>(),
 					  "Unable to handle concurrent updates without synchronization");
+		using SharedLock =
+			typename LockerT::template Concurrent<concurrentUpdates>::template SharedLock<typename UpdateOpsMutexLocks::MutexT>;
 		if (top_candidates.size() < M) {
 			return;
 		}
@@ -660,7 +679,9 @@ public:
 			bool good = true;
 
 			for (std::pair<dist_t, tableint> second_pair : return_list) {
-				auto [lck1, lck2] = getSharedDataUpdateLocksFor<LockerT, concurrentUpdates>(curent_pair.second, second_pair.second);
+				SharedLock lck1{data_updates_locks_[std::min(curent_pair.second, second_pair.second)]};
+				SharedLock lck2{data_updates_locks_[std::max(curent_pair.second, second_pair.second)],
+								reindexer::SkipLock(curent_pair.second == second_pair.second)};
 				dist_t curdist = fstdistfunc_(getDataByInternalId(second_pair.second), second_pair.second,
 											  getDataByInternalId(curent_pair.second), curent_pair.second);
 				if (curdist < dist_to_query) {
@@ -695,25 +716,14 @@ public:
 	}
 
 	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
-	auto getSharedDataUpdateLocksFor(tableint id1, tableint id2) noexcept {
-		using data_updates_shared_lock = typename LockerT::template shared_lock<typename UpdateLockVecT::MutexT>;
-		data_updates_shared_lock lck1, lck2;
-		if constexpr (concurrentUpdates == ExpectConcurrentUpdates::Yes) {
-			lck1 = LockerT::MakeSharedLock(data_updates_locks_[std::min(id1, id2)]);
-			if (id1 != id2) {
-				lck2 = LockerT::MakeSharedLock(data_updates_locks_[std::max(id1, id2)]);
-			}
-		}
-		return std::make_pair(std::move(lck1), std::move(lck2));
-	}
-
-	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
 	tableint mutuallyConnectNewElement(
 		tableint cur_c,
 		std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>& top_candidates,
 		int level, bool isUpdate) {
 		static_assert(concurrentUpdates == ExpectConcurrentUpdates::No || isSynchronizationPossible<LockerT>(),
 					  "Unable to handle concurrent updates without synchronization");
+		using UniqueLock = typename LockerT::template UniqueLock<typename LockVecT::MutexT>;
+		using LockGuard = typename LockerT::template LockGuard<typename LockVecT::MutexT>;
 
 		size_t Mcurmax = level ? maxM_ : maxM0_;
 		getNeighborsByHeuristic2<LockerT, concurrentUpdates>(top_candidates, M_);
@@ -733,10 +743,7 @@ public:
 		{
 			// lock only during the update
 			// because during the addition the lock for cur_c is already acquired
-			std::unique_lock lock = LockerT::MakeUniqueLock(link_list_locks_[cur_c], std::defer_lock);
-			if (isUpdate) {
-				lock.lock();
-			}
+			UniqueLock lock{link_list_locks_[cur_c], reindexer::SkipLock(!isUpdate)};
 			linklistsizeint* ll_cur;
 			if (level == 0) {
 				ll_cur = get_linklist0(cur_c);
@@ -762,7 +769,7 @@ public:
 		}
 
 		for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
-			std::lock_guard lock = LockerT::MakeLockGuard(link_list_locks_[selectedNeighbors[idx]]);
+			LockGuard lock{link_list_locks_[selectedNeighbors[idx]]};
 
 			linklistsizeint* ll_other;
 			if (level == 0) {
@@ -802,11 +809,14 @@ public:
 					data[sz_link_list_other] = cur_c;
 					setListCount(ll_other, sz_link_list_other + 1);
 				} else {
+					using SharedLock =
+						typename LockerT::template Concurrent<concurrentUpdates>::template SharedLock<typename UpdateOpsMutexLocks::MutexT>;
 					// finding the "weakest" element to replace it with the new one
 					const auto id2 = selectedNeighbors[idx];
 					dist_t d_max = 0;
 					{
-						auto [lck1, lck2] = getSharedDataUpdateLocksFor<LockerT, concurrentUpdates>(cur_c, id2);
+						SharedLock lck1{data_updates_locks_[std::min(cur_c, id2)]};
+						SharedLock lck2{data_updates_locks_[std::max(cur_c, id2)], reindexer::SkipLock(cur_c == id2)};
 						d_max = fstdistfunc_(getDataByInternalId(cur_c), cur_c, getDataByInternalId(id2), id2);
 					}
 					// Heuristic:
@@ -815,7 +825,8 @@ public:
 
 					for (size_t j = 0; j < sz_link_list_other; j++) {
 						const auto id1 = data[j];
-						auto [lck1, lck2] = getSharedDataUpdateLocksFor<LockerT, concurrentUpdates>(id1, id2);
+						SharedLock lck1{data_updates_locks_[std::min(id1, id2)]};
+						SharedLock lck2{data_updates_locks_[std::max(id1, id2)], reindexer::SkipLock(id1 == id2)};
 						candidates.emplace(fstdistfunc_(getDataByInternalId(data[j]), id1, getDataByInternalId(id2), id2), data[j]);
 					}
 
@@ -1096,19 +1107,19 @@ public:
 	/*
 	 * Remove the deleted mark of the node.
 	 */
-	void unmarkDeletedInternal(tableint internalId) {
+	void unmarkDeletedInternal(tableint internalId) RX_REQUIRES(!deleted_elements_lock) {
 		assert(internalId < cur_element_count);
 		if (isMarkedDeleted(internalId)) {
 			unsigned char* ll_cur = ((unsigned char*)get_linklist0(internalId)) + 2;
 			*ll_cur &= ~DELETE_MARK;
 			if (allow_replace_deleted_) {
-				std::unique_lock lock_deleted_elements(deleted_elements_lock);
+				reindexer::unique_lock lock_deleted_elements(deleted_elements_lock);
 				if (deleted_elements.erase(internalId)) {
 					num_deleted_ -= 1;
 				}
 				assertrx_dbg(num_deleted_ == deleted_elements.size());
 			} else {
-				std::unique_lock lock_deleted_elements(deleted_elements_lock);
+				reindexer::unique_lock lock_deleted_elements(deleted_elements_lock);
 				num_deleted_ -= 1;
 			}
 		} else {
@@ -1144,8 +1155,12 @@ public:
 	 * Adds point. Updates the point if it is already in the index.
 	 * If replacement of deleted elements is enabled: replaces previously deleted point if any, updating it with new point
 	 */
-	void addPointNoLock(const void* data_point, labeltype label) { addPoint<DummyLocker>(data_point, label); }
-	void addPointConcurrent(const void* data_point, labeltype label) {
+	void addPointNoLock(const void* data_point, labeltype label)
+		RX_REQUIRES(!deleted_elements_lock, !label_lookup_lock, !global, !enterpoint_lock_, !generator_lock_, !update_generator_lock_) {
+		addPoint<DummyLocker>(data_point, label);
+	}
+	void addPointConcurrent(const void* data_point, labeltype label)
+		RX_REQUIRES(!deleted_elements_lock, !label_lookup_lock, !global, !enterpoint_lock_, !generator_lock_, !update_generator_lock_) {
 		if constexpr (synchronization == Synchronization::None) {
 			throw std::logic_error("This HNSW index does not support concurrent insertions");
 		}
@@ -1153,23 +1168,28 @@ public:
 	}
 
 	template <typename LockerT>
-	void addPoint(const void* data_point, labeltype label) {
+	void addPoint(const void* data_point, labeltype label)
+		RX_REQUIRES(!deleted_elements_lock, !label_lookup_lock, !global, !enterpoint_lock_, !generator_lock_, !update_generator_lock_) {
+		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
+		using LockGuard = typename LockerT::template LockGuard<GlobalMutextT>;
 		if (!allow_replace_deleted_) {
 			addPoint<LockerT, ExpectConcurrentUpdates::No>(data_point, label, -1);
 			return;
 		}
 		// check if there is vacant place
 		tableint internal_id_replaced = 0;
-		std::unique_lock lock_deleted_elements = LockerT::MakeUniqueLock(deleted_elements_lock);
-		bool is_vacant_place = !deleted_elements.empty();
 		reindexer::CounterGuardAIR32 updatesCounter;
-		if (is_vacant_place) {
-			internal_id_replaced = *deleted_elements.begin();
-			deleted_elements.erase(deleted_elements.begin());
-			num_deleted_ -= 1;
-			updatesCounter = reindexer::CounterGuardAIR32(concurrent_updates_counter_);
+		bool is_vacant_place;
+		{
+			UniqueLock lock_deleted_elements{deleted_elements_lock};
+			is_vacant_place = !deleted_elements.empty();
+			if (is_vacant_place) {
+				internal_id_replaced = *deleted_elements.begin();
+				deleted_elements.erase(deleted_elements.begin());
+				num_deleted_ -= 1;
+				updatesCounter = reindexer::CounterGuardAIR32(concurrent_updates_counter_);
+			}
 		}
-		lock_deleted_elements.unlock();
 
 		// if there is no vacant place then add or update point
 		// else add point to vacant place
@@ -1193,7 +1213,7 @@ public:
 			setExternalLabel(internal_id_replaced, label);
 
 			{
-				std::lock_guard lock_table = LockerT::MakeLockGuard(label_lookup_lock);
+				LockGuard lock_table{label_lookup_lock};
 				label_lookup_[label] = internal_id_replaced;
 			}
 
@@ -1202,10 +1222,10 @@ public:
 			} catch (...) {
 				assertrx_dbg(false);
 
-				std::lock_guard lock_deleted_elements = LockerT::MakeLockGuard(deleted_elements_lock);
+				LockGuard lock_deleted_elements{deleted_elements_lock};
 				if (!isMarkedDeleted(internal_id_replaced)) {
 					markDeletedInternal(internal_id_replaced);
-					std::lock_guard lock_table = LockerT::MakeLockGuard(label_lookup_lock);
+					LockGuard lock_table{label_lookup_lock};
 					label_lookup_.erase(label);
 				} else {
 					// Handling direct deleted_elements.erase called above (even if element is marked as 'deleted'
@@ -1219,13 +1239,15 @@ public:
 	}
 
 	template <typename LockerT>
-	void updatePoint(const void* dataPoint, tableint internalId, float updateNeighborProbability) {
-		using data_updates_shared_lock = typename LockerT::template shared_lock<typename UpdateLockVecT::MutexT>;
-		using data_updates_unique_lock = typename LockerT::template lock_guard<typename UpdateLockVecT::MutexT>;
+	void updatePoint(const void* dataPoint, tableint internalId, float updateNeighborProbability)
+		RX_REQUIRES(!enterpoint_lock_, !update_generator_lock_, !deleted_elements_lock) {
+		using LockGuard = typename LockerT::template LockGuard<GlobalMutextT>;
+		using UpdateLockGuard = typename LockerT::template LockGuard<typename UpdateLockVecT::MutexT>;
+		using SharedLock = typename LockerT::template SharedLock<typename UpdateLockVecT::MutexT>;
 		{
 			// FIXME: There is still logical race, that reduces recall rate - we may update one of the current insertion candidate nodes
 			// right after dist calculation Check #2029 for details.
-			data_updates_unique_lock lck = LockerT::MakeLockGuard(data_updates_locks_[internalId]);
+			UpdateLockGuard lck{data_updates_locks_[internalId]};
 			// update the feature vector associated with existing point with new vector
 			memcpy(getDataByInternalId(internalId), dataPoint, data_size_);
 			fstdistfunc_.AddNorm(dataPoint, internalId);
@@ -1237,7 +1259,7 @@ public:
 		int maxLevelCopy;
 		tableint entryPointCopy;
 		{
-			data_updates_shared_lock lck = LockerT::MakeSharedLock(enterpoint_lock_);
+			SharedLock lck{enterpoint_lock_};
 			maxLevelCopy = maxlevel_;
 			entryPointCopy = enterpoint_node_;
 		}
@@ -1264,7 +1286,7 @@ public:
 
 				if (updateNeighborProbability != 1.0) {
 					assertrx_dbg(false);  // We do not use this logic
-					std::lock_guard lck = LockerT::MakeLockGuard(update_generator_lock_);
+					LockGuard lck{update_generator_lock_};
 					if (distribution(update_probability_generator_) > updateNeighborProbability) {
 						continue;
 					}
@@ -1290,9 +1312,9 @@ public:
 						continue;
 					}
 
-					data_updates_shared_lock lck1 = LockerT::MakeSharedLock(data_updates_locks_[std::min(neigh, cand)]);
+					SharedLock lck1{data_updates_locks_[std::min(neigh, cand)]};
 					assertrx_dbg(neigh != cand);  // Essential for the second lock
-					data_updates_shared_lock lck2 = LockerT::MakeSharedLock(data_updates_locks_[std::max(neigh, cand)]);
+					SharedLock lck2{data_updates_locks_[std::max(neigh, cand)]};
 					dist_t distance = fstdistfunc_(getDataByInternalId(neigh), neigh, getDataByInternalId(cand), cand);
 					if (candidates.size() < elementsToKeep) {
 						candidates.emplace(distance, cand);
@@ -1308,7 +1330,7 @@ public:
 				getNeighborsByHeuristic2<LockerT, isConcurrentUpdatesAllowedByIdx()>(candidates, layer == 0 ? maxM0_ : maxM_);
 
 				{
-					std::lock_guard lock = LockerT::MakeLockGuard(link_list_locks_[neigh]);
+					LockGuard lock{link_list_locks_[neigh]};
 					linklistsizeint* ll_cur;
 					ll_cur = get_linklist_at_level(neigh, layer);
 					size_t candSize = candidates.size();
@@ -1328,13 +1350,13 @@ public:
 	template <typename LockerT>
 	void repairConnectionsForUpdate(const void* dataPoint, tableint entryPointInternalId, tableint dataPointInternalId, int dataPointLevel,
 									int maxLevel) {
-		using data_updates_shared_lock = typename LockerT::template shared_lock<typename UpdateLockVecT::MutexT>;
-
+		using LockGuard = typename LockerT::template LockGuard<typename LockVecT::MutexT>;
+		using SharedLock = typename LockerT::template SharedLock<typename UpdateOpsMutexLocks::MutexT>;
 		tableint currObj = entryPointInternalId;
 		if (dataPointLevel < maxLevel) {
 			dist_t curdist;
 			{
-				data_updates_shared_lock lck = LockerT::MakeSharedLock(data_updates_locks_[currObj]);
+				SharedLock lck{data_updates_locks_[currObj]};
 				curdist = fstdistfunc_(dataPoint, dataPointInternalId, getDataByInternalId(currObj), currObj);
 			}
 			for (int level = maxLevel; level > dataPointLevel; level--) {
@@ -1342,7 +1364,7 @@ public:
 				while (changed) {
 					changed = false;
 					unsigned int* data;
-					std::lock_guard lock = LockerT::MakeLockGuard(link_list_locks_[currObj]);
+					LockGuard lock{link_list_locks_[currObj]};
 					data = get_linklist_at_level(currObj, level);
 					int size = getListCount(data);
 					tableint* datal = (tableint*)(data + 1);
@@ -1357,7 +1379,7 @@ public:
 
 						dist_t d;
 						{
-							data_updates_shared_lock lck = LockerT::MakeSharedLock(data_updates_locks_[cand]);
+							SharedLock lck{data_updates_locks_[cand]};
 							d = fstdistfunc_(dataPoint, dataPointInternalId, getDataByInternalId(cand), cand);
 						}
 						if (d < curdist) {
@@ -1392,7 +1414,7 @@ public:
 			// entry point itself. To prevent self loops, the `topCandidates` is filtered and thus can be empty.
 			if (filteredTopCandidates.size() > 0) {
 				{
-					data_updates_shared_lock lck = LockerT::MakeSharedLock(data_updates_locks_[entryPointInternalId]);
+					SharedLock lck{data_updates_locks_[entryPointInternalId]};
 					bool epDeleted = isMarkedDeleted(entryPointInternalId);
 					if (epDeleted) {
 						filteredTopCandidates.emplace(
@@ -1412,7 +1434,8 @@ public:
 
 	template <typename LockerT>
 	std::vector<tableint> getConnectionsWithLock(tableint internalId, int level) {
-		std::lock_guard lock = LockerT::MakeLockGuard(link_list_locks_[internalId]);
+		using LockGuard = typename LockerT::template LockGuard<typename LockVecT::MutexT>;
+		LockGuard lock{link_list_locks_[internalId]};
 		unsigned int* data = get_linklist_at_level(internalId, level);
 		int size = getListCount(data);
 		std::vector<tableint> result(size);
@@ -1422,18 +1445,22 @@ public:
 	}
 
 	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
-	tableint addPoint(const void* data_point, labeltype label, int level) {
+	tableint addPoint(const void* data_point, labeltype label, int level)
+		RX_REQUIRES(!label_lookup_lock, !enterpoint_lock_, !global, !generator_lock_, !update_generator_lock_, !deleted_elements_lock) {
 		static_assert(concurrentUpdates == ExpectConcurrentUpdates::No || isSynchronizationPossible<LockerT>(),
 					  "Unable to handle concurrent updates without synchronization");
-
-		using data_updates_shared_lock = typename LockerT::template shared_lock<typename UpdateLockVecT::MutexT>;
-		using data_updates_unique_lock = typename LockerT::template lock_guard<typename UpdateLockVecT::MutexT>;
+		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
+		using DataLockGuard = typename LockerT::template LockGuard<typename LockVecT::MutexT>;
+		using UpdateLockGuard = typename LockerT::template LockGuard<typename UpdateOpsMutexLocks::MutexT>;
+		using SharedLock = typename LockerT::template SharedLock<typename UpdateOpsMutexLocks::MutexT>;
+		using DataUpdatesSharedLock =
+			typename LockerT::template Concurrent<concurrentUpdates>::template SharedLock<typename UpdateOpsMutexLocks::MutexT>;
 
 		tableint cur_c = 0;
 		{
 			// Checking if the element with the same label already exists
 			// if so, updating it *instead* of creating a new element.
-			std::unique_lock lock_table = LockerT::MakeUniqueLock(label_lookup_lock);
+			UniqueLock lock_table{label_lookup_lock};
 			auto search = label_lookup_.find(label);
 			if (search != label_lookup_.end()) {
 				tableint existingInternalId = search->second;
@@ -1464,14 +1491,14 @@ public:
 
 		const int curlevel = (level > 0) ? level : getRandomLevel<LockerT>(mult_);
 
-		std::unique_lock templock = LockerT::MakeUniqueLock(global);
-		std::lock_guard lock_el = LockerT::MakeLockGuard(link_list_locks_[cur_c]);
+		UniqueLock templock{global};
+		DataLockGuard lock_el{link_list_locks_[cur_c]};
 		element_levels_[cur_c] = curlevel;
 
 		int maxlevelcopy;
 		tableint enterpoint_copy;
 		{
-			data_updates_shared_lock lck = LockerT::MakeSharedLock(enterpoint_lock_);
+			SharedLock lck{enterpoint_lock_};
 			maxlevelcopy = maxlevel_;
 			enterpoint_copy = enterpoint_node_;
 			if (curlevel <= maxlevelcopy && enterpoint_node_ >= 0) {
@@ -1500,10 +1527,7 @@ public:
 			if (curlevel < maxlevelcopy) {
 				dist_t curdist;
 				{
-					data_updates_shared_lock lck;
-					if constexpr (concurrentUpdates == ExpectConcurrentUpdates::Yes) {
-						lck = LockerT::MakeSharedLock(data_updates_locks_[currObj]);
-					}
+					DataUpdatesSharedLock lck{data_updates_locks_[currObj]};
 					curdist = fstdistfunc_(data_point, cur_c, getDataByInternalId(currObj), currObj);
 				}
 				for (int level = maxlevelcopy; level > curlevel; level--) {
@@ -1511,7 +1535,7 @@ public:
 					while (changed) {
 						changed = false;
 						unsigned int* data;
-						std::lock_guard lock = LockerT::MakeLockGuard(link_list_locks_[currObj]);
+						DataLockGuard lock{link_list_locks_[currObj]};
 						data = get_linklist(currObj, level);
 						int size = getListCount(data);
 
@@ -1523,10 +1547,7 @@ public:
 							}
 
 							dist_t d;
-							data_updates_shared_lock lck;
-							if constexpr (concurrentUpdates == ExpectConcurrentUpdates::Yes) {
-								lck = LockerT::MakeSharedLock(data_updates_locks_[cand]);
-							}
+							DataUpdatesSharedLock lck{data_updates_locks_[cand]};
 							d = fstdistfunc_(data_point, cur_c, getDataByInternalId(cand), cand);
 							if (d < curdist) {
 								curdist = d;
@@ -1546,10 +1567,7 @@ public:
 				std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates =
 					searchBaseLayer<LockerT, concurrentUpdates>(currObj, data_point, cur_c, level);
 
-				data_updates_shared_lock lck;
-				if constexpr (concurrentUpdates == ExpectConcurrentUpdates::Yes) {
-					lck = LockerT::MakeSharedLock(data_updates_locks_[enterpoint_copy]);
-				}
+				DataUpdatesSharedLock lck{data_updates_locks_[enterpoint_copy]};
 				bool epDeleted = isMarkedDeleted(enterpoint_copy);
 				if (epDeleted) {
 					top_candidates.emplace(fstdistfunc_(data_point, cur_c, getDataByInternalId(enterpoint_copy), enterpoint_copy),
@@ -1562,12 +1580,12 @@ public:
 			}
 
 			if (curlevel > maxlevelcopy) {
-				data_updates_unique_lock lck = LockerT::MakeLockGuard(enterpoint_lock_);
+				UpdateLockGuard lck{enterpoint_lock_};
 				enterpoint_node_ = cur_c;
 				maxlevel_ = curlevel;
 			}
 		} else {
-			data_updates_unique_lock lck = LockerT::MakeLockGuard(enterpoint_lock_);
+			UpdateLockGuard lck{enterpoint_lock_};
 			// Do nothing for the first element
 			maxlevel_ = curlevel;
 			if (curlevel > maxlevelcopy) {
@@ -1681,6 +1699,9 @@ public:
 
 			for (size_t j = 1; j <= size; j++) {
 				int candidate_id = *(data + j);
+				if (isMarkedDeleted(candidate_id)) {
+					continue;
+				}
 				if (visited_array[candidate_id] != visited_array_tag) {
 					visited_array[candidate_id] = visited_array_tag;
 					if ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(candidate_id))) {

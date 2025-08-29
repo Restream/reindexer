@@ -1,12 +1,10 @@
 #pragma once
 
-#include <shared_mutex>
 #include <vector>
 #include "core/dbconfig.h"
 #include "core/embedding/embeddingconfig.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/namespace/namespacestat.h"
-#include "core/storage/idatastorage.h"
 #include "core/storage/storagetype.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
@@ -29,9 +27,9 @@ public:
 
 	explicit Adapter(const BaseKeyT& source);
 	explicit Adapter(std::span<const std::vector<std::pair<std::string, VariantArray>>> sources);
-	[[nodiscard]] const StrorageKeyT& View() const& noexcept { return view_; }
-	[[nodiscard]] auto View() const&& = delete;
-	[[nodiscard]] chunk Content() const;
+	const StrorageKeyT& View() const& noexcept { return view_; }
+	auto View() const&& = delete;
+	chunk Content() const;
 
 private:
 	static void vectorFromJSON(const gason::JsonNode& root, ValuesT& result);
@@ -42,7 +40,7 @@ private:
 
 class [[nodiscard]] EmbeddersCache final {
 public:
-	[[nodiscard]] static bool IsEmbedderSystemName(std::string_view nsName) noexcept;
+	static bool IsEmbedderSystemName(std::string_view nsName) noexcept;
 
 	EmbeddersCache() noexcept = default;
 	EmbeddersCache(EmbeddersCache&&) noexcept = delete;
@@ -55,12 +53,12 @@ public:
 	Error EnableStorage(const std::string& storagePathRoot, datastorage::StorageType type);
 
 	void IncludeTag(std::string_view tag);
-	[[nodiscard]] std::optional<embedding::ValueT> Get(const CacheTag& tag, const embedding::Adapter& srcAdapter);
+	std::optional<embedding::ValueT> Get(const CacheTag& tag, const embedding::Adapter& srcAdapter);
 	void Put(const CacheTag& tag, const embedding::Adapter& srcAdapter, const embedding::ValuesT& values);
 
-	[[nodiscard]] bool IsActive() const noexcept;
-	[[nodiscard]] NamespaceMemStat GetMemStat() const;
-	[[nodiscard]] EmbedderCachePerfStat GetPerfStat(std::string_view tag) const;
+	bool IsActive() const noexcept;
+	NamespaceMemStat GetMemStat() const;
+	EmbedderCachePerfStat GetPerfStat(std::string_view tag) const;
 
 	void ResetPerfStat() noexcept;
 
@@ -70,14 +68,14 @@ public:
 	void Dump(T& os, std::string_view step, std::string_view offset) const;
 
 private:
-	[[nodiscard]] bool getEmbeddersConfig(std::string_view tag, EmbedderConfigData& data);
+	bool getEmbeddersConfig(std::string_view tag, EmbedderConfigData& data);
 	void includeTag(const CacheTag& tag);
 
 	std::optional<fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str>> config_;
 	std::string storagePath_;
 	datastorage::StorageType type_{datastorage::StorageType::LevelDB};
 	fast_hash_map<CacheTag, std::shared_ptr<EmbeddersLRUCache>, CacheTagHash, CacheTagEqual, CacheTagLess> caches_;
-	mutable std::shared_mutex mtx_;
+	mutable shared_mutex mtx_;
 };
 
 }  // namespace reindexer

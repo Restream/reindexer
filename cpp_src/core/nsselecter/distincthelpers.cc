@@ -3,42 +3,27 @@
 namespace reindexer {
 namespace DistinctHelpers {
 
-[[nodiscard]] bool GetMultiFieldValue(const std::vector<DataType>& data, unsigned long dataIndex, unsigned int rowLen,
-									  FieldsValue& values) {
+bool GetMultiFieldValue(const std::vector<DataType>& data, unsigned long dataIndex, unsigned int rowLen, FieldsValue& values) {
 	values.resize(0);
 	values.reserve(rowLen);
 	bool isNullValue = true;
 
-	const auto process = [&](const auto& vv, reindexer::IsArray isArray) {
-		if (isArray) {
-			if (dataIndex < vv.size()) {
-				values.emplace_back(vv[dataIndex]);
-				isNullValue = false;
+	const auto process = [&]<typename T>(const T& vv, reindexer::IsArray isArray) {
+		const auto realDataIndex = isArray ? dataIndex : 0;
+		if (realDataIndex < vv.size()) {
+			const auto& v = vv[realDataIndex];
+			if constexpr (std::is_same_v<T, std::span<const std::string_view>>) {
+				values.emplace_back(p_string(&v));
 			} else {
-				values.emplace_back();
+				values.emplace_back(v);
 			}
+			isNullValue = false;
 		} else {
-			if (vv.size()) {
-				values.emplace_back(vv[0]);
-				isNullValue = false;
-			} else {
-				values.emplace_back();
-			}
+			values.emplace_back();
 		}
 	};
 	for (unsigned int k = 0; k < rowLen; k++) {
-		std::visit(overloaded{[&](const concepts::SpanFromOneOf<const bool, const int32_t, const int64_t, const double, const float,
-																const Uuid, const p_string> auto& vv) { process(vv, data[k].isArray); },
-							  [&](const VariantArray& vv) { process(vv, data[k].isArray); },
-							  [&](const std::span<const std::string_view>& vv) {
-								  if (dataIndex < vv.size()) {
-									  values.emplace_back(p_string(&vv[dataIndex]));
-									  isNullValue = false;
-								  } else {
-									  values.emplace_back();
-								  }
-							  }},
-				   data[k].data);
+		std::visit(overloaded{[&](const auto& vv) { process(vv, data[k].isArray); }}, data[k].data);
 	}
 	return isNullValue;
 }

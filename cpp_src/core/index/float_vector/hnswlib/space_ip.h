@@ -123,7 +123,7 @@ FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 
 //=======================================================
 
-class InnerProductSpace final : public SpaceInterface<float> {
+class [[nodiscard]] InnerProductSpace final : public SpaceInterface<float> {
 	DISTFUNC<float> fstdistfunc_;
 	size_t data_size_;
 	size_t dim_;

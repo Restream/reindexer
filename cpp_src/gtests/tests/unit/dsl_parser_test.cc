@@ -101,3 +101,46 @@ TEST_F(JoinSelectsApi, GeneralDSLTest) {
 
 	checkQueryDslParse(testDslQuery);
 }
+
+TEST_F(JoinSelectsApi, DSL_SQLConvertionTest) {
+	auto json = R"json({
+		"namespace":"ns1",
+		"type":"select",
+		"select_filter":[
+			"*",
+			"vectors()"
+		],
+		"filters":[
+			{
+				"op":"NOT",
+				"join_query":{
+					"namespace":"ns2",
+					"select_filter":[
+						"*",
+						"vectors()"
+					],
+					"type":"INNER",
+					"on":[
+						{
+							"op":"NOT",
+							"left_field":"lfield",
+							"cond":"SET",
+							"right_field":"rfield"
+						}
+					]
+				}
+			}
+		],
+		"sort":{
+			"field":"ns2.respons",
+			"desc":false
+		},
+		"limit":12
+	})json";
+
+	const Query testQueryFromDSL = Query::FromJSON(json);
+	const auto sql = testQueryFromDSL.GetSQL();
+	const Query testQueryFromSQL = Query::FromSQL(sql);
+	ASSERT_EQ(sql, testQueryFromSQL.GetSQL()) << "SQL: " << sql;
+	ASSERT_EQ("SELECT *, vectors() FROM ns1 WHERE NOT INNER JOIN ns2 ON  NOT ns1.lfield IN ns2.rfield ORDER BY 'ns2.respons' LIMIT 12", sql);
+}

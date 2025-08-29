@@ -9,7 +9,10 @@
 #include "client/rpcformat.h"
 #include "client/transaction.h"
 #include "core/shardedmeta.h"
+#include "estl/condition_variable.h"
 #include "estl/fast_hash_map.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "estl/recycle_list.h"
 #include "net/ev/ev.h"
 
@@ -22,7 +25,7 @@ class Connection;
 template <typename CmdT>
 class ConnectionsPool;
 
-class ReindexerImpl {
+class [[nodiscard]] ReindexerImpl {
 public:
 	typedef QueryResults QueryResultsT;
 
@@ -151,22 +154,22 @@ private:
 	};
 
 	template <typename T>
-	struct ResultType {
-		T data;
-		bool ready = false;
-		std::mutex mtx;
-		std::condition_variable cv;
+	struct [[nodiscard]] ResultType {
+		T data RX_GUARDED_BY(mtx);
+		bool ready RX_GUARDED_BY(mtx) = false;
+		mutex mtx;
+		condition_variable cv;
 	};
 
 	template <typename T>
-	class Future {
+	class [[nodiscard]] Future {
 	public:
 		Future(ResultType<T>* res) noexcept : res_(res) {}
 
 		void wait() {
 			if (res_) {
-				std::unique_lock lck(res_->mtx);
-				res_->cv.wait(lck, [this]() noexcept { return res_->ready; });
+				unique_lock lck(res_->mtx);
+				res_->cv.wait(lck, [this]() RX_REQUIRES(res_->mtx) noexcept { return res_->ready; });
 			}
 		}
 
@@ -175,14 +178,14 @@ private:
 	};
 
 	template <typename T>
-	class Promise {
+	class [[nodiscard]] Promise {
 	public:
 		Promise() noexcept = default;
 		Promise(ResultType<T>& res) noexcept : res_(&res) {}
 
 		void set_value(T&& v) noexcept {
 			if (res_) {
-				std::lock_guard lck(res_->mtx);
+				lock_guard lck(res_->mtx);
 				res_->data = std::move(v);
 				res_->ready = true;
 				res_->cv.notify_one();
@@ -194,7 +197,7 @@ private:
 		ResultType<T>* res_ = nullptr;
 	};
 
-	struct DatabaseCommandDataBase {
+	struct [[nodiscard]] DatabaseCommandDataBase {
 		DatabaseCommandDataBase(CmdName _id, const InternalRdxContext& _ctx) noexcept : id(_id), ctx(_ctx) {}
 		CmdName id;
 		InternalRdxContext ctx;
@@ -202,7 +205,7 @@ private:
 	};
 
 	template <typename R, typename... P>
-	struct DatabaseCommandData : public DatabaseCommandDataBase {
+	struct [[nodiscard]] DatabaseCommandData : public DatabaseCommandDataBase {
 		Promise<R> ret;
 		std::tuple<P...> arguments;
 
@@ -214,7 +217,7 @@ private:
 		DatabaseCommandData(DatabaseCommandData&&) = default;
 	};
 
-	class DatabaseCommand {
+	class [[nodiscard]] DatabaseCommand {
 	public:
 		DatabaseCommand(DatabaseCommandDataBase* cmd = nullptr) noexcept : cmd_(cmd) {}
 		template <typename DatabaseCommandDataT>
@@ -274,7 +277,7 @@ private:
 			}
 			if (err.ok()) {
 				future.wait();
-				return std::move(res.data);
+				return RX_GET_WITHOUT_MUTEX_ANALYSIS { return std::move(res.data); }();
 			}
 			if constexpr (withClient) {
 				if (err.code() == errParams) {
@@ -307,7 +310,7 @@ private:
 	template <typename>
 	struct CalculateCommandType;
 	template <typename R, typename C, typename... Args>
-	struct CalculateCommandType<R (C::*)(Args...) const> {
+	struct [[nodiscard]] CalculateCommandType<R (C::*)(Args...) const> {
 		using type = DatabaseCommandData<R, Args...>;
 	};
 
@@ -339,7 +342,7 @@ private:
 		}
 	}
 
-	struct WorkerThread {
+	struct [[nodiscard]] WorkerThread {
 		WorkerThread(uint32_t _connCount);
 		~WorkerThread();
 
@@ -350,12 +353,12 @@ private:
 		net::ev::dynamic_loop loop;
 		const uint32_t connCount;
 	};
-	class CommandsQueue {
+	class [[nodiscard]] CommandsQueue {
 	public:
-		Error Push(DatabaseCommand&& cmd) {
+		Error Push(DatabaseCommand&& cmd) RX_REQUIRES(!mtx_) {
 			uint32_t minReq = std::numeric_limits<uint32_t>::max();
 			ThreadData* targetTh = nullptr;
-			std::unique_lock<std::mutex> lck(mtx_);
+			unique_lock lck(mtx_);
 			if (!isValid_) {
 				return Error(errNotValid, "Reindexer command queue is invalidated");
 			}
@@ -380,8 +383,8 @@ private:
 			}
 			return Error();
 		}
-		Error Push(const void* conn, DatabaseCommand&& cmd) {
-			std::unique_lock<std::mutex> lck(mtx_);
+		Error Push(const void* conn, DatabaseCommand&& cmd) RX_REQUIRES(!mtx_) {
+			unique_lock lck(mtx_);
 			if (!isValid_) {
 				return Error(errNotValid, "Reindexer command queue is invalidated");
 			}
@@ -402,55 +405,55 @@ private:
 			}
 			return Error();
 		}
-		void Get(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds);
-		void OnCmdDone(uint32_t tid);
-		void Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds);
-		void Init(std::deque<WorkerThread>& threads);
-		void SetValid();
-		void ClearConnectionsMapping();
-		void RegisterConn(uint32_t tid, const void* conn, uint32_t connIdx);
+		void Get(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds) RX_REQUIRES(!mtx_);
+		void OnCmdDone(uint32_t tid) RX_REQUIRES(!mtx_);
+		void Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds) RX_REQUIRES(!mtx_);
+		void Init(std::deque<WorkerThread>& threads) RX_REQUIRES(!mtx_);
+		void SetValid() RX_REQUIRES(!mtx_);
+		void ClearConnectionsMapping() RX_REQUIRES(!mtx_);
+		void RegisterConn(uint32_t tid, const void* conn, uint32_t connIdx) RX_REQUIRES(!mtx_);
 
 	private:
-		struct ThreadData {
+		struct [[nodiscard]] ThreadData {
 			ThreadData(net::ev::async& async) noexcept : commandAsync(async) {}
 			std::atomic<uint32_t> reqCnt = 0;
 			h_vector<DatabaseCommand, 16> personalQueue;
 			net::ev::async& commandAsync;
 			bool isReading = false;
 		};
-		struct ConnMeta {
+		struct [[nodiscard]] ConnMeta {
 			ThreadData* threadData = nullptr;
 			uint32_t connIdx = std::numeric_limits<uint32_t>::max();
 		};
 
-		bool isValid_ = false;
-		RecyclingList<DatabaseCommand, 64> sharedQueue_;
-		fast_hash_map<const void*, ConnMeta> thByConns_;
-		std::deque<ThreadData> thData_;
-		std::mutex mtx_;
+		bool isValid_ RX_GUARDED_BY(mtx_) = false;
+		RecyclingList<DatabaseCommand, 64> sharedQueue_ RX_GUARDED_BY(mtx_);
+		fast_hash_map<const void*, ConnMeta> thByConns_ RX_GUARDED_BY(mtx_);
+		std::deque<ThreadData> thData_ RX_GUARDED_BY(mtx_);
+		mutex mtx_;
 	};
-	class ThreadSafeError {
+
+	class [[nodiscard]] ThreadSafeError {
 	public:
-		void Set(Error e) noexcept {
-			std::lock_guard lck(mtx_);
+		void Set(Error e) noexcept RX_REQUIRES(!mtx_) {
+			lock_guard lck(mtx_);
 			err_ = std::move(e);
 		}
-		Error Get() noexcept {
-			std::lock_guard lck(mtx_);
+		Error Get() noexcept RX_REQUIRES(!mtx_) {
+			lock_guard lck(mtx_);
 			return err_;
 		}
 
 	private:
-		std::mutex mtx_;
-		Error err_;
+		mutex mtx_;
+		Error err_ RX_GUARDED_BY(mtx_);
 	};
 
 	CommandsQueue commandsQueue_;
-	std::mutex workersMtx_;
+	mutex workersMtx_;
 	const ReindexerConfig conf_;
 	std::deque<WorkerThread> workers_;
 	std::atomic<uint32_t> runningWorkers_ = {0};
-	std::mutex errorMtx_;
 	ThreadSafeError lastError_;
 	INamespaces::PtrT sharedNamespaces_;
 	std::atomic<bool> requiresStatusCheck_ = {true};
@@ -458,5 +461,6 @@ private:
 	void coroInterpreter(Connection<DatabaseCommand>&, ConnectionsPool<DatabaseCommand>&, uint32_t tid) noexcept;
 	void fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults& qr);
 };
+
 }  // namespace client
 }  // namespace reindexer

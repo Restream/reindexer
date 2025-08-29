@@ -25,8 +25,8 @@ class [[nodiscard]] QueryFunctionParser {
 public:
 	static ParsedQueryFunction Parse(std::string_view query);
 	static ParsedQueryFunction ParseFunction(tokenizer& parser, token& tok);
-	[[nodiscard]] static bool IsFunction(std::string_view val) noexcept;
-	[[nodiscard]] static bool IsFunction(const VariantArray& val) noexcept;
+	static bool IsFunction(std::string_view val) noexcept;
+	static bool IsFunction(const VariantArray& val) noexcept;
 
 private:
 	struct [[nodiscard]] Args {

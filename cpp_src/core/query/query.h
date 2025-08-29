@@ -3,7 +3,6 @@
 #include <functional>
 #include <initializer_list>
 #include "core/keyvalue/geometry.h"
-#include "core/type_consts_helpers.h"
 #include "estl/concepts.h"
 #include "fields_names_filter.h"
 #include "queryentry.h"
@@ -20,11 +19,13 @@ class JoinedQuery;
 
 constexpr std::string_view kAggregationWithSelectFieldsMsgError =
 	"Not allowed to combine aggregation functions and fields' filter in a single query";
+constexpr std::string_view kOrNotOpErrorMsg =
+	"'OR NOT' operation is not supported yet. Use version with brackets instead: 'OR ( NOT ... )'";
 
 /// @class Query
 /// Allows to select data from DB.
 /// Analog to ansi-sql select query.
-class Query {
+class [[nodiscard]] Query {
 public:
 	/// Creates an object for certain namespace with appropriate settings.
 	/// @param nsName - name of the namespace the data to be selected from.
@@ -699,11 +700,14 @@ public:
 	}
 	template <concepts::ConvertibleToString Str>
 	Query& Sort(Str&& sort, bool desc, std::vector<Variant>&& forcedSortOrder) & {
-		if (!sortingEntries_.empty() && !forcedSortOrder.empty()) {
+		if rx_unlikely (!sortingEntries_.empty() && !forcedSortOrder.empty()) {
 			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
 		}
 		SortingEntry entry{std::forward<Str>(sort), desc};
 		if (!entry.expression.empty()) {  // Ignore empty sort expression
+			if rx_unlikely (std::ranges::any_of(forcedSortOrder, [](auto& v) noexcept { return v.IsNullValue(); })) {
+				throw Error(errParams, "Null-values are not supported in forced sorting");
+			}
 			sortingEntries_.emplace_back(std::move(entry));
 			forcedSortOrder_ = std::move(forcedSortOrder);
 		}
@@ -720,7 +724,7 @@ public:
 	Query& Distinct(Str&&... names) & {
 		static_assert(sizeof...(names) > 0);
 		if ((strEmpty(names) || ...)) {
-			throw Error(errParams, "Distincts name empty");
+			throw Error(errParams, "Distinct name empty");
 		}
 		h_vector<std::string, 1> v;
 		v.reserve(sizeof...(names));
@@ -753,7 +757,7 @@ public:
 		if (!CanAddSelectFilter()) {
 			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 		}
-		selectFilter_.Add(l.begin(), l.end());
+		selectFilter_.Add(l.begin(), l.end(), *this);
 		return *this;
 	}
 	template <typename StrCont, std::enable_if_t<!std::is_constructible_v<std::string, StrCont>>* = nullptr>
@@ -765,7 +769,7 @@ public:
 		if (!CanAddSelectFilter()) {
 			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 		}
-		selectFilter_.Add(std::forward<Str>(f));
+		selectFilter_.Add(std::forward<Str>(f), *this);
 		return *this;
 	}
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
@@ -810,7 +814,9 @@ public:
 	/// Sets next operation type to Or.
 	/// @return Query object.
 	Query& Or() & {
-		assertrx_dbg(nextOp_ == OpAnd);
+		if rx_unlikely (nextOp_ == OpNot) {
+			throw Error(errParams, kOrNotOpErrorMsg);
+		}
 		nextOp_ = OpOr;
 		return *this;
 	}
@@ -819,7 +825,9 @@ public:
 	/// Sets next operation type to Not.
 	/// @return Query object.
 	Query& Not() & {
-		assertrx_dbg(nextOp_ == OpAnd);
+		if rx_unlikely (nextOp_ == OpOr) {
+			throw Error(errParams, kOrNotOpErrorMsg);
+		}
 		nextOp_ = OpNot;
 		return *this;
 	}
@@ -1102,7 +1110,7 @@ private:
 	OpType nextOp_ = OpAnd;						/// Next operation constant.
 };
 
-class JoinedQuery final : public Query {
+class [[nodiscard]] JoinedQuery final : public Query {
 public:
 	JoinedQuery(JoinType jt, const Query& q) : Query(q), joinType{jt} {}
 	JoinedQuery(JoinType jt, Query&& q) : Query(std::move(q)), joinType{jt} {}

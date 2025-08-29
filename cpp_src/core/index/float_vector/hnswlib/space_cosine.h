@@ -99,7 +99,7 @@ inline bool CosineWithSSE() noexcept { return false; }
 
 //=======================================================
 
-class CosineSpace final : public SpaceInterface<float> {
+class [[nodiscard]] CosineSpace final : public SpaceInterface<float> {
 	DISTFUNC<float> fstdistfunc_;
 	size_t data_size_;
 	size_t dim_;

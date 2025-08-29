@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-class Prefilter {
+class [[nodiscard]] Prefilter {
 public:
 	Prefilter();
 	size_t CalcSimDistance(const std::wstring& first, const std::wstring& second);

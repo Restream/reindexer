@@ -80,7 +80,7 @@ template <typename T>
 template <typename ContainerT>
 void UpdatesQueuePair<T>::ReinitSyncQueue(ReplicationStatsCollector statsCollector, std::optional<ContainerT>&& allowList,
 										  const Logger& l) {
-	std::lock_guard<MtxT> lck(mtx_);
+	lock_guard lck(mtx_);
 	const auto maxDataSize = syncQueue_->MaxDataSize;
 	syncQueue_ = std::make_shared<QueueT>(maxDataSize, statsCollector);
 	syncQueue_->Init(std::move(allowList), &l);
@@ -90,7 +90,7 @@ template <typename T>
 template <typename ContainerT>
 void UpdatesQueuePair<T>::ReinitAsyncQueue(ReplicationStatsCollector statsCollector, std::optional<ContainerT>&& allowList,
 										   const Logger& l) {
-	std::lock_guard<MtxT> lck(mtx_);
+	lock_guard lck(mtx_);
 	const auto maxDataSize = asyncQueue_->MaxDataSize;
 	asyncQueue_ = std::make_shared<QueueT>(maxDataSize, statsCollector);
 	asyncQueue_->Init(std::move(allowList), &l);

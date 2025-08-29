@@ -15,7 +15,7 @@ class Snapshot;
 namespace reindexer {
 namespace datastorage {
 
-class LevelDbStorage final : public IDataStorage {
+class [[nodiscard]] LevelDbStorage final : public IDataStorage {
 public:
 	LevelDbStorage();
 
@@ -43,7 +43,7 @@ private:
 	std::unique_ptr<leveldb::DB> db_;
 };
 
-class LevelDbBatchBuffer final : public UpdatesCollection {
+class [[nodiscard]] LevelDbBatchBuffer final : public UpdatesCollection {
 public:
 	void Put(std::string_view key, std::string_view value) override {
 		batchWrite_.Put(leveldb::Slice(key.data(), key.size()), leveldb::Slice(value.data(), value.size()));
@@ -59,12 +59,12 @@ private:
 	uint64_t batchId_;
 };
 
-class LevelDbComparator : public Comparator {
+class [[nodiscard]] LevelDbComparator : public Comparator {
 public:
 	int Compare(std::string_view a, std::string_view b) const override final;
 };
 
-class LevelDbIterator final : public Cursor {
+class [[nodiscard]] LevelDbIterator final : public Cursor {
 public:
 	explicit LevelDbIterator(leveldb::Iterator* iterator) noexcept : iterator_(iterator) {}
 
@@ -85,7 +85,7 @@ private:
 	LevelDbComparator comparator_;
 };
 
-class LevelDbSnapshot final : public Snapshot {
+class [[nodiscard]] LevelDbSnapshot final : public Snapshot {
 public:
 	explicit LevelDbSnapshot(const leveldb::Snapshot* snapshot) noexcept;
 

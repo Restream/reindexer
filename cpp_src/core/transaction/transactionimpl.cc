@@ -1,4 +1,5 @@
 #include "transactionimpl.h"
+#include "core/queryresults/queryresults.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {
@@ -6,7 +7,7 @@ namespace reindexer {
 const static Error kTxImplIsNotValid = Error(errNotValid, "Transaction is not initialized");
 
 Error TransactionImpl::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 
 	if (!status_.ok()) {
 		return status_;
@@ -36,7 +37,7 @@ Error TransactionImpl::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 }
 
 Error TransactionImpl::Modify(Query&& query, lsn_t lsn) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 
 	if (!status_.ok()) {
 		return status_;
@@ -59,7 +60,7 @@ Error TransactionImpl::Modify(Query&& query, lsn_t lsn) {
 }
 
 Error TransactionImpl::Nop(lsn_t lsn) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
 	}
@@ -83,7 +84,7 @@ Error TransactionImpl::PutMeta(std::string_view key, std::string_view value, lsn
 		throw Error(errLogic, "Empty meta key is not allowed in tx");
 	}
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
 	}
@@ -107,7 +108,7 @@ Error TransactionImpl::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 		return Error(errLogic, "Unable to set tx tagsmatcher without lsn");
 	}
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
 	}
@@ -136,7 +137,7 @@ Error TransactionImpl::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 }
 
 Item TransactionImpl::NewItem() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	assertrx(data_);
 	Item item(new ItemImpl(data_->GetPayloadType(), data_->GetTagsMatcher(), data_->GetPKFileds(), data_->GetSchema()));
 	item.impl_->tagsMatcher().clearUpdated();
@@ -144,29 +145,29 @@ Item TransactionImpl::NewItem() {
 }
 
 Error TransactionImpl::Status() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return status_;
 }
 
 int TransactionImpl::GetShardID() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return shardId_;
 }
 
 bool TransactionImpl::IsTagsUpdated() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	assertrx(data_);
 	return data_->IsTagsUpdated();
 }
 
 void TransactionImpl::SetShardingRouter(sharding::LocatorServiceAdapter shardingRouter) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	assertrx(!shardingRouter_);
 	shardingRouter_ = std::move(shardingRouter);
 }
 
 Error TransactionImpl::Rollback(int serverId, const RdxContext& ctx) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
 		const auto ward = ctx.BeforeClusterProxy();
 		(*proxiedTx)->Rollback(serverId, ctx);
@@ -183,7 +184,7 @@ Error TransactionImpl::Rollback(int serverId, const RdxContext& ctx) {
 Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx) {
 	const static Error kErrCommitted(errNotValid, "Tx is already committed");
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
 	}
@@ -224,7 +225,7 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& 
 }
 
 LocalTransaction TransactionImpl::Transform(TransactionImpl& tx) {
-	std::lock_guard lck(tx.mtx_);
+	lock_guard lck(tx.mtx_);
 	if (auto* localTx = std::get_if<TxStepsPtr>(&tx.tx_); localTx && *localTx) {
 		LocalTransaction l(std::move(tx.data_), std::move(*localTx), std::move(tx.status_));
 		tx.status_ = Error(errNotValid, "Transformed into local tx");

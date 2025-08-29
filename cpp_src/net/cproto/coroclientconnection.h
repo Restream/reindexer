@@ -20,7 +20,7 @@ namespace cproto {
 using std::chrono::seconds;
 using std::chrono::milliseconds;
 
-class CoroRPCAnswer {
+class [[nodiscard]] CoroRPCAnswer {
 public:
 	const Error& Status() const noexcept { return status_; }
 	Args GetArgs(int minArgs = 0) const {
@@ -60,7 +60,7 @@ constexpr int64_t kShardingFlagsMask = int64_t{0x7FFFFFFF} << 32;
 
 struct CommandParams;
 
-class CoroClientConnection {
+class [[nodiscard]] CoroClientConnection {
 public:
 	using UpdatesHandlerT = std::function<void(const CoroRPCAnswer& ans)>;
 	using FatalErrorHandlerT = std::function<void(Error err)>;
@@ -68,7 +68,7 @@ public:
 	using TimePointT = ClockT::time_point;
 	using ConnectionStateHandlerT = std::function<void(const Error&)>;
 
-	struct Options {
+	struct [[nodiscard]] Options {
 		Options() noexcept
 			: loginTimeout(0),
 			  keepAliveTimeout(0),
@@ -103,7 +103,7 @@ public:
 		std::string appName;
 		std::string replToken;
 	};
-	struct ConnectData {
+	struct [[nodiscard]] ConnectData {
 		httpparser::UrlParser uri;
 		Options opts;
 	};
@@ -132,7 +132,7 @@ public:
 	std::optional<std::string> RxServerVersion() const noexcept { return rxVersion_; }
 
 private:
-	struct RPCData {
+	struct [[nodiscard]] RPCData {
 		RPCData() noexcept : seq(0), used(false), system(false), cancelCtx(nullptr), rspCh(1) {}
 		uint32_t seq;
 		bool used;
@@ -142,7 +142,7 @@ private:
 		coroutine::channel<CoroRPCAnswer> rspCh;
 	};
 
-	struct MarkedChunk {
+	struct [[nodiscard]] MarkedChunk {
 		uint32_t seq;
 		bool noReply;
 		std::optional<TimePointT> requiredLoginTs;
@@ -215,7 +215,7 @@ private:
 	std::optional<std::string> rxVersion_;
 };
 
-struct CommandParams {
+struct [[nodiscard]] CommandParams {
 	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext* ctx,
 				  bool parallel) noexcept
 		: cmd(c),

@@ -8,13 +8,14 @@
 #include "core/ft/ftdsl.h"
 #include "core/ft/ftsetcashe.h"
 #include "core/index/indexunordered.h"
+#include "estl/marked_mutex.h"
 #include "estl/shared_mutex.h"
 #include "fieldsgetter.h"
 
 namespace reindexer {
 
 template <typename Map>
-class IndexText : public IndexUnordered<Map> {
+class [[nodiscard]] IndexText : public IndexUnordered<Map> {
 	using Base = IndexUnordered<Map>;
 
 public:
@@ -23,7 +24,7 @@ public:
 
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, const Index::SelectContext&, const RdxContext&) override final;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, const Index::SelectContext&, FtPreselectT&&, const RdxContext&) override;
-	void UpdateSortedIds(const UpdateSortedContext&) noexcept override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
+	void UpdateSortedIds(const IUpdateSortedContext&) override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
 	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
 	virtual IdSet::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
 							  const RdxContext&) = 0;
@@ -61,7 +62,7 @@ protected:
 								 FtUseExternStatuses useExternSt, bool inTransaction, RankSortType, FtCtx&, const RdxContext&);
 
 	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, FtCtx&, RanksHolder::Ptr&);
-	void build(const RdxContext& rdxCtx);
+	void build(const RdxContext& rdxCtx) RX_REQUIRES(!mtx_);
 
 	void initSearchers();
 	FieldsGetter Getter();

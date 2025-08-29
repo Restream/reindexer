@@ -9,7 +9,7 @@ using reindexer::Query;
 using reindexer::QueryEntry;
 using reindexer::LocalQueryResults;
 
-class ReindexerApi : public virtual ::testing::Test {
+class [[nodiscard]] ReindexerApi : public virtual ::testing::Test {
 public:
 	using Reindexer = reindexer::Reindexer;
 	using QueryResults = reindexer::QueryResults;

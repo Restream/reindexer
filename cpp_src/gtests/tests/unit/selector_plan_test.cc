@@ -49,10 +49,8 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 		const bool searchByBtreeField = (searchField == kFieldTree1 || searchField == kFieldTree2);
 		for (CondType cond : {CondLt, CondLe, CondGt, CondGe}) {
 			{
-				reindexer::QueryResults qr;
 				const Query query{Query(btreeNs).Explain().Where(searchField, cond, RandInt())};
-				Error err = rt.reindexer->Select(query, qr);
-				ASSERT_TRUE(err.ok()) << err.what();
+				auto qr = rt.Select(query);
 				const std::string& explain = qr.GetExplainResults();
 				// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -80,9 +78,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 				for (const Query& query :
 					 {Query(btreeNs).Explain().Where(additionalSearchField, CondEq, RandInt()).Where(searchField, cond, RandInt()),
 					  Query(btreeNs).Explain().Where(searchField, cond, RandInt()).Where(additionalSearchField, CondEq, RandInt())}) {
-					reindexer::QueryResults qr;
-					Error err = rt.reindexer->Select(query, qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+					auto qr = rt.Select(query);
 					const std::string& explain = qr.GetExplainResults();
 					// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -109,10 +105,8 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 				const bool sortByBtreeField = (sortField == kFieldTree1 || sortField == kFieldTree2);
 				for (bool desc : {true, false}) {
 					{
-						reindexer::QueryResults qr;
 						const Query query{Query(btreeNs).Explain().Where(searchField, cond, RandInt()).Sort(sortField, desc)};
-						Error err = rt.reindexer->Select(query, qr);
-						ASSERT_TRUE(err.ok()) << err.what();
+						auto qr = rt.Select(query);
 						const std::string& explain = qr.GetExplainResults();
 						// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -160,9 +154,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 													   .Where(searchField, cond, RandInt())
 													   .Where(additionalSearchField, CondEq, RandInt())
 													   .Sort(sortField, desc)}) {
-							reindexer::QueryResults qr;
-							Error err = rt.reindexer->Select(query, qr);
-							ASSERT_TRUE(err.ok()) << err.what();
+							auto qr = rt.Select(query);
 							const std::string& explain = qr.GetExplainResults();
 							// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -401,12 +393,10 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 	// Check cases, when condition merge algorithm gets empty result sets multiple times in a row
 	const std::string nsName{"conditions_merge_always_false"};
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	for (int id = 0; id < 20; ++id) {
-		Item item = rt.reindexer->NewItem(nsName);
+		Item item(rt.NewItem(nsName));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		item["id"] = id;
 		item["value"] = 123;
@@ -432,9 +422,7 @@ TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 							   .Where("id", CondSet, VariantArray{})
 							   .Where("value", CondAny, VariantArray{})
 							   .Explain()}) {
-		QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		ASSERT_EQ(qr.Count(), 0);
 		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "field", {"always_false"}));
 		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "keys", {1}));

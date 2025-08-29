@@ -69,12 +69,14 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 	using namespace std::string_view_literals;
 	if (!tagName.IsEmpty()) {
 		tagsPath_.emplace_back(tagName);
-		const auto field = tm_.tags2field(tagsPath_);
-		if (field.IsSparseIndex()) {
+		if (const auto field = tm_.tags2field(tagsPath_); field.IsSparseIndex()) {
 			decode(
 				pl, builder, obj, tagName, floatVectorsHolder,
 				SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tm_, isInArray(), "msgpack"sv});
 		} else {
+			if rx_unlikely (field.IsIndexed() && obj.type == MSGPACK_OBJECT_MAP) {
+				throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), "msgpack"sv);
+			}
 			decode(pl, builder, obj, tagName, floatVectorsHolder, kNoValidation);
 		}
 		tagsPath_.pop_back();
@@ -185,8 +187,9 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 									return Variant{p_string(reinterpret_cast<const l_msgpack_hdr*>(&p->via.str)), Variant::HoldT{}};
 								case MSGPACK_OBJECT_NIL:
 									return Variant{};
-								case MSGPACK_OBJECT_ARRAY:
 								case MSGPACK_OBJECT_MAP:
+									throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), "msgpack"sv);
+								case MSGPACK_OBJECT_ARRAY:
 								case MSGPACK_OBJECT_BIN:
 								case MSGPACK_OBJECT_EXT:
 								default:

@@ -8,7 +8,7 @@ namespace reindexer {
 
 template <void (PerfStatCounterST::*hitFunc)(std::chrono::microseconds)>
 void QueriesStatTracer::hit(const QuerySQL& sql, std::chrono::microseconds time) {
-	std::unique_lock<std::mutex> lck(mtx_);
+	unique_lock lck(mtx_);
 	const auto it = stat_.find(sql.normalized);
 	if (it == stat_.end()) {
 		(stat_.emplace(std::string(sql.normalized), Stat(sql.nonNormalized)).first->second.*hitFunc)(time);
@@ -24,7 +24,7 @@ template void QueriesStatTracer::hit<&PerfStatCounterST::Hit>(const QuerySQL&, s
 template void QueriesStatTracer::hit<&PerfStatCounterST::LockHit>(const QuerySQL&, std::chrono::microseconds);
 
 std::vector<QueryPerfStat> QueriesStatTracer::Data() {
-	std::unique_lock<std::mutex> lck(mtx_);
+	unique_lock lck(mtx_);
 
 	std::vector<QueryPerfStat> ret;
 	ret.reserve(stat_.size());

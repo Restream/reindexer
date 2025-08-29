@@ -15,9 +15,9 @@ namespace fuzzing {
 class RandomGenerator;
 class NsScheme;
 
-class Index {
+class [[nodiscard]] Index {
 public:
-	struct Child {
+	struct [[nodiscard]] Child {
 		FieldType type;
 		FieldPath fieldPath;
 	};

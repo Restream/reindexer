@@ -25,14 +25,14 @@ public:
 	};
 
 	template <concepts::ConvertibleToString Str>
-	SelectIterator(SelectKeyResult&& res, reindexer::IsDistinct dist, Str&& n, int idxNo,
+	SelectIterator(SelectKeyResult&& res, reindexer::IsDistinct distinct, Str&& n, int indexNo,
 				   ForcedFirst forcedFirst = ForcedFirst_False) noexcept
 		: SelectKeyResult(std::move(res)),
-		  distinct(dist),
 		  name(std::forward<Str>(n)),
-		  indexNo(idxNo),
+		  type_(Forward),
 		  forcedFirst_(forcedFirst),
-		  type_(Forward) {}
+		  indexNo_(indexNo),
+		  distinct_(distinct) {}
 
 	/// Starts iteration process: prepares
 	/// object for further work.
@@ -89,7 +89,6 @@ public:
 		const auto sz = size();
 		if (sz == 0) {
 			type_ = OnlyComparator;
-			lastVal_ = isReverse_ ? INT_MIN : INT_MAX;
 		} else if (sz == 1 && begIt->indexForwardIter_) {
 			type_ = UnbuiltSortOrdersIndex;
 			begIt->indexForwardIter_->Start(reverse);
@@ -108,54 +107,42 @@ public:
 	/// Signalizes if iteration is over.
 	/// @return true if iteration is done.
 	RX_ALWAYS_INLINE bool End() const noexcept { return lastVal_ == (isReverse_ ? INT_MIN : INT_MAX); }
-	/// Iterates to a next item of result.
+	/// Iterates to a next item of result. Increments 'matched' and 'total' counters.
 	/// @param minHint - rowId value to start from.
 	/// @return true if operation succeed.
-	RX_ALWAYS_INLINE bool Next(IdType minHint) {
-		bool res = false;
-		switch (type_) {
-			case Forward:
-				res = nextFwd(minHint);
-				break;
-			case Reverse:
-				res = nextRev(minHint);
-				break;
-			case SingleRange:
-				res = nextFwdSingleRange(minHint);
-				break;
-			case SingleIdset:
-			case SingleIdSetWithDeferedSort:
-				res = nextFwdSingleIdset(minHint);
-				break;
-			case RevSingleRange:
-				res = nextRevSingleRange(minHint);
-				break;
-			case RevSingleIdset:
-			case RevSingleIdSetWithDeferedSort:
-				res = nextRevSingleIdset(minHint);
-				break;
-			case OnlyComparator:
-				return false;
-			case Unsorted:
-				res = nextUnsorted();
-				break;
-			case UnbuiltSortOrdersIndex:
-				res = nextUnbuiltSortOrders();
-				break;
-		}
-		if (res) {
-			++matchedCount_;
-		}
+	RX_ALWAYS_INLINE bool Next(IdType minHint) noexcept {
+		++totalCalls_;
+		bool res = nextImpl(minHint);
+		matchedCount_ += int(res);
 		return res;
+	}
+	/// Checks if current iterator contains specified ID. Adjusts iterator if needed.
+	/// Increments 'matched' and 'total' counters.
+	/// @param targetId - rowId value to search.
+	/// @return true if targetId was found.
+	RX_ALWAYS_INLINE bool Compare(IdType targetId) noexcept {
+		++totalCalls_;
+		const auto val = Val();
+		if (isReverse_) {
+			if (val < targetId) {
+				return false;
+			}
+		} else if (val > targetId) {
+			return false;
+		}
+
+		if (val == targetId || (nextImpl(targetId) && targetId == Val())) {
+			++matchedCount_;
+			return true;
+		}
+		return false;
 	}
 
 	/// Sets Unsorted iteration mode
 	RX_ALWAYS_INLINE void SetUnsorted() noexcept { isUnsorted_ = true; }
 
 	/// Current rowId
-	RX_ALWAYS_INLINE IdType Val() const noexcept {
-		return (type_ == UnbuiltSortOrdersIndex) ? begin()->indexForwardIter_->Value() : lastVal_;
-	}
+	RX_ALWAYS_INLINE IdType Val() const noexcept { return lastVal_; }
 
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.
@@ -183,7 +170,10 @@ public:
 	}
 
 	/// @return number of matching items
-	int GetMatchedCount() const noexcept { return matchedCount_; }
+	int GetMatchedCount(bool invert) const noexcept {
+		assertrx_dbg(totalCalls_ >= matchedCount_);
+		return invert ? (totalCalls_ - matchedCount_) : matchedCount_;
+	}
 
 	/// Excludes last set of ids from each result
 	/// to remove duplicated keys
@@ -225,7 +215,7 @@ public:
 		}
 		double result{0.0};
 		const auto sz = size();
-		if (distinct) {
+		if (distinct_) {
 			result += sz;
 		} else if (type_ != SingleIdSetWithDeferedSort && type_ != RevSingleIdSetWithDeferedSort && !deferedExplicitSort) {
 			result += static_cast<double>(GetMaxIterations()) * sz;
@@ -254,46 +244,73 @@ public:
 
 	std::string_view TypeName() const noexcept;
 	std::string Dump() const;
-	reindexer::IsDistinct IsDistinct() const noexcept { return distinct; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return distinct_; }
+	int IndexNo() const noexcept { return indexNo_; }
 
-	reindexer::IsDistinct distinct = IsDistinct_False;
 	std::string name;
-	int indexNo = IndexValueType::NotSet;
 
-protected:
+private:
+	/// Iterates to a next item of result.
+	/// @param minHint - rowId value to start from.
+	/// @return true if operation succeed.
+	RX_ALWAYS_INLINE bool nextImpl(IdType minHint) noexcept {
+		switch (type_) {
+			case Forward:
+				return nextFwd(minHint);
+			case Reverse:
+				return nextRev(minHint);
+			case SingleRange:
+				return nextFwdSingleRange(minHint);
+			case SingleIdset:
+			case SingleIdSetWithDeferedSort:
+				return nextFwdSingleIdset(minHint);
+			case RevSingleRange:
+				return nextRevSingleRange(minHint);
+			case RevSingleIdset:
+			case RevSingleIdSetWithDeferedSort:
+				return nextRevSingleIdset(minHint);
+			case OnlyComparator:
+				return false;
+			case Unsorted:
+				return nextUnsorted();
+			case UnbuiltSortOrdersIndex:
+				return nextUnbuiltSortOrders();
+		}
+		return false;
+	}
+
 	// Iterates to a next item of result
 	// depending on iterator type starting
 	// from minHint which is the least rowId.
 	// Generic next implementation
 	bool nextFwd(IdType minHint) noexcept {
-		if (minHint > lastVal_) {
-			lastVal_ = minHint - 1;
-		}
+		const auto lastVal = (minHint > lastVal_) ? (minHint - 1) : lastVal_;
 		int minVal = INT_MAX;
-		for (auto it = begin(), endIt = end(); it != endIt; ++it) {
+		const auto beg = begin();
+		for (auto it = beg, endIt = end(); it != endIt; ++it) {
 			if (it->useBtree_) {
 				if (it->itset_ != it->setend_) {
-					it->itset_ = it->set_->upper_bound(lastVal_);
+					it->itset_ = it->set_->upper_bound(lastVal);
 					if (it->itset_ != it->setend_ && *it->itset_ < minVal) {
 						minVal = *it->itset_;
-						lastPos_ = it - begin();
+						lastPos_ = it - beg;
 					}
 				}
 			} else {
 				if (it->isRange_ && it->rIt_ != it->rEnd_) {
-					it->rIt_ = std::min(it->rEnd_, std::max(it->rIt_, lastVal_ + 1));
+					it->rIt_ = std::min(it->rEnd_, std::max(it->rIt_, lastVal + 1));
 
 					if (it->rIt_ != it->rEnd_ && it->rIt_ < minVal) {
 						minVal = it->rIt_;
-						lastPos_ = it - begin();
+						lastPos_ = it - beg;
 					}
 
 				} else if (!it->isRange_ && it->it_ != it->end_) {
-					for (; it->it_ != it->end_ && *it->it_ <= lastVal_; ++it->it_) {
+					for (; it->it_ != it->end_ && *it->it_ <= lastVal; ++it->it_) {
 					}
 					if (it->it_ != it->end_ && *it->it_ < minVal) {
 						minVal = *it->it_;
-						lastPos_ = it - begin();
+						lastPos_ = it - beg;
 					}
 				}
 			}
@@ -302,32 +319,31 @@ protected:
 		return lastVal_ != INT_MAX;
 	}
 	bool nextRev(IdType maxHint) noexcept {
-		if (maxHint < lastVal_) {
-			lastVal_ = maxHint + 1;
-		}
+		const auto lastVal = (maxHint < lastVal_) ? (maxHint + 1) : lastVal_;
 
 		int maxVal = INT_MIN;
-		for (auto it = begin(), endIt = end(); it != endIt; ++it) {
+		const auto beg = begin();
+		for (auto it = beg, endIt = end(); it != endIt; ++it) {
 			if (it->useBtree_ && it->ritset_ != it->setrend_) {
-				for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal_; ++it->ritset_) {
+				for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal; ++it->ritset_) {
 				}
 				if (it->ritset_ != it->setrend_ && *it->ritset_ > maxVal) {
 					maxVal = *it->ritset_;
-					lastPos_ = it - begin();
+					lastPos_ = it - beg;
 				}
 			} else if (it->isRange_ && it->rrIt_ != it->rrEnd_) {
-				it->rrIt_ = std::max(it->rrEnd_, std::min(it->rrIt_, lastVal_ - 1));
+				it->rrIt_ = std::max(it->rrEnd_, std::min(it->rrIt_, lastVal - 1));
 
 				if (it->rrIt_ != it->rrEnd_ && it->rrIt_ > maxVal) {
 					maxVal = it->rrIt_;
-					lastPos_ = it - begin();
+					lastPos_ = it - beg;
 				}
 			} else if (!it->isRange_ && !it->useBtree_ && it->rit_ != it->rend_) {
-				for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal_; ++it->rit_) {
+				for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal; ++it->rit_) {
 				}
 				if (it->rit_ != it->rend_ && *it->rit_ > maxVal) {
 					maxVal = *it->rit_;
-					lastPos_ = it - begin();
+					lastPos_ = it - beg;
 				}
 			}
 		}
@@ -353,22 +369,21 @@ protected:
 	}
 	// Single idset next implementation
 	bool nextFwdSingleIdset(IdType minHint) noexcept {
-		if (minHint > lastVal_) {
-			lastVal_ = minHint - 1;
-		}
+		const auto lastVal = (minHint > lastVal_) ? (minHint - 1) : lastVal_;
+
 		auto it = begin();
 		if (it->useBtree_) {
-			if (it->itset_ != it->setend_ && *it->itset_ <= lastVal_) {
-				it->itset_ = it->set_->upper_bound(lastVal_);
+			if (it->itset_ != it->setend_ && *it->itset_ <= lastVal) {
+				it->itset_ = it->set_->upper_bound(lastVal);
 			}
 			lastVal_ = (it->itset_ != it->set_->end()) ? *it->itset_ : INT_MAX;
 		} else {
 			if (it->bsearch_) {
-				if (it->it_ != it->end_ && *it->it_ <= lastVal_) {
-					it->it_ = std::upper_bound(it->it_, it->end_, lastVal_);
+				if (it->it_ != it->end_ && *it->it_ <= lastVal) {
+					it->it_ = std::upper_bound(it->it_, it->end_, lastVal);
 				}
 			} else {
-				for (; it->it_ != it->end_ && *it->it_ <= lastVal_; it->it_++) {
+				for (; it->it_ != it->end_ && *it->it_ <= lastVal; it->it_++) {
 				}
 			}
 			lastVal_ = (it->it_ != it->end_) ? *it->it_ : INT_MAX;
@@ -392,25 +407,28 @@ protected:
 		return (lastVal_ != INT_MIN);
 	}
 	bool nextRevSingleIdset(IdType maxHint) noexcept {
-		if (maxHint < lastVal_) {
-			lastVal_ = maxHint + 1;
-		}
+		const auto lastVal = (maxHint < lastVal_) ? (maxHint + 1) : lastVal_;
 
 		auto it = begin();
 
 		if (it->useBtree_) {
-			for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal_; ++it->ritset_) {
+			for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal; ++it->ritset_) {
 			}
 			lastVal_ = (it->ritset_ != it->setrend_) ? *it->ritset_ : INT_MIN;
 		} else {
-			for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal_; ++it->rit_) {
+			for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal; ++it->rit_) {
 			}
 			lastVal_ = (it->rit_ != it->rend_) ? *it->rit_ : INT_MIN;
 		}
 
 		return !(lastVal_ == INT_MIN);
 	}
-	bool nextUnbuiltSortOrders() noexcept { return begin()->indexForwardIter_->Next(); }
+	bool nextUnbuiltSortOrders() noexcept {
+		auto& iter = *begin()->indexForwardIter_;
+		const bool res = iter.Next();
+		lastVal_ = iter.Value();
+		return res;
+	}
 	// Unsorted next implementation
 	bool nextUnsorted() noexcept {
 		if (lastPos_ == size()) {
@@ -433,7 +451,7 @@ protected:
 
 	/// Performs ID sets merge and sort in case, when this sort was deferred earlier and still effective with current maxIterations value
 	bool applyDeferedSort(int maxIterations) {
-		if (deferedExplicitSort && maxIterations > 0 && !distinct) {
+		if (deferedExplicitSort && maxIterations > 0 && !distinct_) {
 			const auto idsCount = GetMaxIterations();
 			if (IsGenericSortRecommended(size(), idsCount, size_t(maxIterations))) {
 				[[maybe_unused]] auto merged =
@@ -444,14 +462,17 @@ protected:
 		return false;
 	}
 
+	int totalCalls_ = 0;
+	IdType lastVal_ = INT_MIN;
+	int type_ = 0;
 	bool isUnsorted_ = false;
 	bool isReverse_ = false;
 	ForcedFirst forcedFirst_ = ForcedFirst_False;
 	bool isNotOperation_ = false;
-	int type_ = 0;
 	size_t lastPos_ = 0;
-	IdType lastVal_ = INT_MIN;
 	int matchedCount_ = 0;
+	int indexNo_ = IndexValueType::NotSet;
+	reindexer::IsDistinct distinct_ = IsDistinct_False;
 };
 
 }  // namespace reindexer

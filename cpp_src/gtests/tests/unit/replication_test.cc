@@ -80,7 +80,7 @@ TEST_F(ReplicationLoadApi, Base) {
 
 	std::thread statsReader([this]() {
 		while (!stop) {
-			GetReplicationStats(masterId_);
+			rx_unused = GetReplicationStats(masterId_);
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		}
 	});
@@ -88,13 +88,13 @@ TEST_F(ReplicationLoadApi, Base) {
 	SetWALSize(masterId_, 50000, kNsSome);
 	for (size_t i = 0; i < 2; ++i) {
 		if (i % 3 == 0) {
-			DeleteFromMaster();
+			rx_unused = DeleteFromMaster();
 		}
 		SetWALSize(masterId_, (int64_t(i) + 1) * 25000, kNsSome1);
 		FillData(1000);
-		GetReplicationStats(masterId_);
+		rx_unused = GetReplicationStats(masterId_);
 		SetWALSize(masterId_, (int64_t(i) + 1) * 50000, kNsSome);
-		SimpleSelect(0);
+		rx_unused = SimpleSelect(0);
 	}
 
 	SetWALSize(masterId_, 50000, "some1");
@@ -177,7 +177,7 @@ TEST_F(ReplicationLoadApi, BaseTagsMatcher) {
 	FillData(1000);
 	for (size_t i = 0; i < 2; ++i) {
 		if (i == 1) {
-			DeleteFromMaster();
+			rx_unused = DeleteFromMaster();
 		}
 		FillData(1000);
 	}
@@ -218,13 +218,13 @@ TEST_F(ReplicationLoadApi, SingleSlaveTest) {
 
 			RestartServer(i);
 			if (counter % 3 == 0) {
-				DeleteFromMaster();
+				rx_unused = DeleteFromMaster();
 			}
 		}
 	});
 
 	for (size_t i = 0; i < 2; ++i) {
-		SimpleSelect(0);
+		rx_unused = SimpleSelect(0);
 		SetWALSize(masterId_, (int64_t(i) + 1) * 1000, "some1");
 		SetWALSize(masterId_, (int64_t(i) + 1) * 1000, "some");
 		std::this_thread::sleep_for(std::chrono::seconds(3));

@@ -9,9 +9,9 @@ namespace net {
 class socket;
 
 /// Server side network connection interface for Listener.
-class IServerConnection {
+class [[nodiscard]] IServerConnection {
 public:
-	enum class BalancingType { NotSet, None, Shared, Dedicated };
+	enum class [[nodiscard]] BalancingType { NotSet, None, Shared, Dedicated };
 
 	virtual ~IServerConnection() = default;
 	/// Check if connection is finished.

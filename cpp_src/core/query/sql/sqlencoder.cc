@@ -7,7 +7,7 @@
 #include "tools/logger.h"
 #include "tools/serializer.h"
 
-enum class NeedQuote : bool { No = false, Yes = true };
+enum class [[nodiscard]] NeedQuote : bool { No = false, Yes = true };
 
 template <NeedQuote needQuote>
 static void indexToSql(std::string_view index, reindexer::WrSerializer& ser) {
@@ -68,7 +68,7 @@ void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer& ser, bool stripAr
 		ser << "(";
 	}
 	for (auto& e : jq.joinEntries_) {
-		if (&e != &*jq.joinEntries_.begin()) {
+		if (e.Operation() == OpType::OpNot || &e != &*jq.joinEntries_.begin()) {
 			ser << ' ' << e.Operation() << ' ';
 		}
 		if (e.ReverseNamespacesOrder()) {
@@ -407,7 +407,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 					ser << kOpNames[op] << ' ';
 				}
 				ser << sqe.FieldName() << ' ' << sqe.Condition() << " ("sv;
-				SQLEncoder{query_.GetSubQuery(sqe.QueryIndex())}.GetSQL(ser, stripArgs);
+				rx_unused = SQLEncoder{query_.GetSubQuery(sqe.QueryIndex())}.GetSQL(ser, stripArgs);
 				ser << ')';
 			},
 			[&](const QueryEntriesBracket& bracket) {
@@ -425,7 +425,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				}
 				dumpCondWithValues<NeedQuote::Yes>(ser, entry.FieldName(), entry.Condition(), entry.Values(), stripArgs);
 			},
-			[&](const DistinctQueryEntry&) {},
+			[&](const MultiDistinctQueryEntry&) {},
 			[&](const JoinQueryEntry& jqe) {
 				if (encodedEntries && query_.GetJoinQueries()[jqe.joinIndex].joinType != JoinType::OrInnerJoin) {
 					ser << kOpNames[op] << ' ';

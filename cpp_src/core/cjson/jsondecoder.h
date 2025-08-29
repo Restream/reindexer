@@ -17,7 +17,7 @@ class SparseValidator;
 
 }  // namespace item_fields_validator
 
-class JsonDecoder {
+class [[nodiscard]] JsonDecoder {
 public:
 	explicit JsonDecoder(TagsMatcher& tagsMatcher, const FieldsSet* filter = nullptr) noexcept
 		: tagsMatcher_(tagsMatcher), filter_(filter) {}
