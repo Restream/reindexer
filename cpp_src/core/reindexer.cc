@@ -235,22 +235,16 @@ Error Reindexer::Delete(const Query& q, QueryResults& result) noexcept {
 		return impl_->Delete(q, result, rdxCtx);
 	});
 }
-Error Reindexer::Select(std::string_view query, QueryResults& result, unsigned proxyFetchLimit) noexcept {
+Error Reindexer::ExecSQL(std::string_view query, QueryResults& result, unsigned proxyFetchLimit) noexcept {
 	return callWithConnectCheck([&] {
 		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << query; }, result);
-		return impl_->Select(query, result, proxyFetchLimit, rdxCtx);
+		return impl_->ExecSQL(query, result, proxyFetchLimit, rdxCtx);
 	});
 }
 Error Reindexer::Select(const Query& q, QueryResults& result, unsigned proxyFetchLimit) noexcept {
 	return callWithConnectCheck([&] {
 		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
 		return impl_->Select(q, result, proxyFetchLimit, rdxCtx);
-	});
-}
-Error Reindexer::Commit(std::string_view) noexcept {
-	return callWithConnectCheck([] {
-		// Empty
-		return Error();
 	});
 }
 Error Reindexer::Update(const Query& q, QueryResults& result) noexcept {

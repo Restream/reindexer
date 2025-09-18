@@ -18,7 +18,7 @@ service Reindexer {
 	rpc EnumNamespaces(EnumNamespacesRequest) returns(EnumNamespacesResponse) {}
 	rpc EnumDatabases(EnumDatabasesRequest) returns(EnumDatabasesResponse) {}
 	rpc ModifyItem(stream ModifyItemRequest) returns(stream ErrorResponse) {}
-	rpc SelectSql(SelectSqlRequest) returns(stream QueryResultsResponse) {}
+	rpc ExecSql(SqlRequest) returns(stream QueryResultsResponse) {}
 	rpc Select(SelectRequest) returns(stream QueryResultsResponse) {}
 	rpc Update(UpdateRequest) returns(stream QueryResultsResponse) {}
 	rpc Delete(DeleteRequest) returns(stream QueryResultsResponse) {}
@@ -207,7 +207,7 @@ message OutputFlags {
 }
 
 // SQL Query message
-message SelectSqlRequest {
+message SqlRequest {
 	string dbName = 1;
 	string sql = 2;
 	OutputFlags flags = 3;
@@ -325,11 +325,12 @@ message EnumDatabasesRequest {}
 
 // Namespaces definition.
 message Namespace {
+	reserved 5;
+
 	string dbName = 1;
 	string name = 2;
 	StorageOptions storageOptions = 3;
 	repeated Index indexesDefinitions = 4;
-	bool isTemporary = 5;
 }
 
 message AddNamespaceRequest {

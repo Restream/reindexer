@@ -16,9 +16,12 @@ class RdxContext;
 class Namespace;
 
 struct [[nodiscard]] NamespaceDef {
+	struct NameOnly {};
+
 	NamespaceDef() = default;
 	explicit NamespaceDef(std::string_view iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
 		: name(iname), storage(istorage) {}
+	explicit NamespaceDef(std::string_view iname, NameOnly) : name{iname}, isNameOnly{true} {}
 
 	NamespaceDef& AddIndex(const std::string& iname, const std::string& indexType, const std::string& fieldType,
 						   IndexOpts opts = IndexOpts()) {
@@ -53,7 +56,7 @@ public:
 	std::string name;
 	StorageOpts storage;
 	std::vector<IndexDef> indexes;
-	bool isTemporary = false;
+	bool isNameOnly = false;
 	std::string schemaJson = "{}";
 };
 

@@ -63,7 +63,7 @@ TEST(SyncCoroRx, BaseTest) {
 	const int insRows = 200;
 	SyncCoroRxHelpers::FillData(client, nsName, insRows);
 	reindexer::client::QueryResults qResults(3);
-	err = client.Select(std::string("select * from ") + std::string(nsName) + " order by id", qResults);
+	err = client.ExecSQL(fmt::format("select * from {} order by id", nsName), qResults);
 
 	int indx = 0;
 	for (auto it = qResults.begin(); it != qResults.end(); ++it, indx++) {
@@ -116,7 +116,7 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 	SyncCoroRxHelpers::FillData(client, nsName, insRows);
 
 	reindexer::client::QueryResults qResults(3);
-	err = client.Select(std::string("select * from ") + std::string(nsName) + " order by id", qResults);
+	err = client.ExecSQL(fmt::format("select * from {} order by id", nsName), qResults);
 
 	unsigned int indx = 0;
 
@@ -168,7 +168,7 @@ TEST(SyncCoroRx, TestSyncCoroRx) {
 
 	SyncCoroRxHelpers::FillData(client, "ns_test", kSyncCoroRxTestMaxIndex);
 	reindexer::client::QueryResults qResults(3);
-	err = client.Select("select * from ns_test", qResults);
+	err = client.ExecSQL("select * from ns_test", qResults);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto i = qResults.begin(); i != qResults.end(); ++i) {

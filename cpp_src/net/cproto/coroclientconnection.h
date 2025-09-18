@@ -109,7 +109,7 @@ public:
 	};
 
 	CoroClientConnection();
-	~CoroClientConnection() { Stop(); }
+	~CoroClientConnection();
 
 	void Start(ev::dynamic_loop& loop, ConnectData&& connectData);
 	void Stop();

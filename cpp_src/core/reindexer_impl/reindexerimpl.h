@@ -98,7 +98,7 @@ public:
 	Error GetSchema(std::string_view nsName, int format, std::string& schema, const RdxContext& ctx);
 	Error UpdateIndex(std::string_view nsName, const IndexDef& indexDef, const RdxContext& ctx);
 	Error DropIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx);
-	Error EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const RdxContext& ctx);
+	Error EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const RdxContext& ctx) noexcept;
 	Error Insert(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Insert(std::string_view nsName, Item& item, LocalQueryResults&, const RdxContext& ctx);
 	Error Update(std::string_view nsName, Item& item, const RdxContext& ctx);
@@ -277,6 +277,7 @@ private:
 		ReindexerImpl& owner_;
 	};
 
+	Error addNamespace(const NamespaceDef& nsDef, std::optional<NsReplicationOpts> replOpts, const RdxContext& ctx);
 	Error getLeaderDsn(DSN& dsn, unsigned short serverId, const cluster::RaftInfo& info);
 	Error insertDontUpdateSystemNS(std::string_view nsName, Item& item, const RdxContext& ctx);
 	FilterNsNamesT detectFilterNsNames(const Query& q);

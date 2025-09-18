@@ -220,7 +220,7 @@ typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::Select(con
 template <typename DB>
 typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::ExecSQL(std::string_view sql) {
 	QueryResultsType qr;
-	auto err = reindexer->WithTimeout(kBasicTimeout).Select(sql, qr);
+	auto err = reindexer->WithTimeout(kBasicTimeout).ExecSQL(sql, qr);
 	EXPECT_TRUE(err.ok()) << err.what() << "; " << sql;
 	return qr;
 }

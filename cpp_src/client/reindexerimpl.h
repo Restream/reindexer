@@ -25,7 +25,7 @@ class Connection;
 template <typename CmdT>
 class ConnectionsPool;
 
-class [[nodiscard]] ReindexerImpl {
+class [[nodiscard]] ReindexerImpl : public std::enable_shared_from_this<ReindexerImpl> {
 public:
 	typedef QueryResults QueryResultsT;
 
@@ -61,7 +61,7 @@ public:
 	Error Delete(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx);
 	Error Delete(std::string_view nsName, Item& item, QueryResults& result, const InternalRdxContext& ctx);
 	Error Delete(const Query& query, QueryResults& result, const InternalRdxContext& ctx);
-	Error Select(std::string_view query, QueryResults& result, const InternalRdxContext& ctx);
+	Error ExecSQL(std::string_view query, QueryResults& result, const InternalRdxContext& ctx);
 	Error Select(const Query& query, QueryResults& result, const InternalRdxContext& ctx);
 	Item NewItem(std::string_view nsName, const InternalRdxContext& ctx) noexcept;
 	Error GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx);
@@ -124,8 +124,8 @@ private:
 		DbCmdDeleteQR,
 		DbCmdDeleteQ,
 		DbCmdNewItem,
-		DbCmdSelectS,
-		DbCmdSelectQ,
+		DbCmdExecSQL,
+		DbCmdSelect,
 		DbCmdGetMeta,
 		DbCmdGetShardedMeta,
 		DbCmdPutMeta,
@@ -277,7 +277,8 @@ private:
 			}
 			if (err.ok()) {
 				future.wait();
-				return RX_GET_WITHOUT_MUTEX_ANALYSIS { return std::move(res.data); }();
+				return RX_GET_WITHOUT_MUTEX_ANALYSIS { return std::move(res.data); }
+				();
 			}
 			if constexpr (withClient) {
 				if (err.code() == errParams) {

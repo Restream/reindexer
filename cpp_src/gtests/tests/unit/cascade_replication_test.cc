@@ -790,24 +790,23 @@ TEST_F(CascadeReplicationApi, DISABLED_RenameSlaveNs) {
 	err = slave->api.reindexer->RenameNamespace("ns1", "ns1RenameSlave");
 	ASSERT_FALSE(err.ok());
 
-	std::string tmpNsName("tmpNsName");
-	NamespaceDef tmpNsDef = NamespaceDef(tmpNsName, StorageOpts().Enabled().CreateIfMissing());
-	tmpNsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
-	tmpNsDef.isTemporary = true;
-	err = master->api.reindexer->AddNamespace(tmpNsDef);
-	ASSERT_TRUE(err.ok()) << err.what();
-	reindexer::client::Item item = master->api.NewItem(tmpNsName);
-	err = item.FromJSON("{\"id\":" + std::to_string(10) + "}");
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = master->api.reindexer->Upsert(tmpNsName, item);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = master->api.reindexer->RenameNamespace(tmpNsName, tmpNsName + "Rename");
-	ASSERT_FALSE(err.ok());
+	// TODO: User can't create temporary namespace this way anymore. But we could try to rewrite this test, using CreateTemporary
+	// std::string tmpNsName("tmpNsName");
+	// NamespaceDef tmpNsDef = NamespaceDef(tmpNsName, StorageOpts().Enabled().CreateIfMissing());
+	// tmpNsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
+	// tmpNsDef.isTemporary = true;
+	// err = master->api.reindexer->AddNamespace(tmpNsDef);
+	// ASSERT_TRUE(err.ok()) << err.what();
+	// reindexer::client::Item item = master->api.NewItem(tmpNsName);
+	// err = item.FromJSON("{\"id\":" + std::to_string(10) + "}");
+	// ASSERT_TRUE(err.ok()) << err.what();
+	// err = master->api.reindexer->Upsert(tmpNsName, item);
+	// ASSERT_TRUE(err.ok()) << err.what();
+	// err = master->api.reindexer->RenameNamespace(tmpNsName, tmpNsName + "Rename");
+	// ASSERT_FALSE(err.ok());
 
-	BaseApi::QueryResultsType r1;
-	err = master->api.reindexer->Select("Select * from " + tmpNsName, r1);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(r1.Count() == 1);
+	// auto r1 = master->api.ExecSQL("Select * from " + tmpNsName);
+	// ASSERT_EQ(r1.Count(), 1);
 }
 
 TEST_F(CascadeReplicationApi, Node3ApplyWal) {

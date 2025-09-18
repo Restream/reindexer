@@ -22,6 +22,7 @@ size_t IdRelType::unpack(const uint8_t* buf, unsigned len) {
 	assertrx_dbg(len != 0);
 	auto l = scan_varint(len, p);
 	assertrx_dbg(l != 0);
+	assertrx_dbg(l <= 5);
 	id_ = parse_uint32(l, p);
 	p += l, len -= l;
 
@@ -45,21 +46,6 @@ size_t IdRelType::unpack(const uint8_t* buf, unsigned len) {
 	return p - buf;
 }
 
-int IdRelType::Distance(const IdRelType& other, int max) const {
-	for (auto i = pos_.begin(), j = other.pos_.begin(); i != pos_.end() && j != other.pos_.end();) {
-		// fpos - field number + word position in the field
-		bool sign = i->fpos > j->fpos;
-		int cur = sign ? i->fpos - j->fpos : j->fpos - i->fpos;
-		if (cur < max && cur < (1 << PosType::posBits)) {
-			max = cur;
-			if (max <= 1) {
-				break;
-			}
-		}
-		(sign) ? j++ : i++;
-	}
-	return max;
-}
 int IdRelType::WordsInField(int field) const noexcept {
 	const auto lower = std::lower_bound(pos_.cbegin(), pos_.cend(), field, [](PosType p, int f) { return p.field() < f; });
 	return std::upper_bound(lower, pos_.cend(), field, [](int f, PosType p) { return f < p.field(); }) - lower;
@@ -75,52 +61,5 @@ int IdRelType::MinPositionInField(int field) const noexcept {
 	}
 	return res;
 }
-
-// h_vector<std::pair<IdRelType::PosType, int>, 4>
-// IdRelType
-// h_vector<std::pair<PosTypeDebug, int>, 4>
-template <typename PosTypeT>
-int IdRelType::MergeWithDist(const IdRelType& newWordPos, unsigned int dist, PosTypeT& res, [[maybe_unused]] const std::string& inf) const {
-	unsigned int minDist = std::numeric_limits<int>::max();
-	auto rightIt = newWordPos.pos_.begin();
-	const auto leftEnd = pos_.end();
-	const auto rightEnd = newWordPos.pos_.end();
-	for (auto leftIt = pos_.begin(); leftIt != leftEnd; ++leftIt) {
-		while (rightIt != rightEnd && rightIt->fpos < leftIt->fpos) {
-			++rightIt;
-		}
-		// here right pos > left pos
-		if (rightIt == rightEnd) {
-			break;
-		}
-		if (rightIt->field() != leftIt->field()) {
-			continue;
-		}
-
-		while (rightIt != rightEnd && rightIt->field() == leftIt->field() && rightIt->fpos - leftIt->fpos <= dist) {
-			minDist = std::min(rightIt->fpos - leftIt->fpos, minDist);
-			if constexpr (std::is_same_v<PosTypeT, IdRelType>) {
-				res.Add(*rightIt);
-			} else if constexpr (std::is_same_v<PosTypeT, h_vector<std::pair<IdRelType::PosType, int>, 4>>) {
-				res.emplace_back(*rightIt, leftIt - pos_.begin());
-			} else if constexpr (std::is_same_v<PosTypeT, h_vector<std::pair<PosTypeDebug, int>, 4>>) {
-				res.emplace_back(PosTypeDebug{*rightIt, inf}, leftIt - pos_.begin());
-			} else {
-				static_assert(!sizeof(PosTypeT), "incorrect PosType type ");
-			}
-			++rightIt;
-		}
-	}
-	return minDist;
-}
-
-template int IdRelType::MergeWithDist<IdRelType>(const IdRelType& newWordPos, unsigned int dist, IdRelType& res,
-												 const std::string& inf) const;
-template int IdRelType::MergeWithDist<h_vector<std::pair<IdRelType::PosType, int>, 4>>(const IdRelType& newWordPos, unsigned int dist,
-																					   h_vector<std::pair<IdRelType::PosType, int>, 4>& res,
-																					   const std::string& inf) const;
-template int IdRelType::MergeWithDist<h_vector<std::pair<PosTypeDebug, int>, 4>>(const IdRelType& newWordPos, unsigned int dist,
-																				 h_vector<std::pair<PosTypeDebug, int>, 4>& res,
-																				 const std::string&) const;
 
 }  // namespace reindexer

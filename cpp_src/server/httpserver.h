@@ -81,6 +81,21 @@ public:
 	int GetDefaultConfigs(http::Context& ctx);
 
 private:
+	enum class DataFormat { JSON, MsgPack, Protobuf, CSVFile };
+
+	struct IQRSerializingOption {
+		virtual ~IQRSerializingOption() = default;
+
+		virtual std::optional<size_t> TotalCount() const noexcept = 0;
+		virtual std::optional<size_t> QueryTotalCount() const noexcept = 0;
+		virtual unsigned ExternalLimit() const noexcept = 0;
+		virtual unsigned ExternalOffset() const noexcept = 0;
+	};
+	class TxCommitOption;
+	class TwoLevelLimitOffsetOption;
+	class ReqularQueryResultsOption;
+	class ItemsQueryResultsOption;
+
 	Error modifyItem(Reindexer& db, std::string_view nsName, Item& item, ItemModifyMode mode);
 	Error modifyItem(Reindexer& db, std::string_view nsName, Item& item, QueryResults&, ItemModifyMode mode);
 	int modifyItems(http::Context& ctx, ItemModifyMode mode);
@@ -88,20 +103,20 @@ private:
 	int modifyItemsProtobuf(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
 	int modifyItemsMsgPack(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
 	int modifyItemsJSON(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	int modifyItemsTxProtobuf(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
 	int modifyItemsTxMsgPack(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
 	int modifyItemsTxJSON(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
-	int queryResults(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults = false, unsigned limit = kDefaultLimit,
-					 unsigned offset = kDefaultOffset);
-	int queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-							bool withColumns, int width = 0);
-	int queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-							 bool withColumns, int width = 0);
-	int queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-						 bool withColumns, int width = 0);
-	int queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, unsigned limit, unsigned offset);
+	int queryResults(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption);
+	int queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption, bool withColumns,
+							int width = 0);
+	int queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption, bool withColumns,
+							 int width = 0);
+	int queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption, bool withColumns,
+						 int width = 0);
+	int queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption);
 	template <typename Builder>
-	void queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData, bool isQueryResults,
-						   unsigned limit, bool withColumns, int width);
+	void queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData,
+						   const IQRSerializingOption& qrOption, bool withColumns, int width);
 	int statusOK(http::Context& ctx, chunk&& chunk);
 	int status(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
 	int jsonStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
@@ -125,6 +140,10 @@ private:
 	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults& res, http::Context& ctx);
 	bool isParameterSetOn(std::string_view val) const noexcept;
 	int getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const;
+
+	DataFormat dataFormatFromStr(std::string_view str);
+	DataFormat getDataFormat(const http::Context& ctx);
+	[[noreturn]] void throwUnsupportedOpFormat(const http::Context& ctx);
 
 	DBManager& dbMgr_;
 	Pprof pprof_;

@@ -97,9 +97,9 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher& tags
 		}
 		if (t_.Field(fieldIdx).IsArray()) {
 			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, CanAddField_False);
-			if (tagsPath.back().IsWithIndex()) {
+			if (tagsPath.back().IsTagIndexNotAll()) {
 				kvs.Clear();
-				kvs.emplace_back(Get(fieldIdx, tagsPath.back().Index()));
+				kvs.emplace_back(Get(fieldIdx, tagsPath.back().GetTagIndex().AsNumber()));
 				rx_unused = kvs.MarkArray();
 				return;
 			}
@@ -119,7 +119,7 @@ void PayloadIface<T>::getByJsonPath(const P& path, VariantArray& krefs, KeyValue
 	const auto filter = FieldsFilter::FromPath(path);
 	ConstPayload pl(t_, *v_);
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	FieldsExtractor extractor(&krefs, expectedType, path.size(), &filter);
+	FieldsExtractor extractor(&krefs, expectedType, path);
 	encoder.Encode(pl, extractor);
 }
 
@@ -195,7 +195,7 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath& tagsPat
 	offset = -1;
 	size = -1;
 	FieldsExtractor::FieldParams params{.index = offset, .length = size, .field = field};
-	FieldsExtractor extractor(&values, KeyValueType::Undefined{}, tagsPath.size(), &filter, &params);
+	FieldsExtractor extractor(&values, KeyValueType::Undefined{}, tagsPath, &params);
 
 	ConstPayload pl(t_, *v_);
 	encoder.Encode(pl, extractor);
@@ -506,13 +506,17 @@ template <typename T>
 template <WithString withString, NotComparable notComparable>
 ComparationResult PayloadIface<T>::CompareField(const T& other, int field, const FieldsSet& fields, size_t& tagPathIdx,
 												const CollateOpts& collateOpts) const {
-	VariantArray krefs1, krefs2;
 	PayloadIface<const T> o(t_, other);
-
+	VariantArray krefs1, krefs2;
 	if (field != IndexValueType::SetByJsonPath) {
-		const auto cmpRes = Field(field).Get().template Compare<notComparable>(o.Field(field).Get(), collateOpts);
-		if (cmpRes != ComparationResult::Eq) {
-			return cmpRes;
+		Get(field, krefs1);
+		o.Get(field, krefs2);
+		size_t length = std::min(krefs1.size(), krefs2.size());
+		for (size_t j = 0; j < length; ++j) {
+			const auto cmpRes = krefs1[j].Compare<notComparable>(krefs2[j], collateOpts);
+			if (cmpRes != ComparationResult::Eq) {
+				return cmpRes;
+			}
 		}
 	} else {
 		assertrx(tagPathIdx < fields.getTagsPathsLength());
@@ -525,7 +529,6 @@ ComparationResult PayloadIface<T>::CompareField(const T& other, int field, const
 			GetByJsonPath(tagsPath, krefs1, KeyValueType::Undefined{});
 			o.GetByJsonPath(tagsPath, krefs2, KeyValueType::Undefined{});
 		}
-
 		size_t length = std::min(krefs1.size(), krefs2.size());
 		for (size_t j = 0; j < length; ++j) {
 			const auto cmpRes = krefs1[j].RelaxCompare<withString, notComparable>(krefs2[j], collateOpts);
@@ -533,13 +536,14 @@ ComparationResult PayloadIface<T>::CompareField(const T& other, int field, const
 				return cmpRes;
 			}
 		}
-
-		if (krefs1.size() < krefs2.size()) {
-			return ComparationResult::Lt;
-		} else if (krefs1.size() > krefs2.size()) {
-			return ComparationResult::Gt;
-		}
 	}
+
+	if (krefs1.size() < krefs2.size()) {
+		return ComparationResult::Lt;
+	} else if (krefs1.size() > krefs2.size()) {
+		return ComparationResult::Gt;
+	}
+
 	return ComparationResult::Eq;
 }
 

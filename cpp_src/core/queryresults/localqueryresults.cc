@@ -267,61 +267,72 @@ joins::ItemIterator LocalQueryResults::IteratorImpl<QR>::GetJoined() {
 }
 
 template <typename QR>
-Error LocalQueryResults::IteratorImpl<QR>::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
-	auto& itemRef = qr_->items_.GetItemRef(idx_);
-	assertrx(qr_->ctxs.size() > itemRef.Nsid());
-	const auto& ctx = qr_->ctxs[itemRef.Nsid()];
+Error LocalQueryResults::IteratorImpl<QR>::GetMsgPack(WrSerializer& wrser, bool withHdrLen) noexcept {
+	try {
+		auto& itemRef = qr_->items_.GetItemRef(idx_);
+		assertrx(qr_->ctxs.size() > itemRef.Nsid());
+		const auto& ctx = qr_->ctxs[itemRef.Nsid()];
 
-	if (itemRef.Value().IsFree()) {
-		return Error(errNotFound, "Item not found");
+		if (itemRef.Value().IsFree()) {
+			MsgPackBuilder msgpackBuilder(wrser, ObjType::TypePlain, 0);
+			if (withHdrLen) {
+				auto slicePosSaver = wrser.StartSlice();
+				rx_unused = msgpackBuilder.Object(TagName::Empty(), 0);
+			} else {
+				rx_unused = msgpackBuilder.Object(TagName::Empty(), 0);
+			}
+			return {};
+		}
+
+		ConstPayload pl(ctx.type_, itemRef.Value());
+		MsgPackEncoder msgpackEncoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
+		const TagsLengths& tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
+		int startTag = 0;
+		MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
+		if (withHdrLen) {
+			auto slicePosSaver = wrser.StartSlice();
+			msgpackEncoder.Encode(pl, msgpackBuilder);
+		} else {
+			msgpackEncoder.Encode(pl, msgpackBuilder);
+		}
+	} catch (std::exception& err) {
+		err_ = std::move(err);
+		return err_;
 	}
-
-	int startTag = 0;
-	ConstPayload pl(ctx.type_, itemRef.Value());
-	MsgPackEncoder msgpackEncoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
-	const TagsLengths& tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
-	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
-	if (withHdrLen) {
-		auto slicePosSaver = wrser.StartSlice();
-		msgpackEncoder.Encode(pl, msgpackBuilder);
-	} else {
-		msgpackEncoder.Encode(pl, msgpackBuilder);
-	}
-	return errOK;
-}
-
-template <typename QR>
-Error LocalQueryResults::IteratorImpl<QR>::GetProtobuf(WrSerializer& wrser, bool withHdrLen) {
-	auto& itemRef = qr_->items_.GetItemRef(idx_);
-	assertrx(qr_->ctxs.size() > itemRef.Nsid());
-	const auto& ctx = qr_->ctxs[itemRef.Nsid()];
-	if (!ctx.schema_) {
-		return Error(errParams, "The schema was not found for Protobuf builder");
-	}
-
-	if (itemRef.Value().IsFree()) {
-		return Error(errNotFound, "Item not found");
-	}
-
-	ConstPayload pl(ctx.type_, itemRef.Value());
-	ProtobufEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
-	ProtobufBuilder builder(&wrser, ObjType::TypePlain, ctx.schema_.get(), const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
-
-	auto item = builder.Object(kProtoQueryResultsFields.at(kParamItems));
-	auto ItemImpl = item.Object(TagName(ctx.schema_->GetProtobufNsNumber() + 1));
-
-	if (withHdrLen) {
-		auto slicePosSaver = wrser.StartSlice();
-		encoder.Encode(pl, builder);
-	} else {
-		encoder.Encode(pl, builder);
-	}
-
 	return {};
 }
 
 template <typename QR>
-Error LocalQueryResults::IteratorImpl<QR>::GetJSON(WrSerializer& ser, bool withHdrLen) {
+Error LocalQueryResults::IteratorImpl<QR>::GetProtobuf(WrSerializer& wrser) noexcept {
+	try {
+		auto& itemRef = qr_->items_.GetItemRef(idx_);
+		assertrx(qr_->ctxs.size() > itemRef.Nsid());
+		const auto& ctx = qr_->ctxs[itemRef.Nsid()];
+		if (!ctx.schema_) {
+			return Error(errParams, "The schema was not found for Protobuf builder");
+		}
+
+		ProtobufEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
+		ProtobufBuilder builder(&wrser, ObjType::TypePlain, ctx.schema_.get(), const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
+
+		auto item = builder.Object(kProtoQueryResultsFields.at(kParamItems));
+		auto ItemImpl = item.Object(TagName(ctx.schema_->GetProtobufNsNumber() + 1));
+
+		if (itemRef.Value().IsFree()) {
+			return {};
+		}
+
+		ConstPayload pl(ctx.type_, itemRef.Value());
+		encoder.Encode(pl, builder);
+	} catch (std::exception& err) {
+		err_ = std::move(err);
+		return err_;
+	}
+	return {};
+}
+
+template <typename QR>
+Error LocalQueryResults::IteratorImpl<QR>::GetJSON(WrSerializer& ser, bool withHdrLen) noexcept {
 	try {
 		if (withHdrLen) {
 			auto slicePosSaver = ser.StartSlice();
@@ -329,11 +340,11 @@ Error LocalQueryResults::IteratorImpl<QR>::GetJSON(WrSerializer& ser, bool withH
 		} else {
 			qr_->encodeJSON(idx_, ser, nsNamesCache);
 		}
-	} catch (const Error& err) {
-		err_ = err;
-		return err;
+	} catch (std::exception& err) {
+		err_ = std::move(err);
+		return err_;
 	}
-	return errOK;
+	return {};
 }
 
 CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offset) const {
@@ -414,7 +425,7 @@ Error LocalQueryResults::IteratorImpl<QR>::GetCSV(WrSerializer& ser, CsvOrdering
 }
 
 template <typename QR>
-Error LocalQueryResults::IteratorImpl<QR>::GetCJSON(WrSerializer& ser, bool withHdrLen) {
+Error LocalQueryResults::IteratorImpl<QR>::GetCJSON(WrSerializer& ser, bool withHdrLen) noexcept {
 	try {
 		auto& itemRef = qr_->items_.GetItemRef(idx_);
 		const auto nsid = itemRef.Nsid();
@@ -435,11 +446,11 @@ Error LocalQueryResults::IteratorImpl<QR>::GetCJSON(WrSerializer& ser, bool with
 		} else {
 			cjsonEncoder.Encode(pl, builder);
 		}
-	} catch (const Error& err) {
-		err_ = err;
-		return err;
+	} catch (std::exception& err) {
+		err_ = std::move(err);
+		return err_;
 	}
-	return errOK;
+	return {};
 }
 
 template <typename QR>

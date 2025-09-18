@@ -75,8 +75,7 @@ TEST_F(ClusterOperationProxyApi, Transaction) {
 
 			// check data in ns on leader node
 			auto leaderNode = cluster.GetNode(leaderId);
-			BaseApi::QueryResultsType qr;
-			err = leaderNode->api.reindexer->Select("select * from " + kNsName + " order by id", qr);
+			auto qr = leaderNode->api.ExecSQL("select * from " + kNsName + " order by id");
 			int i = 0;
 			for (auto it = qr.begin(); it != qr.end(); ++it, ++i) {
 				auto item = it.GetItem();
@@ -115,8 +114,7 @@ TEST_F(ClusterOperationProxyApi, Transaction) {
 
 			// check data in ns on leader node
 			auto leaderNode = cluster.GetNode(leaderId);
-			BaseApi::QueryResultsType qr;
-			err = leaderNode->api.reindexer->Select("select * from " + kNsName + " order by id", qr);
+			auto qr = leaderNode->api.ExecSQL("select * from " + kNsName + " order by id");
 			int i = 0;
 			for (auto it = qr.begin(); it != qr.end(); ++it, ++i) {
 				auto item = it.GetItem();
@@ -174,8 +172,7 @@ TEST_F(ClusterOperationProxyApi, RollbackFollowerTransaction) {
 
 			// check data in ns on leader node
 			auto leaderNode = cluster.GetNode(leaderId);
-			BaseApi::QueryResultsType qr;
-			err = leaderNode->api.reindexer->Select("select * from " + kNsName + " order by id", qr);
+			auto qr = leaderNode->api.ExecSQL("select * from " + kNsName + " order by id");
 			ASSERT_EQ(qr.Count(), 0);
 		}
 	}));
@@ -234,8 +231,7 @@ TEST_F(ClusterOperationProxyApi, ParallelTransaction) {
 		leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
 		auto leaderNode = cluster.GetNode(leaderId);
-		BaseApi::QueryResultsType qr;
-		err = leaderNode->api.reindexer->Select("select * from " + kNsName + " order by id", qr);
+		auto qr = leaderNode->api.ExecSQL("select * from " + kNsName + " order by id");
 		int i = 0;
 		for (auto it = qr.begin(); it != qr.end(); ++it, ++i) {
 			auto item = it.GetItem();
@@ -641,7 +637,7 @@ static void CheckInsertUpsertUpdateDelete(ClusterOperationApi::Cluster& cluster,
 		// update item
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 		Error err =
-			cluster.GetNode(followerId)->api.reindexer->Select("select * from " + kNsName + " where id=" + std::to_string(pk), qres);
+			cluster.GetNode(followerId)->api.reindexer->ExecSQL("select * from " + kNsName + " where id=" + std::to_string(pk), qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
@@ -661,7 +657,7 @@ static void CheckInsertUpsertUpdateDelete(ClusterOperationApi::Cluster& cluster,
 		// delete item
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 		Error err =
-			cluster.GetNode(followerId)->api.reindexer->Select("select * from " + kNsName + " where id=" + std::to_string(pk), qres);
+			cluster.GetNode(followerId)->api.reindexer->ExecSQL("select * from " + kNsName + " where id=" + std::to_string(pk), qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
@@ -980,9 +976,8 @@ static void CheckSQL(ClusterOperationApi::Cluster& cluster, int followerId, int 
 		ASSERT_TRUE(qresSelectTmp.Count() == 1) << "select count = " << qresSelectTmp.Count();
 	}
 	// update item
-	BaseApi::QueryResultsType qr;
 	std::string q = "explain update " + kNsName + " set value='up_name' where id=" + std::to_string(pk);
-	err = cluster.GetNode(followerId)->api.reindexer->Select(q, qr);
+	auto qr = cluster.GetNode(followerId)->api.ExecSQL(q);
 	ASSERT_TRUE(qr.Count() > 0);
 	for (auto it : qr) {
 		ASSERT_FALSE(it.GetLSN().isEmpty());
@@ -1003,9 +998,7 @@ static void CheckSQL(ClusterOperationApi::Cluster& cluster, int followerId, int 
 	}
 
 	// delete item
-	BaseApi::QueryResultsType qresDel;
-	err = cluster.GetNode(followerId)->api.reindexer->Select("delete from " + kNsName, qresDel);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qresDel = cluster.GetNode(followerId)->api.ExecSQL("delete from " + kNsName);
 	for (auto it : qresDel) {
 		ASSERT_FALSE(it.GetLSN().isEmpty());
 	}
@@ -1137,7 +1130,7 @@ TEST_F(ClusterOperationProxyApi, ClusterStatsErrorHandling) {
 			for (auto& q : queries) {
 				std::string sql = q.GetSQL();
 				BaseApi::QueryResultsType qr;
-				Error err = cluster.GetNode(nodeId)->api.reindexer->Select(sql, qr);
+				Error err = cluster.GetNode(nodeId)->api.reindexer->ExecSQL(sql, qr);
 				ASSERT_EQ(err.code(), errParams) << sql;
 				ASSERT_STREQ(err.what(),
 							 "Query to #replicationstats has to contain one of the following conditions: type='async' or type='cluster'")
@@ -1388,7 +1381,7 @@ TEST_F(ClusterOperationProxyApi, ChangeLeaderAndWrite) {
 			leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 			auto leaderClient = cluster.GetNode(leaderId)->api.reindexer;
 			reindexer::client::QueryResults qr;
-			auto err = leaderClient->Select("select *, vectors() from ns1 order by id", qr);
+			auto err = leaderClient->ExecSQL("select *, vectors() from ns1 order by id", qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			itemTracker.Validate(qr);
 		}
@@ -1497,7 +1490,7 @@ TEST_F(ClusterOperationProxyApi, SelectFromStatsTimeout) {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		cluster.StopServers({0, 1});
 		client::QueryResults qr;
-		auto err = cluster.GetNode(2)->api.reindexer->Select("select * from #replicationstats where type='cluster'", qr);
+		auto err = cluster.GetNode(2)->api.reindexer->ExecSQL("select * from #replicationstats where type='cluster'", qr);
 		ASSERT_EQ(err.code(), errTimeout);
 		ASSERT_STREQ(err.what(), "Unable to get cluster's leader: Context was canceled or timed out (condition variable)");
 	}));

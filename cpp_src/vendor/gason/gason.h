@@ -109,8 +109,10 @@ struct JsonValue {
 		assertrx(getTag() == JsonTag::STRING);
 		return sval;
 	}
-	JsonNode* toNode() const noexcept {
-		assertrx(getTag() == JsonTag::ARRAY || getTag() == JsonTag::OBJECT);
+	JsonNode* toNode() const {
+		if (getTag() != JsonTag::OBJECT && getTag() != JsonTag::ARRAY) {
+			throw Exception("Can't convert json field to object or array");
+		}
 		return node;
 	}
 

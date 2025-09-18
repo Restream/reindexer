@@ -276,6 +276,8 @@ public:
 	RX_ALWAYS_INLINE void PutSlice(std::string_view slice) {
 		PutUInt32(slice.size());
 		grow(slice.size());
+		// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		memcpy(&buf_[len_], slice.data(), slice.size());
 		len_ += slice.size();
 	}
@@ -324,7 +326,10 @@ public:
 			}
 			return *this;
 		}
-		~VStringHelper() { End(); }
+		// NOLINTNEXTLINE(bugprone-exception-escape) Not sure if we can handle this somehow
+		~VStringHelper() {
+			End();
+		}
 		void End();
 
 	private:
@@ -406,6 +411,8 @@ public:
 		if (len_ + 1 >= cap_) {
 			grow(1);
 		}
+		// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		buf_[len_++] = c;
 		return *this;
 	}
@@ -497,6 +504,8 @@ public:
 	// Buffer manipulation functions
 	RX_ALWAYS_INLINE void Write(std::string_view slice) {
 		grow(slice.size());
+		// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		memcpy(&buf_[len_], slice.data(), slice.size());
 		len_ += slice.size();
 	}

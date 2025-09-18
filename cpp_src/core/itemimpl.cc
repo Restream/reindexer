@@ -12,12 +12,10 @@
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufdecoder.h"
 #include "core/embedding/embedder.h"
-#include "core/expressiontree.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
 #include "core/rdxcontext.h"
-#include "defnsconfigs.h"
 #include "estl/gift_str.h"
 
 namespace reindexer {
@@ -168,15 +166,19 @@ void ItemImpl::GetField(int field, VariantArray& values) { GetPayload().Get(fiel
 
 Error ItemImpl::FromMsgPack(std::string_view buf, size_t& offset) {
 	payloadValue_.Clone();
+	cjson_ = {};
+
 	Payload pl = GetPayload();
 	if (!msgPackDecoder_) {
 		msgPackDecoder_.reset(new MsgPackDecoder(tagsMatcher_));
 	}
 
+	std::string_view data = createSafeDataCopy(buf);
+
 	pl.Reset();
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	Error err = msgPackDecoder_->Decode(buf, pl, ser_, offset, floatVectorsHolder_);
+	Error err = msgPackDecoder_->Decode(data, pl, ser_, offset, floatVectorsHolder_);
 	if (err.ok()) {
 		initTupleFrom(std::move(pl), ser_);
 	}
@@ -185,13 +187,17 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t& offset) {
 
 Error ItemImpl::FromProtobuf(std::string_view buf) {
 	payloadValue_.Clone();
+	cjson_ = {};
+
 	Payload pl = GetPayload();
 	ProtobufDecoder decoder(tagsMatcher_, schema_);
+
+	std::string_view data = createSafeDataCopy(buf);
 
 	pl.Reset();
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	Error err = decoder.Decode(buf, pl, ser_, floatVectorsHolder_);
+	Error err = decoder.Decode(data, pl, ser_, floatVectorsHolder_);
 	if (err.ok()) {
 		initTupleFrom(std::move(pl), ser_);
 	}
@@ -231,7 +237,7 @@ void ItemImpl::Clear() {
 	static const TagsMatcher kEmptyTagsMatcher;
 	tagsMatcher_ = kEmptyTagsMatcher;
 	precepts_.clear();
-	cjson_ = std::string_view();
+	cjson_ = {};
 	holder_.reset();
 	floatVectorsHolder_ = FloatVectorsHolderVector();
 	sourceData_.reset();
@@ -250,18 +256,13 @@ void ItemImpl::Clear() {
 // Construct item from compressed json
 void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) {
 	payloadValue_.Clone();
-	std::string_view data = slice;
-	if (!unsafe_) {
-		sourceData_.reset(new char[slice.size()]);
-		std::copy(data.begin(), data.end(), sourceData_.get());
-		data = std::string_view(sourceData_.get(), data.size());
-	}
+	std::string_view data = createSafeDataCopy(slice);
 
 	// check tags matcher update
 	if (Serializer rdser(data); rdser.GetCTag() == kCTagEnd) {
 		const auto tmOffset = rdser.GetUInt32();
 		// read tags matcher update
-		Serializer tser(slice.substr(tmOffset));
+		Serializer tser(data.substr(tmOffset));
 		tagsMatcher_.deserialize(tser);
 		tagsMatcher_.setUpdated();
 		data = data.substr(1 + sizeof(uint32_t), tmOffset - 5);
@@ -302,7 +303,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 	payloadValue_.Clone();
 	std::string_view data = slice;
-	cjson_ = std::string_view();
+	cjson_ = {};
 
 	if (!unsafe_) {
 		if (endp) {
@@ -318,9 +319,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 				return Error(errParseJson, "Error parsing json: '{}'", e.what());
 			}
 		} else {
-			sourceData_.reset(new char[slice.size()]);
-			std::copy(data.begin(), data.end(), sourceData_.get());
-			data = std::string_view(sourceData_.get(), data.size());
+			data = createSafeDataCopy(slice);
 		}
 	}
 
@@ -558,6 +557,16 @@ void ItemImpl::initTupleFrom(Payload&& pl, WrSerializer& ser) {
 	// Put tuple to field[0]
 	tupleData_ = ser.DetachLStr();
 	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::noHold));
+}
+
+std::string_view ItemImpl::createSafeDataCopy(std::string_view slice) {
+	std::string_view data = slice;
+	if (!unsafe_) {
+		sourceData_.reset(new char[data.size()]);
+		std::copy(data.begin(), data.end(), sourceData_.get());
+		data = std::string_view(sourceData_.get(), data.size());
+	}
+	return data;
 }
 
 }  // namespace reindexer

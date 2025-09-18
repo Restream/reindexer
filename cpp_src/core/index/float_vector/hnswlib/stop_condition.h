@@ -11,7 +11,7 @@
 namespace hnswlib {
 
 template <typename DOCIDTYPE>
-class [[nodiscard]] BaseMultiVectorSpace : public SpaceInterface<float> {
+class [[nodiscard]] BaseMultiVectorSpace : public SpaceInterface {
 public:
 	virtual DOCIDTYPE get_doc_id(const void* datapoint) = 0;
 
@@ -20,14 +20,14 @@ public:
 
 template <typename DOCIDTYPE>
 class [[nodiscard]] MultiVectorL2Space final : public BaseMultiVectorSpace<DOCIDTYPE> {
-	DISTFUNC<float> fstdistfunc_;
+	DISTFUNC fstdistfunc_;
 	size_t data_size_;
 	size_t vector_size_;
 	size_t dim_;
 
 public:
 	MultiVectorL2Space(size_t dim) {
-		fstdistfunc_ = L2Sqr;
+		fstdistfunc_ = L2Sqr<float>;
 #if REINDEXER_WITH_SSE
 		if (dim % 16 == 0) {
 			fstdistfunc_ = L2SqrSIMD16Ext;
@@ -46,9 +46,7 @@ public:
 
 	size_t get_data_size() override { return data_size_; }
 
-	DistCalculatorParam<float> get_dist_calculator_param() override {
-		return DistCalculatorParam<float>{.f = fstdistfunc_, .metric = MetricType::L2, .dims = dim_};
-	}
+	DistCalculatorParam get_dist_calculator_param() override { return {.f = fstdistfunc_, .metric = MetricType::L2, .dims = dim_}; }
 
 	void* get_dist_func_param() override { return &dim_; }
 
@@ -59,14 +57,14 @@ public:
 
 template <typename DOCIDTYPE>
 class [[nodiscard]] MultiVectorInnerProductSpace final : public BaseMultiVectorSpace<DOCIDTYPE> {
-	DISTFUNC<float> fstdistfunc_;
+	DISTFUNC fstdistfunc_;
 	size_t data_size_;
 	size_t vector_size_;
 	size_t dim_;
 
 public:
 	MultiVectorInnerProductSpace(size_t dim) {
-		fstdistfunc_ = InnerProductDistance;
+		fstdistfunc_ = InnerProductDistance<float>;
 #if REINDEXER_WITH_SSE
 		if (dim % 16 == 0) {
 			fstdistfunc_ = InnerProductDistanceSIMD16Ext;
@@ -84,8 +82,8 @@ public:
 
 	size_t get_data_size() override { return data_size_; }
 
-	DistCalculatorParam<float> get_dist_calculator_param() override {
-		return DistCalculatorParam<float>{.f = fstdistfunc_, .metric = MetricType::INNER_PRODUCT, .dims = dim_};
+	DistCalculatorParam get_dist_calculator_param() override {
+		return {.f = fstdistfunc_, .metric = MetricType::INNER_PRODUCT, .dims = dim_};
 	}
 
 	void* get_dist_func_param() override { return &dim_; }

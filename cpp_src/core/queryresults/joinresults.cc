@@ -1,9 +1,7 @@
 #include "joinresults.h"
 #include "core/cjson/tagsmatcher.h"
-#include "core/payload/payloadiface.h"
 
-namespace reindexer {
-namespace joins {
+namespace reindexer::joins {
 
 bool JoinedFieldIterator::operator==(const JoinedFieldIterator& other) const {
 	if (joinRes_ != other.joinRes_) {
@@ -12,10 +10,7 @@ bool JoinedFieldIterator::operator==(const JoinedFieldIterator& other) const {
 	if (offsets_ != other.offsets_) {
 		throw Error(errLogic, "Comparising joined fields of different items!");
 	}
-	if (order_ != other.order_) {
-		return false;
-	}
-	return true;
+	return (order_ == other.order_);
 }
 
 void JoinedFieldIterator::updateOffset() noexcept {
@@ -104,11 +99,11 @@ int ItemIterator::getJoinedItemsCount() const noexcept {
 
 ItemIterator ItemIterator::CreateFrom(const LocalQueryResults::ConstIterator& it) noexcept {
 	auto ret = ItemIterator::CreateEmpty();
-	auto& itemRef = it.qr_->Items().GetItemRef(it.idx_);
-	if ((itemRef.Nsid() >= it.qr_->joined_.size())) {
+	auto& itemRef = it.GetItemRef();
+	if ((itemRef.Nsid() >= it.Owner()->joined_.size())) {
 		return ret;
 	}
-	return ItemIterator(&(it.qr_->joined_[itemRef.Nsid()]), itemRef.Id());
+	return ItemIterator(&(it.Owner()->joined_[itemRef.Nsid()]), itemRef.Id());
 }
 
 const static NamespaceResults kEmptyNamespaceResults;
@@ -125,5 +120,4 @@ void NamespaceResults::Insert(IdType rowid, uint32_t fieldIdx, LocalQueryResults
 	items_.Insert(items_.end(), std::move(qr.Items()).mbegin(), std::move(qr.Items()).mend());
 }
 
-}  // namespace joins
-}  // namespace reindexer
+}  // namespace reindexer::joins

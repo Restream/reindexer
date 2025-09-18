@@ -8,7 +8,7 @@ namespace client {
 using namespace reindexer::net;
 
 void QueryResults::FetchNextResults(int flags, int offset, int limit) {
-	if (rx_) {
+	if (auto rx = rx_.lock(); rx) {
 		const auto reqFlags = flags ? (flags & ~kResultsWithPayloadTypes) : kResultsCJson;
 
 		int curOffset = results_.i_.fetchOffset_;
@@ -24,7 +24,7 @@ void QueryResults::FetchNextResults(int flags, int offset, int limit) {
 		if (curOffset == offset && curLimit == limit) {
 			return;
 		}
-		Error err = rx_->fetchResults(reqFlags, offset, limit, *this);
+		Error err = rx->fetchResults(reqFlags, offset, limit, *this);
 		if (!err.ok()) {
 			throw err;
 		}
@@ -34,9 +34,9 @@ void QueryResults::FetchNextResults(int flags, int offset, int limit) {
 }
 
 void QueryResults::fetchNextResults() {
-	if (rx_) {
+	if (auto rx = rx_.lock(); rx) {
 		Error err =
-			rx_->fetchResults(results_.i_.fetchFlags_ ? (results_.i_.fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson, *this);
+			rx->fetchResults(results_.i_.fetchFlags_ ? (results_.i_.fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson, *this);
 		if (!err.ok()) {
 			throw err;
 		}
@@ -45,17 +45,20 @@ void QueryResults::fetchNextResults() {
 	}
 }
 
-Error QueryResults::setClient(ReindexerImpl* rx) {
-	if (rx_) {
-		return Error(errLogic, "Client is already set for SyncCoroQuery Results");
+Error QueryResults::setClient(const std::shared_ptr<ReindexerImpl>& rx) noexcept {
+	if rx_unlikely (!rx) {
+		return Error(errLogic, "Client is for client::QueryResults is null");
 	}
-	rx_ = rx;
+	if (rx_.owner_before(std::weak_ptr<ReindexerImpl>{}) || std::weak_ptr<ReindexerImpl>{}.owner_before(rx_)) {
+		return Error(errLogic, "Client is already set for client::QueryResults");
+	}
+	rx_ = rx->weak_from_this();
 	return Error();
 }
 
 QueryResults::~QueryResults() {
-	if (rx_ && results_.holdsRemoteData()) {
-		auto err = rx_->closeResults(*this);
+	if (auto rx = rx_.lock(); rx && results_.holdsRemoteData()) {
+		auto err = rx->closeResults(*this);
 		(void)err;	// ignore
 	}
 	results_.setClosed();

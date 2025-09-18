@@ -9,7 +9,7 @@
 
 namespace reindexer {
 
-static FtCtx::Ptr createFtCtx(const Index::SelectContext selectCtx) {
+static FtCtx::Ptr createFtCtx(const Index::SelectContext& selectCtx) {
 	assertrx_throw(selectCtx.selectFuncCtx);
 	assertrx_dbg(!selectCtx.selectFuncCtx->ranks);
 	selectCtx.selectFuncCtx->ranks = make_intrusive<RanksHolder>();
@@ -160,9 +160,9 @@ SelectKeyResults IndexText<T>::resultFromCache(const VariantArray& keys, FtIdSet
 }
 
 template <typename T>
-SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, const std::optional<IdSetCacheKey>& ckey,
-										   FtMergeStatuses&& mergeStatuses, FtUseExternStatuses useExternSt, bool inTransaction,
-										   RankSortType rankSortType, FtCtx& ftCtx, const RdxContext& rdxCtx) {
+SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, std::optional<IdSetCacheKey>&& ckey, FtMergeStatuses&& mergeStatuses,
+										   FtUseExternStatuses useExternSt, bool inTransaction, RankSortType rankSortType, FtCtx& ftCtx,
+										   const RdxContext& rdxCtx) {
 	if rx_unlikely (cfg_->logLevel >= LogInfo) {
 		logFmt(LogInfo, "Searching for '{}' in '{}' {}", keys[0].As<std::string>(), this->payloadType_ ? this->payloadType_->Name() : "",
 			   ckey ? "(will cache)" : "");

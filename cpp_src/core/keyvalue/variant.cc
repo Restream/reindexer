@@ -848,7 +848,7 @@ size_t Variant::Hash() const noexcept {
 			[&](KeyValueType::Uuid) noexcept { return std::hash<Uuid>()(Uuid{*this}); },
 			[](KeyValueType::Null) noexcept { return std::hash<int>()(0); },
 			[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept
-			-> size_t {
+				-> size_t {
 #ifdef NDEBUG
 				abort();
 #else
@@ -893,7 +893,7 @@ Variant& Variant::convert(KeyValueType type, const PayloadType* payloadType, con
 			});
 		return *this;
 	}
-	if (type.IsSame(variant_.type) || type.Is<KeyValueType::Null>() || variant_.type.Is<KeyValueType::Null>()) {
+	if (type.IsSame(variant_.type) || variant_.type.Is<KeyValueType::Null>()) {
 		return *this;
 	}
 	type.EvaluateOneOf(

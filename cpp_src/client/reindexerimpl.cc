@@ -12,7 +12,7 @@ using std::chrono::milliseconds;
 constexpr size_t kAsyncCoroStackSize = 32 * 1024;
 
 ReindexerImpl::ReindexerImpl(const ReindexerConfig& conf, uint32_t connCount, uint32_t threadsCount) : conf_(conf) {
-	const auto conns = connCount > 0 ? connCount : 1;
+	const auto conns = std::max(connCount, 1u);
 	if (threadsCount > 1) {
 		const auto connsPerThread = conns / threadsCount;
 		auto mod = conns % threadsCount;
@@ -36,6 +36,11 @@ ReindexerImpl::~ReindexerImpl() { stop(); }
 
 Error ReindexerImpl::Connect(const DSN& dsn, const client::ConnectOpts& opts) {
 	lock_guard lock(workersMtx_);
+	if (conf_.SyncRxCoroCount < 1 || conf_.SyncRxCoroCount > 10'000) {
+		return Error(errParams,
+					 "The number of synchronization coroutines (SyncRxCoroCount in conf) must be in the range [1..10'000]. But was: {}",
+					 conf_.SyncRxCoroCount);
+	}
 	if (workers_.size() && workers_[0].th.joinable()) {
 		return Error(errLogic, "Client is already started. DSN: {}", dsn);
 	}
@@ -127,7 +132,7 @@ Error ReindexerImpl::Upsert(std::string_view nsName, Item& item, QueryResults& r
 }
 
 Error ReindexerImpl::Update(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
-	Error err = result.setClient(this);
+	Error err = result.setClient(shared_from_this());
 	if (!err.ok()) {
 		return err;
 	}
@@ -141,25 +146,25 @@ Error ReindexerImpl::Delete(std::string_view nsName, Item& item, QueryResults& r
 }
 
 Error ReindexerImpl::Delete(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
-	Error err = result.setClient(this);
+	Error err = result.setClient(shared_from_this());
 	if (!err.ok()) {
 		return err;
 	}
 	return sendCommand<Error>(DbCmdDeleteQ, ctx, query, result.results_);
 }
-Error ReindexerImpl::Select(std::string_view query, QueryResults& result, const InternalRdxContext& ctx) {
-	Error err = result.setClient(this);
+Error ReindexerImpl::ExecSQL(std::string_view query, QueryResults& result, const InternalRdxContext& ctx) {
+	Error err = result.setClient(shared_from_this());
 	if (!err.ok()) {
 		return err;
 	}
-	return sendCommand<Error>(DbCmdSelectS, ctx, std::move(query), result.results_);
+	return sendCommand<Error>(DbCmdExecSQL, ctx, std::move(query), result.results_);
 }
 Error ReindexerImpl::Select(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
-	Error err = result.setClient(this);
+	Error err = result.setClient(shared_from_this());
 	if (!err.ok()) {
 		return err;
 	}
-	return sendCommand<Error>(DbCmdSelectQ, ctx, query, result.results_);
+	return sendCommand<Error>(DbCmdSelect, ctx, query, result.results_);
 }
 
 Item ReindexerImpl::NewItem(std::string_view nsName, const InternalRdxContext& ctx) noexcept {
@@ -539,11 +544,11 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				cd->ret.set_value(std::move(item));
 				break;
 			}
-			case DbCmdSelectS: {
-				execCommand(cmd, [&conn, &cmd](std::string_view ns, CoroQueryResults& qr) { return conn.rx.Select(ns, qr, cmd->ctx); });
+			case DbCmdExecSQL: {
+				execCommand(cmd, [&conn, &cmd](std::string_view ns, CoroQueryResults& qr) { return conn.rx.ExecSQL(ns, qr, cmd->ctx); });
 				break;
 			}
-			case DbCmdSelectQ: {
+			case DbCmdSelect: {
 				execCommand(
 					cmd, [&conn, &cmd](const Query& query, CoroQueryResults& result) { return conn.rx.Select(query, result, cmd->ctx); });
 				break;
@@ -835,7 +840,8 @@ void ReindexerImpl::CommandsQueue::Get(uint32_t tid, h_vector<DatabaseCommand, 1
 	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
 		assertrx(tid < thData_.size());
 		return thData_[tid];
-	}();
+	}
+	();
 	lock_guard lck(mtx_);
 	if (thD.personalQueue.size()) {
 		std::swap(thD.personalQueue, cmds);
@@ -855,7 +861,8 @@ void ReindexerImpl::CommandsQueue::OnCmdDone(uint32_t tid) {
 	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
 		assertrx(tid < thData_.size());
 		return thData_[tid];
-	}();
+	}
+	();
 	thD.reqCnt.fetch_sub(1, std::memory_order_release);
 }
 
@@ -871,7 +878,8 @@ void ReindexerImpl::CommandsQueue::Invalidate(uint32_t tid, h_vector<DatabaseCom
 	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
 		assertrx(tid < thData_.size());
 		return thData_[tid];
-	}();
+	}
+	();
 	lock_guard lock(mtx_);
 	std::swap(thD.personalQueue, cmds);
 	thD.reqCnt.store(0, std::memory_order_relaxed);
@@ -897,7 +905,8 @@ void ReindexerImpl::CommandsQueue::RegisterConn(uint32_t tid, const void* conn, 
 	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
 		assertrx(tid < thData_.size());
 		return thData_[tid];
-	}();
+	}
+	();
 	lock_guard lock(mtx_);
 	const auto res = thByConns_.emplace(conn, ConnMeta{.threadData = &thD, .connIdx = connIdx});
 	assertrx(res.second);

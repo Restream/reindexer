@@ -182,8 +182,8 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			}
 			const JoinedQuery& mQuery = mQueryCopy ? *mQueryCopy : mq;
 			SelectCtxWithJoinPreSelect mctx(mQuery, &query, &result.GetFloatVectorsHolder());
-			if (!mq.GetSubQueries().empty()) {
-				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+			if (mQueryCopy.has_value()) {
+				assertrx_throw(!mq.GetSubQueries().empty());
 				mctx.subQueriesExplains = preselectSubQueries(*mQueryCopy, queryResultsHolder, locks, func, ctx);
 			}
 

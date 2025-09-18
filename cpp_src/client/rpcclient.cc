@@ -430,7 +430,7 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	}
 }
 
-Error RPCClient::Select(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {
+Error RPCClient::ExecSQL(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {
 	try {
 		auto query = Query::FromSQL(querySQL);
 		switch (query.type_) {

@@ -51,10 +51,10 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 						ConstFloatVectorView vectView;
 						if (count != 0) {
 							if (atagType != TAG_DOUBLE && atagType != TAG_FLOAT && atagType != TAG_VARINT) {
-								throwUnexpectedArrayTypeForFloatVectorError("cjson"sv, fieldRef);
+								throwUnexpectedArrayTypeForFloatVectorError(kCJSONFmt, fieldRef);
 							}
 							if (count != fieldRef.FloatVectorDimension().Value()) {
-								throwUnexpectedArraySizeForFloatVectorError("cjson"sv, fieldRef, count);
+								throwUnexpectedArraySizeForFloatVectorError(kCJSONFmt, fieldRef, count);
 							}
 							auto vect = FloatVector::CreateNotInitialized(fieldRef.FloatVectorDimension());
 							if (atagType == TAG_DOUBLE) {
@@ -79,7 +79,7 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 						wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
 						wrser.PutVarUint(count);
 					} else if rx_likely (fieldRef.IsArray()) {
-						validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), count, "cjson"sv);
+						validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), count, kCJSONFmt);
 						const int ofs = pl.ResizeArray(indexNumber, count, Append_True);
 						if (atagType != TAG_OBJECT) {
 							for (size_t i = 0; i < count; ++i) {
@@ -93,11 +93,11 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 						wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
 						wrser.PutVarUint(count);
 					} else {
-						throwUnexpectedArrayError(fieldRef.Name(), fieldRef.Type(), "cjson"sv);
+						throwUnexpectedArrayError(fieldRef.Name(), fieldRef.Type(), kCJSONFmt);
 					}
 				} else {
-					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, fieldRef, indexNumber, isInArray(), "cjson"sv);
-					validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), 1, "cjson"sv);
+					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, fieldRef, indexNumber, isInArray(), kCJSONFmt);
+					validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), 1, kCJSONFmt);
 					objectScalarIndexes_.set(indexNumber);
 					pl.Set(indexNumber, cjsonValueToVariant(tagType, rdser, fieldType), Append_True);
 					fieldType.EvaluateOneOf(
@@ -116,7 +116,7 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 	} else if (field.IsIndexed()) {	 // sparse index
 		decodeCJson(pl, rdser, wrser, filter, recoder, tagType, tagName, tag, floatVectorsHolder,
 					SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tagsMatcher_, isInArray(),
-									"cjson"sv});
+									kCJSONFmt});
 	} else {
 		decodeCJson(pl, rdser, wrser, filter, recoder, tagType, tagName, tag, floatVectorsHolder, kNoValidation);
 	}

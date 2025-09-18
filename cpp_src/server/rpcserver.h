@@ -87,8 +87,6 @@ public:
 	Error SetSchema(cproto::Context& ctx, p_string ns, p_string schema);
 	Error GetSchema(cproto::Context& ctx, p_string ns, int format);
 
-	Error Commit(cproto::Context& ctx, p_string ns);
-
 	Error ModifyItem(cproto::Context& ctx, p_string nsName, int format, p_string itemData, int mode, p_string percepsPack, int stateToken,
 					 int txID);
 
@@ -107,7 +105,7 @@ public:
 	Error UpdateQuery(cproto::Context& ctx, p_string query, std::optional<int> flags) noexcept;
 
 	Error Select(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
-	Error SelectSQL(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
+	Error ExecSQL(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error FetchResults(cproto::Context& ctx, int reqId, int flags, int offset, int limit, std::optional<int64_t> qrUID);
 	Error CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
 	Error GetSQLSuggestions(cproto::Context& ctx, p_string query, int pos);

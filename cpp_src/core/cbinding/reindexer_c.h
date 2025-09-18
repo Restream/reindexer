@@ -71,7 +71,7 @@ void reindexer_disable_logger(void);
 
 void reindexer_init_locale(void);
 
-const char* reindexer_version();
+const char* reindexer_version(void);
 
 #ifdef __cplusplus
 }

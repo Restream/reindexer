@@ -88,12 +88,12 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		defaultFieldCfg.positionBoost = root["position_boost"].As<>(defaultFieldCfg.positionBoost, 0.0, 10.0);
 		defaultFieldCfg.positionWeight = root["position_weight"].As<>(defaultFieldCfg.positionWeight, 0.0, 1.0);
 
-		rx_unused = fieldsCfg.insert(fieldsCfg.end(), fields.size() ? fields.size() : 1, defaultFieldCfg);
+		rx_unused = fieldsCfg.insert(fieldsCfg.cend(), fields.size() ? fields.size() : 1, defaultFieldCfg);
 
 		const auto& fieldsCfgNode = root["fields"];
 		if (!fieldsCfgNode.empty() && begin(fieldsCfgNode.value) != end(fieldsCfgNode.value)) {
 			if (fields.empty()) {
-				throw Error(errParseDSL, "Configuration for single field fulltext index cannot contain field specifications");
+				throw Error(errParseDSL, "Configuration for single field fulltext index can't contain field specifications");
 			}
 			std::set<size_t> modifiedFields;
 			for (const auto& fldCfg : fieldsCfgNode.value) {
@@ -104,7 +104,7 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 				}
 				assertrx(fldIt->second < static_cast<int>(fieldsCfg.size()));
 				if (modifiedFields.count(fldIt->second) != 0) {
-					throw Error(errParseDSL, "Field '{}' is dublicated in fulltext configuration", fieldName);
+					throw Error(errParseDSL, "Field '{}' is duplicated in fulltext configuration", fieldName);
 				}
 				modifiedFields.insert(fldIt->second);
 				FtFastFieldConfig& curFieldCfg = fieldsCfg[fldIt->second];
@@ -191,7 +191,7 @@ std::string FtFastConfig::GetJSON(const fast_hash_map<std::string, int>& fields)
 
 	jsonBuilder.Put("enable_preselect_before_ft", enablePreselectBeforeFt);
 	if (fields.empty() || isAllEqual(fieldsCfg)) {
-		assertrx(!fieldsCfg.empty());
+		assertrx_throw(!fieldsCfg.empty());
 		jsonBuilder.Put("bm25_boost", fieldsCfg[0].bm25Boost);
 		jsonBuilder.Put("bm25_weight", fieldsCfg[0].bm25Weight);
 		jsonBuilder.Put("term_len_boost", fieldsCfg[0].termLenBoost);
@@ -202,7 +202,8 @@ std::string FtFastConfig::GetJSON(const fast_hash_map<std::string, int>& fields)
 		auto fieldsNode = jsonBuilder.Array("fields");
 		for (const auto& f : fields) {
 			auto fldNode = fieldsNode.Object();
-			assertrx(0 <= f.second && f.second < static_cast<int>(fieldsCfg.size()));
+			assertrx_throw(0 <= f.second);
+			assertrx_throw(f.second < static_cast<int>(fieldsCfg.size()));
 			fldNode.Put("field_name", f.first);
 			fldNode.Put("bm25_boost", fieldsCfg[f.second].bm25Boost);
 			fldNode.Put("bm25_weight", fieldsCfg[f.second].bm25Weight);

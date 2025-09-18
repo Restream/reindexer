@@ -1,17 +1,16 @@
 #pragma once
 
 #include "defines.h"
-// TODO #2213
 // Enable thread safety attributes only with clang.
 // The attributes can be safely erased when compiling with other compilers.
-//#if defined(__clang__) && (!defined(SWIG))
-//#define RX_THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
-//#define RX_THREAD_SAFETY_ANALYSIS_ENABLE
-//#define RX_MUTEX_ACCESS private
-//#else										 // defined(__clang__) && (!defined(SWIG))
+#if defined(__clang__) && (!defined(SWIG))
+#define RX_THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
+#define RX_THREAD_SAFETY_ANALYSIS_ENABLE
+#define RX_MUTEX_ACCESS private
+#else										 // defined(__clang__) && (!defined(SWIG))
 #define RX_THREAD_ANNOTATION_ATTRIBUTE__(x)	 // no-op
 #define RX_MUTEX_ACCESS public
-//#endif										 // defined(__clang__) && (!defined(SWIG))
+#endif	// defined(__clang__) && (!defined(SWIG))
 
 #define RX_CAPABILITY(x) RX_THREAD_ANNOTATION_ATTRIBUTE__(capability(x))
 

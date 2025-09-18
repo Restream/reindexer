@@ -1,3 +1,4 @@
+#include <ranges>
 #include "core/cjson/jsonbuilder.h"
 #include "reindexer_api.h"
 
@@ -183,4 +184,120 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 	EXPECT_EQ(qr.Count(), 2);
 	qr = rt.Select(Query(default_namespace).Where("mac_address", CondEq, Variant(int64_t(2147483648))));
 	EXPECT_EQ(qr.Count(), 2);
+}
+
+TEST_F(ReindexerApi, SetFieldWithDotsTest) {
+	static const std::vector idxNamesAndNestedPaths{std::pair{"nested1", "obj1.id"},
+													std::pair{"nested2", "obj1.id1"},
+
+													std::pair{"nested3", "obj1.obj2.id1"},
+													std::pair{"nested4", "obj1.obj2.id2"},
+
+													std::pair{"nested5", "obj1.obj2.obj3.id1"},
+													std::pair{"nested6", "obj1.obj2.obj3.id3"},
+
+													std::pair{"nested7", "obj1.x.obj2.obj3.id1"},
+													std::pair{"nested8", "obj1.x.obj2.obj3.id3"}};
+
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+
+	auto addNestedIdx = [this](const auto& idxName, auto jsonPath) {
+		rt.AddIndex(default_namespace, {idxName, reindexer::JsonPaths{jsonPath}, "-", "int", IndexOpts()});
+	};
+
+	for (const auto& [name, path] : idxNamesAndNestedPaths) {
+		addNestedIdx(name, path);
+	}
+
+	const std::string_view expected =
+		R"json({"id":0,"obj1":{"id":1,"id1":2,"obj2":{"id1":3,"id2":4,"obj3":{"id1":5,"id3":6,"non_idx_field2":"non_idx_field2","non_idx_field3":"non_idx_field3"}},"x":{"obj2":{"obj3":{"id1":7,"id3":8,"non_idx_field1":"non_idx_field1"}}}}})json";
+
+	auto test = [this, expected](const auto& fieldNames) {
+		Item item(rt.NewItem(default_namespace));
+		item["id"] = 0;
+
+		for (size_t i = 0; i < idxNamesAndNestedPaths.size(); ++i) {
+			item[fieldNames[i]] = int(i + 1);
+		}
+
+		item["obj1.x.obj2.obj3.non_idx_field1"] = "non_idx_field1";
+		item["obj1.obj2.obj3.non_idx_field2"] = "non_idx_field2";
+		item["obj1.obj2.obj3.non_idx_field3"] = "non_idx_field3";
+
+		ASSERT_EQ(item.GetJSON(), expected);
+
+		rt.Insert(default_namespace, item);
+
+		auto qr = rt.Select(Query(default_namespace));
+		ASSERT_EQ(qr.Count(), 1);
+
+		auto it = qr.begin();
+		ASSERT_EQ(expected, *qr.begin().GetJSON());
+
+		rt.TruncateNamespace(default_namespace);
+	};
+
+	test(std::views::elements<0>(idxNamesAndNestedPaths));
+	test(std::views::elements<1>(idxNamesAndNestedPaths));
+}
+
+TEST_F(ReindexerApi, SetSparseFieldThroughItemImplTest) {
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+
+	rt.AddIndex(default_namespace, {"idx1", reindexer::JsonPaths{"f"}, "hash", "string", IndexOpts().Sparse()});
+	rt.AddIndex(default_namespace, {"idx2", reindexer::JsonPaths{"f1.f2.f3.f"}, "hash", "string", IndexOpts().Sparse()});
+
+	auto test = [&](std::string_view name, std::string_view expected) {
+		Item item(rt.NewItem(default_namespace));
+		item["id"] = 0;
+		item[name] = "some_value";
+
+		ASSERT_EQ(item.GetJSON(), expected);
+
+		rt.Insert(default_namespace, item);
+
+		auto qr = rt.Select(Query(default_namespace));
+		ASSERT_EQ(qr.Count(), 1);
+
+		auto it = qr.begin();
+		ASSERT_EQ(expected, *qr.begin().GetJSON());
+		rt.TruncateNamespace(default_namespace);
+	};
+
+	std::string_view expected = R"json({"id":0,"f":"some_value"})json";
+	test("idx1", expected);
+	test("f", expected);
+
+	expected = R"json({"id":0,"f1":{"f2":{"f3":{"f":"some_value"}}}})json";
+	test("idx2", expected);
+	test("f1.f2.f3.f", expected);
+}
+
+TEST_F(ReindexerApi, ExceptionMultyJsonPathsThroughItemImplTest) {
+	const auto nestedArrPath1 = "f1.f2.f3";
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+
+	rt.AddIndex(default_namespace,
+				{"value", reindexer::JsonPaths{"value1", "value2", nestedArrPath1}, "hash", "string", IndexOpts().Array()});
+
+	Item item(rt.NewItem(default_namespace));
+	item["id"] = 0;
+
+	auto test = [&item](std::string_view name) {
+		try {
+			item[name] = "some_value";
+			ASSERT_TRUE(false);
+		} catch (const Error& err) {
+			ASSERT_EQ(err, Error(errLogic,
+								 "It is not allowed to use fields with multiple json paths in the Item::operator[]. Index name = `value`"));
+		}
+	};
+
+	test("value");
+	test("value1");
+	test("value2");
+	test(nestedArrPath1);
 }

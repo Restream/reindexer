@@ -34,7 +34,7 @@ private:
 		const IndexedTagsPath& TagspathWithLastIndex() const noexcept {
 			return tagsPathWithLastIndex_ ? *tagsPathWithLastIndex_ : tagsPath_;
 		}
-		int ArrayIndex() const noexcept { return arrayIndex_; }
+		std::optional<TagIndex> ArrayIndex() const noexcept { return arrayIndex_; }
 		int Index() const noexcept { return fieldIndex_; }
 		bool IsIndex() const noexcept { return isIndex_; }
 		std::string_view Name() const noexcept;
@@ -46,7 +46,7 @@ private:
 		IndexedTagsPath tagsPath_;
 		std::optional<IndexedTagsPath> tagsPathWithLastIndex_;
 		int fieldIndex_{IndexValueType::SetByJsonPath};
-		int arrayIndex_{IndexValueType::NotSet};
+		std::optional<TagIndex> arrayIndex_;
 		bool isIndex_{false};
 	};
 	struct [[nodiscard]] CJsonCache {

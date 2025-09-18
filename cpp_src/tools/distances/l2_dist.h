@@ -2,6 +2,8 @@
 
 #if RX_WITH_BUILTIN_ANN_INDEXES || RX_WITH_FAISS_ANN_INDEXES
 
+#include <type_traits>
+
 #include "estl/defines.h"
 #include "faiss/impl/platform_macros.h"
 #include "tools/cpucheck.h"
@@ -21,13 +23,15 @@ inline bool L2WithSSE() noexcept { return false; }
 #endif	// REINDEXER_WITH_SSE
 
 FAISS_PRAGMA_IMPRECISE_FUNCTION_BEGIN
-static inline float L2Sqr(const float* pVect1, const float* pVect2, size_t qty) noexcept {
-	float res = 0;
+template <typename T>
+static inline float L2Sqr(const T* pVect1, const T* pVect2, size_t qty) noexcept {
+	using ResT = std::conditional_t<std::is_same_v<T, float>, float, int>;
+	ResT res = 0;
 #if REINDEXER_WITH_SSE
 	FAISS_PRAGMA_IMPRECISE_LOOP
 #endif	// REINDEXER_WITH_SSE
 	for (size_t i = 0; i < qty; i++) {
-		float t = *pVect1 - *pVect2;
+		ResT t = *pVect1 - *pVect2;
 		pVect1++;
 		pVect2++;
 		res += t * t;

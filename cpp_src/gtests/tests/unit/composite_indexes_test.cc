@@ -1,5 +1,6 @@
 #include "composite_indexes_api.h"
 #include "gmock/gmock.h"
+#include "vendor/fmt/ranges.h"
 #include "yaml-cpp/yaml.h"
 
 using QueryResults = ReindexerApi::QueryResults;
@@ -343,5 +344,44 @@ TEST_F(CompositeIndexesApi, FastUpdateIndex) {
 			auto err2Text = fmt::format("Cannot convert key from type {} to {}", kFieldTypes[i], kFieldTypes[j]);
 			ASSERT_THAT(err.what(), testing::MatchesRegex(fmt::format("({}|{})", err1Text, err2Text)));
 		}
+	}
+}
+
+TEST_F(CompositeIndexesApi, CompositePartsOrdering) {
+	// Check that jsonpaths of the composite index preserve ordering after update
+	constexpr std::string_view kNsName = "CompositePartsOrderingNS";
+	const std::string kField1 = "str_field1", kField2 = "str_field2";
+	const reindexer::JsonPaths jsonPaths = {kField2, kField1};
+
+	rt.OpenNamespace(kNsName);
+	rt.AddIndex(kNsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(kNsName, reindexer::IndexDef{kField1, {kField1}, "-", "string", IndexOpts()});
+	rt.AddIndex(kNsName, reindexer::IndexDef{"text_composite", reindexer::JsonPaths({kField2, kField1}), "text", "composite", IndexOpts()});
+	{
+		// Check jsonpaths after insertion
+		const auto nsDefs = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().WithFilter(kNsName));
+		ASSERT_EQ(nsDefs.size(), 1);
+		ASSERT_EQ(nsDefs[0].indexes.size(), 3);
+		const auto& resPaths = nsDefs[0].indexes[2].JsonPaths();
+		EXPECT_TRUE(std::ranges::equal(resPaths, jsonPaths))
+			<< fmt::format("Jsonpath in namespace: [{}]; Expected: [{}]", fmt::join(resPaths, ", "), fmt::join(jsonPaths, ", "));
+	}
+	{
+		// Add new index and check jsonpaths again
+		rt.AddIndex(kNsName, reindexer::IndexDef{kField2, {kField2}, "-", "string", IndexOpts()});
+		const auto nsDefs = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().WithFilter(kNsName));
+		ASSERT_EQ(nsDefs.size(), 1);
+		ASSERT_EQ(nsDefs[0].indexes.size(), 4);
+		const auto& resPaths = nsDefs[0].indexes[3].JsonPaths();
+		EXPECT_TRUE(std::ranges::equal(resPaths, jsonPaths))
+			<< fmt::format("Jsonpath in namespace: [{}]; Expected: [{}]", fmt::join(resPaths, ", "), fmt::join(jsonPaths, ", "));
+	}
+	{
+		// Unable to drop one of the composite subindexes.
+		// If we will support subindex drop someday, we have to also preserver paths ordering here
+		const auto& idx = (rand() % 2 == 0) ? kField2 : kField1;
+		auto err = rt.reindexer->DropIndex(kNsName, reindexer::IndexDef{idx});
+		EXPECT_EQ(err.code(), errLogic);
+		EXPECT_EQ(err.whatStr(), fmt::format("Cannot remove index '{}': it's a part of a composite index 'text_composite'", idx));
 	}
 }

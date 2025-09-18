@@ -173,7 +173,7 @@ static bool lessRank(RankT lhs, RankT rhs) noexcept { return lhs < rhs; }
 static bool lessRank(RanksHolder::RankPos lhs, RanksHolder::RankPos rhs) noexcept { return lhs.rank < rhs.rank; }
 
 template <typename T>
-template <auto(RanksHolder::*rankGetter)>
+template <auto(RanksHolder::* rankGetter)>
 void FastIndexText<T>::sortAfterSelect(IdSet& mergedIds, RanksHolder& ranks, RankSortType rankSortType) {
 	std::vector<size_t> sortIds;
 	const size_t nItems = mergedIds.size();
@@ -258,7 +258,7 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 	}
 
 	mergedIds->reserve(cnt);
-	if constexpr (std::is_same_v<MergeDataBase, MergeType>) {
+	if constexpr (std::is_same_v<MergeData, MergeType>) {
 		if (useExternSt == FtUseExternStatuses::No) {
 			appendMergedIds(mergeData, relevantDocs,
 							[&ftCtx, &mergedIds](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
@@ -272,21 +272,22 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 								mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
 							});
 		}
-	} else if constexpr (std::is_same_v<MergeData<Area>, MergeType> || std::is_same_v<MergeData<AreaDebug>, MergeType>) {
+	} else if constexpr (std::is_same_v<MergeDataAreas<Area>, MergeType> || std::is_same_v<MergeDataAreas<AreaDebug>, MergeType>) {
 		if (useExternSt == FtUseExternStatuses::No) {
-			appendMergedIds(mergeData, relevantDocs,
-							[&ftCtx, &mergedIds, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
-								ftCtx.Add(ebegin, eend, RankT(vid.proc), std::move(mergeData.vectorAreas[vid.areaIndex]));
-								mergedIds->Append(ebegin, eend, IdSet::Unordered);
-							});
-
-		} else {
 			appendMergedIds(
 				mergeData, relevantDocs,
-				[&ftCtx, &mergedIds, &statuses, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
-					ftCtx.Add(ebegin, eend, RankT(vid.proc), statuses.rowIds, std::move(mergeData.vectorAreas[vid.areaIndex]));
-					mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
+				[&ftCtx, &mergedIds, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfoAreas& vid) {
+					ftCtx.Add(ebegin, eend, RankT(vid.proc), std::move(mergeData.vectorAreas[vid.areaIndex]));
+					mergedIds->Append(ebegin, eend, IdSet::Unordered);
 				});
+
+		} else {
+			appendMergedIds(mergeData, relevantDocs,
+							[&ftCtx, &mergedIds, &statuses, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend,
+																		const MergeInfoAreas& vid) {
+								ftCtx.Add(ebegin, eend, RankT(vid.proc), statuses.rowIds, std::move(mergeData.vectorAreas[vid.areaIndex]));
+								mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
+							});
 		}
 	} else {
 		static_assert(!sizeof(MergeType), "incorrect MergeType");
@@ -340,17 +341,17 @@ IdSet::Ptr FastIndexText<T>::applyCtxTypeAndSelect(DataHolder<VectorType>* d, Ft
 
 	switch (ftCtx.Type()) {
 		case FtCtxType::kFtCtx: {
-			MergeDataBase mergeData = selector.template Process<useExternalStatuses, MergeDataBase>(
-				std::move(dsl), inTransaction, rankSortType, std::move(statuses.statuses), rdxCtx);
+			MergeData mergeData = selector.template Process<useExternalStatuses, MergeData>(std::move(dsl), inTransaction, rankSortType,
+																							std::move(statuses.statuses), rdxCtx);
 			return afterSelect(ftCtx, std::move(mergeData), rankSortType, std::move(statuses), useExternSt);
 		}
 		case FtCtxType::kFtArea: {
-			MergeData<Area> mergeData = selector.template Process<useExternalStatuses, MergeData<Area>>(
+			MergeDataAreas<Area> mergeData = selector.template Process<useExternalStatuses, MergeDataAreas<Area>>(
 				std::move(dsl), inTransaction, rankSortType, std::move(statuses.statuses), rdxCtx);
 			return afterSelect(ftCtx, std::move(mergeData), rankSortType, std::move(statuses), useExternSt);
 		}
 		case FtCtxType::kFtAreaDebug: {
-			MergeData<AreaDebug> mergeData = selector.template Process<useExternalStatuses, MergeData<AreaDebug>>(
+			MergeDataAreas<AreaDebug> mergeData = selector.template Process<useExternalStatuses, MergeDataAreas<AreaDebug>>(
 				std::move(dsl), inTransaction, rankSortType, std::move(statuses.statuses), rdxCtx);
 			return afterSelect(ftCtx, std::move(mergeData), rankSortType, std::move(statuses), useExternSt);
 		}
@@ -516,9 +517,9 @@ RX_ALWAYS_INLINE void FastIndexText<T>::appendMergedIds(MergeType& mergeData, si
 template <typename T>
 void FastIndexText<T>::initConfig(const FtFastConfig* cfg) {
 	if (cfg) {
-		this->cfg_.reset(new FtFastConfig(*cfg));
+		this->cfg_ = std::make_unique<FtFastConfig>(*cfg);
 	} else {
-		this->cfg_.reset(new FtFastConfig(this->ftFields_.size()));
+		this->cfg_ = std::make_unique<FtFastConfig>(this->ftFields_.size());
 		this->cfg_->parse(this->opts_.Config(), this->ftFields_);
 	}
 	initHolder(*getConfig());  // -V522

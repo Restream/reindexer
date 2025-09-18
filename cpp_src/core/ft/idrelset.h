@@ -23,8 +23,6 @@ public:
 
 	VDocIdType Id() const noexcept { return id_; }
 
-	int Distance(const IdRelType& other, int max) const;
-
 	int WordsInField(int field) const noexcept;
 	int MinPositionInField(int field) const noexcept;
 	// packed_vector callbacks
@@ -45,9 +43,6 @@ public:
 
 		uint32_t fpos;
 	};
-
-	template <typename PosTypeT>
-	int MergeWithDist(const IdRelType& newWordPos, unsigned int dist, PosTypeT& res, const std::string& inf) const;
 
 	void Add(int pos, int field) {
 		assertrx_throw(0 <= field && field <= kMaxFtCompositeFields);
@@ -81,6 +76,7 @@ public:
 			[](const IdRelType::PosType& lhs, const IdRelType::PosType& rhs) noexcept { return lhs.pos() < rhs.pos(); });
 	}
 	const h_vector<PosType, 3>& Pos() const noexcept { return pos_; }
+	h_vector<PosType, 3>& Pos() noexcept { return pos_; }
 	uint64_t UsedFieldsMask() const noexcept { return usedFieldsMask_; }
 	size_t HeapSize() const noexcept { return heapSize(pos_); }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <type_traits>
 #if RX_WITH_BUILTIN_ANN_INDEXES || RX_WITH_FAISS_ANN_INDEXES
 
 #include "estl/defines.h"
@@ -26,8 +27,9 @@ extern float (*InnerProductResiduals4ExtPtr)(const float*, const float*, size_t)
 }  // namespace impl
 
 FAISS_PRAGMA_IMPRECISE_FUNCTION_BEGIN
-static inline float InnerProduct(const float* pVect1, const float* pVect2, size_t qty) noexcept {
-	float res = 0;
+template <typename T>
+static inline float InnerProduct(const T* pVect1, const T* pVect2, size_t qty) noexcept {
+	std::conditional_t<std::is_same_v<T, float>, float, int> res = 0;
 #if REINDEXER_WITH_SSE
 	FAISS_PRAGMA_IMPRECISE_LOOP
 #endif	// REINDEXER_WITH_SSE

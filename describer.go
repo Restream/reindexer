@@ -148,8 +148,6 @@ type NamespaceMemStat struct {
 		LastLSN LsnT `json:"last_lsn_v2"`
 		// Namespace version counter
 		NSVersion LsnT `json:"ns_version"`
-		// Temporary namespace flag
-		Temporary bool `json:"temporary"`
 		// Number of storage's master <-> slave switches
 		IncarnationCounter int64 `json:"incarnation_counter"`
 		// Hashsum of all records in namespace

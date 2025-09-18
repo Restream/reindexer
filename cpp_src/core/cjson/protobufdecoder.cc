@@ -52,7 +52,7 @@ void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue
 	using namespace std::string_view_literals;
 	const auto field = tm_.tags2field(tagsPath_);
 	if rx_unlikely (item.itemType.Is<KeyValueType::Composite>()) {
-		throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), "protobuf"sv);
+		throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), kProtobufFmt);
 	}
 	auto value = item.value.convert(item.itemType);
 	if (field.IsRegularIndex()) {
@@ -64,15 +64,15 @@ void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue
 		if (item.isArray) {
 			arraysStorage_.UpdateArraySize(item.tagName, indexNumber);
 		} else {
-			validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, "protobuf"sv);
+			validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, kProtobufFmt);
 			builder.Ref(item.tagName, value.Type(), indexNumber);
 		}
-		convertValueForIndexField(pl.Type().Field(indexNumber).Type(), pl.Type().Field(indexNumber).Name(), value, "protobuf"sv,
+		convertValueForIndexField(pl.Type().Field(indexNumber).Type(), pl.Type().Field(indexNumber).Name(), value, kProtobufFmt,
 								  ConvertToString_False, ConvertNull_True);
 		pl.Set(indexNumber, std::move(value), Append_True);
 		objectScalarIndexes_.set(indexNumber);
 	} else {
-		convertValueForIndexField(validator.Type(), validator.Name(), value, "protobuf"sv, ConvertToString_True, ConvertNull_False);
+		convertValueForIndexField(validator.Type(), validator.Name(), value, kProtobufFmt, ConvertToString_True, ConvertNull_False);
 		validator(value);
 		if (item.isArray) {
 			auto& array = arraysStorage_.GetArray(item.tagName);
@@ -97,7 +97,7 @@ void ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Prot
 		const auto& f = pl.Type().Field(indexNumber);
 		if (f.IsFloatVector()) {
 			if (!item.itemType.IsNumeric() || item.itemType.Is<KeyValueType::Bool>()) {
-				throwUnexpectedArrayTypeForFloatVectorError("protobuf"sv, f);
+				throwUnexpectedArrayTypeForFloatVectorError(kProtobufFmt, f);
 			}
 			ConstFloatVectorView vectView;
 			size_t count = 0;
@@ -105,14 +105,14 @@ void ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Prot
 				auto vect = FloatVector::CreateNotInitialized(f.FloatVectorDimension());
 				while (!parser.IsEof()) {
 					if (count >= f.FloatVectorDimension().Value()) {
-						throwUnexpectedArraySizeForFloatVectorError("protobuf"sv, f, count);
+						throwUnexpectedArraySizeForFloatVectorError(kProtobufFmt, f, count);
 					}
 					const Variant value = parser.ReadArrayItem(item.itemType);
 					vect.RawData()[count] = value.As<float>();
 					++count;
 				}
 				if (count != f.FloatVectorDimension().Value()) {
-					throwUnexpectedArraySizeForFloatVectorError("protobuf"sv, f, count);
+					throwUnexpectedArraySizeForFloatVectorError(kProtobufFmt, f, count);
 				}
 				if (floatVectorsHolder.Add(std::move(vect))) {
 					vectView = floatVectorsHolder.Back();
@@ -122,13 +122,13 @@ void ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Prot
 			builder.ArrayRef(item.tagName, indexNumber, count);
 		} else {
 			if rx_unlikely (!f.IsArray()) {
-				throwUnexpectedArrayError(f.Name(), f.Type(), "protobuf"sv);
+				throwUnexpectedArrayError(f.Name(), f.Type(), kProtobufFmt);
 			}
 			if (packed) {
 				int count = 0;
 				while (!parser.IsEof()) {
 					Variant val = parser.ReadArrayItem(item.itemType);
-					convertValueForIndexField(pl.Type().Field(indexNumber).Type(), pl.Type().Field(indexNumber).Name(), val, "protobuf"sv,
+					convertValueForIndexField(pl.Type().Field(indexNumber).Type(), pl.Type().Field(indexNumber).Name(), val, kProtobufFmt,
 											  ConvertToString_False, ConvertNull_True);
 					pl.Set(indexNumber, std::move(val), Append_True);
 					++count;
@@ -138,14 +138,14 @@ void ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Prot
 				setValue(pl, builder, item, kNoValidation);
 			}
 			validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(),
-										   reinterpret_cast<PayloadFieldValue::Array*>(pl.Field(indexNumber).p_)->len, "protobuf"sv);
+										   reinterpret_cast<PayloadFieldValue::Array*>(pl.Field(indexNumber).p_)->len, kProtobufFmt);
 		}
 	} else {
 		CJsonBuilder& array = arraysStorage_.GetArray(item.tagName);
 		if (packed) {
 			while (!parser.IsEof()) {
 				Variant value = parser.ReadArrayItem(item.itemType);
-				convertValueForIndexField(validator.Type(), validator.Name(), value, "protobuf"sv, ConvertToString_True, ConvertNull_False);
+				convertValueForIndexField(validator.Type(), validator.Name(), value, kProtobufFmt, ConvertToString_True, ConvertNull_False);
 				validator.Elem()(value);
 				array.Put(TagName::Empty(), value);
 			}
@@ -169,10 +169,10 @@ void ProtobufDecoder::decode(Payload& pl, CJsonBuilder& builder, const ProtobufV
 		if (const auto field = tm_.tags2field(tagsPath_); field.IsSparseIndex()) {
 			decode(pl, builder, item, floatVectorsHolder,
 				   SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tm_, isInArray(),
-								   "protobuf"sv});
+								   kProtobufFmt});
 		} else {
 			if rx_unlikely (field.IsIndexed() && item.itemType.Is<KeyValueType::Composite>()) {
-				throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), "protobuf"sv);
+				throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), kProtobufFmt);
 			}
 			decode(pl, builder, item, floatVectorsHolder, kNoValidation);
 		}

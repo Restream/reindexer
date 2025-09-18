@@ -38,7 +38,7 @@ enum CmdCode : uint16_t {
 	kCmdUpdateQuery = 35,
 
 	kCmdSelect = 48,
-	kCmdSelectSQL = 49,
+	kCmdExecSQL = 49,
 	kCmdFetchResults = 50,
 	kCmdCloseResults = 51,
 

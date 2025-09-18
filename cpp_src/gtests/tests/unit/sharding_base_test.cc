@@ -1317,20 +1317,16 @@ std::optional<ShardingApi::ShardingConfig> ShardingApi::getShardingConfigFrom(re
 }
 
 void ShardingApi::changeClusterLeader(int shardId) {
-	client::QueryResults qrReplStat;
-	Error err = svc_[shardId][0].Get()->api.reindexer->Select("select * from #replicationstats where type = 'cluster'", qrReplStat);
+	SCOPED_TRACE(fmt::format("node index: {}", shardId));
 
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qrReplStat = svc_[shardId][0].Get()->api.ExecSQL("select * from #replicationstats where type = 'cluster'");
 	ASSERT_TRUE(qrReplStat.Status().ok()) << qrReplStat.Status().what();
-
 	ASSERT_EQ(qrReplStat.Count(), 1);
 
 	auto itemRS = qrReplStat.begin().GetItem();
 	gason::JsonParser parserRS;
 	auto nodes = parserRS.Parse(itemRS.GetJSON())["nodes"];
-
 	ASSERT_TRUE(!nodes.empty());
-
 	int leaderId = -1;
 	for (auto& node : nodes) {
 		if (node["role"].As<std::string_view>() == "leader") {
@@ -1338,14 +1334,11 @@ void ShardingApi::changeClusterLeader(int shardId) {
 			break;
 		}
 	}
-
 	ASSERT_GT(leaderId, -1);
 
 	auto newLeaderServerId = (leaderId - shardId * kNodesInCluster + 1) % kNodesInCluster + shardId * kNodesInCluster;
-
 	auto item = svc_[shardId][0].Get()->CreateClusterChangeLeaderItem(newLeaderServerId);
-	err = svc_[shardId][0].Get()->api.reindexer->Update(kConfigNamespace, item);
-	ASSERT_TRUE(err.ok()) << err.what() << "; node index = " << shardId;
+	svc_[shardId][0].Get()->api.Update(kConfigNamespace, item);
 }
 
 TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
@@ -1557,9 +1550,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 		parallelDisablingNodes.emplace_back(
 			[this, &stopDisableNodes, &stopServer, &startServer](int shardId) {
 				do {
-					client::QueryResults qr;
-					Error err = svc_[shardId][0].Get()->api.reindexer->Select("select * from #replicationstats where type = 'cluster'", qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+					auto qr = svc_[shardId][0].Get()->api.ExecSQL("select * from #replicationstats where type = 'cluster'");
 					ASSERT_EQ(qr.Count(), 1);
 
 					auto item = qr.begin().GetItem();

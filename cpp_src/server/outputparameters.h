@@ -43,6 +43,9 @@ constexpr auto kProtoModifyResultsFields = frozen::make_unordered_map<frozen::st
 constexpr auto kProtoErrorResultsFields = frozen::make_unordered_map<frozen::string, TagName>(
 																	{{kParamSuccess,      1_Tag}, {kParamResponseCode,    2_Tag},
 																	 {kParamDescription,  3_Tag}});
+
+constexpr auto kProtoBeginTxResultsFields = frozen::make_unordered_map<frozen::string, TagName>(
+																	{{kTxId,      1_Tag}});
 // clang-format on
 
 }  // namespace reindexer

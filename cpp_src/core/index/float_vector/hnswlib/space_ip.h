@@ -10,12 +10,14 @@
 namespace hnswlib {
 
 FAISS_PRAGMA_IMPRECISE_FUNCTION_BEGIN
+template <typename T>
 static float InnerProductDistance(const void* pVect1, const void* pVect2, const void* qty_ptr) noexcept {
-	return -reindexer::vector_dists::InnerProduct((const float*)pVect1, (const float*)pVect2, *((const size_t*)qty_ptr));
+	return -reindexer::vector_dists::InnerProduct((const T*)pVect1, (const T*)pVect2, *((const size_t*)qty_ptr));
 }
 
-static float InnerProduct(const void* pVect1, const void* pVect2, const void* qty_ptr) noexcept {
-	return reindexer::vector_dists::InnerProduct((const float*)pVect1, (const float*)pVect2, *((const size_t*)qty_ptr));
+template <typename T>
+static float InnerProduct(const T* pVect1, const T* pVect2, const void* qty_ptr) noexcept {
+	return reindexer::vector_dists::InnerProduct(pVect1, pVect2, *((const size_t*)qty_ptr));
 }
 FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 
@@ -71,7 +73,7 @@ static float InnerProductSIMD16ExtSSE(const void* pVect1v, const void* pVect2v, 
 }
 FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 
-static DISTFUNC<float> initInnerProductSIMD16Ext() noexcept {
+static DISTFUNC initInnerProductSIMD16Ext() noexcept {
 	if (reindexer::vector_dists::InnerProductWithAVX512()) {
 		return InnerProductSIMD16ExtAVX512;
 	}
@@ -81,14 +83,14 @@ static DISTFUNC<float> initInnerProductSIMD16Ext() noexcept {
 	return InnerProductSIMD16ExtSSE;
 }
 
-static DISTFUNC<float> initInnerProductSIMD4Ext() noexcept {
+static DISTFUNC initInnerProductSIMD4Ext() noexcept {
 	if (reindexer::vector_dists::InnerProductWithAVX()) {
 		return InnerProductSIMD4ExtAVX;
 	}
 	return InnerProductSIMD4ExtSSE;
 }
 
-static DISTFUNC<float> initInnerProductDistanceSIMD16Ext() noexcept {
+static DISTFUNC initInnerProductDistanceSIMD16Ext() noexcept {
 	if (reindexer::vector_dists::InnerProductWithAVX512()) {
 		return InnerProductDistanceSIMD16ExtAVX512;
 	}
@@ -98,17 +100,17 @@ static DISTFUNC<float> initInnerProductDistanceSIMD16Ext() noexcept {
 	return InnerProductDistanceSIMD16ExtSSE;
 }
 
-static DISTFUNC<float> initInnerProductDistanceSIMD4Ext() noexcept {
+static DISTFUNC initInnerProductDistanceSIMD4Ext() noexcept {
 	if (reindexer::vector_dists::InnerProductWithAVX()) {
 		return InnerProductDistanceSIMD4ExtAVX;
 	}
 	return InnerProductDistanceSIMD4ExtSSE;
 }
 
-static const DISTFUNC<float> InnerProductSIMD16Ext = initInnerProductSIMD16Ext();
-static const DISTFUNC<float> InnerProductSIMD4Ext = initInnerProductSIMD4Ext();
-static const DISTFUNC<float> InnerProductDistanceSIMD16Ext = initInnerProductDistanceSIMD16Ext();
-static const DISTFUNC<float> InnerProductDistanceSIMD4Ext = initInnerProductDistanceSIMD4Ext();
+static const DISTFUNC InnerProductSIMD16Ext = initInnerProductSIMD16Ext();
+static const DISTFUNC InnerProductSIMD4Ext = initInnerProductSIMD4Ext();
+static const DISTFUNC InnerProductDistanceSIMD16Ext = initInnerProductDistanceSIMD16Ext();
+static const DISTFUNC InnerProductDistanceSIMD4Ext = initInnerProductDistanceSIMD4Ext();
 
 FAISS_PRAGMA_IMPRECISE_FUNCTION_BEGIN
 static float InnerProductDistanceSIMD16ExtResiduals(const void* pVect1v, const void* pVect2v, const void* qty_ptr) noexcept {
@@ -123,36 +125,45 @@ FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 
 //=======================================================
 
-class [[nodiscard]] InnerProductSpace final : public SpaceInterface<float> {
-	DISTFUNC<float> fstdistfunc_;
+template <typename T>
+class [[nodiscard]] InnerProductSpaceBase final : public SpaceInterface {
+	DISTFUNC fstdistfunc_;
 	size_t data_size_;
 	size_t dim_;
 
 public:
-	InnerProductSpace(size_t dim) noexcept {
-		fstdistfunc_ = InnerProductDistance;
+	InnerProductSpaceBase(size_t dim) noexcept {
+		fstdistfunc_ = InnerProductDistance<T>;
 #if REINDEXER_WITH_SSE
-		if (dim % 16 == 0) {
-			fstdistfunc_ = InnerProductDistanceSIMD16Ext;
-		} else if (dim > 16) {
-			fstdistfunc_ = InnerProductDistanceSIMD16ExtResiduals;
-		} else if (dim % 4 == 0) {
-			fstdistfunc_ = InnerProductDistanceSIMD4Ext;
-		} else if (dim > 4) {
-			fstdistfunc_ = InnerProductDistanceSIMD4ExtResiduals;
+		if constexpr (std::is_same_v<T, float>) {
+			if (dim % 16 == 0) {
+				fstdistfunc_ = InnerProductDistanceSIMD16Ext;
+			} else if (dim > 16) {
+				fstdistfunc_ = InnerProductDistanceSIMD16ExtResiduals;
+			} else if (dim % 4 == 0) {
+				fstdistfunc_ = InnerProductDistanceSIMD4Ext;
+			} else if (dim > 4) {
+				fstdistfunc_ = InnerProductDistanceSIMD4ExtResiduals;
+			}
 		}
 #endif	// REINDEXER_WITH_SSE
 		dim_ = dim;
-		data_size_ = dim * sizeof(float);
+		data_size_ = dim * sizeof(T);
 	}
 
 	size_t get_data_size() noexcept override { return data_size_; }
 
-	DistCalculatorParam<float> get_dist_calculator_param() noexcept override {
-		return DistCalculatorParam<float>{.f = fstdistfunc_, .metric = MetricType::INNER_PRODUCT, .dims = dim_};
+	DistCalculatorParam get_dist_calculator_param() noexcept override {
+		return {.f = fstdistfunc_, .metric = MetricType::INNER_PRODUCT, .dims = dim_};
 	}
 
 	void* get_dist_func_param() noexcept override { return &dim_; }
 };
+
+template class InnerProductSpaceBase<float>;
+using InnerProductSpace = InnerProductSpaceBase<float>;
+
+template class InnerProductSpaceBase<uint8_t>;
+using InnerProductSpaceSq8 = InnerProductSpaceBase<uint8_t>;
 
 }  // namespace hnswlib

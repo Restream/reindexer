@@ -488,42 +488,34 @@ TEST_F(ReplicationLoadApi, DuplicatePKFollowerTest) {
 
 	WaitSync("some");
 	{
-		BaseApi::QueryResultsType qr;
-		err = api.reindexer->Select("Update some set id=id+" + std::to_string(kItemCount * 2) + " where id in(" + changedIds + ")", qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx_unused = api.ExecSQL("Update some set id=id+" + std::to_string(kItemCount * 2) + " where id in(" + changedIds + ")");
 		WaitSync("some");
 	}
 
 	for (size_t k = 0; k < GetServersCount(); k++) {
 		auto server = GetSrv(k);
 		{
-			BaseApi::QueryResultsType qr;
-			err = server->api.reindexer->Select("select * from some order by id", qr);
-			ASSERT_TRUE(err.ok()) << err.what();
+			auto qr = server->api.ExecSQL("select * from some order by id");
 			ASSERT_EQ(qr.Count(), items.size());
 			for (auto i : qr) {
 				reindexer::WrSerializer ser;
 				err = i.GetJSON(ser, false);
+				ASSERT_TRUE(err.ok()) << err.what();
 				gason::JsonParser parser;
 				auto root = parser.Parse(ser.Slice());
 				int id = root["id"].As<int>();
-				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(ser.Slice(), items[id].second);
 			}
 		}
 		{
 			for (auto id : ids) {
-				BaseApi::QueryResultsType qr;
-				err = server->api.reindexer->Select("select * from some where id=" + std::to_string(id), qr);
-				ASSERT_TRUE(err.ok()) << err.what();
+				auto qr = server->api.ExecSQL("select * from some where id=" + std::to_string(id));
 				ASSERT_EQ(qr.Count(), 0);
 			}
 		}
 		{
 			for (auto id : ids) {
-				BaseApi::QueryResultsType qr;
-				err = server->api.reindexer->Select("select * from some where id=" + std::to_string(id + kItemCount * 2), qr);
-				ASSERT_TRUE(err.ok()) << err.what();
+				auto qr = server->api.ExecSQL("select * from some where id=" + std::to_string(id + kItemCount * 2));
 				ASSERT_EQ(qr.Count(), 1);
 			}
 		}

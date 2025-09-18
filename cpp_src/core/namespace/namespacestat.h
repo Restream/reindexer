@@ -90,8 +90,6 @@ struct [[nodiscard]] ReplicationState {
 	// LSN of last change
 	// updated from WAL when querying the structure
 	lsn_t lastLsn;
-	// Temporary namespace flag
-	bool temporary = false;
 	// Incarnation counter
 	int incarnationCounter = 0;
 	// Data hash

@@ -448,19 +448,26 @@ static inline bool haveEqualType(JsonTag lt, JsonTag rt) noexcept {
 }
 
 bool isHomogeneousArray(const gason::JsonValue& v) noexcept {
+	if (v.getTag() != JsonTag::ARRAY) {
+		return false;
+	}
 	bool hasTag = false;
 	gason::JsonTag prevTag;
-	for (const auto& elem : v) {
-		if (hasTag) {
-			if (!haveEqualType(prevTag, elem.value.getTag())) {
-				return false;
+	try {
+		for (const auto& elem : v) {
+			if (hasTag) {
+				if (!haveEqualType(prevTag, elem.value.getTag())) {
+					return false;
+				}
+			} else {
+				hasTag = true;
 			}
-		} else {
-			hasTag = true;
+			prevTag = elem.value.getTag();
 		}
-		prevTag = elem.value.getTag();
+		return true;
+	} catch (Exception&) {
+		return false;
 	}
-	return true;
 }
 
 std::string_view JsonTagToTypeStr(JsonTag tag) noexcept {

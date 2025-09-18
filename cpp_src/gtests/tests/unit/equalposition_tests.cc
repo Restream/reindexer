@@ -122,6 +122,15 @@ TEST_F(EqualPositionApi, SelectLt) {
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondLt, CondLt});
 }
 
+TEST_F(EqualPositionApi, SelectLe) {
+	const Variant key1(static_cast<int>(400));
+	const Variant key2(static_cast<int>(800));
+	Query q{Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondLe, key1).Where(kFieldA2, CondLe, key2)};
+	q.AddEqualPosition({kFieldA1, kFieldA2});
+	auto qr = rt.Select(q);
+	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondLe, CondLe});
+}
+
 TEST_F(EqualPositionApi, SelectEq) {
 	const Variant key1(static_cast<int>(900));
 	const Variant key2(static_cast<int>(1800));
@@ -191,21 +200,21 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IS NULL AND a2=20 equal_position(a1, a2)");
 		auto err = rt.reindexer->Select(q, qr);
-		EXPECT_STREQ(err.what(), "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
+		EXPECT_STREQ(err.what(), "Conditions IN(with empty parameter list), IS NULL, KNN and DWithin are not allowed for equal position");
 		EXPECT_FALSE(err.ok());
 	}
 	{
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 =10 AND a2 IS EMPTY equal_position(a1, a2)");
 		auto err = rt.reindexer->Select(q, qr);
-		EXPECT_STREQ(err.what(), "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
+		EXPECT_STREQ(err.what(), "Conditions IN(with empty parameter list), IS NULL, KNN and DWithin are not allowed for equal position");
 		EXPECT_FALSE(err.ok());
 	}
 	{
 		QueryResults qr;
-		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IN () AND a2 IS EMPTY equal_position(a1, a2)");
+		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IN () AND a2=20 equal_position(a1, a2)");
 		auto err = rt.reindexer->Select(q, qr);
-		EXPECT_STREQ(err.what(), "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
+		EXPECT_STREQ(err.what(), "Conditions IN(with empty parameter list), IS NULL, KNN and DWithin are not allowed for equal position");
 		EXPECT_FALSE(err.ok());
 	}
 }

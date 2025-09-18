@@ -7,7 +7,7 @@ TEST_F(GrpcClientApi, SelectCJSON) try {
 	reindexer::Query q(default_namespace);
 	q.InnerJoin(kIdField, kIdField, CondEq, reindexer::Query(default_namespace + "2"));
 
-	reindexer::grpc::SelectSqlRequest request;
+	reindexer::grpc::SqlRequest request;
 	request.set_dbname(kDbName);
 	request.set_sql(q.GetSQL());
 
@@ -20,7 +20,7 @@ TEST_F(GrpcClientApi, SelectCJSON) try {
 	request.set_allocated_flags(flags);
 
 	grpc::ClientContext context;
-	std::unique_ptr<grpc::ClientReader<reindexer::grpc::QueryResultsResponse>> reader = rx_->SelectSql(&context, request);
+	std::unique_ptr<grpc::ClientReader<reindexer::grpc::QueryResultsResponse>> reader = rx_->ExecSql(&context, request);
 
 	reindexer::grpc::QueryResultsResponse response;
 	while (reader->Read(&response)) {
@@ -45,7 +45,7 @@ TEST_F(GrpcClientApi, SelectJSON) {
 	q.InnerJoin(kIdField, kIdField, CondEq, reindexer::Query(default_namespace + "2"));
 
 	// Set input data for GRPC query
-	reindexer::grpc::SelectSqlRequest request;
+	reindexer::grpc::SqlRequest request;
 	request.set_dbname(kDbName);
 	request.set_sql(q.GetSQL());
 
@@ -58,7 +58,7 @@ TEST_F(GrpcClientApi, SelectJSON) {
 
 	// Execute GRPC query
 	grpc::ClientContext context;
-	std::unique_ptr<grpc::ClientReader<reindexer::grpc::QueryResultsResponse>> reader = rx_->SelectSql(&context, request);
+	std::unique_ptr<grpc::ClientReader<reindexer::grpc::QueryResultsResponse>> reader = rx_->ExecSql(&context, request);
 
 	// Read answer and make sure output JSON has a correct format
 	reindexer::grpc::QueryResultsResponse response;

@@ -667,7 +667,7 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const It
 								   const ValueGetter& valueGetter) {
 	if (int idx; ns.tryGetIndexByNameOrJsonPath(fieldName, idx)) {
 		if (ns.indexes_[idx]->Opts().IsArray()) {
-			throw Error(errQueryExec, "This type of sorting cannot be applied to a field of array type.");
+			throw Error(errQueryExec, force_sort_helpers::kForcedSortArrayErrorMsg);
 		}
 		const KeyValueType fieldType{ns.indexes_[idx]->KeyType()};
 		if (idx < ns.indexes_.firstSparsePos()) {
@@ -1408,14 +1408,16 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, R
 				}
 				entry.index = sortIndex;
 				entry.rawData = SortingContext::RawDataParams(sortIndex->ColumnData(), ns_->payloadType_, sortingEntry.index);
-				entry.opts = &sortIndex->Opts().collateOpts_;
+				const auto& idxOpts = sortIndex->Opts();
+				entry.opts = &idxOpts.collateOpts_;
 
 				if (i == 0) {
-					if (sortIndex->IsOrdered() && !ctx.sortingContext.enableSortOrders && availableSelectBySortIndex) {
+					const bool isOrdered = sortIndex->IsOrdered();
+					if (isOrdered && !idxOpts.IsArray() && !ctx.sortingContext.enableSortOrders && availableSelectBySortIndex) {
 						ctx.sortingContext.uncommitedIndex = sortingEntry.index;
 						ctx.isForceAll = ctx.sortingContext.forcedMode;
-					} else if (!sortIndex->IsOrdered() || rankedTypeQuery != RankedTypeQuery::No || !ctx.sortingContext.enableSortOrders ||
-							   !availableSelectBySortIndex) {  // empty
+					} else if (!isOrdered || idxOpts.IsArray() || rankedTypeQuery != RankedTypeQuery::No ||
+							   !ctx.sortingContext.enableSortOrders || !availableSelectBySortIndex) {  // empty
 						ctx.isForceAll = true;
 						entry.index = nullptr;
 					}

@@ -31,7 +31,7 @@ void EqualPositionComparator::bindField(const std::string& name, F field, const 
 	ctx.cmpUuid.SetValues(cond, values);
 	assertrx_throw(ctx_.size() == fields_.size());
 
-	name_ += ' ' + name;
+	name_.append(" ").append(name);
 }
 
 bool EqualPositionComparator::Compare(const PayloadValue& pv, IdType /*rowId*/) {
@@ -42,18 +42,16 @@ bool EqualPositionComparator::Compare(const PayloadValue& pv, IdType /*rowId*/) 
 	h_vector<VariantArray, 2> vals;
 	size_t tagsPathIdx = 0;
 	vals.reserve(fields_.size());
-	for (size_t j = 0; j < fields_.size(); ++j) {
+	for (const auto& field : fields_) {
 		auto& v = vals.emplace_back();
-		bool isRegularIndex = fields_[j] != IndexValueType::SetByJsonPath && fields_[j] < payloadType_.NumFields();
+		bool isRegularIndex = field != IndexValueType::SetByJsonPath && field < payloadType_.NumFields();
 		if (isRegularIndex) {
-			pl.Get(fields_[j], v);
+			pl.Get(field, v);
 		} else {
 			assertrx_throw(tagsPathIdx < fields_.getTagsPathsLength());
 			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), v, KeyValueType::Undefined{});
 		}
-		if (v.size() < len) {
-			len = vals.back().size();
-		}
+		len = std::min<size_t>(len, v.size());
 	}
 
 	bool res = false;
@@ -61,8 +59,8 @@ bool EqualPositionComparator::Compare(const PayloadValue& pv, IdType /*rowId*/) 
 		bool cmpRes = true;
 		for (size_t j = 0; j < fields_.size(); ++j) {
 			assertrx_throw(i < vals[j].size());
-			cmpRes &= !vals[j][i].Type().Is<KeyValueType::Null>() && compareField(j, vals[j][i]);
-			if (!cmpRes) {
+			if (!compareField(j, vals[j][i])) {
+				cmpRes = false;
 				break;
 			}
 		}

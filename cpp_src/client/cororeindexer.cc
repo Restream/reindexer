@@ -104,15 +104,11 @@ Error CoroReindexer::Delete(const Query& q, CoroQueryResults& result) noexcept {
 Error CoroReindexer::Delete(std::string_view nsName, std::string_view cjson) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->Delete(nsName, cjson, ctx_));
 }
-Error CoroReindexer::Select(std::string_view query, CoroQueryResults& result) noexcept {
-	RETURN_RESULT_NOEXCEPT(impl_->Select(query, result, ctx_));
+Error CoroReindexer::ExecSQL(std::string_view query, CoroQueryResults& result) noexcept {
+	RETURN_RESULT_NOEXCEPT(impl_->ExecSQL(query, result, ctx_));
 }
 Error CoroReindexer::Select(const Query& q, CoroQueryResults& result) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Select(q, result, ctx_)); }
 Error CoroReindexer::Version(std::string& version) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Version(version, ctx_)); }
-Error CoroReindexer::Commit(std::string_view) noexcept {
-	// Empty
-	return {};
-}
 Error CoroReindexer::AddIndex(std::string_view nsName, const IndexDef& idx) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->AddIndex(nsName, idx, ctx_));
 }

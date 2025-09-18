@@ -1,7 +1,5 @@
 #include "namespacestat.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/embedding/embedderscache.h"
-#include "core/system_ns_names.h"
 #include "gason/gason.h"
 
 namespace reindexer {
@@ -230,7 +228,6 @@ void ReplicationState::GetJSON(JsonBuilder& builder) const {
 		lastLsn.GetJSON(lastLsnObj);
 	}
 
-	builder.Put("temporary", temporary);
 	builder.Put("incarnation_counter", incarnationCounter);
 	builder.Put("data_hash", dataHash);
 	builder.Put("data_count", dataCount);
@@ -255,7 +252,6 @@ void ReplicationState::FromJSON(std::span<char> json) {
 			lastLsn = lsn_t(root["last_lsn"].As<int64_t>());
 		}
 
-		temporary = root["temporary"].As<bool>();
 		incarnationCounter = root["incarnation_counter"].As<int>();
 		dataHash = root["data_hash"].As<uint64_t>();
 		dataCount = root["data_count"].As<int>();

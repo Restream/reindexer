@@ -121,7 +121,7 @@ func TestIndexSubstitition(t *testing.T) {
 
 		t.Run("regular index with different name and jsonpath (by jsonpath)", func(t *testing.T) {
 			t.Parallel()
-			testImpl(t, "RegFieldDiffName", "RegFieldDiffName", 3)
+			testImpl(t, "RegFieldDiffName", "reg_field_diff_name", 3)
 		})
 		t.Run("regular index with different name and jsonpath (by index name)", func(t *testing.T) {
 			t.Parallel()
@@ -133,7 +133,7 @@ func TestIndexSubstitition(t *testing.T) {
 		})
 		t.Run("sparse index with different name and jsonpath (by jsonpath)", func(t *testing.T) {
 			t.Parallel()
-			testImpl(t, "SparseFieldDiffName", "SparseFieldDiffName", 103)
+			testImpl(t, "SparseFieldDiffName", "sparse_field_diff_name", 103)
 		})
 		t.Run("sparse index with different name and jsonpath (by index name)", func(t *testing.T) {
 			t.Parallel()

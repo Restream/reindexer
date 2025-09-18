@@ -241,6 +241,16 @@ TEST(StringFunctions, SortExpressionParse) {
 		SortExpression expected;
 		Result result;
 	} testCases[]{
+		{"\"", {}, FAIL},
+		{"\"abc", {}, FAIL},
+		{"abc\"", {}, FAIL},
+		{"abc\"abc", {}, FAIL},
+		{"\"\"", {}, FAIL},
+		{"\"\"abc", {}, FAIL},
+		{"abc\"\"", {}, FAIL},
+		{"\"abc\"\"", {}, FAIL},
+		{"\"a\"bc", {}, FAIL},
+		{"\"a\"bc\"", {}, FAIL},
 		{"-1.2E-3", {}, FAIL},
 		{"ns.", {"ns"}, FAIL},
 		{"rank(", {}, FAIL},

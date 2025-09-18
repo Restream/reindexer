@@ -58,7 +58,7 @@ protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
 
 	virtual void commitFulltextImpl() = 0;
-	SelectKeyResults doSelectKey(const VariantArray& keys, const std::optional<IdSetCacheKey>&, FtMergeStatuses&&,
+	SelectKeyResults doSelectKey(const VariantArray& keys, std::optional<IdSetCacheKey> &&, FtMergeStatuses&&,
 								 FtUseExternStatuses useExternSt, bool inTransaction, RankSortType, FtCtx&, const RdxContext&);
 
 	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, FtCtx&, RanksHolder::Ptr&);

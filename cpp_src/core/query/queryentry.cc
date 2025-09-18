@@ -83,13 +83,13 @@ static void checkIndexData([[maybe_unused]] int idxNo, [[maybe_unused]] const Fi
 	}
 }
 
-void QueryField::SetIndexData(int idxNo, std::string_view /*idxName*/, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
+void QueryField::SetIndexData(int idxNo, std::string_view idxName, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
 							  QueryField::CompositeTypesVecT&& compositeFieldsTypes) & {
 	checkIndexData(idxNo, fields, fieldType, compositeFieldsTypes);
-	// FIXME: This is correct logic, but it breaks equal_positions compatibility. We should find some workaround
-	// if (!iequals(fieldName_, idxName)) {
-	// 	fieldName_ = std::string(idxName);
-	// }
+	// Explicit equality check to avoid extra allocation on Centos7, when index name is already set
+	if (fieldName_ != idxName) {
+		fieldName_.assign(idxName);
+	}
 	idxNo_ = idxNo;
 	fieldsSet_ = std::move(fields);
 	fieldType_ = fieldType;

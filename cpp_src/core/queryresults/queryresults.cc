@@ -517,7 +517,7 @@ Expected<std::string> QueryResults::Iterator::GetJSON() {
 	return std::string(wrser.Slice());
 }
 
-Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
+Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) noexcept {
 	try {
 		switch (qr_->type_) {
 			case Type::None:
@@ -532,48 +532,42 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 				break;
 		}
 
-		Error err =
-			std::visit(overloaded{[&](LocalQueryResults::ConstIterator it) {
-									  assertrx_dbg(qr_->local_);
-									  // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-									  if (qr_->local_->hasCompatibleTm) {
-										  return it.GetCJSON(wrser, withHdrLen);
-									  }
-									  return getCJSONviaJSON(wrser, withHdrLen, it);
-								  },
-								  [&](client::QueryResults::Iterator it) {
-									  if (qr_->type_ == Type::SingleRemote || qr_->remote_[size_t(qr_->curQrId_)]->hasCompatibleTm) {
-										  return it.GetCJSON(wrser, withHdrLen);
-									  }
-									  return getCJSONviaJSON(wrser, withHdrLen, it);
-								  }},
-					   getVariantIt());
-		return err;
-	} catch (Error& e) {
-		return e;
+		return std::visit(overloaded{[&](LocalQueryResults::ConstIterator it) {
+										 assertrx_dbg(qr_->local_);
+										 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+										 if (qr_->local_->hasCompatibleTm) {
+											 return it.GetCJSON(wrser, withHdrLen);
+										 }
+										 return getCJSONviaJSON(wrser, withHdrLen, it);
+									 },
+									 [&](client::QueryResults::Iterator it) {
+										 if (qr_->type_ == Type::SingleRemote || qr_->remote_[size_t(qr_->curQrId_)]->hasCompatibleTm) {
+											 return it.GetCJSON(wrser, withHdrLen);
+										 }
+										 return getCJSONviaJSON(wrser, withHdrLen, it);
+									 }},
+						  getVariantIt());
 	}
+	CATCH_AND_RETURN;
 }
 
-Error QueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
+Error QueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) noexcept {
 	try {
 		return std::visit([&wrser, withHdrLen](auto&& it) { return it.GetMsgPack(wrser, withHdrLen); }, getVariantIt());
-	} catch (Error& e) {
-		return e;
 	}
+	CATCH_AND_RETURN;
 }
 
-Error QueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdrLen) {
+Error QueryResults::Iterator::GetProtobuf(WrSerializer& wrser) noexcept {
 	try {
-		return std::visit(
-			overloaded{[&wrser, withHdrLen](LocalQueryResults::ConstIterator it) { return it.GetProtobuf(wrser, withHdrLen); },
-					   [](const client::QueryResults::Iterator&) {
-						   return Error(errParams, "Protobuf is not supported for distributed and proxied queries");
-						   // return it.GetProtobuf(wrser, withHdrLen);
-					   }},
-			getVariantIt());
-	} catch (Error& e) {
-		return e;
+		return std::visit(overloaded{[&wrser](LocalQueryResults::ConstIterator it) { return it.GetProtobuf(wrser); },
+									 [](const client::QueryResults::Iterator&) {
+										 // TODO: May be implemented on request some day
+										 return Error(errParams, "Protobuf is not supported for distributed and proxied queries");
+									 }},
+						  getVariantIt());
 	}
+	CATCH_AND_RETURN;
 }
 
 Item QueryResults::Iterator::GetItem(bool enableHold) {
@@ -1177,8 +1171,9 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 		if (qrId < 0) {
 			assertrx_dbg(qr->local_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-			++qr->local_->it;
-			if (qr->local_->it != qr->local_->qr.end()) {
+			auto& local = *qr->local_;
+			++local.it;
+			if (local.it != local.qr.end()) {
 				oNode.value() = -1;
 				qr->orderedQrs_->insert(std::move(oNode));
 			}

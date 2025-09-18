@@ -88,7 +88,7 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr& holder, const FtDSLQue
 	if (!inTransaction) {
 		ThrowOnCancel(rdxCtx);
 	}
-	for (auto& term : dsl) {
+	for (const auto& term : dsl) {
 		data_size += ParseData(holder, term.pattern, max_id, min_id, results, term.opts, 1);
 		fast_hash_map<std::wstring, size_t> patternsUsed;
 

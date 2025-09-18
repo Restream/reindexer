@@ -60,8 +60,8 @@ std::string_view CmdName(uint16_t cmd) noexcept {
 			return "UpdateQuery"sv;
 		case kCmdSelect:
 			return "Select"sv;
-		case kCmdSelectSQL:
-			return "SelectSQL"sv;
+		case kCmdExecSQL:
+			return "ExecSQL"sv;
 		case kCmdFetchResults:
 			return "FetchResults"sv;
 		case kCmdCloseResults:

@@ -34,12 +34,18 @@ inline uint32_t _Hash_bytes(const void* ptr, uint32_t len) noexcept {
 
 	// Handle the last few bytes of the input array.
 	if (len >= 3) {
+		// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		hash ^= static_cast<unsigned char>(buf[2]) << 16;
 	}
 	if (len >= 2) {
+		// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		hash ^= static_cast<unsigned char>(buf[1]) << 8;
 	}
 	if (len >= 1) {
+		// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		hash ^= static_cast<unsigned char>(buf[0]);
 		hash *= m;
 	}

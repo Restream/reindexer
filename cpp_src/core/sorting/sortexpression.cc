@@ -224,7 +224,9 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 	const auto end = expr.data() + expr.size();
 	auto joinedSelectorIt = joinedSelectors.cend();
 	bool joinedFieldInQuotes = false;
+	size_t quotes = 0;
 	while (pos != end && *pos != '.' && kIndexNameSyms.test(*pos)) {
+		quotes += (*pos == '"');
 		++pos;
 	}
 	if (pos != end && *pos == '.') {
@@ -244,7 +246,7 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 			if (std::find_if(joinedSelectorIt + 1, joinedSelectors.cend(),
 							 [namespaceName](const T& js) { return iequals(namespaceName, js.RightNsName()); }) != joinedSelectors.cend()) {
 				throwParseError(fullExpr, pos - fullExpr.data(),
-								"Sorting by namespace which has been joined more than once: '" + std::string(namespaceName) + "'.");
+								fmt::format("Sorting by namespace which has been joined more than once: '{}'", namespaceName));
 			}
 			expr.remove_prefix(pos - expr.data());
 		} else {
@@ -252,25 +254,33 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 		}
 	}
 	while (pos != end && kIndexNameSyms.test(*pos)) {
+		quotes += (*pos == '"');
 		++pos;
 	}
+
 	// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 	std::string_view name{expr.data(), static_cast<size_t>(pos - expr.data())};
-	if (name.empty()) {
-		throwParseError(fullExpr, pos - fullExpr.data(), "Expected index or function name.");
-	}
-
 	if (joinedFieldInQuotes) {	// Namespace in quotes - trim closing quote
-		if (name.back() != '"') {
+		if rx_unlikely (name.back() != '"') {
 			throwParseError(fullExpr, pos - fullExpr.data(), "Closing quote not found");
 		}
+		if rx_unlikely (quotes != 2) {
+			throwParseError(fullExpr, pos - fullExpr.data(), "Unexpected quotes in the middle of the joined field name");
+		}
 		name.remove_suffix(1);
-	} else if (name[0] == '"') {  // In case without join
+	} else if (quotes) {  // In case without join
+		assertrx_throw(!name.empty());
+		if rx_unlikely (name[0] != '"' || quotes > 2) {
+			throwParseError(fullExpr, pos - fullExpr.data(), "Unexpected quotes in the middle of the field name");
+		}
 		name.remove_prefix(1);
-		if (name.back() != '"') {
+		if rx_unlikely (name.empty() || name.back() != '"') {
 			throwParseError(fullExpr, pos - fullExpr.data(), "Closing quote not found");
 		}
 		name.remove_suffix(1);
+	}
+	if rx_unlikely (name.empty()) {
+		throwParseError(fullExpr, pos - fullExpr.data(), "Expected index or function name");
 	}
 
 	expr.remove_prefix(pos - expr.data());
@@ -842,7 +852,6 @@ void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const N
 	assertrx_throw(indexNo == IndexValueType::NotSet);
 	assertrx_throw(!column.empty());
 	indexNo = IndexValueType::SetByJsonPath;
-	// FIXME: Sparse index will not be found if jsonpath does not equal to index name
 	if (ns.tryGetIndexByNameOrJsonPath(column, indexNo)) {
 		const auto& index = *ns.indexes_[indexNo];
 		if (isRanked) {
@@ -853,11 +862,10 @@ void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const N
 			throw Error(errQueryExec, "Ordering by float vector index is not allowed: '{}'", column);
 		}
 		if (index.Opts().IsSparse()) {
-			if (indexNo < ns.indexes_.firstCompositePos()) {
-				const auto& fields = index.Fields();
-				assert(fields.getJsonPathsLength() == 1);
-				column = fields.getJsonPath(0);
-			}
+			assertrx_dbg(indexNo < ns.indexes_.firstCompositePos());
+			const auto& fields = index.Fields();
+			assertrx_dbg(fields.getJsonPathsLength() == 1);
+			column = fields.getJsonPath(0);
 			indexNo = IndexValueType::SetByJsonPath;
 		}
 	}

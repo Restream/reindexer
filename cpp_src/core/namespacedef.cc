@@ -21,31 +21,38 @@ Error NamespaceDef::FromJSON(std::span<char> json) {
 
 void NamespaceDef::FromJSON(const gason::JsonNode& root) {
 	name = root["name"].As<std::string>();
-	storage.Enabled(root["storage"]["enabled"].As<bool>(true));
-	storage.DropOnFileFormatError(root["storage"]["drop_on_file_format_error"].As<bool>());
-	storage.CreateIfMissing(root["storage"]["create_if_missing"].As<bool>(true));
+	auto storageNode = root["storage"];
+	auto indexesNode = root["indexes"];
+	auto schemaNode = root["schema"];
+	auto temporaryNode = root["temporary"];
+	isNameOnly = storageNode.empty() && indexesNode.empty() && schemaNode.empty() && temporaryNode.empty();
+	if (!isNameOnly) {
+		storage.Enabled(storageNode["enabled"].As<bool>(true));
+		storage.DropOnFileFormatError(storageNode["drop_on_file_format_error"].As<bool>());
+		storage.CreateIfMissing(storageNode["create_if_missing"].As<bool>(true));
 
-	for (auto& arrelem : root["indexes"]) {
-		indexes.emplace_back(IndexDef::FromJSON(arrelem));
+		for (auto& arrelem : indexesNode) {
+			indexes.emplace_back(IndexDef::FromJSON(arrelem));
+		}
+		schemaJson = schemaNode.As<std::string>(schemaJson);
 	}
-	isTemporary = root["temporary"].As<bool>(false);
-	schemaJson = root["schema"].As<std::string>(schemaJson);
 }
 
 void NamespaceDef::GetJSON(WrSerializer& ser, ExtraIndexDescription withIndexExtras) const {
 	JsonBuilder json(ser);
 	json.Put("name", name);
-	json.Object("storage").Put("enabled", storage.IsEnabled());
-	{
-		auto arr = json.Array("indexes");
-		for (auto& idx : indexes) {
-			arr.Raw("");
-			idx.GetJSON(ser, withIndexExtras);
+	if (!isNameOnly) {
+		json.Object("storage").Put("enabled", storage.IsEnabled());
+		{
+			auto arr = json.Array("indexes");
+			for (auto& idx : indexes) {
+				arr.Raw("");
+				idx.GetJSON(ser, withIndexExtras);
+			}
 		}
-	}
-	json.Put("temporary", isTemporary);
-	if (!schemaJson.empty()) {
-		json.Put("schema", schemaJson);
+		if (!schemaJson.empty()) {
+			json.Put("schema", schemaJson);
+		}
 	}
 }
 

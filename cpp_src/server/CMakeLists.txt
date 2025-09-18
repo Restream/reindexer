@@ -72,37 +72,37 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 if (LINK_RESOURCES)
   include(CMakeRC)
   message("-- Downloading swagger html assets...")
-	execute_process(
-	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_swagger.cmake"
-	    RESULT_VARIABLE ret
-	    ERROR_VARIABLE err
-	)
-	if (NOT "${ret}" STREQUAL "0")
-            message(FATAL_ERROR "Could not prepare 'swagger' files. Reason: ${err}")
-	endif()
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_swagger.cmake"
+    RESULT_VARIABLE ret
+    ERROR_VARIABLE err
+  )
+  if (NOT "${ret}" STREQUAL "0")
+    message(FATAL_ERROR "Could not prepare 'swagger' files. Reason: ${err}")
+  endif()
   message("-- Downloading face html assets...")
-	execute_process(
-	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_face.cmake"
-	    RESULT_VARIABLE ret
-	    ERROR_VARIABLE err
-	)
-	if (NOT "${ret}" STREQUAL "0")
-		message(FATAL_ERROR "Could not prepare 'face' files. Reason: ${err}")
-	endif()
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_face.cmake"
+    RESULT_VARIABLE ret
+    ERROR_VARIABLE err
+  )
+  if (NOT "${ret}" STREQUAL "0")
+    message(FATAL_ERROR "Could not prepare 'face' files. Reason: ${err}")
+  endif()
   
-	file(GLOB_RECURSE FACE_FILES ${PROJECT_BINARY_DIR}/face*/*)
-	file(GLOB_RECURSE SWAGGER_FILES ${PROJECT_BINARY_DIR}/swagger/*)
-	cmrc_add_resource_library(reindexer_server_resources WHENCE ${PROJECT_BINARY_DIR} ${FACE_FILES})
-	cmrc_add_resources(reindexer_server_resources WHENCE ${PROJECT_BINARY_DIR} ${SWAGGER_FILES})
+  file(GLOB_RECURSE FACE_FILES ${PROJECT_BINARY_DIR}/face*/*)
+  file(GLOB_RECURSE SWAGGER_FILES ${PROJECT_BINARY_DIR}/swagger/*)
+  cmrc_add_resource_library(reindexer_server_resources WHENCE ${PROJECT_BINARY_DIR} ${FACE_FILES})
+  cmrc_add_resources(reindexer_server_resources WHENCE ${PROJECT_BINARY_DIR} ${SWAGGER_FILES})
 
-	add_definitions(-DLINK_RESOURCES)
-	list(APPEND REINDEXER_LIBRARIES reindexer_server_resources)
-	install(TARGETS reindexer_server_resources
-		COMPONENT dev
-		RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-		LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-		ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-	)
+  add_definitions(-DLINK_RESOURCES)
+  list(APPEND REINDEXER_LIBRARIES reindexer_server_resources)
+  install(TARGETS reindexer_server_resources
+          COMPONENT dev
+          RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+          LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+          ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  )
 endif()
 
 
@@ -174,7 +174,7 @@ if (NOT WIN32)
     ProcessorCount (cgo_proc_count)
     set (cgo_cxx_flags "-I../../cpp_src ${EXTRA_FLAGS}")
     set (cgo_c_flags "-I../../cpp_src ${EXTRA_FLAGS}")
-    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ -L\${SRCDIR}/../../build/cpp_src/server/ -L\${SRCDIR}/../../build/cpp_src/server/vendor/ -lreindexer_server_library ${EXTRA_FLAGS}")
+    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ -L\${SRCDIR}/../../build/cpp_src/server/ -lreindexer_server_library ${EXTRA_FLAGS}")
     generate_libs_list("${REINDEXER_LIBRARIES}" cgo_ld_flags)
     string(REPLACE ";" "" cgo_ld_flags "${cgo_ld_flags}")
     configure_file (

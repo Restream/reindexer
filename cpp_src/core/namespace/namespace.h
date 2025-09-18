@@ -187,7 +187,7 @@ public:
 		NamespaceConfigData configData;
 		const auto nsName = GetName(ctx);
 		std::string_view realNsName(nsName);
-		if (isTmpNamespaceNameFast(nsName)) {
+		if (isTmpNamespaceName(nsName)) {
 			realNsName = demangleTmpNamespaceName(realNsName);
 		}
 		configProvider.GetNamespaceConfig(realNsName, configData);

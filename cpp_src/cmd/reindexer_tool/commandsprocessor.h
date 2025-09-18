@@ -54,7 +54,7 @@ private:
 	reindexer::DSN getCurrentDsn(bool withPath = false) const;
 	void queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
 
-	void commandSelect(std::string_view);
+	void commandSelectSQL(std::string_view);
 	void commandUpsert(std::string_view);
 	void commandUpdateSQL(std::string_view);
 	void commandDelete(std::string_view);

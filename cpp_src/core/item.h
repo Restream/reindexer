@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <variant>
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
 #include "tools/errors.h"
@@ -114,12 +115,19 @@ public:
 
 	private:
 		void throwIfNotSet() const;
+		void throwIfAssignFieldMultyJsonPath() const;
+
+		std::string_view jsonPath() const noexcept {
+			return std::get_if<std::string>(&jsonPath_) ? std::string_view{std::get<std::string>(jsonPath_)}
+														: std::get<std::string_view>(jsonPath_);
+		}
 
 		FieldRef(int field, ItemImpl* itemImpl, bool notSet) noexcept : itemImpl_(itemImpl), field_(field), notSet_(notSet) {}
-		FieldRef(std::string_view jsonPath, ItemImpl* itemImpl, bool notSet) noexcept
-			: itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1), notSet_(notSet) {}
+		template <typename Str>
+		FieldRef(Str&& jsonPath, ItemImpl* itemImpl, bool notSet) noexcept
+			: itemImpl_(itemImpl), jsonPath_(std::forward<Str>(jsonPath)), field_(-1), notSet_(notSet) {}
 		ItemImpl* itemImpl_;
-		std::string_view jsonPath_;
+		std::variant<std::string_view, std::string> jsonPath_;
 		int field_;
 		bool notSet_{false};
 	};
@@ -193,7 +201,7 @@ public:
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](std::string_view name) const noexcept { return FieldRefByName(name, *impl_); }
+	FieldRef operator[](std::string_view name) const noexcept { return FieldRefByNameOrJsonPath(name, *impl_); }
 	/// Get field's name tag
 	/// @param name - field name
 	/// @return name's numeric tag value
@@ -224,11 +232,11 @@ public:
 	/// Get index type by field id
 	/// @return either index type or Undefined (if index with this number does not exist or PayloadType is not available)
 	KeyValueType GetIndexType(int field) const noexcept;
-	/// Get field's ref by name
-	/// @param name - field name
+	/// Get field's ref by name or its jsonpath
+	/// @param name - field name or jsonpath
 	/// @param itemImpl - item
 	/// @return field's ref
-	static FieldRef FieldRefByName(std::string_view name, ItemImpl& itemImpl) noexcept;
+	static FieldRef FieldRefByNameOrJsonPath(std::string_view name, ItemImpl& itemImpl) noexcept;
 
 	/// Perform embedding for all fields with automatic embedding configured
 	/// @param ctx - context

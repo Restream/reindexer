@@ -55,13 +55,26 @@ struct [[nodiscard]] FtDSLVariant {
 
 struct StopWord;
 
-class [[nodiscard]] FtDSLQuery : public h_vector<FtDSLEntry> {
+class [[nodiscard]] FtDSLQuery {
 public:
 	FtDSLQuery(const RHashMap<std::string, int>& fields, const StopWordsSetT& stopWords, const SplitOptions& splitOptions) noexcept
 		: fields_(fields), stopWords_(stopWords), splitOptions_(splitOptions) {}
 
 	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, splitOptions_}; }
 	void Parse(std::string_view q);
+
+	template <typename... Args>
+	FtDSLEntry& AddTerm(Args&&... args) {
+		return terms_.emplace_back(std::forward<Args>(args)...);
+	}
+
+	const FtDSLEntry& GetTerm(size_t idx) const noexcept { return terms_[idx]; }
+	FtDSLEntry& GetTerm(size_t idx) noexcept { return terms_[idx]; }
+
+	size_t NumTerms() const noexcept { return terms_.size(); }
+
+	h_vector<FtDSLEntry>::const_iterator begin() const noexcept { return terms_.begin(); }
+	h_vector<FtDSLEntry>::const_iterator end() const noexcept { return terms_.end(); }
 
 private:
 	void parseImpl(wchar_t* str);
@@ -74,6 +87,8 @@ private:
 	const RHashMap<std::string, int>& fields_;
 	const StopWordsSetT& stopWords_;
 	const SplitOptions& splitOptions_;
+
+	h_vector<FtDSLEntry> terms_;
 };
 
 }  // namespace reindexer

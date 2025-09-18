@@ -191,16 +191,13 @@ public:
 	/// @param query - SQL query. Only "SELECT" semantic is supported
 	/// @param result - QueryResults with found items
 	/// @param proxyFetchLimit - Fetch limit for proxied query
-	Error Select(std::string_view query, QueryResults& result, unsigned proxyFetchLimit = 10000) noexcept;
+	Error ExecSQL(std::string_view query, QueryResults& result, unsigned proxyFetchLimit = 10000) noexcept;
 	/// Execute Query and return results
 	/// May be used with completion
 	/// @param query - Query object with query attributes
 	/// @param result - QueryResults with found items
 	/// @param proxyFetchLimit - Fetch limit for proxied query
 	Error Select(const Query& query, QueryResults& result, unsigned proxyFetchLimit = 10000) noexcept;
-	/// *DEPRECATED* This method does nothing
-	/// TODO: Must be removed after python-binding update #1800
-	Error Commit(std::string_view nsName) noexcept;
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace
 	/// @return Item ready for filling and further Upsert/Insert/Delete/Update call

@@ -280,7 +280,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 					}
 
 					if (enableNumbersSearch && is_number(e.word)) {
-						buildVirtualWord(e.word, ctx->words_um, vdocId, field, e.pos, virtualWords);
+						buildVirtualWord(e.word, ctx->words_um, vdocId, rfield, e.pos, virtualWords);
 					}
 				}
 			}
@@ -302,19 +302,19 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 			continue;
 		}
 		for (auto& it : ctx.words_um) {
-#if defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
+#if (defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)) && !defined(NDEBUG)
 			const auto fBeforeMove = it.first;
 			const auto sBeforeMove = it.second.MakeCopy();
 			const auto sCapacityBeforeMove = it.second.vids_.capacity();
-#endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
+#endif	// (defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)) && !defined(NDEBUG)
 			auto [idxIt, emplaced] = words_um.try_emplace(std::move(it.first), std::move(it.second));
 			if (!emplaced) {
-#if defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
+#if (defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)) && !defined(NDEBUG)
 				// Make sure, that try_emplace did not moved the values
 				assertrx(it.first == fBeforeMove);
 				assertrx(it.second.vids_.size() == sBeforeMove.vids_.size());
 				assertrx(it.second.vids_.capacity() == sCapacityBeforeMove);
-#endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
+#endif	// (defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)) && !defined(NDEBUG)
 				auto& resultVids = idxIt->second.vids_;
 				auto& newVids = it.second.vids_;
 				resultVids.insert(resultVids.end(), std::make_move_iterator(newVids.begin()), std::make_move_iterator(newVids.end()));
@@ -368,6 +368,8 @@ void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& w
 		WordEntry wentry;
 		auto idxIt = words_um.emplace(numberWord, std::move(wentry)).first;
 		const int mfcnt = idxIt->second.vids_.Add(docType, insertPos, rfield);
+		assertrx_throw(vdoc.mostFreqWordCount.size() > unsigned(rfield));
+		assertrx_throw(vdoc.wordsCount.size() > unsigned(rfield));
 		if (mfcnt > vdoc.mostFreqWordCount[rfield]) {
 			vdoc.mostFreqWordCount[rfield] = mfcnt;
 		}

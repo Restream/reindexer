@@ -48,7 +48,7 @@ public:
 								 EnumDatabasesResponse* response) override;
 	::grpc::Status ModifyItem(::grpc::ServerContext* context,
 							  ::grpc::ServerReaderWriter<ErrorResponse, ModifyItemRequest>* stream) override;
-	::grpc::Status SelectSql(::grpc::ServerContext* context, const SelectSqlRequest* request,
+	::grpc::Status ExecSql(::grpc::ServerContext* context, const SqlRequest* request,
 							 ::grpc::ServerWriter<QueryResultsResponse>* writer) override;
 	::grpc::Status Select(::grpc::ServerContext* context, const SelectRequest* request,
 						  ::grpc::ServerWriter<QueryResultsResponse>* writer) override;
@@ -75,7 +75,7 @@ private:
 		std::string dbName, nsName;
 	};
 
-	Error execSqlQueryByType(QueryResults& res, const SelectSqlRequest& request);
+	Error execSqlQueryByType(QueryResults& res, const SqlRequest& request);
 	static ::grpc::Status buildQueryResults(QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer, const OutputFlags& opts);
 	static Error buildItems(WrSerializer& wrser, QueryResults& qr, const OutputFlags& opts);
 

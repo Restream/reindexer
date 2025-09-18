@@ -159,16 +159,13 @@ public:
 	/// @param cjson - document's cjson
 	Error Delete(std::string_view nsName, std::string_view cjson) noexcept;
 	/// Execute SQL Query and return results
-	/// @param query - SQL query. Only "SELECT" semantic is supported
+	/// @param query - SQL query.
 	/// @param result - QueryResults with found items
-	Error Select(std::string_view query, CoroQueryResults& result) noexcept;
+	Error ExecSQL(std::string_view query, CoroQueryResults& result) noexcept;
 	/// Execute Query and return results
 	/// @param query - Query object with query attributes
 	/// @param result - QueryResults with found items
 	Error Select(const Query& query, CoroQueryResults& result) noexcept;
-	/// *DEPRECATED* This method does nothing
-	/// TODO: Must be removed after python-binding update #1800
-	Error Commit(std::string_view nsName) noexcept;
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace
 	/// @return Item ready for filling and further Upsert/Insert/Delete/Update call

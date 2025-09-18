@@ -634,7 +634,7 @@ TEST_F(RPCClientTestApi, FirstSelectWithFetch) {
 			auto err = rxs.Connect(dsn, loop, opts);
 			ASSERT_TRUE(err.ok()) << err.what();
 			client::CoroQueryResults res;
-			err = rxs.Select("Select * from " + kNsName + " order by id", res);
+			err = rxs.ExecSQL("Select * from " + kNsName + " order by id", res);
 			ASSERT_TRUE(err.ok()) << err.what();
 			size_t idCounter = 0;
 			for (auto i : res) {

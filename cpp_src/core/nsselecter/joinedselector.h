@@ -218,6 +218,7 @@ private:
 	int64_t lastUpdateTime_ = 0;
 	ExplainCalc::Duration selectTime_ = ExplainCalc::Duration::zero();
 	SetLimit0ForChangeJoin limit0_ = SetLimit0ForChangeJoin_False;
+	VariantArray tmpValues_;
 };
 using JoinedSelectors = std::vector<JoinedSelector>;
 

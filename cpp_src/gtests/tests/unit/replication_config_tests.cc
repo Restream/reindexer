@@ -131,7 +131,7 @@ public:
 			GTEST_TRACE_SCOPE("Checking #memstats.server_id for non-system namespaces.");
 			QueryResultsType results;
 			auto query = "select name, replication.server_id from #memstats";
-			auto err = rx.Select(query, results);
+			auto err = rx.ExecSQL(query, results);
 			EXPECT_TRUE(err.ok()) << err.what();
 			for (auto it : results) {
 				WrSerializer ser;

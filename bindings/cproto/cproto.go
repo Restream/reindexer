@@ -645,7 +645,7 @@ func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool,
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := binding.rpcCall(ctx, opRd, cmdSelectSQL, query, flags, int32(fetchCount), ptVersions)
+	buf, err := binding.rpcCall(ctx, opRd, cmdExecSQL, query, flags, int32(fetchCount), ptVersions)
 	if buf != nil {
 		buf.reqID = buf.args[1].(int)
 		if len(buf.args) > 2 {

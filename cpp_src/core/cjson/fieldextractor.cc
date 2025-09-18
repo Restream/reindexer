@@ -1,24 +1,15 @@
 #include "fieldextractor.h"
-#include "core/queryresults/fields_filter.h"
 
 namespace reindexer {
 
-const IndexedPathNode& FieldsExtractor::getArrayPathNode() const {
-	if (filter_) {
-		const auto* regularFields = filter_->TryRegularFields();
-		if (regularFields && regularFields->getTagsPathsLength() > 0) {
-			size_t lastItemIndex = regularFields->getTagsPathsLength() - 1;
-			if (regularFields->isTagsPathIndexed(lastItemIndex)) {
-				const IndexedTagsPath& path = regularFields->getIndexedTagsPath(lastItemIndex);
-				assertrx(path.size() > 0);
-				if (path.back().IsArrayNode()) {
-					return path.back();
-				}
-			}
-		}
-	}
-	static const IndexedPathNode commonNode{IndexedPathNode::AllItems};
-	return commonNode;
+template <typename Os>
+void FieldsExtractor::Filter::Dump(Os& os) const {
+	std::visit(overloaded{[&os](const TagsPath* path) { reindexer::Dump(os, *path); },
+						  [&os](const IndexedTagsPath* path) { path->Dump(os, nullptr); }},
+			   path_);
+	os << "; pos: " << position_ << "; match: " << match_ << std::endl;
 }
+
+template void FieldsExtractor::Filter::Dump(std::ostream&) const;
 
 }  // namespace reindexer

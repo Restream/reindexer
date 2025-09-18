@@ -133,7 +133,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 
 	if (tag == kCTagEnd) {
 		if constexpr (kWithFieldExtractor) {
-			if (visible && filter_ && indexedTagsPath_.size() && indexedTagsPath_.back().IsWithIndex()) {
+			if (visible && filter_ && indexedTagsPath_.size() && indexedTagsPath_.back().IsTagIndexNotAll()) {
 				const auto field = builder.TargetField();
 				if (field >= 0 && !builder.IsHavingOffset() && filter_->Match(indexedTagsPath_)) {
 					builder.OnScopeEnd(fieldsoutcnt_[field]);
@@ -235,7 +235,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 					if (visible) {
 						auto arrNode = builder.Array(tagName);
 						for (size_t i = 0; i < atagCount; ++i) {
-							indexedTagsPath_.back().SetIndex(i);
+							TagsPathScope tagsPathScope(indexedTagsPath_, TagIndex{i});
 							rx_unused = encode(pl, rdser, arrNode, true);
 						}
 					} else {

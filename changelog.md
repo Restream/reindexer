@@ -1,3 +1,32 @@
+# Version 5.7.0 (18.09.2025)
+## Core
+- [fea] Added support for [sorting](readme.md#sort) with array fields (i.e. `ORDER BY array_field`)
+- [fea] Json-paths ordering for [composite indexes](readme.md#complex-primary-keys-and-composite-indexes) was made consistent and now depends on initial json-paths ordering in indexes definition array
+- [fea] Improved error messages in cases, when user tries to create new PK-index over the field with duplicated values
+- [fea] Optimized dynamic memory allocations count in [JOIN-queries](readme.md#join)
+- [fix] Fixed crash during `null`-values handling in [equal_position](readme.md#search-in-array-fields-with-matching-array-indexes)
+- [fix] Fixed quotes handling in [sort expressions](readme.md#sort)
+
+## Fulltext
+- [fea] Sufficiently optimized ranks merging loop for queries with large relevant results count (up to 25% performance boost according to our [CPP-benchmarks](cpp_src/gtests/bench))
+- [fix] Fixed composite fulltext indexes update when target index has individual fields configs
+- [fix] Fixed crash when indexing arrays with `enable_numbers_search`
+- [fix] Fixed fast-path index update
+
+## Reindexer server
+- [fea] Added support for transaction in Protobuf and MsgPack format (in `/api/v1/db/:db/namespaces/:ns/transactions` endpoint)
+- [fix] Fixed crash on incorrect JSON for `equal_positions` and `join_query` fields in Query DSL parser
+- [fix] Fixed response for [GRPC EnumNamespaces](cpp_src/readme.md#grpc-api) with `onlyNames`-option
+
+## CXX API
+- [fea] Added few more safety checks for `client::Reindexer`
+- [fix] Fixed handling of nested json-paths in `reindexer::Item::operator[]` (i.e. cases like `item["obj.field"] = 10`)
+- [ref] Method `Select(std::string_view sql)` was renamed to `ExecSQL(std::string_view sql)`
+- [ref] Removed deprecated `temporary` flag from namespace's `#memstat`
+
+## Deploy
+- [upd] Updated base docker image from `alpine:3.21` to `alpine:3.22`
+
 # Version 5.6.0 (29.08.2025)
 ## Core
 - [fea] Added subqueries and `or inner join` support for [UPDATE](readme.md#update-queries-with-inner-joins-and-subqueries) and [DELETE](readme.md#delete-queries) queries

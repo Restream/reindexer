@@ -27,6 +27,8 @@ struct [[nodiscard]] VDocEntry {
 	const FtKeyEntryData* keyEntry{nullptr};
 	h_vector<float, 3> wordsCount;
 	h_vector<float, 3> mostFreqWordCount;
+
+	bool IsRemoved() const noexcept { return keyEntry == nullptr; }
 };
 
 // documents for the word

@@ -368,9 +368,11 @@ void addWhereKNN(const JsonNode& fieldNode, const JsonNode& filter, Query& q) {
 static void parseFilter(const JsonNode& filter, Query& q) {
 	checkJsonValueType(filter.value, "filter"sv, JsonTag::OBJECT);
 	if (const auto ep = filter.findCaseInsensitive("equal_positions"sv); !ep.empty()) {
+		checkJsonValueType(ep.value, "equal_positions"sv, JsonTag::ARRAY);
 		parseEqualPositions(ep.value, q);
 		return;
 	} else if (const auto joinQuery = filter.findCaseInsensitive("join_query"sv); !joinQuery.empty()) {
+		checkJsonValueType(joinQuery.value, "join_query"sv, JsonTag::OBJECT);
 		parseSingleJoinQuery(joinQuery.value, q, filter);
 		return;
 	}

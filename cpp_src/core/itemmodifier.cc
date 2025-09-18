@@ -210,9 +210,9 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 		if (tagsPath_.empty()) {
 			throw Error(errParams, "Cannot find field by json: '{}'", entry_.Column());
 		}
-		if (tagsPath_.back().IsWithIndex()) {
-			arrayIndex_ = tagsPath_.back().Index();
-			tagsPath_.back().SetIndex(IndexValueType::NotSet);
+		if (tagsPath_.back().IsTagIndexNotAll()) {
+			arrayIndex_ = tagsPath_.back().GetTagIndex();
+			tagsPath_.pop_back();
 		}
 	} else if (fieldIndex_ = ns.payloadType_.FieldByJsonPath(entry_.Column()); fieldIndex_ > 0) {
 		isIndex_ = true;
@@ -225,12 +225,15 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 		IndexedTagsPath tagsPath = ns.tagsMatcher_.path2indexedtag(entry_.Column(), CanAddField_True);
 		std::string jsonPath;
 		for (size_t i = 0; i < tagsPath.size(); ++i) {
-			if (i) {
-				jsonPath += '.';
+			const auto& tag = tagsPath[i];
+			if (tag.IsTagName()) {
+				if (!jsonPath.empty()) {
+					jsonPath += '.';
+				}
+				const TagName tagName = tag.GetTagName();
+				tp.emplace_back(tagName);
+				jsonPath += ns.tagsMatcher_.tag2name(tagName);
 			}
-			const auto tagName = tagsPath[i].NameTag();
-			tp.emplace_back(tagName);
-			jsonPath += ns.tagsMatcher_.tag2name(tagName);
 		}
 		const auto field = ns.tagsMatcher_.tags2field(tp);
 		if (field.IsRegularIndex()) {
@@ -245,11 +248,10 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 			throw Error(errParams, "Cannot find field by json: '{}'", entry_.Column());
 		}
 		if (isIndex_) {
-			auto& lastTag = tagsPath_.back();
-			if (lastTag.IsWithIndex()) {
+			if (tagsPath_.back().IsTagIndexNotAll()) {
 				tagsPathWithLastIndex_ = tagsPath_;
-				arrayIndex_ = lastTag.Index();
-				lastTag.SetIndex(IndexValueType::NotSet);
+				arrayIndex_ = tagsPath_.back().GetTagIndex();
+				tagsPath_.pop_back();
 			}
 		}
 	}
@@ -312,7 +314,7 @@ bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, UpdatesContainer&
 				values = field.Details().Values();
 			}
 
-			if (values.IsArrayValue() && field.TagspathWithLastIndex().back().IsArrayNode()) {
+			if (values.IsArrayValue() && field.TagspathWithLastIndex().back().IsTagIndex()) {
 				throw Error(errParams, "Array items are supposed to be updated with a single value, not an array");
 			}
 
@@ -527,7 +529,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 			throw Error(errParams, "It's not possible to Update single index fields with arrays!");
 		}
 
-		if (!index.IsFloatVector() && field.TagspathWithLastIndex().back().IsArrayNode()) {
+		if (!index.IsFloatVector() && field.TagspathWithLastIndex().back().IsTagIndex()) {
 			throw Error(errParams, "Can't Update non-array index fields using array index");
 		}
 	}
@@ -581,18 +583,16 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 	}
 	auto strHolder = ns_.strHolder();
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
-	bool updateArrayPart = field.ArrayIndex() >= 0;
+	bool updateArrayPart = field.ArrayIndex() && !field.ArrayIndex()->IsAll();
 	bool isForAllItems = false;
 	for (const auto& tag : field.Tagspath()) {
-		if (tag.IsArrayNode()) {
+		if (tag.IsTagIndex()) {
 			updateArrayPart = true;
-		}
-		if (tag.IsForAllItems()) {
-			isForAllItems = true;
-			continue;
-		}
-		if (isForAllItems && tag.IsWithIndex()) {
-			throw Error(errParams, "Expressions like 'field[*].field[1]=10' are supported for sparse indexes/non-index fields only");
+			if (tag.GetTagIndex().IsAll()) {
+				isForAllItems = true;
+			} else if (isForAllItems) {
+				throw Error(errParams, "Expressions like 'field[*].field[1]=10' are supported for sparse indexes/non-index fields only");
+			}
 		}
 	}
 
@@ -608,12 +608,13 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 		int offset = -1, length = -1;
 		isForAllItems = false;
 		for (const auto& tag : field.Tagspath()) {	// TODO: Move to FieldEntry?
-			if (tag.IsForAllItems()) {
-				isForAllItems = true;
-				continue;
-			}
-			if (isForAllItems && tag.IsWithIndex()) {
-				throw Error(errParams, "Expressions like 'field[*].field[1]=10' are supported for sparse indexes/non-index fields only");
+			if (tag.IsTagIndex()) {
+				if (tag.GetTagIndex().IsAll()) {
+					isForAllItems = true;
+				} else if (isForAllItems) {
+					throw Error(errParams,
+								"Expressions like 'field[*].field[1]=10' are supported for sparse indexes/non-index fields only");
+				}
 			}
 		}
 
@@ -621,18 +622,17 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 		if (offset < 0 || length < 0) {
 			const auto& path = field.TagspathWithLastIndex();
 			std::string indexesStr;
-			for (auto& p : path) {
-				if (p.Index() >= 0) {
-					if (indexesStr.size()) {
-						indexesStr.append(",");
-					}
-					indexesStr.append(std::to_string(p.Index()));
+			for (const auto& p : path) {
+				if (p.IsTagIndexNotAll()) {
+					indexesStr += '[';
+					indexesStr.append(std::to_string(p.GetTagIndex().AsNumber()));
+					indexesStr += ']';
 				}
 			}
-			throw Error(errParams, "Requested array's index was not found: [{}]", indexesStr);
+			throw Error(errParams, "Requested array's index was not found: {}", indexesStr);
 		}
-		if (field.ArrayIndex() != IndexValueType::NotSet && field.ArrayIndex() >= length) {
-			throw Error(errLogic, "Array index is out of range: [{}/{}]", field.ArrayIndex(), length);
+		if (field.ArrayIndex() && !field.ArrayIndex()->IsAll() && field.ArrayIndex()->AsNumber() >= size_t(length)) {
+			throw Error(errLogic, "Array index is out of range: [{}/{}]", field.ArrayIndex()->AsNumber(), length);
 		}
 
 		if (ns_.skrefs.CompareNoExcept(values) == ComparationResult::Eq) {
@@ -661,16 +661,16 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 			for (int i = offset, end = offset + length; i < end; ++i) {
 				pl.Set(field.Index(), i, ns_.krefs.front());
 			}
-		} else if (field.ArrayIndex() == IndexValueType::NotSet) {
+		} else if (field.ArrayIndex()) {
+			// Exactly one value was changed
+			pl.Set(field.Index(), offset, ns_.krefs.front());
+		} else {
 			// Array may be resized
 			VariantArray v;
 			pl.Get(field.Index(), v);
 			rx_unused = v.erase(v.cbegin() + offset, v.cbegin() + offset + length);
 			rx_unused = v.insert(v.cbegin() + offset, ns_.krefs.begin(), ns_.krefs.end());
 			pl.Set(field.Index(), v);
-		} else {
-			// Exactly one value was changed
-			pl.Set(field.Index(), offset, ns_.krefs.front());
 		}
 	} else {
 		if (index.Opts().IsSparse()) {

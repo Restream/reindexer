@@ -184,8 +184,9 @@ private:
 	void processQueryEntryResults(SelectKeyResults&&, OpType, const NamespaceImpl&, const QueryEntry&, reindexer::IsRanked, IsSparse,
 								  std::optional<OpType> nextOp);
 	using EqualPositions = h_vector<size_t, 4>;
-	void processEqualPositions(const std::vector<EqualPositions>& equalPositions, const NamespaceImpl& ns, const QueryEntries& queries);
-	static std::vector<EqualPositions> prepareEqualPositions(const QueryEntries& queries, size_t begin, size_t end);
+	void processEqualPositions(std::span<const EqualPositions> equalPositions, const NamespaceImpl& ns, const QueryEntries& queries);
+	static h_vector<SelectIteratorContainer::EqualPositions, 2> prepareEqualPositions(const QueryEntries& queries, size_t begin,
+																					  size_t end);
 	static std::pair<iterator, iterator> findFirstRanked(iterator begin, iterator end, const NamespaceImpl&);
 	static bool isRanked(const_iterator, const NamespaceImpl&);
 	static void throwIfNotFt(const QueryEntries&, size_t i, const NamespaceImpl&);
@@ -194,20 +195,7 @@ private:
 	bool hasDistinctComparatorsFromPreviousStage() const noexcept { return !preservedDistincts_.Empty(); }
 
 	/// @return end() if empty or last opened bracket is empty
-	iterator lastAppendedOrClosed() {
-		typename Container::iterator it = this->container_.begin(), end = this->container_.end();
-		if (!this->activeBrackets_.empty()) {
-			it += (this->activeBrackets_.back() + 1);
-		}
-		if (it == end) {
-			return this->end();
-		}
-		iterator i = it, i2 = it, e = end;
-		while (++i2 != e) {
-			i = i2;
-		}
-		return i;
-	}
+	iterator lastAppendedOrClosed();
 	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JoinedSelector>&, WrSerializer&);
 
 	PayloadType pt_;

@@ -44,7 +44,7 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 			if (field.IsIndexed()) {  // sparse index
 				decodeJsonSparse(&pl, builder, elem.value, tagName, floatVectorsHolder, matched,
 								 SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tagsMatcher_,
-												 isInArray(), "json"sv});
+												 isInArray(), kJSONFmt});
 			} else {
 				decodeJson(&pl, builder, elem.value, tagName, floatVectorsHolder, matched);
 			}
@@ -55,8 +55,8 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 			switch (elem.value.getTag()) {
 				case gason::JsonTag::ARRAY:
 					if (f.Type().Is<KeyValueType::FloatVector>()) {
-						validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), "json"sv);
-						validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, "json"sv);
+						validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), kJSONFmt);
+						validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, kJSONFmt);
 						objectScalarIndexes_.set(indexNumber);
 						Variant value =
 							jsonValue2Variant(elem.value, f.Type(), f.Name(), &floatVectorsHolder, ConvertToString_False, ConvertNull_True);
@@ -66,14 +66,14 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 						builder.ArrayRef(tagName, indexNumber, int(count));
 					} else {
 						if rx_unlikely (!f.IsArray()) {
-							throwUnexpectedArrayError(f.Name(), f.Type(), "json"sv);
+							throwUnexpectedArrayError(f.Name(), f.Type(), kJSONFmt);
 						}
 						int count = 0;
 						for (auto& subelem : elem.value) {
 							(void)subelem;
 							++count;
 						}
-						validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), count, "json"sv);
+						validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), count, kJSONFmt);
 						int pos = pl.ResizeArray(indexNumber, count, Append_True);
 						for (auto& subelem : elem.value) {
 							pl.Set(indexNumber, pos++,
@@ -84,7 +84,7 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 					break;
 				case gason::JsonTag::JSON_NULL:
 					if (f.Type().Is<KeyValueType::FloatVector>() || (f.IsArray() && !isInArray())) {
-						validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), "json"sv);
+						validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), kJSONFmt);
 						objectScalarIndexes_.set(indexNumber);
 						if (f.Type().Is<KeyValueType::FloatVector>()) {
 							pl.Set(indexNumber, Variant{ConstFloatVectorView{}});
@@ -101,8 +101,8 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 				case gason::JsonTag::STRING:
 				case gason::JsonTag::JTRUE:
 				case gason::JsonTag::JFALSE: {
-					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), "json"sv);
-					validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, "json"sv);
+					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), kJSONFmt);
+					validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, kJSONFmt);
 					objectScalarIndexes_.set(indexNumber);
 					Variant value = jsonValue2Variant(elem.value, f.Type(), f.Name(), nullptr, ConvertToString_False, ConvertNull_True);
 					builder.Ref(tagName, value.Type(), indexNumber);

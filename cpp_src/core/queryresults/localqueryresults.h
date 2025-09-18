@@ -54,10 +54,10 @@ class [[nodiscard]] LocalQueryResults {
 			: qr_{qr}, idx_{idx}, err_{err}, nsNamesCache{nsCache} {}
 		operator IteratorImpl<std::add_const_t<QR>>() const& { return {qr_, idx_, err_, nsNamesCache}; }
 		operator IteratorImpl<std::add_const_t<QR>>() && noexcept { return {qr_, idx_, std::move(err_), std::move(nsNamesCache)}; }
-		Error GetJSON(WrSerializer& wrser, bool withHdrLen = true);
-		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true);
-		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true);
-		Error GetProtobuf(WrSerializer& wrser, bool withHdrLen = true);
+		Error GetJSON(WrSerializer& wrser, bool withHdrLen = true) noexcept;
+		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true) noexcept;
+		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true) noexcept;
+		Error GetProtobuf(WrSerializer& wrser) noexcept;
 		Error GetCSV(WrSerializer& wrser, CsvOrdering& ordering) noexcept;
 
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
@@ -82,10 +82,13 @@ class [[nodiscard]] LocalQueryResults {
 			idx_ += delta;
 			return *this;
 		}
+		const QR* Owner() const& noexcept { return qr_; }
+		auto Owner() && = delete;
+		size_t Idx() const noexcept { return idx_; }
 
 		Error Status() const noexcept { return err_; }
-		bool operator==(const IteratorImpl<const QR>& other) const noexcept { return idx_ == other.idx_; }
-		bool operator==(const IteratorImpl<std::remove_const_t<QR>>& other) const noexcept { return idx_ == other.idx_; }
+		bool operator==(const IteratorImpl<const QR>& other) const noexcept { return idx_ == other.Idx(); }
+		bool operator==(const IteratorImpl<std::remove_const_t<QR>>& other) const noexcept { return idx_ == other.Idx(); }
 		bool operator!=(const IteratorImpl<const QR>& other) const noexcept { return !operator==(other); }
 		bool operator!=(const IteratorImpl<std::remove_const_t<QR>>& other) const noexcept { return !operator==(other); }
 		IteratorImpl& operator*() noexcept { return *this; }
@@ -98,9 +101,10 @@ class [[nodiscard]] LocalQueryResults {
 
 		const FieldsFilter& GetFieldsFilter() const noexcept { return qr_->getFieldsFilter(qr_->items_.GetItemRef(idx_).Nsid()); }
 
+	private:
 		QR* qr_;
 		size_t idx_;
-		Error err_{errOK};
+		Error err_;
 		NsNamesCache nsNamesCache;
 	};
 
@@ -163,7 +167,7 @@ public:
 	struct Context;
 	// precalc context size
 	// sizeof(PayloadType) + sizeof(TagsMatcher) + sizeof(FieldsFilter) + sizeof(shared_ptr) + sizeof(int64);
-	static constexpr int kSizeofContext = 352;
+	static constexpr int kSizeofContext = 392;
 
 	// Order of storing contexts for namespaces:
 	// [0]      - main NS context

@@ -7,13 +7,13 @@ namespace reindexer {
 
 TagsPath TagsMatcherImpl::path2tag(std::string_view jsonPath, CanAddField canAdd, WasUpdated& wasUpdated) {
 	TagsPath fieldTags;
-	for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
-		pos = jsonPath.find('.', lastPos);
-		if (pos == std::string_view::npos) {
-			pos = jsonPath.length();
+	for (size_t nextPos = 0, lastPos = 0; nextPos != jsonPath.length(); lastPos = nextPos + 1) {
+		nextPos = jsonPath.find('.', lastPos);
+		if (nextPos == std::string_view::npos) {
+			nextPos = jsonPath.length();
 		}
-		if (pos != lastPos) {
-			const std::string_view field = jsonPath.substr(lastPos, pos - lastPos);
+		if (nextPos != lastPos) {
+			const std::string_view field = jsonPath.substr(lastPos, nextPos - lastPos);
 			const TagName fieldTag = name2tag(field, canAdd, wasUpdated);
 			if (fieldTag.IsEmpty()) {
 				fieldTags.clear();
@@ -28,26 +28,35 @@ TagsPath TagsMatcherImpl::path2tag(std::string_view jsonPath, CanAddField canAdd
 IndexedTagsPath TagsMatcherImpl::path2indexedtag(std::string_view jsonPath, CanAddField canAdd, WasUpdated& wasUpdated) {
 	using namespace std::string_view_literals;
 	IndexedTagsPath fieldTags;
-	for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
-		pos = jsonPath.find('.', lastPos);
-		if (pos == std::string_view::npos) {
-			pos = jsonPath.length();
+	for (size_t nextPos = 0, lastPos = 0; nextPos != jsonPath.length(); lastPos = nextPos + 1) {
+		nextPos = jsonPath.find('.', lastPos);
+		if (nextPos == std::string_view::npos) {
+			nextPos = jsonPath.length();
 		}
-		if (pos != lastPos) {
-			IndexedPathNode node;
-			std::string_view field = jsonPath.substr(lastPos, pos - lastPos);
-			const size_t openBracketPos = field.find('[');
+		if (nextPos != lastPos) {
+			std::string_view indexedField = jsonPath.substr(lastPos, nextPos - lastPos);
+			std::string_view fieldName = indexedField;
+			auto openBracketPos = indexedField.find('[');
 			if (openBracketPos != std::string_view::npos) {
-				const size_t closeBracketPos = field.find(']', openBracketPos);
+				fieldName = indexedField.substr(0, openBracketPos);
+			}
+			const TagName tagName = name2tag(fieldName, canAdd, wasUpdated);
+			if (tagName.IsEmpty()) {
+				fieldTags.clear();
+				return fieldTags;
+			}
+			fieldTags.emplace_back(tagName);
+			while (openBracketPos != std::string_view::npos) {
+				const size_t closeBracketPos = indexedField.find(']', openBracketPos);
 				if (closeBracketPos == std::string_view::npos) {
 					throw Error(errParams, "No closing bracket for index in jsonpath");
 				}
-				const std::string_view content = field.substr(openBracketPos + 1, closeBracketPos - openBracketPos - 1);
+				const std::string_view content = indexedField.substr(openBracketPos + 1, closeBracketPos - openBracketPos - 1);
 				if (content.empty()) {
 					throw Error(errParams, "Index value in brackets cannot be empty");
 				}
 				if (content == "*"sv) {
-					node.MarkAllItems(true);
+					fieldTags.emplace_back(TagIndex::All());
 				} else {
 					auto index = try_stoi(content);
 					if (!index) {
@@ -56,16 +65,11 @@ IndexedTagsPath TagsMatcherImpl::path2indexedtag(std::string_view jsonPath, CanA
 					if (index < 0) {
 						throw Error(errLogic, "Array index value cannot be negative");
 					}
-					node.SetIndex(*index);
+					fieldTags.emplace_back(TagIndex{*index});
 				}
-				field = field.substr(0, openBracketPos);
+				indexedField = indexedField.substr(closeBracketPos);
+				openBracketPos = indexedField.find('[');
 			}
-			node.SetNameTag(name2tag(field, canAdd, wasUpdated));
-			if (node.NameTag().IsEmpty()) {
-				fieldTags.clear();
-				return fieldTags;
-			}
-			fieldTags.emplace_back(std::move(node));
 		}
 	}
 	return fieldTags;

@@ -1112,7 +1112,7 @@ Error ShardingProxy::Delete(const Query& query, QueryResults& result, const RdxC
 	}
 }
 
-Error ShardingProxy::Select(std::string_view sql, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx) {
+Error ShardingProxy::ExecSQL(std::string_view sql, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx) {
 	try {
 		const Query query = Query::FromSQL(sql);
 		switch (query.type_) {

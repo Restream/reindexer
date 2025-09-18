@@ -3,6 +3,11 @@
 #include "cjsonbuilder.h"
 #include "core/type_consts_helpers.h"
 #include "sparse_validator.h"
+#include "tools/use_pmr.h"
+
+#ifdef USE_PMR
+#include <memory_resource>
+#endif
 
 namespace reindexer {
 
@@ -200,28 +205,97 @@ Variant cjsonValueToVariant(TagType tagType, Serializer& rdser, KeyValueType dst
 		.convert(dstType);
 }
 
-template <typename T>
-void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher, WrSerializer& wrser) {
-	CJsonBuilder builder(wrser, ObjType::TypeObject);
-	for (int field = 1, numFields = pl.NumFields(); field < numFields; ++field) {
-		const PayloadFieldType& fieldType = pl.Type().Field(field);
-		if (fieldType.JsonPaths().size() < 1 || fieldType.JsonPaths()[0].empty()) {
-			continue;
+template <typename CJsonBuilderT, typename PayloadIfaceT>
+static void CJsonBuilderRef(CJsonBuilderT& builder, const PayloadIfaceT& pl, const TagName& tagName, int field) {
+	const PayloadFieldType& fieldType = pl.Type().Field(field);
+
+	if (fieldType.IsFloatVector()) {
+		const auto value = pl.Get(field, 0);
+		const auto count = ConstFloatVectorView(value).Dimension().Value();
+		builder.ArrayRef(tagName, field, int(count));
+	} else if (fieldType.IsArray()) {
+		builder.ArrayRef(tagName, field, pl.GetArrayLen(field));
+	} else {
+		builder.Ref(tagName, pl.Get(field, 0).Type(), field);
+	}
+}
+
+namespace {
+struct PathElementNodeTree {
+#ifdef USE_PMR
+	using MapT = std::pmr::map<TagName, PathElementNodeTree>;
+
+	explicit PathElementNodeTree(std::pmr::memory_resource* buffer) : children_(buffer) {}
+#else
+	using MapT = std::map<TagName, PathElementNodeTree>;
+
+	explicit PathElementNodeTree() = default;
+#endif
+
+	void Add(std::span<const TagName>&& tags, int indexNo) {
+		indexNo_ = indexNo;
+		if (tags.empty()) {
+			return;
 		}
 
-		const TagName tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
-		assertf(!tagName.IsEmpty(), "ns={}, field={}", pl.Type().Name(), fieldType.JsonPaths()[0]);
+#ifdef USE_PMR
+		if (!children_.contains(tags.front())) {
+			children_.emplace(tags.front(), PathElementNodeTree(children_.get_allocator().resource()));
+		}
+		children_.at(tags.front()).Add({std::next(tags.begin()), tags.end()}, indexNo);
 
-		if (fieldType.IsFloatVector()) {
-			const auto value = pl.Get(field, 0);
-			const auto count = ConstFloatVectorView(value).Dimension().Value();
-			builder.ArrayRef(tagName, field, int(count));
-		} else if (fieldType.IsArray()) {
-			builder.ArrayRef(tagName, field, pl.GetArrayLen(field));
-		} else {
-			builder.Ref(tagName, pl.Get(field, 0).Type(), field);
+#else
+		children_[tags.front()].Add({std::next(tags.begin()), tags.end()}, indexNo);
+#endif
+	}
+
+	template <typename BuilderT, typename PayloadIfaceT>
+	void Travers(BuilderT& builder, const PayloadIfaceT& pl, TagName tagName = TagName::Empty()) const noexcept {
+		if (children_.empty()) {
+			CJsonBuilderRef(builder, pl, tagName, indexNo_);
+			return;
+		}
+		auto child = tagName.IsEmpty() ? std::move(builder) : builder.Object(tagName);
+		for (const auto& [tag, node] : children_) {
+			node.Travers(child, pl, tag);
 		}
 	}
+
+private:
+	int indexNo_ = -1;	// it only makes sense for leaf nodes
+	MapT children_;
+};
+}  // namespace
+
+template <typename T>
+void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher, WrSerializer& wrser) {
+#ifdef USE_PMR
+	int bufSize = 0;
+	for (int field = 1, numFields = pl.NumFields(); field < numFields; ++field) {
+		const PayloadFieldType& fieldType = pl.Type().Field(field);
+		assertf_dbg(!fieldType.JsonPaths().empty() && !fieldType.JsonPaths()[0].empty(), "Wrong JsonPaths for field={}, ns={}", field,
+					pl.Type().Name());
+		bufSize += std::count(fieldType.JsonPaths()[0].begin(), fieldType.JsonPaths()[0].end(), '.') + 1;
+	}
+
+	h_vector<std::byte, 1024> buffer;
+	buffer.resize((sizeof(PathElementNodeTree::MapT::node_type) + sizeof(PathElementNodeTree::MapT::value_type)) * bufSize);
+	std::pmr::monotonic_buffer_resource pool(buffer.data(), buffer.size());
+	PathElementNodeTree root(&pool);
+#else
+	PathElementNodeTree root;
+#endif
+
+	for (int field = 1, numFields = pl.NumFields(); field < numFields; ++field) {
+		const PayloadFieldType& fieldType = pl.Type().Field(field);
+		assertf_dbg(!fieldType.JsonPaths().empty() && !fieldType.JsonPaths()[0].empty(), "Wrong JsonPaths for field={}, ns={}", field,
+					pl.Type().Name());
+		const TagsPath tagsPath = tagsMatcher->path2tag(fieldType.JsonPaths()[0]);
+		root.Add(std::span{tagsPath.begin(), tagsPath.end()}, field);
+	}
+
+	CJsonBuilder builder(wrser, ObjType::TypeObject);
+	root.Travers(builder, pl);
 }
 
 template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const PayloadValue>&, const TagsMatcher*, WrSerializer&);

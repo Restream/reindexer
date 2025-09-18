@@ -120,12 +120,20 @@ inline size_t string_pack(const char* str, const size_t len, uint8_t* out) noexc
 inline uint32_t parse_uint32(unsigned len, const uint8_t* data) noexcept {
 	uint32_t rv = data[0] & 0x7f;
 	if (len > 1) {
+		// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		rv |= (static_cast<uint32_t>(data[1] & 0x7f) << 7);
 		if (len > 2) {
+			// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+			// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 			rv |= (static_cast<uint32_t>(data[2] & 0x7f) << 14);
 			if (len > 3) {
+				// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+				// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 				rv |= (static_cast<uint32_t>(data[3] & 0x7f) << 21);
 				if (len > 4) {
+					// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+					// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 					rv |= (static_cast<uint32_t>(data[4]) << 28);
 				}
 			}
@@ -156,6 +164,8 @@ inline unsigned scan_varint(unsigned len, const uint8_t* data) noexcept {
 	}
 	unsigned i = 0;
 	for (; i < len; ++i) {
+		// TODO: Check with newer version. Clang-tidy v21 is unable to validate len correctly
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		if ((data[i] & 0x80) == 0) {
 			break;
 		}

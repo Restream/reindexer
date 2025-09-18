@@ -88,9 +88,9 @@ void FtDSLQuery::closeGroup(wchar_t*& str, int groupTermCounter, int groupCounte
 	if (*str == '~') {
 		distance = parseDistance(str);
 	}
-	assertrx_throw(groupTermCounter <= int(size()));
+	assertrx_throw(groupTermCounter <= int(terms_.size()));
 	if (groupTermCounter > 1) {
-		for (auto fteIt = rbegin(); groupTermCounter > 0; ++fteIt, --groupTermCounter) {
+		for (auto fteIt = terms_.rbegin(); groupTermCounter > 0; ++fteIt, --groupTermCounter) {
 			if (groupTermCounter > 1) {
 				fteIt->opts.distance = distance;
 			}
@@ -108,7 +108,7 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 	wchar_t groupQuote = '\'';
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
 	std::string utf8str;
-	rx_unused = fieldsOpts.insert(fieldsOpts.end(), std::max(int(fields_.size()), 1), {1.0, false});
+	rx_unused = fieldsOpts.insert(fieldsOpts.cend(), std::max(int(fields_.size()), 1), {1.0, false});
 
 	while (*str) {
 		while (*str && needToSkip(*str, splitOptions_)) {
@@ -230,7 +230,7 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 		}
 
 		maxPatternLen = (fte.pattern.length() > maxPatternLen) ? fte.pattern.length() : maxPatternLen;
-		emplace_back(std::move(fte));
+		terms_.emplace_back(std::move(fte));
 		if (inGroup) {
 			++groupTermCounter;
 		}
@@ -239,14 +239,14 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 	if (inGroup) {
 		throw Error(errParseDSL, "No closing quote in full text search query DSL");
 	}
-	if (!hasAnythingExceptNot && size()) {
+	if (!hasAnythingExceptNot && terms_.size()) {
 		throw Error(errParams, "Fulltext query can not contain only 'NOT' terms (i.e. terms with minus)");
 	}
 
 	int cnt = 0;
-	for (auto& e : *this) {
-		e.opts.termLenBoost = float(e.pattern.length()) / maxPatternLen;
-		e.opts.qpos = cnt++;
+	for (auto& t : terms_) {
+		t.opts.termLenBoost = float(t.pattern.length()) / maxPatternLen;
+		t.opts.qpos = cnt++;
 	}
 }
 
@@ -285,7 +285,7 @@ void FtDSLQuery::parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_v
 	std::string fname = utf16_to_utf8(std::wstring_view(beg, std::distance(beg, end)));
 	auto f = fields_.find(fname);
 	if (f == fields_.end()) {
-		throw Error(errLogic, "Field '{}',is not included to full text index", fname);
+		throw Error(errLogic, "Field '{}' is not included into fulltext index", fname);
 	}
 	assertf(f->second < int(fieldsOpts.size()), "f={},fieldsOpts.size()={}", f->second, fieldsOpts.size());
 	fieldsOpts[f->second] = {boost, needSumRank};

@@ -20,11 +20,11 @@ using JsonPaths = std::vector<std::string>;
 
 class [[nodiscard]] IndexDef {
 public:
-	explicit IndexDef(std::string name) noexcept : name_{std::move(name)} { Validate(); }
+	explicit IndexDef(std::string name) : name_{std::move(name)} { Validate(); }
 	IndexDef(std::string name, JsonPaths jsonPaths, std::string indexType, std::string fieldType, IndexOpts opts, int64_t expireAfter = 0);
 	IndexDef(std::string name, JsonPaths, ::IndexType, IndexOpts, int64_t expireAfter);
 	IndexDef(std::string name, std::string indexType, std::string fieldType, IndexOpts opts);
-	IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexOpts opts);
+	IndexDef(std::string name, JsonPaths jsonPaths, ::IndexType type, IndexOpts opts);
 	void GetJSON(WrSerializer& ser, ExtraIndexDescription withExtras = ExtraIndexDescription_False) const;
 	::IndexType IndexType() const { return DetermineIndexType(name_, indexType_, fieldType_); }
 	const std::string& Name() const& noexcept { return name_; }

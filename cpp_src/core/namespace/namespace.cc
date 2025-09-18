@@ -64,7 +64,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				atomicStoreMainNs(nsCopy_.release());
 				wasCopied = true;  // NOLINT(*deadcode.DeadStores)
 				hasCopy_.store(false, std::memory_order_release);
-				if (!nsl->repl_.temporary && !nsCtx.IsInSnapshot()) {
+				if (!ns_->isTemporary() && !nsCtx.IsInSnapshot()) {
 					// If commit happens in ns copy, then the copier have to handle replication
 					auto err = ns_->observers_.SendUpdate(
 						updates::UpdateRecord{updates::URType::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
@@ -243,7 +243,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 	if (dst) {
 		logFmt(LogInfo, "[rename] Rename namespace '{}' to '{}'", srcNs.name_, dstNs->name_);
 		srcNs.name_ = dstNs->name_;
-		if (srcNs.repl_.temporary) {
+		if (isTmpNamespaceName(srcNsName)) {
 			dstNs->markOverwrittenByForceSync();
 		} else {
 			dstNs->markOverwrittenByUser();
@@ -267,10 +267,6 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 			srcNs.storage_.Close();
 			throw status;
 		}
-	}
-	if (srcNs.repl_.temporary) {
-		srcNs.repl_.temporary = false;
-		srcNs.saveReplStateToStorage();
 	}
 
 	if (replicateCb) {

@@ -20,17 +20,43 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 
 		const auto idxNo = ns.indexesNames_.find(from.Name())->second;
 		auto& index = ns.indexes_[idxNo];
-		auto newIndex =
-			Index::New(to, PayloadType(index->GetPayloadType()), FieldsSet{index->Fields()}, ns.config_.cacheConfig, ns.itemsCount());
+		const auto& fields = index->Fields();
+		const auto isSparse = index->Opts().IsSparse();
+		if (isSparse && fields.getJsonPathsLength() != 1) {
+			assertrx_dbg(false);  // Currently we do not support sparse indexes with multiple jsonpaths
+			logFmt(LogWarning,
+				   "[{}]:{} Index '{}' was not updated using a fast strategy: got {} jsonpaths in sparse index, but exactly 1 jsonpath was "
+				   "expected",
+				   ns.name_, ns.wal_.GetServer(), from.Name(), fields.getJsonPathsLength());
+			return false;
+		}
+
 		VariantArray keys, resKeys;
+		auto newIndex = Index::New(to, PayloadType(index->GetPayloadType()), FieldsSet{fields}, ns.config_.cacheConfig, ns.itemsCount());
+		const auto isComposite = IsComposite(index->Type());
 		for (size_t rowId = 0; rowId < ns.items_.size(); ++rowId) {
-			if (ns.items_[rowId].IsFree()) {
+			const auto& item = ns.items_[rowId];
+			if (item.IsFree()) {
 				continue;
 			}
 
-			bool needClearCache = false;
-			ConstPayload(ns.payloadType_, ns.items_[rowId]).Get(idxNo, keys);
-			newIndex->Upsert(resKeys, keys, rowId, needClearCache);
+			if (isComposite) {
+				keys.Clear();
+				keys.emplace_back(item);
+			} else if (isSparse) {
+				try {
+					ConstPayload(ns.payloadType_, item).GetByJsonPath(fields.getJsonPath(0), ns.tagsMatcher_, keys, index->KeyType());
+				} catch (const std::exception& e) {
+					logFmt(LogInfo, "[{}]:{} Unable to index sparse value during index fast update (index name: '{}'): '{}'", ns.name_,
+						   ns.wal_.GetServer(), index->Name(), e.what());
+					keys.resize(0);
+				}
+			} else {
+				ConstPayload(ns.payloadType_, item).Get(idxNo, keys);
+			}
+
+			bool needClearCacheUnused = false;
+			newIndex->Upsert(resKeys, keys, rowId, needClearCacheUnused);
 		}
 
 		auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};

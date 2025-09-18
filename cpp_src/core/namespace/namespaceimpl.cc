@@ -49,9 +49,9 @@ constexpr std::string_view kStorageTagsPrefix{"tags"sv};
 
 constexpr std::string_view kPKIndexName{"#pk"sv};
 
-const std::string kTupleName{"-tuple"};
-const std::string kStorageMetaPrefix{"meta"};
-const std::string kFFFFFFFF{"\xFF\xFF\xFF\xFF"};
+static const std::string kTupleName{"-tuple"};
+static const std::string kStorageMetaPrefix{"meta"};
+static const std::string kFFFFFFFF{"\xFF\xFF\xFF\xFF"};
 
 // TODO disabled due to #1771
 // constexpr int kWALStatementItemsThreshold{5};
@@ -406,15 +406,35 @@ public:
 };
 
 template <NeedRollBack needRollBack>
-NamespaceImpl::RollBack_recreateCompositeIndexes<needRollBack> NamespaceImpl::recreateCompositeIndexes(size_t startIdx, size_t endIdx) {
-	FieldsSet fields;
+NamespaceImpl::RollBack_recreateCompositeIndexes<needRollBack> NamespaceImpl::recreateCompositeIndexes(FieldChangeType fieldChangeType,
+																									   size_t startIdx, size_t endIdx) {
 	RollBack_recreateCompositeIndexes<needRollBack> rollbacker{*this, startIdx, endIdx - startIdx};
 	for (size_t i = startIdx; i < endIdx; ++i) {
 		std::unique_ptr<Index>& index(indexes_[i]);
 		if (IsComposite(index->Type())) {
 			IndexDef indexDef{index->Name(), {}, index->Type(), index->Opts()};
-			createCompositeFieldsSet<FieldsSet, h_vector<std::string, 1>>(indexDef.Name(), index->Fields(), fields);
-			auto newIndex{Index::New(indexDef, PayloadType{payloadType_}, FieldsSet{fields}, config_.cacheConfig, itemsCount())};
+
+			FieldsSet fields;
+			const auto& curFields = index->Fields();
+			if (fieldChangeType == FieldChangeType::Add) {
+				size_t jsonPathIdx = 0;
+				for (int field : curFields) {
+					if (field == SetByJsonPath) {
+						const auto& jsonPath = curFields.getJsonPath(jsonPathIdx);
+						if (!tryGetScalarIndexByName(jsonPath, field)) {
+							fields.push_back(curFields.getTagsPath(jsonPathIdx));
+							fields.push_back(jsonPath);
+						}
+						++jsonPathIdx;
+					}
+					fields.push_back(field);
+				}
+				assertrx(fields.getJsonPathsLength() == fields.getTagsPathsLength());
+			} else {
+				fields = curFields;
+			}
+
+			auto newIndex{Index::New(indexDef, PayloadType{payloadType_}, std::move(fields), config_.cacheConfig, itemsCount())};
 			rollbacker.SaveIndex(std::move(index));
 			std::swap(index, newIndex);
 		}
@@ -539,8 +559,8 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 																			: indexes_.firstCompositePos(oldPlType, sparseIndexesCount_);
 	const int compositeEndIdx = indexes_.totalSize();
 	// all composite indexes must be recreated, because those indexes are holding pointers to old Payloads
-	RollBack_updateItems<needRollBack> rollbacker{*this, recreateCompositeIndexes<needRollBack>(compositeStartIdx, compositeEndIdx),
-												  repl_.dataHash, itemsDataSize_};
+	RollBack_updateItems<needRollBack> rollbacker{
+		*this, recreateCompositeIndexes<needRollBack>(fieldChangeType, compositeStartIdx, compositeEndIdx), repl_.dataHash, itemsDataSize_};
 	for (auto& idx : indexes_) {
 		idx->UpdatePayloadType(PayloadType{payloadType_});
 	}
@@ -987,7 +1007,6 @@ void NamespaceImpl::dropIndex(const IndexDef& index, bool disableTmVersionInc) {
 	}
 
 	// Guard approach is a bit suboptimal, but simpler
-
 	const auto compositesMappingGuard =
 		MakeScopeGuard([this] { indexesToComposites_.clear(); }, [this] { rebuildIndexesToCompositeMapping(); });
 
@@ -1241,7 +1260,7 @@ void NamespaceImpl::verifyUpsertIndex(std::string_view action, const IndexDef& i
 	}
 }
 
-void NamespaceImpl::verifyUpdateIndex(const IndexDef& indexDef) const {
+void NamespaceImpl::verifyUpdateIndex(const IndexDef& indexDef) {
 	const auto idxNameIt = indexesNames_.find(indexDef.Name());
 	const auto currentPKIt = indexesNames_.find(kPKIndexName);
 
@@ -1265,21 +1284,23 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef& indexDef) const {
 	verifyUpsertIndex("update", indexDef);
 
 	if (IsComposite(indexDef.IndexType())) {
-		verifyUpdateCompositeIndex(indexDef);
-		return;
-	}
-
-	const auto newIndex = std::unique_ptr<Index>(Index::New(indexDef, PayloadType(), FieldsSet(), config_.cacheConfig, itemsCount()));
-	if (indexDefOpts.IsSparse()) {
+		verifyCompositeIndex(indexDef);
+		// Composite text indexes require fair fields set to validate config
+		const auto newIndex = std::unique_ptr<Index>(
+			Index::New(indexDef, PayloadType{payloadType_}, createFieldsSetFromJsonPaths(indexDef), config_.cacheConfig, itemsCount()));
+	} else if (indexDefOpts.IsSparse()) {
 		if (indexDef.JsonPaths().size() != 1) {
 			throw Error(errParams, "Sparse index must have exactly 1 JSON-path, but {} paths found for '{}'", indexDef.JsonPaths().size(),
 						indexDef.Name());
 		}
-		const auto newSparseIndex = Index::New(indexDef, PayloadType{payloadType_}, {}, config_.cacheConfig, itemsCount());
+		FieldsSet fields;
+		fields.push_back(indexDef.JsonPaths()[0]);
+		const auto newSparseIndex = Index::New(indexDef, PayloadType{payloadType_}, std::move(fields), config_.cacheConfig, itemsCount());
 		if (itemsCount() > 0) {
 			verifyConvertSparseType(oldIndex->KeyType(), newSparseIndex->KeyType());
 		}
 	} else {
+		const auto newIndex = std::unique_ptr<Index>(Index::New(indexDef, PayloadType(), FieldsSet(), config_.cacheConfig, itemsCount()));
 		PayloadType newPlType = payloadType_;
 		newPlType.Drop(indexDef.Name());
 		newPlType.Add(PayloadFieldType(name_.ToLower(), *newIndex, indexDef, embeddersCache_));
@@ -1553,18 +1574,18 @@ void NamespaceImpl::fillSparseIndex(Index& index, std::string_view jsonPath) {
 		if (items_[rowId].IsFree()) {
 			continue;
 		}
-		Payload{payloadType_, items_[rowId]}.GetByJsonPath(jsonPath, tagsMatcher_, skrefs, index.KeyType());
-		krefs.resize(0);
-		bool needClearCache{false};
-
 		try {
+			Payload{payloadType_, items_[rowId]}.GetByJsonPath(jsonPath, tagsMatcher_, skrefs, index.KeyType());
+			krefs.resize(0);
+			bool needClearCache{false};
+
 			index.Upsert(krefs, skrefs, int(rowId), needClearCache);
+
+			if (needClearCache) {
+				indexesCacheCleaner.Add(index);
+			}
 		} catch (const std::exception& err) {
 			throwIndexUpsertErrorWithPKInfo(ConstPayload(payloadType_, items_[rowId]), err);
-		}
-
-		if (needClearCache) {
-			indexesCacheCleaner.Add(index);
 		}
 	}
 	indexOptimizer_.ScheduleOptimization(IndexOptimization::Partial);
@@ -1610,21 +1631,14 @@ IndexDef NamespaceImpl::getIndexDefinition(const std::string& indexName) const {
 	throw Error(errParams, "Index '{}' not found in '{}'", indexName, name_);
 }
 
-void NamespaceImpl::verifyUpdateCompositeIndex(const IndexDef& indexDef) const {
-	verifyCompositeIndex(indexDef);
-	const auto newIndex = std::unique_ptr<Index>(Index::New(indexDef, PayloadType{payloadType_}, {}, config_.cacheConfig, itemsCount()));
-}
-
 void NamespaceImpl::addCompositeIndex(const IndexDef& indexDef) {
+	assertrx_throw(indexesNames_.find(indexDef.Name()) == indexesNames_.end());
+
+	auto fields = createFieldsSetFromJsonPaths(indexDef);
 	const auto& indexName = indexDef.Name();
-
-	FieldsSet fields;
-	createCompositeFieldsSet<JsonPaths, JsonPaths>(indexName, indexDef.JsonPaths(), fields);
-	assertrx(indexesNames_.find(indexName) == indexesNames_.end());
-
 	const int idxPos = indexes_.size();
 	auto insertIndex_rollbacker{
-		insertIndex(Index::New(indexDef, PayloadType{payloadType_}, FieldsSet{fields}, config_.cacheConfig, itemsCount(), LogCreation_True),
+		insertIndex(Index::New(indexDef, PayloadType{payloadType_}, std::move(fields), config_.cacheConfig, itemsCount(), LogCreation_True),
 					idxPos, indexName)};
 
 	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
@@ -1642,39 +1656,22 @@ void NamespaceImpl::addCompositeIndex(const IndexDef& indexDef) {
 	insertIndex_rollbacker.Disable();
 }
 
-template <typename PathsT, typename JsonPathsContainerT>
-void NamespaceImpl::createCompositeFieldsSet(const std::string& idxName, const PathsT& paths, FieldsSet& fields) {
-	fields.clear();
-
-	const JsonPathsContainerT* jsonPaths = nullptr;
-	if constexpr (std::is_same_v<PathsT, FieldsSet>) {
-		jsonPaths = &paths.getJsonPaths();
-		for (int field : paths) {
-			// Moving index fields
-			fields.push_back(field);
-		}
-	} else {
-		jsonPaths = &paths;
-	}
-
-	for (const auto& jsonPathOrSubIdx : *jsonPaths) {
-		int idx;
-		if (!tryGetScalarIndexByName(jsonPathOrSubIdx, idx) /* || idxName == jsonPathOrSubIdx*/) {	// TODO may be uncomment
-			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPathOrSubIdx, CanAddField_True);
+FieldsSet NamespaceImpl::createFieldsSetFromJsonPaths(const IndexDef& indexDef) {
+	FieldsSet fields;
+	for (const auto& jsonPath : indexDef.JsonPaths()) {
+		int idx = SetByJsonPath;
+		if (!tryGetScalarIndexByName(jsonPath, idx)) {
+			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPath, CanAddField_True);
 			if (tagsPath.empty()) {
-				throw Error(errLogic, "Unable to get or create json-path '{}' for composite index '{}'", jsonPathOrSubIdx, idxName);
+				throw Error(errLogic, "Unable to get or create json-path '{}' for composite index '{}'", jsonPath, indexDef.Name());
 			}
 			fields.push_back(tagsPath);
-			fields.push_back(jsonPathOrSubIdx);
-		} else {
-			const auto& idxFields = indexes_[idx]->Fields();
-			assertrx_throw(idxFields.size() == 1);
-			assertrx_throw(idxFields[0] >= 0);
-			fields.push_back(idxFields[0]);
+			fields.push_back(jsonPath);
 		}
+		fields.push_back(idx);
 	}
-
-	assertrx(fields.getJsonPathsLength() == fields.getTagsPathsLength());
+	assertrx_throw(fields.getJsonPathsLength() == fields.getTagsPathsLength());
+	return fields;
 }
 
 static bool BasicCompatibilityOnly(IndexDef::DiffResult diff) {
@@ -1699,7 +1696,7 @@ static bool BasicCompatibilityOnly(IndexDef::DiffResult diff) {
 	// clang-format on
 }
 
-bool NamespaceImpl::checkIfSameIndexExists(const IndexDef& indexDef, bool* requireTtlUpdate) {
+bool NamespaceImpl::checkIfSameIndexExists(const IndexDef& indexDef, bool* requireTtlUpdate) const {
 	auto idxNameIt = indexesNames_.find(indexDef.Name());
 	if (idxNameIt != indexesNames_.end()) {
 		IndexDef oldIndexDef = getIndexDefinition(indexDef.Name());
@@ -2056,6 +2053,8 @@ void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& r
 		if (tx.GetSteps().size() >= AsyncStorage::kLimitToAdviceBatching) {
 			storageAdvice = storage_.AdviceBatching();
 		}
+
+		result.addNSContext(payloadType_, tagsMatcher_, FieldsFilter(), schema_, incarnationTag_);
 
 		for (auto&& step : tx.GetSteps()) {
 			UpdatesContainer pendedRepl;
@@ -2544,7 +2543,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 	if (!ctx.isCopiedNsRequest) {
 		rlck = rLock(ctx.rdxContext);
 	}
-	if (isSystem() || repl_.temporary) {
+	if (isSystem() || isTemporary()) {
 		return;
 	}
 
@@ -2664,7 +2663,7 @@ void NamespaceImpl::doUpdate(LocalQueryResults& result, UpdatesContainer& pended
 	//		for (ItemRef &item : result.Items()) {
 	//			item.Value().SetLSN(lsn);
 	//		}
-	//		if (!repl_.temporary)
+	//		if (!isTemporary())
 	//			observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_, wrec);
 	//		if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
 	//	}
@@ -2884,7 +2883,6 @@ NamespaceDef NamespaceImpl::getDefinition() const {
 	for (size_t i = 1; i < indexes_.size(); ++i) {
 		nsDef.AddIndex(getIndexDefinition(i));
 	}
-	nsDef.isTemporary = repl_.temporary;
 	if (schema_) {
 		WrSerializer ser;
 		schema_->GetJSON(ser);
@@ -3328,7 +3326,7 @@ std::shared_ptr<const Schema> NamespaceImpl::GetSchemaPtr(const RdxContext& ctx)
 
 Error NamespaceImpl::SetClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx) {
 	auto wlck = simpleWLock(ctx);
-	if (repl_.temporary && status.role == ClusterOperationStatus::Role::None) {
+	if (isTemporary() && status.role == ClusterOperationStatus::Role::None) {
 		return Error(errParams, "Unable to set replication role 'none' to temporary namespace");
 	}
 	repl_.clusterStatus = std::move(status);
@@ -3413,7 +3411,8 @@ void NamespaceImpl::RebuildFreeItemsStorage(const RdxContext& ctx) {
 	std::vector<IdType> newFree;
 	auto wlck = simpleWLock(ctx);
 
-	if (!getReplState().temporary) {
+	if (!isTemporary()) {
+		assertrx_dbg(false);
 		throw Error(errLogic, "Unexpected manual free items rebuild on non-temporary namespace");
 	}
 	for (IdType i = 0, sz = IdType(items_.size()); i < sz; ++i) {
@@ -3604,7 +3603,7 @@ void NamespaceImpl::UpdateANNStorageCache(bool skipTimeCheck, const RdxContext& 
 		return;
 	}
 
-	if (isSystem() || repl_.temporary) {
+	if (isSystem() || isTemporary()) {
 		return;
 	}
 
@@ -3674,7 +3673,7 @@ void NamespaceImpl::RebuildIVFIndex(std::string_view index, float dataPart, cons
 
 void NamespaceImpl::DeleteStorage(const RdxContext& ctx) {
 	auto wlck = simpleWLock(ctx);
-	if (!repl_.temporary) {
+	if (!isTemporary()) {
 		// Should not be able to delete non-temporary follower's storage with user's request
 		checkClusterRole(ctx.GetOriginLSN());
 	}
@@ -3972,7 +3971,7 @@ void NamespaceImpl::processWalRecord(WALRecord&& wrec, const NsContext& ctx, lsn
 }
 
 void NamespaceImpl::replicateAsync(updates::UpdateRecord&& rec, const RdxContext& ctx) {
-	if (!repl_.temporary) {
+	if (!isTemporary()) {
 		auto err = observers_.SendAsyncUpdate(std::move(rec), ctx);
 		if (!err.ok()) {
 			throw Error(errUpdateReplication, err.what());
@@ -3981,7 +3980,7 @@ void NamespaceImpl::replicateAsync(updates::UpdateRecord&& rec, const RdxContext
 }
 
 void NamespaceImpl::replicateAsync(UpdatesContainer&& recs, const RdxContext& ctx) {
-	if (!repl_.temporary) {
+	if (!isTemporary()) {
 		auto err = observers_.SendAsyncUpdates(std::move(recs), ctx);
 		if (!err.ok()) {
 			throw Error(errUpdateReplication, err.what());

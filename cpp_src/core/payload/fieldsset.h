@@ -89,15 +89,15 @@ public:
 	void push_back(TagsPath&& tagsPath) { pushBack(std::move(tagsPath)); }
 	void push_front(TagsPath&& tagsPath) {
 		if (!contains(tagsPath)) {
-			base_fields_set::insert(begin(), IndexValueType::SetByJsonPath);
-			tagsPaths_.insert(tagsPaths_.begin(), std::move(tagsPath));
+			base_fields_set::insert(cbegin(), IndexValueType::SetByJsonPath);
+			tagsPaths_.insert(tagsPaths_.cbegin(), std::move(tagsPath));
 		}
 	}
 
 	void push_front(const TagsPath& tagsPath) {
 		if (!contains(tagsPath)) {
-			base_fields_set::insert(begin(), IndexValueType::SetByJsonPath);
-			tagsPaths_.emplace(tagsPaths_.begin(), tagsPath);
+			base_fields_set::insert(cbegin(), IndexValueType::SetByJsonPath);
+			tagsPaths_.emplace(tagsPaths_.cbegin(), tagsPath);
 		}
 	}
 	void push_back(const IndexedTagsPath& tagsPath) { pushBack(tagsPath); }
@@ -126,15 +126,15 @@ public:
 		}
 		if (!contains(f)) {
 			mask_.set(unsigned(f));
-			base_fields_set::insert(begin(), f);
+			base_fields_set::insert(cbegin(), f);
 		}
 	}
 
 	void erase(int f) {
 		const bool byJsonPath = (f < 0);
 		if (byJsonPath || contains(f)) {
-			auto it = std::find(begin(), end(), f);
-			assertrx(it != end());
+			auto it = std::find(cbegin(), cend(), f);
+			assertrx(it != cend());
 			base_fields_set::erase(it);
 			if (!byJsonPath) {
 				mask_.reset(unsigned(f));
@@ -161,7 +161,7 @@ public:
 	bool contains(const IndexedTagsPath& tagsPath) const noexcept {
 		for (const FieldsPath& path : tagsPaths_) {
 			if (std::visit(overloaded{[&tagsPath](const TagsPath& path) { return tagsPath.Compare(path); },
-									  [&tagsPath](const IndexedTagsPath& path) { return path == tagsPath; }},
+									  [&tagsPath](const IndexedTagsPath& path) { return path.Compare<IgnoreAllOmittedIndexes>(tagsPath); }},
 						   path)) {
 				return true;
 			}
@@ -176,8 +176,8 @@ public:
 			return true;
 		}
 		for (auto& path : tagsPaths_) {
-			if (std::visit(overloaded{[&tagsPath, this](const TagsPath& path) { return comparePaths(tagsPath, path); },
-									  [&tagsPath, this](const IndexedTagsPath& path) { return comparePaths(path, tagsPath); }},
+			if (std::visit(overloaded{[&tagsPath](const TagsPath& path) { return comparePaths(tagsPath, path); },
+									  [&tagsPath](const IndexedTagsPath& path) { return comparePaths(path, tagsPath); }},
 						   path)) {
 				return true;
 			}
@@ -190,8 +190,8 @@ public:
 			return true;
 		}
 		for (auto& path : tagsPaths_) {
-			if (std::visit(overloaded{[&tagsPath, this](const TagsPath& path) { return comparePaths(tagsPath, path); },
-									  [&tagsPath, this](const IndexedTagsPath& path) { return comparePaths(tagsPath, path); }},
+			if (std::visit(overloaded{[&tagsPath](const TagsPath& path) { return comparePaths(tagsPath, path); },
+									  [&tagsPath](const IndexedTagsPath& path) { return comparePaths(tagsPath, path); }},
 						   path)) {
 				return true;
 			}
@@ -216,47 +216,32 @@ public:
 	const TagsPath& getTagsPath(size_t idx) const&& = delete;
 	const IndexedTagsPath& getIndexedTagsPath(size_t idx) const& { return std::get<IndexedTagsPath>(tagsPaths_[idx]); }
 	const IndexedTagsPath& getIndexedTagsPath(size_t idx) const&& = delete;
+	const h_vector<FieldsPath, 1>& getAllTagsPaths() const& noexcept { return tagsPaths_; }
+	const auto& getAllTagsPaths() const&& = delete;
 	const FieldsPath& getFieldsPath(size_t idx) const& { return tagsPaths_[idx]; }
 	const FieldsPath& getFieldsPath(size_t idx) const&& = delete;
 	const std::string& getJsonPath(size_t idx) const& noexcept { return jsonPaths_[idx]; }
 	const std::string& getJsonPath(size_t idx) const&& = delete;
 
 	bool operator==(const FieldsSet& f) const noexcept {
-		return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_) && (jsonPaths_ == jsonPaths_);
+		return mask_ == f.mask_ && jsonPaths_ == f.jsonPaths_ && tagsPaths_.size() == f.tagsPaths_.size() &&
+			   std::equal(tagsPaths_.cbegin(), tagsPaths_.cend(), f.tagsPaths_.cbegin(),
+						  [](const FieldsPath& leftTagsPath, const FieldsPath& rightTagsPath) noexcept {
+							  return std::visit(overloaded{
+													[](const TagsPath& lhs, const TagsPath& rhs) noexcept { return lhs == rhs; },
+													[](const TagsPath&, const IndexedTagsPath&) noexcept { return false; },
+													[](const IndexedTagsPath&, const TagsPath&) noexcept { return false; },
+													[](const IndexedTagsPath& lhs, const IndexedTagsPath& rhs) noexcept {
+														return lhs.Compare<IgnoreAllOmittedIndexes>(rhs);
+													},
+												},
+												leftTagsPath, rightTagsPath);
+						  });
 	}
 	bool operator!=(const FieldsSet& f) const noexcept { return !(*this == f); }
 
-	template <typename T>
-	void Dump(T& os, DumpWithMask withMask) const {
-		const DumpFieldsPath fieldsPathDumper{os};
-		os << "{[";
-		for (auto b = begin(), it = b, e = end(); it != e; ++it) {
-			if (it != b) {
-				os << ", ";
-			}
-			os << *it;
-		}
-		os << "], ";
-		if (withMask == DumpWithMask_True) {
-			os << "mask: " << mask_ << ", ";
-		}
-		os << "tagsPaths: [";
-		for (auto b = tagsPaths_.cbegin(), it = b, e = tagsPaths_.cend(); it != e; ++it) {
-			if (it != b) {
-				os << ", ";
-			}
-			std::visit(fieldsPathDumper, *it);
-		}
-		os << "]}";
-		os << "], jsonPaths: [";
-		for (auto b = jsonPaths_.cbegin(), it = b, e = jsonPaths_.cend(); it != e; ++it) {
-			if (it != b) {
-				os << ", ";
-			}
-			os << *it;
-		}
-		os << "]}";
-	}
+	template <typename Os>
+	void Dump(Os& os, DumpWithMask withMask) const;
 	std::string ToString(DumpWithMask withMask) const;
 
 private:
@@ -267,12 +252,31 @@ private:
 			tagsPaths_.emplace_back(std::forward<F>(fieldPath));
 		}
 	}
-	template <typename TPath1, typename TPath2>
-	bool comparePaths(const TPath1& lhs, const TPath2& rhs) const noexcept {
-		unsigned i = 0, count = std::min(lhs.size(), rhs.size());
+	static bool comparePaths(const TagsPath& lhs, const TagsPath& rhs) noexcept {
+		size_t i = 0, count = std::min(lhs.size(), rhs.size());
 		for (; i < count && lhs[i] == rhs[i]; ++i) {
 		}
 		return (i == count);
+	}
+	template <unsigned hvSize>
+	static bool comparePaths(const IndexedTagsPathImpl<hvSize>& lhs, const TagsPath& rhs) noexcept {
+		for (size_t li = 0, ri = 0, ls = lhs.size(), rs = rhs.size(); li < ls && ri < rs; ++li) {
+			if (lhs[li].IsTagName()) {
+				if (lhs[li].GetTagName() != rhs[ri]) {
+					return false;
+				}
+				++ri;
+			}
+		}
+		return true;
+	}
+	template <unsigned hvSize>
+	static bool comparePaths(const TagsPath& lhs, const IndexedTagsPathImpl<hvSize>& rhs) noexcept {
+		return comparePaths(rhs, lhs);
+	}
+	template <unsigned lHvSize, unsigned rHvSize>
+	static bool comparePaths(const IndexedTagsPathImpl<lHvSize>& lhs, const IndexedTagsPathImpl<rHvSize>& rhs) noexcept {
+		return lhs.ComparePrefix(rhs);
 	}
 	[[noreturn]] void throwMaxValueError(int f);
 
@@ -284,34 +288,8 @@ private:
 	/// tagsPaths_: order and amount of elements.
 	h_vector<std::string, 1> jsonPaths_;
 
-	template <typename T>
-	class [[nodiscard]] DumpFieldsPath {
-	public:
-		DumpFieldsPath(T& os) noexcept : os_{os} {}
-		void operator()(const TagsPath& tp) const {
-			os_ << '[';
-			for (auto b = tp.cbegin(), it = b, e = tp.cend(); it != e; ++it) {
-				if (it != b) {
-					os_ << ", ";
-				}
-				os_ << it->AsNumber();
-			}
-			os_ << ']';
-		}
-		void operator()(const IndexedTagsPath& tp) const {
-			os_ << '[';
-			for (auto b = tp.cbegin(), it = b, e = tp.cend(); it != e; ++it) {
-				if (it != b) {
-					os_ << ", ";
-				}
-				os_ << '?';
-			}
-			os_ << ']';
-		}
-
-	private:
-		T& os_;
-	};
+	template <typename Os>
+	class [[nodiscard]] DumpFieldsPath;
 };
 
 }  // namespace reindexer

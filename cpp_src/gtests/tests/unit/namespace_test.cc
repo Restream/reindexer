@@ -134,7 +134,7 @@ TEST_F(NsApi, TruncateNamespace) {
 	TruncateNamespace([&](const std::string& nsName) { return rt.reindexer->TruncateNamespace(nsName); });
 	TruncateNamespace([&](const std::string& nsName) {
 		QueryResults qr;
-		return rt.reindexer->Select("TRUNCATE " + nsName, qr);
+		return rt.reindexer->ExecSQL("TRUNCATE " + nsName, qr);
 	});
 }
 
@@ -1699,7 +1699,7 @@ static void validateUpdateJSONResults(const std::shared_ptr<reindexer::Reindexer
 
 	// Check select results
 	QueryResults qrSelect;
-	err = reindexer->Select("SELECT * FROM test_namespace", qrSelect);
+	err = reindexer->ExecSQL("SELECT * FROM test_namespace", qrSelect);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qrSelect.Count(), qr.Count());
 	unsigned i = 0;
@@ -2108,8 +2108,8 @@ TEST_F(NsApi, UpdateArrayIndexFieldWithSeveralJsonPaths) {
 
 	auto makeFieldsList = [&fieldsValues](const reindexer::fast_hash_set<int>& indexes, OpT type) {
 		auto quote = type == OpT::Insert ? '"' : '\'';
-		std::vector<std::string> Values::*list = type == OpT::Insert ? &Values::valsList : &Values::newValsList;
-		const auto fieldsListTmplt = fmt::runtime(type == OpT::Insert ? R"("{}field{}": [{}])" : R"({}field{} = [{}])");
+		std::vector<std::string> Values::* list = type == OpT::Insert ? &Values::valsList : &Values::newValsList;
+		const auto fieldsListTmplt = fmt::runtime(type == OpT::Insert ? R"({}"field{}": [{}])" : R"({}field{} = [{}])");
 		std::string fieldsList;
 		for (int idx : indexes) {
 			std::string fieldList;
@@ -2184,7 +2184,7 @@ TEST_F(NsApi, UpdateArrayIndexFieldWithSeveralJsonPaths) {
 	// Check that prohibited updating an index array field with several json paths by index name
 	QueryResults qr;
 	auto err =
-		rt.reindexer->Select(fmt::format("UPDATE {} SET array_index = ['data0', 'data1', 'data2'] WHERE id = 0", default_namespace), qr);
+		rt.reindexer->ExecSQL(fmt::format("UPDATE {} SET array_index = ['data0', 'data1', 'data2'] WHERE id = 0", default_namespace), qr);
 	ASSERT_FALSE(err.ok());
 	ASSERT_STREQ(err.what(), "Ambiguity when updating field with several json paths by index name: 'array_index'");
 }
@@ -2686,7 +2686,7 @@ TEST_F(NsApi, TestUpdateIndexedFieldWithNull) {
 	FillDefaultNamespace();
 
 	QueryResults qr;
-	auto err = rt.reindexer->Select("update test_namespace set string_field = null where id = 1;", qr);
+	auto err = rt.reindexer->ExecSQL("update test_namespace set string_field = null where id = 1;", qr);
 	EXPECT_FALSE(err.ok());
 }
 
@@ -2796,7 +2796,7 @@ TEST_F(NsApi, TestDropField) {
 	}
 
 	QueryResults qr3;
-	auto err = rt.reindexer->Select("update test_namespace drop string_field where id >= 1000 and id < 1010;", qr3);
+	auto err = rt.reindexer->ExecSQL("update test_namespace drop string_field where id >= 1000 and id < 1010;", qr3);
 	ASSERT_FALSE(err.ok());
 
 	auto qr4 = rt.ExecSQL("update test_namespace drop nested2 where id >= 1030 and id <= 1040;");

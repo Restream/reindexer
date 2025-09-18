@@ -49,18 +49,23 @@ reindexer::Error FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg, std::s
 									const std::vector<std::string>& fields) {
 	assertrx(!ftCfg.fieldsCfg.empty());
 	assertrx(ftCfg.fieldsCfg.size() >= fields.size());
+	auto nses = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().WithFilter(ns));
+	const auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
+								 [&index](const reindexer::IndexDef& idef) { return idef.Name() == index; });
+	assertrx(it != nses[0].indexes.end());
+	auto opts = it->Opts();
+	opts.SetConfig(IndexFastFT, GetFTConfigJSON(ftCfg, fields));
+	it->SetOpts(std::move(opts));
+
+	return rt.reindexer->UpdateIndex(ns, *it);
+}
+
+std::string FTApi::GetFTConfigJSON(const reindexer::FtFastConfig& ftCfg, const std::vector<std::string>& fields) {
 	reindexer::fast_hash_map<std::string, int> fieldsMap;
 	for (size_t i = 0, size = fields.size(); i < size; ++i) {
 		fieldsMap.emplace(fields[i], i);
 	}
-	auto nses = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().WithFilter(ns));
-	const auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
-								 [&index](const reindexer::IndexDef& idef) { return idef.Name() == index; });
-	auto opts = it->Opts();
-	opts.SetConfig(IndexFastFT, ftCfg.GetJSON(fieldsMap));
-	it->SetOpts(std::move(opts));
-
-	return rt.reindexer->UpdateIndex(ns, *it);
+	return ftCfg.GetJSON(fieldsMap);
 }
 
 void FTApi::FillData(int64_t count) {

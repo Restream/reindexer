@@ -251,7 +251,7 @@ struct [[nodiscard]] CommandsProcessor<DBInterface>::CommandDefinition {
 // clang-format off
 template <typename DBInterface>
 const std::initializer_list<typename CommandsProcessor<DBInterface>::CommandDefinition> CommandsProcessor<DBInterface>::cmds_ = {
-		CommandDefinition{"select",		"Query to database",&CommandsProcessor::commandSelect,R"help(
+		CommandDefinition{"select",		"Query to database",&CommandsProcessor::commandSelectSQL,R"help(
 	Syntax:
 		See SQL Select statement
 	Example:
@@ -269,7 +269,7 @@ const std::initializer_list<typename CommandsProcessor<DBInterface>::CommandDefi
 	Example:
 		UPDATE media_items SET year='2011' where name = 'Thor'
 		)help"},
-		CommandDefinition{"explain",		"Explain query execution plan",&CommandsProcessor::commandSelect,R"help(
+		CommandDefinition{"explain",		"Explain query execution plan",&CommandsProcessor::commandSelectSQL,R"help(
 	Syntax:
 		See SQL Select statement
 	Example:
@@ -1015,7 +1015,7 @@ std::vector<std::string> ToJSONVector(const QueryResultsT& r) {
 }
 
 template <typename DBInterface>
-void CommandsProcessor<DBInterface>::commandSelect(std::string_view command) {
+void CommandsProcessor<DBInterface>::commandSelectSQL(std::string_view command) {
 	int flags = kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw;
 	if (variables_[kVariableWithShardId] == "on") {
 		flags |= kResultsNeedOutputShardId | kResultsWithShardId;

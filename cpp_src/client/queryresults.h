@@ -100,11 +100,11 @@ private:
 	friend class Reindexer;
 	friend class ReindexerImpl;
 	void fetchNextResults();
-	Error setClient(ReindexerImpl*);
+	Error setClient(const std::shared_ptr<ReindexerImpl> &) noexcept;
 	const net::cproto::CoroClientConnection* coroConnection() const noexcept { return results_.getConn(); }
 
 	CoroQueryResults results_;
-	ReindexerImpl* rx_ = nullptr;
+	std::weak_ptr<ReindexerImpl> rx_;
 };
 }  // namespace client
 }  // namespace reindexer

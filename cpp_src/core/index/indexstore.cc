@@ -178,7 +178,11 @@ void IndexStore<T>::dump(S& os, std::string_view step, std::string_view offset) 
 		if (it != b) {
 			os << ", ";
 		}
-		os << *it;
+		if constexpr (std::is_same_v<T, bool>) {
+			os << int(*it);
+		} else {
+			os << *it;
+		}
 	}
 	os << "]\n" << offset << '}';
 }

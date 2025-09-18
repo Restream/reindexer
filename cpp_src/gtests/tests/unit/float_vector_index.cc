@@ -257,7 +257,7 @@ TEST_P(FloatVector, HnswIndex) try {
 	constexpr static size_t kMaxElements = 3'000;
 #endif
 	constexpr static size_t kM = 16;
-	constexpr static size_t kEfConsruction = 200;
+	constexpr static size_t kEfConstruction = 200;
 
 	rt.OpenNamespace(kNsName);
 	rt.DefineNamespaceDataset(kNsName, {
@@ -267,7 +267,7 @@ TEST_P(FloatVector, HnswIndex) try {
 																									  .SetDimension(kDimension)
 																									  .SetStartSize(100)
 																									  .SetM(kM)
-																									  .SetEfConstruction(kEfConsruction)
+																									  .SetEfConstruction(kEfConstruction)
 																									  .SetMetric(GetParam())),
 															0},
 									   });
@@ -292,10 +292,10 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 	constexpr static size_t kSelectThreads = 2;
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
 	constexpr static size_t kTransactions = 5;
-	constexpr static size_t kEfConsruction = 100;
+	constexpr static size_t kEfConstruction = 100;
 #else
 	constexpr static size_t kTransactions = 20;
-	constexpr static size_t kEfConsruction = 200;
+	constexpr static size_t kEfConstruction = 200;
 #endif
 
 	rt.OpenNamespace(kNsName);
@@ -308,7 +308,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 																	   .SetDimension(kDimension)
 																	   .SetMultithreading(MultithreadingMode::MultithreadTransactions)
 																	   .SetM(kM)
-																	   .SetEfConstruction(kEfConsruction)
+																	   .SetEfConstruction(kEfConstruction)
 																	   .SetMetric(reindexer::VectorMetric::Cosine)),
 							 0},
 		});

@@ -102,6 +102,7 @@ public:
 	AreasInDocument() = default;
 	~AreasInDocument() = default;
 	AreasInDocument(AreasInDocument&&) = default;
+
 	void Reserve(int size) { areas_.reserve(size); }
 	void ReserveField(int size) { areas_.resize(size); }
 	void Commit() {

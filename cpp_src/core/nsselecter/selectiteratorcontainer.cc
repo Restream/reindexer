@@ -13,26 +13,16 @@
 #include "estl/stable_sort.h"
 #include "nsselecter.h"
 #include "querypreprocessor.h"
-
-#define USE_PMR
-
-#if defined(__clang_major__) && __clang_major__ <= 15
-#pragma message("Disabling PMR for clang 15 and lower")
-#undef USE_PMR
-#endif	// __clang_major__ <= 15
-
-#if REINDEX_WITH_GPERFTOOLS
-#include "gperftools/tcmalloc.h"
-#if TC_VERSION_MAJOR < 2 || (TC_VERSION_MAJOR == 2 && TC_VERSION_MINOR < 7)
-#undef USE_PMR
-#endif	// TC_VERSION_MAJOR < 2 || (TC_VERSION_MAJOR == 2 && TC_VERSION_MINOR < 7)
-#endif	// REINDEX_WITH_GPERFTOOLS
+#include "tools/use_pmr.h"
 
 #ifdef USE_PMR
 #include <memory_resource>
 #endif	// USE_PMR
 
 namespace reindexer {
+
+constexpr std::string_view kForbiddenCondsErrorMsg =
+	"Conditions IN(with empty parameter list), IS NULL, KNN and DWithin are not allowed for equal position";
 
 void SelectIteratorContainer::SortByCost(int expectedIterations) {
 	rx_unused = markBracketsHavingJoins(begin(), end());
@@ -433,14 +423,35 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults&& select
 		selectResults.AsVariant());
 }
 
-void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPositions>& equalPositions, const NamespaceImpl& ns,
+void SelectIteratorContainer::processEqualPositions(std::span<const EqualPositions> equalPositions, const NamespaceImpl& ns,
 													const QueryEntries& queries) {
 	for (const auto& eqPos : equalPositions) {
 		EqualPositionComparator cmp{ns.payloadType_};
 		for (size_t i = 0, s = eqPos.size(); i < s; ++i) {
 			const QueryEntry& qe = queries.Get<QueryEntry>(eqPos[i]);
-			if (qe.Condition() == CondEmpty || (qe.Condition() == CondSet && qe.Values().empty())) {
-				throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
+			const auto cond = qe.Condition();
+			switch (cond) {
+				case CondDWithin:
+				case CondKnn:
+				case CondEmpty:
+					throw Error(errQueryExec, kForbiddenCondsErrorMsg);
+				case CondEq:
+				case CondSet:
+					if (qe.Values().empty()) {
+						throw Error(errQueryExec, kForbiddenCondsErrorMsg);
+					}
+					break;
+				case CondLike:
+				case CondAny:
+				case CondLt:
+				case CondLe:
+				case CondGt:
+				case CondGe:
+				case CondRange:
+				case CondAllSet:
+					break;
+				default:
+					throw Error(errLogic, "Unknown condition value for equal position: {}", int(cond));
 			}
 			assertrx_throw(qe.Fields().size() == 1);
 			if (qe.Fields()[0] == IndexValueType::SetByJsonPath) {
@@ -455,44 +466,52 @@ void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPosit
 	}
 }
 
-std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::prepareEqualPositions(const QueryEntries& queries,
+h_vector<SelectIteratorContainer::EqualPositions, 2> SelectIteratorContainer::prepareEqualPositions(const QueryEntries& queries,
 																									size_t begin, size_t end) {
-	static const auto getFieldsStr = [](auto begin, auto end) {
+	static const auto getFieldsStr = [](auto begin, auto end, auto getValue) {
 		std::stringstream str;
 		for (auto it = begin; it != end; ++it) {
-			if (it != begin) {
-				str << ", ";
+			auto val = getValue(it);
+			if (!val.empty()) {
+				if (str.tellp() != std::streampos(0)) {
+					str << ", ";
+				}
+				str << val;
 			}
-			str << *it;
 		}
-		return str.str();
+		return std::move(str).str();
 	};
 	const auto& eqPos = (begin == 0 ? queries.equalPositions : queries.Get<QueryEntriesBracket>(begin - 1).equalPositions);
-	std::vector<EqualPositions> result{eqPos.size()};
-	for (size_t i = 0; i < eqPos.size(); ++i) {
+	h_vector<EqualPositions, 2> result{unsigned(eqPos.size())};
+	for (size_t i = 0, sz = eqPos.size(); i < sz; ++i) {
 		if (eqPos[i].size() < 2) {
 			throw Error(errLogic, "equal positions should contain 2 or more fields");
 		}
-		std::unordered_set<std::string_view> epFields{eqPos[i].begin(), eqPos[i].end()};
-		const auto getEpFieldsStr = [&eqPos, i]() { return getFieldsStr(eqPos[i].cbegin(), eqPos[i].cend()); };
+		fast_hash_map<std::string_view, bool> epFields;
+		for (auto& ep : eqPos[i]) {
+			epFields.emplace(ep, false);
+		}
+		const auto getEpFieldsStr = [&eqPos, i]() {
+			return getFieldsStr(eqPos[i].cbegin(), eqPos[i].cend(), [](auto& it) { return *it; });
+		};
 		if (eqPos[i].size() != epFields.size()) {
 			throw Error(errParams, "equal positions fields should be unique: [{}]", getEpFieldsStr());
 		}
-		std::unordered_set<std::string_view> foundFields;
 		result[i].reserve(eqPos[i].size());
 		for (size_t j = begin, next; j < end; j = next) {
 			next = queries.Next(j);
 			queries.Visit(
-				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, MultiDistinctQueryEntry>{},
+				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
 				[](OneOf<SubQueryEntry, SubQueryFieldEntry>) { throw_as_assert; },
+				[](const KnnQueryEntry&) { throw Error(errQueryExec, kForbiddenCondsErrorMsg); },
 				[&](const QueryEntry& eq) {
-					if (foundFields.find(eq.FieldName()) != foundFields.end()) {
+					auto found = epFields.find(eq.FieldName());
+					if (found == epFields.end()) {
+						return;
+					}
+					if (found.value()) {
 						throw Error(errParams, "Equal position field '{}' found twice in enclosing bracket; equal position fields: [{}]",
 									eq.FieldName(), getEpFieldsStr());
-					}
-					const auto it = epFields.find(eq.FieldName());
-					if (it == epFields.end()) {
-						return;
 					}
 					if (queries.GetOperation(j) != OpAnd || (next < end && queries.GetOperation(next) == OpOr)) {
 						throw Error(errParams,
@@ -500,8 +519,8 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 									"equal position fields: [{}]",
 									eq.FieldName(), getEpFieldsStr());
 					}
+					found.value() = true;
 					result[i].push_back(j);
-					foundFields.insert(epFields.extract(it));
 				},
 				[&](const BetweenFieldsQueryEntry& eq) {  // TODO equal positions for BetweenFieldsQueryEntry #1092
 					if (epFields.find(eq.LeftFieldName()) != epFields.end()) {
@@ -518,9 +537,11 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 					}
 				});
 		}
-		if (!epFields.empty()) {
-			throw Error(errParams, "Equal position fields [{}] are not found in enclosing bracket; equal position fields: [{}]",
-						getFieldsStr(epFields.cbegin(), epFields.cend()), getEpFieldsStr());
+		if (result[i].size() != epFields.size()) {
+			throw Error(
+				errParams, "Equal position fields [{}] are not found in enclosing bracket; equal position fields: [{}]",
+				getFieldsStr(epFields.cbegin(), epFields.cend(), [](auto& it) { return it->second ? std::string_view() : it->first; }),
+				getEpFieldsStr());
 		}
 	}
 	return result;
@@ -615,6 +636,21 @@ void SelectIteratorContainer::throwIfNotFt(const QueryEntries& queries, size_t i
 	if (!qe.IsFieldIndexed() || !IsFullText(ns.indexes_[qe.IndexNo()]->Type())) {
 		throwORbetweenRankedAndNotRanked();
 	}
+}
+
+typename SelectIteratorContainer::iterator SelectIteratorContainer::lastAppendedOrClosed() {
+	auto it = container_.begin(), end = container_.end();
+	if (!activeBrackets_.empty()) {
+		it += (activeBrackets_.back() + 1);
+	}
+	if (it == end) {
+		return this->end();
+	}
+	iterator i = it, i2 = it, e = end;
+	while (++i2 != e) {
+		i = i2;
+	}
+	return i;
 }
 
 ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor& qPreproc, size_t begin, size_t end, unsigned sortId,
@@ -1286,7 +1322,7 @@ void SelectIteratorContainer::mergeRanked(RanksHolder::Ptr& ranks, const Reranke
 																: ranks->GetRanksSpan().size() + knnRes.RawResult().Size();
 #ifdef USE_PMR
 	std::vector<std::byte> buffer;
-	buffer.resize(sizeof(typename Merged<desc>::node_type) * bufSize);
+	buffer.resize((sizeof(typename Merged<desc>::node_type) + sizeof(typename Merged<desc>::value_type)) * bufSize);
 	std::pmr::monotonic_buffer_resource pool(buffer.data(), buffer.size());
 	Merged<desc> merged{&pool};
 #else	// USE_PMR

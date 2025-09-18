@@ -27,7 +27,7 @@ void Synonyms::addDslEntries(std::vector<SynonymsDsl>& synonymsDsl, const Multip
 		synonymsDsl.emplace_back(dsl.CopyCtx(), termsIdx);
 
 		for (const auto& alt : alternatives) {
-			synonymsDsl.back().dsl.emplace_back(alt, opts);
+			rx_unused = synonymsDsl.back().dsl.AddTerm(alt, opts);
 		}
 	}
 }
@@ -81,27 +81,27 @@ void Synonyms::addPhraseAlternatives(const FtDSLQuery& dsl, const h_vector<std::
 	FtDslOpts opts;
 	std::vector<size_t> termsIdx;
 
-	for (auto termIt = phrase.begin(); termIt != phrase.end(); ++termIt) {
-		const auto isAppropriateEntry = [&termIt](const FtDSLEntry& dslEntry) {
-			return dslEntry.opts.op != OpNot && dslEntry.opts.groupNum == -1 && dslEntry.pattern == *termIt;
-		};
-		const auto dslIt = std::find_if(dsl.cbegin(), dsl.end(), isAppropriateEntry);
-		// phrase not found
-		if (dslIt == dsl.end()) {
-			return;
+	for (auto pIt = phrase.begin(); pIt != phrase.end(); ++pIt) {
+		const bool firstPhraseWord = (pIt == phrase.cbegin());
+
+		const auto isAppropriate = [&pIt](const FtDSLEntry& e) { return e.opts.op != OpNot && e.opts.groupNum == -1 && e.pattern == *pIt; };
+		const auto termIt = std::find_if(dsl.begin(), dsl.end(), isAppropriate);
+
+		if (termIt == dsl.end()) {
+			return;	 // phrase not found
 		}
 
-		if (termIt == phrase.cbegin()) {
-			opts = makeOptsForAlternatives(dslIt->opts, proc);
+		if (firstPhraseWord) {
+			opts = makeOptsForAlternatives(termIt->opts, proc);
 		} else {
-			addOptsForAlternatives(opts, dslIt->opts, proc);
+			addOptsForAlternatives(opts, termIt->opts, proc);
 		}
 
 		// Probably we don't need this?
-		size_t idx = dslIt - dsl.cbegin();
+		size_t idx = termIt - dsl.begin();
 		termsIdx.push_back(idx);
-		for (++idx; idx < dsl.size(); ++idx) {
-			if (isAppropriateEntry(dsl[idx])) {
+		for (++idx; idx < dsl.NumTerms(); ++idx) {
+			if (isAppropriate(dsl.GetTerm(idx))) {
 				termsIdx.push_back(idx);
 			}
 		}

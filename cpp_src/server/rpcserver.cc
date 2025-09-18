@@ -357,7 +357,7 @@ Error RPCServer::EnumDatabases(cproto::Context& ctx) {
 
 	WrSerializer ser;
 	JsonBuilder jb(ser);
-	std::span<const std::string> array(&dbList[0], dbList.size());
+	std::span<const std::string> array(dbList.empty() ? nullptr : &dbList[0], dbList.size());
 	jb.Array("databases"sv, array);
 	jb.End();
 
@@ -1034,7 +1034,7 @@ Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int 
 	return sendResults(ctx, *qres, id, opts);
 }
 
-Error RPCServer::SelectSQL(cproto::Context& ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
+Error RPCServer::ExecSQL(cproto::Context& ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
 	const auto data = getClientDataSafe(ctx);
 	RPCQrId id{-1, data->caps.HasQrIdleTimeouts() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
 	RPCQrWatcher::Ref qres;
@@ -1159,11 +1159,6 @@ Error RPCServer::ApplySnapshotChunk(cproto::Context& ctx, p_string ns, p_string 
 	Serializer ser(rec);
 	ch.Deserialize(ser);
 	return getDB(ctx, kRoleDataWrite).ApplySnapshotChunk(ns, ch);
-}
-
-Error RPCServer::Commit(cproto::Context&, p_string /*ns*/) {
-	// This method does nothing and remain for the backward compatibility
-	return {};
 }
 
 Error RPCServer::GetMeta(cproto::Context& ctx, p_string ns, p_string key, std::optional<int> options) {
@@ -1349,7 +1344,6 @@ void RPCServer::Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocket
 	dispatcher_.Register(cproto::kCmdDropIndex, this, &RPCServer::DropIndex);
 	dispatcher_.Register(cproto::kCmdSetSchema, this, &RPCServer::SetSchema);
 	dispatcher_.Register(cproto::kCmdGetSchema, this, &RPCServer::GetSchema);
-	dispatcher_.Register(cproto::kCmdCommit, this, &RPCServer::Commit);
 	dispatcher_.Register(cproto::kCmdStartTransaction, this, &RPCServer::StartTransaction);
 	dispatcher_.Register(cproto::kCmdAddTxItem, this, &RPCServer::AddTxItem);
 	dispatcher_.Register(cproto::kCmdDeleteQueryTx, this, &RPCServer::DeleteQueryTx);
@@ -1360,7 +1354,7 @@ void RPCServer::Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocket
 	dispatcher_.Register(cproto::kCmdDeleteQuery, this, &RPCServer::DeleteQuery);
 	dispatcher_.Register(cproto::kCmdUpdateQuery, this, &RPCServer::UpdateQuery);
 	dispatcher_.Register(cproto::kCmdSelect, this, &RPCServer::Select);
-	dispatcher_.Register(cproto::kCmdSelectSQL, this, &RPCServer::SelectSQL);
+	dispatcher_.Register(cproto::kCmdExecSQL, this, &RPCServer::ExecSQL);
 	dispatcher_.Register(cproto::kCmdFetchResults, this, &RPCServer::FetchResults);
 	dispatcher_.Register(cproto::kCmdCloseResults, this, &RPCServer::CloseResults);
 	dispatcher_.Register(cproto::kCmdGetSQLSuggestions, this, &RPCServer::GetSQLSuggestions);

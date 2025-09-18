@@ -69,7 +69,7 @@ const (
 	cmdDeleteQuery       = 34
 	cmdUpdateQuery       = 35
 	cmdSelect            = 48
-	cmdSelectSQL         = 49
+	cmdExecSQL           = 49
 	cmdFetchResults      = 50
 	cmdCloseResults      = 51
 	cmdDeleteMeta        = 63
@@ -440,7 +440,7 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 
 func needCancelAnswer(cmd int) bool {
 	switch cmd {
-	case cmdCommitTx, cmdModifyItem, cmdDeleteQuery, cmdUpdateQuery, cmdSelect, cmdSelectSQL, cmdFetchResults:
+	case cmdCommitTx, cmdModifyItem, cmdDeleteQuery, cmdUpdateQuery, cmdSelect, cmdExecSQL, cmdFetchResults:
 		return true
 	default:
 		return false

@@ -9,7 +9,6 @@
 #include "vendor/hopscotch/hopscotch_sc_map.h"
 
 namespace hnswlib {
-template <typename dist_t>
 class [[nodiscard]] BruteforceSearch {
 	template <typename K, typename V>
 	using HashMapT = tsl::hopscotch_sc_map<K, V, std::hash<K>, std::equal_to<K>, std::less<K>, std::allocator<std::pair<const K, V>>, 30,
@@ -22,14 +21,13 @@ public:
 	size_t size_per_element_;
 
 	size_t data_size_;
-	DistCalculator<dist_t> fstdistfunc_;
+	DistCalculator fstdistfunc_;
 
 	HashMapT<labeltype, size_t> dict_external_to_internal;
 
-	BruteforceSearch(SpaceInterface<dist_t>* s)
-		: data_(nullptr), maxelements_(0), cur_element_count(0), size_per_element_(0), data_size_(0) {}
+	BruteforceSearch(SpaceInterface* s) : data_(nullptr), maxelements_(0), cur_element_count(0), size_per_element_(0), data_size_(0) {}
 
-	BruteforceSearch(SpaceInterface<dist_t>* s, const BruteforceSearch& other, size_t newMaxElements)
+	BruteforceSearch(SpaceInterface* s, const BruteforceSearch& other, size_t newMaxElements)
 		: data_(nullptr),
 		  maxelements_(std::max(other.maxelements_, newMaxElements)),
 		  cur_element_count(other.cur_element_count),
@@ -41,7 +39,7 @@ public:
 		fstdistfunc_.CopyValuesFrom(other.fstdistfunc_);
 	}
 
-	BruteforceSearch(SpaceInterface<dist_t>* s, size_t maxElements) {
+	BruteforceSearch(SpaceInterface* s, size_t maxElements) {
 		maxelements_ = maxElements;
 		data_size_ = s->get_data_size();
 		fstdistfunc_ = DistCalculator{s->get_dist_calculator_param(), maxelements_};
@@ -114,15 +112,15 @@ public:
 		cur_element_count--;
 	}
 
-	std::priority_queue<std::pair<dist_t, labeltype>> searchKnn(const void* query_data, size_t k, size_t /*ef*/ = 0,
-																BaseFilterFunctor* isIdAllowed = nullptr) const {
+	std::priority_queue<std::pair<float, labeltype>> searchKnn(const void* query_data, size_t k, size_t /*ef*/ = 0,
+															   BaseFilterFunctor* isIdAllowed = nullptr) const {
 		assert(k <= cur_element_count);
-		std::priority_queue<std::pair<dist_t, labeltype>> topResults;
+		std::priority_queue<std::pair<float, labeltype>> topResults;
 		if (cur_element_count == 0) {
 			return topResults;
 		}
 		for (int i = 0; i < k; i++) {
-			dist_t dist = fstdistfunc_(query_data, data_ + size_per_element_ * i, i);
+			float dist = fstdistfunc_(query_data, data_ + size_per_element_ * i, i);
 			// std::cout << "New dist " << dist << " for " << i << " was ";
 			labeltype label = *((labeltype*)(data_ + size_per_element_ * i + data_size_));
 			if ((!isIdAllowed) || (*isIdAllowed)(label)) {
@@ -132,9 +130,9 @@ public:
 				// std::cout << "skipped\n";
 			}
 		}
-		dist_t lastdist = topResults.empty() ? std::numeric_limits<dist_t>::max() : topResults.top().first;
+		float lastdist = topResults.empty() ? std::numeric_limits<float>::max() : topResults.top().first;
 		for (int i = k; i < cur_element_count; i++) {
-			dist_t dist = fstdistfunc_(query_data, data_ + size_per_element_ * i, i);
+			float dist = fstdistfunc_(query_data, data_ + size_per_element_ * i, i);
 			// std::cout << "New dist " << dist << " for " << i << " was ";
 			if (dist <= lastdist) {
 				labeltype label = *((labeltype*)(data_ + size_per_element_ * i + data_size_));
@@ -159,16 +157,16 @@ public:
 		return topResults;
 	}
 
-	std::priority_queue<std::pair<dist_t, labeltype>> searchRange(const void* query_data, float radius, size_t ef,
-																  BaseFilterFunctor* isIdAllowed = nullptr) const {
-		std::priority_queue<std::pair<dist_t, labeltype>> topResults;
+	std::priority_queue<std::pair<float, labeltype>> searchRange(const void* query_data, float radius, size_t ef,
+																 BaseFilterFunctor* isIdAllowed = nullptr) const {
+		std::priority_queue<std::pair<float, labeltype>> topResults;
 		if (cur_element_count == 0) {
 			return topResults;
 		}
 
 		for (int i = 0; i < cur_element_count; i++) {
 			auto ptr = ptrByIdx(i);
-			dist_t dist = fstdistfunc_(query_data, ptr, i);
+			float dist = fstdistfunc_(query_data, ptr, i);
 			labeltype label = *((labeltype*)(ptr + data_size_));
 			if ((!isIdAllowed) || (*isIdAllowed)(label)) {
 				if (dist < radius) {
@@ -179,7 +177,7 @@ public:
 		return topResults;
 	}
 
-	void init(SpaceInterface<dist_t>* s) {
+	void init(SpaceInterface* s) {
 		data_size_ = s->get_data_size();
 		fstdistfunc_ = DistCalculator{s->get_dist_calculator_param(), maxelements_};
 		size_per_element_ = data_size_ + sizeof(labeltype);

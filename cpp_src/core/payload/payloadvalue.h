@@ -16,7 +16,7 @@ class [[nodiscard]] PayloadValue {
 public:
 	typedef std::atomic<int32_t> refcounter;
 	struct [[nodiscard]] dataHeader {
-		dataHeader() noexcept : refcount(1), cap(0), lsn(-1) {}
+		dataHeader() noexcept : refcount(1), cap(0) {}
 
 #ifdef RX_WITH_STDLIB_DEBUG
 		~dataHeader() { assertrx_dbg(refcount.load(std::memory_order_acquire) == 0); }

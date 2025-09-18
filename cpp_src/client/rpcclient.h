@@ -125,7 +125,7 @@ public:
 	}
 	Error Delete(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx);
 	Error Update(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx);
-	Error Select(std::string_view query, CoroQueryResults& result, const InternalRdxContext& ctx);
+	Error ExecSQL(std::string_view query, CoroQueryResults& result, const InternalRdxContext& ctx);
 	Error Select(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
 		return selectImpl(query, result, config_.NetTimeout, ctx);
 	}

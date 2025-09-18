@@ -28,11 +28,11 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 					if (convertToString) {
 						return Variant(v.toNumber()).convert(KeyValueType::String{});
 					} else {
-						throwUnexpected(fieldName, t, "number"sv, "json"sv);
+						throwUnexpected(fieldName, t, "number"sv, kJSONFmt);
 					}
 				},
 				[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector>)
-					-> Variant { throwUnexpected(fieldName, t, "number"sv, "json"sv); });
+					-> Variant { throwUnexpected(fieldName, t, "number"sv, kJSONFmt); });
 		case gason::JsonTag::DOUBLE:
 			return t.EvaluateOneOf(
 				[&](OneOf<KeyValueType::Undefined, KeyValueType::Double>) noexcept { return Variant(v.toDouble()); },
@@ -44,11 +44,11 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 					if (convertToString) {
 						return Variant(v.toDouble()).convert(KeyValueType::String{});
 					} else {
-						throwUnexpected(fieldName, t, "number"sv, "json"sv);
+						throwUnexpected(fieldName, t, "number"sv, kJSONFmt);
 					}
 				},
 				[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector>)
-					-> Variant { throwUnexpected(fieldName, t, "number"sv, "json"sv); });
+					-> Variant { throwUnexpected(fieldName, t, "number"sv, kJSONFmt); });
 		case gason::JsonTag::STRING:
 			return t.EvaluateOneOf(
 				[&](OneOf<KeyValueType::String, KeyValueType::Undefined>) {
@@ -57,7 +57,7 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 				[&](KeyValueType::Uuid) { return Variant{Uuid{v.toString()}}; },
 				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
 						  KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::FloatVector>) -> Variant {
-					throwUnexpected(fieldName, t, "string"sv, "json"sv);
+					throwUnexpected(fieldName, t, "string"sv, kJSONFmt);
 				});
 		case gason::JsonTag::JFALSE:
 			return t.EvaluateOneOf(
@@ -69,11 +69,11 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 					if (convertToString) {
 						return Variant(false).convert(KeyValueType::String{});
 					} else {
-						throwUnexpected(fieldName, t, "bool"sv, "json"sv);
+						throwUnexpected(fieldName, t, "bool"sv, kJSONFmt);
 					}
 				},
 				[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector>)
-					-> Variant { throwUnexpected(fieldName, t, "bool"sv, "json"sv); });
+					-> Variant { throwUnexpected(fieldName, t, "bool"sv, kJSONFmt); });
 		case gason::JsonTag::JTRUE:
 			return t.EvaluateOneOf(
 				[&](OneOf<KeyValueType::Undefined, KeyValueType::Bool>) noexcept { return Variant(true); },
@@ -84,15 +84,15 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 					if (convertToString) {
 						return Variant(true).convert(KeyValueType::String{});
 					} else {
-						throwUnexpected(fieldName, t, "bool"sv, "json"sv);
+						throwUnexpected(fieldName, t, "bool"sv, kJSONFmt);
 					}
 				},
 				[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector>)
-					-> Variant { throwUnexpected(fieldName, t, "bool"sv, "json"sv); });
+					-> Variant { throwUnexpected(fieldName, t, "bool"sv, kJSONFmt); });
 		case gason::JsonTag::JSON_NULL:
-			return convertNullToIndexField(t, fieldName, "json"sv, convertNull);
+			return convertNullToIndexField(t, fieldName, kJSONFmt, convertNull);
 		case gason::JsonTag::OBJECT:
-			throwUnexpectedObjectInIndex(fieldName, "json"sv);
+			throwUnexpectedObjectInIndex(fieldName, kJSONFmt);
 		case gason::JsonTag::ARRAY:
 			if (t.Is<KeyValueType::FloatVector>()) {
 				thread_local static std::vector<float> vect;

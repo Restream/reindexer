@@ -110,13 +110,13 @@ private:
 class [[nodiscard]] ItemComparator::FrontInserter {
 public:
 	explicit FrontInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
-	void expr(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByExpression{desc}); }
+	void expr(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.cbegin(), CompareByExpression{desc}); }
 	void fields(TagsPath&& tp) { comparator_.fields_.push_front(std::move(tp)); }
 	void fields(Joined& joined, TagsPath&& tp) { joined.fields.push_front(std::move(tp)); }
 	void fields(int fieldIdx) {
 		if (fieldIdx != SetByJsonPath && !comparator_.fields_.contains(fieldIdx)) {
 			comparator_.fields_.push_front(fieldIdx);
-			auto rawDataIt = comparator_.rawData_.insert(comparator_.rawData_.begin(), SortingContext::RawDataParams());
+			auto rawDataIt = comparator_.rawData_.insert(comparator_.rawData_.cbegin(), SortingContext::RawDataParams());
 			if (auto rawData = comparator_.ns_.indexes_[fieldIdx]->ColumnData(); rawData) {
 				rawDataIt->ptr = rawData;
 				rawDataIt->type = comparator_.ns_.payloadType_.Field(fieldIdx).Type();
@@ -124,12 +124,12 @@ public:
 		}
 	}
 	void fields(Joined& joined, int fieldIdx) { joined.fields.push_front(fieldIdx); }
-	void index(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByField{desc}); }
+	void index(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.cbegin(), CompareByField{desc}); }
 	void joined(size_t nsIdx, Desc desc) {
-		comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByJoinedField{nsIdx, desc});
+		comparator_.comparators_.emplace(comparator_.comparators_.cbegin(), CompareByJoinedField{nsIdx, desc});
 	}
-	void collateOpts(const CollateOpts* opts) { comparator_.collateOpts_.emplace(comparator_.collateOpts_.begin(), opts); }
-	void collateOpts(Joined& joined, const CollateOpts* opts) { joined.collateOpts.emplace(joined.collateOpts.begin(), opts); }
+	void collateOpts(const CollateOpts* opts) { comparator_.collateOpts_.emplace(comparator_.collateOpts_.cbegin(), opts); }
+	void collateOpts(Joined& joined, const CollateOpts* opts) { joined.collateOpts.emplace(joined.collateOpts.cbegin(), opts); }
 
 private:
 	ItemComparator& comparator_;
@@ -169,9 +169,6 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 							   jns, (fieldIdx == IndexValueType::SetByJsonPath) ? nullptr : &ns.indexes_[fieldIdx]->Opts().collateOpts_);
 					   } else {
 						   const auto& idx = *ns.indexes_[fieldIdx];
-						   if (idx.Opts().IsArray()) {
-							   throw Error(errQueryExec, "Sorting cannot be applied to array field.");
-						   }
 						   if (fieldIdx >= ns.indexes_.firstCompositePos()) {
 							   unsigned jsonPathsIndex = 0;
 							   const auto& fields = idx.Fields();
@@ -220,9 +217,6 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 						   insert.index(e.data.desc);
 						   insert.collateOpts(e.opts);
 					   } else {
-						   if (ns_.indexes_[fieldIdx]->Opts().IsArray()) {
-							   throw Error(errQueryExec, "Sorting cannot be applied to array field.");
-						   }
 						   if (fieldIdx >= ns_.indexes_.firstCompositePos()) {
 							   const auto& fields = ns_.indexes_[fieldIdx]->Fields();
 							   for (unsigned i = 0, s = fields.size(); i < s; ++i) {

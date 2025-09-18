@@ -3,11 +3,13 @@ package reindexer
 import (
 	"math"
 	"math/rand"
+	"reflect"
 	"sort"
 	"strconv"
 	"testing"
 
 	"github.com/restream/reindexer/v5"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -123,7 +125,7 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 	const ns2 = TestSelectArrWithMultipleJsonPathsNs
 
 	testItem1 := TestItemAppendable{ID: 1, Field1: 10}
-	testItem2 := TestItemAppendable{ID: 2, Field2: 20}
+	testItem2 := TestItemAppendable{ID: 2, Field2: 50}
 	testItem3 := TestItemAppendable{ID: 3, Field1: 30}
 	testItem4 := TestItemAppendable{ID: 4, Field2: 30}
 	for _, item := range []TestItemAppendable{testItem1, testItem2, testItem3, testItem4} {
@@ -148,7 +150,7 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 	})
 
 	testArrItem1 := TestArrItemAppendable{ID: 5, ArrField1: []int{50, 51}}
-	testArrItem2 := TestArrItemAppendable{ID: 6, ArrField2: []int{60, 61}}
+	testArrItem2 := TestArrItemAppendable{ID: 6, ArrField2: []int{40, 41}}
 	testArrItem3 := TestArrItemAppendable{ID: 7, ArrField1: []int{70, 71}, ArrField2: []int{72, 73}}
 	for _, item := range []TestArrItemAppendable{testArrItem1, testArrItem2, testArrItem3} {
 		err := DB.Upsert(ns2, item)
@@ -169,12 +171,29 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 		checkResultItem(t, it4, &testArrItem3)
 	})
 
-	t.Run("can't sort with appendable tag", func(t *testing.T) {
-		_, err := DBD.Query(ns).Sort("idx", false).Exec().FetchAll()
-		require.ErrorContains(t, err, "Sorting cannot be applied to array field.")
+	t.Run("can sort with appendable tag", func(t *testing.T) {
+		checkItems := func(t *testing.T, items []interface{}, expectedItems []interface{}) {
+			require.Equal(t, len(items), len(expectedItems))
+			for i := 0; i < len(items); i++ {
+				assert.True(t, reflect.DeepEqual(items[i], expectedItems[i]), "%v\ndoesn't equal to\n%v", items[i], expectedItems[i])
+			}
+		}
 
-		_, err = DBD.Query(ns2).Sort("arridx", false).Exec().FetchAll()
-		require.ErrorContains(t, err, "Sorting cannot be applied to array field.")
+		items, err := DBD.Query(ns).Sort("idx", false).Exec().FetchAll()
+		require.NoError(t, err)
+		checkItems(t, items, []interface{}{&testItem1, &testItem3, &testItem4, &testItem2})
+
+		items, err = DBD.Query(ns).Sort("idx", true).Exec().FetchAll()
+		require.NoError(t, err)
+		checkItems(t, items, []interface{}{&testItem2, &testItem4, &testItem3, &testItem1})
+
+		items, err = DBD.Query(ns2).Sort("arridx", false).Exec().FetchAll()
+		require.NoError(t, err)
+		checkItems(t, items, []interface{}{&testArrItem2, &testArrItem1, &testArrItem3})
+
+		items, err = DBD.Query(ns2).Sort("arridx", true).Exec().FetchAll()
+		require.NoError(t, err)
+		checkItems(t, items, []interface{}{&testArrItem3, &testArrItem1, &testArrItem2})
 	})
 }
 

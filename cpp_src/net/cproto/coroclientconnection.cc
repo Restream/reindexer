@@ -33,6 +33,14 @@ CoroClientConnection::CoroClientConnection()
 	seqNums_.close();
 }
 
+CoroClientConnection::~CoroClientConnection() {
+	try {
+		Stop();
+	} catch (std::exception& e) {
+		fprintf(stderr, "reindexer error: unexpected exception in ~CoroClientConnection: %s\n", e.what());
+	}
+}
+
 void CoroClientConnection::Start(ev::dynamic_loop& loop, ConnectData&& connectData) {
 	if (!isRunning_) {
 		// Don't allow to call Start, while error handling is in progress
@@ -519,7 +527,7 @@ void CoroClientConnection::sendCloseResults(const CProtoHeader& hdr, const CoroR
 		case kCmdDeleteQuery:
 		case kCmdUpdateQuery:
 		case kCmdSelect:
-		case kCmdSelectSQL:
+		case kCmdExecSQL:
 		case kCmdFetchResults: {
 			Serializer ser{ans.data_.data(), ans.data_.size()};
 			Args args;

@@ -15,6 +15,7 @@ public:
 
 	reindexer::Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, std::string_view ns, const std::string& index,
 								 const std::vector<std::string>& fields);
+	std::string GetFTConfigJSON(const reindexer::FtFastConfig& ftCfg, const std::vector<std::string>& fields);
 
 	void FillData(int64_t count);
 	void Add(std::string_view ft1, std::string_view ft2, unsigned nses = NS1);

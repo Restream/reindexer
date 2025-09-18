@@ -104,7 +104,6 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, Float
 	}
 	std::unique_ptr<Query> itemQueryCopy;
 	Query* itemQueryPtr = &itemQuery_;
-	VariantArray values;
 	for (auto& je : joinQuery_.joinEntries_) {
 		size_t changedCount = 1;
 
@@ -113,21 +112,22 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, Float
 		const auto initialSize = itemQueryPtr->Entries().Size();
 #endif	// RX_WITH_STDLIB_DEBUG
 
-		payload.GetByFieldsSet(je.LeftFields(), values, je.LeftFieldType(), je.LeftCompositeFieldsTypes());
+		payload.GetByFieldsSet(je.LeftFields(), tmpValues_, je.LeftFieldType(), je.LeftCompositeFieldsTypes());
 
-		values.erase(unstable_remove_if(values.begin(), values.end(), [](const Variant& v) noexcept { return v.IsNullValue(); }),
-					 values.cend());
-		if (values.empty() || !itemQueryPtr->TryUpdateQueryEntryInplace(i, values)) {
+		tmpValues_.erase(
+			unstable_remove_if(tmpValues_.begin(), tmpValues_.end(), [](const Variant& v) noexcept { return v.IsNullValue(); }),
+			tmpValues_.cend());
+		if (tmpValues_.empty() || !itemQueryPtr->TryUpdateQueryEntryInplace(i, tmpValues_)) {
 			if (itemQueryPtr == &itemQuery_) {
 				itemQueryCopy = std::make_unique<Query>(itemQuery_);
 				itemQueryPtr = itemQueryCopy.get();
 			}
-			if (values.empty()) {
+			if (tmpValues_.empty()) {
 				changedCount = itemQueryPtr->SetEntry<AlwaysFalse>(i);
 			} else {
 				const QueryEntry& qentry = itemQueryPtr->Entries().Get<QueryEntry>(i);
-				changedCount = itemQueryPtr->SetEntry<QueryEntry>(i, QueryEntry{qentry, qentry.Condition(), std::move(values)});
-				values = {};
+				changedCount = itemQueryPtr->SetEntry<QueryEntry>(i, QueryEntry{qentry, qentry.Condition(), std::move(tmpValues_)});
+				tmpValues_ = {};
 			}
 		}
 #ifdef RX_WITH_STDLIB_DEBUG

@@ -40,15 +40,8 @@ INSTANTIATE_TEST_SUITE_P(SelectAndOrderBy, SQLParserTests,
 										   R"(SELECT * FROM ns ORDER BY '5 * "123"')", R"(SELECT * FROM ns ORDER BY '5 * "123abc"')",
 										   R"(SELECT * FROM ns ORDER BY "123abc123" ASC)",
 										   R"(SELECT * FROM ns ORDER BY "123" ASC, "123abc" ASC, "123abc123" ASC)",
-
-										   R"(SELECT * FROM ns ORDER BY '"123" + 123')",
-
-										   R"(SELECT * FROM ns ORDER BY '123 + "123"')",
-
-										   R"(SELECT * FROM ns ORDER BY '"ns.123" + 123')",
-
-										   R"(SELECT * FROM ns ORDER BY '123 + "ns.123"')",
-
+										   R"(SELECT * FROM ns ORDER BY '"123" + 123')", R"(SELECT * FROM ns ORDER BY '123 + "123"')",
+										   R"(SELECT * FROM ns ORDER BY '"ns.123" + 123')", R"(SELECT * FROM ns ORDER BY '123 + "ns.123"')",
 										   R"(SELECT * FROM ns ORDER BY "123" DESC, "123abc" DESC, "123abc123" DESC)")
 
 );

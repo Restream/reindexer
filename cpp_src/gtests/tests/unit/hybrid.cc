@@ -37,7 +37,7 @@ reindexer::Item HybridTest::newItem(int id) {
 
 void HybridTest::SetUp() {
 	constexpr static size_t kM = 16;
-	constexpr static size_t kEfConsruction = 200;
+	constexpr static size_t kEfConstruction = 200;
 
 	auto dir = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "/HybridTest");
 	rx_unused = reindexer::fs::RmDirAll(dir);
@@ -52,7 +52,7 @@ void HybridTest::SetUp() {
 																				.SetDimension(kDimension)
 																				.SetStartSize(100)
 																				.SetM(kM)
-																				.SetEfConstruction(kEfConsruction)
+																				.SetEfConstruction(kEfConstruction)
 																				.SetMetric(reindexer::VectorMetric::InnerProduct)),
 									  0},
 					 IndexDeclaration{kFieldNameCos, "ivf", "float_vector",

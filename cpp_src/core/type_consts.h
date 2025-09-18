@@ -226,6 +226,12 @@ enum {
 	kResultsFlagMaxValue
 };
 
+static const char kCJSONFmt[] = "cjson";
+static const char kJSONFmt[] = "json";
+static const char kMsgPackFmt[] = "msgpack";
+static const char kProtobufFmt[] = "protobuf";
+static const char kCSVFileFmt[] = "csv-file";
+
 typedef enum StotageOpt {
 	kStorageOptEnabled = 1 << 0,
 	kStorageOptDropOnFileFormatError = 1 << 1,

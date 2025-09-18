@@ -20,19 +20,18 @@ void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value
 	if (field.IsRegularIndex()) {
 		const auto indexNumber = field.IndexNumber();
 		const auto& f = pl.Type().Field(indexNumber);
-		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), "msgpack"sv);
+		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), kMsgPackFmt);
 		if (!isInArray()) {
-			validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, "msgpack"sv);
+			validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, kMsgPackFmt);
 		}
 		Variant val(value);
-		convertValueForIndexField(pl.Type().Field(indexNumber).Type(), pl.Type().Field(indexNumber).Name(), val, "msgpack"sv,
-								  ConvertToString_False, ConvertNull_True);
+		convertValueForIndexField(f.Type(), f.Name(), val, kMsgPackFmt, ConvertToString_False, ConvertNull_True);
 		builder.Ref(tagName, val.Type(), indexNumber);
 		pl.Set(indexNumber, std::move(val), Append_True);
 		objectScalarIndexes_.set(indexNumber);
 	} else if (field.IsIndexed()) {	 // sparse index
 		Variant val(value);
-		convertValueForIndexField(validator.Type(), validator.Name(), val, "msgpack"sv, ConvertToString_True, ConvertNull_False);
+		convertValueForIndexField(validator.Type(), validator.Name(), val, kMsgPackFmt, ConvertToString_True, ConvertNull_False);
 		validator(val);
 		builder.Put(tagName, val);
 	} else {
@@ -72,10 +71,10 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 		if (const auto field = tm_.tags2field(tagsPath_); field.IsSparseIndex()) {
 			decode(
 				pl, builder, obj, tagName, floatVectorsHolder,
-				SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tm_, isInArray(), "msgpack"sv});
+				SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tm_, isInArray(), kMsgPackFmt});
 		} else {
 			if rx_unlikely (field.IsIndexed() && obj.type == MSGPACK_OBJECT_MAP) {
-				throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), "msgpack"sv);
+				throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), kMsgPackFmt);
 			}
 			decode(pl, builder, obj, tagName, floatVectorsHolder, kNoValidation);
 		}
@@ -136,7 +135,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 					ConstFloatVectorView vectView;
 					if (count != 0) {
 						if (count != f.FloatVectorDimension().Value()) {
-							throwUnexpectedArraySizeForFloatVectorError("msgpack"sv, f, count);
+							throwUnexpectedArraySizeForFloatVectorError(kMsgPackFmt, f, count);
 						}
 						auto vect = FloatVector::CreateNotInitialized(f.FloatVectorDimension());
 						size_t pos = 0;
@@ -157,7 +156,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 								case MSGPACK_OBJECT_BIN:
 								case MSGPACK_OBJECT_EXT:
 								default:
-									throwUnexpectedArrayTypeForFloatVectorError("msgpack"sv, f);
+									throwUnexpectedArrayTypeForFloatVectorError(kMsgPackFmt, f);
 							}
 						}
 						if (floatVectorsHolder.Add(std::move(vect))) {
@@ -167,9 +166,9 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 					pl.Set(indexNumber, Variant{vectView});
 				} else {
 					if rx_unlikely (!f.IsArray()) {
-						throwUnexpectedArrayError(f.Name(), f.Type(), "msgpack"sv);
+						throwUnexpectedArrayError(f.Name(), f.Type(), kMsgPackFmt);
 					}
-					validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), count, "msgpack"sv);
+					validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), count, kMsgPackFmt);
 					int pos = pl.ResizeArray(indexNumber, count, Append_True);
 					for (const msgpack_object* p = begin; p != end; ++p) {
 						auto val = [&] {
@@ -188,7 +187,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 								case MSGPACK_OBJECT_NIL:
 									return Variant{};
 								case MSGPACK_OBJECT_MAP:
-									throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), "msgpack"sv);
+									throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), kMsgPackFmt);
 								case MSGPACK_OBJECT_ARRAY:
 								case MSGPACK_OBJECT_BIN:
 								case MSGPACK_OBJECT_EXT:
@@ -196,8 +195,7 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 									throw Error(errLogic, "Unsupported MsgPack array field type: {}({})", ToString(p->type), int(p->type));
 							}
 						}();
-						convertValueForIndexField(pl.Type().Field(indexNumber).Type(), pl.Type().Field(indexNumber).Name(), val,
-												  "msgpack"sv, ConvertToString_False, ConvertNull_True);
+						convertValueForIndexField(f.Type(), f.Name(), val, kMsgPackFmt, ConvertToString_False, ConvertNull_True);
 						pl.Set(indexNumber, pos++, std::move(val));
 					}
 				}

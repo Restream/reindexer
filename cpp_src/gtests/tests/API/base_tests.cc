@@ -1473,8 +1473,8 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 	ASSERT_TRUE(err.code() == errCanceled);
 	qr.Clear();
 
-	std::string sqlQuery = ("select * from test_namespace");
-	err = rt.reindexer->WithContext(&canceledCtx).Select(sqlQuery, qr);
+	std::string_view sqlQuery = "select * from test_namespace";
+	err = rt.reindexer->WithContext(&canceledCtx).ExecSQL(sqlQuery, qr);
 	ASSERT_TRUE(err.code() == errCanceled);
 	qr.Clear();
 

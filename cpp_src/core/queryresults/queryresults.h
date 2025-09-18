@@ -24,7 +24,7 @@ const std::string_view kWALParamItem = "item";
 /// multiple nodes.
 /// QueryResults contains current iterators state, so you can iterate over it forward only once.
 /// Random access is supported for LocalQueryResults only.
-/// QueryResults cannot be externaly changed or deleted even in case of changing origin data in DB.<br>
+/// QueryResults cannot be externally changed or deleted even in case of changing origin data in DB.<br>
 
 class [[nodiscard]] QueryResults {
 	template <typename DataT>
@@ -302,15 +302,16 @@ public:
 
 	class [[nodiscard]] Iterator {
 	public:
+		// FIXME: Remove default ctor (requires python binding update) - ToDo remove after release pyreindexer 0.5.700
 		Iterator() = default;
 		Iterator(const QueryResults* qr, int64_t idx, std::optional<LocalQueryResults::ConstIterator> localIt)
 			: qr_(qr), idx_(idx), localIt_(std::move(localIt)) {}
 
 		Error GetJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Expected<std::string> GetJSON();
-		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true);
-		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true);
-		Error GetProtobuf(WrSerializer& wrser, bool withHdrLen = true);
+		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true) noexcept;
+		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true) noexcept;
+		Error GetProtobuf(WrSerializer& wrser) noexcept;
 		Error GetCSV(WrSerializer& wrser, CsvOrdering& ordering) noexcept;
 
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
@@ -463,6 +464,7 @@ public:
 				case Type::None:
 					throw Error(errLogic, "QueryResults are empty");
 				case Type::Local:
+					assertrx_throw(localIt_.has_value());
 					return *localIt_;
 				case Type::SingleRemote:
 				case Type::MultipleRemote:
@@ -494,7 +496,7 @@ public:
 
 		const QueryResults* qr_{nullptr};
 		int64_t idx_{0};
-		// Iterator for Qr with Type::Local. It may be used to iterate in any direction independantly from main query results
+		// An iterator for Qr of Type::Local. Can be used to iterate in either direction regardless of the results of the underlying query
 		std::optional<LocalQueryResults::ConstIterator> localIt_;
 	};
 	using ProxiedRefsStorage = std::vector<ItemRefCache>;

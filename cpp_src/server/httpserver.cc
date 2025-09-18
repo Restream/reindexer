@@ -39,6 +39,76 @@ namespace reindexer_server {
 constexpr size_t kTxIdLen = 20;
 constexpr auto kTxDeadlineCheckPeriod = std::chrono::seconds(1);
 
+class HTTPServer::TxCommitOption final : public HTTPServer::IQRSerializingOption {
+public:
+	TxCommitOption(const QueryResults& qr) noexcept : totalCount_{qr.Count()} {}
+
+	std::optional<size_t> TotalCount() const noexcept override { return totalCount_; }
+	std::optional<size_t> QueryTotalCount() const noexcept override { return std::nullopt; }
+	unsigned ExternalLimit() const noexcept override { return kDefaultLimit; }
+	unsigned ExternalOffset() const noexcept override { return kDefaultOffset; }
+
+private:
+	size_t totalCount_;
+};
+
+class HTTPServer::TwoLevelLimitOffsetOption final : public HTTPServer::IQRSerializingOption {
+public:
+	TwoLevelLimitOffsetOption(QueryResults& qr, unsigned externalLimit, unsigned externalOffset)
+		: totalCount_{qr.Count()}, externalLimit_{externalLimit}, externalOffset_{externalOffset} {
+		for (auto& agg : qr.GetAggregationResults()) {
+			if (auto type = agg.GetType(); type == AggType::AggCount || type == AggType::AggCountCached) {
+				queryTotalCount_.emplace(qr.TotalCount());
+				break;
+			}
+		}
+	}
+
+	std::optional<size_t> TotalCount() const noexcept override { return totalCount_; }
+	std::optional<size_t> QueryTotalCount() const noexcept override { return queryTotalCount_; }
+	unsigned ExternalLimit() const noexcept override { return externalLimit_; }
+	unsigned ExternalOffset() const noexcept override { return externalOffset_; }
+
+private:
+	size_t totalCount_;
+	std::optional<size_t> queryTotalCount_;
+	unsigned externalLimit_;
+	unsigned externalOffset_;
+};
+
+class HTTPServer::ReqularQueryResultsOption final : public HTTPServer::IQRSerializingOption {
+public:
+	ReqularQueryResultsOption(QueryResults& qr) noexcept {
+		for (auto& agg : qr.GetAggregationResults()) {
+			if (auto type = agg.GetType(); type == AggType::AggCount || type == AggType::AggCountCached) {
+				totalCount_.emplace(qr.TotalCount());
+				break;
+			}
+		}
+	}
+
+	std::optional<size_t> TotalCount() const noexcept override { return totalCount_; }
+	std::optional<size_t> QueryTotalCount() const noexcept override { return totalCount_; }
+	unsigned ExternalLimit() const noexcept override { return kDefaultLimit; }
+	unsigned ExternalOffset() const noexcept override { return kDefaultOffset; }
+
+private:
+	std::optional<size_t> totalCount_;
+};
+
+class HTTPServer::ItemsQueryResultsOption final : public HTTPServer::IQRSerializingOption {
+public:
+	ItemsQueryResultsOption(QueryResults& qr) noexcept : totalCount_{qr.TotalCount()} {}
+
+	std::optional<size_t> TotalCount() const noexcept override { return totalCount_; }
+	std::optional<size_t> QueryTotalCount() const noexcept override { return std::nullopt; }
+	unsigned ExternalLimit() const noexcept override { return kDefaultLimit; }
+	unsigned ExternalOffset() const noexcept override { return kDefaultOffset; }
+
+private:
+	size_t totalCount_;
+};
+
 HTTPServer::HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, Prometheus* prometheus,
 					   IStatsWatcher* statsWatcher)
 	: dbMgr_(dbMgr),
@@ -96,7 +166,10 @@ int HTTPServer::GetSQLQuery(http::Context& ctx) {
 		return status(ctx, http::HttpStatus(err));
 	}
 
-	return queryResults(ctx, res, true, limit, offset);
+	if (limit != kDefaultLimit || offset != kDefaultOffset) {
+		return queryResults(ctx, res, TwoLevelLimitOffsetOption(res, limit, offset));
+	}
+	return queryResults(ctx, res, ReqularQueryResultsOption(res));
 }
 
 int HTTPServer::GetSQLSuggest(http::Context& ctx) {
@@ -159,7 +232,7 @@ int HTTPServer::PostSQLQuery(http::Context& ctx) {
 	if (!err.ok()) {
 		return status(ctx, http::HttpStatus(err));
 	}
-	return queryResults(ctx, res, true);
+	return queryResults(ctx, res, ReqularQueryResultsOption(res));
 }
 
 int HTTPServer::PostQuery(http::Context& ctx) {
@@ -178,7 +251,7 @@ int HTTPServer::PostQuery(http::Context& ctx) {
 	if (!err.ok()) {
 		return status(ctx, http::HttpStatus(err));
 	}
-	return queryResults(ctx, res, true);
+	return queryResults(ctx, res, ReqularQueryResultsOption(res));
 }
 
 int HTTPServer::DeleteQuery(http::Context& ctx) {
@@ -490,7 +563,7 @@ int HTTPServer::GetItems(http::Context& ctx) {
 	}
 
 	auto q = Query::FromSQL(querySer.Slice());
-	if (ctx.request->params.Get("format"sv) != "csv-file"sv) {
+	if (ctx.request->params.Get("format"sv) != kCSVFileFmt) {
 		q.ReqTotal();
 	}
 
@@ -504,7 +577,7 @@ int HTTPServer::GetItems(http::Context& ctx) {
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(ret));
 	}
-	return queryResults(ctx, res);
+	return queryResults(ctx, res, ItemsQueryResultsOption(res));
 }
 
 int HTTPServer::DeleteItems(http::Context& ctx) { return modifyItems(ctx, ModeDelete); }
@@ -1177,7 +1250,7 @@ int HTTPServer::modifyItemsProtobuf(http::Context& ctx, std::string_view nsName,
 	}
 
 	const std::string sbuffer = ctx.body->Read();
-	auto err = item.FromProtobuf(std::string_view(sbuffer.data(), sbuffer.size()));
+	auto err = item.FromProtobuf(sbuffer);
 	if (!err.ok()) {
 		return sendResponse(0, err);
 	}
@@ -1237,6 +1310,28 @@ int HTTPServer::modifyItemsTxJSON(http::Context& ctx, Transaction& tx, std::vect
 	return jsonStatus(ctx);
 }
 
+int HTTPServer::modifyItemsTxProtobuf(http::Context& ctx, Transaction& tx, std::vector<string>&& precepts, ItemModifyMode mode) {
+	const std::string sbuffer = ctx.body->Read();
+
+	Item item = tx.NewItem();
+	if (!item.Status().ok()) {
+		return protobufStatus(ctx, http::HttpStatus(item.Status()));
+	}
+
+	auto err = item.FromProtobuf(sbuffer);
+	if (!err.ok()) {
+		return protobufStatus(ctx, http::HttpStatus(err));
+	}
+
+	item.SetPrecepts(precepts);
+	err = tx.Modify(std::move(item), mode);
+	if (!err.ok()) {
+		return protobufStatus(ctx, http::HttpStatus(err));
+	}
+
+	return protobufStatus(ctx);
+}
+
 int HTTPServer::modifyItemsTxMsgPack(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode) {
 	const std::string sbuffer = ctx.body->Read();
 	const size_t length = sbuffer.size();
@@ -1248,7 +1343,7 @@ int HTTPServer::modifyItemsTxMsgPack(http::Context& ctx, Transaction& tx, std::v
 			return msgpackStatus(ctx, http::HttpStatus(item.Status()));
 		}
 
-		auto err = item.FromMsgPack(std::string_view(sbuffer.data(), sbuffer.size()), offset);
+		auto err = item.FromMsgPack(sbuffer, offset);
 		if (!err.ok()) {
 			return msgpackStatus(ctx, http::HttpStatus(err));
 		}
@@ -1276,13 +1371,16 @@ int HTTPServer::modifyItems(http::Context& ctx, ItemModifyMode mode) {
 		}
 	}
 
-	const auto format = ctx.request->params.Get("format"sv);
-	if (format == "msgpack"sv) {
-		return modifyItemsMsgPack(ctx, nsName, std::move(precepts), mode);
-	} else if (format == "protobuf"sv) {
-		return modifyItemsProtobuf(ctx, nsName, std::move(precepts), mode);
-	} else {
-		return modifyItemsJSON(ctx, nsName, std::move(precepts), mode);
+	switch (getDataFormat(ctx)) {
+		case DataFormat::JSON:
+			return modifyItemsJSON(ctx, nsName, std::move(precepts), mode);
+		case DataFormat::MsgPack:
+			return modifyItemsMsgPack(ctx, nsName, std::move(precepts), mode);
+		case DataFormat::Protobuf:
+			return modifyItemsProtobuf(ctx, nsName, std::move(precepts), mode);
+		case DataFormat::CSVFile:
+		default:
+			throwUnsupportedOpFormat(ctx);
 	}
 }
 
@@ -1301,19 +1399,30 @@ int HTTPServer::modifyItemsTx(http::Context& ctx, ItemModifyMode mode) {
 		}
 	}
 
-	const auto format = ctx.request->params.Get("format"sv);
 	auto tx = getTx(dbName, txId);
-	return format == "msgpack"sv ? modifyItemsTxMsgPack(ctx, *tx, std::move(precepts), mode)
-								 : modifyItemsTxJSON(ctx, *tx, std::move(precepts), mode);
+	switch (getDataFormat(ctx)) {
+		case DataFormat::JSON:
+			return modifyItemsTxJSON(ctx, *tx, std::move(precepts), mode);
+		case DataFormat::MsgPack:
+			return modifyItemsTxMsgPack(ctx, *tx, std::move(precepts), mode);
+		case DataFormat::Protobuf:
+			return modifyItemsTxProtobuf(ctx, *tx, std::move(precepts), mode);
+		case DataFormat::CSVFile:
+		default:
+			throwUnsupportedOpFormat(ctx);
+	}
 }
 
-int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-								 bool withColumns, int width) {
+int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption, bool withColumns,
+								 int width) {
+	const auto offset = qrOption.ExternalOffset();
+	const auto limit = qrOption.ExternalLimit();
+
 	WrSerializer ser(ctx.writer->GetChunk());
 	JsonBuilder builder(ser);
 
 	auto iarray = builder.Array(kParamItems);
-	auto it = res.begin() + offset;
+	auto it = offset < res.Count() ? (res.begin() + offset) : res.end();
 	std::vector<std::string> jsonData;
 	if (withColumns) {
 		size_t size = res.Count();
@@ -1396,13 +1505,13 @@ int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& re
 		}
 	}
 
-	queryResultParams(builder, res, std::move(jsonData), isQueryResults, limit, withColumns, width);
+	queryResultParams(builder, res, std::move(jsonData), qrOption, withColumns, width);
 	builder.End();
 
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
 
-int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, unsigned limit, unsigned offset) {
+int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption) {
 	if (!res.GetAggregationResults().empty()) {
 		throw Error(errForbidden, "Aggregations are not supported in CSV");
 	}
@@ -1443,6 +1552,8 @@ int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res
 		throw Error(errLogic, "Uploads in csv format without a namespace scheme are allowed only for local queries");
 	}
 
+	const auto limit = qrOption.ExternalLimit();
+	const auto offset = qrOption.ExternalOffset();
 	auto ordering =
 		withSchema ? CsvOrdering{schema->MakeCsvTagOrdering(res.GetTagsMatcher(0))} : res.ToLocalQr().MakeCSVTagOrdering(limit, offset);
 
@@ -1469,32 +1580,30 @@ int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res
 	return ctx.CSV(http::StatusOK, wrSerRes.DetachChunk());
 }
 
-int HTTPServer::queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
+int HTTPServer::queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption,
 									bool withColumns, int width) {
 	int paramsToSend = 3;
-	const bool withTotalItems = (!isQueryResults || limit != kDefaultLimit);
 	if (!res.GetAggregationResults().empty()) {
 		++paramsToSend;
 	}
 	if (!res.GetExplainResults().empty()) {
 		++paramsToSend;
 	}
-	if (withTotalItems) {
-		++paramsToSend;
-	}
 	if (withColumns) {
 		++paramsToSend;
 	}
-	if (isQueryResults && res.TotalCount()) {
-		if (limit == kDefaultLimit) {
-			++paramsToSend;
-		}
+	if (qrOption.TotalCount().has_value()) {
+		++paramsToSend;
+	}
+	if (qrOption.QueryTotalCount().has_value()) {
 		++paramsToSend;
 	}
 
 	WrSerializer ser(ctx.writer->GetChunk());
 	MsgPackBuilder msgpackBuilder(ser, ObjType::TypeObject, paramsToSend);
 
+	const auto offset = qrOption.ExternalOffset();
+	const auto limit = qrOption.ExternalLimit();
 	WrSerializer itemSer;
 	std::vector<std::string> jsonData;
 	if (withColumns) {
@@ -1530,17 +1639,19 @@ int HTTPServer::queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults&
 		}
 	}
 
-	queryResultParams(msgpackBuilder, res, std::move(jsonData), isQueryResults, limit, withColumns, width);
+	queryResultParams(msgpackBuilder, res, std::move(jsonData), qrOption, withColumns, width);
 	msgpackBuilder.End();
 
 	return ctx.MSGPACK(http::StatusOK, ser.DetachChunk());
 }
 
-int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
+int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption,
 									 bool withColumns, int width) {
 	WrSerializer ser(ctx.writer->GetChunk());
 	ProtobufBuilder protobufBuilder(&ser);
 
+	const auto offset = qrOption.ExternalOffset();
+	const auto limit = qrOption.ExternalLimit();
 	auto& lres = res.ToLocalQr();
 	WrSerializer itemSer;
 	std::vector<std::string> jsonData;
@@ -1553,15 +1664,15 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults
 	}
 	for (size_t i = offset; i < lres.Count() && i < offset + limit; i++) {
 		auto it = lres[i];
-		auto err = it.GetProtobuf(ser, false);
+		auto err = it.GetProtobuf(ser);
 		if (!err.ok()) {
-			return ctx.Protobuf(err.code(), ser.DetachChunk());
+			return protobufStatus(ctx, http::HttpStatus(err));
 		}
 		if (withColumns) {
 			itemSer.Reset();
 			err = it.GetJSON(itemSer, false);
 			if (!err.ok()) {
-				return ctx.Protobuf(err.code(), ser.DetachChunk());
+				return protobufStatus(ctx, http::HttpStatus(err));
 			}
 			jsonData.emplace_back(itemSer.Slice());
 		}
@@ -1586,16 +1697,11 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults
 		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamExplain), res.GetExplainResults());
 	}
 
-	if (!isQueryResults || limit != kDefaultLimit) {
-		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamTotalItems),
-							isQueryResults ? static_cast<int64_t>(res.Count()) : static_cast<int64_t>(res.TotalCount()));
+	if (auto totalCount = qrOption.TotalCount(); totalCount.has_value()) {
+		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamTotalItems), int64_t(*totalCount));
 	}
-
-	if (isQueryResults && res.TotalCount()) {
-		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamQueryTotalItems), int(res.TotalCount()));
-		if (limit == kDefaultLimit) {
-			protobufBuilder.Put(kProtoQueryResultsFields.at(kParamTotalItems), int(res.TotalCount()));
-		}
+	if (auto queryTotalCount = qrOption.QueryTotalCount(); queryTotalCount.has_value()) {
+		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamQueryTotalItems), int64_t(*queryTotalCount));
 	}
 
 	if (withColumns) {
@@ -1618,8 +1724,8 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults
 }
 
 template <typename Builder>
-void HTTPServer::queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData, bool isQueryResults,
-								   unsigned limit, bool withColumns, int width) {
+void HTTPServer::queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData,
+								   const IQRSerializingOption& qrOption, bool withColumns, int width) {
 	h_vector<std::string_view, 1> namespaces(res.GetNamespaces());
 	auto namespacesArray = builder.Array(kParamNamespaces, namespaces.size());
 	for (auto ns : namespaces) {
@@ -1633,15 +1739,11 @@ void HTTPServer::queryResultParams(Builder& builder, reindexer::QueryResults& re
 		builder.Json(kParamExplain, res.GetExplainResults());
 	}
 
-	if (!isQueryResults || limit != kDefaultLimit) {
-		builder.Put(kParamTotalItems, isQueryResults ? static_cast<int64_t>(res.Count()) : static_cast<int64_t>(res.TotalCount()));
+	if (auto totalCount = qrOption.TotalCount(); totalCount.has_value()) {
+		builder.Put(kParamTotalItems, int64_t(*totalCount));
 	}
-
-	if (isQueryResults && res.TotalCount()) {
-		builder.Put(kParamQueryTotalItems, int(res.TotalCount()));
-		if (limit == kDefaultLimit) {
-			builder.Put(kParamTotalItems, int(res.TotalCount()));
-		}
+	if (auto queryTotalCount = qrOption.QueryTotalCount(); queryTotalCount.has_value()) {
+		builder.Put(kParamQueryTotalItems, int64_t(*queryTotalCount));
 	}
 
 	if (withColumns) {
@@ -1660,51 +1762,59 @@ void HTTPServer::queryResultParams(Builder& builder, reindexer::QueryResults& re
 	}
 }
 
-int HTTPServer::queryResults(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset) {
+int HTTPServer::queryResults(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption) {
 	const std::string_view widthParam = ctx.request->params.Get("width"sv);
 	const int width = widthParam.empty() ? 0 : stoi(widthParam);
 
-	const std::string_view format = ctx.request->params.Get("format"sv);
 	const std::string_view withColumnsParam = ctx.request->params.Get("with_columns"sv);
 	const bool withColumns = (isParameterSetOn(withColumnsParam) && (width > 0)) ? true : false;
 
-	if (format == "msgpack"sv) {
-		return queryResultsMsgPack(ctx, res, isQueryResults, limit, offset, withColumns, width);
-	}
-	if (format == "protobuf"sv) {
-		return queryResultsProtobuf(ctx, res, isQueryResults, limit, offset, withColumns, width);
-	}
-	if (format == "csv-file"sv) {
-		CounterGuardAIRL32 cg(currentCsvDownloads_);
-		if (currentCsvDownloads_.load() > kMaxConcurrentCsvDownloads) {
-			throw Error(errForbidden, "Unable to start new CSV download. Limit of concurrent downloads is {}", kMaxConcurrentCsvDownloads);
+	switch (getDataFormat(ctx)) {
+		case DataFormat::JSON:
+			return queryResultsJSON(ctx, res, qrOption, withColumns, width);
+		case DataFormat::MsgPack:
+			return queryResultsMsgPack(ctx, res, qrOption, withColumns, width);
+		case DataFormat::Protobuf:
+			return queryResultsProtobuf(ctx, res, qrOption, withColumns, width);
+		case DataFormat::CSVFile: {
+			CounterGuardAIRL32 cg(currentCsvDownloads_);
+			if (currentCsvDownloads_.load() > kMaxConcurrentCsvDownloads) {
+				throw Error(errForbidden, "Unable to start new CSV download. Limit of concurrent downloads is {}",
+							kMaxConcurrentCsvDownloads);
+			}
+			return queryResultsCSV(ctx, res, qrOption);
 		}
-		return queryResultsCSV(ctx, res, limit, offset);
+		default:
+			throwUnsupportedOpFormat(ctx);
 	}
-	return queryResultsJSON(ctx, res, isQueryResults, limit, offset, withColumns, width);
 }
 
 int HTTPServer::statusOK(http::Context& ctx, chunk&& chunk) {
-	const std::string_view format = ctx.request->params.Get("format"sv);
-	if (format == "msgpack"sv) {
-		return ctx.MSGPACK(http::StatusOK, std::move(chunk));
+	switch (getDataFormat(ctx)) {
+		case DataFormat::JSON:
+			return ctx.JSON(http::StatusOK, std::move(chunk));
+		case DataFormat::MsgPack:
+			return ctx.MSGPACK(http::StatusOK, std::move(chunk));
+		case DataFormat::Protobuf:
+			return ctx.Protobuf(http::StatusOK, std::move(chunk));
+		case DataFormat::CSVFile:
+		default:
+			throw Error(errLogic, "'HTTPServer::statusOK' is not implemented for '{}' format", ctx.request->params.Get("format"sv));
 	}
-	if (format == "protobuf"sv) {
-		return ctx.Protobuf(http::StatusOK, std::move(chunk));
-	}
-
-	return ctx.JSON(http::StatusOK, std::move(chunk));
 }
 
 int HTTPServer::status(http::Context& ctx, const http::HttpStatus& status) {
-	const std::string_view format = ctx.request->params.Get("format"sv);
-	if (format == "msgpack"sv) {
-		return msgpackStatus(ctx, status);
+	switch (getDataFormat(ctx)) {
+		case DataFormat::JSON:
+			return jsonStatus(ctx, status);
+		case DataFormat::MsgPack:
+			return msgpackStatus(ctx, status);
+		case DataFormat::Protobuf:
+			return protobufStatus(ctx, status);
+		case DataFormat::CSVFile:
+		default:
+			throw Error(errLogic, "'HTTPServer::status' is not implemented for '{}' format", ctx.request->params.Get("format"sv));
 	}
-	if (format == "protobuf"sv) {
-		return protobufStatus(ctx, status);
-	}
-	return jsonStatus(ctx, status);
 }
 
 int HTTPServer::msgpackStatus(http::Context& ctx, const http::HttpStatus& status) {
@@ -1954,15 +2064,30 @@ int HTTPServer::BeginTx(http::Context& ctx) {
 	}
 	const auto txId = addTx(std::move(dbName), std::move(tx));
 
-	WrSerializer ser;
-	if (ctx.request->params.Get("format"sv) == "msgpack"sv) {
-		MsgPackBuilder builder(ser, ObjType::TypeObject, 1);
-		builder.Put(kTxId, txId);
-		builder.End();
-	} else {
-		JsonBuilder builder(ser);
-		builder.Put(kTxId, txId);
-		builder.End();
+	WrSerializer ser(ctx.writer->GetChunk());
+
+	switch (getDataFormat(ctx)) {
+		case DataFormat::JSON: {
+			JsonBuilder builder(ser);
+			builder.Put(kTxId, txId);
+			builder.End();
+			break;
+		}
+		case DataFormat::MsgPack: {
+			MsgPackBuilder builder(ser, ObjType::TypeObject, 1);
+			builder.Put(kTxId, txId);
+			builder.End();
+			break;
+		}
+		case DataFormat::Protobuf: {
+			ProtobufBuilder builder(&ser);
+			builder.Put(kProtoBeginTxResultsFields.at(kTxId), txId);
+			builder.End();
+			break;
+		}
+		case DataFormat::CSVFile:
+		default:
+			throwUnsupportedOpFormat(ctx);
 	}
 	return statusOK(ctx, ser.DetachChunk());
 }
@@ -1982,7 +2107,7 @@ int HTTPServer::CommitTx(http::Context& ctx) {
 		return status(ctx, http::HttpStatus(err));
 	}
 	removeTx(dbName, txId);
-	return queryResults(ctx, qr);
+	return queryResults(ctx, qr, TxCommitOption(qr));
 }
 
 int HTTPServer::RollbackTx(http::Context& ctx) {
@@ -1997,10 +2122,7 @@ int HTTPServer::RollbackTx(http::Context& ctx) {
 	QueryResults qr;
 	const auto err = db.RollBackTransaction(*tx);
 	removeTx(dbName, txId);
-	if (!err.ok()) {
-		return status(ctx, http::HttpStatus(err));
-	}
-	return status(ctx);
+	return status(ctx, http::HttpStatus(err));
 }
 
 int HTTPServer::PostItemsTx(http::Context& ctx) { return modifyItemsTx(ctx, ModeInsert); }
@@ -2153,6 +2275,30 @@ int HTTPServer::GetDefaultConfigs(http::Context& ctx) {
 		return status(ctx, http::HttpStatus(ret));
 	}
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
+}
+
+HTTPServer::DataFormat HTTPServer::dataFormatFromStr(std::string_view str) {
+	if (str.empty() || iequals(str, kJSONFmt)) {
+		return DataFormat::JSON;
+	}
+	if (iequals(str, kMsgPackFmt)) {
+		return DataFormat::MsgPack;
+	}
+	if (iequals(str, kProtobufFmt)) {
+		return DataFormat::Protobuf;
+	}
+	if (iequals(str, kCSVFileFmt)) {
+		return DataFormat::CSVFile;
+	}
+	throw Error(errParams, "Unexpected format names:'{}'", str);
+}
+
+HTTPServer::DataFormat HTTPServer::getDataFormat(const http::Context& ctx) {
+	return dataFormatFromStr(ctx.request->params.Get("format"sv));
+}
+
+void HTTPServer::throwUnsupportedOpFormat(const http::Context& ctx) {
+	throw Error(errParams, "Unsupported format '{}' for '{}'", ctx.request->params.Get("format"sv), ctx.request->path);
 }
 
 }  // namespace reindexer_server

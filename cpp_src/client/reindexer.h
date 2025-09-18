@@ -147,9 +147,9 @@ public:
 	/// @param result - QueryResults with IDs of deleted items
 	Error Delete(const Query& query, QueryResults& result) noexcept;
 	/// Execute SQL Query and return results
-	/// @param query - SQL query. Only "SELECT" semantic is supported
+	/// @param query - SQL query.
 	/// @param result - QueryResults with found items
-	Error Select(std::string_view query, QueryResults& result) noexcept;
+	Error ExecSQL(std::string_view query, QueryResults& result) noexcept;
 	/// Execute Query and return resuchCommandlts
 	/// @param query - Query object with query attributes
 	/// @param result - QueryResults with found items

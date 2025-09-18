@@ -973,10 +973,9 @@ void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::Stat
 		state.SkipWithError(err.what());
 	}
 
-	const std::string sql =
-		"UPDATE "s + alternatingNs_ + " SET rand = " + std::to_string(rand()) + " WHERE id = " + std::to_string(RndIndexOf(values_));
+	const std::string sql = fmt::format("UPDATE {} SET rand = {} WHERE id = {}", alternatingNs_, rand(), RndIndexOf(values_));
 	QueryResults qres;
-	err = db_->Select(sql, qres);
+	err = db_->ExecSQL(sql, qres);
 	if (!err.ok()) {
 		state.SkipWithError(err.what());
 	}

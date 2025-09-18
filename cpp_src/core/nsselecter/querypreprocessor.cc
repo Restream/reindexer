@@ -665,7 +665,17 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 		Visit(
 			cur, Skip<JoinQueryEntry, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
 			[](OneOf<SubQueryEntry, SubQueryFieldEntry>) { throw_as_assert; },
-			[this, cur](const QueryEntriesBracket&) { initIndexedQueries(cur + 1, Next(cur)); },
+			[this, cur](QueryEntriesBracket& bracket) {
+				for (auto& equalPositions : bracket.equalPositions) {
+					for (auto& epField : equalPositions) {
+						int idxNo = NotSet;
+						if (ns_.tryGetIndexByNameOrJsonPath(epField, idxNo)) {
+							epField.assign(ns_.indexes_[idxNo]->Name());
+						}
+					}
+				}
+				initIndexedQueries(cur + 1, Next(cur));
+			},
 			[this](BetweenFieldsQueryEntry& entry) {
 				if (!entry.FieldsHaveBeenSet()) {
 					SetQueryField(entry.LeftFieldData(), ns_);
@@ -695,10 +705,11 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 				if (!qe.FieldsHaveBeenSet()) {
 					int idxNo = NotSet;
 					if (ns_.tryGetIndexByNameOrJsonPath(qe.FieldName(), idxNo)) {
-						if (!ns_.indexes_[idxNo]->IsFloatVector()) {
+						auto& idx = *ns_.indexes_[idxNo];
+						if (!idx.IsFloatVector()) {
 							throw Error{errParams, "KNN allowed only for float vector index; {} is not float vector index", qe.FieldName()};
 						}
-						qe.SetIndexNo(idxNo);
+						qe.SetIndexNo(idxNo, idx.Name());
 					} else {
 						throw Error{errParams, "KNN allowed only for float vector index; {} is not indexed field", qe.FieldName()};
 					}

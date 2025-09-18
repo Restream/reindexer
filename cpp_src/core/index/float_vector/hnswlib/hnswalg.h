@@ -6,10 +6,17 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <algorithm>
 #include <atomic>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <queue>
 #include <random>
+#include "core/index/float_vector/hnswlib/space_cosine.h"
+#include "core/index/float_vector/hnswlib/space_ip.h"
+#include "core/index/float_vector/hnswlib/space_l2.h"
+#include "core/index/float_vector/scalar_quantization/quantizer.h"
 #include "estl/fast_hash_set.h"
 #include "hnswlib.h"
 #include "tools/errors.h"
@@ -176,7 +183,7 @@ struct [[nodiscard]] RegularLocker::Concurrent<ExpectConcurrentUpdates::No> {
 	};
 };
 
-template <typename dist_t, Synchronization synchronization>
+template <Synchronization synchronization>
 class [[nodiscard]] HierarchicalNSW {
 	template <typename K, typename V>
 	using HashMapT = tsl::hopscotch_sc_map<K, V, std::hash<K>, std::equal_to<K>, std::less<K>, std::allocator<std::pair<const K, V>>, 30,
@@ -188,6 +195,8 @@ class [[nodiscard]] HierarchicalNSW {
 	using LockVecT = std::conditional_t<synchronization == Synchronization::None, LabelOpsDummyLocks, LabelOpsMutexLocks>;
 	using UpdateLockVecT = std::conditional_t<synchronization == Synchronization::None, UpdateOpsDummyLocks, UpdateOpsMutexLocks>;
 	using GlobalMutextT = std::conditional_t<synchronization == Synchronization::None, DummyMutex, reindexer::mutex>;
+
+	using QuantizerT = Quantizer<HierarchicalNSW>;
 
 public:
 	static const unsigned char DELETE_MARK = 0x01;
@@ -202,6 +211,8 @@ public:
 	size_t maxM0_{0};
 	size_t ef_construction_{0};
 
+	std::unique_ptr<QuantizerT> quantizer_;
+
 	double mult_{0.0};
 	int maxlevel_{0};
 	tableint enterpoint_node_{0};
@@ -212,6 +223,7 @@ public:
 	GlobalMutextT global;
 	LockVecT link_list_locks_;
 	UpdateLockVecT data_updates_locks_;
+	UpdateLockVecT::MutexT quantiles_update_lock_;
 
 	size_t size_links_level0_{0};
 	size_t offsetData_{0}, label_offset_{0};
@@ -222,7 +234,7 @@ public:
 
 	size_t data_size_{0};
 
-	DistCalculator<dist_t> fstdistfunc_;
+	DistCalculator fstdistfunc_;
 
 	mutable GlobalMutextT label_lookup_lock;  // lock for label_lookup_
 	HashMapT<labeltype, tableint> label_lookup_;
@@ -243,7 +255,10 @@ public:
 
 	std::atomic<int32_t> concurrent_updates_counter_{0};
 
-	HierarchicalNSW(SpaceInterface<dist_t>* s, const HierarchicalNSW& other, size_t newMaxElements)
+	ComponentNthQuantiles component1Quantiles_;
+	const ComponentNthQuantiles& Component1Quantiles() const noexcept { return component1Quantiles_; }
+
+	HierarchicalNSW(SpaceInterface* s, const HierarchicalNSW& other, size_t newMaxElements)
 		: max_elements_(std::max(other.max_elements_, newMaxElements)),
 		  cur_element_count(other.cur_element_count.load()),
 		  size_data_per_element_(other.size_data_per_element_),
@@ -261,7 +276,8 @@ public:
 		  data_level0_memory_(nullptr),
 		  linkLists_(nullptr),
 		  allow_replace_deleted_(other.allow_replace_deleted_),
-		  deleted_elements(other.deleted_elements) {
+		  deleted_elements(other.deleted_elements),
+		  component1Quantiles_(other.component1Quantiles_) {
 		initSpace(s);
 		std::memcpy(data_level0_memory_, other.data_level0_memory_, cur_element_count * size_data_per_element_);
 		fstdistfunc_.CopyValuesFrom(other.fstdistfunc_);
@@ -281,12 +297,13 @@ public:
 		assertrx_dbg(num_deleted_ == deleted_elements.size());
 	}
 
-	HierarchicalNSW(SpaceInterface<dist_t>* s, size_t max_elements, size_t M, size_t ef_construction, size_t random_seed,
+	HierarchicalNSW(SpaceInterface* s, size_t max_elements, size_t M, size_t ef_construction, size_t random_seed,
 					reindexer::ReplaceDeleted allow_replace_deleted)
 		: link_list_locks_(max_elements),
 		  data_updates_locks_(max_elements),
 		  element_levels_(max_elements),
-		  allow_replace_deleted_(allow_replace_deleted) {
+		  allow_replace_deleted_(allow_replace_deleted),
+		  component1Quantiles_(s->get_dist_calculator_param().dims) {
 		max_elements_ = max_elements;
 		num_deleted_ = 0;
 		data_size_ = s->get_data_size();
@@ -327,6 +344,78 @@ public:
 		}
 		size_links_per_element_ = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
 		mult_ = getMultFromM(M_);
+	}
+
+	auto prepareData(const void* data) const {
+		auto deleter = [quantized = bool(quantizer_)](const void* ptr) noexcept {
+			if (quantized) {
+				delete[] (static_cast<uint8_t*>(const_cast<void*>(ptr)));
+			}
+		};
+
+		std::unique_ptr<uint8_t[]> res;
+		if (quantizer_) {
+			auto from = std::span(static_cast<const float*>(data), data_size_);
+			res = std::make_unique<uint8_t[]>(data_size_);
+			auto to = std::span(res.get(), data_size_);
+			quantizer_->Quantize(from, to);
+		}
+		return std::unique_ptr<const void, decltype(deleter)>(res ? res.release() : data, std::move(deleter));
+	}
+
+	template <typename LockerT>
+	void Quantize(const ScalarQuantizeType sq8Type, float quantile = 1.f, size_t sampleSize = QuantizerT::kDefaultPartialSamplesize) {
+		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
+
+		assertrx_throw(!quantizer_);
+
+		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
+		// during background index quantization
+		UniqueLock lck{global};
+		quantizer_ = std::make_unique<QuantizerT>(sq8Type, *this, quantile, sampleSize);
+		quantizer_->Init();
+
+		auto data_level0_memory_old = data_level0_memory_;
+		auto size_data_per_element_old = size_data_per_element_;
+		auto label_offset_old = label_offset_;
+
+		std::unique_ptr<hnswlib::SpaceInterface> space;
+		auto dim = fstdistfunc_.Dims();
+		switch (fstdistfunc_.Metric()) {
+			case hnswlib::MetricType::L2:
+				space = std::make_unique<L2SpaceSq8>(dim);
+				break;
+			case hnswlib::MetricType::COSINE:
+				space = std::make_unique<CosineSpaceSq8>(dim);
+				break;
+			case hnswlib::MetricType::INNER_PRODUCT:
+				space = std::make_unique<InnerProductSpaceSq8>(dim);
+				break;
+			case hnswlib::MetricType::NONE:
+			default:
+				assert(false);
+				break;
+		}
+
+		initSpace(space.get());
+		for (auto [_, internal_id] : label_lookup_) {
+			auto oldEl = data_level0_memory_old + internal_id * size_data_per_element_old;
+			auto newEl = data_level0_memory_ + internal_id * size_data_per_element_;
+
+			// copy element links
+			std::memcpy(newEl, oldEl, size_links_level0_);
+
+			// copy quantized element data
+			auto from = std::span(reinterpret_cast<float*>(oldEl + offsetData_), dim);
+			auto to = std::span(reinterpret_cast<uint8_t*>(newEl + offsetData_), dim);
+
+			quantizer_->Quantize(from, to);
+
+			// copy element label
+			std::memcpy(newEl + label_offset_, oldEl + label_offset_old, sizeof(labeltype));
+		}
+
+		free(data_level0_memory_old);
 	}
 
 	~HierarchicalNSW() { clear(); }
@@ -378,7 +467,7 @@ public:
 	}
 
 	struct [[nodiscard]] CompareByFirst {
-		constexpr bool operator()(const std::pair<dist_t, tableint>& a, const std::pair<dist_t, tableint>& b) const noexcept {
+		constexpr bool operator()(const std::pair<float, tableint>& a, const std::pair<float, tableint>& b) const noexcept {
 			return a.first < b.first;
 		}
 	};
@@ -418,7 +507,7 @@ public:
 	size_t getDeletedCountUnsafe() { return num_deleted_; }
 
 	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
-	std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> searchBaseLayer(
+	std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> searchBaseLayer(
 		tableint ep_id, const void* data_point, tableint data_point_id, int layer) {
 		static_assert(concurrentUpdates == ExpectConcurrentUpdates::No || isSynchronizationPossible<LockerT>(),
 					  "Unable to handle concurrent updates without synchronization");
@@ -430,30 +519,30 @@ public:
 		vl_type* visited_array = vl->mass;
 		vl_type visited_array_tag = vl->curV;
 
-		using pair_t = std::pair<dist_t, tableint>;
+		using pair_t = std::pair<float, tableint>;
 		std::vector<pair_t> container1, container2;
 		container1.reserve(256);
 		container2.reserve(256);
 		std::priority_queue<pair_t, std::vector<pair_t>, CompareByFirst> top_candidates(CompareByFirst(), std::move(container1));
 		std::priority_queue<pair_t, std::vector<pair_t>, CompareByFirst> candidateSet(CompareByFirst(), std::move(container2));
 
-		dist_t lowerBound;
+		float lowerBound;
 		{
 			SharedLock lck{data_updates_locks_[ep_id]};
 			if (!isMarkedDeleted(ep_id)) {
-				dist_t dist = fstdistfunc_(data_point, data_point_id, getDataByInternalId(ep_id), ep_id);
+				float dist = fstdistfunc_(data_point, data_point_id, getDataByInternalId(ep_id), ep_id);
 				top_candidates.emplace(dist, ep_id);
 				lowerBound = dist;
 				candidateSet.emplace(-dist, ep_id);
 			} else {
-				lowerBound = std::numeric_limits<dist_t>::max();
+				lowerBound = std::numeric_limits<float>::max();
 				candidateSet.emplace(-lowerBound, ep_id);
 			}
 		}
 		visited_array[ep_id] = visited_array_tag;
 
 		while (!candidateSet.empty()) {
-			std::pair<dist_t, tableint> curr_el_pair = candidateSet.top();
+			std::pair<float, tableint> curr_el_pair = candidateSet.top();
 			if ((-curr_el_pair.first) > lowerBound && top_candidates.size() == ef_construction_) {
 				break;
 			}
@@ -492,7 +581,7 @@ public:
 				visited_array[candidate_id] = visited_array_tag;
 
 				SharedLock lck{data_updates_locks_[candidate_id]};
-				dist_t dist1 = fstdistfunc_(data_point, data_point_id, getDataByInternalId(candidate_id), candidate_id);
+				float dist1 = fstdistfunc_(data_point, data_point_id, getDataByInternalId(candidate_id), candidate_id);
 				if (top_candidates.size() < ef_construction_ || lowerBound > dist1) {
 					candidateSet.emplace(-dist1, candidate_id);
 #if REINDEXER_WITH_SSE
@@ -520,24 +609,24 @@ public:
 
 	// bare_bone_search means there is no check for deletions and stop condition is ignored in return of extra performance
 	template <bool bare_bone_search = true, bool collect_metrics = false>
-	std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> searchBaseLayerST(
+	std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> searchBaseLayerST(
 		tableint ep_id, const void* data_point, size_t ef, BaseFilterFunctor* isIdAllowed = nullptr,
-		BaseSearchStopCondition<dist_t>* stop_condition = nullptr) const {
+		BaseSearchStopCondition<float>* stop_condition = nullptr) const {
 		VisitedList* vl = visited_list_pool_->getFreeVisitedList();
 		vl_type* visited_array = vl->mass;
 		vl_type visited_array_tag = vl->curV;
 
-		using pair_t = std::pair<dist_t, tableint>;
+		using pair_t = std::pair<float, tableint>;
 		std::vector<pair_t> container1, container2;
 		container1.reserve(ef);
 		container2.reserve(ef);
 		std::priority_queue<pair_t, std::vector<pair_t>, CompareByFirst> top_candidates(CompareByFirst(), std::move(container1));
 		std::priority_queue<pair_t, std::vector<pair_t>, CompareByFirst> candidate_set(CompareByFirst(), std::move(container2));
 
-		dist_t lowerBound;
+		float lowerBound;
 		if (bare_bone_search || (!isMarkedDeleted(ep_id) && ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(ep_id))))) {
 			auto ep_data = getDataByInternalId(ep_id);
-			dist_t dist = fstdistfunc_(data_point, ep_data, ep_id);
+			float dist = fstdistfunc_(data_point, ep_data, ep_id);
 			lowerBound = dist;
 			top_candidates.emplace(dist, ep_id);
 			if (!bare_bone_search && stop_condition) {
@@ -545,15 +634,15 @@ public:
 			}
 			candidate_set.emplace(-dist, ep_id);
 		} else {
-			lowerBound = std::numeric_limits<dist_t>::max();
+			lowerBound = std::numeric_limits<float>::max();
 			candidate_set.emplace(-lowerBound, ep_id);
 		}
 
 		visited_array[ep_id] = visited_array_tag;
 
 		while (!candidate_set.empty()) {
-			std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
-			dist_t candidate_dist = -current_node_pair.first;
+			std::pair<float, tableint> current_node_pair = candidate_set.top();
+			float candidate_dist = -current_node_pair.first;
 
 			bool flag_stop_search;
 			if (bare_bone_search) {
@@ -598,7 +687,7 @@ public:
 					visited_array[candidate_id] = visited_array_tag;
 
 					char* currObj1 = (getDataByInternalId(candidate_id));
-					dist_t dist = fstdistfunc_(data_point, currObj1, candidate_id);
+					float dist = fstdistfunc_(data_point, currObj1, candidate_id);
 					bool flag_consider_candidate;
 					if (!bare_bone_search && stop_condition) {
 						flag_consider_candidate = stop_condition->should_consider_candidate(dist, lowerBound);
@@ -652,7 +741,7 @@ public:
 
 	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
 	void getNeighborsByHeuristic2(
-		std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>& top_candidates,
+		std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst>& top_candidates,
 		const size_t M) {
 		static_assert(concurrentUpdates == ExpectConcurrentUpdates::No || isSynchronizationPossible<LockerT>(),
 					  "Unable to handle concurrent updates without synchronization");
@@ -662,8 +751,8 @@ public:
 			return;
 		}
 
-		std::priority_queue<std::pair<dist_t, tableint>> queue_closest;
-		std::vector<std::pair<dist_t, tableint>> return_list;
+		std::priority_queue<std::pair<float, tableint>> queue_closest;
+		std::vector<std::pair<float, tableint>> return_list;
 		while (top_candidates.size() > 0) {
 			queue_closest.emplace(-top_candidates.top().first, top_candidates.top().second);
 			top_candidates.pop();
@@ -673,17 +762,17 @@ public:
 			if (return_list.size() >= M) {
 				break;
 			}
-			std::pair<dist_t, tableint> curent_pair = queue_closest.top();
-			dist_t dist_to_query = -curent_pair.first;
+			std::pair<float, tableint> curent_pair = queue_closest.top();
+			float dist_to_query = -curent_pair.first;
 			queue_closest.pop();
 			bool good = true;
 
-			for (std::pair<dist_t, tableint> second_pair : return_list) {
+			for (std::pair<float, tableint> second_pair : return_list) {
 				SharedLock lck1{data_updates_locks_[std::min(curent_pair.second, second_pair.second)]};
 				SharedLock lck2{data_updates_locks_[std::max(curent_pair.second, second_pair.second)],
 								reindexer::SkipLock(curent_pair.second == second_pair.second)};
-				dist_t curdist = fstdistfunc_(getDataByInternalId(second_pair.second), second_pair.second,
-											  getDataByInternalId(curent_pair.second), curent_pair.second);
+				float curdist = fstdistfunc_(getDataByInternalId(second_pair.second), second_pair.second,
+											 getDataByInternalId(curent_pair.second), curent_pair.second);
 				if (curdist < dist_to_query) {
 					good = false;
 					break;
@@ -694,7 +783,7 @@ public:
 			}
 		}
 
-		for (std::pair<dist_t, tableint> curent_pair : return_list) {
+		for (std::pair<float, tableint> curent_pair : return_list) {
 			top_candidates.emplace(-curent_pair.first, curent_pair.second);
 		}
 	}
@@ -718,8 +807,8 @@ public:
 	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
 	tableint mutuallyConnectNewElement(
 		tableint cur_c,
-		std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>& top_candidates,
-		int level, bool isUpdate) {
+		std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst>& top_candidates, int level,
+		bool isUpdate) {
 		static_assert(concurrentUpdates == ExpectConcurrentUpdates::No || isSynchronizationPossible<LockerT>(),
 					  "Unable to handle concurrent updates without synchronization");
 		using UniqueLock = typename LockerT::template UniqueLock<typename LockVecT::MutexT>;
@@ -813,14 +902,14 @@ public:
 						typename LockerT::template Concurrent<concurrentUpdates>::template SharedLock<typename UpdateOpsMutexLocks::MutexT>;
 					// finding the "weakest" element to replace it with the new one
 					const auto id2 = selectedNeighbors[idx];
-					dist_t d_max = 0;
+					float d_max = 0;
 					{
 						SharedLock lck1{data_updates_locks_[std::min(cur_c, id2)]};
 						SharedLock lck2{data_updates_locks_[std::max(cur_c, id2)], reindexer::SkipLock(cur_c == id2)};
 						d_max = fstdistfunc_(getDataByInternalId(cur_c), cur_c, getDataByInternalId(id2), id2);
 					}
 					// Heuristic:
-					std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidates;
+					std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> candidates;
 					candidates.emplace(d_max, cur_c);
 
 					for (size_t j = 0; j < sz_link_list_other; j++) {
@@ -935,9 +1024,16 @@ public:
 		}
 	}
 
-	void initSpace(SpaceInterface<dist_t>* s) {
+	void initSpace(SpaceInterface* s) {
 		data_size_ = s->get_data_size();
-		fstdistfunc_ = DistCalculator{s->get_dist_calculator_param(), max_elements_};
+
+		DistCalculatorParam params = s->get_dist_calculator_param();
+		params.quantizeParams = QuantizeDistCalcParams(quantizer_);
+		auto newDistCalculator = DistCalculator{std::move(params), max_elements_};
+		if (quantizer_) {
+			newDistCalculator.CopyValuesFrom(fstdistfunc_);
+		}
+		fstdistfunc_ = std::move(newDistCalculator);
 
 		size_links_level0_ = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
 		size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labeltype);
@@ -982,7 +1078,7 @@ public:
 	}
 
 	// *NOT* thread-safe
-	void loadIndex(IReader& reader, SpaceInterface<dist_t>* s) {
+	void loadIndex(IReader& reader, SpaceInterface* s) {
 		clear();
 
 		max_elements_ = reader.GetVarUInt();
@@ -1250,6 +1346,16 @@ public:
 			UpdateLockGuard lck{data_updates_locks_[internalId]};
 			// update the feature vector associated with existing point with new vector
 			memcpy(getDataByInternalId(internalId), dataPoint, data_size_);
+			{
+				SharedLock sharedLk(quantiles_update_lock_);
+
+				if (auto updatedComponents = component1Quantiles_.GetUpdated(dataPoint); updatedComponents) {
+					sharedLk.unlock();
+
+					UpdateLockGuard lk(quantiles_update_lock_);
+					component1Quantiles_.Update(*updatedComponents);
+				}
+			}
 			fstdistfunc_.AddNorm(dataPoint, internalId);
 			if (isMarkedDeleted(internalId)) {
 				unmarkDeletedInternal(internalId);
@@ -1304,7 +1410,7 @@ public:
 				// if (neigh == internalId)
 				//     continue;
 
-				std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidates;
+				std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> candidates;
 				size_t size = sCand.find(neigh) == sCand.end() ? sCand.size() : sCand.size() - 1;  // sCand guaranteed to have size >= 1
 				size_t elementsToKeep = std::min(ef_construction_, size);
 				for (auto&& cand : sCand) {
@@ -1315,7 +1421,7 @@ public:
 					SharedLock lck1{data_updates_locks_[std::min(neigh, cand)]};
 					assertrx_dbg(neigh != cand);  // Essential for the second lock
 					SharedLock lck2{data_updates_locks_[std::max(neigh, cand)]};
-					dist_t distance = fstdistfunc_(getDataByInternalId(neigh), neigh, getDataByInternalId(cand), cand);
+					float distance = fstdistfunc_(getDataByInternalId(neigh), neigh, getDataByInternalId(cand), cand);
 					if (candidates.size() < elementsToKeep) {
 						candidates.emplace(distance, cand);
 					} else {
@@ -1354,7 +1460,7 @@ public:
 		using SharedLock = typename LockerT::template SharedLock<typename UpdateOpsMutexLocks::MutexT>;
 		tableint currObj = entryPointInternalId;
 		if (dataPointLevel < maxLevel) {
-			dist_t curdist;
+			float curdist;
 			{
 				SharedLock lck{data_updates_locks_[currObj]};
 				curdist = fstdistfunc_(dataPoint, dataPointInternalId, getDataByInternalId(currObj), currObj);
@@ -1377,7 +1483,7 @@ public:
 #endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 						tableint cand = datal[i];
 
-						dist_t d;
+						float d;
 						{
 							SharedLock lck{data_updates_locks_[cand]};
 							d = fstdistfunc_(dataPoint, dataPointInternalId, getDataByInternalId(cand), cand);
@@ -1397,11 +1503,10 @@ public:
 		}
 
 		for (int level = dataPointLevel; level >= 0; level--) {
-			std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> topCandidates =
+			std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> topCandidates =
 				searchBaseLayer<LockerT, isConcurrentUpdatesAllowedByIdx()>(currObj, dataPoint, dataPointInternalId, level);
 
-			std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
-				filteredTopCandidates;
+			std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> filteredTopCandidates;
 			while (topCandidates.size() > 0) {
 				if (topCandidates.top().second != dataPointInternalId) {
 					filteredTopCandidates.push(topCandidates.top());
@@ -1514,7 +1619,16 @@ public:
 		// Initialisation of the data and label
 		setExternalLabel(cur_c, label);
 		memcpy(getDataByInternalId(cur_c), data_point, data_size_);
+		{
+			SharedLock sharedLk(quantiles_update_lock_);
 
+			if (auto updatedComponents = component1Quantiles_.GetUpdated(data_point); updatedComponents) {
+				sharedLk.unlock();
+
+				UpdateLockGuard lk(quantiles_update_lock_);
+				component1Quantiles_.Update(*updatedComponents);
+			}
+		}
 		if (curlevel) {
 			linkLists_[cur_c] = (char*)malloc(size_links_per_element_ * curlevel + 1);
 			if (linkLists_[cur_c] == nullptr) {
@@ -1525,7 +1639,7 @@ public:
 
 		if ((signed)currObj != -1) {
 			if (curlevel < maxlevelcopy) {
-				dist_t curdist;
+				float curdist;
 				{
 					DataUpdatesSharedLock lck{data_updates_locks_[currObj]};
 					curdist = fstdistfunc_(data_point, cur_c, getDataByInternalId(currObj), currObj);
@@ -1546,7 +1660,7 @@ public:
 								throw std::runtime_error("cand error");
 							}
 
-							dist_t d;
+							float d;
 							DataUpdatesSharedLock lck{data_updates_locks_[cand]};
 							d = fstdistfunc_(data_point, cur_c, getDataByInternalId(cand), cand);
 							if (d < curdist) {
@@ -1564,7 +1678,7 @@ public:
 					throw std::runtime_error("Level error");
 				}
 
-				std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates =
+				std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> top_candidates =
 					searchBaseLayer<LockerT, concurrentUpdates>(currObj, data_point, cur_c, level);
 
 				DataUpdatesSharedLock lck{data_updates_locks_[enterpoint_copy]};
@@ -1599,9 +1713,12 @@ public:
 	}
 
 	// Read-only concurrency expected
-	auto getTopCandidates(const void* query_data, size_t ef, BaseFilterFunctor* isIdAllowed) const {
+	auto getTopCandidates(const void* query_data_raw, size_t ef, BaseFilterFunctor* isIdAllowed) const {
+		const auto query_data_holder = prepareData(query_data_raw);
+		auto query_data = query_data_holder.get();
+
 		tableint currObj = enterpoint_node_;
-		dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
+		float curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
 
 		for (int level = maxlevel_; level > 0; level--) {
 			bool changed = true;
@@ -1620,7 +1737,7 @@ public:
 					if (cand < 0 || cand > max_elements_) {
 						throw std::runtime_error("cand error");
 					}
-					dist_t d = fstdistfunc_(query_data, getDataByInternalId(cand), cand);
+					float d = fstdistfunc_(query_data, getDataByInternalId(cand), cand);
 					if (d < curdist) {
 						curdist = d;
 						currObj = cand;
@@ -1638,11 +1755,11 @@ public:
 	}
 
 	// Read-only concurrency expected
-	std::priority_queue<std::pair<dist_t, labeltype>> searchKnn(const void* query_data, size_t k, size_t ef = 0,
-																BaseFilterFunctor* isIdAllowed = nullptr) const {
-		std::vector<std::pair<dist_t, labeltype>> container;
+	std::priority_queue<std::pair<float, labeltype>> searchKnn(const void* query_data, size_t k, size_t ef = 0,
+															   BaseFilterFunctor* isIdAllowed = nullptr) const {
+		std::vector<std::pair<float, labeltype>> container;
 		container.reserve(k);
-		std::priority_queue<std::pair<dist_t, labeltype>> result(std::less<std::pair<dist_t, labeltype>>(), std::move(container));
+		std::priority_queue<std::pair<float, labeltype>> result(std::less<std::pair<float, labeltype>>(), std::move(container));
 
 		if (cur_element_count == 0) {
 			return result;
@@ -1654,31 +1771,31 @@ public:
 			top_candidates.pop();
 		}
 		while (top_candidates.size() > 0) {
-			std::pair<dist_t, tableint> rez = top_candidates.top();
-			result.push(std::pair<dist_t, labeltype>(rez.first, getExternalLabel(rez.second)));
+			std::pair<float, tableint> rez = top_candidates.top();
+			result.push(std::pair<float, labeltype>(rez.first, getExternalLabel(rez.second)));
 			top_candidates.pop();
 		}
 		return result;
 	}
 
 	// Read-only concurrency expected
-	std::priority_queue<std::pair<dist_t, labeltype>> searchRange(const void* query_data, float radius, size_t ef,
-																  BaseFilterFunctor* isIdAllowed = nullptr) const {
+	std::priority_queue<std::pair<float, labeltype>> searchRange(const void* query_data, float radius, size_t ef,
+																 BaseFilterFunctor* isIdAllowed = nullptr) const {
 		return getNeighboursWithinRadius(getTopCandidates(query_data, ef, isIdAllowed), query_data, radius, isIdAllowed);
 	}
 
 	auto getNeighboursWithinRadius(
-		std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates,
+		std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> top_candidates,
 		const void* data_point, float radius, BaseFilterFunctor* isIdAllowed = nullptr) const {
-		std::vector<std::pair<dist_t, labeltype>> container;
+		std::vector<std::pair<float, labeltype>> container;
 		container.reserve(top_candidates.size());
-		std::priority_queue<std::pair<dist_t, labeltype>> result(std::less<std::pair<dist_t, labeltype>>(), std::move(container));
+		std::priority_queue<std::pair<float, labeltype>> result(std::less<std::pair<float, labeltype>>(), std::move(container));
 
 		VisitedList* vl = visited_list_pool_->getFreeVisitedList();
 		vl_type* visited_array = vl->mass;
 		vl_type visited_array_tag = vl->curV;
 
-		std::queue<std::pair<dist_t, tableint>> radius_queue;
+		std::queue<std::pair<float, tableint>> radius_queue;
 		while (!top_candidates.empty()) {
 			const auto& cand = top_candidates.top();
 			if (cand.first < radius) {
@@ -1705,7 +1822,7 @@ public:
 				if (visited_array[candidate_id] != visited_array_tag) {
 					visited_array[candidate_id] = visited_array_tag;
 					if ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(candidate_id))) {
-						dist_t dist = fstdistfunc_(data_point, getDataByInternalId(candidate_id), candidate_id);
+						float dist = fstdistfunc_(data_point, getDataByInternalId(candidate_id), candidate_id);
 						if (dist < radius) {
 							radius_queue.emplace(dist, candidate_id);
 							result.emplace(dist, getExternalLabel(candidate_id));
@@ -1721,16 +1838,16 @@ public:
 	}
 
 	// Read-only concurrency expected
-	std::vector<std::pair<dist_t, labeltype>> searchStopConditionClosest(const void* query_data,
-																		 BaseSearchStopCondition<dist_t>& stop_condition,
-																		 BaseFilterFunctor* isIdAllowed = nullptr) const {
-		std::vector<std::pair<dist_t, labeltype>> result;
+	std::vector<std::pair<float, labeltype>> searchStopConditionClosest(const void* query_data,
+																		BaseSearchStopCondition<float>& stop_condition,
+																		BaseFilterFunctor* isIdAllowed = nullptr) const {
+		std::vector<std::pair<float, labeltype>> result;
 		if (cur_element_count == 0) {
 			return result;
 		}
 
 		tableint currObj = enterpoint_node_;
-		dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
+		float curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
 
 		for (int level = maxlevel_; level > 0; level--) {
 			bool changed = true;
@@ -1749,7 +1866,7 @@ public:
 					if (cand < 0 || cand > max_elements_) {
 						throw std::runtime_error("cand error");
 					}
-					dist_t d = fstdistfunc_(query_data, getDataByInternalId(cand), cand);
+					float d = fstdistfunc_(query_data, getDataByInternalId(cand), cand);
 
 					if (d < curdist) {
 						curdist = d;
@@ -1760,7 +1877,7 @@ public:
 			}
 		}
 
-		std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
+		std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> top_candidates;
 		top_candidates = searchBaseLayerST<false>(currObj, query_data, 0, isIdAllowed, &stop_condition);
 
 		size_t sz = top_candidates.size();
@@ -1807,10 +1924,8 @@ public:
 	}
 };
 
-template <typename dist_t>
-using HierarchicalNSWST = HierarchicalNSW<dist_t, Synchronization::None>;
+using HierarchicalNSWST = HierarchicalNSW<Synchronization::None>;
 
-template <typename dist_t>
-using HierarchicalNSWMT = HierarchicalNSW<dist_t, Synchronization::OnInsertions>;
+using HierarchicalNSWMT = HierarchicalNSW<Synchronization::OnInsertions>;
 
 }  // namespace hnswlib

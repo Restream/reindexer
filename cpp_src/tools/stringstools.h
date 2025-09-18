@@ -331,7 +331,7 @@ RX_ALWAYS_INLINE void deepCopy(std::string& dst, const std::string& src) {
 constexpr size_t kTmpNsPostfixLen = 20;
 constexpr std::string_view kTmpNsSuffix = "_tmp_";
 constexpr char kTmpNsPrefix = '@';
-RX_ALWAYS_INLINE bool isTmpNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && name[0] == kTmpNsPrefix; }
+RX_ALWAYS_INLINE bool isTmpNamespaceName(std::string_view name) noexcept { return !name.empty() && name[0] == kTmpNsPrefix; }
 inline std::string createTmpNamespaceName(std::string_view baseName) {
 	return std::string({kTmpNsPrefix}).append(baseName).append(kTmpNsSuffix).append(randStringAlph(kTmpNsPostfixLen));
 }

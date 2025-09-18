@@ -14,8 +14,8 @@ private:
 public:
 	typedef T element_type;
 
-	constexpr intrusive_ptr() noexcept = default;
-	constexpr intrusive_ptr(std::nullptr_t) noexcept {}
+	constexpr intrusive_ptr() noexcept : px{nullptr} {}
+	constexpr intrusive_ptr(std::nullptr_t) noexcept : intrusive_ptr() {}
 	intrusive_ptr(T* p) noexcept : px(p) { intrusive_ptr_add_ref(px); }
 	intrusive_ptr(T* p, bool add_ref) noexcept : px(p) {
 		if (add_ref) {
@@ -26,6 +26,8 @@ public:
 	intrusive_ptr(const intrusive_ptr<U>& rhs) noexcept : px(rhs.get()) {
 		intrusive_ptr_add_ref(px);
 	}
+	// TODO: Looks like false-positive. We should check this again on the newer clang-tidy versions (v21)
+	// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
 	intrusive_ptr(const intrusive_ptr& rhs) noexcept : px(rhs.px) { intrusive_ptr_add_ref(px); }
 	intrusive_ptr(intrusive_ptr&& rhs) noexcept : px(rhs.px) { rhs.px = 0; }
 	~intrusive_ptr() { intrusive_ptr_release(px); }
@@ -64,7 +66,7 @@ public:
 		return px;
 	}
 
-	typedef T* this_type::*unspecified_bool_type;
+	typedef T* this_type::* unspecified_bool_type;
 
 	operator unspecified_bool_type() const noexcept { return px == 0 ? 0 : &this_type::px; }
 	void swap(intrusive_ptr& rhs) noexcept { std::swap(px, rhs.px); }

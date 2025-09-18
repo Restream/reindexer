@@ -194,7 +194,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 		if (this->opts_.IsPK()) {
 			WrSerializer wrser;
 			wrser << "Can't insert item in PK index, duplicate key - ";
-			key.Dump(wrser, CheckIsStringPrintable::No);
+			key.Dump(wrser, this->GetPayloadType(), this->Fields(), CheckIsStringPrintable::No);
 			throw Error(errLogic, wrser.Slice());
 		}
 	}

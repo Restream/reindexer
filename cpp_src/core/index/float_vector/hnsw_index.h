@@ -9,7 +9,7 @@ namespace reindexer {
 
 class HnswKnnRawResult;
 
-template <template <typename> typename Map>
+template <typename Map>
 class [[nodiscard]] HnswIndexBase final : public FloatVectorIndex {
 	using Base = FloatVectorIndex;
 	using FloatType = float;
@@ -22,9 +22,7 @@ public:
 
 	std::unique_ptr<Index> Clone(size_t newCapacity) const override;
 	IndexMemStat GetMemStat(const RdxContext&) noexcept override;
-	bool IsSupportMultithreadTransactions() const noexcept override {
-		return std::is_same_v<Map<FloatType>, hnswlib::HierarchicalNSWMT<FloatType>>;
-	}
+	bool IsSupportMultithreadTransactions() const noexcept override { return std::is_same_v<Map, hnswlib::HierarchicalNSWMT>; }
 	void GrowFor(size_t newElementsCount) override;
 	StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 											const std::atomic_int32_t& cancel) noexcept override;
@@ -47,11 +45,11 @@ private:
 	static size_t newSize(size_t currentSize) noexcept;
 	template <typename ParamsT>
 	HnswKnnRawResult search(const float*, const ParamsT&) const;
-	static std::unique_ptr<hnswlib::SpaceInterface<FloatType>> newSpace(size_t dimension, VectorMetric);
+	static std::unique_ptr<hnswlib::SpaceInterface> newSpace(size_t dimension, VectorMetric);
 	void clearMap() noexcept;
 
-	std::unique_ptr<hnswlib::SpaceInterface<FloatType>> space_;
-	std::unique_ptr<Map<FloatType>> map_;
+	std::unique_ptr<hnswlib::SpaceInterface> space_;
+	std::unique_ptr<Map> map_;
 };
 
 using HnswIndexST = HnswIndexBase<hnswlib::HierarchicalNSWST>;

@@ -199,9 +199,15 @@ template <typename Compare>
 struct btree_key_compare_to_adapter : Compare {
 	btree_key_compare_to_adapter() {}
 	btree_key_compare_to_adapter(const Compare &c) : Compare(c) {}
+	btree_key_compare_to_adapter(Compare &&c) : Compare(std::move(c)) {}
 	btree_key_compare_to_adapter(const btree_key_compare_to_adapter<Compare> &c) : Compare(c) {}
+	btree_key_compare_to_adapter(btree_key_compare_to_adapter<Compare> &&c) : Compare(std::move(c)) {}
 	btree_key_compare_to_adapter<Compare> &operator=(const btree_key_compare_to_adapter<Compare> &c) {
 		Compare::operator=(c);
+		return *this;
+	}
+	btree_key_compare_to_adapter<Compare> &operator=(btree_key_compare_to_adapter<Compare> &&c) {
+		Compare::operator=(std::move(c));
 		return *this;
 	}
 };

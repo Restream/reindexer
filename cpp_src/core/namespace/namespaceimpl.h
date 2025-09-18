@@ -345,7 +345,7 @@ public:
 		auto rlck = rLock(ctx);
 		return isSystem();
 	}
-	bool IsTemporary(const RdxContext& ctx) const { return GetReplState(ctx).temporary; }
+	bool IsTemporary(const RdxContext& ctx) const { return isTmpNamespaceName(GetName(ctx)); }
 	void SetNsVersion(lsn_t version, const RdxContext& ctx);
 
 	void EnableStorage(const std::string& path, StorageOpts opts, StorageType storageType, const RdxContext& ctx);
@@ -482,15 +482,13 @@ private:
 	void addIndex(const IndexDef& indexDef, bool disableTmVersionInc, bool skipEqualityCheck = false);
 	void doAddIndex(const IndexDef& indexDef, bool skipEqualityCheck, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void addCompositeIndex(const IndexDef& indexDef);
-	bool checkIfSameIndexExists(const IndexDef& indexDef, bool* requireTtlUpdate);
-	template <typename PathsT, typename JsonPathsContainerT>
-	void createCompositeFieldsSet(const std::string& idxName, const PathsT& paths, FieldsSet& fields);
+	FieldsSet createFieldsSetFromJsonPaths(const IndexDef& indexDef);
+	bool checkIfSameIndexExists(const IndexDef& indexDef, bool* requireTtlUpdate) const;
 	void verifyCompositeIndex(const IndexDef& indexDef) const;
 	void verifyEmbeddingFields(const h_vector<std::string, 1>& fields, std::string_view fieldName, std::string_view action) const;
 	void verifyUpsertEmbedder(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpsertIndex(std::string_view action, const IndexDef& indexDef) const;
-	void verifyUpdateIndex(const IndexDef& indexDef) const;
-	void verifyUpdateCompositeIndex(const IndexDef& indexDef) const;
+	void verifyUpdateIndex(const IndexDef& indexDef);
 	bool updateIndex(const IndexDef& indexDef, bool disableTmVersionInc);
 	bool doUpdateIndex(const IndexDef& indexDef, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void dropIndex(const IndexDef& index, bool disableTmVersionInc);
@@ -505,7 +503,8 @@ private:
 					   int oldTmVersion, std::optional<PKModifyRevertData>&& modifyData, UpdatesContainer& pendedRepl);
 
 	template <NeedRollBack needRollBack>
-	RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(size_t startIdx, size_t endIdx);
+	RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(FieldChangeType fieldChangeType, size_t startIdx,
+																			 size_t endIdx);
 	NamespaceDef getDefinition() const;
 	IndexDef getIndexDefinition(const std::string& indexName) const;
 	IndexDef getIndexDefinition(size_t i) const;
@@ -604,6 +603,7 @@ private:
 	NamespaceImpl(const NamespaceImpl& src, size_t newCapacity, AsyncStorage::FullLock& storageLock);
 
 	bool isSystem() const noexcept { return isSystemNamespaceNameFast(name_); }
+	bool isTemporary() const noexcept { return isTmpNamespaceName(name_); }
 	IdType createItem(size_t realSize, IdType suggestedId, const NsContext& ctx);
 
 	void processWalRecord(WALRecord&& wrec, const NsContext& ctx, lsn_t itemLsn = lsn_t(), Item* item = nullptr);
@@ -612,7 +612,7 @@ private:
 	template <typename QueryStatsCalculatorT>
 	void replicate(UpdatesContainer&& recs, NamespaceImpl::Locker::WLockT&& wlck, bool tryForceFlush,
 				   QueryStatsCalculatorT&& statCalculator, const NsContext& ctx) {
-		if (!repl_.temporary) {
+		if (!isTemporary()) {
 			assertrx(!ctx.isCopiedNsRequest);
 			auto err = observers_.SendUpdates(
 				std::move(recs),
@@ -638,8 +638,6 @@ private:
 			}
 		}
 	}
-
-	void setTemporary() noexcept { repl_.temporary = true; }
 
 	void removeIndex(std::unique_ptr<Index>&&);
 	void dumpIndex(std::ostream& os, std::string_view index) const;

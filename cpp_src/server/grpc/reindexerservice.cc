@@ -284,7 +284,8 @@ static IndexDef toIndexDef(const Index& src) {
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
 	if (status.ok()) {
 		EnumNamespacesOpts opts;
-		opts.OnlyNames(request->options().onlynames());
+		const bool onlyNames = request->options().onlynames();
+		opts.OnlyNames(onlyNames);
 		opts.HideSystem(request->options().hidesystems());
 		opts.WithClosed(request->options().withclosed());
 		opts.WithFilter(request->options().filter());
@@ -296,36 +297,37 @@ static IndexDef toIndexDef(const Index& src) {
 			for (const NamespaceDef& src : nsDefs) {
 				Namespace* nsdef = response->add_namespacesdefinitions();
 				nsdef->set_name(src.name);
-				nsdef->set_istemporary(src.isTemporary);
 
-				StorageOptions* storageOpts = nsdef->storageoptions().New();
-				storageOpts->set_enabled(src.storage.IsEnabled());
-				storageOpts->set_droponfileformaterror(src.storage.IsDropOnFileFormatError());
-				storageOpts->set_createifmissing(src.storage.IsCreateIfMissing());
-				storageOpts->set_verifychecksums(src.storage.IsVerifyChecksums());
-				storageOpts->set_fillcache(src.storage.IsFillCache());
-				storageOpts->set_sync(src.storage.IsSync());
-				nsdef->set_allocated_storageoptions(storageOpts);
+				if (!onlyNames) {
+					StorageOptions* storageOpts = nsdef->storageoptions().New();
+					storageOpts->set_enabled(src.storage.IsEnabled());
+					storageOpts->set_droponfileformaterror(src.storage.IsDropOnFileFormatError());
+					storageOpts->set_createifmissing(src.storage.IsCreateIfMissing());
+					storageOpts->set_verifychecksums(src.storage.IsVerifyChecksums());
+					storageOpts->set_fillcache(src.storage.IsFillCache());
+					storageOpts->set_sync(src.storage.IsSync());
+					nsdef->set_allocated_storageoptions(storageOpts);
 
-				for (const IndexDef& index : src.indexes) {
-					Index* indexDef = nsdef->add_indexesdefinitions();
-					indexDef->set_name(index.Name());
-					indexDef->set_fieldtype(index.FieldType());
-					indexDef->set_indextype(index.IndexTypeStr());
-					indexDef->set_expireafter(index.ExpireAfter());
-					for (const std::string& jsonPath : index.JsonPaths()) {
-						indexDef->add_jsonpaths(jsonPath);
+					for (const IndexDef& index : src.indexes) {
+						Index* indexDef = nsdef->add_indexesdefinitions();
+						indexDef->set_name(index.Name());
+						indexDef->set_fieldtype(index.FieldType());
+						indexDef->set_indextype(index.IndexTypeStr());
+						indexDef->set_expireafter(index.ExpireAfter());
+						for (const std::string& jsonPath : index.JsonPaths()) {
+							indexDef->add_jsonpaths(jsonPath);
+						}
+
+						IndexOptions* indexOpts = indexDef->options().New();
+						indexOpts->set_ispk(*index.Opts().IsPK());
+						indexOpts->set_config(index.Opts().Config());
+						indexOpts->set_isarray(*index.Opts().IsArray());
+						indexOpts->set_isdense(*index.Opts().IsDense());
+						indexOpts->set_issparse(*index.Opts().IsSparse());
+						indexOpts->set_collatemode(IndexOptions::CollateMode(index.Opts().GetCollateMode()));
+						indexOpts->set_rtreetype(static_cast<reindexer::grpc::IndexOptions_RTreeType>(index.Opts().RTreeType()));
+						indexDef->set_allocated_options(indexOpts);
 					}
-
-					IndexOptions* indexOpts = indexDef->options().New();
-					indexOpts->set_ispk(*index.Opts().IsPK());
-					indexOpts->set_config(index.Opts().Config());
-					indexOpts->set_isarray(*index.Opts().IsArray());
-					indexOpts->set_isdense(*index.Opts().IsDense());
-					indexOpts->set_issparse(*index.Opts().IsSparse());
-					indexOpts->set_collatemode(IndexOptions::CollateMode(index.Opts().GetCollateMode()));
-					indexOpts->set_rtreetype(static_cast<reindexer::grpc::IndexOptions_RTreeType>(index.Opts().RTreeType()));
-					indexDef->set_allocated_options(indexOpts);
 				}
 			}
 		}
@@ -512,7 +514,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 		}
 		case EncodingType::PROTOBUF: {
 			for (auto& it : qr) {
-				status = it.GetProtobuf(wrser, false);
+				status = it.GetProtobuf(wrser);
 				if (!status.ok()) {
 					return status;
 				}
@@ -662,8 +664,8 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	return status;
 }
 
-::grpc::Status ReindexerService::SelectSql(::grpc::ServerContext*, const SelectSqlRequest* request,
-										   ::grpc::ServerWriter<QueryResultsResponse>* writer) {
+::grpc::Status ReindexerService::ExecSql(::grpc::ServerContext*, const SqlRequest* request,
+										 ::grpc::ServerWriter<QueryResultsResponse>* writer) {
 	reindexer::QueryResults qr;
 	Error status = execSqlQueryByType(qr, *request);
 	if (status.ok()) {
@@ -833,6 +835,7 @@ void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
 					(void)status;  // ignore
 				}
 			}
+			logFmt(LogWarning, "GRPC transaction with id '{}' has expired", it->first);
 			it = transactions_.erase(it);
 		} else {
 			++it;
@@ -978,7 +981,7 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 	return ::grpc::Status::OK;
 }
 
-Error ReindexerService::execSqlQueryByType(QueryResults& res, const SelectSqlRequest& request) {
+Error ReindexerService::execSqlQueryByType(QueryResults& res, const SqlRequest& request) {
 	try {
 		reindexer_server::UserRole requiredRole;
 		reindexer::Query q = reindexer::Query::FromSQL(request.sql());

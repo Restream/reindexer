@@ -45,7 +45,7 @@ KeyValueType Item::GetIndexType(int field) const noexcept {
 	return impl_->Type().Field(field).Type();
 }
 
-std::string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
+std::string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath(); }
 
 template <>
 Point Item::FieldRef::As<Point>() const {
@@ -62,7 +62,7 @@ Item::FieldRef::operator Variant() const {
 	if (field_ >= 0) {
 		itemImpl_->GetPayload().Get(field_, kr);
 	} else {
-		kr = itemImpl_->GetValueByJSONPath(jsonPath_);
+		kr = itemImpl_->GetValueByJSONPath(jsonPath());
 	}
 
 	if (kr.size() != 1) {
@@ -78,14 +78,29 @@ Item::FieldRef::operator VariantArray() const {
 		itemImpl_->GetPayload().Get(field_, kr);
 		return kr;
 	}
-	return itemImpl_->GetValueByJSONPath(jsonPath_);
+	return itemImpl_->GetValueByJSONPath(jsonPath());
+}
+
+void Item::FieldRef::throwIfAssignFieldMultyJsonPath() const {
+	int field = field_ >= 0 ? field_ : itemImpl_->Type()->FieldByJsonPath(jsonPath());
+
+	if (field < 0) {
+		return;
+	}
+
+	if (auto& fieldPl = itemImpl_->Type().Field(field); fieldPl.JsonPaths().size() > 1) {
+		throw Error(errLogic, "It is not allowed to use fields with multiple json paths in the Item::operator[]. Index name = `{}`",
+					fieldPl.Name());
+	}
 }
 
 Item::FieldRef& Item::FieldRef::operator=(Variant kr) {
+	throwIfAssignFieldMultyJsonPath();
+
 	if (field_ >= 0) {
 		itemImpl_->SetField(field_, VariantArray{std::move(kr)});
 	} else {
-		itemImpl_->SetField(jsonPath_, VariantArray{std::move(kr)});
+		itemImpl_->SetField(jsonPath(), VariantArray{std::move(kr)});
 	}
 
 	return *this;
@@ -98,7 +113,7 @@ Item::FieldRef& Item::FieldRef::operator=(const VariantArray& krs) {
 	if (field_ >= 0) {
 		itemImpl_->SetField(field_, krs);
 	} else {
-		itemImpl_->SetField(jsonPath_, krs);
+		itemImpl_->SetField(jsonPath(), krs);
 	}
 	return *this;
 }
@@ -112,7 +127,7 @@ Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 		rx_unused = krs.MarkArray();
 		krs.reserve(arr.size());
 		std::transform(arr.begin(), arr.end(), std::back_inserter(krs), [](const T& t) { return Variant(t); });
-		itemImpl_->SetField(jsonPath_, krs);
+		itemImpl_->SetField(jsonPath(), krs);
 		return *this;
 	}
 
@@ -208,13 +223,26 @@ Item::FieldRef Item::operator[](int field) const {
 	return FieldRef(field, impl_, notSet);
 }
 
-Item::FieldRef Item::FieldRefByName(std::string_view name, ItemImpl& impl) noexcept {
+Item::FieldRef Item::FieldRefByNameOrJsonPath(std::string_view name, ItemImpl& impl) noexcept {
 	int field = 0;
-	if (impl.Type().FieldByName(name, field)) {
+
+	if (!impl.Type().FieldByName(name, field)) {
+		field = impl.Type()->FieldByJsonPath(name);
+		if (field > 0 && impl.Type().Field(field).JsonPaths().size() > 1) {
+			return FieldRef(name, &impl, false);
+		}
+	}
+
+	if (field > 0) {
 		const bool notSet = impl.Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl.fieldsFilter_ &&
 							!impl.fieldsFilter_->ContainsVector(field);
 		return FieldRef(field, &impl, notSet);
 	} else {
+		const auto& sparseIndexes = impl.tagsMatcher().SparseIndexes();
+		if (auto it = std::find_if(sparseIndexes.begin(), sparseIndexes.end(), [&name](const auto& data) { return data.name == name; });
+			it != sparseIndexes.end()) {
+			return FieldRef(impl.tagsMatcher().Path2Name(it->paths[0]), &impl, false);
+		}
 		return FieldRef(name, &impl, false);
 	}
 }

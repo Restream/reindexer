@@ -107,31 +107,37 @@ public:
 		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, injectedFrom_{injectedFrom} {
 		rx_unused = adjust(AdjustMode::Default);
 		Verify();
+		ommitExcesiveArguments();
 	}
 	template <concepts::ConvertibleToString Str>
 	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(IsDistinct_True) {
 		rx_unused = adjust(AdjustMode::Default);
 		Verify();
+		ommitExcesiveArguments();
 	}
 	template <concepts::ConvertibleToVariantArray VA>
 	QueryEntry(QueryField&& field, CondType cond, VA&& v) : QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond} {
 		rx_unused = adjust(AdjustMode::Default);
 		Verify();
+		ommitExcesiveArguments();
 	}
 	template <concepts::ConvertibleToVariantArray VA>
 	QueryEntry(QueryField&& field, CondType cond, VA&& v, ForcedSortOptEntryTag)
 		: QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond}, forcedSortOptEntry_{IsForcedSortOptEntry_True} {
 		rx_unused = adjust(AdjustMode::Default);
 		Verify();
+		ommitExcesiveArguments();
 	}
 	QueryEntry(QueryField&& field, CondType cond, IgnoreEmptyValues) : QueryField(std::move(field)), condition_(cond) {
 		rx_unused = adjust(AdjustMode::Default);
 		VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(condition_, values_);
+		ommitExcesiveArguments();
 	}
 	template <concepts::ConvertibleToVariantArray VA>
 	QueryEntry(const QueryEntry& qe, CondType cond, VA&& v) : QueryField{qe}, values_{std::forward<VA>(v)}, condition_(cond) {
 		rx_unused = adjust(AdjustMode::Default);
 		Verify();
+		ommitExcesiveArguments();
 	}
 	CondType Condition() const noexcept { return condition_; }
 	const VariantArray& Values() const& noexcept { return values_; }
@@ -191,6 +197,11 @@ private:
 	enum class [[nodiscard]] AdjustMode { Default, DryRun };
 
 	bool adjust(AdjustMode mode) noexcept;
+	void ommitExcesiveArguments() {
+		if (condition_ == CondAny || condition_ == CondEmpty) {
+			values_.Clear();
+		}
+	}
 
 	VariantArray values_;
 	CondType condition_{CondAny};
@@ -442,7 +453,13 @@ public:
 	KnnSearchParams Params() const noexcept { return params_; }
 	bool FieldsHaveBeenSet() const noexcept { return idxNo_ != IndexValueType::NotSet; }
 	const std::string& FieldName() const& noexcept { return fieldName_; }
-	void SetIndexNo(int idx) noexcept { idxNo_ = idx; }
+	void SetIndexNo(int idx, std::string_view idxName) noexcept {
+		idxNo_ = idx;
+		// Explicit equality check to avoid extra allocation on Centos7, when index name is already set
+		if (fieldName_ != idxName) {
+			fieldName_.assign(idxName);
+		}
+	}
 	std::string Dump() const;
 	void ToDsl(JsonBuilder& builder) const;
 	bool operator==(const KnnQueryEntry&) const noexcept;

@@ -383,7 +383,7 @@ protected:
 	void ValidateQueryError(std::string_view sql, ErrorCode expectedCode, std::string_view expectedText) {
 		{
 			QueryResults qr;
-			auto err = rt.reindexer->Select(sql, qr);
+			auto err = rt.reindexer->ExecSQL(sql, qr);
 			EXPECT_EQ(err.code(), expectedCode) << sql;
 			EXPECT_EQ(err.what(), expectedText) << sql;
 		}
@@ -398,7 +398,7 @@ protected:
 	void ValidateQueryThrow(std::string_view sql, ErrorCode expectedCode, std::string_view expectedRegex) {
 		QueryResults qr;
 		{
-			auto err = rt.reindexer->Select(sql, qr);
+			auto err = rt.reindexer->ExecSQL(sql, qr);
 			EXPECT_EQ(err.code(), expectedCode) << sql;
 			EXPECT_THAT(err.what(), testing::ContainsRegex(expectedRegex)) << sql;
 		}

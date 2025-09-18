@@ -10,6 +10,7 @@
 #include "gtests/tests/tests_data.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
+#include "vendor/fmt/ranges.h"
 #include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
 
@@ -873,6 +874,87 @@ TEST_P(FTGenericApi, NumberToWordsSelect) {
 	select(row8.second, "\"=семьдесят =семь\"", "70 1 7 !77 377 70 7!");
 }
 
+TEST_P(FTGenericApi, NumberToWordsArraysSelect) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableNumbersSearch = true;
+	Init(cfg, 0);
+	const auto configJson = cfg.GetJSON(fast_hash_map<std::string, int>());
+
+	// Create namespace and index
+	constexpr std::string_view kNsName = "NumberToWordsArraysSelect";
+	reindexer::IndexDef ftIndexDef("ft", {"arr_int", "arr_string", "arr_int_noidx", "arr_string_noidx"}, IndexType::IndexCompositeFastFT,
+								   IndexOpts().SetConfig(IndexFastFT, configJson));
+	rt.OpenNamespace(kNsName);
+	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+										IndexDeclaration{"arr_int", "hash", "int", IndexOpts().Array(), 0},
+										IndexDeclaration{"arr_string", "tree", "string", IndexOpts().Array(), 0}});
+	rt.AddIndex(kNsName, ftIndexDef);
+
+	// Fill data
+	for (int i = 0; i < 4; ++i) {
+		reindexer::Item item = rt.NewItem(kNsName);
+		item["id"] = i;
+
+		auto createArray = [mult = i + 1](bool isString) {
+			constexpr unsigned kArraySize = 90;
+			reindexer::VariantArray ret;
+			ret.reserve(kArraySize);
+			for (unsigned j = 0; j < kArraySize; ++j) {
+				int val = mult * 100 + j;
+				ret.emplace_back(isString ? reindexer::Variant(std::to_string(val)) : reindexer::Variant(val));
+			}
+			return ret;
+		};
+
+		switch (i) {
+			case 0: {
+				bool isString = false;
+				item["arr_int"] = createArray(isString);
+			} break;
+			case 1: {
+				bool isString = true;
+				item["arr_string"] = createArray(isString);
+			} break;
+			case 2: {
+				bool isString = false;
+				item["arr_int_noidx"] = createArray(isString);
+			} break;
+			case 3: {
+				bool isString = true;
+				item["arr_string_noidx"] = createArray(isString);
+			} break;
+			default:
+				assertrx(false);
+		}
+		rt.Upsert(kNsName, item);
+	}
+
+	// Check selections
+	auto selectAndCheck = [this, &kNsName](std::string_view ftQuery, int expectedId) {
+		SCOPED_TRACE(ftQuery);
+		auto q = reindexer::Query(kNsName).Where("ft", CondEq, ftQuery);
+		auto res = rt.Select(q);
+		ASSERT_EQ(res.Count(), 1);
+		auto item = res.begin().GetItem();
+		EXPECT_EQ(item["id"].As<int>(), expectedId);
+	};
+
+	selectAndCheck("=сто", 0);
+	selectAndCheck("=двести", 1);
+	selectAndCheck("=триста", 2);
+	selectAndCheck("=четыреста", 3);
+
+	// Update index to dense
+	ftIndexDef.SetOpts(IndexOpts().Dense().SetConfig(IndexFastFT, configJson));
+	rt.UpdateIndex(kNsName, ftIndexDef);
+
+	// Check the same selections
+	selectAndCheck("=сто", 0);
+	selectAndCheck("=двести", 1);
+	selectAndCheck("=триста", 2);
+	selectAndCheck("=четыреста", 3);
+}
+
 // Make sure FT seeks by a huge number set by string in DSL
 TEST_P(FTGenericApi, HugeNumberToWordsSelect) {
 	// Initialize namespace
@@ -1320,34 +1402,62 @@ TEST_P(FTGenericApi, SetFtFieldsCfgErrors) {
 	Init(cfg);
 	cfg.fieldsCfg[0].positionWeight = 0.1;
 	cfg.fieldsCfg[1].positionWeight = 0.2;
-	// Задаем уникальный конфиг для поля ft, которого нет в индексе ft3
+	// Attempt to set field config for 'ft' field. 'ft' doesn't exist in 'ft3'
 	auto err = SetFTConfig(cfg, "nm1", "ft3", {"ft", "ft2"});
-	// Получаем ошибку
 	EXPECT_FALSE(err.ok());
 	EXPECT_STREQ(err.what(), "Field 'ft' is not included to full text index");
 
 	rt.OpenNamespace("nm3");
 	rt.DefineNamespaceDataset(
 		"nm3", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft", "text", "string", IndexOpts(), 0}});
-	// Задаем уникальный конфиг для единственного поля ft в индексе ft
+	// Attempt to set field config for 'ft' field, which is the only field in the fulltext composite
 	err = SetFTConfig(cfg, "nm3", "ft", {"ft"});
-	// Получаем ошибку
 	EXPECT_FALSE(err.ok());
-	EXPECT_STREQ(err.what(), "Configuration for single field fulltext index cannot contain field specifications");
+	EXPECT_STREQ(err.what(), "Configuration for single field fulltext index can't contain field specifications");
 
 	// maxTypos < 0
 	cfg.maxTypos = -1;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
-	// Error
 	EXPECT_FALSE(err.ok());
 	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'max_typos' - -1 is out of bounds: [0,4]");
 
 	// maxTypos > 4
 	cfg.maxTypos = 5;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
-	// Error
 	EXPECT_FALSE(err.ok());
 	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'max_typos' - 5 is out of bounds: [0,4]");
+}
+
+TEST_P(FTGenericApi, IndexUpdateWithFieldsConfigs) {
+	Init(GetDefaultConfig(), NS1);
+	const std::string_view kNs = "nm1";
+	const std::string kIdx = "test_ft_idx";
+	auto cfg = GetDefaultConfig(2);
+	cfg.fieldsCfg[1].bm25Boost -= 0.1;
+	cfg.fieldsCfg[1].bm25Weight += 0.1;
+	const auto opts = IndexOpts().SetConfig(IndexCompositeFastFT, GetFTConfigJSON(cfg, {"ft1", "ft2"}));
+	rt.AddIndex(kNs, reindexer::IndexDef(kIdx, {"ft1", "ft2"}, IndexCompositeFastFT, opts));
+
+	auto validateJsonPaths = [this, &kIdx, &kNs](const reindexer::JsonPaths& expected) {
+		SCOPED_TRACE(fmt::format("Expected jsonpaths: [{}]", fmt::join(expected, ", ")));
+		auto nss = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().HideSystem());
+		ASSERT_EQ(nss.size(), 1);
+		EXPECT_EQ(nss[0].name, kNs);
+		ASSERT_EQ(nss[0].indexes.size(), 6);
+		EXPECT_EQ(nss[0].indexes[5].Name(), kIdx);
+		EXPECT_EQ(nss[0].indexes[5].JsonPaths(), expected);
+	};
+
+	// Try to add new indexed field into the index
+	rt.AddIndex(kNs, reindexer::IndexDef("str", {"str"}, "hash", "string", IndexOpts()));
+	reindexer::JsonPaths paths{"ft1", "ft2", "str"};
+	rt.UpdateIndex(kNs, reindexer::IndexDef(kIdx, paths, IndexCompositeFastFT, opts));
+	validateJsonPaths(paths);
+
+	// Try to add new non-indexed field into the index
+	paths.emplace_back("non-idx-str");
+	rt.UpdateIndex(kNs, reindexer::IndexDef(kIdx, paths, IndexCompositeFastFT, opts));
+	validateJsonPaths(paths);
 }
 
 TEST_P(FTGenericApi, MergeLimitConstraints) {
@@ -1365,6 +1475,32 @@ TEST_P(FTGenericApi, MergeLimitConstraints) {
 	cfg.mergeLimit = reindexer::kMaxMergeLimitValue;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_P(FTGenericApi, IncorrectFieldBoost) {
+	Init(GetDefaultConfig());
+
+	{
+		reindexer::QueryResults qr;
+		const auto q = reindexer::Query("nm1").Where("ft3", CondEq, "@ft1^2,ft2^2,ft3^2 тест");
+		auto err = rt.reindexer->Select(q, qr);
+		EXPECT_EQ(err.code(), errLogic) << err.what();
+		EXPECT_EQ(err.whatStr(), "Field 'ft3' is not included into fulltext index");
+	}
+	{
+		reindexer::QueryResults qr;
+		const auto q = reindexer::Query("nm1").Where("ft3", CondEq, "@ft1^2,ololo^2,ft3^2 тест");
+		auto err = rt.reindexer->Select(q, qr);
+		EXPECT_EQ(err.code(), errLogic) << err.what();
+		EXPECT_EQ(err.whatStr(), "Field 'ololo' is not included into fulltext index");
+	}
+	{
+		reindexer::QueryResults qr;
+		const auto q = reindexer::Query("nm1").Where("ft3", CondEq, "@bad_field^0.1,ft1^2 тест");
+		auto err = rt.reindexer->Select(q, qr);
+		EXPECT_EQ(err.code(), errLogic) << err.what();
+		EXPECT_EQ(err.whatStr(), "Field 'bad_field' is not included into fulltext index");
+	}
 }
 
 TEST_P(FTGenericApi, ConfigBm25Coefficients) {

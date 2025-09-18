@@ -66,7 +66,6 @@ public:
 		{
 			ns1->set_dbname(kDbName);
 			ns1->set_name(default_namespace);
-			ns1->set_istemporary(false);
 
 			reindexer::grpc::Index* idx1 = ns1->add_indexesdefinitions();
 			idx1->set_name(kIdField);
@@ -112,7 +111,6 @@ public:
 		{
 			ns2->set_dbname(kDbName);
 			ns2->set_name(default_namespace + "2");
-			ns2->set_istemporary(false);
 
 			reindexer::grpc::Index* idx1 = ns2->add_indexesdefinitions();
 			idx1->set_name(kIdField);

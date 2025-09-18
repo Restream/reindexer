@@ -39,7 +39,7 @@ public:
 	Error Delete(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Delete(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx);
 	Error Delete(const Query& query, QueryResults& result, const RdxContext& ctx);
-	Error Select(std::string_view sql, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx);
+	Error ExecSQL(std::string_view sql, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx);
 	Error Select(const Query& query, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx);
 	Item NewItem(std::string_view nsName, const RdxContext& ctx);
 

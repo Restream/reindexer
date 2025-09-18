@@ -8,6 +8,8 @@
 
 namespace reindexer::force_sort_helpers {
 
+constexpr std::string_view kForcedSortArrayErrorMsg = "Forced sort can't be applied to a field of array type";
+
 class [[nodiscard]] ForcedSortMap {
 public:
 	using mapped_type = size_t;
@@ -283,8 +285,15 @@ public:
 		valueGetter_.Payload(lhs).GetByJsonPath(tagsPath_, lhsItemValue_, KeyValueType::Undefined{});
 		valueGetter_.Payload(rhs).GetByJsonPath(tagsPath_, rhsItemValue_, KeyValueType::Undefined{});
 
+		if (lhsItemValue_.IsArrayValue() || rhsItemValue_.IsArrayValue()) {
+			throw Error(errQueryExec, kForcedSortArrayErrorMsg);
+		}
+
+		assertrx_throw(!lhsItemValue_.empty());
 		const auto lhsPos = sortMap_.get(lhsItemValue_[0]);
+		assertrx_throw(!rhsItemValue_.empty());
 		const auto rhsPos = sortMap_.get(rhsItemValue_[0]);
+
 		return forceCompareImpl<desc, multiColumnSort>(lhs, lhsPos, rhs, rhsPos, compare_);
 	}
 	bool operator()(const ItemRefRanked& lhs, const ItemRefRanked& rhs) { return operator()(lhs.NotRanked(), rhs.NotRanked()); }

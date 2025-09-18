@@ -4,6 +4,12 @@
 
 #pragma once
 
+#include <cmath>
+#include <cstdint>
+#include <numeric>
+#include <optional>
+#include <span>
+#include "core/index/float_vector/scalar_quantization/hnsw_view_iterator.h"
 #ifndef _MSC_VER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -71,8 +77,7 @@ static void readBinaryPOD(std::istream& in, T& podRef) {
 	in.read((char*)&podRef, sizeof(T));
 }
 
-template <typename MTYPE>
-using DISTFUNC = MTYPE (*)(const void*, const void*, const void*) noexcept;
+using DISTFUNC = float (*)(const void*, const void*, const void*) noexcept;
 
 enum class [[nodiscard]] MetricType {
 	NONE,
@@ -81,23 +86,158 @@ enum class [[nodiscard]] MetricType {
 	COSINE,
 };
 
-template <typename MTYPE>
-struct [[nodiscard]] DistCalculatorParam {
-	DISTFUNC<MTYPE> f{nullptr};
-	MetricType metric{MetricType::NONE};
-	size_t dims{0};
+struct [[nodiscard]] QuantizeDistCalcParams {
+	QuantizeDistCalcParams() noexcept = default;
+
+	template <typename QuantizerPtrT>
+	QuantizeDistCalcParams(const QuantizerPtrT& quantizer = nullptr) noexcept {
+		if (!quantizer) {
+			return;
+		}
+
+		sq8type = quantizer->sq8Type;
+
+		std::vector<float> minQ;
+		std::vector<float> maxQ;
+
+		switch (*sq8type) {
+			case ScalarQuantizeType::Component: {
+				alpha.resize(quantizer->Dims());
+				betta.resize(quantizer->Dims());
+
+				minQ.reserve(quantizer->Dims());
+				maxQ.reserve(quantizer->Dims());
+
+				for (auto [min, max] : quantizer->ComponentQuantiles()) {
+					minQ.emplace_back(min);
+					maxQ.emplace_back(max);
+				}
+
+				delta = std::accumulate(minQ.begin(), minQ.end(), 0.f, [](float res, float v) { return res + std::pow(v, 2); });
+				break;
+			}
+			case ScalarQuantizeType::Full:
+			case ScalarQuantizeType::Partial: {
+				minQ = {quantizer->MinMax().first};
+				maxQ = {quantizer->MinMax().second};
+
+				delta = std::pow(minQ.front(), 2) * quantizer->Dims();
+				break;
+			}
+			default:
+				assertrx(false);
+		}
+
+		std::transform(minQ.begin(), minQ.end(), maxQ.begin(), alpha.begin(), [](float lhs, float rhs) { return (rhs - lhs) / KSq8Max; });
+		std::transform(minQ.begin(), minQ.end(), alpha.begin(), betta.begin(), [](float minQ, float alpha) { return minQ * alpha; });
+		std::transform(alpha.begin(), alpha.end(), alpha.begin(), [](float alpha) { return std::pow(alpha, 2); });
+	}
+
+	// In the case of uint8_t-vectors for L2-metric:
+	//    distance(VecFloat1, VecFloat2) ~= `alpha`^2 * distance(VecByte1, VecByte2), where `alpha` = (maxQuantile - minQuantile) / KSq8Max;
+
+	// In the case of uint8_t-vectors for InnerProduct metric:
+
+	//	  float1 * float2 ~=
+	//	  (byte1 * byte2 * `alpha`^2) + (byte1 * `minQuantile` * `alpha`) + (byte2 * `minQuantile` * `alpha`) + `minQuantile`^2
+	//	  => DotProduct(VecFloat1, VecFloat2) ==
+	//	  `alpha`^2 * DotProduct(VecByte1, VecByte2) + `minQuantile` * `alpha` * (trace(VecByte1) + trace(VecByte2)) + dim * `minQuantile`^2
+
+	// For calculations, we only need `alpha`^2, `minQuantile`*`alpha` and sum(`minQuantile`^2),
+	// so we precompute these parameters and redefine them as alpha, beta and delta, respectively
+	std::optional<ScalarQuantizeType> sq8type = std::nullopt;
+	std::vector<float> alpha = {1.f};
+	std::vector<float> betta = {0.f};
+	float delta = 0.f;
 };
 
-template <typename MTYPE>
+struct [[nodiscard]] DistCalculatorParam {
+	DISTFUNC f{nullptr};
+	MetricType metric{MetricType::NONE};
+	size_t dims{0};
+
+	QuantizeDistCalcParams quantizeParams{};
+
+	float CalcDist(const void* lhs, const void* rhs) const noexcept {
+		if (!quantizeParams.sq8type) {
+			return f(lhs, rhs, &dims);
+		}
+
+		switch (metric) {
+			case MetricType::L2: {
+				return euclideanDist(lhs, rhs);
+			}
+			case MetricType::COSINE:
+			case MetricType::INNER_PRODUCT: {
+				return scalarProduct(lhs, rhs);
+			}
+			case MetricType::NONE:
+			default:
+				std::abort();
+		}
+	}
+
+	float euclideanDist(const void* lhs, const void* rhs) const {
+		switch (*quantizeParams.sq8type) {
+			case ScalarQuantizeType::Full:
+			case ScalarQuantizeType::Partial: {
+				return quantizeParams.alpha.front() * f(lhs, rhs, &dims);
+			}
+			case ScalarQuantizeType::Component: {
+				auto l = static_cast<const uint8_t*>(lhs);
+				auto r = static_cast<const uint8_t*>(rhs);
+
+				float res = 0;
+				for (int i = 0; i < dims; ++i) {
+					res += quantizeParams.alpha[i] * pow(int(l[i]) - int(r[i]), 2.f);
+				}
+
+				return res;
+			}
+			default:
+				std::abort();
+		}
+	}
+
+	float scalarProduct(const void* lhs, const void* rhs) const {
+		switch (*quantizeParams.sq8type) {
+			case ScalarQuantizeType::Full:
+			case ScalarQuantizeType::Partial: {
+				return -(quantizeParams.alpha.front() * -f(lhs, rhs, &dims) + quantizeParams.betta.front() * (convVec(lhs) + convVec(rhs)) +
+						 quantizeParams.delta);
+			}
+			case ScalarQuantizeType::Component: {
+				auto l = static_cast<const uint8_t*>(lhs);
+				auto r = static_cast<const uint8_t*>(rhs);
+
+				float res = 0;
+				for (int i = 0; i < dims; ++i) {
+					res += quantizeParams.alpha[i] * l[i] * r[i] + quantizeParams.betta[i] * (int(l[i]) + int(r[i]));
+				}
+				res += quantizeParams.delta;
+
+				return -res;
+			}
+			default:
+				std::abort();
+		}
+	}
+
+	RX_ALWAYS_INLINE float convVec(const void* data) const noexcept {
+		auto span = std::span(static_cast<const uint8_t*>(data), dims);
+		return std::accumulate(span.begin(), span.end(), 0);
+	}
+};
+
 class [[nodiscard]] DistCalculator {
 public:
 	DistCalculator() = default;
-	DistCalculator(DistCalculatorParam<MTYPE>&& param, size_t maxElements) : maxElements_{maxElements}, param_{std::move(param)} {
+	DistCalculator(DistCalculatorParam&& param, size_t maxElements) : maxElements_{maxElements}, param_{std::move(param)} {
 		assertrx(param_.f);
 		assertrx(param_.metric != MetricType::NONE);
 		assertrx(param_.dims > 0);
 		if (maxElements_ && param_.metric == MetricType::COSINE) {
-			normCoefs_ = std::make_unique<MTYPE[]>(maxElements);
+			normCoefs_ = std::make_unique<float[]>(maxElements);
 		}
 	}
 #if RX_WITH_STDLIB_DEBUG
@@ -123,8 +263,8 @@ public:
 		if (maxElements_ != newSize) {
 			if (param_.metric == MetricType::COSINE) {
 				assertrx_dbg(normCoefs_);
-				auto newData = std::make_unique<MTYPE[]>(newSize);
-				const size_t copyCount = std::min(newSize, maxElements_) * sizeof(MTYPE);
+				auto newData = std::make_unique<float[]>(newSize);
+				const size_t copyCount = std::min(newSize, maxElements_) * sizeof(float);
 				std::memcpy(newData.get(), normCoefs_.get(), copyCount);
 				normCoefs_ = std::move(newData);
 			} else {
@@ -133,14 +273,14 @@ public:
 			maxElements_ = newSize;
 		}
 	}
-	void CopyValuesFrom(const DistCalculator<MTYPE>& other) {
+	void CopyValuesFrom(const DistCalculator& other) {
 		if (maxElements_ < other.maxElements_) {
 			throw std::logic_error("Unable to copy norm values for dist calc");
 		}
 		if (param_.metric == MetricType::COSINE) {
 			assertrx_dbg(normCoefs_);
 			assertrx_dbg(other.normCoefs_);
-			const size_t copyCount = other.maxElements_ * sizeof(MTYPE);
+			const size_t copyCount = other.maxElements_ * sizeof(float);
 			std::memcpy(normCoefs_.get(), other.normCoefs_.get(), copyCount);
 #if RX_WITH_STDLIB_DEBUG
 			reindexer::scoped_lock lck(mtx_, other.mtx_);
@@ -155,7 +295,8 @@ public:
 		assertrx_dbg(id < maxElements_);
 		if (param_.metric == MetricType::COSINE) {
 			assertrx_dbg(normCoefs_);
-			normCoefs_[id] = reindexer::ann::CalculateL2Module(static_cast<const MTYPE*>(v), int32_t(param_.dims));
+			// FIXME! here can be passed uint8_t* after loading from storage quantized graph (by method 'loadIndex')
+			normCoefs_[id] = reindexer::ann::CalculateL2Module(static_cast<const float*>(v), int32_t(param_.dims));
 #if RX_WITH_STDLIB_DEBUG
 			reindexer::lock_guard lck(mtx_);
 			initialized_.emplace(id);
@@ -193,8 +334,9 @@ public:
 #endif	// RX_WITH_STDLIB_DEBUG
 	}
 	RX_ALWAYS_INLINE size_t Dims() const noexcept { return param_.dims; }
-	RX_ALWAYS_INLINE MTYPE operator()(const void* v1, unsigned id1, const void* v2, unsigned id2) const noexcept {
-		auto dist = param_.f(v1, v2, &param_.dims);
+	RX_ALWAYS_INLINE MetricType Metric() const noexcept { return param_.metric; }
+	RX_ALWAYS_INLINE float operator()(const void* v1, unsigned id1, const void* v2, unsigned id2) const noexcept {
+		auto dist = param_.CalcDist(v1, v2);
 		if (param_.metric == MetricType::COSINE) {
 			assertrx(normCoefs_);
 			assertrx(id1 < maxElements_);
@@ -213,8 +355,8 @@ public:
 		}
 		return dist;
 	}
-	RX_ALWAYS_INLINE MTYPE operator()(const void* v1, const void* v2, unsigned id) const noexcept {
-		auto dist = param_.f(v1, v2, &param_.dims);
+	RX_ALWAYS_INLINE float operator()(const void* v1, const void* v2, unsigned id) const noexcept {
+		auto dist = param_.CalcDist(v1, v2);
 		if (param_.metric == MetricType::COSINE) {
 			assertrx_dbg(normCoefs_);
 			assertrx_dbg(id < maxElements_);
@@ -233,21 +375,20 @@ public:
 
 private:
 	size_t maxElements_{0};
-	DistCalculatorParam<MTYPE> param_;
-	std::unique_ptr<MTYPE[]> normCoefs_;
+	DistCalculatorParam param_;
+	std::unique_ptr<float[]> normCoefs_;
 #if RX_WITH_STDLIB_DEBUG
 	mutable reindexer::mutex mtx_;
 	std::set<unsigned> initialized_;
 #endif	// RX_WITH_STDLIB_DEBUG
 };
 
-template <typename MTYPE>
 class [[nodiscard]] SpaceInterface {
 public:
 	// virtual void search(void *);
 	virtual size_t get_data_size() noexcept = 0;
 
-	virtual DistCalculatorParam<MTYPE> get_dist_calculator_param() noexcept = 0;
+	virtual DistCalculatorParam get_dist_calculator_param() noexcept = 0;
 
 	virtual void* get_dist_func_param() noexcept = 0;
 

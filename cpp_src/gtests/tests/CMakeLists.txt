@@ -12,7 +12,6 @@ option(GTEST_SKIP_ASAN_MEMORY_HEAVY "Skips tests with high memory consumation in
 set(GTEST_WORKERS "6" CACHE STRING "Number of workers for gtest_parallel")
 
 include_directories(fixtures mocks)
-include_directories(${GTEST_INCLUDE_DIRS})
 include_directories(${REINDEXER_SOURCE_PATH})
 
 set(GENERATED_PROTO_DIR "${PROJECT_BINARY_DIR}")
@@ -115,6 +114,12 @@ endif()
 # Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
 set_property(TARGET ${FUZZING_TARGET} PROPERTY ENABLE_EXPORTS 1)
+
+if (APPLE)
+  get_target_property(GTEST_INCLUDE_DIRS GTest::gtest INTERFACE_INCLUDE_DIRECTORIES)
+  target_compile_options(${TARGET} BEFORE PRIVATE "-isystem" ${GTEST_INCLUDE_DIRS})
+  target_compile_options(${FUZZING_TARGET} BEFORE PRIVATE "-isystem" ${GTEST_INCLUDE_DIRS})
+endif()
 
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
 target_link_libraries(${FUZZING_TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})

@@ -89,10 +89,10 @@ void ServerConnection::setJsonStatus(Context& ctx, bool success, int responseCod
 
 void ServerConnection::setStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
 	const std::string_view format = ctx.request->params.Get("format"sv);
-	if (format == "msgpack"sv) {
+	if (format == kMsgPackFmt) {
 		return setMsgpackStatus(ctx, success, responseCode, status);
 	}
-	if (format == "protobuf"sv) {
+	if (format == kProtobufFmt) {
 		return setProtobufStatus(ctx, success, responseCode, status);
 	}
 	return setJsonStatus(ctx, success, responseCode, status);

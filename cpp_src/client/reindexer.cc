@@ -8,7 +8,7 @@ namespace reindexer {
 namespace client {
 
 Reindexer::Reindexer(const ReindexerConfig& config, uint32_t connCount, uint32_t threads)
-	: impl_(new ReindexerImpl(config, connCount, threads)), ctx_() {}
+	: impl_(std::make_shared<ReindexerImpl>(config, connCount, threads)), ctx_() {}
 Reindexer::~Reindexer() = default;
 
 Error Reindexer::Connect(const std::string& dsn, const client::ConnectOpts& opts) noexcept {
@@ -80,8 +80,8 @@ Error Reindexer::DeleteMeta(std::string_view nsName, const std::string& key) noe
 	RETURN_RESULT_NOEXCEPT(impl_->DeleteMeta(nsName, key, ctx_));
 }
 Error Reindexer::Delete(const Query& q, QueryResults& result) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Delete(q, result, ctx_)); }
-Error Reindexer::Select(std::string_view query, QueryResults& result) noexcept {
-	RETURN_RESULT_NOEXCEPT(impl_->Select(query, result, ctx_));
+Error Reindexer::ExecSQL(std::string_view query, QueryResults& result) noexcept {
+	RETURN_RESULT_NOEXCEPT(impl_->ExecSQL(query, result, ctx_));
 }
 Error Reindexer::Select(const Query& q, QueryResults& result) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Select(q, result, ctx_)); }
 Error Reindexer::AddIndex(std::string_view nsName, const IndexDef& idx) noexcept {

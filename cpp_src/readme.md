@@ -121,7 +121,7 @@ Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](htt
 
 ### Dependencies
 
-Reindexer's core is written in C++20 and uses LevelDB as the storage backend, so the Cmake, C++20 toolchain and LevelDB must be installed before installing Reindexer. Also FAISS-based vector indexes (`IVF` in particular) depend on OpenMP and BLAS/LAPACK libraries, but those dependecies are optional - you may build `HNWS-only` version by passing `-DBUILD_ANN_INDEXES=builtin` into `CMake`.
+Reindexer's core is written in C++20 and uses LevelDB as the storage backend, so the Cmake, C++20 toolchain and LevelDB must be installed before installing Reindexer. Also, FAISS-based vector indexes (`IVF` in particular) depend on OpenMP and BLAS/LAPACK libraries, but those dependecies are optional - you may build `HNWS-only` version by passing `-DBUILD_ANN_INDEXES=builtin` into `CMake`.
 
 Dependencies can be installed automatically by this script:
 
@@ -178,7 +178,7 @@ Pay attention to methods, that have `stream` parameters:
 
 ```protobuf
  rpc ModifyItem(stream ModifyItemRequest) returns(stream ErrorResponse) {}
- rpc SelectSql(SelectSqlRequest) returns(stream QueryResultsResponse) {}
+ rpc ExecSql(SqlRequest) returns(stream QueryResultsResponse) {}
  rpc Select(SelectRequest) returns(stream QueryResultsResponse) {}
  rpc Update(UpdateRequest) returns(stream QueryResultsResponse) {}
  rpc Delete(DeleteRequest) returns(stream QueryResultsResponse) {}
@@ -324,7 +324,7 @@ Upon successful loading of `libcrypto` library symbols, a corresponding entry or
 
 #### MacOS
 
-By default, OpenSSL support is disabled for MacOS. To enable support for functions from the OpenSSL-library, you can configure and build a project from source code by explicitly passing the `ENABLE_OPENSSL` option:
+By default, OpenSSL support is disabled for macOS. To enable support for functions from the OpenSSL-library, you can configure and build a project from source code by explicitly passing the `ENABLE_OPENSSL` option:
 ```bash
 cmake -DENABLE_OPENSSL=On ..
 cmake --build . -j6
@@ -464,6 +464,12 @@ message ErrorResponse {
 	bool success = 1;
 	sint64 response_code = 2;
 	string description = 3;
+}
+
+// The TransactionResponse message is schema of http API methods response:
+// - POST api/v1/db/:db/namespaces/:ns/transactions/begin
+message TransactionResponse {
+	string txID = 1;
 }
 ```
 

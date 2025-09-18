@@ -9,6 +9,8 @@
 
 namespace reindexer {
 
+class MsgPackDecoder;
+
 struct [[nodiscard]] ItemImplRawData {
 	using HolderT = h_vector<key_string, 16>;
 
@@ -26,6 +28,7 @@ struct [[nodiscard]] ItemImplRawData {
 	std::vector<std::string> precepts_;
 	std::unique_ptr<HolderT> holder_;
 	FloatVectorsHolderVector floatVectorsHolder_;
+	std::shared_ptr<MsgPackDecoder> msgPackDecoder_;
 };
 
 }  // namespace reindexer

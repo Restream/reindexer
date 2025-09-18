@@ -541,7 +541,7 @@ reindexer_error reindexer_set_schema(uintptr_t rx, reindexer_string nsName, rein
 	Error res = err_not_init;
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-		res = rdxKeeper.db().SetSchema(str2cv(nsName), str2cv(schemaJson));
+		res = rdxKeeper.db().SetSchema(str2cv(nsName), str2c(schemaJson));
 	}
 	return error2c(res);
 }
@@ -587,12 +587,12 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json
 
 			auto querySV = str2cv(query);
 			ActiveQueryScope scope(querySV);
-			err = rdxKeeper.db().Select(querySV, *result);
+			err = rdxKeeper.db().ExecSQL(querySV, *result);
 			if (err.ok()) {
 				const auto count = result->Count(), len = result->ser.Len(), cap = result->ser.Cap();
 				results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
 				if (cap >= kWarnLargeResultsLimit) {
-					logFmt(LogWarning, "Query too large results: count={} size={},cap={}, q={}", count, len, cap, str2cv(query));
+					logFmt(LogWarning, "Query too large results: count={}, size={}, cap={}, q={}", count, len, cap, str2cv(query));
 				}
 			}
 		}

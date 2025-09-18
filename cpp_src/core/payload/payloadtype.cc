@@ -1,5 +1,4 @@
 #include "payloadtype.h"
-#include <algorithm>
 #include <sstream>
 #include "core/embedding/embedder.h"
 #include "core/keyvalue/key_string.h"

@@ -103,6 +103,7 @@ private:
 	ItemImpl(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
 
 	void initTupleFrom(Payload&&, WrSerializer&);
+	std::string_view createSafeDataCopy(std::string_view slice);
 
 	// Index fields payload data
 	PayloadType payloadType_;
@@ -116,7 +117,6 @@ private:
 	bool unsafe_ = false;
 	std::string_view cjson_;
 	std::weak_ptr<Namespace> ns_;
-	std::unique_ptr<MsgPackDecoder> msgPackDecoder_;
 	const FieldsFilter* fieldsFilter_{nullptr};
 };
 

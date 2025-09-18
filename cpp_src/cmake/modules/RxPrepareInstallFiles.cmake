@@ -40,7 +40,6 @@ endif()
         endif()
       endif()
     endforeach(lib)
-    list(APPEND flibs " -lstdc++")
     set (${OUTPUT_LIST_NAME} ${flibs} PARENT_SCOPE)
   endfunction (generate_libs_list)
 

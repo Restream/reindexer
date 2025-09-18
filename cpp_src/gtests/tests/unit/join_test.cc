@@ -895,7 +895,7 @@ void CheckJoinIds(std::map<int, std::vector<std::set<int>>> ids, const reindexer
 				for (size_t j = 0; j < joinedIdsSet.size(); ++j) {
 					const auto nsId = joinedItems[j].Nsid();
 					auto itemImpl = joined.at(i).GetItem(j, qr.GetPayloadType(nsId), qr.GetTagsMatcher(nsId));
-					const int joinedId = reindexer::Item::FieldRefByName("id", itemImpl).Get<int>();
+					const int joinedId = reindexer::Item::FieldRefByNameOrJsonPath("id", itemImpl).Get<int>();
 					EXPECT_NE(joinedIdsSet.find(joinedId), joinedIdsSet.end()) << joinedId;
 				}
 			}
