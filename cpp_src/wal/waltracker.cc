@@ -8,7 +8,7 @@
 
 namespace reindexer {
 
-WALTracker::WALTracker(int64_t sz) : walSize_(sz) { logPrintf(LogTrace, "[WALTracker] Create LSN=%ld", lsnCounter_); }
+WALTracker::WALTracker(int64_t sz) : walSize_(sz) { logFmt(LogTrace, "[WALTracker] Create LSN={}", lsnCounter_); }
 
 WALTracker::WALTracker(const WALTracker& wal, AsyncStorage& storage)
 	: records_(wal.records_),
@@ -23,9 +23,7 @@ lsn_t WALTracker::Add(const WALRecord& rec, lsn_t originLsn, lsn_t oldLsn) {
 	return add(rec, originLsn, rec.type != WalItemUpdate, oldLsn);
 }
 
-lsn_t WALTracker::Add(WALRecType type, const PackedWALRecord& rec, lsn_t originLsn) {
-	return add(rec, originLsn, type != WalItemUpdate);
-}  // TODO: Check storage write condition
+lsn_t WALTracker::Add(WALRecType type, const PackedWALRecord& rec, lsn_t originLsn) { return add(rec, originLsn, type != WalItemUpdate); }
 
 bool WALTracker::Set(const WALRecord& rec, lsn_t lsn, bool ignoreServer) {
 	if (!available(lsn, ignoreServer)) {
@@ -39,7 +37,7 @@ bool WALTracker::Set(const WALRecord& rec, lsn_t lsn, bool ignoreServer) {
 	put(lsn, rec);
 	return true;
 	// } else {
-	// logPrintf(LogWarning, "WALRecord for LSN = %d is not empty", lsn);
+	// logFmt(LogWarning, "WALRecord for LSN = {} is not empty", lsn);
 	// }
 	// return false;
 }
@@ -82,7 +80,7 @@ bool WALTracker::Resize(int64_t sz) {
 	initPositions(sz, minLSN, maxLSN);
 	for (auto lsn = minLSN; lsn <= maxLSN; ++lsn) {
 		auto pos = lsn % oldSz;
-		Set(WALRecord(span<uint8_t>(oldRecords[pos])), lsn_t(lsn, oldRecords[pos].server), true);
+		rx_unused = Set(WALRecord(std::span<uint8_t>(oldRecords[pos])), lsn_t(lsn, oldRecords[pos].server), true);
 	}
 	return true;
 }
@@ -112,11 +110,11 @@ void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage& 
 	// input maxLSN of namespace Item or -1 if namespace is empty
 	auto data = readFromStorage(maxLSN);  // return maxLSN of wal record or input value
 										  // new table
-	logPrintf(LogTrace, "WALTracker::Init minLSN=%ld, maxLSN=%ld, size=%ld", minLSN, maxLSN, sz);
+	logFmt(LogTrace, "WALTracker::Init minLSN={}, maxLSN={}, size={}", minLSN, maxLSN, sz);
 	initPositions(sz, minLSN, maxLSN);
 	// Fill records from storage
 	for (auto& rec : data) {
-		Set(WALRecord(std::string_view(rec.second)), rec.first, true);
+		rx_unused = Set(WALRecord(std::string_view(rec.second)), rec.first, true);
 	}
 }
 
@@ -220,23 +218,30 @@ void WALTracker::initPositions(int64_t sz, int64_t minLSN, int64_t maxLSN) {
 template <typename RecordT>
 lsn_t WALTracker::add(RecordT&& rec, lsn_t originLsn, bool toStorage, lsn_t oldLsn) {
 	const auto localServerID = GetServer();
+	const auto initialLsnCounter = lsnCounter_.Counter();
+	const bool emptyWAL = (initialLsnCounter == 0);
 	lsn_t lsn = originLsn;
 	if (lsn.isEmpty()) {
 		lsn = lsnCounter_++;
-	} else if (lsnCounter_.Counter() > originLsn.Counter()) {
-		throw Error(errLogic, "Unexpected origin LSN count: %d. Expecting at least %d", int64_t(lsn.Counter()),
-					int64_t(lsnCounter_.Counter()));
+	} else if (initialLsnCounter > lsn.Counter()) {
+		throw Error(errLogic, "Unexpected origin LSN count: {}. Expecting at least {}", int64_t(lsn.Counter()), int64_t(initialLsnCounter));
 	} else {
 		auto newCounter = lsn.Counter();
-		if (lsnCounter_.Counter() == 0) {  // If there are no WAL records and we've got record with some large LSN
+		if (emptyWAL && walSize_) {	 // If there are no WAL records and we've got record with some large LSN
 			assertrx(records_.empty());
-			records_.resize(newCounter % walSize_, localServerID);
+			assertrx(!walOffset_);
+			walOffset_ = newCounter % walSize_;
+			logFmt(LogInfo, "[wal:{}] Setting wal offset to {}; LSN {}", GetServer(), walOffset_, originLsn);
+			records_.resize(walOffset_, localServerID);
 		}
 		lsnCounter_.SetCounter(newCounter + 1);
 	}
 	lastLsn_ = lsn;
+	if (!walSize_) {
+		return lastLsn_;
+	}
 	const auto counter = lsnCounter_.Counter();
-	if (counter > 1 && walOffset_ == (counter - 1) % walSize_) {
+	if (counter > 1 && walOffset_ == (counter - 1) % walSize_ && !emptyWAL) {
 		walOffset_ = counter % walSize_;
 	}
 

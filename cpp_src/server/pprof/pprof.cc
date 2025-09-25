@@ -11,7 +11,9 @@
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
+#if REINDEX_WITH_GPERFTOOLS || REINDEX_WITH_JEMALLOC
 static const std::string kProfileNamePrefix = "reindexer_server";
+#endif	// REINDEX_WITH_GPERFTOOLS || REINDEX_WITH_JEMALLOC
 
 namespace reindexer_server {
 using namespace reindexer;
@@ -56,7 +58,7 @@ int Pprof::Profile(http::Context& ctx) {
 	}
 
 	if (alloc_ext::TCMallocIsAvailable()) {
-		pprof::ProfilerStart(filePath.c_str());
+		rx_unused = pprof::ProfilerStart(filePath.c_str());
 	}
 	std::this_thread::sleep_for(std::chrono::seconds(seconds));
 	if (alloc_ext::TCMallocIsAvailable()) {
@@ -92,7 +94,7 @@ int Pprof::ProfileHeap(http::Context& ctx) {
 	std::string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".heapprofile");
 	const char* pfp = &filePath[0];
 
-	alloc_ext::mallctl("prof.dump", NULL, NULL, &pfp, sizeof(pfp));
+	rx_unused = alloc_ext::mallctl("prof.dump", NULL, NULL, &pfp, sizeof(pfp));
 	if (fs::ReadFile(filePath, content) < 0) {
 		return ctx.String(http::StatusNotFound, "Profile file not found");
 	}

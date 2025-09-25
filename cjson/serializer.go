@@ -73,6 +73,11 @@ func (s *Serializer) Append(s2 Serializer) {
 	}
 }
 
+func (s *Serializer) PutUInt8(v uint8) *Serializer {
+	s.writeIntBits(int64(v), unsafe.Sizeof(v))
+	return s
+}
+
 func (s *Serializer) PutUInt16(v uint16) *Serializer {
 	s.writeIntBits(int64(v), unsafe.Sizeof(v))
 	return s
@@ -91,6 +96,19 @@ func (s *Serializer) PutUInt64(v uint64) *Serializer {
 func (s *Serializer) PutUuid(v [2]uint64) *Serializer {
 	s.PutUInt64(v[0])
 	s.PutUInt64(v[1])
+	return s
+}
+
+func (s *Serializer) PutFloatVector(vec []float32) *Serializer {
+	s.PutVarUInt(uint64(len(vec)) << 1)
+	for _, value := range vec {
+		s.writeIntBits(int64(math.Float32bits(value)), unsafe.Sizeof(value))
+	}
+	return s
+}
+
+func (s *Serializer) PutFloat32(v float32) *Serializer {
+	s.writeIntBits(int64(math.Float32bits(v)), unsafe.Sizeof(v))
 	return s
 }
 
@@ -244,6 +262,10 @@ func (s *Serializer) GetUInt64() (v uint64) {
 
 func (s *Serializer) GetDouble() (v float64) {
 	return math.Float64frombits(uint64(s.readIntBits(unsafe.Sizeof(v))))
+}
+
+func (s *Serializer) GetFloat32() (v float32) {
+	return math.Float32frombits(uint32(s.readIntBits(unsafe.Sizeof(v))))
 }
 
 func (s *Serializer) GetBytes() (v []byte) {

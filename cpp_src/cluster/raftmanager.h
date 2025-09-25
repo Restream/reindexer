@@ -5,6 +5,7 @@
 #include "cluster/config.h"
 #include "cluster/consts.h"
 #include "cluster/stats/relicationstatscollector.h"
+#include "estl/mutex.h"
 #include "tools/catch_and_return.h"
 
 namespace reindexer {
@@ -15,39 +16,40 @@ namespace cluster {
 
 class Logger;
 
-class RaftManager {
+class [[nodiscard]] RaftManager {
 public:
 	using ClockT = steady_clock_w;
 
-	RaftManager(net::ev::dynamic_loop& loop, ReplicationStatsCollector statsCollector, const Logger& l,
+	RaftManager(net::ev::dynamic_loop& loop, const ReplicationStatsCollector& statsCollector, const Logger& l,
 				std::function<void(uint32_t, bool)> onNodeNetworkStatusChangedCb);
 
 	void SetTerminateFlag(bool val) noexcept { terminate_ = val; }
 	void Configure(const ReplicationConfigData&, const ClusterConfigData&);
-	RaftInfo::Role Elections();
+	std::optional<RaftInfo::Role> RunElectionsRound() noexcept;
 	bool LeaderIsAvailable(ClockT::time_point now) const noexcept;
-	bool FollowersAreAvailable();
-	int32_t GetLeaderId() const { return getLeaderId(voteData_.load()); }
-	RaftInfo::Role GetRole() const { return getRole(voteData_.load()); }
-	int32_t GetTerm() const { return getTerm(voteData_.load()); }
+	bool FollowersAreAvailable() const;
+	int32_t GetLeaderId() const noexcept { return getLeaderId(voteData_.load()); }
+	RaftInfo::Role GetRole() const noexcept { return getRole(voteData_.load()); }
+	int32_t GetTerm() const noexcept { return getTerm(voteData_.load()); }
 	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
-	[[nodiscard]] Error SendDesiredLeaderId(int nextServerId) noexcept {
+	Error SendDesiredLeaderId(int nextServerId) noexcept {
 		RETURN_RESULT_NOEXCEPT(DesiredLeaderIdSender(loop_, nodes_, serverId_, nextServerId, log_)())
 	}
 	void SetDesiredLeaderId(int serverId);
-	int GetDesiredLeaderId() { return nextServerId_.GetNextServerId(); }
+	int GetDesiredLeaderId() noexcept;
 	Error LeadersPing(const cluster::NodeData&);
 	void AwaitTermination();
 
 private:
-	struct NextServerId {
-		void SetNextServerId(int id) {
-			std::lock_guard lock(mtx);
+	class [[nodiscard]] NextServerId {
+	public:
+		void SetNextServerId(int id) noexcept {
+			lock_guard lock(mtx);
 			nextServerId_ = id;
 			startPoint_ = ClockT::now();
 		}
-		int GetNextServerId() {
-			std::lock_guard lock(mtx);
+		int GetNextServerId() noexcept {
+			lock_guard lock(mtx);
 			if (nextServerId_ != -1 && ClockT::now() - startPoint_ > kDesiredLeaderTimeout) {
 				nextServerId_ = -1;
 			}
@@ -55,12 +57,12 @@ private:
 		}
 
 	private:
-		std::mutex mtx;
+		mutex mtx;
 		int nextServerId_ = -1;
 		ClockT::time_point startPoint_;
 	};
 
-	struct RaftNode {
+	struct [[nodiscard]] RaftNode {
 		RaftNode(const client::ReindexerConfig& config, DSN _dsn, uint32_t _uid, int _serverId)
 			: client(config), dsn(std::move(_dsn)), uid(_uid), serverId(_serverId) {}
 		client::RaftClient client;
@@ -71,7 +73,7 @@ private:
 		int serverId = -1;
 	};
 
-	class DesiredLeaderIdSender {
+	class [[nodiscard]] DesiredLeaderIdSender {
 	public:
 		DesiredLeaderIdSender(net::ev::dynamic_loop&, const std::vector<RaftNode>&, int serverId, int nextServerId, const Logger&);
 		~DesiredLeaderIdSender() {
@@ -101,14 +103,14 @@ private:
 		size_t nextServerNodeIndex_;
 	};
 
-	constexpr std::string_view logModuleName() noexcept { return std::string_view("raftmanager"); }
+	constexpr static std::string_view logModuleName() noexcept { return std::string_view("raftmanager"); }
 	void startPingRoutines();
-	static int32_t getLeaderId(int64_t voteData) { return int32_t(voteData & 0x00FFFFFF); }
-	static int64_t setLeaderId(int64_t voteData, int32_t leaderId) { return (leaderId & 0x00FFFFFF) | (voteData & ~0x00FFFFFFll); }
-	static RaftInfo::Role getRole(int64_t voteData) { return RaftInfo::Role((voteData >> 24) & 0xFF); }
-	static int64_t setRole(int64_t voteData, RaftInfo::Role role) { return (voteData & ~(0xFFll << 24)) | (int64_t(role) << 24); }
-	static int32_t getTerm(int64_t voteData) { return int32_t(voteData >> 32); }
-	static int64_t setTerm(int64_t voteData, int32_t term) { return (int64_t(term) << 32) + (voteData & ~(0xFFFFFFFFll << 32)); }
+	static int32_t getLeaderId(int64_t voteData) noexcept { return int32_t(voteData & 0x00FFFFFF); }
+	static int64_t setLeaderId(int64_t voteData, int32_t leaderId) noexcept { return (leaderId & 0x00FFFFFF) | (voteData & ~0x00FFFFFFll); }
+	static RaftInfo::Role getRole(int64_t voteData) noexcept { return RaftInfo::Role((voteData >> 24) & 0xFF); }
+	static int64_t setRole(int64_t voteData, RaftInfo::Role role) noexcept { return (voteData & ~(0xFFll << 24)) | (int64_t(role) << 24); }
+	static int32_t getTerm(int64_t voteData) noexcept { return int32_t(voteData >> 32); }
+	static int64_t setTerm(int64_t voteData, int32_t term) noexcept { return (int64_t(term) << 32) + (voteData & ~(0xFFFFFFFFll << 32)); }
 	static void randomizedSleep(net::ev::dynamic_loop& loop, std::chrono::milliseconds base, std::chrono::milliseconds maxDiff);
 	int32_t beginElectionsTerm(int presetLeader);
 	bool endElections(int32_t term, RaftInfo::Role result);

@@ -10,9 +10,9 @@ namespace reindexer {
 class Schema;
 class TagsMatcher;
 
-struct ProtobufValue {
+struct [[nodiscard]] ProtobufValue {
 	ProtobufValue();
-	ProtobufValue(Variant&& _value, int _tagName, KeyValueType itemType, bool isArray);
+	ProtobufValue(Variant&& _value, TagName _tagName, KeyValueType itemType, bool isArray);
 
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type* = nullptr>
@@ -21,11 +21,11 @@ struct ProtobufValue {
 		value.Type().EvaluateOneOf([&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept { v = T(value); },
 								   [&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Composite, KeyValueType::Undefined,
 											 KeyValueType::Null, KeyValueType::Tuple>) {
-									   throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to number",
+									   throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to number",
 															  value.Type().Name());
 								   });
 		if (v < minv || v > maxv) {
-			throw reindexer::Error(errParams, "Value is out of bounds: [%d,%d]", minv, maxv);
+			throw reindexer::Error(errParams, "Value is out of bounds: [{},{}]", minv, maxv);
 		}
 		return v;
 	}
@@ -34,7 +34,7 @@ struct ProtobufValue {
 			  typename std::enable_if<std::is_same<std::string, T>::value || std::is_same<std::string_view, T>::value>::type* = nullptr>
 	T As() const {
 		if (!value.Type().Is<KeyValueType::String>()) {
-			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to string", value.Type().Name());
+			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to string", value.Type().Name());
 		}
 		return T(value);
 	}
@@ -42,27 +42,29 @@ struct ProtobufValue {
 	template <typename T, typename std::enable_if<std::is_same<T, bool>::value>::type* = nullptr>
 	T As() const {
 		if (!value.Type().Is<KeyValueType::Bool>()) {
-			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to bool", value.Type().Name());
+			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to bool", value.Type().Name());
 		}
 		return T(value);
 	}
 
 	bool IsOfPrimitiveType() const {
 		return itemType.EvaluateOneOf(
-			[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool>) noexcept { return true; },
+			[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::Bool>) noexcept {
+				return true;
+			},
 			[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::String, KeyValueType::Undefined,
-					 KeyValueType::Uuid>) noexcept { return false; });
+					 KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept { return false; });
 	}
 
 	Variant value;
-	int tagName;
+	TagName tagName;
 	KeyValueType itemType;
 	bool isArray;
 };
 
 class ProtobufParser;
 
-struct ProtobufObject {
+struct [[nodiscard]] ProtobufObject {
 	ProtobufObject(std::string_view _buf, const Schema& _schema, TagsPath& tagsPath, TagsMatcher& tm)
 		: ser(_buf), schema(_schema), tagsPath(tagsPath), tm(tm) {}
 	ProtobufObject(const ProtobufObject&) = delete;
@@ -76,7 +78,7 @@ struct ProtobufObject {
 	TagsMatcher& tm;
 };
 
-class ProtobufParser {
+class [[nodiscard]] ProtobufParser {
 public:
 	explicit ProtobufParser(ProtobufObject& obj) : object_(obj) {}
 	ProtobufParser(const ProtobufParser&) = delete;

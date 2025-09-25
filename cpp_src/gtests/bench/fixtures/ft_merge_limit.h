@@ -6,14 +6,13 @@
 
 #include "base_fixture.h"
 #include "core/ft/config/ftfastconfig.h"
-#include "core/ft/usingcontainer.h"
 #include "helpers.h"
 #include "tools/clock.h"
 #include "tools/fsops.h"
 
 // #define ENABLE_TIME_TRACKER
 
-class FullTextMergeLimit : private BaseFixture {
+class [[nodiscard]] FullTextMergeLimit : private BaseFixture {
 public:
 	virtual ~FullTextMergeLimit() {}
 	FullTextMergeLimit(Reindexer* db, const std::string& name, size_t maxItems);

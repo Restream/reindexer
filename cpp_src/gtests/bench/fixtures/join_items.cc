@@ -41,7 +41,7 @@ reindexer::Item JoinItems::MakeItem(benchmark::State&) {
 		item["id"] = id_seq_->Next();
 		item["name"] = randomString("price");
 		// All strings passed in unsafe mode to item must be holded by app
-		item.Unsafe();
+		rx_unused = item.Unsafe();
 		item["location"] = locations_.at(random<size_t>(0, locations_.size() - 1));
 		item["device"] = devices_.at(random<size_t>(0, devices_.size() - 1));
 	}

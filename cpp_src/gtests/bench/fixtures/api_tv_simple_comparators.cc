@@ -38,6 +38,14 @@ void ApiTvSimpleComparators::RegisterAllCases() {
 	Register("Query4CondRange", &ApiTvSimpleComparators::Query4CondRange, this);
 	Register("Query4CondRangeTotal", &ApiTvSimpleComparators::Query4CondRangeTotal, this);
 	Register("Query4CondRangeCachedTotal", &ApiTvSimpleComparators::Query4CondRangeCachedTotal, this);
+
+	Register("QueryDistinctOneField", &ApiTvSimpleComparators::QueryDistinctOneField, this);
+	Register("QueryDistinctTwoField", &ApiTvSimpleComparators::QueryDistinctTwoField, this);
+	Register("QueryDistinctTwoFieldArray", &ApiTvSimpleComparators::QueryDistinctTwoFieldArray, this);
+
+	Register("QueryDistinctOneFieldLimit", &ApiTvSimpleComparators::QueryDistinctOneFieldLimit, this);
+	Register("QueryDistinctTwoFieldLimit", &ApiTvSimpleComparators::QueryDistinctTwoFieldLimit, this);
+	Register("QueryDistinctTwoFieldArrayLimit", &ApiTvSimpleComparators::QueryDistinctTwoFieldArrayLimit, this);
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
@@ -111,7 +119,7 @@ reindexer::Item ApiTvSimpleComparators::MakeStrItem() {
 	static int id = 0;
 	reindexer::Item item = db_->NewItem(stringSelectNs_);
 	if (item.Status().ok()) {
-		item.Unsafe();
+		rx_unused = item.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld(wrSer_);
 		bld.Put("id", id++);
@@ -134,7 +142,7 @@ reindexer::Item ApiTvSimpleComparators::MakeStrItem() {
 reindexer::Item ApiTvSimpleComparators::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
-	item.Unsafe();
+	rx_unused = item.Unsafe();
 
 	auto startTime = random<int>(0, 50000);
 
@@ -172,7 +180,7 @@ void ApiTvSimpleComparators::StringsSelect(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		if (!qres.Count()) {
 			state.SkipWithError("Results does not contain any value");
@@ -188,7 +196,7 @@ void ApiTvSimpleComparators::GetEqInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		if (!qres.Count()) {
 			state.SkipWithError("Results does not contain any value");
@@ -204,7 +212,7 @@ void ApiTvSimpleComparators::GetEqArrayInt(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		if (!qres.Count()) {
 			state.SkipWithError("Results does not contain any value");
@@ -220,7 +228,7 @@ void ApiTvSimpleComparators::GetEqString(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		if (!qres.Count()) {
 			state.SkipWithError("Results does not contain any value");
@@ -238,7 +246,7 @@ void ApiTvSimpleComparators::GetByRangeIDAndSort(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 
 		if (!qres.Count()) {
@@ -256,7 +264,7 @@ void ApiTvSimpleComparators::GetUuidStr(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		if (!qres.Count()) {
 			state.SkipWithError("Results does not contain any value");
@@ -273,7 +281,7 @@ void ApiTvSimpleComparators::Query1Cond(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -287,7 +295,7 @@ void ApiTvSimpleComparators::Query1CondTotal(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -301,7 +309,7 @@ void ApiTvSimpleComparators::Query1CondCachedTotal(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -315,7 +323,7 @@ void ApiTvSimpleComparators::Query2Cond(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -329,7 +337,7 @@ void ApiTvSimpleComparators::Query2CondTotal(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -343,7 +351,7 @@ void ApiTvSimpleComparators::Query2CondCachedTotal(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -362,7 +370,7 @@ void ApiTvSimpleComparators::Query3Cond(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -382,7 +390,7 @@ void ApiTvSimpleComparators::Query3CondTotal(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -402,7 +410,7 @@ void ApiTvSimpleComparators::Query3CondCachedTotal(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -420,7 +428,7 @@ void ApiTvSimpleComparators::Query3CondKillIdsCache(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -439,7 +447,7 @@ void ApiTvSimpleComparators::Query3CondRestoreIdsCache(benchmark::State& state) 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -459,7 +467,7 @@ void ApiTvSimpleComparators::Query4Cond(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -480,7 +488,7 @@ void ApiTvSimpleComparators::Query4CondTotal(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -501,7 +509,7 @@ void ApiTvSimpleComparators::Query4CondCachedTotal(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -522,7 +530,7 @@ void ApiTvSimpleComparators::Query4CondRange(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -544,7 +552,7 @@ void ApiTvSimpleComparators::Query4CondRangeTotal(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -566,7 +574,85 @@ void ApiTvSimpleComparators::Query4CondRangeCachedTotal(benchmark::State& state)
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctOneField(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("year");
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctTwoField(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("year", "location");
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctTwoFieldArray(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("packages", "countries");
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctOneFieldLimit(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("year").Limit(20);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctTwoFieldLimit(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("year", "location").Limit(20);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
+}
+
+void ApiTvSimpleComparators::QueryDistinctTwoFieldArrayLimit(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Distinct("packages", "countries").Limit(20);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
 		}
 	}
 }

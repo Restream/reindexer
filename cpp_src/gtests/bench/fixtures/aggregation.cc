@@ -1,6 +1,6 @@
 #include "aggregation.h"
+#include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
-#include "tools/randompoint.h"
 
 template <size_t N>
 void Aggregation::Insert(State& state) {
@@ -9,12 +9,12 @@ void Aggregation::Insert(State& state) {
 		for (size_t i = 0; i < N; ++i) {
 			auto item = MakeItem(state);
 			if (!item.Status().ok()) {
-				state.SkipWithError(item.Status().what().c_str());
+				state.SkipWithError(item.Status().what());
 			}
 
 			auto err = db_->Insert(nsdef_.name, item);
 			if (!err.ok()) {
-				state.SkipWithError(err.what().c_str());
+				state.SkipWithError(err.what());
 			}
 		}
 	}
@@ -41,7 +41,7 @@ reindexer::Error Aggregation::Initialize() {
 reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
-	item.Unsafe();
+	rx_unused = item.Unsafe();
 
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);
@@ -51,13 +51,13 @@ reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	bld.Put("str_data", RandString());
 	auto arr = bld.Array("int_array_data");
 	for (size_t i = 0, s = rand() % 100 + 100; i < s; ++i) {
-		arr.Put({}, rand() % 1000);
+		arr.Put(reindexer::TagName::Empty(), rand() % 1000);
 	}
 	arr.End();
 	bld.End();
 	const auto err = item.FromJSON(wrSer_.Slice());
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 	return item;
 }
@@ -70,7 +70,7 @@ void Aggregation::Facet(benchmark::State& state) {
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -83,7 +83,7 @@ void Aggregation::MultiFacet(benchmark::State& state) {
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -96,7 +96,7 @@ void Aggregation::ArrayFacet(benchmark::State& state) {
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }

@@ -6,39 +6,17 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        compiler: ["Visual Studio 17 2022"]
+        compiler: ["Visual Studio 17 2022", "MinGW Makefiles"]
       fail-fast: false
+    env:
+      EXTRA_FLAGS: "${{ matrix.compiler == 'Visual Studio 17 2022' && '-Ax64' || '' }}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Build Reindexer
         run: |
           mkdir build && cd build
-          cmake -G "${{matrix.compiler}}" .. -Ax64
-          cmake --build . --config Release
-          cmake --build . --config Release --target face
-          cmake --build . --config Release --target swagger
-          cpack
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-latest
-          path: build/*.exe
-          if-no-files-found: error
-
-  build-windows-2019:
-    runs-on: windows-2019
-    strategy:
-      matrix:
-        compiler: ["Visual Studio 16 2019", "MinGW Makefiles"]
-      fail-fast: false
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Build Reindexer
-        run: |
-          mkdir build && cd build
-          cmake -G "${{matrix.compiler}}" ..
+          cmake -G "${{matrix.compiler}}" -DBUILD_ANN_INDEXES=builtin .. $EXTRA_FLAGS
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
@@ -47,7 +25,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-13]
+        os: [ubuntu-22.04, ubuntu-24.04, macos-15]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -82,7 +60,7 @@ jobs:
           mkdir build && cd build
           if [[ $OS == ubuntu-latest ]]; then
             if [[ $SANITIZER == 'ASAN' ]]; then
-              cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On -DGTEST_SKIP_SHARDING=On ..
+              cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On -DGTEST_SKIP_ASAN_MEMORY_HEAVY=On ..
             else
               cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
             fi
@@ -114,7 +92,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-13]
+        os: [ubuntu-22.04, ubuntu-24.04, macos-15]
         test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
@@ -124,13 +102,11 @@ jobs:
             sanitizer: ASAN
             test: 'GO'
 #         - os: ubuntu-latest
-#           sanitizer: TSAN
-#           cc: gcc-12
-#           cxx: g++-12
 #           test: 'C++'
           - os: ubuntu-latest
             sanitizer: TSAN
             test: 'GO'
+
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
@@ -142,24 +118,24 @@ jobs:
       SANITIZER: ${{matrix.sanitizer}}
     steps:
       - name: Checkout repository
-        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
         uses: actions/checkout@v4
       - name: Install Go
         uses: actions/setup-go@v5
-        if: ${{ matrix.os == 'macos-13' && matrix.test == 'GO' }}
+        if: ${{ matrix.os == 'macos-15' && matrix.test == 'GO' }}
         with:
-          go-version: '1.22.x'
+          go-version: '1.24.x'
           check-latest: true
       - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
-        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
         uses: actions/download-artifact@v4
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
       - name: 'Untar Artifacts'
-        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
         run: tar -xvf artifacts.tar
       - name: Prepare Environment
-        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
         env:
           OS: ${{matrix.os}}
         run: |
@@ -174,7 +150,7 @@ jobs:
             ./.github/workflows/install_gtest_parallel.sh
           fi
       - name: Tests
-        if: ${{ matrix.os != 'macos-13' || matrix.test == 'GO' }}
+        if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
         run: |
           if [[ $TEST == 'GO' ]]; then
             if [[ $SANITIZER == 'ASAN' ]]; then
@@ -183,7 +159,12 @@ jobs:
             if [[ -z "$SANITIZER" ]]; then
               go test -timeout 15m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
             else
-              go test -timeout 35m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
+              export TSAN_OPTIONS="halt_on_error=1 suppressions=$PWD/test/tsan/builtin.tsan.suppressions"
+              mkdir gotests
+              # Using preocompiled tests to get readable Thread sanitizer backtraces from builtin C++ library
+              go test ./test/... -c -o gotests -tags tiny_vectors
+              ./gotests/test.test -test.timeout 35m -test.bench . -test.benchmem -test.benchtime 100ms -seedcount 50000
+              ./gotests/ft.test -test.bench . -test.benchmem -test.benchtime 100ms -seedcount 50000
             fi
           else
             cd build
@@ -219,9 +200,9 @@ jobs:
         run: |
           cd build
           if [[ $OS == ubuntu* ]]; then
-            sudo dpkg -i reindexer-4-dev*.deb
+            sudo dpkg -i reindexer-dev*.deb
             sudo apt-get install -f
-            sudo dpkg -i reindexer-4-server*.deb
+            sudo dpkg -i reindexer-server*.deb
             sudo apt-get install -f
           else
             for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done

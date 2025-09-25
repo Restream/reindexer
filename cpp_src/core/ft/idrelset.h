@@ -2,11 +2,9 @@
 
 #include <limits.h>
 #include <algorithm>
-#include <map>
-#include <set>
+#include "estl/h_vector.h"
 #include "estl/packed_vector.h"
 #include "sort/pdqsort.hpp"
-#include "usingcontainer.h"
 
 namespace reindexer {
 
@@ -15,7 +13,7 @@ static constexpr int kMaxFtCompositeFields = 63;
 
 // the position of the word in the document (the index of the word in the field (pos), the field in which the word field was
 // encountered (field)
-class IdRelType {
+class [[nodiscard]] IdRelType {
 public:
 	explicit IdRelType(VDocIdType id = 0) noexcept : id_(id) {}
 	IdRelType(IdRelType&&) noexcept = default;
@@ -24,8 +22,6 @@ public:
 	IdRelType& operator=(const IdRelType&) = default;
 
 	VDocIdType Id() const noexcept { return id_; }
-
-	int Distance(const IdRelType& other, int max) const;
 
 	int WordsInField(int field) const noexcept;
 	int MinPositionInField(int field) const noexcept;
@@ -36,7 +32,7 @@ public:
 
 	void reserve(int s) { pos_.reserve(s); }
 	bool empty() const noexcept { return pos_.empty(); }
-	struct PosType {
+	struct [[nodiscard]] PosType {
 		static const int posBits = 24;
 		PosType() = default;
 		PosType(int pos, int field) noexcept : fpos(pos | (field << posBits)) {}
@@ -47,9 +43,6 @@ public:
 
 		uint32_t fpos;
 	};
-
-	template <typename PosTypeT>
-	int MergeWithDist(const IdRelType& newWordPos, unsigned int dist, PosTypeT& res, const std::string& inf) const;
 
 	void Add(int pos, int field) {
 		assertrx_throw(0 <= field && field <= kMaxFtCompositeFields);
@@ -82,7 +75,8 @@ public:
 			pos_.begin(), pos_.end(),
 			[](const IdRelType::PosType& lhs, const IdRelType::PosType& rhs) noexcept { return lhs.pos() < rhs.pos(); });
 	}
-	const RVector<PosType, 3>& Pos() const noexcept { return pos_; }
+	const h_vector<PosType, 3>& Pos() const noexcept { return pos_; }
+	h_vector<PosType, 3>& Pos() noexcept { return pos_; }
 	uint64_t UsedFieldsMask() const noexcept { return usedFieldsMask_; }
 	size_t HeapSize() const noexcept { return heapSize(pos_); }
 
@@ -98,19 +92,19 @@ private:
 		}
 	}
 
-	RVector<PosType, 3> pos_;
+	h_vector<PosType, 3> pos_;
 	uint64_t usedFieldsMask_ = 0;  // fields that occur in pos_
 	VDocIdType id_ = 0;			   // index of the document in which the word occurs
 };
 
-struct PosTypeDebug : public IdRelType::PosType {
+struct [[nodiscard]] PosTypeDebug : public IdRelType::PosType {
 	PosTypeDebug() = default;
 	explicit PosTypeDebug(const IdRelType::PosType& pos, const std::string& inf) : IdRelType::PosType(pos), info(inf) {}
 	explicit PosTypeDebug(const IdRelType::PosType& pos, std::string&& inf) noexcept : IdRelType::PosType(pos), info(std::move(inf)) {}
 	std::string info;
 };
 
-class IdRelSet : public std::vector<IdRelType> {
+class [[nodiscard]] IdRelSet : public std::vector<IdRelType> {
 public:
 	int Add(VDocIdType id, int pos, int field) {
 		if (id > max_id_) {
@@ -136,7 +130,7 @@ public:
 
 using PackedIdRelVec = packed_vector<IdRelType>;
 
-class IdRelVec : public std::vector<IdRelType> {
+class [[nodiscard]] IdRelVec : public std::vector<IdRelType> {
 public:
 	size_t heap_size() const noexcept {
 		size_t res = capacity() * sizeof(IdRelType);

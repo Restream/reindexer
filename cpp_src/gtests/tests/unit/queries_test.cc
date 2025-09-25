@@ -6,9 +6,9 @@
 #include "core/schema.h"
 #include "csv2jsonconverter.h"
 #include "queries_api.h"
+#include "server/pprof/gperf_profiler.h"
 #include "tools/jsontools.h"
 
-#if !defined(REINDEX_WITH_TSAN)
 TEST_F(QueriesApi, QueriesStandardTestSet) {
 	try {
 		FillDefaultNamespace(0, 2500, 20);
@@ -19,7 +19,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		FillTestJoinNamespace(0, 300);
 		FillGeomNamespace();
 
-		CheckStandartQueries();
+		CheckStandardQueries();
 		CheckAggregationQueries();
 		CheckSqlQueries();
 		CheckDslQueries();
@@ -33,8 +33,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		int itemsCount = 0;
 		auto& items = insertedItems_[default_namespace];
 		for (auto it = items.begin(); it != items.end();) {
-			Error err = rt.reindexer->Delete(default_namespace, it->second);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Delete(default_namespace, it->second);
 			it = items.erase(it);
 			if (++itemsCount == 4000) {
 				break;
@@ -46,8 +45,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 
 		itemsCount = 0;
 		for (auto it = items.begin(); it != items.end();) {
-			Error err = rt.reindexer->Delete(default_namespace, it->second);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Delete(default_namespace, it->second);
 			it = items.erase(it);
 			if (++itemsCount == 5000) {
 				break;
@@ -57,8 +55,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		for (size_t i = 0; i < 5000; ++i) {
 			auto itToRemove = items.begin();
 			if (itToRemove != items.end()) {
-				Error err = rt.reindexer->Delete(default_namespace, itToRemove->second);
-				ASSERT_TRUE(err.ok()) << err.what();
+				rt.Delete(default_namespace, itToRemove->second);
 				items.erase(itToRemove);
 			}
 			FillDefaultNamespace(rand() % 100, 1, 0);
@@ -67,16 +64,14 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 				itToRemove = items.begin();
 				std::advance(itToRemove, rand() % std::min(100, int(items.size())));
 				if (itToRemove != items.end()) {
-					Error err = rt.reindexer->Delete(default_namespace, itToRemove->second);
-					ASSERT_TRUE(err.ok()) << err.what();
+					rt.Delete(default_namespace, itToRemove->second);
 					items.erase(itToRemove);
 				}
 			}
 		}
 
 		for (auto it = items.begin(); it != items.end();) {
-			Error err = rt.reindexer->Delete(default_namespace, it->second);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Delete(default_namespace, it->second);
 			it = items.erase(it);
 		}
 
@@ -86,7 +81,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		FillComparatorsNamespace();
 		FillGeomNamespace();
 
-		CheckStandartQueries();
+		CheckStandardQueries();
 		CheckAggregationQueries();
 		CheckSqlQueries();
 		CheckDslQueries();
@@ -113,13 +108,10 @@ TEST_F(QueriesApi, QueriesConditions) {
 TEST_F(QueriesApi, UuidQueries) {
 	FillUUIDNs();
 	// hack to obtain not index not string uuid fields
-	/*auto err = rt.reindexer->DropIndex(uuidNs, {kFieldNameUuidNotIndex2});  // TODO uncomment this #1470
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->DropIndex(uuidNs, {kFieldNameUuidNotIndex3});
-	ASSERT_TRUE(err.ok()) << err.what();*/
+	/*rt.DropIndex(uuidNs, {kFieldNameUuidNotIndex2});  // TODO uncomment this #1470
+	rt.DropIndex(uuidNs, {kFieldNameUuidNotIndex3});*/
 	CheckUUIDQueries();
 }
-#endif	// !defined(REINDEX_WITH_TSAN)
 
 TEST_F(QueriesApi, IndexCacheInvalidationTest) {
 	std::vector<std::pair<int, int>> data{{0, 10}, {1, 9}, {2, 8}, {3, 7}, {4, 6},	{5, 5},
@@ -188,7 +180,7 @@ TEST_F(QueriesApi, TransactionStress) {
 
 TEST_F(QueriesApi, SqlParseGenerate) {
 	using namespace std::string_literals;
-	enum Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
+	enum [[nodiscard]] Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
 	struct {
 		std::string sql;
 		std::variant<Query, Error> expected;
@@ -314,7 +306,8 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 			 .LeftJoin("id", "uid", CondEq, Query("second_ns").Not().Where("val", CondEq, 10).Limit(1).Offset(2))
 			 .Where("id", CondSet, Query{"third_ns"}.Select({"id"}).Where("id", CondLt, 999).Limit(5).Offset(7))
 			 .LeftJoin("uid", "id", CondEq, Query("fourth_ns").Where("val", CondAny, VariantArray{}))},
-	};
+		{"SELECT * FROM ns WHERE ft = 'text' ORDER BY 'rank(ft, 10.0)'",
+		 Query{"ns"}.Where("ft", CondEq, "text").Sort("rank(ft, 10.0)", false)}};
 
 	for (const auto& [sql, expected, direction] : cases) {
 		if (std::holds_alternative<Query>(expected)) {
@@ -337,7 +330,7 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 				Query parsed = Query::FromSQL(sql);
 				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nSQL: " << sql;
 			} catch (const Error& err) {
-				EXPECT_EQ(err.what(), expectedErr.what()) << "\nSQL: " << sql;
+				EXPECT_STREQ(err.what(), expectedErr.what()) << "\nSQL: " << sql;
 			}
 		}
 	}
@@ -345,14 +338,14 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 
 TEST_F(QueriesApi, DslGenerateParse) {
 	using namespace std::string_literals;
-	enum Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
+	enum [[nodiscard]] Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
 	struct {
 		std::string dsl;
 		std::variant<Query, Error> expected;
 		Direction direction = BOTH;
-	} cases[]{{fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+	} cases[]{{fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -363,19 +356,49 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "always": true
-      }
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   geomNs),
 			   Query{geomNs}.AppendQueryEntry<reindexer::AlwaysTrue>(OpAnd)},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [
+      {{
+         "field": "rank(ft, 2.0) + 5",
+         "desc": false
+      }}
+   ],
+   "filters": [
+      {{
+         "op": "and",
+         "cond": "eq",
+         "field": "ft",
+         "value": "text"
+      }}
+   ],
+   "merge_queries": [],
+   "aggregations": []
+}})",
+				   geomNs),
+			   Query{geomNs}.Where("ft", CondEq, "text").Sort("rank(ft, 2.0) + 5", false)},
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -386,10 +409,10 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "dwithin",
-         "field": "%s",
+         "field": "{}",
          "value": [
             [
                -9.2,
@@ -397,16 +420,16 @@ TEST_F(QueriesApi, DslGenerateParse) {
             ],
             0.581
          ]
-      }
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   geomNs, kFieldNamePointLinearRTree),
 			   Query{geomNs}.DWithin(kFieldNamePointLinearRTree, reindexer::Point{-9.2, -0.145}, 0.581)},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -417,21 +440,21 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "gt",
-         "first_field": "%s",
-         "second_field": "%s"
-      }
+         "first_field": "{}",
+         "second_field": "{}"
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, kFieldNameStartTime, kFieldNamePackages),
 			   Query(default_namespace).WhereBetweenFields(kFieldNameStartTime, CondGt, kFieldNamePackages)},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -442,11 +465,11 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "gt",
-         "subquery": {
-            "namespace": "%s",
+         "subquery": {{
+            "namespace": "{}",
             "limit": 10,
             "offset": 10,
             "req_total": "disabled",
@@ -454,25 +477,25 @@ TEST_F(QueriesApi, DslGenerateParse) {
             "sort": [],
             "filters": [],
             "aggregations": [
-               {
+               {{
                   "type": "max",
                   "fields": [
-                     "%s"
+                     "{}"
                   ]
-               }
+               }}
             ]
-         },
+         }},
          "value": 18
-      }
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, joinNs, kFieldNameAge),
 			   Query(default_namespace).Where(Query(joinNs).Aggregate(AggMax, {kFieldNameAge}).Limit(10).Offset(10), CondGt, {18})},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -483,36 +506,36 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "any",
-         "subquery": {
-            "namespace": "%s",
+         "subquery": {{
+            "namespace": "{}",
             "limit": 0,
             "offset": 0,
             "req_total": "disabled",
             "select_filter": [],
             "sort": [],
             "filters": [
-               {
+               {{
                   "op": "and",
                   "cond": "eq",
-                  "field": "%s",
+                  "field": "{}",
                   "value": 1
-               }
+               }}
             ],
             "aggregations": []
-         }
-      }
+         }}
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, joinNs, kFieldNameId),
 			   Query(default_namespace).Where(Query(joinNs).Where(kFieldNameId, CondEq, 1), CondAny, {})},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -523,44 +546,44 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "eq",
-         "field": "%s",
-         "subquery": {
-            "namespace": "%s",
+         "field": "{}",
+         "subquery": {{
+            "namespace": "{}",
             "limit": -1,
             "offset": 0,
             "req_total": "disabled",
             "select_filter": [
-               "%s"
+               "{}"
             ],
             "sort": [],
             "filters": [
-               {
+               {{
                   "op": "and",
                   "cond": "set",
-                  "field": "%s",
+                  "field": "{}",
                   "value": [
                      1,
                      10,
                      100
                   ]
-               }
+               }}
             ],
             "aggregations": []
-         }
-      }
+         }}
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, kFieldNameName, joinNs, kFieldNameName, kFieldNameId),
 			   Query(default_namespace)
 				   .Where(kFieldNameName, CondEq, Query(joinNs).Select({kFieldNameName}).Where(kFieldNameId, CondSet, {1, 10, 100}))},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -571,12 +594,12 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "gt",
-         "field": "%s",
-         "subquery": {
-            "namespace": "%s",
+         "field": "{}",
+         "subquery": {{
+            "namespace": "{}",
             "limit": -1,
             "offset": 0,
             "req_total": "disabled",
@@ -584,24 +607,24 @@ TEST_F(QueriesApi, DslGenerateParse) {
             "sort": [],
             "filters": [],
             "aggregations": [
-               {
+               {{
                   "type": "avg",
                   "fields": [
-                     "%s"
+                     "{}"
                   ]
-               }
+               }}
             ]
-         }
-      }
+         }}
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, kFieldNameId, joinNs, kFieldNameId),
 			   Query(default_namespace).Where(kFieldNameId, CondGt, Query(joinNs).Aggregate(AggAvg, {kFieldNameId}))},
-			  {fmt::sprintf(
-				   R"({
-   "namespace": "%s",
+			  {fmt::format(
+				   R"({{
+   "namespace": "{}",
    "limit": -1,
    "offset": 0,
    "req_total": "disabled",
@@ -612,12 +635,12 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {
+      {{
          "op": "and",
          "cond": "gt",
-         "field": "%s",
-         "subquery": {
-            "namespace": "%s",
+         "field": "{}",
+         "subquery": {{
+            "namespace": "{}",
             "limit": 0,
             "offset": 0,
             "req_total": "enabled",
@@ -625,12 +648,12 @@ TEST_F(QueriesApi, DslGenerateParse) {
             "sort": [],
             "filters": [],
             "aggregations": []
-         }
-      }
+         }}
+      }}
    ],
    "merge_queries": [],
    "aggregations": []
-})",
+}})",
 				   default_namespace, kFieldNameId, joinNs, kFieldNameId),
 			   Query(default_namespace).Where(kFieldNameId, CondGt, Query(joinNs).ReqTotal())}};
 	for (const auto& [dsl, expected, direction] : cases) {
@@ -638,7 +661,7 @@ TEST_F(QueriesApi, DslGenerateParse) {
 			const Query& q = std::get<Query>(expected);
 			if (direction & GEN) {
 				reindexer::WrSerializer ser;
-				reindexer::prettyPrintJSON(q.GetJSON(), ser, 3);
+				reindexer::prettyPrintJSON(std::string_view(q.GetJSON()), ser, 3);
 				EXPECT_EQ(ser.Slice(), dsl);
 			}
 			if (direction & PARSE) {
@@ -656,7 +679,7 @@ TEST_F(QueriesApi, DslGenerateParse) {
 				Query parsed = Query::FromJSON(dsl);
 				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nDSL: " << dsl;
 			} catch (const Error& err) {
-				EXPECT_EQ(err.what(), expectedErr.what()) << "\nDSL: " << dsl;
+				EXPECT_STREQ(err.what(), expectedErr.what()) << "\nDSL: " << dsl;
 			}
 		}
 	}
@@ -680,28 +703,36 @@ TEST_F(QueriesApi, ForcedSortOffsetTest) {
 		const bool desc = rand() % 2;
 		// Single column sort
 		auto expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, First);
-		ExecuteAndVerify(Query(forcedSortOffsetNs).Sort(kFieldNameColumnHash, desc, forcedSortOrder).Offset(offset).Limit(limit),
+		ExecuteAndVerify(Query(forcedSortNs).Sort(kFieldNameColumnHash, desc, forcedSortOrder).Offset(offset).Limit(limit),
 						 kFieldNameColumnHash, expectedResults);
 		expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, Second);
-		ExecuteAndVerify(Query(forcedSortOffsetNs).Sort(kFieldNameColumnTree, desc, forcedSortOrder).Offset(offset).Limit(limit),
+		ExecuteAndVerify(Query(forcedSortNs).Sort(kFieldNameColumnTree, desc, forcedSortOrder).Offset(offset).Limit(limit),
 						 kFieldNameColumnTree, expectedResults);
 		// Multicolumn sort
 		const bool desc2 = rand() % 2;
 		auto expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, First);
-		ExecuteAndVerify(Query(forcedSortOffsetNs)
+		ExecuteAndVerify(Query(forcedSortNs)
 							 .Sort(kFieldNameColumnHash, desc, forcedSortOrder)
 							 .Sort(kFieldNameColumnTree, desc2)
 							 .Offset(offset)
 							 .Limit(limit),
 						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
 		expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, Second);
-		ExecuteAndVerify(Query(forcedSortOffsetNs)
+		ExecuteAndVerify(Query(forcedSortNs)
 							 .Sort(kFieldNameColumnTree, desc2, forcedSortOrder)
 							 .Sort(kFieldNameColumnHash, desc)
 							 .Offset(offset)
 							 .Limit(limit),
 						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
 	}
+}
+
+TEST_F(QueriesApi, ForcedSortByValuesOfWrongTypes) {
+	FillForcedSortNamespace();
+	reindexer::QueryResults qr;
+	auto query = Query(forcedSortNs).Sort(kFieldNameColumnString, true, std::vector{Variant{VariantArray{Variant{1}, Variant{3}}}});
+	const Error err = rt.reindexer->Select(query, qr);
+	ASSERT_FALSE(err.ok()) << query.GetSQL();
 }
 
 TEST_F(QueriesApi, StrictModeTest) {
@@ -716,9 +747,7 @@ TEST_F(QueriesApi, StrictModeTest) {
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
 		EXPECT_EQ(err.code(), errStrictMode);
-		qr.Clear();
-		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		qr = rt.Select(query.Strict(StrictModeNone));
 		Verify(qr, Query(testSimpleNs), *rt.reindexer);
 		qr.Clear();
 	}
@@ -730,16 +759,14 @@ TEST_F(QueriesApi, StrictModeTest) {
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
 		EXPECT_EQ(err.code(), errStrictMode);
-		qr.Clear();
-		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		qr = rt.Select(query.Strict(StrictModeNone));
 		EXPECT_EQ(qr.Count(), 0);
 	}
 }
 
 TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 	const char* condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", ">=", "RANGE", "IN", "ALLSET", "IS NULL", "LIKE"};
-	const std::string sqlTemplate = "SELECT * FROM tleft LEFT JOIN tright ON %s.%s %s %s.%s";
+	constexpr auto sqlTemplate = "SELECT * FROM tleft LEFT JOIN tright ON {}.{} {} {}.{}";
 
 	const std::string tLeft = "tleft";
 	const std::string tRight = "tright";
@@ -748,7 +775,7 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 
 	auto createQuery = [&sqlTemplate, &condNames](const std::string& leftTable, const std::string& rightTable, const std::string& leftIndex,
 												  const std::string& rightIndex, CondType t) -> std::string {
-		return fmt::sprintf(sqlTemplate, leftTable, leftIndex, condNames[t], rightTable, rightIndex);
+		return fmt::format(sqlTemplate, leftTable, leftIndex, condNames[t], rightTable, rightIndex);
 	};
 
 	std::vector<std::pair<CondType, CondType>> conditions = {{CondLe, CondGe}, {CondGe, CondLe}, {CondLt, CondGt}, {CondGt, CondLt}};
@@ -763,7 +790,7 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 				std::string sqlQCmp = createQuery(tLeft, tRight, iLeft, iRight, c.first);
 				reindexer::WrSerializer wrSer;
 				q.GetSQL(wrSer);
-				ASSERT_EQ(sqlQCmp, std::string(wrSer.c_str()));
+				ASSERT_EQ(sqlQCmp, wrSer.Slice());
 			}
 
 			{
@@ -772,7 +799,7 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 
 				reindexer::WrSerializer wrSer;
 				qSql.GetSQL(wrSer);
-				ASSERT_EQ(sqlQ, std::string(wrSer.c_str()));
+				ASSERT_EQ(sqlQ, wrSer.Slice());
 			}
 			{
 				std::string sqlQ = createQuery(tRight, tLeft, iRight, iLeft, c.second);
@@ -780,7 +807,7 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 				ASSERT_EQ(q.GetJSON(), qSql.GetJSON());
 				reindexer::WrSerializer wrSer;
 				qSql.GetSQL(wrSer);
-				ASSERT_EQ(sqlQ, std::string(wrSer.c_str()));
+				ASSERT_EQ(sqlQ, wrSer.Slice());
 			}
 		} catch (const Error& e) {
 			ASSERT_TRUE(e.ok()) << e.what();
@@ -795,10 +822,8 @@ TEST_F(QueriesApi, JoinByNotIndexField) {
 
 	reindexer::WrSerializer ser;
 	for (const auto& nsName : {leftNs, rightNs}) {
-		Error err = rt.reindexer->OpenNamespace(nsName);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(nsName);
+		rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
 		for (int i = 0; i < kItemsCount; ++i) {
 			ser.Reset();
 			reindexer::JsonBuilder json{ser};
@@ -807,23 +832,20 @@ TEST_F(QueriesApi, JoinByNotIndexField) {
 				json.Put("f", i);
 			}
 			json.End();
-			Item item = rt.reindexer->NewItem(nsName);
+			Item item(rt.NewItem(nsName));
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			err = item.FromJSON(ser.Slice());
+			auto err = item.FromJSON(ser.Slice());
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 			Upsert(nsName, item);
 		}
 	}
-	reindexer::QueryResults qr;
-	Error err = rt.reindexer->Select(
-		Query(leftNs).Strict(StrictModeNames).Join(InnerJoin, Query(rightNs).Where("id", CondGe, 5)).On("f", CondEq, "f"), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(Query(leftNs).Strict(StrictModeNames).Join(InnerJoin, Query(rightNs).Where("id", CondGe, 5)).On("f", CondEq, "f"));
 	const int expectedIds[] = {5, 7, 9};
 	ASSERT_EQ(qr.Count(), sizeof(expectedIds) / sizeof(int));
 	unsigned i = 0;
 	for (auto& it : qr) {
-		Item item = it.GetItem(false);
+		Item item(it.GetItem(false));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		VariantArray values = item["id"];
 		ASSERT_EQ(values.size(), 1);
@@ -833,26 +855,22 @@ TEST_F(QueriesApi, JoinByNotIndexField) {
 
 TEST_F(QueriesApi, AllSet) {
 	const std::string nsName = "allset_ns";
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	reindexer::WrSerializer ser;
 	reindexer::JsonBuilder json{ser};
 	json.Put("id", 0);
 	json.Array("array", {0, 1, 2});
 	json.End();
-	Item item = rt.reindexer->NewItem(nsName);
+	Item item(rt.NewItem(nsName));
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	err = item.FromJSON(ser.Slice());
+	auto err = item.FromJSON(ser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	Upsert(nsName, item);
 	Query q{nsName};
 	q.Where("array", CondAllSet, {0, 1, 2});
-	reindexer::QueryResults qr;
-	err = rt.reindexer->Select(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(q);
 	EXPECT_EQ(qr.Count(), 1);
 }
 
@@ -860,13 +878,11 @@ TEST_F(QueriesApi, SetByTreeIndex) {
 	// Execute query with sort and set condition by btree index
 	const std::string nsName = "set_by_tree_ns";
 	constexpr int kMaxID = 20;
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
 	setPkFields(nsName, {"id"});
 	for (int id = kMaxID; id != 0; --id) {
-		Item item = rt.NewItem(nsName);
+		Item item(rt.NewItem(nsName));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		item["id"] = id;
 		Upsert(nsName, item);
@@ -934,10 +950,8 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 	std::array<const std::string, 3> nsNames = {"csv_test1", "csv_test2", "csv_test3"};
 
 	auto openNs = [this](std::string_view nsName) {
-		Error err = rt.reindexer->OpenNamespace(nsName);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(nsName);
+		rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	};
 
 	for (auto& nsName : nsNames) {
@@ -1001,49 +1015,47 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 		"type": "object"
 	})!";
 
-	auto err = rt.reindexer->SetSchema(nsNames[0], jsonschema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
+	rt.SetSchema(nsNames[0], jsonschema);
 	int fieldNum = 0;
 	const auto addItem = [&fieldNum, this](int id, std::string_view nsName, bool needJoinField = true) {
 		reindexer::WrSerializer ser;
 		{
 			reindexer::JsonBuilder json{ser};
 			json.Put("id", id);
-			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			json.Put(fmt::format("Field{}", fieldNum), fmt::format("field_{}_data", fieldNum));
 			++fieldNum;
-			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			json.Put(fmt::format("Field{}", fieldNum), fmt::format("field_{}_data", fieldNum));
 			++fieldNum;
-			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			json.Put(fmt::format("Field{}", fieldNum), fmt::format("field_{}_data", fieldNum));
 			++fieldNum;
-			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			json.Put(fmt::format("Field{}", fieldNum), fmt::format("field_{}_data", fieldNum));
 			json.Put("quoted_field", "\"field_with_\"quoted\"");
 			if (needJoinField) {
 				json.Put("join_field", id % 3);
 			}
 			{
-				auto data0 = json.Array(fmt::sprintf("Array_level0_id_%d", id));
+				auto data0 = json.Array(fmt::format("Array_level0_id_{}", id));
 				for (int i = 0; i < 5; ++i) {
-					data0.Put(nullptr, fmt::sprintf("array_data_0_%d", i));
+					data0.Put(reindexer::TagName::Empty(), fmt::format("array_data_0_{}", i));
 				}
-				data0.Put(nullptr, std::string("\"arr_quoted_field(\"this is quoted too\")\""));
+				data0.Put(reindexer::TagName::Empty(), std::string("\"arr_quoted_field(\"this is quoted too\")\""));
 			}
 			{
-				auto data0 = json.Object(fmt::sprintf("Object_level0_id_%d", id));
+				auto data0 = json.Object(fmt::format("Object_level0_id_{}", id));
 				for (int i = 0; i < 5; ++i) {
-					data0.Put(fmt::sprintf("Object_%d", i), fmt::sprintf("object_data_0_%d", i));
+					data0.Put(fmt::format("Object_{}", i), fmt::format("object_data_0_{}", i));
 				}
 				data0.Put("Quoted Field lvl0", std::string("\"obj_quoted_field(\"this is quoted too\")\""));
 				{
-					auto data1 = data0.Object(fmt::sprintf("Object_level1_id_%d", id));
+					auto data1 = data0.Object(fmt::format("Object_level1_id_{}", id));
 					for (int j = 0; j < 5; ++j) {
-						data1.Put(fmt::sprintf("objectData1 %d", j), fmt::sprintf("objectData1 %d", j));
+						data1.Put(fmt::format("objectData1 {}", j), fmt::format("objectData1 {}", j));
 					}
 					data1.Put("Quoted Field lvl1", std::string("\"obj_quoted_field(\"this is quoted too\")\""));
 				}
 			}
 		}
-		Item item = rt.reindexer->NewItem(nsName);
+		Item item(rt.NewItem(nsName));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -1061,16 +1073,15 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 	Query q = Query{nsNames[0]};
 	q.Join(LeftJoin, "join_field", "join_field", CondEq, OpAnd, Query(nsNames[1]));
 	q.Join(LeftJoin, "id", "join_field", CondEq, OpAnd, Query(nsNames[2]));
-	reindexer::QueryResults qr;
-	err = rt.reindexer->Select(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(q);
 
 	for (auto& ordering : std::array<reindexer::CsvOrdering, 2>{qr.GetSchema(0)->MakeCsvTagOrdering(qr.GetTagsMatcher(0)),
 																qr.ToLocalQr().MakeCSVTagOrdering(std::numeric_limits<int>::max(), 0)}) {
 		auto csv2jsonSchema = [&ordering, &qr] {
 			std::vector<std::string> res;
 			for (auto tag : ordering) {
-				res.emplace_back(qr.GetTagsMatcher(0).tag2name(tag));
+				const auto tm = qr.GetTagsMatcher(0);
+				res.emplace_back(tm.tag2name(tag));
 			}
 			res.emplace_back("joined_nss_map");
 			return res;
@@ -1078,7 +1089,7 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 
 		reindexer::WrSerializer serCsv, serJson;
 		for (auto& q : qr) {
-			err = q.GetCSV(serCsv, ordering);
+			auto err = q.GetCSV(serCsv, ordering);
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			err = q.GetJSON(serJson, false);
@@ -1098,7 +1109,7 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 
 			for (const auto& fieldName : csv2jsonSchema) {
 				if (fieldName == "joined_nss_map" && !converted[fieldName].empty()) {
-					EXPECT_EQ(converted[fieldName].value.getTag(), gason::JSON_OBJECT);
+					EXPECT_EQ(converted[fieldName].value.getTag(), gason::JsonTag::OBJECT);
 					for (auto& node : converted[fieldName]) {
 						EXPECT_TRUE(!orig[node.key].empty()) << "not found joined data: " << node.key;
 						auto origStr = reindexer::stringifyJson(orig[node.key]);
@@ -1112,14 +1123,25 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 					EXPECT_TRUE(converted[fieldName].empty() && orig[fieldName].empty()) << "fieldName: " << fieldName;
 					continue;
 				}
-				if (orig[fieldName].value.getTag() == gason::JSON_NUMBER) {
-					EXPECT_EQ(orig[fieldName].As<int>(), converted[fieldName].As<int>());
-				} else if (orig[fieldName].value.getTag() == gason::JSON_STRING) {
-					EXPECT_EQ(orig[fieldName].As<std::string>(), converted[fieldName].As<std::string>());
-				} else if (orig[fieldName].value.getTag() == gason::JSON_OBJECT || orig[fieldName].value.getTag() == gason::JSON_ARRAY) {
-					auto origStr = reindexer::stringifyJson(orig[fieldName]);
-					auto convertedStr = reindexer::stringifyJson(converted[fieldName]);
-					EXPECT_EQ(origStr, convertedStr);
+				switch (orig[fieldName].value.getTag()) {
+					case gason::JsonTag::NUMBER:
+						EXPECT_EQ(orig[fieldName].As<int>(), converted[fieldName].As<int>());
+						break;
+					case gason::JsonTag::STRING:
+						EXPECT_EQ(orig[fieldName].As<std::string>(), converted[fieldName].As<std::string>());
+						break;
+					case gason::JsonTag::OBJECT:
+					case gason::JsonTag::ARRAY: {
+						auto origStr = reindexer::stringifyJson(orig[fieldName]);
+						auto convertedStr = reindexer::stringifyJson(converted[fieldName]);
+						EXPECT_EQ(origStr, convertedStr);
+					} break;
+					case gason::JsonTag::DOUBLE:
+					case gason::JsonTag::JFALSE:
+					case gason::JsonTag::JTRUE:
+					case gason::JsonTag::JSON_NULL:
+					case gason::JsonTag::EMPTY:
+						break;
 				}
 			}
 
@@ -1130,15 +1152,12 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 	}
 }
 
-TEST_F(QueriesApi, ConvertationStringToDoubleDuringSorting) {
+TEST_F(QueriesApi, ConvertStringToDoubleDuringSorting) {
 	using namespace std::string_literals;
-	const std::string nsName = "ns_convertation_string_to_double_during_sorting";
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"str_idx", {"str_idx"}, "hash", "string", IndexOpts{}});
-	ASSERT_TRUE(err.ok()) << err.what();
+	const std::string nsName = "ns_convert_string_to_double_during_sorting";
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.AddIndex(nsName, reindexer::IndexDef{"str_idx", {"str_idx"}, "hash", "string", IndexOpts{}});
 
 	const auto addItem = [&](int id, std::string_view strIdx, std::string_view strFld) {
 		reindexer::WrSerializer ser;
@@ -1148,9 +1167,9 @@ TEST_F(QueriesApi, ConvertationStringToDoubleDuringSorting) {
 			json.Put("str_idx", strIdx);
 			json.Put("str_fld", strFld);
 		}
-		Item item = rt.reindexer->NewItem(nsName);
+		Item item(rt.NewItem(nsName));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-		err = item.FromJSON(ser.Slice());
+		auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		Upsert(nsName, item);
@@ -1168,9 +1187,7 @@ TEST_F(QueriesApi, ConvertationStringToDoubleDuringSorting) {
 
 	for (const auto& f : {"str_idx"s, "str_fld"s}) {
 		Query q = Query{nsName}.Where("id", CondLt, 5).Sort("2 * "s + f, false).Strict(StrictModeNames);
-		reindexer::QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		int prevId = 10;
 		for (auto& it : qr) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
@@ -1185,7 +1202,7 @@ TEST_F(QueriesApi, ConvertationStringToDoubleDuringSorting) {
 	for (const auto& f : {"str_idx"s, "str_fld"s}) {
 		Query q = Query{nsName}.Where("id", CondGt, 5).Sort("2 * "s + f, false).Strict(StrictModeNames);
 		reindexer::QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
+		auto err = rt.reindexer->Select(q, qr);
 		EXPECT_FALSE(err.ok());
 		EXPECT_THAT(err.what(), testing::MatchesRegex("Can't convert '.*' to number"));
 	}
@@ -1222,7 +1239,7 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 				obj.Put("nested_value", v);
 			}
 		}
-		Item item = rt.reindexer->NewItem(fillingNs);
+		Item item(rt.NewItem(fillingNs));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		const auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -1258,7 +1275,7 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 				const auto err = rt.reindexer->Select(q, qr);
 				if (expectedErr) {
 					EXPECT_FALSE(err.ok()) << q.GetSQL();
-					EXPECT_EQ(err.what(), expectedErr) << q.GetSQL();
+					EXPECT_STREQ(err.what(), expectedErr) << q.GetSQL();
 				} else {
 					ASSERT_TRUE(err.ok()) << err.what() << '\n' << q.GetSQL();
 					switch (cond) {
@@ -1278,6 +1295,7 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 						case CondGt:
 						case CondGe:
 						case CondAllSet:
+						case CondKnn:
 							assert(0);
 					}
 					int prevId = 10000 * (desc ? 1 : -1);
@@ -1317,16 +1335,12 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 TEST_F(QueriesApi, SortByJoinedNsDifferentTypes) {
 	const std::string nsMain{"sort_by_joined_ns_different_types_main"};
 	const std::string nsRight{"sort_by_joined_ns_different_types_right"};
-	Error err = rt.reindexer->OpenNamespace(nsMain);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsMain, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->OpenNamespace(nsRight);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsRight, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsMain);
+	rt.AddIndex(nsMain, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.OpenNamespace(nsRight);
+	rt.AddIndex(nsRight, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	for (int id = 0; id < 1000; ++id) {
-		Item item = rt.reindexer->NewItem(nsMain);
+		Item item(rt.NewItem(nsMain));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		item["id"] = id;
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
@@ -1339,11 +1353,8 @@ TEST_F(QueriesApi, SortByJoinedNsDifferentTypes) {
 
 TEST_F(QueriesApi, SortByFieldWithDifferentTypes) {
 	const std::string nsName{"sort_by_field_different_types"};
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	sortByNsDifferentTypesImpl(nsName, Query{nsName}, "");
 }
 
@@ -1423,7 +1434,6 @@ TEST_F(QueriesApi, DistinctWithDuplicatesWhereCondTest) {
 	for (int id = 0; id < 10; ++id) {
 		auto item = GenerateDefaultNsItem(id, 0);
 		item[kFieldNameAge] = id / 4;
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		Upsert(default_namespace, item);
 	}
 
@@ -1434,14 +1444,17 @@ TEST_F(QueriesApi, DistinctWithDuplicatesWhereCondTest) {
 		auto it = std::unique(values.begin(), values.end());
 		values.erase(it, values.end());
 
-		QueryResults qr;
-		auto err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		ASSERT_EQ(qr.Count(), values.size());
 
-		auto distincts = qr.GetAggregationResults().front().distincts;
-		ASSERT_EQ(distincts.size(), values.size());
-
+		unsigned int rows = qr.GetAggregationResults().front().GetDistinctRowCount();
+		ASSERT_EQ(rows, values.size());
+		VariantArray distincts;
+		for (size_t i = 0; i < rows; ++i) {
+			auto d = qr.GetAggregationResults().front().GetDistinctRow(i);
+			ASSERT_EQ(d.size(), 1);
+			distincts.emplace_back(d[0]);
+		}
 		std::sort(distincts.begin(), distincts.end());
 		for (size_t i = 0; i < distincts.size(); ++i) {
 			ASSERT_EQ(distincts[i], values[i]);
@@ -1462,24 +1475,70 @@ TEST_F(QueriesApi, DistinctWithDuplicatesWhereCondTest) {
 
 TEST_F(QueriesApi, ExtraSpacesUpdateSQL) {
 	{
+		SCOPED_TRACE("ExtraSpacesUpdateSQL Step 1");
 		Query updateQuery = Query::FromSQL(
 			R"(update #config set "profiling.long_queries_logging.update_delete" = {"threshold_us":11, "normalized":false} where "type"='profiling')");
-		QueryResults qrUpdate;
-		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
-		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 1";
+		rx_unused = rt.Update(updateQuery);
 	}
 	{
+		SCOPED_TRACE("ExtraSpacesUpdateSQL Step 2");
 		Query updateQuery = Query::FromSQL(
 			R"(update #config set "profiling.long_queries_logging.update_delete"={ "threshold_us" : 11, "normalized":false } where "type"='profiling')");
-		QueryResults qrUpdate;
-		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
-		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 2";
+		rx_unused = rt.Update(updateQuery);
 	}
 	{
+		SCOPED_TRACE("ExtraSpacesUpdateSQL Step 3");
 		Query updateQuery = Query::FromSQL(
 			R"(update #config set "profiling.long_queries_logging.update_delete"={  "threshold_us" : 11,  "normalized": false } where "type" = 'profiling')");
-		QueryResults qrUpdate;
-		Error err = rt.reindexer->Update(updateQuery, qrUpdate);
-		ASSERT_TRUE(err.ok()) << err.what() << "ExtraSpacesUpdateSQL Step 3";
+		rx_unused = rt.Update(updateQuery);
+	}
+}
+
+TEST_F(QueriesApi, EmptyResultForceSortedWithLimitTest) {
+	for (int id = 0; id < 10; ++id) {
+		auto item = GenerateDefaultNsItem(id, 0);
+		item[kFieldNameIsDeleted] = true;
+		Upsert(default_namespace, item);
+	}
+
+	auto check = [this](Query& q, int expected) {
+		QueryResults qr = rt.Select(q);
+		ASSERT_EQ(qr.Count(), expected);
+	};
+
+	auto query = Query(default_namespace).Where(kFieldNameIsDeleted, CondEq, {true}).Sort(kFieldNameGenre, false, {1, 2, 3}).Limit(10);
+	check(query, 10);
+	query.Where(kFieldNameIsDeleted, CondEq, {false});
+	check(query, 0);
+}
+
+TEST_F(QueriesApi, DistinctWithForcedSortAndLimitTest) {
+	std::vector<Item> items;
+	for (int id = 0; id < 10; ++id) {
+		items.emplace_back(GenerateDefaultNsItem(id, 0));
+		auto& item = items.back();
+		item[kFieldNameAge] = id / 3;
+		Upsert(default_namespace, item);
+	}
+
+	VariantArray forceSortOrder{Variant{5}, Variant{7}, Variant{1}};
+
+	auto query = Query(default_namespace).Distinct(kFieldNameAge).Sort(kFieldNameId, false, forceSortOrder).Limit(5);
+
+	int expectedCnt = 4;
+	QueryResults qr = rt.Select(query);
+	ASSERT_EQ(qr.Count(), expectedCnt);
+
+	ASSERT_EQ(qr.GetAggregationResults().front().GetDistinctRowCount(), expectedCnt);
+
+	size_t order = 0;
+	for (auto it : qr) {
+		auto item = it.GetItem();
+		gason::JsonParser parser;
+		auto root = parser.Parse(item.GetJSON());
+		int id = root[kFieldNameId].As<int>();
+		ASSERT_EQ(id, order < forceSortOrder.size() ? int(forceSortOrder[order]) : 9) << fmt::format("order: {}", order);
+		ASSERT_EQ(root[kFieldNameAge].As<int>(), items[id][kFieldNameAge].As<int>()) << fmt::format("Id: {}; order: {}", id, order);
+		order++;
 	}
 }

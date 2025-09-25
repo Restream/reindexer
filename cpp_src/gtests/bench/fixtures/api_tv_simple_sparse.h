@@ -1,15 +1,14 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "base_fixture.h"
 
-class ApiTvSimpleSparse : private BaseFixture {
+class [[nodiscard]] ApiTvSimpleSparse : private BaseFixture {
 public:
 	virtual ~ApiTvSimpleSparse() {}
-	ApiTvSimpleSparse(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	ApiTvSimpleSparse(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "tree", "int64", IndexOpts().Sparse())
 			.AddIndex("year", "tree", "int", IndexOpts().Sparse())

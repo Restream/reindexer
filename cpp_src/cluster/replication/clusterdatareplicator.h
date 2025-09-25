@@ -11,12 +11,11 @@
 namespace reindexer {
 namespace cluster {
 
-class ClusterDataReplicator {
+class [[nodiscard]] ClusterDataReplicator {
 public:
 	using UpdatesQueueT = UpdatesQueuePair<updates::UpdateRecord>;
-	using UpdatesQueueShardT = UpdatesQueueT::QueueT;
 
-	ClusterDataReplicator(UpdatesQueueT&, SharedSyncState<>&, ReindexerImpl&);
+	ClusterDataReplicator(UpdatesQueueT&, SharedSyncState&, ReindexerImpl&);
 
 	void Configure(ClusterConfigData config);
 	void Configure(ReplicationConfigData config);
@@ -43,14 +42,15 @@ private:
 	}
 	bool isRunning() const noexcept { return raftThread_.joinable(); }
 	void clusterControlRoutine(int serverId);
+	void handleClusterCommands(int serverId, const RaftInfo& curRaftInfo);
 	DSN getManagementDsn(int id) const;
 	void onRoleChanged(RaftInfo::Role to, int leaderId);
 	void stop();
 
 	ReplicationStatsCollector statsCollector_;
-	enum ClusterCommandId { kNoComand = -1, kCmdSetDesiredLeader = 0 };
+	enum ClusterCommandId { kNoCommand = -1, kCmdSetDesiredLeader = 0 };
 
-	struct ClusterCommand {
+	struct [[nodiscard]] ClusterCommand {
 		ClusterCommand() = default;
 		ClusterCommand(ClusterCommandId c, int server, bool _send, std::promise<Error> p)
 			: id(c), serverId(server), send(_send), result(std::move(p)) {}
@@ -59,20 +59,20 @@ private:
 		ClusterCommand(ClusterCommand&) = delete;
 		ClusterCommand& operator=(ClusterCommand& other) = delete;
 
-		ClusterCommandId id = kNoComand;
+		ClusterCommandId id = kNoCommand;
 		int serverId = -1;
 		bool send = false;
 		std::promise<Error> result;
 	};
 
-	class CommandQuery {
+	class [[nodiscard]] CommandQuery {
 	public:
 		void AddCommand(ClusterCommand&& c) {
-			std::lock_guard<std::mutex> lk(lock_);
+			lock_guard lk(lock_);
 			commands_.push(std::move(c));
 		}
-		bool GetCommand(ClusterCommand& c) {
-			std::lock_guard<std::mutex> lk(lock_);
+		bool GetCommand(ClusterCommand& c) noexcept {
+			lock_guard lk(lock_);
 			if (commands_.empty()) {
 				return false;
 			}
@@ -82,14 +82,14 @@ private:
 		}
 
 	private:
-		std::mutex lock_;
+		mutex lock_;
 		std::queue<ClusterCommand> commands_;
 	};
 
 	net::ev::dynamic_loop loop_;
 	std::thread raftThread_;
 	std::thread roleSwitchThread_;
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	std::atomic<bool> restartElections_ = {false};
 
 	CommandQuery commands_;
@@ -98,7 +98,7 @@ private:
 	Logger log_;
 	RaftManager raftManager_;
 	UpdatesQueueT& updatesQueue_;
-	SharedSyncState<>& sharedSyncState_;
+	SharedSyncState& sharedSyncState_;
 	ReindexerImpl& thisNode_;
 	std::deque<ClusterReplThread> replThreads_;
 	std::function<void()> requestElectionsRestartCb_;

@@ -19,7 +19,7 @@ typename LRUCacheImpl<K, V, HashT, EqualT>::Iterator LRUCacheImpl<K, V, HashT, E
 		return Iterator();
 	}
 
-	std::lock_guard lk(lock_);
+	lock_guard lk(lock_);
 
 	auto [it, emplaced] = items_.try_emplace(key);
 	if (emplaced) {
@@ -46,7 +46,7 @@ void LRUCacheImpl<K, V, HashT, EqualT>::Put(const K& key, V&& v) {
 		return;
 	}
 
-	std::lock_guard lk(lock_);
+	lock_guard lk(lock_);
 	auto it = items_.find(key);
 	if (it == items_.end()) {
 		return;
@@ -57,11 +57,11 @@ void LRUCacheImpl<K, V, HashT, EqualT>::Put(const K& key, V&& v) {
 
 	++putCount_;
 
-	eraseLRU();
+	rx_unused = eraseLRU();
 
 	if rx_unlikely (putCount_ * 16 > getCount_ && eraseCount_) {
-		logPrintf(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount=%d,putCount=%d,getCount=%d,hitCountToCache=%d",
-				  eraseCount_, putCount_, eraseCount_, hitCountToCache_);
+		logFmt(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount={},putCount={},getCount={},hitCountToCache={}",
+			   eraseCount_, putCount_, eraseCount_, hitCountToCache_);
 		eraseCount_ = 0;
 		hitCountToCache_ = hitCountToCache_ ? std::min(hitCountToCache_ * 2, kMaxHitCountToCache) : 2;
 		putCount_ = 0;
@@ -76,10 +76,10 @@ RX_ALWAYS_INLINE bool LRUCacheImpl<K, V, HashT, EqualT>::eraseLRU() {
 	while (totalCacheSize_ > cacheSizeLimit_) {
 		// just to save us if totalCacheSize_ >0 and lru is empty
 		// someone can make bad key or val with wrong size
-		// TODO: Probably we should remove this logic, since there is no access to sizes outside of the lrucache
+		// TODO: Probably we should remove this logic, since there is no access to sizes outside the lrucache
 		if rx_unlikely (lru_.empty()) {
 			clearAll();
-			logPrintf(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_=%d", totalCacheSize_);
+			logFmt(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_={}", totalCacheSize_);
 			return false;
 		}
 		auto mIt = items_.find(**it);
@@ -89,8 +89,8 @@ RX_ALWAYS_INLINE bool LRUCacheImpl<K, V, HashT, EqualT>::eraseLRU() {
 
 		if rx_unlikely (oldSize > totalCacheSize_) {
 			clearAll();
-			logPrintf(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_=%d,oldSize=%d",
-					  totalCacheSize_, oldSize);
+			logFmt(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_={},oldSize={}",
+				   totalCacheSize_, oldSize);
 			return false;
 		}
 		totalCacheSize_ = totalCacheSize_ - oldSize;
@@ -103,22 +103,20 @@ RX_ALWAYS_INLINE bool LRUCacheImpl<K, V, HashT, EqualT>::eraseLRU() {
 }
 
 template <typename K, typename V, typename HashT, typename EqualT>
-bool LRUCacheImpl<K, V, HashT, EqualT>::clearAll() {
-	const bool res = !items_.empty();
+void LRUCacheImpl<K, V, HashT, EqualT>::clearAll() {
 	totalCacheSize_ = 0;
 	std::unordered_map<K, Entry, HashT, EqualT>().swap(items_);
 	LRUList().swap(lru_);
 	getCount_ = 0;
 	putCount_ = 0;
 	eraseCount_ = 0;
-	return res;
 }
 
 template <typename K, typename V, typename HashT, typename EqualT>
 LRUCacheMemStat LRUCacheImpl<K, V, HashT, EqualT>::GetMemStat() const {
 	LRUCacheMemStat ret;
 
-	std::lock_guard lk(lock_);
+	lock_guard lk(lock_);
 	ret.totalSize = totalCacheSize_;
 	ret.itemsCount = items_.size();
 	// for (auto &item : items_) {
@@ -132,34 +130,12 @@ LRUCacheMemStat LRUCacheImpl<K, V, HashT, EqualT>::GetMemStat() const {
 
 template <typename K, typename V, typename HashT, typename EqualT>
 void LRUCacheImpl<K, V, HashT, EqualT>::Clear() {
-	std::lock_guard lk(lock_);
+	lock_guard lk(lock_);
 	clearAll();
 }
 
-template <typename K, typename V, typename HashT, typename EqualT>
-void LRUCacheImpl<K, V, HashT, EqualT>::Clear(std::function<bool(const Key&)> cond) {
-	std::lock_guard lock(lock_);
-	for (auto it = lru_.begin(); it != lru_.end();) {
-		if (!cond(**it)) {
-			++it;
-			continue;
-		}
-		auto mIt = items_.find(**it);
-		assertrx(mIt != items_.end());
-		const size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
-		if rx_unlikely (oldSize > totalCacheSize_) {
-			clearAll();
-			return;
-		}
-		totalCacheSize_ -= oldSize;
-		items_.erase(mIt);
-		it = lru_.erase(it);
-		++eraseCount_;
-	}
-}
-
-template class LRUCacheImpl<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
-template class LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
+template class LRUCacheImpl<IdSetCacheKey, IdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>;
+template class LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>;
 template class LRUCacheImpl<QueryCacheKey, QueryCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
 template class LRUCacheImpl<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
 

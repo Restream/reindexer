@@ -18,12 +18,12 @@ struct ConditionInjection;
 typedef std::vector<JoinedSelector> JoinedSelectors;
 typedef std::vector<JoinOnInjection> OnConditionInjections;
 
-class SubQueryExplain {
+class [[nodiscard]] SubQueryExplain {
 public:
 	SubQueryExplain(const std::string& ns, std::string&& exp) : explain_{std::move(exp)}, namespace_{ns} {}
-	[[nodiscard]] const std::string& NsName() const& noexcept { return namespace_; }
-	[[nodiscard]] const auto& FieldOrKeys() const& noexcept { return fieldOrKeys_; }
-	[[nodiscard]] const std::string& Explain() const& noexcept { return explain_; }
+	const std::string& NsName() const& noexcept { return namespace_; }
+	const auto& FieldOrKeys() const& noexcept { return fieldOrKeys_; }
+	const std::string& Explain() const& noexcept { return explain_; }
 	void SetFieldOrKeys(std::variant<std::string, size_t>&& fok) noexcept { fieldOrKeys_ = std::move(fok); }
 
 	auto NsName() const&& = delete;
@@ -36,7 +36,7 @@ private:
 	std::variant<std::string, size_t> fieldOrKeys_{size_t(0)};
 };
 
-class ExplainCalc {
+class [[nodiscard]] ExplainCalc {
 public:
 	typedef system_clock_w Clock;
 	typedef Clock::duration Duration;
@@ -146,7 +146,7 @@ private:
 /**
  * @brief Describes the process of a single JOIN-query ON-conditions injection into the Where clause of a main query
  */
-struct JoinOnInjection {
+struct [[nodiscard]] JoinOnInjection {
 	std::string_view rightNsName;  ///< joinable ns name
 	std::string joinCond;		   ///< original ON-conditions clause. SQL-like string
 	ExplainCalc::Duration totalTime_ =
@@ -161,7 +161,7 @@ struct JoinOnInjection {
 /**
  * @brief Describes an injection attempt of a single condition from the ON-clause of a JOIN-query
  */
-struct ConditionInjection {
+struct [[nodiscard]] ConditionInjection {
 	std::string initCond;  ///< single condition from Join ON section. SQL-like string
 	ExplainCalc::Duration totalTime_ =
 		ExplainCalc::Duration::zero();		///< total time elapsed from injection attempt start till the end of substitution or rejection

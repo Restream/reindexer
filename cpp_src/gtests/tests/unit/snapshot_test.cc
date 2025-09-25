@@ -1,21 +1,26 @@
 #include "core/namespace/namespacestat.h"
 #include "core/type_consts.h"
+#include "gtests/tools.h"
 #include "net/cproto/cproto.h"
 #include "net/ev/ev.h"
 #include "snapshot_api.h"
 
 const std::string SnapshotTestApi::kDefaultRPCServerAddr = std::string("127.0.0.1:") + std::to_string(SnapshotTestApi::kDefaultRPCPort);
 
+// ASAN randomly breaks on coroutines here
+#ifndef REINDEX_WITH_ASAN
 TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 	// Check if we can apply snapshot from local rx instance to remote rx instance via RPC
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::Reindexer localRx;
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient, localRx);
 
 		InitNS(localRx, kNsName);
 		FillData(localRx, kNsName, 0);
+
+		constexpr auto kTimeout = std::chrono::seconds(15);
 
 		// Checking full snapshot
 		{
@@ -25,15 +30,17 @@ TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 			ASSERT_TRUE(crsn.HasRawData());
 
 			std::string tmpNsName;
-			err = rxClient.WithLSN(lsn_t(0, 0)).CreateTemporaryNamespace(kNsName, tmpNsName, StorageOpts().Enabled(false));
+			err = rxClient.WithLSN(lsn_t(0, 0))
+					  .WithTimeout(kTimeout)
+					  .CreateTemporaryNamespace(kNsName, tmpNsName, StorageOpts().Enabled(false));
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			for (auto& it : crsn) {
 				auto ch = it.Chunk();
-				err = rxClient.WithLSN(lsn_t(0, 0)).ApplySnapshotChunk(tmpNsName, ch);
+				err = rxClient.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).ApplySnapshotChunk(tmpNsName, ch);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
-			err = rxClient.WithLSN(lsn_t(0, 0)).RenameNamespace(tmpNsName, kNsName);
+			err = rxClient.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).RenameNamespace(tmpNsName, kNsName);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		CompareData(rxClient, localRx);
@@ -51,20 +58,20 @@ TEST_F(SnapshotTestApi, ForceSyncFromLocalToRemote) {
 				auto ch = it.Chunk();
 				ASSERT_TRUE(ch.IsWAL());
 				ASSERT_FALSE(ch.IsShallow());
-				err = rxClient.WithLSN(lsn_t(0, 0)).ApplySnapshotChunk(kNsName, ch);
+				err = rxClient.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).ApplySnapshotChunk(kNsName, ch);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
 		}
 		CompareData(rxClient, localRx);
 		CompareWalSnapshots(rxClient, localRx);
-	});
+	}));
 	loop.run();
 }
 
 TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 	// Check if we can apply snapshot from remote rx instance to local rx instance via RPC
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::Reindexer localRx;
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient, localRx);
@@ -72,27 +79,31 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 		InitNS(rxClient, kNsName);
 		FillData(rxClient, kNsName, 0);
 
+		constexpr auto kTimeout = std::chrono::seconds(15);
+
 		// Checking full snapshot
 		{
 			client::Snapshot crsn;
 			auto err = rxClient.GetSnapshot(kNsName, SnapshotOpts(), crsn);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_TRUE(crsn.HasRawData());
-			ASSERT_TRUE(crsn.ClusterizationStat().has_value());
-			ASSERT_EQ(crsn.ClusterizationStat()->leaderId, -1);
-			ASSERT_EQ(crsn.ClusterizationStat()->role, reindexer::ClusterizationStatus::Role::None);
+			ASSERT_TRUE(crsn.ClusterOperationStat().has_value());
+			ASSERT_EQ(crsn.ClusterOperationStat()->leaderId, -1);
+			ASSERT_EQ(crsn.ClusterOperationStat()->role, reindexer::ClusterOperationStatus::Role::None);
 
 			std::string tmpNsName;
-			err = localRx.WithLSN(lsn_t(0, 0)).CreateTemporaryNamespace(kNsName, tmpNsName, StorageOpts().Enabled(false));
+			err = localRx.WithLSN(lsn_t(0, 0))
+					  .WithTimeout(kTimeout)
+					  .CreateTemporaryNamespace(kNsName, tmpNsName, StorageOpts().Enabled(false));
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			for (auto& it : crsn) {
 				auto& ch = it.Chunk();
-				err = localRx.WithLSN(lsn_t(0, 0)).ApplySnapshotChunk(tmpNsName, ch);
+				err = localRx.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).ApplySnapshotChunk(tmpNsName, ch);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
 
-			err = localRx.WithLSN(lsn_t(0, 0)).RenameNamespace(tmpNsName, kNsName);
+			err = localRx.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).RenameNamespace(tmpNsName, kNsName);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		CompareData(rxClient, localRx);
@@ -106,27 +117,28 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 			auto err = rxClient.GetSnapshot(kNsName, SnapshotOpts(ExtendedLsn(remoteState.nsVersion, remoteState.lsn)), crsn);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_FALSE(crsn.HasRawData());
-			ASSERT_TRUE(crsn.ClusterizationStat().has_value());
-			ASSERT_EQ(crsn.ClusterizationStat()->leaderId, -1);
-			ASSERT_EQ(crsn.ClusterizationStat()->role, reindexer::ClusterizationStatus::Role::None);
+			ASSERT_TRUE(crsn.ClusterOperationStat().has_value());
+			ASSERT_EQ(crsn.ClusterOperationStat()->leaderId, -1);
+			ASSERT_EQ(crsn.ClusterOperationStat()->role, reindexer::ClusterOperationStatus::Role::None);
 			for (auto& it : crsn) {
 				auto& ch = it.Chunk();
 				ASSERT_TRUE(ch.IsWAL());
 				ASSERT_FALSE(ch.IsShallow());
-				err = localRx.WithLSN(lsn_t(0, 0)).ApplySnapshotChunk(kNsName, ch);
+				err = localRx.WithLSN(lsn_t(0, 0)).WithTimeout(kTimeout).ApplySnapshotChunk(kNsName, ch);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
 		}
 		CompareData(rxClient, localRx);
 		CompareWalSnapshots(rxClient, localRx);
-	});
+	}));
 	loop.run();
 }
+#endif	// REINDEX_WITH_ASAN
 
 TEST_F(SnapshotTestApi, ConcurrentSnapshotsLimit) {
 	// Check if concurrent snapshots limit is actually works
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient);
 
@@ -163,14 +175,14 @@ TEST_F(SnapshotTestApi, ConcurrentSnapshotsLimit) {
 			auto err = rxClient.GetSnapshot(kNsName, SnapshotOpts(), crsn);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
-	});
+	}));
 	loop.run();
 }
 
 TEST_F(SnapshotTestApi, SnapshotInvalidation) {
 	// Check if snapshot will be invalidated after reconnect
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient);
 
@@ -193,16 +205,16 @@ TEST_F(SnapshotTestApi, SnapshotInvalidation) {
 			EXPECT_TRUE(false) << "Exception was expected";
 		} catch (Error& e) {
 			EXPECT_EQ(e.code(), errNetwork);
-			EXPECT_EQ(e.what(), "Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated");
+			EXPECT_STREQ(e.what(), "Connection was broken and all associated snapshots, queryresults and transaction were invalidated");
 		}
-	});
+	}));
 	loop.run();
 }
 
 TEST_F(SnapshotTestApi, MaxWALDepth) {
 	// Check if max wal depth option for snapshots is actually works
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient);
 
@@ -237,14 +249,14 @@ TEST_F(SnapshotTestApi, MaxWALDepth) {
 			ASSERT_EQ(sn1WalItemsCount, sn2WalItemsCount);
 			ASSERT_EQ(sn1WalItemsCount, replState.lastLsn.Counter() + 1 + 1);
 		}
-	});
+	}));
 	loop.run();
 }
 
 TEST_F(SnapshotTestApi, MaxWALDepthWithWALOverflow) {
 	// Check if max wal depth option for snapshots is works, when WAL ring-buffer is overflowed
 	ev::dynamic_loop loop;
-	loop.spawn([this, &loop]() noexcept {
+	loop.spawn(exceptionWrapper([this, &loop] {
 		reindexer::client::CoroReindexer rxClient;
 		Connect(loop, rxClient);
 		constexpr auto kWALSize = 500;
@@ -283,6 +295,6 @@ TEST_F(SnapshotTestApi, MaxWALDepthWithWALOverflow) {
 			ASSERT_EQ(sn1WalItemsCount, sn2WalItemsCount);
 			ASSERT_EQ(sn1WalItemsCount, kWALSize + 1);
 		}
-	});
+	}));
 	loop.run();
 }

@@ -1,7 +1,7 @@
 ﻿#include "dataholder.h"
 #include <sstream>
+#include "core/ft/ft_fast/frisosplitter.h"
 #include "dataprocessor.h"
-#include "selecter.h"
 
 namespace reindexer {
 
@@ -18,12 +18,12 @@ size_t IDataHolder::GetMemStat() {
 void IDataHolder::Clear() {
 	steps.resize(1);
 	steps.front().clear();
-	avgWordsCount_.clear();
-	vdocs_.clear();
-	vdocsTexts.clear();
+	avgWordsCount_.resize(0);
+	vdocs_.resize(0);
+	vdocsTexts.resize(0);
 	vdocsOffset_ = 0;
 	szCnt = 0;
-	rowId2Vdoc_.clear();
+	rowId2Vdoc_.resize(0);
 }
 
 std::string IDataHolder::Dump() const {
@@ -58,11 +58,11 @@ std::string IDataHolder::Dump() const {
 }
 
 void IDataHolder::throwWordIdOverflow(uint32_t id) {
-	throw Error(errLogic, "Too large word ID value (%d). Fulltext index can not contain more than %d unique words", id, kWordIdMaxIdVal);
+	throw Error(errLogic, "Too large word ID value ({}). Fulltext index can not contain more than {} unique words", id, kWordIdMaxIdVal);
 }
 
 void IDataHolder::throwStepsOverflow() const {
-	throw Error(errLogic, "Too large index build step value (%d). Fulltext incremental build can not use more than %d steps",
+	throw Error(errLogic, "Too large index build step value ({}). Fulltext incremental build can not use more than {} steps",
 				steps.size() - 1, kWordIdMaxStepVal);
 }
 
@@ -95,7 +95,7 @@ size_t DataHolder<IdCont>::GetMemStat() {
 template <typename IdCont>
 void DataHolder<IdCont>::Clear() {
 	IDataHolder::Clear();
-	words_.clear();
+	words_.resize(0);
 }
 
 template <typename IdCont>
@@ -131,7 +131,7 @@ template <typename IdCont>
 DataHolder<IdCont>::DataHolder(FtFastConfig* c) {
 	cfg_ = c;
 	if (cfg_->splitterType == FtFastConfig::Splitter::Fast) {
-		splitter_ = make_intrusive<FastTextSplitter>(cfg_->extraWordSymbols);
+		splitter_ = make_intrusive<FastTextSplitter>(cfg_->splitOptions);
 	} else if (cfg_->splitterType == FtFastConfig::Splitter::MMSegCN) {
 		splitter_ = make_intrusive<FrisoTextSplitter>();
 	} else {

@@ -11,7 +11,7 @@
 namespace reindexer {
 
 template <class T>
-class EqualPositionComparatorTypeImpl {
+class [[nodiscard]] EqualPositionComparatorTypeImpl {
 	using ValuesSet = fast_hash_set<T>;
 	using AllSetValuesSet = fast_hash_set<const T*>;
 
@@ -20,17 +20,27 @@ public:
 		assertrx_throw(valuesS_.empty());
 		assertrx_throw(allSetValuesS_.empty());
 
-		for (Variant key : values) {
-			key.Type().EvaluateOneOf([](OneOf<KeyValueType::String, KeyValueType::Uuid>) {},
-									 [&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
-											   KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) {
-										 key.convert(type());
-										 addValue(cond, static_cast<T>(key));
-									 });
+		for (const Variant& key : values) {
+			key.Type().EvaluateOneOf(
+				[](OneOf<KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null>) {
+					// Ignore those values
+				},
+				[&key](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+					throw Error(errParams, "Equal positions doesn't support '{}' values", key.Type().Name());
+				},
+				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) {
+					try {
+						auto converted = key.convert(type());
+						addValue(cond, static_cast<T>(converted));
+					} catch (const Error& e) {
+						assertrx_dbg(false);  // We don't expect this error
+						throw Error(errParams, "Equal positions doesn't support '{}' values: {}", key.Type().Name(), e.whatStr());
+					}
+				});
 		}
 	}
 
-	inline bool Compare(CondType cond, T lhs) {
+	RX_ALWAYS_INLINE bool Compare(CondType cond, T lhs) {
 		switch (cond) {
 			case CondEq:
 				assertrx_throw(!values_.empty());
@@ -62,20 +72,15 @@ public:
 			}
 			case CondAny:
 				return true;
-			case CondEmpty:
 			case CondLike:
 				return false;
+			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 				break;
 		}
-		std::abort();
+		throw_as_assert;
 	}
-
-	void ClearAllSetValues() { allSetValuesS_.clear(); }
-
-	h_vector<T, 2> values_;
-	ValuesSet valuesS_;
-	AllSetValuesSet allSetValuesS_;
 
 private:
 	KeyValueType type() {
@@ -87,6 +92,8 @@ private:
 			return KeyValueType::Int64{};
 		} else if constexpr (std::is_same_v<T, double>) {
 			return KeyValueType::Double{};
+		} else if constexpr (std::is_same_v<T, float>) {
+			return KeyValueType::Float{};
 		} else if constexpr (std::is_same_v<T, Uuid>) {
 			return KeyValueType::Uuid{};
 		} else {
@@ -101,10 +108,14 @@ private:
 			values_.emplace_back(value);
 		}
 	}
+
+	h_vector<T, 2> values_;
+	ValuesSet valuesS_;
+	AllSetValuesSet allSetValuesS_;
 };
 
 template <>
-class EqualPositionComparatorTypeImpl<Uuid> {
+class [[nodiscard]] EqualPositionComparatorTypeImpl<Uuid> {
 	using ValuesSet = fast_hash_set<Uuid>;
 	using AllSetValuesSet = fast_hash_set<const Uuid*>;
 
@@ -115,19 +126,24 @@ public:
 
 		for (const Variant& key : values) {
 			key.Type().EvaluateOneOf(
-				overloaded{[&](KeyValueType::Uuid) { addValue(cond, key.As<Uuid>()); },
-						   [&](KeyValueType::String) {
-							   const auto uuid{Uuid::TryParse(key.As<p_string>())};
-							   if (uuid) {
-								   addValue(cond, *uuid);
-							   }
-						   },
-						   [](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool,
-									KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Tuple>) {}});
+				[](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+						 KeyValueType::Null>) {
+					// Ignore nulls and numeric values
+				},
+				[&key](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+					throw Error(errParams, "Equal positions doesn't support '{}' values", key.Type().Name());
+				},
+				[&](KeyValueType::Uuid) { addValue(cond, key.As<Uuid>()); },
+				[&](KeyValueType::String) {
+					const auto uuid{Uuid::TryParse(key.As<p_string>())};
+					if (uuid) {
+						addValue(cond, *uuid);
+					}
+				});
 		}
 	}
 
-	inline bool Compare(CondType cond, Uuid lhs) {
+	RX_ALWAYS_INLINE bool Compare(CondType cond, Uuid lhs) {
 		switch (cond) {
 			case CondEq:
 				assertrx_throw(!values_.empty());
@@ -159,19 +175,15 @@ public:
 			}
 			case CondAny:
 				return true;
-			case CondEmpty:
 			case CondLike:
 				return false;
+			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 				break;
 		}
-		std::abort();
+		throw_as_assert;
 	}
-	void ClearAllSetValues() { allSetValuesS_.clear(); }
-
-	h_vector<Uuid, 1> values_;
-	ValuesSet valuesS_;
-	AllSetValuesSet allSetValuesS_;
 
 private:
 	void addValue(CondType cond, Uuid value) {
@@ -181,28 +193,52 @@ private:
 			values_.emplace_back(value);
 		}
 	}
+
+	h_vector<Uuid, 2> values_;
+	ValuesSet valuesS_;
+	AllSetValuesSet allSetValuesS_;
 };
 
 template <>
-class EqualPositionComparatorTypeImpl<key_string> {
+class [[nodiscard]] EqualPositionComparatorTypeImpl<key_string> {
+	class [[nodiscard]] key_string_set : public tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string> {
+	public:
+		key_string_set(const CollateOpts& opts)
+			: tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string>(
+				  1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts), std::allocator<key_string>(),
+				  less_key_string(opts)) {}
+	};
+
 public:
 	EqualPositionComparatorTypeImpl(const CollateOpts& collate) : valuesS_(collate), collate_{collate} {}
-	EqualPositionComparatorTypeImpl(const EqualPositionComparatorTypeImpl&) = default;
-	EqualPositionComparatorTypeImpl& operator=(const EqualPositionComparatorTypeImpl&) = default;
-	EqualPositionComparatorTypeImpl(EqualPositionComparatorTypeImpl&&) = default;
-	EqualPositionComparatorTypeImpl& operator=(EqualPositionComparatorTypeImpl&&) = default;
 
 	void SetValues(CondType cond, const VariantArray& values) {
 		assertrx_throw(valuesS_.empty());
 		assertrx_throw(allSetValuesS_.empty());
 
-		for (Variant key : values) {
-			key.convert(KeyValueType::String{});
-			addValue(cond, static_cast<key_string>(key));
+		for (const Variant& key : values) {
+			key.Type().EvaluateOneOf(
+				[](OneOf<KeyValueType::Null>) {
+					// Ignore nulls
+				},
+				[&key](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+					throw Error(errParams, "Equal positions doesn't support '{}' values", key.Type().Name());
+				},
+				[&](KeyValueType::String) { addValue(cond, static_cast<key_string>(key)); },
+				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+						  KeyValueType::Uuid>) {
+					try {
+						auto converted = key.convert(KeyValueType::String{});
+						addValue(cond, static_cast<key_string>(converted));
+					} catch (const Error& e) {
+						assertrx_dbg(false);  // We don't expect this error
+						throw Error(errParams, "Equal positions doesn't support '{}' values: {}", key.Type().Name(), e.whatStr());
+					}
+				});
 		}
 	}
 
-	bool inline Compare(CondType cond, p_string lhs) {
+	RX_ALWAYS_INLINE bool Compare(CondType cond, p_string lhs) {
 		auto rhs = cachedValueSV_;
 		switch (cond) {
 			case CondEq:
@@ -230,54 +266,44 @@ public:
 			}
 			case CondAny:
 				return true;
-			case CondEmpty:
-				return false;
 			case CondLike: {
 				return matchLikePattern(std::string_view(lhs), rhs);
 			}
+			case CondEmpty:
 			case CondDWithin:
+			case CondKnn:
 				break;
 		}
-		std::abort();
+		throw_as_assert;
 	}
-	void ClearAllSetValues() { allSetValuesS_.clear(); }
-
-	h_vector<key_string, 1> values_;
-	std::string_view cachedValueSV_;
-
-	class key_string_set : public tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string> {
-	public:
-		key_string_set(const CollateOpts& opts)
-			: tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string>(
-				  1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts), std::allocator<key_string>(),
-				  less_key_string(opts)) {}
-	};
-
-	key_string_set valuesS_;
-	fast_hash_set<const key_string*> allSetValuesS_;
 
 private:
-	void addValue(CondType cond, const key_string& value) {
+	void addValue(CondType cond, key_string&& value) {
 		if (cond == CondSet || cond == CondAllSet) {
-			valuesS_.emplace(value);
+			valuesS_.emplace(std::move(value));
 		} else {
-			values_.emplace_back(value);
+			values_.emplace_back(std::move(value));
 			if (values_.size() == 1) {
 				cachedValueSV_ = std::string_view(values_[0]);
 			}
 		}
 	}
+
+	h_vector<key_string, 2> values_;
+	std::string_view cachedValueSV_;
+	key_string_set valuesS_;
+	fast_hash_set<const key_string*> allSetValuesS_;
 	CollateOpts collate_;
 };
 
 template <>
-class EqualPositionComparatorTypeImpl<PayloadValue> {
+class [[nodiscard]] EqualPositionComparatorTypeImpl<PayloadValue> {
 public:
 	EqualPositionComparatorTypeImpl() = delete;
 };
 
 template <>
-class EqualPositionComparatorTypeImpl<Point> {
+class [[nodiscard]] EqualPositionComparatorTypeImpl<Point> {
 public:
 	void SetValues(const VariantArray& values) {
 		if (values.size() != 2) {
@@ -292,10 +318,10 @@ public:
 		}
 	}
 
-	bool inline Compare(Point lhs) const noexcept { return DWithin(lhs, rhs_, distance_); }
+	RX_ALWAYS_INLINE bool Compare(Point lhs) const noexcept { return DWithin(lhs, rhs_, distance_); }
 
 private:
-	Point rhs_{};
+	Point rhs_;
 	double distance_{};
 };
 

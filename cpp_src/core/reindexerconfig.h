@@ -9,7 +9,7 @@ namespace reindexer {
 class IClientsStats;
 class IExternalEventsListener;
 
-struct ReindexerConfig {
+struct [[nodiscard]] ReindexerConfig {
 	ReindexerConfig& WithClientStats(IClientsStats* cs) noexcept {
 		clientsStats = cs;
 		return *this;

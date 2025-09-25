@@ -1,33 +1,24 @@
 #pragma once
 
-#include <deque>
 #include "core/cjson/tagspath.h"
+#include "core/keyvalue/float_vectors_holder.h"
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadiface.h"
+#include "core/queryresults/fields_filter.h"
 #include "core/type_consts.h"
+#include "recoder.h"
 
 namespace reindexer {
 
-class TagsMatcher;
 class Serializer;
 class WrSerializer;
 
-class Recoder {
-public:
-	[[nodiscard]] virtual TagType Type(TagType oldTagType) = 0;
-	virtual void Recode(Serializer&, WrSerializer&) const = 0;
-	virtual void Recode(Serializer&, Payload&, int tagName, WrSerializer&) = 0;
-	[[nodiscard]] virtual bool Match(int field) const noexcept = 0;
-	[[nodiscard]] virtual bool Match(const TagsPath&) const = 0;
-	virtual ~Recoder() = default;
-};
-
-class CJsonDecoder {
+class [[nodiscard]] CJsonDecoder {
 public:
 	using StrHolderT = h_vector<key_string, 16>;
 
 	explicit CJsonDecoder(TagsMatcher& tagsMatcher, StrHolderT& storage) noexcept : tagsMatcher_(tagsMatcher), storage_(storage) {}
-	class SkipFilter {
+	class [[nodiscard]] SkipFilter {
 	public:
 		SkipFilter MakeCleanCopy() const noexcept { return SkipFilter(); }
 		SkipFilter MakeSkipFilter() const noexcept { return SkipFilter(); }
@@ -36,17 +27,24 @@ public:
 		RX_ALWAYS_INLINE bool match(const TagsPath&) const noexcept { return false; }
 	};
 
-	class DummyFilter {
+	class [[nodiscard]] DefaultFilter {
 	public:
-		DummyFilter MakeCleanCopy() const noexcept { return DummyFilter(); }
+		DefaultFilter(const FieldsFilter* fieldsFilter) noexcept : fieldsFilter_{fieldsFilter} {}
+		DefaultFilter MakeCleanCopy() const noexcept { return DefaultFilter(fieldsFilter_); }
 		SkipFilter MakeSkipFilter() const noexcept { return SkipFilter(); }
 		RX_ALWAYS_INLINE bool HasArraysFields(const PayloadTypeImpl&) const noexcept { return false; }
 
 		RX_ALWAYS_INLINE bool contains([[maybe_unused]] int field) const noexcept { return true; }
+		RX_ALWAYS_INLINE bool containsVector([[maybe_unused]] int field) const noexcept {
+			return !fieldsFilter_ || fieldsFilter_->ContainsVector(field);
+		}
 		RX_ALWAYS_INLINE bool match(const TagsPath&) const noexcept { return true; }
+
+	private:
+		const FieldsFilter* fieldsFilter_{nullptr};
 	};
 
-	class IndexedSkipFilter {
+	class [[nodiscard]] IndexedSkipFilter {
 	public:
 		explicit IndexedSkipFilter(const FieldsSet& f) noexcept : f_(&f) {}
 		IndexedSkipFilter MakeCleanCopy() const noexcept { return IndexedSkipFilter(*f_); }
@@ -59,7 +57,7 @@ public:
 		const FieldsSet* f_{nullptr};
 	};
 
-	class RestrictingFilter {
+	class [[nodiscard]] RestrictingFilter {
 	public:
 		RestrictingFilter(const FieldsSet& f) noexcept : f_(&f), match_(true) {}
 
@@ -88,57 +86,64 @@ public:
 		bool match_{false};
 	};
 
-	class DummyRecoder {
+	class [[nodiscard]] DefaultRecoder {
 	public:
-		RX_ALWAYS_INLINE DummyRecoder MakeCleanCopy() const noexcept { return DummyRecoder(); }
-		RX_ALWAYS_INLINE bool Recode(Serializer&, WrSerializer&) const noexcept { return false; }
-		RX_ALWAYS_INLINE bool Recode(Serializer&, Payload&, int, WrSerializer&) const noexcept { return false; }
-		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, int) const noexcept { return tagType; }
-		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath&) const noexcept { return tagType; }
+		static RX_ALWAYS_INLINE DefaultRecoder MakeCleanCopy() noexcept { return DefaultRecoder(); }
+		RX_ALWAYS_INLINE bool Recode(Serializer&, WrSerializer&) const { return false; }
+		RX_ALWAYS_INLINE bool Recode(Serializer&, Payload&, TagName, WrSerializer&) const noexcept { return false; }
+		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, int) const noexcept {
+			// Do not recode index field
+			return tagType;
+		}
+		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath&) noexcept { return tagType; }
 	};
-	class DefaultRecoder {
+
+	class [[nodiscard]] CustomRecoder {
 	public:
-		DefaultRecoder(Recoder& r) noexcept : r_(&r), needToRecode_(false) {}
+		CustomRecoder(Recoder& r) noexcept : r_(&r), needToRecode_(false) {}
 
-		RX_ALWAYS_INLINE DefaultRecoder MakeCleanCopy() const noexcept { return DefaultRecoder(*r_); }
-
+		RX_ALWAYS_INLINE CustomRecoder MakeCleanCopy() const noexcept { return CustomRecoder(*r_); }
 		RX_ALWAYS_INLINE bool Recode(Serializer& ser, WrSerializer& wser) const {
 			if (needToRecode_) {
 				r_->Recode(ser, wser);
+				return true;
 			}
-			return needToRecode_;
+			return defaultRecoder_.Recode(ser, wser);
 		}
-		RX_ALWAYS_INLINE bool Recode(Serializer& ser, Payload& pl, int tagName, WrSerializer& wser) const {
+		RX_ALWAYS_INLINE bool Recode(Serializer& ser, Payload& pl, TagName tagName, WrSerializer& wser) const {
 			if (needToRecode_) {
 				r_->Recode(ser, pl, tagName, wser);
+				return true;
 			}
-			return needToRecode_;
+			return defaultRecoder_.Recode(ser, pl, tagName, wser);
 		}
 		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, int field) {
 			needToRecode_ = r_->Match(field);
-			return needToRecode_ ? r_->Type(tagType) : tagType;
+			return needToRecode_ ? r_->Type(tagType) : defaultRecoder_.RegisterTagType(tagType, field);
 		}
 		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath& tagsPath) {
 			needToRecode_ = r_->Match(tagsPath);
-			return needToRecode_ ? r_->Type(tagType) : tagType;
+			return needToRecode_ ? r_->Type(tagType) : defaultRecoder_.RegisterTagType(tagType, tagsPath);
 		}
 
 	private:
+		DefaultRecoder defaultRecoder_;
 		Recoder* r_{nullptr};
 		bool needToRecode_{false};
 	};
-	struct NamedTagOpt {};
-	struct NamelessTagOpt {};
+	struct [[nodiscard]] NamedTagOpt {};
+	struct [[nodiscard]] NamelessTagOpt {};
 
-	template <typename FilterT = DummyFilter, typename RecoderT = DummyRecoder>
-	void Decode(Payload& pl, Serializer& rdSer, WrSerializer& wrSer, FilterT filter = FilterT(), RecoderT recoder = RecoderT()) {
-		static_assert(std::is_same_v<FilterT, DummyFilter> || std::is_same_v<FilterT, RestrictingFilter>,
+	template <typename Filter, typename Recoder = DefaultRecoder>
+	void Decode(Payload& pl, Serializer& rdSer, WrSerializer& wrSer, FloatVectorsHolderVector& floatVectorsHolder, Filter filter = Filter(),
+				Recoder recoder = Recoder()) {
+		static_assert(std::is_same_v<Filter, DefaultFilter> || std::is_same_v<Filter, RestrictingFilter>,
 					  "Other filter types are not allowed for the public API");
-		static_assert(std::is_same_v<RecoderT, DummyRecoder> || std::is_same_v<RecoderT, DefaultRecoder>,
+		static_assert(std::is_same_v<Recoder, DefaultRecoder> || std::is_same_v<Recoder, CustomRecoder>,
 					  "Other recoder types are not allowed for the public API");
 		objectScalarIndexes_.reset();
 		if rx_likely (!filter.HasArraysFields(pl.Type())) {
-			decodeCJson(pl, rdSer, wrSer, filter, recoder, NamelessTagOpt{});
+			decodeCJson(pl, rdSer, wrSer, filter, recoder, NamelessTagOpt{}, floatVectorsHolder);
 			return;
 		}
 #ifdef RX_WITH_STDLIB_DEBUG
@@ -146,20 +151,22 @@ public:
 #else
 		// Search of the indexed fields inside the object arrays is not implemented
 		// Possible implementation has noticeable negative impact on 'FromCJSONPKOnly' benchmark.
-		// Currently, we are using filter for PKs only, and PKs can not be arrays, so this code actually will never be called at the
-		// current moment
-		decodeCJson(pl, rdSer, wrSer, DummyFilter(), recoder, NamelessTagOpt{});
+		// Currently, we are using filter for PKs and vector only, and PKs and vectors can not be arrays,
+		// so this code actually will never be called at the current moment
+		decodeCJson(pl, rdSer, wrSer, DefaultFilter(nullptr), recoder, NamelessTagOpt{}, floatVectorsHolder);
 #endif	// RX_WITH_STDLIB_DEBUG
 	}
 
 private:
-	template <typename FilterT, typename RecoderT, typename TagOptT>
-	bool decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrser, FilterT filter, RecoderT recoder, TagOptT);
-	bool isInArray() const noexcept { return arrayLevel_ > 0; }
+	template <typename Filter, typename Recoder, typename TagOptT>
+	bool decodeCJson(Payload&, Serializer&, WrSerializer&, Filter, Recoder, TagOptT, FloatVectorsHolderVector&);
+	template <typename Filter, typename Recoder, typename Validator>
+	void decodeCJson(Payload&, Serializer&, WrSerializer&, Filter, Recoder, TagType, TagName, ctag, FloatVectorsHolderVector&,
+					 const Validator&);
+	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 	[[noreturn]] void throwTagReferenceError(ctag, const Payload&);
-	[[noreturn]] void throwUnexpectedArrayError(const PayloadFieldType&);
 
-	[[nodiscard]] Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
+	Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
 
 	TagsMatcher& tagsMatcher_;
 	TagsPath tagsPath_;
@@ -168,14 +175,5 @@ private:
 	// storage for owning strings obtained from numbers
 	StrHolderT& storage_;
 };
-
-extern template bool CJsonDecoder::decodeCJson<CJsonDecoder::DummyFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DummyFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt);
-extern template bool CJsonDecoder::decodeCJson<CJsonDecoder::DummyFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DummyFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
-extern template bool CJsonDecoder::decodeCJson<CJsonDecoder::RestrictingFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt);
-extern template bool CJsonDecoder::decodeCJson<CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
 
 }  // namespace reindexer

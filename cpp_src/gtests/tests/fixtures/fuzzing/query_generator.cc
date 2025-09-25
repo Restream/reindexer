@@ -11,7 +11,7 @@ reindexer::Query QueryGenerator::operator()() {
 	}
 	const auto& ns = rndGen_.RndWhich(namespaces_);
 	reindexer::Query query{ns.GetName()};
-	enum By : uint8_t { Index, Field, Empty, END = Empty };
+	enum [[nodiscard]] By : uint8_t { Index, Field, Empty, END = Empty };
 	switch (rndGen_.RndWhich<By, 1, 1, 1>()) {
 		case Index:
 			if (const auto& indexes = ns.GetIndexes(); !indexes.empty()) {

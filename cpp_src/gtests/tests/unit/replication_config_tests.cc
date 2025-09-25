@@ -1,16 +1,17 @@
 #include <fstream>
+#include <thread>
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
-#include "core/item.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacestat.h"
 #include "core/reindexer.h"
+#include "core/system_ns_names.h"
 #include "core/type_consts.h"
-
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/serializer.h"
+#include "vendor/gason/gason.h"
 
 #include "gtest/gtest.h"
 
@@ -20,30 +21,29 @@
 
 using namespace reindexer;
 
-class ReplicationConfigTests : public ::testing::Test {
+class [[nodiscard]] ReplicationConfigTests : public ::testing::Test {
 public:
 	using ItemType = typename reindexer::Reindexer::ItemT;
 	using QueryResultsType = typename reindexer::Reindexer::QueryResultsT;
-	enum class ConfigType { File, Namespace };
+	enum class [[nodiscard]] ConfigType { File, Namespace };
 
 	const std::chrono::milliseconds kReplicationConfLoadDelay = std::chrono::milliseconds(1200);
 	const std::string kSimpleReplConfigStoragePath = fs::JoinPath(fs::GetTempDir(), "reindex/simple_replicationConf_tests/");
 	const std::string kStoragePath = kSimpleReplConfigStoragePath;
 	const std::string kBuiltin = "builtin://" + kStoragePath;
-	const std::string kConfigNs = "#config";
 	const std::string kReplicationConfigFilename = "replication.conf";
 	const std::string kReplFilePath = reindexer::fs::JoinPath(kStoragePath, kReplicationConfigFilename);
 
 	// defining test data
-	const reindexer::ReplicationConfigData initialReplConf{0, 2};
-	const reindexer::ReplicationConfigData correctReplConf{10, 2};
-	const reindexer::ReplicationConfigData updatedReplConf{100, 3};
+	const reindexer::ReplicationConfigData initialReplConf{0, 2, {}};
+	const reindexer::ReplicationConfigData correctReplConf{10, 2, {}};
+	const reindexer::ReplicationConfigData updatedReplConf{100, 3, {}};
 
-	const reindexer::ReplicationConfigData invalidReplConf{-10, 2};
-	const reindexer::ReplicationConfigData invalidReplConf1000{1000, 2};
-	const reindexer::ReplicationConfigData fallbackReplConf{0, 2};
+	const reindexer::ReplicationConfigData invalidReplConf{-10, 2, {}};
+	const reindexer::ReplicationConfigData invalidReplConf1000{1000, 2, {}};
+	const reindexer::ReplicationConfigData fallbackReplConf{0, 2, {}};
 
-	void SetUp() override { fs::RmDirAll(kStoragePath); }
+	void SetUp() override { rx_unused = fs::RmDirAll(kStoragePath); }
 	void TearDown() override {}
 
 	void WriteConfigFile(const std::string& path, const std::string& configYaml) {
@@ -93,7 +93,7 @@ public:
 	bool CheckReplicationConfigNS(reindexer::Reindexer& rx, const ReplicationConfigData& expectedConf, bool expectErrorParseJSON = false) {
 		GTEST_TRACE_FUNCTION();
 		QueryResultsType results;
-		auto err = rx.Select(Query(kConfigNs).Where("type", CondEq, "replication"), results);
+		auto err = rx.Select(Query(kConfigNamespace).Where("type", CondEq, "replication"), results);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		ReplicationConfigData replConf;
@@ -131,7 +131,7 @@ public:
 			GTEST_TRACE_SCOPE("Checking #memstats.server_id for non-system namespaces.");
 			QueryResultsType results;
 			auto query = "select name, replication.server_id from #memstats";
-			auto err = rx.Select(query, results);
+			auto err = rx.ExecSQL(query, results);
 			EXPECT_TRUE(err.ok()) << err.what();
 			for (auto it : results) {
 				WrSerializer ser;
@@ -157,7 +157,7 @@ public:
 			EXPECT_TRUE(err.ok()) << err.what();
 			for (auto& nsDef : nsDefs) {
 				if (nsDef.name.empty() || (nsDef.name[0] != '#')) {
-					// we will perform checks only for well defined system namespaces
+					// we will perform checks only for well-defined system namespaces
 					continue;
 				}
 				reindexer::ReplicationStateV2 replState;
@@ -203,11 +203,11 @@ protected:
 	void upsertConfigItemFromJSON(reindexer::Reindexer& rx, const std::string_view stringJSON) {
 		GTEST_TRACE_FUNCTION();
 
-		auto item = rx.NewItem(kConfigNs);
+		auto item = rx.NewItem(kConfigNamespace);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		auto err = item.FromJSON(stringJSON);
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.Upsert(kConfigNs, item);
+		err = rx.Upsert(kConfigNamespace, item);
 		if constexpr (ExpectErrorOnUpsert) {
 			ASSERT_FALSE(err.ok()) << err.what();
 		} else {
@@ -245,8 +245,6 @@ TEST(DBConfigTests, ReadValidJsonConfiguration) {
 			{
 				"namespace":"*",
 				"log_level":"none",
-				"lazyload":false,
-				"unload_idle_threshold":0,
 				"join_cache_mode":"off",
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,
@@ -319,8 +317,6 @@ TEST(DBConfigTests, ReadInvalidJsonConfiguration) {
 			{
 				"namespace":"*",
 				"log_level":"none",
-				"lazyload":false,
-				"unload_idle_threshold":0,
 				"join_cache_mode":"off",
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,

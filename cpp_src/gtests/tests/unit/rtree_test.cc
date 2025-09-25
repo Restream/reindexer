@@ -5,8 +5,8 @@
 #include "core/index/rtree/quadraticsplitter.h"
 #include "core/index/rtree/rstarsplitter.h"
 #include "gtest/gtest.h"
+#include "gtests/tools.h"
 #include "reindexer_api.h"
-#include "tools/randompoint.h"
 
 namespace {
 
@@ -16,7 +16,7 @@ template <typename T>
 struct Compare;
 
 template <>
-struct Compare<reindexer::Point> {
+struct [[nodiscard]] Compare<reindexer::Point> {
 	bool operator()(reindexer::Point lhs, reindexer::Point rhs) const noexcept {
 		if (lhs.X() == rhs.X()) {
 			return lhs.Y() < rhs.Y();
@@ -26,14 +26,14 @@ struct Compare<reindexer::Point> {
 };
 
 template <typename T>
-struct Compare<reindexer::RMapValue<T, size_t>> {
+struct [[nodiscard]] Compare<reindexer::RMapValue<T, size_t>> {
 	bool operator()(const reindexer::RMapValue<T, size_t>& lhs, const reindexer::RMapValue<T, size_t>& rhs) const noexcept {
 		return lhs.second < rhs.second;
 	}
 };
 
 template <typename RTree>
-class SearchVisitor : public RTree::Visitor {
+class [[nodiscard]] SearchVisitor : public RTree::Visitor {
 public:
 	bool operator()(const typename RTree::value_type& v) override {
 		const auto it = data_.find(v);
@@ -54,7 +54,7 @@ private:
 };
 
 template <typename RTree>
-class DeleteVisitor : public RTree::Visitor {
+class [[nodiscard]] DeleteVisitor : public RTree::Visitor {
 public:
 	DeleteVisitor(const reindexer::Rectangle& r) : rect_{r} {}
 	bool operator()(const typename RTree::value_type& v) override { return rect_.Contain(RTree::traits::GetPoint(v)); }
@@ -73,7 +73,7 @@ static void TestInsert() {
 
 	size_t insertedCount = 0;
 	for (size_t i = 0; i < 10000; ++i) {
-		const auto p = reindexer::randPoint(kRange);
+		const auto p = randPoint(kRange);
 		const auto insertRes{tree.insert(reindexer::Point{p})};
 		if (insertRes.second) {
 			++insertedCount;
@@ -101,7 +101,7 @@ static void TestIterators() {
 
 	size_t dublicates = 0;
 	for (size_t i = 0; i < 10000 + dublicates; ++i) {
-		const auto res = tree.insert(reindexer::randPoint(kRange));
+		const auto res = tree.insert(randPoint(kRange));
 		if (!res.second) {
 			++dublicates;
 		}
@@ -132,8 +132,6 @@ TEST(RTree, RStarIterators) { TestIterators<reindexer::RStarSplitter>(); }
 template <template <typename, typename, typename, typename, size_t, size_t> class Splitter>
 static void TestSearch() {
 	using RTree = reindexer::RectangleTree<reindexer::Point, Splitter, 16, 8>;
-	using reindexer::randPoint;
-	using reindexer::randBinDouble;
 	constexpr size_t kCount = 100000;
 
 	RTree tree;
@@ -153,7 +151,7 @@ static void TestSearch() {
 	for (size_t i = 0; i < 1000; ++i) {
 		SearchVisitor<RTree> DWithinVisitor;
 		const reindexer::Point point{randPoint(kRange)};
-		const double distance = randBinDouble(0, 100);
+		const double distance = randBin<double>(0, 100);
 		for (const auto& r : data) {
 			if (reindexer::DWithin(point, r, distance)) {
 				DWithinVisitor.Add(r);
@@ -175,7 +173,6 @@ TEST(RTree, RStarSearch) { TestSearch<reindexer::RStarSplitter>(); }
 template <template <typename, typename, typename, typename, size_t, size_t> class Splitter>
 static void TestDelete() {
 	using RTree = reindexer::RectangleTree<reindexer::Point, Splitter, 16, 8>;
-	using reindexer::randPoint;
 	constexpr size_t kCount = 10000;
 
 	RTree tree;
@@ -209,7 +206,7 @@ static void TestErase() {
 
 	RTree tree;
 	for (size_t i = 0; i < kCount;) {
-		i += tree.insert(reindexer::randPoint(kRange)).second;
+		i += tree.insert(randPoint(kRange)).second;
 	}
 	ASSERT_TRUE(tree.Check());
 	ASSERT_EQ(tree.size(), kCount);
@@ -234,8 +231,6 @@ TEST(RTree, RStarErase) { TestErase<reindexer::RStarSplitter>(); }
 template <template <typename, typename, typename, typename, size_t, size_t> class Splitter>
 static void TestMap() {
 	using Map = reindexer::RTreeMap<size_t, Splitter, 16, 8>;
-	using reindexer::randPoint;
-	using reindexer::randBinDouble;
 	constexpr size_t kCount = 10000;
 
 	Map map;
@@ -254,7 +249,7 @@ static void TestMap() {
 	for (size_t i = 0; i < 1000; ++i) {
 		SearchVisitor<Map> visitor;
 		const reindexer::Point point{randPoint(kRange)};
-		const double distance = randBinDouble(0, 100);
+		const double distance = randBin<double>(0, 100);
 		for (const auto& r : data) {
 			if (reindexer::DWithin(point, r.first, distance)) {
 				visitor.Add(r);
@@ -284,24 +279,14 @@ TEST(RTree, RStarMap) { TestMap<reindexer::RStarSplitter>(); }
 // Make sure RTree indexes work with null values correctly
 TEST_F(ReindexerApi, EmptyRTreeSparseValues) {
 	// Create namespace and add 2 RTree indexes (of type Sparse)
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"point1", "rtree", "point", IndexOpts().Sparse(true).RTreeType(IndexOpts::Linear)});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"point2", "rtree", "point", IndexOpts().Sparse(true).RTreeType(IndexOpts::Linear)});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"point1", "rtree", "point", IndexOpts().Sparse(true).RTreeType(IndexOpts::Linear)});
+	rt.AddIndex(default_namespace, {"point2", "rtree", "point", IndexOpts().Sparse(true).RTreeType(IndexOpts::Linear)});
 
 	// Fill namespace with null values for RTree fields
 	reindexer::WrSerializer wrser;
 	for (int i = 0; i < 100; ++i) {
-		Item item = rt.reindexer->NewItem(default_namespace);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
 		wrser.Reset();
 		reindexer::JsonBuilder jsonBuilder(wrser, reindexer::ObjType::TypeObject);
 		jsonBuilder.Put("id", reindexer::Variant(i));
@@ -309,18 +294,12 @@ TEST_F(ReindexerApi, EmptyRTreeSparseValues) {
 		jsonBuilder.Null("point2");
 		jsonBuilder.End();
 
-		err = item.FromJSON(wrser.Slice());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Insert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.UpsertJSON(default_namespace, wrser.Slice());
 	}
 
 	// Make sure we can select data normally and access newly added RTree null fields
 	{
-		QueryResults qr;
-		err = rt.reindexer->Select(Query(default_namespace).Where("id", CondEq, 13), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		QueryResults qr = rt.Select(Query(default_namespace).Where("id", CondEq, 13));
 		ASSERT_TRUE(qr.Count() == 1);
 		Item item = qr.begin().GetItem(false);
 		Variant idVal = item["id"];
@@ -334,8 +313,7 @@ TEST_F(ReindexerApi, EmptyRTreeSparseValues) {
 	// Make sure removal of items with null RTree items works as expected
 	{
 		QueryResults qr;
-		err = rt.reindexer->Delete(Query(default_namespace).Where("id", CondEq, 13), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Delete(Query(default_namespace).Where("id", CondEq, 13), qr);
 		ASSERT_TRUE(qr.Count() == 1);
 	}
 }

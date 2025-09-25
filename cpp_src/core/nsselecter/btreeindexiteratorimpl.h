@@ -8,9 +8,9 @@
 namespace reindexer {
 
 template <class T>
-class BtreeIndexIteratorImpl {
+class [[nodiscard]] BtreeIndexIteratorImpl {
 public:
-	enum class IdsetType { Plain = 0, Btree };
+	enum class [[nodiscard]] IdsetType { Plain = 0, Btree };
 
 	explicit BtreeIndexIteratorImpl(const T& idxMap) : idxMap_(idxMap) {}
 	virtual ~BtreeIndexIteratorImpl() = default;
@@ -42,6 +42,8 @@ public:
 			case IdsetType::Plain:
 				shiftPlainIdsetToBegin();
 				break;
+			default:
+				std::abort();
 		}
 	}
 
@@ -53,6 +55,8 @@ public:
 			case IdsetType::Plain:
 				shiftPlainIdsetToNext();
 				break;
+			default:
+				std::abort();
 		}
 	}
 	bool isIdsetOver() const noexcept {
@@ -84,7 +88,7 @@ public:
 
 	template <typename TIdSet>
 	void detectCurrentIdsetType(const TIdSet& idset) noexcept {
-		if (std::is_same<TIdSet, IdSet>() && !idset.IsCommited()) {
+		if (std::is_same<TIdSet, IdSet>() && !idset.IsCommitted()) {
 			currentIdsetType_ = IdsetType::Btree;
 		} else {
 			currentIdsetType_ = IdsetType::Plain;
@@ -125,7 +129,7 @@ protected:
 };
 
 template <class T>
-class BtreeIndexForwardIteratorImpl : public BtreeIndexIteratorImpl<T> {
+class [[nodiscard]] BtreeIndexForwardIteratorImpl : public BtreeIndexIteratorImpl<T> {
 public:
 	using Base = BtreeIndexIteratorImpl<T>;
 	explicit BtreeIndexForwardIteratorImpl(const T& idxMap) : Base(idxMap) {
@@ -202,10 +206,17 @@ public:
 	}
 
 private:
+#ifdef REINDEX_DEBUG_CONTAINERS
+	IdSetPlain::const_iterator it_;
+	base_idsetset::const_iterator itset_;
+
+#else  // !REINDEX_DEBUG_CONTAINERS
 	union {
 		IdSetPlain::const_iterator it_;
 		base_idsetset::const_iterator itset_;
 	};
+
+#endif	// !REINDEX_DEBUG_CONTAINERS
 
 	typename Base::ForwardIterator idxMapItBegin_;
 	typename Base::ForwardIterator idxMapItEnd_;
@@ -213,7 +224,7 @@ private:
 };
 
 template <class T>
-class BtreeIndexReverseIteratorImpl : public BtreeIndexIteratorImpl<T> {
+class [[nodiscard]] BtreeIndexReverseIteratorImpl : public BtreeIndexIteratorImpl<T> {
 public:
 	using Base = BtreeIndexIteratorImpl<T>;
 	explicit BtreeIndexReverseIteratorImpl(const T& idxMap) : Base(idxMap) {
@@ -273,11 +284,16 @@ public:
 	}
 
 private:
+#ifdef REINDEX_DEBUG_CONTAINERS
+	IdSetPlain::const_reverse_iterator rit_;
+	base_idsetset::const_reverse_iterator ritset_;
+#else
 	union {
 		IdSetPlain::const_reverse_iterator rit_;
 		base_idsetset::const_reverse_iterator ritset_;
 	};
 
+#endif
 	typename Base::ReverseIterator idxMapRitBegin_;
 	typename Base::ReverseIterator idxMapRitEnd_;
 	typename Base::ReverseIterator idxMapRit_;

@@ -6,7 +6,7 @@
 namespace reindexer {
 namespace client {
 
-struct ConnectionsPoolData {
+struct [[nodiscard]] ConnectionsPoolData {
 	ConnectionsPoolData(size_t connCount, const ReindexerConfig& cfg, INamespaces::PtrT sharedNss) {
 		assert(connCount);
 		assert(sharedNss);
@@ -21,7 +21,7 @@ struct ConnectionsPoolData {
 };
 
 template <typename CmdT>
-class Connection {
+class [[nodiscard]] Connection {
 public:
 	static constexpr auto kConnectionChSize = 100;
 	Connection(RPCClient& _rx) : rx(_rx), cmdCh_(kConnectionChSize) {}
@@ -31,9 +31,9 @@ public:
 		++requests_;
 		cmdCh_.push(std::forward<U>(obj));
 	}
-	std::pair<CmdT, bool> PopCmd() { return cmdCh_.pop(); }
+	std::pair<CmdT, bool> PopCmd() noexcept { return cmdCh_.pop(); }
 	bool IsChOpened() const noexcept { return cmdCh_.opened(); }
-	void CloseCh() { cmdCh_.close(); }
+	void CloseCh() noexcept { cmdCh_.close(); }
 	void OnRequestDone() noexcept {
 		assert(requests_);
 		--requests_;
@@ -48,7 +48,7 @@ private:
 };
 
 template <typename CmdT>
-class ConnectionsPool {
+class [[nodiscard]] ConnectionsPool {
 public:
 	ConnectionsPool(ConnectionsPoolData& data) noexcept : data_(data) {
 		for (auto& c : data_.clients) {

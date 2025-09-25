@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-class Bm25Rx {
+class [[nodiscard]] Bm25Rx {
 public:
 	Bm25Rx(double totalDocCount, double matchedDocCount, double k1, double b) noexcept
 		: k1_(k1), b_(b), idf_(IDF(totalDocCount, matchedDocCount)) {}
@@ -34,7 +34,7 @@ private:
 	const double idf_;
 };
 
-class Bm25Classic {
+class [[nodiscard]] Bm25Classic {
 public:
 	Bm25Classic(double totalDocCount, double matchedDocCount, double k1, double b) noexcept
 		: k1_(k1), b_(b), idf_(IDF(totalDocCount, matchedDocCount)) {}
@@ -56,7 +56,7 @@ private:
 	const double idf_;
 };
 
-class TermCount {
+class [[nodiscard]] TermCount {
 public:
 	TermCount(double /*totalDocCount*/, double /*matchedDocCount*/, double /*k1*/, double /*b*/) noexcept {}
 
@@ -67,7 +67,7 @@ public:
 };
 
 template <typename BM>
-class Bm25Calculator {
+class [[nodiscard]] Bm25Calculator {
 public:
 	Bm25Calculator(double totalDocCount, double matchedDocCount, double k1, double b) : bm_(totalDocCount, matchedDocCount, k1, b) {}
 	RX_ALWAYS_INLINE double Get(double termCountInDoc, double wordsInDoc, double avgDocLen) const {

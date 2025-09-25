@@ -2,10 +2,8 @@
 
 #include <estl/fast_hash_set.h>
 #include <memory>
-#include <unordered_map>
 #include "config.h"
 #include "core/cbinding/resultserializer.h"
-#include "core/keyvalue/variant.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/reindexer.h"
 #include "dbmanager.h"
@@ -26,9 +24,9 @@ namespace reindexer_server {
 using namespace reindexer::net;
 using namespace reindexer;
 
-enum class RPCSocketT : bool { Unx, TCP };
+enum class [[nodiscard]] RPCSocketT : bool { Unx, TCP };
 
-struct RPCClientData final : public cproto::ClientData {
+struct [[nodiscard]] RPCClientData final : public cproto::ClientData {
 	~RPCClientData();
 	h_vector<RPCQrId, 8> results;
 	h_vector<std::pair<Snapshot, bool>, 1> snapshots;
@@ -41,28 +39,25 @@ struct RPCClientData final : public cproto::ClientData {
 	SemVersion rxVersion;
 	BindingCapabilities caps;
 	cproto::RPCEventsPusher pusher;
+	key_string replToken;
 	bool subscribed;
-
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	cproto::RPCUpdatesPusherV3 pusherV3;
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 };
 
-class RPCServer {
+class [[nodiscard]] RPCServer {
 public:
 	RPCServer(DBManager& dbMgr, LoggerWrapper& logger, IClientsStats* clientsStats, const ServerConfig& serverConfig,
 			  IStatsWatcher* statsCollector = nullptr);
 	~RPCServer();
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocketT sockDomain, std::string_view threadingMode);
+	void Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocketT sockDomain, std::string_view threadingMode);
 	void Stop() {
 		terminate_ = true;
+		if (listener_) {
+			listener_->Stop();
+		}
 		if (qrWatcherThread_.joinable()) {
 			qrWatcherTerminateAsync_.send();
 			qrWatcherThread_.join();
-		}
-		if (listener_) {
-			listener_->Stop();
 		}
 		terminate_ = false;
 	}
@@ -70,7 +65,7 @@ public:
 	Error Ping(cproto::Context& ctx);
 	Error Login(cproto::Context& ctx, p_string login, p_string password, p_string db, std::optional<bool> createDBIfMissing,
 				std::optional<bool> checkClusterID, std::optional<int> expectedClusterID, std::optional<p_string> clientRxVersion,
-				std::optional<p_string> appName, std::optional<int64_t> bindingCaps);
+				std::optional<p_string> appName, std::optional<int64_t> bindingCaps, std::optional<p_string> replToken);
 	Error OpenDatabase(cproto::Context& ctx, p_string db, std::optional<bool> createDBIfMissing);
 	Error CloseDatabase(cproto::Context& ctx);
 	Error DropDatabase(cproto::Context& ctx);
@@ -92,8 +87,6 @@ public:
 	Error SetSchema(cproto::Context& ctx, p_string ns, p_string schema);
 	Error GetSchema(cproto::Context& ctx, p_string ns, int format);
 
-	Error Commit(cproto::Context& ctx, p_string ns);
-
 	Error ModifyItem(cproto::Context& ctx, p_string nsName, int format, p_string itemData, int mode, p_string percepsPack, int stateToken,
 					 int txID);
 
@@ -112,12 +105,12 @@ public:
 	Error UpdateQuery(cproto::Context& ctx, p_string query, std::optional<int> flags) noexcept;
 
 	Error Select(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
-	Error SelectSQL(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
+	Error ExecSQL(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error FetchResults(cproto::Context& ctx, int reqId, int flags, int offset, int limit, std::optional<int64_t> qrUID);
 	Error CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
 	Error GetSQLSuggestions(cproto::Context& ctx, p_string query, int pos);
 	Error GetReplState(cproto::Context& ctx, p_string ns);
-	Error SetClusterizationStatus(cproto::Context& ctx, p_string ns, p_string serStatus);
+	Error SetClusterOperationStatus(cproto::Context& ctx, p_string ns, p_string serStatus);
 	Error GetSnapshot(cproto::Context& ctx, p_string ns, p_string optsJson);
 	Error FetchSnapshot(cproto::Context& ctx, int id, int64_t offset);
 	Error ApplySnapshotChunk(cproto::Context& ctx, p_string ns, p_string rec);

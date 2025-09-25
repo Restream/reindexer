@@ -4,14 +4,14 @@
 
 namespace reindexer {
 
-class BackgroundNamespaceDeleter {
+class [[nodiscard]] BackgroundNamespaceDeleter {
 public:
 	void Add(NamespaceImpl::Ptr ns) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		namespaces_.emplace_back(std::move(ns));
 	}
 	void DeleteUnique() noexcept {
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		for (auto it = namespaces_.begin(); it != namespaces_.end();) {
 			if (it->unique()) {
 				lck.unlock();
@@ -25,7 +25,7 @@ public:
 	}
 
 private:
-	std::mutex mtx_;
+	mutex mtx_;
 	std::list<NamespaceImpl::Ptr> namespaces_;
 };
 

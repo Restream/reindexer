@@ -1,25 +1,29 @@
 #include "cjsondecoder.h"
 #include "cjsontools.h"
-#include "tagsmatcher.h"
+#include "sparse_validator.h"
 #include "tools/flagguard.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
 
-template <typename FilterT, typename RecoderT, typename TagOptT>
-bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrser, FilterT filter, RecoderT recoder, TagOptT) {
+using namespace item_fields_validator;
+
+template <typename Filter, typename Recoder, typename TagOptT>
+bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrser, Filter filter, Recoder recoder, TagOptT,
+							   FloatVectorsHolderVector& floatVectorsHolder) {
+	using namespace std::string_view_literals;
 	const ctag tag = rdser.GetCTag();
 	TagType tagType = tag.Type();
 	if (tag == kCTagEnd) {
 		wrser.PutCTag(kCTagEnd);
 		return false;
 	}
-	int tagName = 0;
+	TagName tagName = TagName::Empty();
 	if constexpr (std::is_same_v<TagOptT, NamedTagOpt>) {
 		tagName = tag.Name();
-		assertrx_dbg(tagName);
+		assertrx_dbg(!tagName.IsEmpty());
 		// Check if tag exists
-		(void)tagsMatcher_.tag2name(tagName);
+		rx_unused = tagsMatcher_.tag2name(tagName);
 		tagsPath_.emplace_back(tagName);
 	}
 
@@ -27,91 +31,94 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 		throwTagReferenceError(tag, pl);
 	}
 
-	const int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
-	if (field >= 0) {
-		const bool match = filter.contains(field);
-		if (match) {
-			tagType = recoder.RegisterTagType(tagType, field);
+	const auto field = tagsMatcher_.tags2field(tagsPath_);
+	if (field.IsRegularIndex()) {
+		const auto indexNumber = field.IndexNumber();
+		if (filter.contains(indexNumber)) {
+			tagType = recoder.RegisterTagType(tagType, indexNumber);
 			if (tagType == TAG_NULL) {
 				wrser.PutCTag(ctag{TAG_NULL, tagName});
 			} else if (recoder.Recode(rdser, pl, tagName, wrser)) {
 				// No more actions needed after recoding
 			} else {
-				const auto& fieldRef{pl.Type().Field(field)};
+				const auto& fieldRef{pl.Type().Field(indexNumber)};
 				const KeyValueType fieldType{fieldRef.Type()};
 				if (tagType == TAG_ARRAY) {
 					const carraytag atag = rdser.GetCArrayTag();
 					const auto count = atag.Count();
-					if rx_unlikely (!fieldRef.IsArray()) {
-						throwUnexpectedArrayError(fieldRef);
-					}
-					validateArrayFieldRestrictions(fieldRef, count, "cjson");
-					const int ofs = pl.ResizeArray(field, count, true);
 					const TagType atagType = atag.Type();
-					if (atagType != TAG_OBJECT) {
-						for (size_t i = 0; i < count; ++i) {
-							pl.Set(field, ofs + i, cjsonValueToVariant(atagType, rdser, fieldType));
+					if (fieldRef.IsFloatVector()) {
+						ConstFloatVectorView vectView;
+						if (count != 0) {
+							if (atagType != TAG_DOUBLE && atagType != TAG_FLOAT && atagType != TAG_VARINT) {
+								throwUnexpectedArrayTypeForFloatVectorError(kCJSONFmt, fieldRef);
+							}
+							if (count != fieldRef.FloatVectorDimension().Value()) {
+								throwUnexpectedArraySizeForFloatVectorError(kCJSONFmt, fieldRef, count);
+							}
+							auto vect = FloatVector::CreateNotInitialized(fieldRef.FloatVectorDimension());
+							if (atagType == TAG_DOUBLE) {
+								for (size_t i = 0; i < count; ++i) {
+									vect.RawData()[i] = rdser.GetDouble();
+								}
+							} else if (atagType == TAG_FLOAT) {
+								for (size_t i = 0; i < count; ++i) {
+									vect.RawData()[i] = rdser.GetFloat();
+								}
+							} else if (atagType == TAG_VARINT) {
+								for (size_t i = 0; i < count; ++i) {
+									vect.RawData()[i] = rdser.GetVarint();
+								}
+							}
+							if (floatVectorsHolder.Add(std::move(vect))) {
+								vectView = floatVectorsHolder.Back();
+							}
 						}
+						objectScalarIndexes_.set(indexNumber);	// Indexed float vector is treated as scalar value
+						pl.Set(indexNumber, Variant{vectView});
+						wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+						wrser.PutVarUint(count);
+					} else if rx_likely (fieldRef.IsArray()) {
+						validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), count, kCJSONFmt);
+						const int ofs = pl.ResizeArray(indexNumber, count, Append_True);
+						if (atagType != TAG_OBJECT) {
+							for (size_t i = 0; i < count; ++i) {
+								pl.Set(indexNumber, ofs + i, cjsonValueToVariant(atagType, rdser, fieldType));
+							}
+						} else {
+							for (size_t i = 0; i < count; ++i) {
+								pl.Set(indexNumber, ofs + i, cjsonValueToVariant(rdser.GetCTag().Type(), rdser, fieldType));
+							}
+						}
+						wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+						wrser.PutVarUint(count);
 					} else {
-						for (size_t i = 0; i < count; ++i) {
-							pl.Set(field, ofs + i, cjsonValueToVariant(rdser.GetCTag().Type(), rdser, fieldType));
-						}
+						throwUnexpectedArrayError(fieldRef.Name(), fieldRef.Type(), kCJSONFmt);
 					}
-
-					wrser.PutCTag(ctag{TAG_ARRAY, tagName, field});
-					wrser.PutVarUint(count);
 				} else {
-					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, fieldRef, field, isInArray(), "cjson");
-					validateArrayFieldRestrictions(fieldRef, 1, "cjson");
-					objectScalarIndexes_.set(field);
-					pl.Set(field, cjsonValueToVariant(tagType, rdser, fieldType), true);
+					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, fieldRef, indexNumber, isInArray(), kCJSONFmt);
+					validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), 1, kCJSONFmt);
+					objectScalarIndexes_.set(indexNumber);
+					pl.Set(indexNumber, cjsonValueToVariant(tagType, rdser, fieldType), Append_True);
 					fieldType.EvaluateOneOf(
-						[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) { wrser.PutCTag(ctag{TAG_VARINT, tagName, field}); },
-						[&](OneOf<KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Uuid>) {
-							wrser.PutCTag(ctag{fieldType.ToTagType(), tagName, field});
-						},
-						[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite>) { assertrx(false); });
+						[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) { wrser.PutCTag(ctag{TAG_VARINT, tagName, indexNumber}); },
+						[&](OneOf<KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool, KeyValueType::Null,
+								  KeyValueType::Uuid>) { wrser.PutCTag(ctag{fieldType.ToTagType(), tagName, indexNumber}); },
+						[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+							assertrx(false);
+						});
 				}
 			}
 		} else {
-			// objectScalarIndexes_.set(field); - do not change objectScalarIndexes_ value for the filtered out fields
+			// objectScalarIndexes_.set(indexNumber); - do not change objectScalarIndexes_ value for the filtered out fields
 			skipCjsonTag(tag, rdser);
 		}
+	} else if (field.IsIndexed()) {	 // sparse index
+		decodeCJson(pl, rdser, wrser, filter, recoder, tagType, tagName, tag, floatVectorsHolder,
+					SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tagsMatcher_, isInArray(),
+									kCJSONFmt});
 	} else {
-		const bool match = filter.match(tagsPath_);
-		if (match) {
-			tagType = recoder.RegisterTagType(tagType, tagsPath_);
-			wrser.PutCTag(ctag{tagType, tagName, field});
-			if (tagType == TAG_OBJECT) {
-				while (decodeCJson(pl, rdser, wrser, filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamedTagOpt{}));
-			} else if (recoder.Recode(rdser, wrser)) {
-				// No more actions needed after recoding
-			} else if (tagType == TAG_ARRAY) {
-				const carraytag atag = rdser.GetCArrayTag();
-				wrser.PutCArrayTag(atag);
-				const auto count = atag.Count();
-				const TagType atagType = atag.Type();
-				CounterGuardIR32 g(arrayLevel_);
-				if (atagType == TAG_OBJECT) {
-					for (size_t i = 0; i < count; ++i) {
-						decodeCJson(pl, rdser, wrser, filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamelessTagOpt{});
-					}
-				} else {
-					for (size_t i = 0; i < count; ++i) {
-						copyCJsonValue(atagType, rdser, wrser);
-					}
-				}
-			} else {
-				copyCJsonValue(tagType, rdser, wrser);
-			}
-		} else if (tagType != TAG_OBJECT) {
-			// !match
-			skipCjsonTag(tag, rdser);
-		} else {
-			// !match
-			wrser.PutCTag(ctag{tagType, tagName, field});
-			while (decodeCJson(pl, rdser, wrser, filter.MakeSkipFilter(), recoder.MakeCleanCopy(), NamedTagOpt{}));
-		}
+		decodeCJson(pl, rdser, wrser, filter, recoder, tagType, tagName, tag, floatVectorsHolder, kNoValidation);
 	}
 
 	if constexpr (std::is_same_v<TagOptT, NamedTagOpt>) {
@@ -121,31 +128,71 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 	return true;
 }
 
-[[nodiscard]] Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer& rdser, KeyValueType fieldType) {
+template <typename Filter, typename Recoder, typename Validator>
+void CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrser, Filter filter, Recoder recoder, TagType tagType,
+							   TagName tagName, ctag tag, FloatVectorsHolderVector& floatVectorsHolder, const Validator& validator) {
+	const bool match = filter.match(tagsPath_);
+	if (match) {
+		tagType = recoder.RegisterTagType(tagType, tagsPath_);
+		wrser.PutCTag(ctag{tagType, tagName});
+		if (tagType == TAG_OBJECT) {
+			while (decodeCJson(pl, rdser, wrser, filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamedTagOpt{}, floatVectorsHolder));
+		} else if (recoder.Recode(rdser, wrser)) {
+			// No more actions needed after recoding
+		} else if (tagType == TAG_ARRAY) {
+			auto val = validator.Array();
+			const carraytag atag = rdser.GetCArrayTag();
+			wrser.PutCArrayTag(atag);
+			const auto count = atag.Count();
+			const TagType atagType = atag.Type();
+			CounterGuardIR32 g(arrayLevel_);
+			if (atagType == TAG_OBJECT) {
+				for (size_t i = 0; i < count; ++i) {
+					decodeCJson(pl, rdser, wrser, filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamelessTagOpt{}, floatVectorsHolder);
+				}
+			} else {
+				for (size_t i = 0; i < count; ++i) {
+					copyCJsonValue(atagType, rdser, wrser, val.Elem());
+				}
+			}
+		} else {
+			copyCJsonValue(tagType, rdser, wrser, validator);
+		}
+	} else if (tagType != TAG_OBJECT) {
+		// !match
+		skipCjsonTag(tag, rdser);
+	} else {
+		// !match
+		wrser.PutCTag(ctag{tagType, tagName});
+		while (decodeCJson(pl, rdser, wrser, filter.MakeSkipFilter(), recoder.MakeCleanCopy(), NamedTagOpt{}, floatVectorsHolder));
+	}
+}
+
+Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer& rdser, KeyValueType fieldType) {
 	if (fieldType.Is<KeyValueType::String>() && tagType != TagType::TAG_STRING) {
 		auto& back = storage_.emplace_back(rdser.GetRawVariant(KeyValueType{tagType}).As<key_string>());
-		return Variant(p_string(back), Variant::no_hold_t{});
+		return Variant(p_string(back), Variant::noHold);
 	} else {
 		return reindexer::cjsonValueToVariant(tagType, rdser, fieldType);
 	}
 }
 
 RX_NO_INLINE void CJsonDecoder::throwTagReferenceError(ctag tag, const Payload& pl) {
-	throw Error(errLogic, "Reference tag was found in transport CJSON for field %d[%s] in ns [%s]", tag.Field(),
+	throw Error(errLogic, "Reference tag was found in transport CJSON for field {}[{}] in ns [{}]", tag.Field(),
 				tagsMatcher_.tag2name(tag.Name()), pl.Type().Name());
 }
 
-RX_NO_INLINE void CJsonDecoder::throwUnexpectedArrayError(const PayloadFieldType& fieldRef) {
-	throw Error(errLogic, "Error parsing cjson field '%s' - got array, expected scalar %s", fieldRef.Name(), fieldRef.Type().Name());
-}
-
-template bool CJsonDecoder::decodeCJson<CJsonDecoder::DummyFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DummyFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt);
-template bool CJsonDecoder::decodeCJson<CJsonDecoder::DummyFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DummyFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
-template bool CJsonDecoder::decodeCJson<CJsonDecoder::RestrictingFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::DummyRecoder, CJsonDecoder::NamelessTagOpt);
+template bool CJsonDecoder::decodeCJson<CJsonDecoder::DefaultFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt>(
+	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DefaultFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt,
+	FloatVectorsHolderVector&);
+template bool CJsonDecoder::decodeCJson<CJsonDecoder::DefaultFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt>(
+	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DefaultFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt,
+	FloatVectorsHolderVector&);
 template bool CJsonDecoder::decodeCJson<CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
+	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt,
+	FloatVectorsHolderVector&);
+template bool CJsonDecoder::decodeCJson<CJsonDecoder::RestrictingFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt>(
+	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt,
+	FloatVectorsHolderVector&);
 
 }  // namespace reindexer

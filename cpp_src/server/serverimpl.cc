@@ -196,7 +196,7 @@ int ServerImpl::Start() {
 	return run();
 }
 
-void ServerImpl::Stop() {
+void ServerImpl::Stop() noexcept {
 	if (running_) {
 		running_ = false;
 		async_.send();
@@ -269,11 +269,11 @@ int ServerImpl::run() {
 #elif REINDEX_WITH_JEMALLOC
 		if (alloc_ext::JEMallocIsAvailable()) {
 			size_t val = 0, sz = sizeof(size_t);
-			alloc_ext::mallctl("config.prof", &val, &sz, NULL, 0);
+			rx_unused = alloc_ext::mallctl("config.prof", &val, &sz, NULL, 0);
 			if (!val) {
 				logger_.warn("debug.pprof is enabled, but jemalloc compiled without profiling support. Heap profiling is not possible.");
 			} else {
-				alloc_ext::mallctl("opt.prof", &val, &sz, NULL, 0);
+				rx_unused = alloc_ext::mallctl("opt.prof", &val, &sz, NULL, 0);
 				if (!val) {
 					logger_.warn(
 						"debug.pprof is enabled, but jemmalloc profiler is off. Heap profiling is not possible. export "
@@ -374,7 +374,7 @@ int ServerImpl::run() {
 #ifndef _WIN32
 		const bool withRPCUnix = !config_.RPCUnixAddr.empty() && config_.RPCUnixAddr != "none";
 #else
-		if (config_.RPCUnixAddr != "none") {
+		if (config_.RPCUnixAddr != "none" && !config_.RPCUnixAddr.empty()) {
 			logger_.warn("Unable to startup RPC(Unix) on '{0}' (unix domain socket are not supported on Windows platforms)",
 						 config_.RPCUnixAddr);
 		}
@@ -421,40 +421,50 @@ int ServerImpl::run() {
 
 		if (withHTTP) {
 			httpServer = std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
-			if (!httpServer->Start(config_.HTTPAddr, loop_)) {
-				logger_.error("Can't listen HTTP on '{}'", config_.HTTPAddr);
+			try {
+				httpServer->Start(config_.HTTPAddr, loop_);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen HTTP on '{}': {}", config_.HTTPAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}
 
 		if (withHTTPs) {
 			httpsServer = std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
-			if (!httpsServer->Start(config_.HTTPsAddr, loop_)) {
-				logger_.error("Can't listen HTTPs on '{}'", config_.HTTPsAddr);
+			try {
+				httpsServer->Start(config_.HTTPsAddr, loop_);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen HTTPs on '{}': {}", config_.HTTPsAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}
 
 		if (withRPC) {
 			rpcServerTCP = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
-			if (!rpcServerTCP->Start(config_.RPCAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode)) {
-				logger_.error("Can't listen RPC(TCP) on '{}'", config_.RPCAddr);
+			try {
+				rpcServerTCP->Start(config_.RPCAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen RPC(TCP) on '{}': {}", config_.RPCAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}
 
 		if (withRPCs) {
 			rpcsServerTCP = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
-			if (!rpcsServerTCP->Start(config_.RPCsAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode)) {
-				logger_.error("Can't listen RPC-TLS(TCP) on '{}'", config_.RPCsAddr);
+			try {
+				rpcsServerTCP->Start(config_.RPCsAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen RPC-TLS(TCP) on '{}': {}", config_.RPCsAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}
 
 		if (withRPCUnix) {
 			rpcServerUnix = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
-			if (!rpcServerUnix->Start(config_.RPCUnixAddr, loop_, RPCSocketT::Unx, config_.RPCUnixThreadingMode)) {
-				logger_.error("Can't listen RPC(Unix) on '{}'", config_.RPCUnixAddr);
+			try {
+				rpcServerUnix->Start(config_.RPCUnixAddr, loop_, RPCSocketT::Unx, config_.RPCUnixThreadingMode);
+			} catch (std::exception& e) {
+				logger_.error("Can't listen RPC(Unix) on '{}': {}", config_.RPCUnixAddr, e.what());
 				return EXIT_FAILURE;
 			}
 		}
@@ -527,7 +537,7 @@ int ServerImpl::run() {
 		}
 		logger_.info("Stats collector shutdown completed.");
 		dbMgr_->ShutdownClusters();
-		logger_.info("Clusterization shutdown completed.");
+		logger_.info("ClusterOperation shutdown completed.");
 
 		auto stop = [this](auto& serverPtr, std::string_view addr) {
 			return std::async(
@@ -566,7 +576,7 @@ int ServerImpl::run() {
 #endif	// REINDEX_WITH_LIBDL
 		}
 #endif	// WITH_GRPC
-	} catch (const Error& err) {
+	} catch (const std::exception& err) {
 		logger_.error("Unhandled exception occurred: {0}", err.what());
 	}
 	logger_.info("Reindexer server shutdown completed.");
@@ -591,7 +601,7 @@ Error ServerImpl::daemonize() {
 			umask(0);
 			setsid();
 			if (chdir("/")) {
-				return Error(errLogic, "Could not change working directory. Reason: %s", strerror(errno));
+				return Error(errLogic, "Could not change working directory. Reason: {}", strerror(errno));
 			}
 
 			close(STDIN_FILENO);
@@ -601,7 +611,7 @@ Error ServerImpl::daemonize() {
 
 		// fork error ...
 		case -1:
-			return Error(errLogic, "Could not fork process. Reason: %s", strerror(errno));
+			return Error(errLogic, "Could not fork process. Reason: {}", strerror(errno));
 
 		// parent process
 		default:
@@ -641,7 +651,7 @@ Error ServerImpl::loggerConfigure() {
 				spdlog::initialize_logger(std::move(lptr));
 			}
 		} catch (const spdlog::spdlog_ex& e) {
-			return Error(errLogic, "Can't create logger for '%s' to file '%s': %s\n", logger.first, logger.second, e.what());
+			return Error(errLogic, "Can't create logger for '{}' to file '{}': {}\n", logger.first, logger.second, e.what());
 		}
 	}
 	logger_ = LoggerWrapper("server");

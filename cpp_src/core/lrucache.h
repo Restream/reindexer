@@ -1,10 +1,10 @@
 #pragma once
 
 #include <list>
-#include <mutex>
 #include <unordered_map>
-#include "dbconfig.h"
 #include "estl/atomic_unique_ptr.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "namespace/namespacestat.h"
 
 namespace reindexer {
@@ -12,12 +12,12 @@ namespace reindexer {
 constexpr size_t kElemSizeOverhead = 256;
 
 template <typename K, typename V, typename HashT, typename EqualT>
-class LRUCacheImpl {
+class [[nodiscard]] LRUCacheImpl {
 public:
 	using Key = K;
 	using Value = V;
 	LRUCacheImpl(size_t sizeLimit, uint32_t hitCount) noexcept;
-	struct Iterator {
+	struct [[nodiscard]] Iterator {
 		Iterator(bool k = false, const V& v = V()) : valid(k), val(v) {}
 		Iterator(const Iterator& other) = delete;
 		Iterator& operator=(const Iterator& other) = delete;
@@ -33,20 +33,19 @@ public:
 		bool valid;
 		V val;
 	};
-	// Get cached val. Create new entry in cache if does not exist
+	// Get cached val. Create new entry in cache if it does not exist
 	Iterator Get(const K& k);
 	// Put cached val
 	void Put(const K& k, V&& v);
 	LRUCacheMemStat GetMemStat() const;
 	void Clear();
-	void Clear(std::function<bool(const Key&)> cond);
 
 	template <typename T>
 	void Dump(T& os, std::string_view step, std::string_view offset) const {
 		std::string newOffset{offset};
 		newOffset += step;
 		os << "{\n" << newOffset << "totalCacheSize: ";
-		std::lock_guard lock{lock_};
+		lock_guard lock{lock_};
 		os << totalCacheSize_ << ",\n"
 		   << newOffset << "cacheSizeLimit: " << cacheSizeLimit_ << ",\n"
 		   << newOffset << "hitCountToCache: " << hitCountToCache_ << ",\n"
@@ -77,7 +76,7 @@ public:
 
 private:
 	typedef std::list<const K*> LRUList;
-	struct Entry {
+	struct [[nodiscard]] Entry {
 		V val;
 		typename LRUList::iterator lruPos;
 		int hitCount = 0;
@@ -88,11 +87,11 @@ private:
 	};
 
 	bool eraseLRU();
-	bool clearAll();
+	void clearAll();
 
 	std::unordered_map<K, Entry, HashT, EqualT> items_;
 	LRUList lru_;
-	mutable std::mutex lock_;
+	mutable mutex lock_;
 	size_t totalCacheSize_;
 	const size_t cacheSizeLimit_;
 	uint32_t hitCountToCache_;
@@ -100,10 +99,10 @@ private:
 	uint64_t getCount_ = 0, putCount_ = 0, eraseCount_ = 0;
 };
 
-enum class LRUWithAtomicPtr : bool { Yes, No };
+enum class [[nodiscard]] LRUWithAtomicPtr : bool { Yes, No };
 
 template <typename CacheT, LRUWithAtomicPtr withAtomicPtr>
-class LRUCache {
+class [[nodiscard]] LRUCache {
 	using CachePtrT = std::conditional_t<withAtomicPtr == LRUWithAtomicPtr::Yes, atomic_unique_ptr<CacheT>, std::unique_ptr<CacheT>>;
 
 public:
@@ -114,9 +113,9 @@ public:
 	LRUCache(Args&&... args) noexcept : ptr_(makePtr(std::forward<Args>(args)...)) {
 		(void)alignment1_;
 		(void)alignment2_;
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_IX86)
 		static_assert(sizeof(LRUCache) == 128, "Unexpected size. Check alignment");
-#endif	// defined(__x86_64__)
+#endif	// defined(__x86_64__) || defined(_M_X64) || defined(_M_IX86)
 	}
 	virtual ~LRUCache() = default;
 
@@ -178,7 +177,7 @@ private:
 		return CachePtrT(new CacheT(std::forward<Args>(args)...));
 	}
 
-	class Stats {
+	class [[nodiscard]] Stats {
 	public:
 		Stats(uint64_t _hits = 0, uint64_t _misses = 0) noexcept : hits{_hits}, misses{_misses} {}
 		Stats(const Stats& o) : hits(o.hits.load(std::memory_order_relaxed)), misses(o.misses.load(std::memory_order_relaxed)) {}
@@ -201,7 +200,7 @@ private:
 		std::atomic_uint64_t misses;
 	};
 
-	// Cache line alignment to avoid contention betwee atomic cache ptr and cache stats (alignas would be better, but it does not work
+	// Cache line alignment to avoid contention between atomic cache ptr and cache stats (alignas would be better, but it does not work
 	// properly with tcmalloc on CentOS7)
 	uint8_t alignment1_[48];
 	CachePtrT ptr_;

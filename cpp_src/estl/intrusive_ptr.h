@@ -7,15 +7,15 @@
 namespace reindexer {
 
 template <typename T>
-class intrusive_ptr {
+class [[nodiscard]] intrusive_ptr {
 private:
 	typedef intrusive_ptr this_type;
 
 public:
 	typedef T element_type;
 
-	constexpr intrusive_ptr() noexcept = default;
-	constexpr intrusive_ptr(std::nullptr_t) noexcept {}
+	constexpr intrusive_ptr() noexcept : px{nullptr} {}
+	constexpr intrusive_ptr(std::nullptr_t) noexcept : intrusive_ptr() {}
 	intrusive_ptr(T* p) noexcept : px(p) { intrusive_ptr_add_ref(px); }
 	intrusive_ptr(T* p, bool add_ref) noexcept : px(p) {
 		if (add_ref) {
@@ -26,6 +26,8 @@ public:
 	intrusive_ptr(const intrusive_ptr<U>& rhs) noexcept : px(rhs.get()) {
 		intrusive_ptr_add_ref(px);
 	}
+	// TODO: Looks like false-positive. We should check this again on the newer clang-tidy versions (v21)
+	// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
 	intrusive_ptr(const intrusive_ptr& rhs) noexcept : px(rhs.px) { intrusive_ptr_add_ref(px); }
 	intrusive_ptr(intrusive_ptr&& rhs) noexcept : px(rhs.px) { rhs.px = 0; }
 	~intrusive_ptr() { intrusive_ptr_release(px); }
@@ -52,6 +54,7 @@ public:
 	void reset() noexcept { this_type().swap(*this); }
 	void reset(T* rhs) noexcept { this_type(rhs).swap(*this); }
 	bool unique() const noexcept { return intrusive_ptr_is_unique(px); }
+	int ref_count() const noexcept { return intrusive_ptr_ref_count(px); }
 
 	T* get() const noexcept { return px; }
 	T& operator*() const noexcept {
@@ -156,7 +159,13 @@ inline bool intrusive_ptr_is_unique(const intrusive_atomic_rc_wrapper<T>* x) noe
 }
 
 template <typename T>
-class intrusive_atomic_rc_wrapper : public T {
+inline int intrusive_ptr_ref_count(const intrusive_atomic_rc_wrapper<T>* x) noexcept {
+	// std::memory_order_acquire - is essential for COW constructions based on intrusive_ptr
+	return x ? x->refcount.load(std::memory_order_acquire) : 0;
+}
+
+template <typename T>
+class [[nodiscard]] intrusive_atomic_rc_wrapper : public T {
 public:
 	template <typename... Args>
 	intrusive_atomic_rc_wrapper(Args&&... args) : T(std::forward<Args>(args)...) {}
@@ -168,6 +177,7 @@ private:
 	friend void intrusive_ptr_add_ref<>(const intrusive_atomic_rc_wrapper<T>* x) noexcept;
 	friend void intrusive_ptr_release<>(const intrusive_atomic_rc_wrapper<T>* x) noexcept;
 	friend bool intrusive_ptr_is_unique<>(const intrusive_atomic_rc_wrapper<T>* x) noexcept;
+	friend int intrusive_ptr_ref_count<>(const intrusive_atomic_rc_wrapper<T>* x) noexcept;
 };
 
 template <typename T>
@@ -193,7 +203,12 @@ inline bool intrusive_ptr_is_unique(intrusive_rc_wrapper<T>* x) noexcept {
 }
 
 template <typename T>
-class intrusive_rc_wrapper : public T {
+inline int intrusive_ptr_ref_count(intrusive_rc_wrapper<T>* x) noexcept {
+	return x ? x->refcount : 0;
+}
+
+template <typename T>
+class [[nodiscard]] intrusive_rc_wrapper : public T {
 public:
 	template <typename... Args>
 	intrusive_rc_wrapper(Args&&... args) : T(std::forward<Args>(args)...) {}
@@ -205,9 +220,10 @@ private:
 	friend void intrusive_ptr_add_ref<>(intrusive_rc_wrapper<T>* x) noexcept;
 	friend void intrusive_ptr_release<>(intrusive_rc_wrapper<T>* x) noexcept;
 	friend bool intrusive_ptr_is_unique<>(intrusive_rc_wrapper<T>* x) noexcept;
+	friend int intrusive_ptr_ref_count<>(intrusive_rc_wrapper<T>* x) noexcept;
 };
 
-class intrusive_atomic_rc_base {
+class [[nodiscard]] intrusive_atomic_rc_base {
 public:
 	intrusive_atomic_rc_base& operator=(const intrusive_atomic_rc_base&) = delete;
 	virtual ~intrusive_atomic_rc_base() = default;
@@ -218,6 +234,7 @@ private:
 	friend void intrusive_ptr_add_ref(const intrusive_atomic_rc_base* x) noexcept;
 	friend void intrusive_ptr_release(const intrusive_atomic_rc_base* x) noexcept;
 	friend bool intrusive_ptr_is_unique(const intrusive_atomic_rc_base* x) noexcept;
+	friend int intrusive_ptr_ref_count(const intrusive_atomic_rc_base* x) noexcept;
 };
 
 inline void intrusive_ptr_add_ref(const intrusive_atomic_rc_base* x) noexcept {
@@ -237,7 +254,12 @@ inline bool intrusive_ptr_is_unique(const intrusive_atomic_rc_base* x) noexcept 
 	return !x || (x->refcount.load(std::memory_order_acquire) == 1);
 }
 
-class intrusive_rc_base {
+inline int intrusive_ptr_ref_count(const intrusive_atomic_rc_base* x) noexcept {
+	// std::memory_order_acquire - is essential for COW constructions based on intrusive_ptr
+	return x ? x->refcount.load(std::memory_order_acquire) : 0;
+}
+
+class [[nodiscard]] intrusive_rc_base {
 public:
 	intrusive_rc_base& operator=(const intrusive_rc_base&) = delete;
 	virtual ~intrusive_rc_base() = default;
@@ -248,6 +270,7 @@ private:
 	friend void intrusive_ptr_add_ref(intrusive_rc_base* x) noexcept;
 	friend void intrusive_ptr_release(intrusive_rc_base* x) noexcept;
 	friend bool intrusive_ptr_is_unique(const intrusive_rc_base* x) noexcept;
+	friend int intrusive_ptr_ref_count(const intrusive_rc_base* x) noexcept;
 };
 
 inline void intrusive_ptr_add_ref(intrusive_rc_base* x) noexcept {
@@ -264,6 +287,8 @@ inline void intrusive_ptr_release(intrusive_rc_base* x) noexcept {
 
 inline bool intrusive_ptr_is_unique(const intrusive_rc_base* x) noexcept { return !x || (x->refcount == 1); }
 
+inline int intrusive_ptr_ref_count(const intrusive_rc_base* x) noexcept { return x ? x->refcount : 0; }
+
 template <typename T, typename... Args>
 intrusive_ptr<T> make_intrusive(Args&&... args) {
 	return intrusive_ptr<T>(new T(std::forward<Args>(args)...));
@@ -274,13 +299,13 @@ intrusive_ptr<T> make_intrusive(Args&&... args) {
 namespace std {
 
 template <typename T>
-struct hash<reindexer::intrusive_atomic_rc_wrapper<T>> {
+struct [[nodiscard]] hash<reindexer::intrusive_atomic_rc_wrapper<T>> {
 public:
 	size_t operator()(const reindexer::intrusive_atomic_rc_wrapper<T>& obj) const { return hash<T>()(obj); }
 };
 
 template <typename T>
-struct hash<reindexer::intrusive_ptr<T>> {
+struct [[nodiscard]] hash<reindexer::intrusive_ptr<T>> {
 public:
 	size_t operator()(const reindexer::intrusive_ptr<T>& obj) const { return hash<T>()(*obj); }
 };
