@@ -3,11 +3,12 @@
 #include <unordered_map>
 
 #include "base_fixture.h"
+#include "core/system_ns_names.h"
 
-class ApiTvSimple : private BaseFixture {
+class [[nodiscard]] ApiTvSimple : private BaseFixture {
 public:
 	virtual ~ApiTvSimple() {}
-	ApiTvSimple(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	ApiTvSimple(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "tree", "int64", IndexOpts())
 			.AddIndex("year", "tree", "int", IndexOpts())
@@ -26,7 +27,7 @@ public:
 	reindexer::Error Initialize() override;
 
 private:
-	class IndexCacheSetter {
+	class [[nodiscard]] IndexCacheSetter {
 	public:
 		constexpr static unsigned kVeryLargeHitsValue = 1000000;
 
@@ -42,7 +43,9 @@ private:
 
 		void shrinkCache() {
 			// Shrink cache size to force cache invalidation
-			auto q = reindexer::Query("#config").Set("namespaces.cache.index_idset_cache_size", 1024).Where("type", CondEq, "namespaces");
+			auto q = reindexer::Query(reindexer::kConfigNamespace)
+						 .Set("namespaces.cache.index_idset_cache_size", 1024)
+						 .Where("type", CondEq, "namespaces");
 			reindexer::QueryResults qr;
 			auto err = db_.Update(q, qr);
 			assertrx(err.ok());
@@ -50,7 +53,7 @@ private:
 		}
 		void setHitsCount(unsigned hitsCount) {
 			// Set required hits count and default cache size
-			auto q = reindexer::Query("#config")
+			auto q = reindexer::Query(reindexer::kConfigNamespace)
 						 .Set("namespaces.cache.index_idset_cache_size", kDefaultCacheSize)
 						 .Set("namespaces.cache.index_idset_hits_to_cache", int64_t(hitsCount))
 						 .Where("type", CondEq, "namespaces");
@@ -125,11 +128,22 @@ private:
 	void Query4CondRangeDropCache(State& state);
 	void Query4CondRangeDropCacheTotal(State& state);
 	void Query4CondRangeDropCacheCachedTotal(State& state);
+
 	void SubQueryEq(State&);
 	void SubQuerySet(State&);
 	void SubQueryAggregate(State&);
 
+	void QueryForcedSortHash(State&);
+	void QueryForcedSortTree(State&);
+	void QueryForcedSortDistinctHash(State&);
+	void QueryForcedSortDistinctLowSelectivityHash(State&);
+	void QueryForcedSortDistinctTree(State&);
+
 	void query2CondIdSet(State& state, const std::vector<std::vector<int>>& idsets);
+	std::vector<Variant> generateForcedSort(int minVal, int maxVal, unsigned cnt);
+
+	constexpr static int kMinYear = 2000;
+	constexpr static int kMaxYear = 2049;
 
 	std::vector<std::string> countries_;
 	std::vector<std::string> countryLikePatterns_;

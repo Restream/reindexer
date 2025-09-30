@@ -1,11 +1,12 @@
 #include "clientsstats.h"
+#include "estl/lock.h"
 #include "tools/stringstools.h"
 
 namespace reindexer_server {
 
 void ClientsStats::GetClientInfo(std::vector<reindexer::ClientStat>& datas) {
 	datas.clear();
-	std::lock_guard<std::mutex> lck(mtx_);
+	reindexer::lock_guard lck(mtx_);
 
 	datas.reserve(connections_.size());
 	for (auto& c : connections_) {
@@ -36,12 +37,12 @@ void ClientsStats::GetClientInfo(std::vector<reindexer::ClientStat>& datas) {
 }
 
 void ClientsStats::AddConnection(int64_t connectionId, reindexer::ClientConnectionStat&& conn) {
-	std::lock_guard<std::mutex> lck(mtx_);
+	reindexer::lock_guard lck(mtx_);
 	connections_.emplace(connectionId, std::move(conn));
 }
 
 void ClientsStats::DeleteConnection(int64_t connectionId) {
-	std::lock_guard<std::mutex> lck(mtx_);
+	reindexer::lock_guard lck(mtx_);
 	connections_.erase(connectionId);
 }
 

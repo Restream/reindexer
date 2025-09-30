@@ -15,19 +15,19 @@ struct IdContext;
 typedef map<IdType, IdContext> id_map;
 typedef map<PosType, ProcType> proc_map;
 
-struct DataStruct {};
+struct [[nodiscard]] DataStruct {};
 
-struct IdContext {
+struct [[nodiscard]] IdContext {
 	uint16_t proc_;
 	uint8_t pos[2];
 	uint32_t tota_size_;
 };
 
-struct Info {
+struct [[nodiscard]] Info {
 	SmartDeque<IdContext, 100> true_ids_;
 };
 
-struct SeacrhResult {
+struct [[nodiscard]] SeacrhResult {
 	IdType id;
 	ProcType procent;
 };

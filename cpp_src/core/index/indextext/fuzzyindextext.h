@@ -6,7 +6,7 @@
 namespace reindexer {
 
 template <typename T>
-class FuzzyIndexText : public IndexText<T> {
+class [[nodiscard]] FuzzyIndexText : public IndexText<T> {
 	using Base = IndexText<T>;
 
 public:
@@ -17,22 +17,22 @@ public:
 		createConfig();
 	}
 
-	SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
+	SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, const Index::SelectContext&, FtPreselectT&&,
 							   const RdxContext&) override final {
 		assertrx(0);
 		abort();
 	}
 
-	std::unique_ptr<Index> Clone() const override final { return std::make_unique<FuzzyIndexText<T>>(*this); }
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtSortType ftSortType, FtMergeStatuses&&,
-					  FtUseExternStatuses withExternSt, const RdxContext&) override final;
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override final { return std::make_unique<FuzzyIndexText<T>>(*this); }
+	IdSet::Ptr Select(FtCtx& ctx, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
+					  const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final {
 		this->isBuilt_ = false;
 		return Base::Upsert(key, id, clearCache);
 	}
-	void Delete(const Variant& key, IdType id, StringsHolder& strHolder, bool& clearCache) override final {
+	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) override final {
 		this->isBuilt_ = false;
-		Base::Delete(key, id, strHolder, clearCache);
+		Base::Delete(key, id, mustExist, strHolder, clearCache);
 	}
 	FtMergeStatuses GetFtMergeStatuses(const RdxContext& rdxCtx) override final {
 		this->build(rdxCtx);

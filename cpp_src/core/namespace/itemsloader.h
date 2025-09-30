@@ -1,17 +1,18 @@
 #pragma once
 
-#include <condition_variable>
 #include "core/itemimpl.h"
+#include "estl/condition_variable.h"
+#include "estl/mutex.h"
 #include "namespaceimpl.h"
 
 namespace reindexer {
 
-class ItemsLoader {
+class [[nodiscard]] ItemsLoader {
 public:
 	constexpr static unsigned kBufferSize = 3000;
 	constexpr static unsigned kReadSize = kBufferSize / 2;
 
-	struct LoadData {
+	struct [[nodiscard]] LoadData {
 		int64_t maxLSN = -1;
 		int64_t minLSN = std::numeric_limits<int64_t>::max();
 		Error lastErr;
@@ -31,7 +32,7 @@ public:
 
 private:
 	template <typename T>
-	class InplaceRingBuf {
+	class [[nodiscard]] InplaceRingBuf {
 	public:
 		template <typename... Args>
 		InplaceRingBuf(size_t cap, const Args&... args) noexcept {
@@ -64,9 +65,9 @@ private:
 		bool IsFull() const noexcept { return ((placedHead_ + 1) % ring_.size()) == tail_; }
 		bool HasNoPlacedItems() const noexcept { return placedHead_ == tail_; }
 		bool HasNoWrittenItems() const noexcept { return writtenHead_ == tail_; }
-		span<T> Tail(size_t maxCount) noexcept {
+		std::span<T> Tail(size_t maxCount) noexcept {
 			const size_t cnt = std::min(maxCount, ((tail_ > writtenHead_) ? ring_.size() : writtenHead_) - tail_);
-			return span<T>(ring_.data() + tail_, cnt);
+			return std::span<T>(ring_.data() + tail_, cnt);
 		}
 		void Erase(size_t cnt) noexcept {
 			const size_t actualCnt = std::min(cnt, WrittenSize());
@@ -79,51 +80,63 @@ private:
 		std::vector<T> ring_;
 	};
 
-	struct SliceStorage {
+	struct [[nodiscard]] SliceStorage {
 		unsigned len = 0;
 		std::unique_ptr<char[]> data;
 	};
-	struct ItemData {
+	struct [[nodiscard]] ItemData {
 		ItemData(const PayloadType& type, const TagsMatcher& tagsMatcher) : impl(type, tagsMatcher) {}
 
 		ItemImpl impl;
 		PayloadValue preallocPl;  // Payload, which will be emplaced into namespace
 	};
+	struct [[nodiscard]] ANNIndexInfo {
+		size_t field;
+		size_t dims;
+	};
 
+	void prepareANNData();
 	void reading();
 	void insertion();
+	void loadCachedANNIndexes();
+	void loadCachedANNIndexesFallback(const std::vector<unsigned>& indexes);
 	void clearIndexCache();
 	template <typename MutexT>
 	static void doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned field, IdType id, Payload& pl, Payload& plNew,
-							  VariantArray& krefs, VariantArray& skrefs, MutexT& mtx);
+							  VariantArray& krefs, VariantArray& skrefs, MutexT& mtx, const ann_storage_cache::Reader* annCache);
 
 	friend class IndexInserters;
 
 	NamespaceImpl& ns_;
-	std::mutex mtx_;
-	std::condition_variable cv_;
+	mutex mtx_;
+	condition_variable cv_;
 	InplaceRingBuf<ItemData> items_;
 	std::vector<SliceStorage> slices_;
 	bool terminated_ = false;
 	LoadData loadingData_;
 	const unsigned indexInsertionThreads_;
+
+	// ANN-helpers
+	std::unique_ptr<ann_storage_cache::Reader> annCacheReader_;
+	std::vector<ANNIndexInfo> annIndexes_;
+	fast_hash_map<size_t, std::vector<std::unique_ptr<uint8_t[]>>> vectorsData_;
 };
 
-class IndexInserters {
+class [[nodiscard]] IndexInserters {
 public:
-	IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt);
+	IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt, const ann_storage_cache::Reader* annCache);
 	~IndexInserters() { Stop(); }
 
 	void Run(unsigned threadsCnt);
 	void Stop();
 	void AwaitIndexesBuild();
-	void BuildSimpleIndexesAsync(unsigned startId, span<ItemsLoader::ItemData> newItems, span<PayloadValue> nsItems);
+	void BuildSimpleIndexesAsync(unsigned startId, std::span<ItemsLoader::ItemData> newItems, std::span<PayloadValue> nsItems);
 	void BuildCompositeIndexesAsync();
 
 private:
-	struct SharedData {
-		span<ItemsLoader::ItemData> newItems;
-		span<PayloadValue> nsItems;
+	struct [[nodiscard]] SharedData {
+		std::span<ItemsLoader::ItemData> newItems;
+		std::span<PayloadValue> nsItems;
 		unsigned startId = 0;
 		bool terminate = false;
 		bool composite = false;
@@ -131,22 +144,22 @@ private:
 
 	void insertionLoop(unsigned threadId) noexcept;
 	void onItemsHandled() noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (++readyThreads_ == threads_.size()) {
 			cvDone_.notify_one();
 		}
 	}
 	void onException(Error e) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		status_ = std::move(e);
 		if (++readyThreads_ == threads_.size()) {
 			cvDone_.notify_one();
 		}
 	}
 
-	std::mutex mtx_;
-	std::condition_variable cvReady_;
-	std::condition_variable cvDone_;
+	mutex mtx_;
+	condition_variable cvReady_;
+	condition_variable cvDone_;
 	unsigned iteration_{0};
 	NamespaceImpl::IndexesStorage& indexes_;
 	const PayloadType pt_;
@@ -157,6 +170,7 @@ private:
 	bool hasArrayIndexes_ = false;
 	constexpr static unsigned kTIDOffset = 1;  // Thread ID offset to handle fields [1,n] based on TID
 	std::array<shared_timed_mutex, 10> plArrayMtxs_;
+	const ann_storage_cache::Reader* annCache_ = {nullptr};
 };
 
 }  // namespace reindexer

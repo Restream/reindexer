@@ -2,6 +2,7 @@
 
 #include "cluster/config.h"
 #include "core/dbconfig.h"
+#include "estl/mutex.h"
 #include "idatareplicator.h"
 #include "net/ev/ev.h"
 #include "replication/asyncdatareplicator.h"
@@ -13,9 +14,9 @@ class ReindexerImpl;
 
 namespace cluster {
 
-class Clusterizator : public IDataReplicator, public IDataSyncer {
+class [[nodiscard]] ClusterManager : public IDataReplicator, public IDataSyncer {
 public:
-	Clusterizator(ReindexerImpl& thisNode, size_t maxUpdatesSize);
+	ClusterManager(ReindexerImpl& thisNode, size_t maxUpdatesSize);
 
 	void Configure(ReplicationConfigData replConfig);
 	void Configure(ClusterConfigData clusterConfig);
@@ -54,22 +55,25 @@ public:
 	bool IsInitialSyncDone() const override final {
 		return !enabled_.load(std::memory_order_acquire) || sharedSyncState_.IsInitialSyncDone();
 	}
-	ReplicationStats GetAsyncReplicationStats() const { return asyncReplicator_.GetReplicationStats(); }
-	ReplicationStats GetClusterReplicationStats() const { return clusterReplicator_.GetReplicationStats(); }
-	void SetAsyncReplicatonLogLevel(LogLevel level) noexcept { asyncReplicator_.SetLogLevel(level); }
-	void SetClusterReplicatonLogLevel(LogLevel level) noexcept { clusterReplicator_.SetLogLevel(level); }
+	ReplicationStats GetAsyncReplicationStats() const;
+	ReplicationStats GetClusterReplicationStats() const;
+	void SetAsyncReplicatonLogLevel(LogLevel level) noexcept;
+	void SetClusterReplicatonLogLevel(LogLevel level) noexcept;
 
 private:
+	constexpr std::string_view logModuleName() noexcept { return std::string_view("clusterizator"); }
+
 	static bool replicationIsNotRequired(const UpdatesContainer& recs) noexcept;
 	void validateConfig() const;
 
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	UpdatesQueuePair<updates::UpdateRecord> updatesQueue_;
-	SharedSyncState<> sharedSyncState_;
+	SharedSyncState sharedSyncState_;
 	ClusterDataReplicator clusterReplicator_;
 	AsyncDataReplicator asyncReplicator_;
 	net::ev::async terminateAsync_;
 	std::atomic<bool> enabled_ = {false};
+	Logger log_;
 };
 
 }  // namespace cluster

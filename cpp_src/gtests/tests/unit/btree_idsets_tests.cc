@@ -5,10 +5,8 @@
 #include "core/queryresults/joinresults.h"
 
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
-	QueryResults qr;
 	std::string strValueToCheck = lastStrValue;
-	Error err = rt.reindexer->Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck), qr);
-	EXPECT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck));
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 		Variant kr = item[kFieldOne];
@@ -20,9 +18,7 @@ TEST_F(BtreeIdsetsApi, SelectByStringField) {
 TEST_F(BtreeIdsetsApi, SelectByIntField) {
 	const int boundaryValue = 5000;
 
-	QueryResults qr;
-	Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))), qr);
-	EXPECT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(Query(default_namespace).Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))));
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 		Variant kr = item[kFieldTwo];
@@ -32,17 +28,14 @@ TEST_F(BtreeIdsetsApi, SelectByIntField) {
 }
 
 TEST_F(BtreeIdsetsApi, SelectByBothFields) {
-	QueryResults qr;
 	const int boundaryValue = 50000;
 	const std::string strValueToCheck = lastStrValue;
 	const std::string strValueToCheck2 = "reindexer is fast";
-	Error err = rt.reindexer->Select(Query(default_namespace)
-										 .Where(kFieldOne, CondLe, strValueToCheck2)
-										 .Not()
-										 .Where(kFieldOne, CondEq, strValueToCheck)
-										 .Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))),
-									 qr);
-	EXPECT_TRUE(err.ok()) << err.what();
+	auto qr = rt.Select(Query(default_namespace)
+							.Where(kFieldOne, CondLe, strValueToCheck2)
+							.Not()
+							.Where(kFieldOne, CondEq, strValueToCheck)
+							.Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))));
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 		Variant krOne = item[kFieldOne];
@@ -56,10 +49,7 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 }
 
 TEST_F(BtreeIdsetsApi, SortByStringField) {
-	QueryResults qr;
-	Error err = rt.reindexer->Select(Query(default_namespace).Sort(kFieldOne, true), qr);
-	EXPECT_TRUE(err.ok()) << err.what();
-
+	auto qr = rt.Select(Query(default_namespace).Sort(kFieldOne, true));
 	Variant prev;
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
@@ -72,10 +62,7 @@ TEST_F(BtreeIdsetsApi, SortByStringField) {
 }
 
 TEST_F(BtreeIdsetsApi, SortByIntField) {
-	QueryResults qr;
-	Error err = rt.reindexer->Select(Query(default_namespace).Sort(kFieldTwo, false), qr);
-	EXPECT_TRUE(err.ok()) << err.what();
-
+	auto qr = rt.Select(Query(default_namespace).Sort(kFieldTwo, false));
 	Variant prev;
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
@@ -88,12 +75,9 @@ TEST_F(BtreeIdsetsApi, SortByIntField) {
 }
 
 TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
-	QueryResults qr;
 	Query joinedNs{Query(joinedNsName).Where(kFieldThree, CondGt, Variant(static_cast<int>(9000))).Sort(kFieldThree, false)};
-	Error err = rt.reindexer->Select(
-		Query(default_namespace, 0, 3000).InnerJoin(kFieldId, kFieldIdFk, CondEq, std::move(joinedNs)).Sort(kFieldTwo, false), qr);
-	EXPECT_TRUE(err.ok()) << err.what();
-
+	auto qr =
+		rt.Select(Query(default_namespace, 0, 3000).InnerJoin(kFieldId, kFieldIdFk, CondEq, std::move(joinedNs)).Sort(kFieldTwo, false));
 	Variant prevFieldTwo;
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
@@ -127,12 +111,12 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	for (size_t i = 0; i < 10000; ++i) {
 		auto it1 = m1.insert({i, reindexer::KeyEntry<reindexer::IdSet>()});
 		for (int i = 0; i < rand() % 100 + 50; ++i) {
-			it1.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
+			rx_unused = it1.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
 			ids1.push_back(i);
 		}
 		auto it2 = m2.insert({i, reindexer::KeyEntry<reindexer::IdSetPlain>()});
 		for (int i = 0; i < rand() % 100 + 50; ++i) {
-			it2.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
+			rx_unused = it2.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
 			ids2.push_back(i);
 		}
 	}

@@ -1,9 +1,10 @@
 #pragma once
 
-#include <condition_variable>
 #include "client/transaction.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadtype.h"
+#include "estl/condition_variable.h"
+#include "estl/mutex.h"
 
 namespace reindexer {
 
@@ -13,7 +14,7 @@ class RdxContext;
 class ReindexerImpl;
 class QueryResults;
 
-class ProxiedTransaction {
+class [[nodiscard]] ProxiedTransaction {
 public:
 	ProxiedTransaction(client::Transaction&& _tx, int shardId) : tx_(std::move(_tx)), shardId_(shardId), asyncData_(mtx_) {}
 
@@ -25,9 +26,9 @@ public:
 	Error Commit(int serverId, QueryResults& result, const RdxContext& ctx);
 
 private:
-	class AsyncData {
+	class [[nodiscard]] AsyncData {
 	public:
-		AsyncData(std::mutex& mtx) noexcept : mtx_(mtx) {}
+		AsyncData(mutex& mtx) noexcept : mtx_(mtx) {}
 		void AddNewAsyncRequest();
 		void OnAsyncRequestDone(const Error& e) noexcept;
 		Error AwaitAsyncRequests() noexcept;
@@ -37,12 +38,12 @@ private:
 		}
 
 	private:
-		std::mutex& mtx_;
-		std::condition_variable cv_;
+		mutex& mtx_;
+		condition_variable cv_;
 		Error err_;
 		unsigned asyncRequests_ = 0;
 	};
-	struct ItemCache {
+	struct [[nodiscard]] ItemCache {
 		PayloadType pt;
 		TagsMatcher tm;
 		bool isValid = false;
@@ -50,7 +51,7 @@ private:
 
 	client::Transaction tx_;
 	int shardId_ = ShardingKeyType::NotSetShard;
-	std::mutex mtx_;
+	mutex mtx_;
 	AsyncData asyncData_;
 	ItemCache itemCache_;
 };

@@ -7,6 +7,7 @@
 #include "core/payload/payloadvalue.h"
 #include "estl/comparation_result.h"
 #include "estl/h_vector.h"
+#include "float_vector.h"
 #include "geometry.h"
 #include "p_string.h"
 
@@ -19,26 +20,30 @@ class FieldsSet;
 class VariantArray;
 class Uuid;
 
-enum class WithString : bool { No = false, Yes = true };
-enum class NotComparable : bool { Throw = false, Return = true };
-enum class CheckIsStringPrintable : bool { No = false, Yes = true };
+enum class [[nodiscard]] WithString : bool { No = false, Yes = true };
+enum class [[nodiscard]] NotComparable : bool { Throw = false, Return = true };
+enum class [[nodiscard]] CheckIsStringPrintable : bool { No = false, Yes = true };
 
-class Variant {
+class [[nodiscard]] Variant {
 	friend Uuid;
 
 public:
-	struct no_hold_t {};
-	struct hold_t {};
+	struct [[nodiscard]] NoHoldT {};
+	struct [[nodiscard]] HoldT {};
+
+	static constexpr HoldT hold{};
+	static constexpr NoHoldT noHold{};
 
 	Variant() noexcept : variant_{0, 0, KeyValueType::Null{}, uint64_t{}} {}
 	explicit Variant(int v) noexcept : variant_{0, 0, KeyValueType::Int{}, v} {}
 	explicit Variant(bool v) noexcept : variant_{0, 0, KeyValueType::Bool{}, v} {}
 	explicit Variant(int64_t v) noexcept : variant_{0, 0, KeyValueType::Int64{}, v} {}
+	explicit Variant(float v) noexcept : variant_{0, 0, KeyValueType::Float{}, v} {}
 	explicit Variant(double v) noexcept : variant_{0, 0, KeyValueType::Double{}, v} {}
-	explicit Variant(const char* v) noexcept : Variant(p_string(v), Variant::no_hold_t{}) {}
-	Variant(p_string v, no_hold_t) noexcept : variant_{0, 0, KeyValueType::String{}} { *cast<p_string>() = v; }
-	Variant(p_string v, hold_t);
-	explicit Variant(p_string v) noexcept : Variant(v, no_hold_t{}) {}
+	explicit Variant(const char* v) noexcept : Variant(p_string(v), noHold) {}
+	Variant(p_string v, NoHoldT) noexcept : variant_{0, 0, KeyValueType::String{}} { *cast<p_string>() = v; }
+	Variant(p_string v, HoldT);
+	explicit Variant(p_string v) noexcept : Variant(v, noHold) {}
 	explicit Variant(const std::string& v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
 	explicit Variant(std::string_view v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
 	explicit Variant(const key_string& v) noexcept : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(v); }
@@ -50,6 +55,11 @@ public:
 	explicit Variant(const VariantArray& values);
 	explicit Variant(Point);
 	explicit Variant(Uuid) noexcept;
+	explicit Variant(ConstFloatVectorView v, NoHoldT = noHold) noexcept : variant_{0, 0, KeyValueType::FloatVector{}, v.Payload()} {}
+	Variant(ConstFloatVectorView v, HoldT) : Variant(FloatVector(v)) {}
+	Variant(FloatVector&& v) noexcept : variant_{0, 1, KeyValueType::FloatVector{}, ConstFloatVectorView(v).Payload()} {
+		std::move(v).Release();
+	}
 	Variant(const Variant& other) : uuid_{other.uuid_} {
 		if (!isUuid()) {
 			uuid_.~UUID();
@@ -113,18 +123,21 @@ public:
 	explicit operator bool() const noexcept;
 	explicit operator int64_t() const noexcept;
 	explicit operator double() const noexcept;
+	explicit operator float() const noexcept;
 
 	explicit operator p_string() const noexcept;
 	explicit operator std::string_view() const noexcept;
 	explicit operator const PayloadValue&() const noexcept;
 	explicit operator key_string() const;
 	explicit operator Point() const;
+	explicit operator ConstFloatVectorView() const noexcept;
+	explicit operator FloatVectorView() noexcept;
 
 	template <typename T>
-	[[nodiscard]] T As() const;
+	T As() const;
 
 	template <typename T>
-	[[nodiscard]] T As(const PayloadType&, const FieldsSet&) const;
+	T As(const PayloadType&, const FieldsSet&) const;
 
 	bool operator==(const Variant& other) const {
 		return Type().IsSame(other.Type()) && Compare<NotComparable::Throw>(other) == ComparationResult::Eq;
@@ -152,12 +165,12 @@ public:
 	}
 
 	Variant& convert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) &;
-	[[nodiscard]] Variant convert(KeyValueType type, const PayloadType* pt = nullptr, const FieldsSet* fs = nullptr) && {
+	Variant convert(KeyValueType type, const PayloadType* pt = nullptr, const FieldsSet* fs = nullptr) && {
 		return std::move(convert(type, pt, fs));
 	}
-	[[nodiscard]] Variant convert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&;
-	[[nodiscard]] std::optional<Variant> tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&;
-	[[nodiscard]] bool tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) &;
+	Variant convert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&;
+	std::optional<Variant> tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&;
+	bool tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) &;
 	auto tryConvert(KeyValueType type, const PayloadType* = nullptr, const FieldsSet* = nullptr) const&& = delete;
 	VariantArray getCompositeValues() const;
 
@@ -165,12 +178,15 @@ public:
 
 	template <typename T>
 	void Dump(T& os, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	template <typename T>
+	void Dump(T& os, const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	std::string Dump(CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	std::string Dump(const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 
-	class Less {
+	class [[nodiscard]] Less {
 	public:
 		Less(const CollateOpts& collate) noexcept : collate_{&collate} {}
-		[[nodiscard]] bool operator()(const Variant& lhs, const Variant& rhs) const {
+		bool operator()(const Variant& lhs, const Variant& rhs) const {
 			return lhs.Compare<NotComparable::Throw>(rhs, *collate_) == ComparationResult::Lt;
 		}
 
@@ -178,16 +194,17 @@ public:
 		const CollateOpts* collate_;
 	};
 
-	class EqualTo {
+	class [[nodiscard]] EqualTo {
 	public:
 		EqualTo(const CollateOpts& collate) noexcept : collate_{&collate} {}
-		[[nodiscard]] bool operator()(const Variant& lhs, const Variant& rhs) const {
+		bool operator()(const Variant& lhs, const Variant& rhs) const {
 			return lhs.Compare<NotComparable::Throw>(rhs, *collate_) == ComparationResult::Eq;
 		}
 
 	private:
 		const CollateOpts* collate_;
 	};
+	bool DoHold() const noexcept { return !isUuid() && variant_.hold; }
 
 private:
 	bool isUuid() const noexcept { return uuid_.isUuid != 0; }
@@ -207,13 +224,14 @@ private:
 	template <NotComparable notComparable>
 	ComparationResult relaxCompareWithString(std::string_view) const noexcept(notComparable == NotComparable::Return);
 
-	struct Var {
+	struct [[nodiscard]] Var {
 		Var(uint8_t isu, uint8_t h, KeyValueType t) noexcept : isUuid{isu}, hold{h}, type{t} {}
 		Var(uint8_t isu, uint8_t h, KeyValueType t, bool b) noexcept : isUuid{isu}, hold{h}, type{t}, value_bool{b} {}
 		Var(uint8_t isu, uint8_t h, KeyValueType t, int i) noexcept : isUuid{isu}, hold{h}, type{t}, value_int{i} {}
 		Var(uint8_t isu, uint8_t h, KeyValueType t, int64_t i) noexcept : isUuid{isu}, hold{h}, type{t}, value_int64{i} {}
 		Var(uint8_t isu, uint8_t h, KeyValueType t, uint64_t u) noexcept : isUuid{isu}, hold{h}, type{t}, value_uint64{u} {}
 		Var(uint8_t isu, uint8_t h, KeyValueType t, double d) noexcept : isUuid{isu}, hold{h}, type{t}, value_double{d} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, float d) noexcept : isUuid{isu}, hold{h}, type{t}, value_float{d} {}
 
 		uint8_t isUuid : 1;
 		uint8_t hold : 1;
@@ -224,13 +242,14 @@ private:
 			int64_t value_int64;
 			uint64_t value_uint64;
 			double value_double;
+			float value_float;
 			// runtime cast
 			// p_string value_string;
 			// PayloadValue value_composite;
 			// key_string h_value_string;
 		};
 	};
-	struct UUID {
+	struct [[nodiscard]] UUID {
 		uint8_t isUuid : 1;
 		uint8_t v0 : 7;
 		uint8_t vs[7];
@@ -246,13 +265,6 @@ private:
 
 static_assert(sizeof(Variant) == 16);
 
-extern template ComparationResult Variant::RelaxCompare<WithString::Yes, NotComparable::Throw>(const Variant&, const CollateOpts&) const;
-extern template ComparationResult Variant::RelaxCompare<WithString::No, NotComparable::Throw>(const Variant&, const CollateOpts&) const;
-extern template ComparationResult Variant::RelaxCompare<WithString::Yes, NotComparable::Return>(const Variant&, const CollateOpts&) const;
-extern template ComparationResult Variant::RelaxCompare<WithString::No, NotComparable::Return>(const Variant&, const CollateOpts&) const;
-extern template ComparationResult Variant::Compare<NotComparable::Return>(const Variant&, const CollateOpts&) const;
-extern template ComparationResult Variant::Compare<NotComparable::Throw>(const Variant&, const CollateOpts&) const;
-
 template <>
 int Variant::As<int>() const;
 template <>
@@ -260,13 +272,17 @@ int64_t Variant::As<int64_t>() const;
 template <>
 double Variant::As<double>() const;
 template <>
+float Variant::As<float>() const;
+template <>
 bool Variant::As<bool>() const;
 template <>
 std::string Variant::As<std::string>() const;
 template <>
 key_string Variant::As<key_string>() const;
+template <>
+ConstFloatVectorView Variant::As<ConstFloatVectorView>() const;
 
-class VariantArray : public h_vector<Variant, 2> {
+class [[nodiscard]] VariantArray : public h_vector<Variant, 2> {
 	using Base = h_vector<Variant, 2>;
 
 public:
@@ -291,8 +307,10 @@ public:
 	}
 	void MarkObject() noexcept { isObjectValue = true; }
 	using Base::Base;
-	using Base::operator==;
-	using Base::operator!=;
+	bool operator==(const VariantArray& other) const {
+		return IsArrayValue() == other.IsArrayValue() && IsObjectValue() == other.IsObjectValue() && Base::operator==(other);
+	}
+	bool operator!=(const VariantArray& other) const { return !operator==(other); }
 	template <bool FreeHeapMemory = true>
 	void clear() noexcept {
 		isArrayValue = isObjectValue = false;
@@ -308,12 +326,15 @@ public:
 	bool IsArrayValue() const noexcept { return isArrayValue || (!isObjectValue && size() > 1); }
 	bool IsObjectValue() const noexcept { return isObjectValue; }
 	bool IsNullValue() const noexcept { return size() == 1 && front().IsNullValue(); }
-	KeyValueType ArrayType() const noexcept { return empty() ? KeyValueType::Null{} : front().Type(); }
 	template <typename T>
 	void Dump(T& os, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	template <typename T>
+	void Dump(T& os, const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	std::string Dump(CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+	std::string Dump(const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	template <WithString, NotComparable>
 	ComparationResult RelaxCompare(const VariantArray& other, const CollateOpts& = CollateOpts{}) const;
+	ComparationResult CompareNoExcept(const VariantArray& other, const CollateOpts& = CollateOpts{}) const noexcept;
 	void EnsureHold() {
 		for (Variant& v : *this) {
 			v.EnsureHold();
@@ -347,19 +368,20 @@ private:
 // Current implementation requires 3 allocations for each point
 inline Variant::Variant(Point p) : Variant{VariantArray{p}} {}
 
-extern template ComparationResult VariantArray::RelaxCompare<WithString::Yes, NotComparable::Return>(const VariantArray&,
-																									 const CollateOpts&) const;
-extern template ComparationResult VariantArray::RelaxCompare<WithString::No, NotComparable::Return>(const VariantArray&,
-																									const CollateOpts&) const;
-extern template ComparationResult VariantArray::RelaxCompare<WithString::Yes, NotComparable::Throw>(const VariantArray&,
-																									const CollateOpts&) const;
-extern template ComparationResult VariantArray::RelaxCompare<WithString::No, NotComparable::Throw>(const VariantArray&,
-																								   const CollateOpts&) const;
+namespace concepts {
 
+template <typename T>
+concept ConvertibleToVariant = std::is_constructible_v<Variant, T>;
+
+template <typename T>
+concept ConvertibleToVariantArray = std::is_constructible_v<VariantArray, T>;
+
+}  // namespace concepts
 }  // namespace reindexer
+
 namespace std {
 template <>
-struct hash<reindexer::Variant> {
+struct [[nodiscard]] hash<reindexer::Variant> {
 	size_t operator()(const reindexer::Variant& kv) const { return kv.Hash(); }
 };
 }  // namespace std

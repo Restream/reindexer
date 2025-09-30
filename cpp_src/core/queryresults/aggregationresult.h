@@ -1,16 +1,16 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include "core/keyvalue/variant.h"
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadtype.h"
 #include "core/type_consts.h"
-#include "core/type_consts_helpers.h"
+#include "estl/concepts.h"
+#include "estl/expected.h"
 #include "estl/h_vector.h"
-#include "estl/span.h"
-#include "tools/errors.h"
 
 struct msgpack_object;
 struct MsgPackValue;
@@ -20,9 +20,15 @@ struct JsonNode;
 
 namespace reindexer {
 class WrSerializer;
-class ProtobufSchemaBuilder;
 
-struct Parameters {
+namespace builders {
+class ProtobufSchemaBuilder;
+class ProtobufBuilder;
+}  // namespace builders
+using builders::ProtobufBuilder;
+using builders::ProtobufSchemaBuilder;
+
+struct [[nodiscard]] Parameters {
 	constexpr static std::string_view Value() noexcept;
 	constexpr static std::string_view Type() noexcept;
 	constexpr static std::string_view Facets() noexcept;
@@ -33,7 +39,7 @@ struct Parameters {
 };
 
 template <typename T, typename K>
-class ParametersFields {
+class [[nodiscard]] ParametersFields {
 public:
 	explicit ParametersFields(const T& fieldsStorage) : fieldsStorage_(fieldsStorage) {}
 
@@ -49,7 +55,7 @@ private:
 	const T& fieldsStorage_;
 };
 
-struct FacetResult {
+struct [[nodiscard]] FacetResult {
 	FacetResult(const h_vector<std::string, 1>& v, int c) noexcept : values(v), count(c) {}
 	FacetResult() noexcept : count(0) {}
 
@@ -57,102 +63,69 @@ struct FacetResult {
 	int count;
 };
 
-struct AggregationResult {
+class [[nodiscard]] AggregationResult {
+public:
+	AggregationResult() noexcept;
+	explicit AggregationResult(AggType tp, h_vector<std::string, 1>&& names) noexcept;
+	explicit AggregationResult(AggType tp, h_vector<std::string, 1>&& names, double val) noexcept;
+	explicit AggregationResult(AggType tp, h_vector<std::string, 1>&& names, PayloadType&& pt, FieldsSet&& fset,
+							   std::vector<Variant>&& _distincts) noexcept;
+	explicit AggregationResult(AggType tp, h_vector<std::string, 1>&& names, std::vector<FacetResult>&& facets) noexcept;
+	~AggregationResult();
 	void GetJSON(WrSerializer& ser) const;
 	void GetMsgPack(WrSerializer& wrser) const;
 	void GetProtobuf(WrSerializer& wrser) const;
 	template <typename T>
-	Error FromJSON(T json);
-	Error FromMsgPack(std::string_view msgpack);
-	Error FromMsgPack(span<char> msgpack) { return FromMsgPack(std::string_view(msgpack.data(), msgpack.size())); }
+	static Expected<AggregationResult> FromJSON(T json);
+	static Expected<AggregationResult> FromMsgPack(std::string_view msgpack);
+	static Expected<AggregationResult> FromMsgPack(std::span<char> msgpack) {
+		return FromMsgPack(std::string_view(msgpack.data(), msgpack.size()));
+	}
 	double GetValueOrZero() const noexcept { return value_ ? *value_ : 0; }
 	std::optional<double> GetValue() const noexcept { return value_; }
-	void SetValue(double value) { value_ = value; }
+	AggType GetType() const noexcept { return type_; }
+	void UpdateValue(double value) noexcept { value_ = value; }
 
-	AggType type = AggSum;
-	h_vector<std::string, 1> fields;
-	std::vector<FacetResult> facets;
-	VariantArray distincts;
-	FieldsSet distinctsFields;
-	PayloadType payloadType;
+	const std::vector<FacetResult>& GetFacets() const& noexcept { return facets_; }
+	auto GetFacets() const&& = delete;
 
-	static AggType strToAggType(std::string_view type);
+	static AggType StrToAggType(std::string_view type);
 	static void GetProtobufSchema(ProtobufSchemaBuilder&);
 
-	template <typename Node>
-	void from(Node root) {
-		const Node& node = root[Parameters::Value()];
-		bool isValid = false;
-		if constexpr (std::is_same_v<MsgPackValue, Node>) {
-			isValid = node.isValid();
-		}
-		if constexpr (std::is_same_v<gason::JsonNode, Node>) {
-			isValid = !node.empty();
-		}
-		if (isValid) {
-			value_ = node.template As<double>();
-		}
+	bool IsEquals(const AggregationResult& other) { return (type_ == other.type_ && fields_ == other.fields_); }
 
-		type = strToAggType(root[Parameters::Type()].template As<std::string>());
+	const PayloadType& GetPayloadType() const& noexcept { return payloadType_; }
+	auto GetPayloadType() const&& = delete;
+	const FieldsSet& GetDistinctFields() const& noexcept { return distinctsFields_; }
+	auto GetDistinctFields() const&& = delete;
 
-		for (const auto& subElem : root[Parameters::Fields()]) {
-			fields.emplace_back(subElem.template As<std::string>());
+	std::span<const Variant> GetDistinctRow(unsigned index) const {
+		if ((index + 1) * fields_.size() > distincts_.size()) {
+			throw Error(errLogic, std::string("Incorrect distinct index ") + std::to_string(index));
 		}
+		return std::span{distincts_.begin() + index * fields_.size(), fields_.size()};
+	}
+	unsigned int GetDistinctRowCount() const { return distincts_.size() / fields_.size(); }
+	unsigned int GetDistinctColumnCount() const noexcept { return fields_.size(); }
 
-		for (const auto& facetNode : root[Parameters::Facets()]) {
-			FacetResult facet;
-			facet.count = facetNode[Parameters::Count()].template As<int>();
-			for (const auto& subElem : facetNode[Parameters::Values()]) {
-				facet.values.emplace_back(subElem.template As<std::string>());
-			}
-			facets.emplace_back(std::move(facet));
-		}
-
-		for (const auto& distinctNode : root[Parameters::Distincts()]) {
-			distincts.emplace_back(distinctNode.template As<std::string>());
-		}
+	template <typename T>
+	T As(unsigned int row, unsigned int column) const {
+		return distincts_[row * fields_.size() + column].As<T>(payloadType_, distinctsFields_);
 	}
 
-	template <typename Builder, typename Fields>
-	void get(Builder& builder, const Fields& parametersFields) const {
-		if (value_) {
-			builder.Put(parametersFields.Value(), *value_);
-		}
-		builder.Put(parametersFields.Type(), AggTypeToStr(type));
-		if (!facets.empty()) {
-			auto facetsArray = builder.Array(parametersFields.Facets(), facets.size());
-			for (auto& facet : facets) {
-				auto facetObj = facetsArray.Object(0, 2);
-				facetObj.Put(parametersFields.Count(), facet.count);
-				auto valuesArray = facetObj.Array(parametersFields.Values(), facet.values.size());
-				for (const auto& v : facet.values) {
-					valuesArray.Put(0, v);
-				}
-			}
-		}
+	const h_vector<std::string, 1>& GetFields() const& noexcept { return fields_; }
+	auto GetFields() const&& = delete;
 
-		if (!distincts.empty()) {
-			auto distinctsArray = builder.Array(parametersFields.Distincts(), distincts.size());
-			for (const Variant& v : distincts) {
-				distinctsArray.Put(0, v.As<std::string>(payloadType, distinctsFields));
-			}
-		}
-
-		auto fieldsArray = builder.Array(parametersFields.Fields(), fields.size());
-		for (auto& v : fields) {
-			fieldsArray.Put(0, v);
-		}
-		fieldsArray.End();
-	}
 	template <typename S>
 	S& DumpFields(S& os) {
 		os << '[';
 		bool first = true;
-		for (const auto& f : fields) {
+		for (const auto& f : fields_) {
 			if (!first) {
 				os << ", ";
+			} else {
+				first = false;
 			}
-			first = false;
 			os << f;
 		}
 		os << ']';
@@ -160,7 +133,26 @@ struct AggregationResult {
 	}
 
 private:
+	AggType type_ = AggSum;
+	h_vector<std::string, 1> fields_;
+	std::vector<FacetResult> facets_;
+	std::vector<Variant> distincts_;
+	FieldsSet distinctsFields_;
+	PayloadType payloadType_;
+
+	template <typename Builder, typename Fields>
+	void get(Builder& builder, const Fields& parametersFields) const;
+
+	template <concepts::OneOf<gason::JsonNode, MsgPackValue> Node>
+	static AggregationResult from(Node root);
+
 	std::optional<double> value_ = std::nullopt;
+
+	template <typename Builder, typename Fields>
+	void serialiseDistinct(Builder& builder, const Fields& parametersFields) const;
+
+	template <typename Fields>
+	void serialiseDistinct(ProtobufBuilder& builder, const Fields& parametersFields) const;
 };
 
 }  // namespace reindexer

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/keyvalue/float_vectors_holder.h"
 #include "core/keyvalue/key_string.h"
 #include "estl/h_vector.h"
 #include "payload/payloadvalue.h"
@@ -8,7 +9,9 @@
 
 namespace reindexer {
 
-struct ItemImplRawData {
+class MsgPackDecoder;
+
+struct [[nodiscard]] ItemImplRawData {
 	using HolderT = h_vector<key_string, 16>;
 
 	ItemImplRawData() = default;
@@ -24,6 +27,8 @@ struct ItemImplRawData {
 	std::vector<std::unique_ptr<char[]>> largeJSONStrings_;
 	std::vector<std::string> precepts_;
 	std::unique_ptr<HolderT> holder_;
+	FloatVectorsHolderVector floatVectorsHolder_;
+	std::shared_ptr<MsgPackDecoder> msgPackDecoder_;
 };
 
 }  // namespace reindexer

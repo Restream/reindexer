@@ -1,23 +1,37 @@
 #pragma once
 
-#include "cjsonbuilder.h"
 #include "core/payload/payloadiface.h"
 #include "gason/gason.h"
 
 namespace reindexer {
 
-class JsonDecoder {
+class FloatVectorsHolderVector;
+
+namespace builders {
+class CJsonBuilder;
+}  // namespace builders
+using builders::CJsonBuilder;
+
+namespace item_fields_validator {
+
+class SparseValidator;
+
+}  // namespace item_fields_validator
+
+class [[nodiscard]] JsonDecoder {
 public:
 	explicit JsonDecoder(TagsMatcher& tagsMatcher, const FieldsSet* filter = nullptr) noexcept
 		: tagsMatcher_(tagsMatcher), filter_(filter) {}
-	Error Decode(Payload& pl, WrSerializer& wrSer, const gason::JsonValue& v);
-	void Decode(std::string_view json, CJsonBuilder& builder, const TagsPath& fieldPath);
+	Error Decode(Payload& pl, WrSerializer& wrSer, const gason::JsonValue& v, FloatVectorsHolderVector&);
+	void Decode(std::string_view json, CJsonBuilder&, const TagsPath& fieldPath, FloatVectorsHolderVector&);
 
 private:
-	void decodeJsonObject(const gason::JsonValue& root, CJsonBuilder& builder);
-	void decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gason::JsonValue& v, bool match);
-	void decodeJson(Payload* pl, CJsonBuilder& builder, const gason::JsonValue& v, int tag, bool match);
-	bool isInArray() const noexcept { return arrayLevel_ > 0; }
+	void decodeJsonObject(const gason::JsonValue& root, CJsonBuilder&, FloatVectorsHolderVector&);
+	void decodeJsonObject(Payload&, CJsonBuilder&, const gason::JsonValue&, FloatVectorsHolderVector&, Matched);
+	void decodeJson(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched);
+	void decodeJsonSparse(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched,
+						  const item_fields_validator::SparseValidator&);
+	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 
 	TagsMatcher& tagsMatcher_;
 	TagsPath tagsPath_;

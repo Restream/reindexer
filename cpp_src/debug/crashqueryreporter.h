@@ -11,12 +11,12 @@ class ExplainCalc;
 class StringsHolder;
 class Query;
 
-class ActiveQueryScope {
+class [[nodiscard]] ActiveQueryScope {
 public:
 	// Core query scope
-	ActiveQueryScope(SelectCtx& ctx, const std::atomic<int>& nsOptimizationState, ExplainCalc& explainCalc,
+	ActiveQueryScope(SelectCtx& ctx, const std::atomic<OptimizationState>& nsOptimizationState, ExplainCalc& explainCalc,
 					 const std::atomic<int>& nsLockerState, StringsHolder* strHolder) noexcept;
-	ActiveQueryScope(const Query& q, QueryType realQueryType, const std::atomic<int>& nsOptimizationState,
+	ActiveQueryScope(const Query& q, QueryType realQueryType, const std::atomic<OptimizationState>& nsOptimizationState,
 					 StringsHolder* strHolder) noexcept;
 	// External query scope
 	ActiveQueryScope(const Query& q, QueryType realQueryType) noexcept;
@@ -24,7 +24,7 @@ public:
 	~ActiveQueryScope();
 
 public:
-	enum class Type { NoTracking, CoreQueryTracker, ExternalQueryTracker, ExternalSQLQueryTracker };
+	enum class [[nodiscard]] Type { NoTracking, CoreQueryTracker, ExternalQueryTracker, ExternalSQLQueryTracker };
 
 	Type type_ = Type::NoTracking;
 };

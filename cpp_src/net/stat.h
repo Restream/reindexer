@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-class HandlerStat {
+class [[nodiscard]] HandlerStat {
 public:
 	using ClockT = system_clock_w;
 
@@ -32,17 +32,17 @@ private:
 	size_t allocs_bytes_;
 };
 
-struct SizeStat {
+struct [[nodiscard]] SizeStat {
 	size_t reqSizeBytes{0};
 	size_t respSizeBytes{0};
 };
 
-struct Stat {
+struct [[nodiscard]] Stat {
 	HandlerStat allocStat;
 	SizeStat sizeStat;
 };
 
-class TrafficStat {
+class [[nodiscard]] TrafficStat {
 public:
 	uint64_t GetReadBytes() const noexcept { return read_bytes_; }
 	uint64_t GetWrittenBytes() const noexcept { return written_bytes_; }

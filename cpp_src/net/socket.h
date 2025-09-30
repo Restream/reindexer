@@ -1,10 +1,11 @@
 #pragma once
 
 #include <cstdlib>
+#include <span>
 #include <string>
 #include <string_view>
 #include "estl/chunk.h"
-#include "estl/span.h"
+#include "estl/defines.h"
 #include "tools/ssize_t.h"
 #include "tools/tls.h"
 
@@ -12,10 +13,10 @@ struct addrinfo;
 namespace reindexer {
 namespace net {
 
-enum class socket_domain : bool { tcp, unx };
+enum class [[nodiscard]] socket_domain : bool { tcp, unx };
 class lst_socket;
 
-class socket {
+class [[nodiscard]] socket {
 public:
 	socket() = default;
 	socket(const socket&& other) = delete;
@@ -39,16 +40,16 @@ public:
 		}
 	}
 
-	[[nodiscard]] int connect(std::string_view addr, socket_domain t);
-	ssize_t recv(span<char> buf);
-	ssize_t send(const span<char> buf);
-	ssize_t send(span<chunk> chunks);
-	int setLinger0();
+	int connect(std::string_view addr, socket_domain t);
+	ssize_t recv(std::span<char> buf);
+	ssize_t send(const std::span<char> buf);
+	ssize_t send(std::span<chunk> chunks);
+	void setLinger0();
 	int close();
 	std::string addr() const;
 
-	[[nodiscard]] int set_nonblock();
-	[[nodiscard]] int set_nodelay() noexcept;
+	int set_nonblock();
+	int set_nodelay() noexcept;
 	int fd() const noexcept { return fd_; }
 	bool valid() const noexcept { return fd_ >= 0; }
 	bool has_pending_data() const noexcept;
@@ -66,7 +67,7 @@ private:
 	int create(std::string_view addr, struct addrinfo** pres);
 	void domain(socket_domain t) noexcept { type_ = t; }
 
-	ssize_t ssl_send(span<chunk> chunks);
+	ssize_t ssl_send(std::span<chunk> chunks);
 
 	int fd_ = -1;
 	socket_domain type_ = socket_domain::tcp;
@@ -76,7 +77,7 @@ private:
 	std::vector<uint8_t> ssl_write_buf_;
 };
 
-class lst_socket {
+class [[nodiscard]] lst_socket {
 public:
 	lst_socket() = default;
 	lst_socket(const lst_socket&& other) = delete;
@@ -106,7 +107,7 @@ public:
 
 	int bind(std::string_view addr, socket_domain t);
 	socket accept();
-	[[nodiscard]] int listen(int backlog) noexcept;
+	int listen(int backlog) noexcept;
 	int close();
 
 	int fd() const noexcept { return sock_.fd(); }

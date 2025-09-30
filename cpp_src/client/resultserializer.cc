@@ -1,15 +1,16 @@
 #include "resultserializer.h"
 #include "core/payload/payloadtypeimpl.h"
+#include "estl/gift_str.h"
 
 namespace reindexer {
 namespace client {
 
 void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc,
 										 Options opts, ParsingData& parsingData) {
-	ret.flags = GetVarUint();
-	ret.totalcount = GetVarUint();
-	ret.qcount = GetVarUint();
-	ret.count = GetVarUint();
+	ret.flags = GetVarUInt();
+	ret.totalcount = GetVarUInt();
+	ret.qcount = GetVarUInt();
+	ret.count = GetVarUInt();
 	ret.nsIncarnationTags.clear();
 	ret.shardingConfigVersion = ShardingSourceId::NotSet;
 	if (opts.IsWithClearAggs()) {
@@ -25,11 +26,11 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, con
 
 	parsingData.pts.begin = Pos();
 	if (ret.flags & kResultsWithPayloadTypes) {
-		int ptCount = GetVarUint();
+		int ptCount = GetVarUInt();
 
 		for (int i = 0; i < ptCount; ++i) {
-			int nsid = GetVarUint();
-			GetVString();
+			int nsid = GetVarUInt();
+			rx_unused = GetVString();
 
 			assertrx(updatePayloadFunc != nullptr);
 			updatePayloadFunc(nsid);
@@ -52,7 +53,7 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Option
 	}
 	bool firstLazyData = true;
 	for (;;) {
-		const int tag = GetVarUint();
+		const int tag = GetVarUInt();
 		switch (tag) {
 			case QueryResultEnd:
 				return;
@@ -64,23 +65,19 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Option
 						ret.aggResults.emplace();
 						ret.explainResults.emplace();
 					}
-					// firstLazyData guaranties, that aggResults will be non-'nullopt'
-					auto& aggRes = ret.aggResults->emplace_back();	// NOLINT(bugprone-unchecked-optional-access)
-					Error err;
-					if ((ret.flags & kResultsFormatMask) == kResultsMsgPack) {
-						err = aggRes.FromMsgPack(data);
+					if (auto aggRes = ((ret.flags & kResultsFormatMask) == kResultsMsgPack) ? AggregationResult::FromMsgPack(data)
+																							: AggregationResult::FromJSON(giftStr(data))) {
+						// firstLazyData guaranties, that aggResults will be non-'nullopt'
+						ret.aggResults->emplace_back(std::move(*aggRes));  // NOLINT(bugprone-unchecked-optional-access)
 					} else {
-						err = aggRes.FromJSON(giftStr(data));
-					}
-					if (!err.ok()) {
-						throw err;
+						throw aggRes.error();
 					}
 				}
 				break;
 			}
 			case QueryResultExplain: {
 				if (opts.IsWithLazyMode()) {
-					GetSlice();
+					rx_unused = GetSlice();
 				} else {
 					if (firstLazyData) {
 						firstLazyData = false;
@@ -91,21 +88,21 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Option
 				break;
 			}
 			case QueryResultShardingVersion: {
-				ret.shardingConfigVersion = GetVarUint();
+				ret.shardingConfigVersion = GetVarUInt();
 				break;
 			}
 			case QueryResultShardId: {
-				ret.shardId = GetVarUint();
+				ret.shardId = GetVarUInt();
 				break;
 			}
 			case QueryResultIncarnationTags: {
-				const auto size = GetVarUint();
+				const auto size = GetVarUInt();
 				if (size) {
 					ret.nsIncarnationTags.reserve(size);
 					for (size_t i = 0; i < size; ++i) {
 						auto& shardTags = ret.nsIncarnationTags.emplace_back();
 						shardTags.shardId = GetVarint();
-						const auto tagsSize = GetVarUint();
+						const auto tagsSize = GetVarUInt();
 						shardTags.tags.reserve(tagsSize);
 						for (size_t j = 0; j < tagsSize; ++j) {
 							shardTags.tags.emplace_back(GetVarint());
@@ -114,8 +111,16 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Option
 				}
 				break;
 			}
+			case QueryResultRankFormat: {
+				const auto format = GetVarUInt();
+				if (format != RankFormat::SingleFloatValue) {
+					throw Error(errLogic, "Unexpected rank format value tag: {} - only supported format is 0 (single float rank)",
+								int(format));
+				}
+				break;
+			}
 			default:
-				throw Error(errLogic, "Unexpected Query tag: %d", tag);
+				throw Error(errLogic, "Unexpected Query tag: {}", tag);
 		}
 	}
 }
@@ -124,15 +129,15 @@ ResultSerializer::ItemParams ResultSerializer::GetItemData(int flags, int shardI
 	ItemParams ret;
 
 	if (flags & kResultsWithItemID) {
-		ret.id = int(GetVarUint());
-		ret.lsn = lsn_t(GetVarUint());
+		ret.id = int(GetVarUInt());
+		ret.lsn = lsn_t(GetVarUInt());
 	}
 
 	if (flags & kResultsWithNsID) {
-		ret.nsid = int(GetVarUint());
+		ret.nsid = int(GetVarUInt());
 	}
 	if (flags & kResultsWithRank) {
-		ret.proc = int(GetVarUint());
+		ret.rank = GetRank();
 	}
 
 	if (flags & kResultsWithRaw) {
@@ -143,7 +148,7 @@ ResultSerializer::ItemParams ResultSerializer::GetItemData(int flags, int shardI
 		if (shardId != ShardingKeyType::ProxyOff) {
 			ret.shardId = shardId;
 		} else {
-			ret.shardId = int(GetVarUint());
+			ret.shardId = int(GetVarUInt());
 		}
 	}
 	switch (flags & kResultsFormatMask) {
@@ -155,7 +160,7 @@ ResultSerializer::ItemParams ResultSerializer::GetItemData(int flags, int shardI
 		case kResultsPure:
 			break;
 		default:
-			throw Error(errParseBin, "Server returned data in unknown format %d", flags & kResultsFormatMask);
+			throw Error(errParseBin, "Server returned data in unknown format {}", flags & kResultsFormatMask);
 	}
 
 	return ret;

@@ -16,7 +16,7 @@ namespace joins {
 class NamespaceResults;
 
 /// Offset in 'items_' for left Ns item
-struct ItemOffset {
+struct [[nodiscard]] ItemOffset {
 	ItemOffset() noexcept : field(0), offset(0), size(0) {}
 	ItemOffset(uint32_t f, uint32_t o, uint32_t s) noexcept : field(f), offset(o), size(s) {}
 	bool operator==(const ItemOffset& other) const noexcept { return field == other.field && offset == other.offset && size == other.size; }
@@ -32,7 +32,7 @@ struct ItemOffset {
 using ItemOffsets = h_vector<ItemOffset, 1>;
 
 /// Result of joining entire NamespaceImpl
-class NamespaceResults {
+class [[nodiscard]] NamespaceResults {
 public:
 	/// Move-insertion of LocalQueryResults (for n-th joined field)
 	/// ItemRefs into our results container
@@ -48,12 +48,12 @@ public:
 
 	/// @returns total amount of joined items for
 	/// all the joined fields
-	size_t TotalItems() const noexcept { return items_.size(); }
+	size_t TotalItems() const noexcept { return items_.Size(); }
 
 	/// Clear all internal data
 	void Clear() {
 		offsets_.clear();
-		items_.clear();
+		items_.Clear();
 		joinedSelectorsCount_ = 0;
 	}
 
@@ -69,11 +69,11 @@ private:
 };
 
 /// Results of joining all the namespaces (in case of merge queries)
-class Results : public std::vector<NamespaceResults> {};
+class [[nodiscard]] Results : public std::vector<NamespaceResults> {};
 
 /// Joined field iterator for Item
 /// of left NamespaceImpl (main ns).
-class JoinedFieldIterator {
+class [[nodiscard]] JoinedFieldIterator {
 public:
 	using reference = ItemRef&;
 	using const_reference = const ItemRef&;
@@ -89,12 +89,12 @@ public:
 	bool operator!=(const JoinedFieldIterator& other) const { return !operator==(other); }
 
 	const_reference operator[](size_t idx) const noexcept {
-		assertrx(currOffset_ + idx < joinRes_->items_.size());
-		return joinRes_->items_[currOffset_ + idx];
+		assertrx(currOffset_ + idx < joinRes_->items_.Size());
+		return joinRes_->items_.GetItemRef(currOffset_ + idx);
 	}
 	reference operator[](size_t idx) noexcept {
-		assertrx(currOffset_ + idx < joinRes_->items_.size());
-		return const_cast<reference>(joinRes_->items_[currOffset_ + idx]);
+		assertrx(currOffset_ + idx < joinRes_->items_.Size());
+		return const_cast<reference>(joinRes_->items_.GetItemRef(currOffset_ + idx));
 	}
 	JoinedFieldIterator& operator++() noexcept {
 		++order_;
@@ -118,7 +118,7 @@ private:
 
 /// Left namespace (main ns) iterator.
 /// Iterates over joined fields (if there are some) of item.
-class ItemIterator {
+class [[nodiscard]] ItemIterator {
 public:
 	ItemIterator(const NamespaceResults* parent, IdType rowid) noexcept : joinRes_(parent), rowid_(rowid) {}
 
@@ -129,7 +129,7 @@ public:
 	int getJoinedFieldsCount() const noexcept { return joinRes_->GetJoinedSelectorsCount(); }
 	int getJoinedItemsCount() const noexcept;
 
-	static ItemIterator CreateFrom(const LocalQueryResults::Iterator& it) noexcept;
+	static ItemIterator CreateFrom(const LocalQueryResults::ConstIterator& it) noexcept;
 	static ItemIterator CreateEmpty() noexcept;
 
 private:

@@ -6,8 +6,8 @@
 
 namespace reindexer {
 
-struct StopWord : std::string {
-	enum class Type { Stop, Morpheme };
+struct [[nodiscard]] StopWord : std::string {
+	enum class [[nodiscard]] Type { Stop, Morpheme };
 	StopWord(std::string base, Type type = Type::Stop) noexcept : std::string(std::move(base)), type(type) {}
 	Type type;
 };

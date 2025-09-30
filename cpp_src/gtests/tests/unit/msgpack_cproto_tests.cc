@@ -55,40 +55,47 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	ASSERT_EQ(qr.GetFlags() & kResultsFormatMask, kResultsMsgPack) << qr.GetFlags();
 
 	const reindexer::AggregationResult& distinct = qr.GetAggregationResults()[0];
-	EXPECT_EQ(distinct.type, AggDistinct);
-	EXPECT_EQ(distinct.distincts.size(), 1000);
-	ASSERT_EQ(distinct.fields.size(), 1);
-	EXPECT_EQ(distinct.fields[0], kFieldId);
+	EXPECT_EQ(distinct.GetType(), AggDistinct);
+	ASSERT_EQ(distinct.GetFields().size(), 1);
+	EXPECT_EQ(distinct.GetFields()[0], kFieldId);
+	unsigned int rows = distinct.GetDistinctRowCount();
+	EXPECT_EQ(rows, 1000);
 	std::unordered_set<int> found;
-	for (size_t i = 0; i < distinct.distincts.size(); ++i) {
-		found.insert(reindexer::stoi(distinct.distincts[i].As<std::string>(distinct.payloadType, distinct.distinctsFields)));
+	for (size_t i = 0; i < rows; ++i) {
+		auto row = distinct.GetDistinctRow(i);
+		assertrx(row.size() == 1);
+		found.insert(reindexer::stoi(row[0].As<std::string>(distinct.GetPayloadType(), distinct.GetDistinctFields())));
 	}
-	ASSERT_EQ(distinct.distincts.size(), found.size());
+	ASSERT_EQ(distinct.GetDistinctRowCount(), found.size());
 
-	for (size_t i = 0; i < distinct.distincts.size(); ++i) {
+	for (size_t i = 0; i < distinct.GetDistinctRowCount(); ++i) {
 		EXPECT_NE(found.find(i), found.end());
 	}
+	{
+		const reindexer::AggregationResult& facet = qr.GetAggregationResults()[1];
+		EXPECT_EQ(facet.GetType(), AggFacet);
+		EXPECT_EQ(facet.GetFacets().size(), 1000);
+		const auto& fields = facet.GetFields();
+		ASSERT_EQ(fields.size(), 2);
+		EXPECT_EQ(fields[0], kFieldA1);
+		EXPECT_EQ(fields[1], kFieldA2);
 
-	const reindexer::AggregationResult& facet = qr.GetAggregationResults()[1];
-	EXPECT_EQ(facet.type, AggFacet);
-	EXPECT_EQ(facet.facets.size(), 1000);
-	ASSERT_EQ(facet.fields.size(), 2);
-	EXPECT_EQ(facet.fields[0], kFieldA1);
-	EXPECT_EQ(facet.fields[1], kFieldA2);
-
-	for (const reindexer::FacetResult& res : facet.facets) {
-		EXPECT_EQ(res.count, 1);
-		const auto v1 = reindexer::stoll(res.values[0]);
-		const auto v2 = reindexer::stoll(res.values[1]);
-		EXPECT_EQ(v1 * 3, v2 * 2);
+		for (const reindexer::FacetResult& res : facet.GetFacets()) {
+			EXPECT_EQ(res.count, 1);
+			const auto v1 = reindexer::stoll(res.values[0]);
+			const auto v2 = reindexer::stoll(res.values[1]);
+			EXPECT_EQ(v1 * 3, v2 * 2);
+		}
 	}
-
-	const reindexer::AggregationResult& sum = qr.GetAggregationResults()[2];
-	EXPECT_EQ(sum.type, AggSum);
-	ASSERT_EQ(sum.fields.size(), 1);
-	EXPECT_EQ(sum.fields[0], kFieldId);
-	double val = (999.0 / 2.0) * 1000.0;
-	EXPECT_DOUBLE_EQ(sum.GetValueOrZero(), val) << sum.GetValueOrZero() << "; " << val;
+	{
+		const reindexer::AggregationResult& sum = qr.GetAggregationResults()[2];
+		EXPECT_EQ(sum.GetType(), AggSum);
+		const auto& fields = sum.GetFields();
+		ASSERT_EQ(fields.size(), 1);
+		EXPECT_EQ(fields[0], kFieldId);
+		double val = (999.0 / 2.0) * 1000.0;
+		EXPECT_DOUBLE_EQ(sum.GetValueOrZero(), val) << sum.GetValueOrZero() << "; " << val;
+	}
 }
 
 TEST_F(MsgPackCprotoApi, AggregationsWithStrictModeTest) { QueryAggStrictModeTest(client_); }

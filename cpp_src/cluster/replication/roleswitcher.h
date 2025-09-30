@@ -16,9 +16,9 @@ namespace cluster {
 
 class Logger;
 
-class RoleSwitcher {
+class [[nodiscard]] RoleSwitcher {
 public:
-	struct Config {
+	struct [[nodiscard]] Config {
 		bool enableCompression = false;
 		int clusterId = 0;
 		int serverId = -1;
@@ -30,48 +30,29 @@ public:
 		int maxConcurrentSnapshotsPerNode = -1;
 	};
 
-	RoleSwitcher(SharedSyncState<>&, SynchronizationList&, ReindexerImpl&, const ReplicationStatsCollector&, const Logger&);
+	RoleSwitcher(SharedSyncState&, SynchronizationList&, ReindexerImpl&, const ReplicationStatsCollector&, const Logger&);
 
 	void Run(std::vector<DSN>&& dsns, RoleSwitcher::Config&& cfg);
-	void OnRoleChanged() {
-		std::lock_guard lck(mtx_);
-		if (syncer_) {
-			syncer_->Terminate();
-		}
-		roleSwitchAsync_.send();
-	}
-	void SetTerminationFlag(bool val) noexcept {
-		std::lock_guard lck(mtx_);
-		terminate_ = val;
-		if (val) {
-			if (syncer_) {
-				syncer_->Terminate();
-			}
-			roleSwitchAsync_.send();
-		}
-	}
+	void OnRoleChanged() noexcept;
+	void SetTerminationFlag(bool val) noexcept;
 
 private:
-	struct Node {
+	struct [[nodiscard]] Node {
 		DSN dsn;
 		client::CoroReindexer client;
 	};
 
 	static constexpr std::string_view logModuleName() noexcept { return std::string_view("roleswitcher"); }
 	void await();
-	void notify() {
-		if (!awaitCh_.full()) {
-			awaitCh_.push(true);
-		}
-	}
-	void terminate() { awaitCh_.close(); }
+	void notify();
+	void terminate();
 	void handleRoleSwitch();
 	template <typename ContainerT>
 	void switchNamespaces(const RaftInfo& state, const ContainerT& namespaces);
 	void handleInitialSync(RaftInfo::Role newRole);
 	void initialLeadersSync();
 	Error awaitRoleSwitchForNamespace(client::CoroReindexer& client, const NamespaceName& nsName, ReplicationStateV2& st);
-	Error getNodesListForNs(const NamespaceName& nsName, std::list<reindexer::cluster::LeaderSyncQueue::Entry>& syncQueue);
+	Error getNodesListForNs(const NamespaceName& nsName, elist<reindexer::cluster::LeaderSyncQueue::Entry>& syncQueue);
 	NsNamesHashSetT collectNsNames();
 	template <typename RxT>
 	Error appendNsNamesFrom(RxT& rx, NsNamesHashSetT& set);
@@ -82,7 +63,7 @@ private:
 
 	std::vector<Node> nodes_;
 	net::ev::dynamic_loop loop_;
-	SharedSyncState<>& sharedSyncState_;
+	SharedSyncState& sharedSyncState_;
 	ReindexerImpl& thisNode_;
 	ReplicationStatsCollector statsCollector_;
 	steady_clock_w::time_point roleSwitchTm_;
@@ -97,7 +78,7 @@ private:
 	bool timerIsCanceled_ = false;
 	Config cfg_;
 
-	std::mutex mtx_;
+	mutex mtx_;
 	std::unique_ptr<LeaderSyncer> syncer_;
 	const Logger& log_;
 };

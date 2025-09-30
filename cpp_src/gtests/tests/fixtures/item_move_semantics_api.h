@@ -5,7 +5,7 @@
 #include "gason/gason.h"
 #include "reindexer_api.h"
 
-class ItemMoveSemanticsApi : public ReindexerApi {
+class [[nodiscard]] ItemMoveSemanticsApi : public ReindexerApi {
 protected:
 	const std::string pkField = "bookid";
 	const int32_t itemsCount = 100000;
@@ -14,20 +14,13 @@ protected:
 
 	void SetUp() override {
 		ReindexerApi::SetUp();
-		auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(default_namespace, {"bookid", "hash", "int", IndexOpts().PK()});
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(default_namespace, {"title", "text", "string", IndexOpts()});
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(default_namespace, {"pages", "hash", "int", IndexOpts()});
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(default_namespace, {"price", "hash", "int", IndexOpts()});
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(default_namespace, {"genreid_fk", "hash", "int", IndexOpts()});
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->AddIndex(default_namespace, {"authorid_fk", "hash", "int", IndexOpts()});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+		rt.AddIndex(default_namespace, {"bookid", "hash", "int", IndexOpts().PK()});
+		rt.AddIndex(default_namespace, {"title", "text", "string", IndexOpts()});
+		rt.AddIndex(default_namespace, {"pages", "hash", "int", IndexOpts()});
+		rt.AddIndex(default_namespace, {"price", "hash", "int", IndexOpts()});
+		rt.AddIndex(default_namespace, {"genreid_fk", "hash", "int", IndexOpts()});
+		rt.AddIndex(default_namespace, {"authorid_fk", "hash", "int", IndexOpts()});
 	}
 
 	void prepareItems() {
@@ -36,8 +29,8 @@ protected:
 		for (int i = 1; i < itemsCount; ++i) {
 			int id = i;
 			snprintf(&buf[0], bufSize, jsonPattern, id);
-			Item item(rt.reindexer->NewItem(default_namespace));
-			Error err = item.FromJSON(buf);
+			Item item(rt.NewItem(default_namespace));
+			auto err = item.FromJSON(buf);
 			ASSERT_TRUE(err.ok()) << err.what();
 			items_[id] = std::move(item);
 		}
@@ -46,8 +39,7 @@ protected:
 	void verifyAndUpsertItems() {
 		for (auto& pair : items_) {
 			auto&& item = pair.second;
-			Error err = rt.reindexer->Upsert(default_namespace, item);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Upsert(default_namespace, item);
 			gason::JsonParser parser;
 			ASSERT_NO_THROW(parser.Parse(item.GetJSON()));
 		}
@@ -63,11 +55,8 @@ protected:
 	}
 
 	void verifyJsonsOfUpsertedItems() {
-		reindexer::QueryResults qres;
-		Error err = rt.reindexer->Select("SELECT * FROM " + default_namespace, qres);
-
-		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_TRUE(int(qres.Count()) == (itemsCount - 1)) << (itemsCount - 1) << " items upserted, but selected only " << qres.Count();
+		auto qres = rt.ExecSQL("SELECT * FROM " + default_namespace);
+		EXPECT_EQ(int(qres.Count()), (itemsCount - 1));
 
 		for (auto it : qres) {
 			Item item(it.GetItem(false));
@@ -78,8 +67,7 @@ protected:
 			ASSERT_TRUE(!!originalItem) << "No item for this id: " << itemId;
 
 			std::string_view originalJson = originalItem.GetJSON();
-			ASSERT_TRUE(originalJson == jsonRead) << "Inserted and selected items' jsons are different."
-												  << "\nExpected: " << jsonRead << "\nGot:" << originalJson;
+			ASSERT_EQ(originalJson, jsonRead) << "Inserted and selected items' jsons are different";
 		}
 	}
 };

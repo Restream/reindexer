@@ -5,6 +5,7 @@
 #include "core/keyvalue/uuid.h"
 #include "core/keyvalue/variant.h"
 #include "core/reindexer.h"
+#include "gmock/gmock.h"
 #include "gtests/tools.h"
 #include "tools/stringstools.h"
 
@@ -34,7 +35,8 @@ TEST(UUID, FromString_InvalidChar) {
 			ch = rand() % 256;
 		} while (hexChars.find(ch) != std::string_view::npos);
 		strUuid[i] = ch;
-		EXPECT_THROW(reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
+		[[maybe_unused]] reindexer::Uuid uuid;
+		EXPECT_THROW(uuid = reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
 	}
 }
 
@@ -57,7 +59,8 @@ TEST(UUID, FromString_InvalidSize) {
 			std::transform(delimPos.begin(), delimPos.end(), delimPos.begin(),
 						   [idx, del](unsigned i) { return idx < i ? (del ? i - 1 : i + 1) : i; });
 		}
-		EXPECT_THROW(reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
+		[[maybe_unused]] reindexer::Uuid uuid;
+		EXPECT_THROW(uuid = reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
 	}
 }
 
@@ -69,7 +72,8 @@ TEST(UUID, FromString_InvalidVariant) {
 		} else {
 			strUuid[19] = hexChars[rand() % 8];
 		}
-		EXPECT_THROW(reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
+		[[maybe_unused]] reindexer::Uuid uuid;
+		EXPECT_THROW(uuid = reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
 	}
 }
 
@@ -100,7 +104,7 @@ TEST(UUID, ConvertVariant) {
 }
 
 template <typename T1, typename T2>
-struct Values {
+struct [[nodiscard]] Values {
 	Values() = default;
 	template <typename U1, typename U2>
 	Values(U1&& v1, U2&& v2) : scalar{std::forward<U1>(v1)}, array{std::forward<U2>(v2)} {}
@@ -142,7 +146,7 @@ static void fillItemThroughJson(reindexer::Item& item, int id, Values<T1, T2>& v
 		if (value.array) {
 			auto arr = builder.Array("uuid_a");
 			for (const auto& uuid : *value.array) {
-				arr.Put(nullptr, std::string{uuid});
+				arr.Put(reindexer::TagName::Empty(), std::string{uuid});
 			}
 		} else if (rand() % 2 == 0) {
 			auto arr = builder.Array("uuid_a");
@@ -239,16 +243,16 @@ template <typename>
 struct TypeToKVT;
 
 template <>
-struct TypeToKVT<std::string> {
+struct [[nodiscard]] TypeToKVT<std::string> {
 	using type = reindexer::KeyValueType::String;
 };
 
 template <>
-struct TypeToKVT<reindexer::Uuid> {
+struct [[nodiscard]] TypeToKVT<reindexer::Uuid> {
 	using type = reindexer::KeyValueType::Uuid;
 };
 
-enum class EmptyValues { ShouldBeFilled, ShouldBeEmpty, CouldBeEmpty };	 // TODO delete CouldBeEmpty after #1353
+enum class [[nodiscard]] EmptyValues { ShouldBeFilled, ShouldBeEmpty, CouldBeEmpty };  // TODO delete CouldBeEmpty after #1353
 
 template <typename T1, typename T2>
 static void test(reindexer::Reindexer& rx, const std::vector<Values<T1, T2>>& values,
@@ -558,14 +562,10 @@ TEST(UUID, AddNotArrayUuidIndexOnArrayField) {
 
 		const auto err = rx.AddIndex(nsName, reindexer::IndexDef{"uuid_a", "hash", "uuid", IndexOpts()});
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Cannot convert array field to not array UUID");
+		ASSERT_THAT(err.what(), testing::MatchesRegex(".*: Cannot convert array field to not array UUID"));
 
 		test(rx, strUuidValues);
-	} catch (const reindexer::Error& e) {
-		ASSERT_TRUE(false) << e.what() << std::endl;
 	} catch (const std::exception& e) {
 		ASSERT_TRUE(false) << e.what() << std::endl;
-	} catch (...) {
-		ASSERT_TRUE(false);
 	}
 }
