@@ -3,10 +3,11 @@
 #include <functional>
 #include <ostream>
 #include <string>
-#include <vector>
 #include "cluster/config.h"
+#include "core/namespace/namespacenamemap.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
+#include "estl/thread_annotation_attributes.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
@@ -15,7 +16,6 @@ struct JsonNode;
 }
 
 namespace reindexer {
-class JsonBuilder;
 class RdxContext;
 class WrSerializer;
 
@@ -24,32 +24,33 @@ enum ConfigType {
 	NamespaceDataConf,
 	AsyncReplicationConf,
 	ReplicationConf,
+	EmbeddersConf,
 	//
 	kConfigTypesTotalCount
 };
 
-class LongQueriesLoggingParams {
+class [[nodiscard]] LongQueriesLoggingParams {
 public:
 	LongQueriesLoggingParams(int32_t t = -1, bool n = false) noexcept : thresholdUs(t), normalized(n ? 1 : 0) {}
 
-	// Do not using int32 + bool here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
+	// Don't use int32 + bool here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
 	// atomic).
 	int64_t thresholdUs : 32;
 	int64_t normalized : 1;
 };
 
-class LongTxLoggingParams {
+class [[nodiscard]] LongTxLoggingParams {
 public:
 	LongTxLoggingParams(int32_t t = -1, int32_t a = -1) noexcept : thresholdUs(t), avgTxStepThresholdUs(a) {}
 
-	// Do not using 2 int32's here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
+	// Don't use 2 int32's here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
 	// atomic).
 	// Starting from C++14 both of the bit fields will be signed.
 	int64_t thresholdUs : 32;
 	int64_t avgTxStepThresholdUs : 32;
 };
 
-class ProfilingConfigData {
+class [[nodiscard]] ProfilingConfigData {
 public:
 	ProfilingConfigData& operator=(const ProfilingConfigData& d) noexcept {
 		queriesThresholdUS.store(d.queriesThresholdUS, std::memory_order_relaxed);
@@ -63,7 +64,9 @@ public:
 		return *this;
 	}
 
+	Error FromDefault() noexcept;
 	Error FromJSON(const gason::JsonNode& v);
+	void GetJSON(JsonBuilder& jb) const;
 
 	std::atomic<size_t> queriesThresholdUS = {10};
 	std::atomic<bool> queriesPerfStats = {false};
@@ -78,7 +81,7 @@ public:
 constexpr size_t kDefaultCacheSizeLimit = 1024 * 1024 * 128;
 constexpr uint32_t kDefaultHitCountToCache = 2;
 
-struct NamespaceCacheConfigData {
+struct [[nodiscard]] NamespaceCacheConfigData {
 	bool IsIndexesCacheEqual(const NamespaceCacheConfigData& o) noexcept {
 		return idxIdsetCacheSize == o.idxIdsetCacheSize && idxIdsetHitsToCache == o.idxIdsetHitsToCache &&
 			   ftIdxCacheSize == o.ftIdxCacheSize && ftIdxHitsToCache == o.ftIdxHitsToCache;
@@ -100,15 +103,14 @@ struct NamespaceCacheConfigData {
 	uint32_t queryCountHitsToCache = kDefaultHitCountToCache;
 };
 
-struct NamespaceConfigData {
-	bool lazyLoad = false;
-	int noQueryIdleThreshold = 0;
+struct [[nodiscard]] NamespaceConfigData {
 	LogLevel logLevel = LogNone;
 	CacheMode cacheMode = CacheModeOff;
 	StrictMode strictMode = StrictModeNames;
 	int startCopyPolicyTxSize = 10'000;
 	int copyPolicyMultiplier = 5;
 	int txSizeToAlwaysCopy = 100'000;
+	int txVecInsertionThreads = 4;
 	int optimizationTimeout = 800;
 	int optimizationSortWorkers = 4;
 	int64_t walSize = 4'000'000;
@@ -118,18 +120,27 @@ struct NamespaceConfigData {
 	int64_t maxIterationsIdSetPreResult = 20'000;
 	bool idxUpdatesCountingMode = false;
 	int syncStorageFlushLimit = 20'000;
+	int annStorageCacheBuildTimeout = 5'000;
 	NamespaceCacheConfigData cacheConfig;
 
 	Error FromJSON(const gason::JsonNode& v);
+	void GetJSON(JsonBuilder& jb) const;
+
+	static Error FromDefault(std::vector<std::string>& defaultNamespacesNames,
+							 std::vector<NamespaceConfigData>& defaultNamespacesConfs) noexcept;
+	static Error GetJSON(const std::vector<std::string>& namespacesNames, const std::vector<NamespaceConfigData>& namespacesConfs,
+						 JsonBuilder& jb) noexcept;
 };
 
-struct ReplicationConfigData {
+struct [[nodiscard]] ReplicationConfigData {
 	static constexpr int16_t kMinServerIDValue = 0;
 	static constexpr int16_t kMaxServerIDValue = 999;
 
 	int serverID = 0;
 	int clusterID = 1;
+	NsNamesHashMapT<std::string> admissibleTokens;
 
+	Error FromDefault() noexcept;
 	Error FromYAML(const std::string& yml);
 	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode& v);
@@ -139,15 +150,28 @@ struct ReplicationConfigData {
 	void GetJSON(JsonBuilder& jb) const;
 	void GetYAML(WrSerializer& ser) const;
 
-	bool operator==(const ReplicationConfigData& rdata) const noexcept {
-		return (clusterID == rdata.clusterID) && (serverID == rdata.serverID);
-	}
-	bool operator!=(const ReplicationConfigData& rdata) const noexcept { return !operator==(rdata); }
+	bool operator==(const ReplicationConfigData& rdata) const noexcept = default;
 };
 
 std::ostream& operator<<(std::ostream& os, const ReplicationConfigData& data);
 
-class DBConfigProvider {
+struct [[nodiscard]] EmbedderConfigData {
+	int maxCacheItems = 0;	// Don't touch, disabled by default (=0)
+	int hitToCache = 1;
+	bool operator==(const EmbedderConfigData&) const noexcept = default;
+};
+struct [[nodiscard]] EmbeddersConfigData {
+	std::string cacheTag;
+	EmbedderConfigData configData;
+
+	Error FromJSON(const gason::JsonNode& v);
+	void GetJSON(JsonBuilder& jb) const;
+
+	static Error FromDefault(std::vector<EmbeddersConfigData>& defaultEmbeddersConfs) noexcept;
+	static Error GetJSON(const std::vector<EmbeddersConfigData>& embeddersConfs, JsonBuilder& jb) noexcept;
+};
+
+class [[nodiscard]] DBConfigProvider {
 public:
 	DBConfigProvider() = default;
 	~DBConfigProvider() = default;
@@ -168,18 +192,19 @@ public:
 	 * nothing to change.
 	 * Otherwise - read errors occured, config is not changed.
 	 */
-	Error FromJSON(const gason::JsonNode& root, bool autoCorrect = false);
+	Error FromJSON(const gason::JsonNode& root, bool autoCorrect = false) RX_REQUIRES(!mtx_);
 
 	/// @brief Returns aggregated error state generated by previous calls to FromJSON
-	Error GetConfigParseErrors() const;
+	Error GetConfigParseErrors() const RX_REQUIRES(!mtx_);
 
-	void setHandler(ConfigType cfgType, std::function<void()> handler);
-	int setHandler(std::function<void(const ReplicationConfigData&)> handler);
-	void unsetHandler(int id);
+	void setHandler(ConfigType cfgType, std::function<void()> handler) RX_REQUIRES(!mtx_);
+	int setHandler(std::function<void(const ReplicationConfigData&)> handler) RX_REQUIRES(!mtx_);
+	void unsetHandler(int id) RX_REQUIRES(!mtx_);
 
-	cluster::AsyncReplConfigData GetAsyncReplicationConfig();
-	ReplicationConfigData GetReplicationConfig();
-	bool GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data);
+	const fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str>& GetEmbeddersConfig() const RX_REQUIRES(!mtx_);
+	cluster::AsyncReplConfigData GetAsyncReplicationConfig() const RX_REQUIRES(!mtx_);
+	ReplicationConfigData GetReplicationConfig() const RX_REQUIRES(!mtx_);
+	void GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) const RX_REQUIRES(!mtx_);
 	LongQueriesLoggingParams GetSelectLoggingParams() const noexcept {
 		return profilingData_.longSelectLoggingParams.load(std::memory_order_relaxed);
 	}
@@ -193,6 +218,9 @@ public:
 	bool QueriesPerfStatsEnabled() const noexcept { return profilingData_.queriesPerfStats.load(std::memory_order_relaxed); }
 	unsigned QueriesThresholdUS() const noexcept { return profilingData_.queriesThresholdUS.load(std::memory_order_relaxed); }
 
+	Error CheckAsyncReplicationToken(std::string_view nsName, std::string_view token) const RX_REQUIRES(!mtx_);
+	std::string GetAsyncReplicationToken(std::string_view nsName) const RX_REQUIRES(!mtx_);
+
 private:
 	ProfilingConfigData profilingData_;
 	cluster::AsyncReplConfigData asyncReplicationData_;
@@ -201,11 +229,15 @@ private:
 	Error namespacesDataLoadResult_;
 	Error asyncReplicationDataLoadResult_;
 	Error replicationDataLoadResult_;
-	fast_hash_map<std::string, NamespaceConfigData, hash_str, equal_str, less_str> namespacesData_;
+	Error embeddersDataLoadResult_;
+	fast_hash_map<std::string, NamespaceConfigData, nocase_hash_str, nocase_equal_str, nocase_less_str> namespacesData_;
+	fast_hash_map<std::string, EmbedderConfigData, hash_str, equal_str, less_str> embeddersData_;
 	std::array<std::function<void()>, kConfigTypesTotalCount> handlers_;
 	fast_hash_map<int, std::function<void(const ReplicationConfigData&)>> replicationConfigDataHandlers_;
 	int handlersCounter_ = 0;
 	mutable shared_timed_mutex mtx_;
 };
+
+Error GetDefaultConfigs(std::string_view type, JsonBuilder& builder) noexcept;
 
 }  // namespace reindexer

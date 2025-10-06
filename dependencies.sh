@@ -31,34 +31,33 @@ error_msg() {
 }
 
 centos_openssl_msg() {
-	message="The package manager of this OS does not contain the required version of the openssl library.
+    message="The package manager of this OS does not contain the required version of the openssl library.
 To use the extended authorization and authentication functionality in RX,
 you can build and install openssl from source, following the instructions below:
-  yum -y install perl-IPC-Cmd perl-Test-Simple && \\
-  cd /usr/src  && \\
-  wget https://www.openssl.org/source/openssl-3.2.1.tar.gz  && \\
-  tar -zxf openssl-3.2.1.tar.gz  && \\
-  rm openssl-3.2.1.tar.gz && \\
-  cd /usr/src/openssl-3.2.1 && \\
-  ./config no-shared no-module zlib-dynamic && \\
-  make -j8 && \\
-  make test && \\
-  make install"
+    yum -y install perl-IPC-Cmd perl-Test-Simple && \\
+    cd /usr/src  && \\
+    wget https://www.openssl.org/source/openssl-3.2.1.tar.gz  && \\
+    tar -zxf openssl-3.2.1.tar.gz  && \\
+    rm openssl-3.2.1.tar.gz && \\
+    cd /usr/src/openssl-3.2.1 && \\
+    ./config no-shared no-module zlib-dynamic && \\
+    make -j8 && \\
+    make test && \\
+    make install"
 
-	printf "${YELLOW_BOLD}[ ATTENTION ]\n${NC}$message\n"
+    printf "${YELLOW_BOLD}[ ATTENTION ]\n${NC}$message\n"
 }
 
 # declare dependencies arrays for systems
-osx_deps="gperftools leveldb snappy cmake git"
+osx_deps="gperftools leveldb snappy cmake git libomp"
 almalinux9_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-fedora_rpms=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openssl-devel"
-centos7_rpms="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git wget"
-centos8_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git wget"
-debian_debs="build-essential g++ libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git libssl-dev"
-alpine_apks="g++ snappy-dev leveldb-dev libunwind-dev make curl cmake unzip git openssl-dev"
+fedora_rpms=" gcc-c++ make cmake snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel openssl-devel"
+centos7_rpms="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel"
+debian_debs="build-essential g++ make cmake libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git libopenblas-pthread-dev libssl-dev"
+alpine_apks="g++ snappy-dev leveldb-dev libunwind-dev lapack-dev make curl cmake unzip git openssl-dev"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
-redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake rpm-build python-srpm-macros openssl-devel"
-altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel libgperftools-devel curl unzip git cmake ctest rpm-build rpmdevtools openssl-devel"
+redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake rpm-build python-srpm-macros openblas-devel openssl-devel"
+altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel libgperftools-devel curl unzip git cmake ctest rpm-build rpmdevtools libgomp-devel libopenblas-devel liblapack-devel openssl-devel"
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
@@ -74,13 +73,10 @@ install_cmake_linux () {
     info_msg "Installing 'cmake' package ....."
     case `uname -m` in
         x86_64)
-            curl -L https://github.com/Kitware/CMake/releases/download/v3.24.2/cmake-3.24.2-Linux-x86_64.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
-            ;;
-        i386)
-            curl -L https://github.com/Kitware/CMake/releases/download/v3.6.3/cmake-3.6.3-Linux-i386.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
+            curl -L https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-Linux-x86_64.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
             ;;
         *)
-            warning_msg "Fallback to system 'cmake' package. Be sure, cmake version must be at least 3.0....."
+            warning_msg "Fallback to system 'cmake' package. Be sure, cmake version must be at least 3.18.x"
             apt-get -y install cmake >/dev/null 2>&1
             ;;
     esac
@@ -130,31 +126,6 @@ install_almalinux9() {
             fi
         fi
     done
-    cmake_installed || install_cmake_linux
-    return $?
-}
-
-install_centos8() {
-    yum install -y epel-release >/dev/null 2>&1 || true
-    yum install -y http://rpms.remirepo.net/enterprise/remi-release-8.rpm >/dev/null 2>&1 || true
-    sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/CentOS-Linux-PowerTools.repo || true
-    for pkg in ${centos8_rpms}
-    do
-        if rpm -qa | grep -qw ${pkg} ; then
-            info_msg "Package '$pkg' already installed. Skip ....."
-        else
-            info_msg "Installing '$pkg' package ....."
-            yum install -y ${pkg} > /dev/null 2>&1
-            if [ $? -eq 0 ]; then
-                success_msg "Package '$pkg' was installed successfully."
-            else
-                error_msg "Could not install '$pkg' package. Try 'yum update && yum install $pkg'" && return 1
-            fi
-        fi
-    done
-
-    centos_openssl_msg
-
     cmake_installed || install_cmake_linux
     return $?
 }

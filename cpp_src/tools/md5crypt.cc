@@ -115,14 +115,14 @@ Error ParseCryptString(const std::string& input, std::string& outHash, std::stri
 		return errOK;
 	} else {
 		std::vector<std::string> hashParts;
-		split(input, kCryptDelimiter, false, hashParts);
+		rx_unused = split(input, kCryptDelimiter, false, hashParts);
 		if (hashParts.size() != 4) {
 			return Error(errParams, "Unexpected hash format. Expectig '$type$salt$hash");
 		}
 		if (auto it = kHashOptions.find(hashParts[1]); it != kHashOptions.end()) {
 			hashAlgorithm = it->second;
 		} else {
-			return Error(errParams, "Unsupported hash magic: %s", hashParts[1].c_str());
+			return Error(errParams, "Unsupported hash magic: {}", hashParts[1].c_str());
 		}
 		outHash = std::move(hashParts[3]);
 		outSalt = std::move(hashParts[2]);

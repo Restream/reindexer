@@ -18,7 +18,7 @@ service Reindexer {
 	rpc EnumNamespaces(EnumNamespacesRequest) returns(EnumNamespacesResponse) {}
 	rpc EnumDatabases(EnumDatabasesRequest) returns(EnumDatabasesResponse) {}
 	rpc ModifyItem(stream ModifyItemRequest) returns(stream ErrorResponse) {}
-	rpc SelectSql(SelectSqlRequest) returns(stream QueryResultsResponse) {}
+	rpc ExecSql(SqlRequest) returns(stream QueryResultsResponse) {}
 	rpc Select(SelectRequest) returns(stream QueryResultsResponse) {}
 	rpc Update(UpdateRequest) returns(stream QueryResultsResponse) {}
 	rpc Delete(DeleteRequest) returns(stream QueryResultsResponse) {}
@@ -67,6 +67,23 @@ message ErrorResponse {
 		errCodeNamespaceInvalidated = 23;
 		errCodeParseMsgPack = 24;
 		errCodeParseProtobuf = 25;
+		errCodeUpdatesLost = 26;
+		errCodeWrongReplicationData = 27;
+		errCodeUpdateReplication = 28;
+		errCodeClusterConsensus = 29;
+		errCodeTerminated = 30;
+		errCodeTxDoesNotExist = 31;
+		errCodeAlreadyConnected = 32;
+		errCodeTxInvalidLeader = 33;
+		errCodeAlreadyProxied = 34;
+		errCodeStrictMode = 35;
+		errCodeQrUIDMissmatch = 36;
+		errCodeSystem = 37;
+		errCodeAssert = 38;
+		errCodeParseYAML = 39;
+		errCodeNamespaceOverwritten = 40;
+		errCodeConnectSSL = 41;
+		errCodeVersion = 42;
 	};
 	ErrorCode code = 1;
 	string what = 2;
@@ -111,7 +128,7 @@ message Index {
 	string indexType = 3;
 	string fieldType = 4;
 	IndexOptions options = 5;
-	int64 expireAfter = 6;	// TTL (in seconds)
+	sint64 expireAfter = 6;	// TTL (in seconds)
 }
 
 message AddIndexRequest {
@@ -166,7 +183,7 @@ message Query {
 	// Query can be encoded as following:
 	// 1. JSON # Using DSL-query format, described here: https://github.com/Restream/reindexer/blob/v3.23.0/cpp_src/server/contrib/server.yml#L2420
 	// 2. MSGPACK # Not supported yet
-	EncodingType encdoingType = 1;
+	EncodingType encodingType = 1;
 	bytes data = 2;
 }
 
@@ -190,7 +207,7 @@ message OutputFlags {
 }
 
 // SQL Query message
-message SelectSqlRequest {
+message SqlRequest {
 	string dbName = 1;
 	string sql = 2;
 	OutputFlags flags = 3;
@@ -220,8 +237,8 @@ message QueryResultsResponse {
 	bytes data = 1;
 	// Options for returned buffer.
 	message QueryResultsOptions {
-		int64 totalItems = 1;
-		int64 queryTotalItems = 2;
+		sint64 totalItems = 1;
+		sint64 queryTotalItems = 2;
 		bool cacheEnabled = 3;
 		string explain = 4;
 	}
@@ -236,10 +253,10 @@ enum StorageType { StorageTypeLevelDB = 0; StorageTypeRocksDB = 1; };
 
 // message Connection options
 message ConnectOptions {
-	int64 expectedClusterID = 1;
+	reserved 4;
+	sint64 expectedClusterID = 1;
 	bool openNamespaces = 2;
 	bool allowNamespaceErrors = 3;
-	bool autorepair = 4;
 	bool disableReplication = 5;
 	StorageType storageType = 6;
 }
@@ -257,7 +274,7 @@ message ConnectRequest {
 
 // Storage options for a namespace.
 message StorageOptions {
-	reserved 8;
+	reserved 8, 9;
 	// Ns name.
 	string nsName = 1;
 	// To work with physical storage or not.
@@ -280,9 +297,6 @@ message StorageOptions {
 	// Note that if it is just the process that crashes (i.e., the machine
 	// does not reboot), no writes will be lost even if sync==false.
 	bool sync = 7;
-	// To allow LevelDB or RocksDB to repair storage file
-	// in case it is malfunctioned.
-	bool autorepair = 9;
 }
 
 message OpenNamespaceRequest {
@@ -311,11 +325,12 @@ message EnumDatabasesRequest {}
 
 // Namespaces definition.
 message Namespace {
+	reserved 5;
+
 	string dbName = 1;
 	string name = 2;
 	StorageOptions storageOptions = 3;
 	repeated Index indexesDefinitions = 4;
-	bool isTemporary = 5;
 }
 
 message AddNamespaceRequest {
@@ -382,20 +397,20 @@ message MetadataKeysResponse {
 	ErrorResponse errorResponse = 2;
 }
 
-message CommitTransactionRequest { int64 id = 1; }
-message RollbackTransactionRequest { int64 id = 1; }
+message CommitTransactionRequest { sint64 id = 1; }
+message RollbackTransactionRequest { sint64 id = 1; }
 
 // Transaction data.
 message TransactionIdResponse {
 	// Operation status
 	ErrorResponse status = 1;
 	// unique transaction ID
-	int64 id = 2;
+	sint64 id = 2;
 }
 
 // Transaction Item message
 message AddTxItemRequest {
-	int64 id = 1;
+	sint64 id = 1;
 	// mode
 	ModifyMode mode = 2;
 	// encoding type

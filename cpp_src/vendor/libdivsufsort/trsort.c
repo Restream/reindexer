@@ -24,6 +24,11 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 #include "divsufsort_private.h"
 
 
@@ -378,7 +383,7 @@ tr_introsort(saidx_t *ISA, const saidx_t *ISAd,
         }
       } else if(limit == -2) {
         /* tandem repeat copy */
-        a = stack[--ssize].b, b = stack[ssize].c; // NOLINT(*uninitialized.Assign)
+		a = stack[--ssize].b, b = stack[ssize].c; // NOLINT(*uninitialized.Assign,clang-analyzer-security.ArrayBound)
         if(stack[ssize].d == 0) {
           tr_copy(ISA, SA, first, a, b, last, ISAd - ISA);
         } else {
@@ -584,3 +589,7 @@ trsort(saidx_t *ISA, saidx_t *SA, saidx_t n, saidx_t depth) {
     if(unsorted == 0) { break; }
   }
 }
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif

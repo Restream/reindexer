@@ -4,6 +4,7 @@
 #include <optional>
 #include <random>
 #include <unordered_set>
+#include "core/enums.h"
 #include "core/type_consts.h"
 #include "tools/assertrx.h"
 #include "types.h"
@@ -20,7 +21,7 @@ namespace fuzzing {
 
 class NsScheme;
 
-class RandomGenerator {
+class [[nodiscard]] RandomGenerator {
 	using ErrFactorInt = uint32_t;
 
 public:
@@ -60,20 +61,15 @@ public:
 	IndexType RndIndexType(const std::vector<FieldType>&);
 	IndexType RndPkIndexType(const std::vector<FieldType>&);
 	IndexType RndIndexType(IndexType);
-	IsArrayT RndArrayField() { return RndBool(0.2) ? IsArrayT::Yes : IsArrayT::No; }
-	IsArrayT RndArrayField(IsArrayT array) {
-		if (RndErr()) {
-			return array == IsArrayT::Yes ? IsArrayT::No : IsArrayT::Yes;
-		}
-		return array;
-	}
+	reindexer::IsArray RndArrayField() { return reindexer::IsArray(RndBool(0.2)); }
+	reindexer::IsArray RndArrayField(reindexer::IsArray array) { return reindexer::IsArray(*array != RndErr()); }
 	size_t ArraySize();
 	bool PkIndex(bool pk) { return RndErr() ? RndBool(0.5) : pk; }
-	IsSparseT RndSparseIndex(FieldType fldType) {
+	reindexer::IsSparse RndSparseIndex(FieldType fldType) {
 		const bool couldBeSparse = fldType != FieldType::Struct && fldType != FieldType::Uuid;	// TODO remove uuid #1470
-		return (couldBeSparse ? RndBool(0.2) : RndErr()) ? IsSparseT::Yes : IsSparseT::No;
+		return reindexer::IsSparse(couldBeSparse ? RndBool(0.2) : RndErr());
 	}
-	bool RndSparseIndex(IsSparseT isSparse) { return (isSparse == IsSparseT::Yes) != RndErr(); }
+	reindexer::IsSparse RndSparseIndex(reindexer::IsSparse isSparse) { return reindexer::IsSparse(*isSparse != RndErr()); }
 	bool DenseIndex() { return RndBool(0.2); }
 	int64_t ExpiredIndex() { return RndInt(0, 100'000); }  // TODO
 	size_t IndexesCount();
@@ -141,9 +137,9 @@ public:
 		return err;
 	}
 	char RndChar() { return rndChar_(gen_); }
-	bool NeedThisNode(IsSparseT sparse) { return sparse == IsSparseT::Yes ? RndBool(0.5) : !RndErr(); }
+	bool NeedThisNode(reindexer::IsSparse sparse) { return sparse ? RndBool(0.5) : !RndErr(); }
 	int RndIntValue() {
-		enum Size : uint8_t { Short, Long, END = Long };
+		enum [[nodiscard]] Size : uint8_t { Short, Long, END = Long };
 		switch (RndWhich<Size, 1, 1>()) {
 			case Short:
 				return RndInt(-50, 50);
@@ -155,7 +151,7 @@ public:
 		}
 	}
 	int64_t RndInt64Value() {
-		enum Size : uint8_t { Short, Long, END = Long };
+		enum [[nodiscard]] Size : uint8_t { Short, Long, END = Long };
 		switch (RndWhich<Size, 1, 1>()) {
 			case Short:
 				return rndInt64(-50, 50);
@@ -169,7 +165,7 @@ public:
 	int64_t RndTtlValue();
 	bool RndBool(double p) { return rndBool_(gen_, BoolRndParams{p}); }
 	double RndDoubleValue() {
-		enum Size : uint8_t { Short, Long, END = Long };
+		enum [[nodiscard]] Size : uint8_t { Short, Long, END = Long };
 		switch (RndWhich<Size, 1, 1>()) {
 			case Short:
 				return rndDouble_(gen_, DoubleRndParams{0.0, 10.0});
@@ -184,7 +180,7 @@ public:
 		static constexpr char availableChars[] = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
 		static const IntRndParams availableRndParams{0, sizeof(availableChars) - 2};
 		std::string res;
-		enum Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
+		enum [[nodiscard]] Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
 		switch (RndWhich<Size, 10'000, 100'000, 10, 1>()) {
 			case Short:
 				res.resize(RndInt(0, 5));

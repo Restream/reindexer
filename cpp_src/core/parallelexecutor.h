@@ -3,11 +3,12 @@
 #include <deque>
 #include "cluster/sharding/sharding.h"
 #include "core/queryresults/queryresults.h"
+#include "estl/lock.h"
 
 namespace reindexer {
 
-class ParallelExecutor {
-	struct ConnectionDataBase {
+class [[nodiscard]] ParallelExecutor {
+	struct [[nodiscard]] ConnectionDataBase {
 		ConnectionDataBase() = default;
 		ConnectionDataBase(int _shardId) : shardId(_shardId) {}
 		client::Reindexer connection;
@@ -15,7 +16,7 @@ class ParallelExecutor {
 	};
 
 	template <typename R>
-	struct ConnectionData : public ConnectionDataBase {
+	struct [[nodiscard]] ConnectionData : public ConnectionDataBase {
 		ConnectionData() = default;
 		ConnectionData(int _shardId) : ConnectionDataBase(_shardId) {}
 		R results;
@@ -26,8 +27,8 @@ public:
 
 	template <typename Func, typename FLocal, typename... Args>
 	Error Exec(const RdxContext& rdxCtx, sharding::ConnectionsPtr&& connections, const Func& f, const FLocal& local, Args&&... args) {
-		std::condition_variable cv;
-		std::mutex mtx;
+		condition_variable cv;
+		mutex mtx;
 
 		size_t clientCompl = 0;
 		std::vector<std::pair<Error, int>> clientErrors;
@@ -62,20 +63,20 @@ public:
 				}
 
 				if (!err.ok()) {
-					std::lock_guard lck(mtx);
+					lock_guard lck(mtx);
 					clientErrors.emplace_back(std::move(err), shardId);
 				}
 			} else {
 				Error err = local(std::forward<Args>(args)...);
 				isLocalCall = 1;
 				if (!err.ok()) {
-					std::lock_guard lck(mtx);
+					lock_guard lck(mtx);
 					clientErrors.emplace_back(std::move(err), localShardId_);
 				}
 			}
 		}
 		if (clientCount) {
-			std::unique_lock lck(mtx);
+			unique_lock lck(mtx);
 			cv.wait(lck, [&clientCompl, clientCount] { return clientCompl == clientCount; });
 		}
 		return createIntegralError(clientErrors, isLocalCall);
@@ -83,8 +84,8 @@ public:
 	template <typename ClientF, typename LocalF, typename T, typename Predicate, typename... Args>
 	Error ExecCollect(const RdxContext& rdxCtx, sharding::ConnectionsPtr&& connections, const ClientF& clientF, const LocalF& local,
 					  std::vector<T>& result, const Predicate& predicated, std::string_view nsName, Args&&... args) {
-		std::condition_variable cv;
-		std::mutex mtx;
+		condition_variable cv;
+		mutex mtx;
 		std::vector<std::pair<Error, int>> clientErrors;
 		clientErrors.reserve(connections->size());
 		size_t clientCompl = 0;
@@ -102,7 +103,7 @@ public:
 					});
 				Error err = std::invoke(clientF, clientData.connection, nsName, std::forward<Args>(args)..., clientData.results);
 				if (!err.ok()) {
-					std::lock_guard lck(mtx);
+					lock_guard lck(mtx);
 					clientErrors.emplace_back(std::move(err), shardId);
 				}
 			} else {
@@ -110,13 +111,13 @@ public:
 				Error err = local(nsName, std::forward<Args>(args)..., localData.results, localShardId_);
 				isLocalCall = 1;
 				if (!err.ok()) {
-					std::lock_guard lck(mtx);
+					lock_guard lck(mtx);
 					clientErrors.emplace_back(std::move(err), localShardId_);
 				}
 			}
 		}
 		if (clientCount) {
-			std::unique_lock lck(mtx);
+			unique_lock lck(mtx);
 			cv.wait(lck, [&clientCompl, clientCount] { return clientCompl == clientCount; });
 			Error status = createIntegralError(clientErrors, clientCount + isLocalCall);
 			if (!status.ok()) {
@@ -140,7 +141,7 @@ public:
 private:
 	Error createIntegralError(std::vector<std::pair<Error, int>>& errors, size_t clientCount);
 	void completionFunction(size_t clientCount, size_t& clientCompl, std::vector<std::pair<Error, int>>& clientErrors, int shardId,
-							std::mutex& mtx, std::condition_variable& cv, const Error& err);
+							mutex& mtx, condition_variable& cv, const Error& err);
 
 	size_t countClientConnection(const sharding::ConnectionsVector& connections);
 

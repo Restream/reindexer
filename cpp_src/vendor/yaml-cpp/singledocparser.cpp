@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cstdio>
 #include <sstream>
 
@@ -84,7 +83,14 @@ void SingleDocParser::HandleNode(EventHandler& eventHandler) {
 	const Token& token = m_scanner.peek();
 
 	// add non-specific tags
+#if !defined(_MSC_VER) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wrestrict"
+#endif
 	if (tag.empty()) tag = (token.type == Token::NON_PLAIN_SCALAR ? "!" : "?");
+#if !defined(_MSC_VER) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 	if (token.type == Token::PLAIN_SCALAR && tag.compare("?") == 0 && IsNullString(token.value)) {
 		eventHandler.OnNull(mark, anchor);

@@ -7,16 +7,18 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer/v4"
-	_ "github.com/restream/reindexer/v4/bindings/builtin"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/builtin"
 )
 
 func doRankingTest(t *testing.T, indexType string) {
 
 	totalSearchQuality := 0.0
 
-	rx := reindexer.NewReindex(*dsn)
+	rx, err := reindexer.NewReindex(*dsn)
+	require.NoError(t, err)
 	defer rx.Close()
 
 	testCases := ParseRankingTestCases()
@@ -151,6 +153,7 @@ func elemIsInSlice(elem string, slice []string) bool {
 func TestFTFastRankingTest(t *testing.T) {
 	doRankingTest(t, "text")
 }
+
 func TestFTFuzzyRankingTest(t *testing.T) {
 	doRankingTest(t, "fuzzytext")
 }

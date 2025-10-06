@@ -10,7 +10,7 @@
 
 /** @brief C++ Gtest log stream interface.
  * If you need your strings to be displayed in Tests execution log then they shall always end with "<<std::endl;" */
-class TestCout : public std::stringstream {
+class [[nodiscard]] TestCout : public std::stringstream {
 public:
 	void BoldOn() { printf("\e[1m"); }
 	void BoldOff() { printf("\e[0m"); }

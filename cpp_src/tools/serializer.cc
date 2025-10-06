@@ -1,11 +1,12 @@
 #include "serializer.h"
+#include <span>
 #include "core/keyvalue/p_string.h"
-#include "estl/span.h"
 #include "tools/errors.h"
 #include "vendor/itoa/itoa.h"
 
 namespace reindexer {
 
+void Serializer::SkipPVString() { rx_unused = getPVStringPtr(); }
 p_string Serializer::GetPVString() { return p_string(getPVStringPtr()); }
 
 p_string Serializer::GetPSlice() {
@@ -17,22 +18,22 @@ p_string Serializer::GetPSlice() {
 }
 
 [[noreturn]] void Serializer::throwUnderflowError(uint64_t pos, uint64_t need, uint64_t len) {
-	throw Error(errParseBin, "Binary buffer underflow. Need more %d bytes, pos=%d,len=%d", (pos + need) - len, pos, len);
+	throw Error(errParseBin, "Binary buffer underflow. Need more {} bytes, pos={},len={}", (pos + need) - len, pos, len);
 }
 
 [[noreturn]] void Serializer::throwScanIntError(std::string_view type) {
-	throw Error(errParseBin, "Binary buffer broken - %s failed: pos=%d,len=%d", type, pos_, len_);
+	throw Error(errParseBin, "Binary buffer broken - {} failed: pos={},len={}", type, pos_, len_);
 }
 
 [[noreturn]] void Serializer::throwUnknownTypeError(std::string_view type) {
-	throw Error(errParseBin, "Unknown type %s while parsing binary buffer", type);
+	throw Error(errParseBin, "Unknown type {} while parsing binary buffer", type);
 }
 
 Variant Serializer::getPVStringVariant() { return Variant(GetPVString()); }
 
 const v_string_hdr* Serializer::getPVStringPtr() {
 	auto ret = reinterpret_cast<const v_string_hdr*>(buf_ + pos_);
-	auto l = GetVarUint();
+	auto l = GetVarUInt();
 	checkbound(pos_, l, len_);
 	pos_ += l;
 	return ret;
@@ -62,7 +63,7 @@ void WrSerializer::VStringHelper::End() {
 	if (ser_) {
 		int size = ser_->len_ - pos_;
 		if (size < 0) {
-			throw Error(errParseBin, "Size of object is unexpectedly negative: %d", size);
+			throw Error(errParseBin, "Size of object is unexpectedly negative: {}", size);
 		}
 		if (size == 0) {
 			ser_->grow(1);

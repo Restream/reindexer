@@ -12,7 +12,7 @@ namespace fuzzing {
 
 class Ns;
 
-class QueryGenerator {
+class [[nodiscard]] QueryGenerator {
 public:
 	QueryGenerator(const std::vector<Ns>& nss, RandomGenerator::ErrFactorType errorFactor) : namespaces_{nss}, rndGen_{errorFactor} {}
 	reindexer::Query operator()();

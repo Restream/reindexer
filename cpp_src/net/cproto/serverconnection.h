@@ -1,43 +1,28 @@
 #pragma once
 
-#include <string.h>
 #include "dispatcher.h"
+#include "estl/mutex.h"
 #include "net/connection.h"
 #include "net/iserverconnection.h"
 
-namespace reindexer {
-namespace net {
-namespace cproto {
+namespace reindexer::net::cproto {
 
 using reindexer::h_vector;
 
-class ServerConnection final : public ConnectionST, public IServerConnection, public Writer {
+class [[nodiscard]] ServerConnection final : public ConnectionST, public IServerConnection, public Writer {
 public:
 	using BaseConnT = ConnectionST;
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	ServerConnection(socket&& s, ev::dynamic_loop& loop, Dispatcher& dispatcher, bool enableStat, size_t maxUpdatesSize,
-					 bool enableCustomBalancing);
-#else	// REINDEX_WITH_V3_FOLLOWERS
 	ServerConnection(socket&& s, ev::dynamic_loop& loop, Dispatcher& dispatcher, bool enableStat, bool enableCustomBalancing);
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 	~ServerConnection() override;
 
-// IServerConnection interface implementation
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	static ConnectionFactory NewFactory(Dispatcher& dispatcher, bool enableStat, size_t maxUpdatesSize) {
-		return [&dispatcher, enableStat, maxUpdatesSize](ev::dynamic_loop& loop, socket&& s, bool allowCustomBalancing) {
-			return new ServerConnection(std::move(s), loop, dispatcher, enableStat, maxUpdatesSize, allowCustomBalancing);
-		};
-	}
-#else	// REINDEX_WITH_V3_FOLLOWERS
 	static ConnectionFactory NewFactory(Dispatcher& dispatcher, bool enableStat) {
 		return [&dispatcher, enableStat](ev::dynamic_loop& loop, socket&& s, bool allowCustomBalancing) {
 			return new ServerConnection(std::move(s), loop, dispatcher, enableStat, allowCustomBalancing);
 		};
 	}
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 
+	// IServerConnection interface implementation
 	bool IsFinished() const noexcept override { return !BaseConnT::sock_.valid(); }
 	BalancingType GetBalancingType() const noexcept override { return balancingType_; }
 	void SetRebalanceCallback(std::function<void(IServerConnection*, BalancingType)> cb) override {
@@ -48,7 +33,7 @@ public:
 	void HandlePendingData() override {
 		if (hasPendingData_) {
 			hasPendingData_ = false;
-			onRead();
+			rx_unused = onRead();
 		}
 		callback(BaseConnT::io_, ev::READ);
 	}
@@ -57,8 +42,8 @@ public:
 	void Attach(ev::dynamic_loop& loop) override;
 
 	// Writer iterface implementation
-	void WriteRPCReturn(Context& ctx, const Args& args, const Error& status) override { responceRPC(ctx, status, args); }
-	void CallRPC(const IRPCCall& /*call*/) override;
+	void WriteRPCReturn(Context& ctx, const Args& args, const Error& status) override { responseRPC(ctx, status, args); }
+
 	void SetClientData(std::unique_ptr<ClientData>&& data) noexcept override { clientData_ = std::move(data); }
 	ClientData* GetClientData() noexcept override final { return clientData_.get(); }
 	std::shared_ptr<connection_stat> GetConnectionStat() noexcept override {
@@ -74,7 +59,7 @@ protected:
 	typename BaseConnT::ReadResT onRead() override;
 	void onClose() override;
 	void handleRPC(Context& ctx);
-	void responceRPC(Context& ctx, const Error& error, const Args& args);
+	void responseRPC(Context& ctx, const Error& error, const Args& args);
 	void handleException(Context& ctx, const Error& err) noexcept;
 	void sendUpdates();
 	void async_cb(ev::async&) { sendUpdates(); }
@@ -87,16 +72,7 @@ protected:
 		}
 	}
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	void timeout_cb(ev::periodic&, int) { sendUpdatesV3(); }
-	void sendUpdatesV3();
-	std::vector<IRPCCall> updatesV3_;
-	size_t updatesSize_ = 0;
-	bool updateLostFlag_ = false;
-	const size_t maxUpdatesSize_;
-	ev::periodic updates_timeout_;
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-	std::mutex updatesMtx_;
+	reindexer::mutex updatesMtx_;
 	ev::async updatesAsync_;
 	const size_t maxPendingUpdates_;
 	std::vector<chunk> updates_;
@@ -104,7 +80,7 @@ protected:
 
 	Dispatcher& dispatcher_;
 	std::unique_ptr<ClientData> clientData_;
-	// keep here to prevent allocs
+	// leave here to prevent memory allocation
 	RPCCall call_ = {kCmdPing, 0, {}, std::chrono::milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
 
 	bool enableSnappy_ = false;
@@ -113,6 +89,4 @@ protected:
 	std::function<void(IServerConnection*, BalancingType)> rebalance_;
 };
 
-}  // namespace cproto
-}  // namespace net
-}  // namespace reindexer
+}  // namespace reindexer::net::cproto

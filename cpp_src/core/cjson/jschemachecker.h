@@ -9,29 +9,29 @@
 
 namespace reindexer {
 
-class JsonSchemaChecker {
+class [[nodiscard]] JsonSchemaChecker {
 public:
-	explicit JsonSchemaChecker(const std::string& json, std::string rootTypeName);
-	JsonSchemaChecker() {};
-	Error Init(const std::string& json, std::string rootTypeName);
+	explicit JsonSchemaChecker(std::string_view json, std::string rootTypeName);
+	JsonSchemaChecker(){};
+	Error Init(std::string_view json, std::string rootTypeName);
 	Error Check(gason::JsonNode node);
 
 private:
-	struct SubElement {
+	struct [[nodiscard]] SubElement {
 		std::string typeName;
 		int typeIndex = -1;
 		bool required = false;
 		bool array = false;
 	};
 
-	struct ValAppearance {
+	struct [[nodiscard]] ValAppearance {
 		ValAppearance() : required(false), notExist(true) {}
 		ValAppearance(bool required) : required(required), notExist(true) {}
 		bool required;	// false if not required or already exist in struct
 		bool notExist;	// true if not exist on struct
 	};
 
-	struct TypeDescr {
+	struct [[nodiscard]] TypeDescr {
 		void init() {
 			for (unsigned int i = 0; i < subElementsTable.size(); ++i) {
 				subElementsIndex.insert(std::make_pair(subElementsTable[i].first, i));
@@ -45,7 +45,7 @@ private:
 
 	Error checkScheme(const gason::JsonNode& node, int typeIndex, std::string& path, const std::string& elementName);
 	std::string createType(const PrefixTree::PrefixTreeNode* node, const std::string& typeName = "");
-	Error createTypeTable(const std::string& json);
+	Error createTypeTable(std::string_view json);
 	static bool isSimpleType(std::string_view tp);
 	void addSimpleType(std::string tpName);
 	Error checkExists(std::string_view name, ValAppearance* element, const std::string& path);

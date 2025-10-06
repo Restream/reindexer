@@ -2,9 +2,9 @@
 
 #include <chrono>
 #include <optional>
+#include <span>
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacenamesets.h"
-#include "estl/span.h"
 #include "sharding/ranges.h"
 #include "tools/dsn.h"
 #include "tools/errors.h"
@@ -19,7 +19,6 @@ class Node;
 
 namespace reindexer {
 
-class JsonBuilder;
 class WrSerializer;
 
 namespace cluster {
@@ -29,26 +28,26 @@ constexpr auto kStatusCmdTimeout = std::chrono::seconds(3);
 constexpr size_t kMaxRetriesOnRoleSwitchAwait = 50;
 constexpr auto kRoleSwitchStepTime = std::chrono::milliseconds(150);
 
-struct NodeData {
+struct [[nodiscard]] NodeData {
 	int serverId = -1;
 	int electionsTerm = 0;
 	DSN dsn;
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& v);
 	void GetJSON(JsonBuilder& jb) const;
 	void GetJSON(WrSerializer& ser) const;
 };
 
-struct RaftInfo {
-	enum class Role : uint8_t { None, Leader, Follower, Candidate };
+struct [[nodiscard]] RaftInfo {
+	enum class [[nodiscard]] Role : uint8_t { None, Leader, Follower, Candidate };
 	int32_t leaderId = -1;
 	Role role = Role::None;
 
 	bool operator==(const RaftInfo& rhs) const noexcept { return role == rhs.role && leaderId == rhs.leaderId; }
 	bool operator!=(const RaftInfo& rhs) const noexcept { return !(*this == rhs); }
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& jb) const;
 	void GetJSON(WrSerializer& ser) const;
@@ -56,7 +55,7 @@ struct RaftInfo {
 	static Role RoleFromStr(std::string_view);
 };
 
-struct ClusterNodeConfig {
+struct [[nodiscard]] ClusterNodeConfig {
 	int GetServerID() const noexcept { return serverId; }
 	const DSN& GetRPCDsn() const noexcept { return dsn; }
 	const DSN& GetManagementDsn() const noexcept { return dsn; }
@@ -69,12 +68,12 @@ struct ClusterNodeConfig {
 };
 
 struct AsyncReplConfigData;
-enum class AsyncReplicationMode { Default, FromClusterLeader };
-enum class MaskingDSN : bool { Disabled = false, Enabled = true };
+enum class [[nodiscard]] AsyncReplicationMode { Default, FromClusterLeader };
+enum class [[nodiscard]] MaskingDSN : bool { Disabled = false, Enabled = true };
 
-class AsyncReplNodeConfig {
+class [[nodiscard]] AsyncReplNodeConfig {
 public:
-	class NamespaceListImpl {
+	class [[nodiscard]] NamespaceListImpl {
 	public:
 		NamespaceListImpl() {}
 		NamespaceListImpl(NsNamesHashSetT&& n) : data(std::move(n)) {}
@@ -88,10 +87,12 @@ public:
 	using NamespaceList = intrusive_atomic_rc_wrapper<NamespaceListImpl>;
 
 	AsyncReplNodeConfig() = default;
-	AsyncReplNodeConfig(DSN _dsn) : dsn(std::move(_dsn)) {}
+	AsyncReplNodeConfig(DSN dsn) : dsn_(std::move(dsn)) {}
 
 	int GetServerID() const noexcept { return -1; }
-	const DSN& GetRPCDsn() const { return dsn; }
+	const DSN& GetRPCDsn() const& { return dsn_; }
+	auto GetRPCDsn() const&& = delete;
+	void SetRPCDsn(const DSN& dsn) { dsn_ = dsn; }
 	void FromYAML(const YAML::Node& yaml);
 	void FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& jb, MaskingDSN) const;
@@ -121,10 +122,8 @@ public:
 	const std::optional<AsyncReplicationMode>& GetReplicationMode() const noexcept { return replicationMode_; }
 
 	bool operator==(const AsyncReplNodeConfig& rdata) const noexcept {
-		return (dsn == rdata.dsn) && nsListsAreEqual(rdata) && replicationModesAreEqual(rdata);
+		return (dsn_ == rdata.dsn_) && nsListsAreEqual(rdata) && replicationModesAreEqual(rdata);
 	}
-
-	DSN dsn;
 
 private:
 	bool nsListsAreEqual(const AsyncReplNodeConfig& rdata) const noexcept {
@@ -135,6 +134,7 @@ private:
 		return (!replicationMode_.has_value() && !rdata.replicationMode_.has_value()) || replicationMode_ == rdata.replicationMode_;
 	}
 
+	DSN dsn_;
 	intrusive_ptr<NamespaceList> namespaces_;
 	bool hasOwnNsList_ = false;
 	std::optional<AsyncReplicationMode> replicationMode_;
@@ -144,29 +144,18 @@ constexpr size_t kDefaultClusterProxyConnCount = 8;
 constexpr size_t kDefaultClusterProxyCoroPerConn = 4;
 constexpr size_t kDefaultClusterProxyConnThreads = 2;
 
-struct ClusterConfigData {
+struct [[nodiscard]] ClusterConfigData {
 	Error FromYAML(const std::string& yaml);
 
-	bool operator==(const ClusterConfigData& rdata) const noexcept {
-		return (nodes == rdata.nodes) && (retrySyncIntervalMSec == rdata.retrySyncIntervalMSec) &&
-			   (onlineUpdatesTimeoutSec == rdata.onlineUpdatesTimeoutSec) && (enableCompression == rdata.enableCompression) &&
-			   (appName == rdata.appName) && (replThreadsCount == rdata.replThreadsCount) &&
-			   (parallelSyncsPerThreadCount == rdata.parallelSyncsPerThreadCount) &&
-			   (batchingRoutinesCount == rdata.batchingRoutinesCount) && (leaderSyncThreads == rdata.leaderSyncThreads) &&
-			   (leaderSyncConcurrentSnapshotsPerNode == rdata.leaderSyncConcurrentSnapshotsPerNode) &&
-			   (syncTimeoutSec == rdata.syncTimeoutSec) && (proxyConnCount == rdata.proxyConnCount) &&
-			   (proxyConnConcurrency == rdata.proxyConnConcurrency) && (proxyConnThreads == rdata.proxyConnThreads) &&
-			   (logLevel == rdata.logLevel);
-	}
-	bool operator!=(const ClusterConfigData& rdata) const noexcept { return !operator==(rdata); }
+	bool operator==(const ClusterConfigData& rdata) const noexcept = default;
 
-	unsigned int GetNodeIndexForServerId(int serverId) const {
+	bool NodeIndexExistsForServerId(int serverId) const noexcept {
 		for (unsigned int i = 0; i < nodes.size(); ++i) {
 			if (nodes[i].serverId == serverId) {
-				return i;
+				return true;
 			}
 		}
-		throw Error(errLogic, "Cluster config. Cannot find node index for ServerId(%d)", serverId);
+		return false;
 	}
 
 	std::vector<ClusterNodeConfig> nodes;
@@ -186,18 +175,19 @@ struct ClusterConfigData {
 	int proxyConnConcurrency = kDefaultClusterProxyCoroPerConn;
 	int proxyConnThreads = kDefaultClusterProxyConnThreads;
 	LogLevel logLevel = LogInfo;
+	std::string selfReplToken;
 };
 
 constexpr uint32_t kDefaultShardingProxyConnCount = 8;
 constexpr uint32_t kDefaultShardingProxyCoroPerConn = 8;
 constexpr uint32_t kDefaultShardingProxyConnThreads = 4;
 
-struct ShardingConfig {
+struct [[nodiscard]] ShardingConfig {
 	static constexpr unsigned serverIdPos = 53;
 	static constexpr int64_t serverIdMask = (((1ll << 10) - 1) << serverIdPos);	 // 01111111111000...000
 	static constexpr auto kDefaultRollbackTimeout = std::chrono::seconds(30);
 
-	struct Key {
+	struct [[nodiscard]] Key {
 		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& shards, KeyValueType& valuesType,
 					   std::vector<sharding::Segment<Variant>>& checkVal);
 		Error FromJSON(const gason::JsonNode&, KeyValueType& valuesType, std::vector<sharding::Segment<Variant>>& checkVal);
@@ -217,7 +207,7 @@ struct ShardingConfig {
 		Error checkValue(const sharding::Segment<Variant>& val, KeyValueType& valuesType,
 						 const std::vector<sharding::Segment<Variant>>& checkVal);
 	};
-	struct Namespace {
+	struct [[nodiscard]] Namespace {
 		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& shards);
 		Error FromJSON(const gason::JsonNode&);
 		void GetYAML(YAML::Node&) const;
@@ -229,7 +219,8 @@ struct ShardingConfig {
 	};
 
 	Error FromYAML(const std::string& yaml);
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::string_view json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode&);
 	std::string GetYAML() const;
 	YAML::Node GetYAMLObj() const;
@@ -254,10 +245,11 @@ inline bool operator!=(const ShardingConfig& l, const ShardingConfig& r) { retur
 bool operator==(const ShardingConfig::Key&, const ShardingConfig::Key&);
 bool operator==(const ShardingConfig::Namespace&, const ShardingConfig::Namespace&);
 
-struct AsyncReplConfigData {
+struct [[nodiscard]] AsyncReplConfigData {
 	using NamespaceList = AsyncReplNodeConfig::NamespaceList;
-	enum class Role { None, Leader, Follower };
+	enum class [[nodiscard]] Role { None, Leader, Follower };
 
+	Error FromDefault() noexcept;
 	Error FromYAML(const std::string& yml);
 	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode& v);
@@ -285,6 +277,7 @@ struct AsyncReplConfigData {
 	std::vector<AsyncReplNodeConfig> nodes;
 	int onlineUpdatesDelayMSec = 100;
 	LogLevel logLevel = LogNone;
+	std::string selfReplToken;
 
 	bool operator==(const AsyncReplConfigData& rdata) const noexcept {
 		return (role == rdata.role) && (mode == rdata.mode) && (replThreadsCount == rdata.replThreadsCount) &&
@@ -295,7 +288,7 @@ struct AsyncReplConfigData {
 			   (enableCompression == rdata.enableCompression) && (appName == rdata.appName) &&
 			   (batchingRoutinesCount == rdata.batchingRoutinesCount) && (maxWALDepthOnForceSync == rdata.maxWALDepthOnForceSync) &&
 			   (syncTimeoutSec == rdata.syncTimeoutSec) && (onlineUpdatesDelayMSec == rdata.onlineUpdatesDelayMSec) &&
-			   (logLevel == rdata.logLevel) && (nodes == rdata.nodes);
+			   (logLevel == rdata.logLevel) && (nodes == rdata.nodes) && (selfReplToken == rdata.selfReplToken);
 	}
 	bool operator!=(const AsyncReplConfigData& rdata) const noexcept { return !operator==(rdata); }
 };

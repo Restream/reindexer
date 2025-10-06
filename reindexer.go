@@ -2,10 +2,13 @@ package reindexer
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"reflect"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/dsl"
-	"github.com/restream/reindexer/v4/events"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/dsl"
+	"github.com/restream/reindexer/v5/events"
 )
 
 // Condition types
@@ -89,6 +92,9 @@ type Reindexer struct {
 // IndexDef - Inddex  definition struct
 type IndexDef bindings.IndexDef
 
+// Float vector options
+type FloatVectorIndexOpts bindings.FloatVectorIndexOpts
+
 // Error - reindexer Error interface
 type Error interface {
 	Error() string
@@ -146,31 +152,84 @@ var (
 	ErrDeepCopyType        = bindings.NewError("rq: DeepCopy() returns wrong type", ErrCodeParams)
 )
 
-type AggregationResult struct {
-	Fields []string `json:"fields"`
-	Type   string   `json:"type"`
-	Value  *float64 `json:"value,omitempty"`
-	Facets []struct {
-		Values []string `json:"values"`
-		Count  int      `json:"count"`
-	} `json:"facets,omitempty"`
-	Distincts []string `json:"distincts,omitempty"`
+type Facet struct {
+	Values []string `json:"values"`
+	Count  int      `json:"count"`
 }
 
-// NewReindex Create new instanse of Reindexer DB
-// Returns pointer to created instance
-// The absolute path for Windows builtin should look like 'builtin://C:/my/folder/db'
-func NewReindex(dsn interface{}, options ...interface{}) *Reindexer {
-	rx := &Reindexer{
-		impl: newReindexImpl(dsn, options...),
-		ctx:  context.TODO(),
+type aggregationResultSer struct {
+	Fields    []string      `json:"fields"`
+	Type      string        `json:"type"`
+	Value     *float64      `json:"value,omitempty"`
+	Facets    []Facet       `json:"facets,omitempty"`
+	Distincts []interface{} `json:"distincts,omitempty"`
+}
+
+type AggregationResult struct {
+	Fields    []string
+	Type      string
+	Value     *float64
+	Facets    []Facet
+	Distincts [][]string
+}
+
+func (v *AggregationResult) UnmarshalJSON(bytes []byte) error {
+	resSer := aggregationResultSer{}
+	err := json.Unmarshal(bytes, &resSer)
+	if err != nil {
+		return err
 	}
-	return rx
+	v.Fields = resSer.Fields
+	v.Type = resSer.Type
+	v.Value = resSer.Value
+	v.Facets = resSer.Facets
+
+	if len(resSer.Distincts) == 0 {
+		return nil
+	}
+	v.Distincts = make([][]string, len(resSer.Distincts))
+	if reflect.TypeOf(resSer.Distincts[0]).Kind() == reflect.Slice {
+		for i := 0; i < len(resSer.Distincts); i++ {
+			a1 := resSer.Distincts[i].([]interface{})
+			as := make([]string, len(a1))
+			for j := 0; j < len(a1); j++ {
+				if reflect.TypeOf(a1[j]).Kind() != reflect.String {
+					return errors.New("Distinct value type must be string")
+				}
+				as[j] = a1[j].(string)
+			}
+			v.Distincts[i] = as
+		}
+	} else {
+		for i := 0; i < len(resSer.Distincts); i++ {
+			as := make([]string, 1)
+			as[0] = resSer.Distincts[i].(string)
+			v.Distincts[i] = as
+		}
+	}
+	return nil
 }
 
 // Status will return current db status
 func (db *Reindexer) Status() bindings.Status {
 	return db.impl.getStatus(db.ctx)
+}
+
+// NewReindex creates a new instance of Reindexer.
+// Returns created instance and error if occurred (e.g., DB locked or unreachable).
+// In case of CPROTO binding this error may be temporary (e.g., remote server is unavailable) and Reindexer object is still usebale,
+// despite this error (binding will try to perform reconnect on the next call).
+// The absolute path for Windows builtin should look like 'builtin://C:/my/folder/db'.
+func NewReindex(dsn interface{}, options ...interface{}) (*Reindexer, error) {
+	rx := &Reindexer{
+		impl: newReindexImpl(dsn, options...),
+		ctx:  context.TODO(),
+	}
+
+	if err := rx.Status().Err; err != nil {
+		return rx, err
+	}
+	return rx, nil
 }
 
 // SetLogger sets logger interface for output reindexer logs
@@ -421,4 +480,9 @@ func (db *Reindexer) WithContext(ctx context.Context) *Reindexer {
 		ctx:  ctx,
 	}
 	return dbC
+}
+
+// DBMSVersion return current DBMS version or error
+func (db *Reindexer) DBMSVersion() (string, error) {
+	return db.impl.dbmsVersion()
 }

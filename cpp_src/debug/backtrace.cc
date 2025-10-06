@@ -2,27 +2,28 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
-#include <mutex>
 #include <sstream>
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "tools/fsops.h"
 
 namespace reindexer {
 namespace debug {
 
-static std::recursive_mutex g_mutex;
+static recursive_mutex g_mutex;
 static crash_query_reporter_t g_crash_query_reporter = [](std::ostream& sout) { sout << "<Empty crash query reporter>" << std::endl; };
 static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
 static std::string g_assertion_message("<empty>");
 
 void backtrace_set_assertion_message(std::string&& msg) noexcept {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	g_assertion_message = std::move(msg);
 }
 
 static void print_assertion_message(std::ostream& sout) {
 	std::string msg("<empty>");
 	{
-		std::lock_guard lck(g_mutex);
+		lock_guard lck(g_mutex);
 		std::swap(msg, g_assertion_message);
 	}
 	sout << "Assertion message: " << msg << std::endl;
@@ -34,7 +35,7 @@ static void print_assertion_message(std::ostream& sout) {
 #include <signal.h>
 #include <unistd.h>
 #include <limits>
-#include "estl/span.h"
+#include <span>
 #include "resolver.h"
 
 // There are 3 backtrace methods are available:
@@ -69,7 +70,7 @@ extern "C" void abort() {
 }
 
 extern "C" void __assert_fail(const char* expr, const char* file, int line, const char* func) {
-	fprintf(stderr, "Assertion failed: %s (%s: %s: %d)\n", expr, file, func, line);
+	fprintf(stderr, "reindexer error: assertion failed: %s (%s: %s: %d)\n", expr, file, func, line);
 	fflush(NULL);
 	abort();
 }
@@ -79,9 +80,9 @@ namespace reindexer {
 namespace debug {
 
 #if REINDEX_WITH_UNWIND
-class Unwinder {
+class [[nodiscard]] Unwinder {
 public:
-	size_t operator()(span<void*> trace) {
+	size_t operator()(std::span<void*> trace) {
 		trace_ = trace;
 		index_ = -1;
 		_Unwind_Backtrace(&this->backtrace_trampoline, this);
@@ -116,7 +117,7 @@ private:
 		return _URC_NO_REASON;
 	}
 	ssize_t index_;
-	span<void*> trace_;
+	std::span<void*> trace_;
 };
 #endif
 
@@ -151,7 +152,7 @@ int backtrace_internal(void** addrlist, size_t size, void* ctx, std::string_view
 	Unwinder unw;
 	if (addrlen < 3) {	// -V547
 		method = "unwind"sv;
-		addrlen = unw(span<void*>(addrlist, size));
+		addrlen = unw(std::span<void*>(addrlist, size));
 	}
 #endif
 #if REINDEX_WITH_EXECINFO
@@ -178,7 +179,7 @@ void print_backtrace(std::ostream& sout, void* ctx, int sig) {
 	sout << "backtrace (" << method << "):" << std::endl;
 	for (int i = 1; i < addrlen; i++) {
 		auto te = TraceEntry(uintptr_t(addrlist[i]));
-		resolver->Resolve(te);
+		rx_unused = resolver->Resolve(te);
 		sout << " #" << i << " " << te << std::endl;
 	}
 #endif
@@ -227,19 +228,19 @@ void backtrace_init() noexcept {
 void set_minidump_path(const std::string&) { assert(false); }
 
 void backtrace_set_writer(backtrace_writer_t writer) {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	g_writer = std::move(writer);
 }
 void backtrace_set_crash_query_reporter(crash_query_reporter_t reporter) {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	g_crash_query_reporter = std::move(reporter);
 }
 backtrace_writer_t backtrace_get_writer() {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	return g_writer;
 }
 crash_query_reporter_t backtrace_get_crash_query_reporter() {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	return g_crash_query_reporter;
 }
 
@@ -322,20 +323,20 @@ void backtrace_init() noexcept {
 void set_minidump_path(const std::string& p) { g_pathMiniDump = p; }
 
 void backtrace_set_writer(backtrace_writer_t writer) {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	g_writer = std::move(writer);
 }
 int backtrace_internal(void**, size_t, void*, std::string_view&) { return 0; }
 void backtrace_set_crash_query_reporter(crash_query_reporter_t reporter) {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	g_crash_query_reporter = std::move(reporter);
 }
 backtrace_writer_t backtrace_get_writer() {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	return g_writer;
 }
 crash_query_reporter_t backtrace_get_crash_query_reporter() {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	return g_crash_query_reporter;
 }
 void print_backtrace(std::ostream& sout, void*, int) { cpptrace::generate_trace().print(sout, false); }
@@ -351,7 +352,7 @@ void print_crash_query(std::ostream& sout) {
 #else
 namespace reindexer {
 namespace debug {
-static std::recursive_mutex g_mutex;
+static recursive_mutex g_mutex;
 static crash_query_reporter_t g_crash_query_reporter = [](std::ostream&) {};
 static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
 
@@ -360,15 +361,15 @@ void set_minidump_path(const std::string&) { assert(false); }
 void backtrace_set_writer(backtrace_writer_t) {}
 int backtrace_internal(void**, size_t, void*, std::string_view&) { return 0; }
 void backtrace_set_crash_query_reporter(crash_query_reporter_t reporter) {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	g_crash_query_reporter = std::move(reporter);
 }
 backtrace_writer_t backtrace_get_writer() {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	return g_writer;
 }
 crash_query_reporter_t backtrace_get_crash_query_reporter() {
-	std::lock_guard lck(g_mutex);
+	lock_guard lck(g_mutex);
 	return g_crash_query_reporter;
 }
 void print_backtrace(std::ostream&, void*, int) {}

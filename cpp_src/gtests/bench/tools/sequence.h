@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <string>
-#include <tuple>
 #include <type_traits>
 
 #include "helpers.h"
@@ -10,12 +9,12 @@
 namespace internal {
 
 template <typename fromT, typename toT>
-struct cast_helper {
+struct [[nodiscard]] cast_helper {
 	static toT cast(const fromT& value) { return static_cast<toT>(value); }
 };
 
 template <typename fromT>
-struct cast_helper<fromT, std::string> {
+struct [[nodiscard]] cast_helper<fromT, std::string> {
 	static std::string cast(const fromT& value);
 };
 }  // namespace internal
@@ -26,7 +25,7 @@ std::string internal::cast_helper<fromT, std::string>::cast(const fromT& value) 
 }
 
 template <typename counterT = int>
-class SequenceBase {
+class [[nodiscard]] SequenceBase {
 public:
 	typedef counterT value_type;
 	static_assert(std::is_integral<counterT>::value, "'counterT' must be an integral type");

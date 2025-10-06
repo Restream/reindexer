@@ -2,47 +2,37 @@
 
 #include "join_selects_api.h"
 
-class JoinOnConditionsApi : public JoinSelectsApi {
+class [[nodiscard]] JoinOnConditionsApi : public JoinSelectsApi {
 public:
 	void SetUp() override { JoinSelectsApi::Init(reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_on_conditions_test")); }
 
 	void CreateCondSetTable(const std::string& leftNs, const std::string& rightNs, const std::vector<int>& leftNsData,
 							const std::vector<std::vector<int>>& rightNsData) {
-		Error err = rt.reindexer->OpenNamespace(leftNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(leftNs);
 		DefineNamespaceDataset(leftNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
-		err = rt.reindexer->OpenNamespace(rightNs);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(rightNs);
 		DefineNamespaceDataset(rightNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
 
 		for (auto id : leftNsData) {
-			Item item = rt.reindexer->NewItem(leftNs);
 			reindexer::WrSerializer ser;
 			reindexer::JsonBuilder builder(ser);
 			builder.Put("id", id);
 			builder.End();
-			err = item.FromJSON(ser.c_str());
-			ASSERT_TRUE(err.ok()) << err.what();
-			err = rt.reindexer->Insert(leftNs, item);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.InsertJSON(leftNs, ser.Slice());
 		}
 
 		for (unsigned int i = 0; i < rightNsData.size(); i++) {
-			Item item = rt.reindexer->NewItem(rightNs);
 			reindexer::WrSerializer ser;
 			reindexer::JsonBuilder builder(ser);
 			builder.Put("id", i + 10);
 			{
 				reindexer::JsonBuilder node = builder.Array("set");
 				for (auto d : rightNsData[i]) {
-					node.Put({}, d);
+					node.Put(reindexer::TagName::Empty(), d);
 				}
 			}
 			builder.End();
-			err = item.FromJSON(ser.c_str());
-			ASSERT_TRUE(err.ok()) << err.what();
-			err = rt.reindexer->Insert(rightNs, item);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rt.InsertJSON(rightNs, ser.Slice());
 		}
 	}
 
@@ -65,6 +55,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				throw Error(errLogic, "Not supported condition!");
 		}
@@ -73,23 +64,24 @@ public:
 	static std::string GetSql(const std::string& sql, CondType condType) {
 		switch (condType) {
 			case CondLt:
-				return fmt::sprintf(sql, "<");
+				return fmt::format(fmt::runtime(sql), "<");
 			case CondLe:
-				return fmt::sprintf(sql, "<=");
+				return fmt::format(fmt::runtime(sql), "<=");
 			case CondGt:
-				return fmt::sprintf(sql, ">");
+				return fmt::format(fmt::runtime(sql), ">");
 			case CondGe:
-				return fmt::sprintf(sql, ">=");
+				return fmt::format(fmt::runtime(sql), ">=");
 			case CondEq:
-				return fmt::sprintf(sql, "=");
+				return fmt::format(fmt::runtime(sql), "=");
 			case CondSet:
-				return fmt::sprintf(sql, "in");
+				return fmt::format(fmt::runtime(sql), "in");
 			case CondAny:
 			case CondRange:
 			case CondAllSet:
 			case CondEmpty:
 			case CondLike:
 			case CondDWithin:
+			case CondKnn:
 			default:
 				throw Error(errLogic, "Not supported condition!");
 		}

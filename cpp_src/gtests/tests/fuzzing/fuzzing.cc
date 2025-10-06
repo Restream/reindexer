@@ -67,7 +67,7 @@ TEST_F(Fuzzing, BaseTest) {
 				if (!err.ok()) {
 					continue;
 				}
-				enum Op : uint8_t { Insert, Upsert, Update, Delete, END = Delete };
+				enum [[nodiscard]] Op : uint8_t { Insert, Upsert, Update, Delete, END = Delete };
 				switch (rnd.RndWhich<Op, 10, 100, 1, 1>()) {
 					case Insert:
 						err = rx_.Insert(rnd.NsName(ns.GetName()), item);
@@ -115,11 +115,10 @@ TEST_F(Fuzzing, BaseTest) {
 		}
 	} catch (const std::exception& err) {
 		FAIL() << err.what();
-	} catch (const reindexer::Error& err) {
-		FAIL() << err.what();
 	}
 }
 
+// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
 int main(int argc, char** argv) {
 	::testing::InitGoogleTest(&argc, argv);
 

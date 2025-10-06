@@ -3,8 +3,7 @@
 #include <wchar.h>
 #include <iomanip>
 
-#include "client/coroqueryresults.h"
-#include "core/queryresults/queryresults.h"
+#include "estl/gift_str.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/terminalutils.h"
@@ -17,12 +16,17 @@ namespace reindexer {
 const std::string kSeparator = " | ";
 const int kSuppositiveScreenWidth = 100;
 
-bool ColumnData::IsNumber() const noexcept { return (type == gason::JSON_NUMBER) || (type == gason::JSON_DOUBLE); }
+bool ColumnData::IsNumber() const noexcept {
+	return (gason::JsonTag(type) == gason::JsonTag::NUMBER) || (gason::JsonTag(type) == gason::JsonTag::DOUBLE);
+}
 
-bool ColumnData::IsBoolean() const noexcept { return (type == gason::JSON_TRUE) || (type == gason::JSON_FALSE); }
+bool ColumnData::IsBoolean() const noexcept {
+	return (gason::JsonTag(type) == gason::JsonTag::JTRUE) || (gason::JsonTag(type) == gason::JsonTag::JFALSE);
+}
 
 bool ColumnData::PossibleToBreakTheLine() const noexcept {
-	return IsBoolean() || (type == gason::JSON_STRING) /*|| (type == gason::JSON_OBJECT) */ || (type == gason::JSON_ARRAY);
+	return IsBoolean() || (gason::JsonTag(type) == gason::JsonTag::STRING) /*|| (gason::JsonTag(type) == gason::JsonTag::OBJECT) */ ||
+		   (gason::JsonTag(type) == gason::JsonTag::ARRAY);
 }
 
 TableCalculator::TableCalculator(std::vector<std::string>&& jsonData, int outputWidth) : outputWidth_(outputWidth) {
@@ -43,7 +47,7 @@ void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
 			std::string fieldName = std::string(elem.key);
 			ColumnData& columnData = columnsData_[fieldName];
 
-			columnData.type = elem.value.getTag();
+			columnData.type = int(elem.value.getTag());
 			columnData.maxWidthCh = std::max(columnData.maxWidthCh, reindexer::getStringTerminalWidth(fieldValue));
 			if (columnData.entries == 0) {
 				header_.push_back(fieldName);

@@ -1,7 +1,6 @@
 #include "composite_indexes_api.h"
 #include "gmock/gmock.h"
-#include "yaml-cpp/node/node.h"
-#include "yaml-cpp/node/parse.h"
+#include "vendor/fmt/ranges.h"
 #include "yaml-cpp/yaml.h"
 
 using QueryResults = ReindexerApi::QueryResults;
@@ -28,8 +27,7 @@ TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
 		names.push_back(kFieldNameName + suffixes[i % suffixes.size()]);
 	}
 
-	Error err = rt.reindexer->OpenNamespace(namespaceName);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(namespaceName);
 	DefineNamespaceDataset(namespaceName, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
 										   IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts(), 0},
 										   IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts(), 0},
@@ -45,8 +43,7 @@ TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
 		item[this->kFieldNameTitle] = kFieldNameTitle;
 		Upsert(namespaceName, item);
 	}
-	err = rt.reindexer->AddIndex(namespaceName, {kFieldNameName, {kFieldNameName}, "text", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(namespaceName, {kFieldNameName, {kFieldNameName}, "text", "string", IndexOpts()});
 }
 
 static void selectAll(reindexer::Reindexer* reindexer, const std::string& ns) {
@@ -64,11 +61,8 @@ static void selectAll(reindexer::Reindexer* reindexer, const std::string& ns) {
 
 TEST_F(CompositeIndexesApi, DropTest2) {
 	const std::string test_ns = "weird_namespace";
-	auto err = rt.reindexer->OpenNamespace(test_ns, StorageOpts().Enabled(false));
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(test_ns, {"id", "hash", "int", IndexOpts().PK().Dense()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(test_ns, StorageOpts().Enabled(false));
+	rt.AddIndex(test_ns, {"id", "hash", "int", IndexOpts().PK().Dense()});
 
 	for (int i = 0; i < 1000; ++i) {
 		Item item = NewItem(test_ns);
@@ -77,15 +71,12 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 
 		item["id"] = i + 1;
 
-		err = rt.reindexer->Upsert(test_ns, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		rt.Upsert(test_ns, item);
 	}
 
 	selectAll(rt.reindexer.get(), test_ns);
 
-	reindexer::IndexDef idef("id");
-	err = rt.reindexer->DropIndex(test_ns, idef);
-	EXPECT_TRUE(err.ok()) << err.what();
+	rt.DropIndex(test_ns, "id");
 
 	selectAll(rt.reindexer.get(), test_ns);
 }
@@ -134,14 +125,18 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	EXPECT_EQ(static_cast<reindexer::key_string>(selectedTitle), titleValue);
 	EXPECT_EQ(static_cast<reindexer::key_string>(selectedName), nameValue);
 
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLt, {{Variant(priceValue), Variant(pagesValue)}}));
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLe, {{Variant(priceValue), Variant(pagesValue)}}));
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondGt, {{Variant(priceValue), Variant(pagesValue)}}));
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondGe, {{Variant(priceValue), Variant(pagesValue)}}));
+	rx_unused = execAndCompareQuery(
+		Query(default_namespace).WhereComposite(compositeIndexName, CondLt, {{Variant(priceValue), Variant(pagesValue)}}));
+	rx_unused = execAndCompareQuery(
+		Query(default_namespace).WhereComposite(compositeIndexName, CondLe, {{Variant(priceValue), Variant(pagesValue)}}));
+	rx_unused = execAndCompareQuery(
+		Query(default_namespace).WhereComposite(compositeIndexName, CondGt, {{Variant(priceValue), Variant(pagesValue)}}));
+	rx_unused = execAndCompareQuery(
+		Query(default_namespace).WhereComposite(compositeIndexName, CondGe, {{Variant(priceValue), Variant(pagesValue)}}));
 
 	fillNamespace(301, 400);
 
-	execAndCompareQuery(
+	rx_unused = execAndCompareQuery(
 		Query(default_namespace)
 			.WhereComposite(compositeIndexName, CondRange, {{Variant(1), Variant(1)}, {Variant(priceValue), Variant(pagesValue)}}));
 
@@ -150,7 +145,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	for (int i = 0; i < 10; ++i) {
 		intKeys.emplace_back(VariantArray{Variant(i), Variant(i * 5)});
 	}
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondSet, intKeys));
+	rx_unused = execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondSet, intKeys));
 
 	dropIndex(compositeIndexName);
 	fillNamespace(401, 500);
@@ -160,10 +155,14 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 
 	fillNamespace(701, 900);
 
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondEq, {{Variant(titleValue), Variant(nameValue)}}));
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondGe, {{Variant(titleValue), Variant(nameValue)}}));
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondLt, {{Variant(titleValue), Variant(nameValue)}}));
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondLe, {{Variant(titleValue), Variant(nameValue)}}));
+	rx_unused = execAndCompareQuery(
+		Query(default_namespace).WhereComposite(compositeIndexName2, CondEq, {{Variant(titleValue), Variant(nameValue)}}));
+	rx_unused = execAndCompareQuery(
+		Query(default_namespace).WhereComposite(compositeIndexName2, CondGe, {{Variant(titleValue), Variant(nameValue)}}));
+	rx_unused = execAndCompareQuery(
+		Query(default_namespace).WhereComposite(compositeIndexName2, CondLt, {{Variant(titleValue), Variant(nameValue)}}));
+	rx_unused = execAndCompareQuery(
+		Query(default_namespace).WhereComposite(compositeIndexName2, CondLe, {{Variant(titleValue), Variant(nameValue)}}));
 
 	fillNamespace(1201, 2000);
 
@@ -173,20 +172,20 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	for (size_t i = 0; i < kStringKeysCnt; ++i) {
 		stringKeys.emplace_back(VariantArray{Variant(RandString()), Variant(RandString())});
 	}
-	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondSet, stringKeys));
-	execAndCompareQuery(Query(default_namespace)
-							.Where(kFieldNameName, CondEq, nameValue)
-							.WhereComposite(compositeIndexName2, CondEq, {{Variant(titleValue), Variant(nameValue)}}));
+	rx_unused = execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondSet, stringKeys));
+	rx_unused = execAndCompareQuery(Query(default_namespace)
+										.Where(kFieldNameName, CondEq, nameValue)
+										.WhereComposite(compositeIndexName2, CondEq, {{Variant(titleValue), Variant(nameValue)}}));
 
 	dropIndex(compositeIndexName2);
 	fillNamespace(201, 300);
 
-	execAndCompareQuery(Query(default_namespace));
+	rx_unused = execAndCompareQuery(Query(default_namespace));
 }
 
 TEST_F(CompositeIndexesApi, SelectsBySubIndexes) {
 	// Check if selects work for composite index parts
-	struct Case {
+	struct [[nodiscard]] Case {
 		std::string name;
 		const std::vector<IndexDeclaration> idxs;
 	};
@@ -209,10 +208,10 @@ TEST_F(CompositeIndexesApi, SelectsBySubIndexes) {
 											 IndexDeclaration{CompositeIndexesApi::kFieldNamePages, "tree", "int", IndexOpts(), 0}}}};
 
 	for (const auto& c : caseSet) {
-		auto err = rt.reindexer->DropNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << c.name;
-		err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << c.name;
+		SCOPED_TRACE(c.name);
+
+		rt.DropNamespace(default_namespace);
+		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(default_namespace, c.idxs);
 		addCompositeIndex({kFieldNamePrice, kFieldNamePages}, CompositeIndexHash, IndexOpts());
 
@@ -233,7 +232,7 @@ TEST_F(CompositeIndexesApi, SelectsBySubIndexes) {
 }
 
 TEST_F(CompositeIndexesApi, CompositeOverCompositeTest) {
-	constexpr char kExpectedErrorPattern[] = "Cannot create composite index '%s' over the other composite '%s'";
+	constexpr auto kExpectedErrorPattern = "Cannot create composite index '{}' over the other composite '{}'";
 	constexpr size_t stepSize = 10;
 	size_t from = 0, to = stepSize;
 	auto addData = [this, &from, &to] {
@@ -246,13 +245,13 @@ TEST_F(CompositeIndexesApi, CompositeOverCompositeTest) {
 		auto compositeName = getCompositeIndexName(std::move(compositeFields));
 		auto err = tryAddCompositeIndex({compositeName, singleField}, type, IndexOpts());
 		EXPECT_EQ(err.code(), errParams) << compositeName;
-		EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrorPattern, getCompositeIndexName({compositeName, singleField}), compositeName))
+		EXPECT_EQ(err.what(), fmt::format(kExpectedErrorPattern, getCompositeIndexName({compositeName, singleField}), compositeName))
 			<< compositeName;
 		addData();
 
 		err = tryAddCompositeIndex({singleField, compositeName}, type, IndexOpts());
 		EXPECT_EQ(err.code(), errParams) << compositeName;
-		EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrorPattern, getCompositeIndexName({singleField, compositeName}), compositeName))
+		EXPECT_EQ(err.what(), fmt::format(kExpectedErrorPattern, getCompositeIndexName({singleField, compositeName}), compositeName))
 			<< compositeName;
 		addData();
 	};
@@ -261,8 +260,7 @@ TEST_F(CompositeIndexesApi, CompositeOverCompositeTest) {
 	addData();
 
 	const std::string kNewIdxName = "new_idx";
-	auto err = rt.reindexer->AddIndex(default_namespace, {kNewIdxName, {kNewIdxName}, "-", "int", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(default_namespace, {kNewIdxName, {kNewIdxName}, "-", "int", IndexOpts()});
 	addData();
 
 	addCompositeIndex({kFieldNameTitle, kNewIdxName}, CompositeIndexHash, IndexOpts());
@@ -274,9 +272,9 @@ TEST_F(CompositeIndexesApi, CompositeOverCompositeTest) {
 
 	const auto kComposite1 = getCompositeIndexName({kFieldNameBookid, kFieldNameBookid2});
 	const auto kComposite2 = getCompositeIndexName({kFieldNameTitle, kNewIdxName});
-	err = tryAddCompositeIndex({kComposite1, kComposite2}, CompositeIndexHash, IndexOpts());
+	auto err = tryAddCompositeIndex({kComposite1, kComposite2}, CompositeIndexHash, IndexOpts());
 	EXPECT_EQ(err.code(), errParams);
-	EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrorPattern, getCompositeIndexName({kComposite1, kComposite2}), kComposite1));
+	EXPECT_EQ(err.what(), fmt::format(kExpectedErrorPattern, getCompositeIndexName({kComposite1, kComposite2}), kComposite1));
 	addData();
 }
 
@@ -289,12 +287,10 @@ TEST_F(CompositeIndexesApi, FastUpdateIndex) {
 		return reindexer::IndexDef{idxName, {idxName}, type, fieldType, IndexOpts()};
 	};
 
-	auto err = rt.reindexer->AddIndex(default_namespace, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(default_namespace, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts().PK()});
 
 	for (size_t i = 0; i < kIndexNames.size(); ++i) {
-		err = rt.reindexer->AddIndex(default_namespace, indexDef(kIndexNames[i], kFieldTypes[i], kIndexTypes[2]));
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.AddIndex(default_namespace, indexDef(kIndexNames[i], kFieldTypes[i], kIndexTypes[2]));
 	}
 
 	auto compParts = {kIndexNames[0], kIndexNames[1], kIndexNames[2], kIndexNames[3]};
@@ -323,9 +319,7 @@ TEST_F(CompositeIndexesApi, FastUpdateIndex) {
 			if (kFieldTypes[i] == "double" && kIndexTypes[j] == "hash") {
 				continue;
 			}
-			auto err = rt.reindexer->UpdateIndex(default_namespace, indexDef(kIndexNames[i], kFieldTypes[i], kIndexTypes[j]));
-			ASSERT_TRUE(err.ok()) << err.what();
-
+			rt.UpdateIndex(default_namespace, indexDef(kIndexNames[i], kFieldTypes[i], kIndexTypes[j]));
 			auto qr = rt.Select(query);
 
 			ASSERT_EQ(rt.GetSerializedQrItems(qr), checkItems);
@@ -346,9 +340,48 @@ TEST_F(CompositeIndexesApi, FastUpdateIndex) {
 			}
 			auto err = rt.reindexer->UpdateIndex(default_namespace, indexDef(kIndexNames[i], kFieldTypes[j], "tree"));
 			ASSERT_FALSE(err.ok()) << err.what();
-			auto err1Text = fmt::format("Cannot remove index {} : it's a part of a composite index .*", kIndexNames[i]);
+			auto err1Text = fmt::format("Cannot remove index '{}': it's a part of a composite index '.*'", kIndexNames[i]);
 			auto err2Text = fmt::format("Cannot convert key from type {} to {}", kFieldTypes[i], kFieldTypes[j]);
 			ASSERT_THAT(err.what(), testing::MatchesRegex(fmt::format("({}|{})", err1Text, err2Text)));
 		}
+	}
+}
+
+TEST_F(CompositeIndexesApi, CompositePartsOrdering) {
+	// Check that jsonpaths of the composite index preserve ordering after update
+	constexpr std::string_view kNsName = "CompositePartsOrderingNS";
+	const std::string kField1 = "str_field1", kField2 = "str_field2";
+	const reindexer::JsonPaths jsonPaths = {kField2, kField1};
+
+	rt.OpenNamespace(kNsName);
+	rt.AddIndex(kNsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(kNsName, reindexer::IndexDef{kField1, {kField1}, "-", "string", IndexOpts()});
+	rt.AddIndex(kNsName, reindexer::IndexDef{"text_composite", reindexer::JsonPaths({kField2, kField1}), "text", "composite", IndexOpts()});
+	{
+		// Check jsonpaths after insertion
+		const auto nsDefs = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().WithFilter(kNsName));
+		ASSERT_EQ(nsDefs.size(), 1);
+		ASSERT_EQ(nsDefs[0].indexes.size(), 3);
+		const auto& resPaths = nsDefs[0].indexes[2].JsonPaths();
+		EXPECT_TRUE(std::ranges::equal(resPaths, jsonPaths))
+			<< fmt::format("Jsonpath in namespace: [{}]; Expected: [{}]", fmt::join(resPaths, ", "), fmt::join(jsonPaths, ", "));
+	}
+	{
+		// Add new index and check jsonpaths again
+		rt.AddIndex(kNsName, reindexer::IndexDef{kField2, {kField2}, "-", "string", IndexOpts()});
+		const auto nsDefs = rt.EnumNamespaces(reindexer::EnumNamespacesOpts().WithFilter(kNsName));
+		ASSERT_EQ(nsDefs.size(), 1);
+		ASSERT_EQ(nsDefs[0].indexes.size(), 4);
+		const auto& resPaths = nsDefs[0].indexes[3].JsonPaths();
+		EXPECT_TRUE(std::ranges::equal(resPaths, jsonPaths))
+			<< fmt::format("Jsonpath in namespace: [{}]; Expected: [{}]", fmt::join(resPaths, ", "), fmt::join(jsonPaths, ", "));
+	}
+	{
+		// Unable to drop one of the composite subindexes.
+		// If we will support subindex drop someday, we have to also preserver paths ordering here
+		const auto& idx = (rand() % 2 == 0) ? kField2 : kField1;
+		auto err = rt.reindexer->DropIndex(kNsName, reindexer::IndexDef{idx});
+		EXPECT_EQ(err.code(), errLogic);
+		EXPECT_EQ(err.whatStr(), fmt::format("Cannot remove index '{}': it's a part of a composite index 'text_composite'", idx));
 	}
 }

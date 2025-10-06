@@ -1,6 +1,8 @@
 #include "helpers.h"
 
 #include <cmath>
+#include "core/reindexer.h"
+#include "tools/fsops.h"
 
 std::string HumanReadableNumber(size_t number, bool si, const std::string& unitLabel) {
 	const std::string siPrefix = "kMGTPE";
@@ -60,4 +62,21 @@ std::string FormatString(const char* msg, ...) {
 	auto tmp = FormatString(msg, args);
 	va_end(args);
 	return tmp;
+}
+
+std::shared_ptr<reindexer::Reindexer> InitBenchDB(std::string_view dbDir) {
+	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex", dbDir);
+	if (reindexer::fs::RmDirAll(storagePath) < 0 && errno != ENOENT) {
+		std::cerr << "Could not clean working dir '" << storagePath << "'.";
+		std::cerr << "Reason: " << strerror(errno) << std::endl;
+
+		throw reindexer::Error(errForbidden, "Could not clean working dir '{}'.", storagePath);
+	}
+
+	auto DB = std::make_shared<reindexer::Reindexer>();
+	auto err = DB->Connect("builtin://" + storagePath);
+	if (!err.ok()) {
+		throw err;
+	}
+	return DB;
 }

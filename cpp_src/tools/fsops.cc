@@ -1,19 +1,18 @@
-
 #include "fsops.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include <memory>
-#include <mutex>
 
 #include "errors.h"
+#include "estl/lock.h"
+#include "estl/shared_mutex.h"
 #include "tools/oscompat.h"
 
 namespace reindexer {
 namespace fs {
 
-[[nodiscard]] int MkDirAll(const std::string& path) noexcept {
+int MkDirAll(const std::string& path) noexcept {
 	try {
 		std::string tmpStr = path;
 		char *p = nullptr, *tmp = tmpStr.data();
@@ -61,14 +60,14 @@ int RmDirAll(const std::string& path) noexcept {
 			} else {
 				if (!DeleteFile(dirPath.c_str())) {
 					FindClose(hFind);
-					fprintf(stderr, "Unable to remove file '%s'\n", dirPath.c_str());
+					fprintf(stderr, "reindexer error: unable to remove file '%s'\n", dirPath.c_str());
 					return -1;
 				}
 			}
 		} while (FindNextFile(hFind, &entry));
 		FindClose(hFind);
 		if (!RemoveDirectory(path.c_str())) {
-			fprintf(stderr, "Unable to remove directory '%s'\n", path.c_str());
+			fprintf(stderr, "reindexer error: unable to remove directory '%s'\n", path.c_str());
 			return -1;
 		}
 	}
@@ -77,7 +76,7 @@ int RmDirAll(const std::string& path) noexcept {
 #endif
 }
 
-[[nodiscard]] int ReadFile(const std::string& path, std::string& content) noexcept {
+int ReadFile(const std::string& path, std::string& content) noexcept {
 	try {
 		FILE* f = fopen(path.c_str(), "rb");
 		if (!f) {
@@ -95,7 +94,7 @@ int RmDirAll(const std::string& path) noexcept {
 	}
 }
 
-[[nodiscard]] int64_t WriteFile(const std::string& path, std::string_view content) noexcept {
+int64_t WriteFile(const std::string& path, std::string_view content) noexcept {
 	FILE* f = fopen(path.c_str(), "w");
 	if (!f) {
 		return -1;
@@ -106,7 +105,7 @@ int RmDirAll(const std::string& path) noexcept {
 	return static_cast<int64_t>((written > 0) ? content.size() : written);
 }
 
-[[nodiscard]] int ReadDir(const std::string& path, std::vector<DirEntry>& content) noexcept {
+int ReadDir(const std::string& path, std::vector<DirEntry>& content) noexcept {
 #ifndef _WIN32
 	struct dirent* entry;
 	auto dir = opendir(path.c_str());
@@ -183,11 +182,11 @@ std::string GetCwd() {
 }
 
 static std::string tmpDir;
-static std::mutex tmpDirMtx;
+static shared_timed_mutex tmpDirMtx;
 
-std::string GetTempDir() {
+std::string GetTempDir() RX_REQUIRES(!tmpDirMtx) {
 	{
-		std::lock_guard lck(tmpDirMtx);
+		shared_lock lck(tmpDirMtx);
 		if (!tmpDir.empty()) {
 			return tmpDir;
 		}
@@ -207,7 +206,7 @@ std::string GetTempDir() {
 }
 
 void SetTempDir(std::string&& dir) noexcept {
-	std::lock_guard lck(tmpDirMtx);
+	lock_guard lck(tmpDirMtx);
 	tmpDir = std::move(dir);
 }
 
@@ -269,7 +268,7 @@ TimeStats StatTime(const std::string& path) {
 	return {-1, -1, -1};
 }
 
-[[nodiscard]] bool DirectoryExists(const std::string& directory) noexcept {
+bool DirectoryExists(const std::string& directory) noexcept {
 	if (!directory.empty()) {
 #ifdef _WIN32
 		if (_access(directory.c_str(), 0) == 0) {
@@ -292,21 +291,21 @@ TimeStats StatTime(const std::string& path) {
 	return false;
 }
 
-Error TryCreateDirectory(const std::string& dir) {
+Error TryCreateDirectory(const std::string& dir) RX_REQUIRES(!tmpDirMtx) {
 	using reindexer::fs::MkDirAll;
 	using reindexer::fs::DirectoryExists;
 	using reindexer::fs::GetTempDir;
 	if (!dir.empty()) {
 		if (!DirectoryExists(dir) && dir != GetTempDir()) {
 			if (MkDirAll(dir) < 0) {
-				return Error(errLogic, "Could not create '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
+				return Error(errLogic, "Could not create '{}'. Reason: {}\n", dir.c_str(), strerror(errno));
 			}
 #ifdef _WIN32
 		} else if (_access(dir.c_str(), 6) < 0) {
 #else
 		} else if (access(dir.c_str(), R_OK | W_OK) < 0) {
 #endif
-			return Error(errLogic, "Could not access dir '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
+			return Error(errLogic, "Could not access dir '{}'. Reason: {}\n", dir.c_str(), strerror(errno));
 		}
 	}
 	return {};
@@ -326,16 +325,16 @@ Error ChownDir(const std::string& path, const std::string& user) {
 		int res = getpwnam_r(user.c_str(), &pwd, buf, sizeof(buf), &usr);
 		if (usr == nullptr) {
 			if (res == 0) {
-				return Error(errLogic, "Could get uid of user and gid for user `%s`. Reason: user `%s` not found", user.c_str(),
+				return Error(errLogic, "Could get uid of user and gid for user `{}`. Reason: user `{}` not found", user.c_str(),
 							 user.c_str());
 			} else {
-				return Error(errLogic, "Could not change user to `%s`. Reason: %s", user.c_str(), strerror(errno));
+				return Error(errLogic, "Could not change user to `{}`. Reason: {}", user.c_str(), strerror(errno));
 			}
 		}
 
 		if (getuid() != usr->pw_uid || getgid() != usr->pw_gid) {
 			if (chown(path.c_str(), usr->pw_uid, usr->pw_gid) < 0) {
-				return Error(errLogic, "Could not change ownership for directory '%s'. Reason: %s\n", path.c_str(), strerror(errno));
+				return Error(errLogic, "Could not change ownership for directory '{}'. Reason: {}\n", path.c_str(), strerror(errno));
 			}
 		}
 	}
@@ -354,18 +353,18 @@ Error ChangeUser(const char* userName) {
 	int res = getpwnam_r(userName, &pwd, buf, sizeof(buf), &result);
 	if (result == nullptr) {
 		if (res == 0) {
-			return Error(errLogic, "Could not change user to `%s`. Reason: user `%s` not found", userName, userName);
+			return Error(errLogic, "Could not change user to `{}`. Reason: user `{}` not found", userName, userName);
 		} else {
 			errno = res;
-			return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+			return Error(errLogic, "Could not change user to `{}`. Reason: {}", userName, strerror(errno));
 		}
 	}
 
 	if (setgid(pwd.pw_gid) != 0) {
-		return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+		return Error(errLogic, "Could not change user to `{}`. Reason: {}", userName, strerror(errno));
 	}
 	if (setuid(pwd.pw_uid) != 0) {
-		return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+		return Error(errLogic, "Could not change user to `{}`. Reason: {}", userName, strerror(errno));
 	}
 #else
 	(void)userName;

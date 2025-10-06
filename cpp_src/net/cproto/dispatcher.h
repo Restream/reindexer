@@ -1,7 +1,6 @@
 #pragma once
 
 #include "args.h"
-#include "core/keyvalue/p_string.h"
 #include "cproto.h"
 #include "estl/chunk.h"
 #include "net/connectinstatscollector.h"
@@ -15,15 +14,15 @@ namespace cproto {
 
 using std::chrono::milliseconds;
 
-struct RPCCall {
-	RPCCall(CmdCode cmd_, uint32_t seq_, Args args_, milliseconds execTimeout_, lsn_t lsn_, int emmiterServerId_, int shardId_,
+struct [[nodiscard]] RPCCall {
+	RPCCall(CmdCode cmd_, uint32_t seq_, Args args_, milliseconds execTimeout_, lsn_t lsn_, int emitterServerId_, int shardId_,
 			bool shardingParallelExecution_)
 		: cmd{cmd_},
 		  seq{seq_},
 		  args{args_},
 		  execTimeout{execTimeout_},
 		  lsn{lsn_},
-		  emmiterServerId{emmiterServerId_},
+		  emitterServerId{emitterServerId_},
 		  shardId{shardId_},
 		  shardingParallelExecution{shardingParallelExecution_} {}
 
@@ -32,34 +31,29 @@ struct RPCCall {
 	Args args;
 	milliseconds execTimeout;
 	lsn_t lsn;
-	int emmiterServerId;
+	int emitterServerId;
 	int shardId;
 	bool shardingParallelExecution;
 };
 
-struct ClientData {
+struct [[nodiscard]] ClientData {
 	virtual ~ClientData() = default;
 };
 
 struct Context;
-struct IRPCCall {
-	void (*Get)(IRPCCall*, CmdCode&, std::string_view& nsName, Args&);
-	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> data_;
-};
 
-class Writer {
+class [[nodiscard]] Writer {
 public:
 	virtual ~Writer() = default;
 	virtual size_t AvailableEventsSpace() noexcept = 0;
 	virtual void SendEvent(chunk&& ch) = 0;
 	virtual void WriteRPCReturn(Context& ctx, const Args& args, const Error& status) = 0;
-	virtual void CallRPC(const IRPCCall& call) = 0;
 	virtual void SetClientData(std::unique_ptr<ClientData>&& data) noexcept = 0;
 	virtual ClientData* GetClientData() noexcept = 0;
 	virtual std::shared_ptr<reindexer::net::connection_stat> GetConnectionStat() noexcept = 0;
 };
 
-struct Context {
+struct [[nodiscard]] Context {
 	void Return(const Args& args, const Error& status = Error()) { writer->WriteRPCReturn(*this, args, status); }
 	void SetClientData(std::unique_ptr<ClientData>&& data) noexcept { writer->SetClientData(std::move(data)); }
 	ClientData* GetClientData() noexcept { return writer->GetClientData(); }
@@ -72,7 +66,7 @@ struct Context {
 };
 
 /// Reindexer cproto RPC dispatcher implementation.
-class Dispatcher {
+class [[nodiscard]] Dispatcher {
 public:
 	/// Add handler for command.
 	/// @param cmd - Command code
@@ -140,24 +134,24 @@ public:
 				return handler(ctx);
 			}
 		}
-		return Error(errParams, "Invalid RPC call. CmdCode %08X\n", int(ctx.call->cmd));
+		return Error(errParams, "Invalid RPC call. CmdCode {:#08x}\n", int(ctx.call->cmd));
 	}
 
 private:
 	template <typename>
-	struct is_optional : public std::false_type {};
+	struct [[nodiscard]] is_optional : public std::false_type {};
 
 	template <typename T>
-	struct is_optional<std::optional<T>> : public std::true_type {};
+	struct [[nodiscard]] is_optional<std::optional<T>> : public std::true_type {};
 
 	template <typename T, std::enable_if_t<!is_optional<T>::value, int> = 0>
 	static T get_arg(const Args& args, size_t index, const Context& ctx) {
 		if rx_unlikely (index >= args.size()) {
-			throw Error(errParams, "Invalid args of %s call; argument %d is not submitted", CmdName(ctx.call->cmd),
+			throw Error(errParams, "Invalid args of {} call; argument {} is not submitted", CmdName(ctx.call->cmd),
 						static_cast<int>(index));
 		}
 		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<T>())) {
-			throw Error(errLogic, "Incorrect variant type of %s call, argument index %d, type '%s', expected type '%s'",
+			throw Error(errLogic, "Incorrect variant type of {} call, argument index {}, type '{}', expected type '{}'",
 						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(), KeyValueType::From<T>().Name());
 		}
 		return T(args[index]);
@@ -175,7 +169,7 @@ private:
 #endif
 		}
 		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<typename T::value_type>())) {
-			throw Error(errLogic, "Incorrect variant type of %s call, argument index %d, type '%s', optional expected type '%s'",
+			throw Error(errLogic, "Incorrect variant type of {} call, argument index {}, type '{}', optional expected type '{}'",
 						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(),
 						KeyValueType::From<typename T::value_type>().Name());
 		}
@@ -183,7 +177,7 @@ private:
 	}
 
 	template <typename K, typename... Args>
-	class FuncWrapper {
+	class [[nodiscard]] FuncWrapper {
 	public:
 		FuncWrapper(K* o, Error (K::*f)(Context&, Args...)) noexcept : obj_{o}, func_{f} {}
 		Error operator()(Context& ctx) const { return impl(ctx, std::index_sequence_for<Args...>{}); }

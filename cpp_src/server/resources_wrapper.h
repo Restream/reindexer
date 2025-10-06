@@ -8,7 +8,7 @@
 
 namespace reindexer_server {
 
-struct DocumentStatus {
+struct [[nodiscard]] DocumentStatus {
 	DocumentStatus() {}
 	DocumentStatus(reindexer::fs::FileStatus s, bool gzip) : fstatus(s), isGzip(gzip) {}
 	DocumentStatus(reindexer::fs::FileStatus s) : fstatus(s) {}
@@ -16,7 +16,7 @@ struct DocumentStatus {
 	bool isGzip = false;
 };
 
-struct web {
+struct [[nodiscard]] web {
 	using Context = reindexer::net::http::Context;
 	using HttpStatusCode = reindexer::net::http::HttpStatusCode;
 
