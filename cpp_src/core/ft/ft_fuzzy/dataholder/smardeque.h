@@ -17,11 +17,11 @@ typedef std::vector<ResData> SearchType;
 typedef std::shared_ptr<SearchType> SearchTypePtr;
 
 template <class T, size_t block_size>
-class SmartDeque {
+class [[nodiscard]] SmartDeque {
 public:
 	typedef T* pointer;
 
-	class iterator {
+	class [[nodiscard]] iterator {
 	public:
 		iterator& operator++();
 		size_t GetId() const noexcept { return size_ * block_size + offset_ - 1; }

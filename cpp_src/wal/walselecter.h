@@ -8,7 +8,7 @@ class NamespaceImpl;
 class LocalQueryResults;
 class RdxContext;
 struct SelectCtx;
-class WALSelecter {
+class [[nodiscard]] WALSelecter {
 public:
 	WALSelecter(const NamespaceImpl* ns, bool allowTxWithoutBegining);
 	void operator()(LocalQueryResults& result, SelectCtx& params, bool snapshot = false);

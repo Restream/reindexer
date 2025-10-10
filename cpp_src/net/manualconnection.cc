@@ -48,7 +48,7 @@ void manual_connection::close_conn(int err) {
 	const bool hadRData = !r_data_.empty();
 	const bool hadWData = !w_data_.empty();
 	if (hadRData) {
-		read_from_buf(r_data_.buf, r_data_.transfer, false);
+		rx_unused = read_from_buf(r_data_.buf, r_data_.transfer, false);
 		buffered_data_.clear();
 		on_async_op_done(r_data_, err);
 	} else {
@@ -110,7 +110,7 @@ int manual_connection::async_connect(std::string_view addr, socket_domain type) 
 	return 0;
 }
 
-ssize_t manual_connection::write(span<char> wr_buf, transfer_data& transfer, int& err_ref) {
+ssize_t manual_connection::write(std::span<char> wr_buf, transfer_data& transfer, int& err_ref) {
 	err_ref = 0;
 	ssize_t written = -1;
 	auto cur_buf = wr_buf.subspan(transfer.transfered_size());
@@ -146,7 +146,7 @@ ssize_t manual_connection::write(span<char> wr_buf, transfer_data& transfer, int
 	return written;
 }
 
-ssize_t manual_connection::read(span<char> rd_buf, transfer_data& transfer, int& err_ref) {
+ssize_t manual_connection::read(std::span<char> rd_buf, transfer_data& transfer, int& err_ref) {
 	bool need_read = !transfer.expected_size();
 	ssize_t nread = 0;
 	ssize_t read_this_time = 0;
@@ -291,23 +291,22 @@ void manual_connection::write_cb() {
 		state_ = conn_state::connected;
 	}
 	if (w_data_.buf.size()) {
-		int err = 0;
-		write(w_data_.buf, w_data_.transfer, err);
-		(void)err;
+		[[maybe_unused]] int err = 0;
+		rx_unused = write(w_data_.buf, w_data_.transfer, err);
 	}
 }
 
 int manual_connection::read_cb() {
 	int err = 0;
 	if (r_data_.buf.size()) {
-		read(r_data_.buf, r_data_.transfer, err);
+		rx_unused = read(r_data_.buf, r_data_.transfer, err);
 	} else {
 		read_to_buf(err);
 	}
 	return err;
 }
 
-bool manual_connection::read_from_buf(span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept {
+bool manual_connection::read_from_buf(std::span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept {
 	auto cur_buf = rd_buf.subspan(transfer.transfered_size());
 	const bool will_read_full = read_full && buffered_data_.size() >= cur_buf.size();
 	const bool will_read_any = !read_full && buffered_data_.size();
@@ -322,7 +321,7 @@ bool manual_connection::read_from_buf(span<char> rd_buf, transfer_data& transfer
 			it = buffered_data_.tail();
 		}
 		memcpy(cur_buf.data(), it.data(), bytes_to_copy);
-		buffered_data_.erase(bytes_to_copy);
+		rx_unused = buffered_data_.erase(bytes_to_copy);
 		transfer.append_transfered(bytes_to_copy);
 		return true;
 	}

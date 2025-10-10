@@ -5,7 +5,7 @@
 namespace reindexer {
 
 template <typename T, size_t kRecycleSize = 20>
-class RecyclingList {
+class [[nodiscard]] RecyclingList {
 public:
 	typename std::list<T>::iterator begin() noexcept { return list_.begin(); }
 	typename std::list<T>::const_iterator begin() const noexcept { return list_.begin(); }

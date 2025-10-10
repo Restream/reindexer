@@ -4,7 +4,7 @@
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
 
-class JoinedNsNameMock {
+class [[nodiscard]] JoinedNsNameMock {
 public:
 	JoinedNsNameMock(const char* ns) noexcept : ns_{ns} {}
 	std::string_view RightNsName() const noexcept { return ns_; }
@@ -13,7 +13,7 @@ private:
 	std::string_view ns_;
 };
 
-class JoinedSelectorMock {
+class [[nodiscard]] JoinedSelectorMock {
 public:
 	JoinedSelectorMock(JoinType jt, reindexer::JoinedQuery q) : query_{std::move(q)}, qr_{}, joinType_{jt} {}
 	const reindexer::JoinedQuery& JoinQuery() const noexcept { return query_; }

@@ -1,11 +1,11 @@
 #pragma once
 
-#include "core/cjson/objtype.h"
+#include <span>
 #include "core/cjson/tagslengths.h"
 #include "core/cjson/tagsmatcher.h"
+#include "core/enums.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
-#include "estl/span.h"
 #include "vendor/msgpack/msgpack.h"
 
 namespace gason {
@@ -13,8 +13,8 @@ struct JsonNode;
 }
 
 namespace reindexer {
-
-class MsgPackBuilder {
+namespace builders {
+class [[nodiscard]] MsgPackBuilder {
 public:
 	MsgPackBuilder(WrSerializer& wrser, ObjType type, size_t size);
 	MsgPackBuilder(msgpack_packer& packer, ObjType type, size_t size);
@@ -32,11 +32,12 @@ public:
 	MsgPackBuilder& operator=(MsgPackBuilder&&) = delete;
 
 	void SetTagsMatcher(const TagsMatcher* tm) noexcept { tm_ = tm; }
-	MsgPackBuilder Raw(std::string_view, std::string_view) noexcept { return MsgPackBuilder(); }
-	MsgPackBuilder Raw(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }
+
+	void Raw(std::string_view, std::string_view) noexcept {}
+	void Raw(std::string_view) noexcept {}
 
 	template <typename N, typename T>
-	void Array(N tagName, span<T> data, int /*offset*/ = 0) {
+	void Array(N tagName, std::span<T> data, int /*offset*/ = 0) {
 		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
@@ -46,7 +47,7 @@ public:
 		}
 	}
 	template <typename N>
-	void Array(N tagName, span<Uuid> data, int /*offset*/ = 0) {
+	void Array(N tagName, std::span<Uuid> data, int /*offset*/ = 0) {
 		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
@@ -57,7 +58,7 @@ public:
 	}
 
 	template <typename T>
-	void Array(T tagName, span<p_string> data, int /*offset*/ = 0) {
+	void Array(T tagName, std::span<p_string> data, int /*offset*/ = 0) {
 		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
@@ -78,7 +79,7 @@ public:
 			return MsgPackBuilder(packer_, ObjType::TypeObjectArray, size);
 		}
 	}
-	void Array(int tagName, Serializer& ser, TagType, int count);
+	void Array(TagName, Serializer&, TagType, int count);
 
 	template <typename T>
 	MsgPackBuilder Object(T tagName, int size = KUnknownFieldSize) {
@@ -93,17 +94,17 @@ public:
 			return MsgPackBuilder(packer_, ObjType::TypeObject, size);
 		}
 	}
+	MsgPackBuilder Object() { return Object(std::string_view{}); }
 
 	template <typename T>
-	MsgPackBuilder& Null(T tagName) {
+	void Null(T tagName) {
 		skipTag();
 		packKeyName(tagName);
 		packNil();
-		return *this;
 	}
 
 	template <typename T, typename N>
-	MsgPackBuilder& Put(N tagName, const T& arg, int /*offset*/ = 0) {
+	void Put(N tagName, const T& arg, int /*offset*/ = 0) {
 		if (isArray()) {
 			skipTag();
 		}
@@ -113,11 +114,10 @@ public:
 		if (isArray()) {
 			skipTag();
 		}
-		return *this;
 	}
 
 	template <typename N>
-	MsgPackBuilder& Put(N tagName, Uuid arg) {
+	void Put(N tagName, Uuid arg) {
 		if (isArray()) {
 			skipTag();
 		}
@@ -127,11 +127,10 @@ public:
 		if (isArray()) {
 			skipTag();
 		}
-		return *this;
 	}
 
 	template <typename T>
-	MsgPackBuilder& Put(T tagName, const Variant& kv, int offset = 0) {
+	void Put(T tagName, const Variant& kv, int offset = 0) {
 		if (isArray()) {
 			skipTag();
 		}
@@ -139,24 +138,51 @@ public:
 		packKeyName(tagName);
 		kv.Type().EvaluateOneOf(
 			[&](KeyValueType::Int) { packValue(int(kv)); }, [&](KeyValueType::Int64) { packValue(int64_t(kv)); },
-			[&](KeyValueType::Double) { packValue(double(kv)); }, [&](KeyValueType::String) { packValue(std::string_view(kv)); },
-			[&](KeyValueType::Null) { packNil(); }, [&](KeyValueType::Bool) { packValue(bool(kv)); },
+			[&](KeyValueType::Double) { packValue(double(kv)); }, [&](KeyValueType::Float) { packValue(float(kv)); },
+			[&](KeyValueType::String) { packValue(std::string_view(kv)); }, [&](KeyValueType::Null) { packNil(); },
+			[&](KeyValueType::Bool) { packValue(bool(kv)); },
 			[&](KeyValueType::Tuple) {
 				auto arrNode = Array(tagName);
 				for (auto& val : kv.getCompositeValues()) {
-					arrNode.Put(0, val, offset);
+					arrNode.Put(TagName::Empty(), val, offset);
 				}
 			},
-			[&](KeyValueType::Uuid) { packValue(Uuid{kv}); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
+			[&](KeyValueType::Uuid) { packValue(Uuid{kv}); },
+			[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept { assertrx_throw(false); });
 		if (isArray()) {
 			skipTag();
 		}
-		return *this;
 	}
 
-	MsgPackBuilder& Json(std::string_view name, std::string_view arg);
+	void Json(std::string_view name, std::string_view arg);
+	void Json(std::string_view arg) { Json(std::string_view{}, arg); }
 
-	MsgPackBuilder& End();
+	void End();
+
+	template <typename... Args>
+	void Object(int, Args...) = delete;
+	template <typename... Args>
+	void Object(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Array(int, Args...) = delete;
+	template <typename... Args>
+	void Array(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Put(int, Args...) = delete;
+	template <typename... Args>
+	void Put(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Null(int, Args...) = delete;
+	template <typename... Args>
+	void Null(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Raw(std::nullptr_t, Args...) = delete;
+	template <typename... Args>
+	void Raw(int, Args...) = delete;
+	template <typename... Args>
+	void Json(int, Args...) = delete;
+	template <typename... Args>
+	void Json(std::nullptr_t, Args...) = delete;
 
 private:
 	void init(int size);
@@ -168,6 +194,7 @@ private:
 	void packValue(int arg) { msgpack_pack_int(&packer_, arg); }
 	void packValue(int64_t arg) { msgpack_pack_int64(&packer_, arg); }
 	void packValue(double arg) { msgpack_pack_double(&packer_, arg); }
+	void packValue(float arg) { msgpack_pack_float(&packer_, arg); }
 
 	void packValue(std::string_view arg) {
 		msgpack_pack_str(&packer_, arg.size());
@@ -186,29 +213,29 @@ private:
 		packValue(std::string_view{buf, Uuid::kStrFormLen});
 	}
 
-	bool isArray() const { return type_ == ObjType::TypeArray || type_ == ObjType::TypeObjectArray; }
+	[[nodiscard]] bool isArray() const { return type_ == ObjType::TypeArray || type_ == ObjType::TypeObjectArray; }
 
 	void checkIfCorrectArray(std::string_view) const {}
 
-	void checkIfCorrectArray(int tagName) const {
-		if (tagName == 0) {
+	void checkIfCorrectArray(TagName tagName) const {
+		if (tagName.IsEmpty()) {
 			throw Error(errLogic, "Arrays of arrays are not supported in cjson");
 		}
 	}
 
-	void packKeyName(std::nullptr_t) {}
+	void packKeyName(std::nullptr_t) = delete;
 	void packKeyName(std::string_view name) {
 		if (!name.empty() && !isArray()) {
 			packValue(name);
 		}
 	}
-	void packKeyName(int tagName) {
-		if (tagName != 0 && !isArray()) {
+	void packKeyName(TagName tagName) {
+		if (!tagName.IsEmpty() && !isArray()) {
 			packValue(tm_->tag2name(tagName));
 		}
 	}
 
-	int getTagSize() {
+	[[nodiscard]] int getTagSize() {
 		if (tagsLengths_) {
 			return (*tagsLengths_)[(*tagIndex_)++];
 		}
@@ -235,5 +262,6 @@ private:
 	ObjType type_;
 	int* tagIndex_;
 };
-
+}  // namespace builders
+using builders::MsgPackBuilder;
 }  // namespace reindexer

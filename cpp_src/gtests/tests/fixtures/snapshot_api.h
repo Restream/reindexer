@@ -4,11 +4,13 @@
 #include "client/snapshot.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/namespace/snapshot/snapshot.h"
+#include "core/system_ns_names.h"
 #include "rpcclient_api.h"
+#include "vendor/gason/gason.h"
 
-class SnapshotTestApi : public RPCClientTestApi {
+class [[nodiscard]] SnapshotTestApi : public RPCClientTestApi {
 protected:
-	struct NsDataState {
+	struct [[nodiscard]] NsDataState {
 		lsn_t lsn;
 		lsn_t nsVersion;
 		uint64_t dataHash = 0;
@@ -16,13 +18,13 @@ protected:
 	};
 
 	void SetUp() {
-		fs::RmDirAll(kBaseTestsetDbPath);
+		rx_unused = fs::RmDirAll(kBaseTestsetDbPath);
 		StartServer();
 	}
 	void TearDown() {
 		[[maybe_unused]] auto err = RPCClientTestApi::StopAllServers();
-		assertf(err.ok(), "%s", err.what());
-		fs::RmDirAll(kBaseTestsetDbPath);
+		assertf(err.ok(), "{}", err.what());
+		rx_unused = fs::RmDirAll(kBaseTestsetDbPath);
 	}
 
 	void StartServer() {
@@ -122,7 +124,7 @@ protected:
 
 	template <typename RxT>
 	NsDataState GetNsDataState(RxT& rx, const std::string& ns) {
-		Query qr = Query("#memstats").Where("name", CondEq, ns);
+		Query qr = Query(kMemStatsNamespace).Where("name", CondEq, ns);
 		typename RxT::QueryResultsT res;
 		auto err = rx.Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -216,14 +218,13 @@ protected:
 		nsArray.End();
 		jb.End();
 
-		constexpr std::string_view kConfigNsName = "#config";
-		auto item = rxClient.NewItem(kConfigNsName);
+		auto item = rxClient.NewItem(reindexer::kConfigNamespace);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = rxClient.Upsert(kConfigNsName, item);
+		err = rxClient.Upsert(reindexer::kConfigNamespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 

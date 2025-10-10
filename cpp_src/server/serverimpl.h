@@ -23,7 +23,7 @@ class DBManager;
 struct IDBManagerStatsCollector;
 struct IRPCServerStatsCollector;
 
-class ServerImpl {
+class [[nodiscard]] ServerImpl {
 	using SinkMap = std::unordered_map<std::string, std::shared_ptr<spdlog::sinks::reopen_file_sink_st>>;
 
 public:
@@ -34,7 +34,7 @@ public:
 	Error InitFromYAML(const std::string& yaml);
 	Error InitFromFile(const char* filepath);
 	int Start();
-	void Stop();
+	void Stop() noexcept;
 	void EnableHandleSignals(bool enable = true) noexcept { enableHandleSignals_ = enable; }
 	DBManager& GetDBManager() noexcept { return *dbMgr_; }
 	bool IsReady() const noexcept { return storageLoaded_.load(); }

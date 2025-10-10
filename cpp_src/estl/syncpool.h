@@ -1,14 +1,17 @@
 #pragma once
+
 #include <memory>
-#include <mutex>
 #include <vector>
+#include "estl/lock.h"
+#include "estl/mutex.h"
 
 namespace reindexer {
+
 template <typename T, size_t maxPoolSize, size_t maxAllocSize = std::numeric_limits<size_t>::max()>
-class sync_pool {
+class [[nodiscard]] sync_pool {
 public:
 	void put(std::unique_ptr<T> obj) {
-		std::lock_guard lck(lck_);
+		lock_guard lck(lck_);
 		if (pool_.size() < maxPoolSize) {
 			pool_.emplace_back(std::move(obj));
 		}
@@ -17,7 +20,7 @@ public:
 
 	template <typename... Args>
 	std::unique_ptr<T> get(int usedCount, Args&&... args) {
-		std::unique_lock lck(lck_);
+		unique_lock lck(lck_);
 		if (alloced_.load(std::memory_order_relaxed) > maxAllocSize + usedCount) {
 			return nullptr;
 		}
@@ -32,7 +35,7 @@ public:
 		}
 	}
 	void clear() {
-		std::lock_guard lck(lck_);
+		lock_guard lck(lck_);
 		pool_.clear();
 	}
 	size_t Alloced() const noexcept { return alloced_.load(std::memory_order_relaxed); }
@@ -40,6 +43,7 @@ public:
 protected:
 	std::atomic<size_t> alloced_ = 0;
 	std::vector<std::unique_ptr<T>> pool_;
-	std::mutex lck_;
+	mutex lck_;
 };
+
 }  // namespace reindexer

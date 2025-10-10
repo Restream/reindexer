@@ -1,15 +1,18 @@
 #include "nsselecter.h"
+#include <sstream>
 
-#include "core/keyvalue/relaxed_variant_hash.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/queryresults/fields_filter.h"
 #include "core/queryresults/joinresults.h"
+#include "core/sorting/reranker.h"
 #include "core/sorting/sortexpression.h"
 #include "debug/crashqueryreporter.h"
-#include "estl/multihash_map.h"
 #include "estl/restricted.h"
+#include "forcedsorthelpers.h"
 #include "itemcomparator.h"
 #include "qresexplainholder.h"
 #include "querypreprocessor.h"
+#include "tools/assertrx.h"
 #include "tools/logger.h"
 
 using namespace std::string_view_literals;
@@ -19,10 +22,45 @@ constexpr int kCancelCheckFrequency = 1024;
 
 namespace reindexer {
 
+static std::string_view rankedTypeToErr(RankedTypeQuery type) {
+	using namespace std::string_view_literals;
+	switch (type) {
+		case RankedTypeQuery::No:
+			return "not ranked query"sv;
+		case RankedTypeQuery::FullText:
+			return "fulltext query"sv;
+		case RankedTypeQuery::KnnIP:
+			return "knn with inner product metric query"sv;
+		case RankedTypeQuery::KnnL2:
+			return "knn with L2 metric query"sv;
+		case RankedTypeQuery::KnnCos:
+			return "knn with cosine metric query"sv;
+		case RankedTypeQuery::Hybrid:
+			return "hybrid query"sv;
+		case RankedTypeQuery::NotSet:
+			break;
+	}
+	throw_as_assert;
+}
+
+template <typename JoinPreResultCtx>
+static RankSortType determineRankSortType(RankedTypeQuery rankedTypeQuery, IsRanked isRanked, const std::optional<Reranker>& reranker,
+										  const SelectCtxWithJoinPreSelect<JoinPreResultCtx>& ctx) {
+	if (rankedTypeQuery == RankedTypeQuery::Hybrid) {
+		assertrx_throw(reranker);
+		// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
+		return reranker->IsRRF() ? RankSortType::IDAndPositions : RankSortType::IDOnly;
+	} else if (isRanked && (ctx.isMergeQuery == IsMergeQuery_True || !ctx.query.GetMergeQueries().empty())) {
+		return RankSortType::RankAndID;
+	} else {
+		return RankSortType::RankOnly;
+	}
+}
+
 template <typename JoinPreResultCtx>
 void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& ctx, const RdxContext& rdxCtx) {
-	// const std::string sql = ctx.query.GetSQL();
-	// std::cout << sql << std::endl;
+	//	 const std::string sql = ctx.query.GetSQL();
+	//	 std::cout << sql << std::endl;
 	const size_t resultInitSize = result.Count();
 	ctx.sortingContext.enableSortOrders = ns_->SortOrdersBuilt();
 	const LogLevel logLevel = std::max(ns_->config_.logLevel, LogLevel(ctx.query.GetDebugLevel()));
@@ -30,7 +68,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	auto& explain = ctx.explain;
 	explain = ExplainCalc(ctx.query.NeedExplain() || logLevel >= LogInfo);
 	explain.SetSubQueriesExplains(std::move(ctx.subQueriesExplains));
-	ActiveQueryScope queryScope(ctx, ns_->optimizationState_, explain, ns_->locker_.InvalidationType(), ns_->strHolder_.get());
+	ActiveQueryScope queryScope(ctx, ns_->indexOptimizer_.StateRef(), explain, ns_->locker_.InvalidationType(), ns_->strHolder_.get());
 
 	explain.SetPreselectTime(ctx.preResultTimeTotal);
 	explain.StartTiming();
@@ -57,69 +95,73 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		if (cached.valid && cached.val.IsInitialized()) {
 			result.totalCount += cached.val.totalCount;
 			if (logLevel >= LogTrace) {
-				logPrintf(LogInfo, "[%s] using total count value from cache: %d", ns_->name_, result.totalCount);
+				logFmt(LogInfo, "[{}] using total count value from cache: {}", ns_->name_, result.totalCount);
 			}
 		} else {
 			needPutCachedTotal = cached.valid;
 			needCalcTotal = true;
 			if (logLevel >= LogTrace) {
-				logPrintf(LogTrace, "[%s] total count value for cache will be calculated by query", ns_->name_);
+				logFmt(LogInfo, "[{}] total count value for cache will be calculated by query", ns_->name_);
 			}
 		}
 	}
 
-	OnConditionInjections explainInjectedOnConditions;
+	auto aggregators = getAggregators(aggregationQueryRef.aggregations_, aggregationQueryRef.GetStrictMode());
 	QueryPreprocessor qPreproc(QueryEntries{ctx.query.Entries()}, ns_, ctx);
 	qPreproc.InitIndexedQueries();
+
+	OnConditionInjections explainInjectedOnConditions;
 	if (ctx.joinedSelectors) {
 		qPreproc.InjectConditionsFromJoins(*ctx.joinedSelectors, explainInjectedOnConditions, logLevel, ctx.inTransaction,
 										   ctx.sortingContext.enableSortOrders, rdxCtx);
 		explain.PutOnConditionInjections(&explainInjectedOnConditions);
 	}
-	auto aggregators = getAggregators(aggregationQueryRef.aggregations_, aggregationQueryRef.GetStrictMode());
-
 	qPreproc.AddDistinctEntries(aggregators);
-	const bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
-	bool isFt = qPreproc.ContainsFullTextIndexes();
-	if (isFt && rdxCtx.IsShardingParallelExecution()) {
-		throw Error{errLogic, "Full text query by several sharding hosts"};
+
+	bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
+	auto rankedQueryEntry = qPreproc.GetRankedTypeQuery();
+	if (rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No && rdxCtx.IsShardingParallelExecution()) {
+		throw Error{errLogic, "Full text or float vector query by several sharding hosts"};
 	}
-	if (ctx.isMergeQuery == IsMergeQuery::Yes && ctx.query.sortingEntries_.empty()) {
-		if (ctx.isFtQuery == IsFTQuery::NotSet) {
-			ctx.isFtQuery = isFt ? IsFTQuery::Yes : IsFTQuery::No;
+	if (ctx.isMergeQuery == IsMergeQuery_True && ctx.query.GetSortingEntries().empty()) {
+		if (ctx.rankedTypeQuery == RankedTypeQuery::NotSet) {
+			ctx.rankedTypeQuery = rankedQueryEntry.rankedTypeQuery;
 		} else {
-			if (isFt != (ctx.isFtQuery == IsFTQuery::Yes)) {
+			if (rankedQueryEntry.rankedTypeQuery != ctx.rankedTypeQuery) {
 				throw Error{errNotValid,
-							"In merge query without sorting all subqueries should be fulltext or not fulltext at the same time"};
+							"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions "
+							"at the same time: '{}' VS '{}'",
+							rankedTypeToErr(ctx.rankedTypeQuery), rankedTypeToErr(rankedQueryEntry.rankedTypeQuery)};
 			}
 		}
 	}
 	// Prepare data for select functions
 	if (ctx.functions) {
-		fnc_ = ctx.functions->AddNamespace(ctx.query, *ns_, ctx.nsid, isFt);
+		ftFunc_ = ctx.functions->AddNamespace(ctx.query, *ns_, ctx.nsid, rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No);
 	}
 
 	if (!ctx.skipIndexesLookup) {
-		qPreproc.Reduce(isFt);
+		qPreproc.Reduce();
 	}
-	if (isFt) {
-		qPreproc.CheckUniqueFtQuery();
+	if (rankedQueryEntry.rankedTypeQuery == RankedTypeQuery::FullText) {
 		qPreproc.ExcludeFtQuery(rdxCtx);
-		result.haveRank = true;
 	}
+	result.haveRank = rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No;
 
 	explain.AddPrepareTime();
 
+	const FieldsFilter fieldsFilter = ctx.query.SelectFilters().Empty() && ctx.selectBeforeUpdate
+										  ? FieldsFilter::AllFields()
+										  : FieldsFilter{ctx.query.SelectFilters(), *ns_};
 	if (ctx.contextCollectingMode) {
-		result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, ctx.query.SelectFilters()), ns_->schema_,
-							ns_->incarnationTag_);
+		result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, fieldsFilter, ns_->schema_, ns_->incarnationTag_);
 	}
 
 	if (ctx.query.IsWithRank()) {
-		if (isFt) {
+		if (rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No) {
 			result.needOutputRank = true;
 		} else {
-			throw Error(errLogic, "Rank() is available only for fulltext query");
+			throw Error(errLogic, "Rank() is available only for fulltext or knn query");
 		}
 	}
 
@@ -127,13 +169,16 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	QresExplainHolder qresHolder(qres, (explain.IsEnabled() || logLevel >= LogTrace) ? QresExplainHolder::ExplainEnabled::Yes
 																					 : QresExplainHolder::ExplainEnabled::No);
 	LoopCtx lctx(qres, ctx, qPreproc, aggregators, explain);
-	if (!ctx.query.forcedSortOrder_.empty() && !qPreproc.MoreThanOneEvaluation()) {
+	if (!ctx.query.ForcedSortOrder().empty() && !qPreproc.MoreThanOneEvaluation()) {
 		ctx.isForceAll = true;
 	}
 	const bool isForceAll = ctx.isForceAll;
+	const bool aggregationsOnlyOrig = aggregationsOnly;
 	do {
-		isFt = qPreproc.ContainsFullTextIndexes();
-		qres.Clear();
+		rankedQueryEntry = qPreproc.GetRankedTypeQuery();
+		const IsRanked isRanked{rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No};
+
+		qres.Clear(qPreproc.IsSecondForcedSortStage());
 		lctx.start = QueryEntry::kDefaultOffset;
 		lctx.count = QueryEntry::kDefaultLimit;
 		ctx.isForceAll = isForceAll;
@@ -152,14 +197,15 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 
 		// Prepare sorting context
 		ctx.sortingContext.forcedMode = qPreproc.ContainsForcedSortOrder();
-		SortingEntries sortBy = qPreproc.GetSortingEntries(ctx);
-		prepareSortingContext(sortBy, ctx, isFt, qPreproc.AvailableSelectBySortIndex());
+		SortingEntries sortBy = qPreproc.GetSortingEntries(ctx, rankedQueryEntry.rankedTypeQuery);
+		prepareSortingContext(sortBy, ctx, rankedQueryEntry.rankedTypeQuery, rankedQueryEntry.rankedIndexNo,
+							  qPreproc.AvailableSelectBySortIndex());
 
 		if (ctx.sortingContext.isOptimizationEnabled()) {
 			// Un-built btree index optimization is available for query with
 			// Check, is it really possible to use it
 
-			if (isFt ||	 // Disabled if there are search results
+			if (isRanked ||	 // Disabled if there are search results
 				(!std::is_same_v<JoinPreResultCtx,
 								 void> /*&& !ctx.preSelect.Result().btreeIndexOptimizationEnabled*/) ||	 // Disabled in join pre-result
 																										 // (TMP: now disable for all right
@@ -184,7 +230,8 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 									  SelectKeyResult res;
 									  res.emplace_back(ids);
 									  // Iterator Field Kind: Preselect IdSet -> None
-									  qres.Append(OpAnd, SelectIterator(std::move(res), false, "-preresult", IteratorFieldKind::None));
+									  rx_unused = qres.Append(
+										  OpAnd, SelectIterator(std::move(res), IsDistinct_False, "-preresult", IndexValueType::NotSet));
 								  },
 								  [&](const SelectIteratorContainer& iterators) {
 									  if (ctx.preSelect.Mode() == JoinPreSelectMode::Execute) {
@@ -195,11 +242,16 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 					   ctx.preSelect.Result().payload);
 		}
 
-		qres.PrepareIteratorsForSelectLoop(qPreproc, ctx.sortingContext.sortId(), isFt,
-										   (isFt && (ctx.isMergeQuery == IsMergeQuery::Yes || (!ctx.query.GetMergeQueries().empty())))
-											   ? FtSortType::RankAndID
-											   : FtSortType::RankOnly,
-										   *ns_, fnc_, ft_ctx_, rdxCtx);
+		const auto reranker =
+			rankedQueryEntry.rankedTypeQuery == RankedTypeQuery::Hybrid ? std::optional(ctx.sortingContext.ToReranker(*ns_)) : std::nullopt;
+
+		qres.PrepareIteratorsForSelectLoop(qPreproc, ctx.sortingContext.sortId(), rankedQueryEntry.rankedTypeQuery,
+										   determineRankSortType(rankedQueryEntry.rankedTypeQuery, isRanked, reranker, ctx), *ns_, ftFunc_,
+										   ranks_, rdxCtx);
+		if (rankedQueryEntry.rankedTypeQuery == RankedTypeQuery::Hybrid) {
+			qres.MergeRanked(ranks_, *reranker, *ns_);
+			ctx.sortingContext = {};
+		}
 
 		explain.AddSelectTime();
 
@@ -210,18 +262,18 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 			if (auto sortFieldEntry = ctx.sortingContext.sortFieldEntryIfOrdered(); sortFieldEntry) {
 				preResult.sortOrder = JoinPreResult::SortOrderContext{.index = sortFieldEntry->index, .sortingEntry = sortFieldEntry->data};
 			}
-			preResult.properties.emplace(qres.GetMaxIterations(true), ns_->config().maxIterationsIdSetPreResult);
+			preResult.properties.emplace(qres.GetMaxIterations(), ns_->config().maxIterationsIdSetPreResult);
 			auto& preselectProps = preResult.properties.value();
 			assertrx_throw(preselectProps.maxIterationsIdSetPreResult > JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization());
 			if ((preResult.storedValuesOptStatus == StoredValuesOptimizationStatus::Enabled) &&
-				preselectProps.qresMaxIteratios <= JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization()) {
+				preselectProps.qresMaxIterations <= JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization()) {
 				preResult.payload.template emplace<JoinPreResult::Values>(ns_->payloadType_, ns_->tagsMatcher_);
 			} else {
 				preselectProps.isLimitExceeded = (maxIterations >= preselectProps.maxIterationsIdSetPreResult);
 				preselectProps.isUnorderedIndexSort =
 					!preselectProps.isLimitExceeded && (ctx.sortingContext.entries.size() && !ctx.sortingContext.sortIndex());
 				preselectProps.btreeIndexOptimizationEnabled = preResult.btreeIndexOptimizationEnabled;
-				preselectProps.qresMaxIteratios = maxIterations;
+				preselectProps.qresMaxIterations = maxIterations;
 				// Return pre-result as QueryIterators if:
 				if (preselectProps.isLimitExceeded ||		// 1. We have > QueryIterator which expects more than configured max iterations.
 					preselectProps.isUnorderedIndexSort ||	// 2. We have sorted query, by unordered index
@@ -229,15 +281,15 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 					preResult.payload.template emplace<SelectIteratorContainer>();
 					std::get<SelectIteratorContainer>(preResult.payload).Append(qres.cbegin(), qres.cend());
 					if rx_unlikely (logLevel >= LogInfo) {
-						logPrintf(LogInfo, "Built preResult (expected %d iterations) with %d iterators, q='%s'",
-								  preselectProps.qresMaxIteratios, qres.Size(), ctx.query.GetSQL());
+						logFmt(LogInfo, "Built preResult (expected {} iterations) with {} iterators, q='{}'",
+							   preselectProps.qresMaxIterations, qres.Size(), ctx.query.GetSQL());
 					}
 					return;
 				} else {  // Build pre-result as single IdSet
 					preResult.payload.template emplace<IdSet>();
 					// For building join pre-result always use ASC sort orders
 					for (SortingEntry& se : sortBy) {
-						se.desc = false;
+						se.desc = Desc_False;
 					}
 				}
 			}
@@ -252,7 +304,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 			}
 		} else if (!ctx.sortingContext.isOptimizationEnabled()) {
 			static_assert(std::is_same_v<JoinPreResultCtx, void>);
-			if (!isFt && maxIterations > kMinIterationsForInnerJoinOptimization) {
+			if (!isRanked && maxIterations > kMinIterationsForInnerJoinOptimization) {
 				for (size_t i = 0, size = qres.Size(); i < size; i = qres.Next(i)) {
 					// for optimization use only isolated InnerJoin
 					if (qres.GetOperation(i) == OpAnd && qres.IsJoinIterator(i) &&
@@ -260,27 +312,35 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 						const JoinSelectIterator& jIter = qres.Get<JoinSelectIterator>(i);
 						assertrx_throw(ctx.joinedSelectors && ctx.joinedSelectors->size() > jIter.joinIndex);
 						JoinedSelector& js = (*ctx.joinedSelectors)[jIter.joinIndex];
-						js.AppendSelectIteratorOfJoinIndexData(qres, &maxIterations, ctx.sortingContext.sortId(), fnc_, rdxCtx);
+						js.AppendSelectIteratorOfJoinIndexData(qres, &maxIterations, ctx.sortingContext.sortId(), ftFunc_, rdxCtx);
 					}
 				}
 			}
 		}
 
-		bool reverse = !isFt && ctx.sortingContext.sortIndex() &&
-					   std::visit([](const auto& e) noexcept { return e.data.desc; }, ctx.sortingContext.entries[0]);
+		if (qres.Size() > 0 && (qres.GetOperation(0) == OpOr)) {
+			throw Error{errQueryExec, "OR operator in first condition or after left join"};
+		}
+
+		const bool reverse = !isRanked && ctx.sortingContext.sortIndex() &&
+							 std::visit([](const auto& e) noexcept { return e.data.desc; }, ctx.sortingContext.entries[0].AsVariant());
 
 		bool hasComparators = false;
 		qres.VisitForEach(
+			[](const KnnRawSelectResult&) { throw_as_assert; },
 			Skip<JoinSelectIterator, SelectIteratorsBracket, AlwaysTrue, SelectIterator>{},
 			[&hasComparators](
-				OneOf<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed,
-					  Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) noexcept {
+				OneOf<
+					FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, ComparatorDistinctMulti, ComparatorDistinctMultiArray,
+					Template<ComparatorDistinctMultiScalarBase, ComparatorDistinctMultiIndexedGetter, ComparatorDistinctMultiColumnGetter,
+							 ComparatorDistinctMultiScalarGetter>,
+					Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>) noexcept {
 				hasComparators = true;
 			});
 
 		if (!qres.HasIdsets()) {
 			SelectKeyResult scan;
-			std::string_view scanName = "-scan";
+			std::string_view scanName = "-scan"sv;
 			if (ctx.sortingContext.isOptimizationEnabled()) {
 				auto it = ns_->indexes_[ctx.sortingContext.uncommitedIndex]->CreateIterator();
 				maxIterations = ns_->itemsCount();
@@ -293,7 +353,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 				const bool useSortOrders = ctx.sortingContext.isIndexOrdered() && ctx.sortingContext.enableSortOrders;
 				if (haveLotOfFree && !useSortOrders) {
 					// Attempt to improve selection time by using dense IdSet, when there are a lot of empty items in namespace
-					scanName = "-scan-dns";
+					scanName = "-scan-dns"sv;
 					base_idset denseSet;
 					denseSet.reserve(itemsInUse);
 					for (IdType i = 0, sz = IdType(ns_->items_.size()); i < sz; ++i) {
@@ -316,7 +376,8 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 				}
 			}
 			// Iterator Field Kind: -scan. Sorting Context! -> None
-			qres.AppendFront<SelectIterator>(OpAnd, std::move(scan), false, std::string(scanName), IteratorFieldKind::None, true);
+			rx_unused = qres.AppendFront<SelectIterator>(OpAnd, std::move(scan), IsDistinct_False, std::string(scanName),
+														 IndexValueType::NotSet, ForcedFirst_True);
 		}
 		// Get maximum iterations count, for right calculation comparators costs
 		qres.SortByCost(maxIterations);
@@ -325,11 +386,16 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		qres.CheckFirstQuery();
 
 		// Rewind all results iterators
-		qres.VisitForEach(Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysTrue, EqualPositionComparator>{},
-						  Restricted<ComparatorNotIndexed,
-									 Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
-							  [](auto& comp) { comp.ClearDistinctValues(); }),
-						  [reverse, maxIterations](SelectIterator& it) { it.Start(reverse, maxIterations); });
+		qres.VisitForEach(
+			[](const KnnRawSelectResult&) { throw_as_assert; },
+			Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
+				 ComparatorDistinctMulti, ComparatorDistinctMultiArray,
+				 ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiIndexedGetter>,
+				 ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiColumnGetter>,
+				 ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiScalarGetter>, ComparatorIndexed<bool>, ComparatorIndexed<int>,
+				 ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
+				 ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>>{},
+			[reverse, maxIterations](SelectIterator& it) { it.Start(reverse, maxIterations); });
 
 		// Let iterators choose most efficient algorithm
 		assertrx_throw(qres.Size());
@@ -341,33 +407,35 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		lctx.calcTotal = needCalcTotal &&
 						 (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 || qres.Get<SelectIterator>(0).size() > 1);
 
+		// Aggregations can be calculated correctly in a single pass over the items array
+		// only if there is no limit and offset in the query,
+		// or items are already ordered according to the sorting from the query.
+		// At the same time, for a single Distinct-aggregation we must select
+		// items with unique values, and recalculate the values of Distinct-aggregation
+		// on a correctly formed set of items after applying a select loop.
+		lctx.calcAggsImmediately =
+			(!ctx.query.HasLimit() && !ctx.query.HasOffset()) || ctx.sortingContext.isOptimizationEnabled() || ctx.sortingContext.sortId();
+		aggregationsOnly = aggregationsOnlyOrig && lctx.calcAggsImmediately;
+
 		if (qPreproc.IsFtExcluded()) {
-			if (reverse && hasComparators) {
-				selectLoop<true, true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
-			} else if (!reverse && hasComparators) {
-				selectLoop<false, true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
-			} else if (reverse && !hasComparators) {
-				selectLoop<true, false, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+			if (reverse) {
+				selectLoop<true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
 			} else {
-				selectLoop<false, false, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+				selectLoop<false, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
 			}
 		} else {
-			if (reverse && hasComparators && aggregationsOnly) {
-				selectLoop<true, true, true>(lctx, result, rdxCtx);
-			} else if (!reverse && hasComparators && aggregationsOnly) {
-				selectLoop<false, true, true>(lctx, result, rdxCtx);
-			} else if (reverse && !hasComparators && aggregationsOnly) {
-				selectLoop<true, false, true>(lctx, result, rdxCtx);
-			} else if (!reverse && !hasComparators && aggregationsOnly) {
-				selectLoop<false, false, true>(lctx, result, rdxCtx);
-			} else if (reverse && hasComparators && !aggregationsOnly) {
-				selectLoop<true, true, false>(lctx, result, rdxCtx);
-			} else if (!reverse && hasComparators && !aggregationsOnly) {
-				selectLoop<false, true, false>(lctx, result, rdxCtx);
-			} else if (reverse && !hasComparators && !aggregationsOnly) {
-				selectLoop<true, false, false>(lctx, result, rdxCtx);
-			} else if (!reverse && !hasComparators && !aggregationsOnly) {
-				selectLoop<false, false, false>(lctx, result, rdxCtx);
+			if (reverse) {
+				if (aggregationsOnly) {
+					selectLoop<true, true>(lctx, result, rdxCtx);
+				} else {
+					selectLoop<true, false>(lctx, result, rdxCtx);
+				}
+			} else {
+				if (aggregationsOnly) {
+					selectLoop<false, true>(lctx, result, rdxCtx);
+				} else {
+					selectLoop<false, false>(lctx, result, rdxCtx);
+				}
 			}
 
 			// Get total count for simple query with 1 condition and 1 IdSet
@@ -385,13 +453,31 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		if (!ctx.inTransaction) {
 			ThrowOnCancel(rdxCtx);
 		}
-	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce, qresHolder));
+	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce, qresHolder, needCalcTotal));
+
+	// Aggregations should be recalculated if they were not calculated during selectLoop.
+	// There is special case for single AggDistinct, because it also contains result items and was not included into aggregationsOnlyOrig
+	// flags.
+	const bool hasOnlyDistinctAgg = aggregators.size() == 1 && aggregators[0].Type() == AggDistinct;
+	if ((aggregationsOnlyOrig || hasOnlyDistinctAgg) && !lctx.calcAggsImmediately) {
+		for (auto it = result.begin() + initTotalCount; it != result.end(); ++it) {
+			auto& pl = ns_->items_[it.GetItemRef().Id()];
+			for (auto& aggregator : aggregators) {
+				aggregator.Aggregate(pl);
+			}
+		}
+
+		if (!hasOnlyDistinctAgg) {
+			result.Erase(result.Items().begin() + initTotalCount, result.Items().end());
+		}
+	}
 
 	processLeftJoins(result, ctx, resultInitSize, rdxCtx);
 	if (!ctx.sortingContext.expressions.empty()) {
 		if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
-			std::visit(overloaded{[this](JoinPreResult::Values& values) {
-									  for (auto& iref : values) {
+			std::visit(overloaded{[&](JoinPreResult::Values& values) {
+									  for (const auto& it : values) {
+										  ItemRef& iref = it.GetItemRef();
 										  if (!iref.ValueInitialized()) {
 											  iref.SetValue(ns_->items_[iref.Id()]);
 										  }
@@ -400,33 +486,32 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 								  Restricted<IdSet, SelectIteratorContainer>{}([](const auto&) {})},
 					   ctx.preSelect.Result().payload);
 		} else {
-			for (size_t i = resultInitSize; i < result.Items().size(); ++i) {
-				auto& iref = result.Items()[i];
+			for (size_t i = resultInitSize; i < result.Count(); ++i) {
+				auto& iref = result.Items().GetItemRef(i);
 				if (!iref.ValueInitialized()) {
 					iref.SetValue(ns_->items_[iref.Id()]);
 				}
 			}
 		}
 	}
+	holdFloatVectors(result, ctx, resultInitSize, fieldsFilter);
 	if (rx_unlikely(ctx.isMergeQuerySubQuery())) {
-		writeAggregationResultMergeSubQuery(result, aggregators, ctx);
+		writeAggregationResultMergeSubQuery(result, std::move(aggregators), ctx);
 	} else {
 		for (auto& aggregator : aggregators) {
-			result.aggregationResults.push_back(aggregator.GetResult());
+			result.aggregationResults.emplace_back(std::move(aggregator).MoveResult());
 		}
 	}
 	//	Put count/count_cached to aggregations
 	if (aggregationQueryRef.HasCalcTotal() || containAggCount || containAggCountCached) {
-		AggregationResult ret;
-		ret.fields = {"*"};
-		ret.type = (aggregationQueryRef.CalcTotal() == ModeAccurateTotal || containAggCount) ? AggCount : AggCountCached;
+		AggType t = (aggregationQueryRef.CalcTotal() == ModeAccurateTotal || containAggCount) ? AggCount : AggCountCached;
 		if (ctx.isMergeQuerySubQuery()) {
 			assertrx_dbg(!result.aggregationResults.empty());
 			auto& agg = result.aggregationResults.back();
-			assertrx_dbg(agg.type == ret.type);
-			agg.SetValue(result.totalCount);
+			assertrx_dbg(agg.GetType() == t);
+			agg.UpdateValue(result.totalCount);
 		} else {
-			ret.SetValue(result.totalCount);
+			AggregationResult ret{t, {"*"}, double(result.totalCount)};
 			result.aggregationResults.emplace_back(std::move(ret));
 		}
 	}
@@ -437,7 +522,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	explain.PutSortIndex(ctx.sortingContext.sortIndex() ? ctx.sortingContext.sortIndex()->Name() : "-"sv);
 	if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
 		explain.PutCount(std::visit(overloaded{[](const IdSet& ids) noexcept -> size_t { return ids.size(); },
-											   [](const JoinPreResult::Values& values) noexcept { return values.size(); },
+											   [](const JoinPreResult::Values& values) noexcept { return values.Size(); },
 											   [](const SelectIteratorContainer&) -> size_t { throw_as_assert; }},
 									ctx.preSelect.Result().payload));
 	} else {
@@ -447,7 +532,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	explain.PutJoinedSelectors(ctx.joinedSelectors);
 
 	if rx_unlikely (logLevel >= LogInfo) {
-		logPrintf(LogInfo, "%s", ctx.query.GetSQL());
+		logFmt(LogInfo, "{}", ctx.query.GetSQL());
 		explain.LogDump(logLevel);
 	}
 	if (ctx.query.NeedExplain()) {
@@ -458,24 +543,24 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		}
 	}
 	if rx_unlikely (logLevel >= LogTrace) {
-		logPrintf(LogInfo, "Query returned: [%s]; total=%d", result.Dump(), result.totalCount);
+		logFmt(LogInfo, "Query returned: [{}]; total={}", result.Dump(), result.totalCount);
 	}
 
 	if (needPutCachedTotal) {
 		if rx_unlikely (logLevel >= LogTrace) {
-			logPrintf(LogInfo, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
+			logFmt(LogInfo, "[{}] put totalCount value into query cache: {} ", ns_->name_, result.totalCount);
 		}
 		ns_->queryCountCache_.Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
 	}
 	if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
 		if rx_unlikely (logLevel >= LogTrace) {
 			std::visit(overloaded{[&](const IdSet& ids) {
-									  logPrintf(LogInfo, "Built idset preResult (expected %d iterations) with %d ids, q = '%s'",
-												explain.Iterations(), ids.size(), ctx.query.GetSQL());
+									  logFmt(LogInfo, "Built idset preResult (expected {} iterations) with {} ids, q = '{}'",
+											 explain.Iterations(), ids.size(), ctx.query.GetSQL());
 								  },
 								  [&](const JoinPreResult::Values& values) {
-									  logPrintf(LogInfo, "Built values preResult (expected %d iterations) with %d values, q = '%s'",
-												explain.Iterations(), values.size(), ctx.query.GetSQL());
+									  logFmt(LogInfo, "Built values preResult (expected {} iterations) with {} values, q = '{}'",
+											 explain.Iterations(), values.Size(), ctx.query.GetSQL());
 								  },
 								  [](const SelectIteratorContainer&) { throw_as_assert; }},
 					   ctx.preSelect.Result().payload);
@@ -483,42 +568,63 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	}
 }
 
-template <typename It>
-const PayloadValue& getValue(const ItemRef& itemRef, const std::vector<PayloadValue>& items);
-
 template <>
-const PayloadValue& getValue<ItemRefVector::iterator>(const ItemRef& itemRef, const std::vector<PayloadValue>& items) {
-	return items[itemRef.Id()];
+void NsSelecter::holdFloatVectors(LocalQueryResults&, SelectCtxWithJoinPreSelect<JoinPreResultBuildCtx>& ctx, size_t,
+								  const FieldsFilter& filter) const {
+	if (ctx.floatVectorsHolder) {
+		std::visit(
+			overloaded{[&](JoinPreResult::Values& values) { ctx.floatVectorsHolder->Add(*ns_, values.begin(), values.end(), filter); },
+					   Restricted<IdSet, SelectIteratorContainer>{}([](const auto&) noexcept {})},
+			ctx.preSelect.Result().payload);
+	}
 }
 
 template <>
-const PayloadValue& getValue<JoinPreResult::Values::iterator>(const ItemRef& itemRef, const std::vector<PayloadValue>&) {
-	return itemRef.Value();
+void NsSelecter::holdFloatVectors(LocalQueryResults& result, SelectCtxWithJoinPreSelect<void>& ctx, size_t offset,
+								  const FieldsFilter& filter) const {
+	if (ctx.floatVectorsHolder) {
+		ctx.floatVectorsHolder->Add(*ns_, result.begin() + offset, result.end(), filter);
+	}
 }
 
 template <>
-class NsSelecter::MainNsValueGetter<ItemRefVector::iterator> {
+void NsSelecter::holdFloatVectors(LocalQueryResults&, SelectCtxWithJoinPreSelect<JoinPreResultExecuteCtx>&, size_t,
+								  const FieldsFilter&) const {}
+
+template <>
+class [[nodiscard]] NsSelecter::MainNsValueGetter<ItemRefVector::Iterator::RankedIt> {
 public:
 	explicit MainNsValueGetter(const NamespaceImpl& ns) noexcept : ns_{ns} {}
 	const PayloadValue& Value(const ItemRef& itemRef) const noexcept { return ns_.items_[itemRef.Id()]; }
-	ConstPayload Payload(const ItemRef& itemRef) const noexcept { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
+	ConstPayload Payload(const ItemRef& itemRef) const { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
 
 private:
 	const NamespaceImpl& ns_;
 };
 
 template <>
-class NsSelecter::MainNsValueGetter<JoinPreResult::Values::iterator> {
+class [[nodiscard]] NsSelecter::MainNsValueGetter<ItemRefVector::Iterator::NotRankedIt> {
 public:
 	explicit MainNsValueGetter(const NamespaceImpl& ns) noexcept : ns_{ns} {}
-	const PayloadValue& Value(const ItemRef& itemRef) const noexcept { return itemRef.Value(); }
-	ConstPayload Payload(const ItemRef& itemRef) const noexcept { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
+	const PayloadValue& Value(const ItemRef& itemRef) const noexcept { return ns_.items_[itemRef.Id()]; }
+	ConstPayload Payload(const ItemRef& itemRef) const { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
 
 private:
 	const NamespaceImpl& ns_;
 };
 
-class NsSelecter::JoinedNsValueGetter {
+template <>
+class [[nodiscard]] NsSelecter::MainNsValueGetter<JoinPreResult::Values::Iterator> {
+public:
+	explicit MainNsValueGetter(const NamespaceImpl& ns) noexcept : ns_{ns} {}
+	const PayloadValue& Value(const ItemRef& itemRef) const noexcept { return itemRef.Value(); }
+	ConstPayload Payload(const ItemRef& itemRef) const { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
+
+private:
+	const NamespaceImpl& ns_;
+};
+
+class [[nodiscard]] NsSelecter::JoinedNsValueGetter {
 public:
 	JoinedNsValueGetter(const NamespaceImpl& ns, const joins::NamespaceResults& jr, size_t nsIdx) noexcept
 		: ns_{ns}, joinedResults_{jr}, nsIdx_{nsIdx} {}
@@ -526,14 +632,14 @@ public:
 		const joins::ItemIterator it{&joinedResults_, itemRef.Id()};
 		const auto jfIt = it.at(nsIdx_);
 		if (jfIt == it.end() || jfIt.ItemsCount() == 0) {
-			throw Error(errQueryExec, "Not found value joined from ns %s", ns_.name_);
+			throw Error(errQueryExec, "Not found value joined from ns {}", ns_.name_);
 		}
 		if (jfIt.ItemsCount() > 1) {
-			throw Error(errQueryExec, "Found more than 1 value joined from ns %s", ns_.name_);
+			throw Error(errQueryExec, "Found more than 1 value joined from ns {}", ns_.name_);
 		}
 		return jfIt[0].Value();
 	}
-	ConstPayload Payload(const ItemRef& itemRef) const noexcept { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
+	ConstPayload Payload(const ItemRef& itemRef) const { return ConstPayload{ns_.payloadType_, Value(itemRef)}; }
 
 private:
 	const NamespaceImpl& ns_;
@@ -551,7 +657,7 @@ It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator& compare, 
 		overloaded{
 			[](const SortingContext::ExpressionEntry&) -> It { throw Error(errLogic, "Force sort could not be performed by expression."); },
 			[&](const SortingContext::FieldEntry& e) {
-				return applyForcedSortImpl<desc, multiColumnSort, It>(*ns_, begin, end, compare, ctx.query.forcedSortOrder_,
+				return applyForcedSortImpl<desc, multiColumnSort, It>(*ns_, begin, end, compare, ctx.query.ForcedSortOrder(),
 																	  e.data.expression, MainNsValueGetter<It>{*ns_});
 			},
 			[&](const SortingContext::JoinedFieldEntry& e) {
@@ -560,291 +666,114 @@ It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator& compare, 
 				assertrx_throw(jr);
 				const auto& joinedSelector = (*ctx.joinedSelectors)[e.nsIdx];
 				return applyForcedSortImpl<desc, multiColumnSort, It>(*joinedSelector.RightNs(), begin, end, compare,
-																	  ctx.query.forcedSortOrder_, std::string{e.field},
+																	  ctx.query.ForcedSortOrder(), std::string{e.field},
 																	  JoinedNsValueGetter{*joinedSelector.RightNs(), *jr, e.nsIdx});
 			},
 
 		},
-		ctx.sortingContext.entries[0]);
+		ctx.sortingContext.entries[0].AsVariant());
 }
-
-class ForcedSortMap {
-public:
-	using mapped_type = size_t;
-
-private:
-	using MultiMap = MultiHashMap<const Variant, mapped_type, RelaxedHasher<NotComparable::Return>::indexesCount,
-								  RelaxedHasher<NotComparable::Return>, RelaxedComparator<NotComparable::Return>>;
-	struct SingleTypeMap : tsl::hopscotch_sc_map<Variant, mapped_type> {
-		KeyValueType type_;
-	};
-	using DataType = std::variant<MultiMap, SingleTypeMap>;
-	class Iterator : private std::variant<MultiMap::Iterator, SingleTypeMap::const_iterator> {
-		using Base = std::variant<MultiMap::Iterator, SingleTypeMap::const_iterator>;
-
-	public:
-		using Base::Base;
-		const auto* operator->() const {
-			return std::visit(overloaded{[](MultiMap::Iterator it) { return it.operator->(); },
-										 [](SingleTypeMap::const_iterator it) { return it.operator->(); }},
-							  static_cast<const Base&>(*this));
-		}
-		const auto& operator*() const {
-			return std::visit(overloaded{[](MultiMap::Iterator it) -> const auto& { return *it; },
-										 [](SingleTypeMap::const_iterator it) -> const auto& { return *it; }},
-							  static_cast<const Base&>(*this));
-		}
-	};
-
-public:
-	ForcedSortMap(Variant k, mapped_type v, size_t size)
-		: data_{k.Type().Is<KeyValueType::String>() || k.Type().Is<KeyValueType::Uuid>() || k.Type().IsNumeric()
-					? DataType{MultiMap{size}}
-					: DataType{SingleTypeMap{{}, k.Type()}}} {
-		std::visit(overloaded{[&](MultiMap& m) { m.emplace(std::move(k), v); }, [&](SingleTypeMap& m) { m.emplace(std::move(k), v); }},
-				   data_);
-	}
-	std::pair<Iterator, bool> emplace(Variant k, mapped_type v) & {
-		return std::visit(overloaded{[&](MultiMap& m) {
-										 const auto [iter, success] = m.emplace(std::move(k), v);
-										 return std::make_pair(Iterator{iter}, success);
-									 },
-									 [&](SingleTypeMap& m) {
-										 if (!m.type_.IsSame(k.Type())) {
-											 throw Error{errQueryExec, "Items of different types in forced sort list"};
-										 }
-										 const auto [iter, success] = m.emplace(std::move(k), v);
-										 return std::make_pair(Iterator{iter}, success);
-									 }},
-						  data_);
-	}
-	bool contain(const Variant& k) const {
-		return std::visit(overloaded{[&k](const MultiMap& m) { return m.find(k) != m.cend(); },
-									 [&k](const SingleTypeMap& m) {
-										 if (!m.type_.IsSame(k.Type())) {
-											 throw Error{errQueryExec, "Items of different types in forced sort list"};
-										 }
-										 return m.find(k) != m.end();
-									 }},
-						  data_);
-	}
-	mapped_type get(const Variant& k) const {
-		return std::visit(overloaded{[&k](const MultiMap& m) {
-										 const auto it = m.find(k);
-										 assertrx_throw(it != m.cend());
-										 return it->second;
-									 },
-									 [&k](const SingleTypeMap& m) {
-										 if (!m.type_.IsSame(k.Type())) {
-											 throw Error{errQueryExec, "Items of different types in forced sort list"};
-										 }
-										 const auto it = m.find(k);
-										 assertrx_throw(it != m.end());
-										 return it->second;
-									 }},
-						  data_);
-	}
-
-private:
-	DataType data_;
-};
-
-template <typename Map>
-class ForcedMapInserter {
-public:
-	explicit ForcedMapInserter(Map& m) noexcept : map_{m} {}
-	template <typename V>
-	void Insert(V&& value) {
-		if (const auto [iter, success] = map_.emplace(std::forward<V>(value), cost_); success) {
-			++cost_;
-		} else if (iter->second != cost_ - 1) {
-			static constexpr auto errMsg = "Forced sort value '%s' is duplicated. Deduplicated by the first occurrence.";
-			if constexpr (std::is_same_v<V, Variant>) {
-				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
-				logPrintf(LogInfo, errMsg, value.template As<std::string>());
-			} else {
-				// NOLINTNEXTLINE (bugprone-use-after-move,-warnings-as-errors)
-				logPrintf(LogInfo, errMsg, Variant{std::forward<V>(value)}.template As<std::string>());
-			}
-		}
-	}
-
-private:
-	Map& map_;
-	typename Map::mapped_type cost_ = 1;
-};
 
 template <bool desc, bool multiColumnSort, typename It, typename ValueGetter>
 It NsSelecter::applyForcedSortImpl(NamespaceImpl& ns, It begin, It end, const ItemComparator& compare,
 								   const std::vector<Variant>& forcedSortOrder, const std::string& fieldName,
 								   const ValueGetter& valueGetter) {
-	if (int idx; ns.getIndexByNameOrJsonPath(fieldName, idx)) {
+	if (int idx; ns.tryGetIndexByNameOrJsonPath(fieldName, idx)) {
 		if (ns.indexes_[idx]->Opts().IsArray()) {
-			throw Error(errQueryExec, "This type of sorting cannot be applied to a field of array type.");
+			throw Error(errQueryExec, force_sort_helpers::kForcedSortArrayErrorMsg);
 		}
 		const KeyValueType fieldType{ns.indexes_[idx]->KeyType()};
-		if (idx < ns.indexes_.firstCompositePos()) {
+		if (idx < ns.indexes_.firstSparsePos()) {
 			// implementation for regular indexes
-			fast_hash_map<Variant, ItemRefVector::difference_type> sortMap;
-			ForcedMapInserter inserter{sortMap};
+			fast_hash_map<Variant, std::ptrdiff_t> sortMap;
+			force_sort_helpers::ForcedMapInserter inserter{sortMap};
 			for (const auto& value : forcedSortOrder) {
+				assertrx_dbg(!value.IsNullValue());
 				inserter.Insert(value.convert(fieldType));
 			}
-
-			VariantArray keyRefs;
-			const auto boundary = std::stable_partition(begin, end, [&](const ItemRef& itemRef) {
-				valueGetter.Payload(itemRef).Get(idx, keyRefs);
-				const auto descOrder = keyRefs.empty() || (sortMap.find(keyRefs[0]) == sortMap.end());
-				return desc ? descOrder : !descOrder;
-			});
-
-			VariantArray lhsItemValue;
-			VariantArray rhsItemValue;
-			It from, to;
-			if constexpr (desc) {
-				from = boundary;
-				to = end;
-			} else {
-				from = begin;
-				to = boundary;
+			// clang-tidy reports that std::get_temporary_buffer is deprecated
+			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
+			const auto boundary = std::stable_partition(
+				begin, end, force_sort_helpers::ForcedPartitionerIndexed<desc, ValueGetter>{idx, valueGetter, sortMap});
+			const It from = desc ? boundary : begin;
+			const It to = desc ? end : boundary;
+			std::sort(from, to,
+					  force_sort_helpers::ForcedComparatorIndexed<desc, multiColumnSort, ValueGetter>(idx, valueGetter, compare, sortMap));
+			return boundary;
+		} else if (idx < ns.indexes_.firstCompositePos()) {
+			// implementation for sparse indexes
+			fast_hash_map<Variant, std::ptrdiff_t> sortMap;
+			force_sort_helpers::ForcedMapInserter inserter{sortMap};
+			for (const auto& value : forcedSortOrder) {
+				assertrx_dbg(!value.IsNullValue());
+				inserter.Insert(value.convert(fieldType));
 			}
-			std::sort(from, to, [&](const ItemRef& lhs, const ItemRef& rhs) {
-				valueGetter.Payload(lhs).Get(idx, lhsItemValue);
-				assertrx_throw(!lhsItemValue.empty());
-				const auto lhsIt = sortMap.find(lhsItemValue[0]);
-				assertrx_throw(lhsIt != sortMap.end());
+			const auto& idxRef = *ns.indexes_[idx];
+			const auto& tagsPath = idxRef.Fields().getTagsPath(0);
+			const auto kvt = idxRef.KeyType();
 
-				valueGetter.Payload(rhs).Get(idx, rhsItemValue);
-				assertrx_throw(!rhsItemValue.empty());
-				const auto rhsIt = sortMap.find(rhsItemValue[0]);
-				assertrx_throw(rhsIt != sortMap.end());
-
-				const auto lhsPos = lhsIt->second;
-				const auto rhsPos = rhsIt->second;
-				if (lhsPos == rhsPos) {
-					if constexpr (multiColumnSort) {
-						return compare(lhs, rhs);
-					} else {
-						if constexpr (desc) {
-							return lhs.Id() > rhs.Id();
-						} else {
-							return lhs.Id() < rhs.Id();
-						}
-					}
-				} else {
-					if constexpr (desc) {
-						return lhsPos > rhsPos;
-					} else {
-						return lhsPos < rhsPos;
-					}
-				}
-			});
+			// clang-tidy reports that std::get_temporary_buffer is deprecated
+			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
+			const auto boundary = std::stable_partition(begin, end,
+														force_sort_helpers::ForcedPartitionerIndexedJsonPath<desc, ValueGetter>{
+															tagsPath, kvt, idxRef.Name(), valueGetter, sortMap});
+			const It from = desc ? boundary : begin;
+			const It to = desc ? end : boundary;
+			std::sort(from, to,
+					  force_sort_helpers::ForcedComparatorIndexedJsonPath<desc, multiColumnSort, ValueGetter>(tagsPath, kvt, valueGetter,
+																											  compare, sortMap));
 			return boundary;
 		} else {
 			// implementation for composite indexes
 			const auto& payloadType = ns.payloadType_;
 			const FieldsSet& fields = ns.indexes_[idx]->Fields();
-			unordered_payload_map<ItemRefVector::difference_type, false> sortMap(0, PayloadType{payloadType}, FieldsSet{fields});
-			ForcedMapInserter inserter{sortMap};
+			unordered_payload_map<std::ptrdiff_t, false> sortMap(0, PayloadType{payloadType}, FieldsSet{fields});
+			force_sort_helpers::ForcedMapInserter inserter{sortMap};
 			for (auto value : forcedSortOrder) {
-				value.convert(fieldType, &payloadType, &fields);
+				rx_unused = value.convert(fieldType, &payloadType, &fields);
 				inserter.Insert(static_cast<const PayloadValue&>(value));
 			}
-
-			const auto boundary = std::stable_partition(begin, end, [&](const ItemRef& itemRef) {
-				if constexpr (desc) {
-					return (sortMap.find(valueGetter.Value(itemRef)) == sortMap.end());
-				} else {
-					return (sortMap.find(valueGetter.Value(itemRef)) != sortMap.end());
-				}
-			});
-
-			It from, to;
-			if constexpr (desc) {
-				from = boundary;
-				to = end;
-			} else {
-				from = begin;
-				to = boundary;
-			}
-			std::sort(from, to, [&](const ItemRef& lhs, const ItemRef& rhs) {
-				const auto lhsPos = sortMap.find(valueGetter.Value(lhs))->second;
-				const auto rhsPos = sortMap.find(valueGetter.Value(rhs))->second;
-				if (lhsPos == rhsPos) {
-					if constexpr (multiColumnSort) {
-						return compare(lhs, rhs);
-					} else {
-						if constexpr (desc) {
-							return lhs.Id() > rhs.Id();
-						} else {
-							return lhs.Id() < rhs.Id();
-						}
-					}
-				} else {
-					if constexpr (desc) {
-						return lhsPos > rhsPos;
-					} else {
-						return lhsPos < rhsPos;
-					}
-				}
-			});
+			// clang-tidy reports that std::get_temporary_buffer is deprecated
+			// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
+			const auto boundary =
+				std::stable_partition(begin, end, force_sort_helpers::ForcedPartitionerComposite<desc, ValueGetter>{valueGetter, sortMap});
+			const It from = desc ? boundary : begin;
+			const It to = desc ? end : boundary;
+			std::sort(from, to,
+					  force_sort_helpers::ForcedComparatorComposite<desc, multiColumnSort, ValueGetter>{valueGetter, compare, sortMap});
 			return boundary;
 		}
 	} else {
-		ForcedSortMap sortMap{forcedSortOrder[0], 0, forcedSortOrder.size()};
-		ForcedMapInserter inserter{sortMap};
+		force_sort_helpers::ForcedSortMap sortMap{forcedSortOrder[0], 0, forcedSortOrder.size()};
+		force_sort_helpers::ForcedMapInserter inserter{sortMap};
 		for (size_t i = 1, s = forcedSortOrder.size(); i < s; ++i) {
+			assertrx_dbg(!forcedSortOrder[i].IsNullValue());
 			inserter.Insert(forcedSortOrder[i]);
 		}
-
-		VariantArray keyRefs;
-		const auto boundary = std::stable_partition(begin, end, [&](const ItemRef& itemRef) {
-			valueGetter.Payload(itemRef).GetByJsonPath(fieldName, ns.tagsMatcher_, keyRefs, KeyValueType::Undefined{});
-			if constexpr (desc) {
-				return keyRefs.empty() || !sortMap.contain(keyRefs[0]);
-			} else {
-				return !keyRefs.empty() && sortMap.contain(keyRefs[0]);
-			}
-		});
-
-		VariantArray lhsItemValue;
-		VariantArray rhsItemValue;
-		It from, to;
-		if constexpr (desc) {
-			from = boundary;
-			to = end;
-		} else {
-			from = begin;
-			to = boundary;
-		}
-		std::sort(from, to, [&](const ItemRef& lhs, const ItemRef& rhs) {
-			valueGetter.Payload(lhs).GetByJsonPath(fieldName, ns.tagsMatcher_, lhsItemValue, KeyValueType::Undefined{});
-
-			valueGetter.Payload(rhs).GetByJsonPath(fieldName, ns.tagsMatcher_, rhsItemValue, KeyValueType::Undefined{});
-
-			const auto lhsPos = sortMap.get(lhsItemValue[0]);
-			const auto rhsPos = sortMap.get(rhsItemValue[0]);
-			if (lhsPos == rhsPos) {
-				if constexpr (multiColumnSort) {
-					return compare(lhs, rhs);
-				} else {
-					if constexpr (desc) {
-						return lhs.Id() > rhs.Id();
-					} else {
-						return lhs.Id() < rhs.Id();
-					}
-				}
-			} else {
-				if constexpr (desc) {
-					return lhsPos > rhsPos;
-				} else {
-					return lhsPos < rhsPos;
-				}
-			}
-		});
+		const auto tagsPath = ns.tagsMatcher_.path2tag(fieldName);
+		// clang-tidy reports that std::get_temporary_buffer is deprecated
+		// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)
+		const auto boundary = std::stable_partition(
+			begin, end, force_sort_helpers::ForcedPartitionerNotIndexed<desc, ValueGetter>{tagsPath, valueGetter, sortMap});
+		const It from = desc ? boundary : begin;
+		const It to = desc ? end : boundary;
+		std::sort(
+			from, to,
+			force_sort_helpers::ForcedComparatorNotIndexed<desc, multiColumnSort, ValueGetter>{tagsPath, valueGetter, compare, sortMap});
 		return boundary;
 	}
 }
+
+class [[nodiscard]] GeneralComparator {
+public:
+	explicit GeneralComparator(const ItemComparator& compare) noexcept : compare_{compare} {}
+
+	bool operator()(const ItemRef& lhs, const ItemRef& rhs) { return compare_(lhs, rhs); }
+	bool operator()(const ItemRefRanked& lhs, const ItemRefRanked& rhs) { return compare_(lhs.NotRanked(), rhs.NotRanked()); }
+
+private:
+	const ItemComparator& compare_;
+};
 
 template <typename It>
 void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator& comparator, const SelectCtx& ctx) {
@@ -852,17 +781,17 @@ void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemCom
 		throw Error(errLogic, "Sorting cannot be applied to merged queries.");
 	}
 
-	std::partial_sort(itFirst, itLast, itEnd, std::cref(comparator));
+	std::partial_sort(itFirst, itLast, itEnd, GeneralComparator{comparator});
 }
 
 void NsSelecter::setLimitAndOffset(ItemRefVector& queryResult, size_t offset, size_t limit) {
-	const unsigned totalRows = queryResult.size();
+	const unsigned totalRows = queryResult.Size();
 	if (offset > 0) {
 		auto end = offset < totalRows ? queryResult.begin() + offset : queryResult.end();
-		queryResult.erase(queryResult.begin(), end);
+		queryResult.Erase(queryResult.begin(), end);
 	}
-	if (queryResult.size() > limit) {
-		queryResult.erase(queryResult.begin() + limit, queryResult.end());
+	if (queryResult.Size() > limit) {
+		queryResult.Erase(queryResult.begin() + limit, queryResult.end());
 	}
 }
 
@@ -871,11 +800,12 @@ void NsSelecter::processLeftJoins(LocalQueryResults& qr, SelectCtx& sctx, size_t
 		return;
 	}
 	for (size_t i = startPos; i < qr.Count(); ++i) {
-		IdType rowid = qr[i].GetItemRef().Id();
+		const auto it = qr[i];
+		IdType rowid = it.GetItemRef().Id();
 		ConstPayload pl(ns_->payloadType_, ns_->items_[rowid]);
 		for (auto& joinedSelector : *sctx.joinedSelectors) {
 			if (joinedSelector.Type() == JoinType::LeftJoin) {
-				joinedSelector.Process(rowid, sctx.nsid, pl, true);
+				rx_unused = joinedSelector.Process(rowid, sctx.nsid, pl, sctx.floatVectorsHolder, true);
 			}
 		}
 		if (!sctx.inTransaction && (i % kCancelCheckFrequency == 0)) {
@@ -899,15 +829,15 @@ void NsSelecter::sortResults(LoopCtx<JoinPreResultCtx>& ctx, It begin, It end, c
 	ctx.explain.StartSort();
 #ifdef RX_WITH_STDLIB_DEBUG
 	for (const auto& eR : sctx.sortingContext.exprResults) {
-		assertrx_dbg(eR.size() == end - begin);
+		assertrx_dbg(eR.size() == unsigned(end - begin));
 	}
 #endif	// RX_WITH_STDLIB_DEBUG
 
 	ItemComparator comparator{*ns_, sctx, jr};
 	if (sortingOptions.forcedMode) {
 		comparator.BindForForcedSort();
-		assertrx_throw(!sctx.query.sortingEntries_.empty());
-		if (sctx.query.sortingEntries_[0].desc) {
+		assertrx_throw(!sctx.query.GetSortingEntries().empty());
+		if (sctx.query.GetSortingEntries()[0].desc) {
 			if (sctx.sortingContext.entries.size() > 1) {
 				end = applyForcedSort<true, true>(begin, end, comparator, sctx, jr);
 			} else {
@@ -935,12 +865,12 @@ void NsSelecter::sortResults(LoopCtx<JoinPreResultCtx>& ctx, It begin, It end, c
 
 static size_t resultSize(const LocalQueryResults& qr) noexcept { return qr.Count(); }
 
-static void resultReserve(LocalQueryResults& qr, size_t s) { qr.Items().reserve(s); }
-static void resultReserve(FtMergeStatuses&, size_t) {}
+static void resultReserve(LocalQueryResults& qr, size_t s, IsRanked isRanked) { qr.Items().Reserve(s, isRanked); }
+static void resultReserve(FtMergeStatuses&, size_t, IsRanked) {}
 
-template <bool reverse, bool hasComparators, bool aggregationsOnly, typename ResultsT, typename JoinPreResultCtx>
+template <bool reverse, bool aggregationsOnly, typename ResultsT, typename JoinPreResultCtx>
 void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, const RdxContext& rdxCtx) {
-	static constexpr bool kPreprocessingBeforFT = !std::is_same_v<ResultsT, LocalQueryResults>;
+	static constexpr bool kPreprocessingBeforeFT = !std::is_same_v<ResultsT, LocalQueryResults>;
 	static const JoinedSelectors emptyJoinedSelectors;
 	const auto selectLoopWard = rdxCtx.BeforeSelectLoop();
 	SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx = ctx.sctx;
@@ -948,10 +878,10 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 	SelectIteratorContainer& qres = ctx.qres;
 	// Is not using during ft preprocessing
 	size_t initCount = 0;
-	if constexpr (!kPreprocessingBeforFT) {
+	if constexpr (!kPreprocessingBeforeFT) {
 		if constexpr (!std::is_same_v<JoinPreResultCtx, void>) {
 			if (auto* values = std::get_if<JoinPreResult::Values>(&sctx.preSelect.Result().payload); values) {
-				initCount = values->size();
+				initCount = values->Size();
 			} else {
 				initCount = resultSize(result);
 			}
@@ -969,12 +899,12 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 		if (const size_t reserve = qres.Get<SelectIterator>(0).GetMaxIterations(ctx.count); reserve < size_t(QueryEntry::kDefaultLimit)) {
 			if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
 				if (auto* values = std::get_if<JoinPreResult::Values>(&sctx.preSelect.Result().payload); values) {
-					values->reserve(reserve + initCount);
+					values->Reserve(reserve + initCount);
 				} else {
-					resultReserve(result, initCount + reserve);
+					resultReserve(result, initCount + reserve, IsRanked(ranks_));
 				}
 			} else {
-				resultReserve(result, initCount + reserve);
+				resultReserve(result, initCount + reserve, IsRanked(ranks_));
 			}
 		}
 	}
@@ -992,6 +922,10 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 	assertrx_throw(qres.IsSelectIterator(0));
 	SelectIterator& firstIterator = qres.begin()->Value<SelectIterator>();
 	IdType rowId = firstIterator.Val();
+	const CollateOpts* multisortCollateOpts = nullptr;
+
+	const auto& nsItems = ns_->items_;
+	const auto nsItemsSize = ns_->items_.size();
 	while (firstIterator.Next(rowId) && !finish) {
 		if ((rowId % kCancelCheckFrequency == 0) && !sctx.inTransaction) {
 			ThrowOnCancel(rdxCtx);
@@ -1006,49 +940,42 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 			properRowId = firstSortIndex->SortOrders()[rowId];
 		}
 
-		assertrx_throw(static_cast<size_t>(properRowId) < ns_->items_.size());
-		PayloadValue& pv = ns_->items_[properRowId];
+		if rx_unlikely (static_cast<size_t>(properRowId) > nsItemsSize) {
+			throwUnexpectedItemID(rowId, properRowId);
+		}
+		const PayloadValue& pv = nsItems[properRowId];
 		if (pv.IsFree()) {
 			continue;
 		}
-		if (qres.Process<reverse, hasComparators>(pv, &finish, &rowId, properRowId, !ctx.start && ctx.count)) {
+		if (qres.Process<reverse>(pv, &finish, &rowId, properRowId, !ctx.start && ctx.count)) {
 			sctx.matchedAtLeastOnce = true;
-			// Check distinct condition:
-			// Exclude last sets of id from each query result, so duplicated keys will
-			// be removed
-			qres.VisitForEach(
-				Skip<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue, EqualPositionComparator>{},
-				[rowId](SelectIterator& sit) {
-					if (sit.distinct) {
-						sit.ExcludeLastSet(rowId);
-					}
-				},
-				Restricted<ComparatorNotIndexed,
-						   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>{}(
-					[&pv, properRowId](auto& comp) { comp.ExcludeDistinctValues(pv, properRowId); }));
-			if constexpr (!kPreprocessingBeforFT) {
-				uint8_t proc = ft_ctx_ ? ft_ctx_->Proc(firstIterator.Pos()) : 0;
+			if constexpr (!kPreprocessingBeforeFT) {
+				const RankT rank = ranks_ ? ranks_->GetRank(firstIterator.Pos()) : RankT{};
 				if ((ctx.start || (ctx.count == 0)) && sortingOptions.multiColumnByBtreeIndex) {
 					VariantArray recentValues;
 					size_t lastResSize = result.Count();
-					getSortIndexValue(sctx.sortingContext, properRowId, recentValues, proc,
-									  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors);
-					if (prevValues.empty() && result.Items().empty()) {
+					if (!multisortCollateOpts) {
+						multisortCollateOpts = &getSortIndexCollateOpts(sctx.sortingContext, joinedSelectors);
+					}
+					getSortIndexValue(sctx.sortingContext, properRowId, recentValues, rank,
+									  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors,
+									  rdxCtx.ShardId());
+					if (prevValues.empty() && result.Items().Empty()) {
 						prevValues = recentValues;
-					} else {
-						if (recentValues != prevValues) {
-							if (ctx.start) {
-								result.Items().clear();
-								multisortLimitLeft = 0;
-								lastResSize = 0;
-								prevValues = recentValues;
-							} else if (!ctx.count) {
-								multiSortFinished = true;
-							}
+					} else if (recentValues.CompareNoExcept(prevValues, *multisortCollateOpts) != ComparationResult::Eq) {
+						if (ctx.start) {
+							result.Items().Clear();
+							multisortLimitLeft = 0;
+							lastResSize = 0;
+							prevValues = recentValues;
+						} else if (!ctx.count) {
+							multiSortFinished = true;
 						}
 					}
+
 					if (!multiSortFinished) {
-						addSelectResult<aggregationsOnly>(proc, rowId, properRowId, sctx, ctx.aggregators, result, ctx.preselectForFt);
+						addSelectResult<aggregationsOnly>(rank, rowId, properRowId, sctx, ctx.aggregators, result, ctx.calcAggsImmediately,
+														  ctx.preselectForFt);
 					}
 					if (lastResSize < result.Count()) {
 						if (ctx.start) {
@@ -1059,11 +986,13 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 				if (ctx.start) {
 					--ctx.start;
 				} else if (ctx.count) {
-					addSelectResult<aggregationsOnly>(proc, rowId, properRowId, sctx, ctx.aggregators, result, ctx.preselectForFt);
+					addSelectResult<aggregationsOnly>(rank, rowId, properRowId, sctx, ctx.aggregators, result, ctx.calcAggsImmediately,
+													  ctx.preselectForFt);
 					--ctx.count;
 					if (!ctx.count && sortingOptions.multiColumn && !multiSortFinished) {
-						getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc,
-										  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors);
+						getSortIndexValue(sctx.sortingContext, properRowId, prevValues, rank,
+										  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors,
+										  rdxCtx.ShardId());
 					}
 				}
 				if (!ctx.count && !ctx.calcTotal && multiSortFinished) {
@@ -1072,31 +1001,36 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 				result.totalCount += int(ctx.calcTotal);
 			} else {
 				assertf(static_cast<size_t>(properRowId) < result.rowId2Vdoc->size(),
-						"properRowId = %d; rowId = %d; result.rowId2Vdoc->size() = %d", properRowId, rowId, result.rowId2Vdoc->size());
+						"properRowId = {}; rowId = {}; result.rowId2Vdoc->size() = {}", properRowId, rowId, result.rowId2Vdoc->size());
 				result.statuses[(*result.rowId2Vdoc)[properRowId]] = 0;
 				result.rowIds[properRowId] = true;
 			}
 		}
 	}
 
-	if constexpr (!kPreprocessingBeforFT) {
+	if constexpr (!kPreprocessingBeforeFT) {
 		bool toPreResultValues = false;
 		if constexpr (std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>) {
 			if (auto values = std::get_if<JoinPreResult::Values>(&sctx.preSelect.Result().payload); values) {
 				toPreResultValues = true;
 				if (sctx.isForceAll) {
 					assertrx_throw(!ctx.qPreproc.Start() || !initCount);
-					if (ctx.qPreproc.Start() <= values->size()) {
+					if (ctx.qPreproc.Start() <= values->Size()) {
 						ctx.start = 0;
 					} else {
-						ctx.start = ctx.qPreproc.Start() - values->size();
+						ctx.start = ctx.qPreproc.Start() - values->Size();
 					}
 				}
 				assertrx_throw((std::is_same_v<JoinPreResultCtx, JoinPreResultBuildCtx>));
-				sortResults(ctx, values->begin() + initCount, values->end(), sortingOptions,
-							sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr);
+				if (values->IsRanked()) {
+					sortResults(ctx, values->begin().Ranked() + initCount, values->end().Ranked(), sortingOptions,
+								sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr);
+				} else {
+					sortResults(ctx, values->begin().NotRanked() + initCount, values->end().NotRanked(), sortingOptions,
+								sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr);
+				}
 
-				const size_t countChange = values->size() - initCount;
+				const size_t countChange = values->Size() - initCount;
 				assertrx_throw(countChange <= ctx.qPreproc.Count());
 				ctx.count = ctx.qPreproc.Count() - countChange;
 			}
@@ -1104,24 +1038,29 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 		if (!toPreResultValues) {
 			if (sctx.isForceAll) {
 				assertrx_throw(!ctx.qPreproc.Start() || !initCount);
-				if (ctx.qPreproc.Start() <= result.Items().size()) {
+				if (ctx.qPreproc.Start() <= result.Count()) {
 					ctx.start = 0;
 				} else {
-					ctx.start = ctx.qPreproc.Start() - result.Items().size();
+					ctx.start = ctx.qPreproc.Start() - result.Count();
 				}
 			}
 			if (sortingOptions.postLoopSortingRequired()) {
 				const size_t offset = sctx.isForceAll ? ctx.qPreproc.Start() : multisortLimitLeft;
-				if (result.Items().size() > offset) {
-					sortResults(ctx, result.Items().begin() + initCount, result.Items().end(), sortingOptions,
-								sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr);
+				if (result.Count() > offset) {
+					if (result.haveRank) {
+						sortResults(ctx, result.Items().begin().Ranked() + initCount, result.Items().end().Ranked(), sortingOptions,
+									sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr);
+					} else {
+						sortResults(ctx, result.Items().begin().NotRanked() + initCount, result.Items().end().NotRanked(), sortingOptions,
+									sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr);
+					}
 				}
 				setLimitAndOffset(result.Items(), offset, ctx.qPreproc.Count() + initCount);
 			} else if (sctx.isForceAll) {
 				setLimitAndOffset(result.Items(), ctx.qPreproc.Start(), ctx.qPreproc.Count() + initCount);
 			}
 			if (sctx.isForceAll) {
-				const size_t countChange = result.Items().size() - initCount;
+				const size_t countChange = result.Count() - initCount;
 				assertrx_throw(countChange <= ctx.qPreproc.Count());
 				ctx.count = ctx.qPreproc.Count() - countChange;
 			}
@@ -1129,15 +1068,15 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 	}
 }
 
-void NsSelecter::getSortIndexValue(const SortingContext& sortCtx, IdType rowId, VariantArray& value, uint8_t proc,
-								   const joins::NamespaceResults* joinResults, const JoinedSelectors& js) {
+void NsSelecter::getSortIndexValue(const SortingContext& sortCtx, IdType rowId, VariantArray& value, RankT rank,
+								   const joins::NamespaceResults* joinResults, const JoinedSelectors& js, int shardId) {
 	std::visit(
 		overloaded{
 			[&](const SortingContext::ExpressionEntry& e) {
 				assertrx_throw(e.expression < sortCtx.expressions.size());
 				ConstPayload pv(ns_->payloadType_, ns_->items_[rowId]);
-				value =
-					VariantArray{Variant{sortCtx.expressions[e.expression].Calculate(rowId, pv, joinResults, js, proc, ns_->tagsMatcher_)}};
+				value = VariantArray{
+					Variant{sortCtx.expressions[e.expression].Calculate(rowId, pv, joinResults, js, rank, ns_->tagsMatcher_, shardId)}};
 			},
 			[&](const SortingContext::JoinedFieldEntry& e) {
 				assertrx_throw(joinResults);
@@ -1155,26 +1094,69 @@ void NsSelecter::getSortIndexValue(const SortingContext& sortCtx, IdType rowId, 
 							return Variant(*(static_cast<const double*>(e.rawData.ptr) + rowId));
 						},
 						[&e, rowId](KeyValueType::String) noexcept {
-							return Variant(p_string(static_cast<const std::string_view*>(e.rawData.ptr) + rowId), Variant::no_hold_t{});
+							return Variant(p_string(static_cast<const std::string_view*>(e.rawData.ptr) + rowId), Variant::noHold);
 						},
 						[&e, rowId](KeyValueType::Uuid) noexcept { return Variant(*(static_cast<const Uuid*>(e.rawData.ptr) + rowId)); },
-						[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> Variant {
+						[](KeyValueType::Float) noexcept -> Variant {
+							// Indexed fields can not contain float
 							throw_as_assert;
-						})};
+						},
+						[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+								 KeyValueType::FloatVector>) -> Variant { throw_as_assert; })};
+					return;
+				}
+				// No column data available
+				ConstPayload pv(ns_->payloadType_, ns_->items_[rowId]);
+				if ((e.data.index == IndexValueType::SetByJsonPath) || ns_->indexes_[e.data.index]->Opts().IsSparse()) {
+					pv.GetByJsonPath(e.data.expression, ns_->tagsMatcher_, value, KeyValueType::Undefined{});
+					return;
+				}
+				auto& idx = *ns_->indexes_[e.data.index];
+				if (!IsComposite(idx.Type())) {
+					pv.Get(e.data.index, value);
 				} else {
-					ConstPayload pv(ns_->payloadType_, ns_->items_[rowId]);
-					if ((e.data.index != IndexValueType::SetByJsonPath) && !ns_->indexes_[e.data.index]->Opts().IsSparse()) {
-						pv.Get(e.data.index, value);
-					} else {
-						pv.GetByJsonPath(e.data.expression, ns_->tagsMatcher_, value, KeyValueType::Undefined{});
+					value.Clear();
+					const auto& fields = idx.Fields();
+					VariantArray tmp;
+					for (unsigned i = 0, s = fields.size(); i < s; ++i) {
+						const auto field(fields[i]);
+						if rx_unlikely (field == SetByJsonPath) {
+							throw Error(errQueryExec, "Unexpected non-indexed field in the composite index");
+						}
+						pv.Get(field, tmp);
+						if rx_unlikely (tmp.IsArrayValue()) {
+							throw Error(errQueryExec, "Unexpected array field in the composite index");
+						}
+						value.insert(value.end(), std::make_move_iterator(tmp.begin()), std::make_move_iterator(tmp.end()));
 					}
 				}
 			}},
-		sortCtx.getFirstColumnEntry());
+		sortCtx.getFirstColumnEntry().AsVariant());
 }
 
-void NsSelecter::calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx& sctx,
-										  const LocalQueryResults& result) {
+const CollateOpts& NsSelecter::getSortIndexCollateOpts(const SortingContext& sortCtx, const JoinedSelectors& joinedSelectors) {
+	const static CollateOpts kDefaultCollateOpts;
+	return std::visit(
+		overloaded{[&](const SortingContext::ExpressionEntry&) { return std::cref(kDefaultCollateOpts); },
+				   [&](const SortingContext::JoinedFieldEntry& e) {
+					   if (e.index == IndexValueType::SetByJsonPath) {
+						   return std::cref(kDefaultCollateOpts);
+					   }
+					   const auto& js = joinedSelectors[e.nsIdx];
+					   return std::visit(overloaded{[&](const JoinPreResult::Values&) noexcept { return std::cref(kDefaultCollateOpts); },
+													Restricted<IdSet, SelectIteratorContainer>{}([&js, &e](const auto&) noexcept {
+														return std::cref(js.rightNs_->indexes_[e.index]->Opts().collateOpts_);
+													})},
+										 js.PreResult().payload);
+				   },
+				   [&](const SortingContext::FieldEntry& e) {
+					   return (e.data.index == IndexValueType::SetByJsonPath) ? std::cref(kDefaultCollateOpts)
+																			  : std::cref(ns_->indexes_[e.data.index]->Opts().collateOpts_);
+				   }},
+		sortCtx.getFirstColumnEntry().AsVariant());
+}
+
+void NsSelecter::calculateSortExpressions(RankT rank, IdType rowId, IdType properRowId, SelectCtx& sctx, const LocalQueryResults& result) {
 	static const JoinedSelectors emptyJoinedSelectors;
 	const auto& exprs = sctx.sortingContext.expressions;
 	auto& exprResults = sctx.sortingContext.exprResults;
@@ -1183,24 +1165,23 @@ void NsSelecter::calculateSortExpressions(uint8_t proc, IdType rowId, IdType pro
 	const auto& joinedSelectors = sctx.joinedSelectors ? *sctx.joinedSelectors : emptyJoinedSelectors;
 	const auto joinedResultPtr = sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr;
 	for (size_t i = 0; i < exprs.size(); ++i) {
-		exprResults[i].push_back(exprs[i].Calculate(rowId, pv, joinedResultPtr, joinedSelectors, proc, ns_->tagsMatcher_));
+		exprResults[i].push_back(exprs[i].Calculate(rowId, pv, joinedResultPtr, joinedSelectors, rank, ns_->tagsMatcher_, 0));
 	}
 }
 
 template <bool aggregationsOnly, typename JoinPreResultCtx>
-void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx,
-								 h_vector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool preselectForFt) {
+void NsSelecter::addSelectResult(RankT rank, IdType rowId, IdType properRowId, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx,
+								 h_vector<Aggregator, 4>& aggregators, LocalQueryResults& result, bool needCalcAggs, bool preselectForFt) {
 	if (preselectForFt) {
 		return;
 	}
-	for (auto& aggregator : aggregators) {
-		aggregator.Aggregate(ns_->items_[properRowId]);
+
+	if (needCalcAggs) {
+		for (auto& aggregator : aggregators) {
+			aggregator.Aggregate(ns_->items_[properRowId]);
+		}
 	}
 	if constexpr (aggregationsOnly) {
-		return;
-	}
-	// Due to how aggregationsOnly is calculated the aggregators here can either be empty or contain only one value with the Distinct type
-	if (!aggregators.empty() && !aggregators.front().DistinctChanged()) {
 		return;
 	}
 
@@ -1208,27 +1189,46 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 		std::visit(overloaded{[rowId](IdSet& ids) { ids.AddUnordered(rowId); },
 							  [&](JoinPreResult::Values& values) {
 								  if (!sctx.sortingContext.expressions.empty()) {
-									  values.emplace_back(properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid);
-									  calculateSortExpressions(proc, rowId, properRowId, sctx, result);
+									  if (result.haveRank) {
+										  values.EmplaceBack(rank, properRowId, unsigned(sctx.sortingContext.exprResults[0].size()),
+															 sctx.nsid);
+
+									  } else {
+										  values.EmplaceBack(properRowId, unsigned(sctx.sortingContext.exprResults[0].size()), sctx.nsid);
+									  }
+									  calculateSortExpressions(rank, rowId, properRowId, sctx, result);
 								  } else {
-									  values.emplace_back(properRowId, ns_->items_[properRowId], proc, sctx.nsid);
+									  if (result.haveRank) {
+										  values.EmplaceBack(rank, properRowId, ns_->items_[properRowId], sctx.nsid);
+									  } else {
+										  values.EmplaceBack(properRowId, ns_->items_[properRowId], sctx.nsid);
+									  }
 								  }
 							  },
 							  [](const SelectIteratorContainer&) { throw_as_assert; }},
 				   sctx.preSelect.Result().payload);
 	} else {
 		if (!sctx.sortingContext.expressions.empty()) {
-			result.AddItemRef(properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid);
-			calculateSortExpressions(proc, rowId, properRowId, sctx, result);
+			if (result.haveRank) {
+				result.AddItemRef(rank, properRowId, unsigned(sctx.sortingContext.exprResults[0].size()), sctx.nsid);
+
+			} else {
+				result.AddItemRef(properRowId, unsigned(sctx.sortingContext.exprResults[0].size()), sctx.nsid);
+			}
+			calculateSortExpressions(rank, rowId, properRowId, sctx, result);
 		} else {
-			result.AddItemRef(properRowId, ns_->items_[properRowId], proc, sctx.nsid);
+			if (result.haveRank) {
+				result.AddItemRef(rank, properRowId, ns_->items_[properRowId], sctx.nsid);
+			} else {
+				result.AddItemRef(properRowId, ns_->items_[properRowId], sctx.nsid);
+			}
 		}
 
 		const int kLimitItems = 10000000;
 		size_t sz = result.Count();
 		if (sz >= kLimitItems && !(sz % kLimitItems)) {
-			logPrintf(LogWarning, "Too big query results ns='%s',count='%d',rowId='%d',q='%s'", ns_->name_, sz, properRowId,
-					  sctx.query.GetSQL());
+			logFmt(LogWarning, "Too big query results ns='{}',count='{}',rowId='{}',q='{}'", ns_->name_, sz, properRowId,
+				   sctx.query.GetSQL());
 		}
 	}
 }
@@ -1241,17 +1241,21 @@ void NsSelecter::checkStrictModeAgg(StrictMode strictMode, std::string_view name
 
 	if (strictMode == StrictModeIndexes) {
 		throw Error(errParams,
-					"Current query strict mode allows aggregate index fields only. There are no indexes with name '%s' in namespace '%s'",
+					"Current query strict mode allows aggregate index fields only. There are no indexes with name '{}' in namespace '{}'",
 					name, nsName);
 	}
 	if (strictMode == StrictModeNames) {
 		if (tagsMatcher.path2tag(name).empty()) {
 			throw Error(
 				errParams,
-				"Current query strict mode allows aggregate existing fields only. There are no fields with name '%s' in namespace '%s'",
+				"Current query strict mode allows aggregate existing fields only. There are no fields with name '{}' in namespace '{}'",
 				name, nsName);
 		}
 	}
+}
+
+RX_NO_INLINE void NsSelecter::throwUnexpectedItemID(IdType rowId, IdType properRowId) {
+	throw Error(errAssert, "Unexpected rowID ({}:{}). Items size: {}", rowId, properRowId, ns_->items_.size());
 }
 
 h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEntry>& aggEntries, StrictMode strictMode) const {
@@ -1269,10 +1273,11 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 		h_vector<Aggregator::SortingEntry, 1> sortingEntries;
 		sortingEntries.reserve(ag.Sorting().size());
 		for (const auto& s : ag.Sorting()) {
-			sortingEntries.push_back({(iequals("count"sv, s.expression) ? Aggregator::SortingEntry::Count : NotFilled), s.desc});
+			sortingEntries.emplace_back((iequals("count"sv, s.expression) ? Aggregator::SortingEntry::Count : NotFilled), s.desc);
 		}
 		int idx = -1;
 		for (size_t i = 0; i < ag.Fields().size(); ++i) {
+			size_t fieldsCount = fields.size();
 			checkStrictModeAgg(strictMode == StrictModeNotSet ? ns_->config_.strictMode : strictMode, ag.Fields()[i], ns_->name_,
 							   ns_->tagsMatcher_);
 
@@ -1281,13 +1286,20 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 					sortingEntries[j].field = i;
 				}
 			}
-			if (ns_->getIndexByNameOrJsonPath(ag.Fields()[i], idx)) {
+			if (ns_->tryGetIndexByNameOrJsonPath(ag.Fields()[i], idx)) {
+				if (ns_->indexes_[idx]->IsFloatVector()) {
+					throw Error(errQueryExec, "Aggregation by float vector index is not allowed: {}", ag.Fields()[i]);
+				}
+				if (ag.Type() == AggFacet && ag.Fields().size() > 1 && ns_->indexes_[idx]->Opts().IsArray()) {
+					throw Error(errQueryExec, "Multifield facet cannot contain an array field");
+				}
 				if (ns_->indexes_[idx]->Opts().IsSparse()) {
 					fields.push_back(ns_->indexes_[idx]->Fields().getTagsPath(0));
-				} else if (ag.Type() == AggFacet && ag.Fields().size() > 1 && ns_->indexes_[idx]->Opts().IsArray()) {
-					throw Error(errQueryExec, "Multifield facet cannot contain an array field");
 				} else if (IsComposite(ns_->indexes_[idx]->Type())) {
 					if (ag.Type() == AggDistinct) {
+						if (ag.Fields().size() > 1) {
+							throw Error(errQueryExec, "DISTINCT multi field not support composite index");
+						}
 						fields = ns_->indexes_[idx]->Fields();
 						compositeIndexFields = true;
 					} else {
@@ -1297,14 +1309,20 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 
 				else {
 					fields.push_back(idx);
+					if (fieldsCount == fields.size()) {
+						throw Error(errQueryExec, "Aggregation function fields use one field twice. Field name '{}'", ag.Fields()[i]);
+					}
 				}
 			} else {
 				fields.push_back(ns_->tagsMatcher_.path2tag(ag.Fields()[i]));
+				if (fieldsCount == fields.size()) {
+					throw Error(errQueryExec, "Aggregation function fields use one field twice. Field name '{}'", ag.Fields()[i]);
+				}
 			}
 		}
 		for (size_t i = 0; i < sortingEntries.size(); ++i) {
 			if (sortingEntries[i].field == NotFilled) {
-				throw Error(errQueryExec, "The aggregation %s cannot provide sort by '%s'", AggTypeToStr(ag.Type()),
+				throw Error(errQueryExec, "The aggregation {} cannot provide sort by '{}'", AggTypeToStr(ag.Type()),
 							ag.Sorting()[i].expression);
 			}
 		}
@@ -1324,7 +1342,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 		for (const std::string& name : agg.Names()) {
 			if (std::find_if(distinctIndexes.cbegin(), distinctIndexes.cend(),
 							 [&ret, &name](size_t idx) { return ret[idx].Names()[0] == name; }) == distinctIndexes.cend()) {
-				throw Error(errQueryExec, "Cannot be combined several distinct and non distinct aggregator on index %s", name);
+				throw Error(errQueryExec, "Cannot be combined several distinct and non distinct aggregator on index {}", name);
 			}
 		}
 	}
@@ -1332,28 +1350,28 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 	return ret;
 }
 
-void NsSelecter::prepareSortIndex(const NamespaceImpl& ns, std::string& column, int& index, bool& skipSortingEntry, StrictMode strictMode) {
-	SortExpression::PrepareSortIndex(column, index, ns);
+void NsSelecter::prepareSortIndex(const NamespaceImpl& ns, std::string& column, int& index, SkipSortingEntry& skipSortingEntry,
+								  StrictMode strictMode, IsRanked isRanked) {
+	SortExpression::PrepareSortIndex(column, index, ns, isRanked);
 	if (index == IndexValueType::SetByJsonPath) {
 		skipSortingEntry |= !validateField(strictMode, column, ns.name_, ns.tagsMatcher_);
 	}
 }
 
 void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index,
-										const std::vector<JoinedSelector>& joinedSelectors, bool& skipSortingEntry, StrictMode strictMode) {
+										const std::vector<JoinedSelector>& joinedSelectors, SkipSortingEntry& skipSortingEntry,
+										StrictMode strictMode) {
 	assertrx_throw(!column.empty());
 	index = IndexValueType::SetByJsonPath;
 	assertrx_throw(nsIdx < joinedSelectors.size());
 	const auto& js = joinedSelectors[nsIdx];
-	std::visit(overloaded{[&](const JoinPreResult::Values& values) noexcept {
-							  values.payloadType.FieldByName(column, index);
-							  if (index == IndexValueType::SetByJsonPath) {
+	std::visit(overloaded{[&](const JoinPreResult::Values& values) {
+							  if (!values.payloadType.FieldByName(column, index) || index == IndexValueType::SetByJsonPath) {
 								  skipSortingEntry |= !validateField(strictMode, column, values.nsName, values.tagsMatcher);
 							  }
 						  },
-						  Restricted<IdSet, SelectIteratorContainer>{}([&](const auto&) noexcept {
-							  js.rightNs_->payloadType_.FieldByName(column, index);
-							  if (index == IndexValueType::SetByJsonPath) {
+						  Restricted<IdSet, SelectIteratorContainer>{}([&](const auto&) {
+							  if (!js.rightNs_->payloadType_.FieldByName(column, index) || index == IndexValueType::SetByJsonPath) {
 								  skipSortingEntry |= !validateField(strictMode, column, js.rightNs_->name_, js.rightNs_->tagsMatcher_);
 							  }
 						  })},
@@ -1363,14 +1381,14 @@ void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, std::string_view column, i
 bool NsSelecter::validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName, const TagsMatcher& tagsMatcher) {
 	if (strictMode == StrictModeIndexes) {
 		throw Error(errStrictMode,
-					"Current query strict mode allows sort by index fields only. There are no indexes with name '%s' in namespace '%s'",
+					"Current query strict mode allows sort by index fields only. There are no indexes with name '{}' in namespace '{}'",
 					name, nsName);
 	}
 	if (tagsMatcher.path2tag(name).empty()) {
 		if (strictMode == StrictModeNames) {
 			throw Error(
 				errStrictMode,
-				"Current query strict mode allows sort by existing fields only. There are no fields with name '%s' in namespace '%s'", name,
+				"Current query strict mode allows sort by existing fields only. There are no fields with name '{}' in namespace '{}'", name,
 				nsName);
 		}
 		return false;
@@ -1382,7 +1400,8 @@ static void removeQuotesFromExpression(std::string& expression) {
 	expression.erase(std::remove(expression.begin(), expression.end(), '"'), expression.end());
 }
 
-void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, bool isFt, bool availableSelectBySortIndex) {
+void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, RankedTypeQuery rankedTypeQuery,
+									   IndexValueType rankedIndexNo, bool availableSelectBySortIndex) const {
 	using namespace SortExprFuncs;
 	const auto strictMode = ctx.inTransaction
 								? StrictModeNone
@@ -1399,38 +1418,41 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, b
 			SortingContext::FieldEntry entry{.data = sortingEntry};
 			removeQuotesFromExpression(sortingEntry.expression);
 			sortingEntry.index = IndexValueType::SetByJsonPath;
-			ns_->getIndexByNameOrJsonPath(sortingEntry.expression, sortingEntry.index);
-			if (sortingEntry.index >= 0) {
+			if (ns_->tryGetIndexByNameOrJsonPath(sortingEntry.expression, sortingEntry.index)) {
 				reindexer::Index* sortIndex = ns_->indexes_[sortingEntry.index].get();
+				if (sortIndex->IsFloatVector()) {
+					throw Error(errQueryExec, "Ordering by float vector index is not allowed: '{}'", sortingEntry.expression);
+				}
 				entry.index = sortIndex;
 				entry.rawData = SortingContext::RawDataParams(sortIndex->ColumnData(), ns_->payloadType_, sortingEntry.index);
-				entry.opts = &sortIndex->Opts().collateOpts_;
+				const auto& idxOpts = sortIndex->Opts();
+				entry.opts = &idxOpts.collateOpts_;
 
 				if (i == 0) {
-					if (sortIndex->IsOrdered() && !ctx.sortingContext.enableSortOrders && availableSelectBySortIndex) {
+					const bool isOrdered = sortIndex->IsOrdered();
+					if (isOrdered && !idxOpts.IsArray() && !ctx.sortingContext.enableSortOrders && availableSelectBySortIndex) {
 						ctx.sortingContext.uncommitedIndex = sortingEntry.index;
 						ctx.isForceAll = ctx.sortingContext.forcedMode;
-					} else if (!sortIndex->IsOrdered() || isFt || !ctx.sortingContext.enableSortOrders || !availableSelectBySortIndex) {
+					} else if (!isOrdered || idxOpts.IsArray() || rankedTypeQuery != RankedTypeQuery::No ||
+							   !ctx.sortingContext.enableSortOrders || !availableSelectBySortIndex) {  // empty
 						ctx.isForceAll = true;
 						entry.index = nullptr;
 					}
 				}
-			} else if (sortingEntry.index == IndexValueType::SetByJsonPath) {
+			} else {
 				if (!validateField(strictMode, sortingEntry.expression, ns_->name_, ns_->tagsMatcher_)) {
 					continue;
 				}
 				ctx.isForceAll = true;
-			} else {
-				std::abort();
 			}
 			ctx.sortingContext.entries.emplace_back(std::move(entry));
 		} else if (expr.ByJoinedField()) {
 			auto& je{expr.GetJoinedIndex()};
 			const auto& js = joinedSelectors[je.nsIdx];
 			assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(js.PreResult().payload));
-			bool skip{false};
-			int jeIndex = IndexValueType::SetByJsonPath;
-			prepareSortIndex(*js.RightNs(), je.column, jeIndex, skip, strictMode);
+			SkipSortingEntry skip = SkipSortingEntry_False;
+			int jeIndex = IndexValueType::NotSet;
+			prepareSortIndex(*js.RightNs(), je.column, jeIndex, skip, strictMode, IsRanked_False);
 			if (!skip) {
 				ctx.sortingContext.entries.emplace_back(
 					SortingContext::JoinedFieldEntry(sortingEntry, je.nsIdx, std::move(je.column), jeIndex));
@@ -1441,37 +1463,48 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, b
 				throw Error(errLogic, "Sorting by expression cannot be applied to merged queries.");
 			}
 			struct {
-				bool skipSortingEntry;
+				SkipSortingEntry skipSortingEntry;
 				StrictMode strictMode;
 				const JoinedSelectors& joinedSelectors;
-			} lCtx{false, strictMode, joinedSelectors};
+			} lCtx{SkipSortingEntry_False, strictMode, joinedSelectors};
 			expr.VisitForEach(
-				Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value>{},
+				Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, SortExprFuncs::SortHash>{},
 				[this, &lCtx](SortExprFuncs::Index& exprIndex) {
-					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode);
+					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
 				},
 				[&lCtx](JoinedIndex& exprIndex) {
 					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column, exprIndex.index, lCtx.joinedSelectors, lCtx.skipSortingEntry,
 										   lCtx.strictMode);
 				},
-				[isFt](Rank&) {
-					if (!isFt) {
-						throw Error(errLogic, "Sorting by rank() is only available for full-text query");
+				[rankedTypeQuery](Rank&) {
+					if (rankedTypeQuery == RankedTypeQuery::No || rankedTypeQuery == RankedTypeQuery::Hybrid) {
+						throw Error(errQueryExec, "Sorting by rank() is only available for query with single fulltext or knn condition");
+					}
+				},
+				[&](RankNamed& r) {
+					prepareSortIndex(*ns_, r.IndexName(), r.IndexNoRef(), lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_True);
+					if (r.IndexNo() != rankedIndexNo && rankedTypeQuery != RankedTypeQuery::Hybrid) {
+						throw Error(errQueryExec, "Rank by not used in query fulltext of vector index '{}'", r.IndexName());
+					}
+				},
+				[rankedTypeQuery](const Rrf&) {
+					if (rankedTypeQuery != RankedTypeQuery::Hybrid) {
+						throw Error(errQueryExec, "Reciprocal rank fusion (RRF) is allowed in hybrid queries only");
 					}
 				},
 				[this, &lCtx](DistanceFromPoint& exprIndex) {
-					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode);
+					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
 				},
 				[&lCtx](DistanceJoinedIndexFromPoint& exprIndex) {
 					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column, exprIndex.index, lCtx.joinedSelectors, lCtx.skipSortingEntry,
 										   lCtx.strictMode);
 				},
 				[this, &lCtx](DistanceBetweenIndexes& exprIndex) {
-					prepareSortIndex(*ns_, exprIndex.column1, exprIndex.index1, lCtx.skipSortingEntry, lCtx.strictMode);
-					prepareSortIndex(*ns_, exprIndex.column2, exprIndex.index2, lCtx.skipSortingEntry, lCtx.strictMode);
+					prepareSortIndex(*ns_, exprIndex.column1, exprIndex.index1, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
+					prepareSortIndex(*ns_, exprIndex.column2, exprIndex.index2, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
 				},
 				[this, &lCtx](DistanceBetweenIndexAndJoinedIndex& exprIndex) {
-					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode);
+					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
 					prepareSortJoinedIndex(exprIndex.jNsIdx, exprIndex.jColumn, exprIndex.jIndex, lCtx.joinedSelectors,
 										   lCtx.skipSortingEntry, lCtx.strictMode);
 				},
@@ -1500,10 +1533,10 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, b
 	ctx.sortingContext.exprResults.resize(ctx.sortingContext.expressions.size());
 }
 
-enum class CostCountingPolicy : bool { Any, ExceptTargetSortIdxSeq };
+enum class [[nodiscard]] CostCountingPolicy : bool { Any, ExceptTargetSortIdxSeq };
 
 template <CostCountingPolicy countingPolicy>
-class CostCalculator {
+class [[nodiscard]] CostCalculator {
 public:
 	explicit CostCalculator(size_t _totalCost) noexcept : totalCost_(_totalCost) {}
 	void BeginSequence() noexcept {
@@ -1523,7 +1556,7 @@ public:
 		curCost_ = 0;
 	}
 	bool IsInOrSequence() const noexcept { return isInSequence_; }
-	void Add(const SelectKeyResults& results, bool isTargetSortIndex) noexcept {
+	void Add(const SelectKeyResults& results, bool isTargetSortIndex) {
 		if constexpr (countingPolicy == CostCountingPolicy::ExceptTargetSortIdxSeq) {
 			if (!isInSequence_ && isTargetSortIndex) {
 				return;
@@ -1532,21 +1565,22 @@ public:
 		onlyTargetSortIdxInSequence_ = onlyTargetSortIdxInSequence_ && isTargetSortIndex;
 		Add(results);
 	}
-	void Add(const SelectKeyResults& results) noexcept {
+	void Add(const SelectKeyResults& results) {
 		std::visit(
-			overloaded{[this](const SelectKeyResultsVector& selRes) {
-						   for (const SelectKeyResult& res : selRes) {
-							   if (isInSequence_) {
-								   curCost_ += res.GetMaxIterations(totalCost_);
-							   } else {
-								   totalCost_ = res.GetMaxIterations(totalCost_);
-							   }
-						   }
-					   },
-					   [this](OneOf<ComparatorNotIndexed,
-									Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid>>) {
-						   hasInappositeEntries_ = true;
-					   }},
+			overloaded{
+				[this](const SelectKeyResultsVector& selRes) {
+					for (const SelectKeyResult& res : selRes) {
+						if (isInSequence_) {
+							curCost_ += res.GetMaxIterations(totalCost_);
+						} else {
+							totalCost_ = res.GetMaxIterations(totalCost_);
+						}
+					}
+				},
+				[this](OneOf<ComparatorNotIndexed,
+							 Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>) {
+					hasInappositeEntries_ = true;
+				}},
 			results.AsVariant());
 	}
 	size_t TotalCost() const noexcept { return totalCost_; }
@@ -1578,7 +1612,7 @@ public:
 				return false;
 			}
 		}
-		throw Error(errLogic, "Unexpected op value: %d", int(op));
+		throw Error(errLogic, "Unexpected op value: {}", int(op));
 	}
 
 private:
@@ -1597,14 +1631,9 @@ size_t NsSelecter::calculateNormalCost(const QueryEntries& qentries, SelectCtx& 
 		next = qentries.Next(i);
 		const bool calculateEntry = costCalculator.OnNewEntry(qentries, i, next);
 		qentries.Visit(
-			i, [] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryFieldEntry&) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			Skip<AlwaysFalse, AlwaysTrue>{},
-			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket&)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
-			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const JoinQueryEntry&)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
-			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const BetweenFieldsQueryEntry&)
+			i, [] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<SubQueryEntry, SubQueryFieldEntry>) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
+			Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
+			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, KnnQueryEntry>)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
 			[&](const QueryEntry& qe) {
 				if (!qe.IsFieldIndexed()) {
@@ -1639,14 +1668,14 @@ size_t NsSelecter::calculateNormalCost(const QueryEntries& qentries, SelectCtx& 
 					return;
 				}
 
-				Index::SelectOpts opts;
-				opts.disableIdSetCache = 1;
-				opts.itemsCountInNamespace = totalItemsCount;
-				opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
-				opts.inTransaction = ctx.inTransaction;
+				Index::SelectContext indexSelectContext;
+				indexSelectContext.opts.disableIdSetCache = 1;
+				indexSelectContext.opts.itemsCountInNamespace = totalItemsCount;
+				indexSelectContext.opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
+				indexSelectContext.opts.inTransaction = ctx.inTransaction;
 
 				try {
-					SelectKeyResults results = index->SelectKey(qe.Values(), qe.Condition(), 0, opts, nullptr, rdxCtx);
+					SelectKeyResults results = index->SelectKey(qe.Values(), qe.Condition(), 0, indexSelectContext, rdxCtx);
 					costCalculator.Add(results, qe.IndexNo() == ctx.sortingContext.uncommitedIndex);
 				} catch (const Error&) {
 					costCalculator.MarkInapposite();
@@ -1670,14 +1699,9 @@ size_t NsSelecter::calculateOptimizedCost(size_t costNormal, const QueryEntries&
 			continue;
 		}
 		qentries.Visit(
-			i, Skip<AlwaysFalse, AlwaysTrue>{},
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryFieldEntry&) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket&)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
-			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const JoinQueryEntry&)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
-			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const BetweenFieldsQueryEntry&)
+			i, Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
+			[] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<SubQueryEntry, SubQueryFieldEntry>) RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
+			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, KnnQueryEntry>)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
 			[&](const QueryEntry& qe) {
 				if (!qe.IsFieldIndexed() || qe.IndexNo() != ctx.sortingContext.uncommitedIndex) {
@@ -1685,18 +1709,18 @@ size_t NsSelecter::calculateOptimizedCost(size_t costNormal, const QueryEntries&
 					return;
 				}
 
-				Index::SelectOpts opts;
-				opts.itemsCountInNamespace = ns_->itemsCount();
-				opts.disableIdSetCache = 1;
-				opts.unbuiltSortOrders = 1;
-				opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
-				opts.inTransaction = ctx.inTransaction;
+				Index::SelectContext indexSelectContext;
+				indexSelectContext.opts.itemsCountInNamespace = ns_->itemsCount();
+				indexSelectContext.opts.disableIdSetCache = 1;
+				indexSelectContext.opts.unbuiltSortOrders = 1;
+				indexSelectContext.opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
+				indexSelectContext.opts.inTransaction = ctx.inTransaction;
 
 				try {
 					SelectKeyResults results =
-						ns_->indexes_[qe.IndexNo()]->SelectKey(qe.Values(), qe.Condition(), 0, opts, nullptr, rdxCtx);
+						ns_->indexes_[qe.IndexNo()]->SelectKey(qe.Values(), qe.Condition(), 0, indexSelectContext, rdxCtx);
 					costCalculator.Add(results);
-				} catch (const Error&) {
+				} catch (std::exception&) {
 					costCalculator.MarkInapposite();
 				}
 			});
@@ -1751,22 +1775,22 @@ bool NsSelecter::isSortOptimizationEffective(const QueryEntries& qentries, Selec
 	return costOptimized <= costNormal;
 }
 
-void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, h_vector<Aggregator, 4>& aggregators, SelectCtx& ctx) {
+void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, h_vector<Aggregator, 4>&& aggregators, SelectCtx& ctx) {
 	if (result.aggregationResults.size() < aggregators.size()) {
-		throw Error(errQueryExec, "Merged query(%s) aggregators count (%d) does not match to the parent query aggregations (%d)",
+		throw Error(errQueryExec, "Merged query({}) aggregators count ({}) does not match to the parent query aggregations ({})",
 					ctx.query.GetSQL(false), aggregators.size(), result.aggregationResults.size());
 	}
 	for (size_t i = 0; i < aggregators.size(); i++) {
-		AggregationResult r = aggregators[i].GetResult();
+		AggregationResult r = std::move(aggregators[i]).MoveResult();
 		AggregationResult& parentRes = result.aggregationResults[i];
-		if (r.type != parentRes.type || r.fields != parentRes.fields) {
+		if (!r.IsEquals(parentRes)) {
 			std::stringstream strParentRes;
 			std::stringstream strR;
-			throw Error(errQueryExec, "Aggregation incorrect ns %s type of parent %s type of query %s parent field %s query field %s",
-						ns_->name_, AggTypeToStr(parentRes.type), AggTypeToStr(r.type), parentRes.DumpFields(strParentRes).str(),
+			throw Error(errQueryExec, "Aggregation incorrect ns {} type of parent {} type of query {} parent field {} query field {}",
+						ns_->name_, AggTypeToStr(parentRes.GetType()), AggTypeToStr(r.GetType()), parentRes.DumpFields(strParentRes).str(),
 						r.DumpFields(strR).str());
 		}
-		switch (r.type) {
+		switch (r.GetType()) {
 			case AggSum: {
 				std::optional<double> newVal = r.GetValue();
 				std::optional<double> curVal = parentRes.GetValue();
@@ -1775,7 +1799,7 @@ void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, 
 					if (curVal.has_value()) {
 						cur = curVal.value();
 					}
-					parentRes.SetValue(newVal.value() + cur);
+					parentRes.UpdateValue(newVal.value() + cur);
 				}
 				break;
 			}
@@ -1784,7 +1808,7 @@ void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, 
 				std::optional<double> curVal = parentRes.GetValue();
 				if (newVal.has_value()) {
 					if (!curVal.has_value() || newVal.value() < curVal.value()) {
-						parentRes.SetValue(newVal.value());
+						parentRes.UpdateValue(newVal.value());
 					}
 				}
 				break;
@@ -1794,7 +1818,7 @@ void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, 
 				std::optional<double> curVal = parentRes.GetValue();
 				if (newVal.has_value()) {
 					if (!curVal.has_value() || newVal.value() > curVal.value()) {
-						parentRes.SetValue(newVal.value());
+						parentRes.UpdateValue(newVal.value());
 					}
 				}
 				break;
@@ -1811,7 +1835,7 @@ void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, 
 }
 
 RX_NO_INLINE void NsSelecter::throwIncorrectRowIdInSortOrders(int rowId, const Index& firstSortIndex, const SelectIterator& firstIterator) {
-	throw Error(errLogic, "FirstIterator: %s, firstSortIndex: %s, firstSortIndex size: %d, rowId: %d", firstIterator.name,
+	throw Error(errLogic, "FirstIterator: {}, firstSortIndex: {}, firstSortIndex size: {}, rowId: {}", firstIterator.name,
 				firstSortIndex.Name(), static_cast<int>(firstSortIndex.SortOrders().size()), rowId);
 }
 

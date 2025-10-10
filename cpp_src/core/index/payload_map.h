@@ -9,7 +9,7 @@
 
 namespace reindexer {
 
-class PayloadValueWithHash : public PayloadValue {
+class [[nodiscard]] PayloadValueWithHash : public PayloadValue {
 public:
 	PayloadValueWithHash() noexcept : PayloadValue() {}
 	PayloadValueWithHash(PayloadValue&& pv, const PayloadType& pt, const FieldsSet& fields)
@@ -26,7 +26,7 @@ private:
 	uint32_t hash_ = 0;
 };
 
-class equal_composite {
+class [[nodiscard]] equal_composite {
 public:
 	using is_transparent = void;
 
@@ -46,7 +46,7 @@ private:
 	FieldsSet fields_;
 };
 
-class equal_composite_ref {
+class [[nodiscard]] equal_composite_ref {
 public:
 	equal_composite_ref(const PayloadType& type, const FieldsSet& fields) noexcept : type_(type), fields_(fields) {
 		assertrx_dbg(type_.get());
@@ -62,7 +62,7 @@ private:
 	std::reference_wrapper<const FieldsSet> fields_;
 };
 
-class hash_composite {
+class [[nodiscard]] hash_composite {
 public:
 	template <typename PT, typename FS>
 	hash_composite(PT&& type, FS&& fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {
@@ -76,7 +76,7 @@ private:
 	FieldsSet fields_;
 };
 
-class hash_composite_ref {
+class [[nodiscard]] hash_composite_ref {
 public:
 	hash_composite_ref(const PayloadType& type, const FieldsSet& fields) noexcept : type_(type), fields_(fields) {
 		assertrx_dbg(type_.get());
@@ -88,7 +88,7 @@ private:
 	std::reference_wrapper<const FieldsSet> fields_;
 };
 
-class less_composite {
+class [[nodiscard]] less_composite {
 public:
 	less_composite(PayloadType&& type, FieldsSet&& fields) noexcept : type_(std::move(type)), fields_(std::move(fields)) {
 		assertrx_dbg(type_);
@@ -104,7 +104,7 @@ private:
 	FieldsSet fields_;
 };
 
-class less_composite_ref {
+class [[nodiscard]] less_composite_ref {
 public:
 	less_composite_ref(const PayloadType& type, const FieldsSet& fields) noexcept : type_(type), fields_(fields) {
 		assertrx_dbg(type_.get());
@@ -124,7 +124,7 @@ template <bool hold>
 class payload_str_fields_helper;
 
 template <>
-class payload_str_fields_helper<true> {
+class [[nodiscard]] payload_str_fields_helper<true> {
 protected:
 	payload_str_fields_helper(PayloadType&& payloadType, const FieldsSet& fields) : payload_type_(std::move(payloadType)) {
 		if (fields.getTagsPathsLength() || fields.getJsonPathsLength()) {
@@ -168,7 +168,7 @@ private:
 };
 
 template <>
-class payload_str_fields_helper<false> {
+class [[nodiscard]] payload_str_fields_helper<false> {
 protected:
 	payload_str_fields_helper(const PayloadType&, const FieldsSet&) noexcept {}
 
@@ -178,7 +178,7 @@ protected:
 	inline bool have_str_fields() const noexcept { return false; }
 };
 
-struct no_deep_clean {
+struct [[nodiscard]] no_deep_clean {
 	template <typename T>
 	void operator()(const T&) const noexcept {}
 };
@@ -299,7 +299,7 @@ private:
 };
 
 template <typename T1, bool hold>
-class payload_map : private btree::btree_map<PayloadValue, T1, less_composite>, private payload_str_fields_helper<hold> {
+class [[nodiscard]] payload_map : private btree::btree_map<PayloadValue, T1, less_composite>, private payload_str_fields_helper<hold> {
 	using base_tree_map = btree::btree_map<PayloadValue, T1, less_composite>;
 
 	using base_tree_map::insert;

@@ -6,6 +6,7 @@
 #include <numeric>
 #include <string>
 #include "estl/h_vector.h"
+#include "tools/assertrx.h"
 #include "tools/oscompat.h"
 
 namespace reindexer {
@@ -13,7 +14,7 @@ namespace net {
 
 #ifdef _WIN32
 static int print_not_supported() {
-	fprintf(stderr, "Unix domain sockets are not supported on windows\n");
+	fprintf(stderr, "reindexer error: unix domain sockets are not supported on windows\n");
 	return -1;
 }
 #endif	// _WIN32
@@ -29,7 +30,7 @@ int socket::connect(std::string_view addr, socket_domain t) {
 			if rx_unlikely (::connect(fd_, results->ai_addr, results->ai_addrlen) != 0) {  // -V595
 				if rx_unlikely (!would_block(last_error())) {
 					perror("connect error");
-					close();
+					rx_unused = close();
 				}
 				ret = -1;
 			}
@@ -40,7 +41,7 @@ int socket::connect(std::string_view addr, socket_domain t) {
 					int err = openssl::SSL_get_error(*ssl, res);
 					if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE) {
 						perror("ssl connect error");
-						close();
+						rx_unused = close();
 					}
 				}
 			}
@@ -64,7 +65,7 @@ int socket::connect(std::string_view addr, socket_domain t) {
 		if rx_unlikely (::connect(fd_, reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) != 0) {  // -V595
 			if rx_unlikely (!would_block(last_error())) {
 				perror("connect error");
-				close();
+				rx_unused = close();
 			}
 			return -1;
 		}
@@ -73,7 +74,7 @@ int socket::connect(std::string_view addr, socket_domain t) {
 	return ret;
 }
 
-ssize_t socket::recv(span<char> buf) {
+ssize_t socket::recv(std::span<char> buf) {
 	if (ssl) {
 		return reindexer::openssl::SSL_read(*ssl, buf.data(), buf.size());
 	} else {
@@ -81,7 +82,7 @@ ssize_t socket::recv(span<char> buf) {
 	}
 }
 
-ssize_t socket::send(span<char> buf) {
+ssize_t socket::send(std::span<char> buf) {
 	if (ssl) {
 		return reindexer::openssl::SSL_write(*ssl, buf.data(), buf.size());
 	} else {
@@ -89,7 +90,7 @@ ssize_t socket::send(span<char> buf) {
 	}
 }
 
-ssize_t socket::ssl_send(span<chunk> chunks) {
+ssize_t socket::ssl_send(std::span<chunk> chunks) {
 	constexpr size_t defaultBufCapacity = 0x1000;
 	constexpr size_t maxBufSize = 0x4000;
 
@@ -121,7 +122,7 @@ ssize_t socket::ssl_send(span<chunk> chunks) {
 }
 
 #ifdef _WIN32
-ssize_t socket::send(span<chunk> chunks) {
+ssize_t socket::send(std::span<chunk> chunks) {
 	if (ssl) {
 		return ssl_send(chunks);
 	} else {
@@ -139,7 +140,7 @@ ssize_t socket::send(span<chunk> chunks) {
 	}
 }
 #else	// _WIN32
-ssize_t socket::send(span<chunk> chunks) {
+ssize_t socket::send(std::span<chunk> chunks) {
 	if (ssl) {
 		return ssl_send(chunks);
 	} else {
@@ -155,14 +156,13 @@ ssize_t socket::send(span<chunk> chunks) {
 }
 #endif	// _WIN32
 
-int socket::setLinger0() {
+void socket::setLinger0() {
 	if (fd() >= 0) {
 		struct linger sl;
 		sl.l_onoff = 1;	 /* enable linger */
 		sl.l_linger = 0; /* with 0 seconds timeout */
-		return setsockopt(fd(), SOL_SOCKET, SO_LINGER, reinterpret_cast<const char*>(&sl), sizeof(sl));
+		setsockopt(fd(), SOL_SOCKET, SO_LINGER, reinterpret_cast<const char*>(&sl), sizeof(sl));
 	}
-	return -1;
 }
 
 int socket::create(std::string_view addr, struct addrinfo** presults) {
@@ -194,7 +194,7 @@ int socket::create(std::string_view addr, struct addrinfo** presults) {
 
 		int ret = ::getaddrinfo(paddr, pport, &hints, &results);
 		if rx_unlikely (ret != 0) {
-			fprintf(stderr, "getaddrinfo failed: %s\n", gai_strerror(ret));
+			fprintf(stderr, "reindexer error: getaddrinfo failed: %s\n", gai_strerror(ret));
 			return -1;
 		}
 		assertrx(results != nullptr);
@@ -340,7 +340,7 @@ int lst_socket::bind(std::string_view addr, socket_domain t) {
 			ret = ::bind(sock_.fd(), results->ai_addr, results->ai_addrlen);
 			if rx_unlikely (ret != 0) {
 				perror("bind error");
-				close();
+				rx_unused = close();
 			}
 		}
 		if (results) {
@@ -365,7 +365,7 @@ int lst_socket::bind(std::string_view addr, socket_domain t) {
 		lockFd_ = ::open(unLock_.c_str(), O_WRONLY | O_CREAT | O_APPEND, S_IRWXU);	// open(unLock_.c_str(), O_RDONLY | O_CREAT, 0600);
 		if (lockFd_ < 0) {
 			perror("open(lock) error");
-			close();
+			rx_unused = close();
 			return -1;
 		}
 
@@ -378,16 +378,16 @@ int lst_socket::bind(std::string_view addr, socket_domain t) {
 		lock.l_pid = getpid();
 
 		if rx_unlikely (fcntl(lockFd_, F_SETLK, &lock) < 0) {
-			fprintf(stderr, "Unable to get LOCK for %s\n", unLock_.c_str());
+			fprintf(stderr, "reindexer error: unable to get LOCK for %s\n", unLock_.c_str());
 			perror("fcntl(F_SETLK) error");
-			close();
+			rx_unused = close();
 			return -1;
 		}
 		unlink(unPath_.c_str());
 
 		if rx_unlikely (::bind(sock_.fd(), reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) < 0) {
 			perror("bind() error");
-			close();
+			rx_unused = close();
 			return -1;
 		}
 #endif	// _WIN32
@@ -464,7 +464,7 @@ socket lst_socket::accept() {
 }
 
 #ifdef _WIN32
-class __windows_ev_init {
+class [[nodiscard]] __windows_ev_init {
 public:
 	__windows_ev_init() {
 		WSADATA wsaData;

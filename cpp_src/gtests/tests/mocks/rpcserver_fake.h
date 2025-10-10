@@ -11,7 +11,7 @@ using namespace reindexer_server;
 using namespace reindexer::net;
 using namespace reindexer;
 
-struct RPCServerConfig {
+struct [[nodiscard]] RPCServerConfig {
 	std::chrono::milliseconds loginDelay = std::chrono::milliseconds(2000);
 	std::chrono::milliseconds openNsDelay = std::chrono::milliseconds(2000);
 	std::chrono::milliseconds selectDelay = std::chrono::milliseconds(2000);
@@ -19,16 +19,16 @@ struct RPCServerConfig {
 
 enum RPCServerStatus { Init, Connected, Stopped };
 
-struct RPCClientData final : public cproto::ClientData {
+struct [[nodiscard]] RPCClientData final : public cproto::ClientData {
 	AuthContext auth;
 	int connID;
 };
 
-class RPCServerFake {
+class [[nodiscard]] RPCServerFake {
 public:
 	RPCServerFake(const RPCServerConfig& conf);
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError);
+	void Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError);
 	Error Stop();
 
 	Error Ping(cproto::Context& ctx);
@@ -52,7 +52,7 @@ protected:
 	std::string dsn_;
 	std::atomic<RPCServerStatus> state_;
 	Error loginError_;
-	std::mutex qrMutex_;
+	reindexer::mutex qrMutex_;
 	std::set<int> usedQrIds_;
 	std::set<int> unusedQrIds_;
 	std::atomic_size_t closeQRRequestsCounter_{0};

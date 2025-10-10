@@ -1,6 +1,6 @@
 #include "jsonbuilder.h"
 
-namespace reindexer {
+namespace reindexer::builders {
 
 JsonBuilder::JsonBuilder(WrSerializer& ser, ObjType type, const TagsMatcher* tm, bool emitTrailingForFloat)
 	: ser_(&ser), tm_(tm), type_(type), emitTrailingForFloat_(emitTrailingForFloat) {
@@ -17,9 +17,9 @@ JsonBuilder::JsonBuilder(WrSerializer& ser, ObjType type, const TagsMatcher* tm,
 	}
 }
 
-std::string_view JsonBuilder::getNameByTag(int tagName) { return tagName ? tm_->tag2name(tagName) : std::string_view(); }
+std::string_view JsonBuilder::getNameByTag(TagName tagName) { return tagName.IsEmpty() ? std::string_view{} : tm_->tag2name(tagName); }
 
-JsonBuilder& JsonBuilder::End() {
+void JsonBuilder::End() {
 	switch (type_) {
 		case ObjType::TypeArray:
 			(*ser_) << ']';
@@ -32,8 +32,6 @@ JsonBuilder& JsonBuilder::End() {
 			break;
 	}
 	type_ = ObjType::TypePlain;
-
-	return *this;
 }
 
 JsonBuilder JsonBuilder::Object(std::string_view name, int /*size*/) {
@@ -56,34 +54,30 @@ void JsonBuilder::putName(std::string_view name) {
 	}
 }
 
-JsonBuilder& JsonBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
+void JsonBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
 	putName(name);
 	ser_->PrintJsonString(arg);
-	return *this;
 }
 
-JsonBuilder& JsonBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
+void JsonBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
 	putName(name);
 	ser_->PrintJsonUuid(arg);
-	return *this;
 }
 
-JsonBuilder& JsonBuilder::Raw(std::string_view name, std::string_view arg) {
+void JsonBuilder::Raw(std::string_view name, std::string_view arg) {
 	putName(name);
 	(*ser_) << arg;
-	return *this;
 }
 
-JsonBuilder& JsonBuilder::Null(std::string_view name) {
+void JsonBuilder::Null(std::string_view name) {
 	putName(name);
 	(*ser_) << "null";
-	return *this;
 }
 
-JsonBuilder& JsonBuilder::Put(std::string_view name, const Variant& kv, int offset) {
+void JsonBuilder::Put(std::string_view name, const Variant& kv, int offset) {
 	kv.Type().EvaluateOneOf(
 		[&](KeyValueType::Int) { Put(name, int(kv), offset); }, [&](KeyValueType::Int64) { Put(name, int64_t(kv), offset); },
-		[&](KeyValueType::Double) { Put(name, double(kv), offset); },
+		[&](KeyValueType::Double) { Put(name, double(kv), offset); }, [&](KeyValueType::Float) { Put(name, float(kv), offset); },
 		[&](KeyValueType::String) { Put(name, std::string_view(kv), offset); }, [&](KeyValueType::Null) { Null(name); },
 		[&](KeyValueType::Bool) { Put(name, bool(kv), offset); },
 		[&](KeyValueType::Tuple) {
@@ -92,8 +86,8 @@ JsonBuilder& JsonBuilder::Put(std::string_view name, const Variant& kv, int offs
 				arrNode.Put({nullptr, 0}, val, offset);
 			}
 		},
-		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
-	return *this;
+		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); },
+		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept {});
 }
 
-}  // namespace reindexer
+}  // namespace reindexer::builders

@@ -4,6 +4,7 @@
 #include <vector>
 #include "core/queryresults/queryresults.h"
 #include "core/type_consts.h"
+#include "estl/lock.h"
 #include "loggerwrapper.h"
 #include "net/ev/ev.h"
 #include "tools/assertrx.h"
@@ -12,7 +13,7 @@ namespace reindexer_server {
 
 using namespace reindexer;
 
-class RPCQrWatcher {
+class [[nodiscard]] RPCQrWatcher {
 public:
 	constexpr static int64_t kUninitialized = -1;
 	constexpr static int64_t kDisabled = -2;
@@ -24,7 +25,7 @@ public:
 	RPCQrWatcher(std::chrono::seconds idleTimeout)
 		: idleTimeout_(idleTimeout.count() > 0 ? (idleTimeout + std::chrono::seconds(1)) : idleTimeout) {}
 
-	class Ref {
+	class [[nodiscard]] Ref {
 	public:
 		Ref() = default;
 		Ref(const Ref&) = delete;
@@ -60,7 +61,7 @@ public:
 
 		friend class RPCQrWatcher;
 
-		struct Data {
+		struct [[nodiscard]] Data {
 			uint32_t id = 0;
 			QueryResults* qr = nullptr;
 			RPCQrWatcher* owner = nullptr;
@@ -96,7 +97,7 @@ public:
 		UID curUID = qrs.uid.load(std::memory_order_acquire);
 		if (curUID.freed) {
 			if (strictCheck) {
-				throw Error(errNotFound, "Unexpected Query Results ID: %d (it was already freed)", id.main);
+				throw Error(errNotFound, "Unexpected Query Results ID: {} (it was already freed)", id.main);
 			} else {
 				return;
 			}
@@ -121,8 +122,8 @@ public:
 				}
 			} else if (strictCheck) {
 				throw Error(errQrUIDMissmatch,
-							"Unexpected Query Results UID (most likely those query results were reset by idle timeout): %d vs %d(state:%d)",
-							id.uid, curUID.val, curUID.state);
+							"Unexpected Query Results UID (most likely those query results were reset by idle timeout): {} vs {}(state:{})",
+							id.uid, uint64_t(curUID.val), uint64_t(curUID.state));
 			} else {
 				return;
 			}
@@ -132,7 +133,7 @@ public:
 			newUID.SetUnitialized();
 			qrs.uid.store(newUID, std::memory_order_release);
 
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			putFreeID(uint32_t(id.main));
 		}
 	}
@@ -142,8 +143,8 @@ public:
 private:
 	constexpr static int64_t kUIDValueBitmask = int64_t(0x1FFFFFFFFFFFFF);
 	constexpr static uint32_t kMaxQRRefsCount = 127;
-	struct UID {
-		enum State {
+	struct [[nodiscard]] UID {
+		enum [[nodiscard]] State {
 			Uninitialized = 0,
 			InitializedUIDEnabled = 1,
 			InitializedUIDDisabled = 2,
@@ -153,7 +154,7 @@ private:
 		UID() noexcept : freed(0), state(Uninitialized), refs(0), val(0) {}
 		UID(int64_t uid, bool addRef) noexcept
 			: freed(0), state(uid >= 0 ? InitializedUIDEnabled : InitializedUIDDisabled), refs(addRef ? 1 : 0), val(uid >= 0 ? uid : 0) {
-			assertf(uid == kDisabled || val == (uid & kUIDValueBitmask), "UID: %d, val: %d", uid, val);
+			assertf(uid == kDisabled || val == (uid & kUIDValueBitmask), "UID: {}, val: {}", uint64_t(uid), uint64_t(val));
 		}
 		void SetUnitialized() noexcept {
 			state = UID::Uninitialized;
@@ -166,7 +167,7 @@ private:
 		uint64_t val : 53;
 	};
 	static_assert(std::atomic<UID>::is_always_lock_free, "Expection UID to be lockfree");
-	struct QrStorage {
+	struct [[nodiscard]] QrStorage {
 		QrStorage() = default;
 		QrStorage(const QrStorage&) = delete;
 		QrStorage(QrStorage&& o)
@@ -190,7 +191,7 @@ private:
 		QueryResults qr;
 	};
 	template <typename T>
-	class PartitionedArray {
+	class [[nodiscard]] PartitionedArray {
 	public:
 		PartitionedArray() { array_[0].reserve(kChunkSize); }
 		T& operator[](uint32_t n) noexcept {
@@ -208,7 +209,7 @@ private:
 			uint32_t chunkId = size_ / kChunkSize;
 			if (array_[chunkId].capacity() < kChunkSize) {
 				if (chunkId >= kChuncksCount - 1) {
-					throw Error(errParams, "Too many concurrent query results. Limit is: %d", kChuncksCount * kChunkSize);
+					throw Error(errParams, "Too many concurrent query results. Limit is: {}", kChuncksCount * kChunkSize);
 				}
 				array_[chunkId].reserve(kChunkSize);
 			}
@@ -224,17 +225,17 @@ private:
 
 	void checkIDs(int32_t id, int64_t uid) const {
 		if (!isMainIDValid(id)) {
-			throw Error(errLogic, "Unexpected Query Results ID: %d", id);
+			throw Error(errLogic, "Unexpected Query Results ID: {}", id);
 		}
 		if (!isUIDValid(uid)) {
-			throw Error(errLogic, "Unexpected Query Results UID: %d", uid);
+			throw Error(errLogic, "Unexpected Query Results UID: {}", uid);
 		}
 	}
 	bool isMainIDValid(int32_t id) const noexcept { return id < int32_t(allocated_.load(std::memory_order_acquire)) && id >= 0; }
 	bool isUIDValid(int64_t uid) const noexcept { return uid == (uid & kUIDValueBitmask) || uid == kDisabled || uid == kUninitialized; }
 	void onRefDestroyed(uint32_t id) {
 		[[maybe_unused]] const auto allocated = allocated_.load(std::memory_order_acquire);
-		assertf(id < allocated, "id: %d, allocated: %d", id, allocated);
+		assertf(id < allocated, "id: {}, allocated: {}", id, allocated);
 		auto& qrs = qrs_[id];
 		UID curUID = qrs.uid.load(std::memory_order_acquire);
 		// QR can not be removed, while 1 or more Refs exist
@@ -258,14 +259,14 @@ private:
 			newUID.SetUnitialized();
 			qrs.uid.store(newUID, std::memory_order_release);
 
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			putFreeID(id);
 		}
 	}
 	Ref createQueryResults(int64_t uid, int flags) {
 		std::pair<uint32_t, bool> freeIDP;
 		{
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			freeIDP = tryPopFreeID();
 			if (!freeIDP.second) {
 				freeIDP.first = uint32_t(qrs_.size());
@@ -290,13 +291,13 @@ private:
 			if ((uid >= 0 && curUID.state == UID::InitializedUIDEnabled && uint64_t(uid) == curUID.val) ||
 				(uid == kDisabled && curUID.state == UID::InitializedUIDDisabled)) {
 				if (newUID.refs == kMaxQRRefsCount) {
-					throw Error(errLogic, "Unexpected Query Results refs count. It must be less than %d", kMaxQRRefsCount);
+					throw Error(errLogic, "Unexpected Query Results refs count. It must be less than {}", kMaxQRRefsCount);
 				}
 				++newUID.refs;
 			} else {
 				throw Error(errQrUIDMissmatch,
-							"Unexpected Query Results UID (most likely those query results were reset by idle timeout): %d vs %d(state:%d)",
-							uid, curUID.val, curUID.state);
+							"Unexpected Query Results UID (most likely those query results were reset by idle timeout): {} vs {}(state:{})",
+							uid, uint64_t(curUID.val), uint64_t(curUID.state));
 			}
 		} while (!qrs.uid.compare_exchange_strong(curUID, newUID, std::memory_order_acq_rel));
 		qrs.lastAccessTime.store(now(), std::memory_order_relaxed);
@@ -317,7 +318,7 @@ private:
 	std::array<uint32_t, kMaxConcurrentQRCount> freeIDs_ = {};
 	uint32_t freeIDsCnt_ = 0;
 	PartitionedArray<QrStorage> qrs_;
-	std::mutex mtx_;
+	reindexer::mutex mtx_;
 	std::atomic<uint32_t> allocated_ = {0};
 	std::atomic<int64_t> uidCounter_ = 1;
 

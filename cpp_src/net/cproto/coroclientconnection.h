@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include "args.h"
 #include "core/keyvalue/p_string.h"
 #include "coroutine/channel.h"
@@ -21,9 +20,9 @@ namespace cproto {
 using std::chrono::seconds;
 using std::chrono::milliseconds;
 
-class CoroRPCAnswer {
+class [[nodiscard]] CoroRPCAnswer {
 public:
-	Error Status() const { return status_; }
+	const Error& Status() const noexcept { return status_; }
 	Args GetArgs(int minArgs = 0) const {
 		cproto::Args ret;
 		if (!data_.empty()) {
@@ -31,7 +30,7 @@ public:
 			ret.Unpack(ser);
 		}
 		if (int(ret.size()) < minArgs) {
-			throw Error(errParams, "Server returned %d args, but expected %d", int(ret.size()), minArgs);
+			throw Error(errParams, "Server returned {} args, but expected {}", int(ret.size()), minArgs);
 		}
 
 		return ret;
@@ -51,7 +50,7 @@ public:
 
 protected:
 	Error status_;
-	span<const uint8_t> data_;
+	std::span<const uint8_t> data_;
 	chunk storage_;
 	friend class CoroClientConnection;
 };
@@ -61,7 +60,7 @@ constexpr int64_t kShardingFlagsMask = int64_t{0x7FFFFFFF} << 32;
 
 struct CommandParams;
 
-class CoroClientConnection {
+class [[nodiscard]] CoroClientConnection {
 public:
 	using UpdatesHandlerT = std::function<void(const CoroRPCAnswer& ans)>;
 	using FatalErrorHandlerT = std::function<void(Error err)>;
@@ -69,7 +68,7 @@ public:
 	using TimePointT = ClockT::time_point;
 	using ConnectionStateHandlerT = std::function<void(const Error&)>;
 
-	struct Options {
+	struct [[nodiscard]] Options {
 		Options() noexcept
 			: loginTimeout(0),
 			  keepAliveTimeout(0),
@@ -80,8 +79,8 @@ public:
 			  enableCompression(false),
 			  requestDedicatedThread(false) {}
 		Options(milliseconds _loginTimeout, milliseconds _keepAliveTimeout, bool _createDB, bool _hasExpectedClusterID,
-				int _expectedClusterID, int _reconnectAttempts, bool _enableCompression, bool _requestDedicatedThread,
-				std::string _appName) noexcept
+				int _expectedClusterID, int _reconnectAttempts, bool _enableCompression, bool _requestDedicatedThread, std::string _appName,
+				std::string _replToken) noexcept
 			: loginTimeout(_loginTimeout),
 			  keepAliveTimeout(_keepAliveTimeout),
 			  createDB(_createDB),
@@ -90,7 +89,8 @@ public:
 			  reconnectAttempts(_reconnectAttempts),
 			  enableCompression(_enableCompression),
 			  requestDedicatedThread(_requestDedicatedThread),
-			  appName(std::move(_appName)) {}
+			  appName(std::move(_appName)),
+			  replToken(std::move(_replToken)) {}
 
 		milliseconds loginTimeout;
 		milliseconds keepAliveTimeout;
@@ -101,14 +101,15 @@ public:
 		bool enableCompression;
 		bool requestDedicatedThread;
 		std::string appName;
+		std::string replToken;
 	};
-	struct ConnectData {
+	struct [[nodiscard]] ConnectData {
 		httpparser::UrlParser uri;
 		Options opts;
 	};
 
 	CoroClientConnection();
-	~CoroClientConnection() { Stop(); }
+	~CoroClientConnection();
 
 	void Start(ev::dynamic_loop& loop, ConnectData&& connectData);
 	void Stop();
@@ -128,8 +129,10 @@ public:
 		return call(opts, args, argss...);
 	}
 
+	std::optional<std::string> RxServerVersion() const noexcept { return rxVersion_; }
+
 private:
-	struct RPCData {
+	struct [[nodiscard]] RPCData {
 		RPCData() noexcept : seq(0), used(false), system(false), cancelCtx(nullptr), rspCh(1) {}
 		uint32_t seq;
 		bool used;
@@ -139,7 +142,7 @@ private:
 		coroutine::channel<CoroRPCAnswer> rspCh;
 	};
 
-	struct MarkedChunk {
+	struct [[nodiscard]] MarkedChunk {
 		uint32_t seq;
 		bool noReply;
 		std::optional<TimePointT> requiredLoginTs;
@@ -147,18 +150,18 @@ private:
 	};
 
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, std::string_view val, const Argss&... argss) {
-		args.push_back(Variant(p_string(&val)));
+	RX_ALWAYS_INLINE CoroRPCAnswer call(const CommandParams& opts, Args& args, std::string_view val, const Argss&... argss) {
+		args.emplace_back(p_string(&val));
 		return call(opts, args, argss...);
 	}
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const std::string& val, const Argss&... argss) {
-		args.push_back(Variant(p_string(&val)));
+	RX_ALWAYS_INLINE CoroRPCAnswer call(const CommandParams& opts, Args& args, const std::string& val, const Argss&... argss) {
+		args.emplace_back(p_string(&val));
 		return call(opts, args, argss...);
 	}
 	template <typename T, typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams& opts, Args& args, const T& val, const Argss&... argss) {
-		args.push_back(Variant(val));
+	RX_ALWAYS_INLINE CoroRPCAnswer call(const CommandParams& opts, Args& args, const T& val, const Argss&... argss) {
+		args.emplace_back(val);
 		return call(opts, args, argss...);
 	}
 
@@ -209,9 +212,10 @@ private:
 	manual_connection conn_;
 	TimePointT loginTs_;
 	std::string compressedBuffer_;
+	std::optional<std::string> rxVersion_;
 };
 
-struct CommandParams {
+struct [[nodiscard]] CommandParams {
 	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext* ctx,
 				  bool parallel) noexcept
 		: cmd(c),

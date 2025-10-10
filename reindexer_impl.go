@@ -17,10 +17,10 @@ import (
 	otelattr "go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
-	"github.com/restream/reindexer/v4/dsl"
-	"github.com/restream/reindexer/v4/events"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
+	"github.com/restream/reindexer/v5/dsl"
+	"github.com/restream/reindexer/v5/events"
 )
 
 type reindexerNamespace struct {
@@ -189,7 +189,7 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 		case bindings.OptionOpenTelemetry:
 			if v.EnableTracing {
 				rx.otelTracer = otel.Tracer(
-					"reindexer/v4",
+					"reindexer/v5",
 					oteltrace.WithInstrumentationVersion(bindings.ReindexerVersion),
 				)
 				rx.otelCommonTraceAttrs = []otelattr.KeyValue{
@@ -254,7 +254,10 @@ func (db *reindexerImpl) getAsyncReplicationStat(ctx context.Context) (*bindings
 
 	for _, dsn := range dsns {
 		dsn := fmt.Sprintf("%s://%s%s", dsn.Scheme, dsn.Host, dsn.Path)
-		db := NewReindex(dsn)
+		db, err := NewReindex(dsn)
+		if err != nil {
+			continue
+		}
 		defer db.Close()
 		resp, err := db.Query("#config").
 			WhereString("type", EQ, bindings.ReplicationTypeAsync).
@@ -866,43 +869,39 @@ func loglevelToString(logLevel int) string {
 
 // setDefaultQueryDebug sets default debug level for queries to namespaces
 func (db *reindexerImpl) setDefaultQueryDebug(ctx context.Context, namespace string, level int) error {
-	citem := &DBConfigItem{Type: "namespaces"}
 	item, err := db.query(ConfigNamespaceName).WhereString("type", EQ, "namespaces").ExecCtx(ctx).FetchOne()
-	if err != nil {
+	if err != nil && err != ErrNotFound {
 		return err
 	}
-
-	citem = item.(*DBConfigItem)
-	defaultCfg := DBNamespacesConfig{
-		JoinCacheMode:           "off",
-		StartCopyPolicyTxSize:   10000,
-		CopyPolicyMultiplier:    5,
-		TxSizeToAlwaysCopy:      100000,
-		OptimizationTimeout:     800,
-		OptimizationSortWorkers: 4,
-		WALSize:                 4000000,
+	citem := &DBConfigItem{Type: "namespaces"}
+	if err == nil {
+		citem = item.(*DBConfigItem)
 	}
-	found := false
 
+	defaultCfg := DefaultDBNamespaceConfig("*")
+	found := false
 	if citem.Namespaces == nil {
 		namespaces := make([]DBNamespacesConfig, 0, 1)
 		citem.Namespaces = &namespaces
 	}
 
+nss_loop:
 	for i := range *citem.Namespaces {
 		switch (*citem.Namespaces)[i].Namespace {
 		case namespace:
 			(*citem.Namespaces)[i].LogLevel = loglevelToString(level)
 			found = true
+			break nss_loop
 		case "*":
-			defaultCfg = (*citem.Namespaces)[i]
+			tmp := (*citem.Namespaces)[i]
+			defaultCfg = &tmp
 		}
 	}
 	if !found {
 		nsCfg := defaultCfg
 		nsCfg.Namespace = namespace
 		nsCfg.LogLevel = loglevelToString(level)
-		*citem.Namespaces = append(*citem.Namespaces, nsCfg)
+		*citem.Namespaces = append(*citem.Namespaces, *nsCfg)
 	}
 	return db.upsert(ctx, ConfigNamespaceName, citem)
 }
@@ -1329,7 +1328,7 @@ func (db *reindexerImpl) addAggregationsDSL(q *Query, aggs []dsl.Aggregation) er
 		case dsl.AggMax:
 			q.AggregateMax(agg.Fields[0])
 		case dsl.AggDistinct:
-			q.Distinct(agg.Fields[0])
+			q.Distinct(agg.Fields...)
 		case dsl.AggCount:
 			if len(agg.Fields) == 1 && (agg.Fields[0] == "" || agg.Fields[0] == "*") {
 				q.ReqTotal()
@@ -1449,4 +1448,8 @@ func (db *reindexerImpl) getStats() bindings.Stats {
 // ResetStats Reset local thread reindexer usage stats
 // Deprecated: no longer used.
 func (db *reindexerImpl) resetStats() {
+}
+
+func (db *reindexerImpl) dbmsVersion() (string, error) {
+	return db.binding.DBMSVersion()
 }

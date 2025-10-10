@@ -1,12 +1,11 @@
 #pragma once
 
-#include <cstdint>
 #include "estl/h_vector.h"
 #include "tools/lsn.h"
 
 namespace reindexer {
 
-struct NsIncarnationTagData {
+struct [[nodiscard]] NsIncarnationTagData {
 	int shardId = ShardingKeyType::NotSetShard;
 	h_vector<lsn_t, 3> tags;
 };

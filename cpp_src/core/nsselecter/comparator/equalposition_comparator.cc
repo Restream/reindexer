@@ -27,48 +27,51 @@ void EqualPositionComparator::bindField(const std::string& name, F field, const 
 	ctx.cmpInt64.SetValues(cond, values);
 	ctx.cmpString.SetValues(cond, values);
 	ctx.cmpDouble.SetValues(cond, values);
+	ctx.cmpFloat.SetValues(cond, values);
 	ctx.cmpUuid.SetValues(cond, values);
 	assertrx_throw(ctx_.size() == fields_.size());
 
-	name_ += ' ' + name;
+	name_.append(" ").append(name);
 }
 
 bool EqualPositionComparator::Compare(const PayloadValue& pv, IdType /*rowId*/) {
+	++totalCalls_;
 	ConstPayload pl(payloadType_, pv);
 	size_t len = INT_MAX;
 
 	h_vector<VariantArray, 2> vals;
 	size_t tagsPathIdx = 0;
 	vals.reserve(fields_.size());
-	for (size_t j = 0; j < fields_.size(); ++j) {
+	for (const auto& field : fields_) {
 		auto& v = vals.emplace_back();
-		bool isRegularIndex = fields_[j] != IndexValueType::SetByJsonPath && fields_[j] < payloadType_.NumFields();
+		bool isRegularIndex = field != IndexValueType::SetByJsonPath && field < payloadType_.NumFields();
 		if (isRegularIndex) {
-			pl.Get(fields_[j], v);
+			pl.Get(field, v);
 		} else {
 			assertrx_throw(tagsPathIdx < fields_.getTagsPathsLength());
 			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), v, KeyValueType::Undefined{});
 		}
-		if (v.size() < len) {
-			len = vals.back().size();
-		}
+		len = std::min<size_t>(len, v.size());
 	}
 
+	bool res = false;
 	for (size_t i = 0; i < len; ++i) {
 		bool cmpRes = true;
 		for (size_t j = 0; j < fields_.size(); ++j) {
 			assertrx_throw(i < vals[j].size());
-			cmpRes &= !vals[j][i].Type().Is<KeyValueType::Null>() && compareField(j, vals[j][i]);
-			if (!cmpRes) {
+			if (!compareField(j, vals[j][i])) {
+				cmpRes = false;
 				break;
 			}
 		}
 
 		if (cmpRes) {
-			return true;
+			res = true;
+			break;
 		}
 	}
-	return false;
+	matchedCount_ += int(res);
+	return res;
 }
 
 bool EqualPositionComparator::compareField(size_t field, const Variant& v) {
@@ -77,9 +80,11 @@ bool EqualPositionComparator::compareField(size_t field, const Variant& v) {
 		[&](KeyValueType::Int) { return ctx_[field].cmpInt.Compare(ctx_[field].cond, static_cast<int>(v)); },
 		[&](KeyValueType::Int64) { return ctx_[field].cmpInt64.Compare(ctx_[field].cond, static_cast<int64_t>(v)); },
 		[&](KeyValueType::Double) { return ctx_[field].cmpDouble.Compare(ctx_[field].cond, static_cast<double>(v)); },
+		[&](KeyValueType::Float) { return ctx_[field].cmpFloat.Compare(ctx_[field].cond, static_cast<float>(v)); },
 		[&](KeyValueType::String) { return ctx_[field].cmpString.Compare(ctx_[field].cond, static_cast<p_string>(v)); },
 		[&](KeyValueType::Uuid) { return ctx_[field].cmpUuid.Compare(ctx_[field].cond, Uuid{v}); },
-		[](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple>) noexcept { return false; });
+		[](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+				 KeyValueType::FloatVector>) noexcept { return false; });
 }
 
 }  // namespace reindexer

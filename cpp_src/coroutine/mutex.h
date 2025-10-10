@@ -8,7 +8,7 @@ namespace reindexer {
 namespace coroutine {
 
 /// @class Mutex for coroutines
-class mutex {
+class [[nodiscard]] mutex {
 public:
 	void lock() {
 		bool await = false;

@@ -1,15 +1,17 @@
 #ifndef FULLTEXTDUMPER_H
 #define FULLTEXTDUMPER_H
+
 #include <atomic>
-#include <condition_variable>
 #include <cstdlib>
 #include <deque>
 #include <thread>
-#include "core/queryresults/queryresults.h"
+#include "core/queryresults/localqueryresults.h"
+#include "estl/condition_variable.h"
+#include "estl/mutex.h"
 
 namespace search_engine {
 
-class FullTextDumper {
+class [[nodiscard]] FullTextDumper {
 public:
 	static FullTextDumper& Init();
 
@@ -34,8 +36,8 @@ private:
 	std::atomic_bool new_info_;
 	std::atomic_bool stoped_;
 	std::shared_ptr<std::thread> writer_;
-	std::condition_variable cv;
-	std::mutex cv_m;
+	reindexer::condition_variable cv;
+	reindexer::mutex cv_m;
 
 	const size_t write_timeout_seconds = 5;
 	const std::string file_path = "/tmp/reindexer_full_text.log";

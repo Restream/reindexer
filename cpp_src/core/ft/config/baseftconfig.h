@@ -3,8 +3,8 @@
 #include <string_view>
 #include <vector>
 #include "core/ft/stopwords/types.h"
-#include "core/ft/usingcontainer.h"
 #include "estl/fast_hash_map.h"
+#include "tools/rhashmap.h"
 
 namespace gason {
 struct JsonNode;
@@ -12,11 +12,9 @@ struct JsonNode;
 
 namespace reindexer {
 
-class JsonBuilder;
-
-class BaseFTConfig {
+class [[nodiscard]] BaseFTConfig {
 public:
-	struct Synonym {
+	struct [[nodiscard]] Synonym {
 		std::vector<std::string> tokens;
 		std::vector<std::string> alternatives;
 		bool operator==(const Synonym& other) const { return tokens == other.tokens && alternatives == other.alternatives; }
@@ -37,27 +35,31 @@ public:
 	StopWordsSetT stopWords;
 	std::vector<Synonym> synonyms;
 	int logLevel = 0;
-	std::string extraWordSymbols = "-/+";  // word contains symbols (IsAlpa | IsDigit) {IsAlpa | IsDigit | IsExtra}
-	struct BaseRankingConfig {
+
+	SplitOptions splitOptions;
+
+	struct [[nodiscard]] BaseRankingConfig {
 		static constexpr int kMinProcAfterPenalty = 1;
 		// Relevancy of full word match
 		int fullMatch = 100;
-		// Mininum relevancy of prefix word match.
+		// Minimum relevance of prefix word match.
 		int prefixMin = 50;
-		// Mininum relevancy of suffix word match.
+		// Minimum relevance of suffix word match.
 		int suffixMin = 10;
-		// Base relevancy of typo match
+		// Base relevance of typo match
 		int typo = 85;
 		// Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm
 		int typoPenalty = 15;
 		// Penalty for the variants, created by stemming
 		int stemmerPenalty = 15;
-		// Relevancy of the match in incorrect kblayout
+		// Relevance of the match in incorrect kblayout
 		int kblayout = 90;
-		// Relevancy of the match in translit
+		// Relevance of the match in translit
 		int translit = 90;
-		// Relevancy of the synonym match
+		// Relevance of the synonym match
 		int synonyms = 95;
+		// Relevance of the delimited part match
+		int delimited = 80;
 	};
 	BaseRankingConfig rankingConfig;
 

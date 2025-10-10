@@ -3,7 +3,6 @@
 #include <core/keyvalue/variant.h>
 #include <vector>
 #include "core/formatters/lsn_fmt.h"
-#include "core/storage/idatastorage.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
 #include "walrecord.h"
@@ -13,7 +12,7 @@ namespace reindexer {
 class AsyncStorage;
 
 /// WAL trakcer
-class WALTracker {
+class [[nodiscard]] WALTracker {
 public:
 	explicit WALTracker(int64_t sz);
 	WALTracker(const WALTracker&) = delete;
@@ -70,7 +69,7 @@ public:
 	void Reset();
 
 	/// Iterator for WAL records
-	class iterator {
+	class [[nodiscard]] iterator {
 	public:
 		iterator& operator++() noexcept {
 			++idx_;
@@ -78,12 +77,12 @@ public:
 		}
 		bool operator!=(const iterator& other) const noexcept { return idx_ != other.idx_; }
 		WALRecord operator*() const {
-			assertf(idx_ % wt_->walSize_ < int(wt_->records_.size()), "idx=%d,wt_->records_.size()=%d,lsnCounter=%d", idx_,
+			assertf(idx_ % wt_->walSize_ < int(wt_->records_.size()), "idx={},wt_->records_.size()={},lsnCounter={}", idx_,
 					wt_->records_.size(), wt_->lsnCounter_);
 
-			return WALRecord(span<const uint8_t>(wt_->records_[idx_ % wt_->walSize_]));
+			return WALRecord(std::span<const uint8_t>(wt_->records_[idx_ % wt_->walSize_]));
 		}
-		span<const uint8_t> GetRaw() const noexcept { return wt_->records_[idx_ % wt_->walSize_]; }
+		std::span<const uint8_t> GetRaw() const noexcept { return wt_->records_[idx_ % wt_->walSize_]; }
 		lsn_t GetLSN() const noexcept {
 			auto server = wt_->records_[idx_ % wt_->walSize_].server;
 			return lsn_t(idx_, server);

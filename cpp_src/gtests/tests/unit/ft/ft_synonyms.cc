@@ -3,7 +3,7 @@
 
 using namespace std::string_view_literals;
 
-class FTSynonymsApi : public FTApi {
+class [[nodiscard]] FTSynonymsApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_synonyms_default_namespace"; }
 };
@@ -29,7 +29,7 @@ TEST_P(FTSynonymsApi, SelectWithMultSynonymArea) {
 
 	Add("digit cat empty one animal"sv);
 
-	CheckResults(R"s("big number animal")s", {}, false, true);
+	CheckResults(R"s("big number animal")s", {}, false, true);	// Result is incorrect. Has to be fixed in issue #1393
 	CheckResults(R"s("digit animal")s", {{"!digit cat! empty !one animal!", ""}}, false, true);
 	CheckResults(R"s("two lion")s", {{"!digit cat! empty !one animal!", ""}}, false, true);
 }
