@@ -3,14 +3,13 @@
 #include <benchmark/benchmark.h>
 
 #include "helpers.h"
-#include "vendor/spdlog/spdlog.h"
 
 using benchmark::ConsoleReporter;
 
 namespace benchmark {
 
 #ifndef _GLIBCXX_DEBUG
-class Reporter : public ConsoleReporter {
+class [[nodiscard]] Reporter : public ConsoleReporter {
 protected:
 	void PrintHeader(const Run& run) {
 		std::string str = FormatString("%-*s %13s %13s", static_cast<int>(name_field_width_), "Benchmark", "Time", "RPS");

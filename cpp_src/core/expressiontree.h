@@ -1,6 +1,7 @@
 #pragma once
 
 #include <variant>
+#include "enums.h"
 #include "estl/h_vector.h"
 #include "estl/overloaded.h"
 #include "tools/errors.h"
@@ -10,7 +11,7 @@ namespace reindexer {
 /// @class Bracket
 /// A beginning of subtree, all children are placed just behind it
 /// contains size of space occupied by all children + 1 for this node
-class Bracket {
+class [[nodiscard]] Bracket {
 public:
 	explicit Bracket(size_t s) noexcept : size_(s) {}
 	RX_ALWAYS_INLINE size_t Size() const noexcept { return size_; }
@@ -30,14 +31,14 @@ private:
 };
 
 template <typename T, typename... Ts>
-class Skip : private Skip<Ts...> {
+class [[nodiscard]] Skip : private Skip<Ts...> {
 public:
 	using Skip<Ts...>::operator();
 	RX_ALWAYS_INLINE void operator()(const T&) const noexcept {}
 };
 
 template <typename T>
-class Skip<T> {
+class [[nodiscard]] Skip<T> {
 public:
 	RX_ALWAYS_INLINE void operator()(const T&) const noexcept {}
 };
@@ -49,21 +50,21 @@ using SkipTemplate = Skip<Templ<Ts>...>;
 /// A tree contained in vector
 /// For detailed documentation see expressiontree.md
 template <typename OperationType, typename SubTree, int holdSize, typename... Ts>
-class ExpressionTree {
+class [[nodiscard]] ExpressionTree {
 	template <typename T, typename...>
-	struct Head_t {
+	struct [[nodiscard]] Head_t {
 		using type = T;
 	};
 	template <typename... Args>
 	using Head = typename Head_t<Args...>::type;
 
 	/// @class Node
-	class Node {
+	class [[nodiscard]] Node {
 		friend ExpressionTree;
 
 		using Storage = std::variant<SubTree, Ts...>;
 
-		struct SizeVisitor {
+		struct [[nodiscard]] SizeVisitor {
 			template <typename T>
 			RX_ALWAYS_INLINE size_t operator()(const T&) const noexcept {
 				return 1;
@@ -72,16 +73,16 @@ class ExpressionTree {
 		};
 
 		template <typename T>
-		struct GetVisitor {
+		struct [[nodiscard]] GetVisitor {
 			RX_ALWAYS_INLINE T& operator()(T& v) const noexcept { return v; }
 			template <typename U>
 			RX_ALWAYS_INLINE T& operator()(U&) const noexcept {
-				assertrx_dbg(0);
+				assertrx(0);
 				abort();
 			}
 		};
 		template <typename T>
-		struct GetVisitor<const T> {
+		struct [[nodiscard]] GetVisitor<const T> {
 			RX_ALWAYS_INLINE const T& operator()(const T& v) const noexcept { return v; }
 			template <typename U>
 			RX_ALWAYS_INLINE const T& operator()(const U&) const noexcept {
@@ -89,7 +90,7 @@ class ExpressionTree {
 				abort();
 			}
 		};
-		struct EqVisitor {
+		struct [[nodiscard]] EqVisitor {
 			template <typename T>
 			RX_ALWAYS_INLINE bool operator()(const T& lhs, const T& rhs) const noexcept(noexcept(lhs == rhs)) {
 				return lhs == rhs;
@@ -99,14 +100,14 @@ class ExpressionTree {
 				return false;
 			}
 		};
-		struct CopyVisitor {
+		struct [[nodiscard]] CopyVisitor {
 			RX_ALWAYS_INLINE Storage operator()(const SubTree& st) const noexcept { return st; }
 			template <typename T>
 			RX_ALWAYS_INLINE Storage operator()(const T& v) const {
 				return v;
 			}
 		};
-		struct MoveVisitor {
+		struct [[nodiscard]] MoveVisitor {
 			RX_ALWAYS_INLINE Storage operator()(SubTree&& st) const noexcept { return std::move(st); }
 			template <typename T>
 			RX_ALWAYS_INLINE Storage operator()(T&& v) const {
@@ -125,13 +126,17 @@ class ExpressionTree {
 		Node(Node&& other) noexcept : storage_{std::move(other.storage_)}, operation{std::move(other.operation)} {}
 		~Node() = default;
 		RX_ALWAYS_INLINE Node& operator=(const Node& other) {
-			storage_ = other.storage_;
-			operation = other.operation;
+			if (this != &other) {
+				storage_ = other.storage_;
+				operation = other.operation;
+			}
 			return *this;
 		}
 		RX_ALWAYS_INLINE Node& operator=(Node&& other) noexcept {
-			storage_ = std::move(other.storage_);
-			operation = std::move(other.operation);
+			if (this != &other) {
+				storage_ = std::move(other.storage_);
+				operation = std::move(other.operation);
+			}
 			return *this;
 		}
 		RX_ALWAYS_INLINE bool operator==(const Node& other) const {
@@ -544,6 +549,23 @@ class ExpressionTree {
 					abort();
 			}
 		}
+		template <typename T>
+		RX_ALWAYS_INLINE T& get() & noexcept {
+			return *std::get_if<T>(&storage_);
+		}
+		template <typename T>
+		RX_ALWAYS_INLINE T&& get() && noexcept {
+			return std::move(*std::get_if<T>(&storage_));
+		}
+		template <typename T>
+		RX_ALWAYS_INLINE const T& get() const& noexcept {
+			return *std::get_if<T>(&storage_);
+		}
+		template <typename T>
+		RX_ALWAYS_INLINE const T&& get() const&& noexcept {
+			return std::move(*std::get_if<T>(&storage_));
+		}
+
 		Storage storage_;
 
 	public:
@@ -552,29 +574,16 @@ class ExpressionTree {
 
 protected:
 	using Container = h_vector<Node, holdSize>;
+	enum class [[nodiscard]] MergeResult { NotMerged, Merged, Annihilated };
+
+private:
+	template <typename T>
+	class [[nodiscard]] PostProcessor {
+	public:
+		static constexpr bool NoOp = true;
+	};
 
 public:
-	ExpressionTree() = default;
-	ExpressionTree(ExpressionTree&&) noexcept = default;
-	ExpressionTree& operator=(ExpressionTree&&) noexcept = default;
-	ExpressionTree(const ExpressionTree& other) : activeBrackets_{other.activeBrackets_} {
-		container_.reserve(other.container_.size());
-		for (const Node& n : other.container_) {
-			container_.emplace_back(n.Copy());
-		}
-	}
-	ExpressionTree& operator=(const ExpressionTree& other) {
-		if rx_unlikely (this == &other) {
-			return *this;
-		}
-		container_.clear();
-		container_.reserve(other.container_.size());
-		for (const Node& n : other.container_) {
-			container_.emplace_back(n.Copy());
-		}
-		activeBrackets_ = other.activeBrackets_;
-		return *this;
-	}
 	RX_ALWAYS_INLINE bool operator==(const ExpressionTree& other) const noexcept {
 		if (container_.size() != other.container_.size()) {
 			return false;
@@ -586,15 +595,15 @@ public:
 		}
 		return true;
 	}
-	RX_ALWAYS_INLINE bool operator!=(const ExpressionTree& other) const noexcept { return !operator==(other); }
 
 	/// Insert value at the position
+	/// @return actual inserted nodes count - this method may add new nodes during postprocessing phase
 	template <typename T>
-	void Insert(size_t pos, OperationType op, T&& v) {
+	size_t Insert(size_t pos, OperationType op, T&& v) {
 		if (pos == container_.size()) {
-			Append(op, std::forward<T>(v));
-			return;
+			return Append(op, std::forward<T>(v));
 		}
+		size_t insertedCount = 1;
 		assertrx_dbg(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
 			assertrx_dbg(b < container_.size());
@@ -608,13 +617,19 @@ public:
 			}
 		}
 		container_.emplace(container_.begin() + pos, op, std::forward<T>(v));
-	}
-	template <typename T, typename... Args>
-	void Emplace(size_t pos, OperationType op, Args&&... args) {
-		if (pos == container_.size()) {
-			Append<T>(op, std::forward<Args>(args)...);
-			return;
+		if constexpr (!PostProcessor<T>::NoOp) {
+			insertedCount += PostProcessor<T>::Process(*this, pos);
 		}
+		return insertedCount;
+	}
+	/// Emplace value at the position
+	/// @return actual inserted nodes count - this method may add new nodes during postprocessing phase
+	template <typename T, typename... Args>
+	size_t Emplace(size_t pos, OperationType op, Args&&... args) {
+		if (pos == container_.size()) {
+			return Append<T>(op, std::forward<Args>(args)...);
+		}
+		size_t insertedCount = 1;
 		assertrx_throw(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
 			assertrx_throw(b < container_.size());
@@ -628,10 +643,16 @@ public:
 			}
 		}
 		container_.emplace(container_.begin() + pos, op, T(std::forward<Args>(args)...));
+		if constexpr (!PostProcessor<T>::NoOp) {
+			insertedCount += PostProcessor<T>::Process(*this, pos);
+		}
+		return insertedCount;
 	}
 	/// Insert value after the position
+	/// @return actual inserted nodes count - this method may add new nodes during postprocessing phase
 	template <typename T>
-	void InsertAfter(size_t pos, OperationType op, T&& v) {
+	size_t InsertAfter(size_t pos, OperationType op, T&& v) {
+		size_t insertedCount = 1;
 		assertrx_dbg(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
 			assertrx_dbg(b < container_.size());
@@ -644,57 +665,97 @@ public:
 				container_[i].Append();
 			}
 		}
-		container_.emplace(container_.begin() + pos + 1, op, std::forward<T>(v));
+		++pos;
+		container_.emplace(container_.begin() + pos, op, std::forward<T>(v));
+		if constexpr (!PostProcessor<T>::NoOp) {
+			insertedCount += PostProcessor<T>::Process(*this, pos);
+		}
+		return insertedCount;
 	}
 	/// Appends value to the last opened subtree
+	/// @return actual inserted nodes count - this method may add new nodes during postprocessing phase
 	template <typename T>
-	void Append(OperationType op, T&& v) {
+	size_t Append(OperationType op, T&& v) {
+		size_t insertedCount = 1;
 		for (unsigned i : activeBrackets_) {
 			assertrx_dbg(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, std::forward<T>(v));
+		if constexpr (!PostProcessor<T>::NoOp) {
+			insertedCount += PostProcessor<T>::Process(*this, Size() - 1);
+		}
+		return insertedCount;
 	}
 	/// Appends value to the last opened subtree
+	/// @return actual inserted nodes count - this method may add new nodes during postprocessing phase
 	template <typename T>
-	void Append(OperationType op, const T& v) {
+	size_t Append(OperationType op, const T& v) {
+		size_t insertedCount = 1;
 		for (unsigned i : activeBrackets_) {
 			assertrx_dbg(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, v);
+		if constexpr (!PostProcessor<T>::NoOp) {
+			insertedCount += PostProcessor<T>::Process(*this, Size() - 1);
+		}
+		return insertedCount;
 	}
 	/// Appends value to the last opened subtree
+	/// @return actual inserted nodes count - this method may add new nodes during postprocessing phase
 	template <typename T, typename... Args>
-	void Append(OperationType op, Args&&... args) {
+	size_t Append(OperationType op, Args&&... args) {
+		size_t insertedCount = 1;
 		for (unsigned i : activeBrackets_) {
 			assertrx_dbg(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, T{std::forward<Args>(args)...});
+		if constexpr (!PostProcessor<T>::NoOp) {
+			insertedCount += PostProcessor<T>::Process(*this, Size() - 1);
+		}
+		return insertedCount;
 	}
 	class const_iterator;
+	class iterator;
 	/// Appends all nodes from the interval to the last opened subtree
+	/// Always appends 'as is', i.e. without postprocessing and without implicit nodes creation
 	RX_ALWAYS_INLINE void Append(const_iterator begin, const_iterator end) {
 		container_.reserve(container_.size() + (end.PlainIterator() - begin.PlainIterator()));
 		append(begin, end);
 	}
 
 	/// Appends value as first child of the root
+	/// @return actual inserted nodes count - this method may add new nodes during postprocessing phase
 	template <typename T>
-	RX_ALWAYS_INLINE void AppendFront(OperationType op, T&& v) {
+	RX_ALWAYS_INLINE size_t AppendFront(OperationType op, T&& v) {
+		size_t insertedCount = 1;
 		for (unsigned& i : activeBrackets_) {
 			++i;
 		}
+
 		container_.emplace(container_.begin(), op, std::forward<T>(v));
+		if constexpr (!PostProcessor<T>::NoOp) {
+			insertedCount += PostProcessor<T>::Process(*this, 0);
+		}
+		return insertedCount;
 	}
+	/// Appends value as first child of the root
+	/// @return actual inserted nodes count - this method may add new nodes during postprocessing phase
 	template <typename T, typename... Args>
-	RX_ALWAYS_INLINE void AppendFront(OperationType op, Args&&... args) {
+	RX_ALWAYS_INLINE size_t AppendFront(OperationType op, Args&&... args) {
+		size_t insertedCount = 1;
 		for (unsigned& i : activeBrackets_) {
 			++i;
 		}
 		container_.emplace(container_.begin(), op, T{std::forward<Args>(args)...});
+		if constexpr (!PostProcessor<T>::NoOp) {
+			insertedCount += PostProcessor<T>::Process(*this, 0);
+		}
+		return insertedCount;
 	}
+	/// Pop last node
 	void PopBack() {
 		assertrx_dbg(!container_.empty());
 		for (unsigned i : activeBrackets_) {
@@ -768,11 +829,13 @@ public:
 		assertrx_dbg(i < Size());
 		return i + Size(i);
 	}
+	/// @return 'true' if type of the specified node is T
 	template <typename T>
 	RX_ALWAYS_INLINE bool Is(size_t i) const noexcept {
 		assertrx_dbg(i < Size());
 		return container_[i].template Is<T>();
 	}
+	/// @return 'true' if specified node is subtree (bracket)
 	RX_ALWAYS_INLINE bool IsSubTree(size_t i) const noexcept {
 		assertrx_dbg(i < Size());
 		return container_[i].IsSubTree();
@@ -785,21 +848,41 @@ public:
 		assertrx_dbg(i < Size());
 		container_[i].operation = op;
 	}
+	/// @return node, casted to the specified type (T). Does not performs type check
 	template <typename T>
 	RX_ALWAYS_INLINE T& Get(size_t i) {
 		assertrx_dbg(i < Size());
 		return container_[i].template Value<T>();
 	}
+	/// @return node, casted to the specified type (T). Does not performs type check
 	template <typename T>
 	RX_ALWAYS_INLINE const T& Get(size_t i) const {
 		assertrx_dbg(i < Size());
 		return container_[i].template Value<T>();
 	}
+	/// Set new value to the target node and perform postprocessing if required
+	/// @return actual inserted/changed nodes count - this method may add new nodes during postprocessing phase
 	template <typename T>
-	RX_ALWAYS_INLINE void SetValue(size_t i, T&& v) {
+	RX_ALWAYS_INLINE size_t SetValue(size_t i, T&& v) {
+		size_t insertedCount = 1;
 		assertrx_dbg(i < Size());
-		return container_[i].template SetValue<T>(std::forward<T>(v));
+		container_[i].template SetValue<T>(std::forward<T>(v));
+		if constexpr (!PostProcessor<T>::NoOp) {
+			insertedCount += PostProcessor<T>::Process(*this, i);
+		}
+		return insertedCount;
 	}
+	/// Try to set new values to the target node in-place (if target type has TryUpdateInplace method).
+	/// This method tries to update node content without postprocessing phase (i.e. without extra nodes creation).
+	/// @return 'true' - in case of success
+	template <typename T, typename U>
+	bool TryUpdateInplace(size_t i, U& values) noexcept {
+		if (Is<T>(i)) {
+			return Get<T>(i).TryUpdateInplace(values);
+		}
+		return false;
+	}
+	/// Erase nodes range
 	void Erase(size_t from, size_t to) {
 		assertrx_dbg(to >= from);
 		const size_t count = to - from;
@@ -812,7 +895,7 @@ public:
 				}
 			}
 		}
-		container_.erase(container_.begin() + from, container_.begin() + to);
+		rx_unused = container_.erase(container_.begin() + from, container_.begin() + to);
 		activeBrackets_.erase(
 			std::remove_if(activeBrackets_.begin(), activeBrackets_.end(), [from, to](size_t b) { return b >= from && b < to; }),
 			activeBrackets_.end());
@@ -822,6 +905,7 @@ public:
 			}
 		}
 	}
+	/// Visit target node with specified visitor
 	template <typename Visitor>
 	RX_ALWAYS_INLINE decltype(auto) Visit(size_t i, Visitor&& visitor) {
 		assertrx_dbg(i < container_.size());
@@ -842,6 +926,7 @@ public:
 		assertrx_dbg(i < container_.size());
 		return container_[i].visit(overloaded{std::forward<Fs>(fs)...});
 	}
+	/// Visit each node of the tree with specified visitor
 	template <typename Visitor>
 	RX_ALWAYS_INLINE void VisitForEach(const Visitor& visitor) const {
 		for (const Node& node : container_) {
@@ -871,13 +956,19 @@ public:
 
 	/// @class const_iterator
 	/// iterates between children of the same parent
-	class const_iterator {
+	class [[nodiscard]] const_iterator {
 	public:
+		using iterator_category = std::forward_iterator_tag;
+		using value_type = Node;
+		using difference_type = std::ptrdiff_t;
+		using reference = const Node&;
+		using pointer = const Node*;
+
 		const_iterator(typename Container::const_iterator it) noexcept : it_(it) {}
 		RX_ALWAYS_INLINE bool operator==(const const_iterator& other) const noexcept { return it_ == other.it_; }
 		RX_ALWAYS_INLINE bool operator!=(const const_iterator& other) const noexcept { return !operator==(other); }
-		RX_ALWAYS_INLINE const Node& operator*() const noexcept { return *it_; }
-		RX_ALWAYS_INLINE const Node* operator->() const noexcept { return &*it_; }
+		RX_ALWAYS_INLINE reference operator*() const noexcept { return *it_; }
+		RX_ALWAYS_INLINE pointer operator->() const noexcept { return &*it_; }
 		RX_ALWAYS_INLINE const_iterator& operator++() noexcept {
 			it_ += it_->Size();
 			return *this;
@@ -901,13 +992,19 @@ public:
 
 	/// @class iterator
 	/// iterates between children of the same parent
-	class iterator {
+	class [[nodiscard]] iterator {
 	public:
+		using iterator_category = std::forward_iterator_tag;
+		using value_type = Node;
+		using difference_type = std::ptrdiff_t;
+		using reference = Node&;
+		using pointer = Node*;
+
 		iterator(typename Container::iterator it) noexcept : it_(it) {}
 		RX_ALWAYS_INLINE bool operator==(const iterator& other) const noexcept { return it_ == other.it_; }
 		RX_ALWAYS_INLINE bool operator!=(const iterator& other) const noexcept { return !operator==(other); }
-		RX_ALWAYS_INLINE Node& operator*() const noexcept { return *it_; }
-		RX_ALWAYS_INLINE Node* operator->() const noexcept { return &*it_; }
+		RX_ALWAYS_INLINE reference operator*() const noexcept { return *it_; }
+		RX_ALWAYS_INLINE pointer operator->() const noexcept { return &*it_; }
 		RX_ALWAYS_INLINE iterator& operator++() noexcept {
 			it_ += it_->Size();
 			return *this;
@@ -948,13 +1045,14 @@ public:
 		}
 		return container_.cbegin() + activeBrackets_.back() + 1;
 	}
-
+	/// @return pointer to the last active bracket (if exists)
 	RX_ALWAYS_INLINE const SubTree* LastOpenBracket() const {
 		if (activeBrackets_.empty()) {
 			return nullptr;
 		}
 		return &container_[activeBrackets_.back()].template Value<SubTree>();
 	}
+	/// @return pointer to the last active bracket (if exists)
 	RX_ALWAYS_INLINE SubTree* LastOpenBracket() {
 		if (activeBrackets_.empty()) {
 			return nullptr;
@@ -976,14 +1074,41 @@ public:
 		}
 		return start;
 	}
+	/// Erase target node
+	void Erase(iterator it) {
+		assertrx_dbg(it != end());
+		const auto pos = it.PlainIterator() - begin().PlainIterator();
+		return Erase(pos, pos + 1);
+	}
 
 protected:
+	ExpressionTree() = default;
+	ExpressionTree(ExpressionTree&&) noexcept = default;
+	ExpressionTree& operator=(ExpressionTree&&) noexcept = default;
+	ExpressionTree(const ExpressionTree& other) : activeBrackets_{other.activeBrackets_} {
+		container_.reserve(other.container_.size());
+		for (const Node& n : other.container_) {
+			container_.emplace_back(n.Copy());
+		}
+	}
+	ExpressionTree& operator=(const ExpressionTree& other) {
+		if rx_unlikely (this == &other) {
+			return *this;
+		}
+		container_.clear();
+		container_.reserve(other.container_.size());
+		for (const Node& n : other.container_) {
+			container_.emplace_back(n.Copy());
+		}
+		activeBrackets_ = other.activeBrackets_;
+		return *this;
+	}
 	Container container_;
 	/// stack of opened brackets (beginnings of subtrees)
 	h_vector<unsigned, 2> activeBrackets_;
 	void clear() {
-		container_.clear();
-		activeBrackets_.clear();
+		container_.template clear<false>();
+		activeBrackets_.template clear<false>();
 	}
 
 	void append(const_iterator begin, const_iterator end) {
@@ -996,9 +1121,12 @@ protected:
 					append(begin.cbegin(), begin.cend());
 					CloseBracket();
 				},
-				[this, op](const auto& v) -> void { this->Append(op, v); });
+				[this, op](const auto& v) -> void { rx_unused = this->Append(op, v); });
 		}
 	}
+
+	template <typename Merger>
+	size_t mergeEntries(Merger&, uint16_t dst, uint16_t srcBegin, uint16_t srcEnd, Changed&);
 };
 
 }  // namespace reindexer

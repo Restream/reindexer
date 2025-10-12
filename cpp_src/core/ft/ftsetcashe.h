@@ -1,11 +1,11 @@
 #pragma once
 
+#include "core/ft/ftctx.h"
 #include "core/idsetcache.h"
-#include "core/selectfunc/ctx/ftctx.h"
 
 namespace reindexer {
 
-struct FtIdSetCacheVal {
+struct [[nodiscard]] FtIdSetCacheVal {
 	FtIdSetCacheVal() = default;
 	FtIdSetCacheVal(IdSet::Ptr&& i) noexcept : ids(std::move(i)) {}
 	FtIdSetCacheVal(IdSet::Ptr&& i, FtCtxData::Ptr&& c) noexcept : ids(std::move(i)), ctx(std::move(c)) {}
@@ -17,6 +17,6 @@ struct FtIdSetCacheVal {
 };
 
 using FtIdSetCache =
-	LRUCache<LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>, LRUWithAtomicPtr::No>;
+	LRUCache<LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>, LRUWithAtomicPtr::No>;
 
 }  // namespace reindexer

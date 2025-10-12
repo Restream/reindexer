@@ -1,9 +1,9 @@
 package ft
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 )
 
@@ -29,8 +29,11 @@ type RankingQuality struct {
 	FuzzRankingQuality float64 `json:"fuzz_ranking_quality"`
 }
 
+//go:embed specs/*
+var ftSpecs embed.FS
+
 func ParseBasicTestCases() []BasicTestCase {
-	bytes, err := ioutil.ReadFile("specs/full_text_search_basic_test_data.json")
+	bytes, err := ftSpecs.ReadFile("specs/full_text_search_basic_test_data.json")
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
@@ -42,7 +45,7 @@ func ParseBasicTestCases() []BasicTestCase {
 }
 
 func ParseRankingTestCases() []RankingTestCase {
-	bytes, err := ioutil.ReadFile("specs/full_text_search_ranking_test_data.json")
+	bytes, err := ftSpecs.ReadFile("specs/full_text_search_ranking_test_data.json")
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
@@ -54,7 +57,7 @@ func ParseRankingTestCases() []RankingTestCase {
 }
 
 func ParseRankingQuality() []RankingQuality {
-	bytes, err := ioutil.ReadFile("specs/full_text_search_ranking_quality.json")
+	bytes, err := ftSpecs.ReadFile("specs/full_text_search_ranking_quality.json")
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
@@ -67,5 +70,5 @@ func ParseRankingQuality() []RankingQuality {
 
 func SaveRankingQuality(newQualities []RankingQuality) {
 	file, _ := json.MarshalIndent(newQualities, "", " ")
-	_ = ioutil.WriteFile("specs/new_ranking_quality.json", file, 0644)
+	_ = os.WriteFile("new_ranking_quality.json", file, 0644)
 }

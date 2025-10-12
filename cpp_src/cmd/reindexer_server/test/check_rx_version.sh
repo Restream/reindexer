@@ -3,22 +3,22 @@
 PACKAGE=$1
 
 if [ "$PACKAGE" == "deb" ]; then
-  RX_SERVER_REQUIRED_VERSION="$(basename build/reindexer-4-server*.deb .deb)"
+  RX_SERVER_REQUIRED_VERSION="$(basename build/reindexer-server*.deb .deb)"
   RX_SERVER_REQUIRED_VERSION=$(echo "$RX_SERVER_REQUIRED_VERSION" | cut -d'_' -f 2)
-  RX_SERVER_INSTALLED_VERSION="$(dpkg -s reindexer-4-server | grep Version)"
+  RX_SERVER_INSTALLED_VERSION="$(dpkg -s reindexer-server | grep Version)"
   RX_SERVER_INSTALLED_VERSION="${RX_SERVER_INSTALLED_VERSION#*: }"
 elif [ "$PACKAGE" == "rpm" ]; then
-  RX_SERVER_REQUIRED_VERSION="$(basename build/reindexer-4-server*.rpm .rpm)"
+  RX_SERVER_REQUIRED_VERSION="$(basename build/reindexer-server*.rpm .rpm)"
   OS=$(echo ${ID} | tr '[:upper:]' '[:lower:]')
   if [ "$OS" = "redos" ]; then
-    RX_SERVER_INSTALLED_VERSION="$(dnf list installed  \"reindexer-4-server\" | tail -n 1 | awk \'{print $$2}\')"
+    RX_SERVER_INSTALLED_VERSION="$(dnf list installed  \"reindexer-server\" | tail -n 1 | awk \'{print $$2}\')"
     echo RX_SERVER_INSTALLED_VERSION=$RX_SERVER_INSTALLED_VERSION
     echo "Installed!!!"
-    dnf list installed  \"reindexer-4-server\"
+    dnf list installed  \"reindexer-server\"
     echo "More!!!"
-    dnf list installed  \"reindexer-4-server\" | tail -n 1
+    dnf list installed  \"reindexer-server\" | tail -n 1
   else
-    RX_SERVER_INSTALLED_VERSION="$(rpm -q reindexer-4-server)"
+    RX_SERVER_INSTALLED_VERSION="$(rpm -q reindexer-server)"
   fi
 else
   echo "Unknown package extension"

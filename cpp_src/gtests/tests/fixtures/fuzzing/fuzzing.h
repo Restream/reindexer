@@ -5,7 +5,7 @@
 #include "core/reindexer.h"
 #include "queries_verifier.h"
 
-class Fuzzing : public QueriesVerifier {
+class [[nodiscard]] Fuzzing : public QueriesVerifier {
 public:
 	void SetUp() override {
 		const auto err = rx_.Connect(dsn());

@@ -3,9 +3,9 @@
 #include "gtest/gtest.h"
 #include "tools/stringstools.h"
 
-class CustomStrCompareApi : public virtual ::testing::Test {
+class [[nodiscard]] CustomStrCompareApi : public virtual ::testing::Test {
 public:
-	enum class ComparisonResult { Less, Greater, Equal };
+	enum class [[nodiscard]] ComparisonResult { Less, Greater, Equal };
 	static std::string_view ComparisonResultToString(ComparisonResult r) {
 		switch (r) {
 			case ComparisonResult::Less:
@@ -18,14 +18,14 @@ public:
 		return "<unknown>";
 	}
 
-	struct StringTestCase {
+	struct [[nodiscard]] StringTestCase {
 		std::string str1;
 		std::string str2;
 		ComparisonResult expectedResult;
 
 		friend std::ostream& operator<<(std::ostream& os, const StringTestCase& c) {
-			os << fmt::sprintf("{ str1: '%s', str2: '%s', expected comparison result: %s }", c.str1, c.str2,
-							   ComparisonResultToString(c.expectedResult));
+			os << fmt::format("{{ str1: '{}', str2: '{}', expected comparison result: {} }}", c.str1, c.str2,
+							  ComparisonResultToString(c.expectedResult));
 			return os;
 		}
 	};
@@ -155,8 +155,8 @@ TEST(ConversionStringToNumber, DetectValueTypeTest) {
 	constexpr auto DoubleV = KeyValueType{KeyValueType::Double{}};
 	constexpr auto StringV = KeyValueType{KeyValueType::String{}};
 
-	struct TestCase {
-		struct Empty {};
+	struct [[nodiscard]] TestCase {
+		struct [[nodiscard]] Empty {};
 		TestCase(std::string_view value, KeyValueType expectedType, std::variant<int64_t, double, Empty> expectedValue = Empty{})
 			: value(value),
 			  expectedType(expectedType),
@@ -236,8 +236,20 @@ TEST(ConversionStringToNumber, DetectValueTypeTest) {
 		{"9223372802345370L", StringV},
 		{"92233728070.0145L", StringV},
 
-		{"1.35e10", StringV},
-		{"1.1e-2", StringV},
+		{"1.35e10", DoubleV, 1.35e10},
+		{"1.1e-2", DoubleV, 1.1e-2},
+		{"2.e-2", DoubleV, 2e-2},
+		{"2.e2", DoubleV, 2e2},
+		{"2e-2", DoubleV, 2e-2},
+		{"2e+2", DoubleV, 2e+2},
+		{"2ee2", StringV},
+		{"2e.2", StringV},
+		{"2-2e", StringV},
+		{"2e", StringV},
+		{"2e-", StringV},
+		{"2e+", StringV},
+		{"-e1", StringV},
+
 		{"123.456.7", StringV},
 	};
 

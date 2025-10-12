@@ -14,7 +14,7 @@ class MallocExtension;
 
 namespace reindexer {
 
-class TCMallocHeapWathcher {
+class [[nodiscard]] TCMallocHeapWathcher {
 public:
 	TCMallocHeapWathcher();
 	explicit TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio);
@@ -41,7 +41,7 @@ private:
 	ClockT::time_point deadline_;
 
 	template <typename... Args>
-	void logDebug(Args&&... args);
+	void logDebug(spdlog::format_string_t<Args...>, Args&&... args);
 };
 
 }  // namespace reindexer

@@ -1,7 +1,7 @@
 #include <gtest/gtest-param-test.h>
 #include "ft_api.h"
 
-class FTMinRelevanceApi : public FTApi {
+class [[nodiscard]] FTMinRelevanceApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_min_relevance"; }
 	void CreateNs() {

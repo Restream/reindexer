@@ -1,9 +1,5 @@
 #include "selectiterator.h"
 
-#include <algorithm>
-#include <cmath>
-#include "core/index/indexiterator.h"
-
 namespace reindexer {
 
 std::string_view SelectIterator::TypeName() const noexcept {
@@ -25,8 +21,6 @@ std::string_view SelectIterator::TypeName() const noexcept {
 			return "RevSingleIdset"sv;
 		case RevSingleIdSetWithDeferedSort:
 			return "RevSingleIdSetWithDeferedSort"sv;
-		case OnlyComparator:
-			return "OnlyComparator"sv;
 		case Unsorted:
 			return "Unsorted"sv;
 		case UnbuiltSortOrdersIndex:

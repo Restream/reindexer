@@ -9,7 +9,7 @@ using benchmark::internal::Benchmark;
 using reindexer::NamespaceDef;
 using reindexer::Reindexer;
 
-class ApiEncDec {
+class [[nodiscard]] ApiEncDec {
 public:
 	ApiEncDec(Reindexer* db, std::string&& name);
 	~ApiEncDec();

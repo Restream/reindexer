@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-enum class CSVState { UnquotedField, QuotedField, QuotedQuote };
+enum class [[nodiscard]] CSVState { UnquotedField, QuotedField, QuotedQuote };
 
 std::vector<std::string> parseCSVRow(std::string_view row) {
 	CSVState state = CSVState::UnquotedField;

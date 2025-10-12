@@ -1,42 +1,41 @@
 #pragma once
 
 #include <map>
-#include <mutex>
 #include <vector>
+#include "estl/lock.h"
 #include "estl/mutex.h"
 #include "tools/assertrx.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 namespace cluster {
 
-class SynchronizationList {
+class [[nodiscard]] SynchronizationList {
 public:
 	constexpr static int64_t kEmptyID = -1;
 	constexpr static int64_t kUnsynchronizedID = -2;
 
 	void Init(std::vector<int64_t>&& list) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		lastUpdates_ = std::move(list);
 	}
 	void Clear() {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		std::fill(lastUpdates_.begin(), lastUpdates_.end(), kUnsynchronizedID);
 	}
 	void MarkUnsynchonized(uint32_t nodeId) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		assertrx(nodeId < lastUpdates_.size());
 		lastUpdates_[nodeId] = kUnsynchronizedID;
 	}
 	void MarkSynchronized(uint32_t nodeId, int64_t updateId) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		assertrx(nodeId < lastUpdates_.size());
 		lastUpdates_[nodeId] = updateId;
 	}
 	std::vector<int64_t> GetSynchronized(uint32_t synchronizedCount) const {
 		std::vector<int64_t> res;
 		{
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			res = lastUpdates_;
 		}
 		filterNodesBySynchonizedCount(res, synchronizedCount);
@@ -71,7 +70,7 @@ private:
 	}
 
 	std::vector<int64_t> lastUpdates_;
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 };
 
 }  // namespace cluster

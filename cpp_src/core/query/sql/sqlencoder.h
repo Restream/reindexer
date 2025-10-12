@@ -8,8 +8,9 @@
 namespace reindexer {
 
 class WrSerializer;
+class Query;
 
-class SQLEncoder {
+class [[nodiscard]] SQLEncoder {
 public:
 	SQLEncoder(const Query& q) noexcept : SQLEncoder(q, q.Type()) {}
 	SQLEncoder(const Query& q, QueryType queryType) noexcept : query_(q), realQueryType_(queryType) {}

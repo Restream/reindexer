@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-class LocalTransaction {
+class [[nodiscard]] LocalTransaction {
 public:
 	LocalTransaction(NamespaceName nsName, const PayloadType& pt, const TagsMatcher& tm, const FieldsSet& pf,
 					 std::shared_ptr<const Schema> schema, lsn_t lsn)
@@ -47,10 +47,15 @@ public:
 		assertrx(data_);
 		if (tx_ && tx_->HasDeleteItemSteps() && rx_unlikely(pkFields != data_->GetPKFileds())) {
 			throw Error(errNotValid,
-						"Transaction has Delete-calls and it's PK metadata is outdated (probably PK has been change during the transaction "
-						"creation)");
+						"Transaction has Delete-calls and it's PK metadata is outdated (probably PK has been changed during the "
+						"transaction creation)");
 		}
 	}
+	size_t CalculateNewCapacity(size_t currentSize) const noexcept { return tx_ ? tx_->CalculateNewCapacity(currentSize) : currentSize; }
+	unsigned DeletionsCount() const noexcept { return tx_ ? tx_->DeletionsCount() : 0; }
+	unsigned ExpectedInsertionsCount() const noexcept { return tx_ ? tx_->ExpectedInsertionsCount() : 0; }
+	unsigned UpdateQueriesCount() const noexcept { return tx_ ? tx_->UpdateQueriesCount() : 0; }
+	unsigned DeleteQueriesCount() const noexcept { return tx_ ? tx_->DeleteQueriesCount() : 0; }
 
 private:
 	LocalTransaction(std::unique_ptr<SharedTransactionData>&& d, std::unique_ptr<TransactionSteps>&& tx, Error&& e)

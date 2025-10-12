@@ -10,8 +10,8 @@ namespace reindexer {
 class Index;
 struct SortingEntry;
 
-struct SortingContext {
-	struct RawDataParams {
+struct [[nodiscard]] SortingContext {
+	struct [[nodiscard]] RawDataParams {
 		RawDataParams() = default;
 		RawDataParams(const void* p, const PayloadType& pt, int field) noexcept
 			: ptr(p), type(ptr ? pt.Field(field).Type() : KeyValueType::Undefined{}) {}
@@ -20,13 +20,13 @@ struct SortingContext {
 		KeyValueType type = KeyValueType::Undefined{};
 	};
 
-	struct FieldEntry {
+	struct [[nodiscard]] FieldEntry {
 		const SortingEntry& data;
 		Index* index = nullptr;
 		RawDataParams rawData = {};
 		const CollateOpts* opts = nullptr;
 	};
-	struct JoinedFieldEntry {
+	struct [[nodiscard]] JoinedFieldEntry {
 		JoinedFieldEntry(const SortingEntry& d, unsigned nsI, std::string&& f, int i)
 			: data(d), nsIdx(nsI), index(i), field(std::move(f)) {}
 		JoinedFieldEntry(const JoinedFieldEntry&) = delete;
@@ -38,20 +38,26 @@ struct SortingContext {
 		int index;	// = IndexValueType::NotSet;
 		std::string field;
 	};
-	struct ExpressionEntry {
+	struct [[nodiscard]] ExpressionEntry {
 		const SortingEntry& data;
 		size_t expression;
 	};
-	using Entry = std::variant<FieldEntry, JoinedFieldEntry, ExpressionEntry>;
+	struct [[nodiscard]] Entry : public std::variant<FieldEntry, JoinedFieldEntry, ExpressionEntry> {
+		using Base = std::variant<FieldEntry, JoinedFieldEntry, ExpressionEntry>;
+		using Base::Base;
+		reindexer::Desc Desc() const;
+		const Base& AsVariant() const& noexcept { return *this; }
+		auto AsVariant() const&& = delete;
+	};
 
-	[[nodiscard]] int sortId() const noexcept {
+	int sortId() const noexcept {
 		if (!enableSortOrders) {
 			return 0;
 		}
 		const Index* sortIdx = sortIndex();
 		return sortIdx ? int(sortIdx->SortId()) : 0;
 	}
-	[[nodiscard]] Index* sortIndex() const noexcept {
+	Index* sortIndex() const noexcept {
 		if (entries.empty()) {
 			return nullptr;
 		}
@@ -61,7 +67,7 @@ struct SortingContext {
 		}
 		return nullptr;
 	}
-	[[nodiscard]] const Index* sortIndexIfOrdered() const noexcept {
+	const Index* sortIndexIfOrdered() const noexcept {
 		if (entries.empty() || !isIndexOrdered() || !enableSortOrders) {
 			return nullptr;
 		}
@@ -71,14 +77,14 @@ struct SortingContext {
 		}
 		return nullptr;
 	}
-	[[nodiscard]] const FieldEntry* sortFieldEntryIfOrdered() const noexcept {
+	const FieldEntry* sortFieldEntryIfOrdered() const noexcept {
 		if (entries.empty() || !isIndexOrdered() || !enableSortOrders) {
 			return nullptr;
 		}
 		return std::get_if<FieldEntry>(&entries[0]);
 	}
-	[[nodiscard]] bool isOptimizationEnabled() const noexcept { return (uncommitedIndex >= 0) && sortIndex(); }
-	[[nodiscard]] bool isIndexOrdered() const noexcept {
+	bool isOptimizationEnabled() const noexcept { return (uncommitedIndex >= 0) && sortIndex(); }
+	bool isIndexOrdered() const noexcept {
 		if (entries.empty()) {
 			return false;
 		}
@@ -88,7 +94,7 @@ struct SortingContext {
 		}
 		return false;
 	}
-	[[nodiscard]] const Entry& getFirstColumnEntry() const noexcept {
+	const Entry& getFirstColumnEntry() const noexcept {
 		assertrx_throw(!entries.empty());
 		return entries[0];
 	}
@@ -102,6 +108,8 @@ struct SortingContext {
 		}
 	}
 
+	Reranker ToReranker(const NamespaceImpl&) const;
+
 	bool enableSortOrders = false;
 	h_vector<Entry, 1> entries;
 	int uncommitedIndex = -1;
@@ -110,7 +118,7 @@ struct SortingContext {
 	std::vector<h_vector<double, 32>> exprResults;
 };
 
-struct SortingOptions {
+struct [[nodiscard]] SortingOptions {
 	SortingOptions(const SortingContext& sortingContext) noexcept
 		: forcedMode{sortingContext.forcedMode},
 		  multiColumn{sortingContext.entries.size() > 1},
@@ -129,9 +137,7 @@ struct SortingOptions {
 			}
 		}
 	}
-	[[nodiscard]] bool postLoopSortingRequired() const noexcept {
-		return multiColumn || usingGeneralAlgorithm || forcedMode || haveExpression;
-	}
+	bool postLoopSortingRequired() const noexcept { return multiColumn || usingGeneralAlgorithm || forcedMode || haveExpression; }
 
 	bool byBtreeIndex = false;
 	bool usingGeneralAlgorithm = true;

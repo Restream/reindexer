@@ -1,15 +1,18 @@
 #include "kblayout.h"
-#include <assert.h>
 
 namespace reindexer {
 
-void KbLayout::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) {
+static const int ruLettersStartUTF16 = 1072;
+static const int allSymbolStartUTF16 = 39;
+
+void KbLayout::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorage& result, int proc,
+						   fast_hash_map<std::wstring, size_t>& patternsUsed) {
 	std::wstring result_string;
 	result_string.reserve(data.length());
 
 	for (auto sym : data) {
-		if (sym >= ruLettersStartUTF16 && sym <= ruLettersStartUTF16 + ruAlfavitSize - 1) {	 // russian layout
-			assertrx(sym >= ruLettersStartUTF16 && sym - ruLettersStartUTF16 < ruAlfavitSize);
+		if (sym >= ruLettersStartUTF16 && sym <= ruLettersStartUTF16 + ruAlphabetSize - 1) {  // russian layout
+			assertrx(sym >= ruLettersStartUTF16 && sym - ruLettersStartUTF16 < ruAlphabetSize);
 			result_string.push_back(ru_layout_[sym - ruLettersStartUTF16]);
 
 		} else if (sym >= allSymbolStartUTF16 && sym < allSymbolStartUTF16 + engAndAllSymbols) {  // en symbol
@@ -20,7 +23,8 @@ void KbLayout::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& 
 			result_string.push_back(sym);
 		}
 	}
-	result.emplace_back(std::move(result_string), proc);
+
+	AddOrUpdateVariant(result, patternsUsed, {std::move(result_string), proc, PrefAndStemmersForbidden_False});
 }
 
 void KbLayout::setEnLayout(wchar_t sym, wchar_t data) {
@@ -33,7 +37,7 @@ void KbLayout::PrepareEnLayout() {
 		all_symbol_[i] = i + allSymbolStartUTF16;
 	}
 
-	for (int i = 0; i < ruAlfavitSize; ++i) {
+	for (int i = 0; i < ruAlphabetSize; ++i) {
 		setEnLayout(ru_layout_[i], i + ruLettersStartUTF16);
 	}
 }

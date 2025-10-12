@@ -7,12 +7,12 @@ namespace coroutine {
 
 /// @class Tokens pool based on channel
 template <typename T>
-class tokens_pool {
+class [[nodiscard]] tokens_pool {
 public:
 	using OnTokenReturnF = std::function<void(const T&)>;
 
 	/// @class Token guard owns token and returns it back to pool in desctructor
-	class token {
+	class [[nodiscard]] token {
 	public:
 		token() = default;
 		token(const token&) = delete;

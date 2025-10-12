@@ -1,5 +1,5 @@
 #include "client/rpcclient.h"
-#include <functional>
+#include "client/connectopts.h"
 #include "client/itemimplbase.h"
 #include "client/snapshot.h"
 #include "cluster/clustercontrolrequest.h"
@@ -7,6 +7,8 @@
 #include "core/namespace/namespacestat.h"
 #include "core/namespacedef.h"
 #include "core/schema.h"
+#include "estl/dummy_mutex.h"
+#include "estl/gift_str.h"
 #include "gason/gason.h"
 #include "tools/catch_and_return.h"
 #include "tools/cpucheck.h"
@@ -15,10 +17,8 @@
 namespace reindexer {
 namespace client {
 
-using reindexer::net::cproto::CoroRPCAnswer;
-
 RPCClient::RPCClient(const ReindexerConfig& config, INamespaces::PtrT sharedNamespaces)
-	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : INamespaces::PtrT(new NamespacesImpl<dummy_mutex>())), config_(config) {
+	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : INamespaces::PtrT(new NamespacesImpl<DummyMutex>())), config_(config) {
 	reindexer::CheckRequiredSSESupport();
 
 	conn_.SetConnectionStateHandler([this](Error err) { onConnectionState(std::move(err)); });
@@ -29,14 +29,18 @@ RPCClient::~RPCClient() { Stop(); }
 Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
 	using namespace std::string_view_literals;
 
-	std::lock_guard lck(mtx_);
+	if (coroutine::current() == 0) {
+		return Error(errLogic, "Coroutine client's Connect can't be called from main routine (coroutine ID is 0). DSN: {}", dsn);
+	}
+
+	lock_guard lck(mtx_);
 	if (conn_.IsRunning()) {
-		return Error(errLogic, "Client is already started (%s)", dsn);
+		return Error(errLogic, "Client is already started. DSN: {}", dsn);
 	}
 
 	cproto::CoroClientConnection::ConnectData connectData{.uri = dsn.Parser(), .opts = {}};
 	if (!connectData.uri.isValid()) {
-		return Error(errParams, "%s is not valid uri", dsn);
+		return Error(errParams, "{} is not valid uri", dsn);
 	}
 #ifdef _WIN32
 	if (connectData.uri.scheme() != "cproto"sv && connectData.uri.scheme() != "cprotos"sv) {
@@ -50,7 +54,7 @@ Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::C
 
 	connectData.opts = cproto::CoroClientConnection::Options(
 		config_.NetTimeout, config_.NetTimeout, opts.IsCreateDBIfMissing(), opts.HasExpectedClusterID(), opts.ExpectedClusterID(),
-		config_.ReconnectAttempts, config_.EnableCompression, config_.RequestDedicatedThread, config_.AppName);
+		config_.ReconnectAttempts, config_.EnableCompression, config_.RequestDedicatedThread, config_.AppName, config_.ReplToken);
 	conn_.Start(loop, std::move(connectData));
 	loop_ = &loop;
 	return errOK;
@@ -58,7 +62,7 @@ Error RPCClient::Connect(const DSN& dsn, ev::dynamic_loop& loop, const client::C
 
 void RPCClient::Stop() {
 	if (conn_.IsRunning()) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		terminate_ = true;
 		conn_.Stop();
 		loop_ = nullptr;
@@ -245,7 +249,7 @@ Error RPCClient::modifyItemFormat(std::string_view nsName, Item& item, RPCDataFo
 			data = item.GetMsgPack();
 			break;
 		case RPCDataFormat::CJSON:
-			return Error(errParams, "Unsupported format: %d", int(format));
+			return Error(errParams, "Unsupported format: {}", int(format));
 	}
 	auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(format), data, mode, ser.Slice(),
 						  item.GetStateToken(), 0);
@@ -299,12 +303,12 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 			ser.GetRawQueryParams(
 				qdata,
 				[&ser, nsPtr = std::move(nsPtr)](int nsIdx) {
-					const uint32_t stateToken = ser.GetVarUint();
-					const int version = ser.GetVarUint();
+					const uint32_t stateToken = ser.GetVarUInt();
+					const int version = ser.GetVarUInt();
 					TagsMatcher newTm;
 					newTm.deserialize(ser, version, stateToken);
 					if (nsIdx != 0) {
-						throw Error(errLogic, "Unexpected namespace index in item modification response: %d", nsIdx);
+						throw Error(errLogic, "Unexpected namespace index in item modification response: {}", nsIdx);
 					}
 					nsPtr->TryReplaceTagsMatcher(std::move(newTm));
 					PayloadType("tmp").clone()->deserialize(ser);
@@ -315,14 +319,6 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 		return err;
 	}
 	return Error();
-}
-
-Item RPCClient::NewItem(std::string_view nsName) {
-	try {
-		return getNamespace(nsName)->NewItem();
-	} catch (const Error& err) {
-		return Item(err);
-	}
 }
 
 Error RPCClient::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx) {
@@ -434,7 +430,7 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	}
 }
 
-Error RPCClient::Select(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {
+Error RPCClient::ExecSQL(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {
 	try {
 		auto query = Query::FromSQL(querySQL);
 		switch (query.type_) {
@@ -504,7 +500,7 @@ Error RPCClient::UpdateIndex(std::string_view nsName, const IndexDef& iDef, cons
 }
 
 Error RPCClient::DropIndex(std::string_view nsName, const IndexDef& idx, const InternalRdxContext& ctx) {
-	return conn_.Call(mkCommand(cproto::kCmdDropIndex, &ctx), nsName, idx.name_).Status();
+	return conn_.Call(mkCommand(cproto::kCmdDropIndex, &ctx), nsName, idx.Name()).Status();
 }
 
 Error RPCClient::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext& ctx) {
@@ -531,6 +527,7 @@ Error RPCClient::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesO
 			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
 
+			defs.resize(0);
 			for (auto& nselem : root["items"]) {
 				NamespaceDef def;
 				def.FromJSON(nselem);
@@ -541,7 +538,7 @@ Error RPCClient::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesO
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& err) {
-		return Error(errParseJson, "EnumNamespaces: %s", err.what());
+		return Error(errParseJson, "EnumNamespaces: {}", err.what());
 	}
 }
 
@@ -552,6 +549,7 @@ Error RPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalR
 			gason::JsonParser parser;
 			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
+			dbList.resize(0);
 			for (auto& elem : root["databases"]) {
 				dbList.emplace_back(elem.As<std::string>());
 			}
@@ -560,7 +558,7 @@ Error RPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalR
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& err) {
-		return Error(errParseJson, "EnumDatabases: %s", err.what());
+		return Error(errParseJson, "EnumDatabases: {}", err.what());
 	}
 }
 
@@ -589,6 +587,24 @@ Error RPCClient::Status(bool forceCheck, const InternalRdxContext& ctx) {
 	return conn_.Status(forceCheck, std::max(config_.NetTimeout, ctx.execTimeout()), ctx.execTimeout(), ctx.getCancelCtx());
 }
 
+Error RPCClient::Version(std::string& version, const InternalRdxContext& ctx) {
+	if (!conn_.IsRunning()) {
+		return Error(errParams, "Client is not running");
+	}
+
+	if (auto err = Status(true, ctx); !err.ok()) {
+		return err;
+	}
+
+	auto versionOpt = conn_.RxServerVersion();
+	if (!versionOpt) {
+		return Error(errLogic, "Unable to detect the version of the connection server");
+	}
+	version = std::move(*versionOpt);
+
+	return {};
+}
+
 std::shared_ptr<Namespace> RPCClient::getNamespace(std::string_view nsName) { return namespaces_->Get(nsName); }
 
 cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, const InternalRdxContext* ctx) const noexcept {
@@ -606,27 +622,34 @@ cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, milliseconds net
 	if (ctx) {
 		return {cmd,
 				std::max(netTimeout, ctx->execTimeout()),
-				ctx->execTimeout(),
+				ctx->execTimeout().count() ? ctx->execTimeout() : netTimeout,
 				ctx->lsn(),
-				ctx->emmiterServerId(),
+				ctx->emitterServerId(),
 				ctx->shardId(),
 				ctx->getCancelCtx(),
 				ctx->IsShardingParallelExecution()};
 	}
-	return {cmd, netTimeout, std::chrono::milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false};
+	return {cmd, netTimeout, netTimeout, lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false};
 }
 
-CoroTransaction RPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
-	auto ret = conn_.Call(mkCommand(cproto::kCmdStartTransaction, &ctx), nsName);
-	auto err = ret.Status();
-	if (err.ok()) {
-		try {
-			auto args = ret.GetArgs(1);
-			return CoroTransaction(this, int64_t(args[0]), config_.NetTimeout, ctx.execTimeout(), getNamespace(nsName),
-								   ctx.emmiterServerId());
-		} catch (Error& e) {
-			err = std::move(e);
+CoroTransaction RPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) noexcept {
+	Error err;
+	try {
+		auto ret = conn_.Call(mkCommand(cproto::kCmdStartTransaction, &ctx), nsName);
+		err = ret.Status();
+		if (err.ok()) {
+			try {
+				auto args = ret.GetArgs(1);
+				return CoroTransaction(this, int64_t(args[0]), config_.NetTimeout, ctx.execTimeout(), getNamespace(nsName),
+									   ctx.emitterServerId());
+			} catch (Error& e) {
+				err = std::move(e);
+			}
 		}
+	} catch (std::exception& e) {
+		err = std::move(e);
+	} catch (...) {
+		err = Error(errSystem, "Unknow exception in Reindexer client");
 	}
 	return CoroTransaction(std::move(err));
 }
@@ -681,10 +704,10 @@ Error RPCClient::GetReplState(std::string_view nsName, ReplicationStateV2& state
 	return ret.Status();
 }
 
-Error RPCClient::SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const InternalRdxContext& ctx) {
+Error RPCClient::SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	status.GetJSON(ser);
-	return conn_.Call(mkCommand(cproto::kCmdSetClusterizationStatus, &ctx), nsName, ser.Slice()).Status();
+	return conn_.Call(mkCommand(cproto::kCmdSetClusterOperationStatus, &ctx), nsName, ser.Slice()).Status();
 }
 
 Error RPCClient::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const InternalRdxContext& ctx) {
@@ -699,8 +722,8 @@ Error RPCClient::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, 
 								count > 0 ? p_string(args[4]) : p_string(), config_.NetTimeout);
 			const unsigned nextArgNum = count > 0 ? 5 : 4;
 			if (args.size() >= nextArgNum + 1) {
-				snapshot.ClusterizationStat(ClusterizationStatus{.leaderId = int(args[nextArgNum]),
-																 .role = reindexer::ClusterizationStatus::Role(int(args[nextArgNum + 1]))});
+				snapshot.ClusterOperationStat(ClusterOperationStatus{
+					.leaderId = int(args[nextArgNum]), .role = reindexer::ClusterOperationStatus::Role(int(args[nextArgNum + 1]))});
 			}
 		}
 	} catch (const Error& err) {
@@ -760,7 +783,7 @@ int64_t RPCClient::AddConnectionStateObserver(ConnectionStateHandlerT callback) 
 }
 
 Error RPCClient::RemoveConnectionStateObserver(int64_t id) {
-	return observers_.erase(id) ? Error() : Error(errNotFound, "Callback with id %d does not exist", id);
+	return observers_.erase(id) ? Error() : Error(errNotFound, "Callback with id {} does not exist", id);
 }
 
 Error RPCClient::LeadersPing(const RPCClient::NodeData& leader, const InternalRdxContext& ctx) {

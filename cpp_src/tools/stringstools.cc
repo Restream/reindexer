@@ -1,6 +1,4 @@
-#include <memory.h>
-#include <algorithm>
-
+#include "tools/stringstools.h"
 #include "atoi/atoi.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/uuid.h"
@@ -8,15 +6,17 @@
 #include "fmt/compile.h"
 #include "frozen_str_tools.h"
 #include "itoa/itoa.h"
-#include "stringstools.h"
 #include "tools/assertrx.h"
 #include "tools/randomgenerator.h"
-#include "tools/stringstools.h"
+#include "tools/serializer.h"
 #include "utf8cpp/utf8.h"
 #include "vendor/double-conversion/double-conversion.h"
 #include "vendor/frozen/unordered_map.h"
 
 namespace reindexer {
+
+const char* kDefaultExtraWordsSymbols = "-/+_`'";
+const char* kDefaultWordPartDelimiters = "-/+_`'";
 
 namespace stringtools_impl {
 
@@ -79,6 +79,123 @@ constexpr static auto kStrictModes = frozen::make_unordered_map<std::string_view
 
 }  // namespace stringtools_impl
 
+bool SplitOptions::IsWord(std::string_view str) const noexcept {
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
+		if (!IsWordSymbol(utf8::unchecked::next(it))) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void SplitOptions::RemoveDelims(std::string_view str, std::string& res) const {
+	res.resize(str.length());
+	auto resBegin = res.begin();
+	auto resIt = res.begin();
+
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
+		uint32_t ch = utf8::unchecked::next(it);
+		if (!IsWordPartDelimiter(ch)) {
+			resIt = utf8::unchecked::append(ch, resIt);
+		}
+	}
+
+	res.resize(std::distance(resBegin, resIt));
+}
+
+std::string SplitOptions::RemoveDelims(std::string_view str) const {
+	std::string buf;
+	RemoveDelims(str, buf);
+	return buf;
+}
+
+bool SplitOptions::ContainsDelims(std::string_view str) const {
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
+		if (IsWordPartDelimiter(utf8::unchecked::next(it))) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool SplitOptions::ContainsDelims(std::wstring_view str) const {
+	return std::ranges::any_of(str, [this](auto ch) { return IsWordPartDelimiter(ch); });
+}
+
+std::string SplitOptions::RemoveAccentsAndDiacritics(std::string_view str) const {
+	if (!removeDiacriticsMask_) {
+		return std::string(str);
+	}
+
+	std::string buf;
+	buf.resize(str.length());
+	auto bufBegin = buf.begin();
+	auto bufIt = buf.begin();
+
+	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
+		uint32_t ch = utf8::unchecked::next(it);
+		if (NeedToRemoveDiacritics(ch)) {
+			ch = RemoveDiacritic(ch);
+		}
+		if (ch != 0) {
+			bufIt = utf8::unchecked::append(ch, bufIt);
+		}
+	}
+
+	buf.resize(std::distance(bufBegin, bufIt));
+	return buf;
+}
+
+static void setMask(std::vector<bool>& mask, uint32_t ch) noexcept {
+	if (ch < UINT16_MAX) {
+		if (mask.size() < ch + 1) {
+			mask.resize(ch + 1);
+		}
+		mask[ch] = true;
+	}
+}
+
+void SplitOptions::SetSymbols(std::string_view extraWordSymbols, std::string_view wordPartDelimiters) {
+	extraWordSymbolsMask_.resize(0);
+	wordPartDelimitersMask_.resize(0);
+	extraWordSymbolsMask_.reserve(128);
+	wordPartDelimitersMask_.reserve(128);
+
+	hasDelims_ = !wordPartDelimiters.empty();
+
+	if (!extraWordSymbols.empty()) {
+		for (auto it = extraWordSymbols.begin(); it != extraWordSymbols.end();) {
+			auto ch = utf8::unchecked::next(it);
+			setMask(extraWordSymbolsMask_, ch);
+		}
+	}
+
+	if (!wordPartDelimiters.empty()) {
+		for (auto it = wordPartDelimiters.begin(); it != wordPartDelimiters.end();) {
+			auto ch = utf8::unchecked::next(it);
+			setMask(wordPartDelimitersMask_, ch);
+			setMask(extraWordSymbolsMask_, ch);
+		}
+	}
+}
+
+static std::string bitmaskAsString(const std::vector<bool>& mask) {
+	std::string res;
+	std::wstring str;
+	for (size_t i = 0; i < mask.size(); ++i) {
+		if (mask[i]) {
+			str.push_back(wchar_t(i));
+		}
+	}
+	utf16_to_utf8(str, res);
+	return res;
+}
+
+std::string SplitOptions::GetExtraWordSymbols() const { return bitmaskAsString(extraWordSymbolsMask_); }
+std::string SplitOptions::GetWordPartDelimiters() const { return bitmaskAsString(wordPartDelimitersMask_); }
+
 std::string toLower(std::string_view src) {
 	std::string ret;
 	ret.reserve(src.size());
@@ -91,13 +208,13 @@ std::string toLower(std::string_view src) {
 std::string escapeString(std::string_view str) {
 	std::string dst;
 	dst.reserve(str.length());
-	for (auto it = str.begin(); it != str.end(); it++) {
-		if (*it < 0x20 || unsigned(*it) >= 0x80 || *it == '\\') {
+	for (auto ch : str) {
+		if (ch < 0x20 || unsigned(ch) >= 0x80 || ch == '\\') {
 			char tmpbuf[16];
-			snprintf(tmpbuf, sizeof(tmpbuf), "\\%02X", unsigned(*it) & 0xFF);
+			snprintf(tmpbuf, sizeof(tmpbuf), "\\%02X", unsigned(ch) & 0xFF);
 			dst += tmpbuf;
 		} else {
-			dst.push_back(*it);
+			dst.push_back(ch);
 		}
 	}
 	return dst;
@@ -168,46 +285,51 @@ KeyValueType detectValueType(std::string_view value) {
 
 Variant stringToVariant(std::string_view value) {
 	const auto kvt = detectValueType(value);
-	return kvt.EvaluateOneOf([value](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
-							 [value](KeyValueType::Int) { return Variant(int(stoi(value))); },
-							 [value](KeyValueType::Double) {
-								 using double_conversion::StringToDoubleConverter;
-								 static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr,
-																				nullptr};
-								 int countOfCharsParsedAsDouble = 0;
-								 return Variant(converter.StringToDouble(value.data(), value.size(), &countOfCharsParsedAsDouble));
-							 },
-							 [value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
-							 [value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
-							 [value](KeyValueType::Uuid) { return Variant{Uuid{value}}; },
-							 [](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple>) noexcept {
-								 return Variant();
-							 });
+	return kvt.EvaluateOneOf(
+		[value](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
+		[value](KeyValueType::Int) { return Variant(int(stoi(value))); },
+		[value](KeyValueType::Double) {
+			using double_conversion::StringToDoubleConverter;
+			static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+			int countOfCharsParsedAsDouble = 0;
+			return Variant(converter.StringToDouble(value.data(), value.size(), &countOfCharsParsedAsDouble));
+		},
+		[value](KeyValueType::Float) {
+			using double_conversion::StringToDoubleConverter;
+			static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+			int countOfCharsParsedAsDouble = 0;
+			return Variant(converter.StringToFloat(value.data(), value.size(), &countOfCharsParsedAsDouble));
+		},
+		[value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
+		[value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
+		[value](KeyValueType::Uuid) { return Variant{Uuid{value}}; },
+		[](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+				 KeyValueType::FloatVector>) noexcept { return Variant(); });
 }
 
-std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst) {
+void utf8_to_utf16(std::string_view src, std::wstring& dst) {
 	dst.resize(src.length());
 	auto end = utf8::unchecked::utf8to32(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
-	return dst;
 }
 
-std::string& utf16_to_utf8(const std::wstring& src, std::string& dst) {
+void utf16_to_utf8(const std::wstring_view src, std::string& dst) {
 	dst.resize(src.length() * 4);
 	auto end = utf8::unchecked::utf32to8(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
-	return dst;
 }
 
 std::wstring utf8_to_utf16(std::string_view src) {
 	std::wstring dst;
-	return utf8_to_utf16(src, dst);
+	utf8_to_utf16(src, dst);
+	return dst;
 }
-std::string utf16_to_utf8(const std::wstring& src) {
+std::string utf16_to_utf8(const std::wstring_view src) {
 	std::string dst;
-	return utf16_to_utf8(src, dst);
+	utf16_to_utf8(src, dst);
+	return dst;
 }
-size_t utf16_to_utf8_size(const std::wstring& src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
+size_t utf16_to_utf8_size(const std::wstring_view src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
 
 // This functions calculate how many bytes takes limit symbols in UTF8 forward
 size_t calcUtf8After(std::string_view str, size_t limit) noexcept {
@@ -226,7 +348,12 @@ std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit
 	size_t charCounter = 0;
 	for (ptr = str.data(), strEnd = str.data() + str.size(); limit && ptr < strEnd; limit--) {
 		uint32_t c = utf8::unchecked::next(ptr);
-		charCounter++;
+		if (IsDiacritic(c)) {
+			++limit;
+			continue;
+		}
+
+		++charCounter;
 		for (ptrDelims = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelims < delimsEnd;) {
 			uint32_t d = utf8::unchecked::next(ptrDelims);
 			if (c == d) {
@@ -235,6 +362,16 @@ std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit
 			}
 		}
 	}
+
+	// Add all diacritics after last symbol
+	while (ptr < strEnd) {
+		uint32_t c = utf8::unchecked::next(ptr);
+		if (!IsDiacritic(c)) {
+			utf8::unchecked::prior(ptr);
+			break;
+		}
+	}
+
 	return std::make_pair(ptr - str.data(), charCounter);
 }
 
@@ -254,7 +391,11 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t 
 	int charCounter = 0;
 	for (; limit && ptr > str; limit--) {
 		uint32_t c = utf8::unchecked::prior(ptr);
-		charCounter++;
+		if (IsDiacritic(c)) {
+			++limit;
+			continue;
+		}
+		++charCounter;
 		for (ptrDelim = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelim < delimsEnd;) {
 			uint32_t d = utf8::unchecked::next(ptrDelim);
 			if (c == d) {
@@ -266,24 +407,54 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t 
 	return std::make_pair(str + pos - ptr, charCounter);
 }
 
-void split(std::string_view str, std::string& buf, std::vector<std::string_view>& words, std::string_view extraWordSymbols) {
+void split(std::string_view str, std::string& buf, std::vector<WordWithPos>& words, const SplitOptions& options) {
 	// assuming that the 'ToLower' function and the 'check for replacement' function should not change the character size in bytes
-	buf.resize(str.length());
+	// allocating additional memory to avoid resizing
+	buf.resize(2 * str.length());
+	std::string::iterator bufIt = buf.begin();
 	words.resize(0);
-	auto bufIt = buf.begin();
+	unsigned wordPos = 0;
 
 	for (auto it = str.begin(), endIt = str.end(); it != endIt;) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (!IsAlpha(ch) && !IsDigit(ch) && extraWordSymbols.find(ch) == std::string::npos && it != endIt) {
+		// word can't begin from quote even if quotes present in extra_word_symbols
+		while (!options.IsWordSymbol(ch) && it != endIt) {
 			ch = utf8::unchecked::next(it);
 		}
 
-		const auto begIt = bufIt;
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
+		auto wordBeginIt = bufIt;
+		auto wordPartBeginIt = bufIt;
+		size_t wordPartLength = 0;
+		size_t numPartsFound = 0;
+
+		while (options.IsWordSymbol(ch)) {
 			ch = ToLower(ch);
-			check_for_replacement(ch);
-			bufIt = utf8::unchecked::append(ch, bufIt);
+			if (options.NeedToRemoveDiacritics(ch)) {
+				ch = RemoveDiacritic(ch);
+			}
+			const bool isDelimiter = options.IsWordPartDelimiter(ch);
+
+			// add all delimited parts
+			if (isDelimiter) {
+				if (wordPartBeginIt != bufIt) {
+					numPartsFound++;
+					if (wordPartLength >= options.GetMinPartSize()) {
+						words.emplace_back(std::string_view(&(*wordPartBeginIt), std::distance(wordPartBeginIt, bufIt)), wordPos);
+					}
+				}
+			}
+
+			if (ch != 0) {
+				bufIt = utf8::unchecked::append(ch, bufIt);
+				++wordPartLength;
+			}
+
+			if (isDelimiter) {
+				wordPartBeginIt = bufIt;
+				wordPartLength = 0;
+			}
+
 			if (it != endIt) {
 				ch = utf8::unchecked::next(it);
 			} else {
@@ -291,26 +462,58 @@ void split(std::string_view str, std::string& buf, std::vector<std::string_view>
 			}
 		}
 
-		if (begIt != bufIt) {
-			words.emplace_back(&(*begIt), bufIt - begIt);
+		// add last part
+		if (wordPartBeginIt != bufIt) {
+			numPartsFound++;
+			if (wordPartBeginIt != wordBeginIt && wordPartLength >= options.GetMinPartSize()) {
+				words.emplace_back(std::string_view(&(*wordPartBeginIt), std::distance(wordPartBeginIt, bufIt)), wordPos);
+			}
 		}
+
+		// add word
+		const size_t wordLen = std::distance(wordBeginIt, bufIt);
+		if (wordBeginIt != bufIt) {
+			words.emplace_back(std::string_view(&(*wordBeginIt), wordLen), wordPos);
+		}
+
+		// add word without delims
+		if (numPartsFound > 1) {
+			const auto wordEndIt = bufIt;
+
+			for (auto wordIt = wordBeginIt; wordIt != wordEndIt;) {
+				const uint32_t wordCh = utf8::unchecked::next(wordIt);
+				if (!options.IsWordPartDelimiter(wordCh)) {
+					bufIt = utf8::unchecked::append(wordCh, bufIt);
+				}
+			}
+
+			if (bufIt != wordEndIt) {
+				size_t newWordLen = std::distance(wordEndIt, bufIt);
+				words.emplace_back(std::string_view(&(*wordEndIt), newWordLen), wordPos);
+			}
+		}
+
+		++wordPos;
 	}
+
+	buf.resize(std::distance(buf.begin(), bufIt));
 }
 
-void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, std::string_view extraWordSymbols) {
+void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, const SplitOptions& options) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
 		while (it != utf16str.end() && !IsAlpha(*it) && !IsDigit(*it)) {
-			it++;
+			++it;
 		}
 
 		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || extraWordSymbols.find(*it) != std::string::npos)) {
+		while (it != utf16str.end() && options.IsWordSymbol(*it)) {
 			*it = ToLower(*it);
 			++it;
 		}
 		size_t sz = it - begIt;
+
 		if (sz) {
 			words.emplace_back(&*begIt, &*(begIt + sz));
 		}
@@ -319,7 +522,7 @@ void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::ws
 
 template <CaseSensitive sensitivity>
 bool checkIfStartsWith(std::string_view pattern, std::string_view str) noexcept {
-	if (pattern.empty() || str.empty()) {
+	if (pattern.empty()) {
 		return false;
 	}
 	if (pattern.length() > str.length()) {
@@ -541,28 +744,20 @@ int fast_strftime(char* buf, const tm* tm) {
 	return d - buf;
 }
 
-[[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept {
+bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept {
 	if (!name.length()) {
 		return false;
 	}
-	for (auto c : name) {
-		if (!(std::isalnum(c) || c == '_' || c == '-' || c == '#' || (c == '@' && allowSpecialChars))) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(name.cbegin(), name.cend(), [allowSpecialChars](auto ch) {
+		return (std::isalnum(ch) || ch == '_' || ch == '-' || ch == '#' || (ch == '@' && allowSpecialChars));
+	});
 }
 
-[[nodiscard]] bool validateUserNsName(std::string_view name) noexcept {
+bool validateUserNsName(std::string_view name) noexcept {
 	if (!name.length()) {
 		return false;
 	}
-	for (auto c : name) {
-		if (!(std::isalnum(c) || c == '_' || c == '-')) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(name.cbegin(), name.cend(), [](auto ch) { return (std::isalnum(ch) || ch == '_' || ch == '-'); });
 }
 
 LogLevel logLevelFromString(std::string_view strLogLevel) noexcept {
@@ -604,24 +799,14 @@ bool isPrintable(std::string_view str) noexcept {
 	if (str.length() > 256) {
 		return false;
 	}
-	for (auto c : str) {
-		if (c < 0x20) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(str.cbegin(), str.cend(), [](auto ch) { return (ch >= 0x20); });
 }
 
 bool isBlank(std::string_view str) noexcept {
 	if (str.empty()) {
 		return true;
 	}
-	for (auto c : str) {
-		if (!isspace(c)) {
-			return false;
-		}
-	}
-	return true;
+	return std::all_of(str.cbegin(), str.cend(), [](auto ch) { return isspace(ch); });
 }
 
 bool endsWith(const std::string& source, std::string_view ending) noexcept {
@@ -655,7 +840,7 @@ int stoi(std::string_view sl) {
 	bool valid;
 	const int res = jsteemann::atoi<int>(sl.data(), sl.data() + sl.size(), valid);
 	if (!valid) {
-		throw Error(errParams, "Can't convert '%s' to number", sl);
+		throw Error(errParams, "Can't convert '{}' to number", sl);
 	}
 	return res;
 }
@@ -673,13 +858,33 @@ int64_t stoll(std::string_view sl) {
 	bool valid;
 	auto ret = jsteemann::atoi<int64_t>(sl.data(), sl.data() + sl.size(), valid);
 	if (!valid) {
-		throw Error(errParams, "Can't convert '%s' to number", sl);
+		throw Error(errParams, "Can't convert '{}' to number", sl);
 	}
 	return ret;
 }
 
-int double_to_str(double v, char* buf, int capacity) {
+namespace {
+template <typename FPT>
+int fp_spec_to_str_impl(FPT v, char* buf, int capacity) {
+	if (!std::isnan(v) && !std::isinf(v)) {
+		return 0;
+	}
+	static const std::string strNull = "null";
+	const auto sz = strNull.size();
 	(void)capacity;
+	assertrx_dbg(sz < size_t(capacity));
+	memcpy(buf, strNull.c_str(), sizeof(std::string::value_type) * sz);
+	return sz;
+}
+}  // namespace
+
+template <typename FPT>
+int fp_to_str_impl(FPT v, char* buf, int capacity) {
+	auto sz = fp_spec_to_str_impl(v, buf, capacity);
+	if (sz > 0) {
+		return sz;
+	}
+
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	auto p = buf;
 	do {
@@ -697,19 +902,57 @@ int double_to_str(double v, char* buf, int capacity) {
 	return end - buf;
 }
 
-int double_to_str_no_trailing(double v, char* buf, int capacity) {
-	(void)capacity;
+template <typename FPT>
+int fp_to_str_no_trailing_impl(FPT v, char* buf, int capacity) {
+	auto sz = fp_spec_to_str_impl(v, buf, capacity);
+	if (sz > 0) {
+		return sz;
+	}
+
 	auto end = fmt::format_to(buf, FMT_COMPILE("{}"), v);
 	assertrx_dbg(end - buf < capacity);
 	return end - buf;
 }
 
-std::string double_to_str(double v) {
+template <typename FPT>
+std::string fp_to_str_impl(FPT v) {
 	std::string res;
 	res.resize(32);
-	auto len = double_to_str(v, res.data(), res.size());
+	auto len = fp_to_str_impl(v, res.data(), res.size());
 	res.resize(len);
 	return res;
+}
+
+int double_to_str(double v, char* buf, int capacity) { return fp_to_str_impl(v, buf, capacity); }
+int double_to_str_no_trailing(double v, char* buf, int capacity) { return fp_to_str_no_trailing_impl(v, buf, capacity); }
+std::string double_to_str(double v) { return fp_to_str_impl(v); }
+
+int float_to_str(float v, char* buf, int capacity) { return fp_to_str_impl(v, buf, capacity); }
+int float_to_str_no_trailing(float v, char* buf, int capacity) { return fp_to_str_no_trailing_impl(v, buf, capacity); }
+std::string float_to_str(float v) { return fp_to_str_impl(v); }
+
+void float_vector_to_str(ConstFloatVectorView view, WrSerializer& ser) {
+	ser << '[';
+	if (view.IsStripped()) {
+		throw Error(errLogic, "Unable to serialize stripped float_vector");
+	}
+	auto span = view.Span();
+	std::string res;
+	res.resize(32);
+	for (auto it = span.begin(), end = span.end(); it != end; ++it) {
+		auto len = float_to_str(*it, res.data(), res.size());
+		ser << std::string_view(res.data(), len);
+		if (it + 1 != end) {
+			ser << ',';
+		}
+	}
+	ser << ']';
+}
+
+std::string float_vector_to_str(ConstFloatVectorView view) {
+	WrSerializer ser;
+	float_vector_to_str(std::move(view), ser);
+	return std::string(ser.Slice());
 }
 
 std::string randStringAlph(size_t len) {
@@ -756,15 +999,27 @@ Error getBytePosInMultilineString(std::string_view str, const size_t line, const
 		bytePos = it - str.begin() - 1;
 		return Error();
 	}
-	return Error(errNotValid, "Wrong cursor position: line=%d, pos=%d", line, charPos);
+	return Error(errNotValid, "Wrong cursor position: line={}, pos={}", line, charPos);
 }
 
-Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos) {
+Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos) {
 	try {
 		return getBytePosInMultilineString<true>(str, line, charPos, bytePos);
 	} catch (const utf8::exception&) {
 		return getBytePosInMultilineString<false>(str, line, charPos, bytePos);
 	}
+}
+
+std::string_view trimSpaces(std::string_view str) noexcept {
+	size_t left = 0, right = str.size();
+	while (left < right && std::isspace(str[left])) {
+		++left;
+	}
+	while (right > left && std::isspace(str[right - 1])) {
+		--right;
+	}
+
+	return str.substr(left, right - left);
 }
 
 }  // namespace reindexer

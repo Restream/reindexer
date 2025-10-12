@@ -4,34 +4,35 @@
 #include <vector>
 
 #include "errors.h"
+#include "estl/concepts.h"
 
 namespace reindexer {
 namespace fs {
 
-struct DirEntry {
+struct [[nodiscard]] DirEntry {
 	std::string name;
 	bool isDir;
 	unsigned internalFilesCount;
 };
 
-enum FileStatus {
+enum [[nodiscard]] FileStatus {
 	StatError = -1,
 	StatFile = 1,
 	StatDir = 2,
 };
 
-struct TimeStats {
+struct [[nodiscard]] TimeStats {
 	int64_t atime;
 	int64_t ctime;
 	int64_t mtime;
 };
 
-[[nodiscard]] int MkDirAll(const std::string& path) noexcept;
+int MkDirAll(const std::string& path) noexcept;
 int RmDirAll(const std::string& path) noexcept;
-[[nodiscard]] int ReadFile(const std::string& path, std::string& content) noexcept;
-[[nodiscard]] int64_t WriteFile(const std::string& path, std::string_view content) noexcept;
-[[nodiscard]] int ReadDir(const std::string& path, std::vector<DirEntry>& content) noexcept;
-[[nodiscard]] bool DirectoryExists(const std::string& directory) noexcept;
+int ReadFile(const std::string& path, std::string& content) noexcept;
+int64_t WriteFile(const std::string& path, std::string_view content) noexcept;
+int ReadDir(const std::string& path, std::vector<DirEntry>& content) noexcept;
+bool DirectoryExists(const std::string& directory) noexcept;
 FileStatus Stat(const std::string& path);
 TimeStats StatTime(const std::string& path);
 std::string GetCwd();
@@ -46,8 +47,14 @@ Error TryCreateDirectory(const std::string& dir);
 Error ChangeUser(const char* userName);
 Error ChownDir(const std::string& path, const std::string& user);
 
-inline std::string JoinPath(std::string_view base, const std::string_view name) {
-	return std::string(base).append((!base.empty() && base.back() != '/') ? "/" : "").append(name);
+inline std::string JoinPath(std::string base, concepts::ConvertibleToString auto&& name) {
+	return base.append((!base.empty() && base.back() != '/') ? "/" : "").append(name);
 }
+
+template <concepts::ConvertibleToString... Str>
+inline std::string JoinPath(std::string base, concepts::ConvertibleToString auto&& name, Str&&... names) {
+	return JoinPath(JoinPath(base, name), names...);
+}
+
 }  // namespace fs
 }  // namespace reindexer
