@@ -3,11 +3,13 @@ package reindexer
 import (
 	"math"
 	"math/rand"
+	"reflect"
 	"sort"
 	"strconv"
 	"testing"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -71,19 +73,28 @@ type TestItemNestedArrAppendableN2 struct {
 	NFieldArr []int `json:"nfield_arr,omitempty" reindex:"arridx,,appendable"`
 }
 
-const TestSelectWithMultipleJsonPathsNs = "test_select_with_multiple_json_paths"
-const TestSelectArrWithMultipleJsonPathsNs = "test_select_arr_with_multiple_json_paths"
+type aggValuesStruct struct {
+	Min float64 `json:"min"`
+	Max float64 `json:"max"`
+	Sum float64 `json:"sum"`
+	Avg float64 `json:"avg"`
+}
 
-const TestJoinWithMultipleJsonPathsNs = "test_join_with_multiple_json_paths"
-const TestJoinedWithMultipleJsonPathsNs = "test_joined_with_multiple_json_paths"
-const TestJoinArrWithMultipleJsonPathsNs = "test_join_arr_with_multiple_json_paths"
-const TestJoinedArrWithMultipleJsonPathsNs = "test_joined_arr_with_multiple_json_paths"
+const (
+	TestSelectWithMultipleJsonPathsNs    = "test_select_with_multiple_json_paths"
+	TestSelectArrWithMultipleJsonPathsNs = "test_select_arr_with_multiple_json_paths"
 
-const TestAggregWithMultipleJsonPathsNs = "test_aggreg_with_multiple_json_paths"
-const TestAggregArrWithMultipleJsonPathsNs = "test_aggreg_arr_with_multiple_json_paths"
+	TestJoinWithMultipleJsonPathsNs      = "test_join_with_multiple_json_paths"
+	TestJoinedWithMultipleJsonPathsNs    = "test_joined_with_multiple_json_paths"
+	TestJoinArrWithMultipleJsonPathsNs   = "test_join_arr_with_multiple_json_paths"
+	TestJoinedArrWithMultipleJsonPathsNs = "test_joined_arr_with_multiple_json_paths"
 
-const TestNestedWithMultipleJsonPathsNs = "test_nested_with_multiple_json_paths"
-const TestNestedArrWithMultipleJsonPathsNs = "test_nested_arr_with_multiple_json_paths"
+	TestAggregWithMultipleJsonPathsNs    = "test_aggreg_with_multiple_json_paths"
+	TestAggregArrWithMultipleJsonPathsNs = "test_aggreg_arr_with_multiple_json_paths"
+
+	TestNestedWithMultipleJsonPathsNs    = "test_nested_with_multiple_json_paths"
+	TestNestedArrWithMultipleJsonPathsNs = "test_nested_arr_with_multiple_json_paths"
+)
 
 func init() {
 	tnamespaces[TestSelectWithMultipleJsonPathsNs] = TestItemAppendable{}
@@ -101,11 +112,9 @@ func init() {
 	tnamespaces[TestNestedArrWithMultipleJsonPathsNs] = TestItemNestedArrAppendable{}
 }
 
-func checkResultItem(t *testing.T, it *reindexer.Iterator, item interface{}) {
-	defer it.Close()
-	require.Equal(t, 1, it.Count())
-	for it.Next() {
-		require.EqualValues(t, item, it.Object())
+func addValuesFromArrToMap(m map[string]int, arrField []int) {
+	for _, arr := range arrField {
+		m[strconv.Itoa(arr)] += 1
 	}
 }
 
@@ -116,10 +125,9 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 	const ns2 = TestSelectArrWithMultipleJsonPathsNs
 
 	testItem1 := TestItemAppendable{ID: 1, Field1: 10}
-	testItem2 := TestItemAppendable{ID: 2, Field2: 20}
+	testItem2 := TestItemAppendable{ID: 2, Field2: 50}
 	testItem3 := TestItemAppendable{ID: 3, Field1: 30}
 	testItem4 := TestItemAppendable{ID: 4, Field2: 30}
-
 	for _, item := range []TestItemAppendable{testItem1, testItem2, testItem3, testItem4} {
 		err := DB.Upsert(ns, item)
 		require.NoError(t, err)
@@ -142,9 +150,8 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 	})
 
 	testArrItem1 := TestArrItemAppendable{ID: 5, ArrField1: []int{50, 51}}
-	testArrItem2 := TestArrItemAppendable{ID: 6, ArrField2: []int{60, 61}}
+	testArrItem2 := TestArrItemAppendable{ID: 6, ArrField2: []int{40, 41}}
 	testArrItem3 := TestArrItemAppendable{ID: 7, ArrField1: []int{70, 71}, ArrField2: []int{72, 73}}
-
 	for _, item := range []TestArrItemAppendable{testArrItem1, testArrItem2, testArrItem3} {
 		err := DB.Upsert(ns2, item)
 		require.NoError(t, err)
@@ -164,12 +171,29 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 		checkResultItem(t, it4, &testArrItem3)
 	})
 
-	t.Run("can't sort with appendable tag", func(t *testing.T) {
-		_, err := DBD.Query(ns).Sort("idx", false).Exec().FetchAll()
-		require.ErrorContains(t, err, "Sorting cannot be applied to array field.")
+	t.Run("can sort with appendable tag", func(t *testing.T) {
+		checkItems := func(t *testing.T, items []interface{}, expectedItems []interface{}) {
+			require.Equal(t, len(items), len(expectedItems))
+			for i := 0; i < len(items); i++ {
+				assert.True(t, reflect.DeepEqual(items[i], expectedItems[i]), "%v\ndoesn't equal to\n%v", items[i], expectedItems[i])
+			}
+		}
 
-		_, err = DBD.Query(ns2).Sort("arridx", false).Exec().FetchAll()
-		require.ErrorContains(t, err, "Sorting cannot be applied to array field.")
+		items, err := DBD.Query(ns).Sort("idx", false).Exec().FetchAll()
+		require.NoError(t, err)
+		checkItems(t, items, []interface{}{&testItem1, &testItem3, &testItem4, &testItem2})
+
+		items, err = DBD.Query(ns).Sort("idx", true).Exec().FetchAll()
+		require.NoError(t, err)
+		checkItems(t, items, []interface{}{&testItem2, &testItem4, &testItem3, &testItem1})
+
+		items, err = DBD.Query(ns2).Sort("arridx", false).Exec().FetchAll()
+		require.NoError(t, err)
+		checkItems(t, items, []interface{}{&testArrItem2, &testArrItem1, &testArrItem3})
+
+		items, err = DBD.Query(ns2).Sort("arridx", true).Exec().FetchAll()
+		require.NoError(t, err)
+		checkItems(t, items, []interface{}{&testArrItem3, &testArrItem1, &testArrItem2})
 	})
 }
 
@@ -271,19 +295,6 @@ func TestJoinWithMultipleJsonPaths(t *testing.T) {
 	})
 }
 
-type aggValuesStruct struct {
-	Min float64 `json:"min"`
-	Max float64 `json:"max"`
-	Sum float64 `json:"sum"`
-	Avg float64 `json:"avg"`
-}
-
-func addValuesFromArrToMap(m map[string]int, arrField []int) {
-	for _, arr := range arrField {
-		m[strconv.Itoa(arr)] += 1
-	}
-}
-
 func TestAggregationsWithMultipleJsonPaths(t *testing.T) {
 	t.Parallel()
 
@@ -354,8 +365,12 @@ func TestAggregationsWithMultipleJsonPaths(t *testing.T) {
 
 		aggResults := it.AggResults()
 		require.Equal(t, 1, len(aggResults))
-		sort.Strings(aggResults[0].Distincts)
-		require.Equal(t, fieldValues, aggResults[0].Distincts)
+		var distincts []string
+		for i := 0; i < len(aggResults[0].Distincts); i++ {
+			distincts = append(distincts, aggResults[0].Distincts[i][0])
+		}
+		sort.Strings(distincts)
+		require.Equal(t, fieldValues, distincts)
 	})
 
 	t.Run("test facet with index multiple json paths", func(t *testing.T) {
@@ -441,8 +456,12 @@ func TestAggregationsWithMultipleJsonPaths(t *testing.T) {
 
 		aggResults := it.AggResults()
 		require.Equal(t, 1, len(aggResults))
-		sort.Strings(aggResults[0].Distincts)
-		require.Equal(t, fieldValues2, aggResults[0].Distincts)
+		var distincts []string
+		for i := 0; i < len(aggResults[0].Distincts); i++ {
+			distincts = append(distincts, aggResults[0].Distincts[i][0])
+		}
+		sort.Strings(distincts)
+		require.Equal(t, fieldValues2, distincts)
 	})
 
 	t.Run("test facet with array index multiple json paths", func(t *testing.T) {

@@ -1,17 +1,14 @@
 #pragma once
 #include <memory>
 #include <unordered_map>
-#include "core/ft/areaholder.h"
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/filters/itokenfilter.h"
-#include "core/ft/ft_fast/frisosplitter.h"
+#include "core/ft/filters/synonyms.h"
 #include "core/ft/ft_fast/splitter.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/limits.h"
 #include "core/ft/stemmer.h"
 #include "core/ft/typos.h"
-#include "core/ft/usingcontainer.h"
-#include "core/index/ft_preselect.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "estl/flat_str_map.h"
 #include "estl/suffix_map.h"
@@ -22,19 +19,21 @@ namespace reindexer {
 class RdxContext;
 
 // unique document in the namespace (if different rows contain the same text document, then it will correspond to one vdoc)
-struct VDocEntry {
+struct [[nodiscard]] VDocEntry {
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::string keyDoc;
 #endif
 
 	const FtKeyEntryData* keyEntry{nullptr};
-	RVector<float, 3> wordsCount;
-	RVector<float, 3> mostFreqWordCount;
+	h_vector<float, 3> wordsCount;
+	h_vector<float, 3> mostFreqWordCount;
+
+	bool IsRemoved() const noexcept { return keyEntry == nullptr; }
 };
 
 // documents for the word
 template <typename IdCont>
-class PackedWordEntry {
+class [[nodiscard]] PackedWordEntry {
 public:
 	PackedWordEntry() noexcept = default;
 	PackedWordEntry(const PackedWordEntry&) = delete;
@@ -47,7 +46,7 @@ public:
 	// Necessary for correct rebuilding of the last step
 	size_t cur_step_pos = 0;
 };
-class WordEntry {
+class [[nodiscard]] WordEntry {
 public:
 	WordEntry() noexcept = default;
 	WordEntry(const IdRelSet& _vids) : vids_(_vids) {}
@@ -61,9 +60,9 @@ public:
 
 	IdRelSet vids_;
 };
-enum ProcessStatus { FullRebuild, RecommitLast, CreateNew };
+enum [[nodiscard]] ProcessStatus { FullRebuild, RecommitLast, CreateNew };
 
-struct WordTypo {
+struct [[nodiscard]] WordTypo {
 	WordTypo() = default;
 	explicit WordTypo(WordIdType w) noexcept : word(w) {}
 	explicit WordTypo(WordIdType w, const typos_context::TyposVec& p) noexcept : word(w), positions(p) {}
@@ -79,9 +78,9 @@ struct WordTypo {
 
 static_assert(sizeof(WordTypo) <= 8, "This size is matter for overall size of the typos map");
 
-class IDataHolder {
+class [[nodiscard]] IDataHolder {
 public:
-	struct CommitStep {
+	struct [[nodiscard]] CommitStep {
 		CommitStep() : wordOffset_(0) {}
 
 		CommitStep(const CommitStep&) = delete;
@@ -176,7 +175,9 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	// translit generator for russian and english (returns word + weight)
 	ITokenFilter::Ptr translit_;
 	ITokenFilter::Ptr kbLayout_;
-	ITokenFilter::Ptr synonyms_;
+	ITokenFilter::Ptr compositeWordsSplitter_;
+
+	Synonyms::Ptr synonyms_;
 
 	std::vector<CommitStep> steps;
 	// array of unique documents
@@ -186,7 +187,7 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	std::vector<double> avgWordsCount_;
 	// Virtual documents, merged. Addressable by VDocIdType
 	// Temp data for build
-	std::vector<RVector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
+	std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
 	std::vector<std::unique_ptr<std::string>> bufStrs_;
 	size_t vdocsOffset_{0};
 	size_t szCnt{0};
@@ -197,7 +198,7 @@ public:	 // TODO: #1688 Fix private class data isolation here
 };
 
 template <typename IdCont>
-class DataHolder : public IDataHolder {
+class [[nodiscard]] DataHolder : public IDataHolder {
 public:
 	explicit DataHolder(FtFastConfig* c);
 	void Process(size_t fieldSize, bool multithread) final;

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "client/coroqueryresults.h"
 #include "client/corotransaction.h"
@@ -12,12 +12,13 @@
 #include "core/query/query.h"
 #include "core/shardedmeta.h"
 #include "coroutine/mutex.h"
+#include "estl/lock.h"
 #include "net/cproto/coroclientconnection.h"
 
 namespace reindexer {
 
 struct ReplicationStateV2;
-struct ClusterizationStatus;
+struct ClusterOperationStatus;
 class SnapshotChunk;
 struct SnapshotOpts;
 struct ClusterControlRequestData;
@@ -28,23 +29,24 @@ struct ShardingControlResponseData;
 }  // namespace sharding
 namespace client {
 
+class ConnectOpts;
 class Snapshot;
 
 template <typename MtxT>
-class NamespacesImpl final : public INamespaces::IntrusiveT {
+class [[nodiscard]] NamespacesImpl final : public INamespaces::IntrusiveT {
 public:
 	using MapT = fast_hash_map<std::string, std::shared_ptr<Namespace>, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 	void Add(const std::string& name) override {
 		auto ns = std::make_shared<Namespace>(name);
 
-		std::lock_guard ulck(mtx_);
+		lock_guard ulck(mtx_);
 		namespaces_.emplace(name, std::move(ns));
 	}
 	void Erase(std::string_view name) override {
-		std::lock_guard ulck(mtx_);
+		lock_guard ulck(mtx_);
 		namespaces_.erase(name);
 	}
-	std::shared_ptr<Namespace> Get(std::string_view name) override {
+	std::shared_ptr<Namespace> Get(std::string_view name) override RX_REQUIRES(!mtx_) {
 		shared_lock slck(mtx_);
 		auto nsIt = namespaces_.find(name);
 		if (nsIt == namespaces_.end()) {
@@ -52,7 +54,7 @@ public:
 
 			std::string nsName(name);
 			auto nsPtr = std::make_shared<Namespace>(nsName);
-			std::lock_guard ulck(mtx_);
+			lock_guard ulck(mtx_);
 			nsIt = namespaces_.find(name);
 			if (nsIt == namespaces_.end()) {
 				nsIt = namespaces_.emplace(std::move(nsName), std::move(nsPtr)).first;
@@ -68,7 +70,7 @@ private:
 };
 
 using namespace net;
-class RPCClient {
+class [[nodiscard]] RPCClient {
 public:
 	using ConnectionStateHandlerT = std::function<void(const Error&)>;
 	using NodeData = cluster::NodeData;
@@ -123,17 +125,19 @@ public:
 	}
 	Error Delete(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx);
 	Error Update(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx);
-	Error Select(std::string_view query, CoroQueryResults& result, const InternalRdxContext& ctx);
+	Error ExecSQL(std::string_view query, CoroQueryResults& result, const InternalRdxContext& ctx);
 	Error Select(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
 		return selectImpl(query, result, config_.NetTimeout, ctx);
 	}
-	Item NewItem(std::string_view nsName);
-	template <typename C>
-	Item NewItem(std::string_view nsName, C& client, std::chrono::milliseconds execTimeout) {
+	// This method must be noexcept for public API
+	template <typename... Args>
+	Item NewItem(std::string_view nsName, Args&&... args) noexcept {
 		try {
-			return getNamespace(nsName)->NewItem(client, execTimeout);
-		} catch (const Error& err) {
-			return Item(err);
+			return getNamespace(nsName)->NewItem(std::forward<Args>(args)...);
+		} catch (std::exception& err) {
+			return Item(std::move(err));
+		} catch (...) {
+			return Item(Error(errSystem, "Unknow exception in Reindexer client"));
 		}
 	}
 	Error GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx);
@@ -143,13 +147,15 @@ public:
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx);
 	Error GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string>& suggests);
 	Error Status(bool forceCheck, const InternalRdxContext& ctx);
+	Error Version(std::string& version, const InternalRdxContext& ctx);
 	bool RequiresStatusCheck() const noexcept { return conn_.IsRunning() && conn_.RequiresStatusCheck(); }
 
-	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx);
+	// This method must be noexcept for public API
+	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) noexcept;
 	Error CommitTransaction(CoroTransaction& tr, CoroQueryResults& result, const InternalRdxContext& ctx);
 	Error RollBackTransaction(CoroTransaction& tr, const InternalRdxContext& ctx);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const InternalRdxContext& ctx);
-	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const InternalRdxContext& ctx);
+	Error SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const InternalRdxContext& ctx);
 	Error GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const InternalRdxContext& ctx);
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const InternalRdxContext& ctx);
 	Error SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const InternalRdxContext& ctx);

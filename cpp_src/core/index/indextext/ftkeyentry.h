@@ -3,7 +3,7 @@
 #include "core/index/keyentry.h"
 namespace reindexer {
 
-class FtKeyEntryData : public KeyEntry<IdSetPlain> {
+class [[nodiscard]] FtKeyEntryData : public KeyEntry<IdSetPlain> {
 	using Base = KeyEntry<IdSetPlain>;
 	friend class FtKeyEntry;
 
@@ -24,7 +24,7 @@ private:
 // IndexUnordered is using flat_hash_map, therefore references to KeyEntry can be invalidated on any data update
 // FtKeyEntry is unique_ptr<FtKeyEntryData> wrapper for storing stable pointer to actual KeyEntry
 
-class FtKeyEntry {
+class [[nodiscard]] FtKeyEntry {
 public:
 	FtKeyEntry() : impl_(new FtKeyEntryData) {}
 	FtKeyEntry(const FtKeyEntry& other) : impl_(other.impl_ ? new FtKeyEntryData(*other.impl_.get()) : nullptr) {}
@@ -40,7 +40,7 @@ public:
 	IdSetPlain& Unsorted() noexcept { return impl_->Unsorted(); }
 	const IdSetPlain& Unsorted() const noexcept { return impl_->Unsorted(); }
 	IdSetRef Sorted(unsigned sortId) const noexcept { return impl_->Sorted(sortId); }
-	void UpdateSortedIds(const UpdateSortedContext& ctx) { impl_->UpdateSortedIds(ctx); }
+	void UpdateSortedIds(const IUpdateSortedContext& ctx) { impl_->UpdateSortedIds(ctx); }
 	void SetVDocID(int vdoc_id) noexcept { impl_->SetVDocID(vdoc_id); }
 	const int& VDocID() const { return impl_->vdoc_id_; }
 	FtKeyEntryData* get() { return impl_.get(); }

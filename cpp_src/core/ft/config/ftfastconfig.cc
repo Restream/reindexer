@@ -1,9 +1,8 @@
 #include "ftfastconfig.h"
 #include <string.h>
-#include <limits>
 #include <set>
 #include "core/cjson/jsonbuilder.h"
-#include "core/ft/typos.h"
+#include "core/ft/limits.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
 
@@ -28,7 +27,7 @@ bool FtFastFieldConfig::operator==(const FtFastFieldConfig& other) const noexcep
 		   termLenWeight == other.termLenWeight && positionBoost == other.positionBoost && positionWeight == other.positionWeight;
 }
 
-void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>& fields) {
+void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexFieldPros>& fields) {
 	fieldsCfg.clear();
 	if (json.empty()) {
 		fieldsCfg.resize(fields.size() ? fields.size() : 1);
@@ -52,7 +51,7 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 			maxTypos = 2 * root["max_typos_in_word"].As<>(MaxTyposInWord(), 0, kMaxTyposInWord);
 		} else {
 			const auto& maxTyposNode = root["max_typos"];
-			if (!maxTyposNode.empty() && maxTyposNode.value.getTag() != gason::JSON_NUMBER) {
+			if (!maxTyposNode.empty() && maxTyposNode.value.getTag() != gason::JsonTag::NUMBER) {
 				throw Error(errParseDSL, "Fulltext configuration field 'max_typos' should be integer");
 			}
 			maxTypos = maxTyposNode.As<>(maxTypos, 0, 2 * kMaxTyposInWord);
@@ -89,26 +88,26 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		defaultFieldCfg.positionBoost = root["position_boost"].As<>(defaultFieldCfg.positionBoost, 0.0, 10.0);
 		defaultFieldCfg.positionWeight = root["position_weight"].As<>(defaultFieldCfg.positionWeight, 0.0, 1.0);
 
-		fieldsCfg.insert(fieldsCfg.end(), fields.size() ? fields.size() : 1, defaultFieldCfg);
+		rx_unused = fieldsCfg.insert(fieldsCfg.cend(), fields.size() ? fields.size() : 1, defaultFieldCfg);
 
 		const auto& fieldsCfgNode = root["fields"];
 		if (!fieldsCfgNode.empty() && begin(fieldsCfgNode.value) != end(fieldsCfgNode.value)) {
 			if (fields.empty()) {
-				throw Error(errParseDSL, "Configuration for single field fulltext index cannot contain field specifications");
+				throw Error(errParseDSL, "Configuration for single field fulltext index can't contain field specifications");
 			}
 			std::set<size_t> modifiedFields;
 			for (const auto& fldCfg : fieldsCfgNode.value) {
 				const std::string fieldName = fldCfg["field_name"].As<std::string>();
 				const auto fldIt = fields.find(fieldName);
 				if (fldIt == fields.end()) {
-					throw Error(errParseDSL, "Field '%s' is not included to full text index", fieldName);
+					throw Error(errParseDSL, "Field '{}' is not included to full text index", fieldName);
 				}
-				assertrx(fldIt->second < static_cast<int>(fieldsCfg.size()));
-				if (modifiedFields.count(fldIt->second) != 0) {
-					throw Error(errParseDSL, "Field '%s' is dublicated in fulltext configuration", fieldName);
+				assertrx(fldIt->second.fieldNumber < fieldsCfg.size());
+				if (modifiedFields.contains(fldIt->second.fieldNumber)) {
+					throw Error(errParseDSL, "Field '{}' is duplicated in fulltext configuration", fieldName);
 				}
-				modifiedFields.insert(fldIt->second);
-				FtFastFieldConfig& curFieldCfg = fieldsCfg[fldIt->second];
+				modifiedFields.insert(fldIt->second.fieldNumber);
+				FtFastFieldConfig& curFieldCfg = fieldsCfg[fldIt->second.fieldNumber];
 				curFieldCfg.bm25Boost = fldCfg["bm25_boost"].As<>(defaultFieldCfg.bm25Boost);
 				curFieldCfg.bm25Weight = fldCfg["bm25_weight"].As<>(defaultFieldCfg.bm25Weight);
 				curFieldCfg.termLenBoost = fldCfg["term_len_boost"].As<>(defaultFieldCfg.termLenBoost);
@@ -124,7 +123,7 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		} else if (opt == "cpu") {
 			optimization = Optimization::CPU;
 		} else {
-			throw Error(errParseJson, "FtFastConfig: unknown optimization value: %s", opt);
+			throw Error(errParseJson, "FtFastConfig: unknown optimization value: {}", opt);
 		}
 		enablePreselectBeforeFt = root["enable_preselect_before_ft"].As<>(enablePreselectBeforeFt);
 
@@ -134,12 +133,12 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		} else if (splitterStr == "friso" || splitterStr == "mmseg_cn") {
 			splitterType = Splitter::MMSegCN;
 		} else {
-			throw Error(errParseJson, "FtFastConfig: unknown splitter value: %s", splitterStr);
+			throw Error(errParseJson, "FtFastConfig: unknown splitter value: {}", splitterStr);
 		}
 
 		parseBase(root);
 	} catch (const gason::Exception& ex) {
-		throw Error(errParseJson, "FtFastConfig: %s", ex.what());
+		throw Error(errParseJson, "FtFastConfig: {}", ex.what());
 	}
 }
 
@@ -192,7 +191,7 @@ std::string FtFastConfig::GetJSON(const fast_hash_map<std::string, int>& fields)
 
 	jsonBuilder.Put("enable_preselect_before_ft", enablePreselectBeforeFt);
 	if (fields.empty() || isAllEqual(fieldsCfg)) {
-		assertrx(!fieldsCfg.empty());
+		assertrx_throw(!fieldsCfg.empty());
 		jsonBuilder.Put("bm25_boost", fieldsCfg[0].bm25Boost);
 		jsonBuilder.Put("bm25_weight", fieldsCfg[0].bm25Weight);
 		jsonBuilder.Put("term_len_boost", fieldsCfg[0].termLenBoost);
@@ -203,7 +202,8 @@ std::string FtFastConfig::GetJSON(const fast_hash_map<std::string, int>& fields)
 		auto fieldsNode = jsonBuilder.Array("fields");
 		for (const auto& f : fields) {
 			auto fldNode = fieldsNode.Object();
-			assertrx(0 <= f.second && f.second < static_cast<int>(fieldsCfg.size()));
+			assertrx_throw(0 <= f.second);
+			assertrx_throw(f.second < static_cast<int>(fieldsCfg.size()));
 			fldNode.Put("field_name", f.first);
 			fldNode.Put("bm25_boost", fieldsCfg[f.second].bm25Boost);
 			fldNode.Put("bm25_weight", fieldsCfg[f.second].bm25Weight);
@@ -244,7 +244,7 @@ void FtFastConfig::Bm25Config::parse(const gason::JsonNode& node) {
 	} else if (bm25TypeStr == "word_count") {
 		bm25Type = Bm25Type::wordCount;
 	} else {
-		throw Error(errParseJson, "FtFastConfig: unknown bm25Type value: %s", bm25TypeStr);
+		throw Error(errParseJson, "FtFastConfig: unknown bm25Type value: {}", bm25TypeStr);
 	}
 }
 

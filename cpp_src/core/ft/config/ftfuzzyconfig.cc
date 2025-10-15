@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-void FtFuzzyConfig::parse(std::string_view json, const RHashMap<std::string, int>&) {
+void FtFuzzyConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexFieldPros>&) {
 	if (json.empty()) {
 		return;
 	}

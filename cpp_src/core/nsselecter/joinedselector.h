@@ -2,28 +2,30 @@
 #include <optional>
 #include "core/joincache.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/queryresults/fields_filter.h"
+#include "core/queryresults/itemref.h"
 #include "explaincalc.h"
 #include "selectiteratorcontainer.h"
 
 namespace reindexer {
 
-struct PreselectProperties {
+struct [[nodiscard]] PreselectProperties {
 	PreselectProperties(int64_t qresMaxIts, int64_t maxItersIdSetPreResult) noexcept
-		: qresMaxIteratios{qresMaxIts}, maxIterationsIdSetPreResult{maxItersIdSetPreResult} {}
+		: qresMaxIterations{qresMaxIts}, maxIterationsIdSetPreResult{maxItersIdSetPreResult} {}
 
 	bool isLimitExceeded = false;
 	bool isUnorderedIndexSort = false;
 	bool btreeIndexOptimizationEnabled = false;
-	int64_t qresMaxIteratios;
+	int64_t qresMaxIterations;
 	const int64_t maxIterationsIdSetPreResult;
 };
 
-struct JoinPreResult {
-	class Values : public std::vector<ItemRef> {
+struct [[nodiscard]] JoinPreResult {
+	class [[nodiscard]] Values : public ItemRefVector {
 	public:
 		Values(const PayloadType& pt, const TagsMatcher& tm) noexcept : payloadType{pt}, tagsMatcher{tm} {}
 		Values(Values&& other) noexcept
-			: std::vector<ItemRef>(std::move(other)),
+			: ItemRefVector(std::move(other)),
 			  payloadType(std::move(other.payloadType)),
 			  tagsMatcher(std::move(other.tagsMatcher)),
 			  locked_(other.locked_) {
@@ -35,16 +37,16 @@ struct JoinPreResult {
 		Values& operator=(Values&&) = delete;
 		~Values() {
 			if (locked_) {
-				for (size_t i = 0; i < size(); ++i) {
-					Payload{payloadType, (*this)[i].Value()}.ReleaseStrings();
+				for (size_t i = 0; i < Size(); ++i) {
+					Payload{payloadType, GetItemRef(i).Value()}.ReleaseStrings();
 				}
 			}
 		}
 		bool Locked() const noexcept { return locked_; }
 		void Lock() {
 			assertrx_throw(!locked_);
-			for (size_t i = 0; i < size(); ++i) {
-				Payload{payloadType, (*this)[i].Value()}.AddRefStrings();
+			for (size_t i = 0; i < Size(); ++i) {
+				Payload{payloadType, GetItemRef(i).Value()}.AddRefStrings();
 			}
 			locked_ = true;
 		}
@@ -60,7 +62,7 @@ struct JoinPreResult {
 		bool preselectAllowed_ = true;
 	};
 
-	struct SortOrderContext {
+	struct [[nodiscard]] SortOrderContext {
 		const Index* index = nullptr;  // main ordered index with built sort order mapping
 		SortingEntry sortingEntry;	   // main sorting entry for the ordered index
 	};
@@ -77,9 +79,9 @@ struct JoinPreResult {
 	std::string explainPreSelect;
 };
 
-enum class JoinPreSelectMode { Empty, Build, Execute, ForInjection, InjectionRejected };
+enum class [[nodiscard]] JoinPreSelectMode { Empty, Build, Execute, ForInjection, InjectionRejected };
 
-class JoinPreResultBuildCtx {
+class [[nodiscard]] JoinPreResultBuildCtx {
 public:
 	explicit JoinPreResultBuildCtx(JoinPreResult::Ptr r) noexcept : result_{std::move(r)} {}
 	JoinPreResult& Result() & noexcept { return *result_; }
@@ -91,7 +93,7 @@ private:
 	JoinPreResult::Ptr result_;
 };
 
-class JoinPreResultExecuteCtx {
+class [[nodiscard]] JoinPreResultExecuteCtx {
 public:
 	explicit JoinPreResultExecuteCtx(JoinPreResult::CPtr r) noexcept : result_{std::move(r)}, mode_{JoinPreSelectMode::Execute} {}
 	explicit JoinPreResultExecuteCtx(JoinPreResult::CPtr r, int maxIters) noexcept
@@ -124,7 +126,7 @@ struct DistanceBetweenJoinedIndexesSameNs;
 class NsSelecter;
 class QueryPreprocessor;
 
-class JoinedSelector {
+class [[nodiscard]] JoinedSelector {
 	friend SortExpression;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend NsSelecter;
@@ -132,8 +134,9 @@ class JoinedSelector {
 
 public:
 	JoinedSelector(JoinType joinType, NamespaceImpl::Ptr leftNs, NamespaceImpl::Ptr rightNs, JoinCacheRes&& joinRes, Query&& itemQuery,
-				   LocalQueryResults& result, const JoinedQuery& joinQuery, JoinPreResultExecuteCtx&& preSelCtx, uint32_t joinedFieldIdx,
-				   SelectFunctionsHolder& selectFunctions, bool inTransaction, int64_t lastUpdateTime, const RdxContext& rdxCtx)
+				   FieldsFilter fieldsFilter, LocalQueryResults& result, const JoinedQuery& joinQuery, JoinPreResultExecuteCtx&& preSelCtx,
+				   uint32_t joinedFieldIdx, FtFunctionsHolder& selectFunctions, bool inTransaction, int64_t lastUpdateTime,
+				   SetLimit0ForChangeJoin limit0, const RdxContext& rdxCtx)
 		: joinType_(joinType),
 		  called_(0),
 		  matched_(0),
@@ -141,6 +144,7 @@ public:
 		  rightNs_(std::move(rightNs)),
 		  joinRes_(std::move(joinRes)),
 		  itemQuery_(std::move(itemQuery)),
+		  fieldsFilter_(std::move(fieldsFilter)),
 		  result_(result),
 		  joinQuery_(joinQuery),
 		  preSelectCtx_(std::move(preSelCtx)),
@@ -149,7 +153,8 @@ public:
 		  rdxCtx_(rdxCtx),
 		  optimized_(false),
 		  inTransaction_{inTransaction},
-		  lastUpdateTime_{lastUpdateTime} {
+		  lastUpdateTime_{lastUpdateTime},
+		  limit0_(limit0) {
 #ifndef NDEBUG
 		for (const auto& jqe : joinQuery_.joinEntries_) {
 			assertrx_throw(jqe.FieldsHaveBeenSet());
@@ -162,15 +167,18 @@ public:
 	JoinedSelector(const JoinedSelector&) = delete;
 	JoinedSelector& operator=(const JoinedSelector&) = delete;
 
-	bool Process(IdType, int nsId, ConstPayload, bool match);
+	bool Process(IdType, int nsId, ConstPayload, FloatVectorsHolderMap*, bool match);
 	JoinType Type() const noexcept { return joinType_; }
 	void SetType(JoinType type) noexcept { joinType_ = type; }
 	const std::string& RightNsName() const noexcept { return itemQuery_.NsName(); }
 	int64_t LastUpdateTime() const noexcept { return lastUpdateTime_; }
 	const JoinedQuery& JoinQuery() const noexcept { return joinQuery_; }
 	int Called() const noexcept { return called_; }
-	int Matched() const noexcept { return matched_; }
-	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer&, int* maxIterations, unsigned sortId, const SelectFunction::Ptr&,
+	int Matched(bool invert) const noexcept {
+		assertrx_dbg(called_ >= matched_);
+		return invert ? (called_ - matched_) : matched_;
+	}
+	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer&, int* maxIterations, unsigned sortId, const FtFunction::Ptr&,
 											 const RdxContext&);
 	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() noexcept { return 200; }
 	const JoinPreResult& PreResult() const& noexcept { return preSelectCtx_.Result(); }
@@ -185,11 +193,10 @@ public:
 	auto PreResultPtr() const&& = delete;
 
 private:
-	[[nodiscard]] VariantArray readValuesFromPreResult(const QueryJoinEntry&) const;
+	VariantArray readValuesFromPreResult(const QueryJoinEntry&) const;
 	template <typename Cont, typename Fn>
-	[[nodiscard]] VariantArray readValuesOfRightNsFrom(const Cont& from, const Fn& createPayload, const QueryJoinEntry&,
-													   const PayloadType&) const;
-	void selectFromRightNs(LocalQueryResults& joinItemR, const Query&, bool& found, bool& matchedAtLeastOnce);
+	VariantArray readValuesOfRightNsFrom(const Cont& from, const Fn& createPayload, const QueryJoinEntry&, const PayloadType&) const;
+	void selectFromRightNs(LocalQueryResults& joinItemR, const Query&, FloatVectorsHolderMap*, bool& found, bool& matchedAtLeastOnce);
 	void selectFromPreResultValues(LocalQueryResults& joinItemR, const Query&, bool& found, bool& matchedAtLeastOnce) const;
 
 	JoinType joinType_;
@@ -198,17 +205,20 @@ private:
 	NamespaceImpl::Ptr rightNs_;
 	JoinCacheRes joinRes_;
 	Query itemQuery_;
+	FieldsFilter fieldsFilter_;
 	LocalQueryResults& result_;
 	const JoinedQuery& joinQuery_;
 	JoinPreResultExecuteCtx preSelectCtx_;
 	std::string explainOneSelect_;
 	uint32_t joinedFieldIdx_;
-	SelectFunctionsHolder& selectFunctions_;
+	FtFunctionsHolder& selectFunctions_;
 	const RdxContext& rdxCtx_;
 	bool optimized_ = false;
 	bool inTransaction_ = false;
 	int64_t lastUpdateTime_ = 0;
 	ExplainCalc::Duration selectTime_ = ExplainCalc::Duration::zero();
+	SetLimit0ForChangeJoin limit0_ = SetLimit0ForChangeJoin_False;
+	VariantArray tmpValues_;
 };
 using JoinedSelectors = std::vector<JoinedSelector>;
 

@@ -38,7 +38,7 @@ enum CmdCode : uint16_t {
 	kCmdUpdateQuery = 35,
 
 	kCmdSelect = 48,
-	kCmdSelectSQL = 49,
+	kCmdExecSQL = 49,
 	kCmdFetchResults = 50,
 	kCmdCloseResults = 51,
 
@@ -56,7 +56,7 @@ enum CmdCode : uint16_t {
 	kCmdGetSnapshot = 70,
 	kCmdFetchSnapshot = 71,
 	kCmdApplySnapshotCh = 72,
-	kCmdSetClusterizationStatus = 73,
+	kCmdSetClusterOperationStatus = 73,
 
 	kCmdPutTxMeta = 74,
 	kCmdSetTagsMatcherTx = 75,
@@ -93,7 +93,7 @@ const uint32_t kCprotoMinSnappyVersion = 0x103;
 const uint32_t kCprotoMinDedicatedThreadsVersion = 0x103;
 
 #pragma pack(push, 1)
-struct CProtoHeader {
+struct [[nodiscard]] CProtoHeader {
 	uint32_t magic;
 	uint16_t version : 10;
 	uint16_t compressed : 1;

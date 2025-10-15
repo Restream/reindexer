@@ -1,34 +1,35 @@
 #pragma once
 
+#include <span>
 #include <string>
-#include "estl/span.h"
 #include "key_string.h"
+#include "tools/assertrx.h"
 #include "tools/customhash.h"
 #include "tools/jsonstring.h"
 #include "tools/varint.h"
 
 namespace reindexer {
 
-struct l_string_hdr {
+struct [[nodiscard]] l_string_hdr {
 	uint32_t length;
 	char data[1];
 };
 
-struct v_string_hdr {
+struct [[nodiscard]] v_string_hdr {
 	uint8_t data[1];
 };
 
-struct l_msgpack_hdr {
+struct [[nodiscard]] l_msgpack_hdr {
 	uint32_t size;
 	const char* ptr;
 };
 
-struct json_string_ftr {
+struct [[nodiscard]] json_string_ftr {
 	const char* data;
 };
 
 // Dark
-struct p_string {
+struct [[nodiscard]] p_string {
 	// ptr points to c null-terminated string
 	constexpr static uint64_t tagCstr = 0x0ULL;
 	// ptr points to 4 byte string len header, followed by string's char array
@@ -187,21 +188,21 @@ protected:
 	uint64_t v = 0;
 };
 
-inline span<char> giftStr(p_string s) noexcept {
+inline std::span<char> giftStr(p_string s) noexcept {
 #ifndef _GLIBCXX_USE_CXX11_ABI
 	if (s.type() == p_string::tagCxxstr) {
 		// Trying to avoid COW-string problems
 		auto strPtr = s.getCxxstr();
-		return span<char>(const_cast<std::string*>(strPtr)->data(), strPtr->size());
+		return std::span<char>(const_cast<std::string*>(strPtr)->data(), strPtr->size());
 	}
 #endif	// _GLIBCXX_USE_CXX11_ABI
-	return span<char>(const_cast<char*>(s.data()), s.size());
+	return std::span<char>(const_cast<char*>(s.data()), s.size());
 }
 
 }  // namespace reindexer
 namespace std {
 template <>
-struct hash<reindexer::p_string> {
+struct [[nodiscard]] hash<reindexer::p_string> {
 public:
 	size_t operator()(const reindexer::p_string& str) const noexcept { return reindexer::_Hash_bytes(str.data(), str.length()); }
 };

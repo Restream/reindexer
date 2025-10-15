@@ -1,20 +1,14 @@
 #pragma once
 
-#include <cmath>
-#include <iostream>
-#include <memory>
-#include <string>
-
 #include <benchmark/benchmark.h>
 
 #include "debug/allocdebug.h"
 #include "debug/backtrace.h"
-#include "helpers.h"
 
 namespace benchmark {
 
-struct AllocsTracker {
-	enum PrintOpts { kNoPrint = 1 << 0, kPrintAllocs = 1 << 1, kPrintHold = 1 << 2 };
+struct [[nodiscard]] AllocsTracker {
+	enum [[nodiscard]] PrintOpts { kNoPrint = 1 << 0, kPrintAllocs = 1 << 1, kPrintHold = 1 << 2 };
 
 	AllocsTracker(State& state, uint8_t printFlags = kPrintAllocs)
 		: total_sz(get_alloc_size_total()),

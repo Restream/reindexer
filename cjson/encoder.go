@@ -415,7 +415,6 @@ func ParseUuid(str string) (res [2]uint64, err error) {
 			return generateError(ch, str)
 		}
 		res[1] |= num
-		break
 	case 36:
 		if str[8] != '-' || str[13] != '-' || str[18] != '-' || str[23] != '-' {
 			err = fmt.Errorf("Invalid UUID format: '%s'", str)
@@ -582,7 +581,6 @@ func ParseUuid(str string) (res [2]uint64, err error) {
 			return generateError(ch, str)
 		}
 		res[1] |= num
-		break
 	default:
 		err = fmt.Errorf("UUID should consist of 32 hexadecimal digits: '%s'", str)
 		return
@@ -609,7 +607,9 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 		case reflect.Int, reflect.Int16, reflect.Int64, reflect.Int8, reflect.Int32,
 			reflect.Uint, reflect.Uint16, reflect.Uint64, reflect.Uint32:
 			subTag = TAG_VARINT
-		case reflect.Float32, reflect.Float64:
+		case reflect.Float32:
+			subTag = TAG_FLOAT
+		case reflect.Float64:
 			subTag = TAG_DOUBLE
 		case reflect.String:
 			if f.isUuid {
@@ -675,7 +675,7 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 			case reflect.Float32:
 				sl := (*[1 << 28]float32)(ptr)[:l:l]
 				for _, v := range sl {
-					rdser.PutDouble(float64(v))
+					rdser.PutFloat32(v)
 				}
 			case reflect.Float64:
 				sl := (*[1 << 27]float64)(ptr)[:l:l]
@@ -732,7 +732,11 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 				for i := 0; i < l; i++ {
 					rdser.PutVarUInt(v.Index(i).Uint())
 				}
-			case reflect.Float32, reflect.Float64:
+			case reflect.Float32:
+				for i := 0; i < l; i++ {
+					rdser.PutFloat32(float32(v.Index(i).Float()))
+				}
+			case reflect.Float64:
 				for i := 0; i < l; i++ {
 					rdser.PutDouble(v.Index(i).Float())
 				}
@@ -804,7 +808,16 @@ func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo,
 			rdser.PutCTag(mkctag(TAG_VARINT, f.ctagName, 0))
 			rdser.PutVarInt(int64(val))
 		}
-	case reflect.Float32, reflect.Float64:
+	case reflect.Float32:
+		val := v.Float()
+		if val != 0 || !f.isOmitEmpty {
+			// rdser.PutCTag(mkctag(TAG_FLOAT, f.ctagName, 0))
+			// rdser.PutFloat32(float32(val))
+			// FIXME: Encoding float64 for the some kind of compatibility. We should encode float32 here after full migration to v5
+			rdser.PutCTag(mkctag(TAG_DOUBLE, f.ctagName, 0))
+			rdser.PutDouble(val)
+		}
+	case reflect.Float64:
 		val := v.Float()
 		if val != 0 || !f.isOmitEmpty {
 			rdser.PutCTag(mkctag(TAG_DOUBLE, f.ctagName, 0))

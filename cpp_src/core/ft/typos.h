@@ -8,8 +8,8 @@
 
 namespace reindexer {
 
-struct typos_context {
-	class TyposVec {
+struct [[nodiscard]] typos_context {
+	class [[nodiscard]] TyposVec {
 	public:
 		using value_type = int8_t;
 		using size_type = uint8_t;
@@ -23,7 +23,7 @@ struct typos_context {
 
 		void emplace_back(value_type v) {
 			if (size_ >= kMaxTyposInWord) {
-				throw Error(errLogic, "TyposVec's overwhelming (max size is %d)", kMaxTyposInWord);
+				throw Error(errLogic, "TyposVec's overwhelming (max size is {})", kMaxTyposInWord);
 			}
 			arr_[size_++] = v;
 		}
@@ -45,7 +45,7 @@ struct typos_context {
 		size_type size_ = 0;
 	};
 
-	using CallBack = std::function<void(std::string_view, int, const TyposVec&)>;
+	using CallBack = std::function<void(std::string_view, int, const TyposVec&, const std::wstring_view pattern)>;
 	std::wstring utf16Word, utf16Typo;
 	std::string typo;
 };

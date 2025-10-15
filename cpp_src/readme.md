@@ -34,10 +34,13 @@ While using docker, you may pass reindexer server config options via environment
 - `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is 0 (timeout disabled).
 - `RX_DISABLE_NS_LEAK` - Disables namespaces memory leak on database destruction (will slow down server's termination).
 - `RX_MAX_HTTP_REQ` - allows to configure max HTTP request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
+- `RX_IVF_OMP_THREADS` - number of threads, which will be used to build IVF index centroids (this option has effect only if docker image uses omp version of `libblas`).
 - `RX_HTTP_READ_TIMEOUT` - if RX_HTTP_READ_TIMEOUT is not empty, sets execution timeout for HTTP read operations in seconds. 0 mean no timeout. Default value is 0.
 - `RX_HTTP_WRITE_TIMEOUT` - if RX_HTTP_WRITE_TIMEOUT is not empty, sets execution timeout for HTTP write operations in seconds. 0 mean no timeout. Default value is 0 if cluster is disabled and 20 if cluster is enabled.
 - `RX_SSL_CERT` - path to ssl-certificate file. If it is not set Reindexer will be launched without TLS support.
 - `RX_SSL_KEY` - path to file with ssl private key. If it is not set Reindexer will be launched without TLS support.
+- `RX_IVF_OMP_THREADS` - sets number of OpenMP threads, which will be used during `IVF`-index building. Default value is 8.
+- `OPENBLAS_NUM_THREADS` - sets number of threads, which will be used during `IVF`-index building by `OpenBLAS` library. Default value is 8.
 
 To run Reindexer with TLS support, both of `RX_SSL_CERT` and `RX_SSL_KEY` must be set. Certificate/key files may be added into container by mounting external directory using `-v` or `--mount` options during container startup:
 
@@ -67,9 +70,7 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-7`, `fedora-40`, `fedora-41`.
-
-To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
+Available distros: `centos-7`, `fedora-41`, `fedora-42`.
 
 ### Ubuntu/Debian
 
@@ -80,9 +81,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-focal`, `ubuntu-jammy`, `ubuntu-noble`
-
-To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
+Available distros: `debian-bullseye`, `debian-trixie`, `ubuntu-jammy`, `ubuntu-noble`
 
 ### Redos
 
@@ -107,8 +106,6 @@ apt-get install reindexer-server
 
 Available distros: `p10`.
 
-To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
-
 ## OSX brew
 
 ```bash
@@ -118,13 +115,14 @@ brew install reindexer
 
 ## Windows
 
-Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/)
+Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/). `32-bit` version is `HNSW-only` in terms of supported vector indexes subset.
 
 ## Installation from sources
 
 ### Dependencies
 
-Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 8+, clang 5+ or MSVC 2019+ is required.
+Reindexer's core is written in C++20 and uses LevelDB as the storage backend, so the Cmake, C++20 toolchain and LevelDB must be installed before installing Reindexer. Also, FAISS-based vector indexes (`IVF` in particular) depend on OpenMP and BLAS/LAPACK libraries, but those dependecies are optional - you may build `HNWS-only` version by passing `-DBUILD_ANN_INDEXES=builtin` into `CMake`.
+
 Dependencies can be installed automatically by this script:
 
 ```bash
@@ -150,7 +148,7 @@ sudo make install
 - Start server
 
 ```
-service start reindexer
+sudo service reindexer start
 ```
 
 - open in web browser http://127.0.0.1:9088/swagger to see reindexer REST API interactive documentation
@@ -180,7 +178,7 @@ Pay attention to methods, that have `stream` parameters:
 
 ```protobuf
  rpc ModifyItem(stream ModifyItemRequest) returns(stream ErrorResponse) {}
- rpc SelectSql(SelectSqlRequest) returns(stream QueryResultsResponse) {}
+ rpc ExecSql(SqlRequest) returns(stream QueryResultsResponse) {}
  rpc Select(SelectRequest) returns(stream QueryResultsResponse) {}
  rpc Update(UpdateRequest) returns(stream QueryResultsResponse) {}
  rpc Delete(DeleteRequest) returns(stream QueryResultsResponse) {}
@@ -209,7 +207,11 @@ Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i
 Go binding for reindexer is using [prometheus/client_golang](https://github.com/prometheus/client_golang) to collect some metrics (RPS and request's latency) from client's side. Pass `WithPrometheusMetrics()`-option to enable metrics collecting:
 ```
 // Create DB connection for cproto-mode with metrics enabled
-db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometheusMetrics())
+db, err := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometheusMetrics())
+// Check status of the created DB instance
+if err != nil {
+	panic(err)
+}
 // Register prometheus handle for your HTTP-server to be able to get metrics from the outside
 http.Handle("/metrics", promhttp.Handler())
 ```
@@ -322,7 +324,7 @@ Upon successful loading of `libcrypto` library symbols, a corresponding entry or
 
 #### MacOS
 
-By default, OpenSSL support is disabled for MacOS. To enable support for functions from the OpenSSL-library, you can configure and build a project from source code by explicitly passing the `ENABLE_OPENSSL` option:
+By default, OpenSSL support is disabled for macOS. To enable support for functions from the OpenSSL-library, you can configure and build a project from source code by explicitly passing the `ENABLE_OPENSSL` option:
 ```bash
 cmake -DENABLE_OPENSSL=On ..
 cmake --build . -j6
@@ -363,6 +365,17 @@ To configure storage type for Go bindings either `bindings.ConnectOptions` (for 
 Reindexer will try to autodetect RocksDB library and its dependencies at compile time if CMake flag `ENABLE_ROCKSDB` was passed (enabled by default).
 If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` in order to link with go-applications and go-bindings.
 
+### Converting storage type for existing database
+
+Storage type may be converted by stopping reindexer_server and passing command line option to reindexer_tool like this:   
+
+```sh
+reindexer_tool --dsn builtin:///tmp/rx/dbase_name --convfmt rocksdb --convbackup /tmp/rx_backup/dbase_name
+```
+
+After executing this command, the database storage in the directory specified by the `dsn` option (DSN has to be `builtin://`) will be converted to the type specified by `convfmt`.
+The new type must differ from the current type, or the command will terminate with an error. Currently, two storage types are supported: `rocksdb` and `leveldb`. The optional `convbackup` argument specifies a directory where the original storage will be backed up, if necessary.
+
 ### Data transport formats
 
 Reindexer supports the following data formats to communicate with other applications (mainly via HTTP REST API): JSON, MSGPACK and Protobuf.
@@ -394,11 +407,11 @@ syntax = "proto3";
 
 // Message with document schema from namespace test_ns_1603265619355
 message test_ns_1603265619355 {
-	int64 test_3 = 3;
-	int64 test_4 = 4;
-	int64 test_5 = 5;
-	int64 test_2 = 2;
-	int64 test_1 = 1;
+	sint64 test_3 = 3;
+	sint64 test_4 = 4;
+	sint64 test_5 = 5;
+	sint64 test_2 = 2;
+	sint64 test_1 = 1;
 }
 // Possible item schema variants in QueryResults or in ModifyResults
 message ItemsUnion {
@@ -413,24 +426,27 @@ message QueryResults {
 	repeated string namespaces = 2;
 	bool cache_enabled = 3;
 	string explain = 4;
-	int64 total_items = 5;
-	int64 query_total_items = 6;
+	sint64 total_items = 5;
+	sint64 query_total_items = 6;
 	message Columns {
 		string name = 1;
 		double width_percents = 2;
-		int64 max_chars = 3;
-		int64 width_chars = 4;
+		sint64 max_chars = 3;
+		sint64 width_chars = 4;
 	}
 	repeated Columns columns = 7;
 	message AggregationResults {
 		double value = 1;
 		string type = 2;
 		message Facets {
-			int64 count = 1;
+			sint64 count = 1;
 			repeated string values = 2;
 		}
 		repeated Facets facets = 3;
-		repeated string distincts = 4;
+		message Distincts {
+			repeated string values = 2;
+		}
+		repeated Distincts distincts = 4;
 		repeated string fields = 5;
 	}
 	repeated AggregationResults aggregations = 8;
@@ -439,15 +455,21 @@ message QueryResults {
 // - PUT/POST/DELETE api/v1/db/:db/namespaces/:ns/items
 message ModifyResults {
 	repeated ItemsUnion items = 1;
-	int64 updated = 2;
+	sint64 updated = 2;
 	bool success = 3;
 }
 // The ErrorResponse message is schema of http API methods response on error condition
 // With non 200 http status code
 message ErrorResponse {
 	bool success = 1;
-	int64 response_code = 2;
+	sint64 response_code = 2;
 	string description = 3;
+}
+
+// The TransactionResponse message is schema of http API methods response:
+// - POST api/v1/db/:db/namespaces/:ns/transactions/begin
+message TransactionResponse {
+	string txID = 1;
 }
 ```
 

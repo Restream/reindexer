@@ -1,7 +1,7 @@
 #pragma once
 
 namespace reindexer {
-enum SqlTokenType {
+enum [[nodiscard]] SqlTokenType {
 	Start = 0,
 	SelectSqlToken,
 	DeleteSqlToken,
@@ -42,12 +42,13 @@ enum SqlTokenType {
 	UpdateOptionsSqlToken,
 	EqualPositionSqlToken,
 	JoinTypesSqlToken,
-	ST_DWithinSqlToken,
+	WhereFunction,
 	ST_GeomFromTextSqlToken,
 	GeomFieldSqlToken,
 	StartAfterLocal,
 	StartAfterLocalExplain,
 	WhereFieldOrSubquerySqlToken,
 	WhereFieldValueOrSubquerySqlToken,
+	KnnParamsToken,
 };
 }

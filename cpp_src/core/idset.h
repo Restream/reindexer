@@ -3,23 +3,21 @@
 #include <core/type_consts.h>
 #include <algorithm>
 #include <atomic>
+#include <span>
 #include <string>
-#include "core/ft/usingcontainer.h"
 #include "cpp-btree/btree_set.h"
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
-#include "estl/span.h"
 #include "sort/pdqsort.hpp"
 
 namespace reindexer {
 
-using base_idset = RVector<IdType, 3>;
+using base_idset = h_vector<IdType, 3>;	 // const_iterator must be trivial (used in union)
 using base_idsetset = btree::btree_set<int>;
 
-class IdSetPlain : protected base_idset {
+class [[nodiscard]] IdSetPlain : protected base_idset {
 public:
 	using iterator = base_idset::const_iterator;
-	using base_idset::clear;
 	using base_idset::size;
 	using base_idset::empty;
 	using base_idset::data;
@@ -38,7 +36,7 @@ public:
 	using base_idset::const_iterator;
 	using base_idset::operator[];
 
-	enum EditMode {
+	enum [[nodiscard]] EditMode {
 		Ordered,   // Keep idset ordered, and ready to select (insert is slow O(logN)+O(N))
 		Auto,	   // Prepare idset for fast ordering by commit (insert is fast O(logN))
 		Unordered  // Just add id, commit and erase is impossible
@@ -62,12 +60,13 @@ public:
 
 	int Erase(IdType id) {
 		auto d = std::equal_range(begin(), end(), id);
+		int count = std::distance(d.second, d.first);
 		base_idset::erase(d.first, d.second);
-		return d.second - d.first;
+		return count;
 	}
 
 	void Commit() const noexcept {}
-	bool IsCommited() const noexcept { return true; }
+	bool IsCommitted() const noexcept { return true; }
 	bool IsEmpty() const noexcept { return empty(); }
 	size_t Size() const noexcept { return size(); }
 	size_t BTreeSize() const noexcept { return 0; }
@@ -75,21 +74,50 @@ public:
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
 	std::string Dump() const;
 
-protected:
 	IdSetPlain(base_idset&& idset) noexcept : base_idset(std::move(idset)) {}
+
+	// Explicit construtors implementations to preserve IdSet's capacity (it's required for background indexes optimization)
+	IdSetPlain(IdSetPlain&& other) noexcept : base_idset() {
+		[[maybe_unused]] auto otherCapacity = other.capacity();
+		static_cast<base_idset&>(*this).swap(static_cast<base_idset&>(other));
+		assertrx_dbg(capacity() == otherCapacity);
+	}
+	IdSetPlain(const IdSetPlain& other) : base_idset() {
+		reserve(other.capacity());
+		insert(cbegin(), other.cbegin(), other.cend());
+		assertrx_dbg(capacity() == other.capacity());
+	}
+	IdSetPlain& operator=(const IdSetPlain& other) {
+		if (this != &other) {
+			clear();
+			shrink_to_fit();
+			reserve(other.capacity());
+			insert(cbegin(), other.cbegin(), other.cend());
+		}
+		assertrx_dbg(capacity() == other.capacity());
+		return *this;
+	}
+	IdSetPlain& operator=(IdSetPlain&& other) noexcept {
+		[[maybe_unused]] auto otherCapacity = other.capacity();
+		if (this != &other) {
+			this->swap(other);
+		}
+		assertrx_dbg(capacity() == otherCapacity);
+		return *this;
+	}
 };
 
 std::ostream& operator<<(std::ostream&, const IdSetPlain&);
 
-// maxmimum size of idset without building btree
+// maximum size of idset without building btree
 const int kMaxPlainIdsetSize = 16;
 
-class IdSet : public IdSetPlain {
+class [[nodiscard]] IdSet : public IdSetPlain {
 	friend class SingleSelectKeyResult;
 
 public:
 	using Ptr = intrusive_ptr<intrusive_atomic_rc_wrapper<IdSet>>;
-	IdSet() noexcept : usingBtree_(false) {}
+	IdSet() noexcept = default;
 	IdSet(const IdSet& other)
 		: IdSetPlain(other), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)), usingBtree_(other.usingBtree_.load()) {}
 	IdSet(IdSet&& other) noexcept : IdSetPlain(std::move(other)), set_(std::move(other.set_)), usingBtree_(other.usingBtree_.load()) {}
@@ -111,7 +139,7 @@ public:
 	}
 	static Ptr BuildFromUnsorted(base_idset&& ids) {
 		boost::sort::pdqsort_branchless(ids.begin(), ids.end());
-		ids.erase(std::unique(ids.begin(), ids.end()), ids.end());	// TODO: It would be better to integrate unique into sort
+		ids.erase(std::unique(ids.begin(), ids.end()), ids.cend());	 // TODO: It would be better to integrate unique into sort
 		return make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>(std::move(ids));
 	}
 	bool Add(IdType id, EditMode editMode, int sortedIdxCount) {
@@ -136,16 +164,21 @@ public:
 				return true;
 			}
 			return false;
-		} else {
-			resize(0);
-			usingBtree_.store(true, std::memory_order_release);
-			return set_->insert(id).second;
 		}
+
+		resize(0);
+		usingBtree_.store(true, std::memory_order_release);
+		return set_->insert(id).second;
 	}
 
 	void AddUnordered(IdType id) {
 		assertrx(!set_);
 		push_back(id);
+	}
+
+	void SetUnordered(IdSetPlain&& other) {
+		assertrx(!set_);
+		IdSetPlain::operator=(std::move(other));
 	}
 
 	template <typename InputIt>
@@ -194,16 +227,25 @@ public:
 		}
 	}
 
+	bool Find(IdType id) const {
+		if (!set_) {
+			return (std::find(begin(), end(), id) != end());
+		}
+
+		return (set_->find(id) != set_->end());
+	}
+
 	int Erase(IdType id) {
 		if (!set_) {
 			auto d = std::equal_range(begin(), end(), id);
+			int count = std::distance(d.second, d.first);
 			base_idset::erase(d.first, d.second);
-			return d.second - d.first;
-		} else {
-			clear<false>();
-			usingBtree_.store(true, std::memory_order_release);
-			return set_->erase(id);
+			return count;
 		}
+
+		clear<false>();
+		usingBtree_.store(true, std::memory_order_release);
+		return set_->erase(id);
 	}
 	void Commit() {
 		if (!size() && set_) {
@@ -215,7 +257,7 @@ public:
 
 		usingBtree_.store(false, std::memory_order_release);
 	}
-	bool IsCommited() const noexcept { return !usingBtree_.load(std::memory_order_acquire); }
+	bool IsCommitted() const noexcept { return !usingBtree_.load(std::memory_order_acquire); }
 	bool IsEmpty() const noexcept { return empty() && (!set_ || set_->empty()); }
 	size_t Size() const noexcept { return usingBtree_.load(std::memory_order_acquire) ? set_->size() : size(); }
 	size_t BTreeSize() const noexcept { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
@@ -228,13 +270,13 @@ protected:
 	template <typename>
 	friend class BtreeIndexReverseIteratorImpl;
 
-	IdSet(base_idset&& idset) noexcept : IdSetPlain(std::move(idset)), usingBtree_(false) {}
+	explicit IdSet(base_idset&& idset) noexcept : IdSetPlain(std::move(idset)) {}
 
 	std::unique_ptr<base_idsetset> set_;
-	std::atomic<bool> usingBtree_;
+	std::atomic_bool usingBtree_{false};
 };
 
-using IdSetRef = span<IdType>;
-using IdSetCRef = span<const IdType>;
+using IdSetRef = std::span<IdType>;
+using IdSetCRef = std::span<const IdType>;
 
 }  // namespace reindexer

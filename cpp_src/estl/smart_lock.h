@@ -1,44 +1,52 @@
 #pragma once
 
 #include "contexted_locks.h"
+#include "core/enums.h"
+#include "thread_annotation_attributes.h"
 
 using std::chrono::milliseconds;
 
 namespace reindexer {
 
+constexpr struct UniqueT {
+} Unique;
+constexpr struct NonUniqueT {
+} NonUnique;
+
 template <typename Mutex>
-class smart_lock {
+class [[nodiscard]] RX_SCOPED_CAPABILITY smart_lock {
 public:
 	smart_lock() noexcept : mtx_(nullptr), unique_(false), locked_(false) {}
 
-	smart_lock(Mutex& mtx, bool unique = false) : mtx_(&mtx), unique_(unique), locked_(true) {
-		if (unique_) {
-			mtx_->lock();
-		} else {
-			mtx_->lock_shared();
-		}
-	}
+	smart_lock(Mutex& mtx, UniqueT) RX_ACQUIRE(mtx) : mtx_(&mtx), unique_(true), locked_(true) { mtx_->lock(); }
+	smart_lock(Mutex& mtx, NonUniqueT) RX_ACQUIRE_SHARED(mtx) : mtx_(&mtx), unique_(false), locked_(true) { mtx_->lock_shared(); }
+	smart_lock(Mutex& mtx, LockUniquely unique) RX_ACQUIRE(mtx)
+		: smart_lock{unique ? smart_lock(mtx, Unique) : smart_lock(mtx, NonUnique)} {}
 	template <typename Context>
-	smart_lock(Mutex& mtx, Context& context, bool unique = false, milliseconds chkTimeout = kDefaultCondChkTime)
-		: mtx_(&mtx), unique_(unique), locked_(false) {
+	smart_lock(Mutex& mtx, Context& context, UniqueT, milliseconds chkTimeout = kDefaultCondChkTime) RX_ACQUIRE(mtx)
+		: mtx_(&mtx), unique_(true), locked_(false) {
 		using namespace std::string_view_literals;
 		const auto lockWard = context.BeforeLock(Mutex::mark);
 		if (chkTimeout.count() > 0 && context.IsCancelable()) {
-			if (unique_) {
-				do {
-					ThrowOnCancel(context, "Write lock (smart_lock) was canceled or timed out (mutex)"sv);
-				} while (!mtx_->try_lock_for(chkTimeout));
-			} else {
-				do {
-					ThrowOnCancel(context, "Read lock (smart_lock) was canceled or timed out (mutex)"sv);
-				} while (!mtx_->try_lock_shared_for(chkTimeout));
-			}
+			do {
+				ThrowOnCancel(context, "Write lock (smart_lock) was canceled or timed out (mutex)"sv);
+			} while (!mtx_->try_lock_for(chkTimeout));
 		} else {
-			if (unique_) {
-				mtx_->lock();
-			} else {
-				mtx_->lock_shared();
-			}
+			mtx_->lock();
+		}
+		locked_ = true;
+	}
+	template <typename Context>
+	smart_lock(Mutex& mtx, Context& context, NonUniqueT, milliseconds chkTimeout = kDefaultCondChkTime) RX_ACQUIRE_SHARED(mtx)
+		: mtx_(&mtx), unique_(false), locked_(false) {
+		using namespace std::string_view_literals;
+		const auto lockWard = context.BeforeLock(Mutex::mark);
+		if (chkTimeout.count() > 0 && context.IsCancelable()) {
+			do {
+				ThrowOnCancel(context, "Read lock (smart_lock) was canceled or timed out (mutex)"sv);
+			} while (!mtx_->try_lock_shared_for(chkTimeout));
+		} else {
+			mtx_->lock_shared();
 		}
 		locked_ = true;
 	}
@@ -61,9 +69,9 @@ public:
 		}
 		return *this;
 	}
-	~smart_lock() { unlock(); }
+	~smart_lock() RX_RELEASE() { unlock(); }
 
-	void unlock() {
+	void unlock() noexcept RX_RELEASE() {
 		if (mtx_ && locked_) {
 			if (unique_) {
 				mtx_->unlock();

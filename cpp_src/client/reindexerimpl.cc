@@ -1,6 +1,7 @@
 #include "client/reindexerimpl.h"
 #include "client/connectionspool.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
+#include "estl/dummy_mutex.h"
 #include "tools/catch_and_return.h"
 #include "tools/dsn.h"
 
@@ -11,7 +12,7 @@ using std::chrono::milliseconds;
 constexpr size_t kAsyncCoroStackSize = 32 * 1024;
 
 ReindexerImpl::ReindexerImpl(const ReindexerConfig& conf, uint32_t connCount, uint32_t threadsCount) : conf_(conf) {
-	const auto conns = connCount > 0 ? connCount : 1;
+	const auto conns = std::max(connCount, 1u);
 	if (threadsCount > 1) {
 		const auto connsPerThread = conns / threadsCount;
 		auto mod = conns % threadsCount;
@@ -27,16 +28,21 @@ ReindexerImpl::ReindexerImpl(const ReindexerConfig& conf, uint32_t connCount, ui
 		workers_.emplace_back(conns);
 	}
 	sharedNamespaces_ = (workers_.size() > 1) ? INamespaces::PtrT(new NamespacesImpl<shared_timed_mutex>())
-											  : INamespaces::PtrT(new NamespacesImpl<dummy_mutex>());
+											  : INamespaces::PtrT(new NamespacesImpl<DummyMutex>());
 	commandsQueue_.Init(workers_);
 }
 
 ReindexerImpl::~ReindexerImpl() { stop(); }
 
 Error ReindexerImpl::Connect(const DSN& dsn, const client::ConnectOpts& opts) {
-	std::lock_guard lock(workersMtx_);
+	lock_guard lock(workersMtx_);
+	if (conf_.SyncRxCoroCount < 1 || conf_.SyncRxCoroCount > 10'000) {
+		return Error(errParams,
+					 "The number of synchronization coroutines (SyncRxCoroCount in conf) must be in the range [1..10'000]. But was: {}",
+					 conf_.SyncRxCoroCount);
+	}
 	if (workers_.size() && workers_[0].th.joinable()) {
-		return Error(errLogic, "Client is already started (%s)", dsn);
+		return Error(errLogic, "Client is already started. DSN: {}", dsn);
 	}
 	lastError_.Set(Error());
 	runningWorkers_ = 0;
@@ -59,7 +65,7 @@ Error ReindexerImpl::Connect(const DSN& dsn, const client::ConnectOpts& opts) {
 }
 
 void ReindexerImpl::Stop() {
-	std::lock_guard lock(workersMtx_);
+	lock_guard lock(workersMtx_);
 	requiresStatusCheck_.store(true, std::memory_order_relaxed);
 	stop();
 }
@@ -103,6 +109,7 @@ Error ReindexerImpl::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespa
 Error ReindexerImpl::EnumDatabases(std::vector<std::string>& dbList, const InternalRdxContext& ctx) {
 	return sendCommand<Error>(DbCmdEnumDatabases, ctx, dbList);
 }
+Error ReindexerImpl::Version(std::string& version, const InternalRdxContext& ctx) { return sendCommand<Error>(DbCmdVersion, ctx, version); }
 Error ReindexerImpl::Insert(std::string_view nsName, Item& item, RPCDataFormat format, const InternalRdxContext& ctx) {
 	return sendCommand<Error>(DbCmdInsert, ctx, std::move(nsName), item, std::move(format));
 }
@@ -125,7 +132,7 @@ Error ReindexerImpl::Upsert(std::string_view nsName, Item& item, QueryResults& r
 }
 
 Error ReindexerImpl::Update(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
-	Error err = result.setClient(this);
+	Error err = result.setClient(shared_from_this());
 	if (!err.ok()) {
 		return err;
 	}
@@ -139,29 +146,35 @@ Error ReindexerImpl::Delete(std::string_view nsName, Item& item, QueryResults& r
 }
 
 Error ReindexerImpl::Delete(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
-	Error err = result.setClient(this);
+	Error err = result.setClient(shared_from_this());
 	if (!err.ok()) {
 		return err;
 	}
 	return sendCommand<Error>(DbCmdDeleteQ, ctx, query, result.results_);
 }
-Error ReindexerImpl::Select(std::string_view query, QueryResults& result, const InternalRdxContext& ctx) {
-	Error err = result.setClient(this);
+Error ReindexerImpl::ExecSQL(std::string_view query, QueryResults& result, const InternalRdxContext& ctx) {
+	Error err = result.setClient(shared_from_this());
 	if (!err.ok()) {
 		return err;
 	}
-	return sendCommand<Error>(DbCmdSelectS, ctx, std::move(query), result.results_);
+	return sendCommand<Error>(DbCmdExecSQL, ctx, std::move(query), result.results_);
 }
 Error ReindexerImpl::Select(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
-	Error err = result.setClient(this);
+	Error err = result.setClient(shared_from_this());
 	if (!err.ok()) {
 		return err;
 	}
-	return sendCommand<Error>(DbCmdSelectQ, ctx, query, result.results_);
+	return sendCommand<Error>(DbCmdSelect, ctx, query, result.results_);
 }
 
-Item ReindexerImpl::NewItem(std::string_view nsName, const InternalRdxContext& ctx) {
-	return sendCommand<Item>(DbCmdNewItem, ctx, std::move(nsName));
+Item ReindexerImpl::NewItem(std::string_view nsName, const InternalRdxContext& ctx) noexcept {
+	try {
+		return sendCommand<Item>(DbCmdNewItem, ctx, std::move(nsName));
+	} catch (std::exception& e) {
+		return Item(e);
+	} catch (...) {
+		return Item(Error{errSystem, "Unexpected error in client::Reindexer"});
+	}
 }
 
 Error ReindexerImpl::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx) {
@@ -195,8 +208,14 @@ Error ReindexerImpl::Status(bool forceCheck, const InternalRdxContext& ctx) {
 	return Error();
 }
 
-CoroTransaction ReindexerImpl::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
-	return sendCommand<CoroTransaction>(DbCmdNewTransaction, ctx, std::move(nsName));
+CoroTransaction ReindexerImpl::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) noexcept {
+	try {
+		return sendCommand<CoroTransaction>(DbCmdNewTransaction, ctx, std::move(nsName));
+	} catch (std::exception& e) {
+		return CoroTransaction(e);
+	} catch (...) {
+		return CoroTransaction(Error{errSystem, "Unexpected error in client::Reindexer"});
+	}
 }
 
 Error ReindexerImpl::CommitTransaction(Transaction& tr, QueryResults& results, const InternalRdxContext& ctx) {
@@ -294,8 +313,11 @@ void ReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, 
 					commandsQueue_.Get(thData.tid, q);
 					readMore = q.size();
 					for (auto&& cmd : q) {
-						auto& conn = thData.connPool.GetConn();
-						assert(conn.IsChOpened());
+						auto connIdx = cmd.connIdx;
+						assertrx_dbg(connIdx < 0 || uint32_t(connIdx) < thData.connPool.Size());
+						auto& conn = (connIdx >= 0 && uint32_t(connIdx) < thData.connPool.Size()) ? thData.connPool.GetConn(connIdx)
+																								  : thData.connPool.GetConn();
+						assertrx(conn.IsChOpened());
 						conn.PushCmd(std::move(cmd));
 					}
 					q.clear();
@@ -305,12 +327,14 @@ void ReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, 
 	});
 
 	uint32_t runningCount = 0;
-	for (auto& conn : connPool) {
-		th.loop.spawn([this, dsn, opts, &isRunning, &conn, &thData, &runningCount]() noexcept {
+	for (size_t connIdx = 0; connIdx < connPool.Size(); ++connIdx) {
+		auto& conn = connPool.GetConn(connIdx);
+		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Function may throw exceptions in some rare cases. Is it possible to fix it?
+		th.loop.spawn([this, dsn, opts, &isRunning, &conn, connIdx, &thData, &runningCount]() noexcept {
 			auto& th = workers_[thData.tid];
 			auto err = conn.rx.Connect(dsn, th.loop, opts);
 			if (err.ok()) {
-				commandsQueue_.RegisterConn(thData.tid, conn.rx.GetConnPtr());
+				commandsQueue_.RegisterConn(thData.tid, conn.rx.GetConnPtr(), connIdx);
 			} else {
 				lastError_.Set(err);
 			}
@@ -381,6 +405,7 @@ void ReindexerImpl::stop() {
 	}
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Function may throw exceptions in some rare cases. Is it possible to fix it?
 void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, ConnectionsPool<DatabaseCommand>& pool, uint32_t tid) noexcept {
 	using namespace std::placeholders;
 	for (std::pair<DatabaseCommand, bool> v = conn.PopCmd(); v.second == true; v = conn.PopCmd()) {
@@ -519,11 +544,11 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				cd->ret.set_value(std::move(item));
 				break;
 			}
-			case DbCmdSelectS: {
-				execCommand(cmd, [&conn, &cmd](std::string_view ns, CoroQueryResults& qr) { return conn.rx.Select(ns, qr, cmd->ctx); });
+			case DbCmdExecSQL: {
+				execCommand(cmd, [&conn, &cmd](std::string_view ns, CoroQueryResults& qr) { return conn.rx.ExecSQL(ns, qr, cmd->ctx); });
 				break;
 			}
-			case DbCmdSelectQ: {
+			case DbCmdSelect: {
 				execCommand(
 					cmd, [&conn, &cmd](const Query& query, CoroQueryResults& result) { return conn.rx.Select(query, result, cmd->ctx); });
 				break;
@@ -595,30 +620,43 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			}
 			case DbCmdCommitTransaction: {
 				execCommand(cmd, [&conn, &cmd](CoroTransaction& tr, CoroQueryResults& result) {
+					assertrx_dbg(conn.rx.GetConnPtr() == tr.getConn());
 					return conn.rx.CommitTransaction(tr, result, cmd->ctx);
 				});
 				break;
 			}
 			case DbCmdRollBackTransaction: {
-				execCommand(cmd, [&conn, &cmd](CoroTransaction& tr) { return conn.rx.RollBackTransaction(tr, cmd->ctx); });
+				execCommand(cmd, [&conn, &cmd](CoroTransaction& tr) {
+					assertrx_dbg(!tr.getConn() || conn.rx.GetConnPtr() == tr.getConn());
+					return conn.rx.RollBackTransaction(tr, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdFetchResults: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, int, CoroQueryResults&>*>(cmd);
 				assertrx(cd);
 				CoroQueryResults& coroResults = std::get<1>(cd->arguments);
-				auto err = fetchResultsImpl(std::get<0>(cd->arguments), coroResults.i_.queryParams_.count + coroResults.i_.fetchOffset_,
-											coroResults.i_.fetchAmount_, coroResults);
-
-				cd->ret.set_value(std::move(err));
+				assertrx_dbg(conn.rx.GetConnPtr() == coroResults.i_.conn_);
+				try {
+					fetchResultsImpl(std::get<0>(cd->arguments), coroResults.i_.queryParams_.count + coroResults.i_.fetchOffset_,
+									 coroResults.i_.fetchAmount_, coroResults);
+					cd->ret.set_value(Error());
+				} catch (std::exception& e) {
+					cd->ret.set_value(std::move(e));
+				}
 				break;
 			}
 			case DbCmdFetchResultsParametrized: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, int, int, int, CoroQueryResults&>*>(cmd);
 				assertrx(cd);
-				auto err = fetchResultsImpl(std::get<0>(cd->arguments), std::get<1>(cd->arguments), std::get<2>(cd->arguments),
-											std::get<3>(cd->arguments));
-				cd->ret.set_value(std::move(err));
+				CoroQueryResults& coroResults = std::get<3>(cd->arguments);
+				assertrx_dbg(conn.rx.GetConnPtr() == coroResults.i_.conn_);
+				try {
+					fetchResultsImpl(std::get<0>(cd->arguments), std::get<1>(cd->arguments), std::get<2>(cd->arguments), coroResults);
+					cd->ret.set_value(Error());
+				} catch (std::exception& e) {
+					cd->ret.set_value(std::move(e));
+				}
 				break;
 			}
 			case DbCmdCloseResults: {
@@ -627,6 +665,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				CoroQueryResults& coroResults = std::get<0>(cd->arguments);
 				Error err;
 				if (coroResults.holdsRemoteData()) {
+					assertrx_dbg(conn.rx.GetConnPtr() == coroResults.i_.conn_);
 					err = coroResults.i_.conn_
 							  ->Call({reindexer::net::cproto::kCmdCloseResults, coroResults.i_.requestTimeout_, milliseconds(0), lsn_t(),
 									  -1, ShardingKeyType::NotSetShard, nullptr, false, coroResults.i_.sessionTs_},
@@ -649,8 +688,9 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			case DbCmdAddTxItem: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, Item, ItemModifyMode>*>(cmd);
 				assertrx(cd);
-				Error err =
-					std::get<0>(cd->arguments).Modify(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cmd->ctx.lsn());
+				auto& tr = std::get<0>(cd->arguments);
+				assertrx_dbg(conn.rx.GetConnPtr() == tr.getConn());
+				Error err = tr.Modify(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cmd->ctx.lsn());
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(err);
 				} else {
@@ -661,8 +701,9 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			case DbCmdPutTxMeta: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, std::string_view, std::string_view>*>(cmd);
 				assertrx(cd);
-				Error err =
-					std::get<0>(cd->arguments).PutMeta(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cd->ctx.lsn());
+				auto& tr = std::get<0>(cd->arguments);
+				assertrx_dbg(conn.rx.GetConnPtr() == tr.getConn());
+				Error err = tr.PutMeta(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), cd->ctx.lsn());
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(err);
 				} else {
@@ -673,7 +714,9 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 			case DbCmdSetTxTagsMatcher: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction&, TagsMatcher>*>(cmd);
 				assertrx(cd);
-				Error err = std::get<0>(cd->arguments).SetTagsMatcher(std::move(std::get<1>(cd->arguments)), cd->ctx.lsn());
+				auto& tr = std::get<0>(cd->arguments);
+				assertrx_dbg(conn.rx.GetConnPtr() == tr.getConn());
+				Error err = tr.SetTagsMatcher(std::move(std::get<1>(cd->arguments)), cd->ctx.lsn());
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(err);
 				} else {
@@ -688,26 +731,27 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				Error err(errLogic, "Connection pointer in transaction is nullptr.");
 				auto txConn = tr.getConn();
 				if (txConn) {
+					assertrx_dbg(conn.rx.GetConnPtr() == txConn);
 					WrSerializer ser;
 					std::get<1>(cd->arguments).Serialize(ser);
 					switch (std::get<1>(cd->arguments).type_) {
 						case QueryUpdate:
 							err = txConn
 									  ->Call({cproto::kCmdUpdateQueryTx, tr.i_.requestTimeout_, tr.i_.execTimeout_, cmd->ctx.lsn(),
-											  cmd->ctx.emmiterServerId(), cmd->ctx.shardId(), nullptr, false, tr.i_.sessionTs_},
+											  cmd->ctx.emitterServerId(), cmd->ctx.shardId(), nullptr, false, tr.i_.sessionTs_},
 											 ser.Slice(), tr.i_.txId_)
 									  .Status();
 							break;
 						case QueryDelete:
 							err = txConn
 									  ->Call({cproto::kCmdDeleteQueryTx, tr.i_.requestTimeout_, tr.i_.execTimeout_, cmd->ctx.lsn(),
-											  cmd->ctx.emmiterServerId(), cmd->ctx.shardId(), nullptr, false, tr.i_.sessionTs_},
+											  cmd->ctx.emitterServerId(), cmd->ctx.shardId(), nullptr, false, tr.i_.sessionTs_},
 											 ser.Slice(), tr.i_.txId_)
 									  .Status();
 							break;
 						case QuerySelect:
 						case QueryTruncate:
-							err = Error(errParams, "Incorrect query type in transaction modify %d", std::get<1>(cd->arguments).type_);
+							err = Error(errParams, "Incorrect query type in transaction modify {}", int(std::get<1>(cd->arguments).type_));
 					}
 				}
 				if (cd->ctx.cmpl()) {
@@ -762,6 +806,10 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				});
 				break;
 			}
+			case DbCmdVersion: {
+				execCommand(cmd, [&conn, &cmd](std::string& version) { return conn.rx.Version(version, cmd->ctx); });
+				break;
+			}
 			case DbCmdNone:
 				assert(false);
 				break;
@@ -771,33 +819,30 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 	}
 }
 
-Error ReindexerImpl::fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults& coroResults) {
-	if (!coroResults.holdsRemoteData()) {
-		return Error(errLogic, "Client query results does not hold any remote data");
+void ReindexerImpl::fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults& coroResults) {
+	if rx_unlikely (!coroResults.holdsRemoteData()) {
+		throw Error(errLogic, "Client query results does not hold any remote data");
 	}
 	auto ret = coroResults.i_.conn_->Call({reindexer::net::cproto::kCmdFetchResults, coroResults.i_.requestTimeout_, milliseconds(0),
 										   lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false, coroResults.i_.sessionTs_},
 										  coroResults.i_.queryID_.main, flags, offset, limit, coroResults.i_.queryID_.uid);
-	if (!ret.Status().ok()) {
-		return ret.Status();
-	}
-	Error err;
-	try {
-		coroResults.handleFetchedBuf(ret);
-	} catch (Error& e) {
-		err = e;
+	if rx_unlikely (!ret.Status().ok()) {
+		throw ret.Status();
 	}
 
-	return err;
+	coroResults.handleFetchedBuf(ret);
 }
 
 ReindexerImpl::WorkerThread::WorkerThread(uint32_t _connCount) : connCount(_connCount) {}
 ReindexerImpl::WorkerThread::~WorkerThread() = default;
 
 void ReindexerImpl::CommandsQueue::Get(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds) {
-	assertrx(tid < thData_.size());
-	auto& thD = thData_[tid];
-	std::lock_guard lck(mtx_);
+	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
+		assertrx(tid < thData_.size());
+		return thData_[tid];
+	}
+	();
+	lock_guard lck(mtx_);
 	if (thD.personalQueue.size()) {
 		std::swap(thD.personalQueue, cmds);
 		thD.reqCnt.fetch_add(cmds.size(), std::memory_order_relaxed);
@@ -813,13 +858,16 @@ void ReindexerImpl::CommandsQueue::Get(uint32_t tid, h_vector<DatabaseCommand, 1
 }
 
 void ReindexerImpl::CommandsQueue::OnCmdDone(uint32_t tid) {
-	assertrx(tid < thData_.size());
-	auto& thD = thData_[tid];
+	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
+		assertrx(tid < thData_.size());
+		return thData_[tid];
+	}
+	();
 	thD.reqCnt.fetch_sub(1, std::memory_order_release);
 }
 
 void ReindexerImpl::CommandsQueue::Init(std::deque<WorkerThread>& threads) {
-	std::lock_guard<std::mutex> lock(mtx_);
+	lock_guard lock(mtx_);
 	assertrx(thData_.empty());
 	for (auto& th : threads) {
 		thData_.emplace_back(th.commandAsync);
@@ -827,9 +875,12 @@ void ReindexerImpl::CommandsQueue::Init(std::deque<WorkerThread>& threads) {
 }
 
 void ReindexerImpl::CommandsQueue::Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16>& cmds) {
-	assertrx(tid < thData_.size());
-	auto& thD = thData_[tid];
-	std::lock_guard<std::mutex> lock(mtx_);
+	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
+		assertrx(tid < thData_.size());
+		return thData_[tid];
+	}
+	();
+	lock_guard lock(mtx_);
 	std::swap(thD.personalQueue, cmds);
 	thD.reqCnt.store(0, std::memory_order_relaxed);
 	while (sharedQueue_.size()) {
@@ -841,20 +892,23 @@ void ReindexerImpl::CommandsQueue::Invalidate(uint32_t tid, h_vector<DatabaseCom
 }
 
 void ReindexerImpl::CommandsQueue::SetValid() {
-	std::lock_guard<std::mutex> lock(mtx_);
+	lock_guard lock(mtx_);
 	isValid_ = true;
 }
 
 void ReindexerImpl::CommandsQueue::ClearConnectionsMapping() {
-	std::lock_guard<std::mutex> lock(mtx_);
+	lock_guard lock(mtx_);
 	thByConns_.clear();
 }
 
-void ReindexerImpl::CommandsQueue::RegisterConn(uint32_t tid, const void* conn) {
-	assertrx(tid < thData_.size());
-	auto& thD = thData_[tid];
-	std::lock_guard<std::mutex> lock(mtx_);
-	const auto res = thByConns_.emplace(conn, &thD);
+void ReindexerImpl::CommandsQueue::RegisterConn(uint32_t tid, const void* conn, uint32_t connIdx) {
+	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
+		assertrx(tid < thData_.size());
+		return thData_[tid];
+	}
+	();
+	lock_guard lock(mtx_);
+	const auto res = thByConns_.emplace(conn, ConnMeta{.threadData = &thD, .connIdx = connIdx});
 	assertrx(res.second);
 	(void)res;
 }

@@ -14,7 +14,7 @@ namespace reindexer {
 
 class RdxActivityContext;
 
-class ActivityContainerLog {
+class [[nodiscard]] ActivityContainerLog {
 public:
 	static const int kOperationSlotsCount = 25000;
 	ActivityContainerLog() {
@@ -33,7 +33,7 @@ public:
 	void Dump(int serverId);
 	void Reset();
 
-	struct ActivityOperation {
+	struct [[nodiscard]] ActivityOperation {
 		ActivityOperation(Activity::State st, bool start) {
 			tp = system_clock_w::now();
 			isStart = start;
@@ -44,7 +44,7 @@ public:
 		Activity::State state;
 	};
 
-	struct ActivityOperationRecord {
+	struct [[nodiscard]] ActivityOperationRecord {
 		ActivityOperationRecord() = default;
 		void reset() {
 			operations.clear();

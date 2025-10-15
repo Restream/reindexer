@@ -1,6 +1,7 @@
 #include "variant.h"
 #include <charconv>
 #include <functional>
+#include <sstream>
 
 #include "core/payload/payloadiface.h"
 #include "estl/tuple_utils.h"
@@ -13,7 +14,7 @@
 
 namespace reindexer {
 
-Variant::Variant(p_string v, hold_t) : variant_{0, 0, KeyValueType::String{}} {
+Variant::Variant(p_string v, HoldT) : variant_{0, 0, KeyValueType::String{}} {
 	if (v.type() == p_string::tagKeyString) {
 		variant_.hold = 1;
 		new (cast<void>()) key_string(v.getKeyString());
@@ -21,6 +22,7 @@ Variant::Variant(p_string v, hold_t) : variant_{0, 0, KeyValueType::String{}} {
 		*cast<p_string>() = v;
 	}
 }
+
 Variant::Variant(const VariantArray& values) : variant_{0, 1, KeyValueType::Tuple{}} {
 	WrSerializer ser;
 	ser.PutVarUint(values.size());
@@ -29,6 +31,7 @@ Variant::Variant(const VariantArray& values) : variant_{0, 1, KeyValueType::Tupl
 	}
 	new (cast<void>()) key_string(make_key_string(ser.Slice()));
 }
+
 Variant::Variant(Uuid uuid) noexcept : uuid_() {
 	if (uuid.data_[0] == 0 && uuid.data_[1] == 0) {
 		uuid_.~UUID();
@@ -64,7 +67,7 @@ template Variant::Variant(const std::tuple<std::string, int>&);
 
 template <typename T>
 inline static void assertKeyType([[maybe_unused]] KeyValueType got) noexcept {
-	assertf(got.Is<T>(), "Expected value '%s', but got '%s'", KeyValueType{T{}}.Name(), got.Name());
+	assertf(got.Is<T>(), "Expected value '{}', but got '{}'", KeyValueType{T{}}.Name(), got.Name());
 }
 
 Variant::operator int() const noexcept {
@@ -91,12 +94,31 @@ Variant::operator double() const noexcept {
 	return variant_.value_double;
 }
 
+Variant::operator float() const noexcept {
+	assertrx(!isUuid());
+	assertKeyType<KeyValueType::Float>(variant_.type);
+	return variant_.value_float;
+}
+
+Variant::operator ConstFloatVectorView() const noexcept {
+	assertrx(!isUuid());
+	assertKeyType<KeyValueType::FloatVector>(variant_.type);
+	return ConstFloatVectorView::FromUint64(variant_.value_uint64);
+}
+
+Variant::operator FloatVectorView() noexcept {
+	assertrx(!isUuid());
+	assertKeyType<KeyValueType::FloatVector>(variant_.type);
+	assertrx(variant_.hold);
+	return FloatVectorView::FromUint64(variant_.value_uint64);
+}
+
 Variant::operator Point() const { return static_cast<Point>(getCompositeValues()); }
 template <>
 Point Variant::As<Point>() const {
 	assertrx(!isUuid());
 	if (!variant_.type.Is<KeyValueType::Tuple>()) {
-		throw Error(errParams, "Can't convert %s to Point", variant_.type.Name());
+		throw Error(errParams, "Can't convert {} to Point", variant_.type.Name());
 	}
 	return static_cast<Point>(getCompositeValues());
 }
@@ -107,19 +129,31 @@ Uuid Variant::As<Uuid>() const {
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Uuid) { return Uuid{*this}; }, [&](KeyValueType::String) { return Uuid{this->As<std::string>()}; },
-		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Tuple,
-				  KeyValueType::Composite, KeyValueType::Null, KeyValueType::Undefined>) -> Uuid {
-			throw Error(errParams, "Can't convert %s to UUID", variant_.type.Name());
-		});
+		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Float,
+				  KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::FloatVector>)
+			-> Uuid { throw Error(errParams, "Can't convert {} to UUID", variant_.type.Name()); });
+}
+template <>
+ConstFloatVectorView Variant::As<ConstFloatVectorView>() const {
+	if (isUuid()) {
+		throw Error(errParams, "Can't convert {} to Float Vector", KeyValueType{KeyValueType::Uuid{}}.Name());
+	}
+	if (variant_.type.Is<KeyValueType::FloatVector>()) {
+		return ConstFloatVectorView{*this};
+	} else {
+		throw Error(errParams, "Can't convert {} to Float Vector", variant_.type.Name());
+	}
 }
 
 void Variant::free() noexcept {
 	assertrx(!isUuid());
 	assertrx(variant_.hold == 1);
-	variant_.type.EvaluateOneOf([&](OneOf<KeyValueType::String, KeyValueType::Tuple>) noexcept { this->cast<key_string>()->~key_string(); },
-								[&](KeyValueType::Composite) noexcept { this->cast<PayloadValue>()->~PayloadValue(); },
-								[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Null,
-										 KeyValueType::Undefined, KeyValueType::Double, KeyValueType::Uuid>) noexcept {});
+	variant_.type.EvaluateOneOf(
+		[&](OneOf<KeyValueType::String, KeyValueType::Tuple>) noexcept { this->cast<key_string>()->~key_string(); },
+		[&](KeyValueType::Composite) noexcept { this->cast<PayloadValue>()->~PayloadValue(); },
+		[&](KeyValueType::FloatVector) noexcept { delete[] ConstFloatVectorView(*this).Data(); },
+		[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined,
+				 KeyValueType::Double, KeyValueType::Float, KeyValueType::Uuid>) noexcept {});
 	variant_.hold = 0;
 }
 
@@ -127,6 +161,7 @@ void Variant::copy(const Variant& other) {
 	assertrx(!isUuid());
 	assertrx(!other.isUuid());
 	assertrx(variant_.hold == 1);
+	assertrx(variant_.type.IsSame(other.Type()));
 	variant_.type.EvaluateOneOf(
 		[&](OneOf<KeyValueType::String, KeyValueType::Tuple>) { new (this->cast<void>()) key_string(*other.cast<key_string>()); },
 		[&](KeyValueType::Composite) { new (this->cast<void>()) PayloadValue(*other.cast<PayloadValue>()); },
@@ -134,17 +169,26 @@ void Variant::copy(const Variant& other) {
 		[&](KeyValueType::Bool) noexcept { variant_.value_bool = other.variant_.value_bool; },
 		[&](OneOf<KeyValueType::Int64, KeyValueType::Undefined>) noexcept { variant_.value_uint64 = other.variant_.value_uint64; },
 		[&](KeyValueType::Double) noexcept { variant_.value_double = other.variant_.value_double; },
-		[&](OneOf<KeyValueType::Null, KeyValueType::Uuid>) noexcept {});
+		[&](KeyValueType::Float) noexcept { variant_.value_float = other.variant_.value_float; },
+		[&](OneOf<KeyValueType::Null, KeyValueType::Uuid>) noexcept {},
+		[&](KeyValueType::FloatVector) noexcept {
+			FloatVectorView dest{*this};
+			ConstFloatVectorView src{other};
+			assertrx(dest.Dimension() == src.Dimension());
+			memcpy(dest.Data(), src.Data(), sizeof(FloatVectorView::DataType) * src.Dimension().Value());
+		});
 }
 
 Variant& Variant::EnsureHold() & {
 	if (isUuid() || variant_.hold == 1) {
 		return *this;
 	}
-	variant_.type.EvaluateOneOf([&](OneOf<KeyValueType::String, KeyValueType::Tuple>) { *this = Variant(this->operator key_string()); },
-								[&](KeyValueType::Composite) { *this = Variant(this->operator const PayloadValue&()); },
-								[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Null,
-										 KeyValueType::Undefined, KeyValueType::Double, KeyValueType::Uuid>) noexcept {});
+	variant_.type.EvaluateOneOf(
+		[&](OneOf<KeyValueType::String, KeyValueType::Tuple>) { *this = Variant(this->operator key_string()); },
+		[&](KeyValueType::Composite) { *this = Variant(this->operator const PayloadValue&()); },
+		[&](KeyValueType::FloatVector) { *this = Variant(this->operator ConstFloatVectorView(), hold); },
+		[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined,
+				 KeyValueType::Double, KeyValueType::Float, KeyValueType::Uuid>) noexcept {});
 	return *this;
 }
 
@@ -154,22 +198,24 @@ std::string Variant::As<std::string>() const {
 	if (isUuid()) {
 		return std::string{Uuid{*this}};
 	} else {
-		return variant_.type.EvaluateOneOf([&](KeyValueType::Int) { return std::to_string(variant_.value_int); },
-										   [&](KeyValueType::Bool) { return variant_.value_bool ? "true"s : "false"s; },
-										   [&](KeyValueType::Int64) { return std::to_string(variant_.value_int64); },
-										   [&](KeyValueType::Double) { return double_to_str(variant_.value_double); },
-										   [&](KeyValueType::String) { return this->operator p_string().toString(); },
-										   [&](KeyValueType::Null) { return "null"s; },
-										   [this](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> std::string {
-											   throw Error(errParams, "Can't convert '%s'-value to string", variant_.type.Name());
-										   },
-										   [&](KeyValueType::Tuple) {
-											   auto va = getCompositeValues();
-											   WrSerializer wrser;
-											   va.Dump(wrser);
-											   return std::string(wrser.Slice());
-										   },
-										   [&](KeyValueType::Uuid) { return std::string{Uuid{*this}}; });
+		return variant_.type.EvaluateOneOf(
+			[&](KeyValueType::Int) { return std::to_string(variant_.value_int); },
+			[&](KeyValueType::Bool) { return variant_.value_bool ? "true"s : "false"s; },
+			[&](KeyValueType::Int64) { return std::to_string(variant_.value_int64); },
+			[&](KeyValueType::Double) { return double_to_str(variant_.value_double); },
+			[&](KeyValueType::Float) { return float_to_str(variant_.value_float); },
+			[&](KeyValueType::String) { return this->operator p_string().toString(); }, [&](KeyValueType::Null) { return "null"s; },
+			[&](KeyValueType::FloatVector) { return float_vector_to_str(ConstFloatVectorView::FromUint64(variant_.value_uint64)); },
+			[this](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> std::string {
+				throw Error(errParams, "Can't convert '{}'-value to string", variant_.type.Name());
+			},
+			[&](KeyValueType::Tuple) {
+				auto va = getCompositeValues();
+				WrSerializer wrser;
+				va.Dump(wrser);
+				return std::string(wrser.Slice());
+			},
+			[&](KeyValueType::Uuid) { return std::string{Uuid{*this}}; });
 	}
 }
 
@@ -187,13 +233,19 @@ key_string Variant::As<key_string>() const {
 										   },
 										   [&](KeyValueType::Int64) { return make_key_string(std::to_string(variant_.value_int64)); },
 										   [&](KeyValueType::Double) { return make_key_string(double_to_str(variant_.value_double)); },
+										   [&](KeyValueType::Float) { return make_key_string(float_to_str(variant_.value_float)); },
 										   [&](KeyValueType::String) { return this->operator p_string().getKeyString(); },
 										   [&](KeyValueType::Null) {
 											   static const key_string kNullKeyString = make_key_string("null");
 											   return kNullKeyString;
 										   },
+										   [&](KeyValueType::FloatVector) {
+											   WrSerializer wser;
+											   float_vector_to_str(ConstFloatVectorView::FromUint64(variant_.value_uint64), wser);
+											   return make_key_string(wser.Slice());
+										   },
 										   [this](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> key_string {
-											   throw Error(errParams, "Can't convert '%s'-value to string", variant_.type.Name());
+											   throw Error(errParams, "Can't convert '{}'-value to string", variant_.type.Name());
 										   },
 										   [&](KeyValueType::Tuple) {
 											   auto va = getCompositeValues();
@@ -285,25 +337,25 @@ T parseAs(std::string_view str) {
 	if (res) {
 		return *res;
 	} else {
-		throw Error(errParams, "Can't convert '%s' to number", str);
+		throw Error(errParams, "Can't convert '{}' to number", str);
 	}
 }
 
 template <>
 int Variant::As<int>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
+		throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> int { return variant_.value_bool; },
 		[&](KeyValueType::Int) noexcept { return variant_.value_int; },
 		[&](KeyValueType::Int64) noexcept -> int { return variant_.value_int64; },
 		[&](KeyValueType::Double) noexcept -> int { return variant_.value_double; },
+		[&](KeyValueType::Float) noexcept -> int { return variant_.value_float; },
 		[&](KeyValueType::String) { return parseAs<int>(this->operator p_string()); },
-		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> int {
-			throw Error(errParams, "Can't convert '%s'-value to number", Type().Name());
-		},
-		[&](KeyValueType::Uuid) -> int { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
+		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
+			-> int { throw Error(errParams, "Can't convert '{}'-value to number", Type().Name()); },
+		[&](KeyValueType::Uuid) -> int { throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}}); });
 }
 
 static std::optional<bool> tryConvertToBool(const p_string& str) {
@@ -331,60 +383,77 @@ template <>
 bool Variant::As<bool>() const {
 	using namespace std::string_view_literals;
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}});
+		throw Error(errParams, "Can't convert '{}' to bool", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept { return variant_.value_bool; },
 		[&](KeyValueType::Int) noexcept -> bool { return variant_.value_int; },
 		[&](KeyValueType::Int64) noexcept -> bool { return variant_.value_int64; },
 		[&](KeyValueType::Double) noexcept -> bool { return variant_.value_double; },
+		[&](KeyValueType::Float) noexcept -> bool { return variant_.value_float; },
 		[&](KeyValueType::String) {
 			const auto p_str = operator p_string();
 			const auto res = tryConvertToBool(p_str);
 			if (res.has_value()) {
 				return *res;
 			} else {
-				throw Error(errParams, "Can't convert '%s' to bool", std::string_view(p_str));
+				throw Error(errParams, "Can't convert '{}' to bool", std::string_view(p_str));
 			}
 		},
-		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> bool {
-			throw Error(errParams, "Can't convert '%s'-value to bool", Type().Name());
-		},
-		[&](KeyValueType::Uuid) -> bool { throw Error(errParams, "Can't convert '%s' to bool", std::string{Uuid{*this}}); });
+		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
+			-> bool { throw Error(errParams, "Can't convert '{}'-value to bool", Type().Name()); },
+		[&](KeyValueType::Uuid) -> bool { throw Error(errParams, "Can't convert '{}' to bool", std::string{Uuid{*this}}); });
 }
 
 template <>
 int64_t Variant::As<int64_t>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
+		throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> int64_t { return variant_.value_bool; },
 		[&](KeyValueType::Int) noexcept -> int64_t { return variant_.value_int; },
 		[&](KeyValueType::Int64) noexcept { return variant_.value_int64; },
 		[&](KeyValueType::Double) noexcept -> int64_t { return variant_.value_double; },
+		[&](KeyValueType::Float) noexcept -> int64_t { return variant_.value_float; },
 		[&](KeyValueType::String) { return parseAs<int64_t>(this->operator p_string()); },
-		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> int64_t {
-			throw Error(errParams, "Can't convert '%s'-value to number", Type().Name());
-		},
-		[&](KeyValueType::Uuid) -> int64_t { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
+		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
+			-> int64_t { throw Error(errParams, "Can't convert '{}'-value to number", Type().Name()); },
+		[&](KeyValueType::Uuid) -> int64_t { throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}}); });
 }
 
 template <>
 double Variant::As<double>() const {
 	if (isUuid()) {
-		throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}});
+		throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}});
 	}
 	return variant_.type.EvaluateOneOf(
 		[&](KeyValueType::Bool) noexcept -> double { return variant_.value_bool; },
 		[&](KeyValueType::Int) noexcept -> double { return variant_.value_int; },
 		[&](KeyValueType::Int64) noexcept -> double { return variant_.value_int64; },
 		[&](KeyValueType::Double) noexcept { return variant_.value_double; },
+		[&](KeyValueType::Float) noexcept -> double { return variant_.value_float; },
 		[&](KeyValueType::String) { return parseAs<double>(this->operator p_string()); },
-		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) -> double {
-			throw Error(errParams, "Can't convert '%s'-value to number", Type().Name());
-		},
-		[&](KeyValueType::Uuid) -> double { throw Error(errParams, "Can't convert '%s' to number", std::string{Uuid{*this}}); });
+		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
+			-> double { throw Error(errParams, "Can't convert '{}'-value to number", Type().Name()); },
+		[&](KeyValueType::Uuid) -> double { throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}}); });
+}
+
+template <>
+float Variant::As<float>() const {
+	if (isUuid()) {
+		throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}});
+	}
+	return variant_.type.EvaluateOneOf(
+		[&](KeyValueType::Bool) noexcept -> float { return variant_.value_bool; },
+		[&](KeyValueType::Int) noexcept -> float { return variant_.value_int; },
+		[&](KeyValueType::Int64) noexcept -> float { return variant_.value_int64; },
+		[&](KeyValueType::Double) noexcept -> float { return variant_.value_double; },
+		[&](KeyValueType::Float) noexcept { return variant_.value_float; },
+		[&](KeyValueType::String) -> float { return parseAs<double>(this->operator p_string()); },
+		[this](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>)
+			-> float { throw Error(errParams, "Can't convert '{}'-value to number", Type().Name()); },
+		[&](KeyValueType::Uuid) -> float { throw Error(errParams, "Can't convert '{}' to number", std::string{Uuid{*this}}); });
 }
 
 template <NotComparable notComparable>
@@ -415,7 +484,18 @@ ComparationResult Variant::Compare(const Variant& other, const CollateOpts& coll
 					   : (variant_.value_double > other.variant_.value_double) ? ComparationResult::Gt
 																			   : ComparationResult::Lt;
 			},
+			[&](KeyValueType::Float) noexcept {
+				return (variant_.value_float == other.variant_.value_float)	 ? ComparationResult::Eq
+					   : (variant_.value_float > other.variant_.value_float) ? ComparationResult::Gt
+																			 : ComparationResult::Lt;
+			},
 			[&](KeyValueType::Tuple) -> ComparationResult {
+				auto lhs = cast<key_string>();
+				auto rhs = other.cast<key_string>();
+				if (std::string_view(*lhs) == std::string_view(*rhs)) {
+					return ComparationResult::Eq;
+				}
+				// Less/Greater comparison is not implemented for Tuple values here
 				if constexpr (notComparable == NotComparable::Return) {
 					return ComparationResult::NotComparable;
 				} else {
@@ -433,6 +513,25 @@ ComparationResult Variant::Compare(const Variant& other, const CollateOpts& coll
 			},
 			[](KeyValueType::Composite) -> ComparationResult {
 				throw Error{errParams, "Cannot compare composite variants without payload type"};
+			},
+			[&](KeyValueType::FloatVector) -> ComparationResult {
+				const auto lhs = ConstFloatVectorView{*this}.Span();
+				const auto rhs = ConstFloatVectorView{other}.Span();
+				const auto leftSize = lhs.size();
+				const auto rightSize = rhs.size();
+				const size_t s = std::min(leftSize, rightSize);
+				for (size_t i = 0; i < s; ++i) {
+					if (lhs[i] < rhs[i]) {
+						return ComparationResult::Lt;
+					} else if (lhs[i] > rhs[i]) {
+						return ComparationResult::Gt;
+					}
+				}
+				if (leftSize == rightSize) {
+					return ComparationResult::Eq;
+				} else {
+					return leftSize < rightSize ? ComparationResult::Lt : ComparationResult::Gt;
+				}
 			},
 			[](OneOf<KeyValueType::Undefined>) noexcept -> ComparationResult { abort(); });
 	}
@@ -498,6 +597,19 @@ ComparationResult Variant::relaxCompareWithString(std::string_view str) const no
 					return compare(variant_.value_double, v);
 				}
 			},
+			[&](KeyValueType::Float) {
+				if constexpr (notComparable == NotComparable::Return) {
+					const std::optional<float> v = tryParseAs<double>(str);
+					if (v) {
+						return compare(variant_.value_float, *v);
+					} else {
+						return ComparationResult::NotComparable;
+					}
+				} else {
+					const float v = parseAs<double>(str);
+					return compare(variant_.value_float, v);
+				}
+			},
 			[&](KeyValueType::Uuid) {
 				Uuid{*this}.PutToStr(uuidStrBuf);
 				return uuidStrBufView == str ? ComparationResult::Eq
@@ -528,18 +640,18 @@ ComparationResult Variant::relaxCompareWithString(std::string_view str) const no
 					}
 				}
 			},
-			[&](OneOf<KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>)
-				-> ComparationResult {
+			[&](OneOf<KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null,
+					  KeyValueType::FloatVector>) -> ComparationResult {
 				if constexpr (notComparable == NotComparable::Return) {
 					return ComparationResult::NotComparable;
 				} else {
-					throw Error(errParams, "Not comparable types: %s and %s", KeyValueType{KeyValueType::String{}}.Name(), Type().Name());
+					throw Error(errParams, "Not comparable types: {} and {}", KeyValueType{KeyValueType::String{}}.Name(), Type().Name());
 				}
 			});
 	}
 }
 
-class Comparator {
+class [[nodiscard]] Comparator {
 public:
 	explicit Comparator(const Variant& v1, const Variant& v2) noexcept : v1_{v1}, v2_{v2} {}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Bool) const noexcept {
@@ -554,6 +666,9 @@ public:
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Double) const noexcept {
 		return compare(double(v1_.As<bool>()), v2_.As<double>());
 	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Float) const noexcept {
+		return compare(double(v1_.As<bool>()), v2_.As<float>());
+	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Bool) const noexcept {
 		return compare(v1_.As<int>(), int(v2_.As<bool>()));
 	}
@@ -565,6 +680,9 @@ public:
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Double) const noexcept {
 		return compare(v1_.As<int>(), v2_.As<double>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Float) const noexcept {
+		return compare(v1_.As<int>(), v2_.As<float>());
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Bool) const noexcept {
 		return compare(v1_.As<int64_t>(), int64_t(v2_.As<bool>()));
@@ -578,6 +696,9 @@ public:
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Double) const noexcept {
 		return compare(v1_.As<int64_t>(), v2_.As<double>());
 	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Float) const noexcept {
+		return compare(v1_.As<int64_t>(), v2_.As<float>());
+	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Bool) const noexcept {
 		return compare(v1_.As<double>(), double(v2_.As<bool>()));
 	}
@@ -590,23 +711,44 @@ public:
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Double) const noexcept {
 		return compare(v1_.As<double>(), v2_.As<double>());
 	}
-	RX_ALWAYS_INLINE ComparationResult operator()(OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined,
-														KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid>,
-												  OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined,
-														KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid>) const noexcept {
-		assertrx(0);
-		abort();
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Float) const noexcept {
+		return compare(v1_.As<double>(), v2_.As<float>());
 	}
-	RX_ALWAYS_INLINE ComparationResult operator()(OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>,
-												  OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined,
-														KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid>) const noexcept {
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Bool) const noexcept {
+		return compare(v1_.As<float>(), double(v2_.As<bool>()));
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Int) const noexcept {
+		return compare(v1_.As<float>(), v2_.As<int>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Int64) const noexcept {
+		return compare(v1_.As<float>(), v2_.As<int64_t>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Float) const noexcept {
+		return compare(v1_.As<float>(), v2_.As<float>());
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Double) const noexcept {
+		return compare(v1_.As<float>(), v2_.As<double>());
+	}
+
+	RX_ALWAYS_INLINE ComparationResult
+	operator()(OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+					 KeyValueType::Uuid, KeyValueType::FloatVector>,
+			   OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+					 KeyValueType::Uuid, KeyValueType::FloatVector>) const noexcept {
 		assertrx(0);
 		abort();
 	}
 	RX_ALWAYS_INLINE ComparationResult
-	operator()(OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-					 KeyValueType::Uuid>,
-			   OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) const noexcept {
+	operator()(OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>,
+			   OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+					 KeyValueType::Uuid, KeyValueType::FloatVector>) const noexcept {
+		assertrx(0);
+		abort();
+	}
+	RX_ALWAYS_INLINE ComparationResult operator()(
+		OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+			  KeyValueType::Uuid, KeyValueType::FloatVector>,
+		OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) const noexcept {
 		assertrx(0);
 		abort();
 	}
@@ -630,7 +772,7 @@ ComparationResult Variant::RelaxCompare(const Variant& other, const CollateOpts&
 				return Uuid{*this}.Compare(*otherUuid);
 			} else {
 				Uuid{*this}.PutToStr(uuidStrBuf);
-				return -other.Compare<notComparable>(Variant{uuidStrBufPString, no_hold_t{}});
+				return -other.Compare<notComparable>(Variant{uuidStrBufPString, noHold});
 			}
 		} else if constexpr (withString == WithString::Yes) {
 			Uuid{*this}.PutToStr(uuidStrBuf);
@@ -639,7 +781,7 @@ ComparationResult Variant::RelaxCompare(const Variant& other, const CollateOpts&
 			if constexpr (notComparable == NotComparable::Return) {
 				return ComparationResult::NotComparable;
 			} else {
-				throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+				throw Error(errParams, "Not comparable types: {} and {}", Type().Name(), other.Type().Name());
 			}
 		}
 	} else if (other.isUuid() || other.variant_.type.Is<KeyValueType::Uuid>()) {
@@ -649,7 +791,7 @@ ComparationResult Variant::RelaxCompare(const Variant& other, const CollateOpts&
 				return uuid->Compare(Uuid{other});
 			} else {
 				Uuid{other}.PutToStr(uuidStrBuf);
-				return Compare<notComparable>(Variant{uuidStrBufPString, no_hold_t{}});
+				return Compare<notComparable>(Variant{uuidStrBufPString, noHold});
 			}
 		} else if constexpr (withString == WithString::Yes) {
 			Uuid{other}.PutToStr(uuidStrBuf);
@@ -658,7 +800,7 @@ ComparationResult Variant::RelaxCompare(const Variant& other, const CollateOpts&
 			if constexpr (notComparable == NotComparable::Return) {
 				return ComparationResult::NotComparable;
 			} else {
-				throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+				throw Error(errParams, "Not comparable types: {} and {}", Type().Name(), other.Type().Name());
 			}
 		}
 	} else {
@@ -681,7 +823,7 @@ ComparationResult Variant::RelaxCompare(const Variant& other, const CollateOpts&
 			if constexpr (notComparable == NotComparable::Return) {
 				return ComparationResult::NotComparable;
 			} else {
-				throw Error(errParams, "Not comparable types: %s and %s", Type().Name(), other.Type().Name());
+				throw Error(errParams, "Not comparable types: {} and {}", Type().Name(), other.Type().Name());
 			}
 		}
 	}
@@ -701,14 +843,16 @@ size_t Variant::Hash() const noexcept {
 			[&](KeyValueType::Bool) noexcept { return std::hash<bool>()(variant_.value_bool); },
 			[&](KeyValueType::Int64) noexcept { return std::hash<int64_t>()(variant_.value_int64); },
 			[&](KeyValueType::Double) noexcept { return std::hash<double>()(variant_.value_double); },
+			[&](KeyValueType::Float) noexcept { return std::hash<float>()(variant_.value_float); },
 			[&](KeyValueType::String) noexcept { return std::hash<p_string>()(this->operator p_string()); },
 			[&](KeyValueType::Uuid) noexcept { return std::hash<Uuid>()(Uuid{*this}); },
 			[](KeyValueType::Null) noexcept { return std::hash<int>()(0); },
-			[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) noexcept -> size_t {
+			[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept
+				-> size_t {
 #ifdef NDEBUG
 				abort();
 #else
-				assertf(false, "Unexpected variant type: %s", variant_.type.Name());
+				assertf(false, "Unexpected variant type: {}", variant_.type.Name());
 #endif
 			});
 	}
@@ -728,54 +872,55 @@ Variant Variant::convert(KeyValueType type, const PayloadType* payloadType, cons
 		return *this;
 	}
 	Variant dst(*this);
-	dst.convert(type, payloadType, fields);
+	rx_unused = dst.convert(type, payloadType, fields);
 	return dst;
 }
 
 Variant& Variant::convert(KeyValueType type, const PayloadType* payloadType, const FieldsSet* fields) & {
 	if (isUuid()) {
-		type.EvaluateOneOf([&](KeyValueType::Uuid) noexcept {}, [&](KeyValueType::String) { *this = Variant{std::string{Uuid{*this}}}; },
-						   [&](KeyValueType::Composite) {
-							   assertrx_throw(payloadType && fields);
-							   Variant tmp{VariantArray{std::move(*this)}};
-							   tmp.convertToComposite(*payloadType, *fields);
-							   *this = std::move(tmp);
-						   },
-						   [type](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double,
-										KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) {
-							   throw Error(errParams, "Can't convert Variant from type '%s' to type '%s'",
-										   KeyValueType{KeyValueType::Uuid{}}.Name(), type.Name());
-						   });
+		type.EvaluateOneOf(
+			[&](KeyValueType::Uuid) noexcept {}, [&](KeyValueType::String) { *this = Variant{std::string{Uuid{*this}}}; },
+			[&](KeyValueType::Composite) {
+				assertrx_throw(payloadType && fields);
+				Variant tmp{VariantArray{std::move(*this)}};
+				tmp.convertToComposite(*payloadType, *fields);
+				*this = std::move(tmp);
+			},
+			[type](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Float,
+						 KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) {
+				throw Error(errParams, "Can't convert Variant from type '{}' to type '{}'", KeyValueType{KeyValueType::Uuid{}}.Name(),
+							type.Name());
+			});
 		return *this;
 	}
-	if (type.IsSame(variant_.type) || type.Is<KeyValueType::Null>() || variant_.type.Is<KeyValueType::Null>()) {
+	if (type.IsSame(variant_.type) || variant_.type.Is<KeyValueType::Null>()) {
 		return *this;
 	}
 	type.EvaluateOneOf(
 		[&](KeyValueType::Int) { *this = Variant(As<int>()); }, [&](KeyValueType::Bool) { *this = Variant(As<bool>()); },
 		[&](KeyValueType::Int64) { *this = Variant(As<int64_t>()); }, [&](KeyValueType::Double) { *this = Variant(As<double>()); },
-		[&](KeyValueType::String) { *this = Variant(As<std::string>()); },
+		[&](KeyValueType::Float) { *this = Variant(As<float>()); }, [&](KeyValueType::String) { *this = Variant(As<key_string>()); },
 		[&](KeyValueType::Composite) {
 			variant_.type.EvaluateOneOf(
 				[&](KeyValueType::Tuple) {
-					assertrx(payloadType && fields);
+					assertrx_throw(payloadType && fields);
 					convertToComposite(*payloadType, *fields);
 				},
 				[](KeyValueType::Composite) noexcept {},
-				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String,
-						  KeyValueType::Uuid>) {
-					assertrx(payloadType && fields);
+				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+						  KeyValueType::String, KeyValueType::Uuid>) {
+					assertrx_throw(payloadType && fields);
 					Variant tmp{VariantArray{std::move(*this)}};
 					tmp.convertToComposite(*payloadType, *fields);
 					*this = std::move(tmp);
 				},
-				[&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) {
-					throw Error(errParams, "Can't convert Variant from type '%s' to type '%s'", variant_.type.Name(), type.Name());
+				[&](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) {
+					throw Error(errParams, "Can't convert Variant from type '{}' to type '{}'", variant_.type.Name(), type.Name());
 				});
 		},
 		[&](KeyValueType::Uuid) { *this = Variant{As<Uuid>()}; },
-		[&](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) {
-			throw Error(errParams, "Can't convert Variant from type '%s' to type '%s'", variant_.type.Name(), type.Name());
+		[&](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) {
+			throw Error(errParams, "Can't convert Variant from type '{}' to type '{}'", variant_.type.Name(), type.Name());
 		});
 	return *this;
 }
@@ -796,24 +941,25 @@ std::optional<Variant> Variant::tryConvert(KeyValueType type, const PayloadType*
 bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, const FieldsSet* fields) & {
 	using namespace std::string_view_literals;
 	if (isUuid()) {
-		return type.EvaluateOneOf([&](KeyValueType::Uuid) noexcept { return true; },
-								  [&](KeyValueType::String) {
-									  *this = Variant{std::string{Uuid{*this}}};
-									  return true;
-								  },
-								  [&](KeyValueType::Composite) {
-									  assertrx_throw(payloadType && fields);
-									  try {
-										  Variant tmp{VariantArray{std::move(*this)}};
-										  tmp.convertToComposite(*payloadType, *fields);
-										  *this = std::move(tmp);
-										  return true;
-									  } catch (...) {
-										  return false;
-									  }
-								  },
-								  [](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double,
-										   KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) { return false; });
+		return type.EvaluateOneOf(
+			[&](KeyValueType::Uuid) noexcept { return true; },
+			[&](KeyValueType::String) {
+				*this = Variant{std::string{Uuid{*this}}};
+				return true;
+			},
+			[&](KeyValueType::Composite) {
+				assertrx_throw(payloadType && fields);
+				try {
+					Variant tmp{VariantArray{std::move(*this)}};
+					tmp.convertToComposite(*payloadType, *fields);
+					*this = std::move(tmp);
+					return true;
+				} catch (...) {
+					return false;
+				}
+			},
+			[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Float,
+					 KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) { return false; });
 	}
 	if (type.IsSame(variant_.type) || type.Is<KeyValueType::Null>() || variant_.type.Is<KeyValueType::Null>()) {
 		return true;
@@ -843,6 +989,15 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 						return true;
 					}
 				},
+				[&](KeyValueType::Float) noexcept {
+					if (variant_.value_float < std::numeric_limits<int>::min() ||
+						variant_.value_float > float(std::numeric_limits<int>::max())) {
+						return false;
+					} else {
+						variant_.value_int = variant_.value_float;
+						return true;
+					}
+				},
 				[&](KeyValueType::String) noexcept {
 					const auto res = tryParseAs<int>(operator p_string());
 					if (res) {
@@ -856,41 +1011,42 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 					variant_.value_int = 0;
 					return true;
 				},
-				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
-					return false;
-				});
+				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
+						 KeyValueType::FloatVector>) noexcept { return false; });
 		},
 		[&](KeyValueType::Bool) {
-			return variant_.type.EvaluateOneOf(
-				[](KeyValueType::Bool) noexcept { return true; },
-				[&](KeyValueType::Int) noexcept {
-					variant_.value_bool = bool(variant_.value_int);
-					return true;
-				},
-				[&](KeyValueType::Int64) noexcept {
-					variant_.value_bool = bool(variant_.value_int64);
-					return true;
-				},
-				[&](KeyValueType::Double) noexcept {
-					variant_.value_bool = bool(variant_.value_double);
-					return true;
-				},
-				[&](KeyValueType::String) noexcept {
-					const auto res = tryConvertToBool(operator p_string());
-					if (res.has_value()) {
-						*this = Variant{*res};
-						return true;
-					} else {
-						return false;
-					}
-				},
-				[&](KeyValueType::Null) noexcept {
-					variant_.value_bool = false;
-					return true;
-				},
-				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
-					return false;
-				});
+			return variant_.type.EvaluateOneOf([](KeyValueType::Bool) noexcept { return true; },
+											   [&](KeyValueType::Int) noexcept {
+												   variant_.value_bool = bool(variant_.value_int);
+												   return true;
+											   },
+											   [&](KeyValueType::Int64) noexcept {
+												   variant_.value_bool = bool(variant_.value_int64);
+												   return true;
+											   },
+											   [&](KeyValueType::Double) noexcept {
+												   variant_.value_bool = bool(variant_.value_double);
+												   return true;
+											   },
+											   [&](KeyValueType::Float) noexcept {
+												   variant_.value_bool = bool(variant_.value_float);
+												   return true;
+											   },
+											   [&](KeyValueType::String) noexcept {
+												   const auto res = tryConvertToBool(operator p_string());
+												   if (res.has_value()) {
+													   *this = Variant{*res};
+													   return true;
+												   } else {
+													   return false;
+												   }
+											   },
+											   [&](KeyValueType::Null) noexcept {
+												   variant_.value_bool = false;
+												   return true;
+											   },
+											   [](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple,
+														KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept { return false; });
 		},
 		[&](KeyValueType::Int64) {
 			return variant_.type.EvaluateOneOf(
@@ -907,6 +1063,10 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 					variant_.value_int64 = variant_.value_double;
 					return true;
 				},
+				[&](KeyValueType::Float) noexcept {
+					variant_.value_int64 = variant_.value_float;
+					return true;
+				},
 				[&](KeyValueType::String) noexcept {
 					const auto res = tryParseAs<int64_t>(operator p_string());
 					if (res) {
@@ -920,9 +1080,8 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 					variant_.value_int64 = 0;
 					return true;
 				},
-				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
-					return false;
-				});
+				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
+						 KeyValueType::FloatVector>) noexcept { return false; });
 		},
 		[&](KeyValueType::Double) {
 			return variant_.type.EvaluateOneOf(
@@ -939,6 +1098,10 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 					return true;
 				},
 				[](KeyValueType::Double) noexcept { return true; },
+				[&](KeyValueType::Float) noexcept {
+					variant_.value_double = variant_.value_float;
+					return true;
+				},
 				[&](KeyValueType::String) noexcept {
 					const auto res = tryParseAs<double>(operator p_string());
 					if (res) {
@@ -952,9 +1115,43 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 					variant_.value_double = 0.0;
 					return true;
 				},
-				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
-					return false;
-				});
+				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
+						 KeyValueType::FloatVector>) noexcept { return false; });
+		},
+		[&](KeyValueType::Float) {
+			return variant_.type.EvaluateOneOf(
+				[&](KeyValueType::Bool) noexcept {
+					variant_.value_float = variant_.value_bool;
+					return true;
+				},
+				[&](KeyValueType::Int) noexcept {
+					variant_.value_float = variant_.value_int;
+					return true;
+				},
+				[&](KeyValueType::Int64) noexcept {
+					variant_.value_float = variant_.value_int64;
+					return true;
+				},
+				[&](KeyValueType::Double) noexcept {
+					variant_.value_float = variant_.value_double;
+					return true;
+				},
+				[](KeyValueType::Float) noexcept { return true; },
+				[&](KeyValueType::String) noexcept {
+					const std::optional<float> res = tryParseAs<double>(operator p_string());
+					if (res) {
+						*this = Variant{*res};
+						return true;
+					} else {
+						return false;
+					}
+				},
+				[&](KeyValueType::Null) noexcept {
+					variant_.value_float = 0.0;
+					return true;
+				},
+				[](OneOf<KeyValueType::Uuid, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
+						 KeyValueType::FloatVector>) noexcept { return false; });
 		},
 		[&](KeyValueType::String) {
 			*this = Variant{As<std::string>()};
@@ -972,8 +1169,8 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 					}
 				},
 				[](KeyValueType::Composite) noexcept { return true; },
-				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String,
-						  KeyValueType::Uuid>) {
+				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+						  KeyValueType::String, KeyValueType::Uuid>) {
 					assertrx_throw(payloadType && fields);
 					try {
 						Variant tmp{VariantArray{std::move(*this)}};
@@ -984,7 +1181,7 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 						return false;
 					}
 				},
-				[&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) { return false; });
+				[&](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) { return false; });
 		},
 		[&](KeyValueType::Uuid) {
 			return variant_.type.EvaluateOneOf(
@@ -998,8 +1195,16 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 						return false;
 					}
 				},
-				[](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Tuple,
-						 KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>) noexcept { return false; });
+				[](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+						 KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null,
+						 KeyValueType::FloatVector>) noexcept { return false; });
+		},
+		[&](KeyValueType::FloatVector) {
+			return variant_.type.EvaluateOneOf(
+				[](KeyValueType::FloatVector) noexcept { return true; },
+				[](OneOf<KeyValueType::Null, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+						 KeyValueType::Float, KeyValueType::String, KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Composite,
+						 KeyValueType::Undefined>) noexcept { return false; });
 		},
 		[&](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) { return false; });
 	if (res && !isUuid()) {
@@ -1029,9 +1234,9 @@ void Variant::convertToComposite(const PayloadType& payloadType, const FieldsSet
 
 	Serializer ser(std::string_view(data, strSz));
 
-	size_t count = ser.GetVarUint();
+	size_t count = ser.GetVarUInt();
 	if (count != fields.size()) {
-		throw Error(errLogic, "Invalid count of arguments for composite index, expected %d, got %d", fields.size(), count);
+		throw Error(errLogic, "Invalid count of arguments for composite index, expected {}, got {}", fields.size(), count);
 	}
 
 	Payload pl(payloadType, pv);
@@ -1054,7 +1259,7 @@ VariantArray Variant::getCompositeValues() const {
 
 	VariantArray res;
 	Serializer ser(*cast<key_string>());
-	size_t count = ser.GetVarUint();
+	size_t count = ser.GetVarUInt();
 	res.reserve(count);
 	while (count--) {
 		res.push_back(ser.GetVariant());
@@ -1090,7 +1295,7 @@ Variant::operator const PayloadValue&() const noexcept {
 }
 
 template <typename T>
-void Variant::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
+void Variant::Dump(T& os, const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) const {
 	if (isUuid()) {
 		os << Uuid{*this};
 	} else {
@@ -1105,9 +1310,16 @@ void Variant::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
 			},
 			[&](KeyValueType::Int) { os << this->operator int(); }, [&](KeyValueType::Bool) { os << this->operator bool(); },
 			[&](KeyValueType::Int64) { os << this->operator int64_t(); }, [&](KeyValueType::Double) { os << this->operator double(); },
-			[&](KeyValueType::Tuple) { getCompositeValues().Dump(os); }, [&](KeyValueType::Uuid) { os << Uuid{*this}; },
-			[&](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>) { os << "??"; });
+			[&](KeyValueType::Float) { os << this->operator float(); }, [&](KeyValueType::Tuple) { getCompositeValues().Dump(os); },
+			[&](KeyValueType::Uuid) { os << Uuid{*this}; }, [&](KeyValueType::FloatVector) { os << "[??]"; },
+			[&](KeyValueType::Composite) { os << (pt ? As<std::string>(pt, fieldsSet) : "??"); },
+			[&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) { os << "??"; });
 	}
+}
+
+template <typename T>
+void Variant::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
+	Dump(os, PayloadType{}, FieldsSet{}, checkPrintableString);
 }
 
 template void Variant::Dump(WrSerializer&, CheckIsStringPrintable) const;
@@ -1115,15 +1327,20 @@ template void Variant::Dump(std::ostream&, CheckIsStringPrintable) const;
 template void Variant::Dump(std::stringstream&, CheckIsStringPrintable) const;
 
 template <typename T>
-void VariantArray::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
+void VariantArray::Dump(T& os, const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) const {
 	os << '{';
 	for (auto& arg : *this) {
 		if (&arg != &at(0)) {
 			os << ", ";
 		}
-		arg.Dump(os, checkPrintableString);
+		arg.Dump(os, pt, fieldsSet, checkPrintableString);
 	}
 	os << '}';
+}
+
+template <typename T>
+void VariantArray::Dump(T& os, CheckIsStringPrintable checkPrintableString) const {
+	Dump(os, PayloadType{}, FieldsSet{}, checkPrintableString);
 }
 
 template void VariantArray::Dump(WrSerializer&, CheckIsStringPrintable) const;
@@ -1131,18 +1348,28 @@ template void VariantArray::Dump(std::ostream&, CheckIsStringPrintable) const;
 template void VariantArray::Dump(std::stringstream&, CheckIsStringPrintable) const;
 
 template <typename T>
-static std::string dumpImpl(T&& obj, CheckIsStringPrintable checkPrintableString) {
+static std::string dumpImpl(T&& obj, const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) {
 	std::stringstream ss;
-	obj.Dump(ss, checkPrintableString);
+	obj.Dump(ss, pt, fieldsSet, checkPrintableString);
 	return ss.str();
 }
 
-std::string Variant::Dump(CheckIsStringPrintable checkPrintableString) const { return dumpImpl(*this, checkPrintableString); }
-std::string VariantArray::Dump(CheckIsStringPrintable checkPrintableString) const { return dumpImpl(*this, checkPrintableString); }
+std::string Variant::Dump(CheckIsStringPrintable checkPrintableString) const {
+	return dumpImpl(*this, PayloadType{}, FieldsSet{}, checkPrintableString);
+}
+std::string Variant::Dump(const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) const {
+	return dumpImpl(*this, pt, fieldsSet, checkPrintableString);
+}
+std::string VariantArray::Dump(CheckIsStringPrintable checkPrintableString) const {
+	return dumpImpl(*this, PayloadType{}, FieldsSet{}, checkPrintableString);
+}
+std::string VariantArray::Dump(const PayloadType& pt, const FieldsSet& fieldsSet, CheckIsStringPrintable checkPrintableString) const {
+	return dumpImpl(*this, pt, fieldsSet, checkPrintableString);
+}
 
 VariantArray::operator Point() const {
 	if (size() != 2) {
-		throw Error(errParams, "Can't convert array of %d elements to Point", size());
+		throw Error(errParams, "Can't convert array of {} elements to Point", size());
 	}
 	return Point{(*this)[0].As<double>(), (*this)[1].As<double>()};
 }
@@ -1158,12 +1385,30 @@ ComparationResult VariantArray::RelaxCompare(const VariantArray& other, const Co
 		}
 	}
 	if (lhsIt == lhsEnd) {
-		if (rhsIt == rhsEnd) {
-			return ComparationResult::Eq;
+		return (rhsIt == rhsEnd) ? ComparationResult::Eq : ComparationResult::Lt;
+	}
+	return ComparationResult::Gt;
+}
+
+ComparationResult VariantArray::CompareNoExcept(const VariantArray& other, const CollateOpts& collateOpts) const noexcept {
+	try {
+		auto lhsIt{cbegin()}, rhsIt{other.cbegin()};
+		const auto lhsEnd{cend()}, rhsEnd{other.cend()};
+		for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
+			if (!lhsIt->Type().IsSame(rhsIt->Type())) {
+				return ComparationResult::NotComparable;
+			}
+			const auto res = lhsIt->Compare<NotComparable::Return>(*rhsIt, collateOpts);
+			if (res != ComparationResult::Eq) {
+				return res;
+			}
 		}
-		return ComparationResult::Lt;
-	} else {
+		if (lhsIt == lhsEnd) {
+			return (rhsIt == rhsEnd) ? ComparationResult::Eq : ComparationResult::Lt;
+		}
 		return ComparationResult::Gt;
+	} catch (...) {
+		return ComparationResult::NotComparable;
 	}
 }
 

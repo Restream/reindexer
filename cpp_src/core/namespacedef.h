@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <optional>
 #include <string>
@@ -15,11 +15,13 @@ class WrSerializer;
 class RdxContext;
 class Namespace;
 
-struct NamespaceDef {
-	NamespaceDef() = default;
+struct [[nodiscard]] NamespaceDef {
+	struct NameOnly {};
 
-	explicit NamespaceDef(std::string iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
-		: name(std::move(iname)), storage(istorage) {}
+	NamespaceDef() = default;
+	explicit NamespaceDef(std::string_view iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
+		: name(iname), storage(istorage) {}
+	explicit NamespaceDef(std::string_view iname, NameOnly) : name{iname}, isNameOnly{true} {}
 
 	NamespaceDef& AddIndex(const std::string& iname, const std::string& indexType, const std::string& fieldType,
 						   IndexOpts opts = IndexOpts()) {
@@ -38,9 +40,9 @@ struct NamespaceDef {
 		return *this;
 	}
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	void FromJSON(const gason::JsonNode& root);
-	void GetJSON(WrSerializer&, int formatFlags = 0) const;
+	void GetJSON(WrSerializer&, ExtraIndexDescription withIndexExtras = ExtraIndexDescription_False) const;
 	bool HasSchema() const noexcept { return !schemaJson.empty() && schemaJson != "{}"; }
 	size_t HeapSize() const noexcept {
 		size_t size = name.size() + indexes.size() * sizeof(IndexDef) + schemaJson.size();
@@ -54,31 +56,31 @@ public:
 	std::string name;
 	StorageOpts storage;
 	std::vector<IndexDef> indexes;
-	bool isTemporary = false;
+	bool isNameOnly = false;
 	std::string schemaJson = "{}";
 };
 
-enum EnumNamespacesOpt {
+enum [[nodiscard]] EnumNamespacesOpt {
 	kEnumNamespacesWithClosed = 1,
 	kEnumNamespacesOnlyNames = 1 << 1,
 	kEnumNamespacesHideSystem = 1 << 2,
 	kEnumNamespacesHideTemporary = 1 << 3,
 };
 
-struct EnumNamespacesOpts {
+struct [[nodiscard]] EnumNamespacesOpts {
 	EnumNamespacesOpts() : options_(0) {}
 
 	bool IsWithClosed() const noexcept { return options_ & kEnumNamespacesWithClosed; }
 	bool IsOnlyNames() const noexcept { return options_ & kEnumNamespacesOnlyNames; }
 	bool IsHideSystem() const noexcept { return options_ & kEnumNamespacesHideSystem; }
 	bool IsHideTemporary() const noexcept { return options_ & kEnumNamespacesHideTemporary; }
-	bool MatchFilter(std::string_view nsName, const std::shared_ptr<Namespace>& ns, const RdxContext& ctx) const;
+	bool MatchFilter(std::string_view nsName, const Namespace& ns, const RdxContext& ctx) const;
 	bool MatchNameFilter(std::string_view nsName) const noexcept {
 		return (filter_.empty() || iequals(filter_, nsName)) && (!IsHideSystem() || (!nsName.empty() && nsName[0] != '#')) &&
-			   (!IsHideTemporary() || (!nsName.empty() && nsName[0] != '@'));
+			   (!IsHideTemporary() || (!nsName.empty() && nsName[0] != '@')) && (!nsName.empty() && nsName[0] != '!');
 	}
 
-	// Add not openened namespaces to enumeration
+	// Add not opened namespaces to enumeration
 	EnumNamespacesOpts& WithClosed(bool value = true) noexcept {
 		options_ = value ? options_ | kEnumNamespacesWithClosed : options_ & ~(kEnumNamespacesWithClosed);
 		return *this;
@@ -107,8 +109,8 @@ struct EnumNamespacesOpts {
 	uint16_t options_;
 };
 
-struct NsReplicationOpts {
-	Error FromJSON(span<char> json);
+struct [[nodiscard]] NsReplicationOpts {
+	Error FromJSON(std::span<char> json);
 	void FromJSON(const gason::JsonNode& root);
 	void GetJSON(WrSerializer&) const;
 

@@ -1,25 +1,32 @@
 #pragma once
 
-#include <stdint.h>
 #include "tools/errors.h"
-#include "vendor/gason/gason.h"
+
+namespace gason {
+
+struct JsonNode;
+
+}  // namespace gason
 
 namespace reindexer {
 
+namespace builders {
 class JsonBuilder;
+}  // namespace builders
+using builders::JsonBuilder;
 
 // lsn format
 // server id  counter
 // SSS        NNN NNN NNN NNN NNN (18 decimal digits)
 
-struct LSNUnpacked {
+struct [[nodiscard]] LSNUnpacked {
 	int16_t server;
 	int64_t counter;
 };
 
 class lsn_t {
 private:
-	static constexpr int64_t kMaxCounter = 1000000000000000ll;
+	static constexpr int64_t kMaxCounter = 1'000'000'000'000'000ll;
 
 public:
 	static constexpr int16_t kMinServerIDValue = 0;
@@ -27,12 +34,7 @@ public:
 	static constexpr int64_t kDefaultCounter = kMaxCounter - 1;
 
 	void GetJSON(JsonBuilder& builder) const;
-
-	void FromJSON(const gason::JsonNode& root) {
-		const int server = root["server_id"].As<int>(0);
-		const int64_t counter = root["counter"].As<int64_t>(kDefaultCounter);
-		payload_ = int64_t(lsn_t(counter, server));
-	}
+	void FromJSON(const gason::JsonNode& root);
 
 	lsn_t() noexcept = default;
 	lsn_t(const lsn_t&) noexcept = default;
@@ -50,15 +52,11 @@ public:
 	}
 	explicit operator int64_t() const noexcept { return payload_; }
 	explicit operator uint64_t() const noexcept { return static_cast<uint64_t>(payload_); }
-	lsn_t& operator++() noexcept {
+	lsn_t& operator++() {
 		SetCounter(Counter() + 1);
 		return *this;
 	}
-	lsn_t& operator--() noexcept {
-		SetCounter(Counter() - 1);
-		return *this;
-	}
-	lsn_t operator++(int) noexcept {
+	lsn_t operator++(int) {
 		const lsn_t lsn = *this;
 		SetCounter(Counter() + 1);
 		return lsn;
@@ -67,19 +65,19 @@ public:
 	bool operator==(lsn_t o) const noexcept { return payload_ == o.payload_; }
 	bool operator!=(lsn_t o) const noexcept { return payload_ != o.payload_; }
 
-	int64_t SetServer(int16_t server) {
+	void SetServer(int16_t server) {
 		validateServerId(server);
 		payload_ = server * kMaxCounter + Counter();
-		return payload_;
 	}
-	int64_t SetCounter(int64_t counter) {
+
+	void SetCounter(int64_t counter) {
 		validateCounter(counter);
 		if (counter < 0) {
 			counter = kDefaultCounter;
 		}
 		payload_ = Server() * kMaxCounter + counter;
-		return payload_;
 	}
+
 	int64_t Counter() const noexcept { return payload_ % kMaxCounter; }
 	int16_t Server() const noexcept { return payload_ / kMaxCounter; }
 	LSNUnpacked Unpack() const noexcept { return {.server = Server(), .counter = Counter()}; }
@@ -103,30 +101,27 @@ public:
 	bool operator>=(lsn_t o) const { return compare(o) >= 0; }
 
 private:
-	int64_t payload_ = kDefaultCounter;
 	static void validateServerId(int16_t server) {
 		if (server < kMinServerIDValue) {
-			throwValidation(errLogic, "Server id < %d", kMinServerIDValue);
+			throwValidation(errLogic, "Server id ({}) < {}", server, kMinServerIDValue);
 		}
 		if (server > kMaxServerIDValue) {
-			throwValidation(errLogic, "Server id > %d", kMaxServerIDValue);
+			throwValidation(errLogic, "Server id ({}) > {}", server, kMaxServerIDValue);
 		}
 	}
 	static void validateCounter(int64_t counter) {
 		if (counter > kDefaultCounter) {
-			throwValidation(errLogic, "LSN Counter > Default LSN (%d)", kMaxCounter);
+			throwValidation(errLogic, "LSN Counter ({}) > Default LSN ({})", counter, kMaxCounter);
 		}
 	}
+	[[noreturn]] static void throwValidation(ErrorCode, std::string_view, int64_t, int64_t);
 
-	[[noreturn]] static void throwValidation(ErrorCode, const char*, int64_t);
+	int64_t payload_ = kDefaultCounter;
 };
 
-inline static std::ostream& operator<<(std::ostream& o, const reindexer::lsn_t& sv) {
-	o << sv.Server() << ":" << sv.Counter();
-	return o;
-}
+std::ostream& operator<<(std::ostream& o, const reindexer::lsn_t& sv);
 
-class ExtendedLsn {
+class [[nodiscard]] ExtendedLsn {
 public:
 	ExtendedLsn() = default;
 	ExtendedLsn(lsn_t nsVersion, lsn_t lsn) noexcept : nsVersion_(nsVersion), lsn_(lsn) {}
@@ -151,14 +146,5 @@ private:
 	lsn_t nsVersion_;
 	lsn_t lsn_;
 };
-
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-struct LSNPair {
-	LSNPair() = default;
-	LSNPair(lsn_t upstreamLSN, lsn_t originLSN) noexcept : upstreamLSN_(upstreamLSN), originLSN_(originLSN) {}
-	lsn_t upstreamLSN_;
-	lsn_t originLSN_;
-};
-#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 }  // namespace reindexer

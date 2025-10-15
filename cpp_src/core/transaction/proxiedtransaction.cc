@@ -4,6 +4,7 @@
 #include "core/item.h"
 #include "core/itemimpl.h"
 #include "core/queryresults/queryresults.h"
+#include "estl/lock.h"
 #include "tools/clusterproxyloghelper.h"
 #include "transactionimpl.h"
 
@@ -14,7 +15,7 @@ Error ProxiedTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 	bool itemFromCache = false;
 	try {
 		{
-			std::unique_lock lck(mtx_);
+			unique_lock lck(mtx_);
 			if (itemCache_.isValid) {
 				itemFromCache = true;
 				clientItem = client::Item(
@@ -36,7 +37,7 @@ Error ProxiedTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 		if (!itemFromCache) {
 			return e;
 		}
-		// Update cache, if got error on item convertion
+		// Update cache, if got error on item conversion
 		itemFromCache = false;
 		clientItem = tx_.NewItem();
 		if (!clientItem.Status().ok()) {
@@ -58,14 +59,14 @@ Error ProxiedTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 			return err;
 		}
 
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		itemCache_.isValid = false;
 		lck.unlock();
 
 		return tx_.modify(std::move(clientItem), mode, client::InternalRdxContext(lsn, nullptr, shardId_));
 	}
 	if (!itemFromCache) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		itemCache_.pt = clientItem.impl_->Type();
 		itemCache_.tm = clientItem.impl_->tagsMatcher();
 		itemCache_.isValid = true;
@@ -107,7 +108,7 @@ Error ProxiedTransaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 		return err;
 	}
 	{
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		itemCache_.isValid = false;
 	}
 	return tx_.setTagsMatcher(std::move(tm),
@@ -118,7 +119,7 @@ void ProxiedTransaction::Rollback(int serverId, const RdxContext& ctx) {
 	auto err = asyncData_.AwaitAsyncRequests();
 	(void)err;	// ignore; Error does not matter here
 	if (tx_.rx_) {
-		const auto _ctx = client::InternalRdxContext(ctx.GetOriginLSN(), nullptr, shardId_).WithEmmiterServerId(serverId);
+		const auto _ctx = client::InternalRdxContext(ctx.GetOriginLSN(), nullptr, shardId_).WithEmitterServerId(serverId);
 		err = tx_.rx_->RollBackTransaction(tx_, _ctx);
 		(void)err;	// ignore; Error does not matter here
 	}
@@ -138,11 +139,11 @@ Error ProxiedTransaction::Commit(int serverId, QueryResults& result, const RdxCo
 	client::InternalRdxContext c;
 
 	if (shardId_ < 0) {
-		c = client::InternalRdxContext(ctx.GetOriginLSN()).WithEmmiterServerId(serverId);
-		clusterProxyLog(LogTrace, "[proxy] Proxying commit to leader. SID: %d", serverId);
+		c = client::InternalRdxContext(ctx.GetOriginLSN()).WithEmitterServerId(serverId);
+		clusterProxyLog(LogTrace, "[proxy] Proxying commit to leader. SID: {}", serverId);
 	} else {
 		c = client::InternalRdxContext{}.WithShardId(shardId_, false);
-		clusterProxyLog(LogTrace, "[proxy] Proxying commit to shard %d. SID: %d", shardId_, serverId);
+		clusterProxyLog(LogTrace, "[proxy] Proxying commit to shard {}. SID: {}", shardId_, serverId);
 	}
 
 	client::QueryResults clientResults;
@@ -158,7 +159,7 @@ Error ProxiedTransaction::Commit(int serverId, QueryResults& result, const RdxCo
 }
 
 void ProxiedTransaction::AsyncData::AddNewAsyncRequest() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!err_.ok()) {
 		throw err_;
 	}
@@ -166,7 +167,7 @@ void ProxiedTransaction::AsyncData::AddNewAsyncRequest() {
 }
 
 void ProxiedTransaction::AsyncData::OnAsyncRequestDone(const Error& e) noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if (!e.ok()) {
 		err_ = e;
 	}
@@ -177,7 +178,7 @@ void ProxiedTransaction::AsyncData::OnAsyncRequestDone(const Error& e) noexcept 
 }
 
 Error ProxiedTransaction::AsyncData::AwaitAsyncRequests() noexcept {
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	cv_.wait(lck, [this] { return asyncRequests_ == 0; });
 	return err_;
 }

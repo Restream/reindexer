@@ -8,18 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/require"
-)
-
-const (
-	fieldsUpdateNs              = "test_items_fields_update"
-	truncateNs                  = "test_truncate"
-	removeItemsNs               = "test_remove_items"
-	sparseArrItemNs             = "test_sparse_array_update"
-	TestUpdateWithExpressionsNs = "test_expressions_updates"
-	TestUpdateHeteroArraysNs    = "test_heterogeneous_array_updates"
-	TestUpdateHeteroArraysObjNs = "test_heterogeneous_objects_array_updates"
 )
 
 type ItemWithSparseArray struct {
@@ -41,36 +31,6 @@ type ItemWithHeteroArraysObj struct {
 	ID       int64         `json:"id" reindex:"id,hash,pk"`
 	Nested   []Nested      `json:"nested"`
 	ArrayNon []interface{} `json:"array_nonidx"`
-}
-
-func init() {
-	tnamespaces["test_items_insert_update"] = TestItemSimple{}
-	tnamespaces[sparseArrItemNs] = ItemWithSparseArray{}
-	tnamespaces[TestUpdateWithExpressionsNs] = ItemWithSparseArray{}
-	tnamespaces[TestUpdateHeteroArraysNs] = ItemWithHeteroArrays{}
-	tnamespaces[TestUpdateHeteroArraysObjNs] = ItemWithHeteroArraysObj{}
-}
-
-var checkInsertUpdateExistsData = []*TestItemSimple{
-	{1, 2007, "item1", "123456"},
-	{2, 2000, "item2", "123456"},
-	{7, 2003, "item7", "123456"},
-	{3, 2001, "item3", "123456"},
-	{6, 2006, "item6", "123456"},
-	{5, 2005, "item5", "123456"},
-	{8, 2004, "item8", "123456"},
-	{4, 2002, "item4", "123456"},
-}
-
-var checkInsertUpdateNonExistsData = []*TestItemSimple{
-	{9, 1999, "item9", "123456"},
-	{15, 2017, "item15", "123456"},
-	{11, 2013, "item11", "123456"},
-	{13, 2011, "item13", "123456"},
-	{10, 1996, "item10", "123456"},
-	{12, 1995, "item12", "123456"},
-	{14, 2014, "item14", "123456"},
-	{16, 2012, "item16", "123456"},
 }
 
 type testInnerObject struct {
@@ -100,6 +60,7 @@ type TestItemComplexObject struct {
 	ID        int              `reindex:"id,,pk" json:"id"`
 	Code      int64            `reindex:"code" json:"code"`
 	IsEnabled bool             `reindex:"is_enabled" json:"is_enabled"`
+	Vec       []float32        `reindex:"vec,hnsw,m=16,ef_construction=200,metric=inner_product,dimension=16"`
 	Desc      string           `reindex:"desc" json:"desc"`
 	MainObj   testItemObject   `reindex:"main_obj" json:"main_obj"`
 	Size      int              `json:"size"`
@@ -109,6 +70,64 @@ type TestItemComplexObject struct {
 	Numbers   []int            `json:"numbers"`
 	Objects   []testItemObject `json:"objects"`
 	Optional  interface{}      `json:"optional,omitempty"`
+}
+
+type NestedObject struct {
+	NestedID    int
+	Description string
+	IsFree      bool
+}
+
+type SmallObject struct {
+	ID     int
+	Name   string
+	Price  float64
+	Nested NestedObject
+	Bonus  int
+}
+
+const (
+	testFieldsUpdateNs          = "test_items_fields_update"
+	testTruncateNs              = "test_truncate"
+	testRemoveItemsNs           = "test_remove_items"
+	testItemsInsertUpdate       = "test_items_insert_update"
+	testSparseArrItemNs         = "test_sparse_array_update"
+	testUpdateWithExpressionsNs = "test_expressions_updates"
+	testUpdateHeteroArraysNs    = "test_heterogeneous_array_updates"
+	testUpdateHeteroArraysObjNs = "test_heterogeneous_objects_array_updates"
+)
+
+func init() {
+	tnamespaces[testFieldsUpdateNs] = TestItemComplexObject{}
+	tnamespaces[testTruncateNs] = TestItemComplexObject{}
+	tnamespaces[testRemoveItemsNs] = testDummyObject{}
+	tnamespaces[testItemsInsertUpdate] = TestItemSimple{}
+	tnamespaces[testSparseArrItemNs] = ItemWithSparseArray{}
+	tnamespaces[testUpdateWithExpressionsNs] = ItemWithSparseArray{}
+	tnamespaces[testUpdateHeteroArraysNs] = ItemWithHeteroArrays{}
+	tnamespaces[testUpdateHeteroArraysObjNs] = ItemWithHeteroArraysObj{}
+}
+
+var checkInsertUpdateExistsData = []*TestItemSimple{
+	{1, 2007, "item1", "123456"},
+	{2, 2000, "item2", "123456"},
+	{7, 2003, "item7", "123456"},
+	{3, 2001, "item3", "123456"},
+	{6, 2006, "item6", "123456"},
+	{5, 2005, "item5", "123456"},
+	{8, 2004, "item8", "123456"},
+	{4, 2002, "item4", "123456"},
+}
+
+var checkInsertUpdateNonExistsData = []*TestItemSimple{
+	{9, 1999, "item9", "123456"},
+	{15, 2017, "item15", "123456"},
+	{11, 2013, "item11", "123456"},
+	{13, 2011, "item13", "123456"},
+	{10, 1996, "item10", "123456"},
+	{12, 1995, "item12", "123456"},
+	{14, 2014, "item14", "123456"},
+	{16, 2012, "item16", "123456"},
 }
 
 func randInnerObject() []testInnerObject {
@@ -177,6 +196,7 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 	return &TestItemComplexObject{
 		ID:        id,
 		Code:      rand.Int63() % 10000000,
+		Vec:       randVect(16),
 		IsEnabled: (rand.Int() % 2) == 0,
 		Desc:      randString(),
 		Size:      rand.Int()%200000 + 100,
@@ -196,73 +216,39 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 	}
 }
 
-func TestUpdate(t *testing.T) {
-	FillTestItemsForInsertUpdate(t)
-	CheckTestItemsInsertUpdate(t)
-}
+func fillTestItemsForInsertUpdate(t *testing.T, ns string) {
+	tx := newTestTx(DB, ns)
 
-func TestUpdateFields(t *testing.T) {
-	nsOpts := reindexer.DefaultNamespaceOptions()
-	require.NoError(t, DB.OpenNamespace(fieldsUpdateNs, nsOpts, TestItemComplexObject{}))
-	for i := 0; i < 1000; i++ {
-		require.NoError(t, DB.Upsert(fieldsUpdateNs, newTestItemComplexObject(i)))
+	for _, item := range checkInsertUpdateExistsData {
+		require.NoError(t, tx.Insert(item))
 	}
-
-	RemoveDummyItems(t)
-
-	CheckIndexedArrayItemUpdate1(t)
-	CheckIndexedArrayItemUpdate2(t)
-	CheckNonIndexedArrayItemUpdate1(t)
-	CheckNonIndexedArrayItemUpdate2(t)
-	CheckNonIndexedArrayItemUpdate3(t)
-	CheckNonIndexedArrayAppend1(t)
-	CheckNonIndexedArrayAppend2(t)
-	CheckUpdateArrayObject(t)
-	CheckFieldsDrop(t)
-	CheckIndexedFieldUpdate(t)
-	CheckNonIndexedFieldUpdate(t)
-	CheckNonIndexedEmptyArrayFieldUpdate(t)
-	CheckNonIndexedArrayWithSingleElementFieldUpdate(t)
-	CheckNonIndexedArrayFieldUpdate(t)
-	CheckIndexedArrayFieldUpdate(t)
-	CheckUpdateObject(t)
-	CheckUpdateObject2(t)
-	CheckAddObject(t)
-	CheckAddObject2(t)
-	CheckUpdateArrayOfObjects(t, 10)
-	CheckUpdateArrayOfObjects(t, 1)
-	CheckUpdateArrayOfObjects(t, 0)
-	CheckNestedFieldUpdate(t)
-	CheckNestedFieldUpdate2(t)
-	CheckAddSimpleFields(t)
-	CheckAddComplexField(t, "nested2.nested3.nested4.val", []string{"nested2", "nested3", "nested4", "val"})
-	CheckAddComplexField(t, "main_obj.main.nested.val", []string{"main_obj", "main", "nested", "val"})
-	CheckUpdateWithExpressions1(t)
-	CheckUpdateWithExpressions2(t)
+	require.Equal(t, tx.MustCommit(), len(checkInsertUpdateExistsData), "Could not commit testSortModeDataCustomSource")
 }
 
-func RemoveDummyItems(t *testing.T) {
-	nsOpts := reindexer.DefaultNamespaceOptions()
-	require.NoError(t, DB.OpenNamespace(removeItemsNs, nsOpts, testDummyObject{}))
+func selectAndFetchAll(t *testing.T, ns string) {
+	_, err := DBD.Query(ns).Exec().FetchAll()
+	require.NoError(t, err)
+}
+
+func FillAndDeleteDummyItems(t *testing.T) {
 	for i := 0; i < 10; i++ {
-		require.NoError(t, DB.Upsert(removeItemsNs, testDummyObject{
+		require.NoError(t, DB.Upsert(testRemoveItemsNs, testDummyObject{
 			ID:   i,
 			Name: randString(),
 		}))
 	}
 
-	count, err := DB.Query(removeItemsNs).WhereInt("id", reindexer.LT, 3).Delete()
+	count, err := DB.Query(testRemoveItemsNs).WhereInt("id", reindexer.LT, 3).Delete()
 	require.NoError(t, err)
-	require.Equal(t, count, 3, "Remove failed")
-
+	require.Equal(t, count, 3, "Delete failed")
 }
 
 func DropField(t *testing.T, fieldName string) (items []interface{}) {
-	res1, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Drop(fieldName).Update().FetchAll()
+	res1, err := DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Drop(fieldName).Update().FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec(t).AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.Equal(t, len(results), len(res1), "Different count of items")
 
@@ -274,16 +260,16 @@ func UpdateItemField(t *testing.T, fieldName string, values interface{}, jsonObj
 	if jsonObject {
 		_, ok := values.([]byte)
 		require.True(t, ok, "'%v' is not JSON", values)
-		q = DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).SetObject(fieldName, values)
+		q = DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).SetObject(fieldName, values)
 	} else {
-		q = DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Set(fieldName, values)
+		q = DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Set(fieldName, values)
 	}
 
 	res1, err := q.Update().AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec(t).AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.Equal(t, len(results), len(res1), "Different count of items")
 
@@ -298,12 +284,27 @@ func UpdateObjectJSON(t *testing.T, fieldName string, json []uint8) (items []int
 	return UpdateItemField(t, fieldName, json, true)
 }
 
+func hasJSONPath(path []string, data map[string]interface{}) bool {
+	if len(path) > 0 {
+		if child, ok := data[path[0]]; ok {
+			if len(path) == 1 {
+				return true
+			} else {
+				if childMap, ok := child.(map[string]interface{}); ok {
+					return hasJSONPath(path[1:], childMap)
+				}
+			}
+		}
+	}
+	return false
+}
+
 func CheckUpdateWithExpressions1(t *testing.T) {
-	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update().AllowUnsafe(true).FetchAll()
+	res1, err := DB.Query(testFieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update().AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(testFieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(results), 0, "No results found")
 
@@ -314,11 +315,11 @@ func CheckUpdateWithExpressions1(t *testing.T) {
 }
 
 func CheckUpdateWithExpressions2(t *testing.T) {
-	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update().AllowUnsafe(true).FetchAll()
+	res1, err := DB.Query(testFieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update().AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(testFieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(results), 0, "No results found")
 
@@ -339,7 +340,7 @@ func CheckFieldsDrop(t *testing.T) {
 	const errorMessage = "Field '%s' was not removed from item"
 
 	results := DropField(t, "numbers")
-	require.False(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), "numbers"), errorMessage, "Numbers")
+	require.False(t, CheckIfFieldInJSON(t, DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), "numbers"), errorMessage, "Numbers")
 
 	for i := 0; i < len(results); i++ {
 		obj := results[i].(*TestItemComplexObject)
@@ -350,7 +351,7 @@ func CheckFieldsDrop(t *testing.T) {
 	checkExtraFieldForEquality(t, results2, "best value")
 
 	results3 := DropField(t, "main_obj.main.extra")
-	require.False(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), "main_obj.main.extra"), errorMessage, "main_obj.main.extra")
+	require.False(t, CheckIfFieldInJSON(t, DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), "main_obj.main.extra"), errorMessage, "main_obj.main.extra")
 
 	checkExtraFieldForEquality(t, results3, "")
 
@@ -401,25 +402,12 @@ func CheckUpdateObject(t *testing.T) {
 	}
 }
 
-type NestedObject struct {
-	NestedID    int
-	Description string
-	IsFree      bool
-}
-type SmallObject struct {
-	ID     int
-	Name   string
-	Price  float64
-	Nested NestedObject
-	Bonus  int
-}
-
 func CheckUpdateObject2(t *testing.T) {
 	obj := randTestItemObject()
 	objJson, err := json.Marshal(obj)
 	require.NoError(t, err)
 	UpdateObjectJSON(t, "main_obj", objJson)
-	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
+	require.True(t, CheckIfFieldInJSON(t, DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
 }
 
 // Update 1 element of array objects.nested and make
@@ -461,7 +449,7 @@ func CheckUpdateArrayObject(t *testing.T) {
 			}
 		}
 	}
-	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
+	require.True(t, CheckIfFieldInJSON(t, DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
 }
 
 // Check of simultaneous update of 2 fields: object field + indexed field
@@ -472,7 +460,7 @@ func CheckSimultaneousUpdateOfFields(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set this object value + new value of object field
-	q := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Set("code", 999).SetObject("main_obj", objJson)
+	q := DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Set("code", 999).SetObject("main_obj", objJson)
 
 	// Make sure Update query went well
 	res, err := q.Update().AllowUnsafe(true).FetchAll()
@@ -480,7 +468,7 @@ func CheckSimultaneousUpdateOfFields(t *testing.T) {
 	require.NotEqual(t, len(res), 0, "No items updated")
 
 	// Fetch data for the same query
-	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec(t).AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.Equal(t, len(results), len(res), "Different count of items")
 
@@ -548,7 +536,7 @@ func CheckAddObject2(t *testing.T) {
 	UpdateField(t, "optional", newClient)
 	objJson, err := json.Marshal(newClient)
 	require.NoError(t, err)
-	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
+	require.True(t, CheckIfFieldInJSON(t, DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
 }
 
 func CheckIndexedFieldUpdate(t *testing.T) {
@@ -787,7 +775,6 @@ func CheckNonIndexedArrayItemUpdate3(t *testing.T) {
 			}
 		}
 		require.True(t, equal, "Update of field 'objects[0].nested[0].fourth[0]' has shown wrong results")
-
 	}
 }
 
@@ -795,12 +782,12 @@ func CheckNonIndexedArrayItemUpdate3(t *testing.T) {
 // and make sure after update it stores correct values
 func CheckNonIndexedArrayAppend1(t *testing.T) {
 	// Add 3 new items to array 'numbers'
-	res1, err := DB.Query(fieldsUpdateNs).SetExpression("numbers", "numbers || [11,22,33]").Update().AllowUnsafe(true).FetchAll()
+	res1, err := DB.Query(testFieldsUpdateNs).SetExpression("numbers", "numbers || [11,22,33]").Update().AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
 	// Make sure results container is not empty
-	results, err := DB.Query(fieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(testFieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(results), 0, "No results found")
 
@@ -828,12 +815,12 @@ func CheckNonIndexedArrayAppend1(t *testing.T) {
 // and make sure it stores correct values after update
 func CheckNonIndexedArrayAppend2(t *testing.T) {
 	// Add 3 items to the top of 'numbers' array
-	res1, err := DB.Query(fieldsUpdateNs).SetExpression("numbers", "[111,222,333] || numbers").Update().AllowUnsafe(true).FetchAll()
+	res1, err := DB.Query(testFieldsUpdateNs).SetExpression("numbers", "[111,222,333] || numbers").Update().AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
 	// Make sure results container is not empty
-	results, err := DB.Query(fieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(testFieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(results), 0, "No results found")
 
@@ -891,21 +878,6 @@ func CheckAddSimpleFields(t *testing.T) {
 	}
 }
 
-func hasJSONPath(path []string, data map[string]interface{}) bool {
-	if len(path) > 0 {
-		if child, ok := data[path[0]]; ok {
-			if len(path) == 1 {
-				return true
-			} else {
-				if childMap, ok := child.(map[string]interface{}); ok {
-					return hasJSONPath(path[1:], childMap)
-				}
-			}
-		}
-	}
-	return false
-}
-
 func CheckIfFieldInJSON(t *testing.T, q *queryTest, field string) bool {
 	jsonIter := q.ExecToJson()
 	for jsonIter.Next() {
@@ -922,7 +894,7 @@ func CheckIfFieldInJSON(t *testing.T, q *queryTest, field string) bool {
 
 func CheckAddComplexField(t *testing.T, path string, subfields []string) {
 	UpdateField(t, path, "extra value")
-	jsonIter := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).ExecToJson()
+	jsonIter := DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).ExecToJson()
 	for jsonIter.Next() {
 		jsonB := jsonIter.JSON()
 		var data map[string]interface{}
@@ -934,16 +906,7 @@ func CheckAddComplexField(t *testing.T, path string, subfields []string) {
 	}
 }
 
-func FillTestItemsForInsertUpdate(t *testing.T) {
-	tx := newTestTx(DB, "test_items_insert_update")
-
-	for _, item := range checkInsertUpdateExistsData {
-		require.NoError(t, tx.Insert(item))
-	}
-	require.Equal(t, tx.MustCommit(), len(checkInsertUpdateExistsData), "Could not commit testSortModeDataCustomSource")
-}
-
-func CheckTestItemsInsertUpdate(t *testing.T) {
+func checkTestItemsInsertUpdate(t *testing.T, ns string) {
 	actionMap := map[string]func(string, interface{}, ...string) (int, error){
 		"INSERT": DB.Insert,
 		"UPDATE": DB.Update,
@@ -971,7 +934,7 @@ func CheckTestItemsInsertUpdate(t *testing.T) {
 				t.Run(fmt.Sprintf("%s %s ITEMS %s", actionName, exists, preceptsText), func(t *testing.T) {
 					for _, item := range dataset {
 						var originalYear int = item.Year
-						cnt, err := doAction("test_items_insert_update", item, precepts...)
+						cnt, err := doAction(ns, item, precepts...)
 						require.NoError(t, err)
 
 						act := actionName + " " + exists
@@ -1010,41 +973,118 @@ func checkItemsCount(t *testing.T, nsName string, expectedCount int) {
 	require.Equal(t, len(results), expectedCount, "Expected %d items, but got %d", expectedCount, len(results))
 }
 
+func TestUpdate(t *testing.T) {
+	fillTestItemsForInsertUpdate(t, testItemsInsertUpdate)
+	checkTestItemsInsertUpdate(t, testItemsInsertUpdate)
+	selectAndFetchAll(t, testItemsInsertUpdate)
+}
+
+func TestUpdateFields(t *testing.T) {
+	const ns = testFieldsUpdateNs
+
+	for i := 0; i < 1000; i++ {
+		require.NoError(t, DB.Upsert(ns, newTestItemComplexObject(i)))
+	}
+
+	FillAndDeleteDummyItems(t)
+
+	selectAndFetchAll(t, ns)
+	CheckIndexedArrayItemUpdate1(t)
+	selectAndFetchAll(t, ns)
+	CheckIndexedArrayItemUpdate2(t)
+	selectAndFetchAll(t, ns)
+	CheckNonIndexedArrayItemUpdate1(t)
+	selectAndFetchAll(t, ns)
+	CheckNonIndexedArrayItemUpdate2(t)
+	selectAndFetchAll(t, ns)
+	CheckNonIndexedArrayItemUpdate3(t)
+	selectAndFetchAll(t, ns)
+	CheckNonIndexedArrayAppend1(t)
+	selectAndFetchAll(t, ns)
+	CheckNonIndexedArrayAppend2(t)
+	selectAndFetchAll(t, ns)
+	CheckUpdateArrayObject(t)
+	selectAndFetchAll(t, ns)
+	CheckFieldsDrop(t)
+	selectAndFetchAll(t, ns)
+	CheckIndexedFieldUpdate(t)
+	selectAndFetchAll(t, ns)
+	CheckNonIndexedFieldUpdate(t)
+	selectAndFetchAll(t, ns)
+	CheckNonIndexedEmptyArrayFieldUpdate(t)
+	selectAndFetchAll(t, ns)
+	CheckNonIndexedArrayWithSingleElementFieldUpdate(t)
+	selectAndFetchAll(t, ns)
+	CheckNonIndexedArrayFieldUpdate(t)
+	selectAndFetchAll(t, ns)
+	CheckIndexedArrayFieldUpdate(t)
+	selectAndFetchAll(t, ns)
+	CheckUpdateObject(t)
+	selectAndFetchAll(t, ns)
+	CheckUpdateObject2(t)
+	selectAndFetchAll(t, ns)
+	CheckAddObject(t)
+	selectAndFetchAll(t, ns)
+	CheckAddObject2(t)
+	selectAndFetchAll(t, ns)
+	CheckUpdateArrayOfObjects(t, 10)
+	selectAndFetchAll(t, ns)
+	CheckUpdateArrayOfObjects(t, 1)
+	selectAndFetchAll(t, ns)
+	CheckUpdateArrayOfObjects(t, 0)
+	selectAndFetchAll(t, ns)
+	CheckNestedFieldUpdate(t)
+	selectAndFetchAll(t, ns)
+	CheckNestedFieldUpdate2(t)
+	selectAndFetchAll(t, ns)
+	CheckAddSimpleFields(t)
+	selectAndFetchAll(t, ns)
+	CheckAddComplexField(t, "nested2.nested3.nested4.val", []string{"nested2", "nested3", "nested4", "val"})
+	selectAndFetchAll(t, ns)
+	CheckAddComplexField(t, "main_obj.main.nested.val", []string{"main_obj", "main", "nested", "val"})
+	selectAndFetchAll(t, ns)
+	CheckUpdateWithExpressions1(t)
+	selectAndFetchAll(t, ns)
+	CheckUpdateWithExpressions2(t)
+	selectAndFetchAll(t, ns)
+}
+
 func TestTruncateNamespace(t *testing.T) {
+	const ns = testTruncateNs
+
 	const itemsCount = 1000
 
 	nsOpts := reindexer.DefaultNamespaceOptions()
-	require.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
 
 	for i := 0; i < itemsCount; i++ {
-		_, err := DB.Insert(truncateNs, newTestItemComplexObject(i))
+		_, err := DB.Insert(ns, newTestItemComplexObject(i))
 		require.NoError(t, err)
 	}
-	checkItemsCount(t, truncateNs, itemsCount)
+	checkItemsCount(t, ns, itemsCount)
 
-	require.NoError(t, DB.TruncateNamespace(truncateNs))
-	checkItemsCount(t, truncateNs, 0)
+	require.NoError(t, DB.TruncateNamespace(ns))
+	checkItemsCount(t, ns, 0)
 
-	require.NoError(t, DB.CloseNamespace(truncateNs))
-	require.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
-	checkItemsCount(t, truncateNs, 0)
+	require.NoError(t, DB.CloseNamespace(ns))
+	require.NoError(t, DB.OpenNamespace(ns, nsOpts, TestItemComplexObject{}))
+	checkItemsCount(t, ns, 0)
 
 	for i := 0; i < itemsCount; i++ {
-		_, err := DB.Insert(truncateNs, newTestItemComplexObject(i))
+		_, err := DB.Insert(ns, newTestItemComplexObject(i))
 		require.NoError(t, err)
 	}
-	checkItemsCount(t, truncateNs, itemsCount)
+	checkItemsCount(t, ns, itemsCount)
 
-	require.NoError(t, DB.CloseNamespace(truncateNs))
-	require.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
-	checkItemsCount(t, truncateNs, itemsCount)
+	require.NoError(t, DB.CloseNamespace(ns))
+	require.NoError(t, DB.OpenNamespace(ns, nsOpts, TestItemComplexObject{}))
+	checkItemsCount(t, ns, itemsCount)
 
-	require.NoError(t, DB.TruncateNamespace(truncateNs))
-	checkItemsCount(t, truncateNs, 0)
+	require.NoError(t, DB.TruncateNamespace(ns))
+	checkItemsCount(t, ns, 0)
 
-	require.NoError(t, DB.CloseNamespace(truncateNs))
-	require.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
-	checkItemsCount(t, truncateNs, 0)
+	require.NoError(t, DB.CloseNamespace(ns))
+	require.NoError(t, DB.OpenNamespace(ns, nsOpts, TestItemComplexObject{}))
+	checkItemsCount(t, ns, 0)
 }
 
 func TestUpdateSparseArrayIndex(t *testing.T) {
@@ -1057,25 +1097,28 @@ func TestUpdateSparseArrayIndex(t *testing.T) {
 		Array: []int64{1, 2, 3},
 	}
 
-	require.NoError(t, DB.Upsert(sparseArrItemNs, emptyItem))
+	require.NoError(t, DB.Upsert(testSparseArrItemNs, emptyItem))
 
-	require.NoError(t, DB.Upsert(sparseArrItemNs, emptyItem))
-	results := DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
+	require.NoError(t, DB.Upsert(testSparseArrItemNs, emptyItem))
+	results := DB.ExecSQL("SELECT * FROM " + testSparseArrItemNs + " WHERE id = 2")
 	checkResultItem(t, results, emptyItem)
+	selectAndFetchAll(t, testSparseArrItemNs)
 
-	require.NoError(t, DB.Upsert(sparseArrItemNs, item))
-	results = DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
+	require.NoError(t, DB.Upsert(testSparseArrItemNs, item))
+	results = DB.ExecSQL("SELECT * FROM " + testSparseArrItemNs + " WHERE id = 2")
 	checkResultItem(t, results, item)
+	selectAndFetchAll(t, testSparseArrItemNs)
 
-	require.NoError(t, DB.Upsert(sparseArrItemNs, emptyItem))
-	results = DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
+	require.NoError(t, DB.Upsert(testSparseArrItemNs, emptyItem))
+	results = DB.ExecSQL("SELECT * FROM " + testSparseArrItemNs + " WHERE id = 2")
 	checkResultItem(t, results, emptyItem)
+	selectAndFetchAll(t, testSparseArrItemNs)
 }
 
 func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 	t.Parallel()
 
-	const ns = TestUpdateWithExpressionsNs
+	const ns = testUpdateWithExpressionsNs
 
 	item := &ItemWithSparseArray{ID: 1, Array: []int64{1, 2, 3, 4, 5, 1, 2, 3, 4, 5}}
 	require.NoError(t, DB.Upsert(ns, item))
@@ -1088,6 +1131,7 @@ func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 		res := res_slice[0].(*ItemWithSparseArray)
 		expected := []int64{1, 4, 5, 1, 4, 5, 50}
 		require.EqualValues(t, expected, res.Array)
+		selectAndFetchAll(t, ns)
 	})
 
 	t.Run("update with array_remove_once delete elements from array", func(t *testing.T) {
@@ -1098,6 +1142,7 @@ func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 		res := res_slice[0].(*ItemWithSparseArray)
 		expected := []int64{4, 4, 5, 50}
 		require.EqualValues(t, expected, res.Array)
+		selectAndFetchAll(t, ns)
 	})
 
 	t.Run("update with array_remove delete by single value (scalar) from array", func(t *testing.T) {
@@ -1108,6 +1153,7 @@ func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 		res := res_slice[0].(*ItemWithSparseArray)
 		expected := []int64{5, 50}
 		require.EqualValues(t, expected, res.Array)
+		selectAndFetchAll(t, ns)
 	})
 
 }
@@ -1116,7 +1162,7 @@ func TestUpdateSetHeterogeneousArray(t *testing.T) {
 	t.Parallel()
 
 	t.Run("update with heterogeneous array", func(t *testing.T) {
-		ns := TestUpdateHeteroArraysNs
+		const ns = testUpdateHeteroArraysNs
 		item := &ItemWithHeteroArrays{ID: 1, ArrayIdx: []int64{1, 2, 3}, ArrayNon: []interface{}{3.14, "hi", "bro", 111}}
 		require.NoError(t, DB.Upsert(ns, item))
 
@@ -1134,10 +1180,12 @@ func TestUpdateSetHeterogeneousArray(t *testing.T) {
 		arrayIdxExpected := []int64{777, 333, 555}
 		expected := &ItemWithHeteroArrays{ID: 1, ArrayIdx: arrayIdxExpected, ArrayNon: updateArrNon}
 		checkResultItem(t, DB.ExecSQL(selectText), expected)
+
+		selectAndFetchAll(t, ns)
 	})
 
 	t.Run("update with heterogeneous objects array", func(t *testing.T) {
-		ns := TestUpdateHeteroArraysObjNs
+		const ns = testUpdateHeteroArraysObjNs
 		item := &ItemWithHeteroArraysObj{
 			ID:       1,
 			Nested:   []Nested{{Field: 1}, {Field: 2}},
@@ -1164,5 +1212,7 @@ func TestUpdateSetHeterogeneousArray(t *testing.T) {
 			ArrayNon: []interface{}{map[string]interface{}{"field": 111}, map[string]interface{}{"field": "abc"}},
 		}
 		checkResultItem(t, DB.ExecSQL(selectText), expected)
+
+		selectAndFetchAll(t, ns)
 	})
 }

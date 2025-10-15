@@ -1,8 +1,6 @@
 #pragma once
 #include <memory>
-#include <unordered_map>
-#include <unordered_set>
-#include "baseseacher.h"
+#include "basesearcher.h"
 #include "core/ft/config/ftfuzzyconfig.h"
 #include "core/ft/ftdsl.h"
 #include "dataholder/basebuildedholder.h"
@@ -13,26 +11,25 @@ class RdxContext;
 
 namespace search_engine {
 
-class SearchEngine {
+class [[nodiscard]] SearchEngine {
 public:
 	typedef std::shared_ptr<SearchEngine> Ptr;
 
 	SearchEngine();
-	void SetConfig(const std::unique_ptr<FtFuzzyConfig>& cfg);
+	void SetConfig(const std::unique_ptr<reindexer::FtFuzzyConfig>& cfg);
 	SearchEngine(const SearchEngine& rhs) = delete;
 
 	SearchEngine& operator=(const SearchEngine&) = delete;
 
-	SearchResult Search(const FtDSLQuery& dsl, bool inTransaction, const reindexer::RdxContext&);
-	void Rebuild();
-	void AddData(std::string_view src_data, const IdType id, int field, const std::string& extraWordSymbols);
+	SearchResult Search(const reindexer::FtDSLQuery& dsl, bool inTransaction, const reindexer::RdxContext&);
+
+	void AddData(std::string_view src_data, const IdType id, int field, const reindexer::SplitOptions& splitOptions);
 	void Commit();
 
 private:
 	BaseHolder::Ptr holder_;
-	BaseSearcher seacher_;
-	size_t last_max_id_;
-	bool commited_;
+	BaseSearcher searcher_;
+	bool committed_ = false;
 };
 
 }  // namespace search_engine

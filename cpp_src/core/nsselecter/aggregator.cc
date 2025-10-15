@@ -1,12 +1,11 @@
 #include "aggregator.h"
 #include <algorithm>
-#include <limits>
-#include "core/queryresults/queryresults.h"
+#include "core/queryresults/aggregationresult.h"
 #include "estl/overloaded.h"
 
 namespace {
 
-[[nodiscard]] static int toSigned(reindexer::ComparationResult compRes) noexcept {
+static int toSigned(reindexer::ComparationResult compRes) noexcept {
 	using UnderlyingType = std::underlying_type_t<reindexer::ComparationResult>;
 	const auto res = static_cast<UnderlyingType>(compRes);
 	return static_cast<int>(res & (static_cast<UnderlyingType>(reindexer::ComparationResult::Lt) |
@@ -63,7 +62,7 @@ static void copy(It begin, It end, std::vector<FacetResult>& facets) {
 	}
 }
 
-class Aggregator::MultifieldComparator {
+class [[nodiscard]] Aggregator::MultifieldComparator {
 public:
 	MultifieldComparator(const h_vector<SortingEntry, 1>&, const FieldsSet&, const PayloadType&);
 	bool HaveCompareByCount() const { return haveCompareByCount; }
@@ -71,11 +70,11 @@ public:
 	bool operator()(const std::pair<PayloadValue, int>& lhs, const std::pair<PayloadValue, int>& rhs) const;
 
 private:
-	struct CompOpts {
-		CompOpts() : direction{Asc} {}
+	struct [[nodiscard]] CompOpts {
+		CompOpts() : direction{Direction::Asc} {}
 		CompOpts(const FieldsSet& fs, Direction d) : fields{fs}, direction{d} {}
 		FieldsSet fields;  // if empty - compare by count
-		Direction direction = Asc;
+		Direction direction = Direction::Asc;
 	};
 	h_vector<CompOpts, 2> compOpts_;
 	PayloadType type_;
@@ -84,19 +83,19 @@ private:
 	void insertField(size_t toIdx, const FieldsSet& from, size_t fromIdx, int& tagsPathIdx);
 };
 
-class Aggregator::SinglefieldComparator {
+class [[nodiscard]] Aggregator::SinglefieldComparator {
 	enum CompareBy { ByValue, ByCount };
 
 public:
 	SinglefieldComparator(const h_vector<SortingEntry, 1>&);
 	bool HaveCompareByCount() const { return haveCompareByCount; }
 	bool operator()(const Variant& lhs, const Variant& rhs) const {
-		return toSigned(lhs.Compare<NotComparable::Throw>(rhs)) * valueCompareDirection_ < 0;
+		return toSigned(lhs.Compare<NotComparable::Throw>(rhs)) * int(valueCompareDirection_) < 0;
 	}
 	bool operator()(const std::pair<Variant, int>& lhs, const std::pair<Variant, int>& rhs) const;
 
 private:
-	struct CompOpts {
+	struct [[nodiscard]] CompOpts {
 		CompOpts() = default;
 		CompOpts(CompareBy compBy, Direction direc) : compareBy(compBy), direction(direc) {}
 		CompareBy compareBy;
@@ -112,7 +111,7 @@ Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEnt
 	: compOpts_{}, type_{type}, haveCompareByCount{false} {
 	assertrx_throw(type_);
 	if (sortingEntries.empty()) {
-		compOpts_.emplace_back(fields, Asc);
+		compOpts_.emplace_back(fields, Direction::Asc);
 		return;
 	}
 
@@ -123,7 +122,7 @@ Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEnt
 		for (; j < sortingEntries.size(); ++j) {
 			if (static_cast<int>(i) == sortingEntries[j].field) {
 				insertField(j, fields, i, tagsPathIdx);
-				compOpts_[j].direction = sortingEntries[j].desc ? Desc : Asc;
+				compOpts_[j].direction = sortingEntries[j].desc ? Direction::Desc : Direction::Asc;
 				break;
 			}
 		}
@@ -133,7 +132,7 @@ Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEnt
 	}
 	if (compOpts_.size() > 1 && compOpts_.back().fields.empty()) {
 		auto end = compOpts_.end();
-		compOpts_.erase(--end);
+		rx_unused = compOpts_.erase(--end);
 	}
 	for (const auto& opt : compOpts_) {
 		if (opt.fields.empty()) {
@@ -154,7 +153,7 @@ bool Aggregator::MultifieldComparator::operator()(const PayloadValue& lhs, const
 		if (less == ComparationResult::Eq) {
 			continue;
 		}
-		return toSigned(less) * opt.direction < 0;
+		return toSigned(less) * int(opt.direction) < 0;
 	}
 	return false;
 }
@@ -167,13 +166,13 @@ bool Aggregator::MultifieldComparator::operator()(const std::pair<PayloadValue, 
 			if (lhs.second == rhs.second) {
 				continue;
 			}
-			return opt.direction * (lhs.second - rhs.second) < 0;
+			return int(opt.direction) * (lhs.second - rhs.second) < 0;
 		}
 		const auto less = ConstPayload(type_, lhs.first).Compare<WithString::No, NotComparable::Throw>(rhs.first, opt.fields);
 		if (less == ComparationResult::Eq) {
 			continue;
 		}
-		return toSigned(less) * opt.direction < 0;
+		return toSigned(less) * int(opt.direction) < 0;
 	}
 	return false;
 }
@@ -185,18 +184,19 @@ void Aggregator::MultifieldComparator::insertField(size_t toIdx, const FieldsSet
 	}
 }
 
-struct Aggregator::MultifieldOrderedMap : public btree::btree_map<PayloadValue, int, Aggregator::MultifieldComparator> {
+struct [[nodiscard]] Aggregator::MultifieldOrderedMap : public btree::btree_map<PayloadValue, int, Aggregator::MultifieldComparator> {
 	using Base = btree::btree_map<PayloadValue, int, MultifieldComparator>;
 	using Base::Base;
 	MultifieldOrderedMap() = delete;
+	MultifieldOrderedMap(MultifieldOrderedMap&&) noexcept = default;
 };
 
 Aggregator::SinglefieldComparator::SinglefieldComparator(const h_vector<SortingEntry, 1>& sortingEntries)
-	: valueCompareDirection_(Asc), haveCompareByCount(false) {
+	: valueCompareDirection_(Direction::Asc), haveCompareByCount(false) {
 	bool haveCompareByValue = false;
 	for (const SortingEntry& sortEntry : sortingEntries) {
 		CompareBy compareBy = ByValue;
-		Direction direc = sortEntry.desc ? Desc : Asc;
+		Direction direc = sortEntry.desc ? Direction::Desc : Direction::Asc;
 		if (sortEntry.field == SortingEntry::Count) {
 			compareBy = ByCount;
 			haveCompareByCount = true;
@@ -220,7 +220,7 @@ bool Aggregator::SinglefieldComparator::operator()(const std::pair<Variant, int>
 			less = lhs.second - rhs.second;
 		}
 		if (less != 0) {
-			return less * opt.direction < 0;
+			return less * int(opt.direction) < 0;
 		}
 	}
 	return false;
@@ -237,7 +237,6 @@ Aggregator::Aggregator(const PayloadType& payloadType, const FieldsSet& fields, 
 	  names_(names),
 	  limit_(limit),
 	  offset_(offset),
-	  distinctChecker_(*this),
 	  compositeIndexFields_(compositeIndexFields) {
 	switch (aggType_) {
 		case AggFacet:
@@ -256,7 +255,10 @@ Aggregator::Aggregator(const PayloadType& payloadType, const FieldsSet& fields, 
 			}
 			break;
 		case AggDistinct:
-			distincts_.reset(new HashSetVariantRelax(16, DistinctHasher(payloadType, fields), RelaxVariantCompare(payloadType, fields)));
+			distincts_.reset(new HashSetVariantRelax(
+				16, DistinctHelpers::DistinctHasher<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields),
+				DistinctHelpers::CompareVariantVector<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields),
+				DistinctHelpers::LessDistinctVector<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields)));
 			break;
 		case AggMin:
 		case AggMax:
@@ -266,7 +268,7 @@ Aggregator::Aggregator(const PayloadType& payloadType, const FieldsSet& fields, 
 		case AggCount:
 		case AggCountCached:
 		case AggUnknown:
-			throw Error(errParams, "Unknown aggregation type %d", aggType_);
+			throw Error(errParams, "Unknown aggregation type {}", int(aggType_));
 	}
 }
 
@@ -307,50 +309,56 @@ static void fillUnorderedFacetResult(std::vector<FacetResult>& result, const Fac
 	copy(begin, end, result, args...);
 }
 
-AggregationResult Aggregator::GetResult() const {
-	AggregationResult ret;
-	ret.fields = names_;
-	ret.type = aggType_;
-
+AggregationResult Aggregator::MoveResult() && {
+	assertrx_throw(isValid_);
+	isValid_ = false;
 	switch (aggType_) {
 		case AggAvg:
 			if (result_) {
-				ret.SetValue(double(hitCount_ == 0 ? 0 : (*result_ / hitCount_)));
+				return AggregationResult{aggType_, std::move(names_), double(hitCount_ == 0 ? 0 : (*result_ / hitCount_))};
 			}
 			break;
 		case AggSum:
 		case AggMin:
 		case AggMax:
 			if (result_) {
-				ret.SetValue(*result_);
+				return AggregationResult{aggType_, std::move(names_), *result_};
 			}
 			break;
-		case AggFacet:
-			std::visit(overloaded{[&](const SinglefieldOrderedMap& fm) { fillOrderedFacetResult(ret.facets, fm, offset_, limit_); },
-								  [&](const SinglefieldUnorderedMap& fm) { fillUnorderedFacetResult(ret.facets, fm, offset_, limit_); },
+		case AggFacet: {
+			std::vector<FacetResult> facets;
+			std::visit(overloaded{[&](const SinglefieldOrderedMap& fm) { fillOrderedFacetResult(facets, fm, offset_, limit_); },
+								  [&](const SinglefieldUnorderedMap& fm) { fillUnorderedFacetResult(facets, fm, offset_, limit_); },
 								  [&](const MultifieldOrderedMap& fm) {
-									  fillOrderedFacetResult(ret.facets, fm, offset_, limit_, fields_, payloadType_);
+									  fillOrderedFacetResult(facets, fm, offset_, limit_, fields_, payloadType_);
 								  },
 								  [&](const MultifieldUnorderedMap& fm) {
-									  fillUnorderedFacetResult(ret.facets, fm, offset_, limit_, fields_, payloadType_);
+									  fillUnorderedFacetResult(facets, fm, offset_, limit_, fields_, payloadType_);
 								  }},
 					   *facets_);
-			break;
-		case AggDistinct:
+			return AggregationResult{aggType_, std::move(names_), std::move(facets)};
+		}
+		case AggDistinct: {
 			assertrx_dbg(distincts_);
-			ret.payloadType = payloadType_;
-			ret.distinctsFields = fields_;
-			ret.distincts.reserve(distincts_->size());
-			for (const Variant& value : *distincts_) {
-				ret.distincts.push_back(value);
+			std::vector<Variant> d;
+			if (!distincts_->empty()) {
+				size_t columnCount = names_.size();
+				d.reserve(distincts_->size() * columnCount);
+				for (const auto& r : *distincts_) {
+					assertf_dbg(r.size() == columnCount, "Incorrect column count size={} columnCount={}", r.size(), columnCount);
+					for (unsigned int k = 0; k < columnCount; k++) {
+						d.emplace_back(r[k]);
+					}
+				}
 			}
-			break;
+			return AggregationResult{aggType_, std::move(names_), std::move(payloadType_), std::move(fields_), std::move(d)};
+		}
 		case AggCount:
 		case AggCountCached:
 		case AggUnknown:
 			throw_as_assert;
 	}
-	return ret;
+	return AggregationResult{aggType_, std::move(names_)};
 }
 
 void Aggregator::Aggregate(const PayloadValue& data) {
@@ -375,29 +383,40 @@ void Aggregator::Aggregate(const PayloadValue& data) {
 		return;
 	}
 
-	assertrx_dbg(fields_.size() == 1);
-	if (fields_[0] == IndexValueType::SetByJsonPath) {
-		ConstPayload pl(payloadType_, data);
-		VariantArray va;
-		const TagsPath& tagsPath = fields_.getTagsPath(0);
-		pl.GetByJsonPath(tagsPath, va, KeyValueType::Undefined{});
-		if (va.IsObjectValue()) {
-			throw Error(errQueryExec, "Cannot aggregate object field");
+	if (fields_.size() == 1) {
+		if (fields_[0] == IndexValueType::SetByJsonPath) {
+			ConstPayload pl(payloadType_, data);
+			VariantArray va;
+			const TagsPath& tagsPath = fields_.getTagsPath(0);
+			pl.GetByJsonPath(tagsPath, va, KeyValueType::Undefined{});
+			if (va.IsObjectValue()) {
+				throw Error(errQueryExec, "Cannot aggregate object field");
+			}
+			for (const Variant& v : va) {
+				aggregate(v);
+			}
+			return;
 		}
-		for (const Variant& v : va) {
-			aggregate(v);
-		}
-		return;
-	}
 
-	const auto& fieldType = payloadType_.Field(fields_[0]);
-	if (!fieldType.IsArray()) {
-		aggregate(PayloadFieldValue(fieldType, data.Ptr() + fieldType.Offset()).Get());
+		const auto& fieldType = payloadType_.Field(fields_[0]);
+		if (!fieldType.IsArray()) {
+			aggregate(PayloadFieldValue(fieldType, data.Ptr() + fieldType.Offset()).Get());
+		} else {
+			PayloadFieldValue::Array* arr = reinterpret_cast<PayloadFieldValue::Array*>(data.Ptr() + fieldType.Offset());
+			uint8_t* ptr = data.Ptr() + arr->offset;
+			for (int i = 0; i < arr->len; i++, ptr += fieldType.ElemSizeof()) {
+				aggregate(PayloadFieldValue(fieldType, ptr).Get());
+			}
+		}
 	} else {
-		PayloadFieldValue::Array* arr = reinterpret_cast<PayloadFieldValue::Array*>(data.Ptr() + fieldType.Offset());
-		uint8_t* ptr = data.Ptr() + arr->offset;
-		for (int i = 0; i < arr->len; i++, ptr += fieldType.ElemSizeof()) {
-			aggregate(PayloadFieldValue(fieldType, ptr).Get());
+		assertrx_throw(aggType_ == AggDistinct);
+		size_t maxIndex = 0;
+		getData(data, distinctDataVector_, maxIndex);
+		for (unsigned int i = 0; i < maxIndex; i++) {
+			DistinctHelpers::FieldsValue values;
+			if (!DistinctHelpers::GetMultiFieldValue(distinctDataVector_, i, fields_.size(), values)) {
+				distincts_->insert(std::move(values));
+			}
 		}
 	}
 }
@@ -422,7 +441,7 @@ void Aggregator::aggregate(const Variant& v) {
 			break;
 		case AggDistinct:
 			assertrx_dbg(distincts_);
-			distincts_->insert(v);
+			distincts_->insert({v});
 			break;
 		case AggUnknown:
 		case AggCount:

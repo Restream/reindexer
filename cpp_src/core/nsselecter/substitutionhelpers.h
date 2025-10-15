@@ -8,7 +8,7 @@ namespace reindexer {
 
 namespace composite_substitution_helpers {
 
-class CompositeValuesCountLimits {
+class [[nodiscard]] CompositeValuesCountLimits {
 public:
 	uint32_t operator[](uint32_t fieldsCount) const noexcept {
 		if rx_unlikely (fieldsCount >= limits_.size()) {
@@ -23,9 +23,9 @@ private:
 	std::array<uint32_t, 6> limits_ = {0, 0, 300, 1000, 2000, 4000};
 };
 
-class CompositeSearcher {
+class [[nodiscard]] CompositeSearcher {
 public:
-	struct IndexData {
+	struct [[nodiscard]] IndexData {
 		IndexData(int field, int _idx, uint16_t entry) : fields(field), idx(_idx), entries{entry} {}
 
 		IndexesFieldsSet fields;
@@ -59,7 +59,7 @@ public:
 				logFmt(LogError,
 					   "<assertion failed>: Unexpected field {} in composite index {}:{} during substitution attempt. Actual composite "
 					   "fields: {}",
-					   field, composite, compositePtr->Name(), idxFields.ToString(FieldsSet::DumpWithMask::No));
+					   field, composite, compositePtr->Name(), idxFields.ToString(DumpWithMask_False));
 				assertrx_dbg(false);
 				continue;
 			}
@@ -156,11 +156,11 @@ private:
 };
 
 // EntriesRange - query entries range. [from; to)
-class EntriesRange {
+class [[nodiscard]] EntriesRange {
 public:
 	EntriesRange(uint16_t from, uint16_t to) : from_(from), to_(to) {
 		if (to_ <= from_) {
-			throw Error(errLogic, "Unexpected range boarders during indexes substitution: [%u,%u)", from_, to_);
+			throw Error(errLogic, "Unexpected range boarders during indexes substitution: [{},{})", from_, to_);
 		}
 	}
 	uint16_t From() const noexcept { return from_; }
@@ -168,7 +168,7 @@ public:
 	void ExtendRight() noexcept { ++to_; }
 	void ExtendLeft() {
 		if (!from_) {
-			throw Error(errLogic, "Unable to extend left range's bound during indexes substitution: [%u,%u)", from_, to_);
+			throw Error(errLogic, "Unable to extend left range's bound during indexes substitution: [{},{})", from_, to_);
 		}
 		--from_;
 	}
@@ -187,14 +187,14 @@ private:
 };
 
 // EntriesRanges - contains ordered vector of entries ranges. Ranges can not intercept with each other
-class EntriesRanges : h_vector<EntriesRange, 8> {
+class [[nodiscard]] EntriesRanges : h_vector<EntriesRange, 8> {
 public:
 	using Base = h_vector<EntriesRange, 8>;
 
 	Base::const_reverse_iterator rbegin() const noexcept { return Base::rbegin(); }
 	Base::const_reverse_iterator rend() const noexcept { return Base::rend(); }
 
-	void Add(span<const uint16_t> entries) {
+	void Add(std::span<const uint16_t> entries) {
 		for (auto entry : entries) {
 			auto insertionPos = Base::end();
 			bool wasMerged = false;

@@ -13,10 +13,10 @@ class LocatorServiceAdapter;
 class LocatorService;
 }  // namespace sharding
 
-class ShardingProxy {
+class [[nodiscard]] ShardingProxy {
 public:
 	ShardingProxy(ReindexerConfig cfg);
-	Error Connect(const std::string& dsn, ConnectOpts opts);
+	Error Connect(const std::string& dsn, ConnectOpts opts) RX_REQUIRES(!connectMtx_);
 	Error OpenNamespace(std::string_view nsName, const StorageOpts& opts, const NsReplicationOpts& replOpts, const RdxContext& ctx);
 	Error AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts, const RdxContext& ctx);
 	Error CloseNamespace(std::string_view nsName, const RdxContext& ctx);
@@ -27,12 +27,8 @@ public:
 	Error UpdateIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx);
 	Error DropIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx);
 	Error SetSchema(std::string_view nsName, std::string_view schema, const RdxContext& ctx);
-	Error GetSchema(std::string_view nsName, int format, std::string& schema, const RdxContext& ctx) {
-		return impl_.GetSchema(nsName, format, schema, ctx);
-	}
-	Error EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const RdxContext& ctx) {
-		return impl_.EnumNamespaces(defs, opts, ctx);
-	}
+	Error GetSchema(std::string_view nsName, int format, std::string& schema, const RdxContext& ctx);
+	Error EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const RdxContext& ctx);
 	Error Insert(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Insert(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx);
 	Error Update(std::string_view nsName, Item& item, const RdxContext& ctx);
@@ -43,67 +39,37 @@ public:
 	Error Delete(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Delete(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx);
 	Error Delete(const Query& query, QueryResults& result, const RdxContext& ctx);
-	Error Select(std::string_view sql, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx);
+	Error ExecSQL(std::string_view sql, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx);
 	Error Select(const Query& query, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx);
-	Item NewItem(std::string_view nsName, const RdxContext& ctx) { return impl_.NewItem(nsName, ctx); }
+	Item NewItem(std::string_view nsName, const RdxContext& ctx);
 
 	Transaction NewTransaction(std::string_view nsName, const RdxContext& ctx);
 	Error CommitTransaction(Transaction& tr, QueryResults& result, const RdxContext& ctx);
-	Error RollBackTransaction(Transaction& tr, const RdxContext& ctx) { return impl_.RollBackTransaction(tr, ctx); }
+	Error RollBackTransaction(Transaction& tr, const RdxContext& ctx);
 
-	Error GetMeta(std::string_view nsName, const std::string& key, std::string& data, const RdxContext& ctx) {
-		return impl_.GetMeta(nsName, key, data, ctx);
-	}
+	Error GetMeta(std::string_view nsName, const std::string& key, std::string& data, const RdxContext& ctx);
 	Error GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data, const RdxContext& ctx);
 	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const RdxContext& ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const RdxContext& ctx);
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const RdxContext& ctx);
 
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions, const RdxContext& ctx) {
-		return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, ctx);
-	}
-	Error Status() noexcept {
-		if (connected_.load(std::memory_order_acquire)) {
-			return {};
-		}
-		auto st = impl_.Status();
-		if (st.ok()) {
-			return Error(errNotValid, "Reindexer's sharding proxy layer was not initialized properly");
-		}
-		return st;
-	}
-	Error GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces) { return impl_.GetProtobufSchema(ser, namespaces); }
-	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& ctx) {
-		return impl_.GetReplState(nsName, state, ctx);
-	}
-	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status, const RdxContext& ctx) {
-		return impl_.SetClusterizationStatus(nsName, status, ctx);
-	}
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions, const RdxContext& ctx);
+	Error Status() noexcept;
+	Error GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces);
+	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& ctx);
+	Error SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const RdxContext& ctx);
 	bool NeedTraceActivity() const noexcept { return impl_.NeedTraceActivity(); }
-	Error InitSystemNamespaces() { return impl_.InitSystemNamespaces(); }
-	Error GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const RdxContext& ctx) {
-		return impl_.GetSnapshot(nsName, opts, snapshot, ctx);
-	}
-	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& ctx) {
-		return impl_.ApplySnapshotChunk(nsName, ch, ctx);
-	}
+	Error GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const RdxContext& ctx);
+	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& ctx);
 	Error CreateTemporaryNamespace(std::string_view baseName, std::string& resultName, const StorageOpts& opts, lsn_t nsVersion,
-								   const RdxContext& ctx) {
-		return impl_.CreateTemporaryNamespace(baseName, resultName, opts, nsVersion, ctx);
-	}
-	Error SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const RdxContext& ctx) {
-		return impl_.SetTagsMatcher(nsName, std::move(tm), ctx);
-	}
-	Error DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index, const RdxContext& ctx) {
-		return impl_.DumpIndex(os, nsName, index, ctx);
-	}
+								   const RdxContext& ctx);
+	Error SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const RdxContext& ctx);
+	Error DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index, const RdxContext& ctx);
 
-	Error ClusterControlRequest(const ClusterControlRequestData& request) { return impl_.ClusterControlRequest(request); }
-	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response) {
-		return impl_.SuggestLeader(suggestion, response);
-	}
-	Error LeadersPing(const cluster::NodeData& leader) { return impl_.LeadersPing(leader); }
-	Error GetRaftInfo(cluster::RaftInfo& info, const RdxContext& ctx) { return impl_.GetRaftInfo(info, ctx); }
+	Error ClusterControlRequest(const ClusterControlRequestData& request);
+	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
+	Error LeadersPing(const cluster::NodeData& leader);
+	Error GetRaftInfo(cluster::RaftInfo& info, const RdxContext& ctx);
 
 	void ShutdownCluster();
 
@@ -134,21 +100,14 @@ public:
 	Error ShardingControlRequest(const sharding::ShardingControlRequestData& request, sharding::ShardingControlResponseData& response,
 								 const RdxContext& ctx) noexcept;
 
-	Error SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg) {
-		return impl_.SubscribeUpdates(observer, std::move(cfg));
-	}
-	Error UnsubscribeUpdates(IEventsObserver& observer) { return impl_.UnsubscribeUpdates(observer); }
+	Error SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg);
+	Error UnsubscribeUpdates(IEventsObserver& observer);
 
-	// REINDEX_WITH_V3_FOLLOWERS
-	Error SubscribeUpdates(IUpdatesObserverV3* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
-		return impl_.SubscribeUpdates(observer, filters, opts);
-	}
-	Error UnsubscribeUpdates(IUpdatesObserverV3* observer) { return impl_.UnsubscribeUpdates(observer); }
-	// REINDEX_WITH_V3_FOLLOWERS
+	RX_ALWAYS_INLINE bool IsConnected() const noexcept { return connected_.load(std::memory_order_relaxed); }
 
 private:
-	using ItemModifyFT = Error (client::Reindexer::*)(std::string_view, client::Item&);
-	using ItemModifyQrFT = Error (client::Reindexer::*)(std::string_view, client::Item&, client::QueryResults&);
+	using ItemModifyFT = Error (client::Reindexer::*)(std::string_view, client::Item&) noexcept;
+	using ItemModifyQrFT = Error (client::Reindexer::*)(std::string_view, client::Item&, client::QueryResults&) noexcept;
 
 	static WrSerializer& getActivitySerializer() noexcept {
 		thread_local static WrSerializer ser;
@@ -203,7 +162,7 @@ private:
 
 	bool needProxyWithinCluster(const RdxContext& ctx);
 
-	enum class ConfigResetFlag { RollbackApplied = 0, ResetExistent = 1 };
+	enum class [[nodiscard]] ConfigResetFlag { RollbackApplied = 0, ResetExistent = 1 };
 	// Resetting the existing sharding configs on other shards before applying the new one OR
 	// Rollback (perhaps) applied candidate after unsuccessful applyNewShardingConfig on other shards
 	template <ConfigResetFlag resetFlag>
@@ -213,7 +172,7 @@ private:
 	void obtainConfigForResetRouting(std::optional<cluster::ShardingConfig>& config, ConfigResetFlag resetFlag,
 									 const RdxContext& ctx) const;
 
-	struct NamespaceDataChecker {
+	struct [[nodiscard]] NamespaceDataChecker {
 		NamespaceDataChecker(const cluster::ShardingConfig::Namespace& ns, int thisShardId) noexcept : ns_(ns), thisShardId_(thisShardId) {}
 		void Check(ShardingProxy& proxy, const RdxContext& ctx);
 
@@ -236,12 +195,12 @@ private:
 	using RLocker = contexted_shared_lock<Mutex, const RdxContext>;
 	using WLocker = contexted_unique_lock<Mutex, const RdxContext>;
 
-	struct ShardingRouter {
+	struct [[nodiscard]] ShardingRouter {
 	private:
 		template <typename Locker, typename LocatorServiceSharedPtr>
-		struct ShardingRouterTSWrapper {
-			const auto& operator->() const { return locatorService_; }
-			ShardingRouterTSWrapper(Locker lock, LocatorServiceSharedPtr& locatorService)
+		struct [[nodiscard]] ShardingRouterTSWrapper {
+			const auto& operator->() const noexcept { return locatorService_; }
+			ShardingRouterTSWrapper(Locker lock, LocatorServiceSharedPtr& locatorService) noexcept
 				: lock_(std::move(lock)), locatorService_(locatorService) {}
 
 			void Reset(typename LocatorServiceSharedPtr::element_type* prt = nullptr) noexcept { locatorService_.reset(prt); }
@@ -250,13 +209,11 @@ private:
 					return *this;
 				}
 
-				locatorService_ = sharedPrt;
+				locatorService_ = std::move(sharedPrt);
 				return *this;
 			}
-
-			void Unlock() { lock_.unlock(); }
-
-			operator bool() const noexcept { return (bool)locatorService_; }
+			void Unlock() noexcept { lock_.unlock(); }
+			operator bool() const noexcept { return static_cast<bool>(locatorService_); }
 
 		private:
 			Locker lock_;
@@ -265,10 +222,10 @@ private:
 
 	public:
 		auto SharedLock(const RdxContext& ctx) const { return ShardingRouterTSWrapper{RLocker(mtx_, ctx), locatorService_}; }
-		auto SharedLock() const { return ShardingRouterTSWrapper{shared_lock(mtx_), locatorService_}; }
+		auto SharedLock() const RX_REQUIRES(!mtx_) { return ShardingRouterTSWrapper{shared_lock(mtx_), locatorService_}; }
 
 		auto UniqueLock(const RdxContext& ctx) { return ShardingRouterTSWrapper{WLocker(mtx_, ctx), locatorService_}; }
-		auto UniqueLock() { return ShardingRouterTSWrapper{std::unique_lock(mtx_), locatorService_}; }
+		auto UniqueLock() { return ShardingRouterTSWrapper{unique_lock(mtx_), locatorService_}; }
 
 		auto SharedPtr(const RdxContext& ctx) const;
 
@@ -279,30 +236,17 @@ private:
 
 	ShardingRouter shardingRouter_;
 
-	struct ConfigCandidate {
+	struct [[nodiscard]] ConfigCandidate {
 	private:
 		template <typename Locker, typename ConfigCandidateType>
-		struct ConfigCandidateTSWrapper {
+		struct [[nodiscard]] ConfigCandidateTSWrapper {
 			ConfigCandidateTSWrapper(Locker&& lock, ConfigCandidateType& configCandidate) noexcept
 				: lock_(std::move(lock)), configCandidate_(configCandidate) {}
 
 			auto& SourceId() const { return configCandidate_.sourceId_; }
 			auto& Config() const { return configCandidate_.config_; }
-			template <typename F>
-			void InitReseterThread(F&& f) const {
-				if (configCandidate_.reseter_.joinable()) {
-					throw Error(errLogic, "Sharding config candidate's reset thread is already running");
-				}
-
-				configCandidate_.reseter_ = std::thread(std::forward<F>(f));
-			}
-			void ShutdownReseter() noexcept {
-				if (configCandidate_.reseter_.joinable()) {
-					configCandidate_.reseterEnabled_ = false;
-					configCandidate_.reseter_.join();
-					configCandidate_.reseterEnabled_ = true;
-				}
-			}
+			void InitReseterThread(std::function<void()>&& f) const;
+			void ShutdownReseter() noexcept;
 
 		private:
 			Locker lock_;
@@ -313,40 +257,12 @@ private:
 		auto SharedLock(const RdxContext& ctx) const { return ConfigCandidateTSWrapper{RLocker(mtx_, ctx), *this}; }
 		auto UniqueLock(const RdxContext& ctx) { return ConfigCandidateTSWrapper{WLocker(mtx_, ctx), *this}; }
 
-		auto SharedLock() const { return ConfigCandidateTSWrapper{shared_lock(mtx_), *this}; }
-		auto UniqueLock() { return ConfigCandidateTSWrapper{std::unique_lock(mtx_), *this}; }
+		auto SharedLock() const RX_REQUIRES(!mtx_) { return ConfigCandidateTSWrapper{shared_lock(mtx_), *this}; }
+		auto UniqueLock() { return ConfigCandidateTSWrapper{unique_lock(mtx_), *this}; }
 
-		bool NeedStopReseter() const {
-			if (!reseterEnabled_) {
-				return true;
-			}
-
-			if (auto lock = std::unique_lock(mtx_, std::try_to_lock_t{})) {
-				return !config_;
-			}
-
-			return false;
-		}
-
-		bool TryResetConfig() {
-			if (!reseterEnabled_) {
-				return true;
-			}
-
-			if (auto lock = std::unique_lock(mtx_, std::try_to_lock_t{})) {
-				config_ = std::nullopt;
-				logPrintf(LogWarning, "Timeout for applying the new sharding config. Config candidate removed. Source - %d", sourceId_);
-				return true;
-			}
-
-			return false;
-		}
-
-		~ConfigCandidate() {
-			if (reseter_.joinable()) {
-				reseter_.join();
-			}
-		}
+		bool NeedStopReseter() const;
+		bool TryResetConfig();
+		~ConfigCandidate();
 
 	private:
 		mutable Mutex mtx_;
