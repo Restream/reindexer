@@ -1,6 +1,5 @@
 #pragma once
 
-#include <unordered_map>
 #include "core/cjson/tagspath.h"
 #include "core/keyvalue/variant.h"
 #include "tools/serializer.h"

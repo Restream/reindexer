@@ -21,8 +21,6 @@ std::string_view SelectIterator::TypeName() const noexcept {
 			return "RevSingleIdset"sv;
 		case RevSingleIdSetWithDeferedSort:
 			return "RevSingleIdSetWithDeferedSort"sv;
-		case OnlyComparator:
-			return "OnlyComparator"sv;
 		case Unsorted:
 			return "Unsorted"sv;
 		case UnbuiltSortOrdersIndex:

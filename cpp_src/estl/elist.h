@@ -29,10 +29,27 @@ public:
 	const_iterator end() const noexcept { return list_.end(); }
 	const_iterator cend() const noexcept { return list_.cend(); }
 	template <typename... Args>
+	void push_back(Args&&... args) {
+		list_.push_back(std::forward<Args>(args)...);
+		++size_;
+	}
+	template <typename... Args>
 	reference emplace_back(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
 		auto& val = list_.emplace_back(std::forward<Args>(args)...);
 		++size_;
 		return val;
+	}
+	template <typename... Args>
+	reference emplace_front(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
+		auto& val = list_.emplace_front(std::forward<Args>(args)...);
+		++size_;
+		return val;
+	}
+	template <typename... Args>
+	iterator emplace(const_iterator position, Args&&... args) {
+		auto it = list_.emplace(position, std::forward<Args>(args)...);
+		++size_;
+		return it;
 	}
 	iterator insert(const_iterator pos, T&& v) {
 		auto res = list_.insert(pos, std::move(v));
@@ -52,6 +69,46 @@ public:
 	void pop_front() noexcept {
 		list_.pop_front();
 		--size_;
+	}
+	void pop_back() noexcept {
+		list_.pop_back();
+		--size_;
+	}
+	reference back() noexcept { return list_.back(); }
+	const_reference back() const noexcept { return list_.back(); }
+	reference front() noexcept { return list_.front(); }
+	const_reference front() const noexcept { return list_.front(); }
+	void splice(const_iterator position, elist&& r) noexcept {
+		list_.splice(position, std::move(r.list_));
+		size_ += r.size_;
+		r.size_ = 0;
+	}
+	void splice(const_iterator position, elist& r) noexcept {
+		list_.splice(position, r.list_);
+		size_ += r.size_;
+		r.size_ = 0;
+	}
+	void splice(const_iterator position, elist&& r, const_iterator it) noexcept {
+		list_.splice(position, std::move(r.list_), it);
+		++size_;
+		--r.size_;
+	}
+	void splice(const_iterator position, elist& r, const_iterator it) noexcept {
+		list_.splice(position, r.list_, it);
+		++size_;
+		--r.size_;
+	}
+	void splice(const_iterator position, elist&& r, const_iterator first, const_iterator last) noexcept {
+		const auto diffSize = std::distance(first, last);
+		list_.splice(position, std::move(r.list_), first, last);
+		size_ += diffSize;
+		r.size_ -= diffSize;
+	}
+	void splice(const_iterator position, elist& r, const_iterator first, const_iterator last) noexcept {
+		const auto diffSize = std::distance(first, last);
+		list_.splice(position, r.list_, first, last);
+		size_ += diffSize;
+		r.size_ -= diffSize;
 	}
 	size_type size() const noexcept { return size_; }
 	bool empty() const noexcept { return !size_; }

@@ -302,8 +302,6 @@ public:
 
 	class [[nodiscard]] Iterator {
 	public:
-		// FIXME: Remove default ctor (requires python binding update) - ToDo remove after release pyreindexer 0.5.700
-		Iterator() = default;
 		Iterator(const QueryResults* qr, int64_t idx, std::optional<LocalQueryResults::ConstIterator> localIt)
 			: qr_(qr), idx_(idx), localIt_(std::move(localIt)) {}
 

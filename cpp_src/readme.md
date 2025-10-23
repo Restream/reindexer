@@ -92,7 +92,7 @@ dnf update
 dnf install reindexer-server
 ```
 
-Available distros: `redos-7`.
+Available distros: `redos-7`, `redos-8`.
 
 ### AltLinux
 
@@ -321,6 +321,12 @@ will be created automatically (default login/password are `reindexer`/`reindexer
 Along with the `MD5` algorithm, the `SHA256`-based `SHA512`-based password hashing algorithm can also be used for authentication. To use them, it is necessary that `openssl` and the `libcrypto` library are installed in the system, which is connected dynamically if the Reindexer is built with the `openssl` support option (by default). 
 
 Upon successful loading of `libcrypto` library symbols, a corresponding entry or error information should appear in the log.
+
+### Masking
+
+If reindexer runs with `security`-flag enabled, `DSNs` credentials for `sharding` and `async_replication` in `#config`-namespaces will be masked for all non-admin users and filtering by those fields will be disabled.
+
+`DSNs` credentials in RPC-logs and `#replicationstats` are always masked.
 
 #### MacOS
 

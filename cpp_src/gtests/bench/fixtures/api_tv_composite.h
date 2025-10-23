@@ -2,7 +2,6 @@
 
 #include <string>
 #include <vector>
-
 #include "base_fixture.h"
 
 class [[nodiscard]] ApiTvComposite : private BaseFixture {

@@ -72,7 +72,7 @@ paths:
                 $ref: "#/components/schemas/StatusResponse"
 
 components:
-  schemas:    
+  schemas:
     StatusResponse:
       type: "object"
       properties:

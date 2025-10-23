@@ -68,13 +68,28 @@ void RxSelector::preselectSubQuriesMain(const Query& q, std::optional<Query>& qu
 	}
 }
 
+RankOrdering GetRankOrdering(QueryRankType type, const SortingEntries& sortingEntries) {
+	switch (type) {
+		case QueryRankType::No:
+			return RankOrdering::Off;
+		case QueryRankType::FullText:
+		case QueryRankType::KnnIP:
+		case QueryRankType::KnnCos:
+			return RankOrdering::Desc;
+		case QueryRankType::KnnL2:
+			return RankOrdering::Asc;
+		case QueryRankType::Hybrid:
+			return (sortingEntries.empty() || sortingEntries[0].desc) ? RankOrdering::Desc : RankOrdering::Asc;
+		case QueryRankType::NotSet:
+			break;
+	}
+	throw_as_assert;
+}
+
 template <typename LockerType, typename QueryType>
 void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, LockerType& locks,
 						  FtFunctionsHolder& func, const RdxContext& ctx, QueryStatCalculator<QueryType>& queryStatCalculator) {
 	auto ns = locks.Get(q.NsName());
-	if rx_unlikely (!ns) {
-		throw Error(errParams, "Namespace '{}' does not exist", q.NsName());
-	}
 	std::vector<LocalQueryResults> queryResultsHolder;
 	ExplainCalc::Duration preselectTimeTotal{0};
 	std::vector<SubQueryExplain> subQueryExplains;
@@ -101,7 +116,10 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 		result.joined_[0].SetJoinedSelectorsCount(mainJoinedSelectors.size());
 		preselectTimeTotal += ExplainCalc::Clock::now() - preselectStartTime;
 	}
-	RankedTypeQuery rankedTypeQuery{RankedTypeQuery::NotSet};
+	QueryRankType commonQueryRankType{QueryRankType::NotSet};
+	auto commonLimit = query.Limit();
+	auto commonOffset = query.Offset();
+	auto commonRankOrdering = RankOrdering::Off;
 	{
 		SelectCtxWithJoinPreSelect selCtx(query, nullptr, &result.GetFloatVectorsHolder());
 		selCtx.joinedSelectors = mainJoinedSelectors.size() ? &mainJoinedSelectors : nullptr;
@@ -112,9 +130,6 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 		selCtx.subQueriesExplains = std::move(subQueryExplains);
 		if (!query.GetMergeQueries().empty()) {
 			selCtx.isMergeQuery = IsMergeQuery_True;
-			if rx_unlikely (!query.GetSortingEntries().empty()) {
-				throw Error{errNotValid, "Sorting in merge query is not implemented yet"};	// TODO #1449
-			}
 			for (const auto& a : query.aggregations_) {
 				switch (a.Type()) {
 					case AggCount:
@@ -131,11 +146,19 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 									AggTypeToStr(a.Type())};  // TODO #1506
 				}
 			}
+			if (QueryEntry::kDefaultLimit - commonOffset > commonLimit) {
+				commonLimit += commonOffset;
+			} else {
+				commonLimit = QueryEntry::kDefaultLimit;
+			}
+			commonOffset = QueryEntry::kDefaultOffset;
 		}
 		selCtx.requiresCrashTracking = true;
+		selCtx.limit = commonLimit;
+		selCtx.offset = commonOffset;
 		ns->Select(result, selCtx, ctx);
 		result.AddNamespace(ns, true);
-		rankedTypeQuery = selCtx.rankedTypeQuery;
+		commonQueryRankType = selCtx.queryRankType;
 		if (selCtx.explain.IsEnabled()) {
 			queryStatCalculator.AddExplain(selCtx.explain);
 		}
@@ -143,6 +166,10 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 	// should be destroyed after results.lockResults()
 	std::vector<JoinedSelectors> mergeJoinedSelectors;
 	if (!query.GetMergeQueries().empty()) {
+		if rx_unlikely (commonQueryRankType != QueryRankType::Hybrid && !query.GetSortingEntries().empty()) {
+			throw Error{errNotValid, "Sorting in merge query is not implemented yet"};	// TODO #1449
+		}
+		commonRankOrdering = GetRankOrdering(commonQueryRankType, query.GetSortingEntries());
 		mergeJoinedSelectors.reserve(query.GetMergeQueries().size());
 		uint16_t counter = 0;
 
@@ -164,8 +191,11 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			if rx_unlikely (isSystemNamespaceNameFast(mq.NsName())) {
 				throw Error(errParams, "Queries to system namespaces ('{}') are not supported inside MERGE statement", mq.NsName());
 			}
-			if rx_unlikely (!mq.GetSortingEntries().empty()) {
+			if rx_unlikely (commonQueryRankType != QueryRankType::Hybrid && !mq.GetSortingEntries().empty()) {
 				throw Error(errParams, "Sorting in inner merge query is not allowed");
+			}
+			if rx_unlikely (commonRankOrdering != GetRankOrdering(commonQueryRankType, mq.GetSortingEntries())) {
+				throw Error(errParams, "All merging queries should have the same ordering (ASC or DESC)");
 			}
 			if rx_unlikely (!mq.aggregations_.empty() || mq.HasCalcTotal()) {
 				throw Error(errParams, "Aggregations in inner merge query are not allowed");
@@ -194,9 +224,11 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 				throw Error(errForbidden, "Too many namespaces requested in query result: {}", counter);
 			}
 			mctx.isMergeQuery = IsMergeQuery_True;
-			mctx.rankedTypeQuery = rankedTypeQuery;
+			mctx.queryRankType = commonQueryRankType;
 			mctx.functions = &func;
 			mctx.contextCollectingMode = true;
+			mctx.limit = commonLimit;
+			mctx.offset = commonOffset;
 			if (thereAreJoins) {
 				auto& mjs = mergeJoinedSelectors.emplace_back(
 					prepareJoinedSelectors(mQuery, result, locks, func, joinQueryResultsContexts, SetLimit0ForChangeJoin_False, ctx));
@@ -212,7 +244,7 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			result.Erase(itemRefVec.begin(), itemRefVec.end());
 			return;
 		}
-		switch (ToRankOrdering(rankedTypeQuery)) {
+		switch (commonRankOrdering) {
 			case RankOrdering::Off:
 				boost::sort::pdqsort(itemRefVec.begin().NotRanked(), itemRefVec.end().NotRanked(), ItemRefLess());
 				break;
@@ -240,9 +272,6 @@ void RxSelector::DoPreSelectForUpdateDelete(const Query& q, std::optional<Query>
 											FloatVectorsHolderMap* fvHolder, const RdxContext& rdxCtx) {
 	FtFunctionsHolder func;
 	auto ns = locks.Get(q.NsName());
-	if rx_unlikely (!ns) {
-		throw Error(errParams, "Namespace '{}' does not exist", q.NsName());
-	}
 
 	std::vector<LocalQueryResults> queryResultsHolder;
 	ExplainCalc::Duration preselectTimeTotal{0};
@@ -508,7 +537,6 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 		return joinedSelectors;
 	}
 	auto ns = locks.Get(q.NsName());
-	assertrx_throw(ns);
 
 	// For each joined queries
 	for (size_t i = 0, jqCount = q.GetJoinQueries().size(); i < jqCount; ++i) {

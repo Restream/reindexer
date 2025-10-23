@@ -30,39 +30,6 @@ public:
 		}
 	}
 
-	template <typename T>
-	static void AssertJsonFieldEqualTo(const std::string& str, const char* fieldName, std::initializer_list<T> v) {
-		const auto values = adoptValuesType(v);
-		std::string::size_type pos = findField(str, fieldName, 0);
-		size_t i = 0;
-		for (auto it = values.begin(); it != values.end(); ++i, ++it) {
-			ASSERT_NE(pos, std::string::npos) << str << ": Field '" << fieldName << "' found less then expected (Expected " << values.size()
-											  << ')';
-			const auto fieldValue = readFieldValue<typename decltype(values)::value_type>(str, pos);
-			ASSERT_EQ(*it, fieldValue) << str << ": Field '" << fieldName << "' value number " << i << " missmatch. Expected: '" << *it
-									   << "', got '" << fieldValue << '\'';
-			pos = findField(str, fieldName, pos + 1);
-		}
-		ASSERT_EQ(pos, std::string::npos) << str << ": Field '" << fieldName << "' found more then expected (Expected " << values.size()
-										  << ')';
-	}
-
-	template <typename T>
-	static std::vector<T> GetJsonFieldValues(const std::string& str, const char* fieldName) {
-		std::vector<T> result;
-		std::string::size_type pos = findField(str, fieldName, 0);
-		while (pos != std::string::npos) {
-			result.push_back(readFieldValue<T>(str, pos));
-			pos = findField(str, fieldName, pos + 1);
-		}
-		return result;
-	}
-
-	static void AssertJsonFieldAbsent(const std::string& str, const char* fieldName) {
-		const std::string::size_type pos = findField(str, fieldName, 0);
-		ASSERT_EQ(pos, std::string::npos) << str << ": Field '" << fieldName << "' found";
-	}
-
 	static int RandInt() noexcept {
 		// Using 49 here for more predictable selection plan
 		return rand() % 49;
@@ -77,42 +44,6 @@ public:
 	constexpr static int kNsSize = 2000;
 
 private:
-	static std::string::size_type findField(const std::string& str, const char* fieldName, std::string::size_type pos) {
-		return str.find('"' + std::string(fieldName) + "\":", pos);
-	}
-
-	static std::string::size_type findFieldValueStart(const std::string& str, std::string::size_type pos) {
-		assertrx(pos + 1 < str.size());
-		pos = str.find("\":", pos + 1);
-		assertrx(pos != std::string::npos);
-		assertrx(pos + 2 < str.size());
-		pos = str.find_first_not_of(" \t\n", pos + 2);
-		assertrx(pos != std::string::npos);
-		return pos;
-	}
-
-	template <typename T>
-	static T readFieldValue(const std::string&, std::string::size_type);
-
-	template <typename T>
-	static std::vector<T> adoptValuesType(std::initializer_list<T> values) {
-		std::vector<T> result;
-		result.reserve(values.size());
-		for (const T& v : values) {
-			result.push_back(v);
-		}
-		return result;
-	}
-
-	static std::vector<std::string> adoptValuesType(std::initializer_list<const char*> values) {
-		std::vector<std::string> result;
-		result.reserve(values.size());
-		for (const char* v : values) {
-			result.emplace_back(v);
-		}
-		return result;
-	}
-
 	Item makeItem(const char* ns, int id) {
 		Item item = NewItem(ns);
 		if (item.Status().ok()) {
@@ -153,12 +84,3 @@ private:
 		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
 };
-
-template <>
-std::string SelectorPlanTest::readFieldValue<std::string>(const std::string&, std::string::size_type);
-template <>
-bool SelectorPlanTest::readFieldValue<bool>(const std::string&, std::string::size_type);
-template <>
-int SelectorPlanTest::readFieldValue<int>(const std::string&, std::string::size_type);
-template <>
-int64_t SelectorPlanTest::readFieldValue<int64_t>(const std::string&, std::string::size_type);

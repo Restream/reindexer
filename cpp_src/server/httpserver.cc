@@ -1930,9 +1930,10 @@ Reindexer HTTPServer::getDB(http::Context& ctx, std::string* dbNameOut) {
 	} else if constexpr (role >= kRoleDataWrite) {
 		timeout = timeoutSec.has_value() ? std::chrono::seconds(timeoutSec.value()) : serverConfig_.HttpWriteTimeout();
 	}
+	const auto needMaskDSN = NeedMaskingDSN(actx->UserRights() < kRoleDBAdmin);
 	return db->NeedTraceActivity()
-			   ? db->WithContextParams(timeout, ctx.request->clientAddr, std::string(ctx.request->headers.Get("User-Agent")))
-			   : db->WithTimeout(timeout);
+			   ? db->WithContextParams(timeout, needMaskDSN, ctx.request->clientAddr, std::string(ctx.request->headers.Get("User-Agent")))
+			   : db->WithContextParams(timeout, needMaskDSN, std::string(), std::string());
 }
 
 std::string HTTPServer::getNameFromJson(std::string_view json) {

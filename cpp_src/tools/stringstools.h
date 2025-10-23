@@ -270,6 +270,7 @@ bool endsWith(const std::string& source, std::string_view ending) noexcept;
 std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
 Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
+void charMultilinePos(std::string_view str, size_t pos, size_t search_start, size_t& line, size_t& col) noexcept;
 
 std::string randStringAlph(size_t len);
 

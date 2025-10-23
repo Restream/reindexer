@@ -37,7 +37,7 @@ Error ProxiedTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 		if (!itemFromCache) {
 			return e;
 		}
-		// Update cache, if got error on item convertion
+		// Update cache, if got error on item conversion
 		itemFromCache = false;
 		clientItem = tx_.NewItem();
 		if (!clientItem.Status().ok()) {

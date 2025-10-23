@@ -30,6 +30,7 @@ struct [[nodiscard]] IndexMemStat {
 	size_t idsetPlainSize = 0;
 	size_t sortOrdersSize = 0;
 	size_t indexingStructSize = 0;
+	size_t vectorsKeeperSize = 0;
 	size_t columnSize = 0;
 	size_t trackedUpdatesCount = 0;
 	size_t trackedUpdatesBuckets = 0;
@@ -38,7 +39,7 @@ struct [[nodiscard]] IndexMemStat {
 	std::optional<bool> isBuilt;  // KNN-indexes|fast-text indexes only
 	LRUCacheMemStat idsetCache;
 	size_t GetFullIndexStructSize() const noexcept {
-		return idsetPlainSize + idsetBTreeSize + sortOrdersSize + columnSize + trackedUpdatesSize + indexingStructSize;
+		return idsetPlainSize + idsetBTreeSize + sortOrdersSize + columnSize + trackedUpdatesSize + indexingStructSize + vectorsKeeperSize;
 	}
 };
 

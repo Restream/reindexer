@@ -284,11 +284,17 @@ void FtDSLQuery::parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_v
 
 	std::string fname = utf16_to_utf8(std::wstring_view(beg, std::distance(beg, end)));
 	auto f = fields_.find(fname);
-	if (f == fields_.end()) {
+	if rx_unlikely (f == fields_.end()) {
 		throw Error(errLogic, "Field '{}' is not included into fulltext index", fname);
 	}
-	assertf(f->second < int(fieldsOpts.size()), "f={},fieldsOpts.size()={}", f->second, fieldsOpts.size());
-	fieldsOpts[f->second] = {boost, needSumRank};
+	// No reason to handle other strcit modes here: non-existing fields are already forbidden
+	if rx_unlikely (strictMode_ == StrictModeIndexes && !f->second.isIndexed) {
+		throw Error(errStrictMode,
+					"Field '{}' in fulltext DSL is not indexed. With current strict mode all explicit fields in DSL must be indexed",
+					fname);
+	}
+	assertf(f->second.fieldNumber < fieldsOpts.size(), "f={},fieldsOpts.size()={}", f->second.fieldNumber, fieldsOpts.size());
+	fieldsOpts[f->second.fieldNumber] = {boost, needSumRank};
 }
 
 void FtDSLQuery::parseFieldsOpts(wchar_t*& str, h_vector<FtDslFieldOpts, 8>& fieldsOpts) {

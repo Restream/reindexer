@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/cjson/tagspath.h"
-#include "core/keyvalue/float_vectors_holder.h"
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadiface.h"
 #include "core/queryresults/fields_filter.h"
@@ -12,6 +11,7 @@ namespace reindexer {
 
 class Serializer;
 class WrSerializer;
+class FloatVectorsHolderVector;
 
 class [[nodiscard]] CJsonDecoder {
 public:

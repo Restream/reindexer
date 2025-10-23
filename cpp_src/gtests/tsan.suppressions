@@ -4,3 +4,7 @@ race:leveldb::Arena::AllocateNewBlock
 race:leveldb::port::AtomicPointer::Acquire_Load
 race:leveldb::port::AtomicPointer::Acquire_Store
 race:leveldb::Slice::compare
+
+# Uninstrumented library. May report races during exceptions handling/stack unwinding
+# (for example, in ReindexerApi.ConcurrentRenaming test with GCC 14 on Ubuntu 24.04)
+called_from_lib:libunwind

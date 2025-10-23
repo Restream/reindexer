@@ -24,8 +24,8 @@ public:
 		radius_ = radius;
 		return *static_cast<Derived*>(this);
 	}
-	Derived&& K(std::optional<size_t> k) && noexcept { return std::move(K(std::move(k))); }
-	Derived& K(std::optional<size_t> k) & noexcept {
+	constexpr Derived&& K(std::optional<size_t> k) && noexcept { return std::move(K(std::move(k))); }
+	constexpr Derived& K(std::optional<size_t> k) & noexcept {
 		k_ = k;
 		return *static_cast<Derived*>(this);
 	}
@@ -91,8 +91,8 @@ public:
 	using Base::Radius;
 	explicit HnswSearchParams() = default;
 	size_t Ef() const noexcept { return ef_; }
-	HnswSearchParams&& Ef(size_t ef) && noexcept { return std::move(Ef(ef)); }
-	HnswSearchParams& Ef(size_t ef) & noexcept {
+	constexpr HnswSearchParams&& Ef(size_t ef) && noexcept { return std::move(Ef(ef)); }
+	constexpr HnswSearchParams& Ef(size_t ef) & noexcept {
 		ef_ = ef;
 		return *this;
 	}
@@ -122,8 +122,8 @@ public:
 	using Base::Radius;
 	explicit IvfSearchParams() = default;
 	size_t NProbe() const noexcept { return nprobe_; }
-	IvfSearchParams&& NProbe(size_t nprobe) && noexcept { return std::move(NProbe(nprobe)); }
-	IvfSearchParams& NProbe(size_t nprobe) & noexcept {
+	constexpr IvfSearchParams&& NProbe(size_t nprobe) && noexcept { return std::move(NProbe(nprobe)); }
+	constexpr IvfSearchParams& NProbe(size_t nprobe) & noexcept {
 		nprobe_ = nprobe;
 		return *this;
 	}

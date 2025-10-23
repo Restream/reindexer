@@ -7,12 +7,16 @@ namespace reindexer {
 void ClusterControlRequestData::GetJSON(WrSerializer& ser) const {
 	JsonBuilder request(ser);
 	request.Put("type", int(type));
-	{
-		auto payloadBuilder = request.Object("payload");
-		std::visit([&payloadBuilder](const auto& d) { d.GetJSON(payloadBuilder); }, data);
-	}
+
+	std::visit(overloaded{[&request, this](const SetClusterLeaderCommand& d) {
+							  assertrx_throw(Type::ChangeLeader == Type(type));
+							  auto payloadBuilder = request.Object("payload");
+							  d.GetJSON(payloadBuilder);
+						  },
+						  [this](const ForceElectionsCommand) { assertrx_throw(Type::ForceEletions == Type(type)); }},
+			   data);
 }
-Error ClusterControlRequestData::FromJSON(std::span<char> json) {
+Error ClusterControlRequestData::FromJSON(std::span<char> json) noexcept {
 	try {
 		gason::JsonParser parser;
 		auto node = parser.Parse(json);
@@ -21,14 +25,19 @@ Error ClusterControlRequestData::FromJSON(std::span<char> json) {
 			case Type::ChangeLeader: {
 				data = SetClusterLeaderCommand{};
 				const auto& payloadNode = node["payload"];
-				std::visit([&payloadNode](auto& d) { d.FromJSON(payloadNode); }, data);
+				std::get<SetClusterLeaderCommand>(data).FromJSON(payloadNode);
+				break;
+			}
+			case Type::ForceEletions: {
+				data = ForceElectionsCommand{};
 				break;
 			}
 			case Type::Empty:
+			default:
 				return Error(errParams, "Unknown cluster command request. Command type [{}].", int(commandType));
 		}
 		type = commandType;
-	} catch (Error& e) {
+	} catch (std::exception& e) {
 		return e;
 	} catch (...) {
 		return Error(errLogic, "Unknown error while processing cluster command request.");

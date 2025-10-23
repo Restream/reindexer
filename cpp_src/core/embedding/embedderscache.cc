@@ -1,12 +1,12 @@
 #include "core/embedding/embedderscache.h"
 
-#include <list>
 #include <optional>
 #include "core/cjson/jsonbuilder.h"
 #include "core/enums.h"
 #include "core/storage/storagefactory.h"
 #include "core/system_ns_names.h"
 #include "estl/chunk.h"
+#include "estl/elist.h"
 #include "estl/lock.h"
 #include "estl/mutex.h"
 #include "estl/shared_mutex.h"
@@ -147,7 +147,7 @@ private:
 	const size_t capacity_{0};
 	const uint32_t hitToCache_{0};
 
-	using OrderQueue = std::list<std::pair<embedding::StrorageKeyT, uint32_t>>;
+	using OrderQueue = elist<std::pair<embedding::StrorageKeyT, uint32_t>>;
 	OrderQueue queue_;
 	using SearchMap = tsl::sparse_map<embedding::StrorageKeyT, OrderQueue::iterator>;
 	SearchMap map_;
@@ -291,7 +291,7 @@ void EmbeddersLRUCache::Put(const embedding::Adapter& srcAdapter, const embeddin
 			}
 
 			static constexpr uint32_t kInitCounterValue{1};
-			queue_.emplace_front(key, kInitCounterValue);
+			rx_unused = queue_.emplace_front(key, kInitCounterValue);
 			map_.emplace(key, queue_.begin());
 
 			totalCacheSize_ += calculateItemSize(key);

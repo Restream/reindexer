@@ -27,7 +27,7 @@ bool FtFastFieldConfig::operator==(const FtFastFieldConfig& other) const noexcep
 		   termLenWeight == other.termLenWeight && positionBoost == other.positionBoost && positionWeight == other.positionWeight;
 }
 
-void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>& fields) {
+void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexFieldPros>& fields) {
 	fieldsCfg.clear();
 	if (json.empty()) {
 		fieldsCfg.resize(fields.size() ? fields.size() : 1);
@@ -102,12 +102,12 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 				if (fldIt == fields.end()) {
 					throw Error(errParseDSL, "Field '{}' is not included to full text index", fieldName);
 				}
-				assertrx(fldIt->second < static_cast<int>(fieldsCfg.size()));
-				if (modifiedFields.count(fldIt->second) != 0) {
+				assertrx(fldIt->second.fieldNumber < fieldsCfg.size());
+				if (modifiedFields.contains(fldIt->second.fieldNumber)) {
 					throw Error(errParseDSL, "Field '{}' is duplicated in fulltext configuration", fieldName);
 				}
-				modifiedFields.insert(fldIt->second);
-				FtFastFieldConfig& curFieldCfg = fieldsCfg[fldIt->second];
+				modifiedFields.insert(fldIt->second.fieldNumber);
+				FtFastFieldConfig& curFieldCfg = fieldsCfg[fldIt->second.fieldNumber];
 				curFieldCfg.bm25Boost = fldCfg["bm25_boost"].As<>(defaultFieldCfg.bm25Boost);
 				curFieldCfg.bm25Weight = fldCfg["bm25_weight"].As<>(defaultFieldCfg.bm25Weight);
 				curFieldCfg.termLenBoost = fldCfg["term_len_boost"].As<>(defaultFieldCfg.termLenBoost);

@@ -43,7 +43,8 @@ TEST_P(FTDSLParserApi, MisspellingTest) {
 
 TEST_P(FTDSLParserApi, FieldsPartOfRequest) {
 	FTDSLQueryParams params;
-	params.fields = {{"name", 0}, {"title", 1}};
+	params.fields = {{"name", reindexer::FtIndexFieldPros{.isIndexed = true, .fieldNumber = 0}},
+					 {"title", reindexer::FtIndexFieldPros{.isIndexed = true, .fieldNumber = 1}}};
 	reindexer::SplitOptions opts;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 	ftdsl.Parse("@name^1.5,+title^0.5 rush");
@@ -158,7 +159,9 @@ TEST_P(FTDSLParserApi, QuotesTest) {
 TEST_P(FTDSLParserApi, WrongFieldNameTest) {
 	FTDSLQueryParams params;
 	reindexer::SplitOptions opts;
-	params.fields = {{"id", 0}, {"fk_id", 1}, {"location", 2}};
+	params.fields = {{"id", reindexer::FtIndexFieldPros{.isIndexed = true, .fieldNumber = 0}},
+					 {"fk_id", reindexer::FtIndexFieldPros{.isIndexed = true, .fieldNumber = 1}},
+					 {"location", reindexer::FtIndexFieldPros{.isIndexed = true, .fieldNumber = 2}}};
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 	EXPECT_THROW(ftdsl.Parse("@name,text,desc Thrones"), reindexer::Error);
 }

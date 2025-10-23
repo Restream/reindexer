@@ -1,5 +1,6 @@
 #include "cjsondecoder.h"
 #include "cjsontools.h"
+#include "core/keyvalue/float_vectors_holder.h"
 #include "sparse_validator.h"
 #include "tools/flagguard.h"
 #include "tools/serializer.h"

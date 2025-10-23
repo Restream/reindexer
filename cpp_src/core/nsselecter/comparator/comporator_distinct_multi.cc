@@ -3,9 +3,9 @@
 namespace reindexer {
 
 ComparatorDistinctMulti::ComparatorDistinctMulti(
-	const PayloadType& payloadType, const FieldsSet& fieldNames,
-	std::vector<std::variant<std::pair<const void*, KeyValueType>, int, const TagsPath> >&& rawData)
-	: fNames_(fieldNames), payloadType_(payloadType), dataSource_(std::move(rawData)) {}
+	const PayloadType& payloadType, std::string&& comparatorName, const FieldsSet& fieldNames,
+	std::vector<std::variant<std::pair<const void*, KeyValueType>, int, const TagsPath>>&& rawData)
+	: name_(std::move(comparatorName)), fieldNames_(fieldNames), payloadType_(payloadType), dataSource_(std::move(rawData)) {}
 
 bool ComparatorDistinctMulti::Compare(const PayloadValue& item, IdType rowId) {
 	++totalCalls_;
@@ -14,7 +14,7 @@ bool ComparatorDistinctMulti::Compare(const PayloadValue& item, IdType rowId) {
 	getData(item, lastData_.data, lastData_.maxIndex, rowId);
 	bool res = false;
 	for (unsigned int i = 0; i < lastData_.maxIndex; i++) {
-		const bool isNullValue = DistinctHelpers::GetMultiFieldValue(lastData_.data, i, fNames_.size(), rowValues_);
+		const bool isNullValue = DistinctHelpers::GetMultiFieldValue(lastData_.data, i, fieldNames_.size(), rowValues_);
 		if (isNullValue) {
 			break;
 		}
@@ -31,11 +31,12 @@ void ComparatorDistinctMulti::ExcludeDistinctValues(const PayloadValue& item, Id
 	ConstPayload pv{payloadType_, item};
 	if (rowId != lastData_.rowId) {
 		getData(item, lastData_.data, lastData_.maxIndex, rowId);
+		lastData_.rowId = rowId;
 	}
 	for (unsigned int i = 0; i < lastData_.maxIndex; i++) {
 		DistinctHelpers::FieldsValue rowValues;
-		rowValues.reserve(fNames_.size());
-		const bool isNullValue = DistinctHelpers::GetMultiFieldValue(lastData_.data, i, fNames_.size(), rowValues);
+		rowValues.reserve(fieldNames_.size());
+		const bool isNullValue = DistinctHelpers::GetMultiFieldValue(lastData_.data, i, fieldNames_.size(), rowValues);
 		if (isNullValue) {
 			continue;
 		}
@@ -46,7 +47,7 @@ void ComparatorDistinctMulti::ExcludeDistinctValues(const PayloadValue& item, Id
 void ComparatorDistinctMulti::getData(const PayloadValue& item, std::vector<DistinctHelpers::DataType>& data, size_t& maxArraySize,
 									  IdType rowId) {
 	data.resize(0);
-	data.reserve(fNames_.size());
+	data.reserve(fieldNames_.size());
 	ConstPayload pv{payloadType_, item};
 	maxArraySize = 0;
 	for (const auto& d : dataSource_) {
@@ -89,4 +90,65 @@ void ComparatorDistinctMulti::getData(const PayloadValue& item, std::vector<Dist
 			d);
 	}
 }
+
+ComparatorDistinctMultiArray::ComparatorDistinctMultiArray(const PayloadType& payloadType, std::string&& comparatorName,
+														   std::vector<int>&& fieldsIndex)
+	: name_(std::move(comparatorName)), payloadType_(payloadType), dataSource_(std::move(fieldsIndex)) {}
+
+void ComparatorDistinctMultiArray::getData(const PayloadValue& item, std::vector<DistinctHelpers::DataType>& data, size_t& maxArraySize) {
+	data.resize(0);
+	data.reserve(dataSource_.size());
+	ConstPayload pv{payloadType_, item};
+	maxArraySize = 0;
+	for (const auto& d : dataSource_) {
+		PayloadFieldValue pfv = pv.Field(d);
+		pfv.t_.Type().EvaluateOneOf(
+			[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Int, KeyValueType::Float, KeyValueType::Double,
+								KeyValueType::String, KeyValueType::Uuid> auto keyValueType) {
+				using PayloadFieldValueType = decltype(keyValueType)::PayloadFieldValueType;
+				auto sp = pv.GetArray<PayloadFieldValueType>(d);
+				maxArraySize = std::max(maxArraySize, sp.size());
+				data.emplace_back(sp, IsArray_True);
+			},
+			[&](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+					  KeyValueType::FloatVector>) { assertrx_throw(false); });
+	}
+}
+
+bool ComparatorDistinctMultiArray::Compare(const PayloadValue& item, IdType rowId) {
+	++totalCalls_;
+	ConstPayload pv{payloadType_, item};
+	lastData_.rowId = rowId;
+	getData(item, lastData_.data, lastData_.maxIndex);
+	bool res = false;
+	for (unsigned int i = 0; i < lastData_.maxIndex; i++) {
+		const bool isNullValue = DistinctHelpers::GetMultiFieldValue(lastData_.data, i, dataSource_.size(), rowValues_);
+		if (isNullValue) {
+			break;
+		}
+		if (values_.find(rowValues_) == values_.end()) {
+			res = true;
+			break;
+		}
+	}
+	matchedCount_ += int(res);
+	return res;
+}
+
+void ComparatorDistinctMultiArray::ExcludeDistinctValues(const PayloadValue& item, IdType rowId) {
+	if (rowId != lastData_.rowId) {
+		getData(item, lastData_.data, lastData_.maxIndex);
+		lastData_.rowId = rowId;
+	}
+	for (unsigned int i = 0; i < lastData_.maxIndex; i++) {
+		DistinctHelpers::FieldsValue rowValues;
+		rowValues.reserve(dataSource_.size());
+		const bool isNullValue = DistinctHelpers::GetMultiFieldValue(lastData_.data, i, dataSource_.size(), rowValues);
+		if (isNullValue) {
+			continue;
+		}
+		values_.emplace(std::move(rowValues));
+	}
+}
+
 }  // namespace reindexer

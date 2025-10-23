@@ -253,14 +253,10 @@ TEST(ConversionStringToNumber, DetectValueTypeTest) {
 		{"123.456.7", StringV},
 	};
 
-	auto genToken = [](std::string_view text) {
-		token tok{TokenNumber};
-		tok.text_ = {text.begin(), text.end()};
-		return tok;
-	};
+	auto genToken = [](std::string_view text) { return Token{TokenNumber, text.begin(), text.end()}; };
 
 	for (const auto& testCase : values) {
-		auto res = getVariantFromToken(genToken(testCase.value));
+		auto res = GetVariantFromToken(genToken(testCase.value));
 
 		std::stringstream expected, actual;
 		testCase.expectedValue.Dump(expected);

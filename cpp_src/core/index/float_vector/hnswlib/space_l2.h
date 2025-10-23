@@ -55,6 +55,7 @@ static float L2SqrSIMD4ExtResiduals(const void* pVect1v, const void* pVect2v, co
 	return reindexer::vector_dists::L2SqrResiduals4Ext((const float*)pVect1v, (const float*)pVect2v, *((const size_t*)qty_ptr));
 }
 #endif	// REINDEXER_WITH_SSE
+FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 
 template <typename T>
 class [[nodiscard]] L2SpaceBase final : public SpaceInterface {

@@ -148,7 +148,7 @@ inline const gason::JsonNode& findJsonField(const gason::JsonNode& json, std::st
 template <typename Cont>
 auto&& randOneOf(Cont&& cont) {
 	assertrx(!std::empty(cont));
-	auto it = cont.begin();
+	auto it = std::begin(cont);
 	std::advance(it, rand() % std::size(cont));
 	return reindexer::forward_like<Cont>(*it);
 }

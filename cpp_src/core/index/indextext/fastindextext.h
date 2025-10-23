@@ -14,20 +14,13 @@ public:
 	using key_type = typename IndexUnordered<Map>::key_type;
 	using ref_type = typename IndexUnordered<Map>::ref_type;
 
-	FastIndexText(const FastIndexText& other) : Base(other) {
-		initConfig(other.getConfig());
-		for (auto& idx : this->idx_map) {
-			idx.second.SetVDocID(FtKeyEntryData::ndoc);
-		}
-	}
-
 	FastIndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 		: Base(idef, std::move(payloadType), std::move(fields), cacheCfg) {
 		initConfig();
 	}
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override {
 		// Creates uncommitted copy
-		return std::make_unique<FastIndexText<Map>>(*this);
+		return std::unique_ptr<Index>(new FastIndexText<Map>(*this));
 	}
 	IdSet::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
 					  const RdxContext&) override;
@@ -44,10 +37,17 @@ public:
 	bool EnablePreselectBeforeFt() const override { return getConfig()->enablePreselectBeforeFt; }
 
 private:
+	FastIndexText(const FastIndexText& other) : Base(other) {
+		initConfig(other.getConfig());
+		for (auto& idx : this->idx_map) {
+			idx.second.SetVDocID(FtKeyEntryData::ndoc);
+		}
+	}
+
 	template <typename MergeType>
 	IdSet::Ptr afterSelect(FtCtx& fctx, MergeType&& mergeData, RankSortType, FtMergeStatuses&& statuses, FtUseExternStatuses);
 
-	template <auto(RanksHolder::*rankGetter)>
+	template <auto(RanksHolder::* rankGetter)>
 	void sortAfterSelect(IdSet& mergedIds, RanksHolder&, RankSortType);
 
 	template <typename VectorType>

@@ -129,7 +129,7 @@ void ClusterNodeConfig::FromYAML(const YAML::Node& root) {
 }
 
 void AsyncReplNodeConfig::FromYAML(const YAML::Node& root) {
-	auto tmpDsn = DSN(root["dsn"].as<std::string>());
+	auto tmpDsn = DSN(root[kAsyncReplicationDSNCfgName].as<std::string>());
 	ValidateDSN(tmpDsn);
 	dsn_ = std::move(tmpDsn);
 	auto node = root["namespaces"];
@@ -149,7 +149,7 @@ void AsyncReplNodeConfig::FromYAML(const YAML::Node& root) {
 }
 
 void AsyncReplNodeConfig::FromJSON(const gason::JsonNode& root) {
-	auto tmpDsn = DSN(root["dsn"].As<std::string>());
+	auto tmpDsn = DSN(root[kAsyncReplicationDSNCfgName].As<std::string>());
 	ValidateDSN(tmpDsn);
 	dsn_ = std::move(tmpDsn);
 	{
@@ -171,9 +171,9 @@ void AsyncReplNodeConfig::FromJSON(const gason::JsonNode& root) {
 
 void AsyncReplNodeConfig::GetJSON(JsonBuilder& jb, MaskingDSN maskingDSN) const {
 	if (maskingDSN == MaskingDSN::Disabled) {
-		jb.Put("dsn", dsn_.dsn_);
+		jb.Put(kAsyncReplicationDSNCfgName, dsn_.dsn_);
 	} else if (maskingDSN == MaskingDSN::Enabled) {
-		jb.Put("dsn", dsn_);
+		jb.Put(kAsyncReplicationDSNCfgName, dsn_);
 	}
 	if (hasOwnNsList_) {
 		auto arrNode = jb.Array("namespaces");
@@ -187,7 +187,7 @@ void AsyncReplNodeConfig::GetJSON(JsonBuilder& jb, MaskingDSN maskingDSN) const 
 }
 
 void AsyncReplNodeConfig::GetYAML(YAML::Node& yaml) const {
-	yaml["dsn"] = dsn_;
+	yaml[kAsyncReplicationDSNCfgName] = dsn_;
 	if (hasOwnNsList_) {
 		yaml["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
 		if (namespaces_ && !namespaces_->Empty()) {
@@ -255,7 +255,7 @@ Error AsyncReplConfigData::FromDefault() noexcept {
 	try {
 		gason::JsonParser parser;
 		gason::JsonNode configJson = parser.Parse(kDefAsyncReplicationConfig);
-		auto& asyncReplicationJson = configJson["async_replication"];
+		auto& asyncReplicationJson = configJson[kAsyncReplicationCfgName];
 		if (!asyncReplicationJson.isObject()) {
 			return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefAsyncReplicationConfig");
 		}
@@ -381,7 +381,7 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode& root) {
 
 	try {
 		nodes.clear();
-		for (auto& objNode : root["nodes"]) {
+		for (auto& objNode : root[kAsyncReplicationNodesCfgName]) {
 			AsyncReplNodeConfig conf;
 			conf.FromJSON(objNode);
 			if (!conf.HasOwnNsList()) {
@@ -893,13 +893,13 @@ Error ShardingConfig::FromYAML(const std::string& yaml) {
 			return Error(errParams, "Unsupported version of sharding config file: {}", v);
 		}
 
-		auto shardsNode = root["shards"];
+		auto shardsNode = root[kShardingShardsCfgName];
 		for (const auto& shNode : shardsNode) {
 			const size_t shardId = shNode["shard_id"].as<int>();
 			if (shards.find(shardId) != shards.end()) {
 				return Error{errParams, "Dsns for shard id {} are specified twice", shardId};
 			}
-			const auto& hostsNode = shNode["dsns"];
+			const auto& hostsNode = shNode[kShardingDSNsCfgName];
 			auto& shard = shards[shardId];
 			shard.reserve(hostsNode.size());
 			for (const auto& host : hostsNode) {
@@ -981,13 +981,13 @@ Error ShardingConfig::FromJSON(const gason::JsonNode& root) {
 			}
 		}
 		shards.clear();
-		const auto& shardsNode = root["shards"];
+		const auto& shardsNode = root[kShardingShardsCfgName];
 		for (const auto& shrdNode : shardsNode) {
 			const int shardId = shrdNode["shard_id"].As<int>();
 			if (shards.find(shardId) != shards.end()) {
 				return Error{errParams, "Dsns for shard id {} are specified twice", shardId};
 			}
-			const auto& dsnsNode = shrdNode["dsns"];
+			const auto& dsnsNode = shrdNode[kShardingDSNsCfgName];
 			for (const auto& dNode : dsnsNode) {
 				shards[shardId].emplace_back(dNode.As<std::string>());
 			}
@@ -1035,14 +1035,14 @@ YAML::Node ShardingConfig::GetYAMLObj() const {
 		}
 	}
 	{
-		yaml["shards"] = YAML::Node(YAML::NodeType::Sequence);
-		auto shardsNode = yaml["shards"];
+		yaml[kShardingShardsCfgName] = YAML::Node(YAML::NodeType::Sequence);
+		auto shardsNode = yaml[kShardingShardsCfgName];
 		for (const auto& [id, dsns] : shards) {
 			YAML::Node n;
 			n["shard_id"] = id;
-			n["dsns"] = YAML::Node(YAML::NodeType::Sequence);
+			n[kShardingDSNsCfgName] = YAML::Node(YAML::NodeType::Sequence);
 			for (const auto& dsn : dsns) {
-				n["dsns"].push_back(dsn);
+				n[kShardingDSNsCfgName].push_back(dsn);
 			}
 			shardsNode.push_back(n);
 		}
@@ -1081,11 +1081,11 @@ void ShardingConfig::GetJSON(JsonBuilder& jb, MaskingDSN masking) const {
 		}
 	}
 	{
-		auto shardsNode = jb.Array("shards");
+		auto shardsNode = jb.Array(kShardingShardsCfgName);
 		for (const auto& [id, dsns] : shards) {
 			auto shrdNode = shardsNode.Object();
 			shrdNode.Put("shard_id", id);
-			auto dsnsNode = shrdNode.Array("dsns");
+			auto dsnsNode = shrdNode.Array(kShardingDSNsCfgName);
 			for (const auto& d : dsns) {
 				if (masking == MaskingDSN::Disabled) {
 					dsnsNode.Put(TagName::Empty(), d.dsn_);

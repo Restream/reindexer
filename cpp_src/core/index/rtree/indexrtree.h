@@ -20,7 +20,10 @@ public:
 	using IndexUnordered<Map>::Delete;
 	void Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 
-	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexRTree>(*this); }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexRTree(*this)); }
+
+private:
+	IndexRTree(const IndexRTree&) = default;
 };
 
 std::unique_ptr<Index> IndexRTree_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,

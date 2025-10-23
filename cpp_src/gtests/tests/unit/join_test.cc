@@ -89,7 +89,7 @@ TEST_F(JoinSelectsApi, JoinsNotConditionsNegativeTest) {
 			"books_namespace.authorid_fk";
 		auto query = Query::FromSQL(sql);
 	} catch (const Error& err) {
-		EXPECT_STREQ(err.what(), "Unexpected 'not' in query, line: 1 column: 34 138");
+		EXPECT_STREQ(err.what(), "Unexpected 'not' in query, line: 1 column: 30 33");
 	}
 }
 
@@ -100,7 +100,7 @@ TEST_F(JoinSelectsApi, JoinsNotConditionsBracketsNegativeTest) {
 			"books_namespace.authorid_fk)";
 		auto query = Query::FromSQL(sql);
 	} catch (const Error& err) {
-		EXPECT_STREQ(err.what(), "Unexpected '(' in query, line: 1 column: 31 140");
+		EXPECT_STREQ(err.what(), "Unexpected '(' in query, line: 1 column: 30 31");
 	}
 }
 

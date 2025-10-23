@@ -46,9 +46,9 @@ void IndexText<T>::initSearchers() {
 			auto fieldIdx = fields[i];
 			if (fieldIdx == IndexValueType::SetByJsonPath) {
 				assertrx(jsonPathIdx < fields.getJsonPathsLength());
-				ftFields_.emplace(fields.getJsonPath(jsonPathIdx++), i);
+				ftFields_.emplace(fields.getJsonPath(jsonPathIdx++), FtIndexFieldPros{.isIndexed = false, .fieldNumber = i});
 			} else {
-				ftFields_.emplace(this->payloadType_->Field(fieldIdx).Name(), i);
+				ftFields_.emplace(this->payloadType_->Field(fieldIdx).Name(), FtIndexFieldPros{.isIndexed = true, .fieldNumber = i});
 			}
 		}
 		if rx_unlikely (ftFields_.size() != fields.size()) {
@@ -118,12 +118,27 @@ void IndexText<T>::build(const RdxContext& rdxCtx) {
 
 // Generic implementation for string index
 template <typename T>
-SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType condition, SortType, const Index::SelectContext& selectCtx,
-										 const RdxContext& rdxCtx) {
+SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId,
+										 const Index::SelectContext& selectCtx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
+
+	if (condition == CondAny && selectCtx.opts.distinct) {
+		if rx_unlikely (IsComposite(this->Type())) {
+			throw Error(errParams, "Composite full text index ({}) does not support DISTINCT", Index::Name());
+		}
+		return Base::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
+	}
+	if rx_unlikely (selectCtx.opts.distinct) {
+		throw Error(errParams, "Unexpected condition '{}' with DISTINCT in full text index ({})", CondTypeToStr(condition), Index::Name());
+	}
 	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index ({}) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
+
+	// Parse search query DSL here to perform strict mode validation before cache check
+	FtDSLQuery dsl(this->ftFields_, cfg_->stopWords, cfg_->splitOptions, selectCtx.opts.strictMode);
+	const std::string_view key = keys[0].As<p_string>();
+	dsl.Parse(keys[0].As<p_string>());
 
 	auto mergeStatuses = this->GetFtMergeStatuses(rdxCtx);
 	bool needPutCache = false;
@@ -138,20 +153,18 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 			needPutCache = true;
 		} else {
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-			return resultFromCache(keys, std::move(cache_ft), *ftCtx, selectCtx.selectFuncCtx->ranks);
+			return resultFromCache(key, std::move(cache_ft), *ftCtx, selectCtx.selectFuncCtx->ranks);
 		}
 	}
 
-	return doSelectKey(keys, needPutCache ? std::optional{std::move(ckey)} : std::nullopt, std::move(mergeStatuses),
+	return doSelectKey(key, std::move(dsl), needPutCache ? std::optional{std::move(ckey)} : std::nullopt, std::move(mergeStatuses),
 					   FtUseExternStatuses::No, selectCtx.opts.inTransaction, rankSortType, *ftCtx, rdxCtx);
 }
 
 template <typename T>
-SelectKeyResults IndexText<T>::resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&& it, FtCtx& ftCtx,
-											   RanksHolder::Ptr& ranks) {
+SelectKeyResults IndexText<T>::resultFromCache(std::string_view key, FtIdSetCache::Iterator&& it, FtCtx& ftCtx, RanksHolder::Ptr& ranks) {
 	if rx_unlikely (cfg_->logLevel >= LogInfo) {
-		logFmt(LogInfo, "Get search results for '{}' in '{}' from cache", keys[0].As<std::string>(),
-			   this->payloadType_ ? this->payloadType_->Name() : "");
+		logFmt(LogInfo, "Get search results for '{}' in '{}' from cache", key, this->payloadType_ ? this->payloadType_->Name() : "");
 	}
 	assertrx(it.val.ctx);
 	ftCtx.SetData(std::move(it.val.ctx));
@@ -160,17 +173,13 @@ SelectKeyResults IndexText<T>::resultFromCache(const VariantArray& keys, FtIdSet
 }
 
 template <typename T>
-SelectKeyResults IndexText<T>::doSelectKey(const VariantArray& keys, std::optional<IdSetCacheKey>&& ckey, FtMergeStatuses&& mergeStatuses,
-										   FtUseExternStatuses useExternSt, bool inTransaction, RankSortType rankSortType, FtCtx& ftCtx,
-										   const RdxContext& rdxCtx) {
+SelectKeyResults IndexText<T>::doSelectKey(std::string_view key, FtDSLQuery&& dsl, std::optional<IdSetCacheKey>&& ckey,
+										   FtMergeStatuses&& mergeStatuses, FtUseExternStatuses useExternSt, bool inTransaction,
+										   RankSortType rankSortType, FtCtx& ftCtx, const RdxContext& rdxCtx) {
 	if rx_unlikely (cfg_->logLevel >= LogInfo) {
-		logFmt(LogInfo, "Searching for '{}' in '{}' {}", keys[0].As<std::string>(), this->payloadType_ ? this->payloadType_->Name() : "",
+		logFmt(LogInfo, "Searching for '{}' in '{}' {}", key, this->payloadType_ ? this->payloadType_->Name() : "",
 			   ckey ? "(will cache)" : "");
 	}
-
-	// STEP 1: Parse search query dsl
-	FtDSLQuery dsl(this->ftFields_, cfg_->stopWords, cfg_->splitOptions);
-	dsl.Parse(keys[0].As<p_string>());
 
 	IdSet::Ptr mergedIds = Select(ftCtx, std::move(dsl), inTransaction, rankSortType, std::move(mergeStatuses), useExternSt, rdxCtx);
 	SelectKeyResult res;
@@ -219,8 +228,13 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index ({}) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
+	// Parse search query DSL here to perform strict mode validation before cache check
+	FtDSLQuery dsl(this->ftFields_, cfg_->stopWords, cfg_->splitOptions, selectCtx.opts.strictMode);
+	const std::string_view key = keys[0].As<p_string>();
+	dsl.Parse(keys[0].As<p_string>());
+
 	FtCtx::Ptr ftCtx = createFtCtx(selectCtx);
-	return doSelectKey(keys, std::nullopt, std::move(preselect), FtUseExternStatuses::Yes, selectCtx.opts.inTransaction,
+	return doSelectKey(key, std::move(dsl), std::nullopt, std::move(preselect), FtUseExternStatuses::Yes, selectCtx.opts.inTransaction,
 					   RankSortType(selectCtx.opts.rankSortType), *ftCtx, rdxCtx);
 }
 

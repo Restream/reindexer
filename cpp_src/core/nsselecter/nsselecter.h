@@ -74,7 +74,7 @@ private:
 
 	h_vector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
 	void setLimitAndOffset(ItemRefVector& result, size_t offset, size_t limit);
-	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, RankedTypeQuery, IndexValueType rankedIndexNo,
+	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType, IndexValueType rankedIndexNo,
 							   bool availableSelectBySortIndex) const;
 	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, SkipSortingEntry&, StrictMode, IsRanked);
 	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index, const std::vector<JoinedSelector>&,

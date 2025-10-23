@@ -492,18 +492,18 @@ void LocalQueryResults::AddItemNoHold(Item& item, lsn_t nsIncarnationTag, bool w
 	}
 }
 
-const TagsMatcher& LocalQueryResults::getTagsMatcher(int nsid) const noexcept { return ctxs[nsid].tagsMatcher_; }
+const TagsMatcher& LocalQueryResults::getTagsMatcher(int nsid) const& noexcept { return ctxs[nsid].tagsMatcher_; }
 
-const PayloadType& LocalQueryResults::getPayloadType(int nsid) const noexcept { return ctxs[nsid].type_; }
+const PayloadType& LocalQueryResults::getPayloadType(int nsid) const& noexcept { return ctxs[nsid].type_; }
 
-const FieldsFilter& LocalQueryResults::getFieldsFilter(int nsid) const noexcept {
+const FieldsFilter& LocalQueryResults::getFieldsFilter(int nsid) const& noexcept {
 	assertrx(size_t(nsid) < ctxs.size());
 	return ctxs[nsid].fieldsFilter_;
 }
 
-TagsMatcher& LocalQueryResults::getTagsMatcher(int nsid) noexcept { return ctxs[nsid].tagsMatcher_; }
+TagsMatcher& LocalQueryResults::getTagsMatcher(int nsid) & noexcept { return ctxs[nsid].tagsMatcher_; }
 
-PayloadType& LocalQueryResults::getPayloadType(int nsid) noexcept { return ctxs[nsid].type_; }
+PayloadType& LocalQueryResults::getPayloadType(int nsid) & noexcept { return ctxs[nsid].type_; }
 
 std::shared_ptr<const Schema> LocalQueryResults::getSchema(int nsid) const noexcept { return ctxs[nsid].schema_; }
 

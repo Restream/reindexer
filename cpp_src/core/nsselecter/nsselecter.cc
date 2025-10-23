@@ -22,31 +22,31 @@ constexpr int kCancelCheckFrequency = 1024;
 
 namespace reindexer {
 
-static std::string_view rankedTypeToErr(RankedTypeQuery type) {
+static std::string_view rankedTypeToErr(QueryRankType type) {
 	using namespace std::string_view_literals;
 	switch (type) {
-		case RankedTypeQuery::No:
+		case QueryRankType::No:
 			return "not ranked query"sv;
-		case RankedTypeQuery::FullText:
+		case QueryRankType::FullText:
 			return "fulltext query"sv;
-		case RankedTypeQuery::KnnIP:
+		case QueryRankType::KnnIP:
 			return "knn with inner product metric query"sv;
-		case RankedTypeQuery::KnnL2:
+		case QueryRankType::KnnL2:
 			return "knn with L2 metric query"sv;
-		case RankedTypeQuery::KnnCos:
+		case QueryRankType::KnnCos:
 			return "knn with cosine metric query"sv;
-		case RankedTypeQuery::Hybrid:
+		case QueryRankType::Hybrid:
 			return "hybrid query"sv;
-		case RankedTypeQuery::NotSet:
+		case QueryRankType::NotSet:
 			break;
 	}
 	throw_as_assert;
 }
 
 template <typename JoinPreResultCtx>
-static RankSortType determineRankSortType(RankedTypeQuery rankedTypeQuery, IsRanked isRanked, const std::optional<Reranker>& reranker,
+static RankSortType determineRankSortType(QueryRankType queryRankType, IsRanked isRanked, const std::optional<Reranker>& reranker,
 										  const SelectCtxWithJoinPreSelect<JoinPreResultCtx>& ctx) {
-	if (rankedTypeQuery == RankedTypeQuery::Hybrid) {
+	if (queryRankType == QueryRankType::Hybrid) {
 		assertrx_throw(reranker);
 		// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
 		return reranker->IsRRF() ? RankSortType::IDAndPositions : RankSortType::IDOnly;
@@ -59,8 +59,8 @@ static RankSortType determineRankSortType(RankedTypeQuery rankedTypeQuery, IsRan
 
 template <typename JoinPreResultCtx>
 void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& ctx, const RdxContext& rdxCtx) {
-	//	 const std::string sql = ctx.query.GetSQL();
-	//	 std::cout << sql << std::endl;
+	// const std::string sql = ctx.query.GetSQL();
+	// std::cout << sql << std::endl;
 	const size_t resultInitSize = result.Count();
 	ctx.sortingContext.enableSortOrders = ns_->SortOrdersBuilt();
 	const LogLevel logLevel = std::max(ns_->config_.logLevel, LogLevel(ctx.query.GetDebugLevel()));
@@ -119,34 +119,33 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	qPreproc.AddDistinctEntries(aggregators);
 
 	bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
-	auto rankedQueryEntry = qPreproc.GetRankedTypeQuery();
-	if (rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No && rdxCtx.IsShardingParallelExecution()) {
+	auto rankedQueryEntry = qPreproc.GetQueryRankType();
+	if (rankedQueryEntry.queryRankType != QueryRankType::No && rdxCtx.IsShardingParallelExecution()) {
 		throw Error{errLogic, "Full text or float vector query by several sharding hosts"};
 	}
-	if (ctx.isMergeQuery == IsMergeQuery_True && ctx.query.GetSortingEntries().empty()) {
-		if (ctx.rankedTypeQuery == RankedTypeQuery::NotSet) {
-			ctx.rankedTypeQuery = rankedQueryEntry.rankedTypeQuery;
-		} else {
-			if (rankedQueryEntry.rankedTypeQuery != ctx.rankedTypeQuery) {
-				throw Error{errNotValid,
-							"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions "
-							"at the same time: '{}' VS '{}'",
-							rankedTypeToErr(ctx.rankedTypeQuery), rankedTypeToErr(rankedQueryEntry.rankedTypeQuery)};
-			}
-		}
+	if (ctx.queryRankType == QueryRankType::NotSet) {
+		ctx.queryRankType = rankedQueryEntry.queryRankType;
+	} else if (rankedQueryEntry.queryRankType != ctx.queryRankType &&
+			   (ctx.query.GetSortingEntries().empty() || rankedQueryEntry.queryRankType == QueryRankType::Hybrid ||
+				ctx.queryRankType == QueryRankType::Hybrid)) {
+		assertrx_dbg(ctx.isMergeQuery);
+		throw Error{errNotValid,
+					"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions "
+					"at the same time: '{}' VS '{}'",
+					rankedTypeToErr(ctx.queryRankType), rankedTypeToErr(rankedQueryEntry.queryRankType)};
 	}
 	// Prepare data for select functions
 	if (ctx.functions) {
-		ftFunc_ = ctx.functions->AddNamespace(ctx.query, *ns_, ctx.nsid, rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No);
+		ftFunc_ = ctx.functions->AddNamespace(ctx.query, *ns_, ctx.nsid, rankedQueryEntry.queryRankType != QueryRankType::No);
 	}
 
 	if (!ctx.skipIndexesLookup) {
 		qPreproc.Reduce();
 	}
-	if (rankedQueryEntry.rankedTypeQuery == RankedTypeQuery::FullText) {
+	if (rankedQueryEntry.queryRankType == QueryRankType::FullText) {
 		qPreproc.ExcludeFtQuery(rdxCtx);
 	}
-	result.haveRank = rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No;
+	result.haveRank = rankedQueryEntry.queryRankType != QueryRankType::No;
 
 	explain.AddPrepareTime();
 
@@ -158,7 +157,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	}
 
 	if (ctx.query.IsWithRank()) {
-		if (rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No) {
+		if (rankedQueryEntry.queryRankType != QueryRankType::No) {
 			result.needOutputRank = true;
 		} else {
 			throw Error(errLogic, "Rank() is available only for fulltext or knn query");
@@ -175,8 +174,8 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 	const bool isForceAll = ctx.isForceAll;
 	const bool aggregationsOnlyOrig = aggregationsOnly;
 	do {
-		rankedQueryEntry = qPreproc.GetRankedTypeQuery();
-		const IsRanked isRanked{rankedQueryEntry.rankedTypeQuery != RankedTypeQuery::No};
+		rankedQueryEntry = qPreproc.GetQueryRankType();
+		const IsRanked isRanked{rankedQueryEntry.queryRankType != QueryRankType::No};
 
 		qres.Clear(qPreproc.IsSecondForcedSortStage());
 		lctx.start = QueryEntry::kDefaultOffset;
@@ -197,8 +196,8 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 
 		// Prepare sorting context
 		ctx.sortingContext.forcedMode = qPreproc.ContainsForcedSortOrder();
-		SortingEntries sortBy = qPreproc.GetSortingEntries(ctx, rankedQueryEntry.rankedTypeQuery);
-		prepareSortingContext(sortBy, ctx, rankedQueryEntry.rankedTypeQuery, rankedQueryEntry.rankedIndexNo,
+		SortingEntries sortBy = qPreproc.GetSortingEntries(ctx, rankedQueryEntry.queryRankType);
+		prepareSortingContext(sortBy, ctx, rankedQueryEntry.queryRankType, rankedQueryEntry.rankedIndexNo,
 							  qPreproc.AvailableSelectBySortIndex());
 
 		if (ctx.sortingContext.isOptimizationEnabled()) {
@@ -243,12 +242,12 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		}
 
 		const auto reranker =
-			rankedQueryEntry.rankedTypeQuery == RankedTypeQuery::Hybrid ? std::optional(ctx.sortingContext.ToReranker(*ns_)) : std::nullopt;
+			rankedQueryEntry.queryRankType == QueryRankType::Hybrid ? std::optional(ctx.sortingContext.ToReranker(*ns_)) : std::nullopt;
 
-		qres.PrepareIteratorsForSelectLoop(qPreproc, ctx.sortingContext.sortId(), rankedQueryEntry.rankedTypeQuery,
-										   determineRankSortType(rankedQueryEntry.rankedTypeQuery, isRanked, reranker, ctx), *ns_, ftFunc_,
+		qres.PrepareIteratorsForSelectLoop(qPreproc, ctx.sortingContext.sortId(), rankedQueryEntry.queryRankType,
+										   determineRankSortType(rankedQueryEntry.queryRankType, isRanked, reranker, ctx), *ns_, ftFunc_,
 										   ranks_, rdxCtx);
-		if (rankedQueryEntry.rankedTypeQuery == RankedTypeQuery::Hybrid) {
+		if (rankedQueryEntry.queryRankType == QueryRankType::Hybrid) {
 			qres.MergeRanked(ranks_, *reranker, *ns_);
 			ctx.sortingContext = {};
 		}
@@ -262,7 +261,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 			if (auto sortFieldEntry = ctx.sortingContext.sortFieldEntryIfOrdered(); sortFieldEntry) {
 				preResult.sortOrder = JoinPreResult::SortOrderContext{.index = sortFieldEntry->index, .sortingEntry = sortFieldEntry->data};
 			}
-			preResult.properties.emplace(qres.GetMaxIterations(true), ns_->config().maxIterationsIdSetPreResult);
+			preResult.properties.emplace(qres.GetMaxIterations(), ns_->config().maxIterationsIdSetPreResult);
 			auto& preselectProps = preResult.properties.value();
 			assertrx_throw(preselectProps.maxIterationsIdSetPreResult > JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization());
 			if ((preResult.storedValuesOptStatus == StoredValuesOptimizationStatus::Enabled) &&
@@ -328,7 +327,10 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		bool hasComparators = false;
 		qres.VisitForEach([](const KnnRawSelectResult&) { throw_as_assert; },
 						  Skip<JoinSelectIterator, SelectIteratorsBracket, AlwaysTrue, SelectIterator>{},
-						  [&hasComparators](OneOf<FieldsComparator, EqualPositionComparator, ComparatorNotIndexed, ComparatorDistinctMulti,
+						  [&hasComparators](OneOf<FieldsComparator, EqualPositionComparator, GroupingEqualPositionComparator,
+												  ComparatorNotIndexed, ComparatorDistinctMulti, ComparatorDistinctMultiArray,
+												  Template<ComparatorDistinctMultiScalarBase, ComparatorDistinctMultiIndexedGetter,
+														   ComparatorDistinctMultiColumnGetter, ComparatorDistinctMultiScalarGetter>,
 												  Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point,
 														   Uuid, FloatVector>>) noexcept { hasComparators = true; });
 
@@ -382,10 +384,13 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		// Rewind all results iterators
 		qres.VisitForEach(
 			[](const KnnRawSelectResult&) { throw_as_assert; },
-			Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysTrue, EqualPositionComparator, ComparatorNotIndexed,
-				 ComparatorDistinctMulti, ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>,
-				 ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
-				 ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>>{},
+			Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysTrue, EqualPositionComparator,
+				 GroupingEqualPositionComparator, ComparatorNotIndexed, ComparatorDistinctMulti, ComparatorDistinctMultiArray,
+				 ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiIndexedGetter>,
+				 ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiColumnGetter>,
+				 ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiScalarGetter>, ComparatorIndexed<bool>, ComparatorIndexed<int>,
+				 ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
+				 ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>>{},
 			[reverse, maxIterations](SelectIterator& it) { it.Start(reverse, maxIterations); });
 
 		// Let iterators choose most efficient algorithm
@@ -405,7 +410,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		// items with unique values, and recalculate the values of Distinct-aggregation
 		// on a correctly formed set of items after applying a select loop.
 		lctx.calcAggsImmediately =
-			(!ctx.query.HasLimit() && !ctx.query.HasOffset()) || ctx.sortingContext.isOptimizationEnabled() || ctx.sortingContext.sortId();
+			(!ctx.HasLimit() && !ctx.HasOffset()) || ctx.sortingContext.isOptimizationEnabled() || ctx.sortingContext.sortId();
 		aggregationsOnly = aggregationsOnlyOrig && lctx.calcAggsImmediately;
 
 		if (qPreproc.IsFtExcluded()) {
@@ -444,16 +449,20 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectCtxWithJoinPreSelec
 		if (!ctx.inTransaction) {
 			ThrowOnCancel(rdxCtx);
 		}
-	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce, qresHolder, needCalcTotal));
+	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce, qresHolder, needCalcTotal, ctx));
 
+	// Aggregations should be recalculated if they were not calculated during selectLoop.
+	// There is special case for single AggDistinct, because it also contains result items and was not included into aggregationsOnlyOrig
+	// flags.
 	const bool hasOnlyDistinctAgg = aggregators.size() == 1 && aggregators[0].Type() == AggDistinct;
-	if ((aggregationsOnlyOrig && !lctx.calcAggsImmediately) || hasOnlyDistinctAgg) {
+	if ((aggregationsOnlyOrig || hasOnlyDistinctAgg) && !lctx.calcAggsImmediately) {
 		for (auto it = result.begin() + initTotalCount; it != result.end(); ++it) {
 			auto& pl = ns_->items_[it.GetItemRef().Id()];
 			for (auto& aggregator : aggregators) {
 				aggregator.Aggregate(pl);
 			}
 		}
+
 		if (!hasOnlyDistinctAgg) {
 			result.Erase(result.Items().begin() + initTotalCount, result.Items().end());
 		}
@@ -787,7 +796,8 @@ void NsSelecter::processLeftJoins(LocalQueryResults& qr, SelectCtx& sctx, size_t
 		return;
 	}
 	for (size_t i = startPos; i < qr.Count(); ++i) {
-		IdType rowid = qr[i].GetItemRef().Id();
+		const auto it = qr[i];
+		IdType rowid = it.GetItemRef().Id();
 		ConstPayload pl(ns_->payloadType_, ns_->items_[rowid]);
 		for (auto& joinedSelector : *sctx.joinedSelectors) {
 			if (joinedSelector.Type() == JoinType::LeftJoin) {
@@ -909,6 +919,9 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 	SelectIterator& firstIterator = qres.begin()->Value<SelectIterator>();
 	IdType rowId = firstIterator.Val();
 	const CollateOpts* multisortCollateOpts = nullptr;
+
+	const auto& nsItems = ns_->items_;
+	const auto nsItemsSize = ns_->items_.size();
 	while (firstIterator.Next(rowId) && !finish) {
 		if ((rowId % kCancelCheckFrequency == 0) && !sctx.inTransaction) {
 			ThrowOnCancel(rdxCtx);
@@ -923,10 +936,10 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 			properRowId = firstSortIndex->SortOrders()[rowId];
 		}
 
-		if rx_unlikely (static_cast<size_t>(properRowId) > ns_->items_.size()) {
+		if rx_unlikely (static_cast<size_t>(properRowId) > nsItemsSize) {
 			throwUnexpectedItemID(rowId, properRowId);
 		}
-		PayloadValue& pv = ns_->items_[properRowId];
+		const PayloadValue& pv = nsItems[properRowId];
 		if (pv.IsFree()) {
 			continue;
 		}
@@ -1383,8 +1396,8 @@ static void removeQuotesFromExpression(std::string& expression) {
 	expression.erase(std::remove(expression.begin(), expression.end(), '"'), expression.end());
 }
 
-void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, RankedTypeQuery rankedTypeQuery,
-									   IndexValueType rankedIndexNo, bool availableSelectBySortIndex) const {
+void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType queryRankType, IndexValueType rankedIndexNo,
+									   bool availableSelectBySortIndex) const {
 	using namespace SortExprFuncs;
 	const auto strictMode = ctx.inTransaction
 								? StrictModeNone
@@ -1416,7 +1429,7 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, R
 					if (isOrdered && !idxOpts.IsArray() && !ctx.sortingContext.enableSortOrders && availableSelectBySortIndex) {
 						ctx.sortingContext.uncommitedIndex = sortingEntry.index;
 						ctx.isForceAll = ctx.sortingContext.forcedMode;
-					} else if (!isOrdered || idxOpts.IsArray() || rankedTypeQuery != RankedTypeQuery::No ||
+					} else if (!isOrdered || idxOpts.IsArray() || queryRankType != QueryRankType::No ||
 							   !ctx.sortingContext.enableSortOrders || !availableSelectBySortIndex) {  // empty
 						ctx.isForceAll = true;
 						entry.index = nullptr;
@@ -1442,9 +1455,6 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, R
 				ctx.isForceAll = true;
 			}
 		} else {
-			if (!ctx.query.GetMergeQueries().empty()) {
-				throw Error(errLogic, "Sorting by expression cannot be applied to merged queries.");
-			}
 			struct {
 				SkipSortingEntry skipSortingEntry;
 				StrictMode strictMode;
@@ -1459,19 +1469,19 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, R
 					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column, exprIndex.index, lCtx.joinedSelectors, lCtx.skipSortingEntry,
 										   lCtx.strictMode);
 				},
-				[rankedTypeQuery](Rank&) {
-					if (rankedTypeQuery == RankedTypeQuery::No || rankedTypeQuery == RankedTypeQuery::Hybrid) {
+				[queryRankType](Rank&) {
+					if (queryRankType == QueryRankType::No || queryRankType == QueryRankType::Hybrid) {
 						throw Error(errQueryExec, "Sorting by rank() is only available for query with single fulltext or knn condition");
 					}
 				},
 				[&](RankNamed& r) {
 					prepareSortIndex(*ns_, r.IndexName(), r.IndexNoRef(), lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_True);
-					if (r.IndexNo() != rankedIndexNo && rankedTypeQuery != RankedTypeQuery::Hybrid) {
+					if (r.IndexNo() != rankedIndexNo && queryRankType != QueryRankType::Hybrid) {
 						throw Error(errQueryExec, "Rank by not used in query fulltext of vector index '{}'", r.IndexName());
 					}
 				},
-				[rankedTypeQuery](const Rrf&) {
-					if (rankedTypeQuery != RankedTypeQuery::Hybrid) {
+				[queryRankType](const Rrf&) {
+					if (queryRankType != QueryRankType::Hybrid) {
 						throw Error(errQueryExec, "Reciprocal rank fusion (RRF) is allowed in hybrid queries only");
 					}
 				},
@@ -1741,19 +1751,19 @@ bool NsSelecter::isSortOptimizationEffective(const QueryEntries& qentries, Selec
 	if (expectedMaxIterationsNormal <= 150) {
 		return false;  // If there is very good filtering condition (case for the issues #1489)
 	}
-	if (ctx.isForceAll || ctx.query.HasLimit()) {
+	if (ctx.isForceAll || ctx.HasLimit()) {
 		if (expectedMaxIterationsNormal < 2000) {
 			return false;  // Skip attempt to check limit if there is good enough unordered filtering condition
 		}
 	}
-	if (!ctx.isForceAll && ctx.query.HasLimit()) {
+	if (!ctx.isForceAll && ctx.HasLimit()) {
 		// If optimization will be disabled, selector will must iterate over all the results, ignoring limit
 		// Experimental value. It was chosen during debugging request from issue #1402.
 		// TODO: It's possible to evaluate this multiplier, based on the query conditions, but the only way to avoid corner cases is to
 		// allow user to hint this optimization.
 		const size_t limitMultiplier = std::max(size_t(20), size_t(totalItemsCount / expectedMaxIterationsNormal) * 4);
-		const auto offset = ctx.query.HasOffset() ? ctx.query.Offset() : 1;
-		costOptimized = limitMultiplier * (ctx.query.Limit() + offset);
+		const auto offset = ctx.HasOffset() ? ctx.offset : 1;
+		costOptimized = limitMultiplier * (ctx.limit + offset);
 	}
 	return costOptimized <= costNormal;
 }

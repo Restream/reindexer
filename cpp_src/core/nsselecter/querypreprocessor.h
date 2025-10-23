@@ -17,12 +17,12 @@ struct SelectCtxWithJoinPreSelect;
 class [[nodiscard]] QueryPreprocessor : private QueryEntries {
 	class Merger;
 	struct [[nodiscard]] Ranked {
-		RankedTypeQuery rankedTypeQuery;
+		QueryRankType queryRankType;
 		IndexValueType rankedIndexNo;
 	};
 	enum class [[nodiscard]] EvaluationStage : uint8_t {
 		First,
-		Second	// Curently we do not have queries with more than 2 stages
+		Second	// Currently we do not have queries with more than 2 stages
 	};
 
 public:
@@ -41,7 +41,7 @@ public:
 		}
 		return changed;
 	}
-	Ranked GetRankedTypeQuery() const;
+	Ranked GetQueryRankType() const;
 	bool ContainsForcedSortOrder() const noexcept {
 		if (HasForcedSortOptimizationQueryEntry()) {
 			return forcedStage();
@@ -51,7 +51,8 @@ public:
 	Changed SubstituteCompositeIndexes() { return Changed{substituteCompositeIndexes(0, container_.size()) != 0}; }
 	void InitIndexedQueries() { initIndexedQueries(0, Size()); }
 	void AddDistinctEntries(const h_vector<Aggregator, 4>&);
-	bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder, bool needCalcTotal);
+	bool NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder, bool needCalcTotal,
+							const SelectCtx&);
 	unsigned Start() const noexcept { return start_; }
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return HasForcedSortOptimizationQueryEntry(); }
@@ -63,7 +64,7 @@ public:
 	using QueryEntries::Dump;
 	using QueryEntries::ToDsl;
 	template <typename JoinPreResultCtx>
-	SortingEntries GetSortingEntries(const SelectCtxWithJoinPreSelect<JoinPreResultCtx>&, RankedTypeQuery rankedTypeQuery) const {
+	SortingEntries GetSortingEntries(const SelectCtxWithJoinPreSelect<JoinPreResultCtx>&, QueryRankType queryRankType) const {
 		if (ftEntry_) {
 			return {};
 		}
@@ -71,7 +72,7 @@ public:
 		// - query contains explicit specified sort order
 		// - query contains ranked query.
 		const bool disableOptimizedSortOrder =
-			!query_.GetSortingEntries().empty() || rankedTypeQuery != RankedTypeQuery::No || !std::is_same_v<JoinPreResultCtx, void>;
+			!query_.GetSortingEntries().empty() || queryRankType != QueryRankType::No || !std::is_same_v<JoinPreResultCtx, void>;
 		// Queries with ordered indexes may have different selection plan depending on filters' values.
 		// This may lead to items reordering when SingleRange becomes main selection method.
 		// By default, all the results are ordered by internal IDs, but with SingleRange results will be ordered by values first.
@@ -170,7 +171,7 @@ private:
 																 const CollateOpts&);
 	void checkStrictMode(const QueryField&) const;
 	void checkAllowedCondition(const QueryField&, CondType) const;
-	int calculateMaxIterations(const size_t from, const size_t to, int maxMaxIters, std::span<int>& maxIterations, bool inTransaction,
+	int calculateMaxIterations(size_t from, size_t to, int maxMaxIters, std::span<int>& maxIterations, bool inTransaction,
 							   bool enableSortOrders, const RdxContext&) const;
 	Changed removeBrackets();
 	size_t removeBrackets(size_t begin, size_t end);
@@ -195,8 +196,7 @@ private:
 	unsigned count_ = QueryEntry::kDefaultLimit;
 	std::optional<QueryEntry> ftEntry_;
 	std::optional<FtPreselectT> ftPreselect_;
-	const bool isMergeQuery_ = false;
-	FloatVectorsHolderMap* floatVectorsHolder_;
+	FloatVectorsHolderMap* floatVectorsHolder_ = nullptr;
 	bool hasForcedSortOptimizationEntry_ = false;
 };
 

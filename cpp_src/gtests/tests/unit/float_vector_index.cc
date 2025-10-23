@@ -241,7 +241,7 @@ static void checkIndexMemstat(ReindexerTestApi<reindexer::Reindexer>& rx, std::s
 	auto json = memstats.GetJSON();
 	vectors -= emptyVectors.size();
 	auto expectedRegex =
-		fmt::format(R"(\{{"uniq_keys_count":{},"data_size":{},"indexing_struct_size":[1-9][0-9]+,"is_built":true,"name":"{}"\}})",
+		fmt::format(R"(\{{"uniq_keys_count":{},"data_size":{},"indexing_struct_size":[1-9][0-9]+,"vectors_keeper_size":[1-9][0-9]+,"is_built":true,"name":"{}"\}})",
 					vectors + (emptyVectors.empty() ? 0 : 1), vectors * dims * sizeof(float), vectorIndex);
 	ASSERT_THAT(json, testing::ContainsRegex(expectedRegex));
 }
@@ -1278,6 +1278,50 @@ TEST_F(FloatVector, WhereCondIsNullIsNotNull) try {
 			ASSERT_TRUE(emptyVectors.end() == emptyVectors.find(id)) << idxName;
 		}
 		ASSERT_EQ(qr.Count(), kMaxElements - isNullCount - deletedCount) << idxName;
+	}
+}
+CATCH_AND_ASSERT
+
+TEST_F(FloatVector, KeeperQRIterateAfterDropIndex) try {
+	constexpr static auto kNsName = "fv_delete_index_ns_keeper"sv;
+	constexpr static auto kFieldNameIvf = "ivf"sv;
+	constexpr static size_t kDimension = 10;
+	constexpr static size_t kItemCount = 10;
+	constexpr auto kSleepTime = std::chrono::milliseconds(500);
+
+	rt.OpenNamespace(kNsName);
+	rt.DefineNamespaceDataset(
+		kNsName,
+		{
+			IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+			IndexDeclaration{
+				kFieldNameIvf, "ivf", "float_vector",
+				IndexOpts{}.SetFloatVector(
+					IndexIvf,
+					FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(5).SetMetric(reindexer::VectorMetric::InnerProduct)),
+				0},
+		});
+
+	std::unordered_set<int> emptyVectors;
+	for (size_t i = 0; i < kItemCount; ++i) {
+		auto item = newItem<kDimension>(kNsName, kFieldNameIvf, i, emptyVectors);
+		rt.Upsert(kNsName, item);
+	}
+
+	auto res = rt.Select(reindexer::Query(kNsName).SelectAllFields());
+	EXPECT_EQ(res.Count(), 10);
+
+	rt.DropIndex(kNsName, kFieldNameIvf);
+
+	std::this_thread::sleep_for(kSleepTime);
+
+	// iterate after drop index
+	reindexer::WrSerializer ser;
+	for (auto& it : res) {
+		ser.Reset();
+		auto err = it.GetJSON(ser, false);
+		ASSERT_TRUE(err.ok()) << err.whatStr();
+		ASSERT_EQ(res.GetNamespaces().size(), 1);
 	}
 }
 CATCH_AND_ASSERT

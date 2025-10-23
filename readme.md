@@ -63,7 +63,11 @@ about reindexer server and HTTP API refer to
   - [Subqueries (nested queries)](#subqueries-nested-queries)
   - [Complex Primary Keys and Composite Indexes](#complex-primary-keys-and-composite-indexes)
   - [Aggregations](#aggregations)
-  - [Search in array fields with matching array indexes](#search-in-array-fields-with-matching-array-indexes)
+  - [Search in array fields](#search-in-array-fields)
+    - [Search in array fields with matching indexes](#search-in-array-fields-with-matching-indexes)
+    - [Search in array fields with matching indexes using grouping](#search-in-array-fields-with-matching-indexes-using-grouping)
+      - [Query Execution Examples](#query-execution-examples)
+    - [Grouped values extraction examples for more complex cases](#grouped-values-extraction-examples-for-more-complex-cases)
   - [Atomic on update functions](#atomic-on-update-functions)
   - [Expire Data from Namespace by Setting TTL](#expire-data-from-namespace-by-setting-ttl)
   - [Direct JSON operations](#direct-json-operations)
@@ -1430,55 +1434,293 @@ A table row is considered unique if
  If at least one of these values is unique, then the string is considered unique.
 The aggregation result adds up all the unique values `v1[i]+v2[i]+...`. 
 
+### Search in array fields
 
-### Search in array fields with matching array indexes
-
-Reindexer allows to search data in array fields when matching values have same indexes positions.
-For instance, we've got an array of structures:
+Let's consider the case of filtering data by multiple arrays.
+Suppose we have the following data structure:
 
 ```go
-type Elem struct {
-	F1 int `reindex:"f1"`
-	F2 int `reindex:"f2"`
+type Element struct {
+    Project   string   `reindex:"project"`
+    Countries []string `reindex:"countries"`
 }
 
-type A struct {
-	Elems []Elem
+type Filters struct {
+    Filters []Element
+    Array   []int `reindex:"array"`
 }
 ```
 
-Common attempt to search values in this array
+with the following data:
 
-```go
-db.Query("Namespace").Where("f1",EQ,1).Where("f2",EQ,2)
+```json
+{
+  "Filters": [
+    {"Project": "wink", "Countries": ["ru", "am"]},
+    {"Project": "dns", "Countries": ["ru"]}
+  ],
+  "Array": [10, 20]
+}
 ```
 
-finds all items of array `Elem[]` where `f1` is equal to 1 and `f2` is equal to 2.
-
-`EqualPosition` function allows to search in array fields with equal indexes.
-Queries like this:
-
-```go
-db.Query("Namespace").Where("f1", reindexer.GE, 5).Where("f2", reindexer.EQ, 100).EqualPosition("f1", "f2")
+When filtering with the query:
+```sql
+SELECT * FROM Namespace WHERE Array = 10 AND Filters.Countries = 'ru'
 ```
-
 or
+```sql
+SELECT * FROM Namespace WHERE array = 10 AND countries = 'ru'
+```
+
+the condition `Array = 10` checks whether the value `10` is present in the array `[10, 20]`,
+the condition `Filters.Countries = 'ru'` checks whether the value `'ru'` is present in the array `["ru", "am"]`.
+It does not matter at which position in the array the value was found.
+
+#### Search in array fields with matching indexes
+
+In some tasks, it is necessary to require that matches occur at the same indexes. To solve this problem, there is the function
+`EQUAL_POSITION(FieldName1, FieldName2, ...)`, where the `FieldNameN` parameter can be a JSON path or an index name:
 
 ```sql
-SELECT * FROM Namespace WHERE f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2);
+SELECT * FROM Namespace WHERE Filters.Project = 'wink' AND Array = 20 EQUAL_POSITION(Filters.Project, Array)
 ```
 
-will find all the items of array `Elem[]` with `equal` array indexes where `f1` is greater or equal to 5 and `f2` is equal to 100 (for instance, query returned 5 items where only 3rd elements of both arrays have appropriate values).
+The query above will be processed as follows:
 
-With complex expressions (expressions with brackets) equal_position() could be within a bracket:
+1. Values are extracted:
+```
+Filters.Project -> ["wink", "dns"]
+Array           -> [10, 20]
+```
+2. The query condition is checked for array index 0:
+```
+Filters.Project[0]('wink') = 'wink' AND Array[0](10) = 20
+```
+3. The query condition is checked for array index 1:
+```
+Filters.Project[1]('dns') = 'wink' AND Array[1](20) = 20
+```
+4. Since the condition is not met for any of the array indexes, this document does not satisfy the query condition.
 
+Consider another query:
+```sql
+SELECT * FROM Namespace WHERE Filters.Project = 'wink' AND Array = 10 EQUAL_POSITION(Filters.Project, Array)
+```
+1. Values are extracted:
+```
+Filters.Project -> ["wink", "dns"]
+Array           -> [10, 20]
+```
+2. The query condition is checked for array index 0:
+```
+Filters.Project[0]('wink') = 'wink' AND Array[0](10) = 10
+```
+3. The query condition is checked for array index 1:
+```
+Filters.Project[1]('dns') = 'wink' AND Array[1](20) = 10
+```
+4. Since the condition is met for index 0, this document satisfies the query condition.
+
+For conditions with parentheses, `EQUAL_POSITION(...)` applies to the conditions inside the parentheses. Multiple `EQUAL_POSITION` functions can be specified for a single set of parentheses.
+`EQUAL_POSITION` does not work for the following conditions: `IS NULL`, `IS EMPTY`, and `IN` (with an empty list of values).
+Query examples:
 ```sql
 SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2)) OR (f3 = 3 AND f4 < 4 AND f5 = 7 EQUAL_POSITION(f3,f4,f5));
+
 SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 AND f3 = 3 AND f4 < 4 EQUAL_POSITION(f1,f3) EQUAL_POSITION(f2,f4)) OR (f5 = 3 AND f6 < 4 AND f7 = 7 EQUAL_POSITION(f5,f7));
+
 SELECT * FROM Namespace WHERE f1 >= 5 AND (f2 = 100 AND f3 = 3 AND f4 < 4 EQUAL_POSITION(f2,f3)) AND f5 = 3 AND f6 < 4 EQUAL_POSITION(f1,f5,f6);
 ```
+Both index names and JSON paths can be used in conditions and `EQUAL_POSITION`.
+The following combinations are allowed:
 
-`equal_position` doesn't work with the following conditions: IS NULL, IS EMPTY and IN(with empty parameter list).
+Index (index) built on a single JSON path (json_path) 
+
+| Condition | Equal_position | Allowed |
+|-----------|----------------|---------|
+| index     | index          | +       |
+| index     | json_path      | +       |
+| json_path | json_path      | +       |
+| json_path | index          | +       |
+
+Index (index) built on two JSON paths (json_path1, json_path2)
+
+| Condition  | Equal_position | Allowed |
+|------------|----------------|---------|
+| index      | index          | +       |
+| index      | json_path1     | +       |
+| index      | json_path2     | +       |
+| json_path1 | json_path1     | +       |
+| json_path1 | json_path2     | -       |
+| json_path2 | json_path1     | -       |
+| json_path2 | json_path2     | +       |
+| json_path1 | index          | -       |
+| json_path2 | index          | -       |
+
+#### Search in array fields with matching indexes using grouping
+
+For nested arrays, grouping logic is supported.
+To use it, add the `[#]` label after the field name. 
+It should be noted that in this case, only the JSON path is used because the index name does not reflect the document's structure.
+In this case, during processing, a table will be formed: each row contains all values
+for one index of the marked array, and the row number corresponds to this index.
+
+For example, if we need to group the values of the `Filters.Countries` field by the indexes of the `Filters` array,
+the notation would look like this: `Filters[#].Countries`.
+The table created as a result of grouping will be as follows:
+
+| N |      |     |
+|---|------|-----|
+| 0 | "ru" | "am"|
+| 1 | "ru" |     |
+
+If we need to group the values of the `Filters.Project` field by the indices of the `Filters` array,
+the notation would look like this: `Filters[#].Project`.
+The table created as a result of grouping will be as follows:
+
+| N |      |
+|---|------|
+| 0 |"wink"|
+| 1 |"dns" |
+
+To check the condition, rows with the same indices are selected.
+
+##### Query Execution Examples
+
+Field values are extracted according to the tables above.
+
+**Example 1:**
+```go
+db.Query("Namespace").
+    Where("Filters.Project", reindexer.EQ, "dns").
+    Where("Filters.Countries", reindexer.EQ, "ru").
+    EqualPosition("Filters[#].Project", "Filters[#].Countries")
+```
+```sql
+SELECT * FROM ns WHERE Filters.Project = 'dns' AND Filters.Countries = 'ru'
+  EQUAL_POSITION(Filters[#].Project, Filters[#].Countries)
+```
+
+1. The query condition is checked for array index 0:
+```
+Filters[0].Countries[0]('ru') = 'ru' OR Filters[0].Countries[1]('am') = 'ru'
+AND
+Filters[0].Project[0]('wink') = 'dns'
+```
+2. The query condition is checked for array index 1:
+```
+Filters[1].Countries[0]('ru') = 'ru'
+AND
+Filters[1].Project[0]('dns') = 'dns'
+```
+3. Since the condition is met for index 1, this document satisfies the query condition.
+
+**Example 2:**
+```go
+db.Query("Namespace").
+    Where("Filters.Project", reindexer.EQ, "dns").
+    Where("Filters.Countries", reindexer.EQ, "am").
+    EqualPosition("Filters[#].Project", "Filters[#].Countries")
+```
+
+1. The query condition is checked for array index 0:
+```
+Filters[0].Countries[0]('ru') = 'am' OR Filters[0].Countries[1]('am') = 'am'
+AND
+filters[0].Project[0]('wink') = 'dns'
+```
+2. The query condition is checked for array index 1:
+```
+Filters[1].Countries[0]('ru') = 'am'
+AND
+Filters[1].Project[0]('dns') = 'dns'
+```
+3. Since the condition is not met for any index, this document does not satisfy the query condition.
+
+**Example 3:**
+```go
+db.Query("Namespace").
+    Where("Filters.Project", reindexer.EQ, "wink").
+    Where("Filters.Countries", reindexer.EQ, "am").
+    EqualPosition("Filters[#].Project", "Filters[#].Countries")
+```
+
+1. The query condition is checked for array index 0:
+```
+Filters[0].Countries[0]('ru') = 'am' OR Filters[0].Countries[1]('am') = 'am'
+AND
+Filters[0].Project[0]('wink') = 'wink'
+```
+2. The query condition is checked for array index 1:
+```
+Filters[1].Countries[0]('ru') = 'am'
+AND
+Filters[1].Project[0]('dns') = 'wink'
+```
+3. Since the condition is met for index 0, this document satisfies the query condition.
+
+#### Grouped values extraction examples for more complex cases
+
+Consider the document:
+
+```json
+"arr_root": [
+  {
+    "obj_nested": {
+      "arr_nested": [
+        {
+          "field": 1
+        },
+        {
+          "field": [5, 3]
+        }
+      ]
+    }
+  },
+  {
+  },
+  {
+    "obj_nested": {
+      "arr_nested": [
+        {
+          "field": null
+        },
+        {
+          "field": [4, 7]
+        }
+      ]
+    }
+  }
+]
+```
+
+Grouping by `arr_root.obj_nested.arr_nested.field[#]`:
+
+| N |   |   |     |   |
+|---|---|---|-----|---|
+| 0 | 1 | 5 | null| 4 |
+| 1 | 3 | 7 |     |   |
+
+Grouping by `arr_root.obj_nested.arr_nested[#].field`:
+
+| N |   |      |   |   |
+|---|---|------|---|---|
+| 0 | 1 | null |   |   |
+| 1 | 5 | 3    | 4 | 7 |
+
+Grouping by `arr_root.obj_nested[#].arr_nested.field`:
+
+| N |   |   |   |     |   |   |
+|---|---|---|---|-----|---|---|
+| 0 | 1 | 5 | 3 | null| 4 | 7 |
+
+Grouping by `arr_root[#].obj_nested.arr_nested.field`:
+
+| N |      |   |   |
+|---|------|---|---|
+| 0 | 1    | 5 | 3 |
+| 1 |      |   |   |
+| 2 | null | 4 | 7 |
 
 ### Atomic on update functions
 

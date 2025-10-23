@@ -1,11 +1,9 @@
 #pragma once
 
 #include <optional>
+#include "core/keyvalue/float_vectors_keeper.h"
 #include "core/namespace/float_vectors_indexes.h"
-#include "core/type_consts.h"
-#include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
-#include "float_vector.h"
 
 namespace reindexer {
 
@@ -42,34 +40,41 @@ public:
 };
 
 class [[nodiscard]] FloatVectorsHolderMap {
-	using VectorsById = fast_hash_map<IdType, FloatVectorsHolderVector>;
-
-	struct [[nodiscard]] NsFloatVectorsHolder {
-		NsFloatVectorsHolder(FloatVectorsIndexes&& fvIdx) noexcept : fvIndexes{std::move(fvIdx)} {}
-		FloatVectorsIndexes fvIndexes;
-		VectorsById vectorsById;
-	};
-
 public:
+	FloatVectorsHolderMap() noexcept = default;
+	FloatVectorsHolderMap(const FloatVectorsHolderMap&) noexcept = delete;
+	FloatVectorsHolderMap(FloatVectorsHolderMap&&) noexcept = default;
+	FloatVectorsHolderMap& operator=(const FloatVectorsHolderMap&) noexcept = delete;
+	FloatVectorsHolderMap& operator=(FloatVectorsHolderMap&&) noexcept = default;
+	~FloatVectorsHolderMap() = default;
+
 	template <typename It>
-	void Add(const NamespaceImpl&, It begin, It end, const FieldsFilter&);
-	bool Empty() const noexcept {
-		if (!vectorsByNs_.has_value()) {
-			return true;
-		}
-		for (const auto& holder : *vectorsByNs_) {
-			if (!holder.second.vectorsById.empty()) {
-				return false;
-			}
-		}
-		return true;
-	}
+	void Add(const NamespaceImpl&, const It& begin, const It& end, const FieldsFilter&);
+	bool Empty() const noexcept;
 
 private:
-	void add(const FloatVectorsIndexes&, VectorsById&, ItemRef&, const PayloadType&, const FieldsFilter&);
-	void clear(const FloatVectorsIndexes&, ItemRef&, const PayloadType&);
+	struct [[nodiscard]] FloatVectorIndexInfo {
+		FloatVectorIndexInfo() = delete;
+		FloatVectorIndexInfo(const FloatVectorIndexData& i, FloatVectorsKeeper::KeeperTag&& t) noexcept : index(i), tag(std::move(t)) {}
+		FloatVectorIndexInfo(FloatVectorIndexInfo&&) noexcept = default;
+		FloatVectorIndexInfo(const FloatVectorIndexInfo&) noexcept = delete;
+		FloatVectorIndexInfo& operator=(const FloatVectorIndexInfo&) noexcept = delete;
+		FloatVectorIndexInfo& operator=(FloatVectorIndexInfo&&) noexcept = default;
 
-	std::optional<fast_hash_map<const NamespaceImpl*, NsFloatVectorsHolder>> vectorsByNs_;
+		FloatVectorIndexData index;
+		FloatVectorsKeeper::KeeperTag tag;
+	};
+
+	using FloatVectorIndexList = std::vector<FloatVectorIndexInfo>;
+
+	template <typename It>
+	void updatePayload(const NamespaceImpl& ns, const FloatVectorIndexData& index, It it, const It& end,
+					   std::span<ConstFloatVectorView> vectorsData);
+	template <typename It>
+	void add(const NamespaceImpl& ns, const FloatVectorIndexInfo& indexInfo, It it, const It& end, std::vector<IdType>& ids,
+			 std::vector<ConstFloatVectorView>& vectorsData);
+
+	std::vector<std::pair<const NamespaceImpl*, FloatVectorIndexList>> vectorsByNs_;
 };
 
 }  // namespace reindexer

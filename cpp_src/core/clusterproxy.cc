@@ -1,5 +1,6 @@
 #include "clusterproxy.h"
 #include "client/itemimplbase.h"
+#include "cluster/clustercontrolrequest.h"
 #include "cluster/consts.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "core/system_ns_names.h"
@@ -49,7 +50,7 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults,
 		throw Error(errLogic, "Queries with non-empty joined data are not supported by Cluster Proxy");
 	}
 	if (result.getMergedNSCount() != 0 || result.totalCount != 0) {
-		throw Error(errLogic, "Target query resutls are not empty. Query results merging is not supported by Cluster Proxy");
+		throw Error(errLogic, "Target query results are not empty. Query results merging is not supported by Cluster Proxy");
 	}
 
 	const auto itemsCnt = clientResults.Count();
@@ -134,10 +135,7 @@ std::shared_ptr<client::Reindexer> ClusterProxy::getLeader(const cluster::RaftIn
 	leader_.reset();
 	leaderId_ = -1;
 	DSN leaderDsn;
-	Error err = impl_.getLeaderDsn(leaderDsn, GetServerID(), info);
-	if (!err.ok()) {
-		throw err;
-	}
+	impl_.getLeaderDsn(leaderDsn, GetServerID(), info);
 	if (!leaderDsn.Parser().isValid()) {
 		throw Error(errLogic, "Leader dsn is not valid. {}", leaderDsn);
 	}
@@ -350,7 +348,12 @@ Error ClusterProxy::Select(const Query& q, LocalQueryResults& qr, const RdxConte
 		return resultFollowerAction<&client::Reindexer::Select>(ctx, clientToLeader, q, qr);
 	};
 	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Select query proxied", getServerIDRel());
-	return proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
+	auto err = proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
+	if (err.code() == errNetwork) {
+		// Force leader's check, if proxy returned errNetwork. New error does not matter
+		rx_unused = impl_.ClusterControlRequest(ClusterControlRequestData(ForceElectionsCommand{}));
+	}
+	return err;
 }
 
 Transaction ClusterProxy::NewTransaction(std::string_view nsName, const RdxContext& ctx) {
@@ -473,32 +476,21 @@ void ClusterProxy::ShutdownCluster() {
 	resetLeader();
 }
 
-Namespace::Ptr ClusterProxy::GetNamespacePtr(std::string_view nsName, const RdxContext& ctx) {
-	//
-	return impl_.getNamespace(nsName, ctx);
-}
+Namespace::Ptr ClusterProxy::GetNamespacePtr(std::string_view nsName, const RdxContext& ctx) { return impl_.getNamespace(nsName, ctx); }
 
 Namespace::Ptr ClusterProxy::GetNamespacePtrNoThrow(std::string_view nsName, const RdxContext& ctx) {
-	//
 	return impl_.getNamespaceNoThrow(nsName, ctx);
 }
 
-PayloadType ClusterProxy::GetPayloadType(std::string_view nsName) {
-	//
-	return impl_.getPayloadType(nsName);
-}
+PayloadType ClusterProxy::GetPayloadType(std::string_view nsName) { return impl_.getPayloadType(nsName); }
 
-std::set<std::string> ClusterProxy::GetFTIndexes(std::string_view nsName) {
-	//
-	return impl_.getFTIndexes(nsName);
+bool ClusterProxy::IsFulltextOrVector(std::string_view nsName, std::string_view indexName) const {
+	return impl_.isFulltextOrVector(nsName, indexName);
 }
 
 bool ClusterProxy::shouldProxyQuery(const Query& q) {
-	assertrx(q.Type() == QuerySelect);
+	assertrx_throw(q.Type() == QuerySelect);
 	if (kReplicationStatsNamespace != q.NsName()) {
-		return false;
-	}
-	if (q.HasLimit()) {
 		return false;
 	}
 	if (q.GetJoinQueries().size() || q.GetMergeQueries().size() || q.GetSubQueries().size()) {

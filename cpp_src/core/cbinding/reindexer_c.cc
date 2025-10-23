@@ -537,11 +537,14 @@ reindexer_error reindexer_drop_index(uintptr_t rx, reindexer_string nsName, rein
 	return error2c(res);
 }
 
+// Special function fot tsan's false positive suppression
+static std::string copy_ns_schema(reindexer_string gs) { return std::string(reinterpret_cast<const char*>(gs.p), gs.n); }
+
 reindexer_error reindexer_set_schema(uintptr_t rx, reindexer_string nsName, reindexer_string schemaJson, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-		res = rdxKeeper.db().SetSchema(str2cv(nsName), str2c(schemaJson));
+		res = rdxKeeper.db().SetSchema(str2cv(nsName), copy_ns_schema(schemaJson));
 	}
 	return error2c(res);
 }

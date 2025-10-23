@@ -65,8 +65,8 @@ public:
 	void Update(const reindexer::Query& q, QueryResultsType& qr);
 	size_t Update(const reindexer::Query& q);
 	QueryResultsType UpdateQR(const reindexer::Query& q);
-	void Select(const reindexer::Query& q, QueryResultsType& qr);
-	QueryResultsType Select(const reindexer::Query& q);
+	void Select(const reindexer::Query& q, QueryResultsType& qr) const;
+	QueryResultsType Select(const reindexer::Query& q) const;
 	QueryResultsType ExecSQL(std::string_view sql);
 	void Delete(std::string_view ns, ItemType& item);
 	void Delete(std::string_view ns, ItemType& item, QueryResultsType&);
@@ -82,7 +82,7 @@ public:
 
 	reindexer::Error DumpIndex(std::ostream& os, std::string_view ns, std::string_view index);
 	void PrintQueryResults(const std::string& ns, const QueryResultsType& res);
-	std::string RandString(unsigned minLen = 4, unsigned maxRandLen = 4);
+	static std::string RandString(unsigned minLen = 4, unsigned maxRandLen = 4);
 	std::string RandLikePattern();
 	std::string RuRandString();
 	std::vector<int> RandIntVector(size_t size, int start, int range);

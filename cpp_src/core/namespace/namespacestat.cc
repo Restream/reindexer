@@ -109,6 +109,9 @@ void IndexMemStat::GetJSON(JsonBuilder& builder) const {
 	if (indexingStructSize) {
 		builder.Put("indexing_struct_size", indexingStructSize);
 	}
+	if (vectorsKeeperSize) {
+		builder.Put("vectors_keeper_size", vectorsKeeperSize);
+	}
 	if (isBuilt.has_value()) {
 		builder.Put("is_built", isBuilt.value());
 	}

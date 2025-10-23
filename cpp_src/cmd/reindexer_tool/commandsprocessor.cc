@@ -642,9 +642,7 @@ Error CommandsProcessor<DBInterface>::interactive() noexcept {
 			Error err = process(input);
 			if (!err.ok()) {
 				std::cerr << "ERROR: " << err.what() << std::endl;
-				return err;
 			}
-
 			rx.history_add(input);
 		}
 		rx.history_save(history_file);
@@ -660,7 +658,6 @@ Error CommandsProcessor<DBInterface>::interactive() noexcept {
 			Error err = process(command);
 			if (!err.ok()) {
 				std::cerr << "ERROR: " << err.what() << std::endl;
-				return err;
 			}
 		}
 #endif
@@ -1653,7 +1650,7 @@ void CommandsProcessor<DBInterface>::filterNamespacesByDumpMode(std::vector<Name
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
-		throwIfError(cfg.FromJSON(root["sharding"]));
+		throwIfError(cfg.FromJSON(root[reindexer::kShardingCfgName]));
 	} catch (const gason::Exception& ex) {
 		throw Error(errParseJson, "Unable to parse sharding config: {}", ex.what());
 	}

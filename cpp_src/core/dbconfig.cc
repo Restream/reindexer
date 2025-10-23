@@ -98,7 +98,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 		}
 
 		cluster::AsyncReplConfigData asyncReplConfigDataSafe;
-		const auto& asyncReplicationNode = root["async_replication"sv];
+		const auto& asyncReplicationNode = root[kAsyncReplicationCfgName];
 		if (!asyncReplicationNode.empty()) {
 			asyncReplicationDataLoadResult_ = asyncReplConfigDataSafe.FromJSON(asyncReplicationNode);
 

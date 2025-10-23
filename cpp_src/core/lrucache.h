@@ -1,8 +1,8 @@
 #pragma once
 
-#include <list>
 #include <unordered_map>
 #include "estl/atomic_unique_ptr.h"
+#include "estl/elist.h"
 #include "estl/lock.h"
 #include "estl/mutex.h"
 #include "namespace/namespacestat.h"
@@ -75,7 +75,7 @@ public:
 	}
 
 private:
-	typedef std::list<const K*> LRUList;
+	typedef elist<const K*> LRUList;
 	struct [[nodiscard]] Entry {
 		V val;
 		typename LRUList::iterator lruPos;

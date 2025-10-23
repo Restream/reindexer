@@ -2,12 +2,10 @@
 
 #include <functional>
 #include <iostream>
-#include <limits>
-#include <list>
-#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "estl/elist.h"
 #include "tools/terminalutils.h"
 
 namespace reindexer {
@@ -26,7 +24,7 @@ struct [[nodiscard]] ColumnData {
 
 class [[nodiscard]] TableCalculator {
 public:
-	using Header = std::list<std::string>;
+	using Header = elist<std::string>;
 	using Row = std::unordered_map<std::string, std::string>;
 	using Rows = std::vector<Row>;
 	using ColumnsData = std::unordered_map<std::string, ColumnData>;

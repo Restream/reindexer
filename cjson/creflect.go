@@ -48,6 +48,57 @@ type LStringHeader struct {
 	data [1]Cchar
 }
 
+const (
+	kLargeJSONStrFlag byte = 0x80
+)
+
+func lengthLargeJsonString(p *byte) uint {
+	ptr := uintptr(unsafe.Pointer(p))
+	return uint(*(*byte)(unsafe.Pointer(ptr - 1))) |
+		(uint(*(*byte)(unsafe.Pointer(ptr))) << 8) |
+		(uint(*(*byte)(unsafe.Pointer(ptr + 1))) << 16) |
+		((uint(*(*byte)(unsafe.Pointer(ptr + 2)) & (^kLargeJSONStrFlag))) << 24)
+}
+
+func lengthSmallJsonString(p *byte) uint {
+	ptr := uintptr(unsafe.Pointer(p))
+	return uint(*(*byte)(unsafe.Pointer(ptr))) |
+		(uint(*(*byte)(unsafe.Pointer(ptr + 1))) << 8) |
+		(uint(*(*byte)(unsafe.Pointer(ptr + 2))) << 16)
+}
+
+func jsonStringView(p *byte) []byte {
+	ptr := uintptr(unsafe.Pointer(p))
+
+	thirdByte := *(*byte)(unsafe.Pointer(ptr + 2))
+	var strPtr uintptr
+	var len uint
+	if thirdByte&kLargeJSONStrFlag != 0 {
+		len = lengthLargeJsonString(p)
+
+		if unsafe.Sizeof(strPtr) == 4 {
+			strPtr = uintptr(*(*byte)(unsafe.Pointer(ptr - 2))) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 3))) << 8) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 4))) << 16) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 5))) << 24)
+		} else {
+			strPtr = uintptr(*(*byte)(unsafe.Pointer(ptr - 2))) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 3))) << 8) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 4))) << 16) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 5))) << 24) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 6))) << 32) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 7))) << 40) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 8))) << 48) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 9))) << 56)
+		}
+	} else {
+		len = lengthSmallJsonString(p)
+		strPtr = ptr - uintptr(len)
+	}
+
+	return (*[1 << 30]byte)(unsafe.Pointer(strPtr))[:len:len]
+}
+
 type payloadFieldType struct {
 	Type                 int
 	Name                 string
@@ -207,6 +258,7 @@ const tagShift = 59
 const tagMask = uint64(7) << tagShift
 const lStringType = 1
 const keySringType = 5
+const jsonSringType = 6
 
 func (pl *payloadIface) getBytes(field, idx int) []byte {
 	p := pl.ptr(field, idx, valueString)
@@ -223,6 +275,8 @@ func (pl *payloadIface) getBytes(field, idx int) []byte {
 		strHdr := (*PStringHeader)(unsafe.Pointer(hdrPtr))
 		dataPtr := unsafe.Pointer(hdrPtr + unsafe.Sizeof(PStringHeader{}))
 		return (*[1 << 30]byte)(dataPtr)[:strHdr.len:strHdr.len]
+	case jsonSringType:
+		return jsonStringView((*uint8)(unsafe.Pointer(ppstring)))
 	default:
 		panic(fmt.Sprintf("Unknow string type in payload value: %d", psType))
 	}

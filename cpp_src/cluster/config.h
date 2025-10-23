@@ -21,6 +21,13 @@ namespace reindexer {
 
 class WrSerializer;
 
+constexpr char kAsyncReplicationCfgName[] = "async_replication";
+constexpr char kAsyncReplicationNodesCfgName[] = "nodes";
+constexpr char kAsyncReplicationDSNCfgName[] = "dsn";
+constexpr char kShardingCfgName[] = "sharding";
+constexpr char kShardingShardsCfgName[] = "shards";
+constexpr char kShardingDSNsCfgName[] = "dsns";
+
 namespace cluster {
 
 inline uint32_t GetConsensusForN(uint32_t n) noexcept { return n / 2 + 1; }

@@ -530,7 +530,7 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 				source.emplace_back(fld, std::move(data));
 			}
 
-			// ToDo in real life, work with several embedded devices requires asynchrony. Now we have only one, at all
+			// ToDo in real life, work with several embedded devices requires asynchrony. Now we support only one
 			h_vector<ConstFloatVector, 1> products;
 			embedder->Calculate(ctx, std::span{&source, 1}, products);
 			if (products.size() != 1) {

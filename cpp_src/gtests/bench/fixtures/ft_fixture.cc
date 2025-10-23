@@ -23,21 +23,32 @@ FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
 #endif
-	static reindexer::FtFastConfig ftCfg(1);
-	static IndexOpts ftIndexOpts;
-	ftCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
-	ftIndexOpts.SetConfig(IndexCompositeFastFT, ftCfg.GetJSON({}));
-	ftIndexOpts.Dense();
+	static reindexer::FtFastConfig ftFastCfg(1);
+	ftFastCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+
+	static reindexer::FtFastConfig ftLowDiversityCfg(1);
+	// for benching merge_limit break #2244
+	ftLowDiversityCfg.mergeLimit = 4000;
+	ftLowDiversityCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+
+	static IndexOpts ftFastIndexOpts;
+	ftFastIndexOpts.SetConfig(IndexCompositeFastFT, ftFastCfg.GetJSON({}));
+	ftFastIndexOpts.Dense();
+
+	static IndexOpts ftLowDiversityIndexOpts;
+	ftLowDiversityIndexOpts.SetConfig(IndexCompositeFastFT, ftLowDiversityCfg.GetJSON({}));
+	ftLowDiversityIndexOpts.Dense();
+
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("description", "-", "string", IndexOpts())
 		.AddIndex("year", "tree", "int", IndexOpts())
 		.AddIndex("countries", "tree", "string", IndexOpts().Array())
-		.AddIndex(kFastIndexTextName_, {"countries", "description"}, "text", "composite", ftIndexOpts)
+		.AddIndex(kFastIndexTextName_, {"countries", "description"}, "text", "composite", ftFastIndexOpts)
 		.AddIndex("searchfuzzy", {"countries", "description"}, "fuzzytext", "composite", IndexOpts());
 	lowWordsDiversityNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("description1", "-", "string", IndexOpts())
 		.AddIndex("description2", "-", "string", IndexOpts())
-		.AddIndex(kLowDiversityIndexName_, {"description1", "description2"}, "text", "composite", ftIndexOpts);
+		.AddIndex(kLowDiversityIndexName_, {"description1", "description2"}, "text", "composite", ftLowDiversityIndexOpts);
 }
 
 template <reindexer::FtFastConfig::Optimization opt>
@@ -119,7 +130,7 @@ void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::o
 	RegisterWrapper wrapSlow(slowIterationCount);  // std::numeric_limits<size_t>::max() test limit - default time
 	RegisterWrapper wrapFast(fastIterationCount);
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
-	Register("BuildAndInsertNs2", &FullText::BuildInsertLowDiversityNs, this)->Iterations(1000)->Unit(benchmark::kMicrosecond);
+	Register("BuildAndInsertNs2", &FullText::BuildInsertLowDiversityNs, this)->Iterations(25000)->Unit(benchmark::kMicrosecond);
 	wrapSlow.SetOptions(Register("Fast3PhraseLowDiversity", &FullText::Fast3PhraseLowDiversity, this));
 	wrapSlow.SetOptions(Register("Fast3WordsLowDiversity", &FullText::Fast3WordsLowDiversity, this));
 
@@ -200,7 +211,7 @@ void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::o
 
 reindexer::Item FullText::MakeLowDiversityItem(int id) {
 	auto createText = [this]() {
-		const size_t wordCnt = RndInt(5, 50);
+		const size_t wordCnt = RndInt(10, 25);
 		reindexer::WrSerializer r;
 		r.Reserve(wordCnt * 30);
 

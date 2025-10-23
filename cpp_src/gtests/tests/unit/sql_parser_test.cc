@@ -73,13 +73,13 @@ INSTANTIATE_TEST_SUITE_P(
 	TestsSqlWhere, SQLParserWhere,
 	::testing::Values(
 		std::pair{"select * from ns where", "Expected condition after 'WHERE'"},
-		std::pair{"select * from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 26 26)"},
-		std::pair{"select * from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 28 28)"},
+		std::pair{"select * from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 23 26)"},
+		std::pair{"select * from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 24 27)"},
 		std::pair{"delete from ns where", "Expected condition after 'WHERE'"},
-		std::pair{"delete from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 24 24)"},
-		std::pair{"delete from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 26 26)"},
+		std::pair{"delete from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 21 24)"},
+		std::pair{"delete from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 22 25)"},
 		std::pair{"update ns set a=1 where", "Expected condition after 'WHERE'"},
-		std::pair{"update ns set a=1 where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 27 27)"},
-		std::pair{"update ns set a=1 where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 29 29)"})
+		std::pair{"update ns set a=1 where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 24 27)"},
+		std::pair{"update ns set a=1 where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 25 28)"})
 
 );

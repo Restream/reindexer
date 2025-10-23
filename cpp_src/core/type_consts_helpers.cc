@@ -189,31 +189,14 @@ std::string_view JoinTypeName(JoinType type) {
 	return "unknown"sv;
 }
 
-RankOrdering ToRankOrdering(RankedTypeQuery type) {
-	switch (type) {
-		case RankedTypeQuery::No:
-			return RankOrdering::Off;
-		case RankedTypeQuery::FullText:
-		case RankedTypeQuery::KnnIP:
-		case RankedTypeQuery::KnnCos:
-		case RankedTypeQuery::Hybrid:
-			return RankOrdering::Desc;
-		case RankedTypeQuery::KnnL2:
-			return RankOrdering::Asc;
-		case RankedTypeQuery::NotSet:
-			break;
-	}
-	throw_as_assert;
-}
-
-RankedTypeQuery ToRankedTypeQuery(VectorMetric metric) {
+QueryRankType ToQueryRankType(VectorMetric metric) {
 	switch (metric) {
 		case VectorMetric::L2:
-			return RankedTypeQuery::KnnL2;
+			return QueryRankType::KnnL2;
 		case VectorMetric::Cosine:
-			return RankedTypeQuery::KnnCos;
+			return QueryRankType::KnnCos;
 		case VectorMetric::InnerProduct:
-			return RankedTypeQuery::KnnIP;
+			return QueryRankType::KnnIP;
 	}
 	throw_as_assert;
 }

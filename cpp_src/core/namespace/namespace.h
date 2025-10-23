@@ -216,7 +216,9 @@ public:
 		return nsFuncWrapper<&NamespaceImpl::RebuildIVFIndex>(index, dataPart, ctx);
 	}
 
-	std::set<std::string> GetFTIndexes(const RdxContext& ctx) const { return nsFuncWrapper<&NamespaceImpl::GetFTIndexes>(ctx); }
+	bool IsFulltextOrVector(std::string_view indexName, const RdxContext& ctx) const {
+		return nsFuncWrapper<&NamespaceImpl::IsFulltextOrVector>(indexName, ctx);
+	}
 
 	void DumpIndex(std::ostream& os, std::string_view index, const RdxContext& ctx) {
 		return nsFuncWrapper<&NamespaceImpl::DumpIndex>(os, index, ctx);

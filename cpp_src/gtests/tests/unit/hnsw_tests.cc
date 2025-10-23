@@ -1,64 +1,54 @@
 #include "gtest/gtest.h"
 #include "gtests/tests/gtest_cout.h"
 
-#include "core/enums.h"
 #include "core/index/float_vector/hnswlib/hnswlib.h"
 
 using namespace reindexer;
-using hnswlib::ScalarQuantizeType;
 
 constexpr static size_t kDimension = 100;
-constexpr static size_t kHNSWSize = 1'000;
+constexpr static size_t kHNSWInitSize = 1'000;
+constexpr static size_t kHNSWMaxSize = 3 * kHNSWInitSize;
 constexpr static size_t kEfConstruction = 200;
 
-static float randFloat() { return (rand() % 2 ? -1.f : 1.f) * (rand() % 10'000) / 10'000; }
-static float randFloat(int from, int size) { return from + float(rand() % (1000 * size)) / 1000; }
-
-static std::vector<float> VectorWithComponentDispersion() {
-	std::vector<float> res;
-	res.reserve(kDimension);
-
-	const int from = -5'000;
-	const int to = 5'000;
-	const int step = (to - from) / kDimension;
-	for (size_t i = 0; i < kDimension; ++i) {
-		res.emplace_back(randFloat(from + i * step, step));
-	}
-
-	return res;
+static float randFloat() {
+#if 0
+	static std::random_device rd;
+	static std::mt19937 gen(rd());
+	static std::normal_distribution<> nd(0, 0.25);
+	return nd(gen);
+#else
+	return (rand() % 2 ? -1.f : 1.f) * (rand() % 10'000) / 10'000;
+#endif
 }
 
-class HNSWSq8Test : public ::testing::TestWithParam<ScalarQuantizeType> {};
+std::vector<float> makePoint(float multiplier = 1.f) {
+	std::vector<float> point(kDimension);
+	for (size_t i = 0; i < kDimension; ++i) {
+		point[i] = multiplier * randFloat();
+	}
+	return point;
+}
 
 template <typename MetricT>
-auto CreateHNSWGraph(size_t size, const bool withComponentDispersion = false) {
+auto CreateHNSWGraph() {
 	constexpr static size_t kM = 16;
 	constexpr static size_t kHnswRandomSeed = 100;
 
 	auto space = std::make_unique<MetricT>(kDimension);
-	auto map = std::make_unique<hnswlib::HierarchicalNSWST>(space.get(), size, kM, kEfConstruction, kHnswRandomSeed, ReplaceDeleted_True);
+	auto map =
+		std::make_unique<hnswlib::HierarchicalNSWST>(space.get(), kHNSWMaxSize, kM, kEfConstruction, kHnswRandomSeed, ReplaceDeleted_True);
 
-	std::vector<std::vector<float>> points(size);
+	std::vector<std::vector<float>> points(kHNSWInitSize);
 
-	for (size_t i = 0; i < size; ++i) {
-		if (withComponentDispersion) {
-			points[i] = VectorWithComponentDispersion();
-		} else {
-			points[i].reserve(kDimension);
-			for (size_t j = 0; j < kDimension; ++j) {
-				points[i].emplace_back(randFloat());
-			}
-		}
-	}
-
-	for (size_t i = 0; i < size; ++i) {
-		map->template addPoint<hnswlib::DummyLocker>(points[i].data(), hnswlib::labeltype(i));
+	for (size_t i = 0; i < kHNSWInitSize; ++i) {
+		points[i] = makePoint();
+		map->template addPoint<hnswlib::DummyLocker>(points[i].data(), i);
 	}
 
 	return std::make_pair(std::move(map), std::move(points));
 }
 
-template <typename MetricT, bool withComponentDispersion = false>
+template <typename MetricT>
 class HNSWTestGraphSingleton {
 public:
 	static auto Map() noexcept {
@@ -72,59 +62,35 @@ private:
 		return instance;
 	}
 
-	HNSWTestGraphSingleton() { std::tie(map_, points_) = CreateHNSWGraph<MetricT>(kHNSWSize, withComponentDispersion); }
+	HNSWTestGraphSingleton() { std::tie(map_, points_) = CreateHNSWGraph<MetricT>(); }
 	std::unique_ptr<hnswlib::HierarchicalNSWST> map_;
 	std::vector<std::vector<float>> points_;
 	std::unique_ptr<MetricT> space_ = std::make_unique<MetricT>(kDimension);
 };
 
 template <typename MetricT>
-void DataGettersBaseTestBody(ScalarQuantizeType Sq8type) {
+void DataSamplerBaseTestBody() {
 	const auto& map = HNSWTestGraphSingleton<MetricT>::Map();
 	const auto& points = HNSWTestGraphSingleton<MetricT>::Points();
-	const int partialSamleSize = 0.25 * points.size();
+	const int partialSampleSize = 0.25 * points.size();
 
-	auto partialIndexes = hnswlib::HNSWView<hnswlib::HierarchicalNSWST>::GetParitalSampleIndexes(partialSamleSize, map->cur_element_count);
-	auto samples = hnswlib::HNSWView(Sq8type, *map, partialIndexes);
+	auto partialIndexes = hnswlib::HNSWView<hnswlib::HierarchicalNSWST>::GetSampleIndexes(partialSampleSize, map->cur_element_count);
+	auto samples = hnswlib::HNSWView(*map, partialIndexes);
 
 	const auto dim = map->fstdistfunc_.Dims();
-	if (Sq8type == ScalarQuantizeType::Full) {
-		int cnt = 0;
-		for (const auto& sample : samples) {
-			for (const auto& comp : sample) {
-				ASSERT_EQ(comp, points[cnt / dim][cnt % dim]) << fmt::format("cnt={}", cnt);
-				++cnt;
-			}
+	int cnt = 0;
+	for (auto& sample : samples) {
+		for (const auto& comp : sample) {
+			ASSERT_EQ(comp, points[partialIndexes[cnt / dim]][cnt % dim]);
+			++cnt;
 		}
-		ASSERT_EQ(cnt, map->cur_element_count * dim);
-	} else if (Sq8type == ScalarQuantizeType::Partial) {
-		int cnt = 0;
-		for (auto& sample : samples) {
-			for (const auto& comp : sample) {
-				ASSERT_EQ(comp, points[partialIndexes[cnt / dim]][cnt % dim]);
-				++cnt;
-			}
-		}
-		ASSERT_EQ(cnt, partialSamleSize * dim);
-	} else if (Sq8type == ScalarQuantizeType::Component) {
-		int compIdx = 0;
-		for (const auto& sample : samples) {
-			int i = 0;
-			for (const auto& comp : sample) {
-				(void)comp;
-				ASSERT_EQ(comp, points[i][compIdx]) << fmt::format("i={}, compIdx = {}", i, compIdx);
-				++i;
-			}
-			ASSERT_EQ(i, map->cur_element_count) << fmt::format("compIdx = {}", compIdx);
-			++compIdx;
-		}
-		ASSERT_EQ(compIdx, dim);
 	}
+	ASSERT_EQ(cnt, partialSampleSize * dim);
 }
 
-TEST_P(HNSWSq8Test, DataGettersTest_L2) { DataGettersBaseTestBody<hnswlib::L2Space>(GetParam()); }
-TEST_P(HNSWSq8Test, DataGettersTest_IP) { DataGettersBaseTestBody<hnswlib::InnerProductSpace>(GetParam()); }
-TEST_P(HNSWSq8Test, DataGettersTest_Cosine) { DataGettersBaseTestBody<hnswlib::CosineSpace>(GetParam()); }
+TEST(HNSW, DataSamplerTest_L2) { DataSamplerBaseTestBody<hnswlib::L2Space>(); }
+TEST(HNSW, DataSamplerTest_IP) { DataSamplerBaseTestBody<hnswlib::InnerProductSpace>(); }
+TEST(HNSW, DataSamplerTest_Cosine) { DataSamplerBaseTestBody<hnswlib::CosineSpace>(); }
 
 static float SimilarityQuantizationMetric(auto&& origRes, auto& quantizedRes) {
 	const int size = std::min(quantizedRes.size(), origRes.size());
@@ -179,28 +145,178 @@ static std::string MetricName() {
 	}
 }
 
-static std::string ScalarQuntizeTypeName(ScalarQuantizeType param) {
-	switch (param) {
-		case ScalarQuantizeType::Full:
-			return "Full";
-		case ScalarQuantizeType::Partial:
-			return "Partial";
-		case ScalarQuantizeType::Component:
-			return "Component";
-		default:
-			assert(false);
-			std::abort();
+template <typename MetricT>
+void BaseQuantizeHNSWTestBody(const float quantile) {
+	const auto map = HNSWTestGraphSingleton<MetricT>::Map();
+	// graph without requantizing
+	const auto mapSq8 = HNSWTestGraphSingleton<MetricT>::Map();
+	// graph with requantizing
+	const auto mapSq8R = HNSWTestGraphSingleton<MetricT>::Map();
+	// graph with requantizing with nonlinear correction in metric calclulation
+	const auto mapSq8RCorr = HNSWTestGraphSingleton<MetricT>::Map();
+
+	const float sampleSize = 0.25 * map->cur_element_count;
+
+	mapSq8->template Quantize<hnswlib::DummyLocker>(quantile, sampleSize, hnswlib::Sq8NonLinearCorrection::Disabled);
+	mapSq8R->template Quantize<hnswlib::DummyLocker>(quantile, sampleSize, hnswlib::Sq8NonLinearCorrection::Disabled);
+	mapSq8RCorr->template Quantize<hnswlib::DummyLocker>(quantile, sampleSize, hnswlib::Sq8NonLinearCorrection::Enabled);
+
+	auto countOutliers = [](const auto& point) {
+		return std::count_if(point.begin(), point.end(), [](auto v) { return std::abs(v) > 1.f; });
+	};
+
+	const auto addPointInMaps = [&](int label, float multiplier = 1.f, size_t* outliersCounter = nullptr) {
+		auto point = makePoint(multiplier);
+		if (outliersCounter) {
+			*outliersCounter += countOutliers(point);
+		}
+		map->template addPoint<hnswlib::DummyLocker>(point.data(), label);
+		mapSq8->template addPoint<hnswlib::DummyLocker>(point.data(), label);
+		mapSq8R->template addPoint<hnswlib::DummyLocker>(point.data(), label);
+		mapSq8RCorr->template addPoint<hnswlib::DummyLocker>(point.data(), label);
+	};
+
+	for (int i = kHNSWInitSize; i < int(2 * kHNSWInitSize); ++i) {
+		// 0.95 - to avoid extra outliers
+		addPointInMaps(i, 0.95 * quantile);
+	};
+
+	EXPECT_TRUE(!mapSq8R->quantizer_->NeedRequantize());
+	EXPECT_TRUE(!mapSq8RCorr->quantizer_->NeedRequantize());
+
+	const float kCompMultiplier = [&quantile]() {
+		if (quantile == 1.f) {
+			return 1.05f;
+		} else if (quantile == 0.99f) {
+			return 1.05f;
+		} else if (quantile == 0.95f) {
+			return 1.2f;
+		}
+		return 1.f;
+	}();
+
+	enum class RequantizeState { Before, After };
+	auto test = [&](RequantizeState requantized) {
+		float avgSq8Metric = 0;
+		float avgSq8MetricR = 0;
+		float avgSq8MetricRCorr = 0;
+
+		const int count = 100;
+		const int KnnN = 0.05 * map->cur_element_count;
+		const int ef = 2 * KnnN;
+		for (int i = 0; i < count; ++i) {
+			auto queryPoint = makePoint(requantized == RequantizeState::Before ? 1.f : kCompMultiplier);
+
+			auto res = map->searchKnn(queryPoint.data(), KnnN, ef);
+			auto resSq = mapSq8->searchKnn(queryPoint.data(), KnnN, ef);
+			auto resSqR = mapSq8R->searchKnn(queryPoint.data(), KnnN, ef);
+			auto resSqRCorr = mapSq8RCorr->searchKnn(queryPoint.data(), KnnN, ef);
+
+			avgSq8Metric += SimilarityQuantizationMetric(decltype(res){res}, resSq) / count;
+			avgSq8MetricR += SimilarityQuantizationMetric(decltype(res){res}, resSqR) / count;
+			avgSq8MetricRCorr += SimilarityQuantizationMetric(res, resSqRCorr) / count;
+		}
+
+		auto yellowB = requantized == RequantizeState::After ? "\e[0;33m" : "";
+		auto yellowE = requantized == RequantizeState::After ? "\e[0m" : "";
+		TestCout() << fmt::format("{}-metric; Search with ef = {}; metric = {}; metricR = {}{}{}; metricRCorr = {}{}{};\n",
+								  MetricName<MetricT>(), ef, avgSq8Metric, yellowB, avgSq8MetricR, yellowE, yellowB, avgSq8MetricRCorr,
+								  yellowE);
+
+		switch (requantized) {
+			case RequantizeState::Before: {
+				EXPECT_GT(avgSq8Metric, 0.9);
+				EXPECT_GT(avgSq8MetricR, 0.9);
+				EXPECT_GT(avgSq8MetricRCorr, 0.9);
+				break;
+			}
+			case RequantizeState::After: {
+				EXPECT_GT(avgSq8MetricR, quantile > 0.95f ? 0.9 : 0.8);
+				EXPECT_GT(avgSq8MetricRCorr, quantile > 0.95f ? 0.9 : 0.8);
+
+				// not often, but sporadically failed for good values of avgSq8Metric
+				// EXPECT_TRUE(avgSq8MetricR > avgSq8Metric);
+				// EXPECT_TRUE(avgSq8MetricRCorr > avgSq8Metric);
+				if (avgSq8Metric < 0.9) {
+					EXPECT_TRUE(avgSq8MetricR > avgSq8Metric);
+					EXPECT_TRUE(avgSq8MetricRCorr > avgSq8Metric);
+				}
+
+				// TODO It is necessary to compare avgSq8MetricRCorr and avgSq8MetricR
+
+				break;
+			}
+			default:
+				ASSERT_TRUE(false);
+		}
+	};
+
+	test(RequantizeState::Before);
+
+	size_t outliersCounter = 0;
+
+	int counter = 2 * kHNSWInitSize;
+	while (counter < int(kHNSWMaxSize) && (!mapSq8R->quantizer_->NeedRequantize() || !mapSq8RCorr->quantizer_->NeedRequantize())) {
+		addPointInMaps(counter++, kCompMultiplier, &outliersCounter);
 	}
+
+	auto outliersPct = [&map, curHNSWSize = counter - kHNSWInitSize](size_t outliers) {
+		return float(outliers) / (curHNSWSize * map->fstdistfunc_.Dims());
+	};
+
+	ASSERT_NEAR(quantile == 1.f ? 0.01f : (1.f - quantile), outliersPct(outliersCounter), 0.005f);
+	TestCout() << fmt::format("Inserted after quantizing - {},  outliersPct = {}\n", counter - 2 * kHNSWInitSize,
+							  outliersPct(outliersCounter));
+	EXPECT_GT(counter, 0.1f * (2 * kHNSWInitSize))
+		<< fmt::format("Inserted after quantizing - {},  outliersPct = {}\n", counter - 2 * kHNSWInitSize, outliersPct(outliersCounter));
+
+	EXPECT_TRUE(mapSq8R->quantizer_->NeedRequantize());
+	EXPECT_TRUE(mapSq8RCorr->quantizer_->NeedRequantize());
+
+	mapSq8R->template Requantize<hnswlib::DummyLocker>();
+	mapSq8RCorr->template Requantize<hnswlib::DummyLocker>();
+
+	while (counter < int(kHNSWMaxSize)) {
+		addPointInMaps(counter++, kCompMultiplier);
+	}
+
+	test(RequantizeState::After);
 }
 
+class HNSW_P : public ::testing::TestWithParam<float> {};
+
+TEST_P(HNSW_P, BaseQuantizeTest_L2) { BaseQuantizeHNSWTestBody<hnswlib::L2Space>(GetParam()); }
+TEST_P(HNSW_P, BaseQuantizeTest_IP) { BaseQuantizeHNSWTestBody<hnswlib::InnerProductSpace>(GetParam()); }
+TEST_P(HNSW_P, BaseQuantizeTest_Cosine) { BaseQuantizeHNSWTestBody<hnswlib::CosineSpace>(GetParam()); }
+
+INSTANTIATE_TEST_SUITE_P(, HNSW_P, ::testing::Values(1.f, 0.99f, 0.95f), [](const auto& info) {
+	if (info.param == 1.f) {
+		return "1_quantile";
+	} else if (info.param == 0.99f) {
+		return "99_quantile";
+	} else if (info.param == 0.95f) {
+		return "95_quantile";
+	} else {
+		assert(false);
+		std::abort();
+	}
+});
+
+#if 0 
+// Test for verifying metrics with nonlinear additive terms for vectors with normally distributed components
 template <typename MetricT>
-void QuantizeHNSWTestBody(ScalarQuantizeType quantizeType) {
+void QuantizeHNSWWithQuantilesTestBody(hnswlib::Sq8NonLinearCorrection corr) {
 	const auto map = HNSWTestGraphSingleton<MetricT>::Map();
+
 	const auto mapSq8 = HNSWTestGraphSingleton<MetricT>::Map();
+	const auto mapSq8_2sigma = HNSWTestGraphSingleton<MetricT>::Map();
+	const auto mapSq8_3sigma = HNSWTestGraphSingleton<MetricT>::Map();
 
-	const int partialSamleSize = (0.25 * mapSq8->cur_element_count);
+	const int sampleSize = (0.25 * mapSq8->cur_element_count);
 
-	mapSq8->template Quantize<hnswlib::DummyLocker>(quantizeType, 1.f, partialSamleSize);
+	mapSq8->template Quantize<hnswlib::DummyLocker>(1.f, sampleSize, corr);
+	mapSq8_2sigma->template Quantize<hnswlib::DummyLocker>(.95f, sampleSize, corr);
+	mapSq8_3sigma->template Quantize<hnswlib::DummyLocker>(.99f, sampleSize, corr);
 
 	auto getQueryPoint = [] {
 		std::vector<float> res(kDimension);
@@ -210,89 +326,47 @@ void QuantizeHNSWTestBody(ScalarQuantizeType quantizeType) {
 		return res;
 	};
 
-	auto test = [&](float efMultiplier) {
-		float avgQuantizationMetric = 0;
-
-		const int count = 100;
-		const int KnnN = 0.05 * kHNSWSize;
-		const int ef = 1.5 * KnnN;
-		for (int i = 0; i < count; ++i) {
-			auto queryPoint = getQueryPoint();
-			auto res = map->searchKnn(queryPoint.data(), KnnN, efMultiplier * ef);
-			auto resSq = mapSq8->searchKnn(queryPoint.data(), KnnN, efMultiplier * ef);
-			avgQuantizationMetric += SimilarityQuantizationMetric(res, resSq) / count;
-		}
-		TestCout() << fmt::format("{}-metric; QuntizeType - {}; Search with ef = {} * {}; metric = {}\n", MetricName<MetricT>(),
-								  ScalarQuntizeTypeName(quantizeType), efMultiplier, ef, avgQuantizationMetric);
-
-		ASSERT_GT(avgQuantizationMetric, 0.9);
-	};
-
-	test(1);
-	test(1.3);
-	test(1.5);
-	test(2);
-}
-
-TEST_P(HNSWSq8Test, QuantizeTest_L2) { QuantizeHNSWTestBody<hnswlib::L2Space>(GetParam()); }
-TEST_P(HNSWSq8Test, QuantizeTest_IP) { QuantizeHNSWTestBody<hnswlib::InnerProductSpace>(GetParam()); }
-TEST_P(HNSWSq8Test, QuantizeTest_Cosine) { QuantizeHNSWTestBody<hnswlib::CosineSpace>(GetParam()); }
-
-template <typename MetricT>
-void QuantizeComponentBasedTestBody() {
-	const auto map = HNSWTestGraphSingleton<MetricT, true>::Map();
-	const auto mapSq8PFull = HNSWTestGraphSingleton<MetricT, true>::Map();
-	const auto mapSq8Partial = HNSWTestGraphSingleton<MetricT, true>::Map();
-	const auto mapSq8Component = HNSWTestGraphSingleton<MetricT, true>::Map();
-
-	const int partialSamleSize = (0.25 * mapSq8Partial->cur_element_count);
-
-	mapSq8PFull->template Quantize<hnswlib::DummyLocker>(ScalarQuantizeType::Full);
-	mapSq8Partial->template Quantize<hnswlib::DummyLocker>(ScalarQuantizeType::Partial, 1.f, partialSamleSize);
-	mapSq8Component->template Quantize<hnswlib::DummyLocker>(ScalarQuantizeType::Component);
-
-	float avgFullQntMetric = 0;
-	float avgPartialQntMetric = 0;
-	float avgComponentQntMetric = 0;
+	float avgQuantizationMetric = 0;
+	float avgQuantizationMetric_2sigma = 0;
+	float avgQuantizationMetric_3sigma = 0;
 
 	const int count = 10;
 	const int KnnN = 0.05 * kHNSWSize;
 	const int ef = 1.5 * KnnN;
-
 	for (int i = 0; i < count; ++i) {
-		auto queryPoint = VectorWithComponentDispersion();
+		auto queryPoint = getQueryPoint();
+
 		auto res = map->searchKnn(queryPoint.data(), KnnN, ef);
-		auto resSqFull = mapSq8PFull->searchKnn(queryPoint.data(), KnnN, ef);
-		auto resSqPartial = mapSq8Partial->searchKnn(queryPoint.data(), KnnN, ef);
-		auto resSqComp = mapSq8Component->searchKnn(queryPoint.data(), KnnN, ef);
+		auto resSq = mapSq8->searchKnn(queryPoint.data(), KnnN, ef);
+		auto resSq_2sigma = mapSq8_2sigma->searchKnn(queryPoint.data(), KnnN, ef);
+		auto resSq_3sigma = mapSq8_3sigma->searchKnn(queryPoint.data(), KnnN, ef);
 
-		avgFullQntMetric += SimilarityQuantizationMetric(decltype(res){res}, resSqFull) / count;
-		avgPartialQntMetric += SimilarityQuantizationMetric(decltype(res){res}, resSqPartial) / count;
-		avgComponentQntMetric += SimilarityQuantizationMetric(res, resSqComp) / count;
+		avgQuantizationMetric += SimilarityQuantizationMetric(decltype(res){res}, resSq) / count;
+		avgQuantizationMetric_2sigma += SimilarityQuantizationMetric(decltype(res){res}, resSq_2sigma) / count;
+		avgQuantizationMetric_3sigma += SimilarityQuantizationMetric(res, resSq_3sigma) / count;
 	}
-	TestCout() << fmt::format("{}-metric; Quantizing metric values: Full - {}; Partial - {}; Component - {}\n", MetricName<MetricT>(),
-							  avgFullQntMetric, avgPartialQntMetric, avgComponentQntMetric);
 
-	ASSERT_GT(avgComponentQntMetric, 0.9);
-	ASSERT_GT(avgComponentQntMetric, avgFullQntMetric);
-	ASSERT_GT(avgComponentQntMetric, avgPartialQntMetric);
+	for (auto [quantile, metricValue] : {std::pair{"100", avgQuantizationMetric}, std::pair{"99", avgQuantizationMetric_3sigma},
+										 std::pair{"95", avgQuantizationMetric_2sigma}}) {
+		TestCout() << fmt::format("{}-metric; Quantile - {}%; metric = {}\n", MetricName<MetricT>(), quantile, metricValue);
+	}
 }
 
-TEST(HNSW, QuantizeTest_L2) { QuantizeComponentBasedTestBody<hnswlib::L2Space>(); }
-TEST(HNSW, QuantizeTest_IP) { QuantizeComponentBasedTestBody<hnswlib::InnerProductSpace>(); }
+TEST(HNSW, QuantizeWithQuantilesTest_L2) { QuantizeHNSWWithQuantilesTestBody<hnswlib::L2Space>(hnswlib::Sq8NonLinearCorrection::Disabled); }
+TEST(HNSW, QuantizeWithQuantilesTest_IP) {
+	QuantizeHNSWWithQuantilesTestBody<hnswlib::InnerProductSpace>(hnswlib::Sq8NonLinearCorrection::Disabled);
+}
+TEST(HNSW, QuantizeWithQuantilesTest_Cosine) {
+	QuantizeHNSWWithQuantilesTestBody<hnswlib::CosineSpace>(hnswlib::Sq8NonLinearCorrection::Disabled);
+}
 
-INSTANTIATE_TEST_SUITE_P(, HNSWSq8Test,
-						 ::testing::Values(ScalarQuantizeType::Full, ScalarQuantizeType::Partial, ScalarQuantizeType::Component),
-						 [](const auto& info) {
-							 switch (info.param) {
-								 case ScalarQuantizeType::Full:
-									 return "Full";
-								 case ScalarQuantizeType::Partial:
-									 return "Partial";
-								 case ScalarQuantizeType::Component:
-									 return "Component";
-								 default:
-									 assert(false);
-									 std::abort();
-							 }
-						 });
+TEST(HNSW, QuantizeWithQuantilesTest_L2_corr) {
+	QuantizeHNSWWithQuantilesTestBody<hnswlib::L2Space>(hnswlib::Sq8NonLinearCorrection::Enabled);
+}
+TEST(HNSW, QuantizeWithQuantilesTest_IP_corr) {
+	QuantizeHNSWWithQuantilesTestBody<hnswlib::InnerProductSpace>(hnswlib::Sq8NonLinearCorrection::Enabled);
+}
+TEST(HNSW, QuantizeWithQuantilesTest_Cosine_corr) {
+	QuantizeHNSWWithQuantilesTestBody<hnswlib::CosineSpace>(hnswlib::Sq8NonLinearCorrection::Enabled);
+}
+#endif

@@ -146,7 +146,7 @@
 
 <!-- tocstop -->
 
-> Version 5.7.0
+> Version 5.8.0
 
 ## Overview
 
@@ -6563,17 +6563,19 @@ This operation will return detailed information about database memory consumptio
       name?: string
       // Count of unique keys values stored in index
       unique_keys_count?: integer
-      // Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0
+      // Total memory consumption (in bytes) of reverse index b-tree structures. For `dense` and `store` indexes always 0
       idset_btree_size?: integer
-      // Total memory consumption of reverse index vectors. For `store` indexes always 0
+      // Total memory consumption (in bytes) of reverse index vectors. For `store` indexes always 0
       idset_plain_size?: integer
-      // Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
+      // Total memory consumption (in bytes) of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
       sort_orders_size?: integer
       // Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
       idset_cache?: CacheMemStats
-      // Total memory consumption of the main indexing structures (fulltext, ANN, etc.)
+      // Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
       indexing_struct_size?: integer
-      // Total memory consumption of documents's data, held by index
+      // Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
+      vectors_keeper_size?: integer
+      // Total memory consumption (in bytes) of documents's data, held by index
       data_size?: integer
       // Updates count, pending in index updates tracker
       tracked_updates_count?: integer
@@ -9450,17 +9452,19 @@ string[]
       name?: string
       // Count of unique keys values stored in index
       unique_keys_count?: integer
-      // Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0
+      // Total memory consumption (in bytes) of reverse index b-tree structures. For `dense` and `store` indexes always 0
       idset_btree_size?: integer
-      // Total memory consumption of reverse index vectors. For `store` indexes always 0
+      // Total memory consumption (in bytes) of reverse index vectors. For `store` indexes always 0
       idset_plain_size?: integer
-      // Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
+      // Total memory consumption (in bytes) of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
       sort_orders_size?: integer
       // Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
       idset_cache?: CacheMemStats
-      // Total memory consumption of the main indexing structures (fulltext, ANN, etc.)
+      // Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
       indexing_struct_size?: integer
-      // Total memory consumption of documents's data, held by index
+      // Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
+      vectors_keeper_size?: integer
+      // Total memory consumption (in bytes) of documents's data, held by index
       data_size?: integer
       // Updates count, pending in index updates tracker
       tracked_updates_count?: integer
@@ -9590,17 +9594,19 @@ string[]
     name?: string
     // Count of unique keys values stored in index
     unique_keys_count?: integer
-    // Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0
+    // Total memory consumption (in bytes) of reverse index b-tree structures. For `dense` and `store` indexes always 0
     idset_btree_size?: integer
-    // Total memory consumption of reverse index vectors. For `store` indexes always 0
+    // Total memory consumption (in bytes) of reverse index vectors. For `store` indexes always 0
     idset_plain_size?: integer
-    // Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
+    // Total memory consumption (in bytes) of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
     sort_orders_size?: integer
     // Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
     idset_cache?: CacheMemStats
-    // Total memory consumption of the main indexing structures (fulltext, ANN, etc.)
+    // Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
     indexing_struct_size?: integer
-    // Total memory consumption of documents's data, held by index
+    // Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
+    vectors_keeper_size?: integer
+    // Total memory consumption (in bytes) of documents's data, held by index
     data_size?: integer
     // Updates count, pending in index updates tracker
     tracked_updates_count?: integer
@@ -9648,17 +9654,19 @@ string[]
   name?: string
   // Count of unique keys values stored in index
   unique_keys_count?: integer
-  // Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0
+  // Total memory consumption (in bytes) of reverse index b-tree structures. For `dense` and `store` indexes always 0
   idset_btree_size?: integer
-  // Total memory consumption of reverse index vectors. For `store` indexes always 0
+  // Total memory consumption (in bytes) of reverse index vectors. For `store` indexes always 0
   idset_plain_size?: integer
-  // Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
+  // Total memory consumption (in bytes) of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
   sort_orders_size?: integer
   // Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
   idset_cache?: CacheMemStats
-  // Total memory consumption of the main indexing structures (fulltext, ANN, etc.)
+  // Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
   indexing_struct_size?: integer
-  // Total memory consumption of documents's data, held by index
+  // Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
+  vectors_keeper_size?: integer
+  // Total memory consumption (in bytes) of documents's data, held by index
   data_size?: integer
   // Updates count, pending in index updates tracker
   tracked_updates_count?: integer

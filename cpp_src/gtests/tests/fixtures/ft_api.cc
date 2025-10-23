@@ -221,12 +221,17 @@ void FTApi::CheckAllPermutations(const std::string& queryStart, const std::vecto
 void FTApi::CheckResults(const std::string& query, std::vector<std::tuple<std::string, std::string>> expectedResults, bool withOrder,
 						 bool withHighlight) {
 	const auto qr = SimpleSelect(query, withHighlight);
-	CheckResults(query, qr, expectedResults, withOrder);
+	CheckResults(query, qr, std::move(expectedResults), withOrder);
 }
 
 void FTApi::CheckResults(const std::string& query, const reindexer::QueryResults& qr,
 						 std::vector<std::tuple<std::string, std::string, std::string>> expectedResults, bool withOrder) {
 	CheckResults<std::tuple<std::string, std::string, std::string>>(query, qr, expectedResults, withOrder);
+}
+
+void FTApi::CheckResults(const std::string& query, const reindexer::QueryResults& qr,
+						 std::vector<std::tuple<std::string, std::string>> expectedResults, bool withOrder) {
+	CheckResults<std::tuple<std::string, std::string>>(query, qr, expectedResults, withOrder);
 }
 
 std::vector<std::tuple<std::string, std::string>>& FTApi::DelHighlightSign(std::vector<std::tuple<std::string, std::string>>& in) {

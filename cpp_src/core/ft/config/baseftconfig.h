@@ -2,6 +2,7 @@
 
 #include <string_view>
 #include <vector>
+#include "core/ft/ftdsl.h"
 #include "core/ft/stopwords/types.h"
 #include "estl/fast_hash_map.h"
 #include "tools/rhashmap.h"
@@ -23,7 +24,7 @@ public:
 	BaseFTConfig();
 	virtual ~BaseFTConfig() = default;
 
-	virtual void parse(std::string_view sv, const RHashMap<std::string, int>& fields) = 0;
+	virtual void parse(std::string_view sv, const RHashMap<std::string, FtIndexFieldPros>& fields) = 0;
 	virtual std::string GetJSON(const fast_hash_map<std::string, int>& fields) const = 0;
 
 	uint32_t mergeLimit = 20000;

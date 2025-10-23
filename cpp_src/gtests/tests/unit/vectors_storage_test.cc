@@ -215,7 +215,7 @@ TEST_F(VectorStorageApi, FloatStorageReload) try {
 	constexpr static auto kIVFUnbuiltDims = 28;
 	constexpr static auto kIVFUnbuiltCentroids = kDataCount / 10;
 	static_assert(kIVFUnbuiltCentroids > 4, "Expecting some reasonable centroids count");
-	constexpr static auto kBFDims = 32;
+	constexpr static auto kBFDims = 48;
 	constexpr static auto kQueriesCount = 20;
 	constexpr std::string_view kNoIdx = "none";
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-
 #include "base_fixture.h"
 
 class [[nodiscard]] Geometry : private BaseFixture {

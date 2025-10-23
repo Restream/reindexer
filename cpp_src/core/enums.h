@@ -73,6 +73,8 @@ BOOL_ENUM(AllowAdditionalProps)
 BOOL_ENUM(MustExist)
 BOOL_ENUM(PrefAndStemmersForbidden)
 BOOL_ENUM(SetLimit0ForChangeJoin)
+BOOL_ENUM(EnableMultiJsonPath)
+BOOL_ENUM(NeedMaskingDSN)
 
 #undef BOOL_ENUM
 
@@ -84,7 +86,7 @@ enum class [[nodiscard]] ObjType {
 };
 
 enum class [[nodiscard]] VectorMetric { L2, InnerProduct, Cosine };
-enum class [[nodiscard]] RankedTypeQuery { NotSet, No, FullText, KnnL2, KnnIP, KnnCos, Hybrid };
+enum class [[nodiscard]] QueryRankType { NotSet, No, FullText, KnnL2, KnnIP, KnnCos, Hybrid };
 enum class [[nodiscard]] RankSortType : unsigned { RankOnly, RankAndID, ExternalExpression, IDOnly, IDAndPositions };
 enum class [[nodiscard]] RankOrdering { Off, Asc, Desc };
 

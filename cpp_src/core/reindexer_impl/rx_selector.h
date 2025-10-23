@@ -10,12 +10,43 @@ namespace reindexer {
 class FtFunctionsHolder;
 
 class [[nodiscard]] RxSelector {
-	struct [[nodiscard]] NsLockerItem {
-		explicit NsLockerItem(NamespaceImpl::Ptr ins, Namespace::Ptr n) noexcept : nsImpl(std::move(ins)), ns(std::move(n)), count(1) {}
-		NamespaceImpl::Ptr nsImpl;
-		Namespace::Ptr ns;
-		NamespaceImpl::Locker::RLockT nsLck;
+	class [[nodiscard]] NsLockerItem {
+	public:
+		explicit NsLockerItem(std::string_view searchName, NamespaceImpl::Ptr ins, Namespace::Ptr n) noexcept
+			: searchName_{searchName}, nsImpl_(std::move(ins)), ns_(std::move(n)) {}
+		NsLockerItem(NsLockerItem&&) = default;
+		NsLockerItem& operator=(NsLockerItem&&) = default;
+		~NsLockerItem() = default;
+		NsLockerItem(const NsLockerItem&) = delete;
+		NsLockerItem& operator=(const NsLockerItem&) = delete;
+
+		uintptr_t Ordering() const noexcept { return uintptr_t(ns_.get()); }
+		void RLock(const RdxContext& ctx) {
+			assertrx_dbg(!nsLck_.owns_lock());
+			nsLck_ = nsImpl_->rLock(ctx);
+		}
+		bool UnlockIfOwns() noexcept {
+			bool owns = nsLck_.owns_lock();
+			if (owns) {
+				nsLck_.unlock();
+			}
+			return owns;
+		}
+		std::string_view SearchName() const noexcept { return searchName_; }
+		std::string_view ImplName() const noexcept {
+			assertrx_dbg(nsLck_.owns_lock());
+			return nsImpl_->name_;
+		}
+		const NamespaceImpl::Ptr& NsImpl() const& noexcept { return nsImpl_; }
+		auto NsImpl() && = delete;
+
 		unsigned count = 1;
+
+	private:
+		std::string_view searchName_;
+		NamespaceImpl::Ptr nsImpl_;
+		Namespace::Ptr ns_;
+		NamespaceImpl::Locker::RLockT nsLck_;
 	};
 
 public:
@@ -27,29 +58,29 @@ public:
 			// Unlock first
 			for (auto it = rbegin(), re = rend(); it != re; ++it) {
 				// Some namespaces may be in unlocked state in case of the exception during Lock() call
-				if (it->nsLck.owns_lock()) {
-					it->nsLck.unlock();
-				} else {
+				if (!it->UnlockIfOwns()) {
 					assertrx(!locked_);
 				}
 			}
-			// Clean (ns may will release, if locker holds last ref)
+			// Clean (ns may be released, if locker holds last ref)
 		}
 
-		void Add(NamespaceImpl::Ptr&& nsImpl, Namespace::Ptr ns) {
+		void Add(std::string_view searchName, NamespaceImpl::Ptr&& nsImpl, Namespace::Ptr ns) {
 			assertrx(!locked_);
 			for (auto it = begin(), e = end(); it != e; ++it) {
-				if (it->nsImpl.get() == nsImpl.get()) {
+				if (it->NsImpl().get() == nsImpl.get()) {
+					assertrx_dbg(it->count > 0);
 					++(it->count);
 					return;
 				}
 			}
 
-			emplace_back(std::move(nsImpl), std::move(ns));
+			emplace_back(searchName, std::move(nsImpl), std::move(ns));
 		}
 		void Delete(const NamespaceImpl::Ptr& nsImpl) {
 			for (auto it = begin(), e = end(); it != e; ++it) {
-				if (it->nsImpl.get() == nsImpl.get()) {
+				if (it->NsImpl().get() == nsImpl.get()) {
+					assertrx_dbg(it->count > 0);
 					if (!--(it->count)) {
 						erase(it);
 					}
@@ -60,34 +91,101 @@ public:
 		}
 		void Lock() {
 			boost::sort::pdqsort_branchless(
-				begin(), end(), [](const NsLockerItem& lhs, const NsLockerItem& rhs) noexcept { return lhs.ns.get() < rhs.ns.get(); });
+				begin(), end(), [](const NsLockerItem& lhs, const NsLockerItem& rhs) noexcept { return lhs.Ordering() < rhs.Ordering(); });
 			for (auto it = begin(), e = end(); it != e; ++it) {
-				it->nsLck = it->nsImpl->rLock(context_);
+				it->RLock(context_);
 			}
 			locked_ = true;
 		}
 
-		NamespaceImpl::Ptr Get(const std::string& name) noexcept {
+		NamespaceImpl::Ptr Get(std::string_view name) {
+			assertrx_dbg(locked_);
 			for (auto it = begin(), e = end(); it != e; ++it) {
-				if (iequals(it->nsImpl->name_, name)) {
-					return it->nsImpl;
+				if (iequals(it->SearchName(), name)) {
+					if rx_unlikely (!iequals(it->SearchName(), it->ImplName())) {
+						throw Error(errConflict, "Unable to get namespace: '{}'/'{}' - conflicting rename is in progress", it->SearchName(),
+									it->ImplName());
+					}
+					return it->NsImpl();
 				}
 			}
-			return NamespaceImpl::Ptr();
+			throw Error(errParams, "Namespace '{}' does not exist in namespaces locker", name);
 		}
 
-	protected:
+	private:
 		bool locked_ = false;
 		const Context& context_;
 	};
 
 	class [[nodiscard]] NsLockerWItem {
 	public:
-		explicit NsLockerWItem(Namespace::Ptr ns = {}, bool isWLock = false) noexcept : ns_(std::move(ns)), count_(1), isWLock_(isWLock) {}
+		explicit NsLockerWItem(std::string_view searchName, Namespace::Ptr ns = {}, bool isWLock = false) noexcept
+			: searchName_{searchName}, ns_{std::move(ns)}, isWLock_{isWLock} {}
+		NsLockerWItem(NsLockerWItem&&) = default;
+		NsLockerWItem& operator=(NsLockerWItem&&) = default;
+		~NsLockerWItem() = default;
+		NsLockerWItem(const NsLockerWItem&) = delete;
+		NsLockerWItem& operator=(const NsLockerWItem&) = delete;
+
+		uintptr_t Ordering() const noexcept { return uintptr_t(ns_.get()); }
+		template <typename QueryStatCalculatorT>
+		void Lock(QueryStatCalculatorT& statCalculator, const RdxContext& ctx) {
+			assertrx_dbg(!std::visit(overloaded{[](auto& v) { return v.owns_lock(); }}, nsLck_));
+			if (isWLock_) {
+				Namespace::GetWrLockData wd = ns_->GetWrLock(statCalculator, ctx);
+				nsLck_ = std::move(wd.lock);
+				nsImpl_ = std::move(wd.nsImpl);
+				nsImpl_->updateSelectTime();
+			} else {
+				nsImpl_ = ns_->GetMainNs();
+				nsImpl_->updateSelectTime();
+				nsLck_ = nsImpl_->rLock(ctx);
+			}
+		}
+		bool UnlockIfOwns() noexcept {
+			return std::visit(overloaded{[](NamespaceImpl::Locker::RLockT& v) {
+											 bool owns = v.owns_lock();
+											 if (owns) {
+												 v.unlock();
+											 }
+											 return owns;
+										 },
+										 []([[maybe_unused]] NamespaceImpl::Locker::WLockT& v) {
+											 bool owns = v.owns_lock();
+											 if (owns) {
+												 v.unlock();
+											 }
+											 // Wlock could be extracted previously, so always returning true
+											 return true;
+										 }},
+							  nsLck_);
+		}
+		std::string_view SearchName() const noexcept { return searchName_; }
+		std::string_view ImplName() const noexcept {
+			assertrx_dbg(std::visit(overloaded{[](auto& v) { return v.owns_lock(); }}, nsLck_));
+			return nsImpl_->name_;
+		}
+		const NamespaceImpl::Ptr& NsImpl() const& noexcept { return nsImpl_; }
+		auto NsImpl() && = delete;
+		const Namespace::Ptr& Ns() const& noexcept { return ns_; }
+		auto Ns() && = delete;
+		std::optional<std::pair<NamespaceImpl::Locker::WLockT, NamespaceImpl::Ptr>> TryExtractWLock() noexcept {
+			assertrx_dbg(isWLock_ == std::holds_alternative<NamespaceImpl::Locker::WLockT>(nsLck_));
+			if (isWLock_ && std::holds_alternative<NamespaceImpl::Locker::WLockT>(nsLck_)) {
+				assertrx_dbg(std::get_if<NamespaceImpl::Locker::WLockT>(&nsLck_)->owns_lock());
+				return std::make_pair(std::move(*std::get_if<NamespaceImpl::Locker::WLockT>(&nsLck_)), nsImpl_);
+			}
+			return std::nullopt;
+		}
+		bool IsWLock() const noexcept { return isWLock_; }
+
+		unsigned count = 1;
+
+	private:
+		std::string_view searchName_;
 		Namespace::Ptr ns_;
 		NamespaceImpl::Ptr nsImpl_;
 		std::variant<NamespaceImpl::Locker::RLockT, NamespaceImpl::Locker::WLockT> nsLck_;
-		unsigned count_ = 1;
 		bool isWLock_ = false;
 	};
 
@@ -98,43 +196,45 @@ public:
 			// Unlock first
 			for (auto it = nsList.rbegin(), re = nsList.rend(); it != re; ++it) {
 				// Some namespaces may be in unlocked state in case of the exception during Lock() call
-				std::visit(overloaded{[this](NamespaceImpl::Locker::RLockT& v) {
-										  if (v.owns_lock()) {
-											  v.unlock();
-										  } else {
-											  assertrx(!locked_);
-										  }
-									  },
-									  [](NamespaceImpl::Locker::WLockT&) {}},
-						   it->nsLck_);
-			}
-			// Clean(ns may will release, if locker holds last ref)
-		}
-
-		NamespaceImpl::Ptr Get(std::string_view name) noexcept {
-			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
-				if (iequals(std::string_view(it->nsImpl_->name_), name)) {
-					return it->nsImpl_;
+				if (!it->UnlockIfOwns()) {
+					assertrx(!locked_);
 				}
 			}
-			return NamespaceImpl::Ptr();
+			// Clean(ns may be released, if locker holds last ref)
 		}
 
-		void Add(Namespace::Ptr&& ns, bool wLock) {
+		NamespaceImpl::Ptr Get(std::string_view name) {
+			for (auto it = nsList.cbegin(), e = nsList.cend(); it != e; ++it) {
+				if (iequals(it->SearchName(), name)) {
+					if rx_unlikely (!iequals(it->SearchName(), it->ImplName())) {
+						throw Error(errConflict, "Unable to get namespace: '{}'/'{}' - conflicting rename is in progress", it->SearchName(),
+									it->ImplName());
+					}
+					return it->NsImpl();
+				}
+			}
+			throw Error(errParams, "Namespace '{}' does not exist in namespaces locker", name);
+		}
+
+		void Add(std::string_view searchName, Namespace::Ptr&& ns, bool wLock) {
 			assertrx(!locked_);
 			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
-				if (it->ns_.get() == ns.get()) {
-					++(it->count_);
+				assertrx_dbg(!wLock || !it->IsWLock());	 // Can't hold multiple write locks
+				if (it->Ns().get() == ns.get()) {
+					assertrx_dbg(it->IsWLock() || !wLock);
+					assertrx_dbg(it->count > 0);
+					++(it->count);
 					return;
 				}
 			}
 
-			nsList.emplace_back(std::move(ns), wLock);
+			nsList.emplace_back(searchName, std::move(ns), wLock);
 		}
 		void Delete(const NamespaceImpl::Ptr& ns) {
 			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
-				if (it->nsImpl_.get() == ns.get()) {
-					if (!--(it->count_)) {
+				if (it->NsImpl().get() == ns.get()) {
+					assertrx_dbg(it->count > 0);
+					if (!--(it->count)) {
 						nsList.erase(it);
 					}
 					return;
@@ -146,29 +246,21 @@ public:
 		void Lock(QueryStatCalculatorT& statCalculator) {
 			assertrx(!locked_);
 			boost::sort::pdqsort_branchless(nsList.begin(), nsList.end(), [](const NsLockerWItem& lhs, const NsLockerWItem& rhs) noexcept {
-				return lhs.ns_.get() < rhs.ns_.get();
+				return lhs.Ordering() < rhs.Ordering();
 			});
 			NamespaceImpl::Ptr mainNsImpl;
 			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
-				if (it->isWLock_) {
-					Namespace::GetWrLockData wd = it->ns_->GetWrLock(statCalculator, context_);
-					it->nsLck_ = std::move(wd.lock);
-					it->nsImpl_ = std::move(wd.nsImpl);
-					it->nsImpl_->updateSelectTime();
-				} else {
-					it->nsImpl_ = it->ns_->GetMainNs();
-					it->nsImpl_->updateSelectTime();
-					it->nsLck_ = it->nsImpl_->rLock(context_);
-				}
+				it->Lock(statCalculator, context_);
 			}
 			locked_ = true;
 		}
 
-		std::pair<NamespaceImpl::Locker::WLockT, NamespaceImpl::Ptr> Unlock() {
+		std::pair<NamespaceImpl::Locker::WLockT, NamespaceImpl::Ptr> ExtractWLock() {
 			assertrx(locked_);
 			for (auto it = nsList.begin(), e = nsList.end(); it != e; ++it) {
-				if (it->isWLock_) {
-					return {std::move(std::get<1>(it->nsLck_)), it->nsImpl_};
+				auto wlock = it->TryExtractWLock();
+				if (wlock.has_value()) {
+					return std::move(wlock.value());
 				}
 			}
 			throw_as_assert;

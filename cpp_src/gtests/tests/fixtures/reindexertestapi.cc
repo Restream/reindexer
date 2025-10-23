@@ -205,13 +205,13 @@ typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::UpdateQR(c
 }
 
 template <typename DB>
-void ReindexerTestApi<DB>::Select(const reindexer::Query& q, QueryResultsType& qr) {
+void ReindexerTestApi<DB>::Select(const reindexer::Query& q, QueryResultsType& qr) const {
 	auto err = reindexer->WithTimeout(kBasicTimeout).Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL();
 }
 
 template <typename DB>
-typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::Select(const reindexer::Query& q) {
+typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::Select(const reindexer::Query& q) const {
 	QueryResultsType qr;
 	Select(q, qr);
 	return qr;

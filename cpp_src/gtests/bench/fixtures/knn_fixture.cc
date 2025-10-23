@@ -102,8 +102,8 @@ public:
 			state_.counters["K"] = kK;
 		}
 	}
-	void Add(const QueryResults& qres) noexcept {
-		Base::Add(qres);
+	void operator()(const QueryResults& qres) noexcept {
+		Base::operator()(qres);
 		itemsCounter_ += qres.Count();
 	}
 

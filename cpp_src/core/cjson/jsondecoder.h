@@ -1,10 +1,11 @@
 #pragma once
 
-#include "core/keyvalue/float_vectors_holder.h"
 #include "core/payload/payloadiface.h"
 #include "gason/gason.h"
 
 namespace reindexer {
+
+class FloatVectorsHolderVector;
 
 namespace builders {
 class CJsonBuilder;

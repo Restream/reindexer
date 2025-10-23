@@ -91,15 +91,17 @@ void ClusterManager::Stop(bool disable) noexcept {
 	}
 }
 
-Error ClusterManager::SuggestLeader(const NodeData& suggestion, NodeData& response) {
-	return clusterReplicator_.SuggestLeader(suggestion, response);
+void ClusterManager::SuggestLeader(const NodeData& suggestion, NodeData& response) {
+	clusterReplicator_.SuggestLeader(suggestion, response);
 }
 
-Error ClusterManager::SetDesiredLeaderId(int leaderId, bool sendToOtherNodes) {
-	return clusterReplicator_.SetDesiredLeaderId(leaderId, sendToOtherNodes);
+void ClusterManager::SetDesiredLeaderId(int leaderId, bool sendToOtherNodes) {
+	clusterReplicator_.SetDesiredLeaderId(leaderId, sendToOtherNodes);
 }
 
-Error ClusterManager::LeadersPing(const NodeData& leader) { return clusterReplicator_.LeadersPing(leader); }
+void ClusterManager::ForceElections() { clusterReplicator_.ForceElections(); }
+
+void ClusterManager::LeadersPing(const NodeData& leader) { clusterReplicator_.LeadersPing(leader); }
 
 RaftInfo ClusterManager::GetRaftInfo(bool allowTransitState, const RdxContext& ctx) const {
 	return clusterReplicator_.GetRaftInfo(allowTransitState, ctx);

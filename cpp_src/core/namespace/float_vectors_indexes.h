@@ -7,8 +7,8 @@ namespace reindexer {
 class FloatVectorIndex;
 
 struct [[nodiscard]] FloatVectorIndexData {
-	size_t ptField;
-	const FloatVectorIndex* ptr;
+	size_t ptField{0};
+	const FloatVectorIndex* ptr{nullptr};
 };
 
 struct [[nodiscard]] FloatVectorsIndexes : h_vector<FloatVectorIndexData, 2> {};

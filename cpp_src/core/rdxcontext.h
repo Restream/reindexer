@@ -3,6 +3,7 @@
 #include <functional>
 #include <optional>
 #include "activity_context.h"
+#include "core/enums.h"
 #include "core/keyvalue/key_string.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
@@ -98,7 +99,7 @@ public:
 	explicit RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx) noexcept
 		: activityPtr_(nullptr), cancelCtx_(cancelCtx), cmpl_(nullptr), originLsn_(originLsn), holdStatus_(HoldT::kEmpty) {}
 	RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx, Completion cmpl, int emitterServerId, int shardId, bool parallel,
-			   key_string replToken) noexcept
+			   key_string replToken, NeedMaskingDSN needMaskingDSN) noexcept
 		: activityPtr_(nullptr),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl),
@@ -107,10 +108,11 @@ public:
 		  shardId_(shardId),
 		  holdStatus_(HoldT::kEmpty),
 		  shardingParallelExecution_(parallel),
-		  replToken_(std::move(replToken)) {}
+		  replToken_(std::move(replToken)),
+		  needMaskingDSN_(needMaskingDSN) {}
 	RdxContext(lsn_t originLsn, std::string_view activityTracer, std::string_view user, std::string_view query,
 			   ActivityContainer& container, int connectionId, const IRdxCancelContext* cancelCtx, Completion cmpl, int emitterServerId,
-			   int shardId, bool parallel, key_string replToken)
+			   int shardId, bool parallel, key_string replToken, NeedMaskingDSN needMaskingDSN)
 		: activityCtx_(activityTracer, user, query, container, connectionId),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl),
@@ -119,10 +121,12 @@ public:
 		  shardId_(shardId),
 		  holdStatus_(HoldT::kHold),
 		  shardingParallelExecution_(parallel),
-		  replToken_(std::move(replToken)) {}
+		  replToken_(std::move(replToken)),
+		  needMaskingDSN_(needMaskingDSN) {}
 	explicit RdxContext(RdxActivityContext* ptr, lsn_t originLsn = lsn_t(), const IRdxCancelContext* cancelCtx = nullptr,
 						Completion cmpl = nullptr, int emitterServerId = -1, int shardId = ShardingKeyType::NotSetShard,
-						bool parallel = false, key_string replToken = {}, bool noWaitSync = false) noexcept
+						bool parallel = false, key_string replToken = {}, bool noWaitSync = false,
+						NeedMaskingDSN needMaskingDSN = NeedMaskingDSN_False) noexcept
 		: activityPtr_(ptr),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl),
@@ -132,7 +136,8 @@ public:
 		  holdStatus_(ptr ? HoldT::kPtr : HoldT::kEmpty),
 		  shardingParallelExecution_(parallel),
 		  noWaitSync_(noWaitSync),
-		  replToken_(std::move(replToken)) {
+		  replToken_(std::move(replToken)),
+		  needMaskingDSN_(needMaskingDSN) {
 		if (holdStatus_ == HoldT::kPtr) {
 			activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 		}
@@ -165,26 +170,27 @@ public:
 	/// lifetime of the returning value should not exceed of the context's
 	RdxContext OnlyActivity() const { return RdxContext{Activity(), originLsn_, nullptr, nullptr, -1, shardingParallelExecution_}; }
 	RdxContext NoCancel() const noexcept {
-		return RdxContext{Activity(), originLsn_, nullptr, cmpl_, emitterServerId_, shardId_, shardingParallelExecution_,
-						  replToken_, noWaitSync_};
+		return RdxContext{Activity(), originLsn_,  nullptr,		   cmpl_, emitterServerId_, shardId_, shardingParallelExecution_,
+						  replToken_, noWaitSync_, needMaskingDSN_};
 	}
 	RdxActivityContext* Activity() const noexcept;
 	Completion Compl() const noexcept { return cmpl_; }
 	bool NoWaitSync() const noexcept { return noWaitSync_; }
 	void WithNoWaitSync(bool val = true) const noexcept { noWaitSync_ = val; }
 	bool HasEmitterServer() const noexcept { return emitterServerId_ >= 0; }
+	bool NeedMaskingDSN() const noexcept { return *needMaskingDSN_; }
 	lsn_t GetOriginLSN() const noexcept { return originLsn_; }
 	bool IsShardingParallelExecution() const noexcept { return shardingParallelExecution_; }
 	int EmitterServerId() const noexcept { return emitterServerId_; }
 	int ShardId() const noexcept { return shardId_; }
 	RdxContext WithCancelCtx(const IRdxCancelContext& cancelCtx) const {
 		return RdxContext{
-			Activity(), originLsn_, &cancelCtx, cmpl_, emitterServerId_, shardingParallelExecution_, shardingParallelExecution_,
-			replToken_, noWaitSync_};
+			Activity(), originLsn_,	 &cancelCtx,	 cmpl_, emitterServerId_, shardingParallelExecution_, shardingParallelExecution_,
+			replToken_, noWaitSync_, needMaskingDSN_};
 	}
 	RdxContext WithShardId(int shardId, bool shardingParallelExecution) const {
-		return RdxContext{Activity(), originLsn_, cancelCtx_, cmpl_, emitterServerId_, shardId, shardingParallelExecution,
-						  replToken_, noWaitSync_};
+		return RdxContext{Activity(), originLsn_,  cancelCtx_,	   cmpl_, emitterServerId_, shardId, shardingParallelExecution,
+						  replToken_, noWaitSync_, needMaskingDSN_};
 	}
 	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept {
 		if (cancelCtx_) {
@@ -209,6 +215,7 @@ private:
 	bool shardingParallelExecution_ = false;
 	mutable bool noWaitSync_ = false;  // FIXME: Create SyncContext and move this parameter into it
 	key_string replToken_;
+	class NeedMaskingDSN needMaskingDSN_ = NeedMaskingDSN_False;
 };
 
 class QueryResults;
@@ -219,7 +226,8 @@ public:
 	InternalRdxContext(const InternalRdxContext&) = default;
 	InternalRdxContext(InternalRdxContext&&) = default;
 	InternalRdxContext(RdxContext::Completion cmpl, const RdxDeadlineContext ctx, std::string activityTracer, std::string user,
-					   int connectionId, lsn_t lsn, int emitterServerId, int shardId, bool parallel, key_string replToken) noexcept
+					   int connectionId, lsn_t lsn, int emitterServerId, int shardId, bool parallel, key_string replToken,
+					   NeedMaskingDSN needMaskingDSN) noexcept
 		: cmpl_(std::move(cmpl)),
 		  deadlineCtx_(std::move(ctx)),
 		  activityTracer_(std::move(activityTracer)),
@@ -229,23 +237,24 @@ public:
 		  lsn_(lsn),
 		  shardId_(shardId),
 		  shardingParallelExecution_(parallel),
-		  replToken_(std::move(replToken)) {}
+		  replToken_(std::move(replToken)),
+		  needMaskingDSN_(needMaskingDSN) {}
 
 	InternalRdxContext WithCompletion(RdxContext::Completion cmpl) const noexcept {
 		return InternalRdxContext(cmpl, deadlineCtx_, activityTracer_, user_, connectionId_, lsn_, emitterServerId_, shardId_,
-								  shardingParallelExecution_, replToken_);
+								  shardingParallelExecution_, replToken_, needMaskingDSN_);
 	}
 	InternalRdxContext WithTimeout(milliseconds timeout) const noexcept {
 		return InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_, lsn_,
-								  emitterServerId_, shardId_, shardingParallelExecution_, replToken_);
+								  emitterServerId_, shardId_, shardingParallelExecution_, replToken_, needMaskingDSN_);
 	}
 	InternalRdxContext WithLSN(lsn_t lsn) const noexcept {
 		return InternalRdxContext(cmpl_, deadlineCtx_, activityTracer_, user_, connectionId_, lsn, emitterServerId_, shardId_,
-								  shardingParallelExecution_, replToken_);
+								  shardingParallelExecution_, replToken_, needMaskingDSN_);
 	}
 	InternalRdxContext WithCancelParent(const IRdxCancelContext* parent) const noexcept {
 		return InternalRdxContext(cmpl_, RdxDeadlineContext(deadlineCtx_.deadline(), parent), activityTracer_, user_, connectionId_, lsn_,
-								  emitterServerId_, shardId_, shardingParallelExecution_, replToken_);
+								  emitterServerId_, shardId_, shardingParallelExecution_, replToken_, needMaskingDSN_);
 	}
 	InternalRdxContext WithActivityTracer(std::string_view activityTracer, std::string&& user, int connectionId = kNoConnectionId) const {
 		return activityTracer.empty()
@@ -254,42 +263,46 @@ public:
 										activityTracer_.empty() ? std::string(activityTracer)
 																: std::string(activityTracer_).append("/").append(activityTracer),
 										std::move(user), connectionId, lsn_, emitterServerId_, shardId_, shardingParallelExecution_,
-										replToken_);
+										replToken_, needMaskingDSN_);
 	}
 	InternalRdxContext WithEmitterServerId(unsigned int sId) const noexcept {
 		return InternalRdxContext(cmpl_, deadlineCtx_, activityTracer_, user_, connectionId_, lsn_, sId, shardId_,
-								  shardingParallelExecution_, replToken_);
+								  shardingParallelExecution_, replToken_, needMaskingDSN_);
 	}
 	InternalRdxContext WithShardId(unsigned int id, bool parallel) const noexcept {
 		return InternalRdxContext(cmpl_, deadlineCtx_, activityTracer_, user_, connectionId_, lsn_, emitterServerId_, id, parallel,
-								  replToken_);
+								  replToken_, needMaskingDSN_);
 	}
 	InternalRdxContext WithContextParams(milliseconds timeout, lsn_t lsn, int emitterServerId, int shardId, bool distributed,
-										 key_string replToken) const {
+										 key_string replToken, NeedMaskingDSN needMaskingDSN) const {
 		return InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_, lsn,
-								  emitterServerId, shardId, distributed, std::move(replToken));
+								  emitterServerId, shardId, distributed, std::move(replToken), needMaskingDSN);
 	}
 	InternalRdxContext WithContextParams(milliseconds timeout, lsn_t lsn, int emitterServerId, int shardId, bool distributed,
-										 key_string replToken, std::string_view activityTracer, std::string&& user,
-										 int connectionId) const {
+										 key_string replToken, NeedMaskingDSN needMaskingDSN, std::string_view activityTracer,
+										 std::string&& user, int connectionId) const {
 		return activityTracer.empty()
 				   ? InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_,
-										lsn, emitterServerId, shardId, distributed, std::move(replToken))
+										lsn, emitterServerId, shardId, distributed, std::move(replToken), needMaskingDSN)
 				   : InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()),
 										activityTracer_.empty() ? std::string(activityTracer)
 																: std::string(activityTracer_).append("/").append(activityTracer),
-										std::move(user), connectionId, lsn, emitterServerId, shardId, distributed, std::move(replToken));
+										std::move(user), connectionId, lsn, emitterServerId, shardId, distributed, std::move(replToken),
+										needMaskingDSN_);
 	}
-	InternalRdxContext WithContextParams(milliseconds timeout, std::string_view activityTracer, std::string&& user) const {
+	InternalRdxContext WithContextParams(milliseconds timeout, NeedMaskingDSN needMaskingDSN, std::string_view activityTracer,
+										 std::string&& user) const {
 		return activityTracer.empty()
 				   ? InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_,
-										lsn_, emitterServerId_, shardId_, shardingParallelExecution_, replToken_)
+										lsn_, emitterServerId_, shardId_, shardingParallelExecution_, replToken_, needMaskingDSN)
 				   : InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()),
 										activityTracer_.empty() ? std::string(activityTracer)
 																: std::string(activityTracer_).append("/").append(activityTracer),
 										std::move(user), connectionId_, lsn_, emitterServerId_, shardId_, shardingParallelExecution_,
-										replToken_);
+										replToken_, needMaskingDSN);
 	}
+	void WithMaskingDSN(bool val = true) noexcept { needMaskingDSN_ = NeedMaskingDSN(val); }
+
 	void SetActivityTracer(std::string&& activityTracer, std::string&& user, int connectionId = kNoConnectionId) noexcept {
 		activityTracer_ = std::move(activityTracer);
 		user_ = std::move(user);
@@ -332,6 +345,7 @@ private:
 	int shardId_ = ShardingKeyType::NotSetShard;
 	bool shardingParallelExecution_ = false;
 	key_string replToken_;
+	NeedMaskingDSN needMaskingDSN_ = NeedMaskingDSN_False;
 };
 
 }  // namespace reindexer

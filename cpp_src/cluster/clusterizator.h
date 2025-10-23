@@ -30,9 +30,10 @@ public:
 	void Stop(bool disable = false) noexcept;
 	void Enable() noexcept { enabled_.store(true, std::memory_order_release); }
 	bool Enabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
-	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
-	Error SetDesiredLeaderId(int leaderId, bool sendToOtherNodes);
-	Error LeadersPing(const cluster::NodeData&);
+	void SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
+	void SetDesiredLeaderId(int leaderId, bool sendToOtherNodes);
+	void ForceElections();
+	void LeadersPing(const cluster::NodeData&);
 	RaftInfo GetRaftInfo(bool allowTransitState, const RdxContext& ctx) const;
 	bool NamespaceIsInClusterConfig(std::string_view nsName);
 	bool NamesapceIsInReplicationConfig(std::string_view nsName);

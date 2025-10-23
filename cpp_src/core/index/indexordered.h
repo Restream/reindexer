@@ -18,8 +18,11 @@ public:
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void MakeSortOrders(IUpdateSortedContext& ctx) override;
 	IndexIterator::Ptr CreateIterator() const override;
-	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexOrdered<T>>(*this); }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexOrdered<T>(*this)); }
 	bool IsOrdered() const noexcept override { return true; }
+
+protected:
+	IndexOrdered(const IndexOrdered&) = default;
 };
 
 std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,

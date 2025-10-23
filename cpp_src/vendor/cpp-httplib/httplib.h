@@ -246,7 +246,6 @@ using socket_t = int;
 #include <functional>
 #include <iomanip>
 #include <iostream>
-#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -268,6 +267,7 @@ using socket_t = int;
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include "estl/elist.h"
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
@@ -835,7 +835,7 @@ private:
   friend struct worker;
 
   std::vector<std::thread> threads_;
-  std::list<std::function<void()>> jobs_;
+  reindexer::elist<std::function<void()>> jobs_;
 
   bool shutdown_;
   size_t max_queued_requests_ = 0;

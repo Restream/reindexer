@@ -19,7 +19,6 @@ class [[nodiscard]] IndexText : public IndexUnordered<Map> {
 	using Base = IndexUnordered<Map>;
 
 public:
-	IndexText(const IndexText<Map>& other);
 	IndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg);
 
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, const Index::SelectContext&, const RdxContext&) override final;
@@ -52,16 +51,17 @@ public:
 	void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) override final;
 	IndexPerfStat GetIndexPerfStat() override final;
 	void ResetIndexPerfStat() override final;
-	RankedTypeQuery RankedType() const noexcept override final { return RankedTypeQuery::FullText; }
+	QueryRankType RankedType() const noexcept override final { return QueryRankType::FullText; }
 
 protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
 
+	IndexText(const IndexText<Map>& other);
 	virtual void commitFulltextImpl() = 0;
-	SelectKeyResults doSelectKey(const VariantArray& keys, std::optional<IdSetCacheKey> &&, FtMergeStatuses&&,
+	SelectKeyResults doSelectKey(std::string_view key, FtDSLQuery&&, std::optional<IdSetCacheKey>&&, FtMergeStatuses&&,
 								 FtUseExternStatuses useExternSt, bool inTransaction, RankSortType, FtCtx&, const RdxContext&);
 
-	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, FtCtx&, RanksHolder::Ptr&);
+	SelectKeyResults resultFromCache(std::string_view key, FtIdSetCache::Iterator&&, FtCtx&, RanksHolder::Ptr&);
 	void build(const RdxContext& rdxCtx) RX_REQUIRES(!mtx_);
 
 	void initSearchers();
@@ -71,7 +71,7 @@ protected:
 	size_t cacheMaxSize_;
 	uint32_t hitsToCache_;
 
-	RHashMap<std::string, int> ftFields_;
+	RHashMap<std::string, FtIndexFieldPros> ftFields_;
 	std::unique_ptr<BaseFTConfig> cfg_;
 	Mutex mtx_;
 };

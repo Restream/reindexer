@@ -1,14 +1,16 @@
 #pragma once
 
 #include <string>
-#include <vector>
+#include "api_tv_simple_base.h"
 
-#include "base_fixture.h"
+using namespace std::string_view_literals;
 
-class [[nodiscard]] ApiTvSimpleSparse : private BaseFixture {
+class [[nodiscard]] ApiTvSimpleSparse : private ApiTvSimpleBase {
+	using Base = ApiTvSimpleBase;
+
 public:
-	virtual ~ApiTvSimpleSparse() {}
-	ApiTvSimpleSparse(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	~ApiTvSimpleSparse() override = default;
+	ApiTvSimpleSparse(Reindexer* db, std::string_view name, size_t maxItems) : Base(db, name, maxItems, ""sv) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "tree", "int64", IndexOpts().Sparse())
 			.AddIndex("year", "tree", "int", IndexOpts().Sparse())
@@ -28,31 +30,19 @@ public:
 	}
 
 	void RegisterAllCases();
-	reindexer::Error Initialize() override;
+	using Base::Initialize;
 
 private:
 	reindexer::Item MakeItem(benchmark::State&) override;
 
 	void WarmUpIndexes(State& state);
 
-	void GetByRangeIDAndSortByHash(State& state);
-	void GetByRangeIDAndSortByTree(State& state);
-
-	void Query1Cond(State& state);
-	void Query1CondTotal(State& state);
-	void Query1CondCachedTotal(State& state);
-
+	template <typename Total>
 	void Query2Cond(State& state);
-	void Query2CondTotal(State& state);
-	void Query2CondCachedTotal(State& state);
-
+	template <typename Total>
 	void Query3Cond(State& state);
-	void Query3CondTotal(State& state);
-	void Query3CondCachedTotal(State& state);
-
+	template <typename Total>
 	void Query4Cond(State& state);
-	void Query4CondTotal(State& state);
-	void Query4CondCachedTotal(State& state);
 
 	void QueryInnerJoinPreselectByValues(State& state);
 	void QueryInnerJoinNoPreselect(State& state);
@@ -66,12 +56,5 @@ private:
 
 	void query4CondParameterizable(State& state, std::string_view targetIndexName, bool isNull);
 
-	std::vector<std::string> countries_;
-	std::vector<std::string> locations_;
-	std::vector<std::string> devices_;
-	std::vector<int> start_times_;
-	std::vector<std::vector<int>> packages_;
-	std::vector<std::vector<int>> priceIDs_;
-	std::vector<std::string> uuids_;
 	int counter_ = 0;
 };

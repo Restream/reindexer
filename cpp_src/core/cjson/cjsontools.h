@@ -24,9 +24,9 @@ Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType
 [[noreturn]] void throwScalarMultipleEncodesError(const Payload& pl, const PayloadFieldType& f, int field);
 [[noreturn]] void throwUnexpectedArraySizeError(std::string_view parserName, std::string_view fieldName, size_t fieldArrayDim,
 												size_t arraySize);
-[[noreturn]] void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, KeyValueType obtianedType,
+[[noreturn]] void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, KeyValueType obtainedType,
 								  std::string_view parserName);
-[[noreturn]] void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, std::string_view obtianedType,
+[[noreturn]] void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, std::string_view obtainedType,
 								  std::string_view parserName);
 [[noreturn]] void throwUnexpectedArrayInIndex(std::string_view fieldName, KeyValueType type, std::string_view parserName);
 [[noreturn]] void throwUnexpectedObjectInIndex(std::string_view fieldName, std::string_view parserName);

@@ -3134,7 +3134,8 @@ TEST_F(NsApi, IncorrectNsName) {
 	auto open = [&](std::string_view name) {
 		auto err = rt.reindexer->OpenNamespace(name);
 		ASSERT_FALSE(err.ok());
-		ASSERT_STREQ(err.what(), "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+		ASSERT_EQ(err.whatStr(),
+				  fmt::format("Namespace name '{}' contains invalid character. Only alphas, digits,'_','-', are allowed", name));
 	};
 	check(variants, open);
 
@@ -3143,7 +3144,8 @@ TEST_F(NsApi, IncorrectNsName) {
 		reindexer::NamespaceDef nsDef(name);
 		auto err = rt.reindexer->AddNamespace(nsDef);
 		ASSERT_FALSE(err.ok());
-		ASSERT_STREQ(err.what(), "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+		ASSERT_EQ(err.whatStr(),
+				  fmt::format("Namespace name '{}' contains invalid character. Only alphas, digits,'_','-', are allowed", name));
 	};
 	check(variants, add);
 
@@ -3154,7 +3156,7 @@ TEST_F(NsApi, IncorrectNsName) {
 		auto err = rt.reindexer->RenameNamespace(kNsName, std::string(name));
 		ASSERT_FALSE(err.ok());
 		ASSERT_EQ(err.whatStr(),
-				  fmt::format("Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed ({})", name));
+				  fmt::format("Namespace name '{}' contains invalid character. Only alphas, digits,'_','-', are allowed", name));
 		rt.DropNamespace(kNsName);
 	};
 	check(variants, rename);

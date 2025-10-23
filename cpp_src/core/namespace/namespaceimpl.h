@@ -436,12 +436,11 @@ private:
 	friend struct IndexFastUpdate;
 
 	int getIndexByName(std::string_view index) const;
-	int tryGetScalarIndexByName(std::string_view name) const;
 	bool tryGetIndexByName(std::string_view name, int& index) const noexcept;
 	bool tryGetScalarIndexByName(std::string_view name, int& index) const noexcept;
-	// Those functions does not return indexes with multiple jsonpaths, when searching by jsonpath
-	bool tryGetIndexByNameOrJsonPath(std::string_view name, int& index) const;
-	bool tryGetIndexByJsonPath(std::string_view jsonPath, int& index) const noexcept;
+	// Those functions do not return indexes with multiple jsonpaths, when searching by jsonpath
+	bool tryGetIndexByNameOrJsonPath(std::string_view name, int& index, EnableMultiJsonPath multi = EnableMultiJsonPath_False) const;
+	bool tryGetIndexByJsonPath(std::string_view jsonPath, int& index, EnableMultiJsonPath multi = EnableMultiJsonPath_False) const noexcept;
 	FloatVectorsIndexes getVectorIndexes() const;
 	FloatVectorsIndexes getVectorIndexes(const PayloadType& pt) const;
 	bool haveFloatVectorsIndexes() const noexcept { return !floatVectorsIndexesPositions_.empty(); }
@@ -497,6 +496,7 @@ private:
 	void addToWAL(std::string_view json, WALRecType type, const NsContext& ctx);
 	void removeExpiredItems(RdxActivityContext*);
 	void removeExpiredStrings(RdxActivityContext*);
+	void optimizeFloatVectorKeeper(RdxActivityContext*);
 	void setSchema(std::string_view schema, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void setTagsMatcher(TagsMatcher&& tm, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void replicateItem(IdType itemId, const NsContext& ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity,
@@ -554,7 +554,6 @@ private:
 	void checkClusterRole(lsn_t originLsn) const;
 	void checkClusterStatus(const RdxContext& ctx) const { checkClusterStatus(ctx.GetOriginLSN()); }
 	void checkClusterStatus(lsn_t lsn) const;
-	void checkClusterStatus(bool isWalSync, const LocalTransaction& tx) const;
 	void checkSnapshotLSN(lsn_t lsn);
 	void replicateTmUpdateIfRequired(UpdatesContainer& pendedRepl, int oldTmVersion, const NsContext& ctx) noexcept;
 
@@ -594,11 +593,12 @@ private:
 	void updateFloatVectorsIndexesPositionsInCaseOfDrop(const Index& indexToRemove, size_t positionToRemove, RollBack_dropIndex&);
 	void updateFloatVectorsIndexesPositionsInCaseOfInsert(size_t position, RollBack_insertIndex&);
 	StringsHolderPtr strHolder() const noexcept { return strHolder_; }
-	std::set<std::string> GetFTIndexes(const RdxContext&) const;
 	size_t itemsCount() const noexcept { return items_.size() - free_.size(); }
 	const NamespaceConfigData& config() const noexcept { return config_; }
 
 	void DumpIndex(std::ostream& os, std::string_view index, const RdxContext& ctx) const;
+
+	bool IsFulltextOrVector(std::string_view indexName, const RdxContext&) const;
 
 	NamespaceImpl(const NamespaceImpl& src, size_t newCapacity, AsyncStorage::FullLock& storageLock);
 
@@ -687,4 +687,5 @@ private:
 
 	const std::shared_ptr<EmbeddersCache> embeddersCache_;
 };
+
 }  // namespace reindexer

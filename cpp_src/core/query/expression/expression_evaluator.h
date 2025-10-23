@@ -4,8 +4,8 @@
 
 namespace reindexer {
 
-class token;
-class tokenizer;
+class Token;
+class Tokenizer;
 class FunctionExecutor;
 class TagsMatcher;
 class NsContext;
@@ -27,17 +27,17 @@ private:
 
 	enum class [[nodiscard]] StringAllowed : bool { No = false, Yes = true };
 	enum class [[nodiscard]] NonIntegralAllowed : bool { No = false, Yes = true };
-	PrimaryToken getPrimaryToken(tokenizer& parser, const PayloadValue& v, StringAllowed strAllowed, NonIntegralAllowed nonIntAllowed,
-								 token& outTok, const NsContext& ctx);
-	PrimaryToken handleTokenName(tokenizer& parser, const PayloadValue& v, NonIntegralAllowed nonIntAllowed, token& outTok,
+	PrimaryToken getPrimaryToken(Tokenizer& parser, const PayloadValue& v, StringAllowed strAllowed, NonIntegralAllowed nonIntAllowed,
+								 Token& outTok, const NsContext& ctx);
+	PrimaryToken handleTokenName(Tokenizer& parser, const PayloadValue& v, NonIntegralAllowed nonIntAllowed, Token& outTok,
 								 const NsContext& ctx);
-	double performSumAndSubtracting(tokenizer& parser, const PayloadValue& v, const NsContext& ctx);
-	double performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& lastTok, const NsContext& ctx);
-	double performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& lastTok, const NsContext& ctx);
-	void handleCommand(tokenizer& parser, const PayloadValue& v, const Variant& flag, const NsContext& ctx);
+	double performSumAndSubtracting(Tokenizer& parser, const PayloadValue& v, const NsContext& ctx);
+	double performMultiplicationAndDivision(Tokenizer& parser, const PayloadValue& v, Token& lastTok, const NsContext& ctx);
+	double performArrayConcatenation(Tokenizer& parser, const PayloadValue& v, Token& lastTok, const NsContext& ctx);
+	void handleCommand(Tokenizer& parser, const PayloadValue& v, const Variant& flag, const NsContext& ctx);
 
-	void captureArrayContent(tokenizer& parser);
-	[[noreturn]] void throwUnexpectedTokenError(tokenizer& parser, const token& outTok);
+	void captureArrayContent(Tokenizer& parser);
+	[[noreturn]] void throwUnexpectedTokenError(Tokenizer& parser, const Token& outTok);
 
 	enum [[nodiscard]] State { None = 0, StateArrayConcat, StateMultiplyAndDivide, StateSumAndSubtract };
 

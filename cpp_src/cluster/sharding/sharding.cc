@@ -194,14 +194,14 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::Connect(int shardId, Error& 
 		auto conn = doReconnect(shardId, reconnectStatus);
 		connections_.status = reconnectStatus;
 		connections_.reconnectTs = steady_clock_w::now();
-		const auto reconnectTs = connections_.reconnectTs;
+		const auto reconnectTs2 = connections_.reconnectTs;
 		logFmt(LogInfo, "[sharding proxy] Reconnect result: {}", reconnectStatus.ok() ? "OK" : reconnectStatus.what());
 
 		if (reconnectStatus.ok()) {
 			wlk.unlock();
 			rlk.lock();
 			// Stop unused connections
-			if (!connections_.shutdown && reconnectTs == connections_.reconnectTs) {
+			if (!connections_.shutdown && reconnectTs2 == connections_.reconnectTs) {
 				for (size_t i = 0; i < connections_.size(); ++i) {
 					if (i != connections_.actualIndex) {
 						connections_[i]->Stop();
@@ -294,7 +294,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 				if (reconnectStatus.ok()) {
 					logFmt(
 						LogTrace, "[sharding proxy] Shard {} will proxy data to shard {} (cluster) via {}", thisShard_, shardID,
-						connections_.actualIndex.has_value() ? fmt::format("{}", dsns[connections_.actualIndex.value()]) : "'Unknow DSN'");
+						connections_.actualIndex.has_value() ? fmt::format("{}", dsns[connections_.actualIndex.value()]) : "'Unknown DSN'");
 					return res;
 				}
 				break;
@@ -379,9 +379,8 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 
 Error LocatorService::validateConfig() {
 	for (auto& ns : config_.namespaces) {
-		const auto ftIndexes = rx_.GetFTIndexes(ns.ns);
-		if (ftIndexes.find(ns.index) != ftIndexes.cend()) {
-			return Error(errLogic, "Sharding by full text index is not supported: {}", ns.index);
+		if (rx_.IsFulltextOrVector(ns.ns, ns.index)) {
+			return Error(errLogic, "Sharding by full text or vector index is not supported: {}", ns.index);
 		}
 		int field = ShardingKeyType::NotSetShard;
 		PayloadType pt = rx_.GetPayloadType(ns.ns);
@@ -549,11 +548,11 @@ ConnectionsPtr LocatorService::rebuildConnectionsVector(std::string_view ns, int
 
 ConnectionsPtr LocatorService::getConnectionsFromCache(std::string_view ns, int shardId, bool& requiresRebuild) {
 	ConnectionsPtr connections;
-	auto it = connectionsCache_.find(ns);
+	const auto it = connectionsCache_.find(ns);
 	if (it != connectionsCache_.end()) {
-		auto nsConnnectTableRow = it->second.find(shardId);
-		if (nsConnnectTableRow != it->second.end()) {
-			connections = nsConnnectTableRow->second;
+		const auto nsConnectTableRow = it->second.find(shardId);
+		if (nsConnectTableRow != it->second.end()) {
+			connections = nsConnectTableRow->second;
 			for (auto& connection : *connections) {
 				if (!connection.IsOnThisShard() && !connection.IsConnected()) {
 					requiresRebuild = true;

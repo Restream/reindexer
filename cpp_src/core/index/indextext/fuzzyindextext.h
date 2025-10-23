@@ -10,8 +10,6 @@ class [[nodiscard]] FuzzyIndexText : public IndexText<T> {
 	using Base = IndexText<T>;
 
 public:
-	FuzzyIndexText(const FuzzyIndexText<T>& other) : Base(other) { createConfig(other.getConfig()); }
-
 	FuzzyIndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 		: Base(idef, std::move(payloadType), std::move(fields), cacheCfg) {
 		createConfig();
@@ -23,7 +21,9 @@ public:
 		abort();
 	}
 
-	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override final { return std::make_unique<FuzzyIndexText<T>>(*this); }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override final {
+		return std::unique_ptr<Index>(new FuzzyIndexText<T>(*this));
+	}
 	IdSet::Ptr Select(FtCtx& ctx, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
 					  const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final {
@@ -39,7 +39,9 @@ public:
 		return {{}, {}, nullptr};
 	}
 
-protected:
+private:
+	FuzzyIndexText(const FuzzyIndexText<T>& other) : Base(other) { createConfig(other.getConfig()); }
+
 	void commitFulltextImpl() override final;
 	FtFuzzyConfig* getConfig() const noexcept { return dynamic_cast<FtFuzzyConfig*>(this->cfg_.get()); }
 	void createConfig(const FtFuzzyConfig* cfg = nullptr);

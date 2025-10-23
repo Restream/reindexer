@@ -13,8 +13,7 @@ std::string_view CondTypeToStr(CondType);
 std::string_view CondTypeToStrShort(CondType);
 std::string_view TagTypeToStr(TagType);
 std::string_view AggTypeToStr(AggType) noexcept;
-RankOrdering ToRankOrdering(RankedTypeQuery);
-RankedTypeQuery ToRankedTypeQuery(VectorMetric);
+QueryRankType ToQueryRankType(VectorMetric);
 
 constexpr bool IsComposite(IndexType type) noexcept {
 	switch (type) {

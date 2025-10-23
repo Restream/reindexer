@@ -25,7 +25,6 @@ public:
 	using key_type = StoreIndexKeyType<Map>;
 
 	IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg);
-	IndexUnordered(const IndexUnordered& other);
 
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
@@ -34,7 +33,7 @@ public:
 	void Commit() override;
 	void UpdateSortedIds(const IUpdateSortedContext&) override;
 	bool IsSupportSortedIdsBuild() const noexcept override { return true; }
-	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::make_unique<IndexUnordered<Map>>(*this); }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexUnordered<Map>(*this)); }
 	IndexMemStat GetMemStat(const RdxContext&) override;
 	size_t Size() const noexcept override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
@@ -50,6 +49,8 @@ public:
 	void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) override;
 
 protected:
+	IndexUnordered(const IndexUnordered& other);
+
 	bool tryIdsetCache(const VariantArray& keys, CondType condition, SortType sortId,
 					   const std::function<bool(SelectKeyResult&, size_t&)>& selector, SelectKeyResult& res);
 	void addMemStat(typename Map::iterator it);

@@ -1796,6 +1796,25 @@ func TestEqualPosition(t *testing.T) {
 			assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
 		}
 	})
+	t.Run("equal position array mark", func(t *testing.T) {
+		expectedIds := map[string]bool{
+			"1": true,
+		}
+		it := newTestQuery(DB, ns).
+			Where("ID", reindexer.EQ, 1).
+			Where("items_array.space_id", reindexer.EQ, "space_0").
+			Where("items_array.value", reindexer.EQ, 1).
+			EqualPosition("ItemsArray[#].SpaceId", "ItemsArray[#].Value").
+			MustExec(t)
+		defer it.Close()
+		assert.NoError(t, it.Error())
+		assert.Equal(t, len(expectedIds), it.Count())
+		for it.Next() {
+			fmt.Println(it.Object().(*TestItemEqualPosition).ID, expectedIds[it.Object().(*TestItemEqualPosition).ID])
+			assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
+		}
+	})
+
 }
 
 func TestStrictMode(t *testing.T) {

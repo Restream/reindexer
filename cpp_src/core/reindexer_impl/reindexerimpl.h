@@ -131,10 +131,10 @@ public:
 		}
 		return {errNotValid, "DB is not connected"};
 	}
-	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response);
-	Error LeadersPing(const cluster::NodeData&);
-	Error GetRaftInfo(bool allowTransitState, cluster::RaftInfo&, const RdxContext& ctx);
-	Error ClusterControlRequest(const ClusterControlRequestData& request);
+	Error SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response) noexcept;
+	Error LeadersPing(const cluster::NodeData&) noexcept;
+	Error GetRaftInfo(bool allowTransitState, cluster::RaftInfo&, const RdxContext& ctx) noexcept;
+	Error ClusterControlRequest(const ClusterControlRequestData& request) noexcept;
 	Error SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const RdxContext& ctx);
 	void ShutdownCluster();
 
@@ -277,8 +277,8 @@ private:
 		ReindexerImpl& owner_;
 	};
 
-	Error addNamespace(const NamespaceDef& nsDef, std::optional<NsReplicationOpts> replOpts, const RdxContext& ctx);
-	Error getLeaderDsn(DSN& dsn, unsigned short serverId, const cluster::RaftInfo& info);
+	Error addNamespace(const NamespaceDef& nsDef, std::optional<NsReplicationOpts> replOpts, const RdxContext& ctx) noexcept;
+	void getLeaderDsn(DSN& dsn, unsigned short serverId, const cluster::RaftInfo& info);
 	Error insertDontUpdateSystemNS(std::string_view nsName, Item& item, const RdxContext& ctx);
 	FilterNsNamesT detectFilterNsNames(const Query& q);
 	StatsLocker::StatsLockT syncSystemNamespaces(std::string_view sysNsName, const FilterNsNamesT&, const RdxContext& ctx);
@@ -309,7 +309,7 @@ private:
 	Error closeNamespace(std::string_view nsName, const RdxContext& ctx, bool dropStorage);
 
 	PayloadType getPayloadType(std::string_view nsName);
-	std::set<std::string> getFTIndexes(std::string_view nsName);
+	bool isFulltextOrVector(std::string_view nsName, std::string_view indexName) const;
 
 	Namespace::Ptr getNamespace(std::string_view nsName, const RdxContext& ctx);
 	Namespace::Ptr getNamespaceNoThrow(std::string_view nsName, const RdxContext& ctx);
@@ -354,6 +354,8 @@ private:
 	template <QueryType TP>
 	Error modifyQ(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx,
 				  void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&));
+
+	void maskingAsyncConfig(LocalQueryResults& result) const;
 
 	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 

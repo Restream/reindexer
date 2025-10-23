@@ -126,8 +126,8 @@ int main(int argc, char** argv) {
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
 	args::Group progOptions("options");
 	args::ValueFlag<std::string> dbDsn(progOptions, "DSN",
-									   "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'", {'d', "dsn"},
-									   args::Options::Single | args::Options::Global);
+									   "DSN to 'reindexer'. Can be 'cproto://[user@password:]<ip>:<port>/<dbname>' or 'builtin://<path>'",
+									   {'d', "dsn"}, args::Options::Single | args::Options::Global);
 	args::ValueFlag<std::string> output(progOptions, "FILENAME", "A file for saving initial states of random engines", {'s', "save"},
 										args::Options::Single | args::Options::Global);
 	args::ValueFlag<std::string> input(progOptions, "FILENAME", "A file for initial states of random engines recovery", {'r', "repeat"},

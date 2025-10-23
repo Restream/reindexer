@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.7.0
+  version: 5.8.0
 servers:
 - url: /api/v1
 tags:
@@ -5423,25 +5423,28 @@ components:
           description: Count of unique keys values stored in index
         idset_btree_size:
           type: integer
-          description: Total memory consumption of reverse index b-tree structures.
+          description: Total memory consumption (in bytes) of reverse index b-tree structures.
             For `dense` and `store` indexes always 0
         idset_plain_size:
           type: integer
-          description: Total memory consumption of reverse index vectors. For `store`
+          description: Total memory consumption (in bytes) of reverse index vectors. For `store`
             indexes always 0
         sort_orders_size:
           type: integer
-          description: "Total memory consumption of SORT statement and `GT`, `LT`\
+          description: "Total memory consumption (in bytes) of SORT statement and `GT`, `LT`\
             \ conditions optimized structures. Applicable only to `tree` indexes"
         idset_cache:
           $ref: '#/components/schemas/IndexCacheMemStats'
         indexing_struct_size:
           type: integer
-          description: "Total memory consumption of the main indexing structures (fulltext,\
+          description: "Total memory consumption (in bytes) of the main indexing structures (fulltext,\
             \ ANN, etc.)"
+        vectors_keeper_size:
+          type: integer
+          description: "Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)"
         data_size:
           type: integer
-          description: "Total memory consumption of documents's data, held by index"
+          description: "Total memory consumption (in bytes) of documents's data, held by index"
         tracked_updates_count:
           type: integer
           description: "Updates count, pending in index updates tracker"

@@ -60,7 +60,7 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 
 	try {
 		if (!reindexer::validateObjectName(name, true)) {
-			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+			return Error(errParams, "Namespace name '{}' contains invalid character. Only alphas, digits,'_','-', are allowed", name);
 		}
 		class [[nodiscard]] DummyClusterManager final : public reindexer::cluster::IDataReplicator, public reindexer::cluster::IDataSyncer {
 			Error Replicate(reindexer::UpdatesContainer&&, std::function<void()> f, const reindexer::RdxContext&) override {

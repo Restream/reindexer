@@ -5,6 +5,11 @@
 
 namespace reindexer {
 
+struct [[nodiscard]] FtIndexFieldPros {
+	uint32_t isIndexed : 1;
+	uint32_t fieldNumber : 31;
+};
+
 struct [[nodiscard]] FtDslFieldOpts {
 	float boost = 1.0;
 	bool needSumRank = false;
@@ -57,10 +62,11 @@ struct StopWord;
 
 class [[nodiscard]] FtDSLQuery {
 public:
-	FtDSLQuery(const RHashMap<std::string, int>& fields, const StopWordsSetT& stopWords, const SplitOptions& splitOptions) noexcept
-		: fields_(fields), stopWords_(stopWords), splitOptions_(splitOptions) {}
+	FtDSLQuery(const RHashMap<std::string, FtIndexFieldPros>& fields, const StopWordsSetT& stopWords, const SplitOptions& splitOptions,
+			   StrictMode strictMode = StrictModeNone) noexcept
+		: fields_(fields), stopWords_(stopWords), splitOptions_(splitOptions), strictMode_(strictMode) {}
 
-	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, splitOptions_}; }
+	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, splitOptions_, strictMode_}; }
 	void Parse(std::string_view q);
 
 	template <typename... Args>
@@ -84,9 +90,10 @@ private:
 
 	std::function<int(const std::string&)> resolver_;
 
-	const RHashMap<std::string, int>& fields_;
+	const RHashMap<std::string, FtIndexFieldPros>& fields_;
 	const StopWordsSetT& stopWords_;
 	const SplitOptions& splitOptions_;
+	const StrictMode strictMode_{StrictMode::StrictModeNotSet};
 
 	h_vector<FtDSLEntry> terms_;
 };

@@ -91,7 +91,7 @@ public:
 	/// @param ret - Pointer to returned database pointer
 	/// @return Error - error object
 	template <CalledFrom caller, typename... Args>
-	Error GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcept;
+	Error GetDB(UserRole role, Reindexer** ret, Args&&... args) const noexcept;
 	/// Reset Reindexer DB object pointer in context
 	void ResetDB() noexcept {
 		db_ = nullptr;
@@ -211,7 +211,7 @@ struct [[nodiscard]] fmt::formatter<reindexer_server::AuthContext::UserLogin> {
 namespace reindexer_server {
 
 template <AuthContext::CalledFrom caller, typename... Args>
-Error AuthContext::GetDB(UserRole role, Reindexer** ret, Args&&... args) noexcept {
+Error AuthContext::GetDB(UserRole role, Reindexer** ret, Args&&... args) const noexcept {
 	if (role > role_) {
 		return Error(errForbidden, "Forbidden: need role {} of db '{}' user '{}' have role={}", UserRoleName(role), dbName_, login_,
 					 UserRoleName(role_));

@@ -333,9 +333,10 @@ public:
 	/// @param shardId - expected shard ID for this node (non empty for proxied sharding requests)
 	/// @param distributed - 'true' means, that we are executing distributed sharding query part
 	/// @param replToken - replication token of current node
-	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emitterServerId, int shardId, bool distributed,
-								key_string replToken) const {
-		return {impl_, ctx_.WithContextParams(timeout, lsn, emitterServerId, shardId, distributed, std::move(replToken))};
+	/// @param needMaskingDSN - flag for masking user credentials in DSNs when requesting config data
+	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emitterServerId, int shardId, bool distributed, key_string replToken,
+								NeedMaskingDSN needMaskingDSN) const {
+		return {impl_, ctx_.WithContextParams(timeout, lsn, emitterServerId, shardId, distributed, std::move(replToken), needMaskingDSN)};
 	}
 	/// Allows to set multiple context params at once
 	/// @param timeout - Execution timeout
@@ -343,21 +344,24 @@ public:
 	/// @param emitterServerId - server ID of the emitter node (required for synchronously replicated requests)
 	/// @param shardId - expected shard ID for this node (non empty for proxied sharding requests)
 	/// @param distributed - 'true' means, that we are executing distributed sharding query part
+	/// @param replToken - replication token of current node
+	/// @param needMaskingDSN - flag for masking user credentials in DSNs when requesting config data
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
 	/// @param connectionId - unique identifier for the connection
-	/// @param replToken - replication token of current node
 	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emitterServerId, int shardId, bool distributed, key_string replToken,
-								std::string_view activityTracer, std::string user, int connectionId) const {
-		return {impl_, ctx_.WithContextParams(timeout, lsn, emitterServerId, shardId, distributed, std::move(replToken), activityTracer,
-											  std::move(user), connectionId)};
+								NeedMaskingDSN needMaskingDSN, std::string_view activityTracer, std::string user, int connectionId) const {
+		return {impl_, ctx_.WithContextParams(timeout, lsn, emitterServerId, shardId, distributed, std::move(replToken), needMaskingDSN,
+											  activityTracer, std::move(user), connectionId)};
 	}
 	/// Allows to set multiple context params at once
 	/// @param timeout - Execution timeout
+	///  @param needMaskingDSN - flag for masking user credentials in DSNs when requesting config data
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
-	Reindexer WithContextParams(milliseconds timeout, std::string_view activityTracer, std::string user) const {
-		return {impl_, ctx_.WithContextParams(timeout, activityTracer, std::move(user))};
+	Reindexer WithContextParams(milliseconds timeout, NeedMaskingDSN needMaskingDSN, std::string_view activityTracer,
+								std::string user) const {
+		return {impl_, ctx_.WithContextParams(timeout, needMaskingDSN, activityTracer, std::move(user))};
 	}
 
 	/// Set activityTracer to current DB

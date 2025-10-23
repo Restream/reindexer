@@ -237,7 +237,7 @@ public:
 					expectedDocs.totalCount += docP.second;
 				} else {
 					EXPECT_EQ(it->second, docP.second)
-						<< fmt::format("Inconsistant docs count: {} vs {}. Doc: '{}'. Cur word: '{}'. Words: {}", docP.second, it->second,
+						<< fmt::format("Inconsistent docs count: {} vs {}. Doc: '{}'. Cur word: '{}'. Words: {}", docP.second, it->second,
 									   docP.first, w, DumpContainer("words", words));
 				}
 			}

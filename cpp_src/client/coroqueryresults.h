@@ -63,7 +63,6 @@ public:
 
 	class [[nodiscard]] Iterator {
 	public:
-		Iterator() = default;
 		Iterator(const CoroQueryResults& qr, int idx) noexcept : qr_{&qr}, idx_{idx} {}
 
 		using JoinedData = h_vector<h_vector<ResultSerializer::ItemParams, 1>, 1>;

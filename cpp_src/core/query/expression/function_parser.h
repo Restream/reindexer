@@ -8,8 +8,8 @@
 
 namespace reindexer {
 
-class token;
-class tokenizer;
+class Token;
+class Tokenizer;
 class VariantArray;
 
 struct [[nodiscard]] ParsedQueryFunction {
@@ -24,7 +24,7 @@ struct [[nodiscard]] ParsedQueryFunction {
 class [[nodiscard]] QueryFunctionParser {
 public:
 	static ParsedQueryFunction Parse(std::string_view query);
-	static ParsedQueryFunction ParseFunction(tokenizer& parser, token& tok);
+	static ParsedQueryFunction ParseFunction(Tokenizer& parser, Token& tok);
 	static bool IsFunction(std::string_view val) noexcept;
 	static bool IsFunction(const VariantArray& val) noexcept;
 
@@ -35,9 +35,9 @@ private:
 		std::unordered_set<std::string_view> namedArgs;
 	};
 
-	static void parseFunction(tokenizer& parser, ParsedQueryFunction&, token& tok);
-	static void parseFunctionImpl(tokenizer& parser, ParsedQueryFunction&, token& tok);
-	static void parsePositionalAndNamedArgs(tokenizer& parser, ParsedQueryFunction&, const Args& args);
+	static void parseFunction(Tokenizer& parser, ParsedQueryFunction&, Token& tok);
+	static void parseFunctionImpl(Tokenizer& parser, ParsedQueryFunction&, Token& tok);
+	static void parsePositionalAndNamedArgs(Tokenizer& parser, ParsedQueryFunction&, const Args& args);
 };
 
 }  // namespace reindexer

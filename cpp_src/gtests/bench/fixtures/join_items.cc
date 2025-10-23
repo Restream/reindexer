@@ -1,5 +1,4 @@
 #include "join_items.h"
-
 #include "helpers.h"
 
 reindexer::Error JoinItems::Initialize() {

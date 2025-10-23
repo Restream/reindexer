@@ -1,6 +1,7 @@
 #include "cjsonmodifier.h"
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
+#include "core/keyvalue/float_vectors_holder.h"
 #include "jsondecoder.h"
 #include "sparse_validator.h"
 #include "tagsmatcher.h"

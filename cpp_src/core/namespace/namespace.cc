@@ -168,6 +168,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 	logFmt(LogInfo, "[rename] Trying to rename namespace '{}'...", srcNsName);
 	std::string dbpath;
 	const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
+
 	auto lck = nsFuncWrapper<&NamespaceImpl::dataWLock>(ctx, true);
 	auto srcNsPtr = atomicLoadMainNs();
 	auto& srcNs = *srcNsPtr;

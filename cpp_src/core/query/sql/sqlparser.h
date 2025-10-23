@@ -54,76 +54,76 @@ protected:
 	/// Parses query.
 	/// @param tok - tokenizer object instance.
 	/// @return always returns zero.
-	int Parse(tokenizer& tok);
+	int Parse(Tokenizer& tok);
 
-	/// Peeks next sql token.
+	/// Peeks next sql Token.
 	/// @param parser - tokenizer object instance.
-	/// @param tokenType - token type.
+	/// @param tokenType - Token type.
 	/// @param toLower - transform to lower representation.
-	/// @return sql token object.
-	token peekSqlToken(tokenizer& parser, SqlTokenType tokenType, bool toLower = true);
+	/// @return sql Token object.
+	Token peekSqlToken(Tokenizer& parser, SqlTokenType tokenType, bool toLower = true);
 
 	/// Is current token last in autocomplete mode?
-	bool reachedAutocompleteToken(tokenizer& parser, const token& tok) const;
+	bool reachedAutocompleteToken(Tokenizer& parser, const Token& tok) const;
 
 	/// Parses filter part of sql query.
 	/// @param parser - tokenizer object instance.
 	template <Nested>
-	void selectParse(tokenizer& parser);
+	void selectParse(Tokenizer& parser);
 
 	/// Parses filter part of sql delete query.
 	/// @param parser - tokenizer object instance.
-	void deleteParse(tokenizer& parser);
+	void deleteParse(Tokenizer& parser);
 
 	/// Parses filter part of sql update query.
 	/// @param parser - tokenizer object instance.
-	void updateParse(tokenizer& parser);
+	void updateParse(Tokenizer& parser);
 
 	/// Parses filter part of sql truncate query.
 	/// @param parser - tokenizer object instance.
-	void truncateParse(tokenizer& parser);
+	void truncateParse(Tokenizer& parser);
 
 	/// Parse where entries
 	template <Nested>
-	void parseWhere(tokenizer& parser);
+	void parseWhere(Tokenizer& parser);
 	template <typename T>
-	void parseWhereCondition(tokenizer&, T&& firstArg, OpType);
+	void parseWhereCondition(Tokenizer&, T&& firstArg, OpType);
 
 	/// Parse order by
 	template <typename Sortable>
-	void parseOrderBy(tokenizer& parser, Sortable&);
+	void parseOrderBy(Tokenizer& parser, Sortable&);
 
 	/// Parse join entries
-	void parseJoin(JoinType type, tokenizer& tok);
+	void parseJoin(JoinType type, Tokenizer& tok);
 
 	/// Parse join entries
-	void parseJoinEntries(tokenizer& parser, const std::string& mainNs, JoinedQuery& jquery);
+	void parseJoinEntries(Tokenizer& parser, const std::string& mainNs, JoinedQuery& jquery);
 
 	/// Parse equal_positions
-	void parseEqualPositions(tokenizer& parser);
+	void parseEqualPositions(Tokenizer& parser);
 
-	Point parseGeomFromText(tokenizer& parser) const;
-	void parseDWithin(tokenizer& parser, OpType nextOp);
-	void parseKnn(tokenizer& parser, OpType nextOp);
-	KnnSearchParams parseKnnParams(tokenizer&);
+	Point parseGeomFromText(Tokenizer& parser) const;
+	void parseDWithin(Tokenizer& parser, OpType nextOp);
+	void parseKnn(Tokenizer& parser, OpType nextOp);
+	KnnSearchParams parseKnnParams(Tokenizer&);
 	template <typename T>
-	void parseSingleKnnParam(tokenizer&, std::optional<T>& param, std::string_view paramName);
+	void parseSingleKnnParam(Tokenizer&, std::optional<T>& param, std::string_view paramName);
 
 	/// Parse update field entries
-	UpdateEntry parseUpdateField(tokenizer& parser);
+	UpdateEntry parseUpdateField(Tokenizer& parser);
 
 	/// Parse joined Ns name: [Namespace.field]
-	std::string parseJoinedFieldName(tokenizer& parser, std::string& name);
+	std::string parseJoinedFieldName(Tokenizer& parser, std::string& name);
 
 	/// Parse merge entries
-	void parseMerge(tokenizer& parser);
+	void parseMerge(Tokenizer& parser);
 
-	void parseModifyConditions(tokenizer& parser);
+	void parseModifyConditions(Tokenizer& parser);
 
-	Query parseSubQuery(tokenizer& parser);
+	Query parseSubQuery(Tokenizer& parser);
 
-	void parseArray(tokenizer& parser, std::string_view tokText, UpdateEntry* updateField) const;
-	void parseCommand(tokenizer& parser) const;
+	void parseArray(Tokenizer& parser, std::string_view tokText, UpdateEntry* updateField) const;
+	void parseCommand(Tokenizer& parser) const;
 
 	static CondType getCondType(std::string_view cond);
 	SqlParsingCtx ctx_;

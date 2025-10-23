@@ -1,13 +1,13 @@
 #pragma once
 
 #include "core/cjson/tagspath.h"
-#include "core/keyvalue/float_vectors_holder.h"
 #include "core/payload/payloadiface.h"
 #include "core/payload/payloadtype.h"
 
 namespace reindexer {
 
 class TagsMatcher;
+class FloatVectorsHolderVector;
 
 class [[nodiscard]] CJsonModifier {
 public:

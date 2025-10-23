@@ -3,6 +3,7 @@
 #include <variant>
 
 #include "comparator_indexed_distinct.h"
+#include "const.h"
 #include "core/index/payload_map.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
@@ -155,6 +156,7 @@ public:
 				abort();
 		}
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -197,6 +199,7 @@ public:
 				abort();
 		}
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxColumnComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -240,6 +243,7 @@ public:
 				abort();
 		}
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -286,6 +290,7 @@ public:
 				abort();
 		}
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxColumnComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId)); }
@@ -366,6 +371,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -447,6 +453,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -541,6 +548,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -631,6 +639,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -686,6 +695,7 @@ public:
 				abort();
 		}
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -731,6 +741,7 @@ public:
 				abort();
 		}
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxColumnComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -776,6 +787,7 @@ public:
 				abort();
 		}
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -824,6 +836,7 @@ public:
 				abort();
 		}
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxColumnComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId)); }
@@ -909,6 +922,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -996,6 +1010,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1096,6 +1111,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -1193,6 +1209,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1261,6 +1278,7 @@ public:
 				abort();
 		}
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -1285,6 +1303,7 @@ public:
 		const double* ptr = reinterpret_cast<const double*>(item.Ptr() + arr.offset);
 		return DWithin(Point{ptr[0], ptr[1]}, point_, distance_);
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -1307,6 +1326,7 @@ public:
 		const Point p{ptr[0], ptr[1]};
 		return DWithin(p, point_, distance_) && distinct_.Compare(p);
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1336,6 +1356,7 @@ public:
 		}
 		return DWithin(Point{buffer[0].As<double>(), buffer[1].As<double>()}, point_, distance_);
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -1359,6 +1380,7 @@ public:
 		const Point p{buffer[0].As<double>(), buffer[1].As<double>()};
 		return DWithin(p, point_, distance_) && distinct_.Compare(p);
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1385,6 +1407,7 @@ public:
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const noexcept {
 		return distinct_.Compare(*reinterpret_cast<T*>(item.Ptr() + offset_));
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1403,6 +1426,7 @@ public:
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& /*item*/, IdType rowId) const noexcept {
 		return distinct_.Compare(*(rawData_ + rowId));
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxColumnComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId)); }
@@ -1419,6 +1443,7 @@ public:
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const noexcept {
 		return distinct_.Compare(*reinterpret_cast<p_string*>(item.Ptr() + offset_));
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1437,6 +1462,7 @@ public:
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		return arr.len != 0;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -1459,6 +1485,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1491,6 +1518,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1520,6 +1548,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -1545,6 +1574,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1578,6 +1608,7 @@ public:
 		}
 		return false;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
@@ -1604,6 +1635,7 @@ public:
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
 		return arr.len == 0;
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -1629,6 +1661,7 @@ public:
 		}
 		return buffer_.empty();
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxJsonPathComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
@@ -1645,6 +1678,7 @@ public:
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType) noexcept {
 		return !ConstFloatVectorView::FromUint64(*reinterpret_cast<const uint64_t*>(item.Ptr() + offset_)).IsEmpty();
 	}
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 	void ExcludeDistinctValues(const PayloadValue&, IdType) const noexcept {}
@@ -1711,7 +1745,8 @@ public:
 		return invert ? (totalCalls_ - matchedCount_) : matchedCount_;
 	}
 	double Cost(double expectedIterations) const noexcept {
-		return expectedIterations + 1.0 + (isNotOperation_ ? expectedIterations : 0.0);
+		const auto val = expectedIterations * costMultiplier();
+		return val + 1.0 + (isNotOperation_ ? val : 0.0);
 	}
 	void SetNotOperationFlag(bool isNotOperation) noexcept { isNotOperation_ = isNotOperation; }
 
@@ -1801,6 +1836,9 @@ private:
 	static comparators::ComparatorIndexedVariant<T> createImpl(CondType cond, const VariantArray&, const void* rawData,
 															   reindexer::IsDistinct distinct, IsArray isArray, const PayloadType&,
 															   const FieldsSet&, const CollateOpts&);
+	double costMultiplier() const noexcept {
+		return std::visit([](auto& impl) { return impl.CostMultiplier(); }, impl_);
+	}
 
 	int totalCalls_{0};
 	int matchedCount_{0};
@@ -1896,6 +1934,10 @@ template <>
 RX_ALWAYS_INLINE reindexer::IsDistinct ComparatorIndexed<PayloadValue>::IsDistinct() const noexcept {
 	return impl_.IsDistinct();
 }
+template <>
+RX_ALWAYS_INLINE double ComparatorIndexed<PayloadValue>::costMultiplier() const noexcept {
+	return impl_.CostMultiplier();
+}
 
 template <>
 RX_ALWAYS_INLINE bool ComparatorIndexed<Point>::Compare(const PayloadValue& item, IdType rowId) {
@@ -1942,6 +1984,10 @@ RX_ALWAYS_INLINE void ComparatorIndexed<FloatVector>::ExcludeDistinctValues(cons
 template <>
 RX_ALWAYS_INLINE IsDistinct ComparatorIndexed<FloatVector>::IsDistinct() const noexcept {
 	return impl_.IsDistinct();
+}
+template <>
+RX_ALWAYS_INLINE double ComparatorIndexed<FloatVector>::costMultiplier() const noexcept {
+	return impl_.CostMultiplier();
 }
 
 extern template std::string ComparatorIndexed<int>::ConditionStr() const;

@@ -118,7 +118,7 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 			localQuery = Query::FromSQL("local update " + default_namespace);
 		} catch (const Error& err) {
 			failed = true;
-			ASSERT_STREQ(err.what(), "Syntax error at or near 'update', line: 1 column: 6 27; only SELECT query could be LOCAL");
+			ASSERT_STREQ(err.what(), "Syntax error at or near 'update', line: 1 column: 6 12; only SELECT query could be LOCAL");
 		}
 		EXPECT_TRUE(failed);
 		localQuery = Query{default_namespace};

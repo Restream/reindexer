@@ -161,7 +161,7 @@ public:
 		return FieldsExtractor(&values_->MarkArray(), expectedType_, std::move(filterStep), params_, 0);
 	}
 	FieldsExtractor Array(std::string_view) {
-		assertrx_throw(false && "not realized");
+		assertrx_throw(false && "not implemented");
 		assertrx_throw(values_);
 		auto filterStep = step(TagName::Empty());
 		return FieldsExtractor(&values_->MarkArray(), expectedType_, std::move(filterStep), params_, 0);

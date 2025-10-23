@@ -25,9 +25,8 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, NamespaceImpl* ns, 
 									: ((query_.GetStrictMode() == StrictModeNotSet) ? ns_.config_.strictMode : query_.GetStrictMode())),
 	  forcedSortOrder_(!query_.ForcedSortOrder().empty()),
 	  reqMatchedOnce_(ctx.reqMatchedOnceFlag),
-	  start_(query_.Offset()),
-	  count_(query_.Limit()),
-	  isMergeQuery_(ctx.isMergeQuery == IsMergeQuery_True),
+	  start_(ctx.offset),
+	  count_(ctx.limit),
 	  floatVectorsHolder_(ctx.floatVectorsHolder) {
 	if (forcedSortOrder_ && (start_ > QueryEntry::kDefaultOffset || count_ < QueryEntry::kDefaultLimit)) {
 		assertrx_throw(!query_.GetSortingEntries().empty());
@@ -54,14 +53,6 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, NamespaceImpl* ns, 
 			}
 		}
 	}
-	if (isMergeQuery_) {
-		if (QueryEntry::kDefaultLimit - start_ > count_) {
-			count_ += start_;
-		} else {
-			count_ = QueryEntry::kDefaultLimit;
-		}
-		start_ = QueryEntry::kDefaultOffset;
-	}
 }
 
 void QueryPreprocessor::ExcludeFtQuery(const RdxContext& rdxCtx) {
@@ -70,8 +61,12 @@ void QueryPreprocessor::ExcludeFtQuery(const RdxContext& rdxCtx) {
 	}
 	for (auto it = begin(), next = it, endIt = end(); it != endIt; it = next) {
 		++next;
-		if (it->Is<QueryEntry>() && it->Value<QueryEntry>().IsFieldIndexed()) {
-			const auto& index = ns_.indexes_[it->Value<QueryEntry>().IndexNo()];
+		if (it->Is<QueryEntry>()) {
+			auto& qe = it->Value<QueryEntry>();
+			if (!qe.IsFieldIndexed() || qe.IsDistinctOnly()) {
+				continue;
+			}
+			const auto& index = ns_.indexes_[qe.IndexNo()];
 			if (!IsFastFullText(index->Type())) {
 				continue;
 			}
@@ -82,7 +77,7 @@ void QueryPreprocessor::ExcludeFtQuery(const RdxContext& rdxCtx) {
 			start_ = QueryEntry::kDefaultOffset;
 			count_ = QueryEntry::kDefaultLimit;
 			forcedSortOrder_ = false;
-			ftEntry_ = std::move(it->Value<QueryEntry>());
+			ftEntry_ = std::move(qe);
 			const size_t pos = it.PlainIterator() - cbegin().PlainIterator();
 			Erase(pos, pos + 1);
 			break;
@@ -91,7 +86,7 @@ void QueryPreprocessor::ExcludeFtQuery(const RdxContext& rdxCtx) {
 }
 
 bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool& matchedAtLeastOnce, QresExplainHolder& qresHolder,
-										   bool needCalcTotal) {
+										   bool needCalcTotal, const SelectCtx& ctx) {
 	if (evaluationStage_ == EvaluationStage::Second) {
 		return false;
 	}
@@ -119,17 +114,8 @@ bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool&
 			return false;
 		}
 		qresHolder.BackupContainer();
-		if (isMergeQuery_) {
-			if (QueryEntry::kDefaultLimit - query_.Offset() > query_.Limit()) {
-				count_ = query_.Limit() + query_.Offset();
-			} else {
-				count_ = QueryEntry::kDefaultLimit;
-			}
-			start_ = QueryEntry::kDefaultOffset;
-		} else {
-			start_ = query_.Offset();
-			count_ = query_.Limit();
-		}
+		start_ = ctx.offset;
+		count_ = ctx.limit;
 		forcedSortOrder_ = !query_.ForcedSortOrder().empty();
 		clear();
 		assertrx_dbg(ftEntry_.has_value());
@@ -179,8 +165,8 @@ void QueryPreprocessor::checkAllowedCondition(const QueryField& field, CondType 
 class JoinOnExplainEnabled;
 class JoinOnExplainDisabled;
 
-int QueryPreprocessor::calculateMaxIterations(const size_t from, const size_t to, int maxMaxIters, std::span<int>& maxIterations,
-											  bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx) const {
+int QueryPreprocessor::calculateMaxIterations(size_t from, size_t to, int maxMaxIters, std::span<int>& maxIterations, bool inTransaction,
+											  bool enableSortOrders, const RdxContext& rdxCtx) const {
 	int res = maxMaxIters;
 	int current = maxMaxIters;
 	for (size_t cur = from; cur < to; cur = Next(cur)) {
@@ -207,6 +193,7 @@ int QueryPreprocessor::calculateMaxIterations(const size_t from, const size_t to
 						opts.unbuiltSortOrders = 0;
 						opts.indexesNotOptimized = !enableSortOrders;
 						opts.inTransaction = inTransaction;
+						opts.strictMode = StrictModeNone;  // Strict mode does not matter here
 						const auto selIters =
 							index.SelectKey(qe.Values(), qe.Condition(), 0, Index::SelectContext{opts, std::nullopt}, rdxCtx);
 
@@ -469,69 +456,76 @@ size_t QueryPreprocessor::removeBrackets(size_t begin, size_t end) {
 	throw Error(errNotValid, "KNN or FullText cannot be mixed with conditions for a floating-point vector field in a query");
 }
 
-QueryPreprocessor::Ranked QueryPreprocessor::GetRankedTypeQuery() const {
+QueryPreprocessor::Ranked QueryPreprocessor::GetQueryRankType() const {
 	auto it = cbegin().PlainIterator();
 	const auto end = cend().PlainIterator();
-	Ranked result{RankedTypeQuery::No, IndexValueType::NotSet};
+	Ranked result{QueryRankType::No, IndexValueType::NotSet};
 	bool floatVectorDetected = false;
 	for (; it != end; ++it) {
-		if (it->Is<QueryEntry>() && it->Value<QueryEntry>().IsFieldIndexed()) {
-			const auto indexNo = IndexValueType(it->Value<QueryEntry>().IndexNo());
-			if (ns_.indexes_[indexNo]->IsFulltext()) {
-				if (floatVectorDetected) {
-					throwRankedWithFPCond();
-				}
-				switch (result.rankedTypeQuery) {
-					case RankedTypeQuery::FullText:
-					case RankedTypeQuery::Hybrid:
-						throw Error(errNotValid, "More than one FullText conditions cannot be combined in a query");
-					case RankedTypeQuery::KnnIP:
-					case RankedTypeQuery::KnnCos:
-					case RankedTypeQuery::KnnL2:
-						result = {RankedTypeQuery::Hybrid, IndexValueType::NotSet};
-						break;
-					case RankedTypeQuery::No:
-						result = {RankedTypeQuery::FullText, indexNo};
-						break;
-					case RankedTypeQuery::NotSet:
-					default:
-						throw_as_assert;
-				}
-			} else if (ns_.indexes_[indexNo]->IsFloatVector()) {
-				floatVectorDetected = true;
-				switch (result.rankedTypeQuery) {
-					case RankedTypeQuery::FullText:
-					case RankedTypeQuery::Hybrid:
-					case RankedTypeQuery::KnnIP:
-					case RankedTypeQuery::KnnCos:
-					case RankedTypeQuery::KnnL2:
+		if (it->Is<QueryEntry>()) {
+			const auto& qe = it->Value<QueryEntry>();
+			if (qe.IsFieldIndexed()) {
+				const auto indexNo = IndexValueType(qe.IndexNo());
+				if (ns_.indexes_[indexNo]->IsFulltext()) {
+					if (qe.IsDistinctOnly()) {
+						// distinct() condition over fulltext field may be combined with anything
+						continue;
+					}
+					if (floatVectorDetected) {
 						throwRankedWithFPCond();
-					case RankedTypeQuery::No:
-					case RankedTypeQuery::NotSet:
-						break;
-					default:
-						throw_as_assert;
+					}
+					switch (result.queryRankType) {
+						case QueryRankType::FullText:
+						case QueryRankType::Hybrid:
+							throw Error(errNotValid, "More than one FullText conditions cannot be combined in a query");
+						case QueryRankType::KnnIP:
+						case QueryRankType::KnnCos:
+						case QueryRankType::KnnL2:
+							result = {QueryRankType::Hybrid, IndexValueType::NotSet};
+							break;
+						case QueryRankType::No:
+							result = {QueryRankType::FullText, indexNo};
+							break;
+						case QueryRankType::NotSet:
+						default:
+							throw_as_assert;
+					}
+				} else if (ns_.indexes_[indexNo]->IsFloatVector()) {
+					floatVectorDetected = true;
+					switch (result.queryRankType) {
+						case QueryRankType::FullText:
+						case QueryRankType::Hybrid:
+						case QueryRankType::KnnIP:
+						case QueryRankType::KnnCos:
+						case QueryRankType::KnnL2:
+							throwRankedWithFPCond();
+						case QueryRankType::No:
+						case QueryRankType::NotSet:
+							break;
+						default:
+							throw_as_assert;
+					}
 				}
 			}
-		}
-		if (it->Is<KnnQueryEntry>()) {
+		} else if (it->Is<KnnQueryEntry>()) {
 			if (floatVectorDetected) {
 				throwRankedWithFPCond();
 			}
-			const auto indexNo = IndexValueType(it->Value<KnnQueryEntry>().IndexNo());
-			switch (result.rankedTypeQuery) {
-				case RankedTypeQuery::Hybrid:
-				case RankedTypeQuery::KnnIP:
-				case RankedTypeQuery::KnnCos:
-				case RankedTypeQuery::KnnL2:
+			const auto& qe = it->Value<KnnQueryEntry>();
+			const auto indexNo = IndexValueType(qe.IndexNo());
+			switch (result.queryRankType) {
+				case QueryRankType::Hybrid:
+				case QueryRankType::KnnIP:
+				case QueryRankType::KnnCos:
+				case QueryRankType::KnnL2:
 					throw Error(errNotValid, "More than one KNN conditions cannot be combined in a query");
-				case RankedTypeQuery::FullText:
-					result = {RankedTypeQuery::Hybrid, IndexValueType::NotSet};
+				case QueryRankType::FullText:
+					result = {QueryRankType::Hybrid, IndexValueType::NotSet};
 					break;
-				case RankedTypeQuery::No:
+				case QueryRankType::No:
 					result = {ns_.indexes_[indexNo]->RankedType(), indexNo};
 					break;
-				case RankedTypeQuery::NotSet:
+				case QueryRankType::NotSet:
 				default:
 					throw_as_assert;
 			}

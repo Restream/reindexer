@@ -19,7 +19,6 @@ public:
 		RevSingleRange,
 		RevSingleIdset,
 		RevSingleIdSetWithDeferedSort,
-		OnlyComparator,	 // TODO delete this #1585
 		Unsorted,
 		UnbuiltSortOrdersIndex,
 	};
@@ -86,16 +85,13 @@ public:
 		}
 
 		lastVal_ = isReverse_ ? INT_MAX : INT_MIN;
-		const auto sz = size();
-		if (sz == 0) {
-			type_ = OnlyComparator;
-		} else if (sz == 1 && begIt->indexForwardIter_) {
-			type_ = UnbuiltSortOrdersIndex;
-			begIt->indexForwardIter_->Start(reverse);
-		} else if (isUnsorted_) {
+		if (isUnsorted_) {
 			type_ = Unsorted;
-		} else if (sz == 1) {
-			if (!isReverse_) {
+		} else if (size() == 1) {
+			if (begIt->indexForwardIter_) {
+				type_ = UnbuiltSortOrdersIndex;
+				begIt->indexForwardIter_->Start(reverse);
+			} else if (!isReverse_) {
 				type_ = begIt->isRange_ ? SingleRange : (explicitSort ? SingleIdSetWithDeferedSort : SingleIdset);
 			} else {
 				type_ = begIt->isRange_ ? RevSingleRange : (explicitSort ? RevSingleIdSetWithDeferedSort : RevSingleIdset);
@@ -160,7 +156,6 @@ public:
 			case RevSingleRange:
 			case RevSingleIdset:
 			case RevSingleIdSetWithDeferedSort:
-			case OnlyComparator:
 			case Unsorted:
 			case UnbuiltSortOrdersIndex:
 			default:
@@ -231,11 +226,21 @@ public:
 	/// mode if it's more efficient than just comparing
 	/// each object in sequence.
 	void SetExpectMaxIterations(int expectedIterations) noexcept {
-		for (SingleSelectKeyResult& r : *this) {
-			if (!r.isRange_ && r.ids_.size() > 1) {
-				int itersloop = r.ids_.size();
-				int itersbsearch = int((std::log2(r.ids_.size()) - 1) * expectedIterations);
-				r.bsearch_ = itersbsearch < itersloop;
+		if (expectedIterations == std::numeric_limits<int>::max()) {
+			// FIXME: Remove this branch. In some cases (check issues #1495 and #1935) maxIterations will have incorrect value.
+			// Previously we've been using int32 type to calculate 'itersbsearch', that led to integer overwhelming and
+			// setting 'bsearch_' to 'true'.
+			// Special case for 'std::numeric_limits<int>::max()' preserves this behavior until related issues do not fixed.
+			for (SingleSelectKeyResult& r : *this) {
+				r.bsearch_ = true;
+			}
+		} else {
+			for (SingleSelectKeyResult& r : *this) {
+				if (!r.isRange_ && r.ids_.size() > 8) {
+					const int64_t itersloop = r.ids_.size();
+					const int64_t itersbsearch = std::log2(r.ids_.size()) * int64_t(expectedIterations);
+					r.bsearch_ = itersbsearch < itersloop;
+				}
 			}
 		}
 	}
@@ -269,8 +274,6 @@ private:
 			case RevSingleIdset:
 			case RevSingleIdSetWithDeferedSort:
 				return nextRevSingleIdset(minHint);
-			case OnlyComparator:
-				return false;
 			case Unsorted:
 				return nextUnsorted();
 			case UnbuiltSortOrdersIndex:

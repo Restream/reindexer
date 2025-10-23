@@ -8,6 +8,7 @@
 #include "estl/gift_str.h"
 #include "ft_api.h"
 #include "gtests/tests/tests_data.h"
+#include "json_helpers.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "vendor/fmt/ranges.h"
@@ -1503,6 +1504,38 @@ TEST_P(FTGenericApi, IncorrectFieldBoost) {
 	}
 }
 
+TEST_P(FTGenericApi, StrictMode) {
+	constexpr std::string_view kNs = "nm1";
+
+	Init(GetDefaultConfig());
+	rt.DefineNamespaceDataset(kNs, {IndexDeclaration{"ft1+ft2+non_idx=ft4", "text", "composite", IndexOpts(), 0}});
+
+	const auto newQuery = [&](StrictMode strictMode, std::string_view dsl) {
+		return reindexer::Query(kNs).Strict(strictMode).Where("ft4", CondEq, dsl);
+	};
+
+	/// Permissive strict modes
+	for (auto strictMode : {StrictModeNotSet, StrictModeNone, StrictModeNames}) {
+		SCOPED_TRACE(reindexer::strictModeToString(strictMode));
+		// Non-indexed field
+		rx_unused = rt.Select(newQuery(strictMode, "@ft1^2,non_idx^2 тест"));
+		// Indexed explicit fields only
+		rx_unused = rt.Select(newQuery(strictMode, "@ft1^2,ft2^2 тест"));
+		// No explicit fields
+		rx_unused = rt.Select(newQuery(strictMode, "тест"));
+	}
+
+	/// Strict mode 'indexes'
+	// Non-indexed field
+	reindexer::QueryResults qr;
+	auto err = rt.reindexer->Select(newQuery(StrictModeIndexes, "@ft1^2,non_idx^2 тест"), qr);
+	EXPECT_EQ(err.code(), errStrictMode) << err.what();
+	// Indexed explicit fields only
+	rx_unused = rt.Select(newQuery(StrictModeIndexes, "@ft1^2,ft2^2 тест"));
+	// No explicit fields
+	rx_unused = rt.Select(newQuery(StrictModeIndexes, "тест"));
+}
+
 TEST_P(FTGenericApi, ConfigBm25Coefficients) {
 	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
 	cfgDef.maxAreasInDoc = 100;
@@ -2211,6 +2244,63 @@ TEST_F(FTGenericApi, BetweenFieldsIsNotSupported) {
 	err = rx.Select(Query("nm1").WhereBetweenFields("non_idx", CondEq, "ft1"), qr);
 	EXPECT_EQ(err.code(), errQueryExec) << err.whatStr();
 	EXPECT_STREQ(err.what(), kExpctedErrText);
+}
+
+TEST_P(FTGenericApi, DistinctSingleField) {
+	Init(GetDefaultConfig());
+	Add("word0");
+	Add("word0");
+	Add("word1");
+	Add("word1");
+
+	for (auto preselect : {false, true}) {
+		SCOPED_TRACE(preselect ? "with preselect before fulltext" : "without preselect before fulltext");
+		auto cfg = GetDefaultConfig();
+		cfg.enablePreselectBeforeFt = preselect;
+		auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		const std::string dsl = "word*";
+		const auto q = Query("nm1").Distinct("ft1").Where("ft1", CondEq, dsl).Explain();
+		auto qr = rt.Select(q);
+		CheckResults(dsl, qr, {{"word0", ""}, {"word1", ""}}, true);
+		auto& aggs = qr.GetAggregationResults();
+		ASSERT_EQ(aggs.size(), 1);
+		auto& agg = aggs[0];
+		EXPECT_EQ(agg.GetType(), AggDistinct);
+		EXPECT_EQ(agg.GetDistinctRowCount(), 2);
+		ASSERT_EQ(agg.GetDistinctRow(0).size(), 1);
+		EXPECT_EQ(agg.GetDistinctRow(0)[0].As<std::string>(), "word0");
+		ASSERT_EQ(agg.GetDistinctRow(1).size(), 1);
+		EXPECT_EQ(agg.GetDistinctRow(1)[0].As<std::string>(), "word1");
+
+		const auto explain = qr.GetExplainResults();
+		SCOPED_TRACE(explain);
+
+		if (preselect) {
+			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "field", {"ft1", "(ft1)", "ft1"}));
+			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "type", {"Forward", "Unsorted"}));
+			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
+		} else {
+			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "field", {"ft1", "ft1"}));
+			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "type", {"Unsorted", "Comparator"}));
+			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
+		}
+	}
+}
+
+TEST_P(FTGenericApi, DistinctComposite) {
+	Init(GetDefaultConfig());
+	Add("word0");
+	Add("word0");
+	Add("word1");
+	Add("word1");
+
+	const auto q = Query("nm1").Distinct("ft3").Where("ft3", CondEq, "word*");
+	reindexer::QueryResults qr;
+	auto err = rt.reindexer->Select(q, qr);
+	EXPECT_EQ(err.code(), errParams) << err.what();
+	EXPECT_EQ(err.whatStr(), "Composite full text index (ft3) does not support DISTINCT");
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,

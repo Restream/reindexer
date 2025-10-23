@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-
 #include "base_fixture.h"
 
 class [[nodiscard]] Aggregation : protected BaseFixture {
@@ -18,6 +17,8 @@ public:
 	reindexer::Error Initialize() override;
 
 private:
+	class FacetNotEmptyChecker;
+
 	reindexer::Item MakeItem(benchmark::State&) override;
 
 	template <size_t N>

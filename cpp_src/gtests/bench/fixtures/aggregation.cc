@@ -62,41 +62,35 @@ reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	return item;
 }
 
-void Aggregation::Facet(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		reindexer::Query q(nsdef_.name);
-		q.Aggregate(AggFacet, {"int_data"});
-		reindexer::QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
+class [[nodiscard]] Aggregation::FacetNotEmptyChecker {
+public:
+	FacetNotEmptyChecker(State& state) noexcept : state_{state} {}
+
+	void operator()(reindexer::QueryResults& qres) {
+		const auto& aggRes = qres.GetAggregationResults();
+		if rx_unlikely (aggRes.empty() || aggRes[0].GetFacets().empty()) {
+			state_.SkipWithError("Results does not contain any value");
 		}
 	}
+
+private:
+	State& state_;
+};
+
+void Aggregation::Facet(State& state) {
+	const auto q = reindexer::Query(nsdef_.name).Aggregate(AggFacet, {"int_data"});
+	FacetNotEmptyChecker facetNotEmptyChecker{state};
+	benchQuery(q, state, facetNotEmptyChecker);
 }
 
-void Aggregation::MultiFacet(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		reindexer::Query q(nsdef_.name);
-		q.Aggregate(AggFacet, {"int_data", "str_data"});
-		reindexer::QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+void Aggregation::MultiFacet(State& state) {
+	const auto q = reindexer::Query(nsdef_.name).Aggregate(AggFacet, {"int_data", "str_data"});
+	FacetNotEmptyChecker facetNotEmptyChecker{state};
+	benchQuery(q, state, facetNotEmptyChecker);
 }
 
-void Aggregation::ArrayFacet(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		reindexer::Query q(nsdef_.name);
-		q.Aggregate(AggFacet, {"int_array_data"});
-		reindexer::QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+void Aggregation::ArrayFacet(State& state) {
+	const auto q = reindexer::Query(nsdef_.name).Aggregate(AggFacet, {"int_array_data"});
+	FacetNotEmptyChecker facetNotEmptyChecker{state};
+	benchQuery(q, state, facetNotEmptyChecker);
 }

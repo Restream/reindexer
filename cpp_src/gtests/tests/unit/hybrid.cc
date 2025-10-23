@@ -1,15 +1,10 @@
 #include "gtests/tests/fixtures/hybrid.h"
+#include <gmock/gmock.h>
 #include "core/cjson/jsonbuilder.h"
 #include "gtests/tools.h"
 #include "tools/fsops.h"
 
-#if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
-constexpr static size_t kDimension = 32;
-constexpr static size_t kMaxElements = 500;
-#else
-constexpr static size_t kDimension = 512;
-constexpr static size_t kMaxElements = 2'000;
-#endif
+static constexpr auto kBasicTimeout = std::chrono::seconds(200);
 
 reindexer::Item HybridTest::newItem(int id) {
 	reindexer::WrSerializer ser;
@@ -76,15 +71,9 @@ void HybridTest::SetUp() {
 }
 
 TEST_F(HybridTest, Queries) {
-	std::array<float, kDimension> buf;
-	struct {
-		std::string_view name;
-		reindexer::KnnSearchParams params;
-	} knnFields[]{{kFieldNameIP, reindexer::HnswSearchParams{}.K(kMaxElements / 4).Ef(kMaxElements / 4)},
-				  {kFieldNameCos, reindexer::IvfSearchParams{}.K(kMaxElements / 4).NProbe(5)},
-				  {kFieldNameL2, reindexer::IvfSearchParams{}.K(kMaxElements / 4).NProbe(5)}};
+	static std::array<float, kDimension> buf;
 
-	for (const auto& knnField : knnFields) {
+	for (const auto& knnField : knnFields_) {
 		rndFloatVector(buf);
 		auto result = rt.Select(reindexer::Query{kNsName}
 									.Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString())
@@ -116,4 +105,151 @@ TEST_F(HybridTest, Queries) {
 							   .Sort("RRF(rank_const = 3)", false)
 							   .WithRank());
 	}
+}
+
+void HybridTest::check(const reindexer::Query& q) const {
+	const auto qRes = rt.Select(q);
+	const auto& sorting = q.GetSortingEntries();
+	auto it = qRes.begin();
+	const auto end = qRes.end();
+	if (it == end) {
+		return;
+	}
+	auto prevRank = it.GetItemRefRanked().Rank();
+	++it;
+	if (sorting.empty() || sorting[0].desc) {
+		while (it != end) {
+			const auto currRank = it.GetItemRefRanked().Rank();
+			EXPECT_LE(currRank, prevRank) << q.GetSQL();
+			prevRank = currRank;
+			++it;
+		}
+	} else {
+		while (it != end) {
+			const auto currRank = it.GetItemRefRanked().Rank();
+			EXPECT_GE(currRank, prevRank) << q.GetSQL();
+			prevRank = currRank;
+			++it;
+		}
+	}
+}
+
+std::string HybridTest::checkFailed(const reindexer::Query& q) const {
+	reindexer::QueryResults qr;
+	auto err = rt.reindexer->WithTimeout(kBasicTimeout).Select(q, qr);
+	EXPECT_FALSE(err.ok()) << q.GetSQL();
+	return err.what();
+}
+
+void HybridTest::checkFailed(const reindexer::Query& q, std::string_view expectErr) const {
+	const auto err = checkFailed(q);
+	EXPECT_EQ(err, expectErr) << q.GetSQL();
+}
+
+void HybridTest::checkFailedRegex(const reindexer::Query& q, std::string_view expectErrRegex) const {
+	const auto err = checkFailed(q);
+	EXPECT_THAT(err, testing::MatchesRegex(expectErrRegex)) << q.GetSQL();
+}
+
+reindexer::Query HybridTest::makeHybridQuery() {
+	static std::array<float, kDimension> buf;
+	rndFloatVector(buf);
+	currentKnnField_ = rand() % std::size(knnFields_);
+	const auto& knnField = knnFields_[currentKnnField_];
+	auto q = reindexer::Query{kNsName}.WithRank().Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString());
+	if (rand() % 2) {
+		q.Or();
+	}
+	q.WhereKNN(knnField.name, reindexer::ConstFloatVectorView{buf}, knnField.params);
+	return q;
+}
+
+reindexer::Query HybridTest::makeKnnQuery() const {
+	static std::array<float, kDimension> buf;
+	rndFloatVector(buf);
+	const auto& knnField = randOneOf(knnFields_);
+	return reindexer::Query{kNsName}.WhereKNN(knnField.name, reindexer::ConstFloatVectorView{buf}, knnField.params).WithRank();
+}
+
+reindexer::Query HybridTest::makeFtQuery() const {
+	return reindexer::Query{kNsName}.Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString()).WithRank();
+}
+
+std::string HybridTest::rndReranker() const {
+	std::stringstream reranker;
+	if (rand() % 2) {
+		reranker << "RRF(";
+		if (rand() % 2) {
+			reranker << "rank_const = ";
+			reranker << std::to_string(rand() % 1'000);
+		}
+		reranker << ')';
+	} else {
+		reranker << (rand() % 20'000 - 10'000);
+		reranker << " * rank(" << kFieldNameFt << ") + ";
+		reranker << (rand() % 20'000 - 10'000);
+		const auto& knnField = knnFields_[currentKnnField_];
+		reranker << " * rank(" << knnField.name << ") + ";
+		reranker << (rand() % 20'000 - 10'000);
+	}
+	return reranker.str();
+}
+
+TEST_F(HybridTest, Merge) {
+	check(makeHybridQuery().Merge(makeHybridQuery()));
+	check(makeHybridQuery().Limit(10).Merge(makeHybridQuery()));
+	check(makeHybridQuery().Offset(10).Merge(makeHybridQuery()));
+	check(makeHybridQuery().Offset(10).Limit(10).Merge(makeHybridQuery()));
+	check(makeHybridQuery().Sort(rndReranker(), true).Merge(makeHybridQuery()));
+	check(makeHybridQuery().Merge(makeHybridQuery().Sort(rndReranker(), true)));
+	check(makeHybridQuery().Sort(rndReranker(), false).Merge(makeHybridQuery().Sort(rndReranker(), false)));
+	check(makeHybridQuery().Sort(rndReranker(), true).Merge(makeHybridQuery().Sort(rndReranker(), true)));
+
+	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Offset(10)), "Limit and offset in inner merge query is not allowed");
+	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Limit(10)), "Limit and offset in inner merge query is not allowed");
+
+	checkFailed(makeHybridQuery().Sort(kFieldNameId, true).Merge(makeHybridQuery()),
+				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
+	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Sort(kFieldNameId, true)),
+				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
+	checkFailed(makeHybridQuery().Sort(rndReranker(), true).Sort(kFieldNameId, true).Merge(makeHybridQuery()),
+				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
+	checkFailed(makeHybridQuery().Sort(kFieldNameId, true).Merge(makeHybridQuery().Sort(rndReranker(), true)),
+				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
+	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Sort(rndReranker(), true).Sort(kFieldNameId, true)),
+				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
+	checkFailed(makeHybridQuery().Sort(rndReranker(), true).Merge(makeHybridQuery().Sort(kFieldNameId, true)),
+				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
+
+	checkFailed(makeHybridQuery().Sort(rndReranker(), false).Merge(makeHybridQuery().Sort(rndReranker(), true)),
+				"All merging queries should have the same ordering (ASC or DESC)");
+	checkFailed(makeHybridQuery().Sort(rndReranker(), true).Merge(makeHybridQuery().Sort(rndReranker(), false)),
+				"All merging queries should have the same ordering (ASC or DESC)");
+	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Sort(rndReranker(), false)),
+				"All merging queries should have the same ordering (ASC or DESC)");
+	checkFailed(makeHybridQuery().Sort(rndReranker(), false).Merge(makeHybridQuery()),
+				"All merging queries should have the same ordering (ASC or DESC)");
+
+	checkFailed(makeHybridQuery().Merge(makeFtQuery()),
+				"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
+				"time: 'hybrid query' VS 'fulltext query'");
+	checkFailedRegex(
+		makeHybridQuery().Merge(makeKnnQuery()),
+		"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
+		"time: 'hybrid query' VS 'knn with .* metric query'");
+	checkFailed(makeFtQuery().Merge(makeHybridQuery()),
+				"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
+				"time: 'fulltext query' VS 'hybrid query'");
+	checkFailedRegex(
+		makeKnnQuery().Merge(makeHybridQuery()),
+		"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
+		"time: 'knn with .* metric query' VS 'hybrid query'");
+	checkFailedRegex(
+		makeKnnQuery().Merge(makeFtQuery()),
+		"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
+		"time: 'knn with .* metric query' VS 'fulltext query'");
+	checkFailedRegex(
+		makeFtQuery().Merge(makeKnnQuery()),
+		"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
+		"time: 'fulltext query' VS 'knn with .* metric query'");
 }

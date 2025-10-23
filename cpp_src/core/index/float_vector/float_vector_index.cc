@@ -1,5 +1,6 @@
 #include "float_vector_index.h"
 #include "core/embedding/embedder.h"
+#include "core/keyvalue/float_vectors_keeper.h"
 #include "core/rdxcontext.h"
 #include "knn_raw_result.h"
 #include "tools/assertrx.h"
@@ -8,10 +9,14 @@
 namespace reindexer {
 
 FloatVectorIndex::FloatVectorIndex(const FloatVectorIndex& other)
-	: Index(other), memStat_(other.memStat_), emptyValues_(other.emptyValues_), metric_(other.metric_) {}
+	: Index(other),
+	  memStat_(other.memStat_),
+	  emptyValues_(other.emptyValues_),
+	  keeper_(FloatVectorsKeeper::Create(*this)),
+	  metric_(other.metric_) {}
 
 FloatVectorIndex::FloatVectorIndex(const IndexDef& idef, PayloadType&& pt, FieldsSet&& fields)
-	: Index{idef, std::move(pt), std::move(fields)} {
+	: Index{idef, std::move(pt), std::move(fields)}, keeper_(FloatVectorsKeeper::Create(*this)) {
 	assertrx_dbg(idef.Opts().IsFloatVector());
 	assertrx_throw(!idef.Opts().IsArray());
 	keyType_ = selectKeyType_ = KeyValueType::FloatVector{};
@@ -21,6 +26,7 @@ FloatVectorIndex::FloatVectorIndex(const IndexDef& idef, PayloadType&& pt, Field
 
 void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder& stringsHolder, bool& clearCache) {
 	assertrx_dbg(keys.size() == 1);
+	keeper_->Remove(id);
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
 	if (emptyValues_.Unsorted().Find(id)) {
 		rx_unused = emptyValues_.Unsorted().Erase(id);
@@ -33,9 +39,12 @@ void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, MustExist mus
 SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType condition, SortType sortId, const SelectContext& selectCtx,
 											 const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
+	if rx_unlikely (selectCtx.opts.distinct) {
+		throw Error(errParams, "FloatVectorIndex({}): DISTINCT is not supported for vector indexes", Index::Name());
+	}
 	switch (condition) {
 		case CondEmpty: {
-			if (selectCtx.opts.forceComparator) {
+			if rx_unlikely (selectCtx.opts.forceComparator) {
 				throw Error(errLogic, "FloatVectorIndex({}): Comparator for 'IS NULL' vector index condition is not implemented", Name());
 			}
 			SelectKeyResult res;
@@ -67,6 +76,7 @@ void FloatVectorIndex::Upsert(VariantArray& result, const VariantArray& keys, Id
 
 Variant FloatVectorIndex::Upsert(const Variant& key, IdType id, bool& clearCache) {
 	using namespace std::string_view_literals;
+	keeper_->Remove(id);
 	const ConstFloatVectorView vect{key};
 	if (vect.IsEmpty()) {
 		// Do not lock empty values mutex here
@@ -81,6 +91,7 @@ Variant FloatVectorIndex::UpsertConcurrent(const Variant& key, IdType id, bool& 
 	if (!IsSupportMultithreadTransactions()) {
 		throw Error(errLogic, "Index {} does not support concurrent upsertions"sv, Name());
 	}
+	keeper_->Remove(id);
 	const ConstFloatVectorView vect{key};
 	if (vect.IsEmpty()) {
 		unique_lock lck(emptyValuesInsertionMtx_);
@@ -110,6 +121,7 @@ void FloatVectorIndex::Commit() {
 IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) noexcept {
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
 	memStat_.indexingStructSize = emptyValues_.Unsorted().Size() * sizeof(IdType);
+	memStat_.vectorsKeeperSize = keeper_->GetMemStat();
 	return memStat_;
 }
 

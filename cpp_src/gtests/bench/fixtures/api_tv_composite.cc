@@ -7,8 +7,8 @@
 using benchmark::AllocsTracker;
 
 using reindexer::Query;
-using reindexer::QueryResults;
 using reindexer::Variant;
+using namespace std::string_view_literals;
 
 reindexer::Error ApiTvComposite::Initialize() {
 	auto err = BaseFixture::Initialize();
@@ -24,8 +24,10 @@ reindexer::Error ApiTvComposite::Initialize() {
 			  "hare", "hawk", "ibex", "joey", "kite", "kiwi", "lamb", "lark", "lion", "loon", "lynx", "mako", "mink", "mite",
 			  "mole", "moth", "mule", "mutt", "newt", "orca", "oryx", "pika", "pony", "puma", "seal", "shad", "slug", "sole",
 			  "stag", "stud", "swan", "tahr", "teal", "tick", "toad", "tuna", "wasp", "wolf", "worm", "wren", "yeti"};
+	std::sort(names_.begin(), names_.end());
 
 	locations_ = {"mos", "ct", "dv", "sth", "vlg", "sib", "ural"};
+	std::sort(locations_.begin(), locations_.end());
 
 	compositeIdSet_.resize(20000);
 	int counter = compositeIdSet_.size() * 3;
@@ -121,514 +123,250 @@ void ApiTvComposite::WarmUpIndexes(benchmark::State& state) {
 }
 
 void ApiTvComposite::GetByCompositePK(State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		auto randId = random<int>(id_seq_->Start(), id_seq_->End());
-		auto randSubId = std::to_string(randId);
-		Query q(nsdef_.name);
-		q.WhereComposite("id+sub_id", CondEq, {{Variant(randId), Variant(randSubId)}});
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-
-		if (!qres.Count()) {
-			state.SkipWithError("Results does not contain any value");
-		}
-	}
+	const auto q = [&] {
+		const auto randId = random<int>(id_seq_->Start(), id_seq_->End());
+		const auto randSubId = std::to_string(randId);
+		return Query(nsdef_.name).WhereComposite("id+sub_id", CondEq, {{Variant(randId), Variant(randSubId)}});
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeInt(State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		auto leftYear = random<int>(2000, 2024);
-		auto rightYear = random<int>(2025, 2049);
-
-		Query q(nsdef_.name);
-		q.Where("year", CondRange, {leftYear, rightYear}).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto leftYear = random<int>(2000, 2024);
+		const auto rightYear = random<int>(2025, 2049);
+		return Query(nsdef_.name).Where("year", CondRange, {leftYear, rightYear}).Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeStrCollateNumeric(State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		q.Where("sub_id", CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)}).Limit(1);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		return Query(nsdef_.name).Where("sub_id", CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)}).Limit(1);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeDouble(State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		auto firstRate = random<double>(1, 5);
-		auto secondRate = random<double>(5, 10);
-
-		q.Where("rate", CondRange, {firstRate, secondRate}).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-
-		if (!qres.Count()) {
-			state.SkipWithError("empty qres");
-		}
-	}
+	const auto q = [&] {
+		const auto firstRate = random<double>(1, 5);
+		const auto secondRate = random<double>(6, 10);
+		return Query(nsdef_.name).Where("rate", CondRange, {firstRate, secondRate}).Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeCompositeIntInt(State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		auto leftYear = random<int>(2000, 2024);
-		auto rightYear = random<int>(2025, 2049);
-
-		q.WhereComposite("id+year", CondRange, {{Variant(idRange.first), Variant(leftYear)}, {Variant(idRange.second), Variant(rightYear)}})
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto leftYear = random<int>(2000, 2024);
+		const auto rightYear = random<int>(2025, 2049);
+		return Query(nsdef_.name)
+			.WhereComposite("id+year", CondRange,
+							{{Variant(idRange.first), Variant(leftYear)}, {Variant(idRange.second), Variant(rightYear)}})
 			.Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeCompositeIntStr(State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		auto randLeftStr = names_.at(random<size_t>(0, names_.size() - 1));
-		auto randRightStr = names_.at(random<size_t>(0, names_.size() - 1));
-
-		q.WhereComposite("id+name", CondRange,
-						 {{Variant(idRange.first), Variant(randLeftStr)}, {Variant(idRange.second), Variant(randRightStr)}})
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto leftName = random<size_t>(0, names_.size() - 2);
+		const auto rightName = random<size_t>(leftName + 1, names_.size() - 1);
+		return Query(nsdef_.name)
+			.WhereComposite("id+name", CondRange,
+							{{Variant(idRange.first), Variant(names_[leftName])}, {Variant(idRange.second), Variant(names_[rightName])}})
 			.Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeHashInt(State& state) {
-	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		q.Where("id", CondRange, {idRange.first, idRange.second}).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		return Query(nsdef_.name).Where("id", CondRange, {idRange.first, idRange.second}).Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeHashStringCollateASCII(State& state) {
-	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		auto leftLoc = locations_.at(random<size_t>(0, locations_.size() - 1));
-		auto rightLoc = locations_.at(random<size_t>(0, locations_.size() - 1));
-
-		q.Where("location", CondRange, {leftLoc, rightLoc}).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	assertrx(locations_.size() > 2);
+	const auto q = [&] {
+		const auto leftLoc = random<size_t>(0, locations_.size() - 2);
+		const auto rightLoc = random<size_t>(leftLoc + 1, locations_.size() - 1);
+		return Query(nsdef_.name).Where("location", CondRange, {locations_[leftLoc], locations_[rightLoc]}).Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeHashStringCollateUTF8(State& state) {
-	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto leftName = names_.at(random<size_t>(0, names_.size() - 1));
-		auto rightName = names_.at(random<size_t>(0, names_.size() - 1));
-
-		q.Where("name", CondRange, {leftName, rightName}).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	assertrx(names_.size() > 2);
+	const auto q = [&] {
+		const auto leftName = random<size_t>(0, names_.size() - 2);
+		const auto rightName = random<size_t>(leftName + 1, names_.size() - 1);
+		return Query(nsdef_.name).Where("name", CondRange, {names_[leftName], names_[rightName]}).Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeHashCompositeIntInt(State& state) {
-	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		auto leftStartTime = random<int64_t>(0, 24999);
-		auto rightStartTime = random<int64_t>(25000, 50000);
-
-		q.WhereComposite("id+start_time", CondRange,
-						 {{Variant(idRange.first), Variant(leftStartTime)}, {Variant(idRange.second), Variant(rightStartTime)}})
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto leftStartTime = random<int64_t>(0, 24999);
+		const auto rightStartTime = random<int64_t>(25000, 50000);
+		return Query(nsdef_.name)
+			.WhereComposite("id+start_time", CondRange,
+							{{Variant(idRange.first), Variant(leftStartTime)}, {Variant(idRange.second), Variant(rightStartTime)}})
 			.Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeHashCompositeIntStr(benchmark::State& state) {
-	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		auto leftGenre = std::to_string(random<int>(0, 24));
-		auto rightGenre = std::to_string(random<int>(25, 49));
-
-		q.WhereComposite("id+genre", CondRange,
-						 {{Variant(idRange.first), Variant(leftGenre)}, {Variant(idRange.second), Variant(rightGenre)}})
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto leftGenre = std::to_string(random<int>(0, 24));
+		const auto rightGenre = std::to_string(random<int>(25, 49));
+		return Query(nsdef_.name)
+			.WhereComposite("id+genre", CondRange,
+							{{Variant(idRange.first), Variant(leftGenre)}, {Variant(idRange.second), Variant(rightGenre)}})
 			.Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeIntSortByHashInt(State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-
-		q.Where("id", CondRange, {idRange.first, idRange.second}).Sort("age"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		return Query(nsdef_.name).Where("id", CondRange, {idRange.first, idRange.second}).Sort("age"sv, false).Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeIntSortByTreeInt(State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-
-		q.Where("id"sv, CondRange, {idRange.first, idRange.second}).Sort("year"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		return Query(nsdef_.name).Where("id"sv, CondRange, {idRange.first, idRange.second}).Sort("year"sv, false).Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeStrSortByHashInt(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-
-		q.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)}).Sort("age"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		return Query(nsdef_.name)
+			.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)})
+			.Sort("age"sv, false)
+			.Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeStrSortByTreeInt(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-
-		q.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)}).Sort("year"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		return Query(nsdef_.name)
+			.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)})
+			.Sort("year"sv, false)
+			.Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeDoubleSortByTreeInt(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto leftRate = random<double>(0.0, 4.99);
-		auto rightRate = random<double>(5.0, 10.0);
-
-		q.Where("rate"sv, CondRange, {leftRate, rightRate}).Sort("year"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto leftRate = random<double>(0.0, 4.99);
+		const auto rightRate = random<double>(5.0, 10.0);
+		return Query(nsdef_.name).Where("rate"sv, CondRange, {leftRate, rightRate}).Sort("year"sv, false).Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeDoubleSortByHashInt(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto leftRate = random<double>(0.0, 4.99);
-		auto rightRate = random<double>(5.0, 10.0);
-
-		q.Where("rate"sv, CondRange, {leftRate, rightRate}).Sort("age"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto leftRate = random<double>(0.0, 4.99);
+		const auto rightRate = random<double>(5.0, 10.0);
+		return Query(nsdef_.name).Where("rate"sv, CondRange, {leftRate, rightRate}).Sort("age"sv, false).Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeStrSortByHashStrCollateASCII(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-
-		q.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)}).Sort("location"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		return Query(nsdef_.name)
+			.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)})
+			.Sort("location"sv, false)
+			.Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeStrSortByHashStrCollateUTF8(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-
-		q.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)}).Sort("name"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		return Query(nsdef_.name)
+			.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)})
+			.Sort("name"sv, false)
+			.Limit(20);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByHashInt(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Sort("id"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = Query(nsdef_.name).Sort("id"sv, false).Limit(20);
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::ForcedSortByHashInt(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Sort("id"sv, false, {10, 20, 30, 40, 50}).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = Query(nsdef_.name).Sort("id"sv, false, {10, 20, 30, 40, 50}).Limit(20);
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::ForcedSortWithSecondCondition(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Sort("id"sv, false, {10, 20, 30, 40, 50}).Sort("location"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = Query(nsdef_.name).Sort("id"sv, false, {10, 20, 30, 40, 50}).Sort("location"sv, false).Limit(20);
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::Query2CondIdSetComposite(benchmark::State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
+	const auto q = [&] {
 		// Expecting, that force sort will not be applied to idset
 		const auto idx = random<unsigned>(0, compositeIdSet_.size() - 1);
-		q.Where("id", CondEq, compositeIdSet_[idx][0].As<int>()).WhereComposite("field1+field2", CondSet, compositeIdSet_);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+		return Query(nsdef_.name)
+			.Where("id", CondEq, compositeIdSet_[idx][0].As<int>())
+			.WhereComposite("field1+field2", CondSet, compositeIdSet_);
+	};
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByHashStrCollateASCII(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Sort("location"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = Query(nsdef_.name).Sort("location"sv, false).Limit(20);
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByHashStrCollateUTF8(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Sort("name"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = Query(nsdef_.name).Sort("name"sv, false).Limit(20);
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByHashCompositeIntInt(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Sort("id+start_time"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = Query(nsdef_.name).Sort("id+start_time"sv, false).Limit(20);
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByHashCompositeIntStr(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Sort("id+genre"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = Query(nsdef_.name).Sort("id+genre"sv, false).Limit(20);
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByTreeCompositeIntInt(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Sort("id+year"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = Query(nsdef_.name).Sort("id+year"sv, false).Limit(20);
+	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByTreeCompositeIntStrCollateUTF8(benchmark::State& state) {
-	using namespace std::string_view_literals;
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Sort("id+name"sv, false).Limit(20);
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = Query(nsdef_.name).Sort("id+name"sv, false).Limit(20);
+	benchQuery(q, state);
 }

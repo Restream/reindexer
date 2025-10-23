@@ -1,11 +1,12 @@
 #pragma once
 
-#include "core/keyvalue/float_vectors_holder.h"
-#include "core/keyvalue/variant.h"
 #include "gason/gason.h"
 
 namespace reindexer {
 
+class KeyValueType;
+class Variant;
+class FloatVectorsHolderVector;
 constexpr size_t kMaxThreadLocalJSONVector = 8 * 1024;
 
 Variant jsonValue2Variant(const gason::JsonValue&, KeyValueType, std::string_view fieldName, FloatVectorsHolderVector*, ConvertToString,

@@ -61,7 +61,7 @@ Error Reindexer::Connect(const std::string& dsn, ConnectOpts opts) noexcept {
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) noexcept {
 	return callWithConnectCheck([&] {
 		if (!validateUserNsName(nsDef.name)) {
-			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+			return Error(errParams, "Namespace name '{}' contains invalid character. Only alphas, digits,'_','-', are allowed", nsDef.name);
 		}
 		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "CREATE NAMESPACE "sv << nsDef.name; });
 		return impl_->AddNamespace(nsDef, replOpts, rdxCtx);

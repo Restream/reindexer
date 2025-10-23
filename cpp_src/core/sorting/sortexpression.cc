@@ -1108,7 +1108,7 @@ void SortExpression::reduce() {
 }
 
 void SortExpression::ThrowNonReranker() {
-	throw Error(errNotValid, "In hybrid query ordering expression should be in form 'a * rank(index1) + b * rank(index2) + c'");
+	throw Error(errNotValid, "In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
 }
 
 void SortExpression::initRerankerRank(size_t pos, int& indexNo, double& k, double& defaultValue) const {

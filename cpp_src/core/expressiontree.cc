@@ -76,6 +76,16 @@ public:
 
 	MergeResult Merge(QueryEntry& entry, uint16_t dst, uint16_t src, OpType nextOp, bool last, Changed) {
 		if (entry.IsFieldIndexed() && !entry.ForcedSortOptEntry()) {
+			const Index& index = *qPreproc_.ns_.indexes_[entry.IndexNo()];
+			if (index.IsFulltext() || index.IsFloatVector()) {
+				return MergeResult::NotMerged;
+			}
+
+			const auto& indexOpts = index.Opts();
+			if (indexOpts.IsArray()) {
+				return MergeResult::NotMerged;
+			}
+
 			// try to merge entries with AND operator
 			if (qPreproc_.GetOperation(src) == OpAnd && (last || nextOp != OpOr)) {
 				if (size_t(entry.IndexNo()) >= iidx_.size()) {
@@ -84,9 +94,8 @@ public:
 					std::fill(iidx_.begin() + oldSize, iidx_.begin() + iidx_.size(), 0);
 				}
 				auto& iidxRef = iidx_[entry.IndexNo()];
-				const Index& index = *qPreproc_.ns_.indexes_[entry.IndexNo()];
 				const auto& indexOpts = index.Opts();
-				if (iidxRef > 0 && !indexOpts.IsArray()) {
+				if (iidxRef > 0) {
 					const auto orderedFlag = index.IsOrdered() ? MergeOrdered::Yes : MergeOrdered::No;
 					const auto mergeRes =
 						IsComposite(index.Type())

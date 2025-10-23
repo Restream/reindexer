@@ -29,16 +29,9 @@ void Geometry::Insert(State& state) {
 
 template <size_t N>
 void Geometry::GetDWithin(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		reindexer::Query q(nsdef_.name);
-		q.DWithin("point", randPoint(kRange), kRange / N);
-		reindexer::QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
+	const auto q = [&] { return reindexer::Query(nsdef_.name).DWithin("point", randPoint(kRange), kRange / N); };
+	LowSelectivityItemsCounter itemsCounter(state);
+	benchQuery(q, state, itemsCounter);
 }
 
 template <IndexOpts::RTreeIndexType rtreeType>

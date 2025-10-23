@@ -189,6 +189,7 @@ public:
 	bool NeedIsNull() const noexcept { return needIsNull_; }
 	void ResetNeedIsNull() noexcept { needIsNull_ = false; }
 	bool TryUpdateInplace(VariantArray& newValues) noexcept;
+	bool IsDistinctOnly() const noexcept { return distinct_ && (condition_ == CondAny); }
 
 	auto Values() const&& = delete;
 	auto FieldData() const&& = delete;

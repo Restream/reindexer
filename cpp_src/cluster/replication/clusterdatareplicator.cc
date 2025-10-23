@@ -181,38 +181,55 @@ void ClusterDataReplicator::Stop(bool resetConfig) {
 	}
 }
 
-Error ClusterDataReplicator::SuggestLeader(const NodeData& suggestion, NodeData& response) {
+void ClusterDataReplicator::SuggestLeader(const NodeData& suggestion, NodeData& response) {
 	lock_guard lck(mtx_);
 	if (!isRunning()) {
-		return Error(errNotValid, "Cluster replicator is not running");
+		throw Error(errNotValid, "Cluster replicator is not running");
 	}
-	auto err = raftManager_.SuggestLeader(suggestion, response);
-	if (err.ok()) {
-		response.dsn = getManagementDsn(response.serverId);
-	}
-	return err;
+	raftManager_.SuggestLeader(suggestion, response);
+	response.dsn = getManagementDsn(response.serverId);
 }
 
-Error ClusterDataReplicator::SetDesiredLeaderId(int nextServerId, bool sendToOtherNodes) {
+void ClusterDataReplicator::SetDesiredLeaderId(int nextLeaderId, bool sendToOtherNodes) {
 	unique_lock lck(mtx_);
 	if (!isRunning()) {
-		return Error(errNotValid, "Cluster replicator is not running");
+		throw Error(errNotValid, "Cluster replicator is not running");
 	}
-	logInfo("{}: Setting desired leader ID: {}. Sending to other nodes: {}", serverID(), nextServerId, sendToOtherNodes ? "true" : "false");
+	logInfo("{}: Setting desired leader ID: {}. Sending to other nodes: {}", serverID(), nextLeaderId, sendToOtherNodes ? "true" : "false");
 	std::promise<Error> promise;
 	std::future<Error> future = promise.get_future();
-	ClusterCommand c = ClusterCommand(kCmdSetDesiredLeader, nextServerId, sendToOtherNodes, std::move(promise));
+	ClusterCommand c = ClusterCommand(ClusterCommand::SetDesiredLeaderT{}, nextLeaderId, sendToOtherNodes, std::move(promise));
 	commands_.AddCommand(std::move(c));
 	lck.unlock();
-	return future.get();
+	auto err = future.get();
+	if (!err.ok()) {
+		throw err;
+	}
 }
 
-Error ClusterDataReplicator::LeadersPing(const NodeData& leader) {
+void ClusterDataReplicator::ForceElections() {
+	unique_lock lck(mtx_);
+	if (!isRunning()) {
+		throw Error(errNotValid, "Cluster replicator is not running");
+	}
+	logInfo("{}: Forcing new elections by request...", serverID());
+	std::promise<Error> promise;
+	std::future<Error> future = promise.get_future();
+	ClusterCommand c = ClusterCommand(ClusterCommand::ForceElectionsT{}, std::move(promise));
+	commands_.AddCommand(std::move(c));
+	lck.unlock();
+	auto err = future.get();
+	if (!err.ok()) {
+		throw err;
+	}
+}
+
+void ClusterDataReplicator::LeadersPing(const NodeData& leader) {
 	lock_guard lck(mtx_);
 	if (!isRunning()) {
-		return Error(errNotValid, "Cluster replicator is not running");
+		throw Error(errNotValid, "Cluster replicator is not running");
 	}
-	return raftManager_.LeadersPing(leader);
+	raftManager_.LeadersPing(leader);
 }
 
 RaftInfo ClusterDataReplicator::GetRaftInfo(bool allowTransitState, const RdxContext& ctx) const {
@@ -338,26 +355,49 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 void ClusterDataReplicator::handleClusterCommands(int serverId, const RaftInfo& curRaftInfo) {
 	ClusterCommand c;
 	while (commands_.GetCommand(c)) {
-		if (c.id == kCmdSetDesiredLeader) {
-			Error err;
-			if (c.send) {
-				err = raftManager_.SendDesiredLeaderId(c.serverId);
-			}
-			if (err.ok()) {
+		Error err;
+		switch (c.id) {
+			case kCmdSetDesiredLeader: {
+				if (c.send) {
+					err = raftManager_.SendDesiredLeaderId(c.serverId);
+				}
+				if (err.ok()) {
+					try {
+						raftManager_.SetDesiredLeaderId(c.serverId);
+						restartElections_ = true;
+						onRoleChanged(RaftInfo::Role::Candidate,
+									  curRaftInfo.role == RaftInfo::Role::Leader ? serverId : raftManager_.GetLeaderId());
+					} catch (std::exception& e) {
+						err = std::move(e);
+					}
+				}
+				if (!err.ok()) {
+					logError("{}: Error send desired leader: '{}'", serverId, err.what());
+				}
+
+			} break;
+			case kCmdForceElections: {
+				Error err;
 				try {
-					raftManager_.SetDesiredLeaderId(c.serverId);
-					restartElections_ = true;
-					onRoleChanged(RaftInfo::Role::Candidate,
-								  curRaftInfo.role == RaftInfo::Role::Leader ? serverId : raftManager_.GetLeaderId());
+					// Restart election for followers only. Do not call this for leader to avoid working cluster break
+					if (curRaftInfo.role == RaftInfo::Role::Follower) {
+						restartElections_ = true;
+						onRoleChanged(RaftInfo::Role::Candidate,
+									  curRaftInfo.role == RaftInfo::Role::Leader ? serverId : raftManager_.GetLeaderId());
+					}
 				} catch (std::exception& e) {
 					err = std::move(e);
 				}
-			}
-			if (!err.ok()) {
-				logError("{}: Error send desired leader ({})", serverId, err.what());
-			}
-			c.result.set_value(std::move(err));
+				if (!err.ok()) {
+					logError("{}: Error on election restart attempt: '{}'", serverId, err.what());
+				}
+			} break;
+			case kNoCommand:
+			default:
+				err = Error(errParams, "Unknown cluster command id: {}", int(c.id));
+				break;
 		}
+		c.result.set_value(std::move(err));
 	}
 }
 

@@ -50,7 +50,7 @@ public:
 
 	std::pair<value_type, value_type> GetRandomIdRange(size_t cnt) {
 		auto count = cnt >= static_cast<size_t>(Count()) ? Count() : cnt;
-		auto start = random<value_type>(start_, end_ - count);
+		auto start = random<value_type>(start_, end_ - count - 1);
 		return {start, start + count - 1};
 	}
 

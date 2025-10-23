@@ -725,12 +725,13 @@ Reindexer RPCServer::getDB(cproto::Context& ctx, UserRole role) {
 		}
 
 		if (rx_likely(db != nullptr)) {
+			NeedMaskingDSN needMaskingDSN{clientData->auth.UserRights() < kRoleDBAdmin};
 			return db->NeedTraceActivity()
 					   ? db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emitterServerId, ctx.call->shardId,
-											   ctx.call->shardingParallelExecution, clientData->replToken, ctx.clientAddr,
+											   ctx.call->shardingParallelExecution, clientData->replToken, needMaskingDSN, ctx.clientAddr,
 											   clientData->auth.Login().Str(), clientData->connID)
 					   : db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emitterServerId, ctx.call->shardId,
-											   ctx.call->shardingParallelExecution, clientData->replToken);
+											   ctx.call->shardingParallelExecution, clientData->replToken, needMaskingDSN);
 		}
 	}
 	throw Error(errParams, "Database is not opened, you should open it first");

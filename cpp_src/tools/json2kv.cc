@@ -1,6 +1,7 @@
 #include "json2kv.h"
 #include <limits.h>
 #include "core/cjson/cjsontools.h"
+#include "core/keyvalue/float_vectors_holder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
 #include "estl/one_of.h"

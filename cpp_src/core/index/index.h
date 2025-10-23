@@ -32,7 +32,7 @@ class [[nodiscard]] Index {
 
 public:
 	struct [[nodiscard]] SelectOpts {
-		SelectOpts()
+		SelectOpts() noexcept
 			: itemsCountInNamespace(0),
 			  maxIterations(std::numeric_limits<int>::max()),
 			  distinct(0),
@@ -41,7 +41,8 @@ public:
 			  unbuiltSortOrders(0),
 			  indexesNotOptimized(0),
 			  inTransaction{0},
-			  rankSortType(0) {}
+			  rankSortType(0),
+			  strictMode(StrictModeNone) {}
 		unsigned itemsCountInNamespace;
 		int maxIterations;
 		unsigned distinct : 1;
@@ -51,6 +52,7 @@ public:
 		unsigned indexesNotOptimized : 1;
 		unsigned inTransaction : 1;
 		unsigned rankSortType : 3;
+		StrictMode strictMode;
 	};
 	struct [[nodiscard]] SelectContext {
 		SelectOpts opts;
@@ -91,7 +93,7 @@ public:
 		assertrx(0);
 		std::abort();
 	}
-	virtual RankedTypeQuery RankedType() const noexcept {
+	virtual QueryRankType RankedType() const noexcept {
 		assertrx(0);
 		std::abort();
 	}

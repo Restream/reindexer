@@ -63,8 +63,10 @@ class [[nodiscard]] LocalQueryResults {
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
 		Item GetItem(bool enableHold = true);
 		joins::ItemIterator GetJoined();
-		auto& GetItemRef() const noexcept { return qr_->items_.GetItemRef(idx_); }
-		auto& GetItemRefRanked() const { return qr_->items_.GetItemRefRanked(idx_); }
+		auto& GetItemRef() const& noexcept { return qr_->items_.GetItemRef(idx_); }
+		auto GetItemRef() const&& noexcept = delete;
+		auto& GetItemRefRanked() const& { return qr_->items_.GetItemRefRanked(idx_); }
+		auto GetItemRefRanked() const&& = delete;
 		ItemRefVariant GetItemRefVariant() const { return qr_->items_.GetItemRefVariant(idx_); }
 		reindexer::IsRanked IsRanked() const noexcept { return qr_->items_.IsRanked(); }
 		lsn_t GetLSN() const noexcept { return GetItemRef().Value().GetLSN(); }
@@ -102,8 +104,8 @@ class [[nodiscard]] LocalQueryResults {
 		const FieldsFilter& GetFieldsFilter() const noexcept { return qr_->getFieldsFilter(qr_->items_.GetItemRef(idx_).Nsid()); }
 
 	private:
-		QR* qr_;
-		size_t idx_;
+		QR* qr_{nullptr};
+		size_t idx_{0};
 		Error err_;
 		NsNamesCache nsNamesCache;
 	};
@@ -179,16 +181,23 @@ public:
 	void addNSContext(const PayloadType& type, const TagsMatcher& tagsMatcher, const FieldsFilter& fieldsFilter,
 					  std::shared_ptr<const Schema> schema, lsn_t nsIncarnationTag);
 	void addNSContext(const QueryResults& baseQr, size_t nsid, lsn_t nsIncarnationTag);
-	const TagsMatcher& getTagsMatcher(int nsid) const noexcept;
-	const PayloadType& getPayloadType(int nsid) const noexcept;
-	const FieldsFilter& getFieldsFilter(int nsid) const noexcept;
-	TagsMatcher& getTagsMatcher(int nsid) noexcept;
-	PayloadType& getPayloadType(int nsid) noexcept;
+	const TagsMatcher& getTagsMatcher(int nsid) const& noexcept;
+	auto getTagsMatcher(int nsid) const&& noexcept = delete;
+	const PayloadType& getPayloadType(int nsid) const& noexcept;
+	auto getPayloadType(int nsid) const&& noexcept = delete;
+	const FieldsFilter& getFieldsFilter(int nsid) const& noexcept;
+	auto getFieldsFilter(int nsid) const&& noexcept = delete;
+	
+	TagsMatcher& getTagsMatcher(int nsid) & noexcept;
+	auto getTagsMatcher(int nsid) && noexcept = delete;
+	PayloadType& getPayloadType(int nsid) & noexcept;
+	auto getPayloadType(int nsid) && noexcept = delete;
 	std::shared_ptr<const Schema> getSchema(int nsid) const noexcept;
 	int getNsNumber(int nsid) const noexcept;
 	int getMergedNSCount() const noexcept;
 	ItemRefVector& Items() & noexcept { return items_; }
 	const ItemRefVector& Items() const& noexcept { return items_; }
+	auto Items() const&& noexcept = delete;
 	auto Items() && = delete;
 	int GetJoinedNsCtxIndex(int nsid) const noexcept;
 
@@ -211,7 +220,6 @@ public:
 
 private:
 	class EncoderDatasourceWithJoins;
-	class EncoderAdditionalDatasource;
 
 	void encodeJSON(int idx, WrSerializer& ser, ConstIterator::NsNamesCache&) const;
 	ItemRefVector items_;
@@ -229,7 +237,7 @@ private:
 
 		const StringsHolderPtr::element_type* StrHolderPtr() const& noexcept { return strHolder_.get(); }
 
-		const NamespaceImpl* ns;
+		const NamespaceImpl* ns{nullptr};
 
 	private:
 		NamespaceImplPtr nsPtr_;

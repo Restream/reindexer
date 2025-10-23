@@ -77,13 +77,14 @@ int main(int argc, char* argv[]) {
 	args::Group progOptions("options");
 #ifdef _WIN32
 	args::ValueFlag<std::string> dbDsn(progOptions, "DSN",
-									   "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'", {'d', "dsn"}, "",
-									   Options::Single | Options::Global);
+									   "DSN to 'reindexer'. Can be 'cproto://[user@password:]<ip>:<port>/<dbname>' or 'builtin://<path>'",
+									   {'d', "dsn"}, "", Options::Single | Options::Global);
 #else	// _WIN32
-	args::ValueFlag<std::string> dbDsn(
-		progOptions, "DSN",
-		"DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>', 'builtin://<path>' or 'ucproto://<unix.socket.path>:/<dbname>'",
-		{'d', "dsn"}, "", Options::Single | Options::Global);
+	args::ValueFlag<std::string> dbDsn(progOptions, "DSN",
+									   "DSN to 'reindexer'. Can be 'cproto://[user@password:]<ip>:<port>/<dbname>', "
+									   "'cprotos://[user@password:]<ip>:<port>/<dbname>', 'builtin://<path>' or "
+									   "'ucproto://[user@password:]<unix/socket/path>:/<dbname>'",
+									   {'d', "dsn"}, "", Options::Single | Options::Global);
 #endif	// _WIN32
 	args::ValueFlag<std::string> fileName(progOptions, "FILENAME", "Execute commands from file, then exit", {'f', "filename"}, "",
 										  Options::Single | Options::Global);

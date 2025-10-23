@@ -9,30 +9,29 @@ namespace reindexer {
 using namespace std::string_view_literals;
 
 ParsedQueryFunction QueryFunctionParser::Parse(std::string_view query) {
-	tokenizer parser(query);
+	Tokenizer parser(query);
 
-	token tok = parser.next_token(tokenizer::flags::no_flags);
+	Token tok = parser.NextToken(Tokenizer::Flags::NoFlags);
 
 	ParsedQueryFunction parsedQueryFunction;
-	auto dotPos = tok.text().find('.');
-	if (dotPos == std::string_view::npos || (parser.peek_token(tokenizer::flags::no_flags).text() == "=")) {
-		parsedQueryFunction.field = std::string(tok.text());
-		tok = parser.next_token(tokenizer::flags::no_flags);
-		if (tok.text() != "="sv) {
-			if (tok.text() == "."sv) {
+	auto dotPos = tok.Text().find('.');
+	if (dotPos == std::string_view::npos || (parser.PeekToken(Tokenizer::Flags::NoFlags).Text() == "=")) {
+		parsedQueryFunction.field = std::string(tok.Text());
+		tok = parser.NextToken(Tokenizer::Flags::NoFlags);
+		if (tok.Text() != "="sv) {
+			if (tok.Text() == "."sv) {
 				throw Error(errParams, "Unexpected space symbol before `.` (select function delimiter)");
 			}
-			throw Error(errParams, "Expected `=` or `.` as a select function delimiter, but found `{}`", tok.text());
+			throw Error(errParams, "Expected `=` or `.` as a select function delimiter, but found `{}`", tok.Text());
 		}
-		token ftok;
+		Token ftok;
 		parseFunction(parser, parsedQueryFunction, ftok);
 	} else {
-		if (dotPos == tok.text_.size() - 1) {
-			throw Error(errParams, "Unexpected space symbol or token after `.` (select function delimiter): `{}`", tok.text());
+		if (dotPos == tok.Text().size() - 1) {
+			throw Error(errParams, "Unexpected space symbol or token after `.` (select function delimiter): `{}`", tok.Text());
 		}
-		parsedQueryFunction.field = std::string(tok.text_.begin(), tok.text_.begin() + dotPos);
-		token ftok(TokenName);
-		ftok.text_.assign(tok.text_.begin() + dotPos + 1, tok.text_.end());
+		parsedQueryFunction.field = std::string(tok.Text().begin(), tok.Text().begin() + dotPos);
+		Token ftok(TokenName, tok.Text().begin() + dotPos + 1, tok.Text().end());
 		parseFunction(parser, parsedQueryFunction, ftok);
 	}
 
@@ -44,26 +43,26 @@ ParsedQueryFunction QueryFunctionParser::Parse(std::string_view query) {
 	return parsedQueryFunction;
 }
 
-void QueryFunctionParser::parsePositionalAndNamedArgs(tokenizer& parser, ParsedQueryFunction& parsedQueryFunction, const Args& args) {
-	token tok;
-	tok = parser.next_token(tokenizer::flags::no_flags);
-	if (!(tok.type == TokenSymbol && tok.text() == "("sv)) {
-		throw Error(errParseDSL, "{}: An open parenthesis is required, but found `{}`", parsedQueryFunction.funcName, tok.text());
+void QueryFunctionParser::parsePositionalAndNamedArgs(Tokenizer& parser, ParsedQueryFunction& parsedQueryFunction, const Args& args) {
+	Token tok;
+	tok = parser.NextToken(Tokenizer::Flags::NoFlags);
+	if (!(tok.Type() == TokenSymbol && tok.Text() == "("sv)) {
+		throw Error(errParseDSL, "{}: An open parenthesis is required, but found `{}`", parsedQueryFunction.funcName, tok.Text());
 	}
 	std::string argFirstPart;
 	std::string argSecondPart;
 	enum class [[nodiscard]] NamedArgState { Name = 0, Eq = 1, Val = 2, End = 3, End2 = 4 };
 	NamedArgState expectedToken = NamedArgState::Name;
 
-	while (!parser.end()) {
-		tok = parser.next_token(tokenizer::flags::no_flags);
-		switch (tok.type) {
+	while (!parser.End()) {
+		tok = parser.NextToken(Tokenizer::Flags::NoFlags);
+		switch (tok.Type()) {
 			case TokenSymbol:
-				if (tok.text() == ")"sv) {
-					token nextTok = parser.next_token(tokenizer::flags::no_flags);
-					if (nextTok.text().length() > 0) {
+				if (tok.Text() == ")"sv) {
+					Token nextTok = parser.NextToken(Tokenizer::Flags::NoFlags);
+					if (nextTok.Text().length() > 0) {
 						throw Error(errParseDSL, "{}: Unexpected character `{}` after closing parenthesis.", parsedQueryFunction.funcName,
-									nextTok.text());
+									nextTok.Text());
 					}
 
 					switch (expectedToken) {
@@ -101,10 +100,10 @@ void QueryFunctionParser::parsePositionalAndNamedArgs(tokenizer& parser, ParsedQ
 
 					parsedQueryFunction.isFunction = true;
 					break;
-				} else if (tok.text() == ","sv) {
+				} else if (tok.Text() == ","sv) {
 					if (parsedQueryFunction.funcArgs.size() >= args.posArgsCount) {
 						if (expectedToken != NamedArgState::End) {
-							throw Error(errParseDSL, "{}: Unexpected token '{}'.", parsedQueryFunction.funcName, tok.text());
+							throw Error(errParseDSL, "{}: Unexpected token '{}'.", parsedQueryFunction.funcName, tok.Text());
 						}
 						if (args.namedArgs.find(argFirstPart) == args.namedArgs.end()) {
 							throw Error(errParseDSL, "{}: Unknown argument name '{}'.", parsedQueryFunction.funcName, argFirstPart);
@@ -118,7 +117,7 @@ void QueryFunctionParser::parsePositionalAndNamedArgs(tokenizer& parser, ParsedQ
 						if (expectedToken != NamedArgState::End2) {
 							throw Error(errParseDSL,
 										"{}: Unexpected token '{}', expecting positional argument ({} more positional args required)",
-										parsedQueryFunction.funcName, tok.text(), args.posArgsCount - parsedQueryFunction.funcArgs.size());
+										parsedQueryFunction.funcName, tok.Text(), args.posArgsCount - parsedQueryFunction.funcArgs.size());
 						}
 						parsedQueryFunction.funcArgs.emplace_back(std::move(argFirstPart));
 					}
@@ -126,114 +125,114 @@ void QueryFunctionParser::parsePositionalAndNamedArgs(tokenizer& parser, ParsedQ
 					argSecondPart.clear();
 					expectedToken = NamedArgState::Name;
 				} else {
-					throw Error(errParseDSL, "{}: Unexpected token '{}'", parsedQueryFunction.funcName, tok.text());
+					throw Error(errParseDSL, "{}: Unexpected token '{}'", parsedQueryFunction.funcName, tok.Text());
 				}
 				break;
 			case TokenOp:
-				if (tok.text() == "="sv) {
+				if (tok.Text() == "="sv) {
 					if (argFirstPart.empty()) {
 						throw Error(errParseDSL, "{}: Argument name is empty.", parsedQueryFunction.funcName);
 					} else if (expectedToken != NamedArgState::Eq) {
-						throw Error(errParseDSL, "{}: Unexpected token '{}'.", parsedQueryFunction.funcName, tok.text());
+						throw Error(errParseDSL, "{}: Unexpected token '{}'.", parsedQueryFunction.funcName, tok.Text());
 					}
 					expectedToken = NamedArgState::Val;
 				} else {
-					throw Error(errParseDSL, "{}: Unexpected token '{}'", parsedQueryFunction.funcName, tok.text());
+					throw Error(errParseDSL, "{}: Unexpected token '{}'", parsedQueryFunction.funcName, tok.Text());
 				}
 				break;
 			case TokenNumber:
 			case TokenString:
 				switch (expectedToken) {
 					case NamedArgState::Val:
-						argSecondPart = tok.text();
+						argSecondPart = tok.Text();
 						expectedToken = NamedArgState::End;
 						break;
 
 					case NamedArgState::Name:
-						argFirstPart = tok.text();
+						argFirstPart = tok.Text();
 						expectedToken = NamedArgState::End2;
 						break;
 
 					case NamedArgState::Eq:
 					case NamedArgState::End:
 					case NamedArgState::End2:
-						throw Error(errParseDSL, "{}: Unexpected token '{}'.", parsedQueryFunction.funcName, tok.text());
+						throw Error(errParseDSL, "{}: Unexpected token '{}'.", parsedQueryFunction.funcName, tok.Text());
 				}
 				break;
 			case TokenName:
 				if (expectedToken != NamedArgState::Name) {
-					throw Error(errParseDSL, "{}: Unexpected token '{}'.", parsedQueryFunction.funcName, tok.text());
+					throw Error(errParseDSL, "{}: Unexpected token '{}'.", parsedQueryFunction.funcName, tok.Text());
 				} else {
-					argFirstPart = tok.text();
+					argFirstPart = tok.Text();
 					expectedToken = NamedArgState::Eq;
 				}
 				break;
 			case TokenSign:
 			case TokenEnd:
-				throw Error(errParseDSL, "{}: Unexpected token '{}'", parsedQueryFunction.funcName, tok.text());
+				throw Error(errParseDSL, "{}: Unexpected token '{}'", parsedQueryFunction.funcName, tok.Text());
 		}
 	}
 	if (!parsedQueryFunction.isFunction) {
-		throw Error(errParseDSL, "{}: The closing parenthesis is required, but found `{}`", parsedQueryFunction.funcName, tok.text());
+		throw Error(errParseDSL, "{}: The closing parenthesis is required, but found `{}`", parsedQueryFunction.funcName, tok.Text());
 	}
 }
 
-ParsedQueryFunction QueryFunctionParser::ParseFunction(tokenizer& parser, token& tok) {
+ParsedQueryFunction QueryFunctionParser::ParseFunction(Tokenizer& parser, Token& tok) {
 	ParsedQueryFunction parsedQueryFunction;
 	parseFunctionImpl(parser, parsedQueryFunction, tok);
 	return parsedQueryFunction;
 }
 
-void QueryFunctionParser::parseFunction(tokenizer& parser, ParsedQueryFunction& parsedQueryFunction, token& tok) {
+void QueryFunctionParser::parseFunction(Tokenizer& parser, ParsedQueryFunction& parsedQueryFunction, Token& tok) {
 	parseFunctionImpl(parser, parsedQueryFunction, tok);
-	token nextTok = parser.next_token(tokenizer::flags::no_flags);
-	if (nextTok.text().length() > 0) {
-		throw Error(errParseDSL, "{}: Unexpected character `{}` after closing parenthesis", parsedQueryFunction.funcName, nextTok.text());
+	Token nextTok = parser.NextToken(Tokenizer::Flags::NoFlags);
+	if (nextTok.Text().length() > 0) {
+		throw Error(errParseDSL, "{}: Unexpected character `{}` after closing parenthesis", parsedQueryFunction.funcName, nextTok.Text());
 	}
 }
 
-void QueryFunctionParser::parseFunctionImpl(tokenizer& parser, ParsedQueryFunction& parsedQueryFunction, token& tok) {
+void QueryFunctionParser::parseFunctionImpl(Tokenizer& parser, ParsedQueryFunction& parsedQueryFunction, Token& tok) {
 	using namespace std::string_view_literals;
-	if (tok.text().empty()) {
-		tok = parser.next_token();
+	if (tok.Text().empty()) {
+		tok = parser.NextToken();
 	}
-	parsedQueryFunction.funcName = std::string(tok.text());
-	if (tok.text() == "snippet_n"sv) {
+	parsedQueryFunction.funcName = std::string(tok.Text());
+	if (tok.Text() == "snippet_n"sv) {
 		static const Args args(4, {"pre_delim"sv, "post_delim"sv, "with_area"sv, "left_bound"sv, "right_bound"sv});
 		parsePositionalAndNamedArgs(parser, parsedQueryFunction, args);
 		return;
 	}
 
-	tok = parser.next_token(tokenizer::flags::no_flags);
-	if (tok.text() == "("sv) {
-		if (parser.peek_token(tokenizer::flags::no_flags).text() == ")"sv) {
-			parser.skip_token(tokenizer::flags::no_flags);
+	tok = parser.NextToken(Tokenizer::Flags::NoFlags);
+	if (tok.Text() == "("sv) {
+		if (parser.PeekToken(Tokenizer::Flags::NoFlags).Text() == ")"sv) {
+			parser.SkipToken(Tokenizer::Flags::NoFlags);
 			parsedQueryFunction.isFunction = true;
 		} else {
 			std::string arg;
-			while (!parser.end()) {
-				tok = parser.next_token(tokenizer::flags::no_flags);
-				if (tok.text() == ")"sv) {
+			while (!parser.End()) {
+				tok = parser.NextToken(Tokenizer::Flags::NoFlags);
+				if (tok.Text() == ")"sv) {
 					parsedQueryFunction.funcArgs.emplace_back(std::move(arg));
 					parsedQueryFunction.isFunction = true;
 					arg.clear();
 					break;
 				}
-				if (tok.text() == ","sv && tok.type == TokenSymbol) {
+				if (tok.Text() == ","sv && tok.Type() == TokenSymbol) {
 					parsedQueryFunction.funcArgs.emplace_back(std::move(arg));
 					arg.clear();
 				} else {
-					arg += tok.text();
+					arg += tok.Text();
 				}
 			}
 			if (!parsedQueryFunction.isFunction) {
 				throw Error(errParseDSL, "{}: The closing parenthesis is required, but found `{}`", parsedQueryFunction.funcName,
-							tok.text());
+							tok.Text());
 			}
 		}
 	} else {
 		throw Error(errParseDSL, "{}: An open parenthesis is required, but found `{}`. Select function name: `{}`",
-					parsedQueryFunction.funcName, tok.text(), parsedQueryFunction.funcName);
+					parsedQueryFunction.funcName, tok.Text(), parsedQueryFunction.funcName);
 	}
 
 	return;

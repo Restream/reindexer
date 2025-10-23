@@ -79,7 +79,7 @@ public:
 	Namespace::Ptr GetNamespacePtrNoThrow(std::string_view nsName, const RdxContext& ctx);
 
 	PayloadType GetPayloadType(std::string_view nsName);
-	std::set<std::string> GetFTIndexes(std::string_view nsName);
+	bool IsFulltextOrVector(std::string_view nsName, std::string_view indexName) const;
 
 	Error ResetShardingConfig(std::optional<cluster::ShardingConfig> config = std::nullopt) noexcept;
 	void SaveNewShardingConfigFile(const cluster::ShardingConfig& config) const;

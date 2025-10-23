@@ -49,6 +49,8 @@ public:
 
 	void CheckResults(const std::string& query, const reindexer::QueryResults& qr,
 					  std::vector<std::tuple<std::string, std::string, std::string>> expectedResults, bool withOrder);
+	void CheckResults(const std::string& query, const reindexer::QueryResults& qr,
+					  std::vector<std::tuple<std::string, std::string>> expectedResults, bool withOrder);
 
 	template <typename ResType>
 	void CheckResults(const std::string& query, const reindexer::QueryResults& qr, std::vector<ResType>& expectedResults, bool withOrder);
@@ -65,7 +67,7 @@ protected:
 		std::string ft2;
 	};
 	struct [[nodiscard]] FTDSLQueryParams {
-		reindexer::RHashMap<std::string, int> fields;
+		reindexer::RHashMap<std::string, reindexer::FtIndexFieldPros> fields;
 		reindexer::StopWordsSetT stopWords;
 	};
 	int counter_ = 0;

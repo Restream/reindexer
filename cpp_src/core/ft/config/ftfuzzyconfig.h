@@ -5,8 +5,8 @@
 namespace reindexer {
 
 struct [[nodiscard]] FtFuzzyConfig : public BaseFTConfig {
-	void parse(std::string_view json, const RHashMap<std::string, int>& fields) final;
-	std::string GetJSON(const fast_hash_map<std::string, int>& fields) const final;
+	void parse(std::string_view json, const RHashMap<std::string, FtIndexFieldPros>& fields) override final;
+	std::string GetJSON(const fast_hash_map<std::string, int>& fields) const override final;
 
 	double maxSrcProc = 78;
 	double maxDstProc = 22;

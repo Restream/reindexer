@@ -1010,6 +1010,17 @@ Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size
 	}
 }
 
+void charMultilinePos(std::string_view str, size_t pos, size_t search_start, size_t& line, size_t& col) noexcept {
+	for (auto it = str.begin() + search_start; it != str.begin() + pos; it++) {
+		if (*it == '\n') {
+			line++;
+			col = 0;
+		} else {
+			col++;
+		}
+	}
+}
+
 std::string_view trimSpaces(std::string_view str) noexcept {
 	size_t left = 0, right = str.size();
 	while (left < right && std::isspace(str[left])) {

@@ -81,9 +81,6 @@ TEST_F(ReindexerApi, RenameNamespace) {
 	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 	for (int i = 0; i < 10; ++i) {
 		Item item(rt.NewItem(default_namespace));
-		ASSERT_TRUE(!!item);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
 		item["id"] = i;
 		item["column1"] = i + 100;
 		rt.Upsert(default_namespace, item);
@@ -166,6 +163,73 @@ TEST_F(ReindexerApi, RenameNamespace) {
 	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
 	ASSERT_EQ(tm.stateToken(), tmBeforeTest.stateToken());
 	ASSERT_EQ(tm.version(), tmBeforeTest.version());
+}
+
+TEST_F(ReindexerApi, ConcurrentRenaming) {
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	for (int i = 0; i < 1000; ++i) {
+		Item item(rt.NewItem(default_namespace));
+		item["id"] = i;
+		item["column1"] = i + 100;
+		rt.Upsert(default_namespace, item);
+	}
+
+	const std::string renamedNamespace("renamed_namespace");
+	std::atomic_bool done{false};
+	std::atomic_uint32_t succeed = 0;
+
+	auto executeAndValidate = [this, &succeed](std::string_view ns, std::string_view otherNs, const Query& q, size_t expectedCnt) {
+		QueryResults qr;
+		auto err = rt.reindexer->Select(q, qr);
+		if (err.ok()) {
+			ASSERT_EQ(qr.Count(), expectedCnt);
+			++succeed;
+		} else if (err.code() == errNotFound) {
+			ASSERT_EQ(err.whatStr(), fmt::format("Namespace '{}' does not exist", ns));
+		} else if (err.code() == errConflict) {
+			ASSERT_EQ(err.whatStr(), fmt::format("Unable to get namespace: '{}'/'{}' - conflicting rename is in progress", ns, otherNs));
+		} else {
+			ASSERT_TRUE(false) << err.what();
+		}
+	};
+
+	auto selectionTh1 = [&](std::string_view ns, std::string_view otherNs) {
+		while (!done) {
+			executeAndValidate(ns, otherNs, Query(ns).Sort("hash()", false).Limit(10), 10);
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+	};
+	auto selectionTh2 = [&](std::string_view ns, std::string_view otherNs) {
+		while (!done) {
+			executeAndValidate(ns, otherNs, Query(ns).InnerJoin("id", "id", CondEq, Query(ns)).Sort("hash()", false).Limit(10), 10);
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+	};
+	auto renameTh = [&, this]() {
+		unsigned counter = 0;
+		while (!done) {
+			if (counter++ % 2 == 0) {
+				rt.RenameNamespace(default_namespace, renamedNamespace);
+			} else {
+				rt.RenameNamespace(renamedNamespace, default_namespace);
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+	};
+	std::vector<std::thread> threads;
+	threads.reserve(5);
+	threads.emplace_back(selectionTh1, default_namespace, renamedNamespace);
+	threads.emplace_back(selectionTh1, renamedNamespace, default_namespace);
+	threads.emplace_back(selectionTh2, default_namespace, renamedNamespace);
+	threads.emplace_back(selectionTh2, renamedNamespace, default_namespace);
+	threads.emplace_back(renameTh);
+	std::this_thread::sleep_for(std::chrono::seconds(5));
+	done = true;
+	for (auto& th : threads) {
+		th.join();
+	}
+	ASSERT_GT(succeed, 0);
 }
 
 TEST_F(ReindexerApi, AddIndex) {

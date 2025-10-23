@@ -174,16 +174,18 @@ type NamespaceMemStat struct {
 		Name string `json:"name"`
 		// Count of unique keys values stored in index
 		UniqKeysCount int64 `json:"unique_keys_count"`
-		// Total memory consumption of documents's data, held by index
+		// Total memory consumption (in bytes) of documents's data, held by index
 		DataSize int64 `json:"data_size"`
-		// Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
+		// Total memory consumption (in bytes) of SORT statement and `GT`, `LT` conditions optimized structures. Applicable only to `tree` indexes
 		SortOrdersSize int64 `json:"sort_orders_size"`
-		// Total memory consumption of reverse index vectors. For `store` indexes always 0
+		// Total memory consumption (in bytes) of reverse index vectors. For `store` indexes always 0
 		IDSetPlainSize int64 `json:"idset_plain_size"`
-		// Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0
+		// Total memory consumption (in bytes) of reverse index b-tree structures. For `dense` and `store` indexes always 0
 		IDSetBTreeSize int64 `json:"idset_btree_size"`
-		// Total memory consumption of the main indexing structures (fulltext, ANN, etc.)
+		// Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
 		IndexingStructSize int64 `json:"indexing_struct_size"`
+		// Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
+		VectorsKeeperSize int64 `json:"vectors_keeper_size"`
 		// Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
 		IDSetCache CacheMemStat `json:"idset_cache"`
 		// Updates count, pending in index updates tracker

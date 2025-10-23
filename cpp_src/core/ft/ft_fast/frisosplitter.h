@@ -22,7 +22,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <list>
 #include <string_view>
 #include <vector>
 #include "estl/fast_hash_set.h"
@@ -222,9 +221,9 @@ private:
 	size_t idx = 0;	 // start offset index.
 	size_t charCounter = 0;
 
-	std::string utf8Buffer_;		  // latest symbol in utf8
-	uint16_t unicode = 0;			  // latest symbol unicode number.
-	std::list<FrisoTokenEntry> pool;  // task pool.
+	std::string utf8Buffer_;	  // latest symbol in utf8
+	uint16_t unicode = 0;		  // latest symbol unicode number.
+	elist<FrisoTokenEntry> pool;  // task pool.
 	StringBuffer wordStorage;
 
 	unsigned int convertCounter = 0;

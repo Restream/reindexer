@@ -1,14 +1,17 @@
 #pragma once
 
 #include <string>
-#include <vector>
+#include "api_tv_simple_base.h"
 
-#include "base_fixture.h"
+using namespace std::string_view_literals;
 
-class [[nodiscard]] ApiTvSimpleComparators : private BaseFixture {
+class [[nodiscard]] ApiTvSimpleComparators : private ApiTvSimpleBase {
+	using Base = ApiTvSimpleBase;
+
 public:
-	virtual ~ApiTvSimpleComparators() {}
-	ApiTvSimpleComparators(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	~ApiTvSimpleComparators() override = default;
+	ApiTvSimpleComparators(Reindexer* db, std::string_view name, size_t maxItems)
+		: Base(db, name, maxItems, "string_select_ns_comparators"sv) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "-", "int64", IndexOpts())
 			.AddIndex("year", "-", "int", IndexOpts())
@@ -31,31 +34,7 @@ private:
 
 	void WarmUpIndexes(State& state);
 
-	void StringsSelect(State& state);
-	void GetEqInt(State& state);
-	void GetEqArrayInt(State& state);
-	void GetEqString(State& state);
 	void GetByRangeIDAndSort(State& state);
-	void GetUuidStr(State& state);
-
-	void Query1Cond(State& state);
-	void Query1CondTotal(State& state);
-	void Query1CondCachedTotal(State& state);
-	void Query2Cond(State& state);
-	void Query2CondTotal(State& state);
-	void Query2CondCachedTotal(State& state);
-	void Query3Cond(State& state);
-	void Query3CondTotal(State& state);
-	void Query3CondCachedTotal(State& state);
-	void Query3CondKillIdsCache(State& state);
-	void Query3CondRestoreIdsCache(State& state);
-
-	void Query4Cond(State& state);
-	void Query4CondTotal(State& state);
-	void Query4CondCachedTotal(State& state);
-	void Query4CondRange(State& state);
-	void Query4CondRangeTotal(State& state);
-	void Query4CondRangeCachedTotal(State& state);
 
 	void QueryDistinctOneField(State& state);
 	void QueryDistinctTwoField(State& state);
@@ -65,17 +44,10 @@ private:
 	void QueryDistinctTwoFieldLimit(State& state);
 	void QueryDistinctTwoFieldArrayLimit(State& state);
 
-	std::vector<std::string> countries_;
-	std::vector<std::string> locations_;
-	std::vector<int> start_times_;
-	std::vector<std::vector<int>> packages_;
-	std::vector<std::vector<int>> priceIDs_;
-	std::vector<std::string> uuids_;
 #if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	constexpr static unsigned kTotalItemsStringSelectNs = 100'000;
 #else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	constexpr static unsigned kTotalItemsStringSelectNs = 20'000;
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	reindexer::WrSerializer wrSer_;
-	std::string stringSelectNs_{"string_select_ns_comparators"};
 };

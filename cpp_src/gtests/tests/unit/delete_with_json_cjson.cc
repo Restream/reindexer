@@ -1,4 +1,3 @@
-#include <tuple>
 #include "get_pk_api.h"
 
 #define SIMPLE_ITEM_NAMESPACE "test_extrack_pk_simple"
@@ -59,7 +58,6 @@
 
 using std::ignore;
 using std::string;
-using std::tie;
 
 TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 	CHECK_SUCCESS(CreateNamespace(NamespaceDef(SIMPLE_ITEM_NAMESPACE)
@@ -71,11 +69,7 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 									  .AddIndex("fk_id", "tree", "int", IndexOpts())
 									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
-	Error err;
-	Item item;
-	Data data;
-
-	tie(err, item, data) = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
+	auto [err, item, data] = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
 	ASSERT_EQ(item["id"].As<int>(), data.id);
@@ -112,9 +106,8 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 	CHECK_SUCCESS(db_->Delete(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), deleteRes));
 	ASSERT_TRUE(!deleteRes.Count()) << "Result of deletion must be empty";
 
-	QueryResults qres;
-	tie(err, qres) = Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), false);
-	CHECK_SUCCESS(err);
+	const auto [err2, qres] = Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), false);
+	CHECK_SUCCESS(err2);
 	ASSERT_TRUE(!qres.Count()) << "Result of selection must be empty";
 }
 
@@ -128,11 +121,7 @@ TEST_F(ExtractPK, ChangedTypeJSON) {
 									  .AddIndex("fk_id", "tree", "int", IndexOpts())
 									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
-	Error err;
-	Item item;
-	Data data;
-
-	tie(err, item, data) = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
+	auto [err, item, data] = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
 
@@ -173,11 +162,7 @@ TEST_F(ExtractPK, NestedJSON) {
 									  .AddIndex("fk_id", {"desc.fk_id"}, "tree", "int", IndexOpts())
 									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
-	Error err;
-	Item item;
-	Data data;
-
-	tie(err, item, data) = NewItem(NESTED_ITEM_NAMESPACE, NESTED_JSON_PATTERN);
+	auto [err, item, data] = NewItem(NESTED_ITEM_NAMESPACE, NESTED_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
 	CHECK_SUCCESS(Upsert(NESTED_ITEM_NAMESPACE, item));
@@ -219,11 +204,7 @@ TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
 									  .AddIndex("fk_id", "tree", "int", IndexOpts())
 									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
-	Error err;
-	Item item;
-	Data data;
-
-	tie(err, item, data) = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
+	auto [err, item, data] = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
 	CHECK_SUCCESS(Upsert(SIMPLE_ITEM_NAMESPACE, item));
@@ -247,11 +228,7 @@ TEST_F(ExtractPK, SimpleCJSON) {
 									  .AddIndex("fk_id", "tree", "int", IndexOpts())
 									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
-	Error err;
-	Item item;
-	Data data;
-
-	tie(err, item, data) = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
+	auto [err, item, data] = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
 	CHECK_SUCCESS(Upsert(SIMPLE_ITEM_NAMESPACE, item));
@@ -268,9 +245,8 @@ TEST_F(ExtractPK, SimpleCJSON) {
 		}
 	}
 
-	Item item4cjson;
-	tie(err, item4cjson, ignore) = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN, &data);
-	CHECK_SUCCESS(err);
+	auto [err2, item4cjson, _] = NewItem(SIMPLE_ITEM_NAMESPACE, SIMPLE_JSON_PATTERN, &data);
+	CHECK_SUCCESS(err2);
 
 	Item fromCJSON = db_->NewItem(SIMPLE_ITEM_NAMESPACE);
 	CHECK_SUCCESS(fromCJSON.FromCJSON(item4cjson.GetCJSON(), true));
@@ -295,11 +271,7 @@ TEST_F(ExtractPK, NestedCJSON) {
 									  .AddIndex("fk_id", {"desc.fk_id"}, "tree", "int", IndexOpts())
 									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
-	Error err;
-	Item item;
-	Data data;
-
-	tie(err, item, data) = NewItem(NESTED_ITEM_NAMESPACE, NESTED_JSON_PATTERN);
+	auto [err, item, data] = NewItem(NESTED_ITEM_NAMESPACE, NESTED_JSON_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
 	CHECK_SUCCESS(Upsert(NESTED_ITEM_NAMESPACE, item));
@@ -316,9 +288,8 @@ TEST_F(ExtractPK, NestedCJSON) {
 		}
 	}
 
-	Item item4cjson;
-	tie(err, item4cjson, ignore) = NewItem(NESTED_ITEM_NAMESPACE, NESTED_JSON_PATTERN, &data);
-	CHECK_SUCCESS(err);
+	auto [err2, item4cjson, _] = NewItem(NESTED_ITEM_NAMESPACE, NESTED_JSON_PATTERN, &data);
+	CHECK_SUCCESS(err2);
 
 	Item fromCJSON = db_->NewItem(NESTED_ITEM_NAMESPACE);
 	CHECK_SUCCESS(fromCJSON.FromCJSON(item4cjson.GetCJSON(), true));
@@ -343,11 +314,7 @@ TEST_F(ExtractPK, NestedCJSONWithObject) {
 									  .AddIndex("fk_id", {"other.fk_id"}, "tree", "int", IndexOpts())
 									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
-	Error err;
-	Item item;
-	Data data;
-
-	tie(err, item, data) = NewItem(NESTED_ITEM_WITH_OBJ_NAMESPACE, NESTED_JSON_WITH_OBJ_PATTERN);
+	auto [err, item, data] = NewItem(NESTED_ITEM_WITH_OBJ_NAMESPACE, NESTED_JSON_WITH_OBJ_PATTERN);
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
 	CHECK_SUCCESS(Upsert(NESTED_ITEM_WITH_OBJ_NAMESPACE, item));
@@ -364,9 +331,8 @@ TEST_F(ExtractPK, NestedCJSONWithObject) {
 		}
 	}
 
-	Item item4cjson;
-	tie(err, item4cjson, ignore) = NewItem(NESTED_ITEM_WITH_OBJ_NAMESPACE, NESTED_JSON_WITH_OBJ_PATTERN, &data);
-	CHECK_SUCCESS(err);
+	auto [err2, item4cjson, _] = NewItem(NESTED_ITEM_WITH_OBJ_NAMESPACE, NESTED_JSON_WITH_OBJ_PATTERN, &data);
+	CHECK_SUCCESS(err2);
 
 	Item fromCJSON = db_->NewItem(NESTED_ITEM_WITH_OBJ_NAMESPACE);
 	CHECK_SUCCESS(fromCJSON.FromCJSON(item4cjson.GetCJSON(), true));

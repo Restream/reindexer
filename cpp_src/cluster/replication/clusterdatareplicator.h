@@ -24,10 +24,10 @@ public:
 	void Stop(bool resetConfig = false);
 	const std::optional<ClusterConfigData>& Config() const noexcept { return config_; }
 
-	Error SuggestLeader(const NodeData& suggestion, NodeData& response);
-	Error SetDesiredLeaderId(int serverId, bool sendToOtherNodes);
-
-	Error LeadersPing(const NodeData& leader);
+	void SuggestLeader(const NodeData& suggestion, NodeData& response);
+	void SetDesiredLeaderId(int serverId, bool sendToOtherNodes);
+	void ForceElections();
+	void LeadersPing(const NodeData& leader);
 	RaftInfo GetRaftInfo(bool allowTransitState, const RdxContext& ctx) const;
 	bool NamespaceIsInClusterConfig(std::string_view nsName) const;
 	ReplicationStats GetReplicationStats() const;
@@ -48,12 +48,16 @@ private:
 	void stop();
 
 	ReplicationStatsCollector statsCollector_;
-	enum ClusterCommandId { kNoCommand = -1, kCmdSetDesiredLeader = 0 };
+	enum ClusterCommandId { kNoCommand = -1, kCmdSetDesiredLeader = 0, kCmdForceElections = 1 };
 
 	struct [[nodiscard]] ClusterCommand {
+		struct SetDesiredLeaderT {};
+		struct ForceElectionsT {};
+
 		ClusterCommand() = default;
-		ClusterCommand(ClusterCommandId c, int server, bool _send, std::promise<Error> p)
-			: id(c), serverId(server), send(_send), result(std::move(p)) {}
+		ClusterCommand(SetDesiredLeaderT, int server, bool _send, std::promise<Error> p)
+			: id(kCmdSetDesiredLeader), serverId(server), send(_send), result(std::move(p)) {}
+		ClusterCommand(ForceElectionsT, std::promise<Error> p) : id(kCmdForceElections), result(std::move(p)) {}
 		ClusterCommand(ClusterCommand&&) = default;
 		ClusterCommand& operator=(ClusterCommand&& other) = default;
 		ClusterCommand(ClusterCommand&) = delete;

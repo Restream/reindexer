@@ -5,6 +5,7 @@
 
 namespace reindexer {
 
+class FloatVectorsKeeper;
 class KnnCtx;
 class KnnSearchParams;
 class KnnRawResult;
@@ -89,12 +90,13 @@ public:
 	ConstFloatVectorView GetFloatVectorView(IdType) const;
 	uint64_t GetHash(IdType rowId) const { return GetFloatVectorView(rowId).Hash(); }
 	reindexer::FloatVectorDimension Dimension() const noexcept { return reindexer::FloatVectorDimension(Opts().FloatVector().Dimension()); }
-	RankedTypeQuery RankedType() const noexcept override final { return ToRankedTypeQuery(metric_); }
+	QueryRankType RankedType() const noexcept override final { return ToQueryRankType(metric_); }
 	reindexer::FloatVectorDimension FloatVectorDimension() const noexcept override final { return Dimension(); }
+	FloatVectorsKeeper& GetKeeper() const noexcept { return *keeper_; }
 	virtual StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 													const std::atomic_int32_t& cancel) noexcept = 0;
 	virtual Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVecData) = 0;
-	virtual void RebuildCentroids(float /*dataPart*/) {}
+	virtual void RebuildCentroids(float) {}
 
 private:
 	virtual SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const = 0;
@@ -113,6 +115,7 @@ private:
 	IndexMemStat memStat_;
 	Index::KeyEntry emptyValues_;
 	mutex emptyValuesInsertionMtx_;	 // Mutex for multithreading insertion into emptyValues_
+	std::shared_ptr<FloatVectorsKeeper> keeper_;
 
 protected:
 	VectorMetric metric_;

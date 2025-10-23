@@ -5,6 +5,7 @@
 #include "core/keyvalue/p_string.h"
 #include "core/queryresults/fields_filter.h"
 #include "csvbuilder.h"
+#include "field_extractor_grouping.h"
 #include "jsonbuilder.h"
 #include "msgpackbuilder.h"
 #include "protobufbuilder.h"
@@ -399,5 +400,6 @@ template class BaseEncoder<MsgPackBuilder>;
 template class BaseEncoder<ProtobufBuilder>;
 template class BaseEncoder<FieldsExtractor>;
 template class BaseEncoder<CsvBuilder>;
+template class BaseEncoder<FieldsExtractorGrouping>;
 
 }  // namespace reindexer

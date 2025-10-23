@@ -49,9 +49,9 @@ constexpr std::string_view kStorageTagsPrefix{"tags"sv};
 
 constexpr std::string_view kPKIndexName{"#pk"sv};
 
-static const std::string kTupleName{"-tuple"};
-static const std::string kStorageMetaPrefix{"meta"};
-static const std::string kFFFFFFFF{"\xFF\xFF\xFF\xFF"};
+const std::string kTupleName{"-tuple"};
+const std::string kStorageMetaPrefix{"meta"};
+const std::string kFFFFFFFF{"\xFF\xFF\xFF\xFF"};
 
 // TODO disabled due to #1771
 // constexpr int kWALStatementItemsThreshold{5};
@@ -869,6 +869,7 @@ void NamespaceImpl::clearNamespaceCaches() {
 class [[nodiscard]] NamespaceImpl::RollBack_dropIndex final : private RollBackBase {
 public:
 	explicit RollBack_dropIndex(NamespaceImpl& ns, int fieldIdx) noexcept : ns_{ns}, fieldIdx_{fieldIdx} {}
+	~RollBack_dropIndex() override { RollBack(); }
 	void RollBack() noexcept {
 		if (IsDisabled()) {
 			return;
@@ -1017,7 +1018,6 @@ void NamespaceImpl::dropIndex(const IndexDef& index, bool disableTmVersionInc) {
 		--sparseIndexesCount_;
 		rollBacker.NeedIncrementSparseIndexesCount();
 	}
-	updateFloatVectorsIndexesPositionsInCaseOfDrop(*indexToRemove, fieldIdx, rollBacker);
 
 	// Check, that index to remove is not a part of composite index
 	for (int i = indexes_.firstCompositePos(); i < indexes_.totalSize(); ++i) {
@@ -1025,6 +1025,9 @@ void NamespaceImpl::dropIndex(const IndexDef& index, bool disableTmVersionInc) {
 			throw Error(errLogic, "Cannot remove index '{}': it's a part of a composite index '{}'", index.Name(), indexes_[i]->Name());
 		}
 	}
+
+	updateFloatVectorsIndexesPositionsInCaseOfDrop(*indexToRemove, fieldIdx, rollBacker);
+
 	for (auto& namePair : indexesNames_) {
 		if (namePair.second > fieldIdx) {
 			--namePair.second;
@@ -1722,16 +1725,6 @@ int NamespaceImpl::getIndexByName(std::string_view index) const {
 	return idxIt->second;
 }
 
-int NamespaceImpl::tryGetScalarIndexByName(std::string_view index) const {
-	int idx = 0;
-	if (tryGetIndexByName(index, idx)) {
-		if (idx < indexes_.firstCompositePos()) {
-			return idx;
-		}
-	}
-	throw Error(errParams, "Index '{}' not found in '{}'", index, name_);
-}
-
 bool NamespaceImpl::tryGetIndexByName(std::string_view name, int& index) const noexcept {
 	auto it = indexesNames_.find(name);
 	if (it == indexesNames_.end()) {
@@ -1741,18 +1734,18 @@ bool NamespaceImpl::tryGetIndexByName(std::string_view name, int& index) const n
 	return true;
 }
 
-bool NamespaceImpl::tryGetIndexByNameOrJsonPath(std::string_view name, int& index) const {
+bool NamespaceImpl::tryGetIndexByNameOrJsonPath(std::string_view name, int& index, EnableMultiJsonPath multi) const {
 	if (tryGetIndexByName(name, index)) {
 		return true;
 	}
-	return tryGetIndexByJsonPath(name, index);
+	return tryGetIndexByJsonPath(name, index, multi);
 }
 
-bool NamespaceImpl::tryGetIndexByJsonPath(std::string_view name, int& index) const noexcept {
+bool NamespaceImpl::tryGetIndexByJsonPath(std::string_view name, int& index, EnableMultiJsonPath multi) const noexcept {
 	// regular indexes handling
 	auto idx = payloadType_.FieldByJsonPath(name);
 	if (idx > 0) {
-		if (payloadType_.Field(idx).JsonPaths().size() > 1) {
+		if (!multi && payloadType_.Field(idx).JsonPaths().size() > 1) {
 			return false;
 		}
 		index = idx;
@@ -1764,7 +1757,7 @@ bool NamespaceImpl::tryGetIndexByJsonPath(std::string_view name, int& index) con
 	assertrx_dbg(!field.IsIndexed() || field.IsSparse());
 	if (field.IsIndexed() && field.IsSparse()) {
 		auto& idxData = tagsMatcher_.SparseIndex(field.SparseNumber());
-		if (idxData.paths.size() > 1) {
+		if (!multi && idxData.paths.size() > 1) {
 			return false;
 		}
 		return tryGetIndexByName(idxData.name, index);
@@ -3327,11 +3320,11 @@ std::shared_ptr<const Schema> NamespaceImpl::GetSchemaPtr(const RdxContext& ctx)
 Error NamespaceImpl::SetClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx) {
 	auto wlck = simpleWLock(ctx);
 	if (isTemporary() && status.role == ClusterOperationStatus::Role::None) {
-		return Error(errParams, "Unable to set replication role 'none' to temporary namespace");
+		return {errParams, "Unable to set replication role 'none' to temporary namespace"};
 	}
 	repl_.clusterStatus = std::move(status);
 	saveReplStateToStorage(true);
-	return Error();
+	return {};
 }
 
 void NamespaceImpl::ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& ctx) {
@@ -3511,6 +3504,19 @@ void NamespaceImpl::removeExpiredStrings(RdxActivityContext* ctx) {
 	}
 }
 
+void NamespaceImpl::optimizeFloatVectorKeeper(RdxActivityContext* ctx) {
+	const RdxContext rdxCtx{ctx};
+	auto rlck = rLock(rdxCtx);
+
+	for (const auto& index : indexes_) {
+		if (index->IsFloatVector()) {
+			auto idx = dynamic_cast<FloatVectorIndex*>(index.get());
+			assertrx_dbg(idx != nullptr);
+			idx->GetKeeper().RemoveUnused();
+		}
+	}
+}
+
 void NamespaceImpl::setSchema(std::string_view schema, UpdatesContainer& pendedRepl, const NsContext& ctx) {
 	// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 	std::string_view schemaPrint(schema.data(), std::min(schema.size(), kMaxSchemaCharsToPrint));
@@ -3588,6 +3594,7 @@ void NamespaceImpl::BackgroundRoutine(RdxActivityContext* ctx) {
 		}
 	}
 	removeExpiredStrings(ctx);
+	optimizeFloatVectorKeeper(ctx);
 }
 
 void NamespaceImpl::StorageFlushingRoutine() { storage_.Flush(StorageFlushOpts()); }
@@ -3988,43 +3995,14 @@ void NamespaceImpl::replicateAsync(UpdatesContainer&& recs, const RdxContext& ct
 	}
 }
 
-std::set<std::string> NamespaceImpl::GetFTIndexes(const RdxContext& ctx) const {
+bool NamespaceImpl::IsFulltextOrVector(std::string_view indexName, const RdxContext& ctx) const {
 	auto rlck = rLock(ctx);
-	std::set<std::string> ret;
 	for (const auto& idx : indexes_) {
-		switch (idx->Type()) {
-			case IndexFastFT:
-			case IndexFuzzyFT:
-			case IndexCompositeFastFT:
-			case IndexCompositeFuzzyFT:
-				ret.insert(idx->Name());
-				break;
-			case IndexStrHash:
-			case IndexStrBTree:
-			case IndexIntBTree:
-			case IndexIntHash:
-			case IndexInt64BTree:
-			case IndexInt64Hash:
-			case IndexDoubleBTree:
-			case IndexCompositeBTree:
-			case IndexCompositeHash:
-			case IndexBool:
-			case IndexIntStore:
-			case IndexInt64Store:
-			case IndexStrStore:
-			case IndexDoubleStore:
-			case IndexTtl:
-			case IndexRTree:
-			case IndexUuidHash:
-			case IndexUuidStore:
-			case IndexVectorBruteforce:
-			case IndexHnsw:
-			case IndexIvf:
-			case IndexDummy:
-				break;
+		if (indexName == idx->Name()) {
+			return idx->IsFloatVector() || idx->IsFulltext();
 		}
 	}
-	return ret;
+	return false;
 }
 
 std::shared_ptr<const reindexer::QueryEmbedder> NamespaceImpl::QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const {

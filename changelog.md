@@ -1,3 +1,34 @@
+# Version 5.8.0 (23.10.2025)
+## Core
+- [fea] Added [new EqualPosition syntax](readme.md#search-in-array-fields-with-matching-indexes-using-grouping) to perform grouping conditions over object arrays
+- [fea] Added [MERGE support](hybrid.md#merging-queries-results) for hybrid select results
+- [fea] Optimized comparator for multifield `Distinct` (for conditions like `Distinct(field1,field2,...)`)
+- [fea] Added `Distinct` support for fulltext indexed (works the same way as `Distinct` for regular indexes)
+- [fea] Optimized selection plan for empty query results
+- [fix] Fixed error handling in `composite`-index update/delete operations
+- [fix] Fixed [DSN masking](cpp_src/readme.md#masking) in `#config`-namespace
+- [fix] Fixed token's positions in SQL parsing error descriptions
+- [fix] Fixed data race in namespaces renaming
+
+## Fulltext
+- [fea] Added extra strict validation for non-existing fields/indexes in [fulltext dsl](fulltext.md#text-query-format)
+
+## Vector indexes
+- [fea] Added vector's data sharing between multiple query results to reduce peak memory footprint for results, containing vectors
+
+## Replication
+- [fix] Fixed possible "split mind" in RAFT-cluster
+
+## Sharding
+- [fea] Added forced RAFT-leader elections request after proxying errors during `#replicationstats` request for more stable errors handling
+- [fix] Disabled sharding by vector indexes
+
+## Reindexer tool
+- [fix] Fixed interactive mode termination after error
+
+## Face
+- [fea] Added new `vectors keeper size` field to the Statistics page
+
 # Version 5.7.0 (18.09.2025)
 ## Core
 - [fea] Added support for [sorting](readme.md#sort) with array fields (i.e. `ORDER BY array_field`)

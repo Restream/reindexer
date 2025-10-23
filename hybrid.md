@@ -5,6 +5,7 @@
 - [Reranking](#reranking)
   * [Rrf](#reciprocal-rank-fusion)
   * [Linear](#linear-reranking)
+- [Merging queries results](#merging-queries-results)
 
 <!-- tocstop -->
 
@@ -76,3 +77,17 @@ where `A`, `B`, `C`, `r1` and `r2` are numeric values.
 
 Expected values range for the `rank(ft_idx)` expression is [1, 255], where 1 is the least possible fulltext rank and 255 is the highest one.
 The values range for the `rank(vec_idx)` expressions depends on the specified similarity metric. For example, in case of the `cosine`-metric it would be [-1.0, 1.0], where -1.0 corresponds to the least relevant vectors and 1.0 corresponds to the most relevant vectors.
+
+# Merging queries results
+It is possible to merge multiple queries results and sort final result by ranks calculated by their own rerankers.
+```SQL
+SELECT * FROM ns WHERE ft_idx = 'search_str' OR KNN(vec_idx, [2.4, 3.5, ...], k=100)
+   ORDER BY '30 * rank(ft_idx) + 50 * rank(vec_idx, 100.0) + 100'
+	 MERGE(
+		 SELECT * FROM ns2 WHERE ft_idx = 'search_str' AND KNN(vec_idx, [2.4, 3.5, ...], k=100)
+		    ORDER BY 'RRF(rank_const=120)'
+	 )
+	 MERGE(
+		 SELECT * FROM ns3 WHERE ft_idx = 'search_str' OR KNN(vec_idx, [2.4, 3.5, ...], k=100)
+	 )
+```

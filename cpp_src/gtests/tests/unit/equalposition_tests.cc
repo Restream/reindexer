@@ -230,7 +230,7 @@ TEST_F(EqualPositionApi, SamePosition) {
 	// Make sure processing this query leads to error
 	const Error err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_STREQ(err.what(), "equal positions fields should be unique: [a1, a1]");
+	EXPECT_STREQ(err.what(), "equal positions fields should be unique: [a1(a1), a1(a1)]");
 }
 
 // Make sure equal_position() works only with unique fields
@@ -243,7 +243,7 @@ TEST_F(EqualPositionApi, SamePositionFromSql) {
 	// Make sure processing this query leads to error
 	const Error err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
-	EXPECT_STREQ(err.what(), "equal positions fields should be unique: [a1, a1]");
+	EXPECT_STREQ(err.what(), "equal positions fields should be unique: [a1(a1), a1(a1)]");
 }
 
 TEST_F(EqualPositionApi, SelectBrackets) {

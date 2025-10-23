@@ -26,7 +26,7 @@ public:
 
 private:
 	mutex mtx_;
-	std::list<NamespaceImpl::Ptr> namespaces_;
+	elist<NamespaceImpl::Ptr> namespaces_;
 };
 
 }  // namespace reindexer
