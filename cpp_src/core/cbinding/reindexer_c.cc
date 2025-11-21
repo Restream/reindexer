@@ -154,7 +154,7 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 							 .fetchOffset = 0,
 							 .fetchLimit = INT_MAX,
 							 .withAggregations = true});
-		rx_unused = result->ser.PutResultsRaw(*result, &rawBufOut);
+		std::ignore = result->ser.PutResultsRaw(*result, &rawBufOut);
 		out->len = rawBufOut.size() ? rawBufOut.size() : result->ser.Len();
 		out->data = rawBufOut.size() ? uintptr_t(rawBufOut.data()) : uintptr_t(result->ser.Buf());
 	} else {
@@ -167,7 +167,7 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 							 .fetchOffset = 0,
 							 .fetchLimit = INT_MAX,
 							 .withAggregations = true});
-		rx_unused = result->ser.PutResults(*result, bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
+		std::ignore = result->ser.PutResults(*result, bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
 		out->len = result->ser.Len();
 		out->data = uintptr_t(result->ser.Buf());
 	}

@@ -102,7 +102,7 @@ public:
 			assertrx_dbg(locked_);
 			for (auto it = begin(), e = end(); it != e; ++it) {
 				if (iequals(it->SearchName(), name)) {
-					if rx_unlikely (!iequals(it->SearchName(), it->ImplName())) {
+					if (!iequals(it->SearchName(), it->ImplName())) [[unlikely]] {
 						throw Error(errConflict, "Unable to get namespace: '{}'/'{}' - conflicting rename is in progress", it->SearchName(),
 									it->ImplName());
 					}
@@ -206,7 +206,7 @@ public:
 		NamespaceImpl::Ptr Get(std::string_view name) {
 			for (auto it = nsList.cbegin(), e = nsList.cend(); it != e; ++it) {
 				if (iequals(it->SearchName(), name)) {
-					if rx_unlikely (!iequals(it->SearchName(), it->ImplName())) {
+					if (!iequals(it->SearchName(), it->ImplName())) [[unlikely]] {
 						throw Error(errConflict, "Unable to get namespace: '{}'/'{}' - conflicting rename is in progress", it->SearchName(),
 									it->ImplName());
 					}

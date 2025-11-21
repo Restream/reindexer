@@ -26,11 +26,12 @@ type UntaggedTxItem struct {
 }
 
 const (
-	testTxItemNs               = "test_tx_item"
-	testTxAsyncItemNs          = "test_tx_async_item"
-	testTxAsyncTimeoutItemNs   = "test_tx_async_timeout_item"
-	testTxQueryItemNs          = "test_tx_queries_item"
-	testTxConcurrentTagsItemNs = "test_tx_concurrent_tags_item"
+	testTxItemNs                  = "test_tx_item"
+	testTxAsyncItemNs             = "test_tx_async_item"
+	testTxAsyncTimeoutItemNs      = "test_tx_async_timeout_item"
+	testTxQueryItemNs             = "test_tx_queries_item"
+	testTxConcurrentTagsItemNs    = "test_tx_concurrent_tags_item"
+	testQueryTxCommitItemsCountNs = "test_query_tx_commit_items_count"
 )
 
 func init() {
@@ -39,6 +40,7 @@ func init() {
 	tnamespaces[testTxAsyncTimeoutItemNs] = TextTxItem{}
 	tnamespaces[testTxQueryItemNs] = TextTxItem{}
 	tnamespaces[testTxConcurrentTagsItemNs] = UntaggedTxItem{}
+	tnamespaces[testQueryTxCommitItemsCountNs] = UntaggedTxItem{}
 }
 
 func newUntaggedItems(itemID int64, count int) []*UntaggedTxItem {
@@ -260,4 +262,30 @@ func TestRollbackAsyncOpWithIncorrectItem(t *testing.T) {
 	err := tx.Rollback()
 
 	assert.Nil(t, err)
+}
+
+func TestQueryTxCommitItemsCount(t *testing.T) {
+	tx := newTestTx(DB, testQueryTxCommitItemsCountNs)
+
+	for id := 0; id < 10; id++ {
+		assert.NoError(t, tx.Insert(&UntaggedTxItem{
+			ID:         int64(id),
+			Data:       rand.Int63(),
+			DataString: randString(),
+		}))
+	}
+
+	for id := 5; id < 10; id++ {
+		_, err := tx.Query().Set("data", rand.Int63()).Where("id", reindexer.EQ, id).Update().FetchAll()
+		assert.NoError(t, err)
+	}
+
+	for id := 7; id < 10; id++ {
+		_, err := tx.Query().Where("id", reindexer.EQ, id).Delete()
+		assert.NoError(t, err)
+	}
+
+	count, err := tx.Commit()
+	assert.NoError(t, err)
+	assert.Equal(t, 18, count)
 }

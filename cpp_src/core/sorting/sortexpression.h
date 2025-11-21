@@ -19,8 +19,8 @@ class NamespaceResults;
 namespace SortExprFuncs {
 
 struct [[nodiscard]] Value {
-	Value(double v) : value{v} {}
-	bool operator==(const Value& other) const noexcept { return value == other.value; }
+	Value(double v) noexcept : value{v} {}
+	bool operator==(const Value& other) const noexcept { return fp::ExactlyEqual(value, other.value); }
 
 	double value;
 };
@@ -63,7 +63,9 @@ class [[nodiscard]] RankNamed {
 public:
 	explicit RankNamed(std::string fieldName, double defaultValue) noexcept
 		: fieldName_{std::move(fieldName)}, defaultValue_{defaultValue} {}
-	bool operator==(const RankNamed&) const noexcept = default;
+	bool operator==(const RankNamed& o) const noexcept {
+		return fieldName_ == o.fieldName_ && indexNo_ == o.indexNo_ && fp::ExactlyEqual(defaultValue_, o.defaultValue_);
+	}
 	const std::string& IndexName() const& noexcept { return fieldName_; }
 	std::string& IndexName() & noexcept { return fieldName_; }
 	int IndexNo() const noexcept { return indexNo_; }
@@ -84,7 +86,7 @@ public:
 	constexpr static double kDefaultRankConst = 60.0;
 	explicit Rrf(double rankConst = kDefaultRankConst) noexcept : rankConst_{rankConst} {}
 	double RankConst() const noexcept { return rankConst_; }
-	bool operator==(const Rrf&) const noexcept = default;
+	bool operator==(const Rrf& o) const noexcept { return fp::ExactlyEqual(rankConst_, o.rankConst_); }
 
 private:
 	double rankConst_;
@@ -92,7 +94,7 @@ private:
 
 class [[nodiscard]] SortHash {
 public:
-	SortHash() noexcept : seed_(std::chrono::system_clock::now().time_since_epoch().count()) {}
+	SortHash() noexcept : seed_(system_clock_w::now().time_since_epoch().count()) {}
 	SortHash(uint32_t s) noexcept : userSeed_(true), seed_(s) {}
 	constexpr bool operator==(const SortHash& other) const noexcept = default;
 	uint32_t Seed() const noexcept { return seed_; }

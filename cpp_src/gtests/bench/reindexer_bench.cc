@@ -6,6 +6,7 @@
 #include "api_tv_simple.h"
 #include "api_tv_simple_comparators.h"
 #include "api_tv_simple_sparse.h"
+#include "equalpositions.h"
 #include "geometry.h"
 #include "join_items.h"
 
@@ -34,6 +35,7 @@ int main(int argc, char** argv) {
 	Geometry geometry(DB.get(), "Geometry"sv, kItemsInBenchDataset);
 	Aggregation aggregation(DB.get(), "Aggregation"sv, kItemsInBenchDataset);
 	ApiEncDec decoding(DB.get(), "EncDec");
+	EqualPositions equalPosition(DB.get(), "EqualPositions", kItemsInBenchDataset);
 
 	auto err = apiTvSimple.Initialize();
 	if (!err.ok()) {
@@ -75,6 +77,11 @@ int main(int argc, char** argv) {
 		return err.code();
 	}
 
+	err = equalPosition.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
 	::benchmark::Initialize(&argc, argv);
 	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) {
 		return 1;
@@ -88,6 +95,7 @@ int main(int argc, char** argv) {
 	geometry.RegisterAllCases();
 	aggregation.RegisterAllCases();
 	decoding.RegisterAllCases();
+	equalPosition.RegisterAllCases();
 
 	::benchmark::RunSpecifiedBenchmarks();
 }

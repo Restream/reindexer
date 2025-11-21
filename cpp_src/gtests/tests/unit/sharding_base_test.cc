@@ -16,6 +16,7 @@
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tests/unit/csv2jsonconverter.h"
 #include "sharding_api.h"
+#include "tools/float_comparison.h"
 #include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
 
@@ -1639,7 +1640,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithActualConfigTest) {
 	for (int shardId = 0; shardId < shardsCount; ++shardId) {
 		std::next_permutation(nodeIds.begin(), nodeIds.end());
 		auto& shard = svc_[shardId];
-		rx_unused = shard[0].Get()->GetReplicationStats("cluster");	 // Await replication startup
+		std::ignore = shard[0].Get()->GetReplicationStats("cluster");  // Await replication startup
 		for (size_t i = 0; i < nodeIds.size(); ++i) {
 			const bool useIncorrectCfg = (i != nodeIds.size() - 1);
 			auto& localCfg = useIncorrectCfg ? configIncorrect : config;
@@ -3457,7 +3458,7 @@ private:
 	int impl(reindexer::client::QueryResults::Iterator& it, std::index_sequence<I...>) {
 		const double r = func_(getField<Ts>(fields_[I], it)...);
 		int result = 0;
-		if (prevResult_ && *prevResult_ != r) {
+		if (prevResult_ && !fp::EqualWithinULPs(*prevResult_, r)) {
 			result = *prevResult_ < r ? 1 : -1;
 		}
 		prevResult_ = r;
@@ -3500,6 +3501,7 @@ TEST_F(ShardingApi, OrderBy) {
 	Init(std::move(cfg));
 	const size_t tableSize = rand() % 200 + 1;
 	Fill(default_namespace, 0, 0, tableSize);
+
 	struct [[nodiscard]] SortCase {
 		std::string expression;
 		std::variant<std::vector<int>, std::vector<std::string>, std::vector<std::tuple<int, std::string>>,
@@ -3768,6 +3770,7 @@ TEST_F(ShardingApi, OrderBy) {
 			for (auto i = testCases.begin(), e = testCases.end(); i != e; ++i) {
 				const int result = i->sort.test(it);
 				if (prevResult == 0) {
+					SCOPED_TRACE(fmt::format("desc: {}; result: {}", i->desc, result));
 					EXPECT_TRUE(i->desc ? result <= 0 : result >= 0)
 						<< "NS SIZE: " << tableSize << "; " << sql << "\nPrevious Item: " << prevIt.GetItem().GetJSON()
 						<< "\nCurrent  Item: " << it.GetItem().GetJSON();

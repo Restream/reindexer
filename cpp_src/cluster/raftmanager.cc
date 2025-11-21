@@ -50,7 +50,7 @@ std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 		const int nextLeaderId = voting_.GetDesiredLeaderId();
 		const bool isDesiredLeader = (nextLeaderId == serverId_);
 		if (!isDesiredLeader && nextLeaderId != -1) {
-			rx_unused = endElections(-1, roundBeg, RaftInfo::Role::Follower);
+			std::ignore = endElections(-1, roundBeg, RaftInfo::Role::Follower);
 			logInfo("{}: Skipping elections (desired leader id is {})", serverId_, nextLeaderId);
 			return RaftInfo::Role::Follower;
 		}
@@ -88,7 +88,7 @@ std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 					while (succeedRoutines.size()) {
 						std::swap(succeedRoutinesTmp, succeedRoutines);
 						for (auto routine : succeedRoutinesTmp) {
-							rx_unused = coroutine::resume(routine);
+							std::ignore = coroutine::resume(routine);
 						}
 						succeedRoutinesTmp.clear();
 					}

@@ -172,8 +172,8 @@ static void searchRaw(const IVFSearchArgsKnn& args, const auto& map, const auto&
 		}
 		id = prepareId(id);
 	}
-	rx_unused = ids.erase(ids.begin() + i, ids.end());
-	rx_unused = dists.erase(dists.begin() + i, dists.end());
+	std::ignore = ids.erase(ids.begin() + i, ids.end());
+	std::ignore = dists.erase(dists.begin() + i, dists.end());
 }
 
 static void searchRaw(const IVFSearchArgsKnn& args, const faiss::IndexIVFFlat& map) {
@@ -483,7 +483,7 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 																	const std::atomic_int32_t& cancel) noexcept {
 	auto res = StorageCacheWriteResult{.err = {}, .isCacheable = map_ ? true : false};
 
-	if rx_unlikely (!getPK) {
+	if (!getPK) [[unlikely]] {
 		res.err = Error(errParams, "IvfIndex::WriteIndexCache:{}: PK getter is nullptr", Name());
 		return res;
 	}
@@ -501,7 +501,7 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 			return nitems;
 		}
 		void AppendPKByID(faiss::idx_t id) override {
-			if rx_unlikely (id < 0 || id > std::numeric_limits<IdType>::max()) {
+			if (id < 0 || id > std::numeric_limits<IdType>::max()) [[unlikely]] {
 				throw Error(errLogic, "IvfIndex::WriteIndexCache:{}: internal id {} is out of range", name, id);
 			}
 			writePK(IdType(id));
@@ -534,7 +534,7 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 }
 
 Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData) {
-	if rx_unlikely (!getVectorData) {
+	if (!getVectorData) [[unlikely]] {
 		return Error(errParams, "IvfIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
 	}
 

@@ -1,4 +1,5 @@
 #include "core/ft/ftdsl.h"
+#include "tools/float_comparison.h"
 
 namespace reindexer {
 
@@ -108,7 +109,7 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 	wchar_t groupQuote = '\'';
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
 	std::string utf8str;
-	rx_unused = fieldsOpts.insert(fieldsOpts.cend(), std::max(int(fields_.size()), 1), {1.0, false});
+	std::ignore = fieldsOpts.insert(fieldsOpts.cend(), std::max(int(fields_.size()), 1), {1.0, false});
 
 	while (*str) {
 		while (*str && needToSkip(*str, splitOptions_)) {
@@ -284,11 +285,11 @@ void FtDSLQuery::parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_v
 
 	std::string fname = utf16_to_utf8(std::wstring_view(beg, std::distance(beg, end)));
 	auto f = fields_.find(fname);
-	if rx_unlikely (f == fields_.end()) {
+	if (f == fields_.end()) [[unlikely]] {
 		throw Error(errLogic, "Field '{}' is not included into fulltext index", fname);
 	}
 	// No reason to handle other strcit modes here: non-existing fields are already forbidden
-	if rx_unlikely (strictMode_ == StrictModeIndexes && !f->second.isIndexed) {
+	if (strictMode_ == StrictModeIndexes && !f->second.isIndexed) [[unlikely]] {
 		throw Error(errStrictMode,
 					"Field '{}' in fulltext DSL is not indexed. With current strict mode all explicit fields in DSL must be indexed",
 					fname);
@@ -314,7 +315,7 @@ void FtDSLQuery::parseFieldsOpts(wchar_t*& str, h_vector<FtDslFieldOpts, 8>& fie
 	}
 
 	for (auto& fo : fieldsOpts) {
-		if (fo.boost == 0.0) {
+		if (fp::IsZero(fo.boost)) {
 			fo = defFieldOpts;
 		}
 	}

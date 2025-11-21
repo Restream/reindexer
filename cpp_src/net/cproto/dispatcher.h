@@ -122,7 +122,7 @@ public:
 	/// Handle RPC from the context
 	/// @param ctx - RPC context
 	Error Handle(Context& ctx) {
-		if rx_likely (uint32_t(ctx.call->cmd) < uint32_t(handlers_.size())) {
+		if (uint32_t(ctx.call->cmd) < uint32_t(handlers_.size())) [[likely]] {
 			for (auto& middleware : middlewares_) {
 				auto ret = middleware(ctx);
 				if (!ret.ok()) {
@@ -130,7 +130,7 @@ public:
 				}
 			}
 			auto handler = handlers_[ctx.call->cmd];
-			if rx_likely (handler) {
+			if (handler) [[likely]] {
 				return handler(ctx);
 			}
 		}
@@ -146,11 +146,11 @@ private:
 
 	template <typename T, std::enable_if_t<!is_optional<T>::value, int> = 0>
 	static T get_arg(const Args& args, size_t index, const Context& ctx) {
-		if rx_unlikely (index >= args.size()) {
+		if (index >= args.size()) [[unlikely]] {
 			throw Error(errParams, "Invalid args of {} call; argument {} is not submitted", CmdName(ctx.call->cmd),
 						static_cast<int>(index));
 		}
-		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<T>())) {
+		if (!args[index].Type().IsSame(KeyValueType::From<T>())) [[unlikely]] {
 			throw Error(errLogic, "Incorrect variant type of {} call, argument index {}, type '{}', expected type '{}'",
 						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(), KeyValueType::From<T>().Name());
 		}
@@ -158,7 +158,7 @@ private:
 	}
 	template <typename T, std::enable_if_t<is_optional<T>::value, int> = 0>
 	static T get_arg(const Args& args, size_t index, const Context& ctx) {
-		if rx_unlikely (index >= args.size()) {
+		if (index >= args.size()) [[unlikely]] {
 #if !defined(__clang__) && defined(__GNUC__) && __GNUC__ == 9
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
@@ -168,7 +168,7 @@ private:
 #pragma GCC diagnostic pop
 #endif
 		}
-		if rx_unlikely (!args[index].Type().IsSame(KeyValueType::From<typename T::value_type>())) {
+		if (!args[index].Type().IsSame(KeyValueType::From<typename T::value_type>())) [[unlikely]] {
 			throw Error(errLogic, "Incorrect variant type of {} call, argument index {}, type '{}', optional expected type '{}'",
 						CmdName(ctx.call->cmd), static_cast<int>(index), args[index].Type().Name(),
 						KeyValueType::From<typename T::value_type>().Name());

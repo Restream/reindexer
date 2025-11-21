@@ -49,8 +49,12 @@ void FuzzyIndexText<T>::commitFulltextImpl() {
 #else
 		this->vdocs_.push_back({doc.second.get(), {}, {}});
 #endif
-		for (auto& r : res) {
-			engine_.AddData(r.first, this->vdocs_.size() - 1, r.second, this->cfg_->splitOptions);
+		for (size_t idx = 0, arrayIdx = 0; idx < res.size(); ++idx, ++arrayIdx) {
+			const unsigned field = res[idx].second;
+			if (idx > 0 && field != res[idx - 1].second) {
+				arrayIdx = 0;
+			}
+			engine_.AddData(res[idx].first, this->vdocs_.size() - 1, field, arrayIdx, this->cfg_->splitOptions);
 		}
 	}
 	engine_.Commit();

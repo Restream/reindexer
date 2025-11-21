@@ -22,15 +22,15 @@ protected:
 	std::string ConditionStr() const;
 	RX_ALWAYS_INLINE bool Compare(const Variant& v) const {
 		if constexpr (Cond == CondEq) {
-			return v.RelaxCompare<WithString::Yes, NotComparable::Return>(value_) == ComparationResult::Eq;
+			return v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_) == ComparationResult::Eq;
 		} else if constexpr (Cond == CondLt) {
-			return v.RelaxCompare<WithString::Yes, NotComparable::Return>(value_) == ComparationResult::Lt;
+			return v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_) == ComparationResult::Lt;
 		} else if constexpr (Cond == CondLe) {
-			return v.RelaxCompare<WithString::Yes, NotComparable::Return>(value_) & ComparationResult::Le;
+			return v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_) & ComparationResult::Le;
 		} else if constexpr (Cond == CondGt) {
-			return v.RelaxCompare<WithString::Yes, NotComparable::Return>(value_) == ComparationResult::Gt;
+			return v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_) == ComparationResult::Gt;
 		} else if constexpr (Cond == CondGe) {
-			return v.RelaxCompare<WithString::Yes, NotComparable::Return>(value_) & ComparationResult::Ge;
+			return v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_) & ComparationResult::Ge;
 		} else {
 			static_assert(Cond == CondEq || Cond == CondLt || Cond == CondLe || Cond == CondGt || Cond == CondGe);
 		}
@@ -47,8 +47,8 @@ protected:
 
 	std::string ConditionStr() const;
 	RX_ALWAYS_INLINE bool Compare(const Variant& v) const {
-		return (v.RelaxCompare<WithString::Yes, NotComparable::Return>(value1_) & ComparationResult::Ge) &&
-			   (v.RelaxCompare<WithString::Yes, NotComparable::Return>(value2_) & ComparationResult::Le);
+		return (v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value1_) & ComparationResult::Ge) &&
+			   (v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value2_) & ComparationResult::Le);
 	}
 
 private:
@@ -215,11 +215,11 @@ public:
 	std::string ConditionStr() const;
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
-		if rx_unlikely (buffer_.IsObjectValue()) {
+		if (buffer_.IsObjectValue()) [[unlikely]] {
 			return false;
 		}
 		for (const Variant& v : buffer_) {
-			if rx_unlikely (v.IsNullValue()) {
+			if (v.IsNullValue()) [[unlikely]] {
 				return true;
 			}
 		}
@@ -545,6 +545,7 @@ public:
 	reindexer::IsDistinct IsDistinct() const noexcept {
 		return std::visit([](auto& impl) { return impl.IsDistinct(); }, impl_);
 	}
+	bool IsIndexed() const noexcept { return false; }
 
 private:
 	using ImplVariantType = comparators::ComparatorNotIndexedVariant;

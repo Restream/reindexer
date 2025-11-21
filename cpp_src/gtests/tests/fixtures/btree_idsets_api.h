@@ -11,7 +11,8 @@ public:
 
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
 												   IndexDeclaration{kFieldOne, "hash", "string", IndexOpts(), 0},
-												   IndexDeclaration{kFieldTwo, "hash", "int", IndexOpts(), 0}});
+												   IndexDeclaration{kFieldTwo, "hash", "int", IndexOpts(), 0},
+												   IndexDeclaration{kFieldFour, "tree", "int", IndexOpts().Sparse(), 0}});
 
 		DefineNamespaceDataset(joinedNsName, {IndexDeclaration{kFieldIdFk, "hash", "int", IndexOpts().PK(), 0},
 											  IndexDeclaration{kFieldThree, "hash", "int", IndexOpts(), 0}});
@@ -32,6 +33,13 @@ protected:
 			item[kFieldId] = i;
 			item[kFieldOne] = currStrValue;
 			item[kFieldTwo] = currIntValue;
+
+			if (i % 2 == 0) {
+				item[kFieldFour] = currIntValue;
+			} else {
+				// Null value for Sparse field.
+				item[kFieldFour] = Variant();
+			}
 
 			Upsert(default_namespace, item);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
@@ -71,6 +79,7 @@ protected:
 	const char* kFieldTwo = "f2";
 	const char* kFieldIdFk = "id_fk";
 	const char* kFieldThree = "f3";
+	const char* kFieldFour = "f4";
 
 	std::string lastStrValue;
 

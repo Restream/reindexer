@@ -32,12 +32,13 @@ private:
 	Context initState(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser,
 					  const Payload* pl, FieldModifyMode mode, FloatVectorsHolderVector&);
 	bool updateFieldInTuple(Context& ctx);
-	bool dropFieldInTuple(Context& ctx);
+	bool dropFieldInTuple(Context&, JustCopy);
 	bool buildCJSON(Context& ctx);
 	bool needToInsertField(const Context& ctx) const;
 	void insertField(Context& ctx) const;
 	void embedFieldValue(TagType, int field, Context& ctx, size_t idx) const;
 	void updateObject(Context&, TagName) const;
+	void updateArrayItem(TagType arrayType, const Variant& newValue, Context&) const;
 	void writeCTag(const ctag& tag, Context& ctx);
 	void updateArray(TagType atagType, uint32_t count, TagName, Context&);
 	void copyArray(TagName, Context&);

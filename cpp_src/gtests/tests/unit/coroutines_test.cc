@@ -378,7 +378,7 @@ TEST(Coroutines, FIFOChannels) {
 		launchOrder.emplace_back(current());
 		ch.push(kValue);
 		terminationOrder.emplace_back(current());
-		rx_unused = chEnd.pop();
+		std::ignore = chEnd.pop();
 	});
 	constexpr unsigned kPushRountinesBatch = 5;
 	constexpr unsigned kIntermediateReadSize = 2;

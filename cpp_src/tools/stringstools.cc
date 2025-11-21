@@ -2,7 +2,6 @@
 #include "atoi/atoi.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/uuid.h"
-#include "estl/one_of.h"
 #include "fmt/compile.h"
 #include "frozen_str_tools.h"
 #include "itoa/itoa.h"
@@ -55,6 +54,15 @@ static std::string_view urldecode2(char* buf, std::string_view str) {
 	}
 	*dst = '\0';
 	return std::string_view(buf, dst - buf);
+}
+
+static bool isHexDigit(char c) { return (c >= '0' && c <= '9') || ((c & ~' ') >= 'A' && (c & ~' ') <= 'F'); }
+
+static int charToInt(char c) {
+	if (c <= '9') {
+		return c - '0';
+	}
+	return (c & ~' ') - 'A' + 10;
 }
 
 // Sat Jul 15 14 : 18 : 56 2017 GMT
@@ -208,30 +216,84 @@ std::string toLower(std::string_view src) {
 std::string escapeString(std::string_view str) {
 	std::string dst;
 	dst.reserve(str.length());
-	for (auto ch : str) {
-		if (ch < 0x20 || unsigned(ch) >= 0x80 || ch == '\\') {
-			char tmpbuf[16];
-			snprintf(tmpbuf, sizeof(tmpbuf), "\\%02X", unsigned(ch) & 0xFF);
-			dst += tmpbuf;
-		} else {
-			dst.push_back(ch);
-		}
-	}
+	std::ignore = escapeString(str.begin(), str.end(), std::back_inserter(dst), AddQuotes_False);
 	return dst;
 }
 
 std::string unescapeString(std::string_view str) {
 	std::string dst;
 	dst.reserve(str.length());
-	for (auto it = str.begin(); it != str.end(); it++) {
-		if (*it == '\\' && ++it != str.end() && it + 1 != str.end()) {
-			char tmpbuf[16], *endp;
-			tmpbuf[0] = *it++;
-			tmpbuf[1] = *it;
-			tmpbuf[2] = 0;
-			dst += char(strtol(tmpbuf, &endp, 16));
+
+	for (size_t i = 0; i < str.length(); ++i) {
+		if (str[i] == '\\' && i + 1 < str.length()) {
+			++i;
+			switch (str[i]) {
+				case '"':
+					dst.push_back('"');
+					break;
+				case '\\':
+					dst.push_back('\\');
+					break;
+				case '/':
+					dst.push_back('/');
+					break;
+				case 'b':
+					dst.push_back('\b');
+					break;
+				case 'f':
+					dst.push_back('\f');
+					break;
+				case 'n':
+					dst.push_back('\n');
+					break;
+				case 'r':
+					dst.push_back('\r');
+					break;
+				case 't':
+					dst.push_back('\t');
+					break;
+				case 'u':
+					if (i + 4 < str.length()) {
+						bool is_valid_hex = true;
+						unsigned int code = 0;
+						size_t curr_pos = i;
+
+						for (int j = 0; j < 4; ++j) {
+							char digit = str[++curr_pos];
+							if (stringtools_impl::isHexDigit(digit)) {
+								code = code * 16 + stringtools_impl::charToInt(digit);
+							} else {
+								is_valid_hex = false;
+								break;
+							}
+						}
+
+						if (is_valid_hex && code > 0 && code <= 0xFFFF) {
+							if (code < 0x80) {
+								dst += static_cast<char>(code);
+							} else if (code < 0x800) {
+								dst += static_cast<char>(0xC0 | (code >> 6));
+								dst += static_cast<char>(0x80 | (code & 0x3F));
+							} else {
+								dst += static_cast<char>(0xE0 | (code >> 12));
+								dst += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+								dst += static_cast<char>(0x80 | (code & 0x3F));
+							}
+							i = curr_pos;
+						} else {
+							dst += "\\u";
+						}
+					} else {
+						dst += "\\u";
+					}
+					break;
+				default:
+					dst.push_back('\\');
+					dst.push_back(str[i]);
+					break;
+			}
 		} else {
-			dst.push_back(*it);
+			dst.push_back(str[i]);
 		}
 	}
 	return dst;
@@ -303,8 +365,8 @@ Variant stringToVariant(std::string_view value) {
 		[value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
 		[value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
 		[value](KeyValueType::Uuid) { return Variant{Uuid{value}}; },
-		[](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
-				 KeyValueType::FloatVector>) noexcept { return Variant(); });
+		[](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+						   KeyValueType::FloatVector> auto) noexcept { return Variant(); });
 }
 
 void utf8_to_utf16(std::string_view src, std::wstring& dst) {

@@ -140,6 +140,7 @@ public:
 
 	virtual IndexPerfStat GetIndexPerfStat();
 	virtual void ResetIndexPerfStat();
+
 	virtual bool HoldsStrings() const noexcept = 0;
 	virtual void DestroyCache() {}
 	virtual void ClearCache() {}

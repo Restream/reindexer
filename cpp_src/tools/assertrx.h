@@ -1,7 +1,5 @@
 #pragma once
 
-#include "estl/defines.h"
-
 namespace reindexer {
 
 [[noreturn]] void fail_throwrx(const char* assertion, const char* file, unsigned line, const char* function) noexcept(false);
@@ -20,8 +18,14 @@ namespace reindexer {
 [[noreturn]] void fail_assertrx(const char* assertion, const char* file, unsigned line, const char* function) noexcept;
 
 #ifdef __cplusplus
-#define assertrx(expr) (rx_likely(expr) ? void(0) : reindexer::fail_assertrx(#expr, __FILE__, __LINE__, __FUNCTION__))
-#define assertrx_throw(expr) (rx_likely(expr) ? void(0) : throw_assert(expr))
+#define assertrx(expr)                                                     \
+	if (!(expr)) [[unlikely]] {                                            \
+		reindexer::fail_assertrx(#expr, __FILE__, __LINE__, __FUNCTION__); \
+	}
+#define assertrx_throw(expr)    \
+	if (!(expr)) [[unlikely]] { \
+		throw_assert(expr);     \
+	}
 #endif	// __cplusplus
 
 #ifndef RX_WITH_STDLIB_DEBUG

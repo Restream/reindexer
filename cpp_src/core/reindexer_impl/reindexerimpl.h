@@ -126,7 +126,7 @@ public:
 	Error GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const RdxContext& ctx) noexcept;
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& ctx) noexcept;
 	Error Status() noexcept {
-		if rx_likely (connected_.load(std::memory_order_acquire)) {
+		if (connected_.load(std::memory_order_acquire)) [[likely]] {
 			return {};
 		}
 		return {errNotValid, "DB is not connected"};

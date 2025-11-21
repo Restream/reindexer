@@ -4,6 +4,7 @@
 #include "tagsmatcher.h"
 
 #include "core/nsselecter/comparator/equalposition_comparator.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -22,6 +23,14 @@ public:
 	FieldsExtractorGrouping() noexcept = default;
 	FieldsExtractorGrouping(FieldsExtractorGroupingState state) noexcept : state_(state) {}
 
+	FieldsExtractorGrouping Object(TagIndex) {
+		FieldsExtractorGroupingState stateNew = state_;
+		if (stateNew.isArrayLevel) {
+			stateNew.isArrayLevel = false;
+			(*stateNew.arrayIndex)++;
+		}
+		return FieldsExtractorGrouping(stateNew);
+	}
 	FieldsExtractorGrouping Object(TagName tag = TagName::Empty()) {
 		FieldsExtractorGroupingState stateNew = state_;
 		if (tag == TagName::Empty()) {	// start object or arrayelement
@@ -56,28 +65,32 @@ public:
 		return FieldsExtractorGrouping(stateNew);
 	}
 
+	FieldsExtractorGrouping Array(TagIndex) {
+		assertrx_throw(false && "not implemented");
+		return *this;
+	}
 	FieldsExtractorGrouping Array(std::string_view) {
 		assertrx_throw(false && "not implemented");
 		return *this;
 	}
 
 	template <typename T>
-	void Array(TagName tag, std::span<T> data, unsigned) {
+	void Array(concepts::TagNameOrIndex auto tag, std::span<T> data, unsigned) {
 		auto getValue = [&data](size_t i) -> Variant { return Variant(data[i]); };
-		rx_unused = processArray(data.size(), tag, getValue);
+		std::ignore = processArray(data.size(), tag, getValue);
 	}
 
-	void Array(TagName tag, Serializer& ser, TagType tagType, int count) {
+	void Array(concepts::TagNameOrIndex auto tag, Serializer& ser, TagType tagType, int count) {
 		const KeyValueType kvt{tagType};
 		auto getValue = [&kvt, &ser](size_t) -> Variant { return ser.GetRawVariant(kvt); };
 		if (!processArray(count, tag, getValue)) {
 			for (int i = 0; i < count; ++i) {
-				rx_unused = ser.GetRawVariant(kvt);
+				std::ignore = ser.GetRawVariant(kvt);
 			}
 		}
 	}
 
-	FieldsExtractorGrouping& Put(TagName tag, Variant arg, int) {
+	void Put(TagName tag, Variant arg, int) {
 		if (state_.isTargetValue) {
 			resizeValue(*state_.arrayIndex);
 			(*state_.values)[*state_.arrayIndex - 1].emplace_back(std::move(arg));
@@ -90,14 +103,18 @@ public:
 			resizeValue(*state_.arrayIndex);
 			(*state_.values)[*state_.arrayIndex - 1].emplace_back(std::move(arg));
 		}
-		return *this;
 	}
 
 	template <typename T>
-	FieldsExtractorGrouping& Put(TagName tag, const T& arg, int offset) {
+	void Put(TagName tag, const T& arg, int offset) {
 		return Put(tag, Variant{arg}, offset);
 	}
-	FieldsExtractorGrouping& Null(TagName = TagName::Empty()) noexcept { return *this; }
+	template <typename T>
+	void Put(TagIndex, const T&, int) {
+		assertrx_throw(false && "not implemented");
+	}
+	void Null(TagName = TagName::Empty()) noexcept {}
+	void Null(TagIndex) noexcept {}
 	void SetTagsMatcher(const TagsMatcher*) noexcept {}
 
 private:
@@ -138,6 +155,12 @@ private:
 				return true;
 			}
 		}
+		return false;
+	}
+
+	template <typename T>
+	bool processArray(size_t, TagIndex, T&) {
+		assertrx_throw(false && "not implemented");
 		return false;
 	}
 };

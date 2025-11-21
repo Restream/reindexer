@@ -67,7 +67,7 @@ public:
 		for (size_t i = 0; i < 10; ++i) {
 			int from = random() % 500 + 1;
 			int till = random() % 5000 + (from + 1);
-			rx_unused = rt.Select(Query(default_namespace).Where("id", CondGe, from).Where("id", CondLe, till));
+			std::ignore = rt.Select(Query(default_namespace).Where("id", CondGe, from).Where("id", CondLe, till));
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(200));
 		}

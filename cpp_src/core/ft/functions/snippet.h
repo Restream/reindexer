@@ -1,7 +1,9 @@
 #pragma once
 
+#include "areas_sorter.h"
 #include "core/ft/areaholder.h"
 #include "core/ft/ft_fast/splitter.h"
+#include "core/keyvalue/variant.h"
 
 namespace reindexer {
 
@@ -10,7 +12,7 @@ class PayloadType;
 class ItemRef;
 class key_string;
 
-class [[nodiscard]] Snippet {
+class [[nodiscard]] Snippet : private AreasSorter {
 public:
 	bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder);
 
@@ -30,7 +32,7 @@ private:
 			  leftBound_(leftBound),
 			  rightBound_(rightBound) {}
 		template <typename A>
-		A RecalcZoneToOffset(const Area& area);
+		A RecalcZoneToOffset(const std::pair<unsigned, unsigned>& area);
 
 	private:
 		std::string_view str_;
@@ -43,9 +45,10 @@ private:
 		std::string_view leftBound_, rightBound_;
 	};
 
-	void buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, std::string_view data, std::string& resultString);
-	void buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, std::string_view data,
-							   std::string& resultString);
+	void buildResult(RecalcZoneHelper& recalcZoneHelper, const h_vector<std::pair<unsigned, unsigned>, 10>& areas, std::string_view data,
+					 std::string& resultString);
+	void buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const h_vector<std::pair<unsigned, unsigned>, 10>& areas,
+							   std::string_view data, std::string& resultString);
 
 	bool isInit_ = false;
 	bool needAreaStr_ = false;
@@ -57,6 +60,7 @@ private:
 	std::string_view markerBefore_;
 	std::string_view markerAfter_;
 	h_vector<Area, 10> zonesList_;
+	VariantArray plArr_;
 };
 
 class [[nodiscard]] SnippetN : public Snippet {};

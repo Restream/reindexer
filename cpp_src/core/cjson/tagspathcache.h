@@ -5,6 +5,7 @@
 #include <span>
 #include "core/enums.h"
 #include "core/key_value_type.h"
+#include "core/tag_name_index.h"
 #include "estl/h_vector.h"
 #include "tools/assertrx.h"
 

@@ -17,7 +17,7 @@ namespace search_engine {
 class [[nodiscard]] BaseSearcher {
 public:
 	void AddSearcher(reindexer::ITokenFilter::Ptr&& searcher);
-	void AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, const IdType id, int field,
+	void AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, const IdType id, unsigned field, unsigned arrayIdx,
 				  const reindexer::SplitOptions& splitOptions);
 	SearchResult Compare(const BaseHolder::Ptr& holder, const reindexer::FtDSLQuery& dsl, bool inTransaction, const reindexer::RdxContext&);
 

@@ -16,7 +16,7 @@ protected:
 
 TEST_P(FTStressApi, BasicStress) {
 	const std::string kStorage = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_FTApi/BasicStress");
-	rx_unused = reindexer::fs::RmDirAll(kStorage);
+	std::ignore = reindexer::fs::RmDirAll(kStorage);
 	Init(GetDefaultConfig(), NS1, kStorage);
 
 	std::vector<std::string> data;
@@ -35,7 +35,7 @@ TEST_P(FTStressApi, BasicStress) {
 	std::atomic<bool> terminate = false;
 	std::thread statsThread([&] {
 		while (!terminate) {
-			rx_unused = rt.Select(reindexer::Query(reindexer::kMemStatsNamespace));
+			std::ignore = rt.Select(reindexer::Query(reindexer::kMemStatsNamespace));
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 	});
@@ -68,7 +68,7 @@ TEST_P(FTStressApi, BasicStress) {
 
 TEST_P(FTStressApi, ConcurrencyCheck) {
 	const std::string kStorage = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_FTApi/ConcurrencyCheck");
-	rx_unused = reindexer::fs::RmDirAll(kStorage);
+	std::ignore = reindexer::fs::RmDirAll(kStorage);
 	Init(GetDefaultConfig(), NS1, kStorage);
 
 	Add("Her nose was very very long"sv);
@@ -94,7 +94,7 @@ TEST_P(FTStressApi, ConcurrencyCheck) {
 				cv.wait(lck, [&] { return ready; });
 				lck.unlock();
 				while (!terminate) {
-					rx_unused = rt.Select(reindexer::Query(reindexer::kMemStatsNamespace));
+					std::ignore = rt.Select(reindexer::Query(reindexer::kMemStatsNamespace));
 				}
 			});
 		} else {

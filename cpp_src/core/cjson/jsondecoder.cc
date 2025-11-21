@@ -1,9 +1,11 @@
 #include "jsondecoder.h"
+#include <string_view>
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
 #include "core/keyvalue/float_vectors_holder.h"
 #include "sparse_validator.h"
 #include "tagsmatcher.h"
+#include "tools/assertrx.h"
 #include "tools/flagguard.h"
 #include "tools/json2kv.h"
 #include "tools/serializer.h"
@@ -66,21 +68,24 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 						pl.Set(indexNumber, std::move(value));
 						builder.ArrayRef(tagName, indexNumber, int(count));
 					} else {
-						if rx_unlikely (!f.IsArray()) {
+						if (!f.IsArray()) [[unlikely]] {
 							throwUnexpectedArrayError(f.Name(), f.Type(), kJSONFmt);
 						}
-						int count = 0;
-						for (auto& subelem : elem.value) {
-							(void)subelem;
-							++count;
+						const auto [isHetero, outterSize, fullSize] = analizeHeteroArray(elem.value);
+						validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), fullSize, kJSONFmt);
+						int pos = pl.ResizeArray(indexNumber, fullSize, Append_True);
+						if (isHetero) {
+							builder.HeteroArray(tagName, outterSize);
+							decodeHeteroArray(pl, builder, elem.value, indexNumber, pos, f.Type(), f.Name());
+						} else {
+							assertrx(outterSize == fullSize);
+							for (auto& subelem : elem.value) {
+								pl.Set(
+									indexNumber, pos++,
+									jsonValue2Variant(subelem.value, f.Type(), f.Name(), nullptr, ConvertToString_False, ConvertNull_True));
+							}
+							builder.ArrayRef(tagName, indexNumber, outterSize);
 						}
-						validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), count, kJSONFmt);
-						int pos = pl.ResizeArray(indexNumber, count, Append_True);
-						for (auto& subelem : elem.value) {
-							pl.Set(indexNumber, pos++,
-								   jsonValue2Variant(subelem.value, f.Type(), f.Name(), nullptr, ConvertToString_False, ConvertNull_True));
-						}
-						builder.ArrayRef(tagName, indexNumber, count);
 					}
 					break;
 				case gason::JsonTag::JSON_NULL:
@@ -117,6 +122,54 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 			// objectScalarIndexes_.set(field); - do not change objectScalarIndexes_ value for the filtered out fields
 		}
 		tagsPath_.pop_back();
+	}
+}
+
+JsonDecoder::HeteroArrayAnalizeResult JsonDecoder::analizeHeteroArray(const gason::JsonValue& array) const {
+	HeteroArrayAnalizeResult result;
+	for (const auto& v : array) {
+		++result.outterSize_;
+		if (v.isArray()) {
+			result.isHetero_ = true;
+			result.fullSize_ += analizeHeteroArray(v.value).fullSize_;
+		} else {
+			++result.fullSize_;
+		}
+	}
+	return result;
+}
+
+JsonDecoder::HeteroArrayFastAnalizeResult JsonDecoder::fastAnalizeHeteroArray(const gason::JsonValue& array) const {
+	HeteroArrayFastAnalizeResult result;
+	for (const auto& v : array) {
+		++result.outterSize_;
+		if (v.isArray()) {
+			result.isHetero_ = true;
+		}
+	}
+	return result;
+}
+
+void JsonDecoder::decodeHeteroArray(Payload& pl, CJsonBuilder& builder, const gason::JsonValue& array, int indexNumber, int& pos,
+									KeyValueType fieldType, std::string_view fieldName) const {
+	for (const auto& elem : array) {
+		if (elem.isArray()) {
+			const auto [isHetero, size] = fastAnalizeHeteroArray(elem.value);
+			if (isHetero) {
+				builder.HeteroArray(TagName::Empty(), size);
+				decodeHeteroArray(pl, builder, elem.value, indexNumber, pos, fieldType, fieldName);
+			} else {
+				for (const auto& subElem : elem.value) {
+					pl.Set(indexNumber, pos++,
+						   jsonValue2Variant(subElem.value, fieldType, fieldName, nullptr, ConvertToString_False, ConvertNull_True));
+				}
+				builder.ArrayRef(TagName::Empty(), indexNumber, size);
+			}
+		} else {
+			pl.Set(indexNumber, pos++,
+				   jsonValue2Variant(elem.value, fieldType, fieldName, nullptr, ConvertToString_False, ConvertNull_True));
+			builder.Ref(TagName::Empty(), fieldType, indexNumber);
+		}
 	}
 }
 
@@ -195,19 +248,7 @@ void JsonDecoder::decodeJsonSparse(Payload* pl, CJsonBuilder& builder, const gas
 		case gason::JsonTag::ARRAY: {
 			auto arrayElementsValidation = validator.Array();
 			CounterGuardIR32 g(arrayLevel_);
-			const ObjType arrType = (gason::isHomogeneousArray(v)) ? ObjType::TypeArray : ObjType::TypeObjectArray;
-			auto arrNode = builder.Array(tagName, arrType);
-			for (const auto& elem : v) {
-				if (elem.value.getTag() == gason::JsonTag::OBJECT) {
-					decodeJson(pl, arrNode, elem.value, TagName::Empty(), floatVectorsHolder, matched);
-					rx_unused = arrayElementsValidation.Elem();
-				} else {
-					Variant value = jsonValue2Variant(elem.value, arrayElementsValidation.Type(), arrayElementsValidation.Name(), nullptr,
-													  ConvertToString_True, ConvertNull_False);
-					arrayElementsValidation.Elem()(value);
-					arrNode.Put(TagName::Empty(), value);
-				}
-			}
+			decodeJsonArraySparse(pl, builder, v, tagName, floatVectorsHolder, matched, arrayElementsValidation);
 			break;
 		}
 		case gason::JsonTag::OBJECT: {
@@ -222,6 +263,27 @@ void JsonDecoder::decodeJsonSparse(Payload* pl, CJsonBuilder& builder, const gas
 		case gason::JsonTag::EMPTY:
 		default:
 			throw Error(errLogic, "Unexpected '{}' tag", jsonTag);
+	}
+}
+
+void JsonDecoder::decodeJsonArraySparse(Payload* pl, CJsonBuilder& builder, const gason::JsonValue& v, TagName tagName,
+										FloatVectorsHolderVector& floatVectorsHolder, Matched matched,
+										SparseArrayValidator& arrayElementsValidation) {
+	const ObjType arrType = (gason::isHomogeneousArray(v)) ? ObjType::TypeArray : ObjType::TypeObjectArray;
+	auto arrNode = builder.Array(tagName, arrType);
+	for (const auto& elem : v) {
+		const auto elemType = elem.value.getTag();
+		if (elemType == gason::JsonTag::OBJECT) {
+			decodeJson(pl, arrNode, elem.value, TagName::Empty(), floatVectorsHolder, matched);
+			std::ignore = arrayElementsValidation.Elem();
+		} else if (elemType == gason::JsonTag::ARRAY) {
+			decodeJsonArraySparse(pl, arrNode, elem.value, TagName::Empty(), floatVectorsHolder, matched, arrayElementsValidation);
+		} else {
+			Variant value = jsonValue2Variant(elem.value, arrayElementsValidation.Type(), arrayElementsValidation.Name(), nullptr,
+											  ConvertToString_True, ConvertNull_False);
+			arrayElementsValidation.Elem()(value);
+			arrNode.Put(TagName::Empty(), value);
+		}
 	}
 }
 

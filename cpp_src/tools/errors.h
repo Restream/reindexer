@@ -5,6 +5,7 @@
 #include <string_view>
 #include <version>
 #include "core/type_consts.h"
+#include "estl/defines.h"
 #include "estl/intrusive_ptr.h"
 
 #if defined(REINDEX_CORE_BUILD)
@@ -91,7 +92,7 @@ std::string format([[maybe_unused]] RxFormatString<Args...> fmt, [[maybe_unused]
 #else
 // Using (void)f here to force ';' usage after the macro
 #define assertf(e, f, ...)                                                             \
-	if rx_unlikely (!(e)) {                                                            \
+	if (!(e)) [[unlikely]] {                                                           \
 		try {                                                                          \
 			auto description = reindexer::format_details::format(f, __VA_ARGS__);      \
 			reindexer::print_backtrace_and_abort(#e, __FILE__, __LINE__, description); \
@@ -105,7 +106,7 @@ std::string format([[maybe_unused]] RxFormatString<Args...> fmt, [[maybe_unused]
 #if defined(RX_WITH_STDLIB_DEBUG)
 // Using (void)f here to force ';' usage after the macro
 #define assertf_dbg(e, f, ...)                                                         \
-	if rx_unlikely (!(e)) {                                                            \
+	if (!(e)) [[unlikely]] {                                                           \
 		try {                                                                          \
 			auto description = reindexer::format_details::format(f, __VA_ARGS__);      \
 			reindexer::print_backtrace_and_abort(#e, __FILE__, __LINE__, description); \

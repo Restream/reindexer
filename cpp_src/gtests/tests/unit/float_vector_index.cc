@@ -5,17 +5,18 @@
 #include <thread>
 #include "core/cjson/jsonbuilder.h"
 #include "gtests/tests/gtest_cout.h"
+#include "gtests/tools.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "vendor/fmt/ranges.h"
 
 using namespace std::string_view_literals;
-static constexpr std::string_view kFieldNameId = "id"sv;
+static constexpr auto kFieldNameId = "id";
 static constexpr std::string_view kFieldNameRegular = "regular_field"sv;
 
 void FloatVector::SetUp() {
 	auto dir = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "/FloatVectorTest");
-	rx_unused = reindexer::fs::RmDirAll(dir);
+	std::ignore = reindexer::fs::RmDirAll(dir);
 	rt.reindexer = std::make_shared<reindexer::Reindexer>();
 	rt.Connect("builtin://" + dir);
 }
@@ -119,6 +120,30 @@ void FloatVector::validateIndexValueInQueryResults(std::string_view field, const
 		ASSERT_EQ(qr.GetNamespaces().size(), 1);
 		validateIndexValueInItem(qr.GetNamespaces()[0], field, ser.Slice(), expected);
 	}
+}
+
+template <typename ParamT, size_t kDims>
+void FloatVector::checkEmptyIndexSelection(std::string_view ns, std::string_view vectorIndex) {
+	const auto k = rand() % 100 + 10;
+	const float radius = float(rand() % 20) / 10.;
+	std::array<float, kDims> buf;
+	::rndFloatVector(buf);
+
+	auto addEf = [&](ParamT&& param) {
+		if constexpr (std::is_same_v<ParamT, reindexer::HnswSearchParams>) {
+			if (param.K().has_value()) {
+				return param.Ef(2 * k);
+			}
+		}
+		return param;
+	};
+
+	auto qr = rt.Select(reindexer::Query{ns}.WhereKNN(vectorIndex, reindexer::ConstFloatVectorView{buf}, addEf(ParamT{}.K(k))));
+	EXPECT_EQ(qr.Count(), 0);
+	qr = rt.Select(reindexer::Query{ns}.WhereKNN(vectorIndex, reindexer::ConstFloatVectorView{buf}, addEf(ParamT{}.Radius(radius))));
+	EXPECT_EQ(qr.Count(), 0);
+	qr = rt.Select(reindexer::Query{ns}.WhereKNN(vectorIndex, reindexer::ConstFloatVectorView{buf}, addEf(ParamT{}.K(k).Radius(radius))));
+	EXPECT_EQ(qr.Count(), 0);
 }
 
 template <size_t Dimension>
@@ -240,9 +265,9 @@ static void checkIndexMemstat(ReindexerTestApi<reindexer::Reindexer>& rx, std::s
 	auto memstats = qr.begin().GetItem(false);
 	auto json = memstats.GetJSON();
 	vectors -= emptyVectors.size();
-	auto expectedRegex =
-		fmt::format(R"(\{{"uniq_keys_count":{},"data_size":{},"indexing_struct_size":[1-9][0-9]+,"vectors_keeper_size":[1-9][0-9]+,"is_built":true,"name":"{}"\}})",
-					vectors + (emptyVectors.empty() ? 0 : 1), vectors * dims * sizeof(float), vectorIndex);
+	auto expectedRegex = fmt::format(
+		R"(\{{"uniq_keys_count":{},"data_size":{},"indexing_struct_size":[1-9][0-9]+,"vectors_keeper_size":[1-9][0-9]+,"is_built":true,"name":"{}"\}})",
+		vectors + (emptyVectors.empty() ? 0 : 1), vectors * dims * sizeof(float), vectorIndex);
 	ASSERT_THAT(json, testing::ContainsRegex(expectedRegex));
 }
 
@@ -271,6 +296,8 @@ TEST_P(FloatVector, HnswIndex) try {
 																									  .SetMetric(GetParam())),
 															0},
 									   });
+
+	checkEmptyIndexSelection<reindexer::HnswSearchParams, kDimension>(kNsName, kFieldNameHnsw);
 
 	std::unordered_set<int> emptyVectors;
 	upsertItems<kDimension>(kNsName, kFieldNameHnsw, 0, kMaxElements, emptyVectors);
@@ -394,7 +421,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 			++id;
 			++totalNewItems;
 		}
-		rx_unused = rt.CommitTransaction(tx);
+		std::ignore = rt.CommitTransaction(tx);
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
 
@@ -444,6 +471,8 @@ TEST_P(FloatVector, VecBruteforceIndex) try {
 									  0},
 				 });
 
+	checkEmptyIndexSelection<reindexer::BruteForceSearchParams, kDimension>(kNsName, kFieldNameVec);
+
 	std::unordered_set<int> emptyVectors;
 	upsertItems<kDimension>(kNsName, kFieldNameVec, 0, kMaxElements, emptyVectors);
 	const auto deleted = deleteSomeItems(kNsName, kMaxElements, emptyVectors);
@@ -477,6 +506,8 @@ TEST_P(FloatVector, IvfIndex) try {
 					IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements / 50).SetMetric(GetParam())),
 				0},
 		});
+
+	checkEmptyIndexSelection<reindexer::IvfSearchParams, kDimension>(kNsName, kFieldNameIvf);
 
 	std::unordered_set<int> emptyVectors;
 	upsertItems<kDimension>(kNsName, kFieldNameIvf, 0, kMaxElements, emptyVectors);
@@ -1323,6 +1354,54 @@ TEST_F(FloatVector, KeeperQRIterateAfterDropIndex) try {
 		ASSERT_TRUE(err.ok()) << err.whatStr();
 		ASSERT_EQ(res.GetNamespaces().size(), 1);
 	}
+}
+CATCH_AND_ASSERT
+
+// TODO delete this after #2220
+TEST_F(FloatVector, CheckPKDuringUpdateFVIndex) try {
+	constexpr static auto kNsName = "FV_PK_check_ns"sv;
+	constexpr static auto kFvField = "fv";
+
+	rt.OpenNamespace(kNsName);
+	rt.DefineNamespaceDataset(kNsName, {
+										   IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+									   });
+
+	// Add item
+	{
+		reindexer::WrSerializer ser;
+		{
+			reindexer::JsonBuilder json(ser);
+			json.Put(kFieldNameId, 0);
+			json.Array(kFvField, {1.2, 3.4});
+		}
+		rt.UpsertJSON(kNsName, ser.Slice());
+	}
+
+	rt.DropIndex(kNsName, kFieldNameId);
+	auto err = rt.reindexer->AddIndex(
+		kNsName, reindexer::IndexDef{kFvField,
+									 {kFvField},
+									 IndexVectorBruteforce,
+									 IndexOpts{}.SetFloatVector(IndexVectorBruteforce, FloatVectorIndexOpts{}.SetDimension(2).SetMetric(
+																						   reindexer::VectorMetric::Cosine))});
+	ASSERT_FALSE(err.ok());
+	ASSERT_EQ(err.whatStr(),
+			  fmt::format("Cannot add index '{}' in namespace '{}'. The namespace does not have PK index", kFvField, kNsName));
+
+	rt.AddIndex(kNsName, reindexer::IndexDef{kFieldNameId, {kFieldNameId}, "hash", "int", IndexOpts{}.PK()});
+
+	rt.AddIndex(kNsName,
+				reindexer::IndexDef{kFvField,
+									{kFvField},
+									IndexVectorBruteforce,
+									IndexOpts{}.SetFloatVector(IndexVectorBruteforce, FloatVectorIndexOpts{}.SetDimension(2).SetMetric(
+																						  reindexer::VectorMetric::Cosine))});
+
+	err = rt.reindexer->DropIndex(kNsName, reindexer::IndexDef{kFieldNameId});
+	ASSERT_FALSE(err.ok());
+	ASSERT_EQ(err.whatStr(), fmt::format("Cannot remove PK index '{}' from namespace '{}': the namespace contains float vector index '{}'",
+										 kFieldNameId, kNsName, kFvField));
 }
 CATCH_AND_ASSERT
 

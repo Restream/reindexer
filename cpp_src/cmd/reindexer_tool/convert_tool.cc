@@ -37,7 +37,7 @@ Error ConvertTool::ConvertStorage(std::string_view dsn, std::string_view convert
 		std::cout << "Starting database converting..." << std::endl;
 
 		std::vector<std::string_view> pathParts;
-		rx_unused = reindexer::split(path, "/", true, pathParts);
+		std::ignore = reindexer::split(path, "/", true, pathParts);
 
 		if (pathParts.empty()) {
 			return Error(errParams, "Invalid DSN format for convertation: {}. Empty database name.", dsn);
@@ -57,15 +57,15 @@ Error ConvertTool::ConvertStorage(std::string_view dsn, std::string_view convert
 			tmpFolder = std::string(convertBackupFolder) + "_tmp";
 		}
 
-		rx_unused = reindexer::fs::RmDirAll(backupFolder);
-		rx_unused = reindexer::fs::RmDirAll(tmpFolder);
+		std::ignore = reindexer::fs::RmDirAll(backupFolder);
+		std::ignore = reindexer::fs::RmDirAll(tmpFolder);
 
 		std::cout << "Storing backup in " << backupFolder << std::endl;
 
 		bool cleanupRequired = true;
 		auto cleanup = reindexer::MakeScopeGuard([&cleanupRequired, &tmpFolder]() {
 			if (cleanupRequired) {
-				rx_unused = reindexer::fs::RmDirAll(tmpFolder);
+				std::ignore = reindexer::fs::RmDirAll(tmpFolder);
 			}
 		});
 

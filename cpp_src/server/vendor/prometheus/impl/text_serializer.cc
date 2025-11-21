@@ -124,7 +124,7 @@ void SerializeHistogram(std::ostream& out, const MetricFamily& family, const Cli
 		WriteTail(out, metric);
 	}
 
-	if (last != std::numeric_limits<double>::infinity()) {
+	if (!std::isinf(last)) {
 		WriteHead(out, family, metric, "_bucket", "le", "+Inf");
 		out << hist.sample_count;
 		WriteTail(out, metric);

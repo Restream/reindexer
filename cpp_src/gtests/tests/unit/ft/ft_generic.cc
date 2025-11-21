@@ -295,8 +295,8 @@ TEST_P(FTGenericApi, DebugInfo) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		// clang-format off
         std::vector<std::string> dataCompare={R"({"ft1":
-"{term_rank:97, term:маша, pattern:маша, bm25_norm:0.9798439468181269, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} Маша ела кашу. Каша кушалась сама.
- {term_rank:77, term:маша, pattern:машу, bm25_norm:0.9798439468181269, term_len_boost:1, position_rank:0.994, norm_dist:0, proc:80, full_match_boost:0} Машу ругали."})"};
+"{term_rank:97.9844, term:маша, pattern:маша, bm25_norm:0.979844, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} Маша ела кашу. Каша кушалась сама.
+ {term_rank:77.91719, term:маша, pattern:машу, bm25_norm:0.979844, term_len_boost:1, position_rank:0.994, norm_dist:0, proc:80, full_match_boost:0} Машу ругали."})"};
 		// clang-format on
 		removeLineEnd(dataCompare);
 		ASSERT_EQ(wrSer.Slice(), dataCompare[0]);
@@ -315,8 +315,8 @@ TEST_P(FTGenericApi, DebugInfo) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		// clang-format off
 		std::vector<std::string> dataCompare={R"({"ft1":
-"{term_rank:102, term:коля, pattern:коля, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} Коля,
- {term_rank:102, term:сеня, pattern:сеня, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} Сеня гуляли."})"};
+"{term_rank:102.23141, term:коля, pattern:коля, bm25_norm:1.0223141, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} Коля,
+ {term_rank:102.12917, term:сеня, pattern:сеня, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} Сеня гуляли."})"};
 		// clang-format on
 		removeLineEnd(dataCompare);
 		ASSERT_EQ(wrSer.Slice(), dataCompare[0]);
@@ -332,19 +332,19 @@ TEST_P(FTGenericApi, DebugInfo) {
 		// clang-format off
         std::vector<std::string> dataCompare={
 R"###({"ft1":"слово
- <!>{term_rank:93, term:простая, pattern:простая, bm25_norm:0.9399331930048559, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} простая
- {term_rank:85, term:фраза, pattern:фраза, bm25_norm:0.9399331930048559, term_len_boost:0.9142857193946838, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
- что то еще.","rank()":101.0})###",
+ <!>{term_rank:93.89933, term:простая, pattern:простая, bm25_norm:0.9399332, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} простая
+ {term_rank:85.76488, term:фраза, pattern:фраза, bm25_norm:0.9399332, term_len_boost:0.9142857, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
+ что то еще.","rank()":102.0})###",
 R"##({"ft1":"слово
- <!>{term_rank:92, term:начало, pattern:начало, bm25_norm:0.9624865670750559, term_len_boost:0.9571428596973419, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} начало
- {term_rank:94, term:простая, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0}
- <!>{term_rank:94, term:простая, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} простая
- {term_rank:86, term:фраза, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9142857193946838, position_rank:0.997, norm_dist:0, proc:100, full_match_boost:0}
- {term_rank:86, term:фраза, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9142857193946838, position_rank:0.997, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
- {term_rank:87, term:конец, pattern:конец, bm25_norm:0.9624865670750559, term_len_boost:0.9142857193946838, position_rank:0.996, norm_dist:0, proc:100, full_match_boost:0} конец<!!>
+ <!>{term_rank:92.031586, term:начало, pattern:начало, bm25_norm:0.96248657, term_len_boost:0.95714283, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} начало
+ {term_rank:94.18042, term:простая, pattern:простая, bm25_norm:0.9436916, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0}
+ <!>{term_rank:94.18042, term:простая, pattern:простая, bm25_norm:0.9436916, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} простая
+ {term_rank:86.02153, term:фраза, pattern:фраза, bm25_norm:0.9436916, term_len_boost:0.9142857, position_rank:0.997, norm_dist:0, proc:100, full_match_boost:0}
+ {term_rank:86.02153, term:фраза, pattern:фраза, bm25_norm:0.9436916, term_len_boost:0.9142857, position_rank:0.997, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
+ {term_rank:87.646774, term:конец, pattern:конец, bm25_norm:0.96248657, term_len_boost:0.9142857, position_rank:0.996, norm_dist:0, proc:100, full_match_boost:0} конец<!!>
  что то еще
- <!>{term_rank:94, term:простая, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} простая
- {term_rank:86, term:фраза, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9142857193946838, position_rank:0.997, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
+ <!>{term_rank:94.18042, term:простая, pattern:простая, bm25_norm:0.9436916, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} простая
+ {term_rank:86.02153, term:фраза, pattern:фраза, bm25_norm:0.9436916, term_len_boost:0.9142857, position_rank:0.997, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
  слово слово.","rank()":255.0})##"
             };
 		// clang-format on
@@ -371,15 +371,15 @@ R"##({"ft1":"слово
 		// clang-format off
         std::vector<std::string> dataCompare={
 R"###({"ft1":"слово
- <!>{term_rank:74, term:простыми, pattern:простая, bm25_norm:0.9399331930048559, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:79, full_match_boost:0} простая
- {term_rank:74, term:фразами, pattern:фраза, bm25_norm:0.9399331930048559, term_len_boost:0.9624999999999999, position_rank:0.998, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
+ <!>{term_rank:74.180466, term:простыми, pattern:простая, bm25_norm:0.9399332, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:79, full_match_boost:0} простая
+ {term_rank:74.03586, term:фразами, pattern:фраза, bm25_norm:0.9399332, term_len_boost:0.9625, position_rank:0.998, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
  что то еще."})###",
 R"###({"ft1":"слово начало
- <!>{term_rank:74, term:простыми, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:79, full_match_boost:0} простая
- {term_rank:74, term:фразами, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9624999999999999, position_rank:0.997, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
+ <!>{term_rank:74.402534, term:простыми, pattern:простая, bm25_norm:0.9436916, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:79, full_match_boost:0} простая
+ {term_rank:74.257416, term:фразами, pattern:фраза, bm25_norm:0.9436916, term_len_boost:0.9625, position_rank:0.997, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
  конец что то еще
- <!>{term_rank:74, term:простыми, pattern:простая, bm25_norm:0.9436916111700189, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:79, full_match_boost:0} простая
- {term_rank:74, term:фразами, pattern:фраза, bm25_norm:0.9436916111700189, term_len_boost:0.9624999999999999, position_rank:0.997, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
+ <!>{term_rank:74.402534, term:простыми, pattern:простая, bm25_norm:0.9436916, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:79, full_match_boost:0} простая
+ {term_rank:74.257416, term:фразами, pattern:фраза, bm25_norm:0.9436916, term_len_boost:0.9625, position_rank:0.997, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
  слово слово."})###"
             };
 		// clang-format on
@@ -410,9 +410,9 @@ R"###({"ft1":"слово начало
 		ASSERT_TRUE(err.ok()) << err.what();
 		//clang-format off
 		std::vector<std::string> dataCompare = {
-			R"({"ft1":"{term_rank:102, term:жил, pattern:жил, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} жил
- {term_rank:71, term:жил, pattern:ил, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:70, full_match_boost:0}
- {term_rank:102, term:пил, pattern:пил, bm25_norm:1.022314131295854, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} пил гулял"})"};
+			R"({"ft1":"{term_rank:102.23141, term:жил, pattern:жил, bm25_norm:1.0223141, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} жил
+ {term_rank:71.49042, term:жил, pattern:ил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:70, full_match_boost:0}
+ {term_rank:102.12917, term:пил, pattern:пил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} пил гулял"})"};
 		//clang-format on
 		removeLineEnd(dataCompare);
 		ASSERT_EQ(wrSer.Slice(), dataCompare[0]);
@@ -1518,11 +1518,11 @@ TEST_P(FTGenericApi, StrictMode) {
 	for (auto strictMode : {StrictModeNotSet, StrictModeNone, StrictModeNames}) {
 		SCOPED_TRACE(reindexer::strictModeToString(strictMode));
 		// Non-indexed field
-		rx_unused = rt.Select(newQuery(strictMode, "@ft1^2,non_idx^2 тест"));
+		std::ignore = rt.Select(newQuery(strictMode, "@ft1^2,non_idx^2 тест"));
 		// Indexed explicit fields only
-		rx_unused = rt.Select(newQuery(strictMode, "@ft1^2,ft2^2 тест"));
+		std::ignore = rt.Select(newQuery(strictMode, "@ft1^2,ft2^2 тест"));
 		// No explicit fields
-		rx_unused = rt.Select(newQuery(strictMode, "тест"));
+		std::ignore = rt.Select(newQuery(strictMode, "тест"));
 	}
 
 	/// Strict mode 'indexes'
@@ -1531,9 +1531,9 @@ TEST_P(FTGenericApi, StrictMode) {
 	auto err = rt.reindexer->Select(newQuery(StrictModeIndexes, "@ft1^2,non_idx^2 тест"), qr);
 	EXPECT_EQ(err.code(), errStrictMode) << err.what();
 	// Indexed explicit fields only
-	rx_unused = rt.Select(newQuery(StrictModeIndexes, "@ft1^2,ft2^2 тест"));
+	std::ignore = rt.Select(newQuery(StrictModeIndexes, "@ft1^2,ft2^2 тест"));
 	// No explicit fields
-	rx_unused = rt.Select(newQuery(StrictModeIndexes, "тест"));
+	std::ignore = rt.Select(newQuery(StrictModeIndexes, "тест"));
 }
 
 TEST_P(FTGenericApi, ConfigBm25Coefficients) {
@@ -2207,10 +2207,11 @@ TEST_P(FTGenericApi, FrisoTextPostprocess) {
 		ASSERT_EQ(res.Count(), 1);
 		auto item = res.begin().GetItem();
 		std::string json = item["ft1"].As<std::string>();
-		ASSERT_EQ(json,
-				  "以下為聯絡我們訊息，歡迎{term_rank:90, term:大家, pattern:大家, bm25_norm:0.92, term_len_boost:1, position_rank:0.9889, "
-				  "norm_dist:0, proc:100, full_match_boost:0} 大家瀏覽{term_rank:77, term:查, pattern:查, bm25_norm:0.92, "
-				  "term_len_boost:0.85, position_rank:0.9886, norm_dist:0, proc:100, full_match_boost:0} 查閱。");
+		ASSERT_EQ(
+			json,
+			"以下為聯絡我們訊息，歡迎{term_rank:90.9788, term:大家, pattern:大家, bm25_norm:0.92, term_len_boost:1, position_rank:0.9889, "
+			"norm_dist:0, proc:100, full_match_boost:0} 大家瀏覽{term_rank:77.30853, term:查, pattern:查, bm25_norm:0.92, "
+			"term_len_boost:0.85, position_rank:0.9886, norm_dist:0, proc:100, full_match_boost:0} 查閱。");
 	}
 }
 
@@ -2289,6 +2290,64 @@ TEST_P(FTGenericApi, DistinctSingleField) {
 	}
 }
 
+TEST_F(FTGenericApi, DistinctFtOrderByTreeIdxTest) {
+	const std::string kNsName = "ns";
+	const std::string kTreeIdxName = "tree_idx";
+	const std::string kFtIdxName = "ft";
+	rt.OpenNamespace(kNsName);
+	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{"id", "hash", "int", IndexOpts{}.PK(), 0},
+										IndexDeclaration{kFtIdxName, "text", "string", IndexOpts(), 0},
+										IndexDeclaration{kTreeIdxName, "tree", "int", IndexOpts{}, 0}});
+
+	const bool desc = (rand() % 2);
+	using namespace std::string_view_literals;
+	const std::vector<std::string_view> jsons = {R"({"id":0,"ft":"f0","tree_idx":0})"sv, R"({"id":1,"ft":"f0","tree_idx":1})"sv,
+												 R"({"id":2,"ft":"f2","tree_idx":2})"sv, R"({"id":3,"ft":"f3","tree_idx":4})"sv,
+												 R"({"id":4,"ft":"f4","tree_idx":3})"sv};
+	std::vector<reindexer::Item> items;
+	for (auto& json : jsons) {
+		auto item = rt.NewItem(kNsName);
+		auto err = item.FromJSON(json);
+		ASSERT_TRUE(err.ok()) << err.what();
+		rt.Upsert(kNsName, item);
+		items.emplace_back(std::move(item));
+	}
+	std::ranges::sort(items, [&](const auto& lhs, const auto& rhs) {
+		return desc ? (rhs[kTreeIdxName].template As<int>() < lhs[kTreeIdxName].template As<int>())
+					: (lhs[kTreeIdxName].template As<int>() < rhs[kTreeIdxName].template As<int>());
+	});
+	auto urange = std::ranges::unique(items, [&](const auto& lhs, const auto& rhs) {
+		return lhs[kFtIdxName].template As<std::string>() == rhs[kFtIdxName].template As<std::string>();
+	});
+	items.erase(urange.begin(), urange.end());
+	std::set<std::string> expectedDistincts;
+	for (auto& it : items) {
+		expectedDistincts.emplace(it[kFtIdxName].template As<std::string>());
+	}
+
+	rt.AwaitIndexOptimization(kNsName);
+
+	const auto q = Query(kNsName).Distinct(kFtIdxName).Sort(kTreeIdxName, desc);
+	SCOPED_TRACE(q.GetSQL());
+	auto qr = rt.Select(q);
+	auto& aggs = qr.GetAggregationResults();
+	ASSERT_EQ(aggs.size(), 1);
+	auto& agg = aggs[0];
+	EXPECT_EQ(agg.GetType(), AggDistinct);
+	std::set<std::string> actualDistincts;
+	for (unsigned i = 0; i < agg.GetDistinctRowCount(); ++i) {
+		ASSERT_EQ(agg.GetDistinctRow(i).size(), 1);
+		actualDistincts.emplace(agg.GetDistinctRow(i)[0].As<std::string>());
+	}
+	EXPECT_EQ(expectedDistincts, actualDistincts);
+
+	ASSERT_EQ(qr.Count(), items.size());
+	unsigned i = 0;
+	for (auto& it : qr) {
+		EXPECT_EQ(it.GetJSON().value(), items[i++].GetJSON());
+	}
+}
+
 TEST_P(FTGenericApi, DistinctComposite) {
 	Init(GetDefaultConfig());
 	Add("word0");
@@ -2301,6 +2360,27 @@ TEST_P(FTGenericApi, DistinctComposite) {
 	auto err = rt.reindexer->Select(q, qr);
 	EXPECT_EQ(err.code(), errParams) << err.what();
 	EXPECT_EQ(err.whatStr(), "Composite full text index (ft3) does not support DISTINCT");
+}
+
+TEST_P(FTGenericApi, SelectRepeatingItemsFromArray) {
+	Init(GetDefaultConfig(), NS1 | NS4);
+	AddNs4("privet 1", {"privet 2", "privet 3"}, {"privet 4", "privet 5"});
+	AddNs4("privet 1", {"privet 2", "privet 3"}, {"privet 4", "privet 5"});
+	AddNs4("privet 1", {"privet 6", "privet 7"}, {"privet 4", "privet 5"});
+
+	{
+		const auto q = Query("nm4").Where("ft", CondEq, "privet");
+		reindexer::QueryResults qr;
+		auto res = rt.Select(q);
+		ASSERT_EQ(res.Count(), 3);
+	}
+
+	{
+		const auto q = Query("nm4").Where("ft3", CondEq, "privet");
+		reindexer::QueryResults qr;
+		auto res = rt.Select(q);
+		ASSERT_EQ(res.Count(), 3);
+	}
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,

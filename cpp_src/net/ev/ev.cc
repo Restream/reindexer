@@ -530,7 +530,7 @@ void dynamic_loop::run() {
 		h_vector<coroutine::routine_t, 5> yielded_tasks;
 		std::swap(yielded_tasks, yielded_tasks_);
 		for (auto id : yielded_tasks) {
-			rx_unused = coroutine::resume(id);
+			std::ignore = coroutine::resume(id);
 		}
 		yielded_tasks.clear();
 	}
@@ -678,7 +678,7 @@ void dynamic_loop::set_coro_cb() {
 	[[maybe_unused]] bool res = coroutine::set_loop_completion_callback([this](coroutine::routine_t id) {
 		auto found = std::find(running_tasks_.begin(), running_tasks_.end(), id);
 		assertrx(found != running_tasks_.end());
-		rx_unused = running_tasks_.erase(found);
+		std::ignore = running_tasks_.erase(found);
 		if (new_tasks_.empty() && running_tasks_.empty()) {
 			coroTid_ = std::thread::id();
 			break_loop();

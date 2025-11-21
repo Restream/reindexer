@@ -3,7 +3,6 @@
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
 #include "core/keyvalue/variant.h"
-#include "estl/one_of.h"
 #include "payloadfieldtype.h"
 #include "tools/stringstools.h"
 
@@ -23,21 +22,22 @@ public:
 		t_.Type().EvaluateOneOf(
 			[&kv](KeyValueType::Int64) {
 				if (kv.Type().Is<KeyValueType::Int>()) {
-					kv.convert(KeyValueType::Int64{});
+					std::ignore = kv.convert(KeyValueType::Int64{});
 				}
 			},
 			[&kv](KeyValueType::Int) {
 				if (kv.Type().Is<KeyValueType::Int64>()) {
-					kv.convert(KeyValueType::Int{});
+					std::ignore = kv.convert(KeyValueType::Int{});
 				}
 			},
 			[&kv](KeyValueType::Uuid) {
 				if (kv.Type().Is<KeyValueType::String>()) {
-					kv.convert(KeyValueType::Uuid{});
+					std::ignore = kv.convert(KeyValueType::Uuid{});
 				}
 			},
-			[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Double, KeyValueType::Float, KeyValueType::Composite,
-					 KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::FloatVector>) noexcept {});
+			[](concepts::OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Double, KeyValueType::Float, KeyValueType::Composite,
+							   KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::FloatVector> auto) noexcept {
+			});
 		if (!kv.Type().IsSame(t_.Type())) {
 			throwSetTypeMissmatch(kv);
 		}
@@ -59,8 +59,8 @@ public:
 									uint64_t v = vect.Payload();
 									std::memcpy(p_, &v, sizeof(uint64_t));
 								},
-								[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-										 KeyValueType::Float>) noexcept {
+								[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+												   KeyValueType::Null, KeyValueType::Float> auto) noexcept {
 									assertrx(0);
 									abort();
 								});
@@ -83,8 +83,8 @@ public:
 										   std::memcpy(&v, p_, sizeof(uint64_t));
 										   return Variant{ConstFloatVectorView::FromUint64(v)};
 									   },
-									   [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-												KeyValueType::Float>) noexcept -> Variant {
+									   [](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+														  KeyValueType::Null, KeyValueType::Float> auto) noexcept -> Variant {
 										   assertrx(0);
 										   abort();
 									   });
@@ -101,8 +101,8 @@ public:
 										   std::memcpy(&v, p_, sizeof(uint64_t));
 										   return ConstFloatVectorView::FromUint64(v).Hash();
 									   },
-									   [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-												KeyValueType::Float>) noexcept -> uint64_t {
+									   [](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+														  KeyValueType::Null, KeyValueType::Float> auto) noexcept -> uint64_t {
 										   assertrx(0);
 										   abort();
 									   });
@@ -123,8 +123,8 @@ public:
 									   },
 									   [&](KeyValueType::Uuid) noexcept { return (std::memcmp(p_, o.p_, sizeof(Uuid)) == 0); },
 									   [&](KeyValueType::FloatVector) noexcept { return (std::memcmp(p_, o.p_, sizeof(uint64_t)) == 0); },
-									   [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-												KeyValueType::Float>) noexcept -> bool {
+									   [](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+														  KeyValueType::Null, KeyValueType::Float> auto) noexcept -> bool {
 										   assertrx(0);
 										   abort();
 									   });
@@ -137,7 +137,7 @@ public:
 
 private:
 	template <typename T>
-	void copyVariantToPtr(const Variant& kv) noexcept {
+	void copyVariantToPtr(const Variant& kv) noexcept(std::is_nothrow_convertible_v<Variant, T>) {
 		auto v = T(kv);
 		std::memcpy(p_, &v, sizeof(T));
 	}

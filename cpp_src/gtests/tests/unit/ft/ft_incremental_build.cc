@@ -72,7 +72,7 @@ public:
 
 	class [[nodiscard]] PhraseGenerator : public IWordGenerator {
 	public:
-		PhraseGenerator(const IWordGenerator& wordsGen) : wordsGen_(wordsGen){};
+		PhraseGenerator(const IWordGenerator& wordsGen) : wordsGen_(wordsGen) {}
 
 		std::string NewWord(unsigned step, ReindexerTestApi<reindexer::Reindexer>& rt) const override final {
 			// can use only 2 different words, remove it after fixing #2148
@@ -149,7 +149,7 @@ public:
 					}
 				}
 			}
-			rx_unused = FTIncrementalBuildApi::SimpleSelect("build step");
+			std::ignore = FTIncrementalBuildApi::SimpleSelect("build step");
 		}
 		return d;
 	}

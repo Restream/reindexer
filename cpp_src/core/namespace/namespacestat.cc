@@ -6,6 +6,13 @@ namespace reindexer {
 
 using namespace std::string_view_literals;
 
+void TagsMatcherStat::GetJSON(JsonBuilder& builder) const {
+	builder.Put("tags_count", tagsCount);
+	builder.Put("max_tags_count", ctag::kNameMax);
+	builder.Put("version", version);
+	builder.Put("state_token", stateToken);
+}
+
 void NamespaceMemStat::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 
@@ -66,6 +73,10 @@ void NamespaceMemStat::GetJSON(WrSerializer& ser) const {
 			embedder.GetJSON(obj);
 		}
 	}
+	{
+		auto tagsMatcherJson = builder.Object("tags_matcher");
+		tagsMatcher.GetJSON(tagsMatcherJson);
+	}
 }
 
 void LRUCacheMemStat::GetJSON(JsonBuilder& builder) const {
@@ -73,6 +84,15 @@ void LRUCacheMemStat::GetJSON(JsonBuilder& builder) const {
 	builder.Put("items_count", itemsCount);
 	builder.Put("empty_count", emptyCount);
 	builder.Put("hit_count_limit", hitCountLimit);
+}
+
+void EmbedderStatus::GetJSON(JsonBuilder& builder) const {
+	builder.Put("last_request_result", lastRequestResult ? "OK"sv : "ERROR"sv);
+	{
+		auto err = builder.Object("last_error");
+		err.Put("code", unsigned(lastError.code()));
+		err.Put("message", lastError.whatStr());
+	}
 }
 
 void IndexMemStat::GetJSON(JsonBuilder& builder) const {
@@ -119,6 +139,20 @@ void IndexMemStat::GetJSON(JsonBuilder& builder) const {
 	if (idsetCache.totalSize || idsetCache.itemsCount || idsetCache.emptyCount || idsetCache.hitCountLimit) {
 		auto obj = builder.Object("idset_cache");
 		idsetCache.GetJSON(obj);
+	}
+	if (upsertEmbedderStatus.has_value()) {
+		auto objEmb = builder.Object("upsert_embedder");
+		{
+			auto objStatus = objEmb.Object("status");
+			upsertEmbedderStatus->GetJSON(objStatus);
+		}
+	}
+	if (queryEmbedderStatus.has_value()) {
+		auto objEmb = builder.Object("query_embedder");
+		{
+			auto objStatus = objEmb.Object("status");
+			queryEmbedderStatus->GetJSON(objStatus);
+		}
 	}
 
 	builder.Put("name", name);
@@ -187,6 +221,36 @@ void EmbedderCachePerfStat::GetJSON(JsonBuilder& builder) const {
 	LRUCachePerfStat::GetJSON(builder);
 }
 
+void EmbedderPerfStat::GetJSON(JsonBuilder& builder) const {
+	if (!cacheStat.tag.empty()) {
+		auto cacheNode = builder.Object("cache");
+		cacheStat.GetJSON(cacheNode);
+	}
+
+	builder.Put("total_queries_count", totalQueriesCount);
+	builder.Put("total_embed_documents_count", totalEmbedDocumentsCount);
+	builder.Put("last_sec_qps", lastSecQps);
+	builder.Put("last_sec_dps", lastSecDps);
+	builder.Put("total_errors_count", totalErrorsCount);
+	builder.Put("last_sec_errors_count", lastSecErrorsCount);
+	builder.Put("conn_in_use", connInUse);
+	builder.Put("last_sec_avg_conn_in_use", lastSecAvgConnInUse);
+	builder.Put("total_avg_latency_us", totalAvgLatencyUs);
+	builder.Put("last_sec_avg_latency_us", lastSecAvgLatencyUs);
+	builder.Put("max_latency_us", maxLatencyUs);
+	builder.Put("min_latency_us", minLatencyUs);
+	builder.Put("total_avg_conn_await_latency_us", totalAvgConnAwaitLatencyUs);
+	builder.Put("last_sec_avg_conn_await_latency_us", lastSecAvgConnAwaitLatencyUs);
+	builder.Put("total_avg_embed_latency_us", totalAvgEmbedLatencyUs);
+	builder.Put("last_sec_avg_embed_latency_us", lastSecAvgEmbedLatencyUs);
+	builder.Put("max_embed_latency_us", maxEmbedLatencyUs);
+	builder.Put("min_embed_latency_us", minEmbedLatencyUs);
+	builder.Put("total_avg_cache_latency_us", totalAvgCacheLatencyUs);
+	builder.Put("last_sec_avg_cache_latency_us", lastSecAvgCacheLatencyUs);
+	builder.Put("max_cache_latency_us", maxCacheLatencyUs);
+	builder.Put("min_cache_latency_us", minCacheLatencyUs);
+}
+
 void IndexPerfStat::GetJSON(JsonBuilder& builder) const {
 	builder.Put("name", name);
 	{
@@ -202,13 +266,14 @@ void IndexPerfStat::GetJSON(JsonBuilder& builder) const {
 		cache.GetJSON(obj);
 	}
 
-	if (!upsertEmbedderCache.tag.empty()) {
-		auto obj = builder.Object("upsert_embedder_cache");
-		upsertEmbedderCache.GetJSON(obj);
+	if (upsertEmbedder.has_value()) {
+		auto obj = builder.Object("upsert_embedder");
+		upsertEmbedder->GetJSON(obj);
 	}
-	if (!queryEmbedderCache.tag.empty()) {
-		auto obj = builder.Object("query_embedder_cache");
-		queryEmbedderCache.GetJSON(obj);
+
+	if (queryEmbedder.has_value()) {
+		auto obj = builder.Object("query_embedder");
+		queryEmbedder->GetJSON(obj);
 	}
 }
 
@@ -260,7 +325,7 @@ void ReplicationState::FromJSON(std::span<char> json) {
 		dataCount = root["data_count"].As<int>();
 		updatedUnixNano = root["updated_unix_nano"].As<uint64_t>();
 		token = root["admissible_token"].As<std::string>();
-		rx_unused = LoadLsn(nsVersion, root["ns_version"]);
+		std::ignore = LoadLsn(nsVersion, root["ns_version"]);
 		auto clStatusNode = root["clusterization_status"];
 		if (!clStatusNode.empty()) {
 			clusterStatus.FromJSON(clStatusNode);

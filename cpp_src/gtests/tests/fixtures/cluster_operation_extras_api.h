@@ -7,10 +7,10 @@
 class [[nodiscard]] ClusterOperationExtrasApi : public ClusterOperationApi {
 public:
 	void SetUp() override {	 // -V524
-		rx_unused = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+		std::ignore = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 	}
 	void TearDown() override {	// -V524
-		rx_unused = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+		std::ignore = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 	}
 	const Defaults& GetDefaults() const override {
 		static Defaults defs{14300, 16300, reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "rx_test/ClusterOperationExtrasApi")};

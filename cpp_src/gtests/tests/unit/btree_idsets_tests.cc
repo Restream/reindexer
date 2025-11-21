@@ -74,6 +74,27 @@ TEST_F(BtreeIdsetsApi, SortByIntField) {
 	}
 }
 
+TEST_F(BtreeIdsetsApi, SortBySparseIndex) {
+	for (const bool sortOrder : {true, false}) {
+		auto qr = rt.Select(Query(default_namespace).Sort(kFieldFour, sortOrder));
+		Variant prev;
+		for (auto& it : qr) {
+			Item item = it.GetItem(false);
+			Variant curr = item[kFieldFour];
+			if (it != qr.begin()) {
+				if (!curr.IsNullValue() && !prev.IsNullValue()) {
+					if (sortOrder) {
+						EXPECT_TRUE(prev.As<int>() >= curr.As<int>());
+					} else {
+						EXPECT_TRUE(prev.As<int>() <= curr.As<int>());
+					}
+				}
+			}
+			prev = curr;
+		}
+	}
+}
+
 TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 	Query joinedNs{Query(joinedNsName).Where(kFieldThree, CondGt, Variant(static_cast<int>(9000))).Sort(kFieldThree, false)};
 	auto qr =
@@ -111,36 +132,59 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	for (size_t i = 0; i < 10000; ++i) {
 		auto it1 = m1.insert({i, reindexer::KeyEntry<reindexer::IdSet>()});
 		for (int i = 0; i < rand() % 100 + 50; ++i) {
-			rx_unused = it1.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
+			std::ignore = it1.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
 			ids1.push_back(i);
 		}
 		auto it2 = m2.insert({i, reindexer::KeyEntry<reindexer::IdSetPlain>()});
 		for (int i = 0; i < rand() % 100 + 50; ++i) {
-			rx_unused = it2.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
+			std::ignore = it2.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
 			ids2.push_back(i);
 		}
 	}
 
-	size_t pos = 0;
+	reindexer::Index::KeyEntry emptyIdsKeyEntry;
+	for (int i = 0; i < rand() % 100 + 50; ++i) {
+		std::ignore = emptyIdsKeyEntry.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
+	}
 
-	reindexer::BtreeIndexIterator<typeof(m1)> bIt1(m1);
+	size_t pos = 0;
+	reindexer::base_idset_ptr emptyIds{emptyIdsKeyEntry.Unsorted().BuildBaseIdSet()};
+	const reindexer::base_idset emptyIdsBaseIdSet{*emptyIds};
+
+	reindexer::BtreeIndexIterator<typeof(m1)> bIt1(m1, std::move(emptyIds));
 	bIt1.Start(false);
+	while (pos < emptyIdsBaseIdSet.size() && bIt1.Next()) {
+		EXPECT_TRUE(bIt1.Value() == emptyIdsBaseIdSet[pos])
+			<< "iterator value = " << bIt1.Value() << "; expected value = " << emptyIdsBaseIdSet[pos];
+		++pos;
+	}
+	EXPECT_TRUE(pos == emptyIdsBaseIdSet.size());
+
+	pos = 0;
 	while (bIt1.Next()) {
 		EXPECT_TRUE(bIt1.Value() == ids1[pos]) << "iterator value = " << bIt1.Value() << "; expected value = " << ids1[pos];
 		++pos;
 	}
 	EXPECT_TRUE(pos == ids1.size());
-	EXPECT_TRUE(!bIt1.Next());
 
-	reindexer::BtreeIndexIterator<typeof(m2)> bIt2(m2);
+	reindexer::BtreeIndexIterator<typeof(m2)> bIt2(m2, emptyIdsKeyEntry.Unsorted().BuildBaseIdSet());
 	bIt2.Start(true);
 	pos = ids2.size() - 1;
-	while (bIt2.Next()) {
+	while (bIt2.Next() && pos) {
 		EXPECT_TRUE(bIt2.Value() == ids2[pos]) << "iterator value = " << bIt2.Value() << "; expected value = " << ids2[pos];
 		if (pos) {
 			--pos;
 		}
 	}
 	EXPECT_TRUE(pos == 0);
-	EXPECT_TRUE(!bIt2.Next());
+
+	pos = emptyIdsBaseIdSet.size() - 1;
+	while (bIt2.Next()) {
+		EXPECT_TRUE(bIt2.Value() == emptyIdsBaseIdSet[pos])
+			<< "iterator value = " << bIt2.Value() << "; expected value = " << emptyIdsBaseIdSet[pos];
+		if (pos) {
+			--pos;
+		}
+	}
+	EXPECT_TRUE(pos == 0);
 }

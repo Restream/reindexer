@@ -15,9 +15,9 @@ using namespace reindexer::net;
 CoroQueryResults::~CoroQueryResults() {
 	if (holdsRemoteData()) {
 		try {
-			rx_unused = i_.conn_->Call({cproto::kCmdCloseResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1,
-										ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
-									   i_.queryID_.main, i_.queryID_.uid);
+			std::ignore = i_.conn_->Call({cproto::kCmdCloseResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1,
+										  ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+										 i_.queryID_.main, i_.queryID_.uid);
 		} catch (std::exception& e) {
 			fprintf(stderr, "reindexer error: unexpected exception in ~CoroQueryResults: %s\n", e.what());
 			assertrx_dbg(false);
@@ -92,7 +92,7 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query*
 			opts, i_.parsingData_);
 
 		const auto copyStart = i_.lazyMode_ ? rawResult.begin() : (rawResult.begin() + ser.Pos());
-		if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely(rawResLen > int64_t(QrRawBuffer::max_size()))) {
+		if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rawResLen > int64_t(QrRawBuffer::max_size())) [[unlikely]] {
 			throw Error(
 				errLogic,
 				"client::QueryResults::Bind: rawResult buffer overflow. Max size if {} bytes, but {} bytes requested. Try to reduce "
@@ -129,7 +129,7 @@ void CoroQueryResults::handleFetchedBuf(net::cproto::CoroRPCAnswer& ans) {
 
 	ser.GetRawQueryParams(i_.queryParams_, nullptr, ResultSerializer::Options{}, i_.parsingData_);
 	const auto copyStart = i_.lazyMode_ ? rawResult.begin() : (rawResult.begin() + ser.Pos());
-	if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely(rawResLen > int64_t(QrRawBuffer::max_size()))) {
+	if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rawResLen > int64_t(QrRawBuffer::max_size())) [[unlikely]] {
 		throw Error(errLogic,
 					"client::QueryResults::fetchNextResults: rawResult buffer overflow. Max size if {} bytes, but {} bytes requested. Try "
 					"to reduce fetch limit (current limit is {})",

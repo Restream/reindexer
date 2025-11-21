@@ -4,7 +4,7 @@
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/p_string.h"
 #include "estl/fast_hash_set.h"
-#include "estl/one_of.h"
+#include "tools/float_comparison.h"
 #include "tools/string_regexp_functions.h"
 #include "vendor/hopscotch/hopscotch_sc_set.h"
 
@@ -22,13 +22,15 @@ public:
 
 		for (const Variant& key : values) {
 			key.Type().EvaluateOneOf(
-				[](OneOf<KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null>) {
+				[](concepts::OneOf<KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null> auto) {
 					// Ignore those values
 				},
-				[&key](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+				[&key](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite,
+									   KeyValueType::FloatVector> auto) {
 					throw Error(errParams, "Equal positions doesn't support '{}' values", key.Type().Name());
 				},
-				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) {
+				[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+									KeyValueType::Float> auto) {
 					try {
 						auto converted = key.convert(type());
 						addValue(cond, static_cast<T>(converted));
@@ -44,7 +46,11 @@ public:
 		switch (cond) {
 			case CondEq:
 				assertrx_throw(!values_.empty());
-				return lhs == values_[0];
+				if constexpr (std::is_floating_point_v<T>) {
+					return fp::ExactlyEqual(lhs, this->values_[0]);
+				} else {
+					return lhs == values_[0];
+				}
 			case CondGe:
 				assertrx_throw(!values_.empty());
 				return lhs >= values_[0];
@@ -126,11 +132,12 @@ public:
 
 		for (const Variant& key : values) {
 			key.Type().EvaluateOneOf(
-				[](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
-						 KeyValueType::Null>) {
+				[](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+								   KeyValueType::Null> auto) {
 					// Ignore nulls and numeric values
 				},
-				[&key](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+				[&key](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite,
+									   KeyValueType::FloatVector> auto) {
 					throw Error(errParams, "Equal positions doesn't support '{}' values", key.Type().Name());
 				},
 				[&](KeyValueType::Uuid) { addValue(cond, key.As<Uuid>()); },
@@ -218,15 +225,16 @@ public:
 
 		for (const Variant& key : values) {
 			key.Type().EvaluateOneOf(
-				[](OneOf<KeyValueType::Null>) {
+				[](KeyValueType::Null) {
 					// Ignore nulls
 				},
-				[&key](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+				[&key](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite,
+									   KeyValueType::FloatVector> auto) {
 					throw Error(errParams, "Equal positions doesn't support '{}' values", key.Type().Name());
 				},
 				[&](KeyValueType::String) { addValue(cond, static_cast<key_string>(key)); },
-				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
-						  KeyValueType::Uuid>) {
+				[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+									KeyValueType::Uuid> auto) {
 					try {
 						auto converted = key.convert(KeyValueType::String{});
 						addValue(cond, static_cast<key_string>(converted));

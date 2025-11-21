@@ -54,7 +54,7 @@ size_t TransactionSteps::CalculateNewCapacity(size_t currentSize) const noexcept
 	bool haveDeleteQuery = false;
 	bool haveTruncateQuery = false;
 	for (const auto& step : steps) {
-		std::visit(overloaded{[](OneOf<TransactionMetaStep, TransactionTmStep, TransactionNopStep>) noexcept {},
+		std::visit(overloaded{[](const concepts::OneOf<TransactionMetaStep, TransactionTmStep, TransactionNopStep> auto&) noexcept {},
 							  [&](const TransactionItemStep& s) noexcept {
 								  if (haveDeleteQuery) {
 									  return;

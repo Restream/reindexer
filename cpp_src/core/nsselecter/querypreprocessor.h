@@ -92,7 +92,7 @@ public:
 	}
 	bool IsFtPreselected() const noexcept { return ftPreselect_ && !ftEntry_; }
 	static void SetQueryField(QueryField&, const NamespaceImpl&);
-	static void VerifyOnStatementField(const QueryField&, const NamespaceImpl&);
+	static void VerifyOnStatementField(const QueryField&, const NamespaceImpl&, StrictMode strictMode);
 	bool IsSecondForcedSortStage() const noexcept {
 		return hasForcedSortOptimizationEntry_ && (evaluationStage_ == EvaluationStage::Second);
 	}

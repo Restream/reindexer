@@ -5,16 +5,16 @@
 namespace reindexer {
 
 template <typename OperationType, typename SubTree, int holdSize, typename... Ts>
-template <typename Merger>
-size_t ExpressionTree<OperationType, SubTree, holdSize, Ts...>::mergeEntries(Merger& merger, uint16_t dst, uint16_t srcBegin,
-																			 uint16_t srcEnd, Changed& changed) {
+template <typename Merger, typename SkippingEntries, typename InvalidEntries>
+size_t ExpressionTree<OperationType, SubTree, holdSize, Ts...>::mergeEntriesImpl(Merger& merger, uint16_t dst, uint16_t srcBegin,
+																				 uint16_t srcEnd, Changed& changed) {
 	assertrx_dbg(dst <= srcBegin);
 	size_t merged = 0;
 	for (size_t src = srcBegin, nextSrc; src < srcEnd; src = nextSrc) {
 		nextSrc = Next(src);
 		const auto mergeResult =
-			container_[src].Visit(overloaded{[](const Merger::InvalidEntries&) -> MergeResult { throw_as_assert; },
-											 [dst, src, this](const Merger::SkippingEntries&) {
+			container_[src].Visit(overloaded{[](const concepts::OneOf<InvalidEntries> auto&) -> MergeResult { throw_as_assert; },
+											 [dst, src, this](const concepts::OneOf<SkippingEntries> auto&) {
 												 if (dst != src) {
 													 container_[dst] = std::move(container_[src]);
 												 }
@@ -25,8 +25,8 @@ size_t ExpressionTree<OperationType, SubTree, holdSize, Ts...>::mergeEntries(Mer
 													 container_[dst] = std::move(container_[src]);
 												 }
 												 Merger subMerger{merger.MergingTree()};
-												 const size_t mergedInBracket =
-													 mergeEntries<Merger>(subMerger, dst + 1, src + 1, nextSrc, changed);
+												 const size_t mergedInBracket = mergeEntriesImpl<Merger, SkippingEntries, InvalidEntries>(
+													 subMerger, dst + 1, src + 1, nextSrc, changed);
 												 container_[dst].template Value<SubTree>().Erase(mergedInBracket);
 												 merged += mergedInBracket;
 												 changed |= (mergedInBracket != 0);
@@ -70,8 +70,9 @@ public:
 	explicit Merger(QueryPreprocessor& qPreproc) noexcept : qPreproc_{qPreproc} {}
 	QueryPreprocessor& MergingTree() noexcept { return qPreproc_; }
 
-	using InvalidEntries = OneOf<SubQueryEntry, SubQueryFieldEntry>;
-	using SkippingEntries = OneOf<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, MultiDistinctQueryEntry>;
+	using InvalidEntries = TypesPack<SubQueryEntry, SubQueryFieldEntry>;
+	using SkippingEntries =
+		TypesPack<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, MultiDistinctQueryEntry>;
 	using MergingEntry = QueryEntry;
 
 	MergeResult Merge(QueryEntry& entry, uint16_t dst, uint16_t src, OpType nextOp, bool last, Changed) {
@@ -132,12 +133,12 @@ public:
 	explicit Merger(Base& tree) noexcept : tree_{tree} {}
 	Base& MergingTree() noexcept { return tree_; }
 
-	struct InvalidEntries;
+	using InvalidEntries = TypesPack<>;
 	using SkippingEntries =
-		OneOf<SortExprFuncs::Index, SortExprFuncs::JoinedIndex, SortExprFuncs::Rank, SortExprFuncs::RankNamed, SortExprFuncs::Rrf,
-			  SortExprFuncs::SortHash, SortExprFuncs::DistanceFromPoint, SortExprFuncs::DistanceJoinedIndexFromPoint,
-			  SortExprFuncs::DistanceBetweenIndexes, SortExprFuncs::DistanceBetweenIndexAndJoinedIndex,
-			  SortExprFuncs::DistanceBetweenJoinedIndexes, SortExprFuncs::DistanceBetweenJoinedIndexesSameNs>;
+		TypesPack<SortExprFuncs::Index, SortExprFuncs::JoinedIndex, SortExprFuncs::Rank, SortExprFuncs::RankNamed, SortExprFuncs::Rrf,
+				  SortExprFuncs::SortHash, SortExprFuncs::DistanceFromPoint, SortExprFuncs::DistanceJoinedIndexFromPoint,
+				  SortExprFuncs::DistanceBetweenIndexes, SortExprFuncs::DistanceBetweenIndexAndJoinedIndex,
+				  SortExprFuncs::DistanceBetweenJoinedIndexes, SortExprFuncs::DistanceBetweenJoinedIndexesSameNs>;
 	using MergingEntry = SortExprFuncs::Value;
 
 protected:
@@ -166,7 +167,7 @@ Changed SortExpression::multiplyConstants() {
 	ConstantsMultiplier constMultiplier{*this};
 	const size_t deleted = mergeEntries(constMultiplier, 0, 0, Size(), changed);
 	if (deleted > 0) {
-		rx_unused = container_.erase(container_.end() - deleted, container_.end());
+		std::ignore = container_.erase(container_.end() - deleted, container_.end());
 	}
 	return Changed{deleted > 0} || changed;
 }
@@ -223,7 +224,7 @@ Changed SortExpression::sumConstants() {
 	ConstantsSummer constSummer{*this};
 	const size_t deleted = mergeEntries(constSummer, 0, 0, Size(), changed);
 	if (deleted > 0) {
-		rx_unused = container_.erase(container_.end() - deleted, container_.end());
+		std::ignore = container_.erase(container_.end() - deleted, container_.end());
 	}
 	return Changed{deleted > 0} || changed;
 }

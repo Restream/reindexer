@@ -1,6 +1,5 @@
 #pragma once
 
-#include "estl/one_of.h"
 #include "tools/errors.h"
 #include "variant.h"
 
@@ -9,7 +8,7 @@ namespace reindexer {
 template <NotComparable notComparable>
 struct [[nodiscard]] RelaxedComparator {
 	static bool equal(const Variant& lhs, const Variant& rhs) {
-		return lhs.RelaxCompare<WithString::Yes, notComparable>(rhs) == ComparationResult::Eq;
+		return lhs.RelaxCompare<WithString::Yes, notComparable, kDefaultNullsHandling>(rhs) == ComparationResult::Eq;
 	}
 };
 
@@ -25,8 +24,9 @@ struct [[nodiscard]] RelaxedHasher {
 			[&v](KeyValueType::String) noexcept { return std::pair<size_t, size_t>{4, v.Hash()}; },
 			[&v](KeyValueType::Uuid) noexcept { return std::pair<size_t, size_t>{5, v.Hash()}; },
 			[&v](KeyValueType::Float) noexcept { return std::pair<size_t, size_t>{6, v.Hash()}; },
-			[&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-					   KeyValueType::FloatVector>) noexcept(notComparable == NotComparable::Return) -> std::pair<size_t, size_t> {
+			[&v](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+								 KeyValueType::FloatVector> auto) noexcept(notComparable ==
+																		   NotComparable::Return) -> std::pair<size_t, size_t> {
 				if constexpr (notComparable == NotComparable::Return) {
 					return {indexesCount - 1, v.Hash()};
 				} else {
@@ -39,7 +39,8 @@ struct [[nodiscard]] RelaxedHasher {
 			case 0:
 				return v.Type().EvaluateOneOf(
 					[&v](KeyValueType::Bool) noexcept { return v.Hash(); },
-					[&v](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String>) {
+					[&v](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+										 KeyValueType::String> auto) {
 						if constexpr (notComparable == NotComparable::Return) {
 							const auto var = v.tryConvert(KeyValueType::Bool{});
 							if (var) {
@@ -51,8 +52,8 @@ struct [[nodiscard]] RelaxedHasher {
 							return v.convert(KeyValueType::Bool{}).Hash();
 						}
 					},
-					[&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
-							   KeyValueType::Null, KeyValueType::FloatVector>) -> size_t {
+					[&v](concepts::OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										 KeyValueType::Null, KeyValueType::FloatVector> auto) -> size_t {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
@@ -62,7 +63,8 @@ struct [[nodiscard]] RelaxedHasher {
 			case 1:
 				return v.Type().EvaluateOneOf(
 					[&v](KeyValueType::Int) noexcept { return v.Hash(); },
-					[&v](OneOf<KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String>) {
+					[&v](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+										 KeyValueType::String> auto) {
 						if constexpr (notComparable == NotComparable::Return) {
 							const auto var = v.tryConvert(KeyValueType::Int{});
 							if (var) {
@@ -74,8 +76,8 @@ struct [[nodiscard]] RelaxedHasher {
 							return v.convert(KeyValueType::Int{}).Hash();
 						}
 					},
-					[&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
-							   KeyValueType::Null, KeyValueType::FloatVector>) -> size_t {
+					[&v](concepts::OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										 KeyValueType::Null, KeyValueType::FloatVector> auto) -> size_t {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
@@ -85,7 +87,8 @@ struct [[nodiscard]] RelaxedHasher {
 			case 2:
 				return v.Type().EvaluateOneOf(
 					[&v](KeyValueType::Int64) noexcept { return v.Hash(); },
-					[&v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Double, KeyValueType::Float, KeyValueType::String>) {
+					[&v](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Double, KeyValueType::Float,
+										 KeyValueType::String> auto) {
 						if constexpr (notComparable == NotComparable::Return) {
 							const auto var = v.tryConvert(KeyValueType::Int64{});
 							if (var) {
@@ -97,8 +100,8 @@ struct [[nodiscard]] RelaxedHasher {
 							return v.convert(KeyValueType::Int64{}).Hash();
 						}
 					},
-					[&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
-							   KeyValueType::Null, KeyValueType::FloatVector>) -> size_t {
+					[&v](concepts::OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										 KeyValueType::Null, KeyValueType::FloatVector> auto) -> size_t {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
@@ -108,7 +111,8 @@ struct [[nodiscard]] RelaxedHasher {
 			case 3:
 				return v.Type().EvaluateOneOf(
 					[&v](KeyValueType::Double) noexcept { return v.Hash(); },
-					[&v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Float, KeyValueType::String>) {
+					[&v](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Float,
+										 KeyValueType::String> auto) {
 						if constexpr (notComparable == NotComparable::Return) {
 							const auto var = v.tryConvert(KeyValueType::Double{});
 							if (var) {
@@ -120,8 +124,8 @@ struct [[nodiscard]] RelaxedHasher {
 							return v.convert(KeyValueType::Double{}).Hash();
 						}
 					},
-					[&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
-							   KeyValueType::Null, KeyValueType::FloatVector>) -> size_t {
+					[&v](concepts::OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										 KeyValueType::Null, KeyValueType::FloatVector> auto) -> size_t {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
@@ -130,8 +134,8 @@ struct [[nodiscard]] RelaxedHasher {
 					});
 			case 4:
 				return v.Type().EvaluateOneOf([&v](KeyValueType::String) noexcept { return v.Hash(); },
-											  [&v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
-														 KeyValueType::Float, KeyValueType::Uuid>) {
+											  [&v](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64,
+																   KeyValueType::Double, KeyValueType::Float, KeyValueType::Uuid> auto) {
 												  if constexpr (notComparable == NotComparable::Return) {
 													  const auto var = v.tryConvert(KeyValueType::String{});
 													  if (var) {
@@ -143,8 +147,8 @@ struct [[nodiscard]] RelaxedHasher {
 													  return v.convert(KeyValueType::String{}).Hash();
 												  }
 											  },
-											  [&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
-														 KeyValueType::Null, KeyValueType::FloatVector>) -> size_t {
+											  [&v](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+																   KeyValueType::Null, KeyValueType::FloatVector> auto) -> size_t {
 												  if constexpr (notComparable == NotComparable::Return) {
 													  return v.Hash();
 												  } else {
@@ -167,9 +171,9 @@ struct [[nodiscard]] RelaxedHasher {
 							return v.convert(KeyValueType::Uuid{}).Hash();
 						}
 					},
-					[&v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
-							   KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-							   KeyValueType::FloatVector>) -> size_t {
+					[&v](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+										 KeyValueType::Float, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										 KeyValueType::Null, KeyValueType::FloatVector> auto) -> size_t {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {
@@ -179,7 +183,8 @@ struct [[nodiscard]] RelaxedHasher {
 			case 6:
 				return v.Type().EvaluateOneOf(
 					[&v](KeyValueType::Float) noexcept { return v.Hash(); },
-					[&v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String>) {
+					[&v](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+										 KeyValueType::String> auto) {
 						if constexpr (notComparable == NotComparable::Return) {
 							const auto var = v.tryConvert(KeyValueType::Float{});
 							if (var) {
@@ -191,8 +196,8 @@ struct [[nodiscard]] RelaxedHasher {
 							return v.convert(KeyValueType::Float{}).Hash();
 						}
 					},
-					[&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
-							   KeyValueType::Null, KeyValueType::FloatVector>) -> size_t {
+					[&v](concepts::OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										 KeyValueType::Null, KeyValueType::FloatVector> auto) -> size_t {
 						if constexpr (notComparable == NotComparable::Return) {
 							return v.Hash();
 						} else {

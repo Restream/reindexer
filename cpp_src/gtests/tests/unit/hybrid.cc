@@ -35,7 +35,7 @@ void HybridTest::SetUp() {
 	constexpr static size_t kEfConstruction = 200;
 
 	auto dir = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "/HybridTest");
-	rx_unused = reindexer::fs::RmDirAll(dir);
+	std::ignore = reindexer::fs::RmDirAll(dir);
 	rt.Connect("builtin://" + dir);
 	rt.OpenNamespace(kNsName);
 	rt.DefineNamespaceDataset(
@@ -181,7 +181,7 @@ std::string HybridTest::rndReranker() const {
 		reranker << "RRF(";
 		if (rand() % 2) {
 			reranker << "rank_const = ";
-			reranker << std::to_string(rand() % 1'000);
+			reranker << std::to_string(1 + rand() % 1'000);
 		}
 		reranker << ')';
 	} else {

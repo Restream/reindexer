@@ -49,7 +49,7 @@ public:
 
 	explicit Tokenizer(std::string_view query) noexcept : q_(query), cur_(query.begin()) {}
 	Token NextToken(Flags f = Flags(Flags::ToLower));
-	void SkipToken(Flags f = Flags(Flags::ToLower)) { rx_unused = NextToken(f); }
+	void SkipToken(Flags f = Flags(Flags::ToLower)) { std::ignore = NextToken(f); }
 	Token PeekToken(Flags f = Flags(Flags::ToLower)) {
 		auto saveCur = cur_;
 		auto savePos = pos_;

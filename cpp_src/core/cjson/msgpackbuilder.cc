@@ -29,8 +29,7 @@ MsgPackBuilder::MsgPackBuilder(msgpack_packer& packer, const TagsLengths* tagsLe
 	init(KUnknownFieldSize);
 }
 
-void MsgPackBuilder::Array(TagName tagName, Serializer& ser, TagType tagType, int count) {
-	checkIfCorrectArray(tagName);
+void MsgPackBuilder::Array(concepts::TagNameOrIndex auto tagName, Serializer& ser, TagType tagType, int count) {
 	skipTag();
 	packKeyName(tagName);
 	packArray(count);
@@ -38,6 +37,8 @@ void MsgPackBuilder::Array(TagName tagName, Serializer& ser, TagType tagType, in
 		packCJsonValue(tagType, ser);
 	}
 }
+template void MsgPackBuilder::Array(TagName, Serializer&, TagType, int);
+template void MsgPackBuilder::Array(TagIndex, Serializer&, TagType, int);
 
 void MsgPackBuilder::Json(std::string_view name, std::string_view arg) {
 	gason::JsonParser parser;

@@ -125,18 +125,18 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	EXPECT_EQ(static_cast<reindexer::key_string>(selectedTitle), titleValue);
 	EXPECT_EQ(static_cast<reindexer::key_string>(selectedName), nameValue);
 
-	rx_unused = execAndCompareQuery(
+	std::ignore = execAndCompareQuery(
 		Query(default_namespace).WhereComposite(compositeIndexName, CondLt, {{Variant(priceValue), Variant(pagesValue)}}));
-	rx_unused = execAndCompareQuery(
+	std::ignore = execAndCompareQuery(
 		Query(default_namespace).WhereComposite(compositeIndexName, CondLe, {{Variant(priceValue), Variant(pagesValue)}}));
-	rx_unused = execAndCompareQuery(
+	std::ignore = execAndCompareQuery(
 		Query(default_namespace).WhereComposite(compositeIndexName, CondGt, {{Variant(priceValue), Variant(pagesValue)}}));
-	rx_unused = execAndCompareQuery(
+	std::ignore = execAndCompareQuery(
 		Query(default_namespace).WhereComposite(compositeIndexName, CondGe, {{Variant(priceValue), Variant(pagesValue)}}));
 
 	fillNamespace(301, 400);
 
-	rx_unused = execAndCompareQuery(
+	std::ignore = execAndCompareQuery(
 		Query(default_namespace)
 			.WhereComposite(compositeIndexName, CondRange, {{Variant(1), Variant(1)}, {Variant(priceValue), Variant(pagesValue)}}));
 
@@ -145,7 +145,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	for (int i = 0; i < 10; ++i) {
 		intKeys.emplace_back(VariantArray{Variant(i), Variant(i * 5)});
 	}
-	rx_unused = execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondSet, intKeys));
+	std::ignore = execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondSet, intKeys));
 
 	dropIndex(compositeIndexName);
 	fillNamespace(401, 500);
@@ -155,13 +155,13 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 
 	fillNamespace(701, 900);
 
-	rx_unused = execAndCompareQuery(
+	std::ignore = execAndCompareQuery(
 		Query(default_namespace).WhereComposite(compositeIndexName2, CondEq, {{Variant(titleValue), Variant(nameValue)}}));
-	rx_unused = execAndCompareQuery(
+	std::ignore = execAndCompareQuery(
 		Query(default_namespace).WhereComposite(compositeIndexName2, CondGe, {{Variant(titleValue), Variant(nameValue)}}));
-	rx_unused = execAndCompareQuery(
+	std::ignore = execAndCompareQuery(
 		Query(default_namespace).WhereComposite(compositeIndexName2, CondLt, {{Variant(titleValue), Variant(nameValue)}}));
-	rx_unused = execAndCompareQuery(
+	std::ignore = execAndCompareQuery(
 		Query(default_namespace).WhereComposite(compositeIndexName2, CondLe, {{Variant(titleValue), Variant(nameValue)}}));
 
 	fillNamespace(1201, 2000);
@@ -172,15 +172,15 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	for (size_t i = 0; i < kStringKeysCnt; ++i) {
 		stringKeys.emplace_back(VariantArray{Variant(RandString()), Variant(RandString())});
 	}
-	rx_unused = execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondSet, stringKeys));
-	rx_unused = execAndCompareQuery(Query(default_namespace)
-										.Where(kFieldNameName, CondEq, nameValue)
-										.WhereComposite(compositeIndexName2, CondEq, {{Variant(titleValue), Variant(nameValue)}}));
+	std::ignore = execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2, CondSet, stringKeys));
+	std::ignore = execAndCompareQuery(Query(default_namespace)
+										  .Where(kFieldNameName, CondEq, nameValue)
+										  .WhereComposite(compositeIndexName2, CondEq, {{Variant(titleValue), Variant(nameValue)}}));
 
 	dropIndex(compositeIndexName2);
 	fillNamespace(201, 300);
 
-	rx_unused = execAndCompareQuery(Query(default_namespace));
+	std::ignore = execAndCompareQuery(Query(default_namespace));
 }
 
 TEST_F(CompositeIndexesApi, SelectsBySubIndexes) {

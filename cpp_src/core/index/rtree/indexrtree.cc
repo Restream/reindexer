@@ -67,10 +67,10 @@ template <typename KeyEntryT, template <typename, typename, typename, typename, 
 void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray& result, const VariantArray& keys, IdType id,
 																	 bool& clearCache) {
 	if (keys.empty() || keys.IsNullValue()) {
-		rx_unused = Upsert(Variant{}, id, clearCache);
+		std::ignore = Upsert(Variant{}, id, clearCache);
 		return;
 	}
-	if rx_unlikely (keys.size() != 2) {
+	if (keys.size() != 2) [[unlikely]] {
 		[[maybe_unused]] Point p{keys};
 	}
 	const Point point{keys[0].IsNullValue() ? 0.0 : keys[0].As<double>(), keys[1].IsNullValue() ? 0.0 : keys[1].As<double>()};

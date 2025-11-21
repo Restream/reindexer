@@ -213,7 +213,7 @@ private:
 
 void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::NsNamesCache& nsNamesCache) const {
 	auto& itemRef = items_.GetItemRef(idx);
-	if rx_unlikely (ctxs.size() <= itemRef.Nsid()) {
+	if (ctxs.size() <= itemRef.Nsid()) [[unlikely]] {
 		assertrx_dbg(ctxs.size() > itemRef.Nsid());	 // This code should be unreachable in normal conditions
 		throw Error(errAssert, "Do not have corresponding context for nsid: {} in LocalQueryResults; {} contextes total", itemRef.Nsid(),
 					ctxs.size());
@@ -277,9 +277,9 @@ Error LocalQueryResults::IteratorImpl<QR>::GetMsgPack(WrSerializer& wrser, bool 
 			MsgPackBuilder msgpackBuilder(wrser, ObjType::TypePlain, 0);
 			if (withHdrLen) {
 				auto slicePosSaver = wrser.StartSlice();
-				rx_unused = msgpackBuilder.Object(TagName::Empty(), 0);
+				std::ignore = msgpackBuilder.Object(TagName::Empty(), 0);
 			} else {
-				rx_unused = msgpackBuilder.Object(TagName::Empty(), 0);
+				std::ignore = msgpackBuilder.Object(TagName::Empty(), 0);
 			}
 			return {};
 		}
@@ -457,7 +457,9 @@ template <typename QR>
 Item LocalQueryResults::IteratorImpl<QR>::GetItem(bool enableHold) {
 	auto& itemRef = qr_->items_.GetItemRef(idx_);
 
-	assertrx(qr_->ctxs.size() > itemRef.Nsid());
+	if (qr_->ctxs.size() <= itemRef.Nsid()) {
+		return Item(Error(errNotFound, "QueryResults does not have namespace context and unable to create Item object"));
+	}
 	const auto& ctx = qr_->ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {

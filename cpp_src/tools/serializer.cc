@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-void Serializer::SkipPVString() { rx_unused = getPVStringPtr(); }
+void Serializer::SkipPVString() { std::ignore = getPVStringPtr(); }
 p_string Serializer::GetPVString() { return p_string(getPVStringPtr()); }
 
 p_string Serializer::GetPSlice() {
@@ -81,58 +81,13 @@ void WrSerializer::VStringHelper::End() {
 }
 
 void WrSerializer::PrintJsonString(std::string_view str, PrintJsonStringMode mode) {
-	const char* s = str.data();
-	size_t l = str.size();
-	grow(l * 6 + 3);
+	grow(str.length() * 6 + 3);
 	char* d = reinterpret_cast<char*>(buf_ + len_);
 	*d++ = '"';
-
-	while (l--) {
-		unsigned c = *s++;
-		switch (c) {
-			case '\b':
-				*d++ = '\\';
-				*d++ = 'b';
-				break;
-			case '\f':
-				*d++ = '\\';
-				*d++ = 'f';
-				break;
-			case '\n':
-				*d++ = '\\';
-				*d++ = 'n';
-				break;
-			case '\r':
-				*d++ = '\\';
-				*d++ = 'r';
-				break;
-			case '\t':
-				*d++ = '\\';
-				*d++ = 't';
-				break;
-			case '\\':
-				*d++ = '\\';
-				*d++ = '\\';
-				break;
-			case '"':
-				*d++ = '\\';
-				*d++ = '"';
-				if (mode == PrintJsonStringMode::QuotedQuote) {
-					*d++ = '"';
-				}
-				break;
-			default:
-				if (c < 0x20) {
-					*d++ = '\\';
-					*d++ = 'u';
-					d = u32toax(c, d, 4);
-				} else {
-					*d++ = c;
-				}
-		}
-	}
+	d = escapeString(str.begin(), str.end(), d, mode == PrintJsonStringMode::QuotedQuote ? AddQuotes_True : AddQuotes_False);
 	*d++ = '"';
 	len_ = d - reinterpret_cast<char*>(buf_);
+	return;
 }
 
 void WrSerializer::PutStrUuid(Uuid uuid) {

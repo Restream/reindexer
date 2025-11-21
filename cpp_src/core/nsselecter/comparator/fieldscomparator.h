@@ -6,7 +6,6 @@
 #include "core/payload/payloadtype.h"
 #include "core/payload/payloadtypeimpl.h"
 #include "core/payload/payloadvalue.h"
-#include "estl/one_of.h"
 
 namespace reindexer {
 
@@ -88,6 +87,8 @@ public:
 		assertrx_dbg(totalCalls_ >= matchedCount_);
 		return invert ? (totalCalls_ - matchedCount_) : matchedCount_;
 	}
+	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType /*rowId*/) const noexcept {}
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 
 private:
 	struct [[nodiscard]] FieldContext {
@@ -146,14 +147,19 @@ private:
 			return true;
 		}
 		return lType.EvaluateOneOf(
-			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) noexcept {
+			[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float> auto) noexcept {
 				return rType.EvaluateOneOf(
-					[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) noexcept { return true; },
-					[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
-							 KeyValueType::Tuple, KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept { return false; });
+					[](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float> auto) noexcept {
+						return true;
+					},
+					[](concepts::OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined,
+									   KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid,
+									   KeyValueType::FloatVector> auto) noexcept { return false; });
 			},
-			[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
-					 KeyValueType::Tuple, KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept { return false; });
+			[](concepts::OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined,
+							   KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid, KeyValueType::FloatVector> auto) noexcept {
+				return false;
+			});
 	}
 
 	std::string name_;

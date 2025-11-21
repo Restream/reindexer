@@ -13,7 +13,7 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 	const std::string kDir = JoinPath(GetTempDir(), "TransactionApi/ConcurrencyTest");
 	const std::string kDsn = "builtin://" + kDir;
 	rt.reindexer.reset();
-	rx_unused = reindexer::fs::RmDirAll(kDir);
+	std::ignore = reindexer::fs::RmDirAll(kDir);
 
 	std::unique_ptr<Reindexer> rx = std::make_unique<Reindexer>();
 	Error err = rx->Connect(kDsn);

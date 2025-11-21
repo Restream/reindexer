@@ -4,6 +4,7 @@
 #include "enums.h"
 #include "estl/h_vector.h"
 #include "estl/overloaded.h"
+#include "estl/types_pack.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -42,6 +43,12 @@ class [[nodiscard]] Skip<T> {
 public:
 	RX_ALWAYS_INLINE void operator()(const T&) const noexcept {}
 };
+
+template <class... Ts, class... Us>
+class [[nodiscard]] Skip<TypesPack<Ts...>, Us...> : public Skip<Ts..., Us...> {};
+
+template <class... Ts>
+class [[nodiscard]] Skip<TypesPack<Ts...>> : public Skip<Ts...> {};
 
 template <template <typename> typename Templ, typename... Ts>
 using SkipTemplate = Skip<Templ<Ts>...>;
@@ -809,7 +816,7 @@ public:
 	}
 	/// Closes last open subtree for appending
 	void CloseBracket() {
-		if rx_unlikely (activeBrackets_.empty()) {
+		if (activeBrackets_.empty()) [[unlikely]] {
 			throw Error(errLogic, "Close bracket before open");
 		}
 		activeBrackets_.pop_back();
@@ -895,7 +902,7 @@ public:
 				}
 			}
 		}
-		rx_unused = container_.erase(container_.begin() + from, container_.begin() + to);
+		std::ignore = container_.erase(container_.begin() + from, container_.begin() + to);
 		activeBrackets_.erase(
 			std::remove_if(activeBrackets_.begin(), activeBrackets_.end(), [from, to](size_t b) { return b >= from && b < to; }),
 			activeBrackets_.end());
@@ -1092,7 +1099,7 @@ protected:
 		}
 	}
 	ExpressionTree& operator=(const ExpressionTree& other) {
-		if rx_unlikely (this == &other) {
+		if (this == &other) [[unlikely]] {
 			return *this;
 		}
 		container_.clear();
@@ -1121,12 +1128,18 @@ protected:
 					append(begin.cbegin(), begin.cend());
 					CloseBracket();
 				},
-				[this, op](const auto& v) -> void { rx_unused = this->Append(op, v); });
+				[this, op](const auto& v) -> void { std::ignore = this->Append(op, v); });
 		}
 	}
 
+	// MSVC 14.44/14.51 unable to build mergeEntriesImpl without this wrapper
 	template <typename Merger>
-	size_t mergeEntries(Merger&, uint16_t dst, uint16_t srcBegin, uint16_t srcEnd, Changed&);
+	size_t mergeEntries(Merger& merger, uint16_t dst, uint16_t srcBegin, uint16_t srcEnd, Changed& changed) {
+		return mergeEntriesImpl<Merger, typename Merger::SkippingEntries, typename Merger::InvalidEntries>(merger, dst, srcBegin, srcEnd,
+																										   changed);
+	}
+	template <typename Merger, typename SkippingEntries, typename InvalidEntries>
+	size_t mergeEntriesImpl(Merger&, uint16_t dst, uint16_t srcBegin, uint16_t srcEnd, Changed&);
 };
 
 }  // namespace reindexer

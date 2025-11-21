@@ -283,7 +283,7 @@ uint32_t EventsListener::buildStreamsMask(const ObserverInfo& observer, const Ev
 		return 0;
 	}
 	uint32_t mask = 0;
-	if rx_likely (!rec.IsResyncOnUpdatesDropRecord()) {
+	if (!rec.IsResyncOnUpdatesDropRecord()) [[likely]] {
 		for (const auto& s : streams) {
 			if (s.Check(rec)) {
 				mask |= (1 << s.id);

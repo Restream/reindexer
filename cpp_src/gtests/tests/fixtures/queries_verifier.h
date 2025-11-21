@@ -22,6 +22,7 @@
 #include "core/sorting/sortexpression.h"
 #include "estl/fast_hash_set.h"
 #include "test_helpers.h"
+#include "tools/float_comparison.h"
 #include "tools/string_regexp_functions.h"
 
 class [[nodiscard]] QueriesVerifier : public virtual ::testing::Test {
@@ -134,9 +135,9 @@ protected:
 						}
 					}
 					if (res) {
-						rx_unused = query.SetEntry<reindexer::AlwaysTrue>(i);
+						std::ignore = query.SetEntry<reindexer::AlwaysTrue>(i);
 					} else {
-						rx_unused = query.SetEntry<reindexer::AlwaysFalse>(i);
+						std::ignore = query.SetEntry<reindexer::AlwaysFalse>(i);
 					}
 				},
 				[&](const reindexer::SubQueryFieldEntry& sqe) {
@@ -164,7 +165,7 @@ protected:
 						ASSERT_TRUE(qr.GetAggregationResults()[0].GetValue().has_value());
 						values.emplace_back(*qr.GetAggregationResults()[0].GetValue());
 					}
-					rx_unused = query.SetEntry<reindexer::QueryEntry>(i, sqe.FieldName(), sqe.Condition(), std::move(values));
+					std::ignore = query.SetEntry<reindexer::QueryEntry>(i, sqe.FieldName(), sqe.Condition(), std::move(values));
 				});
 		}
 		auto joinedSelectors = getJoinedSelectors(query);
@@ -195,18 +196,19 @@ protected:
 				}
 			}
 
+			const auto joined = qr[i].GetJoined();
 			bool conditionsSatisfied =
-				checkConditions(itemr, query.Entries().cbegin(), query.Entries().cend(), joinedSelectors, indexesFields);
+				checkConditions(itemr, &joined, query.Entries().cbegin(), query.Entries().cend(), joinedSelectors, indexesFields);
 			if (!conditionsSatisfied) {
 				std::stringstream ss;
 				ss << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl;
-				const auto jit = qr[i].GetJoined();
-				if (jit.getJoinedItemsCount() > 0) {
+				if (joined.getJoinedItemsCount() > 0) {
 					ss << "Joined:" << std::endl;
-					for (int fIdx = 0, fCount = jit.getJoinedFieldsCount(); fIdx < fCount; ++fIdx) {
-						for (int j = 0, iCount = jit.at(fIdx).ItemsCount(); j < iCount; ++j) {
-							const auto nsCtxIdx = qr.GetJoinedNsCtxIndex(jit.at(fIdx)[j].Nsid());
-							ss << jit.at(fIdx).GetItem(j, qr.getPayloadType(nsCtxIdx), qr.getTagsMatcher(nsCtxIdx)).GetJSON() << std::endl;
+					for (int fIdx = 0, fCount = joined.getJoinedFieldsCount(); fIdx < fCount; ++fIdx) {
+						for (int j = 0, iCount = joined.at(fIdx).ItemsCount(); j < iCount; ++j) {
+							const auto nsCtxIdx = qr.GetJoinedNsCtxIndex(joined.at(fIdx)[j].Nsid());
+							ss << joined.at(fIdx).GetItem(j, qr.getPayloadType(nsCtxIdx), qr.getTagsMatcher(nsCtxIdx)).GetJSON()
+							   << std::endl;
 						}
 					}
 				}
@@ -257,16 +259,16 @@ protected:
 							} else if (lastValIt > currValIt) {
 								cmpRes[0] = reindexer::ComparationResult::Gt;
 							} else if (lastValIt == query.ForcedSortOrder().cend()) {
-								cmpRes[0] =
-									lastSortedColumnValues[0].RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(
-										sortedValue, collate);
+								cmpRes[0] = lastSortedColumnValues[0]
+												.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return,
+															  reindexer::kDefaultNullsHandling>(sortedValue, collate);
 							} else {
 								cmpRes[0] = reindexer::ComparationResult::Eq;
 							}
 						} else {
-							cmpRes[j] =
-								lastSortedColumnValues[j].RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(
-									sortedValue, collate);
+							cmpRes[j] = lastSortedColumnValues[j]
+											.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return,
+														  reindexer::kDefaultNullsHandling>(sortedValue, collate);
 						}
 						bool sortOrderSatisfied = (sortingEntry.desc && (cmpRes[j] & reindexer::ComparationResult::Ge)) ||
 												  (!sortingEntry.desc && (cmpRes[j] & reindexer::ComparationResult::Le)) ||
@@ -293,8 +295,8 @@ protected:
 			if (pks.find(insertedItem.first) != pks.end()) {
 				continue;
 			}
-			bool conditionsSatisfied =
-				checkConditions(insertedItem.second, query.Entries().cbegin(), query.Entries().cend(), joinedSelectors, indexesFields);
+			bool conditionsSatisfied = checkConditions(insertedItem.second, nullptr, query.Entries().cbegin(), query.Entries().cend(),
+													   joinedSelectors, indexesFields);
 
 			if (conditionsSatisfied) {
 				bool hasErr = checkDistincts(insertedItem.second, query, distincts, reindexer::Invert_True);
@@ -379,9 +381,9 @@ protected:
 	reindexer::fast_hash_map<std::string, InsertedItemsByPk> insertedItems_;
 
 private:
-	bool checkConditions(const reindexer::Item& item, reindexer::QueryEntries::const_iterator it,
-						 reindexer::QueryEntries::const_iterator to, const std::vector<JoinedSelectorMock>& joinedSelectors,
-						 const IndexesData& indexesFields) {
+	bool checkConditions(const reindexer::Item& item, const reindexer::joins::ItemIterator* joined,
+						 reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
+						 const std::vector<JoinedSelectorMock>& joinedSelectors, const IndexesData& indexesFields) {
 		bool result = true;
 		for (; it != to; ++it) {
 			OpType op = it->operation;
@@ -390,15 +392,14 @@ private:
 			}
 			bool skip = false;
 			const bool iterationResult = it->Visit(
-				[](reindexer::OneOf<reindexer::SubQueryEntry, reindexer::SubQueryFieldEntry, reindexer::KnnQueryEntry>) -> bool {
-					throw_as_assert;
-				},
+				[](const reindexer::concepts::OneOf<reindexer::SubQueryEntry, reindexer::SubQueryFieldEntry,
+													reindexer::KnnQueryEntry> auto&) -> bool { throw_as_assert; },
 				[&](const reindexer::QueryEntriesBracket&) {
 					if (op == OpOr && result && !containsJoins(it.cbegin(), it.cend())) {
 						skip = true;
 						return false;
 					}
-					return checkConditions(item, it.cbegin(), it.cend(), joinedSelectors, indexesFields);
+					return checkConditions(item, joined, it.cbegin(), it.cend(), joinedSelectors, indexesFields);
 				},
 				[&](const reindexer::QueryEntry& qe) {
 					if ((op == OpOr && result) || qe.Distinct()) {
@@ -415,7 +416,12 @@ private:
 					}
 					const auto& js = joinedSelectors[jqe.joinIndex];
 					const auto& rightIndexesFields = indexesFields_[js.RightNsName()];
-					return checkCondition(item, js, indexesFields, rightIndexesFields);
+					std::optional<reindexer::LocalQueryResults> joinedQR;
+					if (joined) {
+						joinedQR = joined->at(jqe.joinIndex).ToQueryResults();
+						joinedQR->addNSContext(js.QueryResults(), 0, reindexer::lsn_t{});
+					}
+					return checkCondition(item, joinedQR, js, indexesFields, rightIndexesFields);
 				},
 				[&](const reindexer::BetweenFieldsQueryEntry& qe) {
 					if (op == OpOr && result) {
@@ -524,43 +530,84 @@ private:
 		return hasErr;
 	}
 
-	bool checkCondition(const reindexer::Item& item, const JoinedSelectorMock& joinedSelector, const IndexesData& leftIndexesFields,
-						const IndexesData& rightIndexesFields) {
-		for (auto it : joinedSelector.QueryResults()) {
-			const reindexer::Item& rightItem = it.GetItem(false);
-			bool result = true;
-			const auto& joinEntries{joinedSelector.JoinQuery().joinEntries_};
-			assertrx(!joinEntries.empty());
-			assertrx(joinEntries[0].Operation() != OpOr);
-			for (const auto& je : joinEntries) {
-				if (je.Operation() == OpOr) {
-					if (result) {
-						continue;
-					}
-				} else if (!result) {
-					break;
+	bool checkSingleJoinedItem(const reindexer::Item& leftItem, const reindexer::Item& rightItem, const JoinedSelectorMock& joinedSelector,
+							   const IndexesData& leftIndexesFields, const IndexesData& rightIndexesFields) {
+		bool result = true;
+		const auto& joinEntries{joinedSelector.JoinQuery().joinEntries_};
+		assertrx(!joinEntries.empty());
+		assertrx(joinEntries[0].Operation() != OpOr);
+		for (const auto& je : joinEntries) {
+			if (je.Operation() == OpOr) {
+				if (result) {
+					continue;
 				}
-				const bool curResult = checkOnCondition(item, rightItem, je.LeftFieldName(), je.RightFieldName(), je.Condition(),
-														leftIndexesFields, rightIndexesFields);
-				switch (je.Operation()) {
-					case OpAnd:
-						result = curResult;
-						break;
-					case OpNot:
-						result = !curResult;
-						break;
-					case OpOr:
-						result = result || curResult;
-						break;
-					default:
-						assertrx(0);
-				}
+			} else if (!result) {
+				break;
 			}
-			if (result) {
-				return true;
+			const bool curResult = checkOnCondition(leftItem, rightItem, je.LeftFieldName(), je.RightFieldName(), je.Condition(),
+													leftIndexesFields, rightIndexesFields);
+			switch (je.Operation()) {
+				case OpAnd:
+					result = curResult;
+					break;
+				case OpNot:
+					result = !curResult;
+					break;
+				case OpOr:
+					result = result || curResult;
+					break;
+				default:
+					assertrx(0);
 			}
 		}
-		return false;
+		return result;
+	}
+
+	bool checkCondition(const reindexer::Item& item, const std::optional<reindexer::LocalQueryResults>& actuallyJoinedQr,
+						const JoinedSelectorMock& joinedSelector, const IndexesData& leftIndexesFields,
+						const IndexesData& rightIndexesFields) {
+		unsigned curOffset = 0;
+		unsigned expectedJoinedCount = 0;
+		bool matched = false;
+
+		for (auto& it : joinedSelector.QueryResults()) {
+			const reindexer::Item rightItem = it.GetItem(false);
+			if (checkSingleJoinedItem(item, rightItem, joinedSelector, leftIndexesFields, rightIndexesFields)) {
+				matched = true;
+				++curOffset;
+				if (!actuallyJoinedQr.has_value()) {
+					break;
+				}
+				if (curOffset < joinedSelector.Offset()) {
+					break;
+				}
+				if (joinedSelector.Limit() == 0) {
+					break;
+				}
+				++expectedJoinedCount;
+				if (expectedJoinedCount > actuallyJoinedQr->Count()) {
+					EXPECT_LE(expectedJoinedCount, actuallyJoinedQr->Count()) << "Too few joined items";
+					continue;
+				}
+				thread_local reindexer::WrSerializer expWser, actWser;
+				expWser.Reset();
+				actWser.Reset();
+				auto err = (*actuallyJoinedQr)[expectedJoinedCount - 1].GetJSON(actWser, false);
+				EXPECT_TRUE(err.ok()) << err.what();
+				err = it.GetJSON(expWser, false);
+				EXPECT_TRUE(err.ok()) << err.what();
+				EXPECT_EQ(actWser.Slice(), expWser.Slice()) << "Actual joined content does not correspond to the expected item";
+				if (expectedJoinedCount == joinedSelector.Limit()) {
+					break;
+				}
+			}
+		}
+		if (actuallyJoinedQr.has_value() && (expectedJoinedCount != actuallyJoinedQr->Count())) {
+			EXPECT_EQ(expectedJoinedCount, actuallyJoinedQr->Count())
+				<< "Unexpected joined items count for " << joinedSelector.JoinQuery().NsName();
+			return false;
+		}
+		return matched;
 	}
 
 	bool checkOnCondition(const reindexer::Item& leftItem, const reindexer::Item& rightItem, const std::string& leftIndexName,
@@ -673,7 +720,10 @@ private:
 		auto cmpRes = reindexer::ComparationResult::Eq;
 		for (size_t i = 0; i < indexesValues.size() && (cmpRes == reindexer::ComparationResult::Eq); ++i) {
 			compositeValues[i].convert(indexesValues[i].Type());
-			cmpRes = indexesValues[i].RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(compositeValues[i], opts);
+			cmpRes =
+				indexesValues[i]
+					.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return, reindexer::NullsHandling::NotComparable>(
+						compositeValues[i], opts);
 		}
 		return cmpRes;
 	}
@@ -735,11 +785,14 @@ private:
 	static auto compare(const reindexer::Variant& v, const reindexer::Variant& k, const CollateOpts& opts,
 						reindexer::KeyValueType fieldType) {
 		if constexpr (betweenFields == BetweenFields::Yes) {
-			return v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(k, opts);
+			return v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return, reindexer::NullsHandling::NotComparable>(
+				k, opts);
 		} else {
 			return fieldType.Is<reindexer::KeyValueType::Undefined>()
-					   ? v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(k, opts)
-					   : v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return>(k.convert(fieldType), opts);
+					   ? v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return,
+										reindexer::NullsHandling::NotComparable>(k, opts)
+					   : v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return,
+										reindexer::NullsHandling::NotComparable>(k.convert(fieldType), opts);
 		}
 	}
 
@@ -962,7 +1015,7 @@ private:
 					assertrx(values.size() == 1);
 					return values[0].As<double>();
 				},
-				[](const OneOf<Rank, RankNamed, Rrf, SortHash>&) -> double { abort(); },
+				[](const concepts::OneOf<Rank, RankNamed, Rrf, SortHash> auto&) -> double { abort(); },
 				[&item](const DistanceFromPoint& i) {
 					return distance(static_cast<Point>(static_cast<VariantArray>(item[i.column])), i.point);
 				},
@@ -1004,7 +1057,7 @@ private:
 					multResult *= value;
 					break;
 				case OpDiv:
-					assertrx(value != 0.0);
+					assertrx(!fp::IsZero(value));
 					multResult /= value;
 					break;
 			}
@@ -1014,16 +1067,15 @@ private:
 
 	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
 		for (; it != end; ++it) {
-			if (it->Visit([&it] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::QueryEntriesBracket&)
-							  RX_POST_LMBD_ALWAYS_INLINE { return containsJoins(it.cbegin(), it.cend()); },
-						  [] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::JoinQueryEntry&)
-							  RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
-						  [] RX_PRE_LMBD_ALWAYS_INLINE(
-							  reindexer::OneOf<const reindexer::QueryEntry, reindexer::BetweenFieldsQueryEntry, reindexer::AlwaysFalse,
-											   reindexer::AlwaysTrue, reindexer::SubQueryEntry, reindexer::SubQueryFieldEntry,
-											   reindexer::KnnQueryEntry, reindexer::MultiDistinctQueryEntry>)
-
-							  RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; })) {
+			if (it->Visit(
+					[&it] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::QueryEntriesBracket&)
+						RX_POST_LMBD_ALWAYS_INLINE { return containsJoins(it.cbegin(), it.cend()); },
+					[] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::JoinQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+					[] RX_PRE_LMBD_ALWAYS_INLINE(
+						const reindexer::concepts::OneOf<reindexer::QueryEntry, reindexer::BetweenFieldsQueryEntry, reindexer::AlwaysFalse,
+														 reindexer::AlwaysTrue, reindexer::SubQueryEntry, reindexer::SubQueryFieldEntry,
+														 reindexer::KnnQueryEntry, reindexer::MultiDistinctQueryEntry> auto&)
+						RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; })) {
 				return true;
 			}
 		}
@@ -1034,10 +1086,11 @@ private:
 		std::vector<JoinedSelectorMock> result;
 		result.reserve(query.GetJoinQueries().size());
 		for (auto jq : query.GetJoinQueries()) {
+			auto limit = jq.Limit();
+			auto offset = jq.Offset();
 			jq.Limit(reindexer::QueryEntry::kDefaultLimit);
 			jq.Offset(reindexer::QueryEntry::kDefaultOffset);
-			jq.ClearSorting();
-			result.emplace_back(InnerJoin, std::move(jq));
+			result.emplace_back(InnerJoin, std::move(jq), limit, offset);
 		}
 		return result;
 	}

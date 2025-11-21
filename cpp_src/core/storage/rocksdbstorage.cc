@@ -47,7 +47,7 @@ Error RocksDbStorage::Open(const std::string& path, const StorageOpts& opts) {
 }
 
 void RocksDbStorage::Destroy(const std::string& path) {
-	rx_unused = fs::RmDirAll(fs::JoinPath(path, std::string(kLostDirName)));
+	std::ignore = fs::RmDirAll(fs::JoinPath(path, std::string(kLostDirName)));
 
 	rocksdb::Options options;
 	options.create_if_missing = true;

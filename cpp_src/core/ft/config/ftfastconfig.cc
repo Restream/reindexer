@@ -4,6 +4,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/limits.h"
 #include "tools/errors.h"
+#include "tools/float_comparison.h"
 #include "tools/jsontools.h"
 
 namespace {
@@ -22,9 +23,10 @@ static bool isAllEqual(const C& c) {
 
 namespace reindexer {
 
-bool FtFastFieldConfig::operator==(const FtFastFieldConfig& other) const noexcept {
-	return bm25Boost == other.bm25Boost && bm25Weight == other.bm25Weight && termLenBoost == other.termLenBoost &&
-		   termLenWeight == other.termLenWeight && positionBoost == other.positionBoost && positionWeight == other.positionWeight;
+bool FtFastFieldConfig::operator==(const FtFastFieldConfig& o) const noexcept {
+	return fp::ExactlyEqual(bm25Boost, o.bm25Boost) && fp::ExactlyEqual(bm25Weight, o.bm25Weight) &&
+		   fp::ExactlyEqual(termLenBoost, o.termLenBoost) && fp::ExactlyEqual(termLenWeight, o.termLenWeight) &&
+		   fp::ExactlyEqual(positionBoost, o.positionBoost) && fp::ExactlyEqual(positionWeight, o.positionWeight);
 }
 
 void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexFieldPros>& fields) {
@@ -88,7 +90,7 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, FtIn
 		defaultFieldCfg.positionBoost = root["position_boost"].As<>(defaultFieldCfg.positionBoost, 0.0, 10.0);
 		defaultFieldCfg.positionWeight = root["position_weight"].As<>(defaultFieldCfg.positionWeight, 0.0, 1.0);
 
-		rx_unused = fieldsCfg.insert(fieldsCfg.cend(), fields.size() ? fields.size() : 1, defaultFieldCfg);
+		std::ignore = fieldsCfg.insert(fieldsCfg.cend(), fields.size() ? fields.size() : 1, defaultFieldCfg);
 
 		const auto& fieldsCfgNode = root["fields"];
 		if (!fieldsCfgNode.empty() && begin(fieldsCfgNode.value) != end(fieldsCfgNode.value)) {

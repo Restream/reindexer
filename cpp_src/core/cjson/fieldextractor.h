@@ -3,6 +3,7 @@
 #include <span>
 #include <variant>
 #include "tagsmatcher.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -20,7 +21,7 @@ class [[nodiscard]] FieldsExtractor {
 			PathStepGuard(PathStepGuard&& other) noexcept : filter_{other.filter_}, step_{other.step_}, wasMatch_{other.wasMatch_} {
 				other.step_ = 0;
 			}
-			PathStepGuard(Filter& filter, concepts::OneOf<TagName, TagIndex> auto... tags) : filter_{filter}, wasMatch_{filter_.match_} {
+			PathStepGuard(Filter& filter, concepts::TagNameOrIndex auto... tags) : filter_{filter}, wasMatch_{filter_.match_} {
 				(step(tags), ...);
 			}
 			~PathStepGuard() {
@@ -99,7 +100,7 @@ class [[nodiscard]] FieldsExtractor {
 		bool ExactMatch() const noexcept {
 			return match_ && std::visit([this](const auto& path) { return position_ == path->size(); }, path_);
 		}
-		PathStepGuard Step(concepts::OneOf<TagName, TagIndex> auto... tags) & { return PathStepGuard{*this, tags...}; }
+		PathStepGuard Step(concepts::TagNameOrIndex auto... tags) & { return PathStepGuard{*this, tags...}; }
 		TagIndex GetArrayIndex() const {
 			if (!match_) {
 				return TagIndex::All();
@@ -147,15 +148,15 @@ public:
 
 	void SetTagsMatcher(const TagsMatcher*) noexcept {}
 
-	template <concepts::OneOf<TagName, TagIndex> T = TagName>
-	FieldsExtractor Object(T tag = TagName::Empty()) {
+	FieldsExtractor Object() { return Object(TagName::Empty()); }
+	FieldsExtractor Object(concepts::TagNameOrIndex auto tag) {
 		auto filterStep = step(tag);
-		if rx_unlikely (filterRef_.ExactMatch()) {
+		if (filterRef_.ExactMatch()) [[unlikely]] {
 			values_->MarkObject();
 		}
 		return FieldsExtractor(values_, expectedType_, std::move(filterStep), params_, NotArray);
 	}
-	FieldsExtractor Array(concepts::OneOf<TagName, TagIndex> auto tag) {
+	FieldsExtractor Array(concepts::TagNameOrIndex auto tag) {
 		assertrx_throw(values_);
 		auto filterStep = step(tag);
 		return FieldsExtractor(&values_->MarkArray(), expectedType_, std::move(filterStep), params_, 0);
@@ -168,7 +169,7 @@ public:
 	}
 
 	template <typename T>
-	void Array(concepts::OneOf<TagName, TagIndex> auto tag, std::span<T> data, unsigned offset) {
+	void Array(concepts::TagNameOrIndex auto tag, std::span<T> data, unsigned offset) {
 		auto filterStep = filterRef_.Step(tag);
 		const TagIndex tagIndex = filterRef_.GetArrayIndex();
 		filterStep.InitArray();
@@ -191,7 +192,7 @@ public:
 		}
 	}
 
-	void Array(concepts::OneOf<TagName, TagIndex> auto tag, Serializer& ser, TagType tagType, int count) {
+	void Array(concepts::TagNameOrIndex auto tag, Serializer& ser, TagType tagType, int count) {
 		auto filterStep = filterRef_.Step(tag);
 		const TagIndex tagIndex = filterRef_.GetArrayIndex();
 		filterStep.InitArray();
@@ -215,10 +216,10 @@ public:
 		}
 	}
 
-	FieldsExtractor& Put(TagName tag, Variant arg, int offset) {
+	void Put(concepts::TagNameOrIndex auto tag, Variant arg, int offset) {
 		const auto filterStep = filterRef_.Step(tag);
 		if (!filterRef_.Match()) {
-			return *this;
+			return;
 		}
 		if (params_) {
 			if (params_->index >= 0 && params_->length > 0 && offset == params_->index + params_->length) {
@@ -233,11 +234,11 @@ public:
 	}
 
 	template <typename T>
-	FieldsExtractor& Put(TagName tag, const T& arg, int offset) {
+	void Put(concepts::TagNameOrIndex auto tag, const T& arg, int offset) {
 		return Put(tag, Variant{arg}, offset);
 	}
 
-	FieldsExtractor& Null(TagName = TagName::Empty()) noexcept { return *this; }
+	void Null(concepts::TagNameOrIndex auto) noexcept {}
 	int TargetField() { return params_ ? params_->field : IndexValueType::NotSet; }
 	bool IsHavingOffset() const noexcept { return params_ && (params_->length >= 0 || params_->index >= 0); }
 	void OnScopeEnd(int offset) noexcept {
@@ -264,19 +265,17 @@ public:
 	void Null(int, Args...) = delete;
 
 private:
-	FieldsExtractor& put(Variant arg) {
+	void put(Variant arg) {
 		if (!filterRef_.Match()) {
-			return *this;
+			return;
 		}
 		expectedType_.EvaluateOneOf(
-			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
-					  KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Uuid, KeyValueType::FloatVector>) {
-				arg.convert(expectedType_);
-			},
-			[](OneOf<KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
+			[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+								KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Uuid,
+								KeyValueType::FloatVector> auto) { arg.convert(expectedType_); },
+			[](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Composite> auto) noexcept {});
 		assertrx_throw(values_);
 		values_->emplace_back(std::move(arg));
-		return *this;
 	}
 
 	void updateParams(TagIndex tagIndex, size_t count, int offset) {
@@ -288,9 +287,9 @@ private:
 					params_->index = offset;
 					params_->length = count;
 				}
-			} else {
+			} else if (tagIndex.AsNumber() < count) {
 				params_->index = tagIndex.AsNumber() + offset;
-				params_->length = count;
+				params_->length = 1;
 			}
 		}
 	}

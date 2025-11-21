@@ -37,7 +37,8 @@ public:
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
 	std::vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
-	void AwaitIndexOptimization(std::string_view nsName);
+	std::vector<std::string> RandStrVector(size_t size) { return rt.RandStrVector(size); }
+	void AwaitIndexOptimization(std::string_view nsName) { rt.AwaitIndexOptimization(nsName); }
 
 public:
 	const std::string default_namespace = "test_namespace";

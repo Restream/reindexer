@@ -40,9 +40,11 @@ public:
 
 	std::pair<Error, ConnectorProxy> GetConnector(const RdxContext& ctx) noexcept;
 	void ReleaseConnection(const ConnectorProxy& proxy);
+	size_t ConnectionInUse() const noexcept;
 
 private:
 	mutex mtx_;
+	std::atomic<uint64_t> busySize_{0};
 	contexted_cond_var cond_;
 
 	const PoolConfig config_;

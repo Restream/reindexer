@@ -43,7 +43,7 @@ protected:
 				keys.emplace_back(ser.GetVariant());
 			} else {
 				const auto len = ser.GetVarUInt();
-				if rx_unlikely (!len) {
+				if (!len) [[unlikely]] {
 					throw Error(errLogic, "{}::LoadIndexCache:{}: serialized PK array is empty", idxType, name);
 				}
 				keys.reserve(len);
@@ -52,7 +52,7 @@ protected:
 				}
 			}
 			const IdType itemID = getVectorData_(keys, destBuf);
-			if rx_unlikely (itemID < 0) {
+			if (itemID < 0) [[unlikely]] {
 				throw Error(errLogic, "{}::LoadIndexCache:{}: unable to find indexed item with requested PK", idxType, name);
 			}
 			return itemID;
@@ -97,6 +97,9 @@ public:
 													const std::atomic_int32_t& cancel) noexcept = 0;
 	virtual Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVecData) = 0;
 	virtual void RebuildCentroids(float) {}
+	void ResetIndexPerfStat() override;
+	void EnablePerfStat(bool);
+	void SetOpts(const IndexOpts& opts) override;
 
 private:
 	virtual SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const = 0;
@@ -111,6 +114,9 @@ private:
 
 	void checkForSelect(ConstFloatVectorView) const;
 	void checkVectorDims(ConstFloatVectorView, std::string_view operation) const;
+
+	template <typename T>
+	void checkAndExecFuncOnEmbeders(T fun);
 
 	IndexMemStat memStat_;
 	Index::KeyEntry emptyValues_;

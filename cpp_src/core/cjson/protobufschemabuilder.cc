@@ -92,13 +92,14 @@ void ProtobufSchemaBuilder::Field(std::string_view name, TagName tagName, const 
 		}
 		writeField(name, typeName, tagName);
 		type.EvaluateOneOf(
-			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) {
+			[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+								KeyValueType::Float> auto) {
 				if (ser_) {
 					ser_->Write(" [packed=true]");
 				}
 			},
-			[](OneOf<KeyValueType::String, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null,
-					 KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept {});
+			[](concepts::OneOf<KeyValueType::String, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
+							   KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector> auto) noexcept {});
 	} else {
 		writeField(name, typeName, tagName);
 	}

@@ -38,7 +38,6 @@ public:
 
 	template <typename N, typename T>
 	void Array(N tagName, std::span<T> data, int /*offset*/ = 0) {
-		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
@@ -48,7 +47,6 @@ public:
 	}
 	template <typename N>
 	void Array(N tagName, std::span<Uuid> data, int /*offset*/ = 0) {
-		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
@@ -59,7 +57,6 @@ public:
 
 	template <typename T>
 	void Array(T tagName, std::span<p_string> data, int /*offset*/ = 0) {
-		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
@@ -70,7 +67,6 @@ public:
 
 	template <typename T>
 	MsgPackBuilder Array(T tagName, int size = KUnknownFieldSize) {
-		checkIfCorrectArray(tagName);
 		packKeyName(tagName);
 		if (size == KUnknownFieldSize) {
 			assertrx(tagsLengths_ && tagIndex_);
@@ -79,7 +75,7 @@ public:
 			return MsgPackBuilder(packer_, ObjType::TypeObjectArray, size);
 		}
 	}
-	void Array(TagName, Serializer&, TagType, int count);
+	void Array(concepts::TagNameOrIndex auto, Serializer&, TagType, int count);
 
 	template <typename T>
 	MsgPackBuilder Object(T tagName, int size = KUnknownFieldSize) {
@@ -148,7 +144,9 @@ public:
 				}
 			},
 			[&](KeyValueType::Uuid) { packValue(Uuid{kv}); },
-			[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept { assertrx_throw(false); });
+			[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) noexcept {
+				assertrx_throw(false);
+			});
 		if (isArray()) {
 			skipTag();
 		}
@@ -215,14 +213,6 @@ private:
 
 	[[nodiscard]] bool isArray() const { return type_ == ObjType::TypeArray || type_ == ObjType::TypeObjectArray; }
 
-	void checkIfCorrectArray(std::string_view) const {}
-
-	void checkIfCorrectArray(TagName tagName) const {
-		if (tagName.IsEmpty()) {
-			throw Error(errLogic, "Arrays of arrays are not supported in cjson");
-		}
-	}
-
 	void packKeyName(std::nullptr_t) = delete;
 	void packKeyName(std::string_view name) {
 		if (!name.empty() && !isArray()) {
@@ -234,6 +224,7 @@ private:
 			packValue(tm_->tag2name(tagName));
 		}
 	}
+	void packKeyName(TagIndex) {}
 
 	[[nodiscard]] int getTagSize() {
 		if (tagsLengths_) {

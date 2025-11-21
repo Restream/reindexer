@@ -8,10 +8,14 @@ namespace reindexer {
 
 struct [[nodiscard]] Area {
 public:
-	Area() noexcept : start(0), end(0) {}
-	Area(int s, int e) noexcept : start(s), end(e) {}
+	Area() noexcept = default;
+	Area(unsigned s, unsigned e, unsigned idx) noexcept : start(s), end(e), arrayIdx(idx) {}
 
 	bool Concat(const Area& rhs) noexcept {
+		if (arrayIdx != rhs.arrayIdx) {
+			return false;
+		}
+
 		if (isIn(rhs.start) || isIn(rhs.end) || (start > rhs.start && end < rhs.end)) {
 			if (start > rhs.start) {
 				start = rhs.start;
@@ -24,20 +28,23 @@ public:
 		return false;
 	}
 
-	int start;
-	int end;
+	unsigned start = 0;
+	unsigned end = 0;
+	unsigned arrayIdx = 0;
 
 private:
-	bool inline isIn(int pos) noexcept { return pos <= end && pos >= start; }
+	bool inline isIn(unsigned pos) noexcept { return pos <= end && pos >= start; }
 };
 
 struct [[nodiscard]] AreaDebug {
 	enum class [[nodiscard]] PhraseMode { None, Start, End };
-	AreaDebug() {}
-	AreaDebug(int s, int e, std::string&& p, PhraseMode phMode) noexcept : start(s), end(e), props(p), phraseMode(phMode) {}
+	AreaDebug() = default;
+	AreaDebug(unsigned s, unsigned e, unsigned idx, std::string&& p, PhraseMode phMode) noexcept
+		: start(s), end(e), arrayIdx(idx), props(p), phraseMode(phMode) {}
 	RX_ALWAYS_INLINE bool Concat(const AreaDebug&) noexcept { return false; }
-	int start = 0;
-	int end = 0;
+	unsigned start = 0;
+	unsigned end = 0;
+	unsigned arrayIdx = 0;
 	std::string props;
 	PhraseMode phraseMode = PhraseMode::None;
 };
@@ -49,8 +56,11 @@ template <typename AreaType>
 class [[nodiscard]] AreasInField {
 public:
 	AreasInField() = default;
+
 	size_t Size() const noexcept { return data_.size(); }
+
 	bool Empty() const noexcept { return data_.empty(); }
+
 	void Commit() {
 		if (!data_.empty()) {
 			boost::sort::pdqsort_branchless(data_.begin(), data_.end(),
@@ -63,11 +73,12 @@ public:
 			}
 		}
 	}
-	bool Insert(AreaType&& area, float termRank, int maxAreasInDoc, float maxTermRank) {
-		if (!data_.empty() && data_.back().Concat(area)) {
+
+	bool Insert(AreaType&& area, float termRank, unsigned maxAreasInDoc, float maxTermRank) {
+		if (index_ > 0 && data_[(index_ - 1) % maxAreasInDoc].Concat(area)) {
 			return true;
 		} else {
-			if (maxAreasInDoc > 0 && data_.size() == unsigned(maxAreasInDoc)) {
+			if (maxAreasInDoc > 0 && data_.size() == maxAreasInDoc) {
 				if (termRank > maxTermRank) {
 					data_[index_ % maxAreasInDoc] = std::move(area);
 					index_++;
@@ -83,7 +94,7 @@ public:
 	}
 
 	const h_vector<AreaType, 2>& GetData() const noexcept { return data_; }
-	void MoveAreas(AreasInDocument<AreaType>& to, int field, int32_t rank, int maxAreasInDoc) {
+	void MoveAreas(AreasInDocument<AreaType>& to, unsigned field, float rank, unsigned maxAreasInDoc) {
 		for (auto& v : data_) {
 			[[maybe_unused]] bool r = to.InsertArea(std::move(v), field, rank, maxAreasInDoc);
 		}
@@ -111,22 +122,22 @@ public:
 			area.Commit();
 		}
 	}
-	bool AddWord(AreaType&& area, int field, int32_t rank, int maxAreasInDoc) {
+	bool AddWord(AreaType&& area, unsigned field, float rank, int maxAreasInDoc) {
 		return InsertArea(std::move(area), field, rank, maxAreasInDoc);
 	}
-	void UpdateRank(int32_t rank) noexcept {
+	void UpdateRank(float rank) noexcept {
 		if (rank > maxTermRank_) {
 			maxTermRank_ = rank;
 		}
 	}
 
-	AreasInField<AreaType>* GetAreas(int field) {
+	AreasInField<AreaType>* GetAreas(unsigned field) {
 		if (!committed_) {
 			Commit();
 		}
-		return (areas_.size() <= size_t(field)) ? nullptr : &areas_[field];
+		return (areas_.size() <= field) ? nullptr : &areas_[field];
 	}
-	AreasInField<AreaType>* GetAreasRaw(int field) noexcept { return (areas_.size() <= size_t(field)) ? nullptr : &areas_[field]; }
+	AreasInField<AreaType>* GetAreasRaw(unsigned field) noexcept { return (areas_.size() <= field) ? nullptr : &areas_[field]; }
 	bool IsCommitted() const noexcept { return committed_; }
 	size_t GetAreasCount() const noexcept {
 		size_t size = 0;
@@ -135,9 +146,9 @@ public:
 		}
 		return size;
 	}
-	bool InsertArea(AreaType&& area, int field, int32_t rank, int maxAreasInDoc) {
+	bool InsertArea(AreaType&& area, unsigned field, float rank, int maxAreasInDoc) {
 		committed_ = false;
-		if (areas_.size() <= size_t(field)) {
+		if (areas_.size() <= field) {
 			areas_.resize(field + 1);
 		}
 		auto& fieldAreas = areas_[field];
@@ -147,7 +158,7 @@ public:
 private:
 	bool committed_ = false;
 	h_vector<AreasInField<AreaType>, 3> areas_;
-	int32_t maxTermRank_ = 0;
+	float maxTermRank_ = 0;
 };
 
 }  // namespace reindexer

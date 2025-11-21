@@ -21,6 +21,15 @@ FloatVectorIndex::FloatVectorIndex(const IndexDef& idef, PayloadType&& pt, Field
 	assertrx_throw(!idef.Opts().IsArray());
 	keyType_ = selectKeyType_ = KeyValueType::FloatVector{};
 	memStat_.name = name_;
+	if (opts_.FloatVector().Embedding().has_value()) {
+		auto embedding = opts_.FloatVector().Embedding().value();
+		if (embedding.upsertEmbedder.has_value()) {
+			memStat_.upsertEmbedderStatus.emplace();
+		}
+		if (embedding.queryEmbedder.has_value()) {
+			memStat_.queryEmbedderStatus.emplace();
+		}
+	}
 	metric_ = idef.Opts().FloatVector().Metric();
 }
 
@@ -29,7 +38,7 @@ void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, MustExist mus
 	keeper_->Remove(id);
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
 	if (emptyValues_.Unsorted().Find(id)) {
-		rx_unused = emptyValues_.Unsorted().Erase(id);
+		std::ignore = emptyValues_.Unsorted().Erase(id);
 		memStat_.uniqKeysCount = emptyValues_.Unsorted().IsEmpty() ? 0 : 1;
 	} else {
 		Delete(keys[0], id, mustExist, stringsHolder, clearCache);
@@ -39,12 +48,12 @@ void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, MustExist mus
 SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType condition, SortType sortId, const SelectContext& selectCtx,
 											 const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if rx_unlikely (selectCtx.opts.distinct) {
+	if (selectCtx.opts.distinct) [[unlikely]] {
 		throw Error(errParams, "FloatVectorIndex({}): DISTINCT is not supported for vector indexes", Index::Name());
 	}
 	switch (condition) {
 		case CondEmpty: {
-			if rx_unlikely (selectCtx.opts.forceComparator) {
+			if (selectCtx.opts.forceComparator) [[unlikely]] {
 				throw Error(errLogic, "FloatVectorIndex({}): Comparator for 'IS NULL' vector index condition is not implemented", Name());
 			}
 			SelectKeyResult res;
@@ -122,17 +131,81 @@ IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) noexcept {
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
 	memStat_.indexingStructSize = emptyValues_.Unsorted().Size() * sizeof(IdType);
 	memStat_.vectorsKeeperSize = keeper_->GetMemStat();
+	if (opts_.FloatVector().Embedding().has_value()) {
+		int fieldNo = 0;
+		if (payloadType_.FieldByName(name_, fieldNo)) {
+			const auto& type = payloadType_.Field(fieldNo);
+
+			auto fillEmbedMemStat = [](auto&& embedder, auto& memStatEmbedField) {
+				if (embedder && memStatEmbedField) {
+					memStatEmbedField->lastError = embedder->GetLastError();
+					memStatEmbedField->lastRequestResult = embedder->GetLastStatus();
+				}
+			};
+
+			fillEmbedMemStat(type.UpsertEmbedder(), memStat_.upsertEmbedderStatus);
+			fillEmbedMemStat(type.QueryEmbedder(), memStat_.queryEmbedderStatus);
+		}
+	}
+
 	return memStat_;
 }
 
 namespace {
-EmbedderCachePerfStat GetEmbedderPerfStat(const std::shared_ptr<const EmbedderBase>& embedder, std::string_view tag) {
-	if (!embedder || tag.empty()) {
+EmbedderPerfStat GetEmbedderPerfStat(const std::shared_ptr<const EmbedderBase>& embedder, std::string_view tag) {
+	if (!embedder) {
 		return {};
 	}
 	return embedder->GetPerfStat(tag);
 }
 }  // namespace
+
+template <typename T>
+void FloatVectorIndex::checkAndExecFuncOnEmbeders(T fun) {
+	if (opts_.FloatVector().Embedding().has_value()) {
+		int fieldNo = 0;
+		if (payloadType_.FieldByName(name_, fieldNo)) {
+			const auto& type = payloadType_.Field(fieldNo);
+			auto upsertEmbeder = type.UpsertEmbedder();
+			if (upsertEmbeder) {
+				fun(upsertEmbeder);
+			}
+			auto queryEmbeder = type.QueryEmbedder();
+			if (queryEmbeder) {
+				fun(queryEmbeder);
+			}
+		}
+	}
+}
+
+void FloatVectorIndex::ResetIndexPerfStat() {
+	Index::ResetIndexPerfStat();
+	checkAndExecFuncOnEmbeders([](const auto& v) { v->ResetPerfStat(); });
+}
+
+void FloatVectorIndex::EnablePerfStat(bool enable) {
+	checkAndExecFuncOnEmbeders([enable](const auto& v) { v->EnablePerfStat(enable); });
+}
+
+void FloatVectorIndex::SetOpts(const IndexOpts& opts) {
+	Index::SetOpts(opts);
+	auto embedding = opts.FloatVector().Embedding();
+	if (embedding.has_value()) {
+		auto check = [](const std::optional<FloatVectorIndexOpts::EmbedderOpts>& embedder, std::optional<EmbedderStatus>& status) {
+			if (embedder.has_value()) {
+				if (!status.has_value()) {
+					status.emplace();
+				}
+			} else {
+				if (status.has_value()) {
+					status.reset();
+				}
+			}
+		};
+		check(embedding->upsertEmbedder, memStat_.upsertEmbedderStatus);
+		check(embedding->queryEmbedder, memStat_.queryEmbedderStatus);
+	}
+}
 
 IndexPerfStat FloatVectorIndex::GetIndexPerfStat() {
 	IndexPerfStat stat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
@@ -145,10 +218,10 @@ IndexPerfStat FloatVectorIndex::GetIndexPerfStat() {
 		if (payloadType_.FieldByName(name_, fieldNo)) {
 			const auto& type = payloadType_.Field(fieldNo);
 			if (embedding.upsertEmbedder.has_value()) {
-				stat.upsertEmbedderCache = GetEmbedderPerfStat(type.Embedder(), embedding.upsertEmbedder.value().cacheTag);
+				stat.upsertEmbedder = GetEmbedderPerfStat(type.UpsertEmbedder(), embedding.upsertEmbedder.value().cacheTag);
 			}
 			if (embedding.queryEmbedder.has_value()) {
-				stat.queryEmbedderCache = GetEmbedderPerfStat(type.QueryEmbedder(), embedding.queryEmbedder.value().cacheTag);
+				stat.queryEmbedder = GetEmbedderPerfStat(type.QueryEmbedder(), embedding.queryEmbedder.value().cacheTag);
 			}
 		}
 	}
@@ -190,7 +263,7 @@ void FloatVectorIndex::checkForSelect(ConstFloatVectorView key) const {
 }
 
 Variant FloatVectorIndex::upsertEmptyVectImpl(IdType id) {
-	rx_unused = emptyValues_.Unsorted().Add(id, IdSet::Auto, sortedIdxCount_);
+	std::ignore = emptyValues_.Unsorted().Add(id, IdSet::Auto, sortedIdxCount_);
 	memStat_.uniqKeysCount = 1;
 	return Variant{ConstFloatVectorView{}};
 }

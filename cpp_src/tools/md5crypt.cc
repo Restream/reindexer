@@ -115,7 +115,7 @@ Error ParseCryptString(const std::string& input, std::string& outHash, std::stri
 		return errOK;
 	} else {
 		std::vector<std::string> hashParts;
-		rx_unused = split(input, kCryptDelimiter, false, hashParts);
+		std::ignore = split(input, kCryptDelimiter, false, hashParts);
 		if (hashParts.size() != 4) {
 			return Error(errParams, "Unexpected hash format. Expectig '$type$salt$hash");
 		}

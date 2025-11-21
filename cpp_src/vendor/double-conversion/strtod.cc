@@ -25,6 +25,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+
 #include <climits>
 #include <cstdarg>
 
@@ -526,3 +531,7 @@ float Strtof(Vector<const char> buffer, int exponent) {
 }
 
 }  // namespace double_conversion
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif

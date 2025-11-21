@@ -18,7 +18,7 @@ class [[nodiscard]] IndexUnordered : public IndexStore<StoreIndexKeyType<Map>> {
 	using Base = IndexStore<StoreIndexKeyType<Map>>;
 
 public:
-	using ref_type = std::conditional_t<std::is_same<typename Map::key_type, PayloadValueWithHash>::value, PayloadValue,
+	using ref_type = std::conditional_t<std::is_same<typename Map::key_type, PayloadValueWithHash>::value, const PayloadValue&,
 										std::conditional_t<std::is_same_v<typename Map::key_type, key_string>, std::string_view,
 														   std::conditional_t<std::is_same_v<typename Map::key_type, key_string_with_hash>,
 																			  std::string_view, typename Map::key_type>>>;

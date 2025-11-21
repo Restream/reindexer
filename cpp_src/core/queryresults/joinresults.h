@@ -54,7 +54,33 @@ public:
 	void Clear() {
 		offsets_.clear();
 		items_.Clear();
+		tmpBuf_.Clear();
 		joinedSelectorsCount_ = 0;
+	}
+
+	/// Clears all joined items, except the chosen row
+	void ClearJoinedItemsExcept(IdType rowId) {
+		constexpr bool deallocateMemory = false;
+		ItemOffsets offsets;
+		if (auto found = offsets_.find(rowId); found != offsets_.end()) {
+			offsets = std::move(found->second);
+			uint32_t pos = 0;
+			tmpBuf_.Clear<deallocateMemory>();
+			tmpBuf_.Reserve(offsets.size());
+			for (auto& offset : offsets) {
+				auto mbegin = std::move(items_).mbegin() + offset.offset;
+				auto mend = mbegin + offset.size;
+				tmpBuf_.Insert(tmpBuf_.cend(), mbegin, mend);
+				offset.offset = pos;
+				pos += offset.size;
+			}
+		}
+		offsets_.clear();
+		items_.Clear<deallocateMemory>();
+		if (offsets.size()) {
+			items_.Insert(items_.cend(), std::move(tmpBuf_).mbegin(), std::move(tmpBuf_).mend());
+			offsets_[rowId] = std::move(offsets);
+		}
 	}
 
 private:
@@ -64,6 +90,8 @@ private:
 	fast_hash_map<IdType, ItemOffsets> offsets_;
 	/// Items for all the joined fields
 	ItemRefVector items_;
+	/// Temporary buffer for internal usage
+	ItemRefVector tmpBuf_;
 	/// Amount of joined selectors for this NS
 	uint32_t joinedSelectorsCount_ = 0;
 };
@@ -103,6 +131,8 @@ public:
 	}
 
 	ItemImpl GetItem(int itemIdx, const PayloadType& pt, const TagsMatcher& tm) const;
+	// TODO: This function returns LocalQueryResults without namespace context. So, user have to call qr.addNSContext() to be able to get
+	// any items/jsons. This API should be improved in #2273
 	LocalQueryResults ToQueryResults() const;
 
 	int ItemsCount() const noexcept;

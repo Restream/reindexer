@@ -74,7 +74,7 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 
 		if (indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::Embedding)) {
 			ns.verifyUpsertEmbedder("update", to);
-			PayloadFieldType f(ns.name_.ToLower(), index, to, ns.embeddersCache_);
+			PayloadFieldType f(ns.name_.ToLower(), index, to, ns.embeddersCache_, ns.enablePerfCounters_);
 			f.SetOffset(ns.payloadType_.Field(idx).Offset());
 			ns.payloadType_.Replace(idx, std::move(f));
 		}

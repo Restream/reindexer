@@ -223,7 +223,7 @@ Error AuthContext::GetDB(UserRole role, Reindexer** ret, Args&&... args) const n
 	if constexpr (caller == CalledFrom::RPCServer) {
 		if (role > kRoleDataRead) {
 			return [&](lsn_t lsn, int emitterServerId, int shardId) -> Error {
-				if rx_unlikely ((replicationRole && lsn.isEmpty() && emitterServerId < 0) || (shardingRole && shardId < 0)) {
+				if ((replicationRole && lsn.isEmpty() && emitterServerId < 0) || (shardingRole && shardId < 0)) [[unlikely]] {
 					return Error(errForbidden, "Forbidden: {} is required to perform modify operation with the role '{}'",
 								 replicationRole ? "a non-empty lsn or emitter server id" : "a non-negative shardId", UserRoleName(role_));
 				}
@@ -232,7 +232,7 @@ Error AuthContext::GetDB(UserRole role, Reindexer** ret, Args&&... args) const n
 			}(std::forward<Args>(args)...);
 		}
 	} else {
-		if rx_unlikely (shardingRole || replicationRole) {
+		if (shardingRole || replicationRole) [[unlikely]] {
 			return Error(errForbidden, "Forbidden: incorrect role{}: '{}'", caller == CalledFrom::HTTPServer ? " in the HTTP protocol" : "",
 						 UserRoleName(role_));
 		}

@@ -123,17 +123,11 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 	const char jsonPattern[] = R"xxx({"id": "key%d", "locale" : "%s", "nested": {"name": "name%d", "count": %ld}})xxx";
 
 	for (int i = 0; i < 20'000; ++i) {
-		Item item(rt.NewItem(default_namespace));
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
 		char json[1024];
 		long count = i;
 		snprintf(json, sizeof(json) - 1, jsonPattern, i, i % 2 ? "en" : "ru", i, count);
 
-		auto err = item.Unsafe(true).FromJSON(json);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		rt.Upsert(default_namespace, item);
+		rt.UpsertJSON(default_namespace, json);
 	}
 
 	rt.AddIndex(default_namespace, {"composite_ft", {"nested.name", "id", "locale"}, "text", "composite", IndexOpts()});
@@ -147,6 +141,63 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 		auto json = ritem.GetJSON();
 		EXPECT_EQ(json, R"xxx({"id":"key2","locale":"ru","nested":{"name":"name2","count":2}})xxx");
 	}
+}
+
+TEST_F(ReindexerApi, CompositeFTSelectByJsonPathWithNulls) {
+	constexpr size_t kItems = 1000;
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"locale", "hash", "string", IndexOpts()});
+
+	std::unordered_set<std::string> allIds;
+	std::unordered_set<std::string> nullIds;
+	std::unordered_set<std::string> nonNullIds;
+	for (size_t i = 0; i < kItems; ++i) {
+		std::string json;
+		std::string idStr = fmt::format("key{}", i);
+		const std::string_view locale = i % 2 ? "en" : "ru";
+		if (rand() % 100) {
+			json = fmt::format(R"j({{"id": "{}", "locale" : "{}", "nested": {{"name": "name{}", "count": {}}}}})j", idStr, locale, i, i);
+			nonNullIds.emplace(std::move(idStr));
+		} else if (rand() % 2) {
+			json = fmt::format(R"j({{"id": "{}", "locale" : "{}", "nested": {{"name": null, "count": {}}}}})j", idStr, locale, i);
+			nullIds.emplace(std::move(idStr));
+		} else {
+			json = fmt::format(R"j({{"id": "{}", "locale" : "{}", "nested": {{"count": {}}}}})j", idStr, locale, i);
+			nullIds.emplace(std::move(idStr));
+		}
+		rt.UpsertJSON(default_namespace, json);
+	}
+	allIds.insert(nullIds.cbegin(), nullIds.cend());
+	allIds.insert(nonNullIds.cbegin(), nonNullIds.cend());
+
+	rt.AddIndex(default_namespace, {"composite_ft", {"nested.name", "id", "locale"}, "text", "composite", IndexOpts()});
+
+	auto checkItems = [](const reindexer::QueryResults& qr, const std::unordered_set<std::string>& expected, std::string_view checkName) {
+		SCOPED_TRACE(checkName);
+		EXPECT_EQ(qr.Count(), expected.size());
+		for (auto& it : qr) {
+			auto item = it.GetItem(false);
+			auto key = item["id"].As<std::string>();
+			EXPECT_TRUE(expected.contains(key)) << "unexpected key: " << key;
+		}
+	};
+
+	// Select everything by key
+	auto qr = rt.Select(Query(default_namespace).Where("composite_ft", CondEq, "=key*"));
+	checkItems(qr, allIds, "all ids");
+	// Select non-null by name
+	qr = rt.Select(Query(default_namespace).Where("composite_ft", CondEq, "=name*"));
+	checkItems(qr, nonNullIds, "null ids");
+	// Remove all nulls
+	const auto removed = rt.Delete(Query(default_namespace).Where("nested.name", CondEmpty, reindexer::Variant()));
+	ASSERT_EQ(removed, nullIds.size());
+	// Select everything by key (there are no nulls anymore)
+	qr = rt.Select(Query(default_namespace).Where("composite_ft", CondEq, "=key*"));
+	checkItems(qr, nonNullIds, "non-null ids 1");
+	// Select non-null by name (same as 'by key')
+	qr = rt.Select(Query(default_namespace).Where("composite_ft", CondEq, "=name*"));
+	checkItems(qr, nonNullIds, "non-null ids 2");
 }
 
 TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {

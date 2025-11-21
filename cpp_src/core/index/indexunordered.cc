@@ -214,7 +214,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) {
 	if (key.IsNullValue()) {
-		rx_unused = this->empty_ids_.Unsorted().Erase(id);
+		std::ignore = this->empty_ids_.Unsorted().Erase(id);
 		this->isBuilt_ = false;
 		cache_.ResetImpl();
 		clearCache = true;
@@ -295,7 +295,8 @@ template <typename T>
 SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId,
 											  const Index::SelectContext& selectCtx, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (selectCtx.opts.forceComparator) {
+
+	if (selectCtx.opts.forceComparator || (sortId && !this->IsSupportSortedIdsBuild())) {
 		return Base::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 
@@ -340,7 +341,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 					if (keyIt != ctx.i_map->end()) {
 						if (dedupSet.has_value()) {
 							auto res = dedupSet->emplace(uintptr_t(&(keyIt->second)));
-							if rx_unlikely (!res.second) {
+							if (!res.second) [[unlikely]] {
 								continue;
 							}
 						}
@@ -463,8 +464,9 @@ void IndexUnordered<T>::SetSortedIdxCount(int sortedIdxCount) {
 	if (this->sortedIdxCount_ != sortedIdxCount) {
 		this->sortedIdxCount_ = sortedIdxCount;
 		for (auto& keyIt : idx_map) {
-			keyIt.second.Unsorted().ReserveForSorted(this->sortedIdxCount_);
+			keyIt.second.Unsorted().ReserveForSorted(sortedIdxCount);
 		}
+		empty_ids_.Unsorted().ReserveForSorted(sortedIdxCount);
 	}
 }
 
@@ -484,7 +486,7 @@ void IndexUnordered<T>::ResetIndexPerfStat() {
 template <typename T>
 IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext& ctx) {
 	IndexMemStat ret = Base::GetMemStat(ctx);
-	ret.uniqKeysCount = idx_map.size();
+	ret.uniqKeysCount = idx_map.size() + int(!empty_ids_.Unsorted().Empty());
 	ret.idsetCache = cache_.GetMemStat();
 	ret.trackedUpdatesCount = tracker_.updatesSize();
 	ret.trackedUpdatesBuckets = tracker_.updatesBuckets();

@@ -17,12 +17,12 @@ struct [[nodiscard]] ProtobufValue {
 												  !std::is_same<T, bool>::value>::type* = nullptr>
 	T As(T minv = std::numeric_limits<T>::min(), T maxv = std::numeric_limits<T>::max()) const {
 		T v;
-		value.Type().EvaluateOneOf([&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept { v = T(value); },
-								   [&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Composite, KeyValueType::Undefined,
-											 KeyValueType::Null, KeyValueType::Tuple>) {
-									   throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to number",
-															  value.Type().Name());
-								   });
+		value.Type().EvaluateOneOf(
+			[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double> auto) noexcept { v = T(value); },
+			[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Composite, KeyValueType::Undefined,
+								KeyValueType::Null, KeyValueType::Tuple> auto) {
+				throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to number", value.Type().Name());
+			});
 		if (v < minv || v > maxv) {
 			throw reindexer::Error(errParams, "Value is out of bounds: [{},{}]", minv, maxv);
 		}
@@ -48,11 +48,10 @@ struct [[nodiscard]] ProtobufValue {
 
 	bool IsOfPrimitiveType() const {
 		return itemType.EvaluateOneOf(
-			[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::Bool>) noexcept {
-				return true;
-			},
-			[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::String, KeyValueType::Undefined,
-					 KeyValueType::Uuid, KeyValueType::FloatVector>) noexcept { return false; });
+			[](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+							   KeyValueType::Bool> auto) noexcept { return true; },
+			[](concepts::OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::String,
+							   KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector> auto) noexcept { return false; });
 	}
 
 	Variant value;

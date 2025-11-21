@@ -5,7 +5,6 @@
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadiface.h"
 #include "core/payload/payloadtype.h"
-#include "estl/one_of.h"
 
 namespace reindexer {
 namespace DistinctHelpers {
@@ -34,8 +33,10 @@ struct [[nodiscard]] DistinctHasher {
 		for (const auto& v : vals) {
 			h = (h * 127) ^
 				v.Type().EvaluateOneOf(
-					[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
-							  KeyValueType::Int, KeyValueType::Uuid>) noexcept { return v.Hash(); },
+					[&](concepts::OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String,
+										KeyValueType::Bool, KeyValueType::Int, KeyValueType::Uuid, KeyValueType::Null> auto) noexcept {
+						return v.Hash();
+					},
 					[&](KeyValueType::Composite) -> size_t {
 						if constexpr (isCompositeSupported == IsCompositeSupported::Yes) {
 							return ConstPayload(type_, static_cast<const PayloadValue&>(v)).GetHash(fields_);
@@ -43,8 +44,9 @@ struct [[nodiscard]] DistinctHasher {
 							throw_as_assert;
 						}
 					},
-					[&](KeyValueType::Null) -> size_t { return 0; },
-					[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::FloatVector>) -> size_t { throw_as_assert; });
+					[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::FloatVector> auto) -> size_t {
+						throw_as_assert;
+					});
 		}
 		return h;
 	}
@@ -62,16 +64,10 @@ struct [[nodiscard]] CompareVariantVector {
 	bool operator()(const DistinctHelpers::FieldsValue& v1, const DistinctHelpers::FieldsValue& v2) const {
 		assertrx_throw(v1.size() == v2.size());
 		for (unsigned i = 0; i < v1.size(); i++) {
-			if (!v1[i].Type().IsSame(v2[i].Type())) {
-				return false;
-			}
-			if (v1[i].Type().Is<KeyValueType::Null>() && v2[i].Type().Is<KeyValueType::Null>()) {
-				continue;
-			}
 			const bool res = v1[i].Type().EvaluateOneOf(
-				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
-						  KeyValueType::Int, KeyValueType::Uuid>) {
-					return v1[i].Compare<NotComparable::Return>(v2[i]) == ComparationResult::Eq;
+				[&](concepts::OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String,
+									KeyValueType::Bool, KeyValueType::Int, KeyValueType::Uuid, KeyValueType::Null> auto) {
+					return v1[i].Compare<NotComparable::Return, kDefaultNullsHandling>(v2[i]) == ComparationResult::Eq;
 				},
 				[&](KeyValueType::Composite) -> bool {
 					if constexpr (isCompositeSupported == IsCompositeSupported::Yes) {
@@ -81,7 +77,7 @@ struct [[nodiscard]] CompareVariantVector {
 						throw_as_assert;
 					}
 				},
-				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::FloatVector>) -> bool {
+				[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::FloatVector> auto) -> bool {
 					throw_as_assert;
 				});
 			if (!res) {
@@ -106,24 +102,22 @@ struct [[nodiscard]] LessDistinctVector {
 			if (!v1[i].Type().IsSame(v2[i].Type())) {
 				return v1[i].Type().ToTagType() < v2[i].Type().ToTagType();
 			}
-			if (v1[i].Type().Is<KeyValueType::Null>() && v2[i].Type().Is<KeyValueType::Null>()) {
-				return false;
-			}
 			const bool res = v1[i].Type().EvaluateOneOf(
-				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
-						  KeyValueType::Int, KeyValueType::Uuid>) {
-					return v1[i].Compare<NotComparable::Return>(v2[i]) == ComparationResult::Lt;
+				[&](concepts::OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String,
+									KeyValueType::Bool, KeyValueType::Int, KeyValueType::Uuid, KeyValueType::Null> auto) {
+					return v1[i].Compare<NotComparable::Return, kDefaultNullsHandling>(v2[i]) == ComparationResult::Lt;
 				},
 				[&](KeyValueType::Composite) -> bool {
 					if constexpr (isCompositeSupported == IsCompositeSupported::Yes) {
 						const PayloadValue& l = static_cast<const PayloadValue&>(v1[i]);
 						const PayloadValue& r = static_cast<const PayloadValue&>(v2[i]);
-						return ConstPayload(type_, l).Compare<WithString::No, NotComparable::Return>(r, fields_) == ComparationResult::Lt;
+						return ConstPayload(type_, l).Compare<WithString::No, NotComparable::Return, kDefaultNullsHandling>(r, fields_) ==
+							   ComparationResult::Lt;
 					} else {
 						throw_as_assert;
 					}
 				},
-				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::FloatVector>) -> bool {
+				[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::FloatVector> auto) -> bool {
 					throw_as_assert;
 				});
 			return res;

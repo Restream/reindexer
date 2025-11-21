@@ -1,11 +1,11 @@
 #include "float_vector_index.h"
 #include "gtests/tests/gtest_cout.h"
+#include "gtests/tools.h"
 #include "tools/fsops.h"
 
 using reindexer::Query;
 using reindexer::ConstFloatVectorView;
 using reindexer::ConstFloatVector;
-using std::span;
 using reindexer::KnnSearchParams;
 using reindexer::VectorMetric;
 using reindexer::Reindexer;
@@ -17,7 +17,7 @@ protected:
 		const std::string kDsn = getDSN();
 		deletedIds_.clear();
 		rt.reindexer.reset();
-		rx_unused = reindexer::fs::RmDirAll(kDir);
+		std::ignore = reindexer::fs::RmDirAll(kDir);
 		rt.reindexer = std::make_shared<Reindexer>();
 		rt.Connect(kDsn);
 		rt.OpenNamespace(kNsName, StorageOpts().Enabled().CreateIfMissing());

@@ -179,7 +179,7 @@ void print_backtrace(std::ostream& sout, void* ctx, int sig) {
 	sout << "backtrace (" << method << "):" << std::endl;
 	for (int i = 1; i < addrlen; i++) {
 		auto te = TraceEntry(uintptr_t(addrlist[i]));
-		rx_unused = resolver->Resolve(te);
+		std::ignore = resolver->Resolve(te);
 		sout << " #" << i << " " << te << std::endl;
 	}
 #endif

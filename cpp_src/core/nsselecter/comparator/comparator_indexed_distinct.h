@@ -2,6 +2,7 @@
 
 #include <string_view>
 
+#include "core/index/payload_map.h"
 #include "estl/fast_hash_set.h"
 #include "tools/stringstools.h"
 
@@ -15,6 +16,18 @@ public:
 
 private:
 	SetType values_;
+};
+
+class [[nodiscard]] ComparatorIndexedDistinctPayload {
+public:
+	ComparatorIndexedDistinctPayload(const PayloadType& payloadType, const FieldsSet& fieldSet)
+		: values_(PayloadType{payloadType}, FieldsSet{fieldSet}) {}
+
+	RX_ALWAYS_INLINE bool Compare(const PayloadValue& pv) const { return values_.find(pv) == values_.cend(); }
+	void ExcludeValues(const PayloadValue& pv) { values_.insert(pv); }
+
+private:
+	unordered_payload_set<false> values_;
 };
 
 class [[nodiscard]] ComparatorIndexedDistinctString {

@@ -12,6 +12,29 @@ struct [[nodiscard]] FtFastFieldConfig {
 	double positionBoost = 1.0;
 	double positionWeight = 0.1;
 	bool operator==(const FtFastFieldConfig&) const noexcept;
+
+	RX_ALWAYS_INLINE static float pos2rank(unsigned pos) noexcept {
+		if (pos <= 10) {
+			return 1.0 - (pos / 100.0);
+		}
+		if (pos <= 100) {
+			return 0.9 - (pos / 1000.0);
+		}
+		if (pos <= 1000) {
+			return 0.8 - (pos / 10000.0);
+		}
+		if (pos <= 10000) {
+			return 0.7 - (pos / 100000.0);
+		}
+		if (pos <= 100000) {
+			return 0.6 - (pos / 1000000.0);
+		}
+		return 0.5;
+	}
+
+	RX_ALWAYS_INLINE static float bound(float k, float weight, float boost) noexcept { return (1.0 - weight) + k * boost * weight; }
+
+	RX_ALWAYS_INLINE float calcPositionRank(unsigned pos) noexcept { return bound(pos2rank(pos), positionWeight, positionBoost); }
 };
 
 struct [[nodiscard]] FtFastConfig : public BaseFTConfig {

@@ -59,7 +59,7 @@ public:
 	void SetConfig(const std::unique_ptr<reindexer::FtFuzzyConfig>& cfg) { cfg_ = *cfg.get(); }
 	DIt GetData(const wchar_t* key);
 	void SetSize(uint32_t size, reindexer::VDocIdType id, int filed);
-	void AddDada(const wchar_t* key, reindexer::VDocIdType id, int pos, int field);
+	void AddData(const wchar_t* key, reindexer::VDocIdType id, unsigned pos, unsigned field, unsigned arrayIdx);
 	void Commit();
 
 public:

@@ -37,15 +37,23 @@ public:
 	virtual reindexer::Error Initialize();
 
 	void RegisterAllCases();
+	struct [[nodiscard]] AllowEmptyResult {
+		void operator()(const reindexer::QueryResults&) const noexcept {}
+	};
+	static constexpr AllowEmptyResult allowEmptyResult{};
 
 protected:
 	template <unsigned maxPercentage = 10>
 	class [[nodiscard]] LowSelectivityItemsCounter {
 	public:
-		explicit LowSelectivityItemsCounter(State& state) noexcept : state_{state} {}
+		explicit LowSelectivityItemsCounter(State& state, unsigned int minIteration = 10) noexcept
+			: state_{state}, minIteration_(minIteration) {}
 		virtual ~LowSelectivityItemsCounter() {
+			if (state_.iterations() < minIteration_) {
+				return;
+			}
 			const auto percentageOfEmptyResults = (100 * emptyResultsCount_) / state_.iterations();
-			if rx_unlikely (percentageOfEmptyResults > maxPercentage) {
+			if (percentageOfEmptyResults > maxPercentage) [[unlikely]] {
 				const auto err = "Percentage of empty results " + std::to_string(percentageOfEmptyResults) + "% is more than " +
 								 std::to_string(maxPercentage) + '%';
 				state_.SkipWithError(err.c_str());
@@ -62,6 +70,7 @@ protected:
 
 	private:
 		size_t emptyResultsCount_{0};
+		unsigned int minIteration_{10};
 	};
 
 	void Insert(State& state);
@@ -84,7 +93,7 @@ protected:
 	}
 
 	RX_ALWAYS_INLINE static void checkNotEmpty(const reindexer::QueryResults& qres, benchmark::State& state) {
-		if rx_unlikely (!qres.Count()) {
+		if (!qres.Count()) [[unlikely]] {
 			state.SkipWithError("Results does not contain any value");
 		}
 	}
@@ -93,7 +102,7 @@ protected:
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			reindexer::QueryResults qres;
 			auto err = db_->Select(q, qres);
-			if rx_unlikely (!err.ok()) {
+			if (!err.ok()) [[unlikely]] {
 				state.SkipWithError(err.what());
 			}
 			checkNotEmpty(qres, state);
@@ -104,7 +113,7 @@ protected:
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			reindexer::QueryResults qres;
 			auto err = db_->Select(queryGenerator(), qres);
-			if rx_unlikely (!err.ok()) {
+			if (!err.ok()) [[unlikely]] {
 				state.SkipWithError(err.what());
 			}
 			checkNotEmpty(qres, state);
@@ -115,7 +124,7 @@ protected:
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			reindexer::QueryResults qres;
 			auto err = db_->Select(q, qres);
-			if rx_unlikely (!err.ok()) {
+			if (!err.ok()) [[unlikely]] {
 				state.SkipWithError(err.what());
 			}
 			itemsCounter(qres);
@@ -126,7 +135,7 @@ protected:
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			reindexer::QueryResults qres;
 			auto err = db_->Select(queryGenerator(), qres);
-			if rx_unlikely (!err.ok()) {
+			if (!err.ok()) [[unlikely]] {
 				state.SkipWithError(err.what());
 			}
 			itemsCounter(qres);

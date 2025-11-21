@@ -36,7 +36,8 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 						   const auto& eR{ctx_.sortingContext.exprResults[expressionIndex++]};
 						   const auto lR{eR[lhs.SortExprResultsIdx()]};
 						   const auto rR{eR[rhs.SortExprResultsIdx()]};
-						   if (lR == rR) {
+						   static_assert(std::is_floating_point_v<std::decay_t<decltype(lR)>>);
+						   if (fp::ExactlyEqual(lR, rR)) {
 							   return ComparationResult::Eq;
 						   } else if (lR > rR) {
 							   return c.desc ? ComparationResult::Lt : ComparationResult::Gt;
@@ -60,8 +61,8 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 							   }
 							   joinedNsRes.fieldsCmpRes =
 								   ConstPayload{joinedSelector.RightNs()->payloadType_, ljfIt[0].Value()}
-									   .Compare<WithString::No, NotComparable::Throw>(rjfIt[0].Value(), jNs.fields,
-																					  joinedNsRes.firstDifferentFieldIdx, jNs.collateOpts);
+									   .Compare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(
+										   rjfIt[0].Value(), jNs.fields, joinedNsRes.firstDifferentFieldIdx, jNs.collateOpts);
 						   }
 						   return joinedNsRes.GetResult(c.desc);
 					   },
@@ -307,13 +308,14 @@ ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t& 
 					// Indexed fields can not contain float
 					throw_as_assert;
 				},
-				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-						 KeyValueType::FloatVector>) -> std::pair<Variant, Variant> { throw_as_assert; });
-			cmpRes = values.first.template Compare<NotComparable::Throw>(values.second, opts ? *opts : CollateOpts());
+				[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+								   KeyValueType::FloatVector> auto) -> std::pair<Variant, Variant> { throw_as_assert; });
+			cmpRes =
+				values.first.template Compare<NotComparable::Throw, kDefaultNullsHandling>(values.second, opts ? *opts : CollateOpts());
 		} else {
 			cmpRes = ConstPayload(ns_.payloadType_, ns_.items_[lId])
-						 .CompareField<WithString::No, NotComparable::Throw>(ns_.items_[rId], field, fields_, tagPathIdx,
-																			 opts ? *opts : CollateOpts());
+						 .CompareField<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(
+							 ns_.items_[rId], field, fields_, tagPathIdx, opts ? *opts : CollateOpts());
 		}
 		if (cmpRes != ComparationResult::Eq) {
 			firstDifferentFieldIdx = i;

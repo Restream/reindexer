@@ -10,7 +10,7 @@ public:
 		: holder_(holder), fieldSize_(fieldSize), maxAreasInDoc_(maxAreasInDoc) {}
 
 	template <FtUseExternStatuses useExternSt, typename MergedDataType>
-	MergedDataType Process(FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses::Statuses&& mergeStatuses,
+	MergedDataType Process(FtDSLQuery&& dsl, bool inTransaction, RankSortType rankSortType, FtMergeStatuses::Statuses&& mergeStatuses,
 						   const RdxContext&);
 
 private:
@@ -124,7 +124,7 @@ private:
 
 	template <typename MergedOffsetT, typename MergedDataType>
 	MergedDataType mergeResults(std::vector<TextSearchResults<IdCont>>& results, size_t totalORVids,
-								const std::vector<size_t>& synonymsBounds, bool inTransaction, RankSortType,
+								const std::vector<size_t>& synonymsBounds, bool inTransaction, RankSortType rankSortType,
 								FtMergeStatuses::Statuses& mergeStatuses, const RdxContext& rdxCtx);
 
 	DataHolder<IdCont>& holder_;

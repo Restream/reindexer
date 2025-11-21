@@ -5,6 +5,7 @@
 #include "jsondecoder.h"
 #include "sparse_validator.h"
 #include "tagsmatcher.h"
+#include "tools/assertrx.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -56,7 +57,7 @@ private:
 void CJsonModifier::SetFieldValue(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser,
 								  const Payload& pl, FloatVectorsHolderVector& floatVectorsHolder) {
 	auto ctx = initState(tuple, fieldPath, val, ser, &pl, FieldModifyMode::FieldModeSet, floatVectorsHolder);
-	rx_unused = updateFieldInTuple(ctx);
+	std::ignore = updateFieldInTuple(ctx);
 	if (!ctx.fieldUpdated && !ctx.IsForAllItems()) {
 		throw Error(errParams, "[SetFieldValue] Requested field or array's index was not found");
 	}
@@ -65,7 +66,7 @@ void CJsonModifier::SetFieldValue(std::string_view tuple, const IndexedTagsPath&
 void CJsonModifier::SetObject(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser,
 							  const Payload& pl, FloatVectorsHolderVector& floatVectorsHolder) {
 	auto ctx = initState(tuple, fieldPath, val, ser, &pl, FieldModifyMode::FieldModeSetJson, floatVectorsHolder);
-	rx_unused = buildCJSON(ctx);
+	std::ignore = buildCJSON(ctx);
 	if (!ctx.fieldUpdated && !ctx.IsForAllItems()) {
 		throw Error(errParams, "[SetObject] Requested field or array's index was not found");
 	}
@@ -74,7 +75,7 @@ void CJsonModifier::SetObject(std::string_view tuple, const IndexedTagsPath& fie
 void CJsonModifier::RemoveField(std::string_view tuple, const IndexedTagsPath& fieldPath, WrSerializer& wrser) {
 	thread_local FloatVectorsHolderVector floatVectorsHolder;
 	auto ctx = initState(tuple, fieldPath, {}, wrser, nullptr, FieldModeDrop, floatVectorsHolder);
-	rx_unused = dropFieldInTuple(ctx);
+	std::ignore = dropFieldInTuple(ctx, JustCopy_False);
 }
 
 CJsonModifier::Context CJsonModifier::initState(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val,
@@ -205,7 +206,7 @@ CJsonModifier::UpdateTagType CJsonModifier::determineUpdateTagType(const Context
 }
 
 bool CJsonModifier::checkIfFoundTag(Context& ctx, TagType tag, bool isLastItem) const {
-	if (tagsPath_.empty() || !fieldPath_.Compare<NotIgnoreLeftTrailingIndexes>(tagsPath_)) {
+	if (tagsPath_.empty() || !Compare<NotIgnoreLeftTrailingIndexes>(fieldPath_, tagsPath_)) {
 		return false;
 	}
 
@@ -306,7 +307,7 @@ void CJsonModifier::updateArray(TagType atagType, uint32_t count, TagName tagNam
 			case TAG_OBJECT: {
 				TagsPathScope currPathNameGuard(ctx.currObjPath, tagName);
 				TagsPathScope currPathIndexGuard(ctx.currObjPath, TagIndex{i});
-				rx_unused = updateFieldInTuple(ctx);
+				std::ignore = updateFieldInTuple(ctx);
 				break;
 			}
 			case TAG_VARINT:
@@ -345,6 +346,7 @@ void CJsonModifier::copyArray(TagName tagName, Context& ctx) {
 		// update item
 		if (checkIfFoundTag(ctx, TAG_ARRAY, isLastItem)) {
 			if (ctx.value.IsArrayValue()) {
+				// TODO #2233
 				throw Error(errParams, "Unable to update array's element with array-value");
 			}
 			Variant value;
@@ -352,8 +354,7 @@ void CJsonModifier::copyArray(TagName tagName, Context& ctx) {
 				value = ctx.value.front();
 			}
 			// situation is possible when array was homogeneous, and new element of different type is added
-			const auto valueType = value.Type().ToTagType();
-			if ((atagType != valueType) && (atagType != TAG_OBJECT)) {
+			if (atagType != TAG_OBJECT && (atagType != value.Type().ToTagType() || ctx.value.IsArrayValue())) {
 				// back to beginning of array and rewrite as an array of objects
 				ctx.rdser.SetPos(rdserPos);
 				ctx.wrser.Reset(wrserLen);
@@ -362,38 +363,66 @@ void CJsonModifier::copyArray(TagName tagName, Context& ctx) {
 			}
 
 			// type of array not changed - simple rewrite item
-			auto vtagType = atagType;
-			if (atagType == TAG_OBJECT) {
-				vtagType = ctx.rdser.GetCTag().Type();
-				ctx.wrser.PutCTag(ctag{valueType});
-			}
-			skipCjsonTag(ctag{vtagType}, ctx.rdser, &ctx.fieldsArrayOffsets);
-			copyCJsonValue(valueType, value, ctx.wrser);
-
+			updateArrayItem(atagType, value, ctx);
 			ctx.fieldUpdated = true;
-			continue;  // next item
-		}
-
-		// copy item as is
-		switch (atagType) {
-			case TAG_OBJECT: {
-				TagsPathScope currPathNameGuard(ctx.currObjPath, tagName);
-				TagsPathScope currPathIndexGuard(ctx.currObjPath, TagIndex{i});
-				rx_unused = updateFieldInTuple(ctx);
-				break;
+		} else {
+			// copy item as is
+			switch (atagType) {
+				case TAG_OBJECT: {
+					TagsPathScope currPathNameGuard(ctx.currObjPath, tagName);
+					TagsPathScope currPathIndexGuard(ctx.currObjPath, TagIndex{i});
+					std::ignore = updateFieldInTuple(ctx);
+					break;
+				}
+				case TAG_VARINT:
+				case TAG_DOUBLE:
+				case TAG_STRING:
+				case TAG_ARRAY:
+				case TAG_NULL:
+				case TAG_BOOL:
+				case TAG_END:
+				case TAG_UUID:
+				case TAG_FLOAT:
+					copyCJsonValue(atagType, ctx.rdser, ctx.wrser, kNoValidation);
+					break;
 			}
-			case TAG_VARINT:
-			case TAG_DOUBLE:
-			case TAG_STRING:
-			case TAG_ARRAY:
-			case TAG_NULL:
-			case TAG_BOOL:
-			case TAG_END:
-			case TAG_UUID:
-			case TAG_FLOAT:
-				copyCJsonValue(atagType, ctx.rdser, ctx.wrser, kNoValidation);
-				break;
 		}
+	}
+}
+
+void CJsonModifier::updateArrayItem(TagType arrayType, const Variant& newValue, Context& ctx) const {
+	const auto newValueType = newValue.Type().ToTagType();
+	if (arrayType == TAG_OBJECT) {
+		const auto elemTag = ctx.rdser.GetCTag();
+		if (isIndexed(elemTag.Field())) {
+			if (elemTag.Type() == TAG_ARRAY) {
+				std::ignore = ctx.rdser.GetVarUInt();
+				if (ctx.value.IsArrayValue()) {
+					// TODO #2233
+				} else {
+					ctx.wrser.PutCTag(ctag{newValueType, TagName::Empty(), elemTag.Field()});
+				}
+			} else {
+				if (ctx.value.IsArrayValue()) {
+					// TODO #2233
+				} else {
+					ctx.wrser.PutCTag(elemTag);
+				}
+			}
+		} else {
+			int field = -1;
+			if (elemTag.Type() == TAG_ARRAY) {
+				field = tagsMatcher_.tags2field(ctx.jsonPath).IndexNumber();
+			}
+			ctx.wrser.PutCTag(ctag{newValueType, TagName::Empty(), field});
+			skipCjsonTag(ctag{elemTag.Type()}, ctx.rdser, &ctx.fieldsArrayOffsets);
+			if (field < 0) {
+				copyCJsonValue(newValueType, newValue, ctx.wrser);
+			}
+		}
+	} else {
+		skipCjsonTag(ctag{arrayType}, ctx.rdser, &ctx.fieldsArrayOffsets);
+		copyCJsonValue(newValueType, newValue, ctx.wrser);
 	}
 }
 
@@ -472,7 +501,7 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 	return true;
 }
 
-bool CJsonModifier::dropFieldInTuple(Context& ctx) {
+bool CJsonModifier::dropFieldInTuple(Context& ctx, JustCopy justCopy) {
 	const ctag tag = ctx.rdser.GetCTag();
 	if (tag == kCTagEnd) {
 		ctx.wrser.PutCTag(kCTagEnd);
@@ -482,7 +511,7 @@ bool CJsonModifier::dropFieldInTuple(Context& ctx) {
 	const TagName tagName = tag.Name();
 	TagsPathScope<IndexedTagsPath> pathScope(tagsPath_, tagName);
 
-	bool tagMatched = (!ctx.fieldUpdated && fieldPath_.Compare<NotIgnoreLeftTrailingIndexes>(tagsPath_));
+	bool tagMatched = !justCopy && !ctx.fieldUpdated && Compare<NotIgnoreLeftTrailingIndexes>(fieldPath_, tagsPath_);
 	if (tagMatched) {
 		skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 		ctx.fieldUpdated = true;
@@ -503,7 +532,7 @@ bool CJsonModifier::dropFieldInTuple(Context& ctx) {
 
 	if (tagType == TAG_OBJECT) {
 		TagsPathScope pathScopeObj(ctx.currObjPath, tagName);
-		while (dropFieldInTuple(ctx)) {
+		while (dropFieldInTuple(ctx, justCopy)) {
 		}
 		return true;
 	}
@@ -511,39 +540,44 @@ bool CJsonModifier::dropFieldInTuple(Context& ctx) {
 	if (tagType == TAG_ARRAY) {
 		carraytag atag = ctx.rdser.GetCArrayTag();
 		const TagType atagType = atag.Type();
-		const auto size = int(atag.Count());
-		tagMatched = fieldPath_.back().IsTagIndex() && tagsPath_.Compare<IgnoreAllOmittedIndexes>(fieldPath_);
+		const auto size = atag.Count();
+		tagMatched = !justCopy && fieldPath_.back().IsTagIndex() &&
+					 (fieldPath_.back().GetTagIndex().IsAll() || fieldPath_.back().GetTagIndex().AsNumber() < size) &&
+					 Compare<NotIgnoreTrailingIndexes>({fieldPath_.data(), fieldPath_.size() - 1}, tagsPath_);
 		if (tagMatched) {
 			atag = carraytag(fieldPath_.back().GetTagIndex().IsAll() ? 0 : size - 1, atagType);
 			ctx.fieldUpdated = true;
 		}
 
 		ctx.wrser.PutCArrayTag(atag);
-		for (int i = 0; i < size; ++i) {
+		for (size_t i = 0; i < size; ++i) {
 			TagsPathScope tagsPathScopeIndex(tagsPath_, TagIndex{i});
 			if (tagMatched && fieldPath_.back().GetTagIndex() == TagIndex{i}) {
-				skipCjsonTag(ctag{atagType}, ctx.rdser, &ctx.fieldsArrayOffsets);
-				continue;
-			}
-
-			switch (atagType) {
-				case TAG_OBJECT: {
-					TagsPathScope currPathNameGuard(ctx.currObjPath, tagName);
-					TagsPathScope currPathIndexGuard(ctx.currObjPath, TagIndex{i});
-					rx_unused = dropFieldInTuple(ctx);
-					break;
+				if (atagType == TAG_OBJECT) {
+					skipCjsonTag(ctx.rdser.GetCTag(), ctx.rdser, &ctx.fieldsArrayOffsets);
+				} else {
+					skipCjsonTag(ctag{atagType}, ctx.rdser, &ctx.fieldsArrayOffsets);
 				}
-				case TAG_VARINT:
-				case TAG_STRING:
-				case TAG_DOUBLE:
-				case TAG_BOOL:
-				case TAG_ARRAY:
-				case TAG_NULL:
-				case TAG_END:
-				case TAG_UUID:
-				case TAG_FLOAT:
-					copyCJsonValue(atagType, ctx.rdser, ctx.wrser, kNoValidation);
-					break;
+			} else {
+				switch (atagType) {
+					case TAG_OBJECT: {
+						TagsPathScope currPathNameGuard(ctx.currObjPath, tagName);
+						TagsPathScope currPathIndexGuard(ctx.currObjPath, TagIndex{i});
+						std::ignore = dropFieldInTuple(ctx, JustCopy{justCopy || tagMatched});
+						break;
+					}
+					case TAG_VARINT:
+					case TAG_STRING:
+					case TAG_DOUBLE:
+					case TAG_BOOL:
+					case TAG_ARRAY:
+					case TAG_NULL:
+					case TAG_END:
+					case TAG_UUID:
+					case TAG_FLOAT:
+						copyCJsonValue(atagType, ctx.rdser, ctx.wrser, kNoValidation);
+						break;
+				}
 			}
 		}
 		return true;
@@ -577,7 +611,7 @@ bool CJsonModifier::buildCJSON(Context& ctx) {
 	const TagName tagName = tag.Name();
 	TagsPathScope<IndexedTagsPath> tagsPathScope(tagsPath_, tagName);
 
-	bool tagMatched = fieldPath_.Compare<NotIgnoreLeftTrailingIndexes>(tagsPath_);
+	bool tagMatched = Compare<NotIgnoreLeftTrailingIndexes>(fieldPath_, tagsPath_);
 	if (tagMatched) {
 		tagType = TAG_OBJECT;
 	} else {
@@ -608,7 +642,7 @@ bool CJsonModifier::buildCJSON(Context& ctx) {
 			assertrx_dbg(ctx.fieldsArrayOffsets[field] == 0);
 			auto value = ctx.payload->Get(field, ctx.fieldsArrayOffsets[field]);
 			const auto view = ConstFloatVectorView(value);
-			if rx_unlikely (view.IsStripped()) {
+			if (view.IsStripped()) [[unlikely]] {
 				throw Error(errLogic, "CJsonModifier: Attempt to serialize stripped vector into CJSON");
 			}
 			const auto span = view.Span();
@@ -624,7 +658,7 @@ bool CJsonModifier::buildCJSON(Context& ctx) {
 			const auto arrSize = atag.Count();
 			for (size_t i = 0; i < arrSize; ++i) {
 				TagsPathScope tagsPathIndexScope(tagsPath_, TagIndex{i});
-				tagMatched = fieldPath_.Compare<NotIgnoreLeftTrailingIndexes>(tagsPath_);
+				tagMatched = Compare<NotIgnoreLeftTrailingIndexes>(fieldPath_, tagsPath_);
 				if (tagMatched) {
 					updateObject(ctx, TagName::Empty());
 					skipCjsonTag(ctx.rdser.GetCTag(), ctx.rdser, &ctx.fieldsArrayOffsets);
@@ -634,7 +668,7 @@ bool CJsonModifier::buildCJSON(Context& ctx) {
 				switch (atag.Type()) {
 					case TAG_OBJECT: {
 						TagsPathScope<IndexedTagsPath> pathScopeObj(ctx.currObjPath, tagName);
-						rx_unused = buildCJSON(ctx);
+						std::ignore = buildCJSON(ctx);
 						break;
 					}
 					case TAG_VARINT:

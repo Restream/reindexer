@@ -12,7 +12,7 @@ DIt BaseHolder::GetData(const wchar_t* key) {
 #endif
 }
 void BaseHolder::SetSize(uint32_t size, VDocIdType id, int field) { words_[id][field] += size; }
-void BaseHolder::AddDada(const wchar_t* key, VDocIdType id, int pos, int field) {
+void BaseHolder::AddData(const wchar_t* key, VDocIdType id, unsigned pos, unsigned field, unsigned arrayIdx) {
 #ifndef DEBUG_FT
 	std::wstring wkey(key, cfg_.bufferSize);
 	auto it = tmp_data_.find(wkey);
@@ -21,7 +21,7 @@ void BaseHolder::AddDada(const wchar_t* key, VDocIdType id, int pos, int field) 
 		it = res.first;
 	}
 
-	rx_unused = it->second.Add(id, pos, field);
+	std::ignore = it->second.Add(id, pos, field, arrayIdx);
 
 #else
 	uint32_t current_hash = reindexer::HashTreGram(key);
@@ -30,7 +30,7 @@ void BaseHolder::AddDada(const wchar_t* key, VDocIdType id, int pos, int field) 
 		auto res = tmp_data_.emplace(current_hash, IdRelSet());
 		it = res.first;
 	}
-	rx_unused = it->second.Add(id, pos, field);
+	std::ignore = it->second.Add(id, pos, field, arrayIdx);
 #endif
 }
 

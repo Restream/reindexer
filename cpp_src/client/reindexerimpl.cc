@@ -820,13 +820,13 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 }
 
 void ReindexerImpl::fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults& coroResults) {
-	if rx_unlikely (!coroResults.holdsRemoteData()) {
+	if (!coroResults.holdsRemoteData()) [[unlikely]] {
 		throw Error(errLogic, "Client query results does not hold any remote data");
 	}
 	auto ret = coroResults.i_.conn_->Call({reindexer::net::cproto::kCmdFetchResults, coroResults.i_.requestTimeout_, milliseconds(0),
 										   lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false, coroResults.i_.sessionTs_},
 										  coroResults.i_.queryID_.main, flags, offset, limit, coroResults.i_.queryID_.uid);
-	if rx_unlikely (!ret.Status().ok()) {
+	if (!ret.Status().ok()) [[unlikely]] {
 		throw ret.Status();
 	}
 
@@ -840,8 +840,7 @@ void ReindexerImpl::CommandsQueue::Get(uint32_t tid, h_vector<DatabaseCommand, 1
 	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
 		assertrx(tid < thData_.size());
 		return thData_[tid];
-	}
-	();
+	}();
 	lock_guard lck(mtx_);
 	if (thD.personalQueue.size()) {
 		std::swap(thD.personalQueue, cmds);
@@ -861,8 +860,7 @@ void ReindexerImpl::CommandsQueue::OnCmdDone(uint32_t tid) {
 	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
 		assertrx(tid < thData_.size());
 		return thData_[tid];
-	}
-	();
+	}();
 	thD.reqCnt.fetch_sub(1, std::memory_order_release);
 }
 
@@ -878,8 +876,7 @@ void ReindexerImpl::CommandsQueue::Invalidate(uint32_t tid, h_vector<DatabaseCom
 	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
 		assertrx(tid < thData_.size());
 		return thData_[tid];
-	}
-	();
+	}();
 	lock_guard lock(mtx_);
 	std::swap(thD.personalQueue, cmds);
 	thD.reqCnt.store(0, std::memory_order_relaxed);
@@ -905,8 +902,7 @@ void ReindexerImpl::CommandsQueue::RegisterConn(uint32_t tid, const void* conn, 
 	auto& thD = RX_GET_WITHOUT_MUTEX_ANALYSIS {
 		assertrx(tid < thData_.size());
 		return thData_[tid];
-	}
-	();
+	}();
 	lock_guard lock(mtx_);
 	const auto res = thByConns_.emplace(conn, ConnMeta{.threadData = &thD, .connIdx = connIdx});
 	assertrx(res.second);

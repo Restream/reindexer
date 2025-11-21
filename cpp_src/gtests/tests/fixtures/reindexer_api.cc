@@ -1,20 +1,7 @@
 #include "reindexer_api.h"
-#include <thread>
 #include "core/system_ns_names.h"
 
 using namespace reindexer;
-
-void ReindexerApi::AwaitIndexOptimization(std::string_view nsName) {
-	bool optimization_completed = false;
-	unsigned waitForIndexOptimizationCompleteIterations = 0;
-	while (!optimization_completed) {
-		ASSERT_LT(waitForIndexOptimizationCompleteIterations++, 200) << "Too long index optimization";
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		auto qr = rt.Select(Query(kMemStatsNamespace).Where("name", CondEq, nsName));
-		ASSERT_EQ(1, qr.Count());
-		optimization_completed = qr.begin().GetItem(false)["optimization_completed"].Get<bool>();
-	}
-}
 
 void ReindexerApi::initializeDefaultNs() {
 	rt.OpenNamespace(default_namespace, StorageOpts().Enabled());

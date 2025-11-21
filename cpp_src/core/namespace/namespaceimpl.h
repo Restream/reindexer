@@ -58,6 +58,7 @@ class SnapshotRecord;
 class Snapshot;
 class SnapshotChunk;
 struct SnapshotOpts;
+class ExpressionEvaluator;
 
 namespace long_actions {
 template <typename T>
@@ -127,6 +128,7 @@ enum class [[nodiscard]] StoredValuesOptimizationStatus : int8_t {
 };
 
 class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // NOLINT(*performance.Padding) Padding does not
+	using IndexNamesMap = fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 	// matter for this class
 	class RollBack_insertIndex;
 	template <typename>
@@ -177,6 +179,7 @@ class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // 
 	friend class ann_storage_cache::Writer;
 	friend class FloatVectorsHolderMap;
 	friend class FieldsFilter;
+	friend class ExpressionEvaluator;
 
 	class [[nodiscard]] IndexesStorage final : public std::vector<std::unique_ptr<Index>> {
 	public:
@@ -488,6 +491,7 @@ private:
 	void verifyUpsertEmbedder(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpsertIndex(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpdateIndex(const IndexDef& indexDef);
+	void verifyDropIndex(const IndexDef&, IndexNamesMap::const_iterator) const;
 	bool updateIndex(const IndexDef& indexDef, bool disableTmVersionInc);
 	bool doUpdateIndex(const IndexDef& indexDef, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void dropIndex(const IndexDef& index, bool disableTmVersionInc);
@@ -564,7 +568,7 @@ private:
 	uint64_t calculateItemHash(IdType rowId, int removedIdxId = -1) const noexcept;
 
 	IndexesStorage indexes_;
-	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> indexesNames_;
+	IndexNamesMap indexesNames_;
 	fast_hash_map<int, std::vector<int>> indexesToComposites_;	// Maps index fields to corresponding composite indexes
 	// All items with data
 	Items items_;

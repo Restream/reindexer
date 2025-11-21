@@ -35,8 +35,10 @@ public:
 		  schema_(nullptr),
 		  sizeHelper_(),
 		  itemsFieldIndex_(TagName::Empty()) {}
-	ProtobufBuilder(WrSerializer*, ObjType = ObjType::TypePlain, const Schema* = nullptr, const TagsMatcher* = nullptr,
-					const TagsPath* = nullptr, TagName = TagName::Empty());
+	ProtobufBuilder(WrSerializer* wrser, ObjType objType = ObjType::TypePlain, const Schema* schema = nullptr,
+					const TagsMatcher* tm = nullptr, const TagsPath* tagsPath = nullptr)
+		: ProtobufBuilder{wrser, objType, schema, tm, tagsPath, TagName::Empty()} {}
+	ProtobufBuilder(WrSerializer*, ObjType, const Schema*, const TagsMatcher*, const TagsPath*, concepts::TagNameOrIndex auto);
 	ProtobufBuilder(ProtobufBuilder&& obj) noexcept
 		: type_(obj.type_),
 		  ser_(obj.ser_),
@@ -54,7 +56,7 @@ public:
 	void SetTagsPath(const TagsPath* tagsPath) noexcept { tagsPath_ = tagsPath; }
 
 	template <typename T>
-	void Put(TagName tagName, const T& val, int /*offset*/ = 0) {
+	void Put(concepts::TagNameOrIndex auto tagName, const T& val, int /*offset*/ = 0) {
 		put(tagName, val);
 	}
 	template <typename T>
@@ -73,56 +75,57 @@ public:
 
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value ||
 												  std::is_same<T, bool>::value>::type* = nullptr>
-	void Array(TagName tagName, std::span<const T> data, int /*offset*/ = 0) {
-		auto array = ArrayPacked(tagName);
+	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0) {
+		auto array = ArrayPacked(tag);
 		for (const T& item : data) {
 			array.put(TagName::Empty(), item);
 		}
 	}
 
 	template <typename T, typename std::enable_if<std::is_same<reindexer::p_string, T>::value>::type* = nullptr>
-	void Array(TagName tagName, std::span<const T> data, int /*offset*/ = 0) {
-		auto array = ArrayNotPacked(tagName);
+	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0) {
+		auto array = ArrayNotPacked(tag);
 		for (const T& item : data) {
-			array.put(tagName, std::string_view(item));
+			array.put(tag, std::string_view(item));
 		}
 	}
-	void Array(TagName tagName, std::span<const Uuid> data, int /*offset*/ = 0) {
-		auto array = ArrayNotPacked(tagName);
+	void Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid> data, int /*offset*/ = 0) {
+		auto array = ArrayNotPacked(tag);
 		for (Uuid item : data) {
-			array.put(tagName, item);
+			array.put(tag, item);
 		}
 	}
 
-	ProtobufBuilder ArrayNotPacked(TagName tagName) {
-		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
-		return ProtobufBuilder(ser_, ObjType::TypeObjectArray, schema_, tm_, tagsPath_, tagName);
+	ProtobufBuilder ArrayNotPacked(concepts::TagNameOrIndex auto tag) {
+		assertrx_throw(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
+		return ProtobufBuilder(ser_, ObjType::TypeObjectArray, schema_, tm_, tagsPath_, tag);
 	}
 
-	ProtobufBuilder ArrayPacked(TagName tagName) {
-		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
-		return ProtobufBuilder(ser_, ObjType::TypeArray, schema_, tm_, tagsPath_, tagName);
+	ProtobufBuilder ArrayPacked(concepts::TagNameOrIndex auto tag) {
+		assertrx_throw(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
+		return ProtobufBuilder(ser_, ObjType::TypeArray, schema_, tm_, tagsPath_, tag);
 	}
 
 	ProtobufBuilder Array(std::string_view tagName, int size = KUnknownFieldSize) { return Array(tm_->name2tag(tagName), size); }
-	ProtobufBuilder Array(TagName tagName, int = KUnknownFieldSize) { return ArrayNotPacked(tagName); }
+	ProtobufBuilder Array(concepts::TagNameOrIndex auto tag, int = KUnknownFieldSize) { return ArrayNotPacked(tag); }
 
-	void Array(TagName tagName, Serializer& rdser, TagType tagType, int count) {
+	void Array(concepts::TagNameOrIndex auto tag, Serializer& rdser, TagType tagType, int count) {
 		if (tagType == TAG_VARINT || tagType == TAG_DOUBLE || tagType == TAG_FLOAT || tagType == TAG_BOOL) {
-			auto array = ArrayPacked(tagName);
+			auto array = ArrayPacked(tag);
 			while (count--) {
-				packItem(tagName, tagType, rdser, array);
+				packItem(tag, tagType, rdser, array);
 			}
 		} else {
-			auto array = ArrayNotPacked(tagName);
+			auto array = ArrayNotPacked(tag);
 			while (count--) {
-				packItem(tagName, tagType, rdser, array);
+				packItem(tag, tagType, rdser, array);
 			}
 		}
 	}
-	void Array(int tagName, Serializer& rdser, TagType tagType, int count) { return Array(TagName(tagName), rdser, tagType, count); }
+	void Array(int tag, Serializer& rdser, TagType tagType, int count) { return Array(TagName(tag), rdser, tagType, count); }
 
-	ProtobufBuilder Object(TagName = TagName::Empty(), int = KUnknownFieldSize);
+	ProtobufBuilder Object() { return Object(TagName::Empty()); }
+	ProtobufBuilder Object(concepts::TagNameOrIndex auto tag, int = KUnknownFieldSize);
 	ProtobufBuilder Object(std::string_view tagName, int size = KUnknownFieldSize) { return Object(tm_->name2tag(tagName), size); }
 
 	void End();
@@ -147,15 +150,19 @@ public:
 	void ArrayNotPacked(int) = delete;
 
 private:
+	TagName toItemsFieldIndex(TagName tagName) noexcept { return tagName; }
+	TagName toItemsFieldIndex(TagIndex) noexcept { return TagName::Empty(); }
+	std::string_view tagToName(TagName);
+	std::string_view tagToName(TagIndex);
 	[[nodiscard]] std::pair<KeyValueType, bool> getExpectedFieldType() const;
-	void put(TagName, bool);
-	void put(TagName, int);
-	void put(TagName, int64_t);
-	void put(TagName, double);
-	void put(TagName, float);
-	void put(TagName, std::string_view);
-	void put(TagName, const Variant&);
-	void put(TagName, Uuid);
+	void put(concepts::TagNameOrIndex auto tag, bool val);
+	void put(concepts::TagNameOrIndex auto tag, int val);
+	void put(concepts::TagNameOrIndex auto tag, int64_t val);
+	void put(concepts::TagNameOrIndex auto tag, double val);
+	void put(concepts::TagNameOrIndex auto tag, float val);
+	void put(concepts::TagNameOrIndex auto tag, std::string_view val);
+	void put(concepts::TagNameOrIndex auto tag, const Variant& val);
+	void put(concepts::TagNameOrIndex auto tag, Uuid val);
 
 	ObjType type_{ObjType::TypePlain};
 	WrSerializer* ser_{nullptr};
@@ -166,8 +173,9 @@ private:
 	TagName itemsFieldIndex_{TagName::Empty()};
 
 	[[nodiscard]] TagName getFieldTag(TagName) const;
-	void putFieldHeader(TagName, ProtobufTypes);
-	static void packItem(TagName, TagType, Serializer&, ProtobufBuilder& array);
+	[[nodiscard]] TagName getFieldTag(TagIndex) const { return getFieldTag(TagName::Empty()); }
+	void putFieldHeader(concepts::TagNameOrIndex auto, ProtobufTypes);
+	static void packItem(concepts::TagNameOrIndex auto, TagType, Serializer&, ProtobufBuilder& array);
 };
 
 }  // namespace builders

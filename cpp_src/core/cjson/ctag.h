@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/enums.h"
+#include "core/tag_name_index.h"
 #include "core/type_consts.h"
 #include "tools/assertrx.h"
 

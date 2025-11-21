@@ -105,37 +105,37 @@ public:
 	template <concepts::ConvertibleToString Str, concepts::ConvertibleToVariantArray VA>
 	QueryEntry(Str&& fieldName, CondType cond, VA&& v, size_t injectedFrom = NotInjected)
 		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, injectedFrom_{injectedFrom} {
-		rx_unused = adjust(AdjustMode::Default);
+		std::ignore = adjust(AdjustMode::Default);
 		Verify();
 		ommitExcesiveArguments();
 	}
 	template <concepts::ConvertibleToString Str>
 	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(IsDistinct_True) {
-		rx_unused = adjust(AdjustMode::Default);
+		std::ignore = adjust(AdjustMode::Default);
 		Verify();
 		ommitExcesiveArguments();
 	}
 	template <concepts::ConvertibleToVariantArray VA>
 	QueryEntry(QueryField&& field, CondType cond, VA&& v) : QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond} {
-		rx_unused = adjust(AdjustMode::Default);
+		std::ignore = adjust(AdjustMode::Default);
 		Verify();
 		ommitExcesiveArguments();
 	}
 	template <concepts::ConvertibleToVariantArray VA>
 	QueryEntry(QueryField&& field, CondType cond, VA&& v, ForcedSortOptEntryTag)
 		: QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond}, forcedSortOptEntry_{IsForcedSortOptEntry_True} {
-		rx_unused = adjust(AdjustMode::Default);
+		std::ignore = adjust(AdjustMode::Default);
 		Verify();
 		ommitExcesiveArguments();
 	}
 	QueryEntry(QueryField&& field, CondType cond, IgnoreEmptyValues) : QueryField(std::move(field)), condition_(cond) {
-		rx_unused = adjust(AdjustMode::Default);
+		std::ignore = adjust(AdjustMode::Default);
 		VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(condition_, values_);
 		ommitExcesiveArguments();
 	}
 	template <concepts::ConvertibleToVariantArray VA>
 	QueryEntry(const QueryEntry& qe, CondType cond, VA&& v) : QueryField{qe}, values_{std::forward<VA>(v)}, condition_(cond) {
-		rx_unused = adjust(AdjustMode::Default);
+		std::ignore = adjust(AdjustMode::Default);
 		Verify();
 		ommitExcesiveArguments();
 	}
@@ -167,7 +167,7 @@ public:
 	QueryField& FieldData() & noexcept { return static_cast<QueryField&>(*this); }
 	void ConvertValuesToFieldType() & {
 		for (Variant& v : values_) {
-			v.convert(SelectType());
+			std::ignore = v.convert(SelectType());
 		}
 	}
 	void ConvertValuesToFieldType(const PayloadType& pt) & {
@@ -175,13 +175,13 @@ public:
 			return;
 		}
 		for (Variant& v : values_) {
-			v.convert(SelectType(), &pt, &Fields());
+			std::ignore = v.convert(SelectType(), &pt, &Fields());
 		}
 	}
 	void Verify() const { VerifyQueryEntryValues(condition_, values_); }
 
-	bool operator==(const QueryEntry&) const noexcept;
-	bool operator!=(const QueryEntry& other) const noexcept { return !operator==(other); }
+	bool operator==(const QueryEntry&) const;
+	bool operator!=(const QueryEntry& other) const { return !operator==(other); }
 
 	std::string Dump() const;
 	std::string DumpBrief() const;
@@ -286,7 +286,7 @@ public:
 	const VariantArray& Values() const& noexcept { return values_; }
 	bool operator==(const SubQueryEntry& other) const noexcept {
 		return condition_ == other.condition_ && queryIndex_ == other.queryIndex_ &&
-			   values_.RelaxCompare<WithString::Yes, NotComparable::Return>(other.values_) == ComparationResult::Eq;
+			   values_.RelaxCompare<WithString::Yes, NotComparable::Return, kDefaultNullsHandling>(other.values_) == ComparationResult::Eq;
 	}
 	std::string Dump(const std::vector<Query>& subQueries) const;
 
@@ -348,10 +348,7 @@ public:
 			throw Error{errParams, "Empty update column name"};
 		}
 	}
-	bool operator==(const UpdateEntry& other) const noexcept {
-		return column_ == other.column_ && mode_ == other.mode_ && isExpression_ == other.isExpression_ &&
-			   values_.CompareNoExcept(other.values_) == ComparationResult::Eq;
-	}
+	bool operator==(const UpdateEntry& other) const noexcept = default;
 	bool operator!=(const UpdateEntry& obj) const noexcept { return !operator==(obj); }
 	std::string_view Column() const noexcept { return column_; }
 	const VariantArray& Values() const noexcept { return values_; }
@@ -493,7 +490,7 @@ public:
 	static size_t Process(QueryEntriesTree& tree, size_t pos) {
 		assertrx_dbg(tree.Is<QueryEntry>(pos));
 		auto& qe = tree.Get<QueryEntry>(pos);
-		if rx_likely (!qe.NeedIsNull()) {
+		if (!qe.NeedIsNull()) [[likely]] {
 			return 0;
 		}
 		qe.ResetNeedIsNull();

@@ -153,7 +153,7 @@ Writer::StorageCacheWriteResult Writer::writeSingleIndexCache(FloatVectorIndex& 
 
 	auto getPKSingle = [this, pkField](IdType id) {
 		VariantArray ret;
-		if rx_unlikely (size_t(id) >= ns_.items_.size() || ns_.items_[id].IsFree()) {
+		if (size_t(id) >= ns_.items_.size() || ns_.items_[id].IsFree()) [[unlikely]] {
 			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
 		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);
@@ -162,7 +162,7 @@ Writer::StorageCacheWriteResult Writer::writeSingleIndexCache(FloatVectorIndex& 
 	};
 	auto getPKComposite = [this, &pkFields](IdType id) {
 		VariantArray ret, tmp;
-		if rx_unlikely (size_t(id) >= ns_.items_.size() || ns_.items_[id].IsFree()) {
+		if (size_t(id) >= ns_.items_.size() || ns_.items_[id].IsFree()) [[unlikely]] {
 			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
 		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);

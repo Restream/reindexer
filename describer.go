@@ -86,6 +86,27 @@ type CacheMemStat struct {
 	HitCountLimit int64 `json:"hit_count_limit"`
 }
 
+// Embedder status
+type EmbedderStatus struct {
+	// Last request execution status
+	LastRequestResult string `json:"last_request_result"`
+	// Last error
+	LastError EmbedderError `json:"last_error"`
+}
+
+type EmbedderError struct {
+	// Error code
+	LastErrorCode int64 `json:"code"`
+	// Error message
+	LastErrorMessage string `json:"message"`
+}
+
+// Embeder info
+type EmbedderInfo struct {
+	// Embedder status
+	Status EmbedderStatus `json:"status"`
+}
+
 // Operation counter and server id
 type LsnT = bindings.LsnT
 
@@ -198,6 +219,10 @@ type NamespaceMemStat struct {
 		TrackedUpdatesOverflow int64 `json:"tracked_updates_overflow"`
 		// Shows whether KNN/fulltext indexing structure is fully built. If this field is nil, index does not require any specific build steps
 		IsBuilt *bool `json:"is_built,omitempty"`
+		// Upsert embedder status
+		UpsertEmbedder *EmbedderInfo `json:"upsert_embedder,omitempty"`
+		// Query embedder status
+		QueryEmbedder *EmbedderInfo `json:"query_embedder,omitempty"`
 	} `json:"indexes,omitempty"`
 	// Join cache stats. Stores results of selects to right table by ON condition
 	JoinCache *CacheMemStat `json:"join_cache,omitempty"`
@@ -220,6 +245,17 @@ type NamespaceMemStat struct {
 		// Disk space occupied by storage
 		StorageSize int64 `json:"storage_size"`
 	} `json:"embedding_caches,omitempty"`
+	// Status of tags matcher
+	TagsMatcher struct {
+		// Current count of tags in tags matcher
+		TagsCount uint32 `json:"tags_count"`
+		// Maximum count of tags
+		MaxTagsCount uint32 `json:"max_tags_count"`
+		// Tags matcher version
+		Version int32 `json:"version"`
+		// Tags matcher state token
+		StateToken uint32 `json:"state_token"`
+	} `json:"tags_matcher"`
 }
 
 // PerfStat is information about different reinexer's objects performance statistics
@@ -286,6 +322,55 @@ type LRUCachePerfStat struct {
 	IsActive bool `json:"is_active"`
 }
 
+type EmbedderPerfStat struct {
+	// Total number of calls to a specific embedder
+	TotalQueriesCount uint64 `json:"total_queries_count"`
+	// Total number of requested vectors
+	TotalEmbedDocumentsCount uint64 `json:"total_embed_documents_count"`
+	// Number of calls to the embedder in the last second
+	LastSecQps uint64 `json:"last_sec_qps"`
+	// Number of embedded documents in the last second
+	LastSecDps uint64 `json:"last_sec_dps"`
+	// Total number of errors accessing the embedder
+	TotalErrorsCount uint64 `json:"total_errors_count"`
+	// Number of errors in the last second
+	LastSecErrorsCount uint64 `json:"last_sec_errors_count"`
+	// Current number of connections in use
+	ConnInUse uint64 `json:"conn_in_use"`
+	// Average number of connections used over the last second
+	LastSecAvgConnInUse uint64 `json:"last_sec_avg_conn_in_use"`
+	// Average overall autoembedding latency (over all time)
+	TotalAvgLatencyUs uint64 `json:"total_avg_latency_us"`
+	// Average autoembedding latency (over the last second)
+	LastSecAvgLatencyUs uint64 `json:"last_sec_avg_latency_us"`
+	// Maximum total autoembedding latency (all time)
+	MaxLatencyUs uint64 `json:"max_latency_us"`
+	// Minimum overall autoembedding latency (all time)
+	MinLatencyUs uint64 `json:"min_latency_us"`
+	// Average latency of waiting for a connection from the pool (over all time)
+	TotalAvgConnAwaitLatencyUs uint64 `json:"total_avg_conn_await_latency_us"`
+	// Average latency of waiting for a connection from the pool (over the last second)
+	LastSecAvgConnAwaitLatencyUs uint64 `json:"last_sec_avg_conn_await_latency_us"`
+	// Average auto-embedding latency on cache miss (over all time)
+	TotalAvgEmbedLatencyUs uint64 `json:"total_avg_embed_latency_us"`
+	// Average auto-embedding latency for cache misses (last second)
+	LastSecAvgEmbedLatencyUs uint64 `json:"last_sec_avg_embed_latency_us"`
+	// Maximum auto-embedding latency on cache miss (all time)
+	MaxEmbedLatencyUs uint64 `json:"max_embed_latency_us"`
+	// Minimum auto-embedding latency on cache miss (all time)
+	MinEmbedLatencyUs uint64 `json:"min_embed_latency_us"`
+	// Average auto-embedding latency for cache hits (over all time)
+	TotalAvgCacheLatencyUs uint64 `json:"total_avg_cache_latency_us"`
+	// Average auto-embedding latency for cache hits (last second)
+	LastSecAvgCacheLatencyUs uint64 `json:"last_sec_avg_cache_latency_us"`
+	// Maximum auto-embedding latency on a cache hit (all time)
+	MaxCacheLatencyUs uint64 `json:"max_cache_latency_us"`
+	// Minimum auto-embedding latency for a cache hit (all time)
+	MinCacheLatencyUs uint64 `json:"min_cache_latency_us"`
+	// Cache statistics
+	CacheStat *EmbedderCachePerfStat `json:"cache,omitempty"`
+}
+
 // EmbedderCachePerfStat is information about specific embedder performance statistics
 type EmbedderCachePerfStat struct {
 	// Tag of cache from configuration
@@ -309,10 +394,10 @@ type IndexPerfStat struct {
 	// Performance statistics for LRU IdSets index cache (or fulltext cache for text indexes).
 	// Nil-value means, that index does not use cache at all
 	Cache *LRUCachePerfStat `json:"cache,omitempty"`
-	// Performance statistics for upsert embedder cache
-	UpsertEmbedderCache EmbedderCachePerfStat `json:"upsert_embedder_cache"`
-	// Performance statistics for query embedder cache
-	QueryEmbedderCache EmbedderCachePerfStat `json:"query_embedder_cache"`
+	// Performance statistics for upsert embedder
+	UpsertEmbedder EmbedderPerfStat `json:"upsert_embedder"`
+	// Performance statistics for query embedder
+	QueryEmbedder EmbedderPerfStat `json:"query_embedder"`
 }
 
 // NamespacePerfStat is information about namespace's performance statistics
@@ -331,7 +416,7 @@ type NamespacePerfStat struct {
 	// Performance statistics for CountCached aggregation cache
 	QueryCountCache LRUCachePerfStat `json:"query_count_cache"`
 	// Performance statistics for each namespace index
-	Indexes IndexPerfStat `json:"indexes"`
+	Indexes []IndexPerfStat `json:"indexes"`
 }
 
 // ClientConnectionStat is information about client connection

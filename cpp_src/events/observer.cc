@@ -11,7 +11,7 @@ void UpdatesObservers::SendAsyncEventOnly(updates::UpdateRecord&& rec) {
 		EventsContainer events;
 		events.emplace_back(std::move(rec));
 		auto err = eventsListener_.SendEvents(std::move(events));
-		if rx_unlikely (!err.ok()) {
+		if (!err.ok()) [[unlikely]] {
 			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}
@@ -30,7 +30,7 @@ Error UpdatesObservers::SendUpdates(UpdatesContainer&& recs, std::function<void(
 
 	if (eventsListener_.HasListenersFor(recs[0].NsName())) {
 		auto err = eventsListener_.SendEvents(convertUpdatesContainer(recs));
-		if rx_unlikely (!err.ok()) {
+		if (!err.ok()) [[unlikely]] {
 			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}
@@ -50,7 +50,7 @@ Error UpdatesObservers::SendAsyncUpdates(UpdatesContainer&& recs, const RdxConte
 
 	if (eventsListener_.HasListenersFor(recs[0].NsName())) {
 		auto err = eventsListener_.SendEvents(convertUpdatesContainer(recs));
-		if rx_unlikely (!err.ok()) {
+		if (!err.ok()) [[unlikely]] {
 			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}

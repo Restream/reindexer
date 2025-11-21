@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/restream/reindexer/v5"
-	"github.com/restream/reindexer/v5/bindings"
 	_ "github.com/restream/reindexer/v5/bindings/builtinserver"
 	"github.com/stretchr/testify/require"
 )
@@ -137,30 +136,14 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 					slaveBadLsn = sLSN
 				}
 				if slaveNsData, ok := slaveMemStatMap[nsName]; ok {
-					if slaveNsData.Replication.LastLSN != masterNsData.Replication.LastLSN || slaveNsData.Replication.NSVersion != masterNsData.Replication.NSVersion { //slave != master
+					if slaveNsData.Replication.LastLSN != masterNsData.Replication.LastLSN || slaveNsData.Replication.NSVersion != masterNsData.Replication.NSVersion { // slave != master
 						handleError(nsName, masterNsData.Replication.LastLSN, slaveNsData.Replication.LastLSN)
 						log.Printf("%s is not synchronized: %v:%v != %v:%v", nsName, slaveNsData.Replication.NSVersion, slaveNsData.Replication.LastLSN, masterNsData.Replication.NSVersion, masterNsData.Replication.LastLSN)
 						break
 					}
-					leaderIt := master.Query(nsName).Limit(0).Exec()
-					defer leaderIt.Close()
-					if leaderIt.Error() != nil {
-						rerr, ok := leaderIt.Error().(bindings.Error)
-						if ok && rerr.Code() == bindings.ErrNotFound {
-							// In some test cases namespace may be closed, so skipping tm validation
-							continue
-						}
-					}
-					followerIt := slave.Query(nsName).Limit(0).Exec()
-					defer followerIt.Close()
-					if leaderIt.Error() != nil || followerIt.Error() != nil {
-						handleError(nsName, masterNsData.Replication.LastLSN, slaveNsData.Replication.LastLSN)
-						log.Printf("%s unable to get tagsmatchers: leader: %v; follower: %v", nsName, leaderIt.Error(), followerIt.Error())
-						break
-					}
-					leaderTmST, leaderTmVer := leaderIt.GetTagsMatcherInfo(nsName)
-					followerTmST, followerTmVer := followerIt.GetTagsMatcherInfo(nsName)
-					if leaderTmVer < 0 || followerTmVer < 0 || leaderTmST != followerTmST || leaderTmVer != followerTmVer { //followers tagsmatcher is not equal to leader's one
+					leaderTmST, leaderTmVer := masterNsData.TagsMatcher.StateToken, masterNsData.TagsMatcher.Version
+					followerTmST, followerTmVer := slaveNsData.TagsMatcher.StateToken, slaveNsData.TagsMatcher.Version
+					if leaderTmVer < 0 || followerTmVer < 0 || leaderTmST != followerTmST || leaderTmVer != followerTmVer { // followers tagsmatcher is not equal to leader's one
 						handleError(nsName, masterNsData.Replication.LastLSN, slaveNsData.Replication.LastLSN)
 						log.Printf("%s has different tagsmatchers: (%08X:%d) vs (%08X:%d)", nsName, leaderTmST, leaderTmVer, followerTmST, followerTmVer)
 						break
@@ -263,12 +246,12 @@ func WaitForSyncWithMasterV3V3(t *testing.T, master *reindexer.Reindexer, slave 
 			}
 		}
 
-		for nsName, _ := range checkNsMap { // loop sync namespaces list (all or defined)
+		for nsName := range checkNsMap { // loop sync namespaces list (all or defined)
 			masterNsData, ok := masterMemStatMap[nsName]
 
 			if ok {
 				if slaveNsData, ok := slaveMemStatMap[nsName]; ok {
-					if slaveNsData.Replication.LastUpstreamLSN != masterNsData.Replication.LastLSN { //slave != master
+					if slaveNsData.Replication.LastUpstreamLSN != masterNsData.Replication.LastLSN { // slave != master
 						complete = false
 						nameBad = nsName
 						masterBadLsn = masterNsData.Replication.LastLSN
@@ -287,7 +270,7 @@ func WaitForSyncWithMasterV3V3(t *testing.T, master *reindexer.Reindexer, slave 
 			}
 		}
 		if complete {
-			for nsName, _ := range checkNsMap {
+			for nsName := range checkNsMap {
 				slaveNsData, _ := slaveMemStatMap[nsName]
 				masterNsData, _ := masterMemStatMap[nsName]
 				if slaveNsData.Replication.DataHash != masterNsData.Replication.DataHash {
@@ -351,12 +334,12 @@ func WaitForSyncV4V3(t *testing.T, rxV4 *reindexer.Reindexer, rxV3 *reindexer.Re
 			}
 		}
 
-		for nsName, _ := range checkNsMap { // loop sync namespaces list (all or defined)
+		for nsName := range checkNsMap { // loop sync namespaces list (all or defined)
 			masterNsData, ok := masterMemStatMap[nsName]
 
 			if ok {
 				if slaveNsData, ok := slaveMemStatMap[nsName]; ok {
-					if slaveNsData.Replication.LastUpstreamLSN != masterNsData.Replication.LastLSN { //slave != master
+					if slaveNsData.Replication.LastUpstreamLSN != masterNsData.Replication.LastLSN { // slave != master
 						complete = false
 						nameBad = nsName
 						masterBadLsn = masterNsData.Replication.LastLSN

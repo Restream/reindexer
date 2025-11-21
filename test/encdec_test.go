@@ -106,6 +106,10 @@ type TestItemEncDec struct {
 	SliceBool           []bool
 	SliceIface          []interface{}
 	SliceIface1         []interface{}
+	NestedArrayFld1     []interface{}
+	NestedArrayFld2     [][]int
+	NestedArrayIdx1     [][]float64 `reindex:"nested_array,tree"`
+	NestedArrayIdx2     [][]string  `reindex:"nested_array_sparse,hash,sparse"`
 	UInt64              uint64
 	UInt32              uint32
 	UInt                uint
@@ -162,12 +166,18 @@ type testItemForCJson struct {
 	DBItemNew
 }
 
+type testItemCJson struct {
+	ID   int    `json:"id" reindex:"id,,pk"`
+	Name string `json:"name" reindex:"name"`
+}
+
 const (
 	testItemsEncdecNs                = "test_items_encdec"
 	testArrayEncdecNs                = "test_array_encdec"
 	testSingleElemSliceNs            = "test_single_elem_slice"
 	testSlicesConcatenationNs        = "test_slices_concatenation"
 	testUnsupportedConversionCJsonNs = "test_unsupported_conversion_cjson"
+	testCJsonEmojiNs                 = "test_cjson_emoji"
 )
 
 func init() {
@@ -176,6 +186,7 @@ func init() {
 	tnamespaces[testSingleElemSliceNs] = SingleElemSliceItem{}
 	tnamespaces[testSlicesConcatenationNs] = SlicesConcatenationItem{}
 	tnamespaces[testUnsupportedConversionCJsonNs] = testItemForCJson{}
+	tnamespaces[testCJsonEmojiNs] = testItemCJson{}
 }
 
 func FillHeteregeneousArrayItem() {
@@ -188,7 +199,6 @@ func FillHeteregeneousArrayItem() {
 		panic(err)
 	}
 	tx.MustCommit()
-
 }
 
 func FilltestItemsEncdecNs(start int, count int, pkgsCount int, asJson bool) {
@@ -302,6 +312,10 @@ func FilltestItemsEncdecNs(start int, count int, pkgsCount int, asJson bool) {
 			CustomInts64:       TestCustomInts64{TestCustomInt64(rand.Int63())},
 			CustomInts16:       TestCustomInts16{TestCustomInt16(rand.Intn(128))},
 			CustomFloats:       TestCustomFloats{TestCustomFloat(rand.Float64())},
+			NestedArrayFld1:    []interface{}{"aa", []interface{}{"bb", []string{"cc", "dd"}}},
+			NestedArrayFld2:    [][]int{{1, 2}, {3, 4}, {5, 6}},
+			NestedArrayIdx1:    [][]float64{{1, 2}, {3, 4}, {5, 6}},
+			NestedArrayIdx2:    [][]string{{"aa", "bb"}, {"cc", "dd"}, {"ee", "ff"}},
 		}
 		if asJson {
 			if err := tx.UpsertJSON(item); err != nil {
@@ -540,5 +554,35 @@ func TestUnsupportedConversionCJson(t *testing.T) {
 			Where("id", reindexer.SET, []int64{1}).
 			Exec().FetchAll()
 		require.ErrorContains(t, err, "can not convert 'double' to 'struct'")
+	})
+}
+
+func TestEmojis(t *testing.T) {
+	t.Parallel()
+
+	t.Run("create and read items with emojis", func(t *testing.T) {
+		const ns = testCJsonEmojiNs
+		emojis := []string{
+			"👀", "😀", "👌🤌👋", "👁️‍🗨️", "🧑‍🧑‍🧒‍🧒👁️‍🗨️", "\U0001F63E\U0001F63A",
+			"\"🚅\" 🚝\"", "\\\"(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧", "\t🏁💬\"🧑‍🧑‍🧒‍🧒\"👁️‍🗨️\\\"\U0001F64E😀",
+		}
+
+		items := make([]testItemCJson, 0, len(emojis))
+		for i, emoji := range emojis {
+			item := testItemCJson{ID: i, Name: emoji}
+			err := DBD.Upsert(ns, item)
+			require.NoError(t, err)
+			items = append(items, item)
+		}
+
+		resItems, err := DBD.Query(ns).Exec().FetchAll()
+		require.NoError(t, err)
+		require.Len(t, resItems, len(emojis))
+
+		resItemsVal := make([]testItemCJson, len(resItems))
+		for i, resItem := range resItems {
+			resItemsVal[i] = *resItem.(*testItemCJson)
+		}
+		require.Equal(t, items, resItemsVal)
 	})
 }

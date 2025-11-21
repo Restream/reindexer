@@ -40,7 +40,7 @@ public:
 				ser.PutUInt64(jns.LastUpdateTime());
 			}
 		}
-		if rx_unlikely (ser.Len() > BufT::max_size()) {
+		if (ser.Len() > BufT::max_size()) [[unlikely]] {
 			throw Error(errLogic, "QueryCacheKey: buffer overflow");
 		}
 		buf_.assign(ser.Buf(), ser.Buf() + ser.Len());

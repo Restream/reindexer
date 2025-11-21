@@ -44,14 +44,14 @@ public:
 
 	/// Start new object
 	CsvBuilder Object(std::string_view name = {}, int size = KUnknownFieldSize);
-	CsvBuilder Object(TagName tagName, int size = KUnknownFieldSize) { return Object(getNameByTag(tagName), size); }
+	CsvBuilder Object(concepts::TagNameOrIndex auto tag, int size = KUnknownFieldSize) { return Object(getNameByTag(tag), size); }
 
 	CsvBuilder Array(std::string_view name, int size = KUnknownFieldSize);
-	CsvBuilder Array(TagName tagName, int size = KUnknownFieldSize) { return Array(getNameByTag(tagName), size); }
+	CsvBuilder Array(concepts::TagNameOrIndex auto tag, int size = KUnknownFieldSize) { return Array(getNameByTag(tag), size); }
 
 	template <typename T>
-	void Array(TagName tagName, std::span<T> data, int /*offset*/ = 0) {
-		CsvBuilder node = Array(tagName);
+	void Array(concepts::TagNameOrIndex auto tag, std::span<T> data, int /*offset*/ = 0) {
+		CsvBuilder node = Array(tag);
 		for (const auto& d : data) {
 			node.Put(TagName::Empty(), d);
 		}
@@ -71,8 +71,8 @@ public:
 		}
 	}
 
-	void Array(TagName tagName, Serializer& ser, TagType tagType, int count) {
-		CsvBuilder node = Array(tagName);
+	void Array(concepts::TagNameOrIndex auto tag, Serializer& ser, TagType tagType, int count) {
+		CsvBuilder node = Array(tag);
 		while (count--) {
 			node.Put(TagName::Empty(), ser.GetRawVariant(KeyValueType{tagType}));
 		}
@@ -88,17 +88,17 @@ public:
 		(*ser_) << arg;
 	}
 	template <typename T>
-	void Put(TagName tagName, const T& arg, int offset = 0) {
-		Put(getNameByTag(tagName), arg, offset);
+	void Put(concepts::TagNameOrIndex auto tag, const T& arg, int offset = 0) {
+		Put(getNameByTag(tag), arg, offset);
 	}
 
-	void Raw(TagName tagName, std::string_view arg) { Raw(getNameByTag(tagName), arg); }
+	void Raw(concepts::TagNameOrIndex auto tag, std::string_view arg) { Raw(getNameByTag(tag), arg); }
 	void Raw(std::string_view name, std::string_view arg);
 	void Raw(std::string_view arg) { Raw(std::string_view{}, arg); }
 	void Json(std::string_view name, std::string_view arg) { Raw(name, arg); }
 	void Json(std::string_view arg) { Raw(arg); }
 
-	void Null(TagName tagName) { Null(getNameByTag(tagName)); }
+	void Null(concepts::TagNameOrIndex auto tag) { Null(getNameByTag(tag)); }
 	void Null(std::string_view name);
 
 	void End();
@@ -133,6 +133,7 @@ private:
 
 	void putName(std::string_view name);
 	[[nodiscard]] std::string_view getNameByTag(TagName tagName);
+	[[nodiscard]] std::string_view getNameByTag(TagIndex) { return getNameByTag(TagName::Empty()); }
 	void tmProcessing(std::string_view name);
 	void postProcessing();
 

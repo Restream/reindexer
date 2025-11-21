@@ -120,7 +120,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 #endif
 
 		// Rebalance connection, when first message was received
-		if rx_unlikely (balancingType_ == BalancingType::NotSet) {
+		if (balancingType_ == BalancingType::NotSet) [[unlikely]] {
 			balancingType_ = (hdr.dedicatedThread && hdr.version >= kCprotoMinDedicatedThreadsVersion) ? BalancingType::Dedicated
 																									   : BalancingType::Shared;
 			hasPendingData_ = true;
@@ -144,7 +144,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			return BaseConnT::ReadResT::Default;
 		}
 
-		rx_unused = BaseConnT::rdBuf_.erase(sizeof(hdr));
+		std::ignore = BaseConnT::rdBuf_.erase(sizeof(hdr));
 
 		auto it = BaseConnT::rdBuf_.tail();
 		if (it.size() < size_t(hdr.len)) {
@@ -160,7 +160,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			ctx.call->seq = hdr.seq;
 			Serializer ser(it.data(), hdr.len);
 			if (hdr.compressed) {
-				if rx_unlikely (!snappy::Uncompress(it.data(), hdr.len, &uncompressed)) {
+				if (!snappy::Uncompress(it.data(), hdr.len, &uncompressed)) [[unlikely]] {
 					throw Error(errParseBin, "Can't decompress data from peer");
 				}
 
@@ -231,7 +231,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			handleException(ctx, Error(errLogic, "Unknown exception"));
 		}
 
-		rx_unused = BaseConnT::rdBuf_.erase(hdr.len);
+		std::ignore = BaseConnT::rdBuf_.erase(hdr.len);
 	}
 	return BaseConnT::ReadResT::Default;
 }
@@ -278,7 +278,7 @@ static chunk packRPC(chunk chunk, Context& ctx, const Error& status, const Args&
 }
 
 void ServerConnection::responseRPC(Context& ctx, const Error& status, const Args& args) {
-	if rx_unlikely (ctx.respSent) {
+	if (ctx.respSent) [[unlikely]] {
 		fprintf(stderr, "reindexer warning: RPC response already sent\n");
 		return;
 	}

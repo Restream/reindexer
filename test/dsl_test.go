@@ -207,7 +207,6 @@ func checkErrorQueryFrom(t *testing.T, jsonDSL string, description string) {
 	require.EqualError(t, err, description)
 }
 
-
 func TestDSLQueries(t *testing.T) {
 	t.Parallel()
 
@@ -562,7 +561,7 @@ func TestDSLQueries(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedOrder := []string{"worm", "sword", "word"}
-			expectedRanks := []float32{75, 75, 107}
+			expectedRanks := []float32{76, 76, 108}
 			assert.Equal(t, expectedOrder, getTesDSLFtItemsDescr(items))
 			assert.Equal(t, expectedRanks, ranks)
 		}, jsonDSL)

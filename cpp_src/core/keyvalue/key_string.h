@@ -85,7 +85,7 @@ public:
 		}
 	}
 	explicit key_string(std::string_view str) {
-		if rx_unlikely (str.size() > kMaxLen) {
+		if (str.size() > kMaxLen) [[unlikely]] {
 			throwMaxLenOverflow(str.size());
 		}
 		void* impl = operator new(sizeof(key_string_impl) + str.size());

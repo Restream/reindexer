@@ -9,11 +9,11 @@ class Tokenizer;
 class FunctionExecutor;
 class TagsMatcher;
 class NsContext;
+class NamespaceImpl;
 
 class [[nodiscard]] ExpressionEvaluator {
 public:
-	ExpressionEvaluator(const PayloadType& type, TagsMatcher& tagsMatcher, FunctionExecutor& func) noexcept
-		: type_(type), tagsMatcher_(tagsMatcher), functionExecutor_(func) {}
+	ExpressionEvaluator(NamespaceImpl& ns, FunctionExecutor& func) noexcept : ns_(ns), functionExecutor_(func) {}
 
 	VariantArray Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField, const NsContext& ctx);
 
@@ -41,8 +41,7 @@ private:
 
 	enum [[nodiscard]] State { None = 0, StateArrayConcat, StateMultiplyAndDivide, StateSumAndSubtract };
 
-	const PayloadType& type_;
-	TagsMatcher& tagsMatcher_;
+	NamespaceImpl& ns_;
 	FunctionExecutor& functionExecutor_;
 	std::string_view forField_;
 	VariantArray arrayValues_;

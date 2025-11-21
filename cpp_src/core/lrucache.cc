@@ -15,7 +15,7 @@ LRUCacheImpl<K, V, HashT, EqualT>::LRUCacheImpl(size_t sizeLimit, uint32_t hitCo
 
 template <typename K, typename V, typename HashT, typename EqualT>
 typename LRUCacheImpl<K, V, HashT, EqualT>::Iterator LRUCacheImpl<K, V, HashT, EqualT>::Get(const K& key) {
-	if rx_unlikely (cacheSizeLimit_ == 0) {
+	if (cacheSizeLimit_ == 0) [[unlikely]] {
 		return Iterator();
 	}
 
@@ -25,7 +25,7 @@ typename LRUCacheImpl<K, V, HashT, EqualT>::Iterator LRUCacheImpl<K, V, HashT, E
 	if (emplaced) {
 		totalCacheSize_ += kElemSizeOverhead + sizeof(Entry) + key.Size();
 		it->second.lruPos = lru_.insert(lru_.end(), &it->first);
-		if rx_unlikely (!eraseLRU()) {
+		if (!eraseLRU()) [[unlikely]] {
 			return Iterator();
 		}
 	} else if (std::next(it->second.lruPos) != lru_.end()) {
@@ -42,7 +42,7 @@ typename LRUCacheImpl<K, V, HashT, EqualT>::Iterator LRUCacheImpl<K, V, HashT, E
 
 template <typename K, typename V, typename HashT, typename EqualT>
 void LRUCacheImpl<K, V, HashT, EqualT>::Put(const K& key, V&& v) {
-	if rx_unlikely (cacheSizeLimit_ == 0) {
+	if (cacheSizeLimit_ == 0) [[unlikely]] {
 		return;
 	}
 
@@ -57,9 +57,9 @@ void LRUCacheImpl<K, V, HashT, EqualT>::Put(const K& key, V&& v) {
 
 	++putCount_;
 
-	rx_unused = eraseLRU();
+	std::ignore = eraseLRU();
 
-	if rx_unlikely (putCount_ * 16 > getCount_ && eraseCount_) {
+	if (putCount_ * 16 > getCount_ && eraseCount_) [[unlikely]] {
 		logFmt(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount={},putCount={},getCount={},hitCountToCache={}",
 			   eraseCount_, putCount_, eraseCount_, hitCountToCache_);
 		eraseCount_ = 0;
@@ -77,7 +77,7 @@ RX_ALWAYS_INLINE bool LRUCacheImpl<K, V, HashT, EqualT>::eraseLRU() {
 		// just to save us if totalCacheSize_ >0 and lru is empty
 		// someone can make bad key or val with wrong size
 		// TODO: Probably we should remove this logic, since there is no access to sizes outside the lrucache
-		if rx_unlikely (lru_.empty()) {
+		if (lru_.empty()) [[unlikely]] {
 			clearAll();
 			logFmt(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_={}", totalCacheSize_);
 			return false;
@@ -87,7 +87,7 @@ RX_ALWAYS_INLINE bool LRUCacheImpl<K, V, HashT, EqualT>::eraseLRU() {
 
 		const size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
 
-		if rx_unlikely (oldSize > totalCacheSize_) {
+		if (oldSize > totalCacheSize_) [[unlikely]] {
 			clearAll();
 			logFmt(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_={},oldSize={}",
 				   totalCacheSize_, oldSize);

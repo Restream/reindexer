@@ -120,7 +120,7 @@ size_t DataProcessor<IdCont>::commitIdRelSets(const WordsVector& preprocWords, w
 		}
 
 		if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
-			word->vids.insert(word->vids.end(), keyIt->second.vids_.begin(), keyIt->second.vids_.end());
+			word->vids.insert_back(keyIt->second.vids_.begin(), keyIt->second.vids_.end());
 		} else {
 			word->vids.insert(word->vids.end(), std::make_move_iterator(keyIt->second.vids_.begin()),
 							  std::make_move_iterator(keyIt->second.vids_.end()));
@@ -232,7 +232,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 
 	auto& cfg = holder_.cfg_;
 	auto& vdocs = holder_.vdocs_;
-	const int fieldscount = fieldSize_;
+	const size_t fieldscount = fieldSize_;
 	size_t offset = holder_.vdocsOffset_;
 	// build words map parallel in maxIndexWorkers threads
 	auto worker = [this, &ctxs, &vdocsTexts, offset, fieldscount, &cfg, &vdocs, &textSplitter](int i) {
@@ -251,13 +251,17 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 			vdoc.mostFreqWordCount.resize(fieldscount, 0.0);
 
 			auto& vdocsText = vdocsTexts[j];
-			for (size_t field = 0, sz = vdocsText.size(); field < sz; ++field) {
-				task->SetText(vdocsText[field].first);
-				const int rfield = vdocsText[field].second;
-				assertrx(rfield < fieldscount);
+			for (size_t idx = 0, arrayIdx = 0, sz = vdocsText.size(); idx < sz; ++idx, ++arrayIdx) {
+				task->SetText(vdocsText[idx].first);
+				const unsigned field = vdocsText[idx].second;
+				if (idx > 0 && field != vdocsTexts[j][idx - 1].second) {
+					arrayIdx = 0;
+				}
+
+				assertrx_throw(field < fieldscount);
 
 				const std::vector<WordWithPos>& entrances = task->GetResults();
-				vdoc.wordsCount[rfield] = entrances.size();
+				vdoc.wordsCount[field] = entrances.size();
 
 				for (const auto& e : entrances) {
 					const auto whash = h(e.word);
@@ -274,13 +278,13 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 
 					auto [idxIt, emplaced] = ctx->words_um.try_emplace_prehashed(whash, e.word);
 					(void)emplaced;
-					const int mfcnt = idxIt->second.vids_.Add(vdocId, e.pos, rfield);
-					if (mfcnt > vdoc.mostFreqWordCount[rfield]) {
-						vdoc.mostFreqWordCount[rfield] = mfcnt;
+					const int mfcnt = idxIt->second.vids_.Add(vdocId, e.pos, field, arrayIdx);
+					if (mfcnt > vdoc.mostFreqWordCount[field]) {
+						vdoc.mostFreqWordCount[field] = mfcnt;
 					}
 
 					if (enableNumbersSearch && is_number(e.word)) {
-						buildVirtualWord(e.word, ctx->words_um, vdocId, rfield, e.pos, virtualWords);
+						buildVirtualWord(e.word, ctx->words_um, vdocId, field, arrayIdx, e.pos, virtualWords);
 					}
 				}
 			}
@@ -337,7 +341,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	// Calculate avg words count per document for bm25 calculation
 	if (vdocs.size()) {
 		holder_.avgWordsCount_.resize(fieldscount, 0);
-		for (int i = 0; i < fieldscount; i++) {
+		for (unsigned i = 0; i < fieldscount; i++) {
 			auto& avgRef = holder_.avgWordsCount_[i];
 			for (auto& vdoc : vdocs) {
 				avgRef += vdoc.wordsCount[i];
@@ -360,20 +364,20 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 }
 
 template <typename IdCont>
-void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, int rfield, size_t insertPos,
-											 std::vector<std::string_view>& container) {
+void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, unsigned field,
+											 unsigned arrayIdx, size_t insertPos, std::vector<std::string_view>& container) {
 	auto& vdoc(holder_.vdocs_[docType]);
-	rx_unused = NumToText::convert(word, container);
+	std::ignore = NumToText::convert(word, container);
 	for (const auto numberWord : container) {
 		WordEntry wentry;
 		auto idxIt = words_um.emplace(numberWord, std::move(wentry)).first;
-		const int mfcnt = idxIt->second.vids_.Add(docType, insertPos, rfield);
-		assertrx_throw(vdoc.mostFreqWordCount.size() > unsigned(rfield));
-		assertrx_throw(vdoc.wordsCount.size() > unsigned(rfield));
-		if (mfcnt > vdoc.mostFreqWordCount[rfield]) {
-			vdoc.mostFreqWordCount[rfield] = mfcnt;
+		const int mfcnt = idxIt->second.vids_.Add(docType, insertPos, field, arrayIdx);
+		assertrx_throw(vdoc.mostFreqWordCount.size() > field);
+		assertrx_throw(vdoc.wordsCount.size() > field);
+		if (mfcnt > vdoc.mostFreqWordCount[field]) {
+			vdoc.mostFreqWordCount[field] = mfcnt;
 		}
-		++vdoc.wordsCount[rfield];
+		++vdoc.wordsCount[field];
 	}
 }
 

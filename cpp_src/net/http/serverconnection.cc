@@ -84,7 +84,7 @@ void ServerConnection::setJsonStatus(Context& ctx, bool success, int responseCod
 	builder.Put("response_code", responseCode);
 	builder.Put("description", status);
 	builder.End();
-	rx_unused = ctx.JSON(responseCode, ser.Slice());
+	std::ignore = ctx.JSON(responseCode, ser.Slice());
 }
 
 void ServerConnection::setStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
@@ -108,7 +108,7 @@ void ServerConnection::handleRequest(Request& req) {
 	ctx.stat.sizeStat.reqSizeBytes = req.size;
 
 	try {
-		rx_unused = router_.handle(ctx);
+		std::ignore = router_.handle(ctx);
 	} catch (const HttpStatus& status) {
 		if (!writer.IsRespSent()) {
 			setStatus(ctx, false, status.code, status.what);
@@ -288,7 +288,7 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 						return ReadResT::Default;
 					}
 				} else {
-					rx_unused = rdBuf_.erase(res);
+					std::ignore = rdBuf_.erase(res);
 				}
 				if (expectContinue_) {
 					if (bodyLeft_ < int(rdBuf_.capacity() - res)) {
@@ -317,7 +317,7 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 
 				request_.size += size_t(bodyLeft_);
 				handleRequest(request_);
-				rx_unused = rdBuf_.erase(bodyLeft_);
+				std::ignore = rdBuf_.erase(bodyLeft_);
 				bodyLeft_ = 0;
 			} else {
 				break;

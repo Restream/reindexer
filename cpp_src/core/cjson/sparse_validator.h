@@ -10,7 +10,7 @@ namespace reindexer::item_fields_validator {
 
 struct [[nodiscard]] NoValidation {
 	NoValidation Array() const noexcept { return *this; }
-	NoValidation Elem() const noexcept { return *this; }
+	NoValidation& Elem() & noexcept { return *this; }
 	std::string_view Name() const noexcept { return {}; }
 	KeyValueType Type() const noexcept { return KeyValueType::Undefined{}; }
 	template <typename T>
@@ -26,7 +26,7 @@ public:
 	SparseValidator(KeyValueType t, IsArray a, size_t arrayDim, int n, const TagsMatcher& tm, InArray inArray, std::string_view parserName)
 		: type_{t}, isArray_{a}, arrayDim_{arrayDim}, tagsMatcher_{tm}, sparseNumber_{n}, parserName_{parserName} {
 		if (inArray) {
-			if rx_unlikely (*!isArray_) {
+			if (*!isArray_) [[unlikely]] {
 				throwUnexpectedNestedArrayError(parserName_, Name(), type_);
 			}
 		}
@@ -36,47 +36,49 @@ public:
 		validateArrayFieldRestrictions(Name(), isArray_, arrayDim_, 1, parserName_);
 		using namespace std::string_view_literals;
 		type_.EvaluateOneOf(
-			[](OneOf<KeyValueType::Undefined, KeyValueType::Double, KeyValueType::Int, KeyValueType::Bool, KeyValueType::Int64,
-					 KeyValueType::String, KeyValueType::Float>) noexcept {},
-			[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector>) {
-				throwUnexpected(Name(), type_, "number"sv, parserName_);
-			});
+			[](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Double, KeyValueType::Int, KeyValueType::Bool, KeyValueType::Int64,
+							   KeyValueType::String, KeyValueType::Float> auto) noexcept {},
+			[&](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid,
+								KeyValueType::FloatVector> auto) { throwUnexpected(Name(), type_, "number"sv, parserName_); });
 	}
 	void operator()(bool) const {
 		validateArrayFieldRestrictions(Name(), isArray_, arrayDim_, 1, parserName_);
 		using namespace std::string_view_literals;
 		type_.EvaluateOneOf(
-			[](OneOf<KeyValueType::Undefined, KeyValueType::Double, KeyValueType::Int, KeyValueType::Bool, KeyValueType::Int64,
-					 KeyValueType::Float>) noexcept {},
-			[&](OneOf<KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid,
-					  KeyValueType::FloatVector>) { throwUnexpected(Name(), type_, "bool"sv, parserName_); });
+			[](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Double, KeyValueType::Int, KeyValueType::Bool, KeyValueType::Int64,
+							   KeyValueType::Float> auto) noexcept {},
+			[&](concepts::OneOf<KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid,
+								KeyValueType::FloatVector> auto) { throwUnexpected(Name(), type_, "bool"sv, parserName_); });
 	}
 	void operator()(std::string_view v) const {
 		validateArrayFieldRestrictions(Name(), isArray_, arrayDim_, 1, parserName_);
 		using namespace std::string_view_literals;
-		type_.EvaluateOneOf([](OneOf<KeyValueType::Undefined, KeyValueType::String>) noexcept {},
-							[v](KeyValueType::Uuid) { rx_unused = Uuid{v}; },
-							[&](OneOf<KeyValueType::Int, KeyValueType::Double, KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Tuple,
-									  KeyValueType::Composite, KeyValueType::Null, KeyValueType::FloatVector, KeyValueType::Float>) {
-								throwUnexpected(Name(), type_, "string"sv, parserName_);
-							});
+		type_.EvaluateOneOf(
+			[](concepts::OneOf<KeyValueType::Undefined, KeyValueType::String> auto) noexcept {},
+			[v](KeyValueType::Uuid) { std::ignore = Uuid{v}; },
+			[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Double, KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Tuple,
+								KeyValueType::Composite, KeyValueType::Null, KeyValueType::FloatVector, KeyValueType::Float> auto) {
+				throwUnexpected(Name(), type_, "string"sv, parserName_);
+			});
 	}
 	void operator()(Uuid) const {
 		validateArrayFieldRestrictions(Name(), isArray_, arrayDim_, 1, parserName_);
 		using namespace std::string_view_literals;
-		type_.EvaluateOneOf([](OneOf<KeyValueType::Undefined, KeyValueType::String, KeyValueType::Uuid>) noexcept {},
-							[&](OneOf<KeyValueType::Int, KeyValueType::Double, KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Tuple,
-									  KeyValueType::Composite, KeyValueType::Null, KeyValueType::Float, KeyValueType::FloatVector>) {
-								throwUnexpected(Name(), type_, "uuid"sv, parserName_);
-							});
+		type_.EvaluateOneOf(
+			[](concepts::OneOf<KeyValueType::Undefined, KeyValueType::String, KeyValueType::Uuid> auto) noexcept {},
+			[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Double, KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Tuple,
+								KeyValueType::Composite, KeyValueType::Null, KeyValueType::Float, KeyValueType::FloatVector> auto) {
+				throwUnexpected(Name(), type_, "uuid"sv, parserName_);
+			});
 	}
 	void operator()(const Variant& v) const {
 		v.Type().EvaluateOneOf(
 			[&](KeyValueType::Bool) { (*this)(v.As<bool>()); }, [&](KeyValueType::Int) { (*this)(v.As<int>()); },
 			[&](KeyValueType::Int64) { (*this)(v.As<int64_t>()); }, [&](KeyValueType::Double) { (*this)(v.As<double>()); },
 			[&](KeyValueType::Float) { (*this)(v.As<float>()); },
-			[&](OneOf<KeyValueType::String, KeyValueType::Uuid>) { (*this)(v.As<std::string>()); }, [](KeyValueType::Null) noexcept {},
-			[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+			[&](concepts::OneOf<KeyValueType::String, KeyValueType::Uuid> auto) { (*this)(v.As<std::string>()); },
+			[](KeyValueType::Null) noexcept {},
+			[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector> auto) {
 				throwUnexpected(Name(), type_, v.Type(), parserName_);
 			});
 	}
@@ -96,13 +98,19 @@ protected:
 
 class [[nodiscard]] SparseArrayValidator : private SparseValidator {
 public:
+	SparseArrayValidator(const SparseArrayValidator&) = delete;
 	SparseArrayValidator(SparseValidator&& other) : SparseValidator{std::move(other)} {}
-	const SparseValidator& Elem() & noexcept {
+	SparseArrayValidator& Elem() & noexcept {
 		++elemsCount_;
 		return *this;
 	}
+	SparseArrayValidator Array() const noexcept {
+		return SparseValidator{type_, IsArray_False, 0, sparseNumber_, tagsMatcher_, InArray_False, parserName_};
+	}
+
 	using SparseValidator::Type;
 	using SparseValidator::Name;
+	using SparseValidator::operator();
 
 	~SparseArrayValidator() noexcept(false) {
 		if (std::uncaught_exceptions() == 0) {
@@ -115,8 +123,8 @@ private:
 };
 
 inline SparseArrayValidator SparseValidator::Array() const {
-	if rx_unlikely (!isArray_) {
-		throwUnexpectedArrayInIndex(Name(), type_, parserName_);
+	if (!isArray_) [[unlikely]] {
+		throwUnexpectedArrayError(Name(), type_, parserName_);
 	}
 	return SparseValidator{type_,		  IsArray_False, tagsMatcher_.SparseIndex(sparseNumber_).ArrayDim(), sparseNumber_, tagsMatcher_,
 						   InArray_False, parserName_};

@@ -47,7 +47,7 @@ private:
 	template <typename MergeType>
 	IdSet::Ptr afterSelect(FtCtx& fctx, MergeType&& mergeData, RankSortType, FtMergeStatuses&& statuses, FtUseExternStatuses);
 
-	template <auto(RanksHolder::* rankGetter)>
+	template <auto(RanksHolder::*rankGetter)>
 	void sortAfterSelect(IdSet& mergedIds, RanksHolder&, RankSortType);
 
 	template <typename VectorType>
@@ -65,10 +65,8 @@ private:
 	template <class Data>
 	void buildVdocs(Data& data);
 	template <typename MergeType, typename F>
-	void appendMergedIds(MergeType& merged, size_t relevantDocs, F&& appender);
-	template <typename MergeType>
-	typename MergeType::iterator unstableRemoveIf(MergeType& md, int minRelevancy, double scalingFactor, size_t& relevantDocs, int& cnt);
-
+	void appendMergedIds(MergeType& merged, size_t relevantDocs, std::optional<fast_hash_set<IdType>>& uniqueIds,
+						 std::vector<IdType>& idsFiltered, F&& appender);
 	std::unique_ptr<IDataHolder> holder_;
 };
 

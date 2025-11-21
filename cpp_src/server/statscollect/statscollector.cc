@@ -7,6 +7,7 @@
 #include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/errors.h"
+#include "tools/jsontools.h"
 
 namespace reindexer_server {
 
@@ -160,14 +161,78 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		status = db->Select(kPerfstatsQuery, qr);
 		if (status.ok()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
-				auto item = it.GetItem(false);
-				std::string nsName = item["name"].As<std::string>();
-				constexpr auto kSelectQueryType = "select"sv;
-				constexpr auto kUpdateQueryType = "update"sv;
-				prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, item["selects.last_sec_qps"].As<int64_t>());
-				prometheus_->RegisterQPS(dbName, nsName, kUpdateQueryType, item["updates.last_sec_qps"].As<int64_t>());
-				prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType, item["selects.last_sec_avg_latency_us"].As<int64_t>());
-				prometheus_->RegisterLatency(dbName, nsName, kUpdateQueryType, item["updates.last_sec_avg_latency_us"].As<int64_t>());
+				try {
+					auto item = it.GetItem(false);
+					std::string nsName = item["name"].As<std::string>();
+					constexpr auto kSelectQueryType = "select"sv;
+					constexpr auto kUpdateQueryType = "update"sv;
+					prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, item["selects.last_sec_qps"].As<int64_t>());
+					prometheus_->RegisterQPS(dbName, nsName, kUpdateQueryType, item["updates.last_sec_qps"].As<int64_t>());
+					prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType, item["selects.last_sec_avg_latency_us"].As<int64_t>());
+					prometheus_->RegisterLatency(dbName, nsName, kUpdateQueryType, item["updates.last_sec_avg_latency_us"].As<int64_t>());
+					std::string_view json = item.GetJSON();
+					gason::JsonParser parser;
+					auto root = parser.Parse(json);
+					auto nodeSelect = root["selects"];
+					if (!nodeSelect.empty() && nodeSelect.isObject()) {
+						prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, nodeSelect["last_sec_qps"].As<int64_t>());
+						prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType, nodeSelect["last_sec_avg_latency_us"].As<int64_t>());
+					}
+					auto nodeUpdates = root["updates"];
+					if (!nodeUpdates.empty() && nodeUpdates.isObject()) {
+						prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, nodeUpdates["last_sec_qps"].As<int64_t>());
+						prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType,
+													 nodeUpdates["last_sec_avg_latency_us"].As<int64_t>());
+					}
+					auto nodeIndexes = root["indexes"];
+					if (!nodeIndexes.empty() && nodeIndexes.isArray()) {
+						for (auto it = gason::begin(nodeIndexes); it != gason::end(nodeIndexes); ++it) {
+							std::string indexName;
+							Error err = tryReadRequiredJsonValue(nullptr, *it, "name", indexName);
+							if (!err.ok()) {
+								continue;
+							}
+
+							auto processEmbed = [&](std::string_view name) {
+								Error err;
+								auto nodeUpEmb = (*it)[name];
+								if (!nodeUpEmb.empty()) {
+									int64_t val = 0;
+									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_qps", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecQps(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_dps", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecDps(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_errors_count", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecErrorsCount(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "conn_in_use", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderConnInUse(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_avg_embed_latency_us", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecAvgLatencyUs(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_avg_embed_latency_us", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecAvgEmbedLatencyUs(dbName, nsName, indexName, name, val);
+									}
+								}
+							};
+							processEmbed("upsert_embedder");
+							processEmbed("query_embedder");
+						}
+					}
+
+				}  // NOLINTBEGIN(bugprone-empty-catch)
+				catch (std::exception&) {
+				}
+				// NOLINTEND(bugprone-empty-catch)
 			}
 		}
 
@@ -205,7 +270,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 	if (reindexer::alloc_ext::JEMallocIsAvailable()) {
 		size_t memoryConsumationBytes = 0;
 		size_t sz = sizeof(memoryConsumationBytes);
-		rx_unused = alloc_ext::mallctl("stats.allocated", &memoryConsumationBytes, &sz, NULL, 0);
+		std::ignore = alloc_ext::mallctl("stats.allocated", &memoryConsumationBytes, &sz, NULL, 0);
 		prometheus_->RegisterAllocatedMemory(memoryConsumationBytes);
 	}
 #endif	// REINDEX_WITH_JEMALLOC

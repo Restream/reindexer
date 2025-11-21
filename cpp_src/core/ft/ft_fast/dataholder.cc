@@ -109,13 +109,13 @@ void DataHolder<IdCont>::StartCommit(bool complete_updated) {
 		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
 
 		for (auto& word : words_) {
-			word.vids.erase_back(word.cur_step_pos);
+			word.RestoreState();
 		}
 
 		steps.back().clear();
 	} else {  // if the last step is full, then create a new
 		for (auto& word : words_) {
-			word.cur_step_pos = word.vids.pos(word.vids.end());
+			word.SaveState();
 		}
 		status_ = CreateNew;
 		steps.emplace_back(CommitStep{});

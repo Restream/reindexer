@@ -56,11 +56,8 @@ private:
 };
 
 struct [[nodiscard]] FacetResult {
-	FacetResult(const h_vector<std::string, 1>& v, int c) noexcept : values(v), count(c) {}
-	FacetResult() noexcept : count(0) {}
-
 	h_vector<std::string, 1> values;
-	int count;
+	int count = 0;
 };
 
 class [[nodiscard]] AggregationResult {

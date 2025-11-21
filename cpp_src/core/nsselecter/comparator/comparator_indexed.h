@@ -13,6 +13,7 @@
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "helpers.h"
+#include "tools/float_comparison.h"
 #include "tools/string_regexp_functions.h"
 
 namespace reindexer {
@@ -123,6 +124,15 @@ struct [[nodiscard]] DataHolder {
 };
 
 template <typename T>
+RX_ALWAYS_INLINE bool SafeEqualWithFP(const T& left, const T& right) {
+	if constexpr (std::is_floating_point_v<T>) {
+		return fp::ExactlyEqual(left, right);
+	} else {
+		return left == right;
+	}
+}
+
+template <typename T>
 class [[nodiscard]] ComparatorIndexedOffsetScalar : private DataHolder<T> {
 public:
 	ComparatorIndexedOffsetScalar(size_t offset, const VariantArray&, CondType);
@@ -130,7 +140,7 @@ public:
 		const T* ptr = reinterpret_cast<T*>(item.Ptr() + offset_);
 		switch (this->cond_) {
 			case CondEq:
-				return *ptr == this->value_;
+				return SafeEqualWithFP(*ptr, this->value_);
 			case CondLt:
 				return *ptr < this->value_;
 			case CondLe:
@@ -173,7 +183,7 @@ public:
 		const T& v = *(rawData_ + rowId);
 		switch (this->cond_) {
 			case CondEq:
-				return v == this->value_;
+				return SafeEqualWithFP(v, this->value_);
 			case CondLt:
 				return v < this->value_;
 			case CondLe:
@@ -216,7 +226,7 @@ public:
 		const T& value = *reinterpret_cast<T*>(item.Ptr() + offset_);
 		switch (this->cond_) {
 			case CondEq:
-				return value == this->value_ && distinct_.Compare(value);
+				return SafeEqualWithFP(value, this->value_) && distinct_.Compare(value);
 			case CondLt:
 				return value < this->value_ && distinct_.Compare(value);
 			case CondLe:
@@ -263,7 +273,7 @@ public:
 		const T& value = *(rawData_ + rowId);
 		switch (this->cond_) {
 			case CondEq:
-				return value == this->value_ && distinct_.Compare(value);
+				return SafeEqualWithFP(value, this->value_) && distinct_.Compare(value);
 			case CondLt:
 				return value < this->value_ && distinct_.Compare(value);
 			case CondLe:
@@ -314,7 +324,7 @@ public:
 		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
 			switch (this->cond_) {
 				case CondEq:
-					if (*ptr == this->value_) {
+					if (SafeEqualWithFP(*ptr, this->value_)) {
 						return true;
 					}
 					continue;
@@ -394,7 +404,7 @@ public:
 		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
 			switch (this->cond_) {
 				case CondEq:
-					if (*ptr == this->value_ && distinct_.Compare(*ptr)) {
+					if (SafeEqualWithFP(*ptr, this->value_) && distinct_.Compare(*ptr)) {
 						return true;
 					}
 					continue;
@@ -484,12 +494,12 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::From<T>());
 		for (Variant& value : buffer_) {
-			if rx_unlikely (value.IsNullValue()) {
+			if (value.IsNullValue()) [[unlikely]] {
 				continue;
 			}
 			switch (this->cond_) {
 				case CondEq:
-					if (value.As<T>() == this->value_) {
+					if (SafeEqualWithFP(value.As<T>(), this->value_)) {
 						return true;
 					}
 					continue;
@@ -574,13 +584,13 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::From<T>());
 		for (Variant& v : buffer_) {
-			if rx_unlikely (v.IsNullValue()) {
+			if (v.IsNullValue()) [[unlikely]] {
 				continue;
 			}
 			const auto value = v.As<T>();
 			switch (this->cond_) {
 				case CondEq:
-					if (value == this->value_ && distinct_.Compare(value)) {
+					if (SafeEqualWithFP(value, this->value_) && distinct_.Compare(value)) {
 						return true;
 					}
 					continue;
@@ -646,7 +656,7 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::From<T>());
 		for (Variant& v : buffer_) {
-			if rx_unlikely (v.IsNullValue()) {
+			if (v.IsNullValue()) [[unlikely]] {
 				continue;
 			}
 			distinct_.ExcludeValues(v.As<T>());
@@ -1040,7 +1050,7 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
 		for (Variant& v : buffer_) {
-			if rx_unlikely (v.IsNullValue()) {
+			if (v.IsNullValue()) [[unlikely]] {
 				continue;
 			}
 
@@ -1136,7 +1146,7 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
 		for (Variant& v : buffer_) {
-			if rx_unlikely (v.IsNullValue()) {
+			if (v.IsNullValue()) [[unlikely]] {
 				continue;
 			}
 
@@ -1216,7 +1226,7 @@ public:
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::String{});
 		for (Variant& v : buffer_) {
-			if rx_unlikely (v.IsNullValue()) {
+			if (v.IsNullValue()) [[unlikely]] {
 				continue;
 			}
 
@@ -1236,38 +1246,45 @@ private:
 	VariantArray buffer_;
 };
 
-class [[nodiscard]] ComparatorIndexedComposite : private DataHolder<PayloadValue> {
+class [[nodiscard]] ComparatorIndexedCompositeBase : protected DataHolder<PayloadValue> {
 	using Base = DataHolder<PayloadValue>;
 
 public:
-	ComparatorIndexedComposite(const VariantArray&, const CollateOpts&, const FieldsSet&, const PayloadType&, CondType);
-	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
+	ComparatorIndexedCompositeBase(const VariantArray& values, const CollateOpts& collate, const FieldsSet& fields,
+								   const PayloadType& payloadType, CondType cond);
+
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
+	std::string ConditionStr() const;
+
+	RX_ALWAYS_INLINE bool CompareItems(const PayloadValue& pv) {
+		ConstPayload item{payloadType_, pv};
 		switch (cond_) {
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
-				return setPtr_->find(item) != setPtr_->cend();
+				return setPtr_->find(pv) != setPtr_->cend();
 			case CondRange: {
-				ConstPayload pv{payloadType_, item};
-				return (pv.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) & ComparationResult::Ge) &&
-					   (pv.Compare<WithString::Yes, NotComparable::Throw>(value2_, *fields_, *collateOpts_) & ComparationResult::Le);
+				return (item.Compare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_, *fields_, *collateOpts_) &
+						ComparationResult::Ge) &&
+					   (item.Compare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value2_, *fields_, *collateOpts_) &
+						ComparationResult::Le);
 			}
 			case CondAllSet:
 				assertrx_dbg(this->allSetPtr_);
-				return allSetPtr_->values_.size() == 1 && allSetPtr_->values_.find(item) != allSetPtr_->values_.end();
+				return allSetPtr_->values_.size() == 1 && allSetPtr_->values_.find(pv) != allSetPtr_->values_.end();
 			case CondEq:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) ==
+				return item.Compare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_, *fields_, *collateOpts_) ==
 					   ComparationResult::Eq;
 			case CondLt:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) ==
+				return item.Compare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_, *fields_, *collateOpts_) ==
 					   ComparationResult::Lt;
 			case CondLe:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) &
+				return item.Compare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_, *fields_, *collateOpts_) &
 					   ComparationResult::Le;
 			case CondGt:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) ==
+				return item.Compare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_, *fields_, *collateOpts_) ==
 					   ComparationResult::Gt;
 			case CondGe:
-				return ConstPayload{payloadType_, item}.Compare<WithString::Yes, NotComparable::Throw>(value_, *fields_, *collateOpts_) &
+				return item.Compare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(value_, *fields_, *collateOpts_) &
 					   ComparationResult::Ge;
 			case CondAny:
 			case CondEmpty:
@@ -1278,12 +1295,8 @@ public:
 				abort();
 		}
 	}
-	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
-	std::string ConditionStr() const;
-	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
-	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
 
-private:
+protected:
 	// Using pointer for cheap copying and ExpressionTree size reduction
 	using FieldsSetWrp = const intrusive_atomic_rc_wrapper<FieldsSet>;	// must be const for safe intrusive copying
 
@@ -1292,12 +1305,40 @@ private:
 	PayloadType payloadType_;
 };
 
+class [[nodiscard]] ComparatorIndexedComposite : public ComparatorIndexedCompositeBase {
+	using Base = ComparatorIndexedCompositeBase;
+	using Base::Base;
+
+public:
+	RX_ALWAYS_INLINE bool Compare(const PayloadValue& pv, IdType) { return CompareItems(pv); }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
+	void ExcludeDistinctValues(const PayloadValue&, IdType) const noexcept {}
+};
+
+class [[nodiscard]] ComparatorIndexedCompositeDistinct : public ComparatorIndexedCompositeBase {
+	using Base = ComparatorIndexedCompositeBase;
+
+public:
+	ComparatorIndexedCompositeDistinct(const VariantArray&, const CollateOpts&, const FieldsSet&, const PayloadType&, CondType);
+	RX_ALWAYS_INLINE bool Compare(const PayloadValue& pv, IdType /*rowId*/) { return CompareItems(pv) && distinct_.Compare(pv); }
+
+	void ExcludeDistinctValues(const PayloadValue& item, IdType) { distinct_.ExcludeValues(item); }
+
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
+
+private:
+	using CompositeTypes = h_vector<KeyValueType, 4>;
+
+	ComparatorIndexedDistinctPayload distinct_;
+	CompositeTypes compositeTypes_;
+};
+
 class [[nodiscard]] ComparatorIndexedOffsetArrayDWithin {
 public:
 	ComparatorIndexedOffsetArrayDWithin(size_t offset, const VariantArray&);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		if rx_unlikely (arr.len != 2) {
+		if (arr.len != 2) [[unlikely]] {
 			throw Error(errQueryExec, "DWithin with not point data");
 		}
 		const double* ptr = reinterpret_cast<const double*>(item.Ptr() + arr.offset);
@@ -1319,7 +1360,7 @@ public:
 	ComparatorIndexedOffsetArrayDWithinDistinct(size_t offset, const VariantArray&);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		if rx_unlikely (arr.len != 2) {
+		if (arr.len != 2) [[unlikely]] {
 			throw Error(errQueryExec, "DWithin with not point data");
 		}
 		const double* ptr = reinterpret_cast<const double*>(item.Ptr() + arr.offset);
@@ -1331,7 +1372,7 @@ public:
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		if rx_unlikely (arr.len != 2) {
+		if (arr.len != 2) [[unlikely]] {
 			return;
 		}
 		const double* ptr = reinterpret_cast<const double*>(item.Ptr() + arr.offset);
@@ -1351,7 +1392,7 @@ public:
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
 		VariantArray buffer;
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer, KeyValueType::Double{});
-		if rx_unlikely (buffer.size() != 2) {
+		if (buffer.size() != 2) [[unlikely]] {
 			throw Error(errQueryExec, "DWithin with not point data");
 		}
 		return DWithin(Point{buffer[0].As<double>(), buffer[1].As<double>()}, point_, distance_);
@@ -1374,7 +1415,7 @@ public:
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
 		VariantArray buffer;
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer, KeyValueType::Double{});
-		if rx_unlikely (buffer.size() != 2) {
+		if (buffer.size() != 2) [[unlikely]] {
 			throw Error(errQueryExec, "DWithin with not point data");
 		}
 		const Point p{buffer[0].As<double>(), buffer[1].As<double>()};
@@ -1386,7 +1427,7 @@ public:
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
 		VariantArray buffer;
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer, KeyValueType::Double{});
-		if rx_unlikely (buffer.size() != 2) {
+		if (buffer.size() != 2) [[unlikely]] {
 			return;
 		}
 		distinct_.ExcludeValues(Point{buffer[0].As<double>(), buffer[1].As<double>()});
@@ -1651,7 +1692,7 @@ public:
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
 		buffer_.clear<false>();
 		ConstPayload(payloadType_, item).GetByJsonPath(tagsPath_, buffer_, KeyValueType::Undefined{});
-		if rx_unlikely (buffer_.IsObjectValue()) {
+		if (buffer_.IsObjectValue()) [[unlikely]] {
 			return false;
 		}
 		for (Variant& value : buffer_) {
@@ -1709,7 +1750,7 @@ struct [[nodiscard]] ComparatorIndexedVariantHelper<key_string> {
 
 template <>
 struct [[nodiscard]] ComparatorIndexedVariantHelper<PayloadValue> {
-	using type = ComparatorIndexedComposite;
+	using type = std::variant<ComparatorIndexedComposite, ComparatorIndexedCompositeDistinct>;
 };
 
 template <>
@@ -1831,6 +1872,7 @@ public:
 	reindexer::IsDistinct IsDistinct() const noexcept {
 		return std::visit([](auto& impl) { return impl.IsDistinct(); }, impl_);
 	}
+	bool IsIndexed() const noexcept { return true; }
 
 private:
 	static comparators::ComparatorIndexedVariant<T> createImpl(CondType cond, const VariantArray&, const void* rawData,
@@ -1920,23 +1962,41 @@ RX_ALWAYS_INLINE bool ComparatorIndexed<key_string>::Compare(const PayloadValue&
 
 template <>
 RX_ALWAYS_INLINE bool ComparatorIndexed<PayloadValue>::Compare(const PayloadValue& item, IdType rowId) {
+	static_assert(std::variant_size_v<comparators::ComparatorIndexedVariant<PayloadValue>> == 2);
 	++totalCalls_;
-	const bool res = impl_.Compare(item, rowId);
-	matchedCount_ += res;
+	bool res{false};
+	switch (impl_.index()) {
+		case 0:
+			res = std::get_if<0>(&impl_)->Compare(item, rowId);
+			matchedCount_ += res;
+			return res;
+		case 1:
+			res = std::get_if<1>(&impl_)->Compare(item, rowId);
+			matchedCount_ += res;
+			return res;
+		default:
+			abort();
+	}
 	return res;
 }
 
 template <>
 RX_ALWAYS_INLINE void ComparatorIndexed<PayloadValue>::ExcludeDistinctValues(const PayloadValue& item, IdType rowId) {
-	impl_.ExcludeDistinctValues(item, rowId);
+	std::visit([&item, rowId](auto& impl) { impl.ExcludeDistinctValues(item, rowId); }, impl_);
 }
+
+template <>
+RX_ALWAYS_INLINE std::string ComparatorIndexed<PayloadValue>::ConditionStr() const {
+	return std::visit([](const auto& impl) { return impl.ConditionStr(); }, impl_);
+}
+
 template <>
 RX_ALWAYS_INLINE reindexer::IsDistinct ComparatorIndexed<PayloadValue>::IsDistinct() const noexcept {
-	return impl_.IsDistinct();
+	return std::visit([](const auto& impl) { return impl.IsDistinct(); }, impl_);
 }
 template <>
 RX_ALWAYS_INLINE double ComparatorIndexed<PayloadValue>::costMultiplier() const noexcept {
-	return impl_.CostMultiplier();
+	return std::visit([](const auto& impl) { return impl.CostMultiplier(); }, impl_);
 }
 
 template <>

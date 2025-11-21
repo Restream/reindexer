@@ -1,6 +1,7 @@
 #include "fieldsset.h"
 #include <sstream>
 #include "core/cjson/tagsmatcher.h"
+#include "core/enums.h"
 
 namespace reindexer {
 

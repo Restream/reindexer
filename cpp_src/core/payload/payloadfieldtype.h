@@ -23,7 +23,7 @@ class EmbeddersCache;
 class [[nodiscard]] PayloadFieldType {
 public:
 	PayloadFieldType(std::string_view nsName, const Index& index, const IndexDef& indexDef,
-					 const std::shared_ptr<EmbeddersCache>& embeddersCache);
+					 const std::shared_ptr<EmbeddersCache>& embeddersCache, bool enablePerfStat);
 	PayloadFieldType(KeyValueType t, std::string n, std::vector<std::string> j, IsArray a,
 					 reindexer::FloatVectorDimension dims = reindexer::FloatVectorDimension()) noexcept
 		: type_(t), name_(std::move(n)), jsonPaths_(std::move(j)), offset_(0), arrayDims_(dims.Value()), isArray_(a) {
@@ -34,7 +34,7 @@ public:
 	size_t ElemSizeof() const noexcept;
 	reindexer::IsArray IsArray() const noexcept { return isArray_; }
 	uint32_t ArrayDims() const noexcept { return arrayDims_; }
-	reindexer::FloatVectorDimension FloatVectorDimension() const noexcept {
+	reindexer::FloatVectorDimension FloatVectorDimension() const {
 		assertrx_dbg(arrayDims_ <= std::numeric_limits<reindexer::FloatVectorDimension::value_type>::max());
 		// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
 		return reindexer::FloatVectorDimension(arrayDims_);
@@ -48,7 +48,7 @@ public:
 	const std::vector<std::string>& JsonPaths() const& noexcept { return jsonPaths_; }
 	void AddJsonPath(const std::string& jsonPath) { jsonPaths_.push_back(jsonPath); }
 	std::string ToString() const;
-	std::shared_ptr<const reindexer::UpsertEmbedder> Embedder() const { return embedder_; }
+	std::shared_ptr<const reindexer::UpsertEmbedder> UpsertEmbedder() const { return upsertEmbedder_; }
 	std::shared_ptr<const reindexer::QueryEmbedder> QueryEmbedder() const { return queryEmbedder_; }
 
 	auto Name() const&& = delete;
@@ -56,7 +56,7 @@ public:
 
 private:
 	void createEmbedders(std::string_view nsName, const std::optional<FloatVectorIndexOpts::EmbeddingOpts>& embeddingOpts,
-						 const std::shared_ptr<EmbeddersCache>& embeddersCache);
+						 const std::shared_ptr<EmbeddersCache>& embeddersCache, bool enablePerfStat);
 
 	KeyValueType type_;
 	std::string name_;
@@ -64,7 +64,7 @@ private:
 	size_t offset_{0};
 	uint32_t arrayDims_{0};
 	reindexer::IsArray isArray_{IsArray_False};
-	std::shared_ptr<const reindexer::UpsertEmbedder> embedder_;
+	std::shared_ptr<const reindexer::UpsertEmbedder> upsertEmbedder_;
 	std::shared_ptr<const reindexer::QueryEmbedder> queryEmbedder_;
 };
 

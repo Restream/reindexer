@@ -24,11 +24,11 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 		tagName = tag.Name();
 		assertrx_dbg(!tagName.IsEmpty());
 		// Check if tag exists
-		rx_unused = tagsMatcher_.tag2name(tagName);
+		std::ignore = tagsMatcher_.tag2name(tagName);
 		tagsPath_.emplace_back(tagName);
 	}
 
-	if rx_unlikely (tag.Field() >= 0) {
+	if (tag.Field() >= 0) [[unlikely]] {
 		throwTagReferenceError(tag, pl);
 	}
 
@@ -79,20 +79,35 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 						pl.Set(indexNumber, Variant{vectView});
 						wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
 						wrser.PutVarUint(count);
-					} else if rx_likely (fieldRef.IsArray()) {
-						validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), count, kCJSONFmt);
-						const int ofs = pl.ResizeArray(indexNumber, count, Append_True);
-						if (atagType != TAG_OBJECT) {
+					} else if (fieldRef.IsArray()) [[likely]] {
+						if (atagType == TAG_OBJECT) {
+							Serializer rdserCopy{rdser};
+							const auto [size, isNested] = analizeNestedArray(count, rdserCopy);
+							validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), size, kCJSONFmt);
+							const int ofs = pl.ResizeArray(indexNumber, size, Append_True);
+							if (isNested) {
+								wrser.PutCTag(ctag{TAG_ARRAY, tagName});
+								wrser.PutCArrayTag(carraytag{count, TAG_OBJECT});
+								[[maybe_unused]] const auto decodedValuesCount =
+									decodeNestedArray(pl, rdser, wrser, indexNumber, count, fieldType, ofs);
+								assertrx_dbg(size == decodedValuesCount);
+							} else {
+								assertrx_dbg(size == count);
+								for (size_t i = 0; i < count; ++i) {
+									pl.Set(indexNumber, ofs + i, cjsonValueToVariant(rdser.GetCTag().Type(), rdser, fieldType));
+								}
+								wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+								wrser.PutVarUint(count);
+							}
+						} else {
+							validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), count, "cjson"sv);
+							const int ofs = pl.ResizeArray(indexNumber, count, Append_True);
 							for (size_t i = 0; i < count; ++i) {
 								pl.Set(indexNumber, ofs + i, cjsonValueToVariant(atagType, rdser, fieldType));
 							}
-						} else {
-							for (size_t i = 0; i < count; ++i) {
-								pl.Set(indexNumber, ofs + i, cjsonValueToVariant(rdser.GetCTag().Type(), rdser, fieldType));
-							}
+							wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+							wrser.PutVarUint(count);
 						}
-						wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
-						wrser.PutVarUint(count);
 					} else {
 						throwUnexpectedArrayError(fieldRef.Name(), fieldRef.Type(), kCJSONFmt);
 					}
@@ -101,13 +116,7 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 					validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), 1, kCJSONFmt);
 					objectScalarIndexes_.set(indexNumber);
 					pl.Set(indexNumber, cjsonValueToVariant(tagType, rdser, fieldType), Append_True);
-					fieldType.EvaluateOneOf(
-						[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) { wrser.PutCTag(ctag{TAG_VARINT, tagName, indexNumber}); },
-						[&](OneOf<KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool, KeyValueType::Null,
-								  KeyValueType::Uuid>) { wrser.PutCTag(ctag{fieldType.ToTagType(), tagName, indexNumber}); },
-						[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
-							assertrx(false);
-						});
+					wrser.PutCTag(fieldType, tagName, indexNumber);
 				}
 			}
 		} else {
@@ -127,6 +136,41 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 	}
 
 	return true;
+}
+
+size_t CJsonDecoder::decodeNestedArray(Payload& pl, Serializer& rdser, WrSerializer& wrser, int indexNumber, size_t count,
+									   KeyValueType fieldType, size_t offset) const {
+	size_t decodedValuesCount = 0;
+	for (size_t i = 0; i < count; ++i) {
+		const auto tag = rdser.GetCTag();
+		const auto tagType = tag.Type();
+		if (tagType == TAG_ARRAY) {
+			const auto nestedArr = rdser.GetCArrayTag();
+			const auto nestedArrCount = nestedArr.Count();
+			const auto nestedArrType = nestedArr.Type();
+			if (nestedArrType == TAG_OBJECT) {
+				wrser.PutCTag(ctag{TAG_ARRAY});
+				wrser.PutCArrayTag(carraytag{nestedArrCount, TAG_OBJECT});
+				const auto decodedValuesCountInNested = decodeNestedArray(pl, rdser, wrser, indexNumber, nestedArrCount, fieldType, offset);
+				offset += decodedValuesCountInNested;
+				decodedValuesCount += decodedValuesCountInNested;
+			} else {
+				for (size_t j = 0; j < nestedArrCount; ++j) {
+					pl.Set(indexNumber, offset, cjsonValueToVariant(nestedArrType, rdser, fieldType));
+					++offset;
+				}
+				decodedValuesCount += nestedArrCount;
+				wrser.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), indexNumber});
+				wrser.PutVarUint(nestedArrCount);
+			}
+		} else {
+			pl.Set(indexNumber, offset, cjsonValueToVariant(tagType, rdser, fieldType));
+			wrser.PutCTag(fieldType, TagName::Empty(), indexNumber);
+			++decodedValuesCount;
+			++offset;
+		}
+	}
+	return decodedValuesCount;
 }
 
 template <typename Filter, typename Recoder, typename Validator>
@@ -169,7 +213,7 @@ void CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 	}
 }
 
-Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer& rdser, KeyValueType fieldType) {
+Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer& rdser, KeyValueType fieldType) const {
 	if (fieldType.Is<KeyValueType::String>() && tagType != TagType::TAG_STRING) {
 		auto& back = storage_.emplace_back(rdser.GetRawVariant(KeyValueType{tagType}).As<key_string>());
 		return Variant(p_string(back), Variant::noHold);

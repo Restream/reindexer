@@ -280,7 +280,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 	ser_.Reset();
 	ser_.PutUInt32(0);
 	if (pkOnly && !pkFields_.empty()) {
-		if rx_unlikely (recoder) {
+		if (recoder) [[unlikely]] {
 			throw Error(errParams, "ItemImpl::FromCJSON: pkOnly mode is not compatible with non-null recoder");
 		}
 		decoder.Decode(pl, rdser, ser_, floatVectorsHolder_, CJsonDecoder::RestrictingFilter(pkFields_));
@@ -416,15 +416,16 @@ VariantArray ItemImpl::GetValueByJSONPath(std::string_view jsonPath) {
 
 void ItemImpl::validateModifyArray(const VariantArray& values) {
 	for (const auto& v : values) {
-		v.Type().EvaluateOneOf(
-			[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::Bool,
-					 KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::FloatVector>) {},
-			[](KeyValueType::Tuple) {
-				throw Error(errParams, "Unable to use 'tuple'-value (array of arrays, array of points, etc) to modify item");
-			},
-			[](KeyValueType::Composite) {
-				throw Error(errParams, "Unable to use 'composite'-value (object, array of objects, etc) to modify item");
-			});
+		v.Type().EvaluateOneOf([](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+												  KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null,
+												  KeyValueType::Undefined, KeyValueType::FloatVector> auto) {},
+							   [](KeyValueType::Tuple) {
+								   throw Error(errParams,
+											   "Unable to use 'tuple'-value (array of arrays, array of points, etc) to modify item");
+							   },
+							   [](KeyValueType::Composite) {
+								   throw Error(errParams, "Unable to use 'composite'-value (object, array of objects, etc) to modify item");
+							   });
 	}
 }
 
@@ -509,7 +510,7 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 		std::vector<std::pair<std::string, VariantArray>> source;
 
 		for (int field = 1, numFields = payloadType_.NumFields(); field < numFields; ++field) {
-			auto embedder = payloadType_.Field(field).Embedder();
+			auto embedder = payloadType_.Field(field).UpsertEmbedder();
 			if (!embedder) {
 				continue;  // do nothing
 			}

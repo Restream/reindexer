@@ -78,7 +78,7 @@ void Connection<Mutex>::closeConn() {
 	io_.loop.break_loop();
 	if (sock_.valid()) {
 		io_.stop();
-		if rx_unlikely (sock_.close() != 0) {
+		if (sock_.close() != 0) [[unlikely]] {
 			perror("sock_.close() error");
 		}
 	}

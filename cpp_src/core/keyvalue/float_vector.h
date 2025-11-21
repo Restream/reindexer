@@ -143,7 +143,7 @@ public:
 	bool IsEmpty() const noexcept { return *this == nullptr; }
 
 	static FloatVectorImpl CreateNotInitialized(FloatVectorDimension dimension) {
-		if rx_likely (!dimension.IsZero()) {
+		if (!dimension.IsZero()) [[likely]] {
 			return FloatVectorImpl(dimension);
 		}
 		return FloatVectorImpl();

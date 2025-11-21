@@ -1,11 +1,11 @@
 #pragma once
 #include <limits.h>
-#include "estl/packed_vector.h"
+#include "core/ft/idrelset.h"
 namespace reindexer {
 class IdRelSet;
 class IdRelType;
 
-class [[nodiscard]] AdvacedPackedVec : public packed_vector<IdRelType> {
+class [[nodiscard]] AdvacedPackedVec : public PackedIdRelVec {
 public:
 	AdvacedPackedVec(IdRelSet&& data);
 

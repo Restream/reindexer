@@ -11,7 +11,6 @@
 #include "core/nsselecter/comparator/fieldscomparator.h"
 #include "core/nsselecter/selectiterator.h"
 #include "core/query/queryentry.h"
-#include "estl/restricted.h"
 
 namespace reindexer {
 
@@ -52,23 +51,22 @@ private:
 	int indexNo_;
 };
 
-class SelectIteratorContainer
-	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
-							ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
-							ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
-							ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, EqualPositionComparator,
-							GroupingEqualPositionComparator, ComparatorNotIndexed, ComparatorDistinctMulti, ComparatorDistinctMultiArray,
-							ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiIndexedGetter>,
-							ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiColumnGetter>,
-							ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiScalarGetter>, KnnRawSelectResult> {
-	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue,
-								ComparatorIndexed<bool>, ComparatorIndexed<int>, ComparatorIndexed<int64_t>, ComparatorIndexed<double>,
-								ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>,
-								ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, EqualPositionComparator,
-								GroupingEqualPositionComparator, ComparatorNotIndexed, ComparatorDistinctMulti,
-								ComparatorDistinctMultiArray, ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiIndexedGetter>,
-								ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiColumnGetter>,
-								ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiScalarGetter>, KnnRawSelectResult>;
+using ComparatorsPackT =
+	TypesPack<FieldsComparator, EqualPositionComparator, GroupingEqualPositionComparator, ComparatorNotIndexed, ComparatorDistinctMulti,
+			  ComparatorDistinctMultiArray, ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiIndexedGetter>,
+			  ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiColumnGetter>,
+			  ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiScalarGetter>, ComparatorIndexed<bool>, ComparatorIndexed<int>,
+			  ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
+			  ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>>;
+
+template <typename... Ts>
+using SelectIteratorContainerTreeBase =
+	ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, KnnRawSelectResult, AlwaysTrue, Ts...>;
+
+using SelectIteratorContainerTree = WithTypesPack<SelectIteratorContainerTreeBase, ComparatorsPackT>::type;
+
+class SelectIteratorContainer : public SelectIteratorContainerTree {
+	using Base = SelectIteratorContainerTree;
 
 public:
 	enum class [[nodiscard]] MergeType : bool;
@@ -91,44 +89,32 @@ public:
 	void PrepareIteratorsForSelectLoop(QueryPreprocessor&, unsigned sortId, QueryRankType, RankSortType, const NamespaceImpl&,
 									   FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
 	template <bool reverse>
-	RX_ALWAYS_INLINE bool Process(const PayloadValue& pv, bool* finish, IdType* rowId, IdType properRowId, bool match) {
+	RX_ALWAYS_INLINE bool Process(const PayloadValue& pv, bool* finish, IdType* rowId, IdType properRowId, bool withJoinedItems) {
 		const auto rowIdV = *rowId;
-		if (auto it = begin(); checkIfSatisfyAllConditions(++it, end(), pv, finish, rowIdV, properRowId, match)) {
+		if (auto it = begin(); checkIfSatisfyAllConditions(++it, end(), pv, finish, rowIdV, properRowId, withJoinedItems)) {
 			// Check distinct condition:
 			// Exclude last sets of id from each query result, so duplicated keys will
 			// be removed
-			VisitForEach(
-				[](const KnnRawSelectResult&) { throw_as_assert; },
-				Skip<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue, EqualPositionComparator,
-					 GroupingEqualPositionComparator>{},
-				[rowIdV](SelectIterator& sit) {
-					if (sit.IsDistinct()) {
-						sit.ExcludeLastSet(rowIdV);
-					}
-				},
-				Restricted<ComparatorNotIndexed, ComparatorDistinctMulti, ComparatorDistinctMultiArray,
-						   Template<ComparatorDistinctMultiScalarBase, ComparatorDistinctMultiIndexedGetter,
-									ComparatorDistinctMultiColumnGetter, ComparatorDistinctMultiScalarGetter>,
-						   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
-					[&pv, properRowId](auto& comp) { comp.ExcludeDistinctValues(pv, properRowId); }));
+			VisitForEach([](const KnnRawSelectResult&) { throw_as_assert; },
+						 Skip<SelectIteratorsBracket, JoinSelectIterator, AlwaysFalse, AlwaysTrue>{},
+						 [rowIdV](SelectIterator& sit) {
+							 if (sit.IsDistinct()) {
+								 sit.ExcludeLastSet(rowIdV);
+							 }
+						 },
+						 [&pv, properRowId](concepts::OneOf<ComparatorsPackT> auto& comp) { comp.ExcludeDistinctValues(pv, properRowId); });
 
-			if rx_likely (preservedDistincts_.Empty()) {
+			if (preservedDistincts_.Empty()) [[likely]] {
 				return true;
 			}
 
 			// Check distinct conditions, preserved from the previous execution stage
 			if (checkIfSatisfyAllConditions(preservedDistincts_.begin(), preservedDistincts_.end(), pv, finish, rowIdV, properRowId,
-											match)) {
+											withJoinedItems)) {
 				preservedDistincts_.VisitForEach(
-					Restricted<SelectIterator, KnnRawSelectResult>{}([](const auto&) { throw_as_assert; }),
-					Skip<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue, EqualPositionComparator,
-						 GroupingEqualPositionComparator>{},
-					Restricted<
-						ComparatorNotIndexed, ComparatorDistinctMulti, ComparatorDistinctMultiArray,
-						Template<ComparatorDistinctMultiScalarBase, ComparatorDistinctMultiIndexedGetter,
-								 ComparatorDistinctMultiColumnGetter, ComparatorDistinctMultiScalarGetter>,
-						Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
-						[&pv, properRowId](auto& comp) { comp.ExcludeDistinctValues(pv, properRowId); }));
+					[]<concepts::OneOf<SelectIterator, KnnRawSelectResult> T>(const T&) { throw_as_assert; },
+					Skip<SelectIteratorsBracket, JoinSelectIterator, AlwaysFalse, AlwaysTrue>{},
+					[&pv, properRowId](concepts::OneOf<ComparatorsPackT> auto& comp) { comp.ExcludeDistinctValues(pv, properRowId); });
 				return true;
 			}
 		}
@@ -147,16 +133,11 @@ public:
 	reindexer::IsDistinct IsDistinct(size_t i) const noexcept {
 		return Visit(
 			i,
-			[] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<SelectIteratorsBracket, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue,
-											   EqualPositionComparator, GroupingEqualPositionComparator, KnnRawSelectResult>)
+			[] RX_PRE_LMBD_ALWAYS_INLINE(
+				const concepts::OneOf<SelectIteratorsBracket, JoinSelectIterator, AlwaysFalse, AlwaysTrue, KnnRawSelectResult> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { return IsDistinct_False; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<ComparatorDistinctMulti, ComparatorDistinctMultiArray,
-											   Template<ComparatorDistinctMultiScalarBase, ComparatorDistinctMultiIndexedGetter,
-														ComparatorDistinctMultiColumnGetter, ComparatorDistinctMultiScalarGetter>>)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { return IsDistinct_True; },
-			Restricted<ComparatorNotIndexed, SelectIterator,
-					   Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue, Point, Uuid, FloatVector>>{}(
-				[] RX_PRE_LMBD_ALWAYS_INLINE(const auto& comp) RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); }));
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SelectIterator, ComparatorsPackT> auto& comp)
+				RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); });
 	}
 	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<JoinedSelector>* js) const;
 
@@ -169,8 +150,8 @@ public:
 	void MergeRanked(RanksHolder::Ptr&, const Reranker&, const NamespaceImpl&);
 
 private:
-	ContainRanked prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, QueryRankType,
-												RankSortType, const NamespaceImpl&, FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
+	ContainRanked prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, QueryRankType, RankSortType,
+												const NamespaceImpl&, FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
 	void sortByCost(std::span<unsigned int> indexes, std::span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(std::span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	double cost(std::span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;

@@ -118,7 +118,7 @@ void HnswIndexBase<Map>::clearMap() noexcept {
 template <typename Map>
 Variant HnswIndexBase<Map>::upsert(ConstFloatVectorView vect, IdType id, bool& clearCache) {
 	if (map_->getCurrentElementCount() >= map_->getMaxElements()) {
-		rx_unused = map_->resizeIndex(newSize(map_->getMaxElements()));
+		std::ignore = map_->resizeIndex(newSize(map_->getMaxElements()));
 	}
 	clearCache = true;
 	map_->addPointNoLock(vect.Data(), id);
@@ -133,7 +133,7 @@ Variant HnswIndexBase<Map>::upsertConcurrent(ConstFloatVectorView, IdType, bool&
 
 template <>
 Variant HnswIndexBase<hnswlib::HierarchicalNSWMT>::upsertConcurrent(ConstFloatVectorView vect, IdType id, bool& clearCache) {
-	if rx_unlikely (map_->getCurrentElementCount() >= map_->getMaxElements()) {
+	if (map_->getCurrentElementCount() >= map_->getMaxElements()) [[unlikely]] {
 		throw Error(errLogic, "Unable to resize '{}' HNSW index during concurrent upsert. Expecting reserve before upsertion", Name());
 	}
 	clearCache = true;
@@ -287,7 +287,7 @@ template <typename Map>
 void HnswIndexBase<Map>::GrowFor(size_t newElementsCount) {
 	const auto requiredSize = newElementsCount + map_->getCurrentElementCount();
 	if (requiredSize > map_->getMaxElements()) {
-		rx_unused = map_->resizeIndex(requiredSize);
+		std::ignore = map_->resizeIndex(requiredSize);
 	}
 }
 
@@ -302,7 +302,7 @@ template <typename Map>
 FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(WrSerializer& wser, PKGetterF&& getPK, bool isCompositePK,
 																			  const std::atomic_int32_t& cancel) noexcept {
 	auto res = StorageCacheWriteResult{.err = {}, .isCacheable = true};
-	if rx_unlikely (!getPK) {
+	if (!getPK) [[unlikely]] {
 		res.err = Error(errParams, "HNSWIndex::WriteIndexCache:{}: PK getter is nullptr", Name());
 		return res;
 	}
@@ -319,7 +319,7 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 		void PutVString(std::string_view slice) override { ser_.PutVString(slice); }
 		void AppendPKByID(hnswlib::labeltype label) override {
 			static_assert(std::numeric_limits<hnswlib::labeltype>::min() >= 0, "Unexpected labeltype limit. Extra check is required");
-			if rx_unlikely (label > size_t(std::numeric_limits<IdType>::max())) {
+			if (label > size_t(std::numeric_limits<IdType>::max())) [[unlikely]] {
 				throw Error(errLogic, "HNSWIndex::WriteIndexCache:{}: internal id {} is out of range", name_, label);
 			}
 			writePK(IdType(label));
@@ -361,7 +361,7 @@ Error HnswIndexBase<hnswlib::BruteforceSearch>::LoadIndexCache(std::string_view 
 
 template <typename Map>
 Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData) {
-	if rx_unlikely (!getVectorData) {
+	if (!getVectorData) [[unlikely]] {
 		return Error(errParams, "HNSWIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
 	}
 

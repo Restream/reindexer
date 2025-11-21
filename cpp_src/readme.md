@@ -32,15 +32,13 @@ While using docker, you may pass reindexer server config options via environment
 - `RX_SECURITY` - if RX_SECURITY is not empty, enables authorization. Disabled by default.
 - `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
 - `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is 0 (timeout disabled).
-- `RX_DISABLE_NS_LEAK` - Disables namespaces memory leak on database destruction (will slow down server's termination).
-- `RX_MAX_HTTP_REQ` - allows to configure max HTTP request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
-- `RX_IVF_OMP_THREADS` - number of threads, which will be used to build IVF index centroids (this option has effect only if docker image uses omp version of `libblas`).
-- `RX_HTTP_READ_TIMEOUT` - if RX_HTTP_READ_TIMEOUT is not empty, sets execution timeout for HTTP read operations in seconds. 0 mean no timeout. Default value is 0.
-- `RX_HTTP_WRITE_TIMEOUT` - if RX_HTTP_WRITE_TIMEOUT is not empty, sets execution timeout for HTTP write operations in seconds. 0 mean no timeout. Default value is 0 if cluster is disabled and 20 if cluster is enabled.
+- `RX_DISABLE_NS_LEAK` - disables intended namespaces memory leak on database destruction (will slow down server's termination). Usually, there are no reasons to change this value.
+- `RX_MAX_HTTP_REQ` - max HTTP-request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
+- `RX_HTTP_READ_TIMEOUT` - execution timeout for HTTP read operations (in seconds). `0` means no timeout. Default value is `0`.
+- `RX_HTTP_WRITE_TIMEOUT` - execution timeout for HTTP write operations (in seconds). Write timeout is usefull for RAFT-cluster to avoid requests hanging, when Reindexer does not have consensus. `0` means no timeout. Default value is `60`.
 - `RX_SSL_CERT` - path to ssl-certificate file. If it is not set Reindexer will be launched without TLS support.
 - `RX_SSL_KEY` - path to file with ssl private key. If it is not set Reindexer will be launched without TLS support.
-- `RX_IVF_OMP_THREADS` - sets number of OpenMP threads, which will be used during `IVF`-index building. Default value is 8.
-- `OPENBLAS_NUM_THREADS` - sets number of threads, which will be used during `IVF`-index building by `OpenBLAS` library. Default value is 8.
+- `RX_IVF_OMP_THREADS` - number of OpenMP threads, which will be used during `IVF`-index building. Default value is 8.
 
 To run Reindexer with TLS support, both of `RX_SSL_CERT` and `RX_SSL_KEY` must be set. Certificate/key files may be added into container by mounting external directory using `-v` or `--mount` options during container startup:
 
@@ -201,6 +199,12 @@ Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i
 `reindexer_rpc_clients_count` - current number of RPC clients for each database
 `reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
 `reindexer_info` - generic reindexer server info (currently it's just a version number)
+`reindexer_embed_last_sec_qps` - number of calls to the embedder in the last second
+`reindexer_embed_last_sec_dps` - number of embedded documents in the last second
+`reindexer_embed_last_sec_errors_count` - number of embedder errors in the last second
+`reindexer_embed_last_sec_avg_latency_us` - average autoembed time (last second)
+`reindexer_embed_conn_in_use` - current number of embedder connections in use
+`reindexer_embed_last_sec_avg_embed_latency_us` - average auto-embedding latency for cache misses (last second)
 
 ### Prometheus (client-side, Go)
 

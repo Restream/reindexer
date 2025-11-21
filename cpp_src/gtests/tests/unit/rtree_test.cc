@@ -7,6 +7,7 @@
 #include "gtest/gtest.h"
 #include "gtests/tools.h"
 #include "reindexer_api.h"
+#include "tools/float_comparison.h"
 
 namespace {
 
@@ -18,7 +19,7 @@ struct Compare;
 template <>
 struct [[nodiscard]] Compare<reindexer::Point> {
 	bool operator()(reindexer::Point lhs, reindexer::Point rhs) const noexcept {
-		if (lhs.X() == rhs.X()) {
+		if (reindexer::fp::EqualWithinULPs(lhs.X(), rhs.X())) {
 			return lhs.Y() < rhs.Y();
 		}
 		return lhs.X() < rhs.X();

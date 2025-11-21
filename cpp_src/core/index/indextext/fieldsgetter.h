@@ -45,7 +45,7 @@ public:
 					ret.emplace_back(*str, fieldPos);
 				} else {
 					const std::string_view stringRef(kref);
-					if (rx_likely(!utf8::is_valid(stringRef.data(), stringRef.data() + stringRef.size()))) {
+					if (!utf8::is_valid(stringRef.data(), stringRef.data() + stringRef.size())) [[likely]] {
 						throw Error(errParams, "Invalid UTF8 string in FullText index");
 					}
 					ret.emplace_back(stringRef, fieldPos);

@@ -401,7 +401,7 @@ static const Error kUnknowExceptioError(errSystem, "Unknown exception in Reindex
 template <typename FnT, typename T>
 RX_ALWAYS_INLINE T Reindexer::callWithConnectCheck(FnT&& f) noexcept {
 	try {
-		if rx_unlikely (!impl_->IsConnected()) {
+		if (!impl_->IsConnected()) [[unlikely]] {
 			return T(Error(errNotValid, "Reindexer is not connected. Call Connect() first"));
 		}
 		return f();

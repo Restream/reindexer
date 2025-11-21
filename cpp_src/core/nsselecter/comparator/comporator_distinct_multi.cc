@@ -60,8 +60,8 @@ void ComparatorDistinctMulti::getData(const PayloadValue& item, std::vector<Dist
 								   const auto* bv = reinterpret_cast<const ViewType*>(raw.first);
 								   data.emplace_back(std::span<const ViewType>{bv + rowId, 1}, IsArray_False);
 							   },
-							   [&](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-										 KeyValueType::FloatVector>) { assertrx_throw(false); });
+							   [&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
+												   KeyValueType::Tuple, KeyValueType::FloatVector> auto) { assertrx_throw(false); });
 						   maxArraySize = std::max(maxArraySize, size_t(1));
 					   },
 					   [&](int i) {
@@ -77,8 +77,8 @@ void ComparatorDistinctMulti::getData(const PayloadValue& item, std::vector<Dist
 								   maxArraySize = std::max(maxArraySize, sp.size());
 								   data.emplace_back(sp, pfv.t_.IsArray());
 							   },
-							   [&](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-										 KeyValueType::FloatVector>) { assertrx_throw(false); });
+							   [&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
+												   KeyValueType::Tuple, KeyValueType::FloatVector> auto) { assertrx_throw(false); });
 					   },
 					   [&](const TagsPath& t) {
 						   VariantArray v;
@@ -110,8 +110,8 @@ void ComparatorDistinctMultiArray::getData(const PayloadValue& item, std::vector
 				maxArraySize = std::max(maxArraySize, sp.size());
 				data.emplace_back(sp, IsArray_True);
 			},
-			[&](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-					  KeyValueType::FloatVector>) { assertrx_throw(false); });
+			[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+								KeyValueType::FloatVector> auto) { assertrx_throw(false); });
 	}
 }
 

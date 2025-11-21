@@ -46,7 +46,7 @@ void QueryResults::fetchNextResults() {
 }
 
 Error QueryResults::setClient(const std::shared_ptr<ReindexerImpl>& rx) noexcept {
-	if rx_unlikely (!rx) {
+	if (!rx) [[unlikely]] {
 		return Error(errLogic, "Client is for client::QueryResults is null");
 	}
 	if (rx_.owner_before(std::weak_ptr<ReindexerImpl>{}) || std::weak_ptr<ReindexerImpl>{}.owner_before(rx_)) {

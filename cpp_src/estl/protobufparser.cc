@@ -33,16 +33,16 @@ ProtobufValue ProtobufParser::ReadValue() {
 }
 
 Variant ProtobufParser::ReadArrayItem(KeyValueType fieldType) {
-	return fieldType.EvaluateOneOf([&](KeyValueType::Int64) { return Variant(int64_t(object_.ser.GetVarint())); },
-								   [&](KeyValueType::Int) { return Variant(int(object_.ser.GetVarint())); },
-								   [&](KeyValueType::Double) { return Variant(object_.ser.GetDouble()); },
-								   [&](KeyValueType::Float) { return Variant(object_.ser.GetFloat()); },
-								   [&](KeyValueType::Bool) { return Variant(object_.ser.GetBool()); },
-								   [&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
-											 KeyValueType::String, KeyValueType::Uuid, KeyValueType::FloatVector>) -> Variant {
-									   throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [{}]",
-												   fieldType.Name());
-								   });
+	return fieldType.EvaluateOneOf(
+		[&](KeyValueType::Int64) { return Variant(int64_t(object_.ser.GetVarint())); },
+		[&](KeyValueType::Int) { return Variant(int(object_.ser.GetVarint())); },
+		[&](KeyValueType::Double) { return Variant(object_.ser.GetDouble()); },
+		[&](KeyValueType::Float) { return Variant(object_.ser.GetFloat()); },
+		[&](KeyValueType::Bool) { return Variant(object_.ser.GetBool()); },
+		[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::String,
+							KeyValueType::Uuid, KeyValueType::FloatVector> auto) -> Variant {
+			throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [{}]", fieldType.Name());
+		});
 }
 
 bool ProtobufParser::IsEof() const { return !(object_.ser.Pos() < object_.ser.Len()); }

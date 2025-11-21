@@ -45,7 +45,7 @@ void RPCClientTestApi::TestServer::Stop() {
 
 void RPCClientTestApi::StartDefaultRealServer() {
 	const std::string dbPath = std::string(kDbPrefix) + "/" + std::to_string(kDefaultRPCPort);
-	rx_unused = reindexer::fs::RmDirAll(dbPath);
+	std::ignore = reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	StartServer();
 }

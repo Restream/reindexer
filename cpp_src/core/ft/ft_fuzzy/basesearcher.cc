@@ -126,7 +126,7 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr& holder, const FtDSLQue
 	return res;
 }
 
-void BaseSearcher::AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, const IdType id, int field,
+void BaseSearcher::AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, const IdType id, unsigned field, unsigned arrayIdx,
 							const reindexer::SplitOptions& splitOptions) {
 #ifdef FULL_LOG_FT
 	words.push_back(std::make_pair(id, *src_data));
@@ -146,7 +146,7 @@ void BaseSearcher::AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, 
 		std::pair<bool, size_t> cont;
 		do {
 			cont = GetData(holder, i, res_buf, term.c_str(), term.size());
-			holder->AddDada(res_buf, id, i, field);
+			holder->AddData(res_buf, id, i, field, arrayIdx);
 			i++;
 			total_size++;
 

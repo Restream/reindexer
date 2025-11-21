@@ -81,4 +81,5 @@ func TestSelectFunctions(t *testing.T) {
 		require.ErrorContains(t, err, "Unable to apply snippet function to the non-string field 'id'")
 		require.Nil(t, result)
 	})
+
 }

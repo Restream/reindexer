@@ -15,11 +15,11 @@ public:
 
 	FieldsNamesFilter() noexcept = default;
 
-	bool operator==(const FieldsNamesFilter other) const noexcept {
+	bool operator==(const FieldsNamesFilter& other) const noexcept {
 		return (!allVectorFields_ && !other.allVectorFields_ && fields_.empty() && other.fields_.empty()) ||
 			   (allRegularFields_ == other.allRegularFields_ && allVectorFields_ == other.allVectorFields_ && fields_ == other.fields_);
 	}
-	bool operator!=(const FieldsNamesFilter other) const noexcept { return !operator==(other); }
+	bool operator!=(const FieldsNamesFilter& other) const noexcept { return !operator==(other); }
 
 	template <typename It, typename QueryType>
 	void Add(It begin, It end, QueryType& q) {

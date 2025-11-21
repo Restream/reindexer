@@ -5,7 +5,6 @@
 #include "core/index/index.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
-#include "estl/one_of.h"
 #include "payloadfieldvalue.h"
 
 namespace reindexer {
@@ -26,7 +25,7 @@ EmbedderConfig::Strategy convert(FloatVectorIndexOpts::EmbedderOpts::Strategy st
 template <class T>
 std::shared_ptr<T> createEmbedder(std::string_view nsName, std::string_view idxName,
 								  const std::optional<FloatVectorIndexOpts::EmbedderOpts>& cfg,
-								  const std::shared_ptr<EmbeddersCache>& embeddersCache) {
+								  const std::shared_ptr<EmbeddersCache>& embeddersCache, bool enablePerfStat) {
 	if (!cfg.has_value()) {
 		return {};
 	}
@@ -37,13 +36,13 @@ std::shared_ptr<T> createEmbedder(std::string_view nsName, std::string_view idxN
 					   opts.pool.write_timeout_ms};
 	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + toLower(idxName) : toLower(opts.name);
 	embeddersCache->IncludeTag(opts.cacheTag);
-	return std::make_shared<T>(embedderName, idxName, std::move(embedderCfg), std::move(poolCfg), embeddersCache);
+	return std::make_shared<T>(embedderName, idxName, std::move(embedderCfg), std::move(poolCfg), embeddersCache, enablePerfStat);
 }
 
 }  // namespace
 
 PayloadFieldType::PayloadFieldType(std::string_view nsName, const Index& index, const IndexDef& indexDef,
-								   const std::shared_ptr<EmbeddersCache>& embeddersCache)
+								   const std::shared_ptr<EmbeddersCache>& embeddersCache, bool enablePerfStat)
 	: type_(index.KeyType()),
 	  name_(indexDef.Name()),
 	  jsonPaths_(indexDef.JsonPaths()),
@@ -55,7 +54,7 @@ PayloadFieldType::PayloadFieldType(std::string_view nsName, const Index& index, 
 	if (index.IsFloatVector()) {
 		arrayDims_ = index.FloatVectorDimension().Value();
 		assertrx(type_.Is<KeyValueType::FloatVector>());
-		createEmbedders(nsName, indexDef.Opts().FloatVector().Embedding(), embeddersCache);
+		createEmbedders(nsName, indexDef.Opts().FloatVector().Embedding(), embeddersCache, enablePerfStat);
 	} else if (indexDef.IndexType() == IndexType::IndexRTree) {
 		arrayDims_ = 2;
 	}
@@ -66,12 +65,11 @@ size_t PayloadFieldType::Sizeof() const noexcept { return IsArray() ? sizeof(Pay
 size_t PayloadFieldType::ElemSizeof() const noexcept {
 	return Type().EvaluateOneOf(
 		[](KeyValueType::Bool) noexcept { return sizeof(bool); }, [](KeyValueType::Int) noexcept { return sizeof(int); },
-		[](OneOf<KeyValueType::Int64>) noexcept { return sizeof(int64_t); },
-		[](OneOf<KeyValueType::Uuid>) noexcept { return sizeof(Uuid); }, [](KeyValueType::Double) noexcept { return sizeof(double); },
-		[](KeyValueType::String) noexcept { return sizeof(p_string); },
+		[](KeyValueType::Int64) noexcept { return sizeof(int64_t); }, [](KeyValueType::Uuid) noexcept { return sizeof(Uuid); },
+		[](KeyValueType::Double) noexcept { return sizeof(double); }, [](KeyValueType::String) noexcept { return sizeof(p_string); },
 		[](KeyValueType::FloatVector) noexcept { return sizeof(ConstFloatVectorView); },
-		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Float>) noexcept
-		-> size_t {
+		[](const concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+								 KeyValueType::Float> auto) noexcept -> size_t {
 			assertrx(0);
 			abort();
 		});
@@ -91,13 +89,13 @@ std::string PayloadFieldType::ToString() const {
 }
 
 void PayloadFieldType::createEmbedders(std::string_view nsName, const std::optional<FloatVectorIndexOpts::EmbeddingOpts>& embeddingOpts,
-									   const std::shared_ptr<EmbeddersCache>& embeddersCache) {
+									   const std::shared_ptr<EmbeddersCache>& embeddersCache, bool enablePerfStat) {
 	if (!embeddingOpts.has_value()) {
 		return;
 	}
 	const auto& cfg = embeddingOpts.value();
-	embedder_ = createEmbedder<const reindexer::UpsertEmbedder>(nsName, name_, cfg.upsertEmbedder, embeddersCache);
-	queryEmbedder_ = createEmbedder<const reindexer::QueryEmbedder>(nsName, name_, cfg.queryEmbedder, embeddersCache);
+	upsertEmbedder_ = createEmbedder<const reindexer::UpsertEmbedder>(nsName, name_, cfg.upsertEmbedder, embeddersCache, enablePerfStat);
+	queryEmbedder_ = createEmbedder<const reindexer::QueryEmbedder>(nsName, name_, cfg.queryEmbedder, embeddersCache, enablePerfStat);
 }
 
 }  // namespace reindexer

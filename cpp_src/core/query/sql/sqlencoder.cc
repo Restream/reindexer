@@ -266,18 +266,20 @@ WrSerializer& SQLEncoder::GetSQL(WrSerializer& ser, bool stripArgs) const {
 							if (&v != &*field.Values().begin()) {
 								ser << ',';
 							}
-							v.Type().EvaluateOneOf(
-								overloaded{[&](KeyValueType::String) {
-											   if (!field.IsExpression() && mode != FieldModeSetJson) {
-												   stringToSql(v.As<p_string>(), ser);
-											   } else {
-												   ser << v.As<std::string>();
-											   }
-										   },
-										   [&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
-										   [&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
-													 KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
-													 KeyValueType::Undefined, KeyValueType::FloatVector>) { ser << v.As<std::string>(); }});
+							v.Type().EvaluateOneOf(overloaded{
+								[&](KeyValueType::String) {
+									if (!field.IsExpression() && mode != FieldModeSetJson) {
+										stringToSql(v.As<p_string>(), ser);
+									} else {
+										ser << v.As<std::string>();
+									}
+								},
+								[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
+								[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+													KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+													KeyValueType::Undefined, KeyValueType::FloatVector> auto) {
+									ser << v.As<std::string>();
+								}});
 						}
 						if (isArray) {
 							ser << "]";
@@ -358,12 +360,12 @@ static void dumpCondWithValues(WrSerializer& ser, std::string_view fieldName, Co
 					if (&v != &values[0]) {
 						ser << ',';
 					}
-					v.Type().EvaluateOneOf(
-						overloaded{[&](KeyValueType::String) { stringToSql(v.As<p_string>(), ser); },
-								   [&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
-								   [&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
-											 KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
-											 KeyValueType::Undefined, KeyValueType::FloatVector>) { ser << v.As<std::string>(); }});
+					v.Type().EvaluateOneOf(overloaded{
+						[&](KeyValueType::String) { stringToSql(v.As<p_string>(), ser); },
+						[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
+						[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+											KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+											KeyValueType::Undefined, KeyValueType::FloatVector> auto) { ser << v.As<std::string>(); }});
 				}
 				if (values.size() != 1) {
 					ser << ")";
@@ -407,7 +409,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 					ser << kOpNames[op] << ' ';
 				}
 				ser << sqe.FieldName() << ' ' << sqe.Condition() << " ("sv;
-				rx_unused = SQLEncoder{query_.GetSubQuery(sqe.QueryIndex())}.GetSQL(ser, stripArgs);
+				std::ignore = SQLEncoder{query_.GetSubQuery(sqe.QueryIndex())}.GetSQL(ser, stripArgs);
 				ser << ')';
 			},
 			[&](const QueryEntriesBracket& bracket) {

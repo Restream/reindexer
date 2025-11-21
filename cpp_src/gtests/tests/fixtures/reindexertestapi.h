@@ -67,7 +67,7 @@ public:
 	QueryResultsType UpdateQR(const reindexer::Query& q);
 	void Select(const reindexer::Query& q, QueryResultsType& qr) const;
 	QueryResultsType Select(const reindexer::Query& q) const;
-	QueryResultsType ExecSQL(std::string_view sql);
+	QueryResultsType ExecSQL(std::string_view sql) const;
 	void Delete(std::string_view ns, ItemType& item);
 	void Delete(std::string_view ns, ItemType& item, QueryResultsType&);
 	size_t Delete(const reindexer::Query& q);
@@ -86,8 +86,10 @@ public:
 	std::string RandLikePattern();
 	std::string RuRandString();
 	std::vector<int> RandIntVector(size_t size, int start, int range);
+	std::vector<std::string> RandStrVector(size_t size);
 	void SetVerbose(bool v) noexcept { verbose_ = v; }
 	static void EnablePerfStats(DB& rx);
+	void AwaitIndexOptimization(std::string_view nsName);
 
 	std::shared_ptr<DB> reindexer;
 
@@ -98,6 +100,9 @@ private:
 	constexpr static std::wstring_view kRuLetters = L"абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
 	bool verbose_ = false;
 };
+
+template <>
+void ReindexerTestApi<reindexer::Reindexer>::AwaitIndexOptimization(std::string_view nsName);
 
 extern template class ReindexerTestApi<reindexer::Reindexer>;
 extern template class ReindexerTestApi<reindexer::client::Reindexer>;

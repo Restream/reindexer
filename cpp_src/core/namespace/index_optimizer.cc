@@ -11,6 +11,7 @@ class [[nodiscard]] IndexOptimizer::UpdateSortedContext final : public IUpdateSo
 public:
 	UpdateSortedContext(IndexOptimizer& optimizer, IndexesSpan indexes, std::span<const PayloadValue> items, SortType curSortId)
 		: optimizer_(optimizer), sortedIndexes_(optimizer_.getSortedIdxCount(indexes)), curSortId_(curSortId) {
+		assertrx_dbg(curSortId_ > 0);
 		ids2Sorts_.reserve(items.size());
 		ids2SortsMemSize_ = ids2Sorts_.capacity() * sizeof(SortType);
 		optimizer_.updateSortedContextMemory_.fetch_add(ids2SortsMemSize_, std::memory_order_relaxed);

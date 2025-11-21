@@ -7,6 +7,8 @@ set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_PCH_WARN_INVALID OFF)
 set(REINDEXER_SOURCE_PATH ${PROJECT_SOURCE_DIR}/cpp_src)
+# Do not scan for C++ modules to save some overhead
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 add_subdirectory(cpp_src)
 

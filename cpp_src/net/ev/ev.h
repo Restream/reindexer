@@ -398,7 +398,7 @@ void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
 	auto id = coroutine::current();
 	if (id) {
 		timer tm(timer::coro_t{});
-		tm.set([id](timer&, int) { rx_unused = coroutine::resume(id); });
+		tm.set([id](timer&, int) { std::ignore = coroutine::resume(id); });
 		tm.set(*this);
 		const double awaitTime = std::chrono::duration_cast<std::chrono::microseconds>(dur).count();
 		tm.start(awaitTime / 1e6);

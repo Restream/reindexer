@@ -17,7 +17,7 @@
 class [[nodiscard]] GrpcClientApi : public ReindexerApi {
 public:
 	void SetUp() {
-		rx_unused = reindexer::fs::RmDirAll(kStoragePath);
+		std::ignore = reindexer::fs::RmDirAll(kStoragePath);
 		YAML::Node y;
 		y["storage"]["path"] = kStoragePath;
 		y["logger"]["loglevel"] = "none";

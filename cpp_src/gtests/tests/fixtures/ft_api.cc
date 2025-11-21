@@ -28,6 +28,18 @@ void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std:
 		auto err = SetFTConfig(ftCfg, "nm3", "ft", {"ft1", "ft2", "ft3"});
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
+	if (nses & NS4) {
+		rt.OpenNamespace("nm4");
+		rt.DefineNamespaceDataset(
+			"nm4", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
+					IndexDeclaration{"ft2", "text", "string", IndexOpts().Array(), 0},
+					IndexDeclaration{"ft3", "text", "string", IndexOpts().Array(), 0},
+					IndexDeclaration{"ft1+ft2=ft", "text", "composite", IndexOpts(), 0}});
+		auto err = SetFTConfig(ftCfg, "nm4", "ft3", {"text"});
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = SetFTConfig(ftCfg, "nm4", "ft", {"ft1", "ft2"});
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
 }
 
 reindexer::FtFastConfig FTApi::GetDefaultConfig(size_t fieldsCount) {
@@ -97,6 +109,17 @@ std::pair<std::string_view, int> FTApi::Add(std::string_view ft1) {
 
 	rt.Upsert("nm1", item);
 	return make_pair(ft1, counter_ - 1);
+}
+
+void FTApi::AddNs4(const std::string& ft1, const std::vector<std::string>& ft2, const std::vector<std::string>& ft3) {
+	reindexer::Item item = rt.NewItem("nm4");
+	item["id"] = counter_;
+	++counter_;
+	item["ft1"] = ft1;
+	item["ft2"] = ft2;
+	item["ft3"] = ft3;
+
+	rt.Upsert("nm4", item);
 }
 
 void FTApi::Add(std::string_view ns, std::string_view ft1, std::string_view ft2) {

@@ -27,6 +27,21 @@ void Prometheus::Attach(http::Router& router) {
 	rxInfo_ = &BuildGauge().Name("reindexer_info").Help("Generic reindexer info").Register(registry_);
 	fillRxInfo();
 
+	embedderLastSecQps_ =
+		&BuildGauge().Name("reindexer_embed_last_sec_qps").Help("Number of calls to the embedder in the last second").Register(registry_);
+	embedderLastSecDps_ =
+		&BuildGauge().Name("reindexer_embed_last_sec_dps").Help("Number of embedded documents in the last second").Register(registry_);
+
+	embedderLastSecErrorsCount_ =
+		&BuildGauge().Name("reindexer_embed_last_sec_errors_count").Help("Number of errors in the last second").Register(registry_);
+	embedderConnInUse_ = &BuildGauge().Name("reindexer_embed_conn_in_use").Help("Current number of connections in use").Register(registry_);
+	embedderLastSecAvgLatencyUs_ =
+		&BuildGauge().Name("reindexer_embed_last_sec_avg_latency_us").Help("Average autoembed time (last second)").Register(registry_);
+	embedderLastSecAvgEmbedLatencyUs_ = &BuildGauge()
+											 .Name("reindexer_embed_last_sec_avg_embed_latency_us")
+											 .Help("Average auto-embedding latency for cache misses (last second)")
+											 .Register(registry_);
+
 	router.GET<Prometheus, &Prometheus::collect>("/metrics", this);
 }
 
@@ -64,6 +79,18 @@ void Prometheus::setNetMetricValue(PFamily<PGauge>* metricFamily, double value, 
 		if (!protocol.empty()) {
 			labels.emplace("protocol_domain", std::string(protocol));
 		}
+		metricFamily->Add(std::move(labels), epoch).Set(value);
+	}
+}
+
+void Prometheus::setMetricEmbedder(PFamily<PGauge>* metricFamily, double value, int64_t epoch, const std::string& db, const std::string& ns,
+								   const std::string& index, std::string_view type) {
+	if (metricFamily) {
+		std::map<std::string, std::string> labels;
+		labels.emplace("db", db);
+		labels.emplace("ns", ns);
+		labels.emplace("index", index);
+		labels.emplace("type", type);
 		metricFamily->Add(std::move(labels), epoch).Set(value);
 	}
 }

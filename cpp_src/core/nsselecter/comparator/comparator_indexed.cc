@@ -481,8 +481,8 @@ std::string ComparatorIndexedJsonPathString::ConditionStr() const { return compa
 
 std::string ComparatorIndexedJsonPathStringDistinct::ConditionStr() const { return comparatorCondStr(*this); }
 
-ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& values, const CollateOpts& collate, const FieldsSet& fields,
-													   const PayloadType& payloadType, CondType cond)
+ComparatorIndexedCompositeBase::ComparatorIndexedCompositeBase(const VariantArray& values, const CollateOpts& collate,
+															   const FieldsSet& fields, const PayloadType& payloadType, CondType cond)
 	: collateOpts_{&collate}, fields_{make_intrusive<FieldsSetWrp>(fields)}, payloadType_{payloadType} {
 	switch (cond) {
 		case CondEq:
@@ -514,7 +514,7 @@ ComparatorIndexedComposite::ComparatorIndexedComposite(const VariantArray& value
 	cond_ = cond;
 }
 
-std::string ComparatorIndexedComposite::ConditionStr() const {
+std::string ComparatorIndexedCompositeBase::ConditionStr() const {
 	switch (cond_) {
 		case CondEq:
 			return compositeComparatorCondStr<CondEq>(value_, payloadType_, *fields_);
@@ -541,6 +541,15 @@ std::string ComparatorIndexedComposite::ConditionStr() const {
 		case CondKnn:
 		default:
 			abort();
+	}
+}
+
+ComparatorIndexedCompositeDistinct::ComparatorIndexedCompositeDistinct(const VariantArray& values, const CollateOpts& collate,
+																	   const FieldsSet& fields, const PayloadType& payloadType,
+																	   CondType cond)
+	: Base(values, collate, fields, payloadType, cond), distinct_(payloadType, fields) {
+	for (const auto& field : fields) {
+		compositeTypes_.emplace_back(payloadType_.Field(field).Type());
 	}
 }
 
@@ -586,10 +595,6 @@ template std::string ComparatorIndexed<int64_t>::ConditionStr() const;
 template std::string ComparatorIndexed<bool>::ConditionStr() const;
 template std::string ComparatorIndexed<double>::ConditionStr() const;
 template std::string ComparatorIndexed<key_string>::ConditionStr() const;
-template <>
-std::string ComparatorIndexed<PayloadValue>::ConditionStr() const {
-	return impl_.ConditionStr();
-}
 template std::string ComparatorIndexed<Point>::ConditionStr() const;
 template std::string ComparatorIndexed<Uuid>::ConditionStr() const;
 template <>
@@ -969,25 +974,24 @@ comparators::ComparatorIndexedVariant<PayloadValue> ComparatorIndexed<PayloadVal
 	if (isArray) {
 		throw Error{errQueryExec, "Array composite index"};
 	}
-	if (distinct) {
-		throw Error{errQueryExec, "Distinct with composite index"};
-	}
 	switch (cond) {
 		case CondEq:
 		case CondSet:
-		case CondAllSet:
-			if (values.size() == 1) {
-				return ComparatorIndexedComposite{values, collate, fields, payloadType, CondEq};
-			} else if (cond == CondAllSet) {
-				return ComparatorIndexedComposite{values, collate, fields, payloadType, CondAllSet};
-			} else {
-				return ComparatorIndexedComposite{values, collate, fields, payloadType, CondSet};
+		case CondAllSet: {
+			const CondType realCond{(values.size() == 1) ? CondEq : (cond == CondAllSet ? CondAllSet : CondSet)};
+			if (distinct) {
+				return ComparatorIndexedCompositeDistinct{values, collate, fields, payloadType, realCond};
 			}
+			return ComparatorIndexedComposite{values, collate, fields, payloadType, realCond};
+		}
 		case CondLt:
 		case CondLe:
 		case CondGt:
 		case CondGe:
 		case CondRange:
+			if (distinct) {
+				return ComparatorIndexedCompositeDistinct{values, collate, fields, payloadType, cond};
+			}
 			return ComparatorIndexedComposite{values, collate, fields, payloadType, cond};
 		case CondLike:
 		case CondEmpty:

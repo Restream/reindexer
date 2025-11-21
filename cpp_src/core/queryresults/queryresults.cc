@@ -5,6 +5,7 @@
 #include "core/type_consts.h"
 #include "joinresults.h"
 #include "tools/catch_and_return.h"
+#include "tools/float_comparison.h"
 
 namespace reindexer {
 
@@ -47,8 +48,7 @@ struct [[nodiscard]] QueryResults::ItemDataStorage {
 QueryResults::QueryResults(int flags) : flags_(flags) {}
 
 QueryResults::~QueryResults() = default;
-// NOLINTNEXTLINE (performance-noexcept-move-constructor)
-QueryResults::QueryResults(QueryResults&&) = default;
+QueryResults::QueryResults(QueryResults&&) noexcept = default;
 
 QueryResults& QueryResults::operator=(QueryResults&& qr) noexcept {
 	if (this != &qr) {
@@ -746,7 +746,7 @@ public:
 								: proxiedExpression_.Calculate(litem.Id(), {lpt, litem.Value()}, lrank, ltm, lShardId);
 		const auto rhv = rLocal ? localExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, {}, {}, rrank, rtm, rShardId)
 								: proxiedExpression_.Calculate(ritem.Id(), {rpt, ritem.Value()}, rrank, rtm, rShardId);
-		if (lhv == rhv) {
+		if (fp::ExactlyEqual(lhv, rhv)) {
 			return ComparationResult::Eq;
 		}
 		return lhv < rhv ? ComparationResult::Gt : ComparationResult::Lt;
@@ -760,12 +760,12 @@ private:
 class [[nodiscard]] FieldComparator {
 	struct [[nodiscard]] RelaxedCompare {
 		bool operator()(const Variant& lhs, const Variant& rhs) const {
-			return lhs.RelaxCompare<WithString::No, NotComparable::Throw>(rhs) == ComparationResult::Eq;
+			return lhs.RelaxCompare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(rhs) == ComparationResult::Eq;
 		}
 	};
 
 public:
-	FieldComparator(std::string fName, int idx, const NamespaceImpl& ns, const std::vector<Variant>& forcedValues)
+	FieldComparator(std::string fName, int idx, const NamespaceImpl& ns, const VariantArray& forcedValues)
 		: fieldName_{std::move(fName)}, fieldIdx_{idx} {
 		if (fieldIdx_ != IndexValueType::SetByJsonPath) {
 			const auto& jsonPaths = ns.payloadType_.Field(fieldIdx_).JsonPaths();
@@ -819,8 +819,8 @@ public:
 				return ComparationResult::Lt;
 			}
 		}
-		return -lpv.RelaxCompare<WithString::No, NotComparable::Throw>(rpv, fieldName_, fieldIdx_, collateOpts_, ltm, rtm, !lLocal,
-																	   !rLocal);
+		return -lpv.RelaxCompare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(rpv, fieldName_, fieldIdx_, collateOpts_, ltm,
+																							  rtm, !lLocal, !rLocal);
 	}
 
 private:
@@ -833,12 +833,12 @@ private:
 class [[nodiscard]] QueryResults::CompositeFieldForceComparator {
 	struct [[nodiscard]] RelaxedCompare {
 		bool operator()(const Variant& lhs, const Variant& rhs) const {
-			return lhs.RelaxCompare<WithString::No, NotComparable::Throw>(rhs) == ComparationResult::Eq;
+			return lhs.RelaxCompare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(rhs) == ComparationResult::Eq;
 		}
 	};
 
 public:
-	CompositeFieldForceComparator(int index, const std::vector<Variant>& forcedSortOrder, const NamespaceImpl& ns) {
+	CompositeFieldForceComparator(int index, const VariantArray& forcedSortOrder, const NamespaceImpl& ns) {
 		fields_.reserve(ns.indexes_[index]->Fields().size());
 		const FieldsSet& fields = ns.indexes_[index]->Fields();
 		size_t jsonPathsIndex = 0;
@@ -1420,9 +1420,9 @@ Error QueryResults::Iterator::getCJSONviaJSON(WrSerializer& wrser, bool withHdrL
 	if (err.ok()) {
 		if (withHdrLen) {
 			auto slicePosSaver = wrser.StartSlice();
-			rx_unused = itemImpl.GetCJSON(wrser);
+			std::ignore = itemImpl.GetCJSON(wrser);
 		} else {
-			rx_unused = itemImpl.GetCJSON(wrser);
+			std::ignore = itemImpl.GetCJSON(wrser);
 		}
 	}
 	return err;

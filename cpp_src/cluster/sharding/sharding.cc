@@ -38,7 +38,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 						if (hostId == ShardingKeyType::ProxyOff) {
 							hostId = id;
 							shardKey = qe.Values()[0];
-							rx_unused = shardKey.EnsureHold();
+							std::ignore = shardKey.EnsureHold();
 						} else if (hostId != id) {
 							throw Error(errLogic, "Shard key from other node");
 						}
@@ -356,14 +356,14 @@ LocatorService::LocatorService(ClusterProxy& rx, cluster::ShardingConfig config)
 
 Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key>& keys) {
 	return fieldType.EvaluateOneOf(
-		[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
-				  KeyValueType::Int, KeyValueType::Uuid>) -> Error {
+		[&](concepts::OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
+							KeyValueType::Int, KeyValueType::Uuid> auto) -> Error {
 			try {
 				for (auto& k : keys) {
 					for (auto& [l, r, _] : k.values) {
 						(void)_;
-						rx_unused = l.convert(fieldType, nullptr, nullptr);
-						rx_unused = r.convert(fieldType, nullptr, nullptr);
+						std::ignore = l.convert(fieldType, nullptr, nullptr);
+						std::ignore = r.convert(fieldType, nullptr, nullptr);
 					}
 				}
 			} catch (const Error& err) {
@@ -371,8 +371,10 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 			}
 			return Error();
 		},
-		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) { return Error{errLogic, "Sharding by composite index is unsupported"}; },
-		[fieldType](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector>) {
+		[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Tuple> auto) {
+			return Error{errLogic, "Sharding by composite index is unsupported"};
+		},
+		[fieldType](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector> auto) {
 			return Error{errLogic, "Unsupported field type: {}", fieldType.Name()};
 		});
 }

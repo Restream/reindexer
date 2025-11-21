@@ -186,7 +186,7 @@ TEST_F(CascadeReplicationApi, MasterSlaveSlave2) {
 	// Check WAL/force sync on cascade setups
 	auto SimpleTest = [this](int port, const std::vector<int>& clusterConfig) {
 		const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "MasterSlaveSlave2"));
-		rx_unused = fs::RmDirAll(kBaseDbPath);
+		std::ignore = fs::RmDirAll(kBaseDbPath);
 		const std::string kDbPathMaster(kBaseDbPath + "/test_");
 		const int serverId = 5;
 		auto cluster = CreateConfiguration(clusterConfig, port, serverId, kDbPathMaster);

@@ -147,7 +147,7 @@ class [[nodiscard]] ItemRefVariant : public std::variant<ItemRef, ItemRefRanked>
 	using Base = std::variant<ItemRef, ItemRefRanked>;
 
 public:
-	const ItemRef& NotRanked() const& noexcept {
+	const ItemRef& NotRanked() const& {
 		return std::visit(overloaded{[](const ItemRef& v) noexcept -> const ItemRef& { return v; },
 									 [](const ItemRefRanked& v) noexcept -> const ItemRef& { return v.NotRanked(); }},
 						  AsVariant());
@@ -319,7 +319,7 @@ public:
 				   b.asVariant());
 	}
 
-	const ItemRef& GetItemRef(size_t i) const& noexcept {
+	const ItemRef& GetItemRef(size_t i) const& {
 		return std::visit(overloaded{[i](const NotRankedVec& v) noexcept -> const ItemRef& { return v[i]; },
 									 [i](const RankedVec& v) noexcept -> const ItemRef& { return v[i].NotRanked(); }},
 						  variant_);
@@ -339,45 +339,45 @@ public:
 		return std::visit([i](const auto& v) { return ItemRefVariant{v[i]}; }, variant_);
 	}
 
-	const ItemRef& Back() const& noexcept {
+	const ItemRef& Back() const& {
 		return std::visit(overloaded{[](const RankedVec& v) noexcept -> const ItemRef& { return v.back().NotRanked(); },
 									 [](const NotRankedVec& v) noexcept -> const ItemRef& { return v.back(); }},
 						  variant_);
 	}
-	ItemRef& Back() & noexcept {
+	ItemRef& Back() & {
 		return std::visit(overloaded{[](RankedVec& v) noexcept -> ItemRef& { return v.back().NotRanked(); },
 									 [](NotRankedVec& v) noexcept -> ItemRef& { return v.back(); }},
 						  variant_);
 	}
 
-	ConstIterator cbegin() const& noexcept {
+	ConstIterator cbegin() const& {
 		return std::visit([](const auto& v) noexcept { return ConstIterator{v.cbegin()}; }, variant_);
 	}
-	ConstIterator cend() const& noexcept {
+	ConstIterator cend() const& {
 		return std::visit([](const auto& v) noexcept { return ConstIterator{v.cend()}; }, variant_);
 	}
-	ConstIterator begin() const& noexcept { return cbegin(); }
-	ConstIterator end() const& noexcept { return cend(); }
+	ConstIterator begin() const& { return cbegin(); }
+	ConstIterator end() const& { return cend(); }
 	Iterator begin() & noexcept {
-		return std::visit([](auto& v) noexcept { return Iterator{v.begin()}; }, variant_);
+		return std::visit([](auto& v) { return Iterator{v.begin()}; }, variant_);
 	}
 	Iterator end() & noexcept {
-		return std::visit([](auto& v) noexcept { return Iterator{v.end()}; }, variant_);
+		return std::visit([](auto& v) { return Iterator{v.end()}; }, variant_);
 	}
-	MoveIterator mbegin() && noexcept {
+	MoveIterator mbegin() && {
 		return std::visit([](auto& v) noexcept { return MoveIterator{std::make_move_iterator(v.begin())}; }, variant_);
 	}
-	MoveIterator mend() && noexcept {
+	MoveIterator mend() && {
 		return std::visit([](auto& v) noexcept { return MoveIterator{std::make_move_iterator(v.end())}; }, variant_);
 	}
 
-	size_t Size() const noexcept {
+	size_t Size() const {
 		return std::visit([](const auto& v) noexcept { return v.size(); }, variant_);
 	}
-	size_t Capacity() const noexcept {
+	size_t Capacity() const {
 		return std::visit([](const auto& v) noexcept { return v.capacity(); }, variant_);
 	}
-	bool Empty() const noexcept {
+	bool Empty() const {
 		return std::visit([](const auto& v) noexcept { return v.empty(); }, variant_);
 	}
 	void Reserve(size_t s) {
@@ -395,7 +395,7 @@ public:
 		Reserve(s);
 	}
 	template <bool FreeHeapMemory = true>
-	void Clear() noexcept {
+	void Clear() {
 		std::visit([](auto& v) { return v.template clear<FreeHeapMemory>(); }, variant_);
 	}
 

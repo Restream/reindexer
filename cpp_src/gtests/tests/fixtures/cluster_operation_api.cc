@@ -11,9 +11,9 @@
 
 using namespace reindexer;
 
-void ClusterOperationApi::SetUp() { rx_unused = fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
+void ClusterOperationApi::SetUp() { std::ignore = fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
 
-void ClusterOperationApi::TearDown() { rx_unused = fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
+void ClusterOperationApi::TearDown() { std::ignore = fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
 
 const ClusterOperationApi::Defaults& ClusterOperationApi::GetDefaults() const {
 	static Defaults defs{14000, 16000, fs::JoinPath(fs::GetTempDir(), "rx_test/ClusterOperationApi")};

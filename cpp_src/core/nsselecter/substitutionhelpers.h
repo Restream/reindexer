@@ -11,7 +11,7 @@ namespace composite_substitution_helpers {
 class [[nodiscard]] CompositeValuesCountLimits {
 public:
 	uint32_t operator[](uint32_t fieldsCount) const noexcept {
-		if rx_unlikely (fieldsCount >= limits_.size()) {
+		if (fieldsCount >= limits_.size()) [[unlikely]] {
 			return kMaxValuesCount;
 		}
 		return limits_[fieldsCount];
@@ -40,7 +40,7 @@ public:
 		const auto compositesBeg = ns_.indexes_.firstCompositePos();
 		const auto compositesEnd = compositesBeg + ns_.indexes_.compositeIndexesSize();
 		for (auto composite : composites) {
-			if rx_unlikely (composite < compositesBeg || composite >= compositesEnd) {
+			if (composite < compositesBeg || composite >= compositesEnd) [[unlikely]] {
 				// TODO: this may be removed later (somewhere around v3.31/v3.32) after some extra investigations (relates to #1830)
 				logFmt(LogError,
 					   "<assertion failed>: Unexpected composite index identifier during substitution attempt: {}. Composites range is "

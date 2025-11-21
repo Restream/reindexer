@@ -25,8 +25,8 @@ void Args::Dump(WrSerializer& wrser, const h_vector<MaskingFunc, 2>& maskArgsFun
 			[&](KeyValueType::Int) { wrser << int(arg); }, [&](KeyValueType::Bool) { wrser << bool(arg); },
 			[&](KeyValueType::Int64) { wrser << int64_t(arg); }, [&](KeyValueType::Uuid) { wrser << Uuid{arg}; },
 			[&](KeyValueType::FloatVector) { wrser << "[??]"; },
-			[&](OneOf<KeyValueType::Double, KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
-					  KeyValueType::Undefined>) { wrser << "??"; });
+			[&](concepts::OneOf<KeyValueType::Double, KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+								KeyValueType::Undefined> auto) { wrser << "??"; });
 	}
 	wrser << '}';
 }

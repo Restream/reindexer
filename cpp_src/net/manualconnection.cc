@@ -40,7 +40,7 @@ void manual_connection::close_conn(int err) {
 	connect_timer_.stop();
 	if (sock_.valid()) {
 		io_.stop();
-		if rx_unlikely (sock_.close() != 0) {
+		if (sock_.close() != 0) [[unlikely]] {
 			perror("sock_.close() error");
 		}
 	}
@@ -48,7 +48,7 @@ void manual_connection::close_conn(int err) {
 	const bool hadRData = !r_data_.empty();
 	const bool hadWData = !w_data_.empty();
 	if (hadRData) {
-		rx_unused = read_from_buf(r_data_.buf, r_data_.transfer, false);
+		std::ignore = read_from_buf(r_data_.buf, r_data_.transfer, false);
 		buffered_data_.clear();
 		on_async_op_done(r_data_, err);
 	} else {
@@ -292,14 +292,14 @@ void manual_connection::write_cb() {
 	}
 	if (w_data_.buf.size()) {
 		[[maybe_unused]] int err = 0;
-		rx_unused = write(w_data_.buf, w_data_.transfer, err);
+		std::ignore = write(w_data_.buf, w_data_.transfer, err);
 	}
 }
 
 int manual_connection::read_cb() {
 	int err = 0;
 	if (r_data_.buf.size()) {
-		rx_unused = read(r_data_.buf, r_data_.transfer, err);
+		std::ignore = read(r_data_.buf, r_data_.transfer, err);
 	} else {
 		read_to_buf(err);
 	}
@@ -321,7 +321,7 @@ bool manual_connection::read_from_buf(std::span<char> rd_buf, transfer_data& tra
 			it = buffered_data_.tail();
 		}
 		memcpy(cur_buf.data(), it.data(), bytes_to_copy);
-		rx_unused = buffered_data_.erase(bytes_to_copy);
+		std::ignore = buffered_data_.erase(bytes_to_copy);
 		transfer.append_transfered(bytes_to_copy);
 		return true;
 	}

@@ -110,10 +110,10 @@ bool QueryField::HaveEmptyField() const noexcept {
 	return Fields().empty();
 }
 
-bool QueryEntry::operator==(const QueryEntry& other) const noexcept {
+bool QueryEntry::operator==(const QueryEntry& other) const {
 	return QueryField::operator==(other) && condition_ == other.condition_ && distinct_ == other.distinct_ &&
 		   forcedSortOptEntry_ == other.forcedSortOptEntry_ && needIsNull_ == other.needIsNull_ &&
-		   values_.RelaxCompare<WithString::Yes, NotComparable::Return>(other.values_) == ComparationResult::Eq;
+		   values_.RelaxCompare<WithString::Yes, NotComparable::Return, kDefaultNullsHandling>(other.values_) == ComparationResult::Eq;
 }
 
 template <VerifyQueryEntryFlags flags>
@@ -194,7 +194,7 @@ bool QueryEntry::adjust(AdjustMode mode) noexcept {
 				adjusted = true;
 			} else {
 				if (mode != AdjustMode::DryRun) {
-					rx_unused = values_.erase(it, values_.cend());
+					std::ignore = values_.erase(it, values_.cend());
 					if (values_.size() == 1) {
 						condition_ = CondEq;
 					}
@@ -467,7 +467,7 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 			break;
 		}
 		const bool lastResult = it->Visit(
-			[] RX_PRE_LMBD_ALWAYS_INLINE(OneOf<SubQueryEntry, SubQueryFieldEntry, JoinQueryEntry>)
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, JoinQueryEntry> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; },
 			[&it, &pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket&)
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
@@ -508,7 +508,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 			}
 			return !lValues.empty();
 		case CondEmpty:
-			if rx_unlikely (lValues.IsObjectValue()) {
+			if (lValues.IsObjectValue()) [[unlikely]] {
 				return false;
 			}
 			for (const Variant& value : lValues) {
@@ -521,7 +521,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondSet:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Eq) {
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) == ComparationResult::Eq) {
 						return true;
 					}
 				}
@@ -534,7 +534,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 			for (const auto& v : rValues) {
 				auto it = lValues.cbegin();
 				for (; it != lValues.cend(); ++it) {
-					if (it->RelaxCompare<WithString::Yes, NotComparable::Return>(v) == ComparationResult::Eq) {
+					if (it->RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(v) == ComparationResult::Eq) {
 						break;
 					}
 				}
@@ -546,7 +546,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondLt:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Lt) {
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) == ComparationResult::Lt) {
 						return true;
 					}
 				}
@@ -555,7 +555,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondLe:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) & ComparationResult::Le) {
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) & ComparationResult::Le) {
 						return true;
 					}
 				}
@@ -564,7 +564,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondGt:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Gt) {
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) == ComparationResult::Gt) {
 						return true;
 					}
 				}
@@ -573,7 +573,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondGe:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) & ComparationResult::Ge) {
+					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) & ComparationResult::Ge) {
 						return true;
 					}
 				}
@@ -581,8 +581,10 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 			return false;
 		case CondRange:
 			for (const auto& v : lValues) {
-				if (v.RelaxCompare<WithString::Yes, NotComparable::Return>(rValues[0]) == ComparationResult::Lt ||
-					v.RelaxCompare<WithString::Yes, NotComparable::Return>(rValues[1]) == ComparationResult::Gt) {
+				if (v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rValues[0]) ==
+						ComparationResult::Lt ||
+					v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rValues[1]) ==
+						ComparationResult::Gt) {
 					return false;
 				}
 			}
@@ -975,7 +977,7 @@ bool KnnQueryEntry::operator==(const KnnQueryEntry& other) const noexcept {
 		return false;
 	}
 	for (size_t i = 0, s = values.size(); i < s; ++i) {
-		if (values[i] != otherValues[i]) {
+		if (!fp::ExactlyEqual(values[i], otherValues[i])) {
 			return false;
 		}
 	}

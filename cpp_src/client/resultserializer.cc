@@ -30,7 +30,7 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, con
 
 		for (int i = 0; i < ptCount; ++i) {
 			int nsid = GetVarUInt();
-			rx_unused = GetVString();
+			std::ignore = GetVString();
 
 			assertrx(updatePayloadFunc != nullptr);
 			updatePayloadFunc(nsid);
@@ -77,7 +77,7 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Option
 			}
 			case QueryResultExplain: {
 				if (opts.IsWithLazyMode()) {
-					rx_unused = GetSlice();
+					std::ignore = GetSlice();
 				} else {
 					if (firstLazyData) {
 						firstLazyData = false;

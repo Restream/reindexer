@@ -257,13 +257,13 @@ public:
 		return ptr()[pos];
 	}
 	const_reference at(size_type pos) const {
-		if rx_unlikely (pos >= size()) {
+		if (pos >= size()) [[unlikely]] {
 			throw std::logic_error("h_vector: Out of range (pos: " + std::to_string(pos) + ", size: " + std::to_string(size()));
 		}
 		return ptr()[pos];
 	}
 	reference at(size_type pos) {
-		if rx_unlikely (pos >= size()) {
+		if (pos >= size()) [[unlikely]] {
 			throw std::logic_error("h_vector: Out of range (pos: " + std::to_string(pos) + ", size: " + std::to_string(size()));
 		}
 		return ptr()[pos];
@@ -321,11 +321,11 @@ public:
 	}
 	void reserve(size_type sz) {
 		if (sz > capacity()) {
-			if rx_unlikely (sz > max_size()) {
+			if (sz > max_size()) [[unlikely]] {
 				throw std::logic_error("h_vector: max capacity overflow (requested: " + std::to_string(sz) +
 									   ", max_size: " + std::to_string(max_size()) + " )");
 			}
-			if rx_unlikely (sz <= holdSize) {
+			if (sz <= holdSize) [[unlikely]] {
 				throw std::logic_error("h_vector: unexpected reserved size");
 			}
 			// NOLINTNEXTLINE(bugprone-sizeof-expression)

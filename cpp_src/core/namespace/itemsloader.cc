@@ -298,7 +298,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 				ConstFloatVectorView vec = ConstFloatVectorView(vecVar);
 				if (vec.IsEmpty()) {
 					bool clearCache = false;
-					rx_unused = ns_.indexes_[cachedIndex->field]->Upsert(vecVar, id, clearCache);
+					std::ignore = ns_.indexes_[cachedIndex->field]->Upsert(vecVar, id, clearCache);
 				} else {
 					vec.Strip();
 					tmp[0] = Variant{vec};
@@ -326,7 +326,7 @@ void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& inde
 
 		for (IdType itemID = 0; itemID < IdType(ns_.items_.size()); ++itemID) {
 			auto& pv = ns_.items_[itemID];
-			if rx_unlikely (pv.IsFree()) {
+			if (pv.IsFree()) [[unlikely]] {
 				continue;
 			}
 			Payload pl(ns_.payloadType_, pv);
@@ -482,7 +482,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 					const auto& plData = shared_.nsItems[i];
 					for (unsigned field = firstCompositeIndex + threadId - kTIDOffset; field < totalIndexes; field += threadsCnt) {
 						bool needClearCache{false};
-						rx_unused = indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
+						std::ignore = indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
 					}
 				}
 			} else {

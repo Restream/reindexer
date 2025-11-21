@@ -33,7 +33,7 @@ public:
 	void HandlePendingData() override {
 		if (hasPendingData_) {
 			hasPendingData_ = false;
-			rx_unused = onRead();
+			std::ignore = onRead();
 		}
 		callback(BaseConnT::io_, ev::READ);
 	}

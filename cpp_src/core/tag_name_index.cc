@@ -1,4 +1,4 @@
-#include "enums.h"
+#include "tag_name_index.h"
 
 namespace reindexer {
 

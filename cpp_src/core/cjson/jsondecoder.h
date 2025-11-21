@@ -15,6 +15,7 @@ using builders::CJsonBuilder;
 namespace item_fields_validator {
 
 class SparseValidator;
+class SparseArrayValidator;
 
 }  // namespace item_fields_validator
 
@@ -26,11 +27,26 @@ public:
 	void Decode(std::string_view json, CJsonBuilder&, const TagsPath& fieldPath, FloatVectorsHolderVector&);
 
 private:
+	struct [[nodiscard]] HeteroArrayFastAnalizeResult {
+		bool isHetero_{false};
+		size_t outterSize_{0};
+	};
+	struct [[nodiscard]] HeteroArrayAnalizeResult {
+		bool isHetero_{false};
+		size_t outterSize_{0};
+		size_t fullSize_{0};
+	};
+	HeteroArrayAnalizeResult analizeHeteroArray(const gason::JsonValue& array) const;
+	HeteroArrayFastAnalizeResult fastAnalizeHeteroArray(const gason::JsonValue& array) const;
+	void decodeHeteroArray(Payload&, CJsonBuilder&, const gason::JsonValue& array, int indexNumber, int& pos, KeyValueType fieldType,
+						   std::string_view fieldName) const;
 	void decodeJsonObject(const gason::JsonValue& root, CJsonBuilder&, FloatVectorsHolderVector&);
 	void decodeJsonObject(Payload&, CJsonBuilder&, const gason::JsonValue&, FloatVectorsHolderVector&, Matched);
 	void decodeJson(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched);
 	void decodeJsonSparse(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched,
 						  const item_fields_validator::SparseValidator&);
+	void decodeJsonArraySparse(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched,
+							   item_fields_validator::SparseArrayValidator&);
 	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 
 	TagsMatcher& tagsMatcher_;

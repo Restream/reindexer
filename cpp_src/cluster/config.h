@@ -204,8 +204,8 @@ struct [[nodiscard]] ShardingConfig {
 		int shardId = ShardingKeyType::ProxyOff;
 		ShardingAlgorithmType algorithmType = ByValue;
 
-		sharding::Segment<Variant> SegmentFromYAML(const YAML::Node& yaml);
-		sharding::Segment<Variant> SegmentFromJSON(const gason::JsonNode& json);
+		sharding::Segment<Variant> SegmentFromYAML(const YAML::Node& yaml, int shardId);
+		sharding::Segment<Variant> SegmentFromJSON(const gason::JsonNode& json, int shardId);
 		ComparationResult RelaxCompare(const std::vector<sharding::Segment<Variant>>&,
 									   const CollateOpts& collateOpts = CollateOpts()) const;
 		std::vector<sharding::Segment<Variant>> values{};

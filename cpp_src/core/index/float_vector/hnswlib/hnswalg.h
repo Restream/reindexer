@@ -1416,7 +1416,7 @@ public:
 			for (auto&& elOneHop : listOneHop) {
 				sCand.insert(elOneHop);
 
-				if (updateNeighborProbability != 1.0) {
+				if (!reindexer::fp::EqualWithinULPs(updateNeighborProbability, 1.0f)) {
 					assertrx_dbg(false);  // We do not use this logic
 					LockGuard lck{update_generator_lock_};
 					if (distribution(update_probability_generator_) > updateNeighborProbability) {
@@ -1805,12 +1805,12 @@ public:
 	// Read-only concurrency expected
 	std::priority_queue<std::pair<float, labeltype>> searchRange(const void* query_data, float radius, size_t ef,
 																 BaseFilterFunctor* isIdAllowed = nullptr) const {
-		return getNeighboursWithinRadius(getTopCandidates(query_data, ef, isIdAllowed), query_data, radius, isIdAllowed);
-	}
+		if (cur_element_count == 0) {
+			return std::priority_queue<std::pair<float, labeltype>>();
+		}
 
-	auto getNeighboursWithinRadius(
-		std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> top_candidates,
-		const void* data_point, float radius, BaseFilterFunctor* isIdAllowed = nullptr) const {
+		auto top_candidates = getTopCandidates(query_data, ef, isIdAllowed);
+
 		std::vector<std::pair<float, labeltype>> container;
 		container.reserve(top_candidates.size());
 		std::priority_queue<std::pair<float, labeltype>> result(std::less<std::pair<float, labeltype>>(), std::move(container));
@@ -1846,7 +1846,7 @@ public:
 				if (visited_array[candidate_id] != visited_array_tag) {
 					visited_array[candidate_id] = visited_array_tag;
 					if ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(candidate_id))) {
-						float dist = fstdistfunc_(data_point, getDataByInternalId(candidate_id), candidate_id);
+						float dist = fstdistfunc_(query_data, getDataByInternalId(candidate_id), candidate_id);
 						if (dist < radius) {
 							radius_queue.emplace(dist, candidate_id);
 							result.emplace(dist, getExternalLabel(candidate_id));

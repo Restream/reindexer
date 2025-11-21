@@ -25,15 +25,15 @@ public:
 
 	/// Start new object
 	JsonBuilder Object(std::string_view name = {}, int size = KUnknownFieldSize);
-	JsonBuilder Object(TagName tagName, int size = KUnknownFieldSize) { return Object(getNameByTag(tagName), size); }
+	JsonBuilder Object(concepts::TagNameOrIndex auto tag, int size = KUnknownFieldSize) { return Object(getNameByTag(tag), size); }
 
-	void AddArray(std::string_view name, int size = KUnknownFieldSize) { rx_unused = Array(name, size); }
+	void AddArray(std::string_view name, int size = KUnknownFieldSize) { std::ignore = Array(name, size); }
 	JsonBuilder Array(std::string_view name, int size = KUnknownFieldSize);
-	JsonBuilder Array(TagName tagName, int size = KUnknownFieldSize) { return Array(getNameByTag(tagName), size); }
+	JsonBuilder Array(concepts::TagNameOrIndex auto tag, int size = KUnknownFieldSize) { return Array(getNameByTag(tag), size); }
 
 	template <typename T>
-	void Array(TagName tagName, std::span<const T> data, int /*offset*/ = 0) {
-		JsonBuilder node = Array(tagName);
+	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0) {
+		JsonBuilder node = Array(tag);
 		for (const auto& d : data) {
 			node.Put(TagName::Empty(), d);
 		}
@@ -53,8 +53,8 @@ public:
 		}
 	}
 
-	void Array(TagName tagName, Serializer& ser, TagType tagType, int count) {
-		JsonBuilder node = Array(tagName);
+	void Array(concepts::TagNameOrIndex auto tag, Serializer& ser, TagType tagType, int count) {
+		JsonBuilder node = Array(tag);
 		const KeyValueType kvt{tagType};
 		while (count--) {
 			node.Put(TagName::Empty(), ser.GetRawVariant(kvt));
@@ -80,8 +80,8 @@ public:
 		}
 	}
 	template <typename T>
-	void Put(TagName tagName, const T& arg, int offset = 0) {
-		Put(getNameByTag(tagName), arg, offset);
+	void Put(concepts::TagNameOrIndex auto tag, const T& arg, int offset = 0) {
+		Put(getNameByTag(tag), arg, offset);
 	}
 
 	template <typename T, std::enable_if_t<!std::is_arithmetic_v<T> && !std::is_constructible_v<std::string_view, T>>* = nullptr>
@@ -92,13 +92,13 @@ public:
 		ser_->PrintJsonString(sstream.str());
 	}
 
-	void Raw(TagName tagName, std::string_view arg) { return Raw(getNameByTag(tagName), arg); }
+	void Raw(concepts::TagNameOrIndex auto tag, std::string_view arg) { return Raw(getNameByTag(tag), arg); }
 	void Raw(std::string_view name, std::string_view arg);
 	void Raw(std::string_view arg) { return Raw(std::string_view{}, arg); }
 	void Json(std::string_view name, std::string_view arg) { return Raw(name, arg); }
 	void Json(std::string_view arg) { return Raw(arg); }
 
-	void Null(TagName tagName) { return Null(getNameByTag(tagName)); }
+	void Null(concepts::TagNameOrIndex auto tag) { return Null(getNameByTag(tag)); }
 	void Null(std::string_view name);
 
 	void End();
@@ -131,6 +131,7 @@ public:
 private:
 	void putName(std::string_view name);
 	[[nodiscard]] std::string_view getNameByTag(TagName);
+	[[nodiscard]] std::string_view getNameByTag(TagIndex) noexcept { return {}; }
 
 	WrSerializer* ser_;
 	const TagsMatcher* tm_;

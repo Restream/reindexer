@@ -131,7 +131,7 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 
 	Item item;
 	NsContext ctx(dummyCtx_);
-	rx_unused = ctx.InSnapshot(lsn, chCtx.wal, false, chCtx.initialLeaderSync);
+	std::ignore = ctx.InSnapshot(lsn, chCtx.wal, false, chCtx.initialLeaderSync);
 	auto rec = snRec.Unpack();
 	switch (rec.type) {
 		// Modify item
@@ -175,7 +175,7 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 		case WalIndexUpdate: {
 			auto iDef = IndexDef::FromJSON(giftStr(rec.data));
 			if (iDef) {
-				rx_unused = ns_.doUpdateIndex(*iDef, pendedRepl, ctx);
+				std::ignore = ns_.doUpdateIndex(*iDef, pendedRepl, ctx);
 				ns_.saveIndexesToStorage();
 			} else {
 				throw iDef.error();
@@ -353,7 +353,7 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 
 	LocalQueryResults qr;
 	NsContext nsCtx = NsContext(rdxCtx);
-	rx_unused = nsCtx.InSnapshot(ch.Records().back().LSN(), ch.IsWAL(), ch.IsLastChunk(), isInitialLeaderSync);
+	std::ignore = nsCtx.InSnapshot(ch.Records().back().LSN(), ch.IsWAL(), ch.IsLastChunk(), isInitialLeaderSync);
 	auto ltx = Transaction::Transform(std::move(tx));
 	ns_.CommitTransaction(ltx, qr, nsCtx);
 }

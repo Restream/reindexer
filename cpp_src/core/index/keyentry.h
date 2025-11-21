@@ -34,7 +34,7 @@ public:
 	void UpdateSortedIds(const IUpdateSortedContext& ctx) {
 		const auto expectedCapacity = (ctx.GetSortedIdxCount() + 1) * ids_.size();
 		// Checking expectedCapacity. We can not reallocate here to avoid incorrect idset iterators in the concurrent queries
-		if rx_unlikely (ids_.capacity() < expectedCapacity) {
+		if (ids_.capacity() < expectedCapacity) [[unlikely]] {
 			throw Error(errAssert, "Unexpected ids capacity: ids_.capacity()={},getSortedIdxCount={},ids_.size()={},expectedCapacity={}",
 						ids_.capacity(), ctx.GetSortedIdxCount(), ids_.size(), expectedCapacity);
 		}

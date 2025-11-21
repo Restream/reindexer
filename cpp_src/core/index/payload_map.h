@@ -5,6 +5,7 @@
 #include "core/payload/payloadiface.h"
 #include "cpp-btree/btree_map.h"
 #include "sparse-map/sparse_map.h"
+#include "sparse-map/sparse_set.h"
 #include "vendor/hopscotch/hopscotch_set.h"
 
 namespace reindexer {
@@ -96,7 +97,8 @@ public:
 	bool operator()(const PayloadValue& lhs, const PayloadValue& rhs) const {
 		assertrx_dbg(!lhs.IsFree());
 		assertrx_dbg(!rhs.IsFree());
-		return (ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, fields_) == ComparationResult::Lt);
+		return (ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(rhs, fields_) ==
+				ComparationResult::Lt);
 	}
 
 private:
@@ -112,7 +114,8 @@ public:
 	bool operator()(const PayloadValue& lhs, const PayloadValue& rhs) const {
 		assertrx_dbg(!lhs.IsFree());
 		assertrx_dbg(!rhs.IsFree());
-		return (ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, fields_) == ComparationResult::Lt);
+		return (ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(rhs, fields_) ==
+				ComparationResult::Lt);
 	}
 
 private:
@@ -291,6 +294,118 @@ public:
 	T1& operator[](PayloadValue&& k) {
 		PayloadValueWithHash key(std::move(k), payloadType_, fields_);
 		return base_hash_map::operator[](std::move(key));
+	}
+
+private:
+	PayloadType payloadType_;
+	FieldsSet fields_;
+};
+
+template <bool hold>
+class [[nodiscard]] unordered_payload_set
+	: private tsl::sparse_set<PayloadValueWithHash, hash_composite, equal_composite, std::allocator<PayloadValueWithHash>,
+							  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
+	  private payload_str_fields_helper<hold> {
+	using base_hash_set = tsl::sparse_set<PayloadValueWithHash, hash_composite, equal_composite, std::allocator<PayloadValueWithHash>,
+										  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
+
+public:
+	using typename base_hash_set::value_type;
+	using typename base_hash_set::key_type;
+	using typename base_hash_set::iterator;
+	using typename base_hash_set::const_iterator;
+
+	using base_hash_set::size;
+	using base_hash_set::empty;
+	using base_hash_set::find;
+	using base_hash_set::begin;
+	using base_hash_set::cbegin;
+	using base_hash_set::end;
+	using base_hash_set::cend;
+	using payload_str_fields_helper<hold>::have_str_fields;
+	using payload_str_fields_helper<hold>::add_ref;
+
+	static_assert(std::is_nothrow_move_constructible<PayloadValueWithHash>::value, "Nothrow movebale value required");
+	unordered_payload_set(size_t size, PayloadType&& pt, FieldsSet&& f)
+		: base_hash_set(size, hash_composite(PayloadType{pt}, FieldsSet{f}), equal_composite(PayloadType{pt}, FieldsSet{f})),
+		  payload_str_fields_helper<hold>(PayloadType{pt}, f),
+		  payloadType_(std::move(pt)),
+		  fields_(std::move(f)) {}
+
+	unordered_payload_set(PayloadType&& pt, FieldsSet&& f) : unordered_payload_set(1000, std::move(pt), std::move(f)) {}
+
+	unordered_payload_set(const unordered_payload_set& other)
+		: base_hash_set(other), payload_str_fields_helper<hold>(other), payloadType_(other.payloadType_), fields_(other.fields_) {
+		for (auto& item : *this) {
+			this->add_ref(item);
+		}
+	}
+	unordered_payload_set(unordered_payload_set&&) = default;
+	unordered_payload_set& operator=(unordered_payload_set&& other) {
+		for (auto& item : *this) {
+			this->release(item);
+		}
+		base_hash_set::operator=(std::move(other));
+		return *this;
+	}
+	unordered_payload_set& operator=(const unordered_payload_set&) = delete;
+
+	~unordered_payload_set() {
+		for (auto& item : *this) {
+			this->release(item);
+		}
+	}
+
+	std::pair<iterator, bool> insert(const PayloadValue& v) {
+		auto res = base_hash_set::emplace(PayloadValue{v}, payloadType_, fields_);
+		if (res.second) {
+			this->add_ref(*res.first);
+		}
+		return res;
+	}
+
+	std::pair<iterator, bool> insert(PayloadValue&& v) {
+		auto res = base_hash_set::emplace(std::move(v), payloadType_, fields_);
+		if (res.second) {
+			this->add_ref(res.first);
+		}
+		return res;
+	}
+
+	std::pair<iterator, bool> emplace(const PayloadValue& pl) {
+		auto res = base_hash_set::emplace(PayloadValue{pl}, payloadType_, fields_);
+		if (res.second) {
+			this->add_ref(*res.first);
+		}
+		return res;
+	}
+
+	std::pair<iterator, bool> emplace(PayloadValue&& pl) {
+		auto res = base_hash_set::emplace(std::move(pl), payloadType_, fields_);
+		if (res.second) {
+			this->add_ref(*res.first);
+		}
+		return res;
+	}
+
+	template <typename deep_cleaner>
+	iterator erase(iterator pos, StringsHolder& strHolder) {
+		static const deep_cleaner deep_clean;
+		if (pos != end()) {
+			this->move_strings_to_holder(pos, strHolder);
+		}
+		deep_clean(*pos);
+		return base_hash_set::erase(pos);
+	}
+
+	template <typename deep_cleaner>
+	iterator erase(const_iterator pos, StringsHolder& strHolder) {
+		static const deep_cleaner deep_clean;
+		if (pos != end()) {
+			this->move_strings_to_holder(pos, strHolder);
+		}
+		deep_clean(*pos);
+		return base_hash_set::erase(pos);
 	}
 
 private:

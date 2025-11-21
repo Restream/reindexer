@@ -11,14 +11,15 @@ namespace reindexer {
 using namespace std::string_view_literals;
 
 std::string_view kvTypeToJsonSchemaType(KeyValueType type) {
-	return type.EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64>) noexcept { return "integer"sv; },
-							  [](OneOf<KeyValueType::Double, KeyValueType::Float>) noexcept { return "number"sv; },
-							  [](KeyValueType::Bool) noexcept { return "boolean"sv; },
-							  [](OneOf<KeyValueType::String, KeyValueType::Uuid>) noexcept { return "string"sv; },
-							  [](KeyValueType::Null) noexcept { return "null"sv; }, [](KeyValueType::Tuple) noexcept { return "object"sv; },
-							  [&](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) -> std::string_view {
-								  throw Error(errParams, "Impossible to convert type [{}] to json schema type", type.Name());
-							  });
+	return type.EvaluateOneOf(
+		[](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64> auto) noexcept { return "integer"sv; },
+		[](concepts::OneOf<KeyValueType::Double, KeyValueType::Float> auto) noexcept { return "number"sv; },
+		[](KeyValueType::Bool) noexcept { return "boolean"sv; },
+		[](concepts::OneOf<KeyValueType::String, KeyValueType::Uuid> auto) noexcept { return "string"sv; },
+		[](KeyValueType::Null) noexcept { return "null"sv; }, [](KeyValueType::Tuple) noexcept { return "object"sv; },
+		[&](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) -> std::string_view {
+			throw Error(errParams, "Impossible to convert type [{}] to json schema type", type.Name());
+		});
 }
 
 void SchemaFieldsTypes::AddObject(std::string objectType) {

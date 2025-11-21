@@ -142,7 +142,7 @@ public:
 		static_assert(std::is_same_v<Recoder, DefaultRecoder> || std::is_same_v<Recoder, CustomRecoder>,
 					  "Other recoder types are not allowed for the public API");
 		objectScalarIndexes_.reset();
-		if rx_likely (!filter.HasArraysFields(pl.Type())) {
+		if (!filter.HasArraysFields(pl.Type())) [[likely]] {
 			decodeCJson(pl, rdSer, wrSer, filter, recoder, NamelessTagOpt{}, floatVectorsHolder);
 			return;
 		}
@@ -166,7 +166,9 @@ private:
 	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 	[[noreturn]] void throwTagReferenceError(ctag, const Payload&);
 
-	Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
+	Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType) const;
+	size_t decodeNestedArray(Payload&, Serializer&, WrSerializer&, int indexNumber, size_t count, KeyValueType fieldType,
+							 size_t offset) const;
 
 	TagsMatcher& tagsMatcher_;
 	TagsPath tagsPath_;

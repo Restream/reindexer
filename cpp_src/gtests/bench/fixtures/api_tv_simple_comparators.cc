@@ -80,7 +80,7 @@ reindexer::Item ApiTvSimpleComparators::MakeStrItem() {
 	static int id = 0;
 	reindexer::Item item = db_->NewItem(stringSelectNs_);
 	if (item.Status().ok()) {
-		rx_unused = item.Unsafe();
+		std::ignore = item.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld(wrSer_);
 		bld.Put("id", id++);
@@ -103,7 +103,7 @@ reindexer::Item ApiTvSimpleComparators::MakeStrItem() {
 reindexer::Item ApiTvSimpleComparators::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
-	rx_unused = item.Unsafe();
+	std::ignore = item.Unsafe();
 
 	auto startTime = random<int>(0, 50000);
 

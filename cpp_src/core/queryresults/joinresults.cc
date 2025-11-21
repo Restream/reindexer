@@ -46,6 +46,9 @@ LocalQueryResults JoinedFieldIterator::ToQueryResults() const {
 }
 
 int JoinedFieldIterator::ItemsCount() const noexcept {
+	if (!joinRes_ || !offsets_) {
+		return 0;
+	}
 	assertrx(order_ < joinRes_->GetJoinedSelectorsCount());
 
 	if ((currField_ != -1) && (currField_ < uint8_t(offsets_->size()))) {

@@ -162,7 +162,7 @@ Error DBManager::DropDatabase(AuthContext& auth) {
 		return Error(errParams, "Database {} not found", dbName);
 	}
 	dbs_.erase(it);
-	rx_unused = fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
+	std::ignore = fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
 	auth.ResetDB();
 
 	return {};

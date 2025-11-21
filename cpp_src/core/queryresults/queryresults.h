@@ -93,7 +93,7 @@ public:
 
 	explicit QueryResults(int flags = 0);
 	~QueryResults();
-	QueryResults(QueryResults&&);
+	QueryResults(QueryResults&&) noexcept;
 	QueryResults(const QueryResults&) = delete;
 	QueryResults& operator=(QueryResults&& qr) noexcept;
 	QueryResults& operator=(const QueryResults& qr) = delete;

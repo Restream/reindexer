@@ -1,3 +1,44 @@
+# Version 5.9.0 (21.11.2025)
+## Core
+- [fea] Added direct support for nested arrays storing/indexing in `JSON`, `CJSON` and `MsgPack` (i.e. JSONs like this `{ "id": 7, "arr": [ 1, "string", [ 1, 2, 3], { "field": 10 }] }` now may be stored into database)
+- [fea] Allowed to sort `null`-values in `hash`-indexes (including `null's` inside arrays). `Nulls`-order is now consistent for different indexes/fields: `null` is considering less than any other value. **This changes behavior for some queries with `sparse tree` indexes: previously `nulls`-order was inconsistent and had depent on the selection plan and index/field type**
+- [fea] Added `TagsMatcher's` info into `#memstats`
+- [fea] Added fields check according to current `StrictMode` for joined fields inside `ON`-clause
+- [fea] Added `Distinct`-support for `composite`-indexes
+- [fix] Fixed assertion in ordered queries with `Distinct` over fulltext-indexes
+- [fix] Fixed background index optimization in cases, when target index contains `null`-values
+- [fix] Fixed `CJSON`-corruption after `UPDATE`-queries with non-existing array indexes
+
+## Fulltext
+- [fea] Improved merging logic, when [MergeLimit](fulltext.md#base-config-parameters) is exceeded. Search engine will try to find documents with maximum corresponding terms. This may be slower, but provides better quality. You may set environment variable `REINDEXER_NO_2PHASE_FT_MERGE=1` to disable 2-phase merging and fallback to the old merge logic
+- [fea] Supported [select functions](fulltext.md#using-select-functions) for array values in composite indexes
+- [fix] Allowed to index `null`-fields in `fulltext composite` indexes
+
+## Vector indexes
+- [fea] Added performance metrics for [auto-embedding logic](float_vector.md#knn-search-with-auto-embedding). Check `indexes` performance stats in `#perfstats` namespace for details (make sure, that `perfstats` are enabled in `#config`)
+- [fix] Fixed segmentation fault in KNN-queries with `radius`, when target index is empty
+- [fix] Disabled vector indexes update/create operations, when namespace does not have PK-index (it could led to disk storage corruption)
+
+## Go connector
+- [fea] Added support for nested arrays into `CJSON`-coding/decoding
+- [fix] Fixed Transactions with `Update`/`Delete`-queries. Now such transactions will return actual count of items, affected by the queries
+
+## Reindexer server
+- [fea] Added [Prometheus-metrics](cpp_src/readme.md#prometheus-server-side) for [auto-embedding logic](float_vector.md#knn-search-with-auto-embedding)
+- [fix] Fixed screening in `api/v1/db/:db/namespaces/:ns/meta*` endpoints
+
+## Reindexer tool
+- [fix] Fixed screening in `\meta`-calls
+
+## Face
+- [fea] Added total for `Memory Statistics` of namespace
+- [fix] Fixed issue appeared on `Performance Statistics` refresh
+- [fix] Fixed Embedder's URL validation to allow local domains
+
+# Version 5.8.1 (05.11.2025)
+## Core
+- [fix] Fixed `INNER JOIN` in composition with multicolumn sort by `tree` index and `LIMIT`. Previously, `joined`-array could be missing in the result items, although the result itself was correct
+
 # Version 5.8.0 (23.10.2025)
 ## Core
 - [fea] Added [new EqualPosition syntax](readme.md#search-in-array-fields-with-matching-indexes-using-grouping) to perform grouping conditions over object arrays

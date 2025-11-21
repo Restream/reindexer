@@ -5,7 +5,7 @@ namespace reindexer {
 AdvacedPackedVec::AdvacedPackedVec(IdRelSet&& data) {
 	data.SimpleCommit();
 
-	insert(end(), data.begin(), data.end());
+	insert_back(data.begin(), data.end());
 
 	max_id_ = data.max_id_;
 	min_id_ = data.min_id_;

@@ -1,7 +1,6 @@
 #include "perfstatcounter.h"
 #include <cmath>
 #include <numeric>
-#include "estl/defines.h"
 #include "estl/mutex.h"
 
 namespace reindexer {
@@ -79,7 +78,7 @@ void PerfStatCounter<Mutex>::lap() noexcept {
 	if (elapsed < kPeriod) {
 		return;
 	}
-	if rx_likely (elapsed < 2 * kPeriod) {
+	if (elapsed < 2 * kPeriod) [[likely]] {
 		lastSecHitCount_ = calcHitCount_;
 		lastSecTotalTime_ = calcTime_;
 		lastSecTotalLockTime_ = calcLockTime_;
@@ -97,5 +96,48 @@ void PerfStatCounter<Mutex>::lap() noexcept {
 
 template class PerfStatCounter<reindexer::mutex>;
 template class PerfStatCounter<DummyMutex>;
+
+template <typename Mutex>
+void PerfStatCounterCountAvg<Mutex>::Hit(size_t val) noexcept {
+	lock_guard lck(mtx_);
+	++hitCount_;
+	valueCount += val;
+	lap();
+}
+
+template <typename Mutex>
+void PerfStatCounterCountAvg<Mutex>::lap() noexcept {
+	const auto now = system_clock_w::now_coarse();
+	std::chrono::microseconds elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - calcStartTime_);
+	constexpr static auto kPeriod = std::chrono::microseconds(1000000);
+	if (elapsed < kPeriod) {
+		return;
+	}
+	if (elapsed < 2 * kPeriod) [[likely]] {
+		lastSecondAvgValue = 0.0;
+		if (hitCount_) {
+			lastSecondAvgValue = float(valueCount) / hitCount_;
+		}
+	} else {
+		lastSecondAvgValue = 0.0;
+		hitCount_ = 0;
+		valueCount = 0;
+	}
+	calcStartTime_ = now;
+	hitCount_ = 0;
+	valueCount = 0;
+}
+
+template <typename Mutex>
+void PerfStatCounterCountAvg<Mutex>::Reset() noexcept {
+	lock_guard lck(mtx_);
+	lastSecondAvgValue = 0.0;
+	hitCount_ = 0;
+	valueCount = 0;
+	calcStartTime_ = system_clock_w::now_coarse();
+}
+
+template class PerfStatCounterCountAvg<reindexer::mutex>;
+template class PerfStatCounterCountAvg<DummyMutex>;
 
 }  // namespace reindexer

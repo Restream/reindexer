@@ -4,6 +4,7 @@
 #include <string_view>
 #include "core/enums.h"
 #include "core/key_value_type.h"
+#include "core/tag_name_index.h"
 
 namespace reindexer {
 

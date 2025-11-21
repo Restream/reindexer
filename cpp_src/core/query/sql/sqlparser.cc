@@ -17,7 +17,7 @@ using namespace std::string_view_literals;
 Query SQLParser::Parse(std::string_view q) {
 	Tokenizer parser(q);
 	Query query;
-	rx_unused = SQLParser{query}.Parse(parser);
+	std::ignore = SQLParser{query}.Parse(parser);
 	return query;
 }
 
@@ -227,7 +227,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 		tok = parser.NextToken();
 	}
 
-	rx_unused = peekSqlToken(parser, FromSqlToken);
+	std::ignore = peekSqlToken(parser, FromSqlToken);
 	tok = parser.NextToken();
 	if (tok.Text() != "from"sv) {
 		throw Error(errParams, "Expected 'FROM', but found '{}' in query, {}", tok.Text(), parser.Where(tok));
@@ -267,7 +267,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 				parseJoin(JoinType::LeftJoin, parser);
 			} else if (tok.Text() == "left"sv) {
 				parser.SkipToken();
-				rx_unused = peekSqlToken(parser, LeftSqlToken);
+				std::ignore = peekSqlToken(parser, LeftSqlToken);
 				tok = parser.NextToken();
 				if (tok.Text() != "join"sv) {
 					throw Error(errParseSQL, "Expected JOIN, but found '{}' in query, {}", tok.Text(), parser.Where(tok));
@@ -275,7 +275,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 				parseJoin(JoinType::LeftJoin, parser);
 			} else if (tok.Text() == "inner"sv) {
 				parser.SkipToken();
-				rx_unused = peekSqlToken(parser, InnerSqlToken);
+				std::ignore = peekSqlToken(parser, InnerSqlToken);
 				tok = parser.NextToken();
 				if (tok.Text() != "join"sv) {
 					throw Error(errParseSQL, "Expected JOIN, but found '{}' in query, {}", tok.Text(), parser.Where(tok));
@@ -371,7 +371,7 @@ Variant Token2kv(const Token& tok, Tokenizer& parser, CompositeAllowed allowComp
 template <typename Sortable>
 void SQLParser::parseOrderBy(Tokenizer& parser, Sortable& sortable) {
 	// Just skip token (BY)
-	rx_unused = peekSqlToken(parser, BySqlToken);
+	std::ignore = peekSqlToken(parser, BySqlToken);
 	parser.SkipToken();
 	Token tok, nameWithCase;
 	for (;;) {
@@ -563,7 +563,7 @@ void SQLParser::parseCommand(Tokenizer& parser) const {
 	tok = parser.NextToken();
 	// try parse as scalar value
 	if ((tok.Type() == TokenNumber) || (tok.Type() == TokenString) || (tok.Type() == TokenName)) {
-		rx_unused = Token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_True, NullAllowed_False);
+		std::ignore = Token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_True, NullAllowed_False);
 	} else {
 		parseArray(parser, tok.Text(), nullptr);
 	}
@@ -611,7 +611,7 @@ UpdateEntry SQLParser::parseUpdateField(Tokenizer& parser) {
 
 	tok = parser.NextToken(Tokenizer::Flags::NoFlags);
 	if (tok.Text() == "["sv) {
-		rx_unused = updateField.Values().MarkArray();
+		std::ignore = updateField.Values().MarkArray();
 		parseArray(parser, tok.Text(), &updateField);
 		updateField.SetIsExpression(false);
 	} else if (tok.Text() == "array_remove"sv || tok.Text() == "array_remove_once"sv) {
@@ -773,7 +773,7 @@ void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op) 
 
 	// Value
 	if (ctx_.autocompleteMode) {
-		rx_unused = peekSqlToken(parser, WhereFieldValueSqlToken, false);
+		std::ignore = peekSqlToken(parser, WhereFieldValueSqlToken, false);
 	}
 	tok = parser.NextToken();
 	if (iequals(tok.Text(), "null"sv) || iequals(tok.Text(), "empty"sv)) {
@@ -883,14 +883,14 @@ void SQLParser::parseWhere(Tokenizer& parser) {
 					if (nextOp != OpAnd) {
 						throw Error(errParseSQL, "Left join with {} operation", OpTypeToStr(nextOp));
 					}
-					rx_unused = peekSqlToken(parser, LeftSqlToken);
+					std::ignore = peekSqlToken(parser, LeftSqlToken);
 					tok = parser.NextToken();
 					if (tok.Text() != "join"sv) {
 						throw Error(errParseSQL, "Expected JOIN, but found '{}' in query, {}", tok.Text(), parser.Where(tok));
 					}
 					parseJoin(JoinType::LeftJoin, parser);
 				} else if (iequals(tok.Text(), "inner"sv)) {
-					rx_unused = peekSqlToken(parser, InnerSqlToken);
+					std::ignore = peekSqlToken(parser, InnerSqlToken);
 					tok = parser.NextToken();
 					if (tok.Text() != "join"sv) {
 						throw Error(errParseSQL, "Expected JOIN, but found '{}' in query, {}", tok.Text(), parser.Where(tok));
@@ -949,7 +949,7 @@ void SQLParser::parseWhere(Tokenizer& parser) {
 		} else if (iequals(tok.Text(), "or"sv)) {
 			throwIfExpectSecondLogicalOperand();
 			parser.SkipToken();
-			rx_unused = peekSqlToken(parser, FieldNameSqlToken);
+			std::ignore = peekSqlToken(parser, FieldNameSqlToken);
 			nextOp = OpOr;
 			expectSecondLogicalOperand = true;
 		} else if (!iequals(tok.Text(), "join"sv) && !iequals(tok.Text(), "inner"sv) && !iequals(tok.Text(), "left"sv)) {
@@ -1085,7 +1085,7 @@ KnnSearchParams SQLParser::parseKnnParams(Tokenizer& parser) {
 	std::optional<float> radius;
 	Token tok;
 	do {
-		rx_unused = peekSqlToken(parser, KnnParamsToken);
+		std::ignore = peekSqlToken(parser, KnnParamsToken);
 		tok = parser.NextToken();
 		if (tok.Text() == KnnSearchParams::kKName) {
 			parseSingleKnnParam(parser, k, KnnSearchParams::kKName);
@@ -1131,7 +1131,7 @@ void SQLParser::parseKnn(Tokenizer& parser, OpType nextOp) {
 	if (tok.Text() != "("sv) {
 		throw Error(errParseSQL, "Expected '(', but found '{}', {}", tok.Text(), parser.Where(tok));
 	}
-	rx_unused = peekSqlToken(parser, GeomFieldSqlToken);
+	std::ignore = peekSqlToken(parser, GeomFieldSqlToken);
 	tok = parser.NextToken();
 	if (tok.Type() != TokenName) {
 		throw Error(errParseSQL, "Expected field name, but found '{}', {}", tok.Text(), parser.Where(tok));
@@ -1196,7 +1196,7 @@ void SQLParser::parseDWithin(Tokenizer& parser, OpType nextOp) {
 		throw Error(errParseSQL, "Expected '(', but found '{}', {}", tok.Text(), parser.Where(tok));
 	}
 
-	rx_unused = peekSqlToken(parser, GeomFieldSqlToken);
+	std::ignore = peekSqlToken(parser, GeomFieldSqlToken);
 	tok = parser.NextToken();
 
 	Point point;
@@ -1212,7 +1212,7 @@ void SQLParser::parseDWithin(Tokenizer& parser, OpType nextOp) {
 		throw Error(errParseSQL, "Expected ',', but found '{}', {}", tok.Text(), parser.Where(tok));
 	}
 
-	rx_unused = peekSqlToken(parser, GeomFieldSqlToken);
+	std::ignore = peekSqlToken(parser, GeomFieldSqlToken);
 	tok = parser.NextToken();
 	if (iequals(tok.Text(), "st_geomfromtext"sv)) {
 		if (field.empty()) {
@@ -1234,9 +1234,9 @@ void SQLParser::parseDWithin(Tokenizer& parser, OpType nextOp) {
 	tok = parser.NextToken();
 	const auto distance = Token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_False, NullAllowed_False);
 	distance.Type().EvaluateOneOf(
-		[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) noexcept {},
-		[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,
-				  KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector>) {
+		[](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float> auto) noexcept {},
+		[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,
+							KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector> auto) {
 			throw Error(errParseSQL, "Expected number, but found '{}', {}", tok.Text(), parser.Where(tok));
 		});
 
@@ -1260,7 +1260,7 @@ void SQLParser::parseJoin(JoinType type, Tokenizer& parser) {
 	auto nameWithCase = peekSqlToken(parser, NamespaceSqlToken, false);
 	auto tok = parser.NextToken();
 	if (tok.Text() == "("sv) {
-		rx_unused = peekSqlToken(parser, SelectSqlToken);
+		std::ignore = peekSqlToken(parser, SelectSqlToken);
 		tok = parser.NextToken();
 		if (tok.Text() != "select"sv) {
 			throw Error(errParseSQL, "Expected 'SELECT', but found '{}', {}", tok.Text(), parser.Where(tok));
@@ -1294,7 +1294,7 @@ void SQLParser::parseMerge(Tokenizer& parser) {
 	}
 	auto tok = parser.NextToken();
 	if (tok.Text() == "("sv) {
-		rx_unused = peekSqlToken(parser, SelectSqlToken);
+		std::ignore = peekSqlToken(parser, SelectSqlToken);
 		tok = parser.NextToken();
 		if (tok.Text() != "select"sv) {
 			throw Error(errParseSQL, "Expected 'SELECT', but found '{}', {}", tok.Text(), parser.Where(tok));

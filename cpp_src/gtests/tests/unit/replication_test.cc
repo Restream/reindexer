@@ -80,7 +80,7 @@ TEST_F(ReplicationLoadApi, Base) {
 
 	std::thread statsReader([this]() {
 		while (!stop) {
-			rx_unused = GetReplicationStats(masterId_);
+			std::ignore = GetReplicationStats(masterId_);
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		}
 	});
@@ -88,13 +88,13 @@ TEST_F(ReplicationLoadApi, Base) {
 	SetWALSize(masterId_, 50000, kNsSome);
 	for (size_t i = 0; i < 2; ++i) {
 		if (i % 3 == 0) {
-			rx_unused = DeleteFromMaster();
+			std::ignore = DeleteFromMaster();
 		}
 		SetWALSize(masterId_, (int64_t(i) + 1) * 25000, kNsSome1);
 		FillData(1000);
-		rx_unused = GetReplicationStats(masterId_);
+		std::ignore = GetReplicationStats(masterId_);
 		SetWALSize(masterId_, (int64_t(i) + 1) * 50000, kNsSome);
-		rx_unused = SimpleSelect(0);
+		std::ignore = SimpleSelect(0);
 	}
 
 	SetWALSize(masterId_, 50000, "some1");
@@ -177,7 +177,7 @@ TEST_F(ReplicationLoadApi, BaseTagsMatcher) {
 	FillData(1000);
 	for (size_t i = 0; i < 2; ++i) {
 		if (i == 1) {
-			rx_unused = DeleteFromMaster();
+			std::ignore = DeleteFromMaster();
 		}
 		FillData(1000);
 	}
@@ -218,13 +218,13 @@ TEST_F(ReplicationLoadApi, SingleSlaveTest) {
 
 			RestartServer(i);
 			if (counter % 3 == 0) {
-				rx_unused = DeleteFromMaster();
+				std::ignore = DeleteFromMaster();
 			}
 		}
 	});
 
 	for (size_t i = 0; i < 2; ++i) {
-		rx_unused = SimpleSelect(0);
+		std::ignore = SimpleSelect(0);
 		SetWALSize(masterId_, (int64_t(i) + 1) * 1000, "some1");
 		SetWALSize(masterId_, (int64_t(i) + 1) * 1000, "some");
 		std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -488,7 +488,7 @@ TEST_F(ReplicationLoadApi, DuplicatePKFollowerTest) {
 
 	WaitSync("some");
 	{
-		rx_unused = api.ExecSQL("Update some set id=id+" + std::to_string(kItemCount * 2) + " where id in(" + changedIds + ")");
+		std::ignore = api.ExecSQL("Update some set id=id+" + std::to_string(kItemCount * 2) + " where id in(" + changedIds + ")");
 		WaitSync("some");
 	}
 

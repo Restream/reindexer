@@ -85,8 +85,8 @@ bool EqualPositionComparator::compareField(size_t field, const Variant& v) {
 		[&](KeyValueType::Float) { return ctx_[field].cmpFloat.Compare(ctx_[field].cond, static_cast<float>(v)); },
 		[&](KeyValueType::String) { return ctx_[field].cmpString.Compare(ctx_[field].cond, static_cast<p_string>(v)); },
 		[&](KeyValueType::Uuid) { return ctx_[field].cmpUuid.Compare(ctx_[field].cond, Uuid{v}); },
-		[](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-				 KeyValueType::FloatVector>) noexcept { return false; });
+		[](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+						   KeyValueType::FloatVector> auto) noexcept { return false; });
 }
 
 void GroupingEqualPositionComparator::BindField(const std::string& name, const VariantArray& values, CondType cond,
@@ -169,8 +169,8 @@ bool GroupingEqualPositionComparator::compareField(size_t field, const Variant& 
 		[&](KeyValueType::Float) { return ctx_[field].cmpFloat.Compare(ctx_[field].cond, static_cast<float>(v)); },
 		[&](KeyValueType::String) { return ctx_[field].cmpString.Compare(ctx_[field].cond, static_cast<p_string>(v)); },
 		[&](KeyValueType::Uuid) { return ctx_[field].cmpUuid.Compare(ctx_[field].cond, Uuid{v}); },
-		[](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-				 KeyValueType::FloatVector>) noexcept { return false; });
+		[](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+						   KeyValueType::FloatVector> auto) noexcept { return false; });
 }
 
 namespace equal_position_helpers {

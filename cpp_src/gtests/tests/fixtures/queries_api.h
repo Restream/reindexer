@@ -315,6 +315,7 @@ public:
 	using QueriesVerifier::Verify;
 
 protected:
+	void CheckStandardQueries(bool sortOrder, const std::string& sortIdx, const std::string& distinct);
 	void FillCompositeIndexesNamespace(size_t since, size_t till) {
 		for (size_t i = since; i < till; ++i) {
 			int idValue(static_cast<int>(i));
@@ -578,7 +579,7 @@ protected:
 			auto err = tr.Insert(std::move(item));
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
-		rx_unused = rt.CommitTransaction(tr);
+		std::ignore = rt.CommitTransaction(tr);
 	}
 
 	int GetcurrBtreeIdsetsValue(int id) {
@@ -1018,7 +1019,9 @@ protected:
 						EXPECT_EQ(v1.size(), v2.size());
 						if (v1.size() == v2.size()) {
 							for (size_t j = 0; j < v1.size(); ++j) {
-								EXPECT_EQ(v1[j].Compare<reindexer::NotComparable::Return>(v2[j]), reindexer::ComparationResult::Eq);
+								const auto cmpRes =
+									v1[j].Compare<reindexer::NotComparable::Return, reindexer::kDefaultNullsHandling>(v2[j]);
+								EXPECT_EQ(cmpRes, reindexer::ComparationResult::Eq);
 							}
 						}
 					}

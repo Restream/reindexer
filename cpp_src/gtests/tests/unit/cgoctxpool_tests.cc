@@ -334,7 +334,7 @@ TEST_F(CGOCtxPoolApi, GeneralConcurrencyCheck) {
 				lck.unlock();
 				static const size_t kCtxCount = 2 * kCtxPoolSize;
 				for (uint64_t i = 1; i <= kCtxCount; ++i) {
-					rx_unused = pool->getContext(i);
+					std::ignore = pool->getContext(i);
 				}
 			}));
 		}
@@ -347,7 +347,7 @@ TEST_F(CGOCtxPoolApi, GeneralConcurrencyCheck) {
 				lck.unlock();
 				static const size_t kCtxCount = 2 * kCtxPoolSize;
 				for (uint64_t i = 1; i <= kCtxCount; ++i) {
-					rx_unused = pool->cancelContext(i, CancelType::Explicit);
+					std::ignore = pool->cancelContext(i, CancelType::Explicit);
 				}
 			}));
 		}
@@ -360,7 +360,7 @@ TEST_F(CGOCtxPoolApi, GeneralConcurrencyCheck) {
 				lck.unlock();
 				static const size_t kCtxCount = 2 * kCtxPoolSize;
 				for (uint64_t i = 1; i <= kCtxCount; ++i) {
-					rx_unused = pool->removeContext(i);
+					std::ignore = pool->removeContext(i);
 				}
 			}));
 		}

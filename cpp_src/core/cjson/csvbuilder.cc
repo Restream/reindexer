@@ -207,6 +207,6 @@ void CsvBuilder::Put(std::string_view name, const Variant& kv, int offset) {
 			}
 		},
 		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); },
-		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) { assertrx_throw(false); });
+		[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) { assertrx_throw(false); });
 }
 }  // namespace reindexer::builders

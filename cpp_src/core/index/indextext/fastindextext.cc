@@ -46,7 +46,7 @@ void FastIndexText<T>::initHolder(FtFastConfig& cfg) {
 
 template <typename T>
 Variant FastIndexText<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
-	if rx_unlikely (key.Type().Is<KeyValueType::Null>()) {
+	if (key.Type().Is<KeyValueType::Null>()) [[unlikely]] {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, 0)) {
 			this->isBuilt_ = false;
 		}
@@ -74,8 +74,8 @@ Variant FastIndexText<T>::Upsert(const Variant& key, IdType id, bool& clearCache
 template <typename T>
 void FastIndexText<T>::Delete(const Variant& key, IdType id, [[maybe_unused]] MustExist mustExist, StringsHolder& strHolder,
 							  bool& clearCache) {
-	if rx_unlikely (key.Type().Is<KeyValueType::Null>()) {
-		rx_unused = this->empty_ids_.Unsorted().Erase(id);
+	if (key.Type().Is<KeyValueType::Null>()) [[unlikely]] {
+		std::ignore = this->empty_ids_.Unsorted().Erase(id);
 		this->isBuilt_ = false;
 		return;
 	}
@@ -123,57 +123,12 @@ IndexMemStat FastIndexText<T>::GetMemStat(const RdxContext& ctx) {
 	ret.isBuilt = this->isBuilt_;
 	return ret;
 }
-template <typename T>
-template <typename MergeType>
-typename MergeType::iterator FastIndexText<T>::unstableRemoveIf(MergeType& md, int minRelevancy, double scalingFactor, size_t& relevantDocs,
-																int& cnt) {
-	if (md.empty()) {
-		return md.begin();
-	}
-	auto& holder = *this->holder_;
-	auto first = md.begin();
-	auto last = md.end();
-	while (true) {
-		while (true) {
-			if (first == last) {
-				return first;
-			}
-			first->proc *= scalingFactor;
-			if (first->proc < minRelevancy) {
-				break;
-			}
-			auto& vdoc = holder.vdocs_[first->id];
-			assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
-			cnt += vdoc.keyEntry->Sorted(0).size();
-			++relevantDocs;
-
-			++first;
-		}
-		while (true) {
-			--last;
-			if (first == last) {
-				return first;
-			}
-			last->proc *= scalingFactor;
-			if (last->proc >= minRelevancy) {
-				break;
-			}
-		}
-		auto& vdoc = holder.vdocs_[last->id];
-		assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
-		cnt += vdoc.keyEntry->Sorted(0).size();
-		++relevantDocs;
-
-		*first = std::move(*last);
-		++first;
-	}
-}
 
 static bool lessRank(RankT lhs, RankT rhs) noexcept { return lhs < rhs; }
 static bool lessRank(RanksHolder::RankPos lhs, RanksHolder::RankPos rhs) noexcept { return lhs.rank < rhs.rank; }
 
 template <typename T>
-template <auto(RanksHolder::* rankGetter)>
+template <auto(RanksHolder::*rankGetter)>
 void FastIndexText<T>::sortAfterSelect(IdSet& mergedIds, RanksHolder& ranks, RankSortType rankSortType) {
 	std::vector<size_t> sortIds;
 	const size_t nItems = mergedIds.size();
@@ -227,25 +182,15 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 		return mergedIds;
 	}
 	int cnt = 0;
-	const double scalingFactor = mergeData.maxRank > 255 ? 255.0 / mergeData.maxRank : 1.0;
-	const int minRelevancy = getConfig()->minRelevancy * 100 * scalingFactor;
-
 	size_t relevantDocs = 0;
+
 	switch (rankSortType) {
 		case RankSortType::RankAndID:
-		case RankSortType::IDOnly: {
-			const auto itF = unstableRemoveIf(mergeData, minRelevancy, scalingFactor, relevantDocs, cnt);
-			mergeData.erase(itF, mergeData.end());
-			break;
-		}
+		case RankSortType::IDOnly:
 		case RankSortType::IDAndPositions:
 		case RankSortType::RankOnly:
 			for (auto& vid : mergeData) {
 				auto& vdoc = holder.vdocs_[vid.id];
-				vid.proc *= scalingFactor;
-				if (vid.proc <= minRelevancy) {
-					break;
-				}
 				assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
 				cnt += vdoc.keyEntry->Sorted(0).size();
 				++relevantDocs;
@@ -257,16 +202,23 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 			throw_as_assert;
 	}
 
+	std::optional<fast_hash_set<IdType>> uniqueIds;
+	bool needToDeduplicate = Index::opts_.IsArray() == IsArray_True;
+	if (needToDeduplicate) {
+		uniqueIds.emplace();
+	}
+	std::vector<IdType> idsFiltered;
+
 	mergedIds->reserve(cnt);
 	if constexpr (std::is_same_v<MergeData, MergeType>) {
 		if (useExternSt == FtUseExternStatuses::No) {
-			appendMergedIds(mergeData, relevantDocs,
+			appendMergedIds(mergeData, relevantDocs, uniqueIds, idsFiltered,
 							[&ftCtx, &mergedIds](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
 								ftCtx.Add(ebegin, eend, RankT(vid.proc));
 								mergedIds->Append(ebegin, eend, IdSet::Unordered);
 							});
 		} else {
-			appendMergedIds(mergeData, relevantDocs,
+			appendMergedIds(mergeData, relevantDocs, uniqueIds, idsFiltered,
 							[&ftCtx, &mergedIds, &statuses](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfo& vid) {
 								ftCtx.Add(ebegin, eend, RankT(vid.proc), statuses.rowIds);
 								mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
@@ -275,14 +227,14 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 	} else if constexpr (std::is_same_v<MergeDataAreas<Area>, MergeType> || std::is_same_v<MergeDataAreas<AreaDebug>, MergeType>) {
 		if (useExternSt == FtUseExternStatuses::No) {
 			appendMergedIds(
-				mergeData, relevantDocs,
+				mergeData, relevantDocs, uniqueIds, idsFiltered,
 				[&ftCtx, &mergedIds, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend, const MergeInfoAreas& vid) {
 					ftCtx.Add(ebegin, eend, RankT(vid.proc), std::move(mergeData.vectorAreas[vid.areaIndex]));
 					mergedIds->Append(ebegin, eend, IdSet::Unordered);
 				});
 
 		} else {
-			appendMergedIds(mergeData, relevantDocs,
+			appendMergedIds(mergeData, relevantDocs, uniqueIds, idsFiltered,
 							[&ftCtx, &mergedIds, &statuses, &mergeData](IdSetCRef::iterator ebegin, IdSetCRef::iterator eend,
 																		const MergeInfoAreas& vid) {
 								ftCtx.Add(ebegin, eend, RankT(vid.proc), statuses.rowIds, std::move(mergeData.vectorAreas[vid.areaIndex]));
@@ -294,7 +246,7 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 	}
 
 	auto& ranks = ftCtx.Ranks();
-	if rx_unlikely (getConfig()->logLevel >= LogInfo) {
+	if (getConfig()->logLevel >= LogInfo) [[unlikely]] {
 		logFmt(LogInfo, "Total merge out: {} ids", mergedIds->size());
 		std::string str;
 		for (size_t i = 0; i < ranks.Size();) {
@@ -427,7 +379,7 @@ void FastIndexText<T>::commitFulltextImpl() {
 				}
 			}
 		}
-		if rx_unlikely (getConfig()->logLevel >= LogInfo) {
+		if (getConfig()->logLevel >= LogInfo) [[unlikely]] {
 			auto tm2 = system_clock_w::now();
 			logFmt(LogInfo, "FastIndexText::Commit elapsed {} ms total [ build vdocs {} ms,  process data {} ms ]",
 				   duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
@@ -478,7 +430,7 @@ void FastIndexText<T>::buildVdocs(Container& data) {
 	for (auto it = data.begin(); it != data.end(); ++it) {
 		if constexpr (std::is_same<Container, typename UpdateTracker<T>::hash_map>()) {
 			doc = this->idx_map.find(*it);
-			assertrx(it != data.end());
+			assertrx(doc != this->idx_map.end());
 		} else {
 			doc = it;
 		}
@@ -492,7 +444,7 @@ void FastIndexText<T>::buildVdocs(Container& data) {
 		// Set VDocID after actual doc emplacing
 		doc->second.SetVDocID(vdocs.size() - 1);
 
-		if rx_unlikely (getConfig()->logLevel <= LogInfo) {
+		if (getConfig()->logLevel <= LogInfo) [[unlikely]] {
 			for (auto& f : vdocsTexts.back()) {
 				this->holder_->szCnt += f.first.length();
 			}
@@ -505,12 +457,30 @@ void FastIndexText<T>::buildVdocs(Container& data) {
 
 template <typename T>
 template <typename MergeType, typename F>
-RX_ALWAYS_INLINE void FastIndexText<T>::appendMergedIds(MergeType& mergeData, size_t relevantDocs, F&& appender) {
+RX_ALWAYS_INLINE void FastIndexText<T>::appendMergedIds(MergeType& mergeData, size_t relevantDocs,
+														std::optional<fast_hash_set<IdType>>& uniqueIds, std::vector<IdType>& idsFiltered,
+														F&& appender) {
 	auto& holder = *this->holder_;
 	for (size_t i = 0; i < relevantDocs; i++) {
 		auto& vid = mergeData[i];
 		auto& vdoc = holder.vdocs_[vid.id];
-		appender(vdoc.keyEntry->Sorted(0).begin(), vdoc.keyEntry->Sorted(0).end(), vid);
+
+		const auto& realIds = vdoc.keyEntry->Sorted(0);
+		if (uniqueIds.has_value()) {
+			idsFiltered.resize(0);
+			for (IdType id : realIds) {
+				if (uniqueIds->insert(id).second) {
+					idsFiltered.push_back(id);
+				}
+			}
+
+			if (!idsFiltered.empty()) {
+				const std::span<const IdType> sp(idsFiltered);
+				appender(sp.begin(), sp.end(), vid);
+			}
+		} else {
+			appender(realIds.begin(), realIds.end(), vid);
+		}
 	}
 }
 

@@ -108,7 +108,7 @@ struct [[nodiscard]] AreasEx : public Areas {
 };
 
 template <typename A>
-A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
+A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const std::pair<unsigned, unsigned>& area) {
 	using PointType = std::conditional_t<std::is_same_v<Areas, A>, WordPosition, WordPositionEx>;
 	constexpr bool needChar = std::is_same_v<AreasEx, A>;
 	A outAreas;
@@ -116,11 +116,11 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
 	splitterTask->SetText(str_);
 
 	PointType p1;
-	splitterTask->WordToByteAndCharPos(area.start - wordCount_, p1);
+	splitterTask->WordToByteAndCharPos(area.first - wordCount_, p1);
 
-	wordCount_ += area.start - wordCount_;
+	wordCount_ += area.first - wordCount_;
 	outAreas.zoneArea.start = p1.StartByte() + stringBeginOffsetByte_;
-	if (area.end - area.start > 1) {
+	if (area.second - area.first > 1) {
 		wordCount_++;
 		stringBeginOffsetByte_ += p1.EndByte();
 		if constexpr (needChar) {
@@ -130,8 +130,8 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
 		str_ = str_.substr(p1.EndByte());
 		splitterTask->SetText(str_);
 		PointType p2;
-		splitterTask->WordToByteAndCharPos(area.end - wordCount_ - 1, p2);
-		wordCount_ += area.end - wordCount_;
+		splitterTask->WordToByteAndCharPos(area.second - wordCount_ - 1, p2);
+		wordCount_ += area.second - wordCount_;
 		outAreas.zoneArea.end = p2.EndByte() + stringBeginOffsetByte_;
 		if constexpr (needChar) {
 			outAreas.snippetAreaChar.end = p2.end.ch + stringBeginOffsetChar_;
@@ -165,13 +165,13 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area& area) {
 	return outAreas;
 }
 
-void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, std::string_view data,
-						  std::string& resultString) {
+void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const h_vector<std::pair<unsigned, unsigned>, 10>& areas,
+						  std::string_view data, std::string& resultString) {
 	// resultString = preDelim_ + with_area_str + data_str_before + marker_before + zone_str + marker_after + data_strAfter + postDelim_
 	Area snippetAreaPrev;
 	zonesList_.clear<false>();
 
-	for (const auto& area : pva.GetData()) {
+	for (const auto& area : areas) {
 		Areas a = recalcZoneHelper.template RecalcZoneToOffset<Areas>(area);
 
 		if (snippetAreaPrev.start == 0 && snippetAreaPrev.end == 0) {
@@ -208,14 +208,14 @@ void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const AreasInField
 	resultString.append(postDelim_);
 }
 
-void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const AreasInField<Area>& pva, std::string_view data,
-									std::string& resultString) {
+void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const h_vector<std::pair<unsigned, unsigned>, 10>& areas,
+									std::string_view data, std::string& resultString) {
 	// resultString = preDelim_ + with_area_str + data_str_before + marker_before + zone_str + marker_after + data_strAfter + postDelim_
 	Area snippetAreaPrev;
 	Area snippetAreaPrevChar;
 	zonesList_.clear<false>();
 
-	for (const auto& area : pva.GetData()) {
+	for (const auto& area : areas) {
 		AreasEx a = recalcZoneHelper.template RecalcZoneToOffset<AreasEx>(area);
 		if (snippetAreaPrev.start == 0 && snippetAreaPrev.end == 0) {
 			snippetAreaPrev = a.snippetArea;
@@ -265,32 +265,47 @@ bool Snippet::Process(ItemRef& res, PayloadType& plType, const FtFuncStruct& fun
 
 	VariantArray kr;
 	pl.Get(func.field, kr);
-	if (kr.empty() || !kr[0].Type().IsSame(KeyValueType::String{})) {
+
+	if (kr.empty()) {
 		throw Error(errLogic, "Unable to apply snippet function to the non-string field '{}'", func.field);
 	}
 
-	const std::string_view data = std::string_view(p_string(kr[0]));
+	for (const auto& k : kr) {
+		if (!k.Type().IsSame(KeyValueType::String{})) {
+			throw Error(errLogic, "Unable to apply snippet function to the non-string field '{}'", func.field);
+		}
+	}
 
 	auto pva = dataFtCtx.area[it->second].GetAreas(func.fieldNo);
 	if (!pva || pva->Empty()) {
 		return false;
 	}
 
-	std::string resultString;
-	resultString.reserve(data.size());
+	initAreas(kr.size(), pva->GetData());
+	sortAndJoinIntersectingAreas();
 
-	RecalcZoneHelper recalcZoneHelper(data, ftctx->GetData()->splitter, after_, before_, leftBound_, rightBound_);
+	plArr_.resize(0);
+	plArr_.reserve(kr.size());
 
-	if (needAreaStr_) {
-		buildResultWithPrefix(recalcZoneHelper, *pva, data, resultString);
-	} else {
-		buildResult(recalcZoneHelper, *pva, data, resultString);
+	for (size_t arrIdx = 0; arrIdx < kr.size(); ++arrIdx) {
+		const std::string_view data = std::string_view(p_string(kr[arrIdx]));
+		std::string resultString;
+		resultString.reserve(data.size());
+
+		RecalcZoneHelper recalcZoneHelper(data, ftctx->GetData()->splitter, after_, before_, leftBound_, rightBound_);
+		if (needAreaStr_) {
+			buildResultWithPrefix(recalcZoneHelper, areasByArrayIdxs_[arrIdx], data, resultString);
+		} else {
+			buildResult(recalcZoneHelper, areasByArrayIdxs_[arrIdx], data, resultString);
+		}
+
+		stringsHolder.emplace_back(make_key_string(std::move(resultString)));
+		plArr_.emplace_back(stringsHolder.back());
 	}
 
-	stringsHolder.emplace_back(make_key_string(std::move(resultString)));
 	res.Value().Clone();
 
-	pl.Set(func.field, Variant{stringsHolder.back()});
+	pl.Set(func.field, plArr_);
 	return true;
 }
 }  // namespace reindexer

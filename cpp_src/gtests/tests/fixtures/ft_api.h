@@ -6,7 +6,7 @@
 
 class [[nodiscard]] FTApi : public ::testing::TestWithParam<reindexer::FtFastConfig::Optimization> {
 public:
-	enum { NS1 = 1, NS2 = 2, NS3 = 4 };
+	enum { NS1 = 1, NS2 = 2, NS3 = 4, NS4 = 8 };
 	void Init(const reindexer::FtFastConfig& ftCfg, unsigned nses = NS1, const std::string& storage = std::string());
 
 	virtual reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2);
@@ -23,6 +23,7 @@ public:
 	std::pair<std::string_view, int> Add(std::string_view ft1);
 	void Add(std::string_view ns, std::string_view ft1, std::string_view ft2);
 	void Add(std::string_view ns, std::string_view ft1, std::string_view ft2, std::string_view ft3);
+	void AddNs4(const std::string& ft1, const std::vector<std::string>& ft2, const std::vector<std::string>& ft3);
 
 	void AddInBothFields(std::string_view w1, std::string_view w2, unsigned nses = NS1);
 

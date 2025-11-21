@@ -107,6 +107,8 @@
   * [DatabaseMemStats](#databasememstats)
   * [NamespaceMemStats](#namespacememstats)
   * [IndexMemStat](#indexmemstat)
+  * [EmbedderStatus](#embedderstatus)
+  * [EmbedderLastError](#embedderlasterror)
   * [EmbeddersCacheMemStat](#embedderscachememstat)
   * [JoinCacheMemStats](#joincachememstats)
   * [QueryCacheMemStats](#querycachememstats)
@@ -123,6 +125,7 @@
   * [QueryPerfStats](#queryperfstats)
   * [LRUCachePerfStats](#lrucacheperfstats)
   * [EmbedderCachePerfStat](#embeddercacheperfstat)
+  * [EmbedderPerfStat](#embedderperfstat)
   * [SystemConfigItems](#systemconfigitems)
   * [SystemConfigItem](#systemconfigitem)
   * [ProfilingConfig](#profilingconfig)
@@ -146,7 +149,7 @@
 
 <!-- tocstop -->
 
-> Version 5.8.0
+> Version 5.9.0
 
 ## Overview
 
@@ -266,6 +269,8 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | DatabaseMemStats | [DatabaseMemStats](#databasememstats) |  |
 | NamespaceMemStats | [NamespaceMemStats](#namespacememstats) |  |
 | IndexMemStat | [IndexMemStat](#indexmemstat) |  |
+| EmbedderStatus | [EmbedderStatus](#embedderstatus) |  |
+| EmbedderLastError | [EmbedderLastError](#embedderlasterror) |  |
 | EmbeddersCacheMemStat | [EmbeddersCacheMemStat](#embedderscachememstat) |  |
 | JoinCacheMemStats | [JoinCacheMemStats](#joincachememstats) | Join cache stats. Stores results of selects to right table by ON condition |
 | QueryCacheMemStats | [QueryCacheMemStats](#querycachememstats) by Where conditions |
@@ -282,6 +287,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | QueryPerfStats | [QueryPerfStats](#queryperfstats) | Performance statistics per each query |
 | LRUCachePerfStats | [LRUCachePerfStats](#lrucacheperfstats) | Performance statistics for specific LRU-cache instance |
 | EmbedderCachePerfStat | [EmbedderCachePerfStat](#embeddercacheperfstat) | Performance statistics for specific Embedder LRU-cache instance |
+| EmbedderPerfStat | [EmbedderPerfStat](#embedderperfstat) |  |
 | SystemConfigItems | [SystemConfigItems](#systemconfigitems) |  |
 | SystemConfigItem | [SystemConfigItem](#systemconfigitem) |  |
 | ProfilingConfig | [ProfilingConfig](#profilingconfig) |  |
@@ -6587,6 +6593,17 @@ This operation will return detailed information about database memory consumptio
       tracked_updates_overflow?: integer
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
+      upsert_embedder: {
+        // Last request execution status
+        last_request_result?: enum[OK, ERROR]
+        last_error: {
+          // Error code. 0 - no error.
+          code?: integer
+          // Error message
+          message?: string
+        }
+      }
+      query_embedder:EmbedderStatus
     }[]
     embedding_caches: {
       // Tag of cache from configuration
@@ -6612,6 +6629,17 @@ This operation will return detailed information about database memory consumptio
       // Disk space occupied by storage
       storage_size?: integer
     }[]
+    // Status of tags matcher
+    tags_matcher: {
+      // Current count of tags in tags matcher
+      tags_count?: integer
+      // Maximum count of tags in tags matcher
+      max_tags_count?: integer
+      // Version of tags matcher
+      version?: integer
+      // State token of tags matcher
+      state_token?: integer
+    }
   }[]
 }
 ```
@@ -6761,18 +6789,64 @@ This operation will return detailed information about database performance timin
       updates:UpdatePerfStats
       selects:SelectPerfStats
       cache:LRUCachePerfStats
-      // Performance statistics for specific Embedder LRU-cache instance
-      upsert_embedder_cache: {
-        // Name. Identifier for linking settings
-        cache_tag?: string
-        // Queries total count
-        total_queries?: integer
-        // Cache hit rate (hits / total_queries)
-        cache_hit_rate?: number
-        // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
-        is_active?: boolean
+      upsert_embedder: {
+        // Total number of calls to a specific embedder
+        total_queries_count?: integer
+        // Total number of requested vectors
+        total_embed_documents_count?: integer
+        // Number of calls to the embedder in the last second
+        last_sec_qps?: integer
+        // Number of embedded documents in the last second
+        last_sec_dps?: integer
+        // Total number of errors accessing the embedder
+        total_errors_count?: integer
+        // Number of errors in the last second
+        last_second_errors_count?: integer
+        // Current number of connections in use
+        conn_in_use?: integer
+        // Average number of connections used over the last second
+        last_sec_avg_conn_in_use?: integer
+        // Average overall autoembedding latency (over all time)
+        total_avg_latency_us?: integer
+        // Average autoembedding latency (over the last second)
+        last_sec_avg_latency_us?: integer
+        // Maximum total autoembedding latency (all time)
+        max_latency_us?: integer
+        // Minimum overall autoembedding latency (all time)
+        min_latency_us?: integer
+        // Average latency of waiting for a connection from the pool (over all time)
+        total_avg_conn_await_latency_us?: integer
+        // Average latency of waiting for a connection from the pool (over the last second)
+        last_sec_avg_conn_await_latency_us?: integer
+        // Average auto-embedding latency on cache miss (over all time)
+        total_avg_embed_latency_us?: integer
+        // Average auto-embedding latency for cache misses (last second)
+        last_sec_avg_embed_latency_us?: integer
+        // Maximum auto-embedding latency on cache miss (all time)
+        max_embed_latency_us?: integer
+        // Minimum auto-embedding latency on cache miss (all time)
+        min_embed_latency_us?: integer
+        // Average auto-embedding latency for cache hits (over all time)
+        total_avg_cache_latency_us?: integer
+        // Average auto-embedding latency for cache hits (last second)
+        last_sec_avg_cache_latency_us?: integer
+        // Maximum auto-embedding latency on a cache hit (all time)
+        max_cache_latency_us?: integer
+        // Minimum auto-embedding latency for a cache hit (all time)
+        min_cache_latency_us?: integer
+        // Performance statistics for specific Embedder LRU-cache instance
+        cache: {
+          // Name. Identifier for linking settings
+          cache_tag?: string
+          // Queries total count
+          total_queries?: integer
+          // Cache hit rate (hits / total_queries)
+          cache_hit_rate?: number
+          // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
+          is_active?: boolean
+        }
       }
-      query_embedder_cache:EmbedderCachePerfStat
+      query_embedder:EmbedderPerfStat
     }[]
   }[]
 }
@@ -9476,6 +9550,17 @@ string[]
       tracked_updates_overflow?: integer
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
+      upsert_embedder: {
+        // Last request execution status
+        last_request_result?: enum[OK, ERROR]
+        last_error: {
+          // Error code. 0 - no error.
+          code?: integer
+          // Error message
+          message?: string
+        }
+      }
+      query_embedder:EmbedderStatus
     }[]
     embedding_caches: {
       // Tag of cache from configuration
@@ -9501,6 +9586,17 @@ string[]
       // Disk space occupied by storage
       storage_size?: integer
     }[]
+    // Status of tags matcher
+    tags_matcher: {
+      // Current count of tags in tags matcher
+      tags_count?: integer
+      // Maximum count of tags in tags matcher
+      max_tags_count?: integer
+      // Version of tags matcher
+      version?: integer
+      // State token of tags matcher
+      state_token?: integer
+    }
   }[]
 }
 ```
@@ -9618,6 +9714,17 @@ string[]
     tracked_updates_overflow?: integer
     // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
     is_built?: boolean
+    upsert_embedder: {
+      // Last request execution status
+      last_request_result?: enum[OK, ERROR]
+      last_error: {
+        // Error code. 0 - no error.
+        code?: integer
+        // Error message
+        message?: string
+      }
+    }
+    query_embedder:EmbedderStatus
   }[]
   embedding_caches: {
     // Tag of cache from configuration
@@ -9643,6 +9750,17 @@ string[]
     // Disk space occupied by storage
     storage_size?: integer
   }[]
+  // Status of tags matcher
+  tags_matcher: {
+    // Current count of tags in tags matcher
+    tags_count?: integer
+    // Maximum count of tags in tags matcher
+    max_tags_count?: integer
+    // Version of tags matcher
+    version?: integer
+    // State token of tags matcher
+    state_token?: integer
+  }
 }
 ```
 
@@ -9678,6 +9796,43 @@ string[]
   tracked_updates_overflow?: integer
   // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
   is_built?: boolean
+  upsert_embedder: {
+    // Last request execution status
+    last_request_result?: enum[OK, ERROR]
+    last_error: {
+      // Error code. 0 - no error.
+      code?: integer
+      // Error message
+      message?: string
+    }
+  }
+  query_embedder:EmbedderStatus
+}
+```
+
+### EmbedderStatus
+
+```ts
+{
+  // Last request execution status
+  last_request_result?: enum[OK, ERROR]
+  last_error: {
+    // Error code. 0 - no error.
+    code?: integer
+    // Error message
+    message?: string
+  }
+}
+```
+
+### EmbedderLastError
+
+```ts
+{
+  // Error code. 0 - no error.
+  code?: integer
+  // Error message
+  message?: string
 }
 ```
 
@@ -9867,18 +10022,64 @@ string[]
       updates:UpdatePerfStats
       selects:SelectPerfStats
       cache:LRUCachePerfStats
-      // Performance statistics for specific Embedder LRU-cache instance
-      upsert_embedder_cache: {
-        // Name. Identifier for linking settings
-        cache_tag?: string
-        // Queries total count
-        total_queries?: integer
-        // Cache hit rate (hits / total_queries)
-        cache_hit_rate?: number
-        // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
-        is_active?: boolean
+      upsert_embedder: {
+        // Total number of calls to a specific embedder
+        total_queries_count?: integer
+        // Total number of requested vectors
+        total_embed_documents_count?: integer
+        // Number of calls to the embedder in the last second
+        last_sec_qps?: integer
+        // Number of embedded documents in the last second
+        last_sec_dps?: integer
+        // Total number of errors accessing the embedder
+        total_errors_count?: integer
+        // Number of errors in the last second
+        last_second_errors_count?: integer
+        // Current number of connections in use
+        conn_in_use?: integer
+        // Average number of connections used over the last second
+        last_sec_avg_conn_in_use?: integer
+        // Average overall autoembedding latency (over all time)
+        total_avg_latency_us?: integer
+        // Average autoembedding latency (over the last second)
+        last_sec_avg_latency_us?: integer
+        // Maximum total autoembedding latency (all time)
+        max_latency_us?: integer
+        // Minimum overall autoembedding latency (all time)
+        min_latency_us?: integer
+        // Average latency of waiting for a connection from the pool (over all time)
+        total_avg_conn_await_latency_us?: integer
+        // Average latency of waiting for a connection from the pool (over the last second)
+        last_sec_avg_conn_await_latency_us?: integer
+        // Average auto-embedding latency on cache miss (over all time)
+        total_avg_embed_latency_us?: integer
+        // Average auto-embedding latency for cache misses (last second)
+        last_sec_avg_embed_latency_us?: integer
+        // Maximum auto-embedding latency on cache miss (all time)
+        max_embed_latency_us?: integer
+        // Minimum auto-embedding latency on cache miss (all time)
+        min_embed_latency_us?: integer
+        // Average auto-embedding latency for cache hits (over all time)
+        total_avg_cache_latency_us?: integer
+        // Average auto-embedding latency for cache hits (last second)
+        last_sec_avg_cache_latency_us?: integer
+        // Maximum auto-embedding latency on a cache hit (all time)
+        max_cache_latency_us?: integer
+        // Minimum auto-embedding latency for a cache hit (all time)
+        min_cache_latency_us?: integer
+        // Performance statistics for specific Embedder LRU-cache instance
+        cache: {
+          // Name. Identifier for linking settings
+          cache_tag?: string
+          // Queries total count
+          total_queries?: integer
+          // Cache hit rate (hits / total_queries)
+          cache_hit_rate?: number
+          // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
+          is_active?: boolean
+        }
       }
-      query_embedder_cache:EmbedderCachePerfStat
+      query_embedder:EmbedderPerfStat
     }[]
   }[]
 }
@@ -9941,18 +10142,64 @@ string[]
     updates:UpdatePerfStats
     selects:SelectPerfStats
     cache:LRUCachePerfStats
-    // Performance statistics for specific Embedder LRU-cache instance
-    upsert_embedder_cache: {
-      // Name. Identifier for linking settings
-      cache_tag?: string
-      // Queries total count
-      total_queries?: integer
-      // Cache hit rate (hits / total_queries)
-      cache_hit_rate?: number
-      // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
-      is_active?: boolean
+    upsert_embedder: {
+      // Total number of calls to a specific embedder
+      total_queries_count?: integer
+      // Total number of requested vectors
+      total_embed_documents_count?: integer
+      // Number of calls to the embedder in the last second
+      last_sec_qps?: integer
+      // Number of embedded documents in the last second
+      last_sec_dps?: integer
+      // Total number of errors accessing the embedder
+      total_errors_count?: integer
+      // Number of errors in the last second
+      last_second_errors_count?: integer
+      // Current number of connections in use
+      conn_in_use?: integer
+      // Average number of connections used over the last second
+      last_sec_avg_conn_in_use?: integer
+      // Average overall autoembedding latency (over all time)
+      total_avg_latency_us?: integer
+      // Average autoembedding latency (over the last second)
+      last_sec_avg_latency_us?: integer
+      // Maximum total autoembedding latency (all time)
+      max_latency_us?: integer
+      // Minimum overall autoembedding latency (all time)
+      min_latency_us?: integer
+      // Average latency of waiting for a connection from the pool (over all time)
+      total_avg_conn_await_latency_us?: integer
+      // Average latency of waiting for a connection from the pool (over the last second)
+      last_sec_avg_conn_await_latency_us?: integer
+      // Average auto-embedding latency on cache miss (over all time)
+      total_avg_embed_latency_us?: integer
+      // Average auto-embedding latency for cache misses (last second)
+      last_sec_avg_embed_latency_us?: integer
+      // Maximum auto-embedding latency on cache miss (all time)
+      max_embed_latency_us?: integer
+      // Minimum auto-embedding latency on cache miss (all time)
+      min_embed_latency_us?: integer
+      // Average auto-embedding latency for cache hits (over all time)
+      total_avg_cache_latency_us?: integer
+      // Average auto-embedding latency for cache hits (last second)
+      last_sec_avg_cache_latency_us?: integer
+      // Maximum auto-embedding latency on a cache hit (all time)
+      max_cache_latency_us?: integer
+      // Minimum auto-embedding latency for a cache hit (all time)
+      min_cache_latency_us?: integer
+      // Performance statistics for specific Embedder LRU-cache instance
+      cache: {
+        // Name. Identifier for linking settings
+        cache_tag?: string
+        // Queries total count
+        total_queries?: integer
+        // Cache hit rate (hits / total_queries)
+        cache_hit_rate?: number
+        // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
+        is_active?: boolean
+      }
     }
-    query_embedder_cache:EmbedderCachePerfStat
+    query_embedder:EmbedderPerfStat
   }[]
 }
 ```
@@ -10113,6 +10360,68 @@ string[]
   cache_hit_rate?: number
   // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
   is_active?: boolean
+}
+```
+
+### EmbedderPerfStat
+
+```ts
+{
+  // Total number of calls to a specific embedder
+  total_queries_count?: integer
+  // Total number of requested vectors
+  total_embed_documents_count?: integer
+  // Number of calls to the embedder in the last second
+  last_sec_qps?: integer
+  // Number of embedded documents in the last second
+  last_sec_dps?: integer
+  // Total number of errors accessing the embedder
+  total_errors_count?: integer
+  // Number of errors in the last second
+  last_second_errors_count?: integer
+  // Current number of connections in use
+  conn_in_use?: integer
+  // Average number of connections used over the last second
+  last_sec_avg_conn_in_use?: integer
+  // Average overall autoembedding latency (over all time)
+  total_avg_latency_us?: integer
+  // Average autoembedding latency (over the last second)
+  last_sec_avg_latency_us?: integer
+  // Maximum total autoembedding latency (all time)
+  max_latency_us?: integer
+  // Minimum overall autoembedding latency (all time)
+  min_latency_us?: integer
+  // Average latency of waiting for a connection from the pool (over all time)
+  total_avg_conn_await_latency_us?: integer
+  // Average latency of waiting for a connection from the pool (over the last second)
+  last_sec_avg_conn_await_latency_us?: integer
+  // Average auto-embedding latency on cache miss (over all time)
+  total_avg_embed_latency_us?: integer
+  // Average auto-embedding latency for cache misses (last second)
+  last_sec_avg_embed_latency_us?: integer
+  // Maximum auto-embedding latency on cache miss (all time)
+  max_embed_latency_us?: integer
+  // Minimum auto-embedding latency on cache miss (all time)
+  min_embed_latency_us?: integer
+  // Average auto-embedding latency for cache hits (over all time)
+  total_avg_cache_latency_us?: integer
+  // Average auto-embedding latency for cache hits (last second)
+  last_sec_avg_cache_latency_us?: integer
+  // Maximum auto-embedding latency on a cache hit (all time)
+  max_cache_latency_us?: integer
+  // Minimum auto-embedding latency for a cache hit (all time)
+  min_cache_latency_us?: integer
+  // Performance statistics for specific Embedder LRU-cache instance
+  cache: {
+    // Name. Identifier for linking settings
+    cache_tag?: string
+    // Queries total count
+    total_queries?: integer
+    // Cache hit rate (hits / total_queries)
+    cache_hit_rate?: number
+    // Determines if cache is currently in use. Usually it has 'false' value for uncommitted indexes
+    is_active?: boolean
+  }
 }
 ```
 

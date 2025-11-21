@@ -18,13 +18,13 @@ protected:
 	};
 
 	void SetUp() {
-		rx_unused = fs::RmDirAll(kBaseTestsetDbPath);
+		std::ignore = fs::RmDirAll(kBaseTestsetDbPath);
 		StartServer();
 	}
 	void TearDown() {
 		[[maybe_unused]] auto err = RPCClientTestApi::StopAllServers();
 		assertf(err.ok(), "{}", err.what());
-		rx_unused = fs::RmDirAll(kBaseTestsetDbPath);
+		std::ignore = fs::RmDirAll(kBaseTestsetDbPath);
 	}
 
 	void StartServer() {

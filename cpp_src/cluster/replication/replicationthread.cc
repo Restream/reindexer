@@ -223,7 +223,7 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 			if (!terminateCh_.opened()) {
 				terminateCh_.reopen();
 			}
-			rx_unused = terminateCh_.pop();
+			std::ignore = terminateCh_.pop();
 		}
 
 		wg.wait();
@@ -611,10 +611,10 @@ std::tuple<bool, UpdateApplyStatus> ReplThread<BehaviourParamT>::handleNetworkCh
 			err = node.client.WithTimeout(kStatusCmdTimeout).Status(true);
 			hadActualNetworkCheck = true;
 		}
-		rx_unused = updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
+		std::ignore = updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
 		return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(std::move(err), updates::URType::NodeNetworkCheck));
 	}
-	rx_unused = updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
+	std::ignore = updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
 	return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(Error(), updates::URType::NodeNetworkCheck));
 }
 
@@ -899,7 +899,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 				const auto& nsName = it.NsName();
 				if constexpr (!isClusterReplThread()) {
 					if (!bhvParam_.IsNamespaceInConfig(node.uid, nsName)) {
-						rx_unused = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
+						std::ignore = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
 						bhvParam_.OnUpdateSucceed(node.uid, updatePtr->ID() + offset);
 						continue;
 					}
@@ -917,8 +917,8 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 						"version: {}, last synced lsn: {}",
 						serverId_, node.uid, nsName, int(it.Type()), updatePtr->ID() + offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
 						nsData.latestLsn.NsVersion(), nsData.latestLsn.LSN());
-					rx_unused = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
-														   it.EmitterServerID() == node.serverId, Error());
+					std::ignore = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
+															 it.EmitterServerID() == node.serverId, Error());
 					continue;
 				}
 				if (nsData.tx.IsFree() && it.IsRequiringTx()) {
@@ -1006,7 +1006,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 			bhvParam_.OnAllUpdatesReplicated(node.uid, int64_t(node.nextUpdateId) - 1);
 			logTrace("{}:{} Awaiting updates...", serverId_, node.uid);
 		}
-		rx_unused = updatesNotifier.pop();
+		std::ignore = updatesNotifier.pop();
 	}
 	if (terminate_) {
 		logTrace("{}: updates handling loop was terminated", serverId_);
@@ -1021,7 +1021,7 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 	bool hadErrorOnLastUpdate = false;
 
 	if (!updatesNotifier.empty()) {
-		rx_unused = updatesNotifier.pop();
+		std::ignore = updatesNotifier.pop();
 	}
 	do {
 		updatePtr = updates_->Read(node.nextUpdateId, std::this_thread::get_id());

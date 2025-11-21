@@ -645,7 +645,7 @@ int HTTPServer::GetMetaList(http::Context& ctx) {
 			if (!err.ok()) {
 				return jsonStatus(ctx, http::HttpStatus(err));
 			}
-			objNode.Put("value", escapeString(value));
+			objNode.Put("value", value);
 		}
 		objNode.End();
 	}
@@ -671,8 +671,8 @@ int HTTPServer::GetMetaByKey(http::Context& ctx) {
 	}
 	WrSerializer ser(ctx.writer->GetChunk());
 	JsonBuilder builder(ser);
-	builder.Put("key", escapeString(key));
-	builder.Put("value", escapeString(value));
+	builder.Put("key", key);
+	builder.Put("value", value);
 	builder.End();
 
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
@@ -692,7 +692,7 @@ int HTTPServer::PutMetaByKey(http::Context& ctx) {
 		const std::string value = root["value"].As<std::string>();
 
 		auto db = getDB<kRoleDataWrite>(ctx);
-		const auto err = db.PutMeta(nsName, key, unescapeString(value));
+		const auto err = db.PutMeta(nsName, key, value);
 		if (!err.ok()) {
 			return status(ctx, http::HttpStatus(err));
 		}
@@ -917,18 +917,18 @@ int HTTPServer::Check(http::Context& ctx) {
 
 			uint64_t epoch = 1;
 			sz = sizeof(epoch);
-			rx_unused = alloc_ext::mallctl("epoch", &epoch, &sz, &epoch, sz);
+			std::ignore = alloc_ext::mallctl("epoch", &epoch, &sz, &epoch, sz);
 
-			rx_unused = alloc_ext::mallctl("stats.resident", &val, &sz, NULL, 0);
+			std::ignore = alloc_ext::mallctl("stats.resident", &val, &sz, NULL, 0);
 			builder.Put("heap_size", val);
 
-			rx_unused = alloc_ext::mallctl("stats.allocated", &val, &sz, NULL, 0);
+			std::ignore = alloc_ext::mallctl("stats.allocated", &val, &sz, NULL, 0);
 			builder.Put("current_allocated_bytes", val);
 
-			rx_unused = alloc_ext::mallctl("stats.active", &val1, &sz, NULL, 0);
+			std::ignore = alloc_ext::mallctl("stats.active", &val1, &sz, NULL, 0);
 			builder.Put("pageheap_free", val1 - val);
 
-			rx_unused = alloc_ext::mallctl("stats.retained", &val, &sz, NULL, 0);
+			std::ignore = alloc_ext::mallctl("stats.retained", &val, &sz, NULL, 0);
 			builder.Put("pageheap_unmapped", val);
 		}
 #elif REINDEX_WITH_GPERFTOOLS
@@ -1917,7 +1917,7 @@ Reindexer HTTPServer::getDB(http::Context& ctx, std::string* dbNameOut) {
 	std::optional<int> timeoutSec;
 	if (!timeoutHeader.empty()) {
 		timeoutSec = try_stoi(timeoutHeader);
-		if rx_unlikely (!timeoutSec.has_value()) {
+		if (!timeoutSec.has_value()) [[unlikely]] {
 			logger_.warn("Unable to get integer value from 'Request-Timeout'-header('{}'). Using default value", timeoutHeader);
 		}
 	}
@@ -2013,7 +2013,7 @@ int HTTPServer::getAuth(http::Context& ctx, AuthContext& auth, const std::string
 
 	if (authHeader.length() < 6) {
 		ctx.writer->SetHeader({"WWW-Authenticate"sv, R"(Basic realm="reindexer")"});
-		rx_unused = ctx.String(http::StatusUnauthorized, "Forbidden"sv);
+		std::ignore = ctx.String(http::StatusUnauthorized, "Forbidden"sv);
 		return -1;
 	}
 
@@ -2029,7 +2029,7 @@ int HTTPServer::getAuth(http::Context& ctx, AuthContext& auth, const std::string
 	const auto err = dbMgr_.Login(dbName, auth);
 	if (!err.ok()) {
 		ctx.writer->SetHeader({"WWW-Authenticate"sv, R"(Basic realm="reindexer")"});
-		rx_unused = ctx.String(http::StatusUnauthorized, err.whatStr());
+		std::ignore = ctx.String(http::StatusUnauthorized, err.whatStr());
 		return -1;
 	}
 

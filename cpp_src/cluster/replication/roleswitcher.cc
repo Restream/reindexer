@@ -74,7 +74,7 @@ void RoleSwitcher::SetTerminationFlag(bool val) noexcept {
 }
 
 void RoleSwitcher::await() {
-	rx_unused = awaitCh_.pop();
+	std::ignore = awaitCh_.pop();
 	if (!isTerminated()) {
 		handleRoleSwitch();
 	}

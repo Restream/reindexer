@@ -2,13 +2,10 @@
 
 #include <functional>
 #include <variant>
-#include <vector>
 #include "core/keyvalue/variant.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "estl/overloaded.h"
-#include "ranges.h"
-#include "tools/assertrx.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -47,7 +44,7 @@ public:
 	private:
 		bool compare(const Variant& lhs, const Variant& rhs) const {
 			if (IsInt(lhs, rhs)) {
-				return lhs.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs) == ComparationResult::Eq;
+				return lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, NullsHandling::NotComparable>(rhs) == ComparationResult::Eq;
 			}
 
 			ValidateTypes(lhs, rhs);
@@ -65,7 +62,7 @@ public:
 	private:
 		bool compare(const Variant& lhs, const Variant& rhs) const {
 			if (IsInt(lhs, rhs)) {
-				return lhs.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs) == ComparationResult::Lt;
+				return lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, NullsHandling::NotComparable>(rhs) == ComparationResult::Lt;
 			}
 
 			ValidateTypes(lhs, rhs);
@@ -108,20 +105,22 @@ private:
 		int defaultShard;
 
 		int GetShardId(const Variant& val) const {
-			return std::visit(overloaded{[&val, this](const VariantHashMap& values) {
-											 auto it = values.find(val);
-											 return (it == values.end()) ? defaultShard : it->second;
-										 },
-										 [&val, this](const Variant4SegmentMap& values) {
-											 auto it = values.lower_bound(val);
-											 if (it == values.end() ||
-												 (!it->first.isRightBound && it->first.RelaxCompare<WithString::Yes, NotComparable::Throw>(
-																				 val) != ComparationResult::Eq)) {
-												 return defaultShard;
-											 }
-											 return it->second;
-										 }},
-							  keysToShard);
+			return std::visit(
+				overloaded{[&val, this](const VariantHashMap& values) {
+							   auto it = values.find(val);
+							   return (it == values.end()) ? defaultShard : it->second;
+						   },
+						   [&val, this](const Variant4SegmentMap& values) {
+							   auto it = values.lower_bound(val);
+							   if (it == values.end() ||
+								   (!it->first.isRightBound &&
+									it->first.RelaxCompare<WithString::Yes, NotComparable::Throw, NullsHandling::NotComparable>(val) !=
+										ComparationResult::Eq)) {
+								   return defaultShard;
+							   }
+							   return it->second;
+						   }},
+				keysToShard);
 		}
 	};
 	fast_hash_set<int> getShardsIds(const NsData& ns) const;

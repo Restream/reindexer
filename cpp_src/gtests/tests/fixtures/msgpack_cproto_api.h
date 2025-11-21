@@ -22,7 +22,7 @@ public:
 
 	void SetUp() {
 		using reindexer::client::RPCDataFormat;
-		rx_unused = reindexer::fs::RmDirAll(kDbPath);
+		std::ignore = reindexer::fs::RmDirAll(kDbPath);
 		YAML::Node y;
 		y["storage"]["path"] = kDbPath;
 		y["logger"]["loglevel"] = "none";

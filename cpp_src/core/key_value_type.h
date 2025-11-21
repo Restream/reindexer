@@ -4,6 +4,7 @@
 #include <string_view>
 #include <utility>
 #include "core/type_consts.h"
+#include "estl/defines.h"
 #include "estl/overloaded.h"
 #include "tools/assertrx.h"
 

@@ -42,6 +42,8 @@ public:
 				   ? (comparators::kNonIdxFieldComparatorCostMultiplier * double(expectedIterations) + jsonPathComparators + 1.0)
 				   : (double(expectedIterations) + 1.0);
 	}
+	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType /*rowId*/) const noexcept {}
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 
 	auto Name() const&& = delete;
 	auto Dump() const&& = delete;
@@ -89,6 +91,8 @@ public:
 	double Cost(double expectedIterations) const noexcept {
 		return comparators::kNonIdxFieldComparatorCostMultiplier * double(expectedIterations) + fieldPathPart_.size() + 1.0;
 	}
+	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType /*rowId*/) const noexcept {}
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
 
 	auto Name() const&& = delete;
 	auto Dump() const&& = delete;

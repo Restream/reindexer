@@ -150,7 +150,7 @@ ServerControl::Interface::Ptr ReplicationApi::GetSrv(size_t id) {
 
 void ReplicationApi::SetUp() {
 	reindexer::lock_guard lock(m_);
-	rx_unused = reindexer::fs::RmDirAll(kStoragePath + "node");
+	std::ignore = reindexer::fs::RmDirAll(kStoragePath + "node");
 
 	svc_.push_back(ServerControl());
 	std::vector<AsyncReplicationConfigTest::Node> followers;
@@ -188,5 +188,5 @@ void ReplicationApi::TearDown() {
 		}
 	}
 	svc_.clear();
-	rx_unused = reindexer::fs::RmDirAll(kStoragePath + "node");
+	std::ignore = reindexer::fs::RmDirAll(kStoragePath + "node");
 }

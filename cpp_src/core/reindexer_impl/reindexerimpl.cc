@@ -1758,7 +1758,7 @@ void ReindexerImpl::createEmbeddings(const Namespace::Ptr& ns, uint32_t batchSiz
 	bool embeddersDetected = false;
 	auto payloadType = ns->GetPayloadType(ctx);
 	for (int field = 1, numFields = payloadType->NumFields(); field < numFields; field++) {
-		if (payloadType->Field(field).Embedder()) {
+		if (payloadType->Field(field).UpsertEmbedder()) {
 			embeddersDetected = true;
 			break;
 		}
@@ -2723,7 +2723,8 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		}
 		const bool allowSpecialChars = true;
 		if (!validateObjectName(nsDef.name, allowSpecialChars)) {
-			return Error(errParams, "Namespace name '{}' contains invalid character. Only alphas, digits,'_' and '-' are allowed", nsDef.name);
+			return Error(errParams, "Namespace name '{}' contains invalid character. Only alphas, digits,'_' and '-' are allowed",
+						 nsDef.name);
 		}
 		assertrx(clusterManager_);
 		ns = std::make_shared<Namespace>(nsDef.name, replOpts.has_value() ? replOpts->tmStateToken : std::optional<int32_t>(),

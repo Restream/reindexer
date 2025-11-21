@@ -13,7 +13,7 @@ using namespace reindexer;
 
 void ClientsStatsApi::RunServerInThread(bool statEnable) {
 	const std::string kdbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "clientstats_test");
-	rx_unused = reindexer::fs::RmDirAll(kdbPath);
+	std::ignore = reindexer::fs::RmDirAll(kdbPath);
 	YAML::Node y;
 	y["storage"]["path"] = kdbPath;
 	y["metrics"]["clientsstats"] = statEnable ? true : false;

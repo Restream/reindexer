@@ -236,7 +236,7 @@ void PayloadTypeImpl::checkNewNameBeforeAdd(const PayloadFieldType& f) const {
 
 std::string_view PayloadTypeImpl::CheckEmbeddersAuxiliaryField(std::string_view fieldName) const {
 	for (const auto& field : fields_) {
-		auto embedder = field.Embedder();
+		auto embedder = field.UpsertEmbedder();
 		if (embedder && embedder->IsAuxiliaryField(fieldName)) {
 			return embedder->FieldName();
 		}
@@ -245,7 +245,7 @@ std::string_view PayloadTypeImpl::CheckEmbeddersAuxiliaryField(std::string_view 
 }
 
 void PayloadTypeImpl::checkEmbedderFields(const PayloadFieldType& fieldType) {
-	auto embedder = fieldType.Embedder();
+	auto embedder = fieldType.UpsertEmbedder();
 	if (embedder) {
 		for (const auto& field : embedder->Fields()) {
 			auto itFld = fieldsByName_.find(field);

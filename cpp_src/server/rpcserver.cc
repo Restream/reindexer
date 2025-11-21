@@ -119,7 +119,7 @@ static RPCClientData* getClientDataUnsafe(cproto::Context& ctx) noexcept { retur
 
 static RPCClientData* getClientDataSafe(cproto::Context& ctx) noexcept {
 	auto ret = dynamic_cast<RPCClientData*>(ctx.GetClientData());
-	if rx_unlikely (!ret) {
+	if (!ret) [[unlikely]] {
 		std::abort();  // It has to be set by the middleware
 	}
 	return ret;
@@ -716,15 +716,15 @@ Error RPCServer::UpdateQuery(cproto::Context& ctx, p_string queryBin, std::optio
 
 Reindexer RPCServer::getDB(cproto::Context& ctx, UserRole role) {
 	auto clientData = getClientDataUnsafe(ctx);
-	if (rx_likely(clientData)) {
+	if (clientData) [[likely]] {
 		Reindexer* db = nullptr;
 		auto status = clientData->auth.GetDB<AuthContext::CalledFrom::RPCServer>(role, &db, ctx.call->lsn, ctx.call->emitterServerId,
 																				 ctx.call->shardId);
-		if rx_unlikely (!status.ok()) {
+		if (!status.ok()) [[unlikely]] {
 			throw status;
 		}
 
-		if (rx_likely(db != nullptr)) {
+		if (db != nullptr) [[likely]] {
 			NeedMaskingDSN needMaskingDSN{clientData->auth.UserRights() < kRoleDBAdmin};
 			return db->NeedTraceActivity()
 					   ? db->WithContextParams(ctx.call->execTimeout, ctx.call->lsn, ctx.call->emitterServerId, ctx.call->shardId,
@@ -826,7 +826,7 @@ RPCQrWatcher::Ref RPCServer::createQueryResults(cproto::Context& ctx, RPCQrId& i
 		}
 	}
 
-	if rx_unlikely (data->results.size() >= cproto::kMaxConcurrentQueries) {
+	if (data->results.size() >= cproto::kMaxConcurrentQueries) [[unlikely]] {
 		for (unsigned idx = 0; idx < data->results.size(); ++idx) {
 			RPCQrId tmpQrId{data->results[idx].main, data->results[idx].uid};
 			assertrx(tmpQrId.main >= 0);

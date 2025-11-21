@@ -48,7 +48,7 @@ TEST_F(ReindexerApi, ProtobufConversionTest) {
 	const std::string_view nsName = "conversion_namespace";
 	rt.OpenNamespace(nsName);
 	rt.SetSchema(nsName, schema);
-	rx_unused = rt.GetSchema(nsName, ProtobufSchemaType);
+	std::ignore = rt.GetSchema(nsName, ProtobufSchemaType);
 
 	std::vector<double> numbers;
 
@@ -124,7 +124,7 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 	rt.OpenNamespace(default_namespace);
 	rt.AddIndex(default_namespace, reindexer::IndexDef("id", {"id"}, "hash", "int", IndexOpts().PK()));
 	rt.SetSchema(default_namespace, schema);
-	rx_unused = rt.GetSchema(default_namespace, ProtobufSchemaType);
+	std::ignore = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
 	std::vector<int> numVals;
 	std::vector<std::string> stringVals;
@@ -331,7 +331,7 @@ TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
 	// clang-format on
 
 	rt.SetSchema(default_namespace, jsonschema);
-	rx_unused = rt.GetSchema(default_namespace, ProtobufSchemaType);
+	std::ignore = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
 	reindexer::WrSerializer wrser;
 	reindexer::JsonBuilder jsonBuilder(wrser);
@@ -492,47 +492,47 @@ TEST_F(ReindexerApi, ProtobufEncodingTest) {
 
 	Person person2;
 	person2.ParseFromArray(wrser.Buf(), wrser.Len());
-	EXPECT_TRUE(person.id() == person2.id());
-	EXPECT_TRUE(person.name() == person2.name());
-	EXPECT_TRUE(person.age() == person2.age());
-	EXPECT_TRUE(person.email() == person2.email());
-	EXPECT_TRUE(person.weight() == person2.weight());
-	EXPECT_TRUE(person.salary() == person2.salary());
-	ASSERT_TRUE(person.address().homes_size() == person2.address().homes_size());
+	EXPECT_EQ(person.id(), person2.id());
+	EXPECT_EQ(person.name(), person2.name());
+	EXPECT_EQ(person.age(), person2.age());
+	EXPECT_EQ(person.email(), person2.email());
+	EXPECT_EQ(person.weight(), person2.weight());
+	EXPECT_EQ(person.salary(), person2.salary());
+	ASSERT_EQ(person.address().homes_size(), person2.address().homes_size());
 	for (int j = 0; j < person.address().homes_size(); ++j) {
 		const auto& home = person.address().homes(j);
 		const auto& home2 = person2.address().homes(j);
-		EXPECT_TRUE(home.city() == home2.city());
-		EXPECT_TRUE(home.street() == home2.street());
+		EXPECT_EQ(home.city(), home2.city());
+		EXPECT_EQ(home.street(), home2.street());
 	}
-	ASSERT_TRUE(person.address().phones_size() == person2.address().phones_size());
+	ASSERT_EQ(person.address().phones_size(), person2.address().phones_size());
 	for (int j = 0; j < person.address().phones_size(); ++j) {
 		const auto& phone = person.address().phones(j);
 		const auto& phone2 = person2.address().phones(j);
-		EXPECT_TRUE(phone.number() == phone2.number());
-		EXPECT_TRUE(phone.type() == phone2.type());
+		EXPECT_EQ(phone.number(), phone2.number());
+		EXPECT_EQ(phone.type(), phone2.type());
 	}
-	ASSERT_TRUE(person.address().postalcodes_size() == person2.address().postalcodes_size());
+	ASSERT_EQ(person.address().postalcodes_size(), person2.address().postalcodes_size());
 	for (int j = 0; j < person.address().postalcodes_size(); ++j) {
-		EXPECT_TRUE(person.address().postalcodes(j) == person2.address().postalcodes(j));
+		EXPECT_EQ(person.address().postalcodes(j), person2.address().postalcodes(j));
 	}
-	ASSERT_TRUE(person.friends_size() == person2.friends_size());
+	ASSERT_EQ(person.friends_size(), person2.friends_size());
 	for (int j = 0; j < person.friends_size(); ++j) {
-		EXPECT_TRUE(person.friends(j) == person2.friends(j));
+		EXPECT_EQ(person.friends(j), person2.friends(j));
 	}
-	ASSERT_TRUE(person.bonuses_size() == person2.bonuses_size());
+	ASSERT_EQ(person.bonuses_size(), person2.bonuses_size());
 	for (int j = 0; j < person.bonuses_size(); ++j) {
-		EXPECT_TRUE(person.bonuses(j) == person2.bonuses(j));
+		EXPECT_EQ(person.bonuses(j), person2.bonuses(j));
 	}
-	ASSERT_TRUE(person.indexedpackeddouble_size() == person2.indexedpackeddouble_size());
+	ASSERT_EQ(person.indexedpackeddouble_size(), person2.indexedpackeddouble_size());
 	for (int j = 0; j < person.indexedpackeddouble_size(); ++j) {
-		EXPECT_TRUE(person.indexedpackeddouble(j) == person2.indexedpackeddouble(j));
+		EXPECT_EQ(person.indexedpackeddouble(j), person2.indexedpackeddouble(j));
 	}
-	ASSERT_TRUE(person.indexedunpackeddouble_size() == person2.indexedunpackeddouble_size());
+	ASSERT_EQ(person.indexedunpackeddouble_size(), person2.indexedunpackeddouble_size());
 	for (int j = 0; j < person.indexedunpackeddouble_size(); ++j) {
-		EXPECT_TRUE(person.indexedunpackeddouble(j) == person2.indexedunpackeddouble(j));
+		EXPECT_EQ(person.indexedunpackeddouble(j), person2.indexedunpackeddouble(j));
 	}
-	ASSERT_TRUE(person.enabled() == person2.enabled());
+	ASSERT_EQ(person.enabled(), person2.enabled());
 }
 
 TEST_F(ReindexerApi, ProtobufDecodingTest) {
@@ -674,7 +674,7 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 				reindexer::IndexDef("indexedUnpackedDouble", {"indexedUnpackedDouble"}, "tree", "string", IndexOpts().Array()));
 
 	rt.SetSchema(default_namespace, jsonSchema);
-	rx_unused = rt.GetSchema(default_namespace, ProtobufSchemaType);
+	std::ignore = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
 	Item nsItem(rt.NewItem(default_namespace));
 	ASSERT_TRUE(nsItem.Status().ok()) << nsItem.Status().what();

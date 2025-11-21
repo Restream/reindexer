@@ -198,7 +198,7 @@ TEST_F(RPCClientTestApi, CoroErrorLoginResponse) {
 TEST_F(RPCClientTestApi, CoroStatus) {
 	// Should return correct Status, based on server's state
 	std::string dbPath = std::string(kDbPrefix) + "/" + std::to_string(kDefaultRPCPort);
-	rx_unused = reindexer::fs::RmDirAll(dbPath);
+	std::ignore = reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	ev::dynamic_loop loop;
 	loop.spawn(exceptionWrapper([this, &loop] {
@@ -602,7 +602,7 @@ TEST_F(RPCClientTestApi, UnknownResultsFlag) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		const int kResultsUnknownFlag = 0x40000000;	 // Max available int flag
 		client::CoroQueryResults qr(kResultsCJson | kResultsWithItemID | kResultsUnknownFlag);
-		err = rx.Select(Query(reindexer::kConfigNamespace).Where("type", CondEq, {"namespaces"}), qr);
+		err = rx.Select(Query(reindexer::kConfigNamespace).Where("type", CondEq, "namespaces"), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		// Check, that kResultsUnknownFlag was not sent back
 		ASSERT_EQ(qr.GetFlags(), kResultsCJson | kResultsWithItemID);

@@ -2,9 +2,11 @@
 
 #include <cstdlib>
 #include <functional>
+#include <span>
 
-#include "core/enums.h"
+#include "core/tag_name_index.h"
 #include "estl/h_vector.h"
+#include "tools/assertrx.h"
 #include "tools/customhash.h"
 
 namespace reindexer {
@@ -31,6 +33,7 @@ public:
 		return index_;
 	}
 	bool IsTagName() const noexcept { return type_ == Name; }
+	bool IsTagNameEmpty() const noexcept { return type_ == Name && name_.IsEmpty(); }
 	bool IsTagIndex() const noexcept { return type_ == Index; }
 	bool IsTagIndexNotAll() const noexcept { return IsTagIndex() && !index_.IsAll(); }
 	bool Math(TagIndex tag) const noexcept { return type_ == Index && index_ == tag; }
@@ -58,7 +61,47 @@ private:
 	enum [[nodiscard]] { Index, Name } type_;
 };
 
-enum [[nodiscard]] IndexedTagsPathCompareType { IgnoreAllOmittedIndexes, NotIgnoreLeftTrailingIndexes };
+enum [[nodiscard]] IndexedTagsPathCompareType { IgnoreAllOmittedIndexes, NotIgnoreLeftTrailingIndexes, NotIgnoreTrailingIndexes };
+
+class [[nodiscard]] IndexedTagsPathView : public std::span<const IndexedPathNode> {
+	using Base = std::span<const IndexedPathNode>;
+
+public:
+	using Base::Base;
+	template <size_t Count>
+	IndexedTagsPathView(std::span<const IndexedPathNode, Count> other) noexcept : Base{other} {}
+	IndexedTagsPathView(std::span<const IndexedPathNode, std::dynamic_extent> other) noexcept : Base{other} {}
+};
+
+inline auto ComparePrefix(IndexedTagsPathView lhs, IndexedTagsPathView rhs) noexcept {
+	struct [[nodiscard]] PrefixCompRes {
+		size_t leftPos;
+		size_t rightPos;
+		bool res;
+	};
+	bool result = true;
+	size_t lI = 0, rI = 0;
+	const size_t lSize = lhs.size();
+	const size_t rSize = rhs.size();
+	while (result && lI < lSize && rI < rSize) {
+		const auto& lNode = lhs[lI];
+		const auto& rNode = rhs[rI];
+		if (lNode.IsTagIndex()) {
+			++lI;
+			if (rNode.IsTagIndex()) {
+				++rI;
+				result = (lNode.GetTagIndex() == rNode.GetTagIndex());
+			}
+		} else {
+			++rI;
+			if (rNode.IsTagName()) {
+				++lI;
+				result = (lNode.GetTagName() == rNode.GetTagName());
+			}
+		}
+	}
+	return PrefixCompRes{lI, rI, result};
+}
 
 template <unsigned hvSize>
 class [[nodiscard]] IndexedTagsPathImpl : public h_vector<IndexedPathNode, hvSize> {
@@ -70,52 +113,6 @@ public:
 		for (auto t : tp) {
 			this->emplace_back(t);
 		}
-	}
-	template <IndexedTagsPathCompareType compareType, unsigned hvSizeO>
-	bool Compare(const IndexedTagsPathImpl<hvSizeO>& other) const noexcept {
-		const size_t ourSize = this->size();
-		const size_t otherSize = other.size();
-		size_t ourPrefixCompareSize = ourSize;
-		if constexpr (compareType == NotIgnoreLeftTrailingIndexes) {
-			while (ourPrefixCompareSize > 0 && (*this)[ourPrefixCompareSize - 1].IsTagIndex()) {
-				--ourPrefixCompareSize;
-			}
-		}
-		auto [ourI, otherI, result] = comparePrefix(ourPrefixCompareSize, other, otherSize);
-		if (!result) {
-			return false;
-		}
-		if constexpr (compareType == NotIgnoreLeftTrailingIndexes) {
-			while (ourI < ourSize && otherI < otherSize) {
-				const auto& ourNode = (*this)[ourI];
-				assertrx_dbg(ourNode.IsTagIndex());
-				const auto& otherNode = other[otherI];
-				if (otherNode.IsTagIndex()) {
-					++ourI;
-					++otherI;
-					if (ourNode.GetTagIndex() != otherNode.GetTagIndex()) {
-						return false;
-					}
-				} else {
-					return false;
-				}
-			}
-			if (ourI != ourSize) {
-				return false;
-			}
-		} else {
-			for (; ourI < ourSize; ++ourI) {
-				if (!(*this)[ourI].IsTagIndex()) {
-					return false;
-				}
-			}
-		}
-		for (; otherI < otherSize; ++otherI) {
-			if (!other[otherI].IsTagIndex()) {
-				return false;
-			}
-		}
-		return true;
 	}
 	bool Compare(const TagsPath& other) const noexcept {
 		const size_t ourSize = this->size();
@@ -151,46 +148,65 @@ public:
 
 	template <unsigned otherHvSize>
 	bool ComparePrefix(const IndexedTagsPathImpl<otherHvSize>& other) const noexcept {
-		return comparePrefix(this->size(), other, other.size()).res;
+		return reindexer::ComparePrefix(*this, other).res;
 	}
 
 	void Dump(auto& os, TagsMatcher* = nullptr) const;
 
 	bool operator==(const IndexedTagsPathImpl&) = delete;  // use Compare
-
-private:
-	struct [[nodiscard]] PrefixCompRes {
-		size_t ourPos;
-		size_t otherPos;
-		bool res;
-	};
-	template <unsigned otherHvSize>
-	PrefixCompRes comparePrefix(size_t ourSize, const IndexedTagsPathImpl<otherHvSize>& other, size_t otherSize) const noexcept {
-		assertrx_dbg(ourSize <= this->size());
-		assertrx_dbg(otherSize <= other.size());
-		bool result = true;
-		size_t ourI = 0, otherI = 0;
-		while (result && ourI < ourSize && otherI < otherSize) {
-			const auto& ourNode = (*this)[ourI];
-			const auto& otherNode = other[otherI];
-			if (ourNode.IsTagIndex()) {
-				++ourI;
-				if (otherNode.IsTagIndex()) {
-					++otherI;
-					result = (ourNode.GetTagIndex() == otherNode.GetTagIndex());
-				}
-			} else {
-				++otherI;
-				if (otherNode.IsTagName()) {
-					++ourI;
-					result = (ourNode.GetTagName() == otherNode.GetTagName());
-				}
-			}
-		}
-		return {ourI, otherI, result};
-	}
 };
 using IndexedTagsPath = IndexedTagsPathImpl<6>;
+
+template <IndexedTagsPathCompareType compareType>
+bool Compare(IndexedTagsPathView lhs, IndexedTagsPathView rhs) noexcept {
+	const size_t lSize = lhs.size();
+	const size_t rSize = rhs.size();
+	size_t lPrefixCompareSize = lSize;
+	if constexpr (compareType != IgnoreAllOmittedIndexes) {
+		while (lPrefixCompareSize > 0 && lhs[lPrefixCompareSize - 1].IsTagIndex()) {
+			--lPrefixCompareSize;
+		}
+	}
+	auto [lI, rI, result] = ComparePrefix(lhs.first(lPrefixCompareSize), rhs);
+	if (!result) {
+		return false;
+	}
+	if constexpr (compareType != IgnoreAllOmittedIndexes) {
+		while (lI < lSize && rI < rSize) {
+			const auto& lNode = lhs[lI];
+			assertrx_dbg(lNode.IsTagIndex());
+			const auto& rNode = rhs[rI];
+			if (rNode.IsTagIndex()) {
+				++lI;
+				++rI;
+				if (lNode.GetTagIndex() != rNode.GetTagIndex()) {
+					return false;
+				}
+			} else {
+				return false;
+			}
+		}
+		if (lI != lSize) {
+			return false;
+		}
+	} else {
+		for (; lI < lSize; ++lI) {
+			if (!lhs[lI].IsTagIndex()) {
+				return false;
+			}
+		}
+	}
+	if (compareType == NotIgnoreTrailingIndexes) {
+		return rI == rSize;
+	} else {
+		for (; rI < rSize; ++rI) {
+			if (!rhs[rI].IsTagIndex()) {
+				return false;
+			}
+		}
+		return true;
+	}
+}
 
 template <typename Path>
 class [[nodiscard]] TagsPathScope {
@@ -201,8 +217,13 @@ public:
 		}
 	}
 	TagsPathScope(Path& path, TagIndex tagIndex) : path_(path), pathNode_(tagIndex) { path_.emplace_back(tagIndex); }
+	TagsPathScope(Path& path, IndexedPathNode tag) : path_(path), pathNode_(tag) {
+		if (!pathNode_.IsTagNameEmpty()) {
+			path_.emplace_back(pathNode_);
+		}
+	}
 	~TagsPathScope() {
-		if (!path_.empty() && (pathNode_.IsTagIndex() || !pathNode_.GetTagName().IsEmpty())) {
+		if (!path_.empty() && !pathNode_.IsTagNameEmpty()) {
 			path_.pop_back();
 		}
 	}

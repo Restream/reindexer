@@ -3,7 +3,6 @@
 #include "core/namespace/namespaceimpl.h"
 #include "core/queryresults/joinresults.h"
 #include "estl/algorithm.h"
-#include "estl/restricted.h"
 #include "nsselecter.h"
 #include "vendor/sparse-map/sparse_set.h"
 
@@ -46,7 +45,7 @@ void JoinedSelector::selectFromRightNs(LocalQueryResults& joinItemR, const Query
 		val.ids = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 		val.matchedAtLeastOnce = matchedAtLeastOnce;
 		for (const auto& it : joinItemR.Items()) {
-			rx_unused = val.ids->Add(it.GetItemRef().Id(), IdSet::Unordered, 0);
+			std::ignore = val.ids->Add(it.GetItemRef().Id(), IdSet::Unordered, 0);
 		}
 		rightNs_->putToJoinCache(joinResLong, std::move(val));
 	}
@@ -89,9 +88,10 @@ void JoinedSelector::selectFromPreResultValues(LocalQueryResults& joinItemR, con
 	matchedAtLeastOnce = matched;
 }
 
-bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, FloatVectorsHolderMap* floatVectorsHolder, bool match) {
+bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, FloatVectorsHolderMap* floatVectorsHolder,
+							 bool withJoinedItems) {
 	++called_;
-	if (optimized_ && !match) {
+	if (optimized_ && !withJoinedItems) {
 		matched_++;
 		return true;
 	}
@@ -139,26 +139,27 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, Float
 
 		i += changedCount;
 	}
-	itemQueryPtr->Limit((match && !limit0_) ? joinQuery_.Limit() : 0);
+	itemQueryPtr->Limit((withJoinedItems && !limit0_) ? joinQuery_.Limit() : 0);
 
 	bool found = false;
 	bool matchedAtLeastOnce = false;
 	LocalQueryResults joinItemR;
 	std::visit(
 		overloaded{[&](const JoinPreResult::Values&) { selectFromPreResultValues(joinItemR, *itemQueryPtr, found, matchedAtLeastOnce); },
-				   Restricted<IdSet, SelectIteratorContainer>{}(
-					   [&](const auto&) { selectFromRightNs(joinItemR, *itemQueryPtr, floatVectorsHolder, found, matchedAtLeastOnce); })},
+				   [&]<concepts::OneOf<IdSet, SelectIteratorContainer> T>(const T&) {
+					   selectFromRightNs(joinItemR, *itemQueryPtr, floatVectorsHolder, found, matchedAtLeastOnce);
+				   }},
 		PreResult().payload);
-	if (match && found) {
+	if (withJoinedItems && found) {
 		assertrx_throw(nsId < static_cast<int>(result_.joined_.size()));
 		joins::NamespaceResults& nsJoinRes = result_.joined_[nsId];
 		assertrx_dbg(nsJoinRes.GetJoinedSelectorsCount());
 		if (floatVectorsHolder) {
-			std::visit(
-				overloaded{[&](const JoinPreResult::Values&) noexcept {}, Restricted<IdSet, SelectIteratorContainer>{}([&](const auto&) {
-							   floatVectorsHolder->Add(*RightNs(), joinItemR.begin(), joinItemR.end(), fieldsFilter_);
-						   })},
-				PreResult().payload);
+			std::visit(overloaded{[&](const JoinPreResult::Values&) noexcept {},
+								  [&]<concepts::OneOf<IdSet, SelectIteratorContainer> T>(const T&) {
+									  floatVectorsHolder->Add(*RightNs(), joinItemR.begin(), joinItemR.end(), fieldsFilter_);
+								  }},
+					   PreResult().payload);
 		}
 		nsJoinRes.Insert(rowId, joinedFieldIdx_, std::move(joinItemR));
 	}
@@ -233,10 +234,10 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 
 	const auto& preresult = PreResult();
 	if (joinType_ != JoinType::InnerJoin || preSelectCtx_.Mode() != JoinPreSelectMode::Execute ||
-		std::visit(overloaded{[](const SelectIteratorContainer&) noexcept { return true; },
-							  Restricted<IdSet, JoinPreResult::Values>{}([maxIterations](const auto& v) noexcept {
+		std::visit(overloaded{[](const SelectIteratorContainer&) { return true; },
+							  [maxIterations]<concepts::OneOf<IdSet, JoinPreResult::Values> T>(const T& v) {
 								  return v.Size() > *maxIterations * kMaxIterationsScaleForInnerJoinOptimization;
-							  })},
+							  }},
 				   preresult.payload)) {
 		return;
 	}
@@ -312,7 +313,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		if (curIterations && curIterations < *maxIterations) {
 			*maxIterations = curIterations;
 		}
-		rx_unused = iterators.Append(OpAnd, std::move(selIter));
+		std::ignore = iterators.Append(OpAnd, std::move(selIter));
 
 		++optimized;
 	}

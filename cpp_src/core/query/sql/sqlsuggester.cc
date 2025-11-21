@@ -23,7 +23,7 @@ std::vector<std::string> SQLSuggester::GetSuggestions(std::string_view q, size_t
 
 	try {
 		Tokenizer tokens{q};
-		rx_unused = suggester.Parse(tokens);
+		std::ignore = suggester.Parse(tokens);
 		// NOLINTBEGIN(bugprone-empty-catch)
 	} catch (const Error&) {
 	}

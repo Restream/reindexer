@@ -35,8 +35,8 @@ ComparatorNotIndexedImplBase<CondSet>::ComparatorNotIndexedImplBase(const Varian
 	for (const Variant& v : values) {
 		assertrx_dbg(!v.IsNullValue());
 		auto t = v.Type();
-		if rx_likely (t.Is<KeyValueType::String>() || t.Is<KeyValueType::Uuid>() || t.IsNumeric()) {
-			rx_unused = values_.insert(v);
+		if (t.Is<KeyValueType::String>() || t.Is<KeyValueType::Uuid>() || t.IsNumeric()) [[likely]] {
+			std::ignore = values_.insert(v);
 		} else {
 			throw Error{errQueryExec, "Value type in CondSet for non indexed field must be string, numeric or uuid. Value type is '{}'",
 						t.Name()};
@@ -61,7 +61,7 @@ reindexer::comparators::ComparatorNotIndexedImpl<CondAllSet, false>::ComparatorN
 	int i = 0;
 	for (const Variant& v : values) {
 		assertrx_dbg(!v.IsNullValue());
-		rx_unused = values_.emplace(v, i);
+		std::ignore = values_.emplace(v, i);
 		++i;
 	}
 }

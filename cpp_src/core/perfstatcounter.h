@@ -57,6 +57,31 @@ using PerfStatCounterMT = PerfStatCounter<mutex>;
 using PerfStatCounterST = PerfStatCounter<DummyMutex>;
 
 template <typename Mutex>
+class [[nodiscard]] PerfStatCounterCountAvg {
+public:
+	PerfStatCounterCountAvg() = default;
+	void Hit(size_t val) noexcept;
+	void Reset() noexcept;
+	float Get() noexcept {
+		lock_guard lck(mtx_);
+		lap();
+		return lastSecondAvgValue;
+	}
+
+private:
+	void lap() noexcept;
+
+	size_t hitCount_ = 0;
+	size_t valueCount = 0;
+	float lastSecondAvgValue = 0.0;
+	system_clock_w::time_point calcStartTime_ = system_clock_w::now_coarse();
+	mutable Mutex mtx_;
+};
+
+using PerfStatCounterCountAvgMT = PerfStatCounterCountAvg<mutex>;
+using PerfStatCounterCountAvgST = PerfStatCounterCountAvg<DummyMutex>;
+
+template <typename Mutex>
 class [[nodiscard]] PerfStatCalculator {
 public:
 	PerfStatCalculator(PerfStatCounter<Mutex>& counter, bool enable) noexcept : counter_(&counter), enable_(enable) {
@@ -64,6 +89,13 @@ public:
 			tmStart_ = system_clock_w::now();
 		}
 	}
+	PerfStatCalculator(PerfStatCounter<Mutex>& counter, system_clock_w::time_point tmStart, bool enable) noexcept
+		: counter_(&counter), enable_(enable) {
+		if (enable_) {
+			tmStart_ = tmStart;
+		}
+	}
+
 	~PerfStatCalculator() {
 		if (enable_) {
 			counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart_));

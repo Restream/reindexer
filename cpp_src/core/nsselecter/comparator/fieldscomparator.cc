@@ -43,8 +43,10 @@ public:
 			[&](KeyValueType::Bool) noexcept { return Variant{*reinterpret_cast<const bool*>(ptr_ + sizeof_ * i)}; },
 			[&](KeyValueType::Int) noexcept { return Variant{*reinterpret_cast<const int*>(ptr_ + sizeof_ * i)}; },
 			[&](KeyValueType::Uuid) noexcept { return Variant{*reinterpret_cast<const Uuid*>(ptr_ + sizeof_ * i)}; },
-			[&](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>)
-				-> Variant { throw Error{errQueryExec, "Field type {} is not supported for two field comparing", type_.Name()}; });
+			[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined,
+								KeyValueType::FloatVector> auto) -> Variant {
+				throw Error{errQueryExec, "Field type {} is not supported for two field comparing", type_.Name()};
+			});
 	}
 	ConstIterator begin() const noexcept { return {*this, 0}; }
 	ConstIterator end() const noexcept { return {*this, len_}; }
@@ -101,8 +103,10 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 						continue;
 					}
 				}
-				if ((v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[0], collateOpts) & ComparationResult::Ge) &&
-					(v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[1], collateOpts) & ComparationResult::Le)) {
+				if ((v.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs[0], collateOpts) &
+					 ComparationResult::Ge) &&
+					(v.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs[1], collateOpts) &
+					 ComparationResult::Le)) {
 					return true;
 				}
 			}
@@ -134,7 +138,8 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 							continue;
 						}
 					}
-					if (lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts) == ComparationResult::Eq) {
+					if (lv.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rv, collateOpts) ==
+						ComparationResult::Eq) {
 						found = true;
 						break;
 					}
@@ -166,7 +171,7 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 							continue;
 						}
 					}
-					const auto compRes = lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts);
+					const auto compRes = lv.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rv, collateOpts);
 					switch (condition_) {
 						case CondEq:
 						case CondSet:
@@ -264,15 +269,15 @@ void FieldsComparator::validateTypes(KeyValueType lType, KeyValueType rType) con
 	}
 	lType.EvaluateOneOf(
 		[&](KeyValueType::String) { throw Error{errQueryExec, "Cannot compare a string field with a non-string one: {}", name_}; },
-		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float>) {
+		[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float> auto) {
 			if (!rType.Is<KeyValueType::Int>() && !rType.Is<KeyValueType::Int64>() && !rType.Is<KeyValueType::Double>() &&
 				!rType.Is<KeyValueType::Float>()) {
 				throw Error{errQueryExec, "Cannot compare a numeric field with a non-numeric one: {}", name_};
 			}
 		},
 		[&](KeyValueType::Bool) { throw Error{errQueryExec, "Cannot compare a boolean field with a non-boolean one: {}", name_}; },
-		[&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid,
-				  KeyValueType::FloatVector>) {
+		[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid,
+							KeyValueType::FloatVector> auto) {
 			throw Error{errQueryExec, "Field of type {} cannot be compared with another field: {}", lType.Name(), name_};
 		});
 }

@@ -87,7 +87,7 @@ void JsonBuilder::Put(std::string_view name, const Variant& kv, int offset) {
 			}
 		},
 		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); },
-		[](OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) noexcept {});
+		[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) noexcept {});
 }
 
 }  // namespace reindexer::builders

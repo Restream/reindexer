@@ -4,6 +4,7 @@
 #include <variant>
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
+#include "core/tag_name_index.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
 

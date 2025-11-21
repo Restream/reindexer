@@ -93,7 +93,7 @@ Error JsonSchemaChecker::createTypeTable(std::string_view json) {
 	addSimpleType("boolean");
 
 	try {
-		rx_unused = createType(root, rootTypeName_);
+		std::ignore = createType(root, rootTypeName_);
 	} catch (const Error& e) {
 		return e;
 	}

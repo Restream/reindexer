@@ -152,9 +152,9 @@ public:
 
 				if (reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kDumpingNamespacePrefix, command)) {
 					LineParser parser(command);
-					rx_unused = parser.NextToken();
-					rx_unused = parser.NextToken();
-					rx_unused = parser.NextToken();
+					std::ignore = parser.NextToken();
+					std::ignore = parser.NextToken();
+					std::ignore = parser.NextToken();
 					std::string_view nsName = removeQuotes(parser.NextToken());
 
 					if (nsName.empty()) {
@@ -1142,7 +1142,7 @@ void CommandsProcessor<DBInterface>::commandSelectSQL(std::string_view command) 
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandUpsert(std::string_view command) {
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 
 	const std::string nsName = reindexer::unescapeString(parser.NextToken());
 
@@ -1189,7 +1189,7 @@ void CommandsProcessor<DBInterface>::parseCommand(const std::string& command, st
 	needSkip = false;
 	cmdBody.resize(0);
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 	nsName = reindexer::unescapeString(parser.NextToken());
 
 	if (!parser.CurPtr().empty() && (parser.CurPtr())[0] == '[') {
@@ -1339,7 +1339,7 @@ void CommandsProcessor<DBInterface>::commandUpdateSQL(std::string_view command) 
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandDelete(std::string_view command) {
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 
 	const auto nsName = reindexer::unescapeString(parser.NextToken());
 
@@ -1360,7 +1360,7 @@ void CommandsProcessor<DBInterface>::commandDeleteSQL(std::string_view command) 
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 
 	std::vector<NamespaceDef> allNsDefs, doNsDefs;
 	const auto dumpMode = dumpMode_.load();
@@ -1451,12 +1451,12 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandNamespaces(std::string_view command) {
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 
 	std::string_view subCommand = parser.NextToken();
 
 	if (iequals(subCommand, "add")) {
-		rx_unused = parser.NextToken();	 // nsName
+		std::ignore = parser.NextToken();  // nsName
 
 		NamespaceDef def("");
 		Error err = def.FromJSON(reindexer::giftStr(parser.CurPtr()));
@@ -1498,7 +1498,7 @@ void CommandsProcessor<DBInterface>::commandNamespaces(std::string_view command)
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandMeta(std::string_view command) {
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 	std::string_view subCommand = parser.NextToken();
 
 	if (iequals(subCommand, "put")) {
@@ -1518,7 +1518,7 @@ void CommandsProcessor<DBInterface>::commandMeta(std::string_view command) {
 		for (auto& metaKey : allMeta) {
 			std::string metaData;
 			throwIfError(db().GetMeta(nsName, metaKey, metaData));
-			output_() << metaKey << " = " << metaData << std::endl;
+			output_() << reindexer::escapeString(metaKey) << " = " << reindexer::escapeString(metaData) << std::endl;
 		}
 	} else {
 		throw Error(errParams, "Unknown sub command '{}' of meta command", subCommand);
@@ -1528,7 +1528,7 @@ void CommandsProcessor<DBInterface>::commandMeta(std::string_view command) {
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandHelp(std::string_view command) {
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 	std::string_view subCommand = parser.NextToken();
 
 	if (!subCommand.length()) {
@@ -1562,7 +1562,7 @@ void CommandsProcessor<DBInterface>::commandQuit(std::string_view) {
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandSet(std::string_view command) {
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 
 	std::string_view variableName = parser.NextToken();
 	std::string_view variableValue = parser.NextToken();
@@ -1585,7 +1585,7 @@ template <>
 void CommandsProcessor<reindexer::client::Reindexer>::commandProcessDatabases(std::string_view command) {
 	using namespace std::string_view_literals;
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 	std::string_view subCommand = parser.NextToken();
 	assertrx(uri_.scheme() == "cproto"sv || uri_.scheme() == "cprotos"sv || uri_.scheme() == "ucproto"sv);
 	if (subCommand == "list"sv) {
@@ -1678,7 +1678,7 @@ void CommandsProcessor<DBInterface>::filterNamespacesByDumpMode(std::vector<Name
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandBench(std::string_view command) {
 	LineParser parser(command);
-	rx_unused = parser.NextToken();
+	std::ignore = parser.NextToken();
 
 	const std::string_view benchTimeToken = parser.NextToken();
 	const int benchTime = benchTimeToken.empty() ? kBenchDefaultTime : reindexer::stoi(benchTimeToken);
@@ -1855,7 +1855,7 @@ reindexer::DSN CommandsProcessor<DBInterface>::getCurrentDsn(bool withPath) cons
 	}
 	if (uri_.scheme() == "ucproto"sv) {
 		std::vector<std::string_view> pathParts;
-		rx_unused = reindexer::split(std::string_view(uri_.path()), ":", true, pathParts);
+		std::ignore = reindexer::split(std::string_view(uri_.path()), ":", true, pathParts);
 		std::string_view dbName;
 		if (pathParts.size() >= 2) {
 			dbName = pathParts.back().substr(1);  // ignore '/' in dbName

@@ -14,10 +14,64 @@
 #include "tools/customlocal.h"
 #include "tools/errors.h"
 
+// Defined in venored libs
+char* u32toax(uint32_t value, char* buffer, int n);
+
 namespace reindexer {
 
 extern const char* kDefaultExtraWordsSymbols;
 extern const char* kDefaultWordPartDelimiters;
+
+template <std::input_iterator InputIterator, std::output_iterator<char> OutputIterator>
+OutputIterator escapeString(InputIterator first, InputIterator last, OutputIterator result, AddQuotes add_quotes) {
+	for (; first != last; ++first) {
+		unsigned char ch = static_cast<unsigned char>(*first);
+		switch (ch) {
+			case '\b':
+				*result++ = '\\';
+				*result++ = 'b';
+				break;
+			case '\f':
+				*result++ = '\\';
+				*result++ = 'f';
+				break;
+			case '\n':
+				*result++ = '\\';
+				*result++ = 'n';
+				break;
+			case '\r':
+				*result++ = '\\';
+				*result++ = 'r';
+				break;
+			case '\t':
+				*result++ = '\\';
+				*result++ = 't';
+				break;
+			case '\\':
+				*result++ = '\\';
+				*result++ = '\\';
+				break;
+			case '"':
+				*result++ = '\\';
+				*result++ = '"';
+				if (add_quotes == AddQuotes_True) {
+					*result++ = '"';
+				}
+				break;
+			default:
+				if (ch < 0x20) {
+					char hex[5];
+					char* end = u32toax(ch, hex, 4);
+					*result++ = '\\';
+					*result++ = 'u';
+					result = std::copy(hex, end, result);
+				} else {
+					*result++ = ch;
+				}
+		}
+	}
+	return result;
+}
 
 std::string escapeString(std::string_view str);
 std::string unescapeString(std::string_view str);

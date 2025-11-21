@@ -58,10 +58,10 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults,
 		auto& incTagsVec = clientResults.GetIncarnationTags();
 		lsn_t incTag;
 		if (!incTagsVec.empty()) {
-			if rx_unlikely (incTagsVec.size() != 1) {
+			if (incTagsVec.size() != 1) [[unlikely]] {
 				throw Error(errLogic, "Unexpected incarnation tags count {} for single-node query", incTagsVec.size());
 			}
-			if rx_likely (incTagsVec[0].tags.size() > unsigned(nsid)) {
+			if (incTagsVec[0].tags.size() > unsigned(nsid)) [[likely]] {
 				incTag = incTagsVec[0].tags[nsid];
 			} else if (itemsCnt) {
 				throw Error(errLogic, "Missing incarnation tag for ns id {} in non-empty result", nsid);
@@ -82,7 +82,7 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults,
 	const auto cNamespaces = clientResults.GetNamespaces();
 	WrSerializer wser;
 	for (auto& it : clientResults) {
-		if rx_unlikely (it.GetNSID() != 0) {
+		if (it.GetNSID() != 0) [[unlikely]] {
 			throw Error(errLogic,
 						"Unexpected items from non-main namespace ({}). Cluster proxy does not support proxying for joined/merged items",
 						cNamespaces.at(it.GetNSID()));
@@ -351,7 +351,7 @@ Error ClusterProxy::Select(const Query& q, LocalQueryResults& qr, const RdxConte
 	auto err = proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
 	if (err.code() == errNetwork) {
 		// Force leader's check, if proxy returned errNetwork. New error does not matter
-		rx_unused = impl_.ClusterControlRequest(ClusterControlRequestData(ForceElectionsCommand{}));
+		std::ignore = impl_.ClusterControlRequest(ClusterControlRequestData(ForceElectionsCommand{}));
 	}
 	return err;
 }

@@ -6,7 +6,7 @@ namespace reindexer {
 
 Uuid::Uuid(std::string_view str) : data_{0, 0} {
 	const auto err = tryParse(str, data_);
-	if (rx_unlikely(!err.ok())) {
+	if (!err.ok()) [[unlikely]] {
 		throw err;
 	}
 }
@@ -17,7 +17,7 @@ static_assert(false, "GET_NUM is already defined");
 
 #define GET_NUM(i)                                                                         \
 	num = hexCharToNum[static_cast<unsigned char>(str[i])];                                \
-	if (rx_unlikely(num > 15)) {                                                           \
+	if (num > 15) [[unlikely]] {                                                           \
 		if (str[i] == '-') {                                                               \
 			return Error(errNotValid, "Invalid UUID format: '{}'", str);                   \
 		} else {                                                                           \
@@ -107,7 +107,7 @@ Error Uuid::tryParse(std::string_view str, uint64_t (&data)[2]) noexcept {
 			data[1] |= num;
 			break;
 		case kStrFormLen:
-			if (rx_unlikely(str[8] != '-' || str[13] != '-' || str[18] != '-' || str[23] != '-')) {
+			if (str[8] != '-' || str[13] != '-' || str[18] != '-' || str[23] != '-') [[unlikely]] {
 				return Error(errNotValid, "Invalid UUID format: '{}'", str);
 			}
 			GET_NUM(0)
@@ -178,7 +178,7 @@ Error Uuid::tryParse(std::string_view str, uint64_t (&data)[2]) noexcept {
 		default:
 			return Error(errNotValid, "UUID should consist of 32 hexadecimal digits: '{}'", str);
 	}
-	if (rx_unlikely((data[0] != 0 || data[1] != 0) && (data[1] >> 63) == 0)) {
+	if ((data[0] != 0 || data[1] != 0) && (data[1] >> 63) == 0) [[unlikely]] {
 		return Error(errNotValid, "Variant 0 of UUID is unsupported: '{}'", str);
 	}
 	return {};
@@ -189,7 +189,7 @@ Error Uuid::tryParse(std::string_view str, uint64_t (&data)[2]) noexcept {
 std::optional<Uuid> Uuid::TryParse(std::string_view str) noexcept {
 	Uuid ret;
 	const auto err = tryParse(str, ret.data_);
-	if (rx_likely(err.ok())) {
+	if (err.ok()) [[likely]] {
 		return ret;
 	} else {
 		return std::nullopt;

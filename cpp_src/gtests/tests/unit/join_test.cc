@@ -39,7 +39,7 @@ TEST_F(JoinSelectsApi, JoinsLockWithCache_364) {
 
 	for (int i = 0; i < 10; ++i) {
 		SCOPED_TRACE(std::to_string(i));
-		rx_unused = rt.Select(queryBooks);
+		std::ignore = rt.Select(queryBooks);
 	}
 }
 
@@ -303,9 +303,8 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 		Variant prevField;
 		for (auto rowIt : joinQueryRes) {
 			Item item = rowIt.GetItem(false);
-			if (!prevField.Type().Is<reindexer::KeyValueType::Null>()) {
-				ASSERT_NE(prevField.Compare<reindexer::NotComparable::Return>(item[age]) & reindexer::ComparationResult::Le, 0);
-			}
+			const auto cmpRes = prevField.Compare<reindexer::NotComparable::Return, reindexer::kDefaultNullsHandling>(item[age]);
+			ASSERT_NE(cmpRes & reindexer::ComparationResult::Le, 0);
 
 			Variant key = item[authorid];
 			auto itemIt = rowIt.GetJoined();
@@ -314,18 +313,22 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 			}
 			auto joinedFieldIt = itemIt.begin();
 
-			Variant prevJoinedValue;
+			std::optional<Variant> prevJoinedValue;
 			for (int j = 0; j < joinedFieldIt.ItemsCount(); ++j) {
 				reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(j, joinQueryRes.GetPayloadType(1), joinQueryRes.GetTagsMatcher(1)));
 				Variant fkey = joinItem.GetField(joinQueryRes.GetPayloadType(1).FieldByName(authorid_fk));
-				ASSERT_EQ(key.Compare<reindexer::NotComparable::Return>(fkey), reindexer::ComparationResult::Eq)
-					<< key.As<std::string>() << " " << fkey.As<std::string>();
+				auto cmpRes = key.Compare<reindexer::NotComparable::Return, reindexer::kDefaultNullsHandling>(fkey);
+				ASSERT_EQ(cmpRes, reindexer::ComparationResult::Eq) << key.As<std::string>() << " " << fkey.As<std::string>();
 				Variant recentJoinedValue = joinItem.GetField(joinQueryRes.GetPayloadType(1).FieldByName(price));
 				ASSERT_GE(recentJoinedValue.As<int>(), 200);
-				if (!prevJoinedValue.Type().Is<reindexer::KeyValueType::Null>()) {
-					ASSERT_NE(
-						prevJoinedValue.Compare<reindexer::NotComparable::Return>(recentJoinedValue) & reindexer::ComparationResult::Ge, 0);
+
+				if (prevJoinedValue.has_value()) {
+					cmpRes =
+						prevJoinedValue->Compare<reindexer::NotComparable::Return, reindexer::kDefaultNullsHandling>(recentJoinedValue);
+					ASSERT_TRUE(cmpRes & reindexer::ComparationResult::Ge)
+						<< prevJoinedValue->As<std::string>() << " " << recentJoinedValue.As<std::string>();
 				}
+
 				Variant pagesValue = joinItem.GetField(joinQueryRes.GetPayloadType(1).FieldByName(pages));
 				ASSERT_GE(pagesValue.As<int>(), 100);
 				prevJoinedValue = recentJoinedValue;
@@ -361,11 +364,11 @@ TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 		const auto joinedFieldIt = itemIt.begin();
 		reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(0, joinQueryRes2.GetPayloadType(1), joinQueryRes2.GetTagsMatcher(1)));
 		const Variant recentValue = joinItem.GetField(joinQueryRes2.GetPayloadType(1).FieldByName(age));
-		if (!prevValue.Type().Is<reindexer::KeyValueType::Null>()) {
-			reindexer::WrSerializer ser;
-			ASSERT_NE(prevValue.Compare<reindexer::NotComparable::Return>(recentValue) & reindexer::ComparationResult::Le, 0)
-				<< (prevValue.Dump(ser), ser << ' ', recentValue.Dump(ser), ser.Slice());
-		}
+
+		reindexer::WrSerializer ser;
+		const auto cmpRes = prevValue.Compare<reindexer::NotComparable::Return, reindexer::kDefaultNullsHandling>(recentValue);
+		ASSERT_NE(cmpRes & reindexer::ComparationResult::Le, 0) << (prevValue.Dump(ser), ser << ' ', recentValue.Dump(ser), ser.Slice());
+
 		prevValue = recentValue;
 	}
 }
@@ -420,7 +423,7 @@ TEST_F(JoinSelectsApi, JoinsEasyStressTest) {
 		}
 	};
 
-	auto removeTh = [this]() { rx_unused = rt.Delete(Query(books_namespace, 0, 10).Where(price, CondGe, 5000)); };
+	auto removeTh = [this]() { std::ignore = rt.Delete(Query(books_namespace, 0, 10).Where(price, CondGe, 5000)); };
 
 	int32_t since = 0, count = 1000;
 	std::vector<std::thread> threads;
@@ -488,7 +491,7 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 			while (!start) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
-			rx_unused = rt.Select(q);
+			std::ignore = rt.Select(q);
 		});
 	}
 	start = true;

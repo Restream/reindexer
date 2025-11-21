@@ -159,6 +159,31 @@ func TestEmbedUpsertKnnIndex(t *testing.T) {
 	require.NoError(t, it2.Error())
 	defer it2.Close()
 	require.Greater(t, it2.Count(), 0)
+
+	{
+		item, err := DBD.Query(reindexer.PerfstatsNamespaceName).Where("name", reindexer.EQ, testHNWSEmbedNs).Exec().FetchOne()
+		require.NoError(t, err)
+		indexes := item.(*reindexer.NamespacePerfStat).Indexes
+		for i := 0; i < len(indexes); i++ {
+			if indexes[i].Name == "vec" {
+				require.Greater(t, indexes[i].UpsertEmbedder.TotalQueriesCount, uint64(0))
+				require.Greater(t, indexes[i].UpsertEmbedder.MaxLatencyUs, uint64(0))
+				require.Greater(t, indexes[i].UpsertEmbedder.TotalAvgLatencyUs, uint64(0))
+				require.Equal(t, indexes[i].UpsertEmbedder.TotalQueriesCount, indexes[i].UpsertEmbedder.TotalEmbedDocumentsCount)
+			}
+		}
+	}
+	{
+		item, err := DBD.Query(reindexer.MemstatsNamespaceName).Where("name", reindexer.EQ, testHNWSEmbedNs).Exec().FetchOne()
+		require.NoError(t, err)
+		indexes := item.(*reindexer.NamespaceMemStat).Indexes
+		for i := 0; i < len(indexes); i++ {
+			if indexes[i].Name == "vec" {
+				require.Equal(t, indexes[i].UpsertEmbedder.Status.LastRequestResult, "OK")
+			}
+		}
+	}
+
 }
 
 func TestEmbedQueryKnnIndex(t *testing.T) {
@@ -229,4 +254,16 @@ func TestEmbedQueryKnnIndex(t *testing.T) {
 	time.Sleep(time.Millisecond * 10000)
 	close(done)
 	wg.Wait()
+
+	item, err := DBD.Query(reindexer.PerfstatsNamespaceName).Where("name", reindexer.EQ, testIvfEmbedNs).Exec().FetchOne()
+	require.NoError(t, err)
+	indexes := item.(*reindexer.NamespacePerfStat).Indexes
+	for i := 0; i < len(indexes); i++ {
+		if indexes[i].Name == "vec" {
+			require.Greater(t, indexes[i].QueryEmbedder.TotalQueriesCount, uint64(0))
+			require.Greater(t, indexes[i].QueryEmbedder.MaxLatencyUs, uint64(0))
+			require.Greater(t, indexes[i].QueryEmbedder.TotalAvgLatencyUs, uint64(0))
+			require.Equal(t, indexes[i].QueryEmbedder.TotalQueriesCount, indexes[i].QueryEmbedder.TotalEmbedDocumentsCount)
+		}
+	}
 }

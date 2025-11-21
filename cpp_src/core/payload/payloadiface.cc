@@ -4,6 +4,7 @@
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/cjsontools.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/cjson/multidimensional_array_checker.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/stringsholder.h"
@@ -59,7 +60,7 @@ void PayloadIface<T>::get(int field, VariantArray& keys, HoldT h) const {
 			PayloadFieldValue pv(fieldType, arrPtr + i * elemSize);
 			keys.push_back(pv.Get(h));
 		}
-		rx_unused = keys.MarkArray();
+		std::ignore = keys.MarkArray();
 	} else {
 		keys.push_back(Field(field).Get(h));
 	}
@@ -100,7 +101,7 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher& tags
 			if (tagsPath.back().IsTagIndexNotAll()) {
 				kvs.Clear();
 				kvs.emplace_back(Get(fieldIdx, tagsPath.back().GetTagIndex().AsNumber()));
-				rx_unused = kvs.MarkArray();
+				std::ignore = kvs.MarkArray();
 				return;
 			}
 		}
@@ -203,6 +204,15 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath& tagsPat
 }
 
 template <typename T>
+bool PayloadIface<T>::ContainsMultidimensionalArray(const FieldsFilter& fieldsFilter) const {
+	BaseEncoder<MultidimensionalArrayChecker> encoder(nullptr, &fieldsFilter);
+	MultidimensionalArrayChecker checker;
+	ConstPayload pl(t_, *v_);
+	encoder.Encode(pl, checker);
+	return checker.Result();
+}
+
+template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 void PayloadIface<T>::SetSingleElement(int field, const Variant& key) {
 	if (t_.Field(field).IsArray()) {
@@ -230,13 +240,13 @@ int PayloadIface<PayloadValue>::ResizeArray(int field, int count, Append append)
 	const auto& fieldType = t_.Field(field);
 	assertrx(fieldType.IsArray());
 
-	size_t realSize = RealSize();
+	const size_t realSize = RealSize();
 	auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-	auto elemSize = fieldType.ElemSizeof();
+	const auto elemSize = fieldType.ElemSizeof();
 
-	size_t grow = elemSize * count;
+	const size_t grow = elemSize * count;
 	size_t strip = 0;
-	size_t insert = arr->offset ? (arr->offset + arr->len * elemSize) : realSize;
+	const size_t insert = arr->offset ? (arr->offset + arr->len * elemSize) : realSize;
 	if (!append) {
 		strip = arr->len * elemSize;
 		arr->len = 0;
@@ -503,7 +513,7 @@ bool PayloadIface<T>::IsEQ(const T& other, const FieldsSet& fields) const {
 }
 
 template <typename T>
-template <WithString withString, NotComparable notComparable>
+template <WithString withString, NotComparable notComparable, NullsHandling nullsHandling>
 ComparationResult PayloadIface<T>::CompareField(const T& other, int field, const FieldsSet& fields, size_t& tagPathIdx,
 												const CollateOpts& collateOpts) const {
 	PayloadIface<const T> o(t_, other);
@@ -513,13 +523,19 @@ ComparationResult PayloadIface<T>::CompareField(const T& other, int field, const
 		o.Get(field, krefs2);
 		size_t length = std::min(krefs1.size(), krefs2.size());
 		for (size_t j = 0; j < length; ++j) {
-			const auto cmpRes = krefs1[j].Compare<notComparable>(krefs2[j], collateOpts);
+			const auto cmpRes = krefs1[j].Compare<notComparable, nullsHandling>(krefs2[j], collateOpts);
 			if (cmpRes != ComparationResult::Eq) {
 				return cmpRes;
 			}
 		}
 	} else {
-		assertrx(tagPathIdx < fields.getTagsPathsLength());
+		auto postproc = [](VariantArray& va) {
+			if (va.empty()) {
+				va.Clear();
+				va.emplace_back();	// Treat empty arrays and missing values as 'null'
+			}
+		};
+		assertrx_throw(tagPathIdx < fields.getTagsPathsLength());
 		if (fields.isTagsPathIndexed(tagPathIdx)) {
 			const IndexedTagsPath& tagsPath = fields.getIndexedTagsPath(tagPathIdx++);
 			GetByJsonPath(tagsPath, krefs1, KeyValueType::Undefined{});
@@ -529,9 +545,11 @@ ComparationResult PayloadIface<T>::CompareField(const T& other, int field, const
 			GetByJsonPath(tagsPath, krefs1, KeyValueType::Undefined{});
 			o.GetByJsonPath(tagsPath, krefs2, KeyValueType::Undefined{});
 		}
+		postproc(krefs1);
+		postproc(krefs2);
 		size_t length = std::min(krefs1.size(), krefs2.size());
 		for (size_t j = 0; j < length; ++j) {
-			const auto cmpRes = krefs1[j].RelaxCompare<withString, notComparable>(krefs2[j], collateOpts);
+			const auto cmpRes = krefs1[j].RelaxCompare<withString, notComparable, nullsHandling>(krefs2[j], collateOpts);
 			if (cmpRes != ComparationResult::Eq) {
 				return cmpRes;
 			}
@@ -548,32 +566,7 @@ ComparationResult PayloadIface<T>::CompareField(const T& other, int field, const
 }
 
 template <typename T>
-template <WithString withString, NotComparable notComparable>
-ComparationResult PayloadIface<T>::Compare(const T& other, const FieldsSet& fields, size_t& firstDifferentFieldIdx,
-										   const h_vector<const CollateOpts*, 1>& collateOpts) const {
-	size_t tagPathIdx = 0;
-	const bool commonOpts = (collateOpts.size() == 1);
-
-	for (size_t i = 0; i < fields.size(); ++i) {
-		const CollateOpts* opts(commonOpts ? collateOpts[0] : collateOpts[i]);
-		const auto cmpRes = CompareField<withString, notComparable>(other, fields[i], fields, tagPathIdx, opts ? *opts : CollateOpts());
-		if (cmpRes != ComparationResult::Eq) {
-			firstDifferentFieldIdx = i;
-			return cmpRes;
-		}
-	}
-	return ComparationResult::Eq;
-}
-
-template <typename T>
-template <WithString withString, NotComparable notComparable>
-ComparationResult PayloadIface<T>::Compare(const T& other, const FieldsSet& fields, const CollateOpts& collateOpts) const {
-	size_t firstDifferentFieldIdx = 0;
-	return Compare<withString, notComparable>(other, fields, firstDifferentFieldIdx, {&collateOpts});
-}
-
-template <typename T>
-template <WithString withString, NotComparable notComparable>
+template <WithString withString, NotComparable notComparable, NullsHandling nullsHandling>
 ComparationResult PayloadIface<T>::RelaxCompare(const PayloadIface<const T>& other, std::string_view field, int fieldIdx,
 												const CollateOpts& collateOpts, TagsMatcher& ltm, TagsMatcher& rtm, bool lForceByJsonPath,
 												bool rForceByJsonPath) const {
@@ -590,7 +583,7 @@ ComparationResult PayloadIface<T>::RelaxCompare(const PayloadIface<const T>& oth
 	}
 	const size_t length = std::min(krefs1.size(), krefs2.size());
 	for (size_t i = 0; i < length; ++i) {
-		auto cmpRes = krefs1[i].RelaxCompare<withString, notComparable>(krefs2[i], collateOpts);
+		auto cmpRes = krefs1[i].RelaxCompare<withString, notComparable, nullsHandling>(krefs2[i], collateOpts);
 		if (cmpRes != ComparationResult::Eq) {
 			return cmpRes;
 		}
@@ -677,7 +670,7 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 void PayloadIface<T>::setArray(int field, const VariantArray& keys, Append append) {
 	if (keys.IsNullValue()) {
-		rx_unused = ResizeArray(field, 0, append);
+		std::ignore = ResizeArray(field, 0, append);
 		return;
 	}
 
@@ -786,6 +779,7 @@ T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 #pragma warning(disable : 5037)
 #endif
 
+// clang-format off
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(std::string_view, const VariantArray&, Append);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, const VariantArray&, Append);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, int, const Variant&);
@@ -795,59 +789,20 @@ template PayloadValue PayloadIface<PayloadValue>::CopyTo<PayloadValue, static_ca
 template PayloadValue PayloadIface<PayloadValue>::CopyWithNewOrUpdatedFields<PayloadValue, static_cast<void*>(0)>(PayloadType t);
 template PayloadValue PayloadIface<PayloadValue>::CopyWithRemovedFields<PayloadValue, static_cast<void*>(0)>(PayloadType t);
 
-template ComparationResult PayloadIface<PayloadValue>::Compare<WithString::Yes, NotComparable::Return>(const PayloadValue&,
-																									   const FieldsSet&,
-																									   const CollateOpts&) const;
-template ComparationResult PayloadIface<PayloadValue>::Compare<WithString::No, NotComparable::Return>(const PayloadValue&, const FieldsSet&,
-																									  const CollateOpts&) const;
-template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::Yes, NotComparable::Return>(const PayloadValue&,
-																											 const FieldsSet&,
-																											 const CollateOpts&) const;
-template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::No, NotComparable::Return>(const PayloadValue&,
-																											const FieldsSet&,
-																											const CollateOpts&) const;
-template ComparationResult PayloadIface<PayloadValue>::Compare<WithString::Yes, NotComparable::Throw>(const PayloadValue&, const FieldsSet&,
-																									  const CollateOpts&) const;
-template ComparationResult PayloadIface<PayloadValue>::Compare<WithString::No, NotComparable::Throw>(const PayloadValue&, const FieldsSet&,
-																									 const CollateOpts&) const;
-template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::Yes, NotComparable::Throw>(const PayloadValue&,
-																											const FieldsSet&,
-																											const CollateOpts&) const;
-template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::No, NotComparable::Throw>(const PayloadValue&,
-																										   const FieldsSet&,
-																										   const CollateOpts&) const;
+template
+ComparationResult PayloadIface<const PayloadValue>::CompareField<WithString::No, NotComparable::Throw, NullsHandling::AlwaysLess>(
+															const PayloadValue&, int, const FieldsSet&, size_t&, const CollateOpts&) const;
+template
+ComparationResult PayloadIface<const PayloadValue>::CompareField<WithString::No, NotComparable::Return, NullsHandling::AlwaysLess>(
+															const PayloadValue&, int, const FieldsSet&, size_t&, const CollateOpts&) const;
+template
+ComparationResult PayloadIface<const PayloadValue>::CompareField<WithString::Yes, NotComparable::Return, NullsHandling::NotComparable>(
+															const PayloadValue&, int, const FieldsSet&, size_t&, const CollateOpts&) const;
 
-template ComparationResult PayloadIface<const PayloadValue>::Compare<WithString::No, NotComparable::Throw>(
-	const PayloadValue&, const FieldsSet&, size_t&, const h_vector<const CollateOpts*, 1>&) const;
-
-template ComparationResult PayloadIface<const PayloadValue>::CompareField<WithString::Yes, NotComparable::Throw>(const PayloadValue&, int,
-																												 const FieldsSet&, size_t&,
-																												 const CollateOpts&) const;
-template ComparationResult PayloadIface<const PayloadValue>::CompareField<WithString::Yes, NotComparable::Return>(const PayloadValue&, int,
-																												  const FieldsSet&, size_t&,
-																												  const CollateOpts&) const;
-template ComparationResult PayloadIface<const PayloadValue>::CompareField<WithString::No, NotComparable::Throw>(const PayloadValue&, int,
-																												const FieldsSet&, size_t&,
-																												const CollateOpts&) const;
-template ComparationResult PayloadIface<const PayloadValue>::CompareField<WithString::No, NotComparable::Return>(const PayloadValue&, int,
-																												 const FieldsSet&, size_t&,
-																												 const CollateOpts&) const;
-template ComparationResult PayloadIface<PayloadValue>::CompareField<WithString::Yes, NotComparable::Throw>(const PayloadValue&, int,
-																										   const FieldsSet&, size_t&,
-																										   const CollateOpts&) const;
-template ComparationResult PayloadIface<PayloadValue>::CompareField<WithString::Yes, NotComparable::Return>(const PayloadValue&, int,
-																											const FieldsSet&, size_t&,
-																											const CollateOpts&) const;
-template ComparationResult PayloadIface<PayloadValue>::CompareField<WithString::No, NotComparable::Throw>(const PayloadValue&, int,
-																										  const FieldsSet&, size_t&,
-																										  const CollateOpts&) const;
-template ComparationResult PayloadIface<PayloadValue>::CompareField<WithString::No, NotComparable::Return>(const PayloadValue&, int,
-																										   const FieldsSet&, size_t&,
-																										   const CollateOpts&) const;
-template ComparationResult PayloadIface<const PayloadValue>::RelaxCompare<WithString::Yes, NotComparable::Throw>(
-	const PayloadIface<const PayloadValue>&, std::string_view, int, const CollateOpts&, TagsMatcher&, TagsMatcher&, bool, bool) const;
-template ComparationResult PayloadIface<const PayloadValue>::RelaxCompare<WithString::No, NotComparable::Throw>(
-	const PayloadIface<const PayloadValue>&, std::string_view, int, const CollateOpts&, TagsMatcher&, TagsMatcher&, bool, bool) const;
+template
+ComparationResult PayloadIface<const PayloadValue>::RelaxCompare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(
+		const PayloadIface<const PayloadValue>&, std::string_view, int, const CollateOpts&, TagsMatcher&, TagsMatcher&, bool, bool) const;
+// clang-format on
 
 template class PayloadIface<PayloadValue>;
 template class PayloadIface<const PayloadValue>;

@@ -27,7 +27,7 @@ void Synonyms::addDslEntries(std::vector<SynonymsDsl>& synonymsDsl, const Multip
 		synonymsDsl.emplace_back(dsl.CopyCtx(), termsIdx);
 
 		for (const auto& alt : alternatives) {
-			rx_unused = synonymsDsl.back().dsl.AddTerm(alt, opts);
+			std::ignore = synonymsDsl.back().dsl.AddTerm(alt, opts);
 		}
 	}
 }

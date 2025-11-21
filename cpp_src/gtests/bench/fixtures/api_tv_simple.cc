@@ -178,7 +178,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 		if (!mItem.Status().ok()) {
 			return mItem.Status();
 		}
-		rx_unused = mItem.Unsafe();
+		std::ignore = mItem.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld(wrSer_);
 		bld.Put("id", i);
@@ -197,7 +197,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 		if (!rItem.Status().ok()) {
 			return rItem.Status();
 		}
-		rx_unused = rItem.Unsafe();
+		std::ignore = rItem.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld2(wrSer_);
 		bld2.Put("id", i);
@@ -220,7 +220,7 @@ reindexer::Item ApiTvSimple::MakeStrItem() {
 	static int id = 0;
 	reindexer::Item item = db_->NewItem(stringSelectNs_);
 	if (item.Status().ok()) {
-		rx_unused = item.Unsafe();
+		std::ignore = item.Unsafe();
 		wrSer_.Reset();
 		reindexer::JsonBuilder bld(wrSer_);
 		bld.Put("id", id++);
@@ -255,7 +255,7 @@ reindexer::Item ApiTvSimple::MakeStrItem() {
 reindexer::Item ApiTvSimple::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
-	rx_unused = item.Unsafe();
+	std::ignore = item.Unsafe();
 
 	auto startTime = random<int>(0, 50000);
 
@@ -362,7 +362,7 @@ void ApiTvSimple::Query2CondLeftJoin2Cond(benchmark::State& state) {
 
 template <typename Total>
 void ApiTvSimple::Query2CondLeftJoin3Cond(benchmark::State& state) {
-	auto q4join = Query(kJoinNamespace).Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos"}).Where("id", CondLt, 500);
+	auto q4join = Query(kJoinNamespace).Where("device", CondEq, "ottstb").Where("location", CondSet, "mos").Where("id", CondLt, 500);
 	auto q = Query(nsdef_.name)
 				 .Where("genre", CondEq, 5)
 				 .Where("year", CondRange, {2010, 2016})
@@ -494,10 +494,6 @@ void ApiTvSimple::InnerJoinInjectConditionFromMain(benchmark::State& state) {
 	};
 	benchQuery(q, state);
 }
-
-struct {
-	void operator()(const reindexer::QueryResults&) const noexcept {}
-} const allowEmptyResult;
 
 void ApiTvSimple::InnerJoinRejectInjection(benchmark::State& state) {
 	const auto q = Query(nsdef_.name).Where("id", CondEq, {-100}).InnerJoin("price_id", "id", CondSet, Query{kJoinNamespace});

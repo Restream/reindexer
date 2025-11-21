@@ -5,8 +5,8 @@ using QueryResults = ReindexerApi::QueryResults;
 using Item = ReindexerApi::Item;
 using Reindexer = ReindexerApi::Reindexer;
 
-bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
-	const auto res = key1.Compare<reindexer::NotComparable::Return>(key2);
+static bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
+	const auto res = key1.Compare<reindexer::NotComparable::Return, reindexer::NullsHandling::NotComparable>(key2);
 	switch (condType) {
 		case CondEq:
 			return res == reindexer::ComparationResult::Eq;
@@ -195,7 +195,7 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		rt.UpsertJSON(ns, json);
 	}
 
-	rx_unused = rt.Select(Query::FromSQL("SELECT * FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2)"));
+	std::ignore = rt.Select(Query::FromSQL("SELECT * FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2)"));
 	{
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IS NULL AND a2=20 equal_position(a1, a2)");

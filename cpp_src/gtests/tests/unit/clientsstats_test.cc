@@ -136,7 +136,7 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		EXPECT_TRUE(curActivity == "SELECT * FROM #clientsstats") << "curActivity = [" << curActivity << "]";
 		std::string curIP = clientsStats["ip"].As<std::string>();
 		std::vector<std::string> addrParts;
-		rx_unused = reindexer::split(curIP, ":", false, addrParts);
+		std::ignore = reindexer::split(curIP, ":", false, addrParts);
 		EXPECT_EQ(addrParts.size(), 2);
 		EXPECT_EQ(addrParts[0], kipaddress) << curIP;
 		int port = std::atoi(addrParts[1].c_str());

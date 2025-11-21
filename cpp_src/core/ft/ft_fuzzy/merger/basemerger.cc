@@ -5,6 +5,7 @@
 #include "core/rdxcontext.h"
 #include "estl/fast_hash_map.h"
 #include "sort/pdqsort.hpp"
+#include "tools/float_comparison.h"
 
 namespace search_engine {
 
@@ -21,7 +22,7 @@ void MergedData::Add(const IDCtx& ctx) {
 		if (it != size_it_->second.end()) {
 			size = it->second;
 		}
-		double src_dst = abs(ctx.data->at(i).pos() - ctx.pos);
+		double src_dst = abs(static_cast<int>(ctx.data->at(i).pos()) - ctx.pos);
 		if (src_dst > ctx.total_size) {
 			src_dst = ctx.total_size - 1;
 		}
@@ -41,7 +42,7 @@ void MergedData::Add(const IDCtx& ctx) {
 		double dst = 1;
 
 		if (!first_) {
-			dst = abs(ctx.data->at(i).pos() - prev_.pos) - 1;
+			dst = abs(static_cast<int>(ctx.data->at(i).pos()) - prev_.pos) - 1;
 
 			dst = (ctx.total_size * ctx.cfg.posDstBoost - dst) / (double(ctx.total_size) * ctx.cfg.posDstBoost);
 		}
@@ -49,7 +50,7 @@ void MergedData::Add(const IDCtx& ctx) {
 		dst = (dst * max_dst_dist) / size;
 
 		double fboost = ctx.opts->fieldsOpts[ctx.data->at(i).field()].boost;
-		if (!fboost) {
+		if (reindexer::fp::IsZero(fboost)) {
 			fboost = 1;
 		}
 
@@ -70,7 +71,7 @@ void MergedData::Add(const IDCtx& ctx) {
 		*ctx.max_proc = rank_;
 	}
 	count_++;
-	prev_ = ResultMerger{ctx.pos, 0, ctx.data->at(curent).pos(), rank_};
+	prev_ = ResultMerger{ctx.pos, 0, static_cast<int>(ctx.data->at(curent).pos()), rank_};
 
 	first_ = false;
 }
@@ -97,7 +98,7 @@ SearchResult BaseMerger::Merge(MergeCtx& ctx, bool inTransaction, const reindexe
 		}
 	}
 	boost::sort::pdqsort(data_set.data_->begin(), data_set.data_->end(), [](const MergedData& lhs, const MergedData& rhs) noexcept {
-		if (lhs.rank_ == rhs.rank_) {
+		if (reindexer::fp::ExactlyEqual(lhs.rank_, rhs.rank_)) {
 			return lhs.id_ < rhs.id_;
 		}
 		return lhs.rank_ > rhs.rank_;

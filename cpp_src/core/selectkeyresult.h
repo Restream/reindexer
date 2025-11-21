@@ -228,7 +228,7 @@ private:
 		ids.resize(idsCount);
 		auto rit = ids.begin();
 		for (auto it = begin(), endIt = end(); it != endIt; ++it) {
-			if rx_unlikely (it->isRange_) {
+			if (it->isRange_) [[unlikely]] {
 				throw Error(errLogic, "Unable to merge 'range' idset ('generic sort mode')");
 			}
 			if (it->useBtree_) {
@@ -258,7 +258,7 @@ private:
 		ptrsVec.reserve(size());
 
 		for (auto& v : *this) {
-			if rx_unlikely (v.isRange_) {
+			if (v.isRange_) [[unlikely]] {
 				throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
 			}
 			ptrsVec.emplace_back(&v);
@@ -344,7 +344,7 @@ private:
 		h_vector<value_type*, 64> ptrsVec;
 		ptrsVec.reserve(size());
 		for (auto& v : *this) {
-			if rx_unlikely (v.isRange_) {
+			if (v.isRange_) [[unlikely]] {
 				throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
 			}
 
@@ -365,7 +365,7 @@ private:
 		std::span<value_type*> idsetsSpan(ptrsVec.data(), ptrsVec.size());
 		std::make_heap(idsetsSpan.begin(), idsetsSpan.end(), IdSetGreater{});
 		int min = INT_MIN;
-		auto handleMinValue = [&mergedIds, &idsetsSpan, &min](auto& it, auto end) noexcept {
+		auto handleMinValue = [&mergedIds, &idsetsSpan, &min](auto& it, auto end) {
 			auto val = *it;
 			if (val > min) {
 				mergedIds->AddUnordered(val);

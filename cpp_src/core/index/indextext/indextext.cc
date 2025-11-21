@@ -51,10 +51,10 @@ void IndexText<T>::initSearchers() {
 				ftFields_.emplace(this->payloadType_->Field(fieldIdx).Name(), FtIndexFieldPros{.isIndexed = true, .fieldNumber = i});
 			}
 		}
-		if rx_unlikely (ftFields_.size() != fields.size()) {
+		if (ftFields_.size() != fields.size()) [[unlikely]] {
 			throw Error(errParams, "Composite fulltext index '{}' contains duplicated fields", this->name_);
 		}
-		if rx_unlikely (ftFields_.size() > kMaxFtCompositeFields) {
+		if (ftFields_.size() > kMaxFtCompositeFields) [[unlikely]] {
 			throw Error(errParams, "Unable to create composite fulltext '{}' index with {} fields. Fields count limit is {}", this->name_,
 						ftFields_.size(), kMaxFtCompositeFields);
 		}
@@ -123,15 +123,15 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 
 	if (condition == CondAny && selectCtx.opts.distinct) {
-		if rx_unlikely (IsComposite(this->Type())) {
+		if (IsComposite(this->Type())) [[unlikely]] {
 			throw Error(errParams, "Composite full text index ({}) does not support DISTINCT", Index::Name());
 		}
 		return Base::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
-	if rx_unlikely (selectCtx.opts.distinct) {
+	if (selectCtx.opts.distinct) [[unlikely]] {
 		throw Error(errParams, "Unexpected condition '{}' with DISTINCT in full text index ({})", CondTypeToStr(condition), Index::Name());
 	}
-	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
+	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) [[unlikely]] {
 		throw Error(errParams, "Full text index ({}) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
 
@@ -163,7 +163,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType cond
 
 template <typename T>
 SelectKeyResults IndexText<T>::resultFromCache(std::string_view key, FtIdSetCache::Iterator&& it, FtCtx& ftCtx, RanksHolder::Ptr& ranks) {
-	if rx_unlikely (cfg_->logLevel >= LogInfo) {
+	if (cfg_->logLevel >= LogInfo) [[unlikely]] {
 		logFmt(LogInfo, "Get search results for '{}' in '{}' from cache", key, this->payloadType_ ? this->payloadType_->Name() : "");
 	}
 	assertrx(it.val.ctx);
@@ -176,7 +176,7 @@ template <typename T>
 SelectKeyResults IndexText<T>::doSelectKey(std::string_view key, FtDSLQuery&& dsl, std::optional<IdSetCacheKey>&& ckey,
 										   FtMergeStatuses&& mergeStatuses, FtUseExternStatuses useExternSt, bool inTransaction,
 										   RankSortType rankSortType, FtCtx& ftCtx, const RdxContext& rdxCtx) {
-	if rx_unlikely (cfg_->logLevel >= LogInfo) {
+	if (cfg_->logLevel >= LogInfo) [[unlikely]] {
 		logFmt(LogInfo, "Searching for '{}' in '{}' {}", key, this->payloadType_ ? this->payloadType_->Name() : "",
 			   ckey ? "(will cache)" : "");
 	}
@@ -225,7 +225,7 @@ template <typename T>
 SelectKeyResults IndexText<T>::SelectKey(const VariantArray& keys, CondType condition, const Index::SelectContext& selectCtx,
 										 FtPreselectT&& preselect, const RdxContext& rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
+	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) [[unlikely]] {
 		throw Error(errParams, "Full text index ({}) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
 	// Parse search query DSL here to perform strict mode validation before cache check

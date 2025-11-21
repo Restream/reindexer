@@ -196,7 +196,7 @@ void parseValues(const JsonValue& values, Array& kvs, std::string_view fieldName
 				++objectsCount;
 			} else if (elem.value.getTag() != JsonTag::JSON_NULL) {
 				kv = jsonValue2Variant(elem.value, KeyValueType::Undefined{}, fieldName, nullptr, ConvertToString_False, ConvertNull_False);
-				rx_unused = kv.EnsureHold();
+				std::ignore = kv.EnsureHold();
 			}
 			kvs.emplace_back(std::move(kv));
 		}
@@ -206,7 +206,7 @@ void parseValues(const JsonValue& values, Array& kvs, std::string_view fieldName
 		}
 	} else if (values.getTag() != JsonTag::JSON_NULL) {
 		Variant kv(jsonValue2Variant(values, KeyValueType::Undefined{}, fieldName, nullptr, ConvertToString_False, ConvertNull_False));
-		rx_unused = kv.EnsureHold();
+		std::ignore = kv.EnsureHold();
 		kvs.emplace_back(std::move(kv));
 	}
 }

@@ -31,7 +31,7 @@ RUN mkdir build && \
 
 FROM alpine:3.22
 
-ARG RX_VERSION=v5.8.0
+ARG RX_VERSION=v5.9.0
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh

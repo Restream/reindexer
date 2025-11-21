@@ -124,7 +124,7 @@ Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>;
 	if (field_ < 0) {
 		VariantArray krs;
-		rx_unused = krs.MarkArray();
+		std::ignore = krs.MarkArray();
 		krs.reserve(arr.size());
 		std::transform(arr.begin(), arr.end(), std::back_inserter(krs), [](const T& t) { return Variant(t); });
 		itemImpl_->SetField(jsonPath(), krs);
@@ -215,7 +215,7 @@ Error Item::GetProtobuf(WrSerializer& wrser) & noexcept { RETURN_RESULT_NOEXCEPT
 int Item::NumFields() const { return impl_->Type().NumFields(); }
 
 Item::FieldRef Item::operator[](int field) const {
-	if (rx_unlikely(field < 0 || field >= impl_->Type().NumFields())) {
+	if (field < 0 || field >= impl_->Type().NumFields()) [[unlikely]] {
 		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; {}]", impl_->Type().NumFields());
 	}
 	const bool notSet = impl_->Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl_->fieldsFilter_ &&

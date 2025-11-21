@@ -62,6 +62,7 @@ std::pair<Error, ConnectorPool::ConnectorProxy> ConnectorPool::GetConnector(cons
 		auto key = idle_.cbegin()->first;
 		auto node = idle_.extract(key);
 		busy_.insert(std::move(node));
+		busySize_.fetch_add(1, std::memory_order_relaxed);
 		lock.unlock();
 
 		if (CheckConnect(*key, config_)) {
@@ -69,6 +70,7 @@ std::pair<Error, ConnectorPool::ConnectorProxy> ConnectorPool::GetConnector(cons
 		}
 		lock.lock();
 		idle_.insert(busy_.extract(key));
+		busySize_.fetch_sub(1, std::memory_order_relaxed);
 	} catch (Error& err) {
 		if (err.code() == errTimeout || err.code() == errCanceled) {
 			return std::make_pair(Error(err.code(), "Some of the connectors are not available (request was canceled/timed out)"),
@@ -93,8 +95,9 @@ void ConnectorPool::ReleaseConnection(const ConnectorProxy& proxy) {
 		notify = idle_.empty();
 
 		if (auto it = busy_.find(proxy.connector_); it != busy_.end()) {
-			rx_unused = CheckConnect(*it->second, config_);
+			std::ignore = CheckConnect(*it->second, config_);
 			idle_.insert(busy_.extract(it));
+			busySize_.fetch_sub(1, std::memory_order_relaxed);
 		}
 	}
 
@@ -102,5 +105,7 @@ void ConnectorPool::ReleaseConnection(const ConnectorProxy& proxy) {
 		cond_.notify_all();
 	}
 }
+
+size_t ConnectorPool::ConnectionInUse() const noexcept { return busySize_.load(std::memory_order_relaxed); }
 
 }  // namespace reindexer

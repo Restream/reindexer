@@ -93,8 +93,8 @@ Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, con
 					break;
 				}
 			}
-			if rx_likely (!hasError) {
-				if rx_unlikely (clientData.results.GetShardingConfigVersion() != shardingVersion) {
+			if (!hasError) [[likely]] {
+				if (clientData.results.GetShardingConfigVersion() != shardingVersion) [[unlikely]] {
 					return Error(errLogic,
 								 "Distributed parallel query: local and remote sharding versions (source IDs) are different: {} vs {}",
 								 shardingVersion, clientData.results.GetShardingConfigVersion());

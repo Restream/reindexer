@@ -25,12 +25,12 @@ int socket::connect(std::string_view addr, socket_domain t) {
 	if (domain() == socket_domain::tcp) {
 		struct addrinfo* results = nullptr;
 		ret = create(addr, &results);
-		if rx_likely (!ret) {
+		if (!ret) [[likely]] {
 			assertrx(results != nullptr);
-			if rx_unlikely (::connect(fd_, results->ai_addr, results->ai_addrlen) != 0) {  // -V595
-				if rx_unlikely (!would_block(last_error())) {
+			if (::connect(fd_, results->ai_addr, results->ai_addrlen) != 0) [[unlikely]] {	// -V595
+				if (!would_block(last_error())) [[unlikely]] {
 					perror("connect error");
-					rx_unused = close();
+					std::ignore = close();
 				}
 				ret = -1;
 			}
@@ -41,19 +41,19 @@ int socket::connect(std::string_view addr, socket_domain t) {
 					int err = openssl::SSL_get_error(*ssl, res);
 					if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE) {
 						perror("ssl connect error");
-						rx_unused = close();
+						std::ignore = close();
 					}
 				}
 			}
 		}
-		if rx_likely (results) {
+		if (results) [[likely]] {
 			freeaddrinfo(results);
 		}
 	} else {
 #ifdef _WIN32
 		return print_not_supported();
 #else	// _WIN32
-		if rx_unlikely (create(addr, nullptr) < 0) {
+		if (create(addr, nullptr) < 0) [[unlikely]] {
 			return -1;
 		}
 
@@ -62,10 +62,10 @@ int socket::connect(std::string_view addr, socket_domain t) {
 		memcpy(address.sun_path, addr.data(), addr.size());
 		address.sun_path[addr.size()] = 0;
 
-		if rx_unlikely (::connect(fd_, reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) != 0) {  // -V595
-			if rx_unlikely (!would_block(last_error())) {
+		if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) != 0) [[unlikely]] {	// -V595
+			if (!would_block(last_error())) [[unlikely]] {
 				perror("connect error");
-				rx_unused = close();
+				std::ignore = close();
 			}
 			return -1;
 		}
@@ -193,20 +193,20 @@ int socket::create(std::string_view addr, struct addrinfo** presults) {
 		}
 
 		int ret = ::getaddrinfo(paddr, pport, &hints, &results);
-		if rx_unlikely (ret != 0) {
+		if (ret != 0) [[unlikely]] {
 			fprintf(stderr, "reindexer error: getaddrinfo failed: %s\n", gai_strerror(ret));
 			return -1;
 		}
 		assertrx(results != nullptr);
 		*presults = results;
 
-		if rx_unlikely ((fd_ = ::socket(results->ai_family, results->ai_socktype, results->ai_protocol)) < 0) {
+		if ((fd_ = ::socket(results->ai_family, results->ai_socktype, results->ai_protocol)) < 0) [[unlikely]] {
 			perror("socket error");
 			return -1;
 		}
 
 		int enable = 1;
-		if rx_unlikely (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&enable), sizeof(enable)) < 0) {
+		if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&enable), sizeof(enable)) < 0) [[unlikely]] {
 			perror("setsockopt(SO_REUSEADDR) failed");
 		}
 	} else {
@@ -217,17 +217,17 @@ int socket::create(std::string_view addr, struct addrinfo** presults) {
 		(void)presults;
 		assertrx(!presults);
 
-		if rx_unlikely ((fd_ = ::socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+		if ((fd_ = ::socket(AF_UNIX, SOCK_STREAM, 0)) < 0) [[unlikely]] {
 			perror("socket error");
 			return -1;
 		}
 #endif	// _WIN32
 	}
 
-	if rx_unlikely (set_nodelay() < 0) {
+	if (set_nodelay() < 0) [[unlikely]] {
 		perror("set_nodelay() failed");
 	}
-	if rx_unlikely (set_nonblock() < 0) {
+	if (set_nonblock() < 0) [[unlikely]] {
 		perror("set_nonblock() failed");
 	}
 
@@ -239,10 +239,10 @@ std::string socket::addr() const {
 		struct sockaddr_storage saddr;
 		struct sockaddr* paddr = reinterpret_cast<sockaddr*>(&saddr);
 		socklen_t len = sizeof(saddr);
-		if rx_likely (::getpeername(fd_, paddr, &len) == 0) {
+		if (::getpeername(fd_, paddr, &len) == 0) [[likely]] {
 			char buf[INET_ADDRSTRLEN] = {};
 			auto port = ntohs(reinterpret_cast<sockaddr_in*>(paddr)->sin_port);
-			if rx_likely (getnameinfo(paddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST) == 0) {
+			if (getnameinfo(paddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST) == 0) [[likely]] {
 				return std::string(buf) + ':' + std::to_string(port);
 			} else {
 				perror("getnameinfo error");
@@ -335,12 +335,12 @@ int lst_socket::bind(std::string_view addr, socket_domain t) {
 	if (domain() == socket_domain::tcp) {
 		struct addrinfo* results = nullptr;
 		ret = sock_.create(addr, &results);
-		if rx_unlikely (!ret) {
+		if (!ret) [[unlikely]] {
 			assertrx(results != nullptr);
 			ret = ::bind(sock_.fd(), results->ai_addr, results->ai_addrlen);
-			if rx_unlikely (ret != 0) {
+			if (ret != 0) [[unlikely]] {
 				perror("bind error");
-				rx_unused = close();
+				std::ignore = close();
 			}
 		}
 		if (results) {
@@ -365,7 +365,7 @@ int lst_socket::bind(std::string_view addr, socket_domain t) {
 		lockFd_ = ::open(unLock_.c_str(), O_WRONLY | O_CREAT | O_APPEND, S_IRWXU);	// open(unLock_.c_str(), O_RDONLY | O_CREAT, 0600);
 		if (lockFd_ < 0) {
 			perror("open(lock) error");
-			rx_unused = close();
+			std::ignore = close();
 			return -1;
 		}
 
@@ -377,17 +377,17 @@ int lst_socket::bind(std::string_view addr, socket_domain t) {
 		lock.l_len = 0;
 		lock.l_pid = getpid();
 
-		if rx_unlikely (fcntl(lockFd_, F_SETLK, &lock) < 0) {
+		if (fcntl(lockFd_, F_SETLK, &lock) < 0) [[unlikely]] {
 			fprintf(stderr, "reindexer error: unable to get LOCK for %s\n", unLock_.c_str());
 			perror("fcntl(F_SETLK) error");
-			rx_unused = close();
+			std::ignore = close();
 			return -1;
 		}
 		unlink(unPath_.c_str());
 
-		if rx_unlikely (::bind(sock_.fd(), reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) < 0) {
+		if (::bind(sock_.fd(), reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) < 0) [[unlikely]] {
 			perror("bind() error");
-			rx_unused = close();
+			std::ignore = close();
 			return -1;
 		}
 #endif	// _WIN32
@@ -450,13 +450,13 @@ socket lst_socket::accept() {
 #else	// __linux__
 	socket client(::accept(sock_.fd(), &client_addr, &client_len), domain());
 	if (client.valid()) {
-		if rx_unlikely (client.set_nonblock() < 0) {
+		if (client.set_nonblock() < 0) [[unlikely]] {
 			perror("client.set_nonblock() error");
 		}
 	}
 #endif	// __linux__
-	if rx_likely (client.valid()) {
-		if rx_unlikely (client.set_nodelay() != 0) {
+	if (client.valid()) [[likely]] {
+		if (client.set_nodelay() != 0) [[unlikely]] {
 			perror("client.set_nodelay() error");
 		}
 	}

@@ -14,7 +14,7 @@ public:
 	void done() {
 		assertrx(wait_cnt_);
 		if (--wait_cnt_ == 0 && waiter_) {
-			resume(waiter_);
+			std::ignore = resume(waiter_);
 		}
 	}
 	/// Await coroutines

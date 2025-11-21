@@ -44,7 +44,7 @@ CoroClientConnection::~CoroClientConnection() {
 void CoroClientConnection::Start(ev::dynamic_loop& loop, ConnectData&& connectData) {
 	if (!isRunning_) {
 		// Don't allow to call Start, while error handling is in progress
-		rx_unused = errSyncCh_.pop();
+		std::ignore = errSyncCh_.pop();
 
 		if (loop_ != &loop) {
 			if (loop_) {
@@ -80,7 +80,7 @@ void CoroClientConnection::Start(ev::dynamic_loop& loop, ConnectData&& connectDa
 
 void CoroClientConnection::Stop() {
 	if (isRunning_) {
-		rx_unused = errSyncCh_.pop();
+		std::ignore = errSyncCh_.pop();
 		errSyncCh_.reopen();
 
 		terminate_ = true;
@@ -130,7 +130,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams& opts, const Args& 
 	}
 
 	// Don't allow to add new requests, while error handling is in progress
-	rx_unused = errSyncCh_.pop();
+	std::ignore = errSyncCh_.pop();
 
 	const uint32_t seq = seqp.first;
 	auto& call = rpcCalls_[seq % rpcCalls_.size()];
@@ -177,7 +177,7 @@ Error CoroClientConnection::callNoReply(const CommandParams& opts, uint32_t seq,
 	}
 
 	// Don't allow to add new requests, while error handling is in progress
-	rx_unused = errSyncCh_.pop();
+	std::ignore = errSyncCh_.pop();
 
 	try {
 		wrCh_.push(packRPC(opts.cmd, seq, true, args, Args{Arg{int64_t(opts.execTimeout.count())}}, LoginTs()));
@@ -239,7 +239,7 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 			ret = conn_.async_connect(connectData_.uri.hostname() + ":" + port, socket_domain::tcp);
 		} else {
 			std::vector<std::string_view> pathParts;
-			rx_unused = split(std::string_view(connectData_.uri.path()), ":", true, pathParts);
+			std::ignore = split(std::string_view(connectData_.uri.path()), ":", true, pathParts);
 			if (pathParts.size() >= 2) {
 				dbName = pathParts.back();
 				ret = conn_.async_connect(connectData_.uri.path().substr(0, connectData_.uri.path().size() - dbName.size() - 1),
@@ -331,7 +331,7 @@ void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
 void CoroClientConnection::handleFatalErrorFromWriter(const Error& err) noexcept {
 	if (!terminate_) {
 		if (errSyncCh_.opened()) {
-			rx_unused = errSyncCh_.pop();
+			std::ignore = errSyncCh_.pop();
 			return;
 		} else {
 			errSyncCh_.reopen();
@@ -586,7 +586,7 @@ void CoroClientConnection::pingerRoutine() {
 	while (!terminate_) {
 		loop_->granular_sleep(kKeepAliveInterval, kCoroSleepGranularity, [this] { return terminate_; });
 		if (loggedIn_) {
-			rx_unused = call({kCmdPing, timeout, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false}, {});
+			std::ignore = call({kCmdPing, timeout, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false}, {});
 		}
 	}
 }

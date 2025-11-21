@@ -31,11 +31,11 @@ Listener<LT>::Listener(ev::dynamic_loop& loop, std::shared_ptr<Shared> shared)
 	async_.start();
 
 	lock_guard lck(shared_->mtx_);
-	if rx_unlikely (int(shared_->listeners_.size()) == shared_->maxListeners_) {
+	if (int(shared_->listeners_.size()) == shared_->maxListeners_) [[unlikely]] {
 		// We are going to get this exception few times in case of concurrent listeners creation
 		throw Error(errConflict, "Too many shared listeners");
 	}
-	if rx_unlikely (shared_->terminating_) {
+	if (shared_->terminating_) [[unlikely]] {
 		throw Error(errConflict, "Listener is terminating");
 	}
 	logFmt(LogTrace, "Listener ({}). Creating new shared thread ({} total)", shared_->addr_, shared_->listeners_.size() + 1);
@@ -165,7 +165,7 @@ void Listener<LT>::io_accept(ev::io& /*watcher*/, int revents) {
 		shared_->idle_.pop_back();
 		lck.unlock();
 		conn->Attach(loop_);
-		rx_unused = conn->Restart(std::move(client));
+		std::ignore = conn->Restart(std::move(client));
 	} else {
 		lck.unlock();
 		conn = std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, std::move(client), LT == ListenerType::Mixed));
@@ -473,7 +473,7 @@ Listener<LT>::Shared::Worker::Worker(std::shared_ptr<Shared> shared, std::unique
 	async_.start();
 
 	lock_guard lck(shared_->mtx_);
-	if rx_unlikely (shared_->terminating_) {
+	if (shared_->terminating_) [[unlikely]] {
 		throw Error(errConflict, "Listener is terminating");
 	}
 	shared_->dedicatedWorkers_.emplace_back(this);
@@ -513,7 +513,7 @@ Listener<LT>::Shared::Shared(ConnectionFactory&& connFactory, int maxListeners, 
 
 template <ListenerType LT>
 Listener<LT>::Shared::~Shared() {
-	if rx_unlikely (sock_.close() != 0) {
+	if (sock_.close() != 0) [[unlikely]] {
 		perror("sock_.close() error");
 	}
 }
@@ -530,7 +530,7 @@ ForkedListener::ForkedListener(ev::dynamic_loop& loop, ConnectionFactory&& connF
 ForkedListener::~ForkedListener() {
 	io_.stop();
 	ForkedListener::Stop();
-	if rx_unlikely (sock_.close() != 0) {
+	if (sock_.close() != 0) [[unlikely]] {
 		perror("sock_.close() error");
 	}
 }

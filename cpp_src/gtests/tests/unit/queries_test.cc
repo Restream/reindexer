@@ -6,7 +6,6 @@
 #include "core/schema.h"
 #include "csv2jsonconverter.h"
 #include "queries_api.h"
-#include "server/pprof/gperf_profiler.h"
 #include "tools/jsontools.h"
 
 TEST_F(QueriesApi, QueriesStandardTestSet) {
@@ -240,12 +239,12 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		 Query{"main_ns"}.Where("id", CondGt, Query{"second_ns"}.Where("id", CondLt, 10).ReqTotal())},
 		{"SELECT * FROM main_ns WHERE (SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL AND value IN (5,4,1)",
 		 Query{"main_ns"}
-			 .Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, {})
+			 .Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, VariantArray{})
 			 .Where("value", CondSet, {Variant{5}, Variant{4}, Variant{1}})},
 		{"SELECT * FROM main_ns WHERE ((SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL) AND value IN (5,4,1)",
 		 Query{"main_ns"}
 			 .OpenBracket()
-			 .Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, {})
+			 .Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, VariantArray{})
 			 .CloseBracket()
 			 .Where("value", CondSet, {Variant{5}, Variant{4}, Variant{1}})},
 		{"SELECT * FROM main_ns WHERE id IN (SELECT id FROM second_ns WHERE id < 999) AND value >= 1000",
@@ -532,7 +531,7 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "aggregations": []
 }})",
 				   default_namespace, joinNs, kFieldNameId),
-			   Query(default_namespace).Where(Query(joinNs).Where(kFieldNameId, CondEq, 1), CondAny, {})},
+			   Query(default_namespace).Where(Query(joinNs).Where(kFieldNameId, CondEq, 1), CondAny, VariantArray{})},
 			  {fmt::format(
 				   R"({{
    "namespace": "{}",
@@ -1359,17 +1358,14 @@ TEST_F(QueriesApi, SortByFieldWithDifferentTypes) {
 }
 
 TEST_F(QueriesApi, SerializeDeserialize) {
-	Query q = Query(default_namespace).Where(Query(default_namespace), CondAny, {});
-	(void)q;
-
 	Query queries[]{
-		Query(default_namespace).Where(Query(default_namespace), CondAny, {}),
+		Query(default_namespace).Where(Query(default_namespace), CondAny, VariantArray{}),
 		Query(default_namespace).Where(kFieldNameUuidArr, CondRange, randHeterogeneousUuidArray(2, 2)),
 		Query(default_namespace)
 			.WhereComposite(kCompositeFieldUuidName, CondRange,
 							{VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())}),
-		Query(default_namespace).Where(Query(default_namespace).Where(kFieldNameId, CondEq, 10), CondAny, {}),
-		Query(default_namespace).Not().Where(Query(default_namespace), CondEmpty, {}),
+		Query(default_namespace).Where(Query(default_namespace).Where(kFieldNameId, CondEq, 10), CondAny, VariantArray{}),
+		Query(default_namespace).Not().Where(Query(default_namespace), CondEmpty, VariantArray{}),
 		Query(default_namespace).Where(kFieldNameId, CondLt, Query(default_namespace).Aggregate(AggAvg, {kFieldNameId})),
 		Query(default_namespace)
 			.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40})),
@@ -1384,7 +1380,7 @@ TEST_F(QueriesApi, SerializeDeserialize) {
 			.Debug(LogTrace)
 			.Where(kFieldNameGenre, CondEq, 5)
 			.Not()
-			.Where(Query(default_namespace).Where(kFieldNameGenre, CondEq, 5), CondAny, {})
+			.Where(Query(default_namespace).Where(kFieldNameGenre, CondEq, 5), CondAny, VariantArray{})
 			.Or()
 			.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
 			.Not()
@@ -1393,7 +1389,7 @@ TEST_F(QueriesApi, SerializeDeserialize) {
 			.Or()
 			.Where(kFieldNameName, CondLike, RandLikePattern())
 			.Or()
-			.Where(Query(joinNs).Where(kFieldNameYear, CondEq, 2000 + rand() % 210), CondEmpty, {})
+			.Where(Query(joinNs).Where(kFieldNameYear, CondEq, 2000 + rand() % 210), CondEmpty, VariantArray{})
 			.CloseBracket()
 			.Or()
 			.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
@@ -1478,19 +1474,19 @@ TEST_F(QueriesApi, ExtraSpacesUpdateSQL) {
 		SCOPED_TRACE("ExtraSpacesUpdateSQL Step 1");
 		Query updateQuery = Query::FromSQL(
 			R"(update #config set "profiling.long_queries_logging.update_delete" = {"threshold_us":11, "normalized":false} where "type"='profiling')");
-		rx_unused = rt.Update(updateQuery);
+		std::ignore = rt.Update(updateQuery);
 	}
 	{
 		SCOPED_TRACE("ExtraSpacesUpdateSQL Step 2");
 		Query updateQuery = Query::FromSQL(
 			R"(update #config set "profiling.long_queries_logging.update_delete"={ "threshold_us" : 11, "normalized":false } where "type"='profiling')");
-		rx_unused = rt.Update(updateQuery);
+		std::ignore = rt.Update(updateQuery);
 	}
 	{
 		SCOPED_TRACE("ExtraSpacesUpdateSQL Step 3");
 		Query updateQuery = Query::FromSQL(
 			R"(update #config set "profiling.long_queries_logging.update_delete"={  "threshold_us" : 11,  "normalized": false } where "type" = 'profiling')");
-		rx_unused = rt.Update(updateQuery);
+		std::ignore = rt.Update(updateQuery);
 	}
 }
 

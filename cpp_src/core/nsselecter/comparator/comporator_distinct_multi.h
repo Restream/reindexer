@@ -22,13 +22,9 @@ public:
 		return invert ? (totalCalls_ - matchedCount_) : matchedCount_;
 	}
 	double Cost(double expectedIterations) const noexcept { return expectedIterations + 2.0; }
-
 	bool Compare(const PayloadValue& item, IdType rowId);
-
 	void ExcludeDistinctValues(const PayloadValue& item, IdType rowId);
-
-	bool IsDistinct() const noexcept { return true; }
-
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	bool IsIndexed() const noexcept {
 		for (const auto& f : fieldNames_) {
 			if (f == IndexValueType::SetByJsonPath) {
@@ -71,7 +67,6 @@ public:
 		return invert ? (totalCalls_ - matchedCount_) : matchedCount_;
 	}
 	double Cost(double expectedIterations) const noexcept { return expectedIterations + 2.0; }
-
 	bool Compare(const PayloadValue& item, IdType rowId) {
 		++totalCalls_;
 		lastData_.rowId = rowId;
@@ -80,7 +75,6 @@ public:
 		matchedCount_ += int(res);
 		return res;
 	}
-
 	void ExcludeDistinctValues(const PayloadValue& item, IdType rowId) {
 		if (rowId != lastData_.rowId) {
 			getter_.GetData(item, rowId, lastData_.data);
@@ -88,8 +82,7 @@ public:
 		}
 		values_.emplace(lastData_.data);
 	}
-
-	bool IsDistinct() const noexcept { return true; }
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	bool IsIndexed() const noexcept { return true; }
 
 private:
@@ -144,8 +137,8 @@ public:
 					const auto* bv = reinterpret_cast<const ViewType*>(d.first);
 					data.emplace_back(p_string(bv + rowId));
 				},
-				[&](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-						  KeyValueType::FloatVector>) { assertrx_throw(false); });
+				[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
+									KeyValueType::FloatVector> auto) { assertrx_throw(false); });
 		}
 	}
 
@@ -178,8 +171,8 @@ public:
 									   data.emplace_back(p_string(bv + rowId));
 								   },
 
-								   [&](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
-											 KeyValueType::FloatVector>) { assertrx_throw(false); });
+								   [&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
+													   KeyValueType::Tuple, KeyValueType::FloatVector> auto) { assertrx_throw(false); });
 						   },
 						   [&](int i) {
 							   PayloadFieldValue pfv = pv.Field(i);
@@ -206,13 +199,9 @@ public:
 		return invert ? (totalCalls_ - matchedCount_) : matchedCount_;
 	}
 	double Cost(double expectedIterations) const noexcept { return expectedIterations + 2.0; }
-
 	bool Compare(const PayloadValue& item, IdType rowId);
-
 	void ExcludeDistinctValues(const PayloadValue& item, IdType rowId);
-
-	bool IsDistinct() const noexcept { return true; }
-
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	bool IsIndexed() const noexcept { return true; }
 
 private:

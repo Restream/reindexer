@@ -167,7 +167,7 @@ public:
 	JoinedSelector(const JoinedSelector&) = delete;
 	JoinedSelector& operator=(const JoinedSelector&) = delete;
 
-	bool Process(IdType, int nsId, ConstPayload, FloatVectorsHolderMap*, bool match);
+	bool Process(IdType, int nsId, ConstPayload, FloatVectorsHolderMap*, bool withJoinedItems);
 	JoinType Type() const noexcept { return joinType_; }
 	void SetType(JoinType type) noexcept { joinType_ = type; }
 	const std::string& RightNsName() const noexcept { return itemQuery_.NsName(); }

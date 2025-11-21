@@ -62,7 +62,7 @@ private:
 	template <bool desc, bool multiColumnSort, typename It>
 	It applyForcedSort(It begin, It end, const ItemComparator&, const SelectCtx& ctx, const joins::NamespaceResults*);
 	template <bool desc, bool multiColumnSort, typename It, typename ValueGetter>
-	static It applyForcedSortImpl(NamespaceImpl&, It begin, It end, const ItemComparator&, const std::vector<Variant>& forcedSortOrder,
+	static It applyForcedSortImpl(NamespaceImpl&, It begin, It end, const ItemComparator&, const VariantArray& forcedSortOrder,
 								  const std::string& fieldName, const ValueGetter&);
 	template <typename It>
 	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator&, const SelectCtx& ctx);

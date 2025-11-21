@@ -51,18 +51,18 @@ Atag is 4 byte int, which encodes type and count elements in array (TTTTTTTTNNNN
 ## Record format
 
 ````
-record := 
+record :=
   ctag := (TAG_OBJECT,name)
-    [field := 
+    [field :=
       ctag := (TAG_VARINT,name) data := <varint> |
       ctag := (TAG_DOUBLE,name) data := <8 byte double> |
       ctag := (TAG_BOOL,name) data := <1 byte: 0 - False, 1 - True> |
       ctag := (TAG_STRING,name) data := <varint(string length)>, <char array> |
       ctag := (TAG_NULL,name) |
-      ctag := (TAG_ARRAY,name) 
-        data := atag := TAG_OBJECT|TAG_VARINT|TAG_DOUBLE|TAG_BOOL, count) 
+      ctag := (TAG_ARRAY,name)
+        data := atag := TAG_OBJECT|TAG_VARINT|TAG_DOUBLE|TAG_BOOL, count)
         array := [ctag := TAG_XXX] <data>,[[ctag := TAG_XXX>]<data>]] ... |
-      ctag (TAG_OBJECT,name)> 
+      ctag (TAG_OBJECT,name)>
         [subfield := field]
       ...
       ctag := (TAG_END)
@@ -79,7 +79,7 @@ record :=
 | 2 | Records              | Tree of records. Begins with TAG_OBJECT, end TAG_END                       |
 | 3 | Names dictionary     | Dictionary of field names                                                  |
 ```
-names_dictionary := 
+names_dictionary :=
   <varint(start_index)>
   <varint(count)>
   [[<varint(string length)>, <name char array>],
@@ -102,7 +102,7 @@ names_dictionary :=
 }
 ```
 ```
-(TAG_OBJECT)                                    06 
+(TAG_OBJECT)                                    06
   (TAG_STRING,1) 5,"Hello"                      0A 05 48 65 6C 6C 6F
   (TAG_VARINT,2) 2010                           10 B4 1F
   (TAG_ARRAY,3) (TAG_VARINT,5) 1 2 3 4 5        1B 05 00 00 00 01 02 03 04 05
@@ -115,26 +115,30 @@ names_dictionary :=
 
 ### Array representations
 
-Thus, a heterogeneous array with two elements: the first string is "hello", the second boolean value is "true", can be encoded as follows:
+Thus, a heterogeneous array with three elements: the first string is "hello", the second boolean value is "true", the third one is nested array, can be encoded as follows:
 ```json
 {
-    "test": ["hi",true]
+    "test": ["hi",true,[7,9]]
 }
 ```
 ```
-(TAG_ARRAY, field index) (TAG_OBJECT, array len) (TAG_STRING, string len, char array) (TAG_BOOL, value)
+(TAG_ARRAY, field index) (TAG_OBJECT, array len) (TAG_STRING, string len, char array) (TAG_BOOL, value) (TAG_ARRAY, 0) (TAG_VARINT, array len) 7 9
 ```
 ```
-\065\002\000\000\006\002\002hi\003\001\a
+\065\003\000\000\006\002\002hi\003\001\005\002\000\000\000\007\011\a
 ```
 | Value            | Descripton                     |
-------------------|--------------------------------|
+|------------------|--------------------------------|
 | \065             | Ctag(TAG_ARRAY)                |
-| \002\000\000\006 | Atag(2 item TAG_OBJECT)        |
+| \003\000\000\006 | Atag(3 items TAG_OBJECT)       |
 | \002             | Ctag(TAG_STRING)               |
 | \002hi           | Item string, 2 character, "hi" |
 | \003             | Ctag(TAG_BOOL)                 |
 | \001             | Item boolean, 'true'           |
+| \005             | Ctag(TAG_ARRAY)                |
+| \002\000\000\000 | Atag(2 items TAG_VARINT)       |
+| \007             | Item varint, 7                 |
+| \011             | Item varint, 9                 |
 
 
 Homogeneous array

@@ -69,11 +69,11 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 	if (!tagName.IsEmpty()) {
 		tagsPath_.emplace_back(tagName);
 		if (const auto field = tm_.tags2field(tagsPath_); field.IsSparseIndex()) {
-			decode(
-				pl, builder, obj, tagName, floatVectorsHolder,
-				SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tm_, isInArray(), kMsgPackFmt});
+			SparseValidator validator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tm_,
+									  isInArray(),		 kMsgPackFmt};
+			decode(pl, builder, obj, tagName, floatVectorsHolder, validator);
 		} else {
-			if rx_unlikely (field.IsIndexed() && obj.type == MSGPACK_OBJECT_MAP) {
+			if (field.IsIndexed() && obj.type == MSGPACK_OBJECT_MAP) [[unlikely]] {
 				throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), kMsgPackFmt);
 			}
 			decode(pl, builder, obj, tagName, floatVectorsHolder, kNoValidation);
@@ -116,92 +116,31 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 			setValue(pl, builder, p_string(reinterpret_cast<const l_msgpack_hdr*>(&obj.via.str)), tagName, validator);
 			break;
 		case MSGPACK_OBJECT_ARRAY: {
-			size_t count = 0;
 			CounterGuardIR32 g(arrayLevel_);
 			const msgpack_object* const begin = obj.via.array.ptr;
 			const msgpack_object* const end = begin + obj.via.array.size;
-			msgpack_object_type beginType = begin == end ? MSGPACK_OBJECT_NIL : begin->type;
-			ObjType type = ObjType::TypeArray;
-			for (const msgpack_object* p = begin; p != end; ++p, ++count) {
-				if (beginType != p->type) {
-					type = ObjType::TypeObjectArray;
-				}
-			}
+			const auto [arrayType, isNested, outterSize, fullSize] = analizeArray(begin, end);
 			const auto field = tm_.tags2field(tagsPath_);
 			if (field.IsRegularIndex()) {
 				const auto indexNumber = field.IndexNumber();
 				const auto& f = pl.Type().Field(indexNumber);
 				if (f.IsFloatVector()) {
-					ConstFloatVectorView vectView;
-					if (count != 0) {
-						if (count != f.FloatVectorDimension().Value()) {
-							throwUnexpectedArraySizeForFloatVectorError(kMsgPackFmt, f, count);
-						}
-						auto vect = FloatVector::CreateNotInitialized(f.FloatVectorDimension());
-						size_t pos = 0;
-						for (const msgpack_object* p = begin; p != end; ++p, ++pos) {
-							assertrx(pos < f.FloatVectorDimension().Value());
-							switch (p->type) {
-								case MSGPACK_OBJECT_FLOAT32:
-								case MSGPACK_OBJECT_FLOAT64:
-									vect.RawData()[pos] = p->via.f64;
-									break;
-								case MSGPACK_OBJECT_BOOLEAN:
-								case MSGPACK_OBJECT_POSITIVE_INTEGER:
-								case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-								case MSGPACK_OBJECT_STR:
-								case MSGPACK_OBJECT_NIL:
-								case MSGPACK_OBJECT_ARRAY:
-								case MSGPACK_OBJECT_MAP:
-								case MSGPACK_OBJECT_BIN:
-								case MSGPACK_OBJECT_EXT:
-								default:
-									throwUnexpectedArrayTypeForFloatVectorError(kMsgPackFmt, f);
-							}
-						}
-						if (floatVectorsHolder.Add(std::move(vect))) {
-							vectView = floatVectorsHolder.Back();
-						}
-					}
-					pl.Set(indexNumber, Variant{vectView});
+					decodeFloatVector(pl, f, indexNumber, builder, tagName, begin, end, fullSize, floatVectorsHolder);
 				} else {
-					if rx_unlikely (!f.IsArray()) {
+					if (!f.IsArray()) [[unlikely]] {
 						throwUnexpectedArrayError(f.Name(), f.Type(), kMsgPackFmt);
 					}
-					validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), count, kMsgPackFmt);
-					int pos = pl.ResizeArray(indexNumber, count, Append_True);
-					for (const msgpack_object* p = begin; p != end; ++p) {
-						auto val = [&] {
-							switch (p->type) {
-								case MSGPACK_OBJECT_BOOLEAN:
-									return Variant{p->via.boolean};
-								case MSGPACK_OBJECT_POSITIVE_INTEGER:
-									return Variant{int64_t(p->via.u64)};
-								case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-									return Variant{p->via.i64};
-								case MSGPACK_OBJECT_FLOAT32:
-								case MSGPACK_OBJECT_FLOAT64:
-									return Variant{p->via.f64};
-								case MSGPACK_OBJECT_STR:
-									return Variant{p_string(reinterpret_cast<const l_msgpack_hdr*>(&p->via.str)), Variant::HoldT{}};
-								case MSGPACK_OBJECT_NIL:
-									return Variant{};
-								case MSGPACK_OBJECT_MAP:
-									throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), kMsgPackFmt);
-								case MSGPACK_OBJECT_ARRAY:
-								case MSGPACK_OBJECT_BIN:
-								case MSGPACK_OBJECT_EXT:
-								default:
-									throw Error(errLogic, "Unsupported MsgPack array field type: {}({})", ToString(p->type), int(p->type));
-							}
-						}();
-						convertValueForIndexField(f.Type(), f.Name(), val, kMsgPackFmt, ConvertToString_False, ConvertNull_True);
-						pl.Set(indexNumber, pos++, std::move(val));
+					validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), fullSize, kMsgPackFmt);
+					int pos = pl.ResizeArray(indexNumber, fullSize, Append_True);
+					if (isNested) {
+						builder.HeteroArray(tagName, outterSize);
+						decodeNestedArray(pl, f, pos, indexNumber, builder, begin, end);
+					} else {
+						decodeArray(pl, f, pos, indexNumber, builder, tagName, begin, end, fullSize);
 					}
 				}
-				builder.ArrayRef(tagName, indexNumber, count);
 			} else {
-				auto array = builder.Array(tagName, type);
+				auto array = builder.Array(tagName, arrayType);
 				auto arrayValidator = validator.Array();
 				for (const msgpack_object* p = begin; p != end; ++p) {
 					decode(pl, array, *p, TagName::Empty(), floatVectorsHolder, arrayValidator.Elem());
@@ -228,6 +167,130 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 	}
 }
 
+void MsgPackDecoder::decodeFloatVector(Payload& pl, const PayloadFieldType& plFieldType, int indexNumber, CJsonBuilder& builder,
+									   TagName tagName, const msgpack_object* const begin, const msgpack_object* const end,
+									   size_t arraySize, FloatVectorsHolderVector& floatVectorsHolder) {
+	ConstFloatVectorView vectView;
+	if (arraySize != 0) {
+		if (arraySize != plFieldType.FloatVectorDimension().Value()) {
+			throwUnexpectedArraySizeForFloatVectorError(kMsgPackFmt, plFieldType, arraySize);
+		}
+		auto vect = FloatVector::CreateNotInitialized(plFieldType.FloatVectorDimension());
+		size_t pos = 0;
+		for (const msgpack_object* p = begin; p != end; ++p, ++pos) {
+			assertrx(pos < plFieldType.FloatVectorDimension().Value());
+			switch (p->type) {
+				case MSGPACK_OBJECT_FLOAT32:
+				case MSGPACK_OBJECT_FLOAT64:
+					vect.RawData()[pos] = p->via.f64;
+					break;
+				case MSGPACK_OBJECT_BOOLEAN:
+				case MSGPACK_OBJECT_POSITIVE_INTEGER:
+				case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+				case MSGPACK_OBJECT_STR:
+				case MSGPACK_OBJECT_NIL:
+				case MSGPACK_OBJECT_ARRAY:
+				case MSGPACK_OBJECT_MAP:
+				case MSGPACK_OBJECT_BIN:
+				case MSGPACK_OBJECT_EXT:
+				default:
+					throwUnexpectedArrayTypeForFloatVectorError(kMsgPackFmt, plFieldType);
+			}
+		}
+		if (floatVectorsHolder.Add(std::move(vect))) {
+			vectView = floatVectorsHolder.Back();
+		}
+	}
+	pl.Set(indexNumber, Variant{vectView});
+	builder.ArrayRef(tagName, indexNumber, arraySize);
+}
+
+Variant MsgPackDecoder::msgpackValue2Variant(const PayloadFieldType& plFieldType, const msgpack_object& obj) {
+	Variant result = [&] {
+		switch (obj.type) {
+			case MSGPACK_OBJECT_BOOLEAN:
+				return Variant{obj.via.boolean};
+			case MSGPACK_OBJECT_POSITIVE_INTEGER:
+				return Variant{int64_t(obj.via.u64)};
+			case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+				return Variant{obj.via.i64};
+			case MSGPACK_OBJECT_FLOAT32:
+			case MSGPACK_OBJECT_FLOAT64:
+				return Variant{obj.via.f64};
+			case MSGPACK_OBJECT_STR:
+				return Variant{p_string(reinterpret_cast<const l_msgpack_hdr*>(&obj.via.str)), Variant::HoldT{}};
+			case MSGPACK_OBJECT_NIL:
+				return Variant{};
+			case MSGPACK_OBJECT_MAP:
+				throwUnexpectedObjectInIndex(tm_.Path2Name(tagsPath_), kMsgPackFmt);
+			case MSGPACK_OBJECT_ARRAY:
+			case MSGPACK_OBJECT_BIN:
+			case MSGPACK_OBJECT_EXT:
+			default:
+				throw Error(errLogic, "Unsupported MsgPack array field type: {}({})", ToString(obj.type), int(obj.type));
+		}
+	}();
+	convertValueForIndexField(plFieldType.Type(), plFieldType.Name(), result, kMsgPackFmt, ConvertToString_False, ConvertNull_True);
+	return result;
+}
+
+void MsgPackDecoder::decodeArray(Payload& pl, const PayloadFieldType& plFieldType, int& plArrayPos, int indexNumber, CJsonBuilder& builder,
+								 TagName tagName, const msgpack_object* const begin, const msgpack_object* const end, size_t arraySize) {
+	for (const msgpack_object* p = begin; p != end; ++p) {
+		pl.Set(indexNumber, plArrayPos++, msgpackValue2Variant(plFieldType, *p));
+	}
+	builder.ArrayRef(tagName, indexNumber, arraySize);
+}
+
+void MsgPackDecoder::decodeNestedArray(Payload& pl, const PayloadFieldType& plFieldType, int& plArrayPos, int indexNumber,
+									   CJsonBuilder& builder, const msgpack_object* const begin, const msgpack_object* const end) {
+	for (const msgpack_object* p = begin; p != end; ++p) {
+		if (p->type == MSGPACK_OBJECT_ARRAY) {
+			const msgpack_object* const nestedBegin = p->via.array.ptr;
+			const msgpack_object* const nestedEnd = nestedBegin + p->via.array.size;
+			const auto [isNested, nestedSize] = fastAnalizeArray(nestedBegin, nestedEnd);
+			if (isNested) {
+				builder.HeteroArray(TagName::Empty(), nestedSize);
+				decodeNestedArray(pl, plFieldType, plArrayPos, indexNumber, builder, nestedBegin, nestedEnd);
+			} else {
+				decodeArray(pl, plFieldType, plArrayPos, indexNumber, builder, TagName::Empty(), nestedBegin, nestedEnd, nestedSize);
+			}
+		} else {
+			pl.Set(indexNumber, plArrayPos++, msgpackValue2Variant(plFieldType, *p));
+			builder.Ref(TagName::Empty(), plFieldType.Type(), indexNumber);
+		}
+	}
+}
+
+MsgPackDecoder::FastArrayAnalizeResult MsgPackDecoder::fastAnalizeArray(const msgpack_object* const begin,
+																		const msgpack_object* const end) {
+	FastArrayAnalizeResult result;
+	for (const msgpack_object* p = begin; p != end; ++p, ++result.outterSize_) {
+		if (p->type == MSGPACK_OBJECT_ARRAY) {
+			result.isNested_ = true;
+		}
+	}
+	return result;
+}
+
+MsgPackDecoder::ArrayAnalizeResult MsgPackDecoder::analizeArray(const msgpack_object* const begin, const msgpack_object* const end) {
+	ArrayAnalizeResult result;
+	for (const msgpack_object* p = begin; p != end; ++p, ++result.outterSize_) {
+		if (p->type == MSGPACK_OBJECT_ARRAY) {
+			result.arrayType_ = ObjType::TypeObjectArray;
+			result.isNested_ = true;
+			const auto& nestedArray = p->via.array;
+			result.fullSize_ += analizeArray(nestedArray.ptr, nestedArray.ptr + nestedArray.size).fullSize_;
+		} else {
+			++result.fullSize_;
+			if (begin->type != p->type) {
+				result.arrayType_ = ObjType::TypeObjectArray;
+			}
+		}
+	}
+	return result;
+}
+
 Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset,
 							 FloatVectorsHolderVector& floatVectorsHolder) noexcept {
 	try {
@@ -235,10 +298,10 @@ Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wr
 		tagsPath_.clear();
 		size_t baseOffset = offset;
 		MsgPackValue data = parser_.Parse(buf, offset);
-		if rx_unlikely (!data.p) {
+		if (!data.p) [[unlikely]] {
 			return Error(errLogic, "Error unpacking msgpack data");
 		}
-		if rx_unlikely (data.p->type != MSGPACK_OBJECT_MAP) {
+		if (data.p->type != MSGPACK_OBJECT_MAP) [[unlikely]] {
 			std::string_view slice = buf.substr(baseOffset, 16);
 			return Error(errNotValid, "Unexpected MsgPack value. Expected {}, but got {}({}) at {}(~>\"{}\"...)",
 						 ToString(MSGPACK_OBJECT_MAP), ToString(data.p->type), int(data.p->type), baseOffset, slice);

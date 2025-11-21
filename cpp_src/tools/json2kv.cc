@@ -4,7 +4,7 @@
 #include "core/keyvalue/float_vectors_holder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
-#include "estl/one_of.h"
+#include "tools/float_comparison.h"
 #include "tools/scope_guard.h"
 
 namespace reindexer {
@@ -32,15 +32,15 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 						throwUnexpected(fieldName, t, "number"sv, kJSONFmt);
 					}
 				},
-				[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector>)
-					-> Variant { throwUnexpected(fieldName, t, "number"sv, kJSONFmt); });
+				[&](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid,
+									KeyValueType::FloatVector> auto) -> Variant { throwUnexpected(fieldName, t, "number"sv, kJSONFmt); });
 		case gason::JsonTag::DOUBLE:
 			return t.EvaluateOneOf(
-				[&](OneOf<KeyValueType::Undefined, KeyValueType::Double>) noexcept { return Variant(v.toDouble()); },
+				[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Double> auto) noexcept { return Variant(v.toDouble()); },
 				[&](KeyValueType::Float) noexcept { return Variant(static_cast<float>(v.toDouble())); },
 				[&](KeyValueType::Int) noexcept { return Variant(static_cast<int>(v.toDouble())); },
 				[&](KeyValueType::Int64) noexcept { return Variant(static_cast<int64_t>(v.toDouble())); },
-				[&](KeyValueType::Bool) noexcept { return Variant(static_cast<bool>(v.toDouble())); },
+				[&](KeyValueType::Bool) noexcept { return Variant(!fp::IsZero(v.toDouble())); },
 				[&](KeyValueType::String) {
 					if (convertToString) {
 						return Variant(v.toDouble()).convert(KeyValueType::String{});
@@ -48,21 +48,20 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 						throwUnexpected(fieldName, t, "number"sv, kJSONFmt);
 					}
 				},
-				[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector>)
-					-> Variant { throwUnexpected(fieldName, t, "number"sv, kJSONFmt); });
+				[&](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid,
+									KeyValueType::FloatVector> auto) -> Variant { throwUnexpected(fieldName, t, "number"sv, kJSONFmt); });
 		case gason::JsonTag::STRING:
 			return t.EvaluateOneOf(
-				[&](OneOf<KeyValueType::String, KeyValueType::Undefined>) {
+				[&](concepts::OneOf<KeyValueType::String, KeyValueType::Undefined> auto) {
 					return Variant(p_string(json_string_ftr{v.sval.ptr}), Variant::noHold);
 				},
 				[&](KeyValueType::Uuid) { return Variant{Uuid{v.toString()}}; },
-				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
-						  KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::FloatVector>) -> Variant {
-					throwUnexpected(fieldName, t, "string"sv, kJSONFmt);
-				});
+				[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+									KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::FloatVector> auto)
+					-> Variant { throwUnexpected(fieldName, t, "string"sv, kJSONFmt); });
 		case gason::JsonTag::JFALSE:
 			return t.EvaluateOneOf(
-				[&](OneOf<KeyValueType::Undefined, KeyValueType::Bool>) noexcept { return Variant(false); },
+				[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Bool> auto) noexcept { return Variant(false); },
 				[&](KeyValueType::Int) noexcept { return Variant(0); },
 				[&](KeyValueType::Int64) noexcept { return Variant(static_cast<int64_t>(0)); },
 				[&](KeyValueType::Double) noexcept { return Variant(0.0); }, [&](KeyValueType::Float) noexcept { return Variant(0.0f); },
@@ -73,11 +72,11 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 						throwUnexpected(fieldName, t, "bool"sv, kJSONFmt);
 					}
 				},
-				[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector>)
-					-> Variant { throwUnexpected(fieldName, t, "bool"sv, kJSONFmt); });
+				[&](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid,
+									KeyValueType::FloatVector> auto) -> Variant { throwUnexpected(fieldName, t, "bool"sv, kJSONFmt); });
 		case gason::JsonTag::JTRUE:
 			return t.EvaluateOneOf(
-				[&](OneOf<KeyValueType::Undefined, KeyValueType::Bool>) noexcept { return Variant(true); },
+				[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Bool> auto) noexcept { return Variant(true); },
 				[&](KeyValueType::Int) noexcept { return Variant(1); },
 				[&](KeyValueType::Int64) noexcept { return Variant(static_cast<int64_t>(1)); },
 				[&](KeyValueType::Double) noexcept { return Variant(1.0); }, [&](KeyValueType::Float) noexcept { return Variant(1.0f); },
@@ -88,8 +87,8 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 						throwUnexpected(fieldName, t, "bool"sv, kJSONFmt);
 					}
 				},
-				[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid, KeyValueType::FloatVector>)
-					-> Variant { throwUnexpected(fieldName, t, "bool"sv, kJSONFmt); });
+				[&](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null, KeyValueType::Uuid,
+									KeyValueType::FloatVector> auto) -> Variant { throwUnexpected(fieldName, t, "bool"sv, kJSONFmt); });
 		case gason::JsonTag::JSON_NULL:
 			return convertNullToIndexField(t, fieldName, kJSONFmt, convertNull);
 		case gason::JsonTag::OBJECT:

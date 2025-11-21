@@ -11,57 +11,57 @@ namespace reindexer {
 using namespace std::string_view_literals;
 
 void Query::checkSubQuery() const {
-	if rx_unlikely (type_ != QuerySelect) {
+	if (type_ != QuerySelect) [[unlikely]] {
 		throw Error{errQueryExec, "Subquery should be select"};
 	}
-	if rx_unlikely (!joinQueries_.empty()) {
+	if (!joinQueries_.empty()) [[unlikely]] {
 		throw Error{errQueryExec, "Join cannot be in subquery"};
 	}
-	if rx_unlikely (!mergeQueries_.empty()) {
+	if (!mergeQueries_.empty()) [[unlikely]] {
 		throw Error{errQueryExec, "Merge cannot be in subquery"};
 	}
-	if rx_unlikely (!subQueries_.empty()) {
+	if (!subQueries_.empty()) [[unlikely]] {
 		throw Error{errQueryExec, "Subquery cannot be in subquery"};
 	}
-	if rx_unlikely (!selectFunctions_.empty()) {
+	if (!selectFunctions_.empty()) [[unlikely]] {
 		throw Error{errQueryExec, "Select function cannot be in subquery"};
 	}
-	if rx_unlikely (!updateFields_.empty()) {
+	if (!updateFields_.empty()) [[unlikely]] {
 		throw Error{errQueryExec, "Subquery cannot update"};
 	}
-	if rx_unlikely (withRank_) {
+	if (withRank_) [[unlikely]] {
 		throw Error{errQueryExec, "Subquery cannot request rank"};
 	}
-	if rx_unlikely (isSystemNamespaceNameFast(NsName())) {
+	if (isSystemNamespaceNameFast(NsName())) [[unlikely]] {
 		throw Error{errQueryExec, "Queries to system namespaces ('{}') are not supported inside subquery", NsName()};
 	}
-	if rx_unlikely (IsWALQuery()) {
+	if (IsWALQuery()) [[unlikely]] {
 		throw Error{errQueryExec, "WAL queries are not supported inside subquery"};
 	}
 }
 
 void Query::checkSubQueryNoData() const {
-	if rx_unlikely (!aggregations_.empty()) {
+	if (!aggregations_.empty()) [[unlikely]] {
 		throw Error{errQueryExec, "Aggregation cannot be in subquery with condition Any or Empty"};
 	}
-	if rx_unlikely (HasLimit() && Limit() != 0) {
+	if (HasLimit() && Limit() != 0) [[unlikely]] {
 		throw Error{errQueryExec, "Limit cannot be in subquery with condition Any or Empty"};
 	}
-	if rx_unlikely (HasOffset()) {
+	if (HasOffset()) [[unlikely]] {
 		throw Error{errQueryExec, "Offset cannot be in subquery with condition Any or Empty"};
 	}
-	if rx_unlikely (calcTotal_ != ModeNoTotal) {
+	if (calcTotal_ != ModeNoTotal) [[unlikely]] {
 		throw Error{errQueryExec, "Total request cannot be in subquery with condition Any or Empty"};
 	}
-	if rx_unlikely (!selectFilter_.OnlyAllRegularFields()) {
+	if (!selectFilter_.OnlyAllRegularFields()) [[unlikely]] {
 		throw Error{errQueryExec, "Select fields filter cannot be in subquery with condition Any or Empty"};
 	}
 	checkSubQuery();
 }
 
 void Query::checkSubQueryWithData() const {
-	if rx_unlikely ((aggregations_.size() + selectFilter_.Fields().size() + (calcTotal_ == ModeNoTotal ? 0 : 1)) != 1 ||
-					(selectFilter_.ExplicitAllRegularFields() && !selectFilter_.Fields().empty()) || selectFilter_.AllVectorFields()) {
+	if ((aggregations_.size() + selectFilter_.Fields().size() + (calcTotal_ == ModeNoTotal ? 0 : 1)) != 1 ||
+		(selectFilter_.ExplicitAllRegularFields() && !selectFilter_.Fields().empty()) || selectFilter_.AllVectorFields()) [[unlikely]] {
 		throw Error{errQueryExec, "Subquery should contain exactly one of aggregation, select field filter or total request"};
 	}
 	if (!aggregations_.empty()) {
@@ -111,7 +111,8 @@ bool Query::operator==(const Query& obj) const {
 		return false;
 	}
 	for (size_t i = 0, s = forcedSortOrder_.size(); i < s; ++i) {
-		if (forcedSortOrder_[i].RelaxCompare<WithString::Yes, NotComparable::Return>(obj.forcedSortOrder_[i]) != ComparationResult::Eq) {
+		if (forcedSortOrder_[i].RelaxCompare<WithString::Yes, NotComparable::Return, kDefaultNullsHandling>(obj.forcedSortOrder_[i]) !=
+			ComparationResult::Eq) {
 			return false;
 		}
 	}
@@ -186,7 +187,7 @@ void Query::Join(JoinedQuery&& jq) & {
 			nextOp_ = OpOr;
 			[[fallthrough]];
 		case JoinType::InnerJoin:
-			rx_unused = entries_.Append(nextOp_, JoinQueryEntry(joinQueries_.size()));
+			std::ignore = entries_.Append(nextOp_, JoinQueryEntry(joinQueries_.size()));
 			nextOp_ = OpAnd;
 			break;
 	}
@@ -237,14 +238,14 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				const OpType op = OpType(ser.GetVarUInt());
 				const CondType condition = CondType(ser.GetVarUInt());
 				VariantArray values = deserializeValues(ser, condition);
-				rx_unused = entries_.Append<QueryEntry>(op, std::string{fieldName}, condition, std::move(values));
+				std::ignore = entries_.Append<QueryEntry>(op, std::string{fieldName}, condition, std::move(values));
 				break;
 			}
 			case QueryKnnCondition: {
 				const auto fieldName = ser.GetVString();
 				const OpType op = OpType(ser.GetVarUInt());
 				const auto vect = ser.GetFloatVectorView();
-				rx_unused = entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
+				std::ignore = entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
 				break;
 			}
 			case QueryKnnConditionExt: {
@@ -254,13 +255,13 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				switch (fmt) {
 					case KnnQueryEntry::DataFormatType::String: {
 						const auto text = ser.GetVString();
-						rx_unused = entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, std::string(text),
-																   KnnSearchParams::Deserialize(ser));
+						std::ignore = entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, std::string(text),
+																	 KnnSearchParams::Deserialize(ser));
 						break;
 					}
 					case KnnQueryEntry::DataFormatType::Vector: {
 						const auto vect = ser.GetFloatVectorView();
-						rx_unused = entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
+						std::ignore = entries_.Append<KnnQueryEntry>(op, std::string{fieldName}, vect, KnnSearchParams::Deserialize(ser));
 						break;
 					}
 					case KnnQueryEntry::DataFormatType::None:
@@ -274,17 +275,17 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				std::string firstField{ser.GetVString()};
 				CondType condition = static_cast<CondType>(ser.GetVarUInt());
 				std::string secondField{ser.GetVString()};
-				rx_unused = entries_.Append<BetweenFieldsQueryEntry>(op, std::move(firstField), condition, std::move(secondField));
+				std::ignore = entries_.Append<BetweenFieldsQueryEntry>(op, std::move(firstField), condition, std::move(secondField));
 				break;
 			}
 			case QueryAlwaysFalseCondition: {
 				const OpType op = OpType(ser.GetVarUInt());
-				rx_unused = entries_.Append<AlwaysFalse>(op);
+				std::ignore = entries_.Append<AlwaysFalse>(op);
 				break;
 			}
 			case QueryAlwaysTrueCondition: {
 				const OpType op = OpType(ser.GetVarUInt());
-				rx_unused = entries_.Append<AlwaysTrue>(op);
+				std::ignore = entries_.Append<AlwaysTrue>(op);
 				break;
 			}
 			case QueryJoinCondition: {
@@ -292,7 +293,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				assertrx(type != JoinType::LeftJoin);
 				JoinQueryEntry joinEntry(ser.GetVarUInt());
 				hasJoinConditions = true;
-				rx_unused = entries_.Append((type == JoinType::OrInnerJoin) ? OpOr : OpAnd, std::move(joinEntry));
+				std::ignore = entries_.Append((type == JoinType::OrInnerJoin) ? OpOr : OpAnd, std::move(joinEntry));
 				break;
 			}
 			case QueryAggregation: {
@@ -332,7 +333,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 			case QueryDistinct: {
 				const auto fieldName = ser.GetVString();
 				if (!fieldName.empty()) {
-					rx_unused = entries_.Append<QueryEntry>(OpAnd, std::string{fieldName}, QueryEntry::DistinctTag{});
+					std::ignore = entries_.Append<QueryEntry>(OpAnd, std::string{fieldName}, QueryEntry::DistinctTag{});
 				}
 				break;
 			}
@@ -435,7 +436,7 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				std::string field(ser.GetVString());
 				bool hasExpressions = false;
 				auto numValues = ser.GetVarUInt();
-				rx_unused = val.MarkArray(ser.GetVarUInt() == 1);
+				std::ignore = val.MarkArray(ser.GetVarUInt() == 1);
 				while (numValues--) {
 					hasExpressions = ser.GetVarUInt();
 					val.emplace_back(ser.GetVariant().EnsureHold());
@@ -683,7 +684,7 @@ Query Query::Deserialize(Serializer& ser) {
 			Query& q = nested ? res.mergeQueries_.back() : res;
 			if (joinType != JoinType::LeftJoin && !hasJoinConditions) {
 				const size_t joinIdx = res.joinQueries_.size();
-				rx_unused = res.entries_.Append<JoinQueryEntry>((joinType == JoinType::OrInnerJoin) ? OpOr : OpAnd, joinIdx);
+				std::ignore = res.entries_.Append<JoinQueryEntry>((joinType == JoinType::OrInnerJoin) ? OpOr : OpAnd, joinIdx);
 			}
 			q.joinQueries_.emplace_back(std::move(q1));
 			q.adoptNested(q.joinQueries_.back());

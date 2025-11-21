@@ -248,7 +248,7 @@ TEST_F(NsApi, UpdateIndex) try {
 	EXPECT_THROW(wrongIndexDef = reindexer::IndexDef(idIdxName, reindexer::JsonPaths{"wrongPath"}, "hash", "double", IndexOpts().PK()),
 				 Error);
 	try {
-		rx_unused = reindexer::IndexDef(idIdxName, reindexer::JsonPaths{"wrongPath"}, "hash", "double", IndexOpts().PK());
+		std::ignore = reindexer::IndexDef(idIdxName, reindexer::JsonPaths{"wrongPath"}, "hash", "double", IndexOpts().PK());
 	} catch (const Error& err) {
 		EXPECT_STREQ(err.what(), "Unsupported combination of field 'id' type 'double' and index type 'hash'");
 	}
@@ -3481,7 +3481,7 @@ TEST(AsyncStorage, SyncReadSimpleTest) {
 
 	AsyncStorage storage;
 	const auto kStoragePath = fs::JoinPath(fs::GetTempDir(), "AsyncStorage.SyncReadSimpleTest/");
-	rx_unused = fs::RmDirAll(kStoragePath);
+	std::ignore = fs::RmDirAll(kStoragePath);
 	auto err = storage.Open(datastorage::StorageType::LevelDB, {}, kStoragePath, StorageOpts{}.CreateIfMissing());
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -3532,7 +3532,7 @@ TEST(AsyncStorage, SyncReadConcurrentTest) {
 #endif
 	AsyncStorage storage;
 	const auto kStoragePath = fs::JoinPath(fs::GetTempDir(), "AsyncStorage.SyncReadConcurrentTest/");
-	rx_unused = fs::RmDirAll(kStoragePath);
+	std::ignore = fs::RmDirAll(kStoragePath);
 	auto err = storage.Open(datastorage::StorageType::LevelDB, {}, kStoragePath, StorageOpts{}.CreateIfMissing());
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -3583,6 +3583,9 @@ TEST(AsyncStorage, SyncReadConcurrentTest) {
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(value, std::to_string(i));
 			}
+			// TODO: Delete this sleep when switching to RocksDB.
+			// Right now, a read timeout is needed in order to avoid read-write degradation inside leveldb lib(#2193).
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		}
 	});
 
@@ -3614,7 +3617,7 @@ TEST(AsyncStorage, ConsistReadWriteRemoveTest) {
 
 	AsyncStorage storage;
 	const auto kStoragePath = fs::JoinPath(fs::GetTempDir(), "AsyncStorage.SyncReadConcurrentTest/");
-	rx_unused = fs::RmDirAll(kStoragePath);
+	std::ignore = fs::RmDirAll(kStoragePath);
 	auto err = storage.Open(datastorage::StorageType::LevelDB, {}, kStoragePath, StorageOpts{}.CreateIfMissing());
 	ASSERT_TRUE(err.ok()) << err.what();
 

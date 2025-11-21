@@ -210,7 +210,7 @@ protected:
 	void DropRuntimeGPointIndex(int indexNumber) { rt.DropIndex(geom_namespace, getRuntimeGPointIndexName(indexNumber)); }
 	void DropRuntimeSPointIndex(int indexNumber) { rt.DropIndex(geom_namespace, getRuntimeSPointIndexName(indexNumber)); }
 
-	void CheckSelectValidity(const Query& query) { rx_unused = rt.Select(query); }
+	void CheckSelectValidity(const Query& query) { std::ignore = rt.Select(query); }
 
 	std::string getRuntimeCompositeIndexName(bool pk) {
 		using namespace std::string_literals;

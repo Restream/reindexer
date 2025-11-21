@@ -32,8 +32,12 @@ struct [[nodiscard]] VDocEntry {
 };
 
 // documents for the word
+
 template <typename IdCont>
-class [[nodiscard]] PackedWordEntry {
+class [[nodiscard]] PackedWordEntry;
+
+template <>
+class [[nodiscard]] PackedWordEntry<PackedIdRelVec> {
 public:
 	PackedWordEntry() noexcept = default;
 	PackedWordEntry(const PackedWordEntry&) = delete;
@@ -41,11 +45,34 @@ public:
 	PackedWordEntry& operator=(const PackedWordEntry&) = delete;
 	PackedWordEntry& operator=(PackedWordEntry&&) noexcept = default;
 
-	IdCont vids;  // IdCont - std::vector or packed_vector
-	// document offset, for the last step.
+	PackedIdRelVec vids;
 	// Necessary for correct rebuilding of the last step
-	size_t cur_step_pos = 0;
+	PackedIdRelVec::state cur_step_state;
+	size_t cur_step_data_size = 0;
+
+	void SaveState() { vids.get_state(cur_step_state, cur_step_data_size); }
+
+	void RestoreState() { vids.erase_back(cur_step_state, cur_step_data_size); }
 };
+
+template <>
+class [[nodiscard]] PackedWordEntry<IdRelVec> {
+public:
+	PackedWordEntry() noexcept = default;
+	PackedWordEntry(const PackedWordEntry&) = delete;
+	PackedWordEntry(PackedWordEntry&&) noexcept = default;
+	PackedWordEntry& operator=(const PackedWordEntry&) = delete;
+	PackedWordEntry& operator=(PackedWordEntry&&) noexcept = default;
+
+	IdRelVec vids;
+	// Necessary for correct rebuilding of the last step
+	size_t cur_step_data_size = 0;
+
+	void SaveState() { cur_step_data_size = vids.pos(vids.end()); }
+
+	void RestoreState() { vids.erase_back(cur_step_data_size); }
+};
+
 class [[nodiscard]] WordEntry {
 public:
 	WordEntry() noexcept = default;
@@ -151,10 +178,10 @@ public:
 	// returns id and found or not found
 	WordIdType BuildWordId(uint32_t id) const {
 		WordIdType wId;
-		if rx_unlikely (id > kWordIdMaxIdVal) {
+		if (id > kWordIdMaxIdVal) [[unlikely]] {
 			throwWordIdOverflow(id);
 		}
-		if rx_unlikely (steps.size() > kMaxStepsCount) {
+		if (steps.size() > kMaxStepsCount) [[unlikely]] {
 			throwStepsOverflow();
 		}
 

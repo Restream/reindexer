@@ -1,27 +1,5 @@
 #pragma once
 
-/// likely()
-#if !defined(likely)
-#if defined(__GNUC__) || defined(__clang__)
-#define rx_likely(x) (__builtin_expect(static_cast<bool>(x), 1))
-#else  // defined(__GNUC__) || defined(__clang__)
-#define rx_likely(x) (x)
-#endif	// defined(__GNUC__) || defined(__clang__)
-#else	// !defined(likely)
-#define rx_likely(x) likely(x)
-#endif	// !defined(likely)
-
-/// unlikely()
-#if !defined(unlikely)
-#if defined(__GNUC__) || defined(__clang__)
-#define rx_unlikely(x) (__builtin_expect(static_cast<bool>(x), 0))
-#else  // defined(__GNUC__) || defined(__clang__)
-#define rx_unlikely(x) (x)
-#endif	// defined(__GNUC__) || defined(__clang__)
-#else	// !defined(unlikely)
-#define rx_unlikely(x) unlikely(x)
-#endif	// !defined(unlikely)
-
 /// inline/noinline
 #if defined(__GNUC__) || defined(__clang__)
 #define RX_ATTR_ALWAYS_INLINE __attribute__((always_inline))
@@ -49,11 +27,6 @@
 #define RX_PRE_LMBD_ALWAYS_INLINE
 #define RX_POST_LMBD_ALWAYS_INLINE
 #endif
-
-// Unused variables handling
-#define _rx_unfold(macro, macro_arg) macro(macro_arg)
-#define _rx_unused_impl(x) [[maybe_unused]] decltype(auto) _##x
-#define rx_unused _rx_unfold(_rx_unused_impl, __LINE__)
 
 // Targets
 #if defined(_MSC_VER) || !defined(REINDEXER_WITH_SSE)

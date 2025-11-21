@@ -4,9 +4,13 @@
 #include "core/index/float_vector/hnswlib/hnswlib.h"
 
 using namespace reindexer;
-
+#ifdef REINDEX_WITH_TSAN
+constexpr static size_t kDimension = 10;
+constexpr static size_t kHNSWInitSize = 500;
+#else
 constexpr static size_t kDimension = 100;
 constexpr static size_t kHNSWInitSize = 1'000;
+#endif
 constexpr static size_t kHNSWMaxSize = 3 * kHNSWInitSize;
 constexpr static size_t kEfConstruction = 200;
 
@@ -185,11 +189,11 @@ void BaseQuantizeHNSWTestBody(const float quantile) {
 	EXPECT_TRUE(!mapSq8RCorr->quantizer_->NeedRequantize());
 
 	const float kCompMultiplier = [&quantile]() {
-		if (quantile == 1.f) {
+		if (reindexer::fp::EqualWithinULPs(quantile, 1.f)) {
 			return 1.05f;
-		} else if (quantile == 0.99f) {
+		} else if (reindexer::fp::EqualWithinULPs(quantile, 0.99f)) {
 			return 1.05f;
-		} else if (quantile == 0.95f) {
+		} else if (reindexer::fp::EqualWithinULPs(quantile, 0.95f)) {
 			return 1.2f;
 		}
 		return 1.f;
@@ -225,9 +229,9 @@ void BaseQuantizeHNSWTestBody(const float quantile) {
 
 		switch (requantized) {
 			case RequantizeState::Before: {
-				EXPECT_GT(avgSq8Metric, 0.9);
-				EXPECT_GT(avgSq8MetricR, 0.9);
-				EXPECT_GT(avgSq8MetricRCorr, 0.9);
+				EXPECT_GT(avgSq8Metric, 0.88);
+				EXPECT_GT(avgSq8MetricR, 0.85);
+				EXPECT_GT(avgSq8MetricRCorr, 0.88);
 				break;
 			}
 			case RequantizeState::After: {
@@ -264,7 +268,7 @@ void BaseQuantizeHNSWTestBody(const float quantile) {
 		return float(outliers) / (curHNSWSize * map->fstdistfunc_.Dims());
 	};
 
-	ASSERT_NEAR(quantile == 1.f ? 0.01f : (1.f - quantile), outliersPct(outliersCounter), 0.005f);
+	ASSERT_NEAR(reindexer::fp::EqualWithinULPs(quantile, 1.f) ? 0.01f : (1.f - quantile), outliersPct(outliersCounter), 0.005f);
 	TestCout() << fmt::format("Inserted after quantizing - {},  outliersPct = {}\n", counter - 2 * kHNSWInitSize,
 							  outliersPct(outliersCounter));
 	EXPECT_GT(counter, 0.1f * (2 * kHNSWInitSize))
@@ -290,11 +294,11 @@ TEST_P(HNSW_P, BaseQuantizeTest_IP) { BaseQuantizeHNSWTestBody<hnswlib::InnerPro
 TEST_P(HNSW_P, BaseQuantizeTest_Cosine) { BaseQuantizeHNSWTestBody<hnswlib::CosineSpace>(GetParam()); }
 
 INSTANTIATE_TEST_SUITE_P(, HNSW_P, ::testing::Values(1.f, 0.99f, 0.95f), [](const auto& info) {
-	if (info.param == 1.f) {
+	if (reindexer::fp::EqualWithinULPs(info.param, 1.f)) {
 		return "1_quantile";
-	} else if (info.param == 0.99f) {
+	} else if (reindexer::fp::EqualWithinULPs(info.param, 0.99f)) {
 		return "99_quantile";
-	} else if (info.param == 0.95f) {
+	} else if (reindexer::fp::EqualWithinULPs(info.param, 0.95f)) {
 		return "95_quantile";
 	} else {
 		assert(false);

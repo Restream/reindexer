@@ -23,7 +23,7 @@ public:
 	socket(socket&& other) noexcept : ssl(std::move(other.ssl)), fd_(other.fd_), type_(other.type_) { other.fd_ = -1; }
 	socket& operator=(const socket& other) = delete;
 	socket& operator=(socket&& other) noexcept {
-		if rx_likely (this != &other) {
+		if (this != &other) [[likely]] {
 			if (valid()) {
 				close();
 			}
@@ -87,7 +87,7 @@ public:
 	}
 	lst_socket& operator=(const lst_socket& other) = delete;
 	lst_socket& operator=(lst_socket&& other) noexcept {
-		if rx_likely (this != &other) {
+		if (this != &other) [[likely]] {
 			if (valid()) {
 				close();
 			}

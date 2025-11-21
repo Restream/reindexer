@@ -19,10 +19,20 @@ class PayloadType;
 class FieldsSet;
 class VariantArray;
 class Uuid;
+class Variant;
 
 enum class [[nodiscard]] WithString : bool { No = false, Yes = true };
 enum class [[nodiscard]] NotComparable : bool { Throw = false, Return = true };
 enum class [[nodiscard]] CheckIsStringPrintable : bool { No = false, Yes = true };
+enum class [[nodiscard]] NullsHandling : int8_t { NotComparable, AlwaysLess };
+
+constexpr auto kDefaultNullsHandling = NullsHandling::AlwaysLess;
+constexpr auto kWhereCompareNullHandling = NullsHandling::NotComparable;
+
+namespace variant_compare_helpers {
+template <NullsHandling nullsHandling>
+RX_ALWAYS_INLINE static std::optional<ComparationResult> handleNulls(const Variant& lhs, const Variant& rhs) noexcept;
+}  // namespace variant_compare_helpers
 
 class [[nodiscard]] Variant {
 	friend Uuid;
@@ -140,18 +150,36 @@ public:
 	T As(const PayloadType&, const FieldsSet&) const;
 
 	bool operator==(const Variant& other) const {
-		return Type().IsSame(other.Type()) && Compare<NotComparable::Throw>(other) == ComparationResult::Eq;
+		return Compare<NotComparable::Return, kDefaultNullsHandling>(other) == ComparationResult::Eq;
 	}
 	bool operator!=(const Variant& other) const { return !operator==(other); }
-	bool operator<(const Variant& other) const { return Compare<NotComparable::Throw>(other) == ComparationResult::Lt; }
-	bool operator>(const Variant& other) const { return Compare<NotComparable::Throw>(other) == ComparationResult::Gt; }
-	bool operator>=(const Variant& other) const { return Compare<NotComparable::Throw>(other) & ComparationResult::Ge; }
-	bool operator<=(const Variant& other) const { return Compare<NotComparable::Throw>(other) & ComparationResult::Le; }
+	bool operator<(const Variant& other) const {
+		return Compare<NotComparable::Throw, kDefaultNullsHandling>(other) == ComparationResult::Lt;
+	}
+	bool operator>(const Variant& other) const {
+		return Compare<NotComparable::Throw, kDefaultNullsHandling>(other) == ComparationResult::Gt;
+	}
+	bool operator>=(const Variant& other) const {
+		return Compare<NotComparable::Throw, kDefaultNullsHandling>(other) & ComparationResult::Ge;
+	}
+	bool operator<=(const Variant& other) const {
+		return Compare<NotComparable::Throw, kDefaultNullsHandling>(other) & ComparationResult::Le;
+	}
 
-	template <NotComparable notComparable>
-	ComparationResult Compare(const Variant& other, const CollateOpts& collateOpts = CollateOpts()) const;
-	template <WithString, NotComparable>
-	ComparationResult RelaxCompare(const Variant& other, const CollateOpts& collateOpts = CollateOpts()) const;
+	template <NotComparable notComparable, NullsHandling nullsHandling>
+	ComparationResult Compare(const Variant& other, const CollateOpts& collateOpts = CollateOpts()) const {
+		if (auto res = variant_compare_helpers::handleNulls<nullsHandling>(*this, other); res) {
+			return *res;
+		}
+		return compareImpl<notComparable>(other, collateOpts);
+	}
+	template <WithString withString, NotComparable notComparable, NullsHandling nullsHandling>
+	ComparationResult RelaxCompare(const Variant& other, const CollateOpts& collateOpts = CollateOpts()) const {
+		if (auto res = variant_compare_helpers::handleNulls<nullsHandling>(*this, other); res) {
+			return *res;
+		}
+		return relaxCompareImpl<withString, notComparable>(other, nullsHandling, collateOpts);
+	}
 	size_t Hash() const noexcept;
 	void EnsureUTF8() const;
 	Variant& EnsureHold() &;
@@ -187,7 +215,7 @@ public:
 	public:
 		Less(const CollateOpts& collate) noexcept : collate_{&collate} {}
 		bool operator()(const Variant& lhs, const Variant& rhs) const {
-			return lhs.Compare<NotComparable::Throw>(rhs, *collate_) == ComparationResult::Lt;
+			return lhs.Compare<NotComparable::Throw, NullsHandling::NotComparable>(rhs, *collate_) == ComparationResult::Lt;
 		}
 
 	private:
@@ -198,7 +226,7 @@ public:
 	public:
 		EqualTo(const CollateOpts& collate) noexcept : collate_{&collate} {}
 		bool operator()(const Variant& lhs, const Variant& rhs) const {
-			return lhs.Compare<NotComparable::Throw>(rhs, *collate_) == ComparationResult::Eq;
+			return lhs.Compare<NotComparable::Throw, NullsHandling::NotComparable>(rhs, *collate_) == ComparationResult::Eq;
 		}
 
 	private:
@@ -207,6 +235,11 @@ public:
 	bool DoHold() const noexcept { return !isUuid() && variant_.hold; }
 
 private:
+	template <NotComparable>
+	ComparationResult compareImpl(const Variant& other, const CollateOpts& collateOpts) const;
+	template <WithString, NotComparable>
+	ComparationResult relaxCompareImpl(const Variant& other, NullsHandling tupleNullsHandling, const CollateOpts& collateOpts) const;
+
 	bool isUuid() const noexcept { return uuid_.isUuid != 0; }
 	void convertToComposite(const PayloadType&, const FieldsSet&);
 	void free() noexcept;
@@ -243,10 +276,6 @@ private:
 			uint64_t value_uint64;
 			double value_double;
 			float value_float;
-			// runtime cast
-			// p_string value_string;
-			// PayloadValue value_composite;
-			// key_string h_value_string;
 		};
 	};
 	struct [[nodiscard]] UUID {
@@ -307,10 +336,11 @@ public:
 	}
 	void MarkObject() noexcept { isObjectValue = true; }
 	using Base::Base;
-	bool operator==(const VariantArray& other) const {
-		return IsArrayValue() == other.IsArrayValue() && IsObjectValue() == other.IsObjectValue() && Base::operator==(other);
+	bool operator==(const VariantArray& other) const noexcept {
+		const static CollateOpts opts;
+		return CompareNoExcept<kDefaultNullsHandling>(other, opts) == ComparationResult::Eq;
 	}
-	bool operator!=(const VariantArray& other) const { return !operator==(other); }
+	bool operator!=(const VariantArray& other) const noexcept { return !operator==(other); }
 	template <bool FreeHeapMemory = true>
 	void clear() noexcept {
 		isArrayValue = isObjectValue = false;
@@ -332,9 +362,32 @@ public:
 	void Dump(T& os, const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	std::string Dump(CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	std::string Dump(const PayloadType&, const FieldsSet&, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
-	template <WithString, NotComparable>
-	ComparationResult RelaxCompare(const VariantArray& other, const CollateOpts& = CollateOpts{}) const;
-	ComparationResult CompareNoExcept(const VariantArray& other, const CollateOpts& = CollateOpts{}) const noexcept;
+	template <WithString withString, NotComparable notComparable, NullsHandling nullsHandling>
+	ComparationResult RelaxCompare(const VariantArray& other, const CollateOpts& collateOpts = CollateOpts{}) const {
+		// This method do not check object/array flags
+		auto lhsIt{cbegin()}, rhsIt{other.cbegin()};
+		const auto lhsEnd{cend()}, rhsEnd{other.cend()};
+		for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
+			const auto res = lhsIt->RelaxCompare<withString, notComparable, nullsHandling>(*rhsIt, collateOpts);
+			if (res != ComparationResult::Eq) {
+				return res;
+			}
+		}
+		if (lhsIt == lhsEnd) {
+			return (rhsIt == rhsEnd) ? ComparationResult::Eq : ComparationResult::Lt;
+		}
+		return ComparationResult::Gt;
+	}
+	template <NotComparable, NullsHandling>
+	ComparationResult Compare(const VariantArray& other, const CollateOpts& = CollateOpts{}) const;
+	template <NullsHandling nullsHandling>
+	ComparationResult CompareNoExcept(const VariantArray& other, const CollateOpts& opts) const noexcept {
+		try {
+			return Compare<NotComparable::Return, nullsHandling>(other, opts);
+		} catch (...) {
+			return ComparationResult::NotComparable;
+		}
+	}
 	void EnsureHold() {
 		for (Variant& v : *this) {
 			v.EnsureHold();
@@ -349,7 +402,7 @@ public:
 		VariantArray res;
 		res.reserve(vs.size());
 		for (auto& v : vs) {
-			res.emplace_back(std::move(v));
+			res.emplace_back(v);
 		}
 		return res;
 	}
@@ -367,6 +420,24 @@ private:
 // TODO: #1352 Improve allocations count: either store Point as 2 floats, or add void* with static size array
 // Current implementation requires 3 allocations for each point
 inline Variant::Variant(Point p) : Variant{VariantArray{p}} {}
+
+namespace variant_compare_helpers {
+template <NullsHandling nullsHandling>
+RX_ALWAYS_INLINE static std::optional<ComparationResult> handleNulls(const Variant& lhs, const Variant& rhs) noexcept {
+	if constexpr (nullsHandling == NullsHandling::AlwaysLess) {
+		if (lhs.IsNullValue() && rhs.IsNullValue()) {
+			return ComparationResult::Eq;
+		}
+		if (lhs.IsNullValue()) {
+			return ComparationResult::Lt;
+		}
+		if (rhs.IsNullValue()) {
+			return ComparationResult::Gt;
+		}
+	}
+	return std::nullopt;
+}
+}  // namespace variant_compare_helpers
 
 namespace concepts {
 

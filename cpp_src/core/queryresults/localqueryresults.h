@@ -169,7 +169,7 @@ public:
 	struct Context;
 	// precalc context size
 	// sizeof(PayloadType) + sizeof(TagsMatcher) + sizeof(FieldsFilter) + sizeof(shared_ptr) + sizeof(int64);
-	static constexpr int kSizeofContext = 392;
+	static constexpr int kSizeofContext = 408;
 
 	// Order of storing contexts for namespaces:
 	// [0]      - main NS context
@@ -187,7 +187,7 @@ public:
 	auto getPayloadType(int nsid) const&& noexcept = delete;
 	const FieldsFilter& getFieldsFilter(int nsid) const& noexcept;
 	auto getFieldsFilter(int nsid) const&& noexcept = delete;
-	
+
 	TagsMatcher& getTagsMatcher(int nsid) & noexcept;
 	auto getTagsMatcher(int nsid) && noexcept = delete;
 	PayloadType& getPayloadType(int nsid) & noexcept;

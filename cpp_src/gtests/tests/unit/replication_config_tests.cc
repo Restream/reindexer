@@ -43,7 +43,7 @@ public:
 	const reindexer::ReplicationConfigData invalidReplConf1000{1000, 2, {}};
 	const reindexer::ReplicationConfigData fallbackReplConf{0, 2, {}};
 
-	void SetUp() override { rx_unused = fs::RmDirAll(kStoragePath); }
+	void SetUp() override { std::ignore = fs::RmDirAll(kStoragePath); }
 	void TearDown() override {}
 
 	void WriteConfigFile(const std::string& path, const std::string& configYaml) {

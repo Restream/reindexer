@@ -41,7 +41,7 @@ reindexer::Error Aggregation::Initialize() {
 reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
-	rx_unused = item.Unsafe();
+	std::ignore = item.Unsafe();
 
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);
@@ -68,7 +68,7 @@ public:
 
 	void operator()(reindexer::QueryResults& qres) {
 		const auto& aggRes = qres.GetAggregationResults();
-		if rx_unlikely (aggRes.empty() || aggRes[0].GetFacets().empty()) {
+		if (aggRes.empty() || aggRes[0].GetFacets().empty()) [[unlikely]] {
 			state_.SkipWithError("Results does not contain any value");
 		}
 	}

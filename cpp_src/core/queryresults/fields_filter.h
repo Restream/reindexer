@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/payload/fieldsset.h"
+#include "estl/concepts.h"
 
 namespace reindexer {
 
@@ -11,6 +12,9 @@ class [[nodiscard]] FieldsFilter {
 public:
 	FieldsFilter() noexcept = default;
 	FieldsFilter(const FieldsNamesFilter&, const NamespaceImpl&);
+	template <concepts::ConvertibleToString Str>
+	FieldsFilter(const Str& field, const NamespaceImpl&);
+	FieldsFilter(std::span<const std::string> fields, const NamespaceImpl&);
 
 	template <unsigned hvSize>
 	bool Match(const IndexedTagsPathImpl<hvSize>& tagsPath) const noexcept {
@@ -56,6 +60,11 @@ private:
 
 	template <typename P>
 	FieldsFilter(P&& path) : regularFields_{{std::forward<P>(path)}}, allRegularFields_{false} {}
+
+	template <concepts::ConvertibleToString Str>
+	void add(const Str& field, const NamespaceImpl&);
+
+	void fill(std::span<const std::string> fields, const NamespaceImpl&);
 
 	FieldsSet regularFields_;
 	FieldsSet vectorFields_;

@@ -16,7 +16,7 @@ RX_ALWAYS_INLINE static float calculateL2Module(const float* x, int32_t d) noexc
 	}
 	float normL2K = 1.0;
 	// Epsilon value should be different for non-float32 types
-	if rx_likely (normL2Sqr > 0.0 && std::abs(1.0f - normL2Sqr) > 0.00001f) {
+	if (normL2Sqr > 0.0 && std::abs(1.0f - normL2Sqr) > 0.00001f) [[likely]] {
 		normL2K = 1.0 / std::sqrt(normL2Sqr);
 	}
 	return normL2K;

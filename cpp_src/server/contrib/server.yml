@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.8.0
+  version: 5.9.0
 servers:
 - url: /api/v1
 tags:
@@ -5411,6 +5411,22 @@ components:
           description: Memory consumption of each embedder
           items:
             $ref: '#/components/schemas/EmbeddersCacheMemStat'
+        tags_matcher:
+          type: object
+          description: "Status of tags matcher"
+          properties:
+            tags_count:
+              type: integer
+              description: "Current count of tags in tags matcher"
+            max_tags_count:
+              type: integer
+              description: "Maximum count of tags in tags matcher"
+            version:
+              type: integer
+              description: "Version of tags matcher"
+            state_token:
+              type: integer
+              description: "State token of tags matcher"
     IndexMemStat:
       type: object
       properties:
@@ -5463,6 +5479,33 @@ components:
           description: "Shows whether KNN/fulltext indexing structure is fully built.\
             \ If this field is missing, index does not require any specific build\
             \ steps"
+        upsert_embedder:
+          $ref: '#/components/schemas/EmbedderStatus'
+          description: Upsert embedder status
+        query_embedder:
+          $ref: '#/components/schemas/EmbedderStatus'
+          description: Query embedder status
+    EmbedderStatus:
+      type: object
+      properties:
+        last_request_result:
+          type: string
+          enum:
+            - OK
+            - ERROR
+          description: Last request execution status
+        last_error: 
+          $ref: '#/components/schemas/EmbedderLastError'
+          description: Last error
+    EmbedderLastError:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: Error code. 0 - no error.
+        message:
+          type: string
+          description: Error message
     EmbeddersCacheMemStat:
       type: object
       properties:
@@ -5621,12 +5664,12 @@ components:
                 $ref: '#/components/schemas/SelectPerfStats'
               cache:
                 $ref: '#/components/schemas/LRUCachePerfStats'
-              upsert_embedder_cache:
-                description: Cache of upsert embedder for index
-                $ref: '#/components/schemas/EmbedderCachePerfStat'
-              query_embedder_cache:
-                description: Cache of query embedder for index
-                $ref: '#/components/schemas/EmbedderCachePerfStat'
+              upsert_embedder:
+                description: Performance statistics for upsert embedder
+                $ref: '#/components/schemas/EmbedderPerfStat'
+              query_embedder:
+                description: Performance statistics for query embedder
+                $ref: '#/components/schemas/EmbedderPerfStat'
     CommonPerfStats:
       type: object
       properties:
@@ -5773,6 +5816,101 @@ components:
           description: Determines if cache is currently in use. Usually it has 'false'
             value for uncommitted indexes
       description: Performance statistics for specific Embedder LRU-cache instance
+    EmbedderPerfStat:
+      type: object
+      properties:
+        total_queries_count:
+          minimum: 0
+          type: integer
+          description: Total number of calls to a specific embedder
+        total_embed_documents_count:
+          minimum: 0
+          type: integer
+          description: Total number of requested vectors
+        last_sec_qps:
+          minimum: 0
+          type: integer
+          description: Number of calls to the embedder in the last second
+        last_sec_dps:
+          minimum: 0
+          type: integer
+          description: Number of embedded documents in the last second
+        total_errors_count:
+          minimum: 0
+          type: integer
+          description: Total number of errors accessing the embedder
+        last_second_errors_count:
+          minimum: 0
+          type: integer
+          description: Number of errors in the last second
+        conn_in_use:
+          minimum: 0
+          type: integer
+          description: Current number of connections in use
+        last_sec_avg_conn_in_use:
+          minimum: 0
+          type: integer
+          description: Average number of connections used over the last second
+        total_avg_latency_us:
+          minimum: 0
+          type: integer
+          description: Average overall autoembedding latency (over all time)
+        last_sec_avg_latency_us:
+          minimum: 0
+          type: integer
+          description: Average autoembedding latency (over the last second)
+        max_latency_us:
+          minimum: 0
+          type: integer
+          description: Maximum total autoembedding latency (all time)
+        min_latency_us:
+          minimum: 0
+          type: integer
+          description: Minimum overall autoembedding latency (all time)
+        total_avg_conn_await_latency_us:
+          minimum: 0
+          type: integer
+          description: Average latency of waiting for a connection from the pool (over all time)
+        last_sec_avg_conn_await_latency_us:
+          minimum: 0
+          type: integer
+          description: Average latency of waiting for a connection from the pool (over the last second)
+        total_avg_embed_latency_us:
+          minimum: 0
+          type: integer
+          description: Average auto-embedding latency on cache miss (over all time)
+        last_sec_avg_embed_latency_us:
+          minimum: 0
+          type: integer
+          description: Average auto-embedding latency for cache misses (last second)
+        max_embed_latency_us:
+          minimum: 0
+          type: integer
+          description: Maximum auto-embedding latency on cache miss (all time)
+        min_embed_latency_us:
+          minimum: 0
+          type: integer
+          description: Minimum auto-embedding latency on cache miss (all time)
+        total_avg_cache_latency_us:
+          minimum: 0
+          type: integer
+          description: Average auto-embedding latency for cache hits (over all time)
+        last_sec_avg_cache_latency_us:
+          minimum: 0
+          type: integer
+          description: Average auto-embedding latency for cache hits (last second)
+        max_cache_latency_us:
+          minimum: 0
+          type: integer
+          description: Maximum auto-embedding latency on a cache hit (all time)
+        min_cache_latency_us:
+          minimum: 0
+          type: integer
+          description: Minimum auto-embedding latency for a cache hit (all time)
+        cache:
+          $ref: '#/components/schemas/EmbedderCachePerfStat'
+          description: Cache statistics
+
     SystemConfigItems:
       type: object
       properties:

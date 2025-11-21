@@ -5,6 +5,7 @@
 #include "core/index/float_vector/hnswlib/type_consts.h"
 #include "estl/fast_hash_set.h"
 #include "hnsw_view_iterator.h"
+#include "tools/float_comparison.h"
 
 namespace hnswlib {
 
@@ -66,7 +67,7 @@ public:
 			  return quantile;
 		  }()),
 		  // for the 1-quantile make a reserve for outliers in 1 pct
-		  kConfidenceInterval_(quantile_ == 1.f ? 1.01f : (1.f / quantile_)),
+		  kConfidenceInterval_(reindexer::fp::EqualWithinULPs(quantile_, 1.f) ? 1.01f : (1.f / quantile_)),
 		  partialSampleSize_(sampleSize),
 		  params_(calcParams()),
 		  statistic_(*this) {}

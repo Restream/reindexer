@@ -115,7 +115,7 @@ reindexer::Error Geometry::Initialize() {
 reindexer::Item Geometry::MakeItem(benchmark::State& state) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
-	rx_unused = item.Unsafe();
+	std::ignore = item.Unsafe();
 
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);

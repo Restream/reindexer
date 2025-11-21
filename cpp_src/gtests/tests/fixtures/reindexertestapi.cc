@@ -1,4 +1,5 @@
 #include "reindexertestapi.h"
+#include <thread>
 #include "core/cjson/tagsmatcher.h"
 #include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
@@ -218,7 +219,7 @@ typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::Select(con
 }
 
 template <typename DB>
-typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::ExecSQL(std::string_view sql) {
+typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::ExecSQL(std::string_view sql) const {
 	QueryResultsType qr;
 	auto err = reindexer->WithTimeout(kBasicTimeout).ExecSQL(sql, qr);
 	EXPECT_TRUE(err.ok()) << err.what() << "; " << sql;
@@ -310,6 +311,8 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 			} catch (...) {
 				EXPECT_TRUE(false) << "Unable to parse cluster status: " << ser.Slice();
 			}
+			state.tmVersion = root["tags_matcher"]["version"].As<int>();
+			state.tmStatetoken = root["tags_matcher"]["state_token"].As<uint32_t>();
 
 #if 0
 			std::ostringstream os;
@@ -319,16 +322,6 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 			   << std::endl;
 			TestCout() << os.str();
 #endif
-		}
-	}
-	{
-		Query qr = Query(ns).Limit(0);
-		QueryResultsType res;
-		auto err = reindexer->WithTimeout(kBasicTimeout).Select(qr, res);
-		if (err.ok()) {
-			auto tm = res.GetTagsMatcher(0);
-			state.tmVersion = tm.version();
-			state.tmStatetoken = tm.stateToken();
 		}
 	}
 	return state;
@@ -455,6 +448,16 @@ std::vector<int> ReindexerTestApi<DB>::RandIntVector(size_t size, int start, int
 }
 
 template <typename DB>
+std::vector<std::string> ReindexerTestApi<DB>::RandStrVector(size_t size) {
+	std::vector<std::string> vec;
+	vec.reserve(size);
+	for (size_t i = 0; i < size; ++i) {
+		vec.push_back(RandString());
+	}
+	return vec;
+}
+
+template <typename DB>
 void ReindexerTestApi<DB>::EnablePerfStats(DB& rx) {
 	auto item = rx.NewItem(reindexer::kConfigNamespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
@@ -478,6 +481,19 @@ std::vector<std::string> ReindexerTestApi<DB>::GetSerializedQrItems(reindexer::Q
 		items.emplace_back(wrser.Slice());
 	}
 	return items;
+}
+
+template <>
+void ReindexerTestApi<reindexer::Reindexer>::AwaitIndexOptimization(std::string_view nsName) {
+	bool optimization_completed = false;
+	unsigned waitForIndexOptimizationCompleteIterations = 0;
+	while (!optimization_completed) {
+		ASSERT_LT(waitForIndexOptimizationCompleteIterations++, 200) << "Too long index optimization";
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		auto qr = Select(reindexer::Query(reindexer::kMemStatsNamespace).Where("name", CondEq, nsName));
+		ASSERT_EQ(1, qr.Count());
+		optimization_completed = qr.begin().GetItem(false)["optimization_completed"].Get<bool>();
+	}
 }
 
 template class ReindexerTestApi<reindexer::Reindexer>;

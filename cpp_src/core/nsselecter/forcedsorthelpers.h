@@ -44,9 +44,10 @@ public:
 private:
 	static void throwIfNotSupportedValueType(const Variant& value) {
 		value.Type().EvaluateOneOf(overloaded{
-			[](OneOf<KeyValueType::Null, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Float,
-					 KeyValueType::Double, KeyValueType::String, KeyValueType::Uuid>) noexcept {},
-			[&value](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector>) {
+			[](concepts::OneOf<KeyValueType::Null, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Float,
+							   KeyValueType::Double, KeyValueType::String, KeyValueType::Uuid> auto) noexcept {},
+			[&value](
+				concepts::OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector> auto) {
 				throw Error{errQueryExec, "Unsupported value type for forced sort by non indexed field: '{}'", value.Type().Name()};
 			}});
 	}

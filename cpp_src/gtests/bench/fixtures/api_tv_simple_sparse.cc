@@ -44,7 +44,7 @@ void ApiTvSimpleSparse::RegisterAllCases() {
 reindexer::Item ApiTvSimpleSparse::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be stored in app
-	rx_unused = item.Unsafe();
+	std::ignore = item.Unsafe();
 
 	auto startTime = random<int>(0, 50000);
 

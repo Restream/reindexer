@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include "estl/defines.h"
 #include "tools/assertrx.h"
 
 namespace reindexer::ann {

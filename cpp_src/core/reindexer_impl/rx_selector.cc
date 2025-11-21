@@ -4,7 +4,6 @@
 #include "core/queryresults/fields_filter.h"
 #include "core/queryresults/joinresults.h"
 #include "estl/charset.h"
-#include "estl/restricted.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -166,7 +165,7 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 	// should be destroyed after results.lockResults()
 	std::vector<JoinedSelectors> mergeJoinedSelectors;
 	if (!query.GetMergeQueries().empty()) {
-		if rx_unlikely (commonQueryRankType != QueryRankType::Hybrid && !query.GetSortingEntries().empty()) {
+		if (commonQueryRankType != QueryRankType::Hybrid && !query.GetSortingEntries().empty()) [[unlikely]] {
 			throw Error{errNotValid, "Sorting in merge query is not implemented yet"};	// TODO #1449
 		}
 		commonRankOrdering = GetRankOrdering(commonQueryRankType, query.GetSortingEntries());
@@ -184,26 +183,26 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			return false;
 		};
 		AggType errType;
-		if (rx_unlikely((query.HasLimit() || query.HasOffset()) && hasUnsupportedAggregations(query.aggregations_, errType))) {
+		if ((query.HasLimit() || query.HasOffset()) && hasUnsupportedAggregations(query.aggregations_, errType)) [[unlikely]] {
 			throw Error(errParams, "Limit and offset are not supported for aggregations '{}'", AggTypeToStr(errType));
 		}
 		for (const JoinedQuery& mq : query.GetMergeQueries()) {
-			if rx_unlikely (isSystemNamespaceNameFast(mq.NsName())) {
+			if (isSystemNamespaceNameFast(mq.NsName())) [[unlikely]] {
 				throw Error(errParams, "Queries to system namespaces ('{}') are not supported inside MERGE statement", mq.NsName());
 			}
-			if rx_unlikely (commonQueryRankType != QueryRankType::Hybrid && !mq.GetSortingEntries().empty()) {
+			if (commonQueryRankType != QueryRankType::Hybrid && !mq.GetSortingEntries().empty()) [[unlikely]] {
 				throw Error(errParams, "Sorting in inner merge query is not allowed");
 			}
-			if rx_unlikely (commonRankOrdering != GetRankOrdering(commonQueryRankType, mq.GetSortingEntries())) {
+			if (commonRankOrdering != GetRankOrdering(commonQueryRankType, mq.GetSortingEntries())) [[unlikely]] {
 				throw Error(errParams, "All merging queries should have the same ordering (ASC or DESC)");
 			}
-			if rx_unlikely (!mq.aggregations_.empty() || mq.HasCalcTotal()) {
+			if (!mq.aggregations_.empty() || mq.HasCalcTotal()) [[unlikely]] {
 				throw Error(errParams, "Aggregations in inner merge query are not allowed");
 			}
-			if rx_unlikely (mq.HasLimit() || mq.HasOffset()) {
+			if (mq.HasLimit() || mq.HasOffset()) [[unlikely]] {
 				throw Error(errParams, "Limit and offset in inner merge query is not allowed");
 			}
-			if rx_unlikely (!mq.GetMergeQueries().empty()) {
+			if (!mq.GetMergeQueries().empty()) [[unlikely]] {
 				throw Error(errParams, "MERGEs nested into the MERGEs are not supported");
 			}
 			std::optional<JoinedQuery> mQueryCopy;
@@ -220,7 +219,7 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			auto mns = locks.Get(mQuery.NsName());
 			assertrx_throw(mns);
 			mctx.nsid = ++counter;
-			if rx_unlikely (counter >= std::numeric_limits<uint8_t>::max()) {
+			if (counter >= std::numeric_limits<uint8_t>::max()) [[unlikely]] {
 				throw Error(errForbidden, "Too many namespaces requested in query result: {}", counter);
 			}
 			mctx.isMergeQuery = IsMergeQuery_True;
@@ -366,7 +365,7 @@ static bool byJoinedField(std::string_view sortExpr, std::string_view joinedNs) 
 StoredValuesOptimizationStatus RxSelector::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns,
 																					  const Query& mainQ) {
 	auto status = StoredValuesOptimizationStatus::Enabled;
-	jItemQ.Entries().VisitForEach([](OneOf<SubQueryEntry, SubQueryFieldEntry>) { assertrx_throw(0); },
+	jItemQ.Entries().VisitForEach([](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&) { assertrx_throw(0); },
 								  Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
 								  [&jns, &status](const QueryEntry& qe) {
 									  if (qe.IsFieldIndexed()) {
@@ -537,26 +536,27 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 		return joinedSelectors;
 	}
 	auto ns = locks.Get(q.NsName());
+	const StrictMode strictMode{(q.GetStrictMode() != StrictModeNotSet) ? q.GetStrictMode() : ns->config_.strictMode};
 
 	// For each joined queries
 	for (size_t i = 0, jqCount = q.GetJoinQueries().size(); i < jqCount; ++i) {
 		const auto& jq = q.GetJoinQueries()[i];
-		if rx_unlikely (isSystemNamespaceNameFast(jq.NsName())) {
+		if (isSystemNamespaceNameFast(jq.NsName())) [[unlikely]] {
 			throw Error(errParams, "Queries to system namespaces ('{}') are not supported inside JOIN statement", jq.NsName());
 		}
-		if rx_unlikely (!jq.GetJoinQueries().empty()) {
+		if (!jq.GetJoinQueries().empty()) [[unlikely]] {
 			throw Error(errParams, "JOINs nested into the other JOINs are not supported");
 		}
-		if rx_unlikely (!jq.GetMergeQueries().empty()) {
+		if (!jq.GetMergeQueries().empty()) [[unlikely]] {
 			throw Error(errParams, "MERGEs nested into the JOINs are not supported");
 		}
-		if rx_unlikely (!jq.GetSubQueries().empty()) {
+		if (!jq.GetSubQueries().empty()) [[unlikely]] {
 			throw Error(errParams, "Subquery in the JOINs are not supported");
 		}
-		if rx_unlikely (!jq.aggregations_.empty()) {
+		if (!jq.aggregations_.empty()) [[unlikely]] {
 			throw Error(errParams, "Aggregations are not allowed in joined subqueries");
 		}
-		if rx_unlikely (jq.HasCalcTotal()) {
+		if (jq.HasCalcTotal()) [[unlikely]] {
 			throw Error(errParams, "Count()/count_cached() are not allowed in joined subqueries");
 		}
 
@@ -579,9 +579,9 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 		// Construct join conditions
 		for (auto& je : jq.joinEntries_) {
 			QueryPreprocessor::SetQueryField(const_cast<QueryJoinEntry&>(je).LeftFieldData(), *ns);
-			QueryPreprocessor::VerifyOnStatementField(je.LeftFieldData(), *ns);
+			QueryPreprocessor::VerifyOnStatementField(je.LeftFieldData(), *ns, strictMode);
 			QueryPreprocessor::SetQueryField(const_cast<QueryJoinEntry&>(je).RightFieldData(), *jns);
-			QueryPreprocessor::VerifyOnStatementField(je.RightFieldData(), *jns);
+			QueryPreprocessor::VerifyOnStatementField(je.RightFieldData(), *jns, strictMode);
 			jItemQ.AppendQueryEntry<QueryEntry>(je.Operation(), QueryField(je.RightFieldData()), InvertJoinCondition(je.Condition()),
 												QueryEntry::IgnoreEmptyValues{});
 		}
@@ -613,7 +613,7 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 									  values.PreselectAllowed(static_cast<size_t>(jns->config().maxPreselectSize) >= values.Size());
 									  values.Lock();
 								  },
-								  Restricted<IdSet, SelectIteratorContainer>{}([](const auto&) {})},
+								  []<concepts::OneOf<IdSet, SelectIteratorContainer> T>(const T&) {}},
 					   ctx.preSelect.Result().payload);
 			preResult = ctx.preSelect.ResultPtr();
 			if (joinRes.needPut) {
@@ -630,7 +630,7 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 								  locks.Delete(jns);
 								  jns.reset();
 							  },
-							  Restricted<IdSet, SelectIteratorContainer>{}([](const auto&) {})},
+							  []<concepts::OneOf<IdSet, SelectIteratorContainer> T>(const T&) {}},
 				   preResult->payload);
 		joinedSelectors.emplace_back(jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ),
 									 FieldsFilter{jq.SelectFilters(), *ns}, result, jq, JoinPreResultExecuteCtx{preResult}, joinedFieldIdx,
@@ -650,8 +650,8 @@ std::vector<SubQueryExplain> RxSelector::preselectSubQueries(Query& mainQuery, s
 	for (size_t i = 0; i < mainQuery.Entries().Size();) {
 		[[maybe_unused]] const size_t cur = i;
 		mainQuery.Entries().Visit(
-			i, overloaded{[&i](OneOf<QueryEntriesBracket, QueryEntry, BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue, AlwaysFalse,
-									 KnnQueryEntry, MultiDistinctQueryEntry>) noexcept { ++i; },
+			i, overloaded{[&i](const concepts::OneOf<QueryEntriesBracket, QueryEntry, BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue,
+													 AlwaysFalse, KnnQueryEntry, MultiDistinctQueryEntry> auto&) noexcept { ++i; },
 						  [&](const SubQueryEntry& sqe) {
 							  try {
 								  const CondType cond = sqe.Condition();

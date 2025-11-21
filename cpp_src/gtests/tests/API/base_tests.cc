@@ -16,10 +16,12 @@
 #include <thread>
 
 #include "core/keyvalue/p_string.h"
+#include "core/system_ns_names.h"
 #include "server/loggerwrapper.h"
 #include "spdlog/async.h"
 #include "spdlog/sinks/reopen_file_sink.h"
 #include "tools/serializer.h"
+#include "vendor/gason/gason.h"
 
 TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
 	const auto kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/base_tests/DeleteTemporaryNamespaceOnConnect");
@@ -48,6 +50,23 @@ TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(reindexer::fs::Stat(temporaryNamespacePath) == reindexer::fs::StatError);
 	}
+}
+
+TEST_F(ReindexerApi, CheckTagsMatcherVersionInQR) {
+	rt.OpenNamespace(default_namespace);
+
+	const auto memstatQR = rt.Select(Query(reindexer::kMemStatsNamespace).Where("name", CondEq, default_namespace));
+	ASSERT_EQ(memstatQR.Count(), 1);
+	auto memstatItem = memstatQR.begin().GetItem(false);
+	gason::JsonParser parser;
+	auto jsonMemStat = parser.Parse(memstatItem.GetJSON());
+
+	const auto qr = rt.Select(reindexer::Query{default_namespace}.Limit(0));
+	const auto& tm = qr.GetTagsMatcher(0);
+
+	EXPECT_EQ(tm.size(), jsonMemStat["tags_matcher"]["tags_count"].As<unsigned>());
+	EXPECT_EQ(tm.version(), jsonMemStat["tags_matcher"]["version"].As<int>());
+	EXPECT_EQ(tm.stateToken(), jsonMemStat["tags_matcher"]["state_token"].As<uint32_t>());
 }
 
 TEST_F(ReindexerApi, AddNamespace) {
@@ -1019,7 +1038,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 			const reindexer::SortingEntry& sortingEntry(query.GetSortingEntries()[j]);
 			Variant sortedValue = item[sortingEntry.expression];
 			if (!lastValues[j].Type().Is<reindexer::KeyValueType::Null>()) {
-				cmpRes[j] = lastValues[j].Compare<reindexer::NotComparable::Return>(sortedValue);
+				cmpRes[j] = lastValues[j].Compare<reindexer::NotComparable::Return, reindexer::kDefaultNullsHandling>(sortedValue);
 				bool needToVerify = true;
 				if (j != 0) {
 					for (int k = j - 1; k >= 0; --k) {
@@ -1042,7 +1061,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	}
 
 	// Check sql parser work correctness
-	rx_unused = rt.ExecSQL("select * from test_namespace order by column2 asc, column3 desc");
+	std::ignore = rt.ExecSQL("select * from test_namespace order by column2 asc, column3 desc");
 }
 
 TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
@@ -1928,7 +1947,7 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 	q = Query(default_namespace).Select({"id"});
 	q.aggregations_.emplace_back(reindexer::AggregateEntry{AggMax, {"year"}});
 	try {
-		rx_unused = Query::FromJSON(q.GetJSON());
+		std::ignore = Query::FromJSON(q.GetJSON());
 	} catch (Error& err) {
 		EXPECT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), reindexer::kAggregationWithSelectFieldsMsgError);
@@ -1941,7 +1960,7 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 	q = Query(default_namespace).Select({"id", "name"});
 	EXPECT_THROW(q.Aggregate(AggFacet, {"year"}, {}), Error);
 	try {
-		rx_unused = Query::FromJSON(fmt::format(R"({{"namespace":"{}",
+		std::ignore = Query::FromJSON(fmt::format(R"({{"namespace":"{}",
 	"limit":-1,
 	"offset":0,
 	"req_total":"disabled",
@@ -1963,7 +1982,7 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 			"fields":["year"]
 		}}
 	]}})",
-												default_namespace));
+												  default_namespace));
 	} catch (Error& err) {
 		EXPECT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), reindexer::kAggregationWithSelectFieldsMsgError);
@@ -2151,7 +2170,7 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 
 TEST_F(ReindexerApi, MetaIndexTest) {
 	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/meta_index_test/");
-	rx_unused = reindexer::fs::RmDirAll(storagePath);
+	std::ignore = reindexer::fs::RmDirAll(storagePath);
 
 	auto rx = std::make_unique<Reindexer>();
 	auto err = rx->Connect("builtin://" + storagePath);
@@ -2324,7 +2343,7 @@ TEST_F(ReindexerApi, QueryResultsLSNTest) {
 		updItem["data"] = "modified_7";
 		err = tx.Update(std::move(updItem));
 		ASSERT_TRUE(err.ok()) << err.what();
-		rx_unused = rt.CommitTransaction(tx);
+		std::ignore = rt.CommitTransaction(tx);
 	}
 
 	// Truncate all remaining data
@@ -2384,7 +2403,7 @@ TEST_F(ReindexerApi, DefautlIndexDefJSON) {
 
 TEST_F(ReindexerApi, NamespaceStorageRaceTest) {
 	const std::string kBaseTestsStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/ns_storage_race_test/");
-	rx_unused = reindexer::fs::RmDirAll(kBaseTestsStoragePath);
+	std::ignore = reindexer::fs::RmDirAll(kBaseTestsStoragePath);
 	auto rx = std::make_unique<Reindexer>();
 	auto err = rx->Connect("builtin://" + kBaseTestsStoragePath);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -2450,7 +2469,7 @@ TEST_F(ReindexerApi, AlignedPayload) {
 	// Tests TSAN's warning with specific payload's alignment.
 	// Check issue #2061 for details.
 	const std::string kBaseTestsStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/payload_race_test/");
-	rx_unused = reindexer::fs::RmDirAll(kBaseTestsStoragePath);
+	std::ignore = reindexer::fs::RmDirAll(kBaseTestsStoragePath);
 	auto rx = std::make_unique<Reindexer>();
 	auto err = rx->Connect("builtin://" + kBaseTestsStoragePath);
 	ASSERT_TRUE(err.ok()) << err.what();

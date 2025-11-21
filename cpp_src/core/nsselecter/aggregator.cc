@@ -90,7 +90,7 @@ public:
 	SinglefieldComparator(const h_vector<SortingEntry, 1>&);
 	bool HaveCompareByCount() const { return haveCompareByCount; }
 	bool operator()(const Variant& lhs, const Variant& rhs) const {
-		return toSigned(lhs.Compare<NotComparable::Throw>(rhs)) * int(valueCompareDirection_) < 0;
+		return toSigned(lhs.Compare<NotComparable::Throw, kDefaultNullsHandling>(rhs)) * int(valueCompareDirection_) < 0;
 	}
 	bool operator()(const std::pair<Variant, int>& lhs, const std::pair<Variant, int>& rhs) const;
 
@@ -132,7 +132,7 @@ Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEnt
 	}
 	if (compOpts_.size() > 1 && compOpts_.back().fields.empty()) {
 		auto end = compOpts_.end();
-		rx_unused = compOpts_.erase(--end);
+		std::ignore = compOpts_.erase(--end);
 	}
 	for (const auto& opt : compOpts_) {
 		if (opt.fields.empty()) {
@@ -149,7 +149,7 @@ bool Aggregator::MultifieldComparator::operator()(const PayloadValue& lhs, const
 		if (opt.fields.empty()) {
 			continue;
 		}
-		const auto less = ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw>(rhs, opt.fields);
+		const auto less = ConstPayload(type_, lhs).Compare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(rhs, opt.fields);
 		if (less == ComparationResult::Eq) {
 			continue;
 		}
@@ -168,7 +168,8 @@ bool Aggregator::MultifieldComparator::operator()(const std::pair<PayloadValue, 
 			}
 			return int(opt.direction) * (lhs.second - rhs.second) < 0;
 		}
-		const auto less = ConstPayload(type_, lhs.first).Compare<WithString::No, NotComparable::Throw>(rhs.first, opt.fields);
+		const auto less =
+			ConstPayload(type_, lhs.first).Compare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(rhs.first, opt.fields);
 		if (less == ComparationResult::Eq) {
 			continue;
 		}
@@ -215,7 +216,7 @@ bool Aggregator::SinglefieldComparator::operator()(const std::pair<Variant, int>
 	for (const CompOpts& opt : compOpts_) {
 		int less;
 		if (opt.compareBy == ByValue) {
-			less = toSigned(lhs.first.Compare<NotComparable::Throw>(rhs.first));
+			less = toSigned(lhs.first.Compare<NotComparable::Throw, kDefaultNullsHandling>(rhs.first));
 		} else {
 			less = lhs.second - rhs.second;
 		}

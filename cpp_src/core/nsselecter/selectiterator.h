@@ -278,8 +278,9 @@ private:
 				return nextUnsorted();
 			case UnbuiltSortOrdersIndex:
 				return nextUnbuiltSortOrders();
+			default:
+				return false;
 		}
-		return false;
 	}
 
 	// Iterates to a next item of result

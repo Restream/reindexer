@@ -8,10 +8,10 @@
 #include "core/keyvalue/variant.h"
 #include "core/rank_t.h"
 #include "estl/chunk.h"
-#include "estl/one_of.h"
 #include "tools/stringstools.h"
 #include "tools/varint.h"
 
+// Defined in venored libs
 char* i32toa(int32_t value, char* buffer);
 char* i64toa(int64_t value, char* buffer);
 
@@ -54,16 +54,18 @@ public:
 			[this](KeyValueType::Double) { return Variant(GetDouble()); }, [this](KeyValueType::String) { return getPVStringVariant(); },
 			[](KeyValueType::Null) noexcept { return Variant(); }, [this](KeyValueType::Uuid) { return Variant{GetUuid()}; },
 			[this](KeyValueType::Float) { return Variant(GetFloat()); },
-			[this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>)
+			[this,
+			 &type](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto)
 				-> Variant { throwUnknownTypeError(type.Name()); });
 	}
 	void SkipRawVariant(KeyValueType type) {
 		type.EvaluateOneOf(
-			[this](KeyValueType::Int) { GetVarint(); }, [this](KeyValueType::Bool) { GetVarUInt(); },
-			[this](KeyValueType::Int64) { GetVarint(); }, [this](KeyValueType::Double) { GetDouble(); },
-			[this](KeyValueType::String) { getPVStringPtr(); }, [](KeyValueType::Null) noexcept {},
-			[this](KeyValueType::Uuid) { rx_unused = GetUuid(); }, [this](KeyValueType::Float) { GetFloat(); },
-			[this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector>) {
+			[this](KeyValueType::Int) { std::ignore = GetVarint(); }, [this](KeyValueType::Bool) { std::ignore = GetVarUInt(); },
+			[this](KeyValueType::Int64) { std::ignore = GetVarint(); }, [this](KeyValueType::Double) { std::ignore = GetDouble(); },
+			[this](KeyValueType::String) { std::ignore = getPVStringPtr(); }, [](KeyValueType::Null) noexcept {},
+			[this](KeyValueType::Uuid) { std::ignore = GetUuid(); }, [this](KeyValueType::Float) { std::ignore = GetFloat(); },
+			[this, &type](
+				concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) {
 				throwUnknownTypeError(type.Name());
 			});
 	}
@@ -129,7 +131,7 @@ public:
 			}
 		}
 	}
-	void SkipUuid() { rx_unused = GetUuid(); }
+	void SkipUuid() { std::ignore = GetUuid(); }
 	Uuid GetUuid() {
 		const uint64_t v1 = GetUInt64();
 		const uint64_t v2 = GetUInt64();
@@ -266,7 +268,7 @@ public:
 			[&](KeyValueType::Float) { PutFloat(float(kv)); }, [&](KeyValueType::String) { PutVString(std::string_view(kv)); },
 			[&](KeyValueType::Null) noexcept {}, [&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
 			[&](KeyValueType::FloatVector) { PutFloatVectorView(ConstFloatVectorView{kv}); },
-			[&](OneOf<KeyValueType::Composite, /*KeyValueType::Tuple,*/ KeyValueType::Undefined>) {
+			[&](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined> auto) {
 				fprintf(stderr, "reindexer error: unknown keyType %s\n", kv.Type().Name().data());
 				abort();
 			});
@@ -327,9 +329,7 @@ public:
 			return *this;
 		}
 		// NOLINTNEXTLINE(bugprone-exception-escape) Not sure if we can handle this somehow
-		~VStringHelper() {
-			End();
-		}
+		~VStringHelper() { End(); }
 		void End();
 
 	private:
@@ -487,6 +487,15 @@ public:
 		buf_[len_++] = uint8_t(v);
 	}
 	RX_ALWAYS_INLINE void PutCTag(ctag tag) { PutVarUint(tag.asNumber()); }
+	void PutCTag(KeyValueType fieldType, TagName tagName, int indexNumber) {
+		fieldType.EvaluateOneOf(
+			[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64> auto) { PutCTag(ctag{TAG_VARINT, tagName, indexNumber}); },
+			[&](concepts::OneOf<KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool, KeyValueType::Null,
+								KeyValueType::Uuid> auto) { PutCTag(ctag{fieldType.ToTagType(), tagName, indexNumber}); },
+			[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector> auto) {
+				assertrx(false);
+			});
+	}
 	RX_ALWAYS_INLINE void PutBool(bool v) {
 		grow(1);
 		len_ += boolean_pack(v, buf_ + len_);

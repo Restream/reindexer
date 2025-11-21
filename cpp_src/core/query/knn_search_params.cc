@@ -113,7 +113,7 @@ static auto StructName() noexcept {
 }
 template <typename Derived>
 Derived detail::KnnSearchParamsCRTPBase<Derived>::Deserialize(Serializer& ser, size_t version) {
-	if rx_unlikely (version != kKnnParamsBinProtocolVersion && version != 0) {
+	if (version != kKnnParamsBinProtocolVersion && version != 0) [[unlikely]] {
 		throw Error(errVersion, "Unexpected binary protocol version for {}: {}", StructName<Derived>(), version);
 	}
 

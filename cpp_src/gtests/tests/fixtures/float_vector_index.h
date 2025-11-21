@@ -3,7 +3,6 @@
 #include <gtest/gtest.h>
 #include "core/item.h"
 #include "core/reindexer.h"
-#include "gtests/tools.h"
 #include "reindexertestapi.h"
 
 class [[nodiscard]] FloatVector : public ::testing::TestWithParam<reindexer::VectorMetric> {
@@ -37,6 +36,8 @@ protected:
 
 	void validateIndexValueInItem(std::string_view ns, std::string_view field, std::string_view json, std::span<const float> expected);
 	void validateIndexValueInQueryResults(std::string_view field, const reindexer::QueryResults& qr, std::span<const float> expected);
+	template <typename ParamT, size_t kDims>
+	void checkEmptyIndexSelection(std::string_view ns, std::string_view vectorIndex);
 
 	ReindexerTestApi<reindexer::Reindexer> rt;
 };

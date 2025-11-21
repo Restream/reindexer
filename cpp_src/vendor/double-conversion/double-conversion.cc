@@ -25,6 +25,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+
 #include <climits>
 #include <cmath>
 #include <locale>
@@ -1007,3 +1012,7 @@ float StringToDoubleConverter::StringToFloat(const uc16* buffer, int length, int
 }
 
 }  // namespace double_conversion
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif

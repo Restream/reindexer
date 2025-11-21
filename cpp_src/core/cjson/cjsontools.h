@@ -17,6 +17,12 @@ TagType arrayKvType2Tag(const VariantArray& values);
 void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>* fieldsArrayOffsets = nullptr);
 Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
 
+struct [[nodiscard]] CJsonNestedArrayAnalizeResult {
+	size_t size{0};
+	bool isNested{false};
+};
+CJsonNestedArrayAnalizeResult analizeNestedArray(size_t count, Serializer&);
+
 [[noreturn]] void throwUnexpectedArrayError(std::string_view fieldName, KeyValueType fieldType, std::string_view parserName);
 [[noreturn]] void throwUnexpectedArraySizeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef, size_t size);
 [[noreturn]] void throwUnexpectedArrayTypeForFloatVectorError(std::string_view parserName, const PayloadFieldType& fieldRef);
@@ -28,17 +34,16 @@ Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType
 								  std::string_view parserName);
 [[noreturn]] void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, std::string_view obtainedType,
 								  std::string_view parserName);
-[[noreturn]] void throwUnexpectedArrayInIndex(std::string_view fieldName, KeyValueType type, std::string_view parserName);
 [[noreturn]] void throwUnexpectedObjectInIndex(std::string_view fieldName, std::string_view parserName);
 
 RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT& scalarIndexes, const Payload& pl,
 														const PayloadFieldType& f, int field, InArray isInArray,
 														std::string_view parserName) {
 	if (!f.IsArray()) {
-		if rx_unlikely (isInArray) {
+		if (isInArray) [[unlikely]] {
 			throwUnexpectedNestedArrayError(parserName, f.Name(), f.Type());
 		}
-		if rx_unlikely (scalarIndexes.test(field)) {
+		if (scalarIndexes.test(field)) [[unlikely]] {
 			throwScalarMultipleEncodesError(pl, f, field);
 		}
 	}
@@ -47,7 +52,7 @@ RX_ALWAYS_INLINE void validateNonArrayFieldRestrictions(const ScalarIndexesSetT&
 RX_ALWAYS_INLINE void validateArrayFieldRestrictions(std::string_view fieldName, IsArray isArray, size_t fieldArrayDim, size_t arraySize,
 													 std::string_view parserName) {
 	if (isArray) {
-		if rx_unlikely (arraySize > 0 && fieldArrayDim > 0 && fieldArrayDim != arraySize) {
+		if (arraySize > 0 && fieldArrayDim > 0 && fieldArrayDim != arraySize) [[unlikely]] {
 			throwUnexpectedArraySizeError(parserName, fieldName, fieldArrayDim, arraySize);
 		}
 	}
@@ -83,17 +88,15 @@ static inline Variant convertNullToIndexField(KeyValueType fieldType, std::strin
 			[](KeyValueType::String) { return Variant(static_cast<const char*>(nullptr)); },
 			[](KeyValueType::Uuid) noexcept { return Variant{Uuid{}}; },
 			[](KeyValueType::FloatVector) noexcept { return Variant{ConstFloatVectorView{}}; },
-			[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) -> Variant {
-				throwUnexpected(fieldName, fieldType, "null"sv, parserName);
-			});
+			[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null> auto)
+				-> Variant { throwUnexpected(fieldName, fieldType, "null"sv, parserName); });
 	} else {
 		return fieldType.EvaluateOneOf(
-			[](OneOf<KeyValueType::Double, KeyValueType::Float, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64,
-					 KeyValueType::String, KeyValueType::Uuid>) noexcept { return Variant{}; },
+			[](concepts::OneOf<KeyValueType::Double, KeyValueType::Float, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64,
+							   KeyValueType::String, KeyValueType::Uuid> auto) noexcept { return Variant{}; },
 			[](KeyValueType::FloatVector) noexcept { return Variant{ConstFloatVectorView{}}; },
-			[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) -> Variant {
-				throwUnexpected(fieldName, fieldType, "null"sv, parserName);
-			});
+			[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null> auto)
+				-> Variant { throwUnexpected(fieldName, fieldType, "null"sv, parserName); });
 	}
 }
 

@@ -643,7 +643,7 @@ Error ShardingConfig::Key::checkValue(const sharding::Segment<Variant>& val, Key
 	return {};
 }
 
-sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node& yaml) {
+sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node& yaml, int shardId) {
 	switch (yaml.Type()) {
 		case YAML::NodeType::Scalar: {
 			auto val = stringToVariant(yaml.as<std::string>());
@@ -683,11 +683,11 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node
 		case YAML::NodeType::Null:
 		case YAML::NodeType::Map:
 		default:
-			throw Error(errParams, "Incorrect YAML::NodeType for sharding key");
+			throw Error(errParams, "Incorrect YAML format for values config for shard id: {}", shardId);
 	}
 }
 
-sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::JsonNode& json) {
+sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::JsonNode& json, int shardId) {
 	const auto& jsonValue = json.value;
 	switch (jsonValue.getTag()) {
 		case gason::JsonTag::JTRUE:
@@ -724,7 +724,7 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 		case gason::JsonTag::JSON_NULL:
 		case gason::JsonTag::EMPTY:
 		default:
-			throw Error(errParams, "Incorrect JsonTag for sharding key: {}", int(jsonValue.getTag()));
+			throw Error(errParams, "Incorrect JSON format for values config for shard id: {}", shardId);
 	}
 }
 
@@ -745,7 +745,7 @@ Error ShardingConfig::Key::FromYAML(const YAML::Node& yaml, const std::map<int, 
 		algorithmType = ByValue;
 		for (const auto& value : valuesNode) {
 			try {
-				auto segment = SegmentFromYAML(value);
+				auto segment = SegmentFromYAML(value, shardId);
 				Error err = checkValue(segment, valuesType, checkVal);
 				if (!err.ok()) {
 					return err;
@@ -774,7 +774,7 @@ Error ShardingConfig::Key::FromJSON(const gason::JsonNode& root, KeyValueType& v
 			algorithmType = ByValue;
 			for (const auto& vNode : valuesNode) {
 				try {
-					auto segment = SegmentFromJSON(vNode);
+					auto segment = SegmentFromJSON(vNode, shardId);
 					Error err = checkValue(segment, valuesType, checkVal);
 					if (!err.ok()) {
 						return err;
@@ -863,11 +863,11 @@ ComparationResult ShardingConfig::Key::RelaxCompare(const std::vector<sharding::
 	auto lhsIt{values.cbegin()}, rhsIt{other.cbegin()};
 	const auto lhsEnd{values.cend()}, rhsEnd{other.cend()};
 	for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
-		auto res = lhsIt->left.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhsIt->left, collateOpts);
+		auto res = lhsIt->left.RelaxCompare<WithString::Yes, NotComparable::Throw, NullsHandling::NotComparable>(rhsIt->left, collateOpts);
 		if (res != ComparationResult::Eq) {
 			return res;
 		}
-		res = lhsIt->right.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhsIt->right, collateOpts);
+		res = lhsIt->right.RelaxCompare<WithString::Yes, NotComparable::Throw, NullsHandling::NotComparable>(rhsIt->right, collateOpts);
 		if (res != ComparationResult::Eq) {
 			return res;
 		}

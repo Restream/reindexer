@@ -291,7 +291,7 @@ void EmbeddersLRUCache::Put(const embedding::Adapter& srcAdapter, const embeddin
 			}
 
 			static constexpr uint32_t kInitCounterValue{1};
-			rx_unused = queue_.emplace_front(key, kInitCounterValue);
+			std::ignore = queue_.emplace_front(key, kInitCounterValue);
 			map_.emplace(key, queue_.begin());
 
 			totalCacheSize_ += calculateItemSize(key);
@@ -580,7 +580,7 @@ void EmbeddersCache::Put(const CacheTag& tag, const embedding::Adapter& srcAdapt
 		shared_lock lk(mtx_);
 		const auto it = caches_.find(tag, tag.Hash());
 		if (it != caches_.end()) {
-			return it->second->Put(srcAdapter, values);
+			it->second->Put(srcAdapter, values);
 		}
 	}
 

@@ -102,7 +102,7 @@ public:
 			   key_string replToken, NeedMaskingDSN needMaskingDSN) noexcept
 		: activityPtr_(nullptr),
 		  cancelCtx_(cancelCtx),
-		  cmpl_(cmpl),
+		  cmpl_(std::move(cmpl)),
 		  originLsn_(originLsn),
 		  emitterServerId_(emitterServerId),
 		  shardId_(shardId),
@@ -115,7 +115,7 @@ public:
 			   int shardId, bool parallel, key_string replToken, NeedMaskingDSN needMaskingDSN)
 		: activityCtx_(activityTracer, user, query, container, connectionId),
 		  cancelCtx_(cancelCtx),
-		  cmpl_(cmpl),
+		  cmpl_(std::move(cmpl)),
 		  originLsn_(originLsn),
 		  emitterServerId_(emitterServerId),
 		  shardId_(shardId),
@@ -129,7 +129,7 @@ public:
 						NeedMaskingDSN needMaskingDSN = NeedMaskingDSN_False) noexcept
 		: activityPtr_(ptr),
 		  cancelCtx_(cancelCtx),
-		  cmpl_(cmpl),
+		  cmpl_(std::move(cmpl)),
 		  originLsn_(originLsn),
 		  emitterServerId_(emitterServerId),
 		  shardId_(shardId),

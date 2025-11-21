@@ -156,7 +156,7 @@ void ShardingApi::Init(InitShardingConfig c) {
 }
 
 void ShardingApi::SetUp() {
-	rx_unused = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+	std::ignore = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 	ReindexerApi::SetUp();
 }
 
@@ -165,7 +165,7 @@ void ShardingApi::TearDown() {
 	ReindexerApi::TearDown();
 	Stop();
 	svc_.clear();
-	rx_unused = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+	std::ignore = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 }
 
 bool ShardingApi::StopByIndex(size_t idx) {
