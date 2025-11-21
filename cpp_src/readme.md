@@ -191,20 +191,20 @@ The concept of streaming is described [here](https://grpc.io/docs/what-is-grpc/c
 
 Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some metrics also require `perfstats` to be enabled in `profiling`-config
 
-`reindexer_qps_total` - total queries per second for each database, namespace and query type
-`reindexer_avg_latency` - average queries latency for each database, namespace and query type
-`reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace
-`reindexer_items_count` - items count in each namespace
-`reindexer_memory_allocated_bytes` - current amount of dynamically allocated memory according to tcmalloc/jemalloc
-`reindexer_rpc_clients_count` - current number of RPC clients for each database
-`reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
-`reindexer_info` - generic reindexer server info (currently it's just a version number)
-`reindexer_embed_last_sec_qps` - number of calls to the embedder in the last second
-`reindexer_embed_last_sec_dps` - number of embedded documents in the last second
-`reindexer_embed_last_sec_errors_count` - number of embedder errors in the last second
-`reindexer_embed_last_sec_avg_latency_us` - average autoembed time (last second)
-`reindexer_embed_conn_in_use` - current number of embedder connections in use
-`reindexer_embed_last_sec_avg_embed_latency_us` - average auto-embedding latency for cache misses (last second)
+- `reindexer_qps_total` - total queries per second for each database, namespace and query type
+- `reindexer_avg_latency` - average queries latency for each database, namespace and query type
+- `reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace
+- `reindexer_items_count` - items count in each namespace
+- `reindexer_memory_allocated_bytes` - current amount of dynamically allocated memory according to tcmalloc/jemalloc
+- `reindexer_rpc_clients_count` - current number of RPC clients for each database
+- `reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
+- `reindexer_info` - generic reindexer server info (currently it's just a version number)
+- `reindexer_embed_last_sec_qps` - number of calls to the embedder in the last second
+- `reindexer_embed_last_sec_dps` - number of embedded documents in the last second
+- `reindexer_embed_last_sec_errors_count` - number of embedder errors in the last second
+- `reindexer_embed_last_sec_avg_latency_us` - average autoembed time (last second)
+- `reindexer_embed_conn_in_use` - current number of embedder connections in use
+- `reindexer_embed_last_sec_avg_embed_latency_us` - average auto-embedding latency for cache misses (last second)
 
 ### Prometheus (client-side, Go)
 
