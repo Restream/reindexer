@@ -50,7 +50,8 @@ you can build and install openssl from source, following the instructions below:
 
 # declare dependencies arrays for systems
 osx_deps="gperftools leveldb snappy cmake git libomp"
-almalinux9_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
+almalinux9_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel"
+almalinux8_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel"
 fedora_rpms=" gcc-c++ make cmake snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel openssl-devel"
 centos7_rpms="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel"
 debian_debs="build-essential g++ make cmake libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git libopenblas-pthread-dev libssl-dev"
@@ -107,6 +108,26 @@ install_osx() {
         fi
     done
     return
+}
+
+install_almalinux8() {
+    yum install -y epel-release >/dev/null 2>&1 || true
+    for pkg in ${almalinux8_rpms}
+    do
+        if rpm -qa | grep -qw ${pkg} ; then
+            info_msg "Package '$pkg' already installed. Skip ....."
+        else
+            info_msg "Installing '$pkg' package ....."
+            yum install -y ${pkg} > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                success_msg "Package '$pkg' was installed successfully."
+            else
+                error_msg "Could not install '$pkg' package. Try 'yum update && yum install $pkg'" && return 1
+            fi
+        fi
+    done
+    cmake_installed || install_cmake_linux
+    return $?
 }
 
 install_almalinux9() {
@@ -286,6 +307,8 @@ detect_installer() {
         local OS=$(echo ${ID} | tr '[:upper:]' '[:lower:]')
         if [ "$OS" = "ubuntu" -o "$OS" = "debian" -o "$OS" = "linuxmint" ]; then
             OS_TYPE="debian" && return
+        elif [ "$OS" = "almalinux" -a "$(echo ${ALMALINUX_MANTISBT_PROJECT} | tr '[:upper:]' '[:lower:]')" = "almalinux-8" ]; then
+            OS_TYPE="almalinux8" && return
         elif [ "$OS" = "almalinux" -a "$(echo ${ALMALINUX_MANTISBT_PROJECT} | tr '[:upper:]' '[:lower:]')" = "almalinux-9" ]; then
             OS_TYPE="almalinux9" && return
         elif [ "$OS" = "centos" -o "$OS" = "rhel" ]; then
