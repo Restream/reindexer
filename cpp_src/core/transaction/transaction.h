@@ -30,10 +30,6 @@ class Item;
 class Query;
 class RdxContext;
 
-namespace client {
-class Transaction;
-}
-
 class [[nodiscard]] Transaction {
 public:
 	using ClockT = system_clock_w;
@@ -50,7 +46,7 @@ public:
 	Error Insert(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeInsert, lsn); }
 	Error Update(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpdate, lsn); }
 	Error Upsert(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpsert, lsn); }
-	Error Upsert(Item&& item, Completion cmpl, lsn_t lsn = lsn_t()) {
+	Error Upsert(Item&& item, const Completion& cmpl, lsn_t lsn = lsn_t()) {
 		Error err = Modify(std::move(item), ModeUpsert, lsn);
 		cmpl(err);
 		return err;

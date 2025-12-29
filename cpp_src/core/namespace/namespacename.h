@@ -60,6 +60,7 @@ private:
 };
 
 inline bool operator==(const NamespaceName& lhs, const NamespaceName& rhs) noexcept { return lhs.ToLower() == rhs.ToLower(); }
+inline bool operator<(const NamespaceName& lhs, const NamespaceName& rhs) noexcept { return lhs.ToLower() < rhs.ToLower(); }
 
 struct [[nodiscard]] NamespaceNameEqual {
 	using is_transparent = void;
@@ -73,7 +74,7 @@ struct [[nodiscard]] NamespaceNameEqual {
 struct [[nodiscard]] NamespaceNameLess {
 	using is_transparent = void;
 
-	bool operator()(const NamespaceName& lhs, const NamespaceName& rhs) const noexcept { return lhs.ToLower() < rhs.ToLower(); }
+	bool operator()(const NamespaceName& lhs, const NamespaceName& rhs) const noexcept { return lhs < rhs; }
 	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return iless(lhs, rhs); }
 	bool operator()(const NamespaceName& lhs, std::string_view rhs) const noexcept { return iless(lhs, rhs); }
 	bool operator()(std::string_view lhs, const NamespaceName& rhs) const noexcept { return iless(lhs, rhs); }

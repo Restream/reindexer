@@ -147,6 +147,7 @@ class [[nodiscard]] ItemRefVariant : public std::variant<ItemRef, ItemRefRanked>
 	using Base = std::variant<ItemRef, ItemRefRanked>;
 
 public:
+	// NOLINTBEGIN(bugprone-return-const-ref-from-parameter)
 	const ItemRef& NotRanked() const& {
 		return std::visit(overloaded{[](const ItemRef& v) noexcept -> const ItemRef& { return v; },
 									 [](const ItemRefRanked& v) noexcept -> const ItemRef& { return v.NotRanked(); }},
@@ -158,6 +159,7 @@ public:
 					   [](const ItemRefRanked& r) noexcept -> const ItemRefRanked& { return r; }},
 			AsVariant());
 	}
+	// NOLINTEND(bugprone-return-const-ref-from-parameter)
 	RankT Rank() const {
 		return std::visit(overloaded{[](const ItemRef&) -> RankT { throw Error{errLogic, "Get rank from result of not ranked query"}; },
 									 [](const ItemRefRanked& r) noexcept { return r.Rank(); }},
@@ -205,6 +207,7 @@ class [[nodiscard]] ItemRefVector {
 			return *this;
 		}
 
+		// NOLINTNEXTLINE(bugprone-exception-escape)
 		IteratorImpl& operator++() & noexcept {
 			std::visit([](auto& it) noexcept { ++it; }, asVariant());
 			return *this;
@@ -229,7 +232,7 @@ class [[nodiscard]] ItemRefVector {
 		}
 
 		template <typename I>
-		IteratorImpl& operator+=(I i) & noexcept {
+		IteratorImpl& operator+=(I i) & noexcept {	// NOLINT(bugprone-exception-escape)
 			std::visit([i](auto& it) noexcept { it += i; }, asVariant());
 			return *this;
 		}
@@ -261,14 +264,15 @@ class [[nodiscard]] ItemRefVector {
 			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			return std::visit([other](auto lhs) noexcept { return lhs - std::get<decltype(lhs)>(other); }, asVariant());
 		}
-
+		// NOLINTBEGIN(bugprone-exception-escape)
 		template <typename I, typename IR>
 		bool operator==(IteratorImpl<I, IR> other) const noexcept {
 			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			return std::visit([other](auto lhs) noexcept { return lhs == std::get<decltype(lhs)>(other); }, asVariant());
 		}
+		// NOLINTEND(bugprone-exception-escape)
 		template <typename I, typename IR>
-		bool operator!=(IteratorImpl<I, IR> other) const noexcept {
+		bool operator!=(const IteratorImpl<I, IR>& other) const noexcept {
 			return !operator==(other);
 		}
 		template <typename I, typename IR>
@@ -289,7 +293,7 @@ class [[nodiscard]] ItemRefVector {
 
 		NotRankedIt NotRanked() const { return std::get<NotRankedIt>(*this); }
 		RankedIt Ranked() const { return std::get<RankedIt>(*this); }
-		ItemRefRef GetItemRef() const noexcept {
+		ItemRefRef GetItemRef() const noexcept {  // NOLINT(bugprone-exception-escape)
 			return std::visit(overloaded{[](NotRankedIt it) noexcept -> ItemRefRef { return *it; },
 										 [](RankedIt it) noexcept -> ItemRefRef { return it->NotRanked(); }},
 							  asVariant());
@@ -319,12 +323,13 @@ public:
 				   b.asVariant());
 	}
 
-	const ItemRef& GetItemRef(size_t i) const& {
+	// NOLINTNEXTLINE (bugprone-exception-escape)
+	const ItemRef& GetItemRef(size_t i) const& noexcept {
 		return std::visit(overloaded{[i](const NotRankedVec& v) noexcept -> const ItemRef& { return v[i]; },
 									 [i](const RankedVec& v) noexcept -> const ItemRef& { return v[i].NotRanked(); }},
 						  variant_);
 	}
-	ItemRef& GetItemRef(size_t i) & noexcept { return const_cast<ItemRef&>(const_cast<const ItemRefVector&>(*this).GetItemRef(i)); }
+	ItemRef& GetItemRef(size_t i) & { return const_cast<ItemRef&>(const_cast<const ItemRefVector&>(*this).GetItemRef(i)); }
 	const ItemRefRanked& GetItemRefRanked(size_t i) const& {
 		return std::visit(overloaded{[](const NotRankedVec&) -> const ItemRefRanked& {
 										 throw Error{errLogic, "Get rank from result of not ranked query"};
@@ -358,10 +363,10 @@ public:
 	}
 	ConstIterator begin() const& { return cbegin(); }
 	ConstIterator end() const& { return cend(); }
-	Iterator begin() & noexcept {
+	Iterator begin() & {
 		return std::visit([](auto& v) { return Iterator{v.begin()}; }, variant_);
 	}
-	Iterator end() & noexcept {
+	Iterator end() & {
 		return std::visit([](auto& v) { return Iterator{v.end()}; }, variant_);
 	}
 	MoveIterator mbegin() && {
@@ -371,9 +376,11 @@ public:
 		return std::visit([](auto& v) noexcept { return MoveIterator{std::make_move_iterator(v.end())}; }, variant_);
 	}
 
-	size_t Size() const {
+	// NOLINTNEXTLINE (bugprone-exception-escape)
+	size_t Size() const noexcept {
 		return std::visit([](const auto& v) noexcept { return v.size(); }, variant_);
 	}
+
 	size_t Capacity() const {
 		return std::visit([](const auto& v) noexcept { return v.capacity(); }, variant_);
 	}

@@ -18,6 +18,7 @@ BaseFTConfig::BaseFTConfig() {
 
 void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 	using namespace std::string_view_literals;
+	enableTermsConcat = root["enable_terms_concat"sv].As<>(enableTermsConcat);
 	enableTranslit = root["enable_translit"sv].As<>(enableTranslit);
 	enableNumbersSearch = root["enable_numbers_search"sv].As<>(enableNumbersSearch);
 	enableKbLayout = root["enable_kb_layout"sv].As<>(enableKbLayout);
@@ -112,6 +113,7 @@ void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 	const auto& baseRankingConfigNode = root["base_ranking"sv];
 	if (!baseRankingConfigNode.empty()) {
 		rankingConfig.fullMatch = baseRankingConfigNode["full_match_proc"sv].As<>(rankingConfig.fullMatch, 0, 500);
+		rankingConfig.concat = baseRankingConfigNode["concat_proc"sv].As<>(rankingConfig.concat, 0, 500);
 		rankingConfig.prefixMin = baseRankingConfigNode["prefix_min_proc"sv].As<>(rankingConfig.prefixMin, 0, 500);
 		rankingConfig.suffixMin = baseRankingConfigNode["suffix_min_proc"sv].As<>(rankingConfig.suffixMin, 0, 500);
 		rankingConfig.typo = baseRankingConfigNode["base_typo_proc"sv].As<>(rankingConfig.typo, 0, 500);
@@ -126,6 +128,7 @@ void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 
 void BaseFTConfig::getJson(JsonBuilder& jsonBuilder) const {
 	using namespace std::string_view_literals;
+	jsonBuilder.Put("enable_terms_concat"sv, enableTermsConcat);
 	jsonBuilder.Put("enable_translit"sv, enableTranslit);
 	jsonBuilder.Put("enable_numbers_search"sv, enableNumbersSearch);
 	jsonBuilder.Put("enable_kb_layout"sv, enableKbLayout);
@@ -163,6 +166,7 @@ void BaseFTConfig::getJson(JsonBuilder& jsonBuilder) const {
 	{
 		auto baseRankingConfigNode = jsonBuilder.Object("base_ranking"sv);
 		baseRankingConfigNode.Put("full_match_proc"sv, rankingConfig.fullMatch);
+		baseRankingConfigNode.Put("concat_proc"sv, rankingConfig.concat);
 		baseRankingConfigNode.Put("prefix_min_proc"sv, rankingConfig.prefixMin);
 		baseRankingConfigNode.Put("suffix_min_proc"sv, rankingConfig.suffixMin);
 		baseRankingConfigNode.Put("base_typo_proc"sv, rankingConfig.typo);

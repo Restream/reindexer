@@ -9,7 +9,7 @@ namespace reindexer {
 namespace client {
 
 using std::chrono::milliseconds;
-constexpr size_t kAsyncCoroStackSize = 32 * 1024;
+constexpr size_t kAsyncCoroStackSize = 40 * 1024;
 
 ReindexerImpl::ReindexerImpl(const ReindexerConfig& conf, uint32_t connCount, uint32_t threadsCount) : conf_(conf) {
 	const auto conns = std::max(connCount, 1u);

@@ -151,6 +151,40 @@ constexpr bool IsFloatVector(IndexType type) noexcept {
 	}
 }
 
+constexpr bool IsGeospatial(IndexType type) noexcept {
+	switch (type) {
+		case IndexRTree:
+			return true;
+		case IndexCompositeBTree:
+		case IndexCompositeHash:
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexTtl:
+		case IndexFastFT:
+		case IndexFuzzyFT:
+		case IndexCompositeFastFT:
+		case IndexCompositeFuzzyFT:
+		case IndexUuidHash:
+		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
+		default:
+			return false;
+	}
+}
+
 /// Get readable Join Type
 /// @param type - join type
 /// @returns string with join type name

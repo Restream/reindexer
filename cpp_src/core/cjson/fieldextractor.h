@@ -1,128 +1,11 @@
 #pragma once
 
-#include <span>
 #include <variant>
-#include "tagsmatcher.h"
-#include "tools/assertrx.h"
+#include "pathfilter.h"
 
 namespace reindexer {
 
-class FieldsFilter;
-
 class [[nodiscard]] FieldsExtractor {
-	class [[nodiscard]] Filter {
-	public:
-		class [[nodiscard]] PathStepGuard {
-		public:
-			PathStepGuard(const PathStepGuard&) = delete;
-			PathStepGuard& operator=(const PathStepGuard&) = delete;
-			PathStepGuard& operator=(PathStepGuard&&) = delete;
-
-			PathStepGuard(PathStepGuard&& other) noexcept : filter_{other.filter_}, step_{other.step_}, wasMatch_{other.wasMatch_} {
-				other.step_ = 0;
-			}
-			PathStepGuard(Filter& filter, concepts::TagNameOrIndex auto... tags) : filter_{filter}, wasMatch_{filter_.match_} {
-				(step(tags), ...);
-			}
-			~PathStepGuard() {
-				if (step_) {
-					assertrx(filter_.position_ >= step_);
-					filter_.position_ -= step_;
-					filter_.match_ = wasMatch_;
-				}
-			}
-			Filter& GetFilter() & noexcept { return filter_; }
-			void InitArray() & { step(TagIndex::All()); }
-
-		private:
-			void step(TagIndex tag) {
-				std::visit(overloaded{[](const TagsPath*) {},
-									  [&](const IndexedTagsPath* path) {
-										  if (filter_.match_ && filter_.position_ < path->size()) {
-											  const auto& pathNode = (*path)[filter_.position_];
-											  if (pathNode.IsTagIndex()) {
-												  if (pathNode.GetTagIndex() != tag) {
-													  filter_.match_ = false;
-												  }
-												  ++filter_.position_;
-												  ++step_;
-											  }
-										  } else {
-											  ++filter_.position_;
-											  ++step_;
-										  }
-									  }},
-						   filter_.path_);
-			}
-
-			void step(TagName tag) {
-				if (tag.IsEmpty()) {
-					return;
-				}
-				std::visit(overloaded{[&](const TagsPath* path) {
-										  if (filter_.position_ < path->size() && (*path)[filter_.position_] != tag) {
-											  filter_.match_ = false;
-										  }
-										  ++filter_.position_;
-										  ++step_;
-									  },
-									  [&](const IndexedTagsPath* pathPtr) {
-										  const IndexedTagsPath& path = *pathPtr;
-										  const size_t pathSize = path.size();
-										  if (filter_.match_ && filter_.position_ < path.size()) {
-											  size_t i = filter_.position_;
-											  while (i < pathSize && path[i].IsTagIndex()) {
-												  ++i;
-											  }
-											  if (i < pathSize && path[i].GetTagName() != tag) {
-												  filter_.match_ = false;
-											  }
-											  const auto step = i - filter_.position_ + 1;
-											  filter_.position_ += step;
-											  step_ += step;
-										  } else {
-											  ++filter_.position_;
-											  ++step_;
-										  }
-									  }},
-						   filter_.path_);
-			}
-
-			Filter& filter_;
-			size_t step_{0};
-			bool wasMatch_;
-		};
-
-		Filter(const concepts::OneOf<TagsPath, IndexedTagsPath> auto& path) : path_{&path} {}
-		bool Match() const noexcept {
-			return match_ && std::visit([this](const auto& path) { return position_ >= path->size(); }, path_);
-		}
-		bool ExactMatch() const noexcept {
-			return match_ && std::visit([this](const auto& path) { return position_ == path->size(); }, path_);
-		}
-		PathStepGuard Step(concepts::TagNameOrIndex auto... tags) & { return PathStepGuard{*this, tags...}; }
-		TagIndex GetArrayIndex() const {
-			if (!match_) {
-				return TagIndex::All();
-			}
-			return std::visit(overloaded{[](const TagsPath*) { return TagIndex::All(); },
-										 [&](const IndexedTagsPath* path) {
-											 if (position_ >= path->size() || !(*path)[position_].IsTagIndex()) {
-												 return TagIndex::All();
-											 }
-											 return (*path)[position_].GetTagIndex();
-										 }},
-							  path_);
-		}
-		template <typename Os>
-		void Dump(Os&) const;
-
-	private:
-		std::variant<const TagsPath*, const IndexedTagsPath*> path_;
-		size_t position_{0};
-		bool match_{true};
-	};
-
 public:
 	class [[nodiscard]] FieldParams {
 	public:
@@ -131,13 +14,12 @@ public:
 		int field;
 	};
 
-	FieldsExtractor() = default;
 	template <typename Path>
-	FieldsExtractor(VariantArray* va, KeyValueType expectedType, const Path& path, FieldParams* params = nullptr)
-		: values_(va), expectedType_(expectedType), filterOrStepHolder_(std::in_place_type<Filter>, path), params_(params) {}
+	FieldsExtractor(VariantArray& va, KeyValueType expectedType, const Path& path, FieldParams* params = nullptr)
+		: values_(va), expectedType_(expectedType), filterOrStepHolder_(std::in_place_type<PathFilter>, path), params_(params) {}
 
 private:
-	FieldsExtractor(VariantArray* va, KeyValueType expectedType, Filter::PathStepGuard&& step, FieldParams* params, int arrayIndex)
+	FieldsExtractor(VariantArray& va, KeyValueType expectedType, PathFilter::PathStepGuard&& step, FieldParams* params, int arrayIndex)
 		: values_(va), expectedType_(expectedType), filterOrStepHolder_(std::move(step)), params_(params), arrayIndex_(arrayIndex) {}
 
 public:
@@ -152,20 +34,18 @@ public:
 	FieldsExtractor Object(concepts::TagNameOrIndex auto tag) {
 		auto filterStep = step(tag);
 		if (filterRef_.ExactMatch()) [[unlikely]] {
-			values_->MarkObject();
+			values_.MarkObject();
 		}
 		return FieldsExtractor(values_, expectedType_, std::move(filterStep), params_, NotArray);
 	}
 	FieldsExtractor Array(concepts::TagNameOrIndex auto tag) {
-		assertrx_throw(values_);
 		auto filterStep = step(tag);
-		return FieldsExtractor(&values_->MarkArray(), expectedType_, std::move(filterStep), params_, 0);
+		return FieldsExtractor(values_.MarkArray(), expectedType_, std::move(filterStep), params_, 0);
 	}
 	FieldsExtractor Array(std::string_view) {
 		assertrx_throw(false && "not implemented");
-		assertrx_throw(values_);
 		auto filterStep = step(TagName::Empty());
-		return FieldsExtractor(&values_->MarkArray(), expectedType_, std::move(filterStep), params_, 0);
+		return FieldsExtractor(values_.MarkArray(), expectedType_, std::move(filterStep), params_, 0);
 	}
 
 	template <typename T>
@@ -187,8 +67,7 @@ public:
 			}
 		}
 		if (filterRef_.Match()) {
-			assertrx_throw(values_);
-			values_->MarkArray();
+			std::ignore = values_.MarkArray();
 		}
 	}
 
@@ -211,8 +90,7 @@ public:
 			}
 		}
 		if (filterRef_.Match()) {
-			assertrx_throw(values_);
-			values_->MarkArray();
+			std::ignore = values_.MarkArray();
 		}
 	}
 
@@ -272,10 +150,9 @@ private:
 		expectedType_.EvaluateOneOf(
 			[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
 								KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Uuid,
-								KeyValueType::FloatVector> auto) { arg.convert(expectedType_); },
+								KeyValueType::FloatVector> auto) { std::ignore = arg.convert(expectedType_); },
 			[](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Composite> auto) noexcept {});
-		assertrx_throw(values_);
-		values_->emplace_back(std::move(arg));
+		values_.emplace_back(std::move(arg));
 	}
 
 	void updateParams(TagIndex tagIndex, size_t count, int offset) {
@@ -294,7 +171,7 @@ private:
 		}
 	}
 
-	Filter::PathStepGuard step(TagName tag) {
+	PathFilter::PathStepGuard step(TagName tag) {
 		if (arrayIndex_ == NotArray) {
 			return filterRef_.Step(tag);
 		} else {
@@ -302,14 +179,14 @@ private:
 		}
 	}
 
-	Filter::PathStepGuard step(TagIndex tag) { return filterRef_.Step(tag); }
+	PathFilter::PathStepGuard step(TagIndex tag) { return filterRef_.Step(tag); }
 
-	VariantArray* values_ = nullptr;
+	VariantArray& values_;
 	KeyValueType expectedType_{KeyValueType::Undefined{}};
-	std::variant<Filter, Filter::PathStepGuard> filterOrStepHolder_{std::in_place_type<Filter>, TagsPath{}};
-	Filter& filterRef_{
-		std::visit(overloaded{[](Filter& f) -> Filter& { return f; }, [](Filter::PathStepGuard& s) -> Filter& { return s.GetFilter(); }},
-				   filterOrStepHolder_)};
+	std::variant<PathFilter, PathFilter::PathStepGuard> filterOrStepHolder_{std::in_place_type<PathFilter>, TagsPath{}};
+	PathFilter& filterRef_{std::visit(overloaded{[](PathFilter& f) -> PathFilter& { return f; },
+												 [](PathFilter::PathStepGuard& s) -> PathFilter& { return s.GetFilter(); }},
+									  filterOrStepHolder_)};
 	FieldParams* params_;
 	enum [[nodiscard]] { NotArray = -1 };
 	int arrayIndex_{NotArray};

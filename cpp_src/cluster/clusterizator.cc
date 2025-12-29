@@ -1,4 +1,5 @@
 #include "clusterizator.h"
+#include "cluster/replication/ns_sync_scheduler.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {
@@ -7,7 +8,8 @@ namespace cluster {
 ClusterManager::ClusterManager(ReindexerImpl& thisNode, size_t maxUpdatesSize)
 	: updatesQueue_(maxUpdatesSize),
 	  clusterReplicator_(updatesQueue_, sharedSyncState_, thisNode),
-	  asyncReplicator_(updatesQueue_, sharedSyncState_, thisNode, *this) {}
+	  asyncReplicator_(updatesQueue_, sharedSyncState_, thisNode, *this),
+	  nssSyncScheduler_(std::make_shared<NamespacesSyncScheduler>()) {}
 
 void ClusterManager::Configure(ReplicationConfigData replConfig) {
 	unique_lock lck(mtx_);
@@ -44,29 +46,29 @@ bool ClusterManager::IsExpectingClusterStartup() const noexcept {
 	return enabled_.load(std::memory_order_acquire) && clusterReplicator_.IsExpectingStartup();
 }
 
-Error ClusterManager::StartClusterRepl() {
+Error ClusterManager::StartClusterRepl() noexcept {
 	lock_guard lck(mtx_);
 	try {
 		if (!enabled_.load(std::memory_order_acquire)) {
 			return Error(errLogic, "ClusterManager is disabled");
 		}
 		validateConfig();
-		clusterReplicator_.Run();
-	} catch (Error& e) {
+		clusterReplicator_.Run(nssSyncScheduler_);
+	} catch (std::exception& e) {
 		return e;
 	}
 	return Error();
 }
 
-Error ClusterManager::StartAsyncRepl() {
+Error ClusterManager::StartAsyncRepl() noexcept {
 	lock_guard lck(mtx_);
 	try {
 		if (!enabled_.load(std::memory_order_acquire)) {
 			return Error(errLogic, "ClusterManager is disabled");
 		}
 		validateConfig();
-		asyncReplicator_.Run();
-	} catch (Error& e) {
+		asyncReplicator_.Run(nssSyncScheduler_);
+	} catch (std::exception& e) {
 		return e;
 	}
 	return Error();
@@ -120,7 +122,7 @@ Error ClusterManager::Replicate(UpdatesContainer&& recs, std::function<void()> b
 
 	std::pair<Error, bool> res;
 	if (ctx.GetOriginLSN().isEmpty()) {
-		res = updatesQueue_.Push(std::move(recs), std::move(beforeWaitF), ctx);
+		res = updatesQueue_.Push(std::move(recs), beforeWaitF, ctx);
 	} else {
 		// Update can't be replicated to cluster from another node, so may only be replicated to async replicas
 		res = updatesQueue_.PushAsync(std::move(recs));

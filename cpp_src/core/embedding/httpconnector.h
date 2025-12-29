@@ -28,6 +28,8 @@ public:
 	struct [[nodiscard]] Response {
 		bool ok{false};
 		std::string content;
+		size_t read_bytes = 0;
+		size_t write_bytes = 0;
 	};
 	Response Send(const std::string& path, chunk&& json);
 

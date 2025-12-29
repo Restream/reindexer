@@ -16,6 +16,7 @@ public:
 	PayloadValueWithHash(PayloadValue&& pv, const PayloadType& pt, const FieldsSet& fields)
 		: PayloadValue(std::move(pv)), hash_(ConstPayload(pt, *static_cast<PayloadValue*>(this)).GetHash(fields)) {}
 	PayloadValueWithHash(const PayloadValueWithHash& o) noexcept : PayloadValue(o), hash_(o.hash_) {}
+	// NOLINTNEXTLINE(bugprone-use-after-move)
 	PayloadValueWithHash(PayloadValueWithHash&& o) noexcept : PayloadValue(std::move(o)), hash_(o.hash_) {}
 	PayloadValueWithHash& operator=(PayloadValueWithHash&& o) noexcept {
 		hash_ = o.hash_;
@@ -226,8 +227,8 @@ public:
 			this->add_ref(item.first);
 		}
 	}
-	unordered_payload_map(unordered_payload_map&&) = default;
-	unordered_payload_map& operator=(unordered_payload_map&& other) {
+	unordered_payload_map(unordered_payload_map&&) noexcept = default;
+	unordered_payload_map& operator=(unordered_payload_map&& other) noexcept {
 		for (auto& item : *this) {
 			this->release(item.first);
 		}
@@ -340,8 +341,8 @@ public:
 			this->add_ref(item);
 		}
 	}
-	unordered_payload_set(unordered_payload_set&&) = default;
-	unordered_payload_set& operator=(unordered_payload_set&& other) {
+	unordered_payload_set(unordered_payload_set&&) noexcept = default;
+	unordered_payload_set& operator=(unordered_payload_set&& other) noexcept {
 		for (auto& item : *this) {
 			this->release(item);
 		}
@@ -462,6 +463,7 @@ public:
 		}
 		return res;
 	}
+	// NOLINTNEXTLINE(performance-unnecessary-value-param)
 	iterator insert(iterator, const value_type& v) { return insert(v).first; }
 
 	template <typename deep_cleaner>

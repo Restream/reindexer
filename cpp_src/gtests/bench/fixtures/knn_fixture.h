@@ -17,7 +17,7 @@ public:
 	KnnBench(Reindexer* db, std::string_view name);
 
 	Error Initialize() override {
-		const auto err = BaseFixture::Initialize();
+		Error err = BaseFixture::Initialize();
 		if (!err.ok()) {
 			return err;
 		}

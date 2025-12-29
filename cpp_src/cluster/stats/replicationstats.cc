@@ -109,6 +109,7 @@ void NodeStats::FromJSON(const gason::JsonNode& root) {
 	status = NodeStatusFromStr(root["status"sv].As<std::string_view>("none"sv));
 	role = RaftInfo::RoleFromStr(root["role"sv].As<std::string_view>("follower"sv));
 	isSynchronized = root["is_synchronized"sv].As<bool>(false);
+	nssSyncQueue = root["queued_namespace_syncs"sv].As<size_t>(0);
 	syncState = NodeSyncStateFromStr(root["sync_state"sv].As<std::string_view>("none"sv));
 	lastError = NodeErrorFromJson(root["last_error"sv]);
 	for (auto& ns : root["namespaces"sv]) {
@@ -124,6 +125,7 @@ void NodeStats::GetJSON(JsonBuilder& builder) const {
 	builder.Put("role"sv, RaftInfo::RoleToStr(role));
 	builder.Put("sync_state"sv, NodeSyncStateToStr(syncState));
 	builder.Put("is_synchronized"sv, isSynchronized);
+	builder.Put("queued_namespace_syncs"sv, nssSyncQueue);
 	{
 		auto lastErrorJsonBuilder = builder.Object("last_error"sv);
 		lastErrorJsonBuilder.Put("code"sv, int(lastError.code()));
@@ -254,12 +256,14 @@ NodeStats NodeStatsCounter::Get() const {
 	stats.status = status.load(std::memory_order_relaxed);
 	stats.syncState = syncState.load(std::memory_order_relaxed);
 	stats.lastError = GetLastError();
+	stats.nssSyncQueue = nssSyncQueueSize.load(std::memory_order_relaxed);
 	return stats;
 }
 
 void ReplicationStatCounter::OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept {
 	shared_lock rlck(mtx_);
 	auto found = nodeCounters_.find(nodeId);
+	assertf_dbg(found != nodeCounters_.end(), "nodeId={}", nodeId);
 	if (found != nodeCounters_.end()) {
 		found->second->OnStatusChanged(status);
 	}
@@ -269,17 +273,42 @@ void ReplicationStatCounter::OnSyncStateChanged(size_t nodeId, NodeStats::SyncSt
 	shared_lock rlck(mtx_);
 	if (nodeId == kLeaderUID && thisNode_.has_value()) {
 		thisNode_->OnSyncStateChanged(state);
+		assertrx_dbg(state != NodeStats::SyncState::OnlineReplication || thisNode_->nssSyncQueueSize.load(std::memory_order_relaxed) == 0);
+	} else if (auto found = nodeCounters_.find(nodeId); found != nodeCounters_.end()) {
+		auto& node = *found->second;
+		node.OnSyncStateChanged(state);
+		assertrx_dbg(state != NodeStats::SyncState::OnlineReplication || node.nssSyncQueueSize.load(std::memory_order_relaxed) == 0);
 	} else {
-		auto found = nodeCounters_.find(nodeId);
-		if (found != nodeCounters_.end()) {
-			found->second->OnSyncStateChanged(state);
-		}
+		assertf_dbg(false, "nodeId={}", nodeId);
+	}
+}
+
+void ReplicationStatCounter::OnNamespaceSynchronized(size_t nodeId) noexcept {
+	shared_lock rlck(mtx_);
+	if (nodeId == kLeaderUID && thisNode_.has_value()) {
+		thisNode_->OnNamespaceSynchronized();
+	} else if (auto found = nodeCounters_.find(nodeId); found != nodeCounters_.end()) {
+		found->second->OnNamespaceSynchronized();
+	} else {
+		assertf_dbg(false, "nodeId={}", nodeId);
+	}
+}
+
+void ReplicationStatCounter::OnEnqueueNamespacesSync(size_t nodeId, size_t count) noexcept {
+	shared_lock rlck(mtx_);
+	if (nodeId == kLeaderUID && thisNode_.has_value()) {
+		thisNode_->OnEnqueueNamespacesSync(count);
+	} else if (auto found = nodeCounters_.find(nodeId); found != nodeCounters_.end()) {
+		found->second->OnEnqueueNamespacesSync(count);
+	} else {
+		assertf_dbg(false, "nodeId={}", nodeId);
 	}
 }
 
 void ReplicationStatCounter::OnServerIdChanged(size_t nodeId, int serverId) const noexcept {
 	shared_lock rlck(mtx_);
 	auto found = nodeCounters_.find(nodeId);
+	assertf_dbg(found != nodeCounters_.end(), "nodeId={}", nodeId);
 	if (found != nodeCounters_.end()) {
 		found->second->OnServerIdChanged(serverId);
 	}
@@ -288,6 +317,7 @@ void ReplicationStatCounter::OnServerIdChanged(size_t nodeId, int serverId) cons
 void ReplicationStatCounter::SaveNodeError(size_t nodeId, const Error& lastError) noexcept {
 	shared_lock rlck(mtx_);
 	auto found = nodeCounters_.find(nodeId);
+	assertf_dbg(found != nodeCounters_.end(), "nodeId={}", nodeId);
 	if (found != nodeCounters_.end()) {
 		found->second->SaveLastError(lastError);
 	}
@@ -326,10 +356,9 @@ ReplicationStats ReplicationStatCounter::Get() const {
 	stats.initialSync.walSyncs = initialWalSyncs_.Get();
 	stats.initialSync.forceSyncs = initialForceSyncs_.Get();
 	stats.initialSync.totalTimeUs = initialSyncTotalTimeUs_.load(std::memory_order_relaxed);
-	stats.nodeStats.reserve(thisNode_.has_value() ? nodeCounters_.size() + 1 : nodeCounters_.size());
 	for (auto& nodeCounter : nodeCounters_) {
 		stats.nodeStats.emplace_back(nodeCounter.second->Get());
-		const auto lastAppliedId = nodeCounter.second->lastAppliedUpdateId_.load(std::memory_order_relaxed);
+		const auto lastAppliedId = nodeCounter.second->lastAppliedUpdateId.load(std::memory_order_relaxed);
 		auto& lastNode = stats.nodeStats.back();
 		lastNode.updatesCount = getUpdatesCountById(lastPushedUpdateId_.load(std::memory_order_relaxed), lastAppliedId);
 		lastNode.isSynchronized = false;

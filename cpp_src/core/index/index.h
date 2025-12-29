@@ -2,7 +2,7 @@
 
 #include <limits>
 #include <vector>
-#include "core/idset.h"
+#include "core/idset/idset.h"
 #include "core/index/keyentry.h"
 #include "core/indexdef.h"
 #include "core/indexopts.h"
@@ -146,7 +146,7 @@ public:
 	virtual void ClearCache() {}
 	virtual bool IsBuilt() const noexcept { return isBuilt_; }
 	virtual void MarkBuilt() noexcept { isBuilt_ = true; }
-	virtual void EnableUpdatesCountingMode(bool) noexcept {}
+	virtual void EnableUpdatesCountingMode(bool) {}
 	virtual void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) = 0;
 	virtual bool IsSupportMultithreadTransactions() const noexcept { return false; }
 	virtual void GrowFor(size_t /*newElementsCount*/) {}

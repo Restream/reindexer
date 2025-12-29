@@ -9,6 +9,7 @@ class [[nodiscard]] GuttmanSplitter : protected Splitter<Entry, Node, Traits, It
 	using Base = Splitter<Entry, Node, Traits, Iterator, MaxEntries>;
 
 protected:
+	// NOLINTNEXTLINE (bugprone-crtp-constructor-accessibility)
 	GuttmanSplitter(Entry&& appendingEntry, Node& sourceNode, Iterator* it)
 		: Base{std::move(appendingEntry), sourceNode, it}, moved_(MaxEntries + 1, false) {}
 	~GuttmanSplitter() = default;

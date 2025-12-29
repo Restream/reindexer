@@ -26,9 +26,13 @@ struct [[nodiscard]] JoinPreResult {
 		Values(const PayloadType& pt, const TagsMatcher& tm) noexcept : payloadType{pt}, tagsMatcher{tm} {}
 		Values(Values&& other) noexcept
 			: ItemRefVector(std::move(other)),
+			  // NOLINTNEXTLINE (bugprone-use-after-move)
 			  payloadType(std::move(other.payloadType)),
+			  // NOLINTNEXTLINE (bugprone-use-after-move)
 			  tagsMatcher(std::move(other.tagsMatcher)),
+			  // NOLINTNEXTLINE (bugprone-use-after-move)
 			  locked_(other.locked_) {
+			// NOLINTNEXTLINE (bugprone-use-after-move)
 			other.locked_ = false;
 		}
 		Values() noexcept : locked_(false) {}

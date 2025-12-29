@@ -5,20 +5,22 @@
 
 namespace reindexer {
 
-template <class T, class U>
-constexpr auto&& forward_like(U&& x) noexcept {
-	constexpr bool is_adding_const = std::is_const_v<std::remove_reference_t<T>>;
-	if constexpr (std::is_lvalue_reference_v<T&&>) {
-		if constexpr (is_adding_const) {
-			return std::as_const(x);
+template <typename T, typename U>
+constexpr decltype(auto) forward_like(U&& x) noexcept {
+	constexpr bool as_rval = std::is_rvalue_reference_v<T&&>;
+
+	if constexpr (std::is_const_v<std::remove_reference_t<T>>) {
+		using U2 = std::remove_reference_t<U>;
+		if constexpr (as_rval) {
+			return static_cast<const U2&&>(x);
 		} else {
-			return static_cast<U&>(x);
+			return static_cast<const U2&>(x);
 		}
 	} else {
-		if constexpr (is_adding_const) {
-			return std::move(std::as_const(x));
+		if constexpr (as_rval) {
+			return static_cast<std::remove_reference_t<U>&&>(x);
 		} else {
-			return std::move(x);
+			return static_cast<U&>(x);
 		}
 	}
 }

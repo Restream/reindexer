@@ -6,10 +6,10 @@ namespace reindexer {
 
 struct FtDslOpts;
 
-struct [[nodiscard]] SynonymsDsl {
-	SynonymsDsl(FtDSLQuery&& dsl_, const std::vector<size_t>& termsIdx_) : dsl{std::move(dsl_)}, termsIdx{termsIdx_} {}
-	FtDSLQuery dsl;
-	std::vector<size_t> termsIdx;
+struct [[nodiscard]] MultiWord {
+	h_vector<std::wstring, 2> words;
+	FtDslOpts opts;
+	h_vector<size_t, 2> termsIdx;
 };
 
 class [[nodiscard]] Synonyms final : public ITokenFilter {
@@ -20,19 +20,15 @@ public:
 	void GetVariants(const std::wstring& data, ITokenFilter::ResultsStorage& result, int proc,
 					 fast_hash_map<std::wstring, size_t>& patternsUsed) override final;
 	void SetConfig(BaseFTConfig* cfg) override final;
-	void AddManyToManySynonyms(const FtDSLQuery&, std::vector<SynonymsDsl>&, int proc) const;
-	void AddOneToManySynonyms(const std::wstring&, const FtDslOpts&, const FtDSLQuery&, size_t termIdx, std::vector<SynonymsDsl>&,
-							  int proc) const;
+	void AddManyToManySynonyms(const FtDSLQuery& query, int proc, std::vector<MultiWord>& synonyms) const;
+	void AddOneToManySynonyms(const std::wstring&, const FtDslOpts&, size_t termIdx, int proc, std::vector<MultiWord>&) const;
 
 private:
 	using SingleAlternativeCont = std::vector<std::wstring>;
 	using MultipleAlternativesCont = std::vector<h_vector<std::wstring, 2>>;
 
-	static void addDslEntries(std::vector<SynonymsDsl>&, const MultipleAlternativesCont&, const FtDslOpts&,
-							  const std::vector<size_t>& termsIdx, const FtDSLQuery&);
-
-	static void addPhraseAlternatives(const FtDSLQuery& dsl, const h_vector<std::wstring, 2>& phrase,
-									  const MultipleAlternativesCont& phraseAlternatives, std::vector<SynonymsDsl>& synonymsDsl, int proc);
+	static void addPhraseAlternatives(const FtDSLQuery& query, const h_vector<std::wstring, 2>& phrase,
+									  const MultipleAlternativesCont& phraseAlternatives, int proc, std::vector<MultiWord>& synonyms);
 
 	// word - single-word synonyms
 	RHashMap<std::wstring, std::shared_ptr<SingleAlternativeCont>> one2one_;

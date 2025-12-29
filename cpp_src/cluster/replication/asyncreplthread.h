@@ -32,7 +32,7 @@ private:
 class [[nodiscard]] AsyncReplThread {
 public:
 	using BaseT = ReplThread<AsyncThreadParam>;
-	AsyncReplThread(int serverId, ReindexerImpl& thisNode, std::shared_ptr<BaseT::UpdatesQueueT>,
+	AsyncReplThread(int serverId, ReindexerImpl& thisNode, std::shared_ptr<BaseT::UpdatesQueueT>, std::shared_ptr<NamespacesSyncScheduler>,
 					const std::vector<AsyncReplNodeConfig>& nodesList, AsyncReplicationMode, SharedSyncState&, ReplicationStatsCollector,
 					const Logger&);
 	~AsyncReplThread();

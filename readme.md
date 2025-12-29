@@ -42,6 +42,8 @@ about reindexer server and HTTP API refer to
   - [Nested Structs](#nested-structs)
   - [Sort](#sort)
     - [Forced sort](#forced-sort)
+  - [Functions](#functions)
+    - [flat_array_len(field_name)](#flat_array_lenfield_name)
   - [Counting](#counting)
   - [Text pattern search with LIKE condition](#text-pattern-search-with-like-condition)
   - [Update queries](#update-queries)
@@ -752,6 +754,52 @@ SELECT * FROM items WHERE fields LIKE 'pattern'
 *CAUTION*: condition LIKE uses scan method. It can be used for debug purposes or within queries with another good selective conditions.
 
 Generally for full text search with reasonable speed we recommend to use fulltext index.
+
+### Functions
+Reindexer provides built-in functions that can be used within WHERE clauses to enable advanced filtering capabilities beyond simple field comparisons.
+
+#### flat_array_len(field_name)
+
+The `flat_array_len` function returns the length or cardinality of a specified field, making it particularly useful for filtering based on array sizes or field presence.
+
+Behavior by Field Type:
+- Array Fields: returns the number of elements in the array
+- Scalar Fields (integers, strings, etc.): always returns 1
+- Object Fields: always returns 1
+- Nested Array Elements: returns the count of occurrences when the field is nested within arrays
+
+Examples:
+
+```sql
+-- Find documents with exactly 3 tags
+SELECT * FROM items WHERE flat_array_len(tags) = 3
+
+-- Find documents with more than 5 comments
+SELECT * FROM articles WHERE flat_array_len(comments) > 5
+
+-- Find documents with at least one phone number
+SELECT * FROM users WHERE flat_array_len(phone_numbers) >= 1
+
+-- Filter objects nested in arrays (returns count of occurrences)
+SELECT * FROM orders WHERE flat_array_len(items.product_id) = 2
+```
+
+```Go
+// Find social media posts with between 10 and 50 comments
+// and at least 3 attached media files
+query := DB.Query("posts").
+    WhereFunction(reindexer.FlatArrayLen{Field: "comment"}, reindexer.GE, 10).
+    WhereFunction(reindexer.FlatArrayLen{Field: "comment"}, reindexer.LE, 50).
+    WhereFunction(reindexer.FlatArrayLen{Field: "media"}, reindexer.GE, 3)
+
+// Execute query
+it := query.Exec()
+```
+
+Notes:
+- `flat_array_len` function operates efficiently on indexed fields
+- Returns 0 if the specified field does not exist in a document
+- Supports the following comparison operators: (=, >, >=, <, <=, Range, Set)
 
 ### Update queries
 

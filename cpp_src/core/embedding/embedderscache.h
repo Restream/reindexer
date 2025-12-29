@@ -42,7 +42,7 @@ class [[nodiscard]] EmbeddersCache final {
 public:
 	static bool IsEmbedderSystemName(std::string_view nsName) noexcept;
 
-	EmbeddersCache() noexcept = default;
+	EmbeddersCache() = default;
 	EmbeddersCache(EmbeddersCache&&) noexcept = delete;
 	EmbeddersCache(const EmbeddersCache&) noexcept = delete;
 	EmbeddersCache& operator=(const EmbeddersCache&) noexcept = delete;
@@ -53,7 +53,7 @@ public:
 	Error EnableStorage(const std::string& storagePathRoot, datastorage::StorageType type);
 
 	void IncludeTag(std::string_view tag);
-	std::optional<embedding::ValueT> Get(const CacheTag& tag, const embedding::Adapter& srcAdapter);
+	std::optional<embedding::ValueT> Get(const CacheTag& tag, const embedding::Adapter& srcAdapter, bool enablePerfStat);
 	void Put(const CacheTag& tag, const embedding::Adapter& srcAdapter, const embedding::ValuesT& values);
 
 	bool IsActive() const noexcept;

@@ -32,7 +32,7 @@ public:
 	virtual void ReconfigureCache(const NamespaceCacheConfigData&) override {}
 	const void* ColumnData() const noexcept override final { return idx_data.size() ? idx_data.data() : nullptr; }
 
-	bool IsColumnIndexDisabled() const noexcept { return opts_.IsArray() || opts_.IsSparse() || opts_.IsNoIndexColumn(); }
+	bool IsColumnIndexDisabled() const noexcept { return opts_.IsArray() || opts_.IsSparse() || opts_.IsNoIndexColumn() || IsFulltext(); }
 
 	template <typename, typename = void>
 	struct [[nodiscard]] HasAddTask : std::false_type {};
@@ -41,7 +41,18 @@ public:
 
 protected:
 	IndexStore(const IndexStore&) = default;
+	bool shouldHoldOriginalValueInStrMap() const noexcept {
+		if constexpr (!std::is_same_v<T, key_string>) {
+			return false;
+		}
+		// Store strings on this level in the next cases:
+		// 1. Top-level index has some collate mode, and we have to preserve original strings here;
+		// 2. Current index is simple store index and the only strings owner.
+		// Do not store strings for 'sparse'-indexes - in this case original strings will remain inside the documents.
+		return ((this->opts_.GetCollateMode() != CollateNone) || (Type() == IndexStrStore)) && !this->Opts().IsSparse();
+	}
 
+	// Strings map with original string values. Ignores collate options
 	unordered_str_map<int> str_map;
 
 	using IdxDataT =
@@ -51,8 +62,6 @@ protected:
 	IndexMemStat memStat_;
 
 private:
-	bool shouldHoldValueInStrMap() const noexcept;
-
 	template <typename S>
 	void dump(S& os, std::string_view step, std::string_view offset) const;
 };

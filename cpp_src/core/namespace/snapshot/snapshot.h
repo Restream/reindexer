@@ -24,6 +24,7 @@ public:
 		Iterator(Iterator&&) = default;
 		Iterator(const Iterator& it) noexcept : sn_(it.sn_), idx_(it.idx_) {}
 		Iterator(const Snapshot* sn, size_t idx) : sn_(sn), idx_(idx) {}
+		// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
 		Iterator& operator=(const Iterator& it) noexcept {
 			sn_ = it.sn_;
 			idx_ = it.idx_;

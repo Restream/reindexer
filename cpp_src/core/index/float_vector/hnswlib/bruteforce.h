@@ -42,7 +42,7 @@ public:
 	BruteforceSearch(SpaceInterface* s, size_t maxElements) {
 		maxelements_ = maxElements;
 		data_size_ = s->get_data_size();
-		fstdistfunc_ = DistCalculator{s->get_dist_calculator_param(), maxelements_, nullptr};
+		fstdistfunc_ = DistCalculator{s->get_dist_calculator_param(), maxelements_};
 		size_per_element_ = data_size_ + sizeof(labeltype);
 		data_ = (char*)malloc(maxElements * size_per_element_);
 		if (data_ == nullptr) {
@@ -179,7 +179,7 @@ public:
 
 	void init(SpaceInterface* s) {
 		data_size_ = s->get_data_size();
-		fstdistfunc_ = DistCalculator{s->get_dist_calculator_param(), maxelements_, nullptr};
+		fstdistfunc_ = DistCalculator{s->get_dist_calculator_param(), maxelements_};
 		size_per_element_ = data_size_ + sizeof(labeltype);
 		data_ = (char*)malloc(maxelements_ * size_per_element_);
 		if (data_ == nullptr) {

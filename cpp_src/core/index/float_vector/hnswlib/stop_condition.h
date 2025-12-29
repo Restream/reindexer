@@ -48,8 +48,6 @@ public:
 
 	DistCalculatorParam get_dist_calculator_param() override { return {.f = fstdistfunc_, .metric = MetricType::L2, .dims = dim_}; }
 
-	void* get_dist_func_param() override { return &dim_; }
-
 	DOCIDTYPE get_doc_id(const void* datapoint) override { return *(DOCIDTYPE*)((char*)datapoint + vector_size_); }
 
 	void set_doc_id(void* datapoint, DOCIDTYPE doc_id) override { *(DOCIDTYPE*)((char*)datapoint + vector_size_) = doc_id; }
@@ -85,8 +83,6 @@ public:
 	DistCalculatorParam get_dist_calculator_param() override {
 		return {.f = fstdistfunc_, .metric = MetricType::INNER_PRODUCT, .dims = dim_};
 	}
-
-	void* get_dist_func_param() override { return &dim_; }
 
 	DOCIDTYPE get_doc_id(const void* datapoint) override { return *(DOCIDTYPE*)((char*)datapoint + vector_size_); }
 

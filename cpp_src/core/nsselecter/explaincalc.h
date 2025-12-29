@@ -50,7 +50,7 @@ public:
 
 	void StartTiming() noexcept {
 		if (enabled_) {
-			lap();
+			std::ignore = lap();
 		}
 	}
 	void StopTiming() noexcept {

@@ -25,6 +25,8 @@ template <typename T, int holdSize = 4, unsigned objSize = sizeof(T)>
 class [[nodiscard]] h_vector : public std::vector<T> {
 public:
 	typedef unsigned size_type;
+	static constexpr auto kElemSize = objSize;
+	static constexpr auto kHoldSize = holdSize;
 
 	using std::vector<T>::vector;
 
@@ -126,7 +128,7 @@ public:
 		const_pointer op = other.ptr();
 		const size_type osz = other.size();
 		for (size_type i = 0; i < osz; i++) {
-			new (p + i) T(op[i]);
+			new (static_cast<void*>(p + i)) T(op[i]);
 		}
 		size_ = other.size_;
 	}
@@ -136,7 +138,7 @@ public:
 			const pointer op = reinterpret_cast<pointer>(other.hdata_);
 			const size_type osz = other.size();
 			for (size_type i = 0; i < osz; i++) {
-				new (p + i) T(std::move(op[i]));
+				new (static_cast<void*>(p + i)) T(std::move(op[i]));
 				if constexpr (!std::is_trivially_destructible_v<T>) {
 					op[i].~T();
 				}
@@ -161,7 +163,7 @@ public:
 			const_pointer op = other.ptr();
 			const auto osz = other.size();
 			for (; i < osz; i++) {
-				new (p + i) T(op[i]);
+				new (static_cast<void*>(p + i)) T(op[i]);
 			}
 			if constexpr (!std::is_trivially_destructible_v<T>) {
 				const auto old_sz = size();
@@ -173,7 +175,11 @@ public:
 		}
 		return *this;
 	}
-
+#if defined(__GNUC__) && __GNUC__ >= 14 && __GNUC__ <= 15
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 	h_vector& operator=(h_vector&& other) noexcept {
 		if (&other != this) {
 			clear();
@@ -182,7 +188,7 @@ public:
 				const pointer p = ptr();
 				const pointer op = other.ptr();
 				for (size_type i = 0; i < osz; i++) {
-					new (p + i) T(std::move(op[i]));
+					new (static_cast<void*>(p + i)) T(std::move(op[i]));
 					if constexpr (!std::is_trivially_destructible_v<T>) {
 						op[i].~T();
 					}
@@ -198,7 +204,9 @@ public:
 		}
 		return *this;
 	}
-
+#if defined(__GNUC__) && __GNUC__ >= 14 && __GNUC__ <= 15
+#pragma GCC diagnostic pop
+#endif
 	bool operator==(const h_vector& other) const noexcept(noexcept(std::declval<value_type>() == std::declval<value_type>())) {
 		if (&other != this) {
 			const size_type sz = size_;
@@ -334,14 +342,14 @@ public:
 			pointer old_data = oold_data;
 			// Creating those explicit old_sz variable for better vectorization
 			for (size_type i = 0, old_sz = size_; i < old_sz; ++i) {
-				new (new_data + i) T(std::move(*old_data));
+				new (static_cast<void*>(new_data + i)) T(std::move(*old_data));
 				if constexpr (!std::is_trivially_destructible_v<T>) {
 					old_data->~T();
 				}
 				++old_data;
 			}
 			if (!is_hdata()) {
-				operator delete(oold_data);
+				operator delete(static_cast<void*>(oold_data));
 			}
 			e_.data_ = new_data;
 			e_.cap_ = sz;
@@ -357,13 +365,15 @@ public:
 	void push_back(const T& v) {
 		const auto size = size_;
 		grow(size + 1);
-		new (ptr() + size) T(v);
+		new (static_cast<void*>(ptr() + size)) T(v);
 		++size_;
 	}
 	void push_back(T&& v) {
 		const auto size = size_;
 		grow(size + 1);
-		new (ptr() + size) T(std::move(v));
+		// avoiding strange gcc error for unused v
+		(void)v;
+		new (static_cast<void*>(ptr() + size)) T(std::move(v));
 		++size_;
 	}
 	template <typename... Args>
@@ -371,7 +381,7 @@ public:
 		const auto size = size_;
 		grow(size + 1);
 		auto p = ptr() + size;
-		new (p) T(std::forward<Args>(args)...);
+		new (static_cast<void*>(p)) T(std::forward<Args>(args)...);
 		++size_;
 		return *p;
 	}
@@ -454,7 +464,7 @@ public:
 			rx_debug_check_subscript(i);
 			grow(sz + 1);
 			const pointer p = ptr();
-			new (p + sz) T(std::move(p[sz - 1]));
+			new (static_cast<void*>(p + sz)) T(std::move(p[sz - 1]));
 			for (size_type j = sz - 1; j > i; --j) {
 				p[j] = std::move(p[j - 1]);
 			}
@@ -490,13 +500,13 @@ public:
 		const pointer p = ptr();
 		difference_type j = sz + cnt - 1;
 		for (; j >= sz && j >= cnt + i; --j) {
-			new (p + j) T(std::move(p[j - cnt]));
+			new (static_cast<void*>(p + j)) T(std::move(p[j - cnt]));
 		}
 		for (; j >= cnt + i; --j) {
 			p[j] = std::move(p[j - cnt]);
 		}
 		for (; j >= sz; --j) {
-			new (p + j) T(*--last);
+			new (static_cast<void*>(p + j)) T(*--last);
 		}
 		for (; j >= i; --j) {
 			p[j] = *--last;
@@ -594,7 +604,7 @@ protected:
 					ptr->~T();
 				}
 			}
-			operator delete(e_.data_);
+			operator delete(static_cast<void*>(e_.data_));
 		}
 	}
 

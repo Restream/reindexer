@@ -19,6 +19,7 @@
 #include "core/index/float_vector/scalar_quantization/quantizer.h"
 #include "hnswlib.h"
 #include "tools/errors.h"
+#include "tools/float_comparison.h"
 #include "vendor/hopscotch/hopscotch_sc_map.h"
 #include "visited_list_pool.h"
 
@@ -31,8 +32,6 @@
 #include "tools/logger.h"
 
 namespace hnswlib {
-typedef uint32_t tableint;
-typedef uint32_t linklistsizeint;
 static_assert(sizeof(linklistsizeint) == sizeof(tableint), "Internal link lists logic requires the same size for this types");
 
 enum class [[nodiscard]] Synchronization { None, OnInsertions };
@@ -183,7 +182,7 @@ struct [[nodiscard]] RegularLocker::Concurrent<ExpectConcurrentUpdates::No> {
 };
 
 template <Synchronization synchronization>
-class [[nodiscard]] HierarchicalNSW {
+class [[nodiscard]] HierarchicalNSW {  // NOLINT(clang-analyzer-optin.performance.Padding)
 	template <typename K, typename V>
 	using HashMapT = tsl::hopscotch_sc_map<K, V, std::hash<K>, std::equal_to<K>, std::less<K>, std::allocator<std::pair<const K, V>>, 30,
 										   false, tsl::mod_growth_policy<std::ratio<3, 2>>>;
@@ -195,7 +194,7 @@ class [[nodiscard]] HierarchicalNSW {
 	using UpdateLockVecT = std::conditional_t<synchronization == Synchronization::None, UpdateOpsDummyLocks, UpdateOpsMutexLocks>;
 	using GlobalMutextT = std::conditional_t<synchronization == Synchronization::None, DummyMutex, reindexer::mutex>;
 
-	using QuantizerT = Quantizer<HierarchicalNSW>;
+	HierarchicalNSW() = default;
 
 public:
 	static const unsigned char DELETE_MARK = 0x01;
@@ -210,8 +209,7 @@ public:
 	size_t maxM0_{0};
 	size_t ef_construction_{0};
 
-	std::unique_ptr<QuantizerT> quantizer_;
-	std::vector<CorrectiveOffsets> correctiveOffsets_;
+	std::unique_ptr<Quantizer> quantizer_;
 
 	double mult_{0.0};
 	int maxlevel_{0};
@@ -301,7 +299,7 @@ public:
 		max_elements_ = max_elements;
 		num_deleted_ = 0;
 		data_size_ = s->get_data_size();
-		fstdistfunc_ = DistCalculator{s->get_dist_calculator_param(), max_elements_, &correctiveOffsets_};
+		fstdistfunc_ = DistCalculator{s->get_dist_calculator_param(), max_elements_};
 		if (M > 10000) {
 			logFmt(LogWarning,
 				   "HNSW: M parameter exceeds 10000 which may lead to adverse effects. Cap to 10000 will be applied for the rest of the "
@@ -340,6 +338,75 @@ public:
 		mult_ = getMultFromM(M_);
 	}
 
+	template <typename LockerT>
+	std::unique_ptr<HierarchicalNSW<synchronization>> CopyForQuantize() const {
+		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
+		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
+		// during background index quantization
+		UniqueLock lck{global};
+
+		CheckElementType<float>();
+
+		std::unique_ptr<HierarchicalNSW<synchronization>> resPtr{new HierarchicalNSW<synchronization>()};
+		auto& res = *resPtr;
+
+		res.max_elements_ = max_elements_;
+		res.cur_element_count.store(cur_element_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		res.M_ = M_;
+		res.maxM_ = maxM_;
+		res.maxM0_ = maxM0_;
+		res.size_links_per_element_ = size_links_per_element_;
+		res.num_deleted_ = num_deleted_;
+		res.ef_construction_ = ef_construction_;
+
+		res.mult_ = mult_;
+		res.maxlevel_ = maxlevel_;
+		res.enterpoint_node_ = enterpoint_node_;
+
+		res.initSpace(Sq8SpaceFromDistParams(fstdistfunc_.Dims(), fstdistfunc_.Metric()).get());
+		res.fstdistfunc_.CopyValuesFrom(fstdistfunc_);
+
+		res.element_levels_ = std::vector<int>(max_elements_);
+		res.label_lookup_ = label_lookup_;
+
+		res.level_generator_ = level_generator_;
+		res.update_probability_generator_ = update_probability_generator_;
+
+		res.metric_distance_computations.store(metric_distance_computations.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		res.metric_hops.store(metric_hops.load(std::memory_order_relaxed), std::memory_order_relaxed);
+
+		res.allow_replace_deleted_ = allow_replace_deleted_;
+
+		res.deleted_elements = deleted_elements;
+		res.concurrent_updates_counter_.store(concurrent_updates_counter_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+
+		res.visited_list_pool_.reset(new VisitedListPool(1, res.max_elements_));
+
+		res.linkLists_ = (char**)malloc(sizeof(void*) * res.max_elements_);
+		if (res.linkLists_ == nullptr) {
+			throw std::runtime_error("Not enough memory: HierarchicalNSW failed to allocate linklists");
+		}
+
+		for (size_t i = 0; i < cur_element_count; i++) {
+			if (isMarkedDeleted(i)) {
+				res.markDeletedInternal(i);
+			}
+			const unsigned linkListSize = element_levels_[i] > 0 ? size_links_per_element_ * element_levels_[i] : 0;
+			if (linkListSize) {
+				res.linkLists_[i] = (char*)malloc(linkListSize);
+				if (res.linkLists_[i] == nullptr) {
+					throw std::runtime_error("Not enough memory: HNSW CopyForQuantize method failed to allocate linklist");
+				}
+				std::memcpy(res.linkLists_[i], linkLists_[i], linkListSize);
+				res.element_levels_[i] = element_levels_[i];
+			} else {
+				res.linkLists_[i] = nullptr;
+			}
+		}
+
+		return resPtr;
+	}
+
 	auto prepareData(const void* data) const {
 		auto deleter = [quantized = bool(quantizer_)](const void* ptr) noexcept {
 			if (quantized) {
@@ -359,87 +426,168 @@ public:
 		return std::unique_ptr<const void, decltype(deleter)>(res ? res.release() : data, std::move(deleter));
 	}
 
-	template <typename LockerT>
-	void Quantize(float quantile = 1.f, size_t sampleSize = QuantizerT::kDefaultSampleSize,
-				  Sq8NonLinearCorrection nonLinearCorrection = Sq8NonLinearCorrection::Disabled) {
-		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
-
-		assertrx_throw(!quantizer_);
-
-		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
-		// during background index quantization
-		UniqueLock lck{global};
-		quantizer_ = std::make_unique<QuantizerT>(*this, quantile, sampleSize, nonLinearCorrection);
-		correctiveOffsets_.resize(max_elements_);
-
-		auto data_level0_memory_old = data_level0_memory_;
-		auto size_data_per_element_old = size_data_per_element_;
-		auto label_offset_old = label_offset_;
-
-		std::unique_ptr<hnswlib::SpaceInterface> space;
-		const auto dim = fstdistfunc_.Dims();
-		switch (fstdistfunc_.Metric()) {
+	static std::unique_ptr<hnswlib::SpaceInterface> Sq8SpaceFromDistParams(size_t dim, hnswlib::MetricType metric) {
+		switch (metric) {
 			case hnswlib::MetricType::L2:
-				space = std::make_unique<L2SpaceSq8>(dim);
-				break;
+				return std::make_unique<L2SpaceSq8>(dim);
 			case hnswlib::MetricType::COSINE:
-				space = std::make_unique<CosineSpaceSq8>(dim);
-				break;
+				return std::make_unique<CosineSpaceSq8>(dim);
 			case hnswlib::MetricType::INNER_PRODUCT:
-				space = std::make_unique<InnerProductSpaceSq8>(dim);
-				break;
+				return std::make_unique<InnerProductSpaceSq8>(dim);
 			case hnswlib::MetricType::NONE:
 			default:
 				assert(false);
 				break;
 		}
+		return nullptr;
+	}
 
-		initSpace(space.get());
-		fstdistfunc_.UpdateQuantizeParams(quantizer_);
+	static std::unique_ptr<hnswlib::SpaceInterface> Sq8SpaceFromDistParams(const DistCalculatorParam& params) {
+		return Sq8SpaceFromDistParams(params.dims, params.metric);
+	}
 
-		unsigned size = cur_element_count;
-		for (tableint internal_id = 0; internal_id < size; ++internal_id) {
-			auto oldEl = data_level0_memory_old + internal_id * size_data_per_element_old;
-			auto newEl = data_level0_memory_ + internal_id * size_data_per_element_;
+	template <typename ExpectedT>
+	void CheckElementType() const {
+		assertrx_throw(fstdistfunc_.Metric() != hnswlib::MetricType::NONE);
+
+		if ((size_data_per_element_ - size_links_level0_ - sizeof(labeltype)) / fstdistfunc_.Dims() != sizeof(ExpectedT)) {
+			throw std::runtime_error("Unexpected size of the hnsw-graph element");
+		}
+	}
+
+	struct [[nodiscard]] ElementQuantizeImplParams {
+		char* data;
+		size_t elementSize;
+		size_t labelOffest;
+	};
+
+	struct [[nodiscard]] CommonQuantizeImplParams {
+		size_t count;
+		size_t dim;
+		// members size_links_level0_ and offsetData_ are independent of the stored component type size
+		size_t size_links_level0;
+		size_t offsetData;
+	};
+
+	static void quantizeImpl(auto& quantizer, auto& correctiveOffsets, ElementQuantizeImplParams fromP, ElementQuantizeImplParams toP,
+							 CommonQuantizeImplParams params) {
+		for (tableint id = 0; id < params.count; ++id) {
+			auto from = fromP.data + id * fromP.elementSize;
+			auto to = toP.data + id * toP.elementSize;
 
 			// copy element links
-			std::memcpy(newEl, oldEl, size_links_level0_);
+			std::memcpy(to, from, params.size_links_level0);
 
-			// copy quantized element data
-			auto from = std::span(reinterpret_cast<float*>(oldEl + offsetData_), dim);
-			auto to = std::span(reinterpret_cast<uint8_t*>(newEl + offsetData_), dim);
-
-			correctiveOffsets_[internal_id] = quantizer_->Quantize(from, to);
+			correctiveOffsets[id] = quantizer->Quantize(std::span(reinterpret_cast<float*>(from + params.offsetData), params.dim),
+														std::span(reinterpret_cast<uint8_t*>(to + params.offsetData), params.dim));
 
 			// copy element label
-			std::memcpy(newEl + label_offset_, oldEl + label_offset_old, sizeof(labeltype));
+			std::memcpy(to + toP.labelOffest, from + fromP.labelOffest, sizeof(labeltype));
+		}
+	}
+
+	template <typename LockerT>
+	void Quantize(const QuantizingConfig& quantizingConfig = {}) {
+		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
+
+		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
+		// during background index quantization
+		UniqueLock lck{global};
+
+		assertrx_throw(!quantizer_);
+		CheckElementType<float>();
+
+		ElementQuantizeImplParams fromParams{
+			.data = data_level0_memory_, .elementSize = size_data_per_element_, .labelOffest = label_offset_};
+
+		quantizer_ = std::make_unique<Quantizer>(*this, QuantizingParams(*this, quantizingConfig));
+		initSpace(Sq8SpaceFromDistParams(fstdistfunc_.Dims(), fstdistfunc_.Metric()).get());
+
+		ElementQuantizeImplParams toParams{
+			.data = data_level0_memory_, .elementSize = size_data_per_element_, .labelOffest = label_offset_};
+
+		quantizeImpl(quantizer_, fstdistfunc_.Sq8CorrectiveOffsets(), std::move(fromParams), std::move(toParams),
+					 CommonQuantizeImplParams{
+						 .count = cur_element_count,
+						 .dim = fstdistfunc_.Dims(),
+						 .size_links_level0 = size_links_level0_,
+						 .offsetData = offsetData_,
+					 });
+
+		// NOLINTNEXTLINE(bugprone-use-after-move)
+		free(fromParams.data);
+	}
+
+	template <typename LockerT>
+	void Quantize(HierarchicalNSW& from, const QuantizingConfig& quantizingConfig = {}) {
+		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
+		using FromReadLock = typename LockerT::template SharedLock<GlobalMutextT>;
+
+		if (this == &from) {
+			return Quantize<LockerT>(quantizingConfig);
 		}
 
-		free(data_level0_memory_old);
+		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
+		// during background index quantization
+		UniqueLock lck{global};
+		FromReadLock fromReadLock{from.global};
+
+		assertrx_throw(!quantizer_);
+		assertrx_throw(fstdistfunc_.Dims() == from.fstdistfunc_.Dims() && max_elements_ >= from.max_elements_);
+
+		CheckElementType<uint8_t>();
+		from.CheckElementType<float>();
+
+		assertrx_dbg(size_links_level0_ == from.size_links_level0_ && offsetData_ == from.offsetData_);
+
+		QuantizingParams quantizingParams(from, quantizingConfig);
+		quantizer_ = std::make_unique<Quantizer>(*this, quantizingParams);
+		fstdistfunc_.UpdateQuantizeParams(std::move(quantizingParams));
+		fstdistfunc_.Sq8CorrectiveOffsets().resize(max_elements_);
+
+		quantizeImpl(quantizer_, fstdistfunc_.Sq8CorrectiveOffsets(),
+					 ElementQuantizeImplParams{
+						 .data = from.data_level0_memory_,
+						 .elementSize = from.size_data_per_element_,
+						 .labelOffest = from.label_offset_,
+					 },
+					 ElementQuantizeImplParams{
+						 .data = data_level0_memory_,
+						 .elementSize = size_data_per_element_,
+						 .labelOffest = label_offset_,
+					 },
+					 CommonQuantizeImplParams{
+						 .count = from.cur_element_count,
+						 .dim = fstdistfunc_.Dims(),
+						 .size_links_level0 = size_links_level0_,
+						 .offsetData = offsetData_,
+					 });
 	}
 
 	template <typename LockerT>
 	void Requantize(bool force = false) {
 		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
 
+		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
+		// during background index quantization
+		UniqueLock lck{global};
+
 		assertrx_throw(quantizer_);
+		CheckElementType<uint8_t>();
 
 		if (!force && !quantizer_->NeedRequantize()) {
 			return;
 		}
 
-		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
-		// during background index quantization
-		UniqueLock lck{global};
-
 		auto dequantizer = quantizer_->PrepareToRequantize();
-		const auto dim = fstdistfunc_.Dims();
-		for (auto [_, internal_id] : label_lookup_) {
-			auto point = std::span(reinterpret_cast<uint8_t*>(getDataByInternalId(internal_id)), dim);
-			correctiveOffsets_[internal_id] = quantizer_->Requantize(point, dequantizer);
-		}
+		fstdistfunc_.UpdateQuantizeParams(quantizer_->Params());
 
-		fstdistfunc_.UpdateQuantizeParams(quantizer_);
+		const auto dim = fstdistfunc_.Dims();
+		const auto cnt = cur_element_count.load(std::memory_order_relaxed);
+		for (tableint internal_id = 0; internal_id < cnt; ++internal_id) {
+			auto point = std::span(reinterpret_cast<uint8_t*>(getDataByInternalId(internal_id)), dim);
+			fstdistfunc_.Sq8CorrectiveOffsets()[internal_id] = quantizer_->Requantize(point, dequantizer);
+		}
 	}
 
 	~HierarchicalNSW() { clear(); }
@@ -460,14 +608,13 @@ public:
 				free(linkLists_[i]);
 			}
 		}
-		free(linkLists_);
+		free(static_cast<void*>(linkLists_));
 		linkLists_ = nullptr;
 		cur_element_count = 0;
 		visited_list_pool_.reset(nullptr);
 		deleted_elements.clear();
 		num_deleted_ = 0;
 		quantizer_.reset();
-		correctiveOffsets_.clear();
 	}
 
 	size_t allocatedMemSize() const noexcept {
@@ -994,7 +1141,7 @@ public:
 		const void* data_level0_memory_old = std::exchange(data_level0_memory_, data_level0_memory_new);
 
 		// Reallocate all other layers
-		char** linkLists_new = (char**)realloc(linkLists_, sizeof(void*) * new_max_elements);
+		char** linkLists_new = static_cast<char**>(realloc(static_cast<void*>(linkLists_), sizeof(void*) * new_max_elements));
 		if (linkLists_new == nullptr) {
 			throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
 		}
@@ -1007,9 +1154,6 @@ public:
 
 	// Read-only concurrency expected
 	void saveIndex(IWriter& writer, const std::atomic_int32_t& cancel) {
-		if (quantizer_) {
-			throw std::runtime_error("Saving of the quantized hnsw-graph not supported yet.");
-		}
 		constexpr size_t kCancelPeriod = 0x3FFFFF;
 
 		writer.PutVarUInt(uint64_t(max_elements_));
@@ -1018,6 +1162,11 @@ public:
 		writer.PutVarUInt(enterpoint_node_);
 		writer.PutVarUInt(uint32_t(M_));
 		writer.PutVarUInt(uint32_t(ef_construction_));
+
+		writer.PutVarUInt(uint32_t(quantizer_ ? 1 : 0));
+		if (quantizer_) {
+			quantizer_->Params().Serialize(writer);
+		}
 
 		for (size_t i = 0; i < cur_element_count; ++i) {
 			if (((i & kCancelPeriod) == kCancelPeriod) && cancel.load(std::memory_order_relaxed)) {
@@ -1056,12 +1205,16 @@ public:
 	void initSpace(SpaceInterface* s) {
 		data_size_ = s->get_data_size();
 
-		auto newDistCalculator = DistCalculator{s->get_dist_calculator_param(), max_elements_, &correctiveOffsets_};
+		auto newDistCalculator = DistCalculator{s->get_dist_calculator_param(), max_elements_};
 		if (fstdistfunc_.Metric() == MetricType::COSINE) {	// copying makes sense only for the Cosine metric.
 			newDistCalculator.CopyValuesFrom(fstdistfunc_);
 		}
-
 		fstdistfunc_ = std::move(newDistCalculator);
+
+		if (quantizer_) {
+			fstdistfunc_.UpdateQuantizeParams(quantizer_->Params());
+			fstdistfunc_.Sq8CorrectiveOffsets().resize(max_elements_);
+		}
 
 		size_links_level0_ = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
 		size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labeltype);
@@ -1128,7 +1281,17 @@ public:
 		mult_ = getMultFromM(M_);
 		ef_construction_ = reader.GetVarUInt();
 
-		initSpace(s);
+		if (reader.Version() > 1) {
+			if (bool needQuantize = reader.GetVarUInt(); needQuantize) {
+				QuantizingParams params;
+				params.Deserialize(reader);
+				quantizer_ = std::make_unique<Quantizer>(*this, std::move(params));
+			}
+		}
+
+		initSpace(quantizer_ ? Sq8SpaceFromDistParams(s->get_dist_calculator_param()).get() : s);
+
+		auto origVecBuf = std::make_unique<float[]>(fstdistfunc_.Dims());
 		for (size_t i = 0; i < cur_count; i++) {
 			char* cur_element_ptr = data_level0_memory_ + i * size_data_per_element_;
 			auto* linkList0 = reinterpret_cast<tableint*>(cur_element_ptr);
@@ -1142,15 +1305,22 @@ public:
 				std::memcpy(linkList0++, &el, sizeof(tableint));
 			}
 			cur_element_ptr += size_links_level0_;
+			char* destPtr = quantizer_ ? reinterpret_cast<char*>(origVecBuf.get()) : cur_element_ptr;
 			labeltype label = std::numeric_limits<labeltype>::max();
 			if (isListMarkedDeleted(linkList0Start)) {
 				std::string_view vector = reader.GetVString();
-				std::memcpy(cur_element_ptr, vector.data(), vector.size());
-				fstdistfunc_.AddNorm(vector.data(), i);
+				std::memcpy(destPtr, vector.data(), vector.size());
 			} else {
-				label = reader.ReadPkEncodedData(cur_element_ptr);
-				fstdistfunc_.AddNorm(cur_element_ptr, i);
+				label = reader.ReadPkEncodedData(destPtr);
 			}
+			fstdistfunc_.AddNorm(destPtr, i);
+
+			if (quantizer_) {
+				auto from = std::span(origVecBuf.get(), fstdistfunc_.Dims());
+				auto to = std::span(reinterpret_cast<uint8_t*>(cur_element_ptr), fstdistfunc_.Dims());
+				fstdistfunc_.Sq8CorrectiveOffsets()[i] = quantizer_->Quantize(from, to);
+			}
+
 			cur_element_ptr += data_size_;
 			std::memcpy(cur_element_ptr, &label, sizeof(labeltype));
 		}
@@ -1380,7 +1550,7 @@ public:
 				quantizer_->UpdateStatistic(dataPointRaw);
 				auto correctiveOffsetsPtr =
 					reinterpret_cast<const CorrectiveOffsets*>(reinterpret_cast<const uint8_t*>(dataPoint) + data_size_);
-				std::memmove(&correctiveOffsets_[internalId], correctiveOffsetsPtr, sizeof(CorrectiveOffsets));
+				std::memmove(&fstdistfunc_.Sq8CorrectiveOffsets()[internalId], correctiveOffsetsPtr, sizeof(CorrectiveOffsets));
 			}
 			fstdistfunc_.AddNorm(dataPointRaw, internalId);
 			if (isMarkedDeleted(internalId)) {
@@ -1651,7 +1821,7 @@ public:
 			quantizer_->UpdateStatistic(data_point_raw);
 			auto correctiveOffsetsPtr =
 				reinterpret_cast<const CorrectiveOffsets*>(reinterpret_cast<const uint8_t*>(data_point) + data_size_);
-			std::memmove(&correctiveOffsets_[cur_c], correctiveOffsetsPtr, sizeof(CorrectiveOffsets));
+			std::memmove(&fstdistfunc_.Sq8CorrectiveOffsets()[cur_c], correctiveOffsetsPtr, sizeof(CorrectiveOffsets));
 		}
 		if (curlevel) {
 			linkLists_[cur_c] = (char*)malloc(size_links_per_element_ * curlevel + 1);

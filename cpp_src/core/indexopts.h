@@ -115,7 +115,7 @@ public:
 	}
 	FloatVectorIndexOpts&& SetMetric(reindexer::VectorMetric metric) && noexcept { return std::move(SetMetric(metric)); }
 	FloatVectorIndexOpts& SetEmbedding(EmbeddingOpts embedding) & noexcept {
-		embedding_ = embedding;
+		embedding_ = std::move(embedding);
 		return *this;
 	}
 	FloatVectorIndexOpts&& SetRadius(float radius) && noexcept { return std::move(SetRadius(radius)); }
@@ -123,7 +123,7 @@ public:
 		radius_ = radius;
 		return *this;
 	}
-	FloatVectorIndexOpts&& SetEmbedding(EmbeddingOpts embedding) && noexcept { return std::move(SetEmbedding(embedding)); }
+	FloatVectorIndexOpts&& SetEmbedding(EmbeddingOpts embedding) && noexcept { return std::move(SetEmbedding(std::move(embedding))); }
 	void Validate(IndexType);
 	static FloatVectorIndexOpts ParseJson(IndexType, std::string_view json);
 	std::string GetJson() const;

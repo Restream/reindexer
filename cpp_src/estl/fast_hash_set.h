@@ -53,7 +53,7 @@ public:
 // fast_hash_map_l.
 // Uses prime_growth_policy for resizing
 template <typename K, typename H = void, typename P = void, typename L = void>
-class [[nodiscard]] fast_hash_set_s : public hs_sc_set_prime<K, H, P, L> {
+class [[nodiscard]] fast_hash_set_s : public hs_sc_set_prime<K, H, P, L> {	// NOLINT (bugprone-exception-escape)
 public:
 	static_assert(!std::is_same_v<H, void>, "Hash functor must be specialized exlicitly");
 	static_assert(!std::is_same_v<P, void>, "EqualTo functor must be specialized exlicitly");

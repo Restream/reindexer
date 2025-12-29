@@ -3,16 +3,17 @@
 #include <algorithm>
 #include <numeric>
 #include <vector>
-
 #include "core/index/float_vector/hnswlib/type_consts.h"
+#include "sort/pdqsort.hpp"
 
 namespace hnswlib {
+
 // The template parameter DataHandlerT is needed to avoid cyclic references
 // in header files for the case of header-only implementation.
 template <typename DataHandlerT>
 class [[nodiscard]] HNSWIterator {
 public:
-	explicit HNSWIterator(const DataHandlerT& map, const std::vector<uint32_t>& splitIndexes) noexcept
+	explicit HNSWIterator(const DataHandlerT& map, const std::vector<tableint>& splitIndexes) noexcept
 		: map_(map), splitIndexes_(splitIndexes) {}
 
 	HNSWIterator& operator++() & noexcept { return next(); }
@@ -49,11 +50,11 @@ private:
 		return *this;
 	}
 
-	uint32_t internalIdIdx_ = 0;
+	tableint internalIdIdx_ = 0;
 	int compIdx_ = 0;
 	const DataHandlerT& map_;
 
-	const std::vector<uint32_t>& splitIndexes_;
+	const std::vector<tableint>& splitIndexes_;
 };
 
 template <typename DataHandlerT>
@@ -61,7 +62,7 @@ class [[nodiscard]] HNSWViewIterator {
 	size_t step(const DataHandlerT& map) const noexcept { return map.fstdistfunc_.Dims() * kSampleBatchSize; }
 
 public:
-	explicit HNSWViewIterator(const DataHandlerT& map, const std::vector<uint32_t>& splitIndexes)
+	explicit HNSWViewIterator(const DataHandlerT& map, const std::vector<tableint>& splitIndexes)
 		: step_(step(map)), begin_(HNSWIterator(map, splitIndexes)), end_(begin_ + step_) {}
 
 	HNSWIterator<DataHandlerT> begin() const noexcept { return begin_; }
@@ -96,9 +97,9 @@ class [[nodiscard]] HNSWView {
 	size_t size() const noexcept { return splitIndexes_.size() / kSampleBatchSize + splitIndexes_.size() % kSampleBatchSize; }
 
 public:
-	static std::vector<uint32_t> GetSampleIndexes(size_t sampleSize, size_t size) {
+	static std::vector<tableint> GetSampleIndexes(size_t sampleSize, size_t size) {
 		sampleSize = std::min(sampleSize, size);
-		std::vector<uint32_t> vectorsToTake(sampleSize);
+		std::vector<tableint> vectorsToTake(sampleSize);
 		std::iota(vectorsToTake.begin(), vectorsToTake.end(), 0);
 		// Getting uniformly distributed indexes from 0 to size of the HNSW-graph
 		for (size_t i = sampleSize; i < size; i++) {
@@ -107,7 +108,7 @@ public:
 				vectorsToTake[j] = i;
 			}
 		}
-		std::sort(vectorsToTake.begin(), vectorsToTake.end());
+		boost::sort::pdqsort_branchless(vectorsToTake.begin(), vectorsToTake.end());
 		return vectorsToTake;
 	}
 
@@ -119,14 +120,14 @@ public:
 		  end_(begin_ + size()) {}
 
 	// Use this constructor only for testing
-	explicit HNSWView(const DataHandlerT& map, std::vector<uint32_t> splitIndexes)
+	explicit HNSWView(const DataHandlerT& map, std::vector<tableint> splitIndexes)
 		: splitIndexes_(std::move(splitIndexes)), begin_(HNSWViewIterator(map, splitIndexes_)), end_(begin_ + size()) {}
 
 	HNSWViewIterator<DataHandlerT> begin() const noexcept { return begin_; }
 	HNSWViewIterator<DataHandlerT> end() const noexcept { return end_; }
 
 private:
-	std::vector<uint32_t> splitIndexes_;
+	std::vector<tableint> splitIndexes_;
 
 	HNSWViewIterator<DataHandlerT> begin_;
 	HNSWViewIterator<DataHandlerT> end_;

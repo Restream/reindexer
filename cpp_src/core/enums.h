@@ -78,6 +78,7 @@ BOOL_ENUM(JustCopy)
 BOOL_ENUM(EnableMultiJsonPath)
 BOOL_ENUM(NeedMaskingDSN)
 BOOL_ENUM(AddQuotes)
+BOOL_ENUM(Shrink)
 
 #undef BOOL_ENUM
 
@@ -98,10 +99,19 @@ public:
 	using value_type = uint16_t;
 
 	FloatVectorDimension() noexcept = default;
-	explicit FloatVectorDimension(uint64_t value) : value_(value) {
-		if (value > std::numeric_limits<value_type>::max()) [[unlikely]] {
-			throw Error(errLogic,
-						std::string("Float vector dimensions overflow - max vector size is 65535, got ").append(std::to_string(value)));
+	explicit FloatVectorDimension(std::signed_integral auto value) : FloatVectorDimension(uint64_t(value)) {
+		using namespace std::string_literals;
+		if (value < 0) [[unlikely]] {
+			throw Error(errLogic, "Float vector dimensions underflow - min value is 0, got "s.append(std::to_string(value)));
+		}
+	}
+	template <std::unsigned_integral T>
+	explicit FloatVectorDimension(T value) noexcept(sizeof(T) <= sizeof(value_type)) : value_(value) {
+		if constexpr (std::numeric_limits<T>::max() > std::numeric_limits<value_type>::max()) {
+			if (value > std::numeric_limits<value_type>::max()) [[unlikely]] {
+				throw Error(errLogic,
+							std::string("Float vector dimensions overflow - max vector size is 65535, got ").append(std::to_string(value)));
+			}
 		}
 	}
 

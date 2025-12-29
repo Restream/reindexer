@@ -292,7 +292,7 @@ TEST_F(ClusterOperationApi, TruncateForceAndWalSync) {
 // clang-format on
 
 static bool ValidateStatsOnTestBeginning(size_t kClusterSize, const ClusterOperationApi::Defaults& ports, const std::set<int>& onlineNodes,
-										 const cluster::ReplicationStats& stats, bool withAssertion) {
+										 size_t clusterNssCount, const cluster::ReplicationStats& stats, bool withAssertion) {
 	WrSerializer wser;
 	stats.GetJSON(wser);
 
@@ -321,27 +321,29 @@ static bool ValidateStatsOnTestBeginning(size_t kClusterSize, const ClusterOpera
 		if (onlineNodes.count(nodeStat.serverId)) {
 			O_EXPECT_EQ(withAssertion, nodeStat.status, cluster::NodeStats::Status::Online)
 			O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::OnlineReplication)
+			O_EXPECT_EQ(withAssertion, nodeStat.nssSyncQueue, 0);
 		} else {
 			O_EXPECT_EQ(withAssertion, nodeStat.status, cluster::NodeStats::Status::Offline)
 			O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::AwaitingResync)
+			O_EXPECT_EQ(withAssertion, nodeStat.nssSyncQueue, int64_t(clusterNssCount));
 		}
 	}
 	return !hasUpdates;
 }
 
 static bool ValidateStatsOnTestBeginning(size_t kClusterSize, const ClusterOperationApi::Defaults& ports, const std::set<int>& onlineNodes,
-										 const ServerControl::Interface::Ptr& node) {
+										 size_t clusterNssCount, const ServerControl::Interface::Ptr& node) {
 	constexpr auto kMaxRetries = 40;
 	cluster::ReplicationStats stats;
 	for (int i = 0; i < kMaxRetries; ++i) {
 		stats = node->GetReplicationStats(cluster::kClusterReplStatsType);
-		if (ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, stats, false)) {
+		if (ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, clusterNssCount, stats, false)) {
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	}
 
-	if (ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, stats, true)) {
+	if (ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, clusterNssCount, stats, true)) {
 		return true;
 	}
 	WrSerializer wser;
@@ -351,7 +353,7 @@ static bool ValidateStatsOnTestBeginning(size_t kClusterSize, const ClusterOpera
 }
 
 static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const std::vector<size_t>& kFirstNodesGroup,
-									  const std::vector<size_t>& kSecondNodesGroup, size_t kClusterSize,
+									  const std::vector<size_t>& kSecondNodesGroup, size_t kClusterSize, size_t clusterNssCount,
 									  const ClusterOperationApi::Defaults& ports, const cluster::ReplicationStats& stats,
 									  bool withAssertion) {
 	WrSerializer wser;
@@ -396,6 +398,7 @@ static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 				} else {
 					O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::Follower)
 				}
+				O_EXPECT_EQ(withAssertion, nodeStat.nssSyncQueue, 0);
 				onlineNodes.erase(nodeStat.serverId);
 			} else if (offlineNodes.count(nodeStat.serverId)) {
 				O_EXPECT_EQ(withAssertion, offlineNodes.count(nodeStat.serverId), 1)
@@ -404,6 +407,7 @@ static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 				O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::None)
 				O_EXPECT_EQ(withAssertion, nodeStat.isSynchronized, false)
 				O_EXPECT_EQ(withAssertion, nodeStat.lastError.code(), errNetwork);
+				O_EXPECT_EQ(withAssertion, nodeStat.nssSyncQueue, int64_t(clusterNssCount));
 				offlineNodes.erase(nodeStat.serverId);
 			} else {
 				EXPECT_TRUE(false) << "Unexpected server id: " << nodeStat.serverId << "; json: " << wser.Slice();
@@ -440,6 +444,7 @@ TEST_F(ClusterOperationApi, InitialLeaderSync) {
 
 		const std::string_view kNsSome = "some";
 		constexpr size_t kDataPortion = 100;
+		constexpr size_t kNssCount = 1;
 
 		// Check force initial sync for nodes from the second group
 		cluster.StopServers(kSecondNodesGroup);
@@ -451,7 +456,7 @@ TEST_F(ClusterOperationApi, InitialLeaderSync) {
 		for (auto id : kFirstNodesGroup) {
 			onlineNodes.emplace(id);
 		}
-		ASSERT_TRUE(ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, cluster.GetNode(leaderId)));
+		ASSERT_TRUE(ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, 0, cluster.GetNode(leaderId)));
 
 		// Fill data for nodes from the first group
 		TestCout() << "Fill data 1" << std::endl;
@@ -459,6 +464,7 @@ TEST_F(ClusterOperationApi, InitialLeaderSync) {
 		cluster.FillData(leaderId, kNsSome, 0, kDataPortion);
 		TestCout() << "Wait sync 1" << std::endl;
 		cluster.WaitSync(kNsSome);
+		ASSERT_TRUE(ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, kNssCount, cluster.GetNode(leaderId)));
 
 		// Stop cluster
 		cluster.StopServers(kFirstNodesGroup);
@@ -516,8 +522,8 @@ TEST_F(ClusterOperationApi, InitialLeaderSync) {
 		cluster::ReplicationStats stats;
 		for (unsigned i = 0; i < 40; ++i) {
 			stats = cluster.GetNode(leaderId)->GetReplicationStats(cluster::kClusterReplStatsType);
-			if (ValidateStatsOnTestEnding(leaderId, kTransitionServer, kFirstNodesGroup, kSecondNodesGroup, kClusterSize, ports, stats,
-										  false)) {
+			if (ValidateStatsOnTestEnding(leaderId, kTransitionServer, kFirstNodesGroup, kSecondNodesGroup, kClusterSize, kNssCount, ports,
+										  stats, false)) {
 				break;
 			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(250));
@@ -526,8 +532,8 @@ TEST_F(ClusterOperationApi, InitialLeaderSync) {
 		stats.GetJSON(serLeader);
 		SCOPED_TRACE(fmt::format("Leader's stats: {}", serLeader.Slice()));
 		{
-			ASSERT_TRUE(ValidateStatsOnTestEnding(leaderId, kTransitionServer, kFirstNodesGroup, kSecondNodesGroup, kClusterSize, ports,
-												  stats, true));
+			ASSERT_TRUE(ValidateStatsOnTestEnding(leaderId, kTransitionServer, kFirstNodesGroup, kSecondNodesGroup, kClusterSize, kNssCount,
+												  ports, stats, true));
 		}
 		// Validate stats, recieved via followers (this request has to be proxied)
 		for (auto nodeId : kFirstNodesGroup) {

@@ -95,7 +95,7 @@ public:
 	FloatVectorsKeeper& GetKeeper() const noexcept { return *keeper_; }
 	virtual StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 													const std::atomic_int32_t& cancel) noexcept = 0;
-	virtual Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVecData) = 0;
+	virtual Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVecData, uint8_t version) = 0;
 	virtual void RebuildCentroids(float) {}
 	void ResetIndexPerfStat() override;
 	void EnablePerfStat(bool);

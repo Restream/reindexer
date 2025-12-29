@@ -19,24 +19,23 @@ using reindexer::QueryResults;
 static uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
 FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
-	: BaseFixture(db, name, maxItems, 1, false), lowWordsDiversityNsDef_("LowWordsDiversityNs") {
+	: BaseFixture(db, name, maxItems, 1, false), ftLowDiversityCfg_(1), lowWordsDiversityNsDef_("LowWordsDiversityNs") {
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
 #endif
 	static reindexer::FtFastConfig ftFastCfg(1);
 	ftFastCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
 
-	static reindexer::FtFastConfig ftLowDiversityCfg(1);
 	// for benching merge_limit break #2244
-	ftLowDiversityCfg.mergeLimit = 4000;
-	ftLowDiversityCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+	ftLowDiversityCfg_.mergeLimit = 4000;
+	ftLowDiversityCfg_.optimization = reindexer::FtFastConfig::Optimization::Memory;
 
 	static IndexOpts ftFastIndexOpts;
 	ftFastIndexOpts.SetConfig(IndexCompositeFastFT, ftFastCfg.GetJSON({}));
 	ftFastIndexOpts.Dense();
 
 	static IndexOpts ftLowDiversityIndexOpts;
-	ftLowDiversityIndexOpts.SetConfig(IndexCompositeFastFT, ftLowDiversityCfg.GetJSON({}));
+	ftLowDiversityIndexOpts.SetConfig(IndexCompositeFastFT, ftLowDiversityCfg_.GetJSON({}));
 	ftLowDiversityIndexOpts.Dense();
 
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
@@ -123,19 +122,54 @@ reindexer::Error FullText::Initialize() {
 	return {};
 }
 
-void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount) {
+void FullText::TurnOnSynonyms() {
+	for (size_t i = 0; i < words2_.size(); i++) {
+		const std::string& word = words2_[i];
+		const std::string& synWord = words2_[(i + 5) % words2_.size()];
+		const std::string& nextWord1 = words2_[(i + 10) % words2_.size()];
+		const std::string& nextWord2 = words2_[(i + 15) % words2_.size()];
+
+		std::string multiSynWord = std::string(nextWord1).append(" ").append(nextWord2);
+		ftLowDiversityCfg_.synonyms.emplace_back(std::vector<std::string>({word}), std::vector<std::string>({synWord, multiSynWord}));
+	}
+
+	for (size_t i = 0; i < words2_.size(); i++) {
+		const std::string& word1 = words2_[i];
+		const std::string& nextWord1 = words2_[(i + 5) % words2_.size()];
+		for (size_t j = i + 1; j < words2_.size(); j++) {
+			const std::string& word2 = words2_[j];
+			const std::string& nextWord2 = words2_[(j + 5) % words2_.size()];
+
+			ftLowDiversityCfg_.synonyms.emplace_back(std::vector<std::string>({std::string(word1).append(" ").append(word2)}),
+													 std::vector<std::string>({std::string(nextWord1).append(" ").append(nextWord2)}));
+		}
+	}
+
+	setIndexConfig(lowWordsDiversityNsDef_, kLowDiversityIndexName_, ftLowDiversityCfg_);
+}
+
+void FullText::TurnOffSynonyms() {
+	ftLowDiversityCfg_.synonyms.clear();
+	setIndexConfig(lowWordsDiversityNsDef_, kLowDiversityIndexName_, ftLowDiversityCfg_);
+}
+
+void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount,
+								std::optional<size_t> verySlowIterationCount) {
 	constexpr static auto Mem = reindexer::FtFastConfig::Optimization::Memory;
 	constexpr static auto CPU = reindexer::FtFastConfig::Optimization::CPU;
 
 	RegisterWrapper wrapSlow(slowIterationCount);  // std::numeric_limits<size_t>::max() test limit - default time
+	RegisterWrapper wrapVerySlow(verySlowIterationCount);
 	RegisterWrapper wrapFast(fastIterationCount);
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("BuildAndInsertNs2", &FullText::BuildInsertLowDiversityNs, this)->Iterations(25000)->Unit(benchmark::kMicrosecond);
-	wrapSlow.SetOptions(Register("Fast3PhraseLowDiversity", &FullText::Fast3PhraseLowDiversity, this));
-	wrapSlow.SetOptions(Register("Fast3WordsLowDiversity", &FullText::Fast3WordsLowDiversity, this));
+	wrapVerySlow.SetOptions(Register("Fast3PhraseLowDiversity", &FullText::Fast3PhraseLowDiversity, this));
+	wrapVerySlow.SetOptions(Register("Fast3WordsLowDiversity", &FullText::Fast3WordsLowDiversity, this));
 
-	wrapSlow.SetOptions(Register("Fast3WordsWithAreasLowDiversity", &FullText::Fast3WordsWithAreasLowDiversity, this));
-	wrapSlow.SetOptions(Register("Fast3PhraseWithAreasLowDiversity", &FullText::Fast3PhraseWithAreasLowDiversity, this));
+	wrapVerySlow.SetOptions(Register("Fast3WordsWithAreasLowDiversity", &FullText::Fast3WordsWithAreasLowDiversity, this));
+	wrapVerySlow.SetOptions(Register("Fast3PhraseWithAreasLowDiversity", &FullText::Fast3PhraseWithAreasLowDiversity, this));
+
+	wrapVerySlow.SetOptions(Register("Fast3WordsSynonymsLowDiversity", &FullText::Fast3WordsSynonymsLowDiversity, this));
 
 	wrapFast.SetOptions(Register("Fast2PhraseLowDiversity", &FullText::Fast2PhraseLowDiversity, this));
 	wrapFast.SetOptions(Register("Fast2AndWordLowDiversity", &FullText::Fast2AndWordLowDiversity, this));
@@ -414,6 +448,33 @@ void FullText::Fast3WordsLowDiversity(State& state) {
 		cnt += qres.Count();
 	}
 
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+
+void FullText::Fast3WordsSynonymsLowDiversity(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	TurnOnSynonyms();
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(lowWordsDiversityNsDef_.name);
+		const std::string& w1 = RndFrom(words2_);
+		const std::string& w2 = RndFrom(words2_);
+		const std::string& w3 = RndFrom(words2_);
+		std::string ftQuery;
+		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
+		ftQuery.append(w1).append(" +").append(w2).append(" ").append(w3);
+		q.Where(kLowDiversityIndexName_, CondEq, std::move(ftQuery));
+		QueryResults qres;
+
+		auto err = db_->Select(q, qres);
+
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+		cnt += qres.Count();
+	}
+
+	TurnOffSynonyms();
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 

@@ -426,6 +426,8 @@ static void parseFilter(const JsonNode& filter, Query& q) {
 		} else {
 			q.Where(fieldNode.As<std::string_view>(), cond, getValues(filter));
 		}
+	} else if (const auto functionNode = filter.findCaseInsensitive("function"sv); !functionNode.empty()) {
+		q.Where(functions::Function::FromJSON(functionNode), getCondition(), getValues(filter));
 	} else if (condition.has_value()) {
 		throw Error{errParseDSL, "Condition is set, but appropriate field/subquery was not found in filter"};
 	}

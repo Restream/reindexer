@@ -227,7 +227,7 @@ VariantArray Query::deserializeValues(Serializer& ser, CondType cond) const {
 
 void Query::deserializeJoinOn(Serializer&) { throw Error(errLogic, "Unexpected call. JoinOn actual only for JoinQuery"); }
 
-void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
+void Query::deserialize(Serializer& ser) {
 	bool end = false;
 	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
 	while (!end && !ser.Eof()) {
@@ -292,7 +292,6 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				uint64_t type = ser.GetVarUInt();
 				assertrx(type != JoinType::LeftJoin);
 				JoinQueryEntry joinEntry(ser.GetVarUInt());
-				hasJoinConditions = true;
 				std::ignore = entries_.Append((type == JoinType::OrInnerJoin) ? OpOr : OpAnd, std::move(joinEntry));
 				break;
 			}
@@ -471,6 +470,36 @@ void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
 				Serializer subQuery{ser.GetVString()};
 				NextOp(op);
 				Where(fieldName, condition, Query::Deserialize(subQuery));
+				break;
+			}
+			case QueryFunctionSubQueryCondition: {
+				OpType op = OpType(ser.GetVarUInt());
+				auto numFields = ser.GetVarUInt();
+				h_vector<std::string, 1> fields;
+				fields.reserve(numFields);
+				while (numFields--) {
+					fields.emplace_back(ser.GetVString());
+				}
+				const FunctionType type = FunctionType(ser.GetVarUInt());
+				CondType condition = CondType(ser.GetVarUInt());
+				Serializer subQuery{ser.GetVString()};
+				NextOp(op);
+				Where(functions::Create(type, std::move(fields)), condition, Query::Deserialize(subQuery));
+				break;
+			}
+			case QueryFunction: {
+				auto numFields = ser.GetVarUInt();
+				h_vector<std::string, 1> fields;
+				fields.reserve(numFields);
+				while (numFields--) {
+					fields.emplace_back(ser.GetVString());
+				}
+				const FunctionType type = FunctionType(ser.GetVarUInt());
+				const OpType op = OpType(ser.GetVarUInt());
+				const CondType condition = CondType(ser.GetVarUInt());
+				VariantArray values = deserializeValues(ser, condition);
+				NextOp(op);
+				Where(functions::Create(type, std::move(fields)), condition, std::move(values));
 				break;
 			}
 			case QueryAggregationSort:
@@ -667,29 +696,40 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 
 Query Query::Deserialize(Serializer& ser) {
 	Query res(ser.GetVString());
-	bool hasJoinConditions = false;
-	res.deserialize(ser, hasJoinConditions);
+	res.deserialize(ser);
 
 	bool nested = false;
 	while (!ser.Eof()) {
 		auto joinType = JoinType(ser.GetVarUInt());
 		JoinedQuery q1(std::string(ser.GetVString()));
 		q1.joinType = joinType;
-		q1.deserialize(ser, hasJoinConditions);
+		q1.deserialize(ser);
 		res.adoptNested(q1);
 		if (joinType == JoinType::Merge) {
 			res.mergeQueries_.emplace_back(std::move(q1));
 			nested = true;
 		} else {
 			Query& q = nested ? res.mergeQueries_.back() : res;
-			if (joinType != JoinType::LeftJoin && !hasJoinConditions) {
-				const size_t joinIdx = res.joinQueries_.size();
-				std::ignore = res.entries_.Append<JoinQueryEntry>((joinType == JoinType::OrInnerJoin) ? OpOr : OpAnd, joinIdx);
-			}
 			q.joinQueries_.emplace_back(std::move(q1));
 			q.adoptNested(q.joinQueries_.back());
 		}
 	}
+
+	auto checkJoinEntries = [](const Query& q) {
+		q.Entries().VisitForEach(
+			[size = q.GetJoinQueries().size()](const JoinQueryEntry& qe) {
+				if (qe.joinIndex >= size) {
+					throw Error(errQueryExec, "Invalid index for joined query after deserialization.");
+				}
+			},
+			[](const auto&) noexcept {});
+	};
+
+	checkJoinEntries(res);
+	for (const auto& mergeQuery : res.GetMergeQueries()) {
+		checkJoinEntries(mergeQuery);
+	}
+
 	return res;
 }
 

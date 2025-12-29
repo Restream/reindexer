@@ -593,8 +593,8 @@ h_vector<SelectIteratorContainer::EqualPositions, 2> SelectIteratorContainer::pr
 		for (size_t j = begin, next; j < end; j = next) {
 			next = queries.Next(j);
 			queries.Visit(
-				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
-				[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&) { throw_as_assert; },
+				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry>{},
+				[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { throw_as_assert; },
 				[](const KnnQueryEntry&) { throw Error(errQueryExec, kForbiddenCondsErrorMsg); },
 				[&](const QueryEntry& qEntry) {
 					if (qEntry.IsFieldIndexed()) {
@@ -697,7 +697,9 @@ void SelectIteratorContainer::Clear(bool preserveDistincts) {
 				[this, &i](const SelectIteratorsBracket& bracket) {
 					// Check that brackets does not contain distincts
 					for (size_t bracketEnd = i + bracket.Size(); i < bracketEnd; ++i) {
-						Visit(i, Skip<SelectIteratorsBracket, JoinSelectIterator, AlwaysFalse, AlwaysTrue, KnnRawSelectResult>{},
+						Visit(i,
+							  Skip<SelectIteratorsBracket, JoinSelectIterator, AlwaysFalse, AlwaysTrue, KnnRawSelectResult,
+								   FunctionsComparator>{},
 							  [](const concepts::OneOf<SelectIterator, ComparatorsPackT> auto& e) {
 								  if (e.IsDistinct()) [[unlikely]] {
 									  throw Error(errLogic, "Unexpected distinct inside bracket");
@@ -763,7 +765,8 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 		next = queries.Next(i);
 		const OpType op = queries.GetOperation(i);
 		containRanked |= queries.Visit(
-			i, [](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&) -> ContainRanked { throw_as_assert; },
+			i,
+			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) -> ContainRanked { throw_as_assert; },
 			[&](const QueryEntriesBracket&) {
 				OpenBracket(op);
 				const ContainRanked contRanked =
@@ -905,6 +908,21 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 					processQueryEntryResults(std::move(res), op, ns, qe, isRanked, nextOp);
 				}
 				return isFT;
+			},
+			[&](const QueryFunctionEntry& qe) {
+				FunctionFieldsInfo fieldsInfo;
+				for (size_t i = 0; i < qe.Fields(); ++i) {
+					if (qe.FieldData(i).IsFieldIndexed()) {
+						const auto& idx{ns.indexes_[qe.FieldData(i).IndexNo()]};
+						if (idx && IsComposite(idx->Type())) {
+							throw Error(errQueryExec, "Conditions with user-defined functions are not allowed for composite indexes.");
+						}
+					}
+					fieldsInfo.emplace_back(qe.FieldData(i).Fields());
+				}
+				FunctionsComparator comparator{std::move(fieldsInfo), qe.Condition(), qe.Values(), qe.FunctionVariant(), ns.payloadType_};
+				std::ignore = Append(op, std::move(comparator));
+				return ContainRanked_False;
 			},
 			[this, op](const JoinQueryEntry& jqe) {
 				processJoinEntry(jqe, op);

@@ -54,7 +54,7 @@ public:
 
 class [[nodiscard]] FastTextSplitter final : public ISplitter {
 public:
-	FastTextSplitter(const SplitOptions opts) : opts_(opts) {}
+	FastTextSplitter(const SplitOptions& opts) : opts_(opts) {}
 	std::shared_ptr<ISplitterTask> CreateTask() const override;
 	const SplitOptions& GetSplitOptions() const noexcept { return opts_; }
 

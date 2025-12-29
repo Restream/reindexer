@@ -148,39 +148,62 @@ public:
 		return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end();
 	}
 	bool contains(const IndexesFieldsSet& f) const noexcept { return (mask_ & f.mask()) == f.mask(); }
-	bool contains(const TagsPath& tagsPath) const {
+	bool contains(const TagsPath& tagsPath) const noexcept {
 		for (const FieldsPath& path : tagsPaths_) {
-			if (std::visit(overloaded{[&tagsPath](const TagsPath& path) { return path == tagsPath; },
-									  [&tagsPath](const IndexedTagsPath& path) { return path.Compare(tagsPath); }},
-						   path)) {
-				return true;
+			if (auto* tp = std::get_if<TagsPath>(&path); tp) {
+				if (*tp == tagsPath) {
+					return true;
+				}
+			} else if (auto* itp = std::get_if<IndexedTagsPath>(&path); itp) {
+				if (itp->Compare(tagsPath)) {
+					return true;
+				}
+			} else {
+				assertrx_dbg(false);
 			}
 		}
 		return false;
 	}
-	bool contains(const IndexedTagsPath& tagsPath) const {
+	bool contains(const IndexedTagsPath& tagsPath) const noexcept {
 		for (const FieldsPath& path : tagsPaths_) {
-			if (std::visit(
-					overloaded{[&tagsPath](const TagsPath& path) { return tagsPath.Compare(path); },
-							   [&tagsPath](const IndexedTagsPath& path) { return Compare<IgnoreAllOmittedIndexes>(path, tagsPath); }},
-					path)) {
-				return true;
+			if (auto* tp = std::get_if<TagsPath>(&path); tp) {
+				if (tagsPath.Compare(*tp)) {
+					return true;
+				}
+			} else if (auto* itp = std::get_if<IndexedTagsPath>(&path); itp) {
+				if (Compare<IgnoreAllOmittedIndexes>(*itp, tagsPath)) {
+					return true;
+				}
+			} else {
+				assertrx_dbg(false);
 			}
 		}
 		return false;
 	}
-	bool contains(const FieldsPath& fieldsPath) const {
-		return std::visit([&](const auto& fp) { return contains(fp); }, fieldsPath);
+	bool contains(const FieldsPath& fieldsPath) const noexcept {
+		if (auto* tp = std::get_if<TagsPath>(&fieldsPath); tp) {
+			return contains(*tp);
+		} else if (auto* itp = std::get_if<IndexedTagsPath>(&fieldsPath); itp) {
+			return contains(*itp);
+		}
+		assertrx_dbg(false);
+		return false;
 	}
-	bool match(const TagsPath& tagsPath) const {
+	bool match(const TagsPath& tagsPath) const noexcept {
 		if (tagsPaths_.empty()) {
 			return true;
 		}
 		for (auto& path : tagsPaths_) {
-			if (std::visit(overloaded{[&tagsPath](const TagsPath& path) { return comparePaths(tagsPath, path); },
-									  [&tagsPath](const IndexedTagsPath& path) { return comparePaths(path, tagsPath); }},
-						   path)) {
-				return true;
+			if (auto* tp = std::get_if<TagsPath>(&path); tp) {
+				if (comparePaths(tagsPath, *tp)) {
+					return true;
+				}
+			} else if (auto* itp = std::get_if<IndexedTagsPath>(&path); itp) {
+				if (comparePaths(tagsPath, *itp)) {
+					return true;
+				}
+			} else {
+				assertrx_dbg(false);
 			}
 		}
 		return false;
@@ -191,10 +214,16 @@ public:
 			return true;
 		}
 		for (auto& path : tagsPaths_) {
-			if (std::visit(overloaded{[&tagsPath](const TagsPath& path) { return comparePaths(tagsPath, path); },
-									  [&tagsPath](const IndexedTagsPath& path) { return comparePaths(tagsPath, path); }},
-						   path)) {
-				return true;
+			if (auto* tp = std::get_if<TagsPath>(&path); tp) {
+				if (comparePaths(tagsPath, *tp)) {
+					return true;
+				}
+			} else if (auto* itp = std::get_if<IndexedTagsPath>(&path); itp) {
+				if (comparePaths(tagsPath, *itp)) {
+					return true;
+				}
+			} else {
+				assertrx_dbg(false);
 			}
 		}
 		return false;
@@ -209,9 +238,16 @@ public:
 	size_t getTagsPathsLength() const noexcept { return tagsPaths_.size(); }
 	size_t getJsonPathsLength() const noexcept { return jsonPaths_.size(); }
 	const h_vector<std::string, 1>& getJsonPaths() const noexcept { return jsonPaths_; }
-	bool isTagsPathIndexed(size_t idx) const {
+	bool isTagsPathIndexed(size_t idx) const noexcept {
 		assertrx(idx < tagsPaths_.size());
-		return std::visit(overloaded{[](const TagsPath&) { return false; }, [](const IndexedTagsPath&) { return true; }}, tagsPaths_[idx]);
+
+		if (auto* tp = std::get_if<TagsPath>(&tagsPaths_[idx]); tp) {
+			return false;
+		} else if (auto* itp = std::get_if<IndexedTagsPath>(&tagsPaths_[idx]); itp) {
+			return true;
+		}
+		assertrx_dbg(false);
+		return false;
 	}
 	const TagsPath& getTagsPath(size_t idx) const& { return std::get<TagsPath>(tagsPaths_[idx]); }
 	const TagsPath& getTagsPath(size_t idx) const&& = delete;
@@ -224,10 +260,11 @@ public:
 	const std::string& getJsonPath(size_t idx) const& noexcept { return jsonPaths_[idx]; }
 	const std::string& getJsonPath(size_t idx) const&& = delete;
 
-	bool operator==(const FieldsSet& f) const {
+	bool operator==(const FieldsSet& f) const noexcept {
 		return mask_ == f.mask_ && jsonPaths_ == f.jsonPaths_ && tagsPaths_.size() == f.tagsPaths_.size() &&
 			   std::equal(tagsPaths_.cbegin(), tagsPaths_.cend(), f.tagsPaths_.cbegin(),
-						  [](const FieldsPath& leftTagsPath, const FieldsPath& rightTagsPath) {
+						  // NOLINTNEXTLINE (bugprone-exception-escape)
+						  [](const FieldsPath& leftTagsPath, const FieldsPath& rightTagsPath) noexcept {
 							  return std::visit(overloaded{
 													[](const TagsPath& lhs, const TagsPath& rhs) noexcept { return lhs == rhs; },
 													[](const TagsPath&, const IndexedTagsPath&) noexcept { return false; },

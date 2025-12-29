@@ -56,6 +56,8 @@ EmbedderPerfStat EmbedderBase::GetPerfStat(std::string_view tag) const {
 	stat.lastSecAvgCacheLatencyUs = statEmbedderTimesCache.lastSecAvgTimeUs;
 	stat.maxCacheLatencyUs = statEmbedderTimesCache.maxTimeUs;
 	stat.minCacheLatencyUs = statEmbedderTimesCache.minTimeUs;
+	stat.outputTrafficTotalBytes = statistic_.totalWriteBytes;
+	stat.inputTrafficTotalBytes = statistic_.totalReadBytes;
 
 	if (cache_ && !tag.empty()) {
 		stat.cacheStat = cache_->GetPerfStat(tag);
@@ -76,6 +78,8 @@ void EmbedderBase::Statistic::Reset() {
 	totalQueriesCount.store(0, std::memory_order_relaxed);
 	totalEmbedDocumentsCount.store(0, std::memory_order_relaxed);
 	connectionAwait.Reset();
+	totalReadBytes.store(0, std::memory_order_relaxed);
+	totalWriteBytes.store(0, std::memory_order_relaxed);
 }
 
 Error EmbedderBase::GetLastError() const { return statistic_.lastError.GetLastError(); }
@@ -92,7 +96,7 @@ void EmbedderBase::calculate(const RdxContext& ctx, const embedding::Adapter& sr
 	logFmt(LogTrace, "Embedding src: {}", srcAdapter.View());
 
 	if (cache_) {
-		auto product = cache_->Get(config_.tag, srcAdapter);
+		auto product = cache_->Get(config_.tag, srcAdapter, enablePerfStat);
 		if (product.has_value()) {
 			PerfStatCalculatorMT embedderTimesCachCalculator(statistic_.embedderTimesCache, tmStart, enablePerfStat);
 			products.emplace_back(std::move(product.value()));
@@ -110,6 +114,11 @@ void EmbedderBase::calculate(const RdxContext& ctx, const embedding::Adapter& sr
 		statistic_.avgConnInUse.Hit(pool_->ConnectionInUse());
 	}
 	auto response = (*res.second).Send(serverPath_, srcAdapter.Content());
+
+	if (enablePerfStat) {
+		statistic_.totalReadBytes.fetch_add(response.read_bytes, std::memory_order_relaxed);
+		statistic_.totalWriteBytes.fetch_add(response.write_bytes, std::memory_order_relaxed);
+	}
 	if (!response.ok) {
 		throw Error{errNetwork, "Failed to get embedding for '{}'. Problem with client: {}", fieldName_, response.content};
 	}

@@ -994,20 +994,27 @@ static void securityCheck(const Query& query, const RdxContext& rdxCtx) {
 	const static auto kProtectedPaths = generateProtectedPaths();
 
 	static constexpr auto errMsg = "Requests to system namespaces with filtering conditions by DSN-fields are prohibited for your role";
-	query.Entries().VisitForEach(
-		[](const KnnRawSelectResult&) { throw_as_assert; },
-		Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue, SubQueryEntry, KnnQueryEntry, MultiDistinctQueryEntry>{},
-		[](const concepts::OneOf<QueryEntry, SubQueryFieldEntry> auto& qe) {
-			if (std::ranges::find(kProtectedPaths, qe.FieldName()) != kProtectedPaths.cend()) {
-				throw Error(errForbidden, errMsg);
-			}
-		},
-		[](const BetweenFieldsQueryEntry& qe) {
-			if (std::ranges::find(kProtectedPaths, qe.LeftFieldName()) != kProtectedPaths.cend() ||
-				std::ranges::find(kProtectedPaths, qe.RightFieldName()) != kProtectedPaths.cend()) {
-				throw Error(errForbidden, errMsg);
-			}
-		});
+	query.Entries().VisitForEach([](const KnnRawSelectResult&) { throw_as_assert; },
+								 Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue, SubQueryEntry, KnnQueryEntry,
+									  MultiDistinctQueryEntry, QueryFunctionEntry>{},
+								 [](const concepts::OneOf<QueryEntry, SubQueryFieldEntry> auto& qe) {
+									 if (std::ranges::find(kProtectedPaths, qe.FieldName()) != kProtectedPaths.cend()) {
+										 throw Error(errForbidden, errMsg);
+									 }
+								 },
+								 [](const SubQueryFunctionEntry& sqe) {
+									 for (size_t i = 0; i < sqe.Fields(); ++i) {
+										 if (std::ranges::find(kProtectedPaths, sqe.FieldData(i).FieldName()) != kProtectedPaths.cend()) {
+											 throw Error(errForbidden, errMsg);
+										 }
+									 }
+								 },
+								 [](const BetweenFieldsQueryEntry& qe) {
+									 if (std::ranges::find(kProtectedPaths, qe.LeftFieldName()) != kProtectedPaths.cend() ||
+										 std::ranges::find(kProtectedPaths, qe.RightFieldName()) != kProtectedPaths.cend()) {
+										 throw Error(errForbidden, errMsg);
+									 }
+								 });
 }
 
 template <QueryType TP>
@@ -1306,7 +1313,7 @@ std::optional<Q> ReindexerImpl::embedKNNQueries(const Q& query, const RdxContext
 	for (size_t i = 0, s = query.Entries().Size(); i < s; ++i) {
 		query.Entries().Visit(i,
 							  Skip<QueryEntriesBracket, QueryEntry, BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue, AlwaysFalse,
-								   SubQueryEntry, SubQueryFieldEntry, MultiDistinctQueryEntry>{},
+								   SubQueryEntry, SubQueryFieldEntry, MultiDistinctQueryEntry, QueryFunctionEntry, SubQueryFunctionEntry>{},
 							  [&](const KnnQueryEntry& qe) {
 								  if (qe.Format() == KnnQueryEntry::DataFormatType::String) {
 									  auto ns = getNamespace(query.NsName(), ctx);
@@ -2641,6 +2648,9 @@ Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2& s
 Error ReindexerImpl::SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status,
 											   const RdxContext& rdxCtx) noexcept {
 	try {
+		if (auto err = configProvider_.CheckAsyncReplicationToken(nsName, rdxCtx.LeaderReplicationToken()); !err.ok()) {
+			return Error(err.code(), "Unable to set cluster operation status for '{}': {}", nsName, err.what());
+		}
 		return getNamespace(nsName, rdxCtx)->SetClusterOperationStatus(ClusterOperationStatus(status), rdxCtx);
 	}
 	CATCH_AND_RETURN;
@@ -2698,7 +2708,7 @@ Error ReindexerImpl::ClusterControlRequest(const ClusterControlRequestData& requ
 			case ClusterControlRequestData::Type::ChangeLeader:
 				clusterManager_->SetDesiredLeaderId(std::get<SetClusterLeaderCommand>(request.data).leaderServerId, false);
 				break;
-			case ClusterControlRequestData::Type::ForceEletions:
+			case ClusterControlRequestData::Type::ForceElections:
 				clusterManager_->ForceElections();
 				break;
 			case ClusterControlRequestData::Type::Empty:

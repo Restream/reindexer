@@ -19,11 +19,11 @@ struct [[nodiscard]] SetClusterLeaderCommand {
 struct [[nodiscard]] ForceElectionsCommand {};
 
 struct [[nodiscard]] ClusterControlRequestData {
-	enum class [[nodiscard]] Type { Empty = 0, ChangeLeader = 1, ForceEletions = 2 };
+	enum class [[nodiscard]] Type { Empty = 0, ChangeLeader = 1, ForceElections = 2 };
 
 	ClusterControlRequestData() = default;
 	ClusterControlRequestData(SetClusterLeaderCommand&& value) : type(Type::ChangeLeader), data(std::move(value)) {}
-	ClusterControlRequestData(ForceElectionsCommand&& value) : type(Type::ForceEletions), data(std::move(value)) {}
+	ClusterControlRequestData(ForceElectionsCommand&& value) : type(Type::ForceElections), data(std::move(value)) {}
 	void GetJSON(WrSerializer& ser) const;
 	Error FromJSON(std::span<char> json) noexcept;
 

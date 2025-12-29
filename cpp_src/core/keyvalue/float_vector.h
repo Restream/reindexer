@@ -22,7 +22,7 @@ public:
 		assertrx_dbg(Dimension().Value() == data.size());
 		assertrx_dbg(Dimension().IsZero() || Data() == data.data());
 	}
-	FloatVectorDimension Dimension() const noexcept {
+	FloatVectorDimension Dimension() const {
 		return FloatVectorDimension(payload_ >> kDimensionOffset);	// NOLINT(*EnumCastOutOfRange)
 	}
 	T* Data() const noexcept {
@@ -100,6 +100,7 @@ class [[nodiscard]] FloatVectorImpl : private std::unique_ptr<T[]> {
 public:
 	FloatVectorImpl() noexcept : Base{nullptr} {}
 	FloatVectorImpl(const FloatVectorImpl& other) : FloatVectorImpl{other.Span()} {}
+	// NOLINTNEXTLINE(bugprone-use-after-move)
 	FloatVectorImpl(FloatVectorImpl&& other) noexcept : Base{std::move(other)}, dimension_{other.Dimension()} {}
 	FloatVectorImpl& operator=(FloatVectorImpl&& other) noexcept {
 		dimension_ = other.dimension_;
@@ -107,9 +108,9 @@ public:
 		return *this;
 	}
 	explicit FloatVectorImpl(std::span<const UnderlingT> data) : dimension_(FloatVectorDimension(data.size())) {
-		std::unique_ptr<UnderlingT> newData{new UnderlingT[dimension_.Value()]};
-		std::memcpy(newData.get(), data.data(), dimension_.Value() * sizeof(T));
-		static_cast<Base&>(*this) = Base{newData.release()};
+		UnderlingT* newData = new UnderlingT[dimension_.Value()];
+		std::memcpy(newData, data.data(), dimension_.Value() * sizeof(T));
+		static_cast<Base&>(*this) = Base{newData};
 	}
 	explicit FloatVectorImpl(ConstFloatVectorView other) : FloatVectorImpl{std::span<const T>{other.Data(), other.Dimension().Value()}} {}
 	template <typename U>
@@ -155,7 +156,7 @@ public:
 
 private:
 	FloatVectorImpl(FloatVectorDimension dimension) : dimension_(dimension) {
-		std::unique_ptr<UnderlingT> newData{new UnderlingT[dimension_.Value()]};
+		std::unique_ptr<UnderlingT[]> newData{new UnderlingT[dimension_.Value()]};
 		static_cast<Base&>(*this) = Base{newData.release()};
 	}
 

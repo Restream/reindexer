@@ -626,7 +626,7 @@ public:
 	RMapValue(Key&& k, const T& v) : first_{std::move(k)}, first{first_}, second{v} {}
 	RMapValue(const Key& k, T&& v) : first_{k}, first{first_}, second{std::move(v)} {}
 	RMapValue(const Key& k, const T& v) : first_{k}, first{first_}, second{v} {}
-	RMapValue(RMapValue&& other) : first_{std::move(other.first_)}, first{first_}, second{std::move(other.second)} {}
+	RMapValue(RMapValue&& other) noexcept : first_{std::move(other.first_)}, first{first_}, second{std::move(other.second)} {}
 	RMapValue(const RMapValue& other) : first_{other.first_}, first{first_}, second{other.second} {}
 	RMapValue& operator=(RMapValue&& other) noexcept {
 		first_ = std::move(other.first_);

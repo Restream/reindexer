@@ -10,14 +10,14 @@ bool isTagIndexOrEmptyName(TagIndex) noexcept { return true; }
 bool isTagIndexOrEmptyName(TagName tagName) noexcept { return tagName.IsEmpty(); }
 }  // namespace
 
-ProtobufBuilder::ProtobufBuilder(WrSerializer* wrser, ObjType type, const Schema* schema, const TagsMatcher* tm, const TagsPath* tagsPath,
+ProtobufBuilder::ProtobufBuilder(WrSerializer& wrser, ObjType type, const Schema* schema, const TagsMatcher* tm, const TagsPath* tagsPath,
 								 concepts::TagNameOrIndex auto tag)
 	: type_(type), ser_(wrser), tm_(tm), tagsPath_(tagsPath), schema_(schema), sizeHelper_(), itemsFieldIndex_(toItemsFieldIndex(tag)) {
 	switch (type_) {
 		case ObjType::TypeArray:
 		case ObjType::TypeObject:
 			putFieldHeader(tag, PBUF_TYPE_LENGTHENCODED);
-			sizeHelper_ = ser_->StartVString();
+			sizeHelper_ = ser_.StartVString();
 			break;
 		case ObjType::TypeObjectArray:
 			itemsFieldIndex_ = toItemsFieldIndex(tag);
@@ -26,8 +26,8 @@ ProtobufBuilder::ProtobufBuilder(WrSerializer* wrser, ObjType type, const Schema
 			break;
 	}
 }
-template ProtobufBuilder::ProtobufBuilder(WrSerializer*, ObjType, const Schema*, const TagsMatcher*, const TagsPath*, TagName);
-template ProtobufBuilder::ProtobufBuilder(WrSerializer*, ObjType, const Schema*, const TagsMatcher*, const TagsPath*, TagIndex);
+template ProtobufBuilder::ProtobufBuilder(WrSerializer&, ObjType, const Schema*, const TagsMatcher*, const TagsPath*, TagName);
+template ProtobufBuilder::ProtobufBuilder(WrSerializer&, ObjType, const Schema*, const TagsMatcher*, const TagsPath*, TagIndex);
 
 void ProtobufBuilder::End() {
 	switch (type_) {
@@ -94,7 +94,7 @@ std::pair<KeyValueType, bool> ProtobufBuilder::getExpectedFieldType() const {
 }
 
 void ProtobufBuilder::putFieldHeader(concepts::TagNameOrIndex auto tag, ProtobufTypes type) {
-	ser_->PutVarUint((unsigned(getFieldTag(tag).AsNumber()) << kTypeBit) | type);
+	ser_.PutVarUint((unsigned(getFieldTag(tag).AsNumber()) << kTypeBit) | type);
 }
 
 std::string_view ProtobufBuilder::tagToName(TagName tagName) { return tm_->tag2name(tagName); }
@@ -129,7 +129,7 @@ void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, int val) {
 		if (type_ != ObjType::TypeArray) {
 			putFieldHeader(tag, PBUF_TYPE_VARINT);
 		}
-		ser_->PutVarint(val);
+		ser_.PutVarint(val);
 	}
 }
 
@@ -158,7 +158,7 @@ void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, int64_t val) {
 		if (type_ != ObjType::TypeArray) {
 			putFieldHeader(tag, PBUF_TYPE_VARINT);
 		}
-		ser_->PutVarint(val);
+		ser_.PutVarint(val);
 	}
 }
 
@@ -187,7 +187,7 @@ void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, double val) {
 		if (type_ != ObjType::TypeArray) {
 			putFieldHeader(tag, PBUF_TYPE_FLOAT64);
 		}
-		ser_->PutDouble(val);
+		ser_.PutDouble(val);
 	}
 }
 
@@ -217,7 +217,7 @@ void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, float val) {
 		if (type_ != ObjType::TypeArray) {
 			putFieldHeader(tag, PBUF_TYPE_FLOAT32);
 		}
-		ser_->PutFloat(val);
+		ser_.PutFloat(val);
 	}
 }
 
@@ -230,7 +230,7 @@ void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, std::string_view va
 	if (type_ != ObjType::TypeArray) {
 		putFieldHeader(tag, PBUF_TYPE_LENGTHENCODED);
 	}
-	ser_->PutVString(val);
+	ser_.PutVString(val);
 }
 template void ProtobufBuilder::put(TagIndex, std::string_view);
 
@@ -243,7 +243,7 @@ void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, Uuid val) {
 	if (type_ != ObjType::TypeArray) {
 		putFieldHeader(tag, PBUF_TYPE_LENGTHENCODED);
 	}
-	ser_->PutStrUuid(val);
+	ser_.PutStrUuid(val);
 }
 template void ProtobufBuilder::put(TagIndex, Uuid);
 

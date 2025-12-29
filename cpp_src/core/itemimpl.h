@@ -37,8 +37,8 @@ public:
 
 	void ModifyField(std::string_view jsonPath, const VariantArray& keys, FieldModifyMode mode);
 	void ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& keys, FieldModifyMode mode);
-	void SetField(int field, const VariantArray& krs, NeedCreate needCopy = NeedCreate_True);
-	void SetField(std::string_view jsonPath, const VariantArray& keys);
+	void SetField(int field, VariantArray&& krs, NeedCreate needCopy = NeedCreate_True);
+	void SetField(std::string_view jsonPath, VariantArray&& keys);
 	void DropField(std::string_view jsonPath);
 	Variant GetField(int field);
 	void GetField(int field, VariantArray&);
@@ -85,7 +85,7 @@ public:
 	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
 	bool IsUnsafe() const noexcept { return unsafe_; }
 	void Clear();
-	void SetNamespace(std::shared_ptr<Namespace> ns) noexcept { ns_ = std::move(ns); }
+	void SetNamespace(const std::shared_ptr<Namespace>& ns) noexcept { ns_ = ns; }
 	std::weak_ptr<Namespace> GetNamespace() const noexcept { return ns_; }
 	static void validateModifyArray(const VariantArray& values);
 	void BuildTupleIfEmpty();
@@ -102,7 +102,7 @@ public:
 private:
 	ItemImpl(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
 
-	void initTupleFrom(Payload&&, WrSerializer&);
+	void initTupleFrom(Payload&&, WrSerializer&, Shrink);
 	std::string_view createSafeDataCopy(std::string_view slice);
 
 	// Index fields payload data

@@ -533,7 +533,7 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 	return res;
 }
 
-Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData) {
+Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData, uint8_t /*version*/) {
 	if (!getVectorData) [[unlikely]] {
 		return Error(errParams, "IvfIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
 	}

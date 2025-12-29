@@ -9,9 +9,19 @@
 
 namespace reindexer {
 namespace sharding {
-
+namespace {
 constexpr size_t kMaxShardingProxyConnCount = 64;
 constexpr size_t kMaxShardingProxyConnConcurrency = 1024;
+
+void validate(const SubQueryFunctionEntry& sqe, std::string_view ns, const ShardingKeys& keys) {
+	for (size_t i = 0; i < sqe.Fields(); ++i) {
+		const auto& field{sqe.FieldData(i)};
+		if (keys.IsShardIndex(ns, field.FieldName())) {
+			throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key ({})", field.FieldName());
+		}
+	}
+}
+}  // namespace
 
 RoutingStrategy::RoutingStrategy(const cluster::ShardingConfig& config) : keys_(config) {}
 
@@ -21,7 +31,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 	for (auto it = q.Entries().cbegin(), next = it, end = q.Entries().cend(); it != end; ++it) {
 		++next;
 		it->Visit(
-			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry, MultiDistinctQueryEntry, KnnQueryEntry>{},
+			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry, MultiDistinctQueryEntry, KnnQueryEntry, QueryFunctionEntry>{},
 			[&](const QueryEntry& qe) {
 				if (containsKey) {
 					if (keys_.IsShardIndex(ns, qe.FieldName())) {
@@ -56,6 +66,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 					throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key ({})", sqe.FieldName());
 				}
 			},
+			[&](const SubQueryFunctionEntry& sqe) { validate(sqe, ns, keys_); },
 			[&](const BetweenFieldsQueryEntry& qe) {
 				if (keys_.IsShardIndex(ns, qe.LeftFieldName()) || keys_.IsShardIndex(ns, qe.RightFieldName())) {
 					throw Error(errLogic, "Shard key cannot be compared with another field");
@@ -64,7 +75,8 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 			[&](const Bracket&) {
 				for (auto i = it.cbegin().PlainIterator(), end = it.cend().PlainIterator(); i != end; ++i) {
 					i->Visit(
-						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry, MultiDistinctQueryEntry, KnnQueryEntry>{},
+						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry, MultiDistinctQueryEntry, KnnQueryEntry,
+							 QueryFunctionEntry>{},
 						[&](const QueryEntry& qe) {
 							if (keys_.IsShardIndex(ns, qe.FieldName())) {
 								throw Error(errLogic, "Shard key condition cannot be included in bracket");
@@ -76,6 +88,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 											sqe.FieldName());
 							}
 						},
+						[&](const SubQueryFunctionEntry& sqe) { validate(sqe, ns, keys_); },
 						[&](const BetweenFieldsQueryEntry& qe) {
 							if (keys_.IsShardIndex(ns, qe.LeftFieldName()) || keys_.IsShardIndex(ns, qe.RightFieldName())) {
 								throw Error(errLogic, "Shard key cannot be compared with another field");

@@ -240,7 +240,7 @@ type NamespaceMemStat struct {
 		StorageOK bool `json:"storage_ok"`
 		// More detailed info about storage status. May contain 'OK', 'DISABLED', 'FAILED' or last error description"
 		StorageStatus string `json:"storage_status"`
-		// Filesystem path to namespace storage
+		// Filesystem path to cache storage
 		StoragePath string `json:"storage_path"`
 		// Disk space occupied by storage
 		StorageSize int64 `json:"storage_size"`
@@ -367,6 +367,11 @@ type EmbedderPerfStat struct {
 	MaxCacheLatencyUs uint64 `json:"max_cache_latency_us"`
 	// Minimum auto-embedding latency for a cache hit (all time)
 	MinCacheLatencyUs uint64 `json:"min_cache_latency_us"`
+	// Total amount of data received from the embedding service over the network
+	InputTrafficTotalBytes uint64 `json:"input_traffic_total_bytes"`
+	// Total amount of data sent to the embedding service over the network
+	OutputTrafficTotalBytes uint64 `json:"output_traffic_total_bytes"`
+
 	// Cache statistics
 	CacheStat *EmbedderCachePerfStat `json:"cache,omitempty"`
 }
@@ -504,6 +509,8 @@ type ReplicationStat struct {
 		SyncState string `json:"sync_state"`
 		// Shows synchronization state for raft-cluster node (false if node is outdated)
 		IsSynchronized bool `json:"is_synchronized"`
+		// Number of namespaces in initial synchronization queue
+		QueuedNamespaceSyncs int64 `json:"queued_namespace_syncs"`
 	} `json:"nodes"`
 }
 

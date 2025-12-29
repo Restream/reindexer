@@ -109,6 +109,7 @@ public:
 			}
 			if (plt) {
 				if (mid == lo + 1) {
+					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 					if (strncmp(str.data(), &text_[sa_[mid]], std::min(str.length(), strlen(&text_[sa_[mid]]))) != 0) {
 						return end();
 					}
@@ -118,6 +119,7 @@ public:
 				hi = mid;
 			} else {
 				if (mid == hi - 1) {
+					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 					if (hi >= sa_.size() || strncmp(str.data(), &text_[sa_[hi]], std::min(str.length(), strlen(&text_[sa_[hi]]))) != 0) {
 						return end();
 					}

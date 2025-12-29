@@ -70,7 +70,7 @@ static const std::unordered_map<SqlTokenType, std::unordered_set<std::string>> s
 	{ModifyConditionsStart, {"where", "limit", "offset", "order"}},
 	{UpdateOptionsSqlToken, {"set", "drop"}},
 	{EqualPositionSqlToken, {"equal_position"}},
-	{WhereFunction, {"ST_DWithin", "KNN"}},
+	{WhereFunction, {"ST_DWithin", "KNN", "flat_array_len"}},
 	{ST_GeomFromTextSqlToken, {"ST_GeomFromText"}},
 	{KnnParamsToken,
 	 {std::string{KnnSearchParams::kKName}, std::string{KnnSearchParams::kEfName}, std::string{KnnSearchParams::kNProbeName}}}};

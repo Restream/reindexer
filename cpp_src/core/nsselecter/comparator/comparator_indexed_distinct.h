@@ -24,7 +24,7 @@ public:
 		: values_(PayloadType{payloadType}, FieldsSet{fieldSet}) {}
 
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& pv) const { return values_.find(pv) == values_.cend(); }
-	void ExcludeValues(const PayloadValue& pv) { values_.insert(pv); }
+	void ExcludeValues(const PayloadValue& pv) { std::ignore = values_.insert(pv); }
 
 private:
 	unordered_payload_set<false> values_;

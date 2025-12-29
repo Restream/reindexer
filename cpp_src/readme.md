@@ -205,6 +205,9 @@ Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i
 - `reindexer_embed_last_sec_avg_latency_us` - average autoembed time (last second)
 - `reindexer_embed_conn_in_use` - current number of embedder connections in use
 - `reindexer_embed_last_sec_avg_embed_latency_us` - average auto-embedding latency for cache misses (last second)
+- `reindexer_embed_input_traffic_total_bytes` - the total amount of data received from the embedding service over the network 
+- `reindexer_embed_output_traffic_total_bytes` - the total amount of data sent to the embedding service over the network
+
 
 ### Prometheus (client-side, Go)
 

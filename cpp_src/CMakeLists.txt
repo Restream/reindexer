@@ -27,9 +27,12 @@ option(ENABLE_ROCKSDB "Enable rocksdb storage" ON)
 option(ENABLE_GRPC "Enable GRPC service" OFF)
 option(ENABLE_SSE "Enable SSE instructions" ON)
 option(ENABLE_SERVER_AS_PROCESS_IN_TEST "Run reindexer servers as separate processes in tests" OFF)
+option(ENABLE_EXTRA_CLUSTER_LOGS "Enable extra logging related to RAFT-cluster" OFF)
 option(ENABLE_PCH "Enable precompiled headers for the build" OFF)
+option(WITH_BUILTIN_LEVELDB "Use builtin leveldb instead of system package" OFF)
 set(BUILD_ANN_INDEXES "all" CACHE STRING "Enable ANN indexes build: none, builtin, all. 'All' builds both builtin and FAISS-based indexes")
 set_property(CACHE BUILD_ANN_INDEXES PROPERTY STRINGS none builtin all)
+set(VERSION_SUFFIX "" CACHE STRING "Add extra suffix to version number")
 
 if(APPLE)
   option(ENABLE_OPENSSL "Enable OpenSSL" OFF)
@@ -64,7 +67,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.9.0")
+set (REINDEXER_VERSION_DEFAULT "5.10.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -425,8 +428,8 @@ add_definitions(-DSPDLOG_FMT_EXTERNAL=1)
 add_definitions(-DFMT_USE_FULL_CACHE_DRAGONBOX=1)
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
-if (ENABLE_SERVER_AS_PROCESS_IN_TEST)
-  add_definitions(-DRX_ENABLE_CLUSTERPROXY_LOGS=1)
+if (ENABLE_EXTRA_CLUSTER_LOGS)
+  add_definitions(-DRX_ENABLE_EXTRA_CLUSTER_LOGS=1)
 endif()
 
 add_subdirectory(server/contrib)
@@ -456,17 +459,21 @@ if(NOT WITH_ASAN AND NOT WITH_TSAN)
   endif()
 endif()
 
+if(WITH_TSAN OR WITH_BUILTIN_LEVELDB)
+  set(RX_EMBED_LEVELDB ON)
+endif()
+
 # snappy
 ########
-if(NOT WITH_TSAN)
-  find_package(Snappy)
-endif()
+find_package(Snappy)
 if(SNAPPY_FOUND)
   include_directories(SYSTEM ${SNAPPY_INCLUDE_DIR})
   list(APPEND REINDEXER_LIBRARIES ${SNAPPY_LIBRARIES})
 else()
   if(WITH_TSAN)
     message(STATUS "Snappy will be downloaded from Github to avoid false-positive warnings from TSAN")
+  elseif(WITH_BUILTIN_LEVELDB)
+    message(STATUS "Builtin LevelDB was requested, so snappy also has to be downloaded")
   else()
     message(STATUS "Snappy not found. Will download it")
   endif()
@@ -480,6 +487,7 @@ else()
     )
   include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
   link_directories(${CMAKE_CURRENT_BINARY_DIR})
+
   list(APPEND REINDEXER_LIBRARIES snappy)
 endif()
 
@@ -568,14 +576,16 @@ if(GPERFTOOLS_TCMALLOC AND NOT WIN32)
   # shared version of leveldb can conflict with tcmalloc, so force static version of leveldb, if tcmalloc enabled
   set(LevelDB_NAMES libleveldb.a)
 endif()
-if(NOT WITH_TSAN)
+if(NOT RX_EMBED_LEVELDB)
   find_library(LevelDB_LIBRARY NAMES ${LevelDB_NAMES} leveldb HINTS $ENV{LEVELDB_ROOT}/lib)
   find_path(LevelDB_INCLUDE_DIR NAMES leveldb/db.h HINTS $ENV{LEVELDB_ROOT}/include /opt/local/include /usr/local/include /usr/include)
 endif()
 
-if(NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN)
+if(NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR RX_EMBED_LEVELDB)
   if(WITH_TSAN)
     message(STATUS "LevelDB will be downloaded from Github to avoid false-positive warnings from TSAN")
+  elseif(WITH_BUILTIN_LEVELDB)
+    message(STATUS "Builtin LevelDB was requested, so it will be downloaded")
   else()
     # Leveldb not found. Download it
     message(STATUS "LevelDB not found. Will download it")
@@ -597,7 +607,9 @@ if(NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN)
   include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
   link_directories(${CMAKE_CURRENT_BINARY_DIR})
   list(APPEND REINDEXER_LINK_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
-  list(INSERT REINDEXER_LIBRARIES 1 leveldb)
+  if(NOT RX_EMBED_LEVELDB)
+    list(INSERT REINDEXER_LIBRARIES 1 leveldb)
+  endif()
   add_dependencies(${TARGET}_obj leveldb_lib)
 else()
   message(STATUS "Found LevelDB: ${LevelDB_LIBRARY}")
@@ -605,6 +617,22 @@ else()
   list(INSERT REINDEXER_LIBRARIES 1 ${LevelDB_LIBRARY})
 endif()
 add_definitions(-DREINDEX_WITH_LEVELDB)
+
+if(RX_EMBED_LEVELDB)
+  if (WIN32)
+    message(FATAL_ERROR "Unable to embed LevelDB on Winowds platform. WITH_TSAN and WITH_BUILTIN_LEVELDB options have to be disabled")
+  endif()
+  add_custom_command(
+      TARGET ${TARGET}
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/cpp_src/combined"
+      COMMAND cd "${CMAKE_BINARY_DIR}/cpp_src/combined" &&
+              ar -M <"${PROJECT_SOURCE_DIR}/libreindexer.mri" &&
+              mv "libreindexer.a" ..
+      COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_BINARY_DIR}/cpp_src/combined"
+      COMMENT "Combining Reindexer, LevelDB and Snappy objects into single library"
+  )
+endif()
 
 # System libraries
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
@@ -725,6 +753,9 @@ endif()
 if(NOT REINDEXER_VERSION_FULL)
   set(REINDEXER_VERSION_FULL "v${REINDEXER_VERSION_DEFAULT}")
 endif()
+if(NOT "${VERSION_SUFFIX}" STREQUAL "")
+  set(REINDEXER_VERSION_FULL "${REINDEXER_VERSION_FULL}_${VERSION_SUFFIX}")
+endif()
 
 set(REINDEXER_VERSION_H "#pragma once\n#define REINDEX_VERSION \"${REINDEXER_VERSION_FULL}\"\n")
 
@@ -743,6 +774,9 @@ set(REINDEXER_VERSION_REDUCED ${REINDEXER_VERSION})
 
 if(CMAKE_MATCH_1)
   set(REINDEXER_VERSION ${REINDEXER_VERSION}.${REINDEXER_RELEASE})
+endif()
+if(NOT "${VERSION_SUFFIX}" STREQUAL "" AND NOT CMAKE_MATCH_2)
+  set(REINDEXER_VERSION "${REINDEXER_VERSION}_${VERSION_SUFFIX}")
 endif()
 
 # Packing and installation
@@ -764,14 +798,14 @@ endif()
 
 find_package(benchmark)
 if(benchmark_FOUND)
-  if(${benchmark_VERSION_MAJOR} EQUAL "1" AND ${benchmark_VERSION_MINOR} GREATER_EQUAL "5" AND ${benchmark_VERSION_MINOR} LESS_EQUAL "7")
+  if(${benchmark_VERSION_MAJOR} EQUAL "1" AND ${benchmark_VERSION_MINOR} GREATER_EQUAL "8" AND ${benchmark_VERSION_MINOR} LESS_EQUAL "9")
     find_package(GBenchmark)
     if(GBENCHMARK_FOUND)
       include_directories(SYSTEM ${GBENCHMARK_INCLUDE_DIR})
       add_subdirectory(gtests/bench)
     endif()
   else()
-    message(STATUS "Unsupported Google benchmark version: ${benchmark_VERSION}. Only versions 1.5.x-1.7.x are supported")
+    message(STATUS "Unsupported Google benchmark version: ${benchmark_VERSION}. Only versions 1.8.0-1.9.x are supported")
   endif()
 endif()
 

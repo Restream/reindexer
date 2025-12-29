@@ -41,6 +41,10 @@ public:
 	std::string Dump() const;
 	enum class [[nodiscard]] SerializeMask : uint8_t { K = 1 << 0, Radius = K << 1 };
 
+protected:
+	// NOLINTNEXTLINE (bugprone-crtp-constructor-accessibility)
+	KnnSearchParamsCRTPBase() noexcept = default;
+
 private:
 	std::optional<size_t> k_;
 	std::optional<float> radius_;
@@ -53,7 +57,10 @@ private:
  * KnnSearchParamsBase{}.Radius(3.f)
  * KnnSearchParamsBase{}.K(20).Radius(3.f)
  */
-class [[nodiscard]] KnnSearchParamsBase : public detail::KnnSearchParamsCRTPBase<KnnSearchParamsBase> {};
+class [[nodiscard]] KnnSearchParamsBase : public detail::KnnSearchParamsCRTPBase<KnnSearchParamsBase> {
+public:
+	KnnSearchParamsBase() noexcept = default;
+};
 
 /** Struct with parameters for search in HNSWBruteForce-index
  * Usage as for base structure

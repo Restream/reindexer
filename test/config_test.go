@@ -30,7 +30,7 @@ func TestDBMSVersion(t *testing.T) {
 		version, err := DB.Reindexer.DBMSVersion()
 		assert.NoError(t, err)
 
-		versionPattern := `^v\d+\.\d+\.\d+(\-\d+\-g[0-9a-f]{9,9})?$`
+		versionPattern := `^v\d+\.\d+\.\d+(\-\d+\-g[0-9a-f]{9,9})?(_static_leveldb)?$`
 		re := regexp.MustCompile(versionPattern)
 		match := re.MatchString(version)
 		assert.True(t, match, version)

@@ -13,7 +13,6 @@ public:
 	CJsonBuilder(WrSerializer& ser, ObjType objType = ObjType::TypeObject, const TagsMatcher* tm = nullptr)
 		: CJsonBuilder{ser, objType, tm, TagName::Empty()} {}
 	CJsonBuilder(WrSerializer&, ObjType, const TagsMatcher*, concepts::TagNameOrIndex auto);
-	CJsonBuilder() noexcept : tm_(nullptr), ser_(nullptr), type_(ObjType::TypePlain) {}
 	~CJsonBuilder() { End(); }
 	CJsonBuilder(const CJsonBuilder&) = delete;
 	CJsonBuilder(CJsonBuilder&& other) noexcept
@@ -37,60 +36,60 @@ public:
 
 	void Array(concepts::TagNameOrIndex auto tag, std::span<const p_string> data, int /*offset*/ = 0) {
 		putTag(tag, TAG_ARRAY);
-		ser_->PutCArrayTag(carraytag(data.size(), TAG_STRING));
+		ser_.PutCArrayTag(carraytag(data.size(), TAG_STRING));
 		for (auto d : data) {
-			ser_->PutVString(d);
+			ser_.PutVString(d);
 		}
 		++count_;
 	}
 	void Array(concepts::TagNameOrIndex auto, std::span<const Uuid> data, int offset = 0);
 	void Array(concepts::TagNameOrIndex auto tag, std::span<const int> data, int /*offset*/ = 0) {
 		putTag(tag, TAG_ARRAY);
-		ser_->PutCArrayTag(carraytag(data.size(), TAG_VARINT));
+		ser_.PutCArrayTag(carraytag(data.size(), TAG_VARINT));
 		for (auto d : data) {
-			ser_->PutVarint(d);
+			ser_.PutVarint(d);
 		}
 		++count_;
 	}
 	void Array(concepts::TagNameOrIndex auto tag, std::span<const int64_t> data, int /*offset*/ = 0) {
 		putTag(tag, TAG_ARRAY);
-		ser_->PutCArrayTag(carraytag(data.size(), TAG_VARINT));
+		ser_.PutCArrayTag(carraytag(data.size(), TAG_VARINT));
 		for (auto d : data) {
-			ser_->PutVarint(d);
+			ser_.PutVarint(d);
 		}
 		++count_;
 	}
 	void Array(concepts::TagNameOrIndex auto tag, std::span<const bool> data, int /*offset*/ = 0) {
 		putTag(tag, TAG_ARRAY);
-		ser_->PutCArrayTag(carraytag(data.size(), TAG_BOOL));
+		ser_.PutCArrayTag(carraytag(data.size(), TAG_BOOL));
 		for (auto d : data) {
-			ser_->PutBool(d);
+			ser_.PutBool(d);
 		}
 		++count_;
 	}
 	void Array(concepts::TagNameOrIndex auto tag, std::span<const double> data, int /*offset*/ = 0) {
 		putTag(tag, TAG_ARRAY);
-		ser_->PutCArrayTag(carraytag(data.size(), TAG_DOUBLE));
+		ser_.PutCArrayTag(carraytag(data.size(), TAG_DOUBLE));
 		for (auto d : data) {
-			ser_->PutDouble(d);
+			ser_.PutDouble(d);
 		}
 		++count_;
 	}
 	void Array(concepts::TagNameOrIndex auto tag, std::span<const float> data, int /*offset*/ = 0) {
 		putTag(tag, TAG_ARRAY);
-		ser_->PutCArrayTag(carraytag(data.size(), TAG_FLOAT));
+		ser_.PutCArrayTag(carraytag(data.size(), TAG_FLOAT));
 		for (auto d : data) {
-			ser_->PutFloat(d);
+			ser_.PutFloat(d);
 		}
 		++count_;
 	}
 	void Array(concepts::TagNameOrIndex auto, Serializer&, TagType, int count);
 	void HeteroArray(concepts::TagNameOrIndex auto tag, int count) {
 		putTag(tag, TAG_ARRAY);
-		ser_->PutCArrayTag(carraytag(count, TAG_OBJECT));
+		ser_.PutCArrayTag(carraytag(count, TAG_OBJECT));
 	}
 
-	void Write(std::string_view data) { ser_->Write(data); }
+	void Write(std::string_view data) { ser_.Write(data); }
 
 	void Put(concepts::TagNameOrIndex auto, bool, int offset = 0);
 	void Put(concepts::TagNameOrIndex auto, int, int offset = 0);
@@ -107,13 +106,13 @@ public:
 	void End() {
 		switch (type_) {
 			case ObjType::TypeArray:
-				*(reinterpret_cast<carraytag*>(ser_->Buf() + savePos_)) = carraytag(count_, itemType_);
+				*(reinterpret_cast<carraytag*>(ser_.Buf() + savePos_)) = carraytag(count_, itemType_);
 				break;
 			case ObjType::TypeObjectArray:
-				*(reinterpret_cast<carraytag*>(ser_->Buf() + savePos_)) = carraytag(count_, TAG_OBJECT);
+				*(reinterpret_cast<carraytag*>(ser_.Buf() + savePos_)) = carraytag(count_, TAG_OBJECT);
 				break;
 			case ObjType::TypeObject:
-				ser_->PutCTag(kCTagEnd);
+				ser_.PutCTag(kCTagEnd);
 				break;
 			case ObjType::TypePlain:
 				break;
@@ -141,15 +140,15 @@ public:
 	void Null(std::nullptr_t, Args...) = delete;
 
 private:
-	inline void putTag(TagName tagName, TagType tagType, int field = -1) { ser_->PutCTag(ctag{tagType, tagName, field}); }
-	inline void putTag(TagIndex, TagType tagType, int field = -1) { ser_->PutCTag(ctag{tagType, TagName::Empty(), field}); }
+	inline void putTag(TagName tagName, TagType tagType, int field = -1) { ser_.PutCTag(ctag{tagType, tagName, field}); }
+	inline void putTag(TagIndex, TagType tagType, int field = -1) { ser_.PutCTag(ctag{tagType, TagName::Empty(), field}); }
 
-	const TagsMatcher* tm_;
-	WrSerializer* ser_;
-	ObjType type_;
-	int savePos_ = 0;
-	int count_ = 0;
-	TagType itemType_ = TAG_OBJECT;
+	const TagsMatcher* tm_{nullptr};
+	WrSerializer& ser_;
+	ObjType type_{ObjType::TypePlain};
+	int savePos_{0};
+	int count_{0};
+	TagType itemType_{TAG_OBJECT};
 };
 
 }  // namespace builders

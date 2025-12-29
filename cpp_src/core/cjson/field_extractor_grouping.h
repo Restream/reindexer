@@ -20,7 +20,6 @@ struct [[nodiscard]] FieldsExtractorGroupingState {
 
 class [[nodiscard]] FieldsExtractorGrouping {
 public:
-	FieldsExtractorGrouping() noexcept = default;
 	FieldsExtractorGrouping(FieldsExtractorGroupingState state) noexcept : state_(state) {}
 
 	FieldsExtractorGrouping Object(TagIndex) {

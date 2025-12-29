@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include "core/idset.h"
+#include "core/idset/idset.h"
 #include "sort/pdqsort.hpp"
 #include "tools/errors.h"
 

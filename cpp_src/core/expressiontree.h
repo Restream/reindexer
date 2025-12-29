@@ -90,6 +90,7 @@ class [[nodiscard]] ExpressionTree {
 		};
 		template <typename T>
 		struct [[nodiscard]] GetVisitor<const T> {
+			// NOLINTNEXTLINE (bugprone-return-const-ref-from-parameter)
 			RX_ALWAYS_INLINE const T& operator()(const T& v) const noexcept { return v; }
 			template <typename U>
 			RX_ALWAYS_INLINE const T& operator()(const U&) const noexcept {
@@ -591,7 +592,8 @@ private:
 	};
 
 public:
-	RX_ALWAYS_INLINE bool operator==(const ExpressionTree& other) const noexcept {
+	RX_ALWAYS_INLINE bool operator==(const ExpressionTree& other) const
+		noexcept(noexcept(std::declval<typename Container::value_type>() != std::declval<typename Container::value_type>())) {
 		if (container_.size() != other.container_.size()) {
 			return false;
 		}

@@ -19,7 +19,7 @@ struct [[nodiscard]] RPCCall {
 			bool shardingParallelExecution_)
 		: cmd{cmd_},
 		  seq{seq_},
-		  args{args_},
+		  args{std::move(args_)},
 		  execTimeout{execTimeout_},
 		  lsn{lsn_},
 		  emitterServerId{emitterServerId_},

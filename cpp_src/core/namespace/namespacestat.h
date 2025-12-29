@@ -265,6 +265,8 @@ struct [[nodiscard]] EmbedderPerfStat {
 	unsigned int lastSecAvgCacheLatencyUs = 0;
 	unsigned int maxCacheLatencyUs = 0;
 	unsigned int minCacheLatencyUs = 0;
+	unsigned int inputTrafficTotalBytes = 0;
+	unsigned int outputTrafficTotalBytes = 0;
 	EmbedderCachePerfStat cacheStat;
 };
 

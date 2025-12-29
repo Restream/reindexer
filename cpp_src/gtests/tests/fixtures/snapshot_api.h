@@ -149,7 +149,7 @@ protected:
 	}
 	void Connect(net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient) {
 		reindexer::client::ConnectOpts opts;
-		opts.CreateDBIfMissing();
+		std::ignore = opts.CreateDBIfMissing();
 		auto err = rxClient.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
@@ -183,7 +183,9 @@ protected:
 		for (auto it1 = csn.begin(); it1 != csn.end() || it2 != sn.end(); ++it1, ++it2) {
 			ASSERT_TRUE(it1 != csn.end());
 			ASSERT_TRUE(it2 != sn.end());
+			// NOLINTNEXTLINE (performance-unnecessary-copy-initialization)
 			auto ch1 = it1.Chunk();
+			// NOLINTNEXTLINE (performance-unnecessary-copy-initialization)
 			auto ch2 = it2.Chunk();
 			EXPECT_EQ(ch1.Records().size(), ch2.Records().size());
 			EXPECT_EQ(ch1.IsTx(), ch2.IsTx());
@@ -196,6 +198,7 @@ protected:
 	size_t GetWALItemsCount(client::Snapshot& sn) {
 		size_t count = 0;
 		for (auto& ch : sn) {
+			// NOLINTNEXTLINE (performance-unnecessary-copy-initialization)
 			auto chunk = ch.Chunk();
 			if (chunk.IsWAL()) {
 				count += chunk.Records().size();

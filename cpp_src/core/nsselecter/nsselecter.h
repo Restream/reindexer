@@ -76,9 +76,8 @@ private:
 	void setLimitAndOffset(ItemRefVector& result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType, IndexValueType rankedIndexNo,
 							   bool availableSelectBySortIndex) const;
-	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, SkipSortingEntry&, StrictMode, IsRanked);
-	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index, const std::vector<JoinedSelector>&,
-									   SkipSortingEntry&, StrictMode);
+	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, StrictMode, IsRanked);
+	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index, const std::vector<JoinedSelector>&, StrictMode);
 	void getSortIndexValue(const SortingContext& sortCtx, IdType rowId, VariantArray& value, RankT, const joins::NamespaceResults*,
 						   const JoinedSelectors&, int shardId);
 	const CollateOpts& getSortIndexCollateOpts(const SortingContext& sortCtx, const JoinedSelectors&);
@@ -91,7 +90,7 @@ private:
 	size_t calculateNormalCost(const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
 	size_t calculateOptimizedCost(size_t costNormal, const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
 	bool isSortOptimizationEffective(const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
-	static bool validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName, const TagsMatcher& tagsMatcher);
+	static void validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName, const TagsMatcher& tagsMatcher);
 	void checkStrictModeAgg(StrictMode strictMode, std::string_view name, const NamespaceName& nsName,
 							const TagsMatcher& tagsMatcher) const;
 

@@ -17,7 +17,8 @@ class [[nodiscard]] PidFile {
 public:
 	PidFile(const std::string& name = std::string(), pid_t pid = -1) : file_(-1) {
 		if (!name.empty()) {
-			Open(name, pid);
+			[[maybe_unused]] bool success = Open(name, pid);
+			assertrx_dbg(success);
 		}
 	}
 	~PidFile() {

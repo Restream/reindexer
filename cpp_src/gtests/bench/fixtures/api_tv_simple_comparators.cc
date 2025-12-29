@@ -1,6 +1,7 @@
 #include "api_tv_simple_comparators.h"
 #include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/function/function.h"
 #include "helpers.h"
 
 using benchmark::AllocsTracker;
@@ -18,6 +19,8 @@ void ApiTvSimpleComparators::RegisterAllCases() {
 	Register("GetEqArrayInt", &ApiTvSimpleComparators::GetEqArrayInt, BasePtr());
 	Register("GetEqString", &ApiTvSimpleComparators::GetEqString, BasePtr());
 	Register("GetByRangeIDAndSort", &ApiTvSimpleComparators::GetByRangeIDAndSort, this);
+	Register("QueryFlatArrayLenIndexed", &ApiTvSimpleComparators::QueryFlatArrayLenIndexed<NoTotal>, this);
+	Register("QueryFlatArrayLenIndexedTotal", &ApiTvSimpleComparators::QueryFlatArrayLenIndexed<ReqTotal>, this);
 	Register("GetUuidStr", &ApiTvSimpleComparators::GetUuidStr, BasePtr());
 
 	Register("Query2Cond", &ApiTvSimpleComparators::Query2Cond<NoTotal>, BasePtr());
@@ -152,6 +155,29 @@ void ApiTvSimpleComparators::GetByRangeIDAndSort(benchmark::State& state) {
 		}
 	}
 }
+
+template <typename Total>
+void ApiTvSimpleComparators::QueryFlatArrayLenIndexed(State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Where(reindexer::functions::FlatArrayLen{"packages"}, CondGe, 1).Limit(20);
+		Total::Apply(q);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
+	}
+}
+
+template void ApiTvSimpleComparators::QueryFlatArrayLenIndexed<BaseFixture::NoTotal>(State&);
+template void ApiTvSimpleComparators::QueryFlatArrayLenIndexed<BaseFixture::ReqTotal>(State&);
 
 void ApiTvSimpleComparators::QueryDistinctOneField(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);

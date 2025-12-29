@@ -35,6 +35,8 @@ private:
 	void WarmUpIndexes(State& state);
 
 	void GetByRangeIDAndSort(State& state);
+	template <typename Total>
+	void QueryFlatArrayLenIndexed(State& state);
 
 	void QueryDistinctOneField(State& state);
 	void QueryDistinctTwoField(State& state);

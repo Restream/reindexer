@@ -41,7 +41,8 @@ public:
 		auto co_id = coroutine::current();
 		auto l = [&err, co_id](int _err, size_t /*cnt*/, std::span<char> /*buf*/) {
 			err = _err;
-			coroutine::resume(co_id);
+			[[maybe_unused]] auto res = coroutine::resume(co_id);
+			assertrx_dbg(!res);
 		};
 		return async_read_impl<buf_t, decltype(l), suspend_switch_policy>(data, cnt, std::move(l));
 	}
@@ -54,7 +55,8 @@ public:
 		auto co_id = coroutine::current();
 		auto l = [&err, co_id](int _err, size_t /*cnt*/, std::span<char> /*buf*/) {
 			err = _err;
-			coroutine::resume(co_id);
+			[[maybe_unused]] auto res = coroutine::resume(co_id);
+			assertrx_dbg(!res);
 		};
 		return async_write_impl<buf_t, decltype(l), suspend_switch_policy>(data, std::move(l), send_now);
 	}
@@ -152,7 +154,7 @@ private:
 		if (data.size()) {
 			auto data_span = std::span<char>(data.data(), data.size());
 			if (send_now && state_ != conn_state::connecting) {
-				write(data_span, transfer, int_err);
+				std::ignore = write(data_span, transfer, int_err);
 			}
 			if (!send_now || (!int_err && transfer.transfered_size() < transfer.expected_size()) || sock_.would_block(int_err)) {
 				w_data_.set_cb(data_span, std::move(cb));

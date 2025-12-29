@@ -18,7 +18,8 @@ public:
 	FullText(Reindexer* db, const std::string& name, size_t maxItems);
 
 	virtual reindexer::Error Initialize() override;
-	void RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount);
+	void RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount,
+						  std::optional<size_t> verySlowIterationCount);
 
 private:
 	enum class [[nodiscard]] FTBuildType { Full, Incremental };
@@ -43,6 +44,11 @@ private:
 
 	void Fast2PhraseLowDiversity(State& state);
 	void Fast2AndWordLowDiversity(State& state);
+
+	void TurnOnSynonyms();
+	void TurnOffSynonyms();
+
+	void Fast3WordsSynonymsLowDiversity(State& state);
 
 	void BuildCommonIndexes(State& state);
 	void BuildFastTextIndex(State& state);
@@ -80,6 +86,7 @@ private:
 	[[nodiscard]] std::vector<std::string> GetRandomCountries(size_t cnt = 5);
 	reindexer::Item MakeLowDiversityItem(int id);
 
+	reindexer::FtFastConfig ftLowDiversityCfg_;
 	std::vector<std::string> words2_;
 	std::vector<std::string> countries_;
 

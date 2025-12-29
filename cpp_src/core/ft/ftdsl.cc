@@ -230,7 +230,7 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 			}
 		}
 
-		maxPatternLen = (fte.pattern.length() > maxPatternLen) ? fte.pattern.length() : maxPatternLen;
+		maxPatternLen = (fte.Pattern().length() > maxPatternLen) ? fte.Pattern().length() : maxPatternLen;
 		terms_.emplace_back(std::move(fte));
 		if (inGroup) {
 			++groupTermCounter;
@@ -246,8 +246,8 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 
 	int cnt = 0;
 	for (auto& t : terms_) {
-		t.opts.termLenBoost = float(t.pattern.length()) / maxPatternLen;
-		t.opts.qpos = cnt++;
+		t.Opts().termLenBoost = float(t.pattern.length()) / maxPatternLen;
+		t.Opts().qpos = cnt++;
 	}
 }
 

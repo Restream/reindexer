@@ -504,7 +504,7 @@ void AsyncReplConfigData::GetYAML(WrSerializer& ser) const {
 			"# Possible values: none, error, warning, info, trace.\n"
 			"log_level: " + std::string(logLevelToString(logLevel)) + "\n"
 			"# Synchronization token for asynchronous replication\n"
-			+ selfReplToken + "\n"
+			"self_replication_token: " + selfReplToken + "\n"
 			"# List of namespaces for replication. If empty, all namespaces\n"
 			"# All replicated namespaces will become read only for followers\n"
 			"# It should be written as YAML sequence, JSON-style arrays are not supported\n"

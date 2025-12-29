@@ -16,11 +16,10 @@ IndexStore<Point>::IndexStore(const IndexDef& idef, PayloadType&& payloadType, F
 template <>
 void IndexStore<key_string>::Delete(const Variant& key, [[maybe_unused]] IdType id, [[maybe_unused]] MustExist mustExist,
 									StringsHolder& strHolder, bool& /*clearCache*/) {
-	assertrx_dbg(!IsFulltext());
 	if (key.Type().Is<KeyValueType::Null>()) {
 		return;
 	}
-	if (!shouldHoldValueInStrMap()) {
+	if (!shouldHoldOriginalValueInStrMap()) {
 		return;
 	}
 	auto keyIt = str_map.find(std::string_view(key));
@@ -39,7 +38,7 @@ void IndexStore<key_string>::Delete(const Variant& key, [[maybe_unused]] IdType 
 }
 template <typename T>
 void IndexStore<T>::Delete(const Variant& /*key*/, IdType /* id */, MustExist, StringsHolder&, bool& /*clearCache*/) {
-	assertrx_dbg(!IsFulltext());
+	assertrx_dbg(!IsFulltext() || Type() == IndexFuzzyFT || Type() == IndexCompositeFuzzyFT);
 }
 
 template <typename T>
@@ -60,13 +59,12 @@ void IndexStore<Point>::Delete(const VariantArray& /*keys*/, IdType /*id*/, Must
 
 template <>
 Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
-	assertrx_dbg(!IsFulltext());
 	if (key.Type().Is<KeyValueType::Null>()) {
 		return Variant();
 	}
 
 	std::string_view val;
-	const bool holdValueInStrMap = shouldHoldValueInStrMap();
+	const bool holdValueInStrMap = shouldHoldOriginalValueInStrMap();
 	auto keyIt = str_map.end();
 	if (holdValueInStrMap) {
 		keyIt = str_map.find(std::string_view(key));
@@ -80,7 +78,7 @@ Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*cl
 	} else {
 		val = std::string_view(key);
 	}
-	if (!IsColumnIndexDisabled() && !IsFulltext()) {
+	if (!IsColumnIndexDisabled()) {
 		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
 		idx_data[id] = val;
 	}
@@ -95,6 +93,7 @@ Variant IndexStore<PayloadValue>::Upsert(const Variant& key, IdType /*id*/, bool
 
 template <typename T>
 Variant IndexStore<T>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
+	assertrx_dbg(!IsFulltext() || Type() == IndexFuzzyFT || Type() == IndexCompositeFuzzyFT);
 	if (!IsColumnIndexDisabled() && !key.Type().Is<KeyValueType::Null>()) {
 		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
 		idx_data[id] = static_cast<T>(key);
@@ -193,11 +192,6 @@ void IndexStore<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue& q) 
 		str_map.add_destroy_task(&q);
 	}
 	(void)q;
-}
-
-template <typename T>
-bool IndexStore<T>::shouldHoldValueInStrMap() const noexcept {
-	return this->opts_.GetCollateMode() != CollateNone || Type() == IndexStrStore;
 }
 
 std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields) {

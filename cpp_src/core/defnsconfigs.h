@@ -143,10 +143,11 @@ const NamespaceDef kSystemNsDefs[] = {
 	NamespaceDef(kActivityStatsNamespace, StorageOpts())
 		.AddIndex("query_id", "hash", "int", IndexOpts().PK())
 		.AddIndex("client", "-", "string", IndexOpts().Dense().NoIndexColumn())
+		.AddIndex("user", "-", "string", IndexOpts().Dense().NoIndexColumn())
 		.AddIndex("query", "-", "string", IndexOpts().Dense().NoIndexColumn())
 		.AddIndex("query_start", "-", "string", IndexOpts().Dense().NoIndexColumn())
-		.AddIndex("blocked", "-", "bool", IndexOpts().Dense().NoIndexColumn())
-		.AddIndex("description", "-", "string", IndexOpts().Sparse()),
+		.AddIndex("state", "-", "string", IndexOpts().Dense().NoIndexColumn())
+		.AddIndex("lock_description", "-", "string", IndexOpts().Sparse()),
 	NamespaceDef(kQueriesPerfStatsNamespace, StorageOpts())
 		.AddIndex("query", "hash", "string", IndexOpts().PK())
 		.AddIndex("total_queries_count", "-", "int64", IndexOpts().Dense().NoIndexColumn())

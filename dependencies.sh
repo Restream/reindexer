@@ -62,7 +62,7 @@ altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel libgperftools-d
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
-    cmake_version=$(cmake --version  2>/dev/null | grep -oE '3\.[0-9]+\.[0-9]+')
+    cmake_version=$(cmake --version  2>/dev/null | grep -oE '3(3.2[5-9]+\.[0-9]+)|(3\.[3-9][0-9]+\.[0-9]+)|(4\.[0-9]+\.[0-9]+)')
     if [ -n "$cmake_version" ]; then
         info_msg "Cmake with comaptable version $cmake_version found"
         return
@@ -71,13 +71,13 @@ cmake_installed () {
 }
 
 install_cmake_linux () {
-    info_msg "Installing 'cmake' package ....."
+    info_msg "Installing 'cmake' package from github ....."
     case `uname -m` in
         x86_64)
             curl -L https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-Linux-x86_64.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
             ;;
         *)
-            warning_msg "Fallback to system 'cmake' package. Be sure, cmake version must be at least 3.18.x"
+            warning_msg "Fallback to system 'cmake' package. Be sure, cmake version must be at least 3.25.x"
             apt-get -y install cmake >/dev/null 2>&1
             ;;
     esac
@@ -236,6 +236,7 @@ install_arch() {
             fi
         fi
     done
+    cmake_installed || install_cmake_linux
     return $?
 }
 
@@ -258,6 +259,7 @@ install_alpine() {
             fi
         fi
     done
+    cmake_installed || install_cmake_linux
     return $?
 }
 
@@ -276,6 +278,7 @@ install_redos() {
             fi
         fi
     done
+    cmake_installed || install_cmake_linux
     return $?
 }
 
@@ -295,6 +298,7 @@ install_altlinux() {
             fi
         fi
     done
+    cmake_installed || install_cmake_linux
     return $?
 }
 
@@ -359,3 +363,4 @@ if [ -z "$@" ]; then
 else
   $@
 fi
+

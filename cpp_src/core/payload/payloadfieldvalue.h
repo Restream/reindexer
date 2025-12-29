@@ -42,28 +42,27 @@ public:
 			throwSetTypeMissmatch(kv);
 		}
 
-		t_.Type().EvaluateOneOf([&](KeyValueType::Int) noexcept { copyVariantToPtr<int>(kv); },
-								[&](KeyValueType::Bool) noexcept { copyVariantToPtr<bool>(kv); },
-								[&](KeyValueType::Int64) noexcept { copyVariantToPtr<int64_t>(kv); },
-								[&](KeyValueType::Double) noexcept { copyVariantToPtr<double>(kv); },
-								[&](KeyValueType::String) noexcept { copyVariantToPtr<p_string>(kv); },
-								[&](KeyValueType::Uuid) noexcept { copyVariantToPtr<Uuid>(kv); },
-								[&](KeyValueType::FloatVector) {
-									assertrx(!kv.DoHold());
-									ConstFloatVectorView vect{kv};
-									if (!vect.IsEmpty() && t_.FloatVectorDimension() != vect.Dimension()) {
-										throw Error{errNotValid,
-													"Attempt to write vector of dimension {} in a float vector field of dimension {}",
-													vect.Dimension().Value(), t_.FloatVectorDimension().Value()};
-									}
-									uint64_t v = vect.Payload();
-									std::memcpy(p_, &v, sizeof(uint64_t));
-								},
-								[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
-												   KeyValueType::Null, KeyValueType::Float> auto) noexcept {
-									assertrx(0);
-									abort();
-								});
+		t_.Type().EvaluateOneOf(
+			[&](KeyValueType::Int) noexcept { copyVariantToPtr<int>(kv); },
+			[&](KeyValueType::Bool) noexcept { copyVariantToPtr<bool>(kv); },
+			[&](KeyValueType::Int64) noexcept { copyVariantToPtr<int64_t>(kv); },
+			[&](KeyValueType::Double) noexcept { copyVariantToPtr<double>(kv); },
+			[&](KeyValueType::String) noexcept { copyVariantToPtr<p_string>(kv); }, [&](KeyValueType::Uuid) { copyVariantToPtr<Uuid>(kv); },
+			[&](KeyValueType::FloatVector) {
+				assertrx(!kv.DoHold());
+				ConstFloatVectorView vect{kv};
+				if (!vect.IsEmpty() && t_.FloatVectorDimension() != vect.Dimension()) {
+					throw Error{errNotValid, "Attempt to write vector of dimension {} in a float vector field of dimension {}",
+								vect.Dimension().Value(), t_.FloatVectorDimension().Value()};
+				}
+				uint64_t v = vect.Payload();
+				std::memcpy(p_, &v, sizeof(uint64_t));
+			},
+			[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+							   KeyValueType::Float> auto) noexcept {
+				assertrx(0);
+				abort();
+			});
 	}
 	Variant Get() noexcept { return Get(Variant::noHold); }
 	template <typename HoldT>

@@ -124,6 +124,7 @@ def get_tidy_invocation(f, clang_tidy_binary, checks, tmpdir, build_path,
     start.append('-allow-enabling-analyzer-alpha-checkers')
   if header_filter is not None:
     start.append('-header-filter=' + header_filter)
+  start.append('--system-headers=0')  
   if line_filter is not None:
     start.append('-line-filter=' + line_filter)
   if use_color is not None:

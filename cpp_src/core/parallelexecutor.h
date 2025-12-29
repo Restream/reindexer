@@ -26,7 +26,7 @@ public:
 	ParallelExecutor(int localShardId) : localShardId_(localShardId) {}
 
 	template <typename Func, typename FLocal, typename... Args>
-	Error Exec(const RdxContext& rdxCtx, sharding::ConnectionsPtr&& connections, const Func& f, const FLocal& local, Args&&... args) {
+	Error Exec(const RdxContext& rdxCtx, sharding::ConnectionsPtr&& connections, const Func& f, const FLocal& local, const Args&... args) {
 		condition_variable cv;
 		mutex mtx;
 
@@ -41,7 +41,7 @@ public:
 
 		size_t clientCount = countClientConnection(*connections.get());
 		for (auto itr = connections->rbegin(); itr != connections->rend(); ++itr) {
-			if (auto connection = *itr; connection) {
+			if (const auto& connection = *itr; connection) {
 				const int shardId = itr->ShardId();
 				auto& clientData = results.emplace_back(shardId);
 				clientData.connection =
@@ -52,14 +52,16 @@ public:
 						.WithShardId(shardId, true);
 
 				auto& conn = clientData.connection;
-				auto invokeWrap = [&f, &conn](auto&&... args) { return std::invoke(f, conn, std::forward<decltype(args)>(args)...); };
+				auto invokeWrap = [&f, &conn]<typename... WrapperArgs>(WrapperArgs&&... wrapperArgs) {
+					return std::invoke(f, conn, std::forward<WrapperArgs>(wrapperArgs)...);
+				};
 
 				Error err;
 				// check whether it is necessary to pass the ShardId to the function
 				if constexpr (std::is_invocable_v<Func, client::Reindexer&, Args..., int>) {
-					err = invokeWrap(std::forward<Args>(args)..., shardId);
+					err = invokeWrap(args..., shardId);
 				} else {
-					err = invokeWrap(std::forward<Args>(args)...);
+					err = invokeWrap(args...);
 				}
 
 				if (!err.ok()) {
@@ -67,7 +69,7 @@ public:
 					clientErrors.emplace_back(std::move(err), shardId);
 				}
 			} else {
-				Error err = local(std::forward<Args>(args)...);
+				Error err = local(args...);
 				isLocalCall = 1;
 				if (!err.ok()) {
 					lock_guard lck(mtx);
@@ -83,7 +85,7 @@ public:
 	}
 	template <typename ClientF, typename LocalF, typename T, typename Predicate, typename... Args>
 	Error ExecCollect(const RdxContext& rdxCtx, sharding::ConnectionsPtr&& connections, const ClientF& clientF, const LocalF& local,
-					  std::vector<T>& result, const Predicate& predicated, std::string_view nsName, Args&&... args) {
+					  std::vector<T>& result, const Predicate& predicated, std::string_view nsName, const Args&... args) {
 		condition_variable cv;
 		mutex mtx;
 		std::vector<std::pair<Error, int>> clientErrors;
@@ -94,21 +96,21 @@ public:
 		auto ward = rdxCtx.BeforeShardingProxy();
 		size_t clientCount = countClientConnection(*connections.get());
 		for (auto itr = connections->rbegin(); itr != connections->rend(); ++itr) {
-			if (auto connection = *itr; connection) {
+			if (const auto& connection = *itr; connection) {
 				const int shardId = itr->ShardId();
 				auto& clientData = results.emplace_back();
 				clientData.connection =
 					connection->WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error& err) {
 						completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
 					});
-				Error err = std::invoke(clientF, clientData.connection, nsName, std::forward<Args>(args)..., clientData.results);
+				Error err = std::invoke(clientF, clientData.connection, nsName, args..., clientData.results);
 				if (!err.ok()) {
 					lock_guard lck(mtx);
 					clientErrors.emplace_back(std::move(err), shardId);
 				}
 			} else {
 				auto& localData = results.emplace_back();
-				Error err = local(nsName, std::forward<Args>(args)..., localData.results, localShardId_);
+				Error err = local(nsName, args..., localData.results, localShardId_);
 				isLocalCall = 1;
 				if (!err.ok()) {
 					lock_guard lck(mtx);

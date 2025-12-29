@@ -23,8 +23,8 @@ public:
 	void Configure(AsyncReplConfigData asyncConfig);
 	bool IsExpectingAsyncReplStartup() const noexcept;
 	bool IsExpectingClusterStartup() const noexcept;
-	Error StartClusterRepl();
-	Error StartAsyncRepl();
+	Error StartClusterRepl() noexcept;
+	Error StartAsyncRepl() noexcept;
 	void StopCluster() noexcept;
 	void StopAsyncRepl() noexcept;
 	void Stop(bool disable = false) noexcept;
@@ -75,6 +75,7 @@ private:
 	net::ev::async terminateAsync_;
 	std::atomic<bool> enabled_ = {false};
 	Logger log_;
+	std::shared_ptr<NamespacesSyncScheduler> nssSyncScheduler_;
 };
 
 }  // namespace cluster

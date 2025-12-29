@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <initializer_list>
+#include "core/function/function.h"
 #include "core/keyvalue/geometry.h"
 #include "estl/concepts.h"
 #include "estl/forward_like.h"
@@ -32,6 +33,7 @@ concept PossibleMultiVariantContainer = concepts::Iterable<T> && !concepts::Conv
 /// @class Query
 /// Allows to select data from DB.
 /// Analog to ansi-sql select query.
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
 class [[nodiscard]] Query {
 public:
 	/// Creates an object for certain namespace with appropriate settings.
@@ -90,7 +92,7 @@ public:
 
 	/// @class ValuesWrapper
 	/// Allows to wrap input values.
-	/// Helps to provide single interface in Query for VariantArrays, std-containers, single values and iterable sequnces.
+	/// Helps to provide single interface in Query for VariantArrays, std-containers, single values and iterable sequences.
 	class [[nodiscard]] ValuesWrapper {
 	public:
 		ValuesWrapper(const ValuesWrapper&) = delete;
@@ -235,6 +237,64 @@ public:
 	/// @return Query object ready to be executed.
 	Query& DWithin(Query&& q, Point p, double distance) & { return Where(std::move(q), CondDWithin, VariantArray::Create(p, distance)); }
 	[[nodiscard]] Query&& DWithin(Query&& q, Point p, double distance) && { return std::move(DWithin(std::move(q), p, distance)); }
+
+	/// Adds a condition with a user-defined function.
+	/// @param function - function object used in condition clause.
+	/// @param cond - type of condition.
+	/// @param values - sequence of index values to be compared with.
+	/// @return Query object ready to be executed.
+	template <concepts::Function Function>
+	Query& Where(Function&& function, CondType cond, ValuesWrapper values) & {
+		std::ignore = entries_.Append<QueryFunctionEntry>(nextOp_, std::forward<Function>(function), cond, std::move(values).Extract());
+		nextOp_ = OpAnd;
+		return *this;
+	}
+
+	template <concepts::Function Function>
+	Query&& Where(Function&& function, CondType cond, ValuesWrapper values) && {
+		return std::move(Where(std::forward<Function>(function), cond, std::move(values).Extract()));
+	}
+
+	/// Adds a condition with a user-defined function.
+	/// @param function - function object used in condition clause.
+	/// @param cond - type of condition.
+	/// @param values - sequence of index values to be compared with.
+	/// @return Query object ready to be executed.
+	Query& Where(functions::FunctionVariant&& function, CondType cond, ValuesWrapper values) & {
+		std::ignore = entries_.Append<QueryFunctionEntry>(nextOp_, std::move(function), cond, std::move(values).Extract());
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	Query&& Where(functions::FunctionVariant&& function, CondType cond, ValuesWrapper values) && {
+		return std::move(Where(std::move(function), cond, std::move(values).Extract()));
+	}
+
+	/// Adds a condition to compare user-defined function values and nested query results.
+	/// @param function - function object used in condition clause.
+	/// @param cond - type of condition.
+	/// @param q - nested query, that has to return some sequence of values (selection or aggregation result).
+	/// @return Query object ready to be executed.
+	Query& Where(functions::FunctionVariant&& function, CondType cond, Query&& q) & {
+		if (cond == CondDWithin) {
+			throw Error(errLogic, "DWithin between field and subquery");
+		}
+		q.checkSubQueryWithData();
+		adoptNested(q);
+		if (q.HasCalcTotal() ||
+			(!q.aggregations_.empty() && (q.aggregations_[0].Type() == AggCount || q.aggregations_[0].Type() == AggCountCached))) {
+			q.Limit(0);
+		}
+		std::ignore = entries_.Append<SubQueryFunctionEntry>(nextOp_, std::move(function), cond, subQueries_.size());
+		PopBackQEGuard guard{&entries_};
+		adoptNested(q);
+		subQueries_.emplace_back(std::move(q));
+		guard.Reset();
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	Query&& Where(functions::FunctionVariant&& function, CondType cond, Query&& q) && {
+		return std::move(Where(std::move(function), cond, std::move(q)));
+	}
 
 	/// Adds nested query and applies condition with passed 'values' to it's results.
 	/// @param q - nested query, that has to return some sequence of values (selection or aggregation result).
@@ -970,7 +1030,7 @@ private:
 
 	void checkSetObjectValue(const Variant& value) const;
 	virtual void deserializeJoinOn(Serializer& ser);
-	void deserialize(Serializer& ser, bool& hasJoinConditions);
+	void deserialize(Serializer& ser);
 	VariantArray deserializeValues(Serializer&, CondType) const;
 	virtual void serializeJoinEntries(WrSerializer& ser) const;
 	void checkSubQueryNoData() const;
@@ -999,7 +1059,7 @@ private:
 	bool explain_ = false;						   /// Explain query if true
 	OpType nextOp_ = OpAnd;						   /// Next operation constant.
 };
-
+// NOLINTEND(clang-analyzer-optin.performance.Padding)
 class [[nodiscard]] JoinedQuery final : public Query {
 public:
 	JoinedQuery(JoinType jt, const Query& q) : Query(q), joinType{jt} {}

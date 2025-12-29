@@ -170,7 +170,7 @@ private:
 	struct [[nodiscard]] QrStorage {
 		QrStorage() = default;
 		QrStorage(const QrStorage&) = delete;
-		QrStorage(QrStorage&& o)
+		QrStorage(QrStorage&& o) noexcept
 			: uid(o.uid.load(std::memory_order_relaxed)),
 			  lastAccessTime(o.lastAccessTime.load(std::memory_order_relaxed)),
 			  qr(std::move(o.qr)) {}

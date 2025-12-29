@@ -25,6 +25,10 @@ const int kItemsInComparatorsBenchDataset = 100'000;
 int main(int argc, char** argv) {
 	using namespace std::string_view_literals;
 
+#ifdef HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
+	benchmark::MaybeReenterWithoutASLR(argc, argv);
+#endif	// HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
+
 	auto DB = InitBenchDB("bench_test"sv);
 
 	JoinItems joinItems(DB.get(), 50'000);
@@ -98,4 +102,7 @@ int main(int argc, char** argv) {
 	equalPosition.RegisterAllCases();
 
 	::benchmark::RunSpecifiedBenchmarks();
+	::benchmark::Shutdown();
+
+	return 0;
 }

@@ -31,6 +31,8 @@ private:
 	uint64_t fpos_ = 0;
 };
 
+using PositionsVector = h_vector<PosType, 3>;
+
 class [[nodiscard]] PosTypeSimple {
 public:
 	PosTypeSimple() = default;
@@ -62,6 +64,7 @@ public:
 	explicit IdRelType(VDocIdType id = 0) noexcept : id_(id) {}
 	IdRelType(IdRelType&&) noexcept = default;
 	IdRelType(const IdRelType&) = default;
+
 	IdRelType& operator=(IdRelType&&) noexcept = default;
 	IdRelType& operator=(const IdRelType&) = default;
 
@@ -106,8 +109,8 @@ public:
 										[](const PosType& lhs, const PosType& rhs) noexcept { return lhs.pos() < rhs.pos(); });
 	}
 
-	const h_vector<PosType, 3>& Pos() const noexcept { return pos_; }
-	h_vector<PosType, 3>& Pos() noexcept { return pos_; }
+	const PositionsVector& Pos() const noexcept { return pos_; }
+	PositionsVector& Pos() noexcept { return pos_; }
 
 	size_t HeapSize() const noexcept { return pos_.heap_size(); }
 
@@ -122,7 +125,7 @@ public:
 	}
 
 private:
-	h_vector<PosType, 3> pos_;
+	PositionsVector pos_;
 	VDocIdType id_ = 0;	 // index of the document in which the word occurs
 };
 
@@ -171,11 +174,11 @@ public:
 	public:
 		iterator(const PackedIdRelVec* pv, store_container::const_iterator it, state st, size_t arrayFoundPos)
 			: pv_(pv), it_(it), st_(st), arrayFoundPos_(arrayFoundPos) {
-			unpack();
+			std::ignore = unpack();
 		}
 
 		iterator& operator++() {
-			unpack();
+			std::ignore = unpack();
 			it_ += curItemSize_;
 			curItemSize_ = 0;
 			return *this;

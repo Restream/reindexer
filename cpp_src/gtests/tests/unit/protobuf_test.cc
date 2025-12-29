@@ -434,7 +434,7 @@ TEST_F(ReindexerApi, ProtobufEncodingTest) {
 	person.set_enabled(true);
 
 	reindexer::WrSerializer wrser;
-	reindexer::ProtobufBuilder builder(&wrser);
+	reindexer::ProtobufBuilder builder(wrser);
 	builder.Put(reindexer::TagName(person.kNameFieldNumber), kNameValue);
 	builder.Put(reindexer::TagName(person.kIdFieldNumber), KIdValue);
 	builder.Put(reindexer::TagName(person.kAgeFieldNumber), kAgeValue);
@@ -680,7 +680,7 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	ASSERT_TRUE(nsItem.Status().ok()) << nsItem.Status().what();
 
 	reindexer::WrSerializer wrser;
-	reindexer::ProtobufBuilder builder(&wrser);
+	reindexer::ProtobufBuilder builder(wrser);
 	builder.Put(nsItem.GetFieldTag("name"), kNameValue);
 	builder.Put(nsItem.GetFieldTag("id"), KIdValue);
 	builder.Put(nsItem.GetFieldTag("age"), kAgeValue);

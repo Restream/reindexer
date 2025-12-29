@@ -3,11 +3,13 @@
 #include <memory>
 #include <string_view>
 #include "core/cjson/ctag.h"
+#include "core/enums.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/uuid.h"
 #include "core/keyvalue/variant.h"
 #include "core/rank_t.h"
 #include "estl/chunk.h"
+#include "estl/membuf.h"
 #include "tools/stringstools.h"
 #include "tools/varint.h"
 
@@ -269,7 +271,8 @@ public:
 			[&](KeyValueType::Null) noexcept {}, [&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
 			[&](KeyValueType::FloatVector) { PutFloatVectorView(ConstFloatVectorView{kv}); },
 			[&](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined> auto) {
-				fprintf(stderr, "reindexer error: unknown keyType %s\n", kv.Type().Name().data());
+				std::string name(kv.Type().Name());
+				fprintf(stderr, "reindexer error: unknown keyType %s\n", name.data());
 				abort();
 			});
 	}
@@ -519,11 +522,11 @@ public:
 		len_ += slice.size();
 	}
 	RX_ALWAYS_INLINE uint8_t* Buf() const noexcept { return buf_; }
-	std::unique_ptr<uint8_t[]> DetachBuf() {
+	std::unique_ptr<uint8_t[]> DetachBuf(size_t minCap = 0) {
 		std::unique_ptr<uint8_t[]> ret;
 
 		if (!HasAllocatedBuffer()) {
-			ret.reset(new uint8_t[len_]);
+			ret.reset(new uint8_t[std::max(len_, minCap)]);
 			memcpy(ret.get(), buf_, len_);
 		} else {
 			ret.reset(buf_);
@@ -534,7 +537,7 @@ public:
 		hasExternalBuf_ = false;
 		return ret;
 	}
-	std::unique_ptr<uint8_t[]> DetachLStr();
+	MemBuf DetachLStr(Shrink shrink = Shrink_False);
 	chunk DetachChunk() {
 		chunk ch;
 		if (!HasAllocatedBuffer()) {

@@ -105,6 +105,16 @@ public:
 			counter_->OnServerIdChanged(nodeId, serverId);
 		}
 	}
+	void OnNamespaceSynchronized(size_t nodeId) noexcept {
+		if (counter_) {
+			counter_->OnNamespaceSynchronized(nodeId);
+		}
+	}
+	void OnEnqueueNamespacesSync(size_t nodeId, size_t count) noexcept {
+		if (counter_) {
+			counter_->OnEnqueueNamespacesSync(nodeId, count);
+		}
+	}
 	void SaveNodeError(size_t nodeId, const Error& err) {
 		if (counter_) {
 			counter_->SaveNodeError(nodeId, err);

@@ -36,7 +36,7 @@ public:
 	template <typename ContainerT>
 	void ReinitAsyncQueue(ReplicationStatsCollector statsCollector, std::optional<ContainerT>&& allowList, const Logger& l);
 	template <typename ContextT>
-	std::pair<Error, bool> Push(UpdatesContainerT&& data, std::function<void()> beforeWait, const ContextT& ctx) RX_REQUIRES(!mtx_);
+	std::pair<Error, bool> Push(UpdatesContainerT&& data, const std::function<void()>& beforeWait, const ContextT& ctx) RX_REQUIRES(!mtx_);
 	std::pair<Error, bool> PushNowait(UpdatesContainerT&& data) RX_REQUIRES(!mtx_);
 	std::pair<Error, bool> PushAsync(UpdatesContainerT&& data) RX_REQUIRES(!mtx_);
 

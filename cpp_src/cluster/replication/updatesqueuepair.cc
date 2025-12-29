@@ -98,7 +98,7 @@ void UpdatesQueuePair<T>::ReinitAsyncQueue(ReplicationStatsCollector statsCollec
 
 template <typename T>
 template <typename ContextT>
-std::pair<Error, bool> UpdatesQueuePair<T>::Push(UpdatesContainerT&& data, std::function<void()> beforeWait, const ContextT& ctx) {
+std::pair<Error, bool> UpdatesQueuePair<T>::Push(UpdatesContainerT&& data, const std::function<void()>& beforeWait, const ContextT& ctx) {
 	const auto shardPair = GetQueue(data[0].NsName());
 	if (shardPair.sync) {
 		if (shardPair.async) {
@@ -113,7 +113,7 @@ std::pair<Error, bool> UpdatesQueuePair<T>::Push(UpdatesContainerT&& data, std::
 
 template class UpdatesQueuePair<updates::UpdateRecord>;
 template std::pair<Error, bool> UpdatesQueuePair<updates::UpdateRecord>::Push(
-	typename UpdatesQueuePair<updates::UpdateRecord>::UpdatesContainerT&&, std::function<void()>, const RdxContext&);
+	typename UpdatesQueuePair<updates::UpdateRecord>::UpdatesContainerT&&, const std::function<void()>&, const RdxContext&);
 
 template void UpdatesQueuePair<updates::UpdateRecord>::ReinitSyncQueue(ReplicationStatsCollector, std::optional<NsNamesHashSetT>&&,
 																	   const Logger&);

@@ -13,7 +13,6 @@
 namespace reindexer {
 
 class Item;
-class ReindexerImpl;
 
 namespace cluster {
 struct ReplicationStats;

@@ -171,50 +171,50 @@ int QueryPreprocessor::calculateMaxIterations(size_t from, size_t to, int maxMax
 	int current = maxMaxIters;
 	for (size_t cur = from; cur < to; cur = Next(cur)) {
 		maxIterations[cur] = std::min(
-			maxMaxIters, Visit(
-							 cur,
-							 [&](const QueryEntriesBracket&) {
-								 return calculateMaxIterations(cur + 1, Next(cur), maxMaxIters, maxIterations, inTransaction,
-															   enableSortOrders, rdxCtx);
-							 },
-							 [&](const QueryEntry& qe) {
-								 if (qe.IndexNo() >= 0) {
-									 Index& index = *ns_.indexes_[qe.IndexNo()];
-									 if (IsFullText(index.Type()) || isStore(index.Type())) {
-										 return maxMaxIters;
-									 }
+			maxMaxIters,
+			Visit(
+				cur,
+				[&](const QueryEntriesBracket&) {
+					return calculateMaxIterations(cur + 1, Next(cur), maxMaxIters, maxIterations, inTransaction, enableSortOrders, rdxCtx);
+				},
+				[&](const QueryEntry& qe) {
+					if (qe.IndexNo() >= 0) {
+						Index& index = *ns_.indexes_[qe.IndexNo()];
+						if (IsFullText(index.Type()) || isStore(index.Type())) {
+							return maxMaxIters;
+						}
 
-									 Index::SelectOpts opts;
-									 if (qe.Distinct()) {
-										 opts.distinct = 1;
-									 }
-									 opts.itemsCountInNamespace = ns_.itemsCount();
-									 opts.disableIdSetCache = 1;
-									 opts.unbuiltSortOrders = 0;
-									 opts.indexesNotOptimized = !enableSortOrders;
-									 opts.inTransaction = inTransaction;
-									 opts.strictMode = StrictModeNone;	// Strict mode does not matter here
-									 const auto selIters =
-										 index.SelectKey(qe.Values(), qe.Condition(), 0, Index::SelectContext{opts, std::nullopt}, rdxCtx);
+						Index::SelectOpts opts;
+						if (qe.Distinct()) {
+							opts.distinct = 1;
+						}
+						opts.itemsCountInNamespace = ns_.itemsCount();
+						opts.disableIdSetCache = 1;
+						opts.unbuiltSortOrders = 0;
+						opts.indexesNotOptimized = !enableSortOrders;
+						opts.inTransaction = inTransaction;
+						opts.strictMode = StrictModeNone;  // Strict mode does not matter here
+						const auto selIters =
+							index.SelectKey(qe.Values(), qe.Condition(), 0, Index::SelectContext{opts, std::nullopt}, rdxCtx);
 
-									 if (auto* selRes = std::get_if<SelectKeyResultsVector>(&selIters); selRes) {
-										 int res = 0;
-										 for (const auto& sIt : *selRes) {
-											 res += sIt.GetMaxIterations();
-										 }
-										 return res;
-									 }
-									 return maxMaxIters;
-								 } else {
-									 return maxMaxIters;
-								 }
-							 },
-							 [maxMaxIters](const concepts::OneOf<BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue, KnnQueryEntry,
-																 MultiDistinctQueryEntry> auto&) noexcept {
-								 return maxMaxIters;
-							 },	 // TODO maybe change for knn
-							 [](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&) -> int { throw_as_assert; },
-							 [&](const AlwaysFalse&) noexcept { return 0; }));
+						if (auto* selRes = std::get_if<SelectKeyResultsVector>(&selIters); selRes) {
+							int res = 0;
+							for (const auto& sIt : *selRes) {
+								res += sIt.GetMaxIterations();
+							}
+							return res;
+						}
+						return maxMaxIters;
+					} else {
+						return maxMaxIters;
+					}
+				},
+				[maxMaxIters](const concepts::OneOf<BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue, KnnQueryEntry,
+													MultiDistinctQueryEntry, QueryFunctionEntry> auto&) noexcept {
+					return maxMaxIters;
+				},	// TODO maybe change for knn
+				[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) -> int { throw_as_assert; },
+				[&](const AlwaysFalse&) noexcept { return 0; }));
 		switch (GetOperation(cur)) {
 			case OpAnd:
 				res = std::min(res, current);
@@ -308,7 +308,9 @@ bool QueryPreprocessor::containsJoin(size_t n) noexcept {
 	return Visit(
 		n, [](const JoinQueryEntry&) noexcept { return true; },
 		[](const concepts::OneOf<QueryEntry, BetweenFieldsQueryEntry, AlwaysTrue, AlwaysFalse, SubQueryEntry, SubQueryFieldEntry,
-								 KnnQueryEntry, MultiDistinctQueryEntry> auto&) noexcept { return false; },
+								 KnnQueryEntry, MultiDistinctQueryEntry, QueryFunctionEntry, SubQueryFunctionEntry> auto&) noexcept {
+			return false;
+		},
 		[&](const QueryEntriesBracket&) noexcept {
 			for (size_t i = n, e = Next(n); i < e; ++i) {
 				if (Is<JoinQueryEntry>(i)) {
@@ -660,7 +662,7 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 	for (auto cur = begin; cur != end; cur = Next(cur)) {
 		Visit(
 			cur, Skip<JoinQueryEntry, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
-			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&) { throw_as_assert; },
+			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { throw_as_assert; },
 			[this, cur](QueryEntriesBracket& bracket) {
 				for (auto& equalPositions : bracket.equalPositions) {
 					for (auto& epField : equalPositions) {
@@ -696,6 +698,15 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 				checkStrictMode(qe.FieldData());
 				checkAllowedCondition(qe.FieldData(), qe.Condition());
 				qe.ConvertValuesToFieldType(ns_.payloadType_);
+			},
+			[this](QueryFunctionEntry& qe) {
+				for (size_t i = 0; i < qe.Fields(); ++i) {
+					auto& fieldData = qe.FieldData(i);
+					if (!fieldData.FieldsHaveBeenSet()) {
+						SetQueryField(fieldData, ns_);
+					}
+					checkStrictMode(fieldData);
+				}
 			},
 			[this](KnnQueryEntry& qe) {
 				if (!qe.FieldsHaveBeenSet()) {
@@ -748,27 +759,28 @@ const Index* QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin,
 void QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
 									 h_vector<FoundIndexInfo, 32>& foundIndexes) const {
 	for (auto it = begin; it != end; ++it) {
-		const auto foundIdx =
-			it->Visit([](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&) -> FoundIndexInfo { throw_as_assert; },
-					  [this, &it, &foundIndexes](const QueryEntriesBracket&) {
-						  findMaxIndex(it.cbegin(), it.cend(), foundIndexes);
-						  return FoundIndexInfo();
-					  },
-					  [this](const QueryEntry& entry) -> FoundIndexInfo {
-						  if (entry.IsFieldIndexed() && !entry.Distinct()) {
-							  const auto idxPtr = ns_.indexes_[entry.IndexNo()].get();
-							  if (idxPtr->IsOrdered() && !idxPtr->Opts().IsArray()) {
-								  if (IsOrderedCondition(entry.Condition())) {
-									  return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Compatible};
-								  } else if (entry.Condition() == CondAny || entry.Values().size() > 1) {
-									  return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Incompatible};
-								  }
-							  }
-						  }
-						  return {};
-					  },
-					  [](const concepts::OneOf<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry,
-											   MultiDistinctQueryEntry> auto&) noexcept { return FoundIndexInfo(); });
+		const auto foundIdx = it->Visit(
+			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) -> FoundIndexInfo { throw_as_assert; },
+			[this, it, end](const QueryEntry& entry) -> FoundIndexInfo {
+				// Consider only isolated root entries with ordered indexes
+				auto cur = it, next = it;
+				++next;
+				if (entry.IsFieldIndexed() && !entry.Distinct() && cur->operation == OpAnd && (next == end || next->operation != OpOr)) {
+					const auto idxPtr = ns_.indexes_[entry.IndexNo()].get();
+					if (idxPtr->IsOrdered() && !idxPtr->Opts().IsArray()) {
+						const auto cond = entry.Condition();
+						if (IsOrderedCondition(cond)) {
+							return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Compatible};
+						} else if (cond == CondEq || cond == CondSet || cond == CondAllSet) {
+							// Do not apply implicit sort if one of those conditions exist
+							return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Incompatible};
+						}
+					}
+				}
+				return {};
+			},
+			[](const concepts::OneOf<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry,
+									 MultiDistinctQueryEntry, QueryEntriesBracket, QueryFunctionEntry> auto&) noexcept { return FoundIndexInfo(); });
 		if (foundIdx.index) {
 			auto found = std::find_if(foundIndexes.begin(), foundIndexes.end(),
 									  [foundIdx](const FoundIndexInfo& i) { return i.index == foundIdx.index; });
@@ -1704,7 +1716,7 @@ size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS
 		if (it != from || container_[it].operation != OpAnd) {
 			ser << container_[it].operation << ' ';
 		}
-		container_[it].Visit([](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&) { throw_as_assert; },
+		container_[it].Visit([](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { throw_as_assert; },
 							 [&](const QueryEntriesBracket& b) {
 								 ser << "(";
 								 briefDump(it + 1, Next(it), joinedSelectors, ser);
@@ -1712,6 +1724,10 @@ size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS
 								 ser << ")";
 							 },
 							 [&ser, &totalQeValues](const QueryEntry& qe) {
+								 ser << qe.DumpBrief() << ' ';
+								 totalQeValues += qe.Values().size();
+							 },
+							 [&ser, &totalQeValues](const QueryFunctionEntry& qe) {
 								 ser << qe.DumpBrief() << ' ';
 								 totalQeValues += qe.Values().size();
 							 },
@@ -1738,8 +1754,9 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 	size_t injectedCount = 0;
 	for (size_t cur = from; cur < to; cur = Next(cur)) {
 		container_[cur].Visit(
-			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&) { throw_as_assert; },
-			Skip<QueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, MultiDistinctQueryEntry>{},
+			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { throw_as_assert; },
+			Skip<QueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, MultiDistinctQueryEntry,
+				 QueryFunctionEntry>{},
 			[&](const QueryEntriesBracket&) {
 				const size_t injCount =
 					injectConditionsFromJoins<ExplainPolicy>(cur + 1, Next(cur), js, explainOnInjections, maxIterations[cur], maxIterations,

@@ -316,6 +316,7 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 		void PutVarUInt(uint64_t v) override { ser_.PutVarUint(v); }
 		void PutVarInt(int64_t v) override { ser_.PutVarint(v); }
 		void PutVarInt(int32_t v) override { ser_.PutVarint(v); }
+		void PutFloat(float v) override { ser_.PutFloat(v); }
 		void PutVString(std::string_view slice) override { ser_.PutVString(slice); }
 		void AppendPKByID(hnswlib::labeltype label) override {
 			static_assert(std::numeric_limits<hnswlib::labeltype>::min() >= 0, "Unexpected labeltype limit. Extra check is required");
@@ -355,23 +356,24 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 
 template <>
 Error HnswIndexBase<hnswlib::BruteforceSearch>::LoadIndexCache(std::string_view /*data*/, bool /*isCompositePK*/,
-															   VecDataGetterF&& /*getVectorData*/) {
+															   VecDataGetterF&& /*getVectorData*/, uint8_t /*version*/) {
 	return Error(errLogic, "{}:Bruteforce index can not be loaded from binary cache", Name());
 }
 
 template <typename Map>
-Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData) {
+Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData, uint8_t version) {
 	if (!getVectorData) [[unlikely]] {
 		return Error(errParams, "HNSWIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
 	}
 
 	class [[nodiscard]] Reader final : public hnswlib::IReader, private LoaderBase {
 	public:
-		Reader(std::string_view name, std::string_view data, VecDataGetterF&& getVectorData, bool isCompositePK) noexcept
-			: hnswlib::IReader(), LoaderBase{std::move(getVectorData), isCompositePK}, name_{name}, ser_{data} {}
+		Reader(std::string_view name, std::string_view data, VecDataGetterF&& getVectorData, bool isCompositePK, size_t version) noexcept
+			: hnswlib::IReader(), LoaderBase{std::move(getVectorData), isCompositePK}, name_{name}, ser_{data}, version_(version) {}
 
 		uint64_t GetVarUInt() override { return ser_.GetVarUInt(); }
 		int64_t GetVarInt() override { return ser_.GetVarint(); }
+		float GetFloat() override { return ser_.GetFloat(); }
 		std::string_view GetVString() override { return ser_.GetVString(); }
 		hnswlib::labeltype ReadPkEncodedData(char* destBuf) override {
 			using namespace std::string_view_literals;
@@ -379,13 +381,16 @@ Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isComposite
 		}
 		size_t RemainingSize() const noexcept { return ser_.Len() - ser_.Pos(); }
 
+		uint8_t Version() override { return version_; }
+
 	private:
 		std::string_view name_;
 		Serializer ser_;
+		uint8_t version_;
 	};
 
 	try {
-		Reader reader(Name(), data, std::move(getVectorData), isCompositePK);
+		Reader reader(Name(), data, std::move(getVectorData), isCompositePK, version);
 		const uint64_t magic = reader.GetVarUInt();
 		if (magic != kStorageMagic) {
 			throw std::runtime_error("Incorrect HNSW storage magic");

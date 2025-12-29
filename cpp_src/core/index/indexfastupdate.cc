@@ -77,6 +77,10 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 			PayloadFieldType f(ns.name_.ToLower(), index, to, ns.embeddersCache_, ns.enablePerfCounters_);
 			f.SetOffset(ns.payloadType_.Field(idx).Offset());
 			ns.payloadType_.Replace(idx, std::move(f));
+			for (auto& idx : ns.indexes_) {
+				idx->UpdatePayloadType(PayloadType{ns.payloadType_});
+			}
+			ns.tagsMatcher_.UpdatePayloadType(ns.payloadType_, ns.indexes_.SparseIndexes(), NeedChangeTmVersion::No);
 		}
 
 		index.SetOpts(to.Opts());

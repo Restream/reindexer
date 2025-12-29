@@ -91,7 +91,7 @@ public:
 		/// application *MUST* hold str until end of life of Item
 		/// @param str - pointer to C null-terminated string, which will be set to field
 		FieldRef& operator=(const char* str);
-		/// Set string value<br>
+		/// Set string value to field
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
 		/// application *MUST* hold str until end of life of Item
 		/// @param str - std::string, which will be set to field
@@ -112,7 +112,7 @@ public:
 		FieldRef& operator=(Variant kr);
 		/// Set field value
 		/// @param krs - key reference object, which will be set to field
-		FieldRef& operator=(const VariantArray& krs);
+		FieldRef& operator=(VariantArray krs);
 
 	private:
 		void throwIfNotSet() const;
@@ -211,6 +211,12 @@ public:
 	/// @param name - field name
 	/// @return name's numeric field value
 	int GetFieldIndex(std::string_view name) const;
+	/// Get field size.
+	/// @param fields - set of fields
+	size_t GetFieldSize(const FieldsSet& fields) const;
+	/// Get field size.
+	/// @param jsonPath - json path of a field
+	size_t GetFieldSize(std::string_view jsonPath) const;
 	/// Get PK fields
 	FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation

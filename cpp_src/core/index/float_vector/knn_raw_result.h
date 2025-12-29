@@ -47,6 +47,7 @@ public:
 	template <concepts::OneOf<Base, HnswKnnRawResult, IvfKnnRawResult, EmptyKnnRawResult> T>
 	KnnRawResult(T&& base, VectorMetric metric) noexcept : Base{std::forward<T>(base)}, metric_{metric} {}
 
+	// NOLINTNEXTLINE (bugprone-exception-escape)
 	size_t Size() const noexcept {
 		return std::visit(overloaded{[](const HnswKnnRawResult& r) noexcept { return r.size(); },
 									 [](const IvfKnnRawResult& r) noexcept -> size_t { return r.Ids().size(); },

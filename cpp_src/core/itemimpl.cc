@@ -15,18 +15,24 @@
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
+#include "core/query/expression/function_parser.h"
 #include "core/rdxcontext.h"
 #include "estl/gift_str.h"
 
 namespace reindexer {
 
-void ItemImpl::SetField(int field, const VariantArray& krs, NeedCreate needCopy) {
+void ItemImpl::SetField(int field, VariantArray&& krs, NeedCreate needCopy) {
 	validateModifyArray(krs);
 	cjson_ = {};
+
 	if (needCopy) {
 		payloadValue_.Clone();
 	}
-	auto& ptField = payloadType_.Field(field);
+
+	const auto& ptField = payloadType_.Field(field);
+	if (ptField.JsonPaths().empty()) [[unlikely]] {
+		throw Error(errLogic, "Unable to set index value: index does not have jsonpath");
+	}
 
 	auto setFieldValueSafe = [this, &ptField, field](const VariantArray& newValue) {
 		auto pl = GetPayload();
@@ -36,14 +42,16 @@ void ItemImpl::SetField(int field, const VariantArray& krs, NeedCreate needCopy)
 		try {
 			// TODO: We should modify CJSON for any default value or array size change #1837
 			bool modifyCjson = false;
-			if (ptField.Type().Is<KeyValueType::FloatVector>()) {
+			if (ptField.IsArray()) {
+				modifyCjson = (oldValues.size() != newValue.size());
+			} else if (ptField.Type().Is<KeyValueType::FloatVector>()) {
 				assertrx_throw(oldValues.size() == 1);
 				assertrx_throw(newValue.size() <= 1);
 				const auto oldSize = oldValues[0].As<ConstFloatVectorView>().Dimension();
 				const auto newSize = newValue.empty() ? FloatVectorDimension() : newValue[0].As<ConstFloatVectorView>().Dimension();
 				modifyCjson = (oldSize != newSize);
 			}
-			if (modifyCjson && ptField.JsonPaths().size()) {
+			if (modifyCjson) {
 				ModifyField(ptField.JsonPaths()[0], newValue, FieldModeSet);
 			}
 		} catch (...) {
@@ -53,30 +61,25 @@ void ItemImpl::SetField(int field, const VariantArray& krs, NeedCreate needCopy)
 	};
 
 	if (!unsafe_ && !krs.empty() && ptField.Type().IsOneOf<KeyValueType::String, KeyValueType::FloatVector>()) {
-		VariantArray krsCopy;
-		krsCopy.reserve(krs.size());
-
 		if (payloadType_.Field(field).Type().Is<KeyValueType::String>()) {
 			if (!holder_) {
 				holder_ = std::make_unique<ItemImplRawData::HolderT>();
 			}
 			for (auto& kr : krs) {
 				auto& back = holder_->emplace_back(kr.As<key_string>());
-				krsCopy.emplace_back(p_string{back});
+				kr = Variant(p_string{back});
 			}
 		} else {
 			floatVectorsHolder_.reserve(floatVectorsHolder_.size() + krs.size());
 			for (auto& kr : krs) {
-				const ConstFloatVectorView vect{kr};
-				if (floatVectorsHolder_.Add(vect)) {
-					krsCopy.emplace_back(floatVectorsHolder_.Back());
-				} else {
-					krsCopy.emplace_back(vect);
+				if (floatVectorsHolder_.Add(ConstFloatVectorView{kr})) {
+					kr = Variant(floatVectorsHolder_.Back());
 				}
 			}
 		}
-		setFieldValueSafe(krsCopy);
+		setFieldValueSafe(krs);
 	} else {
+		std::ranges::for_each(krs, [&ptField](auto& v) { std::ignore = v.convert(ptField.Type()); });
 		setFieldValueSafe(krs);
 	}
 }
@@ -156,10 +159,10 @@ void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& 
 		throw Error(errLogic, "Error modifying field value: '{}'", e.what());
 	}
 
-	initTupleFrom(std::move(pl), ser_);
+	initTupleFrom(std::move(pl), ser_, Shrink_False);
 }
 
-void ItemImpl::SetField(std::string_view jsonPath, const VariantArray& keys) { ModifyField(jsonPath, keys, FieldModeSet); }
+void ItemImpl::SetField(std::string_view jsonPath, VariantArray&& keys) { ModifyField(jsonPath, keys, FieldModeSet); }
 void ItemImpl::DropField(std::string_view jsonPath) { ModifyField(jsonPath, {}, FieldModeDrop); }
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
 void ItemImpl::GetField(int field, VariantArray& values) { GetPayload().Get(field, values); }
@@ -180,7 +183,7 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t& offset) {
 	ser_.PutUInt32(0);
 	Error err = msgPackDecoder_->Decode(data, pl, ser_, offset, floatVectorsHolder_);
 	if (err.ok()) {
-		initTupleFrom(std::move(pl), ser_);
+		initTupleFrom(std::move(pl), ser_, Shrink_True);
 	}
 	return err;
 }
@@ -199,7 +202,7 @@ Error ItemImpl::FromProtobuf(std::string_view buf) {
 	ser_.PutUInt32(0);
 	Error err = decoder.Decode(data, pl, ser_, floatVectorsHolder_);
 	if (err.ok()) {
-		initTupleFrom(std::move(pl), ser_);
+		initTupleFrom(std::move(pl), ser_, Shrink_True);
 	}
 	return err;
 }
@@ -227,7 +230,7 @@ std::string_view ItemImpl::GetMsgPack() {
 
 Error ItemImpl::GetProtobuf(WrSerializer& wrser) {
 	ConstPayload pl = GetConstPayload();
-	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
+	ProtobufBuilder protobufBuilder(wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
 	ProtobufEncoder protobufEncoder(&tagsMatcher_, fieldsFilter_);
 	protobufEncoder.Encode(pl, protobufBuilder);
 	return {};
@@ -242,7 +245,7 @@ void ItemImpl::Clear() {
 	floatVectorsHolder_ = FloatVectorsHolderVector();
 	sourceData_.reset();
 	largeJSONStrings_.clear();
-	tupleData_.reset();
+	tupleData_.Reset();
 	ser_ = WrSerializer();
 
 	GetPayload().Reset();
@@ -297,7 +300,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 		throw Error(errParseJson, "Internal error - left unparsed data {}", rdser.Pos());
 	}
 
-	initTupleFrom(std::move(pl), ser_);
+	initTupleFrom(std::move(pl), ser_, Shrink_True);
 }
 
 Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
@@ -347,7 +350,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 	ser_.PutUInt32(0);
 	auto err = decoder.Decode(pl, ser_, node.value, floatVectorsHolder_);
 	if (err.ok()) {
-		initTupleFrom(std::move(pl), ser_);
+		initTupleFrom(std::move(pl), ser_, Shrink_True);
 	}
 	return err;
 }
@@ -435,7 +438,7 @@ void ItemImpl::BuildTupleIfEmpty() {
 		ser.PutUInt32(0);  // Empty lstring header
 		auto pl = GetPayload();
 		buildPayloadTuple(pl, &tagsMatcher_, ser);
-		initTupleFrom(std::move(pl), ser);
+		initTupleFrom(std::move(pl), ser, Shrink_True);
 	}
 }
 
@@ -499,6 +502,29 @@ int checkEmbedderCalcField(const PayloadType& payloadType, std::string_view inde
 }  // namespace
 
 void ItemImpl::Embed(const RdxContext& ctx) {
+	std::bitset<kMaxIndexes> skipFieldsEmbed;
+	bool needReturn = false;
+	size_t i = 0;
+	while (i < precepts_.size()) {
+		auto sqlFunc = QueryFunctionParser::Parse(precepts_[i]);
+		if (sqlFunc.field == "*" && sqlFunc.funcName == "skip_embedding") {
+			precepts_.erase(precepts_.begin() + i);
+			needReturn = true;
+		} else if (sqlFunc.funcName == "skip_embedding") {
+			int fieldId = payloadType_.FieldByName(sqlFunc.field);
+			std::shared_ptr<const UpsertEmbedder> embedder = payloadType_.Field(fieldId).UpsertEmbedder();
+			if (!embedder) {
+				throw Error{errLogic, "'skip_embedding' posible only on float vector index", sqlFunc.field};
+			}
+			skipFieldsEmbed.set(fieldId, true);
+			precepts_.erase(precepts_.begin() + i);
+		} else {
+			++i;
+		}
+	}
+	if (needReturn) {
+		return;
+	}
 	try {
 		payloadValue_.Clone();
 		auto pl = GetPayload();
@@ -514,7 +540,9 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 			if (!embedder) {
 				continue;  // do nothing
 			}
-
+			if (skipFieldsEmbed.test(field)) {
+				continue;
+			}
 			ThrowOnCancel(ctx);
 
 			int fieldId = payloadType_.FieldByName(embedder->FieldName());
@@ -541,7 +569,7 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 			VariantArray krs;
 			krs.emplace_back(products.front().View());
 
-			SetField(fieldId, krs, NeedCreate_False);
+			SetField(fieldId, std::move(krs), NeedCreate_False);
 		}
 		unsafe_ = unsafe;
 	} catch (Error& err) {
@@ -554,10 +582,12 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 	}
 }
 
-void ItemImpl::initTupleFrom(Payload&& pl, WrSerializer& ser) {
+void ItemImpl::initTupleFrom(Payload&& pl, WrSerializer& ser, Shrink shrink) {
 	// Put tuple to field[0]
-	tupleData_ = ser.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::noHold));
+	auto oldTuple = std::move(tupleData_);
+	tupleData_ = ser.DetachLStr(shrink);
+	ser = WrSerializer(oldTuple.DetachChunk());
+	pl.Set(0, Variant(p_string(reinterpret_cast<const l_string_hdr*>(tupleData_.Get())), Variant::noHold));
 }
 
 std::string_view ItemImpl::createSafeDataCopy(std::string_view slice) {

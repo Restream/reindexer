@@ -30,7 +30,7 @@ class [[nodiscard]] CommandsProcessor {
 public:
 	template <typename... Args>
 	CommandsProcessor(const std::string& outFileName, const std::string& inFileName, const std::vector<std::string>& selectedNamespaces,
-					  unsigned numThreads, unsigned transactionSize, Args... args)
+					  unsigned numThreads, unsigned transactionSize, Args... args)	// NOLINT(performance-unnecessary-value-param)
 		: inFileName_(inFileName),
 		  selectedNamespaces_(selectedNamespaces.begin(), selectedNamespaces.end()),
 		  output_(outFileName),
@@ -126,7 +126,7 @@ private:
 		std::string db() const {
 			if (scheme() == "ucproto") {
 				std::vector<std::string_view> pathParts;
-				reindexer::split(std::string_view(path()), ":", true, pathParts);
+				std::ignore = reindexer::split(std::string_view(path()), ":", true, pathParts);
 				return pathParts.size() >= 2 ? std::string(pathParts.back()) : std::string();
 			}
 			return httpparser::UrlParser::db();

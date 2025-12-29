@@ -8,6 +8,10 @@ int main(int argc, char** argv) {
 	using namespace std::string_view_literals;
 	namespace knn_bench = reindexer::knn_bench;
 
+#ifdef HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
+	benchmark::MaybeReenterWithoutASLR(argc, argv);
+#endif	// HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
+
 	auto DB = InitBenchDB("knn_bench_test"sv);
 
 	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::L2> hnswL2(DB.get(), "hnsw_l2_bench"sv);
@@ -61,4 +65,7 @@ int main(int argc, char** argv) {
 	ivfInnerProduct.RegisterAllCases();
 
 	::benchmark::RunSpecifiedBenchmarks();
+	::benchmark::Shutdown();
+
+	return 0;
 }

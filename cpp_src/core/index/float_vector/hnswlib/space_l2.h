@@ -88,8 +88,6 @@ public:
 	DistCalculatorParam get_dist_calculator_param() noexcept override {
 		return {.f = fstdistfunc_, .metric = MetricType::L2, .dims = dim_};
 	}
-
-	void* get_dist_func_param() noexcept override { return &dim_; }
 };
 
 template class L2SpaceBase<float>;

@@ -1129,3 +1129,15 @@ func TestJoinedFieldUpsert(t *testing.T) {
 	require.Greater(t, len(j), 0)
 	require.NotContains(t, string(j), "JoinedField")
 }
+
+func TestJoinNonOpenedNs(t *testing.T) {
+	t.Parallel()
+
+	_, err := DB.Query(testJoinItemsNs).
+		InnerJoin(DB.Query("non_opened_ns"), "joined").
+		On("id", reindexer.EQ, "id").
+		ExecToJson().
+		FetchAll()
+
+	require.ErrorContains(t, err, "Namespace is not found")
+}

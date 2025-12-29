@@ -22,7 +22,6 @@ public:
 				   const TagsMatcher* tm = nullptr);
 	MsgPackBuilder(msgpack_packer& packer, const TagsLengths* tagsLengths, int* startTag, ObjType = ObjType::TypeObject,
 				   const TagsMatcher* tm = nullptr);
-	MsgPackBuilder() noexcept : tm_(nullptr), packer_(), tagsLengths_(nullptr), type_(ObjType::TypePlain), tagIndex_(nullptr) {}
 	~MsgPackBuilder() { End(); }
 	MsgPackBuilder(MsgPackBuilder&& other) noexcept
 		: tm_(other.tm_), packer_(other.packer_), tagsLengths_(other.tagsLengths_), type_(other.type_), tagIndex_(other.tagIndex_) {}
@@ -66,7 +65,7 @@ public:
 	}
 
 	template <typename T>
-	MsgPackBuilder Array(T tagName, int size = KUnknownFieldSize) {
+	MsgPackBuilder Array(const T& tagName, int size = KUnknownFieldSize) {
 		packKeyName(tagName);
 		if (size == KUnknownFieldSize) {
 			assertrx(tagsLengths_ && tagIndex_);
@@ -247,11 +246,11 @@ private:
 
 	void appendJsonObject(std::string_view name, const gason::JsonNode& obj);
 
-	const TagsMatcher* tm_;
+	const TagsMatcher* tm_{nullptr};
 	msgpack_packer packer_;
-	const TagsLengths* tagsLengths_;
-	ObjType type_;
-	int* tagIndex_;
+	const TagsLengths* tagsLengths_{nullptr};
+	ObjType type_{ObjType::TypePlain};
+	int* tagIndex_{nullptr};
 };
 }  // namespace builders
 using builders::MsgPackBuilder;

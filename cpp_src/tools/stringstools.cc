@@ -8,6 +8,7 @@
 #include "tools/assertrx.h"
 #include "tools/randomgenerator.h"
 #include "tools/serializer.h"
+#include "tools/strntoll.h"
 #include "utf8cpp/utf8.h"
 #include "vendor/double-conversion/double-conversion.h"
 #include "vendor/frozen/unordered_map.h"
@@ -686,51 +687,29 @@ ComparationResult collateCompare<CollateUTF8>(std::string_view lhs, std::string_
 	return ComparationResult::Eq;
 }
 
-static long int strntol(std::string_view str, const char** end, int base) noexcept {
-	char buf[24];
-	long int ret;
-	const char* beg = str.data();
-	auto sz = str.size();
-	for (; beg && sz && *beg == ' '; beg++, sz--);
-	assertrx_dbg(end);
-
-	if (!sz || sz >= sizeof(buf)) {
-		*end = str.data();
-		return 0;
-	}
-
-	// beg can not be null if sz != 0
-	// NOLINTNEXTLINE(clang-analyzer-core.NonNullParamChecker)
-	std::memcpy(buf, beg, sz);
-	buf[sz] = '\0';
-	ret = std::strtol(buf, const_cast<char**>(end), base);
-	if (ret == LONG_MIN || ret == LONG_MAX) {
-		return ret;
-	}
-	*end = str.data() + (*end - buf);
-	return ret;
-}
-
 template <>
 ComparationResult collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept {
 	const char* posl = nullptr;
 	const char* posr = nullptr;
 
-	int numl = strntol(lhs, &posl, 10);
-	int numr = strntol(rhs, &posr, 10);
+	const auto numl = strntoll(lhs, &posl, 10);
+	const auto numr = strntoll(rhs, &posr, 10);
 
 	if (numl == numr) {
-		auto minlen = std::min(lhs.size() - (posl - lhs.data()), rhs.size() - (posr - rhs.data()));
+		const auto lStrLen = lhs.size() - (posl ? (posl - lhs.data()) : 0);
+		const auto rStrLen = rhs.size() - (posr ? (posr - rhs.data()) : 0);
+		auto minlen = std::min(lStrLen, rStrLen);
+		assertrx_dbg((posl && posr) || !minlen);
 		auto res = strncmp(posl, posr, minlen);
 
 		if (res != 0) {
 			return res < 0 ? ComparationResult::Lt : ComparationResult::Gt;
 		}
 
-		return lhs.size() > rhs.size() ? ComparationResult::Gt : (lhs.size() < rhs.size() ? ComparationResult::Lt : ComparationResult::Eq);
+		return lStrLen > rStrLen ? ComparationResult::Gt : (lStrLen < rStrLen ? ComparationResult::Lt : ComparationResult::Eq);
 	}
 
-	return numl > numr ? ComparationResult::Gt : (numl < numr ? ComparationResult::Lt : ComparationResult::Eq);
+	return numl > numr ? ComparationResult::Gt : ComparationResult::Lt;
 }
 
 template <>

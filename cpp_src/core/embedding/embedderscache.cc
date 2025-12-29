@@ -121,7 +121,7 @@ public:
 
 	Error EnableStorage(const std::string& storagePathRoot, datastorage::StorageType type) noexcept;
 
-	std::optional<embedding::ValueT> Get(const embedding::Adapter& srcAdapter);
+	std::optional<embedding::ValueT> Get(const embedding::Adapter& srcAdapter, bool enablePerfStat);
 	void Put(const embedding::Adapter& srcAdapter, const embedding::ValuesT& values);
 
 	void Clear(NeedCreate recreateStorage) noexcept;
@@ -220,21 +220,27 @@ Error EmbeddersLRUCache::EnableStorage(const std::string& storagePathRoot, datas
 	return {};
 }
 
-std::optional<embedding::ValueT> EmbeddersLRUCache::Get(const embedding::Adapter& srcAdapter) {
+std::optional<embedding::ValueT> EmbeddersLRUCache::Get(const embedding::Adapter& srcAdapter, bool enablePerfStat) {
 	if (!IsActive()) {
 		return std::nullopt;
 	}
+
+	auto addCounterIfEnable = [enablePerfStat](std::atomic_uint64_t& counter) {
+		if (enablePerfStat) {
+			counter.fetch_add(1u, std::memory_order_relaxed);
+		}
+	};
 
 	{
 		lock_guard lck(cacheMtx_);
 		const auto it = map_.find(srcAdapter.View());
 		if (it == map_.end()) {
-			misses_.fetch_add(1u, std::memory_order_relaxed);
+			addCounterIfEnable(misses_);
 			return std::nullopt;
 		}
 		queue_.splice(queue_.begin(), queue_, it->second);
 		if (it->second->second < hitToCache_) {
-			misses_.fetch_add(1u, std::memory_order_relaxed);
+			addCounterIfEnable(misses_);
 			return std::nullopt;
 		}
 	}
@@ -245,7 +251,7 @@ std::optional<embedding::ValueT> EmbeddersLRUCache::Get(const embedding::Adapter
 		shared_lock lck(storageMtx_);
 		const auto err = storage_->Read(opts, srcAdapter.View(), value);
 		if (!err.ok()) {
-			misses_.fetch_add(1u, std::memory_order_relaxed);
+			addCounterIfEnable(misses_);
 			return std::nullopt;
 		}
 	}
@@ -253,7 +259,7 @@ std::optional<embedding::ValueT> EmbeddersLRUCache::Get(const embedding::Adapter
 	Serializer rdser(value);
 	embedding::ValueT res{rdser.GetFloatVectorView()};
 
-	hits_.fetch_add(1u, std::memory_order_relaxed);
+	addCounterIfEnable(hits_);
 	return res;
 }
 
@@ -554,7 +560,7 @@ void EmbeddersCache::IncludeTag(std::string_view tag) {
 	includeTag(CacheTag{tag});
 }
 
-std::optional<embedding::ValueT> EmbeddersCache::Get(const CacheTag& tag, const embedding::Adapter& srcAdapter) {
+std::optional<embedding::ValueT> EmbeddersCache::Get(const CacheTag& tag, const embedding::Adapter& srcAdapter, bool enablePerfStat) {
 	if (tag.Tag().empty()) {
 		return std::nullopt;  // NOTE: do nothing - valid situation
 	}
@@ -563,7 +569,7 @@ std::optional<embedding::ValueT> EmbeddersCache::Get(const CacheTag& tag, const 
 		shared_lock lk(mtx_);
 		const auto it = caches_.find(tag, tag.Hash());
 		if (it != caches_.end()) {
-			return it->second->Get(srcAdapter);
+			return it->second->Get(srcAdapter, enablePerfStat);
 		}
 	}
 

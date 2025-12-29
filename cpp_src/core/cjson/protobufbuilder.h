@@ -27,18 +27,10 @@ namespace builders {
 
 class [[nodiscard]] ProtobufBuilder {
 public:
-	ProtobufBuilder() noexcept
-		: type_(ObjType::TypePlain),
-		  ser_(nullptr),
-		  tm_(nullptr),
-		  tagsPath_(nullptr),
-		  schema_(nullptr),
-		  sizeHelper_(),
-		  itemsFieldIndex_(TagName::Empty()) {}
-	ProtobufBuilder(WrSerializer* wrser, ObjType objType = ObjType::TypePlain, const Schema* schema = nullptr,
+	ProtobufBuilder(WrSerializer& wrser, ObjType objType = ObjType::TypePlain, const Schema* schema = nullptr,
 					const TagsMatcher* tm = nullptr, const TagsPath* tagsPath = nullptr)
 		: ProtobufBuilder{wrser, objType, schema, tm, tagsPath, TagName::Empty()} {}
-	ProtobufBuilder(WrSerializer*, ObjType, const Schema*, const TagsMatcher*, const TagsPath*, concepts::TagNameOrIndex auto);
+	ProtobufBuilder(WrSerializer&, ObjType, const Schema*, const TagsMatcher*, const TagsPath*, concepts::TagNameOrIndex auto);
 	ProtobufBuilder(ProtobufBuilder&& obj) noexcept
 		: type_(obj.type_),
 		  ser_(obj.ser_),
@@ -165,7 +157,7 @@ private:
 	void put(concepts::TagNameOrIndex auto tag, Uuid val);
 
 	ObjType type_{ObjType::TypePlain};
-	WrSerializer* ser_{nullptr};
+	WrSerializer& ser_;
 	const TagsMatcher* tm_{nullptr};
 	const TagsPath* tagsPath_{nullptr};
 	const Schema* schema_{nullptr};

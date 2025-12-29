@@ -26,6 +26,7 @@ public:
 		onConstruct();
 	}
 	template <typename _F2>
+	// NOLINTNEXTLINE (bugprone-forwarding-reference-overload)
 	ScopeGuard(_F2&& onDestruct) noexcept : onDestruct_(std::forward<_F2>(onDestruct)) {}
 	~ScopeGuard() noexcept(false) {
 		if (disabled_) {

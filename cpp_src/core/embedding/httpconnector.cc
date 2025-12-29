@@ -45,6 +45,8 @@ HttpConnector::Response HttpConnector::Send(const std::string& path, chunk&& jso
 	if (res) {
 		response.ok = (res->status == httplib::StatusCode::OK_200);
 		response.content = response.ok ? res->body : res->reason;
+		response.read_bytes = res->read_bytes;
+		response.write_bytes = res->write_bytes;
 	} else {
 		response.ok = false;
 		response.content = "Unexpected problem with client, error: " + to_string(res.error());

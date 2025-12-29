@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/idset.h"
+#include "core/idset/idset.h"
 #include "core/keyvalue/variant.h"
 #include "core/lrucache.h"
 #include "core/type_consts_helpers.h"
@@ -29,7 +29,9 @@ public:
 	IdSetCacheKey(const VariantArray& keys, CondType cond, SortType sort) noexcept : keys_(&keys), cond_(cond), sort_(sort) {}
 	IdSetCacheKey(const VariantArray& keys, CondType cond, RankSortType sort) noexcept : keys_(&keys), cond_(cond), sort_(SortT(sort)) {}
 	IdSetCacheKey(const IdSetCacheKey& other) : keys_(&hkeys_), cond_(other.cond_), sort_(other.sort_), hkeys_(*other.keys_) {}
-	IdSetCacheKey(IdSetCacheKey&& other) noexcept : keys_(&hkeys_), cond_(other.cond_), sort_(other.sort_) {
+
+	// NOLINTNEXTLINE (bugprone-exception-escape)
+	IdSetCacheKey(IdSetCacheKey&& other) : keys_(&hkeys_), cond_(std::move(other.cond_)), sort_(std::move(other.sort_)) {
 		if (&other.hkeys_ == other.keys_) {
 			hkeys_ = std::move(other.hkeys_);
 		} else {
@@ -45,7 +47,8 @@ public:
 		}
 		return *this;
 	}
-	IdSetCacheKey& operator=(IdSetCacheKey&& other) noexcept {
+	// NOLINTNEXTLINE (bugprone-exception-escape)
+	IdSetCacheKey& operator=(IdSetCacheKey&& other) {
 		if (&other != this) {
 			if (&other.hkeys_ == other.keys_) {
 				hkeys_ = std::move(other.hkeys_);

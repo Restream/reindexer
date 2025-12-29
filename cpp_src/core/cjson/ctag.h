@@ -60,7 +60,10 @@ private:
 	RX_ALWAYS_INLINE constexpr static TagType typeImpl(uint32_t tag) noexcept {
 		return static_cast<TagType>((tag & kTypeMask) | ((tag >> kType1Offset) & kInvertedTypeMask));
 	}
-	RX_ALWAYS_INLINE constexpr static TagName nameImpl(uint32_t tag) noexcept { return TagName((tag >> kTypeBits) & kNameMask); }
+	RX_ALWAYS_INLINE constexpr static TagName nameImpl(uint32_t tag) noexcept {
+		static_assert(kNameMask < (1 << 16));
+		return TagName(static_cast<uint16_t>((tag >> kTypeBits) & kNameMask));
+	}
 	RX_ALWAYS_INLINE constexpr static int fieldImpl(uint32_t tag) noexcept { return int((tag >> kFieldOffset) & kFieldMask) - 1; }
 	RX_ALWAYS_INLINE constexpr uint32_t asNumber() const noexcept { return tag_; }
 

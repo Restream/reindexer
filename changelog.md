@@ -1,3 +1,46 @@
+# Version 5.10.0 (29.12.2025)
+## Core
+- [fea] Added [filtering by field length](readme.md#functions)
+- [fea] Optimized selection plan for `tree` `sparse`-indexes with `is null`/`is not null` conditions
+- [fea] Support multifield sort by `tree` `sparse`-indexes
+- [fea] Improved index detection logic for target fields in [update-queries](readme.md#update-queries) in cases, when `jsonpath` does not equal to `index name`
+- [fix] Fixed [arrays concatenation](readme.md#concatenate-arrays) for `sparse`-indexes
+- [fix] Fixed `assertion throw` for non-existing fields in [forced sort](readme.md#forced-sort)
+- [fix] Fixed multiple issues with `collate numeric` [index option](readme.md#index-types-and-their-capabilities): `null`-values handling and space characters handling
+- [fix] Fixed original strings content preservation for `collate ascii` and `collate utf-8` (previously those strings could be normalized)
+- [fix] Disabled invalid config with multiple `jsonpaths` for [geo indexes](readme.md#geometry)
+- [fix] Fixed `update drop` for heterogenious arrays with `sparse`-indexes
+- [fix] Fixed array fields rollback for unsuccessful [update-queries](readme.md#update-queries) in some corner cases
+
+## Fulltext
+- [fea] Added [terms concatenation](fulltext.md#base-config-parameters). Enabled by default. Check `EnableTermsConcat` flag and `ConcatProc` value
+- [fix] Fixed crash on `null`-values with `enable_preselect_before_ft: true` index option
+
+## Vector indexes
+- [fea] Added `embed_input_traffic` and `output_traffic` [prometheus metrics](cpp_src/readme.md#prometheus-server-side) for [auto-embedding](float_vector.md#knn-search-with-auto-embedding)
+- [fea] Added `skip_embedding()` precept for vector fields. Check [embedding configuration](float_vector.md#embedding-configuration) for details
+- [fix] Fixed [auto-embedding](float_vector.md#knn-search-with-auto-embedding) statistics in `#perfstats` after vector index update
+
+## Replication
+- [fea] Added `queued_namespace_syncs` field into `#replicationstats`. It shows current `WAL`/`force`-sync queue size for each node
+- [fea] Improved namespaces sync ordering. Now replicator tries to achieve better vectors data sharing
+- [fea] Extended [admissible_replication_tokens](replication.md#configuration) functionality: now those tokens may be used on `leader` to protect it from role switch by other node (useful in scenarios, when `follower` has to become new `leader`)
+
+## Go connector
+- [fix] Fixed `panic` in case of `inner join` with closed namespace
+
+## C++ connector
+- [fea] Added support for array-fields setting via `Item::operator[]`
+
+## Reindexer tool
+- [fea] Improved interaction with between [DB dump restoration](cpp_src/readme.md#dump-and-restore-database) and [auto-embedding](float_vector.md#knn-search-with-auto-embedding): auto-embedding will be skipped for existing data
+
+
+# Version 5.9.1 (23.11.2025)
+## Build
+- [fea] Added `WITH_BUILTIN_LEVELDB` option into CMakeLists to optionaly merge `libleveldb.a` into `libreindexer.a`
+- [fea] Added `VERSION_SUFFIX` option into CMakeLists to parametrize package version string
+
 # Version 5.9.0 (21.11.2025)
 ## Core
 - [fea] Added direct support for nested arrays storing/indexing in `JSON`, `CJSON` and `MsgPack` (i.e. JSONs like this `{ "id": 7, "arr": [ 1, "string", [ 1, 2, 3], { "field": 10 }] }` now may be stored into database)

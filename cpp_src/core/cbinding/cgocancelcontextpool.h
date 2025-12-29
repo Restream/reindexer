@@ -31,7 +31,8 @@ public:
 
 	~CGORdxCtxKeeper() {
 		if (ctx_) {
-			pool_.removeContext(ctxInfo_);
+			[[maybe_unused]] bool removed = pool_.removeContext(ctxInfo_);
+			assertrx_dbg(removed);
 		}
 	}
 

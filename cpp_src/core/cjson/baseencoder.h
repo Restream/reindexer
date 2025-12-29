@@ -66,8 +66,10 @@ private:
 	};
 	using PathScopeT = std::conditional_t<kWithTagsPathTracking, TagsPathScope<TagsPath>, DummyTagsPathScope>;
 
-	template <concepts::TagNameOrIndex TagType>
-	bool encode(ConstPayload* pl, Serializer& rdser, Builder& builder, bool visible, TagType);
+	template <concepts::TagNameOrIndex TagType, typename BuilderT>
+	bool encode(ConstPayload* pl, Serializer& rdser, BuilderT&& builder, TagType indexedTag);
+	template <concepts::TagNameOrIndex TagType, typename BuilderT>
+	bool encodeImpl(ConstPayload* pl, ctag ctag, Serializer& rdser, BuilderT&& builder, TagType indexedTag);
 	void encodeJoinedItems(Builder& builder, IEncoderDatasourceWithJoins* ds, size_t joinedIdx);
 	bool collectTagsSizes(ConstPayload& pl, Serializer& rdser);
 	void collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins* ds, size_t rowid);

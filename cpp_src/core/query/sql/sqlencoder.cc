@@ -54,7 +54,11 @@ static reindexer::WrSerializer& stringToSql(std::string_view str, reindexer::WrS
 namespace reindexer {
 
 void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer& ser, bool stripArgs) const {
-	assertrx(idx < query_.GetJoinQueries().size());
+	if (idx >= query_.GetJoinQueries().size()) [[unlikely]] {
+		throw Error(errParams, "Error during parsing query join entries: idx({}) >= query_.GetJoinQueries().size()({})", idx,
+					query_.GetJoinQueries().size());
+	}
+
 	const auto& jq = query_.GetJoinQueries()[idx];
 	ser << jq.joinType;
 	if (jq.Entries().Empty() && !jq.HasLimit() && jq.GetSortingEntries().empty()) {
@@ -139,7 +143,9 @@ void SQLEncoder::dumpOrderBy(WrSerializer& ser, bool stripArgs) const {
 
 void SQLEncoder::dumpEqualPositions(WrSerializer& ser, const EqualPositions_t& equalPositions) const {
 	for (const auto& ep : equalPositions) {
-		assertrx(ep.size() > 1);
+		if (ep.size() <= 1) [[unlikely]] {
+			throw Error(errParams, "Equal positions must contain more than 1 element, but {} was provided", ep.size());
+		}
 		ser << " equal_position(";
 		for (size_t i = 0; i < ep.size(); ++i) {
 			if (i != 0) {
@@ -321,7 +327,9 @@ static void dumpCondWithValues(WrSerializer& ser, std::string_view fieldName, Co
 			if (stripArgs) {
 				ser << ", ?, ?)";
 			} else {
-				assertrx(values.size() == 2);
+				if (values.size() != 2) [[unlikely]] {
+					throw Error(errParams, "Within-condition must contain exactly 2 elements, but {} was provided", values.size());
+				}
 				Point point;
 				double distance;
 				if (values[0].Type().Is<KeyValueType::Tuple>()) {
@@ -373,7 +381,7 @@ static void dumpCondWithValues(WrSerializer& ser, std::string_view fieldName, Co
 			}
 			break;
 		case CondKnn:
-			assertrx(0);
+			throw Error(errParams, "Unexpected KNN-condition");
 	}
 }
 
@@ -412,6 +420,14 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				std::ignore = SQLEncoder{query_.GetSubQuery(sqe.QueryIndex())}.GetSQL(ser, stripArgs);
 				ser << ')';
 			},
+			[&](const SubQueryFunctionEntry& sqe) {
+				if (encodedEntries) {
+					ser << kOpNames[op] << ' ';
+				}
+				ser << sqe.Function().ToString() << ' ' << sqe.Condition() << " ("sv;
+				std::ignore = SQLEncoder{query_.GetSubQuery(sqe.QueryIndex())}.GetSQL(ser, stripArgs);
+				ser << ')';
+			},
 			[&](const QueryEntriesBracket& bracket) {
 				if (encodedEntries) {
 					ser << kOpNames[op] << ' ';
@@ -426,6 +442,12 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 					ser << kOpNames[op] << ' ';
 				}
 				dumpCondWithValues<NeedQuote::Yes>(ser, entry.FieldName(), entry.Condition(), entry.Values(), stripArgs);
+			},
+			[&](const QueryFunctionEntry& entry) {
+				if (encodedEntries) {
+					ser << kOpNames[op] << ' ';
+				}
+				dumpCondWithValues<NeedQuote::Yes>(ser, entry.Function().ToString(), entry.Condition(), entry.Values(), stripArgs);
 			},
 			[&](const MultiDistinctQueryEntry&) {},
 			[&](const JoinQueryEntry& jqe) {

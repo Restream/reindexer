@@ -73,7 +73,7 @@ RX_ALWAYS_INLINE void stable_sort(Iter begin, Iter end, Compare&& comp) {
 		}
 		default:
 			if (dist <= sort_impl::kInsertionSortThreshold) {
-				sort_impl::insertion_sort(std::move(begin), std::move(end), std::move(comp));
+				sort_impl::insertion_sort(std::move(begin), std::move(end), std::forward<Compare>(comp));
 			} else {
 				// clang-tidy reports that std::get_temporary_buffer is deprecated
 				// NOLINTNEXTLINE (clang-diagnostic-deprecated-declarations)

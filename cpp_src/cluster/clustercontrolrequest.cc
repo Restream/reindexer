@@ -13,7 +13,7 @@ void ClusterControlRequestData::GetJSON(WrSerializer& ser) const {
 							  auto payloadBuilder = request.Object("payload");
 							  d.GetJSON(payloadBuilder);
 						  },
-						  [this](const ForceElectionsCommand) { assertrx_throw(Type::ForceEletions == Type(type)); }},
+						  [this](const ForceElectionsCommand) { assertrx_throw(Type::ForceElections == Type(type)); }},
 			   data);
 }
 Error ClusterControlRequestData::FromJSON(std::span<char> json) noexcept {
@@ -28,7 +28,7 @@ Error ClusterControlRequestData::FromJSON(std::span<char> json) noexcept {
 				std::get<SetClusterLeaderCommand>(data).FromJSON(payloadNode);
 				break;
 			}
-			case Type::ForceEletions: {
+			case Type::ForceElections: {
 				data = ForceElectionsCommand{};
 				break;
 			}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/idset.h"
+#include "core/idset/idset.h"
 #include "core/keyvalue/variant.h"
 #include "core/lrucache.h"
 #include "core/query/query.h"

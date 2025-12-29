@@ -2,7 +2,7 @@
 
 #include <climits>
 
-#include "core/idset.h"
+#include "core/idset/idset.h"
 #include "core/index/indexiterator.h"
 #include "core/nsselecter/comparator/comparator_indexed.h"
 #include "core/nsselecter/comparator/comparator_not_indexed.h"

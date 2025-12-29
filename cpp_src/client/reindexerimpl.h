@@ -221,10 +221,11 @@ private:
 	public:
 		DatabaseCommand(DatabaseCommandDataBase* cmd = nullptr) noexcept : cmd_(cmd) {}
 		template <typename DatabaseCommandDataT>
+		// NOLINTNEXTLINE (bugprone-forwarding-reference-overload)
 		DatabaseCommand(DatabaseCommandDataT&& cmd) : owns_(true), cmd_(new DatabaseCommandData(std::forward<DatabaseCommandDataT>(cmd))) {}
 		DatabaseCommand(DatabaseCommand&& r) noexcept : connIdx(r.connIdx), owns_(r.owns_), cmd_(r.cmd_) { r.owns_ = false; }
 		DatabaseCommand(const DatabaseCommand& r) = delete;
-		DatabaseCommand& operator=(DatabaseCommand&& r) {
+		DatabaseCommand& operator=(DatabaseCommand&& r) noexcept {
 			if (this != &r) {
 				if (owns_) {
 					delete cmd_;
@@ -277,8 +278,7 @@ private:
 			}
 			if (err.ok()) {
 				future.wait();
-				return RX_GET_WITHOUT_MUTEX_ANALYSIS { return std::move(res.data); }
-				();
+				return RX_GET_WITHOUT_MUTEX_ANALYSIS { return std::move(res.data); }();
 			}
 			if constexpr (withClient) {
 				if (err.code() == errParams) {
@@ -320,7 +320,7 @@ private:
 	void execCommand(DatabaseCommandDataBase* cmd, F&& fun) noexcept {
 		auto cd = dynamic_cast<typename CalculateCommandType<decltype(&F::operator())>::type*>(cmd);
 		if (cd) {
-			auto r = std::apply(std::move(fun), cd->arguments);
+			auto r = std::apply(std::forward<F>(fun), cd->arguments);
 			if constexpr (std::is_same_v<decltype(r), Error>) {
 				if (cd->ctx.cmpl()) {
 					try {

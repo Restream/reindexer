@@ -100,7 +100,7 @@ void AggregationResult::GetMsgPack(WrSerializer& wrser) const {
 }
 
 void AggregationResult::GetProtobuf(WrSerializer& wrser) const {
-	ProtobufBuilder builder(&wrser, ObjType::TypePlain);
+	ProtobufBuilder builder(wrser, ObjType::TypePlain);
 	get(builder, ParametersFields<ParametersFieldsNumbers, TagName>(kParametersFieldNumbers));
 }
 

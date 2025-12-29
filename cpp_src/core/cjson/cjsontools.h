@@ -109,7 +109,7 @@ static inline void convertValueForIndexField(KeyValueType fieldType, std::string
 	} else if ((fieldType.IsNumeric() && value.Type().IsNumeric()) ||
 			   (fieldType.Is<KeyValueType::Uuid>() && value.Type().Is<KeyValueType::String>()) ||
 			   (convertToString && fieldType.Is<KeyValueType::String>() && value.Type().IsNumeric())) {
-		value.convert(fieldType);
+		std::ignore = value.convert(fieldType);
 	} else {
 		throwUnexpected(fieldName, fieldType, value.Type().Name(), parserName);
 	}

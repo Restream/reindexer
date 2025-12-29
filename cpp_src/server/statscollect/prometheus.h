@@ -73,6 +73,14 @@ public:
 												  std::string_view type, size_t param) {
 		setMetricEmbedder(embedderLastSecAvgEmbedLatencyUs_, param, currentEpoch_, db, ns, index, type);
 	}
+	void RegisterEmbedderInputTrafficTotalBytes(const std::string& db, const std::string& ns, const std::string& index,
+												std::string_view type, size_t param) {
+		setMetricEmbedder(embedderInputTrafficTotalBytes_, param, currentEpoch_, db, ns, index, type);
+	}
+	void RegisterEmbedderOutputTrafficTotalBytes(const std::string& db, const std::string& ns, const std::string& index,
+												 std::string_view type, size_t param) {
+		setMetricEmbedder(embedderOutputTrafficTotalBytes_, param, currentEpoch_, db, ns, index, type);
+	}
 
 	void NextEpoch();
 
@@ -108,6 +116,8 @@ private:
 	PFamily<PGauge>* embedderConnInUse_{nullptr};
 	PFamily<PGauge>* embedderLastSecAvgLatencyUs_{nullptr};
 	PFamily<PGauge>* embedderLastSecAvgEmbedLatencyUs_{nullptr};
+	PFamily<PGauge>* embedderInputTrafficTotalBytes_{nullptr};
+	PFamily<PGauge>* embedderOutputTrafficTotalBytes_{nullptr};
 };
 
 }  // namespace reindexer_server

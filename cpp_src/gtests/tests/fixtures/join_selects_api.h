@@ -23,7 +23,7 @@ protected:
 	using QueryResultRows = std::map<BookId, QueryResultRow>;
 
 	void Init(const std::string& dbName = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_test")) RX_REQUIRES(!authorsMutex) {
-		reindexer::fs::RmDirAll(dbName);
+		std::ignore = reindexer::fs::RmDirAll(dbName);
 		rt.Connect("builtin://" + dbName);
 
 		rt.OpenNamespace(authors_namespace);

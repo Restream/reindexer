@@ -8,6 +8,7 @@
 #include "cpp-btree/btree_set.h"
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
+#include "iterator.h"
 #include "sort/pdqsort.hpp"
 
 namespace reindexer {
@@ -36,6 +37,10 @@ public:
 	using base_idset::const_reverse_iterator;
 	using base_idset::const_iterator;
 	using base_idset::operator[];
+	using idset_iterator = idset::iterators::ForwardIterator;
+	using idset_reverse_iterator = idset::iterators::ReverseIterator;
+	using idset_iterator_range = idset::iterators::ForwardIteratorRange;
+	using idset_reverse_iterator_range = idset::iterators::ReverseIteratorRange;
 
 	enum [[nodiscard]] EditMode {
 		Ordered,   // Keep idset ordered, and ready to select (insert is slow O(logN)+O(N))
@@ -83,6 +88,7 @@ public:
 		static_cast<base_idset&>(*this).swap(static_cast<base_idset&>(other));
 		assertrx_dbg(capacity() == otherCapacity);
 	}
+	// NOLINTNEXTLINE(bugprone-copy-constructor-init)
 	IdSetPlain(const IdSetPlain& other) : base_idset() {
 		reserve(other.capacity());
 		insert(cbegin(), other.cbegin(), other.cend());
@@ -106,6 +112,9 @@ public:
 		assertrx_dbg(capacity() == otherCapacity);
 		return *this;
 	}
+
+	idset_iterator_range idset_range() const noexcept { return idset::iterators::range(*this); }
+	idset_reverse_iterator_range idset_reverse_range() const noexcept { return idset::iterators::reverse_range(*this); }
 };
 
 std::ostream& operator<<(std::ostream&, const IdSetPlain&);
@@ -124,13 +133,15 @@ public:
 	using Ptr = intrusive_ptr<intrusive_atomic_rc_wrapper<IdSet>>;
 	IdSet() noexcept = default;
 	IdSet(const IdSet& other)
-		: IdSetPlain(other), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)), usingBtree_(other.usingBtree_.load()) {}
-	IdSet(IdSet&& other) noexcept : IdSetPlain(std::move(other)), set_(std::move(other.set_)), usingBtree_(other.usingBtree_.load()) {}
+		: IdSetPlain(other), usingBtree_(other.usingBtree_.load()), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)) {}
+	// NOLINTNEXTLINE(bugprone-use-after-move)
+	IdSet(IdSet&& other) noexcept : IdSetPlain(std::move(other)), usingBtree_(other.usingBtree_.load()), set_(std::move(other.set_)) {}
 	IdSet& operator=(IdSet&& other) noexcept {
 		if (&other != this) {
-			IdSetPlain::operator=(std::move(other));
-			set_ = std::move(other.set_);
 			usingBtree_ = other.usingBtree_.load();
+			set_ = std::move(other.set_);
+			// NOLINTNEXTLINE(bugprone-use-after-move)
+			IdSetPlain::operator=(std::move(other));
 		}
 		return *this;
 	}
@@ -146,19 +157,6 @@ public:
 		boost::sort::pdqsort_branchless(ids.begin(), ids.end());
 		ids.erase(std::unique(ids.begin(), ids.end()), ids.cend());	 // TODO: It would be better to integrate unique into sort
 		return make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>(std::move(ids));
-	}
-	base_idset_ptr BuildBaseIdSet() const {
-		if (IsCommitted()) {
-			return make_intrusive<intrusive_atomic_rc_wrapper<const base_idset>>(static_cast<const base_idset>(*this));
-		} else if (set_) {
-			auto ids{make_intrusive<intrusive_atomic_rc_wrapper<const base_idset>>()};
-			ids->reserve(set_->size());
-			for (auto id : *set_) {
-				ids->push_back(id);
-			}
-			return ids;
-		}
-		return {};
 	}
 	bool Add(IdType id, EditMode editMode, int sortedIdxCount) {
 		// reserve extra space for sort orders data
@@ -285,12 +283,15 @@ public:
 	void ReserveForSorted(int sortedIdxCount) { reserve(((set_ ? set_->size() : size())) * (sortedIdxCount + 1)); }
 	void Dump(auto&) const;
 
+	idset_iterator_range idset_range() const noexcept { return idset::iterators::range(*this); }
+	idset_reverse_iterator_range idset_reverse_range() const noexcept { return idset::iterators::reverse_range(*this); }
+
 protected:
 	explicit IdSet(base_idset&& idset) noexcept : IdSetPlain(std::move(idset)) {}
 
 private:
-	std::unique_ptr<base_idsetset> set_;
 	std::atomic_bool usingBtree_{false};
+	std::unique_ptr<base_idsetset> set_;
 };
 
 using IdSetRef = std::span<IdType>;

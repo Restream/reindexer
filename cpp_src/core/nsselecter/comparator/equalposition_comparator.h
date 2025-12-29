@@ -51,7 +51,7 @@ public:
 private:
 	bool compareField(size_t field, const Variant&);
 	template <typename F>
-	void bindField(const std::string& name, F field, const VariantArray&, CondType, const CollateOpts&);
+	void bindField(const std::string& name, const F& field, const VariantArray&, CondType, const CollateOpts&);
 
 	struct [[nodiscard]] Context {
 		Context(const CollateOpts& collate) : cmpString{collate} {}

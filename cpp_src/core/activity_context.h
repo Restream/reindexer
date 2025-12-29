@@ -105,6 +105,7 @@ class [[nodiscard]] RdxActivityContext {
 public:
 	RdxActivityContext(std::string_view activityTracer, std::string_view user, std::string_view query, ActivityContainer&,
 					   int ipConnectionId, bool clientState = false);
+	// NOLINTNEXTLINE (performance-noexcept-move-constructor)
 	RdxActivityContext(RdxActivityContext&&);
 	~RdxActivityContext();
 	operator Activity() const;

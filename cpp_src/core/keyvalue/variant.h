@@ -14,6 +14,7 @@
 namespace reindexer {
 
 class WrSerializer;
+// NOLINTNEXTLINE (bugprone-forward-declaration-namespace)
 class Serializer;
 class PayloadType;
 class FieldsSet;
@@ -68,7 +69,7 @@ public:
 	explicit Variant(ConstFloatVectorView v, NoHoldT = noHold) noexcept : variant_{0, 0, KeyValueType::FloatVector{}, v.Payload()} {}
 	Variant(ConstFloatVectorView v, HoldT) : Variant(FloatVector(v)) {}
 	Variant(FloatVector&& v) noexcept : variant_{0, 1, KeyValueType::FloatVector{}, ConstFloatVectorView(v).Payload()} {
-		std::move(v).Release();
+		std::ignore = std::move(v).Release();
 	}
 	Variant(const Variant& other) : uuid_{other.uuid_} {
 		if (!isUuid()) {
@@ -321,7 +322,7 @@ public:
 	VariantArray& operator=(const VariantArray&) = default;
 	VariantArray& operator=(VariantArray&&) = default;
 
-	explicit VariantArray(Point p) noexcept {
+	explicit VariantArray(Point p) {
 		emplace_back(p.X());
 		emplace_back(p.Y());
 	}
@@ -390,7 +391,7 @@ public:
 	}
 	void EnsureHold() {
 		for (Variant& v : *this) {
-			v.EnsureHold();
+			std::ignore = v.EnsureHold();
 		}
 	}
 	template <typename... Ts>
@@ -404,6 +405,22 @@ public:
 		for (auto& v : vs) {
 			res.emplace_back(v);
 		}
+		return res;
+	}
+	template <typename T, typename HoldT = Variant::NoHoldT>
+	static VariantArray Create(std::span<const T> vs, HoldT hold = HoldT()) {
+		VariantArray res;
+		res.reserve(vs.size());
+		std::ranges::transform(vs, std::back_inserter(res), [&hold](const T& t) {
+			if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>) {
+				return Variant(p_string(&t), hold);
+			} else if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, key_string>) {
+				return Variant(p_string(t), hold);
+			} else {
+				(void)hold;
+				return Variant(t);
+			}
+		});
 		return res;
 	}
 	void Clear() noexcept {

@@ -5,13 +5,15 @@
 
 namespace reindexer {
 
+namespace ft {
+
 constexpr size_t kUseBinarySearchBorder = 8;
 
 template <typename IdCont, typename Calculator, bool UseBinarySearch>
-std::pair<float, uint8_t> calcTermRankImpl(const TextSearchResults<IdCont>& rawRes, Calculator bm25Calc, const IdRelType& relid,
+std::pair<float, uint8_t> calcTermRankImpl(const TermResults<IdCont>& rawRes, Calculator bm25Calc, const IdRelType& relid,
 										   TermRankInfo& termInf, const DataHolder<IdCont>& holder) {
 	// Find field with max rank
-	const auto& opts = rawRes.term.opts;
+	const auto& opts = rawRes.term.Opts();
 	uint8_t field = 0;
 
 	h_vector<float, 4> ranksInFields;
@@ -37,7 +39,7 @@ std::pair<float, uint8_t> calcTermRankImpl(const TextSearchResults<IdCont>& rawR
 		}
 
 		// skip field with zero boost
-		if (reindexer::fp::IsZero(rawRes.term.opts.fieldsOpts[f].boost)) {
+		if (reindexer::fp::IsZero(rawRes.term.Opts().fieldsOpts[f].boost)) {
 			continue;
 		}
 
@@ -80,7 +82,7 @@ std::pair<float, uint8_t> calcTermRankImpl(const TextSearchResults<IdCont>& rawR
 }
 
 template <typename IdCont, typename Calculator>
-std::pair<float, uint8_t> calcTermRank(const TextSearchResults<IdCont>& rawRes, Calculator bm25Calc, const IdRelType& relid,
+std::pair<float, uint8_t> calcTermRank(const TermResults<IdCont>& rawRes, Calculator bm25Calc, const IdRelType& relid,
 									   TermRankInfo& termInf, const DataHolder<IdCont>& holder) {
 	if (relid.Pos().size() >= kUseBinarySearchBorder) {
 		return calcTermRankImpl<IdCont, Calculator, true>(rawRes, bm25Calc, relid, termInf, holder);
@@ -158,12 +160,12 @@ inline float maxFieldsBoost(const IdRelType& relid, const FtDslOpts& termOpts) {
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 template <typename Bm25T>
-void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TextSearchResults<IdCont>& termRes, bool firstTerm) {
+void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResults<IdCont>& termRes, bool firstTerm) {
 	const auto& vdocs = holder_.vdocs_;
 	const size_t totalDocsCount = vdocs.size();
 
 	// loop on subterm (word, translit, stemmer,...)
-	for (TextSearchResult<IdCont>& subtermRes : termRes) {
+	for (SubtermResults<IdCont>& subtermRes : termRes.subtermsResults) {
 		if (!inTransaction_) {
 			ThrowOnCancel(ctx_);
 		}
@@ -200,7 +202,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TextSear
 			}
 
 			if (holder_.cfg_->logLevel >= LogTrace) [[unlikely]] {
-				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subtermRes.pattern, bm25.GetIDF(), termRes.term.opts.termLenBoost);
+				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subtermRes.pattern, bm25.GetIDF(), termRes.term.Opts().termLenBoost);
 			}
 
 			if (firstTerm) {
@@ -211,18 +213,20 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TextSear
 						mdExt.rank = termRank;
 						md.proc = termRank;
 					}
-					mergeDataExtended_[idoffsets_[docId]].AddPositions(positionsInDoc, termRes.term.pattern, termInf);
+					mergeDataExtended_[idoffsets_[docId]].AddPositions(positionsInDoc.Pos(), termRes.term.Pattern(), termInf);
 					continue;
 				}
 
 				InfoType info{.id = int(docId), .proc = termRank, .field = field};
 				mergeData_.emplace_back(std::move(info));
-				mergeDataExtended_.emplace_back(IdRelType(std::move(positionsInDoc)), termRank, termRes.term.pattern, termInf);
+				PositionsVector positions;
+				InitFrom(std::move(positionsInDoc.Pos()), positions);
+				mergeDataExtended_.emplace_back(std::move(positions), termRank, termRes.term.Pattern(), termInf);
 				idoffsets_[docId] = mergeData_.size() - 1;
 			} else {
 				auto& md = GetMergeData(idoffsets_[docId]);
 				auto& mdExt = GetMergeDataExtended(idoffsets_[docId]);
-				const int minDist = mdExt.MergeWithDist(positionsInDoc, termRes.Distance(), termRes.term.pattern, termInf);
+				const int minDist = mdExt.MergeWithDist(positionsInDoc.Pos(), termRes.Distance(), termRes.term.Pattern(), termInf);
 
 				if (mdExt.nextPhrasePositions.empty()) {
 					continue;
@@ -260,7 +264,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TextSear
 }
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
-void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingAllTerms(std::vector<TextSearchResults<IdCont>>& rawResults,
+void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingAllTerms(std::vector<TermResults<IdCont>>& rawResults,
 																						size_t from, size_t to) {
 	const auto& vdocs = holder_.vdocs_;
 
@@ -271,7 +275,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingA
 
 		index_t maxTermDocId = 0;
 
-		for (TextSearchResult<IdCont>& subtermRes : rawResults[i]) {
+		for (SubtermResults<IdCont>& subtermRes : rawResults[i].subtermsResults) {
 			if (!inTransaction_) {
 				ThrowOnCancel(ctx_);
 			}
@@ -305,7 +309,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingA
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 template <typename Bm25T>
-void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::Merge(std::vector<TextSearchResults<IdCont>>& rawResults, size_t from, size_t to) {
+void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::Merge(std::vector<TermResults<IdCont>>& rawResults, size_t from, size_t to) {
 	static_assert(sizeof(Bm25Calculator<Bm25T>) <= 32, "Bm25Calculator<Bm25T> size is greater than 32 bytes");
 
 	init(rawResults, from, to);
@@ -325,4 +329,5 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::Merge(std::vector<TextSe
 	}
 }
 
+}  // namespace ft
 }  // namespace reindexer

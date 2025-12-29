@@ -542,7 +542,7 @@ public:
 				abort();
 		}
 	}
-	reindexer::IsDistinct IsDistinct() const noexcept {
+	reindexer::IsDistinct IsDistinct() const {
 		return std::visit([](auto& impl) { return impl.IsDistinct(); }, impl_);
 	}
 	bool IsIndexed() const noexcept { return false; }

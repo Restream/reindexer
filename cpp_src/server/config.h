@@ -15,6 +15,7 @@ namespace reindexer_server {
 
 enum class [[nodiscard]] ServerMode { Standalone, Builtin };
 
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
 struct [[nodiscard]] ServerConfig {
 	// This timeout is required to avoid locks, when raft leader does not exist
 	constexpr static auto kDefaultHttpWriteTimeout = std::chrono::seconds(60);
@@ -100,5 +101,6 @@ private:
 	bool tcMallocIsAvailable_;
 #endif	// REINDEX_WITH_GPERFTOOLS
 };
+// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
 }  // namespace reindexer_server

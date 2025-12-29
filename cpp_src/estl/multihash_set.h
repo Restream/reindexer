@@ -16,6 +16,7 @@ public:
 
 public:
 	using Iterator = typename StoreType::const_iterator;
+	// NOLINTNEXTLINE (bugprone-crtp-constructor-accessibility)
 	MultiHashSetImpl(size_t s) : capacity_{2 * (s + 1)} {
 		data_.reserve(s);
 		for (auto& i : indexes_) {
@@ -121,6 +122,7 @@ public:
 	using Base::find;
 	using Base::size;
 	using typename Base::Iterator;
+	// NOLINTNEXTLINE (bugprone-return-const-ref-from-parameter)
 	static const typename Base::KeyType& getKey(const typename Base::StoringType& v) noexcept { return v; }
 };
 

@@ -17,7 +17,10 @@ Error LeaderSyncer::Sync(elist<LeaderSyncQueue::Entry>&& entries, SharedSyncStat
 	const LeaderSyncThread::Config thCfg{cfg_.dsns,		cfg_.maxWALDepthOnForceSync, cfg_.clusterId,
 										 cfg_.serverId, cfg_.enableCompression,		 cfg_.netTimeout};
 	unique_lock lck(mtx_);
+
 	syncQueue_.Refill(std::move(entries));
+	statsCollector.OnEnqueueNamespacesSync(ReplicationStatCounter::kLeaderUID, syncQueue_.Size());
+
 	assert(threads_.empty());
 	std::once_flag onceUpdShardingCfg;
 	for (size_t i = 0; i < cfg_.threadsCount; ++i) {
@@ -151,6 +154,7 @@ void LeaderSyncThread::sync() {
 		LeaderSyncQueue::Entry entry;
 		uint32_t idx = 0;
 		int32_t preferredNodeId = -1;
+
 		while (syncQueue_.TryToGetEntry(preferredNodeId, entry, idx)) {
 			const uint32_t nodeId = entry.nodes[idx];
 			if (preferredNodeId != int32_t(nodeId)) {
@@ -214,6 +218,7 @@ void LeaderSyncThread::sync() {
 					tryDropTmpNamespace();
 				}
 				sharedSyncState_.MarkSynchronized(entry.nsName);
+				statsCollector_.OnNamespaceSynchronized(ReplicationStatCounter::kLeaderUID);
 			} catch (const Error& err) {
 				lastError_ = err;
 				logError("{}: Unable to sync local namespace '{}': {}", cfg_.serverId, entry.nsName, lastError_.what());

@@ -3,13 +3,13 @@
 namespace reindexer::builders {
 
 JsonBuilder::JsonBuilder(WrSerializer& ser, ObjType type, const TagsMatcher* tm, bool emitTrailingForFloat)
-	: ser_(&ser), tm_(tm), type_(type), emitTrailingForFloat_(emitTrailingForFloat) {
+	: ser_(ser), tm_(tm), type_(type), emitTrailingForFloat_(emitTrailingForFloat) {
 	switch (type_) {
 		case ObjType::TypeArray:
-			(*ser_) << '[';
+			ser_ << '[';
 			break;
 		case ObjType::TypeObject:
-			(*ser_) << '{';
+			ser_ << '{';
 			break;
 		case ObjType::TypeObjectArray:
 		case ObjType::TypePlain:
@@ -22,10 +22,10 @@ std::string_view JsonBuilder::getNameByTag(TagName tagName) { return tagName.IsE
 void JsonBuilder::End() {
 	switch (type_) {
 		case ObjType::TypeArray:
-			(*ser_) << ']';
+			ser_ << ']';
 			break;
 		case ObjType::TypeObject:
-			(*ser_) << '}';
+			ser_ << '}';
 			break;
 		case ObjType::TypeObjectArray:
 		case ObjType::TypePlain:
@@ -36,42 +36,42 @@ void JsonBuilder::End() {
 
 JsonBuilder JsonBuilder::Object(std::string_view name, int /*size*/) {
 	putName(name);
-	return JsonBuilder(*ser_, ObjType::TypeObject, tm_, emitTrailingForFloat_);
+	return JsonBuilder(ser_, ObjType::TypeObject, tm_, emitTrailingForFloat_);
 }
 
 JsonBuilder JsonBuilder::Array(std::string_view name, int /*size*/) {
 	putName(name);
-	return JsonBuilder(*ser_, ObjType::TypeArray, tm_, emitTrailingForFloat_);
+	return JsonBuilder(ser_, ObjType::TypeArray, tm_, emitTrailingForFloat_);
 }
 
 void JsonBuilder::putName(std::string_view name) {
 	if (count_++) {
-		(*ser_) << ',';
+		ser_ << ',';
 	}
 	if (name.data()) {	// -V547
-		ser_->PrintJsonString(name);
-		(*ser_) << ':';
+		ser_.PrintJsonString(name);
+		ser_ << ':';
 	}
 }
 
 void JsonBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
 	putName(name);
-	ser_->PrintJsonString(arg);
+	ser_.PrintJsonString(arg);
 }
 
 void JsonBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
 	putName(name);
-	ser_->PrintJsonUuid(arg);
+	ser_.PrintJsonUuid(arg);
 }
 
 void JsonBuilder::Raw(std::string_view name, std::string_view arg) {
 	putName(name);
-	(*ser_) << arg;
+	ser_ << arg;
 }
 
 void JsonBuilder::Null(std::string_view name) {
 	putName(name);
-	(*ser_) << "null";
+	ser_ << "null";
 }
 
 void JsonBuilder::Put(std::string_view name, const Variant& kv, int offset) {

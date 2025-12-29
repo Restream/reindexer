@@ -682,6 +682,9 @@ struct Response {
   std::string body;
   std::string location; // Redirect location
 
+  size_t read_bytes = 0;
+  size_t write_bytes = 0;
+
   bool has_header(const std::string &key) const;
   std::string get_header_value(const std::string &key, const char *def = "",
                                size_t id = 0) const;
@@ -744,6 +747,9 @@ public:
   virtual void get_remote_ip_and_port(std::string &ip, int &port) const = 0;
   virtual void get_local_ip_and_port(std::string &ip, int &port) const = 0;
   virtual socket_t socket() const = 0;
+
+  virtual size_t get_read_bytes() const { return 0; }
+  virtual size_t get_write_bytes() const { return 0; }
 
   ssize_t write(const char *ptr);
   ssize_t write(const std::string &s);
@@ -3320,6 +3326,9 @@ public:
   void get_local_ip_and_port(std::string &ip, int &port) const override;
   socket_t socket() const override;
 
+  virtual size_t get_read_bytes() const override { return read_bytes_; }
+  virtual size_t get_write_bytes() const override { return write_bytes_; }
+
 private:
   socket_t sock_;
   time_t read_timeout_sec_;
@@ -3330,6 +3339,9 @@ private:
   std::vector<char> read_buff_;
   size_t read_buff_off_ = 0;
   size_t read_buff_content_size_ = 0;
+
+  size_t read_bytes_ = 0;
+  size_t write_bytes_ = 0;
 
   static const size_t read_buff_size_ = 1024l * 4;
 };
@@ -6018,15 +6030,21 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
       return n;
     } else if (n <= static_cast<ssize_t>(size)) {
       memcpy(ptr, read_buff_.data(), static_cast<size_t>(n));
+      read_bytes_ += n;
       return n;
     } else {
       memcpy(ptr, read_buff_.data(), size);
       read_buff_off_ = size;
       read_buff_content_size_ = static_cast<size_t>(n);
+      read_bytes_ += n;
       return static_cast<ssize_t>(size);
     }
   } else {
-    return read_socket(sock_, ptr, size, CPPHTTPLIB_RECV_FLAGS);
+      auto n = read_socket(sock_, ptr, size, CPPHTTPLIB_RECV_FLAGS);
+      if (n > 0) {
+          read_bytes_ += n;
+      }
+      return n;
   }
 }
 
@@ -6038,7 +6056,11 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
       (std::min)(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
 #endif
 
-  return send_socket(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS);
+  ssize_t n = send_socket(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS);
+  if (n > 0) {
+      write_bytes_ += n;
+  }
+  return n;
 }
 
 inline void SocketStream::get_remote_ip_and_port(std::string &ip,
@@ -8045,9 +8067,21 @@ ClientImpl::adjust_host_string(const std::string &host) const {
   return host;
 }
 
-inline bool ClientImpl::process_request(Stream &strm, Request &req,
-                                        Response &res, bool close_connection,
-                                        Error &error) {
+class UpdateResponseBytes {
+public:
+  UpdateResponseBytes(const Stream& s, Response& r) : strm_(s), res_(r) {}
+  ~UpdateResponseBytes() {
+    res_.read_bytes = strm_.get_read_bytes();
+    res_.write_bytes = strm_.get_write_bytes();
+  }
+
+private:
+  const Stream& strm_;
+  Response& res_;
+};
+
+inline bool ClientImpl::process_request(Stream& strm, Request& req, Response& res, bool close_connection, Error& error) {
+  UpdateResponseBytes statUpdater(strm, res);
   // Send request
   if (!write_request(strm, req, close_connection, error)) { return false; }
 

@@ -1230,7 +1230,7 @@ int HTTPServer::modifyItemsMsgPack(http::Context& ctx, std::string_view nsName, 
 
 int HTTPServer::modifyItemsProtobuf(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts, ItemModifyMode mode) {
 	WrSerializer ser(ctx.writer->GetChunk());
-	ProtobufBuilder builder(&ser);
+	ProtobufBuilder builder(ser);
 
 	auto sendResponse = [&](int items, const Error& err) {
 		if (err.ok()) {
@@ -1648,7 +1648,7 @@ int HTTPServer::queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults&
 int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption,
 									 bool withColumns, int width) {
 	WrSerializer ser(ctx.writer->GetChunk());
-	ProtobufBuilder protobufBuilder(&ser);
+	ProtobufBuilder protobufBuilder(ser);
 
 	const auto offset = qrOption.ExternalOffset();
 	const auto limit = qrOption.ExternalLimit();
@@ -1839,7 +1839,7 @@ int HTTPServer::jsonStatus(http::Context& ctx, const http::HttpStatus& status) {
 
 int HTTPServer::protobufStatus(http::Context& ctx, const http::HttpStatus& status) {
 	WrSerializer ser(ctx.writer->GetChunk());
-	ProtobufBuilder builder(&ser);
+	ProtobufBuilder builder(ser);
 	builder.Put(kProtoErrorResultsFields.at(kParamSuccess), status.code == http::StatusOK);
 	builder.Put(kProtoErrorResultsFields.at(kParamResponseCode), int(status.code));
 	builder.Put(kProtoErrorResultsFields.at(kParamDescription), status.what);
@@ -2081,7 +2081,7 @@ int HTTPServer::BeginTx(http::Context& ctx) {
 			break;
 		}
 		case DataFormat::Protobuf: {
-			ProtobufBuilder builder(&ser);
+			ProtobufBuilder builder(ser);
 			builder.Put(kProtoBeginTxResultsFields.at(kTxId), txId);
 			builder.End();
 			break;

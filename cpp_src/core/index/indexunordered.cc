@@ -15,8 +15,6 @@
 
 namespace reindexer {
 
-constexpr int kMaxIdsForDistinct = 500;
-
 template <typename T>
 IndexUnordered<T>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 								  const NamespaceCacheConfigData& cacheCfg)
@@ -174,6 +172,7 @@ void IndexUnordered<T>::delMemStat(typename T::iterator it) {
 
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
+	assertrx_dbg(!this->IsFulltext() || this->Type() == IndexFuzzyFT || this->Type() == IndexCompositeFuzzyFT);
 	// reset cache
 	if (key.IsNullValue()) {
 		assertrx_dbg(this->Opts().IsSparse() || this->Opts().IsArray());
@@ -186,7 +185,8 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 		return Variant();
 	}
 
-	typename T::iterator keyIt = this->idx_map.find(static_cast<ref_type>(key));
+	const ref_type refKey = static_cast<ref_type>(key);
+	typename T::iterator keyIt = this->idx_map.find(refKey);
 	if (keyIt == this->idx_map.end()) {
 		keyIt = this->idx_map.insert({static_cast<key_type>(key), typename T::mapped_type()}).first;
 	} else {
@@ -208,11 +208,17 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 
 	addMemStat(keyIt);
 
-	return this->IsFulltext() ? Variant{keyIt->first} : IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
+	if constexpr (std::is_same_v<StoreIndexKeyType<T>, key_string>) {
+		return (IndexStore<StoreIndexKeyType<T>>::shouldHoldOriginalValueInStrMap() && refKey != keyIt->first)
+				   ? IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache)
+				   : IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
+	}
+	return IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
 }
 
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) {
+	assertrx(!this->IsFulltext() || this->Type() == IndexFuzzyFT || this->Type() == IndexCompositeFuzzyFT);
 	if (key.IsNullValue()) {
 		std::ignore = this->empty_ids_.Unsorted().Erase(id);
 		this->isBuilt_ = false;
@@ -230,7 +236,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExis
 		cache_.ResetImpl();
 		clearCache = true;
 	}
-	assertf(!mustExist || delcnt || this->opts_.IsArray() || this->Opts().IsSparse(),
+	assertf(!mustExist || delcnt || this->Opts().IsArray() || this->Opts().IsSparse(),
 			"Delete non-existing id from index '{}' id={}, key={} ({})", this->name_, id,
 			key.As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
@@ -253,9 +259,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExis
 		this->tracker_.markUpdated(this->idx_map, keyIt);
 	}
 
-	if (!this->IsFulltext()) {
-		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, mustExist, strHolder, clearCache);
-	}
+	IndexStore<StoreIndexKeyType<T>>::Delete(key, id, mustExist, strHolder, clearCache);
 }
 
 // WARNING: 'keys' is a key for LRUCache and in some cases (for ordered indexes, for example) can contain values,
@@ -396,7 +400,8 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 		}
 
 		case CondAny:
-			if (selectCtx.opts.distinct && this->idx_map.size() < kMaxIdsForDistinct) {	 // TODO change to more clever condition
+			if (selectCtx.opts.distinct &&
+				this->idx_map.size() < IndexUnordered<T>::kMaxIdsetsForDistinct) {	// TODO change to more clever condition
 				// Get set of any keys
 				res.reserve(this->idx_map.size());
 				for (auto& keyIt : this->idx_map) {

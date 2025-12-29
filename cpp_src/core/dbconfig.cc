@@ -263,13 +263,7 @@ Error DBConfigProvider::CheckAsyncReplicationToken(std::string_view nsName, std:
 
 std::string DBConfigProvider::GetAsyncReplicationToken(std::string_view nsName) const {
 	smart_lock<shared_timed_mutex> lk(mtx_, NonUnique);
-	const auto& tokens = replicationData_.admissibleTokens;
-	if (auto it = tokens.find(nsName); it != tokens.end()) {
-		return it->second;
-	} else if (it = tokens.find("*"); it != tokens.end()) {
-		return it->second;
-	}
-	return {};
+	return replicationData_.GeReplicationToken(nsName);
 }
 
 void DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData& data) const {
@@ -459,6 +453,15 @@ void ProfilingConfigData::GetJSON(JsonBuilder& jb) const {
 	transaction.End();
 
 	lql.End();
+}
+
+std::string ReplicationConfigData::GeReplicationToken(std::string_view nsName) const {
+	if (auto it = admissibleTokens.find(nsName); it != admissibleTokens.end()) {
+		return it->second;
+	} else if (it = admissibleTokens.find("*"); it != admissibleTokens.end()) {
+		return it->second;
+	}
+	return {};
 }
 
 Error ReplicationConfigData::FromDefault() noexcept {

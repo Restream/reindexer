@@ -14,7 +14,7 @@ using FieldsValue = h_vector<Variant, 2>;
 struct [[nodiscard]] DataType {
 	DataType() = default;
 	template <typename T>
-	DataType(T&& d, IsArray a) noexcept : data(std::move(d)), isArray(a) {}
+	DataType(T&& d, IsArray a) noexcept : data(std::forward<T>(d)), isArray(a) {}
 	std::variant<std::span<const bool>, std::span<const int64_t>, std::span<const double>, std::span<const float>,
 				 std::span<const std::string_view>, std::span<const int32_t>, std::span<const Uuid>, std::span<const p_string>,
 				 VariantArray>
@@ -94,8 +94,10 @@ private:
 
 template <IsCompositeSupported isCompositeSupported>
 struct [[nodiscard]] LessDistinctVector {
-	LessDistinctVector() = default;
-	LessDistinctVector(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(fields) {}
+	LessDistinctVector() noexcept = default;
+	LessDistinctVector(const LessDistinctVector&) noexcept = default;
+	LessDistinctVector& operator=(const LessDistinctVector&) noexcept = default;
+	LessDistinctVector(const PayloadType& type, const FieldsSet& fields) : type_(type), fields_(std::make_shared<FieldsSet>(fields)) {}
 	bool operator()(const DistinctHelpers::FieldsValue& v1, const DistinctHelpers::FieldsValue& v2) const {
 		assertrx_throw(v1.size() == v2.size());
 		for (unsigned i = 0; i < v1.size(); i++) {
@@ -111,7 +113,7 @@ struct [[nodiscard]] LessDistinctVector {
 					if constexpr (isCompositeSupported == IsCompositeSupported::Yes) {
 						const PayloadValue& l = static_cast<const PayloadValue&>(v1[i]);
 						const PayloadValue& r = static_cast<const PayloadValue&>(v2[i]);
-						return ConstPayload(type_, l).Compare<WithString::No, NotComparable::Return, kDefaultNullsHandling>(r, fields_) ==
+						return ConstPayload(type_, l).Compare<WithString::No, NotComparable::Return, kDefaultNullsHandling>(r, *fields_) ==
 							   ComparationResult::Lt;
 					} else {
 						throw_as_assert;
@@ -127,7 +129,7 @@ struct [[nodiscard]] LessDistinctVector {
 
 private:
 	PayloadType type_;
-	FieldsSet fields_;
+	std::shared_ptr<const FieldsSet> fields_;
 };
 
 bool GetMultiFieldValue(const std::vector<DataType>& data, unsigned long dataIndex, unsigned int rowLen, FieldsValue& values);

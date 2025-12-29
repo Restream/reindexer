@@ -29,7 +29,7 @@ public:
 	IndexMemStat GetMemStat(const RdxContext&) noexcept override;
 	StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 											const std::atomic_int32_t& cancel) noexcept override;
-	Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&&) override;
+	Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&&, uint8_t version) override;
 	void RebuildCentroids(float dataPart) override;
 
 private:

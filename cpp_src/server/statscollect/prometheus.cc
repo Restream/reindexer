@@ -41,6 +41,14 @@ void Prometheus::Attach(http::Router& router) {
 											 .Name("reindexer_embed_last_sec_avg_embed_latency_us")
 											 .Help("Average auto-embedding latency for cache misses (last second)")
 											 .Register(registry_);
+	embedderInputTrafficTotalBytes_ = &BuildGauge()
+										   .Name("reindexer_embed_input_traffic_total_bytes")
+										   .Help("Total amount of data received from the embedding service over the network")
+										   .Register(registry_);
+	embedderOutputTrafficTotalBytes_ = &BuildGauge()
+											.Name("reindexer_embed_output_traffic_total_bytes")
+											.Help("Total amount of data sent to the embedding service over the network")
+											.Register(registry_);
 
 	router.GET<Prometheus, &Prometheus::collect>("/metrics", this);
 }

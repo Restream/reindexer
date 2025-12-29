@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-class [[nodiscard]] spinlock {
+class [[nodiscard]] RX_CAPABILITY("mutex") spinlock {
 public:
 	spinlock() { _M_lock.clear(); }
 	spinlock(const spinlock&) = delete;

@@ -50,7 +50,7 @@ private:
 template <typename CmdT>
 class [[nodiscard]] ConnectionsPool {
 public:
-	ConnectionsPool(ConnectionsPoolData& data) noexcept : data_(data) {
+	ConnectionsPool(ConnectionsPoolData& data) : data_(data) {
 		for (auto& c : data_.clients) {
 			connections_.emplace_back(c);
 		}

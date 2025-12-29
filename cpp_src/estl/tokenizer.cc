@@ -27,7 +27,7 @@ Token Tokenizer::NextToken(Flags flgs) {
 	SkipSpace();
 
 	if (cur_ == q_.end()) {
-		return Token(TokenEnd);
+		return Token(TokenEnd, pos_);
 	}
 
 	Token res(TokenSymbol, pos_);

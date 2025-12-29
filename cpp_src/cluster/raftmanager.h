@@ -28,7 +28,7 @@ public:
 	void Configure(const ReplicationConfigData&, const ClusterConfigData&);
 	std::optional<RaftInfo::Role> RunElectionsRound() noexcept;
 	bool LeaderIsAvailable(ClockT::time_point now) const noexcept { return voting_.LeaderIsAvailable(now); }
-	bool FollowersAreAvailable() const;
+	bool FollowersAreAvailable() const noexcept;
 	int GetLeaderId() const noexcept { return voting_.GetLeaderId(); }
 	void SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response) {
 		voting_.SuggestLeader(serverId_, suggestion, response);
@@ -56,6 +56,7 @@ private:
 	class [[nodiscard]] DesiredLeaderIdSender {
 	public:
 		DesiredLeaderIdSender(net::ev::dynamic_loop&, const std::vector<RaftNode>&, int serverId, int nextLeaderId, const Logger&);
+		// NOLINTNEXTLINE (bugprone-exception-escape)
 		~DesiredLeaderIdSender() {
 			coroutine::wait_group wgStop;
 			for (auto& client : clients_) {

@@ -9,7 +9,6 @@ namespace reindexer {
 namespace builders {
 class [[nodiscard]] JsonBuilder {
 public:
-	JsonBuilder() noexcept : ser_(nullptr), tm_(nullptr) {}
 	JsonBuilder(WrSerializer& ser, ObjType type = ObjType::TypeObject, const TagsMatcher* tm = nullptr, bool emitTrailingForFloat = true);
 	~JsonBuilder() { End(); }
 	JsonBuilder(const JsonBuilder&) = delete;
@@ -68,15 +67,15 @@ public:
 	template <typename T, typename std::enable_if<std::is_integral<T>::value>::type* = nullptr>
 	void Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
 		putName(name);
-		(*ser_) << arg;
+		ser_ << arg;
 	}
 	template <typename T, typename std::enable_if<std::is_floating_point<T>::value>::type* = nullptr>
 	void Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
 		putName(name);
 		if (emitTrailingForFloat_) {
-			(*ser_) << arg;
+			ser_ << arg;
 		} else {
-			ser_->PutFPStrNoTrailing(arg);
+			ser_.PutFPStrNoTrailing(arg);
 		}
 	}
 	template <typename T>
@@ -89,7 +88,7 @@ public:
 		putName(name);
 		std::ostringstream sstream;
 		sstream << arg;
-		ser_->PrintJsonString(sstream.str());
+		ser_.PrintJsonString(sstream.str());
 	}
 
 	void Raw(concepts::TagNameOrIndex auto tag, std::string_view arg) { return Raw(getNameByTag(tag), arg); }
@@ -133,11 +132,11 @@ private:
 	[[nodiscard]] std::string_view getNameByTag(TagName);
 	[[nodiscard]] std::string_view getNameByTag(TagIndex) noexcept { return {}; }
 
-	WrSerializer* ser_;
-	const TagsMatcher* tm_;
-	ObjType type_ = ObjType::TypePlain;
-	int count_ = 0;
-	bool emitTrailingForFloat_ = true;
+	WrSerializer& ser_;
+	const TagsMatcher* tm_{nullptr};
+	ObjType type_{ObjType::TypePlain};
+	int count_{0};
+	bool emitTrailingForFloat_{true};
 };
 
 }  // namespace builders

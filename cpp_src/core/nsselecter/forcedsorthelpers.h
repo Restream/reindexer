@@ -23,7 +23,7 @@ private:
 public:
 	ForcedSortMap(Variant k, mapped_type v, size_t size) : data_{size} {
 		throwIfNotSupportedValueType(k);
-		data_.emplace(std::move(k), v);
+		std::ignore = data_.emplace(std::move(k), v);
 	}
 	std::pair<Iterator, bool> emplace(Variant k, mapped_type v) & {
 		throwIfNotSupportedValueType(k);

@@ -18,9 +18,9 @@ Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache)
 		return Variant();
 	}
 
-	auto keyIt = this->idx_map.lower_bound(static_cast<ref_type>(key));
-
-	if (keyIt == this->idx_map.end() || this->idx_map.key_comp()(static_cast<ref_type>(key), keyIt->first)) {
+	const ref_type refKey = static_cast<ref_type>(key);
+	auto keyIt = this->idx_map.lower_bound(refKey);
+	if (keyIt == this->idx_map.end() || this->idx_map.key_comp()(refKey, keyIt->first)) {
 		keyIt = this->idx_map.insert(keyIt, {static_cast<key_type>(key), typename T::mapped_type()});
 	} else {
 		this->delMemStat(keyIt);
@@ -34,7 +34,13 @@ Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache)
 	this->tracker_.markUpdated(this->idx_map, keyIt);
 	this->addMemStat(keyIt);
 
-	return IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
+	if constexpr (std::is_same_v<StoreIndexKeyType<T>, key_string>) {
+		return (IndexStore<StoreIndexKeyType<T>>::shouldHoldOriginalValueInStrMap() && refKey != keyIt->first)
+				   ? IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache)
+				   : IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
+	} else {
+		return IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
+	}
 }
 
 template <typename T>
@@ -48,55 +54,64 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 
 	// Get set of keys or single key
 	if (!IsOrderedCondition(condition)) {
-		if (selectCtx.opts.unbuiltSortOrders && keys.size() > 1) {
-			throw Error(errLogic, "Attempt to use btree index '{}' for sort optimization with unordered multivalued condition ({})",
-						this->Name(), CondTypeToStr(condition));
+		const bool isSortIndex = selectCtx.opts.unbuiltSortOrders || (sortId && this->sortId_ == sortId);
+		if (condition != CondAny || !isSortIndex) {
+			if (selectCtx.opts.unbuiltSortOrders && keys.size() > 1) {
+				throw Error(errLogic, "Attempt to use btree index '{}' for sort optimization with unordered multivalued condition ({})",
+							this->Name(), CondTypeToStr(condition));
+			}
+			return IndexUnordered<T>::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 		}
-		return IndexUnordered<T>::SelectKey(keys, condition, sortId, selectCtx, rdxCtx);
 	}
 
 	SelectKeyResult res;
 	auto startIt = this->idx_map.begin();
 	auto endIt = this->idx_map.end();
 	assertrx_dbg(std::none_of(keys.begin(), keys.end(), [](const auto& k) { return k.IsNullValue(); }));
-	const auto& key1 = *keys.begin();
 	switch (condition) {
-		case CondLt:
-			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));
+		case CondLt: {
+			endIt = this->idx_map.lower_bound(static_cast<ref_type>(keys[0]));
 			break;
-		case CondLe:
-			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key1), endIt->first)) {
+		}
+		case CondLe: {
+			const auto& key1 = static_cast<ref_type>(keys[0]);
+			endIt = this->idx_map.lower_bound(key1);
+			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(key1, endIt->first)) {
 				++endIt;
 			}
 			break;
+		}
 		case CondGt:
-			startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
+			startIt = this->idx_map.upper_bound(static_cast<ref_type>(keys[0]));
 			break;
-		case CondGe:
-			startIt = this->idx_map.find(static_cast<ref_type>(key1));
+		case CondGe: {
+			const auto& key1 = static_cast<ref_type>(keys[0]);
+			startIt = this->idx_map.find(key1);
 			if (startIt == this->idx_map.end()) {
-				startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
+				startIt = this->idx_map.upper_bound(key1);
 			}
 			break;
+		}
 		case CondRange: {
-			const auto& key2 = keys[1];
+			const auto& key1 = static_cast<ref_type>(keys[0]);
+			const auto& key2 = static_cast<ref_type>(keys[1]);
 
-			startIt = this->idx_map.find(static_cast<ref_type>(key1));
+			startIt = this->idx_map.find(key1);
 			if (startIt == this->idx_map.end()) {
-				startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
+				startIt = this->idx_map.upper_bound(key1);
 			}
 
-			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key2));
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key2), endIt->first)) {
+			endIt = this->idx_map.lower_bound(key2);
+			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(key2, endIt->first)) {
 				++endIt;
 			}
 
-			if (endIt != this->idx_map.end() && this->idx_map.key_comp()(endIt->first, static_cast<ref_type>(key1))) {
+			if (endIt != this->idx_map.end() && this->idx_map.key_comp()(endIt->first, key1)) {
 				return SelectKeyResults(std::move(res));
 			}
 		} break;
 		case CondAny:
+			break;
 		case CondEq:
 		case CondSet:
 		case CondAllSet:
@@ -113,7 +128,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 	}
 
 	if (selectCtx.opts.unbuiltSortOrders) {
-		IndexIterator::Ptr btreeIt(make_intrusive<BtreeIndexIterator<T>>(this->idx_map, startIt, endIt));
+		IndexIterator::Ptr btreeIt(make_intrusive<BtreeIndexIterator<T>>(startIt, endIt));
 		res.emplace_back(std::move(btreeIt));
 	} else if (sortId && this->sortId_ == sortId && !selectCtx.opts.distinct) {
 		assertrx(startIt->second.Sorted(this->sortId_).size());
@@ -126,15 +141,17 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 		// sort by this index. Just give part of sorted ids;
 		res.emplace_back(idFirst, idLast + 1);
 	} else {
+		// TODO: use count of items in ns to more clever select plan
+		const int kMaxIdsetsCount = selectCtx.opts.distinct ? IndexUnordered<T>::kMaxIdsetsForDistinct : 50;
 		int count = 0;
 		auto it = startIt;
 
-		while (count < 50 && it != endIt) {
+		while (count < kMaxIdsetsCount && it != endIt) {
 			++it;
 			++count;
 		}
-		// TODO: use count of items in ns to more clever select plan
-		if (count < 50) {
+
+		if (count < kMaxIdsetsCount) {
 			struct {
 				T* i_map;
 				SortType sortId;
@@ -226,7 +243,7 @@ void IndexOrdered<T>::MakeSortOrders(IUpdateSortedContext& ctx) {
 
 template <typename T>
 IndexIterator::Ptr IndexOrdered<T>::CreateIterator() const {
-	return make_intrusive<BtreeIndexIterator<T>>(this->idx_map, this->empty_ids_.Unsorted().BuildBaseIdSet());
+	return make_intrusive<BtreeIndexIterator<T>>(this->idx_map, this->empty_ids_.Unsorted());
 }
 
 template <typename KeyEntryT>

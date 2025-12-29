@@ -36,6 +36,13 @@ concept OneOf = (impl::ContainsOrSameT<T, Us>::value || ...);
 template <typename T>
 concept ConvertibleToString = std::is_constructible_v<std::string, T>;
 
+template <typename T>
+concept StringContainer = requires(T t) {
+	{ std::ranges::begin(t) } -> std::forward_iterator;
+	{ std::ranges::end(t) } -> std::sentinel_for<decltype(std::ranges::begin(t))>;
+	{ *std::ranges::begin(t) } -> ConvertibleToString;
+};
+
 template <typename T, typename... Us>
 concept SpanFromOneOf = OneOf<T, std::span<Us>...>;
 
@@ -49,6 +56,9 @@ template <typename T>
 concept HasSize = requires(T a) {
 	{ a.size() } -> std::convertible_to<unsigned>;	// Using 'unsigned' for h_vector/VariantsArray compatibility
 };
+
+template <typename T>
+concept IsEnum = std::is_enum_v<T>;
 
 }  // namespace concepts
 }  // namespace reindexer

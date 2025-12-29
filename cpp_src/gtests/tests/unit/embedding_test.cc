@@ -1090,3 +1090,66 @@ TEST_F(EmbeddingTest, NegativeActionCreateEmbedding) try {
 			  "Vector field '" + kFieldNameIvf + "' must not contain a non-empty data if strict strategy for auto-embedding is configured");
 }
 CATCH_AND_ASSERT
+
+TEST_F(EmbeddingTest, SkipEmbeddingStrategy) {
+	constexpr static auto kNsName = "ns_skip_embedding"sv;
+	const static std::string kFieldNameIvf{"ivf_index"};
+	const static std::string kFieldNameFirst{"first"};
+	const static std::string kFieldNameSecond{"second"};
+	constexpr static size_t kDimension = 3;
+	constexpr static size_t kMaxElements = 1'000;
+
+	FloatVectorIndexOpts::EmbedderOpts embedder;
+	embedder.strategy = FloatVectorIndexOpts::EmbedderOpts::Strategy::Always;
+	embedder.endpointUrl = "http://127.0.0.1:8000";
+	embedder.fields = {kFieldNameFirst, kFieldNameSecond};
+
+	FloatVectorIndexOpts::EmbeddingOpts embedding;
+	embedding.upsertEmbedder = embedder;
+
+	IndexDeclaration vecIndex{kFieldNameIvf, "ivf", "float_vector",
+							  IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
+																	   .SetDimension(kDimension)
+																	   .SetNCentroids(kMaxElements / 50)
+																	   .SetMetric(reindexer::VectorMetric::L2)
+																	   .SetEmbedding(embedding)),
+							  0};
+
+	rt.OpenNamespace(kNsName);
+	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+										IndexDeclaration{kFieldNameFirst, "hash", "string", IndexOpts(), 0},
+										IndexDeclaration{kFieldNameSecond, "hash", "string", IndexOpts(), 0}, vecIndex});
+	auto check = [&]() {
+		std::vector<float> buf{1.0, 2.0, 3.0};
+		auto item = rt.NewItem(kNsName);
+		item[kFieldNameId] = 0;
+		item[kFieldNameIvf] = reindexer::ConstFloatVectorView{buf};
+		std::vector<std::string> precepts;
+		precepts.emplace_back(kFieldNameIvf + "=skip_embedding()");
+		item.SetPrecepts(precepts);
+		rt.Upsert(kNsName, item);
+		Query q{Query::FromSQL("Select *,vectors() from ns_skip_embedding")};
+		{
+			auto qr = rt.Select(q);
+			EXPECT_EQ(qr.Count(), 1);
+			EXPECT_EQ((*qr.begin()).GetJSON(), R"#({"id":0,"first":"","second":"","ivf_index":[1.0,2.0,3.0]})#");
+		}
+	};
+	check();
+
+	auto changeIndexAndCheck = [&](FloatVectorIndexOpts::EmbedderOpts::Strategy s) {
+		rt.TruncateNamespace(kNsName);
+		embedding.upsertEmbedder.value().strategy = s;
+		IndexOpts vecIndexE = IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
+																	   .SetDimension(kDimension)
+																	   .SetNCentroids(kMaxElements / 50)
+																	   .SetMetric(reindexer::VectorMetric::L2)
+																	   .SetEmbedding(embedding));
+
+		auto updateIdx = reindexer::IndexDef{kFieldNameIvf, "ivf", "float_vector", vecIndexE};
+		rt.UpdateIndex(kNsName, updateIdx);
+		check();
+	};
+	changeIndexAndCheck(FloatVectorIndexOpts::EmbedderOpts::Strategy::EmptyOnly);
+	changeIndexAndCheck(FloatVectorIndexOpts::EmbedderOpts::Strategy::Strict);
+}

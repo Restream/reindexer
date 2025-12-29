@@ -18,7 +18,7 @@ public:
 			channels_.emplace_back(std::make_unique<ResultChT>());
 			loop.spawn(
 				workersWg_,
-				[this]() noexcept {
+				[this]() noexcept {	 // NOLINT(bugprone-exception-escape)
 					while (true) {
 						auto itp = updatesCh_.pop();
 						if (!itp.second) {

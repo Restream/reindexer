@@ -101,7 +101,7 @@ public:
 	uint32_t updatesBuckets() const noexcept { return updatesBuckets_.load(std::memory_order_relaxed); }
 	uint32_t allocated() const noexcept { return allocatedMem_.load(std::memory_order_relaxed); }
 	uint32_t overflow() const noexcept { return overflowSize_.load(std::memory_order_relaxed); }
-	void enableCountingMode(bool val) noexcept {
+	void enableCountingMode(bool val) {
 		if (!simpleCounting_ && val) {
 			hash_map m;
 			std::swap(m, updated_);

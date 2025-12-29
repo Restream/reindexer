@@ -20,7 +20,7 @@ public:
 	void Configure(AsyncReplConfigData config);
 	void Configure(ReplicationConfigData config);
 	bool IsExpectingStartup() const noexcept;
-	void Run();
+	void Run(const std::shared_ptr<NamespacesSyncScheduler>&);
 	void Stop(bool resetConfig = false);
 	const std::optional<AsyncReplConfigData>& Config() const noexcept { return config_; }
 	ReplicationStats GetReplicationStats() const;

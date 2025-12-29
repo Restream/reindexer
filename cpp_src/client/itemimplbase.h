@@ -16,12 +16,12 @@ class [[nodiscard]] ItemImplBase {
 public:
 	// Construct empty item
 	ItemImplBase() = default;
-	ItemImplBase(PayloadType type, const TagsMatcher& tagsMatcher)
+	ItemImplBase(const PayloadType& type, const TagsMatcher& tagsMatcher)
 		: payloadType_(type), payloadValue_(type.TotalSize(), 0, type.TotalSize() + 0x100), tagsMatcher_(tagsMatcher) {
 		tagsMatcher_.clearUpdated();
 	}
 
-	ItemImplBase(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher)
+	ItemImplBase(const PayloadType& type, const PayloadValue& v, const TagsMatcher& tagsMatcher)
 		: payloadType_(type), payloadValue_(v), tagsMatcher_(tagsMatcher) {
 		tagsMatcher_.clearUpdated();
 	}

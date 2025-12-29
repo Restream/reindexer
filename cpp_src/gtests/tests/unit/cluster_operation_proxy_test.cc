@@ -1482,7 +1482,6 @@ TEST_F(ClusterOperationProxyApi, ChangeLeaderTimeout) {
 }
 
 TEST_F(ClusterOperationProxyApi, SelectFromStatsTimeout) {
-	// Check error on attempt to reset cluster namespace role
 	net::ev::dynamic_loop loop;
 	auto ports = GetDefaults();
 	loop.spawn(exceptionWrapper([&loop, &ports] {
@@ -1491,7 +1490,7 @@ TEST_F(ClusterOperationProxyApi, SelectFromStatsTimeout) {
 		cluster.StopServers({0, 1});
 		client::QueryResults qr;
 		auto err = cluster.GetNode(2)->api.reindexer->ExecSQL("select * from #replicationstats where type='cluster'", qr);
-		ASSERT_EQ(err.code(), errTimeout);
+		ASSERT_EQ(err.code(), errTimeout) << err.what();
 		ASSERT_STREQ(err.what(), "Unable to get cluster's leader: Context was canceled or timed out (condition variable)");
 	}));
 

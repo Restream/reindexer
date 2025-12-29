@@ -752,9 +752,26 @@ Query SQLParser::parseSubQuery(Tokenizer& parser) {
 	return subquery;
 }
 
-template <typename T>
-void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op) {
-	// Operator
+VariantArray SQLParser::parseValues(Tokenizer& parser) const {
+	VariantArray values;
+	for (;;) {
+		auto tok = parser.NextToken();
+		if (tok.Text() == ")"sv && tok.Type() == TokenSymbol) {
+			break;
+		}
+		values.push_back(Token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_True));
+		tok = parser.NextToken();
+		if (tok.Text() == ")"sv) {
+			break;
+		}
+		if (tok.Text() != ","sv) {
+			throw Error(errParseSQL, "Expected ')' or ',', but found '{}' in query, {}", tok.Text(), parser.Where(tok));
+		}
+	}
+	return values;
+}
+
+CondType SQLParser::parseCondition(Tokenizer& parser, OpType& op) {
 	CondType condition;
 	auto tok = peekSqlToken(parser, ConditionSqlToken);
 	if (tok.Text() == "<>"sv) {
@@ -770,48 +787,59 @@ void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op) 
 		condition = getCondType(tok.Text());
 	}
 	parser.SkipToken();
+	return condition;
+}
+
+template <typename T>
+void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op) {
+	std::optional<functions::FunctionVariant> function;
+	if constexpr (std::is_constructible_v<std::string, T>) {
+		if (auto tok = parser.PeekToken(); tok.Text() == "(") {
+			function.emplace(functions::Function::FromSQL(firstArg, parser));
+		}
+	}
+
+	auto setWhereCondition = [this, &firstArg, &function](OpType op, CondType condition, VariantArray&& values) {
+		if (function.has_value()) {
+			query_.NextOp(op).Where(std::move(function.value()), condition, std::move(values));
+		} else {
+			query_.NextOp(op).Where(std::forward<T>(firstArg), condition, std::move(values));
+		}
+	};
+
+	// Operator
+	CondType condition{parseCondition(parser, op)};
 
 	// Value
 	if (ctx_.autocompleteMode) {
 		std::ignore = peekSqlToken(parser, WhereFieldValueSqlToken, false);
 	}
-	tok = parser.NextToken();
+	auto tok = parser.NextToken();
 	if (iequals(tok.Text(), "null"sv) || iequals(tok.Text(), "empty"sv)) {
-		query_.NextOp(op).Where(std::forward<T>(firstArg), CondEmpty, VariantArray{});
+		setWhereCondition(op, CondEmpty, VariantArray{});
 	} else if (iequals(tok.Text(), "not"sv)) {
 		tok = peekSqlToken(parser, WhereFieldNegateValueSqlToken, false);
 		if (!iequals(tok.Text(), "null"sv) && !iequals(tok.Text(), "empty"sv)) {
 			throw Error(errParseSQL, "Expected NULL, but found '{}' in query, {}", tok.Text(), parser.Where(tok));
 		}
-		query_.NextOp(op).Where(std::forward<T>(firstArg), CondAny, VariantArray{});
+		setWhereCondition(op, CondAny, VariantArray{});
 		tok = parser.NextToken(Tokenizer::Flags::NoFlags);
 	} else if (tok.Text() == "("sv) {
 		if constexpr (!std::is_same_v<T, Query>) {
 			if (iequals(peekSqlToken(parser, WhereFieldValueOrSubquerySqlToken, false).Text(), "select"sv) &&
 				!isCondition(parser.PeekSecondToken().Text())) {
-				query_.NextOp(op).Where(std::forward<T>(firstArg), condition, parseSubQuery(parser));
+				if (function.has_value()) {
+					query_.NextOp(op).Where(std::move(function.value()), condition, parseSubQuery(parser));
+				} else {
+					query_.NextOp(op).Where(std::forward<T>(firstArg), condition, parseSubQuery(parser));
+				}
 				return;
 			}
 		}
-		VariantArray values;
-		for (;;) {
-			tok = parser.NextToken();
-			if (tok.Text() == ")"sv && tok.Type() == TokenSymbol) {
-				break;
-			}
-			values.push_back(Token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_True));
-			tok = parser.NextToken();
-			if (tok.Text() == ")"sv) {
-				break;
-			}
-			if (tok.Text() != ","sv) {
-				throw Error(errParseSQL, "Expected ')' or ',', but found '{}' in query, {}", tok.Text(), parser.Where(tok));
-			}
-		}
-		query_.NextOp(op).Where(std::forward<T>(firstArg), condition, std::move(values));
+		VariantArray values{parseValues(parser)};
+		setWhereCondition(op, condition, std::move(values));
 	} else if (tok.Type() != TokenName || iequals(tok.Text(), "true"sv) || iequals(tok.Text(), "false"sv)) {
-		query_.NextOp(op).Where(std::forward<T>(firstArg), condition,
-								{Token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_True)});
+		setWhereCondition(op, condition, {Token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_True)});
 	} else {
 		if constexpr (std::is_same_v<T, Query>) {
 			throw Error(errParseSQL, "Field cannot be after subquery. (text = '{}'  location = {})", tok.Text(), parser.Where(tok));
@@ -1394,6 +1422,7 @@ void SQLParser::parseJoinEntries(Tokenizer& parser, const std::string& mainNs, J
 		}
 	}
 }
+
 CondType SQLParser::getCondType(std::string_view cond) {
 	if (cond == "="sv || cond == "=="sv || iequals(cond, "is"sv)) {
 		return CondEq;

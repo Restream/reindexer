@@ -53,11 +53,11 @@ struct [[nodiscard]] NamespaceDef {
 	}
 
 public:
-	std::string name;
-	StorageOpts storage;
 	std::vector<IndexDef> indexes;
-	bool isNameOnly = false;
+	std::string name;
 	std::string schemaJson = "{}";
+	StorageOpts storage;
+	bool isNameOnly = false;
 };
 
 enum [[nodiscard]] EnumNamespacesOpt {

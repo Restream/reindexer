@@ -15,6 +15,14 @@
 
 namespace reindexer {
 
+namespace {
+void checkSubqueryCondition(CondType cond) {
+	if (cond == CondAny || cond == CondEmpty || cond == CondKnn) {
+		throw Error{errQueryExec, "Condition {} with field and subquery", CondTypeToStr(cond)};
+	}
+}
+}  // namespace
+
 template <typename JS>
 std::string JoinQueryEntry::Dump(const std::vector<JS>& joinedSelectors) const {
 	WrSerializer ser;
@@ -277,6 +285,71 @@ bool QueryEntry::TryUpdateInplace(VariantArray& newValues) noexcept {
 	return false;
 }
 
+const functions::Function& FunctionEntry::Function() const& {
+	switch (function_.index()) {
+		case 0:
+			return std::get<0>(function_);
+		default:
+			throw Error(errLogic, "Function type {} is not supported yet!", function_.index());
+	}
+}
+
+std::string FunctionEntry::Dump() const {
+	WrSerializer ser;
+	ser << Function().ToString();
+	ser << ' ' << condition_ << ' ';
+	return std::string{ser.Slice()};
+}
+
+bool QueryFunctionEntry::operator==(const QueryFunctionEntry& other) const {
+	return FunctionEntry::operator==(other) &&
+		   values_.RelaxCompare<WithString::Yes, NotComparable::Return, kDefaultNullsHandling>(other.values_) == ComparationResult::Eq;
+}
+
+std::string QueryFunctionEntry::Dump() const {
+	WrSerializer ser;
+	ser << FunctionEntry::Dump();
+	const bool severalValues = (Values().size() > 1);
+	if (severalValues) {
+		ser << '(';
+	}
+	for (auto& v : Values()) {
+		if (&v != &*Values().begin()) {
+			ser << ',';
+		}
+		ser << '\'' << v.As<std::string>() << '\'';
+	}
+	if (severalValues) {
+		ser << ')';
+	}
+	return std::string{ser.Slice()};
+}
+
+std::string QueryFunctionEntry::DumpBrief() const {
+	WrSerializer ser;
+	ser << FunctionEntry::Dump();
+	switch (Values().size()) {
+		case 0:
+			break;
+		case 1:
+			ser << '\'' << Values().front().As<std::string>() << '\'';
+			break;
+		default:
+			ser << "(...)";
+			break;
+	}
+	return std::string{ser.Slice()};
+}
+
+std::string SubQueryFunctionEntry::Dump(const std::vector<Query>& subQueries) const {
+	WrSerializer ser;
+	ser << FunctionEntry::Dump();
+	ser << " (" << subQueries.at(QueryIndex()).GetSQL() << ')';
+	return std::string{ser.Slice()};
+}
+
+void SubQueryFunctionEntry::checkCondition(CondType condition) const { checkSubqueryCondition(condition); }
+
 AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, SortingEntries&& sort, unsigned limit, unsigned offset)
 	: type_(type), fields_(std::move(fields)), sortingEntries_{std::move(sort)}, limit_(limit), offset_(offset) {
 	switch (type_) {
@@ -406,6 +479,20 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 					subQueries.at(sqe.QueryIndex()).Serialize(ser);
 				}
 			},
+			[&ser, op, &subQueries](const SubQueryFunctionEntry& sqe) {
+				ser.PutVarUint(QueryFunctionSubQueryCondition);
+				ser.PutVarUint(op);
+				ser.PutVarUint(sqe.Function().FieldNames().size());
+				for (const auto& field : sqe.Function().FieldNames()) {
+					ser.PutVString(field);
+				}
+				ser.PutVarUint(sqe.Function().Type());
+				ser.PutVarUint(sqe.Condition());
+				{
+					const auto sizePosSaver = ser.StartVString();
+					subQueries.at(sqe.QueryIndex()).Serialize(ser);
+				}
+			},
 			[&](const QueryEntriesBracket&) {
 				ser.PutVarUint(QueryOpenBracket);
 				ser.PutVarUint(op);
@@ -451,6 +538,20 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 					ser.PutVString(qe.Data());
 				}
 				qe.Params().Serialize(ser);
+			},
+			[&](const QueryFunctionEntry& entry) {
+				ser.PutVarUint(QueryFunction);
+				ser.PutVarUint(entry.Function().FieldNames().size());
+				for (const auto& field : entry.Function().FieldNames()) {
+					ser.PutVString(field);
+				}
+				ser.PutVarUint(entry.Function().Type());
+				ser.PutVarUint(op);
+				ser.PutVarUint(entry.Condition());
+				ser.PutVarUint(entry.Values().size());
+				for (const auto& kv : entry.Values()) {
+					ser.PutVariant(kv);
+				}
 			});
 	}
 }
@@ -467,17 +568,19 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 			break;
 		}
 		const bool lastResult = it->Visit(
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, JoinQueryEntry> auto&)
+			[] RX_PRE_LMBD_ALWAYS_INLINE(
+				const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, JoinQueryEntry, SubQueryFunctionEntry> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; },
 			[&it, &pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket&)
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
 			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const QueryFunctionEntry&) -> bool { throw_as_assert; },
 			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const BetweenFieldsQueryEntry& qe)
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const MultiDistinctQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const KnnQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept -> bool { throw_as_assert; }	 // TODO
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const KnnQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; }	// TODO
 		);
 		result = (lastResult != (it->operation == OpNot));
 	}
@@ -1036,11 +1139,7 @@ std::string SubQueryFieldEntry::Dump(const std::vector<Query>& subQueries) const
 	return ss.str();
 }
 
-void SubQueryFieldEntry::checkCondition(CondType cond) const {
-	if (cond == CondAny || cond == CondEmpty || cond == CondKnn) {
-		throw Error{errQueryExec, "Condition {} with field and subquery", CondTypeToStr(cond)};
-	}
-}
+void SubQueryFieldEntry::checkCondition(CondType cond) const { checkSubqueryCondition(cond); }
 
 template <typename JS>
 void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinedSelectors,
@@ -1052,23 +1151,24 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 		if (it != begin || it->operation != OpAnd) {
 			ser << it->operation << ' ';
 		}
-		it->Visit([&ser, subQueries](const SubQueryEntry& sqe) { ser << sqe.Dump(subQueries); },
-				  [&ser, subQueries](const SubQueryFieldEntry& sqe) { ser << sqe.Dump(subQueries); },
-				  [&](const QueryEntriesBracket& b) {
-					  ser << "(\n";
-					  dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, subQueries, ser);
-					  dumpEqualPositions(level + 1, ser, b.equalPositions);
-					  for (size_t i = 0; i < level; ++i) {
-						  ser << "   ";
-					  }
-					  ser << ")\n";
-				  },
-				  [&ser](const QueryEntry& qe) { ser << qe.Dump() << '\n'; },
-				  [&joinedSelectors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
-				  [&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << '\n'; },
-				  [&ser](const AlwaysFalse&) { ser << "AlwaysFalse\n"; }, [&ser](const AlwaysTrue&) { ser << "AlwaysTrue\n"; },
-				  [&ser](const MultiDistinctQueryEntry& qe) { ser << qe.Dump() << "\n"; },
-				  [&ser](const KnnQueryEntry& qe) { ser << qe.Dump() << '\n'; });
+		it->Visit(
+			[&ser, subQueries](const SubQueryEntry& sqe) { ser << sqe.Dump(subQueries); },
+			[&ser, subQueries](const SubQueryFieldEntry& sqe) { ser << sqe.Dump(subQueries); },
+			[&ser, subQueries](const SubQueryFunctionEntry& sqe) { ser << sqe.Dump(subQueries); },
+			[&](const QueryEntriesBracket& b) {
+				ser << "(\n";
+				dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, subQueries, ser);
+				dumpEqualPositions(level + 1, ser, b.equalPositions);
+				for (size_t i = 0; i < level; ++i) {
+					ser << "   ";
+				}
+				ser << ")\n";
+			},
+			[&ser](const QueryEntry& qe) { ser << qe.Dump() << '\n'; }, [&ser](const QueryFunctionEntry& qe) { ser << qe.Dump() << '\n'; },
+			[&joinedSelectors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
+			[&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << '\n'; }, [&ser](const AlwaysFalse&) { ser << "AlwaysFalse\n"; },
+			[&ser](const AlwaysTrue&) { ser << "AlwaysTrue\n"; }, [&ser](const MultiDistinctQueryEntry& qe) { ser << qe.Dump() << "\n"; },
+			[&ser](const KnnQueryEntry& qe) { ser << qe.Dump() << '\n'; });
 	}
 }
 template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinedSelector>&, const std::vector<Query>&,

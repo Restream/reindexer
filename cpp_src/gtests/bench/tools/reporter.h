@@ -35,8 +35,8 @@ protected:
 		auto& Out = GetOutputStream();
 
 		// CHECK ERROR
-		if (result.error_occurred) {
-			IgnoreColorPrint(Out, "ERROR OCCURRED: \'%s\'\n", result.error_message.c_str());
+		if (result.skipped != internal::NotSkipped) {
+			IgnoreColorPrint(Out, "SKIPPED WITH MESSAGE: \'%s\'\n", result.skip_message.c_str());
 			return;
 		}
 

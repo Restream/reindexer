@@ -165,7 +165,19 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(Tokenizer
 	if (pv.ContainsMultidimensionalArray(FieldsFilter{outTok.Text(), ns_})) {
 		throw Error(errParams, "Concatenation and remove are not supported for multidimensional arrays: '{}'", outTok.Text());
 	}
-	pv.GetByJsonPath(outTok.Text(), ns_.tagsMatcher_, fieldValues, KeyValueType::Undefined{});
+
+	std::string_view jsonPath{outTok.Text()};
+	if (ns_.tryGetIndexByNameOrJsonPath(jsonPath, fieldIdx)) {
+		if (const auto& index{ns_.indexes_[fieldIdx]}; index->Opts().IsSparse()) {
+			const auto& fields{index->Fields()};
+			if (fields.getJsonPathsLength() > 0) {
+				jsonPath = fields.getJsonPath(0);
+			} else {
+				throw Error(errParams, "Field '{}' doesn't have json path");
+			}
+		}
+	}
+	pv.GetByJsonPath(jsonPath, ns_.tagsMatcher_, fieldValues, KeyValueType::Undefined{});
 
 	if (fieldValues.IsNullValue()) {
 		return {.value = Variant{}, .type = PrimaryToken::Type::Null};

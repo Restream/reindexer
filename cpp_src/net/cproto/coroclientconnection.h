@@ -133,6 +133,7 @@ public:
 
 private:
 	struct [[nodiscard]] RPCData {
+		// NOLINTNEXTLINE(bugprone-exception-escape)
 		RPCData() noexcept : seq(0), used(false), system(false), cancelCtx(nullptr), rspCh(1) {}
 		uint32_t seq;
 		bool used;

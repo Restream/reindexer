@@ -63,7 +63,7 @@ class [[nodiscard]] LocalQueryResults {
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
 		Item GetItem(bool enableHold = true);
 		joins::ItemIterator GetJoined();
-		auto& GetItemRef() const& noexcept { return qr_->items_.GetItemRef(idx_); }
+		auto& GetItemRef() const& { return qr_->items_.GetItemRef(idx_); }
 		auto GetItemRef() const&& noexcept = delete;
 		auto& GetItemRefRanked() const& { return qr_->items_.GetItemRefRanked(idx_); }
 		auto GetItemRefRanked() const&& = delete;
@@ -136,7 +136,7 @@ public:
 	void AddItemNoHold(Item& item, lsn_t nsIncarnationTag, bool withData = false);
 	std::string Dump() const;
 	void Erase(const ItemRefVector::Iterator& begin, const ItemRefVector::Iterator& end) { items_.Erase(begin, end); }
-	size_t Count() const noexcept { return items_.Size(); }
+	size_t Count() const { return items_.Size(); }
 	size_t TotalCount() const noexcept { return totalCount; }
 	const std::string& GetExplainResults() const& noexcept { return explainResults; }
 	auto GetExplainResults() const&& = delete;

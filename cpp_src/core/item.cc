@@ -109,11 +109,13 @@ Item::FieldRef& Item::FieldRef::operator=(Variant kr) {
 Item::FieldRef& Item::FieldRef::operator=(const char* str) { return operator=(p_string(str)); }
 Item::FieldRef& Item::FieldRef::operator=(const std::string& str) { return operator=(p_string(&str)); }
 
-Item::FieldRef& Item::FieldRef::operator=(const VariantArray& krs) {
+Item::FieldRef& Item::FieldRef::operator=(VariantArray krs) {
+	throwIfAssignFieldMultyJsonPath();
+
 	if (field_ >= 0) {
-		itemImpl_->SetField(field_, krs);
+		itemImpl_->SetField(field_, std::move(krs));
 	} else {
-		itemImpl_->SetField(jsonPath(), krs);
+		itemImpl_->SetField(jsonPath(), std::move(krs));
 	}
 	return *this;
 }
@@ -122,15 +124,25 @@ template <typename T>
 Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
 								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>;
-	if (field_ < 0) {
-		VariantArray krs;
+	const bool isRegularIndex = (field_ >= 0);
+	bool needCjsonModify = !isRegularIndex;
+	if (isRegularIndex) {
+		throwIfAssignFieldMultyJsonPath();
+		auto pl(itemImpl_->GetPayload());
+		needCjsonModify = (arr.size() != size_t(pl.GetArrayLen(field_)));
+	}
+	if (needCjsonModify) {
+		auto krs = VariantArray::Create(arr);
 		std::ignore = krs.MarkArray();
-		krs.reserve(arr.size());
-		std::transform(arr.begin(), arr.end(), std::back_inserter(krs), [](const T& t) { return Variant(t); });
-		itemImpl_->SetField(jsonPath(), krs);
+		if (isRegularIndex) {
+			itemImpl_->SetField(field_, std::move(krs));
+		} else {
+			itemImpl_->SetField(jsonPath(), std::move(krs));
+		}
 		return *this;
 	}
 
+	// Fast path, that works only if indexed array size was not changed
 	auto pl(itemImpl_->GetPayload());
 	int pos = pl.ResizeArray(field_, arr.size(), Append_False);
 
@@ -251,6 +263,8 @@ void Item::Embed(const RdxContext& ctx) { impl_->Embed(ctx); }
 
 TagName Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }
+size_t Item::GetFieldSize(const FieldsSet& fields) const { return impl_->GetConstPayload().GetFieldSize(fields); }
+size_t Item::GetFieldSize(std::string_view jsonPath) const { return impl_->GetConstPayload().GetFieldSize(jsonPath, impl_->tagsMatcher()); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
 void Item::SetPrecepts(std::vector<std::string> precepts) & { impl_->SetPrecepts(std::move(precepts)); }
 bool Item::IsTagsUpdated() const noexcept { return impl_->tagsMatcher().isUpdated(); }

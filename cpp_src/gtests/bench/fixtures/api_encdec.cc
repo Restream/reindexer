@@ -205,7 +205,7 @@ void ApiEncDec::GetCJSON(benchmark::State& state) {
 	assertrx(itemForCjsonBench_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		const auto ret = itemForCjsonBench_->GetCJSON();
+		auto ret = itemForCjsonBench_->GetCJSON();
 		benchmark::DoNotOptimize(ret);
 	}
 }
@@ -241,7 +241,7 @@ void ApiEncDec::GetJSON(benchmark::State& state) {
 	assertrx(itemForCjsonBench_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		const auto ret = itemForCjsonBench_->GetJSON();
+		auto ret = itemForCjsonBench_->GetJSON();
 		benchmark::DoNotOptimize(ret);
 	}
 }
@@ -290,7 +290,7 @@ void ApiEncDec::GetMsgPack(benchmark::State& state) {
 	assertrx(itemForCjsonBench_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		const auto ret = itemForCjsonBench_->GetMsgPack();
+		auto ret = itemForCjsonBench_->GetMsgPack();
 		benchmark::DoNotOptimize(ret);
 	}
 }

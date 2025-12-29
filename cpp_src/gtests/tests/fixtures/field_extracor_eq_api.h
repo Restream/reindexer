@@ -31,8 +31,8 @@ public:
 		reindexer::FloatVectorsHolderVector vectors;
 		ser.PutUInt32(0);
 		reindexer::Error err = decoder.Decode(pl, ser, node.value, vectors);
-		std::unique_ptr<uint8_t[]> tupleData = ser.DetachLStr();
-		pl.Set(0, Variant(reindexer::p_string(reinterpret_cast<reindexer::l_string_hdr*>(tupleData.get())), Variant::noHold));
+		auto tupleData = ser.DetachLStr();
+		pl.Set(0, Variant(reindexer::p_string(reinterpret_cast<const reindexer::l_string_hdr*>(tupleData.Get())), Variant::noHold));
 
 		ASSERT_TRUE(err.ok()) << err.what();
 		reindexer::FieldPath path;

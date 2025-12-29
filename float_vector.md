@@ -217,6 +217,7 @@ if err != nil {
 	panic(err)
 }
 ```
+In some cases, embedding may need to be skipped. To do this, you can set a precept like `vec_index_name=skip_embedding()` or, if you want to skip it for all vector indexes, `*=skip_embedding()`. If a record is being updated via update query, you can specify a vector index for which embedding will not be called, like `set vec_indx=skip_embedding() ...`
 
 ### Embedding cache configuration
 When do embedding, it makes sense to use result caching, which can improve performance. To do this, you need to configure it.

@@ -137,9 +137,13 @@ void WrSerializer::PrintHexDump(std::string_view str) {
 	len_ = d - reinterpret_cast<char*>(buf_);
 }
 
-std::unique_ptr<uint8_t[]> WrSerializer::DetachLStr() {
+MemBuf WrSerializer::DetachLStr(Shrink shrink) {
 	reinterpret_cast<l_string_hdr*>(buf_)->length = len_ - sizeof(uint32_t);
-	return DetachBuf();
+	auto cap = Cap();
+	if (!HasAllocatedBuffer() && shrink == Shrink_True) {
+		cap = Len();
+	}
+	return MemBuf(DetachBuf(cap), cap);
 }
 
 }  // namespace reindexer

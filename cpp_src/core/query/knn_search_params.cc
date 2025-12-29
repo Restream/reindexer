@@ -113,19 +113,14 @@ static auto StructName() noexcept {
 }
 template <typename Derived>
 Derived detail::KnnSearchParamsCRTPBase<Derived>::Deserialize(Serializer& ser, size_t version) {
-	if (version != kKnnParamsBinProtocolVersion && version != 0) [[unlikely]] {
+	if (version != kKnnParamsBinProtocolVersion) [[unlikely]] {
 		throw Error(errVersion, "Unexpected binary protocol version for {}: {}", StructName<Derived>(), version);
 	}
 
 	Derived res;
-	if (version == 0) {
-		// TODO Support compatibility with the old deserialization until 5.8.0. increase after 5.8.0 release
-		res.K(ser.GetVarUInt());
-	} else {
-		uint8_t mask = ser.GetUInt8();
-		res.K(mask & uint8_t(SerializeMask::K) ? std::optional(ser.GetVarUInt()) : std::nullopt);
-		res.Radius(mask & uint8_t(SerializeMask::Radius) ? std::optional(ser.GetFloat()) : std::nullopt);
-	}
+	const uint8_t mask = ser.GetUInt8();
+	res.K(mask & uint8_t(SerializeMask::K) ? std::optional(ser.GetVarUInt()) : std::nullopt);
+	res.Radius(mask & uint8_t(SerializeMask::Radius) ? std::optional(ser.GetFloat()) : std::nullopt);
 	return res;
 }
 

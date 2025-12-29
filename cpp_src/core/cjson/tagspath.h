@@ -36,8 +36,8 @@ public:
 	bool IsTagNameEmpty() const noexcept { return type_ == Name && name_.IsEmpty(); }
 	bool IsTagIndex() const noexcept { return type_ == Index; }
 	bool IsTagIndexNotAll() const noexcept { return IsTagIndex() && !index_.IsAll(); }
-	bool Math(TagIndex tag) const noexcept { return type_ == Index && index_ == tag; }
-	bool Math(TagName tag) const noexcept { return type_ == Name && name_ == tag; }
+	bool Match(TagIndex tag) const noexcept { return type_ == Index && index_ == tag; }
+	bool Match(TagName tag) const noexcept { return type_ == Name && name_ == tag; }
 	bool operator==(const IndexedPathNode& other) const noexcept {
 		if (type_ != other.type_) {
 			return false;

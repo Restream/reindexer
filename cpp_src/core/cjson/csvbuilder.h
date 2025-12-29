@@ -32,8 +32,6 @@ private:
 
 class [[nodiscard]] CsvBuilder {
 public:
-	CsvBuilder() = default;
-
 	CsvBuilder(WrSerializer& ser, CsvOrdering& ordering);
 
 	~CsvBuilder() noexcept(false);
@@ -85,7 +83,7 @@ public:
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type* = nullptr>
 	void Put(std::string_view name, const T& arg, int /*offset*/ = 0) {
 		putName(name);
-		(*ser_) << arg;
+		ser_ << arg;
 	}
 	template <typename T>
 	void Put(concepts::TagNameOrIndex auto tag, const T& arg, int offset = 0) {
@@ -137,7 +135,7 @@ private:
 	void tmProcessing(std::string_view name);
 	void postProcessing();
 
-	WrSerializer* ser_ = nullptr;
+	WrSerializer& ser_;
 	const TagsMatcher* tm_ = nullptr;
 	ObjType type_ = ObjType::TypePlain;
 	int count_ = 0;
@@ -145,8 +143,8 @@ private:
 	int level_ = 0;
 	int startSerLen_ = 0;
 
-	const std::vector<TagName>* ordering_ = nullptr;
-	WrSerializer* buf_ = nullptr;
+	const std::vector<TagName>* ordering_;
+	WrSerializer* buf_;
 
 	// idx - pos in ordering, {startTagPosInSer, endTagPosInSer(post calculated after received next tag)}
 	std::vector<std::pair<int, int>> positions_;

@@ -20,7 +20,7 @@ public:
 			data_ = std::make_unique<Data>(current_);
 		}
 	}
-	SelectIteratorContainer& GetResultsRef() noexcept {
+	SelectIteratorContainer& GetResultsRef() {
 		if (!data_) {
 			return current_;
 		}

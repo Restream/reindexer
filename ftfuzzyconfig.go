@@ -69,6 +69,6 @@ func DefaultFtFuzzyConfig() FtFuzzyConfig {
 		EnableKbLayout:       true,
 		LogLevel:             0,
 		ExtraWordSymbols:     "/-+",
-		FtBaseRankingConfig:  &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95, Delimited: 80},
+		FtBaseRankingConfig:  &FtBaseRanking{FullMatch: 100, ConcatProc: 90, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95, Delimited: 80},
 	}
 }

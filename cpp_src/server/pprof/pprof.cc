@@ -58,6 +58,17 @@ int Pprof::Profile(http::Context& ctx) {
 	}
 
 	if (alloc_ext::TCMallocIsAvailable()) {
+		if (std::getenv("HEAPPROFILE")) {
+			return ctx.String(http::StatusForbidden,
+							  "Environment variable HEAPPROFILE is set. Unable to use CPU profiling, when heap profiling is enabled - "
+							  "TCMalloc may deadlock");
+		}
+		if (std::getenv("TCMALLOC_SAMPLE_PARAMETER")) {
+			return ctx.String(http::StatusForbidden,
+							  "Environment variable TCMALLOC_SAMPLE_PARAMETER is set. Unable to use CPU profiling, when heap profiling is "
+							  "enabled - TCMalloc may deadlock");
+		}
+
 		std::ignore = pprof::ProfilerStart(filePath.c_str());
 	}
 	std::this_thread::sleep_for(std::chrono::seconds(seconds));

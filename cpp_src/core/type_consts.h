@@ -87,6 +87,8 @@ typedef enum QueryItemType {
 	QueryLocal = 31,
 	QueryKnnCondition = 32,
 	QueryKnnConditionExt = 33,
+	QueryFunction = 34,
+	QueryFunctionSubQueryCondition = 35,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -116,6 +118,10 @@ typedef enum CondType {
 	CondDWithin = 11,
 	CondKnn = 12,
 } CondType;
+
+typedef enum FunctionType {
+	FunctionFlatArrayLen = 0,
+} FunctionType;
 
 enum REINDEX_CPP_NODISCARD ErrorCode {
 	errOK = 0,

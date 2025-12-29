@@ -29,6 +29,7 @@ public:
 
 	uint32_t mergeLimit = 20000;
 	std::vector<std::string> stemmers = {"en", "ru"};
+	bool enableTermsConcat = true;
 	bool enableTranslit = true;
 	bool enableKbLayout = true;
 	bool enableNumbersSearch = false;
@@ -43,6 +44,8 @@ public:
 		static constexpr int kMinProcAfterPenalty = 1;
 		// Relevancy of full word match
 		int fullMatch = 100;
+		// Relevancy of joined terms match
+		int concat = 90;
 		// Minimum relevance of prefix word match.
 		int prefixMin = 50;
 		// Minimum relevance of suffix word match.

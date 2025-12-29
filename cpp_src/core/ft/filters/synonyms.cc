@@ -20,20 +20,10 @@ void Synonyms::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorag
 	}
 }
 
-void Synonyms::addDslEntries(std::vector<SynonymsDsl>& synonymsDsl, const MultipleAlternativesCont& multiAlternatives,
-							 const FtDslOpts& opts, const std::vector<size_t>& termsIdx, const FtDSLQuery& dsl) {
-	for (const auto& alternatives : multiAlternatives) {
-		assertrx(!alternatives.empty());
-		synonymsDsl.emplace_back(dsl.CopyCtx(), termsIdx);
-
-		for (const auto& alt : alternatives) {
-			std::ignore = synonymsDsl.back().dsl.AddTerm(alt, opts);
-		}
-	}
-}
-
 static FtDslOpts makeOptsForAlternatives(const FtDslOpts& termOpts, int proc) {
 	FtDslOpts result;
+	result.pref = false;
+	result.suff = false;
 	result.op = OpAnd;
 	result.boost = termOpts.boost * proc / 100.0f;
 	result.termLenBoost = termOpts.termLenBoost;
@@ -63,59 +53,70 @@ static void divOptsForAlternatives(FtDslOpts& opts, size_t size) {
 	opts.qpos /= size;
 }
 
-void Synonyms::AddOneToManySynonyms(const std::wstring& pattern, const FtDslOpts& opts, const FtDSLQuery& dsl, size_t termIdx,
-									std::vector<SynonymsDsl>& synonymsDsl, int proc) const {
+void Synonyms::AddOneToManySynonyms(const std::wstring& pattern, const FtDslOpts& opts, size_t termIdx, int proc,
+									std::vector<MultiWord>& synonyms) const {
 	if (opts.groupNum != -1) {
 		// Skip multiword synonyms for phrase search
 		return;
 	}
 
+	const h_vector<size_t, 2> termsIdxs{termIdx};
+	const FtDslOpts alternativeOpts = makeOptsForAlternatives(opts, proc);
+
 	if (auto it = one2many_.find(pattern); it != one2many_.end()) {
 		assertrx_throw(it->second);
-		addDslEntries(synonymsDsl, *it->second, makeOptsForAlternatives(opts, proc), {termIdx}, dsl);
+		for (const auto& phrase : *it->second) {
+			assertrx_throw(!phrase.empty());
+			synonyms.emplace_back(phrase, alternativeOpts, termsIdxs);
+		}
 	}
 }
 
-void Synonyms::addPhraseAlternatives(const FtDSLQuery& dsl, const h_vector<std::wstring, 2>& phrase,
-									 const MultipleAlternativesCont& phraseAlternatives, std::vector<SynonymsDsl>& synonymsDsl, int proc) {
+void Synonyms::addPhraseAlternatives(const FtDSLQuery& query, const h_vector<std::wstring, 2>& phrase,
+									 const MultipleAlternativesCont& phraseAlternatives, int proc, std::vector<MultiWord>& synonyms) {
 	FtDslOpts opts;
-	std::vector<size_t> termsIdx;
+	h_vector<size_t, 2> termsIdx;
 
 	for (auto pIt = phrase.begin(); pIt != phrase.end(); ++pIt) {
 		const bool firstPhraseWord = (pIt == phrase.cbegin());
 
-		const auto isAppropriate = [&pIt](const FtDSLEntry& e) { return e.opts.op != OpNot && e.opts.groupNum == -1 && e.pattern == *pIt; };
-		const auto termIt = std::find_if(dsl.begin(), dsl.end(), isAppropriate);
+		const auto isAppropriate = [&pIt](const FtDSLEntry& e) {
+			return e.Opts().op != OpNot && e.Opts().groupNum == -1 && e.Pattern() == *pIt;
+		};
+		const auto termIt = std::find_if(query.begin(), query.end(), isAppropriate);
 
-		if (termIt == dsl.end()) {
+		if (termIt == query.end()) {
 			return;	 // phrase not found
 		}
 
 		if (firstPhraseWord) {
-			opts = makeOptsForAlternatives(termIt->opts, proc);
+			opts = makeOptsForAlternatives(termIt->Opts(), proc);
 		} else {
-			addOptsForAlternatives(opts, termIt->opts, proc);
+			addOptsForAlternatives(opts, termIt->Opts(), proc);
 		}
 
 		// Probably we don't need this?
-		size_t idx = termIt - dsl.begin();
+		size_t idx = termIt - query.begin();
 		termsIdx.push_back(idx);
-		for (++idx; idx < dsl.NumTerms(); ++idx) {
-			if (isAppropriate(dsl.GetTerm(idx))) {
+		for (++idx; idx < query.NumTerms(); ++idx) {
+			if (isAppropriate(query.GetTerm(idx))) {
 				termsIdx.push_back(idx);
 			}
 		}
 	}
 
 	divOptsForAlternatives(opts, phrase.size());
-	addDslEntries(synonymsDsl, phraseAlternatives, opts, termsIdx, dsl);
+	for (const auto& phrase : phraseAlternatives) {
+		assertrx_throw(!phrase.empty());
+		synonyms.emplace_back(phrase, opts, termsIdx);
+	}
 }
 
-void Synonyms::AddManyToManySynonyms(const FtDSLQuery& dsl, std::vector<SynonymsDsl>& synonymsDsl, int proc) const {
-	for (const auto& multiSynonyms : many2any_) {
-		assertrx_throw(!multiSynonyms.first.empty());
-		assertrx_throw(multiSynonyms.second);
-		addPhraseAlternatives(dsl, multiSynonyms.first, *multiSynonyms.second.get(), synonymsDsl, proc);
+void Synonyms::AddManyToManySynonyms(const FtDSLQuery& query, int proc, std::vector<MultiWord>& synonyms) const {
+	for (const auto& [multiWord, multiWordSynonyms] : many2any_) {
+		assertrx_throw(!multiWord.empty());
+		assertrx_throw(multiWordSynonyms);
+		addPhraseAlternatives(query, multiWord, *multiWordSynonyms, proc, synonyms);
 	}
 }
 

@@ -9,9 +9,10 @@ template <typename C>
 class [[nodiscard]] ItemImpl : public ItemImplBase {
 public:
 	ItemImpl() = default;
-	ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, C* client, std::chrono::milliseconds requestTimeout)
+	ItemImpl(const PayloadType& type, const TagsMatcher& tagsMatcher, C* client, std::chrono::milliseconds requestTimeout)
 		: ItemImplBase(type, tagsMatcher), requestTimeout_(requestTimeout), client_(client) {}
-	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, C* client, std::chrono::milliseconds requestTimeout)
+	ItemImpl(const PayloadType& type, const PayloadValue& v, const TagsMatcher& tagsMatcher, C* client,
+			 std::chrono::milliseconds requestTimeout)
 		: ItemImplBase(type, v, tagsMatcher), requestTimeout_(requestTimeout), client_(client) {}
 	ItemImpl(ItemImpl<C>&&) = default;
 	ItemImpl(const ItemImpl<C>&) = delete;

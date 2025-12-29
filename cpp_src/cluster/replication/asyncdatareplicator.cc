@@ -34,12 +34,12 @@ bool AsyncDataReplicator::IsExpectingStartup() const noexcept {
 	return isExpectingStartup();
 }
 
-void AsyncDataReplicator::Run() {
+void AsyncDataReplicator::Run(const std::shared_ptr<NamespacesSyncScheduler>& nssSyncScheduler) {
 	auto localNamespaces = getLocalNamespaces();
 	{
 		lock_guard lck(mtx_);
 		if (!isExpectingStartup()) {
-			log_.Warn([] { return "AsyncDataReplicator: startup is not expected"; });
+			logWarnSimple("AsyncDataReplicator: startup is not expected");
 			return;
 		}
 
@@ -60,8 +60,8 @@ void AsyncDataReplicator::Run() {
 				nodesShard.emplace_back(std::make_pair(j, config_->nodes[j]));
 			}
 			if (nodesShard.size()) {
-				replThreads_.emplace_back(baseConfig_->serverID, thisNode_, updatesQueue_.GetAsyncQueue(), config_->nodes, config_->mode,
-										  syncState_, statsCollector_, log_);
+				replThreads_.emplace_back(baseConfig_->serverID, thisNode_, updatesQueue_.GetAsyncQueue(), nssSyncScheduler, config_->nodes,
+										  config_->mode, syncState_, statsCollector_, log_);
 				replThreads_.back().Run(threadsConfig, std::move(nodesShard), config_->nodes.size());
 			}
 		}
@@ -70,7 +70,8 @@ void AsyncDataReplicator::Run() {
 		for (auto& ns : localNamespaces) {
 			if (!clusterManager_.NamespaceIsInClusterConfig(ns)) {
 				auto err = thisNode_.SetClusterOperationStatus(
-					ns, ClusterOperationStatus{baseConfig_->serverID, ClusterOperationStatus::Role::None}, RdxContext());
+					ns, ClusterOperationStatus{baseConfig_->serverID, ClusterOperationStatus::Role::None},
+					RdxContext().WithLeaderReplicationToken(key_string{baseConfig_->GeReplicationToken(ns)}));
 				if (!err.ok()) {
 					logWarn("SetClusterOperationStatus for the local '{}' namespace error: {}", ns, err.what());
 				}

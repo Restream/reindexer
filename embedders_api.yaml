@@ -1,35 +1,35 @@
-openapi: "3.0.0"
+openapi: '3.0.0'
 info:
-  title: "Swagger Embedder endpoint REST API - OpenAPI 3.0"
+  title: 'Swagger Embedder endpoint REST API - OpenAPI 3.0'
   description: |
     **Reindexer** Embedder endpoint REST API
-  version: "1.0.0"
+  version: '1.0.0'
 tags:
-  - name: "embedder"
-    description: "Everything about your Embedders"
+  - name: 'embedder'
+    description: 'Everything about your Embedders'
 
 paths:
   /api/v1/embedder/{name}/produce:
     post:
       tags:
-        - "embedder"
-      summary: "Calculate embedder result"
+        - 'embedder'
+      summary: 'Calculate embedder result'
       description: |
         This operation will calculate the result of the embedding
       operationId: postProduct
       parameters:
-        - name: "format"
+        - name: 'format'
           in: query
-          description: "Encoding data format"
+          description: 'Encoding data format'
           required: true
           schema:
             type: string
             enum:
               - json
               - text
-        - name: "name"
+        - name: 'name'
           in: path
-          description: "Embedder name"
+          description: 'Embedder name'
           required: true
           schema:
             type: string
@@ -44,8 +44,8 @@ paths:
               properties:
                 data:
                   oneOf:
-                    - $ref: "#/components/schemas/JSONDataArray"
-                    - $ref: "#/components/schemas/TextDataArray"
+                    - $ref: '#/components/schemas/JSONDataArray'
+                    - $ref: '#/components/schemas/TextDataArray'
                   discriminator:
                     propertyName: format
                     mapping:
@@ -53,66 +53,68 @@ paths:
                       text: TextDataArray
       responses:
         200:
-          description: "Successful operation"
+          description: 'Successful operation'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EmbedderProduceResponse"
+                $ref: '#/components/schemas/EmbedderProduceResponse'
         400:
-          description: "Invalid arguments supplied"
+          description: 'Invalid arguments supplied'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StatusResponse"
+                $ref: '#/components/schemas/StatusResponse'
         500:
-          description: "Unexpected internal error"
+          description: 'Unexpected internal error'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StatusResponse"
+                $ref: '#/components/schemas/StatusResponse'
 
 components:
   schemas:
     StatusResponse:
-      type: "object"
+      type: 'object'
       properties:
         success:
           type: boolean
         response_code:
           type: integer
-          description: "Duplicates HTTP response code"
+          description: 'Duplicates HTTP response code'
         description:
           type: string
-          description: "Text description of error details"
+          description: 'Text description of error details'
 
     TextDataArray:
-      description: "Raw text data for embedding"
+      description: 'Raw text data for embedding'
       type: array
       items:
         type: string
-        example: "some user query"
+        example: 'some user query'
 
     JSONDataArray:
-      description: "JSON with target fields for embedding"
+      description: 'JSON with target fields for embedding'
       type: array
       items:
         type: object
-        description: "Each object contains fields (names and values) of the document. List of those fields has to be configured in the index embedding config"
+        description:
+          'Each object contains fields (names and values) of the document. List
+          of those fields has to be configured in the index embedding config'
         example:
           field1: value1
-          field2: [1,2,3]
+          field2: [1, 2, 3]
 
     EmbedderProduceResponse:
       type: object
       required:
         - products
-      description: "Products array created by Embedder"
+      description: 'Products array created by Embedder'
       properties:
         products:
           type: array
           items:
             type: array
-            description: "Single embedder calculation result"
+            description: 'Single embedder calculation result'
             items:
               type: object
               required:
@@ -121,12 +123,13 @@ components:
               properties:
                 chunk:
                   type: string
-                  description: "Single chunk. Currently this value will be ignored and may be empty string"
+                  description:
+                    'Single chunk. Currently this value will be ignored and may
+                    be empty string'
                 embedding:
                   type: array
-                  description: "Result embedding for the chunk"
+                  description: 'Result embedding for the chunk'
                   items:
                     type: number
                     format: float
                     example: -1.7
-

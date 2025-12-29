@@ -144,7 +144,7 @@ std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 	return std::nullopt;
 }
 
-bool RaftManager::FollowersAreAvailable() const {
+bool RaftManager::FollowersAreAvailable() const noexcept {
 	size_t aliveNodes = 0;
 	for (auto& n : nodes_) {
 		n.isOk && ++aliveNodes;
@@ -259,7 +259,15 @@ void RaftManager::startPingRoutines() {
 				NodeData leader;
 				leader.serverId = serverId_;
 				leader.electionsTerm = voteData.term;
+#ifdef RX_ENABLE_CLUSTERPROXY_LOGS
+				// TODO: This temporary debgu message for tests only
+				logTrace("{} Sending ping to {}({})", serverId_, node.uid, node.serverId);
+#endif	// RX_ENABLE_CLUSTERPROXY_LOGS
 				err = node.client.LeadersPing(leader);
+#ifdef RX_ENABLE_CLUSTERPROXY_LOGS
+				// TODO: This temporary debgu message for tests only
+				logTrace("{} Ping to {}({}) was sent", serverId_, node.uid, node.serverId);
+#endif	// RX_ENABLE_CLUSTERPROXY_LOGS
 				const bool isNetworkError = (err.code() == errTimeout) || (err.code() == errNetwork);
 				if (node.isOk != err.ok() || isNetworkError != node.hasNetworkError || isFirstPing) {
 					node.isOk = err.ok();

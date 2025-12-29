@@ -90,7 +90,7 @@ public:
 					if (isSyncAllowed) {
 						outIdx = idx;
 						out = std::move(*it);
-						entries_.erase(it);
+						std::ignore = entries_.erase(it);
 						return true;
 					}
 				}

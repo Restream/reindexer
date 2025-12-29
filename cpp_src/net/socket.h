@@ -25,7 +25,7 @@ public:
 	socket& operator=(socket&& other) noexcept {
 		if (this != &other) [[likely]] {
 			if (valid()) {
-				close();
+				std::ignore = close();
 			}
 			fd_ = other.fd_;
 			type_ = other.type_;
@@ -36,7 +36,7 @@ public:
 	}
 	~socket() {
 		if (valid()) {
-			close();
+			std::ignore = close();
 		}
 	}
 
@@ -89,7 +89,7 @@ public:
 	lst_socket& operator=(lst_socket&& other) noexcept {
 		if (this != &other) [[likely]] {
 			if (valid()) {
-				close();
+				std::ignore = close();
 			}
 			sock_ = std::move(other.sock_);
 			lockFd_ = other.lockFd_;
@@ -101,7 +101,7 @@ public:
 	}
 	~lst_socket() {
 		if (valid()) {
-			close();
+			std::ignore = close();
 		}
 	}
 

@@ -60,7 +60,8 @@ public:
 			remove_waiter(writers_);
 		}
 		while (readers_.size() && !empty()) {
-			resume(readers_.front());
+			[[maybe_unused]] auto res = resume(readers_.front());
+			assertrx_dbg(!res);
 		}
 	}
 
@@ -88,7 +89,8 @@ public:
 			remove_waiter(readers_);
 		}
 		while (writers_.size() && !full()) {
-			resume(writers_.front());
+			[[maybe_unused]] auto res = resume(writers_.front());
+			assertrx_dbg(!res);
 		}
 		return obj;
 	}
@@ -98,10 +100,12 @@ public:
 	void close() noexcept {
 		closed_ = true;
 		while (readers_.size()) {
-			resume(readers_.front());
+			[[maybe_unused]] auto res = resume(readers_.front());
+			assertrx_dbg(!res);
 		}
 		while (writers_.size()) {
-			resume(writers_.front());
+			[[maybe_unused]] auto res = resume(writers_.front());
+			assertrx_dbg(!res);
 		}
 	}
 	/// Reopens closed channel

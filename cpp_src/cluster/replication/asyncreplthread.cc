@@ -31,9 +31,10 @@ Error AsyncThreadParam::CheckReplicationMode(uint32_t nodeId) const noexcept {
 }
 
 AsyncReplThread::AsyncReplThread(int serverId, ReindexerImpl& thisNode, std::shared_ptr<BaseT::UpdatesQueueT> q,
-								 const std::vector<AsyncReplNodeConfig>& nodesList, AsyncReplicationMode replMode,
-								 SharedSyncState& syncState, ReplicationStatsCollector statsCollector, const Logger& l)
-	: base_(serverId, thisNode, std::move(q), AsyncThreadParam(&nodesList, replMode, syncState), statsCollector, l) {}
+								 std::shared_ptr<NamespacesSyncScheduler> scheduler, const std::vector<AsyncReplNodeConfig>& nodesList,
+								 AsyncReplicationMode replMode, SharedSyncState& syncState, ReplicationStatsCollector statsCollector,
+								 const Logger& l)
+	: base_(serverId, thisNode, std::move(q), std::move(scheduler), AsyncThreadParam(&nodesList, replMode, syncState), statsCollector, l) {}
 
 AsyncReplThread::~AsyncReplThread() {
 	if (th.joinable()) {

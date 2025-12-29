@@ -156,8 +156,6 @@ public:
 	DistCalculatorParam get_dist_calculator_param() noexcept override {
 		return {.f = fstdistfunc_, .metric = MetricType::INNER_PRODUCT, .dims = dim_};
 	}
-
-	void* get_dist_func_param() noexcept override { return &dim_; }
 };
 
 template class InnerProductSpaceBase<float>;

@@ -114,7 +114,6 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	this->delMemStat(keyIt);
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
-	// TODO: we have to implement removal of composite indexes (doesn't work right now)
 	assertf(!mustExist || this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '{}' id={}, key={} ({})", this->name_, id,
 			Variant(keys).template As<std::string>(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));

@@ -2,62 +2,53 @@
 
 #include <limits.h>
 #include "btreeindexiteratorimpl.h"
-#include "core/idset.h"
+#include "core/idset/idset.h"
 #include "core/index/indexiterator.h"
 
 namespace reindexer {
 
-template <class T>
+template <class IndexMap>
 class [[nodiscard]] BtreeIndexIterator final : public IndexIterator {
 public:
-	BtreeIndexIterator(const T& idxMap, base_idset_ptr&& empty_ids) noexcept
-		: idxMap_(idxMap), first_(idxMap.begin()), last_(idxMap.end()), empty_ids_(std::move(empty_ids)) {}
-	BtreeIndexIterator(const T& idxMap, const typename T::iterator& first, const typename T::iterator& last) noexcept
-		: idxMap_(idxMap), first_(first), last_(last) {}
+	BtreeIndexIterator(const IndexMap& idxMap, const IdSet& empty_ids) noexcept
+		: first_(idxMap.begin()), last_(idxMap.end()), nullValues_(&empty_ids) {}
+	BtreeIndexIterator(const typename IndexMap::iterator& first, const typename IndexMap::iterator& last) noexcept
+		: first_(first), last_(last), nullValues_(nullptr) {}
 	~BtreeIndexIterator() override final = default;
 
 	void Start(bool reverse) final override {
 		if (reverse) {
-			impl_ = std::make_shared<BtreeIndexReverseIteratorImpl<T>>(idxMap_, first_, last_, empty_ids_);
+			impl_ = createReverseIterator();
 		} else {
-			impl_ = std::make_shared<BtreeIndexForwardIteratorImpl<T>>(idxMap_, first_, last_, empty_ids_);
+			impl_ = createForwardIterator();
 		}
-		impl_->shiftToBegin();
-		if (impl_->getSize() == 0) {
-			return;
-		}
-		impl_->shiftIdsetToBegin();
+		std::visit([](auto& impl) { impl.Start(); }, impl_);
 	}
 
 	bool Next() noexcept final override {
-		assertrx_dbg(impl_);
-		if (impl_->isOver()) {
-			return impl_->finishIteration();
+		if (auto* it = std::get_if<ForwardIteratorImpl>(&impl_); it) {
+			return next(it);
 		}
-
-		impl_->shiftIdsetToNext();
-		if (impl_->isIdsetOver() && !impl_->shiftToNextIdset()) {
-			return impl_->finishIteration();
+		if (auto* it = std::get_if<ReverseIteratorImpl>(&impl_); it) {
+			return next(it);
 		}
-
-		impl_->updateCurrentValue();
-		return true;
+		std::abort();
 	}
 
-	void ExcludeLastSet() noexcept override {
-		assertrx_dbg(impl_);
-		impl_->shiftToNextIdset();
+	void ExcludeLastSet() noexcept override final {
+		if (auto* it = std::get_if<ForwardIteratorImpl>(&impl_); it) {
+			it->SkipKey();
+		}
+		if (auto* it = std::get_if<ReverseIteratorImpl>(&impl_); it) {
+			it->SkipKey();
+		}
+		std::abort();
 	}
 
-	IdType Value() const noexcept override final {
-		assertrx_dbg(impl_);
-		return impl_->getValue();
-	}
-	size_t GetMaxIterations(size_t limitIters) noexcept final {
+	size_t GetMaxIterations(size_t limitIters) noexcept override final {
 		auto limit = std::min(kMaxBTreeIterations, limitIters);
 		if (!cachedIters_.Valid(limit)) {
-			auto [iters, fullyScanned] = BtreeIndexForwardIteratorImpl<T>(idxMap_, first_, last_, empty_ids_).getMaxIterations(limit);
-
+			auto [iters, fullyScanned] = createReverseIterator().MaxIterations(limit);
 			if (iters >= kMaxBTreeIterations && !fullyScanned) {
 				cachedIters_ = CachedIters{std::numeric_limits<size_t>::max(), true};
 			} else if (fullyScanned || iters > cachedIters_.value || cachedIters_.value == std::numeric_limits<size_t>::max()) {
@@ -67,17 +58,58 @@ public:
 
 		return std::min(cachedIters_.value, limitIters);
 	}
+
 	void SetMaxIterations(size_t iters) noexcept final { cachedIters_ = CachedIters{iters, true}; }
+
+	IdType Value() const noexcept override final { return lastVal_; }
+
+private:
+	auto createForwardIterator() {
+		lastVal_ = INT_MIN;
+		type_ = Forward;
+		if (nullValues_) {
+			return index::iterators::BtreeIndexForwardIteratorImpl<IndexMap>(first_, last_, *nullValues_);
+		} else {
+			return index::iterators::BtreeIndexForwardIteratorImpl<IndexMap>(first_, last_);
+		}
+	}
+
+	auto createReverseIterator() {
+		lastVal_ = INT_MAX;
+		type_ = Reverse;
+		if (nullValues_) {
+			return index::iterators::BtreeIndexReverseIteratorImpl<IndexMap>(first_, last_, *nullValues_);
+		} else {
+			return index::iterators::BtreeIndexReverseIteratorImpl<IndexMap>(first_, last_);
+		}
+	}
+
+	bool next(auto* it) noexcept {
+		auto [hasValue, rowId] = it->Next(lastVal_);
+		if (hasValue) {
+			lastVal_ = rowId;
+		} else {
+			lastVal_ = (type_ == Reverse) ? INT_MAX : INT_MIN;
+		}
+		return hasValue;
+	}
 
 private:
 	static constexpr size_t kMaxBTreeIterations = 200'000;
 
-	std::shared_ptr<BtreeIndexIteratorImpl<T>> impl_;
-	const T& idxMap_;
-	const typename T::const_iterator first_;
-	const typename T::const_iterator last_;
+	using ForwardIteratorImpl = index::iterators::BtreeIndexForwardIteratorImpl<IndexMap>;
+	using ReverseIteratorImpl = index::iterators::BtreeIndexReverseIteratorImpl<IndexMap>;
+	using BtreeIndexIteratorImpl = std::variant<ForwardIteratorImpl, ReverseIteratorImpl>;
+	BtreeIndexIteratorImpl impl_;
 
-	base_idset_ptr empty_ids_ = nullptr;
+	const typename IndexMap::const_iterator first_;
+	const typename IndexMap::const_iterator last_;
+
+	const IdSet* nullValues_;
+	IdType lastVal_ = INT_MIN;
+
+	enum Type { Empty, Reverse, Forward };
+	Type type_{Empty};
 
 	struct [[nodiscard]] CachedIters {
 		bool Valid(size_t limitIters) const noexcept {

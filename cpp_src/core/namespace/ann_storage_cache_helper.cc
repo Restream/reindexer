@@ -8,7 +8,7 @@
 namespace reindexer::ann_storage_cache {
 
 #define kStorageANNCachePrefix "ann_cache"
-constexpr static uint8_t kANNCacheFormatVersion = 1;
+constexpr static uint8_t kANNCacheFormatVersion = 2;
 
 std::string GetStorageKey(std::string_view name) noexcept {
 	std::string key(kStorageANNCachePrefix);
@@ -244,7 +244,7 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 			}
 			Serializer ser(dataSlice);
 			const auto version = ser.GetUInt8();
-			if (version != kANNCacheFormatVersion) {
+			if (version > kANNCacheFormatVersion) {
 				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): unsupported format version {}", nsName_, keySlice, version);
 				keysToRemove.emplace_back(keySlice);
@@ -324,7 +324,7 @@ std::optional<Reader::CachedIndex> Reader::GetNextCachedIndex() {
 	}
 
 	Serializer ser(dataSlice);
-	[[maybe_unused]] uint8_t version = ser.GetUInt8();
+	uint8_t version = ser.GetUInt8();
 	const std::chrono::nanoseconds lastUpdate{ser.GetUInt64()};
 	[[maybe_unused]] std::string_view pkIndexDef = ser.GetSlice();
 	[[maybe_unused]] std::string_view annIndexDef = ser.GetSlice();
@@ -334,6 +334,7 @@ std::optional<Reader::CachedIndex> Reader::GetNextCachedIndex() {
 	ret->field = meta.field;
 	ret->lastUpdate = lastUpdate;
 	ret->data = std::string(dataSlice.substr(ser.Pos()));
+	ret->version = version;
 	return ret;
 }
 

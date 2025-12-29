@@ -195,32 +195,40 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 
 							auto processEmbed = [&](std::string_view name) {
 								Error err;
-								auto nodeUpEmb = (*it)[name];
-								if (!nodeUpEmb.empty()) {
+								auto nodeEmb = (*it)[name];
+								if (!nodeEmb.empty()) {
 									int64_t val = 0;
-									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_qps", val);
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_qps", val);
 									if (err.ok()) {
 										prometheus_->RegisterEmbedderLastSecQps(dbName, nsName, indexName, name, val);
 									}
-									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_dps", val);
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_dps", val);
 									if (err.ok()) {
 										prometheus_->RegisterEmbedderLastSecDps(dbName, nsName, indexName, name, val);
 									}
-									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_errors_count", val);
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_errors_count", val);
 									if (err.ok()) {
 										prometheus_->RegisterEmbedderLastSecErrorsCount(dbName, nsName, indexName, name, val);
 									}
-									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "conn_in_use", val);
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "conn_in_use", val);
 									if (err.ok()) {
 										prometheus_->RegisterEmbedderConnInUse(dbName, nsName, indexName, name, val);
 									}
-									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_avg_embed_latency_us", val);
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_avg_embed_latency_us", val);
 									if (err.ok()) {
 										prometheus_->RegisterEmbedderLastSecAvgLatencyUs(dbName, nsName, indexName, name, val);
 									}
-									err = tryReadRequiredJsonValue(nullptr, nodeUpEmb, "last_sec_avg_embed_latency_us", val);
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_avg_embed_latency_us", val);
 									if (err.ok()) {
 										prometheus_->RegisterEmbedderLastSecAvgEmbedLatencyUs(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "input_traffic_total_bytes", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderInputTrafficTotalBytes(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "output_traffic_total_bytes", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderOutputTrafficTotalBytes(dbName, nsName, indexName, name, val);
 									}
 								}
 							};

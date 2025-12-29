@@ -705,6 +705,7 @@ public:
 
 	hopscotch_hash(const hopscotch_hash&) = default;
 
+	// NOLINTNEXTLINE (bugprone-exception-escape)
 	hopscotch_hash(hopscotch_hash&& other) noexcept(std::is_nothrow_move_constructible<buckets_container_type>::value &&
 													std::is_nothrow_move_constructible<overflow_container_type>::value &&
 													std::is_nothrow_move_constructible<Hash>::value &&

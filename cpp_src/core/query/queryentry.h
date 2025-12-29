@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "core/expressiontree.h"
+#include "core/function/function.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/fieldsset.h"
 #include "core/query/knn_search_params.h"
@@ -210,6 +211,119 @@ private:
 	IsDistinct distinct_{IsDistinct_False};
 	IsForcedSortOptEntry forcedSortOptEntry_{IsForcedSortOptEntry_False};
 	bool needIsNull_{false};
+};
+
+class [[nodiscard]] FunctionEntry {
+public:
+	template <concepts::Function Function>
+	FunctionEntry(Function&& function, CondType condition) : function_(std::forward<Function>(function)), condition_(condition) {
+		setFields();
+	}
+	FunctionEntry(functions::FunctionVariant&& function, CondType condition) : function_(std::move(function)), condition_(condition) {
+		setFields();
+	}
+	FunctionEntry(const functions::FunctionVariant& function, CondType condition) : function_(function), condition_(condition) {
+		setFields();
+	}
+
+	FunctionEntry(const FunctionEntry&) = default;
+	FunctionEntry& operator=(FunctionEntry&) = default;
+	FunctionEntry(FunctionEntry&&) = default;
+	FunctionEntry& operator=(FunctionEntry&&) = default;
+
+	bool operator==(const FunctionEntry& other) const = default;
+
+	const QueryField& FieldData(size_t field) const& noexcept { return fields_[field]; }
+	QueryField& FieldData(size_t field) & noexcept { return fields_[field]; }
+	size_t Fields() const noexcept { return fields_.size(); }
+	CondType Condition() const noexcept { return condition_; }
+
+	const functions::Function& Function() const&;
+	const functions::FunctionVariant& FunctionVariant() const& { return function_; }
+
+	std::string Dump() const;
+
+	auto FieldData(size_t) const&& = delete;
+	auto Function() const&& = delete;
+	auto FunctionVariant() const&& = delete;
+
+protected:
+	void setFields() {
+		for (const auto& field : this->Function().FieldNames()) {
+			fields_.emplace_back(field);
+		}
+	}
+
+	h_vector<QueryField, 1> fields_;
+	functions::FunctionVariant function_;
+	CondType condition_{CondAny};
+};
+
+class [[nodiscard]] QueryFunctionEntry : public FunctionEntry {
+public:
+	using FunctionEntry::Fields;
+	using FunctionEntry::FieldData;
+	using FunctionEntry::Condition;
+	using FunctionEntry::Function;
+	using FunctionEntry::FunctionVariant;
+
+	template <concepts::Function Function, concepts::ConvertibleToVariantArray Values>
+	QueryFunctionEntry(Function&& function, CondType condition, Values&& values)
+		: FunctionEntry(std::forward<Function>(function), condition), values_(std::forward<Values>(values)) {}
+	template <concepts::ConvertibleToVariantArray Values>
+	QueryFunctionEntry(functions::FunctionVariant&& function, CondType condition, Values&& values)
+		: FunctionEntry(std::move(function), condition), values_(std::forward<Values>(values)) {}
+	template <concepts::ConvertibleToVariantArray Values>
+	QueryFunctionEntry(const functions::FunctionVariant& function, CondType condition, Values&& values)
+		: FunctionEntry(function, condition), values_(std::forward<Values>(values)) {}
+
+	QueryFunctionEntry(const QueryFunctionEntry&) = default;
+	QueryFunctionEntry& operator=(QueryFunctionEntry&) = default;
+	QueryFunctionEntry(QueryFunctionEntry&&) = default;
+	QueryFunctionEntry& operator=(QueryFunctionEntry&&) = default;
+
+	bool operator==(const QueryFunctionEntry&) const;
+
+	const VariantArray& Values() const& noexcept { return values_; }
+	auto Values() const&& = delete;
+
+	std::string Dump() const;
+	std::string DumpBrief() const;
+
+private:
+	VariantArray values_;
+};
+
+class [[nodiscard]] SubQueryFunctionEntry : public FunctionEntry {
+public:
+	using FunctionEntry::Fields;
+	using FunctionEntry::FieldData;
+	using FunctionEntry::Condition;
+	using FunctionEntry::Function;
+	using FunctionEntry::FunctionVariant;
+
+	template <concepts::Function Function>
+	SubQueryFunctionEntry(Function&& function, CondType condition, size_t queryIndex)
+		: FunctionEntry(std::forward<Function>(function), condition), queryIndex_(queryIndex) {
+		checkCondition(condition);
+	}
+	SubQueryFunctionEntry(functions::FunctionVariant&& function, CondType condition, size_t queryIndex)
+		: FunctionEntry(std::move(function), condition), queryIndex_(queryIndex) {
+		checkCondition(condition);
+	}
+
+	bool operator==(const SubQueryFunctionEntry& other) const {
+		return FunctionEntry::operator==(other) && queryIndex_ == other.queryIndex_;
+	}
+
+	size_t QueryIndex() const noexcept { return queryIndex_; }
+	std::string Dump(const std::vector<Query>& subQueries) const;
+
+private:
+	void checkCondition(CondType condition) const;
+
+	// index of Query in Query::subQueries_
+	size_t queryIndex_{std::numeric_limits<size_t>::max()};
 };
 
 class [[nodiscard]] BetweenFieldsQueryEntry {
@@ -479,8 +593,9 @@ private:
 enum class [[nodiscard]] InjectionDirection : bool { IntoMain, FromMain };
 class Index;
 
-using QueryEntriesTree = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
-										AlwaysTrue, SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry, MultiDistinctQueryEntry>;
+using QueryEntriesTree =
+	ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue,
+				   SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry, MultiDistinctQueryEntry, QueryFunctionEntry, SubQueryFunctionEntry>;
 
 template <>
 template <>

@@ -3,9 +3,8 @@
 #include "core/keyvalue/float_vectors_holder.h"
 #include "core/keyvalue/key_string.h"
 #include "estl/h_vector.h"
+#include "estl/membuf.h"
 #include "payload/payloadvalue.h"
-
-#include <memory>
 
 namespace reindexer {
 
@@ -22,7 +21,7 @@ struct [[nodiscard]] ItemImplRawData {
 	ItemImplRawData& operator=(ItemImplRawData&&) = default;
 
 	PayloadValue payloadValue_;
-	std::unique_ptr<uint8_t[]> tupleData_;
+	MemBuf tupleData_;
 	std::unique_ptr<char[]> sourceData_;
 	std::vector<std::unique_ptr<char[]>> largeJSONStrings_;
 	std::vector<std::string> precepts_;

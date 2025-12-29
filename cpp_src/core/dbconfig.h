@@ -151,6 +151,8 @@ struct [[nodiscard]] ReplicationConfigData {
 	void GetYAML(WrSerializer& ser) const;
 
 	bool operator==(const ReplicationConfigData& rdata) const noexcept = default;
+
+	std::string GeReplicationToken(std::string_view nsName) const;
 };
 
 std::ostream& operator<<(std::ostream& os, const ReplicationConfigData& data);

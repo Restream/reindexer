@@ -14,8 +14,11 @@ void ApiTvSimpleSparse::RegisterAllCases() {
 	Register("WarmUpIndexes", &ApiTvSimpleSparse::WarmUpIndexes, this)->Iterations(1);	// once!!!
 
 	Base::RegisterAllCases();
-	// ToDo always fail  Register("GetByRangeIDAndSortByHash", &ApiTvSimpleSparse::GetByRangeIDAndSortByHash, BasePtr());
+	Register("GetByRangeIDAndSortByHash", &ApiTvSimpleSparse::GetByRangeIDAndSortByHash, BasePtr());
 	Register("GetByRangeIDAndSortByTree", &ApiTvSimpleSparse::GetByRangeIDAndSortByTree, BasePtr());
+	Register("GetByRangeIDAndSortByTreeWithoutNulls", &ApiTvSimpleSparse::GetByRangeIDAndSortByTreeWithoutNulls, this);
+	Register("QueryFlatArrayLenSparse", &ApiTvSimpleSparse::QueryFlatArrayLenSparse<NoTotal>, this);
+	Register("QueryFlatArrayLenSparseTotal", &ApiTvSimpleSparse::QueryFlatArrayLenSparse<ReqTotal>, this);
 
 	Register("Query2Cond", &ApiTvSimpleSparse::Query2Cond<NoTotal>, this);
 	Register("Query2CondTotal", &ApiTvSimpleSparse::Query2Cond<ReqTotal>, this);
@@ -115,6 +118,42 @@ void ApiTvSimpleSparse::WarmUpIndexes(State& state) {
 		}
 	}
 }
+
+void ApiTvSimpleSparse::GetByRangeIDAndSortByTreeWithoutNulls(benchmark::State& state) {
+	const auto q = [&] {
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		// Condition should be similar to GetByRangeIDAndSortByTree
+		return Query(nsdef_.name)
+			.Where("id", CondRange, {idRange.first, idRange.second})
+			.Where("genre", CondAny, Variant())
+			.Sort("genre", false)
+			.Limit(20);
+	};
+	benchQuery(q, state);
+}
+
+template <typename Total>
+void ApiTvSimpleSparse::QueryFlatArrayLenSparse(State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		// Count nullable scalar fields
+		q.Where(reindexer::functions::FlatArrayLen{"data33"}, CondGe, 1).Limit(20);
+		Total::Apply(q);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+
+		if (!qres.Count()) {
+			state.SkipWithError("Results does not contain any value");
+		}
+	}
+}
+template void ApiTvSimpleSparse::QueryFlatArrayLenSparse<BaseFixture::NoTotal>(State&);
+template void ApiTvSimpleSparse::QueryFlatArrayLenSparse<BaseFixture::ReqTotal>(State&);
 
 template <typename Total>
 void ApiTvSimpleSparse::Query2Cond(benchmark::State& state) {

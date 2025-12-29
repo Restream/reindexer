@@ -21,7 +21,7 @@ RPCClient::RPCClient(const ReindexerConfig& config, INamespaces::PtrT sharedName
 	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : INamespaces::PtrT(new NamespacesImpl<DummyMutex>())), config_(config) {
 	reindexer::CheckRequiredSSESupport();
 
-	conn_.SetConnectionStateHandler([this](Error err) { onConnectionState(std::move(err)); });
+	conn_.SetConnectionStateHandler([this](const Error& err) { onConnectionState(err); });
 }
 
 RPCClient::~RPCClient() { Stop(); }

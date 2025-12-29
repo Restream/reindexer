@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.25)
 
 project(benchmarking)
 
@@ -12,6 +12,12 @@ option(BENCH_REPORT "Enable CI benchmarks report" OFF)
 include_directories(fixtures)
 include_directories(tools)
 
+try_compile(
+    HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR ${CMAKE_CURRENT_SOURCE_DIR}/cmake_checks
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/cmake_checks/aslr_disable_check.cpp
+    LINK_LIBRARIES benchmark::benchmark
+)
+
 file (GLOB_RECURSE FIXT_SRCS fixtures/*)
 file (GLOB_RECURSE FT_FIXT_SRCS fixtures/ft_* fixtures/base_fixture.*)
 file (GLOB_RECURSE KNN_FIXT_SRCS fixtures/knn_* fixtures/base_fixture.* fixtures/ft_base.*)
@@ -22,12 +28,21 @@ target_compile_definitions(${RX_BENCH_LIB} PRIVATE RX_BENCH_DICT_PATH="${CMAKE_C
 
 add_executable(${TARGET} reindexer_bench.cc)
 target_link_libraries(${TARGET} ${RX_BENCH_LIB} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
+if(HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
+    target_compile_definitions(${TARGET} PRIVATE HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
+endif()
 
 add_executable(${FT_TARGET} ft_bench.cc)
 target_link_libraries(${FT_TARGET} ${RX_BENCH_LIB} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
+if(HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
+    target_compile_definitions(${FT_TARGET} PRIVATE HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
+endif()
 
 add_executable(${KNN_TARGET} knn_bench.cc)
 target_link_libraries(${KNN_TARGET} ${RX_BENCH_LIB} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
+if(HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
+    target_compile_definitions(${KNN_TARGET} PRIVATE HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
+endif()
 
 # Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)

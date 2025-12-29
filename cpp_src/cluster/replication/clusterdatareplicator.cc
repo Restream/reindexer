@@ -49,10 +49,10 @@ bool ClusterDataReplicator::IsExpectingStartup() const noexcept {
 	return isExpectingStartup();
 }
 
-void ClusterDataReplicator::Run() {
+void ClusterDataReplicator::Run(const std::shared_ptr<NamespacesSyncScheduler>& nssSyncScheduler) {
 	lock_guard lck(mtx_);
 	if (!isExpectingStartup()) {
-		log_.Warn([] { rtstr("ClusterDataReplicator: startup is not expected"); });
+		logWarnSimple("ClusterDataReplicator: startup is not expected");
 		return;
 	}
 
@@ -122,8 +122,8 @@ void ClusterDataReplicator::Run() {
 		}
 		if (nodesShard.size()) {
 			replThreads_.emplace_back(
-				baseConfig_->serverID, thisNode_, &config_->namespaces, updatesQueue_.GetSyncQueue(), sharedSyncState_, syncList_,
-				[this]() noexcept { restartElections_ = true; }, statsCollector_, log_);
+				baseConfig_->serverID, thisNode_, &config_->namespaces, updatesQueue_.GetSyncQueue(), nssSyncScheduler, sharedSyncState_,
+				syncList_, [this]() noexcept { restartElections_ = true; }, statsCollector_, log_);
 			replThreads_.back().Run(threadsConfig, std::move(nodesShard), config_->nodes.size());
 		}
 	}

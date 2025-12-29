@@ -77,6 +77,7 @@ public:
 		friend class flat_str_map;
 
 	public:
+		// NOLINTNEXTLINE (performance-unnecessary-value-param)
 		base_iterator(map_iterator it, map_type* m, int multi_idx) noexcept : it_(it), m_(m), multi_idx_(multi_idx) {}
 		base_iterator(map_iterator it, map_type* m) noexcept
 			: it_(it), m_(m), multi_idx_((Multi && it_ != m_->map_->end() && it_->second.IsMultiValue()) ? it_->second.GetWordID() : -1) {}

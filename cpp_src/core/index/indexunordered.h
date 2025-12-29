@@ -2,7 +2,7 @@
 
 #include <functional>
 #include <type_traits>
-#include "core/idsetcache.h"
+#include "core/idset/idsetcache.h"
 #include "core/index/indexstore.h"
 #include "core/index/updatetracker.h"
 
@@ -43,17 +43,21 @@ public:
 	void DestroyCache() override { cache_.ResetImpl(); }
 	void ClearCache() override { cache_.Clear(); }
 	void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
-	void EnableUpdatesCountingMode(bool val) noexcept override { tracker_.enableCountingMode(val); }
+	void EnableUpdatesCountingMode(bool val) override { tracker_.enableCountingMode(val); }
 
 	void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) override;
 	void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) override;
 
 protected:
+	constexpr static int kMaxIdsetsForDistinct = 500;
+
 	IndexUnordered(const IndexUnordered& other);
 
 	bool tryIdsetCache(const VariantArray& keys, CondType condition, SortType sortId,
 					   const std::function<bool(SelectKeyResult&, size_t&)>& selector, SelectKeyResult& res);
+	// NOLINTNEXTLINE (performance-unnecessary-value-param)
 	void addMemStat(typename Map::iterator it);
+	// NOLINTNEXTLINE (performance-unnecessary-value-param)
 	void delMemStat(typename Map::iterator it);
 
 	// Index map

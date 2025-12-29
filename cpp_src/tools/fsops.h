@@ -52,7 +52,7 @@ inline std::string JoinPath(std::string base, concepts::ConvertibleToString auto
 }
 
 template <concepts::ConvertibleToString... Str>
-inline std::string JoinPath(std::string base, concepts::ConvertibleToString auto&& name, Str&&... names) {
+inline std::string JoinPath(const std::string& base, concepts::ConvertibleToString auto&& name, Str&&... names) {
 	return JoinPath(JoinPath(base, name), names...);
 }
 

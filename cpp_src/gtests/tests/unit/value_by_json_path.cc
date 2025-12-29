@@ -1,5 +1,6 @@
 #include <ranges>
 #include "core/cjson/jsonbuilder.h"
+#include "core/payload/payloadiface.h"
 #include "reindexer_api.h"
 
 TEST_F(ReindexerApi, GetValueByJsonPath) {
@@ -351,4 +352,62 @@ TEST_F(ReindexerApi, ExceptionMultyJsonPathsThroughItemImplTest) {
 	test("value1");
 	test("value2");
 	test(nestedArrPath1);
+}
+
+TEST_F(ReindexerApi, GetFieldSizeByJsonPath) {
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+
+	Item item = NewItem(default_namespace);
+	Error err = item.FromJSON(fmt::format(R"({{
+		"id":{},
+		"obj1":{{"name":"test1"}},
+		"array1":[0,1,2,3,4],
+		"items1": [
+			{{"obj2":{{"name":"test1","year":2022}}}},
+			{{"obj2":{{"name":"test2","year":2023}}}},
+			{{"obj2":{{"name":"test3","year":2024}}}},
+			{{"obj2":{{"name":"test4","year":2025}}}},
+			{{"obj2":{{"name":"test5","year":2026}}}},
+			{{"obj2":{{"name":"test5","year":2027,"array2":[0,1,2]}}}}
+		],
+		"items2": [
+			{{
+			  "obj3":{{
+				"name":"test1",
+				"obj4":{{
+					"items":[
+						{{"obj5":{{"name":"one"}}}},
+						{{"obj5":{{"name":"two"}}}},
+						{{"obj5":{{"name":"three"}}}},
+						{{"obj5":{{"name":"four","array3":["1","2","3","4","5","6","7"]}}}}
+					]
+				}}
+			  }}
+			}}
+	  ]
+	}})",
+										  0));
+	ASSERT_TRUE(err.ok()) << err.what();
+	rt.Insert(default_namespace, item);
+
+	reindexer::QueryResults qr{rt.Select(Query(default_namespace))};
+	reindexer::TagsMatcher tm{qr.GetTagsMatcher(0)};
+	reindexer::PayloadType pt{qr.GetPayloadType(0)};
+
+	for (auto it : qr) {
+		auto itemRef{it.GetItemRef()};
+		reindexer::ConstPayload pv{pt, itemRef.Value()};
+		EXPECT_EQ(pv.GetFieldSize("id", tm), 1);
+		EXPECT_EQ(pv.GetFieldSize("array1", tm), 5);
+		EXPECT_EQ(pv.GetFieldSize("obj1", tm), 1);
+		EXPECT_EQ(pv.GetFieldSize("items1", tm), 6);
+		EXPECT_EQ(pv.GetFieldSize("items2", tm), 1);
+		EXPECT_EQ(pv.GetFieldSize("items1.obj2", tm), 6);
+		EXPECT_EQ(pv.GetFieldSize("items1.obj2.array2", tm), 3);
+		EXPECT_EQ(pv.GetFieldSize("items2.obj3", tm), 1);
+		EXPECT_EQ(pv.GetFieldSize("items2.obj3.obj4", tm), 1);
+		EXPECT_EQ(pv.GetFieldSize("items2.obj3.obj4.items.obj5", tm), 4);
+		EXPECT_EQ(pv.GetFieldSize("items2.obj3.obj4.items.obj5.array3", tm), 7);
+	}
 }

@@ -779,6 +779,16 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 							 .Where(kFieldNamePackages, CondAllSet, 10000 + rand() % 50)
 							 .Sort(sortIdx, sortOrder));
 
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(reindexer::functions::FlatArrayLen(kFieldNameCountries), CondGe, 1)
+							 .Sort(sortIdx, sortOrder));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .Where(reindexer::functions::FlatArrayLen(kFieldNamePriceId), CondEq, 2)
+							 .Sort(sortIdx, sortOrder));
+
 		// check substituteCompositeIndexes
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)

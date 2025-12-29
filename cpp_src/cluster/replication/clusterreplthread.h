@@ -13,7 +13,7 @@ public:
 					   std::function<void()> cb);
 
 	bool IsLeader() const noexcept { return !leadershipAwaitCh_.opened(); }
-	void AwaitReplPermission() { leadershipAwaitCh_.pop(); }
+	void AwaitReplPermission() { std::ignore = leadershipAwaitCh_.pop(); }
 	void OnNewNsAppearance(const NamespaceName& ns);
 	void OnUpdateReplicationFailure();
 	bool IsNamespaceInConfig(size_t, const NamespaceName& ns) const noexcept {
@@ -38,8 +38,9 @@ private:
 class [[nodiscard]] ClusterReplThread {
 public:
 	ClusterReplThread(int serverId, ReindexerImpl& thisNode, const NsNamesHashSetT*,
-					  std::shared_ptr<updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>>, SharedSyncState&,
-					  SynchronizationList&, std::function<void()> requestElectionsRestartCb, ReplicationStatsCollector, const Logger&);
+					  std::shared_ptr<updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>>,
+					  std::shared_ptr<NamespacesSyncScheduler>, SharedSyncState&, SynchronizationList&,
+					  std::function<void()> requestElectionsRestartCb, ReplicationStatsCollector, const Logger&);
 	~ClusterReplThread();
 	void Run(ReplThreadConfig config, std::vector<std::pair<uint32_t, ClusterNodeConfig>>&& nodesList, size_t totalNodesCount);
 	void SendTerminate() noexcept;

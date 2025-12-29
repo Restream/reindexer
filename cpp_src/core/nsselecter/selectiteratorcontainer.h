@@ -9,6 +9,7 @@
 #include "core/nsselecter/comparator/comporator_distinct_multi.h"
 #include "core/nsselecter/comparator/equalposition_comparator.h"
 #include "core/nsselecter/comparator/fieldscomparator.h"
+#include "core/nsselecter/comparator/functions_comparator.h"
 #include "core/nsselecter/selectiterator.h"
 #include "core/query/queryentry.h"
 
@@ -57,7 +58,7 @@ using ComparatorsPackT =
 			  ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiColumnGetter>,
 			  ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiScalarGetter>, ComparatorIndexed<bool>, ComparatorIndexed<int>,
 			  ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
-			  ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>>;
+			  ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, FunctionsComparator>;
 
 template <typename... Ts>
 using SelectIteratorContainerTreeBase =
@@ -130,14 +131,14 @@ public:
 		assertrx_throw(i < container_.size());
 		return container_[i].Is<JoinSelectIterator>();
 	}
-	reindexer::IsDistinct IsDistinct(size_t i) const noexcept {
+	reindexer::IsDistinct IsDistinct(size_t i) const {
 		return Visit(
 			i,
 			[] RX_PRE_LMBD_ALWAYS_INLINE(
 				const concepts::OneOf<SelectIteratorsBracket, JoinSelectIterator, AlwaysFalse, AlwaysTrue, KnnRawSelectResult> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { return IsDistinct_False; },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SelectIterator, ComparatorsPackT> auto& comp)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { return comp.IsDistinct(); });
+				RX_POST_LMBD_ALWAYS_INLINE { return comp.IsDistinct(); });
 	}
 	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<JoinedSelector>* js) const;
 
@@ -145,7 +146,29 @@ public:
 	int GetMaxIterations() const noexcept { return maxIterations_; }
 	std::string Dump() const;
 	static bool IsExpectingOrderedResults(const QueryEntry& qe) noexcept {
-		return IsOrderedCondition(qe.Condition()) || (qe.Condition() != CondAny && qe.Values().size() <= 1);
+		const auto cond = qe.Condition();
+		if (IsOrderedCondition(cond)) {
+			return true;
+		}
+		switch (cond) {
+			case CondLt:
+			case CondLe:
+			case CondGt:
+			case CondGe:
+			case CondRange:
+			case CondAny:
+			case CondEq:
+			case CondSet:
+			case CondAllSet:
+			case CondEmpty:
+			case CondLike:
+				return qe.Values().size() <= 1;
+			case CondDWithin:
+			case CondKnn:
+				return false;
+			default:
+				std::abort();
+		}
 	}
 	void MergeRanked(RanksHolder::Ptr&, const Reranker&, const NamespaceImpl&);
 

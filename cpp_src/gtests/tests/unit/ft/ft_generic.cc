@@ -372,14 +372,14 @@ R"##({"ft1":"слово
         std::vector<std::string> dataCompare={
 R"###({"ft1":"слово
  <!>{term_rank:74.180466, term:простыми, pattern:простая, bm25_norm:0.9399332, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:79, full_match_boost:0} простая
- {term_rank:74.03586, term:фразами, pattern:фраза, bm25_norm:0.9399332, term_len_boost:0.9625, position_rank:0.998, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
+ {term_rank:73.3587, term:фразами, pattern:фраза, bm25_norm:0.9399332, term_len_boost:0.9625, position_rank:0.998, norm_dist:0, proc:81.25, full_match_boost:0} фраза<!!>
  что то еще."})###",
 R"###({"ft1":"слово начало
  <!>{term_rank:74.402534, term:простыми, pattern:простая, bm25_norm:0.9436916, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:79, full_match_boost:0} простая
- {term_rank:74.257416, term:фразами, pattern:фраза, bm25_norm:0.9436916, term_len_boost:0.9625, position_rank:0.997, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
+ {term_rank:73.57823, term:фразами, pattern:фраза, bm25_norm:0.9436916, term_len_boost:0.9625, position_rank:0.997, norm_dist:0, proc:81.25, full_match_boost:0} фраза<!!>
  конец что то еще
  <!>{term_rank:74.402534, term:простыми, pattern:простая, bm25_norm:0.9436916, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:79, full_match_boost:0} простая
- {term_rank:74.257416, term:фразами, pattern:фраза, bm25_norm:0.9436916, term_len_boost:0.9625, position_rank:0.997, norm_dist:0, proc:82, full_match_boost:0} фраза<!!>
+ {term_rank:73.57823, term:фразами, pattern:фраза, bm25_norm:0.9436916, term_len_boost:0.9625, position_rank:0.997, norm_dist:0, proc:81.25, full_match_boost:0} фраза<!!>
  слово слово."})###"
             };
 		// clang-format on
@@ -411,7 +411,7 @@ R"###({"ft1":"слово начало
 		//clang-format off
 		std::vector<std::string> dataCompare = {
 			R"({"ft1":"{term_rank:102.23141, term:жил, pattern:жил, bm25_norm:1.0223141, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} жил
- {term_rank:71.49042, term:жил, pattern:ил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:70, full_match_boost:0}
+ {term_rank:77.61817, term:жил, pattern:ил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:76, full_match_boost:0}
  {term_rank:102.12917, term:пил, pattern:пил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} пил гулял"})"};
 		//clang-format on
 		removeLineEnd(dataCompare);
@@ -1697,12 +1697,12 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	CheckResults("тестов~",
 				 {{"!Местов!", ""},
 				  {"!МестоД!", ""},
-				  {"!testov!", ""},
-				  {"!задача!", ""},
-				  {"!ntcnjd!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"маленький !тест!", ""}},
+				  {"маленький !тест!", ""},
+				  {"!testov!", ""},
+				  {"!задача!", ""},
+				  {"!ntcnjd!", ""}},
 				 true);
 
 	cfg = cfgDef;
@@ -1714,13 +1714,13 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов~",
 				 {{"!Местов!", ""},
-				  {"!testov!", ""},
-				  {"!МестоД!", ""},
-				  {"!задача!", ""},
-				  {"!ntcnjd!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"маленький !тест!", ""}},
+				  {"!МестоД!", ""},
+				  {"!testov!", ""},
+				  {"маленький !тест!", ""},
+				  {"!задача!", ""},
+				  {"!ntcnjd!", ""}},
 				 true);
 
 	cfg = cfgDef;
@@ -1731,12 +1731,12 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов~",
-				 {{"!testov!", ""},
+				 {{"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"!testov!", ""},
 				  {"!Местов!", ""},
 				  {"!задача!", ""},
 				  {"!ntcnjd!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 }
@@ -2381,6 +2381,48 @@ TEST_P(FTGenericApi, SelectRepeatingItemsFromArray) {
 		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 3);
 	}
+}
+
+TEST_P(FTGenericApi, JoiningQueryTerms) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.optimization = reindexer::FtFastConfig::Optimization::CPU;
+	ftCfg.maxTypos = 3;
+	ftCfg.stemmers = {};
+	Init(ftCfg);
+	Add("Леонардо ДиКаприо снимался в Выжившем"sv);
+	Add("леонардо ди каприо снимался в выжившем"sv);
+	Add("Леонардо ДеКаприо снимался в Выжившем"sv);
+	Add("Леонардо Де каприо снимался в Выжившем"sv);
+	Add("леонардодикаприо снимался в выжившем"sv);
+	Add("леонардо дикаприоснимался в выжившем"sv);
+	Add("Маша ела кашу. Каша кушалась сама. Маша кашляла."sv);
+
+	CheckResults("ди каприо",
+				 {{"леонардо !ди каприо! снимался в выжившем", ""},
+				  {"Леонардо Де !каприо! снимался в Выжившем", ""},
+				  {"Леонардо !ДиКаприо! снимался в Выжившем", ""}},
+				 true);
+
+	CheckResults("ди каприо*",
+				 {{"леонардо !ди каприо! снимался в выжившем", ""},
+				  {"Леонардо Де !каприо! снимался в Выжившем", ""},
+				  {"Леонардо !ДиКаприо! снимался в Выжившем", ""},
+				  {"леонардо !дикаприоснимался! в выжившем", ""}},
+				 true);
+
+	CheckResults("*ди каприо",
+				 {{"леонардо !ди каприо! снимался в выжившем", ""},
+				  {"Леонардо Де !каприо! снимался в Выжившем", ""},
+				  {"Леонардо !ДиКаприо! снимался в Выжившем", ""},
+				  {"!леонардодикаприо! снимался в выжившем", ""}},
+				 true);
+
+	CheckResults("ди каприо~",
+				 {{"леонардо !ди каприо! снимался в выжившем", ""},
+				  {"Леонардо Де !каприо! снимался в Выжившем", ""},
+				  {"Леонардо !ДиКаприо! снимался в Выжившем", ""},
+				  {"Леонардо !ДеКаприо! снимался в Выжившем", ""}},
+				 true);
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,

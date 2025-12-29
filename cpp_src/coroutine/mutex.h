@@ -35,7 +35,8 @@ public:
 		if (!waiters_.empty()) {
 			auto next = waiters_.front();
 			waiters_.pop_front();
-			resume(next);
+			[[maybe_unused]] int res = resume(next);
+			assertrx_dbg(res == 0);
 		}
 		// for (auto id : waiters) {
 		//	resume(id);

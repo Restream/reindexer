@@ -148,17 +148,17 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	}
 
 	size_t pos = 0;
-	reindexer::base_idset_ptr emptyIds{emptyIdsKeyEntry.Unsorted().BuildBaseIdSet()};
-	const reindexer::base_idset emptyIdsBaseIdSet{*emptyIds};
-
-	reindexer::BtreeIndexIterator<typeof(m1)> bIt1(m1, std::move(emptyIds));
+	reindexer::IdSet emptyIds{emptyIdsKeyEntry.Unsorted()};
+	reindexer::IdSet::idset_iterator_range empty_ids_range{emptyIds.idset_range()};
+	reindexer::IdSet::idset_iterator emptyIdsIt{empty_ids_range.begin()};
+	reindexer::BtreeIndexIterator<typeof(m1)> bIt1(m1, emptyIds);
 	bIt1.Start(false);
-	while (pos < emptyIdsBaseIdSet.size() && bIt1.Next()) {
-		EXPECT_TRUE(bIt1.Value() == emptyIdsBaseIdSet[pos])
-			<< "iterator value = " << bIt1.Value() << "; expected value = " << emptyIdsBaseIdSet[pos];
+	while (pos < emptyIds.Size() && bIt1.Next()) {
+		EXPECT_TRUE(bIt1.Value() == *emptyIdsIt) << "iterator value = " << bIt1.Value() << "; expected value = " << *emptyIdsIt;
+		++emptyIdsIt;
 		++pos;
 	}
-	EXPECT_TRUE(pos == emptyIdsBaseIdSet.size());
+	EXPECT_TRUE(pos == emptyIds.Size());
 
 	pos = 0;
 	while (bIt1.Next()) {
@@ -167,7 +167,7 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	}
 	EXPECT_TRUE(pos == ids1.size());
 
-	reindexer::BtreeIndexIterator<typeof(m2)> bIt2(m2, emptyIdsKeyEntry.Unsorted().BuildBaseIdSet());
+	reindexer::BtreeIndexIterator<typeof(m2)> bIt2(m2, emptyIdsKeyEntry.Unsorted());
 	bIt2.Start(true);
 	pos = ids2.size() - 1;
 	while (bIt2.Next() && pos) {
@@ -178,12 +178,15 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	}
 	EXPECT_TRUE(pos == 0);
 
-	pos = emptyIdsBaseIdSet.size() - 1;
+	reindexer::IdSet::idset_reverse_iterator_range empty_ids_reverse_range{emptyIds.idset_reverse_range()};
+	reindexer::IdSet::idset_reverse_iterator emptyIdsRit{empty_ids_reverse_range.begin()};
+
+	pos = emptyIds.Size() - 1;
 	while (bIt2.Next()) {
-		EXPECT_TRUE(bIt2.Value() == emptyIdsBaseIdSet[pos])
-			<< "iterator value = " << bIt2.Value() << "; expected value = " << emptyIdsBaseIdSet[pos];
+		EXPECT_TRUE(bIt2.Value() == *emptyIdsRit) << "iterator value = " << bIt2.Value() << "; expected value = " << *emptyIdsRit;
 		if (pos) {
 			--pos;
+			++emptyIdsRit;
 		}
 	}
 	EXPECT_TRUE(pos == 0);

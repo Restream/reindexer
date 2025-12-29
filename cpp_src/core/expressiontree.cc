@@ -70,9 +70,9 @@ public:
 	explicit Merger(QueryPreprocessor& qPreproc) noexcept : qPreproc_{qPreproc} {}
 	QueryPreprocessor& MergingTree() noexcept { return qPreproc_; }
 
-	using InvalidEntries = TypesPack<SubQueryEntry, SubQueryFieldEntry>;
-	using SkippingEntries =
-		TypesPack<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, MultiDistinctQueryEntry>;
+	using InvalidEntries = TypesPack<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry>;
+	using SkippingEntries = TypesPack<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry,
+									  MultiDistinctQueryEntry, QueryFunctionEntry>;
 	using MergingEntry = QueryEntry;
 
 	MergeResult Merge(QueryEntry& entry, uint16_t dst, uint16_t src, OpType nextOp, bool last, Changed) {

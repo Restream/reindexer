@@ -11,7 +11,7 @@
 
 namespace reindexer {
 
-#if RX_ENABLE_CLUSTERPROXY_LOGS
+#if RX_ENABLE_EXTRA_CLUSTER_LOGS
 template <typename R, typename std::enable_if<std::is_same<R, Error>::value>::type* = nullptr>
 static void printErr(const R& r) {
 	if (!r.ok()) {
@@ -25,7 +25,7 @@ static void printErr(const R& r) {
 		clusterProxyLog(LogTrace, "[cluster proxy] Tx err: {}", r.Status().what());
 	}
 }
-#endif
+#endif	// RX_ENABLE_EXTRA_CLUSTER_LOGS
 
 #define CallProxyFunction(Fn) proxyCall<decltype(&ReindexerImpl::Fn), &ReindexerImpl::Fn, Error>
 
@@ -350,8 +350,11 @@ Error ClusterProxy::Select(const Query& q, LocalQueryResults& qr, const RdxConte
 	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Select query proxied", getServerIDRel());
 	auto err = proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
 	if (err.code() == errNetwork) {
-		// Force leader's check, if proxy returned errNetwork. New error does not matter
-		std::ignore = impl_.ClusterControlRequest(ClusterControlRequestData(ForceElectionsCommand{}));
+		// Force leader's check, if proxy returned errNetwork
+		const auto clusterErr = impl_.ClusterControlRequest(ClusterControlRequestData(ForceElectionsCommand{}));
+		if (clusterErr.ok()) {
+			return proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
+		}
 	}
 	return err;
 }
@@ -715,10 +718,10 @@ R ClusterProxy::proxyCall(const RdxContext& ctx, std::string_view nsName, const 
 				resetLeader();
 				clusterProxyLog(LogTrace, "[{} proxy] proxyCall RaftInfo::Role::Leader", getServerIDRel());
 				r = localCall<Fn, fn, R, Args...>(ctx, args...);
-#if RX_ENABLE_CLUSTERPROXY_LOGS
+#if RX_ENABLE_EXTRA_CLUSTER_LOGS
 				printErr(r);
-#endif
-				// the only place, where errUpdateReplication may appear
+#endif	// RX_ENABLE_EXTRA_CLUSTER_LOGS
+		// the only place, where errUpdateReplication may appear
 			} else if (info.role == cluster::RaftInfo::Role::Follower) {
 				if (ctx.HasEmitterServer()) {
 					setErrorCode(r, Error(errAlreadyProxied, "Request was proxied to follower node"));

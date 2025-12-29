@@ -249,6 +249,8 @@ void EmbedderPerfStat::GetJSON(JsonBuilder& builder) const {
 	builder.Put("last_sec_avg_cache_latency_us", lastSecAvgCacheLatencyUs);
 	builder.Put("max_cache_latency_us", maxCacheLatencyUs);
 	builder.Put("min_cache_latency_us", minCacheLatencyUs);
+	builder.Put("input_traffic_total_bytes", inputTrafficTotalBytes);
+	builder.Put("output_traffic_total_bytes", outputTrafficTotalBytes);
 }
 
 void IndexPerfStat::GetJSON(JsonBuilder& builder) const {

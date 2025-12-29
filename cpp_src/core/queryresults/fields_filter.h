@@ -28,7 +28,7 @@ public:
 
 	bool ContainsVector(int idx) const noexcept { return allVectorFields_ || vectorFields_.contains(idx); }
 
-	bool ContainsVector(const TagsPath& path) const noexcept { return allVectorFields_ || vectorFields_.contains(path); }
+	bool ContainsVector(const TagsPath& path) const { return allVectorFields_ || vectorFields_.contains(path); }
 
 	const FieldsSet& RegularFields() const& noexcept {
 		assertrx_dbg(!allRegularFields_);
@@ -59,7 +59,8 @@ private:
 	FieldsFilter(bool allReg, bool allVec) noexcept : allRegularFields_{allReg}, allVectorFields_{allVec} {}
 
 	template <typename P>
-	FieldsFilter(P&& path) : regularFields_{{std::forward<P>(path)}}, allRegularFields_{false} {}
+	FieldsFilter(P&& path)	// NOLINT(bugprone-forwarding-reference-overload)
+		: regularFields_{{std::forward<P>(path)}}, allRegularFields_{false} {}
 
 	template <concepts::ConvertibleToString Str>
 	void add(const Str& field, const NamespaceImpl&);

@@ -6,10 +6,11 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        compiler: ["Visual Studio 17 2022", "MinGW Makefiles"]
+        compiler: ['Visual Studio 17 2022', 'MinGW Makefiles']
       fail-fast: false
     env:
-      EXTRA_FLAGS: "${{ matrix.compiler == 'Visual Studio 17 2022' && '-Ax64' || '' }}"
+      EXTRA_FLAGS:
+        "${{ matrix.compiler == 'Visual Studio 17 2022' && '-Ax64' || '' }}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -105,8 +106,8 @@ jobs:
           - os: ubuntu-latest
             sanitizer: ASAN
             test: 'GO'
-#         - os: ubuntu-latest
-#           test: 'C++'
+          #  os: ubuntu-latest
+          #  test: 'C++'
           - os: ubuntu-latest
             sanitizer: TSAN
             test: 'GO'
@@ -232,4 +233,3 @@ jobs:
         run: |
           cd pyreindexer
           ../.github/workflows/test.sh
-

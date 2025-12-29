@@ -220,7 +220,7 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	size_t szCnt{0};
 	FtFastConfig* cfg_{nullptr};
 	// index - rowId, value vdocId (index in array vdocs_)
-	std::vector<size_t> rowId2Vdoc_;
+	std::vector<uint32_t> rowId2Vdoc_;
 	intrusive_ptr<const ISplitter> splitter_;
 };
 

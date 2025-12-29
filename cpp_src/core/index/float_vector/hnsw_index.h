@@ -26,7 +26,7 @@ public:
 	void GrowFor(size_t newElementsCount) override;
 	StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 											const std::atomic_int32_t& cancel) noexcept override;
-	Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData) override;
+	Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData, uint8_t version) override;
 
 private:
 	constexpr static uint64_t kStorageMagic = 0x3A3A3A3A2B2B2B2B;

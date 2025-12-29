@@ -4,9 +4,12 @@
 #include "clusterreplthread.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/reindexer_impl/reindexerimpl.h"
+#include "estl/algorithm.h"
 #include "estl/gift_str.h"
+#include "ns_sync_scheduler.h"
 #include "sharedsyncstate.h"
 #include "tools/catch_and_return.h"
+#include "tools/scope_guard.h"
 #include "updates/updatesqueue.h"
 #include "updatesbatcher.h"
 
@@ -115,14 +118,17 @@ bool UpdateApplyStatus::IsHaveToResync() const noexcept {
 
 template <typename BehaviourParamT>
 ReplThread<BehaviourParamT>::ReplThread(int serverId, ReindexerImpl& _thisNode, std::shared_ptr<UpdatesQueueT> shard,
-										BehaviourParamT&& bhvParam, ReplicationStatsCollector statsCollector, const Logger& l)
+										std::shared_ptr<NamespacesSyncScheduler> nssSyncScheduler, BehaviourParamT&& bhvParam,
+										ReplicationStatsCollector statsCollector, const Logger& l)
 	: thisNode(_thisNode),
 	  serverId_(serverId),
+	  nssSyncScheduler_(std::move(nssSyncScheduler)),
 	  bhvParam_(std::move(bhvParam)),
 	  updates_(std::move(shard)),
 	  statsCollector_(statsCollector),
 	  log_(l) {
-	assert(updates_);
+	assertrx(updates_);
+	assertrx(nssSyncScheduler_);
 	auto spawnNotifierRoutine = [this] {
 		loop.spawn(
 			wg,
@@ -145,7 +151,7 @@ ReplThread<BehaviourParamT>::ReplThread(int serverId, ReindexerImpl& _thisNode, 
 	updatesTimer_.set(loop);
 	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 	updatesTimer_.set([this, spawnNotifierRoutine](net::ev::timer&, int) noexcept {
-		log_.Trace([this] { rtfmt("{}: new updates notification (on timer)", serverId_); });
+		logTrace("{}: new updates notification (on timer)", serverId_);
 		spawnNotifierRoutine();
 	});
 	updatesAsync_.set(loop);
@@ -156,16 +162,16 @@ ReplThread<BehaviourParamT>::ReplThread(int serverId, ReindexerImpl& _thisNode, 
 			if (!notificationInProgress_) {
 				notificationInProgress_ = true;
 				if (config_.OnlineUpdatesDelaySec > 0) {
-					log_.Trace([this] { rtfmt("{}: new updates notification (delaying...)", serverId_); });
+					logTrace("{}: new updates notification (delaying...)", serverId_);
 					updatesTimer_.start(config_.OnlineUpdatesDelaySec);
 				} else {
-					log_.Trace([this] { rtfmt("{}: new updates notification (on async)", serverId_); });
+					logTrace("{}: new updates notification (on async)", serverId_);
 					spawnNotifierRoutine();
 				}
 			}
 		} else {
 			notificationInProgress_ = true;
-			log_.Trace([this] { rtfmt("{}: new terminate notification", serverId_); });
+			logTrace("{}: new terminate notification", serverId_);
 			spawnNotifierRoutine();
 		}
 	});
@@ -180,7 +186,7 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 	requiredReplicas_ = requiredReplicas;
 
 	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
-	loop.spawn([this, &nodesList]() noexcept {
+	loop.spawn([this, &nodesList, funcName = __FUNCTION__]() noexcept {
 		nodes.clear();
 		if (config_.ParallelSyncsPerThreadCount > 0) {
 			nsSyncTokens_ = std::make_unique<coroutine::tokens_pool<bool>>(config_.ParallelSyncsPerThreadCount);
@@ -200,16 +206,18 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 
 		bhvParam_.AwaitReplPermission();
 		if (!terminate_) {
-			log_.Info([this] {
-				std::string nodesString;
-				for (size_t i = 0; i < nodes.size(); ++i) {
-					if (i > 0) {
-						nodesString.append(", ");
+			log_.Info(
+				[this] {
+					std::string nodesString;
+					for (size_t i = 0; i < nodes.size(); ++i) {
+						if (i > 0) {
+							nodesString.append(", ");
+						}
+						nodesString.append(fmt::format("Node {} - server ID {}", nodes[i].uid, nodes[i].serverId));
 					}
-					nodesString.append(fmt::format("Node {} - server ID {}", nodes[i].uid, nodes[i].serverId));
-				}
-				rtfmt("{}: starting dataReplicationThread. Nodes:'{}'", serverId_, nodesString);
-			});
+					rtfmt("{}: starting dataReplicationThread. Nodes:'{}'", serverId_, nodesString);
+				},
+				__FILE__, __LINE__, funcName);
 			updates_->AddDataNotifier(std::this_thread::get_id(), [this] { updatesAsync_.send(); });
 
 			for (size_t i = 0; i < nodes.size(); ++i) {
@@ -243,10 +251,8 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 	terminateCh_.close();
 	nodes.clear();
 
-	log_.Info([this] {
-		rtfmt("{}: Replication thread was terminated. TID: {}", serverId_,
-			  static_cast<size_t>(std::hash<std::thread::id>()(std::this_thread::get_id())));
-	});
+	logInfo("{}: Replication thread was terminated. TID: {}", serverId_,
+			static_cast<size_t>(std::hash<std::thread::id>()(std::this_thread::get_id())));
 }
 
 template <typename BehaviourParamT>
@@ -333,8 +339,15 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 					err = connObserverId.error();
 				}
 			}
-			if (err.ok()) {
-				err = nodeReplicationImpl(node);
+
+			const auto nsList = generateSyncNssList(node);
+			if (nsList) {
+				statsCollector_.OnEnqueueNamespacesSync(node.uid, nsList->size());
+			}
+			if (err.ok() && nsList) {
+				err = nodeReplicationImpl(node, *nsList);
+			} else if (err.ok()) {
+				err = nsList.error();
 			}
 			statsCollector_.SaveNodeError(node.uid, err);
 		} else {
@@ -438,18 +451,158 @@ bool ReplThread<BehaviourParamT>::needForceSyncOnLogicError(const Error& err) co
 }
 
 template <typename BehaviourParamT>
-Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
+Expected<std::vector<NamespaceDef>> ReplThread<BehaviourParamT>::generateSyncNssList(const Node& node) const noexcept {
 	std::vector<NamespaceDef> nsList;
-	node.requireResync = false;
 	logTrace("{}:{} Trying to collect local namespaces...", serverId_, node.uid);
 	const RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
-	auto integralError = thisNode.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary(),
-												 RdxContext().WithCancelCtx(deadlineCtx));
-	if (!integralError.ok()) {
-		logWarn("{}:{} Unable to enum local namespaces in node replication routine: {}", serverId_, node.uid, integralError.what());
-		return integralError;
+	auto err = thisNode.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary(),
+									   RdxContext().WithCancelCtx(deadlineCtx));
+	if (!err.ok()) {
+		logWarn("{}:{} Unable to enum local namespaces in node replication routine: {}", serverId_, node.uid, err.what());
+		return Unexpected(std::move(err));
+	}
+	nsList.erase(unstable_remove_if(nsList.begin(), nsList.end(),
+									[this, &node](const auto& ns) { return !bhvParam_.IsNamespaceInConfig(node.uid, ns.name); }),
+				 nsList.cend());
+	return nsList;
+}
+
+template <typename BehaviourParamT>
+Error ReplThread<BehaviourParamT>::namespacesSyncImpl(Node& node, const std::vector<NamespaceDef>& nsList) {
+	std::set<NamespaceName> nssToSync;
+	for (auto& ns : nsList) {
+		nssToSync.emplace(ns.name);
 	}
 
+	struct RoutineContext {
+		coroutine::tokens_pool<bool>::token syncToken;
+		NamespacesSyncScheduler::Guard ns;
+	};
+
+	coroutine::wait_group localWg;
+	Error integralError;
+	while (!nssToSync.empty() && integralError.ok()) {
+		auto routineCtx = std::make_shared<RoutineContext>();
+		// Get sync token
+		if (nsSyncTokens_) {
+			logTrace("{}:{} Awaiting sync token", serverId_, node.uid);
+			routineCtx->syncToken = nsSyncTokens_->await_token();
+			logTrace("{}:{} Got sync token", serverId_, node.uid);
+		}
+		if (!integralError.ok()) {
+			break;
+		}
+
+		const bool isFirstNs = (nssToSync.size() == nsList.size());
+		routineCtx->ns = nssSyncScheduler_->ScheduleNext(nssToSync);
+		[[maybe_unused]] auto removed = nssToSync.erase(routineCtx->ns.Name());
+		assertrx_dbg(removed == 1);
+
+		// Delay allows other routines to get tokens for better rearranging
+		if (isFirstNs) {
+			loop.sleep(std::chrono::milliseconds(10));
+		} else {
+			loop.yield();
+		}
+
+		logInfo("{}:{} Creating new sync routine to sync '{}'", serverId_, node.uid, routineCtx->ns.Name());
+		loop.spawn(localWg, [this, &integralError, &node, routineCtx = std::move(routineCtx)]() mutable noexcept {
+			// 3.1) Perform wal-sync/force-sync for specified namespace in separated routine
+			try {
+				auto logGrd = MakeScopeGuard(
+					[&] { logInfo("{}:{} Sync routine for '{}' was completed", serverId_, node.uid, routineCtx->ns.Name()); });
+				auto& ns = routineCtx->ns;
+				ReplicationStateV2 replState;
+				for (size_t i = 0; i < kMaxRetriesOnRoleSwitchAwait && integralError.ok(); ++i) {
+					auto err = node.client.GetReplState(ns.Name(), replState);
+					bool nsExists = true;
+					if (err.code() == errNotFound) {
+						nsExists = false;
+						logInfo("{}:{} Namespace does not exist on remote node. Trying to get repl state for whole DB", serverId_,
+								node.uid);
+						err = node.client.GetReplState(std::string_view(), replState);
+					}
+					if (!bhvParam_.IsLeader() && integralError.ok()) {
+						integralError = Error(errParams, "Leader was switched");
+						return;
+					} else if (!integralError.ok()) {
+						return;
+					}
+					if (err.ok()) {
+						statsCollector_.OnSyncStateChanged(node.uid, NodeStats::SyncState::Syncing);
+						updateNodeStatus(node.uid, NodeStats::Status::Online);
+						if constexpr (isClusterReplThread()) {
+							if (replState.clusterStatus.role != ClusterOperationStatus::Role::ClusterReplica ||
+								replState.clusterStatus.leaderId != serverId_) {
+								// Await transition
+								logTrace("{}:{} Awaiting NS role switch on remote node", serverId_, node.uid);
+								loop.sleep(kRoleSwitchStepTime);
+								// TODO: Check if cluster is configured on remote node
+								continue;
+							}
+						} else {
+							if (nsExists && (replState.clusterStatus.role != ClusterOperationStatus::Role::SimpleReplica ||
+											 replState.clusterStatus.leaderId != serverId_)) {
+								logTrace("{}:{} Switching role for '{}' on remote node", serverId_, node.uid, ns.Name());
+								err = node.client.WithEmitterServerId(serverId_).SetClusterOperationStatus(
+									ns.Name(), ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
+								if (err.ok()) {
+									// Renew remote replState after role switch to avoid races between remote's users and replication
+									err = node.client.GetReplState(ns.Name(), replState);
+								}
+							}
+						}
+					} else {
+						logWarn("{}:{} Unable to get repl state: {}", serverId_, node.uid, err.whatStr());
+					}
+
+					if (err.ok()) {
+						if (!nsExists) {
+							replState = ReplicationStateV2();
+						}
+						err = syncNamespace(node, ns.Name(), replState);
+						if (!err.ok()) {
+							logWarn("{}:{}:{} Namespace sync error: {}", serverId_, node.uid, ns.Name(), err.whatStr());
+							if (err.code() == errNotFound) {
+								err = Error();
+								logWarn("{}:{} Expecting drop namespace record for '{}'", serverId_, node.uid, ns.Name());
+							} else if (err.code() == errDataHashMismatch || needForceSyncOnLogicError(err)) {
+								replState = ReplicationStateV2();
+								err = syncNamespace(node, ns.Name(), replState);
+								if (!err.ok()) {
+									logWarn("{}:{}:{} Namespace sync error (resync due to {}): {}", serverId_, node.uid, ns.Name(),
+											err.code() == errDataHashMismatch ? "datahash missmatch" : "logic error", err.whatStr());
+								}
+							}
+						}
+					}
+					if (!err.ok() && integralError.ok()) {
+						integralError = std::move(err);
+					}
+					if (integralError.ok()) {
+						statsCollector_.OnNamespaceSynchronized(node.uid);
+					}
+					return;
+				}
+
+				if (integralError.ok()) {
+					integralError = Error(errTimeout, "{}:{}:{} Unable to sync namespace", serverId_, node.uid, ns.Name());
+				}
+			} catch (std::exception& e) {
+				if (integralError.ok()) {
+					integralError = e;
+				}
+			}
+		});
+	}
+
+	localWg.wait();
+	return integralError;
+}
+
+template <typename BehaviourParamT>
+Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node, const std::vector<NamespaceDef>& nsList) {
+	node.requireResync = false;
 	logTrace("{}:{} Performing ns data cleanup...", serverId_, node.uid);
 	for (auto nsDataIt = node.namespaceData.begin(); nsDataIt != node.namespaceData.end();) {
 		if (!nsDataIt->second.tx.IsFree()) {
@@ -467,105 +620,16 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 	}
 
 	if constexpr (isClusterReplThread()) {
-		integralError = syncShardingConfig(node);
-		if (!integralError.ok()) {
-			logWarn("{}", integralError.what());
-			return integralError;
+		if (auto err = syncShardingConfig(node); !err.ok()) {
+			logWarn("{}", err.what());
+			return err;
 		}
 	}
 
-	logInfo("{}:{} Creating {} sync routines", serverId_, node.uid, nsList.size());
-	coroutine::wait_group localWg;
-	for (const auto& ns : nsList) {
-		if (!bhvParam_.IsNamespaceInConfig(node.uid, ns.name)) {
-			continue;
-		}
-		logTrace("{}:{} Creating sync routine for {}", serverId_, node.uid, ns.name);
-		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
-		loop.spawn(localWg, [this, &integralError, &node, &ns]() mutable noexcept {
-			// 3.1) Perform wal-sync/force-sync for specified namespace in separated routine
-			ReplicationStateV2 replState;
-			Error err;
-			size_t i = 0;
-			for (i = 0; i < kMaxRetriesOnRoleSwitchAwait; ++i) {
-				err = node.client.GetReplState(ns.name, replState);
-				bool nsExists = true;
-				if (err.code() == errNotFound) {
-					nsExists = false;
-					logInfo("{}:{} Namespace does not exist on remote node. Trying to get repl state for whole DB", serverId_, node.uid);
-					err = node.client.GetReplState(std::string_view(), replState);
-				}
-				if (!bhvParam_.IsLeader() && integralError.ok()) {
-					integralError = Error(errParams, "Leader was switched");
-					return;
-				} else if (!integralError.ok()) {
-					return;
-				}
-				if (err.ok()) {
-					statsCollector_.OnSyncStateChanged(node.uid, NodeStats::SyncState::Syncing);
-					updateNodeStatus(node.uid, NodeStats::Status::Online);
-					if constexpr (isClusterReplThread()) {
-						if (replState.clusterStatus.role != ClusterOperationStatus::Role::ClusterReplica ||
-							replState.clusterStatus.leaderId != serverId_) {
-							// Await transition
-							logTrace("{}:{} Awaiting NS role switch on remote node", serverId_, node.uid);
-							loop.sleep(kRoleSwitchStepTime);
-							// TODO: Check if cluster is configured on remote node
-							continue;
-						}
-					} else {
-						if (nsExists && (replState.clusterStatus.role != ClusterOperationStatus::Role::SimpleReplica ||
-										 replState.clusterStatus.leaderId != serverId_)) {
-							logTrace("{}:{} Switching role for '{}' on remote node", serverId_, node.uid, ns.name);
-							err = node.client.WithEmitterServerId(serverId_).SetClusterOperationStatus(
-								ns.name, ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
-							if (err.ok()) {
-								// Renew remote replState after role switch to avoid races between remote's users and replication
-								err = node.client.GetReplState(ns.name, replState);
-							}
-						}
-					}
-				} else {
-					logWarn("{}:{} Unable to get repl state: {}", serverId_, node.uid, err.whatStr());
-				}
-
-				if (err.ok()) {
-					if (!nsExists) {
-						replState = ReplicationStateV2();
-					}
-					const NamespaceName nsName(ns.name);
-					err = syncNamespace(node, nsName, replState);
-					if (!err.ok()) {
-						logWarn("{}:{}:{} Namespace sync error: {}", serverId_, node.uid, nsName, err.whatStr());
-						if (err.code() == errNotFound) {
-							err = Error();
-							logWarn("{}:{} Expecting drop namespace record for '{}'", serverId_, node.uid, nsName);
-						} else if (err.code() == errDataHashMismatch || needForceSyncOnLogicError(err)) {
-							replState = ReplicationStateV2();
-							err = syncNamespace(node, nsName, replState);
-							if (!err.ok()) {
-								logWarn("{}:{}:{} Namespace sync error (resync due to {}): {}", serverId_, node.uid, nsName,
-										err.code() == errDataHashMismatch ? "datahash missmatch" : "logic error", err.whatStr());
-							}
-						}
-					}
-				}
-				if (!err.ok() && integralError.ok()) {
-					integralError = std::move(err);
-				}
-				return;
-			}
-
-			if (integralError.ok()) {
-				integralError = Error(errTimeout, "{}:{}:{} Unable to sync namespace", serverId_, node.uid, ns.name);
-				return;
-			}
-		});
-	}
-	localWg.wait();
-	if (!integralError.ok()) {
-		logError("{}:{} Unable to sync remote namespaces: {}", serverId_, node.uid, integralError.what());
-		return integralError;
+	// 3) Perform wal-sync/force-sync for node's namespaces
+	if (auto err = namespacesSyncImpl(node, nsList); !err.ok()) {
+		logError("{}:{} Unable to sync remote namespaces: {}", serverId_, node.uid, err.what());
+		return err;
 	}
 	updateNodeStatus(node.uid, NodeStats::Status::Online);
 	statsCollector_.OnSyncStateChanged(node.uid, NodeStats::SyncState::OnlineReplication);
@@ -644,12 +708,6 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 			const Logger& log_;
 		};
 
-		coroutine::tokens_pool<bool>::token syncToken;
-		if (nsSyncTokens_) {
-			logTrace("{}:{}:{} Awaiting sync token", serverId_, node.uid, nsName);
-			syncToken = nsSyncTokens_->await_token();
-			logTrace("{}:{}:{} Got sync token", serverId_, node.uid, nsName);
-		}
 		if (!bhvParam_.IsLeader()) {
 			return Error(errParams, "Leader was switched");
 		}
@@ -820,26 +878,21 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 
 	auto applyUpdateF = [this, &node](const UpdatesQueueT::UpdateT::Value& upd, Context& ctx) {
 		auto& it = upd.Data();
-		log_.Trace([&] {
-			auto& nsName = it.NsName();
-			auto& nsData = *ctx.nsData;
-			rtfmt(
-				"{}:{}:{} Applying update with type {} (batched), id: {}, ns version: {}, lsn: {}, last synced ns "
-				"version: {}, last synced lsn: {}",
-				serverId_, node.uid, nsName, int(it.Type()), ctx.updPtr->ID() + ctx.offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
-				nsData.latestLsn.NsVersion(), nsData.latestLsn.LSN());
-		});
+		auto& nsName = it.NsName();
+		auto& nsData = *ctx.nsData;
+		logTrace(
+			"{}:{}:{} Applying update with type {} (batched), id: {}, ns version: {}, lsn: {}, last synced ns "
+			"version: {}, last synced lsn: {}",
+			serverId_, node.uid, nsName, int(it.Type()), ctx.updPtr->ID() + ctx.offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
+			nsData.latestLsn.NsVersion(), nsData.latestLsn.LSN());
 		return applyUpdate(it, node, *ctx.nsData);
 	};
 	auto onUpdateResF = [this, &node, &requireReelections](const UpdatesQueueT::UpdateT::Value& upd, const UpdateApplyStatus& res,
 														   Context&& ctx) {
 		auto& it = upd.Data();
 		ctx.nsData->UpdateLsnOnRecord(it);
-		log_.Trace([&] {
-			const auto counters = upd.GetCounters();
-			rtfmt("{}:{}:{} Apply update (lsn: {}, id: {}) result: {}. Replicas: {}", serverId_, node.uid, it.NsName(), it.ExtLSN().LSN(),
-				  ctx.updPtr->ID() + ctx.offset, (res.err.ok() ? "OK" : "ERROR:" + res.err.whatStr()), counters.replicas + 1);
-		});
+		logTrace("{}:{}:{} Apply update (lsn: {}, id: {}) result: {}. Replicas: {}", serverId_, node.uid, it.NsName(), it.ExtLSN().LSN(),
+				 ctx.updPtr->ID() + ctx.offset, (res.err.ok() ? "OK" : "ERROR:" + res.err.whatStr()), upd.GetCounters().replicas + 1);
 		const auto replRes = ctx.updPtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, ctx.offset,
 														 it.EmitterServerID() == node.serverId, res.err);
 		if (res.err.ok()) {
@@ -1078,17 +1131,19 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 				bhvParam_.OnUpdateReplicationFailure();
 			}
 
-			log_.Trace([&] {
-				const auto counters = upd.GetCounters();
-				rtfmt(
-					"{}:{}:{} Dropping update with error: {}. Type {}, ns version: {}, lsn: {}, emitter: {}. "
-					"Required: "
-					"{}, succeed: "
-					"{}, failed: {}, replicas: {}",
-					serverId_, node.uid, nsName, err.whatStr(), int(it.Type()), it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
-					(isEmitter ? node.serverId : it.EmitterServerID()), consensusCnt_, counters.approves, counters.errors,
-					counters.replicas + 1);
-			});
+			log_.Trace(
+				[&] {
+					const auto counters = upd.GetCounters();
+					rtfmt(
+						"{}:{}:{} Dropping update with error: {}. Type {}, ns version: {}, lsn: {}, emitter: {}. "
+						"Required: "
+						"{}, succeed: "
+						"{}, failed: {}, replicas: {}",
+						serverId_, node.uid, nsName, err.whatStr(), int(it.Type()), it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
+						(isEmitter ? node.serverId : it.EmitterServerID()), consensusCnt_, counters.approves, counters.errors,
+						counters.replicas + 1);
+				},
+				__FILE__, __LINE__, __FUNCTION__);
 		}
 	} while (!terminate_);
 	return false;

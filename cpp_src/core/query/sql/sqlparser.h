@@ -2,6 +2,7 @@
 
 #include <unordered_set>
 #include <vector>
+#include "core/function/function.h"
 #include "core/query/knn_search_params.h"
 #include "estl/tokenizer.h"
 #include "sqltokentype.h"
@@ -124,8 +125,11 @@ protected:
 
 	void parseArray(Tokenizer& parser, std::string_view tokText, UpdateEntry* updateField) const;
 	void parseCommand(Tokenizer& parser) const;
+	VariantArray parseValues(Tokenizer& parser) const;
+	CondType parseCondition(Tokenizer& parser, OpType& op);
 
 	static CondType getCondType(std::string_view cond);
+
 	SqlParsingCtx ctx_;
 	Query& query_;
 };

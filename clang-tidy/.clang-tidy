@@ -22,7 +22,7 @@ Checks: 'clang-diagnostic-*,
 # performance-no-int-to-ptr - consider how to fix this
 # bugprone-macro-parentheses - consider fixing
 WarningsAsErrors: '*'
-HeaderFilterRegex: '.*(?<!\.pb\.h)$'
+HeaderFilterRegex: '.*/cpp_src/([^v]|v[^e]|ve[^n]|ven[^d]|vend[^o]|vendo[^r]).*$'
 FormatStyle:     none
 CheckOptions:
     - { key: performance-unnecessary-value-param.AllowedTypes, value: 'span;IdType;ReplicationStatsCollector;KeyValueType' }

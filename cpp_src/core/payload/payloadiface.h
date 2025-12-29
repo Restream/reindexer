@@ -125,7 +125,7 @@ public:
 	// Copies current payload value to a new one
 	// according to PayloadType format
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	T CopyTo(PayloadType t, bool newFields = true);
+	T CopyTo(const PayloadType& t, bool newFields = true);
 
 	// Get element(s) by field name
 	void Get(std::string_view field, VariantArray&, Variant::HoldT) const;
@@ -137,6 +137,8 @@ public:
 	void GetByJsonPath(const IndexedTagsPath& jsonPath, VariantArray&, KeyValueType expectedType) const;
 	void GetByFieldsSet(const FieldsSet&, VariantArray&, KeyValueType expectedType,
 						const h_vector<KeyValueType, 4>& expectedCompositeTypes) const;
+	size_t GetFieldSize(const FieldsSet& fields) const;
+	size_t GetFieldSize(std::string_view jsonPath, const TagsMatcher& tagsMatcher) const;
 	Variant GetComposite(const FieldsSet&, const h_vector<KeyValueType, 4>& expectedTypes) const;
 	VariantArray GetIndexedArrayData(const IndexedTagsPath& jsonPath, int field, int& offset, int& size) const;
 	// very heavy, parse cjson
@@ -215,10 +217,10 @@ public:
 private:
 	enum class [[nodiscard]] HoldPolicy : bool { Hold, NoHold };
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	T CopyWithNewOrUpdatedFields(PayloadType t);
+	T CopyWithNewOrUpdatedFields(const PayloadType& t);
 
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type* = nullptr>
-	T CopyWithRemovedFields(PayloadType t);
+	T CopyWithRemovedFields(const PayloadType& t);
 	template <typename StrHolder>
 	void copyOrMoveStrings(int field, StrHolder& dest, bool copy);
 	template <typename P>
@@ -231,6 +233,8 @@ private:
 	Variant get(int field, int idx, HoldT h) const;
 	template <typename HoldT>
 	void get(std::string_view field, VariantArray&, HoldT h) const;
+	template <typename P>
+	size_t getFieldSize(const P& path) const;
 
 	// Array of elements types , not owning
 	const PayloadTypeImpl& t_;

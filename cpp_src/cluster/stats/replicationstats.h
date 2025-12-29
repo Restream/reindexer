@@ -7,8 +7,7 @@
 #include "estl/shared_mutex.h"
 #include "estl/spin_lock.h"
 
-namespace reindexer {
-namespace cluster {
+namespace reindexer::cluster {
 
 struct [[nodiscard]] SyncStats {
 	void FromJSON(const gason::JsonNode&);
@@ -43,6 +42,7 @@ struct [[nodiscard]] NodeStats {
 
 	DSN dsn;
 	int64_t updatesCount;
+	int64_t nssSyncQueue;
 	int serverId;
 	Status status;
 	SyncState syncState;
@@ -73,33 +73,39 @@ struct [[nodiscard]] ReplicationStats {
 };
 
 struct [[nodiscard]] SyncStatsCounter {
-	void Hit(std::chrono::microseconds time) noexcept;
-	void Reset() noexcept;
-	SyncStats Get() const;
+	void Hit(std::chrono::microseconds time) noexcept RX_REQUIRES(!mtx_);
+	void Reset() noexcept RX_REQUIRES(!mtx_);
+	SyncStats Get() const RX_REQUIRES(!mtx_);
 
-	size_t count = 0;
-	int64_t maxTimeUs = 0;
-	int64_t totalTimeUs = 0;
+	size_t count RX_GUARDED_BY(mtx_) = 0;
+	int64_t maxTimeUs RX_GUARDED_BY(mtx_) = 0;
+	int64_t totalTimeUs RX_GUARDED_BY(mtx_) = 0;
 	mutable spinlock mtx_;
 };
 
 struct [[nodiscard]] NodeStatsCounter {
 	NodeStatsCounter(DSN d, std::vector<std::string> nss) : dsn(std::move(d)), namespaces(std::move(nss)) {}
-	void OnUpdateApplied(int64_t updateId) noexcept { lastAppliedUpdateId_.store(updateId, std::memory_order_relaxed); }
+	void OnUpdateApplied(int64_t updateId) noexcept { lastAppliedUpdateId.store(updateId, std::memory_order_relaxed); }
 	void OnStatusChanged(NodeStats::Status st) noexcept { status.store(st, std::memory_order_relaxed); }
 	void OnSyncStateChanged(NodeStats::SyncState st) noexcept { syncState.store(st, std::memory_order_relaxed); }
 	void OnServerIdChanged(int sId) noexcept { serverId.store(sId, std::memory_order_relaxed); }
-	void SaveLastError(const Error& err) noexcept;
-	Error GetLastError() const;
-	NodeStats Get() const;
+	void OnEnqueueNamespacesSync(size_t count) noexcept { nssSyncQueueSize.store(count, std::memory_order_relaxed); }
+	void OnNamespaceSynchronized() noexcept {
+		[[maybe_unused]] auto curVal = nssSyncQueueSize.fetch_sub(1, std::memory_order_relaxed);
+		assertrx_dbg(curVal > 0);
+	}
+	void SaveLastError(const Error& err) noexcept RX_REQUIRES(!mtx_);
+	Error GetLastError() const RX_REQUIRES(!mtx_);
+	NodeStats Get() const RX_REQUIRES(!mtx_);
 
 	const DSN dsn;
 	const std::vector<std::string> namespaces;
-	std::atomic<int64_t> lastAppliedUpdateId_ = {-1};
+	std::atomic<int64_t> lastAppliedUpdateId = {-1};
+	std::atomic<int64_t> nssSyncQueueSize = {0};
 	std::atomic<int> serverId = {-1};
 	std::atomic<NodeStats::Status> status = {NodeStats::Status::None};
 	std::atomic<NodeStats::SyncState> syncState = {NodeStats::SyncState::None};
-	Error lastError;  // Change under lock
+	Error lastError RX_GUARDED_BY(mtx_);
 	mutable spinlock mtx_;
 };
 
@@ -109,7 +115,7 @@ public:
 
 	ReplicationStatCounter(std::string t) : type_(std::move(t)) {}
 	template <typename NodeT>
-	void Init(const std::vector<NodeT>& nodes) {
+	void Init(const std::vector<NodeT>& nodes) RX_REQUIRES(!mtx_) {
 		lock_guard wlck(mtx_);
 		nodeCounters_.clear();
 		thisNode_.reset();
@@ -119,7 +125,7 @@ public:
 		}
 	}
 	template <typename NodeT>
-	void Init(const NodeT& thisNode, const std::vector<NodeT>& nodes, const std::vector<std::string>& namespaces) {
+	void Init(const NodeT& thisNode, const std::vector<NodeT>& nodes, const std::vector<std::string>& namespaces) RX_REQUIRES(!mtx_) {
 		lock_guard wlck(mtx_);
 		nodeCounters_.clear();
 		thisNode_.emplace(thisNode.GetRPCDsn(), namespaces);
@@ -161,9 +167,11 @@ public:
 	}
 	void OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept RX_REQUIRES(!mtx_);
 	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) noexcept RX_REQUIRES(!mtx_);
+	void OnNamespaceSynchronized(size_t nodeId) noexcept RX_REQUIRES(!mtx_);
+	void OnEnqueueNamespacesSync(size_t nodeId, size_t count) noexcept RX_REQUIRES(!mtx_);
 	void OnServerIdChanged(size_t nodeId, int serverId) const noexcept RX_REQUIRES(!mtx_);
 	void SaveNodeError(size_t nodeId, const Error& lastError) noexcept RX_REQUIRES(!mtx_);
-	void Clear() noexcept;
+	void Clear() noexcept RX_REQUIRES(!mtx_);
 	ReplicationStats Get() const RX_REQUIRES(!mtx_);
 
 private:
@@ -180,10 +188,9 @@ private:
 	SyncStatsCounter initialForceSyncs_;
 	SyncStatsCounter initialWalSyncs_;
 	std::atomic<size_t> initialSyncTotalTimeUs_ = {0};
-	fast_hash_map<size_t, std::unique_ptr<NodeStatsCounter>> nodeCounters_;
-	std::optional<NodeStatsCounter> thisNode_;
+	fast_hash_map<size_t, std::unique_ptr<NodeStatsCounter>> nodeCounters_ RX_GUARDED_BY(mtx_);
+	std::optional<NodeStatsCounter> thisNode_ RX_GUARDED_BY(mtx_);
 	mutable read_write_spinlock mtx_;
 };
 
-}  // namespace cluster
-}  // namespace reindexer
+}  // namespace reindexer::cluster

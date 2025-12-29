@@ -46,6 +46,10 @@ type FtBaseRanking struct {
 	// Values range: [0,500]
 	// Default: 100
 	FullMatch int `json:"full_match_proc"`
+	// Base relevancy of concatenated terms match
+	// Values range: [0,500]
+	// Default: 90
+	ConcatProc int `json:"concat_proc"`
 	// Minimum relevancy of prefix word match.
 	// Values range: [0,500]
 	// Default: 50
@@ -154,6 +158,8 @@ type FtFastConfig struct {
 	KeepDiacritics []string `json:"keep_diacritics"`
 	// List of used stemmers
 	Stemmers []string `json:"stemmers"`
+	// Enable concatenated terms variants processing
+	EnableTermsConcat bool `json:"enable_terms_concat"`
 	// Enable translit variants processing
 	EnableTranslit bool `json:"enable_translit"`
 	// Enable wrong keyboard layout variants processing
@@ -228,6 +234,7 @@ func DefaultFtFastConfig() FtFastConfig {
 		MergeLimit:              20000,
 		KeepDiacritics:          []string{},
 		Stemmers:                []string{"en", "ru"},
+		EnableTermsConcat:       true,
 		EnableTranslit:          true,
 		EnableKbLayout:          true,
 		LogLevel:                0,
@@ -239,7 +246,7 @@ func DefaultFtFastConfig() FtFastConfig {
 		MaxTotalAreasToCache:    -1,
 		Optimization:            "Memory",
 		EnablePreselectBeforeFt: false,
-		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95, Delimited: 80},
+		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, ConcatProc: 90, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95, Delimited: 80},
 		Bm25Config:              &Bm25ConfigType{Bm25k1: 2.0, Bm25b: 0.75, Bm25Type: "rx_bm25"},
 	}
 }

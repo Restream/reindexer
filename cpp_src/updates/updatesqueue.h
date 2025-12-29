@@ -92,6 +92,7 @@ public:
 					}
 				} while (!replication_.compare_exchange_strong(expected, repl, std::memory_order_acquire));
 				status.hasEnoughApproves = (repl.approves >= consensusCnt);
+				// NOLINTNEXTLINE (bugprone-throw-keyword-missing)
 				status.result = error ? std::move(err) : Error();
 				return status;
 			}
@@ -192,16 +193,17 @@ public:
 			assertrx(!isFull());
 			auto count = count_.load(std::memory_order_relaxed);
 			totalSizeBytes_ += sizeBytes;
+			bool hasEmitterID = val.HasEmitterID();
 			data_[count].data_ = std::move(val);
 			if constexpr (skipResultCounting) {
-				data_[count].replication_.store({val.HasEmitterID() ? 0u : 1u, 0u, 0, 1, 0}, std::memory_order_relaxed);
+				data_[count].replication_.store({hasEmitterID ? 0u : 1u, 0u, 0, 1, 0}, std::memory_order_relaxed);
 				assert(!onRes);
 				(void)onRes;
 				data_[count].onResult_ = nullptr;
 				count_.fetch_add(1, std::memory_order_release);
 				addSentResult();
 			} else {
-				data_[count].replication_.store({val.HasEmitterID() ? 0u : 1u, 1u, 0, 1, 0}, std::memory_order_relaxed);
+				data_[count].replication_.store({hasEmitterID ? 0u : 1u, 1u, 0, 1, 0}, std::memory_order_relaxed);
 				data_[count].onResult_ = onRes;
 				count_.fetch_add(1, std::memory_order_release);
 			}
@@ -300,7 +302,7 @@ public:
 		}
 	}
 	template <typename ContextT>
-	std::pair<Error, bool> PushAndWait(UpdatesContainerT&& data, std::function<void()> beforeWait, const ContextT&) {
+	std::pair<Error, bool> PushAndWait(UpdatesContainerT&& data, const std::function<void()>& beforeWait, const ContextT&) {
 		struct {
 			size_t dataSize = 0;
 			size_t executedCnt = 0;
@@ -323,7 +325,8 @@ public:
 			return std::make_pair(invalidationErr_, false);
 		}
 		try {
-			logTraceW([&] { uq_rtfmt("Push new sync updates ({}) for {}", localData.dataSize, data[0].NsName()); });
+			logTraceW([&] { uq_rtfmt("Push new sync updates ({}) for {}", localData.dataSize, data[0].NsName()); }, __FILE__, __LINE__,
+					  __FUNCTION__);
 
 			entriesRange = addDataToQueue(std::move(data), &onResult, dropped);
 
@@ -341,7 +344,7 @@ public:
 				dummyCtx_);	 // Don't pass cancel context here, because data are already on the leader and we have to handle them
 			return std::make_pair(std::move(localData.err), true);
 		} catch (...) {
-			logInfoW([] { return "PushAndWait call has recieved an exception"; });
+			logInfoW([] { return "PushAndWait call has recieved an exception"; }, __FILE__, __LINE__, __FUNCTION__);
 			for (auto i = entriesRange.first; i <= entriesRange.second; ++i) {
 				const auto idx = tryGetIdx(i);
 				if (idx >= 0) {
@@ -361,7 +364,8 @@ public:
 				return std::make_pair(invalidationErr_, false);
 			}
 
-			logTraceW([&] { uq_rtfmt("Push new async updates ({}) for {}", data.size(), data[0].NsName()); });
+			logTraceW([&] { uq_rtfmt("Push new async updates ({}) for {}", data.size(), data[0].NsName()); }, __FILE__, __LINE__,
+					  __FUNCTION__);
 
 			addDataToQueue<skipResultCounting>(std::move(data), dropped);
 		}
@@ -462,13 +466,15 @@ private:
 		const auto offset = id - updPtr->ID();
 		auto& entry = updPtr->value(offset);
 		updPtr->addSentResult();
-		logTraceW([&] {
-			if (entry.onResult_) {
-				uq_rtfmt("Sending result for update with ID {}", id);
-			} else {
-				uq_rtfmt("Trying to send result for update with ID {}, but it doesn't have result handler", id);
-			}
-		});
+		logTraceW(
+			[&] {
+				if (entry.onResult_) {
+					uq_rtfmt("Sending result for update with ID {}", id);
+				} else {
+					uq_rtfmt("Trying to send result for update with ID {}, but it doesn't have result handler", id);
+				}
+			},
+			__FILE__, __LINE__, __FUNCTION__);
 		onResult(entry, std::move(err));
 		eraseReplicated(lck);
 	}
@@ -526,7 +532,8 @@ private:
 
 			if (lastChunckId >= 0) {
 				const auto updateId = lastChunckId + kBatchSize - 1;
-				logWarnW([&] { uq_rtfmt("Dropping updates: {}-{}. {} bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); });
+				logWarnW([&] { uq_rtfmt("Dropping updates: {}-{}. {} bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); },
+						 __FILE__, __LINE__, __FUNCTION__);
 				updatedDropRecord_ =
 					make_intrusive<intrusive_atomic_rc_wrapper<UpdateT>>(updateId, *this, typename UpdateT::DroppedUpdatesT{});
 				stats_.OnUpdatesDrop(updateId, droppedUpdatesSize);
@@ -536,21 +543,21 @@ private:
 	}
 	uint64_t getNextUpdateID() const noexcept { return queue_.size() ? queue_.back()->NextUpdateID() : nextChunkID_; }
 	template <typename F>
-	void logWarnW(F&& f) const {
+	void logWarnW(F&& f, const char* file, int line, const char* function) const noexcept {
 		if (log_) {
-			log_->Warn(std::forward<F>(f));
+			log_->Warn(std::forward<F>(f), file, line, function);
 		}
 	}
 	template <typename F>
-	void logInfoW(F&& f) const {
+	void logInfoW(F&& f, const char* file, int line, const char* function) const noexcept {
 		if (log_) {
-			log_->Info(std::forward<F>(f));
+			log_->Info(std::forward<F>(f), file, line, function);
 		}
 	}
 	template <typename F>
-	void logTraceW(F&& f) const {
+	void logTraceW(F&& f, const char* file, int line, const char* function) const noexcept {
 		if (log_) {
-			log_->Trace(std::forward<F>(f));
+			log_->Trace(std::forward<F>(f), file, line, function);
 		}
 	}
 

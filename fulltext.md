@@ -83,13 +83,13 @@ Queries to full text index are constructed by usual query interface
 
 ```go
     query := db.Query ("items").
-        Match ("name+description","text query","<stemmers>")
+        Match ("name+description","text query")
 ```
 Or equivalent query using name alias:
 
 ```go
     query := db.Query ("items").
-        Match ("text_search","text query","<stemmers>")
+        Match ("text_search","text query")
 ```
 
 Queries to full text index can be combined with conditions on another fields. e.g:
@@ -101,8 +101,6 @@ Queries to full text index can be combined with conditions on another fields. e.
 ```
 
 Each result of query contains rank of match. Rank is integer from 0 to 255. 0 - lowest relevancy, 255 - best relevancy. The query Iterator has method `Rank()`, which returns rank of current result
-
-> **Note**: `<stemmers>` see more [Stemming](https://en.wikipedia.org/wiki/Stemming).
 
 ## Text query format
 
@@ -373,7 +371,8 @@ Several parameters of full text search engine can be configured from application
 |   |    MaxRebuildSteps    |    int   | Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15.                                                                                                                                                                                                                             |      50       |
 |   |      MaxStepSize      |    int   | Maximum unique words to step                                                                                                                                                                                                                                                                                                      |     4000      |
 |   |      MergeLimit       |    int   | Maximum documents count which will be processed in merge query results. Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed                                                                                                                                             |     20000     |
-|   |       Stemmers        | []string | List of stemmers to use. Available values: "en", "ru", "nl", "fin", "de", "da", "fr", "it", "hu", "no", "pt", "ro", "es", "sv", "tr"                                                                                                                                                                                              |   "en","ru"   |
+|   |       Stemmers        | []string | List of stemmers to use. More about [stemming](https://en.wikipedia.org/wiki/Stemming). Available values: "en", "ru", "nl", "fin", "de", "da", "fr", "it", "hu", "no", "pt", "ro", "es", "sv", "tr"                                                                                                                                                                                              |   "en","ru"   |
+|   |    EnableTermsConcat  |   bool   | Enable concatenated terms processing. e.g. terms "di caprio" will match word "dicaprio"                                                                                                                                                                                                                                          |     true      |
 |   |    EnableTranslit     |   bool   | Enable russian translit variants processing. e.g. term "luntik" will match word "лунтик"                                                                                                                                                                                                                                          |     true      |
 |   |    EnableKbLayout     |   bool   | Enable wrong keyboard layout variants processing. e.g. term "keynbr" will match word "лунтик"                                                                                                                                                                                                                                     |     true      |
 |   |       StopWords       | []struct | List of objects of stopwords. Words from this list will be ignored when building indexes, but may be used in fulltext queries (such as 'word*', 'word~' etc) and produce non-empty search results. [More...](#stopwords-details)                                                                                                  |               |
@@ -442,7 +441,10 @@ FtBaseRanking: config for the base relevancy of the word in different forms.
 
 |   |       Parameter name         |   Type   |                                                                                                                        Description                                                                                                                        | Default value |
 |---|:----------------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
-|   | FullMatch                    |    int   | Relevancy of full word match                                                                                                                                                                                                                              |      100      |   
+|   | FullMatch                    |    int   | Relevancy of full word match                                                                                                           
+   |      100      |   
+|   | ConcatProc                   |    int   | Base relevancy of concatenated terms match match                                                                                                           
+                                                                                                                   |      90       |   
 |   | PrefixMin                    |    int   | Minimum relevancy of prefix word match.                                                                                                                                                                                                                   |       50      |           
 |   | SuffixMin                    |    int   | Minimum relevancy of suffix word match.                                                                                                                                                                                                                   |       10      | 
 |   | Typo                         |    int   | Base relevancy of typo match                                                                                                                                                                                                                              |       85      |

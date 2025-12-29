@@ -281,7 +281,7 @@ void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher
 		bufSize += std::count(fieldType.JsonPaths()[0].begin(), fieldType.JsonPaths()[0].end(), '.') + 1;
 	}
 
-	h_vector<std::byte, 1024> buffer;
+	h_vector<std::byte, 4096> buffer;
 	buffer.resize((sizeof(PathElementNodeTree::MapT::node_type) + sizeof(PathElementNodeTree::MapT::value_type)) * bufSize);
 	std::pmr::monotonic_buffer_resource pool(buffer.data(), buffer.size());
 	PathElementNodeTree root(&pool);

@@ -6,7 +6,7 @@ CsvBuilder::CsvBuilder(ObjType type, const CsvBuilder& parent)
 	  tm_(parent.tm_),
 	  type_(type),
 	  level_(parent.level_ + 1),
-	  startSerLen_(ser_->Len()),
+	  startSerLen_(ser_.Len()),
 	  ordering_(parent.ordering_),
 	  buf_(parent.buf_),
 	  positions_([this]() -> std::vector<std::pair<int, int>> {
@@ -18,15 +18,15 @@ CsvBuilder::CsvBuilder(ObjType type, const CsvBuilder& parent)
 	if (level_ < 1) {
 		return;
 	} else if (level_ == 1) {
-		(*ser_) << '"';
+		ser_ << '"';
 	}
 
 	switch (type_) {
 		case ObjType::TypeArray:
-			(*ser_) << '[';
+			ser_ << '[';
 			break;
 		case ObjType::TypeObject:
-			(*ser_) << '{';
+			ser_ << '{';
 			break;
 		case ObjType::TypeObjectArray:
 		case ObjType::TypePlain:
@@ -36,7 +36,7 @@ CsvBuilder::CsvBuilder(ObjType type, const CsvBuilder& parent)
 }
 
 CsvBuilder::CsvBuilder(WrSerializer& ser, CsvOrdering& ordering)
-	: ser_(&ser),
+	: ser_(ser),
 	  level_(-1),
 	  ordering_(!ordering.ordering_.empty() ? &ordering.ordering_ : nullptr),
 	  buf_(ordering_ ? &ordering.buf_ : nullptr) {}
@@ -56,10 +56,10 @@ void CsvBuilder::End() {
 	if (level_ > 0) {
 		switch (type_) {
 			case ObjType::TypeArray:
-				(*ser_) << ']';
+				ser_ << ']';
 				break;
 			case ObjType::TypeObject:
-				(*ser_) << '}';
+				ser_ << '}';
 				break;
 			case ObjType::TypeObjectArray:
 			case ObjType::TypePlain:
@@ -69,7 +69,7 @@ void CsvBuilder::End() {
 	}
 
 	if (level_ == 1) {
-		(*ser_) << '"';
+		ser_ << '"';
 	}
 
 	type_ = ObjType::TypePlain;
@@ -91,7 +91,7 @@ void CsvBuilder::putName(std::string_view name) {
 	}
 
 	if (count_++) {
-		(*ser_) << ',';
+		ser_ << ',';
 	}
 
 	if (level_ < 1) {
@@ -99,17 +99,17 @@ void CsvBuilder::putName(std::string_view name) {
 	}
 
 	if (name.data()) {
-		(*ser_) << '"';
-		(*ser_).PrintJsonString(name, WrSerializer::PrintJsonStringMode::QuotedQuote);
-		(*ser_) << '"';
-		(*ser_) << ':';
+		ser_ << '"';
+		ser_.PrintJsonString(name, WrSerializer::PrintJsonStringMode::QuotedQuote);
+		ser_ << '"';
+		ser_ << ':';
 	}
 }
 
 void CsvBuilder::tmProcessing(std::string_view name) {
 	const TagName tag = tm_->name2tag(name);
 
-	auto prevFinishPos = ser_->Len();
+	auto prevFinishPos = ser_.Len();
 	if (!tag.IsEmpty()) {
 		auto it = std::find_if(ordering_->begin(), ordering_->end(), [&tag](const auto& t) { return t == tag; });
 
@@ -131,10 +131,10 @@ void CsvBuilder::tmProcessing(std::string_view name) {
 			positions_[curTagPos_].second = prevFinishPos;
 		}
 		if (count_) {
-			(*ser_) << ',';
+			ser_ << ',';
 		}
 
-		(*ser_) << "\"{";
+		ser_ << "\"{";
 		type_ = ObjType::TypeObject;
 		count_ = 0;
 		level_++;
@@ -149,10 +149,10 @@ void CsvBuilder::postProcessing() {
 	buf_->Reset();
 
 	if (positions_[curTagPos_].second == -1) {
-		positions_[curTagPos_].second = ser_->Len();
+		positions_[curTagPos_].second = ser_.Len();
 	}
 
-	auto joinedData = std::string_view(ser_->Slice().data() + positions_[curTagPos_].second, ser_->Len() - positions_[curTagPos_].second);
+	auto joinedData = std::string_view(ser_.Slice().data() + positions_[curTagPos_].second, ser_.Len() - positions_[curTagPos_].second);
 
 	bool needDelim = false;
 	for (auto& [begin, end] : positions_) {
@@ -161,37 +161,37 @@ void CsvBuilder::postProcessing() {
 		} else {
 			needDelim = true;
 		}
-		*buf_ << std::string_view{ser_->Slice().data() + begin, static_cast<size_t>(end - begin)};
+		*buf_ << std::string_view{ser_.Slice().data() + begin, static_cast<size_t>(end - begin)};
 	}
 
 	*buf_ << joinedData;
-	ser_->Reset(startSerLen_);
-	*ser_ << buf_->Slice();
+	ser_.Reset(startSerLen_);
+	ser_ << buf_->Slice();
 }
 
 void CsvBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
 	putName(name);
 
 	std::string_view optQuote = level_ > 0 ? "\"" : "";
-	(*ser_) << optQuote;
-	(*ser_).PrintJsonString(arg, WrSerializer::PrintJsonStringMode::QuotedQuote);
+	ser_ << optQuote;
+	ser_.PrintJsonString(arg, WrSerializer::PrintJsonStringMode::QuotedQuote);
 
-	(*ser_) << optQuote;
+	ser_ << optQuote;
 }
 
 void CsvBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
 	putName(name);
-	ser_->PrintJsonUuid(arg);
+	ser_.PrintJsonUuid(arg);
 }
 
 void CsvBuilder::Raw(std::string_view name, std::string_view arg) {
 	putName(name);
-	(*ser_) << arg;
+	ser_ << arg;
 }
 
 void CsvBuilder::Null(std::string_view name) {
 	putName(name);
-	(*ser_) << "null";
+	ser_ << "null";
 }
 
 void CsvBuilder::Put(std::string_view name, const Variant& kv, int offset) {

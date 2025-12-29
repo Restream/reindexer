@@ -355,7 +355,8 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				const std::string jName{addToJSON(builder, (*jselectors)[jiter.joinIndex], it->operation)};
 				name << opName(it->operation, it == begin) << jName;
 			},
-			[&]<concepts::OneOf<FieldsComparator, EqualPositionComparator, GroupingEqualPositionComparator> T>(const T& c) {
+			[&]<concepts::OneOf<FieldsComparator, EqualPositionComparator, GroupingEqualPositionComparator, FunctionsComparator> T>(
+				const T& c) {
 				auto jsonSel = builder.Object();
 				if constexpr (concepts::OneOf<T, EqualPositionComparator, GroupingEqualPositionComparator>) {
 					jsonSel.Put("comparators"sv, c.FieldsCount());
@@ -367,6 +368,17 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				jsonSel.Put("method"sv, "scan"sv);
 				jsonSel.Put("matched"sv, c.GetMatchedCount(it->operation == OpNot));
 				jsonSel.Put("type"sv, std::is_same_v<FieldsComparator, decltype(c)> ? "TwoFieldsComparison"sv : "Comparator"sv);
+				name << opName(it->operation, it == begin) << c.Name();
+			},
+			[&](const FunctionsComparator& c) {
+				auto jsonSel = builder.Object();
+				jsonSel.Put("comparators"sv, 1);
+				jsonSel.Put("field"sv, opName(it->operation) + c.Name());
+				jsonSel.Put("cost"sv, std::round(c.Cost(iters)));
+				jsonSel.Put("method"sv, "scan"sv);
+				jsonSel.Put("matched"sv, c.GetMatchedCount(it->operation == OpNot));
+				jsonSel.Put("condition"sv, c.ConditionStr());
+				jsonSel.Put("type"sv, "FunctionsComparator"sv);
 				name << opName(it->operation, it == begin) << c.Name();
 			},
 			[&](const concepts::OneOf<

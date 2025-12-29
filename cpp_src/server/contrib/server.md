@@ -78,6 +78,7 @@
   * [EqualPositionDef](#equalpositiondef)
   * [FilterDef](#filterdef)
   * [KnnSearchParamsDef](#knnsearchparamsdef)
+  * [FunctionDef](#functiondef)
   * [SortDef](#sortdef)
   * [JoinedDef](#joineddef)
   * [OnDef](#ondef)
@@ -149,7 +150,7 @@
 
 <!-- tocstop -->
 
-> Version 5.9.0
+> Version 5.10.0
 
 ## Overview
 
@@ -240,6 +241,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | EqualPositionDef | [EqualPositionDef](#equalpositiondef) | Array fields to be searched with equal array indexes |
 | FilterDef | [FilterDef](#filterdef) | If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required. |
 | KnnSearchParamsDef | [KnnSearchParamsDef](#knnsearchparamsdef) | Parameters for knn search |
+| FunctionDef | [FunctionDef](#functiondef) = 2 |
 | SortDef | [SortDef](#sortdef) | Specifies results sorting order |
 | JoinedDef | [JoinedDef](#joineddef) |  |
 | OnDef | [OnDef](#ondef) |  |
@@ -532,10 +534,7 @@ This operation will create new database. If database is already exists, then err
 ```
 
 
-This operation will remove complete database from memory and disk.   
-All data, including namespaces, their documents and indexes will be erased.   
-Can not be undone. USE WITH CAUTION.  
-
+This operation will remove complete database from memory and disk. All data, including namespaces, their documents and indexes will be erased. Can not be undone. USE WITH CAUTION.
 
 #### Responses
 
@@ -3147,10 +3146,7 @@ ns?: string[]
 ```
 
 
-This operation queries documents from namespace by SQL query. Query can be preceded by `EXPLAIN` statement, then query execution plan will be returned with query results.   
-Two level paging is supported. At first, applied normal SQL `LIMIT` and `OFFSET`,  
-then `limit` and `offset` from http request.  
-
+This operation queries documents from namespace by SQL query. Query can be preceded by `EXPLAIN` statement, then query execution plan will be returned with query results. Two level paging is supported. At first, applied normal SQL `LIMIT` and `OFFSET`, then `limit` and `offset` from http request.
 
 #### Parameters(Query)
 
@@ -3484,6 +3480,12 @@ This operation updates documents in namespace by DSL query.
     equal_positions: {
       positions?: string[]
     }[]
+    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
+    function: {
+      // Function name
+      name: string
+      fields?: string[]
+    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -3761,6 +3763,12 @@ format?: enum[json, msgpack, protobuf, csv-file]
     equal_positions: {
       positions?: string[]
     }[]
+    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
+    function: {
+      // Function name
+      name: string
+      fields?: string[]
+    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -4140,6 +4148,12 @@ This operation removes documents from namespace by DSL query.
     equal_positions: {
       positions?: string[]
     }[]
+    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
+    function: {
+      // Function name
+      name: string
+      fields?: string[]
+    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -5300,6 +5314,12 @@ tx_id?: string
     equal_positions: {
       positions?: string[]
     }[]
+    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
+    function: {
+      // Function name
+      name: string
+      fields?: string[]
+    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -6379,27 +6399,29 @@ filter: string
       // Total time of initial sync
       total_time_us: integer
     }
-    // number of online updates waiting to be replicated
+    // Number of online updates waiting to be replicated
     pending_updates_count: integer
-    // number of online updates waiting to be released
+    // Number of online updates waiting to be released
     allocated_updates_count: integer
-    // total online updates' size in bytes
+    // Total online updates' size in bytes
     allocated_updates_size: integer
     nodes: {
-      // node's dsn
+      // Node's dsn
       dsn: string
-      // node's server id
+      // Node's server id
       server_id: integer
-      // online updates waiting to be replicated to this node
+      // Online updates waiting to be replicated to this node
       pending_updates_count: integer
-      // network status
+      // Network status
       status: enum[none, offline, online]
-      // replication role
+      // Replication role
       role: enum[none, follower, leader, candidate]
-      // replication mode for mixed 'sync cluster + async replication' configs
+      // Replication mode for mixed 'sync cluster + async replication' configs
       replication_mode?: enum[default, from_sync_leader]
-      // shows synchronization state for raft-cluster node (false if node is outdated)
+      // Shows synchronization state for raft-cluster node (false if node is outdated)
       is_synchronized?: boolean
+      // Number of namespaces in initial synchronization queue
+      queued_namespace_syncs?: integer
       namespaces?: string[]
     }[]
   }[]
@@ -6834,6 +6856,10 @@ This operation will return detailed information about database performance timin
         max_cache_latency_us?: integer
         // Minimum auto-embedding latency for a cache hit (all time)
         min_cache_latency_us?: integer
+        // Total amount of data received from the embedding service over the network
+        input_traffic_total_bytes?: integer
+        // Total amount of data sent to the embedding service over the network
+        output_traffic_total_bytes?: integer
         // Performance statistics for specific Embedder LRU-cache instance
         cache: {
           // Name. Identifier for linking settings
@@ -7917,27 +7943,29 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       // Total time of initial sync
       total_time_us: integer
     }
-    // number of online updates waiting to be replicated
+    // Number of online updates waiting to be replicated
     pending_updates_count: integer
-    // number of online updates waiting to be released
+    // Number of online updates waiting to be released
     allocated_updates_count: integer
-    // total online updates' size in bytes
+    // Total online updates' size in bytes
     allocated_updates_size: integer
     nodes: {
-      // node's dsn
+      // Node's dsn
       dsn: string
-      // node's server id
+      // Node's server id
       server_id: integer
-      // online updates waiting to be replicated to this node
+      // Online updates waiting to be replicated to this node
       pending_updates_count: integer
-      // network status
+      // Network status
       status: enum[none, offline, online]
-      // replication role
+      // Replication role
       role: enum[none, follower, leader, candidate]
-      // replication mode for mixed 'sync cluster + async replication' configs
+      // Replication mode for mixed 'sync cluster + async replication' configs
       replication_mode?: enum[default, from_sync_leader]
-      // shows synchronization state for raft-cluster node (false if node is outdated)
+      // Shows synchronization state for raft-cluster node (false if node is outdated)
       is_synchronized?: boolean
+      // Number of namespaces in initial synchronization queue
+      queued_namespace_syncs?: integer
       namespaces?: string[]
     }[]
   }[]
@@ -8212,6 +8240,12 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     equal_positions: {
       positions?: string[]
     }[]
+    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
+    function: {
+      // Function name
+      name: string
+      fields?: string[]
+    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -8374,6 +8408,12 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     equal_positions: {
       positions?: string[]
     }[]
+    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
+    function: {
+      // Function name
+      name: string
+      fields?: string[]
+    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -8487,6 +8527,12 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     equal_positions: {
       positions?: string[]
     }[]
+    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
+    function: {
+      // Function name
+      name: string
+      fields?: string[]
+    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -8508,6 +8554,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   // Boolean constant
   always?: boolean
   equal_positions:EqualPositionDef[]
+  function:FunctionDef
   params:KnnSearchParamsDef
 }
 ```
@@ -8525,6 +8572,17 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   ef?: integer
   // Applicable for IVF index only. The number of Voronoi cells to search during a query
   nprobe?: integer
+}
+```
+
+### FunctionDef
+
+```ts
+// Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
+{
+  // Function name
+  name: string
+  fields?: string[]
 }
 ```
 
@@ -8622,6 +8680,12 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     equal_positions: {
       positions?: string[]
     }[]
+    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
+    function: {
+      // Function name
+      name: string
+      fields?: string[]
+    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -8750,7 +8814,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       pool: {
         // Number connections to service
         connections?: integer //default: 10
-        // Connection\reconnection timeout to any embedding service (milliseconds)
+        // Connection/reconnection timeout to any embedding service (milliseconds)
         connect_timeout_ms?: integer //default: 300
         // Timeout reading data from embedding service (milliseconds)
         read_timeout_ms?: integer //default: 5000
@@ -8768,7 +8832,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       pool: {
         // Number connections to service
         connections?: integer //default: 10
-        // Connection\reconnection timeout to any embedding service (milliseconds)
+        // Connection/reconnection timeout to any embedding service (milliseconds)
         connect_timeout_ms?: integer //default: 300
         // Timeout reading data from embedding service (milliseconds)
         read_timeout_ms?: integer //default: 5000
@@ -8785,6 +8849,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 ```ts
 // Fulltext Index configuration
 {
+  // Enable search of concatenated adjacent terms. e.g. terms 'di caprio' will match word 'dicaprio'
+  enable_terms_concat?: boolean //default: true
   // Enable russian translit variants processing. e.g. term 'luntik' will match word 'лунтик'
   enable_translit?: boolean //default: true
   // Enable number variants processing. e.g. term '100' will match words one hundred
@@ -8895,6 +8961,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   base_ranking: {
     // Relevancy of full word match
     full_match_proc?: integer
+    // Base relevancy of concatenated terms match
+    concat_proc?: integer
     // Minimum relevancy of prefix word match
     prefix_min_proc?: integer
     // Minimum relevancy of suffix word match
@@ -10067,6 +10135,10 @@ string[]
         max_cache_latency_us?: integer
         // Minimum auto-embedding latency for a cache hit (all time)
         min_cache_latency_us?: integer
+        // Total amount of data received from the embedding service over the network
+        input_traffic_total_bytes?: integer
+        // Total amount of data sent to the embedding service over the network
+        output_traffic_total_bytes?: integer
         // Performance statistics for specific Embedder LRU-cache instance
         cache: {
           // Name. Identifier for linking settings
@@ -10187,6 +10259,10 @@ string[]
       max_cache_latency_us?: integer
       // Minimum auto-embedding latency for a cache hit (all time)
       min_cache_latency_us?: integer
+      // Total amount of data received from the embedding service over the network
+      input_traffic_total_bytes?: integer
+      // Total amount of data sent to the embedding service over the network
+      output_traffic_total_bytes?: integer
       // Performance statistics for specific Embedder LRU-cache instance
       cache: {
         // Name. Identifier for linking settings
@@ -10411,6 +10487,10 @@ string[]
   max_cache_latency_us?: integer
   // Minimum auto-embedding latency for a cache hit (all time)
   min_cache_latency_us?: integer
+  // Total amount of data received from the embedding service over the network
+  input_traffic_total_bytes?: integer
+  // Total amount of data sent to the embedding service over the network
+  output_traffic_total_bytes?: integer
   // Performance statistics for specific Embedder LRU-cache instance
   cache: {
     // Name. Identifier for linking settings

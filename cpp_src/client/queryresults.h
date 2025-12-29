@@ -32,7 +32,7 @@ public:
 	QueryResults(const QueryResults&) = delete;
 	QueryResults(QueryResults&&) noexcept = default;
 	QueryResults& operator=(const QueryResults&) = delete;
-	QueryResults& operator=(QueryResults&& obj) = default;
+	QueryResults& operator=(QueryResults&& obj) noexcept = default;
 	~QueryResults();
 
 	class [[nodiscard]] Iterator : public CoroQueryResults::Iterator {
@@ -100,7 +100,7 @@ private:
 	friend class Reindexer;
 	friend class ReindexerImpl;
 	void fetchNextResults();
-	Error setClient(const std::shared_ptr<ReindexerImpl> &) noexcept;
+	Error setClient(const std::shared_ptr<ReindexerImpl>&) noexcept;
 	const net::cproto::CoroClientConnection* coroConnection() const noexcept { return results_.getConn(); }
 
 	CoroQueryResults results_;

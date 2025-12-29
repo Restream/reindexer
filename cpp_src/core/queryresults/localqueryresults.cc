@@ -313,7 +313,7 @@ Error LocalQueryResults::IteratorImpl<QR>::GetProtobuf(WrSerializer& wrser) noex
 		}
 
 		ProtobufEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
-		ProtobufBuilder builder(&wrser, ObjType::TypePlain, ctx.schema_.get(), const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
+		ProtobufBuilder builder(wrser, ObjType::TypePlain, ctx.schema_.get(), const_cast<TagsMatcher*>(&ctx.tagsMatcher_));
 
 		auto item = builder.Object(kProtoQueryResultsFields.at(kParamItems));
 		auto ItemImpl = item.Object(TagName(ctx.schema_->GetProtobufNsNumber() + 1));

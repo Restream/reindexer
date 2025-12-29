@@ -87,9 +87,12 @@ TEST_F(ClusterOperationExtrasApi, SpecifyClusterNamespaceList) {
 			WrSerializer wser;
 			auto stats = cluster.GetNode(leaderId)->GetReplicationStats(cluster::kClusterReplStatsType);
 			stats.GetJSON(wser);
-			ASSERT_EQ(stats.nodeStats.size(), kClusterSize) << wser.Slice();
+			SCOPED_TRACE(wser.Slice());
+			ASSERT_EQ(stats.nodeStats.size(), kClusterSize);
 			for (auto& nodeStat : stats.nodeStats) {
-				ASSERT_EQ(nodeStat.namespaces, kClusterNsNames) << wser.Slice();
+				SCOPED_TRACE(nodeStat.dsn);
+				ASSERT_EQ(nodeStat.namespaces, kClusterNsNames);
+				ASSERT_EQ(nodeStat.nssSyncQueue, 0);
 			}
 		}
 	}));
@@ -102,7 +105,8 @@ TEST_F(ClusterOperationExtrasApi, SynchronizationStatusTest) {
 	auto ports = GetDefaults();
 	loop.spawn([&loop, &ports, this]() noexcept {
 		constexpr size_t kClusterSize = 5;
-		const std::string_view kNsName = "some";
+		const std::string_view kNsName1 = "some1";
+		const std::string_view kNsName2 = "some2";
 		constexpr size_t kDataPortion = 10;
 		constexpr size_t kStatsThreadsCnt = 5;
 		constexpr size_t kUpsertThreadsCnt = 5;
@@ -114,17 +118,20 @@ TEST_F(ClusterOperationExtrasApi, SynchronizationStatusTest) {
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
 		TestCout() << "Checking sync status without data" << std::endl;
-		AwaitSyncNodesCount(cluster, leaderId, kClusterSize - 1, kMaxSyncTime);
+		AwaitSyncNodesStats(cluster, leaderId,
+							{ExpectedStats{.nodesCount = kClusterSize - 1, .queuedNssCount = 0, .isSynchronized = true},
+							 ExpectedStats{.nodesCount = 1, .queuedNssCount = 0, .isSynchronized = false}},
+							kMaxSyncTime);
 
 		TestCout() << "Checking sync status during online updates" << std::endl;
-		cluster.InitNs(leaderId, kNsName);
+		cluster.InitNs(leaderId, kNsName1);
 		std::vector<std::thread> upsertThreads;
 		upsertThreads.reserve(kUpsertThreadsCnt);
 		for (size_t tid = 0; tid < kStatsThreadsCnt; ++tid) {
-			upsertThreads.emplace_back(std::thread([leaderId, &kNsName, &cluster, &terminate] {
+			upsertThreads.emplace_back(std::thread([leaderId, &kNsName1, &cluster, &terminate] {
 				size_t id = 0;
 				while (!terminate) {
-					cluster.FillData(leaderId, kNsName, id, kDataPortion);
+					cluster.FillData(leaderId, kNsName1, id, kDataPortion);
 					id += kDataPortion;
 					std::this_thread::sleep_for(std::chrono::milliseconds(10));
 				}
@@ -153,22 +160,36 @@ TEST_F(ClusterOperationExtrasApi, SynchronizationStatusTest) {
 		for (auto& uTh : upsertThreads) {
 			uTh.join();
 		}
-		AwaitSyncNodesCount(cluster, leaderId, kClusterSize - 1, kMaxSyncTime);
+		AwaitSyncNodesStats(cluster, leaderId,
+							{ExpectedStats{.nodesCount = kClusterSize - 1, .queuedNssCount = 0, .isSynchronized = true},
+							 ExpectedStats{.nodesCount = 1, .queuedNssCount = 1, .isSynchronized = false}},
+							kMaxSyncTime);
+		TestCout() << "Checking sync status after second namespace creation" << std::endl;
+		cluster.InitNs(leaderId, kNsName2);
+		AwaitSyncNodesStats(cluster, leaderId,
+							{ExpectedStats{.nodesCount = kClusterSize - 1, .queuedNssCount = 0, .isSynchronized = true},
+							 ExpectedStats{.nodesCount = 1, .queuedNssCount = 2, .isSynchronized = false}},
+							kMaxSyncTime);
 
 		TestCout() << "Checking sync status after new follower sync" << std::endl;
 		ASSERT_TRUE(cluster.StartServer(restartNodeId));
-		AwaitSyncNodesCount(cluster, leaderId, kClusterSize, kMaxSyncTime);
+		AwaitSyncNodesStats(cluster, leaderId, {ExpectedStats{.nodesCount = kClusterSize, .queuedNssCount = 0, .isSynchronized = true}},
+							kMaxSyncTime);
 
 		TestCout() << "Checking sync status after follower shutdown" << std::endl;
 		ASSERT_TRUE(cluster.StopServer(restartNodeId));
-		AwaitSyncNodesCount(cluster, leaderId, kClusterSize - 1, kMaxSyncTime);
+		AwaitSyncNodesStats(cluster, leaderId,
+							{ExpectedStats{.nodesCount = kClusterSize - 1, .queuedNssCount = 0, .isSynchronized = true},
+							 ExpectedStats{.nodesCount = 1, .queuedNssCount = 2, .isSynchronized = false}},
+							kMaxSyncTime);
 
 		TestCout() << "Checking sync status after full cluster restart" << std::endl;
 		cluster.StopServers(0, kClusterSize);
 		for (size_t i = 0; i < kClusterSize; ++i) {
 			ASSERT_TRUE(cluster.StartServer(i));
 		}
-		AwaitSyncNodesCount(cluster, leaderId, kClusterSize, kMaxSyncTime);
+		AwaitSyncNodesStats(cluster, leaderId, {ExpectedStats{.nodesCount = kClusterSize, .queuedNssCount = 0, .isSynchronized = true}},
+							kMaxSyncTime);
 	});
 
 	loop.run();
@@ -290,6 +311,9 @@ TEST_F(ClusterOperationExtrasApi, RestrictUpdates) {
 		} else {
 			ASSERT_EQ(stats.allocatedUpdatesSizeBytes, 0);
 		}
+		for (auto& nodeStat : stats.nodeStats) {
+			ASSERT_EQ(nodeStat.nssSyncQueue, 0) << nodeStat.dsn;
+		}
 		const auto updatesDrops2 = stats.updateDrops;
 
 		if (!updatesDrops2 || !updatesDrops1) {
@@ -349,7 +373,7 @@ TEST_F(ClusterOperationExtrasApi, LogLevel) {
 		auto checkLogLevel = [&cluster](LogLevel expected) {
 			// Expecting same log level on each node (due to proxying logic)
 			for (unsigned i = 0; i < kClusterSize; ++i) {
-				auto stats = cluster.GetNode(i)->GetReplicationStats("cluster");
+				auto stats = cluster.GetNode(i)->GetReplicationStats(cluster::kClusterReplStatsType);
 				ASSERT_EQ(stats.logLevel, expected) << "Node id: " << i;
 			}
 		};

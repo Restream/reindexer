@@ -1,4 +1,4 @@
-#include "core/idset.h"
+#include "core/idset/idset.h"
 
 namespace reindexer {
 

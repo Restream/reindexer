@@ -193,7 +193,7 @@ void RoleSwitcher::handleInitialSync(RaftInfo::Role newRole) {
 				return;
 			}
 
-			log_.Info([this] { rtfmt("{}: Leader's resync done", cfg_.serverId); });
+			logInfo("{}: Leader's resync done", cfg_.serverId);
 			statsCollector_.OnSyncStateChanged(ReplicationStatCounter::kLeaderUID, NodeStats::SyncState::OnlineReplication);
 			cfg_.onRoleSwitchDone();
 		});
@@ -202,14 +202,14 @@ void RoleSwitcher::handleInitialSync(RaftInfo::Role newRole) {
 
 	logInfo("{}: got new role: '{}'", cfg_.serverId, RaftInfo::RoleToStr(newRole));
 	if (newRole == RaftInfo::Role::Leader) {
-		log_.Info([this] { rtfmt("{}: Leader resync has begun", cfg_.serverId); });
+		logInfo("{}: Leader resync has begun", cfg_.serverId);
 		statsCollector_.OnSyncStateChanged(ReplicationStatCounter::kLeaderUID, NodeStats::SyncState::InitialLeaderSync);
 		timerIsCanceled_ = false;
 		roleSwitchTm_ = steady_clock_w::now();
 		leaderSyncFn(leaderResyncTimer_, 0);
 	} else {
 		if (curRole_ == RaftInfo::Role::Leader) {
-			log_.Info([this] { rtfmt("{}: Leader resync timer was canceled", cfg_.serverId); });
+			logInfo("{}: Leader resync timer was canceled", cfg_.serverId);
 			timerIsCanceled_ = true;
 			leaderResyncTimer_.stop();
 			leaderResyncWg_.wait();

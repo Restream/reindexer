@@ -269,16 +269,19 @@ void ItemsLoader::loadCachedANNIndexes() {
 		auto vectorsDataIt = vectorsData_.find(cachedIndex->field);
 		assertrx(vectorsDataIt != vectorsData_.end());
 		auto& vectorsData = vectorsDataIt->second;
-		auto res = idxPtr->LoadIndexCache(cachedIndex->data, IsComposite(pkIdx->Type()), [&](const VariantArray& keys, void* targetVec) {
-			auto res = pkIdx->SelectKey(keys, CondEq, 0, Index::SelectContext{}, dummyCtx).Front();
-			if (!res[0].ids_.empty()) {
-				const IdType id = res[0].ids_[0];
-				std::memcpy(targetVec, vectorsData[id].get(), vecSizeBytes);
-				return id;
-			} else {
-				throw Error(errLogic, "Requested PK does not exist");
-			}
-		});
+		auto res = idxPtr->LoadIndexCache(
+			cachedIndex->data, IsComposite(pkIdx->Type()),
+			[&](const VariantArray& keys, void* targetVec) {
+				auto res = pkIdx->SelectKey(keys, CondEq, 0, Index::SelectContext{}, dummyCtx).Front();
+				if (!res[0].ids_.empty()) {
+					const IdType id = res[0].ids_[0];
+					std::memcpy(targetVec, vectorsData[id].get(), vecSizeBytes);
+					return id;
+				} else {
+					throw Error(errLogic, "Requested PK does not exist");
+				}
+			},
+			cachedIndex->version);
 		if (!res.ok()) {
 			assertrx_dbg(false);  // Do not expect this error in test scenarios
 			logFmt(LogError, "[{}] Unable to restore ANN index '{}' from storage cache: {}", ns_.name_, cachedIndex->name, res.what());

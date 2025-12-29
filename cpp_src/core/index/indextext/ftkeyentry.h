@@ -11,7 +11,7 @@ public:
 	static constexpr int ndoc = -1;
 
 	void SetVDocID(int vdoc_id) noexcept { vdoc_id_ = vdoc_id; }
-	const int& VDocID() const noexcept { return vdoc_id_; }
+	int VDocID() const noexcept { return vdoc_id_; }
 	FtKeyEntryData* get() { return this; }
 	const FtKeyEntryData* get() const { return this; }
 	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const;

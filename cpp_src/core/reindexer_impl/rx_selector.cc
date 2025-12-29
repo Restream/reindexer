@@ -365,37 +365,38 @@ static bool byJoinedField(std::string_view sortExpr, std::string_view joinedNs) 
 StoredValuesOptimizationStatus RxSelector::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns,
 																					  const Query& mainQ) {
 	auto status = StoredValuesOptimizationStatus::Enabled;
-	jItemQ.Entries().VisitForEach([](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&) { assertrx_throw(0); },
-								  Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
-								  [&jns, &status](const QueryEntry& qe) {
-									  if (qe.IsFieldIndexed()) {
-										  assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.IndexNo()));
-										  const IndexType indexType = jns->indexes_[qe.IndexNo()]->Type();
-										  if (IsComposite(indexType)) {
-											  status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
-										  } else if (IsFullText(indexType)) {
-											  status = StoredValuesOptimizationStatus::DisabledByFullTextIndex;
-										  }
-									  }
-								  },
-								  [&jns, &status](const BetweenFieldsQueryEntry& qe) {
-									  if (qe.IsLeftFieldIndexed()) {
-										  assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.LeftIdxNo()));
-										  const IndexType indexType = jns->indexes_[qe.LeftIdxNo()]->Type();
-										  if (IsComposite(indexType)) {
-											  status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
-										  } else if (IsFullText(indexType)) {
-											  status = StoredValuesOptimizationStatus::DisabledByFullTextIndex;
-										  }
-									  }
-									  if (qe.IsRightFieldIndexed()) {
-										  assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.RightIdxNo()));
-										  if (IsComposite(jns->indexes_[qe.RightIdxNo()]->Type())) {
-											  status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
-										  }
-									  }
-								  },
-								  [&status](const KnnQueryEntry&) { status = StoredValuesOptimizationStatus::DisabledByFloatVectorIndex; });
+	jItemQ.Entries().VisitForEach(
+		[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { assertrx_throw(0); },
+		Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry>{},
+		[&jns, &status](const QueryEntry& qe) {
+			if (qe.IsFieldIndexed()) {
+				assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.IndexNo()));
+				const IndexType indexType = jns->indexes_[qe.IndexNo()]->Type();
+				if (IsComposite(indexType)) {
+					status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
+				} else if (IsFullText(indexType)) {
+					status = StoredValuesOptimizationStatus::DisabledByFullTextIndex;
+				}
+			}
+		},
+		[&jns, &status](const BetweenFieldsQueryEntry& qe) {
+			if (qe.IsLeftFieldIndexed()) {
+				assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.LeftIdxNo()));
+				const IndexType indexType = jns->indexes_[qe.LeftIdxNo()]->Type();
+				if (IsComposite(indexType)) {
+					status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
+				} else if (IsFullText(indexType)) {
+					status = StoredValuesOptimizationStatus::DisabledByFullTextIndex;
+				}
+			}
+			if (qe.IsRightFieldIndexed()) {
+				assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.RightIdxNo()));
+				if (IsComposite(jns->indexes_[qe.RightIdxNo()]->Type())) {
+					status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
+				}
+			}
+		},
+		[&status](const KnnQueryEntry&) { status = StoredValuesOptimizationStatus::DisabledByFloatVectorIndex; });
 	if (status == StoredValuesOptimizationStatus::Enabled) {
 		for (const auto& se : mainQ.GetSortingEntries()) {
 			if (byJoinedField(se.expression, jItemQ.NsName())) {
@@ -650,45 +651,60 @@ std::vector<SubQueryExplain> RxSelector::preselectSubQueries(Query& mainQuery, s
 	for (size_t i = 0; i < mainQuery.Entries().Size();) {
 		[[maybe_unused]] const size_t cur = i;
 		mainQuery.Entries().Visit(
-			i, overloaded{[&i](const concepts::OneOf<QueryEntriesBracket, QueryEntry, BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue,
-													 AlwaysFalse, KnnQueryEntry, MultiDistinctQueryEntry> auto&) noexcept { ++i; },
-						  [&](const SubQueryEntry& sqe) {
-							  try {
-								  const CondType cond = sqe.Condition();
-								  if (cond == CondAny || cond == CondEmpty) {
-									  if (selectSubQuery(mainQuery.GetSubQuery(sqe.QueryIndex()), mainQuery, locks, func, explains, ctx) ==
-										  (cond == CondAny)) {
-										  i += mainQuery.SetEntry<AlwaysTrue>(i);
-										  return;
-									  }
-									  i += mainQuery.SetEntry<AlwaysFalse>(i);
-									  return;
-								  }
-								  LocalQueryResults qr;
-								  const auto values = selectSubQuery(mainQuery.GetSubQuery(sqe.QueryIndex()), mainQuery, locks, qr, func,
-																	 sqe.Values().size(), explains, ctx);
-								  if (QueryEntries::CheckIfSatisfyCondition(values, sqe.Condition(), sqe.Values())) {
-									  i += mainQuery.SetEntry<AlwaysTrue>(i);
-									  return;
-								  }
-								  i += mainQuery.SetEntry<AlwaysFalse>(i);
-							  } catch (const Error& err) {
-								  throw Error(err.code(), "Error during preprocessing of subquery '" +
-															  mainQuery.GetSubQuery(sqe.QueryIndex()).GetSQL() + "': " + err.what());
-							  }
-						  },
-						  [&](const SubQueryFieldEntry& sqe) {
-							  try {
-								  queryResultsHolder.resize(queryResultsHolder.size() + 1);
-								  i += mainQuery.SetEntry<QueryEntry>(
-									  i, sqe.FieldName(), sqe.Condition(),
-									  selectSubQuery(mainQuery.GetSubQuery(sqe.QueryIndex()), mainQuery, locks, queryResultsHolder.back(),
-													 func, sqe.FieldName(), explains, ctx));
-							  } catch (const Error& err) {
-								  throw Error(err.code(), "Error during preprocessing of subquery '" +
-															  mainQuery.GetSubQuery(sqe.QueryIndex()).GetSQL() + "': " + err.what());
-							  }
-						  }});
+			i,
+			overloaded{[&i](const concepts::OneOf<QueryEntriesBracket, QueryEntry, BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue,
+												  AlwaysFalse, KnnQueryEntry, MultiDistinctQueryEntry, QueryFunctionEntry> auto&) noexcept {
+						   ++i;
+					   },
+					   [&](const SubQueryEntry& sqe) {
+						   try {
+							   const CondType cond = sqe.Condition();
+							   if (cond == CondAny || cond == CondEmpty) {
+								   if (selectSubQuery(mainQuery.GetSubQuery(sqe.QueryIndex()), mainQuery, locks, func, explains, ctx) ==
+									   (cond == CondAny)) {
+									   i += mainQuery.SetEntry<AlwaysTrue>(i);
+									   return;
+								   }
+								   i += mainQuery.SetEntry<AlwaysFalse>(i);
+								   return;
+							   }
+							   LocalQueryResults qr;
+							   const auto values = selectSubQuery(mainQuery.GetSubQuery(sqe.QueryIndex()), mainQuery, locks, qr, func,
+																  sqe.Values().size(), explains, ctx);
+							   if (QueryEntries::CheckIfSatisfyCondition(values, sqe.Condition(), sqe.Values())) {
+								   i += mainQuery.SetEntry<AlwaysTrue>(i);
+								   return;
+							   }
+							   i += mainQuery.SetEntry<AlwaysFalse>(i);
+						   } catch (const Error& err) {
+							   throw Error(err.code(), "Error during preprocessing of subquery '" +
+														   mainQuery.GetSubQuery(sqe.QueryIndex()).GetSQL() + "': " + err.what());
+						   }
+					   },
+					   [&](const SubQueryFieldEntry& sqe) {
+						   try {
+							   queryResultsHolder.resize(queryResultsHolder.size() + 1);
+							   i += mainQuery.SetEntry<QueryEntry>(
+								   i, sqe.FieldName(), sqe.Condition(),
+								   selectSubQuery(mainQuery.GetSubQuery(sqe.QueryIndex()), mainQuery, locks, queryResultsHolder.back(),
+												  func, sqe.FieldName(), explains, ctx));
+						   } catch (const Error& err) {
+							   throw Error(err.code(), "Error during preprocessing of subquery '" +
+														   mainQuery.GetSubQuery(sqe.QueryIndex()).GetSQL() + "': " + err.what());
+						   }
+					   },
+					   [&](const SubQueryFunctionEntry& sqe) {
+						   try {
+							   queryResultsHolder.resize(queryResultsHolder.size() + 1);
+							   i += mainQuery.SetEntry<QueryFunctionEntry>(
+								   i, sqe.FunctionVariant(), sqe.Condition(),
+								   selectSubQuery(mainQuery.GetSubQuery(sqe.QueryIndex()), mainQuery, locks, queryResultsHolder.back(),
+												  func, sqe.Function().ToString(), explains, ctx));
+						   } catch (const Error& err) {
+							   throw Error(err.code(), "Error during preprocessing of subquery '" +
+														   mainQuery.GetSubQuery(sqe.QueryIndex()).GetSQL() + "': " + err.what());
+						   }
+					   }});
 		assertrx_dbg(i > cur);
 	}
 	return explains;

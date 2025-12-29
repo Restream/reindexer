@@ -24,10 +24,10 @@ void ClusterThreadParam::OnUpdateReplicationFailure() {
 
 ClusterReplThread::ClusterReplThread(int serverId, ReindexerImpl& thisNode, const NsNamesHashSetT* namespaces,
 									 std::shared_ptr<updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>> q,
-									 SharedSyncState& syncState, SynchronizationList& syncList,
-									 std::function<void()> requestElectionsRestartCb, ReplicationStatsCollector statsCollector,
-									 const Logger& l)
-	: base_(serverId, thisNode, std::move(q),
+									 std::shared_ptr<NamespacesSyncScheduler> scheduler, SharedSyncState& syncState,
+									 SynchronizationList& syncList, std::function<void()> requestElectionsRestartCb,
+									 ReplicationStatsCollector statsCollector, const Logger& l)
+	: base_(serverId, thisNode, std::move(q), std::move(scheduler),
 			ClusterThreadParam(namespaces, leadershipAwaitCh, syncState, syncList, std::move(requestElectionsRestartCb)), statsCollector,
 			l),
 	  sharedSyncState_(syncState) {

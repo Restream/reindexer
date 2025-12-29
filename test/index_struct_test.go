@@ -23,6 +23,18 @@ type Orders struct {
 	OrderCity       string `reindex:"ordercity,tree"`
 }
 
+type OrdersEmptyTags struct {
+	OrderId          int64  `reindexer:"" json:"-"`
+	OrderTime        uint32 `reindex:",,sparse"`
+	OrderCity        string `reindex:",tree"`
+	OrderDescription string `reindex:""`
+}
+
+type TestOpenNamespaceEmptyTags struct {
+	Id        int64             `json:"id" reindex:",,pk"`
+	OrdersEmp []OrdersEmptyTags `reindex:"" json:"OrdEmpJ,omitempty"`
+}
+
 type TestOpenNamespace struct {
 	Id     int64 `json:"id" reindex:"id,,pk"`
 	First  int   `reindex:"first,-" json:"first"`
@@ -81,6 +93,7 @@ type ExpectedIndexDef struct {
 	JSONPaths []string
 	IndexType string
 	FieldType string
+	IsSparse  bool
 }
 
 type testGenre struct {
@@ -128,10 +141,11 @@ type multiGenresRecursiveItem struct {
 }
 
 const (
-	testNamespaceOpenNs        = "test_namespace_open"
-	testNoNamespaceOpenNs      = "test_no_namespace_open"
-	testMultigenresNs          = "test_multigenres_namespace"
-	testMultigenresRecursiveNs = "test_multigenres_recursive_namespace"
+	testNamespaceOpenNs          = "test_namespace_open"
+	testNamespaceOpenNsEmptyTags = "test_namespace_open_empty_tags"
+	testNoNamespaceOpenNs        = "test_no_namespace_open"
+	testMultigenresNs            = "test_multigenres_namespace"
+	testMultigenresRecursiveNs   = "test_multigenres_recursive_namespace"
 )
 
 func TestOpenNs(t *testing.T) {
@@ -147,6 +161,7 @@ func TestOpenNs(t *testing.T) {
 				idx.IndexDef.JSONPaths,
 				idx.IndexDef.IndexType,
 				idx.IndexDef.FieldType,
+				idx.IndexDef.IsSparse,
 			})
 		}
 		assert.Equal(t, expected, actual)
@@ -169,6 +184,24 @@ func TestOpenNs(t *testing.T) {
 			{Name: "ordercity", JSONPaths: []string{"Ord1.OrderCity"}, IndexType: "tree", FieldType: "string"},
 			{Name: "id+first", JSONPaths: []string{"id", "first"}, IndexType: "hash", FieldType: "composite"},
 			{Name: "first+id", JSONPaths: []string{"first", "id"}, IndexType: "hash", FieldType: "composite"},
+		})
+	})
+
+	t.Run("open namespace: check indexes creation with empty reindex names", func(t *testing.T) {
+		if len(DB.slaveList) > 0 {
+			t.Skip() // This test contains ns open/close and won't work with our replication testing logic
+		}
+
+		const ns = testNamespaceOpenNsEmptyTags
+		err := DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TestOpenNamespaceEmptyTags{})
+		defer DB.CloseNamespace(ns)
+		require.NoError(t, err)
+
+		validateIndexes(t, ns, []ExpectedIndexDef{
+			{Name: "Id", JSONPaths: []string{"id"}, IndexType: "hash", FieldType: "int64"},
+			{Name: "OrdersEmp.OrderCity", JSONPaths: []string{"OrdEmpJ.OrderCity"}, IndexType: "tree", FieldType: "string"},
+			{Name: "OrdersEmp.OrderDescription", JSONPaths: []string{"OrdEmpJ.OrderDescription"}, IndexType: "hash", FieldType: "string"},
+			{Name: "OrdersEmp.OrderTime", JSONPaths: []string{"OrdEmpJ.OrderTime"}, IndexType: "hash", FieldType: "int", IsSparse: true},
 		})
 	})
 
@@ -232,6 +265,7 @@ func TestOpenNs(t *testing.T) {
 				idx.IndexDef.JSONPaths,
 				idx.IndexDef.IndexType,
 				idx.IndexDef.FieldType,
+				idx.IndexDef.IsSparse,
 			})
 		}
 		j, err := json.Marshal(actual)
@@ -264,6 +298,7 @@ func TestOpenNs(t *testing.T) {
 				idx.IndexDef.JSONPaths,
 				idx.IndexDef.IndexType,
 				idx.IndexDef.FieldType,
+				idx.IndexDef.IsSparse,
 			})
 		}
 		j, err := json.Marshal(actual)

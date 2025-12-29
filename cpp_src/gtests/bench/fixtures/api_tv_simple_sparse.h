@@ -37,12 +37,15 @@ private:
 
 	void WarmUpIndexes(State& state);
 
+	void GetByRangeIDAndSortByTreeWithoutNulls(State& state);
 	template <typename Total>
 	void Query2Cond(State& state);
 	template <typename Total>
 	void Query3Cond(State& state);
 	template <typename Total>
 	void Query4Cond(State& state);
+	template <typename Total>
+	void QueryFlatArrayLenSparse(State& state);
 
 	void QueryInnerJoinPreselectByValues(State& state);
 	void QueryInnerJoinNoPreselect(State& state);

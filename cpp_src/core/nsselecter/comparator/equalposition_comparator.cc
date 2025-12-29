@@ -18,7 +18,7 @@ void EqualPositionComparator::BindField(const std::string& name, const FieldsPat
 }
 
 template <typename F>
-void EqualPositionComparator::bindField(const std::string& name, F field, const VariantArray& values, CondType cond,
+void EqualPositionComparator::bindField(const std::string& name, const F& field, const VariantArray& values, CondType cond,
 										const CollateOpts& collate) {
 	fields_.push_back(field);
 	Context& ctx = ctx_.emplace_back(collate);

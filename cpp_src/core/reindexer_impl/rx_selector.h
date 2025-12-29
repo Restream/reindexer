@@ -142,6 +142,7 @@ public:
 				nsLck_ = nsImpl_->rLock(ctx);
 			}
 		}
+		// NOLINTNEXTLINE(bugprone-exception-escape)
 		bool UnlockIfOwns() noexcept {
 			return std::visit(overloaded{[](NamespaceImpl::Locker::RLockT& v) {
 											 bool owns = v.owns_lock();

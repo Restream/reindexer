@@ -213,6 +213,12 @@ static void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
 	putValues(builder, qentry.Values());
 }
 
+static void encodeFilter(const QueryFunctionEntry& qentry, JsonBuilder& builder) {
+	builder.Put("cond"sv, get(kCondMap, CondType(qentry.Condition())));
+	putValues(builder, qentry.Values());
+	qentry.Function().GetJSON(builder);
+}
+
 static void encodeDropFields(const Query& query, JsonBuilder& builder) {
 	auto dropFields = builder.Array("drop_fields"sv);
 	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
@@ -356,12 +362,23 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				auto subquery = node.Object("subquery"sv);
 				dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
 			},
+			[&node, &parentQuery](const SubQueryFunctionEntry& sqe) {
+				node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
+				auto fields = node.Array("fields");
+				for (size_t i = 0; i < sqe.Fields(); ++i) {
+					fields.Put(TagName::Empty(), sqe.FieldData(i).FieldName());
+				}
+				fields.End();
+				auto subquery = node.Object("subquery"sv);
+				dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
+			},
 			[&it, &node, &parentQuery](const QueryEntriesBracket& bracket) {
 				auto arrNode = node.Array("filters"sv);
 				toDsl(it.cbegin(), it.cend(), parentQuery, arrNode);
 				dsl::encodeEqualPositions(bracket.equalPositions, arrNode);
 			},
 			[&node](const QueryEntry& qe) { dsl::encodeFilter(qe, node); },
+			[&node](const QueryFunctionEntry& qe) { dsl::encodeFilter(qe, node); },
 			[&node, &parentQuery](const JoinQueryEntry& jqe) {
 				assertrx(jqe.joinIndex < parentQuery.GetJoinQueries().size());
 				dsl::encodeSingleJoinQuery(parentQuery.GetJoinQueries()[jqe.joinIndex], node);

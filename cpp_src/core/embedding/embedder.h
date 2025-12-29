@@ -79,6 +79,8 @@ protected:
 		std::atomic<uint64_t> totalEmbedDocumentsCount{0};
 		LastError lastError;
 		std::atomic_bool lastStatus{true};
+		std::atomic<uint64_t> totalReadBytes{0};
+		std::atomic<uint64_t> totalWriteBytes{0};
 	};
 	mutable Statistic statistic_;
 };

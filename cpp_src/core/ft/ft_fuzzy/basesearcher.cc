@@ -89,18 +89,18 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr& holder, const FtDSLQue
 		ThrowOnCancel(rdxCtx);
 	}
 	for (const auto& term : dsl) {
-		data_size += ParseData(holder, term.pattern, max_id, min_id, results, term.opts, 1);
+		data_size += ParseData(holder, term.Pattern(), max_id, min_id, results, term.Opts(), 1);
 		fast_hash_map<std::wstring, size_t> patternsUsed;
 
 		if (holder->cfg_.enableTranslit) {
-			searchers_[0]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.translit, patternsUsed);
+			searchers_[0]->GetVariants(term.Pattern(), data, holder->cfg_.rankingConfig.translit, patternsUsed);
 
-			ParseData(holder, data[0].pattern, max_id, min_id, results, term.opts, holder->cfg_.startDefaultDecreese);
+			ParseData(holder, data[0].pattern, max_id, min_id, results, term.Opts(), holder->cfg_.startDefaultDecreese);
 		}
 		if (holder->cfg_.enableKbLayout) {
 			data.clear();
-			searchers_[1]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.kblayout, patternsUsed);
-			ParseData(holder, data[0].pattern, max_id, min_id, results, term.opts, holder->cfg_.startDefaultDecreese);
+			searchers_[1]->GetVariants(term.Pattern(), data, holder->cfg_.rankingConfig.kblayout, patternsUsed);
+			ParseData(holder, data[0].pattern, max_id, min_id, results, term.Opts(), holder->cfg_.startDefaultDecreese);
 		}
 	}
 

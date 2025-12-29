@@ -184,7 +184,7 @@ protected:
 	Error modifyItemRaw(std::string_view nsName, std::string_view cjson, int mode, milliseconds netTimeout, const InternalRdxContext& ctx);
 	std::shared_ptr<Namespace> getNamespace(std::string_view nsName);
 
-	void onConnectionState(Error err) noexcept {
+	void onConnectionState(const Error& err) noexcept {
 		const auto observers = observers_;
 		for (auto& obs : observers) {
 			obs.second(err);

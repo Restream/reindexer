@@ -3,9 +3,11 @@
 #include <thread>
 
 #include "core/cjson/csvbuilder.h"
+#include "core/function/function.h"
 #include "core/schema.h"
 #include "csv2jsonconverter.h"
 #include "queries_api.h"
+#include "tools/json2kv.h"
 #include "tools/jsontools.h"
 
 TEST_F(QueriesApi, QueriesStandardTestSet) {
@@ -97,6 +99,57 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	} catch (...) {
 		ASSERT_TRUE(false);
 	}
+}
+
+TEST_F(QueriesApi, SelectionResultsJsonTest) {
+	// Check, that selected JSON corresponds to CJSON for each individual field
+	FillDefaultNamespace(0, 100, 1);
+	QueryResults qr = rt.Select(Query(default_namespace));
+	VariantArray jsonArr, cjsonArr;
+	reindexer::fast_hash_set<std::string_view> found;
+	std::vector<std::string_view> testFields{kFieldNameId,			kFieldNameYear,		 kFieldNameYearSparse, kFieldNameGenre,
+											 kFieldNameName,		kFieldNameCountries, kFieldNameAge,		   kFieldNameDescription,
+											 kFieldNamePackages,	kFieldNameRate,		 kFieldNamePriceId,	   kFieldNameLocation,
+											 kFieldNameStartTime,	kFieldNameEndTime,	 kFieldNameActor,	   kFieldNameNumeric,
+											 kFieldNameBtreeIdsets, kFieldNameUuid,		 kFieldNameUuidArr};
+	for (auto it : qr) {
+		auto item = it.GetItem();
+		gason::JsonParser parser;
+		auto json = parser.Parse(item.GetJSON());
+		for (auto field : testFields) {
+			SCOPED_TRACE(field);
+			auto node = json[field];
+			jsonArr.Clear();
+			if (!node.empty()) {
+				if (node.isArray()) {
+					for (auto& it : node) {
+						jsonArr.emplace_back(reindexer::jsonValue2Variant(it.value, reindexer::KeyValueType::Undefined{}, field, nullptr,
+																		  reindexer::ConvertToString_False, reindexer::ConvertNull_False));
+					}
+					std::ignore = jsonArr.MarkArray();
+				} else {
+					jsonArr.emplace_back(reindexer::jsonValue2Variant(node.value, reindexer::KeyValueType::Undefined{}, field, nullptr,
+																	  reindexer::ConvertToString_False, reindexer::ConvertNull_False));
+				}
+			}
+			auto cjsonArr = VariantArray(item[field]);
+			for (auto& v : cjsonArr) {
+				if (v.Type().Is<reindexer::KeyValueType::Uuid>()) {
+					std::ignore = v.convert(reindexer::KeyValueType::String{});
+				}
+			}
+			EXPECT_EQ(jsonArr, cjsonArr) << "jsonArr: " << jsonArr.Dump() << "\ncjsonArr: " << cjsonArr.Dump();
+			if (!jsonArr.empty()) {
+				found.emplace(field);
+			}
+		}
+	}
+
+	// Check if all fields were found with non-empty values
+	std::vector<std::string_view> foundFields(found.begin(), found.end());
+	std::ranges::sort(foundFields);
+	std::ranges::sort(testFields);
+	ASSERT_EQ(foundFields, testFields);
 }
 
 TEST_F(QueriesApi, QueriesConditions) {
@@ -306,7 +359,11 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 			 .Where("id", CondSet, Query{"third_ns"}.Select({"id"}).Where("id", CondLt, 999).Limit(5).Offset(7))
 			 .LeftJoin("uid", "id", CondEq, Query("fourth_ns").Where("val", CondAny, VariantArray{}))},
 		{"SELECT * FROM ns WHERE ft = 'text' ORDER BY 'rank(ft, 10.0)'",
-		 Query{"ns"}.Where("ft", CondEq, "text").Sort("rank(ft, 10.0)", false)}};
+		 Query{"ns"}.Where("ft", CondEq, "text").Sort("rank(ft, 10.0)", false)},
+		{"select ssdfs", Error{errParseSQL, "Expected 'FROM', but found '' in query, line: 1 column: 12 12"}},
+		{"SELECT * FROM ns WHERE flat_array_len(arr1) > 2", Query{"ns"}.Where(reindexer::functions::FlatArrayLen("arr1"), CondGt, 2)},
+		{"SELECT * FROM ns WHERE flat_array_len(arr2) = 12", Query{"ns"}.Where(reindexer::functions::FlatArrayLen("arr2"), CondEq, 12)},
+		{"SELECT * FROM ns WHERE flat_array_len(arr3) <= 55", Query{"ns"}.Where(reindexer::functions::FlatArrayLen("arr3"), CondLe, 55)}};
 
 	for (const auto& [sql, expected, direction] : cases) {
 		if (std::holds_alternative<Query>(expected)) {
@@ -355,10 +412,10 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {{
-         "op": "and",
-         "always": true
-      }}
+	  {{
+		 "op": "and",
+		 "always": true
+	  }}
    ],
    "merge_queries": [],
    "aggregations": []
@@ -377,18 +434,18 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_filter": [],
    "select_functions": [],
    "sort": [
-      {{
-         "field": "rank(ft, 2.0) + 5",
-         "desc": false
-      }}
+	  {{
+		 "field": "rank(ft, 2.0) + 5",
+		 "desc": false
+	  }}
    ],
    "filters": [
-      {{
-         "op": "and",
-         "cond": "eq",
-         "field": "ft",
-         "value": "text"
-      }}
+	  {{
+		 "op": "and",
+		 "cond": "eq",
+		 "field": "ft",
+		 "value": "text"
+	  }}
    ],
    "merge_queries": [],
    "aggregations": []
@@ -408,18 +465,18 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {{
-         "op": "and",
-         "cond": "dwithin",
-         "field": "{}",
-         "value": [
-            [
-               -9.2,
-               -0.145
-            ],
-            0.581
-         ]
-      }}
+	  {{
+		 "op": "and",
+		 "cond": "dwithin",
+		 "field": "{}",
+		 "value": [
+			[
+			   -9.2,
+			   -0.145
+			],
+			0.581
+		 ]
+	  }}
    ],
    "merge_queries": [],
    "aggregations": []
@@ -439,12 +496,12 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {{
-         "op": "and",
-         "cond": "gt",
-         "first_field": "{}",
-         "second_field": "{}"
-      }}
+	  {{
+		 "op": "and",
+		 "cond": "gt",
+		 "first_field": "{}",
+		 "second_field": "{}"
+	  }}
    ],
    "merge_queries": [],
    "aggregations": []
@@ -464,28 +521,28 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {{
-         "op": "and",
-         "cond": "gt",
-         "subquery": {{
-            "namespace": "{}",
-            "limit": 10,
-            "offset": 10,
-            "req_total": "disabled",
-            "select_filter": [],
-            "sort": [],
-            "filters": [],
-            "aggregations": [
-               {{
-                  "type": "max",
-                  "fields": [
-                     "{}"
-                  ]
-               }}
-            ]
-         }},
-         "value": 18
-      }}
+	  {{
+		 "op": "and",
+		 "cond": "gt",
+		 "subquery": {{
+			"namespace": "{}",
+			"limit": 10,
+			"offset": 10,
+			"req_total": "disabled",
+			"select_filter": [],
+			"sort": [],
+			"filters": [],
+			"aggregations": [
+			   {{
+				  "type": "max",
+				  "fields": [
+					 "{}"
+				  ]
+			   }}
+			]
+		 }},
+		 "value": 18
+	  }}
    ],
    "merge_queries": [],
    "aggregations": []
@@ -505,27 +562,27 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {{
-         "op": "and",
-         "cond": "any",
-         "subquery": {{
-            "namespace": "{}",
-            "limit": 0,
-            "offset": 0,
-            "req_total": "disabled",
-            "select_filter": [],
-            "sort": [],
-            "filters": [
-               {{
-                  "op": "and",
-                  "cond": "eq",
-                  "field": "{}",
-                  "value": 1
-               }}
-            ],
-            "aggregations": []
-         }}
-      }}
+	  {{
+		 "op": "and",
+		 "cond": "any",
+		 "subquery": {{
+			"namespace": "{}",
+			"limit": 0,
+			"offset": 0,
+			"req_total": "disabled",
+			"select_filter": [],
+			"sort": [],
+			"filters": [
+			   {{
+				  "op": "and",
+				  "cond": "eq",
+				  "field": "{}",
+				  "value": 1
+			   }}
+			],
+			"aggregations": []
+		 }}
+	  }}
    ],
    "merge_queries": [],
    "aggregations": []
@@ -545,34 +602,34 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {{
-         "op": "and",
-         "cond": "eq",
-         "field": "{}",
-         "subquery": {{
-            "namespace": "{}",
-            "limit": -1,
-            "offset": 0,
-            "req_total": "disabled",
-            "select_filter": [
-               "{}"
-            ],
-            "sort": [],
-            "filters": [
-               {{
-                  "op": "and",
-                  "cond": "set",
-                  "field": "{}",
-                  "value": [
-                     1,
-                     10,
-                     100
-                  ]
-               }}
-            ],
-            "aggregations": []
-         }}
-      }}
+	  {{
+		 "op": "and",
+		 "cond": "eq",
+		 "field": "{}",
+		 "subquery": {{
+			"namespace": "{}",
+			"limit": -1,
+			"offset": 0,
+			"req_total": "disabled",
+			"select_filter": [
+			   "{}"
+			],
+			"sort": [],
+			"filters": [
+			   {{
+				  "op": "and",
+				  "cond": "set",
+				  "field": "{}",
+				  "value": [
+					 1,
+					 10,
+					 100
+				  ]
+			   }}
+			],
+			"aggregations": []
+		 }}
+	  }}
    ],
    "merge_queries": [],
    "aggregations": []
@@ -593,28 +650,28 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {{
-         "op": "and",
-         "cond": "gt",
-         "field": "{}",
-         "subquery": {{
-            "namespace": "{}",
-            "limit": -1,
-            "offset": 0,
-            "req_total": "disabled",
-            "select_filter": [],
-            "sort": [],
-            "filters": [],
-            "aggregations": [
-               {{
-                  "type": "avg",
-                  "fields": [
-                     "{}"
-                  ]
-               }}
-            ]
-         }}
-      }}
+	  {{
+		 "op": "and",
+		 "cond": "gt",
+		 "field": "{}",
+		 "subquery": {{
+			"namespace": "{}",
+			"limit": -1,
+			"offset": 0,
+			"req_total": "disabled",
+			"select_filter": [],
+			"sort": [],
+			"filters": [],
+			"aggregations": [
+			   {{
+				  "type": "avg",
+				  "fields": [
+					 "{}"
+				  ]
+			   }}
+			]
+		 }}
+	  }}
    ],
    "merge_queries": [],
    "aggregations": []
@@ -634,34 +691,37 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_functions": [],
    "sort": [],
    "filters": [
-      {{
-         "op": "and",
-         "cond": "gt",
-         "field": "{}",
-         "subquery": {{
-            "namespace": "{}",
-            "limit": 0,
-            "offset": 0,
-            "req_total": "enabled",
-            "select_filter": [],
-            "sort": [],
-            "filters": [],
-            "aggregations": []
-         }}
-      }}
+	  {{
+		 "op": "and",
+		 "cond": "gt",
+		 "field": "{}",
+		 "subquery": {{
+			"namespace": "{}",
+			"limit": 0,
+			"offset": 0,
+			"req_total": "enabled",
+			"select_filter": [],
+			"sort": [],
+			"filters": [],
+			"aggregations": []
+		 }}
+	  }}
    ],
    "merge_queries": [],
    "aggregations": []
 }})",
 				   default_namespace, kFieldNameId, joinNs, kFieldNameId),
 			   Query(default_namespace).Where(kFieldNameId, CondGt, Query(joinNs).ReqTotal())}};
+	auto jsonPrettyPrint = [](const std::string_view& json) {
+		reindexer::WrSerializer ser;
+		reindexer::prettyPrintJSON(std::string_view(json), ser, 3);
+		return std::string{ser.Slice()};
+	};
 	for (const auto& [dsl, expected, direction] : cases) {
 		if (std::holds_alternative<Query>(expected)) {
 			const Query& q = std::get<Query>(expected);
 			if (direction & GEN) {
-				reindexer::WrSerializer ser;
-				reindexer::prettyPrintJSON(std::string_view(q.GetJSON()), ser, 3);
-				EXPECT_EQ(ser.Slice(), dsl);
+				EXPECT_EQ(jsonPrettyPrint(q.GetJSON()), jsonPrettyPrint(dsl));
 			}
 			if (direction & PARSE) {
 				try {
@@ -682,6 +742,57 @@ TEST_F(QueriesApi, DslGenerateParse) {
 			}
 		}
 	}
+}
+
+TEST_F(QueriesApi, FunctionDslTest) {
+	auto getFunction = [](const auto& function) {
+		switch (function.index()) {
+			case 0:
+				return std::get<0>(function);
+			default:
+				throw Error(errLogic, "Function type {} is not supported yet!", function.index());
+		}
+	};
+
+	const std::string dsl = R"({"function":{"name":"flat_array_len","fields":["prices"]}})";
+
+	gason::JsonParser jsonParser;
+	auto json = jsonParser.Parse(dsl);
+	auto function = reindexer::functions::Function::FromJSON(json["function"]);
+	EXPECT_EQ(getFunction(function).FieldNames().size(), 1);
+	EXPECT_EQ(getFunction(function).FieldNames()[0], "prices");
+	EXPECT_EQ(getFunction(function).Type(), FunctionFlatArrayLen);
+	EXPECT_EQ(getFunction(function).Name(), "flat_array_len");
+
+	reindexer::WrSerializer ser;
+	reindexer::builders::JsonBuilder jsonBuilder{ser};
+	getFunction(function).GetJSON(jsonBuilder);
+	jsonBuilder.End();
+	EXPECT_EQ(dsl, ser.Slice());
+}
+
+TEST_F(QueriesApi, DslQueryWithFunctionTest) {
+	const std::string dsl = R"({
+	   "namespace":"ns1",
+	   "limit":-1,
+	   "offset":0,
+	   "explain":false,
+	   "type":"select",
+	   "filters":[
+		  {
+			 "op": "and",
+			 "cond": "gt",
+			 "function":{"name":"flat_array_len","fields":["prices"]},
+			 "value": [2]
+		  }
+	   ],
+	   "merge_queries":[],
+	   "aggregations":[]
+	})";
+	Query q1{Query().FromJSON(dsl)};
+	Query q2{Query("ns1").Where(reindexer::functions::FlatArrayLen("prices"), CondGt, 2)};
+	ASSERT_EQ(q1, q2);
+	ASSERT_EQ(q1.GetJSON(), q2.GetJSON());
 }
 
 static std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {
@@ -1537,4 +1648,243 @@ TEST_F(QueriesApi, DistinctWithForcedSortAndLimitTest) {
 		ASSERT_EQ(root[kFieldNameAge].As<int>(), items[id][kFieldNameAge].As<int>()) << fmt::format("Id: {}; order: {}", id, order);
 		order++;
 	}
+}
+
+TEST_F(QueriesApi, FlatArrayFunctionArrayTest) {
+	unsigned countriesForCondition = 0, countriesActual = 0;
+	unsigned pricesForCondition = 0, pricesActual = 0;
+
+	static const std::string nonIndexPrefix = "_non_index";
+
+	for (int i = 0; i < 1000; ++i) {
+		Item item = NewItem(default_namespace);
+		item[kFieldNameId] = i;
+
+		const unsigned countriesCount = 1 + rand() % 5;
+		item[kFieldNameCountries] = RandStrVector(countriesCount);
+		item[kFieldNameCountries + nonIndexPrefix] = RandStrVector(countriesCount);
+		if (countriesCount > 2) {
+			++countriesForCondition;
+		}
+
+		Upsert(default_namespace, item);
+		saveItem(std::move(item), default_namespace);
+	}
+	for (int i = 1000; i < 2000; ++i) {
+		Item item = NewItem(default_namespace);
+		item[kFieldNameId] = i;
+
+		const unsigned pricesCount = 1 + rand() % 5;
+		item[kFieldNamePriceId] = RandIntVector(pricesCount, 0, 100);
+		item[kFieldNamePriceId + nonIndexPrefix] = RandIntVector(pricesCount, 0, 100);
+		if (pricesCount == 3) {
+			++pricesForCondition;
+		}
+
+		Upsert(default_namespace, item);
+		saveItem(std::move(item), default_namespace);
+	}
+
+	unsigned sparseArrayForCondition = 0, sparseArrayActual = 0;
+	const std::string kFieldNameSparseArray = "sparse_array";
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldNameSparseArray, "tree", "string", IndexOpts{}.Sparse().Array(), 0}});
+
+	for (int i = 2000; i < 3000; ++i) {
+		Item item = NewItem(default_namespace);
+		item[kFieldNameId] = i;
+
+		const unsigned items = 1 + rand() % 10;
+		item[kFieldNameSparseArray] = RandStrVector(items);
+		if (items == 4) {
+			++sparseArrayForCondition;
+		}
+
+		Upsert(default_namespace, item);
+		saveItem(std::move(item), default_namespace);
+	}
+
+	QueryResults qrCountries{rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameCountries), CondGt, 2))};
+	for (auto it : qrCountries) {
+		auto item = it.GetItem();
+
+		auto countriesField = item[item.GetFieldIndex(kFieldNameCountries)];
+		VariantArray countriesValues = countriesField;
+		ASSERT_GT(countriesValues.size(), 2);
+
+		unsigned countriesNonIndexedCount = 0;
+
+		gason::JsonParser parser;
+		auto root = parser.Parse(item.GetJSON());
+		auto countriesNonIndexed = root[kFieldNameCountries + nonIndexPrefix];
+		for (const auto& it : countriesNonIndexed) {
+			if (!it.empty()) {
+				++countriesNonIndexedCount;
+			}
+		}
+		ASSERT_GT(countriesNonIndexedCount, 2);
+
+		++countriesActual;
+	}
+	ASSERT_EQ(countriesForCondition, countriesActual);
+
+	QueryResults qrPrices{rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNamePriceId), CondEq, 3))};
+	for (auto it : qrPrices) {
+		auto item = it.GetItem();
+		auto pricesField = item[item.GetFieldIndex(kFieldNamePriceId)];
+		VariantArray pricesValues = pricesField;
+		ASSERT_EQ(pricesValues.size(), 3);
+		++pricesActual;
+	}
+	ASSERT_EQ(pricesForCondition, pricesActual);
+
+	pricesActual = 0;
+
+	QueryResults qrPricesBothConditions{
+		rt.Select(Query(default_namespace)
+					  .Where(reindexer::functions::FlatArrayLen(kFieldNamePriceId), CondEq, 3)
+					  .Where(reindexer::functions::FlatArrayLen(kFieldNamePriceId + nonIndexPrefix), CondEq, 3))};
+	for (auto it : qrPricesBothConditions) {
+		unsigned count = 0;
+		auto item = it.GetItem();
+		gason::JsonParser parser;
+		auto root = parser.Parse(item.GetJSON());
+		auto pricesNonIndexed = root[kFieldNamePriceId + nonIndexPrefix];
+		for (const auto& it : pricesNonIndexed) {
+			if (!it.empty()) {
+				++count;
+			}
+		}
+		ASSERT_EQ(count, 3);
+		++pricesActual;
+	}
+	ASSERT_EQ(pricesForCondition, pricesActual);
+
+	QueryResults qrSparseArray{
+		rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameSparseArray), CondEq, 4))};
+	for (auto it : qrSparseArray) {
+		auto item = it.GetItem();
+		auto field = item[kFieldNameSparseArray];
+		VariantArray values = field;
+		ASSERT_EQ(values.size(), 4);
+		++sparseArrayActual;
+	}
+	ASSERT_EQ(sparseArrayForCondition, sparseArrayActual);
+}
+
+TEST_F(QueriesApi, FlatArrayFunctionSingularFieldTest) {
+	static const std::string nonIndexPrefix = "_non_index";
+
+	for (int i = 0; i < 1000; ++i) {
+		Item item = NewItem(default_namespace);
+		item[kFieldNameId] = i;
+
+		if (i % 2 == 0) {
+			item[kFieldNameYear] = 2010 + rand() % 10;
+			item[kFieldNameYear + nonIndexPrefix] = 2015 + rand() % 10;
+			item[kFieldNameYearSparse] = RandString();
+		}
+
+		Upsert(default_namespace, item);
+		saveItem(std::move(item), default_namespace);
+	}
+
+	QueryResults qrYear{rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameYear), CondEq, 1))};
+	ASSERT_EQ(qrYear.Count(), 1000);
+
+	QueryResults qrYearSparse{
+		rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameYearSparse), CondEq, 1))};
+	ASSERT_EQ(qrYearSparse.Count(), 500);
+
+	QueryResults qrYearSparseNull{
+		rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameYearSparse), CondEq, 0))};
+	ASSERT_EQ(qrYearSparse.Count(), 500);
+
+	QueryResults qrYearNonIndexed{
+		rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameYear + nonIndexPrefix), CondEq, 1))};
+	ASSERT_EQ(qrYearNonIndexed.Count(), 500);
+}
+
+TEST_F(QueriesApi, FlatArrayFunctionNestedQueriesTest) {
+	for (int i = 0; i < 1000; ++i) {
+		Item item = NewItem(default_namespace);
+		item[kFieldNameId] = i;
+		item[kFieldNameYear] = 2015 + rand() % 10;
+		if (i % 2 == 0) {
+			item[kFieldNamePriceId] = RandIntVector(2, 0, 100);
+		}
+		Upsert(default_namespace, item);
+		saveItem(std::move(item), default_namespace);
+	}
+
+	QueryResults qrYear{
+		rt.ExecSQL("SELECT * FROM test_namespace WHERE flat_array_len(price_id) = "
+				   "(SELECT id FROM test_namespace WHERE id = 2 AND flat_array_len(year) = 1);")};
+	ASSERT_EQ(qrYear.Count(), 500);
+}
+
+TEST_F(QueriesApi, FlatArrayFunctionObjectFieldTest) {
+	auto upsertItem = [this](std::string_view json) {
+		Item item = NewItem(default_namespace);
+		Error err = item.FromJSON(json);
+		ASSERT_TRUE(err.ok()) << err.what();
+		Upsert(default_namespace, item);
+		saveItem(std::move(item), default_namespace);
+	};
+
+	for (int i = 0; i < 100; ++i) {
+		upsertItem(fmt::format(R"({{"id":{},"obj":{{"name":"{}","price":{},"year":2025}}}})", i, RandString(), rand()));
+	}
+	QueryResults qr{rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen("obj"), CondEq, 1))};
+	ASSERT_EQ(qr.Count(), 100);
+
+	for (int i = 100; i < 200; ++i) {
+		upsertItem(fmt::format(R"({{"id":{},"empty_obj":{{}}}})", i));
+	}
+	qr = rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen("empty_obj"), CondEq, 1));
+	ASSERT_EQ(qr.Count(), 100);
+
+	for (int i = 200; i < 300; ++i) {
+		upsertItem(fmt::format(R"({{"id":{},"obj":null}})", i));
+	}
+	qr = rt.Select(Query(default_namespace).Where("id", CondRange, {200, 300}).Where(reindexer::functions::FlatArrayLen("obj"), CondEq, 0));
+	ASSERT_EQ(qr.Count(), 100);
+
+	for (int i = 300; i < 400; ++i) {
+		upsertItem(fmt::format(R"({{"id":{}}})", i));
+	}
+	qr = rt.Select(Query(default_namespace).Where("id", CondRange, {300, 400}).Where(reindexer::functions::FlatArrayLen("obj"), CondEq, 0));
+	ASSERT_EQ(qr.Count(), 100);
+}
+
+TEST_F(QueriesApi, FlatArrayFunctionObjectsArrayTest) {
+	for (int i = 0; i < 1000; ++i) {
+		Item item = NewItem(default_namespace);
+		Error err = item.FromJSON(fmt::format(R"(
+		{{
+			"id":{},
+			"items": [
+				{{"obj":{{"name":"test1","year":2022}}}},
+				{{"obj":{{"name":"test2","year":2023}}}},
+				{{"obj":{{"name":"test3","year":2024}}}},
+				{{"obj":{{"name":"test4","year":2025}}}},
+				{{"obj":{{"name":"test5","year":2026}}}},
+				{{"obj":{{}}}},
+				{{"obj":null}}
+			],
+			"null_items": [
+				{{"obj":null}},
+				{{"obj":null}}
+			]
+		}})",
+											  i));
+		ASSERT_TRUE(err.ok()) << err.what();
+		Upsert(default_namespace, item);
+		saveItem(std::move(item), default_namespace);
+	}
+
+	QueryResults qr{rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen("items.obj"), CondEq, 6))};
+	ASSERT_EQ(qr.Count(), 1000);
+
+	qr = rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen("null_items.obj"), CondEq, 0));
+	ASSERT_EQ(qr.Count(), 1000);
 }

@@ -78,6 +78,7 @@ public:
 		std::chrono::nanoseconds lastUpdate;
 		std::string name;
 		std::string data;
+		uint8_t version;
 	};
 
 	std::optional<CachedIndex> GetNextCachedIndex();

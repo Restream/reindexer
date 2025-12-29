@@ -3,6 +3,7 @@
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/cjsontools.h"
+#include "core/cjson/field_size_evaluator.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/multidimensional_array_checker.h"
 #include "core/keyvalue/p_string.h"
@@ -120,7 +121,7 @@ void PayloadIface<T>::getByJsonPath(const P& path, VariantArray& krefs, KeyValue
 	const auto filter = FieldsFilter::FromPath(path);
 	ConstPayload pl(t_, *v_);
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	FieldsExtractor extractor(&krefs, expectedType, path);
+	FieldsExtractor extractor(krefs, expectedType, path);
 	encoder.Encode(pl, extractor);
 }
 
@@ -153,6 +154,52 @@ void PayloadIface<T>::GetByFieldsSet(const FieldsSet& fields, VariantArray& kvs,
 			Get(fields[0], kvs);
 		}
 	}
+}
+
+template <typename T>
+template <typename P>
+size_t PayloadIface<T>::getFieldSize(const P& path) const {
+	if (path.empty()) {
+		return 0;
+	}
+
+	size_t fieldSize = 0;
+	const auto filter{FieldsFilter::FromPath(path)};
+	FieldSizeEvaluator sizeEvaluator{path, fieldSize};
+
+	ConstPayload pl{t_, *v_};
+	BaseEncoder<FieldSizeEvaluator> encoder{nullptr, &filter};
+	encoder.Encode(pl, sizeEvaluator);
+	return fieldSize;
+}
+
+template <typename T>
+size_t PayloadIface<T>::GetFieldSize(const FieldsSet& fields) const {
+	assertrx_throw(fields.size() == 1);
+	if (fields[0] == IndexValueType::SetByJsonPath) {
+		assertrx_throw(fields.getTagsPathsLength() == 1);
+		if (fields.isTagsPathIndexed(0)) {
+			return getFieldSize(fields.getIndexedTagsPath(0));
+		} else {
+			return getFieldSize(fields.getTagsPath(0));
+		}
+	} else {
+		const auto& field{t_.Field(fields[0])};
+		if (field.IsFloatVector()) {
+			const auto value{Get(fields[0], 0)};
+			return ConstFloatVectorView(value).Dimension().Value();
+		}
+		if (field.IsArray()) {
+			return GetArrayLen(fields[0]);
+		}
+		return 1;
+	}
+	return 0;
+}
+
+template <typename T>
+size_t PayloadIface<T>::GetFieldSize(std::string_view jsonPath, const TagsMatcher& tagsMatcher) const {
+	return getFieldSize(tagsMatcher.path2tag(jsonPath));
 }
 
 template <typename T>
@@ -196,7 +243,7 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath& tagsPat
 	offset = -1;
 	size = -1;
 	FieldsExtractor::FieldParams params{.index = offset, .length = size, .field = field};
-	FieldsExtractor extractor(&values, KeyValueType::Undefined{}, tagsPath, &params);
+	FieldsExtractor extractor(values, KeyValueType::Undefined{}, tagsPath, &params);
 
 	ConstPayload pl(t_, *v_);
 	encoder.Encode(pl, extractor);
@@ -714,17 +761,17 @@ void PayloadIface<T>::ReleaseStrings() noexcept {
 
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
-T PayloadIface<T>::CopyTo(PayloadType modifiedType, bool newOrUpdatedFields) {
+T PayloadIface<T>::CopyTo(const PayloadType& modifiedType, bool newOrUpdatedFields) {
 	if (newOrUpdatedFields) {
-		return CopyWithNewOrUpdatedFields(std::move(modifiedType));
+		return CopyWithNewOrUpdatedFields(modifiedType);
 	} else {
-		return CopyWithRemovedFields(std::move(modifiedType));
+		return CopyWithRemovedFields(modifiedType);
 	}
 }
 
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
-T PayloadIface<T>::CopyWithNewOrUpdatedFields(PayloadType modifiedType) {
+T PayloadIface<T>::CopyWithNewOrUpdatedFields(const PayloadType& modifiedType) {
 	size_t totalGrow = 0;
 	for (int idx = 1, modNumFields = modifiedType.NumFields(); idx < modNumFields; ++idx) {
 		const auto& modifiedFieldType = modifiedType.Field(idx);
@@ -751,7 +798,7 @@ T PayloadIface<T>::CopyWithNewOrUpdatedFields(PayloadType modifiedType) {
 
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
-T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
+T PayloadIface<T>::CopyWithRemovedFields(const PayloadType& modifiedType) {
 	size_t totalReduce = 0;
 	std::vector<std::string> fieldsLeft;
 	for (int idx = 0, numFields = t_.NumFields(); idx < numFields; ++idx) {
@@ -785,9 +832,9 @@ template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void*>(0)>(int, int, const Variant&);
 template void PayloadIface<PayloadValue>::SetSingleElement<PayloadValue, static_cast<void*>(0)>(int, const Variant&);
 
-template PayloadValue PayloadIface<PayloadValue>::CopyTo<PayloadValue, static_cast<void*>(0)>(PayloadType t, bool newFields);
-template PayloadValue PayloadIface<PayloadValue>::CopyWithNewOrUpdatedFields<PayloadValue, static_cast<void*>(0)>(PayloadType t);
-template PayloadValue PayloadIface<PayloadValue>::CopyWithRemovedFields<PayloadValue, static_cast<void*>(0)>(PayloadType t);
+template PayloadValue PayloadIface<PayloadValue>::CopyTo<PayloadValue, static_cast<void*>(0)>(const PayloadType& t, bool newFields);
+template PayloadValue PayloadIface<PayloadValue>::CopyWithNewOrUpdatedFields<PayloadValue, static_cast<void*>(0)>(const PayloadType& t);
+template PayloadValue PayloadIface<PayloadValue>::CopyWithRemovedFields<PayloadValue, static_cast<void*>(0)>(const PayloadType& t);
 
 template
 ComparationResult PayloadIface<const PayloadValue>::CompareField<WithString::No, NotComparable::Throw, NullsHandling::AlwaysLess>(

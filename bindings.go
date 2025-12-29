@@ -269,7 +269,9 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 		}
 	}
 
-	db.appendJoinQueries(q, &ser)
+	if err := db.appendJoinQueries(q, &ser); err != nil {
+		return nil, err
+	}
 
 	for _, mq := range q.mergedQueries {
 		ser.PutVarCUInt(merge)

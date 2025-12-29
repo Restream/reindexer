@@ -106,7 +106,7 @@ protected:
 				for (size_t i = 0; i < s; ++i) {
 					uuids.emplace_back(randStrUuid());
 				}
-				item[indexName] = std::move(uuids);
+				item[indexName] = uuids;
 			} else {
 				std::vector<reindexer::Uuid> uuids;
 				const size_t s = rand() % 20;
@@ -114,7 +114,7 @@ protected:
 				for (size_t i = 0; i < s; ++i) {
 					uuids.emplace_back(randUuid());
 				}
-				item[indexName] = std::move(uuids);
+				item[indexName] = uuids;
 			}
 			Upsert(default_namespace, item);
 		}

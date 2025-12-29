@@ -181,11 +181,13 @@ private:
 		UpdatesPtrT() = default;
 		UpdatesPtrT(UpdatesPtrT&& p, uint32_t cnt) : BaseT(std::move(p)), updatesCount(cnt) {}
 		UpdatesPtrT(const UpdatesPtrT&) = delete;
+		// NOLINTNEXTLINE (bugprone-use-after-move)
 		UpdatesPtrT(UpdatesPtrT&& o) noexcept : BaseT(std::move(o)), updatesCount(o.updatesCount) { o.updatesCount = 0; }
 		UpdatesPtrT& operator=(const UpdatesPtrT&) = delete;
-		UpdatesPtrT& operator=(UpdatesPtrT&& o) {
+		UpdatesPtrT& operator=(UpdatesPtrT&& o) noexcept {
 			if (this != &o) {
 				BaseT::operator=(std::move(o));
+				// NOLINTNEXTLINE (bugprone-use-after-move)
 				updatesCount = o.updatesCount;
 				o.updatesCount = 0;
 			}
@@ -212,6 +214,7 @@ private:
 	template <ModifyOp op>
 	void modifyAsyncImpl(std::string_view k, std::optional<std::string_view> v = std::nullopt) {
 		if constexpr (op == ModifyOp::Write) {
+			// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
 			curUpdatesChunck_->Put(k, *v);
 		} else {
 			curUpdatesChunck_->Remove(k);
@@ -226,6 +229,7 @@ private:
 
 		Error err;
 		if constexpr (op == ModifyOp::Write) {
+			// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
 			err = storage_->Write(opts, k, *v);
 		} else {
 			err = storage_->Delete(opts, k);
@@ -421,8 +425,9 @@ private:
 				auto keyCapacity = key.capacity();
 				auto valCapacity = value ? value->capacity() : 0;
 				if (auto it = ProxyBatchBase::find(key); it != ProxyBatchBase::end()) {
-					auto oldValCapacity = it->second ? it->second->capacity() : 0;
-					it->second = std::move(value);
+					auto& proxyValue = it->second;
+					auto oldValCapacity = proxyValue ? proxyValue->capacity() : 0;
+					proxyValue = std::move(value);
 					allocated_ += valCapacity - oldValCapacity;
 				} else {
 					ProxyBatchBase::operator[](std::move(key)) = std::move(value);
@@ -431,7 +436,8 @@ private:
 			}
 			void erase(const std::string_view& key, size_t precalcHash) {
 				if (auto it = ProxyBatchBase::find(key, precalcHash); it != ProxyBatchBase::end()) {
-					auto capacityToDecrease = it->first.capacity() + (it->second ? it->second->capacity() : 0);
+					const auto& proxyValue = it->second;
+					auto capacityToDecrease = it->first.capacity() + (proxyValue ? proxyValue->capacity() : 0);
 					ProxyBatchBase::erase(it);
 					allocated_ -= capacityToDecrease;
 				}

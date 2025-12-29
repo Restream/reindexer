@@ -561,7 +561,7 @@ func TestDSLQueries(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedOrder := []string{"worm", "sword", "word"}
-			expectedRanks := []float32{76, 76, 108}
+			expectedRanks := []float32{76, 80, 108}
 			assert.Equal(t, expectedOrder, getTesDSLFtItemsDescr(items))
 			assert.Equal(t, expectedRanks, ranks)
 		}, jsonDSL)

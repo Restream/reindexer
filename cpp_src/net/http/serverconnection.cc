@@ -69,7 +69,7 @@ void ServerConnection::setMsgpackStatus(Context& ctx, bool success, int response
 
 void ServerConnection::setProtobufStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
 	WrSerializer ser;
-	ProtobufBuilder builder(&ser);
+	ProtobufBuilder builder(ser);
 	builder.Put(kProtoErrorResultsFields.at(kParamSuccess), success);
 	builder.Put(kProtoErrorResultsFields.at(kParamResponseCode), responseCode);
 	builder.Put(kProtoErrorResultsFields.at(kParamDescription), status);

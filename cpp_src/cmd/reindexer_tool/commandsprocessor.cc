@@ -1275,6 +1275,7 @@ Error CommandsProcessor<DBInterface>::parallelUpsertCommands(const std::vector<s
 			} else {
 				items[i] = db().NewItem(nsNames[i]);
 			}
+			items[i].SetPrecepts({"*=skip_embedding()"});
 
 			if (Error err = items[i].Status(); !err.ok()) {
 				printError(err, lineNum);
@@ -1299,7 +1300,7 @@ Error CommandsProcessor<DBInterface>::parallelUpsertCommands(const std::vector<s
 			if (useTransaction) {
 				err = tr->Upsert(std::move(items[i]), completeCallback);
 			} else {
-				err = db().WithCompletion(completeCallback).Upsert(nsNames[i], items[i]);
+				err = db().WithCompletion(std::move(completeCallback)).Upsert(nsNames[i], items[i]);
 			}
 
 			if (!err.ok()) {

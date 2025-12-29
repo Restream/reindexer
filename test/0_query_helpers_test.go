@@ -721,6 +721,12 @@ func (q *queryTest) WhereDouble(index string, condition int, keys ...float64) *q
 	return q.Where(index, condition, keys)
 }
 
+// WhereFlatArrayLen - Add where condition to DB query for flat_array_len() function
+func (qt *queryTest) WhereFlatArrayLen(index string, condition int, keys ...interface{}) *queryTest {
+	qt.q.WhereFunction(reindexer.FlatArrayLen{Field: index}, condition, keys)
+	return qt
+}
+
 func (qt *queryTestEntryTree) addTree(op int) {
 	if qt.activeChild > 0 {
 		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addTree(op)

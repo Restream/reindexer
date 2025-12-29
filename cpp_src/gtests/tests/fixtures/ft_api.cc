@@ -270,7 +270,9 @@ void FTApi::CheckResults(const std::string& query, const reindexer::QueryResults
 						 bool withOrder) {
 	constexpr bool kTreeFields = std::tuple_size<ResType>{} == 3;
 	EXPECT_EQ(qr.Count(), expectedResults.size()) << "Query: " << query;
+	size_t position = 0;
 	for (auto itRes : qr) {
+		++position;
 		const auto item = itRes.GetItem(false);
 		const auto it = std::find_if(expectedResults.begin(), expectedResults.end(), [&item](const ResType& p) {
 			if constexpr (kTreeFields) {
@@ -282,20 +284,21 @@ void FTApi::CheckResults(const std::string& query, const reindexer::QueryResults
 		if (it == expectedResults.end()) {
 			if constexpr (kTreeFields) {
 				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
-							  << "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
+							  << "\" \"" << item["ft3"].As<std::string>() << "\"\nPosition: " << position << "\nQuery: " << query;
 			} else {
 				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
-							  << "\"\nQuery: " << query;
+							  << "\"\nPosition: " << position << "\nQuery: " << query;
 			}
 		} else {
 			if (withOrder) {
 				if constexpr (kTreeFields) {
 					EXPECT_EQ(it, expectedResults.begin())
 						<< "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>() << "\" \""
-						<< item["ft3"].As<std::string>() << "\"\nQuery: " << query;
+						<< item["ft3"].As<std::string>() << "\"\nPosition: " << position << "\nQuery: " << query;
 				} else {
-					EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \""
-														   << item["ft2"].As<std::string>() << "\"\nQuery: " << query;
+					EXPECT_EQ(it, expectedResults.begin())
+						<< "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
+						<< "\"\nPosition: " << position << "\nQuery: " << query;
 				}
 			}
 			expectedResults.erase(it);

@@ -1260,11 +1260,18 @@ void NamespaceImpl::verifyUpsertIndex(std::string_view action, const IndexDef& i
 	if ((idxType == IndexUuidHash || idxType == IndexUuidStore) && indexDefOpts.IsSparse()) {
 		throw Error(errParams, "Cannot {} index '{}' in namespace '{}'. UUID field can't be sparse", action, indexDef.Name(), name_);
 	}
-	if (indexDef.JsonPaths().size() > 1 && !IsComposite(idxType) && !indexDefOpts.IsArray()) {
-		throw Error(errParams,
-					"Cannot {} index '{}' in namespace '{}'. Scalar (non-array and non-composite) index can not have multiple JSON-paths. "
-					"Use array index instead",
-					action, indexDef.Name(), name_);
+	if (indexDef.JsonPaths().size() > 1) {
+		if (!IsComposite(idxType) && !indexDefOpts.IsArray()) {
+			throw Error(
+				errParams,
+				"Cannot {} index '{}' in namespace '{}'. Scalar (non-array and non-composite) index can not have multiple JSON-paths. "
+				"Use array index instead",
+				action, indexDef.Name(), name_);
+		}
+		if (IsGeospatial(idxType)) {
+			throw Error(errParams, "Cannot {} index '{}' in namespace '{}'. Geospatial index can not have multiple JSON-paths", action,
+						indexDef.Name(), name_);
+		}
 	}
 	if (indexDef.JsonPaths().empty()) {
 		throw Error(errParams, "Cannot {} index '{}' in namespace '{}'. JSON paths array can not be empty", action, indexDef.Name(), name_);
@@ -1940,10 +1947,14 @@ void NamespaceImpl::ModifyItem(Item& item, ItemModifyMode mode, const RdxContext
 		item.Embed(rdxCtx);
 	}
 
+	static PerfStatCounterMT dummyCounter;
+	PerfStatCalculatorMT lockCalc(dummyCounter, enablePerfCounters_);
 	CounterGuardAIR32 cg(cancelCommitCnt_);
 	auto wlck = dataWLock(rdxCtx);
 	cg.Reset();
-	calc.LockHit();
+	lockCalc.SetCounter(updatePerfCounter_);
+	lockCalc.LockHit();
+	lockCalc.Disable();
 	if (mode == ModeDelete && item.PkFields() != pkFields()) [[unlikely]] {
 		throw Error(errNotValid, "Item has outdated PK metadata (probably PK has been change during the Delete-call)");
 	}
@@ -3901,7 +3912,7 @@ void NamespaceImpl::setFieldsBasedOnPrecepts(ItemImpl* ritem, UpdatesContainer& 
 		std::ignore = skrefs.back().convert(krefs[0].Type());
 		bool unsafe = ritem->IsUnsafe();
 		ritem->Unsafe(false);
-		ritem->SetField(ritem->GetPayload().Type().FieldByName(sqlFunc.field), skrefs);
+		ritem->SetField(ritem->GetPayload().Type().FieldByName(sqlFunc.field), std::move(skrefs));
 		ritem->Unsafe(unsafe);
 	}
 }

@@ -15,17 +15,21 @@ public:
 		size_t operator()(TagName v) const noexcept { return Base::operator()(v.value_); }
 	};
 
+	template <concepts::IsEnum T>
+	constexpr explicit TagName(T v) : TagName(std::underlying_type_t<T>(v)) {}
 	constexpr explicit TagName(std::signed_integral auto v) : TagName(uint64_t(v)) {
 		using namespace std::string_literals;
 		if (v < 0) [[unlikely]] {
-			throw Error{errLogic, "TagName onderflow - min value is 0, got "s.append(std::to_string(v))};
+			throw Error{errLogic, "TagName underflow - min value is 0, got "s.append(std::to_string(v))};
 		}
 	}
-	constexpr explicit TagName(std::unsigned_integral auto v) : TagName(uint64_t(v)) {}
-	constexpr explicit TagName(uint64_t v) : value_(v) {
-		using namespace std::string_literals;
-		if (v > std::numeric_limits<value_type>::max()) [[unlikely]] {
-			throw Error{errLogic, "TagName overflow - max value is 65535, got "s.append(std::to_string(v))};
+	template <std::unsigned_integral T>
+	constexpr explicit TagName(T v) noexcept(std::numeric_limits<T>::max() <= std::numeric_limits<value_type>::max()) : value_(v) {
+		if constexpr (std::numeric_limits<T>::max() > std::numeric_limits<value_type>::max()) {
+			using namespace std::string_literals;
+			if (v > std::numeric_limits<value_type>::max()) [[unlikely]] {
+				throw Error{errLogic, "TagName overflow - max value is 65535, got "s.append(std::to_string(v))};
+			}
 		}
 	}
 
@@ -40,7 +44,7 @@ private:
 
 	value_type value_{0};
 };
-inline constexpr TagName operator""_Tag(unsigned long long v) noexcept { return TagName(v); }
+inline constexpr TagName operator""_Tag(unsigned long long v) { return TagName(v); }
 
 class [[nodiscard]] TagIndex {
 	using value_type = uint32_t;

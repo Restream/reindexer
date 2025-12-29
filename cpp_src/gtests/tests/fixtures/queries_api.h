@@ -229,7 +229,7 @@ public:
 		query.Explain();
 		auto qr = rt.Select(query);
 		if constexpr (std::is_rvalue_reference_v<decltype(query)>) {
-			Verify(qr, std::move(query), *rt.reindexer);
+			Verify(qr, std::forward<Q>(query), *rt.reindexer);
 		} else {
 			Verify(qr, reindexer::Query(query), *rt.reindexer);
 		}
@@ -249,7 +249,7 @@ public:
 		query.Explain();
 		rt.Select(query, qr);
 		if constexpr (std::is_rvalue_reference_v<decltype(query)>) {
-			Verify(qr, std::move(query), *rt.reindexer);
+			Verify(qr, std::forward<Q>(query), *rt.reindexer);
 		} else {
 			Verify(qr, reindexer::Query(query), *rt.reindexer);
 		}
@@ -636,7 +636,7 @@ protected:
 			for (size_t i = 0; i < s; ++i) {
 				arr.emplace_back(randUuid());
 			}
-			item[kFieldNameUuidArr] = std::move(arr);
+			item[kFieldNameUuidArr] = arr;
 		} else {
 			item[kFieldNameUuid] = randStrUuid();
 			std::vector<std::string> arr;
@@ -644,7 +644,7 @@ protected:
 			for (size_t i = 0; i < s; ++i) {
 				arr.emplace_back(randStrUuid());
 			}
-			item[kFieldNameUuidArr] = std::move(arr);
+			item[kFieldNameUuidArr] = arr;
 		}
 
 		return item;

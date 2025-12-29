@@ -251,6 +251,11 @@ func TestStorageCompatibility(t *testing.T) {
 	const leaderCproto = "cproto://127.0.0.1:30534/xxx"
 
 	t.Run("backward compatibility", func(t *testing.T) {
+		// TODO:
+		// This test is skipped, because there is no migration from new leveldb version to the old one.
+		// Test should be re-enabled at some day (after a few releases with new leveldb)
+		t.Skip()
+
 		cfgFollower.Storage.Path = baseStoragePath + "backward/follower"
 		cfgLeader.Storage.Path = baseStoragePath + "backward/leader"
 		fillDataOnCurrentServer := func() []interface{} {

@@ -16,9 +16,9 @@ public:
 	public:
 		token() = default;
 		token(const token&) = delete;
-		token(token&& o) : pool_(o.pool_), t_(std::move(o.t_)), onReturn_(std::move(o.onReturn_)) { o.pool_ = nullptr; }
+		token(token&& o) noexcept : pool_(o.pool_), t_(std::move(o.t_)), onReturn_(std::move(o.onReturn_)) { o.pool_ = nullptr; }
 		token& operator=(const token&) = delete;
-		token& operator=(token&& o) {
+		token& operator=(token&& o) noexcept {
 			t_ = std::move(o.t_);
 			pool_ = o.pool_;
 			o.pool_ = nullptr;
@@ -26,7 +26,7 @@ public:
 			return *this;
 		}
 		/// Return token to it's pool
-		void to_pool() noexcept {
+		void to_pool() {
 			if (is_valid()) {
 				const T& val = value();
 				pool_->return_token(std::move(t_));
@@ -44,6 +44,7 @@ public:
 			throw std::logic_error("Token was already returned to pool");
 		}
 		bool is_valid() const noexcept { return pool_; }
+		// NOLINTNEXTLINE (bugprone-exception-escape)
 		~token() { to_pool(); }
 
 	private:

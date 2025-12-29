@@ -28,12 +28,54 @@ struct [[nodiscard]] FtDslOpts {
 	int distance = INT_MAX;
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
 	int qpos = 0;
+
+	FtDslOpts GetStemOpts(bool keepSuff) const {
+		FtDslOpts res = *this;
+		res.pref = true;
+		if (!keepSuff) {
+			res.suff = false;
+		}
+		return res;
+	}
+
+	FtDslOpts JoinWithPrevTermOpts(const FtDslOpts& prevTermOpts) const {
+		FtDslOpts res = *this;
+		res.suff = prevTermOpts.suff;
+		res.typos |= prevTermOpts.typos;
+		return res;
+	}
 };
 
-struct [[nodiscard]] FtDSLEntry {
+class [[nodiscard]] FtDSLEntry {
+public:
 	FtDSLEntry() = default;
-	FtDSLEntry(std::wstring&& p, FtDslOpts&& o) : pattern{std::move(p)}, opts{std::move(o)} {}
+	FtDSLEntry(std::wstring&& p, const FtDslOpts& o) : pattern{std::move(p)}, opts{o} {}
 	FtDSLEntry(const std::wstring& p, const FtDslOpts& o) : pattern{p}, opts{o} {}
+
+	bool CanBeJoinedWith(const FtDSLEntry& otherTerm) const noexcept {
+		if (opts.op != OpOr || otherTerm.Opts().op != OpOr) {
+			return false;
+		}
+
+		if (opts.exact || otherTerm.Opts().exact) {
+			return false;
+		}
+
+		return true;
+	}
+
+	FtDSLEntry JoinWithPrevTerm(const FtDSLEntry& prevTerm) const {
+		FtDslOpts resOpts = opts.JoinWithPrevTermOpts(prevTerm.Opts());
+		return FtDSLEntry(prevTerm.Pattern() + pattern, resOpts);
+	}
+
+	const FtDslOpts& Opts() const noexcept { return opts; }
+	FtDslOpts& Opts() noexcept { return opts; }
+	const std::wstring& Pattern() const noexcept { return pattern; }
+
+	friend class FtDSLQuery;
+
+private:
 	std::wstring pattern;
 	FtDslOpts opts;
 };

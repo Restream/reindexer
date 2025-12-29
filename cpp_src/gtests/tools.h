@@ -132,7 +132,7 @@ void rndFloatVector(std::array<float, Dim>& buf) {
 inline const gason::JsonNode& findJsonField(const gason::JsonNode& json, std::string_view fieldName) {
 	using namespace std::string_view_literals;
 	std::vector<std::string_view> fields;
-	reindexer::split(fieldName, "."sv, false, fields);
+	std::ignore = reindexer::split(fieldName, "."sv, false, fields);
 	assertrx(!fields.empty());
 	const auto* node = &json;
 	for (auto it = fields.begin(); it != fields.end() - 1; ++it) {

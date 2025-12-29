@@ -634,11 +634,11 @@ template <bool desc, bool multiColumnSort, typename It>
 It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator& compare, const SelectCtx& ctx, const joins::NamespaceResults* jr) {
 	assertrx_throw(!ctx.sortingContext.entries.empty());
 	if (ctx.query.GetMergeQueries().size() > 1) {
-		throw Error(errLogic, "Force sort could not be applied to 'merged' queries.");
+		throw Error(errLogic, "Force sort could not be applied to 'merged' queries");
 	}
 	return std::visit(
 		overloaded{
-			[](const SortingContext::ExpressionEntry&) -> It { throw Error(errLogic, "Force sort could not be performed by expression."); },
+			[](const SortingContext::ExpressionEntry&) -> It { throw Error(errLogic, "Force sort could not be performed by expression"); },
 			[&](const SortingContext::FieldEntry& e) {
 				return applyForcedSortImpl<desc, multiColumnSort, It>(*ns_, begin, end, compare, ctx.query.ForcedSortOrder(),
 																	  e.data.expression, MainNsValueGetter<It>{*ns_});
@@ -988,7 +988,9 @@ void NsSelecter::selectLoop(LoopCtx<JoinPreResultCtx>& ctx, ResultsT& result, co
 			} else {
 				assertf(static_cast<size_t>(properRowId) < result.rowId2Vdoc->size(),
 						"properRowId = {}; rowId = {}; result.rowId2Vdoc->size() = {}", properRowId, rowId, result.rowId2Vdoc->size());
-				result.statuses[(*result.rowId2Vdoc)[properRowId]] = 0;
+				if (const auto vdocId = (*result.rowId2Vdoc)[properRowId]; vdocId != FtMergeStatuses::kEmpty) {
+					result.statuses[vdocId] = 0;
+				}
 				result.rowIds[properRowId] = true;
 			}
 		}
@@ -1118,6 +1120,10 @@ void NsSelecter::getSortIndexValue(const SortingContext& sortCtx, IdType rowId, 
 				}
 			}},
 		sortCtx.getFirstColumnEntry().AsVariant());
+	if (value.empty()) {
+		// Treat empty values (missing fields) as 'null' in this context
+		value.emplace_back();
+	}
 }
 
 const CollateOpts& NsSelecter::getSortIndexCollateOpts(const SortingContext& sortCtx, const JoinedSelectors& joinedSelectors) {
@@ -1336,50 +1342,43 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEn
 	return ret;
 }
 
-void NsSelecter::prepareSortIndex(const NamespaceImpl& ns, std::string& column, int& index, SkipSortingEntry& skipSortingEntry,
-								  StrictMode strictMode, IsRanked isRanked) {
+void NsSelecter::prepareSortIndex(const NamespaceImpl& ns, std::string& column, int& index, StrictMode strictMode, IsRanked isRanked) {
 	SortExpression::PrepareSortIndex(column, index, ns, isRanked);
 	if (index == IndexValueType::SetByJsonPath) {
-		skipSortingEntry |= !validateField(strictMode, column, ns.name_, ns.tagsMatcher_);
+		validateField(strictMode, column, ns.name_, ns.tagsMatcher_);
 	}
 }
 
 void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index,
-										const std::vector<JoinedSelector>& joinedSelectors, SkipSortingEntry& skipSortingEntry,
-										StrictMode strictMode) {
+										const std::vector<JoinedSelector>& joinedSelectors, StrictMode strictMode) {
 	assertrx_throw(!column.empty());
 	index = IndexValueType::SetByJsonPath;
 	assertrx_throw(nsIdx < joinedSelectors.size());
 	const auto& js = joinedSelectors[nsIdx];
 	std::visit(overloaded{[&](const JoinPreResult::Values& values) {
 							  if (!values.payloadType.FieldByName(column, index) || index == IndexValueType::SetByJsonPath) {
-								  skipSortingEntry |= !validateField(strictMode, column, values.nsName, values.tagsMatcher);
+								  validateField(strictMode, column, values.nsName, values.tagsMatcher);
 							  }
 						  },
 						  [&]<concepts::OneOf<IdSet, SelectIteratorContainer> T>(const T&) {
 							  if (!js.rightNs_->payloadType_.FieldByName(column, index) || index == IndexValueType::SetByJsonPath) {
-								  skipSortingEntry |= !validateField(strictMode, column, js.rightNs_->name_, js.rightNs_->tagsMatcher_);
+								  validateField(strictMode, column, js.rightNs_->name_, js.rightNs_->tagsMatcher_);
 							  }
 						  }},
 			   js.PreResult().payload);
 }
 
-bool NsSelecter::validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName, const TagsMatcher& tagsMatcher) {
+void NsSelecter::validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName, const TagsMatcher& tagsMatcher) {
 	if (strictMode == StrictModeIndexes) {
 		throw Error(errStrictMode,
 					"Current query strict mode allows sort by index fields only. There are no indexes with name '{}' in namespace '{}'",
 					name, nsName);
 	}
-	if (tagsMatcher.path2tag(name).empty()) {
-		if (strictMode == StrictModeNames) {
-			throw Error(
-				errStrictMode,
-				"Current query strict mode allows sort by existing fields only. There are no fields with name '{}' in namespace '{}'", name,
-				nsName);
-		}
-		return false;
+	if (strictMode == StrictModeNames && tagsMatcher.path2tag(name).empty()) {
+		throw Error(errStrictMode,
+					"Current query strict mode allows sort by existing fields only. There are no fields with name '{}' in namespace '{}'",
+					name, nsName);
 	}
-	return true;
 }
 
 static void removeQuotesFromExpression(std::string& expression) {
@@ -1426,9 +1425,7 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 					}
 				}
 			} else {
-				if (!validateField(strictMode, sortingEntry.expression, ns_->name_, ns_->tagsMatcher_)) {
-					continue;
-				}
+				validateField(strictMode, sortingEntry.expression, ns_->name_, ns_->tagsMatcher_);
 				ctx.isForceAll = true;
 			}
 			ctx.sortingContext.entries.emplace_back(std::move(entry));
@@ -1436,28 +1433,24 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 			auto& je{expr.GetJoinedIndex()};
 			const auto& js = joinedSelectors[je.nsIdx];
 			assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(js.PreResult().payload));
-			SkipSortingEntry skip = SkipSortingEntry_False;
 			int jeIndex = IndexValueType::NotSet;
-			prepareSortIndex(*js.RightNs(), je.column, jeIndex, skip, strictMode, IsRanked_False);
-			if (!skip) {
-				ctx.sortingContext.entries.emplace_back(
-					SortingContext::JoinedFieldEntry(sortingEntry, je.nsIdx, std::move(je.column), jeIndex));
-				ctx.isForceAll = true;
-			}
+			prepareSortIndex(*js.RightNs(), je.column, jeIndex, strictMode, IsRanked_False);
+
+			ctx.sortingContext.entries.emplace_back(
+				SortingContext::JoinedFieldEntry(sortingEntry, je.nsIdx, std::move(je.column), jeIndex));
+			ctx.isForceAll = true;
 		} else {
 			struct {
-				SkipSortingEntry skipSortingEntry;
 				StrictMode strictMode;
 				const JoinedSelectors& joinedSelectors;
-			} lCtx{SkipSortingEntry_False, strictMode, joinedSelectors};
+			} lCtx{strictMode, joinedSelectors};
 			expr.VisitForEach(
 				Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, SortExprFuncs::SortHash>{},
 				[this, &lCtx](SortExprFuncs::Index& exprIndex) {
-					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
+					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.strictMode, IsRanked_False);
 				},
 				[&lCtx](JoinedIndex& exprIndex) {
-					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column, exprIndex.index, lCtx.joinedSelectors, lCtx.skipSortingEntry,
-										   lCtx.strictMode);
+					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column, exprIndex.index, lCtx.joinedSelectors, lCtx.strictMode);
 				},
 				[queryRankType](Rank&) {
 					if (queryRankType == QueryRankType::No || queryRankType == QueryRankType::Hybrid) {
@@ -1465,7 +1458,7 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 					}
 				},
 				[&](RankNamed& r) {
-					prepareSortIndex(*ns_, r.IndexName(), r.IndexNoRef(), lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_True);
+					prepareSortIndex(*ns_, r.IndexName(), r.IndexNoRef(), lCtx.strictMode, IsRanked_True);
 					if (r.IndexNo() != rankedIndexNo && queryRankType != QueryRankType::Hybrid) {
 						throw Error(errQueryExec, "Rank by not used in query fulltext of vector index '{}'", r.IndexName());
 					}
@@ -1476,36 +1469,28 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 					}
 				},
 				[this, &lCtx](DistanceFromPoint& exprIndex) {
-					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
+					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.strictMode, IsRanked_False);
 				},
 				[&lCtx](DistanceJoinedIndexFromPoint& exprIndex) {
-					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column, exprIndex.index, lCtx.joinedSelectors, lCtx.skipSortingEntry,
-										   lCtx.strictMode);
+					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column, exprIndex.index, lCtx.joinedSelectors, lCtx.strictMode);
 				},
 				[this, &lCtx](DistanceBetweenIndexes& exprIndex) {
-					prepareSortIndex(*ns_, exprIndex.column1, exprIndex.index1, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
-					prepareSortIndex(*ns_, exprIndex.column2, exprIndex.index2, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
+					prepareSortIndex(*ns_, exprIndex.column1, exprIndex.index1, lCtx.strictMode, IsRanked_False);
+					prepareSortIndex(*ns_, exprIndex.column2, exprIndex.index2, lCtx.strictMode, IsRanked_False);
 				},
 				[this, &lCtx](DistanceBetweenIndexAndJoinedIndex& exprIndex) {
-					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode, IsRanked_False);
-					prepareSortJoinedIndex(exprIndex.jNsIdx, exprIndex.jColumn, exprIndex.jIndex, lCtx.joinedSelectors,
-										   lCtx.skipSortingEntry, lCtx.strictMode);
+					prepareSortIndex(*ns_, exprIndex.column, exprIndex.index, lCtx.strictMode, IsRanked_False);
+					prepareSortJoinedIndex(exprIndex.jNsIdx, exprIndex.jColumn, exprIndex.jIndex, lCtx.joinedSelectors, lCtx.strictMode);
 				},
 				[&lCtx](DistanceBetweenJoinedIndexes& exprIndex) {
-					prepareSortJoinedIndex(exprIndex.nsIdx1, exprIndex.column1, exprIndex.index1, lCtx.joinedSelectors,
-										   lCtx.skipSortingEntry, lCtx.strictMode);
-					prepareSortJoinedIndex(exprIndex.nsIdx2, exprIndex.column2, exprIndex.index2, lCtx.joinedSelectors,
-										   lCtx.skipSortingEntry, lCtx.strictMode);
+					prepareSortJoinedIndex(exprIndex.nsIdx1, exprIndex.column1, exprIndex.index1, lCtx.joinedSelectors, lCtx.strictMode);
+					prepareSortJoinedIndex(exprIndex.nsIdx2, exprIndex.column2, exprIndex.index2, lCtx.joinedSelectors, lCtx.strictMode);
 				},
 				[&lCtx](DistanceBetweenJoinedIndexesSameNs& exprIndex) {
-					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column1, exprIndex.index1, lCtx.joinedSelectors,
-										   lCtx.skipSortingEntry, lCtx.strictMode);
-					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column2, exprIndex.index2, lCtx.joinedSelectors,
-										   lCtx.skipSortingEntry, lCtx.strictMode);
+					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column1, exprIndex.index1, lCtx.joinedSelectors, lCtx.strictMode);
+					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column2, exprIndex.index2, lCtx.joinedSelectors, lCtx.strictMode);
 				});
-			if (lCtx.skipSortingEntry) {
-				continue;
-			}
+
 			ctx.sortingContext.expressions.emplace_back(std::move(expr));
 			ctx.sortingContext.entries.emplace_back(
 				SortingContext::ExpressionEntry{sortingEntry, ctx.sortingContext.expressions.size() - 1});
@@ -1615,9 +1600,9 @@ size_t NsSelecter::calculateNormalCost(const QueryEntries& qentries, SelectCtx& 
 		const bool calculateEntry = costCalculator.OnNewEntry(qentries, i, next);
 		qentries.Visit(
 			i,
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&)
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
+			Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry>{},
 			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(
 				const concepts::OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, KnnQueryEntry> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
@@ -1686,10 +1671,10 @@ size_t NsSelecter::calculateOptimizedCost(size_t costNormal, const QueryEntries&
 		}
 		qentries.Visit(
 			i, Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry> auto&)
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(
-				const concepts::OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, KnnQueryEntry> auto&)
+			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry,
+																			  KnnQueryEntry, QueryFunctionEntry> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
 			[&](const QueryEntry& qe) {
 				if (!qe.IsFieldIndexed() || qe.IndexNo() != ctx.sortingContext.uncommitedIndex) {

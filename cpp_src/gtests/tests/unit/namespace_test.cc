@@ -953,6 +953,79 @@ TEST_F(NsApi, AppendToArrayWithSql) {
 	}
 }
 
+TEST_F(NsApi, AppendToSparseArrayWithSql) {
+	// 1. Define NS
+	DefineDefaultNamespace();
+
+	rt.AddIndex(default_namespace, reindexer::IndexDef{"sparse_array", {"field"}, "hash", "int", IndexOpts().Array().Sparse()});
+
+	// 2. Fill NS
+	{
+		Item item = NewItem(default_namespace);
+		Error err = item.FromJSON(R"({"id": 0, "field": [11,22,33]})");
+		ASSERT_TRUE(err.ok()) << err.what();
+		Upsert(default_namespace, item);
+	}
+	{
+		Item item = NewItem(default_namespace);
+		Error err = item.FromJSON(R"({"id": 1, "field": []})");
+		ASSERT_TRUE(err.ok()) << err.what();
+		Upsert(default_namespace, item);
+	}
+
+	// 3. Concatenate sparse_array with non empty array
+	Query updateQuery{Query::FromSQL("update test_namespace set sparse_array = sparse_array || [44,55,66] where id = 0;")};
+	auto qr{rt.UpdateQR(updateQuery)};
+	ASSERT_EQ(qr.Count(), 1);
+
+	std::string json;
+	gason::JsonParser parser;
+
+	auto getSparseArray = [&](auto it) -> gason::JsonNode {
+		Item item{it.GetItem(false)};
+		checkIfItemJSONValid(it);
+
+		json = item.GetJSON();
+		auto root = parser.Parse(std::string_view{json});
+		return root["field"];
+	};
+
+	for (const auto& it : qr) {
+		auto sparseArrayField{getSparseArray(it)};
+
+		int i = 0;
+		for (const auto& item : sparseArrayField) {
+			ASSERT_EQ(item.As<int>(), ++i * 11);
+		}
+
+		ASSERT_EQ(i, 6);
+	}
+
+	// 3. Concatenate sparse_array with empty array
+	updateQuery = Query::FromSQL("update test_namespace set sparse_array = sparse_array || [];");
+	qr = rt.UpdateQR(updateQuery);
+	ASSERT_EQ(qr.Count(), 2);
+
+	auto it = qr.begin();
+	{
+		int i = 0;
+		for (const auto& item : getSparseArray(it)) {
+			ASSERT_EQ(item.As<int>(), ++i * 11);
+		}
+		ASSERT_EQ(i, 6);
+	}
+
+	++it;
+	{
+		int i = 0;
+		for (const auto& item : getSparseArray(it)) {
+			(void)item;
+			++i;
+		}
+		ASSERT_EQ(i, 0);
+	}
+}
+
 TEST_F(NsApi, ExtendArrayWithExpressions) {
 	// 1. Define NS
 	// 2. Fill NS

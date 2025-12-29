@@ -10,20 +10,21 @@
 
 namespace reindexer {
 
-struct [[nodiscard]] less_key_string {
+struct [[nodiscard]] less_key_string {	// NOLINT(performance-move-constructor-init)
 	using is_transparent = void;
 
-	less_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
+	less_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(std::make_shared<CollateOpts>(collateOpts)) {}
+
 	bool operator()(const key_string& lhs, const key_string& rhs) const noexcept {
-		return collateCompare(lhs, rhs, collateOpts_) == ComparationResult::Lt;
+		return collateCompare(lhs, rhs, *collateOpts_) == ComparationResult::Lt;
 	}
 	bool operator()(std::string_view lhs, const key_string& rhs) const noexcept {
-		return collateCompare(lhs, rhs, collateOpts_) == ComparationResult::Lt;
+		return collateCompare(lhs, rhs, *collateOpts_) == ComparationResult::Lt;
 	}
 	bool operator()(const key_string& lhs, std::string_view rhs) const noexcept {
-		return collateCompare(lhs, rhs, collateOpts_) == ComparationResult::Lt;
+		return collateCompare(lhs, rhs, *collateOpts_) == ComparationResult::Lt;
 	}
-	CollateOpts collateOpts_;
+	std::shared_ptr<CollateOpts> collateOpts_;
 };
 
 class [[nodiscard]] key_string_with_hash : public key_string {
@@ -32,6 +33,7 @@ public:
 	key_string_with_hash(key_string s, CollateMode cm)
 		: key_string(std::move(s)), hash_(collateHash(*static_cast<key_string*>(this), cm)) {}
 	key_string_with_hash(const key_string_with_hash& o) noexcept : key_string(o), hash_(o.hash_) {}
+	// NOLINTNEXTLINE(bugprone-use-after-move)
 	key_string_with_hash(key_string_with_hash&& o) noexcept : key_string(std::move(o)), hash_(o.hash_) {}
 	key_string_with_hash& operator=(key_string_with_hash&& o) noexcept {
 		hash_ = o.hash_;

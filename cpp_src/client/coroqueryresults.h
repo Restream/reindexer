@@ -52,7 +52,7 @@ public:
 	CoroQueryResults(const CoroQueryResults&) = delete;
 	CoroQueryResults(CoroQueryResults&& o) noexcept : i_(std::move(o.i_)) { o.setClosed(); }
 	CoroQueryResults& operator=(const CoroQueryResults&) = delete;
-	CoroQueryResults& operator=(CoroQueryResults&& o) {
+	CoroQueryResults& operator=(CoroQueryResults&& o) noexcept {
 		if (this != &o) {
 			i_ = std::move(o.i_);
 			o.setClosed();

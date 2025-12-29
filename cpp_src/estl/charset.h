@@ -9,7 +9,7 @@ class [[nodiscard]] Charset {
 public:
 	constexpr Charset(std::initializer_list<uint8_t> list) {
 		for (const auto& c : list) {
-			set(c);
+			std::ignore = set(c);
 		}
 	}
 	constexpr bool test(uint8_t pos) const noexcept { return getword(pos) & maskbit(pos); }
@@ -37,7 +37,6 @@ private:
 	WordT set_[kWordsCount] = {0};
 };
 
-static_assert(size_t(std::numeric_limits<uint8_t>::max() - std::numeric_limits<uint8_t>::min() + 1) == Charset::max_values_count(),
-			  "Expecting max uint8_t range of [0, 255] for the simplicity");
+static_assert(Charset::max_values_count() == 256, "Expecting max uint8_t range of [0, 255] for the simplicity");
 
 }  // namespace reindexer::estl

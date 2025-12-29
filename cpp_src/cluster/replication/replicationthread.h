@@ -18,6 +18,8 @@ namespace cluster {
 
 constexpr size_t kUpdatesContainerOverhead = 48;
 
+class NamespacesSyncScheduler;
+
 struct [[nodiscard]] ReplThreadConfig {
 	ReplThreadConfig() = default;
 	ReplThreadConfig(const ReplicationConfigData& baseConfig, const AsyncReplConfigData& config);
@@ -83,8 +85,8 @@ public:
 	using Node = repl_thread_impl::Node;
 	using NamespaceData = repl_thread_impl::NamespaceData;
 
-	ReplThread(int serverId_, ReindexerImpl& thisNode, std::shared_ptr<UpdatesQueueT>, BehaviourParamT&&, ReplicationStatsCollector,
-			   const Logger&);
+	ReplThread(int serverId_, ReindexerImpl& thisNode, std::shared_ptr<UpdatesQueueT>, std::shared_ptr<NamespacesSyncScheduler>,
+			   BehaviourParamT&&, ReplicationStatsCollector, const Logger&);
 
 	template <typename NodeConfigT>
 	void Run(ReplThreadConfig, const std::vector<std::pair<uint32_t, NodeConfigT>>& nodesList, size_t consensusCnt,
@@ -108,7 +110,9 @@ private:
 	constexpr static bool isClusterReplThread() noexcept;
 	void updateNodeStatus(size_t uid, NodeStats::Status st);
 	void nodeReplicationRoutine(Node& node);
-	Error nodeReplicationImpl(Node& node);
+	Error namespacesSyncImpl(Node& node, const std::vector<NamespaceDef>& nsList);
+	Error nodeReplicationImpl(Node& node, const std::vector<NamespaceDef>& nsList);
+	Expected<std::vector<NamespaceDef>> generateSyncNssList(const Node& node) const noexcept;
 	void updatesNotifier() noexcept;
 	void terminateNotifier() noexcept;
 	std::tuple<bool, UpdateApplyStatus> handleNetworkCheckRecord(Node& node, UpdatesQueueT::UpdatePtr& updPtr, uint16_t offset,
@@ -139,6 +143,7 @@ private:
 	uint32_t consensusCnt_ = 0;
 	uint32_t requiredReplicas_ = 0;
 	std::unique_ptr<coroutine::tokens_pool<bool>> nsSyncTokens_;
+	std::shared_ptr<NamespacesSyncScheduler> nssSyncScheduler_;
 	net::ev::async updatesAsync_;
 	net::ev::timer updatesTimer_;
 	bool notificationInProgress_ = false;

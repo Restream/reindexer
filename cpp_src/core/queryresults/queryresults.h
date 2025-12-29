@@ -127,23 +127,23 @@ public:
 		if (!IsLocal()) {
 			throw Error(errLogic, "QueryResults are not local");
 		}
-		return local_->qr;
+		return localUnsafe().qr;
 	}
 	const LocalQueryResults& ToLocalQr() const {
 		if (!IsLocal()) {
 			throw Error(errLogic, "QueryResults are not local");
 		}
-		return local_->qr;
+		return localUnsafe().qr;
 	}
 	int Flags() const noexcept { return flags_; }
 	const std::string& GetExplainResults() & {
 		switch (type_) {
 			case Type::Local:
-				return local_->qr.GetExplainResults();
+				return localUnsafe().qr.GetExplainResults();
 			case Type::SingleRemote:
 				return remote_[0]->qr.GetExplainResults();
 			case Type::Mixed:
-				if (local_->qr.explainResults.size()) {
+				if (localUnsafe().qr.explainResults.size()) {
 					throw Error(errForbidden, "Explain is not supported for distribute queries");
 				}
 				[[fallthrough]];
@@ -168,7 +168,7 @@ public:
 				return 0;
 			}
 			case Type::Local: {
-				return local_->qr.getMergedNSCount();
+				return localUnsafe().qr.getMergedNSCount();
 			}
 			case Type::SingleRemote: {
 				return remote_[0]->qr.GetMergedNSCount();
@@ -188,14 +188,14 @@ public:
 			case Type::None:
 				return ret;
 			case Type::Local: {
-				auto localTags = local_->qr.GetIncarnationTags();
+				auto localTags = localUnsafe().qr.GetIncarnationTags();
 				if (localTags.empty()) {
 					return ret;
 				}
 				if (localTags.size() != 1) {
 					throw Error(errLogic, "Unexpected shards count in the local query results");
 				}
-				localTags[0].shardId = local_->ShardID();
+				localTags[0].shardId = localUnsafe().ShardID();
 				ret.emplace_back(std::move(localTags[0]));
 				return ret;
 			}
@@ -213,12 +213,12 @@ public:
 				return ret;
 			}
 			case Type::Mixed: {
-				auto localTags = local_->qr.GetIncarnationTags();
+				auto localTags = localUnsafe().qr.GetIncarnationTags();
 				if (!localTags.empty()) {
 					if (localTags.size() != 1) {
 						throw Error(errLogic, "Unexpected shards count in the local query results");
 					}
-					localTags[0].shardId = local_->ShardID();
+					localTags[0].shardId = localUnsafe().ShardID();
 					ret.emplace_back(std::move(localTags[0]));
 				}
 			}
@@ -255,14 +255,14 @@ public:
 	// For local qr only
 	const FieldsFilter& GetFieldsFilter(int nsid) const noexcept {
 		if (type_ == Type::Local) {
-			return local_->qr.getFieldsFilter(nsid);
+			return localUnsafe().qr.getFieldsFilter(nsid);
 		}
 		static const FieldsFilter kEmpty;
 		return kEmpty;
 	}
 	std::shared_ptr<const Schema> GetSchema(int nsid) const noexcept {
 		if (type_ == Type::Local) {
-			return local_->qr.getSchema(nsid);
+			return localUnsafe().qr.getSchema(nsid);
 		}
 		return std::shared_ptr<const Schema>();
 	}
@@ -337,6 +337,7 @@ public:
 				case Type::None:
 					return ShardingKeyType::ProxyOff;
 				case Type::Local:
+					// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
 					return qr_->local_->ShardID();
 				case Type::SingleRemote:
 				case Type::MultipleRemote:
@@ -345,7 +346,7 @@ public:
 			}
 			validateProxiedIterator();
 			if (qr_->curQrId_ < 0) {
-				return qr_->local_->ShardID();
+				return qr_->localUnsafe().ShardID();
 			}
 			return qr_->remote_[size_t(qr_->curQrId_)]->ShardID();
 		}
@@ -371,6 +372,7 @@ public:
 					*this = qr_->end();
 					return *this;
 				case Type::Local:
+					// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
 					localIt_ = *localIt_ + delta;
 					return *this;
 				case Type::SingleRemote:
@@ -400,6 +402,7 @@ public:
 				case Type::None:
 					return Error();
 				case Type::Local:
+					// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
 					return localIt_->Status();
 				case Type::SingleRemote:
 				case Type::MultipleRemote:
@@ -449,7 +452,7 @@ public:
 
 			auto* qr = const_cast<QueryResults*>(qr_);
 			if (qr_->curQrId_ < 0) {
-				return &(*qr->local_);
+				return &(qr->localUnsafe());
 			}
 			if (size_t(qr_->curQrId_) < qr->remote_.size()) {
 				return qr->remote_[size_t(qr_->curQrId_)].get();
@@ -473,7 +476,7 @@ public:
 
 			auto* qr = const_cast<QueryResults*>(qr_);
 			if (qr_->curQrId_ < 0) {
-				return qr->local_->it;
+				return qr->localUnsafe().it;
 			}
 			if (size_t(qr_->curQrId_) < qr->remote_.size()) {
 				return qr->remote_[size_t(qr_->curQrId_)]->it;
@@ -503,6 +506,7 @@ public:
 		if (!begin_.it) {
 			beginImpl();
 		}
+		// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
 		return *begin_.it;	// -V1007
 	}
 	Iterator end() const {
@@ -511,7 +515,7 @@ public:
 		} else {
 			const int64_t n = std::min<size_t>(count(), limit < UINT_MAX ? limit + offset : UINT_MAX);
 			if (type_ == Type::Local) {
-				return Iterator{this, n, {local_->qr.begin() + n}};
+				return Iterator{this, n, {localUnsafe().qr.begin() + n}};
 			} else {
 				return Iterator{this, n, std::nullopt};
 			}
@@ -538,6 +542,17 @@ private:
 	int64_t shardingConfigVersion_ = ShardingSourceId::NotSet;
 	std::unique_ptr<MergedData> mergedData_;  // Merged data of distributed query results
 	std::optional<QrMetaData<LocalQueryResults>> local_;
+
+	const QrMetaData<LocalQueryResults>& localUnsafe() const {
+		// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
+		return local_.value();
+	}
+
+	QrMetaData<LocalQueryResults>& localUnsafe() {
+		// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
+		return local_.value();
+	}
+
 	// We could use std::deque to make QrMetaData non-movable, but deque's default constructor performs allocation in GCC's implementation
 	std::vector<std::unique_ptr<QrMetaData<client::QueryResults>>> remote_;
 	int64_t lastSeenIdx_ = 0;

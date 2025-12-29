@@ -15,7 +15,7 @@ public:
 	void SetTagsMatcher(const TagsMatcher*) const noexcept {}
 	MultidimensionalArrayChecker Object() noexcept { return {*this, false}; }
 	MultidimensionalArrayChecker Object(concepts::TagNameOrIndex auto) noexcept { return Object(); }
-	MultidimensionalArrayChecker Array(auto) noexcept {
+	MultidimensionalArrayChecker Array(auto&) noexcept {
 		result_ = result_ || isArray_;
 		return {*this, true};
 	}

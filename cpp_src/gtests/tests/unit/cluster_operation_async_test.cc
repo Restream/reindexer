@@ -1,3 +1,4 @@
+#include "cluster/consts.h"
 #include "cluster_operation_async_api.h"
 #include "gtests/tests/gtest_cout.h"
 #include "tools/fsops.h"
@@ -99,15 +100,14 @@ TEST_F(ClusterOperationAsyncApi, GetLastErrorFromInterceptingNamespaces) {
 		// Get stats
 		ServerControl::Interface::Ptr node = cluster1.GetNode(kReplicatedNodeId);
 		for (std::size_t i = 0; i < 10; i++) {
-			reindexer::cluster::ReplicationStats stats = node->GetReplicationStats("async");
+			const auto stats = node->GetReplicationStats(cluster::kAsyncReplStatsType);
 			if (!stats.nodeStats.empty() && stats.nodeStats[0].lastError.code() == errParams) {
 				break;
 			}
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
 
-		reindexer::cluster::ReplicationStats stats = node->GetReplicationStats("async");
-
+		const auto stats = node->GetReplicationStats(cluster::kAsyncReplStatsType);
 		ASSERT_EQ(stats.nodeStats.size(), std::size_t(1));
 		ASSERT_EQ(stats.nodeStats[0].lastError.code(), errParams);
 		ASSERT_EQ(stats.nodeStats[0].lastError.what(), expectedError);

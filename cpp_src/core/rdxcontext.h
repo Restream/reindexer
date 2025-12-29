@@ -200,6 +200,10 @@ public:
 	}
 
 	std::string_view LeaderReplicationToken() const noexcept { return replToken_; }
+	RdxContext WithLeaderReplicationToken(key_string replToken) const noexcept {
+		return RdxContext{Activity(),			originLsn_,	 cancelCtx_,	 cmpl_, emitterServerId_, shardId_, shardingParallelExecution_,
+						  std::move(replToken), noWaitSync_, needMaskingDSN_};
+	}
 
 private:
 	union {
@@ -225,8 +229,8 @@ public:
 	InternalRdxContext() noexcept {}
 	InternalRdxContext(const InternalRdxContext&) = default;
 	InternalRdxContext(InternalRdxContext&&) = default;
-	InternalRdxContext(RdxContext::Completion cmpl, const RdxDeadlineContext ctx, std::string activityTracer, std::string user,
-					   int connectionId, lsn_t lsn, int emitterServerId, int shardId, bool parallel, key_string replToken,
+	InternalRdxContext(RdxContext::Completion cmpl, RdxDeadlineContext ctx, std::string activityTracer, std::string user, int connectionId,
+					   lsn_t lsn, int emitterServerId, int shardId, bool parallel, key_string replToken,
 					   NeedMaskingDSN needMaskingDSN) noexcept
 		: cmpl_(std::move(cmpl)),
 		  deadlineCtx_(std::move(ctx)),
@@ -240,8 +244,8 @@ public:
 		  replToken_(std::move(replToken)),
 		  needMaskingDSN_(needMaskingDSN) {}
 
-	InternalRdxContext WithCompletion(RdxContext::Completion cmpl) const noexcept {
-		return InternalRdxContext(cmpl, deadlineCtx_, activityTracer_, user_, connectionId_, lsn_, emitterServerId_, shardId_,
+	InternalRdxContext WithCompletion(RdxContext::Completion&& cmpl) const noexcept {
+		return InternalRdxContext(std::move(cmpl), deadlineCtx_, activityTracer_, user_, connectionId_, lsn_, emitterServerId_, shardId_,
 								  shardingParallelExecution_, replToken_, needMaskingDSN_);
 	}
 	InternalRdxContext WithTimeout(milliseconds timeout) const noexcept {

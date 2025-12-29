@@ -7,13 +7,13 @@ namespace reindexer::builders {
 using namespace item_fields_validator;
 
 CJsonBuilder::CJsonBuilder(WrSerializer& ser, ObjType type, const TagsMatcher* tm, concepts::TagNameOrIndex auto tag)
-	: tm_(tm), ser_(&ser), type_(type) {
+	: tm_(tm), ser_(ser), type_(type) {
 	switch (type_) {
 		case ObjType::TypeArray:
 		case ObjType::TypeObjectArray:
 			putTag(tag, TAG_ARRAY);
-			savePos_ = ser_->Len();
-			ser_->PutCArrayTag(carraytag{0, TAG_NULL});
+			savePos_ = ser_.Len();
+			ser_.PutCArrayTag(carraytag{0, TAG_NULL});
 			break;
 		case ObjType::TypeObject:
 			putTag(tag, TAG_OBJECT);
@@ -27,23 +27,23 @@ template CJsonBuilder::CJsonBuilder(WrSerializer&, ObjType, const TagsMatcher*, 
 
 CJsonBuilder CJsonBuilder::Object(concepts::TagNameOrIndex auto tag) {
 	++count_;
-	return CJsonBuilder(*ser_, ObjType::TypeObject, tm_, tag);
+	return CJsonBuilder(ser_, ObjType::TypeObject, tm_, tag);
 }
 template CJsonBuilder CJsonBuilder::Object(TagName);
 template CJsonBuilder CJsonBuilder::Object(TagIndex);
 
 CJsonBuilder CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, ObjType type) {
 	++count_;
-	return CJsonBuilder(*ser_, type, tm_, tag);
+	return CJsonBuilder(ser_, type, tm_, tag);
 }
 template CJsonBuilder CJsonBuilder::Array(TagName, ObjType);
 template CJsonBuilder CJsonBuilder::Array(TagIndex, ObjType);
 
 void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid> data, int /*offset*/) {
 	putTag(tag, TAG_ARRAY);
-	ser_->PutCArrayTag(carraytag(data.size(), TAG_UUID));
+	ser_.PutCArrayTag(carraytag(data.size(), TAG_UUID));
 	for (auto d : data) {
-		ser_->PutUuid(d);
+		ser_.PutUuid(d);
 	}
 	++count_;
 }
@@ -56,7 +56,7 @@ void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, bool arg, int /*offset
 	} else {
 		putTag(tag, TAG_BOOL);
 	}
-	ser_->PutBool(arg);
+	ser_.PutBool(arg);
 	++count_;
 }
 template void CJsonBuilder::Put(TagName, bool, int);
@@ -68,7 +68,7 @@ void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, int64_t arg, int /*off
 	} else {
 		putTag(tag, TAG_VARINT);
 	}
-	ser_->PutVarint(arg);
+	ser_.PutVarint(arg);
 	++count_;
 }
 template void CJsonBuilder::Put(TagName, int64_t, int);
@@ -80,7 +80,7 @@ void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, int arg, int /*offset*
 	} else {
 		putTag(tag, TAG_VARINT);
 	}
-	ser_->PutVarint(arg);
+	ser_.PutVarint(arg);
 	++count_;
 }
 template void CJsonBuilder::Put(TagName, int, int);
@@ -92,7 +92,7 @@ void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, double arg, int /*offs
 	} else {
 		putTag(tag, TAG_DOUBLE);
 	}
-	ser_->PutDouble(arg);
+	ser_.PutDouble(arg);
 	++count_;
 }
 template void CJsonBuilder::Put(TagName, double, int);
@@ -104,7 +104,7 @@ void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, float arg, int /*offse
 	} else {
 		putTag(tag, TAG_FLOAT);
 	}
-	ser_->PutFloat(arg);
+	ser_.PutFloat(arg);
 	++count_;
 }
 
@@ -114,7 +114,7 @@ void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, std::string_view arg, 
 	} else {
 		putTag(tag, TAG_STRING);
 	}
-	ser_->PutVString(arg);
+	ser_.PutVString(arg);
 	++count_;
 }
 template void CJsonBuilder::Put(TagName, std::string_view, int);
@@ -122,7 +122,7 @@ template void CJsonBuilder::Put(TagIndex, std::string_view, int);
 
 void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, Uuid arg, int /*offset*/) {
 	putTag(tag, TAG_UUID);
-	ser_->PutUuid(arg);
+	ser_.PutUuid(arg);
 	++count_;
 }
 
@@ -151,7 +151,7 @@ template void CJsonBuilder::Ref(TagIndex, const KeyValueType&, int);
 
 void CJsonBuilder::ArrayRef(concepts::TagNameOrIndex auto tag, int field, int count) {
 	putTag(tag, TAG_ARRAY, field);
-	ser_->PutVarUint(count);
+	ser_.PutVarUint(count);
 }
 template void CJsonBuilder::ArrayRef(TagName, int, int);
 template void CJsonBuilder::ArrayRef(TagIndex, int, int);
@@ -178,9 +178,9 @@ template void CJsonBuilder::Put(TagIndex, const Variant&, int);
 
 void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, Serializer& ser, TagType tagType, int count) {
 	putTag(tag, TAG_ARRAY);
-	ser_->PutCArrayTag(carraytag(count, tagType));
+	ser_.PutCArrayTag(carraytag(count, tagType));
 	while (count--) {
-		copyCJsonValue(tagType, ser, *ser_, kNoValidation);
+		copyCJsonValue(tagType, ser, ser_, kNoValidation);
 	}
 	++count_;
 }

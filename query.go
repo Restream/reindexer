@@ -29,38 +29,40 @@ const (
 
 // Constants for query serialization
 const (
-	queryCondition              = bindings.QueryCondition
-	querySortIndex              = bindings.QuerySortIndex
-	queryJoinOn                 = bindings.QueryJoinOn
-	queryLimit                  = bindings.QueryLimit
-	queryOffset                 = bindings.QueryOffset
-	queryReqTotal               = bindings.QueryReqTotal
-	queryDebugLevel             = bindings.QueryDebugLevel
-	queryAggregation            = bindings.QueryAggregation
-	querySelectFilter           = bindings.QuerySelectFilter
-	queryExplain                = bindings.QueryExplain
-	querySelectFunction         = bindings.QuerySelectFunction
-	queryEqualPosition          = bindings.QueryEqualPosition
-	queryUpdateField            = bindings.QueryUpdateField
-	queryEnd                    = bindings.QueryEnd
-	queryAggregationLimit       = bindings.QueryAggregationLimit
-	queryAggregationOffset      = bindings.QueryAggregationOffset
-	queryAggregationSort        = bindings.QueryAggregationSort
-	queryOpenBracket            = bindings.QueryOpenBracket
-	queryCloseBracket           = bindings.QueryCloseBracket
-	queryJoinCondition          = bindings.QueryJoinCondition
-	queryDropField              = bindings.QueryDropField
-	queryUpdateObject           = bindings.QueryUpdateObject
-	queryWithRank               = bindings.QueryWithRank
-	queryStrictMode             = bindings.QueryStrictMode
-	queryUpdateFieldV2          = bindings.QueryUpdateFieldV2
-	queryBetweenFieldsCondition = bindings.QueryBetweenFieldsCondition
-	queryAlwaysFalseCondition   = bindings.QueryAlwaysFalseCondition
-	queryAlwaysTrueCondition    = bindings.QueryAlwaysTrueCondition
-	querySubQueryCondition      = bindings.QuerySubQueryCondition
-	queryFieldSubQueryCondition = bindings.QueryFieldSubQueryCondition
-	queryKnnCondition           = bindings.QueryKnnCondition
-	queryKnnConditionExt        = bindings.QueryKnnConditionExt
+	queryCondition                 = bindings.QueryCondition
+	querySortIndex                 = bindings.QuerySortIndex
+	queryJoinOn                    = bindings.QueryJoinOn
+	queryLimit                     = bindings.QueryLimit
+	queryOffset                    = bindings.QueryOffset
+	queryReqTotal                  = bindings.QueryReqTotal
+	queryDebugLevel                = bindings.QueryDebugLevel
+	queryAggregation               = bindings.QueryAggregation
+	querySelectFilter              = bindings.QuerySelectFilter
+	queryExplain                   = bindings.QueryExplain
+	querySelectFunction            = bindings.QuerySelectFunction
+	queryEqualPosition             = bindings.QueryEqualPosition
+	queryUpdateField               = bindings.QueryUpdateField
+	queryEnd                       = bindings.QueryEnd
+	queryAggregationLimit          = bindings.QueryAggregationLimit
+	queryAggregationOffset         = bindings.QueryAggregationOffset
+	queryAggregationSort           = bindings.QueryAggregationSort
+	queryOpenBracket               = bindings.QueryOpenBracket
+	queryCloseBracket              = bindings.QueryCloseBracket
+	queryJoinCondition             = bindings.QueryJoinCondition
+	queryDropField                 = bindings.QueryDropField
+	queryUpdateObject              = bindings.QueryUpdateObject
+	queryWithRank                  = bindings.QueryWithRank
+	queryStrictMode                = bindings.QueryStrictMode
+	queryUpdateFieldV2             = bindings.QueryUpdateFieldV2
+	queryBetweenFieldsCondition    = bindings.QueryBetweenFieldsCondition
+	queryAlwaysFalseCondition      = bindings.QueryAlwaysFalseCondition
+	queryAlwaysTrueCondition       = bindings.QueryAlwaysTrueCondition
+	querySubQueryCondition         = bindings.QuerySubQueryCondition
+	queryFieldSubQueryCondition    = bindings.QueryFieldSubQueryCondition
+	queryKnnCondition              = bindings.QueryKnnCondition
+	queryKnnConditionExt           = bindings.QueryKnnConditionExt
+	queryFunction                  = bindings.QueryFunction
+	queryFunctionSubQueryCondition = bindings.QueryFunctionSubQueryCondition
 )
 
 // Constants for KNN query types
@@ -119,6 +121,10 @@ const (
 )
 
 const (
+	functionFlatArrayLen = bindings.FunctionFlatArrayLen
+)
+
+const (
 	defaultFetchCount = 1000
 )
 
@@ -166,6 +172,12 @@ type Query struct {
 	traceClose     []byte
 }
 
+type Function interface {
+	Type() int
+	Fields() []string
+	Args() []interface{}
+}
+
 type KnnSearchParam interface {
 	serialize(*cjson.Serializer)
 }
@@ -187,6 +199,10 @@ type IndexHnswSearchParam struct {
 type IndexIvfSearchParam struct {
 	BaseKnnSearchParam
 	NProbe int
+}
+
+type FlatArrayLen struct {
+	Field string
 }
 
 func NewIndexBFSearchParam(baseParam BaseKnnSearchParam) (IndexBFSearchParam, error) {
@@ -260,6 +276,18 @@ func (p IndexIvfSearchParam) serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(p.NProbe)
 }
 
+func (f FlatArrayLen) Type() int {
+	return functionFlatArrayLen
+}
+
+func (f FlatArrayLen) Fields() []string {
+	return []string{f.Field}
+}
+
+func (f FlatArrayLen) Args() []interface{} {
+	return []interface{}{}
+}
+
 var queryPool sync.Pool
 var enableDebug bool
 
@@ -317,7 +345,7 @@ func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
 	return q
 }
 
-// MakeCopy - create copy of query with same or different DB. Thisresets query context
+// MakeCopy - create copy of query with same or different DB. This resets query context
 func (q *Query) MakeCopy(db *Reindexer) *Query {
 	return q.makeCopy(db.impl, nil)
 }
@@ -377,7 +405,12 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 }
 
 // Where - Add where condition to DB query
-// For composite indexes keys must be []interface{}, with value of each subindex
+// 'keys' may be:
+// - single value
+// - slice/arrays of values
+// - nil for CondAny/CondEmpty
+// - []interface{} with 1 value per subindex for composite indexes
+// - *Query for subquery where-filters
 func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 	t := reflect.TypeOf(keys)
 	v := reflect.ValueOf(keys)
@@ -416,7 +449,10 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 	return q
 }
 
-// WhereQuery - Add subquery condition to DB query
+// WhereQuery - Add subquery condition to DB query// 'keys' may be:
+// - single value
+// - slice/arrays of values
+// - nil for CondAny/CondEmpty
 func (q *Query) WhereQuery(subQuery *Query, condition int, keys interface{}) *Query {
 	t := reflect.TypeOf(keys)
 	v := reflect.ValueOf(keys)
@@ -467,10 +503,10 @@ func (q *Query) OpenBracket() *Query {
 // CloseBracket - Close bracket for where condition to DB query
 func (q *Query) CloseBracket() *Query {
 	if q.nextOp != opAND {
-		panic(fmt.Errorf("Operation before close bracket"))
+		panic(fmt.Errorf("rq: operation before close bracket"))
 	}
 	if len(q.openedBrackets) < 1 {
-		panic(fmt.Errorf("Close bracket before open it"))
+		panic(fmt.Errorf("rq: close bracket before open it"))
 	}
 	q.ser.PutVarCUInt(queryCloseBracket)
 	q.openedBrackets = q.openedBrackets[:len(q.openedBrackets)-1]
@@ -672,6 +708,55 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 	for _, v := range keys {
 		q.ser.PutVarCUInt(valueDouble).PutDouble(v)
 	}
+	return q
+}
+
+func (q *Query) WhereFunction(function Function, condition int, keys interface{}) *Query {
+	t := reflect.TypeOf(keys)
+	v := reflect.ValueOf(keys)
+
+	fields := function.Fields()
+
+	if keys != nil && (t == reflect.TypeOf((*Query)(nil)).Elem() || (t.Kind() == reflect.Ptr && t.Elem() == reflect.TypeOf((*Query)(nil)).Elem())) {
+		q.ser.PutVarCUInt(queryFunctionSubQueryCondition)
+		q.ser.PutVarCUInt(q.nextOp)
+		q.ser.PutVarCUInt(len(fields))
+		for _, field := range fields {
+			q.ser.PutVString(field)
+		}
+		q.ser.PutVarCUInt(function.Type())
+		q.ser.PutVarCUInt(condition)
+		if t.Kind() == reflect.Ptr {
+			q.ser.PutVBytes(v.Interface().(*Query).ser.Bytes())
+		} else {
+			subQuery := v.Interface().(Query)
+			q.ser.PutVBytes(subQuery.ser.Bytes())
+		}
+	} else {
+		q.ser.PutVarCUInt(queryFunction)
+		q.ser.PutVarCUInt(len(fields))
+		for _, field := range fields {
+			q.ser.PutVString(field)
+		}
+		q.ser.PutVarCUInt(function.Type())
+		q.ser.PutVarCUInt(q.nextOp).PutVarCUInt(condition)
+
+		if keys == nil {
+			q.ser.PutVarUInt(0)
+		} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+			q.ser.PutVarCUInt(v.Len())
+			for i := 0; i < v.Len(); i++ {
+				q.putValue(v.Index(i))
+			}
+		} else {
+			q.ser.PutVarCUInt(1)
+			q.putValue(v)
+		}
+	}
+
+	q.queriesCount++
+	q.nextOp = opAND
+
 	return q
 }
 
