@@ -217,7 +217,7 @@ func (db *Reindexer) Status() bindings.Status {
 
 // NewReindex creates a new instance of Reindexer.
 // Returns created instance and error if occurred (e.g., DB locked or unreachable).
-// In case of CPROTO binding this error may be temporary (e.g., remote server is unavailable) and Reindexer object is still usebale,
+// In case of CPROTO binding this error may be temporary (e.g., remote server is unavailable) and Reindexer object is still usable,
 // despite this error (binding will try to perform reconnect on the next call).
 // The absolute path for Windows builtin should look like 'builtin://C:/my/folder/db'.
 func NewReindex(dsn interface{}, options ...interface{}) (*Reindexer, error) {
