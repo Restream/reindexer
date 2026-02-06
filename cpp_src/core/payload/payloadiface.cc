@@ -35,6 +35,18 @@ Variant PayloadIface<T>::Get(int field, int idx) const {
 	return get(field, idx, Variant::noHold);
 }
 
+template <typename T>
+bool PayloadIface<T>::HasDefaultValue(int field) const {
+	assertrx_throw(field < NumFields());
+
+	const auto& fieldType = t_.Field(field);
+	if (fieldType.IsArray()) {
+		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
+		return (arr->len == 0);
+	}
+	return Field(field).HasDefaultValue();
+}
+
 // Get element(s) by field name
 template <typename T>
 void PayloadIface<T>::Get(std::string_view field, VariantArray& kvs, Variant::HoldT h) const {
@@ -223,8 +235,14 @@ Variant PayloadIface<T>::GetComposite(const FieldsSet& fields, const h_vector<Ke
 		} else {
 			Get(fields[i], buf);
 		}
-		assertrx_throw(buf.size() == 1);
-		buffer.emplace_back(std::move(buf[0]));
+
+		if (buf.size() == 1) [[likely]] {
+			buffer.emplace_back(std::move(buf[0]));
+		} else if (buf.empty()) {
+			buffer.emplace_back();
+		} else [[unlikely]] {
+			throw Error(errParams, "Ambiguous composite value: it contains array with multiple values");
+		}
 	}
 	return Variant{buffer};
 }
@@ -277,7 +295,7 @@ void PayloadIface<T>::Set(int field, int idx, const Variant& v) {
 	assertrx(fieldType.IsArray());
 	const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 	const auto elemSize = fieldType.ElemSizeof();
-	assertrx(idx < arr->len);
+	assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), fieldType.Name(), idx, arr->len);
 	PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * elemSize);
 	pv.Set(v);
 }
@@ -800,12 +818,13 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 T PayloadIface<T>::CopyWithRemovedFields(const PayloadType& modifiedType) {
 	size_t totalReduce = 0;
-	std::vector<std::string> fieldsLeft;
+	h_vector<std::reference_wrapper<const std::string>, 32> fieldsLeft;
+	fieldsLeft.reserve(modifiedType.NumFields());
 	for (int idx = 0, numFields = t_.NumFields(); idx < numFields; ++idx) {
 		const auto& fieldType = t_.Field(idx);
 		const auto& fieldName(fieldType.Name());
 		if (modifiedType.Contains(fieldName)) {
-			fieldsLeft.emplace_back(fieldName);
+			fieldsLeft.emplace_back(std::cref(fieldName));
 		} else {
 			totalReduce += fieldType.IsArray() ? sizeof(PayloadFieldValue::Array) : fieldType.Sizeof();
 		}
@@ -815,8 +834,8 @@ T PayloadIface<T>::CopyWithRemovedFields(const PayloadType& modifiedType) {
 	T pv(RealSize() - totalReduce);
 	PayloadIface<T> copyValueInterface(modifiedType, pv);
 	for (const auto& fieldname : fieldsLeft) {
-		Get(fieldname, kr);
-		copyValueInterface.Set(fieldname, kr, Append_False);
+		Get(fieldname.get(), kr);
+		copyValueInterface.Set(fieldname.get(), kr, Append_False);
 	}
 
 	return pv;

@@ -48,28 +48,37 @@ type ExplainSubQuery struct {
 	Field     string         `json:"field,omitempty"`
 }
 
-// ExplainResults presents query plan
+// ExplainResults represents query plan
 type ExplainResults struct {
-	// Total query execution time
+	SingleQueryExplainResults
+	// Detailed execution plans for queries with MERGE (including main query)
+	Merged []SingleQueryExplainResults `json:"merged,omitempty"`
+}
+
+// SingleQueryExplainResults represents explain plan for single query
+type SingleQueryExplainResults struct {
+	// Main/merged query namespace name
+	Namespace string `json:"namespace,omitempty"`
+	// Total query execution time (for MERGE queries includes total_us of all merged queries)
 	TotalUs int `json:"total_us"`
-	// Query preselect build and select time
+	// Query preselect build and select time (for MERGE queries includes preselect_us of all merged queries)
 	PreselectUs int `json:"preselect_us"`
-	// Query prepare and optimize time
+	// Query prepare and optimize time (for MERGE queries includes prepare_us of all merged queries)
 	PrepareUs int `json:"prepare_us"`
-	// Indexes keys selection time
+	// Indexes keys selection time (for MERGE queries includes indexes_us of all merged queries)
 	IndexesUs int `json:"indexes_us"`
-	// Query post process time
+	// Query post process time (for MERGE queries includes postprocess_us of all merged queries)
 	PostprocessUS int `json:"postprocess_us"`
-	// Intersection loop time
+	// Intersection loop time (for MERGE queries includes loop_us of all merged queries)
 	LoopUs int `json:"loop_us"`
 	// Index, which used for sort results
 	SortIndex string `json:"sort_index"`
-	// General sort time
+	// General sort time (for MERGE queries includes general_sort_us of all merged queries and post-merge sorting time)
 	GeneralSortUs int `json:"general_sort_us"`
 	// Optimization of sort by uncompleted index has been performed
 	SortByUncommittedIndex bool `json:"sort_by_uncommitted_index"`
 	// Filter selectors, used to proccess query conditions
-	Selectors []ExplainSelector `json:"selectors"`
+	Selectors []ExplainSelector `json:"selectors,omitempty"`
 	// Explaining attempts to inject Join queries ON-conditions into the Main Query WHERE clause
 	OnConditionsInjections []ExplainJoinOnInjections `json:"on_conditions_injections,omitempty"`
 	// Explaining of subqueries' preselect

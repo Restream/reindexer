@@ -2,6 +2,7 @@
 #include <sstream>
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsonbuilder.h"
+#include "core/id_type.h"
 
 namespace reindexer {
 
@@ -14,7 +15,7 @@ Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, u
 	  expectedDataCount_(expectedDataCount),
 	  clusterOperationStatus_(std::move(clusterStatus)),
 	  nsVersion_(nsVersion) {
-	walData_.AddItem(ItemRef(-1, createTmItem(), 0, true));
+	walData_.AddItem(ItemRef(IdType::NotSet(), createTmItem(), 0, true));
 }
 
 Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDataHash, uint64_t expectedDataCount,
@@ -27,9 +28,9 @@ Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLs
 	  lastLsn_(lastLsn),
 	  nsVersion_(nsVersion) {
 	if (raw.Items().Size()) {
-		rawData_.AddItem(ItemRef(-1, createTmItem(), 0, true));
+		rawData_.AddItem(ItemRef(IdType::NotSet(), createTmItem(), 0, true));
 	} else {
-		walData_.AddItem(ItemRef(-1, createTmItem(), 0, true));
+		walData_.AddItem(ItemRef(IdType::NotSet(), createTmItem(), 0, true));
 	}
 
 	addRawData(std::move(raw));
@@ -139,7 +140,7 @@ void Snapshot::addRawData(LocalQueryResults&& qr) {
 		wr.Pack(wrec);
 		PayloadValue val(wr.size(), wr.data());
 		val.SetLSN(lsn_t());
-		rawData_.AddItem(ItemRef(-1, val, 0, true));
+		rawData_.AddItem(ItemRef(IdType::NotSet(), val, 0, true));
 	}
 }
 
@@ -197,7 +198,7 @@ SnapshotChunk Snapshot::Iterator::Chunk() const {
 			pwrec.resize(itemRef.Value().GetCapacity());
 			memcpy(pwrec.data(), itemRef.Value().Ptr(), pwrec.size());
 		} else if (shallow) {
-			assertrx(itemRef.Id() >= 0);
+			assertrx(itemRef.Id().IsValid());
 			pwrec.Pack(WALRecord(WalShallowItem, itemRef.Id()));
 		} else {
 			ser_.Reset();

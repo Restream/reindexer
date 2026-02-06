@@ -17,7 +17,15 @@ class [[nodiscard]] CJsonDecoder {
 public:
 	using StrHolderT = h_vector<key_string, 16>;
 
-	explicit CJsonDecoder(TagsMatcher& tagsMatcher, StrHolderT& storage) noexcept : tagsMatcher_(tagsMatcher), storage_(storage) {}
+	explicit CJsonDecoder(Payload& pl, Serializer& rdSer, WrSerializer& wrSer, TagsMatcher& tagsMatcher, StrHolderT& storage,
+						  FloatVectorsHolderVector& floatVectorsHolder, ScalarIndexesSetT& objectScalarIndexes) noexcept
+		: tagsMatcher_(tagsMatcher),
+		  storage_(storage),
+		  pl_(pl),
+		  rdSer_(rdSer),
+		  wrSer_(wrSer),
+		  floatVectorsHolder_(floatVectorsHolder),
+		  objectScalarIndexes_(objectScalarIndexes) {}
 	class [[nodiscard]] SkipFilter {
 	public:
 		SkipFilter MakeCleanCopy() const noexcept { return SkipFilter(); }
@@ -135,15 +143,14 @@ public:
 	struct [[nodiscard]] NamelessTagOpt {};
 
 	template <typename Filter, typename Recoder = DefaultRecoder>
-	void Decode(Payload& pl, Serializer& rdSer, WrSerializer& wrSer, FloatVectorsHolderVector& floatVectorsHolder, Filter filter = Filter(),
-				Recoder recoder = Recoder()) {
+	void Decode(Filter filter = Filter(), Recoder recoder = Recoder()) {
 		static_assert(std::is_same_v<Filter, DefaultFilter> || std::is_same_v<Filter, RestrictingFilter>,
 					  "Other filter types are not allowed for the public API");
 		static_assert(std::is_same_v<Recoder, DefaultRecoder> || std::is_same_v<Recoder, CustomRecoder>,
 					  "Other recoder types are not allowed for the public API");
 		objectScalarIndexes_.reset();
-		if (!filter.HasArraysFields(pl.Type())) [[likely]] {
-			decodeCJson(pl, rdSer, wrSer, filter, recoder, NamelessTagOpt{}, floatVectorsHolder);
+		if (!filter.HasArraysFields(pl_.Type())) [[likely]] {
+			decodeCJson(filter, recoder, NamelessTagOpt{});
 			return;
 		}
 #ifdef RX_WITH_STDLIB_DEBUG
@@ -153,29 +160,32 @@ public:
 		// Possible implementation has noticeable negative impact on 'FromCJSONPKOnly' benchmark.
 		// Currently, we are using filter for PKs and vector only, and PKs and vectors can not be arrays,
 		// so this code actually will never be called at the current moment
-		decodeCJson(pl, rdSer, wrSer, DefaultFilter(nullptr), recoder, NamelessTagOpt{}, floatVectorsHolder);
+		decodeCJson(DefaultFilter(nullptr), recoder, NamelessTagOpt{});
 #endif	// RX_WITH_STDLIB_DEBUG
 	}
 
 private:
 	template <typename Filter, typename Recoder, typename TagOptT>
-	bool decodeCJson(Payload&, Serializer&, WrSerializer&, Filter, Recoder, TagOptT, FloatVectorsHolderVector&);
+	bool decodeCJson(Filter, Recoder, TagOptT);
 	template <typename Filter, typename Recoder, typename Validator>
-	void decodeCJson(Payload&, Serializer&, WrSerializer&, Filter, Recoder, TagType, TagName, ctag, FloatVectorsHolderVector&,
-					 const Validator&);
+	void decodeCJson(Filter, Recoder, TagType, TagName, ctag, const Validator&);
 	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 	[[noreturn]] void throwTagReferenceError(ctag, const Payload&);
 
-	Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType) const;
-	size_t decodeNestedArray(Payload&, Serializer&, WrSerializer&, int indexNumber, size_t count, KeyValueType fieldType,
-							 size_t offset) const;
+	Variant cjsonValueToVariant(TagType tag, KeyValueType dstType) const;
+	size_t decodeNestedArray(int indexNumber, size_t count, KeyValueType fieldType, size_t offset) const;
 
 	TagsMatcher& tagsMatcher_;
 	TagsPath tagsPath_;
 	int32_t arrayLevel_{0};
-	ScalarIndexesSetT objectScalarIndexes_;
-	// storage for owning strings obtained from numbers
+	//  storage for owning strings obtained from numbers
 	StrHolderT& storage_;
+
+	Payload& pl_;
+	Serializer& rdSer_;
+	WrSerializer& wrSer_;
+	FloatVectorsHolderVector& floatVectorsHolder_;
+	ScalarIndexesSetT& objectScalarIndexes_;
 };
 
 }  // namespace reindexer

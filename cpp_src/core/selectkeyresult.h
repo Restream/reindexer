@@ -1,9 +1,9 @@
 #pragma once
 
-#include <climits>
-
+#include "core/id_type.h"
 #include "core/idset/idset.h"
 #include "core/index/indexiterator.h"
+#include "core/index/keyentry.h"
 #include "core/nsselecter/comparator/comparator_indexed.h"
 #include "core/nsselecter/comparator/comparator_not_indexed.h"
 
@@ -24,18 +24,35 @@ public:
 		assertrx(indexForwardIter_ != nullptr);
 	}
 	template <typename KeyEntryT>
-	explicit SingleSelectKeyResult(const KeyEntryT& ids, SortType sortId) noexcept {
-		if (ids.Unsorted().IsCommitted()) {
+	explicit SingleSelectKeyResult(const KeyEntryT& ids, SortType sortId) noexcept
+		requires(concepts::KeyEntryWithSortedIDs<KeyEntryT>)
+	{
+		auto set = ids.Unsorted().BTree();
+		if (!set) {
+			assertrx_dbg(ids.Unsorted().IsCommitted());
 			ids_ = ids.Sorted(sortId);
 		} else {
-			assertrx(ids.Unsorted().BTree());
 			assertrx(!sortId);
-			set_ = ids.Unsorted().BTree();
+			assertrx_dbg(!ids.Unsorted().IsCommitted());
+			set_ = set;
 			useBtree_ = true;
 		}
 	}
-	explicit SingleSelectKeyResult(IdSet::Ptr&& ids) noexcept : tempIds_(std::move(ids)), ids_(*tempIds_) {}
-	explicit SingleSelectKeyResult(IdSetCRef ids) noexcept : ids_(ids) {}
+	template <typename KeyEntryT>
+	explicit SingleSelectKeyResult(const KeyEntryT& ids, const SortedIDsCtx& sortCtx) noexcept
+		requires(concepts::KeyEntryWithSortedIDs<KeyEntryT>)
+		: SingleSelectKeyResult(ids, sortCtx.SortID()) {}
+	template <typename KeyEntryT>
+	explicit SingleSelectKeyResult(const KeyEntryT& ids, const SortedIDsCtx& sortCtx) noexcept
+		requires(!concepts::KeyEntryWithSortedIDs<KeyEntryT>)
+	{
+		static_assert(KeyEntryT::IdSetType::IsCommitted());
+		ids_ = ids.Sorted(sortCtx);
+	}
+	explicit SingleSelectKeyResult(IdSet::Ptr&& ids) : tempIds_(std::move(ids)), ids_(tempIds_->begin(), tempIds_->end()) {
+		assertrx_throw(tempIds_->IsCommitted());
+	}
+	explicit SingleSelectKeyResult(const IdSet& ids) noexcept : ids_(ids) { assertrx_throw(ids.IsCommitted()); }
 	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) noexcept : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
 	SingleSelectKeyResult(const SingleSelectKeyResult& other) noexcept
 		: tempIds_(other.tempIds_),
@@ -106,8 +123,8 @@ protected:
 		IdSetCRef::reverse_iterator rbegin_;
 		base_idsetset::const_iterator setbegin_;
 		base_idsetset::const_reverse_iterator setrbegin_;
-		int rBegin_ = 0;
-		int rrBegin_;
+		IdType rBegin_ = IdType::Zero();
+		IdType rrBegin_;
 	};
 
 	union {
@@ -115,8 +132,8 @@ protected:
 		IdSetCRef::reverse_iterator rend_;
 		base_idsetset::const_iterator setend_;
 		base_idsetset::const_reverse_iterator setrend_;
-		int rEnd_ = 0;
-		int rrEnd_;
+		IdType rEnd_ = IdType::Zero();
+		IdType rrEnd_;
 	};
 
 	union {
@@ -124,8 +141,8 @@ protected:
 		IdSetCRef::reverse_iterator rit_;
 		base_idsetset::const_iterator itset_;
 		base_idsetset::const_reverse_iterator ritset_;
-		int rIt_ = 0;
-		int rrIt_;
+		IdType rIt_ = IdType::Zero();
+		IdType rrIt_;
 	};
 
 	IndexIterator::Ptr indexForwardIter_;
@@ -152,6 +169,7 @@ public:
 	};
 
 	bool deferedExplicitSort = false;
+	bool cached = false;
 
 	static size_t GetMergeSortCost(size_t idsCount, size_t idsetsCount) noexcept { return idsCount * idsetsCount; }
 	static size_t GetGenericSortCost(size_t idsCount) noexcept { return idsCount * log2(idsCount) + 2 * idsCount; }
@@ -182,7 +200,7 @@ public:
 				}
 				cnt += iters;
 			} else if (r.isRange_) {
-				cnt += std::abs(r.rEnd_ - r.rBegin_);
+				cnt += std::abs(r.rEnd_.ToNumber() - r.rBegin_.ToNumber());
 			} else if (r.useBtree_) {
 				cnt += r.set_->size();
 			} else {
@@ -220,6 +238,9 @@ public:
 		emplace_back(IdSet::Ptr(mergedIds));
 		return mergedIds;
 	}
+
+	void MarkCached() noexcept { cached = true; }
+	bool IsCached() const noexcept { return cached; }
 
 private:
 	IdSet::Ptr mergeGenericSort(size_t idsCount) {
@@ -277,9 +298,9 @@ private:
 			v->setend_ = v->set_->end();
 		}
 
-		int min = INT_MIN;
+		IdType min = IdType::Min();
 		for (;;) {
-			int curMin = INT_MAX;
+			IdType curMin = IdType::Max();
 			for (auto vsIt = vecSpan.begin(), vsItEnd = vecSpan.end(); vsIt != vsItEnd;) {
 				auto& itvec = (*vsIt)->it_;
 				auto& vecend = (*vsIt)->end_;
@@ -320,7 +341,7 @@ private:
 					}
 				}
 			}
-			if (curMin == INT_MAX) {
+			if (curMin == IdType::Max()) {
 				break;
 			}
 			min = curMin;
@@ -364,7 +385,7 @@ private:
 		}
 		std::span<value_type*> idsetsSpan(ptrsVec.data(), ptrsVec.size());
 		std::make_heap(idsetsSpan.begin(), idsetsSpan.end(), IdSetGreater{});
-		int min = INT_MIN;
+		IdType min = IdType::Min();
 		auto handleMinValue = [&mergedIds, &idsetsSpan, &min](auto& it, auto end) {
 			auto val = *it;
 			if (val > min) {

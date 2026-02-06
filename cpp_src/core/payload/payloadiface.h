@@ -33,6 +33,8 @@ public:
 	Variant Get(int field, int idx, Variant::HoldT) const;
 	Variant Get(int field, int idx) const;
 
+	bool HasDefaultValue(int field) const;
+
 	// Get array as span of typed elements
 	template <typename Elem>
 	std::span<const Elem> GetArray(int field) const& {

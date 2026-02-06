@@ -10,17 +10,16 @@ namespace reindexer {
 
 void EqualPositionComparator::BindField(const std::string& name, int field, const VariantArray& values, CondType cond,
 										const CollateOpts& collate) {
-	bindField(name, field, values, cond, collate);
+	fields_.push_back(field);
+	bindField(name, values, cond, collate);
 }
 
 void EqualPositionComparator::BindField(const std::string& name, const FieldsPath& fieldPath, const VariantArray& values, CondType cond) {
-	bindField(name, fieldPath, values, cond, CollateOpts{});
+	fields_.push_back(fieldPath);
+	bindField(name, values, cond, CollateOpts{});
 }
 
-template <typename F>
-void EqualPositionComparator::bindField(const std::string& name, const F& field, const VariantArray& values, CondType cond,
-										const CollateOpts& collate) {
-	fields_.push_back(field);
+void EqualPositionComparator::bindField(const std::string& name, const VariantArray& values, CondType cond, const CollateOpts& collate) {
 	Context& ctx = ctx_.emplace_back(collate);
 
 	ctx.cond = cond;

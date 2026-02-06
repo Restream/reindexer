@@ -262,9 +262,11 @@ public:
 		reindexer::Serializer rdser(cjson);
 
 		reindexer::h_vector<reindexer::key_string, 16> storage;
-		reindexer::CJsonDecoder decoder(const_cast<reindexer::TagsMatcher&>(nsTypes.first), storage);
 		reindexer::FloatVectorsHolderVector floatVectorsHolder;
-		ASSERT_NO_THROW(decoder.Decode<>(pl, rdser, wrser, floatVectorsHolder, reindexer::CJsonDecoder::DefaultFilter{nullptr}));
+		reindexer::ScalarIndexesSetT objectScalarIndexes;
+		reindexer::CJsonDecoder decoder(pl, rdser, wrser, const_cast<reindexer::TagsMatcher&>(nsTypes.first), storage, floatVectorsHolder,
+										objectScalarIndexes);
+		ASSERT_NO_THROW(decoder.Decode<>(reindexer::CJsonDecoder::DefaultFilter{nullptr}));
 		ASSERT_TRUE(rdser.Eof());
 	}
 

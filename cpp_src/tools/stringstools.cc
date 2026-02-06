@@ -376,7 +376,7 @@ void utf8_to_utf16(std::string_view src, std::wstring& dst) {
 	dst.resize(std::distance(dst.begin(), end));
 }
 
-void utf16_to_utf8(const std::wstring_view src, std::string& dst) {
+void utf16_to_utf8(std::wstring_view src, std::string& dst) {
 	dst.resize(src.length() * 4);
 	auto end = utf8::unchecked::utf32to8(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
@@ -387,12 +387,12 @@ std::wstring utf8_to_utf16(std::string_view src) {
 	utf8_to_utf16(src, dst);
 	return dst;
 }
-std::string utf16_to_utf8(const std::wstring_view src) {
+std::string utf16_to_utf8(std::wstring_view src) {
 	std::string dst;
 	utf16_to_utf8(src, dst);
 	return dst;
 }
-size_t utf16_to_utf8_size(const std::wstring_view src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
+size_t utf16_to_utf8_size(std::wstring_view src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
 
 // This functions calculate how many bytes takes limit symbols in UTF8 forward
 size_t calcUtf8After(std::string_view str, size_t limit) noexcept {
@@ -566,7 +566,7 @@ void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::ws
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
-		while (it != utf16str.end() && !IsAlpha(*it) && !IsDigit(*it)) {
+		while (it != utf16str.end() && !options.IsWordSymbol(*it)) {
 			++it;
 		}
 

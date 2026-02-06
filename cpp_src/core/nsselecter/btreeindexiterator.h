@@ -2,6 +2,7 @@
 
 #include <limits.h>
 #include "btreeindexiteratorimpl.h"
+#include "core/id_type.h"
 #include "core/idset/idset.h"
 #include "core/index/indexiterator.h"
 
@@ -65,7 +66,7 @@ public:
 
 private:
 	auto createForwardIterator() {
-		lastVal_ = INT_MIN;
+		lastVal_ = IdType::Min();
 		type_ = Forward;
 		if (nullValues_) {
 			return index::iterators::BtreeIndexForwardIteratorImpl<IndexMap>(first_, last_, *nullValues_);
@@ -75,7 +76,7 @@ private:
 	}
 
 	auto createReverseIterator() {
-		lastVal_ = INT_MAX;
+		lastVal_ = IdType::Max();
 		type_ = Reverse;
 		if (nullValues_) {
 			return index::iterators::BtreeIndexReverseIteratorImpl<IndexMap>(first_, last_, *nullValues_);
@@ -89,7 +90,7 @@ private:
 		if (hasValue) {
 			lastVal_ = rowId;
 		} else {
-			lastVal_ = (type_ == Reverse) ? INT_MAX : INT_MIN;
+			lastVal_ = (type_ == Reverse) ? IdType::Max() : IdType::Min();
 		}
 		return hasValue;
 	}
@@ -106,7 +107,7 @@ private:
 	const typename IndexMap::const_iterator last_;
 
 	const IdSet* nullValues_;
-	IdType lastVal_ = INT_MIN;
+	IdType lastVal_ = IdType::Min();
 
 	enum Type { Empty, Reverse, Forward };
 	Type type_{Empty};

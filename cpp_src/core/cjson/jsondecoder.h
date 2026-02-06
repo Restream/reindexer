@@ -21,10 +21,11 @@ class SparseArrayValidator;
 
 class [[nodiscard]] JsonDecoder {
 public:
-	explicit JsonDecoder(TagsMatcher& tagsMatcher, const FieldsSet* filter = nullptr) noexcept
-		: tagsMatcher_(tagsMatcher), filter_(filter) {}
-	Error Decode(Payload& pl, WrSerializer& wrSer, const gason::JsonValue& v, FloatVectorsHolderVector&);
-	void Decode(std::string_view json, CJsonBuilder&, const TagsPath& fieldPath, FloatVectorsHolderVector&);
+	explicit JsonDecoder(TagsMatcher& tagsMatcher, FloatVectorsHolderVector& floatVectorsHolder, ScalarIndexesSetT& objectScalarIndexes,
+						 const FieldsSet* filter = nullptr) noexcept
+		: tagsMatcher_(tagsMatcher), filter_(filter), floatVectorsHolder_(floatVectorsHolder), objectScalarIndexes_(objectScalarIndexes) {}
+	Error Decode(Payload& pl, WrSerializer& wrSer, const gason::JsonValue& v);
+	void Decode(std::string_view json, CJsonBuilder&, const TagsPath& fieldPath);
 
 private:
 	struct [[nodiscard]] HeteroArrayFastAnalizeResult {
@@ -40,12 +41,12 @@ private:
 	HeteroArrayFastAnalizeResult fastAnalizeHeteroArray(const gason::JsonValue& array) const;
 	void decodeHeteroArray(Payload&, CJsonBuilder&, const gason::JsonValue& array, int indexNumber, int& pos, KeyValueType fieldType,
 						   std::string_view fieldName) const;
-	void decodeJsonObject(const gason::JsonValue& root, CJsonBuilder&, FloatVectorsHolderVector&);
-	void decodeJsonObject(Payload&, CJsonBuilder&, const gason::JsonValue&, FloatVectorsHolderVector&, Matched);
-	void decodeJson(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched);
-	void decodeJsonSparse(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched,
+	void decodeJsonObject(const gason::JsonValue& root, CJsonBuilder&);
+	void decodeJsonObject(Payload&, CJsonBuilder&, const gason::JsonValue&, Matched);
+	void decodeJson(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, Matched);
+	void decodeJsonSparse(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, Matched,
 						  const item_fields_validator::SparseValidator&);
-	void decodeJsonArraySparse(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, FloatVectorsHolderVector&, Matched,
+	void decodeJsonArraySparse(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, Matched,
 							   item_fields_validator::SparseArrayValidator&);
 	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 
@@ -53,7 +54,9 @@ private:
 	TagsPath tagsPath_;
 	const FieldsSet* filter_{nullptr};
 	int32_t arrayLevel_{0};
-	ScalarIndexesSetT objectScalarIndexes_;
+
+	FloatVectorsHolderVector& floatVectorsHolder_;
+	ScalarIndexesSetT& objectScalarIndexes_;
 };
 
 }  // namespace reindexer

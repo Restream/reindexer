@@ -177,7 +177,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 	logFmt(LogInfo, "[rename] Performing double check for data awaiting flush ({})...", srcNsName);
 	srcNs.storage_.Flush(flushOpts);  // Repeat flush, to raise any disk errors before attempt to close storage
 	auto storageStatus = srcNs.storage_.GetStatusCached();
-	if (!storageStatus.err.ok()) {
+	if (!storageStatus.err.ok()) [[unlikely]] {
 		throw Error(storageStatus.err.code(), "Unable to flush storage before rename: {}", storageStatus.err.what());
 	}
 	logFmt(LogInfo, "[rename] All data in '{}' were flushed successfully", srcNsName);
@@ -201,7 +201,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 		dstNs->checkClusterRole(ctx);
 		dbpath = dstNs->storage_.GetPath();
 		newNameObj = dstNs->name_;
-	} else if (newName.empty()) {
+	} else if (newName.empty()) [[unlikely]] {
 		throw Error(errParams, "Unable to rename {}: new name can not be empty", srcNs.name_);
 	} else if (iequals(newName, srcNs.name_)) {
 		return;
@@ -221,13 +221,13 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 	const bool requiresStorageMove = (srcNs.storage_.IsValid() && srcDbpath != dbpath);
 	auto storageType = StorageType::LevelDB;
 	if (requiresStorageMove) {
-		if (storagePath.empty()) {
+		if (storagePath.empty()) [[unlikely]] {
 			throw Error(errParams, "Unable to rename {}: namespace storage is active, but DB's storage path is empty", srcNs.name_);
 		}
 		storageType = srcNs.storage_.GetType();
 		srcNs.storage_.Close();
-		if (fs::RmDirAll(dbpath) != 0) {
-			logFmt(LogError, "Failed to remove folder {}, error : {}", dbpath, strerror(errno));
+		if (fs::RmDirAll(dbpath) != 0 && errno != ENOENT) [[unlikely]] {
+			logFmt(LogError, "Failed to remove directory '{}', error: '{}'", dbpath, strerror(errno));
 		}
 		int renameRes = fs::Rename(srcDbpath, dbpath);
 		if (renameRes < 0) {
@@ -236,7 +236,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 				dstLck.unlock();
 			}
 			auto err = srcNs.storage_.Open(storageType, srcNs.name_, srcDbpath, srcNs.storageOpts_);
-			if (!err.ok()) {
+			if (!err.ok()) [[unlikely]] {
 				logFmt(LogError, "Unable to reopen storage after unsuccessfully renaming: {}", err.whatStr());
 			}
 			throw Error(errParams, "Unable to rename '{}' to '{}'", srcDbpath, dbpath);
@@ -266,7 +266,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 		logFmt(LogInfo, "[rename] Storage was moved from '{}' to '{}'", srcDbpath, dbpath);
 		auto status = srcNs.storage_.Open(storageType, srcNs.name_, dbpath, srcNs.storageOpts_);
 		logFmt(LogInfo, "[rename] Storage status on '{}': {}", dbpath, status.ok() ? "OK" : status.what());
-		if (!status.ok()) {
+		if (!status.ok()) [[unlikely]] {
 			srcNs.storage_.Close();
 			throw status;
 		}

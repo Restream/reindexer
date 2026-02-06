@@ -1,5 +1,6 @@
 #pragma once
 #include "core/ft/areaholder.h"
+#include "core/id_type.h"
 #include "core/index/ft_preselect.h"
 #include "dataholder.h"
 #include "estl/dynamic_bitset.h"
@@ -53,14 +54,37 @@ int MergePositionsWithDist(const PositionsVector& positions, const PositionsVect
 	return minDist;
 }
 
-typedef fast_hash_map<WordIdType, float, WordIdTypeHash, WordIdTypeEqual, WordIdTypeLess> FoundWordsProcsType;
+using FoundWordsProcsType = fast_hash_map<WordIdType, float, WordIdTypeHash, WordIdTypeEqual, WordIdTypeLess>;
 
 template <typename IdCont>
-struct [[nodiscard]] SubtermResults {
-	const IdCont* vids;		   // indexes of documents (vdoc) containing the given word + position + field
-	std::string_view pattern;  // word,translit,.....
-	WordIdType patternId;
+class [[nodiscard]] SubtermResults {
+public:
+	struct HoldT {};
+	struct NoHoldT {};
+
+	SubtermResults(const IdCont& vids, std::string&& pattern, WordIdType patternId, float proc, HoldT) noexcept
+		: proc(proc), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
+	SubtermResults(const IdCont& vids, std::string_view pattern, WordIdType patternId, float proc, NoHoldT) noexcept
+		: proc(proc), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
+
+	const IdCont& Vids() const noexcept { return *vids_; }
+	std::string_view Pattern() const noexcept {
+		try {
+			return std::visit([](const auto& v) { return std::string_view(v); }, pattern_);
+		} catch (...) {
+			assertrx_dbg(false);
+
+			return std::string_view();
+		}
+	}
+	WordIdType PatternID() const noexcept { return patternId_; }
+
 	float proc = 0.0;
+
+private:
+	const IdCont* vids_ = nullptr;						   // indexes of documents (vdoc) containing the given word + position + field
+	std::variant<std::string, std::string_view> pattern_;  // word,translit,.....
+	WordIdType patternId_;
 };
 
 // text search results for a single token (word) in a search query
@@ -85,7 +109,7 @@ public:
 
 	void UpdateProcs(const FoundWordsProcsType& finalProcs) {
 		for (SubtermResults<IdCont>& sr : subtermsResults) {
-			if (auto it = finalProcs.find(sr.patternId); it != finalProcs.end()) {
+			if (auto it = finalProcs.find(sr.PatternID()); it != finalProcs.end()) {
 				sr.proc = it->second;
 			}
 		}
@@ -94,15 +118,15 @@ public:
 
 // Final information about found document
 struct [[nodiscard]] MergeInfo {
-	IdType id = 0;				 // Virtual id of merged document (index in vdocs)
+	IdType id = IdType::Zero();	 // Virtual id of merged document (index in vdocs)
 	float proc = 0;				 // Rank of document
 	uint8_t field = 0;			 // Field index, where was match
 	uint8_t normalizedProc = 0;	 // Normalized rank of document;
 };
 
 struct [[nodiscard]] MergeInfoAreas {
-	IdType id = 0;	 // Virtual id of merged document (index in vdocs)
-	float proc = 0;	 // Rank of document
+	IdType id = IdType::Zero();	 // Virtual id of merged document (index in vdocs)
+	float proc = 0;				 // Rank of document
 	uint32_t areaIndex = std::numeric_limits<uint32_t>::max();
 	uint8_t field = 0;			 // Field index, where was match
 	uint8_t normalizedProc = 0;	 // Normalized rank of document;
@@ -358,10 +382,10 @@ public:
 
 		for (const auto& md : mergeData_) {
 			if (md.proc > 0) {
-				bm.set(md.id);
+				bm.set(md.id.ToNumber());
 
-				if (phraseProc_ <= std::numeric_limits<uint16_t>::max() - scores[md.id]) {
-					scores[md.id] += phraseProc_;
+				if (phraseProc_ <= std::numeric_limits<uint16_t>::max() - scores[md.id.ToNumber()]) {
+					scores[md.id.ToNumber()] += phraseProc_;
 				}
 			}
 		}

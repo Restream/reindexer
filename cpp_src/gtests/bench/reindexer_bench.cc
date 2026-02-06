@@ -9,6 +9,7 @@
 #include "equalpositions.h"
 #include "geometry.h"
 #include "join_items.h"
+#include "update_items.h"
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 const int kItemsInBenchDataset = 5'000;
@@ -40,6 +41,7 @@ int main(int argc, char** argv) {
 	Aggregation aggregation(DB.get(), "Aggregation"sv, kItemsInBenchDataset);
 	ApiEncDec decoding(DB.get(), "EncDec");
 	EqualPositions equalPosition(DB.get(), "EqualPositions", kItemsInBenchDataset);
+	UpdateItems updateItems(DB.get(), "UpdateItems", 2000);
 
 	auto err = apiTvSimple.Initialize();
 	if (!err.ok()) {
@@ -86,6 +88,11 @@ int main(int argc, char** argv) {
 		return err.code();
 	}
 
+	err = updateItems.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
 	::benchmark::Initialize(&argc, argv);
 	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) {
 		return 1;
@@ -100,6 +107,7 @@ int main(int argc, char** argv) {
 	aggregation.RegisterAllCases();
 	decoding.RegisterAllCases();
 	equalPosition.RegisterAllCases();
+	updateItems.RegisterAllCases();
 
 	::benchmark::RunSpecifiedBenchmarks();
 	::benchmark::Shutdown();

@@ -96,8 +96,8 @@ void Item::FieldRef::throwIfAssignFieldMultyJsonPath() const {
 
 Item::FieldRef& Item::FieldRef::operator=(Variant kr) {
 	throwIfAssignFieldMultyJsonPath();
-
-	if (field_ >= 0) {
+	assertrx_throw(field_ != 0);
+	if (field_ > 0) {
 		itemImpl_->SetField(field_, VariantArray{std::move(kr)});
 	} else {
 		itemImpl_->SetField(jsonPath(), VariantArray{std::move(kr)});
@@ -260,6 +260,8 @@ Item::FieldRef Item::FieldRefByNameOrJsonPath(std::string_view name, ItemImpl& i
 }
 
 void Item::Embed(const RdxContext& ctx) { impl_->Embed(ctx); }
+
+const ScalarIndexesSetT& Item::GetScalarIndexMask() const noexcept { return impl_->GetScalarIndexMask(); }
 
 TagName Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }

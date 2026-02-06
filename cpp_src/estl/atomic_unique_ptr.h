@@ -7,36 +7,37 @@ namespace reindexer {
 template <class T>
 class [[nodiscard]] atomic_unique_ptr {
 	using pointer = T*;
-	std::atomic<pointer> ptr;
+	std::atomic<pointer> ptr_;
 
 public:
-	constexpr atomic_unique_ptr() noexcept : ptr(nullptr) {}
-	explicit atomic_unique_ptr(pointer p) noexcept : ptr(p) {}
-	atomic_unique_ptr(atomic_unique_ptr&& p) noexcept : ptr(p.release()) {}
+	constexpr atomic_unique_ptr() noexcept : ptr_(nullptr) {}
+	explicit atomic_unique_ptr(pointer p) noexcept : ptr_(p) {}
+	atomic_unique_ptr(atomic_unique_ptr&& p) noexcept : ptr_(p.release()) {}
 	atomic_unique_ptr& operator=(atomic_unique_ptr&& p) noexcept {
 		reset(p.release());
 		return *this;
 	}
-	atomic_unique_ptr(std::unique_ptr<T>&& p) noexcept : ptr(p.release()) {}
+	atomic_unique_ptr(std::unique_ptr<T>&& p) noexcept : ptr_(p.release()) {}
 	atomic_unique_ptr& operator=(std::unique_ptr<T>&& p) noexcept {
 		reset(p.release());
 		return *this;
 	}
 
-	void reset(pointer p = pointer(), std::memory_order order = std::memory_order_seq_cst) {
-		auto old = ptr.exchange(p, order);
+	void reset(pointer p = pointer(), std::memory_order order = std::memory_order_seq_cst) noexcept {
+		auto old = ptr_.exchange(p, order);
 		if (old) {
 			delete old;
 		}
 	}
-	operator pointer() const { return ptr; }
-	pointer operator->() const { return ptr; }
-	pointer get(std::memory_order order = std::memory_order_seq_cst) const { return ptr.load(order); }
-	explicit operator bool() const { return ptr != pointer(); }
-	pointer release(std::memory_order order = std::memory_order_seq_cst) { return ptr.exchange(pointer(), order); }
-	bool compare_exchange_strong(pointer exp, pointer p, std::memory_order order = std::memory_order_seq_cst) {
-		return ptr.compare_exchange_strong(exp, p, order);
+	operator pointer() const noexcept { return ptr_; }
+	pointer operator->() const noexcept { return ptr_; }
+	pointer get(std::memory_order order = std::memory_order_seq_cst) const noexcept { return ptr_.load(order); }
+	explicit operator bool() const noexcept { return ptr_ != pointer(); }
+	pointer release(std::memory_order order = std::memory_order_seq_cst) noexcept { return ptr_.exchange(pointer(), order); }
+	bool compare_exchange_strong(pointer exp, pointer p, std::memory_order order = std::memory_order_seq_cst) noexcept {
+		return ptr_.compare_exchange_strong(exp, p, order);
 	}
+	pointer exchange(pointer p, std::memory_order order = std::memory_order_seq_cst) { return ptr_.exchange(p, order); }
 	~atomic_unique_ptr() { reset(); }
 };
 
@@ -66,12 +67,12 @@ public:
 			delete[] old;
 		}
 	}
-	operator pointer() const { return ptr; }
-	pointer operator->() const { return ptr; }
-	pointer get(std::memory_order order = std::memory_order_seq_cst) const { return ptr.load(order); }
-	explicit operator bool() const { return ptr != pointer(); }
-	pointer release(std::memory_order order = std::memory_order_seq_cst) { return ptr.exchange(pointer(), order); }
-	bool compare_exchange_strong(pointer exp, pointer p, std::memory_order order = std::memory_order_seq_cst) {
+	operator pointer() const noexcept { return ptr; }
+	pointer operator->() const noexcept { return ptr; }
+	pointer get(std::memory_order order = std::memory_order_seq_cst) const noexcept { return ptr.load(order); }
+	explicit operator bool() const noexcept { return ptr != pointer(); }
+	pointer release(std::memory_order order = std::memory_order_seq_cst) noexcept { return ptr.exchange(pointer(), order); }
+	bool compare_exchange_strong(pointer exp, pointer p, std::memory_order order = std::memory_order_seq_cst) noexcept {
 		return ptr.compare_exchange_strong(exp, p, order);
 	}
 	~atomic_unique_ptr() { reset(); }

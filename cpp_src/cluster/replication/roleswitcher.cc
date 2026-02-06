@@ -142,31 +142,34 @@ void RoleSwitcher::handleRoleSwitch() {
 }
 
 template <typename ContainerT>
-void RoleSwitcher::switchNamespaces(const RaftInfo& newState, const ContainerT& namespaces) {
+void RoleSwitcher::switchNamespaces(const RaftInfo& newState, const ContainerT& namespaces) noexcept {
 	for (auto& nsName : namespaces) {
-		// 0) Mark local namespaces with new leader data
-		auto nsPtr = thisNode_.getNamespaceNoThrow(nsName, ctx_);
-		if (nsPtr) {
-			ClusterOperationStatus status;
-			switch (newState.role) {
-				case RaftInfo::Role::None:
-				case RaftInfo::Role::Leader:
-					status.role = ClusterOperationStatus::Role::None;  // -V1048
-					break;
-				case RaftInfo::Role::Follower:
-					status.role = ClusterOperationStatus::Role::ClusterReplica;
-					break;
-				case RaftInfo::Role::Candidate:
-					status.role = (curRole_ == RaftInfo::Role::Leader) ? ClusterOperationStatus::Role::None
-																	   : ClusterOperationStatus::Role::ClusterReplica;
-					break;
+		try {
+			// 0) Mark local namespaces with new leader data
+			auto nsPtr = thisNode_.getNamespaceNoThrow(nsName, ctx_);
+			if (nsPtr) {
+				ClusterOperationStatus status;
+				switch (newState.role) {
+					case RaftInfo::Role::None:
+					case RaftInfo::Role::Leader:
+						status.role = ClusterOperationStatus::Role::None;  // -V1048
+						break;
+					case RaftInfo::Role::Follower:
+						status.role = ClusterOperationStatus::Role::ClusterReplica;
+						break;
+					case RaftInfo::Role::Candidate:
+						status.role = (curRole_ == RaftInfo::Role::Leader) ? ClusterOperationStatus::Role::None
+																		   : ClusterOperationStatus::Role::ClusterReplica;
+						break;
+				}
+				status.leaderId = newState.leaderId;
+				logInfo("{}: Setting new role '{}' and leader id {} for '{}'", cfg_.serverId, RaftInfo::RoleToStr(newState.role),
+						status.leaderId, nsName);
+
+				nsPtr->SetClusterOperationStatus(std::move(status), ctx_);
 			}
-			status.leaderId = newState.leaderId;
-			logInfo("{}: Setting new role '{}' and leader id {} for '{}'", cfg_.serverId, RaftInfo::RoleToStr(newState.role),
-					status.leaderId, nsName);
-			if (auto err = nsPtr->SetClusterOperationStatus(std::move(status), ctx_); !err.ok()) {
-				logWarn("SetClusterOperationStatus for the '{}' namespace error: {}", nsName, err.what());
-			}
+		} catch (std::exception& err) {
+			logWarn("{}: Role switch error for '{}' namespace: {}", cfg_.serverId, nsName, err.what());
 		}
 	}
 }

@@ -5,6 +5,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include "core/id_type.h"
 #include "estl/h_vector.h"
 #include "tools/lsn.h"
 
@@ -42,7 +43,8 @@ struct WALRecord;
 struct [[nodiscard]] WALRecord {
 	explicit WALRecord(std::span<const uint8_t>);
 	explicit WALRecord(std::string_view sv);
-	explicit WALRecord(WALRecType _type = WalEmpty, IdType _id = 0, bool inTx = false) : type(_type), id(_id), inTransaction(inTx) {}
+	explicit WALRecord(WALRecType _type = WalEmpty, IdType _id = IdType::Zero(), bool inTx = false)
+		: type(_type), id(_id), inTransaction(inTx) {}
 	explicit WALRecord(WALRecType _type, std::string_view _data, bool inTx = false) : type(_type), data(_data), inTransaction(inTx) {}
 	explicit WALRecord(WALRecType _type, IdType _id, std::string_view _data) : type(_type), rawItem{_id, _data} {}
 	explicit WALRecord(WALRecType _type, std::string_view key, std::string_view value, bool inTx)

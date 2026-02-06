@@ -79,6 +79,8 @@ BOOL_ENUM(EnableMultiJsonPath)
 BOOL_ENUM(NeedMaskingDSN)
 BOOL_ENUM(AddQuotes)
 BOOL_ENUM(Shrink)
+BOOL_ENUM(ForceAllColumns)
+BOOL_ENUM(MigrationStatus)
 
 #undef BOOL_ENUM
 

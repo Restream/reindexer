@@ -624,7 +624,10 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondSet:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) == ComparationResult::Eq) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res == ComparationResult::Eq) {
 						return true;
 					}
 				}
@@ -637,7 +640,10 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 			for (const auto& v : rValues) {
 				auto it = lValues.cbegin();
 				for (; it != lValues.cend(); ++it) {
-					if (it->RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(v) == ComparationResult::Eq) {
+					auto res = (it->IsNullValue() || v.IsNullValue())
+								   ? it->RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(v)
+								   : it->RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(v);
+					if (res == ComparationResult::Eq) {
 						break;
 					}
 				}
@@ -649,7 +655,10 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondLt:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) == ComparationResult::Lt) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res == ComparationResult::Lt) {
 						return true;
 					}
 				}
@@ -658,7 +667,10 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondLe:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) & ComparationResult::Le) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res & ComparationResult::Le) {
 						return true;
 					}
 				}
@@ -667,7 +679,10 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondGt:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) == ComparationResult::Gt) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res == ComparationResult::Gt) {
 						return true;
 					}
 				}
@@ -676,7 +691,10 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 		case CondGe:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs) & ComparationResult::Ge) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res & ComparationResult::Ge) {
 						return true;
 					}
 				}
@@ -684,10 +702,17 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 			return false;
 		case CondRange:
 			for (const auto& v : lValues) {
-				if (v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rValues[0]) ==
-						ComparationResult::Lt ||
-					v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rValues[1]) ==
-						ComparationResult::Gt) {
+				auto res = (v.IsNullValue() || rValues[0].IsNullValue())
+							   ? v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rValues[0])
+							   : v.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rValues[0]);
+				if (res == ComparationResult::Lt) {
+					return false;
+				}
+
+				res = (v.IsNullValue() || rValues[1].IsNullValue())
+						  ? v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rValues[1])
+						  : v.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rValues[1]);
+				if (res == ComparationResult::Gt) {
 					return false;
 				}
 			}

@@ -2,16 +2,18 @@
 
 #include <utility>
 #include "core/enums.h"
+#include "core/id_type.h"
 #include "core/payload/payloadvalue.h"
 #include "core/rank_t.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
+#include "estl/overloaded.h"
 
 namespace reindexer {
 
 class [[nodiscard]] ItemRef {
 public:
-	ItemRef() noexcept : id_(0), raw_(0), valueInitialized_(false), nsid_(0) {}
+	ItemRef() noexcept : id_(IdType::Zero()), raw_(0), valueInitialized_(false), nsid_(0) {}
 	ItemRef(IdType id, const PayloadValue& value, uint16_t nsid = 0, bool raw = false) noexcept
 		: id_(id), raw_(raw), valueInitialized_(true), nsid_(nsid), value_(value) {}
 	ItemRef(IdType id, unsigned sortExprResultsIdx, uint16_t nsid = 0) noexcept
@@ -118,7 +120,7 @@ public:
 	bool ValueInitialized() const noexcept { return valueInitialized_; }
 
 private:
-	IdType id_ = 0;
+	IdType id_ = IdType::Zero();
 	uint16_t raw_ : 1;
 	uint16_t valueInitialized_ : 1;
 	uint16_t nsid_ = 0;

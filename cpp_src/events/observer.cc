@@ -17,13 +17,13 @@ void UpdatesObservers::SendAsyncEventOnly(updates::UpdateRecord&& rec) {
 	}
 }
 
-Error UpdatesObservers::SendUpdate(updates::UpdateRecord&& rec, std::function<void()> beforeWaitF, const RdxContext& ctx) {
+Error UpdatesObservers::SendUpdate(updates::UpdateRecord&& rec, const std::function<void()>& beforeWaitF, const RdxContext& ctx) {
 	UpdatesContainer recs;
 	recs.emplace_back(std::move(rec));
-	return SendUpdates(std::move(recs), std::move(beforeWaitF), ctx);
+	return SendUpdates(std::move(recs), beforeWaitF, ctx);
 }
 
-Error UpdatesObservers::SendUpdates(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) {
+Error UpdatesObservers::SendUpdates(UpdatesContainer&& recs, const std::function<void()>& beforeWaitF, const RdxContext& ctx) {
 	if (recs.empty()) {
 		return {};
 	}
@@ -34,7 +34,7 @@ Error UpdatesObservers::SendUpdates(UpdatesContainer&& recs, std::function<void(
 			logFmt(LogError, "Unable to send update to EventsListener: '{}'", err.what());
 		}
 	}
-	return replicator_.Replicate(std::move(recs), std::move(beforeWaitF), ctx);
+	return replicator_.Replicate(std::move(recs), beforeWaitF, ctx);
 }
 
 Error UpdatesObservers::SendAsyncUpdate(updates::UpdateRecord&& rec, const RdxContext& ctx) {

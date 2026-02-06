@@ -256,10 +256,9 @@ Aggregator::Aggregator(const PayloadType& payloadType, const FieldsSet& fields, 
 			}
 			break;
 		case AggDistinct:
-			distincts_.reset(new HashSetVariantRelax(
-				16, DistinctHelpers::DistinctHasher<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields),
-				DistinctHelpers::CompareVariantVector<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields),
-				DistinctHelpers::LessDistinctVector<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields)));
+			distincts_.emplace(16, DistinctHelpers::DistinctHasher<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields),
+							   DistinctHelpers::CompareVariantVector<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields),
+							   DistinctHelpers::LessDistinctVector<DistinctHelpers::IsCompositeSupported::Yes>(payloadType, fields));
 			break;
 		case AggMin:
 		case AggMax:
@@ -342,10 +341,11 @@ AggregationResult Aggregator::MoveResult() && {
 		case AggDistinct: {
 			assertrx_dbg(distincts_);
 			std::vector<Variant> d;
-			if (!distincts_->empty()) {
+			const auto& distincts = *distincts_;  // NOLINT(bugprone-unchecked-optional-access)
+			if (!distincts.empty()) {
 				size_t columnCount = names_.size();
-				d.reserve(distincts_->size() * columnCount);
-				for (const auto& r : *distincts_) {
+				d.reserve(distincts.size() * columnCount);
+				for (const auto& r : distincts) {
 					assertf_dbg(r.size() == columnCount, "Incorrect column count size={} columnCount={}", r.size(), columnCount);
 					for (unsigned int k = 0; k < columnCount; k++) {
 						d.emplace_back(r[k]);
@@ -413,10 +413,11 @@ void Aggregator::Aggregate(const PayloadValue& data) {
 		assertrx_throw(aggType_ == AggDistinct);
 		size_t maxIndex = 0;
 		getData(data, distinctDataVector_, maxIndex);
+		auto& distincts = *distincts_;	// NOLINT(bugprone-unchecked-optional-access)
 		for (unsigned int i = 0; i < maxIndex; i++) {
 			DistinctHelpers::FieldsValue values;
 			if (!DistinctHelpers::GetMultiFieldValue(distinctDataVector_, i, fields_.size(), values)) {
-				distincts_->insert(std::move(values));
+				distincts.insert(std::move(values));
 			}
 		}
 	}
@@ -442,7 +443,7 @@ void Aggregator::aggregate(const Variant& v) {
 			break;
 		case AggDistinct:
 			assertrx_dbg(distincts_);
-			distincts_->insert({v});
+			distincts_->insert({v});  // NOLINT(bugprone-unchecked-optional-access)
 			break;
 		case AggUnknown:
 		case AggCount:

@@ -8,7 +8,7 @@ namespace reindexer {
 size_t IDataHolder::GetMemStat() {
 	size_t res = 0;
 	for (auto& step : steps) {
-		res += step.typosHalf_.heap_size() + step.typosMax_.heap_size() + step.suffixes_.heap_size();
+		res += step.typos_.heap_size() + step.suffixes_.heap_size();
 	}
 	res += vdocs_.capacity() * sizeof(VDocEntry);
 	res += rowId2Vdoc_.capacity() * sizeof(rowId2Vdoc_[0]);

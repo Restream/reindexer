@@ -3,6 +3,7 @@
 #include <numeric>
 #include <span>
 #include <sstream>
+#include "core/id_type.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/index/float_vector/knn_ctx.h"
 #include "core/namespace/namespaceimpl.h"
@@ -223,9 +224,9 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe
 	} else if (strictMode == StrictModeNone) {
 		// Ignore non-index/non-existing fields
 		if (qe.Condition() == CondEmpty) {
-			return SelectKeyResult{{SingleSelectKeyResult{IdType(0), IdType(ns.items_.size())}}};
+			return SelectKeyResult{{SingleSelectKeyResult{IdType::Zero(), IdType::FromNumber(ns.items_.size())}}};
 		} else {
-			return SelectKeyResult{{SingleSelectKeyResult{IdType(0), IdType(0)}}};
+			return SelectKeyResult{{SingleSelectKeyResult{IdType::Zero(), IdType::Zero()}}};
 		}
 	} else {
 		throw Error(
@@ -338,9 +339,7 @@ void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry& jqe, OpType
 		js.SetType(InnerJoin);
 		op = OpOr;
 	}
-	if (op == OpOr && lastAppendedOrClosed() == this->end()) {
-		throw Error(errQueryExec, "OR operator in first condition or after left join");
-	}
+	assertrx_throw(op != OpOr || lastAppendedOrClosed() != this->end());
 	std::ignore = Append(op, JoinSelectIterator{static_cast<size_t>(jqe.joinIndex)});
 }
 
@@ -350,7 +349,7 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults&& select
 							  if (selResults.empty()) {
 								  if (op == OpAnd) {
 									  SelectKeyResult zeroScan;
-									  zeroScan.emplace_back(0, 0);
+									  zeroScan.emplace_back(IdType::Zero(), IdType::Zero());
 									  std::ignore = Append(OpAnd, SelectIterator{std::move(zeroScan), IsDistinct_False, "always_false",
 																				 IndexValueType::NotSet, ForcedFirst_True});
 								  }
@@ -361,9 +360,7 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults&& select
 								  switch (op) {
 									  case OpOr: {
 										  const iterator last = lastAppendedOrClosed();
-										  if (last == end()) {
-											  throw Error(errQueryExec, "OR operator in first condition or after left join");
-										  }
+										  assertrx_throw(last != end());
 										  if (last->Is<SelectIterator>() && !last->Value<SelectIterator>().IsDistinct() &&
 											  last->operation != OpNot) {
 											  using namespace std::string_view_literals;
@@ -402,9 +399,7 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults&& select
 						  },
 						  [&](concepts::OneOf<ComparatorNotIndexed, Template<ComparatorIndexed, bool, int, int64_t, double, key_string,
 																			 PayloadValue, Point, Uuid, FloatVector>> auto& c) {
-							  if (op == OpOr && lastAppendedOrClosed() == end()) {
-								  throw Error(errQueryExec, "OR operator in first condition or after left join");
-							  }
+							  assertrx_throw(op != OpOr || lastAppendedOrClosed() != end());
 							  c.SetNotOperationFlag(op == OpNot);
 							  std::ignore = Append(op, std::move(c));
 						  }},
@@ -414,6 +409,7 @@ template <typename EqCompT>
 void SelectIteratorContainer::bindFieldEqualPositions(const NamespaceImpl& ns, const EqualPositions& eqPos, const QueryEntries& queries,
 													  const EqualPosition_t& eqPosStr) {
 	EqCompT cmp{ns.payloadType_, &ns.tagsMatcher_};
+	bool containsNonExistingFields = false;
 	for (size_t i = 0, size = eqPos.size(); i < size; ++i) {
 		const QueryEntry& qe = queries.Get<QueryEntry>(eqPos[i]);
 		const auto cond = qe.Condition();
@@ -441,8 +437,15 @@ void SelectIteratorContainer::bindFieldEqualPositions(const NamespaceImpl& ns, c
 				throw Error(errLogic, "Unknown condition value for equal position: {}", int(cond));
 		}
 		assertrx_throw(qe.Fields().size() == 1);
+
 		if constexpr (std::is_same_v<EqCompT, EqualPositionComparator>) {
 			if (qe.Fields()[0] == IndexValueType::SetByJsonPath) {
+				const auto& fieldPath = qe.Fields().getFieldsPath(0);
+				size_t sz = std::visit([](auto& p) { return p.size(); }, fieldPath);
+				if (sz == 0) {
+					containsNonExistingFields = true;
+					break;
+				}
 				cmp.BindField(qe.FieldName(), qe.Fields().getFieldsPath(0), qe.Values(), qe.Condition());
 			} else {
 				const size_t idxNo = qe.Fields()[0];
@@ -453,7 +456,14 @@ void SelectIteratorContainer::bindFieldEqualPositions(const NamespaceImpl& ns, c
 			cmp.BindField(qe.FieldName(), qe.Values(), qe.Condition(), eqPosStr[i]);
 		}
 	}
-	std::ignore = Append(OpAnd, std::move(cmp));
+	if (containsNonExistingFields) {
+		// Using empty IdSet for non-exisiting fields instead of actual comparator
+		std::ignore = Append<SelectIterator>(OpAnd, SelectKeyResult{}, IsDistinct_False, std::string("Empty equal position"),
+											 IndexValueType::NotSet, ForcedFirst_False);
+
+	} else {
+		std::ignore = Append(OpAnd, std::move(cmp));
+	}
 }
 
 void SelectIteratorContainer::processEqualPositions(const h_vector<EqualPositions, 2>& equalPositions, const NamespaceImpl& ns,
@@ -937,7 +947,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 			},
 			[this, op](const AlwaysFalse&) {
 				SelectKeyResult zeroScan;
-				zeroScan.emplace_back(0, 0);
+				zeroScan.emplace_back(IdType::Zero(), IdType::Zero());
 				std::ignore = Append<SelectIterator>(op, std::move(zeroScan), IsDistinct_False, "always_false", IndexValueType::NotSet,
 													 ForcedFirst_True);
 				return ContainRanked_False;
@@ -1063,7 +1073,7 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 		switch (it->operation) {
 			case OpOr: {
 				auto next = it->Visit(
-					[](const KnnRawSelectResult&) -> int { throw_as_assert; },
+					[](const KnnRawSelectResult&) -> IdType { throw_as_assert; },
 					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
 						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
 					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE {
@@ -1072,14 +1082,14 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 								return std::numeric_limits<IdType>::lowest();
 							}
 							if (const auto val = sit.Val(); val < from) {
-								return val + 1;
+								return val.Incr();
 							}
 						} else {
 							if (sit.End()) {
 								return std::numeric_limits<IdType>::max();
 							}
 							if (const auto val = sit.Val(); val > from) {
-								return val - 1;
+								return val.Decr();
 							}
 						}
 						return from;
@@ -1098,7 +1108,7 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 			case OpAnd:
 				from = result;
 				result = it->Visit(
-					[](const KnnRawSelectResult&) -> int { throw_as_assert; },
+					[](const KnnRawSelectResult&) -> IdType { throw_as_assert; },
 					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
 						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
 					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE {
@@ -1107,14 +1117,14 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 								return std::numeric_limits<IdType>::lowest();
 							}
 							if (const auto val = sit.Val(); val < from) {
-								return val + 1;
+								return val.Incr();
 							}
 						} else {
 							if (sit.End()) {
 								return std::numeric_limits<IdType>::max();
 							}
 							if (const auto val = sit.Val(); val > from) {
-								return val - 1;
+								return val.Decr();
 							}
 						}
 						return from;
@@ -1229,18 +1239,18 @@ class [[nodiscard]] SelectIteratorContainer::MergerRanked {
 	friend class MergerRankedImpl;
 
 public:
-	MergerRanked(const SelectIterator& ftSelectIter, std::span<const RankT> ftRanks, std::span<const size_t> ftPositions) noexcept
+	MergerRanked(const SelectIterator& ftSelectIter, std::span<const RankT> ftRanks, std::span<const size_t> ftPositions)
 		: ftRanks_{ftRanks}, ftPositions_{ftPositions} {
 		assertrx_throw(ftSelectIter.size() == 1);
 		assertrx_throw(ftSelectIter[0].tempIds_);
-		ftIds_ = *ftSelectIter[0].tempIds_;
+		ftIds_ = ftSelectIter[0].ids_;
 	}
 
 	template <MergeType mergeType, bool desc, VectorMetric metric>
 	MergerRankedImpl<mergeType, desc, metric> Get(Merged<desc>& result);
 
 private:
-	IdSetRef ftIds_;
+	IdSetCRef ftIds_;
 	std::span<const RankT> ftRanks_;
 	std::span<const size_t> ftPositions_;
 };
@@ -1248,7 +1258,7 @@ private:
 template <SelectIteratorContainer::MergeType mergeType, bool desc, VectorMetric metric>
 class [[nodiscard]] SelectIteratorContainer::MergerRankedImpl {
 public:
-	MergerRankedImpl(Merged<desc>& result, IdSetRef ftIds, std::span<const RankT> ftRanks, std::span<const size_t> ftPositions) noexcept
+	MergerRankedImpl(Merged<desc>& result, IdSetCRef ftIds, std::span<const RankT> ftRanks, std::span<const size_t> ftPositions) noexcept
 		: result_{result}, ftIds_{ftIds}, ftRanks_{ftRanks}, ftPositions_{ftPositions} {
 		assertrx_throw(ftIds_.size() == ftRanks_.size());
 	}
@@ -1269,7 +1279,7 @@ public:
 			ftAdded.resize(ftIds_.size(), false);
 		}
 		for (size_t i = 0, s = knnIds.size(); i < s && knnIds[i] >= 0; ++i) {
-			const IdType id = knnIds[i];
+			const IdType id = IdType::FromNumber(knnIds[i]);
 			const auto ftIt = std::lower_bound(ftIds_.begin(), ftIds_.end(), id);
 			if (ftIt != ftIds_.end() && *ftIt == id) {
 				const size_t ftN = ftIt - ftIds_.begin();
@@ -1293,22 +1303,23 @@ public:
 		}
 		for (; !knnRes.empty(); knnRes.pop()) {
 			const auto [knnDist, id] = knnRes.top();
-			const auto ftIt = std::lower_bound(ftIds_.begin(), ftIds_.end(), id);
-			if (ftIt != ftIds_.end() && *ftIt == IdType(id)) {
+			const IdType rowId = IdType::FromNumber(id);
+			const auto ftIt = std::lower_bound(ftIds_.begin(), ftIds_.end(), rowId);
+			if (ftIt != ftIds_.end() && *ftIt == rowId) {
 				const size_t ftN = ftIt - ftIds_.begin();
 				if constexpr (metric == VectorMetric::L2) {
-					result_.emplace(IdType(id), reranker.Calculate(knnDist, ftRanks_[ftN]));
+					result_.emplace(rowId, reranker.Calculate(knnDist, ftRanks_[ftN]));
 				} else {
-					result_.emplace(IdType(id), reranker.Calculate(-knnDist, ftRanks_[ftN]));
+					result_.emplace(rowId, reranker.Calculate(-knnDist, ftRanks_[ftN]));
 				}
 				if constexpr (mergeType == MergeType::Union) {
 					ftAdded[ftN] = true;
 				}
 			} else if constexpr (mergeType == MergeType::Union) {
 				if constexpr (metric == VectorMetric::L2) {
-					result_.emplace(IdType(id), reranker.CalculateJustKnn(knnDist));
+					result_.emplace(rowId, reranker.CalculateJustKnn(knnDist));
 				} else {
-					result_.emplace(IdType(id), reranker.CalculateJustKnn(-knnDist));
+					result_.emplace(rowId, reranker.CalculateJustKnn(-knnDist));
 				}
 			}
 		}
@@ -1348,7 +1359,7 @@ public:
 						knnPos = i + 1;
 					}
 				}
-				const IdType id = knnIds[i];
+				const IdType id = IdType::FromNumber(knnIds[i]);
 				const auto ftIt = std::lower_bound(ftIds_.begin(), ftIds_.end(), id);
 				if (ftIt != ftIds_.end() && *ftIt == id) {
 					const size_t ftN = ftIt - ftBegin;
@@ -1378,7 +1389,7 @@ public:
 			knnResReversed.resize(knnRes.size());
 			for (size_t i = knnRes.size(); i > 0; --i, knnRes.pop()) {
 				const auto [knnDist, id] = knnRes.top();
-				knnResReversed[i - 1] = {int(id), RankT(knnDist)};
+				knnResReversed[i - 1] = {IdType::FromNumber(id), RankT(knnDist)};
 			}
 			auto lastKnnDist = knnResReversed.front().rank;
 			for (size_t knnPos = 1, i = 0, s = knnResReversed.size(); i < s; ++i) {
@@ -1423,7 +1434,7 @@ private:
 		}
 	}
 	Merged<desc>& result_;
-	IdSetRef ftIds_;
+	IdSetCRef ftIds_;
 	std::span<const RankT> ftRanks_;
 	std::span<const size_t> ftPositions_;
 };

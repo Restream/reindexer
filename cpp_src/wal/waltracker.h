@@ -67,6 +67,12 @@ public:
 	int16_t GetServer() const noexcept { return lsnCounter_.Server(); }
 	/// Reset WAL state
 	void Reset();
+	/// Updates last lsn if empty to avoid force sync on empty namespace
+	void OnNewLeaderSet(int16_t leaderId) {
+		if (leaderId >= 0 && lastLsn_.isEmpty()) {
+			lastLsn_.SetServer(leaderId);
+		}
+	}
 
 	/// Iterator for WAL records
 	class [[nodiscard]] iterator {

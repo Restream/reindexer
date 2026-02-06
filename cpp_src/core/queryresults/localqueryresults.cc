@@ -6,6 +6,7 @@
 #include "core/cjson/csvbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
+#include "core/id_type.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespace.h"
 #include "estl/gift_str.h"
@@ -90,7 +91,7 @@ std::string LocalQueryResults::Dump() const {
 		if (i != 0) {
 			buf += ",";
 		}
-		buf += std::to_string(items_.GetItemRef(i).Id());
+		buf += std::to_string(items_.GetItemRef(i).Id().ToNumber());
 		if (joined_.empty()) {
 			continue;
 		}
@@ -106,7 +107,7 @@ std::string LocalQueryResults::Dump() const {
 					if (j != 0) {
 						buf += ",";
 					}
-					buf += std::to_string(fieldIt[j].Id());
+					buf += std::to_string(fieldIt[j].Id().ToNumber());
 				}
 			}
 			buf += "]";
@@ -480,7 +481,7 @@ Item LocalQueryResults::IteratorImpl<QR>::GetItem(bool enableHold) {
 }
 
 void LocalQueryResults::AddItemNoHold(Item& item, lsn_t nsIncarnationTag, bool withData) {
-	if (item.GetID() != -1) {
+	if (item.GetID().IsValid()) {
 		auto ritem = item.impl_;
 		if (ctxs.empty()) {
 			ctxs.emplace_back(ritem->Type(), ritem->tagsMatcher(), FieldsFilter(), ritem->GetSchema(), nsIncarnationTag);

@@ -26,6 +26,8 @@ private:
 
 class [[nodiscard]] FtKeyEntry {
 public:
+	using IdSetType = IdSetPlain;
+
 	FtKeyEntry() : impl_(new FtKeyEntryData) {}
 	FtKeyEntry(const FtKeyEntry& other) : impl_(other.impl_ ? new FtKeyEntryData(*other.impl_.get()) : nullptr) {}
 	FtKeyEntry& operator=(const FtKeyEntry& other) {
@@ -39,7 +41,7 @@ public:
 
 	IdSetPlain& Unsorted() noexcept { return impl_->Unsorted(); }
 	const IdSetPlain& Unsorted() const noexcept { return impl_->Unsorted(); }
-	IdSetRef Sorted(unsigned sortId) const noexcept { return impl_->Sorted(sortId); }
+	IdSetCRef Sorted(SortType sortId) const noexcept { return impl_->Sorted(sortId); }
 	void UpdateSortedIds(const IUpdateSortedContext& ctx) { impl_->UpdateSortedIds(ctx); }
 	void SetVDocID(int vdoc_id) noexcept { impl_->SetVDocID(vdoc_id); }
 	const int& VDocID() const { return impl_->vdoc_id_; }

@@ -48,7 +48,7 @@ void TransactionConcurrentInserter::threadFn(std::atomic<size_t>& nextId, const 
 				const IdType id = vec->id;
 				krefs.emplace_back(idx.UpsertConcurrent(Variant{ConstFloatVectorView{vec->vec}, Variant::noHold}, id, needClearCache));
 				assertrx(ns_.items_.exists(id));
-				Payload pl(pt, ns_.items_[id]);
+				Payload pl(pt, ns_.items_[id.ToNumber()]);
 				pl.Set(field, krefs);
 			} catch (std::exception& e) {
 				// TODO: Probably this error handling should be improved. Currently assuming that it's better to crash, than loss data

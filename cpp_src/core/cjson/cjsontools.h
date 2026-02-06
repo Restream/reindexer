@@ -5,7 +5,8 @@
 namespace reindexer {
 
 template <typename T>
-void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher, WrSerializer& wrser);
+void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher, WrSerializer& wrser,
+					   ScalarIndexesSetT& objectScalarIndexes);
 
 template <typename Validator>
 void copyCJsonValue(TagType, Serializer&, WrSerializer&, const Validator&);

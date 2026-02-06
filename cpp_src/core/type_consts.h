@@ -8,7 +8,7 @@
 #define REINDEX_CPP_NODISCARD
 #endif
 
-typedef enum TagType {
+typedef enum REINDEX_CPP_NODISCARD TagType {
 	TAG_VARINT = 0,
 	TAG_DOUBLE = 1,
 	TAG_STRING = 2,
@@ -23,7 +23,7 @@ typedef enum TagType {
 
 static const uint8_t kMaxTagType = TAG_FLOAT;
 
-typedef enum IndexType {
+typedef enum REINDEX_CPP_NODISCARD IndexType {
 	IndexStrHash = 0,
 	IndexStrBTree = 1,
 	IndexIntBTree = 2,
@@ -52,7 +52,7 @@ typedef enum IndexType {
 	IndexDummy = 25,  // Special index type for IndexDrop calls
 } IndexType;
 
-typedef enum QueryItemType {
+typedef enum REINDEX_CPP_NODISCARD QueryItemType {
 	QueryCondition = 0,
 	QueryDistinct = 1,
 	QuerySortIndex = 2,
@@ -91,7 +91,7 @@ typedef enum QueryItemType {
 	QueryFunctionSubQueryCondition = 35,
 } QueryItemType;
 
-typedef enum QuerySerializeMode {
+typedef enum REINDEX_CPP_NODISCARD QuerySerializeMode {
 	Normal = 0x0,
 	SkipJoinQueries = 0x01,
 	SkipMergeQueries = 0x02,
@@ -103,7 +103,7 @@ typedef enum QuerySerializeMode {
 	SkipLeftJoinQueries = 0x80,
 } QuerySerializeMode;
 
-typedef enum CondType {
+typedef enum REINDEX_CPP_NODISCARD CondType {
 	CondAny = 0,
 	CondEq = 1,
 	CondLt = 2,
@@ -119,7 +119,7 @@ typedef enum CondType {
 	CondKnn = 12,
 } CondType;
 
-typedef enum FunctionType {
+typedef enum REINDEX_CPP_NODISCARD FunctionType {
 	FunctionFlatArrayLen = 0,
 } FunctionType;
 
@@ -182,7 +182,7 @@ enum REINDEX_CPP_NODISCARD AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, A
 
 enum REINDEX_CPP_NODISCARD JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
 
-enum CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
+enum REINDEX_CPP_NODISCARD CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
 
 enum REINDEX_CPP_NODISCARD DataFormat { FormatJson, FormatCJson, FormatMsgPack };
 
@@ -196,21 +196,20 @@ enum REINDEX_CPP_NODISCARD QueryResultItemType {
 	QueryResultRankFormat = 6,
 };
 
-enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
+enum REINDEX_CPP_NODISCARD CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
 
 enum REINDEX_CPP_NODISCARD StrictMode { StrictModeNotSet = 0, StrictModeNone, StrictModeNames, StrictModeIndexes };
 
 enum REINDEX_CPP_NODISCARD RankFormat { SingleFloatValue = 0 };	 // For the future hybrid queries
 
-typedef int IdType;
 typedef unsigned SortType;
 
 static const SortType SortIdNotFilled = -1;
 static const SortType SortIdNotExists = -2;
 
-typedef enum LogLevel { LogNone, LogError, LogWarning, LogInfo, LogTrace } LogLevel;
+typedef enum REINDEX_CPP_NODISCARD LogLevel { LogNone, LogError, LogWarning, LogInfo, LogTrace } LogLevel;
 
-enum {
+enum REINDEX_CPP_NODISCARD {
 	kResultsFormatMask = 0xF,
 	kResultsPure = 0x0,
 	kResultsPtrs = 0x1,
@@ -238,7 +237,7 @@ static const char kMsgPackFmt[] = "msgpack";
 static const char kProtobufFmt[] = "protobuf";
 static const char kCSVFileFmt[] = "csv-file";
 
-typedef enum StotageOpt {
+typedef enum REINDEX_CPP_NODISCARD StotageOpt {
 	kStorageOptEnabled = 1 << 0,
 	kStorageOptDropOnFileFormatError = 1 << 1,
 	kStorageOptCreateIfMissing = 1 << 2,
@@ -249,7 +248,7 @@ typedef enum StotageOpt {
 	// kStorageOptAutorepair = 1 << 9, Deprecated
 } StorageOpt;
 
-enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
+enum REINDEX_CPP_NODISCARD CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
 
 enum REINDEX_CPP_NODISCARD FieldModifyMode {
 	FieldModeSet = 0,
@@ -261,7 +260,7 @@ enum REINDEX_CPP_NODISCARD FieldModifyMode {
 
 enum REINDEX_CPP_NODISCARD ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
 
-typedef struct StorageOpts {
+typedef struct REINDEX_CPP_NODISCARD StorageOpts {
 #ifdef __cplusplus
 	constexpr StorageOpts() noexcept : options(0), noQueryIdleThresholdSec(0) {}
 
@@ -307,7 +306,7 @@ typedef struct StorageOpts {
 	uint16_t noQueryIdleThresholdSec;
 } StorageOpts;
 
-typedef enum ConnectOpt {
+typedef enum REINDEX_CPP_NODISCARD ConnectOpt {
 	kConnectOptOpenNamespaces = 1,
 	kConnectOptAllowNamespaceErrors = 1 << 1,
 	// kConnectOptAutorepair = 1 << 2, // Deprecated
@@ -316,12 +315,12 @@ typedef enum ConnectOpt {
 	kConnectOptDisableReplication = 1 << 5,
 } ConnectOpt;
 
-typedef enum StorageTypeOpt {
+typedef enum REINDEX_CPP_NODISCARD StorageTypeOpt {
 	kStorageTypeOptLevelDB = 0,
 	kStorageTypeOptRocksDB = 1,
 } StorageTypeOpt;
 
-typedef struct ConnectOpts {
+typedef struct REINDEX_CPP_NODISCARD ConnectOpts {
 #ifdef __cplusplus
 	constexpr ConnectOpts() noexcept : storage(kStorageTypeOptLevelDB), options(kConnectOptOpenNamespaces), expectedClusterID(-1) {}
 
@@ -378,7 +377,7 @@ enum REINDEX_CPP_NODISCARD BindingCapability {
 	kBindingCapabilityComplexRank = 1 << 3,
 };
 
-typedef struct BindingCapabilities {
+typedef struct REINDEX_CPP_NODISCARD BindingCapabilities {
 #ifdef __cplusplus
 	constexpr BindingCapabilities(int64_t c = 0) noexcept : caps(c) {}
 
@@ -390,7 +389,7 @@ typedef struct BindingCapabilities {
 	int64_t caps;
 } BindingCapabilities;
 
-typedef struct RPCQrId {
+typedef struct REINDEX_CPP_NODISCARD RPCQrId {
 #ifdef __cplusplus
 	explicit RPCQrId(int m = -1, int64_t u = -1) noexcept : main(m), uid(u) {}
 #endif

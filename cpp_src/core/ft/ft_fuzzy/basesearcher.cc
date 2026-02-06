@@ -146,13 +146,13 @@ void BaseSearcher::AddIndex(BaseHolder::Ptr& holder, std::string_view src_data, 
 		std::pair<bool, size_t> cont;
 		do {
 			cont = GetData(holder, i, res_buf, term.c_str(), term.size());
-			holder->AddData(res_buf, id, i, field, arrayIdx);
+			holder->AddData(res_buf, id.ToNumber(), i, field, arrayIdx);
 			i++;
 			total_size++;
 
 		} while (cont.first);
 	}
-	holder->SetSize(total_size, id, field);
+	holder->SetSize(total_size, id.ToNumber(), field);
 }
 
 void BaseSearcher::Commit(BaseHolder::Ptr& holder) { holder->Commit(); }

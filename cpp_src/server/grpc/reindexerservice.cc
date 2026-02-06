@@ -451,7 +451,7 @@ Error ReindexerService::packCJSONItem(WrSerializer& wrser, ItT& it, const Output
 		wrser.PutVarUint(itemRef.Nsid());
 	}
 	if (opts.withitemid()) {
-		wrser.PutVarUint(itemRef.Id());
+		wrser.PutVarUint(itemRef.Id().ToNumber());
 		wrser.PutVarUint(int64_t(itemRef.Value().GetLSN()));
 	}
 	if (opts.withrank()) {

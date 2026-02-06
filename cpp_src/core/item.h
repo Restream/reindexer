@@ -1,10 +1,13 @@
 #pragma once
 
+#include <bitset>
 #include <span>
 #include <variant>
+#include "core/id_type.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
 #include "core/tag_name_index.h"
+#include "core/type_consts.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
 
@@ -185,7 +188,7 @@ public:
 	Error Status() const noexcept { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
-	int GetID() const noexcept { return id_; }
+	IdType GetID() const noexcept { return id_; }
 	/// Get internal shardId of item
 	/// @return shardId of item
 	int GetShardID() const noexcept { return shardId_; }
@@ -249,19 +252,21 @@ public:
 	/// @param ctx - context
 	void Embed(const RdxContext& ctx);
 
+	const std::bitset<kMaxIndexes>& GetScalarIndexMask() const noexcept;
+
 private:
 	explicit Item(ItemImpl* impl) : impl_(impl) {}
 	Item(ItemImpl*, const FieldsFilter&);
 	explicit Item(const Error& err) : impl_(nullptr), status_(err) {}
 	Item(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
-	void setID(int id) noexcept { id_ = id; }
+	void setID(IdType id) noexcept { id_ = id; }
 	void setLSN(lsn_t lsn);
 	void setShardID(int id) noexcept { shardId_ = id; }
 	void setFieldsFilter(const FieldsFilter&) noexcept;
 
 	ItemImpl* impl_;
 	Error status_;
-	int id_ = -1;
+	IdType id_ = IdType::NotSet();
 	int shardId_ = ShardingKeyType::ProxyOff;
 	friend class NamespaceImpl;
 	friend class ItemModifier;

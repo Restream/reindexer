@@ -38,7 +38,7 @@ public:
 	bool NamespaceIsInClusterConfig(std::string_view nsName);
 	bool NamesapceIsInReplicationConfig(std::string_view nsName);
 
-	Error Replicate(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) override final;
+	Error Replicate(UpdatesContainer&& recs, const std::function<void()>& beforeWaitF, const RdxContext& ctx) override final;
 	Error ReplicateAsync(UpdatesContainer&& recs, const RdxContext& ctx) override final;
 	void AwaitInitialSync(const NamespaceName& nsName, const RdxContext& ctx) const override final {
 		if (enabled_.load(std::memory_order_acquire)) {

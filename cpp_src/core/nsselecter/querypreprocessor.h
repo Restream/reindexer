@@ -97,6 +97,7 @@ public:
 		return hasForcedSortOptimizationEntry_ && (evaluationStage_ == EvaluationStage::Second);
 	}
 	bool HasForcedSortOptimizationQueryEntry() const noexcept { return hasForcedSortOptimizationEntry_; }
+	void RemoveForcedSortOptimizationQueryEntry();
 
 private:
 	enum class [[nodiscard]] NeedSwitch : bool { Yes = true, No = false };

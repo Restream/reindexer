@@ -188,6 +188,8 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 				if (splitOptions_.NeedToRemoveDiacritics(*str)) {
 					*str = RemoveDiacritic(*str);
 				}
+			} else if ((*str == '*' || *str == '~') && str != beg) {
+				break;
 			} else if (inGroup && *str == groupQuote) {
 				break;
 			} else if (is_term(*str, splitOptions_)) {

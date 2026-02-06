@@ -1027,12 +1027,13 @@ void CommandsProcessor<DBInterface>::commandSelectSQL(std::string_view command) 
 			auto jsonData = ToJSONVector(results);
 			auto isCanceled = [this]() -> bool { return cancelCtx_.IsCancelled(); };
 
-			reindexer::TableViewBuilder tableResultsBuilder;
+			rx_tv::TableViewBuilder tableResultsBuilder;
 			if (output_.IsCout() && !reindexer::isStdoutRedirected()) {
 				TableViewScroller resultsScroller(tableResultsBuilder, reindexer::getTerminalSize().height - 1);
 				resultsScroller.Scroll(output_, std::move(jsonData), isCanceled);
 			} else {
-				tableResultsBuilder.Build(output_(), std::move(jsonData), isCanceled);
+				tableResultsBuilder.Build(output_(), std::move(jsonData), isCanceled,
+										  rx_tv::kRemoveRareColumns | rx_tv::kRemoveEmptyColumns);
 			}
 		} else {
 			if (!cancelCtx_.IsCancelled()) {

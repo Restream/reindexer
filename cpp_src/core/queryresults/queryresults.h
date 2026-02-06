@@ -143,7 +143,7 @@ public:
 			case Type::SingleRemote:
 				return remote_[0]->qr.GetExplainResults();
 			case Type::Mixed:
-				if (localUnsafe().qr.explainResults.size()) {
+				if (localUnsafe().qr.GetExplainResults().size()) {
 					throw Error(errForbidden, "Explain is not supported for distribute queries");
 				}
 				[[fallthrough]];

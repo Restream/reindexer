@@ -10,13 +10,12 @@ namespace reindexer {
 using namespace item_fields_validator;
 
 template <typename Filter, typename Recoder, typename TagOptT>
-bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrser, Filter filter, Recoder recoder, TagOptT,
-							   FloatVectorsHolderVector& floatVectorsHolder) {
+bool CJsonDecoder::decodeCJson(Filter filter, Recoder recoder, TagOptT) {
 	using namespace std::string_view_literals;
-	const ctag tag = rdser.GetCTag();
+	const ctag tag = rdSer_.GetCTag();
 	TagType tagType = tag.Type();
 	if (tag == kCTagEnd) {
-		wrser.PutCTag(kCTagEnd);
+		wrSer_.PutCTag(kCTagEnd);
 		return false;
 	}
 	TagName tagName = TagName::Empty();
@@ -29,7 +28,7 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 	}
 
 	if (tag.Field() >= 0) [[unlikely]] {
-		throwTagReferenceError(tag, pl);
+		throwTagReferenceError(tag, pl_);
 	}
 
 	const auto field = tagsMatcher_.tags2field(tagsPath_);
@@ -38,14 +37,14 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 		if (filter.contains(indexNumber)) {
 			tagType = recoder.RegisterTagType(tagType, indexNumber);
 			if (tagType == TAG_NULL) {
-				wrser.PutCTag(ctag{TAG_NULL, tagName});
-			} else if (recoder.Recode(rdser, pl, tagName, wrser)) {
+				wrSer_.PutCTag(ctag{TAG_NULL, tagName});
+			} else if (recoder.Recode(rdSer_, pl_, tagName, wrSer_)) {
 				// No more actions needed after recoding
 			} else {
-				const auto& fieldRef{pl.Type().Field(indexNumber)};
+				const auto& fieldRef{pl_.Type().Field(indexNumber)};
 				const KeyValueType fieldType{fieldRef.Type()};
 				if (tagType == TAG_ARRAY) {
-					const carraytag atag = rdser.GetCArrayTag();
+					const carraytag atag = rdSer_.GetCArrayTag();
 					const auto count = atag.Count();
 					const TagType atagType = atag.Type();
 					if (fieldRef.IsFloatVector()) {
@@ -60,75 +59,74 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 							auto vect = FloatVector::CreateNotInitialized(fieldRef.FloatVectorDimension());
 							if (atagType == TAG_DOUBLE) {
 								for (size_t i = 0; i < count; ++i) {
-									vect.RawData()[i] = rdser.GetDouble();
+									vect.RawData()[i] = rdSer_.GetDouble();
 								}
 							} else if (atagType == TAG_FLOAT) {
 								for (size_t i = 0; i < count; ++i) {
-									vect.RawData()[i] = rdser.GetFloat();
+									vect.RawData()[i] = rdSer_.GetFloat();
 								}
 							} else if (atagType == TAG_VARINT) {
 								for (size_t i = 0; i < count; ++i) {
-									vect.RawData()[i] = rdser.GetVarint();
+									vect.RawData()[i] = rdSer_.GetVarint();
 								}
 							}
-							if (floatVectorsHolder.Add(std::move(vect))) {
-								vectView = floatVectorsHolder.Back();
+							if (floatVectorsHolder_.Add(std::move(vect))) {
+								vectView = floatVectorsHolder_.Back();
 							}
 						}
 						objectScalarIndexes_.set(indexNumber);	// Indexed float vector is treated as scalar value
-						pl.Set(indexNumber, Variant{vectView});
-						wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
-						wrser.PutVarUint(count);
+						pl_.Set(indexNumber, Variant{vectView});
+						wrSer_.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+						wrSer_.PutVarUint(count);
 					} else if (fieldRef.IsArray()) [[likely]] {
 						if (atagType == TAG_OBJECT) {
-							Serializer rdserCopy{rdser};
+							Serializer rdserCopy{rdSer_};
 							const auto [size, isNested] = analizeNestedArray(count, rdserCopy);
 							validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), size, kCJSONFmt);
-							const int ofs = pl.ResizeArray(indexNumber, size, Append_True);
+							const int ofs = pl_.ResizeArray(indexNumber, size, Append_True);
 							if (isNested) {
-								wrser.PutCTag(ctag{TAG_ARRAY, tagName});
-								wrser.PutCArrayTag(carraytag{count, TAG_OBJECT});
-								[[maybe_unused]] const auto decodedValuesCount =
-									decodeNestedArray(pl, rdser, wrser, indexNumber, count, fieldType, ofs);
+								wrSer_.PutCTag(ctag{TAG_ARRAY, tagName});
+								wrSer_.PutCArrayTag(carraytag{count, TAG_OBJECT});
+								[[maybe_unused]] const auto decodedValuesCount = decodeNestedArray(indexNumber, count, fieldType, ofs);
 								assertrx_dbg(size == decodedValuesCount);
 							} else {
 								assertrx_dbg(size == count);
 								for (size_t i = 0; i < count; ++i) {
-									pl.Set(indexNumber, ofs + i, cjsonValueToVariant(rdser.GetCTag().Type(), rdser, fieldType));
+									pl_.Set(indexNumber, ofs + i, cjsonValueToVariant(rdSer_.GetCTag().Type(), fieldType));
 								}
-								wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
-								wrser.PutVarUint(count);
+								wrSer_.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+								wrSer_.PutVarUint(count);
 							}
 						} else {
 							validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), count, "cjson"sv);
-							const int ofs = pl.ResizeArray(indexNumber, count, Append_True);
+							const int ofs = pl_.ResizeArray(indexNumber, count, Append_True);
 							for (size_t i = 0; i < count; ++i) {
-								pl.Set(indexNumber, ofs + i, cjsonValueToVariant(atagType, rdser, fieldType));
+								pl_.Set(indexNumber, ofs + i, cjsonValueToVariant(atagType, fieldType));
 							}
-							wrser.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
-							wrser.PutVarUint(count);
+							wrSer_.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+							wrSer_.PutVarUint(count);
 						}
 					} else {
 						throwUnexpectedArrayError(fieldRef.Name(), fieldRef.Type(), kCJSONFmt);
 					}
 				} else {
-					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, fieldRef, indexNumber, isInArray(), kCJSONFmt);
+					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl_, fieldRef, indexNumber, isInArray(), kCJSONFmt);
 					validateArrayFieldRestrictions(fieldRef.Name(), fieldRef.IsArray(), fieldRef.ArrayDims(), 1, kCJSONFmt);
 					objectScalarIndexes_.set(indexNumber);
-					pl.Set(indexNumber, cjsonValueToVariant(tagType, rdser, fieldType), Append_True);
-					wrser.PutCTag(fieldType, tagName, indexNumber);
+					pl_.Set(indexNumber, cjsonValueToVariant(tagType, fieldType), Append_True);
+					wrSer_.PutCTag(fieldType, tagName, indexNumber);
 				}
 			}
 		} else {
 			// objectScalarIndexes_.set(indexNumber); - do not change objectScalarIndexes_ value for the filtered out fields
-			skipCjsonTag(tag, rdser);
+			skipCjsonTag(tag, rdSer_);
 		}
 	} else if (field.IsIndexed()) {	 // sparse index
-		decodeCJson(pl, rdser, wrser, filter, recoder, tagType, tagName, tag, floatVectorsHolder,
+		decodeCJson(filter, recoder, tagType, tagName, tag,
 					SparseValidator{field.ValueType(), field.IsArray(), field.ArrayDim(), field.SparseNumber(), tagsMatcher_, isInArray(),
 									kCJSONFmt});
 	} else {
-		decodeCJson(pl, rdser, wrser, filter, recoder, tagType, tagName, tag, floatVectorsHolder, kNoValidation);
+		decodeCJson(filter, recoder, tagType, tagName, tag, kNoValidation);
 	}
 
 	if constexpr (std::is_same_v<TagOptT, NamedTagOpt>) {
@@ -138,34 +136,33 @@ bool CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrs
 	return true;
 }
 
-size_t CJsonDecoder::decodeNestedArray(Payload& pl, Serializer& rdser, WrSerializer& wrser, int indexNumber, size_t count,
-									   KeyValueType fieldType, size_t offset) const {
+size_t CJsonDecoder::decodeNestedArray(int indexNumber, size_t count, KeyValueType fieldType, size_t offset) const {
 	size_t decodedValuesCount = 0;
 	for (size_t i = 0; i < count; ++i) {
-		const auto tag = rdser.GetCTag();
+		const auto tag = rdSer_.GetCTag();
 		const auto tagType = tag.Type();
 		if (tagType == TAG_ARRAY) {
-			const auto nestedArr = rdser.GetCArrayTag();
+			const auto nestedArr = rdSer_.GetCArrayTag();
 			const auto nestedArrCount = nestedArr.Count();
 			const auto nestedArrType = nestedArr.Type();
 			if (nestedArrType == TAG_OBJECT) {
-				wrser.PutCTag(ctag{TAG_ARRAY});
-				wrser.PutCArrayTag(carraytag{nestedArrCount, TAG_OBJECT});
-				const auto decodedValuesCountInNested = decodeNestedArray(pl, rdser, wrser, indexNumber, nestedArrCount, fieldType, offset);
+				wrSer_.PutCTag(ctag{TAG_ARRAY});
+				wrSer_.PutCArrayTag(carraytag{nestedArrCount, TAG_OBJECT});
+				const auto decodedValuesCountInNested = decodeNestedArray(indexNumber, nestedArrCount, fieldType, offset);
 				offset += decodedValuesCountInNested;
 				decodedValuesCount += decodedValuesCountInNested;
 			} else {
 				for (size_t j = 0; j < nestedArrCount; ++j) {
-					pl.Set(indexNumber, offset, cjsonValueToVariant(nestedArrType, rdser, fieldType));
+					pl_.Set(indexNumber, offset, cjsonValueToVariant(nestedArrType, fieldType));
 					++offset;
 				}
 				decodedValuesCount += nestedArrCount;
-				wrser.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), indexNumber});
-				wrser.PutVarUint(nestedArrCount);
+				wrSer_.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), indexNumber});
+				wrSer_.PutVarUint(nestedArrCount);
 			}
 		} else {
-			pl.Set(indexNumber, offset, cjsonValueToVariant(tagType, rdser, fieldType));
-			wrser.PutCTag(fieldType, TagName::Empty(), indexNumber);
+			pl_.Set(indexNumber, offset, cjsonValueToVariant(tagType, fieldType));
+			wrSer_.PutCTag(fieldType, TagName::Empty(), indexNumber);
 			++decodedValuesCount;
 			++offset;
 		}
@@ -174,51 +171,50 @@ size_t CJsonDecoder::decodeNestedArray(Payload& pl, Serializer& rdser, WrSeriali
 }
 
 template <typename Filter, typename Recoder, typename Validator>
-void CJsonDecoder::decodeCJson(Payload& pl, Serializer& rdser, WrSerializer& wrser, Filter filter, Recoder recoder, TagType tagType,
-							   TagName tagName, ctag tag, FloatVectorsHolderVector& floatVectorsHolder, const Validator& validator) {
+void CJsonDecoder::decodeCJson(Filter filter, Recoder recoder, TagType tagType, TagName tagName, ctag tag, const Validator& validator) {
 	const bool match = filter.match(tagsPath_);
 	if (match) {
 		tagType = recoder.RegisterTagType(tagType, tagsPath_);
-		wrser.PutCTag(ctag{tagType, tagName});
+		wrSer_.PutCTag(ctag{tagType, tagName});
 		if (tagType == TAG_OBJECT) {
-			while (decodeCJson(pl, rdser, wrser, filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamedTagOpt{}, floatVectorsHolder));
-		} else if (recoder.Recode(rdser, wrser)) {
+			while (decodeCJson(filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamedTagOpt{}));
+		} else if (recoder.Recode(rdSer_, wrSer_)) {
 			// No more actions needed after recoding
 		} else if (tagType == TAG_ARRAY) {
 			auto val = validator.Array();
-			const carraytag atag = rdser.GetCArrayTag();
-			wrser.PutCArrayTag(atag);
+			const carraytag atag = rdSer_.GetCArrayTag();
+			wrSer_.PutCArrayTag(atag);
 			const auto count = atag.Count();
 			const TagType atagType = atag.Type();
 			CounterGuardIR32 g(arrayLevel_);
 			if (atagType == TAG_OBJECT) {
 				for (size_t i = 0; i < count; ++i) {
-					decodeCJson(pl, rdser, wrser, filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamelessTagOpt{}, floatVectorsHolder);
+					decodeCJson(filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamelessTagOpt{});
 				}
 			} else {
 				for (size_t i = 0; i < count; ++i) {
-					copyCJsonValue(atagType, rdser, wrser, val.Elem());
+					copyCJsonValue(atagType, rdSer_, wrSer_, val.Elem());
 				}
 			}
 		} else {
-			copyCJsonValue(tagType, rdser, wrser, validator);
+			copyCJsonValue(tagType, rdSer_, wrSer_, validator);
 		}
 	} else if (tagType != TAG_OBJECT) {
 		// !match
-		skipCjsonTag(tag, rdser);
+		skipCjsonTag(tag, rdSer_);
 	} else {
 		// !match
-		wrser.PutCTag(ctag{tagType, tagName});
-		while (decodeCJson(pl, rdser, wrser, filter.MakeSkipFilter(), recoder.MakeCleanCopy(), NamedTagOpt{}, floatVectorsHolder));
+		wrSer_.PutCTag(ctag{tagType, tagName});
+		while (decodeCJson(filter.MakeSkipFilter(), recoder.MakeCleanCopy(), NamedTagOpt{}));
 	}
 }
 
-Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer& rdser, KeyValueType fieldType) const {
+Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, KeyValueType fieldType) const {
 	if (fieldType.Is<KeyValueType::String>() && tagType != TagType::TAG_STRING) {
-		auto& back = storage_.emplace_back(rdser.GetRawVariant(KeyValueType{tagType}).As<key_string>());
+		auto& back = storage_.emplace_back(rdSer_.GetRawVariant(KeyValueType{tagType}).As<key_string>());
 		return Variant(p_string(back), Variant::noHold);
 	} else {
-		return reindexer::cjsonValueToVariant(tagType, rdser, fieldType);
+		return reindexer::cjsonValueToVariant(tagType, rdSer_, fieldType);
 	}
 }
 
@@ -228,16 +224,12 @@ RX_NO_INLINE void CJsonDecoder::throwTagReferenceError(ctag tag, const Payload& 
 }
 
 template bool CJsonDecoder::decodeCJson<CJsonDecoder::DefaultFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DefaultFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt,
-	FloatVectorsHolderVector&);
+	CJsonDecoder::DefaultFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
 template bool CJsonDecoder::decodeCJson<CJsonDecoder::DefaultFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::DefaultFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt,
-	FloatVectorsHolderVector&);
+	CJsonDecoder::DefaultFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt);
 template bool CJsonDecoder::decodeCJson<CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt,
-	FloatVectorsHolderVector&);
+	CJsonDecoder::RestrictingFilter, CJsonDecoder::DefaultRecoder, CJsonDecoder::NamelessTagOpt);
 template bool CJsonDecoder::decodeCJson<CJsonDecoder::RestrictingFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt>(
-	Payload&, Serializer&, WrSerializer&, CJsonDecoder::RestrictingFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt,
-	FloatVectorsHolderVector&);
+	CJsonDecoder::RestrictingFilter, CJsonDecoder::CustomRecoder, CJsonDecoder::NamelessTagOpt);
 
 }  // namespace reindexer

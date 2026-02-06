@@ -51,7 +51,7 @@ private:
 	class MultifieldComparator;
 	class SinglefieldComparator;
 	struct MultifieldOrderedMap;
-	using MultifieldUnorderedMap = unordered_payload_map<int, false>;
+	using MultifieldUnorderedMap = unordered_payload_map<int>;
 	using SinglefieldOrderedMap = btree::btree_map<Variant, int, SinglefieldComparator>;
 	using SinglefieldUnorderedMap = fast_hash_map<Variant, int>;
 	using Facets = std::variant<MultifieldOrderedMap, MultifieldUnorderedMap, SinglefieldOrderedMap, SinglefieldUnorderedMap>;
@@ -95,7 +95,7 @@ private:
 		fast_hash_set<DistinctHelpers::FieldsValue, DistinctHelpers::DistinctHasher<DistinctHelpers::IsCompositeSupported::Yes>,
 					  DistinctHelpers::CompareVariantVector<DistinctHelpers::IsCompositeSupported::Yes>,
 					  DistinctHelpers::LessDistinctVector<DistinctHelpers::IsCompositeSupported::Yes>>;
-	std::unique_ptr<HashSetVariantRelax> distincts_;
+	std::optional<HashSetVariantRelax> distincts_;
 	const bool compositeIndexFields_;
 };
 

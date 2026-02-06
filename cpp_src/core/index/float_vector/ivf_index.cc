@@ -1,6 +1,6 @@
+#include "core/id_type.h"
 #if RX_WITH_FAISS_ANN_INDEXES
 
-#include "ivf_index.h"
 #include "core/query/knn_search_params.h"
 #include "faiss/IndexFlat.h"
 #include "faiss/IndexIVFFlat.h"
@@ -8,6 +8,7 @@
 #include "faiss/impl/AuxIndexStructures.h"
 #include "faiss/impl/io.h"
 #include "faiss/index_io.h"
+#include "ivf_index.h"
 #include "knn_ctx.h"
 #include "knn_raw_result.h"
 #include "tools/blas_extension.h"
@@ -91,12 +92,12 @@ static const unsigned kIVFOMPThreads =
 
 Variant IvfIndex::upsert(ConstFloatVectorView vect, IdType id, bool& clearCache) {
 	if (map_) {
-		const faiss::idx_t faissId{id};
+		const faiss::idx_t faissId{id.ToNumber()};
 		map_->add_with_ids(1, vect.Data(), &faissId);
 	} else {
 		space_->add(1, vect.Data());
 		rowId2N_[id] = n2RowId_.size();
-		n2RowId_.push_back(id);
+		n2RowId_.push_back(id.ToNumber());
 		assertrx_dbg(n2RowId_.size() == size_t(space_->ntotal));
 		if (size_t(space_->ntotal) > ivfTrainingSize(nCentroids_)) {
 			auto space = newSpace(Dimension().Value(), metric_);
@@ -121,7 +122,7 @@ Variant IvfIndex::upsertConcurrent(ConstFloatVectorView, IdType, bool&) { throw 
 
 void IvfIndex::Delete(const Variant&, IdType id, [[maybe_unused]] MustExist mustExist, StringsHolder&, bool&) {
 	if (map_) {
-		const faiss::idx_t faissId = id;
+		const faiss::idx_t faissId = id.ToNumber();
 		map_->remove_ids(faiss::IDSelectorArray{1, &faissId});
 	} else {
 		const auto it = rowId2N_.find(id);
@@ -156,7 +157,7 @@ static void search(base_idset& idset, const IVFSearchArgsKnn& args, const auto& 
 			break;
 		}
 		sortSameDist(i);
-		idset.push_back(prepareId(id));
+		idset.push_back(IdType::FromNumber(prepareId(id)));
 	}
 }
 
@@ -215,7 +216,7 @@ static void search(base_idset& idset, const IVFSearchArgsRange& args, const auto
 		ids[i] = id;
 		dists[i] = distances[permut[i]];
 		sortSameDist(i);
-		idset.push_back(prepareId(id));
+		idset.push_back(IdType::FromNumber(prepareId(id)));
 	}
 }
 
@@ -438,7 +439,7 @@ IndexMemStat IvfIndex::GetMemStat(const RdxContext& ctx) noexcept {
 
 void IvfIndex::reconstruct(IdType rowId, FloatVector& vect) const {
 	if (map_) {
-		map_->reconstruct(rowId, vect.RawData());
+		map_->reconstruct(rowId.ToNumber(), vect.RawData());
 	} else {
 		const auto it = rowId2N_.find(rowId);
 		assertrx_throw(it != rowId2N_.end());
@@ -471,7 +472,7 @@ FloatVector IvfIndex::getFloatVector(IdType id) const {
 
 ConstFloatVectorView IvfIndex::getFloatVectorView(IdType id) const {
 	if (map_) {
-		return map_->getView(id);
+		return map_->getView(id.ToNumber());
 	} else {
 		const auto it = rowId2N_.find(id);
 		assertrx_throw(it != rowId2N_.end());
@@ -501,10 +502,10 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 			return nitems;
 		}
 		void AppendPKByID(faiss::idx_t id) override {
-			if (id < 0 || id > std::numeric_limits<IdType>::max()) [[unlikely]] {
+			if (id < 0 || id > IdType::Max().ToNumber()) [[unlikely]] {
 				throw Error(errLogic, "IvfIndex::WriteIndexCache:{}: internal id {} is out of range", name, id);
 			}
-			writePK(IdType(id));
+			writePK(IdType::FromNumber(id));
 		}
 		int filedescriptor() override {
 			throw Error(errLogic, "Unexpected call to SerializerWriter::filedescriptor(). Serializer name is '{}'", name);
@@ -563,7 +564,7 @@ Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDat
 			Serializer ser(view_);
 			const IdType itemID = readPKEncodedData(destBuf, ser, name, "IVFIndex"sv);
 			view_ = view_.substr(ser.Pos());
-			return faiss::idx_t(itemID);
+			return faiss::idx_t(itemID.ToNumber());
 		}
 		int filedescriptor() override {
 			throw Error(errLogic, "IVFFlat::LoadIndexCache:{}: unexpected call to ViewReader::filedescriptor()", name);

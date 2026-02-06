@@ -11,6 +11,7 @@
 #endif	// REINDEX_WITH_ASAN
 #include "cjson/jsonbuilder.h"
 #include "core/enums.h"
+#include "core/id_type.h"
 #include "tools/errors.h"
 #include "type_consts_helpers.h"
 #include "vendor/gason/gason.h"
@@ -345,7 +346,7 @@ FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::str
 		throw reindexer::Error{errParams, "Unknown vector metric '{}'", metricStr};
 	}
 	if (const auto startSize = root["start_size"sv]; !startSize.empty()) {
-		result.SetStartSize(startSize.As<size_t>(reindexer::CheckUnsigned_True, 0, 0, std::numeric_limits<IdType>::max()));
+		result.SetStartSize(startSize.As<size_t>(reindexer::CheckUnsigned_True, 0, 0, reindexer::IdType::Max().ToNumber()));
 	}
 	if (const auto m = root["m"sv]; !m.empty()) {
 		result.SetM(m.As<size_t>(reindexer::CheckUnsigned_True, 0, kHnswMMin, kHnswMMax));

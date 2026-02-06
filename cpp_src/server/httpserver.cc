@@ -7,6 +7,7 @@
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufschemabuilder.h"
 #include "core/dbconfig.h"
+#include "core/id_type.h"
 #include "core/queryresults/tableviewbuilder.h"
 #include "core/schema.h"
 #include "core/type_consts.h"
@@ -1153,7 +1154,7 @@ int HTTPServer::modifyItemsJSON(http::Context& ctx, std::string_view nsName, std
 				return jsonStatus(ctx, http::HttpStatus(err));
 			}
 
-			if (item.GetID() != -1) {
+			if (item.GetID().IsValid()) {
 				++cnt;
 				if (!precepts.empty()) {
 					updatedItems.emplace_back(item.GetJSON());
@@ -1205,7 +1206,7 @@ int HTTPServer::modifyItemsMsgPack(http::Context& ctx, std::string_view nsName, 
 			return msgpackStatus(ctx, http::HttpStatus(err));
 		}
 
-		if (item.GetID() != -1) {
+		if (item.GetID().IsValid()) {
 			++totalItems;
 		}
 	}
@@ -1263,7 +1264,7 @@ int HTTPServer::modifyItemsProtobuf(http::Context& ctx, std::string_view nsName,
 	}
 
 	int totalItems = 0;
-	if (item.GetID() != -1) {
+	if (item.GetID().IsValid()) {
 		if (hasPrecepts) {
 			auto object = builder.Object(kProtoModifyResultsFields.at(kParamItems));
 			err = item.GetProtobuf(ser);
@@ -1705,11 +1706,11 @@ int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults
 	}
 
 	if (withColumns) {
-		reindexer::TableCalculator tableCalculator(std::move(jsonData), width);
+		reindexer::table_view::TableCalculator tableCalculator(std::move(jsonData), width, reindexer::table_view::kNoOpts);
 		const auto& header = tableCalculator.GetHeader();
 		auto& columnsSettings = tableCalculator.GetColumnsSettings();
 		for (const auto& part : header) {
-			ColumnData& data = columnsSettings[part];
+			auto& data = columnsSettings[part];
 			auto parametersObj = protobufBuilder.Object(kProtoQueryResultsFields.at(kParamColumns));
 			parametersObj.Put(kProtoColumnsFields.at(kParamName), part);
 			parametersObj.Put(kProtoColumnsFields.at(kParamWidthPercents), data.widthTerminalPercentage);
@@ -1747,12 +1748,12 @@ void HTTPServer::queryResultParams(Builder& builder, reindexer::QueryResults& re
 	}
 
 	if (withColumns) {
-		reindexer::TableCalculator tableCalculator(std::move(jsonData), width);
+		reindexer::table_view::TableCalculator tableCalculator(std::move(jsonData), width, reindexer::table_view::kNoOpts);
 		const auto& header = tableCalculator.GetHeader();
 		auto& columnsSettings = tableCalculator.GetColumnsSettings();
 		auto headerArray = builder.Array(kParamColumns, header.size());
 		for (const auto& part : header) {
-			ColumnData& data = columnsSettings[part];
+			auto& data = columnsSettings[part];
 			auto parametersObj = headerArray.Object(TagName::Empty(), 4);
 			parametersObj.Put(kParamName, part);
 			parametersObj.Put(kParamWidthPercents, data.widthTerminalPercentage);

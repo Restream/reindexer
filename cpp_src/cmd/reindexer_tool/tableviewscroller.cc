@@ -55,7 +55,7 @@ void WaitEnterToContinue(std::ostream& o, int terminalWidth, const std::function
 	}
 }
 
-TableViewScroller::TableViewScroller(reindexer::TableViewBuilder& tableBuilder, int linesOnPage)
+TableViewScroller::TableViewScroller(reindexer::table_view::TableViewBuilder& tableBuilder, int linesOnPage)
 	: tableBuilder_(tableBuilder), linesOnPage_(linesOnPage) {}
 
 void TableViewScroller::Scroll(Output& output, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled) {
@@ -64,7 +64,7 @@ void TableViewScroller::Scroll(Output& output, std::vector<std::string>&& jsonDa
 	}
 
 	reindexer::TerminalSize terminalSize = reindexer::getTerminalSize();
-	reindexer::TableCalculator tableCalculator(std::move(jsonData), terminalSize.width);
+	rx_tv::TableCalculator tableCalculator(std::move(jsonData), terminalSize.width, rx_tv::kRemoveEmptyColumns | rx_tv::kRemoveRareColumns);
 	auto& rows = tableCalculator.GetRows();
 	bool viaMoreCmd = (int(rows.size()) > linesOnPage_);
 

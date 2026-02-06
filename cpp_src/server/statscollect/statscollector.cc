@@ -166,10 +166,6 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 					std::string nsName = item["name"].As<std::string>();
 					constexpr auto kSelectQueryType = "select"sv;
 					constexpr auto kUpdateQueryType = "update"sv;
-					prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, item["selects.last_sec_qps"].As<int64_t>());
-					prometheus_->RegisterQPS(dbName, nsName, kUpdateQueryType, item["updates.last_sec_qps"].As<int64_t>());
-					prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType, item["selects.last_sec_avg_latency_us"].As<int64_t>());
-					prometheus_->RegisterLatency(dbName, nsName, kUpdateQueryType, item["updates.last_sec_avg_latency_us"].As<int64_t>());
 					std::string_view json = item.GetJSON();
 					gason::JsonParser parser;
 					auto root = parser.Parse(json);
@@ -180,8 +176,8 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 					}
 					auto nodeUpdates = root["updates"];
 					if (!nodeUpdates.empty() && nodeUpdates.isObject()) {
-						prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, nodeUpdates["last_sec_qps"].As<int64_t>());
-						prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType,
+						prometheus_->RegisterQPS(dbName, nsName, kUpdateQueryType, nodeUpdates["last_sec_qps"].As<int64_t>());
+						prometheus_->RegisterLatency(dbName, nsName, kUpdateQueryType,
 													 nodeUpdates["last_sec_avg_latency_us"].As<int64_t>());
 					}
 					auto nodeIndexes = root["indexes"];

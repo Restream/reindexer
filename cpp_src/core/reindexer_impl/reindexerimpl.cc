@@ -12,6 +12,7 @@
 #include "core/embedding/embedderscache.h"
 #include "core/ft/functions/ft_function.h"
 #include "core/iclientsstats.h"
+#include "core/id_type.h"
 #include "core/index/index.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/query/sql/sqlsuggester.h"
@@ -322,7 +323,8 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 							const std::string tmpPath = fs::JoinPath(storagePath_, de.name);
 							logFmt(LogWarning, "Dropping tmp namespace '{}'", de.name);
 							if (fs::RmDirAll(tmpPath) < 0) {
-								logFmt(LogWarning, "Failed to remove '{}' temporary namespace from filesystem, path: {}", de.name, tmpPath);
+								logFmt(LogWarning, "Failed to remove '{}' temporary namespace from filesystem, path: '{}'", de.name,
+									   tmpPath);
 								hasNsErrors.test_and_set(std::memory_order_relaxed);
 							}
 							continue;
@@ -566,10 +568,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, IsDBInitCall isDBInitC
 			ClusterOperationStatus clStatus;
 			clStatus.role = ClusterOperationStatus::Role::ClusterReplica;  // TODO: It may be a simple replica
 			clStatus.leaderId = rdxCtx.GetOriginLSN().Server();
-			auto err = ns->SetClusterOperationStatus(std::move(clStatus), rdxCtx);
-			if (!err.ok()) {
-				return err;
-			}
+			ns->SetClusterOperationStatus(std::move(clStatus), rdxCtx);
 		}
 		const int64_t stateToken = ns->NewItem(rdxCtx).GetStateToken();
 		{
@@ -1020,6 +1019,7 @@ static void securityCheck(const Query& query, const RdxContext& rdxCtx) {
 template <QueryType TP>
 Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx,
 							 void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&)) {
+	// std::cout << query.GetSQL(QueryUpdate) << std::endl;
 	try {
 		securityCheck(query, rdxCtx);
 		const std::string& nsName = query.NsName();
@@ -1214,7 +1214,7 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 
 		const auto ward = rdxCtx.BeforeSimpleState(Activity::InProgress);
 		FtFunctionsHolder func;
-		RxSelector::DoSelect(q, queryCopy, result, locks, func, rdxCtx, statCalculator);
+		RxSelector::DoSelect(q, queryCopy, result, locks, func, rdxCtx);
 		func.Process(result);
 
 		if (rdxCtx.NeedMaskingDSN()) {
@@ -2050,7 +2050,7 @@ Error ReindexerImpl::tryLoadConfFromYAML(const std::string& yamlConf) {
 }
 
 void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item, const RdxContext& ctx) {
-	if (item.GetID() != -1 && nsName == kConfigNamespace) {
+	if (item.GetID().IsValid() && nsName == kConfigNamespace) {
 		try {
 			gason::JsonParser parser;
 			gason::JsonNode configJson = parser.Parse(item.GetJSON());
@@ -2153,10 +2153,7 @@ void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std:
 			if (name.empty()) {
 				for (auto& ns : namespaces) {
 					if (!clusterManager_->NamespaceIsInClusterConfig(ns.first)) {
-						auto err = ns.second->SetClusterOperationStatus(ClusterOperationStatus(), ctx);
-						if (!err.ok()) {
-							throw err;
-						}
+						ns.second->SetClusterOperationStatus(ClusterOperationStatus(), ctx);
 					}
 				}
 			} else {
@@ -2165,10 +2162,7 @@ void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std:
 				}
 				auto ns = getNamespaceNoThrow(name, ctx);
 				if (ns) {
-					auto err = ns->SetClusterOperationStatus(ClusterOperationStatus(), ctx);
-					if (!err.ok()) {
-						throw err;
-					}
+					ns->SetClusterOperationStatus(ClusterOperationStatus(), ctx);
 				}
 			}
 		} else if (command == "set_log_level"sv) {
@@ -2648,10 +2642,10 @@ Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2& s
 Error ReindexerImpl::SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status,
 											   const RdxContext& rdxCtx) noexcept {
 	try {
-		if (auto err = configProvider_.CheckAsyncReplicationToken(nsName, rdxCtx.LeaderReplicationToken()); !err.ok()) {
+		if (auto err = configProvider_.CheckAsyncReplicationToken(nsName, rdxCtx.LeaderReplicationToken()); !err.ok()) [[unlikely]] {
 			return Error(err.code(), "Unable to set cluster operation status for '{}': {}", nsName, err.what());
 		}
-		return getNamespace(nsName, rdxCtx)->SetClusterOperationStatus(ClusterOperationStatus(status), rdxCtx);
+		getNamespace(nsName, rdxCtx)->SetClusterOperationStatus(ClusterOperationStatus(status), rdxCtx);
 	}
 	CATCH_AND_RETURN;
 	return {};
@@ -2760,11 +2754,8 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 
 		if (!rdxCtx.GetOriginLSN().isEmpty()) {
 			// TODO: It may be a simple replica
-			auto err = ns->SetClusterOperationStatus(
+			ns->SetClusterOperationStatus(
 				ClusterOperationStatus{rdxCtx.GetOriginLSN().Server(), ClusterOperationStatus::Role::ClusterReplica}, rdxCtx);
-			if (!err.ok()) {
-				return err;
-			}
 		}
 		const int64_t stateToken = ns->NewItem(rdxCtx).GetStateToken();
 		{

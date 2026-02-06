@@ -17,11 +17,14 @@ public:
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) override;
 	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	void Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
+	bool RefreshCompositeKey(const Variant& key) noexcept override;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
 	void Commit() override;
+
 	void UpdateSortedIds(const IUpdateSortedContext& /*ctx*/) override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
 	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
+
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexStore<T>(*this)); }
 	IndexMemStat GetMemStat(const RdxContext&) override;
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string> || std::is_same_v<T, key_string_with_hash>; }
@@ -40,7 +43,7 @@ public:
 	struct [[nodiscard]] HasAddTask<H, std::void_t<decltype(std::declval<H>().add_destroy_task(nullptr))>> : public std::true_type {};
 
 protected:
-	IndexStore(const IndexStore&) = default;
+	IndexStore(const IndexStore& store) : Index(store), str_map(store.str_map), idx_data(store.idx_data), memStat_(store.memStat_) {}
 	bool shouldHoldOriginalValueInStrMap() const noexcept {
 		if constexpr (!std::is_same_v<T, key_string>) {
 			return false;

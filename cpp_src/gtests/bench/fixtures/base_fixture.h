@@ -119,6 +119,19 @@ protected:
 			checkNotEmpty(qres, state);
 		}
 	}
+
+	void benchUpdate(auto queryGenerator, benchmark::State& state) {
+		benchmark::AllocsTracker allocsTracker(state);
+		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+			reindexer::QueryResults qres;
+			auto err = db_->Update(queryGenerator(), qres);
+			if (!err.ok()) [[unlikely]] {
+				state.SkipWithError(err.what());
+			}
+			checkNotEmpty(qres, state);
+		}
+	}
+
 	void benchQuery(const reindexer::Query& q, benchmark::State& state, auto& itemsCounter) {
 		benchmark::AllocsTracker allocsTracker(state);
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
@@ -141,6 +154,7 @@ protected:
 			itemsCounter(qres);
 		}
 	}
+
 	struct NoTotal {
 		RX_ALWAYS_INLINE static void Apply(reindexer::Query&) noexcept {}
 	};

@@ -16,7 +16,9 @@ public:
 		reindexer::Payload pl(pti, value);
 		reindexer::TagsMatcher tm;
 
-		reindexer::JsonDecoder decoder(tm);
+		reindexer::FloatVectorsHolderVector vectors;
+		reindexer::ScalarIndexesSetT objectScalarIndexes;
+		reindexer::JsonDecoder decoder(tm, vectors, objectScalarIndexes);
 		reindexer::WrSerializer wrser;
 		reindexer::Serializer rdser(json);
 		gason::JsonNode node;
@@ -28,9 +30,8 @@ public:
 			ASSERT_TRUE(false);
 		}
 		reindexer::WrSerializer ser;
-		reindexer::FloatVectorsHolderVector vectors;
 		ser.PutUInt32(0);
-		reindexer::Error err = decoder.Decode(pl, ser, node.value, vectors);
+		reindexer::Error err = decoder.Decode(pl, ser, node.value);
 		auto tupleData = ser.DetachLStr();
 		pl.Set(0, Variant(reindexer::p_string(reinterpret_cast<const reindexer::l_string_hdr*>(tupleData.Get())), Variant::noHold));
 

@@ -1,5 +1,6 @@
 
 #include "index_optimizer.h"
+#include "core/id_type.h"
 #include "tools/clock.h"
 #include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
@@ -10,8 +11,8 @@ namespace reindexer {
 class [[nodiscard]] IndexOptimizer::UpdateSortedContext final : public IUpdateSortedContext {
 public:
 	UpdateSortedContext(IndexOptimizer& optimizer, IndexesSpan indexes, std::span<const PayloadValue> items, SortType curSortId)
-		: optimizer_(optimizer), sortedIndexes_(optimizer_.getSortedIdxCount(indexes)), curSortId_(curSortId) {
-		assertrx_dbg(curSortId_ > 0);
+		: optimizer_(optimizer), sortedIndexes_(optimizer_.getSortedIdxCount(indexes)), curSortId_(IdType::FromNumber(curSortId)) {
+		assertrx_dbg(curSortId_ > IdType::Zero());
 		ids2Sorts_.reserve(items.size());
 		ids2SortsMemSize_ = ids2Sorts_.capacity() * sizeof(SortType);
 		optimizer_.updateSortedContextMemory_.fetch_add(ids2SortsMemSize_, std::memory_order_relaxed);
@@ -21,14 +22,14 @@ public:
 	}
 	~UpdateSortedContext() override { optimizer_.updateSortedContextMemory_.fetch_sub(ids2SortsMemSize_, std::memory_order_relaxed); }
 	int GetSortedIdxCount() const noexcept override { return sortedIndexes_; }
-	SortType GetCurSortId() const noexcept override { return curSortId_; }
+	SortType GetCurSortId() const noexcept override { return curSortId_.ToNumber(); }
 	const std::vector<SortType>& Ids2Sorts() const& noexcept override { return ids2Sorts_; }
 	std::vector<SortType>& Ids2Sorts() & noexcept override { return ids2Sorts_; }
 
 private:
 	IndexOptimizer& optimizer_;
 	const int sortedIndexes_{0};
-	const IdType curSortId_{-1};
+	const IdType curSortId_{IdType::NotSet()};
 	std::vector<SortType> ids2Sorts_;
 	int64_t ids2SortsMemSize_{0};
 };
@@ -133,6 +134,7 @@ void IndexOptimizer::tryOptimize(const Context& ctx, const std::function<bool()>
 	static const auto kHardwareConcurrency = hardware_concurrency();
 	const size_t maxIndexWorkers = std::min<size_t>(kHardwareConcurrency, cfg_.optimizationSortWorkers);
 	assertrx(maxIndexWorkers);
+
 	for (auto& idx : ctx.indexes) {
 		if (idx->IsOrdered()) {
 			UpdateSortedContext sortCtx(*this, ctx.indexes, ctx.items, currentSortId++);

@@ -318,7 +318,6 @@ public:
 				q.Limit(0);
 			}
 		}
-		q.Strict(strictMode_).Debug(debugLevel_).Explain(explain_);
 		std::ignore = entries_.Append<SubQueryEntry>(nextOp_, cond, subQueries_.size(), std::move(values).Extract());
 		PopBackQEGuard guard{&entries_};
 		adoptNested(q);

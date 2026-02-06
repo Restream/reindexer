@@ -58,7 +58,7 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, FtIn
 			}
 			maxTypos = maxTyposNode.As<>(maxTypos, 0, 2 * kMaxTyposInWord);
 		}
-		maxTypoLen = root["max_typo_len"].As<>(maxTypoLen, 0, kMaxTypoLenLimit);
+		maxTypoLen = root["max_typo_len"].As<uint8_t>(maxTypoLen, 0, kMaxTypoLenLimit);
 		if (!root["typos_detailed_config"].empty()) {
 			auto typos = root["typos_detailed_config"];
 			maxTypoDistance = typos["max_typo_distance"].As<>(maxTypoDistance, -1, kMaxTypoLenLimit);

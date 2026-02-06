@@ -104,7 +104,7 @@ std::pair<Error, bool> UpdatesQueuePair<T>::Push(UpdatesContainerT&& data, const
 		if (shardPair.async) {
 			shardPair.async->template PushAsync<true>(copyUpdatesContainer(data));
 		}
-		return shardPair.sync->PushAndWait(std::move(data), std::move(beforeWait), ctx);
+		return shardPair.sync->PushAndWait(std::move(data), beforeWait, ctx);
 	} else if (shardPair.async) {
 		return shardPair.async->template PushAsync<true>(std::move(data));
 	}

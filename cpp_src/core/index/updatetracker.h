@@ -88,6 +88,13 @@ public:
 			eraseUpdate(k);
 		}
 	}
+	void refreshKey(const key_type& oldK, const key_type& newK) {
+		if (!simpleCounting_) {
+			if (updated_.erase(oldK)) {
+				updated_.emplace(newK);
+			}
+		}
+	}
 	bool isUpdated() const noexcept { return !updated_.empty() || completeUpdate_ || (simpleCounting_ && updatesCounter_); }
 	bool isCompleteUpdated() const noexcept { return completeUpdate_ || (simpleCounting_ && updatesCounter_); }
 	void clear() {

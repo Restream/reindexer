@@ -199,21 +199,19 @@ public:
 		nsFuncWrapper<&NamespaceImpl::OnConfigUpdated>(configProvider, ctx);
 	}
 	void Refill(std::vector<Item>& items, const RdxContext& ctx) { nsFuncWrapper<&NamespaceImpl::Refill>(items, ctx); }
-	Error SetClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx) {
-		return nsFuncWrapper<&NamespaceImpl::SetClusterOperationStatus>(std::move(status), ctx);
+	void SetClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx) {
+		nsFuncWrapper<&NamespaceImpl::SetClusterOperationStatus>(std::move(status), ctx);
 	}
 	void GetSnapshot(Snapshot& snapshot, const SnapshotOpts& opts, const RdxContext& ctx) {
-		return nsFuncWrapper<&NamespaceImpl::GetSnapshot>(snapshot, opts, ctx);
+		nsFuncWrapper<&NamespaceImpl::GetSnapshot>(snapshot, opts, ctx);
 	}
 	void ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& ctx);
-	void SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx) {
-		return nsFuncWrapper<&NamespaceImpl::SetTagsMatcher>(std::move(tm), ctx);
-	}
+	void SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx) { nsFuncWrapper<&NamespaceImpl::SetTagsMatcher>(std::move(tm), ctx); }
 	void DropANNStorageCache(std::string_view index, const RdxContext& ctx) {
-		return nsFuncWrapper<&NamespaceImpl::DropANNStorageCache>(index, ctx);
+		nsFuncWrapper<&NamespaceImpl::DropANNStorageCache>(index, ctx);
 	}
 	void RebuildIVFIndex(std::string_view index, float dataPart, const RdxContext& ctx) {
-		return nsFuncWrapper<&NamespaceImpl::RebuildIVFIndex>(index, dataPart, ctx);
+		nsFuncWrapper<&NamespaceImpl::RebuildIVFIndex>(index, dataPart, ctx);
 	}
 
 	bool IsFulltextOrVector(std::string_view indexName, const RdxContext& ctx) const {
@@ -221,7 +219,7 @@ public:
 	}
 
 	void DumpIndex(std::ostream& os, std::string_view index, const RdxContext& ctx) {
-		return nsFuncWrapper<&NamespaceImpl::DumpIndex>(os, index, ctx);
+		nsFuncWrapper<&NamespaceImpl::DumpIndex>(os, index, ctx);
 	}
 
 	std::shared_ptr<const reindexer::QueryEmbedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const {

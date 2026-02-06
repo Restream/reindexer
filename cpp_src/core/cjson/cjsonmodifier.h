@@ -13,10 +13,10 @@ class [[nodiscard]] CJsonModifier {
 public:
 	CJsonModifier(TagsMatcher& tagsMatcher, PayloadType pt) noexcept : pt_(std::move(pt)), tagsMatcher_(tagsMatcher) {}
 	void SetFieldValue(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser,
-					   const Payload& pl, FloatVectorsHolderVector&);
+					   const Payload& pl, FloatVectorsHolderVector&, ScalarIndexesSetT&);
 	void SetObject(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser, const Payload& pl,
-				   FloatVectorsHolderVector&);
-	void RemoveField(std::string_view tuple, const IndexedTagsPath& fieldPath, WrSerializer& wrser);
+				   FloatVectorsHolderVector&, ScalarIndexesSetT&);
+	void RemoveField(std::string_view tuple, const IndexedTagsPath& fieldPath, WrSerializer& wrser, ScalarIndexesSetT&);
 
 private:
 	struct [[nodiscard]] UpdateTagType {
@@ -30,7 +30,7 @@ private:
 
 	class Context;
 	Context initState(std::string_view tuple, const IndexedTagsPath& fieldPath, const VariantArray& val, WrSerializer& ser,
-					  const Payload* pl, FieldModifyMode mode, FloatVectorsHolderVector&);
+					  const Payload* pl, FieldModifyMode mode, FloatVectorsHolderVector&, ScalarIndexesSetT& objectScalarIndexes);
 	bool updateFieldInTuple(Context& ctx);
 	bool dropFieldInTuple(Context&, JustCopy);
 	bool buildCJSON(Context& ctx);

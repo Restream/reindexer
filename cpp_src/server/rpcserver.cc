@@ -5,6 +5,7 @@
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/iclientsstats.h"
+#include "core/id_type.h"
 #include "core/namespace/namespacestat.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "debug/crashqueryreporter.h"
@@ -639,7 +640,7 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 				return Error(errParams, "Unexpected ItemModifyMode: {}", mode);
 		}
 		if (err.ok()) {
-			if (item.GetID() != -1) {
+			if (item.GetID().IsValid()) {
 				LocalQueryResults lqr;
 				lqr.AddItemNoHold(item, lsn_t());
 				qres.AddQr(std::move(lqr), item.GetShardID());

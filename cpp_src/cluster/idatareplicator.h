@@ -7,7 +7,7 @@ namespace reindexer {
 namespace cluster {
 
 struct [[nodiscard]] IDataReplicator {
-	virtual Error Replicate(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) = 0;
+	virtual Error Replicate(UpdatesContainer&& recs, const std::function<void()>& beforeWaitF, const RdxContext& ctx) = 0;
 	virtual Error ReplicateAsync(UpdatesContainer&& recs, const RdxContext& ctx) = 0;
 
 	virtual ~IDataReplicator() = default;

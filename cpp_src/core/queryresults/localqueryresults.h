@@ -140,7 +140,6 @@ public:
 	size_t TotalCount() const noexcept { return totalCount; }
 	const std::string& GetExplainResults() const& noexcept { return explainResults; }
 	auto GetExplainResults() const&& = delete;
-	std::string&& MoveExplainResults() & noexcept { return std::move(explainResults); }
 	const std::vector<AggregationResult>& GetAggregationResults() const& noexcept { return aggregationResults; }
 	const std::vector<AggregationResult>& GetAggregationResults() const&& = delete;
 	void Clear();

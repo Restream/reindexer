@@ -1,4 +1,5 @@
 #include <thread>
+#include "core/id_type.h"
 #include "core/system_ns_names.h"
 #include "estl/condition_variable.h"
 #include "estl/lock.h"
@@ -35,7 +36,7 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 	const size_t mediumPortion = 1000;
 	const size_t bigPortion = 15000;
 	const size_t hugePortion = 30000;
-	const int selectLimit = std::numeric_limits<IdType>::max();
+	const auto selectLimit = reindexer::IdType::Max().ToNumber();
 #else	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_TSAN)
 	const size_t smallPortion = 100;
 	const size_t mediumPortion = 1000;

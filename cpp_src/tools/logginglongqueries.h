@@ -9,7 +9,7 @@ namespace reindexer {
 
 class Query;
 class LocalTransaction;
-class ExplainCalc;
+class Explain;
 
 namespace long_actions {
 
@@ -54,6 +54,7 @@ consteval DurationStorageIdx DurationStorageIdxCast(MutexMark mark) noexcept {
 
 enum class [[nodiscard]] ExplainDuration {
 	Total,
+	Preselect,
 	Prepare,
 	Indexes,
 	Postprocess,
@@ -99,12 +100,12 @@ struct [[nodiscard]] ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>> : Que
 	using ArrayT = std::array<std::chrono::microseconds, size_t(ExplainDuration::ExplainDurationSize)>;
 	std::optional<ArrayT> durationStorage = std::nullopt;
 
-	void Add(const ExplainCalc&);
+	void Add(const Explain&);
 
 private:
-	using ExplainMethodType = system_clock_w::duration (ExplainCalc::*)() const noexcept;
+	using ExplainMethodType = system_clock_w::duration (Explain::*)() const noexcept;
 	template <ExplainMethodType... methods>
-	void add(const ExplainCalc&);
+	void add(const Explain&);
 };
 
 template <>

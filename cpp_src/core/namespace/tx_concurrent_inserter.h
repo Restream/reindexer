@@ -2,8 +2,8 @@
 
 #include <optional>
 #include <vector>
+#include "core/id_type.h"
 #include "core/keyvalue/float_vector.h"
-#include "core/type_consts.h"
 #include "estl/fast_hash_map.h"
 
 namespace reindexer {
@@ -12,10 +12,10 @@ class [[nodiscard]] SingleIndexData {
 public:
 	struct [[nodiscard]] Vector {
 		using Type = float;
-		Vector(FloatVectorDimension dimensions) noexcept : id{-1}, vec{FloatVector::CreateNotInitialized(dimensions)} {}
+		Vector(FloatVectorDimension dimensions) noexcept : id{IdType::NotSet()}, vec{FloatVector::CreateNotInitialized(dimensions)} {}
 
-		void Reset() noexcept { id = -1; }
-		bool IsValid() const noexcept { return id >= 0; }
+		void Reset() noexcept { id = IdType::NotSet(); }
+		bool IsValid() const noexcept { return id.IsValid(); }
 
 		IdType id;
 		FloatVectorImpl<Type> vec;
@@ -55,7 +55,7 @@ public:
 			mapping_.erase(found);
 			assertrx_dbg(vectors_[vecID].IsValid());
 			vectors_[vecID].Reset();
-			vacantIDs_.emplace_back(vecID);
+			vacantIDs_.emplace_back(IdType::FromNumber(vecID));
 			return true;
 		}
 		return false;
@@ -79,7 +79,7 @@ private:
 		if (vacantIDs_.empty()) {
 			vectors_.emplace_back(dimensions_);
 		} else {
-			ret = vacantIDs_.back();
+			ret = vacantIDs_.back().ToNumber();
 			vacantIDs_.pop_back();
 		}
 		return ret;

@@ -24,7 +24,7 @@ void FullTextDumper::LogFinalData(const reindexer::LocalQueryResults& result) {
 	tmp_buffer.push_back("Returned ids: ");
 	for (const auto& it : result.Items()) {
 		const auto& res = it.GetItemRef();
-		tmp_buffer.push_back("id: " + std::to_string(res.Id()) + " | lsn: " + std::to_string(int64_t(res.Value().GetLSN())));
+		tmp_buffer.push_back("id: " + std::to_string(res.Id().ToNumber()) + " | lsn: " + std::to_string(int64_t(res.Value().GetLSN())));
 	}
 	tmp_buffer.push_back("_______________________________________");
 

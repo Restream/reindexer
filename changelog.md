@@ -1,3 +1,36 @@
+# Version 5.11.0 (06.02.2026)
+## Core
+- [fea] Optimized indexes memory layout for namespaces with large amount of items. Index `IdSet`-structures now produce noticeably less overhead
+- [fea] Added support for `JOIN` on `composite`-indexes (i.e. queries like `SELECT * FROM ns1 INNER JOIN (SELECT * ns2) ON ns1.composite = ns2.composite`)
+- [fea] Added support for [serial()/now() precepts](readme.md#atomic-on-update-functions) with non-indexed fields
+- [fea] Added more optimal `preselect` for `JOIN`-queries in cases, when right namespace is small and right query does not have filtering conditions with `IdSets`
+- [fea] Added new `EXPLAIN` format for `SELECT`-queries with [MERGE](fulltext.md#merging-queries-results). Now it contains aggregated timing information and separate explains for each query
+- [fix] Fixed [serial()/now() precepts](readme.md#atomic-on-update-functions) with indexed fields, when target `jsonpath` is missing in document
+- [fix] Fixed `UPDATE`-queries for indexed fields, when target `jsonpath` is missing in document
+- [fix] Fixed indexing of empty arrays after `UPDATE`-queries: previously those arrays won't be selected by `IS NULL` condition
+- [fix] Fixed memory leak in `composite`-indexes after particular item update via `UPDATE` query
+- [fix] Fixed `UPDATE DROP` for `composite`-index parts, when `jsonpath` of subindex has nested field
+- [fix] Fixed `UPDATE`-query interaction with `null`-fields
+- [fix] Fixed handling for duplicate `sparse`-indexes in [DISTINCT](readme.md#aggregations) with multiple fields
+- [fix] Fixed storage data migration after `Primary key` index update
+
+## Fulltext
+- [fea] Changed indexing structure for [typos handling](fulltext.md#typos-algorithm). New structure has noticeably less memory consumation
+- [fea] Added support for `ORDER BY ft_composite` created over non-indexed fields
+- [fix] Fixed few incorrect interactions between `UPDATE`-queries and `text composite` index with `null`/missing fields
+
+## Vector indexes
+- [fix] Fixed situation, when some row IDs in `KNN` results with `range search` could be incorrect (due to missing internal/external index mapping)
+
+## Reindexer server
+- [fix] Fixed QPS in [Prometheus-metrics](cpp_src/readme.md#prometheus-server-side) for `SELECT`-queries (after `5.9.0` it was always equal to `UPDATE`-queries QPS)
+- [fix] Fixed `columns` list content in HTTP query results response (now it will contain full list of existing columns)
+
+## Face
+- [fea] Removed autocomplete from index fields for create/edit index forms
+- [fea] Added caching of added float vector data config
+- [fea] Deleted `is_appendable` field from index config
+
 # Version 5.10.0 (29.12.2025)
 ## Core
 - [fea] Added [filtering by field length](readme.md#functions)

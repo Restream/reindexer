@@ -4,6 +4,7 @@
 #include <random>
 #include <thread>
 #include "core/cjson/jsonbuilder.h"
+#include "core/id_type.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 #include "tools/errors.h"
@@ -22,7 +23,7 @@ void FloatVector::SetUp() {
 }
 
 static void checkOrdering(const reindexer::QueryResults& qr, reindexer::VectorMetric metric, std::optional<float> radius = std::nullopt) {
-	IdType lastId = 0;
+	reindexer::IdType lastId = reindexer::IdType::Zero();
 	reindexer::WrSerializer ser;
 	switch (metric) {
 		case reindexer::VectorMetric::L2: {
@@ -341,7 +342,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 		});
 
 	unsigned id = 0;
-	std::unordered_map<IdType, std::string> expectedData;
+	std::unordered_map<reindexer::IdType, std::string> expectedData;
 
 	std::atomic_bool terminate{false};
 	std::vector<std::thread> selectThreads;
@@ -374,7 +375,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 				// Insert new item
 				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, id, emptyVectors);
 				std::string json(item.GetJSON());
-				expectedData[id] = std::move(json);
+				expectedData[reindexer::IdType::FromNumber(id)] = std::move(json);
 				auto err = tx.Upsert(std::move(item));
 				ASSERT_TRUE(err.ok()) << err.what();
 				++id;
@@ -385,7 +386,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 				auto updID = rand() % id;
 				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, updID, emptyVectors);
 				std::string json(item.GetJSON());
-				if (auto found = expectedData.find(updID); found != expectedData.end()) {
+				if (auto found = expectedData.find(reindexer::IdType::FromNumber(updID)); found != expectedData.end()) {
 					found->second = std::move(json);
 				}
 				auto err = tx.Update(std::move(item));
@@ -395,7 +396,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 				// Delete existing id
 				auto delID = rand() % id;
 				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, delID, emptyVectors);
-				if (expectedData.erase(delID)) {
+				if (expectedData.erase(reindexer::IdType::FromNumber(delID))) {
 					--totalNewItems;
 				}
 				auto err = tx.Delete(std::move(item));
@@ -406,7 +407,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 				// Delete non existing id
 				auto delID = id + rand() % 1000 + 1000;
 				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, delID, emptyVectors);
-				ASSERT_EQ(expectedData.erase(delID), 0);
+				ASSERT_EQ(expectedData.erase(reindexer::IdType::FromNumber(delID)), 0);
 				auto err = tx.Delete(std::move(item));
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
@@ -415,7 +416,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 			// Insert more items to force multithreading insertion
 			auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, id, emptyVectors);
 			std::string json(item.GetJSON());
-			expectedData[id] = std::move(json);
+			expectedData[reindexer::IdType::FromNumber(id)] = std::move(json);
 			auto err = tx.Insert(std::move(item));
 			ASSERT_TRUE(err.ok()) << err.what();
 			++id;
@@ -437,7 +438,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 		auto item = it.GetItem(false);
 		auto id = item["id"].As<int>();
 		auto json = item.GetJSON();
-		auto found = expectedData.find(id);
+		auto found = expectedData.find(reindexer::IdType::FromNumber(id));
 		EXPECT_NE(found, expectedData.end()) << "Item with unexpected ID in namespace: " << json;
 		EXPECT_EQ(found->second, json) << "Unexpected item's content in namespace";
 		expectedData.erase(found);
@@ -758,7 +759,7 @@ TEST_P(FloatVector, Queries) try {
 						   .WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params)
 						   .Sort("rank(" + kFieldNameIvf + ')', false));
 	::rndFloatVector(buf);
-	std::map<IdType, reindexer::RankT> ranks;
+	std::map<reindexer::IdType, reindexer::RankT> ranks;
 	result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params).WithRank());
 	for (auto& i : result) {
 		const auto& item = i.GetItemRefRanked();
@@ -775,9 +776,9 @@ TEST_P(FloatVector, Queries) try {
 		const auto& item = i.GetItemRefRanked();
 		const auto it = ranks.find(item.NotRanked().Id());
 		if (it == ranks.end()) {
-			EXPECT_NE(it, ranks.end()) << item.NotRanked().Id() << ' ' << item.Rank().Value();
+			EXPECT_NE(it, ranks.end()) << item.NotRanked().Id().ToNumber() << ' ' << item.Rank().Value();
 		} else {
-			EXPECT_EQ(it->second, item.Rank()) << item.NotRanked().Id();
+			EXPECT_EQ(it->second, item.Rank()) << item.NotRanked().Id().ToNumber();
 		}
 	}
 

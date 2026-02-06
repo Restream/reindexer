@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include "core/id_type.h"
 #include "core/keyvalue/float_vector.h"
 #include "estl/elist.h"
 #include "estl/mutex.h"

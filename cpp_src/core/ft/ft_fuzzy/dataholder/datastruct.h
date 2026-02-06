@@ -2,8 +2,7 @@
 #include <stdint.h>
 #include <map>
 #include <memory>
-#include <set>
-#include "core/type_consts.h"
+#include "core/id_type.h"
 #include "smardeque.h"
 
 namespace search_engine {
@@ -12,7 +11,7 @@ using std::shared_ptr;
 using std::map;
 struct IdContext;
 
-typedef map<IdType, IdContext> id_map;
+typedef map<reindexer::IdType, IdContext> id_map;
 typedef map<PosType, ProcType> proc_map;
 
 struct [[nodiscard]] DataStruct {};
@@ -28,7 +27,7 @@ struct [[nodiscard]] Info {
 };
 
 struct [[nodiscard]] SeacrhResult {
-	IdType id;
+	reindexer::IdType id;
 	ProcType procent;
 };
 }  // namespace search_engine

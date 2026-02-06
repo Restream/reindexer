@@ -2,6 +2,7 @@
 
 #include "comparator_not_indexed_distinct.h"
 #include "const.h"
+#include "core/id_type.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/relaxed_variant_hash.h"
 #include "core/payload/payloadiface.h"

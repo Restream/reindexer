@@ -1,9 +1,11 @@
 #pragma once
 #include <functional>
 #include <optional>
+#include "core/id_type.h"
 #include "core/namespace/incarnationtags.h"
 #include "core/queryresults/aggregationresult.h"
 #include "core/rank_t.h"
+#include "core/type_consts.h"
 #include "tools/lsn.h"
 #include "tools/serializer.h"
 
@@ -28,7 +30,7 @@ public:
 	};
 
 	struct [[nodiscard]] ItemParams {
-		IdType id = -1;
+		IdType id = IdType::NotSet();
 		uint16_t nsid = 0;
 		RankT rank{};
 		lsn_t lsn;

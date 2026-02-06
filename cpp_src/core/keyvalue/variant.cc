@@ -178,12 +178,7 @@ void Variant::copy(const Variant& other) {
 		[&](KeyValueType::Double) noexcept { variant_.value_double = other.variant_.value_double; },
 		[&](KeyValueType::Float) noexcept { variant_.value_float = other.variant_.value_float; },
 		[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Uuid> auto) noexcept {},
-		[&](KeyValueType::FloatVector) noexcept {
-			FloatVectorView dest{*this};
-			ConstFloatVectorView src{other};
-			assertrx(dest.Dimension() == src.Dimension());
-			memcpy(dest.Data(), src.Data(), sizeof(FloatVectorView::DataType) * src.Dimension().Value());
-		});
+		[&](KeyValueType::FloatVector) noexcept { *this = Variant(other.operator ConstFloatVectorView(), hold); });
 }
 
 Variant& Variant::EnsureHold() & {
@@ -302,7 +297,7 @@ std::optional<T> tryParseAs(std::string_view str) noexcept {
 	while (begin != end && std::isspace(*begin)) {
 		++begin;
 	}
-	T res;
+	T res = 0;
 	auto [ptr, err] = std::from_chars(begin, end, res);
 	if (ptr == begin || err == std::errc::invalid_argument || err == std::errc::result_out_of_range) {
 		return std::nullopt;

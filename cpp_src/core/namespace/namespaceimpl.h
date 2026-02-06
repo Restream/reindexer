@@ -19,6 +19,7 @@
 #include "core/selectkeyresult.h"
 #include "core/storage/storagetype.h"
 #include "core/transaction/localtransaction.h"
+#include "core/type_consts.h"
 #include "estl/contexted_locks.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
@@ -71,6 +72,10 @@ class QueryStatCalculator;
 namespace SortExprFuncs {
 struct DistanceBetweenJoinedIndexesSameNs;
 }  // namespace SortExprFuncs
+
+namespace migrations {
+class PKMigrationService;
+}
 
 class [[nodiscard]] NsContext {
 public:
@@ -180,6 +185,8 @@ class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // 
 	friend class FloatVectorsHolderMap;
 	friend class FieldsFilter;
 	friend class ExpressionEvaluator;
+	friend class FunctionExecutor;
+	friend class migrations::PKMigrationService;
 
 	class [[nodiscard]] IndexesStorage final : public std::vector<std::unique_ptr<Index>> {
 	public:
@@ -211,7 +218,7 @@ class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // 
 
 	class [[nodiscard]] Items final : public std::vector<PayloadValue> {
 	public:
-		bool exists(IdType id) const noexcept { return id < IdType(size()) && !(*this)[id].IsFree(); }
+		bool exists(IdType id) const noexcept { return id.ToNumber() < ptrdiff_t(size()) && !(*this)[id.ToNumber()].IsFree(); }
 	};
 
 public:
@@ -408,7 +415,7 @@ public:
 	void OnConfigUpdated(const DBConfigProvider& configProvider, const RdxContext& ctx);
 	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext& ctx) const;
 	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
-	Error SetClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx);
+	void SetClusterOperationStatus(ClusterOperationStatus&& status, const RdxContext& ctx);
 	void ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& ctx);
 	void GetSnapshot(Snapshot& snapshot, const SnapshotOpts& opts, const RdxContext& ctx);
 	void SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx);
@@ -470,10 +477,11 @@ private:
 	void doUpsert(ItemImpl& item, IdType id, bool doUpdate, TransactionContext* txCtx);
 	void modifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void deleteItem(Item& item, UpdatesContainer& pendedRepl, const NsContext& ctx);
-	void doModifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx, IdType suggestedId = -1);
+	void doModifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx,
+					  IdType suggestedId = IdType::NotSet());
 	void updateTagsMatcherFromItem(ItemImpl* ritem, const NsContext& ctx);
-	void tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl& item, IdType rowId, const FloatVectorsIndexes& vectorIndexes,
-								 WrSerializer& pk, WrSerializer& data) noexcept;
+	Error tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl& item, IdType rowId, const FloatVectorsIndexes& vectorIndexes,
+								  WrSerializer& pk, WrSerializer& data) noexcept;
 	template <NeedRollBack needRollBack, FieldChangeType fieldChangeType>
 	RollBack_updateItems<needRollBack> updateItems(const PayloadType& oldPlType, int changedField);
 	void fillSparseIndex(Index&, std::string_view jsonPath);
@@ -522,7 +530,7 @@ private:
 	std::pair<Index*, int> getPkIdx() const noexcept;
 	RX_ALWAYS_INLINE SelectKeyResult getPkDocs(const ConstPayload& cpl, bool inTransaction, const RdxContext& ctx);
 	RX_ALWAYS_INLINE VariantArray getPkKeys(const ConstPayload& cpl, Index* pkIndex, int fieldNum);
-	void checkUniquePK(const ConstPayload& cpl, bool inTransaction, const RdxContext& ctx);
+	[[noreturn]] void throwDuplicatePK(const ConstPayload& cpl, IdType itemId, IdType conflictingItemId);
 
 	void setFieldsBasedOnPrecepts(ItemImpl* ritem, UpdatesContainer& replUpdates, const NsContext& ctx);
 

@@ -12,11 +12,11 @@ void KbLayout::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorag
 
 	for (auto sym : data) {
 		if (sym >= ruLettersStartUTF16 && sym <= ruLettersStartUTF16 + ruAlphabetSize - 1) {  // russian layout
-			assertrx(sym >= ruLettersStartUTF16 && sym - ruLettersStartUTF16 < ruAlphabetSize);
+			assertrx_throw(sym >= ruLettersStartUTF16 && sym - ruLettersStartUTF16 < ruAlphabetSize);
 			result_string.push_back(ru_layout_[sym - ruLettersStartUTF16]);
 
 		} else if (sym >= allSymbolStartUTF16 && sym < allSymbolStartUTF16 + engAndAllSymbols) {  // en symbol
-			assertrx(sym >= allSymbolStartUTF16 && sym - allSymbolStartUTF16 < engAndAllSymbols);
+			assertrx_throw(sym >= allSymbolStartUTF16 && sym - allSymbolStartUTF16 < engAndAllSymbols);
 			result_string.push_back(all_symbol_[sym - allSymbolStartUTF16]);
 
 		} else {
@@ -28,7 +28,7 @@ void KbLayout::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorag
 }
 
 void KbLayout::setEnLayout(wchar_t sym, wchar_t data) {
-	assertrx(((sym >= allSymbolStartUTF16) && (sym - allSymbolStartUTF16 < engAndAllSymbols)));
+	assertrx_throw(((sym >= allSymbolStartUTF16) && (sym - allSymbolStartUTF16 < engAndAllSymbols)));
 	all_symbol_[sym - allSymbolStartUTF16] = data;	// '
 }
 

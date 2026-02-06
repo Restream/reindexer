@@ -23,7 +23,7 @@ public:
 
 	SearchResult Search(const reindexer::FtDSLQuery& dsl, bool inTransaction, const reindexer::RdxContext&);
 
-	void AddData(std::string_view src_data, const IdType id, unsigned field, unsigned arrayIdx,
+	void AddData(std::string_view src_data, const reindexer::IdType id, unsigned field, unsigned arrayIdx,
 				 const reindexer::SplitOptions& splitOptions);
 	void Commit();
 

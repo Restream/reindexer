@@ -271,7 +271,8 @@ private:
 }  // namespace
 
 template <typename T>
-void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher, WrSerializer& wrser) {
+void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher, WrSerializer& wrser,
+					   ScalarIndexesSetT& objectScalarIndexes) {
 #ifdef USE_PMR
 	int bufSize = 0;
 	for (int field = 1, numFields = pl.NumFields(); field < numFields; ++field) {
@@ -294,6 +295,7 @@ void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher
 		assertf_dbg(!fieldType.JsonPaths().empty() && !fieldType.JsonPaths()[0].empty(), "Wrong JsonPaths for field={}, ns={}", field,
 					pl.Type().Name());
 		const TagsPath tagsPath = tagsMatcher->path2tag(fieldType.JsonPaths()[0]);
+		objectScalarIndexes.set(field);
 		root.Add(std::span{tagsPath.begin(), tagsPath.end()}, field);
 	}
 
@@ -301,8 +303,9 @@ void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher
 	root.Travers(builder, pl);
 }
 
-template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const PayloadValue>&, const TagsMatcher*, WrSerializer&);
-template void buildPayloadTuple<PayloadValue>(const PayloadIface<PayloadValue>&, const TagsMatcher*, WrSerializer&);
+template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const PayloadValue>&, const TagsMatcher*, WrSerializer&,
+													ScalarIndexesSetT&);
+template void buildPayloadTuple<PayloadValue>(const PayloadIface<PayloadValue>&, const TagsMatcher*, WrSerializer&, ScalarIndexesSetT&);
 
 CJsonNestedArrayAnalizeResult analizeNestedArray(size_t count, Serializer& rdser) {
 	CJsonNestedArrayAnalizeResult result;
@@ -596,6 +599,8 @@ private:
 				}
 			} break;
 			case TAG_NULL:
+				dump_ << " -> null";
+				break;
 			case TAG_OBJECT:
 			case TAG_END:
 			default:

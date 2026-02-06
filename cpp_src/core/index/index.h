@@ -60,6 +60,7 @@ public:
 	};
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
+	using KeyEntryPK = reindexer::KeyEntry<IdSetUnique>;
 
 	Index(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields);
 	Index(const Index&);
@@ -69,6 +70,7 @@ public:
 	virtual void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) = 0;
 	virtual void Delete(const Variant& key, IdType id, reindexer::MustExist mustExist, StringsHolder&, bool& clearCache) = 0;
 	virtual void Delete(const VariantArray& keys, IdType id, reindexer::MustExist mustExist, StringsHolder&, bool& clearCache) = 0;
+	virtual bool RefreshCompositeKey(const Variant& key) noexcept = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const SelectContext&,
 									   const RdxContext&) = 0;
@@ -84,6 +86,7 @@ public:
 
 	virtual void UpdateSortedIds(const IUpdateSortedContext& ctx) = 0;
 	virtual bool IsSupportSortedIdsBuild() const noexcept = 0;
+
 	virtual size_t Size() const noexcept { return 0; }
 	virtual std::unique_ptr<Index> Clone(size_t newCapacity) const = 0;
 	virtual bool IsOrdered() const noexcept { return false; }

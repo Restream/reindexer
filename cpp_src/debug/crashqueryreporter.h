@@ -7,14 +7,14 @@
 namespace reindexer {
 
 struct SelectCtx;
-class ExplainCalc;
+class SingleQueryExplainCalc;
 class StringsHolder;
 class Query;
 
 class [[nodiscard]] ActiveQueryScope {
 public:
 	// Core query scope
-	ActiveQueryScope(SelectCtx& ctx, const std::atomic<OptimizationState>& nsOptimizationState, ExplainCalc& explainCalc,
+	ActiveQueryScope(SelectCtx& ctx, const std::atomic<OptimizationState>& nsOptimizationState, SingleQueryExplainCalc& explainCalc,
 					 const std::atomic<int>& nsLockerState, StringsHolder* strHolder) noexcept;
 	ActiveQueryScope(const Query& q, QueryType realQueryType, const std::atomic<OptimizationState>& nsOptimizationState,
 					 StringsHolder* strHolder) noexcept;

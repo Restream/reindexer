@@ -1,5 +1,6 @@
 #include "joinresults.h"
 #include "core/cjson/tagsmatcher.h"
+#include "core/id_type.h"
 
 namespace reindexer::joins {
 
@@ -111,7 +112,7 @@ ItemIterator ItemIterator::CreateFrom(const LocalQueryResults::ConstIterator& it
 
 const static NamespaceResults kEmptyNamespaceResults;
 
-ItemIterator ItemIterator::CreateEmpty() noexcept { return ItemIterator{&kEmptyNamespaceResults, 0}; }
+ItemIterator ItemIterator::CreateEmpty() noexcept { return ItemIterator{&kEmptyNamespaceResults, IdType::Zero()}; }
 
 void NamespaceResults::Insert(IdType rowid, uint32_t fieldIdx, LocalQueryResults&& qr) {
 	assertrx_throw(fieldIdx < joinedSelectorsCount_);

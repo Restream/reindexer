@@ -21,7 +21,7 @@ struct [[nodiscard]] SelectCtx {
 	bool HasOffset() const noexcept { return offset != QueryEntry::kDefaultOffset; }
 	bool HasLimit() const noexcept { return limit != QueryEntry::kDefaultLimit; }
 
-	ExplainCalc::Duration preResultTimeTotal = ExplainCalc::Duration::zero();
+	Explain::Duration preResultTimeTotal = Explain::Duration::zero();
 	SortingContext sortingContext;
 	uint8_t nsid = 0;
 	bool isForceAll = false;
@@ -38,7 +38,7 @@ struct [[nodiscard]] SelectCtx {
 	unsigned limit = QueryEntry::kDefaultLimit;
 
 	const Query* parentQuery = nullptr;
-	ExplainCalc explain;
+	Explain* explain = nullptr;
 	bool requiresCrashTracking = false;
 	std::vector<SubQueryExplain> subQueriesExplains;
 	FloatVectorsHolderMap* floatVectorsHolder = nullptr;

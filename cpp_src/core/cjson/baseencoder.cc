@@ -361,7 +361,7 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload& pl, Serializer& rdser)
 					if (isFloatVector) {
 						assertrx_dbg(count == ConstFloatVectorView(pl.Get(tagField, 0)).Dimension().Value());
 					}
-#endif
+#endif	// RX_WITH_STDLIB_DEBUG
 					tagsLengths_.back() = count;
 				} else {
 					tagsLengths_.pop_back();
@@ -432,7 +432,8 @@ std::string_view BaseEncoder<Builder>::getPlTuple(ConstPayload& pl) {
 
 	if (tagsMatcher_ && tuple.empty()) {
 		tmpPlTuple_.Reset();
-		buildPayloadTuple(pl, tagsMatcher_, tmpPlTuple_);
+		ScalarIndexesSetT objectScalarIndexes;
+		buildPayloadTuple(pl, tagsMatcher_, tmpPlTuple_, objectScalarIndexes);
 		return tmpPlTuple_.Slice();
 	}
 

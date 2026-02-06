@@ -106,7 +106,7 @@ Each result of query contains rank of match. Rank is integer from 0 to 255. 0 - 
 
 The format of query is:
 
-`query := [@[+]field[^boost][,field2[^boost]]]    [=][*]term1[*][~][^boost] [+|-][*]term2[*][~][@][^boost] ...`
+`query := [@[+]field[^boost][,field2[^boost]]]    [=][*]term1[*][~][^boost] [+|-][*]term2[*][~][^boost] ...`
 
 ### Patterns
 - `*` - match any symbols. For example, `termina*` matches words `terminator` and `terminal`. `*` Can be at word start or at word end, but can not be at word middle.
@@ -125,7 +125,7 @@ The format of query is:
 
 ### Escape character
 `\` character allows to include any special character (`+`,`-`,`@`,`*`,`^`,`~`) to a word to be searched:
-`\*crisis` means to search literally `*crisis` and not all words that end with 'crisis'.
+`\*crisis` means to search literally `*crisis` and not all words that end with 'crisis'. The escaped character must be present in ExtraWordSymbols for correct searching. 
 
 ### Phrase search
 The DSL's operand can be a phrase:

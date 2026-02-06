@@ -12,6 +12,8 @@ static std::string_view describeExplainDuration(ExplainDuration mark) {
 	switch (mark) {
 		case ExplainDuration::Total:
 			return "Total"sv;
+		case ExplainDuration::Preselect:
+			return "Preselect"sv;
 		case ExplainDuration::Prepare:
 			return "Prepare"sv;
 		case ExplainDuration::Indexes:
@@ -148,13 +150,13 @@ void Logger<LocalTransaction>::Dump(std::chrono::microseconds time) {
 }
 
 template <ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::ExplainMethodType... methods>
-void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::add(const ExplainCalc& explain) {
+void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::add(const Explain& explain) {
 	durationStorage = {std::chrono::duration_cast<std::chrono::microseconds>((explain.*methods)())...};
 }
 
-void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::Add(const ExplainCalc& explain) {
-	add<&ExplainCalc::Total, &ExplainCalc::Prepare, &ExplainCalc::Indexes, &ExplainCalc::Postprocess, &ExplainCalc::Loop,
-		&ExplainCalc::Sort>(explain);
+void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::Add(const Explain& explain) {
+	add<&Explain::Total, &Explain::Preselect, &Explain::Prepare, &Explain::Indexes, &Explain::Postprocess, &Explain::Loop, &Explain::Sort>(
+		explain);
 }
 
 template struct Logger<LocalTransaction>;

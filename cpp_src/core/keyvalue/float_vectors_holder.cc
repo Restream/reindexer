@@ -1,4 +1,5 @@
 #include "float_vectors_holder.h"
+#include "core/id_type.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joinedselector.h"
@@ -64,7 +65,7 @@ void FloatVectorsHolderMap::updatePayload(const NamespaceImpl& ns, const FloatVe
 	for (; it != end; ++it) {
 		ItemRef& itemRef = it.GetItemRef();
 		const auto id = itemRef.Id();
-		if (id >= 0) {
+		if (id.IsValid()) {
 			itemRef.Value().Clone();
 			Payload payload{ns.payloadType_, itemRef.Value()};
 			checkPayloadVectorField(payload, index);
@@ -90,7 +91,7 @@ void FloatVectorsHolderMap::add(const NamespaceImpl& ns, const FloatVectorIndexI
 	for (; it != end; ++it) {
 		ItemRef& itemRef = it.GetItemRef();
 		const auto id = itemRef.Id();
-		if (id >= 0) {
+		if (id.IsValid()) {
 			ids.push_back(id);
 			if (ids.size() >= kLimitNumberProcessedElements) {
 				auto itNext = it;

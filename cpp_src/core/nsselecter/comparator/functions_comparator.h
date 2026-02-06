@@ -2,6 +2,7 @@
 
 #include "const.h"
 #include "core/function/function.h"
+#include "core/id_type.h"
 #include "core/payload/payloadiface.h"
 #include "core/payload/payloadtype.h"
 #include "core/type_consts.h"

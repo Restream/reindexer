@@ -153,19 +153,19 @@ Writer::StorageCacheWriteResult Writer::writeSingleIndexCache(FloatVectorIndex& 
 
 	auto getPKSingle = [this, pkField](IdType id) {
 		VariantArray ret;
-		if (size_t(id) >= ns_.items_.size() || ns_.items_[id].IsFree()) [[unlikely]] {
+		if (size_t(id.ToNumber()) >= ns_.items_.size() || ns_.items_[id.ToNumber()].IsFree()) [[unlikely]] {
 			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
-		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);
+		ConstPayload pl(ns_.payloadType_, ns_.items_[id.ToNumber()]);
 		pl.Get(pkField, ret);
 		return ret;
 	};
 	auto getPKComposite = [this, &pkFields](IdType id) {
 		VariantArray ret, tmp;
-		if (size_t(id) >= ns_.items_.size() || ns_.items_[id].IsFree()) [[unlikely]] {
+		if (size_t(id.ToNumber()) >= ns_.items_.size() || ns_.items_[id.ToNumber()].IsFree()) [[unlikely]] {
 			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
-		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);
+		ConstPayload pl(ns_.payloadType_, ns_.items_[id.ToNumber()]);
 		for (const int f : pkFields) {
 			pl.Get(f, tmp);
 			ret.emplace_back(tmp[0]);

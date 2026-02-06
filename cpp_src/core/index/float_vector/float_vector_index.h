@@ -52,7 +52,7 @@ protected:
 				}
 			}
 			const IdType itemID = getVectorData_(keys, destBuf);
-			if (itemID < 0) [[unlikely]] {
+			if (!itemID.IsValid()) [[unlikely]] {
 				throw Error(errLogic, "{}::LoadIndexCache:{}: unable to find indexed item with requested PK", idxType, name);
 			}
 			return itemID;
@@ -76,11 +76,14 @@ public:
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType, bool& clearCache) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
 	Variant UpsertConcurrent(const Variant& key, IdType id, bool& clearCache);
+	bool RefreshCompositeKey(const Variant& key) noexcept override final;
 	SelectKeyResult Select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&, const RdxContext&) const;
 	KnnRawResult SelectRaw(ConstFloatVectorView, const KnnSearchParams&, const RdxContext&) const;
 	void Commit() override final;
+
 	void UpdateSortedIds(const IUpdateSortedContext&) override final { assertrx_dbg(!IsSupportSortedIdsBuild()); }
 	bool IsSupportSortedIdsBuild() const noexcept override final { return false; }
+
 	const void* ColumnData() const noexcept override final { return nullptr; }
 	bool HoldsStrings() const noexcept override final { return false; }
 	void ReconfigureCache(const NamespaceCacheConfigData&) noexcept override final {}

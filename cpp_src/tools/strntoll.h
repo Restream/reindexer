@@ -15,13 +15,13 @@ inline long long int strntoll(std::string_view str, const char** end, int base) 
 	}
 	char buf[24];
 	const char* beg = str.data();
-	auto sz = str.size();
-	for (; beg && sz && isspace(*beg); ++beg, --sz);
+	const char* strEnd = beg + str.size();
+	for (; beg && beg < strEnd && isspace(*beg); ++beg);
 	assertrx_dbg(end);
 	const bool isNegative = beg && *beg == '-';
 	const bool hasSign = beg && (*beg == '-' || *beg == '+');
-	unsigned nums = hasSign ? 1 : 0;
-	for (auto it = beg + nums; sz && it; ++it, --sz) {
+	unsigned nums = hasSign ? 1 :0;
+	for (auto it = beg + nums; it && it < strEnd; ++it) {
 		if (!isdigit(*it)) {
 			break;
 		}

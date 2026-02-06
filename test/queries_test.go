@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -150,6 +151,12 @@ type TestItemSimple struct {
 	Phone string
 }
 
+type TestItemSelectFilter struct {
+	ID    int    `reindex:"id,,pk"`
+	Genre int64  `reindex:"genre,tree,sparse"`
+	Name  string `reindex:"name,text"`
+}
+
 type TestItemGeom struct {
 	ID                  int             `reindex:"id,,pk"`
 	PointRTreeLinear    reindexer.Point `reindex:"point_rtree_linear,rtree,linear"`
@@ -268,6 +275,7 @@ const (
 	testItemsCancelNs       = "test_items_cancel"
 	testItemsIdOnlyNs       = "test_items_id_only"
 	testItemsWithSparseNs   = "test_items_with_sparse"
+	testSelectFilterNs      = "test_select_filter"
 	testItemsGeomNs         = "test_items_geom"
 	testItemsStDistanceNs   = "test_items_st_distance"
 	testItemsNotNs          = "test_items_not"
@@ -283,7 +291,8 @@ const (
 	testItemsStrictNs        = "test_items_strict"
 	testItemsStrictJoinedNs  = "test_items_strict_joined"
 
-	testItemsExplainNs      = "test_items_explain"
+	testItemsExplainNs1     = "test_items_explain_1"
+	testItemsExplainNs2     = "test_items_explain_2"
 	testItemsFlatArrayLenNs = "test_items_flat_array_len"
 )
 
@@ -295,6 +304,7 @@ func init() {
 	tnamespaces[testItemsCancelNs] = TestItem{}
 	tnamespaces[testItemsIdOnlyNs] = TestItemIDOnly{}
 	tnamespaces[testItemsWithSparseNs] = TestItemWithSparse{}
+	tnamespaces[testSelectFilterNs] = TestItemSelectFilter{}
 	tnamespaces[testItemsGeomNs] = TestItemGeom{}
 	tnamespaces[testItemsStDistanceNs] = TestItemGeomSimple{}
 	tnamespaces[testItemsNotNs] = TestItemSimple{}
@@ -310,7 +320,8 @@ func init() {
 	tnamespaces[testItemsStrictNs] = TestItem{}
 	tnamespaces[testItemsStrictJoinedNs] = TestJoinItem{}
 
-	tnamespaces[testItemsExplainNs] = TestItemSimple{}
+	tnamespaces[testItemsExplainNs1] = TestItemSimple{}
+	tnamespaces[testItemsExplainNs2] = TestItemSimple{}
 	tnamespaces[testItemsFlatArrayLenNs] = TestItemFlatArrayLen{}
 }
 
@@ -644,6 +655,9 @@ func FillTestItemsWithFuncParts(ns string, start int, count int, partSize int, p
 }
 
 func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort string, desc, testComposite bool) {
+	// Take items without conditions
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).Limit(1).ExecAndVerify(t)
+
 	// Take items with single condition
 	newTestQuery(DB, namespace).Where("genre", reindexer.EQ, rand.Int()%50).Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
 	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
@@ -1034,13 +1048,25 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 
 func CheckTestItemsQueries(t *testing.T, testCase IndexesTestCase) {
 	log.Println(testCase.Name)
-	desc := []bool{true, false}[rand.Intn(2)]
-	sort := testCase.Options.SortIndexes[rand.Intn(len(testCase.Options.SortIndexes))]
-	distinct := testCase.Options.DistinctIndexes[rand.Intn(len(testCase.Options.DistinctIndexes))]
-	log.Printf("\tDISTINCT '%s' SORT '%s' DESC %v\n", distinct, sort, desc)
-	// Just take all items from namespace
-	newTestQuery(DB, testCase.Namespace).Distinct(distinct).Sort(sort, desc).Limit(1).ExecAndVerify(t)
-	callQueriesSequence(t, testCase.Namespace, distinct, sort, desc, testCase.Options.TestComposite)
+
+	if len(os.Getenv("REINDEXER_FULL_GO_QUERIES_TEST")) > 0 {
+		log.Println("Running full queries test set")
+		for _, desc := range []bool{true, false} {
+			for _, sort := range testCase.Options.SortIndexes {
+				for _, distinct := range testCase.Options.DistinctIndexes {
+					log.Printf("\tDISTINCT '%s' SORT '%s' DESC %v\n", distinct, sort, desc)
+					callQueriesSequence(t, testCase.Namespace, distinct, sort, desc, testCase.Options.TestComposite)
+				}
+			}
+		}
+	} else {
+		log.Println("Running partial queries test set")
+		desc := []bool{true, false}[rand.Intn(2)]
+		sort := testCase.Options.SortIndexes[rand.Intn(len(testCase.Options.SortIndexes))]
+		distinct := testCase.Options.DistinctIndexes[rand.Intn(len(testCase.Options.DistinctIndexes))]
+		log.Printf("\tDISTINCT '%s' SORT '%s' DESC %v\n", distinct, sort, desc)
+		callQueriesSequence(t, testCase.Namespace, distinct, sort, desc, testCase.Options.TestComposite)
+	}
 }
 
 func CheckAggregateQueries(t *testing.T) {
@@ -1428,6 +1454,40 @@ func TestQueries(t *testing.T) {
 		CheckTestItemsQueries(t, testCaseWithSparseIndexes)
 	})
 
+}
+
+func TestSelectFilter(t *testing.T) {
+	t.Parallel()
+
+	const ns = testSelectFilterNs
+
+	testItem := TestItemSelectFilter{ID: int(rand.Int() % 100), Genre: int64(rand.Int() % 100), Name: randString()}
+	err := DB.Upsert(ns, testItem)
+	require.NoError(t, err)
+
+	t.Run("select filter json", func(t *testing.T) {
+		it := DB.Query(ns).Select("ID").ExecToJson()
+		defer it.Close()
+		for it.Next() {
+			item := TestItemSelectFilter{}
+			err := json.Unmarshal(it.JSON(), &item)
+			assert.NoError(t, err)
+			expected := TestItemSelectFilter{ID: testItem.ID}
+			require.Equal(t, expected, item)
+		}
+	})
+
+	t.Run("select filter go object", func(t *testing.T) {
+		if strings.HasPrefix(DB.dsn, "builtin") {
+			t.Skip() // TODO 2138
+		}
+		items, err := DB.Query(ns).Select("ID").Exec(t).FetchAll()
+		assert.NoError(t, err)
+		assert.Len(t, items, 1)
+		item := *items[0].(*TestItemSelectFilter)
+		expected := TestItemSelectFilter{ID: testItem.ID}
+		require.Equal(t, expected, item)
+	})
 }
 
 func TestSTDistanceWrappers(t *testing.T) {
@@ -2458,9 +2518,15 @@ func TestQrIdleTimeout(t *testing.T) {
 func TestQueryExplain(t *testing.T) {
 	t.Parallel()
 
-	const ns = testItemsExplainNs
+	const ns = testItemsExplainNs1
 
 	tx := newTestTx(DB, ns)
+	for i := 0; i < 5; i++ {
+		tx.Upsert(TestItemSimple{ID: i, Year: i, Name: randString()})
+	}
+	tx.MustCommit()
+
+	tx = newTestTx(DB, testItemsExplainNs2)
 	for i := 0; i < 5; i++ {
 		tx.Upsert(TestItemSimple{ID: i, Year: i, Name: randString()})
 	}
@@ -2549,68 +2615,137 @@ func TestQueryExplain(t *testing.T) {
 	})
 
 	t.Run("Subquery explain check (Where + WhereQuery)", func(t *testing.T) {
-		q := DB.Query(ns).Explain().
-			Where("id", reindexer.SET, DB.Query(ns).Select("id").Where("year", reindexer.SET, []int{1, 2})).
-			WhereQuery(t, DB.Query(ns).Select("id").Where("year", reindexer.EQ, 5), reindexer.LE, 10)
-		it := q.MustExec(t)
-		defer it.Close()
-		explainRes, err := it.GetExplainResults()
-		require.NoError(t, err)
-		require.NotNil(t, explainRes)
+		createMainQuery := func() *queryTest {
+			return DB.Query(ns).Explain().
+				Where("id", reindexer.SET, DB.Query(ns).Select("id").Where("year", reindexer.SET, []int{1, 2})).
+				WhereQuery(t, DB.Query(ns).Select("id").Where("year", reindexer.EQ, 5), reindexer.LE, 10)
+		}
 
-		printExplainRes(explainRes)
-		checkExplain(t, explainRes.Selectors, []expectedExplain{
-			{
-				Field:       "always_false",
-				Method:      "index",
-				Keys:        1,
-				Comparators: 0,
-				Matched:     0,
-			},
-		}, "")
-		checkExplainSubqueries(t, explainRes.SubQueriesExplains, []expectedExplainSubQuery{
-			{
-				Namespace: ns,
-				Field:     "id",
-				Selectors: []expectedExplain{
-					{
-						Field:       "-scan",
-						Method:      "scan",
-						Keys:        0,
-						Comparators: 0,
-						Matched:     5,
-					},
-					{
-						Field:       "year",
-						FieldType:   "indexed",
-						Method:      "scan",
-						Keys:        0,
-						Comparators: 1,
-						Matched:     2,
+		checkMainQueryExplain := func(t *testing.T, explainRes *reindexer.SingleQueryExplainResults) {
+			checkExplain(t, explainRes.Selectors, []expectedExplain{
+				{
+					Field:       "always_false",
+					Method:      "index",
+					Keys:        1,
+					Comparators: 0,
+					Matched:     0,
+				},
+			}, "")
+			checkExplainSubqueries(t, explainRes.SubQueriesExplains, []expectedExplainSubQuery{
+				{
+					Namespace: ns,
+					Field:     "id",
+					Selectors: []expectedExplain{
+						{
+							Field:       "-scan",
+							Method:      "scan",
+							Keys:        0,
+							Comparators: 0,
+							Matched:     5,
+						},
+						{
+							Field:       "year",
+							FieldType:   "indexed",
+							Method:      "scan",
+							Keys:        0,
+							Comparators: 1,
+							Matched:     2,
+						},
 					},
 				},
-			},
-			{
-				Namespace: ns,
-				Selectors: []expectedExplain{
-					{
-						Field:       "year",
-						FieldType:   "indexed",
-						Method:      "index",
-						Keys:        0,
-						Comparators: 0,
-						Matched:     0,
-					},
-					{
-						Field:       "id",
-						FieldType:   "indexed",
-						Method:      "scan",
-						Keys:        0,
-						Comparators: 1,
-						Matched:     0,
+				{
+					Namespace: ns,
+					Selectors: []expectedExplain{
+						{
+							Field:       "year",
+							FieldType:   "indexed",
+							Method:      "index",
+							Keys:        0,
+							Comparators: 0,
+							Matched:     0,
+						},
+						{
+							Field:       "id",
+							FieldType:   "indexed",
+							Method:      "scan",
+							Keys:        0,
+							Comparators: 1,
+							Matched:     0,
+						},
 					},
 				},
-			},
+			})
+		}
+
+		t.Run("Single", func(t *testing.T) {
+			q := createMainQuery()
+			it := q.MustExec(t)
+			defer it.Close()
+			explainRes, err := it.GetExplainResults()
+			require.NoError(t, err)
+			require.NotNil(t, explainRes)
+			require.Empty(t, explainRes.Merged)
+
+			printExplainRes(explainRes)
+			checkMainQueryExplain(t, &explainRes.SingleQueryExplainResults)
+		})
+
+		t.Run("With merge", func(t *testing.T) {
+
+			mq := DB.Query(testItemsExplainNs2).Where("id", reindexer.LT, 1)
+			q := DB.Query(ns).Explain().
+				Where("id", reindexer.SET, DB.Query(ns).Select("id").Where("year", reindexer.SET, []int{1, 2})).
+				WhereQuery(t, DB.Query(ns).Select("id").Where("year", reindexer.EQ, 5), reindexer.LE, 10).
+				Merge(mq)
+			it := q.MustExec(t)
+			defer it.Close()
+			explainRes, err := it.GetExplainResults()
+			require.NoError(t, err)
+			require.NotNil(t, explainRes)
+
+			printExplainRes(explainRes)
+			assert.Empty(t, explainRes.Selectors)
+			assert.Empty(t, explainRes.SubQueriesExplains)
+			assert.Empty(t, explainRes.OnConditionsInjections)
+			require.Equal(t, len(explainRes.Merged), 2)
+
+			assert.Greater(t, explainRes.TotalUs, 0)
+			assert.GreaterOrEqual(t, explainRes.PreselectUs, 0)
+			assert.Greater(t, explainRes.PrepareUs, 0)
+			assert.GreaterOrEqual(t, explainRes.LoopUs, 0)
+			assert.GreaterOrEqual(t, explainRes.PostprocessUS, 0)
+			assert.Greater(t, explainRes.IndexesUs, 0)
+			assert.GreaterOrEqual(t, explainRes.TotalUs, explainRes.Merged[0].TotalUs+explainRes.Merged[1].TotalUs)
+			assert.GreaterOrEqual(t, explainRes.GeneralSortUs, explainRes.Merged[0].GeneralSortUs+explainRes.Merged[1].GeneralSortUs)
+			assert.GreaterOrEqual(t, explainRes.PrepareUs, explainRes.Merged[0].PrepareUs+explainRes.Merged[1].PrepareUs)
+			assert.GreaterOrEqual(t, explainRes.PreselectUs, explainRes.Merged[0].PreselectUs+explainRes.Merged[1].PreselectUs)
+			assert.GreaterOrEqual(t, explainRes.IndexesUs, explainRes.Merged[0].IndexesUs+explainRes.Merged[1].IndexesUs)
+			assert.GreaterOrEqual(t, explainRes.PostprocessUS, explainRes.Merged[0].PostprocessUS+explainRes.Merged[1].PostprocessUS)
+			assert.GreaterOrEqual(t, explainRes.LoopUs, explainRes.Merged[0].LoopUs+explainRes.Merged[1].LoopUs)
+
+			// Check first query explain
+			checkMainQueryExplain(t, &explainRes.Merged[0])
+
+			// Check second query explain
+			explainQ2 := explainRes.Merged[1]
+			checkExplain(t, explainQ2.Selectors, []expectedExplain{
+				{
+					Field:       "-scan",
+					Method:      "scan",
+					Keys:        0,
+					Comparators: 0,
+					Matched:     5,
+				},
+				{
+					Field:       "id",
+					FieldType:   "indexed",
+					Method:      "scan",
+					Keys:        0,
+					Comparators: 1,
+					Matched:     1,
+				},
+			}, "")
+
 		})
 	})
 }

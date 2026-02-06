@@ -17,6 +17,8 @@ template <typename Map>
 class [[nodiscard]] IndexUnordered : public IndexStore<StoreIndexKeyType<Map>> {
 	using Base = IndexStore<StoreIndexKeyType<Map>>;
 
+	static constexpr bool isPK = std::is_same_v<typename Map::mapped_type, reindexer::Index::KeyEntryPK>;
+
 public:
 	using ref_type = std::conditional_t<std::is_same<typename Map::key_type, PayloadValueWithHash>::value, const PayloadValue&,
 										std::conditional_t<std::is_same_v<typename Map::key_type, key_string>, std::string_view,
@@ -28,11 +30,14 @@ public:
 
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
+	bool RefreshCompositeKey(const Variant& key) noexcept override;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType cond, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
 	void Commit() override;
+
 	void UpdateSortedIds(const IUpdateSortedContext&) override;
 	bool IsSupportSortedIdsBuild() const noexcept override { return true; }
+
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexUnordered<Map>(*this)); }
 	IndexMemStat GetMemStat(const RdxContext&) override;
 	size_t Size() const noexcept override final { return idx_map.size(); }
@@ -56,9 +61,9 @@ protected:
 	bool tryIdsetCache(const VariantArray& keys, CondType condition, SortType sortId,
 					   const std::function<bool(SelectKeyResult&, size_t&)>& selector, SelectKeyResult& res);
 	// NOLINTNEXTLINE (performance-unnecessary-value-param)
-	void addMemStat(typename Map::iterator it);
+	void addMemStat(typename Map::iterator it) noexcept;
 	// NOLINTNEXTLINE (performance-unnecessary-value-param)
-	void delMemStat(typename Map::iterator it);
+	void delMemStat(typename Map::iterator it) noexcept;
 
 	// Index map
 	Map idx_map;
@@ -71,9 +76,15 @@ protected:
 	// Tracker of updates
 	UpdateTracker<Map> tracker_;
 
+	const std::vector<std::vector<IdType>>& getExternalSortedIds() const noexcept { return pkSortedIds_; }
+
 private:
 	template <typename S>
 	void dump(S& os, std::string_view step, std::string_view offset) const;
+
+	// Sorted ID for primary key indexes with IdSetUnique
+	std::vector<std::vector<IdType>> pkSortedIds_;
+	std::atomic<int64_t> pkSortedIdsSizeBytes_{0};
 };
 
 constexpr unsigned maxSelectivityPercentForIdset() noexcept { return 30u; }

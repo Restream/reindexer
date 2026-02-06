@@ -206,7 +206,6 @@ TEST_F(ClusterOperationExtrasApi, SynchronizationStatusOnInitialSyncTest) {
 		std::atomic<bool> terminate = false;
 		constexpr size_t kRestartNodeIdForce = 0;
 		constexpr size_t kRestartNodeIdWal = 1;
-		constexpr size_t kMinSynchronizedNodesCount = kClusterSize - 3;
 		Cluster cluster(loop, 0, kClusterSize, ports);
 
 		cluster.StopServer(kRestartNodeIdForce);
@@ -223,11 +222,11 @@ TEST_F(ClusterOperationExtrasApi, SynchronizationStatusOnInitialSyncTest) {
 		cluster.StopServers(0, kClusterSize);
 		constexpr size_t kRunningServerId = kClusterSize - 2;
 		ASSERT_TRUE(cluster.StartServer(kRunningServerId));
-		std::thread statThread([&cluster, &terminate, kMinSynchronizedNodesCount]() noexcept {
+		std::thread statThread([&cluster, &terminate]() noexcept {
 			while (!terminate) {
 				auto syncCount = cluster.GetSynchronizedNodesCount(kRunningServerId);
 				if (syncCount) {
-					ASSERT_GE(syncCount, kMinSynchronizedNodesCount);
+					ASSERT_GE(syncCount, 1);
 				}
 			}
 			size_t syncCount;

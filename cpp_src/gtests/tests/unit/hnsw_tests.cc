@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "gtests/tests/gtest_cout.h"
 
+#include "core/id_type.h"
 #include "core/index/float_vector/hnswlib/hnswlib.h"
 #include "tools/serializer.h"
 
@@ -361,7 +362,7 @@ public:
 	void PutVarInt(int32_t v) override { ser_.PutVarint(v); }
 	void PutFloat(float v) override { ser_.PutFloat(v); }
 	void PutVString(std::string_view slice) override { ser_.PutVString(slice); }
-	void AppendPKByID(hnswlib::labeltype label) override { ser_.PutVariant(Variant{IdType(label)}); }
+	void AppendPKByID(hnswlib::labeltype label) override { ser_.PutVariant(Variant{reindexer::IdType::FromNumber(label).ToNumber()}); }
 
 private:
 	WrSerializer& ser_;

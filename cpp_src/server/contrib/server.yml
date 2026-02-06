@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.10.0
+  version: 5.11.0
 servers:
   - url: /api/v1
 tags:
@@ -4212,9 +4212,6 @@ components:
             Second field json path or index name for filter by two fields
         subquery:
           $ref: '#/components/schemas/SubQuery'
-        always:
-          type: boolean
-          description: Boolean constant
         equal_positions:
           type: array
           description:
@@ -5180,8 +5177,15 @@ components:
           type: integer
           description: Total count of indexes
     ExplainDef:
+      oneOf:
+        - $ref: '#/components/schemas/SingleQueryExplainDef'
+        - $ref: '#/components/schemas/MergedQueryExplainDef'
+    SingleQueryExplainDef:
       type: object
       properties:
+        namespace:
+          type: string
+          description: Namespace name
         total_us:
           type: integer
           description: Total query execution time
@@ -5279,9 +5283,9 @@ components:
                 type: string
                 description: Description of the selector
               explain_preselect:
-                $ref: '#/components/schemas/ExplainDef'
+                $ref: '#/components/schemas/SingleQueryExplainDef'
               explain_select:
-                $ref: '#/components/schemas/ExplainDef'
+                $ref: '#/components/schemas/SingleQueryExplainDef'
         on_conditions_injections:
           type: array
           description: Describes Join ON conditions injections
@@ -5331,7 +5335,7 @@ components:
                         total time elapsed from injection attempt start till the
                         end of substitution or rejection
                     explain_select:
-                      $ref: '#/components/schemas/ExplainDef'
+                      $ref: '#/components/schemas/SingleQueryExplainDef'
                     agg_type:
                       type: string
                       description: Optional. Aggregation type used in subquery
@@ -5371,8 +5375,56 @@ components:
                 description:
                   Name of field being compared with the subquery's result
               explain:
-                $ref: '#/components/schemas/ExplainDef'
+                $ref: '#/components/schemas/SingleQueryExplainDef'
       description: Explanations of query execution
+    MergedQueryExplainDef:
+      type: object
+      properties:
+        namespace:
+          type: string
+          description: Namespace name
+        total_us:
+          type: integer
+          description: Total query execution time
+        loop_us:
+          type: integer
+          description:
+            Intersection loop time (includes loop_us of all merged queries)
+        indexes_us:
+          type: integer
+          description:
+            Indexes keys selection time (includes indexes_us of all merged
+            queries)
+        postprocess_us:
+          type: integer
+          description:
+            Query post process time (includes postprocess_us of all merged
+            queries)
+        preselect_us:
+          type: integer
+          description:
+            Query preselect processing time (includes preselect_us of all merged
+            queries)
+        prepare_us:
+          type: integer
+          description:
+            Query prepare and optimize time (includes prepare_us of all merged
+            queries)
+        general_sort_us:
+          type: integer
+          description:
+            Result sort time (includes indexes_us of all merged queries and
+            post-merge sort time of merged result)
+        sort_index:
+          type: string
+          description: Index, which used for sort results
+        merged:
+          type: array
+          description:
+            Detailed execution plans for queries with MERGE, including main
+            query
+          items:
+            $ref: '#/components/schemas/SingleQueryExplainDef'
     AggregationResDef:
       required:
         - fields

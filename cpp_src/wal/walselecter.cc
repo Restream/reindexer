@@ -1,5 +1,6 @@
 #include "walselecter.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/id_type.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/selectctx.h"
 #include "core/queryresults/fields_filter.h"
@@ -78,11 +79,11 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 			WALRecord rec = *it;
 			switch (rec.type) {
 				case WalItemUpdate:
-					if (ns_->items_[rec.id].IsFree()) {
+					if (ns_->items_[rec.id.ToNumber()].IsFree()) {
 						if (snapshot) {
 							assertrx(!start);
 							assertrx(count < 0);
-							putWalRecord(it, -1);
+							putWalRecord(it, IdType::NotSet());
 						}
 						break;
 					}
@@ -90,9 +91,9 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 						start--;
 					} else if (count) {
 						// Put as usual ItemRef
-						[[maybe_unused]] const auto iLSN = lsn_t(ns_->items_[rec.id].GetLSN());
+						[[maybe_unused]] const auto iLSN = lsn_t(ns_->items_[rec.id.ToNumber()].GetLSN());
 						assertf(iLSN.Counter() == (lsn_t(it.GetLSN()).Counter()), "lsn {} != {}, ns={}", iLSN, it.GetLSN(), ns_->name_);
-						result.AddItemRef(rec.id, ns_->items_[rec.id]);
+						result.AddItemRef(rec.id, ns_->items_[rec.id.ToNumber()]);
 						count--;
 					}
 					result.totalCount++;
@@ -123,7 +124,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 					if (start) {
 						start--;
 					} else if (count) {
-						putWalRecord(it, -1);
+						putWalRecord(it, IdType::NotSet());
 						count--;
 					}
 					result.totalCount++;
@@ -133,7 +134,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 						// We have to store empty records in snapshot to preserve original server IDs
 						assertrx(!start);
 						assertrx(count < 0);
-						putWalRecord(it, -1);
+						putWalRecord(it, IdType::NotSet());
 					}
 					break;
 				case WalReplState:
@@ -157,7 +158,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 				wr.Pack(wrec);
 				PayloadValue val(wr.size(), wr.data());
 				val.SetLSN(lsn_t());
-				result.AddItemRef(-1, std::move(val), 0, true);
+				result.AddItemRef(IdType::NotSet(), std::move(val), 0, true);
 			};
 			for (unsigned int i = 1; i < ns_->indexes_.size(); i++) {
 				auto indexDef = ns_->getIndexDefinition(i);
@@ -186,7 +187,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 			if (start) {
 				start--;
 			} else if (count) {
-				result.AddItemRef(id, ns_->items_[id]);
+				result.AddItemRef(IdType::FromNumber(id), ns_->items_[id]);
 				count--;
 			}
 			result.totalCount++;
@@ -215,7 +216,7 @@ void WALSelecter::putReplState(LocalQueryResults& result) {
 	// Put as ItemRef with raw container
 	PayloadValue pv(wr.size(), wr.data());
 	pv.SetLSN(lsn_t());
-	result.AddItemRef(-1, std::move(pv), 0, true);
+	result.AddItemRef(IdType::NotSet(), std::move(pv), 0, true);
 }
 
 }  // namespace reindexer

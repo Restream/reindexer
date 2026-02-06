@@ -16,14 +16,12 @@ import (
 	"github.com/restream/reindexer/v5/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
 )
 
 type startupConfig struct {
 	removeStorage bool
 	serverID      int
 	isLeader      bool
-	masterDSN     string
 }
 
 func MakeLeader(t *testing.T, serverConfig *config.ServerConfig, serverID int, followerDSNs ...string) *reindexer.Reindexer {
@@ -42,23 +40,7 @@ func MakeFollowerNoStorageCleanup(t *testing.T, serverConfig *config.ServerConfi
 	return MakeNode(t, serverConfig, &startupConfig{removeStorage: false, serverID: serverID, isLeader: false}, followerDSNs...)
 }
 
-func MakeNode(t *testing.T, serverConfig *config.ServerConfig, startupCfg *startupConfig, followerDSNs ...string) *reindexer.Reindexer {
-	if startupCfg.removeStorage {
-		err := os.RemoveAll(serverConfig.Storage.Path)
-		require.NoError(t, err)
-	}
-	dbPath := serverConfig.Storage.Path + "/xxx/"
-	{
-		err := os.MkdirAll(dbPath, os.ModePerm)
-		require.NoError(t, err)
-		f, err := os.OpenFile(dbPath+".reindexer.storage", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
-		require.NoError(t, err)
-		defer f.Close()
-		_, err = f.Write(([]byte)("leveldb"))
-		require.NoError(t, err)
-		err = f.Sync()
-		require.NoError(t, err)
-	}
+func writeAsyncReplicationConfig(t *testing.T, dbPath string, startupCfg *startupConfig, followerDSNs ...string) {
 	{
 		f, err := os.OpenFile(dbPath+"replication.conf", os.O_RDWR|os.O_CREATE, 0644)
 		require.NoError(t, err)
@@ -95,12 +77,33 @@ namespaces: []`
 		_, err = f.Write([]byte(config))
 		require.NoError(t, err)
 	}
+}
+
+func MakeNode(t *testing.T, serverConfig *config.ServerConfig, startupCfg *startupConfig, followerDSNs ...string) *reindexer.Reindexer {
+	if startupCfg.removeStorage {
+		err := os.RemoveAll(serverConfig.Storage.Path)
+		require.NoError(t, err)
+	}
+	dbPath := serverConfig.Storage.Path + "/xxx/"
+	{
+		err := os.MkdirAll(dbPath, os.ModePerm)
+		require.NoError(t, err)
+		f, err := os.OpenFile(dbPath+".reindexer.storage", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+		require.NoError(t, err)
+		defer f.Close()
+		_, err = f.Write(([]byte)("leveldb"))
+		require.NoError(t, err)
+		err = f.Sync()
+		require.NoError(t, err)
+	}
+	writeAsyncReplicationConfig(t, dbPath, startupCfg, followerDSNs...)
+
 	rx, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, serverConfig))
 	require.NoError(t, err)
 	return rx
 }
 
-func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, startupCfg *startupConfig) (*reindexer.Reindexer, func()) {
+func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, startupCfg *startupConfig, followerDSNs ...string) (*reindexer.Reindexer, func()) {
 	if startupCfg.removeStorage {
 		err := os.RemoveAll(serverConfig.Storage.Path)
 		require.NoError(t, err)
@@ -118,38 +121,23 @@ func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerC
 			err = f.Sync()
 			require.NoError(t, err)
 		}
-		{
-			f, err := os.OpenFile(dbPath+"replication.conf", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
-			require.NoError(t, err)
-			defer f.Close()
-			role := "master"
-			if !startupCfg.isLeader {
-				role = "slave"
-			}
-			config := helpers.LegacyDBReplicationConfig{ServerID: startupCfg.serverID, Role: role, MasterDSN: startupCfg.masterDSN, ClusterID: 1, ForceSyncOnLogicError: true, ForceSyncOnWrongDataHash: true}
-			yaml, err := yaml.Marshal(config)
-			require.NoError(t, err)
-			_, err = f.Write(yaml)
-			require.NoError(t, err)
-			err = f.Sync()
-			require.NoError(t, err)
-		}
+		writeAsyncReplicationConfig(t, dbPath, startupCfg, followerDSNs...)
 	}
 
 	writeConfigs()
 	return StartupServerFromBinary(t, serverConfig, cprotoDSN)
 }
 
-func MakeLegacyLeader(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int) (*reindexer.Reindexer, func()) {
-	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: true, masterDSN: ""})
+func MakeLegacyLeader(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, followerDSNs ...string) (*reindexer.Reindexer, func()) {
+	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: true}, followerDSNs...)
 }
 
-func MakeLegacyFollower(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, masterDSN string) (*reindexer.Reindexer, func()) {
-	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: false, masterDSN: masterDSN})
+func MakeLegacyFollower(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, followerDSNs ...string) (*reindexer.Reindexer, func()) {
+	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: false}, followerDSNs...)
 }
 
-func MakeLegacyFollowerNoStorageCleanup(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, masterDSN string) (*reindexer.Reindexer, func()) {
-	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: false, serverID: serverID, isLeader: false, masterDSN: masterDSN})
+func MakeLegacyFollowerNoStorageCleanup(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, followerDSNs ...string) (*reindexer.Reindexer, func()) {
+	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: false, serverID: serverID, isLeader: false}, followerDSNs...)
 }
 
 func FillData(t *testing.T, rx *reindexer.Reindexer, count int) {
@@ -168,13 +156,9 @@ func GetData(t *testing.T, rx *reindexer.Reindexer) []interface{} {
 	return data
 }
 
-func GetDataFromNodes(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer, useLegacySync bool) []interface{} {
+func GetDataFromNodes(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer) []interface{} {
 	dataLeader := GetData(t, rxLeader)
-	if useLegacySync {
-		helpers.WaitForSyncWithMasterV3V3(t, rxLeader, rxFollower)
-	} else {
-		helpers.WaitForSyncWithMaster(t, rxLeader, rxFollower)
-	}
+	helpers.WaitForSyncWithMaster(t, rxLeader, rxFollower)
 	dataFollower := GetData(t, rxFollower)
 	assert.Equal(t, dataLeader, dataFollower, "Data in tables does not equal\n%s\n%s", dataLeader, dataFollower)
 	return dataLeader
@@ -208,11 +192,11 @@ func StartupServerFromBinary(t *testing.T, serverConfig *config.ServerConfig, cp
 	}
 	err = rx.CloseNamespace("#memstats")
 	require.NoError(t, err)
-	err = rx.RegisterNamespace("#memstats", reindexer.DefaultNamespaceOptions(), helpers.LegacyNamespaceMemStat{})
+	err = rx.RegisterNamespace("#memstats", reindexer.DefaultNamespaceOptions(), reindexer.NamespaceMemStat{})
 	require.NoError(t, err)
 	err = rx.CloseNamespace("#config")
 	require.NoError(t, err)
-	err = rx.RegisterNamespace("#config", reindexer.DefaultNamespaceOptions(), helpers.LegacyDBConfigItem{})
+	err = rx.RegisterNamespace("#config", reindexer.DefaultNamespaceOptions(), reindexer.DBConfigItem{})
 	require.NoError(t, err)
 	return rx, terminateF
 }
@@ -251,11 +235,6 @@ func TestStorageCompatibility(t *testing.T) {
 	const leaderCproto = "cproto://127.0.0.1:30534/xxx"
 
 	t.Run("backward compatibility", func(t *testing.T) {
-		// TODO:
-		// This test is skipped, because there is no migration from new leveldb version to the old one.
-		// Test should be re-enabled at some day (after a few releases with new leveldb)
-		t.Skip()
-
 		cfgFollower.Storage.Path = baseStoragePath + "backward/follower"
 		cfgLeader.Storage.Path = baseStoragePath + "backward/leader"
 		fillDataOnCurrentServer := func() []interface{} {
@@ -272,7 +251,7 @@ func TestStorageCompatibility(t *testing.T) {
 			require.NoError(t, err)
 			FillData(t, rxLeader, dataCount)
 
-			return GetDataFromNodes(t, rxLeader, rxFollower, false)
+			return GetDataFromNodes(t, rxLeader, rxFollower)
 		}
 
 		readDataFromLegacyServer := func() []interface{} {
@@ -298,10 +277,10 @@ func TestStorageCompatibility(t *testing.T) {
 		cfgFollower.Storage.Path = baseStoragePath + "forward/follower"
 		cfgLeader.Storage.Path = baseStoragePath + "forward/leader"
 		fillDataOnLegacyServer := func() []interface{} {
-			rxLeader, terminateLeader := MakeLegacyLeader(t, leaderCproto, cfgLeader, leaderServerId)
-			defer terminateLeader()
-			rxFollower, terminateFollower := MakeLegacyFollower(t, followerCproto, cfgFollower, followerServerId, leaderCproto)
+			rxFollower, terminateFollower := MakeLegacyFollower(t, followerCproto, cfgFollower, followerServerId)
 			defer terminateFollower()
+			rxLeader, terminateLeader := MakeLegacyLeader(t, leaderCproto, cfgLeader, leaderServerId, followerCproto)
+			defer terminateLeader()
 
 			err := rxFollower.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)
@@ -309,7 +288,7 @@ func TestStorageCompatibility(t *testing.T) {
 			require.NoError(t, err)
 			FillData(t, rxLeader, dataCount)
 
-			return GetDataFromNodes(t, rxLeader, rxFollower, true)
+			return GetDataFromNodes(t, rxLeader, rxFollower)
 		}
 
 		readDataFromCurrentServer := func() []interface{} {

@@ -43,7 +43,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 
 	// Step 6: Build typos hash map
 	try {
-		buildTyposMap(wrdOffset, preprocWords);
+		buildTyposMap(wrdOffset, preprocWords, multithread);
 	} catch (...) {
 		exwr.SetException(std::current_exception());
 	}
@@ -55,10 +55,8 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	exwr.RethrowException();
 	const auto tm6 = system_clock_w::now();
 
-	logFmt(LogInfo,
-		   "FastIndexText[{}] built with [{} uniq words, {} typos ({} + {}), {}KB text size, {}KB suffixarray size, {}KB idrelsets size]",
-		   holder_.steps.size(), words_um.size(), holder_.GetTyposHalf().size() + holder_.GetTyposMax().size(),
-		   holder_.GetTyposHalf().size(), holder_.GetTyposMax().size(), szCnt / 1024, suffixes.heap_size() / 1024, idsetcnt / 1024);
+	logFmt(LogInfo, "FastIndexText[{}] built with [{} uniq words, {} typos, {}KB text size, {}KB suffixarray size, {}KB idrelsets size]",
+		   holder_.steps.size(), words_um.size(), holder_.GetTypos().size(), szCnt / 1024, suffixes.heap_size() / 1024, idsetcnt / 1024);
 
 	logFmt(LogInfo,
 		   "DataProcessor::Process elapsed {} ms total [ build words {} ms | suffixes preproc {} ms | build typos {} ms | build "
@@ -382,111 +380,64 @@ void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& w
 }
 
 template <typename IdCont>
-void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& preprocWords) {
-	if (!holder_.cfg_->maxTypos) {
-		return;
-	}
-	if (preprocWords.empty()) {
+void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& preprocWords, bool multithread) {
+	if (!holder_.cfg_->maxTypos || preprocWords.empty()) {
 		return;
 	}
 
-	auto& typosHalf = holder_.GetTyposHalf();
-	auto& typosMax = holder_.GetTyposMax();
-	const auto wordsSize = preprocWords.size();
+	const size_t stepNum = holder_.steps.size() - 1;
 	const auto maxTypoLen = holder_.cfg_->maxTypoLen;
 	const auto maxTyposInWord = holder_.cfg_->MaxTyposInWord();
-	const auto halfMaxTypos = holder_.cfg_->maxTypos / 2;
-	if (maxTyposInWord == halfMaxTypos) {
-		assertrx_throw(maxTyposInWord > 0);
-		typos_context tctx[kMaxTyposInWord];
-		const auto multiplier = wordsSize * (10 << (maxTyposInWord - 1));
-		typosHalf.reserve(multiplier / 2, multiplier * 5);
-		auto wordPos = startPos;
+	assertrx_throw(maxTyposInWord > 0);
 
-		for (auto& word : preprocWords) {
-			const auto wordString = std::get_if<std::string_view>(&word);
-			if (!wordString) {
-				continue;
-			}
-			const auto wordId = holder_.BuildWordId(wordPos++);
-			mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-					typos_context::CallBack{
-						[&typosHalf, wordId](std::string_view typo, int, const typos_context::TyposVec& positions,
-											 const std::wstring_view) { typosHalf.emplace(typo, WordTypo{wordId, positions}); }});
-		}
-	} else {
-		assertrx_throw(maxTyposInWord == halfMaxTypos + 1);
+	std::vector<std::pair<uint32_t, WordTypo>> typosData;
+	const size_t multiplier = preprocWords.size() * (10 << (maxTyposInWord - 1));
 
-		auto multiplier = wordsSize * (10 << (halfMaxTypos > 1 ? (halfMaxTypos - 1) : 0));
-		ExceptionPtrWrapper exwr;
-		std::thread maxTyposTh = runInThread(
-			exwr,
-			[&](size_t mult) noexcept {
-				try {
-					typos_context tctx[kMaxTyposInWord];
-					auto wordPos = startPos;
-					mult = wordsSize * (10 << (maxTyposInWord - 1)) - mult;
-					typosMax.reserve(multiplier / 2, multiplier * 5);
-					for (auto& word : preprocWords) {
-						const auto wordString = std::get_if<std::string_view>(&word);
-						if (!wordString) {
-							continue;
-						}
-						const auto wordId = holder_.BuildWordId(wordPos++);
+	const size_t numThreads = getMaxBuildWorkers(multithread);
+	std::vector<std::vector<std::pair<uint32_t, WordTypo>>> threadsTyposDatas(numThreads);
 
-						struct {
-							reindexer::WordIdType wordId_;
-							decltype(typosMax)& typosMax_;
-							size_t wordStringSize_;
-						} callbackCtx{wordId, typosMax, wordString->size()};
-
-						mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-								typos_context::CallBack{[&callbackCtx](std::string_view typo, int level,
-																	   const typos_context::TyposVec& positions, const std::wstring_view) {
-									if (level <= 1 && typo.size() != callbackCtx.wordStringSize_) {
-										callbackCtx.typosMax_.emplace(typo, WordTypo{callbackCtx.wordId_, positions});
-									}
-								}});
-					}
-					typosMax.shrink_to_fit();
-				} catch (...) {
-					exwr.SetException(std::current_exception());
-				}
-			},
-			multiplier);
-
-		try {
-			auto wordPos = startPos;
-			typos_context tctx[kMaxTyposInWord];
-			typosHalf.reserve(multiplier / 2, multiplier * 5);
-			for (auto& word : preprocWords) {
-				const auto wordString = std::get_if<std::string_view>(&word);
-				if (!wordString) {
-					continue;
-				}
-				const auto wordId = holder_.BuildWordId(wordPos++);
-
-				struct {
-					reindexer::WordIdType wordId_;
-					decltype(typosHalf)& typosHalf_;
-					size_t wordStringSize_;
-				} callbackCtx{wordId, typosHalf, wordString->size()};
-
-				mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-						typos_context::CallBack{[&callbackCtx](std::string_view typo, int level, const typos_context::TyposVec& positions,
-															   const std::wstring_view) {
-							if (level > 1 || typo.size() == callbackCtx.wordStringSize_) {
-								callbackCtx.typosHalf_.emplace(typo, WordTypo{callbackCtx.wordId_, positions});
-							}
-						}});
-			}
-		} catch (...) {
-			exwr.SetException(std::current_exception());
-		}
-		maxTyposTh.join();
-		exwr.RethrowException();
+	for (auto& td : threadsTyposDatas) {
+		td.reserve(multiplier / numThreads + 1);
 	}
-	typosHalf.shrink_to_fit();
+
+	std::vector<std::thread> ths(numThreads);
+	ExceptionPtrWrapper exwr;
+
+	for (size_t threadIdx = 0; threadIdx < numThreads; ++threadIdx) {
+		ths[threadIdx] =
+			runInThread(exwr, [threadIdx, numThreads, &preprocWords, startPos, maxTypoLen, maxTyposInWord, &threadsTyposDatas, this]() {
+				auto wordPos = startPos;
+				std::wstring wordStringW, buf;
+				std::vector<std::pair<uint32_t, WordTypo>>& typosData = threadsTyposDatas[threadIdx];
+
+				for (const auto& word : preprocWords) {
+					const auto wordString = std::get_if<std::string_view>(&word);
+					if (!wordString) {
+						continue;
+					}
+
+					if (wordPos % numThreads != threadIdx) {
+						wordPos++;
+						continue;
+					}
+					const auto wordId = holder_.BuildWordId(wordPos++);
+
+					auto cb = [&typosData, wordId](std::wstring_view typo, const TyposVec& positions, std::wstring_view) {
+						typosData.emplace_back(TyposMap::CalcHash(typo), WordTypo{wordId, positions});
+					};
+
+					utf8_to_utf16(*wordString, wordStringW);
+					mktypos(wordStringW, maxTyposInWord, maxTypoLen, TyposCallBack{cb}, buf);
+				}
+			});
+	}
+
+	for (auto& th : ths) {
+		th.join();
+	}
+
+	exwr.RethrowException();
+	holder_.GetTypos().Build(threadsTyposDatas, stepNum, numThreads);
 }
 
 template <typename IdCont>

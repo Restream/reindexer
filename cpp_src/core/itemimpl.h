@@ -40,6 +40,12 @@ public:
 	void SetField(int field, VariantArray&& krs, NeedCreate needCopy = NeedCreate_True);
 	void SetField(std::string_view jsonPath, VariantArray&& keys);
 	void DropField(std::string_view jsonPath);
+	bool IsIndexFieldSet(int index) const {
+		assertrx_throw(index > 0);
+		assertrx_throw(index < kMaxIndexes);
+		return objectScalarIndexes_.test(index);
+	}
+
 	Variant GetField(int field);
 	void GetField(int field, VariantArray&);
 	FieldsSet PkFields() const { return pkFields_; }
@@ -98,6 +104,7 @@ public:
 	void CopyIndexedVectorsValuesFrom(IdType, const FloatVectorsIndexes&);
 
 	void Embed(const RdxContext& ctx);
+	const ScalarIndexesSetT& GetScalarIndexMask() const noexcept { return objectScalarIndexes_; }
 
 private:
 	ItemImpl(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
@@ -118,6 +125,8 @@ private:
 	std::string_view cjson_;
 	std::weak_ptr<Namespace> ns_;
 	const FieldsFilter* fieldsFilter_{nullptr};
+	// The mask will not be updated in some cases when calling SetObject
+	ScalarIndexesSetT objectScalarIndexes_;
 };
 
 }  // namespace reindexer

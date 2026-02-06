@@ -174,6 +174,51 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 	EXPECT_EQ(CompareQueriesResults(pureSelectRows, joinSelectRows), true);
 }
 
+TEST_F(JoinSelectsApi, InnerJoinSmallNsPreselectTest) {
+	auto prepareData = [this](int32_t itemsCount, int32_t preresult_max_iterations) {
+		std::ignore = rt.ExecSQL(fmt::format("delete from authors_namespace"));
+		std::ignore = rt.ExecSQL(fmt::format("delete from books_namespace"));
+		std::ignore = rt.ExecSQL(fmt::format(
+			"update #config set namespaces[*].max_iterations_idset_preresult = {} where type = 'namespaces'", preresult_max_iterations));
+
+		FillAuthorsNamespace(itemsCount);
+		FillBooksNamespace(0, itemsCount);
+	};
+
+	auto executeAndCheck = [this](unsigned booksLimit, const std::string& method) {
+		Query queryAuthors(authors_namespace);
+		Query queryBooks{Query(books_namespace, 0, booksLimit).Where(price, CondLe, 10000)};
+		Query joinQuery{queryBooks.Explain().InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors))};
+		QueryWatcher watcher{joinQuery};
+
+		auto qr{rt.Select(joinQuery)};
+
+		gason::JsonParser parser;
+		auto json = parser.Parse(qr.GetExplainResults());
+		auto selectors = json["selectors"];
+
+		size_t index = 0;
+		for (const auto& item : selectors) {
+			if (++index == 3) {
+				EXPECT_EQ(item["field"].As<std::string>(), "inner_join authors_namespace");
+				EXPECT_EQ(item["method"].As<std::string>(), method);
+			}
+		}
+		EXPECT_EQ(index, 3);
+	};
+
+	// 1. Check cases with optimization
+	prepareData(199, 210);
+	executeAndCheck(199, "preselected_values");
+
+	prepareData(205, 210);
+	executeAndCheck(205, "preselected_rows");
+
+	// 2. Check case without optimization
+	prepareData(210, 200);
+	executeAndCheck(210, "no_preselect");
+}
+
 TEST_F(JoinSelectsApi, LeftJoinTest) {
 	Query booksQuery{Query(books_namespace).Where(price, CondGe, 500)};
 	auto booksQueryRes = rt.Select(booksQuery);
@@ -193,7 +238,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	std::unordered_set<int> presentedAuthorIds;
-	std::unordered_map<int, int> rowidsIndexes;
+	std::unordered_map<reindexer::IdType, int> rowidsIndexes;
 	int i = 0;
 	for (auto rowIt : joinQueryRes.ToLocalQr()) {
 		Item item(rowIt.GetItem(false));
@@ -216,7 +261,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 	}
 
 	for (auto rowIt : joinQueryRes.ToLocalQr()) {
-		IdType rowid = rowIt.GetItemRef().Id();
+		const auto rowid = rowIt.GetItemRef().Id();
 		auto itemIt = rowIt.GetJoined();
 		if (itemIt.getJoinedItemsCount() == 0) {
 			continue;
@@ -235,7 +280,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			EXPECT_NE(itRowidIndex, rowidsIndexes.end());
 
 			if (itRowidIndex != rowidsIndexes.end()) {
-				Item item2((joinQueryRes.begin() + rowid).GetItem(false));
+				Item item2((joinQueryRes.begin() + rowid.ToNumber()).GetItem(false));
 				Variant authorIdKeyRef2 = item2[authorid];
 				EXPECT_EQ(authorIdKeyRef1, authorIdKeyRef2);
 			}

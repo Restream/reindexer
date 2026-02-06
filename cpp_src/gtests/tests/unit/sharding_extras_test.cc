@@ -496,7 +496,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 					} else {
 						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
 						ASSERT_TRUE(lsn.isEmpty()) << lsn;
-						ASSERT_EQ(item.GetID(), -1);
+						ASSERT_FALSE(item.GetID().IsValid());
 					}
 				}
 			}
@@ -519,7 +519,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 					} else {
 						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
 						ASSERT_TRUE(lsn.isEmpty()) << lsn;
-						ASSERT_EQ(item.GetID(), -1);
+						ASSERT_FALSE(item.GetID().IsValid());
 					}
 				}
 			}
@@ -546,7 +546,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 					} else {
 						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
 						ASSERT_TRUE(lsn.isEmpty()) << lsn;
-						ASSERT_EQ(item.GetID(), -1);
+						ASSERT_FALSE(item.GetID().IsValid());
 					}
 				}
 			}
@@ -575,7 +575,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 					} else {
 						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
 						ASSERT_TRUE(lsn.isEmpty());
-						ASSERT_EQ(item.GetID(), -1);
+						ASSERT_FALSE(item.GetID().IsValid());
 					}
 				}
 			}
@@ -628,7 +628,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 					} else {
 						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
 						ASSERT_TRUE(lsn.isEmpty()) << lsn;
-						ASSERT_EQ(item.GetID(), -1);
+						ASSERT_FALSE(item.GetID().IsValid());
 					}
 				}
 			}

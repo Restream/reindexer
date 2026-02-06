@@ -24,7 +24,14 @@ QueryFunction::QueryFunction(ParsedQueryFunction&& parsed) : Base{QueryFunctionS
 }
 
 Variant FunctionExecutor::Execute(const QueryFunction& func, const NsContext& ctx) {
-	return std::visit(overloaded{[&](const QueryFunctionSerial&) { return Variant(ns_.GetSerial(func.FieldName(), replUpdates_, ctx)); },
+	return std::visit(overloaded{[&](const QueryFunctionSerial&) {
+									 int index = 0;
+									 std::string_view fieldName = func.FieldName();
+									 if (ns_.tryGetIndexByNameOrJsonPath(func.FieldName(), index)) {
+										 fieldName = ns_.indexes_[index]->Name();
+									 }
+									 return Variant(ns_.GetSerial(fieldName, replUpdates_, ctx));
+								 },
 								 [&](const QueryFunctionNow& now) { return Variant(getTimeNow(now.Unit())); }},
 					  func.AsVariant());
 }

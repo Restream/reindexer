@@ -32,8 +32,8 @@ template <typename InputIterator>
 void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank, const std::vector<bool>& mask) {
 	auto& data = *data_;
 	for (; begin != end; ++begin) {
-		assertrx(static_cast<size_t>(*begin) < mask.size());
-		if (!mask[*begin]) {
+		assertrx(static_cast<size_t>(begin->ToNumber()) < mask.size());
+		if (!mask[begin->ToNumber()]) {
 			continue;
 		}
 		data.ranks->Add(rank);
@@ -64,8 +64,8 @@ void FtCtx::Add(InputIterator begin, InputIterator end, RankT rank, const std::v
 	if (data.holders.has_value()) {
 		auto& holders = data.holders.value();
 		for (; begin != end; ++begin) {
-			assertrx_dbg(static_cast<size_t>(*begin) < mask.size());
-			if (!mask[*begin]) {
+			assertrx_dbg(static_cast<size_t>(begin->ToNumber()) < mask.size());
+			if (!mask[begin->ToNumber()]) {
 				continue;
 			}
 			data.ranks->Add(rank);

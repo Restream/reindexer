@@ -58,6 +58,16 @@ concept HasSize = requires(T a) {
 };
 
 template <typename T>
+concept HasCapacity = requires(T cont) {
+	{ cont.capacity() } -> std::convertible_to<unsigned>;  // Using 'unsigned' for h_vector/VariantsArray compatibility
+};
+
+template <typename T>
+concept HasResize = requires(T cont, size_t arg) {
+	{ cont.resize(arg) };
+};
+
+template <typename T>
 concept IsEnum = std::is_enum_v<T>;
 
 }  // namespace concepts

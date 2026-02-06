@@ -377,14 +377,7 @@ static void parseFilter(const JsonNode& filter, Query& q) {
 		return;
 	}
 	const OpType op = parseOptionalOperation(filter);
-	if (const auto always = filter.findCaseInsensitive("always"sv); !always.empty()) {
-		if (always.As<bool>()) {
-			q.AppendQueryEntry<AlwaysTrue>(op);
-		} else {
-			q.AppendQueryEntry<AlwaysFalse>(op);
-		}
-		return;
-	} else if (const auto bracket = filter.findCaseInsensitive("filters"sv); !bracket.empty()) {
+	if (const auto bracket = filter.findCaseInsensitive("filters"sv); !bracket.empty()) {
 		checkJsonValueType(bracket.value, bracket.key, JsonTag::ARRAY);
 		q.NextOp(op).OpenBracket();
 		for (const auto& f : bracket) {

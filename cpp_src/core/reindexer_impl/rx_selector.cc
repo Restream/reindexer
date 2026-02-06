@@ -52,7 +52,7 @@ struct [[nodiscard]] RxSelector::QueryResultsContext {
 
 template <typename LockerType>
 void RxSelector::preselectSubQuriesMain(const Query& q, std::optional<Query>& queryCopy, LockerType& locks, FtFunctionsHolder& func,
-										std::vector<SubQueryExplain>& subQueryExplains, ExplainCalc::Duration& preselectTimeTotal,
+										std::vector<SubQueryExplain>& subQueryExplains, Explain::Duration& preselectTimeTotal,
 										std::vector<LocalQueryResults>& queryResultsHolder, LogLevel logLevel, const RdxContext& ctx) {
 	if (!q.GetSubQueries().empty()) {
 		if (q.GetDebugLevel() >= LogInfo || logLevel >= LogInfo) {
@@ -61,9 +61,9 @@ void RxSelector::preselectSubQuriesMain(const Query& q, std::optional<Query>& qu
 		if (!queryCopy) {
 			queryCopy.emplace(q);
 		}
-		const auto preselectStartTime = ExplainCalc::Clock::now();
+		const auto preselectStartTime = Explain::Clock::now();
 		subQueryExplains = preselectSubQueries(*queryCopy, queryResultsHolder, locks, func, ctx);
-		preselectTimeTotal += ExplainCalc::Clock::now() - preselectStartTime;
+		preselectTimeTotal += Explain::Clock::now() - preselectStartTime;
 	}
 }
 
@@ -85,12 +85,12 @@ RankOrdering GetRankOrdering(QueryRankType type, const SortingEntries& sortingEn
 	throw_as_assert;
 }
 
-template <typename LockerType, typename QueryType>
+template <typename LockerType>
 void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, LockerType& locks,
-						  FtFunctionsHolder& func, const RdxContext& ctx, QueryStatCalculator<QueryType>& queryStatCalculator) {
+						  FtFunctionsHolder& func, const RdxContext& ctx) {
 	auto ns = locks.Get(q.NsName());
 	std::vector<LocalQueryResults> queryResultsHolder;
-	ExplainCalc::Duration preselectTimeTotal{0};
+	Explain::Duration preselectTimeTotal{0};
 	std::vector<SubQueryExplain> subQueryExplains;
 	preselectSubQuriesMain(q, queryCopy, locks, func, subQueryExplains, preselectTimeTotal, queryResultsHolder, ns->config_.logLevel, ctx);
 
@@ -108,23 +108,25 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 
 	JoinedSelectors mainJoinedSelectors;
 	if (thereAreJoins) {
-		const auto preselectStartTime = ExplainCalc::Clock::now();
+		const auto preselectStartTime = Explain::Clock::now();
 		mainJoinedSelectors =
 			prepareJoinedSelectors(query, result, locks, func, joinQueryResultsContexts, SetLimit0ForChangeJoin_False, ctx);
 		result.joined_.resize(1 + query.GetMergeQueries().size());
 		result.joined_[0].SetJoinedSelectorsCount(mainJoinedSelectors.size());
-		preselectTimeTotal += ExplainCalc::Clock::now() - preselectStartTime;
+		preselectTimeTotal += Explain::Clock::now() - preselectStartTime;
 	}
 	QueryRankType commonQueryRankType{QueryRankType::NotSet};
 	auto commonLimit = query.Limit();
 	auto commonOffset = query.Offset();
 	auto commonRankOrdering = RankOrdering::Off;
+	Explain explain;
 	{
 		SelectCtxWithJoinPreSelect selCtx(query, nullptr, &result.GetFloatVectorsHolder());
 		selCtx.joinedSelectors = mainJoinedSelectors.size() ? &mainJoinedSelectors : nullptr;
 		selCtx.preResultTimeTotal = preselectTimeTotal;
 		selCtx.contextCollectingMode = true;
 		selCtx.functions = &func;
+		selCtx.explain = &explain;
 		selCtx.nsid = 0;
 		selCtx.subQueriesExplains = std::move(subQueryExplains);
 		if (!query.GetMergeQueries().empty()) {
@@ -158,9 +160,6 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 		ns->Select(result, selCtx, ctx);
 		result.AddNamespace(ns, true);
 		commonQueryRankType = selCtx.queryRankType;
-		if (selCtx.explain.IsEnabled()) {
-			queryStatCalculator.AddExplain(selCtx.explain);
-		}
 	}
 	// should be destroyed after results.lockResults()
 	std::vector<JoinedSelectors> mergeJoinedSelectors;
@@ -228,6 +227,7 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			mctx.contextCollectingMode = true;
 			mctx.limit = commonLimit;
 			mctx.offset = commonOffset;
+			mctx.explain = &explain;
 			if (thereAreJoins) {
 				auto& mjs = mergeJoinedSelectors.emplace_back(
 					prepareJoinedSelectors(mQuery, result, locks, func, joinQueryResultsContexts, SetLimit0ForChangeJoin_False, ctx));
@@ -238,6 +238,7 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			mns->Select(result, mctx, ctx);
 			result.AddNamespace(mns, true);
 		}
+		const auto mergedSortStart = q.NeedExplain() ? Explain::Clock::now() : Explain::Clock::time_point();
 		ItemRefVector& itemRefVec = result.Items();
 		if (query.Offset() >= itemRefVec.Size()) {
 			result.Erase(itemRefVec.begin(), itemRefVec.end());
@@ -260,10 +261,16 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 		if (itemRefVec.Size() > query.Limit()) {
 			result.Erase(itemRefVec.begin() + query.Limit(), itemRefVec.end());
 		}
+		if (q.NeedExplain()) [[unlikely]] {
+			explain.AddSortTime(Explain::Clock::now() - mergedSortStart);
+		}
 	}
 	// Adding context to QueryResults
 	for (const auto& jctx : joinQueryResultsContexts) {
 		result.addNSContext(jctx.type_, jctx.tagsMatcher_, jctx.fieldsFilter_, jctx.schema_, jctx.nsIncarnationTag_);
+	}
+	if (q.NeedExplain()) [[unlikely]] {
+		result.explainResults = explain.GetJSON();
 	}
 }
 
@@ -273,7 +280,7 @@ void RxSelector::DoPreSelectForUpdateDelete(const Query& q, std::optional<Query>
 	auto ns = locks.Get(q.NsName());
 
 	std::vector<LocalQueryResults> queryResultsHolder;
-	ExplainCalc::Duration preselectTimeTotal{0};
+	Explain::Duration preselectTimeTotal{0};
 	std::vector<SubQueryExplain> subQueryExplains;
 	preselectSubQuriesMain(q, queryCopy, locks, func, subQueryExplains, preselectTimeTotal, queryResultsHolder, ns->config_.logLevel,
 						   rdxCtx);
@@ -282,15 +289,16 @@ void RxSelector::DoPreSelectForUpdateDelete(const Query& q, std::optional<Query>
 
 	JoinedSelectors mainJoinedSelectors;
 	if (!q.GetJoinQueries().empty()) {
-		const auto preselectStartTime = ExplainCalc::Clock::now();
+		const auto preselectStartTime = Explain::Clock::now();
 		const Query& query = queryCopy.has_value() ? *queryCopy : q;
 		mainJoinedSelectors =
 			prepareJoinedSelectors(query, result, locks, func, joinQueryResultsContexts, SetLimit0ForChangeJoin_True, rdxCtx);
 		result.joined_.resize(1);
 		result.joined_[0].SetJoinedSelectorsCount(mainJoinedSelectors.size());
-		preselectTimeTotal += ExplainCalc::Clock::now() - preselectStartTime;
+		preselectTimeTotal += Explain::Clock::now() - preselectStartTime;
 	}
 
+	Explain explain;
 	const Query& query = queryCopy.has_value() ? *queryCopy : q;
 	SelectCtxWithJoinPreSelect selCtx(query, nullptr, fvHolder);
 	selCtx.joinedSelectors = mainJoinedSelectors.size() ? &mainJoinedSelectors : nullptr;
@@ -300,6 +308,7 @@ void RxSelector::DoPreSelectForUpdateDelete(const Query& q, std::optional<Query>
 	selCtx.nsid = 0;
 	selCtx.requiresCrashTracking = true;
 	selCtx.selectBeforeUpdate = true;
+	selCtx.explain = &explain;
 
 	NsSelecter selecter(ns.get());
 	selecter(result, selCtx, rdxCtx);
@@ -307,6 +316,10 @@ void RxSelector::DoPreSelectForUpdateDelete(const Query& q, std::optional<Query>
 	// Adding context to QueryResults
 	for (const auto& jctx : joinQueryResultsContexts) {
 		result.addNSContext(jctx.type_, jctx.tagsMatcher_, jctx.fieldsFilter_, jctx.schema_, jctx.nsIncarnationTag_);
+	}
+	if (q.NeedExplain()) [[unlikely]] {
+		// TODO: Add update/delete explain some day. Issue #2399
+		result.explainResults = explain.GetJSON();
 	}
 }
 
@@ -409,10 +422,11 @@ StoredValuesOptimizationStatus RxSelector::isPreResultValuesModeOptimizationAvai
 
 template <typename LockerT>
 bool RxSelector::selectSubQuery(const Query& subQuery, const Query& mainQuery, LockerT& locks, FtFunctionsHolder& func,
-								std::vector<SubQueryExplain>& explain, const RdxContext& rdxCtx) {
+								std::vector<SubQueryExplain>& explainsOut, const RdxContext& rdxCtx) {
 	auto ns = locks.Get(subQuery.NsName());
 	assertrx_throw(ns);
 
+	Explain explain;
 	LocalQueryResults result;
 	SelectCtxWithJoinPreSelect sctx{subQuery, &mainQuery, &result.GetFloatVectorsHolder()};
 	sctx.nsid = 0;
@@ -420,11 +434,12 @@ bool RxSelector::selectSubQuery(const Query& subQuery, const Query& mainQuery, L
 	sctx.reqMatchedOnceFlag = true;
 	sctx.contextCollectingMode = true;
 	sctx.functions = &func;
+	sctx.explain = &explain;
 
 	ns->Select(result, sctx, rdxCtx);
 	locks.Delete(ns);
-	if (!result.GetExplainResults().empty()) {
-		explain.emplace_back(subQuery.NsName(), result.MoveExplainResults());
+	if (subQuery.NeedExplain()) {
+		explainsOut.emplace_back(subQuery.NsName(), explain.GetJSON());
 	}
 	return sctx.matchedAtLeastOnce;
 }
@@ -432,15 +447,17 @@ bool RxSelector::selectSubQuery(const Query& subQuery, const Query& mainQuery, L
 template <typename LockerT>
 VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& mainQuery, LockerT& locks, LocalQueryResults& qr,
 										FtFunctionsHolder& func, std::variant<std::string, size_t> fieldOrKeys,
-										std::vector<SubQueryExplain>& explain, const RdxContext& rdxCtx) {
+										std::vector<SubQueryExplain>& explainsOut, const RdxContext& rdxCtx) {
 	NamespaceImpl::Ptr ns = locks.Get(subQuery.NsName());
 	assertrx_throw(ns);
 
+	Explain explain;
 	SelectCtxWithJoinPreSelect sctx{subQuery, &mainQuery, &qr.GetFloatVectorsHolder()};
 	sctx.nsid = 0;
 	sctx.requiresCrashTracking = true;
 	sctx.contextCollectingMode = true;
 	sctx.functions = &func;
+	sctx.explain = &explain;
 
 	ns->Select(qr, sctx, rdxCtx);
 	VariantArray result, buf;
@@ -454,7 +471,7 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 					if (!it.Status().ok()) {
 						throw it.Status();
 					}
-					ConstPayload{ns->payloadType_, ns->items_[it.GetItemRef().Id()]}.Get(idxNo, buf);
+					ConstPayload{ns->payloadType_, ns->items_[it.GetItemRef().Id().ToNumber()]}.Get(idxNo, buf);
 					for (Variant& v : buf) {
 						result.emplace_back(std::move(v));
 					}
@@ -479,20 +496,21 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 					if (!it.Status().ok()) {
 						throw it.Status();
 					}
-					result.emplace_back(ConstPayload{ns->payloadType_, ns->items_[it.GetItemRef().Id()]}.GetComposite(fields, fieldsTypes));
+					result.emplace_back(
+						ConstPayload{ns->payloadType_, ns->items_[it.GetItemRef().Id().ToNumber()]}.GetComposite(fields, fieldsTypes));
 				}
 			}
 		} else {
 			if (idxNo < 0) {
 				switch (mainQuery.GetStrictMode()) {
 					case StrictModeIndexes:
-						throw Error(errParams,
+						throw Error(errStrictMode,
 									"Current query strict mode allows aggregate index fields only. There are no indexes with name '{}' in "
 									"namespace '{}'",
 									field, subQuery.NsName());
 					case StrictModeNames:
 						if (ns->tagsMatcher_.path2tag(field).empty()) {
-							throw Error(errParams,
+							throw Error(errStrictMode,
 										"Current query strict mode allows aggregate existing fields only. There are no fields with name "
 										"'{}' in namespace '{}'",
 										field, subQuery.NsName());
@@ -507,8 +525,8 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 				if (!it.Status().ok()) {
 					throw it.Status();
 				}
-				ConstPayload{ns->payloadType_, ns->items_[it.GetItemRef().Id()]}.GetByJsonPath(field, ns->tagsMatcher_, buf,
-																							   KeyValueType::Undefined{});
+				ConstPayload{ns->payloadType_, ns->items_[it.GetItemRef().Id().ToNumber()]}.GetByJsonPath(field, ns->tagsMatcher_, buf,
+																										  KeyValueType::Undefined{});
 				for (Variant& v : buf) {
 					result.emplace_back(std::move(v));
 				}
@@ -521,9 +539,9 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 		}
 	}
 	locks.Delete(ns);
-	if (!qr.GetExplainResults().empty()) {
-		explain.emplace_back(subQuery.NsName(), std::move(qr.MoveExplainResults()));
-		explain.back().SetFieldOrKeys(std::move(fieldOrKeys));
+	if (subQuery.NeedExplain()) {
+		explainsOut.emplace_back(subQuery.NsName(), explain.GetJSON());
+		explainsOut.back().SetFieldOrKeys(std::move(fieldOrKeys));
 	}
 	return result;
 }
@@ -577,6 +595,14 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 
 		jItemQ.ReserveQueryEntries(jq.joinEntries_.size());
 
+		if (jq.joinEntries_.empty()) [[unlikely]] {
+			throw Error{errQueryExec, "Join without ON conditions"};
+		}
+
+		if (jq.joinEntries_.front().Operation() == OpOr) [[unlikely]] {
+			throw Error{errQueryExec, "OR operator in first condition or after left join"};
+		}
+
 		// Construct join conditions
 		for (auto& je : jq.joinEntries_) {
 			QueryPreprocessor::SetQueryField(const_cast<QueryJoinEntry&>(je).LeftFieldData(), *ns);
@@ -608,6 +634,7 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, LocalQueryRes
 			ctx.preSelect.Result().storedValuesOptStatus = isPreResultValuesModeOptimizationAvailable(jItemQ, jns, q);
 			ctx.functions = &func;
 			ctx.requiresCrashTracking = true;
+			ctx.explain = nullptr;	// No external explain for joins preselect
 			LocalQueryResults jr;
 			jns->Select(jr, ctx, rdxCtx);
 			std::visit(overloaded{[&](JoinPreResult::Values& values) {
@@ -710,8 +737,8 @@ std::vector<SubQueryExplain> RxSelector::preselectSubQueries(Query& mainQuery, s
 	return explains;
 }
 
-template void RxSelector::DoSelect<RxSelector::NsLocker<const RdxContext>, long_actions::QueryEnum2Type<QueryType::QuerySelect>>(
-	const Query&, std::optional<Query>&, LocalQueryResults&, NsLocker<const RdxContext>&, FtFunctionsHolder&, const RdxContext&,
-	QueryStatCalculator<long_actions::QueryEnum2Type<QueryType::QuerySelect>, long_actions::Logger>&);
+template void RxSelector::DoSelect<RxSelector::NsLocker<const RdxContext>>(const Query&, std::optional<Query>&, LocalQueryResults&,
+																		   NsLocker<const RdxContext>&, FtFunctionsHolder&,
+																		   const RdxContext&);
 
 }  // namespace reindexer

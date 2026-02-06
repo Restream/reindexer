@@ -57,6 +57,12 @@ void IndexStore<Point>::Delete(const VariantArray& /*keys*/, IdType /*id*/, Must
 	assertrx(0);
 }
 
+template <typename T>
+bool IndexStore<T>::RefreshCompositeKey(const Variant& /*key*/) noexcept {
+	assertrx_dbg(0);
+	return false;
+}
+
 template <>
 Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
 	if (key.Type().Is<KeyValueType::Null>()) {
@@ -79,8 +85,8 @@ Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*cl
 		val = std::string_view(key);
 	}
 	if (!IsColumnIndexDisabled()) {
-		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
-		idx_data[id] = val;
+		idx_data.resize(std::max<size_t>(id.ToNumber() + 1, idx_data.size()));
+		idx_data[id.ToNumber()] = val;
 	}
 
 	return holdValueInStrMap ? Variant(keyIt->first) : key;
@@ -95,8 +101,8 @@ template <typename T>
 Variant IndexStore<T>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
 	assertrx_dbg(!IsFulltext() || Type() == IndexFuzzyFT || Type() == IndexCompositeFuzzyFT);
 	if (!IsColumnIndexDisabled() && !key.Type().Is<KeyValueType::Null>()) {
-		idx_data.resize(std::max(id + 1, IdType(idx_data.size())));
-		idx_data[id] = static_cast<T>(key);
+		idx_data.resize(std::max<size_t>(id.ToNumber() + 1, idx_data.size()));
+		idx_data[id.ToNumber()] = static_cast<T>(key);
 	}
 	return Variant(key);
 }

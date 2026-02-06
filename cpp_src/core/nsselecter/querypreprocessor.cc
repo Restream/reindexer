@@ -30,7 +30,7 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, NamespaceImpl* ns, 
 	  floatVectorsHolder_(ctx.floatVectorsHolder) {
 	if (forcedSortOrder_ && (start_ > QueryEntry::kDefaultOffset || count_ < QueryEntry::kDefaultLimit)) {
 		assertrx_throw(!query_.GetSortingEntries().empty());
-		static const std::vector<JoinedSelector> emptyJoinedSelectors;
+		const std::vector<JoinedSelector> emptyJoinedSelectors;
 		const auto& sEntry = query_.GetSortingEntries()[0];
 		if (SortExpression::Parse(sEntry.expression, emptyJoinedSelectors).ByField()) {
 			int indexNo = IndexValueType::NotSet;
@@ -661,7 +661,7 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 	for (auto cur = begin; cur != end; cur = Next(cur)) {
 		Visit(
-			cur, Skip<JoinQueryEntry, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
+			cur, Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
 			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { throw_as_assert; },
 			[this, cur](QueryEntriesBracket& bracket) {
 				for (auto& equalPositions : bracket.equalPositions) {
@@ -673,6 +673,10 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 					}
 				}
 				initIndexedQueries(cur + 1, Next(cur));
+			},
+			[this]([[maybe_unused]] JoinQueryEntry& entry) {
+				assertrx_throw(query_.GetJoinQueries().size() > entry.joinIndex &&
+							   query_.GetJoinQueries()[entry.joinIndex].joinType != LeftJoin);
 			},
 			[this](BetweenFieldsQueryEntry& entry) {
 				if (!entry.FieldsHaveBeenSet()) {
@@ -760,7 +764,9 @@ void QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin, QueryEn
 									 h_vector<FoundIndexInfo, 32>& foundIndexes) const {
 	for (auto it = begin; it != end; ++it) {
 		const auto foundIdx = it->Visit(
-			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) -> FoundIndexInfo { throw_as_assert; },
+			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) -> FoundIndexInfo {
+				throw_as_assert;
+			},
 			[this, it, end](const QueryEntry& entry) -> FoundIndexInfo {
 				// Consider only isolated root entries with ordered indexes
 				auto cur = it, next = it;
@@ -780,7 +786,9 @@ void QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin, QueryEn
 				return {};
 			},
 			[](const concepts::OneOf<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry,
-									 MultiDistinctQueryEntry, QueryEntriesBracket, QueryFunctionEntry> auto&) noexcept { return FoundIndexInfo(); });
+									 MultiDistinctQueryEntry, QueryEntriesBracket, QueryFunctionEntry> auto&) noexcept {
+				return FoundIndexInfo();
+			});
 		if (foundIdx.index) {
 			auto found = std::find_if(foundIndexes.begin(), foundIndexes.end(),
 									  [foundIdx](const FoundIndexInfo& i) { return i.index == foundIdx.index; });
@@ -1607,15 +1615,20 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 	}
 
 	LocalQueryResults qr;
+	Explain explain;
 	SelectCtxWithJoinPreSelect ctx{joinQuery, nullptr, JoinPreResultExecuteCtx{std::move(joinPreresult), mainQueryMaxIterations},
 								   floatVectorsHolder_};
+	ctx.explain = &explain;
 	rightNs.Select(qr, ctx, rdxCtx);
 	if (ctx.preSelect.Mode() == JoinPreSelectMode::InjectionRejected || qr.Count() > size_t(limit)) {
 		return {CondAny, {}};
 	}
 	assertrx_throw(qr.aggregationResults.size() == 1);
 	auto& aggRes = qr.aggregationResults[0];
-	explainStr = qr.explainResults;
+
+	if (joinQuery.NeedExplain()) {
+		explainStr = explain.GetJSON();
+	}
 	switch (condition) {
 		case CondEq:
 		case CondSet: {
@@ -1790,9 +1803,7 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 					}
 				}
 				const auto& joinEntries = joinedSelector.joinQuery_.joinEntries_;
-				if (!joinEntries.empty() && joinEntries.front().Operation() == OpOr) {
-					throw Error{errQueryExec, "OR operator in first condition or after left join"};
-				}
+				assertrx_throw(joinEntries.empty() || joinEntries.front().Operation() != OpOr);
 				// LeftJoin-s shall not be in QueryEntries container_ by construction
 				assertrx_throw(joinedSelector.Type() == InnerJoin || joinedSelector.Type() == OrInnerJoin);
 				// Checking if we have anything to inject into main Where clause
@@ -2041,10 +2052,10 @@ public:
 };
 
 class [[nodiscard]] JoinOnExplainEnabled {
-	using time_point_t = ExplainCalc::Clock::time_point;
+	using time_point_t = Explain::Clock::time_point;
 	struct [[nodiscard]] OnEntryExplain {
-		OnEntryExplain(ConditionInjection& explainEntry) noexcept : startTime_(ExplainCalc::Clock::now()), explainEntry_(explainEntry) {}
-		~OnEntryExplain() noexcept { explainEntry_.totalTime_ = ExplainCalc::Clock::now() - startTime_; }
+		OnEntryExplain(ConditionInjection& explainEntry) noexcept : startTime_(Explain::Clock::now()), explainEntry_(explainEntry) {}
+		~OnEntryExplain() noexcept { explainEntry_.totalTime_ = Explain::Clock::now() - startTime_; }
 		OnEntryExplain(const OnEntryExplain&) = delete;
 		OnEntryExplain(OnEntryExplain&&) = delete;
 		OnEntryExplain& operator=(const OnEntryExplain&) = delete;
@@ -2079,7 +2090,7 @@ class [[nodiscard]] JoinOnExplainEnabled {
 		ConditionInjection& explainEntry_;
 	};
 
-	JoinOnExplainEnabled(JoinOnInjection& joinOn) noexcept : explainJoinOn_(joinOn), startTime_(ExplainCalc::Clock::now()) {}
+	JoinOnExplainEnabled(JoinOnInjection& joinOn) noexcept : explainJoinOn_(joinOn), startTime_(Explain::Clock::now()) {}
 
 public:
 	JoinOnExplainEnabled(const JoinOnExplainEnabled&) = delete;
@@ -2090,7 +2101,7 @@ public:
 	static JoinOnExplainEnabled AppendJoinOnExplain(OnConditionInjections& explainOnInjections) {
 		return {explainOnInjections.emplace_back()};
 	}
-	~JoinOnExplainEnabled() noexcept { explainJoinOn_.totalTime_ = ExplainCalc::Clock::now() - startTime_; }
+	~JoinOnExplainEnabled() noexcept { explainJoinOn_.totalTime_ = Explain::Clock::now() - startTime_; }
 
 	void Init(const JoinQueryEntry& jqe, const JoinedSelectors& js, bool byValues) {
 		const JoinedSelector& joinedSelector = js[jqe.joinIndex];
@@ -2162,19 +2173,36 @@ void QueryPreprocessor::SetQueryField(QueryField& qField, const NamespaceImpl& n
 
 void QueryPreprocessor::VerifyOnStatementField(const QueryField& qField, const NamespaceImpl& ns, StrictMode strictMode) {
 	if (qField.IsFieldIndexed()) {
-		if (ns.indexes_[qField.IndexNo()]->IsFloatVector()) {
-			throw Error(errLogic, "Float vector indexes is not allowed in ON statement: {}", qField.FieldName());
+		if (ns.indexes_[qField.IndexNo()]->IsFloatVector()) [[unlikely]] {
+			throw Error(errParams, "Float vector indexes are not allowed in ON statement: {}", qField.FieldName());
 		}
 		return;
 	}
-	if (strictMode == StrictModeIndexes) {
+	if (strictMode == StrictModeIndexes) [[unlikely]] {
 		throw Error(errStrictMode, "Current query strict mode allows using only indexed fields in ON statement: {}", qField.FieldName());
 	} else if (strictMode == StrictModeNames) {
-		if (ns.tagsMatcher_.path2tag(qField.FieldName()).empty()) {
+		if (ns.tagsMatcher_.path2tag(qField.FieldName()).empty()) [[unlikely]] {
 			throw Error(errStrictMode, "Current query strict mode allows using only existing fields in ON statement: {}",
 						qField.FieldName());
 		}
 	}
+}
+
+void QueryPreprocessor::RemoveForcedSortOptimizationQueryEntry() {
+	assertrx_dbg(hasForcedSortOptimizationEntry_);
+	for (auto it = begin(), endIt = end(); it != endIt; ++it) {
+		if (it->Is<QueryEntry>()) {
+			auto& qe = it->Value<QueryEntry>();
+			if (!qe.ForcedSortOptEntry()) {
+				continue;
+			}
+			const size_t pos = it.PlainIterator() - cbegin().PlainIterator();
+			Erase(pos, pos + 1);
+			hasForcedSortOptimizationEntry_ = false;
+			break;
+		}
+	}
+	assertrx_dbg(!hasForcedSortOptimizationEntry_);
 }
 
 }  // namespace reindexer

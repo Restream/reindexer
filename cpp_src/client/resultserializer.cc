@@ -129,7 +129,7 @@ ResultSerializer::ItemParams ResultSerializer::GetItemData(int flags, int shardI
 	ItemParams ret;
 
 	if (flags & kResultsWithItemID) {
-		ret.id = int(GetVarUInt());
+		ret.id = IdType::FromNumber(GetVarUInt());
 		ret.lsn = lsn_t(GetVarUInt());
 	}
 

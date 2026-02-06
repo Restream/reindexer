@@ -56,7 +56,7 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 			}
 
 			bool needClearCacheUnused = false;
-			newIndex->Upsert(resKeys, keys, rowId, needClearCacheUnused);
+			newIndex->Upsert(resKeys, keys, IdType::FromNumber(rowId), needClearCacheUnused);
 		}
 
 		auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};

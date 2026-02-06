@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include "core/id_type.h"
 
 #if defined(__GNUC__) && ((__GNUC__ == 12) || (__GNUC__ == 13)) && defined(REINDEX_WITH_ASAN)
 // regex header is broken in GCC 12.0-13.3 with ASAN
@@ -1027,7 +1028,7 @@ private:
 		return std::sqrt((p1.X() - p2.X()) * (p1.X() - p2.X()) + (p1.Y() - p2.Y()) * (p1.Y() - p2.Y()));
 	}
 
-	static reindexer::VariantArray getJoinedField(int id, const reindexer::LocalQueryResults& qr, size_t nsIdx, int index,
+	static reindexer::VariantArray getJoinedField(reindexer::IdType id, const reindexer::LocalQueryResults& qr, size_t nsIdx, int index,
 												  std::string_view column) noexcept {
 		const reindexer::joins::ItemIterator itemIt{&qr.joined_[0], id};
 		const auto joinedIt = itemIt.at(nsIdx);

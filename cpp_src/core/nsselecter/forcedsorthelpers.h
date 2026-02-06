@@ -162,7 +162,7 @@ private:
 template <bool desc, typename ValueGetter>
 class [[nodiscard]] ForcedPartitionerComposite {
 public:
-	ForcedPartitionerComposite(const ValueGetter& valueGetter, unordered_payload_map<std::ptrdiff_t, false>& sortMap) noexcept
+	ForcedPartitionerComposite(const ValueGetter& valueGetter, unordered_payload_map<std::ptrdiff_t>& sortMap) noexcept
 		: valueGetter_{valueGetter}, sortMap_{sortMap} {}
 
 	bool operator()(const ItemRef& itemRef) {
@@ -177,7 +177,7 @@ public:
 
 private:
 	const ValueGetter& valueGetter_;
-	const unordered_payload_map<std::ptrdiff_t, false>& sortMap_;
+	const unordered_payload_map<std::ptrdiff_t>& sortMap_;
 };
 
 template <bool desc, bool multiColumnSort, typename CompareT>
@@ -312,7 +312,7 @@ template <bool desc, bool multiColumnSort, typename ValueGetter>
 class [[nodiscard]] ForcedComparatorComposite {
 public:
 	ForcedComparatorComposite(const ValueGetter& valueGetter, const ItemComparator& compare,
-							  const unordered_payload_map<std::ptrdiff_t, false>& sortMap) noexcept
+							  const unordered_payload_map<std::ptrdiff_t>& sortMap) noexcept
 		: valueGetter_{valueGetter}, sortMap_{sortMap}, compare_{compare} {}
 
 	bool operator()(const ItemRef& lhs, const ItemRef& rhs) {
@@ -324,7 +324,7 @@ public:
 
 private:
 	const ValueGetter& valueGetter_;
-	const unordered_payload_map<std::ptrdiff_t, false>& sortMap_;
+	const unordered_payload_map<std::ptrdiff_t>& sortMap_;
 	const ItemComparator& compare_;
 };
 

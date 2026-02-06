@@ -1,4 +1,5 @@
 #include "core/ft/bm25.h"
+#include "core/id_type.h"
 #include "core/rdxcontext.h"
 #include "merger.h"
 #include "phrasemergerimpl.h"
@@ -40,7 +41,7 @@ template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 template <typename Bm25T>
 void Merger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseResults(size_t phraseIdx, size_t phraseBegin, OpType phraseOp,
 																	 int phraseQPos) {
-	auto& phraseMerger = phraseMergers_[phraseIdx];
+	auto& phraseMerger = phraseMergers_.at(phraseIdx);
 
 	if (phraseOp == OpNot) {
 		removeDocs(phraseMerger.GetMergeData());
@@ -58,7 +59,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseResults(size_t phra
 			continue;
 		}
 
-		const index_t phraseDocId = phraseDocMergeData.id;
+		const index_t phraseDocId = phraseDocMergeData.id.ToNumber();
 
 		if (restrictingMask_.size() && !restrictingMask_[phraseDocId]) {
 			continue;
@@ -68,7 +69,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseResults(size_t phra
 
 		if (mergeStatuses_[phraseDocId] == 0 && !hasBeenAnd_ && numDocs() < holder_.cfg_->mergeLimit) {	 // add new
 			mergeStatuses_[phraseDocId] = phraseBegin + 1;
-			InfoType md{.id = int(phraseDocId), .proc = phraseDocMergeData.proc, .field = phraseDocMergeData.field};
+			InfoType md{.id = IdType::FromNumber(phraseDocId), .proc = phraseDocMergeData.proc, .field = phraseDocMergeData.field};
 
 			MergerDocumentData mdExt(phraseDocMergeDataExt.rank, phraseQPos);
 			if constexpr (kWithAreas) {
@@ -140,10 +141,10 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTermResults(TermResults<I
 			ThrowOnCancel(ctx_);
 		}
 
-		Bm25Calculator<Bm25T> bm25{double(totalDocsCount), double(subtermRes.vids->size()), holder_.cfg_->bm25Config.bm25k1,
+		Bm25Calculator<Bm25T> bm25{double(totalDocsCount), double(subtermRes.Vids().size()), holder_.cfg_->bm25Config.bm25k1,
 								   holder_.cfg_->bm25Config.bm25b};
 
-		auto& subtermDocs = *subtermRes.vids;
+		auto& subtermDocs = subtermRes.Vids();
 
 		for (auto&& positionsInDoc : subtermDocs) {
 			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(positionsInDoc), const IdRelType&>) ||
@@ -182,13 +183,14 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTermResults(TermResults<I
 			// Find field with max rank
 			TermRankInfo subtermInf;
 			subtermInf.proc = subtermRes.proc;
-			subtermInf.pattern = subtermRes.pattern;
+			subtermInf.pattern = subtermRes.Pattern();
 			auto [rank, field] = calcTermRank(termRes, bm25, positionsInDoc, subtermInf, holder_);
 			if (fp::IsZero(rank)) {
 				continue;
 			}
 			if (holder_.cfg_->logLevel >= LogTrace) [[unlikely]] {
-				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subtermRes.pattern, bm25.GetIDF(), termRes.term.Opts().termLenBoost);
+				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subtermRes.Pattern(), bm25.GetIDF(),
+					   termRes.term.Opts().termLenBoost);
 			}
 
 			if (bitmask != nullptr) {
@@ -233,10 +235,10 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::mergeSimple(TermResul
 		if (!inTransaction_) {
 			ThrowOnCancel(ctx_);
 		}
-		Bm25Calculator<Bm25T> bm25{double(totalDocsCount), double(subtermRes.vids->size()), holder_.cfg_->bm25Config.bm25k1,
+		Bm25Calculator<Bm25T> bm25{double(totalDocsCount), double(subtermRes.Vids().size()), holder_.cfg_->bm25Config.bm25k1,
 								   holder_.cfg_->bm25Config.bm25b};
 
-		const auto& subtermDocs = *subtermRes.vids;
+		const auto& subtermDocs = subtermRes.Vids();
 
 		for (const IdRelType& positionsInDoc : subtermDocs) {
 			const int docId = positionsInDoc.Id();
@@ -253,14 +255,14 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::mergeSimple(TermResul
 			// Find field with max rank
 			TermRankInfo subtermInf;
 			subtermInf.proc = subtermRes.proc;
-			subtermInf.pattern = subtermRes.pattern;
+			subtermInf.pattern = subtermRes.Pattern();
 			auto [rank, field] = calcTermRank(singleTermRes, bm25, positionsInDoc, subtermInf, holder_);
 			if (fp::IsZero(rank)) {
 				continue;
 			}
 
 			if (holder_.cfg_->logLevel >= LogTrace) [[unlikely]] {
-				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subtermRes.pattern, bm25.GetIDF(),
+				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subtermRes.Pattern(), bm25.GetIDF(),
 					   singleTermRes.term.Opts().termLenBoost);
 			}
 
@@ -301,7 +303,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::calcTermBitmask(const TermResu
 			ThrowOnCancel(ctx_);
 		}
 
-		for (const auto& positionsInDoc : *subtermRes.vids) {
+		for (const auto& positionsInDoc : subtermRes.Vids()) {
 			if (allFieldsHavePositiveBoost || checkFieldsRelevance(positionsInDoc, termRes.term.Opts())) {
 				index_t docId = positionsInDoc.Id();
 				termMask.set(docId);
@@ -327,7 +329,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::calcTermScores(TermResults<IdC
 			ThrowOnCancel(ctx_);
 		}
 
-		for (const auto& positionsInDoc : *subtermRes.vids) {
+		for (const auto& positionsInDoc : subtermRes.Vids()) {
 			const float maxBoostFromFields = allFieldsHaveSameBoost ? fieldsBoost : maxFieldsBoost(positionsInDoc, termRes.term.Opts());
 			if (maxBoostFromFields > 0.0) {
 				index_t docId = positionsInDoc.Id();
@@ -407,7 +409,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::collectRestrictingMask(std::ve
 				phraseEnd++;
 			}
 
-			phraseMergers_[phraseIdx].GetMergedDocsScores(tmpMask, docsScores);
+			phraseMergers_.at(phraseIdx).GetMergedDocsScores(tmpMask, docsScores);
 
 			if (phraseOp == OpAnd) {
 				if (!andBitmask.size()) {
@@ -416,7 +418,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::collectRestrictingMask(std::ve
 					andBitmask &= tmpMask;
 				}
 			} else if (phraseOp == OpNot) {
-				phraseMergers_[phraseIdx].GetMergedDocsScores(tmpMask, docsScores);
+				phraseMergers_.at(phraseIdx).GetMergedDocsScores(tmpMask, docsScores);
 				if (!notBitmask.size()) {
 					notBitmask.swap(tmpMask);
 				} else {
@@ -595,13 +597,14 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::Merge(std::vector<Ter
 			if (termIdx > synGroupBegin) {
 				assertrx_throw(bitmask.size());
 				for (auto& md : mergeData_) {
-					if (bitmask[md.id] || reindexer::fp::IsZero(md.proc) || mergeStatuses_[md.id] == FtMergeStatuses::kExcluded ||
-						mergeStatuses_[md.id] <= synGroupBegin) {
+					if (bitmask[md.id.ToNumber()] || reindexer::fp::IsZero(md.proc) ||
+						mergeStatuses_[md.id.ToNumber()] == FtMergeStatuses::kExcluded ||
+						mergeStatuses_[md.id.ToNumber()] <= synGroupBegin) {
 						continue;
 					}
 
 					md.proc = 0;
-					mergeStatuses_[md.id] = 0;
+					mergeStatuses_[md.id.ToNumber()] = 0;
 				}
 			}
 		}
@@ -655,7 +658,7 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::Merge(std::vector<Ter
 
 			hasBeenAnd_ = true;
 			for (auto& md : mergeData_) {
-				const auto docId = md.id;
+				const auto docId = md.id.ToNumber();
 				if (bitmask[docId] || reindexer::fp::IsZero(md.proc) || mergeStatuses_[docId] == FtMergeStatuses::kExcluded) {
 					continue;
 				}

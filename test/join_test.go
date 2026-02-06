@@ -899,6 +899,7 @@ func TestExplainJoin(t *testing.T) {
 	explainRes, err := iter.GetExplainResults()
 	assert.NoError(t, err)
 	assert.NotNil(t, explainRes)
+	assert.Empty(t, explainRes.Merged)
 	checkExplain(t, explainRes.Selectors, []expectedExplain{
 		{
 			Field:       "-scan",

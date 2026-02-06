@@ -1,5 +1,5 @@
 #include "translit.h"
-#include <span>
+#include "tools/scope_guard.h"
 
 namespace reindexer {
 
@@ -10,7 +10,17 @@ Translit::Translit() {
 
 void Translit::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorage& result, int proc,
 						   fast_hash_map<std::wstring, size_t>& patternsUsed) {
-	std::wstring strings[maxTranslitVariants];
+	thread_local std::wstring strings[maxTranslitVariants];
+	auto cleanup = MakeScopeGuard([] {
+		for (auto& s : strings) {
+			if (s.size() < 255) [[likely]] {
+				s.resize(0);
+			} else {
+				s = std::wstring();
+			}
+		}
+	});
+
 	Context ctx;
 	if (data.length()) {
 		for (int j = 0; j < maxTranslitVariants; ++j) {
@@ -22,7 +32,7 @@ void Translit::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorag
 		wchar_t symbol = data[i];
 		if (symbol >= ruLettersStartUTF16 && symbol <= ruLettersStartUTF16 + ruAlphabetSize - 1) {	// russian symbol
 			for (int j = 0; j < maxTranslitVariants; ++j) {
-				assertrx(symbol >= ruLettersStartUTF16 && symbol - ruLettersStartUTF16 < ruAlphabetSize);
+				assertrx_throw(symbol >= ruLettersStartUTF16 && symbol - ruLettersStartUTF16 < ruAlphabetSize);
 				strings[j] += ru_buf_[symbol - ruLettersStartUTF16][j];
 			}
 
@@ -53,7 +63,7 @@ void Translit::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorag
 		auto& current = strings[i];
 		for (int j = i + 1; j < maxTranslitVariants; ++j) {
 			if (current == strings[j]) {
-				current.clear();
+				current.resize(0);
 				break;
 			}
 		}
@@ -70,7 +80,7 @@ void Translit::GetVariants(const std::wstring& data, ITokenFilter::ResultsStorag
 }
 
 std::pair<uint8_t, wchar_t> Translit::GetEnglish(wchar_t symbol, size_t variant, Context& ctx) {
-	assertrx(symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < engAlphabetSize);
+	assertrx_throw(symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < engAlphabetSize);
 
 	if (variant == 1 && ctx.GetCount() > 0) {
 		auto sym = en_d_buf_[ctx.GetLast()][symbol - enLettersStartUTF16];

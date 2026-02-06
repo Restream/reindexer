@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_set>
 #include "gtest/gtest.h"
 
 namespace json_helpers {
@@ -32,7 +33,7 @@ void AssertJsonFieldEqualTo(const std::string& str, const char* fieldName, std::
 	std::string::size_type pos = impl::findField(str, fieldName, 0);
 	size_t i = 0;
 	for (auto it = values.begin(); it != values.end(); ++i, ++it) {
-		ASSERT_NE(pos, std::string::npos) << str << ": Field '" << fieldName << "' found less then expected (Expected " << values.size()
+		ASSERT_NE(pos, std::string::npos) << str << ": Field '" << fieldName << "' found less than expected (Expected " << values.size()
 										  << ')';
 		const auto fieldValue = impl::readFieldValue<typename decltype(values)::value_type>(str, pos);
 		ASSERT_EQ(*it, fieldValue) << str << ": Field '" << fieldName << "' value number " << i << " missmatch. Expected: '" << *it
@@ -40,6 +41,42 @@ void AssertJsonFieldEqualTo(const std::string& str, const char* fieldName, std::
 		pos = impl::findField(str, fieldName, pos + 1);
 	}
 	ASSERT_EQ(pos, std::string::npos) << str << ": Field '" << fieldName << "' found more then expected (Expected " << values.size() << ')';
+}
+
+template <typename T>
+void AssertJsonFieldEqualToOneOf(const std::string& str, const char* fieldName, std::initializer_list<std::unordered_set<T>> expectedSets) {
+	auto formatSet = [](const std::unordered_set<T>& set) -> std::string {
+		std::string result = "{'";
+		for (auto it = set.begin(); it != set.end(); ++it) {
+			if (it != set.begin()) {
+				result += "', '";
+			}
+			result += *it;
+		}
+		result += "'}";
+		return result;
+	};
+
+	const auto allExpectedSets = impl::adoptValuesType(expectedSets);
+	std::string::size_type pos = impl::findField(str, fieldName, 0);
+	size_t i = 0;
+
+	for (auto it = allExpectedSets.begin(); it != allExpectedSets.end(); ++i, ++it) {
+		ASSERT_NE(pos, std::string::npos) << str << ": Field '" << fieldName << "' found less than expected (Expected "
+										  << allExpectedSets.size() << ')';
+
+		const T fieldValue = impl::readFieldValue<T>(str, pos);
+		const auto& allowedValues = *it;
+
+		ASSERT_TRUE(allowedValues.find(fieldValue) != allowedValues.end())
+			<< str << ": Field '" << fieldName << "' value number " << i << " mismatch. Got: '" << fieldValue
+			<< "', expected one of: " << formatSet(allowedValues);
+
+		pos = impl::findField(str, fieldName, pos + 1);
+	}
+
+	ASSERT_EQ(pos, std::string::npos) << str << ": Field '" << fieldName << "' found more than expected (Expected "
+									  << allExpectedSets.size() << ')';
 }
 
 template <typename T>

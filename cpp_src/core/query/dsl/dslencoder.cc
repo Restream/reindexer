@@ -339,56 +339,49 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 	for (; it != to; ++it) {
 		auto node = builder.Object();
 		node.Put("op"sv, dsl::get(dsl::kOpMap, it->operation));
-		it->Visit(
-			[&node](const AlwaysFalse&) {
-				logFmt(LogTrace, "Not normalized query to dsl"sv);
-				node.Put("always"sv, false);
-			},
-			[&node](const AlwaysTrue&) {
-				logFmt(LogTrace, "Not normalized query to dsl"sv);
-				node.Put("always"sv, true);
-			},
-			[&node, &parentQuery](const SubQueryEntry& sqe) {
-				node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
-				{
-					auto subquery = node.Object("subquery"sv);
-					dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
-				}
-				dsl::putValues(node, sqe.Values());
-			},
-			[&node, &parentQuery](const SubQueryFieldEntry& sqe) {
-				node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
-				node.Put("field"sv, sqe.FieldName());
-				auto subquery = node.Object("subquery"sv);
-				dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
-			},
-			[&node, &parentQuery](const SubQueryFunctionEntry& sqe) {
-				node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
-				auto fields = node.Array("fields");
-				for (size_t i = 0; i < sqe.Fields(); ++i) {
-					fields.Put(TagName::Empty(), sqe.FieldData(i).FieldName());
-				}
-				fields.End();
-				auto subquery = node.Object("subquery"sv);
-				dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
-			},
-			[&it, &node, &parentQuery](const QueryEntriesBracket& bracket) {
-				auto arrNode = node.Array("filters"sv);
-				toDsl(it.cbegin(), it.cend(), parentQuery, arrNode);
-				dsl::encodeEqualPositions(bracket.equalPositions, arrNode);
-			},
-			[&node](const QueryEntry& qe) { dsl::encodeFilter(qe, node); },
-			[&node](const QueryFunctionEntry& qe) { dsl::encodeFilter(qe, node); },
-			[&node, &parentQuery](const JoinQueryEntry& jqe) {
-				assertrx(jqe.joinIndex < parentQuery.GetJoinQueries().size());
-				dsl::encodeSingleJoinQuery(parentQuery.GetJoinQueries()[jqe.joinIndex], node);
-			},
-			[&node](const BetweenFieldsQueryEntry& qe) {
-				node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(qe.Condition())));
-				node.Put("first_field"sv, qe.LeftFieldName());
-				node.Put("second_field"sv, qe.RightFieldName());
-			},
-			[](const MultiDistinctQueryEntry&) {}, [&node](const KnnQueryEntry& qe) { qe.ToDsl(node); });
+		it->Visit([](const AlwaysFalse&) { throw Error(errLogic, "Unexpected 'AlwaysFalse' query entry in DSL"); },
+				  [](const AlwaysTrue&) { throw Error(errLogic, "Unexpected 'AlwaysTrue' query entry in DSL"); },
+				  [&node, &parentQuery](const SubQueryEntry& sqe) {
+					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
+					  {
+						  auto subquery = node.Object("subquery"sv);
+						  dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
+					  }
+					  dsl::putValues(node, sqe.Values());
+				  },
+				  [&node, &parentQuery](const SubQueryFieldEntry& sqe) {
+					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
+					  node.Put("field"sv, sqe.FieldName());
+					  auto subquery = node.Object("subquery"sv);
+					  dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
+				  },
+				  [&node, &parentQuery](const SubQueryFunctionEntry& sqe) {
+					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
+					  auto fields = node.Array("fields");
+					  for (size_t i = 0; i < sqe.Fields(); ++i) {
+						  fields.Put(TagName::Empty(), sqe.FieldData(i).FieldName());
+					  }
+					  fields.End();
+					  auto subquery = node.Object("subquery"sv);
+					  dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
+				  },
+				  [&it, &node, &parentQuery](const QueryEntriesBracket& bracket) {
+					  auto arrNode = node.Array("filters"sv);
+					  toDsl(it.cbegin(), it.cend(), parentQuery, arrNode);
+					  dsl::encodeEqualPositions(bracket.equalPositions, arrNode);
+				  },
+				  [&node](const QueryEntry& qe) { dsl::encodeFilter(qe, node); },
+				  [&node](const QueryFunctionEntry& qe) { dsl::encodeFilter(qe, node); },
+				  [&node, &parentQuery](const JoinQueryEntry& jqe) {
+					  assertrx(jqe.joinIndex < parentQuery.GetJoinQueries().size());
+					  dsl::encodeSingleJoinQuery(parentQuery.GetJoinQueries()[jqe.joinIndex], node);
+				  },
+				  [&node](const BetweenFieldsQueryEntry& qe) {
+					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(qe.Condition())));
+					  node.Put("first_field"sv, qe.LeftFieldName());
+					  node.Put("second_field"sv, qe.RightFieldName());
+				  },
+				  [](const MultiDistinctQueryEntry&) {}, [&node](const KnnQueryEntry& qe) { qe.ToDsl(node); });
 	}
 }
 

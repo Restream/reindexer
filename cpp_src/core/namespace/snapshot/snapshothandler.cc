@@ -1,5 +1,6 @@
 #include "snapshothandler.h"
 #include "core/ft/functions/ft_function.h"
+#include "core/id_type.h"
 #include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/selectctx.h"
@@ -225,7 +226,7 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 			if (!err.ok()) {
 				throw err;
 			}
-			ns_.doModifyItem(item, ModeUpsert, pendedRepl, ctx, (chCtx.wal) ? -1 : rec.rawItem.id);
+			ns_.doModifyItem(item, ModeUpsert, pendedRepl, ctx, (chCtx.wal) ? IdType::NotSet() : rec.rawItem.id);
 			break;
 		}
 		case WalTagsMatcher: {

@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/ft_fast/frisosplitter.h"
+#include "core/ft/ft_fast/typosmap.h"
 #include "core/ft/limits.h"
 #include "estl/gift_str.h"
 #include "ft_api.h"
@@ -11,6 +12,7 @@
 #include "json_helpers.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
+#include "tools/stringstools.h"
 #include "vendor/fmt/ranges.h"
 #include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
@@ -1741,6 +1743,49 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 true);
 }
 
+TEST_P(FTGenericApi, TyposCollision) {
+	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
+	reindexer::FtFastConfig cfg = cfgDef;
+	cfg.rankingConfig.fullMatch = 100;
+	cfg.rankingConfig.typo = 100;
+	cfg.maxTypos = 4;
+	Init(cfg);
+
+	// aaaaaaaa and aaiotqda give typos hash collision
+	const std::string_view doc1 = "aaaaaaaaxx", doc2 = "aaiotqdaxx", term = "aaiotqda";
+
+	// Check if collisions actually exist
+	std::map<size_t, std::wstring> typos;
+	auto cbWrite = [&typos](std::wstring_view typo, const reindexer::TyposVec&, std::wstring_view) {
+		typos[reindexer::TyposMap::CalcHash(typo)] = typo;
+	};
+	std::wstring buf;
+	reindexer::mktypos(reindexer::utf8_to_utf16(doc1), cfg.maxTypos / 2, cfg.maxTypoLen, cbWrite, buf);
+
+	std::set<std::wstring> collisions;
+	auto cbRead = [&typos, &collisions](std::wstring_view typo, const reindexer::TyposVec&, std::wstring_view) {
+		const auto found = typos.find(reindexer::TyposMap::CalcHash(typo));
+		if (found != typos.end() && found->second != typo) {
+			collisions.emplace(typo);
+		}
+	};
+	reindexer::mktypos(reindexer::utf8_to_utf16(doc2), cfg.maxTypos / 2, cfg.maxTypoLen, cbRead, buf);
+	EXPECT_GT(collisions.size(), 0) << "Documents do not have collisions in typos";
+
+	unsigned termCollisions = 0;
+	auto cbTerm = [&collisions, &termCollisions](std::wstring_view typo, const reindexer::TyposVec&, std::wstring_view) {
+		termCollisions += collisions.count(std::wstring(typo));
+	};
+	reindexer::mktypos(reindexer::utf8_to_utf16(term), cfg.maxTypos / 2, cfg.maxTypoLen, cbTerm, buf);
+	EXPECT_GT(termCollisions, 0) << "Term does not produce typo with collision";
+
+	// Check if query with typo collision works properly
+	Add("nm1"sv, doc1, "");
+	Add("nm1"sv, doc2, "");
+
+	CheckResults(fmt::format("{}~", term), {{fmt::format("!{}!", doc2), ""}}, true);
+}
+
 TEST_P(FTGenericApi, InvalidDSLErrors) {
 	auto cfg = GetDefaultConfig();
 	cfg.stopWords.clear();
@@ -2423,6 +2468,17 @@ TEST_P(FTGenericApi, JoiningQueryTerms) {
 				  {"Леонардо !ДиКаприо! снимался в Выжившем", ""},
 				  {"Леонардо !ДеКаприо! снимался в Выжившем", ""}},
 				 true);
+}
+
+TEST_P(FTGenericApi, OperatorsInExtraWordSymbols) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.splitOptions.SetSymbols("-/+_`'=*", "");
+	Init(ftCfg);
+	Add("слово"sv);
+	Add("=слово*"sv);
+	Add("=слово"sv);
+
+	CheckResults("\\=слово\\*", {{"!=слово*!", ""}}, true);
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,

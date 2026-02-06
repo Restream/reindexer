@@ -115,7 +115,7 @@ bool ClusterManager::NamesapceIsInReplicationConfig(std::string_view nsName) {
 	return clusterReplicator_.NamespaceIsInClusterConfig(nsName) || asyncReplicator_.NamespaceIsInAsyncConfig(nsName);
 }
 
-Error ClusterManager::Replicate(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx) {
+Error ClusterManager::Replicate(UpdatesContainer&& recs, const std::function<void()>& beforeWaitF, const RdxContext& ctx) {
 	if (replicationIsNotRequired(recs)) {
 		return {};
 	}

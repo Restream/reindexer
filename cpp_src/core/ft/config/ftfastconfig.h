@@ -54,7 +54,7 @@ struct [[nodiscard]] FtFastConfig : public BaseFTConfig {
 	int maxTypos = 2;
 	int maxExtraLetters = 2;
 	int maxMissingLetters = 2;
-	int maxTypoLen = 15;
+	uint8_t maxTypoLen = 15;
 	int maxTypoDistance = 0;
 	int maxSymbolPermutationDistance = 1;
 

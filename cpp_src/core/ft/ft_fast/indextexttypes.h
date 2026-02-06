@@ -6,14 +6,18 @@
 
 namespace reindexer {
 
+constexpr int kTypoStepNumBits = 6;
+constexpr int kTypoWordIdNumBits = 32 - kTypoStepNumBits;
+
 struct [[nodiscard]] WordIdTypeBit {
-	uint32_t step_num : 6;	// index in the array of the index build steps (IDataHolder::steps)
-	uint32_t id : 26;		// index in the array of the unique words (DataHolder::words_)
+	uint32_t step_num : kTypoStepNumBits;  // index in the array of the index build steps (IDataHolder::steps)
+	uint32_t id : kTypoWordIdNumBits;	   // index in the array of the unique words (DataHolder::words_)
 };
 
 static_assert(WordIdTypeBit{.step_num = kWordIdMaxStepVal, .id = 0}.step_num == kWordIdMaxStepVal, "Bitfield overflow");
 static_assert(WordIdTypeBit{.step_num = 0, .id = kWordIdMaxIdVal}.id == kWordIdMaxIdVal, "Bitfield overflow");
 static_assert(WordIdTypeBit{.step_num = 0, .id = kWordIdEmptyIdVal}.id == kWordIdEmptyIdVal, "Bitfield overflow");
+static_assert(sizeof(WordIdTypeBit) == 4, "Unexpected WordIdTypeBit size");
 
 union [[nodiscard]] WordIdType {
 	WordIdTypeBit b;

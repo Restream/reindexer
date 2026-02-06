@@ -63,7 +63,7 @@ void BaseFixture::Update(benchmark::State& state) {
 			state.SkipWithError(err.what());
 		}
 
-		if (item.GetID() < 0) {
+		if (!item.GetID().IsValid()) {
 			auto e = reindexer::Error(errConflict, "Item not exists [id = '{}']", item["id"].As<int>());
 			state.SkipWithError(e.what());
 		}

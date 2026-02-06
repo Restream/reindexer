@@ -43,6 +43,9 @@ public:
 	const char* const kFieldHash = "data_hash";
 	constexpr static int kNsSize = 2000;
 
+	const std::unordered_set<std::string> indexMethods = {"index", "index(cached)"};
+	const std::unordered_set<std::string> scanMethods = {"scan"};
+
 private:
 	Item makeItem(const char* ns, int id) {
 		Item item = NewItem(ns);

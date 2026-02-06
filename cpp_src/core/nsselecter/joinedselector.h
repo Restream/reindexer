@@ -189,7 +189,7 @@ public:
 	const JoinPreResult::CPtr& PreResultPtr() const& noexcept { return preSelectCtx_.ResultPtr(); }
 	JoinPreSelectMode PreSelectMode() const noexcept { return preSelectCtx_.Mode(); }
 	const NamespaceImpl::Ptr& RightNs() const noexcept { return rightNs_; }
-	ExplainCalc::Duration SelectTime() const noexcept { return selectTime_; }
+	Explain::Duration SelectTime() const noexcept { return selectTime_; }
 	const std::string& ExplainOneSelect() const& noexcept { return explainOneSelect_; }
 
 	auto ExplainOneSelect() const&& = delete;
@@ -220,7 +220,7 @@ private:
 	bool optimized_ = false;
 	bool inTransaction_ = false;
 	int64_t lastUpdateTime_ = 0;
-	ExplainCalc::Duration selectTime_ = ExplainCalc::Duration::zero();
+	Explain::Duration selectTime_ = Explain::Duration::zero();
 	SetLimit0ForChangeJoin limit0_ = SetLimit0ForChangeJoin_False;
 	VariantArray tmpValues_;
 };

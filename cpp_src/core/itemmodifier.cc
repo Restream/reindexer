@@ -11,6 +11,8 @@
 #include "estl/tokenizer.h"
 #include "index/float_vector/float_vector_index.h"
 #include "index/index.h"
+#include "tools/logger.h"
+#include "tools/scope_guard.h"
 
 namespace reindexer {
 
@@ -131,7 +133,7 @@ TagsPath ItemModifier::FieldData::getTagsPathByIndexField(int& field, const Name
 							  ? idx.Fields().size()
 							  : ns.payloadType_.Field(field).JsonPaths().size();
 
-	if (totalJsonPaths != 1) {
+	if (totalJsonPaths != 1) [[unlikely]] {
 		assertrx_dbg(totalJsonPaths);
 		throw Error(errParams, "Ambiguity when updating field with several json paths by index name: '{}'", idx.Name());
 	}
@@ -143,7 +145,7 @@ TagsPath ItemModifier::FieldData::getTagsPathByIndexField(int& field, const Name
 		field = fields[0];	// 'Composite' index with single subindex
 		const auto& jsonPath = ns.payloadType_.Field(field).JsonPaths()[0];
 		tagsPath = ns.tagsMatcher_.path2tag(jsonPath);
-		if (tagsPath.empty()) {
+		if (tagsPath.empty()) [[unlikely]] {
 			throw Error(errParams, "Cannot find field by json: '{}'", jsonPath);
 		}
 	}
@@ -223,7 +225,9 @@ public:
 		}
 		auto indexesCacheCleaner{modifier_.ns_.GetIndexesCacheCleaner()};
 		const std::vector<bool>& data = modifier_.rollBackIndexData_.IndexStatus();
-		PayloadValue& plValue = modifier_.ns_.items_[itemId_];
+		PayloadValue& plValue = modifier_.ns_.items_[itemId_.ToNumber()];
+		plValue.Clone();
+
 		NamespaceImpl::IndexesStorage& indexes = modifier_.ns_.indexes_;
 
 		Payload plSave(modifier_.ns_.payloadType_, modifier_.rollBackIndexData_.GetPayloadValueBackup());
@@ -277,7 +281,7 @@ public:
 				VariantArray result;
 				indexes[i]->Upsert(result, oldData, itemId_, needClearCache);
 				if (!indexes[i]->Opts().IsSparse()) {
-					Payload pl{modifier_.ns_.payloadType_, modifier_.ns_.items_[itemId_]};
+					Payload pl{modifier_.ns_.payloadType_, modifier_.ns_.items_[itemId_.ToNumber()]};
 					pl.Set(i, result);
 				}
 				if (needClearCache) {
@@ -295,12 +299,20 @@ public:
 			plCur.Set(0, res);
 		}
 
-		for (size_t i = indexes.firstCompositePos(); i < size_t(indexes.totalSize()) && i < data.size(); ++i) {
+		// Insert old value into affected composite indexes or refresh value in unaffected indexes
+		const auto pvBackup = Variant(modifier_.rollBackIndexData_.GetPayloadValueBackup());
+		for (size_t i = indexes.firstCompositePos(); i < size_t(indexes.totalSize()); ++i) {
 			if (data[i]) {
 				bool needClearCache{false};
-				std::ignore = indexes[i]->Upsert(Variant(modifier_.rollBackIndexData_.GetPayloadValueBackup()), itemId_, needClearCache);
+				std::ignore = indexes[i]->Upsert(pvBackup, itemId_, needClearCache);
 				if (needClearCache) {
 					indexesCacheCleaner.Add(*indexes[i]);
+				}
+			} else {
+				bool refreshed = indexes[i]->RefreshCompositeKey(pvBackup);
+				assertrx_dbg(refreshed);
+				if (!refreshed) [[unlikely]] {
+					logFmt(LogError, "[{}]: Unable to refresh key for {} during update query", modifier_.ns_.name_, indexes[i]->Name());
 				}
 			}
 		}
@@ -367,7 +379,7 @@ void ItemModifier::EmbedderHelper::prepareVectorIndexInfo() {
 		if (embedder) {
 			for (const auto& field : embedder->Fields()) {
 				int idx = 0;
-				if (!ns_.tryGetIndexByName(field, idx)) {
+				if (!ns_.tryGetIndexByName(field, idx)) [[unlikely]] {
 					throw Error{errConflict, "Configuration 'embedding:upsert_embedder' configured with invalid base field name '{}'",
 								field};
 				}
@@ -425,7 +437,7 @@ void ItemModifier::EmbedderHelper::prepareSkipVectorIndexes(const std::vector<Fi
 				Tokenizer tokenizer(v);
 				Token tok = tokenizer.NextToken();
 				auto parsedFunction = QueryFunctionParser::ParseFunction(tokenizer, tok);
-				if (parsedFunction.funcName == "skip_embedding") {
+				if (parsedFunction.funcName == "skip_embedding") [[likely]] {
 					skipVectorIndexes_.set(field.Index());
 					continue;
 				} else {
@@ -440,7 +452,7 @@ void ItemModifier::EmbedderHelper::prepareSkipVectorIndexes(const std::vector<Fi
 }
 
 bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, UpdatesContainer& replUpdates) {
-	PayloadValue& pv = ns_.items_[itemId];
+	PayloadValue& pv = ns_.items_[itemId.ToNumber()];
 	Payload pl(ns_.payloadType_, pv);
 	pv.Clone(pl.RealSize());
 
@@ -453,6 +465,9 @@ bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, UpdatesContainer&
 
 	deleteItemFromComposite(itemId, indexesCacheCleaner);
 	try {
+		auto compositesGuard =
+			MakeScopeGuard([this, itemId, &indexesCacheCleaner] { insertItemIntoComposite(itemId, indexesCacheCleaner); });
+
 		VariantArray values;
 		bool recalcEmbeddersOnSetObject = false;
 		for (FieldData& field : fieldsToModify_) {
@@ -467,7 +482,7 @@ bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, UpdatesContainer&
 				values = field.Details().Values();
 			}
 
-			if (values.IsArrayValue() && field.TagspathWithLastIndex().back().IsTagIndex()) {
+			if (values.IsArrayValue() && field.TagspathWithLastIndex().back().IsTagIndex()) [[unlikely]] {
 				throw Error(errParams, "Array items are supposed to be updated with a single value, not an array");
 			}
 
@@ -493,24 +508,21 @@ bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, UpdatesContainer&
 			embedderHelper_.RecalcVectorIndexesToModify(pl, plOld);
 		}
 		updateEmbedding(itemId, ctx.rdxContext, pl);
-	} catch (...) {
-		insertItemIntoComposite(itemId, indexesCacheCleaner);
-		throw;
+	} catch (const DuplicatedItemIDError& err) {
+		assertrx_throw(err.ID() < IdType::Max().ToNumber());
+		IdType conflictingItemId = IdType::FromNumber(err.ID());
+		PayloadValue& conflictingItemPV = ns_.items_[conflictingItemId.ToNumber()];
+		ns_.throwDuplicatePK(ConstPayload(ns_.payloadType_, conflictingItemPV), itemId, conflictingItemId);
 	}
 
-	insertItemIntoComposite(itemId, indexesCacheCleaner);
-	if (rollBackIndexData_.IsPkModified()) {
-		ns_.checkUniquePK(ConstPayload(ns_.payloadType_, pv), ctx.IsInTransaction(), ctx.rdxContext);
-	}
 	rollBack.Disable();
-
 	ns_.markUpdated(IndexOptimization::Partial);
 
 	return rollBackIndexData_.IsPkModified();
 }
 
 void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values, UpdatesContainer& replUpdates, const NsContext& ctx) {
-	PayloadValue& plData = ns_.items_[id];
+	PayloadValue& plData = ns_.items_[id.ToNumber()];
 	const PayloadTypeImpl& pti(*ns_.payloadType_.get());
 	Payload pl(pti, plData);
 	VariantArray cjsonKref;
@@ -632,7 +644,7 @@ void ItemModifier::deleteItemFromComposite(IdType itemId, auto& indexesCacheClea
 			bool needClearCache{false};
 			const auto& compositeIdx = ns_.indexes_[i];
 			rollBackIndexData_.IndexChanged(i, compositeIdx->Opts().IsPK());
-			compositeIdx->Delete(Variant(ns_.items_[itemId]), itemId, MustExist_True, *strHolder, needClearCache);
+			compositeIdx->Delete(Variant(ns_.items_[itemId.ToNumber()]), itemId, MustExist_True, *strHolder, needClearCache);
 			if (needClearCache) {
 				indexesCacheCleaner.Add(*compositeIdx);
 			}
@@ -644,13 +656,19 @@ void ItemModifier::insertItemIntoComposite(IdType itemId, auto& indexesCacheClea
 	const auto totalIndexes = ns_.indexes_.totalSize();
 	const auto firstCompositePos = ns_.indexes_.firstCompositePos();
 	for (int i = firstCompositePos; i < totalIndexes; ++i) {
+		auto& compositeIdx = *ns_.indexes_[i];
 		if (affectedComposites_[i - firstCompositePos]) {
+			rollBackIndexData_.IndexChanged(i, compositeIdx.Opts().IsPK());
 			bool needClearCache{false};
-			auto& compositeIdx = ns_.indexes_[i];
-			rollBackIndexData_.IndexChanged(i, compositeIdx->Opts().IsPK());
-			std::ignore = compositeIdx->Upsert(Variant(ns_.items_[itemId]), itemId, needClearCache);
+			std::ignore = compositeIdx.Upsert(Variant(ns_.items_[itemId.ToNumber()]), itemId, needClearCache);
 			if (needClearCache) {
-				indexesCacheCleaner.Add(*compositeIdx);
+				indexesCacheCleaner.Add(compositeIdx);
+			}
+		} else {
+			bool refreshed = compositeIdx.RefreshCompositeKey(Variant(ns_.items_[itemId.ToNumber()]));
+			assertrx_dbg(refreshed);
+			if (!refreshed) [[unlikely]] {
+				logFmt(LogError, "[{}]: Unable to refresh key for {} during update query", ns_.name_, compositeIdx.Name());
 			}
 		}
 	}
@@ -666,7 +684,7 @@ void convertToFloatVector(FloatVectorDimension dim, VariantArray& values) {
 		values[0] = Variant{ConstFloatVectorView{}};
 		return;
 	}
-	if (values.size() != dim.Value()) {
+	if (values.size() != dim.Value()) [[unlikely]] {
 		throw Error(errParams, "It's not possible to Update float vector index of dimension {} with array of size {}", dim.Value(),
 					values.size());
 	}
@@ -682,7 +700,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 	assertrx_throw(field.IsIndex());
 	Index& index = *(ns_.indexes_[field.Index()]);
 	if (!index.Opts().IsSparse() && field.Details().Mode() == FieldModeDrop /*&&
-		!(field.ArrayIndex() != IndexValueType::NotSet || field.tagspath().back().IsArrayNode())*/) {	 // TODO #1218 allow to drop array fields
+		!(field.ArrayIndex() != IndexValueType::NotSet || field.tagspath().back().IsArrayNode())*/)  [[unlikely]]{	 // TODO #1218 allow to drop array fields
 		throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
 	}
 
@@ -692,11 +710,11 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 
 	assertrx_throw(!index.Opts().IsSparse() || index.Fields().getTagsPathsLength() > 0);
 	if (!index.Opts().IsArray()) {
-		if (values.IsArrayValue()) {
+		if (values.IsArrayValue()) [[unlikely]] {
 			throw Error(errParams, "It's not possible to Update single index fields with arrays!");
 		}
 
-		if (!index.IsFloatVector() && field.TagspathWithLastIndex().back().IsTagIndex()) {
+		if (!index.IsFloatVector() && field.TagspathWithLastIndex().back().IsTagIndex()) [[unlikely]] {
 			throw Error(errParams, "Can't Update non-array index fields using array index");
 		}
 	}
@@ -710,9 +728,10 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 	auto strHolder = ns_.strHolder();
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
 
-	bool fvRequiresTupleUpdate = false;
-	if (index.IsFloatVector()) {
-		// TODO: We should modify CJSON for any default value #1837
+	bool requiresTupleUpdate = index.Opts().IsSparse() || index.Opts().IsArray() || index.KeyType().Is<KeyValueType::Uuid>();
+	// We should modify CJSON for any default value #1837
+	requiresTupleUpdate = requiresTupleUpdate || pl.HasDefaultValue(field.Index());
+	if (!requiresTupleUpdate && index.IsFloatVector()) {
 		// If float vector is changing it's size, than we have to perform tuple update, to handle null and missing values properly
 		for (Variant& key : values) {
 			std::ignore = key.convert(KeyValueType::FloatVector{});
@@ -720,12 +739,12 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 		assertrx_throw(values.size() <= 1);
 		const auto oldSize = pl.Get(field.Index(), 0).As<ConstFloatVectorView>().Dimension();
 		const auto newSize = values.empty() ? FloatVectorDimension() : values[0].As<ConstFloatVectorView>().Dimension();
-		fvRequiresTupleUpdate = (oldSize != newSize);
+		requiresTupleUpdate = (oldSize != newSize);
 	}
 
 	modifyIndexValues(itemId, field, values, pl);
 
-	if (index.Opts().IsSparse() || index.Opts().IsArray() || index.KeyType().Is<KeyValueType::Uuid>() || fvRequiresTupleUpdate) {
+	if (requiresTupleUpdate) {
 		ItemImpl item(ns_.payloadType_, *(pl.Value()), ns_.tagsMatcher_);
 		Variant oldTupleValue = item.GetField(0);
 		std::ignore = oldTupleValue.EnsureHold();
@@ -745,7 +764,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 
 void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, VariantArray& values, Payload& pl) {
 	Index& index = *(ns_.indexes_[field.Index()]);
-	if (values.IsNullValue() && !index.Opts().IsArray()) {
+	if (values.IsNullValue() && !index.Opts().IsArray()) [[unlikely]] {
 		throw Error(errParams, "Non-array index fields cannot be set to null!");
 	}
 	auto strHolder = ns_.strHolder();
@@ -768,12 +787,12 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 	}
 
 	if (index.Opts().IsArray() && updateArrayPart && !index.Opts().IsSparse()) {
-		if (!values.IsArrayValue() && values.empty()) {
+		if (!values.IsArrayValue() && values.empty()) [[unlikely]] {
 			throw Error(errParams, "Cannot update array item with an empty value");	 // TODO #1218 maybe delete this
 		}
 		int offset = -1, length = -1;
 		ns_.skrefs = pl.GetIndexedArrayData(field.TagspathWithLastIndex(), field.Index(), offset, length);
-		if (offset < 0 || length < 0) {
+		if (offset < 0 || length < 0) [[unlikely]] {
 			const auto& path = field.TagspathWithLastIndex();
 			std::string indexesStr;
 			for (const auto& p : path) {
@@ -864,16 +883,13 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 			return;
 		}
 
-		if (!ns_.skrefs.empty()) {
-			bool needClearCache{false};
-			rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
-			index.Delete(ns_.skrefs, itemId, MustExist_True, *strHolder, needClearCache);
-			if (needClearCache) {
-				indexesCacheCleaner.Add(index);
-			}
+		bool needClearCache{false};
+		rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
+		index.Delete(ns_.skrefs, itemId, MustExist_True, *strHolder, needClearCache);
+		if (needClearCache) {
+			indexesCacheCleaner.Add(index);
 		}
 
-		bool needClearCache{false};
 		rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
 		index.Upsert(ns_.krefs, kConcatIndexValues ? concatValues : values, itemId, needClearCache);
 		if (needClearCache) {
@@ -891,7 +907,7 @@ void ItemModifier::getEmbeddingData(const Payload& pl, const UpsertEmbedder& emb
 	ns_.verifyEmbeddingFields(embedder.Fields(), embedder.FieldName(), "automatically embed value in");
 	for (const auto& field : embedder.Fields()) {
 		int idx = 0;
-		if (!ns_.tryGetIndexByName(field, idx)) {
+		if (!ns_.tryGetIndexByName(field, idx)) [[unlikely]] {
 			throw Error{errConflict, "Configuration 'embedding:upsert_embedder' configured with invalid base field name '{}'", field};
 		}
 		pl.Get(idx, fldData);

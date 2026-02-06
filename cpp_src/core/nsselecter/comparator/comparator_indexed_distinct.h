@@ -27,7 +27,7 @@ public:
 	void ExcludeValues(const PayloadValue& pv) { std::ignore = values_.insert(pv); }
 
 private:
-	unordered_payload_set<false> values_;
+	unordered_payload_set values_;
 };
 
 class [[nodiscard]] ComparatorIndexedDistinctString {

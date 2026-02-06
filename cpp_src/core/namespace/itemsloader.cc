@@ -1,4 +1,5 @@
 #include "itemsloader.h"
+#include "core/id_type.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "tools/logger.h"
 
@@ -227,7 +228,7 @@ void ItemsLoader::insertion() {
 				Payload pl(ns_.payloadType_, plData);
 				Payload plNew(items[i].impl.GetPayload());
 				// Index [0] must be inserted after all other simple indexes
-				doInsertField(ns_.indexes_, 0, id, pl, plNew, krefs, skrefs, dummyMtx, annCacheReader_.get());
+				doInsertField(ns_.indexes_, 0, IdType::FromNumber(id), pl, plNew, krefs, skrefs, dummyMtx, annCacheReader_.get());
 			}
 
 			if (compositeIndexesSize) {
@@ -236,7 +237,7 @@ void ItemsLoader::insertion() {
 			for (unsigned i = 0; i < items.size(); ++i) {
 				auto& plData = ns_.items_[i + startId];
 				plData.SetLSN(items[i].impl.Value().GetLSN());
-				ns_.repl_.dataHash ^= ns_.calculateItemHash(i + startId);
+				ns_.repl_.dataHash ^= ns_.calculateItemHash(IdType::FromNumber(i + startId));
 				ns_.itemsDataSize_ += plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
 			}
 			if (compositeIndexesSize) {
@@ -275,7 +276,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 				auto res = pkIdx->SelectKey(keys, CondEq, 0, Index::SelectContext{}, dummyCtx).Front();
 				if (!res[0].ids_.empty()) {
 					const IdType id = res[0].ids_[0];
-					std::memcpy(targetVec, vectorsData[id].get(), vecSizeBytes);
+					std::memcpy(targetVec, vectorsData[id.ToNumber()].get(), vecSizeBytes);
 					return id;
 				} else {
 					throw Error(errLogic, "Requested PK does not exist");
@@ -294,14 +295,14 @@ void ItemsLoader::loadCachedANNIndexes() {
 		// Strip restored vectors
 		VariantArray tmp;
 		tmp.resize(1);
-		for (IdType id = 0, s = ns_.items_.size(); id < s; ++id) {
+		for (size_t id = 0, s = ns_.items_.size(); id < s; ++id) {
 			Payload pl(ns_.payloadType_, ns_.items_[id]);
 			Variant vecVar = pl.Get(cachedIndex->field, 0);
 			if (vecVar.Type().Is<KeyValueType::FloatVector>()) {
 				ConstFloatVectorView vec = ConstFloatVectorView(vecVar);
 				if (vec.IsEmpty()) {
 					bool clearCache = false;
-					std::ignore = ns_.indexes_[cachedIndex->field]->Upsert(vecVar, id, clearCache);
+					std::ignore = ns_.indexes_[cachedIndex->field]->Upsert(vecVar, IdType::FromNumber(id), clearCache);
 				} else {
 					vec.Strip();
 					tmp[0] = Variant{vec};
@@ -327,7 +328,7 @@ void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& inde
 		auto& vectorsData = vectorsDataIt->second;
 		const auto dims = idxPtr->Opts().FloatVector().Dimension();
 
-		for (IdType itemID = 0; itemID < IdType(ns_.items_.size()); ++itemID) {
+		for (size_t itemID = 0; itemID < ns_.items_.size(); ++itemID) {
 			auto& pv = ns_.items_[itemID];
 			if (pv.IsFree()) [[unlikely]] {
 				continue;
@@ -338,7 +339,7 @@ void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& inde
 			std::span<float> vec{reinterpret_cast<float*>(vecPtr.get()), dims};
 			skrefs[0] = Variant{ConstFloatVectorView{vec}};
 			bool needClearCache{false};
-			idxPtr->Upsert(krefs, skrefs, itemID, needClearCache);
+			idxPtr->Upsert(krefs, skrefs, IdType::FromNumber(itemID), needClearCache);
 			pl.Set(field, krefs);
 			vecPtr.reset();
 		}
@@ -485,7 +486,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 					const auto& plData = shared_.nsItems[i];
 					for (unsigned field = firstCompositeIndex + threadId - kTIDOffset; field < totalIndexes; field += threadsCnt) {
 						bool needClearCache{false};
-						std::ignore = indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
+						std::ignore = indexes_[field]->Upsert(Variant{plData}, IdType::FromNumber(id), needClearCache);
 					}
 				}
 			} else {
@@ -497,7 +498,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 						Payload pl(pt_, plData);
 						Payload plNew = item.GetPayload();
 						for (unsigned field = threadId - kTIDOffset + 1; field < firstCompositeIndex; field += threadsCnt) {
-							ItemsLoader::doInsertField(indexes_, field, id, pl, plNew, krefs, skrefs,
+							ItemsLoader::doInsertField(indexes_, field, IdType::FromNumber(id), pl, plNew, krefs, skrefs,
 													   plArrayMtxs_[id % plArrayMtxs_.size()], annCache_);
 						}
 					}
@@ -510,7 +511,8 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 						Payload pl(pt_, plData);
 						Payload plNew = item.GetPayload();
 						for (unsigned field = threadId - kTIDOffset + 1; field < firstCompositeIndex; field += threadsCnt) {
-							ItemsLoader::doInsertField(indexes_, field, id, pl, plNew, krefs, skrefs, dummyMtx, annCache_);
+							ItemsLoader::doInsertField(indexes_, field, IdType::FromNumber(id), pl, plNew, krefs, skrefs, dummyMtx,
+													   annCache_);
 						}
 					}
 				}

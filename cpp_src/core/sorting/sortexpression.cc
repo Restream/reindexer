@@ -675,7 +675,7 @@ template SortExpression SortExpression::Parse(std::string_view, const std::vecto
 
 static double CalcSortHash(IdType rowId, uint32_t seed, uint32_t shardIdHash) noexcept {
 	uint32_t hash;
-	uint32_t r = uint32_t(rowId) ^ shardIdHash;
+	uint32_t r = uint32_t(rowId.ToNumber()) ^ shardIdHash;
 	MurmurHash3_x86_32(&r, sizeof(r), seed, &hash);
 	return double(hash);
 }

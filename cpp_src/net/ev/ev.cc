@@ -494,6 +494,7 @@ void dynamic_loop::run() {
 		int tv = busy_loop ? 0 : -1;
 
 		if (!busy_loop && timers_.size()) {
+			now = steady_clock_w::now();
 			tv = std::chrono::duration_cast<std::chrono::microseconds>(timers_.front()->deadline_ - now).count();
 			if (tv < 0) {
 				tv = 0;

@@ -1,5 +1,6 @@
 #include "fuzzyindextext.h"
 #include <stdio.h>
+#include "core/id_type.h"
 #include "core/rdxcontext.h"
 
 namespace reindexer {
@@ -28,7 +29,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx& ftCtx, FtDSLQuery&& dsl, bool inTran
 		assertrx(it->id_ < this->vdocs_.size());
 		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
 		ftCtx.Add(id_set.begin(), id_set.end(), RankT(it->rank_));
-		mergedIds->Append(id_set.begin(), id_set.end(), IdSet::Unordered);
+		mergedIds->Append(id_set.begin(), id_set.end(), IdSetEditMode::Unordered);
 		if ((counter & 0xFF) == 0 && !inTransaction) {
 			ThrowOnCancel(rdxCtx);
 		}
@@ -54,7 +55,7 @@ void FuzzyIndexText<T>::commitFulltextImpl() {
 			if (idx > 0 && field != res[idx - 1].second) {
 				arrayIdx = 0;
 			}
-			engine_.AddData(res[idx].first, this->vdocs_.size() - 1, field, arrayIdx, this->cfg_->splitOptions);
+			engine_.AddData(res[idx].first, IdType::FromNumber(this->vdocs_.size() - 1), field, arrayIdx, this->cfg_->splitOptions);
 		}
 	}
 	engine_.Commit();
@@ -78,8 +79,8 @@ std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType&& pa
 			return std::make_unique<FuzzyIndexText<unordered_str_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
 																				   cacheCfg);
 		case IndexCompositeFuzzyFT:
-			return std::make_unique<FuzzyIndexText<unordered_payload_map<FtKeyEntry, true>>>(idef, std::move(payloadType),
-																							 std::move(fields), cacheCfg);
+			return std::make_unique<FuzzyIndexText<unordered_payload_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
+																					   cacheCfg);
 		case IndexStrHash:
 		case IndexStrBTree:
 		case IndexIntBTree:

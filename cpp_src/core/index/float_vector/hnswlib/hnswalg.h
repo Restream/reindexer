@@ -1994,7 +1994,7 @@ public:
 			const auto& cand = top_candidates.top();
 			if (cand.first < radius) {
 				radius_queue.emplace(cand);
-				result.emplace(cand.first, cand.second);
+				result.emplace(cand.first, getExternalLabel(cand.second));
 			}
 			visited_array[cand.second] = visited_array_tag;
 			top_candidates.pop();

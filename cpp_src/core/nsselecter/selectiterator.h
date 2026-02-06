@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/enums.h"
+#include "core/id_type.h"
 #include "core/selectkeyresult.h"
 #include "estl/concepts.h"
 
@@ -47,8 +48,8 @@ public:
 		for (auto it = begIt, endIt = end(); it != endIt; ++it) {
 			if (it->isRange_) {
 				if (isReverse_) {
-					const auto rrBegin = it->rEnd_ - 1;
-					it->rrEnd_ = it->rBegin_ - 1;
+					const auto rrBegin = it->rEnd_.Decr();
+					it->rrEnd_ = it->rBegin_.Decr();
 					it->rrBegin_ = rrBegin;
 					it->rrIt_ = rrBegin;
 				} else {
@@ -84,7 +85,7 @@ public:
 			}
 		}
 
-		lastVal_ = isReverse_ ? INT_MAX : INT_MIN;
+		lastVal_ = isReverse_ ? IdType::Max() : IdType::Min();
 		if (isUnsorted_) {
 			type_ = Unsorted;
 		} else if (size() == 1) {
@@ -102,7 +103,7 @@ public:
 	}
 	/// Signalizes if iteration is over.
 	/// @return true if iteration is done.
-	RX_ALWAYS_INLINE bool End() const noexcept { return lastVal_ == (isReverse_ ? INT_MIN : INT_MAX); }
+	RX_ALWAYS_INLINE bool End() const noexcept { return lastVal_ == (isReverse_ ? IdType::Min() : IdType::Max()); }
 	/// Iterates to a next item of result. Increments 'matched' and 'total' counters.
 	/// @param minHint - rowId value to start from.
 	/// @return true if operation succeed.
@@ -288,8 +289,8 @@ private:
 	// from minHint which is the least rowId.
 	// Generic next implementation
 	bool nextFwd(IdType minHint) noexcept {
-		const auto lastVal = (minHint > lastVal_) ? (minHint - 1) : lastVal_;
-		int minVal = INT_MAX;
+		const auto lastVal = (minHint > lastVal_) ? minHint.Decr() : lastVal_;
+		IdType minVal = IdType::Max();
 		const auto beg = begin();
 		for (auto it = beg, endIt = end(); it != endIt; ++it) {
 			if (it->useBtree_) {
@@ -302,7 +303,7 @@ private:
 				}
 			} else {
 				if (it->isRange_ && it->rIt_ != it->rEnd_) {
-					it->rIt_ = std::min(it->rEnd_, std::max(it->rIt_, lastVal + 1));
+					it->rIt_ = std::min(it->rEnd_, std::max(it->rIt_, lastVal.Incr()));
 
 					if (it->rIt_ != it->rEnd_ && it->rIt_ < minVal) {
 						minVal = it->rIt_;
@@ -320,12 +321,12 @@ private:
 			}
 		}
 		lastVal_ = minVal;
-		return lastVal_ != INT_MAX;
+		return lastVal_ != IdType::Max();
 	}
 	bool nextRev(IdType maxHint) noexcept {
-		const auto lastVal = (maxHint < lastVal_) ? (maxHint + 1) : lastVal_;
+		const auto lastVal = (maxHint < lastVal_) ? maxHint.Incr() : lastVal_;
 
-		int maxVal = INT_MIN;
+		IdType maxVal = IdType::Min();
 		const auto beg = begin();
 		for (auto it = beg, endIt = end(); it != endIt; ++it) {
 			if (it->useBtree_ && it->ritset_ != it->setrend_) {
@@ -336,7 +337,7 @@ private:
 					lastPos_ = it - beg;
 				}
 			} else if (it->isRange_ && it->rrIt_ != it->rrEnd_) {
-				it->rrIt_ = std::max(it->rrEnd_, std::min(it->rrIt_, lastVal - 1));
+				it->rrIt_ = std::max(it->rrEnd_, std::min(it->rrIt_, lastVal.Decr()));
 
 				if (it->rrIt_ != it->rrEnd_ && it->rrIt_ > maxVal) {
 					maxVal = it->rrIt_;
@@ -352,35 +353,35 @@ private:
 			}
 		}
 		lastVal_ = maxVal;
-		return !(lastVal_ == INT_MIN);
+		return lastVal_ != IdType::Min();
 	}
 	// Single range next implementation
 	bool nextFwdSingleRange(IdType minHint) noexcept {
 		if (minHint > lastVal_) {
-			lastVal_ = minHint - 1;
+			lastVal_ = minHint.Decr();
 		}
 
 		const auto begIt = begin();
 		if (lastVal_ < begIt->rBegin_) {
-			lastVal_ = begIt->rBegin_ - 1;
+			lastVal_ = begIt->rBegin_.Decr();
 		}
 
-		lastVal_ = (lastVal_ < begIt->rEnd_) ? lastVal_ + 1 : begIt->rEnd_;
+		lastVal_ = (lastVal_ < begIt->rEnd_) ? lastVal_.Incr() : begIt->rEnd_;
 		if (lastVal_ == begIt->rEnd_) {
-			lastVal_ = INT_MAX;
+			lastVal_ = IdType::Max();
 		}
-		return (lastVal_ != INT_MAX);
+		return lastVal_ != IdType::Max();
 	}
 	// Single idset next implementation
 	bool nextFwdSingleIdset(IdType minHint) noexcept {
-		const auto lastVal = (minHint > lastVal_) ? (minHint - 1) : lastVal_;
+		const auto lastVal = (minHint > lastVal_) ? minHint.Decr() : lastVal_;
 
 		auto it = begin();
 		if (it->useBtree_) {
 			if (it->itset_ != it->setend_ && *it->itset_ <= lastVal) {
 				it->itset_ = it->set_->upper_bound(lastVal);
 			}
-			lastVal_ = (it->itset_ != it->set_->end()) ? *it->itset_ : INT_MAX;
+			lastVal_ = (it->itset_ != it->set_->end()) ? *it->itset_ : IdType::Max();
 		} else {
 			if (it->bsearch_) {
 				if (it->it_ != it->end_ && *it->it_ <= lastVal) {
@@ -390,42 +391,42 @@ private:
 				for (; it->it_ != it->end_ && *it->it_ <= lastVal; it->it_++) {
 				}
 			}
-			lastVal_ = (it->it_ != it->end_) ? *it->it_ : INT_MAX;
+			lastVal_ = (it->it_ != it->end_) ? *it->it_ : IdType::Max();
 		}
-		return !(lastVal_ == INT_MAX);
+		return lastVal_ != IdType::Max();
 	}
 	bool nextRevSingleRange(IdType maxHint) noexcept {
 		if (maxHint < lastVal_) {
-			lastVal_ = maxHint + 1;
+			lastVal_ = maxHint.Incr();
 		}
 
 		const auto begIt = begin();
 		if (lastVal_ > begIt->rrBegin_) {
-			lastVal_ = begIt->rrBegin_ + 1;
+			lastVal_ = begIt->rrBegin_.Incr();
 		}
 
-		lastVal_ = (lastVal_ > begIt->rrEnd_) ? lastVal_ - 1 : begIt->rrEnd_;
+		lastVal_ = (lastVal_ > begIt->rrEnd_) ? lastVal_.Decr() : begIt->rrEnd_;
 		if (lastVal_ == begIt->rrEnd_) {
-			lastVal_ = INT_MIN;
+			lastVal_ = IdType::Min();
 		}
-		return (lastVal_ != INT_MIN);
+		return lastVal_ != IdType::Min();
 	}
 	bool nextRevSingleIdset(IdType maxHint) noexcept {
-		const auto lastVal = (maxHint < lastVal_) ? (maxHint + 1) : lastVal_;
+		const auto lastVal = (maxHint < lastVal_) ? maxHint.Incr() : lastVal_;
 
 		auto it = begin();
 
 		if (it->useBtree_) {
 			for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal; ++it->ritset_) {
 			}
-			lastVal_ = (it->ritset_ != it->setrend_) ? *it->ritset_ : INT_MIN;
+			lastVal_ = (it->ritset_ != it->setrend_) ? *it->ritset_ : IdType::Min();
 		} else {
 			for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal; ++it->rit_) {
 			}
-			lastVal_ = (it->rit_ != it->rend_) ? *it->rit_ : INT_MIN;
+			lastVal_ = (it->rit_ != it->rend_) ? *it->rit_ : IdType::Min();
 		}
 
-		return !(lastVal_ == INT_MIN);
+		return lastVal_ != IdType::Min();
 	}
 	bool nextUnbuiltSortOrders() noexcept {
 		auto& iter = *begin()->indexForwardIter_;
@@ -467,7 +468,7 @@ private:
 	}
 
 	int totalCalls_ = 0;
-	IdType lastVal_ = INT_MIN;
+	IdType lastVal_ = IdType::Min();
 	int type_ = 0;
 	bool isUnsorted_ = false;
 	bool isReverse_ = false;

@@ -119,7 +119,7 @@ std::string format([[maybe_unused]] RxFormatString<Args...> fmt, [[maybe_unused]
 #define assertf_dbg(...) ((void)0)
 #endif	// RX_WITH_STDLIB_DEBUG
 
-class [[nodiscard]] Error final : public std::exception {
+class [[nodiscard]] Error : public std::exception {
 	using WhatT = intrusive_atomic_rc_wrapper<std::string>;
 	using WhatPtr = intrusive_ptr<WhatT>;
 	const static WhatPtr defaultErrorText_;
@@ -214,6 +214,15 @@ public:
 private:
 	WhatPtr what_;
 	ErrorCode code_{errOK};
+};
+
+class DuplicatedItemIDError : public Error {
+public:
+	DuplicatedItemIDError(size_t id, Error&& err) noexcept : Error(std::move(err)), id_(id) {}
+	size_t ID() const noexcept { return id_; }
+
+private:
+	size_t id_;
 };
 
 std::ostream& operator<<(std::ostream& os, const Error& error);

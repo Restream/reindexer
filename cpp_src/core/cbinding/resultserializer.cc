@@ -108,7 +108,7 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 	const auto itemRef = GetItemRefWithStore(it, storage);
 
 	if (opts_.flags & kResultsWithItemID) {
-		PutVarUint(itemRef.Id());
+		PutVarUint(itemRef.Id().ToNumber());
 		PutVarUint(uint64_t(itemRef.Value().GetLSN()));
 	}
 

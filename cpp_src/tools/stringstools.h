@@ -130,8 +130,8 @@ public:
 
 	bool IsWord(std::string_view str) const noexcept;
 
-	bool ContainsDelims(const std::string_view str) const;
-	bool ContainsDelims(const std::wstring_view str) const;
+	bool ContainsDelims(std::string_view str) const;
+	bool ContainsDelims(std::wstring_view str) const;
 	void RemoveDelims(std::string_view str, std::string& res) const;
 	std::string RemoveDelims(std::string_view str) const;
 	std::string RemoveAccentsAndDiacritics(std::string_view str) const;
@@ -244,10 +244,10 @@ inline ComparationResult collateCompare(std::string_view lhs, std::string_view r
 }
 
 std::wstring utf8_to_utf16(std::string_view src);
-std::string utf16_to_utf8(const std::wstring_view src);
-size_t utf16_to_utf8_size(const std::wstring_view src);
+std::string utf16_to_utf8(std::wstring_view src);
+size_t utf16_to_utf8_size(std::wstring_view src);
 void utf8_to_utf16(std::string_view src, std::wstring& dst);
-void utf16_to_utf8(const std::wstring_view src, std::string& dst);
+void utf16_to_utf8(std::wstring_view src, std::string& dst);
 
 inline bool is_number(std::string_view str) noexcept {
 	uint16_t i = 0;

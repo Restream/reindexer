@@ -4,6 +4,7 @@
 #include "core/keyvalue/uuid.h"
 #include "core/keyvalue/variant.h"
 #include "payloadfieldtype.h"
+#include "tools/float_comparison.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -128,6 +129,22 @@ public:
 										   abort();
 									   });
 	}
+	bool HasDefaultValue() const noexcept {
+		return t_.Type().EvaluateOneOf([&](KeyValueType::Bool) noexcept { return (getValueFromPtr<bool>() == false); },
+									   [&](KeyValueType::Int) noexcept { return (getValueFromPtr<int>() == 0); },
+									   [&](KeyValueType::Int64) noexcept { return (getValueFromPtr<int64_t>() == 0); },
+									   [&](KeyValueType::Double) noexcept { return fp::IsZero(getValueFromPtr<double>()); },
+									   [&](KeyValueType::String) noexcept { return (getValueFromPtr<p_string>().size() == 0); },
+									   [&](KeyValueType::Uuid) noexcept { return (getValueFromPtr<Uuid>() == Uuid()); },
+									   [&](KeyValueType::FloatVector) noexcept {
+										   return ConstFloatVectorView::FromUint64(getValueFromPtr<uint64_t>()).Dimension().IsZero();
+									   },
+									   [](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+														  KeyValueType::Null, KeyValueType::Float> auto) noexcept -> bool {
+										   assertrx(0);
+										   abort();
+									   });
+	}
 
 	// Type of value, not owning
 	const PayloadFieldType& t_;
@@ -136,20 +153,25 @@ public:
 
 private:
 	template <typename T>
-	void copyVariantToPtr(const Variant& kv) noexcept(std::is_nothrow_convertible_v<Variant, T>) {
+	RX_ALWAYS_INLINE void copyVariantToPtr(const Variant& kv) noexcept(std::is_nothrow_convertible_v<Variant, T>) {
 		auto v = T(kv);
 		std::memcpy(p_, &v, sizeof(T));
 	}
 
 	template <typename T>
-	Variant getVariantFromPtr() const noexcept {
+	RX_ALWAYS_INLINE T getValueFromPtr() const noexcept {
 		T v;
 		std::memcpy(&v, p_, sizeof(T));
-		return Variant(v);
+		return v;
 	}
 
 	template <typename T>
-	uint64_t getHashFromPtr() const noexcept {
+	RX_ALWAYS_INLINE Variant getVariantFromPtr() const noexcept {
+		return Variant(getValueFromPtr<T>());
+	}
+
+	template <typename T>
+	RX_ALWAYS_INLINE uint64_t getHashFromPtr() const noexcept {
 		T v;
 		std::memcpy(&v, p_, sizeof(T));
 		return std::hash<T>()(v);

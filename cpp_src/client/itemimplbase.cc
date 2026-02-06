@@ -34,10 +34,11 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 	}
 
 	Payload pl = GetPayload();
-	CJsonDecoder decoder(tagsMatcher_, holder_);
+	ScalarIndexesSetT objectScalarIndexes;
+	CJsonDecoder decoder(pl, rdser, ser_, tagsMatcher_, holder_, floatVectorsHolder_, objectScalarIndexes);
 	ser_.Reset();
 	try {
-		decoder.Decode(pl, rdser, ser_, floatVectorsHolder_, CJsonDecoder::DefaultFilter{nullptr});
+		decoder.Decode(CJsonDecoder::DefaultFilter{nullptr});
 	} catch (const Error& e) {
 		if (!hasBundledTm) {
 			const auto err = tryToUpdateTagsMatcher();
@@ -46,8 +47,8 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 			}
 			ser_.Reset();
 			rdser.SetPos(0);
-			CJsonDecoder decoderSecondAttempt(tagsMatcher_, holder_);
-			decoderSecondAttempt.Decode(pl, rdser, ser_, floatVectorsHolder_, CJsonDecoder::DefaultFilter{nullptr});
+			CJsonDecoder decoderSecondAttempt(pl, rdser, ser_, tagsMatcher_, holder_, floatVectorsHolder_, objectScalarIndexes);
+			decoderSecondAttempt.Decode(CJsonDecoder::DefaultFilter{nullptr});
 		}
 	}
 
@@ -85,11 +86,13 @@ Error ItemImplBase::FromJSON(std::string_view slice, char** endp, bool /*pkOnly*
 		return Error(errParseJson, "Error parsing json: '{}', pos: {}", e.what(), len);
 	}
 
+	ScalarIndexesSetT objectScalarIndexes;
 	// Split parsed json into indexes and tuple
-	JsonDecoder decoder(tagsMatcher_);
+	JsonDecoder decoder(tagsMatcher_, floatVectorsHolder_, objectScalarIndexes);
 	Payload pl = GetPayload();
 	ser_.Reset();
-	auto err = decoder.Decode(pl, ser_, node.value, floatVectorsHolder_);
+
+	auto err = decoder.Decode(pl, ser_, node.value);
 
 	if (err.ok()) {
 		// Put tuple to field[0]
@@ -103,7 +106,6 @@ Error ItemImplBase::FromJSON(std::string_view slice, char** endp, bool /*pkOnly*
 
 Error ItemImplBase::FromMsgPack(std::string_view buf, size_t& offset) {
 	Payload pl = GetPayload();
-	MsgPackDecoder decoder(tagsMatcher_);
 
 	std::string_view data = buf;
 	if (!unsafe_) {
@@ -112,7 +114,9 @@ Error ItemImplBase::FromMsgPack(std::string_view buf, size_t& offset) {
 	}
 
 	ser_.Reset();
-	Error err = decoder.Decode(data, pl, ser_, offset, floatVectorsHolder_);
+	ScalarIndexesSetT objectScalarIndexes;
+	MsgPackDecoder decoder(data, pl, ser_, tagsMatcher_, offset, floatVectorsHolder_, objectScalarIndexes);
+	Error err = decoder.Decode();
 	if (err.ok()) {
 		const auto tupleSize = ser_.Len();
 		tupleHolder_ = ser_.DetachBuf();

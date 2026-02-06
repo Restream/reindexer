@@ -11,12 +11,37 @@ using std::chrono::microseconds;
 
 namespace reindexer {
 
-void ExplainCalc::LogDump(int logLevel) {
+static int64_t To_us(const BasicExplainResults::Duration& d) noexcept { return duration_cast<microseconds>(d).count(); }
+
+void BasicExplainResults::Append(const BasicExplainResults& other) noexcept {
+	total += other.total;
+	prepare += other.prepare;
+	preselect += other.preselect;
+	select += other.select;
+	postprocess += other.postprocess;
+	loop += other.loop;
+	sort += other.sort;
+}
+
+void BasicExplainResults::GetJSON(JsonBuilder& json) const {
+	using namespace std::string_view_literals;
+
+	json.Put("total_us"sv, To_us(total));
+	json.Put("preselect_us"sv, To_us(preselect));
+	json.Put("prepare_us"sv, To_us(prepare));
+	json.Put("indexes_us"sv, To_us(select));
+	json.Put("postprocess_us"sv, To_us(postprocess));
+	json.Put("loop_us"sv, To_us(loop));
+	json.Put("general_sort_us"sv, To_us(sort));
+}
+
+void SingleQueryExplainCalc::LogDump(int logLevel) {
 	using namespace std::string_view_literals;
 	if (logLevel >= LogInfo && enabled_) {
 		logFmt(LogInfo,
 			   "Got {} items in {} µs [prepare {} µs, select {} µs, postprocess {} µs loop {} µs, general sort {} µs], sortindex {}",
-			   count_, To_us(total_), To_us(prepare_), To_us(select_), To_us(postprocess_), To_us(loop_), To_us(sort_), sortIndex_);
+			   count_, To_us(basics_.total), To_us(basics_.prepare), To_us(basics_.select), To_us(basics_.postprocess), To_us(basics_.loop),
+			   To_us(basics_.sort), sortIndex_);
 	}
 
 	if (logLevel >= LogTrace) {
@@ -94,6 +119,14 @@ constexpr std::string_view fieldKind(int fk) {
 	}
 }
 
+static std::string method(bool isScan, bool isCached) {
+	std::string method{isScan ? "scan" : "index"};
+	if (isCached) {
+		method += "(cached)";
+	}
+	return method;
+}
+
 RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult& result) {
 	assertrx_throw(result.properties);
 	return std::visit(
@@ -154,16 +187,16 @@ RX_NO_INLINE static std::string buildPreselectDescription(const JoinPreResult& r
 
 static std::string addToJSON(JsonBuilder& builder, const JoinedSelector& js, OpType op = OpAnd) {
 	using namespace std::string_view_literals;
-	auto jsonSel = builder.Object();
+	auto jsonSel{builder.Object()};
 	std::string name{joinTypeName(js.Type()) + js.RightNsName()};
 	jsonSel.Put("field"sv, opName(op) + name);
 	jsonSel.Put("matched"sv, js.Matched(op == OpNot));
 	jsonSel.Put("selects_count"sv, js.Called());
-	jsonSel.Put("join_select_total"sv, ExplainCalc::To_us(js.SelectTime()));
+	jsonSel.Put("join_select_total"sv, To_us(js.SelectTime()));
 	switch (js.Type()) {
 		case JoinType::InnerJoin:
 		case JoinType::OrInnerJoin:
-		case JoinType::LeftJoin:
+		case JoinType::LeftJoin: {
 			std::visit(overloaded{[&](const JoinPreResult::Values& values) {
 									  jsonSel.Put("method"sv, "preselected_values"sv);
 									  jsonSel.Put("keys"sv, values.Size());
@@ -187,6 +220,7 @@ static std::string addToJSON(JsonBuilder& builder, const JoinedSelector& js, OpT
 				jsonSel.Raw("explain_select"sv, js.ExplainOneSelect());
 			}
 			break;
+		}
 		case JoinType::Merge:
 			break;
 	}
@@ -199,7 +233,7 @@ static void addToJSON(JsonBuilder& builder, const ConditionInjection& injCond) {
 	using namespace std::string_literals;
 
 	jsonSel.Put("condition"sv, injCond.initCond);
-	jsonSel.Put("total_time_us"sv, ExplainCalc::To_us(injCond.totalTime_));
+	jsonSel.Put("total_time_us"sv, To_us(injCond.totalTime_));
 	jsonSel.Put("success"sv, injCond.succeed);
 	if (!injCond.succeed) {
 		if (injCond.reason.empty()) {
@@ -234,7 +268,7 @@ static void addToJSON(JsonBuilder& builder, const JoinOnInjection& injCond) {
 	jsonSel.Put("namespace"sv, injCond.rightNsName);
 	jsonSel.Put("on_condition"sv, injCond.joinCond);
 	jsonSel.Put("type"sv, injCond.type == JoinOnInjection::ByValue ? "by_value"sv : "select"sv);
-	jsonSel.Put("total_time_us"sv, ExplainCalc::To_us(injCond.totalTime_));
+	jsonSel.Put("total_time_us"sv, To_us(injCond.totalTime_));
 	jsonSel.Put("success"sv, injCond.succeed);
 	if (!injCond.reason.empty()) {
 		jsonSel.Put("reason"sv, injCond.reason);
@@ -248,20 +282,14 @@ static void addToJSON(JsonBuilder& builder, const JoinOnInjection& injCond) {
 	}
 }
 
-std::string ExplainCalc::GetJSON() {
+std::string SingleQueryExplainCalc::GetJSON() const {
 	using namespace std::string_view_literals;
 	WrSerializer ser;
 	{
 		JsonBuilder json(ser);
 		json.EmitTrailingForFloat(false);
 		if (enabled_) {
-			json.Put("total_us"sv, To_us(total_));
-			json.Put("preselect_us"sv, To_us(preselect_));
-			json.Put("prepare_us"sv, To_us(prepare_));
-			json.Put("indexes_us"sv, To_us(select_));
-			json.Put("postprocess_us"sv, To_us(postprocess_));
-			json.Put("loop_us"sv, To_us(loop_));
-			json.Put("general_sort_us"sv, To_us(sort_));
+			basics_.GetJSON(json);
 			if (!subqueries_.empty()) {
 				auto subQueries = json.Array("subqueries");
 				for (const auto& sq : subqueries_) {
@@ -273,6 +301,7 @@ std::string ExplainCalc::GetJSON() {
 				}
 			}
 		}
+		json.Put("namespace"sv, nsName_);
 		json.Put("sort_index"sv, sortIndex_);
 		json.Put("sort_by_uncommitted_index"sv, sortOptimization_);
 
@@ -302,6 +331,44 @@ std::string ExplainCalc::GetJSON() {
 		}
 	}
 
+	return std::string(ser.Slice());
+}
+
+SingleQueryExplainCalc::Duration SingleQueryExplainCalc::lap() noexcept {
+	const auto now = Clock::now();
+	Duration d = now - last_point_;
+	last_point_ = now;
+	return d;
+}
+
+void Explain::Append(const SingleQueryExplainCalc& explain) {
+	mergedExplainJSONs_.emplace_back(explain.GetJSON());
+	aggregated_.Append(explain.Basics());
+}
+
+std::string Explain::GetJSON() const {
+	using namespace std::string_view_literals;
+
+	if (mergedExplainJSONs_.size() == 1) {
+		return mergedExplainJSONs_[0];
+	}
+	WrSerializer ser;
+	{
+		JsonBuilder json(ser);
+		json.EmitTrailingForFloat(false);
+
+		if (mergedExplainJSONs_.empty()) {
+			aggregated_.GetJSON(json);
+			json.Put("sort_index"sv, "-"sv);
+		} else {
+			aggregated_.GetJSON(json);
+			json.Put("sort_index"sv, "-"sv);
+			auto mergedArr = json.Array("merged");
+			for (auto& explain : mergedExplainJSONs_) {
+				mergedArr.Raw(explain);
+			}
+		}
+	}
 	return std::string(ser.Slice());
 }
 
@@ -345,7 +412,7 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 					jsonSel.Put("field_type"sv, fieldKind(siter.IndexNo()));
 				}
 				jsonSel.Put("matched"sv, siter.GetMatchedCount(it->operation == OpNot));
-				jsonSel.Put("method"sv, isScanIterator ? "scan"sv : "index"sv);
+				jsonSel.Put("method"sv, method(isScanIterator, siter.IsCached()));
 				jsonSel.Put("type"sv, siter.TypeName());
 				name << opName(it->operation, it == begin) << siter.name;
 			},
@@ -413,7 +480,5 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 	name << ')';
 	return name.str();
 }
-
-int ExplainCalc::To_us(const ExplainCalc::Duration& d) noexcept { return duration_cast<microseconds>(d).count(); }
 
 }  // namespace reindexer

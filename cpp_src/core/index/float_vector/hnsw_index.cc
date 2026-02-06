@@ -1,7 +1,8 @@
+#include "core/id_type.h"
 #if RX_WITH_BUILTIN_ANN_INDEXES
 
-#include "hnsw_index.h"
 #include "core/query/knn_search_params.h"
+#include "hnsw_index.h"
 #include "knn_ctx.h"
 #include "knn_raw_result.h"
 #include "tools/logger.h"
@@ -121,7 +122,7 @@ Variant HnswIndexBase<Map>::upsert(ConstFloatVectorView vect, IdType id, bool& c
 		std::ignore = map_->resizeIndex(newSize(map_->getMaxElements()));
 	}
 	clearCache = true;
-	map_->addPointNoLock(vect.Data(), id);
+	map_->addPointNoLock(vect.Data(), id.ToNumber());
 	vect.Strip();
 	return Variant{vect};
 }
@@ -137,24 +138,24 @@ Variant HnswIndexBase<hnswlib::HierarchicalNSWMT>::upsertConcurrent(ConstFloatVe
 		throw Error(errLogic, "Unable to resize '{}' HNSW index during concurrent upsert. Expecting reserve before upsertion", Name());
 	}
 	clearCache = true;
-	map_->addPointConcurrent(vect.Data(), id);
+	map_->addPointConcurrent(vect.Data(), id.ToNumber());
 	vect.Strip();
 	return Variant{vect};
 }
 
 template <>
 void HnswIndexBase<hnswlib::BruteforceSearch>::Delete(const Variant&, IdType id, MustExist, StringsHolder&, bool&) {
-	map_->removePoint(id);
+	map_->removePoint(id.ToNumber());
 }
 
 template <>
 void HnswIndexBase<hnswlib::HierarchicalNSWMT>::Delete(const Variant&, IdType id, MustExist, StringsHolder&, bool&) {
-	map_->markDelete(id);
+	map_->markDelete(id.ToNumber());
 }
 
 template <>
 void HnswIndexBase<hnswlib::HierarchicalNSWST>::Delete(const Variant&, IdType id, MustExist, StringsHolder&, bool&) {
-	map_->markDelete(id);
+	map_->markDelete(id.ToNumber());
 }
 
 template <typename Map>
@@ -262,7 +263,7 @@ SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSe
 					dists[i] = RankT{-res.first};
 					break;
 			}
-			idset[i] = res.second;
+			idset[i] = IdType::FromNumber(res.second);
 			sortSameDist(i);
 		}
 		if (ctx.NeedSort()) {
@@ -279,7 +280,7 @@ SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSe
 
 template <typename Map>
 ConstFloatVectorView HnswIndexBase<Map>::getFloatVectorView(IdType rowId) const {
-	const FloatType* ptr = reinterpret_cast<const FloatType*>(map_->ptrByExternalLabel(rowId));
+	const FloatType* ptr = reinterpret_cast<const FloatType*>(map_->ptrByExternalLabel(rowId.ToNumber()));
 	return ConstFloatVectorView{std::span<const float>{ptr, Dimension().Value()}};
 }
 
@@ -320,10 +321,10 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 		void PutVString(std::string_view slice) override { ser_.PutVString(slice); }
 		void AppendPKByID(hnswlib::labeltype label) override {
 			static_assert(std::numeric_limits<hnswlib::labeltype>::min() >= 0, "Unexpected labeltype limit. Extra check is required");
-			if (label > size_t(std::numeric_limits<IdType>::max())) [[unlikely]] {
+			if (label > IdType::Max().ToNumber()) [[unlikely]] {
 				throw Error(errLogic, "HNSWIndex::WriteIndexCache:{}: internal id {} is out of range", name_, label);
 			}
-			writePK(IdType(label));
+			writePK(IdType::FromNumber(label));
 		}
 		size_t Size() const noexcept { return ser_.Len(); }
 		size_t Capacity() const noexcept { return ser_.Cap(); }
@@ -377,7 +378,7 @@ Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isComposite
 		std::string_view GetVString() override { return ser_.GetVString(); }
 		hnswlib::labeltype ReadPkEncodedData(char* destBuf) override {
 			using namespace std::string_view_literals;
-			return hnswlib::labeltype(readPKEncodedData(destBuf, ser_, name_, "HNSWIndex"sv));
+			return hnswlib::labeltype(readPKEncodedData(destBuf, ser_, name_, "HNSWIndex"sv).ToNumber());
 		}
 		size_t RemainingSize() const noexcept { return ser_.Len() - ser_.Pos(); }
 

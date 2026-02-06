@@ -1,7 +1,5 @@
 #include "crashqueryreporter.h"
-#include <sstream>
 #include "core/nsselecter/nsselecter.h"
-#include "debug/backtrace.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -44,7 +42,7 @@ struct [[nodiscard]] QueryDebugContext {
 	std::string_view externSql;
 	const Query* parentQuery = nullptr;
 	const std::atomic<OptimizationState>* nsOptimizationState = nullptr;
-	ExplainCalc* explainCalc = nullptr;
+	SingleQueryExplainCalc* explainCalc = nullptr;
 	const std::atomic<int>* nsLockerState = nullptr;
 	StringsHolder* nsStrHolder = nullptr;
 	QueryType realQueryType = QuerySelect;
@@ -53,8 +51,9 @@ struct [[nodiscard]] QueryDebugContext {
 
 thread_local QueryDebugContext g_queryDebugCtx;
 
-ActiveQueryScope::ActiveQueryScope(SelectCtx& ctx, const std::atomic<OptimizationState>& nsOptimizationState, ExplainCalc& explainCalc,
-								   const std::atomic<int>& nsLockerState, StringsHolder* strHolder) noexcept
+ActiveQueryScope::ActiveQueryScope(SelectCtx& ctx, const std::atomic<OptimizationState>& nsOptimizationState,
+								   SingleQueryExplainCalc& explainCalc, const std::atomic<int>& nsLockerState,
+								   StringsHolder* strHolder) noexcept
 	: type_(ctx.requiresCrashTracking ? Type::CoreQueryTracker : Type::NoTracking) {
 	if (ctx.requiresCrashTracking) {
 		g_queryDebugCtx.mainQuery = &ctx.query;

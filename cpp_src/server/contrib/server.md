@@ -98,6 +98,8 @@
   * [QueryItems](#queryitems)
   * [Indexes](#indexes)
   * [ExplainDef](#explaindef)
+  * [SingleQueryExplainDef](#singlequeryexplaindef)
+  * [MergedQueryExplainDef](#mergedqueryexplaindef)
   * [AggregationResDef](#aggregationresdef)
   * [DistincOneItemDef](#distinconeitemdef)
   * [DistinctMultiItemDef](#distinctmultiitemdef)
@@ -150,7 +152,7 @@
 
 <!-- tocstop -->
 
-> Version 5.10.0
+> Version 5.11.0
 
 ## Overview
 
@@ -260,7 +262,9 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | SuggestItems | [SuggestItems](#suggestitems) |  |
 | QueryItems | [QueryItems](#queryitems) |  |
 | Indexes | [Indexes](#indexes) |  |
-| ExplainDef | [ExplainDef](#explaindef) | Explanations of query execution |
+| ExplainDef | [ExplainDef](#explaindef) |  |
+| SingleQueryExplainDef | [SingleQueryExplainDef](#singlequeryexplaindef) | Explanations of query execution |
+| MergedQueryExplainDef | [MergedQueryExplainDef](#mergedqueryexplaindef) |  |
 | AggregationResDef | [AggregationResDef](#aggregationresdef) |  |
 | DistincOneItemDef | [DistincOneItemDef](#distinconeitemdef) |  |
 | DistinctMultiItemDef | [DistinctMultiItemDef](#distinctmultiitemdef) | Distinct fields values |
@@ -3218,95 +3222,7 @@ sharding?: enum[true, false]
     // Maximum count of chars in column
     max_chars?: number
   }[]
-  // Explanations of query execution
-  explain: {
-    // Total query execution time
-    total_us?: integer
-    // Intersection loop time
-    loop_us?: integer
-    // Indexes keys selection time
-    indexes_us?: integer
-    // Query post process time
-    postprocess_us?: integer
-    // Query preselect processing time
-    preselect_us?: integer
-    // Query prepare and optimize time
-    prepare_us?: integer
-    // Result sort time
-    general_sort_us?: integer
-    // Index, which used for sort results
-    sort_index?: string
-    // Optimization of sort by uncompleted index has been performed
-    sort_by_uncommitted_index?: boolean
-    selectors: {
-      // Method, used to process condition
-      method?: enum[scan, index, inner_join, left_join]
-      // Field or index name
-      field?: string
-      // Shows which kind of the field was used for the filtration. Non-indexed fields are usually really slow for 'scan' and should be avoided
-      field_type?: enum[non-indexed, indexed]
-      // Count of scanned documents by this selector
-      items?: integer
-      // Count of processed documents, matched this selector
-      matched?: integer
-      // Count of comparators used, for this selector
-      comparators?: integer
-      // Cost expectation of this selector
-      cost?: integer
-      // Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
-      keys?: integer
-      // Condition on the field
-      condition?: string
-      // Select iterator type
-      type?: enum[Comparator, TwoFieldsComparison, Skipped, Forward, Reverse, SingleRange, SingleIdset, SingleIdSetWithDeferedSort, RevSingleRange, RevSingleIdset, RevSingleIdSetWithDeferedSort, OnlyComparator, Unsorted, UnbuiltSortOrdersIndex]
-      // Description of the selector
-      description?: string
-      explain_preselect:ExplainDef
-      explain_select:ExplainDef
-    }[]
-    on_conditions_injections: {
-      // Joinable ns name
-      namespace?: string
-      // Original ON-conditions clause. SQL-like string
-      on_condition?: string
-      // Total amount of time spent on checking and substituting all conditions
-      total_time_us?: integer
-      // Result of injection attempt
-      success?: boolean
-      // Optional{succeed==false}. Explains condition injection failure
-      reason?: string
-      // Values source: preselect values(by_value) or additional select(select)
-      type?: string
-      // Injected condition. SQL-like string
-      injected_condition?: string
-      conditions: {
-        // single condition from Join ON section. SQL-like string
-        condition?: string
-        // total time elapsed from injection attempt start till the end of substitution or rejection
-        total_time_us?: integer
-        explain_select:ExplainDef
-        // Optional. Aggregation type used in subquery
-        agg_type?: enum[min, max, distinct]
-        // result of injection attempt
-        success?: boolean
-        // Optional. Explains condition injection failure
-        reason?: string
-        // substituted injected condition. SQL-like string
-        new_condition?: string
-        // resulting size of query values set
-        values_count?: integer
-      }[]
-    }[]
-    subqueries: {
-      // Subquery's namespace name
-      namespace?: string
-      // Count of keys being compared with the subquery's result
-      keys?: integer
-      // Name of field being compared with the subquery's result
-      field?: string
-      explain:ExplainDef
-    }[]
-  }
+  explain?: SingleQueryExplainDef | MergedQueryExplainDef
 }
 ```
 
@@ -3474,8 +3390,6 @@ This operation updates documents in namespace by DSL query.
         type: enum[SUM, AVG, MIN, MAX]
       }[]
     }
-    // Boolean constant
-    always?: boolean
     // Array fields to be searched with equal array indexes
     equal_positions: {
       positions?: string[]
@@ -3757,8 +3671,6 @@ format?: enum[json, msgpack, protobuf, csv-file]
         type: enum[SUM, AVG, MIN, MAX]
       }[]
     }
-    // Boolean constant
-    always?: boolean
     // Array fields to be searched with equal array indexes
     equal_positions: {
       positions?: string[]
@@ -3886,95 +3798,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
     // Maximum count of chars in column
     max_chars?: number
   }[]
-  // Explanations of query execution
-  explain: {
-    // Total query execution time
-    total_us?: integer
-    // Intersection loop time
-    loop_us?: integer
-    // Indexes keys selection time
-    indexes_us?: integer
-    // Query post process time
-    postprocess_us?: integer
-    // Query preselect processing time
-    preselect_us?: integer
-    // Query prepare and optimize time
-    prepare_us?: integer
-    // Result sort time
-    general_sort_us?: integer
-    // Index, which used for sort results
-    sort_index?: string
-    // Optimization of sort by uncompleted index has been performed
-    sort_by_uncommitted_index?: boolean
-    selectors: {
-      // Method, used to process condition
-      method?: enum[scan, index, inner_join, left_join]
-      // Field or index name
-      field?: string
-      // Shows which kind of the field was used for the filtration. Non-indexed fields are usually really slow for 'scan' and should be avoided
-      field_type?: enum[non-indexed, indexed]
-      // Count of scanned documents by this selector
-      items?: integer
-      // Count of processed documents, matched this selector
-      matched?: integer
-      // Count of comparators used, for this selector
-      comparators?: integer
-      // Cost expectation of this selector
-      cost?: integer
-      // Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
-      keys?: integer
-      // Condition on the field
-      condition?: string
-      // Select iterator type
-      type?: enum[Comparator, TwoFieldsComparison, Skipped, Forward, Reverse, SingleRange, SingleIdset, SingleIdSetWithDeferedSort, RevSingleRange, RevSingleIdset, RevSingleIdSetWithDeferedSort, OnlyComparator, Unsorted, UnbuiltSortOrdersIndex]
-      // Description of the selector
-      description?: string
-      explain_preselect:ExplainDef
-      explain_select:ExplainDef
-    }[]
-    on_conditions_injections: {
-      // Joinable ns name
-      namespace?: string
-      // Original ON-conditions clause. SQL-like string
-      on_condition?: string
-      // Total amount of time spent on checking and substituting all conditions
-      total_time_us?: integer
-      // Result of injection attempt
-      success?: boolean
-      // Optional{succeed==false}. Explains condition injection failure
-      reason?: string
-      // Values source: preselect values(by_value) or additional select(select)
-      type?: string
-      // Injected condition. SQL-like string
-      injected_condition?: string
-      conditions: {
-        // single condition from Join ON section. SQL-like string
-        condition?: string
-        // total time elapsed from injection attempt start till the end of substitution or rejection
-        total_time_us?: integer
-        explain_select:ExplainDef
-        // Optional. Aggregation type used in subquery
-        agg_type?: enum[min, max, distinct]
-        // result of injection attempt
-        success?: boolean
-        // Optional. Explains condition injection failure
-        reason?: string
-        // substituted injected condition. SQL-like string
-        new_condition?: string
-        // resulting size of query values set
-        values_count?: integer
-      }[]
-    }[]
-    subqueries: {
-      // Subquery's namespace name
-      namespace?: string
-      // Count of keys being compared with the subquery's result
-      keys?: integer
-      // Name of field being compared with the subquery's result
-      field?: string
-      explain:ExplainDef
-    }[]
-  }
+  explain?: SingleQueryExplainDef | MergedQueryExplainDef
 }
 ```
 
@@ -4142,8 +3966,6 @@ This operation removes documents from namespace by DSL query.
         type: enum[SUM, AVG, MIN, MAX]
       }[]
     }
-    // Boolean constant
-    always?: boolean
     // Array fields to be searched with equal array indexes
     equal_positions: {
       positions?: string[]
@@ -5308,8 +5130,6 @@ tx_id?: string
         type: enum[SUM, AVG, MIN, MAX]
       }[]
     }
-    // Boolean constant
-    always?: boolean
     // Array fields to be searched with equal array indexes
     equal_positions: {
       positions?: string[]
@@ -5667,95 +5487,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
     // Maximum count of chars in column
     max_chars?: number
   }[]
-  // Explanations of query execution
-  explain: {
-    // Total query execution time
-    total_us?: integer
-    // Intersection loop time
-    loop_us?: integer
-    // Indexes keys selection time
-    indexes_us?: integer
-    // Query post process time
-    postprocess_us?: integer
-    // Query preselect processing time
-    preselect_us?: integer
-    // Query prepare and optimize time
-    prepare_us?: integer
-    // Result sort time
-    general_sort_us?: integer
-    // Index, which used for sort results
-    sort_index?: string
-    // Optimization of sort by uncompleted index has been performed
-    sort_by_uncommitted_index?: boolean
-    selectors: {
-      // Method, used to process condition
-      method?: enum[scan, index, inner_join, left_join]
-      // Field or index name
-      field?: string
-      // Shows which kind of the field was used for the filtration. Non-indexed fields are usually really slow for 'scan' and should be avoided
-      field_type?: enum[non-indexed, indexed]
-      // Count of scanned documents by this selector
-      items?: integer
-      // Count of processed documents, matched this selector
-      matched?: integer
-      // Count of comparators used, for this selector
-      comparators?: integer
-      // Cost expectation of this selector
-      cost?: integer
-      // Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
-      keys?: integer
-      // Condition on the field
-      condition?: string
-      // Select iterator type
-      type?: enum[Comparator, TwoFieldsComparison, Skipped, Forward, Reverse, SingleRange, SingleIdset, SingleIdSetWithDeferedSort, RevSingleRange, RevSingleIdset, RevSingleIdSetWithDeferedSort, OnlyComparator, Unsorted, UnbuiltSortOrdersIndex]
-      // Description of the selector
-      description?: string
-      explain_preselect:ExplainDef
-      explain_select:ExplainDef
-    }[]
-    on_conditions_injections: {
-      // Joinable ns name
-      namespace?: string
-      // Original ON-conditions clause. SQL-like string
-      on_condition?: string
-      // Total amount of time spent on checking and substituting all conditions
-      total_time_us?: integer
-      // Result of injection attempt
-      success?: boolean
-      // Optional{succeed==false}. Explains condition injection failure
-      reason?: string
-      // Values source: preselect values(by_value) or additional select(select)
-      type?: string
-      // Injected condition. SQL-like string
-      injected_condition?: string
-      conditions: {
-        // single condition from Join ON section. SQL-like string
-        condition?: string
-        // total time elapsed from injection attempt start till the end of substitution or rejection
-        total_time_us?: integer
-        explain_select:ExplainDef
-        // Optional. Aggregation type used in subquery
-        agg_type?: enum[min, max, distinct]
-        // result of injection attempt
-        success?: boolean
-        // Optional. Explains condition injection failure
-        reason?: string
-        // substituted injected condition. SQL-like string
-        new_condition?: string
-        // resulting size of query values set
-        values_count?: integer
-      }[]
-    }[]
-    subqueries: {
-      // Subquery's namespace name
-      namespace?: string
-      // Count of keys being compared with the subquery's result
-      keys?: integer
-      // Name of field being compared with the subquery's result
-      field?: string
-      explain:ExplainDef
-    }[]
-  }
+  explain?: SingleQueryExplainDef | MergedQueryExplainDef
 }
 ```
 
@@ -8234,8 +7966,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
         type: enum[SUM, AVG, MIN, MAX]
       }[]
     }
-    // Boolean constant
-    always?: boolean
     // Array fields to be searched with equal array indexes
     equal_positions: {
       positions?: string[]
@@ -8402,8 +8132,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
         type: enum[SUM, AVG, MIN, MAX]
       }[]
     }
-    // Boolean constant
-    always?: boolean
     // Array fields to be searched with equal array indexes
     equal_positions: {
       positions?: string[]
@@ -8521,8 +8249,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
         type: enum[SUM, AVG, MIN, MAX]
       }[]
     }
-    // Boolean constant
-    always?: boolean
     // Array fields to be searched with equal array indexes
     equal_positions: {
       positions?: string[]
@@ -8551,8 +8277,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   // Second field json path or index name for filter by two fields
   second_field?: string
   subquery:SubQuery
-  // Boolean constant
-  always?: boolean
   equal_positions:EqualPositionDef[]
   function:FunctionDef
   params:KnnSearchParamsDef
@@ -8674,8 +8398,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
         type: enum[SUM, AVG, MIN, MAX]
       }[]
     }
-    // Boolean constant
-    always?: boolean
     // Array fields to be searched with equal array indexes
     equal_positions: {
       positions?: string[]
@@ -9109,95 +8831,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     // Maximum count of chars in column
     max_chars?: number
   }[]
-  // Explanations of query execution
-  explain: {
-    // Total query execution time
-    total_us?: integer
-    // Intersection loop time
-    loop_us?: integer
-    // Indexes keys selection time
-    indexes_us?: integer
-    // Query post process time
-    postprocess_us?: integer
-    // Query preselect processing time
-    preselect_us?: integer
-    // Query prepare and optimize time
-    prepare_us?: integer
-    // Result sort time
-    general_sort_us?: integer
-    // Index, which used for sort results
-    sort_index?: string
-    // Optimization of sort by uncompleted index has been performed
-    sort_by_uncommitted_index?: boolean
-    selectors: {
-      // Method, used to process condition
-      method?: enum[scan, index, inner_join, left_join]
-      // Field or index name
-      field?: string
-      // Shows which kind of the field was used for the filtration. Non-indexed fields are usually really slow for 'scan' and should be avoided
-      field_type?: enum[non-indexed, indexed]
-      // Count of scanned documents by this selector
-      items?: integer
-      // Count of processed documents, matched this selector
-      matched?: integer
-      // Count of comparators used, for this selector
-      comparators?: integer
-      // Cost expectation of this selector
-      cost?: integer
-      // Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
-      keys?: integer
-      // Condition on the field
-      condition?: string
-      // Select iterator type
-      type?: enum[Comparator, TwoFieldsComparison, Skipped, Forward, Reverse, SingleRange, SingleIdset, SingleIdSetWithDeferedSort, RevSingleRange, RevSingleIdset, RevSingleIdSetWithDeferedSort, OnlyComparator, Unsorted, UnbuiltSortOrdersIndex]
-      // Description of the selector
-      description?: string
-      explain_preselect:ExplainDef
-      explain_select:ExplainDef
-    }[]
-    on_conditions_injections: {
-      // Joinable ns name
-      namespace?: string
-      // Original ON-conditions clause. SQL-like string
-      on_condition?: string
-      // Total amount of time spent on checking and substituting all conditions
-      total_time_us?: integer
-      // Result of injection attempt
-      success?: boolean
-      // Optional{succeed==false}. Explains condition injection failure
-      reason?: string
-      // Values source: preselect values(by_value) or additional select(select)
-      type?: string
-      // Injected condition. SQL-like string
-      injected_condition?: string
-      conditions: {
-        // single condition from Join ON section. SQL-like string
-        condition?: string
-        // total time elapsed from injection attempt start till the end of substitution or rejection
-        total_time_us?: integer
-        explain_select:ExplainDef
-        // Optional. Aggregation type used in subquery
-        agg_type?: enum[min, max, distinct]
-        // result of injection attempt
-        success?: boolean
-        // Optional. Explains condition injection failure
-        reason?: string
-        // substituted injected condition. SQL-like string
-        new_condition?: string
-        // resulting size of query values set
-        values_count?: integer
-      }[]
-    }[]
-    subqueries: {
-      // Subquery's namespace name
-      namespace?: string
-      // Count of keys being compared with the subquery's result
-      keys?: integer
-      // Name of field being compared with the subquery's result
-      field?: string
-      explain:ExplainDef
-    }[]
-  }
+  explain?: SingleQueryExplainDef | MergedQueryExplainDef
 }
 ```
 
@@ -9243,8 +8877,25 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 ### ExplainDef
 
 ```ts
+{
+  "oneOf": [
+    {
+      "$ref": "SingleQueryExplainDef"
+    },
+    {
+      "$ref": "MergedQueryExplainDef"
+    }
+  ]
+}
+```
+
+### SingleQueryExplainDef
+
+```ts
 // Explanations of query execution
 {
+  // Namespace name
+  namespace?: string
   // Total query execution time
   total_us?: integer
   // Intersection loop time
@@ -9288,6 +8939,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     description?: string
     // Explanations of query execution
     explain_preselect: {
+      // Namespace name
+      namespace?: string
       // Total query execution time
       total_us?: integer
       // Intersection loop time
@@ -9329,8 +8982,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
         type?: enum[Comparator, TwoFieldsComparison, Skipped, Forward, Reverse, SingleRange, SingleIdset, SingleIdSetWithDeferedSort, RevSingleRange, RevSingleIdset, RevSingleIdSetWithDeferedSort, OnlyComparator, Unsorted, UnbuiltSortOrdersIndex]
         // Description of the selector
         description?: string
-        explain_preselect:ExplainDef
-        explain_select:ExplainDef
+        explain_preselect:SingleQueryExplainDef
+        explain_select:SingleQueryExplainDef
       }[]
       on_conditions_injections: {
         // Joinable ns name
@@ -9352,7 +9005,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
           condition?: string
           // total time elapsed from injection attempt start till the end of substitution or rejection
           total_time_us?: integer
-          explain_select:ExplainDef
+          explain_select:SingleQueryExplainDef
           // Optional. Aggregation type used in subquery
           agg_type?: enum[min, max, distinct]
           // result of injection attempt
@@ -9372,10 +9025,10 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
         keys?: integer
         // Name of field being compared with the subquery's result
         field?: string
-        explain:ExplainDef
+        explain:SingleQueryExplainDef
       }[]
     }
-    explain_select:ExplainDef
+    explain_select:SingleQueryExplainDef
   }[]
   on_conditions_injections: {
     // Joinable ns name
@@ -9397,7 +9050,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       condition?: string
       // total time elapsed from injection attempt start till the end of substitution or rejection
       total_time_us?: integer
-      explain_select:ExplainDef
+      explain_select:SingleQueryExplainDef
       // Optional. Aggregation type used in subquery
       agg_type?: enum[min, max, distinct]
       // result of injection attempt
@@ -9417,7 +9070,123 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     keys?: integer
     // Name of field being compared with the subquery's result
     field?: string
-    explain:ExplainDef
+    explain:SingleQueryExplainDef
+  }[]
+}
+```
+
+### MergedQueryExplainDef
+
+```ts
+{
+  // Namespace name
+  namespace?: string
+  // Total query execution time
+  total_us?: integer
+  // Intersection loop time (includes loop_us of all merged queries)
+  loop_us?: integer
+  // Indexes keys selection time (includes indexes_us of all merged queries)
+  indexes_us?: integer
+  // Query post process time (includes postprocess_us of all merged queries)
+  postprocess_us?: integer
+  // Query preselect processing time (includes preselect_us of all merged queries)
+  preselect_us?: integer
+  // Query prepare and optimize time (includes prepare_us of all merged queries)
+  prepare_us?: integer
+  // Result sort time (includes indexes_us of all merged queries and post-merge sort time of merged result)
+  general_sort_us?: integer
+  // Index, which used for sort results
+  sort_index?: string
+  // Explanations of query execution
+  merged: {
+    // Namespace name
+    namespace?: string
+    // Total query execution time
+    total_us?: integer
+    // Intersection loop time
+    loop_us?: integer
+    // Indexes keys selection time
+    indexes_us?: integer
+    // Query post process time
+    postprocess_us?: integer
+    // Query preselect processing time
+    preselect_us?: integer
+    // Query prepare and optimize time
+    prepare_us?: integer
+    // Result sort time
+    general_sort_us?: integer
+    // Index, which used for sort results
+    sort_index?: string
+    // Optimization of sort by uncompleted index has been performed
+    sort_by_uncommitted_index?: boolean
+    selectors: {
+      // Method, used to process condition
+      method?: enum[scan, index, inner_join, left_join]
+      // Field or index name
+      field?: string
+      // Shows which kind of the field was used for the filtration. Non-indexed fields are usually really slow for 'scan' and should be avoided
+      field_type?: enum[non-indexed, indexed]
+      // Count of scanned documents by this selector
+      items?: integer
+      // Count of processed documents, matched this selector
+      matched?: integer
+      // Count of comparators used, for this selector
+      comparators?: integer
+      // Cost expectation of this selector
+      cost?: integer
+      // Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
+      keys?: integer
+      // Condition on the field
+      condition?: string
+      // Select iterator type
+      type?: enum[Comparator, TwoFieldsComparison, Skipped, Forward, Reverse, SingleRange, SingleIdset, SingleIdSetWithDeferedSort, RevSingleRange, RevSingleIdset, RevSingleIdSetWithDeferedSort, OnlyComparator, Unsorted, UnbuiltSortOrdersIndex]
+      // Description of the selector
+      description?: string
+      explain_preselect:SingleQueryExplainDef
+      explain_select:SingleQueryExplainDef
+    }[]
+    on_conditions_injections: {
+      // Joinable ns name
+      namespace?: string
+      // Original ON-conditions clause. SQL-like string
+      on_condition?: string
+      // Total amount of time spent on checking and substituting all conditions
+      total_time_us?: integer
+      // Result of injection attempt
+      success?: boolean
+      // Optional{succeed==false}. Explains condition injection failure
+      reason?: string
+      // Values source: preselect values(by_value) or additional select(select)
+      type?: string
+      // Injected condition. SQL-like string
+      injected_condition?: string
+      conditions: {
+        // single condition from Join ON section. SQL-like string
+        condition?: string
+        // total time elapsed from injection attempt start till the end of substitution or rejection
+        total_time_us?: integer
+        explain_select:SingleQueryExplainDef
+        // Optional. Aggregation type used in subquery
+        agg_type?: enum[min, max, distinct]
+        // result of injection attempt
+        success?: boolean
+        // Optional. Explains condition injection failure
+        reason?: string
+        // substituted injected condition. SQL-like string
+        new_condition?: string
+        // resulting size of query values set
+        values_count?: integer
+      }[]
+    }[]
+    subqueries: {
+      // Subquery's namespace name
+      namespace?: string
+      // Count of keys being compared with the subquery's result
+      keys?: integer
+      // Name of field being compared with the subquery's result
+      field?: string
+      explain:SingleQueryExplainDef
+    }[]
   }[]
 }
 ```

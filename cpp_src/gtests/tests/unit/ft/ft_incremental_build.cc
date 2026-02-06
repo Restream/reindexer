@@ -10,7 +10,7 @@ public:
 	using MapT = reindexer::fast_hash_map<K, V>;
 	template <typename K>
 	using SetT = reindexer::fast_hash_set<K>;
-	constexpr static int kMaxWordLen = 30;
+	constexpr static uint8_t kMaxWordLen = 30;
 
 	struct [[nodiscard]] StepInfo {
 		unsigned wordsCnt;

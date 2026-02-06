@@ -20,8 +20,8 @@ public:
 	}
 	Error Remove(IEventsObserver& observer) { return eventsListener_.Remove(observer); }
 	void SendAsyncEventOnly(updates::UpdateRecord&& rec);
-	Error SendUpdate(updates::UpdateRecord&& rec, std::function<void()> beforeWaitF, const RdxContext& ctx);
-	Error SendUpdates(UpdatesContainer&& recs, std::function<void()> beforeWaitF, const RdxContext& ctx);
+	Error SendUpdate(updates::UpdateRecord&& rec, const std::function<void()>& beforeWaitF, const RdxContext& ctx);
+	Error SendUpdates(UpdatesContainer&& recs, const std::function<void()>& beforeWaitF, const RdxContext& ctx);
 	Error SendAsyncUpdate(updates::UpdateRecord&& rec, const RdxContext& ctx);
 	Error SendAsyncUpdates(UpdatesContainer&& recs, const RdxContext& ctx);
 	void SetEventsServerID(int serverID) noexcept { eventsListener_.SetEventsServerID(serverID); }

@@ -67,7 +67,7 @@ if (NOT WIN32)
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
     "tools/verifying_updater.h" "tools/customlocal.h" "tools/clock.h" "tools/enum_compare.h" "tools/float_comparison.h"
     "core/reindexer.h" "core/type_consts.h" "core/type_formats.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
-    "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
+    "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h" "core/id_type.h"
     "core/rdxcontext.h" "core/activity_context.h" "core/activity.h" "core/activitylog.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
     "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction/transaction.h" "core/payload/payloadfieldtype.h" "core/reindexerconfig.h"
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/query/knn_search_params.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"

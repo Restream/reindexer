@@ -1,9 +1,7 @@
 #pragma once
 
 #include <stddef.h>
-#include <climits>
 #include "core/idset/idset.h"
-#include "core/type_consts.h"
 
 namespace reindexer {
 namespace index {
@@ -106,7 +104,7 @@ public:
 				return {true, *this->idsetIt_};
 			}
 		}
-		return {false, 0};
+		return {false, IdType::Zero()};
 	}
 
 	void SkipKey() noexcept {
@@ -188,7 +186,7 @@ public:
 				}
 			}
 		}
-		return {false, 0};
+		return {false, IdType::Zero()};
 	}
 
 	void SkipKey() noexcept {

@@ -1,4 +1,5 @@
 #include "indexordered.h"
+#include "core/id_type.h"
 #include "core/nsselecter/btreeindexiterator.h"
 #include "core/rdxcontext.h"
 #include "tools/errors.h"
@@ -9,7 +10,7 @@ namespace reindexer {
 template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
 	if (key.IsNullValue()) {
-		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
+		if (this->empty_ids_.Unsorted().Add(id, IdSetEditMode::Auto, this->sortedIdxCount_)) {
 			this->cache_.ResetImpl();
 			clearCache = true;
 			this->isBuilt_ = false;
@@ -26,7 +27,7 @@ Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache)
 		this->delMemStat(keyIt);
 	}
 
-	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
+	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSetEditMode::Ordered : IdSetEditMode::Auto, this->sortedIdxCount_)) {
 		this->isBuilt_ = false;
 		this->cache_.ResetImpl();
 		clearCache = true;
@@ -131,15 +132,15 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 		IndexIterator::Ptr btreeIt(make_intrusive<BtreeIndexIterator<T>>(startIt, endIt));
 		res.emplace_back(std::move(btreeIt));
 	} else if (sortId && this->sortId_ == sortId && !selectCtx.opts.distinct) {
-		assertrx(startIt->second.Sorted(this->sortId_).size());
-		IdType idFirst = startIt->second.Sorted(this->sortId_).front();
+		assertrx(startIt->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).size());
+		IdType idFirst = startIt->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).front();
 
 		auto backIt = endIt;
 		--backIt;
-		assertrx(backIt->second.Sorted(this->sortId_).size());
-		IdType idLast = backIt->second.Sorted(this->sortId_).back();
+		assertrx(backIt->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).size());
+		IdType idLast = backIt->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).back();
 		// sort by this index. Just give part of sorted ids;
-		res.emplace_back(idFirst, idLast + 1);
+		res.emplace_back(idFirst, idLast.Incr());
 	} else {
 		// TODO: use count of items in ns to more clever select plan
 		const int kMaxIdsetsCount = selectCtx.opts.distinct ? IndexUnordered<T>::kMaxIdsetsForDistinct : 50;
@@ -156,15 +157,16 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 				T* i_map;
 				SortType sortId;
 				typename T::iterator startIt, endIt;
-			} selectorCtx = {&this->idx_map, sortId, startIt, endIt};
+				const int count;
+			} selectorCtx = {&this->idx_map, sortId, startIt, endIt, count};
 
-			auto selector = [&selectorCtx, count](SelectKeyResult& res, size_t& idsCount) {
+			auto selector = [&selectorCtx, this](SelectKeyResult& res, size_t& idsCount) {
 				idsCount = 0;
-				res.reserve(count);
+				res.reserve(selectorCtx.count);
 				for (auto it = selectorCtx.startIt; it != selectorCtx.endIt; ++it) {
 					assertrx_dbg(it != selectorCtx.i_map->end());
 					idsCount += it->second.Unsorted().Size();
-					res.emplace_back(it->second, selectorCtx.sortId);
+					res.emplace_back(it->second, SortedIDsCtx{selectorCtx.sortId, this->getExternalSortedIds()});
 				}
 				res.deferedExplicitSort = false;
 				return false;
@@ -203,15 +205,15 @@ void IndexOrdered<T>::MakeSortOrders(IUpdateSortedContext& ctx) {
 	size_t idx = 0;
 	auto fill = [&](const auto& keyEntry, const key_type* key) {
 		for (auto id : keyEntry.Unsorted()) {
-			if (id >= int(ids2Sorts.size()) || ids2Sorts[id] == SortIdNotExists) [[unlikely]] {
+			if (id >= IdType::FromNumber(ids2Sorts.size()) || ids2Sorts[id.ToNumber()] == SortIdNotExists) [[unlikely]] {
 				logFmt(
 					LogError,
 					"Internal error: Index '{}' is broken. Item with key '{}' contains id={}, which is not present in allIds,totalids={}\n",
 					this->name_, key ? Variant(*key).As<std::string>() : "null", id, totalIds);
 				assertrx(0);
 			}
-			if (ids2Sorts[id] == SortIdNotFilled) {
-				ids2Sorts[id] = idx;
+			if (ids2Sorts[id.ToNumber()] == SortIdNotFilled) {
+				ids2Sorts[id.ToNumber()] = idx;
 				this->sortOrders_[idx++] = id;
 			}
 		}
@@ -229,10 +231,10 @@ void IndexOrdered<T>::MakeSortOrders(IUpdateSortedContext& ctx) {
 		for (auto it = ids2Sorts.begin(), beg = ids2Sorts.begin(), end = ids2Sorts.end(); it != end; ++it) {
 			if (*it == SortIdNotFilled) {
 				*it = idx;
-				this->sortOrders_[idx++] = it - beg;
+				this->sortOrders_[idx++] = IdType::FromNumber(it - beg);
 				if (isFirst) {
 					isFirst = false;
-					logFmt(LogError, "First missing item in '{}' has internal ID {}", this->Name(), IdType(it - beg));
+					logFmt(LogError, "First missing item in '{}' has internal ID {}", this->Name(), IdType::FromNumber(it - beg));
 				}
 			}
 		}
@@ -260,7 +262,7 @@ static std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType
 		case IndexDoubleBTree:
 			return std::make_unique<IndexOrdered<number_map<double, KeyEntryT>>>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 		case IndexCompositeBTree:
-			return std::make_unique<IndexOrdered<payload_map<KeyEntryT, true>>>(idef, std::move(payloadType), std::move(fields), cacheCfg);
+			return std::make_unique<IndexOrdered<payload_map<KeyEntryT>>>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 		case IndexStrHash:
 		case IndexIntHash:
 		case IndexInt64Hash:
@@ -290,9 +292,12 @@ static std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType
 // NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 										const NamespaceCacheConfigData& cacheCfg) {
-	return (idef.Opts().IsPK() || idef.Opts().IsDense())
-			   ? IndexOrdered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), std::move(fields), cacheCfg)
-			   : IndexOrdered_New<Index::KeyEntry>(idef, std::move(payloadType), std::move(fields), cacheCfg);
+	if (idef.Opts().IsPK()) {
+		return IndexOrdered_New<Index::KeyEntryPK>(idef, std::move(payloadType), std::move(fields), cacheCfg);
+	}
+
+	return idef.Opts().IsDense() ? IndexOrdered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), std::move(fields), cacheCfg)
+								 : IndexOrdered_New<Index::KeyEntry>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 }
 // NOLINTEND(*cplusplus.NewDeleteLeaks)
 

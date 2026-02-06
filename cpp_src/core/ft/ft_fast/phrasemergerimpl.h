@@ -1,4 +1,5 @@
 #include "core/ft/bm25.h"
+#include "core/id_type.h"
 #include "core/rdxcontext.h"
 #include "merger.h"
 #include "tools/logger.h"
@@ -169,10 +170,10 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 		if (!inTransaction_) {
 			ThrowOnCancel(ctx_);
 		}
-		Bm25Calculator<Bm25T> bm25(totalDocsCount, subtermRes.vids->size(), holder_.cfg_->bm25Config.bm25k1,
+		Bm25Calculator<Bm25T> bm25(totalDocsCount, subtermRes.Vids().size(), holder_.cfg_->bm25Config.bm25k1,
 								   holder_.cfg_->bm25Config.bm25b);
 
-		auto& subtermDocs = *subtermRes.vids;
+		auto& subtermDocs = subtermRes.Vids();
 		for (auto&& positionsInDoc : subtermDocs) {
 			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(positionsInDoc), const IdRelType&>) ||
 							  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(positionsInDoc), IdRelType&>),
@@ -194,7 +195,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 			// Find field with max rank
 			TermRankInfo termInf;
 			termInf.proc = subtermRes.proc;
-			termInf.pattern = subtermRes.pattern;
+			termInf.pattern = subtermRes.Pattern();
 
 			auto [termRank, field] = calcTermRank(termRes, bm25, positionsInDoc, termInf, holder_);
 			if (reindexer::fp::IsZero(termRank)) {
@@ -202,7 +203,8 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 			}
 
 			if (holder_.cfg_->logLevel >= LogTrace) [[unlikely]] {
-				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subtermRes.pattern, bm25.GetIDF(), termRes.term.Opts().termLenBoost);
+				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subtermRes.Pattern(), bm25.GetIDF(),
+					   termRes.term.Opts().termLenBoost);
 			}
 
 			if (firstTerm) {
@@ -217,7 +219,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 					continue;
 				}
 
-				InfoType info{.id = int(docId), .proc = termRank, .field = field};
+				InfoType info{.id = IdType::FromNumber(docId), .proc = termRank, .field = field};
 				mergeData_.emplace_back(std::move(info));
 				PositionsVector positions;
 				InitFrom(std::move(positionsInDoc.Pos()), positions);
@@ -251,7 +253,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 		auto& mdExt = mergeDataExtended_[idx];
 
 		if (mdExt.nextPhrasePositions.empty()) {
-			preselectedDocs_.reset(md.id);
+			preselectedDocs_.reset(md.id.ToNumber());
 			md.proc = 0;
 			mdExt.lastPhrasePositions.clear();
 			mdExt.rank = 0;
@@ -280,7 +282,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingA
 				ThrowOnCancel(ctx_);
 			}
 
-			auto& subtermDocs = *subtermRes.vids;
+			auto& subtermDocs = subtermRes.Vids();
 			for (auto&& positionsInDoc : subtermDocs) {
 				static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(positionsInDoc), const IdRelType&>) ||
 								  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(positionsInDoc), IdRelType&>),
@@ -323,7 +325,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::Merge(std::vector<TermRe
 	// looks like that doesnt work correctly
 	// Update full match rank
 	for (auto& md : mergeData_) {
-		if (size_t(holder_.vdocs_[md.id].wordsCount[md.field]) == rawResults.size()) {
+		if (size_t(holder_.vdocs_[md.id.ToNumber()].wordsCount[md.field]) == rawResults.size()) {
 			md.proc *= holder_.cfg_->fullMatchBoost;
 		}
 	}

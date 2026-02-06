@@ -69,32 +69,45 @@ private:
 
 class [[nodiscard]] ProtobufDecoder {
 public:
-	ProtobufDecoder(TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema) noexcept
-		: tm_(tagsMatcher), schema_(std::move(schema)), arraysStorage_(tm_) {}
+	ProtobufDecoder(TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema, std::string_view data, Payload& pl, WrSerializer& wrser,
+					FloatVectorsHolderVector& floatVectorsHolder, ScalarIndexesSetT& objectScalarIndexes) noexcept
+		: tm_(tagsMatcher),
+		  schema_(std::move(schema)),
+		  arraysStorage_(tm_),
+		  data_(data),
+		  pl_(pl),
+		  wrSer_(wrser),
+		  floatVectorsHolder_(floatVectorsHolder),
+		  objectScalarIndexes_(objectScalarIndexes) {}
 	ProtobufDecoder(const ProtobufDecoder&) = delete;
 	ProtobufDecoder(ProtobufDecoder&&) = delete;
 	ProtobufDecoder& operator=(const ProtobufDecoder&) = delete;
 	ProtobufDecoder& operator=(ProtobufDecoder&&) = delete;
 
-	Error Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, FloatVectorsHolderVector&) noexcept;
+	Error Decode() noexcept;
 
 private:
 	template <typename Validator>
-	void setValue(Payload&, CJsonBuilder&, ProtobufValue, const Validator&);
-	void decode(Payload&, CJsonBuilder&, const ProtobufValue&, FloatVectorsHolderVector&);
+	void setValue(CJsonBuilder&, ProtobufValue, const Validator&);
+	void decode(CJsonBuilder&, const ProtobufValue&);
 	template <typename Validator>
-	void decode(Payload&, CJsonBuilder&, const ProtobufValue&, FloatVectorsHolderVector&, const Validator&);
-	void decodeObject(Payload&, CJsonBuilder&, ProtobufObject&, FloatVectorsHolderVector&);
+	void decode(CJsonBuilder&, const ProtobufValue&, const Validator&);
+	void decodeObject(CJsonBuilder&, ProtobufObject&);
 	template <typename Validator>
-	void decodeArray(Payload&, CJsonBuilder&, const ProtobufValue&, FloatVectorsHolderVector&, Validator&&);
+	void decodeArray(CJsonBuilder&, const ProtobufValue&, Validator&&);
 	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 
 	TagsMatcher& tm_;
 	std::shared_ptr<const Schema> schema_;
 	TagsPath tagsPath_;
 	ArraysStorage arraysStorage_;
-	ScalarIndexesSetT objectScalarIndexes_;
 	int32_t arrayLevel_ = 0;
+
+	std::string_view data_;
+	Payload& pl_;
+	WrSerializer& wrSer_;
+	FloatVectorsHolderVector& floatVectorsHolder_;
+	ScalarIndexesSetT& objectScalarIndexes_;
 };
 
 }  // namespace reindexer

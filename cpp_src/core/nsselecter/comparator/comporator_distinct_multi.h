@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/id_type.h"
 #include "core/nsselecter/distincthelpers.h"
 #include "core/type_consts.h"
 #include "estl/fast_hash_set.h"
@@ -39,7 +40,7 @@ private:
 
 	struct [[nodiscard]] ItemData {
 		std::vector<DistinctHelpers::DataType> data;
-		IdType rowId = -1;
+		IdType rowId = IdType::NotSet();
 		size_t maxIndex = 0;
 	};
 
@@ -92,7 +93,7 @@ private:
 	SetType values_;
 	struct [[nodiscard]] ItemData {
 		DistinctHelpers::FieldsValue data;
-		IdType rowId = -1;
+		IdType rowId = IdType::NotSet();
 	};
 
 	ItemData lastData_;
@@ -130,12 +131,12 @@ public:
 									KeyValueType::Uuid> auto keyValueType) {
 					using ViewType = decltype(keyValueType)::ViewType;
 					const auto* bv = reinterpret_cast<const ViewType*>(d.first);
-					data.emplace_back(*(bv + rowId));
+					data.emplace_back(*(bv + rowId.ToNumber()));
 				},
 				[&](concepts::OneOf<KeyValueType::String> auto keyValueType) {
 					using ViewType = decltype(keyValueType)::ViewType;
 					const auto* bv = reinterpret_cast<const ViewType*>(d.first);
-					data.emplace_back(p_string(bv + rowId));
+					data.emplace_back(p_string(bv + rowId.ToNumber()));
 				},
 				[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
 									KeyValueType::FloatVector> auto) { assertrx_throw(false); });
@@ -163,12 +164,12 @@ public:
 													   KeyValueType::Int, KeyValueType::Uuid> auto keyValueType) {
 									   using ViewType = decltype(keyValueType)::ViewType;
 									   const auto* bv = reinterpret_cast<const ViewType*>(raw.first);
-									   data.emplace_back(*(bv + rowId));
+									   data.emplace_back(*(bv + rowId.ToNumber()));
 								   },
 								   [&](concepts::OneOf<KeyValueType::String> auto keyValueType) {
 									   using ViewType = decltype(keyValueType)::ViewType;
 									   const auto* bv = reinterpret_cast<const ViewType*>(raw.first);
-									   data.emplace_back(p_string(bv + rowId));
+									   data.emplace_back(p_string(bv + rowId.ToNumber()));
 								   },
 
 								   [&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
@@ -212,7 +213,7 @@ private:
 	int matchedCount_{0};
 	struct [[nodiscard]] ItemData {
 		std::vector<DistinctHelpers::DataType> data;
-		IdType rowId = -1;
+		IdType rowId = IdType::NotSet();
 		size_t maxIndex = 0;
 	};
 

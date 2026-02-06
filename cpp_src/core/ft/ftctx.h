@@ -4,8 +4,8 @@
 #include <variant>
 #include "core/ft/areaholder.h"
 #include "core/ft/ft_fast/splitter.h"
+#include "core/id_type.h"
 #include "core/nsselecter/ranks_holder.h"
-#include "core/type_consts.h"
 #include "tools/rhashmap.h"
 
 namespace reindexer {

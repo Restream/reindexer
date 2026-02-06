@@ -73,7 +73,7 @@ public:
 		Item GetItem();
 		lsn_t GetLSN();
 		int GetNSID();
-		int GetID();
+		IdType GetID();
 		int GetShardID();
 		RankT GetRank();
 		bool IsRanked() noexcept;

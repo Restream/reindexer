@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/expressiontree.h"
+#include "core/id_type.h"
 #include "core/keyvalue/geometry.h"
 #include "core/payload/payloadiface.h"
 #include "core/rank_t.h"

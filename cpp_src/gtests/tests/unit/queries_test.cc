@@ -410,29 +410,6 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "select_with_rank": false,
    "select_filter": [],
    "select_functions": [],
-   "sort": [],
-   "filters": [
-	  {{
-		 "op": "and",
-		 "always": true
-	  }}
-   ],
-   "merge_queries": [],
-   "aggregations": []
-}})",
-				   geomNs),
-			   Query{geomNs}.AppendQueryEntry<reindexer::AlwaysTrue>(OpAnd)},
-			  {fmt::format(
-				   R"({{
-   "namespace": "{}",
-   "limit": -1,
-   "offset": 0,
-   "req_total": "disabled",
-   "explain": false,
-   "type": "select",
-   "select_with_rank": false,
-   "select_filter": [],
-   "select_functions": [],
    "sort": [
 	  {{
 		 "field": "rank(ft, 2.0) + 5",
@@ -1617,6 +1594,33 @@ TEST_F(QueriesApi, EmptyResultForceSortedWithLimitTest) {
 	check(query, 10);
 	query.Where(kFieldNameIsDeleted, CondEq, {false});
 	check(query, 0);
+}
+
+TEST_F(QueriesApi, ExplainWithCacheTest) {
+	for (int i = 0; i < 100; ++i) {
+		Item item = NewItem(default_namespace);
+		item[kFieldNameId] = i * 100;
+		item[kFieldNameAge] = 18 + i;
+		item[kFieldNameName] = "name";
+		Upsert(default_namespace, item);
+		saveItem(std::move(item), default_namespace);
+	}
+
+	AwaitIndexOptimization(default_namespace);
+
+	Query q = Query{default_namespace};
+	q.Where(kFieldNameAge, CondEq, {18, 19, 20, 21}).Where(kFieldNameName, CondEq, "name").Sort(kFieldNameName, false);
+	{
+		QueryResults qr;
+		ExecuteAndVerifyWithSql(q, qr);
+		EXPECT_NE(qr.GetExplainResults().find(",\"method\":\"index\","), std::string::npos);
+	}
+
+	{
+		QueryResults qr;
+		ExecuteAndVerifyWithSql(q, qr);
+		EXPECT_NE(qr.GetExplainResults().find(",\"method\":\"index(cached)\","), std::string::npos);
+	}
 }
 
 TEST_F(QueriesApi, DistinctWithForcedSortAndLimitTest) {

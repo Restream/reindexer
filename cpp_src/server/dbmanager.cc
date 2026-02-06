@@ -161,8 +161,11 @@ Error DBManager::DropDatabase(AuthContext& auth) {
 	if (it == dbs_.end()) {
 		return Error(errParams, "Database {} not found", dbName);
 	}
+	const auto storageDir = fs::JoinPath(config_.StoragePath, dbName);
 	dbs_.erase(it);
-	std::ignore = fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
+	if (fs::RmDirAll(storageDir) < 0) {
+		logFmt(LogError, "[dbmanager] Failed to remove directory '{}', error: '{}'", storageDir, strerror(errno));
+	}
 	auth.ResetDB();
 
 	return {};

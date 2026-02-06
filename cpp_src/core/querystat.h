@@ -142,7 +142,7 @@ public:
 		void unlock() RX_RELEASE() { return Lock::unlock(); }
 	};
 
-	void AddExplain(const ExplainCalc& explain) { logger_.Add(explain); }
+	void AddExplain(const Explain& explain) { logger_.Add(explain); }
 
 private:
 	template <long_actions::DurationStorageIdx index, typename Callable, typename... Args>

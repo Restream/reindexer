@@ -3,6 +3,7 @@
 #include "client/queryresults.h"
 #include "cluster/consts.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/id_type.h"
 #include "core/system_ns_names.h"
 #include "estl/mutex.h"
 #include "gtests/tests/gtest_cout.h"
@@ -357,7 +358,7 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 				ASSERT_TRUE(err.ok()) << err.what();
 				gason::JsonParser parser;
 				auto root = parser.Parse(ser.Slice());
-				EXPECT_EQ(root["id"].As<int>(), it.GetID());
+				EXPECT_EQ(root["id"].As<int>(), it.GetID().ToNumber());
 			}
 		}
 	}));
@@ -580,7 +581,7 @@ static void CheckSetGetEnumDeleteMeta(ClusterOperationApi::Cluster& cluster, int
 }
 
 static void SelectHelper(int node, const std::string& nsName, ClusterOperationApi::Cluster& cluster, const std::string& itemJson,
-						 int id = -1) {
+						 reindexer::IdType id = reindexer::IdType::NotSet()) {
 	reindexer::Query q(nsName);
 	BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 	Error err = cluster.GetNode(node)->api.reindexer->Select(q, qr);
@@ -588,7 +589,7 @@ static void SelectHelper(int node, const std::string& nsName, ClusterOperationAp
 	ASSERT_TRUE(qr.Count() == 1);
 	auto itsel = qr.begin().GetItem();
 	ASSERT_TRUE(itsel.GetJSON() == itemJson) << itsel.GetJSON();
-	if (id >= 0) {
+	if (id.IsValid()) {
 		ASSERT_EQ(id, itsel.GetID());
 	}
 }
@@ -692,7 +693,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterOperationApi::Cluster& cl
 			ASSERT_TRUE(qrInsert.Count() == 1) << qrInsert.Count();
 			auto itemQR = qrInsert.begin().GetItem();
 			const auto id = itemQR.GetID();
-			ASSERT_GE(id, 0);
+			ASSERT_TRUE(id.IsValid());
 			ASSERT_TRUE(itemQR.GetLSN().isEmpty());
 			// check the correctness of the insert
 			SelectHelper(followerId, kNsName, cluster, itemJson, id);
@@ -709,7 +710,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterOperationApi::Cluster& cl
 			ASSERT_TRUE(qrUpsert.Count() == 1);
 			auto itemQR = qrUpsert.begin().GetItem();
 			const auto id = itemQR.GetID();
-			ASSERT_GE(id, 0);
+			ASSERT_TRUE(id.IsValid());
 			ASSERT_TRUE(itemQR.GetLSN().isEmpty());
 			// check the correctness of the upsert
 			SelectHelper(followerId, kNsName, cluster, itemJsonUp, id);
@@ -734,7 +735,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterOperationApi::Cluster& cl
 		ASSERT_TRUE(qrUpdate.Count() == 1);
 		auto itemQR = qrUpdate.begin().GetItem();
 		const auto id = itemQR.GetID();
-		ASSERT_GE(id, 0);
+		ASSERT_TRUE(id.IsValid());
 		ASSERT_TRUE(itemQR.GetLSN().isEmpty());
 		// check the correctness of the update
 		SelectHelper(followerId, kNsName, cluster, itemJson, id);
@@ -755,7 +756,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterOperationApi::Cluster& cl
 		ASSERT_TRUE(qrDelete.Count() == 1);
 		auto itemQR = qrDelete.begin().GetItem();
 		const auto id = itemQR.GetID();
-		ASSERT_GE(id, 0);
+		ASSERT_TRUE(id.IsValid());
 		ASSERT_TRUE(itemQR.GetLSN().isEmpty());
 		// check the correctness of the delete
 		Select0Helper(followerId, kNsName, cluster);

@@ -26,15 +26,16 @@ void JoinedSelector::selectFromRightNs(LocalQueryResults& joinItemR, const Query
 		matchedAtLeastOnce = joinResLong.it.val.matchedAtLeastOnce;
 		rightNs_->FillResult(joinItemR, *joinResLong.it.val.ids);
 	} else {
+		Explain explain;
 		SelectCtxWithJoinPreSelect<JoinPreResultExecuteCtx> ctx(query, nullptr, preSelectCtx_, floatVectorsHolder);
 		ctx.matchedAtLeastOnce = false;
 		ctx.reqMatchedOnceFlag = true;
 		ctx.skipIndexesLookup = true;
 		ctx.functions = &selectFunctions_;
+		ctx.explain = &explain;
 		rightNs_->Select(joinItemR, ctx, rdxCtx_);
 		if (query.NeedExplain()) {
-			explainOneSelect_ = std::move(joinItemR.explainResults);
-			joinItemR.explainResults = {};
+			explainOneSelect_ = explain.GetJSON();
 		}
 
 		found = joinItemR.Count();
@@ -45,7 +46,7 @@ void JoinedSelector::selectFromRightNs(LocalQueryResults& joinItemR, const Query
 		val.ids = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 		val.matchedAtLeastOnce = matchedAtLeastOnce;
 		for (const auto& it : joinItemR.Items()) {
-			std::ignore = val.ids->Add(it.GetItemRef().Id(), IdSet::Unordered, 0);
+			std::ignore = val.ids->Add(it.GetItemRef().Id(), IdSetEditMode::Unordered, 0);
 		}
 		rightNs_->putToJoinCache(joinResLong, std::move(val));
 	}
@@ -96,7 +97,7 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, Float
 		return true;
 	}
 
-	const auto startTime = ExplainCalc::Clock::now();
+	const auto startTime = Explain::Clock::now();
 	// Put values to join conditions
 	size_t i = 0;
 	if (itemQuery_.NeedExplain() && !explainOneSelect_.empty()) {
@@ -166,7 +167,7 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, Float
 	if (matchedAtLeastOnce) {
 		++matched_;
 	}
-	selectTime_ += (ExplainCalc::Clock::now() - startTime);
+	selectTime_ += (Explain::Clock::now() - startTime);
 	return matchedAtLeastOnce;
 }
 
@@ -253,7 +254,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 			continue;
 		}
 		const auto& leftIndex = leftNs_->indexes_[joinEntry.LeftIdxNo()];
-		if (IsFullText(leftIndex->Type())) {
+		if (IsFullText(leftIndex->Type()) || IsComposite(leftIndex->Type())) {
 			continue;
 		}
 
@@ -279,8 +280,8 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 									  return readValuesOfRightNsFrom(
 										  preselected,
 										  [this, sortOrders](IdType rowId) noexcept {
-											  const auto properRowId = sortOrders ? (*sortOrders)[rowId] : rowId;
-											  return ConstPayload{rightNs_->payloadType_, rightNs_->items_[properRowId]};
+											  const auto properRowId = sortOrders ? (*sortOrders)[rowId.ToNumber()] : rowId;
+											  return ConstPayload{rightNs_->payloadType_, rightNs_->items_[properRowId.ToNumber()]};
 										  },
 										  joinEntry, rightNs_->payloadType_);
 								  },

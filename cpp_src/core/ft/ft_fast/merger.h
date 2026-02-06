@@ -1,5 +1,6 @@
 #pragma once
-#include <deque>
+#include "core/id_type.h"
+#include "estl/lazy_deque.h"
 #include "phrasemerger.h"
 #include "tools/float_comparison.h"
 
@@ -80,9 +81,8 @@ private:
 					phraseEnd++;
 				}
 
-				phraseMergers_.emplace_back(holder_, fieldSize_, maxAreasInDoc_, inTransaction_, ctx_);
-
-				phraseMergers_.back().template Merge<Bm25Type>(rawResults, phraseBegin, phraseEnd);
+				auto& merger = phraseMergers_.emplace_back(holder_, fieldSize_, maxAreasInDoc_, inTransaction_, ctx_);
+				merger.template Merge<Bm25Type>(rawResults, phraseBegin, phraseEnd);
 
 				termIdx = phraseEnd - 1;
 				continue;
@@ -100,7 +100,7 @@ private:
 
 			for (index_t termIdx = synGroupBegin; termIdx < synGroupEnd; ++termIdx) {
 				for (const SubtermResults<IdCont>& subtermRes : rawResults[termIdx].subtermsResults) {
-					estimatedNumDocs += subtermRes.vids->size();
+					estimatedNumDocs += subtermRes.Vids().size();
 				}
 
 				if (rawResults[termIdx].Op() == OpAnd) {
@@ -121,7 +121,7 @@ private:
 				}
 
 				if (phraseOp != OpNot) {
-					estimatedNumDocs += phraseMergers_[phraseIdx].NumDocsMerged();
+					estimatedNumDocs += phraseMergers_.at(phraseIdx).NumDocsMerged();
 				}
 
 				if (phraseOp == OpAnd) {
@@ -136,7 +136,7 @@ private:
 			const auto termOp = rawResults[termIdx].Op();
 			if (termOp != OpNot) {
 				for (const SubtermResults<IdCont>& subtermRes : rawResults[termIdx].subtermsResults) {
-					estimatedNumDocs += subtermRes.vids->size();
+					estimatedNumDocs += subtermRes.Vids().size();
 				}
 			}
 
@@ -163,7 +163,7 @@ private:
 		const auto& vdocs = holder_.vdocs_;
 		for (size_t idx = 0; idx < mergeData_.size(); ++idx) {
 			auto& md = mergeData_[idx];
-			if (size_t(vdocs[md.id].wordsCount[md.field]) == numTerms) {
+			if (size_t(vdocs[md.id.ToNumber()].wordsCount[md.field]) == numTerms) {
 				md.proc *= holder_.cfg_->fullMatchBoost;
 			}
 		}
@@ -218,7 +218,7 @@ private:
 	size_t numDocs() const noexcept { return mergeData_.size(); }
 
 	void addDoc(int docId, index_t mergeStatus, float proc, uint8_t field) {
-		InfoType info{.id = docId, .proc = proc, .field = field};
+		InfoType info{.id = IdType::FromNumber(docId), .proc = proc, .field = field};
 
 		if constexpr (kWithAreas) {
 			auto& area = mergeData_.vectorAreas.emplace_back();
@@ -291,7 +291,7 @@ private:
 			if (reindexer::fp::IsZero(mdToRemove.proc)) {
 				continue;
 			}
-			int docId = mdToRemove.id;
+			const auto docId = mdToRemove.id.ToNumber();
 			if (mergeStatuses_[docId] != 0 && mergeStatuses_[docId] != FtMergeStatuses::kExcluded) {
 				getMergeData(docId).proc = 0;
 			}
@@ -301,8 +301,8 @@ private:
 
 	void removeAllDocsExcept(const std::vector<bool>& docsMask) noexcept {
 		for (auto& md : mergeData_) {
-			if (!docsMask[md.id]) {
-				mergeStatuses_[md.id] = FtMergeStatuses::kExcluded;
+			if (!docsMask[md.id.ToNumber()]) {
+				mergeStatuses_[md.id.ToNumber()] = FtMergeStatuses::kExcluded;
 				md.proc = 0;
 			}
 		}
@@ -326,7 +326,7 @@ private:
 	int maxAreasInDoc_ = 0;
 
 	FtMergeStatuses::Statuses& mergeStatuses_;
-	std::deque<PhraseMerger<IdCont, MergeDataType, MergeOffsetT>> phraseMergers_;
+	lazy_deque<PhraseMerger<IdCont, MergeDataType, MergeOffsetT>> phraseMergers_;
 
 	bool inTransaction_ = false;
 	const RdxContext& ctx_;

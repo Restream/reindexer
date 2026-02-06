@@ -110,6 +110,11 @@ Variant FloatVectorIndex::UpsertConcurrent(const Variant& key, IdType id, bool& 
 	return upsertConcurrent(vect, id, clearCache);
 }
 
+bool FloatVectorIndex::RefreshCompositeKey(const Variant& /*key*/) noexcept {
+	assertrx_dbg(0);
+	return false;
+}
+
 SelectKeyResult FloatVectorIndex::Select(ConstFloatVectorView key, const KnnSearchParams& p, KnnCtx& ctx, const RdxContext& rdxCtx) const {
 	checkForSelect(key);
 	const auto indexWard(rdxCtx.BeforeIndexWork());
@@ -263,7 +268,7 @@ void FloatVectorIndex::checkForSelect(ConstFloatVectorView key) const {
 }
 
 Variant FloatVectorIndex::upsertEmptyVectImpl(IdType id) {
-	std::ignore = emptyValues_.Unsorted().Add(id, IdSet::Auto, sortedIdxCount_);
+	std::ignore = emptyValues_.Unsorted().Add(id, IdSetEditMode::Auto, sortedIdxCount_);
 	memStat_.uniqKeysCount = 1;
 	return Variant{ConstFloatVectorView{}};
 }

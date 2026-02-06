@@ -58,7 +58,7 @@ void ComparatorDistinctMulti::getData(const PayloadValue& item, std::vector<Dist
 												   KeyValueType::String, KeyValueType::Int, KeyValueType::Uuid> auto keyValueType) {
 								   using ViewType = decltype(keyValueType)::ViewType;
 								   const auto* bv = reinterpret_cast<const ViewType*>(raw.first);
-								   data.emplace_back(std::span<const ViewType>{bv + rowId, 1}, IsArray_False);
+								   data.emplace_back(std::span<const ViewType>{bv + rowId.ToNumber(), 1}, IsArray_False);
 							   },
 							   [&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
 												   KeyValueType::Tuple, KeyValueType::FloatVector> auto) { assertrx_throw(false); });

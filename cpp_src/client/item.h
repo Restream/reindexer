@@ -3,6 +3,7 @@
 #include <memory>
 #include <string_view>
 #include <vector>
+#include "core/id_type.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
 
@@ -75,7 +76,7 @@ public:
 	Error Status() const noexcept { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
-	int GetID() const noexcept { return id_; }
+	IdType GetID() const noexcept { return id_; }
 	/// Get LSN of item
 	/// @return LSN of item
 	lsn_t GetLSN() const noexcept { return lsn_; }
@@ -106,13 +107,13 @@ public:
 private:
 	explicit Item(ItemImplBase* impl);
 	explicit Item(Error err);
-	void setID(int id) noexcept { id_ = id; }
+	void setID(IdType id) noexcept { id_ = id; }
 	void setLSN(lsn_t lsn) noexcept { lsn_ = lsn; }
 	void setShardID(int shardId) noexcept { shardId_ = shardId; }
 
 	std::unique_ptr<ItemImplBase> impl_;
 	Error status_;
-	int id_ = -1;
+	IdType id_ = IdType::NotSet();
 	lsn_t lsn_;
 	int shardId_ = ShardingKeyType::ProxyOff;
 	friend class client::RPCClient;

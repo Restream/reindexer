@@ -23,8 +23,10 @@ public:
 
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, const Index::SelectContext&, const RdxContext&) override final;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, const Index::SelectContext&, FtPreselectT&&, const RdxContext&) override;
+
 	void UpdateSortedIds(const IUpdateSortedContext&) override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
 	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
+
 	virtual IdSet::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
 							  const RdxContext&) = 0;
 	void SetOpts(const IndexOpts& opts) override;

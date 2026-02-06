@@ -4,6 +4,7 @@
 
 #include "comparator_indexed_distinct.h"
 #include "const.h"
+#include "core/id_type.h"
 #include "core/index/payload_map.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
@@ -89,7 +90,7 @@ struct [[nodiscard]] ValuesHolder<key_string, CondAllSet> {
 template <>
 struct [[nodiscard]] ValuesHolder<PayloadValue, CondAllSet> {
 	struct [[nodiscard]] Type {
-		unordered_payload_map<int, false> values_;
+		unordered_payload_map<int> values_;
 		fast_hash_set<int> allSetValues_;
 	};
 };
@@ -180,7 +181,7 @@ class [[nodiscard]] ComparatorIndexedColumnScalar : private DataHolder<T> {
 public:
 	ComparatorIndexedColumnScalar(const void* rawData, const VariantArray&, CondType);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& /*item*/, IdType rowId) const noexcept {
-		const T& v = *(rawData_ + rowId);
+		const T& v = *(rawData_ + rowId.ToNumber());
 		switch (this->cond_) {
 			case CondEq:
 				return SafeEqualWithFP(v, this->value_);
@@ -270,7 +271,7 @@ class [[nodiscard]] ComparatorIndexedColumnScalarDistinct : private DataHolder<T
 public:
 	ComparatorIndexedColumnScalarDistinct(const void* rawData, const VariantArray&, CondType);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& /*item*/, IdType rowId) const noexcept {
-		const T& value = *(rawData_ + rowId);
+		const T& value = *(rawData_ + rowId.ToNumber());
 		switch (this->cond_) {
 			case CondEq:
 				return SafeEqualWithFP(value, this->value_) && distinct_.Compare(value);
@@ -303,7 +304,7 @@ public:
 	static double CostMultiplier() noexcept { return comparators::kIdxColumnComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
-	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId)); }
+	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId.ToNumber())); }
 
 private:
 	ComparatorIndexedDistinct<T> distinct_;
@@ -720,7 +721,7 @@ class [[nodiscard]] ComparatorIndexedColumnScalarString : private DataHolder<key
 public:
 	ComparatorIndexedColumnScalarString(const void* rawData, const VariantArray&, const CollateOpts&, CondType);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& /*item*/, IdType rowId) const {
-		const std::string_view value(*(rawData_ + rowId));
+		const std::string_view value(*(rawData_ + rowId.ToNumber()));
 		switch (cond_) {
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
@@ -814,7 +815,7 @@ class [[nodiscard]] ComparatorIndexedColumnScalarStringDistinct : private DataHo
 public:
 	ComparatorIndexedColumnScalarStringDistinct(const void* rawData, const VariantArray&, const CollateOpts&, CondType);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& /*item*/, IdType rowId) const {
-		const std::string_view value(*(rawData_ + rowId));
+		const std::string_view value(*(rawData_ + rowId.ToNumber()));
 		switch (cond_) {
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
@@ -849,7 +850,7 @@ public:
 	static double CostMultiplier() noexcept { return comparators::kIdxColumnComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
-	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId)); }
+	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId.ToNumber())); }
 
 private:
 	ComparatorIndexedDistinctString distinct_;
@@ -1465,12 +1466,12 @@ class [[nodiscard]] ComparatorIndexedColumnScalarAnyDistinct {
 public:
 	ComparatorIndexedColumnScalarAnyDistinct(const void* rawData) : rawData_{static_cast<const T*>(rawData)} {}
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& /*item*/, IdType rowId) const noexcept {
-		return distinct_.Compare(*(rawData_ + rowId));
+		return distinct_.Compare(*(rawData_ + rowId.ToNumber()));
 	}
 	static double CostMultiplier() noexcept { return comparators::kIdxColumnComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
-	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId)); }
+	void ExcludeDistinctValues(const PayloadValue& /*item*/, IdType rowId) { distinct_.ExcludeValues(*(rawData_ + rowId.ToNumber())); }
 
 private:
 	ComparatorIndexedDistinct<T> distinct_;

@@ -8,13 +8,15 @@
 #include "core/ft/idrelset.h"
 #include "core/ft/limits.h"
 #include "core/ft/stemmer.h"
-#include "core/ft/typos.h"
 #include "core/index/indextext/ftkeyentry.h"
-#include "estl/flat_str_map.h"
 #include "estl/suffix_map.h"
 #include "indextexttypes.h"
+#include "typosmap.h"
 
 namespace reindexer {
+
+static_assert(kMaxStepsCount <= TyposMap::kMaxStepNum, "TyposMap max steps overflow");
+static_assert(kTypoStepNumBits <= TyposMap::kStepBits, "TyposMap max steps overflow");
 
 class RdxContext;
 
@@ -89,22 +91,6 @@ public:
 };
 enum [[nodiscard]] ProcessStatus { FullRebuild, RecommitLast, CreateNew };
 
-struct [[nodiscard]] WordTypo {
-	WordTypo() = default;
-	explicit WordTypo(WordIdType w) noexcept : word(w) {}
-	explicit WordTypo(WordIdType w, const typos_context::TyposVec& p) noexcept : word(w), positions(p) {}
-	bool IsMultiValue() const noexcept { return multiMapFlag; }
-	void SetMultiValueFlag(bool val) noexcept { multiMapFlag = val; }
-	int32_t GetWordID() const noexcept { return word.GetID(); }
-	void SetWordID(int32_t id) noexcept { word.SetID(id); }
-
-	WordIdType word;
-	typos_context::TyposVec positions;
-	uint8_t multiMapFlag = 0;
-};
-
-static_assert(sizeof(WordTypo) <= 8, "This size is matter for overall size of the typos map");
-
 class [[nodiscard]] IDataHolder {
 public:
 	struct [[nodiscard]] CommitStep {
@@ -118,17 +104,13 @@ public:
 		// Suffix map. suffix <-> original word id
 		suffix_map<char, WordIdType> suffixes_;
 		// Typos maps. typo string <-> original word id
-		// typosHalf_ contains words with <=maxTypos/2 typos
-		flat_str_multimap<char, WordTypo> typosHalf_;
-		// typosMax_ contains words with MaxTyposInWord() typos if MaxTyposInWord() != maxTypos/2
-		flat_str_multimap<char, WordTypo> typosMax_;
+		TyposMap typos_;
 		// word offset for given step in DataHolder::words_
 		uint32_t wordOffset_;
 
 		void clear() {
 			suffixes_.clear();
-			typosHalf_.clear();
-			typosMax_.clear();
+			typos_.clear();
 		}
 	};
 
@@ -159,8 +141,7 @@ public:
 	}
 	bool NeedClear(bool complte_updated) const noexcept { return NeedRebuild(complte_updated) || !NeedRecommitLast(); }
 	suffix_map<char, WordIdType>& GetSuffix() noexcept { return steps.back().suffixes_; }
-	flat_str_multimap<char, WordTypo>& GetTyposHalf() noexcept { return steps.back().typosHalf_; }
-	flat_str_multimap<char, WordTypo>& GetTyposMax() noexcept { return steps.back().typosMax_; }
+	TyposMap& GetTypos() noexcept { return steps.back().typos_; }
 	WordIdType findWord(std::string_view word) const;
 	uint32_t GetSuffixWordId(WordIdType id) const noexcept { return GetSuffixWordId(id, steps.back()); }
 	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step) const noexcept {

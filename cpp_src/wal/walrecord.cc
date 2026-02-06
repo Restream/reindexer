@@ -1,6 +1,7 @@
 
 #include "walrecord.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/id_type.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 
@@ -22,7 +23,7 @@ void WALRecord::Pack(WrSerializer& ser) const {
 	switch (type) {
 		case WalItemUpdate:
 		case WalShallowItem:
-			ser.PutUInt32(id);
+			ser.PutUInt32(id.ToNumber());
 			return;
 		case WalUpdateQuery:
 		case WalIndexAdd:
@@ -49,7 +50,7 @@ void WALRecord::Pack(WrSerializer& ser) const {
 			ser.PutVarUint(itemModify.tmVersion);
 			return;
 		case WalRawItem:
-			ser.PutUInt32(rawItem.id);
+			ser.PutUInt32(rawItem.id.ToNumber());
 			ser.PutVString(rawItem.itemCJson);
 			return;
 		case WalEmpty:
@@ -81,7 +82,7 @@ WALRecord::WALRecord(std::span<const uint8_t> packed) {
 	switch (type) {
 		case WalItemUpdate:
 		case WalShallowItem:
-			id = ser.GetUInt32();
+			id = IdType::FromNumber(ser.GetUInt32());
 			return;
 		case WalUpdateQuery:
 		case WalIndexAdd:
@@ -108,7 +109,7 @@ WALRecord::WALRecord(std::span<const uint8_t> packed) {
 			itemModify.tmVersion = ser.GetVarUInt();
 			return;
 		case WalRawItem:
-			rawItem.id = ser.GetUInt32();
+			rawItem.id = IdType::FromNumber(ser.GetUInt32());
 			rawItem.itemCJson = ser.GetVString();
 			return;
 		case WalEmpty:
@@ -235,7 +236,7 @@ void WALRecord::GetJSON(JsonBuilder& jb, const std::function<std::string(std::st
 			return;
 		case WalItemUpdate:
 		case WalShallowItem:
-			jb.Put("row_id", id);
+			jb.Put("row_id", id.ToNumber());
 			return;
 		case WalUpdateQuery:
 			jb.Put("query", data);
@@ -270,7 +271,7 @@ void WALRecord::GetJSON(JsonBuilder& jb, const std::function<std::string(std::st
 			jb.Raw("schema", data);
 			return;
 		case WalRawItem:
-			jb.Put("row_id", rawItem.id);
+			jb.Put("row_id", rawItem.id.ToNumber());
 			jb.Raw("item", cjsonViewer(rawItem.itemCJson));
 			return;
 		case WalTagsMatcher:

@@ -1,9 +1,13 @@
 #pragma once
 
+#include <span>
 #include <variant>
-#include "core/type_consts.h"
+#include "core/id_type.h"
 #include "cpp-btree/btree_set.h"
-#include "estl/h_vector.h"
+
+#if REINDEX_DEBUG_CONTAINERS
+#include <vector>
+#endif	// REINDEX_DEBUG_CONTAINERS
 
 namespace reindexer {
 namespace idset {
@@ -14,7 +18,7 @@ concept IdSetLike = requires(T a) {
 	{ a.IsEmpty() } -> std::same_as<bool>;
 	{ a.Size() } -> std::same_as<size_t>;
 	{ a.BTreeSize() } -> std::same_as<size_t>;
-	{ a.BTree() } -> std::same_as<const btree::btree_set<int>*>;
+	{ a.BTree() } -> std::same_as<const btree::btree_set<IdType>*>;
 	{ a.Commit() } -> std::same_as<void>;
 	a.idset_range();
 	a.idset_reverse_range();
@@ -33,6 +37,10 @@ public:
 	using const_reference = const IdType&;
 
 	Iterator() noexcept = default;
+#if REINDEX_DEBUG_CONTAINERS
+	explicit Iterator(std::span<const IdType>::iterator it) noexcept : impl_{it} {}
+	explicit Iterator(std::span<const IdType>::reverse_iterator it) noexcept : impl_{it} {}
+#endif	// REINDEX_DEBUG_CONTAINERS
 	explicit Iterator(SequentialIterator it) noexcept : impl_{it} {}
 	explicit Iterator(BtreeIterator it) noexcept : impl_{it} {}
 
@@ -79,7 +87,13 @@ public:
 	}
 
 private:
+#if REINDEX_DEBUG_CONTAINERS
+	using Impl =
+		std::variant<std::span<const IdType>::iterator, std::span<const IdType>::reverse_iterator, SequentialIterator, BtreeIterator>;
+#else	// !REINDEX_DEBUG_CONTAINERS
 	using Impl = std::variant<SequentialIterator, BtreeIterator>;
+#endif	// REINDEX_DEBUG_CONTAINERS
+
 	Impl impl_;
 };
 
@@ -100,10 +114,19 @@ private:
 	Iterator end_;
 };
 
-using SequentialContainer = h_vector<IdType>;
-using BtreeContainer = btree::btree_set<IdType>;
+#if REINDEX_DEBUG_CONTAINERS
+// We could use span-iterator instead of vector-iterator, but vector iterator provides debug checks for data invalidation after vector
+// modification
+using SequentialContainer = std::vector<IdType>;
 using SequentialIterator = SequentialContainer::const_iterator;
 using SequentialReverseIterator = SequentialContainer::const_reverse_iterator;
+#else	// !REINDEX_DEBUG_CONTAINERS
+using SequentialContainer = std::span<const IdType>;
+using SequentialIterator = SequentialContainer::iterator;
+using SequentialReverseIterator = SequentialContainer::reverse_iterator;
+#endif	//  REINDEX_DEBUG_CONTAINERS
+
+using BtreeContainer = btree::btree_set<IdType>;
 using BtreeIterator = BtreeContainer::const_iterator;
 using BtreeReverseIterator = BtreeContainer::const_reverse_iterator;
 
@@ -115,20 +138,18 @@ using ReverseIteratorRange = IteratorRange<ReverseIterator>;
 
 template <IdSetLike IdSet>
 ForwardIteratorRange range(const IdSet& idSet) noexcept {
-	if (idSet.IsCommitted()) {
-		return ForwardIteratorRange{ForwardIterator{idSet.begin()}, ForwardIterator{idSet.end()}};
-	}
-	assertrx_dbg(idSet.BTree());
-	return ForwardIteratorRange{ForwardIterator{idSet.BTree()->begin()}, ForwardIterator{idSet.BTree()->end()}};
+	auto set = idSet.BTree();
+	assertrx_dbg(idSet.IsCommitted() == !set);
+	return set ? ForwardIteratorRange{ForwardIterator{set->begin()}, ForwardIterator{set->end()}}
+			   : ForwardIteratorRange{ForwardIterator{idSet.begin()}, ForwardIterator{idSet.end()}};
 }
 
 template <IdSetLike IdSet>
 ReverseIteratorRange reverse_range(const IdSet& idSet) noexcept {
-	if (idSet.IsCommitted()) {
-		return ReverseIteratorRange{ReverseIterator{idSet.rbegin()}, ReverseIterator{idSet.rend()}};
-	}
-	assertrx_dbg(idSet.BTree());
-	return ReverseIteratorRange{ReverseIterator{idSet.BTree()->rbegin()}, ReverseIterator{idSet.BTree()->rend()}};
+	auto set = idSet.BTree();
+	assertrx_dbg(idSet.IsCommitted() == !set);
+	return set ? ReverseIteratorRange{ReverseIterator{set->rbegin()}, ReverseIterator{set->rend()}}
+			   : ReverseIteratorRange{ReverseIterator{idSet.rbegin()}, ReverseIterator{idSet.rend()}};
 }
 
 }  // namespace iterators
@@ -139,9 +160,9 @@ namespace std {
 template <typename SequentialIterator, typename BtreeIterator>
 struct iterator_traits<reindexer::idset::iterators::Iterator<SequentialIterator, BtreeIterator>> {
 	using iterator_category = bidirectional_iterator_tag;
-	using value_type = IdType;
+	using value_type = reindexer::IdType;
 	using difference_type = ptrdiff_t;
-	using pointer = const IdType*;
-	using reference = const IdType&;
+	using pointer = const reindexer::IdType*;
+	using reference = const reindexer::IdType&;
 };
 }  // namespace std

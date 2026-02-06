@@ -40,34 +40,22 @@ private:
 	class [[nodiscard]] TyposHandler {
 	public:
 		TyposHandler(const FtFastConfig& cfg) noexcept
-			: maxTyposInWord_(cfg.MaxTyposInWord()),
-			  dontUseMaxTyposForBoth_(maxTyposInWord_ != cfg.maxTypos / 2),
-			  maxMissingLetts_(cfg.MaxMissingLetters()),
-			  maxExtraLetts_(cfg.MaxExtraLetters()),
-			  logLevel_(cfg.logLevel) {
-			{
-				const auto maxTypoDist = cfg.MaxTypoDistance();
-				maxTypoDist_ = maxTypoDist.first;
-				useMaxTypoDist_ = maxTypoDist.second;
-			}
-			{
-				const auto maxLettPermDist = cfg.MaxSymbolPermutationDistance();
-				maxLettPermDist_ = maxLettPermDist.first;
-				useMaxLettPermDist_ = maxLettPermDist.second;
-			}
+			: maxMissingLetts_(cfg.MaxMissingLetters()), maxExtraLetts_(cfg.MaxExtraLetters()), logLevel_(cfg.logLevel) {
+			const auto maxTypoDist = cfg.MaxTypoDistance();
+			maxTypoDist_ = maxTypoDist.first;
+			useMaxTypoDist_ = maxTypoDist.second;
+			const auto maxLettPermDist = cfg.MaxSymbolPermutationDistance();
+			maxLettPermDist_ = maxLettPermDist.first;
+			useMaxLettPermDist_ = maxLettPermDist.second;
 		}
-		size_t Process(const std::wstring& pattern, const std::vector<std::wstring>& variantsForTypos, const DataHolder<IdCont>& holder,
+		size_t Process(const std::wstring& pattern, const h_vector<std::wstring, 8>& variantsForTypos, const DataHolder<IdCont>& holder,
 					   ft::TermResults<IdCont>& res, ft::FoundWordsProcsType& wordsProcs);
 
 	private:
-		template <typename... Args>
-		void logTraceF(int level, fmt::format_string<Args...> fmt, Args&&... args);
-		bool isWordFitMaxTyposDist(const WordTypo& found, const typos_context::TyposVec& current);
-		bool isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found, const std::wstring_view currentWord,
-								  const typos_context::TyposVec& current);
+		bool checkMaxTyposDist(const WordTypo& found, const TyposVec& current);
+		bool checkMaxLettPermDist(std::string_view foundWord, const WordTypo& found, std::wstring_view currentWord,
+								  const TyposVec& current);
 
-		const int maxTyposInWord_;
-		const bool dontUseMaxTyposForBoth_;
 		bool useMaxTypoDist_;
 		bool useMaxLettPermDist_;
 		unsigned maxTypoDist_;
@@ -81,14 +69,14 @@ private:
 	template <FtUseExternStatuses>
 	void processLowRelVariants(size_t& totalORVids, h_vector<FtBoundVariantEntry, 4>& lowRelVariants,
 							   const FtMergeStatuses::Statuses& mergeStatuses, std::vector<ft::TermResults<IdCont>>& rawResults,
-							   std::deque<std::unique_ptr<ft::FoundWordsProcsType>>& termsWordsProcs);
+							   h_vector<std::optional<ft::FoundWordsProcsType>, 4>& termsWordsProcs);
 
 	void applyStemmers(const std::string& pattern, int proc, const FtDslOpts& termOpts, bool keepSuffForStemmedVars,
 					   std::vector<FtVariantEntry>& variants, h_vector<FtBoundVariantEntry, 4>* lowRelVariants, std::string& buffer);
 
 	void prepareVariants(const FtDSLEntry& term, int baseRelevancy, unsigned termIdx, std::vector<FtVariantEntry>& variants,
 						 h_vector<FtBoundVariantEntry, 4>* lowRelVariants, std::vector<MultiWord>* synonyms,
-						 std::vector<std::wstring>* variantsForTypos);
+						 h_vector<std::wstring, 8>* variantsForTypos);
 	void prepareSynonymVariants(const std::wstring& pattern, const FtDslOpts& opts, std::vector<FtVariantEntry>& variants,
 								std::string& patternBuf, std::string& stemmerBuf);
 

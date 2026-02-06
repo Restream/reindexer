@@ -24,7 +24,7 @@ struct [[nodiscard]] SelectCtxWithJoinPreSelect<void> : public SelectCtx {
 SelectCtxWithJoinPreSelect(const Query&, const Query*, FloatVectorsHolderMap*) -> SelectCtxWithJoinPreSelect<void>;
 
 class ItemComparator;
-class ExplainCalc;
+class SingleQueryExplainCalc;
 class QueryPreprocessor;
 
 class [[nodiscard]] NsSelecter {
@@ -42,7 +42,7 @@ private:
 	template <typename JoinPreResultCtx>
 	struct [[nodiscard]] LoopCtx {
 		LoopCtx(SelectIteratorContainer& sIt, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& ctx, const QueryPreprocessor& qpp,
-				h_vector<Aggregator, 4>& agg, ExplainCalc& expl)
+				h_vector<Aggregator, 4>& agg, SingleQueryExplainCalc& expl)
 			: qres(sIt), sctx(ctx), qPreproc(qpp), aggregators(agg), explain(expl) {}
 
 		SelectIteratorContainer& qres;
@@ -50,7 +50,7 @@ private:
 		SelectCtxWithJoinPreSelect<JoinPreResultCtx>& sctx;
 		const QueryPreprocessor& qPreproc;
 		h_vector<Aggregator, 4>& aggregators;
-		ExplainCalc& explain;
+		SingleQueryExplainCalc& explain;
 		unsigned start = QueryEntry::kDefaultOffset;
 		unsigned count = QueryEntry::kDefaultLimit;
 		bool preselectForFt = false;
@@ -100,6 +100,8 @@ private:
 	[[noreturn]] RX_NO_INLINE void throwUnexpectedItemID(IdType rowId, IdType properRowId);
 	template <typename JoinPreResultCtx>
 	void holdFloatVectors(LocalQueryResults&, SelectCtxWithJoinPreSelect<JoinPreResultCtx>&, size_t offset, const FieldsFilter&) const;
+	template <typename JoinPreResultCtx>
+	static size_t GetMaxScanIterations(const NamespaceImpl& ns, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& ctx);
 	NamespaceImpl* ns_;
 	FtFunction::Ptr ftFunc_;
 	RanksHolder::Ptr ranks_;

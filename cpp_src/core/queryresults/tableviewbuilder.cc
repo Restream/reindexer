@@ -11,7 +11,7 @@
 #include "vendor/utf8cpp/utf8.h"
 #include "vendor/wcwidth/wcwidth.h"
 
-namespace reindexer {
+namespace reindexer::table_view {
 
 const std::string kSeparator = " | ";
 const int kSuppositiveScreenWidth = 100;
@@ -29,7 +29,8 @@ bool ColumnData::PossibleToBreakTheLine() const noexcept {
 		   (gason::JsonTag(type) == gason::JsonTag::ARRAY);
 }
 
-TableCalculator::TableCalculator(std::vector<std::string>&& jsonData, int outputWidth) : outputWidth_(outputWidth) {
+TableCalculator::TableCalculator(std::vector<std::string>&& jsonData, int outputWidth, int columnsOpts)
+	: outputWidth_(outputWidth), opts_(columnsOpts) {
 	calculate(std::move(jsonData));
 }
 
@@ -74,7 +75,9 @@ void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
 	for (auto it = header_.begin(); it != header_.end();) {
 		std::string columnName = *it;
 		ColumnData& columnData = columnsData_[columnName];
-		if ((columnData.entries <= int(rows_.size() / 3)) || (columnData.emptyValues == int(rows_.size()))) {
+		const bool removeEmptyColumn = (columnData.emptyValues == int(rows_.size())) && (opts_ & ColumnsOpts::kRemoveRareColumns);
+		const bool removeRareColumn = (columnData.entries <= int(rows_.size() / 3)) && (opts_ & ColumnsOpts::kRemoveEmptyColumns);
+		if (removeEmptyColumn || removeRareColumn) {
 			it = header_.erase(it);
 			columnsData_.erase(columnName);
 		} else {
@@ -116,12 +119,13 @@ void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
 	}
 }
 
-void TableViewBuilder::Build(std::ostream& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled) {
+void TableViewBuilder::Build(std::ostream& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled,
+							 int columnsOpts) {
 	if (isCanceled()) {
 		return;
 	}
 	TerminalSize terminalSize = reindexer::getTerminalSize();
-	TableCalculator tableCalculator(std::move(jsonData), terminalSize.width);
+	TableCalculator tableCalculator(std::move(jsonData), terminalSize.width, columnsOpts);
 	BuildHeader(o, tableCalculator, isCanceled);
 	BuildTable(o, tableCalculator, isCanceled);
 }
@@ -294,4 +298,4 @@ void TableViewBuilder::ensureFieldWidthIsOk(std::string& str, int maxWidth) {
 	}
 }
 
-}  // namespace reindexer
+}  // namespace reindexer::table_view

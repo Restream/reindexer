@@ -470,7 +470,7 @@ int CoroQueryResults::Iterator::GetNSID() {
 	return itemParams_.nsid;
 }
 
-int CoroQueryResults::Iterator::GetID() {
+IdType CoroQueryResults::Iterator::GetID() {
 	readNext();
 	return itemParams_.id;
 }

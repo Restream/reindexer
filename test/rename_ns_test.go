@@ -1,8 +1,6 @@
 package reindexer
 
 import (
-	//	"fmt"
-
 	"strconv"
 	"testing"
 

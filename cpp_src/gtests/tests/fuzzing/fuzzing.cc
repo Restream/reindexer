@@ -71,7 +71,7 @@ TEST_F(Fuzzing, BaseTest) {
 				switch (rnd.RndWhich<Op, 10, 100, 1, 1>()) {
 					case Insert:
 						err = rx_.Insert(rnd.NsName(ns.GetName()), item);
-						if (err.ok() && item.GetID() != -1) {
+						if (err.ok() && item.GetID().IsValid()) {
 							saveItem(std::move(item), ns.GetName());
 						}
 						break;
@@ -83,7 +83,7 @@ TEST_F(Fuzzing, BaseTest) {
 						break;
 					case Update:
 						err = rx_.Update(rnd.NsName(ns.GetName()), item);
-						if (err.ok() && item.GetID() != -1) {
+						if (err.ok() && item.GetID().IsValid()) {
 							saveItem(std::move(item), ns.GetName());
 						}
 						break;

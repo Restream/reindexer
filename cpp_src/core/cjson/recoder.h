@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/id_type.h"
 #include "core/payload/payloadiface.h"
 #include "tagspath.h"
 

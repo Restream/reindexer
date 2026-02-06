@@ -3,7 +3,7 @@
 #include <variant>
 #include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/querystat.h"
+#include "core/nsselecter/explaincalc.h"
 
 namespace reindexer {
 
@@ -274,9 +274,9 @@ public:
 		const RdxContext& context_;
 	};
 
-	template <typename LockerType, typename QueryType>
+	template <typename LockerType>
 	static void DoSelect(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, LockerType& locks,
-						 FtFunctionsHolder& func, const RdxContext& ctx, QueryStatCalculator<QueryType>& queryStatCalculator);
+						 FtFunctionsHolder& func, const RdxContext& ctx);
 
 	static void DoPreSelectForUpdateDelete(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, NsLockerW& locks,
 										   FloatVectorsHolderMap* fvHolder, const RdxContext& ctx);
@@ -301,7 +301,7 @@ private:
 
 	template <typename LockerType>
 	static void preselectSubQuriesMain(const Query& q, std::optional<Query>& queryCopy, LockerType& locks, FtFunctionsHolder& func,
-									   std::vector<SubQueryExplain>& subQueryExplains, ExplainCalc::Duration& preselectTimeTotal,
+									   std::vector<SubQueryExplain>& subQueryExplains, Explain::Duration& preselectTimeTotal,
 									   std::vector<LocalQueryResults>& queryResultsHolder, LogLevel logLevel, const RdxContext& ctx);
 };
 

@@ -48,7 +48,7 @@ private:
 	void terminate();
 	void handleRoleSwitch();
 	template <typename ContainerT>
-	void switchNamespaces(const RaftInfo& state, const ContainerT& namespaces);
+	void switchNamespaces(const RaftInfo& state, const ContainerT& namespaces) noexcept;
 	void handleInitialSync(RaftInfo::Role newRole);
 	void initialLeadersSync();
 	Error awaitRoleSwitchForNamespace(client::CoroReindexer& client, const NamespaceName& nsName, ReplicationStateV2& st);
