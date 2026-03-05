@@ -309,13 +309,174 @@ public:
 using unordered_payload_ref_set =
 	tsl::hopscotch_set<PayloadValue, hash_composite_ref, equal_composite_ref, std::allocator<PayloadValue>, 30, true>;
 
+class [[nodiscard]] payload_str_fields_helper {
+	constexpr static int kTupleField = 0;
+
+protected:
+	payload_str_fields_helper(PayloadType&& payloadType, const FieldsSet& fields)
+		: payload_type_(std::move(payloadType)), with_tuple_(fields.getTagsPathsLength() || fields.getJsonPathsLength()) {}
+	payload_str_fields_helper(const payload_str_fields_helper&) = default;
+	payload_str_fields_helper(payload_str_fields_helper&&) = default;
+
+	void add_ref(PayloadValue& pv) const noexcept {
+		if (with_tuple_) {
+			Payload(payload_type_, pv).AddRefStrings(kTupleField);
+		}
+	}
+
+	void release(PayloadValue& pv) const noexcept {
+		if (with_tuple_) {
+			Payload(payload_type_, pv).ReleaseStrings(kTupleField);
+		}
+	}
+
+	void move_strings_to_holder(PayloadValue& pv, StringsHolder& strHolder) const {
+		if (with_tuple_) {
+			Payload(payload_type_, pv).MoveStrings(kTupleField, strHolder);
+		}
+	}
+
+	bool have_str_fields() const noexcept { return with_tuple_; }
+
+private:
+	PayloadType payload_type_;
+	bool with_tuple_ = false;
+};
+
+// Unordered payload map implementation for fulltext indexes.
+// Composite fulltext indexes may be built over non-indexed fields and have to hold `-tuple` string to avoid memory invalidation.
+// This implementation increments `-tuple` ref counter on insertion and decrements it on deletion
+template <typename T1>
+class unordered_payload_map_ft
+	: private tsl::sparse_map<PayloadValueWithHash, T1, hash_composite, equal_composite,
+							  std::allocator<std::pair<PayloadValueWithHash, T1>>, tsl::sh::power_of_two_growth_policy<2>,
+							  tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
+	  private payload_str_fields_helper {
+	using base_hash_map =
+		tsl::sparse_map<PayloadValueWithHash, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValueWithHash, T1>>,
+						tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
+
+public:
+	using typename base_hash_map::value_type;
+	using typename base_hash_map::key_type;
+	using typename base_hash_map::mapped_type;
+	using typename base_hash_map::const_iterator;
+
+	using base_hash_map::size;
+	using base_hash_map::empty;
+	using payload_str_fields_helper::have_str_fields;
+
+	class iterator : public base_hash_map::iterator {
+	public:
+		iterator() noexcept : owner_(nullptr) {}
+		explicit iterator(base_hash_map::iterator&& it, unordered_payload_map_ft& owner) noexcept
+			: base_hash_map::iterator(std::move(it)), owner_(&owner) {}
+
+		void refresh_key(PayloadValueWithHash&& newKey) noexcept {
+#ifdef RX_WITH_STDLIB_DEBUG
+			assertrx_dbg(owner_);
+			assertrx_dbg((*this)->first.GetHash() == newKey.GetHash());
+			const hash_composite hashF(owner_->payload_type_, owner_->fields_);
+			assertrx_dbg(hashF((*this)->first) == hashF(newKey));
+			const equal_composite equalF(owner_->payload_type_, owner_->fields_);
+			assertrx_dbg(equalF((*this)->first, newKey));
+#endif	// RX_WITH_STDLIB_DEBUG
+
+			owner_->add_ref(newKey);
+			// Intentionally do not use string holder here. We can safely remove `-tuple` if nobody does not have reference to it
+			owner_->release((*this)->first);
+
+			(*this)->first = std::move(newKey);
+		}
+
+	private:
+		unordered_payload_map_ft* owner_;
+	};
+
+	static_assert(std::is_nothrow_move_constructible<std::pair<PayloadValueWithHash, T1>>::value,
+				  "Nothrow movebale key and value required");
+	unordered_payload_map_ft(size_t size, PayloadType&& pt, FieldsSet&& f)
+		: base_hash_map(size, hash_composite(PayloadType{pt}, FieldsSet{f}), equal_composite(PayloadType{pt}, FieldsSet{f})),
+		  payload_str_fields_helper(PayloadType{pt}, f),
+		  payload_type_(std::move(pt)),
+		  fields_(std::move(f)) {
+		if (fields_.empty() || !payload_type_.NumFields()) [[unlikely]] {
+			throw Error(errLogic, "Unable to create payload fulltext map with empty fields set");
+		}
+	}
+
+	unordered_payload_map_ft(PayloadType&& pt, FieldsSet&& f) : unordered_payload_map_ft(1000, std::move(pt), std::move(f)) {}
+
+	unordered_payload_map_ft(const unordered_payload_map_ft& other)
+		: base_hash_map(other), payload_str_fields_helper(other), payload_type_(other.payload_type_), fields_(other.fields_) {
+		for (auto& item : *this) {
+			this->add_ref(item.first);
+		}
+	}
+	unordered_payload_map_ft(unordered_payload_map_ft&&) noexcept = default;
+	unordered_payload_map_ft& operator=(unordered_payload_map_ft&& other) = delete;
+	unordered_payload_map_ft& operator=(const unordered_payload_map_ft&) = delete;
+
+	~unordered_payload_map_ft() {
+		for (auto& item : *this) {
+			this->release(item.first);
+		}
+	}
+
+	std::pair<iterator, bool> insert(std::pair<PayloadValue, T1>&& v) {
+		PayloadValueWithHash key(std::move(v.first), payload_type_, fields_);
+		auto res = base_hash_map::emplace(std::move(key), std::move(v.second));
+		if (res.second) {
+			this->add_ref(res.first->first);
+		}
+		return std::make_pair(iterator(std::move(res.first), *this), res.second);
+	}
+
+	template <typename deep_cleaner>
+	iterator erase(iterator pos, StringsHolder& strHolder) {
+		static const deep_cleaner deep_clean;
+		if (pos != end()) {
+			this->move_strings_to_holder(pos->first, strHolder);
+		}
+		deep_clean(*pos);
+		return iterator(base_hash_map::erase(static_cast<base_hash_map::iterator>(pos)), *this);
+	}
+
+	template <typename KeyT>
+	iterator find(KeyT&& key) {
+		return iterator(base_hash_map::find(std::forward<KeyT>(key)), *this);
+	}
+	iterator begin() noexcept { return iterator(base_hash_map::begin(), *this); }
+	iterator end() noexcept { return iterator(base_hash_map::end(), *this); }
+	auto begin() const noexcept { return base_hash_map::begin(); }
+	auto end() const noexcept { return base_hash_map::end(); }
+
+	T1& operator[](const PayloadValue& k) {
+		PayloadValueWithHash key(PayloadValue{k}, payload_type_, fields_);
+		return base_hash_map::operator[](std::move(key));
+	}
+	T1& operator[](PayloadValue&& k) {
+		PayloadValueWithHash key(std::move(k), payload_type_, fields_);
+		return base_hash_map::operator[](std::move(key));
+	}
+
+private:
+	PayloadType payload_type_;
+	FieldsSet fields_;
+};
+
 template <typename>
 constexpr bool is_payload_map_v = false;
-
 template <typename T>
 constexpr bool is_payload_map_v<payload_map<T>> = true;
-
 template <typename T>
 constexpr bool is_payload_map_v<unordered_payload_map<T>> = true;
+template <typename T>
+constexpr bool is_payload_map_v<unordered_payload_map_ft<T>> = true;
+
+template <typename>
+constexpr bool is_ft_payload_map_v = false;
+template <typename T>
+constexpr bool is_ft_payload_map_v<unordered_payload_map_ft<T>> = true;
 
 }  // namespace reindexer

@@ -360,11 +360,16 @@ public:
 	}
 	~RollBack_recreateCompositeIndexes() override {
 		RollBack();
-#ifdef RX_WITH_STDLIB_DEBUG
 		for (auto& idx : indexes_) {
-			assertrx_dbg(!idx->HoldsStrings());
+			try {
+				if (idx->HoldsStrings()) {
+					ns_.strHolder_->Add(std::move(idx));
+				}
+				// NOLINTBEGIN(bugprone-empty-catch)
+			} catch (...) {
+			}
+			// NOLINTEND(bugprone-empty-catch)
 		}
-#endif	// RX_WITH_STDLIB_DEBUG
 	}
 	void RollBack() noexcept {
 		if (IsDisabled()) {

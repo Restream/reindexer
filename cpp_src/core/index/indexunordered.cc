@@ -1,7 +1,6 @@
 #include "indexunordered.h"
 #include "core/dbconfig.h"
 #include "core/index/indextext/ftkeyentry.h"
-#include "core/index/payload_map.h"
 #include "core/index/string_map.h"
 #include "core/indexdef.h"
 #include "core/rdxcontext.h"
@@ -82,8 +81,8 @@ IndexUnordered<unordered_str_map<FtKeyEntry>>::IndexUnordered(const IndexDef& id
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<unordered_payload_map<FtKeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-																  const NamespaceCacheConfigData& cacheCfg)
+IndexUnordered<unordered_payload_map_ft<FtKeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+																	 const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
 	  idx_map(PayloadType{Base::GetPayloadType()}, FieldsSet{Base::Fields()}),
 	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
@@ -219,6 +218,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 	if (keyIt == this->idx_map.end()) {
 		keyIt = this->idx_map.insert({static_cast<key_type>(key), typename T::mapped_type()}).first;
 	} else {
+		refreshCompositeKeyImpl(key, keyIt);
 		delMemStat(keyIt);
 		if (this->opts_.IsPK()) {
 			WrSerializer wrser;
@@ -278,9 +278,12 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExis
 		if constexpr (is_str_map_v<T>) {
 			idx_map.template erase<StringMapEntryCleaner<true>>(
 				keyIt, {strHolder, this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() == CollateNone});
+		} else if constexpr (is_ft_payload_map_v<T>) {
+			idx_map.template erase<DeepClean>(keyIt, strHolder);
 		} else {
 			idx_map.template erase<DeepClean>(keyIt);
 		}
+
 	} else {
 		addMemStat(keyIt);
 		this->tracker_.markUpdated(this->idx_map, keyIt);
@@ -299,27 +302,10 @@ bool IndexUnordered<T>::RefreshCompositeKey(const Variant& key) noexcept {
 			assertrx_dbg(false);
 			return false;
 		}
+
 		delMemStat(keyIt);
 
-#ifdef RX_WITH_STDLIB_DEBUG
-		const hash_composite hashF(this->GetPayloadType(), this->Fields());
-		assertrx_dbg(hashF(keyIt->first) == hashF(static_cast<const PayloadValue&>(key)));
-		const equal_composite equalF(this->GetPayloadType(), this->Fields());
-		assertrx_dbg(equalF(keyIt->first, static_cast<const PayloadValue&>(key)));
-		const less_composite lessF(PayloadType(this->GetPayloadType()), FieldsSet(this->Fields()));
-		assertrx_dbg(!lessF(keyIt->first, static_cast<const PayloadValue&>(key)));
-		assertrx_dbg(!lessF(static_cast<const PayloadValue&>(key), keyIt->first));
-#endif	// RX_WITH_STDLIB_DEBUG
-
-		auto& newKey = static_cast<const PayloadValue&>(key);
-		this->tracker_.refreshKey(keyIt->first, static_cast<const PayloadValue&>(key));
-		if constexpr (std::is_same_v<typename T::key_type, PayloadValueWithHash>) {
-			const_cast<PayloadValueWithHash&>(keyIt->first) =
-				PayloadValueWithHash(PayloadValue(newKey), this->payloadType_, this->Fields());
-
-		} else {
-			const_cast<PayloadValue&>(keyIt->first) = newKey;
-		}
+		refreshCompositeKeyImpl(key, keyIt);
 
 		addMemStat(keyIt);
 		cache_.ResetImpl();
@@ -603,6 +589,34 @@ IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext& ctx) {
 }
 
 template <typename T>
+void IndexUnordered<T>::refreshCompositeKeyImpl(const Variant& key, typename T::iterator& keyIt) noexcept {
+	if constexpr (is_payload_map_v<T>) {
+#ifdef RX_WITH_STDLIB_DEBUG
+		const hash_composite hashF(this->GetPayloadType(), this->Fields());
+		assertrx_dbg(hashF(keyIt->first) == hashF(static_cast<const PayloadValue&>(key)));
+		const equal_composite equalF(this->GetPayloadType(), this->Fields());
+		assertrx_dbg(equalF(keyIt->first, static_cast<const PayloadValue&>(key)));
+		const less_composite lessF(PayloadType(this->GetPayloadType()), FieldsSet(this->Fields()));
+		assertrx_dbg(!lessF(keyIt->first, static_cast<const PayloadValue&>(key)));
+		assertrx_dbg(!lessF(static_cast<const PayloadValue&>(key), keyIt->first));
+#endif	// RX_WITH_STDLIB_DEBUG
+
+		auto& newKey = static_cast<const PayloadValue&>(key);
+		this->tracker_.refreshKey(keyIt->first, static_cast<const PayloadValue&>(key));
+		if constexpr (std::is_same_v<typename T::key_type, PayloadValueWithHash>) {
+			const_cast<PayloadValueWithHash&>(keyIt->first) =
+				PayloadValueWithHash(PayloadValue(newKey), this->payloadType_, this->Fields());
+
+		} else {
+			const_cast<PayloadValue&>(keyIt->first) = newKey;
+		}
+	} else {
+		(void)key;
+		(void)keyIt;
+	}
+}
+
+template <typename T>
 template <typename S>
 void IndexUnordered<T>::dump(S& os, std::string_view step, std::string_view offset) const {
 	std::string newOffset{offset};
@@ -724,7 +738,7 @@ template class IndexUnordered<payload_map<Index::KeyEntry>>;
 
 template class IndexUnordered<unordered_str_map<FtKeyEntry>>;
 
-template class IndexUnordered<unordered_payload_map<FtKeyEntry>>;
+template class IndexUnordered<unordered_payload_map_ft<FtKeyEntry>>;
 
 template class IndexUnordered<unordered_uuid_map<Index::KeyEntryPK>>;
 template class IndexUnordered<unordered_uuid_map<Index::KeyEntryPlain>>;

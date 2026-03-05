@@ -61,6 +61,7 @@ Variant FastIndexText<T>::Upsert(const Variant& key, IdType id, bool& clearCache
 		this->tracker_.markUpdated(this->idx_map, keyIt, false);
 	} else {
 		this->delMemStat(keyIt);
+		Base::refreshCompositeKeyImpl(key, keyIt);
 	}
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSetEditMode::Ordered : IdSetEditMode::Auto, 0)) {
 		this->isBuilt_ = false;
@@ -108,7 +109,7 @@ void FastIndexText<T>::Delete(const Variant& key, IdType id, MustExist mustExist
 																	   {strHolder, this->KeyType().template Is<KeyValueType::String>()});
 		} else {
 			static_assert(is_payload_map_v<T>);
-			this->idx_map.template erase<no_deep_clean>(keyIt);
+			this->idx_map.template erase<no_deep_clean>(keyIt, strHolder);
 		}
 	} else {
 		this->addMemStat(keyIt);
@@ -200,6 +201,7 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 		case RankSortType::RankOnly:
 			for (auto& vid : mergeData) {
 				auto& vdoc = holder.vdocs_[vid.id.ToNumber()];
+				assertrx_dbg(!vdoc.IsRemoved());
 				assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
 				cnt += vdoc.keyEntry->Sorted(0).size();
 				++relevantDocs;
@@ -562,8 +564,8 @@ std::unique_ptr<Index> FastIndexText_New(const IndexDef& idef, PayloadType&& pay
 			return std::make_unique<FastIndexText<unordered_str_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
 																				  cacheCfg);
 		case IndexCompositeFastFT:
-			return std::make_unique<FastIndexText<unordered_payload_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
-																					  cacheCfg);
+			return std::make_unique<FastIndexText<unordered_payload_map_ft<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
+																						 cacheCfg);
 		case IndexStrHash:
 		case IndexStrBTree:
 		case IndexIntBTree:

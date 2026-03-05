@@ -77,6 +77,7 @@ protected:
 	UpdateTracker<Map> tracker_;
 
 	const std::vector<std::vector<IdType>>& getExternalSortedIds() const noexcept { return pkSortedIds_; }
+	virtual void refreshCompositeKeyImpl(const Variant& key, typename Map::iterator& keyIt) noexcept;
 
 private:
 	template <typename S>

@@ -35,6 +35,16 @@ IndexText<T>::IndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsS
 	this->selectKeyType_ = KeyValueType::String{};
 	initSearchers();
 }
+
+template <typename T>
+bool IndexText<T>::RefreshCompositeKey(const Variant& key) noexcept {
+	if (Base::RefreshCompositeKey(key)) {
+		cache_ft_.Clear();
+		return true;
+	}
+	return false;
+}
+
 // Generic implementation for string index
 template <typename T>
 void IndexText<T>::initSearchers() {
@@ -75,6 +85,15 @@ void IndexText<T>::SetOpts(const IndexOpts& opts) {
 			cfg_->parse(this->opts_.Config(), ftFields_);
 			throw;
 		}
+	}
+}
+
+template <typename T>
+bool IndexText<T>::HoldsStrings() const noexcept {
+	if constexpr (is_payload_map_v<T>) {
+		return this->idx_map.have_str_fields() || Base::HoldsStrings();
+	} else {
+		return Base::HoldsStrings();
 	}
 }
 
@@ -243,7 +262,19 @@ FieldsGetter IndexText<T>::Getter() {
 	return FieldsGetter(this->Fields(), this->payloadType_, this->KeyType());
 }
 
+template <typename T>
+void IndexText<T>::refreshCompositeKeyImpl(const Variant& key, typename T::iterator& keyIt) noexcept {
+	if constexpr (is_payload_map_v<T>) {
+		auto& newKey = static_cast<const PayloadValue&>(key);
+		this->tracker_.refreshKey(keyIt->first, newKey);
+		keyIt.refresh_key(PayloadValueWithHash(PayloadValue(newKey), this->payloadType_, this->Fields()));
+	} else {
+		(void)key;
+		(void)keyIt;
+	}
+}
+
 template class IndexText<unordered_str_map<FtKeyEntry>>;
-template class IndexText<unordered_payload_map<FtKeyEntry>>;
+template class IndexText<unordered_payload_map_ft<FtKeyEntry>>;
 
 }  // namespace reindexer

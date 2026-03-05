@@ -525,14 +525,7 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 	PayloadValue& plData = ns_.items_[id.ToNumber()];
 	const PayloadTypeImpl& pti(*ns_.payloadType_.get());
 	Payload pl(pti, plData);
-	VariantArray cjsonKref;
-	pl.Get(0, cjsonKref);
-	cjsonCache_.Reset();
-
-	const Variant& v = cjsonKref.front();
-	if (v.Type().Is<KeyValueType::String>()) {
-		cjsonCache_.Assign(std::string_view(p_string(v)));
-	}
+	const auto oldTuple = pl.Get(0, 0);
 
 	ItemImpl itemimpl(ns_.payloadType_, plData, ns_.tagsMatcher_);
 	itemimpl.Unsafe(true);
@@ -542,7 +535,7 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 	Item item = ns_.newItem();
 	Error err = item.Unsafe().FromCJSON(itemimpl.GetCJSON(true));
 	if (!err.ok()) {
-		pl.Set(0, cjsonKref);
+		pl.Set(0, oldTuple);
 		throw err;
 	}
 
@@ -583,47 +576,43 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 			}
 		}
 
-		if ((fieldIdx == 0) && (cjsonCache_.Size() > 0)) {
-			bool needClearCache{false};
-			index.Delete(Variant(cjsonCache_.Get()), id, MustExist_True, *strHolder, needClearCache);
-			if (needClearCache) {
-				indexesCacheCleaner.Add(index);
+		if (isIndexSparse) {
+			try {
+				pl.GetByJsonPath(index.Fields().getTagsPath(0), ns_.krefs, index.KeyType());
+			} catch (const Error&) {
+				ns_.krefs.resize(0);
 			}
+		} else if (index.Opts().IsArray()) {
+			pl.Get(fieldIdx, ns_.krefs, Variant::hold);
+		} else if (index.Opts().IsFloatVector()) {
+			const FloatVectorIndex& fvIdx = static_cast<FloatVectorIndex&>(index);
+			const ConstFloatVectorView fvView = fvIdx.GetFloatVectorView(id);
+			ns_.krefs.clear<false>();
+			ns_.krefs.emplace_back(fvView);
 		} else {
-			if (isIndexSparse) {
-				try {
-					pl.GetByJsonPath(index.Fields().getTagsPath(0), ns_.krefs, index.KeyType());
-				} catch (const Error&) {
-					ns_.krefs.resize(0);
-				}
-			} else if (index.Opts().IsArray()) {
-				pl.Get(fieldIdx, ns_.krefs, Variant::hold);
-			} else if (index.Opts().IsFloatVector()) {
-				const FloatVectorIndex& fvIdx = static_cast<FloatVectorIndex&>(index);
-				const ConstFloatVectorView fvView = fvIdx.GetFloatVectorView(id);
-				ns_.krefs.clear<false>();
-				ns_.krefs.emplace_back(fvView);
-			} else {
-				pl.Get(fieldIdx, ns_.krefs);
-			}
-			if (ns_.krefs == ns_.skrefs) {
-				// Do not modify indexes, if documents content was not changed
-				continue;
-			}
+			pl.Get(fieldIdx, ns_.krefs);
+		}
+		if (ns_.krefs == ns_.skrefs) {
+			// Do not modify indexes, if documents content was not changed
+			continue;
+		}
 
-			bool needClearCache{false};
+		bool needClearCache{false};
+		if (fieldIdx) {
 			rollBackIndexData_.IndexChanged(fieldIdx, index.Opts().IsPK());
-			index.Delete(ns_.krefs, id, MustExist_True, *strHolder, needClearCache);
-			if (needClearCache) {
-				indexesCacheCleaner.Add(index);
-			}
+		}
+		index.Delete(ns_.krefs, id, MustExist_True, *strHolder, needClearCache);
+		if (needClearCache) {
+			indexesCacheCleaner.Add(index);
 		}
 
 		ns_.krefs.resize(0);
-		bool needClearCache{false};
-		rollBackIndexData_.IndexChanged(fieldIdx, index.Opts().IsPK());
+		const bool isTuple = (fieldIdx == 0);
+		if (!isTuple) {
+			rollBackIndexData_.IndexChanged(fieldIdx, index.Opts().IsPK());
+		}
 		index.Upsert(ns_.krefs, ns_.skrefs, id, needClearCache);
-		if (needClearCache) {
+		if (!isTuple) {
 			indexesCacheCleaner.Add(index);
 		}
 
@@ -766,6 +755,10 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 	Index& index = *(ns_.indexes_[field.Index()]);
 	if (values.IsNullValue() && !index.Opts().IsArray()) [[unlikely]] {
 		throw Error(errParams, "Non-array index fields cannot be set to null!");
+	}
+	if (!index.Opts().IsSparse() && values.IsArrayValue() && std::ranges::any_of(values, [](const Variant& v) { return v.IsNullValue(); }))
+		[[unlikely]] {
+		throw Error(errParams, "Non-sparse indexes cannot contain null-values inside arrays");
 	}
 	auto strHolder = ns_.strHolder();
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};

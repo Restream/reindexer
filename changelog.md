@@ -1,3 +1,12 @@
+# Version 5.11.1 (05.03.2026)
+## Fulltext
+- [fix] Fixed possible heap-use-after in composite fulltext indexes, created over non-indexed fields
+- [fix] Fixed composite fulltext index cache invalidation after `UPDATE`-queries
+- [fix] Fixed deleted docs handling, when selection results exceeding `merge_limit` and there are multiple build steps in incremental index
+
+## Vector indexes
+- [fix] Fixed possible buffer overflow in transactions logic in case of multithreading insertion into `HNSW`
+
 # Version 5.11.0 (06.02.2026)
 ## Core
 - [fea] Optimized indexes memory layout for namespaces with large amount of items. Index `IdSet`-structures now produce noticeably less overhead

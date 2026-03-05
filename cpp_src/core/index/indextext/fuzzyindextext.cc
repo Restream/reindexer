@@ -79,8 +79,8 @@ std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType&& pa
 			return std::make_unique<FuzzyIndexText<unordered_str_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
 																				   cacheCfg);
 		case IndexCompositeFuzzyFT:
-			return std::make_unique<FuzzyIndexText<unordered_payload_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
-																					   cacheCfg);
+			return std::make_unique<FuzzyIndexText<unordered_payload_map_ft<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
+																						  cacheCfg);
 		case IndexStrHash:
 		case IndexStrBTree:
 		case IndexIntBTree:

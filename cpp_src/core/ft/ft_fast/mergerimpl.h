@@ -504,6 +504,9 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::collectRestrictingMask(std::ve
 
 	size_t minScoreDocsTaken = 0;
 	for (size_t i = 0; i < docsScores.size(); i++) {
+		if (vdocs[i].IsRemoved() || mergeStatuses_[i] == FtMergeStatuses::kExcluded) {
+			continue;
+		}
 		if (docsScores[i] > minScore) {
 			restrictingMask_.set(i);
 		} else if (docsScores[i] == minScore && minScoreDocsTaken < minScoreDocs) {

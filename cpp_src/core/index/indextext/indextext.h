@@ -21,6 +21,7 @@ class [[nodiscard]] IndexText : public IndexUnordered<Map> {
 public:
 	IndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg);
 
+	bool RefreshCompositeKey(const Variant& key) noexcept override;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, const Index::SelectContext&, const RdxContext&) override final;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, const Index::SelectContext&, FtPreselectT&&, const RdxContext&) override;
 
@@ -39,6 +40,7 @@ public:
 		commitFulltextImpl();
 		this->isBuilt_ = true;
 	}
+	bool HoldsStrings() const noexcept override;
 	void SetSortedIdxCount(int) override final {}
 	void DestroyCache() override {
 		Base::DestroyCache();
@@ -68,7 +70,7 @@ protected:
 
 	void initSearchers();
 	FieldsGetter Getter();
-
+	void refreshCompositeKeyImpl(const Variant& key, typename Map::iterator& keyIt) noexcept override;
 	FtIdSetCache cache_ft_;
 	size_t cacheMaxSize_;
 	uint32_t hitsToCache_;

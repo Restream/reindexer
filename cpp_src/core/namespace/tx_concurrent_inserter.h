@@ -124,7 +124,7 @@ public:
 	std::pair<size_t, const SingleIndexData::Vector*> operator[](size_t idx) const noexcept {
 		size_t offset = 0;
 		for (auto& d : indexesData_) {
-			if (offset + d.Buckets() >= idx) {
+			if (offset + d.Buckets() > idx) {
 				return std::make_pair(d.Field(), d[idx - offset]);
 			}
 			offset += d.Buckets();

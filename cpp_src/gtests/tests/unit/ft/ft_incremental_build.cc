@@ -25,6 +25,7 @@ public:
 	struct [[nodiscard]] WordsData {
 		MapT<std::string, MapT<std::string, unsigned>> docsByWords;
 		MapT<unsigned, SetT<std::string>> wordsBySteps;
+		SetT<unsigned> deletedIds;
 	};
 
 	enum class [[nodiscard]] StrictSuffixValidation { No, Yes };
@@ -107,7 +108,10 @@ public:
 		const WordsData& wordsData_;
 	};
 
-	WordsData FillWithSteps(const std::vector<StepInfo>& steps, const IWordGenerator& wordsGen, const std::string& separator = "") {
+	enum class [[nodiscard]] WithDeletions : bool { No, Yes };
+
+	WordsData FillWithSteps(const std::vector<StepInfo>& steps, const IWordGenerator& wordsGen, const std::string& separator = "",
+							WithDeletions withDeletions = WithDeletions::No) {
 		EXPECT_GT(steps.size(), 0);
 		WordsData d;
 
@@ -147,6 +151,17 @@ public:
 					if (!emplaced) {
 						it->second += 1;
 					}
+				}
+			}
+			if (withDeletions == WithDeletions::Yes) {
+				// Delete some data
+				const auto delCnt = std::max(st.wordsCnt / 5, 1u);
+				for (unsigned i = 0; i < delCnt; ++i) {
+					auto item = rt.NewItem(GetDefaultNamespace());
+					const auto delId = rand() % counter_;
+					d.deletedIds.emplace(delId);
+					item["id"] = delId;
+					rt.Delete(GetDefaultNamespace(), item);
 				}
 			}
 			std::ignore = FTIncrementalBuildApi::SimpleSelect("build step");
@@ -206,6 +221,41 @@ public:
 			}
 		}
 
+		return query;
+	}
+
+	std::string BuildGenericQuery(const SetT<std::string>& words, const std::vector<std::string_view>& termPrefixes) {
+		std::string query;
+		assertrx(!words.empty());
+		for (auto& termPrefix : termPrefixes) {
+			if (!query.empty()) {
+				query.append(" ");
+			}
+			query.append(termPrefix);
+			auto randWid = rand() % words.size();
+			unsigned wid = 0;
+			for (auto& wIt : words) {
+				if (wid++ == randWid) {
+					switch (rand() % 5) {
+						case 0:
+							// Prefix
+							EXPECT_GE(wIt.size(), 2) << wIt;
+							query.append(wIt.substr(0, wIt.size() - 1));
+							query.back() = '*';
+							break;
+						case 1:
+							// Prefix
+							EXPECT_GE(wIt.size(), 2) << wIt;
+							query.append(wIt.substr(0, wIt.size() - 1));
+							break;
+						default:
+							// Full word
+							query.append(wIt);
+							break;
+					}
+				}
+			}
+		}
 		return query;
 	}
 
@@ -400,6 +450,21 @@ public:
 		}
 	}
 
+	void CheckRandomizedBasics(const WordsData& wordsData, const std::vector<StepInfo>& steps) {
+		SCOPED_TRACE("Select some random queries without actual results checks");
+		for (int i = 0; i < 10; ++i) {
+			checkRandomizedBasicsImpl(wordsData, steps, {"", "+"});
+			checkRandomizedBasicsImpl(wordsData, steps, {"+", "+"});
+			checkRandomizedBasicsImpl(wordsData, steps, {"", "-"});
+			checkRandomizedBasicsImpl(wordsData, steps, {"", "+", "+"});
+			checkRandomizedBasicsImpl(wordsData, steps, {"", "-", "+"});
+			checkRandomizedBasicsImpl(wordsData, steps, {"", ""});
+			checkRandomizedBasicsImpl(wordsData, steps, {"+", ""});
+			checkRandomizedBasicsImpl(wordsData, steps, {"", "-", "-"});
+			checkRandomizedBasicsImpl(wordsData, steps, {""});
+		}
+	}
+
 	std::vector<std::string> CreateWordsPool(unsigned size) {
 		std::vector<std::string> pool;
 		SetT<std::string> poolSet;
@@ -413,8 +478,11 @@ public:
 		return pool;
 	}
 
-	std::vector<FTIncrementalBuildApi::StepInfo> InitIncrementalIndexIncreasingSteps() {
-		const auto ftCfg = CreateConfig();
+	std::vector<FTIncrementalBuildApi::StepInfo> InitIncrementalIndexIncreasingSteps(std::optional<int> mergeLimit = std::nullopt) {
+		auto ftCfg = CreateConfig();
+		if (mergeLimit.has_value()) {
+			ftCfg.mergeLimit = *mergeLimit;
+		}
 		FTIncrementalBuildApi::Init(ftCfg);
 
 		// Create steps config
@@ -428,8 +496,11 @@ public:
 		}
 		return steps;
 	}
-	std::vector<FTIncrementalBuildApi::StepInfo> InitIncrementalIndexDecreasingSteps() {
-		const auto ftCfg = CreateConfig();
+	std::vector<FTIncrementalBuildApi::StepInfo> InitIncrementalIndexDecreasingSteps(std::optional<int> mergeLimit = std::nullopt) {
+		auto ftCfg = CreateConfig();
+		if (mergeLimit.has_value()) {
+			ftCfg.mergeLimit = *mergeLimit;
+		}
 		FTIncrementalBuildApi::Init(ftCfg);
 
 		// Create steps config
@@ -448,6 +519,26 @@ public:
 
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_inc_build_default_namespace"; }
+
+private:
+	void checkRandomizedBasicsImpl(const WordsData& wordsData, const std::vector<StepInfo>& steps,
+								   const std::vector<std::string_view>& termPrefixes) {
+		for (unsigned i = 0; i < steps.size(); ++i) {
+			SCOPED_TRACE(fmt::format("Step {}", i));
+			auto wordsInStep = wordsData.wordsBySteps.find(i);
+			ASSERT_TRUE(wordsInStep != wordsData.wordsBySteps.end());
+			auto query = BuildGenericQuery(wordsInStep->second, termPrefixes);
+			SCOPED_TRACE(fmt::format("Query '{}'", query));
+			auto res = FTIncrementalBuildApi::SimpleSelect(query);
+			for (auto& it : res) {
+				auto item = it.GetItem(false);
+				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+				auto id = item["id"].As<int64_t>();
+				EXPECT_EQ(wordsData.deletedIds.count(id), 0) << "Deleted document id in results: " << id;
+			}
+			ASSERT_FALSE(::testing::Test::HasFailure());
+		}
+	}
 };
 
 TEST_F(FTIncrementalBuildApi, IncreasingStepsSize) {
@@ -546,4 +637,42 @@ TEST_F(FTIncrementalBuildApi, DecreasingStepsSizePhrasesRandomWords) {
 	const auto wordsData = FillWithSteps(steps, PhraseGenerator(pGen), separator);
 	DataDumpGuard g(wordsData);
 	CheckPhrasesSelection(wordsData, steps);
+}
+
+TEST_F(FTIncrementalBuildApi, IncreasingStepsSizeRandomQueriesLowMergeLimit) {
+	// Test with random words in each step, increasing step sizes and random queries without any validation
+	const int mergeLimit = 100;	 // Low merge limit to for 2-phase merging
+	const auto steps = InitIncrementalIndexIncreasingSteps(mergeLimit);
+	SCOPED_TRACE(fmt::format("Steps count: {}", steps.size()));
+	const auto wordsData = FillWithSteps(steps, PoolWordGenerator(CreateWordsPool(200)), "", WithDeletions::Yes);
+	DataDumpGuard g(wordsData);
+	CheckRandomizedBasics(wordsData, steps);
+}
+
+TEST_F(FTIncrementalBuildApi, IncreasingStepsSizeRandomQueriesDefMergeLimit) {
+	// Test with random words in each step, increasing step sizes and random queries without any validation
+	const auto steps = InitIncrementalIndexIncreasingSteps();
+	SCOPED_TRACE(fmt::format("Steps count: {}", steps.size()));
+	const auto wordsData = FillWithSteps(steps, PoolWordGenerator(CreateWordsPool(200)), "", WithDeletions::Yes);
+	DataDumpGuard g(wordsData);
+	CheckRandomizedBasics(wordsData, steps);
+}
+
+TEST_F(FTIncrementalBuildApi, DecreasingStepsSizeRandomQueriesLowMergeLimit) {
+	// Test with random words in each step, decreasing step sizes and random queries without any validation
+	const int mergeLimit = 100;	 // Low merge limit to for 2-phase merging
+	const auto steps = InitIncrementalIndexDecreasingSteps(mergeLimit);
+	SCOPED_TRACE(fmt::format("Steps count: {}", steps.size()));
+	const auto wordsData = FillWithSteps(steps, PoolWordGenerator(CreateWordsPool(200)), "", WithDeletions::Yes);
+	DataDumpGuard g(wordsData);
+	CheckRandomizedBasics(wordsData, steps);
+}
+
+TEST_F(FTIncrementalBuildApi, DecreasingStepsSizeRandomQueriesDefMergeLimit) {
+	// Test with random words in each step, decreasing step sizes and random queries without any validation
+	const auto steps = InitIncrementalIndexDecreasingSteps();
+	SCOPED_TRACE(fmt::format("Steps count: {}", steps.size()));
+	const auto wordsData = FillWithSteps(steps, PoolWordGenerator(CreateWordsPool(200)), "", WithDeletions::Yes);
+	DataDumpGuard g(wordsData);
+	CheckRandomizedBasics(wordsData, steps);
 }

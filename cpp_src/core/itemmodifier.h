@@ -63,24 +63,6 @@ private:
 		std::optional<TagIndex> arrayIndex_;
 		bool isIndex_{false};
 	};
-	struct [[nodiscard]] CJsonCache {
-		CJsonCache() = default;
-		void Assign(std::string_view str) {
-			if (data_.capacity() < DefaultCJsonSize) {
-				data_.reserve(DefaultCJsonSize);
-			}
-			data_.assign(str.begin(), str.end());
-			cjson_ = !str.empty() ? std::string_view(&data_[0], str.size()) : std::string_view();
-		}
-		p_string Get() const { return p_string(&cjson_); }
-		void Reset() { cjson_ = {nullptr, 0}; }
-		int Size() const { return cjson_.length(); }
-
-	private:
-		enum { DefaultCJsonSize = 4096 };
-		std::vector<char> data_;
-		std::string_view cjson_;
-	};
 
 	struct VectorIndex {
 		int vecField;
@@ -172,7 +154,6 @@ private:
 	NamespaceImpl& ns_;
 	const std::vector<UpdateEntry>& updateEntries_;
 	std::vector<FieldData> fieldsToModify_;
-	CJsonCache cjsonCache_;
 
 	class RollBack_ModifiedPayload;
 
