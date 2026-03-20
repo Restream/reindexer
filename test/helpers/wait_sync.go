@@ -13,18 +13,35 @@ import (
 
 const syncRetries = 90
 
-func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *reindexer.Reindexer) {
+const (
+	syncModeLegacy  = 0
+	syncModeDefault = 1
+)
+
+func WaitForSyncWithLeader(t *testing.T, leader *reindexer.Reindexer, follower *reindexer.Reindexer) {
+	waitForSyncWithLeaderImpl(t, leader, follower, syncModeDefault)
+}
+
+func WaitForSyncWithLeaderLegacy(t *testing.T, leader *reindexer.Reindexer, follower *reindexer.Reindexer) {
+	waitForSyncWithLeaderImpl(t, leader, follower, syncModeLegacy)
+}
+
+func waitForSyncWithLeaderImpl(t *testing.T, leader *reindexer.Reindexer, follower *reindexer.Reindexer, syncMode int) {
 	complete := true
 
 	var nameBad string
 	var masterBadLsn reindexer.LsnT
 	var slaveBadLsn reindexer.LsnT
 
+	if syncMode != syncModeDefault && syncMode != syncModeLegacy {
+		t.Fatalf("Unexpected sync mode value: %v", syncMode)
+	}
+
 	for i := 0; i < syncRetries; i++ {
 
 		complete = true
 
-		masterStats, err := master.GetNamespacesMemStat()
+		masterStats, err := leader.GetNamespacesMemStat()
 		require.NoError(t, err)
 
 		masterMemStatMap := make(map[string]reindexer.NamespaceMemStat)
@@ -32,7 +49,7 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 			masterMemStatMap[st.Name] = *st
 		}
 
-		slaveStats, err := slave.GetNamespacesMemStat()
+		slaveStats, err := follower.GetNamespacesMemStat()
 		require.NoError(t, err)
 
 		slaveMemStatMap := make(map[string]reindexer.NamespaceMemStat)
@@ -40,7 +57,7 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 			slaveMemStatMap[st.Name] = *st
 		}
 
-		configItemNs, found := master.Query("#config").Where("type", reindexer.EQ, "async_replication").Get()
+		configItemNs, found := leader.Query("#config").Where("type", reindexer.EQ, "async_replication").Get()
 		var namespaces []string
 		if found {
 			replication := configItemNs.(*reindexer.DBConfigItem)
@@ -62,7 +79,7 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 		}
 
 		for nsName := range checkNsMap { // loop sync namespaces list (all or defined)
-			masterNsData, ok := masterMemStatMap[nsName]
+			leaderNsData, ok := masterMemStatMap[nsName]
 
 			if ok {
 				handleError := func(nsName string, mLSN reindexer.LsnT, sLSN reindexer.LsnT) {
@@ -71,16 +88,16 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 					masterBadLsn = mLSN
 					slaveBadLsn = sLSN
 				}
-				if slaveNsData, ok := slaveMemStatMap[nsName]; ok {
-					if slaveNsData.Replication.LastLSN != masterNsData.Replication.LastLSN || slaveNsData.Replication.NSVersion != masterNsData.Replication.NSVersion { // slave != master
-						handleError(nsName, masterNsData.Replication.LastLSN, slaveNsData.Replication.LastLSN)
-						log.Printf("%s is not synchronized: %v:%v != %v:%v", nsName, slaveNsData.Replication.NSVersion, slaveNsData.Replication.LastLSN, masterNsData.Replication.NSVersion, masterNsData.Replication.LastLSN)
+				if followerNsData, ok := slaveMemStatMap[nsName]; ok {
+					if followerNsData.Replication.LastLSN != leaderNsData.Replication.LastLSN || followerNsData.Replication.NSVersion != leaderNsData.Replication.NSVersion { // slave != master
+						handleError(nsName, leaderNsData.Replication.LastLSN, followerNsData.Replication.LastLSN)
+						log.Printf("%s is not synchronized: %v:%v != %v:%v", nsName, followerNsData.Replication.NSVersion, followerNsData.Replication.LastLSN, leaderNsData.Replication.NSVersion, leaderNsData.Replication.LastLSN)
 						break
 					}
-					leaderTmST, leaderTmVer := masterNsData.TagsMatcher.StateToken, masterNsData.TagsMatcher.Version
-					followerTmST, followerTmVer := slaveNsData.TagsMatcher.StateToken, slaveNsData.TagsMatcher.Version
+					leaderTmST, leaderTmVer := leaderNsData.TagsMatcher.StateToken, leaderNsData.TagsMatcher.Version
+					followerTmST, followerTmVer := followerNsData.TagsMatcher.StateToken, followerNsData.TagsMatcher.Version
 					if leaderTmVer < 0 || followerTmVer < 0 || leaderTmST != followerTmST || leaderTmVer != followerTmVer { // followers tagsmatcher is not equal to leader's one
-						handleError(nsName, masterNsData.Replication.LastLSN, slaveNsData.Replication.LastLSN)
+						handleError(nsName, leaderNsData.Replication.LastLSN, followerNsData.Replication.LastLSN)
 						log.Printf("%s has different tagsmatchers: (%08X:%d) vs (%08X:%d)", nsName, leaderTmST, leaderTmVer, followerTmST, followerTmVer)
 						break
 					}
@@ -98,12 +115,20 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 		}
 		if complete {
 			for nsName := range checkNsMap {
-				slaveNsData, _ := slaveMemStatMap[nsName]
-				masterNsData, _ := masterMemStatMap[nsName]
-				if slaveNsData.Replication.DataHash != masterNsData.Replication.DataHash {
-					t.Fatalf("Can't sync slave ns with master: ns \"%s\". Slave LSN: %v:%v, master LSN: %v:%v, slave dataHash: %d , master dataHash %d",
-						nsName, slaveNsData.Replication.NSVersion, slaveNsData.Replication.LastLSN, masterNsData.Replication.NSVersion, masterNsData.Replication.LastLSN, slaveNsData.Replication.DataHash,
-						masterNsData.Replication.DataHash)
+				followerNsData, _ := slaveMemStatMap[nsName]
+				leaderNsData, _ := masterMemStatMap[nsName]
+				if syncMode != syncModeLegacy {
+					if followerNsData.Replication.Checksum != leaderNsData.Replication.Checksum {
+						t.Fatalf("Can't sync follower ns with leader (checksum missmatch): ns \"%s\". Follower LSN: %v:%v, leader LSN: %v:%v, follower checksum: %d , leader checksum %d",
+							nsName, followerNsData.Replication.NSVersion, followerNsData.Replication.LastLSN, leaderNsData.Replication.NSVersion, leaderNsData.Replication.LastLSN, followerNsData.Replication.Checksum,
+							leaderNsData.Replication.Checksum)
+					}
+				}
+				// Deprecated. TODO: Remove this and syncMode somewhere around v5.18.0. Issue #2417
+				if followerNsData.Replication.DataHash != leaderNsData.Replication.DataHash {
+					t.Fatalf("Can't sync follower ns with leader (datahash v1 missmatch): ns \"%s\". Follower LSN: %v:%v, leader LSN: %v:%v, follower dataHash: %d , leader dataHash %d",
+						nsName, followerNsData.Replication.NSVersion, followerNsData.Replication.LastLSN, leaderNsData.Replication.NSVersion, leaderNsData.Replication.LastLSN, followerNsData.Replication.DataHash,
+						leaderNsData.Replication.DataHash)
 				}
 			}
 			return

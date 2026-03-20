@@ -32,6 +32,8 @@ struct ShardingControlRequestData;
 struct ShardingControlResponseData;
 }  // namespace sharding
 
+// NOLINTBEGIN(performance-unnecessary-value-param) // TODO: Temprorary comment to avoid false-positive on warning on moved params
+
 /// The main Reindexer interface. Holds database object<br>
 /// *Thread safety*: All methods of Reindexer are thread safe. <br>
 /// *Resources lifetime*: All resources acquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
@@ -408,5 +410,7 @@ private:
 	bool owner_;
 	InternalRdxContext ctx_;
 };
+
+// NOLINTEND(performance-unnecessary-value-param) // Temprorary comment to avoid false-positive on warning on moved params
 
 }  // namespace reindexer

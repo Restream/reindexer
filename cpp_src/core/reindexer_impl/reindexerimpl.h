@@ -45,10 +45,14 @@ class ClusterThreadParam;
 struct RaftInfo;
 }  // namespace cluster
 
+namespace functions {
+class PrecomputedValues;
+}
+
 class [[nodiscard]] ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<timed_mutex, MutexMark::ReindexerStats>;
-	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg arg, Args&&... args);
 	template <auto MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg&&, Args&&...);
@@ -90,7 +94,7 @@ public:
 	Error CloseNamespace(std::string_view nsName, const RdxContext& ctx);
 	Error DropNamespace(std::string_view nsName, const RdxContext& ctx);
 	Error CreateTemporaryNamespace(std::string_view baseName, std::string& resultName, const StorageOpts& opts, lsn_t nsVersion,
-								   const RdxContext& ctx);
+								   const RdxContext& ctx) noexcept;
 	Error TruncateNamespace(std::string_view nsName, const RdxContext& ctx);
 	Error RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const RdxContext& ctx);
 	Error AddIndex(std::string_view nsName, const IndexDef& index, const RdxContext& ctx);
@@ -277,7 +281,8 @@ private:
 		ReindexerImpl& owner_;
 	};
 
-	Error addNamespace(const NamespaceDef& nsDef, std::optional<NsReplicationOpts> replOpts, const RdxContext& ctx) noexcept;
+	Error addNamespace(const NamespaceDef& nsDef, std::optional<NsReplicationOpts> replOpts, bool* wasCreatedOut,
+					   const RdxContext& ctx) noexcept;
 	void getLeaderDsn(DSN& dsn, unsigned short serverId, const cluster::RaftInfo& info);
 	Error insertDontUpdateSystemNS(std::string_view nsName, Item& item, const RdxContext& ctx);
 	FilterNsNamesT detectFilterNsNames(const Query& q);
@@ -347,14 +352,14 @@ private:
 
 	template <concepts::OneOf<Query, JoinedQuery> Q>
 	void embedNestedQueries(const Query& q, const std::vector<Q>& nestedQueries, std::invocable<Query&, size_t, Q&&> auto replacer,
-							const RdxContext& ctx, std::optional<Query>& queryCopy);
+							const RdxContext& ctx, std::optional<Query>& queryCopy, functions::PrecomputedValues& precomputedValues);
 
-	std::optional<Query> embedQuery(const Query& query, const RdxContext& ctx);
+	std::optional<Query> embedQuery(const Query& query, const RdxContext& ctx, functions::PrecomputedValues& precomputedValues);
 
 	template <QueryType TP>
 	Error modifyQ(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx,
-				  void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&));
-
+				  void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&,
+											const functions::PrecomputedValues&));
 	void maskingAsyncConfig(LocalQueryResults& result) const;
 
 	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;

@@ -1,6 +1,7 @@
 #include "core/query/query.h"
 #include "core/query/dsl/dslencoder.h"
 #include "core/query/dsl/dslparser.h"
+#include "core/query/expression/expression.h"
 #include "core/query/sql/sqlencoder.h"
 #include "core/query/sql/sqlparser.h"
 #include "core/type_consts_helpers.h"
@@ -82,16 +83,40 @@ void Query::checkSubQueryWithData() const {
 	checkSubQuery();
 }
 
+void Query::checkFunctionForLeftExpression(const FunctionType& type) {
+	if (type != FunctionFlatArrayLen) [[unlikely]] {
+		throw Error(errLogic, "Function '{}' is not supported as left expression", functions::TypeToName(type));
+	}
+}
+
+void Query::checkFunctionForLeftExpression(const functions::Function& f) { checkFunctionForLeftExpression(f.Type()); }
+
+void Query::checkFunctionForLeftExpression(const functions::FunctionVariant& f) {
+	checkFunctionForLeftExpression(functions::FunctionVariantType(f));
+}
+
+void Query::checkFunctionForRightExpression(const FunctionType& type) {
+	if (type != FunctionNow) [[unlikely]] {
+		throw Error(errLogic, "Function '{}' is not supported as right expression", functions::TypeToName(type));
+	}
+}
+
+void Query::checkFunctionForRightExpression(const functions::Function& f) { checkFunctionForRightExpression(f.Type()); }
+
+void Query::checkFunctionForRightExpression(const functions::FunctionVariant& f) {
+	checkFunctionForRightExpression(functions::FunctionVariantType(f));
+}
+
 void Query::VerifyForUpdate() const {
 	for (const auto& jq : joinQueries_) {
-		if (!(jq.joinType == JoinType::InnerJoin || jq.joinType == JoinType::OrInnerJoin)) {
+		if (!(jq.joinType == JoinType::InnerJoin || jq.joinType == JoinType::OrInnerJoin)) [[unlikely]] {
 			throw Error{errQueryExec, "UPDATE and DELETE query can contain only inner join"};
 		}
 	}
 }
 
 void Query::VerifyForUpdateTransaction() const {
-	if (!joinQueries_.empty()) {
+	if (!joinQueries_.empty()) [[unlikely]] {
 		throw Error{errQueryExec, "UPDATE and DELETE query cannot contain join"};
 	}
 	VerifyForUpdate();
@@ -154,7 +179,7 @@ std::string Query::GetSQL(QueryType realType) const {
 }
 
 Query& Query::EqualPositions(EqualPosition_t&& ep) & {
-	if (ep.size() < 2) {
+	if (ep.size() < 2) [[unlikely]] {
 		throw Error(errParams, "EqualPosition must have at least 2 field. Fields: [{}]", ep.size() == 1 ? ep[0] : "");
 	}
 	QueryEntriesBracket* bracketPointer = entries_.LastOpenBracket();
@@ -170,18 +195,18 @@ Query& Query::EqualPositions(EqualPosition_t&& ep) & {
 void Query::Join(JoinedQuery&& jq) & {
 	switch (jq.joinType) {
 		case JoinType::Merge:
-			if (nextOp_ != OpAnd) {
+			if (nextOp_ != OpAnd) [[unlikely]] {
 				throw Error(errParams, "Merge query with {} operation", OpTypeToStr(nextOp_));
 			}
 			mergeQueries_.emplace_back(std::move(jq));
 			return;
 		case JoinType::LeftJoin:
-			if (nextOp_ != OpAnd) {
+			if (nextOp_ != OpAnd) [[unlikely]] {
 				throw Error(errParams, "Left join with {} operation", OpTypeToStr(nextOp_));
 			}
 			break;
 		case JoinType::OrInnerJoin:
-			if (nextOp_ == OpNot) {
+			if (nextOp_ == OpNot) [[unlikely]] {
 				throw Error(errParams, "Or inner join with {} operation", OpTypeToStr(nextOp_));
 			}
 			nextOp_ = OpOr;
@@ -196,7 +221,7 @@ void Query::Join(JoinedQuery&& jq) & {
 }
 
 void Query::checkSetObjectValue(const Variant& value) const {
-	if (!value.Type().Is<KeyValueType::String>()) {
+	if (!value.Type().Is<KeyValueType::String>()) [[unlikely]] {
 		throw Error(errLogic, "Unexpected variant type in SetObject: {}. Expecting KeyValueType::String with JSON-content",
 					value.Type().Name());
 	}
@@ -206,7 +231,7 @@ VariantArray Query::deserializeValues(Serializer& ser, CondType cond) const {
 	VariantArray values;
 	auto cnt = ser.GetVarUInt();
 	if (cond == CondDWithin) {
-		if (cnt != 3) {
+		if (cnt != 3) [[unlikely]] {
 			throw Error(errParseBin, "Expected point and distance for DWithin");
 		}
 		VariantArray point;
@@ -344,13 +369,13 @@ void Query::deserialize(Serializer& ser) {
 					sortingEntries_.push_back(std::move(sortingEntry));
 				}
 				auto cnt = ser.GetVarUInt();
-				if (cnt != 0 && sortingEntries_.size() != 1) {
+				if (cnt != 0 && sortingEntries_.size() != 1) [[unlikely]] {
 					throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
 				}
 				forcedSortOrder_.reserve(cnt);
 				while (cnt--) {
 					auto v = ser.GetVariant();
-					if (v.IsNullValue()) {
+					if (v.IsNullValue()) [[unlikely]] {
 						throw Error(errParams, "Null-values are not supported in forced sorting");
 					}
 					forcedSortOrder_.emplace_back(std::move(v.EnsureHold()));
@@ -472,34 +497,48 @@ void Query::deserialize(Serializer& ser) {
 				Where(fieldName, condition, Query::Deserialize(subQuery));
 				break;
 			}
-			case QueryFunctionSubQueryCondition: {
+			case QueryFunctionSubQueryCondition:
+			case QueryFunction:
+				throw Error{errParseBin, "Serialization type={} is deprecated", int(qtype)};
+			case QueryExpressions: {
+				auto left = expressions::Expression::Deserialize(ser);
+				auto leftType = expressions::GetValueType(left);
 				OpType op = OpType(ser.GetVarUInt());
-				auto numFields = ser.GetVarUInt();
-				h_vector<std::string, 1> fields;
-				fields.reserve(numFields);
-				while (numFields--) {
-					fields.emplace_back(ser.GetVString());
-				}
-				const FunctionType type = FunctionType(ser.GetVarUInt());
 				CondType condition = CondType(ser.GetVarUInt());
-				Serializer subQuery{ser.GetVString()};
+				auto right = expressions::Expression::Deserialize(ser);
+				auto rightType = expressions::GetValueType(right);
 				NextOp(op);
-				Where(functions::Create(type, std::move(fields)), condition, Query::Deserialize(subQuery));
-				break;
-			}
-			case QueryFunction: {
-				auto numFields = ser.GetVarUInt();
-				h_vector<std::string, 1> fields;
-				fields.reserve(numFields);
-				while (numFields--) {
-					fields.emplace_back(ser.GetVString());
+				expressions::ValidateExpressions(leftType, rightType, expressions::ValidationType::Full);
+				if (rightType == ExpressionTypeSubQuery) {
+					if (leftType == ExpressionTypeExpression) {
+						Where(std::get<functions::FunctionVariant>(std::move(left)), condition, std::get<Query>(std::move(right)));
+					} else if (leftType == ExpressionTypeField) {
+						Where(std::get<std::string>(std::move(left)), condition, std::get<Query>(std::move(right)));
+					} else {
+						assertrx_throw(false);
+					}
+				} else {
+					if (leftType == ExpressionTypeField) {
+						if (rightType == ExpressionTypeExpression) {
+							Where(std::move(std::get<std::string>(left)), condition,
+								  std::get<functions::FunctionVariant>(std::move(right)));
+						} else if (rightType == ExpressionTypeValues) {
+							Where(std::move(std::get<std::string>(left)), condition, std::get<VariantArray>(std::move(right)));
+						} else if (rightType == ExpressionTypeField) {
+							WhereBetweenFields(std::move(std::get<std::string>(left)), condition, std::get<std::string>(std::move(right)));
+						} else {
+							assertrx_throw(false);
+						}
+					} else if (leftType == ExpressionTypeExpression) {
+						Where(std::get<functions::FunctionVariant>(std::move(left)), condition, std::move(std::get<VariantArray>(right)));
+					} else if (leftType == ExpressionTypeSubQuery) {
+						if (rightType == ExpressionTypeField) {
+							Where(std::move(std::get<std::string>(left)), condition, std::get<Query>(std::move(right)));
+						}
+					} else {
+						assertrx_throw(false);
+					}
 				}
-				const FunctionType type = FunctionType(ser.GetVarUInt());
-				const OpType op = OpType(ser.GetVarUInt());
-				const CondType condition = CondType(ser.GetVarUInt());
-				VariantArray values = deserializeValues(ser, condition);
-				NextOp(op);
-				Where(functions::Create(type, std::move(fields)), condition, std::move(values));
 				break;
 			}
 			case QueryAggregationSort:
@@ -513,7 +552,11 @@ void Query::deserialize(Serializer& ser) {
 		if (eqPos.first == 0) {
 			entries_.equalPositions.emplace_back(std::move(eqPos.second));
 		} else {
-			entries_.Get<QueryEntriesBracket>(eqPos.first - 1).equalPositions.emplace_back(std::move(eqPos.second));
+			const auto bracketIdx = eqPos.first - 1;
+			if (!entries_.Is<QueryEntriesBracket>(bracketIdx)) [[unlikely]] {
+				throw Error(errParseBin, "Invalid bracket offset in equal_position: {}", bracketIdx);
+			}
+			entries_.Get<QueryEntriesBracket>(bracketIdx).equalPositions.emplace_back(std::move(eqPos.second));
 		}
 	}
 }
@@ -718,7 +761,7 @@ Query Query::Deserialize(Serializer& ser) {
 	auto checkJoinEntries = [](const Query& q) {
 		q.Entries().VisitForEach(
 			[size = q.GetJoinQueries().size()](const JoinQueryEntry& qe) {
-				if (qe.joinIndex >= size) {
+				if (qe.joinIndex >= size) [[unlikely]] {
 					throw Error(errQueryExec, "Invalid index for joined query after deserialization.");
 				}
 			},
@@ -765,7 +808,7 @@ void Query::AddJoinQuery(JoinedQuery&& jq) {
 }
 
 Query& Query::SortStDistance(std::string_view field, Point p, bool desc) & {
-	if (field.empty()) {
+	if (field.empty()) [[unlikely]] {
 		throw Error(errParams, "Field name for ST_Distance can not be empty");
 	}
 	sortingEntries_.emplace_back(fmt::format("ST_Distance({},ST_GeomFromText('point({:.12f} {:.12f})'))", field, p.X(), p.Y()), desc);
@@ -773,7 +816,7 @@ Query& Query::SortStDistance(std::string_view field, Point p, bool desc) & {
 }
 
 Query& Query::SortStDistance(std::string_view field1, std::string_view field2, bool desc) & {
-	if (field1.empty() || field2.empty()) {
+	if (field1.empty() || field2.empty()) [[unlikely]] {
 		throw Error(errParams, "Fields names for ST_Distance can not be empty");
 	}
 	sortingEntries_.emplace_back(fmt::format("ST_Distance({},{})", field1, field2), desc);

@@ -19,7 +19,7 @@ namespace reindexer {
 class RdxContext;
 class WrSerializer;
 
-enum ConfigType {
+enum [[nodiscard]] ConfigType {
 	ProfilingConf = 0,
 	NamespaceDataConf,
 	AsyncReplicationConf,

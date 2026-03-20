@@ -13,6 +13,8 @@ using reindexer::client::CoroQueryResults;
 using reindexer::client::CoroTransaction;
 using reindexer::coroutine::wait_group;
 
+// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
+
 TEST_F(ClientsStatsApi, ClientsStatsConcurrent) {
 	// ClientsStats should work without races in concurrent environment
 	RunServerInThread(true);
@@ -109,6 +111,9 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		err = reindexer.OpenNamespace(nsName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
+		err = reindexer.AddIndex(nsName, reindexer::IndexDef{"id", "hash", "int", IndexOpts().PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+
 		auto tx1 = reindexer.NewTransaction(nsName);
 		ASSERT_FALSE(tx1.IsFree());
 		auto tx2 = reindexer.NewTransaction(nsName);
@@ -139,7 +144,7 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		std::ignore = reindexer::split(curIP, ":", false, addrParts);
 		EXPECT_EQ(addrParts.size(), 2);
 		EXPECT_EQ(addrParts[0], kipaddress) << curIP;
-		int port = std::atoi(addrParts[1].c_str());
+		int port = std::atoi(addrParts[1].c_str());	 // NOLINT(bugprone-unchecked-string-to-number-conversion)
 		EXPECT_GT(port, 0) << curIP;
 		EXPECT_NE(port, kPortI) << curIP;
 		int64_t sentBytes = clientsStats["sent_bytes"].As<int64_t>();
@@ -201,6 +206,9 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 		err = reindexer.OpenNamespace(nsName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
+		err = reindexer.AddIndex(nsName, reindexer::IndexDef{"id", "hash", "int", IndexOpts().PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+
 		std::vector<CoroTransaction> txs;
 		txs.reserve(kMaxTxCount);
 		for (size_t i = 0; i < 2 * kMaxTxCount; ++i) {
@@ -250,3 +258,5 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 	loop.run();
 	ASSERT_TRUE(finished);
 }
+
+// NOLINTEND(rx-perf-lambda-to-std-function-allocation)

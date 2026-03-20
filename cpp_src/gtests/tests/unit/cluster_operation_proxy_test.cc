@@ -12,6 +12,8 @@
 
 using namespace reindexer;
 
+// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
+
 static std::string itemData(int id, std::string_view valueData, std::string_view modifyValueData) {
 	WrSerializer ser;
 	JsonBuilder jb(ser);
@@ -271,6 +273,7 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 
 		auto txInsertions = exceptionWrapper([&] {
 			net::ev::dynamic_loop thLoop;
+			// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 			thLoop.spawn(exceptionWrapper([&] {
 				client::CoroReindexer rx;
 				auto err = rx.Connect(dsn, thLoop);
@@ -306,6 +309,7 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 
 		auto singleInsertions = exceptionWrapper([&] {
 			net::ev::dynamic_loop thLoop;
+			// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 			thLoop.spawn(exceptionWrapper([&] {
 				client::CoroReindexer rx;
 				auto err = rx.Connect(dsn, thLoop);
@@ -1497,3 +1501,5 @@ TEST_F(ClusterOperationProxyApi, SelectFromStatsTimeout) {
 
 	loop.run();
 }
+
+// NOLINTEND(rx-perf-lambda-to-std-function-allocation)

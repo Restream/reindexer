@@ -2,10 +2,10 @@
 #include <fstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
+#include "core/formatters/checksum_fmt.h"
 #include "core/formatters/lsn_fmt.h"
 #include "core/system_ns_names.h"
 #include "estl/gift_str.h"
-#include "estl/lock.h"
 #include "systemhelpers.h"
 #include "tools/crypt.h"
 #include "tools/fsops.h"

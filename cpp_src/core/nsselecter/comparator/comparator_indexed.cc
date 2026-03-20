@@ -3,6 +3,7 @@
 #include "core/formatters/key_string_fmt.h"
 #include "core/formatters/uuid_fmt.h"
 #include "core/nsselecter/comparator/helpers.h"
+#include "helpers.h"
 
 namespace {
 

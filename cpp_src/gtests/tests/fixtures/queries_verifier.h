@@ -702,7 +702,9 @@ private:
 
 	bool checkCondition(const reindexer::Item& item, const reindexer::QueryFunctionEntry& qentry) {
 		EXPECT_GT(item.NumFields(), 0);
-		if (qentry.Function().Type() == FunctionFlatArrayLen) {
+		EXPECT_GT(qentry.Fields(), 0);
+		const auto type{qentry.Function().Type()};
+		if (type == FunctionFlatArrayLen) {
 			reindexer::h_vector<int, 1> values;
 			for (const auto& v : qentry.Values()) {
 				if (!v.Type().IsOneOf<reindexer::KeyValueType::Int, reindexer::KeyValueType::Int64>()) {
@@ -711,10 +713,8 @@ private:
 				values.emplace_back(static_cast<int>(v));
 			}
 			const size_t fieldSize = item.GetFieldSize(qentry.FieldData(0).FieldName());
-			return std::visit(reindexer::overloaded{[&qentry, &values, &fieldSize](const reindexer::functions::FlatArrayLen& f) {
-								  return f.Evaluate(qentry.Condition(), values, fieldSize);
-							  }},
-							  qentry.FunctionVariant());
+			const auto& arrayLen{std::get<reindexer::functions::FlatArrayLen>(qentry.FunctionVariant())};
+			return arrayLen.Compare(qentry.Condition(), values, fieldSize);
 		} else {
 			// Other types are not supported yet.
 			assertrx(0);

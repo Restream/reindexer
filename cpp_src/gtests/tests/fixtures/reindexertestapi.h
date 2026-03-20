@@ -17,7 +17,7 @@ struct [[nodiscard]] ReplicationTestState {
 	reindexer::lsn_t lsn;
 	reindexer::lsn_t nsVersion;
 	reindexer::lsn_t ownLsn;
-	uint64_t dataHash = 0;
+	reindexer::PayloadChecksum dataHash;
 	size_t dataCount = 0;
 	std::optional<int> tmVersion;
 	std::optional<int> tmStatetoken;

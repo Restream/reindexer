@@ -73,7 +73,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseResults(size_t phra
 
 			MergerDocumentData mdExt(phraseDocMergeDataExt.rank, phraseQPos);
 			if constexpr (kWithAreas) {
-				mergeData_.vectorAreas.emplace_back(phraseDocMergeDataExt.CreateAreas(maxAreasInDoc_));
+				mergeData_.vectorAreas.emplace_back(phraseDocMergeDataExt.CreateAreas(phraseDocMergeData.proc, maxAreasInDoc_));
 				md.areaIndex = mergeData_.vectorAreas.size() - 1;
 			}
 
@@ -100,7 +100,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseResults(size_t phra
 			mdExt.qpos = phraseQPos;
 
 			if constexpr (kWithAreas) {
-				auto areas = phraseDocMergeDataExt.CreateAreas(maxAreasInDoc_);
+				auto areas = phraseDocMergeDataExt.CreateAreas(phraseDocMergeData.proc, maxAreasInDoc_);
 				copyAreas(areas, mergeData_.vectorAreas[md.areaIndex], phraseDocMergeDataExt.rank, fieldSize_, maxAreasInDoc_);
 			}
 		}

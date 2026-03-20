@@ -4,6 +4,7 @@
 #include <span>
 #include <string>
 #include <vector>
+#include "core/payload/payload_checksum.h"
 #include "namespacename.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
@@ -46,6 +47,7 @@ struct [[nodiscard]] IndexMemStat {
 	LRUCacheMemStat idsetCache;
 	std::optional<EmbedderStatus> upsertEmbedderStatus;
 	std::optional<EmbedderStatus> queryEmbedderStatus;
+	std::optional<bool> isQuantized;  // HNSW-indexes only
 	size_t GetFullIndexStructSize() const noexcept {
 		return idsetPlainSize + idsetBTreeSize + sortOrdersSize + columnSize + trackedUpdatesSize + indexingStructSize + vectorsKeeperSize;
 	}
@@ -88,6 +90,28 @@ struct [[nodiscard]] ClusterOperationStatus {
 	Role role = Role::None;
 };
 
+class [[nodiscard]] ReplicationDataHash {
+public:
+	void Set(PayloadChecksum h) noexcept {
+		hashV1 = h.hashV1;
+		hashV2 = h.hashV2;
+	}
+	void operator^=(PayloadChecksum h) noexcept {
+		hashV1 ^= h.hashV1;
+		if (!hashV2.has_value()) {
+			hashV2.emplace(0);
+		}
+		hashV2 = (*hashV2) ^ h.hashV2;
+	}
+	void GetJSON(JsonBuilder& builder) const;
+	void FromJSON(const gason::JsonNode& root);
+	bool IsEqualByAnyVersionTo(const ReplicationDataHash& o) const noexcept;
+	bool IsEqualByAnyVersionTo(PayloadChecksum o) const noexcept;
+
+	uint64_t hashV1 = 0;  // Deprecated. TODO: Remove somewhere around v5.18.0. Issue #2417
+	std::optional<uint64_t> hashV2 = 0;
+};
+
 struct [[nodiscard]] ReplicationState {
 	enum class [[nodiscard]] Status { None, Idle, Error, Fatal, Syncing };
 
@@ -99,10 +123,8 @@ struct [[nodiscard]] ReplicationState {
 	// LSN of last change
 	// updated from WAL when querying the structure
 	lsn_t lastLsn;
-	// Incarnation counter
-	int incarnationCounter = 0;
 	// Data hash
-	uint64_t dataHash = 0;
+	ReplicationDataHash dataHash;
 	// Data count
 	int dataCount = 0;
 	// Data updated
@@ -120,18 +142,14 @@ struct [[nodiscard]] ReplicationState {
 
 // TODO: Rename this
 struct [[nodiscard]] ReplicationStateV2 {
-	constexpr static int64_t kNoDataCount = -1;
-
-	bool HasDataCount() const noexcept { return dataCount != kNoDataCount; }
 	void GetJSON(JsonBuilder& builder) const;
 	void FromJSON(std::span<char>);
 
 	// LSN of last change
 	// updated from WAL when querying the structure
 	lsn_t lastLsn;
-	uint64_t dataHash = 0;
-	// This field is optional - older rx versions do not have it
-	int64_t dataCount = kNoDataCount;
+	ReplicationDataHash dataHash;
+	uint64_t dataCount = 0;
 	lsn_t nsVersion;
 	//
 	ClusterOperationStatus clusterStatus;

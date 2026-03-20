@@ -28,6 +28,7 @@ std::string NestedArraysApi::newItemJson(int id) {
 				// nested str array
 				const auto strArray = RandStrVector(rand() % 5);
 				array.Array(Empty, std::span(strArray));
+				// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 				const std::function<void(reindexer::JsonBuilder&, size_t)> addHeteroNestedArray = [&](reindexer::JsonBuilder& array,
 																									  size_t level) {
 					auto heteroNestedArray = array.Array(Empty);

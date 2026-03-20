@@ -11,9 +11,13 @@ class TagsMatcher;
 class NsContext;
 class NamespaceImpl;
 
+namespace functions {
+class FunctionInvoker;
+}
+
 class [[nodiscard]] ExpressionEvaluator {
 public:
-	ExpressionEvaluator(NamespaceImpl& ns, FunctionExecutor& func) noexcept : ns_(ns), functionExecutor_(func) {}
+	ExpressionEvaluator(NamespaceImpl& ns, functions::FunctionInvoker& funcInvoker) noexcept : ns_(ns), functionInvoker_(funcInvoker) {}
 
 	VariantArray Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField, const NsContext& ctx);
 
@@ -42,7 +46,7 @@ private:
 	enum [[nodiscard]] State { None = 0, StateArrayConcat, StateMultiplyAndDivide, StateSumAndSubtract };
 
 	NamespaceImpl& ns_;
-	FunctionExecutor& functionExecutor_;
+	functions::FunctionInvoker& functionInvoker_;
 	std::string_view forField_;
 	VariantArray arrayValues_;
 	State state_ = None;

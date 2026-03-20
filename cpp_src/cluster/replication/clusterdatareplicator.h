@@ -48,11 +48,11 @@ private:
 	void stop();
 
 	ReplicationStatsCollector statsCollector_;
-	enum ClusterCommandId { kNoCommand = -1, kCmdSetDesiredLeader = 0, kCmdForceElections = 1 };
+	enum [[nodiscard]] ClusterCommandId { kNoCommand = -1, kCmdSetDesiredLeader = 0, kCmdForceElections = 1 };
 
 	struct [[nodiscard]] ClusterCommand {
-		struct SetDesiredLeaderT {};
-		struct ForceElectionsT {};
+		struct [[nodiscard]] SetDesiredLeaderT {};
+		struct [[nodiscard]] ForceElectionsT {};
 
 		ClusterCommand() = default;
 		ClusterCommand(SetDesiredLeaderT, int server, bool _send, std::promise<Error> p)

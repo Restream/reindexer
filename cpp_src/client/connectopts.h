@@ -4,7 +4,7 @@
 
 namespace reindexer::client {
 
-enum ConnectOpt { kConnectOptCreateIfMissing = 1 << 0, kConnectOptCheckClusterID = 1 << 1 };
+enum [[nodiscard]] ConnectOpt { kConnectOptCreateIfMissing = 1 << 0, kConnectOptCheckClusterID = 1 << 1 };
 
 class [[nodiscard]] ConnectOpts {
 public:

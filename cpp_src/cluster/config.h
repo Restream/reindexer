@@ -68,7 +68,9 @@ struct [[nodiscard]] ClusterNodeConfig {
 	const DSN& GetManagementDsn() const noexcept { return dsn; }
 	void FromYAML(const YAML::Node& yaml);
 
-	bool operator==(const ClusterNodeConfig& rdata) const noexcept { return (serverId == rdata.serverId) && (dsn == rdata.dsn); }
+	bool operator==(const ClusterNodeConfig& rdata) const noexcept(noexcept(dsn == rdata.dsn)) {
+		return (serverId == rdata.serverId) && (dsn == rdata.dsn);
+	}
 
 	int serverId = -1;
 	DSN dsn;
@@ -128,7 +130,7 @@ public:
 	void SetReplicationMode(AsyncReplicationMode mode) noexcept { replicationMode_ = mode; }
 	const std::optional<AsyncReplicationMode>& GetReplicationMode() const noexcept { return replicationMode_; }
 
-	bool operator==(const AsyncReplNodeConfig& rdata) const noexcept {
+	bool operator==(const AsyncReplNodeConfig& rdata) const noexcept(noexcept(dsn_ == rdata.dsn_)) {
 		return (dsn_ == rdata.dsn_) && nsListsAreEqual(rdata) && replicationModesAreEqual(rdata);
 	}
 
@@ -286,7 +288,7 @@ struct [[nodiscard]] AsyncReplConfigData {
 	LogLevel logLevel = LogNone;
 	std::string selfReplToken;
 
-	bool operator==(const AsyncReplConfigData& rdata) const noexcept {
+	bool operator==(const AsyncReplConfigData& rdata) const noexcept(noexcept(nodes == rdata.nodes)) {
 		return (role == rdata.role) && (mode == rdata.mode) && (replThreadsCount == rdata.replThreadsCount) &&
 			   (parallelSyncsPerThreadCount == rdata.parallelSyncsPerThreadCount) &&
 			   (forceSyncOnLogicError == rdata.forceSyncOnLogicError) && (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) &&
@@ -297,7 +299,7 @@ struct [[nodiscard]] AsyncReplConfigData {
 			   (syncTimeoutSec == rdata.syncTimeoutSec) && (onlineUpdatesDelayMSec == rdata.onlineUpdatesDelayMSec) &&
 			   (logLevel == rdata.logLevel) && (nodes == rdata.nodes) && (selfReplToken == rdata.selfReplToken);
 	}
-	bool operator!=(const AsyncReplConfigData& rdata) const noexcept { return !operator==(rdata); }
+	bool operator!=(const AsyncReplConfigData& rdata) const noexcept(noexcept(*this == rdata)) { return !operator==(rdata); }
 };
 
 }  // namespace cluster

@@ -45,33 +45,20 @@ IvfIndex::IvfIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& 
 	blas_ext::CheckIfBLASAvailable();
 
 	std::string vecInstructions = "disabled";
-	switch (Base::Opts().FloatVector().Metric()) {
-		case VectorMetric::L2:
-			if (vector_dists::L2WithAVX512()) {
-				vecInstructions = "avx512";
-			} else if (vector_dists::L2WithAVX2()) {
-				vecInstructions = "avx2";
-			} else if (vector_dists::L2WithAVX()) {
-				vecInstructions = "avx";
-			} else if (vector_dists::L2WithSSE()) {
-				vecInstructions = "sse";
-			}
-			break;
-		case VectorMetric::InnerProduct:
-		case VectorMetric::Cosine:
-			if (vector_dists::InnerProductWithAVX512()) {
-				vecInstructions = "avx512";
-			} else if (vector_dists::InnerProductWithAVX2()) {
-				vecInstructions = "avx2";
-			} else if (vector_dists::InnerProductWithAVX()) {
-				vecInstructions = "avx";
-			} else if (vector_dists::InnerProductWithSSE()) {
-				vecInstructions = "sse";
-			}
-			break;
-		default:
-			throw Error(errLogic, "Attempt to construct IVF index '{}' with unknown metric: {}", Base::Name(),
-						int(Base::Opts().FloatVector().Metric()));
+#if REINDEXER_WITH_SSE
+	if (IsAVX512Allowed()) {
+		vecInstructions = "avx512";
+	} else if (IsAVX2Allowed()) {
+		vecInstructions = "avx2";
+	} else if (IsAVXAllowed()) {
+		vecInstructions = "avx";
+	} else {
+		vecInstructions = "sse";
+	}
+#endif
+	if (auto metric = Base::Opts().FloatVector().Metric();
+		metric != VectorMetric::L2 && metric != VectorMetric::InnerProduct && metric != VectorMetric::Cosine) {
+		throw Error(errLogic, "Attempt to construct IVF index '{}' with unknown metric: {}", Base::Name(), int(metric));
 	}
 	if (log) {
 		logFmt(LogInfo, "Creating IVF index '{}'; Vector instructions level: {}", Base::Name(), vecInstructions);
@@ -86,9 +73,11 @@ IvfIndex::IvfIndex(const IvfIndex& other)
 	  rowId2N_{other.rowId2N_},
 	  map_{other.map_ ? static_cast<faiss::IndexIVFFlat*>(faiss::clone_index(other.map_.get())) : nullptr} {}
 
+// NOLINTBEGIN(bugprone-unchecked-string-to-number-conversion)
 static const int kIVFMTMode = std::getenv("RX_IVF_MT") ? atoi(std::getenv("RX_IVF_MT")) : 0;
 static const unsigned kIVFOMPThreads =
 	std::min(hardware_concurrency(), std::getenv("RX_IVF_OMP_THREADS") ? unsigned(atoi(std::getenv("RX_IVF_OMP_THREADS"))) : 8u);
+// NOLINTEND(bugprone-unchecked-string-to-number-conversion)
 
 Variant IvfIndex::upsert(ConstFloatVectorView vect, IdType id, bool& clearCache) {
 	if (map_) {
@@ -143,55 +132,60 @@ void IvfIndex::Delete(const Variant&, IdType id, [[maybe_unused]] MustExist must
 struct [[nodiscard]] IVFSearchArgsKnn {
 	const float* keyData;
 	size_t k;
-	faiss::IVFSearchParameters& params;
-	IvfKnnRawResult& rawResults;
+	std::optional<float> radius;
+	faiss::IVFSearchParameters params;
 };
 
-static void search(base_idset& idset, const IVFSearchArgsKnn& args, const auto& map, const auto& filter, const auto& sortSameDist,
-				   const auto& prepareId) {
-	auto& ids = args.rawResults.Ids();
-	map->search(1, args.keyData, args.k, args.rawResults.Dists().data(), ids.data(), &args.params);
+static IvfKnnRawResult search(base_idset& idset, const IVFSearchArgsKnn& args, const auto& map, const auto& sortSameDist,
+							  const auto& prepareId) {
+	IvfKnnRawResult rawResults(args.k);
+
+	auto& ids = rawResults.Ids();
+	auto& dists = rawResults.Dists();
+	map->search(1, args.keyData, args.k, dists.data(), ids.data(), &args.params);
 	for (size_t i = 0; i < args.k; ++i) {
 		const auto id = ids[i];
-		if (id < 0 || !filter(i)) {
+		if (id < 0) {
 			break;
 		}
-		sortSameDist(i);
+		sortSameDist(i, dists.data());
 		idset.push_back(IdType::FromNumber(prepareId(id)));
 	}
+
+	return rawResults;
 }
 
-static void searchRaw(const IVFSearchArgsKnn& args, const auto& map, const auto& filter, const auto& prepareId) {
-	auto& ids = args.rawResults.Ids();
-	auto& dists = args.rawResults.Dists();
+static IvfKnnRawResult searchRaw(const IVFSearchArgsKnn& args, const auto& map, const auto& prepareId) {
+	IvfKnnRawResult rawResults(args.k);
+
+	auto& ids = rawResults.Ids();
+	auto& dists = rawResults.Dists();
+
 	map->search(1, args.keyData, args.k, dists.data(), ids.data(), &args.params);
 	size_t i = 0;
 	for (; i < args.k; ++i) {
 		auto& id = ids[i];
-		if (id < 0 || !filter(i)) {
+		if (id < 0) {
 			break;
 		}
 		id = prepareId(id);
 	}
-	std::ignore = ids.erase(ids.begin() + i, ids.end());
-	std::ignore = dists.erase(dists.begin() + i, dists.end());
+	return rawResults;
 }
 
-static void searchRaw(const IVFSearchArgsKnn& args, const faiss::IndexIVFFlat& map) {
-	map.search(1, args.keyData, args.k, args.rawResults.Dists().data(), args.rawResults.Ids().data(), &args.params);
+static IvfKnnRawResult searchRaw(const IVFSearchArgsKnn& args, const faiss::IndexIVFFlat& map) {
+	IvfKnnRawResult rawResults(args.k);
+	map.search(1, args.keyData, args.k, rawResults.Dists().data(), rawResults.Ids().data(), &args.params);
+	return rawResults;
 }
 
-struct [[nodiscard]] IVFSearchArgsRange {
-	const float* keyData;
-	float radius;
-	faiss::RangeSearchResult* result;
-	faiss::IVFSearchParameters* params;
-};
+static IvfKnnRawResult search(base_idset& idset, const IVFSearchArgsKnn& args, const auto& map, VectorMetric metric,
+							  const auto& sortSameDist, const auto& prepareId) {
+	assertrx_throw(args.radius);
 
-static void search(base_idset& idset, const IVFSearchArgsRange& args, const auto& map, IvfKnnRawResult& rawResults, VectorMetric metric,
-				   const auto& sortSameDist, const auto& prepareId) {
-	map->range_search(1, args.keyData, args.radius, args.result, args.params);
-	auto& result = *args.result;
+	faiss::RangeSearchResult result(1);
+	map->range_search(1, args.keyData, *args.radius, &result, &args.params);
+
 	auto size = result.lims[1] - result.lims[0];
 
 	std::vector<size_t> permut(size);
@@ -204,26 +198,34 @@ static void search(base_idset& idset, const IVFSearchArgsRange& args, const auto
 		return comparator(distances[lhs], distances[rhs]);
 	});
 
+	IvfKnnRawResult rawResults;
+	rawResults.Reserve(size);
+
 	auto& ids = rawResults.Ids();
 	auto& dists = rawResults.Dists();
-	ids.resize(size);
-	dists.resize(size);
 	for (size_t i = 0; i < size; ++i) {
 		const auto id = labels[permut[i]];
 		if (id < 0) {
 			break;
 		}
-		ids[i] = id;
-		dists[i] = distances[permut[i]];
-		sortSameDist(i);
+		ids.emplace_back(id);
+		dists.emplace_back(distances[permut[i]]);
+		sortSameDist(i, dists.data());
 		idset.push_back(IdType::FromNumber(prepareId(id)));
+		if (idset.size() == args.k) {
+			break;
+		}
 	}
+
+	return rawResults;
 }
 
-static void searchRaw(const IVFSearchArgsRange& args, const auto& map, IvfKnnRawResult& rawResults, VectorMetric metric,
-					  const auto& prepareId) {
-	map->range_search(1, args.keyData, args.radius, args.result, args.params);
-	auto& rangeRes = *args.result;
+static IvfKnnRawResult searchRaw(const IVFSearchArgsKnn& args, const auto& map, VectorMetric metric, const auto& prepareId) {
+	assertrx_throw(args.radius);
+
+	faiss::RangeSearchResult rangeRes(1);
+	map->range_search(1, args.keyData, *args.radius, &rangeRes, &args.params);
+
 	auto size = rangeRes.lims[1] - rangeRes.lims[0];
 
 	std::vector<size_t> permut(size);
@@ -236,25 +238,31 @@ static void searchRaw(const IVFSearchArgsRange& args, const auto& map, IvfKnnRaw
 		return comparator(distances[lhs], distances[rhs]);
 	});
 
+	IvfKnnRawResult rawResults;
+	rawResults.Reserve(size);
+
 	auto& ids = rawResults.Ids();
 	auto& dists = rawResults.Dists();
-	ids.reserve(size);
-	dists.reserve(size);
+
 	for (size_t i = 0; i < size; ++i) {
 		const auto id = labels[permut[i]];
 		if (id < 0) {
 			break;
 		}
-		ids.push_back(prepareId(id));
-		dists.push_back(distances[permut[i]]);
+		ids.emplace_back(prepareId(id));
+		dists.emplace_back(distances[permut[i]]);
+		if (ids.size() == args.k) {
+			break;
+		}
 	}
+
+	return rawResults;
 }
 
 SelectKeyResult IvfIndex::select(ConstFloatVectorView key, const KnnSearchParams& p, KnnCtx& ctx) const {
 	const auto params = p.Ivf();
 	const auto k = params.K() ? *params.K() : 0;
 	const auto radius = params.Radius() ? params.Radius() : Opts().FloatVector().Radius();
-	IvfKnnRawResult knnRawResults(k);
 	base_idset idset;
 	idset.reserve(k);
 	h_vector<float, 2048> normalizedStorage;
@@ -262,17 +270,13 @@ SelectKeyResult IvfIndex::select(ConstFloatVectorView key, const KnnSearchParams
 	if (metric_ == VectorMetric::Cosine) {
 		const auto dims = key.Dimension().Value();
 		normalizedStorage.resize(uint32_t(dims));
-		ann::NormalizeCopyVector(key.Data(), int32_t(dims), normalizedStorage.data());
+		std::ignore = ann::NormalizeCopyVector(key.Data(), int32_t(dims), normalizedStorage.data());
 		keyData = normalizedStorage.data();
 	}
 
-	faiss::IVFSearchParameters param;
-	param.nprobe = params.NProbe();
-
 	size_t firstSameDist{0};
-	const auto sortSameDist = [&](size_t i) {
+	const auto sortSameDist = [&](size_t i, const float* distsData) {
 		bool newDist{false};
-		const auto* distsData = knnRawResults.Dists().data();
 		switch (metric_) {
 			case VectorMetric::L2:
 				newDist = distsData[firstSameDist] < distsData[i];
@@ -288,56 +292,38 @@ SelectKeyResult IvfIndex::select(ConstFloatVectorView key, const KnnSearchParams
 		}
 	};
 	const auto prepareId = [this](size_t i) noexcept { return n2RowId_[i]; };
-	const auto empty = [](size_t) noexcept { return true; };
+	const auto empty = [](...) noexcept {};
 	const bool withSort = *ctx.NeedSort();
 	const bool withIVF = bool(map_);
 
-	if (k > 0) {
-		const auto filter = [this, distsData = knnRawResults.Dists().data(), radius](size_t i) {
-			switch (metric_) {
-				case VectorMetric::L2:
-					return distsData[i] < *radius;
-				case VectorMetric::Cosine:
-				case VectorMetric::InnerProduct:
-					return distsData[i] > *radius;
-				default:
-					throw_as_assert;
-			}
-		};
+	faiss::IVFSearchParameters param;
+	param.nprobe = params.NProbe();
 
-		const bool withFilter = bool(radius);
-		IVFSearchArgsKnn args{keyData, k, param, knnRawResults};
-		if (withIVF && withFilter && withSort) {
-			search(idset, args, map_, filter, sortSameDist, std::identity{});
-		} else if (withIVF && withFilter && !withSort) {
-			search(idset, args, map_, filter, empty, std::identity{});
-		} else if (withIVF && !withFilter && withSort) {
-			search(idset, args, map_, empty, sortSameDist, std::identity{});
-		} else if (withIVF && !withFilter && !withSort) {
-			search(idset, args, map_, empty, empty, std::identity{});
-		} else if (!withIVF && withFilter && withSort) {
-			search(idset, args, space_, filter, sortSameDist, prepareId);
-		} else if (!withIVF && withFilter && !withSort) {
-			search(idset, args, space_, filter, empty, prepareId);
-		} else if (!withIVF && !withFilter && withSort) {
-			search(idset, args, space_, empty, sortSameDist, prepareId);
-		} else if (!withIVF && !withFilter && !withSort) {
-			search(idset, args, space_, empty, empty, prepareId);
-		}
-	} else if (radius) {
-		faiss::RangeSearchResult result(1);
-		IVFSearchArgsRange args{keyData, *radius, &result, &param};
+	IvfKnnRawResult rawResults;
+
+	IVFSearchArgsKnn args{keyData, k, radius, param};
+	if (radius) {
 		if (withIVF && withSort) {
-			search(idset, args, map_, knnRawResults, metric_, sortSameDist, std::identity{});
+			rawResults = search(idset, args, map_, metric_, sortSameDist, std::identity{});
 		} else if (withIVF && !withSort) {
-			search(idset, args, map_, knnRawResults, metric_, empty, std::identity{});
+			rawResults = search(idset, args, map_, metric_, empty, std::identity{});
 		} else if (!withIVF && withSort) {
-			search(idset, args, space_, knnRawResults, metric_, sortSameDist, prepareId);
+			rawResults = search(idset, args, space_, metric_, sortSameDist, prepareId);
 		} else if (!withIVF && !withSort) {
-			search(idset, args, space_, knnRawResults, metric_, empty, prepareId);
+			rawResults = search(idset, args, space_, metric_, empty, prepareId);
 		}
 	} else {
-		throw_as_assert;
+		assertrx_throw(k > 0);
+
+		if (withIVF && withSort) {
+			rawResults = search(idset, args, map_, sortSameDist, std::identity{});
+		} else if (withIVF && !withSort) {
+			rawResults = search(idset, args, map_, empty, std::identity{});
+		} else if (!withIVF && withSort) {
+			rawResults = search(idset, args, space_, sortSameDist, prepareId);
+		} else if (!withIVF && !withSort) {
+			rawResults = search(idset, args, space_, empty, prepareId);
+		}
 	}
 
 	if (withSort) {
@@ -345,7 +331,7 @@ SelectKeyResult IvfIndex::select(ConstFloatVectorView key, const KnnSearchParams
 	}
 	IdSet::Ptr resSet = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	resSet->SetUnordered(std::move(idset));
-	ctx.Add(std::move(knnRawResults.Dists()));
+	ctx.Add(std::move(rawResults.Dists()));
 	SelectKeyResult result;
 	result.emplace_back(std::move(resSet));
 	return result;
@@ -354,64 +340,37 @@ SelectKeyResult IvfIndex::select(ConstFloatVectorView key, const KnnSearchParams
 KnnRawResult IvfIndex::selectRaw(ConstFloatVectorView key, const KnnSearchParams& p) const {
 	const auto params = p.Ivf();
 	const auto k = params.K() ? *params.K() : 0;
-	IvfKnnRawResult knnRawResults(k);
 	const auto radius = params.Radius() ? params.Radius() : Opts().FloatVector().Radius();
 	h_vector<float, 2048> normalizedStorage;
 	const float* keyData = key.Data();
 	if (metric_ == VectorMetric::Cosine) {
 		const auto dims = key.Dimension().Value();
 		normalizedStorage.resize(uint32_t(dims));
-		ann::NormalizeCopyVector(key.Data(), int32_t(dims), normalizedStorage.data());
+		std::ignore = ann::NormalizeCopyVector(key.Data(), int32_t(dims), normalizedStorage.data());
 		keyData = normalizedStorage.data();
 	}
+
+	const auto prepareId = [this](size_t i) noexcept { return n2RowId_[i]; };
 
 	faiss::IVFSearchParameters param;
 	param.nprobe = params.NProbe();
 
-	const auto prepareId = [this](size_t i) noexcept { return n2RowId_[i]; };
-	const auto empty = [](size_t) noexcept { return true; };
+	IvfKnnRawResult knnRawResults;
 
-	if (k > 0) {
-		IVFSearchArgsKnn args{keyData, k, param, knnRawResults};
-		if (radius) {
-			switch (metric_) {
-				case VectorMetric::L2: {
-					const auto filter = [distsData = knnRawResults.Dists().data(), radius](size_t i) { return distsData[i] < *radius; };
-					if (map_) {
-						searchRaw(args, map_, filter, std::identity{});
-					} else {
-						searchRaw(args, space_, filter, prepareId);
-					}
-					break;
-				}
-				case VectorMetric::Cosine:
-				case VectorMetric::InnerProduct: {
-					const auto filter = [distsData = knnRawResults.Dists().data(), radius](size_t i) { return distsData[i] > *radius; };
-					if (map_) {
-						searchRaw(args, map_, filter, std::identity{});
-					} else {
-						searchRaw(args, space_, filter, prepareId);
-					}
-					break;
-				}
-				default:
-					throw_as_assert;
-			}
-		} else if (map_) {
-			searchRaw(args, *map_);
-		} else {
-			searchRaw(args, space_, empty, prepareId);
-		}
-	} else if (radius) {
-		faiss::RangeSearchResult result(1);
-		IVFSearchArgsRange args{keyData, *radius, &result, &param};
+	IVFSearchArgsKnn args{keyData, k, radius, param};
+	if (radius) {
 		if (map_) {
-			searchRaw(args, map_, knnRawResults, metric_, std::identity{});
+			knnRawResults = searchRaw(args, map_, metric_, std::identity{});
 		} else {
-			searchRaw(args, space_, knnRawResults, metric_, prepareId);
+			knnRawResults = searchRaw(args, space_, metric_, prepareId);
 		}
 	} else {
-		throw_as_assert;
+		assertrx_throw(k > 0);
+		if (map_) {
+			knnRawResults = searchRaw(args, *map_);
+		} else {
+			knnRawResults = searchRaw(args, space_, prepareId);
+		}
 	}
 
 	return KnnRawResult{std::move(knnRawResults), metric_};
@@ -419,7 +378,7 @@ KnnRawResult IvfIndex::selectRaw(ConstFloatVectorView key, const KnnSearchParams
 
 std::unique_ptr<Index> IvfIndex::Clone(size_t) const { return std::unique_ptr<IvfIndex>{new IvfIndex{*this}}; }
 
-IndexMemStat IvfIndex::GetMemStat(const RdxContext& ctx) noexcept {
+IndexMemStat IvfIndex::GetMemStat(const RdxContext& ctx) const noexcept {
 	auto stats = FloatVectorIndex::GetMemStat(ctx);
 	size_t uniqKeysCount;
 	if (map_) {
@@ -464,13 +423,7 @@ void IvfIndex::trainIdx(faiss::IndexIVFFlat& idx, const float* vecs, const float
 #endif	// __linux__
 }
 
-FloatVector IvfIndex::getFloatVector(IdType id) const {
-	auto result = FloatVector::CreateNotInitialized(Dimension());
-	reconstruct(id, result);
-	return result;
-}
-
-ConstFloatVectorView IvfIndex::getFloatVectorView(IdType id) const {
+ConstFloatVectorView IvfIndex::getFloatVectorViewImpl(IdType id) const {
 	if (map_) {
 		return map_->getView(id.ToNumber());
 	} else {
@@ -522,10 +475,10 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 			faiss::write_index(map_.get(), &writer, cancel, true);
 		}
 	} catch (Error& err) {
-		assertrx_dbg(false);  // Don't expect this error in test scenarios
+		assertf_dbg(false, "Error: '{}'", err.what());	// Don't expect this error in test scenarios
 		res.err = std::move(err);
 	} catch (const std::exception& err) {
-		assertrx_dbg(false);  // Don't expect this error in test scenarios
+		assertf_dbg(false, "Error: '{}'", err.what());	// Don't expect this error in test scenarios
 		res.err = Error{errLogic, err.what()};
 	} catch (...) {
 		assertrx_dbg(false);  // Don't expect this error in test scenarios
@@ -534,14 +487,11 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 	return res;
 }
 
-Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData, uint8_t /*version*/) {
-	if (!getVectorData) [[unlikely]] {
-		return Error(errParams, "IvfIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
-	}
-
+Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&& getVectorData,
+							   LoadWithQuantizer, uint8_t /*version*/) {
 	class [[nodiscard]] ViewReader final : public faiss::IOReader, private LoaderBase {
 	public:
-		ViewReader(std::string _name, std::string_view view, VecDataGetterF&& getVectorData, bool isCompositePK) noexcept
+		ViewReader(std::string _name, std::string_view view, FloatVectorIndexRawDataInserter&& getVectorData, bool isCompositePK) noexcept
 			: faiss::IOReader(), LoaderBase{std::move(getVectorData), isCompositePK}, view_{view} {
 			name = std::move(_name);
 		}

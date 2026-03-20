@@ -1,9 +1,9 @@
 #include "ft_function.h"
 #include <algorithm>
 #include <cctype>
+#include "core/function/function_parser.h"
 #include "core/nsselecter/ranks_holder.h"
 #include "core/payload/fieldsset.h"
-#include "core/query/expression/function_parser.h"
 #include "core/queryresults/localqueryresults.h"
 #include "core/type_consts_helpers.h"
 #include "highlight.h"
@@ -11,7 +11,7 @@
 
 namespace reindexer {
 
-FtFuncStruct::FtFuncStruct(ParsedQueryFunction&& parsed) : ParsedQueryFunction{std::move(parsed)} {
+FtFuncStruct::FtFuncStruct(functions::ParsedFunction&& parsed) : functions::ParsedFunction{std::move(parsed)} {
 	using namespace std::string_view_literals;
 	if (iequals(funcName, "snippet"sv)) {
 		func = Snippet();
@@ -51,7 +51,7 @@ FtFunction::Ptr FtFunctionsHolder::AddNamespace(const Query& q, const NamespaceI
 
 FtFunction::FtFunction(const Query& q, NsFtFuncInterface&& nm) : nm_(std::move(nm)), currCjsonFieldIdx_(nm_.getIndexesCount()) {
 	for (auto& func : q.selectFunctions_) {
-		auto result = QueryFunctionParser::Parse(func);
+		auto result = functions::FunctionParser::Parse(func);
 		if (!result.isFunction) {
 			continue;
 		}
@@ -102,7 +102,7 @@ void FtFunction::createFunc(FtFuncStruct&& data) {
 FtCtx::Ptr FtFunction::createFuncForRank(int indexNo, const RanksHolder::Ptr& ranks) {
 	const int lastCjsonIdx = currCjsonFieldIdx_;
 	{
-		FtFuncStruct data{ParsedQueryFunction{}};
+		FtFuncStruct data{functions::ParsedFunction{}};
 		data.isFunction = true;
 		data.indexNo = indexNo;
 		createFunc(std::move(data));

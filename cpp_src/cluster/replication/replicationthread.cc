@@ -2,6 +2,7 @@
 #include "cluster/consts.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "clusterreplthread.h"
+#include "core/formatters/checksum_fmt.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 #include "estl/algorithm.h"
@@ -185,7 +186,8 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 	consensusCnt_ = consensusCnt;
 	requiredReplicas_ = requiredReplicas;
 
-	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
+	// TODO: Currently there are no good ways to recover, crash is intended
+	// NOLINTNEXTLINE(bugprone-exception-escape,rx-perf-lambda-to-std-function-allocation)
 	loop.spawn([this, &nodesList, funcName = __FUNCTION__]() noexcept {
 		nodes.clear();
 		if (config_.ParallelSyncsPerThreadCount > 0) {
@@ -474,7 +476,7 @@ Error ReplThread<BehaviourParamT>::namespacesSyncImpl(Node& node, const std::vec
 		nssToSync.emplace(ns.name);
 	}
 
-	struct RoutineContext {
+	struct [[nodiscard]] RoutineContext {
 		coroutine::tokens_pool<bool>::token syncToken;
 		NamespacesSyncScheduler::Guard ns;
 	};
@@ -506,6 +508,7 @@ Error ReplThread<BehaviourParamT>::namespacesSyncImpl(Node& node, const std::vec
 		}
 
 		logInfo("{}:{} Creating new sync routine to sync '{}'", serverId_, node.uid, routineCtx->ns.Name());
+		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 		loop.spawn(localWg, [this, &integralError, &node, routineCtx = std::move(routineCtx)]() mutable noexcept {
 			// 3.1) Perform wal-sync/force-sync for specified namespace in separated routine
 			try {
@@ -754,6 +757,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 			"ns_version: {}, lsn: {}, data_hash: {} }} }}",
 			serverId_, node.uid, nsName, localState.nsVersion, localState.lastLsn, localState.dataHash, followerState.nsVersion,
 			followerState.lastLsn, followerState.dataHash);
+		assertrx_dbg(localState.dataHash.hashV2.has_value());
 
 		if (!requiredLsn.IsEmpty() && localLsn.IsCompatibleByNsVersion(requiredLsn)) {
 			if (requiredLsn.LSN().Counter() > localLsn.LSN().Counter()) {
@@ -765,7 +769,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 				logWarn("{}:{}:{} unexpected follower's lsn: {}. Local lsn: {}. LSNs have different server ids", serverId_, node.uid,
 						nsName, requiredLsn.LSN(), localLsn.LSN());
 				requiredLsn = ExtendedLsn();
-			} else if (requiredLsn.LSN() == localLsn.LSN() && followerState.dataHash != localState.dataHash) {
+			} else if (requiredLsn.LSN() == localLsn.LSN() && !followerState.dataHash.IsEqualByAnyVersionTo(localState.dataHash)) {
 				logWarn("{}:{}:{} Datahash missmatch. Expected: {}, actual: {}", serverId_, node.uid, nsName, localState.dataHash,
 						followerState.dataHash);
 				requiredLsn = ExtendedLsn();
@@ -837,8 +841,8 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 
 		const bool versionMissmatch = (!snapshot.LastLSN().isEmpty() && snapshot.LastLSN() != replState.lastLsn) ||
 									  (!snapshot.NsVersion().isEmpty() && snapshot.NsVersion() != replState.nsVersion);
-		if (versionMissmatch || snapshot.ExpectedDataHash() != replState.dataHash ||
-			(replState.HasDataCount() && snapshot.ExpectedDataCount() != uint64_t(replState.dataCount))) {
+		if (versionMissmatch || !replState.dataHash.IsEqualByAnyVersionTo(snapshot.ExpectedDataHash()) ||
+			snapshot.ExpectedDataCount() != replState.dataCount) {
 			logInfo("{}:{}:{} Snapshot dump on data missmatch: {}", serverId_, node.uid, nsName, snapshot.Dump());
 			return Error(
 				errDataHashMismatch,

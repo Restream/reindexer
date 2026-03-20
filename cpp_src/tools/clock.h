@@ -31,6 +31,7 @@ public:
 		return std::chrono::system_clock::now();
 #endif	// !REINDEXER_OVERRIDES_STD_NOW
 	}
+	static uint64_t now_count() noexcept { return system_clock_w::now().time_since_epoch().count(); }
 	// Coarse version of the clock gets time ~2-3 times faster, but has worse granularity. Expected granularity is about 2-4 ms.
 	static time_point now_coarse() noexcept {
 #if defined(CLOCK_REALTIME_COARSE)

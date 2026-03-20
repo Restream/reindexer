@@ -40,7 +40,7 @@ namespace reindexer_server {
 constexpr size_t kTxIdLen = 20;
 constexpr auto kTxDeadlineCheckPeriod = std::chrono::seconds(1);
 
-class HTTPServer::TxCommitOption final : public HTTPServer::IQRSerializingOption {
+class [[nodiscard]] HTTPServer::TxCommitOption final : public HTTPServer::IQRSerializingOption {
 public:
 	TxCommitOption(const QueryResults& qr) noexcept : totalCount_{qr.Count()} {}
 
@@ -53,7 +53,7 @@ private:
 	size_t totalCount_;
 };
 
-class HTTPServer::TwoLevelLimitOffsetOption final : public HTTPServer::IQRSerializingOption {
+class [[nodiscard]] HTTPServer::TwoLevelLimitOffsetOption final : public HTTPServer::IQRSerializingOption {
 public:
 	TwoLevelLimitOffsetOption(QueryResults& qr, unsigned externalLimit, unsigned externalOffset)
 		: totalCount_{qr.Count()}, externalLimit_{externalLimit}, externalOffset_{externalOffset} {
@@ -77,7 +77,7 @@ private:
 	unsigned externalOffset_;
 };
 
-class HTTPServer::ReqularQueryResultsOption final : public HTTPServer::IQRSerializingOption {
+class [[nodiscard]] HTTPServer::ReqularQueryResultsOption final : public HTTPServer::IQRSerializingOption {
 public:
 	ReqularQueryResultsOption(QueryResults& qr) noexcept {
 		for (auto& agg : qr.GetAggregationResults()) {
@@ -97,7 +97,7 @@ private:
 	std::optional<size_t> totalCount_;
 };
 
-class HTTPServer::ItemsQueryResultsOption final : public HTTPServer::IQRSerializingOption {
+class [[nodiscard]] HTTPServer::ItemsQueryResultsOption final : public HTTPServer::IQRSerializingOption {
 public:
 	ItemsQueryResultsOption(QueryResults& qr) noexcept : totalCount_{qr.TotalCount()} {}
 
@@ -1487,6 +1487,7 @@ int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& re
 				}
 			} else {
 				reindexer::WALRecord rec(it.GetRaw());
+				// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 				rec.GetJSON(obj, cjsonViewer);
 			}
 		}

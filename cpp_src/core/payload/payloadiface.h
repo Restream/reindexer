@@ -6,6 +6,7 @@
 #include "core/indexopts.h"
 #include "core/keyvalue/variant.h"
 #include "fieldsset.h"
+#include "payload_checksum.h"
 #include "payloadfieldvalue.h"
 #include "payloadtype.h"
 #include "payloadvalue.h"
@@ -159,12 +160,12 @@ public:
 	// Serialize field values
 	void SerializeFields(WrSerializer& ser, const FieldsSet& fields) const;
 
-	// Get hash by fields mask
+	// Get hash by fields mask (does not support float vectors)
 	size_t GetHash(const FieldsSet& fields) const;
 	// Compare is EQ by field mask
 	bool IsEQ(const T& other, const FieldsSet& fields) const;
 	// Get hash of all document
-	uint64_t GetHash(const std::function<uint64_t(unsigned int, ConstFloatVectorView)>& getVectorHashF) const noexcept;
+	PayloadChecksum GetChecksum(const std::function<uint64_t(unsigned int, ConstFloatVectorView)>& getVectorHashF) const noexcept;
 
 	// Compare single field (indexed or non-indexed)
 	template <WithString, NotComparable, NullsHandling>

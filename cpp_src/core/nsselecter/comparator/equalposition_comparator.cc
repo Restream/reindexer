@@ -1,10 +1,13 @@
 #include "equalposition_comparator.h"
 
 #include <limits.h>
+#include <cstddef>
+#include <string>
 
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/field_extractor_grouping.h"
 #include "core/payload/payloadiface.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -93,9 +96,11 @@ void GroupingEqualPositionComparator::BindField(const std::string& name, const V
 	fieldPathPart_.emplace_back();
 	equal_position_helpers::ParseStrPath(fieldStr, fieldPathPart_.back());
 	for (auto& v : fieldPathPart_.back()) {
-		v.tag = tm_->name2tag(v.name);
-		if (v.tag.IsEmpty()) {
-			throw Error(Error(errParams, "Equal position tag is empty. Name {}", v.name));
+		if (v.type == PathPartType::Name) {
+			v.tag = tm_->name2tag(v.name);
+			if (v.tag.IsEmpty()) {
+				throw Error(Error(errParams, "Equal position tag is empty. Name {}", v.name));
+			}
 		}
 	}
 	Context& ctx = ctx_.emplace_back(CollateOpts{});
@@ -123,13 +128,10 @@ bool GroupingEqualPositionComparator::Compare(const PayloadValue& pv, IdType /*r
 		BaseEncoder<FieldsExtractorGrouping> encoder(tm_, nullptr);
 		const std::span<FieldPathPart> p(fieldPathPart_[i]);
 		unsigned int index;
-		FieldsExtractorGroupingState state;
-		state.arrayIndex = &index;
-		state.values = &eqPosVals[i];
-		state.path = p;
+		FieldsExtractorGroupingState state{eqPosVals[i], index, p};
 		FieldsExtractorGrouping extractor{state};
 		encoder.Encode(pl, extractor);
-		minLevel = std::min(minLevel, size_t(state.values->size()));
+		minLevel = std::min(minLevel, size_t(eqPosVals[i].size()));
 	}
 
 	bool res = false;
@@ -174,59 +176,72 @@ bool GroupingEqualPositionComparator::compareField(size_t field, const Variant& 
 
 namespace equal_position_helpers {
 
-static FieldPathPart parsePathPart(std::string_view str, unsigned int& i) {
+void checkIncorrectIndex() {}
+
+static FieldPathPart parsePathPart(std::string_view str, size_t& index) {
+	auto checkIncorrectIndex =
+		[&index, str]() {
+			if (index >= str.size()) {
+				throw Error(errParams, "Equal position path parse error. Incorrect path");
+			}
+		};
+
 	FieldPathPart p;
-	while (i < str.size()) {
-		if (isalpha(str[i]) || isdigit(str[i]) || str[i] == '_') {
-			if (p.name.empty()) {
-				p.name = std::string_view(&str[i], 1);
-			} else {
-				p.name = std::string_view(p.name.data(), p.name.size() + 1);
-			}
-			++i;
-		} else if (str[i] == '.') {
-			if (p.name.empty()) {
-				throw Error(errParams, "Equal position path parse error. Name is empty");
-			}
-			++i;
-			return p;
-		} else if (str[i] == '[') {
-			++i;
-			if (i < str.size() && str[i] == '#') {
-				if (p.flags == FieldPathPartFlags::Array) {
-					throw Error(errParams, "Equal position flag '#' is already set");
-				}
-				p.flags = FieldPathPartFlags::Array;
-				i++;
-			}
-			if (i >= str.size() || str[i] != ']') {
-				throw Error(errParams, "Equal position path parse error");
-			}
-			++i;
-		} else {
-			throw Error(errParams, "Equal position path parse error. Incorrect symbol '{}'", str[i]);
+	size_t begin = index;
+	checkIncorrectIndex();
+	if ((index == 0 && str[0] != '[') || str[index] == '.') {
+		if (str[index] == '.') {
+			index++;
+			begin++;
 		}
-	}
-	if (p.name.empty()) {
-		throw Error(errParams, "Equal position path parse error. Name is empty");
+		while (index < str.size() && (str[index] != '.' && str[index] != '[' && str[index] != ']')) {
+			index++;
+		}
+		if ((index - begin) == 0) {
+			throw Error(errParams, "Equal position path parse error. Name is empty");
+		}
+		p.type = PathPartType::Name;
+		p.name = str.substr(begin, index - begin);
+		return p;
+
+	} else if (str[index] != '[') {
+		throw Error(errParams, "Equal position path parse error. Incorrect symbol '{}'", str[index]);
+	} else {
+		index++;
+		checkIncorrectIndex();
+		if (str[index] == '*') {
+			p.type = PathPartType::AnyValue;
+			index++;
+			checkIncorrectIndex();
+			if (str[index] != ']') {
+				throw Error(errParams, "Equal position path parse error. No symbol ']' after '*'");
+			}
+			index++;
+			return p;
+		} else if (str[index] == '#') {
+			p.type = PathPartType::ArrayTarget;
+			index++;
+			checkIncorrectIndex();
+			if (str[index] != ']') {
+				throw Error(errParams, "Equal position path parse error. No symbol ']' after '#'");
+			}
+			index++;
+			return p;
+		} else {
+			throw Error(errParams, "Equal position path parse error. Incorrect symbol '{}'", str[index]);
+		}
 	}
 	return p;
 }
 
 void ParseStrPath(std::string_view str, FieldPath& path) {
-	unsigned int i = 0;
-	unsigned arrayFlagCounter = 0;
+	size_t i = 0;
 	while (i < str.size()) {
 		FieldPathPart part = parsePathPart(str, i);
-		if (part.flags == FieldPathPartFlags::Array) {
-			arrayFlagCounter++;
-		}
-		if (arrayFlagCounter > 1) {
-			throw Error(errParams, "Equal position field can contain only one array marker");
-		}
 		path.emplace_back(std::move(part));
 	}
 }
+
 }  // namespace equal_position_helpers
 
 }  // namespace reindexer

@@ -19,7 +19,7 @@ public:
 		: impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(std::move(payloadType), sparseIndexes, stateToken)),
 		  wasUpdated_(false) {}
 
-	TagsMatcher() : impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>()), wasUpdated_(false) {}
+	TagsMatcher() noexcept;
 	TagName name2tag(std::string_view name) const { return impl_->name2tag(name); }
 	TagName name2tag(std::string_view name, CanAddField canAdd) {
 		if (!name.data()) {

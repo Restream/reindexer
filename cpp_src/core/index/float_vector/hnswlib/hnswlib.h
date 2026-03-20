@@ -78,57 +78,19 @@ struct [[nodiscard]] DistCalculatorParam {
 	size_t dims{0};
 	QuantizingParams quantizingParams{};
 
-	float CalcDist(const void* lhs, const void* rhs, const CorrectiveOffsets& lhsCorrectiveOffsets,
-				   const CorrectiveOffsets& rhsCorrectiveOffsets) const noexcept {
+	float CalcDist(const void* lhs, const void* rhs, CorrectiveOffset lhsCorr, CorrectiveOffset rhsCorr) const noexcept {
 		switch (metric) {
 			case MetricType::L2: {
-				return euclideanDist(lhs, rhs, lhsCorrectiveOffsets, rhsCorrectiveOffsets);
+				return quantizingParams.alpha_2 * f(lhs, rhs, &dims) + lhsCorr + rhsCorr;
 			}
 			case MetricType::COSINE:
 			case MetricType::INNER_PRODUCT: {
-				return scalarProduct(lhs, rhs, lhsCorrectiveOffsets, rhsCorrectiveOffsets);
+				return -(quantizingParams.alpha_2 * -f(lhs, rhs, &dims) + lhsCorr + rhsCorr);
 			}
 			case MetricType::NONE:
 			default:
 				std::abort();
 		}
-	}
-
-	static float calcNonLinearAddition(const void* lhs, const void* rhs, const CorrectiveOffsets& lhsCorrectiveOffsets,
-									   const CorrectiveOffsets& rhsCorrectiveOffsets, size_t dims, float alpha) {
-		float res = 0;
-		const auto i1 = static_cast<const uint8_t*>(lhs);
-		const auto i2 = static_cast<const uint8_t*>(rhs);
-
-		for (size_t i = 0; i < dims; ++i) {
-			const float err1 =
-				i1[i] == 0 ? lhsCorrectiveOffsets.negOutlierErr
-						   : (i1[i] == uint8_t(KDefaultSq8Range) ? lhsCorrectiveOffsets.posOutlierErr : lhsCorrectiveOffsets.roundingErr);
-			const float err2 =
-				i2[i] == 0 ? rhsCorrectiveOffsets.negOutlierErr
-						   : (i2[i] == uint8_t(KDefaultSq8Range) ? rhsCorrectiveOffsets.posOutlierErr : rhsCorrectiveOffsets.roundingErr);
-
-			res += alpha * (i1[i] * err2 + i2[i] * err1) /*+ err1 * err2*/;
-		}
-
-		return res;
-	}
-
-	float euclideanDist(const void* lhs, const void* rhs, const CorrectiveOffsets& lhsCorrectiveOffsets,
-						const CorrectiveOffsets& rhsCorrectiveOffsets) const {
-		float res = quantizingParams.alpha_2 * f(lhs, rhs, &dims) + lhsCorrectiveOffsets.precalc + rhsCorrectiveOffsets.precalc;
-		if (quantizingParams.config.nonLinearCorrection == Sq8NonLinearCorrection::Enabled) {
-			res -= 2 * calcNonLinearAddition(lhs, rhs, lhsCorrectiveOffsets, rhsCorrectiveOffsets, dims, quantizingParams.alpha);
-		}
-		return res;
-	}
-	float scalarProduct(const void* lhs, const void* rhs, const CorrectiveOffsets& lhsCorrectiveOffsets,
-						const CorrectiveOffsets& rhsCorrectiveOffsets) const {
-		float res = quantizingParams.alpha_2 * -f(lhs, rhs, &dims) + lhsCorrectiveOffsets.precalc + rhsCorrectiveOffsets.precalc;
-		if (quantizingParams.config.nonLinearCorrection == Sq8NonLinearCorrection::Enabled) {
-			res += calcNonLinearAddition(lhs, rhs, lhsCorrectiveOffsets, rhsCorrectiveOffsets, dims, quantizingParams.alpha);
-		}
-		return -res;
 	}
 };
 
@@ -176,6 +138,10 @@ public:
 				assertrx_dbg(!normCoefs_);
 			}
 			maxElements_ = newSize;
+
+			if (!correctiveOffsets_.empty()) {
+				correctiveOffsets_.resize(maxElements_);
+			}
 		}
 	}
 	void CopyValuesFrom(const DistCalculator& other) {
@@ -241,7 +207,7 @@ public:
 	RX_ALWAYS_INLINE size_t Dims() const noexcept { return param_.dims; }
 	RX_ALWAYS_INLINE MetricType Metric() const noexcept { return param_.metric; }
 	RX_ALWAYS_INLINE float operator()(const void* v1, unsigned id1, const void* v2, unsigned id2) const {
-		auto dist = param_.CalcDist(v1, v2, getCorrectiveOffsets(id1), getCorrectiveOffsets(id2));
+		auto dist = param_.CalcDist(v1, v2, getCorrectiveOffset(id1), getCorrectiveOffset(id2));
 
 		if (param_.metric == MetricType::COSINE) {
 			assertrx(normCoefs_);
@@ -262,7 +228,7 @@ public:
 		return dist;
 	}
 	RX_ALWAYS_INLINE float operator()(const void* v1, const void* v2, unsigned id) const {
-		auto dist = param_.CalcDist(v1, v2, getCorrectiveOffsets(v1), getCorrectiveOffsets(id));
+		auto dist = param_.CalcDist(v1, v2, getCorrectiveOffset(v1), getCorrectiveOffset(id));
 		if (param_.metric == MetricType::COSINE) {
 			assertrx_dbg(normCoefs_);
 			assertrx_dbg(id < maxElements_);
@@ -279,36 +245,40 @@ public:
 		return dist;
 	}
 
-	void UpdateQuantizeParams(QuantizingParams params) noexcept { param_.quantizingParams = std::move(params); }
+	void UpdateQuantizeParams(QuantizingParams params) noexcept {
+		param_.quantizingParams = std::move(params);
+		correctiveOffsets_.resize(maxElements_);
+	}
 
-	std::vector<CorrectiveOffsets>& Sq8CorrectiveOffsets() noexcept { return correctiveOffsets_; }
+	std::vector<CorrectiveOffset>& Sq8CorrectiveOffsets() noexcept { return correctiveOffsets_; }
+	const std::vector<CorrectiveOffset>& Sq8CorrectiveOffsets() const noexcept { return correctiveOffsets_; }
 
 private:
 	size_t maxElements_{0};
 	DistCalculatorParam param_;
 	std::unique_ptr<float[]> normCoefs_;
-	std::vector<CorrectiveOffsets> correctiveOffsets_;
+	std::vector<CorrectiveOffset> correctiveOffsets_;
 #if RX_WITH_STDLIB_DEBUG
 	mutable reindexer::mutex mtx_;
 	std::set<unsigned> initialized_;
 #endif	// RX_WITH_STDLIB_DEBUG
 
-	RX_ALWAYS_INLINE CorrectiveOffsets getCorrectiveOffsets(unsigned id) const {
+	RX_ALWAYS_INLINE CorrectiveOffset getCorrectiveOffset(unsigned id) const {
 		if (!correctiveOffsets_.empty() && id >= correctiveOffsets_.size()) [[unlikely]] {
 			throw std::logic_error(fmt::format("There are no corrective offsets for the vector with id {} in the graph.", id));
 		}
 
-		return !correctiveOffsets_.empty() ? correctiveOffsets_[id] : CorrectiveOffsets{};
+		return !correctiveOffsets_.empty() ? correctiveOffsets_[id] : CorrectiveOffset{};
 	}
 
-	RX_ALWAYS_INLINE CorrectiveOffsets getCorrectiveOffsets(const void* data) const noexcept {
+	RX_ALWAYS_INLINE CorrectiveOffset getCorrectiveOffset(const void* data) const noexcept {
 		if (correctiveOffsets_.empty()) {
 			return {};
 		}
 
 		auto ptr = reinterpret_cast<const float*>(reinterpret_cast<const uint8_t*>(data) + param_.dims);
-		CorrectiveOffsets res;
-		std::memcpy(static_cast<void*>(&res), ptr, sizeof(CorrectiveOffsets));
+		CorrectiveOffset res{};
+		std::memcpy(static_cast<void*>(&res), ptr, sizeof(CorrectiveOffset));
 		return res;
 	}
 };
@@ -345,6 +315,7 @@ public:
 	virtual std::string_view GetVString() = 0;
 	virtual float GetFloat() = 0;
 	virtual labeltype ReadPkEncodedData(char* destBuf) = 0;
+	virtual bool WithQuantizer() = 0;
 
 	virtual uint8_t Version() = 0;
 };
@@ -356,7 +327,6 @@ public:
 #include "space_cosine.h"
 #include "space_ip.h"
 #include "space_l2.h"
-#include "stop_condition.h"
 
 #ifndef _MSC_VER
 #pragma GCC diagnostic pop

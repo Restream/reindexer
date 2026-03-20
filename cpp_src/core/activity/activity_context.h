@@ -1,39 +1,14 @@
 #pragma once
 
 #include <atomic>
-#include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_set>
-#include <vector>
 #include "activity.h"
 #include "estl/marked_mutex.h"
-#include "estl/mutex.h"
 
 namespace reindexer {
 
-class RdxActivityContext;
-
-class [[nodiscard]] ActivityContainer {
-public:
-	void Register(const RdxActivityContext*);
-	void Unregister(const RdxActivityContext*);
-	void Reregister(const RdxActivityContext* oldCtx, const RdxActivityContext* newCtx);
-	std::vector<Activity> List(int serverId);
-	std::optional<std::string> QueryForIpConnection(int id);
-
-	void Reset();
-
-#ifdef RX_LOGACTIVITY
-	void AddOperation(const RdxActivityContext* ctx, Activity::State st, bool start);
-
-private:
-	ActivityContainerLog log_;
-#endif
-private:
-	mutex mtx_;
-	std::unordered_set<const RdxActivityContext*> cont_;
-};
+class ActivityContainer;
 
 /// Threadsafe operations of objects of this class are
 ///		cast to Activity
@@ -48,50 +23,10 @@ class [[nodiscard]] RdxActivityContext {
 
 	class [[nodiscard]] Ward {
 	public:
-		Ward(RdxActivityContext* cont, Activity::State state) noexcept : context_(cont) {
-			if (context_) {
-				prevState_ = context_->state_.exchange(serializeState(state), std::memory_order_relaxed);
-#ifndef NDEBUG
-				context_->refCount_.fetch_add(1u, std::memory_order_relaxed);
-#endif
-#ifdef RX_LOGACTIVITY
-				if (context_->parent_) {
-					context_->parent_->AddOperation(context_, state, true);
-				}
-#endif
-			}
-		}
-		Ward(RdxActivityContext* cont, MutexMark mutexMark) noexcept : context_(cont) {
-			if (context_) {
-				prevState_ = context_->state_.exchange(serializeState(mutexMark), std::memory_order_relaxed);
-#ifndef NDEBUG
-				context_->refCount_.fetch_add(1u, std::memory_order_relaxed);
-#endif
-#ifdef RX_LOGACTIVITY
-				if (context_->parent_) {
-					context_->parent_->AddOperation(context_, Activity::WaitLock, true);
-				}
-#endif
-			}
-		}
+		Ward(RdxActivityContext* cont, Activity::State state) noexcept;
+		Ward(RdxActivityContext* cont, MutexMark mutexMark) noexcept;
 		Ward(Ward&& other) noexcept : context_(other.context_), prevState_(other.prevState_) { other.context_ = nullptr; }
-		~Ward() {
-			if (context_) {
-#ifdef RX_LOGACTIVITY
-				auto [state, mark] = deserializeState(context_->state_);
-				(void)mark;
-#endif
-
-				context_->state_.store(prevState_, std::memory_order_relaxed);
-				[[maybe_unused]] const auto refs = context_->refCount_.fetch_sub(1u, std::memory_order_relaxed);
-				assertrx(refs != 0u);
-#ifdef RX_LOGACTIVITY
-				if (context_->parent_) {
-					context_->parent_->AddOperation(context_, state, false);
-				}
-#endif
-			}
-		}
+		~Ward();
 
 		Ward(const Ward&) = delete;
 		Ward& operator=(const Ward&) = delete;

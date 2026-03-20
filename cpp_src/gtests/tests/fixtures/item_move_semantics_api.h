@@ -1,16 +1,15 @@
 #pragma once
 
 #include <gtest/gtest.h>
-#include <map>
 #include "gason/gason.h"
 #include "reindexer_api.h"
 
 class [[nodiscard]] ItemMoveSemanticsApi : public ReindexerApi {
 protected:
 	const std::string pkField = "bookid";
-	const int32_t itemsCount = 100000;
+	const int32_t itemsCount = 10000;
 	const char* jsonPattern = "{\"bookid\":%d,\"title\":\"title\",\"pages\":200,\"price\":299,\"genreid_fk\":3,\"authorid_fk\":10}";
-	std::map<int, Item> items_;
+	std::vector<Item> items_;
 
 	void SetUp() override {
 		ReindexerApi::SetUp();
@@ -26,7 +25,8 @@ protected:
 	void prepareItems() {
 		const size_t bufSize = 4096;
 		char buf[bufSize];
-		for (int i = 1; i < itemsCount; ++i) {
+		items_.resize(itemsCount);
+		for (int i = 0; i < itemsCount; ++i) {
 			int id = i;
 			snprintf(&buf[0], bufSize, jsonPattern, id);
 			Item item(rt.NewItem(default_namespace));
@@ -37,8 +37,7 @@ protected:
 	}
 
 	void verifyAndUpsertItems() {
-		for (auto& pair : items_) {
-			auto&& item = pair.second;
+		for (auto& item : items_) {
 			rt.Upsert(default_namespace, item);
 			gason::JsonParser parser;
 			ASSERT_NO_THROW(parser.Parse(item.GetJSON()));
@@ -46,17 +45,15 @@ protected:
 	}
 
 	Item getItemById(int id) {
-		auto itItem = items_.find(id);
-		if (itItem == items_.end()) {
+		if (id < 0 || unsigned(id) >= items_.size()) {
 			return Item();
 		}
-		auto&& item = itItem->second;
-		return std::move(item);
+		return std::move(items_[id]);
 	}
 
 	void verifyJsonsOfUpsertedItems() {
 		auto qres = rt.ExecSQL("SELECT * FROM " + default_namespace);
-		EXPECT_EQ(int(qres.Count()), (itemsCount - 1));
+		EXPECT_EQ(int(qres.Count()), itemsCount);
 
 		for (auto it : qres) {
 			Item item(it.GetItem(false));

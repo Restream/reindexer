@@ -4,16 +4,16 @@
 #include "estl/tokenizer.h"
 #include "tools/errors.h"
 
-namespace reindexer {
+namespace reindexer::functions {
 
 using namespace std::string_view_literals;
 
-ParsedQueryFunction QueryFunctionParser::Parse(std::string_view query) {
+ParsedFunction FunctionParser::Parse(std::string_view query) {
 	Tokenizer parser(query);
 
 	Token tok = parser.NextToken(Tokenizer::Flags::NoFlags);
 
-	ParsedQueryFunction parsedQueryFunction;
+	ParsedFunction parsedQueryFunction;
 	auto dotPos = tok.Text().find('.');
 	if (dotPos == std::string_view::npos || (parser.PeekToken(Tokenizer::Flags::NoFlags).Text() == "=")) {
 		parsedQueryFunction.field = std::string(tok.Text());
@@ -43,7 +43,7 @@ ParsedQueryFunction QueryFunctionParser::Parse(std::string_view query) {
 	return parsedQueryFunction;
 }
 
-void QueryFunctionParser::parsePositionalAndNamedArgs(Tokenizer& parser, ParsedQueryFunction& parsedQueryFunction, const Args& args) {
+void FunctionParser::parsePositionalAndNamedArgs(Tokenizer& parser, ParsedFunction& parsedQueryFunction, const Args& args) {
 	Token tok;
 	tok = parser.NextToken(Tokenizer::Flags::NoFlags);
 	if (!(tok.Type() == TokenSymbol && tok.Text() == "("sv)) {
@@ -177,13 +177,13 @@ void QueryFunctionParser::parsePositionalAndNamedArgs(Tokenizer& parser, ParsedQ
 	}
 }
 
-ParsedQueryFunction QueryFunctionParser::ParseFunction(Tokenizer& parser, Token& tok) {
-	ParsedQueryFunction parsedQueryFunction;
+ParsedFunction FunctionParser::ParseFunction(Tokenizer& parser, Token& tok) {
+	ParsedFunction parsedQueryFunction;
 	parseFunctionImpl(parser, parsedQueryFunction, tok);
 	return parsedQueryFunction;
 }
 
-void QueryFunctionParser::parseFunction(Tokenizer& parser, ParsedQueryFunction& parsedQueryFunction, Token& tok) {
+void FunctionParser::parseFunction(Tokenizer& parser, ParsedFunction& parsedQueryFunction, Token& tok) {
 	parseFunctionImpl(parser, parsedQueryFunction, tok);
 	Token nextTok = parser.NextToken(Tokenizer::Flags::NoFlags);
 	if (nextTok.Text().length() > 0) {
@@ -191,7 +191,7 @@ void QueryFunctionParser::parseFunction(Tokenizer& parser, ParsedQueryFunction& 
 	}
 }
 
-void QueryFunctionParser::parseFunctionImpl(Tokenizer& parser, ParsedQueryFunction& parsedQueryFunction, Token& tok) {
+void FunctionParser::parseFunctionImpl(Tokenizer& parser, ParsedFunction& parsedQueryFunction, Token& tok) {
 	using namespace std::string_view_literals;
 	if (tok.Text().empty()) {
 		tok = parser.NextToken();
@@ -238,7 +238,7 @@ void QueryFunctionParser::parseFunctionImpl(Tokenizer& parser, ParsedQueryFuncti
 	return;
 }
 
-bool QueryFunctionParser::IsFunction(std::string_view val) noexcept {
+bool FunctionParser::IsFunction(std::string_view val) noexcept {
 	if (val.length() < 3) {
 		return false;
 	}
@@ -272,8 +272,8 @@ bool QueryFunctionParser::IsFunction(std::string_view val) noexcept {
 	return false;
 }
 
-bool QueryFunctionParser::IsFunction(const VariantArray& val) noexcept {
+bool FunctionParser::IsFunction(const VariantArray& val) noexcept {
 	return val.size() == 1 && val.front().Type().Is<KeyValueType::String>() && IsFunction(static_cast<std::string_view>(val.front()));
 }
 
-}  // namespace reindexer
+}  // namespace reindexer::functions

@@ -224,7 +224,7 @@ static void CJsonBuilderRef(CJsonBuilderT& builder, const PayloadIfaceT& pl, con
 }
 
 namespace {
-struct PathElementNodeTree {
+struct [[nodiscard]] PathElementNodeTree {
 #ifdef USE_PMR
 	using MapT = std::pmr::map<TagName, PathElementNodeTree>;
 
@@ -374,7 +374,7 @@ void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, std:
 }
 
 template <typename PL>
-class CJsonDumper {
+class [[nodiscard]] CJsonDumper {
 	static constexpr uint32_t kMaxArrayOutput = 3;
 
 public:

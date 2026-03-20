@@ -252,7 +252,7 @@ def main():
                       action='store_true', help='allow alpha checkers from '
                                                 'clang-analyzer.')
   parser.add_argument('-clang-tidy-binary', metavar='PATH',
-                      default='clang-tidy-21',
+                      default='clang-tidy-22',
                       help='path to clang-tidy binary')
   parser.add_argument('-clang-apply-replacements-binary', metavar='PATH',
                       default='clang-apply-replacements-21',

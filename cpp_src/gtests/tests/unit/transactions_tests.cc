@@ -7,6 +7,13 @@
 #include "tools/fsops.h"
 #include "transaction_api.h"
 
+#if defined(__GNUC__) && !defined(__clang__) && defined(REINDEX_WITH_TSAN)
+// GCC-only workaround for a known false-positive -Warray-bounds warning
+// triggered by std::thread when building with ThreadSanitizer.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 TEST_F(TransactionApi, ConcurrencyTest) {
 	using reindexer::fs::GetTempDir;
 	using reindexer::fs::JoinPath;
@@ -224,4 +231,116 @@ TEST_F(TransactionApi, IndexesOptimizeTest) {
 	// Ensure, that ns indexes is in optimized state immediately after tx done
 	bool optimization_completed = qr.begin().GetItem(false)["optimization_completed"].Get<bool>();
 	ASSERT_EQ(true, optimization_completed);
+}
+
+#if defined(__GNUC__) && !defined(__clang__) && defined(REINDEX_WITH_TSAN)
+#pragma GCC diagnostic pop
+#endif
+
+TEST_F(TransactionApi, ConcurrentTwoFloatVectorUpdateTest) {
+#if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(_GLIBCXX_DEBUG)
+	static constexpr bool kIsRelease = false;
+#else
+	static constexpr bool kIsRelease = true;
+#endif
+	static const size_t kDataSize = kIsRelease ? 10'326 : 1'326;
+	static const size_t kDim = kIsRelease ? 1000 : 10;
+	static const size_t kTxBatchSize = kIsRelease ? 1000 : 200;
+	static const std::string kIndexName1 = "hnsw1";
+	static const std::string kIndexName2 = "hnsw2";
+
+	auto addIndex = [this](const std::string& indexName) {
+		rt.AddIndex(
+			default_namespace,
+			reindexer::IndexDef{indexName,
+								{indexName},
+								IndexHnsw,
+								IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
+																		  .SetStartSize(kDataSize)
+																		  .SetMetric(reindexer::VectorMetric::Cosine)
+																		  .SetMultithreading(MultithreadingMode::MultithreadTransactions)
+																		  .SetM(16)
+																		  .SetEfConstruction(200)
+																		  .SetDimension(kDim))});
+	};
+
+	addIndex(kIndexName1);
+	addIndex(kIndexName2);
+
+	auto points = [] {
+		std::vector<reindexer::FloatVector> res;
+		res.reserve(kDataSize);
+
+		for (size_t i = 0; i < kDataSize; ++i) {
+			auto point = reindexer::FloatVector::CreateNotInitialized(reindexer::FloatVectorDimension(kDim));
+			for (size_t j = 0; j < kDim; ++j) {
+				point.RawData()[j] = float(rand() % 10'000) / 10'000;
+			}
+			res.emplace_back(std::move(point));
+		}
+		return res;
+	}();
+
+	const size_t kNumTxThreads = 3;
+	std::atomic<size_t> nextBatch{0};
+	const size_t numBatches = (kDataSize + kTxBatchSize - 1) / kTxBatchSize;
+
+	auto worker = [&]() {
+		while (true) {
+			size_t batchId = nextBatch.fetch_add(1, std::memory_order_relaxed);
+			if (batchId >= numBatches) {
+				break;
+			}
+
+			size_t begin = batchId * kTxBatchSize;
+			size_t end = std::min(begin + kTxBatchSize, kDataSize);
+
+			auto tx = rt.NewTransaction(default_namespace);
+			size_t cnt = 0;
+
+			for (size_t itemId = begin; itemId < end; ++itemId) {
+				auto txItem = tx.NewItem();
+				txItem["id"] = int64_t(itemId);
+				auto view = points[itemId].View();
+				txItem[kIndexName1] = view;
+				txItem[kIndexName2] = view;
+
+				ASSERT_TRUE(tx.Insert(std::move(txItem)).ok());
+				++cnt;
+			}
+
+			auto qr = rt.CommitTransaction(tx);
+			ASSERT_EQ(qr.Count(), cnt);
+		}
+	};
+
+	std::vector<std::thread> threads;
+	threads.reserve(kNumTxThreads);
+	for (size_t i = 0; i < kNumTxThreads; ++i) {
+		threads.emplace_back(worker);
+	}
+	for (auto& th : threads) {
+		th.join();
+	}
+
+	auto qr = rt.Select(Query(default_namespace).Sort("id", false).SelectAllFields());
+
+	ASSERT_EQ(qr.Count(), kDataSize);
+
+	int id = 0;
+	for (auto it = qr.begin(); it != qr.end(); ++it) {
+		auto item = (*it).GetItem();
+		auto fv = item[kIndexName1].template As<reindexer::ConstFloatVectorView>().Span();
+		auto fvQ = item[kIndexName2].template As<reindexer::ConstFloatVectorView>().Span();
+
+		ASSERT_EQ(fvQ.size(), kDim);
+		ASSERT_EQ(fv.size(), kDim);
+
+		auto point = points[id].Span();
+		for (size_t i = 0; i < kDim; ++i) {
+			ASSERT_TRUE(reindexer::fp::EqualWithinULPs(fv[i], point[i]));
+			ASSERT_TRUE(reindexer::fp::EqualWithinULPs(fvQ[i], point[i]));
+		}
+		++id;
+	}
 }

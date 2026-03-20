@@ -31,11 +31,6 @@
 #include "stringsholder.h"
 #include "wal/waltracker.h"
 
-#ifdef kRxStorageItemPrefix
-static_assert(false, "Redefinition of kRxStorageItemPrefix");
-#endif	// kRxStorageItemPrefix
-#define kRxStorageItemPrefix "I"
-
 namespace reindexer {
 
 using reindexer::datastorage::StorageType;
@@ -75,6 +70,10 @@ struct DistanceBetweenJoinedIndexesSameNs;
 
 namespace migrations {
 class PKMigrationService;
+}
+
+namespace functions {
+class PrecomputedValues;
 }
 
 class [[nodiscard]] NsContext {
@@ -185,7 +184,8 @@ class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // 
 	friend class FloatVectorsHolderMap;
 	friend class FieldsFilter;
 	friend class ExpressionEvaluator;
-	friend class FunctionExecutor;
+	friend class FloatVectorsGetter;
+	friend class functions::Serial;
 	friend class migrations::PKMigrationService;
 
 	class [[nodiscard]] IndexesStorage final : public std::vector<std::unique_ptr<Index>> {
@@ -273,7 +273,8 @@ public:
 			const bool isFollowerNS = owner_.repl_.clusterStatus.role == ClusterOperationStatus::Role::SimpleReplica ||
 									  owner_.repl_.clusterStatus.role == ClusterOperationStatus::Role::ClusterReplica;
 
-			if (!ctx.GetOriginLSN().isEmpty() && !owner_.repl_.token.empty() && owner_.repl_.token != ctx.LeaderReplicationToken()) {
+			if (!ctx.GetOriginLSN().isEmpty() && !owner_.repl_.token.empty() && !owner_.isTemporary() &&
+				owner_.repl_.token != ctx.LeaderReplicationToken()) {
 				throw Error(errReplParams,
 							"Different replication tokens on leader and follower for namespace '{}'. Expected '{}', but got '{}'",
 							owner_.name_, owner_.repl_.token, ctx.LeaderReplicationToken());
@@ -470,20 +471,24 @@ private:
 
 	void markUpdated(IndexOptimization requestedOptimization);
 	Item newItem();
-	void doUpdate(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
-	void doUpdateTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
-	void doDelete(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
-	void doDeleteTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx);
+	void doUpdate(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx,
+				  const functions::PrecomputedValues&);
+	void doUpdateTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx,
+					const functions::PrecomputedValues&);
+	void doDelete(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx,
+				  const functions::PrecomputedValues&);
+	void doDeleteTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx,
+					const functions::PrecomputedValues&);
 	void doUpsert(ItemImpl& item, IdType id, bool doUpdate, TransactionContext* txCtx);
 	void modifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void deleteItem(Item& item, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void doModifyItem(Item& item, ItemModifyMode mode, UpdatesContainer& pendedRepl, const NsContext& ctx,
 					  IdType suggestedId = IdType::NotSet());
 	void updateTagsMatcherFromItem(ItemImpl* ritem, const NsContext& ctx);
-	Error tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl& item, IdType rowId, const FloatVectorsIndexes& vectorIndexes,
-								  WrSerializer& pk, WrSerializer& data) noexcept;
+	Error tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl& item, IdType rowId, WrSerializer& pk, WrSerializer& data) noexcept;
 	template <NeedRollBack needRollBack, FieldChangeType fieldChangeType>
-	RollBack_updateItems<needRollBack> updateItems(const PayloadType& oldPlType, int changedField);
+	RollBack_updateItems<needRollBack> updateItems(const PayloadType& oldPlType, const TagsMatcher& oldTagsMatcher,
+												   const FieldsSet* oldPkFields, int changedField);
 	void fillSparseIndex(Index&, std::string_view jsonPath);
 	void doDelete(IdType id, TransactionContext* txCtx);
 	void doTruncate(UpdatesContainer& pendedRepl, const NsContext& ctx);
@@ -499,6 +504,8 @@ private:
 	void verifyUpsertEmbedder(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpsertIndex(std::string_view action, const IndexDef& indexDef) const;
 	void verifyUpdateIndex(const IndexDef& indexDef);
+	void verifyUpdateQuantizationConfigHNSWIndex(const Index* curIndex, const IndexDef& newIndexDef) const;
+	void verifyUpsertQuantizationConfigHNSWIndex(std::string_view action, const IndexDef& indexDef) const;
 	void verifyDropIndex(const IndexDef&, IndexNamesMap::const_iterator) const;
 	bool updateIndex(const IndexDef& indexDef, bool disableTmVersionInc);
 	bool doUpdateIndex(const IndexDef& indexDef, UpdatesContainer& pendedRepl, const NsContext& ctx);
@@ -509,9 +516,10 @@ private:
 	void removeExpiredItems(RdxActivityContext*);
 	void removeExpiredStrings(RdxActivityContext*);
 	void optimizeFloatVectorKeeper(RdxActivityContext*);
+	void backgroundHNSWIndexesQuantization(RdxActivityContext*);
 	void setSchema(std::string_view schema, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void setTagsMatcher(TagsMatcher&& tm, UpdatesContainer& pendedRepl, const NsContext& ctx);
-	void replicateItem(IdType itemId, const NsContext& ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity,
+	void replicateItem(IdType itemId, const NsContext& ctx, bool statementReplication, PayloadChecksum oldPlHash, size_t oldItemCapacity,
 					   int oldTmVersion, std::optional<PKModifyRevertData>&& modifyData, UpdatesContainer& pendedRepl);
 
 	template <NeedRollBack needRollBack>
@@ -531,6 +539,7 @@ private:
 	RX_ALWAYS_INLINE SelectKeyResult getPkDocs(const ConstPayload& cpl, bool inTransaction, const RdxContext& ctx);
 	RX_ALWAYS_INLINE VariantArray getPkKeys(const ConstPayload& cpl, Index* pkIndex, int fieldNum);
 	[[noreturn]] void throwDuplicatePK(const ConstPayload& cpl, IdType itemId, IdType conflictingItemId);
+	[[noreturn]] void throwCannotModifyNsWithoutPK() const;
 
 	void setFieldsBasedOnPrecepts(ItemImpl* ritem, UpdatesContainer& replUpdates, const NsContext& ctx);
 
@@ -542,7 +551,7 @@ private:
 	void getInsideFromJoinCache(JoinCacheRes& ctx) const;
 	int64_t lastUpdateTimeNano() const noexcept { return repl_.updatedUnixNano; }
 
-	const FieldsSet& pkFields();
+	const FieldsSet* pkFields() const noexcept;
 
 	std::vector<std::string> enumMeta() const;
 
@@ -573,7 +582,7 @@ private:
 
 	int64_t correctMaxIterationsIdSetPreResult(int64_t maxIterationsIdSetPreResult) const;
 	void rebuildIndexesToCompositeMapping() noexcept;
-	uint64_t calculateItemHash(IdType rowId, int removedIdxId = -1) const noexcept;
+	PayloadChecksum calculateItemChecksum(IdType rowId, int removedIdxId = -1) const noexcept;
 
 	IndexesStorage indexes_;
 	IndexNamesMap indexesNames_;
@@ -664,6 +673,13 @@ private:
 	}
 	void clearNamespaceCaches();
 	[[noreturn]] void throwIndexUpsertErrorWithPKInfo(const ConstPayload&, const std::exception&);
+
+	Variant getFloatVector(IdType, const FloatVectorIndex&, const PayloadType* = nullptr, const TagsMatcher* = nullptr,
+						   const FieldsSet* = nullptr) const;
+	FloatVectorsGetter floatVectorsGetterFn(IdType rowId, const FieldsSet* = nullptr) const noexcept;
+
+	void quantize(std::string_view index, const RdxContext& ctx);
+	void reloadNonQuantizedIndex(int idx);
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic_bool enablePerfCounters_{false};

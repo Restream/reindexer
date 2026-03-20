@@ -244,6 +244,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 	for (size_t i = 0; i < size; ++i) {
 		auto conn = connections_[i];
 		auto& c = *conn;
+		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 		auto err = c.WithCompletion([i, stData, conn = std::move(conn)](const Error& err) {
 						lock_guard lck(stData->mtx);
 						++stData->completed;

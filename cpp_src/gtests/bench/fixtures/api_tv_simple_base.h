@@ -2,7 +2,7 @@
 
 #include "base_fixture.h"
 
-class ApiTvSimpleBase : protected BaseFixture {
+class [[nodiscard]] ApiTvSimpleBase : protected BaseFixture {
 	using Base = BaseFixture;
 
 public:

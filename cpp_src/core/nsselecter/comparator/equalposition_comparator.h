@@ -8,17 +8,17 @@
 
 namespace reindexer {
 
-enum class [[nodiscard]] FieldPathPartFlags { None = 0, Array };
+enum class [[nodiscard]] PathPartType { Name, AnyValue, ArrayTarget };
 struct [[nodiscard]] FieldPathPart {
+	PathPartType type;
 	std::string_view name;
-	FieldPathPartFlags flags = FieldPathPartFlags::None;
 	TagName tag = TagName::Empty();
 };
 
 using FieldPath = h_vector<FieldPathPart, 4>;
 namespace equal_position_helpers {
 void ParseStrPath(std::string_view str, FieldPath& path);
-}
+}  // namespace equal_position_helpers
 
 class [[nodiscard]] EqualPositionComparator {
 public:

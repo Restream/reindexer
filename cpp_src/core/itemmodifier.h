@@ -1,9 +1,8 @@
 #pragma once
 
 #include <optional>
-#include "core/keyvalue/p_string.h"
-#include "core/namespace/float_vectors_indexes.h"
 #include "core/payload/payloadiface.h"
+#include "function/precomputed_values.h"
 #include "keyvalue/float_vectors_holder.h"
 #include "updates/updaterecord.h"
 
@@ -15,7 +14,8 @@ class UpdateEntry;
 
 class [[nodiscard]] ItemModifier {
 public:
-	ItemModifier(const std::vector<UpdateEntry>&, NamespaceImpl& ns, UpdatesContainer& replUpdates, const NsContext& ctx);
+	ItemModifier(const std::vector<UpdateEntry>&, NamespaceImpl& ns, UpdatesContainer& replUpdates, const NsContext& ctx,
+				 const functions::PrecomputedValues& precomputedValues);
 	ItemModifier(const ItemModifier&) = delete;
 	ItemModifier& operator=(const ItemModifier&) = delete;
 	ItemModifier(ItemModifier&&) = delete;
@@ -40,7 +40,7 @@ private:
 		std::string_view Name() const noexcept;
 
 	private:
-		struct PathData {
+		struct [[nodiscard]] PathData {
 			std::string jsonPath;
 			TagsPath tagsPath;
 			unsigned indexesCountInPath = 0;
@@ -64,12 +64,12 @@ private:
 		bool isIndex_{false};
 	};
 
-	struct VectorIndex {
+	struct [[nodiscard]] VectorIndex {
 		int vecField;
 		h_vector<int, 2> autoEmbeddingFields;
 	};
 
-	struct EmbeddingIndex {
+	struct [[nodiscard]] EmbeddingIndex {
 		int autoEmbeddingField;
 		h_vector<int, 2> vecFields;
 	};
@@ -160,7 +160,7 @@ private:
 	class [[nodiscard]] IndexRollBack {
 	public:
 		IndexRollBack(int indexCount) { data_.resize(indexCount); }
-		void Reset(IdType itemId, const PayloadType& pt, const PayloadValue& pv, FloatVectorsIndexes&& fvIndexes);
+		void Reset(const NamespaceImpl& ns, IdType itemId, const PayloadValue& pv);
 		void IndexChanged(size_t index, IsPk isPk) noexcept {
 			data_[index] = true;
 			pkModified_ = pkModified_ || isPk;
@@ -178,9 +178,9 @@ private:
 
 	IndexRollBack rollBackIndexData_;
 	CompositeFlags affectedComposites_;
-	const FloatVectorsIndexes vectorIndexes_;
 
 	EmbedderHelper embedderHelper_;
+	const functions::PrecomputedValues& precomputedValues_;
 };
 
 }  // namespace reindexer

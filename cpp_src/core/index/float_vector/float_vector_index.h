@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/index/index.h"
+#include "core/namespace/float_vector_data_access.h"
 #include "estl/mutex.h"
 
 namespace reindexer {
@@ -12,7 +13,6 @@ class KnnRawResult;
 
 class [[nodiscard]] FloatVectorIndex : public Index {
 public:
-	using VecDataGetterF = std::function<IdType(const VariantArray& pk, void*)>;
 	using PKGetterF = std::function<VariantArray(IdType)>;
 
 protected:
@@ -34,7 +34,7 @@ protected:
 
 	class [[nodiscard]] LoaderBase {
 	protected:
-		LoaderBase(VecDataGetterF&& getVectorData, bool isCompositePK) noexcept
+		LoaderBase(FloatVectorIndexRawDataInserter&& getVectorData, bool isCompositePK) noexcept
 			: getVectorData_{std::move(getVectorData)}, isCompositePK_{isCompositePK} {}
 
 		IdType readPKEncodedData(void* destBuf, Serializer& ser, std::string_view name, std::string_view idxType) {
@@ -59,7 +59,7 @@ protected:
 		}
 
 	private:
-		VecDataGetterF getVectorData_;
+		FloatVectorIndexRawDataInserter getVectorData_;
 		const bool isCompositePK_;
 	};
 
@@ -87,31 +87,39 @@ public:
 	const void* ColumnData() const noexcept override final { return nullptr; }
 	bool HoldsStrings() const noexcept override final { return false; }
 	void ReconfigureCache(const NamespaceCacheConfigData&) noexcept override final {}
-	IndexMemStat GetMemStat(const RdxContext&) noexcept override;
+	IndexMemStat GetMemStat(const RdxContext&) const noexcept override;
 	IndexPerfStat GetIndexPerfStat() override;
-	FloatVector GetFloatVector(IdType) const;
-	ConstFloatVectorView GetFloatVectorView(IdType) const;
-	uint64_t GetHash(IdType rowId) const { return GetFloatVectorView(rowId).Hash(); }
+	virtual uint64_t GetHash(IdType rowId) const = 0;
 	reindexer::FloatVectorDimension Dimension() const noexcept { return reindexer::FloatVectorDimension(Opts().FloatVector().Dimension()); }
 	QueryRankType RankedType() const noexcept override final { return ToQueryRankType(metric_); }
 	reindexer::FloatVectorDimension FloatVectorDimension() const noexcept override final { return Dimension(); }
 	FloatVectorsKeeper& GetKeeper() const noexcept { return *keeper_; }
 	virtual StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 													const std::atomic_int32_t& cancel) noexcept = 0;
-	virtual Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVecData, uint8_t version) = 0;
+	virtual Error LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&& getVecData, LoadWithQuantizer,
+								 uint8_t version) = 0;
 	virtual void RebuildCentroids(float) {}
 	void ResetIndexPerfStat() override;
 	void EnablePerfStat(bool);
 	void SetOpts(const IndexOpts& opts) override;
 
+	virtual bool IsQuantized() const = 0;
+	virtual bool QuantizationAvailable() const = 0;
+	virtual void Quantize() = 0;
+	virtual void SwitchMapOnQuantized() = 0;
+
+protected:
+	ConstFloatVectorView getFloatVectorView(IdType) const;
+
 private:
+	friend class FloatVectorExtractor;
+
 	virtual SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const = 0;
 	virtual KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const = 0;
 	virtual Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) = 0;
 	virtual Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) = 0;
 
-	virtual FloatVector getFloatVector(IdType) const = 0;
-	virtual ConstFloatVectorView getFloatVectorView(IdType) const = 0;
+	virtual ConstFloatVectorView getFloatVectorViewImpl(IdType) const = 0;
 
 	Variant upsertEmptyVectImpl(IdType);
 

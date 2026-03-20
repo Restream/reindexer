@@ -114,11 +114,34 @@ Variant::operator FloatVectorView() noexcept {
 	return FloatVectorView::FromUint64(variant_.value_uint64);
 }
 
+Variant::operator FloatVector() & {
+	auto view = this->operator ConstFloatVectorView();
+	return view.IsStrippedOrEmpty() ? FloatVector::CreateNotInitialized(view.Dimension()) : FloatVector{view};
+}
+
+Variant::operator FloatVector() && {
+	auto view = this->operator ConstFloatVectorView();
+
+	if (view.IsStrippedOrEmpty()) {
+		return FloatVector::CreateNotInitialized(view.Dimension());
+	}
+
+	if (!variant_.hold) {
+		return FloatVector{view};
+	}
+
+	FloatVector res(std::unique_ptr<float[]>(const_cast<float*>(view.Data())), view.Dimension());
+	variant_.hold = 0;
+	return res;
+}
+
 Variant::operator Point() const { return static_cast<Point>(getCompositeValues()); }
 template <>
 Point Variant::As<Point>() const {
-	assertrx(!isUuid());
-	if (!variant_.type.Is<KeyValueType::Tuple>()) {
+	if (isUuid()) [[unlikely]] {
+		throw Error(errParams, "Can't convert {} to Point", KeyValueType{KeyValueType::Uuid{}}.Name());
+	}
+	if (!variant_.type.Is<KeyValueType::Tuple>()) [[unlikely]] {
 		throw Error(errParams, "Can't convert {} to Point", variant_.type.Name());
 	}
 	return static_cast<Point>(getCompositeValues());
@@ -138,10 +161,10 @@ Uuid Variant::As<Uuid>() const {
 }
 template <>
 ConstFloatVectorView Variant::As<ConstFloatVectorView>() const {
-	if (isUuid()) {
+	if (isUuid()) [[unlikely]] {
 		throw Error(errParams, "Can't convert {} to Float Vector", KeyValueType{KeyValueType::Uuid{}}.Name());
 	}
-	if (variant_.type.Is<KeyValueType::FloatVector>()) {
+	if (variant_.type.Is<KeyValueType::FloatVector>()) [[likely]] {
 		return ConstFloatVectorView{*this};
 	} else {
 		throw Error(errParams, "Can't convert {} to Float Vector", variant_.type.Name());
@@ -178,7 +201,7 @@ void Variant::copy(const Variant& other) {
 		[&](KeyValueType::Double) noexcept { variant_.value_double = other.variant_.value_double; },
 		[&](KeyValueType::Float) noexcept { variant_.value_float = other.variant_.value_float; },
 		[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Uuid> auto) noexcept {},
-		[&](KeyValueType::FloatVector) noexcept { *this = Variant(other.operator ConstFloatVectorView(), hold); });
+		[&](KeyValueType::FloatVector) { *this = Variant(other.operator ConstFloatVectorView(), hold); });
 }
 
 Variant& Variant::EnsureHold() & {
@@ -261,7 +284,12 @@ key_string Variant::As<key_string>() const {
 
 template <>
 p_string Variant::As<p_string>() const {
-	assertrx_throw(!isUuid() && variant_.type.Is<KeyValueType::String>());
+	if (isUuid()) [[unlikely]] {
+		throw Error(errParams, "Can't convert {} to p_String", KeyValueType{KeyValueType::Uuid{}}.Name());
+	}
+	if (!variant_.type.Is<KeyValueType::String>()) [[unlikely]] {
+		throw Error(errParams, "Can't convert {} to p_String", variant_.type.Name());
+	}
 	return this->operator p_string();
 }
 
@@ -288,6 +316,17 @@ std::string Variant::As<std::string>(const PayloadType& pt, const FieldsSet& fie
 	} else {
 		return As<std::string>();
 	}
+}
+
+template <>
+PayloadValue Variant::As<PayloadValue>() const {
+	if (isUuid()) [[unlikely]] {
+		throw Error(errParams, "Can't convert {} to PayloadValue", KeyValueType{KeyValueType::Uuid{}}.Name());
+	}
+	if (!variant_.type.Is<KeyValueType::Composite>()) [[unlikely]] {
+		throw Error(errParams, "Can't convert {} to PayloadValue", variant_.type.Name());
+	}
+	return this->operator const PayloadValue&();
 }
 
 template <typename T>
@@ -570,7 +609,12 @@ ComparationResult Variant::relaxCompareWithString(std::string_view str) const no
 	thread_local char uuidStrBuf[Uuid::kStrFormLen];
 	thread_local const std::string_view uuidStrBufView{uuidStrBuf, Uuid::kStrFormLen};
 	if (isUuid()) {
-		Uuid{*this}.PutToStr(uuidStrBuf);
+		try {
+			Uuid{*this}.PutToStr(uuidStrBuf);
+		} catch (...) {
+			// Never expect this
+			std::terminate();
+		}
 		return uuidStrBufView == str ? ComparationResult::Eq : (uuidStrBufView < str ? ComparationResult::Lt : ComparationResult::Gt);
 	} else {
 		return variant_.type.EvaluateOneOf(
@@ -637,7 +681,12 @@ ComparationResult Variant::relaxCompareWithString(std::string_view str) const no
 				}
 			},
 			[&](KeyValueType::Uuid) {
-				Uuid{*this}.PutToStr(uuidStrBuf);
+				try {
+					Uuid{*this}.PutToStr(uuidStrBuf);
+				} catch (...) {
+					// Never expect this
+					std::terminate();
+				}
 				return uuidStrBufView == str ? ComparationResult::Eq
 											 : (uuidStrBufView < str ? ComparationResult::Lt : ComparationResult::Gt);
 			},
@@ -681,79 +730,79 @@ class [[nodiscard]] Comparator {
 public:
 	explicit Comparator(const Variant& v1, const Variant& v2) noexcept : v1_{v1}, v2_{v2} {}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Bool) const noexcept {
-		return compare(v1_.As<bool>(), v2_.As<bool>());
+		return compare(bool(v1_), bool(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Int) const noexcept {
-		return compare(int(v1_.As<bool>()), v2_.As<int>());
+		return compare(int(bool(v1_)), int(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Int64) const noexcept {
-		return compare(int64_t(v1_.As<bool>()), v2_.As<int64_t>());
+		return compare(int64_t(bool(v1_)), int64_t(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Double) const noexcept {
-		return compare(double(v1_.As<bool>()), v2_.As<double>());
+		return compare(double(bool(v1_)), double(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Bool, KeyValueType::Float) const noexcept {
-		return compare(double(v1_.As<bool>()), v2_.As<float>());
+		return compare(double(bool(v1_)), float(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Bool) const noexcept {
-		return compare(v1_.As<int>(), int(v2_.As<bool>()));
+		return compare(int(v1_), int(bool(v2_)));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Int) const noexcept {
-		return compare(v1_.As<int>(), v2_.As<int>());
+		return compare(int(v1_), int(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Int64) const noexcept {
-		return compare(int64_t(v1_.As<int>()), v2_.As<int64_t>());
+		return compare(int64_t(int(v1_)), int64_t(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Double) const noexcept {
-		return compare(v1_.As<int>(), v2_.As<double>());
+		return compare(int(v1_), double(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int, KeyValueType::Float) const noexcept {
-		return compare(v1_.As<int>(), v2_.As<float>());
+		return compare(int(v1_), float(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Bool) const noexcept {
-		return compare(v1_.As<int64_t>(), int64_t(v2_.As<bool>()));
+		return compare(int64_t(v1_), int64_t(bool(v2_)));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Int) const noexcept {
-		return compare(v1_.As<int64_t>(), int64_t(v2_.As<int>()));
+		return compare(int64_t(v1_), int64_t(int(v2_)));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Int64) const noexcept {
-		return compare(v1_.As<int64_t>(), v2_.As<int64_t>());
+		return compare(int64_t(v1_), int64_t(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Double) const noexcept {
-		return compare(v1_.As<int64_t>(), v2_.As<double>());
+		return compare(int64_t(v1_), double(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Int64, KeyValueType::Float) const noexcept {
-		return compare(v1_.As<int64_t>(), v2_.As<float>());
+		return compare(int64_t(v1_), float(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Bool) const noexcept {
-		return compare(v1_.As<double>(), double(v2_.As<bool>()));
+		return compare(double(v1_), double(bool(v2_)));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Int) const noexcept {
-		return compare(v1_.As<double>(), v2_.As<int>());
+		return compare(double(v1_), int(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Int64) const noexcept {
-		return compare(v1_.As<double>(), v2_.As<int64_t>());
+		return compare(double(v1_), int64_t(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Double) const noexcept {
-		return compare(v1_.As<double>(), v2_.As<double>());
+		return compare(double(v1_), double(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Double, KeyValueType::Float) const noexcept {
-		return compare(v1_.As<double>(), v2_.As<float>());
+		return compare(double(v1_), float(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Bool) const noexcept {
-		return compare(v1_.As<float>(), double(v2_.As<bool>()));
+		return compare(float(v1_), double(bool(v2_)));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Int) const noexcept {
-		return compare(v1_.As<float>(), v2_.As<int>());
+		return compare(float(v1_), int(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Int64) const noexcept {
-		return compare(v1_.As<float>(), v2_.As<int64_t>());
+		return compare(float(v1_), int64_t(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Float) const noexcept {
-		return compare(v1_.As<float>(), v2_.As<float>());
+		return compare(float(v1_), float(v2_));
 	}
 	RX_ALWAYS_INLINE ComparationResult operator()(KeyValueType::Float, KeyValueType::Double) const noexcept {
-		return compare(v1_.As<float>(), v2_.As<double>());
+		return compare(float(v1_), double(v2_));
 	}
 
 	RX_ALWAYS_INLINE ComparationResult
@@ -876,7 +925,12 @@ template ComparationResult Variant::relaxCompareImpl<WithString::No, NotComparab
 
 size_t Variant::Hash() const noexcept {
 	if (isUuid()) {
-		return std::hash<Uuid>()(Uuid{*this});
+		try {
+			return std::hash<Uuid>()(Uuid{*this});
+		} catch (...) {
+			//  Supressing clang-tidy warning. Never expect this
+			std::terminate();
+		}
 	} else {
 		return variant_.type.EvaluateOneOf([&](KeyValueType::Int) noexcept { return std::hash<int>()(variant_.value_int); },
 										   [&](KeyValueType::Bool) noexcept { return std::hash<bool>()(variant_.value_bool); },
@@ -884,7 +938,14 @@ size_t Variant::Hash() const noexcept {
 										   [&](KeyValueType::Double) noexcept { return std::hash<double>()(variant_.value_double); },
 										   [&](KeyValueType::Float) noexcept { return std::hash<float>()(variant_.value_float); },
 										   [&](KeyValueType::String) noexcept { return std::hash<p_string>()(this->operator p_string()); },
-										   [&](KeyValueType::Uuid) noexcept { return std::hash<Uuid>()(Uuid{*this}); },
+										   [&](KeyValueType::Uuid) noexcept {
+											   try {
+												   return std::hash<Uuid>()(Uuid{*this});
+											   } catch (...) {
+												   // Supressing clang-tidy warning. Never expect this
+												   std::terminate();
+											   }
+										   },
 										   [](KeyValueType::Null) noexcept { return std::hash<int>()(0); },
 										   [&](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined,
 															   KeyValueType::FloatVector> auto) noexcept -> size_t {

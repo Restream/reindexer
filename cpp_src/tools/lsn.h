@@ -24,7 +24,7 @@ struct [[nodiscard]] LSNUnpacked {
 	int64_t counter;
 };
 
-class lsn_t {
+class [[nodiscard]] lsn_t {
 private:
 	static constexpr int64_t kMaxCounter = 1'000'000'000'000'000ll;
 

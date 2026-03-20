@@ -1,4 +1,5 @@
 #include <ranges>
+#include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
 #include "core/payload/payloadiface.h"
 #include "reindexer_api.h"

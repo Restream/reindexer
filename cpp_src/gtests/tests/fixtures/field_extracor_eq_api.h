@@ -44,17 +44,14 @@ public:
 		reindexer::BaseEncoder<reindexer::FieldsExtractorGrouping> encoder(&tm, nullptr);
 		const std::span<reindexer::FieldPathPart> p(path);
 		reindexer::h_vector<reindexer::VariantArray, 2> vals;
-		reindexer::FieldsExtractorGroupingState state;
 		unsigned int index = 0;
-		state.path = p;
-		state.values = &vals;
-		state.arrayIndex = &index;
+		reindexer::FieldsExtractorGroupingState state{vals,index,p};
 		reindexer::FieldsExtractorGrouping extractor{state};
 		reindexer::ConstPayload cpl(pti, value);
 		encoder.Encode(cpl, extractor);
 		ASSERT_EQ(vals.size(), resultVals.size());
 		for (size_t i = 0; i < vals.size(); i++) {
-			ASSERT_EQ(vals[i].size(), resultVals[i].size());
+			ASSERT_EQ(vals[i].size(), resultVals[i].size()) << "index=" << i;
 			for (size_t j = 0; j < vals[i].size(); j++) {
 				if (vals[i][j].Type().IsSame(reindexer::KeyValueType::Null{}) &&
 					resultVals[i][j].Type().IsSame(reindexer::KeyValueType::Null{})) {
@@ -65,4 +62,5 @@ public:
 			}
 		}
 	}
+	Variant i64v(int v) { return Variant(int64_t(v)); }
 };

@@ -1,149 +1,122 @@
 #if RX_WITH_BUILTIN_ANN_INDEXES || RX_WITH_FAISS_ANN_INDEXES
 
 #include "l2_dist.h"
+#include "faiss/impl/platform_macros.h"
+#include "tools/cpucheck.h"
 #include "tools/distances/common.h"
 
 namespace reindexer::vector_dists {
 
-namespace impl {
-
-using L2SqrPtrT = float (*)(const float*, const float*, size_t);
-
-#if REINDEXER_WITH_SSE
-
 FAISS_PRAGMA_IMPRECISE_FUNCTION_BEGIN
-static float l2SqrSSEResiduals16Ext(const float* pVect1, const float* pVect2, size_t qty) {
-	size_t qty16 = qty >> 4 << 4;
-	if (qty16 == qty) {
-		return L2SqrSIMD16ExtSSE(pVect1, pVect2, qty16);
-	}
-	float res = qty16 ? L2SqrSIMD16ExtSSE(pVect1, pVect2, qty16) : 0.0;
-	return res + L2Sqr(pVect1 + qty16, pVect2 + qty16, qty - qty16);
-}
 
-RX_AVX_TARGET_ATTR
-static float l2SqrAVXResiduals16Ext(const float* pVect1, const float* pVect2, size_t qty) {
-	size_t qty16 = qty >> 4 << 4;
-	if (qty16 == qty) {
-		return L2SqrSIMD16ExtAVX(pVect1, pVect2, qty16);
-	}
-	float res = qty16 ? L2SqrSIMD16ExtAVX(pVect1, pVect2, qty16) : 0.0;
-	return res + L2Sqr(pVect1 + qty16, pVect2 + qty16, qty - qty16);
-}
-
-RX_AVX512_TARGET_ATTR
-static float l2SqrAVX512Residuals16Ext(const float* pVect1, const float* pVect2, size_t qty) {
-	size_t qty16 = qty >> 4 << 4;
-	if (qty16 == qty) {
-		return L2SqrSIMD16ExtAVX512(pVect1, pVect2, qty16);
-	}
-	float res = qty16 ? L2SqrSIMD16ExtAVX512(pVect1, pVect2, qty16) : 0.0;
-	return res + L2Sqr(pVect1 + qty16, pVect2 + qty16, qty - qty16);
-}
-
-static float l2SqrSSEResiduals4Ext(const float* pVect1, const float* pVect2, size_t qty) {
-	size_t qty4 = qty >> 2 << 2;
-	if (qty4 == qty) {
-		return L2SqrSIMD4Ext(pVect1, pVect2, qty4);
-	}
-	float res = qty4 ? L2SqrSIMD4Ext(pVect1, pVect2, qty4) : 0.0;
-	return res + L2Sqr(pVect1 + qty4, pVect2 + qty4, qty - qty4);
-}
-
-FAISS_PRAGMA_IMPRECISE_FUNCTION_END
-#endif	// REINDEXER_WITH_SSE
-
-static L2SqrPtrT initL2SqrSIMD16Ext() {
+template <typename T>
+static RX_ALWAYS_INLINE float L2Sqr(const T* pVect1, const T* pVect2, size_t qty) noexcept {
+	using ResT = std::conditional_t<std::is_same_v<T, float>, float, int>;
+	ResT res = 0;
 #if REINDEXER_WITH_SSE
-	if (L2WithAVX512()) {
-		return l2SqrAVX512Residuals16Ext;
-	}
-	if (L2WithAVX()) {
-		return l2SqrAVXResiduals16Ext;
-	}
-	return l2SqrSSEResiduals16Ext;
-#else	// REINDEXER_WITH_SSE
-	return L2Sqr;
+	FAISS_PRAGMA_IMPRECISE_LOOP
 #endif	// REINDEXER_WITH_SSE
-}
-
-static L2SqrPtrT initL2SqrSIMD4Ext() {
-#if REINDEXER_WITH_SSE
-	return l2SqrSSEResiduals4Ext;
-#else	// REINDEXER_WITH_SSE
-	return L2Sqr;
-#endif	// REINDEXER_WITH_SSE
-}
-
-L2SqrPtrT L2SqrResiduals16ExtPtr = initL2SqrSIMD16Ext();
-L2SqrPtrT L2SqrResiduals4ExtPtr = initL2SqrSIMD4Ext();
-}  // namespace impl
-
-#if REINDEXER_WITH_SSE
-
-FAISS_PRAGMA_IMPRECISE_FUNCTION_BEGIN
-RX_AVX512_TARGET_ATTR
-float L2SqrSIMD16ExtAVX512(const float* pVect1, const float* pVect2, size_t qty) noexcept {
-	float PORTABLE_ALIGN64 TmpRes[16];
-	size_t qty16 = qty >> 4;
-
-	const float* pEnd1 = pVect1 + (qty16 << 4);
-
-	__m512 diff, v1, v2;
-	__m512 sum = _mm512_set1_ps(0);
-
-	while (pVect1 < pEnd1) {
-		v1 = _mm512_loadu_ps(pVect1);
-		pVect1 += 16;
-		v2 = _mm512_loadu_ps(pVect2);
-		pVect2 += 16;
-		diff = _mm512_sub_ps(v1, v2);
-		// sum = _mm512_fmadd_ps(diff, diff, sum);
-		sum = _mm512_add_ps(sum, _mm512_mul_ps(diff, diff));
+	for (size_t i = 0; i < qty; i++) {
+		ResT t = *pVect1 - *pVect2;
+		pVect1++;
+		pVect2++;
+		res += t * t;
 	}
-
-	_mm512_store_ps(TmpRes, sum);
-	float res = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] + TmpRes[7] + TmpRes[8] + TmpRes[9] +
-				TmpRes[10] + TmpRes[11] + TmpRes[12] + TmpRes[13] + TmpRes[14] + TmpRes[15];
-
 	return (res);
 }
 
-RX_AVX_TARGET_ATTR
-float L2SqrSIMD16ExtAVX(const float* pVect1, const float* pVect2, size_t qty) noexcept {
-	float PORTABLE_ALIGN32 TmpRes[8];
-	size_t qty16 = qty >> 4;
+#if REINDEXER_WITH_SSE
 
-	const float* pEnd1 = pVect1 + (qty16 << 4);
+#ifndef _MSC_VER
+#ifndef __clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#endif
+RX_AVX512_TARGET_ATTR static float L2SqrAVX512(const float* pVect1, const float* pVect2, size_t qty) noexcept {
+	size_t simdEnd = qty & ~size_t(63);
 
-	__m256 diff, v1, v2;
-	__m256 sum = _mm256_set1_ps(0);
+	__m512 sum0 = _mm512_setzero_ps();
+	__m512 sum1 = _mm512_setzero_ps();
+	__m512 sum2 = _mm512_setzero_ps();
+	__m512 sum3 = _mm512_setzero_ps();
 
-	while (pVect1 < pEnd1) {
-		v1 = _mm256_loadu_ps(pVect1);
-		pVect1 += 8;
-		v2 = _mm256_loadu_ps(pVect2);
-		pVect2 += 8;
-		diff = _mm256_sub_ps(v1, v2);
-		sum = _mm256_add_ps(sum, _mm256_mul_ps(diff, diff));
+	for (size_t i = 0; i + 64 <= simdEnd; i += 64) {
+		__m512 a0 = _mm512_loadu_ps(pVect1 + i);
+		__m512 b0 = _mm512_loadu_ps(pVect2 + i);
+		__m512 d0 = _mm512_sub_ps(a0, b0);
 
-		v1 = _mm256_loadu_ps(pVect1);
-		pVect1 += 8;
-		v2 = _mm256_loadu_ps(pVect2);
-		pVect2 += 8;
-		diff = _mm256_sub_ps(v1, v2);
-		sum = _mm256_add_ps(sum, _mm256_mul_ps(diff, diff));
+		__m512 a1 = _mm512_loadu_ps(pVect1 + i + 16);
+		__m512 b1 = _mm512_loadu_ps(pVect2 + i + 16);
+		__m512 d1 = _mm512_sub_ps(a1, b1);
+
+		__m512 a2 = _mm512_loadu_ps(pVect1 + i + 32);
+		__m512 b2 = _mm512_loadu_ps(pVect2 + i + 32);
+		__m512 d2 = _mm512_sub_ps(a2, b2);
+
+		__m512 a3 = _mm512_loadu_ps(pVect1 + i + 48);
+		__m512 b3 = _mm512_loadu_ps(pVect2 + i + 48);
+		__m512 d3 = _mm512_sub_ps(a3, b3);
+
+		sum0 = _mm512_fmadd_ps(d0, d0, sum0);
+		sum1 = _mm512_fmadd_ps(d1, d1, sum1);
+		sum2 = _mm512_fmadd_ps(d2, d2, sum2);
+		sum3 = _mm512_fmadd_ps(d3, d3, sum3);
 	}
 
-	_mm256_store_ps(TmpRes, sum);
-	return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] + TmpRes[7];
+	__m512 sum = _mm512_add_ps(_mm512_add_ps(sum0, sum1), _mm512_add_ps(sum2, sum3));
+
+	return _mm512_reduce_add_ps(sum) + L2Sqr(pVect1 + simdEnd, pVect2 + simdEnd, qty - simdEnd);
+}
+#ifndef _MSC_VER
+#ifndef __clang__
+#pragma GCC diagnostic pop
+#endif
+#pragma GCC diagnostic pop
+#endif
+
+RX_AVX_TARGET_ATTR static float L2SqrAVX(const float* pVect1, const float* pVect2, size_t qty) noexcept {
+	size_t simdEnd = qty & ~size_t(31);
+
+	__m256 sum0 = _mm256_setzero_ps();
+	__m256 sum1 = _mm256_setzero_ps();
+	__m256 sum2 = _mm256_setzero_ps();
+	__m256 sum3 = _mm256_setzero_ps();
+
+	for (size_t i = 0; i + 32 <= simdEnd; i += 32) {
+		__m256 a0 = _mm256_loadu_ps(pVect1 + i);
+		__m256 b0 = _mm256_loadu_ps(pVect2 + i);
+
+		__m256 a1 = _mm256_loadu_ps(pVect1 + i + 8);
+		__m256 b1 = _mm256_loadu_ps(pVect2 + i + 8);
+
+		__m256 a2 = _mm256_loadu_ps(pVect1 + i + 16);
+		__m256 b2 = _mm256_loadu_ps(pVect2 + i + 16);
+
+		__m256 a3 = _mm256_loadu_ps(pVect1 + i + 24);
+		__m256 b3 = _mm256_loadu_ps(pVect2 + i + 24);
+
+		sum0 = _mm256_add_ps(sum0, _mm256_mul_ps(_mm256_sub_ps(a0, b0), _mm256_sub_ps(a0, b0)));
+		sum1 = _mm256_add_ps(sum1, _mm256_mul_ps(_mm256_sub_ps(a1, b1), _mm256_sub_ps(a1, b1)));
+		sum2 = _mm256_add_ps(sum2, _mm256_mul_ps(_mm256_sub_ps(a2, b2), _mm256_sub_ps(a2, b2)));
+		sum3 = _mm256_add_ps(sum3, _mm256_mul_ps(_mm256_sub_ps(a3, b3), _mm256_sub_ps(a3, b3)));
+	}
+
+	__m256 sum = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
+
+	PORTABLE_ALIGN64 float tmp[8];
+	_mm256_storeu_ps(tmp, sum);
+
+	return tmp[0] + tmp[1] + tmp[2] + tmp[3] + tmp[4] + tmp[5] + tmp[6] + tmp[7] + L2Sqr(pVect1 + simdEnd, pVect2 + simdEnd, qty - simdEnd);
 }
 
-float L2SqrSIMD16ExtSSE(const float* pVect1, const float* pVect2, size_t qty) noexcept {
+static float L2SqrSSE(const float* pVect1, const float* pVect2, size_t qty) noexcept {
 	float PORTABLE_ALIGN32 TmpRes[8];
-	size_t qty16 = qty >> 4;
+	size_t simdEnd = qty & ~size_t(15);
 
-	const float* pEnd1 = pVect1 + (qty16 << 4);
+	const float* pEnd1 = pVect1 + simdEnd;
 
 	__m128 diff, v1, v2;
 	__m128 sum = _mm_set1_ps(0);
@@ -180,33 +153,137 @@ float L2SqrSIMD16ExtSSE(const float* pVect1, const float* pVect2, size_t qty) no
 	}
 
 	_mm_store_ps(TmpRes, sum);
-	return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
-}
 
-float L2SqrSIMD4Ext(const float* pVect1, const float* pVect2, size_t qty) noexcept {
-	float PORTABLE_ALIGN32 TmpRes[8];
-
-	size_t qty4 = qty >> 2;
-
-	const float* pEnd1 = pVect1 + (qty4 << 2);
-
-	__m128 diff, v1, v2;
-	__m128 sum = _mm_set1_ps(0);
-
-	while (pVect1 < pEnd1) {
-		v1 = _mm_loadu_ps(pVect1);
-		pVect1 += 4;
-		v2 = _mm_loadu_ps(pVect2);
-		pVect2 += 4;
-		diff = _mm_sub_ps(v1, v2);
-		sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));
-	}
-	_mm_store_ps(TmpRes, sum);
-	return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
+	return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + L2Sqr(pVect1, pVect2, qty - simdEnd);
 }
 FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 
-#endif	// REINDEXER_WITH_SSE
+#ifndef _MSC_VER
+#ifndef __clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#endif
+RX_AVX512_TARGET_ATTR static inline float L2SqrAVX512(const uint8_t* pVect1, const uint8_t* pVect2, size_t qty) noexcept {
+	size_t simdEnd = qty & ~63;
+
+	__m512i sum = _mm512_setzero_si512();
+
+	for (size_t i = 0; i < simdEnd; i += 64) {
+		__m512i v0 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(pVect1 + i));
+		__m512i v1 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(pVect2 + i));
+
+		__m512i v0lo = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(v0, 0));
+		__m512i v0hi = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(v0, 1));
+		__m512i v1lo = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(v1, 0));
+		__m512i v1hi = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(v1, 1));
+
+		__m512i diff_lo = _mm512_sub_epi16(v0lo, v1lo);
+		__m512i diff_hi = _mm512_sub_epi16(v0hi, v1hi);
+
+		__m512i prod_lo = _mm512_madd_epi16(diff_lo, diff_lo);
+		__m512i prod_hi = _mm512_madd_epi16(diff_hi, diff_hi);
+
+		sum = _mm512_add_epi32(sum, prod_lo);
+		sum = _mm512_add_epi32(sum, prod_hi);
+	}
+
+	PORTABLE_ALIGN64 uint32_t tmp[16];
+	_mm512_store_si512(reinterpret_cast<__m512i*>(tmp), sum);
+
+	float result = 0;
+	for (int i = 0; i < 16; ++i) {
+		result += tmp[i];
+	}
+	return result + L2Sqr(pVect1 + simdEnd, pVect2 + simdEnd, qty - simdEnd);
+}
+#ifndef _MSC_VER
+#ifndef __clang__
+#pragma GCC diagnostic pop
+#endif
+#pragma GCC diagnostic pop
+#endif
+
+RX_AVX_TARGET_ATTR static inline float L2SqrAVX(const uint8_t* pVect1, const uint8_t* pVect2, size_t qty) noexcept {
+	size_t simdEnd = qty & ~15;
+	__m128i sum = _mm_setzero_si128();
+
+	for (size_t i = 0; i < simdEnd; i += 16) {
+		__m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(pVect1 + i));
+		__m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(pVect2 + i));
+
+		__m128i va_lo = _mm_cvtepu8_epi16(va);
+		__m128i vb_lo = _mm_cvtepu8_epi16(vb);
+
+		__m128i va_hi = _mm_cvtepu8_epi16(_mm_srli_si128(va, 8));
+		__m128i vb_hi = _mm_cvtepu8_epi16(_mm_srli_si128(vb, 8));
+
+		__m128i diff_lo = _mm_sub_epi16(va_lo, vb_lo);
+		__m128i diff_hi = _mm_sub_epi16(va_hi, vb_hi);
+
+		sum = _mm_add_epi32(sum, _mm_madd_epi16(diff_lo, diff_lo));
+		sum = _mm_add_epi32(sum, _mm_madd_epi16(diff_hi, diff_hi));
+	}
+
+	PORTABLE_ALIGN16 uint32_t tmp[4];
+	_mm_store_si128(reinterpret_cast<__m128i*>(tmp), sum);
+	uint64_t result = static_cast<uint64_t>(tmp[0]) + tmp[1] + tmp[2] + tmp[3];
+	return result + L2Sqr(pVect1 + simdEnd, pVect2 + simdEnd, qty - simdEnd);
+}
+
+static inline float L2SqrSSE(const uint8_t* pVect1, const uint8_t* pVect2, size_t qty) noexcept {
+	size_t i = 0;
+
+	__m128i acc = _mm_setzero_si128();
+	const __m128i zero = _mm_setzero_si128();
+
+	for (; i + 16 <= qty; i += 16) {
+		__m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(pVect1 + i));
+		__m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(pVect2 + i));
+
+		__m128i va_lo = _mm_unpacklo_epi8(va, zero);
+		__m128i va_hi = _mm_unpackhi_epi8(va, zero);
+
+		__m128i vb_lo = _mm_unpacklo_epi8(vb, zero);
+		__m128i vb_hi = _mm_unpackhi_epi8(vb, zero);
+
+		__m128i diff_lo = _mm_sub_epi16(va_lo, vb_lo);
+		__m128i diff_hi = _mm_sub_epi16(va_hi, vb_hi);
+
+		acc = _mm_add_epi32(acc, _mm_madd_epi16(diff_lo, diff_lo));
+		acc = _mm_add_epi32(acc, _mm_madd_epi16(diff_hi, diff_hi));
+	}
+
+	PORTABLE_ALIGN16 uint32_t tmp[4];
+	_mm_store_si128(reinterpret_cast<__m128i*>(tmp), acc);
+	uint64_t result = static_cast<uint64_t>(tmp[0]) + tmp[1] + tmp[2] + tmp[3];
+	return result + L2Sqr(pVect1 + i, pVect2 + i, qty - i);
+}
+#endif
+
+namespace impl {
+
+template <typename T>
+static L2SqrPtrT<T> initL2SqrFn() noexcept {
+	L2SqrPtrT<T> res = L2Sqr<T>;
+#if REINDEXER_WITH_SSE
+	if (reindexer::IsAVX512Allowed()) {
+		res = L2SqrAVX512;
+	} else if (reindexer::IsAVXAllowed()) {
+		res = L2SqrAVX;
+	} else {
+		res = L2SqrSSE;
+	}
+#endif
+	return res;
+}
+
+L2SqrPtrT<float> L2SqrPtrF = initL2SqrFn<float>();
+L2SqrPtrT<uint8_t> L2SqrPtrU = initL2SqrFn<uint8_t>();
+
+}  // namespace impl
 
 }  // namespace reindexer::vector_dists
 

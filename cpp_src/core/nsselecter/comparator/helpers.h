@@ -1,14 +1,10 @@
 #pragma once
 
-#include "core/index/string_map.h"
 #include "core/keyvalue/key_string.h"
+#include "core/keyvalue/variant.h"
 #include "core/type_consts_helpers.h"
-#include "vendor/hopscotch/hopscotch_sc_map.h"
-#include "vendor/hopscotch/hopscotch_sc_set.h"
 
-namespace reindexer {
-
-namespace comparators {
+namespace reindexer::comparators {
 
 template <typename T>
 struct [[nodiscard]] DataTypeImpl {
@@ -21,21 +17,6 @@ struct [[nodiscard]] DataTypeImpl<key_string> {
 
 template <typename T>
 using DataType = typename DataTypeImpl<T>::type;
-
-class [[nodiscard]] key_string_set : public tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string> {
-public:
-	key_string_set(const CollateOpts& opts)
-		: tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string>(
-			  1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts), std::allocator<key_string>(), less_key_string(opts)) {}
-};
-
-template <typename T>
-class [[nodiscard]] key_string_map : public tsl::hopscotch_sc_map<key_string, T, hash_key_string, equal_key_string, less_key_string> {
-public:
-	key_string_map(const CollateOpts& opts)
-		: tsl::hopscotch_sc_map<key_string, T, hash_key_string, equal_key_string, less_key_string>(
-			  1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts), std::allocator<key_string>(), less_key_string(opts)) {}
-};
 
 template <CondType Cond>
 std::string_view CondToStr() {
@@ -63,9 +44,9 @@ std::string_view CondToStr() {
 template <typename T>
 T GetValue(const Variant& value) {
 	if constexpr (std::is_same_v<T, PayloadValue>) {
-		return static_cast<const PayloadValue&>(value);
+		return value.As<PayloadValue>();
 	} else if constexpr (std::is_same_v<T, Point>) {
-		return static_cast<T>(value);
+		return value.As<Point>();
 	} else if constexpr (std::is_same_v<T, key_string>) {
 		return static_cast<key_string>(value.convert(KeyValueType::String{}));
 	} else if constexpr (std::is_same_v<T, Variant>) {
@@ -85,6 +66,4 @@ T GetValue(CondType cond, const VariantArray& values, size_t i) {
 	return GetValue<T>(val);
 }
 
-}  // namespace comparators
-
-}  // namespace reindexer
+}  // namespace reindexer::comparators

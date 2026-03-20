@@ -285,7 +285,7 @@ func (db *reindexerImpl) getAsyncReplicationStat(ctx context.Context) (*bindings
 }
 
 func (db *reindexerImpl) getClusterStat(ctx context.Context) (*bindings.ReplicationStat, error) {
-	resp, err := db.query("#replicationstats").
+	resp, err := db.query(ReplicationStatsNamespaceName).
 		WhereString("type", EQ, "cluster").
 		ExecCtx(ctx).
 		FetchOne()

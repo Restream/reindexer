@@ -66,7 +66,7 @@ using SelectIteratorContainerTreeBase =
 
 using SelectIteratorContainerTree = WithTypesPack<SelectIteratorContainerTreeBase, ComparatorsPackT>::type;
 
-class SelectIteratorContainer : public SelectIteratorContainerTree {
+class [[nodiscard]] SelectIteratorContainer : public SelectIteratorContainerTree {
 	using Base = SelectIteratorContainerTree;
 
 public:

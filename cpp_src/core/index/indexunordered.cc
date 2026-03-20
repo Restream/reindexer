@@ -276,12 +276,10 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExis
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
 		if constexpr (is_str_map_v<T>) {
-			idx_map.template erase<StringMapEntryCleaner<true>>(
+			std::ignore = idx_map.template erase<StringMapEntryCleaner<true>>(
 				keyIt, {strHolder, this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() == CollateNone});
-		} else if constexpr (is_ft_payload_map_v<T>) {
-			idx_map.template erase<DeepClean>(keyIt, strHolder);
 		} else {
-			idx_map.template erase<DeepClean>(keyIt);
+			(void)idx_map.template erase<DeepClean>(keyIt);
 		}
 
 	} else {
@@ -297,7 +295,14 @@ bool IndexUnordered<T>::RefreshCompositeKey(const Variant& key) noexcept {
 	assertrx_dbg(IsComposite(this->Type()));
 	if constexpr (is_payload_map_v<T>) {
 		// This implementation updates existing pointer in composite index after PayloadValue update
-		typename T::iterator keyIt = idx_map.find(static_cast<ref_type>(key));
+		typename T::iterator keyIt = idx_map.end();
+		try {
+			keyIt = idx_map.find(static_cast<ref_type>(key));
+		} catch (std::exception&) {
+			// Supporess clang-tidy warning. Never expect exceptions here
+			std::terminate();
+		}
+
 		if (keyIt == idx_map.end()) {
 			assertrx_dbg(false);
 			return false;
@@ -575,7 +580,7 @@ void IndexUnordered<T>::ResetIndexPerfStat() {
 }
 
 template <typename T>
-IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext& ctx) {
+IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext& ctx) const {
 	IndexMemStat ret = Base::GetMemStat(ctx);
 	ret.uniqKeysCount = idx_map.size() + int(!empty_ids_.Unsorted().IsEmpty());
 	ret.idsetCache = cache_.GetMemStat();

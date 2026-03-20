@@ -24,7 +24,7 @@ public:
 	explicit JsonDecoder(TagsMatcher& tagsMatcher, FloatVectorsHolderVector& floatVectorsHolder, ScalarIndexesSetT& objectScalarIndexes,
 						 const FieldsSet* filter = nullptr) noexcept
 		: tagsMatcher_(tagsMatcher), filter_(filter), floatVectorsHolder_(floatVectorsHolder), objectScalarIndexes_(objectScalarIndexes) {}
-	Error Decode(Payload& pl, WrSerializer& wrSer, const gason::JsonValue& v);
+	Error Decode(Payload& pl, WrSerializer& wrSer, const gason::JsonValue& v) noexcept;
 	void Decode(std::string_view json, CJsonBuilder&, const TagsPath& fieldPath);
 
 private:

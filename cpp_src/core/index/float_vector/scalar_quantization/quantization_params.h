@@ -1,20 +1,13 @@
 #pragma once
+
+#include "core/quantization_config.h"
 #include "estl/fast_hash_set.h"
 #include "hnsw_view_iterator.h"
+#include "tools/errors.h"
 
 namespace hnswlib {
-struct [[nodiscard]] CorrectiveOffsets {
-	float precalc = 0.f;
-	float roundingErr = 0.f;
-	float negOutlierErr = 0.f;
-	float posOutlierErr = 0.f;
-};
 
-struct [[nodiscard]] QuantizingConfig {
-	float quantile = 1.f;
-	size_t sampleSize = kDefaultSampleSize;
-	Sq8NonLinearCorrection nonLinearCorrection = Sq8NonLinearCorrection::Disabled;
-};
+static inline constexpr unsigned kQuantizationParamsVersion = 1;
 
 std::pair<float, float> FindNthMinMax(auto&& s, size_t dataSize, float quantile) {
 	float min, max;
@@ -53,12 +46,13 @@ std::pair<float, float> FindNthMinMax(auto&& s, size_t dataSize, float quantile)
 
 struct [[nodiscard]] QuantizingParams {
 	QuantizingParams() = default;
-	QuantizingParams(const auto& hnsw, QuantizingConfig conf) : config(std::move(conf)) {
+	QuantizingParams(const auto& hnsw, QuantizationConfig conf) : config(std::move(conf)) {
+		const auto dim = hnsw.fstdistfunc_.Dims();
 		minQ = 0.f;
 		maxQ = 0.f;
 		size_t size = 0;
 		for (auto& sample : HNSWView(hnsw, config.sampleSize)) {
-			auto [min, max] = FindNthMinMax(sample, hnsw.fstdistfunc_.Dims() * kSampleBatchSize, config.quantile);
+			auto [min, max] = FindNthMinMax(sample, dim * kSampleBatchSize, Quantile(dim));
 			minQ += min;
 			maxQ += max;
 			size++;
@@ -66,19 +60,20 @@ struct [[nodiscard]] QuantizingParams {
 		minQ /= size;
 		maxQ /= size;
 
-		alpha = (maxQ - minQ) / sq8Range;
+		alpha = (maxQ - minQ) / kSq8Range;
 		alpha_2 = std::pow(alpha, 2.f);
-		delta = 0.5 * std::pow(minQ, 2.f) * hnsw.fstdistfunc_.Dims();
+		delta = 0.5 * std::pow(minQ, 2.f) * dim;
 	}
 
 	template <typename ReaderT>
 	void Deserialize(ReaderT& reader) {
-		config.quantile = reader.GetFloat();
-		config.sampleSize = reader.GetVarUInt();
-		config.nonLinearCorrection = Sq8NonLinearCorrection(reader.GetVarInt());
+		auto version = reader.GetVarUInt();
+		if (version != kQuantizationParamsVersion) {
+			throw reindexer::Error(errParams, "Invalid quantization parameters version during deserialization: expected {}, got {}",
+								   kQuantizationParamsVersion, version);
+		}
 
-		sq8Range = reader.GetFloat();
-		uint8offset = reader.GetFloat();
+		config.Deserialize(reader);
 
 		minQ = reader.GetFloat();
 		maxQ = reader.GetFloat();
@@ -89,12 +84,9 @@ struct [[nodiscard]] QuantizingParams {
 
 	template <typename WriterT>
 	void Serialize(WriterT& writer) const {
-		writer.PutFloat(config.quantile);
-		writer.PutVarUInt(uint64_t{config.sampleSize});
-		writer.PutVarInt(int32_t(config.nonLinearCorrection));
+		writer.PutVarUInt(kQuantizationParamsVersion);
 
-		writer.PutFloat(sq8Range);
-		writer.PutFloat(uint8offset);
+		config.Serialize(writer);
 
 		writer.PutFloat(minQ);
 		writer.PutFloat(maxQ);
@@ -103,10 +95,9 @@ struct [[nodiscard]] QuantizingParams {
 		writer.PutFloat(delta);
 	}
 
-	QuantizingConfig config;
-	float sq8Range = KDefaultSq8Range - (config.nonLinearCorrection == Sq8NonLinearCorrection::Enabled ? 2 : 0);
-	float uint8offset = config.nonLinearCorrection == Sq8NonLinearCorrection::Enabled ? 1.f : 0.f;
+	float Quantile(size_t dim) const noexcept { return config.quantile ? *config.quantile : std::clamp(1.f - 1.f / (dim + 1), 0.95f, 1.f); }
 
+	QuantizationConfig config;
 	float minQ = std::numeric_limits<float>::max();
 	float maxQ = std::numeric_limits<float>::lowest();
 	float alpha = 0.f;

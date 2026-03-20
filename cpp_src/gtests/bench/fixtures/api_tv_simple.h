@@ -39,6 +39,7 @@ private:
 			shrinkCache();
 			setHitsCount(hitsCount);
 		}
+		// NOLINTNEXTLINE(bugprone-exception-escape)
 		~IndexCacheSetter() { setHitsCount(kDefaultCacheHits); }
 
 	private:

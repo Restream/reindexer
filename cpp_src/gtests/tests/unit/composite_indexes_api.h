@@ -4,7 +4,7 @@
 
 class [[nodiscard]] CompositeIndexesApi : public ReindexerApi {
 public:
-	enum CompositeIndexType { CompositeIndexHash, CompositeIndexBTree };
+	enum [[nodiscard]] CompositeIndexType { CompositeIndexHash, CompositeIndexBTree };
 
 public:
 	void SetUp() override {

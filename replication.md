@@ -249,7 +249,7 @@ will return JSON object with status of namespace `media_items `replication
 	}
 	"temporary":false,
 	"incarnation_counter":0,
-	"data_hash":6,
+	"checksum":6,
 	"data_count":4,
 	"updated_unix_nano":1594041127153561000,
 	"status":"none",
@@ -261,8 +261,7 @@ will return JSON object with status of namespace `media_items `replication
 - `last_lsn_v2` - current lsn of this node (leader and follower will have the same LSN values for each record)
 - `ns_version` - current namespace version. This value is set during namespace creation
 - `temporary` - namespace is temporary
-- `incarnation_counter` - number of switches between master slave 
-- `data_hash` - hash of data
+- `checksum` - Checksum of all records in namespace
 - `data_count` - number of records in the namespace
 - `updated_unix_nano` - last operation time
 - `status` - shows current synchronization status: idle, error, syncing, fatal

@@ -63,6 +63,7 @@ std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 			size_t failed = 0;
 		} electionsStat;
 		for (size_t nodeId = 0; nodeId < nodes_.size(); ++nodeId) {
+			// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 			loop_.spawn(wg, [this, &electionsStat, nodeId, term, &succeedRoutines, isDesiredLeader] {
 				auto& node = nodes_[nodeId];
 				if (!node.client.Status().ok()) {
@@ -259,15 +260,15 @@ void RaftManager::startPingRoutines() {
 				NodeData leader;
 				leader.serverId = serverId_;
 				leader.electionsTerm = voteData.term;
-#ifdef RX_ENABLE_CLUSTERPROXY_LOGS
+#ifdef RX_ENABLE_EXTRA_CLUSTER_LOGS
 				// TODO: This temporary debgu message for tests only
 				logTrace("{} Sending ping to {}({})", serverId_, node.uid, node.serverId);
-#endif	// RX_ENABLE_CLUSTERPROXY_LOGS
+#endif	// RX_ENABLE_EXTRA_CLUSTER_LOGS
 				err = node.client.LeadersPing(leader);
-#ifdef RX_ENABLE_CLUSTERPROXY_LOGS
+#ifdef RX_ENABLE_EXTRA_CLUSTER_LOGS
 				// TODO: This temporary debgu message for tests only
 				logTrace("{} Ping to {}({}) was sent", serverId_, node.uid, node.serverId);
-#endif	// RX_ENABLE_CLUSTERPROXY_LOGS
+#endif	// RX_ENABLE_EXTRA_CLUSTER_LOGS
 				const bool isNetworkError = (err.code() == errTimeout) || (err.code() == errNetwork);
 				if (node.isOk != err.ok() || isNetworkError != node.hasNetworkError || isFirstPing) {
 					node.isOk = err.ok();
@@ -379,6 +380,7 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 			continue;
 		}
 
+		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 		loop_.spawn(wg, [this, nodeId, &errString, &okCount] {
 			try {
 				logTrace("{} Sending desired server ID ({}) to node with server ID {}", thisServerId_, nextLeaderId_,

@@ -199,6 +199,7 @@ private:
 	std::optional<FtPreselectT> ftPreselect_;
 	FloatVectorsHolderMap* floatVectorsHolder_ = nullptr;
 	bool hasForcedSortOptimizationEntry_ = false;
+	h_vector<Variant, 16> compositeStringsContainer_;
 };
 
 }  // namespace reindexer

@@ -143,7 +143,7 @@ public:
 		}
 	}
 
-	class Iterator {
+	class [[nodiscard]] Iterator {
 	public:
 		Iterator(const std::vector<WordIdType>& typoIds, const std::vector<uint8_t>& typoPositions, size_t shift, size_t stepNum) noexcept
 			: typoIds_(typoIds), typoPositions_(typoPositions), shift_(shift), stepNum_(stepNum) {}

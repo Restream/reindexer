@@ -337,6 +337,23 @@ struct [[nodiscard]] nocase_equal_str {
 	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return iequals(lhs, rhs); }
 };
 
+struct [[nodiscard]] nocase_equal_str_utf8 {
+	using is_transparent = void;
+
+	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept {
+		return collateCompare<CollateUTF8>(lhs, rhs, SortingPrioritiesTable()) == ComparationResult::Eq;
+	}
+	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept {
+		return collateCompare<CollateUTF8>(lhs, rhs, SortingPrioritiesTable()) == ComparationResult::Eq;
+	}
+	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept {
+		return collateCompare<CollateUTF8>(lhs, rhs, SortingPrioritiesTable()) == ComparationResult::Eq;
+	}
+	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept {
+		return collateCompare<CollateUTF8>(lhs, rhs, SortingPrioritiesTable()) == ComparationResult::Eq;
+	}
+};
+
 struct [[nodiscard]] nocase_less_str {
 	using is_transparent = void;
 
@@ -351,6 +368,13 @@ struct [[nodiscard]] nocase_hash_str {
 
 	size_t operator()(std::string_view hs) const noexcept { return collateHash<CollateASCII>(hs); }
 	size_t operator()(const std::string& hs) const noexcept { return collateHash<CollateASCII>(hs); }
+};
+
+struct [[nodiscard]] nocase_hash_str_utf8 {
+	using is_transparent = void;
+
+	size_t operator()(std::string_view hs) const noexcept { return collateHash<CollateUTF8>(hs); }
+	size_t operator()(const std::string& hs) const noexcept { return collateHash<CollateUTF8>(hs); }
 };
 
 struct [[nodiscard]] less_str {

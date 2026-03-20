@@ -325,6 +325,53 @@ Reindexer server supports login/password authorization for http(s)/rpc(s) client
 If security option is active Reindexer will try to load users list from `users.yml` or `users.json`(deprecate) found in database path. If users-file was not found the default one
 will be created automatically (default login/password are `reindexer`/`reindexer`)
 
+The `users.yml` file must have the following structure:
+
+```yaml
+user_data_read:
+  hash: $1$salt1$sxceK5uCFboYZNAuscl7U.
+  roles:
+    *: data_read
+user_data_write:
+  hash: $1$salt2$mVTUg8rz3JZbWZdu8BmgB.
+  roles:
+    *: data_write
+user_db_admin:
+  hash: $1$salt3$vX3bUgz2B6qUtO8/Pp8..1
+  roles:
+    *: db_admin
+user_replication:
+  hash: $1$salt4$iJkAqfm0xRlCDrUwPEyzy/
+  roles:
+    *: replication
+user_sharding:
+  hash: $1$salt5$ExMJUuH4sh8Gxb2FiS3kA.
+  roles:
+    *: sharding
+user_owner:
+  hash: $1$salt6$FP6vfMCasfDJIl7o3YzvC.
+  roles:
+    *: owner
+```
+
+Parameter values in the `users.yml` file:
+
+* `user_data_read`, `user_data_write`, `user_db_admin`, `user_replication`, `user_sharding`, `user_owner` — user names;
+* `hash` — for each user:
+  * if it starts with the `$` character — a password hash, optionally with an added arbitrary sequence of characters (salt), in BSD MD5 Crypt format. It can be generated using the `openssl` utility with a command like: `openssl passwd -1 -salt <salt> <password>`, where `<salt>` is the salt and `<password>` is the password string;
+  * otherwise — the password in plain text (not recommended for security reasons);
+  * the username may contain only English letters, digits, and the symbols `-`, `.`, `_`, `~`, and `%`. The password may contain English letters, digits, and `%`.
+
+* `roles` — description of user roles with respect to databases:
+  * `*` — a symbol representing all databases. It can be replaced with a specific database name or multiple names separated by commas;
+  * available roles:
+    * `data_read` — a user with this role has read access to the database;
+    * `data_write` — a user with this role has write access to the database;
+    * `db_admin` — a user with this role can manage the database, which includes write permissions, creation/deletion of namespaces, and index modification;
+    * `replication` — the same as `db_admin`, but with restrictions on usage across different protocols and additional context checks for replication. This role should be used for asynchronous and synchronous (RAFT) replication instead of `db_admin` and `owner`;
+    * `sharding` — the same as `db_admin`, but with restrictions on usage across different protocols and additional context checks for sharding. This role should be used for inter-shard communication instead of `db_admin` and `owner`;
+    * `owner` — the user has all privileges related to database access, including creating and deleting a database with the specified name.
+
 Along with the `MD5` algorithm, the `SHA256`-based `SHA512`-based password hashing algorithm can also be used for authentication. To use them, it is necessary that `openssl` and the `libcrypto` library are installed in the system, which is connected dynamically if the Reindexer is built with the `openssl` support option (by default). 
 
 Upon successful loading of `libcrypto` library symbols, a corresponding entry or error information should appear in the log.

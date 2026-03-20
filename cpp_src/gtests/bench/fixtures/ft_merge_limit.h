@@ -1,16 +1,10 @@
 #pragma once
 
-#include <random>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "base_fixture.h"
-#include "core/ft/config/ftfastconfig.h"
-#include "helpers.h"
-#include "tools/clock.h"
-#include "tools/fsops.h"
-
-// #define ENABLE_TIME_TRACKER
 
 class [[nodiscard]] FullTextMergeLimit : private BaseFixture {
 public:

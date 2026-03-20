@@ -1,10 +1,10 @@
 #include "expression_evaluator.h"
+#include "core/function/function_invoker.h"
+#include "core/function/function_parser.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/payload/payloadiface.h"
 #include "core/queryresults/fields_filter.h"
 #include "estl/tokenizer.h"
-#include "function_executor.h"
-#include "function_parser.h"
 #include "tools/float_comparison.h"
 
 namespace reindexer {
@@ -209,9 +209,9 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(Tokenizer
 				abort();
 			});
 	} else if (parser.PeekToken(Tokenizer::Flags::TreatSignAsToken).Text() == "("sv) {
-		auto parsedFunction = QueryFunctionParser::ParseFunction(parser, outTok);
+		auto parsedFunction = functions::FunctionParser::ParseFunction(parser, outTok);
 		parsedFunction.field = std::string(forField_);
-		return {.value = functionExecutor_.Execute(QueryFunction{std::move(parsedFunction)}, ctx), .type = PrimaryToken::Type::Scalar};
+		return {.value = functionInvoker_.Invoke(functions::Create(std::move(parsedFunction)), ctx, v), .type = PrimaryToken::Type::Scalar};
 	}
 	return {.value = Variant{}, .type = PrimaryToken::Type::Null};
 }

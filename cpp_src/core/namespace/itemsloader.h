@@ -119,7 +119,7 @@ private:
 	// ANN-helpers
 	std::unique_ptr<ann_storage_cache::Reader> annCacheReader_;
 	std::vector<ANNIndexInfo> annIndexes_;
-	fast_hash_map<size_t, std::vector<std::unique_ptr<uint8_t[]>>> vectorsData_;
+	fast_hash_map<size_t, std::vector<FloatVector>> vectorsData_;
 };
 
 class [[nodiscard]] IndexInserters {

@@ -50,6 +50,7 @@ IvfSearchParams KnnSearchParams::Ivf() const {
 					  },
 					  toVariant());
 }
+
 template <typename Derived>
 void detail::KnnSearchParamsCRTPBase<Derived>::ToDsl(JsonBuilder& json) const {
 	if (k_) {

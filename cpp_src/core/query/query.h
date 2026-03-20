@@ -2,7 +2,6 @@
 
 #include <functional>
 #include <initializer_list>
-#include "core/function/function.h"
 #include "core/keyvalue/geometry.h"
 #include "estl/concepts.h"
 #include "estl/forward_like.h"
@@ -245,6 +244,7 @@ public:
 	/// @return Query object ready to be executed.
 	template <concepts::Function Function>
 	Query& Where(Function&& function, CondType cond, ValuesWrapper values) & {
+		checkFunctionForLeftExpression(function);
 		std::ignore = entries_.Append<QueryFunctionEntry>(nextOp_, std::forward<Function>(function), cond, std::move(values).Extract());
 		nextOp_ = OpAnd;
 		return *this;
@@ -256,11 +256,48 @@ public:
 	}
 
 	/// Adds a condition with a user-defined function.
+	/// @param field - field name.
+	/// @param cond - type of condition.
+	/// @param function - function object used in condition clause.
+	/// @return Query object ready to be executed.
+	template <concepts::ConvertibleToString Str, concepts::Function Function>
+	Query& Where(Str&& field, CondType cond, Function&& function) & {
+		checkFunctionForRightExpression(function);
+		std::ignore = entries_.Append<QueryFunctionEntry>(nextOp_, std::forward<Str>(field), cond, std::forward<Function>(function));
+		nextOp_ = OpAnd;
+		return *this;
+	}
+
+	template <concepts::ConvertibleToString Str, concepts::Function Function>
+	Query&& Where(Str&& field, CondType cond, Function&& function) && {
+		return std::move(Where(std::forward<Str>(field), cond, std::forward<Function>(function)));
+	}
+
+	/// Adds a condition with a user-defined function.
+	/// @param field - field name.
+	/// @param cond - type of condition.
+	/// @param function - function object used in condition clause.
+	/// @return Query object ready to be executed.
+	template <concepts::ConvertibleToString Str>
+	Query& Where(Str&& field, CondType cond, functions::FunctionVariant&& function) & {
+		checkFunctionForRightExpression(function);
+		std::ignore = entries_.Append<QueryFunctionEntry>(nextOp_, std::forward<Str>(field), cond, std::move(function));
+		nextOp_ = OpAnd;
+		return *this;
+	}
+
+	template <concepts::ConvertibleToString Str>
+	Query&& Where(Str&& field, CondType cond, functions::FunctionVariant&& function) && {
+		return std::move(Where(std::forward<Str>(field), cond, std::move(function)));
+	}
+
+	/// Adds a condition with a user-defined function.
 	/// @param function - function object used in condition clause.
 	/// @param cond - type of condition.
 	/// @param values - sequence of index values to be compared with.
 	/// @return Query object ready to be executed.
 	Query& Where(functions::FunctionVariant&& function, CondType cond, ValuesWrapper values) & {
+		checkFunctionForLeftExpression(function);
 		std::ignore = entries_.Append<QueryFunctionEntry>(nextOp_, std::move(function), cond, std::move(values).Extract());
 		nextOp_ = OpAnd;
 		return *this;
@@ -278,6 +315,7 @@ public:
 		if (cond == CondDWithin) {
 			throw Error(errLogic, "DWithin between field and subquery");
 		}
+		checkFunctionForLeftExpression(function);
 		q.checkSubQueryWithData();
 		adoptNested(q);
 		if (q.HasCalcTotal() ||
@@ -294,6 +332,34 @@ public:
 	}
 	Query&& Where(functions::FunctionVariant&& function, CondType cond, Query&& q) && {
 		return std::move(Where(std::move(function), cond, std::move(q)));
+	}
+
+	/// Adds a condition to compare user-defined function values and nested query results.
+	/// @param q - nested query, that has to return some sequence of values (selection or aggregation result).
+	/// @param cond - type of condition.
+	/// @param function - function object used in condition clause.
+	/// @return Query object ready to be executed.
+	Query& Where(Query&& q, CondType cond, functions::FunctionVariant&& function) & {
+		if (cond == CondDWithin) {
+			throw Error(errLogic, "DWithin between field and subquery");
+		}
+		checkFunctionForRightExpression(function);
+		q.checkSubQueryWithData();
+		adoptNested(q);
+		if (q.HasCalcTotal() ||
+			(!q.aggregations_.empty() && (q.aggregations_[0].Type() == AggCount || q.aggregations_[0].Type() == AggCountCached))) {
+			q.Limit(0);
+		}
+		std::ignore = entries_.Append<SubQueryFunctionEntry>(nextOp_, subQueries_.size(), cond, std::move(function));
+		PopBackQEGuard guard{&entries_};
+		adoptNested(q);
+		subQueries_.emplace_back(std::move(q));
+		guard.Reset();
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	Query&& Where(Query&& q, CondType cond, functions::FunctionVariant&& function) && {
+		return std::move(Where(std::move(q), cond, std::move(function)));
 	}
 
 	/// Adds nested query and applies condition with passed 'values' to it's results.
@@ -897,7 +963,6 @@ public:
 
 	QueryType type_ = QuerySelect;				/// Query type
 	std::vector<std::string> selectFunctions_;	/// List of sql functions
-
 	std::vector<AggregateEntry> aggregations_;
 
 	[[nodiscard]] auto NsName() const&& = delete;
@@ -973,6 +1038,7 @@ private:
 	class [[nodiscard]] PopBackQEGuard {
 	public:
 		explicit PopBackQEGuard(QueryEntries* e) noexcept : e_{e} {}
+		// NOLINTNEXTLINE(bugprone-exception-escape)
 		~PopBackQEGuard() {
 			if (e_) {
 				e_->PopBack();
@@ -1035,6 +1101,12 @@ private:
 	void checkSubQueryNoData() const;
 	void checkSubQueryWithData() const;
 	void checkSubQuery() const;
+	void checkFunctionForLeftExpression(const functions::Function& f);
+	void checkFunctionForLeftExpression(const functions::FunctionVariant& f);
+	void checkFunctionForLeftExpression(const FunctionType& t);
+	void checkFunctionForRightExpression(const functions::Function& f);
+	void checkFunctionForRightExpression(const functions::FunctionVariant& f);
+	void checkFunctionForRightExpression(const FunctionType& t);
 	void walkNested(bool withSelf, bool withMerged, bool withSubQueries,
 					const std::function<void(Query& q)>& visitor) noexcept(noexcept(visitor(std::declval<Query&>())));
 	void adoptNested(Query& nq) const noexcept { nq.Strict(GetStrictMode()).Explain(NeedExplain()).Debug(GetDebugLevel()); }

@@ -19,6 +19,29 @@ void prettyPrintJSON(std::string_view json, WrSerializer& ser, int shift = kJson
 
 std::string stringifyJson(const gason::JsonNode& elem, bool escapeStrings = true);
 
+/// @brief Reading values of certain type from json node to a container.
+/// @param node - json node.
+/// @returns container with node values of type T.
+template <typename T, template <typename, auto...> class ContainerT, auto... Args>
+ContainerT<T, Args...> readNodeValues(const gason::JsonNode& node) {
+	ContainerT<T, Args...> values;
+	if (node.empty()) {
+		return values;
+	}
+	const auto tag{node.value.getTag()};
+	if (tag == gason::JsonTag::OBJECT) {
+		throw Error{errParseJson, "Cannot read json object value"};
+	}
+	if (tag == gason::JsonTag::ARRAY) {
+		for (const auto& item : node) {
+			values.emplace_back(item.As<T>());
+		}
+	} else {
+		values.emplace_back(node.As<T>());
+	}
+	return values;
+}
+
 namespace details {
 /**
  * @brief Safely reads JSON value from parent json node, in case of errors, value left unmodified.

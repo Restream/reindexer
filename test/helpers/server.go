@@ -233,7 +233,7 @@ func CreateReplication(t *testing.T, master *TestServer, slaves []*TestServer, n
 	}
 
 	ConfigureReplication(t, masterDb, "leader", []string{nsName}, nodes)
-	WaitForSyncWithMaster(t, masterDb, slaveDbs[0])
+	WaitForSyncWithLeader(t, masterDb, slaveDbs[0])
 }
 
 func ConfigureReplication(t *testing.T, rx *reindexer.Reindexer, role string, ns []string, nodes []reindexer.DBAsyncReplicationNode) {

@@ -169,6 +169,7 @@ public:
 	void spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
 		wg.add(1);
 		spawn(
+			// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 			[f = std::move(func), &wg]() {	// NOLINT(*.NewDeleteLeaks) False positive
 				coroutine::wait_group_guard wgg(wg);
 				f();

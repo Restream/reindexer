@@ -1,9 +1,9 @@
 #pragma once
 
+#include "core/keyvalue/variant.h"
 #include "estl/h_vector.h"
 
 namespace reindexer {
-
 class FloatVectorIndex;
 
 struct [[nodiscard]] FloatVectorIndexData {
@@ -12,5 +12,6 @@ struct [[nodiscard]] FloatVectorIndexData {
 };
 
 struct [[nodiscard]] FloatVectorsIndexes : h_vector<FloatVectorIndexData, 2> {};
+struct [[nodiscard]] FloatVectorsIndexesValues : h_vector<std::pair<FloatVectorIndexData, Variant>, 2> {};	// per Item
 
 }  // namespace reindexer

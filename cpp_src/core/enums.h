@@ -80,6 +80,7 @@ BOOL_ENUM(NeedMaskingDSN)
 BOOL_ENUM(AddQuotes)
 BOOL_ENUM(Shrink)
 BOOL_ENUM(ForceAllColumns)
+BOOL_ENUM(LoadWithQuantizer)
 BOOL_ENUM(MigrationStatus)
 
 #undef BOOL_ENUM

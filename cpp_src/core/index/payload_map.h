@@ -94,6 +94,12 @@ public:
 	less_composite(PayloadType&& type, FieldsSet&& fields) noexcept : type_(std::move(type)), fields_(std::move(fields)) {
 		assertrx_dbg(type_);
 	}
+	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Try to avoid copying inside btree
+	less_composite(const less_composite&) noexcept = default;
+	less_composite(less_composite&&) noexcept = default;
+	// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Try to avoid copying inside btree
+	less_composite& operator=(const less_composite&) noexcept = default;
+	less_composite& operator=(less_composite&&) noexcept = default;
 	bool operator()(const PayloadValue& lhs, const PayloadValue& rhs) const {
 		assertrx_dbg(!lhs.IsFree());
 		assertrx_dbg(!rhs.IsFree());
@@ -129,7 +135,7 @@ struct [[nodiscard]] no_deep_clean {
 };
 
 template <typename T1>
-class unordered_payload_map
+class [[nodiscard]] unordered_payload_map
 	: private tsl::sparse_map<PayloadValueWithHash, T1, hash_composite, equal_composite,
 							  std::allocator<std::pair<PayloadValueWithHash, T1>>, tsl::sh::power_of_two_growth_policy<2>,
 							  tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
@@ -330,14 +336,6 @@ protected:
 		}
 	}
 
-	void move_strings_to_holder(PayloadValue& pv, StringsHolder& strHolder) const {
-		if (with_tuple_) {
-			Payload(payload_type_, pv).MoveStrings(kTupleField, strHolder);
-		}
-	}
-
-	bool have_str_fields() const noexcept { return with_tuple_; }
-
 private:
 	PayloadType payload_type_;
 	bool with_tuple_ = false;
@@ -345,9 +343,13 @@ private:
 
 // Unordered payload map implementation for fulltext indexes.
 // Composite fulltext indexes may be built over non-indexed fields and have to hold `-tuple` string to avoid memory invalidation.
-// This implementation increments `-tuple` ref counter on insertion and decrements it on deletion
+// This implementation increments `-tuple` ref counter on insertion and decrements it on deletion.
+// It doesn't move string into string holder. If this map is the last owner of specific '-tuple', then nobody else can see this
+// '-tuple', because it was already removed from tuple-index and all the documents referring to it were also removed from namespace. The map
+// still holds this '-tuple' because there is no way to update it with a 'live' one on document deletion, but it will be updated on
+// the next insert/update
 template <typename T1>
-class unordered_payload_map_ft
+class [[nodiscard]] unordered_payload_map_ft
 	: private tsl::sparse_map<PayloadValueWithHash, T1, hash_composite, equal_composite,
 							  std::allocator<std::pair<PayloadValueWithHash, T1>>, tsl::sh::power_of_two_growth_policy<2>,
 							  tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
@@ -364,9 +366,8 @@ public:
 
 	using base_hash_map::size;
 	using base_hash_map::empty;
-	using payload_str_fields_helper::have_str_fields;
 
-	class iterator : public base_hash_map::iterator {
+	class [[nodiscard]] iterator : public base_hash_map::iterator {
 	public:
 		iterator() noexcept : owner_(nullptr) {}
 		explicit iterator(base_hash_map::iterator&& it, unordered_payload_map_ft& owner) noexcept
@@ -383,7 +384,6 @@ public:
 #endif	// RX_WITH_STDLIB_DEBUG
 
 			owner_->add_ref(newKey);
-			// Intentionally do not use string holder here. We can safely remove `-tuple` if nobody does not have reference to it
 			owner_->release((*this)->first);
 
 			(*this)->first = std::move(newKey);
@@ -433,10 +433,10 @@ public:
 	}
 
 	template <typename deep_cleaner>
-	iterator erase(iterator pos, StringsHolder& strHolder) {
+	iterator erase(iterator pos) {
 		static const deep_cleaner deep_clean;
 		if (pos != end()) {
-			this->move_strings_to_holder(pos->first, strHolder);
+			this->release(pos->first);
 		}
 		deep_clean(*pos);
 		return iterator(base_hash_map::erase(static_cast<base_hash_map::iterator>(pos)), *this);
@@ -473,10 +473,5 @@ template <typename T>
 constexpr bool is_payload_map_v<unordered_payload_map<T>> = true;
 template <typename T>
 constexpr bool is_payload_map_v<unordered_payload_map_ft<T>> = true;
-
-template <typename>
-constexpr bool is_ft_payload_map_v = false;
-template <typename T>
-constexpr bool is_ft_payload_map_v<unordered_payload_map_ft<T>> = true;
 
 }  // namespace reindexer

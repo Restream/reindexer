@@ -216,7 +216,7 @@ private:
 	ErrorCode code_{errOK};
 };
 
-class DuplicatedItemIDError : public Error {
+class [[nodiscard]] DuplicatedItemIDError : public Error {
 public:
 	DuplicatedItemIDError(size_t id, Error&& err) noexcept : Error(std::move(err)), id_(id) {}
 	size_t ID() const noexcept { return id_; }

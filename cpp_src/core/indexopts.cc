@@ -33,6 +33,7 @@ constexpr size_t kIvfNCentroidsMax = 2 << 16;
 constexpr std::string_view kEmbedding{"embedding"};
 constexpr std::string_view kUpsertEmbedder{"upsert_embedder"};
 constexpr std::string_view kQueryEmbedder{"query_embedder"};
+constexpr std::string_view kQuantizationConfig{"quantization_config"};
 constexpr std::string_view kEmbedderName{"name"};
 constexpr std::string_view kEmbedderURL{"URL"};
 constexpr std::string_view kEmbedderCacheTag{"cache_tag"};
@@ -366,6 +367,11 @@ FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::str
 	if (const auto radius = root["radius"sv]; !radius.empty()) {
 		result.SetRadius(radius.As<float>());
 	}
+	if (const auto configNode = root[kQuantizationConfig]; !configNode.empty()) {
+		hnswlib::QuantizationConfig config;
+		config.FromJSON(configNode);
+		result.SetQuantizationConfig(std::move(config));
+	}
 
 	result.Validate(idxType);
 	return result;
@@ -425,6 +431,9 @@ void FloatVectorIndexOpts::GetJson(reindexer::builders::JsonBuilder& json) const
 	if (radius_) {
 		json.Put("radius"sv, *radius_);
 	}
+	if (quantizationConfig_) {
+		quantizationConfig_->GetJSON(json.Object(kQuantizationConfig));
+	}
 }
 
 IndexOpts::IndexOpts(uint8_t flags, CollateMode mode, RTreeIndexType rtreeType)
@@ -459,7 +468,8 @@ FloatVectorIndexOpts::DiffResult FloatVectorIndexOpts::Compare(const FloatVector
 		.Set<Diff::Base>(dimension_ == o.dimension_ && startSize_ == o.startSize_ && M_ == o.M_ && efConstruction_ == o.efConstruction_ &&
 						 nCentroids_ == o.nCentroids_ && multithreadingMode_ == o.multithreadingMode_ && metric_ == o.metric_)
 		.Set<Diff::Embedding>(embedding_ == o.embedding_)
-		.Set<Diff::Radius>(radius_ == o.radius_);
+		.Set<Diff::Radius>(radius_ == o.radius_)
+		.Set<Diff::QuantizationConfig>(quantizationConfig_ == o.quantizationConfig_);
 }
 
 void IndexOpts::validateForFloatVector() const {

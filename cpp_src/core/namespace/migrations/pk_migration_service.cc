@@ -1,5 +1,6 @@
 #include "pk_migration_service.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/storage/storage_prefixes.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -16,12 +17,12 @@ void serializeItemPk(const ConstPayload& pl, const FieldsSet& pk, WrSerializer& 
 }  // namespace
 
 bool PKMigrationService::migrateItem(size_t rowId, const FieldsSet& oldPk, const FieldsSet& newPk, WrSerializer& pkBuf,
-									 WrSerializer& itemBuf, const FloatVectorsIndexes& vectorIndexes) noexcept {
+									 WrSerializer& itemBuf) noexcept {
 	try {
 		ItemImpl item{nsImpl_.payloadType_, nsImpl_.items_[rowId], nsImpl_.tagsMatcher_};
 		item.Unsafe(true);
 		// Serialize the new one.
-		Error err{nsImpl_.tryWriteItemIntoStorage(newPk, item, IdType::FromNumber(rowId), vectorIndexes, pkBuf, itemBuf)};
+		Error err{nsImpl_.tryWriteItemIntoStorage(newPk, item, IdType::FromNumber(rowId), pkBuf, itemBuf)};
 		if (err.ok()) {
 			// Remove the old one if successfull.
 			serializeItemPk(item.GetConstPayload(), oldPk, pkBuf);
@@ -47,10 +48,9 @@ void PKMigrationService::MigrateFromOldToNewPK(const FieldsSet& oldPk, const Fie
 			logFmt(LogTrace, "Migrating '{}' items from old to new PK.", nsImpl_.name_);
 
 			WrSerializer pkBuf, itemBuf;
-			const FloatVectorsIndexes vectorIndexes{nsImpl_.getVectorIndexes()};
 
 			for (size_t rowId = 0; rowId < nsImpl_.items_.size(); ++rowId) {
-				if (!migrateItem(rowId, oldPk, newPk, pkBuf, itemBuf, vectorIndexes)) {
+				if (!migrateItem(rowId, oldPk, newPk, pkBuf, itemBuf)) {
 					status = MigrationStatus_False;
 				}
 			}
@@ -65,58 +65,131 @@ void PKMigrationService::MigrateFromOldToNewPK(const FieldsSet& oldPk, const Fie
 	}
 }
 
+void PKMigrationService::MigrateToNewPK(const FieldsSet& pk) noexcept {
+	if (nsImpl_.storage_.IsValid() && !nsImpl_.items_.empty()) {
+		MigrationStatus status{MigrationStatus_True};
+
+		try {
+			logFmt(LogInfo, "Migrating '{}' items to new PK.", nsImpl_.name_);
+
+			writeStatus(MigrationStatus_False);
+
+			// Flushing all the items waiting in queue.
+			nsImpl_.storage_.Flush(StorageFlushOpts{});
+
+			WrSerializer pkBuf, itemBuf;
+			for (size_t rowId = 0; rowId < nsImpl_.items_.size(); ++rowId) {
+				ItemImpl item{nsImpl_.payloadType_, nsImpl_.items_[rowId], nsImpl_.tagsMatcher_};
+				item.Unsafe(true);
+
+				Error err{nsImpl_.tryWriteItemIntoStorage(pk, item, IdType::FromNumber(rowId), pkBuf, itemBuf)};
+				if (!err.ok()) {
+					logFmt(LogError, "Failed to migrate '{}' item with row_id={}: {}", nsImpl_.name_, rowId, err.what());
+					status = MigrationStatus_False;
+				}
+			}
+
+			logFmt(LogInfo, "Removing '{}' items with old PK.", nsImpl_.name_);
+
+			iterateOverStorageItems([&, this](const ItemImpl& item, AsyncStorage::Cursor& cursor, const StorageOpts& opts) {
+				try {
+					serializeItemPk(item.GetConstPayload(), pk, pkBuf);
+					if (pkBuf.Slice() != cursor->Key()) {
+						cursor.RemoveThisKey(opts);
+						logFmt(LogTrace, "Removing item ('{}') with obsolete key from '{}' storage", cursor->Key(), nsImpl_.name_);
+					}
+				} catch (const std::exception& err) {
+					logFmt(LogError, "Error removing item = '{}' for '{}': {}", cursor->Key(), nsImpl_.name_, err.what());
+					status = MigrationStatus_False;
+				}
+			});
+		} catch (const std::exception& ex) {
+			logFmt(LogError, "Migrating '{}' to new PK failed: {}", nsImpl_.name_, ex.what());
+			status = MigrationStatus_False;
+		}
+
+		writeStatus(status);
+
+		logFmt(((status == MigrationStatus_False) ? LogError : LogInfo), "Migrating '{}' to new PK finished with status: {}", nsImpl_.name_,
+			   static_cast<bool>(status));
+	}
+}
+
 void PKMigrationService::RemoveItemsWithObsoletePK() {
 	if (nsImpl_.storage_.IsValid()) {
+		auto* pk{nsImpl_.pkFields()};
+		if (!pk) {
+			auto dbIter{nsImpl_.storage_.GetCursor(StorageOpts().FillCache(false))};
+			dbIter->Seek(kRxStorageItemPrefix);
+			if (const bool hasItems = dbIter->Valid() && checkIfStartsWith(kRxStorageItemPrefix, dbIter->Key()); hasItems) {
+				logFmt(LogError, "Error removing items with obsolete PK for NS='{}': namespace contains items, but doesn't contain PK",
+					   nsImpl_.name_);
+			}
+			return;
+		}
 		MigrationStatus status{MigrationStatus_False};
 		reindexer::Error error{readStatus(status)};
 		if (error.ok() && status == MigrationStatus_False) {
 			logFmt(LogTrace, "Removing '{}' items with obsolete PK.", nsImpl_.name_);
 
 			WrSerializer buf;
-
-			ItemImpl item{nsImpl_.payloadType_, nsImpl_.tagsMatcher_};
-			item.Unsafe(true);
-
-			StorageOpts opts;
-			opts.FillCache(false);
-
-			auto dbIter{nsImpl_.storage_.GetCursor(opts)};
-			for (dbIter->Seek(kRxStorageItemPrefix);
-				 dbIter->Valid() &&
-				 dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kRxStorageItemPrefix "\xFF\xFF\xFF\xFF")) < 0;
-				 dbIter->Next()) {
-				std::string_view dataSlice{dbIter->Value()};
-				if (dataSlice.empty()) {
-					continue;
-				}
-				if (dataSlice.size() < sizeof(int64_t)) {
-					continue;
-				}
-				const int64_t lsn{*reinterpret_cast<const int64_t*>(dataSlice.data())};
-				if (lsn < 0) {
-					continue;
-				}
-
-				try {
-					dataSlice = dataSlice.substr(sizeof(lsn));
-					item.FromCJSON(dataSlice);
-				} catch (const Error&) {
-					continue;
-				}
-
-				try {
-					serializeItemPk(item.GetConstPayload(), nsImpl_.pkFields(), buf);
-					if (buf.Slice() != dbIter->Key()) {
-						// Item's PK is obsolete, removing this item from storage.
-						nsImpl_.storage_.Remove(buf.Slice());
-						logFmt(LogTrace, "Removing item ('{}') from '{}' storage: 'PK is obsolete.'", dbIter->Key(), nsImpl_.name_);
+			iterateOverStorageItems([&](const ItemImpl& item, AsyncStorage::Cursor& cursor, const StorageOpts& opts) {
+				serializeItemPk(item.GetConstPayload(), *pk, buf);
+				if (buf.Slice() != cursor->Key()) {
+					try {
+						cursor.RemoveThisKey(opts);
+						logFmt(LogTrace, "Removing item ('{}') from '{}' storage: 'PK is obsolete.'", cursor->Key(), nsImpl_.name_);
+					} catch (const std::exception& err) {
+						throw Error{errParseBin, "Error recovering item = '{}' for '{}': {}", cursor->Key(), nsImpl_.name_, err.what()};
 					}
-				} catch (const Error& err) {
-					throw Error{errParseBin, "Error recovering item = '{}' for '{}': {}", dbIter->Key(), nsImpl_.name_, err.what()};
 				}
-			}
+			});
 		}
 		writeStatus(MigrationStatus_True);
+	}
+}
+
+template <typename Fn>
+void PKMigrationService::iterateOverStorageItems(Fn&& onReadItem) noexcept {
+	if (!nsImpl_.storage_.IsValid()) {
+		return;
+	}
+	try {
+		ItemImpl item{nsImpl_.payloadType_, nsImpl_.tagsMatcher_};
+		item.Unsafe(true);
+
+		StorageOpts opts;
+		opts.FillCache(false);
+
+		auto dbIter{nsImpl_.storage_.GetCursor(opts)};
+		for (dbIter->Seek(kRxStorageItemPrefix);
+			 dbIter->Valid() &&
+			 dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kRxStorageItemPrefix "\xFF\xFF\xFF\xFF")) < 0;
+			 dbIter->Next()) {
+			std::string_view dataSlice{dbIter->Value()};
+			if (dataSlice.empty()) {
+				continue;
+			}
+			if (dataSlice.size() < sizeof(int64_t)) {
+				continue;
+			}
+
+			const int64_t lsn{*reinterpret_cast<const int64_t*>(dataSlice.data())};
+			if (lsn < 0) {
+				continue;
+			}
+
+			try {
+				dataSlice = dataSlice.substr(sizeof(lsn));
+				item.FromCJSON(dataSlice);
+			} catch (const Error&) {
+				continue;
+			}
+
+			onReadItem(item, dbIter, opts);
+		}
+	} catch (const std::exception& ex) {
+		logFmt(LogError, "Error reading items from storage for '{}': {}", nsImpl_.name_, ex.what());
 	}
 }
 

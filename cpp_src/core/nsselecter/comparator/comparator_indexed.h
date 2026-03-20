@@ -6,6 +6,7 @@
 #include "const.h"
 #include "core/id_type.h"
 #include "core/index/payload_map.h"
+#include "core/index/string_map.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadfieldvalue.h"
@@ -13,13 +14,27 @@
 #include "core/payload/payloadvalue.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
-#include "helpers.h"
 #include "tools/float_comparison.h"
 #include "tools/string_regexp_functions.h"
 
 namespace reindexer {
 
 namespace comparators {
+
+class [[nodiscard]] key_string_set : public tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string> {
+public:
+	key_string_set(const CollateOpts& opts)
+		: tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string>(
+			  1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts), std::allocator<key_string>(), less_key_string(opts)) {}
+};
+
+template <typename T>
+class [[nodiscard]] key_string_map : public tsl::hopscotch_sc_map<key_string, T, hash_key_string, equal_key_string, less_key_string> {
+public:
+	key_string_map(const CollateOpts& opts)
+		: tsl::hopscotch_sc_map<key_string, T, hash_key_string, equal_key_string, less_key_string>(
+			  1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts), std::allocator<key_string>(), less_key_string(opts)) {}
+};
 
 template <typename T, CondType Cond>
 struct [[nodiscard]] ValuesHolder {

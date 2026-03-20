@@ -37,8 +37,8 @@ struct [[nodiscard]] NodeStats {
 
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const NodeStats& r) const noexcept = default;
-	bool operator!=(const NodeStats& r) const noexcept = default;
+	bool operator==(const NodeStats& r) const noexcept(noexcept(dsn == r.dsn)) = default;
+	bool operator!=(const NodeStats& r) const noexcept(noexcept(dsn != r.dsn)) = default;
 
 	DSN dsn;
 	int64_t updatesCount;
@@ -57,8 +57,8 @@ struct [[nodiscard]] ReplicationStats {
 	Error FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& builder) const;
 	void GetJSON(WrSerializer& ser) const;
-	bool operator==(const ReplicationStats& r) const noexcept = default;
-	bool operator!=(const ReplicationStats& r) const noexcept = default;
+	bool operator==(const ReplicationStats& r) const noexcept(noexcept(nodeStats == r.nodeStats)) = default;
+	bool operator!=(const ReplicationStats& r) const noexcept(noexcept(nodeStats != r.nodeStats)) = default;
 
 	std::string type;
 	int64_t updateDrops;

@@ -81,9 +81,9 @@ public:
 	int GetDefaultConfigs(http::Context& ctx);
 
 private:
-	enum class DataFormat { JSON, MsgPack, Protobuf, CSVFile };
+	enum class [[nodiscard]] DataFormat { JSON, MsgPack, Protobuf, CSVFile };
 
-	struct IQRSerializingOption {
+	struct [[nodiscard]] IQRSerializingOption {
 		virtual ~IQRSerializingOption() = default;
 
 		virtual std::optional<size_t> TotalCount() const noexcept = 0;

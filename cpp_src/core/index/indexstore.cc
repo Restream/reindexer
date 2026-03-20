@@ -156,7 +156,7 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray& keys, CondType con
 }
 
 template <typename T>
-IndexMemStat IndexStore<T>::GetMemStat(const RdxContext&) {
+IndexMemStat IndexStore<T>::GetMemStat(const RdxContext&) const {
 	IndexMemStat ret = memStat_;
 	ret.name = name_;
 	ret.uniqKeysCount = str_map.size();

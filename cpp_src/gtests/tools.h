@@ -159,6 +159,7 @@ T1 randOneOf(T1 v1, T2 v2, Ts... vs) {
 }
 
 inline std::function<void()> exceptionWrapper(std::function<void()>&& func) {
+	// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 	return [f = std::move(func)] {	// NOLINT(*.NewDeleteLeaks) False positive
 		try {
 			f();

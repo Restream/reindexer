@@ -8,7 +8,7 @@
 namespace reindexer {
 namespace net {
 namespace cproto {
-enum CmdCode : uint16_t {
+enum [[nodiscard]] CmdCode : uint16_t {
 	kCmdPing = 0,
 	kCmdLogin = 1,
 	kCmdOpenDatabase = 2,

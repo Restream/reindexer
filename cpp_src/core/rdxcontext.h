@@ -2,7 +2,7 @@
 
 #include <functional>
 #include <optional>
-#include "activity_context.h"
+#include "core/activity/activity_context.h"
 #include "core/enums.h"
 #include "core/keyvalue/key_string.h"
 #include "tools/errors.h"
@@ -12,7 +12,7 @@ namespace reindexer {
 
 using std::chrono::milliseconds;
 
-enum class CancelType : uint8_t { None = 0, Explicit, Timeout };
+enum class [[nodiscard]] CancelType : uint8_t { None = 0, Explicit, Timeout };
 
 struct [[nodiscard]] IRdxCancelContext {
 	virtual CancelType GetCancelType() const noexcept = 0;

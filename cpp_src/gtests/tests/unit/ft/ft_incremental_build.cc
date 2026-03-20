@@ -87,6 +87,7 @@ public:
 	class [[nodiscard]] DataDumpGuard {
 	public:
 		DataDumpGuard(const WordsData& wordsData) noexcept : wordsData_(wordsData) {}
+		// NOLINTNEXTLINE(bugprone-exception-escape)
 		~DataDumpGuard() {
 			if (::testing::Test::HasFailure()) {
 				TestCout() << "Additional info:\n";

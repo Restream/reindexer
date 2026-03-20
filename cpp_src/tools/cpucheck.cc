@@ -152,9 +152,11 @@ static bool cpuHasAVX512() noexcept {
 	uint32_t nIds = cpuInfo[0];
 
 	bool HW_AVX512F = false;
+	bool HW_AVX512BW = false;
 	if (nIds >= 0x00000007) {  //  AVX512 Foundation
 		cpuid_count(cpuInfo, 0x00000007, 0);
-		HW_AVX512F = (cpuInfo[1] & (uint32_t(1) << 16)) != 0;
+		HW_AVX512F = (cpuInfo[1] & (1u << 16)) != 0;   // AVX512F
+		HW_AVX512BW = (cpuInfo[1] & (1u << 30)) != 0;  // AVX512BW
 	}
 
 	// OS support
@@ -166,9 +168,11 @@ static bool cpuHasAVX512() noexcept {
 	bool avx512Supported = false;
 	if (osUsesXSAVE_XRSTORE && cpuAVXSuport) {
 		uint64_t xcrFeatureMask = xgetbv(_XCR_XFEATURE_ENABLED_MASK);
+		// bits: ZMM0..ZMM15 state (bits 0-5), Opmask (bit 5), ZMM16..31 (bit 6)
 		avx512Supported = (xcrFeatureMask & 0xe6) == 0xe6;
 	}
-	return HW_AVX512F && avx512Supported;
+
+	return HW_AVX512F && HW_AVX512BW && avx512Supported;
 }
 
 bool CPUHasAVX() noexcept {

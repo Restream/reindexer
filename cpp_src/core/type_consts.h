@@ -87,8 +87,9 @@ typedef enum REINDEX_CPP_NODISCARD QueryItemType {
 	QueryLocal = 31,
 	QueryKnnCondition = 32,
 	QueryKnnConditionExt = 33,
-	QueryFunction = 34,
-	QueryFunctionSubQueryCondition = 35,
+	QueryFunction = 34,					  // Deprecated
+	QueryFunctionSubQueryCondition = 35,  // Deprecated
+	QueryExpressions = 36,
 } QueryItemType;
 
 typedef enum REINDEX_CPP_NODISCARD QuerySerializeMode {
@@ -121,7 +122,16 @@ typedef enum REINDEX_CPP_NODISCARD CondType {
 
 typedef enum REINDEX_CPP_NODISCARD FunctionType {
 	FunctionFlatArrayLen = 0,
+	FunctionNow = 1,
+	FunctionSerial = 2,
 } FunctionType;
+
+typedef enum REINDEX_CPP_NODISCARD ExpressionType {
+	ExpressionTypeField = 0,
+	ExpressionTypeValues = 1,
+	ExpressionTypeExpression = 2,
+	ExpressionTypeSubQuery = 3,
+} ExpressionType;
 
 enum REINDEX_CPP_NODISCARD ErrorCode {
 	errOK = 0,

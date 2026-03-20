@@ -234,10 +234,10 @@ void RoleSwitcher::initialLeadersSync() {
 		nsList = collectNsNames();
 	}
 
-	// coroutine::tokens_pool<bool> syncTokens(maxConcurrentSnapshots);
 	std::vector<size_t> snapshotsOnNode(nodes_.size(), 0);
 	for (auto& ns : nsList) {
 		logInfo("{}: Leader's resync timer: create coroutine for '{}'", cfg_.serverId, ns);
+		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 		loop_.spawn(leaderSyncWg, [this, &lastErr, &ns, &syncQueue]() mutable noexcept {
 			try {
 				auto err = getNodesListForNs(ns, syncQueue);
@@ -348,7 +348,8 @@ Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, elist<LeaderS
 
 	std::vector<std::pair<Error, ReplicationStateV2>> nodesStates(nodes_.size());
 	for (int id = 0; size_t(id) < nodes_.size(); ++id) {
-		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
+		// TODO: Currently there are no good ways to recover, crash is intended
+		// NOLINTNEXTLINE(bugprone-exception-escape,rx-perf-lambda-to-std-function-allocation)
 		loop_.spawn(lwg, [this, id, &nodesStates]() noexcept {
 			ReplicationStateV2 st;
 			nodesStates[id].first = awaitRoleSwitchForNamespace(nodes_[id].client, NamespaceName(), st);
@@ -357,7 +358,8 @@ Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, elist<LeaderS
 	lwg.wait();
 
 	for (int id = 0; size_t(id) < nodes_.size(); ++id) {
-		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
+		// TODO: Currently there are no good ways to recover, crash is intended
+		// NOLINTNEXTLINE(bugprone-exception-escape,rx-perf-lambda-to-std-function-allocation)
 		loop_.spawn(lwg, [this, id, &nsEntry, &responses, &nodesStates]() noexcept {
 			Error err = nodesStates[id].first;
 			if (err.ok()) {
@@ -380,10 +382,9 @@ Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, elist<LeaderS
 					nsEntry.latestLsn = remoteLsn;
 				} else if (nsEntry.latestLsn == remoteLsn) {
 					const bool sameAsLocal =
-						(nsEntry.localData.hash == state.dataHash && (!state.HasDataCount() || nsEntry.localData.count == state.dataCount));
-					const bool sameAsRemote =
-						(nsEntry.data.size() && nsEntry.data[0].hash == state.dataHash &&
-						 (!nsEntry.data[0].HasDataCount() || !state.HasDataCount() || nsEntry.data[0].count == state.dataCount));
+						(nsEntry.localData.hash.IsEqualByAnyVersionTo(state.dataHash) && nsEntry.localData.count == state.dataCount);
+					const bool sameAsRemote = (nsEntry.data.size() && nsEntry.data[0].hash.IsEqualByAnyVersionTo(state.dataHash) &&
+											   nsEntry.data[0].count == state.dataCount);
 					if (sameAsLocal || sameAsRemote) {
 						nsEntry.nodes.emplace_back(id);
 						nsEntry.data.emplace_back(LeaderSyncQueue::Entry::NodeData{state.dataHash, state.dataCount});
@@ -419,7 +420,8 @@ NsNamesHashSetT RoleSwitcher::collectNsNames() {
 	coroutine::wait_group lwg;
 	size_t responses = 1;
 	for (size_t nodeId = 0; nodeId < nodes_.size(); ++nodeId) {
-		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
+		// TODO: Currently there are no good ways to recover, crash is intended
+		// NOLINTNEXTLINE(bugprone-exception-escape,rx-perf-lambda-to-std-function-allocation)
 		loop_.spawn(lwg, [this, nodeId, &set, &responses]() noexcept {
 			auto& node = nodes_[nodeId];
 			auto client = node.client.WithTimeout(kStatusCmdTimeout);

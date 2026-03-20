@@ -104,7 +104,7 @@ public:
 		++elemsCount_;
 		return *this;
 	}
-	SparseArrayValidator Array() const noexcept {
+	SparseArrayValidator Array() const {
 		return SparseValidator{type_, IsArray_False, 0, sparseNumber_, tagsMatcher_, InArray_False, parserName_};
 	}
 

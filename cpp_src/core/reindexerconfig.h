@@ -9,11 +9,14 @@ namespace reindexer {
 class IClientsStats;
 class IExternalEventsListener;
 
+// NOLINTBEGIN(performance-unnecessary-value-param) // TODO: Temprorary comment to avoid false-positive on warning on moved params
+
 struct [[nodiscard]] ReindexerConfig {
 	ReindexerConfig& WithClientStats(IClientsStats* cs) noexcept {
 		clientsStats = cs;
 		return *this;
 	}
+	// NOLINTNEXTLINE(performance-unnecessary-value-param)
 	ReindexerConfig& WithDBName(std::string _dbName) noexcept {
 		dbName = std::move(_dbName);
 		return *this;
@@ -41,5 +44,7 @@ struct [[nodiscard]] ReindexerConfig {
 	/// Recommended maximum free cache size of tcmalloc memory allocator in relation to total reindexer allocated memory size, in units
 	float allocatorCachePart = -1.0;
 };
+
+// NOLINTEND(performance-unnecessary-value-param) // Temprorary comment to avoid false-positive on warning on moved params
 
 }  // namespace reindexer

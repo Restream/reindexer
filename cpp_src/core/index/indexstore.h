@@ -26,7 +26,7 @@ public:
 	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
 
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexStore<T>(*this)); }
-	IndexMemStat GetMemStat(const RdxContext&) override;
+	IndexMemStat GetMemStat(const RdxContext&) const override;
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string> || std::is_same_v<T, key_string_with_hash>; }
 	void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
 	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) override;

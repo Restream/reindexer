@@ -366,7 +366,7 @@ int QueryResults::GetCommonShardID() const {
 	return shardId.has_value() ? *shardId : ShardingKeyType::ProxyOff;
 }
 
-PayloadType QueryResults::GetPayloadType(int nsid) const noexcept {
+PayloadType QueryResults::GetPayloadType(int nsid) const {
 	switch (type_) {
 		case Type::None:
 			return PayloadType();
@@ -383,7 +383,7 @@ PayloadType QueryResults::GetPayloadType(int nsid) const noexcept {
 	}
 }
 
-TagsMatcher QueryResults::GetTagsMatcher(int nsid) const noexcept {
+TagsMatcher QueryResults::GetTagsMatcher(int nsid) const {
 	switch (type_) {
 		case Type::None:
 			return TagsMatcher();

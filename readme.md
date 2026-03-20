@@ -44,6 +44,7 @@ about reindexer server and HTTP API refer to
     - [Forced sort](#forced-sort)
   - [Functions](#functions)
     - [flat_array_len(field_name)](#flat_array_lenfield_name)
+    - [now(unit)](#nowunit)
   - [Counting](#counting)
   - [Text pattern search with LIKE condition](#text-pattern-search-with-like-condition)
   - [Update queries](#update-queries)
@@ -54,6 +55,7 @@ about reindexer server and HTTP API refer to
     - [Concatenate arrays](#concatenate-arrays)
     - [Remove array elements by values](#remove-array-elements-by-values)
   - [Delete queries](#delete-queries)
+    [Truncate queries](#truncate-queries)
   - [Transactions and batch update](#transactions-and-batch-update)
     - [Synchronous mode](#synchronous-mode)
     - [Async batch mode](#async-batch-mode)
@@ -760,7 +762,7 @@ Reindexer provides built-in functions that can be used within WHERE clauses to e
 
 #### flat_array_len(field_name)
 
-The `flat_array_len` function returns the length or cardinality of a specified field, making it particularly useful for filtering based on array sizes or field presence.
+The `flat_array_len` function returns the length or cardinality of a specified field, making it particularly useful for filtering based on array sizes or field presence. The `flat_array_len` function can be used in both SELECT and UPDATE queries.
 
 Behavior by Field Type:
 - Array Fields: returns the number of elements in the array
@@ -782,24 +784,78 @@ SELECT * FROM users WHERE flat_array_len(phone_numbers) >= 1
 
 -- Filter objects nested in arrays (returns count of occurrences)
 SELECT * FROM orders WHERE flat_array_len(items.product_id) = 2
+
+-- Update field value with flat_array_len function 
+UPDATE items SET size = flat_array_len(comments) where id = 100;
 ```
 
 ```Go
 // Find social media posts with between 10 and 50 comments
 // and at least 3 attached media files
 query := DB.Query("posts").
-    WhereFunction(reindexer.FlatArrayLen{Field: "comment"}, reindexer.GE, 10).
-    WhereFunction(reindexer.FlatArrayLen{Field: "comment"}, reindexer.LE, 50).
-    WhereFunction(reindexer.FlatArrayLen{Field: "media"}, reindexer.GE, 3)
+    WhereFlatArrayLen("comment", reindexer.GE, 10).
+    WhereFlatArrayLen("comment", reindexer.LE, 50).
+    WhereFlatArrayLen("media", reindexer.GE, 3)
 
 // Execute query
 it := query.Exec()
+
+// Update field 'size' with flat_array_len function
+res, err := DB.Query("items").Where("id", reindexer.EQ, 1).SetExpression("size", "flat_array_len(comments)").Update().FetchAll()
 ```
 
 Notes:
 - `flat_array_len` function operates efficiently on indexed fields
 - Returns 0 if the specified field does not exist in a document
 - Supports the following comparison operators: (=, >, >=, <, <=, Range, Set)
+- Can be used in both SELECT and UPDATE queries
+
+#### now(unit)
+
+The `now()` function returns the current system timestamp, making it particularly useful for time-based filtering and data synchronization. This function can be used in both SELECT and UPDATE queries.
+
+Arguments:
+- `sec` - returns timestamp in seconds (default if no argument is provided)
+- `msec` - returns timestamp in milliseconds
+- `usec` - returns timestamp in microseconds
+- `nsec` - returns timestamp in nanoseconds
+
+Examples:
+```sql
+-- Find documents with exact current timestamp
+SELECT * FROM logs WHERE timestamp = now(sec)
+
+-- Filter documents with timestamps in the future (milliseconds)
+SELECT * FROM schedules WHERE start_time > now(msec)
+
+-- Update a document with current timestamp in nanoseconds
+UPDATE items SET last_modified = now(nsec) WHERE id = 100
+
+-- Set both creation time and modification time
+UPDATE users SET created_at = now(sec), updated_at = now(sec) WHERE status = 'new'
+```
+```go
+// Find events that occurred in the past
+query := DB.Query("events").
+    WhereExpressions(reindexer.Field{Name: "timestamp"}, reindexer.LE, reindexer.Now{TimeUnit: reindexer.Sec})
+
+// Update document with current microsecond timestamp
+res, err := DB.Query("items").
+    Where("id", reindexer.EQ, 42).
+    SetExpression("updated_at", "now(usec)").
+    Update().
+    FetchAll()
+
+// Insert document with serial ID and current timestamp
+item := Item{Name: "test"}
+DB.Insert("items", &item, "id=serial()", "created_at=now(msec)")
+```
+
+Notes:
+- The returned timestamp represents seconds (or subunits) since the Unix epoch (January 1, 1970)
+- Time resolution depends on the specified unit - use nsec for maximum precision
+- All instances of Now() within a single query share the same value, which is computed at the start of the query execution
+- Useful for implementing TTL (Time-To-Live) functionality and audit logging
 
 ### Update queries
 
@@ -1077,6 +1133,20 @@ DB.Query(ns).
 	).
 	Delete()
 ```
+
+### Truncate queries
+
+`Truncate` is more effective alternative to `delete`-query for cases, when you need to remove all the items from namespace without filtering:
+```sql
+TRUNCATE ns
+```
+
+Go syntax:
+```go
+DB.TruncateNamespace(ns)
+```
+
+In oposite to queries like `delete * from ns`, `truncate` also deallocates dynamic memory, associated with indexing structures, and does not bloat `WAL` with serialized primary keys of deleted items.
 
 ### Transactions and batch update
 
@@ -1507,7 +1577,8 @@ with the following data:
     {"Project": "wink", "Countries": ["ru", "am"]},
     {"Project": "dns", "Countries": ["ru"]}
   ],
-  "Array": [10, 20]
+  "Array": [10, 20],
+  "Array2": [[1,2],[3,4]]
 }
 ```
 
@@ -1608,7 +1679,9 @@ Index (index) built on two JSON paths (json_path1, json_path2)
 #### Search in array fields with matching indexes using grouping
 
 For nested arrays, grouping logic is supported.
-To use it, add the `[#]` label after the field name. 
+To get the values, you need to specify the path considering all intermediate arrays. 
+For an array, use `[*]`, for the array by whose indices the grouping will be performed, use `[#]`.
+
 It should be noted that in this case, only the JSON path is used because the index name does not reflect the document's structure.
 In this case, during processing, a table will be formed: each row contains all values
 for one index of the marked array, and the row number corresponds to this index.
@@ -1632,6 +1705,20 @@ The table created as a result of grouping will be as follows:
 | 1 |"dns" |
 
 To check the condition, rows with the same indices are selected.
+
+Grouping with two dimensions array:
+`Array2[#][*]`
+| N |      |     |
+|---|------|-----|
+| 0 |  1   |  2  |
+| 1 |  3   |  4  |
+
+`Array2[*][#]`
+| N |      |     |
+|---|------|-----|
+| 0 |  1   |  3  |
+| 1 |  2   |  4  |
+
 
 ##### Query Execution Examples
 
@@ -1742,27 +1829,22 @@ Consider the document:
 ]
 ```
 
-Grouping by `arr_root.obj_nested.arr_nested.field[#]`:
+Grouping by `arr_root[*].obj_nested.arr_nested[*].field[#]`:
 
 | N |   |   |     |   |
 |---|---|---|-----|---|
 | 0 | 1 | 5 | null| 4 |
 | 1 | 3 | 7 |     |   |
 
-Grouping by `arr_root.obj_nested.arr_nested[#].field`:
+Grouping by `arr_root[*].obj_nested.arr_nested[#].field`:
 
 | N |   |      |   |   |
 |---|---|------|---|---|
 | 0 | 1 | null |   |   |
 | 1 | 5 | 3    | 4 | 7 |
 
-Grouping by `arr_root.obj_nested[#].arr_nested.field`:
 
-| N |   |   |   |     |   |   |
-|---|---|---|---|-----|---|---|
-| 0 | 1 | 5 | 3 | null| 4 | 7 |
-
-Grouping by `arr_root[#].obj_nested.arr_nested.field`:
+Grouping by `arr_root[#].obj_nested.arr_nested[*].field`:
 
 | N |      |   |   |
 |---|------|---|---|
@@ -2154,23 +2236,39 @@ A list of connectors for work with Reindexer via other program languages (TBC la
 ### Pyreindexer for Python
 
 Pyreindexer is official connector, and maintained by Reindexer's team. It supports both builtin and standalone modes.
-Before installation reindexer-dev (version >= 2.10) should be installed. See [installation instructions](cpp_src/readme.md#Installation) for details.
+Before installation reindexer-dev should be installed. Check [installation instructions](cpp_src/readme.md#Installation) for details.
 
 - *Support modes*: standalone, builtin
 - *API Used:* binary ABI, cproto
 - *Dependency on reindexer library (reindexer-dev package):* yes
 
-For install run:
+Run to install:
 
 ```bash
 pip3 install pyreindexer
 ```
 
-URLs:
+Related URLs:
 - https://github.com/Restream/reindexer-py
 - https://pypi.org/project/pyreindexer/
 
-Python version >=3.6 is required.
+Python version >=3.8 is required.
+
+#### LangChain integration
+
+Reindexer has integration with [LangChain](https://github.com/langchain-ai/langchain) framework.
+
+Run to install:
+
+```bash
+pip3 install langchain-reindexer
+```
+
+LangChain integraion library is able to interact with Reindexer in `builtin` and `cproto` modes.
+
+Related URLs:
+- https://github.com/Restream/langchain-reindexer
+- https://pypi.org/project/langchain-reindexer/
 
 ### Reindexer for Java
 
@@ -2179,7 +2277,7 @@ Python version >=3.6 is required.
 - *Dependency on reindexer library (reindexer-dev package):* yes, for builtin & builtin-server
 
 Reindexer for java is official connector, and maintained by Reindexer's team. It supports both builtin and standalone modes.
-For enable builtin mode support reindexer-dev (version >= 3.1.0) should be installed. See [installation instructions](cpp_src/readme.md#Installation) for details.
+To enable builtin mode support reindexer-dev should be installed. Check [installation instructions](cpp_src/readme.md#Installation) for details.
 
 For install reindexer to Java or Kotlin project add the following lines to maven project file
 ```

@@ -2,6 +2,7 @@
 
 #include "auth_tools.h"
 
+#include <unordered_set>
 #include "cluster/stats/replicationstats.h"
 #include "core/namespace/namespacenamemap.h"
 #include "estl/lock.h"
@@ -20,8 +21,8 @@ struct [[nodiscard]] AsyncReplicationConfigTest {
 
 	struct [[nodiscard]] Node {
 		Node(reindexer::DSN _dsn, std::optional<NsSet> _nsList = std::optional<NsSet>());
-		bool operator==(const Node& node) const noexcept { return dsn == node.dsn && nsList == node.nsList; }
-		bool operator!=(const Node& node) const noexcept { return !(*this == node); }
+		bool operator==(const Node& node) const { return dsn == node.dsn && nsList == node.nsList; }
+		bool operator!=(const Node& node) const { return !(*this == node); }
 
 		void GetJSON(reindexer::JsonBuilder& jb) const;
 

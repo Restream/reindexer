@@ -11,6 +11,8 @@ using reindexer::client::CoroQueryResults;
 using reindexer::coroutine::wait_group;
 using namespace reindexer;
 
+// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
+
 void ClientsStatsApi::RunServerInThread(bool statEnable) {
 	const std::string kdbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "clientstats_test");
 	std::ignore = reindexer::fs::RmDirAll(kdbPath);
@@ -165,3 +167,5 @@ void ClientsStatsApi::StopThreads() {
 	}
 	reconnectThreads_.clear();
 }
+
+// NOLINTEND(rx-perf-lambda-to-std-function-allocation)

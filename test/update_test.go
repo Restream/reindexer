@@ -1158,6 +1158,25 @@ func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 
 }
 
+func TestUpdateExpressionWithFlatArrayLen(t *testing.T) {
+	t.Parallel()
+
+	const ns = testFieldsUpdateNs
+
+	item := &TestItemComplexObject{ID: 1, Employees: []string{"John", "Josh", "Hannah", "Mary", "Joachim"}, Size: 0}
+	require.NoError(t, DB.Upsert(ns, item))
+
+	t.Run("update with flat_array_len(employees) for 'size' field", func(t *testing.T) {
+		res_slice, err := DB.Query(ns).Where("id", reindexer.EQ, 1).SetExpression("size", "flat_array_len(employees)").
+			Update().FetchAll()
+		require.NoError(t, err)
+		require.Len(t, res_slice, 1)
+		res := res_slice[0].(*TestItemComplexObject)
+		require.EqualValues(t, 5, res.Size)
+		selectAndFetchAll(t, ns)
+	})
+}
+
 func TestUpdateSetHeterogeneousArray(t *testing.T) {
 	t.Parallel()
 

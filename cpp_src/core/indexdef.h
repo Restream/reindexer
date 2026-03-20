@@ -91,7 +91,7 @@ private:
 	int64_t expireAfter_ = 0;
 };
 
-bool isStore(IndexType type) noexcept;
-bool validateIndexName(std::string_view name, IndexType type) noexcept;
+bool IsStore(IndexType type) noexcept;
+bool ValidateIndexName(std::string_view name, IndexType type) noexcept;
 
 }  // namespace reindexer

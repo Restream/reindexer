@@ -173,7 +173,7 @@ func (dbw *ReindexerWrapper) waitSyncWithSingleDb(t *testing.T, sdb *ReindexerWr
 	if !dbw.IsSynced() {
 		dbw.syncMutex.Lock()
 		defer dbw.syncMutex.Unlock()
-		sdb.WaitForSyncWithMaster(t)
+		sdb.WaitForSyncWithLeader(t)
 		dbw.setSynced()
 		sdb.ResetCaches()
 	}
@@ -184,7 +184,7 @@ func (dbw *ReindexerWrapper) waitSyncFull(t *testing.T) {
 		dbw.syncMutex.Lock()
 		defer dbw.syncMutex.Unlock()
 		for _, db := range dbw.slaveList {
-			db.WaitForSyncWithMaster(t)
+			db.WaitForSyncWithLeader(t)
 		}
 		dbw.setSynced()
 	}
@@ -278,8 +278,8 @@ func (dbw *ReindexerWrapper) setSlaveConfig(slaveDb *ReindexerWrapper) {
 	}
 }
 
-func (dbw *ReindexerWrapper) WaitForSyncWithMaster(t *testing.T) {
-	helpers.WaitForSyncWithMaster(t, &dbw.master.Reindexer, &dbw.Reindexer)
+func (dbw *ReindexerWrapper) WaitForSyncWithLeader(t *testing.T) {
+	helpers.WaitForSyncWithLeader(t, &dbw.master.Reindexer, &dbw.Reindexer)
 	dbw.setSynced()
 }
 

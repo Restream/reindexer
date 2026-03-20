@@ -17,6 +17,7 @@ const (
 	valueUuid        = bindings.ValueUuid
 	valueFloatVector = bindings.ValueFloatVector
 	valueFloat       = bindings.ValueFloat
+	valueTuple       = bindings.ValueTuple
 )
 
 const (

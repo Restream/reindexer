@@ -21,16 +21,51 @@ static_assert(kTypoStepNumBits <= TyposMap::kStepBits, "TyposMap max steps overf
 class RdxContext;
 
 // unique document in the namespace (if different rows contain the same text document, then it will correspond to one vdoc)
-struct [[nodiscard]] VDocEntry {
+class [[nodiscard]] VDocEntry {
+public:
+	VDocEntry() noexcept = default;
 #ifdef REINDEX_FT_EXTRA_DEBUG
-	std::string keyDoc;
+	VDocEntry(std::string&& keyDoc, FtKeyEntryData* keyEntry) noexcept : keyDoc_(std::move(keyDoc)), keyEntry_(keyEntry) {}
+#else
+	VDocEntry(FtKeyEntryData* keyEntry) noexcept : keyEntry_(keyEntry) {}
 #endif
+	VDocEntry(const VDocEntry&) = delete;
+	VDocEntry(VDocEntry&& o) noexcept {
+		wordsCount = std::move(o.wordsCount);
+		mostFreqWordCount = std::move(o.mostFreqWordCount);
+		keyEntry_ = o.keyEntry_;
+		o.keyEntry_ = nullptr;
+#ifdef REINDEX_FT_EXTRA_DEBUG
+		std::string keyDoc_ = std::move(o.keyDoc_);
+#endif
+	}
+	VDocEntry& operator=(const VDocEntry&) = delete;
+	VDocEntry& operator=(VDocEntry&&) = delete;
+	~VDocEntry() {
+		if (keyEntry_) {
+			keyEntry_->SetVDocID(FtKeyEntryData::ndoc);
+		}
+	}
 
-	const FtKeyEntryData* keyEntry{nullptr};
+	bool IsRemoved() const noexcept { return keyEntry_ == nullptr; }
+	void MarkRemoved() noexcept {
+		if (keyEntry_) {
+			keyEntry_->SetVDocID(FtKeyEntryData::ndoc);
+			keyEntry_ = nullptr;
+		}
+	}
+	// Temporary method for fuzzy index text. Should be removed with fuzzy index
+	void ResetKeyEntry() noexcept { keyEntry_ = nullptr; }
+	const FtKeyEntryData* KeyEntry() const noexcept { return keyEntry_; }
+
 	h_vector<float, 3> wordsCount;
 	h_vector<float, 3> mostFreqWordCount;
 
-	bool IsRemoved() const noexcept { return keyEntry == nullptr; }
+private:
+#ifdef REINDEX_FT_EXTRA_DEBUG
+	std::string keyDoc_;
+#endif
+	FtKeyEntryData* keyEntry_ = nullptr;
 };
 
 // documents for the word
@@ -186,6 +221,7 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	ITokenFilter::Ptr compositeWordsSplitter_;
 
 	Synonyms::Ptr synonyms_;
+	TermsBoostMapT stemmedTermsBoost;
 
 	std::vector<CommitStep> steps;
 	// array of unique documents

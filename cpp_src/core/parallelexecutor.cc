@@ -52,7 +52,9 @@ Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, con
 			auto& clientData = clientResults.emplace_back(connection.ShardId());
 			clientData.results = client::QueryResults{result.Flags()};
 			clientData.connection =
-				connection->WithShardingParallelExecution(connections.size() > 1)
+				connection
+					->WithShardingParallelExecution(connections.size() > 1)
+					// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 					.WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error& err) {
 						completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
 					})

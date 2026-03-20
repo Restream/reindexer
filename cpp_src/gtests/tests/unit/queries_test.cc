@@ -9,6 +9,7 @@
 #include "queries_api.h"
 #include "tools/json2kv.h"
 #include "tools/jsontools.h"
+#include "tools/timetools.h"
 
 TEST_F(QueriesApi, QueriesStandardTestSet) {
 	try {
@@ -363,7 +364,16 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		{"select ssdfs", Error{errParseSQL, "Expected 'FROM', but found '' in query, line: 1 column: 12 12"}},
 		{"SELECT * FROM ns WHERE flat_array_len(arr1) > 2", Query{"ns"}.Where(reindexer::functions::FlatArrayLen("arr1"), CondGt, 2)},
 		{"SELECT * FROM ns WHERE flat_array_len(arr2) = 12", Query{"ns"}.Where(reindexer::functions::FlatArrayLen("arr2"), CondEq, 12)},
-		{"SELECT * FROM ns WHERE flat_array_len(arr3) <= 55", Query{"ns"}.Where(reindexer::functions::FlatArrayLen("arr3"), CondLe, 55)}};
+		{"SELECT * FROM ns WHERE flat_array_len(arr3) <= 55", Query{"ns"}.Where(reindexer::functions::FlatArrayLen("arr3"), CondLe, 55)},
+		{"SELECT * FROM ns WHERE f1 > now(sec)", Query{"ns"}.Where("f1", CondGt, reindexer::functions::Now())},
+		{"SELECT * FROM ns WHERE f2 = now(msec)", Query{"ns"}.Where("f2", CondEq, reindexer::functions::Now("msec"))},
+		{"SELECT * FROM ns WHERE f3 <= now(usec)", Query{"ns"}.Where("f3", CondLe, reindexer::functions::Now(reindexer::TimeUnit::usec))},
+		{"SELECT * FROM ns WHERE INNER JOIN (SELECT * FROM ns WHERE field1 > 10) ON ns.id IN ns.id OR INNER JOIN (SELECT * FROM ns WHERE "
+		 "field2 < 17) ON ns.id IN ns.id LEFT JOIN (SELECT * FROM ns WHERE field3 = 'media') ON ns.id = ns.id",
+		 Query{"ns"}
+			 .InnerJoin("id", "id", CondSet, Query{"ns"}.Where("field1", CondGt, 10))
+			 .OrInnerJoin("id", "id", CondSet, Query{"ns"}.Where("field2", CondLt, 17))
+			 .LeftJoin("id", "id", CondEq, Query{"ns"}.Where("field3", CondEq, "media"))}};
 
 	for (const auto& [sql, expected, direction] : cases) {
 		if (std::holds_alternative<Query>(expected)) {
@@ -420,8 +430,14 @@ TEST_F(QueriesApi, DslGenerateParse) {
 	  {{
 		 "op": "and",
 		 "cond": "eq",
-		 "field": "ft",
-		 "value": "text"
+		 "left_expression": {{
+			"type": "field",
+			"value": "ft"
+		 }},
+		 "right_expression": {{
+			"type": "values",
+			"value": "text"
+		 }}
 	  }}
    ],
    "merge_queries": [],
@@ -445,14 +461,20 @@ TEST_F(QueriesApi, DslGenerateParse) {
 	  {{
 		 "op": "and",
 		 "cond": "dwithin",
-		 "field": "{}",
-		 "value": [
-			[
-			   -9.2,
-			   -0.145
-			],
-			0.581
-		 ]
+		 "left_expression": {{
+			"type": "field",
+			"value": "{}"
+		 }},
+		 "right_expression": {{
+			"type": "values",
+			"value": [
+			   [
+				  -9.2,
+				  -0.145
+			   ],
+			   0.581
+			]
+		 }}
 	  }}
    ],
    "merge_queries": [],
@@ -476,8 +498,14 @@ TEST_F(QueriesApi, DslGenerateParse) {
 	  {{
 		 "op": "and",
 		 "cond": "gt",
-		 "first_field": "{}",
-		 "second_field": "{}"
+		 "left_expression": {{
+			"type": "field",
+			"value": "{}"
+		 }},
+		 "right_expression": {{
+			"type": "field",
+			"value": "{}"
+		 }}
 	  }}
    ],
    "merge_queries": [],
@@ -553,8 +581,14 @@ TEST_F(QueriesApi, DslGenerateParse) {
 			   {{
 				  "op": "and",
 				  "cond": "eq",
-				  "field": "{}",
-				  "value": 1
+				  "left_expression": {{
+					 "type": "field",
+					 "value": "{}"
+				  }},
+				  "right_expression": {{
+					 "type": "values",
+					 "value": 1
+				  }}
 			   }}
 			],
 			"aggregations": []
@@ -582,7 +616,10 @@ TEST_F(QueriesApi, DslGenerateParse) {
 	  {{
 		 "op": "and",
 		 "cond": "eq",
-		 "field": "{}",
+		 "left_expression": {{
+			"type": "field",
+			"value": "{}"
+		 }},
 		 "subquery": {{
 			"namespace": "{}",
 			"limit": -1,
@@ -596,12 +633,18 @@ TEST_F(QueriesApi, DslGenerateParse) {
 			   {{
 				  "op": "and",
 				  "cond": "set",
-				  "field": "{}",
-				  "value": [
-					 1,
-					 10,
-					 100
-				  ]
+				  "left_expression": {{
+					 "type": "field",
+					 "value": "{}"
+				  }},
+				  "right_expression": {{
+					 "type": "values",
+					 "value": [
+						1,
+						10,
+						100
+					 ]
+				  }}
 			   }}
 			],
 			"aggregations": []
@@ -630,7 +673,10 @@ TEST_F(QueriesApi, DslGenerateParse) {
 	  {{
 		 "op": "and",
 		 "cond": "gt",
-		 "field": "{}",
+		 "left_expression": {{
+			"type": "field",
+			"value": "{}"
+		 }},
 		 "subquery": {{
 			"namespace": "{}",
 			"limit": -1,
@@ -671,7 +717,10 @@ TEST_F(QueriesApi, DslGenerateParse) {
 	  {{
 		 "op": "and",
 		 "cond": "gt",
-		 "field": "{}",
+		 "left_expression": {{
+			"type": "field",
+			"value": "{}"
+		 }},
 		 "subquery": {{
 			"namespace": "{}",
 			"limit": 0,
@@ -722,34 +771,71 @@ TEST_F(QueriesApi, DslGenerateParse) {
 }
 
 TEST_F(QueriesApi, FunctionDslTest) {
-	auto getFunction = [](const auto& function) {
-		switch (function.index()) {
-			case 0:
-				return std::get<0>(function);
-			default:
-				throw Error(errLogic, "Function type {} is not supported yet!", function.index());
-		}
+	const auto getFunction = [](const auto& function) -> const reindexer::functions::Function& {
+		return std::visit([](const auto& f) -> const reindexer::functions::Function& { return f; }, function);
 	};
 
-	const std::string dsl = R"({"function":{"name":"flat_array_len","fields":["prices"]}})";
+	auto checkFunctionDsl = [&](const std::string& dsl, const reindexer::h_vector<std::string, 1>& fields, FunctionType type,
+								std::string_view name, const VariantArray& args) {
+		gason::JsonParser jsonParser;
+		auto json = jsonParser.Parse(dsl);
 
-	gason::JsonParser jsonParser;
-	auto json = jsonParser.Parse(dsl);
-	auto function = reindexer::functions::Function::FromJSON(json["function"]);
-	EXPECT_EQ(getFunction(function).FieldNames().size(), 1);
-	EXPECT_EQ(getFunction(function).FieldNames()[0], "prices");
-	EXPECT_EQ(getFunction(function).Type(), FunctionFlatArrayLen);
-	EXPECT_EQ(getFunction(function).Name(), "flat_array_len");
+		auto function = reindexer::functions::Function::FromJSON(json["function"]);
+		EXPECT_EQ(getFunction(function).FieldNames(), fields);
+		EXPECT_EQ(getFunction(function).Type(), type);
+		EXPECT_EQ(getFunction(function).Name(), name);
+		EXPECT_EQ(getFunction(function).Arguments(), args);
 
-	reindexer::WrSerializer ser;
-	reindexer::builders::JsonBuilder jsonBuilder{ser};
-	getFunction(function).GetJSON(jsonBuilder);
-	jsonBuilder.End();
-	EXPECT_EQ(dsl, ser.Slice());
+		reindexer::WrSerializer ser;
+		reindexer::builders::JsonBuilder jsonBuilder{ser};
+		getFunction(function).GetJSON(jsonBuilder);
+		jsonBuilder.End();
+		EXPECT_EQ(dsl, ser.Slice());
+	};
+
+	checkFunctionDsl(R"({"function":{"name":"flat_array_len","fields":["prices"]}})", {"prices"}, FunctionFlatArrayLen, "flat_array_len",
+					 {});
+
+	checkFunctionDsl(R"({"function":{"name":"now","arguments":["sec"]}})", {}, FunctionNow, "now", {Variant("sec")});
 }
 
-TEST_F(QueriesApi, DslQueryWithFunctionTest) {
-	const std::string dsl = R"({
+TEST_F(QueriesApi, DslQueryFlatArrayFunctionTest) {
+	const std::string dsl = R"#({
+	  "namespace": "ns1",
+	  "limit": -1,
+	  "offset": 0,
+	  "req_total": "disabled",
+	  "explain": false,
+	  "type": "select",
+	  "select_with_rank": false,
+	  "select_filter": [],
+	  "select_functions": [],
+	  "sort": [],
+	  "filters": [
+		{
+		  "op": "and",
+		  "cond": "gt",
+		  "left_expression": {
+			"type": "expression",
+			"value": "flat_array_len(prices)"
+		  },
+		  "right_expression": {
+			"type": "values",
+			"value": 2
+		  }
+		}
+	  ],
+	  "merge_queries": [],
+	  "aggregations": []
+	})#";
+	Query q1{Query().FromJSON(dsl)};
+	Query q2{Query("ns1").Where(reindexer::functions::FlatArrayLen("prices"), CondGt, 2)};
+	ASSERT_EQ(q1, q2);
+	ASSERT_EQ(q1.GetJSON(), q2.GetJSON());
+}
+
+TEST_F(QueriesApi, DslQueryNowFunctionTest) {
+	const std::string dsl = R"#({
 	   "namespace":"ns1",
 	   "limit":-1,
 	   "offset":0,
@@ -759,15 +845,21 @@ TEST_F(QueriesApi, DslQueryWithFunctionTest) {
 		  {
 			 "op": "and",
 			 "cond": "gt",
-			 "function":{"name":"flat_array_len","fields":["prices"]},
-			 "value": [2]
+			 "left_expression": {
+				"type": "field",
+				"value": "start_time"
+			 },
+			 "right_expression": {
+				"type": "expression",
+				"value": "now(msec)"
+			 }
 		  }
 	   ],
 	   "merge_queries":[],
 	   "aggregations":[]
-	})";
+	})#";
 	Query q1{Query().FromJSON(dsl)};
-	Query q2{Query("ns1").Where(reindexer::functions::FlatArrayLen("prices"), CondGt, 2)};
+	Query q2{Query("ns1").Where("start_time", CondGt, reindexer::functions::Now(reindexer::TimeUnit::msec))};
 	ASSERT_EQ(q1, q2);
 	ASSERT_EQ(q1.GetJSON(), q2.GetJSON());
 }
@@ -1672,7 +1764,6 @@ TEST_F(QueriesApi, FlatArrayFunctionArrayTest) {
 		}
 
 		Upsert(default_namespace, item);
-		saveItem(std::move(item), default_namespace);
 	}
 	for (int i = 1000; i < 2000; ++i) {
 		Item item = NewItem(default_namespace);
@@ -1686,7 +1777,6 @@ TEST_F(QueriesApi, FlatArrayFunctionArrayTest) {
 		}
 
 		Upsert(default_namespace, item);
-		saveItem(std::move(item), default_namespace);
 	}
 
 	unsigned sparseArrayForCondition = 0, sparseArrayActual = 0;
@@ -1704,7 +1794,6 @@ TEST_F(QueriesApi, FlatArrayFunctionArrayTest) {
 		}
 
 		Upsert(default_namespace, item);
-		saveItem(std::move(item), default_namespace);
 	}
 
 	QueryResults qrCountries{rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameCountries), CondGt, 2))};
@@ -1789,7 +1878,6 @@ TEST_F(QueriesApi, FlatArrayFunctionSingularFieldTest) {
 		}
 
 		Upsert(default_namespace, item);
-		saveItem(std::move(item), default_namespace);
 	}
 
 	QueryResults qrYear{rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameYear), CondEq, 1))};
@@ -1817,7 +1905,6 @@ TEST_F(QueriesApi, FlatArrayFunctionNestedQueriesTest) {
 			item[kFieldNamePriceId] = RandIntVector(2, 0, 100);
 		}
 		Upsert(default_namespace, item);
-		saveItem(std::move(item), default_namespace);
 	}
 
 	QueryResults qrYear{
@@ -1832,7 +1919,6 @@ TEST_F(QueriesApi, FlatArrayFunctionObjectFieldTest) {
 		Error err = item.FromJSON(json);
 		ASSERT_TRUE(err.ok()) << err.what();
 		Upsert(default_namespace, item);
-		saveItem(std::move(item), default_namespace);
 	};
 
 	for (int i = 0; i < 100; ++i) {
@@ -1883,7 +1969,6 @@ TEST_F(QueriesApi, FlatArrayFunctionObjectsArrayTest) {
 											  i));
 		ASSERT_TRUE(err.ok()) << err.what();
 		Upsert(default_namespace, item);
-		saveItem(std::move(item), default_namespace);
 	}
 
 	QueryResults qr{rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen("items.obj"), CondEq, 6))};
@@ -1891,4 +1976,69 @@ TEST_F(QueriesApi, FlatArrayFunctionObjectsArrayTest) {
 
 	qr = rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen("null_items.obj"), CondEq, 0));
 	ASSERT_EQ(qr.Count(), 1000);
+}
+
+TEST_F(QueriesApi, TestUpdateFieldWithFlatArrayLen) {
+	for (int i = 0; i < 100; ++i) {
+		Item item = NewItem(default_namespace);
+		item[kFieldNameId] = i;
+		item[kFieldNamePackages] = RandIntVector(5, 0, 100);
+		Upsert(default_namespace, item);
+	}
+	auto qr = rt.ExecSQL(
+		fmt::format("update {} set {} = flat_array_len({}) where id >= 49;", default_namespace, kFieldNameAge, kFieldNamePackages));
+	ASSERT_GT(qr.Count(), 50);
+	for (auto it : qr) {
+		auto item = it.GetItem();
+		Variant age = item[kFieldNameAge];
+		ASSERT_LE(age.As<int>(), 5);
+	}
+}
+
+TEST_F(QueriesApi, NowFunctionTest) {
+	const int64_t nowSeconds{getTimeNow(reindexer::TimeUnit::sec)};
+	for (int i = 0; i < 100; ++i) {
+		Item item = NewItem(default_namespace);
+		item[kFieldNameId] = i;
+		item[kFieldNameStartTime] = nowSeconds + 60;
+		Upsert(default_namespace, item);
+	}
+	for (int i = 100; i < 200; ++i) {
+		Item item = NewItem(default_namespace);
+		item[kFieldNameId] = i;
+		item[kFieldNameStartTime] = nowSeconds - 60;
+		Upsert(default_namespace, item);
+	}
+	{
+		QueryResults qr{rt.Select(Query(default_namespace).Where(kFieldNameStartTime, CondGt, reindexer::functions::Now()))};
+		ASSERT_EQ(qr.Count(), 100);
+		for (auto it : qr) {
+			auto item = it.GetItem();
+			Variant id = item[kFieldNameId];
+			ASSERT_LE(id.As<int>(), 99);
+		}
+	}
+	{
+		QueryResults qr1{rt.Select(Query(default_namespace).Where(kFieldNameStartTime, CondLt, reindexer::functions::Now()))};
+		ASSERT_EQ(qr1.Count(), 100);
+		for (auto it : qr1) {
+			auto item = it.GetItem();
+			Variant id = item[kFieldNameId];
+			ASSERT_GE(id.As<int>(), 100);
+			ASSERT_LE(id.As<int>(), 199);
+		}
+		QueryResults qr2{rt.ExecSQL(fmt::format("select * from {} where {} < now();", default_namespace, kFieldNameStartTime))};
+		ASSERT_EQ(qr1.Count(), qr2.Count());
+		auto it1 = qr1.begin();
+		auto it2 = qr2.begin();
+		while (it1 != qr1.end() && it2 != qr2.end()) {
+			Variant t1 = it1.GetItem()[kFieldNameStartTime];
+			Variant t2 = it2.GetItem()[kFieldNameStartTime];
+			ASSERT_EQ(t1, t2);
+			++it1;
+			++it2;
+		}
+		ASSERT_EQ(it1, qr1.end());
+		ASSERT_EQ(it2, qr2.end());
+	}
 }

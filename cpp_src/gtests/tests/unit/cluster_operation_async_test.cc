@@ -16,6 +16,7 @@ TEST_F(ClusterOperationAsyncApi, AsyncReplicationForClusterNamespaces) {
 
 	net::ev::dynamic_loop loop;
 	auto defaults = GetDefaults();
+	// NOLINTNEXTLINE(bugprone-exception-escape)
 	loop.spawn([&loop, &defaults]() noexcept {
 		constexpr size_t kClusterSize = 3;
 		constexpr size_t kDataPortion = 50;
@@ -75,6 +76,7 @@ TEST_F(ClusterOperationAsyncApi, AsyncReplicationForClusterNamespaces) {
 TEST_F(ClusterOperationAsyncApi, GetLastErrorFromInterceptingNamespaces) {
 	net::ev::dynamic_loop loop;
 	auto defaults = GetDefaults();
+	// NOLINTNEXTLINE(bugprone-exception-escape)
 	loop.spawn([&loop, &defaults]() noexcept {
 		constexpr size_t kClusterSize = 3;
 		constexpr size_t kReplicatedNodeId = 2;
@@ -124,6 +126,7 @@ TEST_F(ClusterOperationAsyncApi, AsyncReplicationBetweenClustersDefaultMode) {
 
 	net::ev::dynamic_loop loop;
 	auto defaults = GetDefaults();
+	// NOLINTNEXTLINE(bugprone-exception-escape)
 	loop.spawn([&loop, &defaults]() noexcept {
 		constexpr size_t kClusterSize = 3;
 		constexpr size_t kDataPortion = 20;
@@ -193,6 +196,7 @@ TEST_F(ClusterOperationAsyncApi, AsyncReplicationBetweenClustersLeaderMode) {
 
 	net::ev::dynamic_loop loop;
 	auto defaults = GetDefaults();
+	// NOLINTNEXTLINE(bugprone-exception-escape)
 	loop.spawn([&loop, &defaults]() noexcept {
 		constexpr size_t kClusterSize = 3;
 		constexpr size_t kDataPortion = 20;

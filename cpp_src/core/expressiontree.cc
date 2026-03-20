@@ -34,8 +34,11 @@ size_t ExpressionTree<OperationType, SubTree, holdSize, Ts...>::mergeEntriesImpl
 											 },
 											 [&](Merger::MergingEntry& entry) {
 												 const bool last = nextSrc >= srcEnd;
-												 const auto nextOp = last ? OperationType{} : GetOperation(nextSrc);
-												 const auto mergeEntryRes = merger.Merge(entry, dst, src, nextOp, last, changed);
+												 std::optional<OperationType> nextOp;
+												 if (!last) {
+													 nextOp = GetOperation(nextSrc);
+												 }
+												 const auto mergeEntryRes = merger.Merge(entry, dst, src, nextOp, changed);
 												 switch (mergeEntryRes) {
 													 case MergeResult::NotMerged:
 														 if (dst != src) {
@@ -75,7 +78,7 @@ public:
 									  MultiDistinctQueryEntry, QueryFunctionEntry>;
 	using MergingEntry = QueryEntry;
 
-	MergeResult Merge(QueryEntry& entry, uint16_t dst, uint16_t src, OpType nextOp, bool last, Changed) {
+	MergeResult Merge(QueryEntry& entry, uint16_t dst, uint16_t src, std::optional<OpType> nextOp, Changed) {
 		if (entry.IsFieldIndexed() && !entry.ForcedSortOptEntry()) {
 			const Index& index = *qPreproc_.ns_.indexes_[entry.IndexNo()];
 			if (index.IsFulltext() || index.IsFloatVector()) {
@@ -88,7 +91,7 @@ public:
 			}
 
 			// try to merge entries with AND operator
-			if (qPreproc_.GetOperation(src) == OpAnd && (last || nextOp != OpOr)) {
+			if (qPreproc_.GetOperation(src) == OpAnd && (!nextOp.has_value() || *nextOp != OpOr)) {
 				if (size_t(entry.IndexNo()) >= iidx_.size()) {
 					const auto oldSize = iidx_.size();
 					iidx_.resize(entry.IndexNo() + 1);
@@ -148,7 +151,7 @@ protected:
 class [[nodiscard]] SortExpression::ConstantsMultiplier : public Merger {
 public:
 	using Merger::Merger;
-	MergeResult Merge(const SortExprFuncs::Value& entry, uint16_t dst, uint16_t src, SortExpressionOperation /*nextOp*/, bool /*last*/,
+	MergeResult Merge(const SortExprFuncs::Value& entry, uint16_t dst, uint16_t src, std::optional<SortExpressionOperation> /*nextOp*/,
 					  Changed) {
 		if (tree_.GetOperation(src).op == OpMult) {
 			assertrx_throw(tree_.GetOperation(src).negative == false);
@@ -175,9 +178,9 @@ Changed SortExpression::multiplyConstants() {
 class [[nodiscard]] SortExpression::ConstantsSummer : public Merger {
 public:
 	using Merger::Merger;
-	MergeResult Merge(SortExprFuncs::Value& entry, uint16_t dst, uint16_t src, SortExpressionOperation nextOp, bool last,
+	MergeResult Merge(SortExprFuncs::Value& entry, uint16_t dst, uint16_t src, std::optional<SortExpressionOperation> nextOp,
 					  Changed& changed) {
-		if (!last && (nextOp == OpMult || nextOp == OpDiv)) {
+		if (nextOp.has_value() && (*nextOp == OpMult || *nextOp == OpDiv)) {
 			return MergeResult::NotMerged;
 		}
 		const auto op = tree_.GetOperation(src);

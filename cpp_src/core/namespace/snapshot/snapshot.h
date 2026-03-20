@@ -10,8 +10,9 @@ namespace reindexer {
 class [[nodiscard]] Snapshot {
 public:
 	Snapshot() = default;
-	Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, uint64_t expectedDataCount, ClusterOperationStatus clusterStatus);
-	Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDataHash, uint64_t expectedDataCount,
+	Snapshot(TagsMatcher tm, lsn_t nsVersion, PayloadChecksum expectedDataHash, uint64_t expectedDataCount,
+			 ClusterOperationStatus clusterStatus);
+	Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, PayloadChecksum expectedDataHash, uint64_t expectedDataCount,
 			 ClusterOperationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw = LocalQueryResults());
 	Snapshot(const Snapshot&) = delete;
 	Snapshot(Snapshot&&) = default;
@@ -48,7 +49,7 @@ public:
 	size_t Size() const noexcept { return rawData_.Size() + walData_.Size(); }
 	size_t RawDataSize() const noexcept { return rawData_.Size(); }
 	bool HasRawData() const noexcept { return rawData_.Size(); }
-	uint64_t ExpectedDataHash() const noexcept { return expectedDataHash_; }
+	PayloadChecksum ExpectedDataHash() const noexcept { return expectedDataHash_; }
 	uint64_t ExpectedDataCount() const noexcept { return expectedDataCount_; }
 	ClusterOperationStatus ClusterOperationStat() const noexcept { return clusterOperationStatus_; }
 	lsn_t LastLSN() const noexcept { return lastLsn_; }
@@ -88,7 +89,7 @@ private:
 	TagsMatcher tm_;
 	ItemsContainer rawData_;
 	ItemsContainer walData_;
-	uint64_t expectedDataHash_ = 0;
+	PayloadChecksum expectedDataHash_;
 	uint64_t expectedDataCount_ = 0;
 	ClusterOperationStatus clusterOperationStatus_;
 	lsn_t lastLsn_;

@@ -7,12 +7,14 @@
 #include <vector>
 
 namespace reindexer {
-
 class Token;
 class Tokenizer;
 class VariantArray;
+}  // namespace reindexer
 
-struct [[nodiscard]] ParsedQueryFunction {
+namespace reindexer::functions {
+
+struct [[nodiscard]] ParsedFunction {
 	std::string field;
 	std::string value;
 	std::string funcName;
@@ -21,10 +23,10 @@ struct [[nodiscard]] ParsedQueryFunction {
 	bool isFunction{false};
 };
 
-class [[nodiscard]] QueryFunctionParser {
+class [[nodiscard]] FunctionParser {
 public:
-	static ParsedQueryFunction Parse(std::string_view query);
-	static ParsedQueryFunction ParseFunction(Tokenizer& parser, Token& tok);
+	static ParsedFunction Parse(std::string_view query);
+	static ParsedFunction ParseFunction(Tokenizer& parser, Token& tok);
 	static bool IsFunction(std::string_view val) noexcept;
 	static bool IsFunction(const VariantArray& val) noexcept;
 
@@ -35,9 +37,9 @@ private:
 		std::unordered_set<std::string_view> namedArgs;
 	};
 
-	static void parseFunction(Tokenizer& parser, ParsedQueryFunction&, Token& tok);
-	static void parseFunctionImpl(Tokenizer& parser, ParsedQueryFunction&, Token& tok);
-	static void parsePositionalAndNamedArgs(Tokenizer& parser, ParsedQueryFunction&, const Args& args);
+	static void parseFunction(Tokenizer& parser, ParsedFunction&, Token& tok);
+	static void parseFunctionImpl(Tokenizer& parser, ParsedFunction&, Token& tok);
+	static void parsePositionalAndNamedArgs(Tokenizer& parser, ParsedFunction&, const Args& args);
 };
 
-}  // namespace reindexer
+}  // namespace reindexer::functions

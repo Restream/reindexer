@@ -445,10 +445,11 @@ using SelectKeyResultsVector = h_vector<SelectKeyResult, 1>;
 
 /// Result of selecting data for
 /// each key in a query.
-class SelectKeyResults : public std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
-											 ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>,
-											 ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>,
-											 ComparatorIndexed<FloatVector>> {
+class [[nodiscard]] SelectKeyResults
+	: public std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
+						  ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>,
+						  ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>,
+						  ComparatorIndexed<FloatVector>> {
 	using Base =
 		std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
 					 ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
@@ -456,14 +457,33 @@ class SelectKeyResults : public std::variant<SelectKeyResultsVector, ComparatorN
 
 public:
 	SelectKeyResults() noexcept : Base{SelectKeyResultsVector{}} {}
+	// NOLINTNEXTLINE(bugprone-exception-escape) h_vector has default capacity of 1
 	SelectKeyResults(SelectKeyResult&& res) noexcept : Base{SelectKeyResultsVector{std::move(res)}} {}
 	template <typename T>
 	SelectKeyResults(ComparatorIndexed<T>&& comp) noexcept : Base{std::move(comp)} {}
 	SelectKeyResults(ComparatorNotIndexed&& comp) noexcept : Base{std::move(comp)} {}
-	void Clear() noexcept { std::get<SelectKeyResultsVector>(*this).clear(); }
-	void EmplaceBack(SelectKeyResult&& sr) { std::get<SelectKeyResultsVector>(*this).emplace_back(std::move(sr)); }
+	void Clear() noexcept {
+		auto vec = std::get_if<SelectKeyResultsVector>(this);
+		assertrx_dbg(vec);
+		if (vec) {
+			vec->clear();
+		};
+	}
+	void EmplaceBack(SelectKeyResult&& sr) {
+		auto vec = std::get_if<SelectKeyResultsVector>(this);
+		assertrx_dbg(vec);
+		if (vec) {
+			vec->emplace_back(std::move(sr));
+		};
+	}
 	[[nodiscard]] bool IsComparator() const noexcept { return !std::holds_alternative<SelectKeyResultsVector>(AsVariant()); }
-	SelectKeyResult&& Front() && noexcept { return std::move(std::get<SelectKeyResultsVector>(*this).front()); }
+	SelectKeyResult&& Front() && {
+		auto vec = std::get_if<SelectKeyResultsVector>(this);
+		if (vec) {
+			return std::move(vec->front());
+		};
+		throw_assert(false);
+	}
 	const Base& AsVariant() const& noexcept { return *this; }
 	Base& AsVariant() & noexcept { return *this; }
 	auto AsVariant() const&& = delete;

@@ -76,7 +76,7 @@ private:
 };
 
 template <typename T1>
-class unordered_str_map
+class [[nodiscard]] unordered_str_map
 	: public tsl::sparse_map<key_string_with_hash, T1, hash_key_string, equal_key_string,
 							 std::allocator<std::pair<key_string_with_hash, T1>>, tsl::sh::power_of_two_growth_policy<2>,
 							 tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
@@ -143,7 +143,7 @@ public:
 };
 
 template <typename K, typename T>
-class unordered_number_map
+class [[nodiscard]] unordered_number_map
 	: public tsl::sparse_map<K, T, hash_int<K>, std::equal_to<K>, std::allocator<std::pair<K, T>>, tsl::sh::power_of_two_growth_policy<2>,
 							 tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
 	using base_hash_map = tsl::sparse_map<K, T, hash_int<K>, std::equal_to<K>, std::allocator<std::pair<K, T>>,
@@ -169,7 +169,7 @@ struct [[nodiscard]] hash_uuid {
 };
 
 template <typename T>
-class unordered_uuid_map
+class [[nodiscard]] unordered_uuid_map
 	: public tsl::sparse_map<Uuid, T, hash_uuid, std::equal_to<Uuid>, std::allocator<std::pair<Uuid, T>>,
 							 tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
 	using base_hash_map = tsl::sparse_map<Uuid, T, hash_uuid, std::equal_to<Uuid>, std::allocator<std::pair<Uuid, T>>,

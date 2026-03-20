@@ -34,8 +34,8 @@ public:
 	Transaction& operator=(Transaction&&) = default;
 	~Transaction();
 
-	PayloadType GetPayloadType() const;
-	TagsMatcher GetTagsMatcher() const;
+	PayloadType GetPayloadType() const noexcept;
+	TagsMatcher GetTagsMatcher() const noexcept;
 
 	int64_t GetTransactionId() const noexcept;
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <assert.h>
 #include <atomic>
+#include "tools/assertrx.h"
 
 namespace reindexer {
 

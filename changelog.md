@@ -1,3 +1,43 @@
+# Version 5.12.0 (20.03.2026)
+## Core
+- [fea] Added [now()-function](readme.md#nowunit) support into `WHERE`-clause. Now it may be used both in `UPDATE SET` and `WHERE` clauses
+- [fea] Added [flat_array_len()-function](readme.md#flat_array_lenfield_name) into `UPDATE SET`. Now it may be used both in `UPDATE SET` and `WHERE` clauses
+- [fea] Added `checksum` field into `#memstats`-namespaces as better alternative for `datahash`
+- [fea] Changed [grouping logic for equal_position](readme.md#search-in-array-fields-with-matching-indexes-using-grouping). New syntax/logic has better match with standard json-paths and also supports nested arrays in explicit way
+- [fix] Fixed possible memory leak during `composite`-indexes substitution inside WHERE-clauses (in cases, when `int`->`string` convertion was performed before `composite` substitution)
+- [fix] Fixed SQL parsing for queries with combination of `or inner join(...)` and `left join(...)`
+- [fix] Fixed storage data migration, when Primary key index was changed
+- [fix] Fixed `2D points` convertion on WHERE-clause (perviously it could led to crashes on assertion)
+- [fix] Added explicit check for `rtree` Primary keys. [Geo-indexes](readme.md#geometry) can not be PK anymore
+- [fix] Fixed [forced sort](readme.md#forced-sort) errors handling for [KNN-queries](float_vector.md), when query has `LIMIT` and `OFFSET`
+- [fix] Fixed `UUID`->`string` conversions for nested arrays on `UUID`-index deletion
+
+## Fulltext
+- [fea] Added [optional terms boost](fulltext.md#base-config-parameters), that allows to set rank multiplier for specific terms
+
+## Vector indexes
+- [fea] Added 8 bit scalar quantization for HNSW-index. [Read more...](float_vector.md#quantization-configuration-for-hnsw-index)
+- [fea] Added more effective vectorized implementations for `L2`, `IP` and `cosine` metrics.
+
+## Replication
+- [fea] Added `checksum` check instead of `datahash` - `checksum` implementation has lower collisions rate and higher impact from each document's field
+- [fix] Fixed some rare case, when `temporary` namespace could remain alive after replication error
+
+## Reindexer server
+- [fea] Changed [FilterDef](https://github.com/Restream/reindexer/blob/v5.12.0/cpp_src/server/contrib/server.yml#L4161) in Query DSL: some of the fields were marked as deprecated and `left_expression`/`right_expression` were as more unified alternatives for better [functions](readme.md#functions) support and future filtering expressions development
+
+## Go connector
+- [fea] Added unified `WhereExpressions` method for better [functions](readme.md#functions) support and future filtering expressions development
+- [fix] Fixed deserialization crash for queries, where `inner join` stays before [equal_position](readme.md#search-in-array-fields-with-matching-indexes) in brackets
+
+## Face
+- [fea] Added `Explain` visualization for queries with [MERGE](fulltext.md#merging-queries-results)
+- [fea] Added `Boost for specific fulltext terms` into fulltext config tab
+- [fix] Fixed up/down buttons for custom field on pagination section
+- [fix] Fixed the issue related to the page opening in a new window from left bar
+- [fix] Fixed the issue related to the page opening in a new window from `Namespace` tabs
+- [fix] Fixed `Explain` table in `Query Builder`
+
 # Version 5.11.1 (05.03.2026)
 ## Fulltext
 - [fix] Fixed possible heap-use-after in composite fulltext indexes, created over non-indexed fields

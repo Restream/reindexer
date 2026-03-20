@@ -1,9 +1,9 @@
 #include "float_vectors_holder.h"
 #include "core/id_type.h"
 #include "core/index/float_vector/float_vector_index.h"
+#include "core/keyvalue/float_vectors_keeper.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joinedselector.h"
-#include "core/queryresults/itemref.h"
 #include "core/queryresults/localqueryresults.h"
 
 namespace reindexer {
@@ -22,22 +22,33 @@ void checkPayloadVectorField([[maybe_unused]] const Payload& payload, [[maybe_un
 }
 }  // namespace
 
+struct FloatVectorsHolderMap::FloatVectorIndexInfo {
+	FloatVectorIndexInfo() = delete;
+	FloatVectorIndexInfo(const FloatVectorIndexData& i, FloatVectorsKeeper::KeeperTag&& t) noexcept : index(i), tag(std::move(t)) {}
+	FloatVectorIndexInfo(FloatVectorIndexInfo&&) noexcept = default;
+	FloatVectorIndexInfo(const FloatVectorIndexInfo&) noexcept = delete;
+	FloatVectorIndexInfo& operator=(const FloatVectorIndexInfo&) noexcept = delete;
+	FloatVectorIndexInfo& operator=(FloatVectorIndexInfo&&) noexcept = default;
+
+	FloatVectorIndexData index;
+	FloatVectorsKeeper::KeeperTag tag;
+};
+
 template <typename It>
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
 void FloatVectorsHolderMap::Add(const NamespaceImpl& ns, const It& it, const It& end, const FieldsFilter& filter) {
 	if (!ns.haveFloatVectorsIndexes() || !filter.HasVectors()) {
 		return;
 	}
 
-	auto nsIt = std::find_if(vectorsByNs_.cbegin(), vectorsByNs_.cend(), [&ns](const auto& item) { return item.first == &ns; });
+	auto nsIt = std::ranges::find_if(vectorsByNs_, [&ns](const auto& item) noexcept { return item.ns == &ns; });
 	if (nsIt == vectorsByNs_.end()) {
 		auto vectIndexes = ns.getVectorIndexes();
-		FloatVectorIndexList indexes;
-		indexes.reserve(vectIndexes.size());
-		for (const auto& index : vectIndexes) {
-			indexes.emplace_back(index, index.ptr->GetKeeper().Register());
+		const auto indexCnt = vectIndexes.size();
+		auto indexes = std::make_unique<std::optional<FloatVectorIndexInfo>[]>(indexCnt);
+		for (size_t i = 0; i < indexCnt; ++i) {
+			indexes[i].emplace(vectIndexes[i], vectIndexes[i].ptr->GetKeeper().Register());
 		}
-		vectorsByNs_.emplace_back(&ns, std::move(indexes));
+		vectorsByNs_.emplace_back(NsFloatVectorIndexes{.ns = &ns, .indexesCnt = indexCnt, .indexes = std::move(indexes)});
 		nsIt = std::prev(vectorsByNs_.end());
 	}
 
@@ -46,15 +57,23 @@ void FloatVectorsHolderMap::Add(const NamespaceImpl& ns, const It& it, const It&
 	ids.reserve(kLimitNumberProcessedElements);
 	vectorsData.reserve(kLimitNumberProcessedElements);
 
-	for (const auto& info : nsIt->second) {
+	for (size_t i = 0; i < nsIt->indexesCnt; ++i) {
+		assertrx_dbg(nsIt->indexes[i].has_value());
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+		auto& info = *(nsIt->indexes[i]);
 		if (filter.ContainsVector(info.index.ptField)) {
 			add(ns, info, it, end, ids, vectorsData);
 		}
 	}
 }
 
+FloatVectorsHolderMap::FloatVectorsHolderMap() noexcept = default;
+FloatVectorsHolderMap::FloatVectorsHolderMap(FloatVectorsHolderMap&&) noexcept = default;
+FloatVectorsHolderMap& FloatVectorsHolderMap::operator=(FloatVectorsHolderMap&&) noexcept = default;
+FloatVectorsHolderMap::~FloatVectorsHolderMap() = default;
+
 bool FloatVectorsHolderMap::Empty() const noexcept {
-	return !std::ranges::any_of(vectorsByNs_, [](const auto& info) { return !info.second.empty(); });
+	return !std::ranges::any_of(vectorsByNs_, [](const auto& info) { return info.indexesCnt != 0; });
 }
 
 template <typename It>
@@ -78,6 +97,32 @@ void FloatVectorsHolderMap::updatePayload(const NamespaceImpl& ns, const FloatVe
 	}
 }
 
+void FloatVectorsKeeper::getFloatVectors(const KeeperTag& tag, std::span<IdType> ids, std::vector<ConstFloatVectorView>& vectorsData,
+										 auto&& floatVectorGetter) {
+	vectorsData.resize(0);
+	vectorsData.reserve(ids.size());
+
+	auto ownerID = tag.GetID();
+
+	lock_guard lock(lock_);
+
+	for (auto id : ids) {
+		auto [itVector, newAdded] = map_.try_emplace(id, queue_.end());
+		if (newAdded) {
+			itVector->second = queue_.emplace(std::next(tag.Get()), ownerID, floatVectorGetter(id, index_), itVector);
+		} else {
+			// update owner
+			if (itVector->second->owner < ownerID) {
+				queue_.splice(std::next(tag.Get()), queue_, itVector->second);
+				itVector->second = std::next(tag.Get());
+				itVector->second->owner = ownerID;
+				itVector->second->deleted = false;
+			}
+		}
+		vectorsData.emplace_back(itVector->second->vect);
+	}
+}
+
 template <typename It>
 void FloatVectorsHolderMap::add(const NamespaceImpl& ns, const FloatVectorIndexInfo& indexInfo, It it, const It& end,
 								std::vector<IdType>& ids, std::vector<ConstFloatVectorView>& vectorsData) {
@@ -86,6 +131,8 @@ void FloatVectorsHolderMap::add(const NamespaceImpl& ns, const FloatVectorIndexI
 	auto& keeper = index.ptr->GetKeeper();
 
 	ids.resize(0);
+
+	auto floatVectorGetter = [&ns](IdType id, const FloatVectorIndex& index) { return FloatVector{ns.getFloatVector(id, index)}; };
 
 	It itCurr = it;
 	for (; it != end; ++it) {
@@ -96,7 +143,7 @@ void FloatVectorsHolderMap::add(const NamespaceImpl& ns, const FloatVectorIndexI
 			if (ids.size() >= kLimitNumberProcessedElements) {
 				auto itNext = it;
 				++itNext;
-				keeper.GetFloatVectors(tag, ids, vectorsData);
+				keeper.getFloatVectors(tag, ids, vectorsData, floatVectorGetter);
 				assertrx_throw(ids.size() == vectorsData.size());
 				updatePayload(ns, index, itCurr, itNext, vectorsData);
 
@@ -108,7 +155,7 @@ void FloatVectorsHolderMap::add(const NamespaceImpl& ns, const FloatVectorIndexI
 	}
 
 	if (!ids.empty()) {
-		keeper.GetFloatVectors(tag, ids, vectorsData);
+		keeper.getFloatVectors(tag, ids, vectorsData, floatVectorGetter);
 		assertrx_throw(ids.size() == vectorsData.size());
 		updatePayload(ns, index, itCurr, end, vectorsData);
 

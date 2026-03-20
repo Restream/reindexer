@@ -21,6 +21,7 @@
 
 // TODO: Those dependecies should be moved inside faiss library
 #include "estl/defines.h"
+#include "tools/cpucheck.h"
 
 #ifdef __SSE3__
 #include <immintrin.h>
@@ -242,10 +243,10 @@ using NormL2SqrPtrT = float (*)(const float*, size_t);
 
 static NormL2SqrPtrT initNormL2SqrSIMD() {
 #if REINDEXER_WITH_SSE
-    if (reindexer::vector_dists::L2WithAVX512()) {
+    if (reindexer::IsAVX512Allowed()) {
         return fvec_norm_L2sqr_avx512;
     }
-    if (reindexer::vector_dists::L2WithAVX()) {
+    if (reindexer::IsAVXAllowed()) {
         return fvec_norm_L2sqr_avx;
     }
 #endif // REINDEXER_WITH_SSE

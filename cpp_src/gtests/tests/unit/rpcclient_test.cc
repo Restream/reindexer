@@ -14,6 +14,8 @@
 #include "gtests/tools.h"
 #include "net/ev/ev.h"
 
+// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
+
 using std::chrono::seconds;
 
 TEST_F(RPCClientTestApi, CoroRequestTimeout) {
@@ -418,7 +420,7 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 
 	// Startup server
 	StartDefaultRealServer();
-	enum class Step { Init, ShutdownInProgress, ShutdownDone, RestartInProgress, RestartDone };
+	enum class [[nodiscard]] Step { Init, ShutdownInProgress, ShutdownDone, RestartInProgress, RestartDone };
 	std::atomic<Step> step = Step::Init;
 
 	// Create thread, performing upserts
@@ -496,15 +498,15 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 	}
 
 	// Shutdown server
-	step = Step::ShutdownInProgress;
+	step.store(Step::ShutdownInProgress);
 	Error err = StopServer();
 	ASSERT_TRUE(err.ok()) << err.what();
-	step = Step::ShutdownDone;
+	step.store(Step::ShutdownDone);
 	std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
-	step = Step::RestartInProgress;
+	step.store(Step::RestartInProgress);
 	StartServer();
-	step = Step::RestartDone;
+	step.store(Step::RestartDone);
 	std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
 	terminate = true;
@@ -1341,3 +1343,5 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 
 	loop.run();
 }
+
+// NOLINTEND(rx-perf-lambda-to-std-function-allocation)

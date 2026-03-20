@@ -1,14 +1,11 @@
 #include "ann_storage_cache_helper.h"
-#include "core/formatters/namespacesname_fmt.h"
 #include "core/index/float_vector/float_vector_index.h"
+#include "core/storage/storage_prefixes.h"
 #include "namespaceimpl.h"
 #include "tools/logger.h"
 #include "tools/scope_guard.h"
 
 namespace reindexer::ann_storage_cache {
-
-#define kStorageANNCachePrefix "ann_cache"
-constexpr static uint8_t kANNCacheFormatVersion = 2;
 
 std::string GetStorageKey(std::string_view name) noexcept {
 	std::string key(kStorageANNCachePrefix);
@@ -25,7 +22,7 @@ bool IsANNCacheEnabledByEnv() noexcept {
 	return !len || (len == 1 && kEnvPtr[0] == '0');
 }
 
-void UpdateInfo::Update(const std::string& idx, nanoseconds lastUpdateTime) noexcept {
+void UpdateInfo::Update(const std::string& idx, nanoseconds lastUpdateTime) {
 	lock_guard lck(mtx_);
 	infoMap_[idx].lastUpdateTime = lastUpdateTime;
 }

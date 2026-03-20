@@ -142,5 +142,6 @@ TEST_F(JoinSelectsApi, DSL_SQLConvertionTest) {
 	const auto sql = testQueryFromDSL.GetSQL();
 	const Query testQueryFromSQL = Query::FromSQL(sql);
 	ASSERT_EQ(sql, testQueryFromSQL.GetSQL()) << "SQL: " << sql;
-	ASSERT_EQ("SELECT *, vectors() FROM ns1 WHERE NOT INNER JOIN ns2 ON  NOT ns1.lfield IN ns2.rfield ORDER BY 'ns2.respons' LIMIT 12", sql);
+	ASSERT_EQ("SELECT *, vectors() FROM ns1 WHERE NOT INNER JOIN ns2 ON  NOT ns1.lfield IN ns2.rfield ORDER BY 'ns2.respons' LIMIT 12",
+			  sql);
 }

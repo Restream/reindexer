@@ -793,10 +793,15 @@ CondType SQLParser::parseCondition(Tokenizer& parser, OpType& op) {
 template <typename T>
 void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op) {
 	std::optional<functions::FunctionVariant> function;
-	if constexpr (std::is_constructible_v<std::string, T>) {
+
+	auto tryToParseFunction = [&](const auto& name) {
 		if (auto tok = parser.PeekToken(); tok.Text() == "(") {
-			function.emplace(functions::Function::FromSQL(firstArg, parser));
+			function.emplace(functions::Function::FromSQL(name, parser));
 		}
+	};
+
+	if constexpr (std::is_constructible_v<std::string, T>) {
+		tryToParseFunction(firstArg);
 	}
 
 	auto setWhereCondition = [this, &firstArg, &function](OpType op, CondType condition, VariantArray&& values) {
@@ -842,10 +847,24 @@ void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op) 
 		setWhereCondition(op, condition, {Token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_True)});
 	} else {
 		if constexpr (std::is_same_v<T, Query>) {
-			throw Error(errParseSQL, "Field cannot be after subquery. (text = '{}'  location = {})", tok.Text(), parser.Where(tok));
+			tryToParseFunction(tok.Text());
+			if (function.has_value()) {
+				query_.NextOp(op).Where(std::forward<T>(firstArg), condition, std::move(function.value()));
+			} else {
+				throw Error(errParseSQL, "Field cannot be after subquery. (text = '{}'  location = {})", tok.Text(), parser.Where(tok));
+			}
 		} else {
-			// Second field
-			query_.NextOp(op).WhereBetweenFields(std::forward<T>(firstArg), condition, std::string{tok.Text()});
+			if (function.has_value()) {
+				query_.NextOp(op).Where(std::move(function.value()), condition, std::forward<T>(firstArg));
+			} else {
+				// Second field
+				tryToParseFunction(tok.Text());
+				if (function.has_value()) {
+					query_.NextOp(op).Where(std::forward<T>(firstArg), condition, std::move(function.value()));
+				} else {
+					query_.NextOp(op).WhereBetweenFields(std::forward<T>(firstArg), condition, std::string{tok.Text()});
+				}
+			}
 		}
 	}
 }
@@ -900,10 +919,8 @@ void SQLParser::parseWhere(Tokenizer& parser) {
 			const auto nextToken = parser.PeekToken();
 			if (iequals(tok.Text(), "st_dwithin"sv) && nextToken.Text() == "("sv) {
 				parseDWithin(parser, nextOp);
-				nextOp = OpAnd;
 			} else if (iequals(tok.Text(), "knn"sv) && nextToken.Text() == "("sv) {
 				parseKnn(parser, nextOp);
-				nextOp = OpAnd;
 			} else if constexpr (nested == Nested::No) {
 				if (iequals(tok.Text(), "join"sv)) {
 					parseJoin(JoinType::LeftJoin, parser);
@@ -928,12 +945,11 @@ void SQLParser::parseWhere(Tokenizer& parser) {
 					parseJoin(jtype, parser);
 				} else {
 					parseWhereCondition(parser, std::string{tok.Text()}, nextOp);
-					nextOp = OpAnd;
 				}
 			} else {
 				parseWhereCondition(parser, std::string{tok.Text()}, nextOp);
-				nextOp = OpAnd;
 			}
+			nextOp = OpAnd;
 		} else if (tok.Type() == TokenNumber || tok.Type() == TokenString) {
 			throw Error(errParseSQL, "{} is invalid at this location. (text = '{}'  location = {})",
 						tok.Type() == TokenNumber ? "Number" : "String", tok.Text(), parser.Where(tok));

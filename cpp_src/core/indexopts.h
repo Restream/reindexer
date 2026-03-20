@@ -2,6 +2,7 @@
 
 #include <optional>
 #include "core/enums.h"
+#include "core/quantization_config.h"
 #include "core/type_consts.h"
 #include "core/type_consts_helpers.h"
 #include "estl/h_vector.h"
@@ -76,6 +77,7 @@ public:
 	size_t EfConstruction() const noexcept { return efConstruction_; }
 	size_t NCentroids() const noexcept { return nCentroids_; }
 	std::optional<float> Radius() const noexcept { return radius_; }
+	const std::optional<hnswlib::QuantizationConfig>& QuantizationConfig() const noexcept { return quantizationConfig_; }
 	MultithreadingMode Multithreading() const noexcept { return multithreadingMode_; }
 	reindexer::VectorMetric Metric() const noexcept { return metric_; }
 	std::optional<EmbeddingOpts> Embedding() const noexcept { return embedding_; }
@@ -123,6 +125,13 @@ public:
 		radius_ = radius;
 		return *this;
 	}
+	FloatVectorIndexOpts&& SetQuantizationConfig(hnswlib::QuantizationConfig quantizationConfig) && noexcept {
+		return std::move(SetQuantizationConfig(std::move(quantizationConfig)));
+	}
+	FloatVectorIndexOpts& SetQuantizationConfig(hnswlib::QuantizationConfig quantizationConfig) & noexcept {
+		quantizationConfig_ = std::move(quantizationConfig);
+		return *this;
+	}
 	FloatVectorIndexOpts&& SetEmbedding(EmbeddingOpts embedding) && noexcept { return std::move(SetEmbedding(std::move(embedding))); }
 	void Validate(IndexType);
 	static FloatVectorIndexOpts ParseJson(IndexType, std::string_view json);
@@ -133,7 +142,8 @@ public:
 		Base = 1,
 		Embedding = 1 << 1,
 		Radius = 1 << 2,
-		Full = (Radius << 1) - 1,
+		QuantizationConfig = 1 << 3,
+		Full = (QuantizationConfig << 1) - 1,
 	};
 
 	using DiffResult = compare_enum::Diff<FloatVectorIndexOpts::Diff>;
@@ -149,6 +159,7 @@ private:
 	reindexer::VectorMetric metric_{reindexer::VectorMetric::L2};
 	std::optional<EmbeddingOpts> embedding_;
 	std::optional<float> radius_;
+	std::optional<hnswlib::QuantizationConfig> quantizationConfig_;
 };
 
 /// Cpp version of IndexOpts: includes

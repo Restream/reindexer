@@ -25,7 +25,7 @@ public:
 	PayloadFieldType(std::string_view nsName, const Index& index, const IndexDef& indexDef,
 					 const std::shared_ptr<EmbeddersCache>& embeddersCache, bool enablePerfStat);
 	PayloadFieldType(KeyValueType t, std::string n, std::vector<std::string> j, IsArray a,
-					 reindexer::FloatVectorDimension dims = reindexer::FloatVectorDimension()) noexcept
+					 reindexer::FloatVectorDimension dims = reindexer::FloatVectorDimension())
 		: type_(t), name_(std::move(n)), jsonPaths_(std::move(j)), offset_(0), arrayDims_(dims.Value()), isArray_(a) {
 		assertrx(!t.Is<KeyValueType::FloatVector>() || !FloatVectorDimension().IsZero());
 	}
@@ -33,7 +33,7 @@ public:
 	size_t Sizeof() const noexcept;
 	size_t ElemSizeof() const noexcept;
 	reindexer::IsArray IsArray() const noexcept { return isArray_; }
-	uint32_t ArrayDims() const noexcept { return arrayDims_; }
+	uint16_t ArrayDims() const noexcept { return arrayDims_; }
 	reindexer::FloatVectorDimension FloatVectorDimension() const {
 		assertrx_dbg(arrayDims_ <= std::numeric_limits<reindexer::FloatVectorDimension::value_type>::max());
 		// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
@@ -62,7 +62,7 @@ private:
 	std::string name_;
 	std::vector<std::string> jsonPaths_;
 	size_t offset_{0};
-	uint32_t arrayDims_{0};
+	uint16_t arrayDims_{0};
 	reindexer::IsArray isArray_{IsArray_False};
 	std::shared_ptr<const reindexer::UpsertEmbedder> upsertEmbedder_;
 	std::shared_ptr<const reindexer::QueryEmbedder> queryEmbedder_;

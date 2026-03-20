@@ -2,6 +2,7 @@
 #include "client/snapshot.h"
 #include "cluster/logger.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
+#include "core/formatters/checksum_fmt.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 #include "estl/gift_str.h"
 #include "vendor/gason/gason.h"
@@ -84,7 +85,8 @@ void LeaderSyncThread::actualizeShardingConfig() {
 	clCfg.EnableCompression = false;
 	clCfg.RequestDedicatedThread = true;
 	for (const auto& dsn : cfg_.dsns) {
-		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
+		// TODO: Currently there are no good ways to recover, crash is intended
+		// NOLINTNEXTLINE(bugprone-exception-escape,rx-perf-lambda-to-std-function-allocation)
 		loop_.spawn([&]() noexcept {
 			try {
 				client::CoroReindexer client(clCfg);
@@ -162,8 +164,8 @@ void LeaderSyncThread::sync() {
 				client_.Stop();
 			}
 			const auto& node = entry.data[idx];
-			const uint64_t expectedDataHash = node.hash;
-			const int64_t expectedDataCount = node.count;
+			const auto expectedDataHash = node.hash;
+			const uint64_t expectedDataCount = node.count;
 			logInfo("{}: Trying to sync ns '{}' from {} (TID: {})", cfg_.serverId, entry.nsName, nodeId,
 					static_cast<size_t>(std::hash<std::thread::id>()(std::this_thread::get_id())));
 			std::string tmpNsName;
@@ -192,7 +194,7 @@ void LeaderSyncThread::sync() {
 						throw err;
 					}
 					const auto localLsn = ExtendedLsn(state.nsVersion, state.lastLsn);
-					if (state.dataHash == expectedDataHash && (expectedDataCount < 0 || expectedDataCount == state.dataCount)) {
+					if (state.dataHash.IsEqualByAnyVersionTo(expectedDataHash) && expectedDataCount == state.dataCount) {
 						if (!tmpNsName.empty()) {
 							err = thisNode_.renameNamespace(tmpNsName, std::string(entry.nsName), true, true);
 							if (!err.ok()) {

@@ -1,10 +1,11 @@
 #pragma once
 
+#include <bitset>
 #include <optional>
 #include "core/indexdef.h"
-#include "core/payload/fieldsset.h"
 #include "core/rdxcontext.h"
 #include "estl/contexted_locks.h"
+#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "tools/stringstools.h"
 #include "vendor/sparse-map/sparse_map.h"
@@ -19,6 +20,8 @@ class FloatVectorIndex;
 
 namespace ann_storage_cache {
 
+constexpr static uint8_t kANNCacheFormatVersion = 2;
+
 std::string GetStorageKey(std::string_view name) noexcept;
 bool IsANNCacheEnabledByEnv() noexcept;
 
@@ -26,7 +29,7 @@ class [[nodiscard]] UpdateInfo {
 public:
 	using nanoseconds = std::chrono::nanoseconds;
 
-	void Update(const std::string& idx, nanoseconds lastUpdateTime) noexcept;
+	void Update(const std::string& idx, nanoseconds lastUpdateTime);
 	void Remove(std::string_view idx) noexcept;
 	nanoseconds LastUpdateTime(std::string_view idx) const noexcept;
 	void Clear() noexcept;

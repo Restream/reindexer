@@ -5,6 +5,7 @@
 #pragma once
 
 #include <assert.h>
+#include <optional>
 #include <queue>
 #include "vendor/hopscotch/hopscotch_sc_map.h"
 
@@ -52,6 +53,7 @@ public:
 	}
 
 	~BruteforceSearch() { free(data_); }
+	bool IsQuantized() const noexcept { return false; }
 
 	size_t getMaxElements() const noexcept { return maxelements_; }
 
@@ -112,8 +114,8 @@ public:
 		cur_element_count--;
 	}
 
-	std::priority_queue<std::pair<float, labeltype>> searchKnn(const void* query_data, size_t k, size_t /*ef*/ = 0,
-															   BaseFilterFunctor* isIdAllowed = nullptr) const {
+	std::priority_queue<std::pair<float, labeltype>> searchKnn(const void* query_data, std::optional<float> /*query_data_norm*/, size_t k,
+															   size_t /*ef*/ = 0, BaseFilterFunctor* isIdAllowed = nullptr) const {
 		assert(k <= cur_element_count);
 		std::priority_queue<std::pair<float, labeltype>> topResults;
 		if (cur_element_count == 0) {
@@ -157,8 +159,8 @@ public:
 		return topResults;
 	}
 
-	std::priority_queue<std::pair<float, labeltype>> searchRange(const void* query_data, float radius, size_t ef,
-																 BaseFilterFunctor* isIdAllowed = nullptr) const {
+	std::priority_queue<std::pair<float, labeltype>> searchRange(const void* query_data, std::optional<float> /*query_data_norm*/,
+																 float radius, size_t ef, BaseFilterFunctor* isIdAllowed = nullptr) const {
 		std::priority_queue<std::pair<float, labeltype>> topResults;
 		if (cur_element_count == 0) {
 			return topResults;

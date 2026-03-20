@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
 #include "core/system_ns_names.h"
 #include "reindexer_api.h"

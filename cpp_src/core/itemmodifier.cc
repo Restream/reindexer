@@ -3,11 +3,11 @@
 #include <span>
 #include "core/cjson/tagsmatcher.h"
 #include "core/embedding/embedder.h"
+#include "core/function/expression_evaluator.h"
+#include "core/function/function_invoker.h"
+#include "core/function/function_parser.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/query/expression/expression_evaluator.h"
-#include "core/query/expression/function_executor.h"
-#include "core/query/expression/function_parser.h"
 #include "estl/tokenizer.h"
 #include "index/float_vector/float_vector_index.h"
 #include "index/index.h"
@@ -43,6 +43,10 @@ bool ItemModifier::FieldData::initFromSimpleIndexName(std::string_view name, Nam
 	if (ns.tryGetIndexByName(name, fieldIndex_)) {
 		isIndex_ = true;
 		tagsPath_ = IndexedTagsPath(getTagsPathByIndexField(fieldIndex_, ns));
+		if (IsComposite(ns.indexes_[fieldIndex_]->Type())) {
+			isIndex_ = false;
+			fieldIndex_ = SetByJsonPath;
+		}
 		return true;
 	}
 	return false;
@@ -157,16 +161,6 @@ void ItemModifier::FieldData::appendAffectedIndexes(const NamespaceImpl& ns, Com
 	const auto firstSparsePos = ns.indexes_.firstSparsePos();
 	const auto totalIndexes = ns.indexes_.totalSize();
 	const bool isRegularIndex = IsIndex() && Index() < firstSparsePos;
-	const bool isSparseIndex = IsIndex() && Index() >= firstSparsePos && Index() < firstCompositePos;
-	if (isSparseIndex) {
-		// Composite indexes can not be created over sparse indexes, so just skipping rest of the checks for them
-		return;
-	}
-	const bool isCompositeIndex = IsIndex() && Index() >= firstCompositePos;
-	if (isCompositeIndex) {
-		// Composite indexes can not be created over another composite indexes, so just skipping rest of the checks for them
-		return;
-	}
 	std::bitset<kMaxIndexes> affected;
 	if (isRegularIndex) {
 		affected.set(Index());
@@ -200,8 +194,8 @@ void ItemModifier::FieldData::appendAffectedIndexes(const NamespaceImpl& ns, Com
 			continue;
 		}
 
-		if (!IsIndex()) {
-			// Fulltext composites may be created over non-index fields
+		if (!isRegularIndex) {
+			// Fulltext composites may be created over non-index and sparse fields
 			for (size_t tp = 0, end = fields.getTagsPathsLength(); tp < end; ++tp) {
 				if (Tagspath().IsNestedOrEqualTo(fields.getTagsPath(tp))) {
 					affectedComposites[idxId] = true;
@@ -342,13 +336,13 @@ ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, 
 }
 
 ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, NamespaceImpl& ns, UpdatesContainer& replUpdates,
-						   const NsContext& ctx)
+						   const NsContext& ctx, const functions::PrecomputedValues& precomputedValues)
 	: ns_(ns),
 	  updateEntries_(updateEntries),
 	  rollBackIndexData_(ns_.indexes_.totalSize()),
 	  affectedComposites_(ns_.indexes_.totalSize() - ns_.indexes_.firstCompositePos(), false),
-	  vectorIndexes_(ns_.getVectorIndexes()),
-	  embedderHelper_(ns_) {
+	  embedderHelper_(ns_),
+	  precomputedValues_(precomputedValues) {
 	const auto oldTmV = ns_.tagsMatcher_.version();
 	for (const UpdateEntry& updateField : updateEntries_) {
 		for (const auto& v : updateField.Values()) {
@@ -436,7 +430,7 @@ void ItemModifier::EmbedderHelper::prepareSkipVectorIndexes(const std::vector<Fi
 				std::string v = field.Details().Values().front().As<std::string>();
 				Tokenizer tokenizer(v);
 				Token tok = tokenizer.NextToken();
-				auto parsedFunction = QueryFunctionParser::ParseFunction(tokenizer, tok);
+				auto parsedFunction = functions::FunctionParser::ParseFunction(tokenizer, tok);
 				if (parsedFunction.funcName == "skip_embedding") [[likely]] {
 					skipVectorIndexes_.set(field.Index());
 					continue;
@@ -456,10 +450,10 @@ bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, UpdatesContainer&
 	Payload pl(ns_.payloadType_, pv);
 	pv.Clone(pl.RealSize());
 
-	rollBackIndexData_.Reset(itemId, ns_.payloadType_, pv, ns_.getVectorIndexes());
+	rollBackIndexData_.Reset(ns_, itemId, pv);
 	RollBack_ModifiedPayload rollBack = RollBack_ModifiedPayload(*this, itemId);
-	FunctionExecutor funcExecutor(ns_, replUpdates);
-	ExpressionEvaluator ev(ns_, funcExecutor);
+	functions::FunctionInvoker funcInvoker(precomputedValues_, ns_, ns_.payloadType_, ns_.tagsMatcher_, replUpdates);
+	ExpressionEvaluator ev(ns_, funcInvoker);
 
 	auto indexesCacheCleaner = ns_.GetIndexesCacheCleaner();
 
@@ -529,7 +523,7 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 
 	ItemImpl itemimpl(ns_.payloadType_, plData, ns_.tagsMatcher_);
 	itemimpl.Unsafe(true);
-	itemimpl.CopyIndexedVectorsValuesFrom(id, vectorIndexes_);
+	itemimpl.CopyIndexedVectorsValuesFrom(ns_.floatVectorsGetterFn(id));
 	itemimpl.ModifyField(field.Tagspath(), values, field.Details().Mode());
 
 	Item item = ns_.newItem();
@@ -586,9 +580,8 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 			pl.Get(fieldIdx, ns_.krefs, Variant::hold);
 		} else if (index.Opts().IsFloatVector()) {
 			const FloatVectorIndex& fvIdx = static_cast<FloatVectorIndex&>(index);
-			const ConstFloatVectorView fvView = fvIdx.GetFloatVectorView(id);
 			ns_.krefs.clear<false>();
-			ns_.krefs.emplace_back(fvView);
+			ns_.krefs.emplace_back(ns_.getFloatVector(id, fvIdx));
 		} else {
 			pl.Get(fieldIdx, ns_.krefs);
 		}
@@ -843,9 +836,8 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, Vari
 			pl.GetByJsonPath(field.TagspathWithLastIndex(), ns_.skrefs, index.KeyType());
 		} else if (index.Opts().IsFloatVector()) {
 			const FloatVectorIndex& fvIdx = static_cast<FloatVectorIndex&>(index);
-			const ConstFloatVectorView fvView = fvIdx.GetFloatVectorView(itemId);
 			ns_.skrefs.clear<false>();
-			ns_.skrefs.emplace_back(fvView);
+			ns_.skrefs.emplace_back(ns_.getFloatVector(itemId, fvIdx));
 		} else {
 			pl.Get(field.Index(), ns_.skrefs, Variant::hold);
 		}
@@ -952,17 +944,17 @@ void ItemModifier::updateEmbedding(IdType itemId, const RdxContext& rdxContext, 
 	}
 }
 
-void ItemModifier::IndexRollBack::Reset(IdType itemId, const PayloadType& pt, const PayloadValue& pv, FloatVectorsIndexes&& fvIndexes) {
+void ItemModifier::IndexRollBack::Reset(const NamespaceImpl& ns, IdType itemId, const PayloadValue& pv) {
 	pvSave_ = pv;
 	pvSave_.Clone();
 	floatVectorsHolder_ = FloatVectorsHolderVector();
-	Payload pl{pt, pvSave_};
-	for (auto& fvIdx : fvIndexes) {
-		auto fv = fvIdx.ptr->GetFloatVector(itemId);
-		if (floatVectorsHolder_.Add(std::move(fv))) {
-			pl.Set(fvIdx.ptField, Variant{floatVectorsHolder_.Back()});
+	Payload pl{ns.payloadType_, pvSave_};
+
+	for (auto& [idxData, fvVar] : ns.floatVectorsGetterFn(itemId)(ns.payloadType_, ns.tagsMatcher_)) {
+		if (floatVectorsHolder_.Add(FloatVector{std::move(fvVar)})) {
+			pl.Set(idxData.ptField, Variant{floatVectorsHolder_.Back()});
 		} else {
-			pl.Set(fvIdx.ptField, Variant{ConstFloatVectorView{}});
+			pl.Set(idxData.ptField, Variant{ConstFloatVectorView{}});
 		}
 	}
 	std::fill(data_.begin(), data_.end(), false);

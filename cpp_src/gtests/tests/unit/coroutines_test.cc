@@ -13,6 +13,8 @@ using std::chrono::seconds;
 using std::chrono::milliseconds;
 using reindexer::coroutine::channel;
 
+// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
+
 template <typename T>
 static void OutputVector(const std::vector<T>& vec) {
 	std::cerr << "{ ";
@@ -428,3 +430,5 @@ TEST(Coroutines, FIFOChannels) {
 		ASSERT_TRUE(false);
 	}
 }
+
+// NOLINTEND(rx-perf-lambda-to-std-function-allocation)

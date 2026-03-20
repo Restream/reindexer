@@ -13,6 +13,8 @@ struct JsonNode;
 
 namespace reindexer {
 
+using TermsBoostMapT = tsl::hopscotch_map<std::string, float, nocase_hash_str_utf8, nocase_equal_str_utf8>;
+
 class [[nodiscard]] BaseFTConfig {
 public:
 	struct [[nodiscard]] Synonym {
@@ -35,6 +37,7 @@ public:
 	bool enableNumbersSearch = false;
 
 	StopWordsSetT stopWords;
+	TermsBoostMapT termsBoost;
 	std::vector<Synonym> synonyms;
 	int logLevel = 0;
 

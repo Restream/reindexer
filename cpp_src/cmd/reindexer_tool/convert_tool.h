@@ -8,7 +8,7 @@ namespace reindexer_tool {
 using reindexer::datastorage::IDataStorage;
 using reindexer::Error;
 
-class ConvertTool {
+class [[nodiscard]] ConvertTool {
 public:
 	static Error ConvertStorage(std::string_view dsn, std::string_view convertFormat, std::string_view convertBackupFolder) noexcept;
 

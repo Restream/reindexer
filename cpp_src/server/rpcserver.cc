@@ -230,7 +230,7 @@ void RPCServer::Logger(cproto::Context& ctx, const Error& err, const cproto::Arg
 	const auto clientData = getClientDataUnsafe(ctx);
 	uint8_t buf[0x500];
 	WrSerializer ser(buf);
-	ser << "p='" << protocolName_ << '\'';
+	ser << "p='" << protocolName_ << "\' ";
 	if (clientData) {
 		ser << "c='"sv << clientData->connID << "' db='"sv << clientData->auth.Login() << '@' << clientData->auth.DBName() << "' "sv;
 	} else {

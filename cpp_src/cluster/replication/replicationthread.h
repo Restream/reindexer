@@ -62,7 +62,7 @@ public:
 struct [[nodiscard]] Node {
 	using UpdatesChT = coroutine::channel<bool>;
 
-	Node(int _serverId, uint32_t _uid, const client::ReindexerConfig& config) noexcept : serverId(_serverId), uid(_uid), client(config) {}
+	Node(int _serverId, uint32_t _uid, const client::ReindexerConfig& config) : serverId(_serverId), uid(_uid), client(config) {}
 	void Reconnect(net::ev::dynamic_loop& loop, const ReplThreadConfig& config);
 
 	int serverId;

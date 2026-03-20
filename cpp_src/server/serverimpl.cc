@@ -686,6 +686,7 @@ void ServerImpl::initCoreLogger() {
 		}
 	};
 	if (coreLogLevel_ && logger.lock()) {
+		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 		reindexer::logInstallWriter(callback, mode_ == ServerMode::Standalone ? LoggerPolicy::WithoutLocks : LoggerPolicy::WithLocks,
 									coreLogLevel_);
 	}

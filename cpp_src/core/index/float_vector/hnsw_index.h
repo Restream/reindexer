@@ -21,12 +21,20 @@ public:
 	using FloatVectorIndex::Delete;
 
 	std::unique_ptr<Index> Clone(size_t newCapacity) const override;
-	IndexMemStat GetMemStat(const RdxContext&) noexcept override;
+	IndexMemStat GetMemStat(const RdxContext&) const noexcept override;
 	bool IsSupportMultithreadTransactions() const noexcept override { return std::is_same_v<Map, hnswlib::HierarchicalNSWMT>; }
 	void GrowFor(size_t newElementsCount) override;
 	StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 											const std::atomic_int32_t& cancel) noexcept override;
-	Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData, uint8_t version) override;
+	Error LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&& getVectorData, LoadWithQuantizer,
+						 uint8_t version) override;
+
+	bool QuantizationAvailable() const override;
+	bool IsQuantized() const override;
+	void Quantize() override;
+	void SwitchMapOnQuantized() override;
+
+	uint64_t GetHash(IdType rowId) const override;
 
 private:
 	constexpr static uint64_t kStorageMagic = 0x3A3A3A3A2B2B2B2B;
@@ -35,21 +43,74 @@ private:
 
 	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const override;
 	KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const override;
-	HnswKnnRawResult selectRawImpl(ConstFloatVectorView, const KnnSearchParams&) const;
 	Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) override;
 	Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) override;
 
-	FloatVector getFloatVector(IdType rowId) const override { return FloatVector{getFloatVectorView(rowId)}; }
-	ConstFloatVectorView getFloatVectorView(IdType) const override;
+	ConstFloatVectorView getFloatVectorViewImpl(IdType) const override;
 
 	static size_t newSize(size_t currentSize) noexcept;
-	template <typename ParamsT>
-	HnswKnnRawResult search(const float*, const ParamsT&) const;
-	static std::unique_ptr<hnswlib::SpaceInterface> newSpace(size_t dimension, VectorMetric);
+	HnswKnnRawResult search(ConstFloatVectorView key, const KnnSearchParams& params) const;
+	static std::unique_ptr<hnswlib::SpaceInterface> newSpace(size_t dimension, VectorMetric, bool quantized = false);
 	void clearMap() noexcept;
 
 	std::unique_ptr<hnswlib::SpaceInterface> space_;
-	std::unique_ptr<Map> map_;
+
+	struct [[nodiscard]] MapWrapper {
+		MapWrapper() = default;
+		MapWrapper(std::unique_ptr<Map>&& map) noexcept : map_(std::move(map)) {}
+
+		MapWrapper(const MapWrapper& other, size_t dimension, VectorMetric metric, size_t newCapacity) {
+			assertrx_throw(other.map_);
+			if (other.quantizedMap_) {
+				assertrx_throw(*other.quantizedMap_);
+				assertrx_throw(intermediateHashes);
+			}
+
+			const auto& map = other.quantizedMap_ ? **other.quantizedMap_ : *other.map_;
+			map_ = std::make_unique<Map>(newSpace(dimension, metric, map.IsQuantized()).get(), map, newCapacity);
+			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+			hashes = other.quantizedMap_ ? *other.intermediateHashes : other.hashes;
+		}
+
+		bool QuantizationAvailable() const { return !map_->IsQuantized() && !quantizedMap_; }
+
+		// This method must only be used in index-modifying operations (like upsert/delete/resize) under the namespace writeLock,
+		// in no case under namespace readLock.
+		auto& GetWritable() noexcept { return get(); }
+		const auto& operator->() const noexcept { return get(); }
+		const auto& operator*() const noexcept { return *get(); }
+
+		void Reset() noexcept {
+			map_.reset();
+			quantizedMap_ = std::nullopt;
+		}
+
+		void CalcOrigHashes(size_t dim);
+		void Quantize(const hnswlib::QuantizationConfig& config) { quantizedMap_ = map_->QuantizedCopy(config); }
+
+		// origin float vector hashes for quantized vectors
+		std::vector<uint64_t> hashes;
+		// In order to avoid a data race, filled in CalcOrigHashes under the ns RLock.
+		std::optional<std::vector<uint64_t>> intermediateHashes;
+
+	private:
+		auto& get() noexcept {
+			if (quantizedMap_) {
+				map_ = std::move(*quantizedMap_);
+				quantizedMap_ = std::nullopt;
+
+				assertrx_throw(intermediateHashes);
+				hashes = std::move(*intermediateHashes);
+				intermediateHashes = std::nullopt;
+			}
+			return map_;
+		}
+
+		const auto& get() const noexcept { return map_; }
+
+		std::unique_ptr<Map> map_;
+		std::optional<std::unique_ptr<Map>> quantizedMap_;
+	} map_;
 };
 
 using HnswIndexST = HnswIndexBase<hnswlib::HierarchicalNSWST>;

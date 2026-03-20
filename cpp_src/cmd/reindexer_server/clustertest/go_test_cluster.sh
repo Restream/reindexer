@@ -30,7 +30,7 @@ if [[ -n $REINDEXER_TEST_DB_ROOT ]]; then
 fi
 BASE_RPC=6000
 BASE_HTTP=7000
-RX_BIN=build/cpp_src/cmd/reindexer_server/reindexer_server
+RX_BIN=reindexer_server
 QR_TIMEOUT=10
 
 CreateDirForClusterNodes $BASE_DIR $NODES_NUMBER $CLUSTER_DB_NAME $BASE_RPC

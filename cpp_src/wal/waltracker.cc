@@ -1,10 +1,9 @@
 
 #include "waltracker.h"
 #include "core/namespace/asyncstorage.h"
+#include "core/storage/storage_prefixes.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
-
-#define kStorageWALPrefix "W"
 
 namespace reindexer {
 

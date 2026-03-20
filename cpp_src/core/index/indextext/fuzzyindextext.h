@@ -14,6 +14,7 @@ public:
 		: Base(idef, std::move(payloadType), std::move(fields), cacheCfg) {
 		createConfig();
 	}
+	~FuzzyIndexText();
 
 	SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, const Index::SelectContext&, FtPreselectT&&,
 							   const RdxContext&) override final {

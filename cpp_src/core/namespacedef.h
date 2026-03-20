@@ -16,7 +16,7 @@ class RdxContext;
 class Namespace;
 
 struct [[nodiscard]] NamespaceDef {
-	struct NameOnly {};
+	struct [[nodiscard]] NameOnly {};
 
 	NamespaceDef() = default;
 	explicit NamespaceDef(std::string_view iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())

@@ -64,14 +64,17 @@ public:
 	KeeperTag Register();
 	void Deregister(const KeeperTag& tag) noexcept;
 
-	void GetFloatVectors(const KeeperTag& tag, std::span<IdType> ids, std::vector<ConstFloatVectorView>& floatVectData);
-
 	void Remove(IdType id);
 	void RemoveUnused();
 
 	size_t GetMemStat() const;
 
 private:
+	friend class FloatVectorsHolderMap;
+
+	void getFloatVectors(const KeeperTag& tag, std::span<IdType> ids, std::vector<ConstFloatVectorView>& vectorsData,
+						 auto&& floatVectorGetter);
+
 	const FloatVectorIndex& index_;
 	OwnerIdType currOwner_{0};
 

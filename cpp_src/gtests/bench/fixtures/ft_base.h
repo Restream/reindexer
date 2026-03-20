@@ -25,6 +25,7 @@ private:
 
 	std::vector<std::string> words1_;
 	size_t maxWord1Count_{0};
+	// NOLINTNEXTLINE(bugprone-random-generator-seed) Using the same seed here for more stable results
 	std::mt19937 randomEngine_{1};
 	std::uniform_int_distribution<int> randomGenerator_{};
 };

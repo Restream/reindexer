@@ -42,7 +42,7 @@ public:
 };
 
 template <class T>
-class atomic_unique_ptr<T[]>  // for array types
+class [[nodiscard]] atomic_unique_ptr<T[]>	// for array types
 {
 	using pointer = T*;
 	std::atomic<pointer> ptr;

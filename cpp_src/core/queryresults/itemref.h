@@ -1,6 +1,7 @@
 #pragma once
 
 #include <utility>
+#include <variant>
 #include "core/enums.h"
 #include "core/id_type.h"
 #include "core/payload/payloadvalue.h"
@@ -194,10 +195,13 @@ class [[nodiscard]] ItemRefVector {
 
 		IteratorImpl(NotRankedIt it) noexcept : Base{std::in_place_index<0>, it} {}
 		IteratorImpl(RankedIt it) noexcept : Base{std::in_place_index<1>, it} {}
-		IteratorImpl(const IteratorImpl<NotRankedVec::iterator, RankedVec::iterator>& other) noexcept
+		// NOLINTNEXTLINE(bugprone-exception-escape)
+		IteratorImpl(const IteratorImpl<NotRankedVec::iterator, RankedVec::iterator>& other)
 			: Base{std::visit([](auto& it) { return Base{it}; }, other.asVariant())} {}
-		IteratorImpl(IteratorImpl<NotRankedVec::iterator, RankedVec::iterator>&& other) noexcept
+		// NOLINTNEXTLINE(bugprone-exception-escape)
+		IteratorImpl(IteratorImpl<NotRankedVec::iterator, RankedVec::iterator>&& other)
 			: Base{std::visit([](auto& it) { return Base{std::move(it)}; }, other.asVariant())} {}
+		// NOLINTNEXTLINE(bugprone-exception-escape)
 		IteratorImpl& operator=(const IteratorImpl<NotRankedVec::iterator, RankedVec::iterator>& other) noexcept {
 			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			Base::operator=(other.asVariant());
@@ -215,19 +219,20 @@ class [[nodiscard]] ItemRefVector {
 			return *this;
 		}
 		IteratorImpl&& operator++() && noexcept { return std::move(operator++()); }
+		// NOLINTNEXTLINE(bugprone-exception-escape)
 		IteratorImpl operator++(int) & noexcept {
 			IteratorImpl res = *this;
 			std::visit([](auto& it) noexcept { ++it; }, asVariant());
 			return res;
 		}
-
+		// NOLINTNEXTLINE(bugprone-exception-escape)
 		IteratorImpl& operator--() & noexcept {
 			std::visit([](auto& it) noexcept { --it; }, asVariant());
 			return *this;
 		}
 		IteratorImpl&& operator--() && noexcept { return std::move(operator--()); }
 
-		IteratorImpl operator--(int) & noexcept {
+		IteratorImpl operator--(int) & noexcept {  // NOLINT(bugprone-exception-escape)
 			IteratorImpl res = *this;
 			std::visit([](auto& it) noexcept { --it; }, asVariant());
 			return res;
@@ -252,17 +257,17 @@ class [[nodiscard]] ItemRefVector {
 		}
 
 		template <typename I>
-		IteratorImpl operator+(I i) const noexcept {
+		IteratorImpl operator+(I i) const noexcept {  // NOLINT(bugprone-exception-escape)
 			IteratorImpl res{*this};
 			res += i;
 			return res;
 		}
 		template <typename I>
-		IteratorImpl operator-(I i) const noexcept {
+		IteratorImpl operator-(I i) const noexcept {  // NOLINT(bugprone-exception-escape)
 			return operator+(-i);
 		}
 
-		std::ptrdiff_t operator-(IteratorImpl other) const noexcept {
+		std::ptrdiff_t operator-(IteratorImpl other) const noexcept {  // NOLINT(bugprone-exception-escape)
 			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			return std::visit([other](auto lhs) noexcept { return lhs - std::get<decltype(lhs)>(other); }, asVariant());
 		}
@@ -272,7 +277,6 @@ class [[nodiscard]] ItemRefVector {
 			assertf_dbg(this->index() == other.index(), "{} {}", this->index(), other.index());
 			return std::visit([other](auto lhs) noexcept { return lhs == std::get<decltype(lhs)>(other); }, asVariant());
 		}
-		// NOLINTEND(bugprone-exception-escape)
 		template <typename I, typename IR>
 		bool operator!=(const IteratorImpl<I, IR>& other) const noexcept {
 			return !operator==(other);
@@ -290,14 +294,15 @@ class [[nodiscard]] ItemRefVector {
 		bool operator<=(IteratorImpl<I, IR> other) const noexcept {
 			return other >= *this;
 		}
-
 		IteratorImpl operator*() const noexcept { return *this; }
+		// NOLINTEND(bugprone-exception-escape)
 
-		NotRankedIt NotRanked() const { return std::get<NotRankedIt>(*this); }
-		RankedIt Ranked() const { return std::get<RankedIt>(*this); }
-		ItemRefRef GetItemRef() const noexcept {  // NOLINT(bugprone-exception-escape)
-			return std::visit(overloaded{[](NotRankedIt it) noexcept -> ItemRefRef { return *it; },
-										 [](RankedIt it) noexcept -> ItemRefRef { return it->NotRanked(); }},
+		NotRankedIt NotRanked() const { return std::get<IteratorImpl::NotRankedIt>(*this); }
+		RankedIt Ranked() const { return std::get<IteratorImpl::RankedIt>(*this); }
+		// NOLINTNEXTLINE(bugprone-exception-escape)
+		ItemRefRef GetItemRef() const noexcept {
+			return std::visit(overloaded{[](NotRankedIt it) noexcept -> IteratorImpl::ItemRefRef { return *it; },
+										 [](RankedIt it) noexcept -> IteratorImpl::ItemRefRef { return it->NotRanked(); }},
 							  asVariant());
 		}
 		reindexer::IsRanked IsRanked() const noexcept { return reindexer::IsRanked(std::holds_alternative<RIt>(asVariant())); }

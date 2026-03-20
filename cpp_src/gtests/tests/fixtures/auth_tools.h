@@ -33,14 +33,14 @@ reindexer::DSN MakeDsn(reindexer_server::UserRole role, const ServerControlInter
 }
 
 namespace reindexer {
-inline bool operator==(const reindexer::DSN& lhs, const reindexer::DSN& rhs) noexcept {
+inline bool operator==(const reindexer::DSN& lhs, const reindexer::DSN& rhs) {
 	return (&reindexer::operator== <reindexer::DSN>)(lhs, rhs) || fmt::format("{}", lhs) == fmt::format("{}", rhs);
 }
 
-inline bool operator==(const std::string& lhs, const reindexer::DSN& rhs) noexcept {
+inline bool operator==(const std::string& lhs, const reindexer::DSN& rhs) {
 	const auto& DsnFromStr = reindexer::DSN(lhs);
 	return (&reindexer::operator== <reindexer::DSN>)(DsnFromStr, rhs) || fmt::format("{}", DsnFromStr) == fmt::format("{}", rhs);
 }
 
-inline bool operator!=(const reindexer::DSN& lhs, const reindexer::DSN& rhs) noexcept { return !(lhs == rhs); }
+inline bool operator!=(const reindexer::DSN& lhs, const reindexer::DSN& rhs) { return !(lhs == rhs); }
 }  // namespace reindexer

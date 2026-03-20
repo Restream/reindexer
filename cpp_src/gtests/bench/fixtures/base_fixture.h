@@ -155,13 +155,13 @@ protected:
 		}
 	}
 
-	struct NoTotal {
+	struct [[nodiscard]] NoTotal {
 		RX_ALWAYS_INLINE static void Apply(reindexer::Query&) noexcept {}
 	};
-	struct ReqTotal {
+	struct [[nodiscard]] ReqTotal {
 		RX_ALWAYS_INLINE static void Apply(reindexer::Query& q) noexcept { q.ReqTotal(); }
 	};
-	struct CachedTotal {
+	struct [[nodiscard]] CachedTotal {
 		RX_ALWAYS_INLINE static void Apply(reindexer::Query& q) noexcept { q.CachedTotal(); }
 	};
 

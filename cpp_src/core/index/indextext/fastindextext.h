@@ -24,7 +24,7 @@ public:
 	}
 	IdSet::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
 					  const RdxContext&) override;
-	IndexMemStat GetMemStat(const RdxContext&) override;
+	IndexMemStat GetMemStat(const RdxContext&) const override;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	void SetOpts(const IndexOpts& opts) override;
@@ -62,6 +62,7 @@ private:
 	FtFastConfig* getConfig() const noexcept { return dynamic_cast<FtFastConfig*>(this->cfg_.get()); }
 	void initConfig(const FtFastConfig* = nullptr);
 	void initHolder(FtFastConfig&);
+	void initTermBoosts(FtFastConfig&);
 	template <class Data>
 	void buildVdocs(Data& data);
 	template <typename MergeType, typename F>

@@ -132,10 +132,11 @@ void FloatVectorIndex::Commit() {
 	logFmt(LogTrace, "FloatVectorIndex::Commit ({}) {} empty", name_, emptyValues_.Unsorted().size());
 }
 
-IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) noexcept {
+IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) const noexcept {
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
-	memStat_.indexingStructSize = emptyValues_.Unsorted().Size() * sizeof(IdType);
-	memStat_.vectorsKeeperSize = keeper_->GetMemStat();
+	auto res = memStat_;
+	res.indexingStructSize = emptyValues_.Unsorted().Size() * sizeof(IdType);
+	res.vectorsKeeperSize = keeper_->GetMemStat();
 	if (opts_.FloatVector().Embedding().has_value()) {
 		int fieldNo = 0;
 		if (payloadType_.FieldByName(name_, fieldNo)) {
@@ -148,12 +149,12 @@ IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) noexcept {
 				}
 			};
 
-			fillEmbedMemStat(type.UpsertEmbedder(), memStat_.upsertEmbedderStatus);
-			fillEmbedMemStat(type.QueryEmbedder(), memStat_.queryEmbedderStatus);
+			fillEmbedMemStat(type.UpsertEmbedder(), res.upsertEmbedderStatus);
+			fillEmbedMemStat(type.QueryEmbedder(), res.queryEmbedderStatus);
 		}
 	}
 
-	return memStat_;
+	return res;
 }
 
 namespace {
@@ -233,22 +234,13 @@ IndexPerfStat FloatVectorIndex::GetIndexPerfStat() {
 	return stat;
 }
 
-FloatVector FloatVectorIndex::GetFloatVector(IdType id) const {
+ConstFloatVectorView FloatVectorIndex::getFloatVectorView(IdType id) const {
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
 	if (emptyValues_.Unsorted().Find(id)) {
 		return {};
 	}
 
-	return getFloatVector(id);
-}
-
-ConstFloatVectorView FloatVectorIndex::GetFloatVectorView(IdType id) const {
-	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
-	if (emptyValues_.Unsorted().Find(id)) {
-		return {};
-	}
-
-	return getFloatVectorView(id);
+	return getFloatVectorViewImpl(id);
 }
 
 void FloatVectorIndex::checkVectorDims(ConstFloatVectorView vect, std::string_view operation) const {

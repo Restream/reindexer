@@ -271,6 +271,16 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 			if err != nil {
 				return err
 			}
+			if quantizationType, ok := namedOpts["quantization"]; ok {
+				if quantizationType != "sq8" {
+					return fmt.Errorf("Unsupported quantization type - %s", quantizationType)
+				}
+
+				fvOpts.QuantizationConfig = &bindings.QuantizationConfig{
+					Type: "scalar_quantization_8_bit",
+				}
+			}
+
 			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, "float_vector", opts, CollateNone, "", 0, &fvOpts)
 			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err

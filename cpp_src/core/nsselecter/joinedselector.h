@@ -35,7 +35,6 @@ struct [[nodiscard]] JoinPreResult {
 			// NOLINTNEXTLINE (bugprone-use-after-move)
 			other.locked_ = false;
 		}
-		Values() noexcept : locked_(false) {}
 		Values(const Values&) = delete;
 		Values& operator=(const Values&) = delete;
 		Values& operator=(Values&&) = delete;

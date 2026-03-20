@@ -30,7 +30,14 @@ void TCMallocHeapWathcher::logDebug(spdlog::format_string_t<Args...> fmt, Args&&
 	}
 }
 
-TCMallocHeapWathcher::~TCMallocHeapWathcher() { logDebug("Heap watcher destructed"); }
+TCMallocHeapWathcher::~TCMallocHeapWathcher() {
+	try {
+		logDebug("Heap watcher destructed");
+		// NOLINTBEGIN(bugprone-empty-catch)
+	} catch (...) {
+	}
+	// NOLINTEND(bugprone-empty-catch)
+}
 
 void TCMallocHeapWathcher::CheckHeapUsagePeriodic() {
 	static std::once_flag startupFirstCallFlag;

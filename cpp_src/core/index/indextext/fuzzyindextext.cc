@@ -6,6 +6,14 @@
 namespace reindexer {
 
 template <typename T>
+FuzzyIndexText<T>::~FuzzyIndexText() {
+	for (auto& vdoc : this->vdocs_) {
+		// Fuzzy index does not nullify those entries during deletion
+		vdoc.ResetKeyEntry();
+	}
+}
+
+template <typename T>
 IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx& ftCtx, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&,
 									 FtUseExternStatuses withExternSt, const RdxContext& rdxCtx) {
 	assertrx_throw(withExternSt == FtUseExternStatuses::No);
@@ -27,7 +35,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx& ftCtx, FtDSLQuery&& dsl, bool inTran
 			continue;
 		}
 		assertrx(it->id_ < this->vdocs_.size());
-		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
+		const auto& id_set = this->vdocs_[it->id_].KeyEntry()->Sorted(0);
 		ftCtx.Add(id_set.begin(), id_set.end(), RankT(it->rank_));
 		mergedIds->Append(id_set.begin(), id_set.end(), IdSetEditMode::Unordered);
 		if ((counter & 0xFF) == 0 && !inTransaction) {
@@ -42,13 +50,20 @@ template <typename T>
 void FuzzyIndexText<T>::commitFulltextImpl() {
 	std::vector<std::unique_ptr<std::string>> bufStrs;
 	auto gt = this->Getter();
+
+	for (auto& vdoc : this->vdocs_) {
+		// Fuzzy index does not nullify those entries during deletion. It fully clears vdocs array instead
+		vdoc.ResetKeyEntry();
+	}
+	this->vdocs_.resize(0);
+
 	for (auto& doc : this->idx_map) {
 		auto res = gt.getDocFields(doc.first, bufStrs);
 #ifdef REINDEX_FT_EXTRA_DEBUG
 		std::string text(res[0].first);
-		this->vdocs_.push_back({(text.length() > 48) ? text.substr(0, 48) + "..." : text, doc.second.get(), {}, {}});
+		this->vdocs_.emplace_back((text.length() > 48) ? text.substr(0, 48) + "..." : std::move(text), doc.second.get());
 #else
-		this->vdocs_.push_back({doc.second.get(), {}, {}});
+		this->vdocs_.emplace_back(doc.second.get());
 #endif
 		for (size_t idx = 0, arrayIdx = 0; idx < res.size(); ++idx, ++arrayIdx) {
 			const unsigned field = res[idx].second;

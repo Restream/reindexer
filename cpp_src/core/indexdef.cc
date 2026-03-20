@@ -199,10 +199,19 @@ void IndexDef::SetOpts(IndexOpts&& opts) {
 }
 
 IndexDef::DiffResult IndexDef::Compare(const IndexDef& o) const noexcept {
+	enum IndexType lit, rit;
+	try {
+		lit = IndexType();
+		rit = o.IndexType();
+	} catch (std::exception&) {
+		assertrx_dbg(false);
+		return DiffResult{}.Set<Diff::IndexType>(false);
+	}
+
 	return DiffResult{}
 		.Set<Diff::Name>(name_ == o.name_)
 		.Set<Diff::JsonPaths>(jsonPaths_ == o.jsonPaths_)
-		.Set<Diff::IndexType>(IndexType() == o.IndexType())
+		.Set<Diff::IndexType>(lit == rit)
 		.Set<Diff::FieldType>(fieldType_ == o.fieldType_)
 		.Set<Diff::ExpireAfter>(expireAfter_ == o.expireAfter_)
 		.Set(opts_.Compare(o.opts_));
@@ -237,7 +246,7 @@ void IndexDef::initFromIndexType(::IndexType type) {
 	indexType_ = it.IndexType();
 }
 
-bool isStore(IndexType type) noexcept {
+bool IsStore(IndexType type) noexcept {
 	return type == IndexIntStore || type == IndexInt64Store || type == IndexStrStore || type == IndexDoubleStore || type == IndexBool ||
 		   type == IndexUuidStore;
 }
@@ -384,7 +393,7 @@ void IndexDef::GetJSON(WrSerializer& ser, ExtraIndexDescription withExtras) cons
 	}
 }
 
-bool validateIndexName(std::string_view name, IndexType type) noexcept {
+bool ValidateIndexName(std::string_view name, IndexType type) noexcept {
 	if (!name.length()) {
 		return false;
 	}

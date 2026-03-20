@@ -40,7 +40,6 @@ public:
 		commitFulltextImpl();
 		this->isBuilt_ = true;
 	}
-	bool HoldsStrings() const noexcept override;
 	void SetSortedIdxCount(int) override final {}
 	void DestroyCache() override {
 		Base::DestroyCache();
@@ -77,7 +76,7 @@ protected:
 
 	RHashMap<std::string, FtIndexFieldPros> ftFields_;
 	std::unique_ptr<BaseFTConfig> cfg_;
-	Mutex mtx_;
+	mutable Mutex mtx_;
 };
 
 }  // namespace reindexer

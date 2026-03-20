@@ -22,10 +22,8 @@ class [[nodiscard]] LeaderSyncQueue {
 public:
 	struct [[nodiscard]] Entry {
 		struct [[nodiscard]] NodeData {
-			bool HasDataCount() const noexcept { return count != ReplicationStateV2::kNoDataCount; }
-
-			uint64_t hash = 0;
-			int64_t count = ReplicationStateV2::kNoDataCount;
+			ReplicationDataHash hash;
+			uint64_t count = 0;
 		};
 
 		bool IsLocal() const noexcept {

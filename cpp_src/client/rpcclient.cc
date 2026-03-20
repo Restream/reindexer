@@ -302,7 +302,7 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 			auto nsPtr = getNamespace(nsName);
 			ser.GetRawQueryParams(
 				qdata,
-				[&ser, nsPtr = std::move(nsPtr)](int nsIdx) {
+				[&ser, &nsPtr](int nsIdx) {
 					const uint32_t stateToken = ser.GetVarUInt();
 					const int version = ser.GetVarUInt();
 					TagsMatcher newTm;

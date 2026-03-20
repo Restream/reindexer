@@ -3,6 +3,12 @@
 
 namespace reindexer {
 
+// Minimal relevant length of the stemmer's term
+constexpr int kMinStemRelevantLen = 3;
+// Max length of the stemming result, which will be skipped
+constexpr int kMaxStemSkipLen = 1;
+constexpr bool kVariantsWithDifLength = (kMinStemRelevantLen - kMaxStemSkipLen) > 2;
+
 template <typename IdCont>
 class [[nodiscard]] Selector {
 public:
@@ -29,6 +35,7 @@ private:
 		FtDslOpts opts;
 		float proc;		 // Rank
 		int charsCount;	 // UTF-8 characters count
+		float boostUsed = 1.0;
 	};
 
 	struct [[nodiscard]] FtBoundVariantEntry : public FtVariantEntry {
@@ -49,7 +56,7 @@ private:
 			useMaxLettPermDist_ = maxLettPermDist.second;
 		}
 		size_t Process(const std::wstring& pattern, const h_vector<std::wstring, 8>& variantsForTypos, const DataHolder<IdCont>& holder,
-					   ft::TermResults<IdCont>& res, ft::FoundWordsProcsType& wordsProcs);
+					   ft::TermResults<IdCont>& res, ft::FoundWordsProcsType& wordsProcs, const TermsBoostMapT& termsBoost);
 
 	private:
 		bool checkMaxTyposDist(const WordTypo& found, const TyposVec& current);
@@ -71,8 +78,13 @@ private:
 							   const FtMergeStatuses::Statuses& mergeStatuses, std::vector<ft::TermResults<IdCont>>& rawResults,
 							   h_vector<std::optional<ft::FoundWordsProcsType>, 4>& termsWordsProcs);
 
-	void applyStemmers(const std::string& pattern, int proc, const FtDslOpts& termOpts, bool keepSuffForStemmedVars,
-					   std::vector<FtVariantEntry>& variants, h_vector<FtBoundVariantEntry, 4>* lowRelVariants, std::string& buffer);
+	float getTermBoost(const std::string& term) {
+		auto it = holder_.cfg_->termsBoost.find(term);
+		return it == holder_.cfg_->termsBoost.end() ? 1.0f : it->second;
+	}
+
+	float applyStemmers(const std::string& pattern, int proc, const FtDslOpts& termOpts, bool keepSuffForStemmedVars,
+						std::vector<FtVariantEntry>& variants, h_vector<FtBoundVariantEntry, 4>* lowRelVariants, std::string& buffer);
 
 	void prepareVariants(const FtDSLEntry& term, int baseRelevancy, unsigned termIdx, std::vector<FtVariantEntry>& variants,
 						 h_vector<FtBoundVariantEntry, 4>* lowRelVariants, std::vector<MultiWord>* synonyms,

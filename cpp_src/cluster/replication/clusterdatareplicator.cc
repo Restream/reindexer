@@ -1,4 +1,5 @@
 #include "clusterdatareplicator.h"
+#include <unordered_set>
 #include "core/reindexer_impl/reindexerimpl.h"
 #include "core/system_ns_names.h"
 #include "tools/randomgenerator.h"

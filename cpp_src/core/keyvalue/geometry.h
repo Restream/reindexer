@@ -88,8 +88,12 @@ inline bool operator==(const Rectangle& lhs, const Rectangle& rhs) noexcept {
 inline bool operator!=(const Rectangle& lhs, const Rectangle& rhs) noexcept { return !(lhs == rhs); }
 
 inline bool DWithin(const Rectangle& r, Point p, double distance) noexcept {
-	return DWithin(Point{r.Left(), r.Bottom()}, p, distance) && DWithin(Point{r.Left(), r.Top()}, p, distance) &&
-		   DWithin(Point{r.Right(), r.Bottom()}, p, distance) && DWithin(Point{r.Right(), r.Top()}, p, distance);
+	try {
+		return DWithin(Point{r.Left(), r.Bottom()}, p, distance) && DWithin(Point{r.Left(), r.Top()}, p, distance) &&
+			   DWithin(Point{r.Right(), r.Bottom()}, p, distance) && DWithin(Point{r.Right(), r.Top()}, p, distance);
+	} catch (std::exception&) {
+		return false;
+	}
 }
 
 inline Rectangle boundRect(Point p) noexcept { return {p.X(), p.X(), p.Y(), p.Y()}; }

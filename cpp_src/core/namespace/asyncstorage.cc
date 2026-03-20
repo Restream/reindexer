@@ -22,6 +22,7 @@ AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLock& storag
 	}
 	storage_ = o.storage_;
 	path_ = o.path_;
+	withProxy_.store(o.withProxy_.load());
 	curUpdatesChunck_ = createUpdatesCollection();
 	updateStatusCache();
 	// Do not copying lastFlushError_ and reopenTs_, because copied storage does not performs actual writes

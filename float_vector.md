@@ -5,6 +5,7 @@
   * [IVF options](#ivf-options)
   * [Embedding configuration](#embedding-configuration)
   * [Embedding cache configuration](#embedding-cache-configuration)
+  * [Quantization (HNSW)](#quantization-configuration-for-hnsw-index)
 - [Float vector fields in selection results](#float-vector-fields-in-selection-results)
 - [KNN search](#knn-search)
 - [KNN search with auto-embedding](#knn-search-with-auto-embedding)
@@ -278,6 +279,105 @@ Or you can update one parameter
 ```SQL
 update #config set caches[0].max_cache_items = 4 where type='embedders'
 ```
+
+### Quantization Configuration for HNSW Index
+
+The HNSW index supports vector quantization. Quantization helps reduce the memory footprint of the index (by approximately 75%) and lowers the computational cost of search. At the moment, only **[8-bit scalar quantization](https://www.elastic.co/search-labs/blog/scalar-quantization-101)** is supported.
+
+Quantization is configured via the `quantization_config` object in the index definition under the `config` field and is currently available **only for HNSW indexes**.
+
+#### Configuration Example
+
+```json
+{
+  "indexes": [
+    {
+      "name": "some_hnsw_index",
+      ///...
+      "config": {
+        "dimension": 1024,
+        "metric": "cosine",
+        ///...
+        "quantization_config": {
+          "quantization_type": "scalar_quantization_8_bit",
+          "quantile": 0.99,
+          "sample_size": 30000,
+          "quantization_threshold": 150000
+        },
+        "embedding": {
+          ///...
+        }
+      }
+    }
+  ]
+}
+```
+
+#### `quantization_config` Fields
+
+| Field | Type | Default Value | Description |
+|---|---|---:|---|
+| `quantization_type` | `string` | — | Quantization type. Currently, only the `scalar_quantization_8_bit` value is supported, which corresponds to 8-bit scalar quantization. If the `quantization_config` object is absent from the index configuration, quantization is disabled |
+| `quantile` | `number` | computed automatically | Quantile used to determine the clipping range of vector components before quantization. Allowed values range from `0.95` to `1.0`. The default value is computed automatically based on the dimensionality of vectors in the index. It is recommended to change this parameter only if the distribution of vector component values is known and additional search quality tuning is required, for example to achieve the expected `recall` |
+| `sample_size` | `integer` | `20000` | Number of vectors sampled from the index to build a sample used for estimating the quantization range. Minimum and maximum component values are computed on this sample with `quantile` taken into account, after which the effective quantization range is determined |
+| `quantization_threshold` | `integer` | `100000` | Minimum number of vectors in the index required to trigger background quantization |
+
+### Default Behavior
+
+To enable quantization, it is enough to specify only `quantization_type` (tag `reindex:"quantization=sq8"` in the Go connector):
+
+- JSON
+
+```json
+{
+  "quantization_config": {
+    "quantization_type": "scalar_quantization_8_bit"
+  }
+}
+```
+- Go
+
+```go
+type Item struct {
+	Id      int           `reindex:"id,,pk"`
+	VecHnsw [1024]float32 `reindex:"hnsw_idx,hnsw,m=16,ef_construction=200,metric=inner_product,multithreading=1,start_size=1000,quantization=sq8"`
+}
+```
+
+All other parameters will use their default values:
+
+- `quantile` — computed automatically;
+- `sample_size` — `20000`;
+- `quantization_threshold` — `100000`.
+
+### Updating and Disabling Quantization
+
+The user can update the parameters of an existing quantization config (`quantile`, `sample_size`, `quantization_threshold`), but only until the index has been quantized:
+
+```go
+err := DB.UpdateIndex(ns, reindexer.IndexDef{
+  Name:      hnswIndexName,
+  IndexType: "hnsw",
+  FieldType: "float_vector",
+  ///...
+  Config: reindexer.FloatVectorIndexOpts{
+    ///...
+    QuantizationConfig: &bindings.QuantizationConfig{
+      Type:       "scalar_quantization_8_bit",
+      Quantile:   0.987,
+      SampleSize: 200000,
+      Threshold:  1000000,
+    },
+  },
+})
+```
+
+Otherwise, an error will be returned, and the new configuration can only be applied after resetting the old one.
+
+The absence of `quantization_config` is interpreted as index operation without quantization.  
+To disable quantization, the index must be updated by removing the `quantization_config` object from its configuration.
+
+If quantization has already been performed for this index, removing this section is treated as resetting the quantization configuration and reloading the original `float` vector values.
 
 ## Float vector fields in selection results
 By default, float vector fields are excluded from the results of all queries to namespaces containing vector indexes.

@@ -12,6 +12,7 @@ constexpr double kTimerPeriod = 0.1;
 
 void RPCQrWatcher::Register(net::ev::dynamic_loop& loop, LoggerWrapper logger) {
 	timer_.set(loop);
+	// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 	timer_.set([this, logger = std::move(logger)](net::ev::timer&, int) {
 		thread_local static auto lastCbCallTime = steady_clock_w::now_coarse();
 		constexpr auto secCount = std::chrono::duration_cast<std::chrono::seconds>(kTimeIncrementPeriod).count();

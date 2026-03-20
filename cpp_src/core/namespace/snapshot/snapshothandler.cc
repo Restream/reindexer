@@ -13,6 +13,9 @@ namespace reindexer {
 Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 	LocalQueryResults walQr;
 	const auto from = opts.from;
+	PayloadChecksum datahash;
+	datahash.hashV1 = ns_.repl_.dataHash.hashV1;
+	datahash.hashV2 = ns_.repl_.dataHash.hashV2 ? *ns_.repl_.dataHash.hashV2 : 0;
 	try {
 		if (!from.IsCompatibleByNsVersion(ExtendedLsn(ns_.repl_.nsVersion, ns_.wal_.LastLSN()))) {
 			throw Error(errOutdatedWAL, "Requested LSN is not compatible by NS version ({}). Current namespace has {}", from.NsVersion(),
@@ -25,7 +28,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		selCtx.contextCollectingMode = true;
 		WALSelecter selecter(&ns_, false);
 		selecter(walQr, selCtx, true);
-		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, ns_.itemsCount(),
+		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), datahash, ns_.itemsCount(),
 						ns_.repl_.clusterStatus, std::move(walQr));
 	} catch (Error& err) {
 		if (err.code() != errOutdatedWAL) {
@@ -34,7 +37,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		logFmt(LogInfo, "[repl:{}]:{} Creating RAW (force sync) snapshot. Reason: {}", ns_.name_, ns_.wal_.GetServer(), err.what());
 		const auto minLsn = ns_.wal_.LSNByOffset(opts.maxWalDepthOnForceSync);
 		if (minLsn.isEmpty()) {
-			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.repl_.dataHash, ns_.itemsCount(), ns_.repl_.clusterStatus);
+			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, datahash, ns_.itemsCount(), ns_.repl_.clusterStatus);
 		}
 		{
 			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn)).SelectAllFields();
@@ -58,7 +61,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 			selecter(fullQr, selCtx, true);
 		}
 
-		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, ns_.itemsCount(),
+		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), datahash, ns_.itemsCount(),
 						ns_.repl_.clusterStatus, std::move(walQr), std::move(fullQr));
 	}
 }
@@ -98,15 +101,15 @@ void SnapshotHandler::applyShallowRecord(lsn_t lsn, WALRecType type, const Packe
 		case WalSetSchema:
 		case WalUpdateQuery:
 			// NOLINTNEXTLINE (bugprone-unused-return-value)
-			ns_.wal_.Add(type, prec, lsn);
+			std::ignore = ns_.wal_.Add(type, prec, lsn);
 			return;
 		case WalShallowItem:
 			// NOLINTNEXTLINE (bugprone-unused-return-value)
-			ns_.wal_.Add(WALRecord(WalItemUpdate, WALRecord(prec).id, chCtx.tx), lsn);
+			std::ignore = ns_.wal_.Add(WALRecord(WalItemUpdate, WALRecord(prec).id, chCtx.tx), lsn);
 			return;
 		case WalItemUpdate:
 			// NOLINTNEXTLINE (bugprone-unused-return-value)
-			ns_.wal_.Add(WALRecord(WalEmpty, WALRecord(prec).id, chCtx.tx), lsn);
+			std::ignore = ns_.wal_.Add(WALRecord(WalEmpty, WALRecord(prec).id, chCtx.tx), lsn);
 			return;
 		case WalReplState:
 			return;
@@ -251,7 +254,7 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 			break;
 		case WalEmpty:
 			// NOLINTNEXTLINE (bugprone-unused-return-value)
-			ns_.wal_.Add(WALRecord(WalEmpty), lsn);
+			std::ignore = ns_.wal_.Add(WALRecord(WalEmpty), lsn);
 			break;
 		case WalReplState:
 			break;

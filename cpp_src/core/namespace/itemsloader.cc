@@ -1,6 +1,7 @@
 #include "itemsloader.h"
 #include "core/id_type.h"
 #include "core/index/float_vector/float_vector_index.h"
+#include "core/storage/storage_prefixes.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -55,9 +56,6 @@ void ItemsLoader::prepareANNData() {
 			ns_.name_, std::chrono::nanoseconds(ns_.lastUpdateTimeNano()), pkField, ns_.storage_,
 			[this](std::string_view name) { return ns_.getIndexByName(name); },
 			[this](size_t field) { return ns_.getIndexDefinition(field); });
-	} else if (!annIndexes.empty()) {
-		assertrx_dbg(false);  // Do not expect this error in test scenarios
-		logFmt(LogError, "[{}] PK field does not exist. Unable to use ANN storage cache", ns_.name_);
 	}
 }
 
@@ -78,9 +76,6 @@ void ItemsLoader::reading() {
 		 dbIter->Next()) {
 		std::string_view dataSlice = dbIter->Value();
 		if (dataSlice.size() > 0) {
-			if (!ns_.pkFields().size()) {
-				throw Error(errLogic, "Can't load data storage of '{}' - there are no PK fields in ns", ns_.name_);
-			}
 			if (dataSlice.size() < sizeof(int64_t)) {
 				lastErr = Error(errParseBin, "Not enough data in data slice");
 				logFmt(LogTrace, "Error load item to '{}' from storage: '{}'", ns_.name_, lastErr.what());
@@ -145,14 +140,12 @@ void ItemsLoader::reading() {
 
 				auto& vectors = vectorsData_[idx.field];
 				Variant vecVar = item.impl.GetField(idx.field);
-				const size_t vecSizeBytes = idx.dims * sizeof(float);
-				auto cur = vectors.emplace_back(std::make_unique<uint8_t[]>(vecSizeBytes)).get();
+				auto& cur = vectors.emplace_back();
 				if (vecVar.Type().Is<KeyValueType::FloatVector>()) {
-					ConstFloatVectorView vec = ConstFloatVectorView(vecVar);
-					if (!vec.Dimension().IsZero()) {
+					if (ConstFloatVectorView vec(vecVar); !vec.Dimension().IsZero()) {
 						assertrx(vec.Dimension() == FloatVectorDimension(idx.dims));
-						std::memcpy(cur, vec.Data(), vecSizeBytes);
-						tmp[0] = Variant{FloatVectorView{std::span<float>{reinterpret_cast<float*>(cur), idx.dims}}};
+						cur = FloatVector(vec);
+						tmp[0] = Variant{cur.View()};
 						item.impl.GetPayload().Set(idx.field, tmp);
 					}
 				} else {
@@ -237,7 +230,7 @@ void ItemsLoader::insertion() {
 			for (unsigned i = 0; i < items.size(); ++i) {
 				auto& plData = ns_.items_[i + startId];
 				plData.SetLSN(items[i].impl.Value().GetLSN());
-				ns_.repl_.dataHash ^= ns_.calculateItemHash(IdType::FromNumber(i + startId));
+				ns_.repl_.dataHash ^= ns_.calculateItemChecksum(IdType::FromNumber(i + startId));
 				ns_.itemsDataSize_ += plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
 			}
 			if (compositeIndexesSize) {
@@ -256,6 +249,8 @@ void ItemsLoader::loadCachedANNIndexes() {
 	ns_.annStorageCacheState_.Clear();
 
 	auto pkIdx = ns_.getPkIdx().first;
+	assertrx_throw(pkIdx);
+
 	const RdxContext dummyCtx;
 
 	std::vector<unsigned> indexesWithError;
@@ -270,26 +265,19 @@ void ItemsLoader::loadCachedANNIndexes() {
 		auto vectorsDataIt = vectorsData_.find(cachedIndex->field);
 		assertrx(vectorsDataIt != vectorsData_.end());
 		auto& vectorsData = vectorsDataIt->second;
-		auto res = idxPtr->LoadIndexCache(
-			cachedIndex->data, IsComposite(pkIdx->Type()),
-			[&](const VariantArray& keys, void* targetVec) {
-				auto res = pkIdx->SelectKey(keys, CondEq, 0, Index::SelectContext{}, dummyCtx).Front();
-				if (!res[0].ids_.empty()) {
-					const IdType id = res[0].ids_[0];
-					std::memcpy(targetVec, vectorsData[id.ToNumber()].get(), vecSizeBytes);
-					return id;
-				} else {
-					throw Error(errLogic, "Requested PK does not exist");
-				}
-			},
-			cachedIndex->version);
+		auto res = idxPtr->LoadIndexCache(cachedIndex->data, IsComposite(pkIdx->Type()),
+										  FloatVectorIndexRawDataInserter{vectorsData, pkIdx, vecSizeBytes}, LoadWithQuantizer_True,
+										  cachedIndex->version);
 		if (!res.ok()) {
 			assertrx_dbg(false);  // Do not expect this error in test scenarios
 			logFmt(LogError, "[{}] Unable to restore ANN index '{}' from storage cache: {}", ns_.name_, cachedIndex->name, res.what());
 			indexesWithError.emplace_back(cachedIndex->field);
 			continue;
 		}
-		vectorsData = std::vector<std::unique_ptr<uint8_t[]>>();
+		if (idxPtr->IsQuantized() && !ns_.storage_.WithProxy()) {
+			ns_.storage_.WithProxy(true);
+		}
+		vectorsData = std::vector<FloatVector>();
 		ns_.annStorageCacheState_.Update(idxPtr->Name(), cachedIndex->lastUpdate);
 
 		// Strip restored vectors
@@ -326,7 +314,6 @@ void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& inde
 		auto vectorsDataIt = vectorsData_.find(field);
 		assertrx(vectorsDataIt != vectorsData_.end());
 		auto& vectorsData = vectorsDataIt->second;
-		const auto dims = idxPtr->Opts().FloatVector().Dimension();
 
 		for (size_t itemID = 0; itemID < ns_.items_.size(); ++itemID) {
 			auto& pv = ns_.items_[itemID];
@@ -335,15 +322,14 @@ void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& inde
 			}
 			Payload pl(ns_.payloadType_, pv);
 			krefs.resize(0);
-			auto& vecPtr = vectorsData[itemID];
-			std::span<float> vec{reinterpret_cast<float*>(vecPtr.get()), dims};
-			skrefs[0] = Variant{ConstFloatVectorView{vec}};
+			auto& vec = vectorsData[itemID];
+			skrefs[0] = Variant{vec.View()};
 			bool needClearCache{false};
 			idxPtr->Upsert(krefs, skrefs, IdType::FromNumber(itemID), needClearCache);
 			pl.Set(field, krefs);
-			vecPtr.reset();
+			vec = FloatVector{};
 		}
-		vectorsData = std::vector<std::unique_ptr<uint8_t[]>>();
+		vectorsData = std::vector<FloatVector>();
 	}
 }
 

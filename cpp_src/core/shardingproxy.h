@@ -1,6 +1,7 @@
 #pragma once
 
 #include "clusterproxy.h"
+#include "core/activity/activity_container.h"
 
 namespace reindexer {
 

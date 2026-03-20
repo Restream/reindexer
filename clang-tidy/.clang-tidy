@@ -2,6 +2,7 @@ Checks: 'clang-diagnostic-*,
          clang-analyzer-*,
          performance-*,
          bugprone-*,
+         rx-*,
          -bugprone-branch-clone,
          -bugprone-easily-swappable-parameters,
          -bugprone-macro-parentheses,
@@ -13,6 +14,9 @@ Checks: 'clang-diagnostic-*,
          -bugprone-parent-virtual-call,
          -bugprone-integer-division,
          -bugprone-inc-dec-in-conditions,
+         -bugprone-std-namespace-modification,
+         -bugprone-throwing-static-initialization,
+         -bugprone-derived-method-shadowing-base-method,
          -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
          -performance-no-int-to-ptr,
          -performance-enum-size,
@@ -21,6 +25,8 @@ Checks: 'clang-diagnostic-*,
 # clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling - too many unnecessary warning in vendored code
 # performance-no-int-to-ptr - consider how to fix this
 # bugprone-macro-parentheses - consider fixing
+# bugprone-std-namespace-modification - we have a lot of std::hash/operator>>. Consider fixing
+# bugprone-throwing-static-initialization - seems irrelevant
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*/cpp_src/([^v]|v[^e]|ve[^n]|ven[^d]|vend[^o]|vendo[^r]).*$'
 FormatStyle:     none

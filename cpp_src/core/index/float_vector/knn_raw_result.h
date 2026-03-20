@@ -26,11 +26,17 @@ public:
 
 class [[nodiscard]] IvfKnnRawResult {
 public:
-	IvfKnnRawResult(size_t k) : dists_(k), ids_(k) {}
+	explicit IvfKnnRawResult() = default;
+	explicit IvfKnnRawResult(size_t k) : dists_(k), ids_(k) {}
 	const h_vector<float, 128>& Dists() const& noexcept { return dists_; }
 	h_vector<float, 128>& Dists() & noexcept { return dists_; }
 	h_vector<faiss::idx_t, 128>& Ids() & noexcept { return ids_; }
 	const h_vector<faiss::idx_t, 128>& Ids() const& noexcept { return ids_; }
+
+	void Reserve(size_t k) {
+		dists_.reserve(k);
+		ids_.reserve(k);
+	}
 
 	auto Ids() const&& = delete;
 	auto Dists() const&& = delete;

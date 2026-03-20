@@ -22,8 +22,9 @@ public:
 		assertrx_dbg(Dimension().Value() == data.size());
 		assertrx_dbg(Dimension().IsZero() || Data() == data.data());
 	}
-	FloatVectorDimension Dimension() const {
-		return FloatVectorDimension(payload_ >> kDimensionOffset);	// NOLINT(*EnumCastOutOfRange)
+	FloatVectorDimension Dimension() const noexcept {
+		static_assert(sizeof(FloatVectorDimension::value_type) * 8 == sizeof(payload_) * 8 - kDimensionOffset);
+		return FloatVectorDimension(FloatVectorDimension::value_type(payload_ >> kDimensionOffset));  // NOLINT(*EnumCastOutOfRange)
 	}
 	T* Data() const noexcept {
 		assertrx(!IsEmpty() && !IsStripped());
@@ -112,6 +113,11 @@ public:
 		std::memcpy(newData, data.data(), dimension_.Value() * sizeof(T));
 		static_cast<Base&>(*this) = Base{newData};
 	}
+
+	explicit FloatVectorImpl(Base&& ptr, std::constructible_from<FloatVectorDimension> auto dimension) noexcept(
+		noexcept(FloatVectorDimension(dimension)))
+		: Base{std::move(ptr)}, dimension_(std::move(dimension)) {}
+
 	explicit FloatVectorImpl(ConstFloatVectorView other) : FloatVectorImpl{std::span<const T>{other.Data(), other.Dimension().Value()}} {}
 	template <typename U>
 	explicit FloatVectorImpl(const FloatVectorImpl<U>& other) : dimension_{other.Dimension()} {

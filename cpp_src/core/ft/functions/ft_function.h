@@ -1,7 +1,7 @@
 #pragma once
 #include "core/ft/ftctx.h"
+#include "core/function/function_parser.h"
 #include "core/namespace/ns_ft_func_interface.h"
-#include "core/query/expression/function_parser.h"
 #include "core/query/query.h"
 #include "debugrank.h"
 #include "highlight.h"
@@ -20,8 +20,8 @@ public:
 	bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>&) noexcept { return false; }
 };
 
-struct [[nodiscard]] FtFuncStruct : public ParsedQueryFunction {
-	explicit FtFuncStruct(ParsedQueryFunction&&);
+struct [[nodiscard]] FtFuncStruct : public functions::ParsedFunction {
+	explicit FtFuncStruct(functions::ParsedFunction&&);
 
 	FtFuncVariant func{std::in_place_type<FuncNone>};
 	FtCtx::Ptr ctx;

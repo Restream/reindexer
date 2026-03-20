@@ -180,7 +180,7 @@ int QueryPreprocessor::calculateMaxIterations(size_t from, size_t to, int maxMax
 				[&](const QueryEntry& qe) {
 					if (qe.IndexNo() >= 0) {
 						Index& index = *ns_.indexes_[qe.IndexNo()];
-						if (IsFullText(index.Type()) || isStore(index.Type())) {
+						if (IsFullText(index.Type()) || IsStore(index.Type())) {
 							return maxMaxIters;
 						}
 
@@ -638,6 +638,13 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 			auto& qe = Get<QueryEntry>(i);
 			qe.ConvertValuesToFieldType();
 			const int idxNo = qe.IndexNo();
+			if (qe.FieldType().Is<KeyValueType::String>()) {
+				for (auto& v : qe.Values()) {
+					if (v.DoHold()) {
+						compositeStringsContainer_.emplace_back(v);
+					}
+				}
+			}
 			values.emplace_back(idxNo, std::move(qe).Values());
 		}
 		{
@@ -710,6 +717,9 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 						SetQueryField(fieldData, ns_);
 					}
 					checkStrictMode(fieldData);
+				}
+				if (qe.HasComparisonField()) {
+					SetQueryField(qe.ComparisonField(), ns_);
 				}
 			},
 			[this](KnnQueryEntry& qe) {
@@ -1623,6 +1633,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 	if (ctx.preSelect.Mode() == JoinPreSelectMode::InjectionRejected || qr.Count() > size_t(limit)) {
 		return {CondAny, {}};
 	}
+
 	assertrx_throw(qr.aggregationResults.size() == 1);
 	auto& aggRes = qr.aggregationResults[0];
 
@@ -2033,7 +2044,8 @@ class [[nodiscard]] JoinOnExplainDisabled {
 		OnEntryExplain() noexcept = default;
 
 		RX_ALWAYS_INLINE void InitialCondition(const QueryJoinEntry&, const JoinedSelector&) const noexcept {}
-		RX_ALWAYS_INLINE void Succeed(const std::function<size_t(WrSerializer&)>&) const noexcept {}
+		template <typename CallBackT>
+		RX_ALWAYS_INLINE void Succeed(CallBackT&&) const noexcept {}
 		RX_ALWAYS_INLINE void Skipped(std::string_view) const noexcept {}
 		RX_ALWAYS_INLINE void OrChainPart(bool) const noexcept {}
 		RX_ALWAYS_INLINE void ExplainSelect(std::string&&, AggType) const noexcept {}
@@ -2043,7 +2055,8 @@ public:
 	RX_ALWAYS_INLINE static JoinOnExplainDisabled AppendJoinOnExplain(OnConditionInjections&) noexcept { return {}; }
 
 	RX_ALWAYS_INLINE void Init(const JoinQueryEntry&, const JoinedSelectors&, bool) const noexcept {}
-	RX_ALWAYS_INLINE void Succeed(const std::function<void(WrSerializer&)>&) const noexcept {}
+	template <typename CallBackT>
+	RX_ALWAYS_INLINE void Succeed(CallBackT&&) const noexcept {}
 	RX_ALWAYS_INLINE void Skipped(std::string_view) const noexcept {}
 	RX_ALWAYS_INLINE void ReserveOnEntries(size_t) const noexcept {}
 	RX_ALWAYS_INLINE OnEntryExplain AppendOnEntryExplain() const noexcept { return {}; }
@@ -2064,7 +2077,8 @@ class [[nodiscard]] JoinOnExplainEnabled {
 		void InitialCondition(const QueryJoinEntry& joinEntry, const JoinedSelector& joinedSelector) {
 			explainEntry_.initCond = joinEntry.DumpCondition(joinedSelector);
 		}
-		void Succeed(const std::function<size_t(WrSerializer&)>& setInjectedCond) {
+		template <typename CallBackT>
+		void Succeed(CallBackT&& setInjectedCond) {
 			explainEntry_.succeed = true;
 			explainEntry_.reason = "";
 			WrSerializer wser;
@@ -2109,7 +2123,8 @@ public:
 		explainJoinOn_.joinCond = jqe.DumpOnCondition(js);
 		explainJoinOn_.type = byValues ? JoinOnInjection::ByValue : JoinOnInjection::Select;
 	}
-	void Succeed(const std::function<void(WrSerializer&)>& setInjectedCond) {
+	template <typename CallbackT>
+	void Succeed(CallbackT&& setInjectedCond) {
 		explainJoinOn_.succeed = true;
 		setInjectedCond(explainJoinOn_.injectedCond);
 	}

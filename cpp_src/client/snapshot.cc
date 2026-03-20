@@ -87,7 +87,7 @@ Snapshot::Impl::Impl(net::cproto::CoroClientConnection* conn, int id, int64_t co
 	assert(conn_);
 	const auto sessionTs = conn_->LoginTs();
 	if (sessionTs.has_value()) {
-		sessionTs_ = sessionTs.value();
+		sessionTs_ = *sessionTs;
 	}
 }
 

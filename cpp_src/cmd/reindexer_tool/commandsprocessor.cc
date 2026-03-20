@@ -464,7 +464,7 @@ Error CommandsProcessor<DBInterface>::Connect(const std::string& dsn, const Conn
 
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::setDumpMode(const std::string& mode) {
-	dumpMode_ = DumpOptions::ModeFromStr(mode);
+	dumpMode_.store(DumpOptions::ModeFromStr(mode));
 }
 
 static void printError(const Error& err) { std::cerr << fmt::format("ERROR: {}\n", err.what()); }
@@ -531,7 +531,7 @@ Error CommandsProcessor<DBInterface>::process(const std::string& command) noexce
 			if (!err.ok()) {
 				return Error(errParams, "Unable to parse dump mode from cmd: {}", err.what());
 			}
-			dumpMode_ = opts.mode;
+			dumpMode_.store(opts.mode);
 		}
 		if (token.substr(0, 2) == "--") {
 			return errOK;

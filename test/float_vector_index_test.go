@@ -1,12 +1,14 @@
 package reindexer
 
 import (
+	"encoding/json"
 	"log"
 	"math/rand"
 	"reflect"
 	"testing"
 
 	"github.com/restream/reindexer/v5"
+	"github.com/restream/reindexer/v5/bindings"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,6 +40,10 @@ type TestItemMultiIndexVec struct {
 	Vec3 []float32 `json:"vec3"`
 	Vec4 []float32 `json:"vec4"`
 }
+type TestQuantizationConfigNs struct {
+	ID       int          `reindex:"id,,pk"`
+	HnswIdxQ [768]float32 `json:"hnsw_q" reindex:"hnsw_q,hnsw,m=16,ef_construction=200,start_size=100,metric=cosine,quantization=sq8"`
+}
 
 const (
 	kMultiIndexVecDimension = kTestFloatVectorDimension / 5
@@ -45,11 +51,12 @@ const (
 )
 
 const (
-	testHnswNsSTNs      = "test_items_hnsw_st"
-	testHnswNsMTNs      = "test_items_hnsw_mt"
-	testVecBfNs         = "test_items_vec_bf"
-	testIvfNs           = "test_items_ivf"
-	testMultiIndexVecNs = "test_items_multi_index_vec"
+	testHnswNsSTNs           = "test_items_hnsw_st"
+	testHnswNsMTNs           = "test_items_hnsw_mt"
+	testVecBfNs              = "test_items_vec_bf"
+	testIvfNs                = "test_items_ivf"
+	testMultiIndexVecNs      = "test_items_multi_index_vec"
+	testQuantizationConfigNs = "test_quantization_config"
 )
 
 func init() {
@@ -58,6 +65,7 @@ func init() {
 	tnamespaces[testVecBfNs] = TestItemVecBF{}
 	tnamespaces[testIvfNs] = TestItemIvf{}
 	tnamespaces[testMultiIndexVecNs] = TestItemMultiIndexVec{}
+	tnamespaces[testQuantizationConfigNs] = TestQuantizationConfigNs{}
 }
 
 func newTestItemHnswST(id int, pkgsCount int) interface{} {
@@ -414,4 +422,57 @@ func TestAddKnnIndex(t *testing.T) {
 	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
 	removeSomeItems(t, ns, newTestItemMultiIndexVec, currentSize)
+}
+
+func TestChangeQuantizationConfig(t *testing.T) {
+	const ns = testQuantizationConfigNs
+
+	description, err := DB.DescribeNamespace(ns)
+	require.NoError(t, err)
+
+	configBin, err := json.Marshal(description.Indexes[1].Config.(map[string]interface{})["quantization_config"])
+	require.NoError(t, err)
+
+	var curConfig bindings.QuantizationConfig
+	err = json.Unmarshal(configBin, &curConfig)
+	require.NoError(t, err)
+
+	require.Equal(t, curConfig, bindings.QuantizationConfig{
+		Type:       "scalar_quantization_8_bit",
+		SampleSize: 20000,
+		Threshold:  100000,
+	})
+
+	newConfig := bindings.QuantizationConfig{
+		Type:       "scalar_quantization_8_bit",
+		Quantile:   0.987,
+		SampleSize: 12340,
+		Threshold:  43210,
+	}
+
+	err = DB.UpdateIndex(ns, reindexer.IndexDef{
+		Name:      description.Indexes[1].Name,
+		JSONPaths: []string{description.Indexes[1].Name},
+		IndexType: "hnsw",
+		FieldType: "float_vector",
+		Config: reindexer.FloatVectorIndexOpts{
+			Metric:             "cosine",
+			Dimension:          1024,
+			M:                  20,
+			EfConstruction:     150,
+			StartSize:          1000,
+			QuantizationConfig: &newConfig,
+		},
+	})
+	require.NoError(t, err)
+
+	description, err = DB.DescribeNamespace(ns)
+	require.NoError(t, err)
+
+	configBin, err = json.Marshal(description.Indexes[1].Config.(map[string]interface{})["quantization_config"])
+
+	err = json.Unmarshal(configBin, &curConfig)
+	require.NoError(t, err)
+
+	require.Equal(t, newConfig, curConfig)
 }

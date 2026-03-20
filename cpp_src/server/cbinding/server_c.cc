@@ -7,7 +7,7 @@
 using namespace reindexer_server;
 using reindexer::Error;
 
-static const Error err_not_init(errNotValid, "Reindexer server has not initialized");
+static const Error err_not_init(errNotValid, "Reindexer server is not initialized");
 static const Error err_unexpected_exception{errAssert, "Unexpected exception in Reindexer Server C-binding"};
 static reindexer::WrapersMap wrappersMap_;
 

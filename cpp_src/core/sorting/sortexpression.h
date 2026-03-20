@@ -243,7 +243,7 @@ private:
 	bool isAbs_ = false;
 };
 
-class SortExpression
+class [[nodiscard]] SortExpression
 	: public ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExprFuncs::Value, SortExprFuncs::Index,
 							SortExprFuncs::JoinedIndex, SortExprFuncs::Rank, SortExprFuncs::RankNamed, SortExprFuncs::Rrf,
 							SortExprFuncs::SortHash, SortExprFuncs::DistanceFromPoint, SortExprFuncs::DistanceJoinedIndexFromPoint,
@@ -315,7 +315,7 @@ private:
 };
 std::ostream& operator<<(std::ostream&, const SortExpression&);
 
-class ProxiedSortExpression
+class [[nodiscard]] ProxiedSortExpression
 	: public ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExprFuncs::Value, SortExprFuncs::ProxiedField,
 							SortExprFuncs::Rank, SortExprFuncs::RankNamed, SortExprFuncs::SortHash, SortExprFuncs::ProxiedDistanceFromPoint,
 							SortExprFuncs::ProxiedDistanceBetweenFields> {

@@ -494,9 +494,10 @@ TEST_P(FTSelectFunctionsApi, RankAsField) {
 
 #if !defined(REINDEX_WITH_TSAN)
 TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
-	const unsigned int kItemCount = 140'000;
+	const unsigned int kItemCount = 70'000;	 // This values has to be larger than 65k
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.mergeLimit = 1'000'000;
+	ftCfg.optimization = reindexer::FtFastConfig::Optimization::CPU;
 	ftCfg.maxAreasInDoc = 100000;
 	Init(ftCfg);
 	const std::vector<std::string_view> words = {"zero",	 "one",		"two",	   "three",		"four",		"five",	   "six",

@@ -5,6 +5,7 @@
 #include "core/queryresults/queryresults.h"
 #include "core/type_consts.h"
 #include "estl/lock.h"
+#include "estl/mutex.h"
 #include "loggerwrapper.h"
 #include "net/ev/ev.h"
 #include "tools/assertrx.h"

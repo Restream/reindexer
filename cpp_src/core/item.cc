@@ -235,7 +235,7 @@ Item::FieldRef Item::operator[](int field) const {
 	return FieldRef(field, impl_, notSet);
 }
 
-Item::FieldRef Item::FieldRefByNameOrJsonPath(std::string_view name, ItemImpl& impl) noexcept {
+Item::FieldRef Item::FieldRefByNameOrJsonPath(std::string_view name, ItemImpl& impl) {
 	int field = 0;
 
 	if (!impl.Type().FieldByName(name, field)) {

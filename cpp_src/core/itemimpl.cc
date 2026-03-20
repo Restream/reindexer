@@ -13,13 +13,12 @@
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufdecoder.h"
 #include "core/embedding/embedder.h"
-#include "core/id_type.h"
-#include "core/index/float_vector/float_vector_index.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
-#include "core/query/expression/function_parser.h"
+#include "core/namespace/float_vector_data_access.h"
 #include "core/rdxcontext.h"
 #include "estl/gift_str.h"
+#include "function/function_parser.h"
 
 namespace reindexer {
 
@@ -249,7 +248,9 @@ void ItemImpl::Clear() {
 	tagsMatcher_ = kEmptyTagsMatcher;
 	precepts_.clear();
 	cjson_ = {};
-	holder_.reset();
+	if (holder_) {
+		holder_->clear<true>();
+	}
 	floatVectorsHolder_ = FloatVectorsHolderVector();
 	msgPackDecoder_.reset();
 	sourceData_.reset();
@@ -285,10 +286,13 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 
 	Payload pl = GetPayload();
 	pl.Reset();
-	if (!holder_) {
-		holder_ = std::make_unique<ItemImplRawData::HolderT>();
+	ItemImplRawData::HolderT holder;
+	if (ser_.Cap() < ((rdser.Len() / 4) * 3)) {
+		// Usuallay result ser_'s size will be less, than rdser's size, because of index references. We can't calculate actual proportions,
+		// so just expecting x0.75
+		ser_.Reserve(rdser.Len());
 	}
-	CJsonDecoder decoder(pl, rdser, ser_, tagsMatcher_, *holder_, floatVectorsHolder_, objectScalarIndexes_);
+	CJsonDecoder decoder(pl, rdser, ser_, tagsMatcher_, holder, floatVectorsHolder_, objectScalarIndexes_);
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
@@ -304,8 +308,14 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 			decoder.Decode(CJsonDecoder::DefaultFilter(fieldsFilter_));
 		}
 	}
+	if (!holder.empty()) {
+		if (!holder_) {
+			holder_ = std::make_unique<ItemImplRawData::HolderT>();
+		}
+		*holder_ = std::move(holder);
+	}
 
-	if (!rdser.Eof()) {
+	if (!rdser.Eof()) [[unlikely]] {
 		throw Error(errParseJson, "Internal error - left unparsed data {}", rdser.Pos());
 	}
 
@@ -451,25 +461,30 @@ void ItemImpl::BuildTupleIfEmpty() {
 	}
 }
 
-void ItemImpl::CopyIndexedVectorsValuesFrom(IdType id, const FloatVectorsIndexes& indexes) {
-	if (!id.IsValid()) {
-		throw Error(errLogic, "Unable to set vector values with incorrect ID: {}", id);
-	}
-	if (indexes.empty()) {
+void ItemImpl::CopyIndexedVectorsValuesFrom(FloatVectorsGetter&& floatVectorsGettter) {
+	auto data = floatVectorsGettter(payloadType_, tagsMatcher_);
+	if (data.empty()) {
 		return;
 	}
+
 	payloadValue_.Clone();
 	floatVectorsHolder_.resize(0);
 	Payload pl(payloadType_, payloadValue_);
+	floatVectorsHolder_.reserve(data.size());
 	if (IsUnsafe()) {
-		for (auto& indexP : indexes) {
-			pl.Set(indexP.ptField, Variant{indexP.ptr->GetFloatVectorView(id)});
+		for (auto& [idxData, fvVariant] : data) {
+			if (fvVariant.DoHold()) {
+				if (floatVectorsHolder_.Add(FloatVector{std::move(fvVariant)})) {
+					pl.Set(idxData.ptField, Variant{floatVectorsHolder_.Back()});
+				}
+			} else {
+				pl.Set(idxData.ptField, std::move(fvVariant));
+			}
 		}
 	} else {
-		floatVectorsHolder_.reserve(indexes.size());
-		for (auto& indexP : indexes) {
-			if (floatVectorsHolder_.Add(indexP.ptr->GetFloatVector(id))) {
-				pl.Set(indexP.ptField, Variant{floatVectorsHolder_.Back()});
+		for (auto& [idxData, fv] : data) {
+			if (floatVectorsHolder_.Add(FloatVector{std::move(fv)})) {
+				pl.Set(idxData.ptField, Variant{floatVectorsHolder_.Back()});
 			}
 		}
 	}
@@ -515,7 +530,7 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 	bool needReturn = false;
 	size_t i = 0;
 	while (i < precepts_.size()) {
-		auto sqlFunc = QueryFunctionParser::Parse(precepts_[i]);
+		auto sqlFunc = functions::FunctionParser::Parse(precepts_[i]);
 		if (sqlFunc.field == "*" && sqlFunc.funcName == "skip_embedding") {
 			precepts_.erase(precepts_.begin() + i);
 			needReturn = true;

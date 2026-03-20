@@ -129,7 +129,7 @@ nodes:
 	defer itMaster.Close()
 	testDataMaster, errfm := itMaster.FetchAll()
 	assert.NoError(t, errfm)
-	helpers.WaitForSyncWithMaster(t, rxMaster, rxSlave)
+	helpers.WaitForSyncWithLeader(t, rxMaster, rxSlave)
 	// Check follower's data
 	qSlave := rxSlave.Query(nsName)
 	itSlave := qSlave.Exec()
@@ -205,8 +205,8 @@ func TestMasterSlaveSlaveNoStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, cnt)
 
-	helpers.WaitForSyncWithMaster(t, rxSrv[0], rxSrv[1])
-	helpers.WaitForSyncWithMaster(t, rxSrv[1], rxSrv[2])
+	helpers.WaitForSyncWithLeader(t, rxSrv[0], rxSrv[1])
+	helpers.WaitForSyncWithLeader(t, rxSrv[1], rxSrv[2])
 
 	item, err := rxSrv[2].Query(recomNamespaces[0]).Exec().FetchOne()
 	require.NoError(t, err)
@@ -268,8 +268,8 @@ func TestCycleLeaders(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, cnt)
 
-	helpers.WaitForSyncWithMaster(t, rxSrv[0], rxSrv[1])
-	helpers.WaitForSyncWithMaster(t, rxSrv[1], rxSrv[0])
+	helpers.WaitForSyncWithLeader(t, rxSrv[0], rxSrv[1])
+	helpers.WaitForSyncWithLeader(t, rxSrv[1], rxSrv[0])
 
 	item, err := rxSrv[0].Query(recomNamespaces[0]).Exec().FetchOne()
 	require.NoError(t, err)

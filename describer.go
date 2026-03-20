@@ -171,8 +171,10 @@ type NamespaceMemStat struct {
 		NSVersion LsnT `json:"ns_version"`
 		// Number of storage's master <-> slave switches
 		IncarnationCounter int64 `json:"incarnation_counter"`
-		// Hashsum of all records in namespace
+		// Hashsum of all records in namespace (deprecated)
 		DataHash uint64 `json:"data_hash"`
+		// Checksum of all records in namespace
+		Checksum uint64 `json:"checksum"`
 		// Data count
 		DataCount int `json:"data_count"`
 		// Write Ahead Log (WAL) records count
@@ -219,6 +221,8 @@ type NamespaceMemStat struct {
 		TrackedUpdatesOverflow int64 `json:"tracked_updates_overflow"`
 		// Shows whether KNN/fulltext indexing structure is fully built. If this field is nil, index does not require any specific build steps
 		IsBuilt *bool `json:"is_built,omitempty"`
+		// Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
+		IsQuantized *bool `json:"is_quantized,omitempty"`
 		// Upsert embedder status
 		UpsertEmbedder *EmbedderInfo `json:"upsert_embedder,omitempty"`
 		// Query embedder status
@@ -475,15 +479,15 @@ type ReplicationStat struct {
 	// Replication type: either "async" or "cluster"
 	Type string `json:"type"`
 	// Global WAL-syncs' stats
-	WALSync ReplicationSyncStat `json:"wal_sync"`
+	WALSync ReplicationSyncStat `json:"wal_syncs"`
 	// Global force-syncs' stats
-	ForceSync ReplicationSyncStat `json:"force_sync"`
+	ForceSync ReplicationSyncStat `json:"force_syncs"`
 	// Leader's initial sync statistic (for "cluster" type only)
 	InitialSyncStat struct {
 		// WAL-syncs' stats
-		WALSync ReplicationSyncStat `json:"wal_sync"`
+		WALSync ReplicationSyncStat `json:"wal_syncs"`
 		// Force-syncs' stats
-		ForceSync ReplicationSyncStat `json:"force_sync"`
+		ForceSync ReplicationSyncStat `json:"force_syncs"`
 		// Total initial sync time
 		TotalTimeUs int64 `json:"total_time_us"`
 	} `json:"initial_sync"`

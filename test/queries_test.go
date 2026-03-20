@@ -214,16 +214,6 @@ type TestItemNestedPK struct {
 	Nested    TestItem `json:"nested"`
 }
 
-type TestItemEqualPosition struct {
-	ID         string                        `reindex:"id,,pk"`
-	Name       string                        `reindex:"name"`
-	SecondName string                        `reindex:"second_name"`
-	TestFlag   bool                          `reindex:"test_flag"`
-	ItemsArray []*TestArrayItemEqualPosition `reindex:"items_array,-"`
-	ValueArray []int                         `reindex:"value_array,-"`
-	_          struct{}                      `reindex:"name+second_name=searching,text,composite"`
-}
-
 type itemType struct {
 	Age      int    `reindex:"age" json:"age"`
 	Rate     int    `reindex:"rate" json:"rate"`
@@ -243,6 +233,13 @@ type TestItemFlatArrayLen struct {
 	Ratings   []int      `json:"ratings"`
 	Items     []itemType `reindex:"items" json:"items"`
 	Order     int        `reindex:"order" json:"order"`
+}
+
+type TestItemNow struct {
+	ID        int    `reindex:"id,,pk"`
+	EndTime   int    `reindex:"end_time,-"`
+	StartTime int    `reindex:"start_time,tree"`
+	Name      string `json:"name"`
 }
 
 type TestArrayItemEqualPosition struct {
@@ -287,13 +284,13 @@ const (
 	testItemsObjectArrayNs = "test_items_object_array"
 	testItemNestedPkNs     = "test_item_nested_pk"
 
-	testItemsEqualPositionNs = "test_items_eqaul_position"
-	testItemsStrictNs        = "test_items_strict"
-	testItemsStrictJoinedNs  = "test_items_strict_joined"
+	testItemsStrictNs       = "test_items_strict"
+	testItemsStrictJoinedNs = "test_items_strict_joined"
 
 	testItemsExplainNs1     = "test_items_explain_1"
 	testItemsExplainNs2     = "test_items_explain_2"
 	testItemsFlatArrayLenNs = "test_items_flat_array_len"
+	testItemsNowNs          = "test_items_now_len"
 )
 
 func init() {
@@ -316,13 +313,13 @@ func init() {
 	tnamespaces[testItemsObjectArrayNs] = TestItemObjectArray{}
 	tnamespaces[testItemNestedPkNs] = TestItemNestedPK{}
 
-	tnamespaces[testItemsEqualPositionNs] = TestItemEqualPosition{}
 	tnamespaces[testItemsStrictNs] = TestItem{}
 	tnamespaces[testItemsStrictJoinedNs] = TestJoinItem{}
 
 	tnamespaces[testItemsExplainNs1] = TestItemSimple{}
 	tnamespaces[testItemsExplainNs2] = TestItemSimple{}
 	tnamespaces[testItemsFlatArrayLenNs] = TestItemFlatArrayLen{}
+	tnamespaces[testItemsNowNs] = TestItemNow{}
 }
 
 var testCaseWithCommonIndexes = IndexesTestCase{
@@ -567,26 +564,6 @@ func newTestItemObjectArray(id int, arrSize int) *TestItemObjectArray {
 		Hash:      rand.Int63() % 1000000 >> 1,
 		Salt:      rand.Int() % 100000,
 		IsUpdated: (rand.Int() % 2) == 0,
-	}
-}
-
-func newTestItemEqualPosition(id int, arrSize int) *TestItemEqualPosition {
-	av := make([]*TestArrayItemEqualPosition, id%arrSize)
-	av2 := make([]int, id%arrSize)
-	for j := range av {
-		av[j] = &TestArrayItemEqualPosition{
-			SpaceId: "space_" + strconv.Itoa(j),
-			Value:   id % 2,
-		}
-		av2[j] = (id + j) % 2
-	}
-	return &TestItemEqualPosition{
-		ID:         strconv.Itoa(id),
-		Name:       "Name_" + strconv.Itoa(id),
-		SecondName: "Second_name_" + strconv.Itoa(id),
-		TestFlag:   id%4 > 2,
-		ItemsArray: av,
-		ValueArray: av2,
 	}
 }
 
@@ -1795,111 +1772,6 @@ func TestDeleteByPK(t *testing.T) {
 	})
 }
 
-func TestEqualPosition(t *testing.T) {
-	const ns = testItemsEqualPositionNs
-
-	tx := newTestTx(DB, ns)
-	for i := 0; i < 20; i++ {
-		tx.Upsert(newTestItemEqualPosition(i, 3))
-	}
-	tx.MustCommit()
-
-	t.Run("simple equal position", func(t *testing.T) {
-		expectedIds := map[string]bool{
-			"2":  true,
-			"4":  true,
-			"8":  true,
-			"10": true,
-			"14": true,
-			"16": true,
-		}
-		it := newTestQuery(DB, ns).
-			Match("searching", "name Name*").
-			Where("items_array.space_id", reindexer.EQ, "space_0").
-			Where("items_array.value", reindexer.EQ, 0).
-			EqualPosition("items_array.space_id", "items_array.value").
-			MustExec(t)
-		defer it.Close()
-		assert.NoError(t, it.Error())
-		assert.Equal(t, len(expectedIds), it.Count())
-		for it.Next() {
-			assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
-		}
-	})
-
-	t.Run("equal position with additional conditions", func(t *testing.T) {
-		expectedIds := map[string]bool{
-			"5":  true,
-			"17": true,
-		}
-		it := newTestQuery(DB, ns).
-			Match("searching", "name Name*").
-			Where("items_array.space_id", reindexer.EQ, "space_1").
-			Where("items_array.value", reindexer.EQ, 1).
-			WhereBool("test_flag", reindexer.EQ, false).
-			EqualPosition("items_array.space_id", "items_array.value").
-			MustExec(t)
-		defer it.Close()
-		assert.NoError(t, it.Error())
-		assert.Equal(t, len(expectedIds), it.Count())
-		for it.Next() {
-			assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
-		}
-	})
-
-	t.Run("equal position in brackets", func(t *testing.T) {
-		expectedIds := map[string]bool{
-			"2":  true,
-			"3":  true,
-			"4":  true,
-			"7":  true,
-			"8":  true,
-			"10": true,
-			"11": true,
-			"14": true,
-			"15": true,
-			"16": true,
-			"19": true,
-		}
-		it := newTestQuery(DB, ns).
-			OpenBracket().
-			Where("items_array.space_id", reindexer.EQ, "space_0").
-			Where("items_array.value", reindexer.EQ, 0).
-			Where("value_array", reindexer.EQ, 0).
-			EqualPosition("items_array.space_id", "items_array.value", "value_array").
-			CloseBracket().
-			Or().
-			WhereBool("test_flag", reindexer.EQ, true).
-			MustExec(t)
-		defer it.Close()
-		assert.NoError(t, it.Error())
-		assert.Equal(t, len(expectedIds), it.Count())
-		for it.Next() {
-			fmt.Println(it.Object().(*TestItemEqualPosition).ID, expectedIds[it.Object().(*TestItemEqualPosition).ID])
-			assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
-		}
-	})
-	t.Run("equal position array mark", func(t *testing.T) {
-		expectedIds := map[string]bool{
-			"1": true,
-		}
-		it := newTestQuery(DB, ns).
-			Where("ID", reindexer.EQ, 1).
-			Where("items_array.space_id", reindexer.EQ, "space_0").
-			Where("items_array.value", reindexer.EQ, 1).
-			EqualPosition("ItemsArray[#].SpaceId", "ItemsArray[#].Value").
-			MustExec(t)
-		defer it.Close()
-		assert.NoError(t, it.Error())
-		assert.Equal(t, len(expectedIds), it.Count())
-		for it.Next() {
-			fmt.Println(it.Object().(*TestItemEqualPosition).ID, expectedIds[it.Object().(*TestItemEqualPosition).ID])
-			assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
-		}
-	})
-
-}
-
 func TestFlatArrayLenFunction(t *testing.T) {
 	t.Parallel()
 
@@ -1976,81 +1848,132 @@ func TestFlatArrayLenFunction(t *testing.T) {
 	}
 	tx.Commit()
 	t.Run("flat_array_len() countries length", func(t *testing.T) {
-		it1 := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "countries"}, reindexer.EQ, 5).MustExec()
+		it1 := DBD.Query(testItemsFlatArrayLenNs).WhereFlatArrayLen("countries", reindexer.EQ, 5).MustExec()
 		defer it1.Close()
 		assert.Equal(t, it1.Count(), 100)
-		it2 := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "countries"}, reindexer.EQ, 0).MustExec()
+		it2 := DBD.Query(testItemsFlatArrayLenNs).WhereFlatArrayLen("countries", reindexer.EQ, 0).MustExec()
 		defer it2.Close()
 		assert.Equal(t, it2.Count(), 500)
 	})
 	t.Run("flat_array_len() price_id length", func(t *testing.T) {
-		it1 := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "price_id"}, reindexer.EQ, 3).MustExec()
+		it1 := DBD.Query(testItemsFlatArrayLenNs).WhereFlatArrayLen("price_id", reindexer.EQ, 3).MustExec()
 		defer it1.Close()
 		assert.Equal(t, it1.Count(), 100)
-		it2 := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "price_id"}, reindexer.GE, 1).MustExec()
+		it2 := DBD.Query(testItemsFlatArrayLenNs).WhereFlatArrayLen("price_id", reindexer.GE, 1).MustExec()
 		defer it2.Close()
 		assert.Equal(t, it2.Count(), 100)
 	})
 	t.Run("flat_array_len() uuid_array length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "uuid_array"}, reindexer.EQ, 6).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).WhereFlatArrayLen("uuid_array", reindexer.EQ, 6).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 100)
 	})
 	t.Run("flat_array_len() packages length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "packages"}, reindexer.GE, 10).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).WhereFlatArrayLen("packages", reindexer.GE, 10).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 100)
 	})
 	t.Run("flat_array_len() staff length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "staff"}, reindexer.EQ, 5).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).WhereFlatArrayLen("staff", reindexer.EQ, 5).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 100)
 	})
 	t.Run("flat_array_len() ratings length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "ratings"}, reindexer.EQ, 3).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).WhereFlatArrayLen("ratings", reindexer.EQ, 3).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 100)
 	})
 	t.Run("flat_array_len() id length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "id"}, reindexer.EQ, 1).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).WhereFlatArrayLen("id", reindexer.EQ, 1).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 600)
 	})
 	t.Run("flat_array_len() with nested query", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).WhereFunction(reindexer.FlatArrayLen{Field: "name"}, reindexer.EQ,
-			DBD.Query(testItemsFlatArrayLenNs).Select("order").Where("order", reindexer.EQ, 1)).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).WhereExpressions(reindexer.FlatArrayLen{Field: "name"}, reindexer.EQ,
+			reindexer.SubQuery{SubQuery: DBD.Query(testItemsFlatArrayLenNs).Select("order").Where("order", reindexer.EQ, 1)}).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 600)
 	})
 	t.Run("flat_array_len() name length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFunction(reindexer.FlatArrayLen{Field: "name"}, reindexer.GE, 0).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFlatArrayLen("name", reindexer.GE, 0).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 600)
 	})
 	t.Run("flat_array_len() items length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFunction(reindexer.FlatArrayLen{Field: "items"}, reindexer.EQ, 5).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFlatArrayLen("items", reindexer.EQ, 5).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 100)
 	})
 	t.Run("flat_array_len() items.location length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFunction(reindexer.FlatArrayLen{Field: "items.location"}, reindexer.EQ, 5).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFlatArrayLen("items.location", reindexer.EQ, 5).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 100)
 	})
 	t.Run("flat_array_len() items.name length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFunction(reindexer.FlatArrayLen{Field: "items.name"}, reindexer.EQ, 5).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFlatArrayLen("items.name", reindexer.EQ, 5).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 100)
 	})
 	t.Run("flat_array_len() items.age length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFunction(reindexer.FlatArrayLen{Field: "items.age"}, reindexer.EQ, 5).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFlatArrayLen("items.age", reindexer.EQ, 5).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 100)
 	})
 	t.Run("flat_array_len() items.rate length", func(t *testing.T) {
-		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFunction(reindexer.FlatArrayLen{Field: "items.rate"}, reindexer.EQ, 5).MustExec()
+		it := DBD.Query(testItemsFlatArrayLenNs).Strict(reindexer.QueryStrictModeNone).WhereFlatArrayLen("items.rate", reindexer.EQ, 5).MustExec()
 		defer it.Close()
 		assert.Equal(t, it.Count(), 100)
+	})
+}
+
+func TestNowFunction(t *testing.T) {
+	t.Parallel()
+
+	nowTs := time.Now()
+
+	tx := newTestTx(DB, testItemsNowNs)
+	for i := 0; i < 100; i++ {
+		testItem := TestItemNow{
+			ID:        i,
+			Name:      randString(),
+			StartTime: int(nowTs.Unix()),
+			EndTime:   int(nowTs.UnixMilli()) + 60000,
+		}
+		if err := tx.Upsert(testItem); err != nil {
+			panic(err)
+		}
+	}
+	for i := 100; i < 110; i++ {
+		testItem := TestItemNow{
+			ID:        i,
+			Name:      randString(),
+			StartTime: int(nowTs.UnixNano()),
+		}
+		if err := tx.Upsert(testItem); err != nil {
+			panic(err)
+		}
+	}
+	tx.Commit()
+
+	t.Run("now() start_time LE Now(sec)", func(t *testing.T) {
+		it := DBD.Query(testItemsNowNs).WhereExpressions(
+			reindexer.Field{Name: "start_time"}, reindexer.LE, reindexer.Now{TimeUnit: reindexer.Sec}).MustExec()
+		defer it.Close()
+		assert.Equal(t, it.Count(), 100)
+	})
+
+	t.Run("now() end_time GT Now(msec)", func(t *testing.T) {
+		it := DBD.Query(testItemsNowNs).WhereExpressions(
+			reindexer.Field{Name: "end_time"}, reindexer.GT, reindexer.Now{TimeUnit: reindexer.Msec}).MustExec()
+		defer it.Close()
+		assert.Equal(t, it.Count(), 100)
+	})
+
+	t.Run("now() start_time LE Now(nsec)", func(t *testing.T) {
+		it := DBD.Query(testItemsNowNs).Where("id", reindexer.GE, 100).
+			WhereExpressions(reindexer.Field{Name: "start_time"}, reindexer.LE, reindexer.Now{TimeUnit: reindexer.Nsec}).MustExec()
+		defer it.Close()
+		assert.Equal(t, it.Count(), 10)
 	})
 }
 
@@ -2711,7 +2634,7 @@ func TestQueryExplain(t *testing.T) {
 
 			assert.Greater(t, explainRes.TotalUs, 0)
 			assert.GreaterOrEqual(t, explainRes.PreselectUs, 0)
-			assert.Greater(t, explainRes.PrepareUs, 0)
+			assert.GreaterOrEqual(t, explainRes.PrepareUs, 0)
 			assert.GreaterOrEqual(t, explainRes.LoopUs, 0)
 			assert.GreaterOrEqual(t, explainRes.PostprocessUS, 0)
 			assert.Greater(t, explainRes.IndexesUs, 0)

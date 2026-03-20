@@ -138,7 +138,7 @@ void BaseEncoder<Builder>::encodeJoinedItems(Builder& builder, IEncoderDatasourc
 	}
 }
 namespace {
-struct DummyBuilder {};
+struct [[nodiscard]] DummyBuilder {};
 
 template <typename Builder, typename... Args>
 auto GetArrayBuilder(Builder&& builder, Args&&... args) {

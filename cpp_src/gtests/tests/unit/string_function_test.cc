@@ -64,7 +64,7 @@ static bool isLikePattern(const std::string& str, const std::string& pattern) {
 
 TEST(StringFunctions, IsLikeSqlPattern) {
 	using namespace std::string_view_literals;
-	srand(std::time(0));
+	srand(reindexer::system_clock_w::now_count());
 	struct {  // NOLINT (*performance.Padding) Padding does not matter here
 		int caseNumber;
 		std::string_view str;

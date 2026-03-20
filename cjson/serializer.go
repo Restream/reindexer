@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"reflect"
 	"unsafe"
 
 	"sync"
@@ -115,6 +116,65 @@ func (s *Serializer) PutFloat32(v float32) *Serializer {
 func (s *Serializer) PutDouble(v float64) *Serializer {
 	s.writeIntBits(int64(math.Float64bits(v)), unsafe.Sizeof(v))
 	return s
+}
+
+func (s *Serializer) PutValue(v reflect.Value) error {
+	k := v.Kind()
+	if k == reflect.Ptr || k == reflect.Interface {
+		v = v.Elem()
+		k = v.Kind()
+	}
+	switch k {
+	case reflect.Bool:
+		s.PutVarCUInt(valueBool)
+		if v.Bool() {
+			s.PutVarUInt(1)
+		} else {
+			s.PutVarUInt(0)
+		}
+	case reflect.Uint:
+		if unsafe.Sizeof(int(0)) == unsafe.Sizeof(int64(0)) {
+			s.PutVarCUInt(valueInt64)
+		} else {
+			s.PutVarCUInt(valueInt)
+		}
+
+		s.PutVarInt(int64(v.Uint()))
+	case reflect.Int:
+		if unsafe.Sizeof(int(0)) == unsafe.Sizeof(int64(0)) {
+			s.PutVarCUInt(valueInt64)
+		} else {
+			s.PutVarCUInt(valueInt)
+		}
+		s.PutVarInt(v.Int())
+	case reflect.Int16, reflect.Int32, reflect.Int8:
+		s.PutVarCUInt(valueInt)
+		s.PutVarInt(v.Int())
+	case reflect.Uint8, reflect.Uint16, reflect.Uint32:
+		s.PutVarCUInt(valueInt)
+		s.PutVarInt(int64(v.Uint()))
+	case reflect.Int64:
+		s.PutVarCUInt(valueInt64)
+		s.PutVarInt(v.Int())
+	case reflect.Uint64:
+		s.PutVarCUInt(valueInt64)
+		s.PutVarInt(int64(v.Uint()))
+	case reflect.String:
+		s.PutVarCUInt(valueString)
+		s.PutVString(v.String())
+	case reflect.Float32, reflect.Float64:
+		s.PutVarCUInt(valueDouble)
+		s.PutDouble(v.Float())
+	case reflect.Slice, reflect.Array:
+		s.PutVarCUInt(valueTuple)
+		s.PutVarCUInt(v.Len())
+		for i := 0; i < v.Len(); i++ {
+			s.PutValue(v.Index(i))
+		}
+	default:
+		panic(fmt.Errorf("rq: Invalid reflection type %s", v.Kind().String()))
+	}
+	return nil
 }
 
 func (s *Serializer) writeIntBits(v int64, sz uintptr) {

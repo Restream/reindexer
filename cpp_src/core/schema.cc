@@ -248,7 +248,7 @@ Error PrefixTree::buildProtobufSchema(ProtobufSchemaBuilder& builder, const Pref
 			}
 			builder.Field(name, fieldNumber, node->props);
 		}
-	} catch (const Error& err) {
+	} catch (std::exception& err) {
 		return err;
 	}
 	return Error();

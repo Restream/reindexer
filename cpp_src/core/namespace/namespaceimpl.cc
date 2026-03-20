@@ -1,14 +1,14 @@
 #include "core/namespace/namespaceimpl.h"
 
-#include <algorithm>
-#include <ctime>
-#include <memory>
-#include <string_view>
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/uuid_recoders.h"
 #include "core/embedding/embedder.h"
 #include "core/embedding/embedderscache.h"
+#include "core/formatters/checksum_fmt.h"
+#include "core/function/function_invoker.h"
+#include "core/function/function_parser.h"
+#include "core/function/precomputed_values.h"
 #include "core/id_type.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/index/index.h"
@@ -16,13 +16,14 @@
 #include "core/index/ttlindex.h"
 #include "core/itemimpl.h"
 #include "core/itemmodifier.h"
+#include "core/keyvalue/float_vectors_keeper.h"
 #include "core/namespace/migrations/pk_migration_service.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/payload/payloadiface.h"
-#include "core/query/expression/function_executor.h"
-#include "core/query/expression/function_parser.h"
+#include "core/query/functions_optimizations.h"
 #include "core/querystat.h"
 #include "core/rdxcontext.h"
+#include "core/storage/storage_prefixes.h"
 #include "debug/crashqueryreporter.h"
 #include "estl/gift_str.h"
 #include "itemsloader.h"
@@ -44,15 +45,10 @@ using std::chrono::nanoseconds;
 using namespace std::string_view_literals;
 
 namespace {
-constexpr std::string_view kStorageIndexesPrefix{"indexes"sv};
-constexpr std::string_view kStorageSchemaPrefix{"schema"sv};
-constexpr std::string_view kStorageReplStatePrefix{"repl"sv};
-constexpr std::string_view kStorageTagsPrefix{"tags"sv};
 
 constexpr std::string_view kPKIndexName{"#pk"sv};
 
 const std::string kTupleName{"-tuple"};
-const std::string kStorageMetaPrefix{"meta"};
 const std::string kFFFFFFFF{"\xFF\xFF\xFF\xFF"};
 
 // TODO disabled due to #1771
@@ -352,6 +348,18 @@ void NamespaceImpl::OnConfigUpdated(const DBConfigProvider& configProvider, cons
 	repl_.token = std::move(asyncReplToken);
 }
 
+Variant NamespaceImpl::getFloatVector(IdType rowId, const FloatVectorIndex& index, const PayloadType* pt, const TagsMatcher* tm,
+									  const FieldsSet* oldPkFields) const {
+	const FieldsSet* pk = oldPkFields ? oldPkFields : pkFields();
+	assertrx_throw(pk);
+	return FloatVectorExtractor(storage_, index, pk ? *pk : FieldsSet{}, pt ? *pt : payloadType_, tm ? *tm : tagsMatcher_)
+		.GetVector(rowId, items_[rowId.ToNumber()]);
+}
+
+FloatVectorsGetter NamespaceImpl::floatVectorsGetterFn(IdType rowId, const FieldsSet* oldPkFields) const noexcept {
+	return FloatVectorsGetter(*this, rowId, oldPkFields);
+}
+
 template <NeedRollBack needRollBack>
 class [[nodiscard]] NamespaceImpl::RollBack_recreateCompositeIndexes final : private RollBackBase {
 public:
@@ -360,16 +368,11 @@ public:
 	}
 	~RollBack_recreateCompositeIndexes() override {
 		RollBack();
+#if RX_WITH_STDLIB_DEBUG
 		for (auto& idx : indexes_) {
-			try {
-				if (idx->HoldsStrings()) {
-					ns_.strHolder_->Add(std::move(idx));
-				}
-				// NOLINTBEGIN(bugprone-empty-catch)
-			} catch (...) {
-			}
-			// NOLINTEND(bugprone-empty-catch)
+			assertrx_dbg(!idx->HoldsStrings());
 		}
+#endif	// RX_WITH_STDLIB_DEBUG
 	}
 	void RollBack() noexcept {
 		if (IsDisabled()) {
@@ -450,7 +453,8 @@ NamespaceImpl::RollBack_recreateCompositeIndexes<needRollBack> NamespaceImpl::re
 template <NeedRollBack needRollBack>
 class [[nodiscard]] NamespaceImpl::RollBack_updateItems final : private RollBackBase {
 public:
-	RollBack_updateItems(NamespaceImpl& ns, RollBack_recreateCompositeIndexes<needRollBack>&& rb, uint64_t dh, size_t ds) noexcept
+	RollBack_updateItems(NamespaceImpl& ns, RollBack_recreateCompositeIndexes<needRollBack>&& rb, ReplicationDataHash dh,
+						 size_t ds) noexcept
 		: ns_{ns}, rollbacker_recreateCompositeIndexes_{std::move(rb)}, dataHash_{dh}, itemsDataSize_{ds} {
 		items_.reserve(ns_.items_.size());
 	}
@@ -471,9 +475,9 @@ public:
 		if (tuple_) {
 			std::swap(ns_.indexes_[0], tuple_);
 		}
-		WrSerializer pk, data;
-		const auto pkFieldsSet = ns_.pkFields();
-		const auto vectorIndexes = ns_.getVectorIndexes();
+		WrSerializer pkBuf, itemBuf;
+		const auto* pk = ns_.pkFields();
+		assertrx(pk);
 		for (auto& [rowId, pv] : items_) {
 			ns_.items_[rowId] = std::move(pv);
 			if (storageWasRewritten_) {
@@ -482,7 +486,7 @@ public:
 				logFmt(LogInfo, "[{}] Rewriting storage on rollback", ns_.name_);
 				ItemImpl item(ns_.payloadType_, ns_.items_[rowId], ns_.tagsMatcher_);
 				item.Unsafe(true);
-				std::ignore = ns_.tryWriteItemIntoStorage(pkFieldsSet, item, IdType::FromNumber(rowId), vectorIndexes, pk, data);
+				std::ignore = ns_.tryWriteItemIntoStorage(*pk, item, IdType::FromNumber(rowId), pkBuf, itemBuf);
 			}
 		}
 		rollbacker_recreateCompositeIndexes_.RollBack();
@@ -505,7 +509,7 @@ private:
 	NamespaceImpl& ns_;
 	RollBack_recreateCompositeIndexes<needRollBack> rollbacker_recreateCompositeIndexes_;
 	std::vector<std::pair<size_t, PayloadValue>> items_;
-	uint64_t dataHash_{0};
+	ReplicationDataHash dataHash_;
 	size_t itemsDataSize_{0};
 	std::unique_ptr<Index> tuple_;
 	bool storageWasRewritten_{false};
@@ -527,15 +531,14 @@ public:
 	RollBack_updateItems& operator=(RollBack_updateItems&&) = delete;
 };
 
-Error NamespaceImpl::tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl& item, IdType rowId,
-											 const FloatVectorsIndexes& vectorIndexes, WrSerializer& pk, WrSerializer& data) noexcept {
+Error NamespaceImpl::tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl& item, IdType rowId, WrSerializer& pk,
+											 WrSerializer& data) noexcept {
 	if (item.payloadValue_.IsFree()) {
 		return Error{};
 	}
 	try {
 		if (storage_.IsValid()) {
-			item.CopyIndexedVectorsValuesFrom(rowId, vectorIndexes);
-
+			item.CopyIndexedVectorsValuesFrom(floatVectorsGetterFn(rowId));
 			auto pl = item.GetConstPayload();
 			pk.Reset();
 			data.Reset();
@@ -562,7 +565,9 @@ Error NamespaceImpl::tryWriteItemIntoStorage(const FieldsSet& pkFields, ItemImpl
 }
 
 template <NeedRollBack needRollBack, NamespaceImpl::FieldChangeType fieldChangeType>
-NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(const PayloadType& oldPlType, int changedField) {
+NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(const PayloadType& oldPlType,
+																			 const TagsMatcher& oldTagsMatcher,
+																			 const FieldsSet* oldPkFields, int changedField) {
 	logFmt(LogTrace, "Namespace::updateItems({}) changeType={}", name_, fieldChangeType == FieldChangeType::Add ? "Add" : "Delete");
 
 	assertrx(oldPlType->NumFields() + int(fieldChangeType) == payloadType_->NumFields());
@@ -589,13 +594,12 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		const auto& jsonPaths = fld.JsonPaths();
 		fld.Type().EvaluateOneOf(
 			[&](KeyValueType::Uuid) {
-				assertrx(jsonPaths.size() == 1);
-				const auto tags = tagsMatcher_.path2tag(jsonPaths[0]);
-				if (fld.IsArray()) {
-					recoder = std::make_unique<RecoderUuidToString<true>>(tags);
-				} else {
-					recoder = std::make_unique<RecoderUuidToString<false>>(tags);
+				std::vector<TagsPath> tagsPaths;
+				tagsPaths.reserve(jsonPaths.size());
+				for (auto& jp : jsonPaths) {
+					tagsPaths.emplace_back(tagsMatcher_.path2tag(jp));
 				}
+				recoder = std::make_unique<RecoderUuidToString>(std::move(tagsPaths));
 			},
 			Skip<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String,
 				 KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
@@ -622,7 +626,7 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 	VariantArray skrefsDel, skrefsUps;
 	ItemImpl newItem(payloadType_, tagsMatcher_);
 	newItem.Unsafe(true);
-	repl_.dataHash = 0;
+	repl_.dataHash.Set(PayloadChecksum());
 	itemsDataSize_ = 0;
 	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
 
@@ -634,14 +638,15 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		if (index.IsFloatVector()) {
 			rollbacker.MarkStorageRewrite();
 			needToRewriteStorageData = true;
+			if (!oldPkFields) {
+				throwCannotModifyNsWithoutPK();
+			}
 		}
 	}
 
-	WrSerializer pk, data;
-	const auto pkFieldsSet = pkFields();
+	WrSerializer pkBuf, itemBuf;
 	const auto vectorIndexesNew =
 		getVectorIndexes(payloadType_);	 // the indexes in the indexesNames_ set have already changed and do not match the indexes_ array.
-	const auto vectorIndexesOld = getVectorIndexes(oldPlType);
 	for (size_t rowId = 0; rowId < items_.size(); ++rowId) {
 		if (items_[rowId].IsFree()) {
 			continue;
@@ -649,9 +654,9 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		const IdType id = IdType::FromNumber(rowId);
 		PayloadValue& plCurr = items_[rowId];
 		Payload oldValue(oldPlType, plCurr);
-		ItemImpl oldItem(oldPlType, plCurr, tagsMatcher_);
+		ItemImpl oldItem(oldPlType, plCurr, oldTagsMatcher);
 		oldItem.Unsafe(true);
-		oldItem.CopyIndexedVectorsValuesFrom(id, vectorIndexesOld);
+		oldItem.CopyIndexedVectorsValuesFrom(floatVectorsGetterFn(id, oldPkFields));
 		if (recoder) {
 			recoder->Prepare(id);
 		}
@@ -702,8 +707,9 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 			if (needToRewriteStorageData) {
 				// We have to rewrite storage data in case, when have arrays with double values in storage,
 				// otherwise datahash won't match.
+				assertrx(oldPkFields);
 				newItem.payloadValue_.SetLSN(plNew.GetLSN());
-				std::ignore = tryWriteItemIntoStorage(pkFieldsSet, newItem, id, vectorIndexesNew, pk, data);
+				std::ignore = tryWriteItemIntoStorage(oldPkFields ? *oldPkFields : FieldsSet{}, newItem, id, pkBuf, itemBuf);
 			}
 		}
 
@@ -718,7 +724,7 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 
 		rollbacker.SaveItem(rowId, std::move(plCurr));
 		plCurr = std::move(plNew);
-		repl_.dataHash ^= calculateItemHash(id, (fieldChangeType == FieldChangeType::Delete) ? changedField : -1);
+		repl_.dataHash ^= calculateItemChecksum(id, (fieldChangeType == FieldChangeType::Delete) ? changedField : -1);
 		itemsDataSize_ += plCurr.GetCapacity() + sizeof(PayloadValue::dataHeader);
 	}
 
@@ -726,8 +732,8 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 	return rollbacker;
 }
 
-uint64_t NamespaceImpl::calculateItemHash(IdType rowId, int removedIdxId) const noexcept {
-	return ConstPayload{payloadType_, items_[rowId.ToNumber()]}.GetHash(
+PayloadChecksum NamespaceImpl::calculateItemChecksum(IdType rowId, int removedIdxId) const noexcept {
+	return ConstPayload{payloadType_, items_[rowId.ToNumber()]}.GetChecksum(
 		[this, rowId, removedIdxId](unsigned field, ConstFloatVectorView vec) noexcept -> uint64_t {
 			if (vec.IsStripped()) {
 				unsigned actualField = field;
@@ -796,12 +802,18 @@ void NamespaceImpl::UpdateIndex(const IndexDef& indexDef, const RdxContext& rdxC
 
 	auto wlck = dataWLock(rdxCtx);
 
-	const FieldsSet oldPk{pkFields()};
+	FieldsSet oldPk;
+	if (const FieldsSet* pk = pkFields(); pk) {
+		oldPk = *pk;
+	}
 
 	if (doUpdateIndex(indexDef, pendedRepl, ctx)) {
 		saveIndexesToStorage();
 		if (indexDef.Opts().IsPK()) {
-			migrations::PKMigrationService{*this}.MigrateFromOldToNewPK(oldPk, pkFields());
+			// oldPk correctness is verified earlier in verifyUpdateIndex()
+			if (const FieldsSet* pk = pkFields(); pk) {
+				migrations::PKMigrationService{*this}.MigrateFromOldToNewPK(oldPk, *pk);
+			}
 		}
 		replicate(std::move(pendedRepl), std::move(wlck), false, nullptr, ctx);
 	}
@@ -886,7 +898,8 @@ void NamespaceImpl::clearNamespaceCaches() {
 
 class [[nodiscard]] NamespaceImpl::RollBack_dropIndex final : private RollBackBase {
 public:
-	explicit RollBack_dropIndex(NamespaceImpl& ns, int fieldIdx) noexcept : ns_{ns}, fieldIdx_{fieldIdx} {}
+	explicit RollBack_dropIndex(NamespaceImpl& ns, int fieldIdx, std::string_view indexName) noexcept
+		: ns_{ns}, fieldIdx_{fieldIdx}, indexName_{indexName} {}
 	~RollBack_dropIndex() override { RollBack(); }
 	void RollBack() noexcept {
 		if (IsDisabled()) {
@@ -920,9 +933,10 @@ public:
 			// NOLINTEND(bugprone-empty-catch)
 		}
 		if (needUpdateIndexesNames_) {
-			for (auto& namePair : ns_.indexesNames_) {
-				if (namePair.second >= fieldIdx_) {
-					++namePair.second;
+			auto itIdx = ns_.indexesNames_.find(indexName_);
+			for (auto it = ns_.indexesNames_.begin(); it != ns_.indexesNames_.end(); ++it) {
+				if (it != itIdx && it->second >= fieldIdx_) {
+					it->second++;
 				}
 			}
 		}
@@ -986,6 +1000,7 @@ private:
 	NeedChangeTmVersion needChangeTmVersion_{NeedChangeTmVersion::No};
 	std::optional<PayloadType> oldPayloadType_;
 	int fieldIdx_;
+	std::string_view indexName_;
 	std::vector<std::pair<Index*, FieldsSet>> oldIndexesFieldsSets_;
 	std::optional<RollBack_updateItems<NeedRollBack::Yes>> rollbacker_updateItems_;
 };
@@ -1043,7 +1058,7 @@ void NamespaceImpl::dropIndex(const IndexDef& index, bool disableTmVersionInc) {
 		MakeScopeGuard([this] { indexesToComposites_.clear(); }, [this] { rebuildIndexesToCompositeMapping(); });
 
 	int fieldIdx = itIdxName->second;
-	RollBack_dropIndex rollBacker{*this, fieldIdx};
+	RollBack_dropIndex rollBacker{*this, fieldIdx, index.Name()};
 	std::unique_ptr<Index>& indexToRemove = indexes_[fieldIdx];
 	if (!IsComposite(indexToRemove->Type()) && indexToRemove->Opts().IsSparse()) {
 		--sparseIndexesCount_;
@@ -1058,6 +1073,11 @@ void NamespaceImpl::dropIndex(const IndexDef& index, bool disableTmVersionInc) {
 	}
 
 	updateFloatVectorsIndexesPositionsInCaseOfDrop(*indexToRemove, fieldIdx, rollBacker);
+
+	FieldsSet oldPkFields;
+	if (const FieldsSet* pk = pkFields(); pk) {
+		oldPkFields = *pk;
+	}
 
 	for (auto& namePair : indexesNames_) {
 		if (namePair.second > fieldIdx) {
@@ -1102,11 +1122,12 @@ void NamespaceImpl::dropIndex(const IndexDef& index, bool disableTmVersionInc) {
 				payloadType_.Drop(index.Name());
 				rollBacker.SetOldPayloadType(std::move(oldPlType));
 			}
+			auto oldTagsMatcher = tagsMatcher_;
 			tagsMatcher_.UpdatePayloadType(payloadType_, sparseIndexes,
 										   disableTmVersionInc ? NeedChangeTmVersion::No : NeedChangeTmVersion::Increment);
 			rollBacker.NeedResetPayloadTypeInTagsMatcher(disableTmVersionInc);
-			rollBacker.RollBacker_updateItems(
-				updateItems<NeedRollBack::Yes, FieldChangeType::Delete>(rollBacker.GetOldPayloadType(), fieldIdx));
+			rollBacker.RollBacker_updateItems(updateItems<NeedRollBack::Yes, FieldChangeType::Delete>(
+				rollBacker.GetOldPayloadType(), oldTagsMatcher, &oldPkFields, fieldIdx));
 		}
 	}
 
@@ -1251,9 +1272,76 @@ void NamespaceImpl::verifyUpsertEmbedder(std::string_view action, const IndexDef
 	verifyEmbeddingFields(embedding.value().upsertEmbedder.value().fields, indexDef.Name(), action);
 }
 
+void NamespaceImpl::verifyUpsertQuantizationConfigHNSWIndex(std::string_view action, const IndexDef& indexDef) const {
+	const auto& indexDefOpts = indexDef.Opts();
+	if (!indexDefOpts.IsFloatVector()) {
+		return;
+	}
+
+	const auto& config = indexDefOpts.FloatVector().QuantizationConfig();
+	if (!config) {
+		return;
+	}
+
+	if (indexDef.IndexType() != IndexType::IndexHnsw) {
+		throw Error(errParams,
+					"Cannot {} quantization config in index '{}' in namespace '{}'. Only the HNSW float vector index can have a "
+					"quantization config.",
+					action, indexDef.Name(), name_);
+	}
+
+	if (config->quantizationType != hnswlib::QuantizationType::ScalarQuantization8bit) {
+		throw Error(errParams, "Cannot {} quantization config in index '{}' in namespace '{}'. Unsupported quantization type - {}", action,
+					indexDef.Name(), name_, int(config->quantizationType));
+	}
+
+	if (config->sampleSize == 0) {
+		throw Error(errParams, "Cannot {} quantization config in index '{}' in namespace '{}'. The sampleSize value must be greater than 0",
+					action, indexDef.Name(), name_);
+	}
+
+	if (config->quantizationThreshold == 0) {
+		throw Error(errParams,
+					"Cannot {} quantization config in index '{}' in namespace '{}'. The quantizationThreshold value must be greater than 0",
+					action, indexDef.Name(), name_);
+	}
+}
+
+void NamespaceImpl::verifyUpdateQuantizationConfigHNSWIndex(const Index* curIndex, const IndexDef& newIndexDef) const {
+	const auto& curIndexDefOpts = curIndex->Opts();
+
+	if (curIndexDefOpts.IsFloatVector() != newIndexDef.Opts().IsFloatVector() && itemsCount() > 0) {
+		throw Error(errParams,
+					"Cannot update index '{}' in namespace '{}'. Can't convert float vector index to not float vector index and vice versa "
+					"in non-empty namespace",
+					curIndex->Name(), name_);
+	}
+
+	auto curFloatIndex = dynamic_cast<const FloatVectorIndex*>(curIndex);
+	if (!curFloatIndex) {
+		return;
+	}
+
+	if (const auto& curConfig = curIndexDefOpts.FloatVector().QuantizationConfig();
+		curConfig && curFloatIndex->Type() != IndexType::IndexHnsw) {
+		logFmt(LogWarning,
+			   "An incorrect float vector options were detected during update index '{}' in namespace '{}': the quantization config of "
+			   "an index with a type other than 'hnsw'",
+			   curFloatIndex->Name(), name_);
+	}
+
+	if (curFloatIndex->IsQuantized() && newIndexDef.Opts().FloatVector().QuantizationConfig()) {
+		throw Error(errParams,
+					"Cannot update quantization config in index '{}' in namespace '{}'. Index was quantized already. "
+					"To set a new quantization config, restore the original non-quantized index by resetting the current config, "
+					"then apply the new one.",
+					curFloatIndex->Name(), name_);
+	}
+}
+
 void NamespaceImpl::verifyUpsertIndex(std::string_view action, const IndexDef& indexDef) const {
 	const auto idxType = indexDef.IndexType();
-	if (!validateIndexName(indexDef.Name(), idxType)) [[unlikely]] {
+	if (!ValidateIndexName(indexDef.Name(), idxType)) [[unlikely]] {
 		throw Error(errParams,
 					"Cannot {} index '{}' in namespace '{}'. Index name contains invalid characters. Only alphas, digits, '+' (for "
 					"composite indexes only), '.', '_' and '-' are allowed",
@@ -1265,10 +1353,13 @@ void NamespaceImpl::verifyUpsertIndex(std::string_view action, const IndexDef& i
 			throw Error(errParams, "Cannot {} index '{}' in namespace '{}'. PK field can't be array", action, indexDef.Name(), name_);
 		} else if (indexDefOpts.IsSparse()) [[unlikely]] {
 			throw Error(errParams, "Cannot {} index '{}' in namespace '{}'. PK field can't be sparse", action, indexDef.Name(), name_);
-		} else if (isStore(idxType)) [[unlikely]] {
+		} else if (IsStore(idxType)) [[unlikely]] {
 			throw Error(errParams, "Cannot {} index '{}' in namespace '{}'. PK field can't have '-' type", action, indexDef.Name(), name_);
 		} else if (IsFullText(idxType)) [[unlikely]] {
 			throw Error(errParams, "Cannot {} index '{}' in namespace '{}'. PK field can't be fulltext index", action, indexDef.Name(),
+						name_);
+		} else if (IsGeospatial(idxType)) [[unlikely]] {
+			throw Error(errParams, "Cannot {} index '{}' in namespace '{}'. PK field can't be geospatial index", action, indexDef.Name(),
 						name_);
 		}
 	}
@@ -1303,6 +1394,8 @@ void NamespaceImpl::verifyUpsertIndex(std::string_view action, const IndexDef& i
 			throw Error(errParams, "Cannot {} index '{}' in namespace '{}'. The namespace does not have PK index", action, indexDef.Name(),
 						name_);
 		}
+
+		verifyUpsertQuantizationConfigHNSWIndex(action, indexDef);
 	}
 }
 
@@ -1360,6 +1453,8 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef& indexDef) {
 		// TODO remove this after #2220
 		throw Error(errParams, "Cannot update index '{}' in namespace '{}'. The namespace does not have PK index", indexDef.Name(), name_);
 	}
+
+	verifyUpdateQuantizationConfigHNSWIndex(oldIndex.get(), indexDef);
 }
 
 class [[nodiscard]] NamespaceImpl::RollBack_insertIndex final : private RollBackBase {
@@ -1488,6 +1583,7 @@ public:
 		: ns_{ns}, remapCompositeIndexes_{remapCompositeIndexes} {}
 	RollBack_addIndex(const RollBack_addIndex&) = delete;
 	~RollBack_addIndex() override { RollBack(); }
+	// NOLINTNEXTLINE(bugprone-exception-escape) Termination here is better, than inconsistent state of the user's data
 	void RollBack() noexcept {
 		if (IsDisabled()) {
 			return;
@@ -1578,6 +1674,7 @@ void NamespaceImpl::addIndex(const IndexDef& indexDef, bool disableTmVersionInc,
 		throw Error(errConflict, "Cannot add index '{}.{}'. Too many non-composite indexes. {} non-composite indexes are allowed only",
 					name_, indexName, kMaxIndexes - 1);
 	}
+
 	const JsonPaths& jsonPaths = indexDef.JsonPaths();
 	RollBack_addIndex rollbacker{*this, compositesMappingGuard};
 	if (indexDef.Opts().IsSparse()) {
@@ -1605,6 +1702,8 @@ void NamespaceImpl::addIndex(const IndexDef& indexDef, bool disableTmVersionInc,
 		payloadType_.Add(PayloadFieldType(name_.ToLower(), *newIndex, indexDef, embeddersCache_, enablePerfCounters_));
 
 		rollbacker.SetOldPayloadType(std::move(oldPlType));
+		auto oldTagsMatcher = tagsMatcher_;
+
 		tagsMatcher_.UpdatePayloadType(payloadType_, sparseIndexes,
 									   disableTmVersionInc ? NeedChangeTmVersion::No : NeedChangeTmVersion::Increment);
 		rollbacker.NeedResetPayloadTypeInTagsMatcher(disableTmVersionInc);
@@ -1612,8 +1711,15 @@ void NamespaceImpl::addIndex(const IndexDef& indexDef, bool disableTmVersionInc,
 		newIndex->UpdatePayloadType(PayloadType(payloadType_));
 
 		rollbacker.RollBacker_insertIndex(insertIndex(std::move(newIndex), idxNo, indexName));
-		rollbacker.RollBacker_updateItems(updateItems<NeedRollBack::Yes, FieldChangeType::Add>(rollbacker.GetOldPayloadType(), idxNo));
+		rollbacker.RollBacker_updateItems(
+			updateItems<NeedRollBack::Yes, FieldChangeType::Add>(rollbacker.GetOldPayloadType(), oldTagsMatcher, pkFields(), idxNo));
 	}
+
+	if (indexDef.Opts().IsPK()) {
+		migrations::PKMigrationService pkMigrationService{*this};
+		pkMigrationService.MigrateToNewPK(indexes_[idxNo]->Fields());
+	}
+
 	indexOptimizer_.UpdateSortedIdxCount(indexes_);
 	rollbacker.Disable();
 }
@@ -1726,7 +1832,7 @@ FieldsSet NamespaceImpl::createFieldsSetFromJsonPaths(const IndexDef& indexDef) 
 
 static bool BasicCompatibilityOnly(IndexDef::DiffResult diff) {
 	// clang-format off
-	return 
+	return
 		diff.AllOfIsEqual(
 			IndexDef::Diff::Name,
 			IndexDef::Diff::IndexType,
@@ -1740,7 +1846,7 @@ static bool BasicCompatibilityOnly(IndexDef::DiffResult diff) {
 
 			IndexOpts::ParamsDiff::CollateOpts,
 			IndexOpts::ParamsDiff::RTreeIndexType,
-			
+
 			FloatVectorIndexOpts::Diff::Base
 		);
 	// clang-format on
@@ -1835,15 +1941,17 @@ void NamespaceImpl::doDelete(IdType id, TransactionContext* txCtx) {
 	assertrx(items_.exists(id));
 
 	Payload pl(payloadType_, items_[id.ToNumber()]);
+	const FieldsSet* pk = pkFields();
+	assertrx_dbg(pk);
 
-	WrSerializer pk;
-	pk << kRxStorageItemPrefix;
-	pl.SerializeFields(pk, pkFields());
+	WrSerializer pkBuf;
+	pkBuf << kRxStorageItemPrefix;
+	pl.SerializeFields(pkBuf, pk ? *pk : FieldsSet{});
 
-	repl_.dataHash ^= calculateItemHash(id);
+	repl_.dataHash ^= calculateItemChecksum(id);
 	std::ignore = wal_.Set(WALRecord(), items_[id.ToNumber()].GetLSN(), false);
 
-	storage_.Remove(pk.Slice());
+	storage_.Remove(pkBuf.Slice());
 
 	// erase last item
 	int field = 0;
@@ -1912,6 +2020,10 @@ void NamespaceImpl::removeIndex(std::unique_ptr<Index>&& idx) {
 }
 
 void NamespaceImpl::doTruncate(UpdatesContainer& pendedRepl, const NsContext& ctx) {
+	const FieldsSet* pk = pkFields();
+	if (!pk) {
+		throwCannotModifyNsWithoutPK();
+	}
 	const bool storageIsValid = storage_.IsValid();
 	for (size_t id = 0, sz = items_.size(); id < sz; ++id) {
 		auto& pv = items_[id];
@@ -1921,15 +2033,16 @@ void NamespaceImpl::doTruncate(UpdatesContainer& pendedRepl, const NsContext& ct
 		std::ignore = wal_.Set(WALRecord(), pv.GetLSN(), false);
 		if (storageIsValid) {
 			Payload pl(payloadType_, pv);
-			WrSerializer pk;
-			pk << kRxStorageItemPrefix;
-			pl.SerializeFields(pk, pkFields());
-			storage_.Remove(pk.Slice());
+			WrSerializer pkBuf;
+			pkBuf << kRxStorageItemPrefix;
+			assertrx_dbg(pk);
+			pl.SerializeFields(pkBuf, *pk);
+			storage_.Remove(pkBuf.Slice());
 		}
 	}
 	items_.clear();
 	free_.clear();
-	repl_.dataHash = 0;
+	repl_.dataHash.Set(PayloadChecksum());
 	itemsDataSize_ = 0;
 	for (size_t i = 0; i < indexes_.size(); ++i) {
 		if (indexes_[i]->IsFloatVector()) {
@@ -1971,8 +2084,12 @@ void NamespaceImpl::ModifyItem(Item& item, ItemModifyMode mode, const RdxContext
 	lockCalc.SetCounter(updatePerfCounter_);
 	lockCalc.LockHit();
 	lockCalc.Disable();
-	if (mode == ModeDelete && item.PkFields() != pkFields()) [[unlikely]] {
-		throw Error(errNotValid, "Item has outdated PK metadata (probably PK has been change during the Delete-call)");
+	auto* pk = pkFields();
+	if (!pk) {
+		throwCannotModifyNsWithoutPK();
+	}
+	if (mode == ModeDelete && *pk != item.PkFields()) [[unlikely]] {
+		throw Error(errNotValid, "Item has outdated PK metadata (probably PK has been changed during the Delete-call)");
 	}
 	modifyItem(item, mode, pendedRepl, ctx);
 
@@ -2036,7 +2153,11 @@ ReplicationState NamespaceImpl::getReplState() const {
 
 LocalTransaction NamespaceImpl::NewTransaction(const RdxContext& ctx) {
 	auto rlck = rLock(ctx);
-	return LocalTransaction(name_, payloadType_, tagsMatcher_, pkFields(), schema_, ctx.GetOriginLSN());
+	const FieldsSet* pk = pkFields();
+	if (!pk) {
+		return LocalTransaction(Error{errLogic, "Cannot start transaction: namespace '{}' doesn't contain PK index", name_});
+	}
+	return LocalTransaction(name_, payloadType_, tagsMatcher_, *pk, schema_, ctx.GetOriginLSN());
 }
 
 void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& result, const NsContext& ctx,
@@ -2113,13 +2234,16 @@ void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& r
 					break;
 				}
 				case TransactionStep::Type::Query: {
+					functions::PrecomputedValues precomputedValues;
 					LocalQueryResults qr;
 					qr.AddNamespace(this, true);
 					auto& data = std::get<TransactionQueryStep>(step.data_);
-					if (data.query->type_ == QueryDelete) {
-						doDeleteTr(qr, pendedRepl, *data.query, NsContext(ctx).InTransaction(step.lsn_, txCtxPtr));
+					std::optional<Query> query{std::in_place, std::move(*data.query)};
+					OptimizeFunctionEntries(query.value(), query, precomputedValues);
+					if (query->type_ == QueryDelete) {
+						doDeleteTr(qr, pendedRepl, query.value(), NsContext(ctx).InTransaction(step.lsn_, txCtxPtr), precomputedValues);
 					} else {
-						doUpdateTr(qr, pendedRepl, *data.query, NsContext(ctx).InTransaction(step.lsn_, txCtxPtr));
+						doUpdateTr(qr, pendedRepl, query.value(), NsContext(ctx).InTransaction(step.lsn_, txCtxPtr), precomputedValues);
 					}
 					for (const auto& it : qr.Items()) {
 						result.AddItemRef(it.GetItemRef().Id(), PayloadValue());
@@ -2129,7 +2253,7 @@ void NamespaceImpl::CommitTransaction(LocalTransaction& tx, LocalQueryResults& r
 				case TransactionStep::Type::Nop:
 					assertrx(ctx.IsInSnapshot());
 					// NOLINTNEXTLINE (bugprone-unused-return-value)
-					wal_.Add(WALRecord(WalEmpty), step.lsn_);
+					std::ignore = wal_.Add(WALRecord(WalEmpty), step.lsn_);
 					break;
 				case TransactionStep::Type::PutMeta: {
 					auto& data = std::get<TransactionMetaStep>(step.data_);
@@ -2189,7 +2313,7 @@ void NamespaceImpl::doUpsert(ItemImpl& item, IdType id, bool doUpdate, Transacti
 		}
 		plData.Clone(pl.RealSize());
 
-		repl_.dataHash ^= calculateItemHash(id);
+		repl_.dataHash ^= calculateItemChecksum(id);
 		itemsDataSize_ -= plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
 
 		needUpdateCompIndexes = h_vector<bool, 32>(compIndexesCount, false);
@@ -2262,16 +2386,18 @@ void NamespaceImpl::doUpsert(ItemImpl& item, IdType id, bool doUpdate, Transacti
 			} else if (index.Opts().IsArray()) {
 				pl.Get(field, krefs, Variant::hold);
 			} else if (index.Opts().IsFloatVector()) {
-				std::optional<ConstFloatVectorView> fvView;
+				std::optional<Variant> fvView;
 				if (isMultithreadTxInsertion) {
-					fvView = txCtx->TryGetValue(field, id);
+					if (auto viewOpt = txCtx->TryGetValue(field, id); viewOpt) {
+						fvView = Variant(*viewOpt);
+					}
 				}
-				if (!fvView.has_value()) {
+				if (!fvView) {
 					const FloatVectorIndex& fvIdx = static_cast<FloatVectorIndex&>(index);
-					fvView = fvIdx.GetFloatVectorView(id);
+					fvView = getFloatVector(id, fvIdx);
 				}
 				krefs.clear<false>();
-				krefs.emplace_back(fvView.value());
+				krefs.emplace_back(std::move(*fvView));
 			} else {
 				pl.Get(field, krefs);
 			}
@@ -2339,7 +2465,7 @@ void NamespaceImpl::doUpsert(ItemImpl& item, IdType id, bool doUpdate, Transacti
 			indexesCacheCleaner.Add(idxRef);
 		}
 	}
-	repl_.dataHash ^= calculateItemHash(id);
+	repl_.dataHash ^= calculateItemChecksum(id);
 	itemsDataSize_ += plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
 	item.RealValue() = plData;
 }
@@ -2402,11 +2528,11 @@ void NamespaceImpl::deleteItem(Item& item, UpdatesContainer& pendedRepl, const N
 		if (itItem.second) {
 			ritem->RealValue() = items_[id.ToNumber()];
 			if (!ctx.txCtx) {
-				if (const auto& fvIndexes = getVectorIndexes(); !fvIndexes.empty()) {
+				if (auto data = floatVectorsGetterFn(id)(payloadType_, tagsMatcher_); !data.empty()) {
 					ritem->RealValue().Clone();
 					Payload pl(payloadType_, ritem->RealValue());
-					for (const auto& fvIdx : fvIndexes) {
-						if (ritem->floatVectorsHolder_.Add(fvIdx.ptr->GetFloatVector(id))) {
+					for (auto& [fvIdx, val] : data) {
+						if (ritem->floatVectorsHolder_.Add(FloatVector{std::move(val)})) {
 							pl.Set(fvIdx.ptField, Variant(ritem->floatVectorsHolder_.Back()));
 						}
 					}
@@ -2486,12 +2612,14 @@ void NamespaceImpl::doModifyItem(Item& item, ItemModifyMode mode, UpdatesContain
 
 	saveTagsMatcherToStorage(true);
 	if (storage_.IsValid()) {
-		WrSerializer pk, data;
-		pk << kRxStorageItemPrefix;
-		newPl.SerializeFields(pk, pkFields());
-		data.PutUInt64(int64_t(lsn));
-		data.Write(cjson.Slice());
-		storage_.Write(pk.Slice(), data.Slice());
+		const FieldsSet* pk = pkFields();
+		assertrx(pk);
+		WrSerializer pkBuf, cjsonBuf;
+		pkBuf << kRxStorageItemPrefix;
+		newPl.SerializeFields(pkBuf, *pk);
+		cjsonBuf.PutUInt64(int64_t(lsn));
+		cjsonBuf.Write(cjson.Slice());
+		storage_.Write(pkBuf.Slice(), cjsonBuf.Slice());
 	}
 
 	markUpdated(exists ? IndexOptimization::Partial : IndexOptimization::Full);
@@ -2544,7 +2672,7 @@ std::pair<Index*, int> NamespaceImpl::getPkIdx() const noexcept {
 RX_ALWAYS_INLINE SelectKeyResult NamespaceImpl::getPkDocs(const ConstPayload& cpl, bool inTransaction, const RdxContext& ctx) {
 	auto [pkIndex, pkField] = getPkIdx();
 	if (!pkIndex) [[unlikely]] {
-		throw Error(errLogic, "Trying to modify namespace '{}', but it doesn't contain PK index", name_);
+		throwCannotModifyNsWithoutPK();
 	}
 	VariantArray keys = getPkKeys(cpl, pkIndex, pkField);
 	assertf(keys.size() == 1, "Pkey field must contain 1 key, but there '{}' in '{}.{}'", keys.size(), name_, pkIndex->Name());
@@ -2571,6 +2699,10 @@ void NamespaceImpl::throwDuplicatePK(const ConstPayload& cpl, IdType itemId, IdT
 	keys.Dump(wrser, CheckIsStringPrintable::No);
 	wrser << "} for rows [" << itemId.ToNumber() << ", " << conflictingItemId.ToNumber() << "]!";
 	throw Error(errLogic, wrser.Slice());
+}
+
+void NamespaceImpl::throwCannotModifyNsWithoutPK() const {
+	throw Error(errLogic, "Trying to modify namespace '{}', but it doesn't contain PK index", name_);
 }
 
 void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
@@ -2612,17 +2744,19 @@ void NamespaceImpl::markUpdated(IndexOptimization requestedOptimization) {
 }
 
 Item NamespaceImpl::newItem() {
-	auto impl_ = pool_.get(0, payloadType_, tagsMatcher_, pkFields(), schema_);
+	const auto* pk = pkFields();
+	auto impl_ = pool_.get(0, payloadType_, tagsMatcher_, pk ? *pk : FieldsSet{}, schema_);
 	impl_->tagsMatcher() = tagsMatcher_;
 	impl_->tagsMatcher().clearUpdated();
 	impl_->schema() = schema_;
 #ifdef RX_WITH_STDLIB_DEBUG
-	assertrx_dbg(impl_->PkFields() == pkFields());
+	assertrx_dbg(pk ? impl_->PkFields() == *pk : impl_->PkFields() == FieldsSet{});
 #endif	// RX_WITH_STDLIB_DEBUG
 	return Item(impl_.release());
 }
 
-void NamespaceImpl::doUpdateTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx) {
+void NamespaceImpl::doUpdateTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx,
+							   const functions::PrecomputedValues& precomputedValues) {
 	NsSelecter selecter(this);
 	SelectCtxWithJoinPreSelect selCtx(query, nullptr, nullptr);
 	FtFunctionsHolder func;
@@ -2633,10 +2767,15 @@ void NamespaceImpl::doUpdateTr(LocalQueryResults& result, UpdatesContainer& pend
 	selCtx.selectBeforeUpdate = true;
 	selCtx.explain = nullptr;  // No explain for tx updates
 	selecter(result, selCtx, ctx.rdxContext);
-	doUpdate(result, pendedRepl, query, ctx);
+	doUpdate(result, pendedRepl, query, ctx, precomputedValues);
 }
 
-void NamespaceImpl::doUpdate(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx) {
+void NamespaceImpl::doUpdate(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx,
+							 const functions::PrecomputedValues& precomputedValues) {
+	if (!pkFields()) {
+		throwCannotModifyNsWithoutPK();
+	}
+
 	ActiveQueryScope queryScope(query, QueryUpdate, indexOptimizer_.StateRef(), strHolder_.get());
 	const auto tmStart = system_clock_w::now();
 
@@ -2670,7 +2809,7 @@ void NamespaceImpl::doUpdate(LocalQueryResults& result, UpdatesContainer& pended
 	// 	(!updateWithJson && !withExpressions && !query.HasLimit() && !query.HasOffset() && (result.Count() >= kWALStatementItemsThreshold));
 	constexpr bool statementReplication = false;
 
-	ItemModifier itemModifier(query.UpdateFields(), *this, pendedRepl, ctx);
+	ItemModifier itemModifier(query.UpdateFields(), *this, pendedRepl, ctx, precomputedValues);
 	pendedRepl.reserve(pendedRepl.size() + result.Count());	 // Required for item-based replication only
 	for (auto& it : result) {
 		ItemRef& item = it.GetItemRef();
@@ -2679,7 +2818,7 @@ void NamespaceImpl::doUpdate(LocalQueryResults& result, UpdatesContainer& pended
 		PayloadValue& pv(items_[item.Id().ToNumber()]);
 		Payload pl(payloadType_, pv);
 
-		const uint64_t oldItemHash = calculateItemHash(item.Id());
+		const PayloadChecksum oldItemHash = calculateItemChecksum(item.Id());
 		size_t oldItemCapacity = pv.GetCapacity();
 		const bool isPKModified = itemModifier.Modify(item.Id(), ctx, pendedRepl);
 		std::optional<PKModifyRevertData> modifyData;
@@ -2720,16 +2859,16 @@ void NamespaceImpl::doUpdate(LocalQueryResults& result, UpdatesContainer& pended
 	//	}
 }
 
-void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool statementReplication, uint64_t oldItemHash,
+void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool statementReplication, PayloadChecksum oldItemHash,
 								  size_t oldItemCapacity, int oldTmVersion, std::optional<PKModifyRevertData>&& modifyData,
 								  UpdatesContainer& pendedRepl) {
+	const FieldsSet* pk = pkFields();
 	PayloadValue& pv(items_[itemId.ToNumber()]);
 	Payload pl(payloadType_, pv);
-	const auto vectorIndexes = getVectorIndexes();
 
 	if (!statementReplication) {
 		replicateTmUpdateIfRequired(pendedRepl, oldTmVersion, ctx);
-		auto sendWalUpdate = [this, itemId, &ctx, &pv, &pendedRepl, &vectorIndexes](updates::URType mode) {
+		auto sendWalUpdate = [this, itemId, &ctx, &pv, &pendedRepl](updates::URType mode) {
 			lsn_t lsn;
 			if (ctx.IsForceSyncItem()) {
 				lsn = ctx.GetOriginLSN();
@@ -2741,7 +2880,7 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool stat
 			pv.SetLSN(lsn);
 			ItemImpl item(payloadType_, pv, tagsMatcher_);
 			item.Unsafe(true);
-			item.CopyIndexedVectorsValuesFrom(itemId, vectorIndexes);
+			item.CopyIndexedVectorsValuesFrom(floatVectorsGetterFn(itemId));
 			WrSerializer cjson;
 			std::ignore = item.GetCJSON(cjson, false);
 			pendedRepl.emplace_back(mode, name_, lsn, repl_.nsVersion, ctx.EmitterServerId(), std::move(cjson));
@@ -2750,7 +2889,7 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool stat
 		if (modifyData.has_value()) {
 			ItemImpl itemSave(payloadType_, modifyData->pv, tagsMatcher_);
 			itemSave.Unsafe(true);
-			itemSave.CopyIndexedVectorsValuesFrom(itemId, vectorIndexes);
+			itemSave.CopyIndexedVectorsValuesFrom(floatVectorsGetterFn(itemId));
 			WrSerializer cjson;
 			std::ignore = itemSave.GetCJSON(cjson, false);
 			processWalRecord(WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete, ctx.IsInTransaction()), ctx,
@@ -2764,31 +2903,33 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext& ctx, bool stat
 	}
 
 	repl_.dataHash ^= oldItemHash;
-	repl_.dataHash ^= calculateItemHash(itemId);
+	repl_.dataHash ^= calculateItemChecksum(itemId);
 	itemsDataSize_ -= oldItemCapacity;
 	itemsDataSize_ += pl.Value()->GetCapacity();
 
 	saveTagsMatcherToStorage(true);
 	if (storage_.IsValid()) {
-		WrSerializer pk, data;
+		assertrx(pk);
+		WrSerializer pkBuf, itemBuf;
 		if (modifyData.has_value()) {
 			Payload plSave(payloadType_, modifyData->pv);
-			pk << kRxStorageItemPrefix;
-			plSave.SerializeFields(pk, pkFields());
-			storage_.Remove(pk.Slice());
-			pk.Reset();
+			pkBuf << kRxStorageItemPrefix;
+			plSave.SerializeFields(pkBuf, *pk);
+			storage_.Remove(pkBuf.Slice());
+			pkBuf.Reset();
 		}
-		pk << kRxStorageItemPrefix;
-		pl.SerializeFields(pk, pkFields());
-		data.PutUInt64(uint64_t(pv.GetLSN()));
+		pkBuf << kRxStorageItemPrefix;
+		pl.SerializeFields(pkBuf, *pk);
+		itemBuf.PutUInt64(uint64_t(pv.GetLSN()));
 		ItemImpl item(payloadType_, pv, tagsMatcher_);
 		item.Unsafe(true);
-		item.CopyIndexedVectorsValuesFrom(itemId, vectorIndexes);
-		storage_.Write(pk.Slice(), item.GetCJSON(data));
+		item.CopyIndexedVectorsValuesFrom(floatVectorsGetterFn(itemId));
+		storage_.Write(pkBuf.Slice(), item.GetCJSON(itemBuf));
 	}
 }
 
-void NamespaceImpl::doDeleteTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx) {
+void NamespaceImpl::doDeleteTr(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx,
+							   const functions::PrecomputedValues& precomputedValues) {
 	NsSelecter selecter(this);
 	SelectCtxWithJoinPreSelect selCtx(query, nullptr, &result.GetFloatVectorsHolder());
 	selCtx.contextCollectingMode = true;
@@ -2800,10 +2941,15 @@ void NamespaceImpl::doDeleteTr(LocalQueryResults& result, UpdatesContainer& pend
 	selCtx.functions = &func;
 	selecter(result, selCtx, ctx.rdxContext);
 	assertrx(result.IsNamespaceAdded(this));
-	doDelete(result, pendedRepl, query, ctx);
+	doDelete(result, pendedRepl, query, ctx, precomputedValues);
 }
 
-void NamespaceImpl::doDelete(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx) {
+void NamespaceImpl::doDelete(LocalQueryResults& result, UpdatesContainer& pendedRepl, const Query& query, const NsContext& ctx,
+							 const functions::PrecomputedValues&) {
+	if (!pkFields()) {
+		throwCannotModifyNsWithoutPK();
+	}
+
 	ActiveQueryScope queryScope(query, QueryDelete, indexOptimizer_.StateRef(), strHolder_.get());
 	const auto tmStart = system_clock_w::now();
 	const auto oldTmV = tagsMatcher_.version();
@@ -3202,10 +3348,10 @@ void NamespaceImpl::loadReplStateFromStorage() {
 		repl_.FromJSON(giftStr(json));
 	}
 	{
-		WrSerializer ser_log;
-		JsonBuilder builder_log(ser_log, ObjType::TypePlain);
-		repl_.GetJSON(builder_log);
-		logFmt(LogTrace, "[load_repl:{}]:{} Loading replication state {}", name_, wal_.GetServer(), ser_log.c_str());
+		WrSerializer serLog;
+		JsonBuilder builderLog(serLog, ObjType::TypePlain);
+		repl_.GetJSON(builderLog);
+		logFmt(LogTrace, "[load_repl:{}]:{} Loading replication state {}", name_, wal_.GetServer(), serLog.Slice());
 	}
 }
 
@@ -3481,8 +3627,8 @@ void NamespaceImpl::LoadFromStorage(unsigned threadsCount, const RdxContext& ctx
 	auto wlck = simpleWLock(ctx);
 	FlagGuardT nsLoadingGuard(nsIsLoading_);
 
-	const uint64_t dataHash = repl_.dataHash;
-	repl_.dataHash = 0;
+	const auto dataHash = repl_.dataHash;
+	repl_.dataHash.Set(PayloadChecksum());
 
 	migrations::PKMigrationService pkMigrationService{*this};
 	pkMigrationService.RemoveItemsWithObsoletePK();
@@ -3497,9 +3643,18 @@ void NamespaceImpl::LoadFromStorage(unsigned threadsCount, const RdxContext& ctx
 
 	logFmt(LogInfo, "[{}] Done loading storage. {} items loaded ({} errors {}), lsn #{}, total size={}M, dataHash={}", name_, items_.size(),
 		   ldata.errCount, ldata.lastErr.what(), repl_.lastLsn, ldata.ldcount / (1024 * 1024), repl_.dataHash);
-	if (dataHash != repl_.dataHash) {
-		logFmt(LogError, "[{}] Warning dataHash mismatch {} != {}", name_, dataHash, repl_.dataHash);
-		replStateUpdates_.fetch_add(1, std::memory_order_release);
+	if (dataHash.hashV2) {
+		if (dataHash.hashV2 != repl_.dataHash.hashV2) {
+			logFmt(LogError, "[{}] Warning dataHash(v2) mismatch {} != {}", name_,
+				   dataHash.hashV2 ? std::to_string(*dataHash.hashV2) : "<empty>",
+				   repl_.dataHash.hashV2 ? std::to_string(*repl_.dataHash.hashV2) : "<empty>");
+			replStateUpdates_.fetch_add(1, std::memory_order_release);
+		}
+	} else {
+		if (dataHash.hashV1 != repl_.dataHash.hashV1) {
+			logFmt(LogError, "[{}] Warning dataHash(v1) mismatch {} != {}", name_, dataHash.hashV1, repl_.dataHash.hashV1);
+		}
+		replStateUpdates_.fetch_add(1, std::memory_order_release);	// Update datahash to v2 in storage
 	}
 
 	markUpdated(IndexOptimization::Full);
@@ -3537,13 +3692,17 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext* ctx) {
 		if ((index->Type() != IndexTtl) || (index->Size() == 0)) {
 			continue;
 		}
+		if (!pkFields()) {
+			logFmt(LogTrace, "Cannot remove expired (TTL) items for namespace '{}': it doesn't contain PK index", name_);
+			return;
+		}
 		const int64_t expirationThreshold =
 			std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now_coarse().time_since_epoch()).count() -
 			index->GetTTLValue();
 		LocalQueryResults qr;
 		qr.AddNamespace(this, true);
 		auto q = Query(name_).Where(index->Name(), CondLt, expirationThreshold);
-		doDeleteTr(qr, pendedRepl, q, nsCtx);
+		doDeleteTr(qr, pendedRepl, q, nsCtx, functions::PrecomputedValues{});
 		if (qr.Count()) {
 			logFmt(LogInfo, "[{}] {} items were removed: TTL({}) has expired", name_, qr.Count(), index->Name());
 		}
@@ -3659,6 +3818,7 @@ void NamespaceImpl::BackgroundRoutine(RdxActivityContext* ctx) {
 	}
 	removeExpiredStrings(ctx);
 	optimizeFloatVectorKeeper(ctx);
+	backgroundHNSWIndexesQuantization(ctx);
 }
 
 void NamespaceImpl::StorageFlushingRoutine() { storage_.Flush(StorageFlushOpts()); }
@@ -3916,12 +4076,14 @@ IdType NamespaceImpl::createItem(size_t realSize, IdType suggestedId, const NsCo
 }
 
 void NamespaceImpl::setFieldsBasedOnPrecepts(ItemImpl* ritem, UpdatesContainer& replUpdates, const NsContext& ctx) {
+	functions::PrecomputedValues precomputedValues;
 	for (auto& precept : ritem->GetPrecepts()) {
-		auto sqlFunc = QueryFunctionParser::Parse(precept);
+		auto sqlFunc = functions::FunctionParser::Parse(precept);
 
 		skrefs.clear<false>();
 		if (sqlFunc.isFunction) {
-			skrefs.emplace_back(FunctionExecutor(*this, replUpdates).Execute(QueryFunction{sqlFunc}, ctx));
+			functions::FunctionInvoker funcInvoker{precomputedValues, *this, payloadType_, tagsMatcher_, replUpdates};
+			skrefs.emplace_back(funcInvoker.Invoke(functions::Create(functions::ParsedFunction(sqlFunc)), ctx, ritem->Value()));
 		} else {
 			skrefs.emplace_back(make_key_string(sqlFunc.value));
 		}
@@ -4035,14 +4197,11 @@ void NamespaceImpl::putToJoinCache(JoinCacheRes& res, JoinCacheVal&& val) const 
 	joinCache_.Put(res.key, std::move(val));
 }
 
-const FieldsSet& NamespaceImpl::pkFields() {
-	auto it = indexesNames_.find(kPKIndexName);
-	if (it != indexesNames_.end()) {
-		return indexes_[it->second]->Fields();
+const FieldsSet* NamespaceImpl::pkFields() const noexcept {
+	if (auto it = indexesNames_.find(kPKIndexName); it != indexesNames_.end()) {
+		return &indexes_[it->second]->Fields();
 	}
-
-	static FieldsSet ret;
-	return ret;
+	return nullptr;
 }
 
 void NamespaceImpl::processWalRecord(WALRecord&& wrec, const NsContext& ctx, lsn_t itemLsn, Item* item) {
@@ -4166,7 +4325,7 @@ void NamespaceImpl::rebuildIndexesToCompositeMapping() noexcept {
 		}
 	}
 	if (indexesToComposites.has_value()) {
-		indexesToComposites_ = std::move(indexesToComposites.value());
+		indexesToComposites_ = std::move(*indexesToComposites);
 	}
 }
 
@@ -4175,8 +4334,109 @@ void NamespaceImpl::throwIndexUpsertErrorWithPKInfo(const ConstPayload& pl, cons
 	assertrx_throw(pkIndex);
 	VariantArray keys = getPkKeys(pl, pkIndex, pkField);
 	auto errPtr = dynamic_cast<const Error*>(&err);
-	throw Error{errPtr ? errPtr->code() : errParams, fmt::format("Error during processing item with primary key `{}`={}: {}",
-																 pkIndex->Name(), keys.Dump(payloadType_, pkFields()), err.what())};
+	const FieldsSet* pk = pkFields();
+	throw Error{errPtr ? errPtr->code() : errParams,
+				fmt::format("Error during processing item with primary key `{}`={}: {}", pkIndex->Name(),
+							keys.Dump(payloadType_, pk ? *pk : FieldsSet{}), err.what())};
+}
+
+void NamespaceImpl::backgroundHNSWIndexesQuantization(RdxActivityContext* ctx) {
+	std::vector<std::string> indexNames;
+
+	RdxContext rdxCtx{ctx};
+	{
+		auto rlock = rLock(rdxCtx);
+
+		auto vectorIndexes = getVectorIndexes();
+		indexNames.reserve(vectorIndexes.size());
+		for (auto [idx, ptr] : vectorIndexes) {
+			indexNames.emplace_back(indexes_[idx]->Name());
+		}
+	}
+
+	for (const auto& indexName : indexNames) {
+		quantize(indexName, rdxCtx);
+	}
+
+	{
+		auto rlock = rLock(rdxCtx);
+		if (auto indexes = getVectorIndexes();
+			storage_.WithProxy() && std::find_if(indexes.begin(), indexes.end(), [](const FloatVectorIndexData& indexData) {
+										return indexData.ptr->IsQuantized();
+									}) == indexes.end()) {
+			storage_.WithProxy(false);
+		}
+	}
+}
+
+void NamespaceImpl::quantize(std::string_view indexName, const RdxContext& ctx) {
+	auto rlock = rLock(ctx);
+
+	auto getFloatVectorIndex = [this, indexName](int& idx) {
+		return tryGetIndexByName(indexName, idx) ? dynamic_cast<FloatVectorIndex*>(indexes_[idx].get()) : nullptr;
+	};
+
+	int idx = -1;
+	auto index = getFloatVectorIndex(idx);
+	if (!index || !index->QuantizationAvailable()) {
+		return;
+	}
+
+	if (!storageOpts_.IsEnabled()) {
+		logFmt(LogWarning, "NamespaceImpl::backgroundHNSWIndexesQuantization ({}): Quantization available only with enabled storage.",
+			   name_);
+		return;
+	}
+
+	if (!storage_.WithProxy()) {
+		storage_.WithProxy(true);
+		storage_.Flush(StorageFlushOpts{});
+	}
+
+	index->Quantize();
+
+	rlock.unlock();
+	auto wlock = simpleWLock(ctx);
+	// This is necessary in order to avoid accessing invalid memory, if this index is deleted between lock captures.
+	index = getFloatVectorIndex(idx);
+	if (!index) {
+		throw Error(errLogic,
+					"NamespaceImpl::backgroundHNSWIndexesQuantization ({}): Quantization was interrupted due to index '{}' deletion", name_,
+					indexName);
+	}
+	index->SwitchMapOnQuantized();
+}
+
+void NamespaceImpl::reloadNonQuantizedIndex(int idx) {
+	assertrx_throw(indexes_[idx]->IsFloatVector());
+	auto& index = static_cast<FloatVectorIndex&>(*indexes_[idx]);
+
+	if (!index.IsQuantized()) {
+		return;
+	}
+
+	WrSerializer wrSer;
+	auto err = index.WriteIndexCache(wrSer, [](IdType id) { return VariantArray{Variant{id.ToNumber()}}; }, false, 0).err;
+	if (!err.ok()) {
+		throw err;
+	}
+
+	auto newIndexPtr = Index::New(getIndexDefinition(idx), PayloadType{payloadType_}, FieldsSet{index.Fields()}, config_.cacheConfig,
+								  itemsCount(), LogCreation_True);
+	auto& newIndex = static_cast<FloatVectorIndex&>(*newIndexPtr);
+
+	const FieldsSet* pk = pkFields();
+	assertrx_throw(pk);
+
+	const auto vecSizeBytes = sizeof(float) * index.Opts().FloatVector().Dimension();
+	auto vectorsData = FloatVectorExtractor(storage_, index, *pk, payloadType_, tagsMatcher_).LoadVectorDataFromStorage(items_);
+	err = newIndex.LoadIndexCache(wrSer.Slice(), false, FloatVectorIndexRawDataInserter{vectorsData, vecSizeBytes}, LoadWithQuantizer_False,
+								  ann_storage_cache::kANNCacheFormatVersion);
+	if (!err.ok()) {
+		throw err;
+	}
+
+	indexes_[idx] = std::move(newIndexPtr);
 }
 
 }  // namespace reindexer

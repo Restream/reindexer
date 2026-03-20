@@ -26,11 +26,19 @@ public:
 	using Base::Delete;
 
 	std::unique_ptr<Index> Clone(size_t newCapacity) const override;
-	IndexMemStat GetMemStat(const RdxContext&) noexcept override;
+	IndexMemStat GetMemStat(const RdxContext&) const noexcept override;
 	StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 											const std::atomic_int32_t& cancel) noexcept override;
-	Error LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&&, uint8_t version) override;
+	Error LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&&, LoadWithQuantizer,
+						 uint8_t version) override;
 	void RebuildCentroids(float dataPart) override;
+
+	uint64_t GetHash(IdType rowId) const override { return FloatVectorIndex::getFloatVectorView(rowId).Hash(); }
+
+	bool QuantizationAvailable() const override { return false; }
+	bool IsQuantized() const override { return false; }
+	void Quantize() override { assertrx(false); }
+	void SwitchMapOnQuantized() override { assertrx(false); }
 
 private:
 	template <typename K, typename V>
@@ -41,14 +49,12 @@ private:
 	IvfIndex(const IvfIndex&);
 
 	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const override;
-	IvfKnnRawResult selectRawImpl(ConstFloatVectorView, const KnnSearchParams&) const;
 	KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const override;
 
 	Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) override;
 	[[noreturn]] Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) override;
 
-	FloatVector getFloatVector(IdType) const override;
-	ConstFloatVectorView getFloatVectorView(IdType) const override;
+	ConstFloatVectorView getFloatVectorViewImpl(IdType) const override;
 
 	static std::unique_ptr<faiss::IndexFlat> newSpace(size_t dimension, VectorMetric);
 	void clearMap() noexcept;

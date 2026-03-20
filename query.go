@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"unsafe"
 
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
@@ -63,6 +62,7 @@ const (
 	queryKnnConditionExt           = bindings.QueryKnnConditionExt
 	queryFunction                  = bindings.QueryFunction
 	queryFunctionSubQueryCondition = bindings.QueryFunctionSubQueryCondition
+	queryExpressions               = bindings.QueryExpressions
 )
 
 // Constants for KNN query types
@@ -122,6 +122,14 @@ const (
 
 const (
 	functionFlatArrayLen = bindings.FunctionFlatArrayLen
+	functionNow          = bindings.FunctionNow
+)
+
+const (
+	expressionTypeField      = bindings.ExpressionTypeField
+	expressionTypeValues     = bindings.ExpressionTypeValues
+	expressionTypeExpression = bindings.ExpressionTypeExpression
+	expressionTypeSubQuery   = bindings.ExpressionTypeSubQuery
 )
 
 const (
@@ -141,41 +149,35 @@ func (*noCopy) Unlock() {}
 
 // Query represents a database query object
 type Query struct {
-	noCopy         noCopy
-	Namespace      string
-	db             *reindexerImpl
-	nextOp         int
-	ser            cjson.Serializer
-	root           *Query
-	joinQueries    []*Query
-	mergedQueries  []*Query
-	joinToFields   []string
-	joinHandlers   []JoinHandler
-	context        interface{}
-	joinType       int
-	closed         bool
-	initBuf        [256]byte
-	nsArray        []nsArrayEntry
-	ptVersions     []int32
-	iterator       Iterator
-	jsonIterator   JSONIterator
-	items          []interface{}
-	json           []byte
-	jsonOffsets    []int
-	totalName      string
-	executed       bool
-	fetchCount     int
-	queriesCount   int
-	openedBrackets []int
-	tx             *Tx
-	traceNew       []byte
-	traceClose     []byte
-}
-
-type Function interface {
-	Type() int
-	Fields() []string
-	Args() []interface{}
+	noCopy            noCopy
+	Namespace         string
+	db                *reindexerImpl
+	nextOp            int
+	ser               cjson.Serializer
+	root              *Query
+	joinQueries       []*Query
+	mergedQueries     []*Query
+	joinToFields      []string
+	joinHandlers      []JoinHandler
+	context           interface{}
+	joinType          int
+	closed            bool
+	initBuf           [256]byte
+	nsArray           []nsArrayEntry
+	ptVersions        []int32
+	iterator          Iterator
+	jsonIterator      JSONIterator
+	items             []interface{}
+	json              []byte
+	jsonOffsets       []int
+	totalName         string
+	executed          bool
+	fetchCount        int
+	whereEntriesCount int
+	openedBrackets    []int
+	tx                *Tx
+	traceNew          []byte
+	traceClose        []byte
 }
 
 type KnnSearchParam interface {
@@ -201,8 +203,21 @@ type IndexIvfSearchParam struct {
 	NProbe int
 }
 
-type FlatArrayLen struct {
-	Field string
+type IExpression interface {
+	Type() int
+	Serialize(ser *cjson.Serializer)
+}
+
+type Field struct {
+	Name string
+}
+
+type Values struct {
+	Values []interface{}
+}
+
+type SubQuery struct {
+	SubQuery *Query
 }
 
 func NewIndexBFSearchParam(baseParam BaseKnnSearchParam) (IndexBFSearchParam, error) {
@@ -276,16 +291,34 @@ func (p IndexIvfSearchParam) serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(p.NProbe)
 }
 
-func (f FlatArrayLen) Type() int {
-	return functionFlatArrayLen
+func (f Field) Type() int {
+	return expressionTypeField
 }
 
-func (f FlatArrayLen) Fields() []string {
-	return []string{f.Field}
+func (f Field) Serialize(ser *cjson.Serializer) {
+	ser.PutVarCUInt(int(f.Type()))
+	ser.PutVString(f.Name)
 }
 
-func (f FlatArrayLen) Args() []interface{} {
-	return []interface{}{}
+func (v Values) Type() int {
+	return expressionTypeValues
+}
+
+func (v Values) Serialize(ser *cjson.Serializer) {
+	ser.PutVarCUInt(int(v.Type()))
+	ser.PutVarCUInt(len(v.Values))
+	for _, v := range v.Values {
+		ser.PutValue(reflect.ValueOf(v))
+	}
+}
+
+func (q SubQuery) Type() int {
+	return expressionTypeSubQuery
+}
+
+func (s SubQuery) Serialize(ser *cjson.Serializer) {
+	ser.PutVarCUInt(int(s.Type()))
+	ser.Write(s.SubQuery.ser.Bytes())
 }
 
 var queryPool sync.Pool
@@ -330,7 +363,7 @@ func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
 		q.totalName = ""
 		q.executed = false
 		q.nsArray = q.nsArray[:0]
-		q.queriesCount = 0
+		q.whereEntriesCount = 0
 		q.openedBrackets = q.openedBrackets[:0]
 	}
 	mktrace(&q.traceNew)
@@ -437,14 +470,14 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 		} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 			q.ser.PutVarCUInt(v.Len())
 			for i := 0; i < v.Len(); i++ {
-				q.putValue(v.Index(i))
+				q.ser.PutValue(v.Index(i))
 			}
 		} else {
 			q.ser.PutVarCUInt(1)
-			q.putValue(v)
+			q.ser.PutValue(v)
 		}
 	}
-	q.queriesCount++
+	q.whereEntriesCount++
 	q.nextOp = opAND
 	return q
 }
@@ -462,18 +495,18 @@ func (q *Query) WhereQuery(subQuery *Query, condition int, keys interface{}) *Qu
 	q.ser.PutVBytes(subQuery.ser.Bytes())
 	q.ser.PutVarCUInt(condition)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 
 	if keys == nil {
 		q.ser.PutVarUInt(0)
 	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		q.ser.PutVarCUInt(v.Len())
 		for i := 0; i < v.Len(); i++ {
-			q.putValue(v.Index(i))
+			q.ser.PutValue(v.Index(i))
 		}
 	} else {
 		q.ser.PutVarCUInt(1)
-		q.putValue(v)
+		q.ser.PutValue(v)
 	}
 	return q
 }
@@ -486,7 +519,7 @@ func (q *Query) WhereBetweenFields(firstField string, condition int, secondField
 	q.ser.PutVarCUInt(condition)
 	q.ser.PutVString(secondField)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 	return q
 }
 
@@ -495,8 +528,8 @@ func (q *Query) OpenBracket() *Query {
 	q.ser.PutVarCUInt(queryOpenBracket)
 	q.ser.PutVarCUInt(q.nextOp)
 	q.nextOp = opAND
-	q.openedBrackets = append(q.openedBrackets, q.queriesCount)
-	q.queriesCount++
+	q.openedBrackets = append(q.openedBrackets, q.whereEntriesCount)
+	q.whereEntriesCount++
 	return q
 }
 
@@ -513,72 +546,12 @@ func (q *Query) CloseBracket() *Query {
 	return q
 }
 
-func (q *Query) putValue(v reflect.Value) error {
-	k := v.Kind()
-	if k == reflect.Ptr || k == reflect.Interface {
-		v = v.Elem()
-		k = v.Kind()
-	}
-
-	switch k {
-	case reflect.Bool:
-		q.ser.PutVarCUInt(valueBool)
-		if v.Bool() {
-			q.ser.PutVarUInt(1)
-		} else {
-			q.ser.PutVarUInt(0)
-		}
-	case reflect.Uint:
-		if unsafe.Sizeof(int(0)) == unsafe.Sizeof(int64(0)) {
-			q.ser.PutVarCUInt(valueInt64)
-		} else {
-			q.ser.PutVarCUInt(valueInt)
-		}
-
-		q.ser.PutVarInt(int64(v.Uint()))
-	case reflect.Int:
-		if unsafe.Sizeof(int(0)) == unsafe.Sizeof(int64(0)) {
-			q.ser.PutVarCUInt(valueInt64)
-		} else {
-			q.ser.PutVarCUInt(valueInt)
-		}
-		q.ser.PutVarInt(v.Int())
-	case reflect.Int16, reflect.Int32, reflect.Int8:
-		q.ser.PutVarCUInt(valueInt)
-		q.ser.PutVarInt(v.Int())
-	case reflect.Uint8, reflect.Uint16, reflect.Uint32:
-		q.ser.PutVarCUInt(valueInt)
-		q.ser.PutVarInt(int64(v.Uint()))
-	case reflect.Int64:
-		q.ser.PutVarCUInt(valueInt64)
-		q.ser.PutVarInt(v.Int())
-	case reflect.Uint64:
-		q.ser.PutVarCUInt(valueInt64)
-		q.ser.PutVarInt(int64(v.Uint()))
-	case reflect.String:
-		q.ser.PutVarCUInt(valueString)
-		q.ser.PutVString(v.String())
-	case reflect.Float32, reflect.Float64:
-		q.ser.PutVarCUInt(valueDouble)
-		q.ser.PutDouble(v.Float())
-	case reflect.Slice, reflect.Array:
-		q.ser.PutVarCUInt(valueTuple)
-		q.ser.PutVarCUInt(v.Len())
-		for i := 0; i < v.Len(); i++ {
-			q.putValue(v.Index(i))
-		}
-	default:
-		panic(fmt.Errorf("rq: Invalid reflection type %s", v.Kind().String()))
-	}
-	return nil
-}
-
 // WhereInt - Add where condition to DB query with int arguments
 func (q *Query) WhereInt(index string, condition int, keys ...int) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -592,7 +565,7 @@ func (q *Query) WhereInt32(index string, condition int, keys ...int32) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -605,7 +578,7 @@ func (q *Query) WhereInt32(index string, condition int, keys ...int32) *Query {
 func (q *Query) WhereInt64(index string, condition int, keys ...int64) *Query {
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -618,7 +591,7 @@ func (q *Query) WhereInt64(index string, condition int, keys ...int64) *Query {
 func (q *Query) WhereString(index string, condition int, keys ...string) *Query {
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -633,7 +606,7 @@ func (q *Query) WhereString(index string, condition int, keys ...string) *Query 
 func (q *Query) WhereUuid(index string, condition int, keys ...string) *Query {
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -653,7 +626,7 @@ func (q *Query) WhereKnn(index string, vec []float32, params KnnSearchParam) *Qu
 	q.ser.PutVarCUInt(queryKnnCondition).PutVString(index).PutVarCUInt(q.nextOp).PutFloatVector(vec)
 	params.serialize(&q.ser)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 	return q
 }
 
@@ -664,7 +637,7 @@ func (q *Query) WhereKnnString(index string, val string, params KnnSearchParam) 
 	q.ser.PutVarCUInt(queryKnnConditionExt).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(knnQueryDataFormatString).PutVString(val)
 	params.serialize(&q.ser)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 	return q
 }
 
@@ -683,7 +656,7 @@ func (q *Query) WhereBool(index string, condition int, keys ...bool) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -702,7 +675,7 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -711,52 +684,35 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 	return q
 }
 
-func (q *Query) WhereFunction(function Function, condition int, keys interface{}) *Query {
-	t := reflect.TypeOf(keys)
-	v := reflect.ValueOf(keys)
+// WhereExpressions - Add where condition with expressions.
+// Left expression possible values: field or function.
+// Right expression possible values: field, function, subquery, values.
+// At the moment supported combinations are:
+// - [field] condition [values]
+// - [field] condition [function]
+// - [field] condition [subquery]
+// - [field] condition [field]
+// - [subquery] condition [values]
+// - [function] condition [values]
+// - [function] condition [subquery]
+// Functions as left expressions: flat_array_len.
+// Functions as right expressions: now.
+func (q *Query) WhereExpressions(left IExpression, condition int, right IExpression) *Query {
+	q.ser.PutVarCUInt(queryExpressions)
+	left.Serialize(&q.ser)
+	q.ser.PutVarCUInt(q.nextOp)
+	q.ser.PutVarCUInt(condition)
+	right.Serialize(&q.ser)
 
-	fields := function.Fields()
-
-	if keys != nil && (t == reflect.TypeOf((*Query)(nil)).Elem() || (t.Kind() == reflect.Ptr && t.Elem() == reflect.TypeOf((*Query)(nil)).Elem())) {
-		q.ser.PutVarCUInt(queryFunctionSubQueryCondition)
-		q.ser.PutVarCUInt(q.nextOp)
-		q.ser.PutVarCUInt(len(fields))
-		for _, field := range fields {
-			q.ser.PutVString(field)
-		}
-		q.ser.PutVarCUInt(function.Type())
-		q.ser.PutVarCUInt(condition)
-		if t.Kind() == reflect.Ptr {
-			q.ser.PutVBytes(v.Interface().(*Query).ser.Bytes())
-		} else {
-			subQuery := v.Interface().(Query)
-			q.ser.PutVBytes(subQuery.ser.Bytes())
-		}
-	} else {
-		q.ser.PutVarCUInt(queryFunction)
-		q.ser.PutVarCUInt(len(fields))
-		for _, field := range fields {
-			q.ser.PutVString(field)
-		}
-		q.ser.PutVarCUInt(function.Type())
-		q.ser.PutVarCUInt(q.nextOp).PutVarCUInt(condition)
-
-		if keys == nil {
-			q.ser.PutVarUInt(0)
-		} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-			q.ser.PutVarCUInt(v.Len())
-			for i := 0; i < v.Len(); i++ {
-				q.putValue(v.Index(i))
-			}
-		} else {
-			q.ser.PutVarCUInt(1)
-			q.putValue(v)
-		}
-	}
-
-	q.queriesCount++
+	q.whereEntriesCount++
 	q.nextOp = opAND
 
+	return q
+}
+
+// WhereFlatArrayLen - Add where condition to DB query for flat_array_len() function
+func (q *Query) WhereFlatArrayLen(index string, condition int, keys ...interface{}) *Query {
+	q.WhereExpressions(FlatArrayLen{Field: index}, condition, Values{Values: keys})
 	return q
 }
 
@@ -765,7 +721,7 @@ func (q *Query) DWithin(index string, point Point, distance float64) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(DWITHIN)
 	q.nextOp = opAND
-	q.queriesCount++
+	q.whereEntriesCount++
 
 	q.ser.PutVarCUInt(3)
 	q.ser.PutVarCUInt(valueDouble).PutDouble(point[0])
@@ -834,7 +790,7 @@ func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query 
 
 	q.ser.PutVarCUInt(len(values))
 	for i := 0; i < len(values); i++ {
-		q.putValue(reflect.ValueOf(values[i]))
+		q.ser.PutValue(reflect.ValueOf(values[i]))
 	}
 
 	return q
@@ -1169,7 +1125,7 @@ func (q *Query) Set(field string, values interface{}) *Query {
 		for i := 0; i < v.Len(); i++ {
 			// function/value flag
 			q.ser.PutVarUInt(0)
-			q.putValue(v.Index(i))
+			q.ser.PutValue(v.Index(i))
 		}
 	} else {
 		if cmd == queryUpdateFieldV2 {
@@ -1178,7 +1134,7 @@ func (q *Query) Set(field string, values interface{}) *Query {
 		q.ser.PutVarCUInt(1) // size
 		// function/value flag
 		q.ser.PutVarUInt(0)
-		q.putValue(v)
+		q.ser.PutValue(v)
 	}
 	return q
 }
@@ -1197,7 +1153,7 @@ func (q *Query) SetExpression(field string, value string) *Query {
 
 	q.ser.PutVarCUInt(1) // size
 	q.ser.PutVarUInt(1)  // is expression
-	q.putValue(reflect.ValueOf(value))
+	q.ser.PutValue(reflect.ValueOf(value))
 
 	return q
 }
@@ -1311,6 +1267,7 @@ func (q *Query) join(q2 *Query, field string, joinType int) *Query {
 // - `q` has a join handler (registered via `q.JoinHandler(...)` call) with the same `field` value
 func (q *Query) InnerJoin(q2 *Query, field string) *Query {
 
+	q.whereEntriesCount++
 	if q.nextOp == opOR {
 		q.nextOp = opAND
 		return q.join(q2, field, orInnerJoin)

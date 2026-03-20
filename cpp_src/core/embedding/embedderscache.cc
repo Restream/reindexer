@@ -329,10 +329,12 @@ void EmbeddersLRUCache::Clear(NeedCreate createStorage) noexcept {
 
 	try {
 		totalCacheSize_ = initBaseSize();
+		SearchMap emptySearchMap;
+		OrderQueue emptyOrderQueue;
 		{
 			scoped_lock lck{cacheMtx_, storageMtx_};
-			SearchMap().swap(map_);
-			OrderQueue().swap(queue_);
+			emptySearchMap.swap(map_);
+			emptyOrderQueue.swap(queue_);
 			if (storage_) {
 				totalStorageSize_.store(0, std::memory_order_relaxed);
 				storage_->Destroy(storagePath_);
@@ -346,13 +348,14 @@ void EmbeddersLRUCache::Clear(NeedCreate createStorage) noexcept {
 		}
 		hits_.store(0u, std::memory_order_relaxed);
 		misses_.store(0u, std::memory_order_relaxed);
-
-		logFmt(LogInfo, "Cache with cache_tag '{}' cleared", tag_);
 	} catch (const std::exception& ex) {
 		logFmt(LogError, "Can't clear embedder cache: {}", ex.what());
+		return;
 	} catch (...) {
 		logFmt(LogError, "Can't clear embedder cache");
+		return;
 	}
+	logFmt(LogInfo, "Cache with cache_tag '{}' was cleared", tag_);
 }
 
 EmbeddersCacheMemStat EmbeddersLRUCache::GetMemStat() const {

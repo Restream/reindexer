@@ -109,7 +109,7 @@ private:
 	const IdSet* nullValues_;
 	IdType lastVal_ = IdType::Min();
 
-	enum Type { Empty, Reverse, Forward };
+	enum [[nodiscard]] Type { Empty, Reverse, Forward };
 	Type type_{Empty};
 
 	struct [[nodiscard]] CachedIters {

@@ -267,7 +267,7 @@ static void checkIndexMemstat(ReindexerTestApi<reindexer::Reindexer>& rx, std::s
 	auto json = memstats.GetJSON();
 	vectors -= emptyVectors.size();
 	auto expectedRegex = fmt::format(
-		R"(\{{"uniq_keys_count":{},"data_size":{},"indexing_struct_size":[1-9][0-9]+,"vectors_keeper_size":[1-9][0-9]+,"is_built":true,"name":"{}"\}})",
+		R"(\{{"uniq_keys_count":{},"data_size":{},"indexing_struct_size":[1-9][0-9]+,"vectors_keeper_size":[1-9][0-9]+,"is_built":true,("is_quantized":false,)*"name":"{}"\}})",
 		vectors + (emptyVectors.empty() ? 0 : 1), vectors * dims * sizeof(float), vectorIndex);
 	ASSERT_THAT(json, testing::ContainsRegex(expectedRegex));
 }
@@ -1358,7 +1358,6 @@ TEST_F(FloatVector, KeeperQRIterateAfterDropIndex) try {
 }
 CATCH_AND_ASSERT
 
-// TODO delete this after #2220
 TEST_F(FloatVector, CheckPKDuringUpdateFVIndex) try {
 	constexpr static auto kNsName = "FV_PK_check_ns"sv;
 	constexpr static auto kFvField = "fv";

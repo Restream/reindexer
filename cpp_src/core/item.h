@@ -121,9 +121,8 @@ public:
 		void throwIfNotSet() const;
 		void throwIfAssignFieldMultyJsonPath() const;
 
-		std::string_view jsonPath() const noexcept {
-			return std::get_if<std::string>(&jsonPath_) ? std::string_view{std::get<std::string>(jsonPath_)}
-														: std::get<std::string_view>(jsonPath_);
+		std::string_view jsonPath() const {
+			return std::visit([](auto& v) -> std::string_view { return v; }, jsonPath_);
 		}
 
 		FieldRef(int field, ItemImpl* itemImpl, bool notSet) noexcept : itemImpl_(itemImpl), field_(field), notSet_(notSet) {}
@@ -205,7 +204,7 @@ public:
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](std::string_view name) const noexcept { return FieldRefByNameOrJsonPath(name, *impl_); }
+	FieldRef operator[](std::string_view name) const { return FieldRefByNameOrJsonPath(name, *impl_); }
 	/// Get field's name tag
 	/// @param name - field name
 	/// @return name's numeric tag value
@@ -246,7 +245,7 @@ public:
 	/// @param name - field name or jsonpath
 	/// @param itemImpl - item
 	/// @return field's ref
-	static FieldRef FieldRefByNameOrJsonPath(std::string_view name, ItemImpl& itemImpl) noexcept;
+	static FieldRef FieldRefByNameOrJsonPath(std::string_view name, ItemImpl& itemImpl);
 
 	/// Perform embedding for all fields with automatic embedding configured
 	/// @param ctx - context
@@ -255,9 +254,9 @@ public:
 	const std::bitset<kMaxIndexes>& GetScalarIndexMask() const noexcept;
 
 private:
-	explicit Item(ItemImpl* impl) : impl_(impl) {}
+	explicit Item(ItemImpl* impl) noexcept : impl_(impl) {}
 	Item(ItemImpl*, const FieldsFilter&);
-	explicit Item(const Error& err) : impl_(nullptr), status_(err) {}
+	explicit Item(const Error& err) noexcept : impl_(nullptr), status_(err) {}
 	Item(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
 	void setID(IdType id) noexcept { id_ = id; }
 	void setLSN(lsn_t lsn);

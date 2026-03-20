@@ -2,7 +2,6 @@
 
 #ifdef RX_LOGACTIVITY
 
-#include <chrono>
 #include <deque>
 #include <string>
 #include <unordered_map>

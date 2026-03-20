@@ -28,6 +28,12 @@ public:
 	void MigrateFromOldToNewPK(const FieldsSet& from, const FieldsSet& to) noexcept;
 
 	/**
+	 * @brief Migrating NS items to new PK.
+	 * @param to - new PK fields.
+	 */
+	void MigrateToNewPK(const FieldsSet& pk) noexcept;
+
+	/**
 	 * @brief Removing NS items with PK that is different from the actual one
 	 * in case if the last call of 'MigrateFromOldToNewPK' failed.
 	 */
@@ -41,17 +47,22 @@ private:
 	 * @param newPk - PK to migrate to.
 	 * @param pkBuf - buffer for PK.
 	 * @param itemBuf - buffer for item.
-	 * @param vectorIndexes - const reference float vector indexes.
 	 * @return true, if no errors occurred.
 	 */
-	bool migrateItem(size_t rowId, const FieldsSet& oldPk, const FieldsSet& newPk, WrSerializer& pkBuf, WrSerializer& itemBuf,
-					 const FloatVectorsIndexes& vectorIndexes) noexcept;
+	bool migrateItem(size_t rowId, const FieldsSet& oldPk, const FieldsSet& newPk, WrSerializer& pkBuf, WrSerializer& itemBuf) noexcept;
 
 	/**
 	 * Save migration status to storage.
 	 * @param status - migration status value.
 	 */
 	void writeStatus(MigrationStatus status) noexcept;
+
+	/**
+	 * Iterate over all the Storage items.
+	 * @param onReadItem - callback for every iterated item.
+	 */
+	template <typename Fn>
+	void iterateOverStorageItems(Fn&& onReadItem) noexcept;
 
 	/**
 	 * Read migration status from storage.

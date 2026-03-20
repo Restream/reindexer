@@ -143,6 +143,8 @@ public:
 	explicit operator Point() const;
 	explicit operator ConstFloatVectorView() const noexcept;
 	explicit operator FloatVectorView() noexcept;
+	explicit operator FloatVector() &;
+	explicit operator FloatVector() &&;	 // Takes ownership if possible, otherwise copies
 
 	template <typename T>
 	T As() const;

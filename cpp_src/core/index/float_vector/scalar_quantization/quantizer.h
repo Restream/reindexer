@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <span>
+#include "estl/concepts.h"
 #include "estl/defines.h"
 #include "quantization_params.h"
 
@@ -12,7 +13,7 @@ public:
 	explicit Quantizer(const MapT& hnsw, QuantizingParams params)
 		: params_(std::move(params)),
 		  // for the 1-quantile make a reserve for outliers in 1 pct
-		  kConfidenceInterval_([quantile = params_.config.quantile]() {
+		  kConfidenceInterval_([quantile = params_.Quantile(hnsw.fstdistfunc_.Dims())]() {
 			  assertrx_throw(quantile >= 0.95f && quantile <= 1.f);
 			  return (1.f / quantile <= 1.01f) ? 1.01f : (1.f / quantile);
 		  }()),
@@ -20,25 +21,18 @@ public:
 		  kMetric(hnsw.fstdistfunc_.Metric()),
 		  statistic_(*this, [&hnsw]() noexcept { return hnsw.cur_element_count.load(std::memory_order_relaxed); }) {}
 
-	CorrectiveOffsets Quantize(auto from, auto to) const noexcept {
-		switch (params_.config.nonLinearCorrection) {
-			case Sq8NonLinearCorrection::Disabled:
-				return quantize<Sq8NonLinearCorrection::Disabled>(from, to);
-			case Sq8NonLinearCorrection::Enabled:
-				return quantize<Sq8NonLinearCorrection::Enabled>(from, to);
-			default:
-				std::abort();
-		}
-	}
-	CorrectiveOffsets Requantize(auto point, const auto& dequantizer) const noexcept {
-		switch (params_.config.nonLinearCorrection) {
-			case Sq8NonLinearCorrection::Disabled:
-				return quantize<Sq8NonLinearCorrection::Disabled>(point, point, dequantizer);
-			case Sq8NonLinearCorrection::Enabled:
-				return quantize<Sq8NonLinearCorrection::Enabled>(point, point, dequantizer);
-			default:
-				std::abort();
-		}
+	template <typename MapT>
+	explicit Quantizer(const MapT& hnsw, const Quantizer& other)
+		: params_(other.params_),
+		  kConfidenceInterval_(other.kConfidenceInterval_),
+		  kDim(other.kDim),
+		  kMetric(other.kMetric),
+		  statistic_(other.statistic_, *this, [&hnsw]() noexcept { return hnsw.cur_element_count.load(std::memory_order_relaxed); }) {}
+
+	CorrectiveOffset Quantize(auto from, auto to) const noexcept { return quantize(from, to); }
+
+	CorrectiveOffset Requantize(auto point, const QuantizingParams& dequantizeParams) const noexcept {
+		return quantize(point, point, dequantizeParams);
 	}
 
 	const QuantizingParams& Params() const noexcept { return params_; }
@@ -47,81 +41,87 @@ public:
 
 	[[nodiscard]] bool NeedRequantize() const noexcept { return statistic_.OutliersPct() > (kConfidenceInterval_ - 1.f); }
 
-	[[nodiscard]] auto PrepareToRequantize() noexcept {
-		auto dequantizer = [p = params_](uint8_t val) { return uint8t2floatImpl(val, p.minQ, p.maxQ, p.alpha, p.uint8offset); };
+	QuantizingParams PrepareToRequantize() noexcept {
+		QuantizingParams oldQuantizingParams = params_;
 
 		params_.minQ = statistic_.Min();
 		params_.maxQ = statistic_.Max();
-		params_.alpha = (params_.maxQ - params_.minQ) / params_.sq8Range;
+		params_.alpha = (params_.maxQ - params_.minQ) / kSq8Range;
 		params_.alpha_2 = std::pow(params_.alpha, 2.f);
 		params_.delta = 0.5 * std::pow(params_.minQ, 2.f) * kDim;
 
 		statistic_.Reset();
 
-		return dequantizer;
+		return oldQuantizingParams;
 	}
+
+	float Dequantize(uint8_t val) const noexcept { return dequantize(val, params_); }
 
 private:
+	static float dequantize(uint8_t val, QuantizingParams dequantizeParams) noexcept {
+		return uint8t2floatImpl(val, dequantizeParams.alpha, dequantizeParams.minQ);
+	}
+
 	[[nodiscard]] RX_ALWAYS_INLINE uint8_t float2uint8t(float val) const noexcept {
-		return val < params_.minQ ? 0
-			   : val > params_.maxQ
-				   ? KDefaultSq8Range
-				   : std::clamp((val - params_.minQ) / params_.alpha + params_.uint8offset, params_.uint8offset, params_.sq8Range);
+		return std::clamp((val - params_.minQ) / params_.alpha, 0.f, kSq8Range);
 	}
-	[[nodiscard]] static RX_ALWAYS_INLINE float uint8t2floatImpl(uint8_t val, float min, float max, float alpha, float uint8offset) {
-		return val == 0 ? min : val == uint8_t(KDefaultSq8Range) ? max : alpha * (val - uint8offset) + min;
-	}
+	[[nodiscard]] static RX_ALWAYS_INLINE float uint8t2floatImpl(uint8_t val, float alpha, float min) noexcept { return alpha * val + min; }
 
 	[[nodiscard]] RX_ALWAYS_INLINE float uint8t2float(uint8_t val) const noexcept {
-		return uint8t2floatImpl(val, params_.minQ, params_.maxQ, params_.alpha, params_.uint8offset);
+		return uint8t2floatImpl(val, params_.alpha, params_.minQ);
 	}
 
-	template <Sq8NonLinearCorrection nonLinearCorrection, typename DequantizerT = void*>
-	CorrectiveOffsets quantize(auto from, auto to, const DequantizerT& dequantizer = {}) const noexcept {
-		CorrectiveOffsets res{};
+	/**
+	 * @brief Performs scalar quantization on vectors with error correction.
+	 *
+	 * This implementation is based on the principles outlined in the articles:
+	 * 1. https://www.elastic.co/search-labs/blog/scalar-quantization-101
+	 * 2. https://www.elastic.co/search-labs/blog/vector-db-optimized-scalar-quantization
+	 *
+	 * Unlike classical scalar quantization, which is primarily used for inference
+	 * acceleration, this implementation is optimized specifically for the vector
+	 * database use case. The key optimization applied in this code is a first-order
+	 * additive correction to the quantized dot product.
+	 *
+	 * Instead of only computing the dot product using integer arithmetic, we
+	 * compensate for the systematic quantization error that occurs when comparing
+	 * a query with documents. The correction assumes that relevant queries for a
+	 * given document lie in the vicinity of its embedding. This allows us to
+	 * precompute and store one additional float per vector, improving ranking
+	 * accuracy without sacrificing the performance of the integer dot product
+	 * computation.
+	 */
+	template <reindexer::concepts::OneOf<QuantizingParams, std::nullopt_t> DequantizeParams = std::nullopt_t>
+	CorrectiveOffset quantize(auto from, auto to, const DequantizeParams& dequantizeParams = std::nullopt) const noexcept {
+		CorrectiveOffset res{};
 		const bool isL2 = kMetric == hnswlib::MetricType::L2;
-		int cnt = 0;
-		int cntPos = 0;
-		int cntNeg = 0;
-
+		float mathExpectShift = 0.f;
 		std::transform(from.begin(), from.end(), to.begin(), [&](auto _val) noexcept {
 			float val = _val;
-			if constexpr (!std::is_same_v<void*, DequantizerT>) {
-				val = dequantizer(val);
+			if constexpr (std::is_same_v<DequantizeParams, QuantizingParams>) {
+				val = dequantize(val, dequantizeParams);
 			}
 
 			const auto uint8 = float2uint8t(val);
 			const auto err = val - uint8t2float(uint8);
 			if (isL2) {
-				res.precalc += (2 * params_.alpha * uint8 + err) * err;
+				res += (2 * params_.alpha * uint8 + err) * err;
+				mathExpectShift -= 2.f * params_.alpha * err * uint8;
 			} else {
-				res.precalc += params_.alpha * uint8 + err;
-			}
-
-			if constexpr (nonLinearCorrection == Sq8NonLinearCorrection::Enabled) {
-				res.roundingErr += (val >= params_.minQ && val <= params_.maxQ) ? ++cnt, err : 0;
-				res.negOutlierErr += val < params_.minQ ? ++cntNeg, err : 0;
-				res.posOutlierErr += val > params_.maxQ ? ++cntPos, err : 0;
+				res += params_.alpha * uint8 + err;
+				mathExpectShift += params_.alpha * err * uint8;
 			}
 
 			return uint8;
 		});
 
 		if (!isL2) {
-			res.precalc *= params_.minQ;
-			res.precalc += params_.delta;
+			res *= params_.minQ;
+			res += params_.delta;
 		}
 
-		res.roundingErr /= cnt;
+		res += mathExpectShift;
 
-		if constexpr (nonLinearCorrection == Sq8NonLinearCorrection::Enabled) {
-			if (cntNeg) {
-				res.negOutlierErr /= cntNeg;
-			}
-			if (cntPos) {
-				res.posOutlierErr /= cntPos;
-			}
-		}
 		return res;
 	}
 
@@ -133,6 +133,14 @@ private:
 
 	struct [[nodiscard]] Statistic {
 		Statistic(const Quantizer& q, auto curSizeFn) noexcept : quantizer_(q), curSizeFn_(std::move(curSizeFn)) {}
+		Statistic(const Statistic& other, const Quantizer& q, auto curSizeFn) noexcept : quantizer_(q), curSizeFn_(std::move(curSizeFn)) {
+			kMinQconfidence = other.kMinQconfidence;
+			kMaxQconfidence = other.kMaxQconfidence;
+			curMin_.store(other.curMin_, std::memory_order_relaxed);
+			curMax_.store(other.curMax_, std::memory_order_relaxed);
+			cnt_.store(other.cnt_, std::memory_order_relaxed);
+			cntOutliers_.store(other.cntOutliers_, std::memory_order_relaxed);
+		}
 
 		void Reset() {
 			kMinQconfidence = quantizer_.params_.minQ * quantizer_.kConfidenceInterval_;

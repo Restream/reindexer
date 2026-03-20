@@ -59,13 +59,13 @@ using FoundWordsProcsType = fast_hash_map<WordIdType, float, WordIdTypeHash, Wor
 template <typename IdCont>
 class [[nodiscard]] SubtermResults {
 public:
-	struct HoldT {};
-	struct NoHoldT {};
+	struct [[nodiscard]] HoldT {};
+	struct [[nodiscard]] NoHoldT {};
 
-	SubtermResults(const IdCont& vids, std::string&& pattern, WordIdType patternId, float proc, HoldT) noexcept
-		: proc(proc), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
-	SubtermResults(const IdCont& vids, std::string_view pattern, WordIdType patternId, float proc, NoHoldT) noexcept
-		: proc(proc), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
+	SubtermResults(const IdCont& vids, std::string&& pattern, WordIdType patternId, float proc, float boost, HoldT) noexcept
+		: proc(proc), boost(boost), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
+	SubtermResults(const IdCont& vids, std::string_view pattern, WordIdType patternId, float proc, float boost, NoHoldT) noexcept
+		: proc(proc), boost(boost), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
 
 	const IdCont& Vids() const noexcept { return *vids_; }
 	std::string_view Pattern() const noexcept {
@@ -80,6 +80,7 @@ public:
 	WordIdType PatternID() const noexcept { return patternId_; }
 
 	float proc = 0.0;
+	float boost = 1.0;
 
 private:
 	const IdCont* vids_ = nullptr;						   // indexes of documents (vdoc) containing the given word + position + field
@@ -171,11 +172,11 @@ struct [[nodiscard]] TermRankInfo {
 };
 
 template <class MergeDataType>
-struct PhraseMergerDocumentData;
+struct [[nodiscard]] PhraseMergerDocumentData;
 
 // Intermediate information about document found at current phrase merge step. Used only for phrases with 2 or more terms
 template <>
-struct PhraseMergerDocumentData<MergeData> {
+struct [[nodiscard]] PhraseMergerDocumentData<MergeData> {
 	explicit PhraseMergerDocumentData(PositionsVector&& positions, float termRank, const std::wstring&, const TermRankInfo&) noexcept
 		: nextPhrasePositions(std::move(positions)), rank(termRank) {}
 	PhraseMergerDocumentData(PhraseMergerDocumentData&&) noexcept = default;
@@ -207,7 +208,7 @@ struct PhraseMergerDocumentData<MergeData> {
 };
 
 template <>
-struct PhraseMergerDocumentData<MergeDataAreas<Area>> {
+struct [[nodiscard]] PhraseMergerDocumentData<MergeDataAreas<Area>> {
 	PhraseMergerDocumentData(const PositionsVector& termPositions, float termRank, const std::wstring&, const TermRankInfo&)
 		: rank(termRank) {
 		nextPhrasePositions.reserve(termPositions.size());
@@ -243,7 +244,7 @@ struct PhraseMergerDocumentData<MergeDataAreas<Area>> {
 		nextPhrasePositions.clear();
 	}
 
-	AreasInDocument<Area> CreateAreas(size_t maxAreasInDoc) const {
+	AreasInDocument<Area> CreateAreas(float proc, size_t maxAreasInDoc) const {
 		AreasInDocument<Area> area;
 		if (wordPosForChain.empty()) {
 			return area;
@@ -261,8 +262,8 @@ struct PhraseMergerDocumentData<MergeDataAreas<Area>> {
 				--indx;
 			}
 			assertrx_throw(first.field() == last.field());
-			if (area.InsertArea(Area(first.pos(), last.pos() + 1, cur.arrayIdx()), cur.field(), rank, maxAreasInDoc)) {
-				area.UpdateRank(rank);
+			if (area.InsertArea(Area(first.pos(), last.pos() + 1, cur.arrayIdx()), cur.field(), proc, maxAreasInDoc)) {
+				area.UpdateRank(proc);
 			}
 		}
 		return area;
@@ -277,7 +278,7 @@ struct PhraseMergerDocumentData<MergeDataAreas<Area>> {
 };
 
 template <>
-struct PhraseMergerDocumentData<MergeDataAreas<AreaDebug>> {
+struct [[nodiscard]] PhraseMergerDocumentData<MergeDataAreas<AreaDebug>> {
 	PhraseMergerDocumentData(const PositionsVector& termPositions, float termRank, const std::wstring& termPattern, TermRankInfo& termInf)
 		: rank(termRank) {
 		nextPhrasePositions.reserve(termPositions.size());
@@ -317,7 +318,7 @@ struct PhraseMergerDocumentData<MergeDataAreas<AreaDebug>> {
 		nextPhrasePositions.clear();
 	}
 
-	AreasInDocument<AreaDebug> CreateAreas(size_t) const {
+	AreasInDocument<AreaDebug> CreateAreas(float proc, size_t) const {
 		AreasInDocument<AreaDebug> area;
 		if (wordPosForChain.empty()) {
 			return area;
@@ -336,9 +337,9 @@ struct PhraseMergerDocumentData<MergeDataAreas<AreaDebug>> {
 				} else if (indx == 0) {
 					mode = AreaDebug::PhraseMode::Start;
 				}
-				if (area.InsertArea(AreaDebug(pos.pos(), pos.pos() + 1, cur.arrayIdx(), std::move(pos.info), mode), cur.field(), rank,
+				if (area.InsertArea(AreaDebug(pos.pos(), pos.pos() + 1, cur.arrayIdx(), std::move(pos.info), mode), cur.field(), proc,
 									-1)) {
-					area.UpdateRank(float(rank));
+					area.UpdateRank(float(proc));
 				}
 
 				--indx;

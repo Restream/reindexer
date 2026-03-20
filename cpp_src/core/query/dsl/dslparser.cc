@@ -1,5 +1,6 @@
 #include "dslparser.h"
 #include "core/cjson/jschemachecker.h"
+#include "core/query/expression/expression.h"
 #include "core/query/query.h"
 #include "core/type_consts_helpers.h"
 #include "gason/gason.h"
@@ -365,6 +366,93 @@ void addWhereKNN(const JsonNode& fieldNode, const JsonNode& filter, Query& q) {
 	}
 }
 
+ExpressionType parseExpressionType(const JsonNode& expr) {
+	const auto type{expr.findCaseInsensitive("type"sv)};
+	if (type.empty()) {
+		throw Error{errParseDSL, "Wrong DSL format: expression type '{}' is not set"};
+	}
+	return expressions::MakeExpressionType(type.As<std::string_view>());
+}
+
+static void parseExpressions(const JsonNode& leftExpr, const JsonNode& rightExpr, CondType condition, Query& q) {
+	auto parseValueAsString = [](const JsonNode& expr) -> std::string_view {
+		if (const auto v = expr.findCaseInsensitive("value"sv); !v.empty()) {
+			checkJsonValueType(v.value, "value"sv, JsonTag::STRING);
+			return v.As<std::string_view>();
+		}
+		return {};
+	};
+	const auto leftType{parseExpressionType(leftExpr)};
+	const auto rightType{parseExpressionType(rightExpr)};
+	expressions::ValidateExpressions(leftType, rightType, expressions::ValidationType::WithoutSubqueries);
+	if (leftType == ExpressionTypeField) {
+		auto leftField{parseValueAsString(leftExpr)};
+		if (rightType == ExpressionTypeField) {
+			q.WhereBetweenFields(leftField, condition, parseValueAsString(rightExpr));
+		} else if (rightType == ExpressionTypeExpression) {
+			q.Where(leftField, condition, functions::Function::FromExpression(parseValueAsString(rightExpr)));
+		} else if (rightType == ExpressionTypeValues) {
+			q.Where(leftField, condition, getValues(rightExpr));
+		} else {
+			assertrx_throw(false);
+		}
+	} else if (leftType == ExpressionTypeExpression) {
+		auto leftFunction{functions::Function::FromExpression(parseValueAsString(leftExpr))};
+		if (rightType == ExpressionTypeField) {
+			q.Where(std::move(leftFunction), condition, parseValueAsString(rightExpr));
+		} else if (rightType == ExpressionTypeValues) {
+			q.Where(std::move(leftFunction), condition, getValues(rightExpr));
+		} else {
+			assertrx_throw(false);
+		}
+	} else {
+		assertrx_throw(false);
+	}
+}
+
+static void parseLeftExpressionWithSubquery(const JsonNode& le, CondType cond, Query&& subQuery, Query& q) {
+	checkJsonValueType(le.value, "left_expression"sv, JsonTag::OBJECT);
+	auto leType = parseExpressionType(le);
+	expressions::ValidateExpressions(leType, ExpressionTypeSubQuery, expressions::ValidationType::Full);
+	if (const auto v = le.findCaseInsensitive("value"sv); !v.empty()) {
+		switch (leType) {
+			case ExpressionTypeField:
+				q.Where(v.As<std::string_view>(), cond, std::move(subQuery));
+				break;
+			case ExpressionTypeExpression:
+				q.Where(functions::Function::FromExpression(v.As<std::string_view>()), cond, std::move(subQuery));
+				break;
+			case ExpressionTypeValues:
+			case ExpressionTypeSubQuery:
+			default:
+				assertrx_throw(false);
+		}
+	}
+}
+
+static void parseRightExpressionWithSubquery(Query&& subQuery, CondType cond, const JsonNode& re, Query& q) {
+	checkJsonValueType(re.value, "right_expression"sv, JsonTag::OBJECT);
+	auto reType = parseExpressionType(re);
+	if (reType != ExpressionTypeExpression && reType != ExpressionTypeValues) {
+		throw Error(errParseDSL, "Unsupported type of right expression '{}': expression\\values is expected",
+					expressions::ExpressionTypeToString(reType));
+	}
+	if (const auto v = re.findCaseInsensitive("value"sv); !v.empty()) {
+		switch (reType) {
+			case ExpressionTypeExpression:
+				q.Where(std::move(subQuery), cond, functions::Function::FromExpression(v.As<std::string_view>()));
+				break;
+			case ExpressionTypeValues:
+				q.Where(std::move(subQuery), cond, getValues(re));
+				break;
+			case ExpressionTypeField:
+			case ExpressionTypeSubQuery:
+			default:
+				assertrx_throw(false);
+		}
+	}
+}
+
 static void parseFilter(const JsonNode& filter, Query& q) {
 	checkJsonValueType(filter.value, "filter"sv, JsonTag::OBJECT);
 	if (const auto ep = filter.findCaseInsensitive("equal_positions"sv); !ep.empty()) {
@@ -410,17 +498,28 @@ static void parseFilter(const JsonNode& filter, Query& q) {
 			if (const auto valuesJson = filter.findCaseInsensitive("value"sv); !valuesJson.empty()) {
 				throw Error{errParseDSL, "Wrong DSL format: 'value', 'subquery' and 'field' fields in one filter"};
 			}
+		} else if (const auto le = filter.findCaseInsensitive("left_expression"sv); !le.empty()) {
+			parseLeftExpressionWithSubquery(le, getCondition(), std::move(subQuery), q);
+		} else if (const auto re = filter.findCaseInsensitive("right_expression"sv); !re.empty()) {
+			parseRightExpressionWithSubquery(std::move(subQuery), getCondition(), re, q);
 		} else {
 			q.Where(std::move(subQuery), getCondition(), getValues(filter));
 		}
+	} else if (const auto le = filter.findCaseInsensitive("left_expression"sv); !le.empty()) {
+		checkJsonValueType(le.value, "left_expression"sv, JsonTag::OBJECT);
+		const auto re = filter.findCaseInsensitive("right_expression"sv);
+		if (re.empty()) {
+			throw Error{errParseDSL, "Wrong DSL format: 'right_expression' is not set"};
+		}
+		// Expresssions will replace fields in the future
+		checkJsonValueType(re.value, "right_expression"sv, JsonTag::OBJECT);
+		parseExpressions(le, re, getCondition(), q);
 	} else if (const auto fieldNode = filter.findCaseInsensitive("field"sv); !fieldNode.empty()) {
 		if (auto cond = getCondition(); cond == CondKnn) {
 			addWhereKNN(fieldNode, filter, q);
 		} else {
 			q.Where(fieldNode.As<std::string_view>(), cond, getValues(filter));
 		}
-	} else if (const auto functionNode = filter.findCaseInsensitive("function"sv); !functionNode.empty()) {
-		q.Where(functions::Function::FromJSON(functionNode), getCondition(), getValues(filter));
 	} else if (condition.has_value()) {
 		throw Error{errParseDSL, "Condition is set, but appropriate field/subquery was not found in filter"};
 	}

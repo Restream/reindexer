@@ -99,7 +99,7 @@ public:
 	}
 	int RndInt(int min, int max) { return rndInt_(gen_, IntRndParams(min, max)); }
 	size_t RndItemsCount() {
-		enum Count : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
+		enum [[nodiscard]] Count : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
 		switch (RndWhich<Count, 100, 100'000, 100, 1>()) {
 			case Short:
 				return RndInt(0, 10);

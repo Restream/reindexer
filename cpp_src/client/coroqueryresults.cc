@@ -173,6 +173,7 @@ TagsMatcher CoroQueryResults::GetTagsMatcher(int nsid) const noexcept {
 TagsMatcher CoroQueryResults::GetTagsMatcher(std::string_view nsName) const noexcept {
 	const auto it = std::find_if(i_.nsArray_.begin(), i_.nsArray_.end(),
 								 [&nsName](const std::shared_ptr<Namespace>& ns) { return (std::string_view(ns->name) == nsName); });
+
 	return (it != i_.nsArray_.end()) ? (*it)->GetTagsMatcher() : TagsMatcher();
 }
 
@@ -577,7 +578,7 @@ CoroQueryResults::Impl::Impl(cproto::CoroClientConnection* conn, CoroQueryResult
 	assert(conn_);
 	const auto sessionTs = conn_->LoginTs();
 	if (sessionTs.has_value()) {
-		sessionTs_ = sessionTs.value();
+		sessionTs_ = *sessionTs;
 	}
 	InitLazyData();
 }

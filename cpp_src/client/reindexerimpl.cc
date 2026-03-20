@@ -329,7 +329,8 @@ void ReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, 
 	uint32_t runningCount = 0;
 	for (size_t connIdx = 0; connIdx < connPool.Size(); ++connIdx) {
 		auto& conn = connPool.GetConn(connIdx);
-		// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Function may throw exceptions in some rare cases. Is it possible to fix it?
+		// TODO: Function may throw exceptions in some rare cases. Is it possible to fix it?
+		// NOLINTNEXTLINE(bugprone-exception-escape,rx-perf-lambda-to-std-function-allocation)
 		th.loop.spawn([this, dsn, opts, &isRunning, &conn, connIdx, &thData, &runningCount]() noexcept {
 			auto& th = workers_[thData.tid];
 			auto err = conn.rx.Connect(dsn, th.loop, opts);
@@ -343,6 +344,7 @@ void ReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, 
 			}
 			coroutine::wait_group wg;
 			for (unsigned n = 0; n < conf_.SyncRxCoroCount; ++n) {
+				// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 				th.loop.spawn(wg, [this, &conn, &thData]() noexcept { coroInterpreter(conn, thData.connPool, thData.tid); });
 			}
 			const auto obsID = conn.rx.AddConnectionStateObserver(

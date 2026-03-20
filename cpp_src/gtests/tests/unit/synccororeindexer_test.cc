@@ -14,6 +14,8 @@
 
 using namespace reindexer;
 
+// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
+
 const int kSyncCoroRxTestMaxIndex = 1000;
 static const size_t kSyncCoroRxTestDefaultRpcPort = 8999;
 static const size_t kSyncCoroRxTestDefaultHttpPort = 9888;
@@ -362,7 +364,7 @@ TEST(SyncCoroRx, StopWhileWriting) {
 	constexpr auto kWritingThreadSleep = std::chrono::milliseconds(1);
 	constexpr auto kSleepBetweenPhases = std::chrono::milliseconds(200);
 
-	enum class State { Running, Stopping, Stopped, TestDone };
+	enum class [[nodiscard]] State { Running, Stopping, Stopped, TestDone };
 	std::atomic<State> state = State::Running;
 
 	Error err = client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
@@ -431,11 +433,11 @@ TEST(SyncCoroRx, StopWhileWriting) {
 	}
 
 	std::this_thread::sleep_for(kSleepBetweenPhases);
-	state = State::Stopping;
+	state.store(State::Stopping);
 	client.Stop();
-	state = State::Stopped;
+	state.store(State::Stopped);
 	std::this_thread::sleep_for(kSleepBetweenPhases);
-	state = State::TestDone;
+	state.store(State::TestDone);
 	for (auto& th : writingThreads) {
 		th.join();
 	}
@@ -543,6 +545,9 @@ TEST(SyncCoroRx, TxInvalidation) {
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	auto client = server.Get()->api.reindexer;
 	Error err = client->OpenNamespace(kNsNames);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = client->AddIndex(kNsNames, reindexer::IndexDef{"id", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	auto originalTx = client->NewTransaction(kNsNames);
@@ -739,3 +744,5 @@ TEST(SyncCoroRx, QRWithMultipleIterationLoops) {
 	}
 	rx.Stop();
 }
+
+// NOLINTEND(rx-perf-lambda-to-std-function-allocation)

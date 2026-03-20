@@ -44,12 +44,14 @@ public:
 			if (const auto& connection = *itr; connection) {
 				const int shardId = itr->ShardId();
 				auto& clientData = results.emplace_back(shardId);
+				// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 				clientData.connection =
 					connection
 						->WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error& err) {
 							completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
 						})
 						.WithShardId(shardId, true);
+				// NOLINTEND(rx-perf-lambda-to-std-function-allocation)
 
 				auto& conn = clientData.connection;
 				auto invokeWrap = [&f, &conn]<typename... WrapperArgs>(WrapperArgs&&... wrapperArgs) {
@@ -99,10 +101,12 @@ public:
 			if (const auto& connection = *itr; connection) {
 				const int shardId = itr->ShardId();
 				auto& clientData = results.emplace_back();
+				// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 				clientData.connection =
 					connection->WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error& err) {
 						completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
 					});
+				// NOLINTEND(rx-perf-lambda-to-std-function-allocation)
 				Error err = std::invoke(clientF, clientData.connection, nsName, args..., clientData.results);
 				if (!err.ok()) {
 					lock_guard lck(mtx);

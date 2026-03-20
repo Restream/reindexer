@@ -4,7 +4,6 @@
 #include <set>
 #include "client/queryresults.h"
 #include "core/itemimplrawdata.h"
-#include "core/namespace/incarnationtags.h"
 #include "fields_filter.h"
 #include "localqueryresults.h"
 
@@ -250,8 +249,8 @@ public:
 	bool IsDistributed() const noexcept { return type_ == Type::Mixed || type_ == Type::MultipleRemote; }
 	bool HaveShardIDs() const noexcept;
 	int GetCommonShardID() const;
-	PayloadType GetPayloadType(int nsid) const noexcept;
-	TagsMatcher GetTagsMatcher(int nsid) const noexcept;
+	PayloadType GetPayloadType(int nsid) const;
+	TagsMatcher GetTagsMatcher(int nsid) const;
 	// For local qr only
 	const FieldsFilter& GetFieldsFilter(int nsid) const noexcept {
 		if (type_ == Type::Local) {
@@ -543,14 +542,14 @@ private:
 	std::unique_ptr<MergedData> mergedData_;  // Merged data of distributed query results
 	std::optional<QrMetaData<LocalQueryResults>> local_;
 
-	const QrMetaData<LocalQueryResults>& localUnsafe() const {
+	const QrMetaData<LocalQueryResults>& localUnsafe() const noexcept {
 		// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
-		return local_.value();
+		return *local_;
 	}
 
-	QrMetaData<LocalQueryResults>& localUnsafe() {
+	QrMetaData<LocalQueryResults>& localUnsafe() noexcept {
 		// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
-		return local_.value();
+		return *local_;
 	}
 
 	// We could use std::deque to make QrMetaData non-movable, but deque's default constructor performs allocation in GCC's implementation

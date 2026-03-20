@@ -87,17 +87,24 @@ type EmbeddingConfig struct {
 	// Query embedder configuration
 	QueryEmbedder *EmbedderConfig `json:"query_embedder,omitempty"`
 }
+type QuantizationConfig struct {
+	Type       string  `json:"quantization_type"`
+	Quantile   float32 `json:"quantile,omitempty"`
+	SampleSize int64   `json:"sample_size,omitempty"`
+	Threshold  int64   `json:"quantization_threshold,omitempty"`
+}
 
 type FloatVectorIndexOpts struct {
-	Metric             string           `json:"metric"`
-	Dimension          int              `json:"dimension"`
-	M                  int              `json:"m,omitempty"`
-	EfConstruction     int              `json:"ef_construction,omitempty"`
-	StartSize          int              `json:"start_size,omitempty"`
-	CentroidsCount     int              `json:"centroids_count,omitempty"`
-	MultithreadingMode int              `json:"multithreading,omitempty"`
-	Radius             float32          `json:"radius,omitempty"`
-	EmbeddingConfig    *EmbeddingConfig `json:"embedding,omitempty"`
+	Metric             string              `json:"metric"`
+	Dimension          int                 `json:"dimension"`
+	M                  int                 `json:"m,omitempty"`
+	EfConstruction     int                 `json:"ef_construction,omitempty"`
+	StartSize          int                 `json:"start_size,omitempty"`
+	CentroidsCount     int                 `json:"centroids_count,omitempty"`
+	MultithreadingMode int                 `json:"multithreading,omitempty"`
+	Radius             float32             `json:"radius,omitempty"`
+	EmbeddingConfig    *EmbeddingConfig    `json:"embedding,omitempty"`
+	QuantizationConfig *QuantizationConfig `json:"quantization_config,omitempty"`
 }
 
 type IndexDef struct {

@@ -2,7 +2,6 @@
 #include <string_view>
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
-#include "core/keyvalue/float_vectors_holder.h"
 #include "sparse_validator.h"
 #include "tagsmatcher.h"
 #include "tools/assertrx.h"
@@ -15,14 +14,14 @@ namespace reindexer {
 
 using namespace item_fields_validator;
 
-Error JsonDecoder::Decode(Payload& pl, WrSerializer& wrser, const gason::JsonValue& v) {
+Error JsonDecoder::Decode(Payload& pl, WrSerializer& wrser, const gason::JsonValue& v) noexcept {
 	try {
 		tagsPath_.clear();
 		objectScalarIndexes_.reset();
 		CJsonBuilder builder(wrser, ObjType::TypePlain, &tagsMatcher_);
 		decodeJson(&pl, builder, v, TagName::Empty(), Matched_True);
-	} catch (const Error& err) {
-		return err;
+	} catch (std::exception& e) {
+		return e;
 	}
 	return {};
 }

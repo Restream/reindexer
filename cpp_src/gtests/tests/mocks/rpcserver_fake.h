@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <set>
-#include "core/reindexer.h"
 #include "net/cproto/dispatcher.h"
 #include "net/listener.h"
 #include "server/dbmanager.h"
@@ -17,7 +16,7 @@ struct [[nodiscard]] RPCServerConfig {
 	std::chrono::milliseconds selectDelay = std::chrono::milliseconds(2000);
 };
 
-enum RPCServerStatus { Init, Connected, Stopped };
+enum [[nodiscard]] RPCServerStatus { Init, Connected, Stopped };
 
 struct [[nodiscard]] RPCClientData final : public cproto::ClientData {
 	AuthContext auth;

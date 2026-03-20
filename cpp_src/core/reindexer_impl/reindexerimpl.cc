@@ -5,16 +5,19 @@
 #include <thread>
 #include "cluster/clustercontrolrequest.h"
 #include "cluster/clusterizator.h"
+#include "core/activity/activity_container.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/protobufschemabuilder.h"
 #include "core/defnsconfigs.h"
 #include "core/embedding/embedder.h"
 #include "core/embedding/embedderscache.h"
 #include "core/ft/functions/ft_function.h"
+#include "core/function/precomputed_values.h"
 #include "core/iclientsstats.h"
 #include "core/id_type.h"
 #include "core/index/index.h"
 #include "core/nsselecter/querypreprocessor.h"
+#include "core/query/functions_optimizations.h"
 #include "core/query/sql/sqlsuggester.h"
 #include "debug/crashqueryreporter.h"
 #include "rx_selector.h"
@@ -423,7 +426,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 	if (!validateObjectName(nsDef.name, allowSpecialChars)) {
 		return Error(errParams, "Namespace name '{}' contains invalid character. Only alphas, digits,'_' and '-' are allowed", nsDef.name);
 	}
-	return addNamespace(nsDef, std::move(replOpts), rdxCtx);
+	return addNamespace(nsDef, std::move(replOpts), nullptr, rdxCtx);
 }
 
 Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& storageOpts, const NsReplicationOpts& replOpts,
@@ -441,20 +444,33 @@ std::string ReindexerImpl::generateTemporaryNamespaceName(std::string_view baseN
 }
 
 Error ReindexerImpl::CreateTemporaryNamespace(std::string_view baseName, std::string& resultName, const StorageOpts& opts, lsn_t nsVersion,
-											  const RdxContext& rdxCtx) {
+											  const RdxContext& rdxCtx) noexcept {
+	bool wasCreated = false;
+	Error err;
 	NamespaceDef tmpNsDef;
-	tmpNsDef.storage = opts;
-	tmpNsDef.storage.CreateIfMissing();
-	if (auto err = configProvider_.CheckAsyncReplicationToken(baseName, rdxCtx.LeaderReplicationToken()); !err.ok()) {
-		throw Error(err.code(), "Unable to create temporary namespace for '{}': {}", baseName, err.what());
+	try {
+		tmpNsDef.storage = opts;
+		tmpNsDef.storage.CreateIfMissing();
+		if (err = configProvider_.CheckAsyncReplicationToken(baseName, rdxCtx.LeaderReplicationToken()); !err.ok()) {
+			return Error(err.code(), "Unable to create temporary namespace for '{}': {}", baseName, err.what());
+		}
+		if (resultName.empty()) {
+			tmpNsDef.name = generateTemporaryNamespaceName(baseName);
+			resultName = tmpNsDef.name;
+		} else {
+			tmpNsDef.name = resultName;
+		}
+		err = addNamespace(tmpNsDef, {NsReplicationOpts{{}, nsVersion}}, &wasCreated, rdxCtx);
+
+	} catch (std::exception& e) {
+		err = std::move(e);
 	}
-	if (resultName.empty()) {
-		tmpNsDef.name = generateTemporaryNamespaceName(baseName);
-		resultName = tmpNsDef.name;
-	} else {
-		tmpNsDef.name = resultName;
+	if (!err.ok() && wasCreated) {
+		logFmt(LogWarning, "Error on tmp namespace({}) creation: {}. Dropping namespace...", tmpNsDef.name, err.what());
+		constexpr bool dropStorage = true;
+		std::ignore = closeNamespace(tmpNsDef.name, rdxCtx, dropStorage);
 	}
-	return addNamespace(tmpNsDef, {NsReplicationOpts{{}, nsVersion}}, rdxCtx);
+	return err;
 }
 
 Error ReindexerImpl::CloseNamespace(std::string_view nsName, const RdxContext& rdxCtx) {
@@ -467,6 +483,7 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 	Error err;
 	try {
 		auto nsCreationLock = nsLock_.CreationLock(nsName, ctx);
+		ctx.WithNoWaitSync(true);  // Do not wait sync after nsCreationLock
 		auto wlck = nsLock_.DataWLock(ctx, nsName);
 
 		auto nsIt = namespaces_.find(nsName);
@@ -549,8 +566,11 @@ Error ReindexerImpl::openNamespace(std::string_view name, IsDBInitCall isDBInitC
 											  *clusterManager_, observers_, embeddersCache_);
 
 		rdxCtx.WithNoWaitSync(ns->IsSystem(rdxCtx) || !clusterManager_->NamespaceIsInClusterConfig(nsDef.name));
+
 		// Do not use this lock on database initialization
 		nsCreationLock = isDBInitCall ? NsCreationLockerT::Locks() : nsLock_.CreationLock(name, rdxCtx);
+		rdxCtx.WithNoWaitSync(true);  // Do not wait sync after nsCreationLock
+
 		if (storageOpts.IsEnabled() && !storagePath_.empty()) {
 			{
 				auto rlck = nsLock_.RLock(rdxCtx);
@@ -703,7 +723,8 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 		rdxCtx.WithNoWaitSync(fromReplication);
 
 		auto nsCreationLock = nsLock_.CreationLock(srcNsName, dstNsName, rdxCtx);
-		// Using wlock here to relock it later ignoring the context's timeout. It's slower, but that does not matter in the rename context
+		rdxCtx.WithNoWaitSync(true);  // Do not wait sync after nsCreationLock
+		//   Using wlock here to relock it later ignoring the context's timeout. It's slower, but that does not matter in the rename context
 		auto wlck = nsLock_.DataWLock(rdxCtx, srcNsName);
 
 		checkDBClusterRole(srcNsName, rdxCtx.GetOriginLSN());
@@ -1018,7 +1039,8 @@ static void securityCheck(const Query& query, const RdxContext& rdxCtx) {
 
 template <QueryType TP>
 Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx,
-							 void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&)) {
+							 void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&,
+													   const functions::PrecomputedValues&)) {
 	// std::cout << query.GetSQL(QueryUpdate) << std::endl;
 	try {
 		securityCheck(query, rdxCtx);
@@ -1026,7 +1048,8 @@ Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, cons
 		{
 			Namespace::Ptr mainNs = getNamespace(nsName, rdxCtx);
 			query.VerifyForUpdate();
-			std::optional<Query> queryCopy = embedQuery(query, rdxCtx);
+			functions::PrecomputedValues precomputedValues;
+			std::optional<Query> queryCopy = embedQuery(query, rdxCtx, precomputedValues);
 
 			const bool isWalQuery = query.IsWALQuery();
 			auto mainNsImpl = isWalQuery ? mainNs->awaitMainNs(rdxCtx) : mainNs->getMainNs();
@@ -1041,6 +1064,7 @@ Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, cons
 				const Query& q = queryCopy ? *queryCopy : query;
 				RxSelector::NsLockerW locks(rdxCtx);
 				locks.Add(nsName, std::move(mainNs), true);
+				// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 				query.WalkNested(false, false, true, [this, &locks, &rdxCtx](const Query& q) {
 					auto nsWrp = getNamespace(q.NsName(), rdxCtx);
 					locks.Add(q.NsName(), std::move(nsWrp), false);
@@ -1056,7 +1080,7 @@ Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, cons
 			NsContext nsCtx(rdxCtx);
 
 			const Query& q = queryCopy ? *queryCopy : query;
-			(*(unlockData.second).*fn)(result, pendedRepl, q, nsCtx);
+			(*(unlockData.second).*fn)(result, pendedRepl, q, nsCtx, precomputedValues);
 			unlockData.second->replicate(std::move(pendedRepl), std::move(unlockData.first), true, std::move(statCalculator), nsCtx);
 		}
 		if (isSystemNamespaceNameFast(nsName)) {
@@ -1201,7 +1225,8 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 			refs.locks.Add(q.NsName(), std::move(ns), std::move(nsWrp));
 		});
 
-		auto queryCopy = embedQuery(q, rdxCtx);
+		functions::PrecomputedValues precomputedValues;
+		auto queryCopy = embedQuery(q, rdxCtx, precomputedValues);
 
 		locks.Lock();
 		calc.LockHit();
@@ -1350,9 +1375,10 @@ std::optional<Q> ReindexerImpl::embedKNNQueries(const Q& query, const RdxContext
 template <concepts::OneOf<Query, JoinedQuery> Q>
 void ReindexerImpl::embedNestedQueries(const Query& q, const std::vector<Q>& nestedQueries,
 									   std::invocable<Query&, size_t, Q&&> auto replacer, const RdxContext& ctx,
-									   std::optional<Query>& queryCopy) {
+									   std::optional<Query>& queryCopy, functions::PrecomputedValues& precomputedValues) {
 	for (size_t i = 0, sz = nestedQueries.size(); i < sz; ++i) {
 		auto subQueryCopy = embedKNNQueries<Q>(nestedQueries[i], ctx);
+		OptimizeFunctionEntries<Q>(nestedQueries[i], subQueryCopy, precomputedValues);
 		if (subQueryCopy) {
 			if (!queryCopy) {
 				queryCopy.emplace(q);
@@ -1362,19 +1388,19 @@ void ReindexerImpl::embedNestedQueries(const Query& q, const std::vector<Q>& nes
 	}
 }
 
-std::optional<Query> ReindexerImpl::embedQuery(const Query& q, const RdxContext& ctx) {
-	auto queryCopy = embedKNNQueries(q, ctx);
-	const Query& query = queryCopy ? *queryCopy : q;
-
+std::optional<Query> ReindexerImpl::embedQuery(const Query& q, const RdxContext& ctx, functions::PrecomputedValues& precomputedValues) {
+	std::optional<Query> queryCopy{embedKNNQueries(q, ctx)};
+	OptimizeFunctionEntries(q, queryCopy, precomputedValues);
+	const Query& query{queryCopy ? queryCopy.value() : q};
 	embedNestedQueries(
-		q, query.GetSubQueries(), [](Query& qr, size_t i, Query&& queryN) { qr.ReplaceSubQuery(i, std::move(queryN)); }, ctx, queryCopy);
+		q, query.GetSubQueries(), [](Query& qr, size_t i, Query&& queryN) { qr.ReplaceSubQuery(i, std::move(queryN)); }, ctx, queryCopy,
+		precomputedValues);
 	embedNestedQueries(
 		q, query.GetJoinQueries(), [](Query& qr, size_t i, JoinedQuery&& queryN) { qr.ReplaceJoinQuery(i, std::move(queryN)); }, ctx,
-		queryCopy);
+		queryCopy, precomputedValues);
 	embedNestedQueries(
 		q, query.GetMergeQueries(), [](Query& qr, size_t i, JoinedQuery&& queryN) { qr.ReplaceMergeQuery(i, std::move(queryN)); }, ctx,
-		queryCopy);
-
+		queryCopy, precomputedValues);
 	return queryCopy;
 }
 
@@ -1401,12 +1427,11 @@ PayloadType ReindexerImpl::getPayloadType(std::string_view nsName) {
 Namespace::Ptr ReindexerImpl::getNamespace(std::string_view nsName, const RdxContext& ctx) {
 	auto rlck = nsLock_.RLock(ctx);
 	auto nsIt = namespaces_.find(nsName);
-	if (nsIt == namespaces_.end()) {
-		throw Error(errNotFound, "Namespace '{}' does not exist", nsName);
+	if (nsIt != namespaces_.end()) [[likely]] {
+		assertrx(nsIt->second);
+		return nsIt->second;
 	}
-
-	assertrx(nsIt->second);
-	return nsIt->second;
+	throw Error(errNotFound, "Namespace '{}' does not exist", nsName);
 }
 
 Namespace::Ptr ReindexerImpl::getNamespaceNoThrow(std::string_view nsName, const RdxContext& ctx) {
@@ -1686,9 +1711,12 @@ void ReindexerImpl::storageFlushingRoutine(net::ev::dynamic_loop& loop) {
 void ReindexerImpl::createSystemNamespaces() {
 	const RdxContext dummyCtx;
 	for (const auto& nsDef : kSystemNsDefs) {
-		auto err = addNamespace(nsDef, std::nullopt, dummyCtx);
-		if (!err.ok()) {
-			logFmt(LogWarning, "Unable to create system namespace '{}': {}", nsDef.name, err.what());
+		auto nsPtr = getNamespaceNoThrow(nsDef.name, dummyCtx);
+		if (!nsPtr) {
+			auto err = addNamespace(nsDef, std::nullopt, nullptr, dummyCtx);
+			if (!err.ok()) {
+				logFmt(LogWarning, "Unable to create system namespace '{}': {}", nsDef.name, err.what());
+			}
 		}
 	}
 }
@@ -2490,6 +2518,7 @@ Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::
 									   const RdxContext& rdxCtx) {
 	std::vector<NamespaceDef> nses;
 
+	// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 	suggestions = SQLSuggester::GetSuggestions(
 		sqlQuery, pos,
 		[&, this](EnumNamespacesOpts opts) {
@@ -2504,6 +2533,7 @@ Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::
 			}
 			return std::shared_ptr<const Schema>();
 		});
+	// NOLINTEND(rx-perf-lambda-to-std-function-allocation)
 	return {};
 }
 
@@ -2630,7 +2660,7 @@ Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2& s
 			state = getNamespace(nsName, rdxCtx)->GetReplStateV2(rdxCtx);
 		} else {
 			state.lastLsn = lsn_t();
-			state.dataHash = 0;
+			state.dataHash.hashV2 = state.dataHash.hashV1 = 0;
 			auto rlck = nsLock_.RLock(rdxCtx);
 			state.clusterStatus = clusterStatus_;
 		}
@@ -2715,7 +2745,8 @@ Error ReindexerImpl::ClusterControlRequest(const ClusterControlRequestData& requ
 	return {};
 }
 
-Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsReplicationOpts> replOpts, const RdxContext& rdxCtx) noexcept {
+Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsReplicationOpts> replOpts, bool* wasCreatedOut,
+								  const RdxContext& rdxCtx) noexcept {
 	NsCreationLockerT::Locks nsCreationLock;  // In case of error this lock should be destroyed after Namespace pointer
 	Namespace::Ptr ns;
 	try {
@@ -2737,7 +2768,10 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		const bool isTemporary = ns->IsTemporary(rdxCtx);
 		const bool isSystem = ns->IsSystem(rdxCtx);
 		rdxCtx.WithNoWaitSync(isTemporary || isSystem || !clusterManager_->NamespaceIsInClusterConfig(nsDef.name));
+
 		nsCreationLock = nsLock_.CreationLock(nsDef.name, rdxCtx);
+		rdxCtx.WithNoWaitSync(true);  // Do not wait sync after nsCreationLock
+
 		if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
 			{
 				auto rlck = nsLock_.RLock(rdxCtx);
@@ -2757,6 +2791,7 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			ns->SetClusterOperationStatus(
 				ClusterOperationStatus{rdxCtx.GetOriginLSN().Server(), ClusterOperationStatus::Role::ClusterReplica}, rdxCtx);
 		}
+
 		const int64_t stateToken = ns->NewItem(rdxCtx).GetStateToken();
 		{
 			auto wlck = nsLock_.DataWLock(rdxCtx, nsDef.name);
@@ -2767,6 +2802,9 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			if (!inserted) {
 				return Error(errParams, "Namespace '{}' already exists", nsDef.name);
 			}
+			if (wasCreatedOut) {
+				*wasCreatedOut = true;
+			}
 			// Unlock, when all storage and namespace map operations are done
 			nsCreationLock.UnlockIfOwns();
 
@@ -2774,7 +2812,7 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			if (!isTemporary) {
 				NamespaceDef def;
 				def.name = nsDef.name;
-				def.storage = nsDef.storage;  // Indexes and schema will be replicate later
+				def.storage = nsDef.storage;  // Indexes and schema will be replicated later
 				auto err = observers_.SendUpdate(
 					{updates::URType::AddNamespace, it.value()->GetName(RdxContext()), version, rdxCtx.EmitterServerId(), std::move(def),
 					 stateToken},
@@ -2789,7 +2827,7 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			}
 		}
 		try {
-			rdxCtx.WithNoWaitSync(isTemporary || isSystem);
+			rdxCtx.WithNoWaitSync(isTemporary || isSystem);	 // We do not own any locks now and have to use general sync logic
 			for (auto& indexDef : nsDef.indexes) {
 				ns->AddIndex(indexDef, rdxCtx);
 			}

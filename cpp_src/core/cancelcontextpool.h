@@ -18,7 +18,7 @@ public:
 	CancelContextImpl() : cancelType_(CancelType::None) {}
 	CancelContextImpl(const CancelContextImpl& ctx) : cancelType_(ctx.GetCancelType()) {}
 	CancelContextImpl& operator=(const CancelContextImpl& ctx) {
-		cancelType_ = ctx.GetCancelType();
+		cancelType_.store(ctx.GetCancelType());
 		return *this;
 	}
 

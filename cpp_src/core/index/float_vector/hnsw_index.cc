@@ -14,36 +14,19 @@ static_assert(sizeof(IdType) == sizeof(hnswlib::labeltype), "Expecting 1-to-1 ma
 
 static void PrintVecInstructionsLevel(std::string_view indexType, std::string_view name, VectorMetric metric, LogCreation log) {
 	std::string vecInstructions = "disabled";
-	switch (metric) {
-		case VectorMetric::L2:
-			if (vector_dists::L2WithAVX512()) {
-				vecInstructions = "avx512";
-			} else if (vector_dists::L2WithAVX()) {
-				vecInstructions = "avx";
-			} else if (vector_dists::L2WithSSE()) {
-				vecInstructions = "sse";
-			}
-			break;
-		case VectorMetric::InnerProduct:
-			if (vector_dists::InnerProductWithAVX512()) {
-				vecInstructions = "avx512";
-			} else if (vector_dists::InnerProductWithAVX()) {
-				vecInstructions = "avx";
-			} else if (vector_dists::InnerProductWithSSE()) {
-				vecInstructions = "sse";
-			}
-			break;
-		case VectorMetric::Cosine:
-			if (hnswlib::CosineWithAVX512()) {
-				vecInstructions = "avx512";
-			} else if (hnswlib::CosineWithAVX()) {
-				vecInstructions = "avx";
-			} else if (hnswlib::CosineWithSSE()) {
-				vecInstructions = "sse";
-			}
-			break;
-		default:
-			throw Error(errLogic, "Attempt to construct {} index '{}' with unknown metric: {}", indexType, name, int(metric));
+#if REINDEXER_WITH_SSE
+	if (IsAVX512Allowed()) {
+		vecInstructions = "avx512";
+	} else if (IsAVX2Allowed()) {
+		vecInstructions = "avx2";
+	} else if (IsAVXAllowed()) {
+		vecInstructions = "avx";
+	} else {
+		vecInstructions = "sse";
+	}
+#endif
+	if (metric != VectorMetric::L2 && metric != VectorMetric::InnerProduct && metric != VectorMetric::Cosine) {
+		throw Error(errLogic, "Attempt to construct {} index '{}' with unknown metric: {}", indexType, name, int(metric));
 	}
 	if (log) {
 		logFmt(LogInfo, "Creating {} index '{}'; Vector instructions level: {}", indexType, name, vecInstructions);
@@ -86,17 +69,21 @@ HnswIndexBase<hnswlib::BruteforceSearch>::HnswIndexBase(const IndexDef& idef, Pa
 
 template <typename Map>
 HnswIndexBase<Map>::HnswIndexBase(const HnswIndexBase& other, size_t newCapacity)
-	: Base{other}, space_{newSpace(Dimension().Value(), metric_)}, map_{std::make_unique<Map>(space_.get(), *other.map_, newCapacity)} {}
+	: Base{other}, space_{newSpace(Dimension().Value(), metric_)}, map_{other.map_, Dimension().Value(), metric_, newCapacity} {}
 
 template <typename Map>
-std::unique_ptr<hnswlib::SpaceInterface> HnswIndexBase<Map>::newSpace(size_t dimension, VectorMetric metric) {
+std::unique_ptr<hnswlib::SpaceInterface> HnswIndexBase<Map>::newSpace(size_t dimension, VectorMetric metric, bool quantized) {
+	using ReturnT = std::unique_ptr<hnswlib::SpaceInterface>;
+
 	switch (metric) {
 		case VectorMetric::L2:
-			return std::make_unique<hnswlib::L2Space>(dimension);
+			return quantized ? ReturnT{std::make_unique<hnswlib::L2SpaceSq8>(dimension)} : std::make_unique<hnswlib::L2Space>(dimension);
 		case VectorMetric::InnerProduct:
-			return std::make_unique<hnswlib::InnerProductSpace>(dimension);
+			return quantized ? ReturnT{std::make_unique<hnswlib::InnerProductSpaceSq8>(dimension)}
+							 : std::make_unique<hnswlib::InnerProductSpace>(dimension);
 		case VectorMetric::Cosine:
-			return std::make_unique<hnswlib::CosineSpace>(dimension);
+			return quantized ? ReturnT{std::make_unique<hnswlib::CosineSpaceSq8>(dimension)}
+							 : std::make_unique<hnswlib::CosineSpace>(dimension);
 	}
 	throw_as_assert;
 }
@@ -105,24 +92,36 @@ template <typename Map>
 void HnswIndexBase<Map>::clearMap() noexcept {
 	// This method is used in exception handling. It potentially may throw, but we will not be able to handle this exception properly
 	const auto& fvOpts = Opts().FloatVector();
-	map_.reset();
+	map_.Reset();
 	space_.reset();
 	space_ = newSpace(Dimension().Value(), metric_);
-	if constexpr (std::is_same_v<Map, hnswlib::BruteforceSearch>) {
-		map_ = std::make_unique<Map>(space_.get(), fvOpts.StartSize());
-	} else {
-		map_ = std::make_unique<Map>(space_.get(), fvOpts.StartSize(), fvOpts.M(), fvOpts.EfConstruction(), kHnswRandomSeed,
-									 kHNSWAllowReplaceDeleted);
+	try {
+		if constexpr (std::is_same_v<Map, hnswlib::BruteforceSearch>) {
+			map_ = std::make_unique<Map>(space_.get(), fvOpts.StartSize());
+		} else {
+			map_ = std::make_unique<Map>(space_.get(), fvOpts.StartSize(), fvOpts.M(), fvOpts.EfConstruction(), kHnswRandomSeed,
+										 kHNSWAllowReplaceDeleted);
+		}
+	} catch (std::exception& e) {
+		logFmt(LogError, "Unexpected critical exception: {}. Termination...", e.what());
+		std::abort();
 	}
 }
 
 template <typename Map>
 Variant HnswIndexBase<Map>::upsert(ConstFloatVectorView vect, IdType id, bool& clearCache) {
-	if (map_->getCurrentElementCount() >= map_->getMaxElements()) {
-		std::ignore = map_->resizeIndex(newSize(map_->getMaxElements()));
+	if (auto curMaxSize = map_.GetWritable()->getMaxElements(); map_->getCurrentElementCount() >= curMaxSize) {
+		std::ignore = map_.GetWritable()->resizeIndex(newSize(curMaxSize));
+		if (IsQuantized()) {
+			assertrx(map_.hashes.size() == curMaxSize);
+			map_.hashes.resize(map_->getMaxElements());
+		}
 	}
 	clearCache = true;
-	map_->addPointNoLock(vect.Data(), id.ToNumber());
+	map_.GetWritable()->addPointNoLock(vect.Data(), id.ToNumber());
+	if (IsQuantized()) {
+		map_.hashes[id.ToNumber()] = vect.Hash();
+	}
 	vect.Strip();
 	return Variant{vect};
 }
@@ -134,28 +133,31 @@ Variant HnswIndexBase<Map>::upsertConcurrent(ConstFloatVectorView, IdType, bool&
 
 template <>
 Variant HnswIndexBase<hnswlib::HierarchicalNSWMT>::upsertConcurrent(ConstFloatVectorView vect, IdType id, bool& clearCache) {
-	if (map_->getCurrentElementCount() >= map_->getMaxElements()) [[unlikely]] {
+	if (map_.GetWritable()->getCurrentElementCount() >= map_.GetWritable()->getMaxElements()) [[unlikely]] {
 		throw Error(errLogic, "Unable to resize '{}' HNSW index during concurrent upsert. Expecting reserve before upsertion", Name());
 	}
 	clearCache = true;
-	map_->addPointConcurrent(vect.Data(), id.ToNumber());
+	map_.GetWritable()->addPointConcurrent(vect.Data(), id.ToNumber());
+	if (IsQuantized()) {
+		map_.hashes[id.ToNumber()] = vect.Hash();
+	}
 	vect.Strip();
 	return Variant{vect};
 }
 
 template <>
 void HnswIndexBase<hnswlib::BruteforceSearch>::Delete(const Variant&, IdType id, MustExist, StringsHolder&, bool&) {
-	map_->removePoint(id.ToNumber());
+	map_.GetWritable()->removePoint(id.ToNumber());
 }
 
 template <>
 void HnswIndexBase<hnswlib::HierarchicalNSWMT>::Delete(const Variant&, IdType id, MustExist, StringsHolder&, bool&) {
-	map_->markDelete(id.ToNumber());
+	map_.GetWritable()->markDelete(id.ToNumber());
 }
 
 template <>
 void HnswIndexBase<hnswlib::HierarchicalNSWST>::Delete(const Variant&, IdType id, MustExist, StringsHolder&, bool&) {
-	map_->markDelete(id.ToNumber());
+	map_.GetWritable()->markDelete(id.ToNumber());
 }
 
 template <typename Map>
@@ -164,7 +166,7 @@ std::unique_ptr<Index> HnswIndexBase<Map>::Clone(size_t newCapacity) const {
 }
 
 template <>
-IndexMemStat HnswIndexBase<hnswlib::BruteforceSearch>::GetMemStat(const RdxContext& ctx) noexcept {
+IndexMemStat HnswIndexBase<hnswlib::BruteforceSearch>::GetMemStat(const RdxContext& ctx) const noexcept {
 	auto stats = FloatVectorIndex::GetMemStat(ctx);
 	const auto uniqKeysCount = map_->getCurrentElementCount();
 	stats.isBuilt = true;  // Bruteforce is always 'built'
@@ -176,28 +178,47 @@ IndexMemStat HnswIndexBase<hnswlib::BruteforceSearch>::GetMemStat(const RdxConte
 }
 
 template <typename Map>
-IndexMemStat HnswIndexBase<Map>::GetMemStat(const RdxContext& ctx) noexcept {
+IndexMemStat HnswIndexBase<Map>::GetMemStat(const RdxContext& ctx) const noexcept {
 	auto stats = FloatVectorIndex::GetMemStat(ctx);
 	const auto uniqKeysCount = map_->getCurrentElementCount() - map_->getDeletedCountUnsafe();
+	const bool isQuantized = map_->IsQuantizedNoThrow();
 	stats.isBuilt = true;  // HNSW is always 'built'
+	stats.isQuantized = isQuantized;
 	stats.uniqKeysCount += uniqKeysCount;
-	stats.dataSize += uniqKeysCount * sizeof(FloatType) * Dimension().Value();
+	stats.dataSize += uniqKeysCount * (isQuantized ? sizeof(uint8_t) : sizeof(FloatType)) * Dimension().Value();
 	stats.indexingStructSize += map_->allocatedMemSize() + sizeof(Map);
 	stats.indexingStructSize -= stats.dataSize;	 // Don't calculate actual data size twice
+	stats.indexingStructSize += map_.hashes.capacity();
 	return stats;
 }
 
 template <typename Map>
-template <typename ParamsT>
-HnswKnnRawResult HnswIndexBase<Map>::search(const float* key, const ParamsT& params) const {
-	std::optional<size_t> k = params.K();
-	std::optional<float> radius = params.Radius() ? params.Radius() : Opts().FloatVector().Radius();
-	size_t ef = 0;
-	if constexpr (std::is_same_v<ParamsT, HnswSearchParams>) {
-		ef = params.Ef();
+HnswKnnRawResult HnswIndexBase<Map>::search(ConstFloatVectorView key, const KnnSearchParams& params) const {
+	static constexpr bool isBF = std::is_same_v<Map, hnswlib::BruteforceSearch>;
+
+	h_vector<float, 2048> normalizedStorage;
+	std::optional<float> normL2 = std::nullopt;
+	const float* keyData = key.Data();
+	if (metric_ == VectorMetric::Cosine) {
+		const auto dims = key.Dimension().Value();
+		normalizedStorage.resize(uint32_t(dims));
+		normL2 = 1.f / ann::NormalizeCopyVector(key.Data(), int32_t(dims), normalizedStorage.data());
+		keyData = normalizedStorage.data();
 	}
+
+	auto getCommonParams = [this](const auto& params) -> std::tuple<std::optional<size_t>, std::optional<float>> {
+		return {params.K(), params.Radius() ? params.Radius() : Opts().FloatVector().Radius()};
+	};
+
+	auto [k, radius] = isBF ? getCommonParams(params.BruteForce()) : getCommonParams(params.Hnsw());
+
+	size_t ef = 0;
+	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
+		ef = params.Hnsw().Ef();
+	}
+
 	if (radius) {
-		auto res = map_->searchRange(key, metric_ == VectorMetric::L2 ? *radius : -*radius, ef);
+		auto res = map_->searchRange(keyData, normL2, metric_ == VectorMetric::L2 ? *radius : -*radius, ef);
 		if (k) {
 			while (res.size() > std::min(*k, map_->getCurrentElementCount())) {
 				res.pop();
@@ -207,49 +228,42 @@ HnswKnnRawResult HnswIndexBase<Map>::search(const float* key, const ParamsT& par
 	} else {
 		assertrx_dbg(k && *k != 0);
 		// NOLINTNEXTLINE (bugprone-unchecked-optional-access) K cannot be empty if radius is empty
-		return map_->searchKnn(key, std::min(*k, map_->getCurrentElementCount()), ef);
+		return map_->searchKnn(keyData, normL2, std::min(*k, map_->getCurrentElementCount()), ef);
 	}
-}
-
-template <typename Map>
-HnswKnnRawResult HnswIndexBase<Map>::selectRawImpl(ConstFloatVectorView key, const KnnSearchParams& params) const {
-	h_vector<float, 2048> normalizedStorage;
-	const float* keyData = key.Data();
-	if (metric_ == VectorMetric::Cosine) {
-		const auto dims = key.Dimension().Value();
-		normalizedStorage.resize(uint32_t(dims));
-		ann::NormalizeCopyVector(key.Data(), int32_t(dims), normalizedStorage.data());
-		keyData = normalizedStorage.data();
-	}
-	return std::is_same_v<Map, hnswlib::BruteforceSearch> ? search(keyData, params.BruteForce()) : search(keyData, params.Hnsw());
 }
 
 template <typename Map>
 KnnRawResult HnswIndexBase<Map>::selectRaw(ConstFloatVectorView key, const KnnSearchParams& params) const {
-	return {selectRawImpl(key, params), metric_};
+	return {search(key, params), metric_};
 }
 
 template <typename Map>
 SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSearchParams& params, KnnCtx& ctx) const {
-	auto knnRes = selectRawImpl(key, params);
+	auto knnRes = search(key, params);
 	h_vector<RankT, 128> dists;
 	base_idset idset;
 	if (!knnRes.empty()) {
 		dists.resize(knnRes.size());
 		idset.resize(knnRes.size());
 		size_t lastSameDist = idset.size() - 1;
-		const auto sortSameDist = ctx.NeedSort() ? [&](size_t i) {
-			bool newDist{false};
-			switch (metric_) {
-				case VectorMetric::L2: newDist = dists[lastSameDist] > dists[i]; break;
-				case VectorMetric::Cosine:
-				case VectorMetric::InnerProduct: newDist = dists[lastSameDist] < dists[i]; break;
+		const auto sortSameDist = [&](size_t i) {
+			if (ctx.NeedSort()) {
+				bool newDist{false};
+				switch (metric_) {
+					case VectorMetric::L2:
+						newDist = dists[lastSameDist] > dists[i];
+						break;
+					case VectorMetric::Cosine:
+					case VectorMetric::InnerProduct:
+						newDist = dists[lastSameDist] < dists[i];
+						break;
+				}
+				if (newDist) {
+					std::sort(idset.begin() + i + 1, idset.begin() + lastSameDist + 1);
+					lastSameDist = i;
+				}
 			}
-			if (newDist) {
-				std::sort(idset.begin() + i + 1, idset.begin() + lastSameDist + 1);
-				lastSameDist = i;
-			}
-		} : std::function{[](size_t){}};
+		};
 		for (auto i = knnRes.size(); !knnRes.empty(); knnRes.pop()) {
 			--i;
 			const auto& res = knnRes.top();
@@ -279,16 +293,25 @@ SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSe
 }
 
 template <typename Map>
-ConstFloatVectorView HnswIndexBase<Map>::getFloatVectorView(IdType rowId) const {
-	const FloatType* ptr = reinterpret_cast<const FloatType*>(map_->ptrByExternalLabel(rowId.ToNumber()));
-	return ConstFloatVectorView{std::span<const float>{ptr, Dimension().Value()}};
+ConstFloatVectorView HnswIndexBase<Map>::getFloatVectorViewImpl(IdType rowId) const {
+	if (IsQuantized()) {
+		return ConstFloatVectorView::CreateStripped(Dimension());
+	} else {
+		const FloatType* ptr = reinterpret_cast<const FloatType*>(map_->ptrByExternalLabel(rowId.ToNumber()));
+		return ConstFloatVectorView{std::span<const float>{ptr, Dimension().Value()}};
+	}
 }
 
 template <typename Map>
 void HnswIndexBase<Map>::GrowFor(size_t newElementsCount) {
-	const auto requiredSize = newElementsCount + map_->getCurrentElementCount();
-	if (requiredSize > map_->getMaxElements()) {
-		std::ignore = map_->resizeIndex(requiredSize);
+	const auto requiredSize = newElementsCount + map_.GetWritable()->getCurrentElementCount();
+
+	if (const auto curMaxSize = map_.GetWritable()->getMaxElements(); requiredSize > curMaxSize) {
+		std::ignore = map_.GetWritable()->resizeIndex(requiredSize);
+		if (IsQuantized()) {
+			assertrx(map_.hashes.size() == curMaxSize);
+			map_.hashes.resize(map_->getMaxElements());
+		}
 	}
 }
 
@@ -357,20 +380,25 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 
 template <>
 Error HnswIndexBase<hnswlib::BruteforceSearch>::LoadIndexCache(std::string_view /*data*/, bool /*isCompositePK*/,
-															   VecDataGetterF&& /*getVectorData*/, uint8_t /*version*/) {
+															   FloatVectorIndexRawDataInserter&& /*getVectorData*/, LoadWithQuantizer,
+															   uint8_t /*version*/
+) {
 	return Error(errLogic, "{}:Bruteforce index can not be loaded from binary cache", Name());
 }
 
 template <typename Map>
-Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isCompositePK, VecDataGetterF&& getVectorData, uint8_t version) {
-	if (!getVectorData) [[unlikely]] {
-		return Error(errParams, "HNSWIndex::LoadIndexCache:{}: vector data getter is nullptr", Name());
-	}
-
+Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&& getVectorData,
+										 LoadWithQuantizer withQuantizer, uint8_t version) {
 	class [[nodiscard]] Reader final : public hnswlib::IReader, private LoaderBase {
 	public:
-		Reader(std::string_view name, std::string_view data, VecDataGetterF&& getVectorData, bool isCompositePK, size_t version) noexcept
-			: hnswlib::IReader(), LoaderBase{std::move(getVectorData), isCompositePK}, name_{name}, ser_{data}, version_(version) {}
+		Reader(std::string_view name, std::string_view data, FloatVectorIndexRawDataInserter&& getVectorData, bool isCompositePK,
+			   LoadWithQuantizer withQuantizer, size_t version) noexcept
+			: hnswlib::IReader(),
+			  LoaderBase{std::move(getVectorData), isCompositePK},
+			  name_{name},
+			  ser_{data},
+			  withQuantizer_(withQuantizer),
+			  version_(version) {}
 
 		uint64_t GetVarUInt() override { return ser_.GetVarUInt(); }
 		int64_t GetVarInt() override { return ser_.GetVarint(); }
@@ -382,21 +410,23 @@ Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isComposite
 		}
 		size_t RemainingSize() const noexcept { return ser_.Len() - ser_.Pos(); }
 
+		bool WithQuantizer() override { return *withQuantizer_; }
 		uint8_t Version() override { return version_; }
 
 	private:
 		std::string_view name_;
 		Serializer ser_;
+		LoadWithQuantizer withQuantizer_;
 		uint8_t version_;
 	};
 
 	try {
-		Reader reader(Name(), data, std::move(getVectorData), isCompositePK, version);
+		Reader reader(Name(), data, std::move(getVectorData), isCompositePK, withQuantizer, version);
 		const uint64_t magic = reader.GetVarUInt();
 		if (magic != kStorageMagic) {
 			throw std::runtime_error("Incorrect HNSW storage magic");
 		}
-		map_->loadIndex(reader, space_.get());
+		map_->loadIndex(reader, space_.get(), map_.hashes);
 		if (reader.RemainingSize()) {
 			throw Error(errLogic, "HNSWIndex::LoadIndexCache:{} has unparsed data: {} bytes", Name(), reader.RemainingSize());
 		}
@@ -414,6 +444,98 @@ Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isComposite
 		return Error{errLogic, "HNSWIndex::LoadIndexCache:{}: unexpected exception", Name()};
 	}
 	return {};
+}
+
+template <typename Map>
+void HnswIndexBase<Map>::MapWrapper::CalcOrigHashes(size_t dim) {
+	assertrx_throw(!intermediateHashes);
+	intermediateHashes.emplace();
+	intermediateHashes->resize(map_->getMaxElements());
+
+	const auto curElementCount = map_->getCurrentElementCount();
+	[[maybe_unused]] const auto curDelCount = map_->getDeletedCountUnsafe();
+
+	size_t count = 0;
+	for (hnswlib::tableint internalId = 0; internalId < curElementCount; ++internalId) {
+		if (map_->isMarkedDeleted(internalId)) {
+			continue;
+		}
+
+		(*intermediateHashes)[map_->getExternalLabel(internalId)] =
+			ConstFloatVectorView(std::span{reinterpret_cast<const float*>(map_->getDataByInternalId(internalId)), dim}).Hash();
+		++count;
+	}
+
+	assertrx_throw(curElementCount - curDelCount == count);
+}
+
+template <typename Map>
+uint64_t HnswIndexBase<Map>::GetHash(IdType rowId) const {
+	if (IsQuantized()) {
+		assertrx(rowId.ToNumber() < int(map_.hashes.size()));
+		return map_.hashes[rowId.ToNumber()];
+	} else {
+		return FloatVectorIndex::getFloatVectorView(rowId).Hash();
+	}
+}
+
+template <typename Map>
+bool HnswIndexBase<Map>::QuantizationAvailable() const {
+	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
+		return map_.QuantizationAvailable() &&
+			   (opts_.FloatVector().QuantizationConfig() &&
+				(map_->getCurrentElementCount() >= opts_.FloatVector().QuantizationConfig()->quantizationThreshold));
+	} else {
+		return false;
+	}
+}
+
+template <typename Map>
+bool HnswIndexBase<Map>::IsQuantized() const {
+	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
+		return map_->IsQuantized();
+	} else {
+		return false;
+	}
+}
+
+template <typename Map>
+void HnswIndexBase<Map>::Quantize() {
+	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
+		if (auto config = opts_.FloatVector().QuantizationConfig(); config) {
+			if (!map_.QuantizationAvailable()) {
+				throw Error(errLogic, "Index already quantized");
+			}
+
+			try {
+				map_.CalcOrigHashes(Dimension().Value());
+				// It should be after calculating the hashes, so that if an exception is thrown by any of the methods,
+				// quantizedMap_ always remains empty in the catch section.
+				map_.Quantize(*config);
+			} catch (...) {
+				map_.intermediateHashes = std::nullopt;
+				throw;
+			}
+		} else {
+			throw Error(errLogic, "Empty quantization config");
+		}
+	} else {
+		assertrx(false);
+	}
+}
+
+template <typename Map>
+void HnswIndexBase<Map>::SwitchMapOnQuantized() {
+	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
+		if (!map_.GetWritable()->IsQuantized()) {
+			logFmt(LogError,
+				   "Failed to swap quantized HNSW graph maps. The temporary quantized map is empty, while the main map is not "
+				   "quantized.");
+			assertrx_throw(false);
+		}
+	} else {
+		assertrx(false);
+	}
 }
 
 template <typename Map>

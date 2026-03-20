@@ -1,6 +1,4 @@
 #include "tableviewscroller.h"
-#include "client/coroqueryresults.h"
-#include "core/queryresults/queryresults.h"
 #include "iotools.h"
 #include "tools/oscompat.h"
 
@@ -71,7 +69,7 @@ void TableViewScroller::Scroll(Output& output, std::vector<std::string>&& jsonDa
 #ifndef WIN32
 	FILE* pfile = nullptr;
 	if (viaMoreCmd) {
-		pfile = popen("more", "w");
+		pfile = popen("more", "w");	 // NOLINT(bugprone-command-processor)
 	}
 #else
 	viaMoreCmd = false;

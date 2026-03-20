@@ -447,7 +447,7 @@ protected:
 		saveItem(std::move(item), btreeIdxOptNs);
 	}
 
-	enum Column { First, Second };
+	enum [[nodiscard]] Column { First, Second };
 
 	std::vector<Variant> ForcedSortOffsetTestExpectedResults(size_t offset, size_t limit, bool desc,
 															 const std::vector<int>& forcedSortOrder, Column column) const {

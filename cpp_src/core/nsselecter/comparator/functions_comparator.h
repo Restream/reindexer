@@ -9,7 +9,10 @@
 
 namespace reindexer {
 
-using FunctionFieldsInfo = h_vector<FieldsSet, 1>;
+struct [[nodiscard]] FunctionFieldsInfo {
+	FieldsSet comparisonField;
+	h_vector<FieldsSet, 1> fields;
+};
 
 class [[nodiscard]] FunctionsComparatorImplBase {
 public:
@@ -19,9 +22,10 @@ public:
 
 	double Cost(double expectedIterations) const noexcept {
 		size_t jsonPathComparators = 0;
-		for (const auto& fieldInfo : fieldsInfo_) {
+		for (const auto& fieldInfo : fieldsInfo_.fields) {
 			jsonPathComparators += fieldInfo.getTagsPathsLength();
 		}
+		jsonPathComparators += fieldsInfo_.comparisonField.getJsonPathsLength();
 		return jsonPathComparators ? (comparators::kNonIdxFieldComparatorCostMultiplier * expectedIterations + jsonPathComparators + 1.0)
 								   : (expectedIterations + 1.0);
 	}
@@ -39,10 +43,10 @@ protected:
 class [[nodiscard]] FlatArrayFunctionComparatorImpl : public FunctionsComparatorImplBase {
 public:
 	FlatArrayFunctionComparatorImpl(FunctionFieldsInfo&& fieldsInfo, CondType cond, const VariantArray& values,
-									const functions::FunctionVariant& function, const PayloadType& pt)
-		: FunctionsComparatorImplBase(std::move(fieldsInfo), cond, values, function, pt) {
-		if (fieldsInfo_.size() != 1) {
-			throw Error(errQueryExec, "flat_array_len() expects values only for 1 field, but got {}", fieldsInfo_.size());
+									const functions::FlatArrayLen& function, const PayloadType& pt)
+		: FunctionsComparatorImplBase(std::move(fieldsInfo), cond, values, function, pt), flatArrayLen_(function) {
+		if (fieldsInfo_.fields.size() != 1) {
+			throw Error(errQueryExec, "flat_array_len() expects values only for 1 field, but {} were provided", fieldsInfo_.fields.size());
 		}
 		for (const auto& v : values_) {
 			if (!v.Type().IsOneOf<KeyValueType::Int, KeyValueType::Int64>()) {
@@ -54,16 +58,14 @@ public:
 
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& pv, IdType) const {
 		ConstPayload item{pt_, pv};
-		const size_t size{item.GetFieldSize(fieldsInfo_[0])};
-		return std::visit(overloaded{[this, &size](const functions::FlatArrayLen& f) { return f.Evaluate(cond_, concreteValues_, size); }},
-						  function_);
+		const size_t size{item.GetFieldSize(fieldsInfo_.fields[0])};
+		return flatArrayLen_.Compare(cond_, concreteValues_, size);
 	}
 
-	std::string Name() const& {
-		return std::visit(overloaded{[](const functions::FlatArrayLen& f) { return f.ToString(); }}, function_);
-	}
+	std::string Name() const& { return flatArrayLen_.ToString(); }
 
 private:
+	functions::FlatArrayLen flatArrayLen_;
 	h_vector<int, 1> concreteValues_;
 };
 
@@ -114,12 +116,11 @@ public:
 private:
 	FunctionsComparatorType createImpl(FunctionFieldsInfo&& fieldsInfo, CondType cond, const VariantArray& values,
 									   const functions::FunctionVariant& function, const PayloadType& pt) {
-		switch (std::visit([](const auto& impl) { return impl.Type(); }, function)) {
-			case FunctionFlatArrayLen:
-				return FlatArrayFunctionComparatorImpl(std::move(fieldsInfo), cond, values, function, pt);
-			default:
-				abort();
+		if (std::holds_alternative<functions::FlatArrayLen>(function)) {
+			return FlatArrayFunctionComparatorImpl(std::move(fieldsInfo), cond, values, std::get<functions::FlatArrayLen>(function), pt);
 		}
+		throw Error{errQueryExec, "Function '{}' is not supported yet.",
+					std::visit([](const auto& impl) { return impl.Name(); }, function)};
 	}
 
 	std::string name_;

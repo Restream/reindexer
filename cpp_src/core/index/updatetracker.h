@@ -81,17 +81,22 @@ public:
 		}
 	}
 
-	void markDeleted(typename T::iterator& k) {
+	void markDeleted(typename T::iterator& k) noexcept {
 		if (simpleCounting_) {
 			++updatesCounter_;
 		} else {
 			eraseUpdate(k);
 		}
 	}
-	void refreshKey(const key_type& oldK, const key_type& newK) {
+	void refreshKey(const key_type& oldK, const key_type& newK) noexcept {
 		if (!simpleCounting_) {
 			if (updated_.erase(oldK)) {
-				updated_.emplace(newK);
+				try {
+					updated_.emplace(newK);
+				} catch (...) {
+					completeUpdate_ = true;
+					clearUpdates();
+				}
 			}
 		}
 	}
@@ -123,7 +128,7 @@ public:
 	}
 
 protected:
-	void eraseUpdate(typename T::iterator& k) {
+	void eraseUpdate(typename T::iterator& k) noexcept {
 		updated_.erase(k->first);
 		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
@@ -137,7 +142,7 @@ protected:
 		allocatedMem_.store(getMapAllocatedMemSize(), std::memory_order_relaxed);
 		overflowSize_.store(getMapOverflowSize(), std::memory_order_relaxed);
 	}
-	void clearUpdates() {
+	void clearUpdates() noexcept {
 		updated_.clear();
 		updatesSize_.store(0, std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);

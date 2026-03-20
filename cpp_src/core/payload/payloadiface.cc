@@ -15,6 +15,8 @@
 
 namespace reindexer {
 
+constexpr static uint64_t kHashMagic = 0x9e3779b97f4a7c15ull;
+
 // Get element(s) by field index
 template <typename T>
 void PayloadIface<T>::Get(int field, VariantArray& keys, Variant::HoldT h) const {
@@ -475,7 +477,7 @@ std::string PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher& tm, con
 // Get fields hash
 template <typename T>
 size_t PayloadIface<T>::GetHash(const FieldsSet& fields) const {
-	size_t ret = 0;
+	uint64_t ret = 0;
 	VariantArray keys1;
 	size_t tagPathIdx = 0;
 	for (auto field : fields) {
@@ -490,6 +492,7 @@ size_t PayloadIface<T>::GetHash(const FieldsSet& fields) const {
 					ret ^= PayloadFieldValue(f, p).Hash();
 				}
 			} else {
+				assertrx_dbg(!f.Type().IsSame(KeyValueType::FloatVector{}));  // Calculation is not implemented for float vector
 				ret ^= Field(field).Hash();
 			}
 		} else {
@@ -509,10 +512,12 @@ size_t PayloadIface<T>::GetHash(const FieldsSet& fields) const {
 
 // Get complete hash
 template <typename T>
-uint64_t PayloadIface<T>::GetHash(const std::function<uint64_t(unsigned int, ConstFloatVectorView)>& getVectorHashF) const noexcept {
-	uint64_t ret = 0;
+PayloadChecksum PayloadIface<T>::GetChecksum(
+	const std::function<uint64_t(unsigned int, ConstFloatVectorView)>& getVectorHashF) const noexcept {
+	PayloadChecksum ret;
 	for (int field = 0, fields = t_.NumFields(); field < fields; ++field) {
-		ret <<= 1;
+		ret.hashV1 <<= 1;
+
 		const auto& f = t_.Field(field);
 		auto fv = Field(field);
 		if (f.Type().IsSame(KeyValueType::FloatVector{})) {
@@ -522,11 +527,13 @@ uint64_t PayloadIface<T>::GetHash(const std::function<uint64_t(unsigned int, Con
 			ret ^= arr->len;
 			uint8_t* p = v_->Ptr() + arr->offset;
 			for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
+				ret.hashV2 = std::rotl(ret.hashV2, 13);
 				ret ^= PayloadFieldValue(f, p).Hash();
 			}
 		} else {
 			ret ^= fv.Hash();
 		}
+		ret.hashV2 *= kHashMagic;
 	}
 	return ret;
 }

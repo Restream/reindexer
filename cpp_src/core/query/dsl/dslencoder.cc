@@ -5,7 +5,6 @@
 #include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
 #include "dslparser.h"
-#include "tools/logger.h"
 #include "vendor/frozen/unordered_map.h"
 
 namespace reindexer {
@@ -39,6 +38,13 @@ constexpr static auto kReqTotalValues = frozen::make_unordered_map<CalcTotalMode
 	{{ModeNoTotal, "disabled"sv}, {ModeAccurateTotal, "enabled"sv}, {ModeCachedTotal, "cached"sv}});
 
 enum class [[nodiscard]] QueryScope { Main, Subquery };
+
+constexpr static auto kExpressionTypeMap = frozen::make_unordered_map<ExpressionType, std::string_view>({
+	{ExpressionType::ExpressionTypeField, "field"sv},
+	{ExpressionType::ExpressionTypeExpression, "function"sv},
+	{ExpressionType::ExpressionTypeValues, "values"sv},
+	{ExpressionType::ExpressionTypeSubQuery, "subquery"sv},
+});
 
 template <typename T, size_t N>
 std::string_view get(const frozen::unordered_map<T, std::string_view, N>& m, const T& key) {
@@ -204,19 +210,73 @@ static void putValues(JsonBuilder& builder, const VariantArray& values) {
 	}
 }
 
+void putExpressionValue(ExpressionType type, std::string_view expr, JsonBuilder& builder) {
+	if (type == ExpressionTypeField) {
+		builder.Put("value"sv, expr);
+	}
+}
+
+void putExpressionValue(ExpressionType type, const QueryEntry& expr, JsonBuilder& builder) {
+	if (type == ExpressionTypeField) {
+		builder.Put("value"sv, expr.FieldName());
+	} else if (type == ExpressionTypeValues) {
+		putValues(builder, expr.Values());
+	}
+}
+
+void putExpressionValue(ExpressionType type, const QueryFunctionEntry& expr, JsonBuilder& builder) {
+	if (type == ExpressionTypeExpression) {
+		builder.Put("value"sv, expr.Function().ToString());
+	} else if (type == ExpressionTypeField) {
+		builder.Put("value"sv, expr.ComparisonField().FieldName());
+	} else if (type == ExpressionTypeValues) {
+		putValues(builder, expr.Values());
+	}
+}
+
+template <typename Expression>
+static void encodeExpression(ExpressionType type, const Expression& expr, JsonBuilder& builder) {
+	builder.Put("type"sv, get(kExpressionTypeMap, type));
+	putExpressionValue(type, expr, builder);
+}
+
+template <typename Expression>
+static void encodeLeftExpression(ExpressionType type, const Expression& expr, JsonBuilder& builder) {
+	auto expression = builder.Object("left_expression");
+	encodeExpression(type, expr, expression);
+}
+
+template <typename Expression>
+static void encodeRightExpression(ExpressionType type, const Expression& expr, JsonBuilder& builder) {
+	auto expression = builder.Object("right_expression");
+	encodeExpression(type, expr, expression);
+}
+
 static void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
 	if (qentry.Distinct()) {
 		return;
 	}
 	builder.Put("cond"sv, get(kCondMap, CondType(qentry.Condition())));
-	builder.Put("field"sv, qentry.FieldName());
-	putValues(builder, qentry.Values());
+	encodeLeftExpression(ExpressionTypeField, qentry, builder);
+	encodeRightExpression(ExpressionTypeValues, qentry, builder);
 }
 
 static void encodeFilter(const QueryFunctionEntry& qentry, JsonBuilder& builder) {
 	builder.Put("cond"sv, get(kCondMap, CondType(qentry.Condition())));
-	putValues(builder, qentry.Values());
-	qentry.Function().GetJSON(builder);
+	const FunctionType type{qentry.Function().Type()};
+	switch (type) {
+		case FunctionType::FunctionNow:
+		case FunctionType::FunctionSerial:
+			encodeLeftExpression(ExpressionTypeField, qentry, builder);
+			encodeRightExpression(ExpressionTypeExpression, qentry, builder);
+			break;
+		case FunctionType::FunctionFlatArrayLen:
+			encodeLeftExpression(ExpressionTypeExpression, qentry, builder);
+			encodeRightExpression(ExpressionTypeValues, qentry, builder);
+			break;
+		default:
+			throw Error{errLogic, "Function type={} is not supported in DSL", int(type)};
+	}
 }
 
 static void encodeDropFields(const Query& query, JsonBuilder& builder) {
@@ -351,7 +411,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				  },
 				  [&node, &parentQuery](const SubQueryFieldEntry& sqe) {
 					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
-					  node.Put("field"sv, sqe.FieldName());
+					  dsl::encodeLeftExpression(ExpressionTypeField, sqe.FieldName(), node);
 					  auto subquery = node.Object("subquery"sv);
 					  dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
 				  },
@@ -378,8 +438,8 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				  },
 				  [&node](const BetweenFieldsQueryEntry& qe) {
 					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(qe.Condition())));
-					  node.Put("first_field"sv, qe.LeftFieldName());
-					  node.Put("second_field"sv, qe.RightFieldName());
+					  dsl::encodeLeftExpression(ExpressionTypeField, qe.LeftFieldName(), node);
+					  dsl::encodeRightExpression(ExpressionTypeField, qe.RightFieldName(), node);
 				  },
 				  [](const MultiDistinctQueryEntry&) {}, [&node](const KnnQueryEntry& qe) { qe.ToDsl(node); });
 	}

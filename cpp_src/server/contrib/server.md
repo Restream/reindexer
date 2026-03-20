@@ -78,7 +78,6 @@
   * [EqualPositionDef](#equalpositiondef)
   * [FilterDef](#filterdef)
   * [KnnSearchParamsDef](#knnsearchparamsdef)
-  * [FunctionDef](#functiondef)
   * [SortDef](#sortdef)
   * [JoinedDef](#joineddef)
   * [OnDef](#ondef)
@@ -90,6 +89,7 @@
   * [FulltextConfig](#fulltextconfig)
   * [FulltextFieldConfig](#fulltextfieldconfig)
   * [FulltextSynonym](#fulltextsynonym)
+  * [FulltextTermsBoost](#fulltexttermsboost)
   * [MetaInfo](#metainfo)
   * [MetaListResponse](#metalistresponse)
   * [MetaByKeyResponse](#metabykeyresponse)
@@ -152,7 +152,7 @@
 
 <!-- tocstop -->
 
-> Version 5.11.1
+> Version 5.12.0
 
 ## Overview
 
@@ -243,7 +243,6 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | EqualPositionDef | [EqualPositionDef](#equalpositiondef) | Array fields to be searched with equal array indexes |
 | FilterDef | [FilterDef](#filterdef) | If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required. |
 | KnnSearchParamsDef | [KnnSearchParamsDef](#knnsearchparamsdef) | Parameters for knn search |
-| FunctionDef | [FunctionDef](#functiondef) = 2 |
 | SortDef | [SortDef](#sortdef) | Specifies results sorting order |
 | JoinedDef | [JoinedDef](#joineddef) |  |
 | OnDef | [OnDef](#ondef) |  |
@@ -255,6 +254,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | FulltextConfig | [FulltextConfig](#fulltextconfig) | Fulltext Index configuration |
 | FulltextFieldConfig | [FulltextFieldConfig](#fulltextfieldconfig) | Configuration for certain field if it differ from whole index configuration |
 | FulltextSynonym | [FulltextSynonym](#fulltextsynonym) | Fulltext synonym definition |
+| FulltextTermsBoost | [FulltextTermsBoost](#fulltexttermsboost) | Fulltext terms boost definition |
 | MetaInfo | [MetaInfo](#metainfo) | Meta info to be set |
 | MetaListResponse | [MetaListResponse](#metalistresponse) | List of meta info of the specified namespace |
 | MetaByKeyResponse | [MetaByKeyResponse](#metabykeyresponse) | Meta info of the specified namespace |
@@ -3326,15 +3326,25 @@ This operation updates documents in namespace by DSL query.
   req_total?: enum[disabled, enabled, cached] //default: disabled
   // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
   filters: {
-    // Field json path or index name for filter
-    field?: string
+    // Expression on the left side of the condition. It may be a field or function.
+    left_expression: {
+      // Explicit expression type
+      type?: enum[field, expression]
+      // Field name or function (as expression).
+      value?: string
+    }
+    // Expression on the right side of the condition. It may be a field, function, or value.
+    right_expression: {
+      // Explicit expression type
+      type?: enum[field, expression, values]
+      // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+      value: {
+      }
+    }
     // Condition operator
     cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
     // Logic operator
     op?: enum[AND, OR, NOT]
-    // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
-    value: {
-    }
     filters:FilterDef[]
     join_query: {
       // Namespace name
@@ -3367,10 +3377,6 @@ This operation updates documents in namespace by DSL query.
       }[]
       select_filter?: string[]
     }
-    // First field json path or index name for filter by two fields
-    first_field?: string
-    // Second field json path or index name for filter by two fields
-    second_field?: string
     // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
     subquery: {
       // Namespace name
@@ -3394,12 +3400,6 @@ This operation updates documents in namespace by DSL query.
     equal_positions: {
       positions?: string[]
     }[]
-    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
-    function: {
-      // Function name
-      name: string
-      fields?: string[]
-    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -3411,6 +3411,15 @@ This operation updates documents in namespace by DSL query.
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
       nprobe?: integer
     }
+    // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+    field?: string
+    // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+    value: {
+    }
+    // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+    first_field?: string
+    // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+    second_field?: string
   }[]
   sort:SortDef[]
   merge_queries: {
@@ -3607,15 +3616,25 @@ format?: enum[json, msgpack, protobuf, csv-file]
   req_total?: enum[disabled, enabled, cached] //default: disabled
   // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
   filters: {
-    // Field json path or index name for filter
-    field?: string
+    // Expression on the left side of the condition. It may be a field or function.
+    left_expression: {
+      // Explicit expression type
+      type?: enum[field, expression]
+      // Field name or function (as expression).
+      value?: string
+    }
+    // Expression on the right side of the condition. It may be a field, function, or value.
+    right_expression: {
+      // Explicit expression type
+      type?: enum[field, expression, values]
+      // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+      value: {
+      }
+    }
     // Condition operator
     cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
     // Logic operator
     op?: enum[AND, OR, NOT]
-    // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
-    value: {
-    }
     filters:FilterDef[]
     join_query: {
       // Namespace name
@@ -3648,10 +3667,6 @@ format?: enum[json, msgpack, protobuf, csv-file]
       }[]
       select_filter?: string[]
     }
-    // First field json path or index name for filter by two fields
-    first_field?: string
-    // Second field json path or index name for filter by two fields
-    second_field?: string
     // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
     subquery: {
       // Namespace name
@@ -3675,12 +3690,6 @@ format?: enum[json, msgpack, protobuf, csv-file]
     equal_positions: {
       positions?: string[]
     }[]
-    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
-    function: {
-      // Function name
-      name: string
-      fields?: string[]
-    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -3692,6 +3701,15 @@ format?: enum[json, msgpack, protobuf, csv-file]
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
       nprobe?: integer
     }
+    // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+    field?: string
+    // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+    value: {
+    }
+    // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+    first_field?: string
+    // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+    second_field?: string
   }[]
   sort:SortDef[]
   merge_queries: {
@@ -3902,15 +3920,25 @@ This operation removes documents from namespace by DSL query.
   req_total?: enum[disabled, enabled, cached] //default: disabled
   // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
   filters: {
-    // Field json path or index name for filter
-    field?: string
+    // Expression on the left side of the condition. It may be a field or function.
+    left_expression: {
+      // Explicit expression type
+      type?: enum[field, expression]
+      // Field name or function (as expression).
+      value?: string
+    }
+    // Expression on the right side of the condition. It may be a field, function, or value.
+    right_expression: {
+      // Explicit expression type
+      type?: enum[field, expression, values]
+      // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+      value: {
+      }
+    }
     // Condition operator
     cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
     // Logic operator
     op?: enum[AND, OR, NOT]
-    // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
-    value: {
-    }
     filters:FilterDef[]
     join_query: {
       // Namespace name
@@ -3943,10 +3971,6 @@ This operation removes documents from namespace by DSL query.
       }[]
       select_filter?: string[]
     }
-    // First field json path or index name for filter by two fields
-    first_field?: string
-    // Second field json path or index name for filter by two fields
-    second_field?: string
     // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
     subquery: {
       // Namespace name
@@ -3970,12 +3994,6 @@ This operation removes documents from namespace by DSL query.
     equal_positions: {
       positions?: string[]
     }[]
-    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
-    function: {
-      // Function name
-      name: string
-      fields?: string[]
-    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -3987,6 +4005,15 @@ This operation removes documents from namespace by DSL query.
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
       nprobe?: integer
     }
+    // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+    field?: string
+    // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+    value: {
+    }
+    // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+    first_field?: string
+    // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+    second_field?: string
   }[]
   sort:SortDef[]
   merge_queries: {
@@ -5066,15 +5093,25 @@ tx_id?: string
   req_total?: enum[disabled, enabled, cached] //default: disabled
   // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
   filters: {
-    // Field json path or index name for filter
-    field?: string
+    // Expression on the left side of the condition. It may be a field or function.
+    left_expression: {
+      // Explicit expression type
+      type?: enum[field, expression]
+      // Field name or function (as expression).
+      value?: string
+    }
+    // Expression on the right side of the condition. It may be a field, function, or value.
+    right_expression: {
+      // Explicit expression type
+      type?: enum[field, expression, values]
+      // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+      value: {
+      }
+    }
     // Condition operator
     cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
     // Logic operator
     op?: enum[AND, OR, NOT]
-    // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
-    value: {
-    }
     filters:FilterDef[]
     join_query: {
       // Namespace name
@@ -5107,10 +5144,6 @@ tx_id?: string
       }[]
       select_filter?: string[]
     }
-    // First field json path or index name for filter by two fields
-    first_field?: string
-    // Second field json path or index name for filter by two fields
-    second_field?: string
     // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
     subquery: {
       // Namespace name
@@ -5134,12 +5167,6 @@ tx_id?: string
     equal_positions: {
       positions?: string[]
     }[]
-    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
-    function: {
-      // Function name
-      name: string
-      fields?: string[]
-    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -5151,6 +5178,15 @@ tx_id?: string
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
       nprobe?: integer
     }
+    // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+    field?: string
+    // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+    value: {
+    }
+    // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+    first_field?: string
+    // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+    second_field?: string
   }[]
   sort:SortDef[]
   merge_queries: {
@@ -6282,41 +6318,43 @@ This operation will return detailed information about database memory consumptio
     query_cache?: CacheMemStats
     // State of namespace replication
     replication: {
-      // Last Log Sequence Number (LSN) of applied namespace modification
+      // Last Log Sequence Number (LSN) of applied namespace modification represented as single integer
       last_lsn?: integer
-      // Cluster ID - must be same for client and for master
-      cluster_id?: integer
-      // If true, then namespace is in slave mode
-      slave_mode?: boolean
-      // Error code of last replication
-      error_code?: integer
-      // Error message of last replication
-      error_message?: string
-      // Current replication status for this namespace
-      status?: enum[idle, error, fatal, syncing, none]
-      // State of current master namespace
-      master_state: {
-        // Hashsum of all records in namespace
-        data_hash?: integer
-        // Last Log Sequence Number (LSN) of applied namespace modification
-        last_lsn?: integer
-        // Last update time
-        updated_unix_nano?: integer
-        // Items count in master namespace
-        data_count?: integer
+      // Last Log Sequence Number (LSN) of applied namespace record
+      last_lsn_v2: {
+        // Server ID of record source node
+        server_id?: integer
+        // Record ID (incremental counter)
+        counter?: integer
       }
-      // Number of storage's master <-> slave switches
-      incarnation_counter?: integer
-      // Hashsum of all records in namespace
-      data_hash?: integer
+      // Namespace version, assigned on namespace creation
+      ns_version: {
+        // Server ID of creater node
+        server_id?: integer
+        // Version (incremental counter)
+        counter?: integer
+      }
+      // Cluster operation status for the namespace
+      clusterization_status: {
+        // Server ID of the namespace's leader
+        leader_id?: integer
+        // Namespace role in replication
+        role?: enum[none, cluster_replica, simple_replica]
+      }
+      // Checksum of all records in namespace
+      checksum?: integer
       // Write Ahead Log (WAL) records count
       wal_count?: integer
       // Total memory consumption of Write Ahead Log (WAL)
       wal_size?: integer
+      // Current node ID
+      server_id?: integer
       // Last update time
       updated_unix_nano?: integer
       // Items count in namespace
       data_count?: integer
+      // Admissible replication token of the namespace
+      admissible_token?: string
     }
     indexes: {
       // Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexed fields
@@ -6347,6 +6385,8 @@ This operation will return detailed information about database memory consumptio
       tracked_updates_overflow?: integer
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
+      // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
+      is_quantized?: boolean
       upsert_embedder: {
         // Last request execution status
         last_request_result?: enum[OK, ERROR]
@@ -7902,15 +7942,25 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   req_total?: enum[disabled, enabled, cached] //default: disabled
   // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
   filters: {
-    // Field json path or index name for filter
-    field?: string
+    // Expression on the left side of the condition. It may be a field or function.
+    left_expression: {
+      // Explicit expression type
+      type?: enum[field, expression]
+      // Field name or function (as expression).
+      value?: string
+    }
+    // Expression on the right side of the condition. It may be a field, function, or value.
+    right_expression: {
+      // Explicit expression type
+      type?: enum[field, expression, values]
+      // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+      value: {
+      }
+    }
     // Condition operator
     cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
     // Logic operator
     op?: enum[AND, OR, NOT]
-    // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
-    value: {
-    }
     filters:FilterDef[]
     join_query: {
       // Namespace name
@@ -7943,10 +7993,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       }[]
       select_filter?: string[]
     }
-    // First field json path or index name for filter by two fields
-    first_field?: string
-    // Second field json path or index name for filter by two fields
-    second_field?: string
     // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
     subquery: {
       // Namespace name
@@ -7970,12 +8016,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     equal_positions: {
       positions?: string[]
     }[]
-    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
-    function: {
-      // Function name
-      name: string
-      fields?: string[]
-    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -7987,6 +8027,15 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
       nprobe?: integer
     }
+    // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+    field?: string
+    // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+    value: {
+    }
+    // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+    first_field?: string
+    // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+    second_field?: string
   }[]
   sort:SortDef[]
   merge_queries: {
@@ -8068,15 +8117,25 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   req_total?: enum[disabled, enabled, cached] //default: disabled
   // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
   filters: {
-    // Field json path or index name for filter
-    field?: string
+    // Expression on the left side of the condition. It may be a field or function.
+    left_expression: {
+      // Explicit expression type
+      type?: enum[field, expression]
+      // Field name or function (as expression).
+      value?: string
+    }
+    // Expression on the right side of the condition. It may be a field, function, or value.
+    right_expression: {
+      // Explicit expression type
+      type?: enum[field, expression, values]
+      // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+      value: {
+      }
+    }
     // Condition operator
     cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
     // Logic operator
     op?: enum[AND, OR, NOT]
-    // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
-    value: {
-    }
     filters:FilterDef[]
     join_query: {
       // Namespace name
@@ -8109,10 +8168,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       }[]
       select_filter?: string[]
     }
-    // First field json path or index name for filter by two fields
-    first_field?: string
-    // Second field json path or index name for filter by two fields
-    second_field?: string
     // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
     subquery: {
       // Namespace name
@@ -8136,12 +8191,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     equal_positions: {
       positions?: string[]
     }[]
-    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
-    function: {
-      // Function name
-      name: string
-      fields?: string[]
-    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -8153,6 +8202,15 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
       nprobe?: integer
     }
+    // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+    field?: string
+    // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+    value: {
+    }
+    // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+    first_field?: string
+    // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+    second_field?: string
   }[]
   sort:SortDef[]
   select_filter?: string //default: id[]
@@ -8174,26 +8232,46 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 ```ts
 // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
 {
-  // Field json path or index name for filter
-  field?: string
+  // Expression on the left side of the condition. It may be a field or function.
+  left_expression: {
+    // Explicit expression type
+    type?: enum[field, expression]
+    // Field name or function (as expression).
+    value?: string
+  }
+  // Expression on the right side of the condition. It may be a field, function, or value.
+  right_expression: {
+    // Explicit expression type
+    type?: enum[field, expression, values]
+    // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+    value: {
+    }
+  }
   // Condition operator
   cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
   // Logic operator
   op?: enum[AND, OR, NOT]
-  // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
-  value: {
-  }
   // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
   filters: {
-    // Field json path or index name for filter
-    field?: string
+    // Expression on the left side of the condition. It may be a field or function.
+    left_expression: {
+      // Explicit expression type
+      type?: enum[field, expression]
+      // Field name or function (as expression).
+      value?: string
+    }
+    // Expression on the right side of the condition. It may be a field, function, or value.
+    right_expression: {
+      // Explicit expression type
+      type?: enum[field, expression, values]
+      // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+      value: {
+      }
+    }
     // Condition operator
     cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
     // Logic operator
     op?: enum[AND, OR, NOT]
-    // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
-    value: {
-    }
     filters:FilterDef[]
     join_query: {
       // Namespace name
@@ -8226,10 +8304,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       }[]
       select_filter?: string[]
     }
-    // First field json path or index name for filter by two fields
-    first_field?: string
-    // Second field json path or index name for filter by two fields
-    second_field?: string
     // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
     subquery: {
       // Namespace name
@@ -8253,12 +8327,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     equal_positions: {
       positions?: string[]
     }[]
-    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
-    function: {
-      // Function name
-      name: string
-      fields?: string[]
-    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -8270,16 +8338,29 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
       nprobe?: integer
     }
+    // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+    field?: string
+    // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+    value: {
+    }
+    // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+    first_field?: string
+    // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+    second_field?: string
   }[]
   join_query:JoinedDef
-  // First field json path or index name for filter by two fields
-  first_field?: string
-  // Second field json path or index name for filter by two fields
-  second_field?: string
   subquery:SubQuery
   equal_positions:EqualPositionDef[]
-  function:FunctionDef
   params:KnnSearchParamsDef
+  // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+  field?: string
+  // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+  value: {
+  }
+  // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+  first_field?: string
+  // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+  second_field?: string
 }
 ```
 
@@ -8296,17 +8377,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   ef?: integer
   // Applicable for IVF index only. The number of Voronoi cells to search during a query
   nprobe?: integer
-}
-```
-
-### FunctionDef
-
-```ts
-// Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
-{
-  // Function name
-  name: string
-  fields?: string[]
 }
 ```
 
@@ -8334,15 +8404,25 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   type: enum[LEFT, INNER, ORINNER]
   // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
   filters: {
-    // Field json path or index name for filter
-    field?: string
+    // Expression on the left side of the condition. It may be a field or function.
+    left_expression: {
+      // Explicit expression type
+      type?: enum[field, expression]
+      // Field name or function (as expression).
+      value?: string
+    }
+    // Expression on the right side of the condition. It may be a field, function, or value.
+    right_expression: {
+      // Explicit expression type
+      type?: enum[field, expression, values]
+      // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+      value: {
+      }
+    }
     // Condition operator
     cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
     // Logic operator
     op?: enum[AND, OR, NOT]
-    // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
-    value: {
-    }
     filters:FilterDef[]
     join_query: {
       // Namespace name
@@ -8375,10 +8455,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       }[]
       select_filter?: string[]
     }
-    // First field json path or index name for filter by two fields
-    first_field?: string
-    // Second field json path or index name for filter by two fields
-    second_field?: string
     // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
     subquery: {
       // Namespace name
@@ -8402,12 +8478,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     equal_positions: {
       positions?: string[]
     }[]
-    // Function with parameters to filter by several fields. For example, flat_array_len(array1) = 2
-    function: {
-      // Function name
-      name: string
-      fields?: string[]
-    }
     // Parameters for knn search
     params: {
       // Maximum count of returned vectors in KNN queries
@@ -8419,6 +8489,15 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       // Applicable for IVF index only. The number of Voronoi cells to search during a query
       nprobe?: integer
     }
+    // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+    field?: string
+    // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+    value: {
+    }
+    // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+    first_field?: string
+    // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+    second_field?: string
   }[]
   sort:SortDef[]
   // Maximum count of returned items
@@ -8519,6 +8598,17 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   centroids_count?: integer
   // Raduis for filtering vectors by metric in queries
   radius?: number
+  // Quantization config. Supported only for HNSW-index
+  quantization_config: {
+    // Type of the quantization. Currently, only 8-bit scalar quantization is supported
+    quantization_type?: enum[scalar_quantization_8_bit]
+    // Quantile used to determine the clipping range for vector components during quantization. The value is automatically computed based on vector dimensionality. Changing it is recommended only if you understand the distribution of vector values and need to tune recall
+    quantile?: number
+    // Number of vectors sampled from the index to estimate the min/max range (with quantile clipping) used for quantization
+    sample_size?: integer //default: 20000
+    // Minimum number of vectors in the index required to trigger background quantization
+    quantization_threshold?: integer //default: 100000
+  }
   // Embedding configuration
   embedding: {
     // Upsert embedding configuration
@@ -8601,6 +8691,12 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   synonyms: {
     tokens?: string[]
     alternatives?: string[]
+  }[]
+  // Fulltext terms boost definition
+  terms_boost: {
+    terms?: string[]
+    // Rank multiplier for boosted terms
+    boost?: number
   }[]
   // Boost of bm25 ranking
   bm25_boost?: number //default: 1
@@ -8738,6 +8834,17 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 {
   tokens?: string[]
   alternatives?: string[]
+}
+```
+
+### FulltextTermsBoost
+
+```ts
+// Fulltext terms boost definition
+{
+  terms?: string[]
+  // Rank multiplier for boosted terms
+  boost?: number
 }
 ```
 
@@ -9322,41 +9429,43 @@ string[]
     query_cache?: CacheMemStats
     // State of namespace replication
     replication: {
-      // Last Log Sequence Number (LSN) of applied namespace modification
+      // Last Log Sequence Number (LSN) of applied namespace modification represented as single integer
       last_lsn?: integer
-      // Cluster ID - must be same for client and for master
-      cluster_id?: integer
-      // If true, then namespace is in slave mode
-      slave_mode?: boolean
-      // Error code of last replication
-      error_code?: integer
-      // Error message of last replication
-      error_message?: string
-      // Current replication status for this namespace
-      status?: enum[idle, error, fatal, syncing, none]
-      // State of current master namespace
-      master_state: {
-        // Hashsum of all records in namespace
-        data_hash?: integer
-        // Last Log Sequence Number (LSN) of applied namespace modification
-        last_lsn?: integer
-        // Last update time
-        updated_unix_nano?: integer
-        // Items count in master namespace
-        data_count?: integer
+      // Last Log Sequence Number (LSN) of applied namespace record
+      last_lsn_v2: {
+        // Server ID of record source node
+        server_id?: integer
+        // Record ID (incremental counter)
+        counter?: integer
       }
-      // Number of storage's master <-> slave switches
-      incarnation_counter?: integer
-      // Hashsum of all records in namespace
-      data_hash?: integer
+      // Namespace version, assigned on namespace creation
+      ns_version: {
+        // Server ID of creater node
+        server_id?: integer
+        // Version (incremental counter)
+        counter?: integer
+      }
+      // Cluster operation status for the namespace
+      clusterization_status: {
+        // Server ID of the namespace's leader
+        leader_id?: integer
+        // Namespace role in replication
+        role?: enum[none, cluster_replica, simple_replica]
+      }
+      // Checksum of all records in namespace
+      checksum?: integer
       // Write Ahead Log (WAL) records count
       wal_count?: integer
       // Total memory consumption of Write Ahead Log (WAL)
       wal_size?: integer
+      // Current node ID
+      server_id?: integer
       // Last update time
       updated_unix_nano?: integer
       // Items count in namespace
       data_count?: integer
+      // Admissible replication token of the namespace
+      admissible_token?: string
     }
     indexes: {
       // Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexed fields
@@ -9387,6 +9496,8 @@ string[]
       tracked_updates_overflow?: integer
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
+      // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
+      is_quantized?: boolean
       upsert_embedder: {
         // Last request execution status
         last_request_result?: enum[OK, ERROR]
@@ -9486,41 +9597,43 @@ string[]
   query_cache?: CacheMemStats
   // State of namespace replication
   replication: {
-    // Last Log Sequence Number (LSN) of applied namespace modification
+    // Last Log Sequence Number (LSN) of applied namespace modification represented as single integer
     last_lsn?: integer
-    // Cluster ID - must be same for client and for master
-    cluster_id?: integer
-    // If true, then namespace is in slave mode
-    slave_mode?: boolean
-    // Error code of last replication
-    error_code?: integer
-    // Error message of last replication
-    error_message?: string
-    // Current replication status for this namespace
-    status?: enum[idle, error, fatal, syncing, none]
-    // State of current master namespace
-    master_state: {
-      // Hashsum of all records in namespace
-      data_hash?: integer
-      // Last Log Sequence Number (LSN) of applied namespace modification
-      last_lsn?: integer
-      // Last update time
-      updated_unix_nano?: integer
-      // Items count in master namespace
-      data_count?: integer
+    // Last Log Sequence Number (LSN) of applied namespace record
+    last_lsn_v2: {
+      // Server ID of record source node
+      server_id?: integer
+      // Record ID (incremental counter)
+      counter?: integer
     }
-    // Number of storage's master <-> slave switches
-    incarnation_counter?: integer
-    // Hashsum of all records in namespace
-    data_hash?: integer
+    // Namespace version, assigned on namespace creation
+    ns_version: {
+      // Server ID of creater node
+      server_id?: integer
+      // Version (incremental counter)
+      counter?: integer
+    }
+    // Cluster operation status for the namespace
+    clusterization_status: {
+      // Server ID of the namespace's leader
+      leader_id?: integer
+      // Namespace role in replication
+      role?: enum[none, cluster_replica, simple_replica]
+    }
+    // Checksum of all records in namespace
+    checksum?: integer
     // Write Ahead Log (WAL) records count
     wal_count?: integer
     // Total memory consumption of Write Ahead Log (WAL)
     wal_size?: integer
+    // Current node ID
+    server_id?: integer
     // Last update time
     updated_unix_nano?: integer
     // Items count in namespace
     data_count?: integer
+    // Admissible replication token of the namespace
+    admissible_token?: string
   }
   indexes: {
     // Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexed fields
@@ -9551,6 +9664,8 @@ string[]
     tracked_updates_overflow?: integer
     // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
     is_built?: boolean
+    // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
+    is_quantized?: boolean
     upsert_embedder: {
       // Last request execution status
       last_request_result?: enum[OK, ERROR]
@@ -9633,6 +9748,8 @@ string[]
   tracked_updates_overflow?: integer
   // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
   is_built?: boolean
+  // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
+  is_quantized?: boolean
   upsert_embedder: {
     // Last request execution status
     last_request_result?: enum[OK, ERROR]
@@ -9761,41 +9878,43 @@ string[]
 ```ts
 // State of namespace replication
 {
-  // Last Log Sequence Number (LSN) of applied namespace modification
+  // Last Log Sequence Number (LSN) of applied namespace modification represented as single integer
   last_lsn?: integer
-  // Cluster ID - must be same for client and for master
-  cluster_id?: integer
-  // If true, then namespace is in slave mode
-  slave_mode?: boolean
-  // Error code of last replication
-  error_code?: integer
-  // Error message of last replication
-  error_message?: string
-  // Current replication status for this namespace
-  status?: enum[idle, error, fatal, syncing, none]
-  // State of current master namespace
-  master_state: {
-    // Hashsum of all records in namespace
-    data_hash?: integer
-    // Last Log Sequence Number (LSN) of applied namespace modification
-    last_lsn?: integer
-    // Last update time
-    updated_unix_nano?: integer
-    // Items count in master namespace
-    data_count?: integer
+  // Last Log Sequence Number (LSN) of applied namespace record
+  last_lsn_v2: {
+    // Server ID of record source node
+    server_id?: integer
+    // Record ID (incremental counter)
+    counter?: integer
   }
-  // Number of storage's master <-> slave switches
-  incarnation_counter?: integer
-  // Hashsum of all records in namespace
-  data_hash?: integer
+  // Namespace version, assigned on namespace creation
+  ns_version: {
+    // Server ID of creater node
+    server_id?: integer
+    // Version (incremental counter)
+    counter?: integer
+  }
+  // Cluster operation status for the namespace
+  clusterization_status: {
+    // Server ID of the namespace's leader
+    leader_id?: integer
+    // Namespace role in replication
+    role?: enum[none, cluster_replica, simple_replica]
+  }
+  // Checksum of all records in namespace
+  checksum?: integer
   // Write Ahead Log (WAL) records count
   wal_count?: integer
   // Total memory consumption of Write Ahead Log (WAL)
   wal_size?: integer
+  // Current node ID
+  server_id?: integer
   // Last update time
   updated_unix_nano?: integer
   // Items count in namespace
   data_count?: integer
+  // Admissible replication token of the namespace
+  admissible_token?: string
 }
 ```
 

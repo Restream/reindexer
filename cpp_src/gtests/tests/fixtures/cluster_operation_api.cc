@@ -1,6 +1,7 @@
 #include "cluster_operation_api.h"
 
 #include "cluster/consts.h"
+#include "core/formatters/checksum_fmt.h"
 #include "core/formatters/lsn_fmt.h"
 #include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"

@@ -49,6 +49,9 @@ type BuiltinServer struct {
 }
 
 func (server *BuiltinServer) stopServer(timeout time.Duration) error {
+	if server.svc == 0 {
+		return nil
+	}
 	if err := err2go(C.stop_reindexer_server(server.svc)); err != nil {
 		return err
 	}
@@ -276,6 +279,7 @@ func (server *BuiltinServer) Finalize() error {
 		return err
 	}
 	C.destroy_reindexer_server(server.svc)
+	server.svc = 0
 	server.builtin = nil
 	server.shutdownTimeout = 0
 	return nil

@@ -1743,6 +1743,29 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 true);
 }
 
+TEST_P(FTGenericApi, BoostingTerms) {
+	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
+	cfgDef.synonyms = {{{"тест"}, {"задача"}}};
+	reindexer::FtFastConfig cfg = cfgDef;
+
+	cfg.rankingConfig.fullMatch = 100;
+	cfg.rankingConfig.stemmerPenalty = 1;  // for idf/tf boost
+	cfg.rankingConfig.translit = 50;
+	cfg.rankingConfig.kblayout = 40;
+	cfg.rankingConfig.synonyms = 80;
+	cfg.termsBoost["Задачи"] = 5.0;
+	cfg.termsBoost["задание"] = 4.0;
+	Init(cfg);
+
+	Add("nm1"sv, "некоторый тест тест"sv, "");
+	Add("nm1"sv, "некоторое задание"sv, "");
+	Add("nm1"sv, "задача"sv, "");
+	Add("nm1"sv, "произвольный текст"sv, "");
+
+	reindexer::Error err;
+	CheckResults("тест задание", {{"!задача!", ""}, {"некоторое !задание!", ""}, {"некоторый !тест тест!", ""}}, true);
+}
+
 TEST_P(FTGenericApi, TyposCollision) {
 	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
 	reindexer::FtFastConfig cfg = cfgDef;

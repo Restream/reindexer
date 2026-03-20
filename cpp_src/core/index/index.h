@@ -100,7 +100,7 @@ public:
 		assertrx(0);
 		std::abort();
 	}
-	virtual IndexMemStat GetMemStat(const RdxContext&) = 0;
+	virtual IndexMemStat GetMemStat(const RdxContext&) const = 0;
 	virtual int64_t GetTTLValue() const noexcept { return 0; }
 	virtual IndexIterator::Ptr CreateIterator() const { return nullptr; }
 

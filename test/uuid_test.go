@@ -429,7 +429,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 			upsertUniqueTestUuidStructNoIdx(t, rx1, ns, i, &uuids)
 		}
 		item := upsertUniqueTestUuidStructNoIdx(t, rx1, ns, 50, &uuids)
-		helpers.WaitForSyncWithMaster(t, rx1, rx2)
+		helpers.WaitForSyncWithLeader(t, rx1, rx2)
 
 		it1 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).MustExec()
 		defer it1.Close()
@@ -448,7 +448,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 		err = rx3.AddIndex(ns, reindexer.IndexDef{
 			Name: "uuid", JSONPaths: []string{"uuid"}, IndexType: "hash", FieldType: "uuid"})
 		require.NoError(t, err)
-		helpers.WaitForSyncWithMaster(t, rx1, rx2)
+		helpers.WaitForSyncWithLeader(t, rx1, rx2)
 
 		// make select with same filter
 		it2 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).MustExec()
@@ -461,7 +461,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 
 		// add new item
 		item = upsertUniqueTestUuidStructNoIdx(t, rx3, ns, 51, &uuids)
-		helpers.WaitForSyncWithMaster(t, rx1, rx2)
+		helpers.WaitForSyncWithLeader(t, rx1, rx2)
 
 		// make select with new item, uuid index must be used
 		it3 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).Explain().MustExec()
@@ -491,7 +491,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 			upsertUniqueTestUuidStructNoTag(t, rx1, ns, i, &uuids)
 		}
 		item := upsertUniqueTestUuidStructNoTag(t, rx1, ns, 50, &uuids)
-		helpers.WaitForSyncWithMaster(t, rx1, rx2)
+		helpers.WaitForSyncWithLeader(t, rx1, rx2)
 
 		it1 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).MustExec()
 		defer it1.Close()
@@ -510,7 +510,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 		err = rx3.UpdateIndex(ns, reindexer.IndexDef{
 			Name: "uuid", JSONPaths: []string{"uuid"}, IndexType: "hash", FieldType: "uuid"})
 		require.NoError(t, err)
-		helpers.WaitForSyncWithMaster(t, rx1, rx2)
+		helpers.WaitForSyncWithLeader(t, rx1, rx2)
 
 		// make select with same filter
 		it2 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).Explain().MustExec()
@@ -520,7 +520,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 
 		// add new item
 		upsertUniqueTestUuidStructNoTag(t, rx3, ns, 51, &uuids)
-		helpers.WaitForSyncWithMaster(t, rx1, rx2)
+		helpers.WaitForSyncWithLeader(t, rx1, rx2)
 
 		it3 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).Explain().MustExec()
 		defer it3.Close()

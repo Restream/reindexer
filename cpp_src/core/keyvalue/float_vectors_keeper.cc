@@ -32,33 +32,6 @@ void FloatVectorsKeeper::Deregister(const KeeperTag& tag) noexcept {
 	tag.Get()->deleted = true;
 }
 
-void FloatVectorsKeeper::GetFloatVectors(const KeeperTag& tag, std::span<IdType> ids, std::vector<ConstFloatVectorView>& vectorsData) {
-	vectorsData.resize(0);
-	vectorsData.reserve(ids.size());
-
-	auto ownerID = tag.GetID();
-
-	lock_guard lock(lock_);
-
-	for (auto id : ids) {
-		auto [itVector, newAdded] = map_.try_emplace(id, queue_.end());
-		if (newAdded) {
-			// load new vector from index
-			auto data = index_.GetFloatVector(id);
-			itVector->second = queue_.emplace(std::next(tag.Get()), ownerID, std::move(data), itVector);
-		} else {
-			// update owner
-			if (itVector->second->owner < ownerID) {
-				queue_.splice(std::next(tag.Get()), queue_, itVector->second);
-				itVector->second = std::next(tag.Get());
-				itVector->second->owner = ownerID;
-				itVector->second->deleted = false;
-			}
-		}
-		vectorsData.emplace_back(itVector->second->vect);
-	}
-}
-
 void FloatVectorsKeeper::Remove(IdType id) {
 	lock_guard lock(lock_);
 

@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.11.1
+  version: 5.12.0
 servers:
   - url: /api/v1
 tags:
@@ -4160,10 +4160,47 @@ components:
       description: Array fields to be searched with equal array indexes
     FilterDef:
       type: object
+      additionalProperties: false
       properties:
-        field:
-          type: string
-          description: Field json path or index name for filter
+        left_expression:
+          type: object
+          additionalProperties: false
+          description:
+            Expression on the left side of the condition. It may be a field or
+            function.
+          properties:
+            type:
+              type: string
+              description: Explicit expression type
+              enum:
+                - field
+                - expression
+            value:
+              type: string
+              description: Field name or function (as expression).
+        right_expression:
+          type: object
+          additionalProperties: false
+          description:
+            Expression on the right side of the condition. It may be a field,
+            function, or value.
+          properties:
+            type:
+              type: string
+              description: Explicit expression type
+              enum:
+                - field
+                - expression
+                - values
+            value:
+              type: object
+              properties: {}
+              description:
+                "Value of filter. Single integer or string for EQ, GT, GE, LE,
+                LT condition, array of 2 elements for RANGE condition, variable
+                len array for SET and ALLSET conditions, or something like that:
+                '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN.
+                Function value as expression. Field name as a string."
         cond:
           type: string
           description: Condition operator
@@ -4187,14 +4224,6 @@ components:
             - AND
             - OR
             - NOT
-        value:
-          type: object
-          properties: {}
-          description:
-            "Value of filter. Single integer or string for EQ, GT, GE, LE, LT
-            condition, array of 2 elements for RANGE condition, variable len
-            array for SET and ALLSET conditions, or something like that: '[[1,
-            -3.5], 5.0]' for DWITHIN, or float vector for KNN"
         filters:
           type: array
           description: Filter for results documents
@@ -4202,14 +4231,6 @@ components:
             $ref: '#/components/schemas/FilterDef'
         join_query:
           $ref: '#/components/schemas/JoinedDef'
-        first_field:
-          type: string
-          description:
-            First field json path or index name for filter by two fields
-        second_field:
-          type: string
-          description:
-            Second field json path or index name for filter by two fields
         subquery:
           $ref: '#/components/schemas/SubQuery'
         equal_positions:
@@ -4218,10 +4239,36 @@ components:
             Array of array fields to be searched with equal array indexes
           items:
             $ref: '#/components/schemas/EqualPositionDef'
-        function:
-          $ref: '#/components/schemas/FunctionDef'
         params:
           $ref: '#/components/schemas/KnnSearchParamsDef'
+        field:
+          deprecated: true
+          type: string
+          description:
+            DEPRECATED. Use left_expression instead. Field json path or index
+            name for filter
+        value:
+          deprecated: true
+          type: object
+          properties: {}
+          description:
+            "DEPRECATED. Use right_expression instead. Value of filter. Single
+            integer or string for EQ, GT, GE, LE, LT condition, array of 2
+            elements for RANGE condition, variable len array for SET and ALLSET
+            conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN,
+            or float vector for KNN"
+        first_field:
+          deprecated: true
+          type: string
+          description:
+            DEPRECATED. Use left_expression instead. First field json path or
+            index name for filter by two fields
+        second_field:
+          deprecated: true
+          type: string
+          description:
+            DEPRECATED. Use right_expression instead. Second field json path or
+            index name for filter by two fields
       description:
         "If contains 'filters' then cannot contain 'cond', 'field' and 'value'.
         If not contains 'filters' then 'field' and 'cond' are required."
@@ -4251,23 +4298,6 @@ components:
         - required: [k]
         - required: [radius]
       description: Parameters for knn search
-    FunctionDef:
-      type: object
-      required:
-        - name
-        - fields
-      properties:
-        name:
-          type: string
-          description: Function name
-        fields:
-          type: array
-          description: Multiple field names used as arguments
-          items:
-            type: string
-      description:
-        Function with parameters to filter by several fields. For example,
-        flat_array_len(array1) = 2
     SortDef:
       required:
         - field
@@ -4499,6 +4529,42 @@ components:
           type: number
           description: Raduis for filtering vectors by metric in queries
           format: float
+        quantization_config:
+          type: object
+          description: Quantization config. Supported only for HNSW-index
+          properties:
+            quantization_type:
+              type: string
+              description:
+                Type of the quantization. Currently, only 8-bit scalar
+                quantization is supported
+              enum:
+                - scalar_quantization_8_bit
+            quantile:
+              type: number
+              description:
+                Quantile used to determine the clipping range for vector
+                components during quantization. The value is automatically
+                computed based on vector dimensionality. Changing it is
+                recommended only if you understand the distribution of vector
+                values and need to tune recall
+              format: float
+              minimum: 0.95
+              maximum: 1.0
+            sample_size:
+              type: integer
+              minimum: 1
+              default: 20000
+              description:
+                Number of vectors sampled from the index to estimate the min/max
+                range (with quantile clipping) used for quantization
+            quantization_threshold:
+              type: integer
+              minimum: 1
+              default: 100000
+              description:
+                Minimum number of vectors in the index required to trigger
+                background quantization
         embedding:
           type: object
           description: Embedding configuration
@@ -4687,6 +4753,11 @@ components:
           description: List of synonyms for replacement
           items:
             $ref: '#/components/schemas/FulltextSynonym'
+        terms_boost:
+          type: array
+          description: List of boosted terms
+          items:
+            $ref: '#/components/schemas/FulltextTermsBoost'
         bm25_boost:
           maximum: 10
           minimum: 0
@@ -5062,6 +5133,18 @@ components:
           items:
             type: string
       description: Fulltext synonym definition
+    FulltextTermsBoost:
+      type: object
+      properties:
+        terms:
+          type: array
+          description: 'List of boosted terms'
+          items:
+            type: string
+        boost:
+          type: number
+          description: 'Rank multiplier for boosted terms'
+      description: Fulltext terms boost definition
     MetaInfo:
       required:
         - key
@@ -5710,6 +5793,11 @@ components:
             'Shows whether KNN/fulltext indexing structure is fully built. If
             this field is missing, index does not require any specific build
             steps'
+        is_quantized:
+          type: boolean
+          description:
+            'Shows whether HNSW-index quantized. If this field is nil, index
+            does not support quantization'
         upsert_embedder:
           $ref: '#/components/schemas/EmbedderStatus'
           description: Upsert embedder status
@@ -5798,68 +5886,69 @@ components:
           description: 'Number of hits of queries, to store results in cache'
     ReplicationStats:
       type: object
+      description: State of namespace replication
       properties:
         last_lsn:
           type: integer
           description:
             Last Log Sequence Number (LSN) of applied namespace modification
-        cluster_id:
-          type: integer
-          description: Cluster ID - must be same for client and for master
-        slave_mode:
-          type: boolean
-          description: 'If true, then namespace is in slave mode'
-        error_code:
-          type: integer
-          description: Error code of last replication
-        error_message:
-          type: string
-          description: Error message of last replication
-        status:
-          type: string
-          description: Current replication status for this namespace
-          enum:
-            - idle
-            - error
-            - fatal
-            - syncing
-            - none
-        master_state:
+            represented as single integer
+        last_lsn_v2:
           type: object
+          description:
+            Last Log Sequence Number (LSN) of applied namespace record
           properties:
-            data_hash:
+            server_id:
               type: integer
-              description: Hashsum of all records in namespace
-            last_lsn:
+              description: Server ID of record source node
+            counter:
               type: integer
-              description:
-                Last Log Sequence Number (LSN) of applied namespace modification
-            updated_unix_nano:
+              description: Record ID (incremental counter)
+        ns_version:
+          type: object
+          description: Namespace version, assigned on namespace creation
+          properties:
+            server_id:
               type: integer
-              description: Last update time
-            data_count:
+              description: Server ID of creater node
+            counter:
               type: integer
-              description: Items count in master namespace
-          description: State of current master namespace
-        incarnation_counter:
+              description: Version (incremental counter)
+        clusterization_status:
+          type: object
+          description: Cluster operation status for the namespace
+          properties:
+            leader_id:
+              type: integer
+              description: Server ID of the namespace's leader
+            role:
+              type: string
+              description: Namespace role in replication
+              enum:
+                - none
+                - cluster_replica
+                - simple_replica
+        checksum:
           type: integer
-          description: Number of storage's master <-> slave switches
-        data_hash:
-          type: integer
-          description: Hashsum of all records in namespace
+          description: Checksum of all records in namespace
         wal_count:
           type: integer
           description: Write Ahead Log (WAL) records count
         wal_size:
           type: integer
           description: Total memory consumption of Write Ahead Log (WAL)
+        server_id:
+          type: integer
+          description: Current node ID
         updated_unix_nano:
           type: integer
           description: Last update time
         data_count:
           type: integer
           description: Items count in namespace
-      description: State of namespace replication
+        admissible_token:
+          type: string
+          description: Admissible replication token of the namespace
     DatabasePerfStats:
       type: object
       properties:

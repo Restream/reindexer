@@ -39,14 +39,14 @@ void RandomGenerator::SetIn(const std::string& i) {
 
 RandomGenerator::RandomEngine RandomGenerator::createRandomEngine() {
 	if (in()) {
-		RandomEngine ret;
+		RandomEngine ret;  // NOLINT(bugprone-random-generator-seed)
 		std::string buf;
 		std::getline(*in(), buf);
 		std::istringstream ss{buf};
 		ss >> ret;
 		return ret;
 	} else {
-		RandomEngine ret(reindexer::system_clock_w::now().time_since_epoch().count());
+		RandomEngine ret(reindexer::system_clock_w::now_count());
 		if (!out().empty()) {
 			std::ofstream file{out(), std::ios_base::app};
 			if (file.is_open()) {
@@ -126,7 +126,7 @@ std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generate
 			}
 			res.resize(len);
 			{
-				enum Chars : uint8_t { All, Printable, Available, END = Available };
+				enum [[nodiscard]] Chars : uint8_t { All, Printable, Available, END = Available };
 				switch (RndWhich<Chars, 1, 1, 1>()) {
 					case All:
 						for (auto& ch : res) {
@@ -143,7 +143,7 @@ std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generate
 						break;
 					case Available:
 						for (auto& ch : res) {
-							enum Chars : uint8_t { Alfas, Digits, END = Digits };
+							enum [[nodiscard]] Chars : uint8_t { Alfas, Digits, END = Digits };
 							switch (RndWhich<Chars, alfasWeight, digitsWeight>()) {
 								case Alfas:
 									ch = alfas[rndInt(alfasRndParams)];
@@ -167,7 +167,7 @@ std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generate
 			res.resize(len);
 			res[0] = alfas[rndInt(alfasRndParams)];
 			for (size_t i = 1; i < len; ++i) {
-				enum Chars : uint8_t { Alfas, Digits, END = Digits };
+				enum [[nodiscard]] Chars : uint8_t { Alfas, Digits, END = Digits };
 				switch (RndWhich<Chars, alfasWeight, digitsWeight>()) {
 					case Alfas:
 						res[i] = alfas[rndInt(alfasRndParams)];
@@ -351,7 +351,7 @@ size_t RandomGenerator::IndexesCount() {
 				assertrx(0);
 		}
 	}
-	enum Count : uint8_t { Few, Normal, Many, TooMany, END = TooMany };
+	enum [[nodiscard]] Count : uint8_t { Few, Normal, Many, TooMany, END = TooMany };
 	switch (RndWhich<Count, 500, 1'000, 10, 1>()) {
 		case Few:
 			return RndInt(1, 3);

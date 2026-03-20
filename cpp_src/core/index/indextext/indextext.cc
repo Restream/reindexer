@@ -89,15 +89,6 @@ void IndexText<T>::SetOpts(const IndexOpts& opts) {
 }
 
 template <typename T>
-bool IndexText<T>::HoldsStrings() const noexcept {
-	if constexpr (is_payload_map_v<T>) {
-		return this->idx_map.have_str_fields() || Base::HoldsStrings();
-	} else {
-		return Base::HoldsStrings();
-	}
-}
-
-template <typename T>
 void IndexText<T>::ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) {
 	if (cacheMaxSize_ != cacheCfg.ftIdxCacheSize || hitsToCache_ != cacheCfg.ftIdxHitsToCache) {
 		cacheMaxSize_ = cacheCfg.ftIdxCacheSize;

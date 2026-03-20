@@ -39,7 +39,7 @@ public:
 	bool IsSupportSortedIdsBuild() const noexcept override { return true; }
 
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexUnordered<Map>(*this)); }
-	IndexMemStat GetMemStat(const RdxContext&) override;
+	IndexMemStat GetMemStat(const RdxContext&) const override;
 	size_t Size() const noexcept override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
 	IndexPerfStat GetIndexPerfStat() override;

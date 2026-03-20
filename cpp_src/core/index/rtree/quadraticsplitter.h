@@ -6,8 +6,8 @@
 namespace reindexer {
 
 template <typename Entry, typename Node, typename Traits, typename Iterator, size_t MaxEntries, size_t MinEntries>
-class QuadraticSplitter : public GuttmanSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries,
-												 QuadraticSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries>> {
+class [[nodiscard]] QuadraticSplitter : public GuttmanSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries,
+															   QuadraticSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries>> {
 	using Base = GuttmanSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries,
 								 QuadraticSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries>>;
 	friend Base;

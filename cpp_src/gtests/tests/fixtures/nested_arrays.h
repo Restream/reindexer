@@ -2,7 +2,7 @@
 
 #include "reindexer_api.h"
 
-class NestedArraysApi : public ReindexerApi {
+class [[nodiscard]] NestedArraysApi : public ReindexerApi {
 public:
 	void SetUp() override;
 

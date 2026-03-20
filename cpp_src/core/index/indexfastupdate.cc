@@ -55,6 +55,7 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 				ConstPayload(ns.payloadType_, item).Get(idxNo, keys);
 			}
 
+			resKeys.resize(0);
 			bool needClearCacheUnused = false;
 			newIndex->Upsert(resKeys, keys, IdType::FromNumber(rowId), needClearCacheUnused);
 		}
@@ -67,14 +68,24 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 		ns.indexOptimizer_.UpdateSortedIdxCount(ns.indexes_);
 		ns.markUpdated(IndexOptimization::Full);
 	} else if (indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::Embedding, FloatVectorIndexOpts::Diff::Radius,
-										  IndexOpts::ParamsDiff::Config)) {
+										  FloatVectorIndexOpts::Diff::QuantizationConfig, IndexOpts::ParamsDiff::Config)) {
 		logFmt(LogTrace, "[{}]:{} Only the options will be updated for the index '{}'.", ns.name_, ns.wal_.GetServer(), from.Name());
 		const auto idx = ns.getIndexByName(to.Name());
-		auto& index = *ns.indexes_[idx].get();
+		auto* index = ns.indexes_[idx].get();
 
+		if (indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::QuantizationConfig)) {
+			ns.verifyUpsertQuantizationConfigHNSWIndex("update", to);
+			ns.verifyUpdateQuantizationConfigHNSWIndex(index, to);
+
+			// If quantization config is reset in new IndexDef we must reload the origin non-quantized index.
+			if (!to.Opts().FloatVector().QuantizationConfig()) {
+				ns.reloadNonQuantizedIndex(idx);
+				index = ns.indexes_[idx].get();
+			}
+		}
 		if (indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::Embedding)) {
 			ns.verifyUpsertEmbedder("update", to);
-			PayloadFieldType f(ns.name_.ToLower(), index, to, ns.embeddersCache_, ns.enablePerfCounters_);
+			PayloadFieldType f(ns.name_.ToLower(), *index, to, ns.embeddersCache_, ns.enablePerfCounters_);
 			f.SetOffset(ns.payloadType_.Field(idx).Offset());
 			ns.payloadType_.Replace(idx, std::move(f));
 			for (auto& idx : ns.indexes_) {
@@ -83,8 +94,8 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 			ns.tagsMatcher_.UpdatePayloadType(ns.payloadType_, ns.indexes_.SparseIndexes(), NeedChangeTmVersion::No);
 		}
 
-		index.SetOpts(to.Opts());
-		index.ClearCache();
+		index->SetOpts(to.Opts());
+		index->ClearCache();
 		ns.clearNamespaceCaches();
 	} else {
 		logFmt(LogWarning,
@@ -114,6 +125,7 @@ bool IndexFastUpdate::RelaxedEqual(const IndexDef& from, const IndexDef& to) {
 		.Skip(IndexOpts::ParamsDiff::Config)
 		.Skip(FloatVectorIndexOpts::Diff::Embedding)
 		.Skip(FloatVectorIndexOpts::Diff::Radius)
+		.Skip(FloatVectorIndexOpts::Diff::QuantizationConfig)
 		.Equal();
 }
 

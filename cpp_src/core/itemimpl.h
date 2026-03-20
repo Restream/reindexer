@@ -6,7 +6,6 @@
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
 #include "itemimplrawdata.h"
-#include "namespace/float_vectors_indexes.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -16,6 +15,7 @@ class Namespace;
 class RdxContext;
 class Recoder;
 class Schema;
+class FloatVectorsGetter;
 
 class [[nodiscard]] ItemImpl : public ItemImplRawData {
 	friend class Item;
@@ -96,12 +96,12 @@ public:
 	static void validateModifyArray(const VariantArray& values);
 	void BuildTupleIfEmpty();
 	/**
-	 * @brief Copies vectors' values from indexes into ItemImpl::payloadValue.
+	 * @brief Copies vectors' values into ItemImpl::payloadValue.
 	 * Be default this method creates and stores full vector's data copy.
 	 * If item is marked 'unsafe', then resulting payload value will contain view, pointing into index structures directly
 	 * and any modification of those indexes may break the references.
 	 */
-	void CopyIndexedVectorsValuesFrom(IdType, const FloatVectorsIndexes&);
+	void CopyIndexedVectorsValuesFrom(FloatVectorsGetter&& floatVectorsGettter);
 
 	void Embed(const RdxContext& ctx);
 	const ScalarIndexesSetT& GetScalarIndexMask() const noexcept { return objectScalarIndexes_; }

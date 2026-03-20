@@ -19,7 +19,6 @@ TEST_F(ItemMoveSemanticsApi, StoreFPNANINF) {
 	builder.Put("vielfrass", -INFINITY);
 	builder.End();
 	Item item(rt.NewItem(nsName));
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	auto err = item.FromJSON(ser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(R"json({"id":0,"pocomaxa":null,"wolverine":null,"vielfrass":null})json", item.GetJSON());

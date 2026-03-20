@@ -7,6 +7,7 @@
 #include "core/nsselecter/joinedselector.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/payload/payloadiface.h"
+#include "core/query/expression/expression.h"
 #include "core/type_consts.h"
 #include "estl/algorithm.h"
 #include "query.h"
@@ -105,7 +106,7 @@ void QueryField::SetIndexData(int idxNo, std::string_view idxName, FieldsSet&& f
 	compositeFieldsTypes_ = std::move(compositeFieldsTypes);
 }
 
-bool QueryField::HaveEmptyField() const noexcept {
+bool QueryField::HaveEmptyField() const {
 	size_t tagsNo = 0;
 	for (auto f : Fields()) {
 		if (f == IndexValueType::SetByJsonPath) {
@@ -286,18 +287,20 @@ bool QueryEntry::TryUpdateInplace(VariantArray& newValues) noexcept {
 }
 
 const functions::Function& FunctionEntry::Function() const& {
-	switch (function_.index()) {
-		case 0:
-			return std::get<0>(function_);
-		default:
-			throw Error(errLogic, "Function type {} is not supported yet!", function_.index());
-	}
+	return std::visit([](const auto& f) -> const functions::Function& { return f; }, function_);
 }
 
 std::string FunctionEntry::Dump() const {
 	WrSerializer ser;
-	ser << Function().ToString();
-	ser << ' ' << condition_ << ' ';
+	if (HasComparisonField()) {
+		ser << comparisonField_.FieldName();
+		ser << ' ' << condition_;
+		ser << Function().ToString();
+	} else {
+		ser << Function().ToString();
+		ser << ' ' << condition_;
+	}
+	ser << ' ';
 	return std::string{ser.Slice()};
 }
 
@@ -438,12 +441,12 @@ void QueryEntries::serialize(CondType cond, const VariantArray& values, WrSerial
 		assertrx_throw(values.size() == 2);
 		ser.PutVarUint(3);
 		if (values[0].Type().Is<KeyValueType::Tuple>()) {
-			const Point point = static_cast<Point>(values[0]);
+			const Point point = values[0].As<Point>();
 			ser.PutVariant(Variant(point.X()));
 			ser.PutVariant(Variant(point.Y()));
 			ser.PutVariant(values[1]);
 		} else {
-			const Point point = static_cast<Point>(values[1]);
+			const Point point = values[1].As<Point>();
 			ser.PutVariant(Variant(point.X()));
 			ser.PutVariant(Variant(point.Y()));
 			ser.PutVariant(values[0]);
@@ -480,17 +483,34 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 				}
 			},
 			[&ser, op, &subQueries](const SubQueryFunctionEntry& sqe) {
-				ser.PutVarUint(QueryFunctionSubQueryCondition);
-				ser.PutVarUint(op);
-				ser.PutVarUint(sqe.Function().FieldNames().size());
-				for (const auto& field : sqe.Function().FieldNames()) {
-					ser.PutVString(field);
+				ser.PutVarUint(QueryExpressions);
+				switch (sqe.GetSubqueryType()) {
+					case SubQueryFunctionEntry::SubQueryType::Left:
+						expressions::SubQuery(subQueries.at(sqe.QueryIndex())).Serialize(ser);
+						ser.PutVarUint(op);
+						ser.PutVarUint(sqe.Condition());
+						expressions::Function(sqe.FunctionVariant()).Serialize(ser);
+						break;
+					case SubQueryFunctionEntry::SubQueryType::Right:
+						expressions::Function(sqe.FunctionVariant()).Serialize(ser);
+						ser.PutVarUint(op);
+						ser.PutVarUint(sqe.Condition());
+						expressions::SubQuery(subQueries.at(sqe.QueryIndex())).Serialize(ser);
+						break;
 				}
-				ser.PutVarUint(sqe.Function().Type());
-				ser.PutVarUint(sqe.Condition());
-				{
-					const auto sizePosSaver = ser.StartVString();
-					subQueries.at(sqe.QueryIndex()).Serialize(ser);
+			},
+			[&](const QueryFunctionEntry& entry) {
+				ser.PutVarUint(QueryExpressions);
+				if (entry.HasComparisonField()) {
+					expressions::Field{entry.ComparisonField().FieldName()}.Serialize(ser);
+					ser.PutVarUint(op);
+					ser.PutVarUint(entry.Condition());
+					expressions::Function{entry.FunctionVariant()}.Serialize(ser);
+				} else {
+					expressions::Function{entry.FunctionVariant()}.Serialize(ser);
+					ser.PutVarUint(op);
+					ser.PutVarUint(entry.Condition());
+					expressions::Values{entry.Values()}.Serialize(ser);
 				}
 			},
 			[&](const QueryEntriesBracket&) {
@@ -538,20 +558,6 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 					ser.PutVString(qe.Data());
 				}
 				qe.Params().Serialize(ser);
-			},
-			[&](const QueryFunctionEntry& entry) {
-				ser.PutVarUint(QueryFunction);
-				ser.PutVarUint(entry.Function().FieldNames().size());
-				for (const auto& field : entry.Function().FieldNames()) {
-					ser.PutVString(field);
-				}
-				ser.PutVarUint(entry.Function().Type());
-				ser.PutVarUint(op);
-				ser.PutVarUint(entry.Condition());
-				ser.PutVarUint(entry.Values().size());
-				for (const auto& kv : entry.Values()) {
-					ser.PutVariant(kv);
-				}
 			});
 	}
 }

@@ -659,29 +659,30 @@ Error NamespaceConfigData::FromDefault(std::vector<std::string>& defaultNamespac
 		}
 	}
 	CATCH_AND_RETURN
-
 	return {};
 }
 
 Error NamespaceConfigData::GetJSON(const std::vector<std::string>& namespacesNames, const std::vector<NamespaceConfigData>& namespacesConfs,
 								   JsonBuilder& jb) noexcept {
-	using namespace std::string_view_literals;
-	if (namespacesNames.size() != namespacesConfs.size()) {
-		return {ErrorCode::errLogic, "Incorrect args for NamespaceConfigData::GetJSON"};
+	try {
+		using namespace std::string_view_literals;
+		if (namespacesNames.size() != namespacesConfs.size()) {
+			return {ErrorCode::errLogic, "Incorrect args for NamespaceConfigData::GetJSON"};
+		}
+
+		jb.Put("type"sv, "namespaces"sv);
+		auto arr = jb.Array("namespaces"sv);
+		for (size_t i = 0; i < namespacesConfs.size(); i++) {
+			const std::string& namespaceName = namespacesNames[i];
+			const NamespaceConfigData& namespaceConf = namespacesConfs[i];
+
+			JsonBuilder obj = arr.Object();
+			obj.Put("namespace"sv, namespaceName);
+			namespaceConf.GetJSON(obj);
+			obj.End();
+		}
 	}
-
-	jb.Put("type"sv, "namespaces"sv);
-	auto arr = jb.Array("namespaces"sv);
-	for (size_t i = 0; i < namespacesConfs.size(); i++) {
-		const std::string& namespaceName = namespacesNames[i];
-		const NamespaceConfigData& namespaceConf = namespacesConfs[i];
-
-		JsonBuilder obj = arr.Object();
-		obj.Put("namespace"sv, namespaceName);
-		namespaceConf.GetJSON(obj);
-		obj.End();
-	}
-
+	CATCH_AND_RETURN;
 	return {};
 }
 

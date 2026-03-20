@@ -25,8 +25,8 @@ Transaction::~Transaction() {
 	tr_.clear();
 }
 
-PayloadType Transaction::GetPayloadType() const { return tr_.GetPayloadType(); }
-TagsMatcher Transaction::GetTagsMatcher() const { return tr_.GetTagsMatcher(); }
+PayloadType Transaction::GetPayloadType() const noexcept { return tr_.GetPayloadType(); }
+TagsMatcher Transaction::GetTagsMatcher() const noexcept { return tr_.GetTagsMatcher(); }
 
 int64_t Transaction::GetTransactionId() const noexcept { return tr_.i_.txId_; }
 

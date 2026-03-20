@@ -98,7 +98,7 @@ private:
 	void threadLoopFun(uint32_t tid, std::promise<Error>& isRunning, const DSN& dsn, const client::ConnectOpts& opts);
 	void stop();
 
-	enum CmdName {
+	enum [[nodiscard]] CmdName {
 		DbCmdNone = 0,
 		DbCmdOpenNamespace = 1,
 		DbCmdAddNamespace,
@@ -317,7 +317,7 @@ private:
 
 	// cmd may be owned by another thread and will be invalidated after this function
 	template <typename F>
-	void execCommand(DatabaseCommandDataBase* cmd, F&& fun) noexcept {
+	void execCommand(DatabaseCommandDataBase* cmd, F&& fun) {
 		auto cd = dynamic_cast<typename CalculateCommandType<decltype(&F::operator())>::type*>(cmd);
 		if (cd) {
 			auto r = std::apply(std::forward<F>(fun), cd->arguments);

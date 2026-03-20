@@ -1,6 +1,11 @@
 #include "ft_merge_limit.h"
 #include "allocs_tracker.h"
 
+#include "core/ft/config/ftfastconfig.h"
+// #include "helpers.h"
+// #include "tools/clock.h"
+// #include "tools/fsops.h"
+
 static uint8_t printFlags = benchmark::AllocsTracker::kPrintAllocs | benchmark::AllocsTracker::kPrintHold;
 
 FullTextMergeLimit::FullTextMergeLimit(Reindexer* db, const std::string& name, size_t maxItems)

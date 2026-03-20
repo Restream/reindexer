@@ -15,14 +15,14 @@ extern float (*calculateL2ModulePtr)(const float*, int32_t) noexcept;
 
 RX_ALWAYS_INLINE float CalculateL2Module(const float* x, int32_t d) noexcept { return impl::calculateL2ModulePtr(x, d); }
 RX_ALWAYS_INLINE float NormalizeVector(float* x, int32_t d) noexcept { return impl::normalizeVectorPtr(x, d); }
-RX_ALWAYS_INLINE void NormalizeCopyVector(const float* x, int32_t d, float* out) noexcept {
+RX_ALWAYS_INLINE float NormalizeCopyVector(const float* x, int32_t d, float* out) noexcept {
 	assertrx_dbg(d >= 0);
 	std::memcpy(out, x, d * sizeof(float));
-	impl::normalizeVectorPtr(out, d);
+	return impl::normalizeVectorPtr(out, d);
 }
 RX_ALWAYS_INLINE std::unique_ptr<float[]> NormalizeCopyVector(const float* x, int32_t d) noexcept {
 	auto ret = std::make_unique<float[]>(d);
-	NormalizeCopyVector(x, d, ret.get());
+	std::ignore = NormalizeCopyVector(x, d, ret.get());
 	return ret;
 }
 RX_ALWAYS_INLINE std::unique_ptr<float[]> NormalizeCopyVectors(const float* x, size_t n, int32_t d) noexcept {

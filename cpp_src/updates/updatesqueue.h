@@ -8,6 +8,7 @@
 #include "estl/fast_hash_set.h"
 #include "estl/h_vector.h"
 #include "estl/lock.h"
+#include "estl/mutex.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 

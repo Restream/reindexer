@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v5.11.1"
+const ReindexerVersion = "v5.12.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -40,6 +40,7 @@ const (
 	CollateCustom  = 4
 
 	FunctionFlatArrayLen = 0
+	FunctionNow          = 1
 )
 
 // private go consts from type_consts.h and reindexer_ctypes.h
@@ -97,6 +98,12 @@ const (
 	QueryKnnConditionExt           = 33
 	QueryFunction                  = 34
 	QueryFunctionSubQueryCondition = 35
+	QueryExpressions               = 36
+
+	ExpressionTypeField      = 0
+	ExpressionTypeValues     = 1
+	ExpressionTypeExpression = 2
+	ExpressionTypeSubQuery   = 3
 
 	KnnQueryTypeBase       = 0
 	KnnQueryTypeBruteForce = 1

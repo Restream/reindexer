@@ -1,6 +1,6 @@
-#include "activitylog.h"
-
 #ifdef RX_LOGACTIVITY
+
+#include "activity_log.h"
 
 #include <fstream>
 #include <iomanip>
@@ -75,8 +75,8 @@ void ActivityContainerLog::Reset() {
 void ActivityContainerLog::Dump(int serverId) {
 	std::string fileName = "activity_" + std::to_string(serverId) + ".json";
 	std::ofstream f(fileName);
-	auto timeToString = [](const std::chrono::time_point<system_clock_w>& tp) {
-		auto tm = ssystem_clock_w::to_time_t(tp);
+	auto timeToString = [](const system_clock_w::time_point& tp) {
+		auto tm = system_clock_w::to_time_t(tp);
 		std::tm tmTime = localtime(tm);
 		auto timeInUs = std::chrono::duration_cast<std::chrono::microseconds>(tp.time_since_epoch()).count();
 		int us = timeInUs % 1000;

@@ -8,6 +8,7 @@
 #include "tools/serializer.h"
 
 enum class [[nodiscard]] NeedQuote : bool { No = false, Yes = true };
+enum class [[nodiscard]] FunctionAsString : bool { No = false, Yes = true };
 
 template <NeedQuote needQuote>
 static void indexToSql(std::string_view index, reindexer::WrSerializer& ser) {
@@ -318,7 +319,7 @@ WrSerializer& SQLEncoder::GetSQL(WrSerializer& ser, bool stripArgs) const {
 
 constexpr static std::string_view kOpNames[] = {"-", "OR", "AND", "AND NOT"};
 
-template <NeedQuote needQuote>
+template <NeedQuote needQuote, FunctionAsString functionAsString = FunctionAsString::No>
 static void dumpCondWithValues(WrSerializer& ser, std::string_view fieldName, CondType cond, const VariantArray& values, bool stripArgs) {
 	switch (cond) {
 		case CondDWithin:
@@ -333,10 +334,10 @@ static void dumpCondWithValues(WrSerializer& ser, std::string_view fieldName, Co
 				Point point;
 				double distance;
 				if (values[0].Type().Is<KeyValueType::Tuple>()) {
-					point = static_cast<Point>(values[0]);
+					point = values[0].As<Point>();
 					distance = values[1].As<double>();
 				} else {
-					point = static_cast<Point>(values[1]);
+					point = values[1].As<Point>();
 					distance = values[0].As<double>();
 				}
 				ser << ", ST_GeomFromText('POINT(" << point.X() << ' ' << point.Y() << ")'), " << distance << ')';
@@ -368,12 +369,16 @@ static void dumpCondWithValues(WrSerializer& ser, std::string_view fieldName, Co
 					if (&v != &values[0]) {
 						ser << ',';
 					}
-					v.Type().EvaluateOneOf(overloaded{
-						[&](KeyValueType::String) { stringToSql(v.As<p_string>(), ser); },
-						[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
-						[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
-											KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
-											KeyValueType::Undefined, KeyValueType::FloatVector> auto) { ser << v.As<std::string>(); }});
+					if (functionAsString == FunctionAsString::Yes) {
+						ser << v.As<std::string>();
+					} else {
+						v.Type().EvaluateOneOf(overloaded{
+							[&](KeyValueType::String) { stringToSql(v.As<p_string>(), ser); },
+							[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
+							[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+												KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+												KeyValueType::Undefined, KeyValueType::FloatVector> auto) { ser << v.As<std::string>(); }});
+					}
 				}
 				if (values.size() != 1) {
 					ser << ")";
@@ -447,7 +452,16 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				if (encodedEntries) {
 					ser << kOpNames[op] << ' ';
 				}
-				dumpCondWithValues<NeedQuote::Yes>(ser, entry.Function().ToString(), entry.Condition(), entry.Values(), stripArgs);
+				std::visit(
+					overloaded{[&](const functions::FlatArrayLen& f) {
+								   dumpCondWithValues<NeedQuote::Yes>(ser, f.ToString(), entry.Condition(), entry.Values(), stripArgs);
+							   },
+							   [&](const functions::Now& f) {
+								   dumpCondWithValues<NeedQuote::Yes, FunctionAsString::Yes>(
+									   ser, entry.ComparisonField().FieldName(), entry.Condition(), {Variant(f.ToString())}, stripArgs);
+							   },
+							   [&](const functions::Serial&) { assertrx_dbg(0); }},
+					entry.FunctionVariant());
 			},
 			[&](const MultiDistinctQueryEntry&) {},
 			[&](const JoinQueryEntry& jqe) {

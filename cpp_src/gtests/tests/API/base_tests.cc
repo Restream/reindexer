@@ -14,6 +14,7 @@
 
 #include <deque>
 #include <thread>
+#include <unordered_set>
 
 #include "core/keyvalue/p_string.h"
 #include "core/system_ns_names.h"
@@ -2119,7 +2120,7 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 	enum class [[nodiscard]] Order { InsertThenAddIndex, AddIndexThenUpdate };
 
 	auto testImpl = [this](Order order) {
-		std::srand(std::time(0));
+		std::srand(reindexer::system_clock_w::now_count());
 		int value = std::rand();
 		auto indexName = fmt::format("data_{}", id);
 		auto indexPaths = order == Order::AddIndexThenUpdate ? reindexer::JsonPaths{"n." + indexName} : reindexer::JsonPaths{indexName};

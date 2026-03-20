@@ -18,10 +18,10 @@ class [[nodiscard]] Namespace {
 		while (true) {
 			try {
 				auto ns = atomicLoadMainNs();
-				if (!ns) {
-					throw Error(errLogic, "Ns is nullptr");
+				if (ns) [[likely]] {
+					return (*ns.*fn)(std::forward<Args>(args)...);
 				}
-				return (*ns.*fn)(std::forward<Args>(args)...);
+				throw Error(errLogic, "Ns is nullptr");
 			} catch (const Error& e) {
 				if (e.code() != errNamespaceInvalidated) {
 					throw;

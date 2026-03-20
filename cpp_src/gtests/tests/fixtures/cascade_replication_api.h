@@ -1,14 +1,21 @@
 #include <gtest/gtest.h>
+#include "quantization_helpers.h"
 #include "servercontrol.h"
 #include "tools/fsops.h"
 
-class [[nodiscard]] CascadeReplicationApi : public ::testing::Test {
+template <typename T>
+class [[nodiscard]] CascadeReplicationApiP : public ::testing::TestWithParam<T> {
 protected:
 	void SetUp() override;
 	void TearDown() override;
 
 public:
 	using ServerPtr = ServerControl::Interface::Ptr;
+
+	CascadeReplicationApiP()
+		: kBaseTestsetDbPath(reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), std::is_same_v<T, sq8_test::TestSyncType>
+																					  ? "rx_test/Sq8CascadeReplicationApi"
+																					  : "rx_test/CascadeReplicationApi")) {}
 
 	class [[nodiscard]] TestNamespace1 {
 	public:
@@ -58,12 +65,14 @@ public:
 	Cluster CreateConfiguration(std::vector<FollowerConfig> clusterConfig, int basePort, int baseServerId, const std::string& dbPathMaster,
 								const AsyncReplicationConfigTest::NsSet& nsList);
 
-	void UpdateReplTokensByConfiguration(CascadeReplicationApi::Cluster& cluster, const std::vector<int>& clusterConfig);
+	void UpdateReplTokensByConfiguration(CascadeReplicationApiP::Cluster& cluster, const std::vector<int>& clusterConfig);
 	static void UpdateReplicationConfigs(const ServerPtr& sc, const std::string& selfToken, const std::string& admissibleLeaderToken);
 
 	void ApplyConfig(const ServerPtr& sc, std::string_view json);
 	void CheckTxCopyEventsCount(const ServerPtr& sc, int expectedCount);
 
-protected:
-	const std::string kBaseTestsetDbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "rx_test/CascadeReplicationApi");
+	const std::string kBaseTestsetDbPath;
 };
+
+using CascadeReplicationApi = CascadeReplicationApiP<void*>;
+using Sq8CascadeReplicationApi = CascadeReplicationApiP<sq8_test::TestSyncType>;

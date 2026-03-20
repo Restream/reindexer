@@ -8,9 +8,9 @@ using std::chrono::milliseconds;
 
 namespace reindexer {
 
-constexpr struct UniqueT {
+constexpr struct [[nodiscard]] UniqueT {
 } Unique;
-constexpr struct NonUniqueT {
+constexpr struct [[nodiscard]] NonUniqueT {
 } NonUnique;
 
 template <typename Mutex>

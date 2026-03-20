@@ -13,6 +13,7 @@
 #include <memory>
 #include <queue>
 #include <random>
+#include <ranges>
 #include "core/index/float_vector/hnswlib/space_cosine.h"
 #include "core/index/float_vector/hnswlib/space_ip.h"
 #include "core/index/float_vector/hnswlib/space_l2.h"
@@ -28,6 +29,7 @@
 #include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "estl/spin_lock.h"
+#include "tools/clock.h"
 #include "tools/flagguard.h"
 #include "tools/logger.h"
 
@@ -237,9 +239,9 @@ public:
 	HashMapT<labeltype, tableint> label_lookup_;
 
 	mutable GlobalMutextT generator_lock_;
-	std::default_random_engine level_generator_;
+	std::default_random_engine level_generator_{uint32_t(reindexer::system_clock_w::now_count())};
 	GlobalMutextT update_generator_lock_;
-	std::default_random_engine update_probability_generator_;
+	std::default_random_engine update_probability_generator_{uint32_t(reindexer::system_clock_w::now_count())};
 
 	mutable std::atomic<long> metric_distance_computations{0};
 	mutable std::atomic<long> metric_hops{0};
@@ -256,11 +258,11 @@ public:
 		: max_elements_(std::max(other.max_elements_, newMaxElements)),
 		  cur_element_count(other.cur_element_count.load()),
 		  size_data_per_element_(other.size_data_per_element_),
-		  num_deleted_(other.num_deleted_),
 		  M_(other.M_),
 		  maxM_(other.maxM_),
 		  maxM0_(other.maxM0_),
 		  ef_construction_(other.ef_construction_),
+		  quantizer_(other.quantizer_ ? std::make_unique<Quantizer>(*this, *other.quantizer_) : nullptr),
 		  mult_(other.mult_),
 		  maxlevel_(other.maxlevel_),
 		  enterpoint_node_(other.enterpoint_node_),
@@ -269,11 +271,11 @@ public:
 		  label_offset_(other.label_offset_),
 		  data_level0_memory_(nullptr),
 		  linkLists_(nullptr),
-		  allow_replace_deleted_(other.allow_replace_deleted_),
-		  deleted_elements(other.deleted_elements) {
+		  allow_replace_deleted_(other.allow_replace_deleted_) {
 		initSpace(s);
 		std::memcpy(data_level0_memory_, other.data_level0_memory_, cur_element_count * size_data_per_element_);
 		fstdistfunc_.CopyValuesFrom(other.fstdistfunc_);
+		fstdistfunc_.Sq8CorrectiveOffsets() = other.fstdistfunc_.Sq8CorrectiveOffsets();
 		initTree([&other, this](size_t i) {
 			const unsigned linkListSize = other.element_levels_[i] > 0 ? other.size_links_per_element_ * other.element_levels_[i] : 0;
 			if (linkListSize) {
@@ -338,13 +340,8 @@ public:
 		mult_ = getMultFromM(M_);
 	}
 
-	template <typename LockerT>
+	// This method is not thread-safe. Must be called under the namespaceImpl readlock
 	std::unique_ptr<HierarchicalNSW<synchronization>> CopyForQuantize() const {
-		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
-		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
-		// during background index quantization
-		UniqueLock lck{global};
-
 		CheckElementType<float>();
 
 		std::unique_ptr<HierarchicalNSW<synchronization>> resPtr{new HierarchicalNSW<synchronization>()};
@@ -356,12 +353,14 @@ public:
 		res.maxM_ = maxM_;
 		res.maxM0_ = maxM0_;
 		res.size_links_per_element_ = size_links_per_element_;
-		res.num_deleted_ = num_deleted_;
 		res.ef_construction_ = ef_construction_;
 
 		res.mult_ = mult_;
 		res.maxlevel_ = maxlevel_;
 		res.enterpoint_node_ = enterpoint_node_;
+
+		LockVecT(res.max_elements_).swap(res.link_list_locks_);
+		UpdateLockVecT(res.max_elements_).swap(res.data_updates_locks_);
 
 		res.initSpace(Sq8SpaceFromDistParams(fstdistfunc_.Dims(), fstdistfunc_.Metric()).get());
 		res.fstdistfunc_.CopyValuesFrom(fstdistfunc_);
@@ -377,7 +376,6 @@ public:
 
 		res.allow_replace_deleted_ = allow_replace_deleted_;
 
-		res.deleted_elements = deleted_elements;
 		res.concurrent_updates_counter_.store(concurrent_updates_counter_.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
 		res.visited_list_pool_.reset(new VisitedListPool(1, res.max_elements_));
@@ -407,20 +405,25 @@ public:
 		return resPtr;
 	}
 
-	auto prepareData(const void* data) const {
-		auto deleter = [quantized = bool(quantizer_)](const void* ptr) noexcept {
+	auto prepareData(const void* data, std::optional<float> norm) const {
+		const bool quantized = IsQuantized();
+
+		auto deleter = [quantized](const void* ptr) noexcept {
 			if (quantized) {
 				delete[] (static_cast<uint8_t*>(const_cast<void*>(ptr)));
 			}
 		};
 
 		std::unique_ptr<uint8_t[]> res;
-		if (quantizer_) {
+		if (quantized) {
 			auto from = std::span(static_cast<const float*>(data), data_size_);
-			res = std::make_unique<uint8_t[]>(data_size_ + sizeof(CorrectiveOffsets));
+			res = std::make_unique<uint8_t[]>(data_size_ + sizeof(CorrectiveOffset));
 			auto to = std::span(res.get(), data_size_);
-			auto correctiveOffset = quantizer_->Quantize(from, to);
-			std::memcpy(res.get() + data_size_, &correctiveOffset, sizeof(CorrectiveOffsets));
+
+			auto correctiveOffset = norm
+										? quantizer_->Quantize(from | std::views::transform([n = *norm](float val) { return n * val; }), to)
+										: quantizer_->Quantize(from, to);
+			std::memcpy(res.get() + data_size_, &correctiveOffset, sizeof(CorrectiveOffset));
 		}
 
 		return std::unique_ptr<const void, decltype(deleter)>(res ? res.release() : data, std::move(deleter));
@@ -469,6 +472,26 @@ public:
 		size_t offsetData;
 	};
 
+	bool IsQuantized() const {
+		if (quantizer_) {
+			CheckElementType<uint8_t>();
+			return true;
+		} else {
+			if (fstdistfunc_.Metric() != hnswlib::MetricType::NONE) {
+				CheckElementType<float>();
+			}
+			return false;
+		}
+	}
+
+	bool IsQuantizedNoThrow() const noexcept {
+		try {
+			return IsQuantized();
+		} catch (...) {
+			return false;
+		}
+	}
+
 	static void quantizeImpl(auto& quantizer, auto& correctiveOffsets, ElementQuantizeImplParams fromP, ElementQuantizeImplParams toP,
 							 CommonQuantizeImplParams params) {
 		for (tableint id = 0; id < params.count; ++id) {
@@ -486,21 +509,17 @@ public:
 		}
 	}
 
-	template <typename LockerT>
-	void Quantize(const QuantizingConfig& quantizingConfig = {}) {
-		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
-
-		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
-		// during background index quantization
-		UniqueLock lck{global};
-
-		assertrx_throw(!quantizer_);
+	// This method is not thread-safe. Must be called under the namespaceImpl readlock
+	void Quantize(const QuantizationConfig& quantizationConfig = {}) {
+		if (quantizer_) {
+			throw std::runtime_error("Error when trying to quantize: HNSW graph has already been quantized");
+		}
 		CheckElementType<float>();
 
 		ElementQuantizeImplParams fromParams{
 			.data = data_level0_memory_, .elementSize = size_data_per_element_, .labelOffest = label_offset_};
 
-		quantizer_ = std::make_unique<Quantizer>(*this, QuantizingParams(*this, quantizingConfig));
+		quantizer_ = std::make_unique<Quantizer>(*this, QuantizingParams(*this, quantizationConfig));
 		initSpace(Sq8SpaceFromDistParams(fstdistfunc_.Dims(), fstdistfunc_.Metric()).get());
 
 		ElementQuantizeImplParams toParams{
@@ -518,21 +537,17 @@ public:
 		free(fromParams.data);
 	}
 
-	template <typename LockerT>
-	void Quantize(HierarchicalNSW& from, const QuantizingConfig& quantizingConfig = {}) {
-		using UniqueLock = typename LockerT::template UniqueLock<GlobalMutextT>;
-		using FromReadLock = typename LockerT::template SharedLock<GlobalMutextT>;
+	std::unique_ptr<HierarchicalNSW<synchronization>> QuantizedCopy(const QuantizationConfig& quantizationConfig = {}) {
+		auto res = CopyForQuantize();
+		res->Quantize(*this, quantizationConfig);
+		return res;
+	}
 
+	// This method is not thread-safe. Must be called under the namespaceImpl readlock
+	void Quantize(HierarchicalNSW& from, const QuantizationConfig& quantizationConfig = {}) {
 		if (this == &from) {
-			return Quantize<LockerT>(quantizingConfig);
+			return Quantize(quantizationConfig);
 		}
-
-		// FIXME: think about external synchronization with namespace write-(or possibly read-) lock
-		// during background index quantization
-		UniqueLock lck{global};
-		FromReadLock fromReadLock{from.global};
-
-		assertrx_throw(!quantizer_);
 		assertrx_throw(fstdistfunc_.Dims() == from.fstdistfunc_.Dims() && max_elements_ >= from.max_elements_);
 
 		CheckElementType<uint8_t>();
@@ -540,10 +555,9 @@ public:
 
 		assertrx_dbg(size_links_level0_ == from.size_links_level0_ && offsetData_ == from.offsetData_);
 
-		QuantizingParams quantizingParams(from, quantizingConfig);
+		QuantizingParams quantizingParams(from, quantizationConfig);
 		quantizer_ = std::make_unique<Quantizer>(*this, quantizingParams);
 		fstdistfunc_.UpdateQuantizeParams(std::move(quantizingParams));
-		fstdistfunc_.Sq8CorrectiveOffsets().resize(max_elements_);
 
 		quantizeImpl(quantizer_, fstdistfunc_.Sq8CorrectiveOffsets(),
 					 ElementQuantizeImplParams{
@@ -572,21 +586,23 @@ public:
 		// during background index quantization
 		UniqueLock lck{global};
 
-		assertrx_throw(quantizer_);
+		if (!quantizer_) {
+			throw std::runtime_error("Error when trying to requantize: HNSW graph has not been quantized");
+		}
 		CheckElementType<uint8_t>();
 
 		if (!force && !quantizer_->NeedRequantize()) {
 			return;
 		}
 
-		auto dequantizer = quantizer_->PrepareToRequantize();
+		const auto dequantizeParams = quantizer_->PrepareToRequantize();
 		fstdistfunc_.UpdateQuantizeParams(quantizer_->Params());
 
 		const auto dim = fstdistfunc_.Dims();
 		const auto cnt = cur_element_count.load(std::memory_order_relaxed);
 		for (tableint internal_id = 0; internal_id < cnt; ++internal_id) {
 			auto point = std::span(reinterpret_cast<uint8_t*>(getDataByInternalId(internal_id)), dim);
-			fstdistfunc_.Sq8CorrectiveOffsets()[internal_id] = quantizer_->Requantize(point, dequantizer);
+			fstdistfunc_.Sq8CorrectiveOffsets()[internal_id] = quantizer_->Requantize(point, dequantizeParams);
 		}
 	}
 
@@ -677,7 +693,7 @@ public:
 	size_t getCurrentElementCount() const noexcept { return cur_element_count; }
 
 	// *NOT* thread safe
-	size_t getDeletedCountUnsafe() { return num_deleted_; }
+	size_t getDeletedCountUnsafe() const noexcept { return num_deleted_; }
 
 	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
 	std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> searchBaseLayer(
@@ -783,7 +799,7 @@ public:
 	// bare_bone_search means there is no check for deletions and stop condition is ignored in return of extra performance
 	template <bool bare_bone_search = true, bool collect_metrics = false>
 	std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> searchBaseLayerST(
-		tableint ep_id, const void* data_point, size_t ef, BaseFilterFunctor* isIdAllowed = nullptr,
+		tableint ep_id, const void* data_point, float normCoef, size_t ef, BaseFilterFunctor* isIdAllowed = nullptr,
 		BaseSearchStopCondition<float>* stop_condition = nullptr) const {
 		VisitedList* vl = visited_list_pool_->getFreeVisitedList();
 		vl_type* visited_array = vl->mass;
@@ -799,7 +815,7 @@ public:
 		float lowerBound;
 		if (bare_bone_search || (!isMarkedDeleted(ep_id) && ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(ep_id))))) {
 			auto ep_data = getDataByInternalId(ep_id);
-			float dist = fstdistfunc_(data_point, ep_data, ep_id);
+			float dist = normCoef * fstdistfunc_(data_point, ep_data, ep_id);
 			lowerBound = dist;
 			top_candidates.emplace(dist, ep_id);
 			if (!bare_bone_search && stop_condition) {
@@ -860,7 +876,7 @@ public:
 					visited_array[candidate_id] = visited_array_tag;
 
 					char* currObj1 = (getDataByInternalId(candidate_id));
-					float dist = fstdistfunc_(data_point, currObj1, candidate_id);
+					float dist = normCoef * fstdistfunc_(data_point, currObj1, candidate_id);
 					bool flag_consider_candidate;
 					if (!bare_bone_search && stop_condition) {
 						flag_consider_candidate = stop_condition->should_consider_candidate(dist, lowerBound);
@@ -1149,11 +1165,13 @@ public:
 
 		max_elements_ = new_max_elements;
 		fstdistfunc_.Resize(max_elements_);
+
 		return {data_level0_memory_old, data_level0_memory_new};
 	}
 
 	// Read-only concurrency expected
 	void saveIndex(IWriter& writer, const std::atomic_int32_t& cancel) {
+		const size_t dim = fstdistfunc_.Dims();
 		constexpr size_t kCancelPeriod = 0x3FFFFF;
 
 		writer.PutVarUInt(uint64_t(max_elements_));
@@ -1167,6 +1185,8 @@ public:
 		if (quantizer_) {
 			quantizer_->Params().Serialize(writer);
 		}
+
+		std::vector<float> dequantizedDeletedVectorsHolder(dim);
 
 		for (size_t i = 0; i < cur_element_count; ++i) {
 			if (((i & kCancelPeriod) == kCancelPeriod) && cancel.load(std::memory_order_relaxed)) {
@@ -1183,8 +1203,17 @@ public:
 				writer.PutVarUInt(*(linkList0++));
 			}
 			if (isDeleted) {
+				auto data = cur_element_ptr + offsetData_;
 				// We have to store full vector for the deleted items
-				writer.PutVString(std::string_view(cur_element_ptr + offsetData_, data_size_));
+				if (quantizer_) {
+					const auto from = std::span{reinterpret_cast<const uint8_t*>(data), dim};
+					const auto to = std::span{dequantizedDeletedVectorsHolder};
+					std::transform(from.begin(), from.end(), to.begin(), [&](uint8_t val) noexcept { return quantizer_->Dequantize(val); });
+					writer.PutVString(std::string_view(reinterpret_cast<const char*>(to.data()), dim * sizeof(float)));
+				} else {
+					writer.PutVString(std::string_view(data, dim * sizeof(float)));
+				}
+
 			} else {
 				labeltype label;
 				std::memcpy(&label, (cur_element_ptr + label_offset_), sizeof(labeltype));
@@ -1213,7 +1242,6 @@ public:
 
 		if (quantizer_) {
 			fstdistfunc_.UpdateQuantizeParams(quantizer_->Params());
-			fstdistfunc_.Sq8CorrectiveOffsets().resize(max_elements_);
 		}
 
 		size_links_level0_ = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
@@ -1221,7 +1249,7 @@ public:
 		offsetData_ = size_links_level0_;
 		label_offset_ = size_links_level0_ + data_size_;
 
-		data_level0_memory_ = (char*)malloc(max_elements_ * size_data_per_element_);
+		data_level0_memory_ = (char*)calloc(max_elements_, size_data_per_element_);
 		if (data_level0_memory_ == nullptr) {
 			throw std::runtime_error("Not enough memory: loadIndex failed to allocate level0");
 		}
@@ -1259,7 +1287,7 @@ public:
 	}
 
 	// *NOT* thread-safe
-	void loadIndex(IReader& reader, SpaceInterface* s) {
+	void loadIndex(IReader& reader, SpaceInterface* s, std::vector<uint64_t>& hashes) {
 		clear();
 
 		max_elements_ = reader.GetVarUInt();
@@ -1285,7 +1313,9 @@ public:
 			if (bool needQuantize = reader.GetVarUInt(); needQuantize) {
 				QuantizingParams params;
 				params.Deserialize(reader);
-				quantizer_ = std::make_unique<Quantizer>(*this, std::move(params));
+				quantizer_ = reader.WithQuantizer() ? std::make_unique<Quantizer>(*this, std::move(params)) : nullptr;
+
+				hashes.resize(max_elements_);
 			}
 		}
 
@@ -1307,7 +1337,8 @@ public:
 			cur_element_ptr += size_links_level0_;
 			char* destPtr = quantizer_ ? reinterpret_cast<char*>(origVecBuf.get()) : cur_element_ptr;
 			labeltype label = std::numeric_limits<labeltype>::max();
-			if (isListMarkedDeleted(linkList0Start)) {
+			const bool isDeleted = isListMarkedDeleted(linkList0Start);
+			if (isDeleted) {
 				std::string_view vector = reader.GetVString();
 				std::memcpy(destPtr, vector.data(), vector.size());
 			} else {
@@ -1317,6 +1348,9 @@ public:
 
 			if (quantizer_) {
 				auto from = std::span(origVecBuf.get(), fstdistfunc_.Dims());
+				if (!isDeleted) {
+					hashes[label] = reindexer::ConstFloatVectorView(from).Hash();
+				}
 				auto to = std::span(reinterpret_cast<uint8_t*>(cur_element_ptr), fstdistfunc_.Dims());
 				fstdistfunc_.Sq8CorrectiveOffsets()[i] = quantizer_->Quantize(from, to);
 			}
@@ -1538,7 +1572,7 @@ public:
 		using LockGuard = typename LockerT::template LockGuard<GlobalMutextT>;
 		using UpdateLockGuard = typename LockerT::template LockGuard<typename UpdateLockVecT::MutexT>;
 		using SharedLock = typename LockerT::template SharedLock<typename UpdateLockVecT::MutexT>;
-		const auto dataPointHolder = prepareData(dataPointRaw);
+		const auto dataPointHolder = prepareData(dataPointRaw, std::nullopt);
 		const void* dataPoint = dataPointHolder.get();
 		{
 			// FIXME: There is still logical race, that reduces recall rate - we may update one of the current insertion candidate nodes
@@ -1549,8 +1583,8 @@ public:
 			if (quantizer_) {
 				quantizer_->UpdateStatistic(dataPointRaw);
 				auto correctiveOffsetsPtr =
-					reinterpret_cast<const CorrectiveOffsets*>(reinterpret_cast<const uint8_t*>(dataPoint) + data_size_);
-				std::memmove(&fstdistfunc_.Sq8CorrectiveOffsets()[internalId], correctiveOffsetsPtr, sizeof(CorrectiveOffsets));
+					reinterpret_cast<const CorrectiveOffset*>(reinterpret_cast<const uint8_t*>(dataPoint) + data_size_);
+				std::memmove(&fstdistfunc_.Sq8CorrectiveOffsets()[internalId], correctiveOffsetsPtr, sizeof(CorrectiveOffset));
 			}
 			fstdistfunc_.AddNorm(dataPointRaw, internalId);
 			if (isMarkedDeleted(internalId)) {
@@ -1814,14 +1848,13 @@ public:
 
 		// Initialisation of the data and label
 		setExternalLabel(cur_c, label);
-		const auto dataPointHolder = prepareData(data_point_raw);
+		const auto dataPointHolder = prepareData(data_point_raw, std::nullopt);
 		const void* data_point = dataPointHolder.get();
 		memcpy(getDataByInternalId(cur_c), data_point, data_size_);
 		if (quantizer_) {
 			quantizer_->UpdateStatistic(data_point_raw);
-			auto correctiveOffsetsPtr =
-				reinterpret_cast<const CorrectiveOffsets*>(reinterpret_cast<const uint8_t*>(data_point) + data_size_);
-			std::memmove(&fstdistfunc_.Sq8CorrectiveOffsets()[cur_c], correctiveOffsetsPtr, sizeof(CorrectiveOffsets));
+			auto correctiveOffsetsPtr = reinterpret_cast<const uint8_t*>(data_point) + data_size_;
+			std::memcpy(&fstdistfunc_.Sq8CorrectiveOffsets()[cur_c], correctiveOffsetsPtr, sizeof(CorrectiveOffset));
 		}
 		if (curlevel) {
 			linkLists_[cur_c] = (char*)malloc(size_links_per_element_ * curlevel + 1);
@@ -1907,12 +1940,20 @@ public:
 	}
 
 	// Read-only concurrency expected
-	auto getTopCandidates(const void* query_data_raw, size_t ef, BaseFilterFunctor* isIdAllowed) const {
-		const auto query_data_holder = prepareData(query_data_raw);
+	auto getTopCandidates(const void* query_data_raw, std::optional<float> query_data_norm, size_t ef,
+						  BaseFilterFunctor* isIdAllowed) const {
+		if (IsQuantized() && fstdistfunc_.Metric() == MetricType::COSINE && !query_data_norm) {
+			throw std::runtime_error("Norm is required for Cosine-metric during corrective offsets calculation in quantized graph");
+		}
+
+		const auto query_data_holder = prepareData(query_data_raw, query_data_norm);
 		auto query_data = query_data_holder.get();
 
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access) false-positive. Check was made above
+		const float normCoef = IsQuantized() && fstdistfunc_.Metric() == MetricType::COSINE ? 1.f / *query_data_norm : 1.f;
+
 		tableint currObj = enterpoint_node_;
-		float curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
+		float curdist = normCoef * fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
 
 		for (int level = maxlevel_; level > 0; level--) {
 			bool changed = true;
@@ -1931,7 +1972,7 @@ public:
 					if (cand < 0 || cand > max_elements_) {
 						throw std::runtime_error("cand error");
 					}
-					float d = fstdistfunc_(query_data, getDataByInternalId(cand), cand);
+					float d = normCoef * fstdistfunc_(query_data, getDataByInternalId(cand), cand);
 					if (d < curdist) {
 						curdist = d;
 						currObj = cand;
@@ -1942,15 +1983,15 @@ public:
 		}
 
 		if (!num_deleted_ && !isIdAllowed) {
-			return searchBaseLayerST<true>(currObj, query_data, ef, isIdAllowed);
+			return searchBaseLayerST<true>(currObj, query_data, normCoef, ef, isIdAllowed);
 		} else {
-			return searchBaseLayerST<false>(currObj, query_data, ef, isIdAllowed);
+			return searchBaseLayerST<false>(currObj, query_data, normCoef, ef, isIdAllowed);
 		}
 	}
 
 	// Read-only concurrency expected
-	std::priority_queue<std::pair<float, labeltype>> searchKnn(const void* query_data, size_t k, size_t ef = 0,
-															   BaseFilterFunctor* isIdAllowed = nullptr) const {
+	std::priority_queue<std::pair<float, labeltype>> searchKnn(const void* query_data, std::optional<float> query_data_norm, size_t k,
+															   size_t ef = 0, BaseFilterFunctor* isIdAllowed = nullptr) const {
 		std::vector<std::pair<float, labeltype>> container;
 		container.reserve(k);
 		std::priority_queue<std::pair<float, labeltype>> result(std::less<std::pair<float, labeltype>>(), std::move(container));
@@ -1960,7 +2001,7 @@ public:
 		}
 
 		ef = ef ? ef : k * 3 / 2;
-		auto top_candidates = getTopCandidates(query_data, ef, isIdAllowed);
+		auto top_candidates = getTopCandidates(query_data, query_data_norm, ef, isIdAllowed);
 		while (top_candidates.size() > k) {
 			top_candidates.pop();
 		}
@@ -1973,13 +2014,13 @@ public:
 	}
 
 	// Read-only concurrency expected
-	std::priority_queue<std::pair<float, labeltype>> searchRange(const void* query_data, float radius, size_t ef,
-																 BaseFilterFunctor* isIdAllowed = nullptr) const {
+	std::priority_queue<std::pair<float, labeltype>> searchRange(const void* query_data, std::optional<float> query_data_norm, float radius,
+																 size_t ef, BaseFilterFunctor* isIdAllowed = nullptr) const {
 		if (cur_element_count == 0) {
 			return std::priority_queue<std::pair<float, labeltype>>();
 		}
 
-		auto top_candidates = getTopCandidates(query_data, ef, isIdAllowed);
+		auto top_candidates = getTopCandidates(query_data, query_data_norm, ef, isIdAllowed);
 
 		std::vector<std::pair<float, labeltype>> container;
 		container.reserve(top_candidates.size());
@@ -2029,92 +2070,6 @@ public:
 		visited_list_pool_->releaseVisitedList(vl);
 
 		return result;
-	}
-
-	// Read-only concurrency expected
-	std::vector<std::pair<float, labeltype>> searchStopConditionClosest(const void* query_data,
-																		BaseSearchStopCondition<float>& stop_condition,
-																		BaseFilterFunctor* isIdAllowed = nullptr) const {
-		std::vector<std::pair<float, labeltype>> result;
-		if (cur_element_count == 0) {
-			return result;
-		}
-
-		tableint currObj = enterpoint_node_;
-		float curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
-
-		for (int level = maxlevel_; level > 0; level--) {
-			bool changed = true;
-			while (changed) {
-				changed = false;
-				unsigned int* data;
-
-				data = (unsigned int*)get_linklist(currObj, level);
-				int size = getListCount(data);
-				metric_hops++;
-				metric_distance_computations += size;
-
-				tableint* datal = (tableint*)(data + 1);
-				for (int i = 0; i < size; i++) {
-					tableint cand = datal[i];
-					if (cand < 0 || cand > max_elements_) {
-						throw std::runtime_error("cand error");
-					}
-					float d = fstdistfunc_(query_data, getDataByInternalId(cand), cand);
-
-					if (d < curdist) {
-						curdist = d;
-						currObj = cand;
-						changed = true;
-					}
-				}
-			}
-		}
-
-		std::priority_queue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> top_candidates;
-		top_candidates = searchBaseLayerST<false>(currObj, query_data, 0, isIdAllowed, &stop_condition);
-
-		size_t sz = top_candidates.size();
-		result.resize(sz);
-		while (!top_candidates.empty()) {
-			result[--sz] = top_candidates.top();
-			top_candidates.pop();
-		}
-
-		stop_condition.filter_results(result);
-
-		return result;
-	}
-
-	void checkIntegrity() {
-		int connections_checked = 0;
-		std::vector<int> inbound_connections_num(cur_element_count, 0);
-		for (int i = 0; i < cur_element_count; i++) {
-			for (int l = 0; l <= element_levels_[i]; l++) {
-				linklistsizeint* ll_cur = get_linklist_at_level(i, l);
-				int size = getListCount(ll_cur);
-				tableint* data = (tableint*)(ll_cur + 1);
-				reindexer::fast_hash_set<tableint> s;
-				for (int j = 0; j < size; j++) {
-					assert(data[j] < cur_element_count);
-					assert(data[j] != i);
-					inbound_connections_num[data[j]]++;
-					s.insert(data[j]);
-					connections_checked++;
-				}
-				assert(s.size() == size);
-			}
-		}
-		if (cur_element_count > 1) {
-			int min1 = inbound_connections_num[0], max1 = inbound_connections_num[0];
-			for (int i = 0; i < cur_element_count; i++) {
-				assert(inbound_connections_num[i] > 0);
-				min1 = std::min(inbound_connections_num[i], min1);
-				max1 = std::max(inbound_connections_num[i], max1);
-			}
-			std::cout << "Min inbound: " << min1 << ", Max inbound:" << max1 << "\n";
-		}
-		std::cout << "integrity ok, checked " << connections_checked << " connections\n";
 	}
 };
 

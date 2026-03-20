@@ -58,6 +58,7 @@ void ShardingApi::Init(InitShardingConfig c) {
 		clusterConf["sync_timeout_sec"] = 60;
 		clusterConf["syncs_per_thread"] = maxSyncCount;
 		clusterConf["leader_sync_threads"] = 2;
+		clusterConf["log_level"] = logLevelToString(LogTrace);
 #ifdef REINDEX_WITH_TSAN
 		clusterConf["batching_routines_count"] = 20;
 #else

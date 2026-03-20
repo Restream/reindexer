@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include <unordered_set>
 #include "core/item.h"
 #include "core/reindexer.h"
 #include "reindexertestapi.h"

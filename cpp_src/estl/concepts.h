@@ -8,21 +8,21 @@
 namespace reindexer {
 
 template <template <typename> typename Templ, typename... Ts>
-struct Template;
+struct [[nodiscard]] Template;
 
 namespace concepts::impl {
 template <typename T, typename U>
-struct ContainsOrSameT {
+struct [[nodiscard]] ContainsOrSameT {
 	constexpr static bool value = std::is_same_v<T, U>;
 };
 
 template <typename T, typename... Us>
-struct ContainsOrSameT<T, TypesPack<Us...>> {
+struct [[nodiscard]] ContainsOrSameT<T, TypesPack<Us...>> {
 	constexpr static bool value = (ContainsOrSameT<T, Us>::value || ...);
 };
 
 template <typename T, template <typename> typename Templ, typename... Us>
-struct ContainsOrSameT<T, Template<Templ, Us...>> {
+struct [[nodiscard]] ContainsOrSameT<T, Template<Templ, Us...>> {
 	constexpr static bool value = (ContainsOrSameT<T, Templ<Us>>::value || ...);
 };
 }  // namespace concepts::impl

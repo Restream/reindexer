@@ -492,7 +492,7 @@ TEST(StringFunctions, SortExpressionParse) {
 	for (const auto& tC : testCases) {
 		if (tC.result == FAIL) {
 			// NOLINTNEXTLINE (bugprone-unused-return-value)
-			EXPECT_THROW(SortExpression::Parse(tC.expression, tC.joinedSelectors), reindexer::Error) << tC.expression;
+			EXPECT_THROW(auto expr = SortExpression::Parse(tC.expression, tC.joinedSelectors), reindexer::Error) << tC.expression;
 		} else {
 			try {
 				const auto parsed = SortExpression::Parse(tC.expression, tC.joinedSelectors);

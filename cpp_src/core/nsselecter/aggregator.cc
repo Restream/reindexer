@@ -84,7 +84,7 @@ private:
 };
 
 class [[nodiscard]] Aggregator::SinglefieldComparator {
-	enum CompareBy { ByValue, ByCount };
+	enum [[nodiscard]] CompareBy { ByValue, ByCount };
 
 public:
 	SinglefieldComparator(const h_vector<SortingEntry, 1>&);

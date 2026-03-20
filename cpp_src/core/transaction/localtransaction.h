@@ -43,9 +43,12 @@ public:
 		return data_->nsName;
 	}
 	Error Status() const noexcept { return err_; }
-	void ValidatePK(const FieldsSet& pkFields) {
+	void ValidatePK(const FieldsSet* pkFields) {
 		assertrx(data_);
-		if (tx_ && tx_->HasDeleteItemSteps() && pkFields != data_->GetPKFileds()) [[unlikely]] {
+		if (!pkFields) {
+			throw Error(errLogic, "Trying to modify namespace '{}', but it doesn't contain PK index", GetNsName());
+		}
+		if (tx_ && tx_->HasDeleteItemSteps() && *pkFields != data_->GetPKFileds()) [[unlikely]] {
 			throw Error(errNotValid,
 						"Transaction has Delete-calls and it's PK metadata is outdated (probably PK has been changed during the "
 						"transaction creation)");

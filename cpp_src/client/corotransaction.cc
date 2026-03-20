@@ -217,11 +217,11 @@ CoroTransaction::Impl::Impl(RPCClient* rpcClient, int64_t txId, std::chrono::mil
 	  localTm_(std::make_unique<TagsMatcher>(ns->GetTagsMatcher())),
 	  ns_(std::move(ns)),
 	  emitterServerId_(emitterServerId) {
-	assert(rpcClient_);
-	assert(ns_);
+	assertrx(rpcClient_);
+	assertrx(ns_);
 	const auto sessinTsOpt = rpcClient_->conn_.LoginTs();
 	if (sessinTsOpt.has_value()) {
-		sessionTs_ = sessinTsOpt.value();
+		sessionTs_ = *sessinTsOpt;
 	}
 }
 

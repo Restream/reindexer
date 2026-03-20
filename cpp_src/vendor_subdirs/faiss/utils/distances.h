@@ -33,12 +33,12 @@ extern float (*fvec_norm_L2sqr_ptr)(const float*, size_t);
 
 /// Squared L2 distance between two vectors
 inline float fvec_L2sqr(const float* x, const float* y, size_t d) {
-    return reindexer::vector_dists::L2SqrResiduals16Ext(x, y, d);
+    return reindexer::vector_dists::L2SqrDistance(x, y, d);
 }
 
 /// inner product
 inline float fvec_inner_product(const float* x, const float* y, size_t d) {
-    return reindexer::vector_dists::InnerProductResiduals16Ext(x, y, d);
+    return reindexer::vector_dists::InnerProductDistance(x, y, d);
 }
 
 /// L1 distance

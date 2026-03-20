@@ -6,6 +6,8 @@
 
 using namespace reindexer;
 
+// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
+
 TEST_F(ClusterOperationExtrasApi, SpecifyClusterNamespaceList) {
 	// Check if with specified cluster namespaces list we are able to write into follower's non-cluster namespaces
 	net::ev::dynamic_loop loop;
@@ -423,3 +425,5 @@ TEST_F(ClusterOperationExtrasApi, LogLevel) {
 
 	loop.run();
 }
+
+// NOLINTEND(rx-perf-lambda-to-std-function-allocation)

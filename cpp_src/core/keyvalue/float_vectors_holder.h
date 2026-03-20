@@ -1,8 +1,8 @@
 #pragma once
 
 #include <optional>
-#include "core/keyvalue/float_vectors_keeper.h"
-#include "core/namespace/float_vectors_indexes.h"
+#include "core/id_type.h"
+#include "core/keyvalue/float_vector.h"
 #include "estl/h_vector.h"
 
 namespace reindexer {
@@ -11,6 +11,7 @@ class NamespaceImpl;
 class ItemRef;
 class PayloadType;
 class FieldsFilter;
+struct FloatVectorIndexData;
 
 class [[nodiscard]] FloatVectorsHolderVector : private h_vector<FloatVector, 1> {
 	using Base = h_vector<FloatVector, 1>;
@@ -41,31 +42,24 @@ public:
 
 class [[nodiscard]] FloatVectorsHolderMap {
 public:
-	FloatVectorsHolderMap() noexcept = default;
+	FloatVectorsHolderMap() noexcept;
 	FloatVectorsHolderMap(const FloatVectorsHolderMap&) noexcept = delete;
-	FloatVectorsHolderMap(FloatVectorsHolderMap&&) noexcept = default;
+	FloatVectorsHolderMap(FloatVectorsHolderMap&&) noexcept;
 	FloatVectorsHolderMap& operator=(const FloatVectorsHolderMap&) noexcept = delete;
-	FloatVectorsHolderMap& operator=(FloatVectorsHolderMap&&) noexcept = default;
-	~FloatVectorsHolderMap() = default;
+	FloatVectorsHolderMap& operator=(FloatVectorsHolderMap&&) noexcept;
+	~FloatVectorsHolderMap();
 
 	template <typename It>
 	void Add(const NamespaceImpl&, const It& begin, const It& end, const FieldsFilter&);
 	bool Empty() const noexcept;
 
 private:
-	struct [[nodiscard]] FloatVectorIndexInfo {
-		FloatVectorIndexInfo() = delete;
-		FloatVectorIndexInfo(const FloatVectorIndexData& i, FloatVectorsKeeper::KeeperTag&& t) noexcept : index(i), tag(std::move(t)) {}
-		FloatVectorIndexInfo(FloatVectorIndexInfo&&) noexcept = default;
-		FloatVectorIndexInfo(const FloatVectorIndexInfo&) noexcept = delete;
-		FloatVectorIndexInfo& operator=(const FloatVectorIndexInfo&) noexcept = delete;
-		FloatVectorIndexInfo& operator=(FloatVectorIndexInfo&&) noexcept = default;
-
-		FloatVectorIndexData index;
-		FloatVectorsKeeper::KeeperTag tag;
+	struct [[nodiscard]] FloatVectorIndexInfo;
+	struct [[nodiscard]] NsFloatVectorIndexes {
+		const NamespaceImpl* ns;
+		size_t indexesCnt;
+		std::unique_ptr<std::optional<FloatVectorIndexInfo>[]> indexes;
 	};
-
-	using FloatVectorIndexList = std::vector<FloatVectorIndexInfo>;
 
 	template <typename It>
 	void updatePayload(const NamespaceImpl& ns, const FloatVectorIndexData& index, It it, const It& end,
@@ -74,7 +68,7 @@ private:
 	void add(const NamespaceImpl& ns, const FloatVectorIndexInfo& indexInfo, It it, const It& end, std::vector<IdType>& ids,
 			 std::vector<ConstFloatVectorView>& vectorsData);
 
-	std::vector<std::pair<const NamespaceImpl*, FloatVectorIndexList>> vectorsByNs_;
+	std::vector<NsFloatVectorIndexes> vectorsByNs_;
 };
 
 }  // namespace reindexer

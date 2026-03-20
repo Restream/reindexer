@@ -2,7 +2,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
-#include "cjson/jsonbuilder.h"
+#include "core/cjson/jsonbuilder.h"
 #include "tools/timetools.h"
 
 namespace reindexer {

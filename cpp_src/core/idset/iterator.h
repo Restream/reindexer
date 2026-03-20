@@ -27,7 +27,7 @@ concept IdSetLike = requires(T a) {
 namespace iterators {
 
 template <typename SequentialIterator, typename BtreeIterator>
-class Iterator {
+class [[nodiscard]] Iterator {
 public:
 	using value_type = IdType;
 	using difference_type = std::ptrdiff_t;
@@ -38,10 +38,14 @@ public:
 
 	Iterator() noexcept = default;
 #if REINDEX_DEBUG_CONTAINERS
-	explicit Iterator(std::span<const IdType>::iterator it) noexcept : impl_{it} {}
-	explicit Iterator(std::span<const IdType>::reverse_iterator it) noexcept : impl_{it} {}
+	explicit Iterator(std::span<const IdType>::iterator it) noexcept
+		requires(!std::same_as<SequentialIterator, std::span<const IdType>::iterator>)
+		: impl_{it} {}
+	explicit Iterator(std::span<const IdType>::reverse_iterator it) noexcept
+		requires(!std::same_as<SequentialIterator, std::span<const IdType>::reverse_iterator>)
+		: impl_{it} {}
 #endif	// REINDEX_DEBUG_CONTAINERS
-	explicit Iterator(SequentialIterator it) noexcept : impl_{it} {}
+	explicit Iterator(SequentialIterator it) noexcept : impl_{std::in_place_index_t<0>{}, it} {}
 	explicit Iterator(BtreeIterator it) noexcept : impl_{it} {}
 
 	Iterator(const Iterator& other) noexcept = default;
@@ -89,7 +93,7 @@ public:
 private:
 #if REINDEX_DEBUG_CONTAINERS
 	using Impl =
-		std::variant<std::span<const IdType>::iterator, std::span<const IdType>::reverse_iterator, SequentialIterator, BtreeIterator>;
+		std::variant<SequentialIterator, BtreeIterator, std::span<const IdType>::iterator, std::span<const IdType>::reverse_iterator>;
 #else	// !REINDEX_DEBUG_CONTAINERS
 	using Impl = std::variant<SequentialIterator, BtreeIterator>;
 #endif	// REINDEX_DEBUG_CONTAINERS
@@ -98,7 +102,7 @@ private:
 };
 
 template <typename Iterator>
-class IteratorRange {
+class [[nodiscard]] IteratorRange {
 public:
 	IteratorRange() = default;
 	IteratorRange(Iterator begin, Iterator end) noexcept : begin_{std::move(begin)}, end_{std::move(end)} {}

@@ -64,7 +64,7 @@ public:
 	KeyValueType FieldType() const noexcept { return fieldType_; }
 	KeyValueType SelectType() const noexcept { return selectType_; }
 	const CompositeTypesVecT& CompositeFieldsTypes() const& noexcept { return compositeFieldsTypes_; }
-	bool HaveEmptyField() const noexcept;
+	bool HaveEmptyField() const;
 	void SetField(FieldsSet&& fields) &;
 	void SetIndexData(int idxNo, std::string_view idxName, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
 					  CompositeTypesVecT&& compositeFieldsTypes) &;
@@ -214,20 +214,32 @@ private:
 };
 
 class [[nodiscard]] FunctionEntry {
-public:
+protected:
 	template <concepts::Function Function>
-	FunctionEntry(Function&& function, CondType condition) : function_(std::forward<Function>(function)), condition_(condition) {
-		setFields();
+	FunctionEntry(Function&& function, CondType condition)
+		: comparisonField_(""), function_(std::forward<Function>(function)), condition_(condition) {
+		setFieldsFromFunction();
 	}
-	FunctionEntry(functions::FunctionVariant&& function, CondType condition) : function_(std::move(function)), condition_(condition) {
-		setFields();
+	FunctionEntry(functions::FunctionVariant&& function, CondType condition)
+		: comparisonField_(""), function_(std::move(function)), condition_(condition) {
+		setFieldsFromFunction();
 	}
-	FunctionEntry(const functions::FunctionVariant& function, CondType condition) : function_(function), condition_(condition) {
-		setFields();
+	FunctionEntry(const functions::FunctionVariant& function, CondType condition)
+		: comparisonField_(""), function_(function), condition_(condition) {
+		setFieldsFromFunction();
 	}
 
+public:
+	template <concepts::ConvertibleToString Str, concepts::Function Function>
+	FunctionEntry(Str&& comparisonField, CondType cond, Function&& function)
+		: comparisonField_(std::forward<Str>(comparisonField)), function_(function), condition_(cond) {}
+
+	template <concepts::ConvertibleToString Str>
+	FunctionEntry(Str&& comparisonField, CondType cond, functions::FunctionVariant&& function)
+		: comparisonField_(std::forward<Str>(comparisonField)), function_(std::move(function)), condition_(cond) {}
+
 	FunctionEntry(const FunctionEntry&) = default;
-	FunctionEntry& operator=(FunctionEntry&) = default;
+	FunctionEntry& operator=(const FunctionEntry&) = delete;
 	FunctionEntry(FunctionEntry&&) = default;
 	FunctionEntry& operator=(FunctionEntry&&) = default;
 
@@ -237,6 +249,9 @@ public:
 	QueryField& FieldData(size_t field) & noexcept { return fields_[field]; }
 	size_t Fields() const noexcept { return fields_.size(); }
 	CondType Condition() const noexcept { return condition_; }
+	const QueryField& ComparisonField() const noexcept { return comparisonField_; }
+	QueryField& ComparisonField() noexcept { return comparisonField_; }
+	bool HasComparisonField() const noexcept { return !comparisonField_.FieldName().empty(); }
 
 	const functions::Function& Function() const&;
 	const functions::FunctionVariant& FunctionVariant() const& { return function_; }
@@ -248,12 +263,13 @@ public:
 	auto FunctionVariant() const&& = delete;
 
 protected:
-	void setFields() {
+	void setFieldsFromFunction() {
 		for (const auto& field : this->Function().FieldNames()) {
 			fields_.emplace_back(field);
 		}
 	}
 
+	QueryField comparisonField_;
 	h_vector<QueryField, 1> fields_;
 	functions::FunctionVariant function_;
 	CondType condition_{CondAny};
@@ -276,11 +292,17 @@ public:
 	template <concepts::ConvertibleToVariantArray Values>
 	QueryFunctionEntry(const functions::FunctionVariant& function, CondType condition, Values&& values)
 		: FunctionEntry(function, condition), values_(std::forward<Values>(values)) {}
+	template <concepts::ConvertibleToString Str, concepts::Function Function>
+	QueryFunctionEntry(Str&& comparisonField, CondType cond, Function&& function)
+		: FunctionEntry(std::forward<Str>(comparisonField), cond, std::forward<Function>(function)) {}
+	template <concepts::ConvertibleToString Str>
+	QueryFunctionEntry(Str&& comparisonField, CondType cond, functions::FunctionVariant&& function)
+		: FunctionEntry(std::forward<Str>(comparisonField), cond, std::move(function)) {}
 
 	QueryFunctionEntry(const QueryFunctionEntry&) = default;
-	QueryFunctionEntry& operator=(QueryFunctionEntry&) = default;
 	QueryFunctionEntry(QueryFunctionEntry&&) = default;
 	QueryFunctionEntry& operator=(QueryFunctionEntry&&) = default;
+	QueryFunctionEntry& operator=(QueryFunctionEntry&) = delete;
 
 	bool operator==(const QueryFunctionEntry&) const;
 
@@ -302,13 +324,25 @@ public:
 	using FunctionEntry::Function;
 	using FunctionEntry::FunctionVariant;
 
+	enum [[nodiscard]] SubQueryType { Left, Right };
+
 	template <concepts::Function Function>
 	SubQueryFunctionEntry(Function&& function, CondType condition, size_t queryIndex)
-		: FunctionEntry(std::forward<Function>(function), condition), queryIndex_(queryIndex) {
+		: FunctionEntry(std::forward<Function>(function), condition), queryIndex_(queryIndex), subqueryType_(Right) {
 		checkCondition(condition);
 	}
 	SubQueryFunctionEntry(functions::FunctionVariant&& function, CondType condition, size_t queryIndex)
-		: FunctionEntry(std::move(function), condition), queryIndex_(queryIndex) {
+		: FunctionEntry(std::move(function), condition), queryIndex_(queryIndex), subqueryType_(Right) {
+		checkCondition(condition);
+	}
+
+	template <concepts::Function Function>
+	SubQueryFunctionEntry(size_t queryIndex, CondType condition, Function&& function)
+		: FunctionEntry(std::forward<Function>(function), condition), queryIndex_(queryIndex), subqueryType_(Left) {
+		checkCondition(condition);
+	}
+	SubQueryFunctionEntry(size_t queryIndex, CondType condition, functions::FunctionVariant&& function)
+		: FunctionEntry(std::move(function), condition), queryIndex_(queryIndex), subqueryType_(Left) {
 		checkCondition(condition);
 	}
 
@@ -317,6 +351,7 @@ public:
 	}
 
 	size_t QueryIndex() const noexcept { return queryIndex_; }
+	SubQueryType GetSubqueryType() const noexcept { return subqueryType_; }
 	std::string Dump(const std::vector<Query>& subQueries) const;
 
 private:
@@ -324,6 +359,7 @@ private:
 
 	// index of Query in Query::subQueries_
 	size_t queryIndex_{std::numeric_limits<size_t>::max()};
+	SubQueryType subqueryType_;
 };
 
 class [[nodiscard]] BetweenFieldsQueryEntry {

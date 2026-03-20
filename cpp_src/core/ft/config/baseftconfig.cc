@@ -110,6 +110,20 @@ void BaseFTConfig::parseBase(const gason::JsonNode& root) {
 
 		synonyms.emplace_back(std::move(synonym));
 	}
+
+	termsBoost.clear();
+	for (auto& tb : root["terms_boost"sv]) {
+		float boost = tb["boost"sv].As<float>(1.0, 0.0, 5.0);
+
+		for (auto& term : tb["terms"sv]) {
+			std::string termStr = term.As<std::string>();
+			if (!splitOptions.IsWord(termStr)) {
+				throw Error(errParams, "Incorrect term to boost: {} (must be single word)"sv, termStr);
+			}
+			termsBoost[termStr] = std::max(termsBoost[termStr], boost);
+		}
+	}
+
 	const auto& baseRankingConfigNode = root["base_ranking"sv];
 	if (!baseRankingConfigNode.empty()) {
 		rankingConfig.fullMatch = baseRankingConfigNode["full_match_proc"sv].As<>(rankingConfig.fullMatch, 0, 500);
@@ -153,6 +167,15 @@ void BaseFTConfig::getJson(JsonBuilder& jsonBuilder) const {
 					alternativesNode.Put(TagName::Empty(), token);
 				}
 			}
+		}
+	}
+	{
+		auto termsBoostNode = jsonBuilder.Array("terms_boost"sv);
+
+		for (const auto& [term, boost] : termsBoost) {
+			auto termObj = termsBoostNode.Object();
+			{ termObj.Array("terms"sv).Put(TagName::Empty(), term); }
+			termObj.Put("boost"sv, boost);
 		}
 	}
 	{

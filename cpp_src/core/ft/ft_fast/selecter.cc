@@ -5,16 +5,11 @@
 #include "tools/serializer.h"
 
 namespace reindexer {
-// Minimal relevant length of the stemmer's term
-constexpr int kMinStemRelevantLen = 3;
-// Max length of the stemming result, which will be skipped
-constexpr int kMaxStemSkipLen = 1;
-constexpr bool kVariantsWithDifLength = (kMinStemRelevantLen - kMaxStemSkipLen) > 2;
-
 template <typename IdCont>
-void Selector<IdCont>::applyStemmers(const std::string& pattern, int proc, const FtDslOpts& termOpts, bool keepSuff,
-									 std::vector<FtVariantEntry>& variants, h_vector<FtBoundVariantEntry, 4>* lowRelVariants,
-									 std::string& buffer) {
+float Selector<IdCont>::applyStemmers(const std::string& pattern, int proc, const FtDslOpts& termOpts, bool keepSuff,
+									  std::vector<FtVariantEntry>& variants, h_vector<FtBoundVariantEntry, 4>* lowRelVariants,
+									  std::string& buffer) {
+	float maxBoost = 1.0;
 	const int stemProc = std::max(proc - holder_.cfg_->rankingConfig.stemmerPenalty, BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty);
 	std::string& stemstr = buffer;
 
@@ -23,7 +18,7 @@ void Selector<IdCont>::applyStemmers(const std::string& pattern, int proc, const
 		if (holder_.cfg_->logLevel >= LogTrace) [[unlikely]] {
 			logFmt(LogInfo, "Skipping stemming for '{}{}{}'", termOpts.suff ? "*" : "", pattern, termOpts.pref ? "*" : "");
 		}
-		return;
+		return maxBoost;
 	}
 
 	for (auto& lang : holder_.cfg_->stemmers) {
@@ -47,11 +42,19 @@ void Selector<IdCont>::applyStemmers(const std::string& pattern, int proc, const
 
 		const auto charCount = getUTF8StringCharactersCount(stemstr);
 		if (charCount >= kMinStemRelevantLen) {
-			variants.emplace_back(std::move(stemstr), std::move(termOpts.GetStemOpts(keepSuff)), stemProc, stemLen);
+			float boost = 1.0;
+			auto it = holder_.stemmedTermsBoost.find(stemstr);
+			if (it != holder_.stemmedTermsBoost.end()) {
+				boost = it->second;
+			}
+			maxBoost = std::max(maxBoost, boost);
+			variants.emplace_back(std::move(stemstr), std::move(termOpts.GetStemOpts(keepSuff)), stemProc * boost, stemLen);
 		} else if (lowRelVariants != nullptr) {
 			lowRelVariants->emplace_back(std::move(stemstr), std::move(termOpts.GetStemOpts(keepSuff)), stemProc, stemLen);
 		}
 	}
+
+	return maxBoost;
 }
 
 template <typename IdCont>
@@ -65,8 +68,10 @@ void Selector<IdCont>::prepareSynonymVariants(const std::wstring& pattern, const
 	variants.resize(0);
 	utf16_to_utf8(pattern, patternBuf);
 	variants.emplace_back(patternBuf, opts, proc, -1);
+	size_t varPos = variants.size() - 1;
 	if (!opts.exact) {
-		applyStemmers(patternBuf, proc, opts, true, variants, nullptr, stemmerBuf);
+		float stemmerBoost = applyStemmers(patternBuf, proc, opts, true, variants, nullptr, stemmerBuf);
+		variants[varPos].boostUsed = std::max(stemmerBoost, getTermBoost(patternBuf));
 	}
 
 	if (holder_.cfg_->logLevel >= LogTrace) [[unlikely]] {
@@ -101,9 +106,13 @@ void Selector<IdCont>::prepareVariants(const FtDSLEntry& term, int termProc, uns
 
 	variants.emplace_back(std::string(), opts, termProc, -1);
 	utf16_to_utf8(pattern, variants.back().pattern);
+	auto patternBuf = stringsPool.Get();
+	patternBuf.Data() = variants.back().pattern;
+	size_t varPos = variants.size() - 1;
 	if (!opts.exact) {
 		auto buffer = stringsPool.Get();
-		applyStemmers(variants.back().pattern, termProc, opts, true, variants, lowRelVariants, buffer.Data());
+		float stemmerBoost = applyStemmers(patternBuf.Data(), termProc, opts, true, variants, lowRelVariants, buffer.Data());
+		variants[varPos].boostUsed = std::max(stemmerBoost, getTermBoost(patternBuf.Data()));
 	}
 
 	if (holder_.cfg_->enableNumbersSearch && opts.number) {
@@ -184,11 +193,16 @@ void Selector<IdCont>::prepareVariants(const FtDSLEntry& term, int termProc, uns
 			}
 		}
 
+		auto patternBuf = stringsPool.Get();
+		patternBuf.Data() = variantPattern;
 		variants.emplace_back(std::move(variantPattern), std::move(varOpts), v.proc, -1);
+		size_t varPos = variants.size() - 1;
+
 		if (!opts.exact && !v.prefAndStemmersForbidden) {
 			auto& last = variants.back();
 			auto buffer = stringsPool.Get();
-			applyStemmers(last.pattern, v.proc, last.opts, false, variants, lowRelVariants, buffer.Data());
+			float stemmerBoost = applyStemmers(patternBuf.Data(), v.proc, last.opts, false, variants, lowRelVariants, buffer.Data());
+			variants[varPos].boostUsed = std::max(stemmerBoost, getTermBoost(patternBuf.Data()));
 		}
 	}
 }
@@ -275,7 +289,7 @@ MergedDataType Selector<IdCont>::Process(FtDSLQuery&& query, bool inTransaction,
 		if (!typosPattern.empty()) {
 			// Lookup typos from typos_ map and fill results
 			TyposHandler h(*holder_.cfg_);
-			size_t vidsCount = h.Process(typosPattern, variantsForTypos, holder_, termRes, *termWordsProcs);
+			size_t vidsCount = h.Process(typosPattern, variantsForTypos, holder_, termRes, *termWordsProcs, holder_.cfg_->termsBoost);
 			if (termRes.term.Opts().op == OpOr) {
 				totalORVids += vidsCount;
 			}
@@ -339,6 +353,12 @@ MergedDataType Selector<IdCont>::Process(FtDSLQuery&& query, bool inTransaction,
 
 	for (auto& res : rawResults) {
 		results.emplace_back(std::move(res));
+	}
+
+	for (auto& res : results) {
+		for (auto& subtermRes : res.subtermsResults) {
+			subtermRes.proc *= subtermRes.boost;
+		}
 	}
 
 	const auto maxMergedSize = std::min(size_t(holder_.cfg_->mergeLimit), totalORVids);
@@ -421,6 +441,7 @@ size_t Selector<IdCont>::processStepVariants(typename DataHolder<IdCont>::Commit
 		}
 
 		const int matchDif = std::abs(long(suffixWordLength - pattern.length() + suffixLen));
+		const float subtermBoost = std::max(getTermBoost(suffixWord), variant.boostUsed);
 		const float proc =
 			std::max<float>(variant.proc - holder_.cfg_->partialMatchDecrease * matchDif / std::max<float>(pattern.length(), 3),
 							suffixLen ? holder_.cfg_->rankingConfig.suffixMin : holder_.cfg_->rankingConfig.prefixMin);
@@ -432,7 +453,8 @@ size_t Selector<IdCont>::processStepVariants(typename DataHolder<IdCont>::Commit
 			continue;
 		}
 
-		result.subtermsResults.emplace_back(word.vids, wordIt->first, wordId, proc, typename ft::SubtermResults<IdCont>::NoHoldT{});
+		result.subtermsResults.emplace_back(word.vids, wordIt->first, wordId, proc, subtermBoost,
+											typename ft::SubtermResults<IdCont>::NoHoldT{});
 		result.idsCnt += word.vids.size();
 		matched++;
 		vids += word.vids.size();
@@ -537,7 +559,7 @@ void Selector<IdCont>::processLowRelVariants(size_t& totalORVids, h_vector<FtBou
 template <typename IdCont>
 size_t Selector<IdCont>::TyposHandler::Process(const std::wstring& pattern, const h_vector<std::wstring, 8>& variantsForTypos,
 											   const DataHolder<IdCont>& holder, ft::TermResults<IdCont>& res,
-											   ft::FoundWordsProcsType& wordsProcs) {
+											   ft::FoundWordsProcsType& wordsProcs, const TermsBoostMapT& termsBoost) {
 	size_t totalVids = 0;
 	std::wstring buf;
 	for (auto& step : holder.steps) {
@@ -546,9 +568,10 @@ size_t Selector<IdCont>::TyposHandler::Process(const std::wstring& pattern, cons
 			ft::FoundWordsProcsType& wordsProcs;
 			const DataHolder<IdCont>& holder;
 			const DataHolder<IdCont>::CommitStep& step;
+			const TermsBoostMapT& termsBoost;
 			size_t& totalVids;
 			int matched, skipped, vids;
-		} ctx{res, wordsProcs, holder, step, totalVids, 0, 0, 0};
+		} ctx{res, wordsProcs, holder, step, termsBoost, totalVids, 0, 0, 0};
 
 		auto callback = [&ctx, this](std::wstring_view typo, const TyposVec& positions, std::wstring_view typoPattern) {
 			size_t maxTypos = ctx.holder.cfg_->maxTypos;
@@ -615,7 +638,11 @@ size_t Selector<IdCont>::TyposHandler::Process(const std::wstring& pattern, cons
 						logFmt(LogInfo, fmt::runtime(" matched typo '{}' of word '{}', {} ids, {}%"), typoUTF8, word, hword.vids.size(),
 							   proc);
 					}
-					ctx.res.subtermsResults.emplace_back(hword.vids, std::move(typoUTF8), wordTypo.word, proc,
+
+					auto boostIt = ctx.termsBoost.find(word);
+					float boost = (boostIt == ctx.termsBoost.end()) ? 1.0 : boostIt->second;
+
+					ctx.res.subtermsResults.emplace_back(hword.vids, std::move(typoUTF8), wordTypo.word, proc, boost,
 														 typename ft::SubtermResults<IdCont>::HoldT{});
 					ctx.res.idsCnt += hword.vids.size();
 

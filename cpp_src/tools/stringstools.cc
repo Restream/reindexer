@@ -206,12 +206,18 @@ std::string SplitOptions::GetExtraWordSymbols() const { return bitmaskAsString(e
 std::string SplitOptions::GetWordPartDelimiters() const { return bitmaskAsString(wordPartDelimitersMask_); }
 
 std::string toLower(std::string_view src) {
-	std::string ret;
-	ret.reserve(src.size());
-	for (char ch : src) {
-		ret.push_back(tolower(ch));
+	std::string res;
+	res.resize(src.size() + 4);
+	auto resIt = res.begin();
+	for (auto it = src.begin(); it != src.end();) {
+		wchar_t ch = utf8::unchecked::next(it);
+		resIt = utf8::unchecked::append(ToLower(ch), resIt);
+		if (static_cast<size_t>((resIt - res.begin()) + 4) > res.capacity()) {
+			res.reserve(res.capacity() + 4);
+		}
 	}
-	return ret;
+	res.resize(resIt - res.begin());
+	return res;
 }
 
 std::string escapeString(std::string_view str) {

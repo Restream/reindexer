@@ -2879,25 +2879,54 @@ TEST_F(NsApi, TestDropField) {
 	}
 }
 
-TEST_F(NsApi, TestUpdateFieldWithFunction) {
+TEST_F(NsApi, TestUpdateFieldWithConsistentNowValues) {
 	DefineDefaultNamespace();
 	FillDefaultNamespace();
+	{
+		auto qr = rt.ExecSQL("update test_namespace set timeField1 = NOW(nsec), timeField2 = NOW(msec);");
+		ASSERT_GT(qr.Count(), 0);
 
-	int64_t updateTime = std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
-
-	auto qr = rt.ExecSQL("update test_namespace set int_field = SERIAL(), extra = SERIAL(), nested.timeField = NOW(msec) where id >= 0;");
-	ASSERT_GT(qr.Count(), 0);
-
-	int i = 1;
-	for (auto& it : qr) {
-		Item item(it.GetItem(false));
-		Variant intFieldVal = item[intField];
-		Variant extraFieldVal = item["extra"];
-		Variant timeFieldVal = item["nested.timeField"];
-		ASSERT_EQ(intFieldVal.As<int>(), i++);
-		ASSERT_EQ(intFieldVal.As<int>(), extraFieldVal.As<int>());
-		ASSERT_GE(timeFieldVal.As<int64_t>(), updateTime);
+		std::optional<Variant> prevTimeField1;
+		for (auto& it : qr) {
+			Item item(it.GetItem(false));
+			Variant timeField1 = item["timeField1"];
+			Variant timeField2 = item["timeField2"];
+			ASSERT_EQ(reindexer::ConvertTime(timeField1.As<int64_t>(), reindexer::TimeUnit::nsec, reindexer::TimeUnit::msec),
+					  timeField2.As<int64_t>());
+			if (prevTimeField1.has_value()) {
+				ASSERT_EQ(timeField1, prevTimeField1.value());
+			}
+			prevTimeField1 = timeField1;
+		}
 	}
+	{
+		int64_t updateTimeMsec =
+			std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
+		auto qr = rt.ExecSQL("update test_namespace set timeField1 = NOW(msec) where timeField1 < NOW(nsec);");
+		ASSERT_GT(qr.Count(), 0);
+		for (auto& it : qr) {
+			Item item(it.GetItem(false));
+			Variant timeFieldVal = item["timeField1"];
+			ASSERT_GE(timeFieldVal.As<int64_t>(), updateTimeMsec);
+		}
+	}
+}
+
+TEST_F(NsApi, TestUpdateFieldWithConsistentNowInWhereClause) {
+	DefineDefaultNamespace();
+
+	int64_t updateTimeMsec =
+		std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
+
+	for (int i = 0; i < 20'000; ++i) {
+		Item item = NewItem(default_namespace);
+		item[idIdxName] = i;
+		item[intField] = updateTimeMsec + i;
+		Upsert(default_namespace, item);
+	}
+
+	auto qr = rt.ExecSQL("update test_namespace set timeField = NOW(msec) WHERE int_field = NOW(msec);");
+	ASSERT_GT(qr.Count(), 0);
 }
 
 TEST_F(NsApi, TestUpdateFieldWithExpressions) {
@@ -3504,7 +3533,7 @@ TEST_F(NsApi, ArrayDistinct) {
 		rt.UpsertJSON(default_namespace, doc);
 	}
 
-	struct Case {
+	struct [[nodiscard]] Case {
 		const std::string_view name;
 		const Query query;
 		const std::set<int> expectedIDs;

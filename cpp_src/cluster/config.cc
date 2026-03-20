@@ -575,7 +575,7 @@ Error ShardingConfig::Namespace::FromYAML(const YAML::Node& yaml, const std::map
 	}
 
 	index = yaml["index"].as<std::string>();
-	if (!validateIndexName(index, IndexCompositeHash)) {
+	if (!ValidateIndexName(index, IndexCompositeHash)) {
 		return Error(errParams, "Index name incorrect '{}'.", index);
 	}
 	const auto defaultShardNode = yaml["default_shard"];
@@ -605,7 +605,7 @@ Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode& root) {
 		}
 		defaultShard = root["default_shard"].As<int>();
 		index = root["index"].As<std::string>();
-		if (!validateIndexName(index, IndexCompositeHash)) {
+		if (!ValidateIndexName(index, IndexCompositeHash)) {
 			return Error(errParams, "Index name incorrect '{}'.", index);
 		}
 		const auto& keysNode = root["keys"];

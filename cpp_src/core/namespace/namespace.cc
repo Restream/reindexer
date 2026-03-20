@@ -69,6 +69,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 					auto err = ns_->observers_.SendUpdate(
 						updates::UpdateRecord{updates::URType::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
 											  ctx.EmitterServerId()},
+						// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 						[&clonerLck, &storageLock, &nsRlck]() RX_NO_THREAD_SAFETY_ANALYSIS {
 							storageLock.unlock();
 							nsRlck.unlock();

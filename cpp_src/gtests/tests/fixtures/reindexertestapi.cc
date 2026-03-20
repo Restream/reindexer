@@ -301,7 +301,8 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 			state.lsn.FromJSON(root["replication"]["last_lsn_v2"]);
 
 			state.dataCount = root["replication"]["data_count"].As<int64_t>();
-			state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
+			state.dataHash.hashV1 = root["replication"]["data_hash"].As<uint64_t>();
+			state.dataHash.hashV2 = root["replication"]["checksum"].As<uint64_t>();
 			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
 			state.updateUnixNano = root["replication"]["updated_unix_nano"].As<uint64_t>();
 			try {

@@ -85,14 +85,13 @@ public:
 	typedef unsigned size_type;
 	typedef std::ptrdiff_t difference_type;
 	static constexpr auto kElemSize = objSize;
-	static constexpr auto kHoldSize = holdSize;
 	static_assert(std::is_trivial_v<reverse_iterator>, "Expecting trivial reverse iterator");
 	static_assert(std::is_trivial_v<const_reverse_iterator>, "Expecting trivial const reverse iterator");
 
 	h_vector() noexcept : e_{0, 0}, size_(0), is_hdata_(1) {}
 	h_vector(StolenHeap&& heap) noexcept : h_vector() {
 		const auto cap = heap.Capacity();
-		if (cap > holdSize) {
+		if (cap > kHoldSize) {
 			e_.data_ = std::move(heap).Release();
 			e_.cap_ = cap;
 			is_hdata_ = 0;
@@ -115,7 +114,7 @@ public:
 	template <typename InputIt>
 	h_vector(StolenHeap&& heap, InputIt first, InputIt last) : h_vector() {
 		const auto cap = heap.Capacity();
-		if (cap > holdSize && cap > (last - first)) {
+		if (cap > kHoldSize && cap > (last - first)) {
 			e_.data_ = std::move(heap).Release();
 			e_.cap_ = cap;
 			is_hdata_ = 0;
@@ -254,7 +253,7 @@ public:
 	reverse_iterator rbegin() noexcept { return end(); }
 	reverse_iterator rend() noexcept { return begin(); }
 	size_type size() const noexcept { return size_; }
-	size_type capacity() const noexcept { return is_hdata_ ? holdSize : e_.cap_; }
+	size_type capacity() const noexcept { return is_hdata_ ? kHoldSize : e_.cap_; }
 	bool empty() const noexcept { return size_ == 0; }
 	const_reference operator[](size_type pos) const noexcept {
 		rx_debug_check_subscript(pos);
@@ -333,7 +332,7 @@ public:
 				throw std::logic_error("h_vector: max capacity overflow (requested: " + std::to_string(sz) +
 									   ", max_size: " + std::to_string(max_size()) + " )");
 			}
-			if (sz <= holdSize) [[unlikely]] {
+			if (sz <= kHoldSize) [[unlikely]] {
 				throw std::logic_error("h_vector: unexpected reserved size");
 			}
 			// NOLINTNEXTLINE(bugprone-sizeof-expression)
@@ -586,7 +585,7 @@ public:
 		assertrx(other.capacity() == cap1);
 	}
 
-protected:
+private:
 	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_) : e_.data_; }
 	const_pointer ptr() const noexcept { return is_hdata() ? reinterpret_cast<const_pointer>(hdata_) : e_.data_; }
 	RX_ALWAYS_INLINE void destruct() noexcept {
@@ -615,9 +614,13 @@ protected:
 	};
 #pragma pack(pop)
 
+public:
+	static constexpr auto kHoldSize = (((holdSize + 1) * kElemSize) > sizeof(edata)) ? holdSize : (sizeof(edata) / kElemSize);
+
+private:
 	union {
 		edata e_;
-		uint8_t hdata_[holdSize > 0 ? holdSize* objSize : 1];
+		uint8_t hdata_[kHoldSize * kElemSize];
 	};
 	size_type size_ : 31;
 	size_type is_hdata_ : 1;

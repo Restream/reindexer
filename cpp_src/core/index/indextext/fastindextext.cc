@@ -23,6 +23,21 @@ using std::chrono::duration_cast;
 using std::chrono::milliseconds;
 
 template <typename T>
+void FastIndexText<T>::initTermBoosts(FtFastConfig& cfg) {
+	holder_->stemmedTermsBoost.clear();
+	std::string stemstr;
+	for (auto& [term, boost] : cfg.termsBoost) {
+		for (auto& st : holder_->stemmers_) {
+			stemstr = "";
+			st.second.stem(term, stemstr);
+			if (getUTF8StringCharactersCount(stemstr) >= kMinStemRelevantLen) {
+				holder_->stemmedTermsBoost[stemstr] = std::max(holder_->stemmedTermsBoost[stemstr], boost);
+			}
+		}
+	}
+}
+
+template <typename T>
 void FastIndexText<T>::initHolder(FtFastConfig& cfg) {
 	switch (cfg.optimization) {
 		case FtFastConfig::Optimization::Memory:
@@ -42,6 +57,8 @@ void FastIndexText<T>::initHolder(FtFastConfig& cfg) {
 	for (const char** lang = stemLangs; *lang; ++lang) {
 		holder_->stemmers_.emplace(*lang, *lang);
 	}
+
+	initTermBoosts(cfg);
 }
 
 template <typename T>
@@ -102,14 +119,14 @@ void FastIndexText<T>::Delete(const Variant& key, IdType id, MustExist mustExist
 		this->tracker_.markDeleted(keyIt);
 		if (keyIt->second.VDocID() != FtKeyEntryData::ndoc) {
 			assertrx(keyIt->second.VDocID() < int(this->holder_->vdocs_.size()));
-			this->holder_->vdocs_[keyIt->second.VDocID()].keyEntry = nullptr;
+			this->holder_->vdocs_[keyIt->second.VDocID()].MarkRemoved();
 		}
 		if constexpr (is_str_map_v<T>) {
-			this->idx_map.template erase<StringMapEntryCleaner<false>>(keyIt,
-																	   {strHolder, this->KeyType().template Is<KeyValueType::String>()});
+			std::ignore = this->idx_map.template erase<StringMapEntryCleaner<false>>(
+				keyIt, {strHolder, this->KeyType().template Is<KeyValueType::String>()});
 		} else {
 			static_assert(is_payload_map_v<T>);
-			this->idx_map.template erase<no_deep_clean>(keyIt, strHolder);
+			std::ignore = this->idx_map.template erase<no_deep_clean>(keyIt);
 		}
 	} else {
 		this->addMemStat(keyIt);
@@ -124,7 +141,7 @@ void FastIndexText<T>::Delete(const Variant& key, IdType id, MustExist mustExist
 }
 
 template <typename T>
-IndexMemStat FastIndexText<T>::GetMemStat(const RdxContext& ctx) {
+IndexMemStat FastIndexText<T>::GetMemStat(const RdxContext& ctx) const {
 	auto ret = IndexUnordered<T>::GetMemStat(ctx);
 
 	contexted_shared_lock lck(this->mtx_, ctx);
@@ -202,8 +219,8 @@ IdSet::Ptr FastIndexText<T>::afterSelect(FtCtx& ftCtx, MergeType&& mergeData, Ra
 			for (auto& vid : mergeData) {
 				auto& vdoc = holder.vdocs_[vid.id.ToNumber()];
 				assertrx_dbg(!vdoc.IsRemoved());
-				assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
-				cnt += vdoc.keyEntry->Sorted(0).size();
+				assertrx_throw(!vdoc.KeyEntry()->Unsorted().empty());
+				cnt += vdoc.KeyEntry()->Sorted(0).size();
 				++relevantDocs;
 			}
 			break;
@@ -441,7 +458,7 @@ void FastIndexText<T>::buildVdocs(Container& data) {
 	if (status == CreateNew) {
 		this->holder_->cur_vdoc_pos_ = vdocs.size();
 	} else if (status == RecommitLast) {
-		vdocs.erase(vdocs.begin() + this->holder_->cur_vdoc_pos_, vdocs.end());
+		vdocs.resize(this->holder_->cur_vdoc_pos_);
 	}
 	this->holder_->vdocsOffset_ = vdocs.size();
 
@@ -456,9 +473,9 @@ void FastIndexText<T>::buildVdocs(Container& data) {
 		vdocsTexts.emplace_back(gt.getDocFields(doc->first, bufStrs));
 #ifdef REINDEX_FT_EXTRA_DEBUG
 		std::string text(vdocsTexts.back()[0].first);
-		vdocs.push_back({(text.length() > 48) ? text.substr(0, 48) + "..." : text, doc->second.get(), {}, {}});
+		vdocs.emplace_back((text.length() > 48) ? text.substr(0, 48) + "..." : std::move(text), doc->second.get());
 #else
-		vdocs.push_back({doc->second.get(), {}, {}});
+		vdocs.emplace_back(doc->second.get());
 #endif
 		// Set VDocID after actual doc emplacing
 		doc->second.SetVDocID(vdocs.size() - 1);
@@ -484,7 +501,7 @@ RX_ALWAYS_INLINE void FastIndexText<T>::appendMergedIds(MergeType& mergeData, si
 		auto& vid = mergeData[i];
 		auto& vdoc = holder.vdocs_[vid.id.ToNumber()];
 
-		const auto& realIds = vdoc.keyEntry->Sorted(0);
+		const auto& realIds = vdoc.KeyEntry()->Sorted(0);
 		if (uniqueIds.has_value()) {
 			idsFiltered.resize(0);
 			for (IdType id : realIds) {
@@ -528,8 +545,7 @@ void FastIndexText<T>::SetOpts(const IndexOpts& opts) {
 
 	if (!eq_c(oldCfg.stopWords, newCfg.stopWords) || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
 		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.splitOptions != newCfg.splitOptions ||
-		oldCfg.synonyms != newCfg.synonyms || oldCfg.maxTypos != newCfg.maxTypos || oldCfg.optimization != newCfg.optimization ||
-		oldCfg.splitterType != newCfg.splitterType) {
+		oldCfg.maxTypos != newCfg.maxTypos || oldCfg.optimization != newCfg.optimization || oldCfg.splitterType != newCfg.splitterType) {
 		logFmt(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
 		this->isBuilt_ = false;
 		if (oldCfg.optimization != newCfg.optimization || oldCfg.splitterType != newCfg.splitterType ||
@@ -547,7 +563,9 @@ void FastIndexText<T>::SetOpts(const IndexOpts& opts) {
 		logFmt(LogInfo, "FulltextIndex config changed, cache cleared");
 		this->cache_ft_.Clear();
 	}
+
 	this->holder_->synonyms_->SetConfig(&newCfg);
+	initTermBoosts(newCfg);
 }
 
 template <typename T>

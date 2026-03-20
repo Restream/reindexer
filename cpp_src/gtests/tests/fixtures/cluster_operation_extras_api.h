@@ -18,7 +18,7 @@ public:
 	}
 
 protected:
-	struct ExpectedStats {
+	struct [[nodiscard]] ExpectedStats {
 		size_t nodesCount;
 		size_t queuedNssCount;
 		bool isSynchronized;

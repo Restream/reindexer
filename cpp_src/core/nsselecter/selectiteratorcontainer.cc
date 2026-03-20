@@ -7,6 +7,7 @@
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/index/float_vector/knn_ctx.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/nsselecter/comparator/equalposition_comparator.h"
 #include "core/rdxcontext.h"
 #include "core/sorting/reranker.h"
 #include "core/type_consts_helpers.h"
@@ -478,7 +479,7 @@ void SelectIteratorContainer::processEqualPositions(const h_vector<EqualPosition
 			equal_position_helpers::ParseStrPath(eqPosStr[k][i], paths[i]);
 			bool isArray = false;
 			for (const auto& part : paths[i]) {
-				if (part.flags == FieldPathPartFlags::Array) {
+				if (part.type == PathPartType::ArrayTarget) {
 					isArray = true;
 					break;
 				}
@@ -541,27 +542,46 @@ h_vector<SelectIteratorContainer::EqualPositions, 2> SelectIteratorContainer::pr
 		fast_hash_map<std::string, int> epFieldsJson;  // json, argument num
 		fast_hash_map<int, int> epFieldsIndexed;	   // index, argument num
 		fast_hash_set<int> subResult;
-		unsigned int arrayMarkerCount = 0;
+		unsigned int pathThisArrayMarker = 0;
 		FieldPath path;
 		for (size_t j = 0, sz = eqPosFunctions[i].size(); j < sz; ++j) {
 			path.clear();
 
 			equal_position_helpers::ParseStrPath(eqPosFunctions[i][j], path);
+
+			unsigned int markerCount = 0;
+			unsigned int asteriskCount = 0;
 			for (const auto& v : path) {
-				if (v.flags == FieldPathPartFlags::Array) {
-					arrayMarkerCount++;
-					break;
+				switch (v.type) {
+					case PathPartType::ArrayTarget: {
+						++markerCount;
+						++pathThisArrayMarker;	// If it is incremented more than once for a path, an error will be triggered on markerCount
+					} break;
+					case PathPartType::AnyValue: {
+						++asteriskCount;
+					} break;
+					case PathPartType::Name:
+						break;
 				}
+			}
+			if (markerCount > 1) {
+				throw Error(errParams, "Equal positions fields should contain only one array marker");
+			}
+			if (markerCount == 0 && asteriskCount > 0) {
+				throw Error(errParams, "Equal positions fields should contain only one array marker if used asterisk");
 			}
 			std::string simplePath;
 			bool flagFirst = true;
 			for (const auto& v : path) {
-				if (!flagFirst) {
-					simplePath += '.';
+				if (v.type == PathPartType::Name) {
+					if (!flagFirst) {
+						simplePath += '.';
+					}
+					simplePath += v.name;
+					flagFirst = false;
 				}
-				simplePath += v.name;
-				flagFirst = false;
 			}
+
 			int indNo = IndexValueType::NotSet;
 			if (ns.tryGetIndexByName(simplePath, indNo)) {	// index name
 				if (epFieldsIndexed.find(indNo) != epFieldsIndexed.end()) {
@@ -579,7 +599,7 @@ h_vector<SelectIteratorContainer::EqualPositions, 2> SelectIteratorContainer::pr
 			}
 		}
 
-		if (arrayMarkerCount > 0 && arrayMarkerCount < eqPosFunctions[i].size()) {
+		if (pathThisArrayMarker > 0 && pathThisArrayMarker < eqPosFunctions[i].size()) {
 			throw Error(errParams, "All equal positions fields should contain array marker");
 		}
 
@@ -920,15 +940,28 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 				return isFT;
 			},
 			[&](const QueryFunctionEntry& qe) {
+				auto verifyIndexField = [&](const QueryField& field) {
+					const auto& index{ns.indexes_[field.IndexNo()]};
+					if (index && IsComposite(index->Type())) {
+						if (field.Fields().size() != 1) {
+							throw Error(errQueryExec,
+										"Conditions with user-defined functions are not allowed for composite indexes with more than one "
+										"jsonpath.");
+						}
+					}
+				};
 				FunctionFieldsInfo fieldsInfo;
 				for (size_t i = 0; i < qe.Fields(); ++i) {
 					if (qe.FieldData(i).IsFieldIndexed()) {
-						const auto& idx{ns.indexes_[qe.FieldData(i).IndexNo()]};
-						if (idx && IsComposite(idx->Type())) {
-							throw Error(errQueryExec, "Conditions with user-defined functions are not allowed for composite indexes.");
-						}
+						verifyIndexField(qe.FieldData(i));
 					}
-					fieldsInfo.emplace_back(qe.FieldData(i).Fields());
+					fieldsInfo.fields.emplace_back(qe.FieldData(i).Fields());
+				}
+				if (qe.HasComparisonField()) {
+					if (qe.ComparisonField().IsFieldIndexed()) {
+						verifyIndexField(qe.ComparisonField());
+					}
+					fieldsInfo.comparisonField = qe.ComparisonField().Fields();
 				}
 				FunctionsComparator comparator{std::move(fieldsInfo), qe.Condition(), qe.Values(), qe.FunctionVariant(), ns.payloadType_};
 				std::ignore = Append(op, std::move(comparator));

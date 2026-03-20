@@ -4,6 +4,7 @@
 #include "cluster/consts.h"
 #include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
+#include "quantization_helpers.h"
 #include "vendor/gason/gason.h"
 
 using namespace reindexer;
@@ -1619,3 +1620,96 @@ TEST_F(CascadeReplicationApi, ReplTokensNegativeTest) {
 	ns1.AddRows(leader, 200, 100);
 	WaitSync(leader, follower, ns1.nsName_);
 }
+
+namespace sq8_test {
+
+template <reindexer::VectorMetric Metric>
+void ReplWithQuantizationTestBody(auto& api, TestSyncType sync) {
+	constexpr static auto kNsName = "hnsw_quantization_repl_test_ns";
+
+	const std::string kBaseDbPath(fs::JoinPath(api.kBaseTestsetDbPath, "QuantizationWithReplication"));
+	const std::string kDbPathMaster(kBaseDbPath + "/test_");
+	const int port = 11111;
+
+	std::vector<int> clusterConfig = {-1, 0};
+	auto cluster = api.CreateConfiguration(clusterConfig, port, 10, kDbPathMaster);
+
+	auto& leader = cluster.Get(0)->api;
+
+	InitNsAndIndexes<Metric>(
+		leader, kNsName, kHNSWInitSize / 2,
+		hnswlib::QuantizationConfig{.quantile = kQuantile, .sampleSize = kHNSWInitSize / 2, .quantizationThreshold = kHNSWInitSize});
+
+	api.WaitSync(cluster.Get(0), cluster.Get(1), kNsName);
+
+	ASSERT_FALSE(GetQuantizationStatus(leader, kNsName));
+	ASSERT_FALSE(GetQuantizationStatus(cluster.Get(1)->api, kNsName));
+
+	if (sync != TestSyncType::Online) {
+		if (sync == TestSyncType::Force) {
+			cluster.Get(0)->SetWALSize(kHNSWInitSize / 3, kNsName);
+		}
+		cluster.ShutdownServer(1);
+	}
+	for (size_t i = kHNSWInitSize / 2; i < kHNSWInitSize; ++i) {
+		auto item = newItemWithVector(leader, kNsName, i);
+		leader.Upsert(kNsName, item);
+	}
+
+	WaitQuantization(leader, kNsName);
+	TEST_COUT << fmt::format("Leader quantized\n");
+
+	if (sync != TestSyncType::Online) {
+		cluster.InitServer(1, port + 1, port + 1000 + 1, kDbPathMaster + std::to_string(1), "db", true);
+		// maybe can blink
+		ASSERT_FALSE(GetQuantizationStatus(cluster.Get(1)->api, kNsName));
+	}
+
+	api.WaitSync(cluster.Get(0), cluster.Get(1), kNsName);
+
+	WaitQuantization(cluster.Get(1)->api, kNsName);
+	TEST_COUT << fmt::format("Follower quantized\n");
+
+	for (size_t i = kHNSWInitSize; i < 2 * kHNSWInitSize; ++i) {
+		auto item = newItemWithVector(leader, kNsName, i);
+		leader.Upsert(kNsName, item);
+	}
+
+	api.WaitSync(cluster.Get(0), cluster.Get(1), kNsName);
+
+	CheckRecallRate(leader, kNsName, MakeQueryPoints(), 0.02 * kHNSWInitSize, 0.1 * kHNSWInitSize);
+	CheckRecallRate(cluster.Get(1)->api, kNsName, MakeQueryPoints(), 0.02 * kHNSWInitSize, 0.1 * kHNSWInitSize);
+}
+
+TEST_P(Sq8CascadeReplicationApi, QuantizationTest) {
+	switch (VectorMetric(std::rand() % 3)) {
+		case VectorMetric::L2:
+			TEST_COUT << "Chosen L2-metric\n";
+			return ReplWithQuantizationTestBody<VectorMetric::L2>(*this, GetParam());
+		case VectorMetric::InnerProduct:
+			TEST_COUT << "Chosen InnerProduct-metric\n";
+			return ReplWithQuantizationTestBody<VectorMetric::InnerProduct>(*this, GetParam());
+		case VectorMetric::Cosine:
+			TEST_COUT << "Chosen Cosine-metric\n";
+			return ReplWithQuantizationTestBody<VectorMetric::Cosine>(*this, GetParam());
+		default:
+			assert(false);
+			std::abort();
+	}
+}
+
+INSTANTIATE_TEST_SUITE_P(, Sq8CascadeReplicationApi, ::testing::Values(TestSyncType::Online, TestSyncType::WAL, TestSyncType::Force),
+						 [](const auto& info) {
+							 switch (info.param) {
+								 case TestSyncType::Online:
+									 return "Online";
+								 case TestSyncType::WAL:
+									 return "WAL";
+								 case TestSyncType::Force:
+									 return "Force";
+								 default:
+									 assert(false);
+									 std::abort();
+							 }
+						 });
+}  // namespace sq8_test
