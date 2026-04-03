@@ -127,7 +127,7 @@ bool QueryEntry::operator==(const QueryEntry& other) const {
 
 template <VerifyQueryEntryFlags flags>
 void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
-	if (cond == CondKnn) {
+	if (cond == CondKnn) [[unlikely]] {
 		throw Error{errLogic, "Use KNN query instead of regular query with KNN condition"};
 	}
 	if constexpr (flags & VerifyQueryEntryFlags::ignoreEmptyValues) {
@@ -136,8 +136,8 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 		}
 	}
 	const auto checkArgsCount = [&](size_t argsCountReq) {
-		if (values.size() != argsCountReq) {
-			throw Error{errLogic, "Condition {} must have exact {} argument, but {} arguments were provided", CondTypeToStr(cond),
+		if (values.size() != argsCountReq) [[unlikely]] {
+			throw Error{errParams, "Condition {} must have exact {} argument, but {} arguments were provided", CondTypeToStr(cond),
 						argsCountReq, values.size()};
 		}
 	};
@@ -148,8 +148,9 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 			break;
 		case CondAny:
 		case CondEmpty:
-			if (std::any_of(values.begin(), values.end(), [](const Variant& v) noexcept { return !v.IsNullValue(); })) {
-				throw Error{errLogic, "Condition {} must have no argument or single null argument, but {} not null arguments were provided",
+			if (std::any_of(values.begin(), values.end(), [](const Variant& v) noexcept { return !v.IsNullValue(); })) [[unlikely]] {
+				throw Error{errParams,
+							"Condition {} must have no argument or single null argument, but {} not null arguments were provided",
 							CondTypeToStr(cond), values.size()};
 			}
 			break;
@@ -158,26 +159,35 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 		case CondLt:
 		case CondLe:
 			checkArgsCount(1);
-			if (values[0].IsNullValue()) {
-				throw Error{errLogic, "Conditions CondGe|CondGt|CondLt|CondLe can't have null argument", CondTypeToStr(cond)};
+			if (values[0].IsNullValue()) [[unlikely]] {
+				throw Error{errParams, "Conditions CondGe|CondGt|CondLt|CondLe can't have null argument", CondTypeToStr(cond)};
 			}
 			break;
 		case CondLike:
 			checkArgsCount(1);
-			if (!values[0].Type().Is<KeyValueType::String>()) {
-				throw Error{errLogic, "Condition {} must have string argument, but {} argument was provided", CondTypeToStr(cond),
+			if (!values[0].Type().Is<KeyValueType::String>()) [[unlikely]] {
+				throw Error{errParams, "Condition {} must have string argument, but {} argument was provided", CondTypeToStr(cond),
 							values[0].Type().Name()};
 			}
 			break;
 		case CondRange:
+			checkArgsCount(2);
+			if (values[0].IsNullValue() || values[1].IsNullValue()) [[unlikely]] {
+				throw Error{errParams, "Condition {} can't have null argument", CondTypeToStr(cond)};
+			}
+			break;
 		case CondDWithin:
 			checkArgsCount(2);
-			if (values[0].IsNullValue() || values[1].IsNullValue()) {
-				throw Error{errLogic, "Condition {} can't have null argument", CondTypeToStr(cond)};
+			if (values[0].IsNullValue() || values[1].IsNullValue()) [[unlikely]] {
+				throw Error{errParams, "Condition {} can't have null argument", CondTypeToStr(cond)};
+			}
+			if (values[1].Type().IsNumeric() && values[1].As<double>() < 0.0) [[unlikely]] {
+				throw Error{errParams, "Condition {} can't have negative radius value", CondTypeToStr(cond)};
 			}
 			break;
 		case CondKnn:
-			throw Error{errLogic, "Use KNN query instead of regular query with KNN condition"};
+			assertrx_dbg(false);  // Handled before this switch
+			break;
 	}
 }
 template void VerifyQueryEntryValues<VerifyQueryEntryFlags::null>(CondType, const VariantArray&);

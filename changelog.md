@@ -1,13 +1,27 @@
+# Version 5.12.1 (03.04.2026)
+## Core
+- [fix] Fixed crash during error handling in `IndexUpdate` when PK is missing
+- [fix] Fixed `composite` values validation in `ALLSET` operator
+- [fix] Fixed `composite` indexes error handling in [equal_position](readme.md#search-in-array-fields-with-matching-indexes)
+- [fix] Fixed negative radius validation in `DWithin` condition for [geo index](readme.md#geometry)
+
+## Vector indexes
+- [fix] Fixed disk ANN cache for `composite` primary keys. Previously it could lead to crash on startup
+- [fix] Fixed KNN search with radius for [quantized HNSW index](float_vector.md#quantization-configuration-for-hnsw-index)
+
+## Go connector
+- [fix] Fixed type tags handling for empty slices
+
 # Version 5.12.0 (20.03.2026)
 ## Core
 - [fea] Added [now()-function](readme.md#nowunit) support into `WHERE`-clause. Now it may be used both in `UPDATE SET` and `WHERE` clauses
 - [fea] Added [flat_array_len()-function](readme.md#flat_array_lenfield_name) into `UPDATE SET`. Now it may be used both in `UPDATE SET` and `WHERE` clauses
 - [fea] Added `checksum` field into `#memstats`-namespaces as better alternative for `datahash`
 - [fea] Changed [grouping logic for equal_position](readme.md#search-in-array-fields-with-matching-indexes-using-grouping). New syntax/logic has better match with standard json-paths and also supports nested arrays in explicit way
-- [fix] Fixed possible memory leak during `composite`-indexes substitution inside WHERE-clauses (in cases, when `int`->`string` convertion was performed before `composite` substitution)
+- [fix] Fixed possible memory leak during `composite`-indexes substitution inside WHERE-clauses (in cases, when `int`->`string` conversion was performed before `composite` substitution)
 - [fix] Fixed SQL parsing for queries with combination of `or inner join(...)` and `left join(...)`
 - [fix] Fixed storage data migration, when Primary key index was changed
-- [fix] Fixed `2D points` convertion on WHERE-clause (perviously it could led to crashes on assertion)
+- [fix] Fixed `2D points` conversion on WHERE-clause (previously it could lead to crashes on assertion)
 - [fix] Added explicit check for `rtree` Primary keys. [Geo-indexes](readme.md#geometry) can not be PK anymore
 - [fix] Fixed [forced sort](readme.md#forced-sort) errors handling for [KNN-queries](float_vector.md), when query has `LIMIT` and `OFFSET`
 - [fix] Fixed `UUID`->`string` conversions for nested arrays on `UUID`-index deletion
@@ -64,7 +78,7 @@
 - [fix] Fixed storage data migration after `Primary key` index update
 
 ## Fulltext
-- [fea] Changed indexing structure for [typos handling](fulltext.md#typos-algorithm). New structure has noticeably less memory consumation
+- [fea] Changed indexing structure for [typos handling](fulltext.md#typos-algorithm). New structure has noticeably less memory consumption
 - [fea] Added support for `ORDER BY ft_composite` created over non-indexed fields
 - [fix] Fixed few incorrect interactions between `UPDATE`-queries and `text composite` index with `null`/missing fields
 
@@ -91,7 +105,7 @@
 - [fix] Fixed multiple issues with `collate numeric` [index option](readme.md#index-types-and-their-capabilities): `null`-values handling and space characters handling
 - [fix] Fixed original strings content preservation for `collate ascii` and `collate utf-8` (previously those strings could be normalized)
 - [fix] Disabled invalid config with multiple `jsonpaths` for [geo indexes](readme.md#geometry)
-- [fix] Fixed `update drop` for heterogenious arrays with `sparse`-indexes
+- [fix] Fixed `update drop` for heterogeneous arrays with `sparse`-indexes
 - [fix] Fixed array fields rollback for unsuccessful [update-queries](readme.md#update-queries) in some corner cases
 
 ## Fulltext
@@ -248,7 +262,7 @@
 - [fea] Added proxying for UPDATE and DELETE queries with subqueries and inner joins
 
 ## Reindexer tool
-- [fea] Added [storage convertion tool](cpp_src/readme.md#converting-storage-type-for-existing-database)
+- [fea] Added [storage conversion tool](cpp_src/readme.md#converting-storage-type-for-existing-database)
 
 ## Deploy
 - [upd] Added deployment for `debian:13` (trixie)

@@ -1,6 +1,10 @@
 #include "comparator_not_indexed.h"
 #include "helpers.h"
 
+namespace reindexer {
+
+namespace comparators {
+
 namespace {
 
 std::string anyComparatorCondStr() {
@@ -13,19 +17,19 @@ std::string emptyComparatorCondStr() {
 	return "IS NULL"s;
 }
 
+void checkNonIndexedValueType(CondType condType, const Variant& v) {
+	auto t = v.Type();
+	if (!(t.template Is<KeyValueType::String>() || t.template Is<KeyValueType::Uuid>() || t.IsNumeric())) [[unlikely]] {
+		throw Error{errQueryExec, "Value type in '{}' for non indexed field must be string, numeric or uuid. Value type is '{}'",
+					CondTypeToStr(condType), t.Name()};
+	}
+}
+
 }  // namespace
-
-namespace reindexer {
-
-namespace comparators {
 
 template <CondType Cond>
 ComparatorNotIndexedImplBase<Cond>::ComparatorNotIndexedImplBase(const VariantArray& values) : value_(GetValue<Variant>(Cond, values, 0)) {
-	auto t = value_.Type();
-	if (!(t.template Is<KeyValueType::String>() || t.template Is<KeyValueType::Uuid>() || t.IsNumeric())) {
-		throw Error{errQueryExec, "Value type in condition for non indexed field must be string, numeric or uuid. Value type is '{}'",
-					t.Name()};
-	}
+	checkNonIndexedValueType(Cond, value_);
 }
 
 ComparatorNotIndexedImplBase<CondRange>::ComparatorNotIndexedImplBase(const VariantArray& values)
@@ -34,13 +38,8 @@ ComparatorNotIndexedImplBase<CondRange>::ComparatorNotIndexedImplBase(const Vari
 ComparatorNotIndexedImplBase<CondSet>::ComparatorNotIndexedImplBase(const VariantArray& values) : values_{values.size()} {
 	for (const Variant& v : values) {
 		assertrx_dbg(!v.IsNullValue());
-		auto t = v.Type();
-		if (t.Is<KeyValueType::String>() || t.Is<KeyValueType::Uuid>() || t.IsNumeric()) [[likely]] {
-			std::ignore = values_.insert(v);
-		} else {
-			throw Error{errQueryExec, "Value type in CondSet for non indexed field must be string, numeric or uuid. Value type is '{}'",
-						t.Name()};
-		}
+		checkNonIndexedValueType(CondSet, v);
+		std::ignore = values_.insert(v);
 	}
 }
 
@@ -61,6 +60,7 @@ reindexer::comparators::ComparatorNotIndexedImpl<CondAllSet, false>::ComparatorN
 	int i = 0;
 	for (const Variant& v : values) {
 		assertrx_dbg(!v.IsNullValue());
+		checkNonIndexedValueType(CondAllSet, v);
 		std::ignore = values_.emplace(v, i);
 		++i;
 	}

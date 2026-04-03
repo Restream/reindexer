@@ -4,7 +4,7 @@
 Reindexer's goal is to provide fast search with complex queries.
 
 Reindexer is compact, fast and it does not have heavy dependencies.
-reindexer is up to 5x times faster, than mongodb, and 10x times than elastic search. See [benchmarks section](https://github.com/Restream/reindexer-benchmarks) for details.
+Reindexer is up to 5x faster than MongoDB and 10x faster than Elasticsearch. See [benchmarks section](https://github.com/Restream/reindexer-benchmarks) for details.
 
 # Installation
 
@@ -12,7 +12,7 @@ reindexer is up to 5x times faster, than mongodb, and 10x times than elastic sea
 
 ### Container startup
 
-The simplest way to get reindexer, is pulling & run docker image from [dockerhub](https://hub.docker.com/r/reindexer/reindexer/)
+The simplest way to get Reindexer is to pull and run the Docker image from [Docker Hub](https://hub.docker.com/r/reindexer/reindexer/)
 
 ```bash
 docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
@@ -35,7 +35,7 @@ While using docker, you may pass reindexer server config options via environment
 - `RX_DISABLE_NS_LEAK` - disables intended namespaces memory leak on database destruction (will slow down server's termination). Usually, there are no reasons to change this value.
 - `RX_MAX_HTTP_REQ` - max HTTP-request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
 - `RX_HTTP_READ_TIMEOUT` - execution timeout for HTTP read operations (in seconds). `0` means no timeout. Default value is `0`.
-- `RX_HTTP_WRITE_TIMEOUT` - execution timeout for HTTP write operations (in seconds). Write timeout is usefull for RAFT-cluster to avoid requests hanging, when Reindexer does not have consensus. `0` means no timeout. Default value is `60`.
+- `RX_HTTP_WRITE_TIMEOUT` - execution timeout for HTTP write operations (in seconds). Write timeout is useful for RAFT clusters to avoid requests hanging when Reindexer does not have consensus. `0` means no timeout. Default value is `60`.
 - `RX_SSL_CERT` - path to ssl-certificate file. If it is not set Reindexer will be launched without TLS support.
 - `RX_SSL_KEY` - path to file with ssl private key. If it is not set Reindexer will be launched without TLS support.
 - `RX_IVF_OMP_THREADS` - number of OpenMP threads, which will be used during `IVF`-index building. Default value is 8.
@@ -119,7 +119,7 @@ Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](htt
 
 ### Dependencies
 
-Reindexer's core is written in C++20 and uses LevelDB as the storage backend, so the Cmake, C++20 toolchain and LevelDB must be installed before installing Reindexer. Also, FAISS-based vector indexes (`IVF` in particular) depend on OpenMP and BLAS/LAPACK libraries, but those dependecies are optional - you may build `HNWS-only` version by passing `-DBUILD_ANN_INDEXES=builtin` into `CMake`.
+Reindexer's core is written in C++20 and uses LevelDB as the storage backend, so CMake, a C++20 toolchain, and LevelDB must be installed before installing Reindexer. Also, FAISS-based vector indexes (`IVF` in particular) depend on OpenMP and BLAS/LAPACK libraries, but those dependencies are optional — you may build an `HNSW-only` version by passing `-DBUILD_ANN_INDEXES=builtin` into `CMake`.
 
 Dependencies can be installed automatically by this script:
 
@@ -129,7 +129,7 @@ curl -L https://github.com/Restream/reindexer/raw/master/dependencies.sh | bash 
 
 ### Build & install
 
-The typical steps for building and configuring the reindexer looks like this
+The typical steps for building and configuring Reindexer look like this
 
 ```bash
 git clone https://github.com/Restream/reindexer
@@ -155,7 +155,7 @@ sudo service reindexer start
 
 ## HTTP REST API
 
-The simplest way to use reindexer with any program language - is using REST API. The
+The simplest way to use Reindexer with any programming language is to use the REST API. The
 [complete REST API documentation is here](server/contrib/server.md).
 [Or explore interactive version of Reindexer's swagger documentation](https://editor.swagger.io/?url=https://raw.githubusercontent.com/Restream/reindexer/master/cpp_src/server/contrib/server.yml)
 
@@ -189,7 +189,11 @@ The concept of streaming is described [here](https://grpc.io/docs/what-is-grpc/c
 
 ### Prometheus (server-side)
 
-Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some metrics also require `perfstats` to be enabled in `profiling`-config
+Reindexer has a bunch of Prometheus metrics available via HTTP URL `/metrics` (i.e. `http://localhost:9088/metrics`). These metrics may be enabled by passing `--prometheus` as a reindexer_server command-line argument or by setting the `metrics:prometheus` flag in the server YAML config file.
+
+Some of the metrics also require:
+- `perfstats` and `memstats` flags to be set in the `profiling` config in the `#config` namespace. This has to be done at runtime for each specific database.
+- the `metrics:clientsstats` flag to be set in the server YAML config file (or the `--clientsstats` flag passed via CLI). This has to be done on server startup and affects all the databases on this server.
 
 - `reindexer_qps_total` - total queries per second for each database, namespace and query type
 - `reindexer_avg_latency` - average queries latency for each database, namespace and query type
@@ -226,7 +230,7 @@ http.Handle("/metrics", promhttp.Handler())
 All the metrics will be exported into `DefaultRegistry`. Check [this](https://github.com/prometheus/client_golang/blob/main/prometheus/promauto/auto.go#L57-L85) for basic prometheus usage example.
 
 Both server-side and client-side metrics contain 'latency', however, client-side latency will also count all the time consumed by the binding's queue, network communication (for cproto/ucproto) and deserialization.
-So client-side latency may be more relevant for user's applications the server-side latency.
+So client-side latency may be more relevant for user applications than server-side latency.
 
 ## Maintenance
 
@@ -243,7 +247,7 @@ or application with `builtinserver` mode, and open http://server-ip:9088/face in
 ### Command line tool
 
 To work with database from command line you can use reindexer [command line tool](cmd/reindexer_tool/readme.md)
-Command line tool have the following functions
+The command line tool has the following functions
 
 - Backup whole database into text file or console.
 - Make queries to database
@@ -259,7 +263,7 @@ Database creation via reindexer_tool:
 reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\databases create mydb'
 ```
 
-To dump and restore database in normal way there reindexer command line tool is used
+To dump and restore a database in the normal way, the Reindexer command line tool is used
 
 Backup whole database into single backup file:
 
@@ -283,7 +287,7 @@ Reindexer supports master slave replication. To create slave DB the following co
 reindexer_tool --dsn cproto://127.0.0.1:6534/slavedb --command '\upsert #config {"type":"replication","replication":{"role":"slave","master_dsn":"cproto://127.0.0.1:6534/masterdb","cluster_id":2}}'
 ```
 
-More details about replication is [here](../replication.md)
+More details about replication are [here](../replication.md)
 
 ### Requests handling modes
 
@@ -305,7 +309,7 @@ In dedicated mode server creates one thread per connection. This approach may be
 
 ### TLS support
 
-Reindexer hash TLS support for HTTP/1(HTTPS) and CPROTO(RPCS). In order to run Reindexer with TLS support, it is necessary that `openssl` and `libssl` libraries are installed in the system. 
+Reindexer has TLS support for HTTP/1 (HTTPS) and CPROTO (RPCS). To run Reindexer with TLS support, the `openssl` and `libssl` libraries must be installed on the system. 
 Reindexer will detect those libraries on startup if it was built with openssl support option (by default). Upon successful loading of `libssl` library symbols, a corresponding entry or error information should appear in the log.
 
 Paths to files with ssl-certificate (`ssl_cert`) and ssl private key (`ssl_key`) in `PEM`-format must be specified in `reindexer.conf` in `net`-section:
@@ -322,7 +326,7 @@ Any of the servers (HTTP, HTTPS, RPC, RPCS) may be disabled by passing `none` in
 ### Authentication
 
 Reindexer server supports login/password authorization for http(s)/rpc(s) client with different access levels for each user/database. To enable this feature `security` flag should be set in server.yml.
-If security option is active Reindexer will try to load users list from `users.yml` or `users.json`(deprecate) found in database path. If users-file was not found the default one
+If the security option is active, Reindexer will try to load the users list from `users.yml` or `users.json` (deprecated) found in the database path. If users-file was not found the default one
 will be created automatically (default login/password are `reindexer`/`reindexer`)
 
 The `users.yml` file must have the following structure:
@@ -418,7 +422,7 @@ storage:
   engine: leveldb
 ```
 
-To configure storage type for Go bindings either `bindings.ConnectOptions` (for builtin) or `confg.ServerConfig` (for builtin-server) structs may be used.
+To configure storage type for Go bindings, either `bindings.ConnectOptions` (for builtin) or `config.ServerConfig` (for builtin-server) structs may be used.
 
 ### RocksDB
 
@@ -442,14 +446,14 @@ Reindexer supports the following data formats to communicate with other applicat
 
 ## Log rotation
 
-There are no builtin mechanism for automatic log rotation, however `reindexer server` is able to reopen logfiles on `SIGHUP`.
-So, your external log manager (it may be even a simple `cron` script) have to move existing log files somewhere and then send `SIGHUP`-signal to the `reindexer server` process to recreate log files.
+There is no built-in mechanism for automatic log rotation; however, `reindexer server` is able to reopen log files on `SIGHUP`.
+So your external log manager (it may be even a simple `cron` script) has to move existing log files somewhere and then send a `SIGHUP` signal to the `reindexer server` process to recreate log files.
 
 ## Protobuf
 
-Protocol buffers are language-neutral, platform-neutral, extensible mechanism for serializing structured data. You define how you want your data to be structured once, then you can use special generated source code to easily write and read your structured data to and from a variety of data streams and using a variety of languages (https://developers.google.com/protocol-buffers).
+Protocol buffers are a language-neutral, platform-neutral, extensible mechanism for serializing structured data. You define how you want your data to be structured once, then you can use special generated source code to easily write and read your structured data to and from a variety of data streams and using a variety of languages (https://developers.google.com/protocol-buffers).
 
-Protocol buffers is one of the output data formats for Reindexer's HTTP REST API.
+Protocol buffers are one of the output data formats for Reindexer's HTTP REST API.
 
 To start working with Protobuf in Reindexer you need to perform the following steps:
 

@@ -9,12 +9,13 @@ namespace reindexer::knn_bench {
 
 enum class [[nodiscard]] IndexType { Hnsw, Ivf };
 enum class [[nodiscard]] KnnParams { K, K_Radius, Radius };
+enum class [[nodiscard]] WithQuantization { No, Yes };
 
 template <IndexType, VectorMetric>
 class [[nodiscard]] KnnBench : private BaseFixture, private bench::FullTextBase {
 public:
 	~KnnBench() override = default;
-	KnnBench(Reindexer* db, std::string_view name);
+	KnnBench(Reindexer* db, std::string_view name, WithQuantization = WithQuantization::No);
 
 	Error Initialize() override {
 		Error err = BaseFixture::Initialize();
@@ -58,6 +59,7 @@ private:
 	// NOLINTNEXTLINE(bugprone-random-generator-seed) Using the same seed here for more stable results
 	std::mt19937 randomEngine_{1};
 	std::uniform_int_distribution<int> randomGenerator_{};
+	const WithQuantization withQuantization_;
 };
 
 }  // namespace reindexer::knn_bench

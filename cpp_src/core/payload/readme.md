@@ -1,6 +1,6 @@
 # Reindexer data storage format
  
-Internally reindexer is processing documents in special objects, called `Payload`. Documents are stored splitted into 3 parts:
+Internally Reindexer processes documents in special objects called `Payload`. Documents are stored split into 3 parts:
 
 - untyped tuple of non-indexed fields;
 - fixed-type struct of indexed fields;
@@ -8,22 +8,22 @@ Internally reindexer is processing documents in special objects, called `Payload
 
 # Motivation
 
-Main goal of documents splitting technique - get the best features from SQL, no-SQL and column databases.
-The untyped tuple is gives applications capability to store any JSON objects as reindexer documents without data schema migration.
-The fixed-type struct of indexed fields allows application and reindexer maintains consistent indexes and primary keys. Furthermore it helps to achieve best performance for full-scan and join queries - their
-performance are strongly depends on fields access time. 
+The main goal of the document splitting technique is to get the best features from SQL, no-SQL, and column databases.
+The untyped tuple gives applications the capability to store any JSON objects as Reindexer documents without data schema migration.
+The fixed-type struct of indexed fields allows the application and Reindexer to maintain consistent indexes and primary keys. Furthermore it helps achieve the best performance for full-scan and join queries — their
+performance strongly depends on field access time.
 
-Also there are optional column's storage is present. They are bound to full-scan indexes, and can speed up full-scan queries.
+Optional column storage may also be present. It is bound to full-scan indexes and can speed up full-scan queries.
 
 # Payload 
 
 Payload is fixed-type struct of indexed fields. Internal Payload API is represented by 3 top level classes: 
 
 - `PayloadValue` is shared copy on write fields structure. Size of structure is equal to sum of fields size + 8 bytes header;
-- `PayloafType` is payload structure definition. Contains vector of fields (names, types, sizes, offsets);
+- `PayloadType` is the payload structure definition. It contains a vector of fields (names, types, sizes, offsets);
 - `PayloadIface` is template of payload control interface. Holds pointer to PayloadValue and PayloadType.  There are 2 instantiation: `Payload` - can modify PayloadValue; class `ConstPayload` - read only interface, can't modify PayloadValue.
 
-Payload API is close to usual reflection API and contains methods `Set` and `Get` to manipulating fields
+The Payload API is close to a usual reflection API and contains methods `Set` and `Get` for manipulating fields
 See [payloadiface.h](payloadiface.h) for details.
 
 

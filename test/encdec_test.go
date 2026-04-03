@@ -171,6 +171,20 @@ type testItemCJson struct {
 	Name string `json:"name" reindex:"name"`
 }
 
+type arrInternal struct {
+	Value int `json:"value"`
+}
+
+type testItemSliceTagDecoding struct {
+	ID  int           `json:"id" reindex:"id,,pk"`
+	Arr []arrInternal `json:"arr"`
+}
+
+type testItemSlicePtrTagDecoding struct {
+	ID  int            `json:"id" reindex:"id,,pk"`
+	Arr *[]arrInternal `json:"arr"`
+}
+
 const (
 	testItemsEncdecNs                = "test_items_encdec"
 	testArrayEncdecNs                = "test_array_encdec"
@@ -178,6 +192,8 @@ const (
 	testSlicesConcatenationNs        = "test_slices_concatenation"
 	testUnsupportedConversionCJsonNs = "test_unsupported_conversion_cjson"
 	testCJsonEmojiNs                 = "test_cjson_emoji"
+	testSliceTagDecodingNs           = "test_slice_tag_decoding"
+	testSlicePtrTagDecodingNs        = "test_slice_ptr_tag_decoding"
 )
 
 func init() {
@@ -187,6 +203,8 @@ func init() {
 	tnamespaces[testSlicesConcatenationNs] = SlicesConcatenationItem{}
 	tnamespaces[testUnsupportedConversionCJsonNs] = testItemForCJson{}
 	tnamespaces[testCJsonEmojiNs] = testItemCJson{}
+	tnamespaces[testSliceTagDecodingNs] = testItemSliceTagDecoding{}
+	tnamespaces[testSlicePtrTagDecodingNs] = testItemSlicePtrTagDecoding{}
 }
 
 func FillHeteregeneousArrayItem() {
@@ -584,5 +602,104 @@ func TestEmojis(t *testing.T) {
 			resItemsVal[i] = *resItem.(*testItemCJson)
 		}
 		require.Equal(t, items, resItemsVal)
+	})
+}
+
+func TestSliceTagDecoding(t *testing.T) {
+	t.Parallel()
+	const ns = testSliceTagDecodingNs
+	const nsPtr = testSlicePtrTagDecodingNs
+	defaultItem := &testItemSliceTagDecoding{ID: 0, Arr: []arrInternal{{10}}}
+	defaultItemPtr := &testItemSlicePtrTagDecoding{ID: 0, Arr: &[]arrInternal{{10}}}
+
+	checkSingleItemInNs := func(t *testing.T) {
+		items, err := DB.Query(ns).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+
+		item, ok := items[0].(*testItemSliceTagDecoding)
+		require.True(t, ok)
+		require.NotNil(t, item.Arr)
+		require.Len(t, item.Arr, 0)
+	}
+
+	checkSingleItemWithPtrInNs := func(t *testing.T) {
+		items, err := DB.Query(nsPtr).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+
+		item, ok := items[0].(*testItemSlicePtrTagDecoding)
+		require.True(t, ok)
+		require.NotNil(t, item.Arr)
+		require.Len(t, *item.Arr, 0)
+	}
+
+	t.Run("update with empty json", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		err = DB.Upsert(ns, []byte(`{"id":0, "arr":[]}`))
+		require.NoError(t, err)
+
+		checkSingleItemInNs(t)
+	})
+
+	t.Run("update with empty int slice", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		updated, err := DB.Query(ns).Set("arr", []int{}).Update().FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(updated), 1)
+
+		checkSingleItemInNs(t)
+	})
+
+	t.Run("update with empty interface slice", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		updated, err := DB.Query(ns).Set("arr", []interface{}{}).Update().FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(updated), 1)
+
+		checkSingleItemInNs(t)
+	})
+
+	t.Run("update with empty structs slice", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		updated, err := DB.Query(ns).Set("arr", []arrInternal{}).Update().FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(updated), 1)
+
+		checkSingleItemInNs(t)
+	})
+
+	t.Run("update with non-empty int slice (unconvertible)", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		it := DB.Query(ns).Set("arr", []int{1, 2, 3}).Update()
+		require.NoError(t, it.Error())
+		require.Equal(t, it.Count(), 1)
+		defer it.Close()
+
+		// Unable to put int slice into structs slice
+		assert.False(t, it.Next())
+		assert.Error(t, it.Error())
+		_, err = DB.Query(ns).MustExec(t).FetchAll()
+		assert.Error(t, err)
+	})
+
+	t.Run("update pointer with empty json", func(t *testing.T) {
+		err := DB.Upsert(nsPtr, defaultItemPtr)
+		require.NoError(t, err)
+
+		err = DB.Upsert(nsPtr, []byte(`{"id":0, "arr":[]}`))
+		require.NoError(t, err)
+
+		checkSingleItemWithPtrInNs(t)
 	})
 }

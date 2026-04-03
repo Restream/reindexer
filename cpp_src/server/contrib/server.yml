@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.12.0
+  version: 5.12.1
 servers:
   - url: /api/v1
 tags:
@@ -31,7 +31,7 @@ paths:
         - databases
       summary: List available databases
       description: |
-        This operation will output list of all available databases
+        This operation will return list of all available databases.
       operationId: describeDatabases
       parameters:
         - name: sort_order
@@ -84,7 +84,7 @@ paths:
         - databases
       summary: Create new database
       description: |
-        This operation will create new database. If database is already exists, then error will be returned.
+        This operation will create new database. If database already exists, then error will be returned.
       operationId: createDatabase
       requestBody:
         description: Database definition
@@ -137,7 +137,7 @@ paths:
         - databases
       summary: Drop database
       description:
-        'This operation will remove complete database from memory and disk. All
+        'This operation will remove entire database from memory and disk. All
         data, including namespaces, their documents and indexes will be erased.
         Can not be undone. USE WITH CAUTION.'
       operationId: dropDatabase
@@ -192,7 +192,7 @@ paths:
       summary: List available namespaces
       description: |
         This operation will list all available namespaces in specified database.
-        If database is not exists, then error will be returned.
+        If database does not exist, then error will be returned.
       operationId: describeNamespaces
       parameters:
         - name: database
@@ -252,7 +252,7 @@ paths:
       summary: Create namespace
       description: |
         This operation will create new namespace in specified database.
-        If namespace is already exists, then operation do not nothing.
+        If namespace already exists, then operation does nothing.
       operationId: openNamespace
       parameters:
         - name: database
@@ -369,7 +369,7 @@ paths:
         - namespaces
       summary: Drop namespace
       description: |
-        This operation will delete completely namespace from memory and disk.
+        This operation will delete namespace completely from memory and disk.
         All documents, indexes and metadata from namespace will be removed.
         Can not be undone. USE WITH CAUTION.
       operationId: dropNamespace
@@ -1433,7 +1433,7 @@ paths:
         - indexes
       summary: Add new index to namespace
       description: |
-        This operation will create new index. If index is already exists with the different parameters, then error will be returned.
+        This operation will create new index. If index already exists with different parameters, then error will be returned.
         Operation synchronous, so it can take long time, if namespace contains bunch of documents.
       operationId: postIndex
       parameters:
@@ -4309,7 +4309,7 @@ components:
         values:
           type: array
           description:
-            'Optional: Documents with this values of field will be returned
+            'Optional: Documents with these values of field will be returned
             first'
           items:
             type: object
@@ -6742,7 +6742,7 @@ components:
                 type: array
                 description:
                   "List of namespaces to replicate on this specific node. Empty
-                  means all of the namespaces. If field doesn't exists, then
+                  means all of the namespaces. If field doesn't exist, then
                   general list will be used"
                 items:
                   type: string
@@ -6805,7 +6805,7 @@ components:
             - data_write
             - data_read
             - none
-            - unauthoried
+            - unauthorized
   responses:
     OK:
       description: Successful operation

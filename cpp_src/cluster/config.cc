@@ -31,7 +31,6 @@ Error NodeData::FromJSON(std::span<char> json) {
 	} catch (const Error& err) {
 		return err;
 	}
-	return {};
 }
 
 Error NodeData::FromJSON(const gason::JsonNode& root) {
@@ -67,7 +66,6 @@ Error RaftInfo::FromJSON(std::span<char> json) {
 	} catch (const Error& err) {
 		return err;
 	}
-	return {};
 }
 
 Error RaftInfo::FromJSON(const gason::JsonNode& root) {
@@ -1003,7 +1001,7 @@ Error ShardingConfig::FromJSON(const gason::JsonNode& root) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "NodeData: {}", ex.what());
+		return Error(errParseJson, "ShardingConfig: {}", ex.what());
 	}
 	return Validate();
 }

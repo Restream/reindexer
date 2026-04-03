@@ -185,10 +185,10 @@ bool GetQuantizationStatus(auto& api, std::string_view nsName, std::string_view 
 	EXPECT_EQ(qr.Count(), 1);
 	auto item = YAML::Load(std::string{(*qr.begin()).GetItem().GetJSON()});
 
-	const int indexCount = std::distance(item["indexes"].begin(), item["indexes"].end());
-	for (int i = 0; i < indexCount; ++i) {
-		if (item["indexes"][i]["name"].template as<std::string>() == indexName) {
-			return item["indexes"][i]["is_quantized"].template as<bool>();
+	const auto indexes = item["indexes"];
+	for (auto& index : indexes) {
+		if (index["name"].as<std::string>() == indexName) {
+			return index["is_quantized"].as<bool>();
 		}
 	}
 

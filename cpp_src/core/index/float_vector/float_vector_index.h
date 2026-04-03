@@ -37,26 +37,7 @@ protected:
 		LoaderBase(FloatVectorIndexRawDataInserter&& getVectorData, bool isCompositePK) noexcept
 			: getVectorData_{std::move(getVectorData)}, isCompositePK_{isCompositePK} {}
 
-		IdType readPKEncodedData(void* destBuf, Serializer& ser, std::string_view name, std::string_view idxType) {
-			VariantArray keys;
-			if (!isCompositePK_) {
-				keys.emplace_back(ser.GetVariant());
-			} else {
-				const auto len = ser.GetVarUInt();
-				if (!len) [[unlikely]] {
-					throw Error(errLogic, "{}::LoadIndexCache:{}: serialized PK array is empty", idxType, name);
-				}
-				keys.reserve(len);
-				for (size_t i = 0; i < len; ++i) {
-					keys.emplace_back(ser.GetVariant());
-				}
-			}
-			const IdType itemID = getVectorData_(keys, destBuf);
-			if (!itemID.IsValid()) [[unlikely]] {
-				throw Error(errLogic, "{}::LoadIndexCache:{}: unable to find indexed item with requested PK", idxType, name);
-			}
-			return itemID;
-		}
+		IdType readPKEncodedData(void* destBuf, Serializer& ser, std::string_view name, std::string_view idxType);
 
 	private:
 		FloatVectorIndexRawDataInserter getVectorData_;

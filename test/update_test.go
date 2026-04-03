@@ -226,7 +226,7 @@ func fillTestItemsForInsertUpdate(t *testing.T, ns string) {
 }
 
 func selectAndFetchAll(t *testing.T, ns string) {
-	_, err := DBD.Query(ns).Exec().FetchAll()
+	_, err := DB.Query(ns).Exec(t).FetchAll()
 	require.NoError(t, err)
 }
 

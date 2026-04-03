@@ -437,6 +437,12 @@ void SelectIteratorContainer::bindFieldEqualPositions(const NamespaceImpl& ns, c
 			default:
 				throw Error(errLogic, "Unknown condition value for equal position: {}", int(cond));
 		}
+		if (qe.IsFieldIndexed()) {
+			const size_t idxNo = qe.IndexNo();
+			if (IsComposite(ns.indexes_[idxNo]->Type())) [[unlikely]] {
+				throw Error(errParams, "Equal positions doesn't support 'composite' values");
+			}
+		}
 		assertrx_throw(qe.Fields().size() == 1);
 
 		if constexpr (std::is_same_v<EqCompT, EqualPositionComparator>) {

@@ -475,15 +475,19 @@ public:
 		if (tuple_) {
 			std::swap(ns_.indexes_[0], tuple_);
 		}
-		WrSerializer pkBuf, itemBuf;
-		const auto* pk = ns_.pkFields();
-		assertrx(pk);
+
 		for (auto& [rowId, pv] : items_) {
 			ns_.items_[rowId] = std::move(pv);
-			if (storageWasRewritten_) {
-				// We have to rewrite storage data in case, when have arrays with double values in storage,
-				// otherwise datahash won't match
-				logFmt(LogInfo, "[{}] Rewriting storage on rollback", ns_.name_);
+		}
+		if (storageWasRewritten_) {
+			WrSerializer pkBuf, itemBuf;
+			const auto* pk = ns_.pkFields();
+			assertrx(pk);
+			// We have to rewrite storage data in case, when have arrays with double values in storage,
+			// otherwise datahash won't match
+			logFmt(LogInfo, "[{}] Rewriting storage on rollback", ns_.name_);
+			for (auto& [rowId, _] : items_) {
+				(void)_;
 				ItemImpl item(ns_.payloadType_, ns_.items_[rowId], ns_.tagsMatcher_);
 				item.Unsafe(true);
 				std::ignore = ns_.tryWriteItemIntoStorage(*pk, item, IdType::FromNumber(rowId), pkBuf, itemBuf);
@@ -4330,14 +4334,16 @@ void NamespaceImpl::rebuildIndexesToCompositeMapping() noexcept {
 }
 
 void NamespaceImpl::throwIndexUpsertErrorWithPKInfo(const ConstPayload& pl, const std::exception& err) {
+	const auto errPtr = dynamic_cast<const Error*>(&err);
+	const auto errCode = errPtr ? errPtr->code() : errParams;
 	auto [pkIndex, pkField] = getPkIdx();
-	assertrx_throw(pkIndex);
-	VariantArray keys = getPkKeys(pl, pkIndex, pkField);
-	auto errPtr = dynamic_cast<const Error*>(&err);
-	const FieldsSet* pk = pkFields();
-	throw Error{errPtr ? errPtr->code() : errParams,
-				fmt::format("Error during processing item with primary key `{}`={}: {}", pkIndex->Name(),
-							keys.Dump(payloadType_, pk ? *pk : FieldsSet{}), err.what())};
+	if (pkIndex) {
+		VariantArray keys = getPkKeys(pl, pkIndex, pkField);
+		throw Error{errCode, fmt::format("Error during processing item with primary key `{}`={}: {}", pkIndex->Name(),
+										 keys.Dump(payloadType_, pkIndex->Fields()), err.what())};
+	} else {
+		throw Error{errCode, fmt::format("Error during processing item with unknown primary key (PK index is missing): {}", err.what())};
+	}
 }
 
 void NamespaceImpl::backgroundHNSWIndexesQuantization(RdxActivityContext* ctx) {

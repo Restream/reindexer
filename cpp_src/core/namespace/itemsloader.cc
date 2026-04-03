@@ -266,7 +266,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 		assertrx(vectorsDataIt != vectorsData_.end());
 		auto& vectorsData = vectorsDataIt->second;
 		auto res = idxPtr->LoadIndexCache(cachedIndex->data, IsComposite(pkIdx->Type()),
-										  FloatVectorIndexRawDataInserter{vectorsData, pkIdx, vecSizeBytes}, LoadWithQuantizer_True,
+										  FloatVectorIndexRawDataInserter{vectorsData, *pkIdx, vecSizeBytes}, LoadWithQuantizer_True,
 										  cachedIndex->version);
 		if (!res.ok()) {
 			assertrx_dbg(false);  // Do not expect this error in test scenarios

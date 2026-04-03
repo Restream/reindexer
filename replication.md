@@ -36,15 +36,15 @@ Reindexer supports async logical leader-follower replication and sync RAFT-clust
 
 ## Write ahead log (WAL)
 
-Write ahead log is combination of rows updates and statements execution. WAL is stored as part of namespace storage. Each WAL record has unique 64-bit log sequence number (LSN), which also contains server id. WAL overhead is 18 bytes of RAM per each row update record.
+The write-ahead log is a combination of row updates and statement execution. WAL is stored as part of namespace storage. Each WAL record has a unique 64-bit log sequence number (LSN), which also contains the server id. WAL overhead is 18 bytes of RAM per row update record.
 WAL is ring structure, therefore after N updates (4M by default) are recorded, the oldest WAL records will be automatically removed.
 WAL in storage contains only records with statements (bulk updates, deletes and index structure changes). Rows updates are not stored as dedicated WAL records, but each document contains its own LSN - this is enough to restore complete WAL in RAM on namespace loading from disk.
 
 Side effect of this mechanic is lack of exact sequence of indexes updates/data updates, and therefore in case of incompatible data migration (e.g. indexed field type changed) follower will fail to apply offline WAL, and will fallback to forced sync.
 
-During `force sync` reindexer will try to transfer all the namespace's data into temporary in-memory table (it's name starts with `@tmp_`-prefix) and then perform atomic swap at the end of synchronization. This process requires an additional RAM for the full namespace copy.
+During `force sync`, Reindexer will try to transfer all the namespace's data into a temporary in-memory table (its name starts with the `@tmp_` prefix) and then perform an atomic swap at the end of synchronization. This process requires additional RAM for a full copy of the namespace.
 
-When namespace is large (or network connection is not fast enough) `force sync` takes a long time. During the sync `leader`-node may still receive an updates, which will be placed into ring WAL buffer and internal online updates queue. So, it is possible to face situation, when right after `force sync` target namespace will have an outdated LSN (in cases, when both WAL buffer and online updates queue got overflow during synchronization process) and this will lead to another attempt of `force sync`. To avoid such situations, you may try to set larger WAL size (check the section below) and larger online updates buffer size (it may be set via `--updatessize` CLI flag or `net.maxupdatessize` config option on `reindexer_server` startup).
+When a namespace is large (or the network connection is not fast enough), `force sync` takes a long time. During the sync, the `leader` node may still receive updates, which will be placed into the ring WAL buffer and internal online updates queue. So, it is possible to face situation, when right after `force sync` target namespace will have an outdated LSN (in cases, when both WAL buffer and online updates queue got overflow during synchronization process) and this will lead to another attempt of `force sync`. To avoid such situations, you may try to set larger WAL size (check the section below) and larger online updates buffer size (it may be set via `--updatessize` CLI flag or `net.maxupdatessize` config option on `reindexer_server` startup).
 
 ### Maximum WAL size configuration
 
@@ -66,8 +66,8 @@ Reindexer> SELECT * FROM epg LIMIT 2 where #lsn > 1000000
 
 ## Data integrity check
 
-Replication is complex mechanism and there are present potential possibilities to broke data consistence between master and slave. 
-Reindexer is calculates lightweight incremental hash of all namespace data (DataHash). DataHash is used to quick check, that data of follower is really up-to-date with leader.
+Replication is a complex mechanism, and there is a potential risk of breaking data consistency between master and slave.
+Reindexer calculates a lightweight incremental hash of all namespace data (Checksum/DataHash). Checksum is used to quickly check that follower data is really up to date with the leader.
 
 ## Async replication
 
@@ -190,7 +190,7 @@ Then you are able to configure specific async replication via `async_replication
 }
 ```
 
-- `role`  Replication role. May be on of
+- `role`  Replication role. May be one of
    - `none` - replication is disabled
    - `follower` - replication as follower
    - `leader` - replication as leader
@@ -208,7 +208,7 @@ Then you are able to configure specific async replication via `async_replication
 - `force_sync_on_wrong_data_hash` - Force resync if dataHash mismatch
 - `log_level` - Replication log level on replicator's startup. Possible values: none, error, warning, info, trace
 - `max_wal_depth_on_force_sync` - Maximum number of WAL records, which will be copied after force-sync
-- `online_updates_delay_msec` - Delay between write operation and replication. Larger values here will leader to higher replication latency and buffering, but also will provide more effective network batching and CPU utilization
+- `online_updates_delay_msec` - Delay between write operation and replication. Larger values here will lead to higher replication latency and buffering, but will also provide more effective network batching and CPU utilization
 - `namespaces` - List of namespaces for replication. If empty, all namespaces. All replicated namespaces will become read only for follower. This parameter is used, when node doesn't have specific namespace list
 - `self_replication_token` - Replication token of the current node that it sends to the follower for verification
 - `nodes` - List of follower nodes
@@ -217,21 +217,21 @@ Follower settings:
 - `ip_addr` - IP of the follower node
 - `rpc_port` - Port of follower's RPC-server
 - `database` - Follower database name
-- `namespaces` - Optional list on namespaces to replicate to this specific node. If specific list is not set, value from general replication config will be used
+- `namespaces` - Optional list of namespaces to replicate to this specific node. If a specific list is not set, the value from the general replication config will be used
 
 As second option replication can be configured by YAML-config files, which has to be placed to database directory. Sample of async replication config file is [here](cpp_src/cluster/async_replication.conf) 
 and sample for general replication config file is [here](cpp_src/cluster/replication.conf).
 
-If config file is present, then it's overrides settings from `#config` namespace on reindexer startup.
+If a config file is present, it overrides settings from the `#config` namespace on Reindexer startup.
 
 #### Check replication status
 
-Replication status is available in system namespace `#memstats`. e.g, execution of statement:
+Replication status is available in the system namespace `#memstats`. For example, execution of the statement:
 
 ```SQL
 Reindexer> SELECT name,replication FROM #memstats WHERE name='media_items'
 ```
-will return JSON object with status of namespace `media_items `replication 
+will return a JSON object with the replication status of namespace `media_items`
 
 ```JSON
 {
@@ -246,7 +246,7 @@ will return JSON object with status of namespace `media_items `replication
 	"clusterization_status":{
 		"leader_id": 20,
 		"role": "simple_replica"
-	}
+	},
 	"temporary":false,
 	"incarnation_counter":0,
 	"checksum":6,
@@ -302,7 +302,7 @@ Possible `levels`: `none`, `error`, `warning`, `info`, `trace`.
 
 ## RAFT-cluster
 
-Reindexer support RAFT-like algorithm for leader elections and synchronous replication with consensus awaiting. In cluster setup each node may be standalone server or golang application with builtinserver binding.
+Reindexer supports a RAFT-like algorithm for leader elections and synchronous replication with consensus awaiting. In a cluster setup, each node may be a standalone server or a Go application with the builtinserver binding.
 
 ### Node roles
 
@@ -320,13 +320,13 @@ At startup each node begins an elections loop. Each elections' iteration (electi
 
 #### Operating as follower
 
-Once node has become follower it starts checking if leader is available (via timestamp of the last received ping message). If leader becomes unavailable, follower initiate new election term.
+Once a node has become a follower, it starts checking if the leader is available (via timestamp of the last received ping message). If the leader becomes unavailable, the follower initiates a new election term.
 
 In follower state node changes roles of each namespace from cluster config to "cluster_replica" and sets corresponding leader ID (i.e. server ID of current leader). From this moment all the follower namespaces are readonly for anyone except cluster leader.
 
 Any request, which requires write access will be proxied to leader and executed on the leader's side.
 
-Requests, which doesn't require write access (and request to system namespaces) will be executed locally.
+Requests that do not require write access (and requests to system namespaces) will be executed locally.
 
 #### Operating as leader
 
@@ -335,8 +335,8 @@ If N/2 of the followers are dead (N is total number of nodes in cluster), leader
 
 Right after role switch node begins initial leader sync. During initial sync leader collects the latest data from at least N/2 other nodes. It can not replicate any data while initial sync is not completed.
 
-When initial sync is done, leader start to synchronize followers. Same as for asynchronous replication there are 3 different mechanics for data synchronization: force sync, WAL sync and online updates.
-Leader continues to replicate data, while it won't receive request for manual re-elections or error in consensus. In both of this situations node will initiate new elections term.
+When initial sync is done, the leader starts to synchronize followers. Same as for asynchronous replication there are 3 different mechanics for data synchronization: force sync, WAL sync and online updates.
+The leader continues to replicate data until it receives a request for manual re-elections or an error in consensus. In both of these situations, the node will initiate a new election term.
 
 ### Guarantees
 
@@ -346,11 +346,11 @@ Reindexer is using consensus algorithm to provide data safety. Each data write o
 
 2. Read after write is always safe.
 
-If operation was proxied from follower to leader, then it won't be generally approved before it get approve from current node (emitter node), so if you wrote something in current thread on any node, then you'll be able to read this data from the same node.
+If an operation was proxied from follower to leader, then it won't generally be approved before it gets approval from the current node (emitter node), so if you wrote something in the current thread on any node, you'll be able to read this data from the same node.
 
 3. Online updates are ordered.
 
-For optimization purposes concurrent writes are available even if some the writing operations from other threads are awaiting consensus right now. Reindexer guarantees that all of this concurrent writes will be performed on followers with the same ordering.
+For optimization purposes, concurrent writes are available even if some write operations from other threads are awaiting consensus right now. Reindexer guarantees that all of these concurrent writes will be performed on followers in the same order.
 
 ### Configuration
 
@@ -358,7 +358,7 @@ For optimization purposes concurrent writes are available even if some the writi
 
 On startup reindexer_server reads replication and cluster config from files `replication.conf`([sample](cpp_src/cluster/replication.conf)) and `cluster.conf`([sample](cpp_src/cluster/cluster.conf)), which have to be placed in database directory.
 
-`replication.conf` sets general replication parameter and has to be unique for each node in cluster (those parameters also may be configured via `#config` namespace).
+`replication.conf` sets general replication parameters and has to be unique for each node in the cluster (those parameters may also be configured via the `#config` namespace).
 
 `cluster.conf` sets specific cluster parameters (description may be found in sample). This file has to have the same content on each node of the cluster.
 
@@ -366,7 +366,7 @@ On startup reindexer_server reads replication and cluster config from files `rep
 
 1. [Example script](cpp_src/cmd/reindexer_server/clustertest/cluster_example.sh), which creates local cluster.
 
-2. [Docker-compose config](cpp_src/cmd/reindexer_server/clustertest/docker-compose.yml), which create 3 docker-containers running RAFT-cluster. Usage:
+2. [Docker-compose config](cpp_src/cmd/reindexer_server/clustertest/docker-compose.yml), which creates 3 Docker containers running a RAFT cluster. Usage:
 
 ```
 # Run from docker-compose.yml directory
@@ -519,8 +519,8 @@ updates -> cl10 - cl11               cl20 - cl21
 In setup above there are 2 independent RAFT-clusters: `cluster1`(over `ns1` and `ns2`) and `cluster2`(over `ns1`). Also, one of the nodes of the first cluster replicating its data (`ns2`) asynchronously to one of the nodes of the second cluster.
 
 Take a notice:
-- `ns2` can not taking part in second RAFT-cluster
-- asynchronous replication here (with `default` replication mode) still works on node-to-node basis, i.e. it replicates all the data from `cl12` node to `cl22` node, but not to other nodes of the seconds cluster (i.e. if `cl12` is down, data will not be asynchronously replicated)
+- `ns2` cannot take part in the second RAFT cluster
+- asynchronous replication here (with `default` replication mode) still works on a node-to-node basis, i.e. it replicates all the data from the `cl12` node to the `cl22` node, but not to other nodes of the second cluster (i.e. if `cl12` is down, data will not be asynchronously replicated)
 
 ### Async replication with "from_sync_leader" replication mode
 
@@ -572,10 +572,10 @@ In setup above there are 2 independent RAFT-clusters: `cluster1`(over `ns1` and 
 }
 ```
  
-With `replication_mode: "from_sync_leader"` option only the current leader of `cluster1` replicating its data (`ns2`) asynchronously to all the nodes of the second cluster (i.e. if one of the node from `cluster1` down, asynchronous replication will still work via new leader)
+With the `replication_mode: "from_sync_leader"` option, only the current leader of `cluster1` replicates its data (`ns2`) asynchronously to all the nodes of the second cluster (i.e. if one of the nodes from `cluster1` is down, asynchronous replication will still work via the new leader)
 
 Take a notice:
-- `ns2` can not taking part in second RAFT-cluster 
+- `ns2` cannot take part in the second RAFT cluster
 
 ## Known issues and constraints
 
@@ -590,7 +590,7 @@ This also may lead to situation, when new leader recovers some the dropped names
 
 Current asynchronous replication implementation is incompatible with configs from v3.x.x, so you will have to migrate manually.
 
-1. Server ID's and cluster ID's doesn't require any changes (they are using the same object "replication" in #config namespace) 
+1. Server IDs and cluster IDs don't require any changes (they use the same object "replication" in the #config namespace) 
 2. Current scheme works as "push-replication" and legacy scheme was "pull-replication", so you have to move all information about namespaces and DSNs from legacy slaves to current leader (to "async_replication" in #config).
 3. Any additional configs (i.e. timeouts or appnames) now should also be configured on leader's side.
 

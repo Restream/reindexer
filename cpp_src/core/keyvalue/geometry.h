@@ -110,7 +110,7 @@ inline Rectangle boundRect(const Rectangle& r, Point p) noexcept {
 class [[nodiscard]] Circle {
 public:
 	Circle() noexcept = default;
-	Circle(Point c, double r) : center_(c), radius_(r) { assertrx(radius_ >= 0.0); }
+	Circle(Point c, double r) noexcept : center_(c), radius_(r) { assertrx_dbg(radius_ >= 0.0); }
 	Point Center() const noexcept { return center_; }
 	double Radius() const noexcept { return radius_; }
 

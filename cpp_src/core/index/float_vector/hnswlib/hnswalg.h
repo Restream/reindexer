@@ -405,7 +405,7 @@ public:
 		return resPtr;
 	}
 
-	auto prepareData(const void* data, std::optional<float> norm) const {
+	auto prepareData(const void* data, float norm = 1.f) const {
 		const bool quantized = IsQuantized();
 
 		auto deleter = [quantized](const void* ptr) noexcept {
@@ -419,10 +419,7 @@ public:
 			auto from = std::span(static_cast<const float*>(data), data_size_);
 			res = std::make_unique<uint8_t[]>(data_size_ + sizeof(CorrectiveOffset));
 			auto to = std::span(res.get(), data_size_);
-
-			auto correctiveOffset = norm
-										? quantizer_->Quantize(from | std::views::transform([n = *norm](float val) { return n * val; }), to)
-										: quantizer_->Quantize(from, to);
+			auto correctiveOffset = quantizer_->Quantize(from | std::views::transform([norm](float val) { return norm * val; }), to);
 			std::memcpy(res.get() + data_size_, &correctiveOffset, sizeof(CorrectiveOffset));
 		}
 
@@ -1572,7 +1569,7 @@ public:
 		using LockGuard = typename LockerT::template LockGuard<GlobalMutextT>;
 		using UpdateLockGuard = typename LockerT::template LockGuard<typename UpdateLockVecT::MutexT>;
 		using SharedLock = typename LockerT::template SharedLock<typename UpdateLockVecT::MutexT>;
-		const auto dataPointHolder = prepareData(dataPointRaw, std::nullopt);
+		const auto dataPointHolder = prepareData(dataPointRaw);
 		const void* dataPoint = dataPointHolder.get();
 		{
 			// FIXME: There is still logical race, that reduces recall rate - we may update one of the current insertion candidate nodes
@@ -1848,7 +1845,7 @@ public:
 
 		// Initialisation of the data and label
 		setExternalLabel(cur_c, label);
-		const auto dataPointHolder = prepareData(data_point_raw, std::nullopt);
+		const auto dataPointHolder = prepareData(data_point_raw);
 		const void* data_point = dataPointHolder.get();
 		memcpy(getDataByInternalId(cur_c), data_point, data_size_);
 		if (quantizer_) {
@@ -1940,18 +1937,7 @@ public:
 	}
 
 	// Read-only concurrency expected
-	auto getTopCandidates(const void* query_data_raw, std::optional<float> query_data_norm, size_t ef,
-						  BaseFilterFunctor* isIdAllowed) const {
-		if (IsQuantized() && fstdistfunc_.Metric() == MetricType::COSINE && !query_data_norm) {
-			throw std::runtime_error("Norm is required for Cosine-metric during corrective offsets calculation in quantized graph");
-		}
-
-		const auto query_data_holder = prepareData(query_data_raw, query_data_norm);
-		auto query_data = query_data_holder.get();
-
-		// NOLINTNEXTLINE(bugprone-unchecked-optional-access) false-positive. Check was made above
-		const float normCoef = IsQuantized() && fstdistfunc_.Metric() == MetricType::COSINE ? 1.f / *query_data_norm : 1.f;
-
+	auto getTopCandidates(const void* query_data, float normCoef, size_t ef, BaseFilterFunctor* isIdAllowed) const {
 		tableint currObj = enterpoint_node_;
 		float curdist = normCoef * fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
 
@@ -1989,22 +1975,36 @@ public:
 		}
 	}
 
-	// Read-only concurrency expected
-	std::priority_queue<std::pair<float, labeltype>> searchKnn(const void* query_data, std::optional<float> query_data_norm, size_t k,
-															   size_t ef = 0, BaseFilterFunctor* isIdAllowed = nullptr) const {
-		std::vector<std::pair<float, labeltype>> container;
-		container.reserve(k);
-		std::priority_queue<std::pair<float, labeltype>> result(std::less<std::pair<float, labeltype>>(), std::move(container));
+	auto preSearch(const void* query_data_raw, std::optional<float> query_data_norm, size_t ef,
+				   BaseFilterFunctor* isIdAllowed = nullptr) const {
+		if (IsQuantized() && fstdistfunc_.Metric() == MetricType::COSINE && !query_data_norm) {
+			throw std::runtime_error("Norm is required for Cosine-metric during corrective offsets calculation in quantized graph");
+		}
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access) false-positive. Check was made above
+		const float normCoef = IsQuantized() && fstdistfunc_.Metric() == MetricType::COSINE ? 1.f / *query_data_norm : 1.f;
+		auto query_data_holder = prepareData(query_data_raw, 1.f / normCoef);
+		return std::make_tuple(getTopCandidates(query_data_holder.get(), normCoef, ef, isIdAllowed), std::move(query_data_holder),
+							   normCoef);
+	}
 
+	// Read-only concurrency expected
+	std::priority_queue<std::pair<float, labeltype>> searchKnn(const void* query_data_raw, std::optional<float> query_data_norm, size_t k,
+															   size_t ef = 0, BaseFilterFunctor* isIdAllowed = nullptr) const {
 		if (cur_element_count == 0) {
-			return result;
+			return std::priority_queue<std::pair<float, labeltype>>();
 		}
 
 		ef = ef ? ef : k * 3 / 2;
-		auto top_candidates = getTopCandidates(query_data, query_data_norm, ef, isIdAllowed);
+
+		auto [top_candidates, query_data_holder, normCoef] = preSearch(query_data_raw, query_data_norm, ef, isIdAllowed);
 		while (top_candidates.size() > k) {
 			top_candidates.pop();
 		}
+
+		std::vector<std::pair<float, labeltype>> container;
+		container.reserve(top_candidates.size());
+		std::priority_queue<std::pair<float, labeltype>> result(std::less<std::pair<float, labeltype>>(), std::move(container));
+
 		while (top_candidates.size() > 0) {
 			std::pair<float, tableint> rez = top_candidates.top();
 			result.push(std::pair<float, labeltype>(rez.first, getExternalLabel(rez.second)));
@@ -2014,13 +2014,14 @@ public:
 	}
 
 	// Read-only concurrency expected
-	std::priority_queue<std::pair<float, labeltype>> searchRange(const void* query_data, std::optional<float> query_data_norm, float radius,
-																 size_t ef, BaseFilterFunctor* isIdAllowed = nullptr) const {
+	std::priority_queue<std::pair<float, labeltype>> searchRange(const void* query_data_raw, std::optional<float> query_data_norm,
+																 float radius, size_t ef, BaseFilterFunctor* isIdAllowed = nullptr) const {
 		if (cur_element_count == 0) {
 			return std::priority_queue<std::pair<float, labeltype>>();
 		}
 
-		auto top_candidates = getTopCandidates(query_data, query_data_norm, ef, isIdAllowed);
+		auto [top_candidates, query_data_holder, normCoef] = preSearch(query_data_raw, query_data_norm, ef, isIdAllowed);
+		auto query_data = query_data_holder.get();
 
 		std::vector<std::pair<float, labeltype>> container;
 		container.reserve(top_candidates.size());
@@ -2057,7 +2058,7 @@ public:
 				if (visited_array[candidate_id] != visited_array_tag) {
 					visited_array[candidate_id] = visited_array_tag;
 					if ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(candidate_id))) {
-						float dist = fstdistfunc_(query_data, getDataByInternalId(candidate_id), candidate_id);
+						float dist = normCoef * fstdistfunc_(query_data, getDataByInternalId(candidate_id), candidate_id);
 						if (dist < radius) {
 							radius_queue.emplace(dist, candidate_id);
 							result.emplace(dist, getExternalLabel(candidate_id));

@@ -51,18 +51,21 @@ FloatVector FloatVectorExtractor::loadVectorDataFromStorage(auto&& item) {
 	return FloatVector{vecView};
 }
 
-IdType FloatVectorIndexRawDataInserter::operator()(const VariantArray& keys, void* targetVec) const {
+IdType FloatVectorIndexRawDataInserter::operator()(Variant&& key, void* targetVec) const {
 	static const Index::SelectContext kDummySelectContext;
 	static const RdxContext kDummyRdxContext;
-	auto select = [this](const VariantArray& keys) {
-		auto res = pkIndex_->SelectKey(keys, CondEq, 0, kDummySelectContext, kDummyRdxContext).Front();
+	auto select = [this](Variant&& key) {
+		auto res = pkIndex_
+					   ->SelectKey({key.convert(pkIndex_->SelectKeyType(), &pkIndex_->GetPayloadType(), &pkIndex_->Fields())}, CondEq, 0,
+								   kDummySelectContext, kDummyRdxContext)
+					   .Front();
 		if (res[0].ids_.empty()) {
 			throw Error(errLogic, "Requested PK does not exist");
 		}
 		return res[0].ids_[0];
 	};
 
-	const auto id = pkIndex_ ? select(keys) : IdType::FromNumber(keys[0].As<int>());
+	const auto id = pkIndex_ ? select(std::move(key)) : IdType::FromNumber(key.As<int>());
 	std::memcpy(targetVec, vectorData_[id.ToNumber()].RawData(), vecSizeBytes_);
 	return id;
 }

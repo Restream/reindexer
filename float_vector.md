@@ -29,7 +29,7 @@ Vectors of only the specified dimension can be inserted and searched in the inde
 
 Optionally `radius` could be specified for filtering vectors by metric.
 
-The initial size `start_size` can optionally be specified for `brute force` и `hnsw` indexes, which helps to avoid reallocation and reindexing.
+The initial size `start_size` can optionally be specified for `brute force` and `hnsw` indexes, which helps to avoid reallocation and reindexing.
 The optimal value is equal to the size of the fully filled index.
 A much larger `start_size` value will result in memory overuse, while a much smaller `start_size` value will slow down inserts.
 Minimum and default values are 1000.
@@ -139,7 +139,7 @@ To configure automatic embedding you should set `config` field in the target vec
 
 It is also optionally possible to configure a connection `pool`:
   + `connections` - Number connections to service. Optional, [1..1024], default 10
-  + `connect_timeout_ms` - Connection\reconnection timeout to any embedding service (milliseconds). Optional, minimum 100, default 300
+  + `connect_timeout_ms` - Connection/reconnection timeout to any embedding service (milliseconds). Optional, minimum 100, default 300
   + `read_timeout_ms` - Timeout reading data from embedding service (milliseconds). Optional, minimum 500, default 5000
   + `write_timeout_ms` - Timeout writing data from embedding service (milliseconds). Optional, minimum 500, default 5000
 
@@ -213,7 +213,7 @@ indexDef := reindexer.IndexDef{
 	FieldType: "float_vector",
 	Config:    hnswSTOpts,
 }
-err := DB.AddIndex("embedding_hnws", indexDef)
+err := DB.AddIndex("embedding_hnsw", indexDef)
 if err != nil {
 	panic(err)
 }
@@ -221,9 +221,9 @@ if err != nil {
 In some cases, embedding may need to be skipped. To do this, you can set a precept like `vec_index_name=skip_embedding()` or, if you want to skip it for all vector indexes, `*=skip_embedding()`. If a record is being updated via update query, you can specify a vector index for which embedding will not be called, like `set vec_indx=skip_embedding() ...`
 
 ### Embedding cache configuration
-When do embedding, it makes sense to use result caching, which can improve performance. To do this, you need to configure it.
+When doing embedding, it makes sense to use result caching, which can improve performance. To do this, you need to configure it.
 Setting up embedding caches is done in two places. Firstly, `cache_tag` parameter that was described above.
-`cache_tag` is part of `config` field in the target vector index description. `cache_tag` it's simple name\identifier,
+`cache_tag` is part of the `config` field in the target vector index description. `cache_tag` is a simple name/identifier,
 used to access the cache. Optional, if not specified, caching is not used. The name may not be unique.
 In this case, different embedders can put the result in the same cache. But keep in mind that this only works well
 if the source data for the embedder does not overlap. Or if the embedders return exactly the same values for the same request.
@@ -374,7 +374,7 @@ err := DB.UpdateIndex(ns, reindexer.IndexDef{
 
 Otherwise, an error will be returned, and the new configuration can only be applied after resetting the old one.
 
-The absence of `quantization_config` is interpreted as index operation without quantization.  
+The absence of `quantization_config` means the index operates without quantization.  
 To disable quantization, the index must be updated by removing the `quantization_config` object from its configuration.
 
 If quantization has already been performed for this index, removing this section is treated as resetting the quantization configuration and reloading the original `float` vector values.
@@ -424,7 +424,7 @@ Result:
 Supported filtering operations on floating-point vector fields are `KNN`, `Empty`, and `Any`.
 It is not possible to use multiple `KNN` filters in a query, and it is impossible to combine filtering by `KNN` and fulltext.
 
-Parameters set for `KNN`-query depends on the specific index type. It is required to specify `k` or `radius` (or both) for every index type. `k` is the maximum number of documents returned from the index for subsequent filtering.
+Parameters set for a `KNN` query depend on the specific index type. It is required to specify `k` or `radius` (or both) for every index type. `k` is the maximum number of documents returned from the index for subsequent filtering.
 
 In addition to the parameter `k` (or instead it), the query results can also be filtered by a `rank`-value using the parameter `radius`. It's named so because, under the `L2`-metric, it restricts vectors from query result to a sphere of the specified radius.
 
@@ -482,7 +482,7 @@ db.Query("test_ns").WhereKnn("vec_ivf", []float32{2.4, 3.5, ...}, ivfSearchParam
 KNN search with automatic embedding works much like simple KNN search.
 With one exception, it expects a string instead of a vector. It then sends that string to the embedding service, gets back a calculated vector.
 And that vector is then used as the actual value for filtering the database.
-Before this need to configure "query_embedder".
+Before that, you need to configure the "query_embedder".
 
 - SQL\
   All queries are similar to KNN search
@@ -679,7 +679,7 @@ You need to be careful and pay close attention to the settings of the strategy f
 The 'strict' strategy does not make sense at this stage. If documents contain embedded values, but there are also documents without filled vectors,
 it makes sense to use the 'empty_only' strategy. If you need to replace all values in a field with configured auto-embed,
 then you should use the 'always' strategy. The strategy is an embedder setting and can be set individually ("config": {
-"embedding": { "upsert_embedder": { "embedding_strategy": ...). This action only locally applied
+"embedding": { "upsert_embedder": { "embedding_strategy": ...). This action is only applied locally.
 - `namespace` - the target namespace (`*` - applies the command to all namespaces);
 - `batch_size` - number, how many documents to update in the namespace at a time (batch size in transaction). Optional parameter.
 

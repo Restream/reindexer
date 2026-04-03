@@ -42,13 +42,13 @@ private:
 
 class [[nodiscard]] FloatVectorIndexRawDataInserter {
 public:
-	explicit FloatVectorIndexRawDataInserter(std::span<const FloatVector> vectorData, Index* pkIndex, size_t vecSizeBytes)
-		: vectorData_(vectorData), pkIndex_(pkIndex), vecSizeBytes_(vecSizeBytes) {}
+	explicit FloatVectorIndexRawDataInserter(std::span<const FloatVector> vectorData, Index& pkIndex, size_t vecSizeBytes) noexcept
+		: vectorData_(vectorData), pkIndex_(&pkIndex), vecSizeBytes_(vecSizeBytes) {}
 
-	explicit FloatVectorIndexRawDataInserter(std::span<const FloatVector> vectorData, size_t vecSizeBytes)
+	explicit FloatVectorIndexRawDataInserter(std::span<const FloatVector> vectorData, size_t vecSizeBytes) noexcept
 		: vectorData_(vectorData), vecSizeBytes_(vecSizeBytes) {}
 
-	IdType operator()(const VariantArray& keys, void* targetVec) const;
+	IdType operator()(Variant&& key, void* targetVec) const;
 
 private:
 	std::span<const FloatVector> vectorData_;

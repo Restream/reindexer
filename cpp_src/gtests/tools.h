@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include <random>
 #include <string>
 #include "core/keyvalue/uuid.h"
 #include "estl/forward_like.h"
@@ -116,8 +117,12 @@ inline reindexer::Point randPoint(long long range) noexcept {
 
 template <size_t Dim>
 void rndFloatVector(std::array<float, Dim>& buf) {
+	static thread_local std::random_device rd;
+	static thread_local std::mt19937 gen(rd());
+	static thread_local std::normal_distribution<> nd(0, 0.25);
+
 	for (float& v : buf) {
-		v = randBin<float>(-1'000'000, 1'000'000);
+		v = nd(gen);
 	}
 }
 

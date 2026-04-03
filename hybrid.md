@@ -28,7 +28,7 @@ Placing full text and knn conditions in different brackets is prohibited:
 ```SQL
 SELECT * FROM ns WHERE (ft_idx = 'search_str' AND id > 100) OR (KNN(vec_idx, [2.4, 3.5, ...], k=100) AND id < 100)
 ```
-Possible use auto-embedding query with hybrid search (Need to configure [Query embedder](float_vector.md#embedding-configuration) for `vec_idx`):
+It is possible to use an auto-embedding query with hybrid search (you need to configure [Query embedder](float_vector.md#embedding-configuration) for `vec_idx`):
 ```SQL
 SELECT * FROM ns WHERE (ft_idx = 'search_str' AND id > 100) OR (KNN(vec_idx, '*SOME TEXT FOR SEARCH VECTOR GENERATION*', k=100) AND id < 100)
 ```

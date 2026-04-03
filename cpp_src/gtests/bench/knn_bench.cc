@@ -33,6 +33,27 @@ int main(int argc, char** argv) {
 		return err.code();
 	}
 
+	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::L2> hnswL2Q(DB.get(), "quantized_hnsw_l2_bench"sv,
+																						 knn_bench::WithQuantization::Yes);
+	err = hnswL2Q.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::Cosine> hnswCosineQ(DB.get(), "quantized_hnsw_cosine_bench"sv,
+																								 knn_bench::WithQuantization::Yes);
+	err = hnswCosineQ.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::InnerProduct> hnswInnerProductQ(
+		DB.get(), "quantized_hnsw_inner_product_bench"sv, knn_bench::WithQuantization::Yes);
+	err = hnswInnerProductQ.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
 	knn_bench::KnnBench<knn_bench::IndexType::Ivf, reindexer::VectorMetric::L2> ivfL2(DB.get(), "ivf_l2_bench"sv);
 	err = ivfL2.Initialize();
 	if (!err.ok()) {
@@ -60,6 +81,9 @@ int main(int argc, char** argv) {
 	hnswL2.RegisterAllCases();
 	hnswCosine.RegisterAllCases();
 	hnswInnerProduct.RegisterAllCases();
+	hnswL2Q.RegisterAllCases();
+	hnswCosineQ.RegisterAllCases();
+	hnswInnerProductQ.RegisterAllCases();
 	ivfL2.RegisterAllCases();
 	ivfCosine.RegisterAllCases();
 	ivfInnerProduct.RegisterAllCases();

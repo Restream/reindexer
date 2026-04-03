@@ -20,13 +20,13 @@ Reindexer can distribute namespaces across multiple nodes (shards). Each namespa
 
 It's recommended (however, not required) to use composite primary key in sharded namespaces, where sharding key is part of this PK. Such approach allows to avoid PK conflicts during resharding. It's also recommended to create its own index for sharding key.
 
-Some operations (creation and deleting namespaces, indexes operations, accessing metadata, etc.) are performed on each shard and requires all shards to be available. For this reason, the Reindexer waits for shards to start, which can also lead to delays in such queries (shards are usually not started at the same time).
+Some operations (creating and deleting namespaces, index operations, accessing metadata, etc.) are performed on each shard and require all shards to be available. For this reason, the Reindexer waits for shards to start, which can also lead to delays in such queries (shards are usually not started at the same time).
 
 ## Proxy requests
 
 Any client's request may be sent to any shard, and then it will be proxied to the proper shard automatically. However, proxying is not free and sometimes network delays may take much more time, than actual request's execution.
 
-Each request and modified item has to have **single** explicit sharding key in it. So each operation may be executed either on the single node or over across all nodes (execution on nodes' subsetes is not supported yet). For example, if sharding is configured by field 'location', correct request will be something like that:
+Each request and modified item has to have a **single** explicit sharding key in it. So each operation may be executed either on a single node or across all nodes (execution on a subset of nodes is not supported yet). For example, if sharding is configured by field 'location', a correct request will be something like this:
 
 ```SQL
 SELECT * FROM ns WHERE location='name1' and id > 100;
@@ -50,7 +50,7 @@ Also, it's possible to join local namespace, which does not have sharding config
 SELECT * FROM sharded_ns JOIN (SELECT * FROM not_sharded_ns) ON sharded_ns.id=not_sharded_ns.id WHERE location='name1';
 ```
 
-Local namespace may also be used as left namespace in join-query. In this case request will be executed on proxied to the shard, set by joined query:
+Local namespace may also be used as left namespace in join-query. In this case the request will be proxied to the shard set by the joined query:
 
 ```SQL
 SELECT * FROM not_sharded_ns JOIN (SELECT * FROM sharded WHERE location='name1') ON sharded_ns.id=not_sharded_ns.id;
@@ -90,7 +90,7 @@ Operator `LOCAL` can be used only with `SELECT` queries.
 
 On startup reindexer_server (or builtin server) reads replication and sharding config from files `replication.conf`([sample](cpp_src/cluster/replication.conf)) and `sharding.conf`([sample](cpp_src/cluster/sharding/sharding.conf)), which have to be placed in database directory.
 
-`replication.conf` sets general replication parameter and has to be unique for each node in cluster (those parameters also may be configured via `#config` namespace).
+`replication.conf` sets general replication parameters and has to be unique for each node in the cluster (those parameters may also be configured via the `#config` namespace).
 
 `sharding.conf` sets specific sharding parameters (description may be found in sample). This file has to have the same content on each node of the cluster (here, 'cluster' means the combination of all sharded nodes and synchronous clusters for each shard).
 
@@ -302,7 +302,7 @@ reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\dump' --dump-mode=
 reindexer_tool --dsn cproto://127.0.0.1:7231/mydb -f mydb.rxdump
 ```
 
-In example above, if second cluster has different sharding configuration, than all the dumped data will be redistributed between new shards.
+In the example above, if the second cluster has a different sharding configuration, then all the dumped data will be redistributed among the new shards.
 
 More info about dump modes in reindexer_tool may be found [here](cpp_src/cmd/reindexer_tool/readme.md#dump-modes).
 

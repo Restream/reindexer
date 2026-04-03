@@ -290,7 +290,7 @@ const (
 	testItemsExplainNs1     = "test_items_explain_1"
 	testItemsExplainNs2     = "test_items_explain_2"
 	testItemsFlatArrayLenNs = "test_items_flat_array_len"
-	testItemsNowNs          = "test_items_now_len"
+	testItemsNowNs          = "test_items_now"
 )
 
 func init() {
@@ -1956,24 +1956,42 @@ func TestNowFunction(t *testing.T) {
 	tx.Commit()
 
 	t.Run("now() start_time LE Now(sec)", func(t *testing.T) {
-		it := DBD.Query(testItemsNowNs).WhereExpressions(
-			reindexer.Field{Name: "start_time"}, reindexer.LE, reindexer.Now{TimeUnit: reindexer.Sec}).MustExec()
-		defer it.Close()
-		assert.Equal(t, it.Count(), 100)
+		itemsServerNow, err := DBD.Query(testItemsNowNs).WhereExpressions(
+			reindexer.Field{Name: "start_time"}, reindexer.LE, reindexer.Now{TimeUnit: reindexer.Sec}).
+			MustExec().FetchAll()
+		require.NoError(t, err)
+		assert.Equal(t, len(itemsServerNow), 100)
+
+		itemsClientNow, err := DB.Query(testItemsNowNs).
+			Where("start_time", reindexer.LE, time.Now().Unix()).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		assert.EqualValues(t, itemsClientNow, itemsServerNow)
 	})
 
 	t.Run("now() end_time GT Now(msec)", func(t *testing.T) {
-		it := DBD.Query(testItemsNowNs).WhereExpressions(
-			reindexer.Field{Name: "end_time"}, reindexer.GT, reindexer.Now{TimeUnit: reindexer.Msec}).MustExec()
-		defer it.Close()
-		assert.Equal(t, it.Count(), 100)
+		itemsServerNow, err := DBD.Query(testItemsNowNs).WhereExpressions(
+			reindexer.Field{Name: "end_time"}, reindexer.GT, reindexer.Now{TimeUnit: reindexer.Msec}).
+			MustExec().FetchAll()
+		require.NoError(t, err)
+		assert.Equal(t, len(itemsServerNow), 100)
+
+		itemsClientNow, err := DB.Query(testItemsNowNs).
+			Where("end_time", reindexer.GT, time.Now().UnixMilli()).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		assert.EqualValues(t, itemsClientNow, itemsServerNow)
 	})
 
 	t.Run("now() start_time LE Now(nsec)", func(t *testing.T) {
-		it := DBD.Query(testItemsNowNs).Where("id", reindexer.GE, 100).
-			WhereExpressions(reindexer.Field{Name: "start_time"}, reindexer.LE, reindexer.Now{TimeUnit: reindexer.Nsec}).MustExec()
-		defer it.Close()
-		assert.Equal(t, it.Count(), 10)
+		itemsServerNow, err := DBD.Query(testItemsNowNs).Where("id", reindexer.GE, 100).
+			WhereExpressions(reindexer.Field{Name: "start_time"}, reindexer.LE, reindexer.Now{TimeUnit: reindexer.Nsec}).
+			MustExec().FetchAll()
+		require.NoError(t, err)
+		assert.Equal(t, len(itemsServerNow), 10)
+
+		itemsClientNow, err := DB.Query(testItemsNowNs).Where("id", reindexer.GE, 100).
+			Where("start_time", reindexer.LE, time.Now().UnixNano()).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		assert.EqualValues(t, itemsClientNow, itemsServerNow)
 	})
 }
 

@@ -152,7 +152,7 @@
 
 <!-- tocstop -->
 
-> Version 5.12.0
+> Version 5.12.1
 
 ## Overview
 
@@ -326,7 +326,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 ```
 
 
-This operation will output list of all available databases  
+This operation will return list of all available databases.  
 
 
 #### Parameters(Query)
@@ -429,7 +429,7 @@ sort_order?: enum[asc, desc]
 ```
 
 
-This operation will create new database. If database is already exists, then error will be returned.  
+This operation will create new database. If database already exists, then error will be returned.  
 
 
 #### RequestBody
@@ -538,7 +538,7 @@ This operation will create new database. If database is already exists, then err
 ```
 
 
-This operation will remove complete database from memory and disk. All data, including namespaces, their documents and indexes will be erased. Can not be undone. USE WITH CAUTION.
+This operation will remove entire database from memory and disk. All data, including namespaces, their documents and indexes will be erased. Can not be undone. USE WITH CAUTION.
 
 #### Responses
 
@@ -636,7 +636,7 @@ This operation will remove complete database from memory and disk. All data, inc
 
 
 This operation will list all available namespaces in specified database.  
-If database is not exists, then error will be returned.  
+If database does not exist, then error will be returned.  
 
 
 #### Parameters(Query)
@@ -742,7 +742,7 @@ sort_order?: enum[asc, desc]
 
 
 This operation will create new namespace in specified database.  
-If namespace is already exists, then operation do not nothing.  
+If namespace already exists, then operation does nothing.  
 
 
 #### RequestBody
@@ -1014,7 +1014,7 @@ This operation will return specified namespace description, including options of
 ```
 
 
-This operation will delete completely namespace from memory and disk.  
+This operation will delete namespace completely from memory and disk.  
 All documents, indexes and metadata from namespace will be removed.  
 Can not be undone. USE WITH CAUTION.  
 
@@ -2622,7 +2622,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 ```
 
 
-This operation will create new index. If index is already exists with the different parameters, then error will be returned.  
+This operation will create new index. If index already exists with different parameters, then error will be returned.  
 Operation synchronous, so it can take long time, if namespace contains bunch of documents.  
 
 
@@ -5865,7 +5865,7 @@ Get the role of the currently authorized user in the Reindexer. If authorization
 ```ts
 {
   // User role
-  user_role?: enum[owner, db_admin, data_write, data_read, none, unauthoried]
+  user_role?: enum[owner, db_admin, data_write, data_read, none, unauthorized]
 }
 ```
 
@@ -10976,7 +10976,7 @@ string[]
 ```ts
 {
   // User role
-  user_role?: enum[owner, db_admin, data_write, data_read, none, unauthoried]
+  user_role?: enum[owner, db_admin, data_write, data_read, none, unauthorized]
 }
 ```
 

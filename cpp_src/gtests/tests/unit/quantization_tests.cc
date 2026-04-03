@@ -318,4 +318,80 @@ TEST_F(QuantizationApi, IndexQuantizingConcurrentTest_L2) { IndexQuantizingConcu
 TEST_F(QuantizationApi, IndexQuantizingConcurrentTest_IP) { IndexQuantizingConcurrentTestBody<reindexer::VectorMetric::InnerProduct>(api); }
 TEST_F(QuantizationApi, IndexQuantizingConcurrentTest_Cosine) { IndexQuantizingConcurrentTestBody<reindexer::VectorMetric::Cosine>(api); }
 
+template <reindexer::VectorMetric Metric>
+void SearchWithRadiusTestBody(auto& api) {
+	constexpr static auto kNsName = "hnsw_quantization_search_with_radius_test_ns";
+
+	const size_t K = 100;
+	const size_t ef = 1.2 * K;
+
+	InitNsAndIndexes<Metric>(
+		api, kNsName, kHNSWMaxSize,
+		hnswlib::QuantizationConfig{.quantile = kQuantile, .sampleSize = kHNSWInitSize, .quantizationThreshold = kHNSWMaxSize});
+
+	WaitQuantization(api, kNsName);
+
+	std::unordered_map<int, float> res, resQ;
+
+	float avgRankVariance = 0;
+
+	auto test = [&](auto& queryPoint, std::optional<float> refRank) {
+		auto params = !refRank ? reindexer::HnswSearchParams{}.Ef(ef).K(K) : reindexer::HnswSearchParams{}.Ef(ef).Radius(refRank);
+		auto qr =
+			api.Select(reindexer::Query(kNsName).WhereKNN(kHnswIndexName, reindexer::ConstFloatVectorView{queryPoint}, params).WithRank());
+		auto qrQ =
+			api.Select(reindexer::Query(kNsName).WhereKNN(kHnswIndexNameQ, reindexer::ConstFloatVectorView{queryPoint}, params).WithRank());
+
+		auto it = qr.begin();
+		auto itQ = qrQ.begin();
+
+		res.clear();
+		resQ.clear();
+		while (it != qr.end() && itQ != qrQ.end()) {
+			auto item = YAML::Load(std::string{(*it).GetItem().GetJSON()});
+			auto itemQ = YAML::Load(std::string{(*itQ).GetItem().GetJSON()});
+
+			res.emplace(item["id"].template as<int>(), (*it).GetItemRefRanked().Rank().Value());
+			resQ.emplace(itemQ["id"].template as<int>(), (*itQ).GetItemRefRanked().Rank().Value());
+
+			++it;
+			++itQ;
+		}
+
+		int recallCounter = 0;
+		float variance = 0;
+		for (auto& [id, rank] : resQ) {
+			if (res.contains(id)) {
+				variance += std::abs(res[id] - rank) / res[id];
+				++recallCounter;
+			}
+		}
+		EXPECT_GT(recallCounter, 0);
+
+		avgRankVariance += variance / recallCounter;
+
+		if (!refRank) {
+			EXPECT_EQ(it, qr.end());
+			EXPECT_EQ(itQ, qrQ.end());
+			refRank = (*(qr.begin() + qr.Count() / 2)).GetItemRefRanked().Rank().Value();
+		}
+
+		return refRank;
+	};
+
+	const auto queryPoints = MakeQueryPoints();
+	for (auto& queryPoint : queryPoints) {
+		auto refRank = test(queryPoint, std::nullopt);
+		std::ignore = test(queryPoint, refRank);
+	}
+
+	avgRankVariance /= queryPoints.size();
+	if (kIsRelease) {
+		ASSERT_LE(avgRankVariance, 0.06f);
+	}
+}
+
+TEST_F(QuantizationApi, SearchWithRadiusTest_L2) { SearchWithRadiusTestBody<reindexer::VectorMetric::L2>(api); }
+TEST_F(QuantizationApi, SearchWithRadiusTest_IP) { SearchWithRadiusTestBody<reindexer::VectorMetric::InnerProduct>(api); }
+TEST_F(QuantizationApi, SearchWithRadiusTest_Cosine) { SearchWithRadiusTestBody<reindexer::VectorMetric::Cosine>(api); }
 }  // namespace sq8_test

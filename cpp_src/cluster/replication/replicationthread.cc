@@ -772,6 +772,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 			} else if (requiredLsn.LSN() == localLsn.LSN() && !followerState.dataHash.IsEqualByAnyVersionTo(localState.dataHash)) {
 				logWarn("{}:{}:{} Datahash missmatch. Expected: {}, actual: {}", serverId_, node.uid, nsName, localState.dataHash,
 						followerState.dataHash);
+				assertrx_dbg(0 && "Does not expect checksum missmatch in debug build");
 				requiredLsn = ExtendedLsn();
 			}
 		}

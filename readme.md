@@ -10,9 +10,8 @@ Reindexer's goal is to provide fast search with complex queries. We at Restream 
 
 The core is written in C++ and the application level API is in Go.
 
-This document describes Go connector and its API. To get information
-about reindexer server and HTTP API refer to
-[reindexer documentation](cpp_src/readme.md)
+This document describes the Go connector and its API. For information about the Reindexer server and HTTP API, refer to the
+[Reindexer documentation](cpp_src/readme.md).
 
 # Table of contents:
 
@@ -31,7 +30,7 @@ about reindexer server and HTTP API refer to
   - [Installation for server mode](#installation-for-server-mode)
     - [Official docker image](#official-docker-image)
   - [Installation for embedded mode](#installation-for-embedded-mode)
-    - [Prerequirements](#prerequirements)
+    - [Prerequisites](#prerequisites)
     - [Get Reindexer using go.mod](#get-reindexer-using-gomod)
     - [Get Reindexer using go.mod and replace](#get-reindexer-using-gomod-and-replace)
     - [Get Reindexer for apps without go.mod (vendoring)](#get-reindexer-for-apps-without-gomod-vendoring)
@@ -55,7 +54,7 @@ about reindexer server and HTTP API refer to
     - [Concatenate arrays](#concatenate-arrays)
     - [Remove array elements by values](#remove-array-elements-by-values)
   - [Delete queries](#delete-queries)
-    [Truncate queries](#truncate-queries)
+  - [Truncate queries](#truncate-queries)
   - [Transactions and batch update](#transactions-and-batch-update)
     - [Synchronous mode](#synchronous-mode)
     - [Async batch mode](#async-batch-mode)
@@ -93,7 +92,7 @@ about reindexer server and HTTP API refer to
     - [CPU profiling](#cpu-profiling)
     - [Known profiling issues](#known-profiling-issues)
   - [Tracing](#tracing)
-- [Integration with other program languages](#integration-with-other-program-languages)
+- [Integration with other programming languages](#integration-with-other-programming-languages)
   - [Reindexer for python](#pyreindexer-for-python)
   - [Reindexer for java](#reindexer-for-java)
     - [Spring wrapper](#spring-wrapper)
@@ -198,7 +197,7 @@ import (
 
 )
 
-// Define struct with reindex tags. Fields must be exported - private fields can not be written into reindexer
+// Define struct with reindex tags. Fields must be exported - private fields cannot be written into Reindexer
 type Item struct {
 	ID       int64  `reindex:"id,,pk"`    // 'id' is primary key
 	Name     string `reindex:"name"`      // add index by 'name' field
@@ -301,7 +300,7 @@ There are also some basic samples for C++ and Go [here](samples)
 
 ### SQL compatible interface
 
-As alternative to Query builder Reindexer provides SQL compatible query interface. Here is sample of SQL interface usage:
+As an alternative to the Query builder, Reindexer provides SQL-compatible query interface. Here is a sample of SQL interface usage:
 
 ```go
     ...
@@ -363,9 +362,9 @@ SELECT * FROM ns WHERE (SELECT COUNT(*) FROM ns2 WHERE id < 10) > 18
 Reindexer can run in 3 different modes:
 
 - `embedded (builtin)` Reindexer is embedded into application as static library, and does not require separate server process.
-- `embedded with server (builtinserver)` Reindexer is embedded into application as static library, and start server. In this mode other
-  clients can connect to application via cproto, cprotos, ucproto, http or https.
-- `standalone` Reindexer run as standalone server, application connects to Reindexer via network or unix domain sockets.
+- `embedded with server (builtinserver)` Reindexer is embedded into the application as a static library and starts a server. In this mode, other
+  clients can connect to the application via cproto, cprotos, ucproto, http, or https.
+- `standalone` Reindexer runs as a standalone server; the application connects to Reindexer via network or Unix domain sockets.
 
 ### Installation for server mode
 
@@ -376,7 +375,7 @@ In this mode Reindexer's Go-binding does not depend on reindexer's static librar
 
 #### Official docker image
 
-The simplest way to get reindexer server, is pulling & run docker image from [dockerhub](https://hub.docker.com/r/reindexer/reindexer/).
+The simplest way to get Reindexer server is to pull and run the Docker image from [Docker Hub](https://hub.docker.com/r/reindexer/reindexer/).
 
 ```bash
 docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
@@ -386,13 +385,13 @@ docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
 
 ### Installation for embedded mode
 
-#### Prerequirements
+#### Prerequisites
 
-Reindexer's core is written with C++20 and uses LevelDB as the storage backend, so Cmake, C++20 toolchain and LevelDB must be installed before installing Reindexer. Also, OpenMP and BLAS/LAPACK libraries may be required for full vector indexes support.
+Reindexer's core is written in C++20 and uses LevelDB as the storage backend, so CMake, a C++20 toolchain, and LevelDB must be installed before installing Reindexer. Also, OpenMP and BLAS/LAPACK libraries may be required for full vector index support.
 
-To build Reindexer, g++ 10+, clang 15+ or [mingw64](https://sourceforge.net/projects/mingw-w64/) is required.
+To build Reindexer, g++ 10+, clang 15+, or [mingw64](https://sourceforge.net/projects/mingw-w64/) is required.
 
-In embedded modes Reindexer's Go-binding depends on reindexer's static libraries (core, server and resource).
+In embedded mode, Reindexer's Go binding depends on Reindexer's static libraries (core, server, and resource).
 
 #### Get Reindexer using go.mod
 
@@ -414,7 +413,7 @@ If you need modified Reindexer's sources, you can use `replace` like that.
 
 1. Download and build reindexer:
 ```bash
-# Clone reindexer via git. It's also possible to use 'go get -a github.com/restream/reindexer/v5', but it's behavior may vary depending on Go's version
+# Clone reindexer via git. It's also possible to use 'go get -a github.com/restream/reindexer/v5', but its behavior may vary depending on Go's version
 git clone https://github.com/restream/reindexer.git $GOPATH/src/reindexer
 bash $GOPATH/src/reindexer/dependencies.sh
 # Generate builtin binding
@@ -442,7 +441,7 @@ If you're not using go.mod it's possible to get and build reindexer from sources
 export GO111MODULE=off # Disable go1.11 modules
 # Go to your app's directory
 cd /your/app/path
-# Clone reindexer via git. It's also possible to use 'go get -a github.com/restream/reindexer', but it's behavior may vary depending on Go's version
+# Clone reindexer via git. It's also possible to use 'go get -a github.com/restream/reindexer', but its behavior may vary depending on Go's version
 git clone https://github.com/restream/reindexer.git vendor/github.com/restream/reindexer/v5
 # Generate builtin binding
 go generate -x ./vendor/github.com/restream/reindexer/v5/bindings/builtin
@@ -456,7 +455,7 @@ Go does not support proper vendoring for CGO code (https://github.com/golang/go/
 
 With `vend` you'll be able to call `go generate -mod=vendor` for `builtin` and `builtinserver`, placed in your vendor-directory.
 
-It's also possible to copy simply copy reindexer's sources into youth project, using `git clone`.
+It's also possible to simply copy Reindexer's sources into your project using `git clone`.
 
 In these cases all the dependencies from Reindexer's [go.mod](go.mod) must be installed manually with proper versions.
 
@@ -473,26 +472,26 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
 
 `reindex:"<name>[[,<type>],<opts>]"`
 
-- `name` – index name.
-- `type` – index type:
-  - `hash` – fast select by EQ and SET match. Used by default. Allows _slow_ and inefficient sorting by field.
-  - `tree` – fast select by RANGE, GT, and LT matches. A bit slower for EQ and SET matches than `hash` index. Allows fast sorting results by field.
-  - `text` – full text search index. Usage details of full text search is described [here](fulltext.md)
-  - `-` – column index. Can't perform fast select because it's implemented with full-scan technic. Has the smallest memory overhead.
+- `name` - index name.
+- `type` - index type:
+  - `hash` - fast select by EQ and SET match. Used by default. Allows _slow_ and inefficient sorting by field.
+  - `tree` - fast select by RANGE, GT, and LT matches. A bit slower for EQ and SET matches than `hash` index. Allows fast sorting results by field.
+  - `text` - full-text search index. Details of full-text search are described [here](fulltext.md)
+  - `-` - column index. Can't perform fast select because it's implemented with a full-scan technique. Has the smallest memory overhead.
   - `ttl` - TTL index that works only with int64 fields. These indexes are quite convenient for representation of date fields (stored as UNIX timestamps) that expire after specified amount of seconds.
   - `rtree` - available only DWITHIN match. Acceptable only for `[2]float64` (or `reindexer.Point`) field type. For details see [geometry subsection](#geometry).
-- `opts` – additional index options:
-  - `pk` – field is part of a primary key. Struct must have at least 1 field tagged with `pk`
+- `opts` - additional index options:
+  - `pk` - field is part of a primary key. Struct must have at least 1 field tagged with `pk`
   - `composite` – create composite index. The field type must be an empty struct: `struct{}`.
   - `joined` – field is a recipient for join. The field type must be `[]*SubitemType`.
   - `dense` - reduce index size. For `hash` and `tree` it will save 8-16 bytes per unique key value. For `-` it will save 4-16 bytes per each element. Useful for indexes with high selectivity, but for `tree` and `hash` indexes with low selectivity can seriously decrease update performance. Also `dense` will slow down wide fullscan queries on `-` indexes, due to lack of CPU cache optimization. For the `text` index does not reduce index' size, but switches index' rebuild to the single-thread mode.
   - `sparse` - Row (document) contains a value of Sparse index only in case if it's set on purpose - there are no empty (or default) records of this type of indexes in the row (document). It allows to save RAM, but it will cost you performance - it works a bit slower than regular indexes.
   - `collate_numeric` - create string index that provides values order in numeric sequence. The field type must be a string.
-  - `collate_ascii` - create case-insensitive string index works with ASCII. The field type must be a string.
-  - `collate_utf8` - create case-insensitive string index works with UTF8. The field type must be a string.
+  - `collate_ascii` - create a case-insensitive string index that works with ASCII. The field type must be a string.
+  - `collate_utf8` - create a case-insensitive string index that works with UTF-8. The field type must be a string.
   - `collate_custom=<ORDER>` - create custom order string index. The field type must be a string. `<ORDER>` is sequence of letters, which defines sort order.
   - `linear`, `quadratic`, `greene` or `rstar` - specify algorithm for construction of `rtree` index (by default `rstar`). For details see [geometry subsection](#geometry).
-  - `uuid` - store this value as UUID. This is much more effective from the RAM/network consummation standpoint for UUIDs, than strings. Only `hash` and `-` index types are supported for UUIDs. Can be used with any UUID variant, except variant 0
+  - `uuid` - store this value as UUID. This is much more effective from the RAM/network consumption standpoint for UUIDs than strings. Only `hash` and `-` index types are supported for UUIDs. Can be used with any UUID variant, except variant 0
 
 Fields with regular indexes are not nullable. Condition `is NULL` is supported only by `sparse` and `array` indexes.
 
@@ -561,7 +560,7 @@ Nested fields. Index has `json_paths: ["obj1.f", "obj2.f"]`:
 ### Nested Structs
 
 By default, Reindexer scans all nested structs and adds their fields to the namespace (as well as indexes specified).
-During indexes scan private (non-exported fields), fields tagged with `reindex:"-"` and fields tagged with `json:"-"` will be skipped.
+During index tags scanning, private (non-exported) fields, fields tagged with `reindex:"-"`, and fields tagged with `json:"-"` will be skipped.
 
 ```go
 type Actor struct {
@@ -592,25 +591,25 @@ type ComplexItem struct {
 
 Reindexer can sort documents by fields (including nested and fields of the joined namespaces) or by expressions in ascending or descending order.
 
-To sort by non-index fields all the values must be convertible to each other, i.e. either have the same types or be one of th numeric types (`bool`, `int`, `int64` or `float`).
+To sort by non-indexed fields, all the values must be convertible to each other, i.e. either have the same types or be one of the numeric types (`bool`, `int`, `int64`, or `float`).
 
 Sort expressions can contain:
- - fields and indexes names (including nested fields and fields of the joined namespaces) of `bool`, `int`, `int64`, `float` or `string` types. All the values must be convertible to numbers ignoring leading and finishing spaces;
+ - field and index names (including nested fields and fields of the joined namespaces) of `bool`, `int`, `int64`, `float`, or `string` types. All the values must be convertible to numbers ignoring leading and trailing spaces;
  - numbers;
  - functions `rank()`, `abs()` and `ST_Distance()`;
  - parenthesis;
  - arithmetic operations: `+`, `-` (unary and binary), `*` and `/`.
 
-If field name followed by `+` they must be separated by space to distinguish composite index name.
+If a field name is followed by `+`, it must be separated by a space to distinguish a composite index name.
 Fields of the joined namespaces must be written like this: `joined_namespace.field`.
 
 `Abs()` means absolute value of an argument.
 
-`Rank()` means fulltext or knn rank of match and is applicable only in fulltext and knn query.
+`Rank()` means fulltext or KNN rank of match and is applicable only in fulltext and KNN queries.
 
 `ST_Distance()` means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
 
-`hash()` or `hash(seed)` means get hash (uint32) from record id. If `seed` is not specified, it is generated randomly. This function is usefully to randomize sorting order.
+`hash()` or `hash(seed)` returns a hash (`uint32`) from the record id. If `seed` is not specified, it is generated randomly. This function is useful to achieve randomized sort order.
 
 In SQL query sort expression must be quoted.
 
@@ -703,9 +702,9 @@ query := db.Query("actors").Sort("id", false, 10, 15, 17) // Documents with IDs 
 
 ### Counting
 
-Reindexer supports 2 version of counting aggregation:
-- `count()` - this aggregation counts all the documents, which match query's filters;
-- `count_cached()` - this allows reindexer to use cached count results. Generally this method is more fast (especially for queries with low `limit()` value), however may return outdated results, if cache was not invalidated after some documents' changes.
+Reindexer supports two versions of counting aggregation:
+- `count()` - this aggregation counts all the documents that match the query's filters;
+- `count_cached()` - this allows Reindexer to use cached count results. Generally this method is faster (especially for queries with low `limit()` values); however, it may return outdated results if the cache was not invalidated after some documents' changes.
 
 Go example for `count()`:
 ```go
@@ -914,7 +913,7 @@ db.Query("items").Where("id", reindexer.EQ, 40).Set("field1", value1).Set("field
 
 #### Update queries with inner joins and subqueries
 
-Inner join and subquery may also be used as WHERE-condition.  Inner joins don't actually joining items, but will be applied as filtering condition.
+Inner join and subquery may also be used as WHERE conditions. Inner joins don't actually join items, but are applied as filtering conditions.
 
 SQL syntax:
 ```sql
@@ -961,7 +960,7 @@ db.Query("clients").Where("id", reindexer.EQ, 100).SetObject("client_data", clie
 
 In this case, `Map` in golang can only work with string as a key. `map[string]interface{}` is a perfect choice.
 
-Updating of object field by Sql statement:
+Updating an object field via SQL statement:
 
 ```sql
 UPDATE clients SET client_data = {"Name":"John Doe","Age":40,"Address":"Fifth Avenue, Manhattan","Occupation":"Bank Manager","TaxYear":1999,"TaxConsultant":"Jane Smith"} WHERE id = 100;
@@ -969,7 +968,7 @@ UPDATE clients SET client_data = {"Name":"John Doe","Age":40,"Address":"Fifth Av
 
 #### Remove field via update-query
 
-UPDATE Sql-Syntax of queries that drop existing non-indexed fields:
+UPDATE SQL syntax for queries that drop existing non-indexed fields:
 
 ```sql
 UPDATE nsName
@@ -1104,7 +1103,7 @@ db.Query("main_ns").SetExpression("integer_array", "[3] || array_remove(integer_
 
 ### Delete queries
 
-Reindexer also supports `delete`-queries. Those queries may contain conditions, inner joins and subqueries. Inner joins don't actually joining items, but will be applied as filtering condition.
+Reindexer also supports `delete` queries. Those queries may contain conditions, inner joins, and subqueries. Inner joins don't actually join items, but are applied as filtering conditions.
 
 SQL syntax for delete queries:
 ```sql
@@ -1146,11 +1145,11 @@ Go syntax:
 DB.TruncateNamespace(ns)
 ```
 
-In oposite to queries like `delete * from ns`, `truncate` also deallocates dynamic memory, associated with indexing structures, and does not bloat `WAL` with serialized primary keys of deleted items.
+Unlike queries like `delete * from ns`, `truncate` also deallocates dynamic memory associated with indexing structures and does not bloat `WAL` with serialized primary keys of deleted items.
 
 ### Transactions and batch update
 
-Reindexer supports transactions. Transaction are performs atomic namespace update. There are synchronous and async transaction available. To start transaction method `db.BeginTx()` is used. This method creates transaction object, which provides usual Update/Upsert/Insert/Delete interface for application.
+Reindexer supports transactions. Transactions perform atomic namespace updates. There are synchronous and async transactions available. To start transaction method `db.BeginTx()` is used. This method creates transaction object, which provides usual Update/Upsert/Insert/Delete interface for application.
 For RPC clients there is transactions count limitation - each connection can't have more than 1024 open transactions at the same time.
 
 #### Synchronous mode
@@ -1313,7 +1312,7 @@ SELECT * FROM items_with_join WHERE NOT INNER JOIN (SELECT * FROM actors WHERE i
 
 #### Joinable interface
 
-To avoid using reflection, `Item` can implement `Joinable` interface. If that implemented, Reindexer uses this instead of the slow reflection-based implementation. This increases overall performance by 10-20%, and reduces the amount of allocations.
+To avoid using reflection, `Item` can implement the `Joinable` interface. If that is implemented, Reindexer uses this instead of the slow reflection-based implementation. This increases overall performance by 10-20%, and reduces the amount of allocations.
 
 ```go
 // Joinable interface implementation.
@@ -1344,7 +1343,7 @@ or between a field of main query's namespace and result of the subquery:
 query := db.Query("main_ns").
 	Where("id", reindexer.EQ, db.Query("second_ns").Select("id").Where("age", reindexer.GE, 18))
 ```
-Result of the subquery may either be a certain field pointed by `Select` method (in this case it must set the single field filter):
+The result of the subquery may either be a certain field pointed to by the `Select` method (in this case it must set the single field filter):
 ```go
 query1 := db.Query("main_ns").
 	WhereQuery(db.Query("second_ns").Select("id").Where("age", reindexer.GE, 18), reindexer.GE, 100)
@@ -1369,7 +1368,7 @@ query2 := db.Query("main_ns").
 
 Subquery can be applied to the same namespace or to the another one.
 
-Subquery can not contain another subquery, join or merge.
+A subquery cannot contain another subquery, join, or merge.
 
 If you want to check if at least one of the items is satisfying to the subqueries, you may use `ANY` or `EMPTY` condition:
 ```go
@@ -1431,14 +1430,14 @@ type Item struct {
 	query := db.Query("items").Sort("rating+year", true, []interface{}{5,2010})
 ```
 
-For make query to the composite index, pass []interface{} to `.WhereComposite` function of Query builder:
+To query the composite index, pass `[]interface{}` to the `.WhereComposite` function of the Query builder:
 
 ```go
 	// Get results where rating == 5 and year == 2010
 	query := db.Query("items").WhereComposite("rating+year", reindexer.EQ,[]interface{}{5,2010})
 ```
 
-All the fields in regular (non-fulltext) composite index must be indexed. I.e. to be able to create composite index `rating+year`, it is necessary to create some kind of indexes for both `raiting` and `year` first:
+All the fields in a regular (non-fulltext) composite index must be indexed. I.e. to be able to create composite index `rating+year`, it is necessary to create some kind of indexes for both `rating` and `year` first:
 
 ```go
 type Item struct {
@@ -1455,8 +1454,8 @@ Reindexer allows to retrieve aggregated results. Currently Count, CountCached, A
 Distinct
 aggregations are supported.
 
-- `Count` - get total number of documents that meet the querie's conditions
-- `CountCached` - get total number of documents that meet the querie's conditions. Result value will be cached and may
+- `Count` - get total number of documents that meet the query's conditions
+- `CountCached` - get total number of documents that meet the query's conditions. Result value will be cached and may
   be reused by the other queries with CountCached aggregation
 - `AggregateMax` - get maximum field value
 - `AggregateMin` - get minimum field value
@@ -1466,14 +1465,14 @@ aggregations are supported.
 - `Distinct` - get list of unique values of the field
 
 In order to support aggregation, `Query` has methods `AggregateAvg`, `AggregateSum`, `AggregateMin`, `AggregateMax`
-, `AggregateFacet` and `Distinct` those should be called before the `Query` execution: this will ask reindexer to
+, `AggregateFacet`, and `Distinct` should be called before the `Query` execution: this will ask Reindexer to
 calculate data aggregations.
 Aggregation Facet is applicable to multiple data columns and the result of that could be sorted by any data column or '
 count' and cut off by offset and limit.
 In order to support this functionality method `AggregateFacet` returns `AggregationFacetRequest` which has
 methods `Sort`, `Limit` and `Offset`.
 
-Queries with MERGE will apply aggregations from the main query to all the merged subqueries. Subqueries can not have
+Queries with MERGE will apply aggregations from the main query to all the merged subqueries. Subqueries cannot have
 their own aggregations. Available aggregations for MERGE-queries are: Count, CountCached, Sum, Min and Max.
 
 To get aggregation results, `Iterator` has method `AggResults`: it is available after query execution and returns slice
@@ -1706,7 +1705,7 @@ The table created as a result of grouping will be as follows:
 
 To check the condition, rows with the same indices are selected.
 
-Grouping with two dimensions array:
+Grouping with a two-dimensional array:
 `Array2[#][*]`
 | N |      |     |
 |---|------|-----|
@@ -1854,7 +1853,7 @@ Grouping by `arr_root[#].obj_nested.arr_nested[*].field`:
 
 ### Atomic on update functions
 
-There are atomic functions, which executes under namespace lock, and therefore guarantees data consistency:
+There are atomic functions, which execute under a namespace lock and therefore guarantee data consistency:
 
 - serial() - sequence of integer, useful for auto-increment keys
 - now() - current time stamp, useful for data synchronization. It may have one of the following arguments:  msec, usec, nsec and sec. The “sec” argument is used by default.
@@ -1923,7 +1922,7 @@ In case of requirement to serialize results of Query in JSON format, then it is 
 ```go
 ...
 	iterator := db.Query("items").
-		Select ("id","name").        // Filter output JSON: Select only "id" and "name" fields of items, another fields will be omitted. This fields should be specified in the same case as the jsonpaths corresponding to them.
+		Select ("id","name").        // Filter output JSON: select only "id" and "name" fields of items; other fields will be omitted. These fields should be specified in the same case as the jsonpaths corresponding to them.
 		Limit (1).
 		ExecToJson ("root_object")   // Name of root object of output JSON
 
@@ -1944,8 +1943,8 @@ This code will print something like:
 
 ### Using object cache
 
-To avoid race conditions, by default object cache is turned off and all objects are allocated and deserialized from reindexer internal format (called `CJSON`) per each query.
-The deserialization is uses reflection, so its speed is not optimal (in fact `CJSON` deserialization is ~3-10x faster than `JSON`, and ~1.2x faster than `GOB`), but performance is still seriously limited by reflection overhead.
+To avoid race conditions, by default object cache is turned off and all objects are allocated and deserialized from Reindexer's internal format (called `CJSON`) for each query.
+Deserialization uses reflection, so its speed is not optimal (in fact `CJSON` deserialization is ~3-10x faster than `JSON`, and ~1.2x faster than `GOB`), but performance is still seriously limited by reflection overhead.
 
 There are 2 ways to enable object cache:
 
@@ -1954,8 +1953,7 @@ There are 2 ways to enable object cache:
 
 #### DeepCopy interface
 
-If object is implements DeepCopy interface, then reindexer will turn on object cache and use DeepCopy interface to copy objects from cache to query results. The DeepCopy interface is responsible to
-make deep copy of source object.
+If an object implements the DeepCopy interface, then Reindexer will turn on object cache and use the DeepCopy interface to copy objects from cache to query results. The DeepCopy interface is responsible for making a deep copy of the source object.
 
 Here is sample of DeepCopy interface implementation
 
@@ -1974,9 +1972,9 @@ func (item *Item) DeepCopy () interface {} {
 
 #### Get shared objects from object cache (USE WITH CAUTION)
 
-To speed up queries and do not allocate new objects per each query it is possible ask query return objects directly from object cache. For enable this behavior, call `AllowUnsafe(true)` on `Iterator`.
+To speed up queries and avoid allocating new objects for each query, it is possible to have the query return objects directly from object cache. To enable this behavior, call `AllowUnsafe(true)` on `Iterator`.
 
-WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to structs in object cache. Therefore, application MUST NOT modify returned objects.
+WARNING: when `AllowUnsafe(true)` is used, queries return shared pointers to structs in object cache. Therefore, application MUST NOT modify returned objects.
 
 ```go
 	res, err := db.Query("items").WhereInt ("id",reindexer.EQ,1).Exec().AllowUnsafe(true).FetchAll()
@@ -2050,7 +2048,7 @@ stream := db.Subscribe(opts)
 if err := stream.Error(); err != nil {
 	panic(err)
 }
-// Stream must be finalized. Finalization here basicly means 'unsubscribe'
+// Stream must be finalized. Finalization here basically means 'unsubscribe'
 defer stream.Close(context.Background())
 
 for {
@@ -2135,7 +2133,7 @@ In `go:generate` builds and prebuilt packages reindexer has TCMalloc support, ho
 LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libtcmalloc_and_profiler.so ./my_executable
 ```
 
-Custom allocator may be handy to track memory consummation, profile heap/CPU or to improve general performance.
+A custom allocator may be handy to track memory consumption, profile heap/CPU, or to improve general performance.
 
 ### Profiling
 
@@ -2166,7 +2164,7 @@ go func() {
 pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
 ```
 
-In some cases remote symbolizer unable to resolve the symbols, so you may try the default:
+In some cases the remote symbolizer is unable to resolve the symbols, so you may try the default:
 ```bash
 pprof http://localhost:6060/debug/cgo/pprof/heap
 ```
@@ -2198,7 +2196,7 @@ pprof -symbolize remote http://localhost:6060/debug/pprof/profile?seconds=10
 
 #### Known profiling issues
 
-Due to internal Golang's specific it's not recommended to try to get CPU and heap profiles simultaneously, because it may cause deadlock inside the profiler.
+Due to Go-specific behavior, it is not recommended to try to get CPU and heap profiles simultaneously, because it may cause a deadlock inside the profiler.
 
 ### Tracing
 
@@ -2229,9 +2227,9 @@ Use [opentelemetry-go](https://opentelemetry.io/docs/instrumentation/go/getting-
 to export the information externally. For example, as a minimum, you will need to configure OpenTelemetry SDK exporter
 to expose the generated spans externally (see the `Getting Started` guide for more information).
 
-## Integration with other program languages
+## Integration with other programming languages
 
-A list of connectors for work with Reindexer via other program languages (TBC later):
+A list of connectors for working with Reindexer via other programming languages:
 
 ### Pyreindexer for Python
 
@@ -2264,7 +2262,7 @@ Run to install:
 pip3 install langchain-reindexer
 ```
 
-LangChain integraion library is able to interact with Reindexer in `builtin` and `cproto` modes.
+The LangChain integration library is able to interact with Reindexer in `builtin` and `cproto` modes.
 
 Related URLs:
 - https://github.com/Restream/langchain-reindexer
@@ -2279,7 +2277,7 @@ Related URLs:
 Reindexer for java is official connector, and maintained by Reindexer's team. It supports both builtin and standalone modes.
 To enable builtin mode support reindexer-dev should be installed. Check [installation instructions](cpp_src/readme.md#Installation) for details.
 
-For install reindexer to Java or Kotlin project add the following lines to maven project file
+To install Reindexer in a Java or Kotlin project, add the following lines to the Maven project file
 ```
 <dependency>
 	<groupId>com.github.restream</groupId>

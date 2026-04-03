@@ -58,7 +58,7 @@ T GetValue(const Variant& value) {
 
 template <typename T>
 T GetValue(CondType cond, const VariantArray& values, size_t i) {
-	if (values.size() <= i) {
+	if (values.size() <= i) [[unlikely]] {
 		throw Error{errQueryExec, "Too many arguments for condition {}", CondTypeToStr(cond)};
 	}
 	const auto& val = values[i];

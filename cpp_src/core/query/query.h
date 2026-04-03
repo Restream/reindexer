@@ -220,9 +220,7 @@ public:
 	/// @return Query object ready to be executed.
 	template <concepts::ConvertibleToString Str>
 	Query& DWithin(Str&& field, Point p, double distance) & {
-		std::ignore = entries_.Append<QueryEntry>(nextOp_, std::forward<Str>(field), CondDWithin, VariantArray::Create(p, distance));
-		nextOp_ = OpAnd;
-		return *this;
+		return Where(std::forward<Str>(field), CondDWithin, VariantArray::Create(p, distance));
 	}
 	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& DWithin(Str&& field, Point p, double distance) && {
@@ -285,7 +283,6 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-
 	template <concepts::ConvertibleToString Str>
 	Query&& Where(Str&& field, CondType cond, functions::FunctionVariant&& function) && {
 		return std::move(Where(std::forward<Str>(field), cond, std::move(function)));
@@ -312,7 +309,7 @@ public:
 	/// @param q - nested query, that has to return some sequence of values (selection or aggregation result).
 	/// @return Query object ready to be executed.
 	Query& Where(functions::FunctionVariant&& function, CondType cond, Query&& q) & {
-		if (cond == CondDWithin) {
+		if (cond == CondDWithin) [[unlikely]] {
 			throw Error(errLogic, "DWithin between field and subquery");
 		}
 		checkFunctionForLeftExpression(function);
@@ -340,7 +337,7 @@ public:
 	/// @param function - function object used in condition clause.
 	/// @return Query object ready to be executed.
 	Query& Where(Query&& q, CondType cond, functions::FunctionVariant&& function) & {
-		if (cond == CondDWithin) {
+		if (cond == CondDWithin) [[unlikely]] {
 			throw Error(errLogic, "DWithin between field and subquery");
 		}
 		checkFunctionForRightExpression(function);

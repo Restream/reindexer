@@ -1,4 +1,4 @@
-# Full text search with Reindexer
+# Full-text search with Reindexer
 
 Reindexer has builtin full text search engine. This document describes usage of full text search.
 
@@ -30,7 +30,7 @@ Reindexer has builtin full text search engine. This document describes usage of 
     - [Base ranking config](#base-ranking-config)
     - [Text splitters](#text-splitters)
     - [Basic document ranking algorithms](#basic-document-ranking-algorithms)
-    - [Limitations and know issues](#limitations-and-know-issues)
+    - [Limitations and known issues](#limitations-and-known-issues)
 
 
 ## LIKE
@@ -70,12 +70,12 @@ type Item struct {
     ID          int64  `reindex:"id,,pk"`
     Name        string `reindex:"name,-"`
     Description string `reindex:"description,-"`
-    _ struct{}         `reindex:"name+description=text_search,text,composite`
+    _ struct{}         `reindex:"name+description=text_search,text,composite"`
 }
 ```
-In this example full text index will include fields `name` and `description`,`text_search` is short alias of composite index name for using in Queries.
+In this example the full-text index will include fields `name` and `description`; `text_search` is a short alias of the composite index name for use in Queries.
 
-Full text index is case-insensitive. The source text is tokenized to set of words. Word is sequence of any UTF-8 letters, digits or `+`, `-` or `/` symbols. First symbol of word is letter or digit.
+The full-text index is case-insensitive. The source text is tokenized into a set of words. A word is a sequence of any UTF-8 letters, digits, or `+`, `-`, or `/` symbols. The first symbol of a word is a letter or digit.
 
 ## Query to full text index
 
@@ -131,7 +131,7 @@ The format of query is:
 The DSL's operand can be a phrase:
 `"word1 word2 ..."[~N]`. 
 In this case `word1`, `word2`, ... are the words that make up the phrase in the given sequence. 
-Words order is matter, i.e. sequence `word2 word1` will not be found with `"word1 word2"` DSL.
+Word order matters, i.e. sequence `word2 word1` will not be found with `"word1 word2"` DSL.
 
 `~N` - max distance (in words) between adjacent word positions. This argument is optional, default value for `N` is 1.
 
@@ -160,9 +160,9 @@ Synonyms of multiple words are not supported in the phrase.
 
 ## Natural language processing
 
-There are built in stemmers support in full text search. It enables natural language search of words with same stem. For example, query `users` will also match `user`. Stemmer is language specific, so it is necessary to specify language of used stemmer.
+Built-in stemmer support is available in full-text search. It enables natural language search of words with same stem. For example, query `users` will also match `user`. Stemmer is language specific, so it is necessary to specify language of used stemmer.
 
-All the available stemmers are in this [directory].(cpp_src/vendor/libstemmer/src_c)
+All the available stemmers are in this [directory](cpp_src/vendor/libstemmer/src_c).
 
 
 ## Merging queries results
@@ -203,7 +203,7 @@ Notice: although text indexes may be created over numeric fields, select functio
 For all the functions there are two types of supported syntax with the same behavior: `field.func_name(...)` and `field = func_name(...)`.
 
 ### Highlight
-This functions just highlights text area that was found.
+This function highlights the text area that was found.
 It has two arguments -
 - `first` string that will be inserted before found text area
 - `second` string that will be inserted after found text area
@@ -321,7 +321,7 @@ word. `black` and `block` do not match.
 
 Internally reindexer uses enhanced suffix array of unique words, and compressed reverse index of documents. Typically size of index is about 30%-80% of source text. But can vary in corner cases.
 
-The `Upsert` operation does not perform actual indexing, but just stores text. There are lazy indexing is implemented. So actually, full text index is building on first Query on fulltext field. The indexing is uses several threads, so it is efficiently utilizes resources of modern multicore CPU. Therefore, the indexing speed is very high. On modern hardware indexing speed is about ~50MB/sec
+The `Upsert` operation does not perform actual indexing, but just stores text. There are lazy indexing is implemented. So actually, full text index is building on first Query on fulltext field. The indexing is uses several threads, so it is efficiently utilizes resources of modern multicore CPU. Therefore, the indexing speed is very high.
 
 But on huge text size lazy indexing can seriously slow down first Query to text index. To avoid this side effect it is possible to warmup text index: just by dummy Query after last `Upsert`
 
@@ -354,7 +354,7 @@ Several parameters of full text search engine can be configured from application
 |   |    Parameter name     |   Type   |                                                                                                                                                            Description                                                                                                                                                            | Default value |
 |---|:---------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
 |   |       Bm25Boost       |   float  | Boost of bm25 ranking                                                                                                                                                                                                                                                                                                             |       1       |
-|   |      Bm25Weight       |   float  | Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to fin l rank in 0 - 100% range.                                                                                                                                                                                                        |      0.1      |
+|   |      Bm25Weight       |   float  | Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect the final rank in 0 - 100% range.                                                                                                                                                                                                        |      0.1      |
 |   |     DistanceBoost     |   float  | Boost of search query term distance in found document.                                                                                                                                                                                                                                                                            |       1       |
 |   |    DistanceWeight     |   float  | Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range.                                                                                                                                                            |      0.5      |
 |   |     TermLenBoost      |   float  | Boost of search query term length                                                                                                                                                                                                                                                                                                 |       1       |
@@ -435,7 +435,7 @@ FtTyposDetailedConfig: config for more precise typos algorithm tuning.
 |   |       Parameter name         |   Type   |                                                                                                                        Description                                                                                                                        | Default value |
 |---|:----------------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
 |   | MaxTypoDistance              |    int   | Maximum distance between symbols in initial and target words to perform substitution. Check [typos handling](#typos-handling-details) section for detailed description.                                                                                   |       0       |
-|   | MaxSymbolPermutationDistance |    int   | aximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbols were switched with each other). Check [typos handling](#typos-handling-details) section for detailed description.            |       1       |
+|   | MaxSymbolPermutationDistance |    int   | Maximum distance between same symbols in initial and target words to perform substitution (to handle cases when two symbols were switched with each other). Check [typos handling](#typos-handling-details) section for detailed description.             |       1       |
 |   | MaxMissingLetters            |    int   | Maximum number of symbols, which may be removed from the initial term to transform it into the result word. Check [typos handling](#typos-handling-details) section for detailed description.                                                             |       2       |
 |   | MaxExtraLetters              |    int   | Maximum number of symbols, which may be added to the initial term to transform it into the result word. Check [typos handling](#typos-handling-details) section for detailed description.                                                                 |       2       |
 
@@ -447,7 +447,7 @@ FtBaseRanking: config for the base relevancy of the word in different forms.
 |---|:----------------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
 |   | FullMatch                    |    int   | Relevancy of full word match                                                                                                           
    |      100      |   
-|   | ConcatProc                   |    int   | Base relevancy of concatenated terms match match                                                                                                           
+|   | ConcatProc                   |    int   | Base relevancy of concatenated terms match                                                                                                           
                                                                                                                    |      90       |   
 |   | PrefixMin                    |    int   | Minimum relevancy of prefix word match.                                                                                                                                                                                                                   |       50      |           
 |   | SuffixMin                    |    int   | Minimum relevancy of suffix word match.                                                                                                                                                                                                                   |       10      | 
@@ -540,7 +540,7 @@ R = termCountInDoc
 
 
 
-### Limitations and know issues
+### Limitations and known issues
 
 - Results of full text search is always sorted by relevancy.
 - It is not possible to combine 2 Match in single Query. (but actually this can be done by composite indexes or by Merge functional)

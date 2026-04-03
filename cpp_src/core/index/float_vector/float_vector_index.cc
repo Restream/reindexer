@@ -277,4 +277,27 @@ void FloatVectorIndex::WriterBase::writePK(IdType id) {
 	}
 }
 
+IdType FloatVectorIndex::LoaderBase::readPKEncodedData(void* destBuf, Serializer& ser, std::string_view name, std::string_view idxType) {
+	Variant key;
+	if (!isCompositePK_) {
+		key = ser.GetVariant();
+	} else {
+		VariantArray keyParts;
+		const auto len = ser.GetVarUInt();
+		if (!len) [[unlikely]] {
+			throw Error(errLogic, "{}::LoadIndexCache:{}: serialized PK array is empty", idxType, name);
+		}
+		keyParts.reserve(len);
+		for (size_t i = 0; i < len; ++i) {
+			keyParts.emplace_back(ser.GetVariant());
+		}
+		key = Variant(keyParts);
+	}
+	const IdType itemID = getVectorData_(std::move(key), destBuf);
+	if (!itemID.IsValid()) [[unlikely]] {
+		throw Error(errLogic, "{}::LoadIndexCache:{}: unable to find indexed item with requested PK", idxType, name);
+	}
+	return itemID;
+}
+
 }  // namespace reindexer

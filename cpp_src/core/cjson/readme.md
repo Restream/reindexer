@@ -1,6 +1,6 @@
 
-`CJSON` (Compact JSON) is binary internal reindexer format for transparently representing JSON data.
-Each field of CJSON is encoded to `ctag` - varuint, which encodes type and name of field, and `data` binary representation of field data in format dependent of type.
+`CJSON` (Compact JSON) is a binary internal Reindexer format for transparently representing JSON data.
+Each field of CJSON is encoded to `ctag` — a varuint that encodes the type and name of the field, and `data`, the binary representation of field data in a format dependent on the type.
 
 
 ## Ctag format

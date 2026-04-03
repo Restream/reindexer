@@ -3,6 +3,7 @@
 #include "allocs_tracker.h"
 #include "core/ft/config/ftfastconfig.h"
 #include "gtests/tools.h"
+#include "yaml-cpp/yaml.h"
 
 namespace reindexer::knn_bench {
 
@@ -64,28 +65,28 @@ consteval float radius<IndexType::Ivf, VectorMetric::Cosine>() noexcept {
 
 template <>
 consteval float radius<IndexType::Hnsw, VectorMetric::L2>() noexcept {
-	return 1.47e14f;
+	return 26.5f;
 }
 template <>
 consteval float radius<IndexType::Hnsw, VectorMetric::InnerProduct>() noexcept {
-	return 1.0e13f;
+	return 2.15f;
 }
 template <>
 consteval float radius<IndexType::Hnsw, VectorMetric::Cosine>() noexcept {
-	return 1.1e-1f;
+	return 0.129f;
 }
 
 template <>
 consteval float radius<IndexType::Ivf, VectorMetric::L2>() noexcept {
-	return 1.62e14f;
+	return 28.1f;
 }
 template <>
 consteval float radius<IndexType::Ivf, VectorMetric::InnerProduct>() noexcept {
-	return 1.45e12f;
+	return 0.3f;
 }
 template <>
 consteval float radius<IndexType::Ivf, VectorMetric::Cosine>() noexcept {
-	return 1.5e-2f;
+	return 0.02f;
 }
 #endif	// defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(RX_WITH_STDLIB_DEBUG)
 
@@ -112,38 +113,45 @@ private:
 };
 
 template <IndexType indexType, VectorMetric metric>
-KnnBench<indexType, metric>::KnnBench(Reindexer* db, std::string_view name)
-	: BaseFixture(db, name, kNsSize * 3), bench::FullTextBase{kWordsInFtIndex} {
+KnnBench<indexType, metric>::KnnBench(Reindexer* db, std::string_view name, WithQuantization withQuantization)
+	: BaseFixture(db, name, kNsSize * 3), bench::FullTextBase{kWordsInFtIndex}, withQuantization_(withQuantization) {
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 	nsdef_.AddIndex("tree", "tree", "int", IndexOpts());
 	switch (indexType) {
-		case IndexType::Hnsw:
-			nsdef_.AddIndex("vec", "hnsw", "float_vector",
-							IndexOpts().SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
-																	  .SetDimension(kDimention)
-																	  .SetMetric(metric)
-																	  .SetM(16)
-																	  .SetEfConstruction(200)
-																	  .SetMultithreading(MultithreadingMode::MultithreadTransactions)
-																	  .SetStartSize(kNsSize)));
+		case IndexType::Hnsw: {
+			auto fvOpts = FloatVectorIndexOpts{}
+							  .SetDimension(kDimention)
+							  .SetMetric(metric)
+							  .SetM(16)
+							  .SetEfConstruction(200)
+							  .SetMultithreading(MultithreadingMode::MultithreadTransactions)
+							  .SetStartSize(kNsSize);
+
+			if (withQuantization_ == WithQuantization::Yes) {
+				fvOpts.SetQuantizationConfig({.quantile = 1.f, .sampleSize = kNsSize, .quantizationThreshold = kNsSize});
+			}
+
+			nsdef_.AddIndex("vec", "hnsw", "float_vector", IndexOpts().SetFloatVector(IndexHnsw, std::move(fvOpts)));
 			break;
-		case IndexType::Ivf:
+		}
+		case IndexType::Ivf: {
 			nsdef_.AddIndex("vec", "ivf", "float_vector",
 							IndexOpts().SetFloatVector(
 								IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimention).SetMetric(metric).SetNCentroids(kNsSize / 100)));
 			break;
+		}
 	}
 	IndexOpts ftIndexOpts;
 	ftIndexOpts.SetConfig(IndexFastFT, FtFastConfig{1}.GetJSON({}));
 	nsdef_.AddIndex("ft", "text", "string", ftIndexOpts);
 }
 
-template KnnBench<IndexType::Hnsw, VectorMetric::L2>::KnnBench(Reindexer*, std::string_view);
-template KnnBench<IndexType::Hnsw, VectorMetric::Cosine>::KnnBench(Reindexer*, std::string_view);
-template KnnBench<IndexType::Hnsw, VectorMetric::InnerProduct>::KnnBench(Reindexer*, std::string_view);
-template KnnBench<IndexType::Ivf, VectorMetric::L2>::KnnBench(Reindexer*, std::string_view);
-template KnnBench<IndexType::Ivf, VectorMetric::Cosine>::KnnBench(Reindexer*, std::string_view);
-template KnnBench<IndexType::Ivf, VectorMetric::InnerProduct>::KnnBench(Reindexer*, std::string_view);
+template KnnBench<IndexType::Hnsw, VectorMetric::L2>::KnnBench(Reindexer*, std::string_view, WithQuantization);
+template KnnBench<IndexType::Hnsw, VectorMetric::Cosine>::KnnBench(Reindexer*, std::string_view, WithQuantization);
+template KnnBench<IndexType::Hnsw, VectorMetric::InnerProduct>::KnnBench(Reindexer*, std::string_view, WithQuantization);
+template KnnBench<IndexType::Ivf, VectorMetric::L2>::KnnBench(Reindexer*, std::string_view, WithQuantization);
+template KnnBench<IndexType::Ivf, VectorMetric::Cosine>::KnnBench(Reindexer*, std::string_view, WithQuantization);
+template KnnBench<IndexType::Ivf, VectorMetric::InnerProduct>::KnnBench(Reindexer*, std::string_view, WithQuantization);
 
 template <IndexType indexType, VectorMetric metric>
 Item KnnBench<indexType, metric>::MakeItem(State& state) {
@@ -431,11 +439,49 @@ void KnnBench<indexType, metric>::OrHybridLinear(State& state) {
 	benchQuery(q, state, itemsCounter);
 }
 
+static bool GetQuantizationStatus(Reindexer* db, std::string_view nsName, std::string_view indexName) {
+	QueryResults qr;
+	auto err = db->Select(reindexer::Query("#memstats").Where("name", CondEq, nsName), qr);
+	if (!err.ok()) {
+		throw err;
+	}
+
+	if (qr.Count() != 1) {
+		throw Error(errLogic, "Unexpected QueryResults size ({}) for #memstats query", qr.Count());
+	}
+
+	auto item = YAML::Load(std::string{(*qr.begin()).GetItem().GetJSON()});
+	const auto indexes = item["indexes"];
+	for (auto& index : indexes) {
+		if (index["name"].as<std::string>() == indexName) {
+			return index["is_quantized"].as<bool>();
+		}
+	}
+
+	throw Error(errLogic, "Info about index {} not found in #memstats", indexName);
+}
+
+static void WaitQuantization(Reindexer* db, std::string_view nsName, std::string_view indexName) {
+	auto now = std::chrono::milliseconds(0);
+	const auto pause = std::chrono::milliseconds(50);
+	constexpr auto kMaxSyncTime = std::chrono::seconds(10);
+	while (!GetQuantizationStatus(db, nsName, indexName)) {
+		now += pause;
+		if (now > kMaxSyncTime) {
+			throw Error(errLogic, "Wait quantization is too long");
+		}
+		std::this_thread::sleep_for(pause);
+	}
+}
+
 template <IndexType indexType, VectorMetric metric>
 void KnnBench<indexType, metric>::Sleep(State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		std::this_thread::sleep_for(std::chrono::seconds(20));
+	}
+	if (withQuantization_ == WithQuantization::Yes) {
+		WaitQuantization(db_, nsdef_.name, "vec");
 	}
 }
 
@@ -455,33 +501,36 @@ void KnnBench<indexType, metric>::RegisterAllCases() {
 	Register("KnnWithVectors/K"s, &KnnBench<indexType, metric>::KnnWithVectors<KnnParams::K>, this);
 	Register("KnnWithVectors/K_Radius"s, &KnnBench<indexType, metric>::KnnWithVectors<KnnParams::K_Radius>, this);
 	Register("KnnWithVectors/Radius"s, &KnnBench<indexType, metric>::KnnWithVectors<KnnParams::Radius>, this);
-	Register("KnnWithCondition/K"s, &KnnBench<indexType, metric>::KnnWithCondition<KnnParams::K>, this);
-	Register("KnnWithCondition/K_Radius"s, &KnnBench<indexType, metric>::KnnWithCondition<KnnParams::K_Radius>, this);
-	Register("KnnWithCondition/Radius"s, &KnnBench<indexType, metric>::KnnWithCondition<KnnParams::Radius>, this);
-	Register("KnnWith2Conditions/K"s, &KnnBench<indexType, metric>::KnnWith2Conditions<KnnParams::K>, this);
-	Register("KnnWith2Conditions/K_Radius"s, &KnnBench<indexType, metric>::KnnWith2Conditions<KnnParams::K_Radius>, this);
-	Register("KnnWith2Conditions/Radius"s, &KnnBench<indexType, metric>::KnnWith2Conditions<KnnParams::Radius>, this);
 
-	Register("InitFtIndex"s, &KnnBench<indexType, metric>::FillFtIndex, this)->Iterations(1);
+	if constexpr (metric == VectorMetric::Cosine) {
+		Register("KnnWithCondition/K"s, &KnnBench<indexType, metric>::KnnWithCondition<KnnParams::K>, this);
+		Register("KnnWithCondition/K_Radius"s, &KnnBench<indexType, metric>::KnnWithCondition<KnnParams::K_Radius>, this);
+		Register("KnnWithCondition/Radius"s, &KnnBench<indexType, metric>::KnnWithCondition<KnnParams::Radius>, this);
+		Register("KnnWith2Conditions/K"s, &KnnBench<indexType, metric>::KnnWith2Conditions<KnnParams::K>, this);
+		Register("KnnWith2Conditions/K_Radius"s, &KnnBench<indexType, metric>::KnnWith2Conditions<KnnParams::K_Radius>, this);
+		Register("KnnWith2Conditions/Radius"s, &KnnBench<indexType, metric>::KnnWith2Conditions<KnnParams::Radius>, this);
+
+		Register("InitFtIndex"s, &KnnBench<indexType, metric>::FillFtIndex, this)->Iterations(1);
 #if !defined(RX_WITH_STDLIB_DEBUG) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
-	Register("Sleep"s, &KnnBench<indexType, metric>::Sleep, this)->Iterations(1);
+		Register("Sleep"s, &KnnBench<indexType, metric>::Sleep, this)->Iterations(1);
 #endif	// !defined(RX_WITH_STDLIB_DEBUG) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 
-	Register("AndHybridRrf/K"s, &KnnBench<indexType, metric>::AndHybridRrf<KnnParams::K>, this);
-	Register("AndHybridRrf/K_Radius"s, &KnnBench<indexType, metric>::AndHybridRrf<KnnParams::K_Radius>, this);
-	Register("AndHybridRrf/Radius"s, &KnnBench<indexType, metric>::AndHybridRrf<KnnParams::Radius>, this);
-	Register("AndHybridLinear/K"s, &KnnBench<indexType, metric>::AndHybridLinear<KnnParams::K>, this);
-	Register("AndHybridLinear/K_Radius"s, &KnnBench<indexType, metric>::AndHybridLinear<KnnParams::K_Radius>, this);
-	Register("AndHybridLinear/Radius"s, &KnnBench<indexType, metric>::AndHybridLinear<KnnParams::Radius>, this);
+		Register("AndHybridRrf/K"s, &KnnBench<indexType, metric>::AndHybridRrf<KnnParams::K>, this);
+		Register("AndHybridRrf/K_Radius"s, &KnnBench<indexType, metric>::AndHybridRrf<KnnParams::K_Radius>, this);
+		Register("AndHybridRrf/Radius"s, &KnnBench<indexType, metric>::AndHybridRrf<KnnParams::Radius>, this);
+		Register("AndHybridLinear/K"s, &KnnBench<indexType, metric>::AndHybridLinear<KnnParams::K>, this);
+		Register("AndHybridLinear/K_Radius"s, &KnnBench<indexType, metric>::AndHybridLinear<KnnParams::K_Radius>, this);
+		Register("AndHybridLinear/Radius"s, &KnnBench<indexType, metric>::AndHybridLinear<KnnParams::Radius>, this);
 
-	Register("OrHybridRrf/K"s, &KnnBench<indexType, metric>::OrHybridRrf<KnnParams::K>, this);
-	Register("OrHybridRrf/K_Radius"s, &KnnBench<indexType, metric>::OrHybridRrf<KnnParams::K_Radius>, this);
-	Register("OrHybridRrf/Radius"s, &KnnBench<indexType, metric>::OrHybridRrf<KnnParams::Radius>, this);
-	Register("OrHybridLinear/K"s, &KnnBench<indexType, metric>::OrHybridLinear<KnnParams::K>, this);
-	Register("OrHybridLinear/K_Radius"s, &KnnBench<indexType, metric>::OrHybridLinear<KnnParams::K_Radius>, this);
-	Register("OrHybridLinear/Radius"s, &KnnBench<indexType, metric>::OrHybridLinear<KnnParams::Radius>, this);
+		Register("OrHybridRrf/K"s, &KnnBench<indexType, metric>::OrHybridRrf<KnnParams::K>, this);
+		Register("OrHybridRrf/K_Radius"s, &KnnBench<indexType, metric>::OrHybridRrf<KnnParams::K_Radius>, this);
+		Register("OrHybridRrf/Radius"s, &KnnBench<indexType, metric>::OrHybridRrf<KnnParams::Radius>, this);
+		Register("OrHybridLinear/K"s, &KnnBench<indexType, metric>::OrHybridLinear<KnnParams::K>, this);
+		Register("OrHybridLinear/K_Radius"s, &KnnBench<indexType, metric>::OrHybridLinear<KnnParams::K_Radius>, this);
+		Register("OrHybridLinear/Radius"s, &KnnBench<indexType, metric>::OrHybridLinear<KnnParams::Radius>, this);
 
-	Register("DeleteFtIndex"s, &KnnBench<indexType, metric>::DeleteFtIndex, this)->Iterations(1);
+		Register("DeleteFtIndex"s, &KnnBench<indexType, metric>::DeleteFtIndex, this)->Iterations(1);
+	}
 
 	Register("Update"s, &KnnBench<indexType, metric>::Update, this);
 	Register("Insert"s, &KnnBench<indexType, metric>::Insert, this);

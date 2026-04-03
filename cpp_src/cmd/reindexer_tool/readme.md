@@ -1,7 +1,7 @@
 # Reindexer command line tool
-Reindexer command line tool is an client utility to work with database.
+Reindexer command line tool is a client utility to work with the database.
 
-## Table of Content
+## Table of contents
 
 - [Features](#features)
 - [Usage](#usage)
@@ -13,7 +13,7 @@ Reindexer command line tool is an client utility to work with database.
 - Backup whole database into text file or console.
 - Make queries to database
 - Modify documents and DB metadata
-- Both standalone and embeded(builtin) modes are supported
+- Both standalone and embedded (builtin) modes are supported
 
 ## Usage
 
@@ -69,9 +69,9 @@ Options
 
 ### Dump modes
 
-There are few different dump modes to interract with sharded databases:
+There are a few different dump modes to interact with sharded databases:
 1. full_node - Default mode. Dumps all data of chosen node, including sharded namespaces. However, does not dump data from other shards.
-2. sharded_only - Dumps data from sharded namespaces only (including the data from all other shards). May be usefull for resharding.
+2. sharded_only - Dumps data from sharded namespaces only (including the data from all other shards). May be useful for resharding.
 3. local_only - Dumps data from local namespaces, excluding sharded namespaces.
 
 Dump mode is saved in the output file and will be used during restoration process.

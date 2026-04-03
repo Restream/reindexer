@@ -375,6 +375,10 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 		}
 	}
 
+	if count == 0 {
+		return
+	}
+
 	if subtag != TAG_OBJECT {
 		k := v.Type().Elem().Kind()
 		isPtr := false

@@ -1293,7 +1293,7 @@ void ReindexerImpl::maskingAsyncConfig(LocalQueryResults& result) const {
 			result.SaveRawData(std::move(item));
 		};
 
-		for (auto it : result) {
+		for (auto& it : result) {
 			auto& itemRef = it.GetItemRef();
 			Payload pl(result.getPayloadType(itemRef.Nsid()), itemRef.Value());
 

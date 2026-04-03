@@ -18,8 +18,8 @@ class ExpressionTree;
 * `Ts...` - types of the expression arguments.
 
 `ExpressionTree` does not support operator precedence.
-You can support it manually as it done in `QueryEntries` and `SelectIteratorContainer`, or by enclosing higher priority operators in brackets as it done in `SortExpression`.
-Here is not used the traditional way for constructing trees with inheritance of nodes, allocations of separate nodes and holding  pointers to them.
+You can support it manually as is done in `QueryEntries` and `SelectIteratorContainer`, or by enclosing higher priority operators in brackets as is done in `SortExpression`.
+The traditional way of constructing trees with inheritance of nodes, allocations of separate nodes, and holding pointers to them is not used here.
 `ExpressionTree` holds all nodes by value in a vector (`container_`) sequentially in type `Node` based on `variant`.
 
 Subtree is stored in `container_` just behind its head (`SubTree`) which holds occupied space. For details see examples.
@@ -39,7 +39,7 @@ would be stored like
 
 Every cell holds an operator (here `+` or `-`) and payload.
 
-Lets see cells 4-5: they correspond to subexpression `-(D + E)`.
+Let's look at cells 4-5: they correspond to subexpression `-(D + E)`.
 * Cell 4 is a head of subtree: `-` - operator before the bracket and `3` - count of cells occupied by subtree (from 4 to 6).
 * Cell 5 holds default operator `+` and value `D`.
 * Cell 6 holds operator `+` and value `E`.
@@ -50,7 +50,7 @@ This structure provides effective forward iteration and doesn't allow to iterate
 
 Default building process of ExpressionTree is to append elements from beginning to end by using methods `Append()`, `OpenBracket()` and `CloseBracket()`.
 `activeBrackets_` - list of cells of heads of open brackets which sizes should be incremented when new element is added.
-Lets trace evolution of `container_` and `activeBrackets_` during construction expression `(A + B) - (C + (D - E) + F) - G`:
+Let's trace the evolution of `container_` and `activeBrackets_` while constructing the expression `(A + B) - (C + (D - E) + F) - G`:
 1. `OpenBracket(+)`. Constructed expression: `(`
 
 |  0   |
