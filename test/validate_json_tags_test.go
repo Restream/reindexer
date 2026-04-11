@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -120,15 +121,15 @@ var (
 func TestReturnEncoderValidateError(t *testing.T) {
 	enc := cjson.Validator{}
 
-	assert.Equal(t, fmt.Errorf(rootLevelErrMessage), enc.Validate(RootLevelFailType{}))
-	assert.Equal(t, fmt.Errorf(internalLevelErrMessage), enc.Validate(InternalLevelFailType{}))
-	assert.Equal(t, fmt.Errorf(deepInternalLevelErrMessage), enc.Validate(DeepInternalLevelFailType{}))
+	assert.Equal(t, errors.New(rootLevelErrMessage), enc.Validate(RootLevelFailType{}))
+	assert.Equal(t, errors.New(internalLevelErrMessage), enc.Validate(InternalLevelFailType{}))
+	assert.Equal(t, errors.New(deepInternalLevelErrMessage), enc.Validate(DeepInternalLevelFailType{}))
 	require.NoError(t, enc.Validate(DBItemType{}))
 	require.NoError(t, enc.Validate(ServiceType{}))
 	require.NoError(t, enc.Validate(ElementType{}))
-	assert.Equal(t, fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage), enc.Validate(DBItemFailType{}))
+	assert.Equal(t, errors.New(deepInternalLevelWithOmitSymbolErrMessage), enc.Validate(DBItemFailType{}))
 	require.NoError(t, enc.Validate(EmbeddedSuccessType{}))
-	assert.Equal(t, fmt.Errorf(embeddedInternalLevelErrMessage), enc.Validate(EmbeddedFailType{}))
+	assert.Equal(t, errors.New(embeddedInternalLevelErrMessage), enc.Validate(EmbeddedFailType{}))
 	require.NoError(t, enc.Validate(RecursiveType{}))
 	require.NoError(t, enc.Validate(&RecursiveTypePtr{}))
 }
@@ -137,17 +138,17 @@ func TestReturnRegisterNamespaceError(t *testing.T) {
 	const ns = testValidateJsonTagsNs
 
 	NsOptions := reindexer.DefaultNamespaceOptions()
-	assert.Equal(t, fmt.Errorf(rootLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, RootLevelFailType{}))
-	assert.Equal(t, fmt.Errorf(internalLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, InternalLevelFailType{}))
-	assert.Equal(t, fmt.Errorf(deepInternalLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, DeepInternalLevelFailType{}))
+	assert.Equal(t, errors.New(rootLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, RootLevelFailType{}))
+	assert.Equal(t, errors.New(internalLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, InternalLevelFailType{}))
+	assert.Equal(t, errors.New(deepInternalLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, DeepInternalLevelFailType{}))
 	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, DBItemType{}))
 	DB.CloseNamespace(ns)
 	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, ServiceType{}))
 	DB.CloseNamespace(ns)
 	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, ElementType{}))
 	DB.CloseNamespace(ns)
-	assert.Equal(t, fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage), OpenNamespaceWrapper(ns, NsOptions, DBItemFailType{}))
-	assert.Equal(t, fmt.Errorf(embeddedInternalLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, EmbeddedFailType{}))
+	assert.Equal(t, errors.New(deepInternalLevelWithOmitSymbolErrMessage), OpenNamespaceWrapper(ns, NsOptions, DBItemFailType{}))
+	assert.Equal(t, errors.New(embeddedInternalLevelErrMessage), OpenNamespaceWrapper(ns, NsOptions, EmbeddedFailType{}))
 	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, EmbeddedSuccessType{}))
 	DB.CloseNamespace(ns)
 	require.NoError(t, OpenNamespaceWrapper(ns, NsOptions, RecursiveType{}))

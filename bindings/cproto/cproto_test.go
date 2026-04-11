@@ -118,7 +118,7 @@ func TestCprotoPool(t *testing.T) {
 		require.NoError(t, err)
 
 		conns := make(map[connection]bool)
-		for i := 0; i < defConnPoolSize; i++ {
+		for range defConnPoolSize {
 			conn, err := c.getConnection(context.Background())
 			require.NoError(t, err)
 			if _, ok := conns[conn]; ok {
