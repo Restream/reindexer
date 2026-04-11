@@ -318,7 +318,7 @@ func (q SubQuery) Type() int {
 
 func (s SubQuery) Serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(int(s.Type()))
-	ser.Write(s.SubQuery.ser.Bytes())
+	ser.PutVBytes(s.SubQuery.ser.Bytes())
 }
 
 var queryPool sync.Pool
