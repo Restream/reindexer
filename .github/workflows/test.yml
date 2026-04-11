@@ -129,7 +129,7 @@ jobs:
         uses: actions/setup-go@v5
         if: ${{ matrix.os == 'macos-15' && matrix.test == 'GO' }}
         with:
-          go-version: '1.24.x'
+          go-version: '1.26.x'
           check-latest: true
       - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
         if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
