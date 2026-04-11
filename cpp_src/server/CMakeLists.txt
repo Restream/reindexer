@@ -15,38 +15,88 @@ file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
     file(WRITE ${PROJECT_BINARY_DIR}/swagger/index.html \"\${indexhtml}\")"
 )
 
+set(SWAGGER_LOCAL_DIST "${PROJECT_SOURCE_DIR}/contrib/swagger-ui-dist" CACHE PATH
+    "Path to prebuilt Swagger UI dist")
+option(SWAGGER_ALLOW_DOWNLOAD "Allow downloading Swagger UI when local dist is absent" ON)
+
 file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
-    "file(
-	DOWNLOAD \"https://codeload.github.com/swagger-api/swagger-ui/tar.gz/${SWAGGER_VERSION}\"
-	\"${PROJECT_BINARY_DIR}/swagger.tar.gz\"
-     )
+    "set(swagger_dst \"${PROJECT_BINARY_DIR}/swagger\")
+     set(swagger_local_dist \"${SWAGGER_LOCAL_DIST}\")
+     set(swagger_allow_download \"${SWAGGER_ALLOW_DOWNLOAD}\")
+
      execute_process(
-       COMMAND \"${CMAKE_COMMAND}\" -E tar xzf \"swagger.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+       COMMAND \"${CMAKE_COMMAND}\" -E remove_directory \"\${swagger_dst}\"
        RESULT_VARIABLE ret
      )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not untar 'swagger.tar.gz'\")
+
+     if(EXISTS \"\${swagger_local_dist}/index.html\")
+       message(STATUS \"Using local Swagger UI dist: \${swagger_local_dist}\")
+       execute_process(
+         COMMAND \"${CMAKE_COMMAND}\" -E copy_directory
+                 \"\${swagger_local_dist}\"
+                 \"\${swagger_dst}\"
+         RESULT_VARIABLE ret
+       )
+       if(NOT \"\${ret}\" STREQUAL \"0\")
+         message(FATAL_ERROR \"Could not copy local swagger dist from '\${swagger_local_dist}'\")
+       endif()
+     else()
+       if(NOT swagger_allow_download)
+         message(FATAL_ERROR
+           \"Local Swagger UI dist was not found at '\${swagger_local_dist}', and download is disabled\")
+       endif()
+
+       file(
+         DOWNLOAD \"https://codeload.github.com/swagger-api/swagger-ui/tar.gz/${SWAGGER_VERSION}\"
+         \"${PROJECT_BINARY_DIR}/swagger.tar.gz\"
+         STATUS dl_status
+         SHOW_PROGRESS
+       )
+       list(GET dl_status 0 dl_code)
+       list(GET dl_status 1 dl_msg)
+       if(NOT dl_code EQUAL 0)
+         message(FATAL_ERROR \"Could not download swagger-ui: \${dl_msg}\")
+       endif()
+
+       execute_process(
+         COMMAND \"${CMAKE_COMMAND}\" -E tar xzf \"swagger.tar.gz\"
+         WORKING_DIRECTORY \"${PROJECT_BINARY_DIR}\"
+         RESULT_VARIABLE ret
+       )
+       if(NOT \"\${ret}\" STREQUAL \"0\")
+         message(FATAL_ERROR \"Could not untar 'swagger.tar.gz'\")
+       endif()
+
+       execute_process(
+         COMMAND \"${CMAKE_COMMAND}\" -E copy_directory
+                 \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist\"
+                 \"\${swagger_dst}\"
+         RESULT_VARIABLE ret
+       )
+       if(NOT \"\${ret}\" STREQUAL \"0\")
+         message(FATAL_ERROR
+           \"Could not copy directory '${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist'\")
+       endif()
+
+       execute_process(
+         COMMAND \"${CMAKE_COMMAND}\" -E remove_directory
+                 \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}\"
+         RESULT_VARIABLE ret
+       )
+       file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")
      endif()
+
      execute_process(
-       COMMAND \"${CMAKE_COMMAND}\" -E copy_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist\" \"${PROJECT_BINARY_DIR}/swagger\"
+       COMMAND \"${CMAKE_COMMAND}\" -E copy
+               \"${PROJECT_SOURCE_DIR}/contrib/server.yml\"
+               \"\${swagger_dst}/swagger.yml\"
        RESULT_VARIABLE ret
      )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not copy directory '${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist'\")
+     if(NOT \"\${ret}\" STREQUAL \"0\")
+       message(FATAL_ERROR \"Could not copy '${PROJECT_SOURCE_DIR}/contrib/server.yml'\")
      endif()
-     execute_process(
-       COMMAND \"${CMAKE_COMMAND}\" -E copy \"${PROJECT_SOURCE_DIR}/contrib/server.yml\" \"${PROJECT_BINARY_DIR}/swagger/swagger.yml\"
-       RESULT_VARIABLE ret
-     )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not copy '${PROJECT_SOURCE_DIR}/contrib/server.yml'\")
-     endif()
-     execute_process(COMMAND \"${CMAKE_COMMAND}\" -P \"${PROJECT_BINARY_DIR}/swagger_replace.cmake\")
-     execute_process(
-       COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}\"
-       RESULT_VARIABLE ret
-     )
-     file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")"
+
+     execute_process(COMMAND \"${CMAKE_COMMAND}\" -P \"${PROJECT_BINARY_DIR}/swagger_replace.cmake\")"
 )
 
 file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
