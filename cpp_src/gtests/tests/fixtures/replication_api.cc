@@ -1,4 +1,4 @@
-﻿#include "replication_api.h"
+#include "replication_api.h"
 #include "estl/lock.h"
 #include "tools/fsops.h"
 

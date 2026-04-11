@@ -103,7 +103,7 @@ private:
 	class [[nodiscard]] RegisterWrapper {
 	public:
 		RegisterWrapper(std::optional<size_t> iterationCoun) noexcept : iterationCoun_(iterationCoun) {}
-		void SetOptions(Benchmark* b) {
+		void SetOptions(benchmark::Benchmark* b) {
 			if (iterationCoun_.has_value()) {
 				b = b->Iterations(*iterationCoun_);
 			}

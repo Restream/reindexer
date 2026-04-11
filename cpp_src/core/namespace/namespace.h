@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <thread>
 #include "core/queryresults/fields_filter.h"

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <unordered_map>
 #include "cluster_operation_api.h"
