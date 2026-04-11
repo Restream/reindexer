@@ -105,7 +105,7 @@ type cacheKey struct {
 
 type cacheItem struct {
 	// cached data
-	item interface{}
+	item any
 	// version of the item
 	itemVersion int64
 	// version of the sharding config
@@ -164,7 +164,7 @@ func newCacheItems(count uint64) (*cacheItems, error) {
 
 // NewReindexImpl Create new instanse of Reindexer DB
 // Returns pointer to created instance
-func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
+func newReindexImpl(dsn any, options ...any) *reindexerImpl {
 	scheme, dsnParsed := dsnParse(dsn)
 
 	binding := bindings.GetBinding(scheme)
@@ -346,7 +346,7 @@ func (db *reindexerImpl) getStatus(ctx context.Context) bindings.Status {
 
 // setLogger sets logger interface for output reindexer logs
 func (db *reindexerImpl) setLogger(log Logger) {
-	if log != nil && (reflect.ValueOf(log).Kind() != reflect.Ptr || !reflect.ValueOf(log).IsNil()) {
+	if log != nil && (reflect.ValueOf(log).Kind() != reflect.Pointer || !reflect.ValueOf(log).IsNil()) {
 		db.binding.EnableLogger(log)
 	} else {
 		db.binding.DisableLogger()
@@ -378,7 +378,7 @@ func (db *reindexerImpl) close() {
 
 // openNamespace Open or create new namespace and indexes based on passed struct.
 // IndexDef fields of struct are marked by `reindex:` tag
-func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, opts *NamespaceOptions, s interface{}) (err error) {
+func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, opts *NamespaceOptions, s any) (err error) {
 	namespace = strings.ToLower(namespace)
 
 	if db.otelTracer != nil {
@@ -466,7 +466,7 @@ func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, op
 }
 
 // RegisterNamespace Register go type against namespace. There are no data and indexes changes will be performed
-func (db *reindexerImpl) registerNamespace(ctx context.Context, namespace string, opts *NamespaceOptions, s interface{}) (err error) {
+func (db *reindexerImpl) registerNamespace(ctx context.Context, namespace string, opts *NamespaceOptions, s any) (err error) {
 	namespace = strings.ToLower(namespace)
 
 	if db.otelTracer != nil {
@@ -490,9 +490,9 @@ func (db *reindexerImpl) unregisterNamespaceImpl(namespace string) {
 }
 
 // registerNamespace Register go type against namespace. There are no data and indexes changes will be performed
-func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *NamespaceOptions, s interface{}) (err error) {
+func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *NamespaceOptions, s any) (err error) {
 	t := reflect.TypeOf(s)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	namespace = strings.ToLower(namespace)
@@ -639,7 +639,7 @@ func (db *reindexerImpl) closeNamespace(ctx context.Context, namespace string) e
 
 // upsert (Insert or Update) item to index
 // Item must be the same type as item passed to OpenNamespace, or []byte with json
-func (db *reindexerImpl) upsert(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
+func (db *reindexerImpl) upsert(ctx context.Context, namespace string, item any, precepts ...string) error {
 	namespace = strings.ToLower(namespace)
 
 	if db.otelTracer != nil {
@@ -657,7 +657,7 @@ func (db *reindexerImpl) upsert(ctx context.Context, namespace string, item inte
 // insert item to namespace by PK
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was inserted, 1 if item was inserted
-func (db *reindexerImpl) insert(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
+func (db *reindexerImpl) insert(ctx context.Context, namespace string, item any, precepts ...string) (int, error) {
 	namespace = strings.ToLower(namespace)
 
 	if db.otelTracer != nil {
@@ -674,7 +674,7 @@ func (db *reindexerImpl) insert(ctx context.Context, namespace string, item inte
 // update item to namespace by PK
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was updated, 1 if item was updated
-func (db *reindexerImpl) update(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
+func (db *reindexerImpl) update(ctx context.Context, namespace string, item any, precepts ...string) (int, error) {
 	namespace = strings.ToLower(namespace)
 
 	if db.otelTracer != nil {
@@ -690,7 +690,7 @@ func (db *reindexerImpl) update(ctx context.Context, namespace string, item inte
 
 // delete - remove single item from namespace by PK
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
-func (db *reindexerImpl) delete(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
+func (db *reindexerImpl) delete(ctx context.Context, namespace string, item any, precepts ...string) error {
 	namespace = strings.ToLower(namespace)
 
 	if db.otelTracer != nil {
@@ -708,7 +708,7 @@ func (db *reindexerImpl) delete(ctx context.Context, namespace string, item inte
 // configureIndex - configure an index.
 // config argument must be struct with index configuration
 // Deprecated: Use UpdateIndex instead.
-func (db *reindexerImpl) configureIndex(ctx context.Context, namespace, index string, config interface{}) error {
+func (db *reindexerImpl) configureIndex(ctx context.Context, namespace, index string, config any) error {
 	namespace = strings.ToLower(namespace)
 
 	if db.otelTracer != nil {
@@ -1078,7 +1078,7 @@ func (db *reindexerImpl) addJoinedDSL(joined *dsl.JoinQuery, resultField string,
 			return bindings.NewError("rq: dsl join_query op is invalid", ErrCodeParams)
 		}
 	}
-	q.JoinHandler(resultField, func(field string, item interface{}, subitems []interface{}) bool {
+	q.JoinHandler(resultField, func(field string, item any, subitems []any) bool {
 		return false // Do not handle joined data
 	})
 
@@ -1376,7 +1376,7 @@ func (db *reindexerImpl) queryFrom(d *dsl.DSL) (*Query, error) {
 	return db.handleFiltersDSL(d.Filters, &joinIDs, q)
 }
 
-func dsnParse(dsn interface{}) (string, []url.URL) {
+func dsnParse(dsn any) (string, []url.URL) {
 	var dsnSlice []string
 	var scheme string
 

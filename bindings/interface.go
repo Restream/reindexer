@@ -108,20 +108,20 @@ type FloatVectorIndexOpts struct {
 }
 
 type IndexDef struct {
-	Name        string      `json:"name"`
-	JSONPaths   []string    `json:"json_paths"`
-	IndexType   string      `json:"index_type"`
-	FieldType   string      `json:"field_type"`
-	IsPK        bool        `json:"is_pk"`
-	IsArray     bool        `json:"is_array"`
-	IsDense     bool        `json:"is_dense"`
-	IsNoColumn  bool        `json:"is_no_column"`
-	IsSparse    bool        `json:"is_sparse"`
-	CollateMode string      `json:"collate_mode"`
-	SortOrder   string      `json:"sort_order_letters"`
-	ExpireAfter int         `json:"expire_after"`
-	Config      interface{} `json:"config"`
-	RTreeType   string      `json:"rtree_type"`
+	Name        string   `json:"name"`
+	JSONPaths   []string `json:"json_paths"`
+	IndexType   string   `json:"index_type"`
+	FieldType   string   `json:"field_type"`
+	IsPK        bool     `json:"is_pk"`
+	IsArray     bool     `json:"is_array"`
+	IsDense     bool     `json:"is_dense"`
+	IsNoColumn  bool     `json:"is_no_column"`
+	IsSparse    bool     `json:"is_sparse"`
+	CollateMode string   `json:"collate_mode"`
+	SortOrder   string   `json:"sort_order_letters"`
+	ExpireAfter int      `json:"expire_after"`
+	Config      any      `json:"config"`
+	RTreeType   string   `json:"rtree_type"`
 }
 
 type FieldDef struct {
@@ -275,13 +275,13 @@ type FetchMore interface {
 
 // Logger interface for reindexer
 type Logger interface {
-	Printf(level int, fmt string, msg ...interface{})
+	Printf(level int, fmt string, msg ...any)
 }
 
 type NullLogger struct {
 }
 
-func (NullLogger) Printf(level int, fmt string, msg ...interface{}) {
+func (NullLogger) Printf(level int, fmt string, msg ...any) {
 }
 
 func NewError(text string, code int) error {
@@ -320,7 +320,7 @@ type Stats struct {
 
 // Raw binding to reindexer
 type RawBinding interface {
-	Init(u []url.URL, eh EventsHandler, options ...interface{}) error
+	Init(u []url.URL, eh EventsHandler, options ...any) error
 	Clone() RawBinding
 	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(ctx context.Context, namespace string) error

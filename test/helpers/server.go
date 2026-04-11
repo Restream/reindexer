@@ -174,7 +174,7 @@ func (srv *TestServer) Stop() error {
 	}
 }
 
-func CreateCluster(t *testing.T, servers []*TestServer, nsName string, nsItem interface{}) {
+func CreateCluster(t *testing.T, servers []*TestServer, nsName string, nsItem any) {
 	clusterConf := DefaultClusterConf()
 	for i := range servers {
 		clusterConf.Nodes = append(clusterConf.Nodes, ClusterNodeConfig{
@@ -209,7 +209,7 @@ func CreateCluster(t *testing.T, servers []*TestServer, nsName string, nsItem in
 	time.Sleep(1 * time.Second)
 }
 
-func CreateReplication(t *testing.T, master *TestServer, slaves []*TestServer, nsName string, nsItem interface{}) {
+func CreateReplication(t *testing.T, master *TestServer, slaves []*TestServer, nsName string, nsItem any) {
 	require.NoError(t, master.Run())
 	masterDb, err := reindexer.NewReindex(master.GetDSN(), reindexer.WithCreateDBIfMissing())
 	require.NoError(t, err)

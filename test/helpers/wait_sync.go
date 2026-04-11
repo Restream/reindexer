@@ -37,7 +37,7 @@ func waitForSyncWithLeaderImpl(t *testing.T, leader *reindexer.Reindexer, follow
 		t.Fatalf("Unexpected sync mode value: %v", syncMode)
 	}
 
-	for i := 0; i < syncRetries; i++ {
+	for range syncRetries {
 
 		complete = true
 

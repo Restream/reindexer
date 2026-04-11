@@ -8,9 +8,11 @@ package jsonschema
 
 import (
 	"encoding/json"
+
 	"net"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -56,7 +58,7 @@ type Type struct {
 	PatternProperties    map[string]*Type       `json:"patternProperties,omitempty"`    // section 5.17
 	AdditionalProperties json.RawMessage        `json:"additionalProperties,omitempty"` // section 5.18
 	Dependencies         map[string]*Type       `json:"dependencies,omitempty"`         // section 5.19
-	Enum                 []interface{}          `json:"enum,omitempty"`                 // section 5.20
+	Enum                 []any                  `json:"enum,omitempty"`                 // section 5.20
 	Type                 string                 `json:"type,omitempty"`                 // section 5.21
 	AllOf                []*Type                `json:"allOf,omitempty"`                // section 5.22
 	AnyOf                []*Type                `json:"anyOf,omitempty"`                // section 5.23
@@ -65,20 +67,20 @@ type Type struct {
 	Definitions          Definitions            `json:"definitions,omitempty"`          // section 5.26
 	XGoType              string                 `json:"x-go-type,omitempty"`
 	// RFC draft-wright-json-schema-validation-00, section 6, 7
-	Title       string        `json:"title,omitempty"`       // section 6.1
-	Description string        `json:"description,omitempty"` // section 6.1
-	Default     interface{}   `json:"default,omitempty"`     // section 6.2
-	Format      string        `json:"format,omitempty"`      // section 7
-	Examples    []interface{} `json:"examples,omitempty"`    // section 7.4
+	Title       string `json:"title,omitempty"`       // section 6.1
+	Description string `json:"description,omitempty"` // section 6.1
+	Default     any    `json:"default,omitempty"`     // section 6.2
+	Format      string `json:"format,omitempty"`      // section 7
+	Examples    []any  `json:"examples,omitempty"`    // section 7.4
 	// RFC draft-wright-json-schema-hyperschema-00, section 4
 	Media          *Type  `json:"media,omitempty"`          // section 4.3
 	BinaryEncoding string `json:"binaryEncoding,omitempty"` // section 4.3
 
-	Extras map[string]interface{} `json:"-"`
+	Extras map[string]any `json:"-"`
 }
 
 // Reflect reflects to Schema from a value using the default Reflector
-func Reflect(v interface{}) *Schema {
+func Reflect(v any) *Schema {
 	return ReflectFromType(reflect.TypeOf(v))
 }
 
@@ -122,7 +124,7 @@ type Reflector struct {
 
 	// IgnoredTypes defines a slice of types that should be ignored in the schema,
 	// switching to just allowing additional properties instead.
-	IgnoredTypes []interface{}
+	IgnoredTypes []any
 
 	// TypeMapper is a function that can be used to map custom Go types to jsconschema types.
 	TypeMapper func(reflect.Type) *Type
@@ -132,7 +134,7 @@ type Reflector struct {
 }
 
 // Reflect reflects to Schema from a value.
-func (r *Reflector) Reflect(v interface{}) *Schema {
+func (r *Reflector) Reflect(v any) *Schema {
 	return r.ReflectFromType(reflect.TypeOf(v))
 }
 
@@ -172,20 +174,20 @@ type Definitions map[string]*Type
 // Available Go defined types for JSON Schema Validation.
 // RFC draft-wright-json-schema-validation-00, section 7.3
 var (
-	timeType = reflect.TypeOf(time.Time{}) // date-time RFC section 7.3.1
-	ipType   = reflect.TypeOf(net.IP{})    // ipv4 and ipv6 RFC section 7.3.4, 7.3.5
-	uriType  = reflect.TypeOf(url.URL{})   // uri RFC section 7.3.6
+	timeType = reflect.TypeFor[time.Time]() // date-time RFC section 7.3.1
+	ipType   = reflect.TypeFor[net.IP]()    // ipv4 and ipv6 RFC section 7.3.4, 7.3.5
+	uriType  = reflect.TypeFor[url.URL]()   // uri RFC section 7.3.6
 )
 
 // Byte slices will be encoded as base64
-var byteSliceType = reflect.TypeOf([]byte(nil))
+var byteSliceType = reflect.TypeFor[[]byte]()
 
 // Go code generated from protobuf enum types should fulfil this interface.
 type protoEnum interface {
 	EnumDescriptor() ([]byte, []int)
 }
 
-var protoEnumType = reflect.TypeOf((*protoEnum)(nil)).Elem()
+var protoEnumType = reflect.TypeFor[protoEnum]()
 
 func (r *Reflector) reflectTypeToSchema(definitions Definitions, parentTypes Definitions, t reflect.Type) *Type {
 	// Already added to definitions?
@@ -280,7 +282,7 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, parentTypes Def
 	case reflect.String:
 		return &Type{Type: "string"}
 
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return r.reflectTypeToSchema(definitions, parentTypes, t.Elem())
 	}
 	panic("unsupported type " + t.String())
@@ -341,14 +343,14 @@ func (r *Reflector) reflectStruct(definitions Definitions, parentTypes Definitio
 }
 
 func (r *Reflector) reflectStructFields(st *Type, definitions Definitions, parentTypes Definitions, t reflect.Type) {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
 		return
 	}
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for f := range t.Fields() {
+		f := f
 
 		if r.FieldIsInScheme != nil && !r.FieldIsInScheme(f) {
 			continue
@@ -534,7 +536,7 @@ func (t *Type) numbericKeywords(tags []string) {
 
 // read struct tags for array type keyworks
 func (t *Type) arrayKeywords(tags []string) {
-	var defaultValues []interface{}
+	var defaultValues []any
 	for _, tag := range tags {
 		nameValue := strings.Split(tag, "=")
 		if len(nameValue) == 2 {
@@ -569,7 +571,7 @@ func (t *Type) extraKeywords(tags []string) {
 
 func (t *Type) setExtra(key, val string) {
 	if t.Extras == nil {
-		t.Extras = map[string]interface{}{}
+		t.Extras = map[string]any{}
 	}
 	if existingVal, ok := t.Extras[key]; ok {
 		switch existingVal.(type) {
@@ -588,24 +590,14 @@ func requiredFromJSONTags(tags []string) bool {
 		return false
 	}
 
-	for _, tag := range tags[1:] {
-		if tag == "omitempty" {
-			return false
-		}
-	}
-	return true
+	return !slices.Contains(tags[1:], "omitempty")
 }
 
 func requiredFromJSONSchemaTags(tags []string) bool {
 	if ignoredByJSONSchemaTags(tags) {
 		return false
 	}
-	for _, tag := range tags {
-		if tag == "required" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(tags, "required")
 }
 
 func ignoredByJSONTags(tags []string) bool {

@@ -272,7 +272,7 @@ func (binding *NetCProto) GetDSNs() []url.URL {
 	return binding.dsn.urls
 }
 
-func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) (err error) {
+func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options ...any) (err error) {
 	connPoolSize := defConnPoolSize
 	connPoolLBAlgorithm := defConnPoolLBAlgorithm
 	binding.appName = defAppName
@@ -379,7 +379,7 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoo
 	connParams := binding.createConnParams()
 
 	wg.Add(connPoolSize)
-	for i := 0; i < connPoolSize; i++ {
+	for i := range connPoolSize {
 		go func(binding *NetCProto, wg *sync.WaitGroup, i int) {
 			defer wg.Done()
 
@@ -842,7 +842,7 @@ func (binding *NetCProto) getAllConns() []connection {
 	return conns
 }
 
-func (binding *NetCProto) logMsg(level int, fmt string, msg ...interface{}) {
+func (binding *NetCProto) logMsg(level int, fmt string, msg ...any) {
 	binding.logMtx.RLock()
 	defer binding.logMtx.RUnlock()
 	if binding.logger != nil {
@@ -957,7 +957,7 @@ func (binding *NetCProto) reconnect(ctx context.Context) (conn connection, err e
 	return binding.pool.GetConnection(), err
 }
 
-func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...interface{}) (buf *NetBuffer, err error) {
+func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...any) (buf *NetBuffer, err error) {
 	var attempts int
 	switch op {
 	case opRd:
@@ -987,7 +987,7 @@ func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...
 	return
 }
 
-func (binding *NetCProto) rpcCallNoResults(ctx context.Context, op int, cmd int, args ...interface{}) error {
+func (binding *NetCProto) rpcCallNoResults(ctx context.Context, op int, cmd int, args ...any) error {
 	buf, err := binding.rpcCall(ctx, op, cmd, args...)
 	if buf != nil {
 		buf.Free()
@@ -999,10 +999,7 @@ func (binding *NetCProto) pinger() {
 	timeout := time.Second
 	ticker := time.NewTicker(timeout)
 	var ticksCount uint32
-	pingTimeoutSec := pingResponseTimeoutSec
-	if uint32(binding.timeouts.RequestTimeout/time.Second) > pingTimeoutSec {
-		pingTimeoutSec = uint32(binding.timeouts.RequestTimeout / time.Second)
-	}
+	pingTimeoutSec := max(uint32(binding.timeouts.RequestTimeout/time.Second), pingResponseTimeoutSec)
 	for now := range ticker.C {
 		ticksCount++
 		select {

@@ -142,7 +142,7 @@ func newIterator(
 	nsArray []nsArrayEntry,
 	joinToFields []string,
 	joinHandlers []JoinHandler,
-	queryContext interface{},
+	queryContext any,
 ) (it *Iterator) {
 	if q != nil {
 		it = &q.iterator
@@ -171,7 +171,7 @@ func newIterator(
 		}
 	}
 	if joinObjSize > 0 {
-		it.current.joinObj = make([][]interface{}, joinObjSize)
+		it.current.joinObj = make([][]any, joinObjSize)
 	}
 	it.setBuffer(result, true)
 
@@ -206,14 +206,14 @@ type Iterator struct {
 	nsArray        []nsArrayEntry
 	joinToFields   []string
 	joinHandlers   []JoinHandler
-	queryContext   interface{}
+	queryContext   any
 	query          *Query
 	allowUnsafe    bool
 	resPtr         int
 	ptr            int
 	current        struct {
-		obj     interface{}
-		joinObj [][]interface{}
+		obj     any
+		joinObj [][]any
 		rank    float32
 	}
 	err     error
@@ -237,7 +237,7 @@ func (it *Iterator) setBuffer(result bindings.RawBuffer, cleanup bool) {
 // Next moves iterator pointer to the next element.
 // Returns bool, that indicates the availability of the next elements.
 // Decode result to given struct
-func (it *Iterator) NextObj(obj interface{}) (hasNext bool) {
+func (it *Iterator) NextObj(obj any) (hasNext bool) {
 	if it.ptr >= it.rawQueryParams.qcount || it.err != nil {
 		return
 	}
@@ -281,7 +281,7 @@ func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
 	return offset
 }
 
-func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank float32) {
+func (it *Iterator) readItem(toObj any) (item any, rank float32) {
 	params := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
 	if (it.rawQueryParams.flags & bindings.ResultsWithRank) != 0 {
 		rank = params.rank
@@ -307,8 +307,8 @@ func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank float32)
 		if siRes == 0 {
 			continue
 		}
-		subitems := make([]interface{}, siRes)
-		for i := 0; i < siRes; i++ {
+		subitems := make([]any, siRes)
+		for i := range siRes {
 			subparams := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
 			subitems[i], it.err = unpackItem(it.db.binding, &it.nsArray[nsIndex+nsIndexOffset],
 				&it.rawQueryParams, &subparams, it.allowUnsafe, nonCacheble, toObj)
@@ -375,7 +375,7 @@ func (it *Iterator) fetchResults() {
 	}
 }
 
-func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{}) error {
+func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item any) error {
 	var field string
 	var handler JoinHandler
 	if parentNsID == 0 {
@@ -409,7 +409,7 @@ func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{
 				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeLogic)
 		}
 		if v.IsNil() {
-			v.Set(reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(it.nsArray[nsIndex+nsIndexOffset].rtype)), 0, len(subitems)))
+			v.Set(reflect.MakeSlice(reflect.SliceOf(reflect.PointerTo(it.nsArray[nsIndex+nsIndexOffset].rtype)), 0, len(subitems)))
 		}
 		for _, subitem := range subitems {
 			v.Set(reflect.Append(v, reflect.ValueOf(subitem)))
@@ -420,7 +420,7 @@ func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{
 
 // Object returns current object.
 // Will panic when pointer was not moved, Next() must be called before.
-func (it *Iterator) Object() interface{} {
+func (it *Iterator) Object() any {
 	if it.resPtr == 0 {
 		panic(errIteratorNotReady)
 	}
@@ -437,7 +437,7 @@ func (it *Iterator) Rank() float32 {
 }
 
 // JoinedObjects returns objects slice, that result of join for the given field
-func (it *Iterator) JoinedObjects(field string) (objects []interface{}, err error) {
+func (it *Iterator) JoinedObjects(field string) (objects []any, err error) {
 	if it.resPtr == 0 {
 		return nil, errIteratorNotReady
 	}
@@ -470,12 +470,12 @@ func (it *Iterator) AllowUnsafe(allow bool) *Iterator {
 }
 
 // FetchAll returns all query results as slice []interface{} and closes the iterator.
-func (it *Iterator) FetchAll() (items []interface{}, err error) {
+func (it *Iterator) FetchAll() (items []any, err error) {
 	defer it.Close()
 	if !it.Next() {
 		return nil, it.err
 	}
-	items = make([]interface{}, it.rawQueryParams.qcount)
+	items = make([]any, it.rawQueryParams.qcount)
 	for i := range items {
 		items[i] = it.Object()
 		if !it.Next() {
@@ -487,7 +487,7 @@ func (it *Iterator) FetchAll() (items []interface{}, err error) {
 
 // FetchOne returns first element and closes the iterator.
 // When it's impossible (count is 0) err will be ErrNotFound.
-func (it *Iterator) FetchOne() (item interface{}, err error) {
+func (it *Iterator) FetchOne() (item any, err error) {
 	defer it.Close()
 	if it.Next() {
 		return it.Object(), it.err
@@ -500,12 +500,12 @@ func (it *Iterator) FetchOne() (item interface{}, err error) {
 
 // FetchAllWithRank returns resulting slice of objects and slice of objects ranks.
 // Closes iterator after use.
-func (it *Iterator) FetchAllWithRank() (items []interface{}, ranks []float32, err error) {
+func (it *Iterator) FetchAllWithRank() (items []any, ranks []float32, err error) {
 	defer it.Close()
 	if !it.Next() {
 		return nil, nil, it.err
 	}
-	items = make([]interface{}, it.rawQueryParams.qcount)
+	items = make([]any, it.rawQueryParams.qcount)
 	ranks = make([]float32, it.rawQueryParams.qcount)
 	for i := range items {
 		items[i] = it.Object()
@@ -529,7 +529,7 @@ func (it *Iterator) HasRank() bool {
 func (it *Iterator) AggResults() (v []AggregationResult) {
 	l := len(it.rawQueryParams.aggResults)
 	v = make([]AggregationResult, l)
-	for i := 0; i < l; i++ {
+	for i := range l {
 		json.Unmarshal(it.rawQueryParams.aggResults[i], &v[i])
 	}
 

@@ -2,7 +2,9 @@ package reindexer
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -145,9 +147,7 @@ func copyParsedPointer(parsed *map[string]bool) *map[string]bool {
 	var parsedCopy *map[string]bool
 	if parsed != nil {
 		m := make(map[string]bool, len(*parsed))
-		for key, value := range *parsed {
-			m[key] = value
-		}
+		maps.Copy(m, *parsed)
 		parsedCopy = &m
 	}
 	return parsedCopy
@@ -162,7 +162,7 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 		reindexBasePath = reindexBasePath + "."
 	}
 
-	if st.Kind() == reflect.Ptr {
+	if st.Kind() == reflect.Pointer {
 		st = st.Elem()
 	}
 
@@ -171,10 +171,10 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 		return nil
 	}
 
-	for i := 0; i < st.NumField(); i++ {
-		field := st.Field(i)
+	for field := range st.Fields() {
+		field := field
 		t := field.Type
-		if t.Kind() == reflect.Ptr {
+		if t.Kind() == reflect.Pointer {
 			t = t.Elem()
 		}
 		// Get and parse tags
@@ -304,10 +304,10 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 				return err
 			}
 		} else if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) &&
-			(t.Elem().Kind() == reflect.Struct || (t.Elem().Kind() == reflect.Ptr && t.Elem().Elem().Kind() == reflect.Struct)) {
+			(t.Elem().Kind() == reflect.Struct || (t.Elem().Kind() == reflect.Pointer && t.Elem().Elem().Kind() == reflect.Struct)) {
 			// Check if field nested slice of struct
 			if opts.isJoined && len(idxName) > 0 {
-				(*joined)[idxName] = st.Field(i).Index
+				(*joined)[idxName] = field.Index
 			} else if err := parseIndexesImpl(indexDefs, t.Elem(), true, reindexPath, jsonPath, joined, copyParsedPointer(parsed)); err != nil {
 				return err
 			}
@@ -480,7 +480,7 @@ func getFieldType(t reflect.Type) (string, error) {
 		return "double", nil
 	case reflect.Struct:
 		return "composite", nil
-	case reflect.Array, reflect.Slice, reflect.Ptr:
+	case reflect.Array, reflect.Slice, reflect.Pointer:
 		return getFieldType(t.Elem())
 	}
 	return "", errInvalidReflection
@@ -552,13 +552,7 @@ func indexDefAppend(indexDefs *[]bindings.IndexDef, indexDef bindings.IndexDef, 
 
 	if len(indexDef.JSONPaths) > 0 && indexDef.IndexType != "composite" {
 		jsonPaths := foundIndexDef.JSONPaths
-		isPresented := false
-		for _, jsonPath := range jsonPaths {
-			if jsonPath == indexDef.JSONPaths[0] {
-				isPresented = true
-				break
-			}
-		}
+		isPresented := slices.Contains(jsonPaths, indexDef.JSONPaths[0])
 
 		if !isPresented {
 			if !isAppendable {

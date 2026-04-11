@@ -94,7 +94,7 @@ func (s *resultSerializer) readRawQueryParamsKeepExtras(v *rawResultQueryParams,
 
 	if (v.flags & bindings.ResultsWithPayloadTypes) != 0 {
 		ptCount := int(s.GetVarUInt())
-		for i := 0; i < ptCount; i++ {
+		for range ptCount {
 			nsid := int(s.GetVarUInt())
 			nsname := s.GetVString()
 			_ = nsname
@@ -141,12 +141,12 @@ func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 		case bindings.QueryResultIncarnationTags:
 			shardsCnt := uint(s.GetVarUInt())
 			v.nsIncarnationTags = make(nsTagsMap)
-			for i := uint(0); i < shardsCnt; i++ {
+			for range shardsCnt {
 				shardID := int(s.GetVarInt())
 				nsCnt := uint(s.GetVarUInt())
 				if nsCnt > 0 {
 					sl := make([]int64, nsCnt)
-					for j := uint(0); j < nsCnt; j++ {
+					for j := range nsCnt {
 						sl[j] = s.GetVarInt()
 					}
 					v.nsIncarnationTags[shardID] = sl

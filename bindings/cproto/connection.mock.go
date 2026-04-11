@@ -17,7 +17,7 @@ type MockConnection struct {
 }
 
 type recMockConnection struct {
-	args []interface{}
+	args []any
 	mock *MockConnection
 }
 
@@ -28,7 +28,7 @@ type MockConnFactory struct {
 }
 
 type recMockConnFactory struct {
-	args []interface{}
+	args []any
 	mock *MockConnFactory
 }
 
@@ -72,7 +72,7 @@ func (mcf *MockConnFactory) newConnection(ctx context.Context, params newConnPar
 
 func (rec *recMockConnFactory) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner) *call {
 	c := &call{
-		method: reflect.TypeOf((*MockConnFactory)(nil).newConnection),
+		method: reflect.TypeFor[func(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eh bindings.EventsHandler) (connection, string, int64, error)](),
 	}
 	rec.mock.expCalls["newConnection"] = c
 	return c
@@ -89,7 +89,7 @@ func (mc *MockConnection) hasError() bool {
 
 func (rec *recMockConnection) hasError() *call {
 	c := &call{
-		method: reflect.TypeOf((*MockConnection)(nil).hasError),
+		method: reflect.TypeFor[func() bool](),
 	}
 	rec.mock.expCalls["hasError"] = c
 	return c
@@ -97,13 +97,13 @@ func (rec *recMockConnection) hasError() *call {
 
 func (rec *recMockConnection) rpcCall() *call {
 	c := &call{
-		method: reflect.TypeOf((*MockConnection)(nil).rpcCall),
+		method: reflect.TypeFor[func(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error)](),
 	}
 	rec.mock.expCalls["rpcCall"] = c
 	return c
 }
 
-func (mc *MockConnection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
+func (mc *MockConnection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...any) (buf *NetBuffer, err error) {
 	c, ok := mc.expCalls["rpcCall"]
 	if !ok {
 		mc.t.Fatalf("unexpected call rpcCall")
@@ -112,14 +112,14 @@ func (mc *MockConnection) rpcCall(ctx context.Context, cmd int, netTimeout uint3
 	ret1, _ := c.rets[1].(error)
 	return ret0, ret1
 }
-func (mc *MockConnection) rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error {
+func (mc *MockConnection) rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...any) error {
 	return nil
 }
-func (mc *MockConnection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...interface{}) {
+func (mc *MockConnection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...any) {
 }
 func (mc *MockConnection) onError(err error) {
 }
-func (mc *MockConnection) rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...interface{}) {
+func (mc *MockConnection) rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...any) {
 }
 func (mc *MockConnection) curError() error {
 	c, ok := mc.expCalls["curError"]
@@ -132,7 +132,7 @@ func (mc *MockConnection) curError() error {
 
 func (rec *recMockConnection) curError() *call {
 	c := &call{
-		method: reflect.TypeOf((*MockConnection)(nil).curError),
+		method: reflect.TypeFor[func() error](),
 	}
 	rec.mock.expCalls["curError"] = c
 	return c
@@ -152,16 +152,16 @@ func (mc *MockConnection) getSeqs() chan uint32 {
 func (mc *MockConnection) getRequestTimeout() uint32 {
 	return 0
 }
-func (mc *MockConnection) logMsg(level int, fmt string, msg ...interface{}) {
+func (mc *MockConnection) logMsg(level int, fmt string, msg ...any) {
 }
 
 type call struct {
-	rets   []interface{}
-	args   []interface{}
+	rets   []any
+	args   []any
 	method reflect.Type
 }
 
-func (c *call) Return(rets ...interface{}) []interface{} {
+func (c *call) Return(rets ...any) []any {
 	c.rets = rets
 	return rets
 }

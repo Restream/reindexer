@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/restream/reindexer/v5/bindings"
 	"github.com/golang/snappy"
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 var bufPool sync.Pool
@@ -15,7 +15,7 @@ type NetBuffer struct {
 	conn  connection
 	reqID int
 	uid   int64
-	args  []interface{}
+	args  []any
 }
 
 func (buf *NetBuffer) Fetch(ctx context.Context, offset, limit int, asJson bool) (err error) {
@@ -84,7 +84,7 @@ func (buf *NetBuffer) parseArgs() (err error) {
 	}
 	retCount := dec.argsCount()
 	if retCount > 0 {
-		for i := 0; i < retCount; i++ {
+		for range retCount {
 			buf.args = append(buf.args, dec.intfArg())
 		}
 	}

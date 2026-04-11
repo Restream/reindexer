@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -159,7 +160,7 @@ type Query struct {
 	mergedQueries     []*Query
 	joinToFields      []string
 	joinHandlers      []JoinHandler
-	context           interface{}
+	context           any
 	joinType          int
 	closed            bool
 	initBuf           [256]byte
@@ -167,7 +168,7 @@ type Query struct {
 	ptVersions        []int32
 	iterator          Iterator
 	jsonIterator      JSONIterator
-	items             []interface{}
+	items             []any
 	json              []byte
 	jsonOffsets       []int
 	totalName         string
@@ -213,7 +214,7 @@ type Field struct {
 }
 
 type Values struct {
-	Values []interface{}
+	Values []any
 }
 
 type SubQuery struct {
@@ -444,16 +445,16 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 // - nil for CondAny/CondEmpty
 // - []interface{} with 1 value per subindex for composite indexes
 // - *Query for subquery where-filters
-func (q *Query) Where(index string, condition int, keys interface{}) *Query {
+func (q *Query) Where(index string, condition int, keys any) *Query {
 	t := reflect.TypeOf(keys)
 	v := reflect.ValueOf(keys)
 
-	if keys != nil && (t == reflect.TypeOf((*Query)(nil)).Elem() || (t.Kind() == reflect.Ptr && t.Elem() == reflect.TypeOf((*Query)(nil)).Elem())) {
+	if keys != nil && (t == reflect.TypeFor[Query]() || (t.Kind() == reflect.Pointer && t.Elem() == reflect.TypeFor[Query]())) {
 		q.ser.PutVarCUInt(queryFieldSubQueryCondition)
 		q.ser.PutVarCUInt(q.nextOp)
 		q.ser.PutVString(index)
 		q.ser.PutVarCUInt(condition)
-		if t.Kind() == reflect.Ptr {
+		if t.Kind() == reflect.Pointer {
 			q.ser.PutVBytes(v.Interface().(*Query).ser.Bytes())
 		} else {
 			subQuery := v.Interface().(Query)
@@ -486,7 +487,7 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 // - single value
 // - slice/arrays of values
 // - nil for CondAny/CondEmpty
-func (q *Query) WhereQuery(subQuery *Query, condition int, keys interface{}) *Query {
+func (q *Query) WhereQuery(subQuery *Query, condition int, keys any) *Query {
 	t := reflect.TypeOf(keys)
 	v := reflect.ValueOf(keys)
 
@@ -642,7 +643,7 @@ func (q *Query) WhereKnnString(index string, val string, params KnnSearchParam) 
 }
 
 // WhereComposite - Add where condition to DB query with interface args for composite indexes
-func (q *Query) WhereComposite(index string, condition int, keys ...interface{}) *Query {
+func (q *Query) WhereComposite(index string, condition int, keys ...any) *Query {
 	return q.Where(index, condition, keys)
 }
 
@@ -711,7 +712,7 @@ func (q *Query) WhereExpressions(left IExpression, condition int, right IExpress
 }
 
 // WhereFlatArrayLen - Add where condition to DB query for flat_array_len() function
-func (q *Query) WhereFlatArrayLen(index string, condition int, keys ...interface{}) *Query {
+func (q *Query) WhereFlatArrayLen(index string, condition int, keys ...any) *Query {
 	q.WhereExpressions(FlatArrayLen{Field: index}, condition, Values{Values: keys})
 	return q
 }
@@ -779,7 +780,7 @@ func (r *AggregateFacetRequest) Sort(field string, desc bool) *AggregateFacetReq
 // If values argument specified, then items equal to values, if found will be placed in the top positions
 // For composite indexes values must be []interface{}, with value of each subindex
 // Forced sort is support for the first sorting field only
-func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query {
+func (q *Query) Sort(sortIndex string, desc bool, values ...any) *Query {
 	q.ser.PutVarCUInt(querySortIndex)
 	q.ser.PutVString(sortIndex)
 	if desc {
@@ -789,7 +790,7 @@ func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query 
 	}
 
 	q.ser.PutVarCUInt(len(values))
-	for i := 0; i < len(values); i++ {
+	for i := range values {
 		q.ser.PutValue(reflect.ValueOf(values[i]))
 	}
 
@@ -849,7 +850,7 @@ func (q *Query) Not() *Query {
 func (q *Query) Distinct(distinctFields ...string) *Query {
 	l := len(distinctFields)
 	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggDistinct).PutVarCUInt(l)
-	for i := 0; i < l; i++ {
+	for i := range l {
 		q.ser.PutVString(distinctFields[i])
 	}
 	return q
@@ -908,7 +909,7 @@ func (q *Query) WithRank() *Query {
 }
 
 // SetContext set interface, which will be passed to Joined interface
-func (q *Query) SetContext(ctx interface{}) *Query {
+func (q *Query) SetContext(ctx any) *Query {
 	q.context = ctx
 	if q.root != nil {
 		q.root.context = ctx
@@ -1033,7 +1034,7 @@ func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 	return q.db.deleteQuery(ctx, q)
 }
 
-func getValueJSON(value interface{}) string {
+func getValueJSON(value any) string {
 	ok := false
 	var err error
 	var objectJSON []byte
@@ -1052,12 +1053,12 @@ func getValueJSON(value interface{}) string {
 }
 
 // SetObject adds update of object field request for update query
-func (q *Query) SetObject(field string, values interface{}) *Query {
+func (q *Query) SetObject(field string, values any) *Query {
 	size := 1
 	isArray := false
 	t := reflect.TypeOf(values)
 	v := reflect.ValueOf(values)
-	if t != reflect.TypeOf([]byte{}) && (t.Kind() == reflect.Array || t.Kind() == reflect.Slice) {
+	if t != reflect.TypeFor[[]byte]() && (t.Kind() == reflect.Array || t.Kind() == reflect.Slice) {
 		size = v.Len()
 		isArray = true
 	}
@@ -1092,7 +1093,7 @@ func (q *Query) SetObject(field string, values interface{}) *Query {
 }
 
 // Set adds update field request for update query
-func (q *Query) Set(field string, values interface{}) *Query {
+func (q *Query) Set(field string, values any) *Query {
 	t := reflect.TypeOf(values)
 	if t.Kind() == reflect.Struct || t.Kind() == reflect.Map {
 		return q.SetObject(field, values)
@@ -1198,12 +1199,12 @@ func (q *Query) MustExecCtx(ctx context.Context) *Iterator {
 }
 
 // Get will execute query and return 1 st item. Generates panic on error
-func (q *Query) Get() (item interface{}, found bool) {
+func (q *Query) Get() (item any, found bool) {
 	return q.GetCtx(context.Background())
 }
 
 // GetCtx will execute query and return first item. Generates panic on error
-func (q *Query) GetCtx(ctx context.Context) (item interface{}, found bool) {
+func (q *Query) GetCtx(ctx context.Context) (item any, found bool) {
 	if q.root != nil {
 		q = q.root
 	}
@@ -1297,11 +1298,9 @@ func (q *Query) LeftJoin(q2 *Query, field string) *Query {
 func (q *Query) JoinHandler(field string, handler JoinHandler) *Query {
 	if q.root != nil {
 		// Joined queries can not have JoinHandlers themselves. Routing this call to the root query if current query is joined
-		for _, jq := range q.root.joinQueries {
-			if q == jq {
-				q.root.JoinHandler(field, handler)
-				return q
-			}
+		if slices.Contains(q.root.joinQueries, q) {
+			q.root.JoinHandler(field, handler)
+			return q
 		}
 	}
 	index := -1
