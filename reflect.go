@@ -171,8 +171,8 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 		return nil
 	}
 
-	for field := range st.Fields() {
-		field := field
+	for i := 0; i < st.NumField(); i++ {
+		field := st.Field(i)
 		t := field.Type
 		if t.Kind() == reflect.Pointer {
 			t = t.Elem()

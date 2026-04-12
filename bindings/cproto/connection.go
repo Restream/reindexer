@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/url"
 	"sync"
@@ -396,7 +395,7 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 			}
 			trySetReqId(answ)
 		} else {
-			io.CopyN(ioutil.Discard, c.rdBuf, int64(size))
+			io.CopyN(io.Discard, c.rdBuf, int64(size))
 		}
 		return
 	}

@@ -2,7 +2,6 @@ package reindexer
 
 import (
 	"context"
-	"github.com/goccy/go-json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
@@ -457,7 +458,7 @@ func (q *Query) Where(index string, condition int, keys any) *Query {
 		if t.Kind() == reflect.Pointer {
 			q.ser.PutVBytes(v.Interface().(*Query).ser.Bytes())
 		} else {
-			subQuery := v.Interface().(Query)
+			subQuery := v.Interface().(*Query)
 			q.ser.PutVBytes(subQuery.ser.Bytes())
 		}
 	} else {

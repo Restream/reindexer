@@ -349,8 +349,8 @@ func (r *Reflector) reflectStructFields(st *Type, definitions Definitions, paren
 	if t.Kind() != reflect.Struct {
 		return
 	}
-	for f := range t.Fields() {
-		f := f
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
 
 		if r.FieldIsInScheme != nil && !r.FieldIsInScheme(f) {
 			continue
