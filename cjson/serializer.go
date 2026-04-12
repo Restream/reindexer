@@ -275,6 +275,39 @@ func (s *Serializer) WriteInts(v []int) (n int, err error) {
 	}
 	return slBytes, nil
 }
+func (s *Serializer) WriteFloat32s(v []float32) (n int, err error) {
+	sl := len(v)
+	slBytes := sl * 4
+	l := len(s.buf)
+	s.grow(slBytes)
+	if sl > 0 && isLittleEndian {
+		vs := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), slBytes)
+		copy(s.buf[l:], vs)
+		return slBytes, nil
+	}
+	for i := 0; i < sl; i++ {
+		binary.LittleEndian.PutUint32(s.buf[l:], math.Float32bits(v[i]))
+		l += 4
+	}
+	return slBytes, nil
+}
+
+func (s *Serializer) WriteFloat64s(v []float64) (n int, err error) {
+	sl := len(v)
+	slBytes := sl * 8
+	l := len(s.buf)
+	s.grow(slBytes)
+	if sl > 0 && isLittleEndian {
+		vs := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), slBytes)
+		copy(s.buf[l:], vs)
+		return slBytes, nil
+	}
+	for i := 0; i < sl; i++ {
+		binary.LittleEndian.PutUint64(s.buf[l:], math.Float64bits(v[i]))
+		l += 8
+	}
+	return slBytes, nil
+}
 
 func (s *Serializer) PutVarInt(v int64) {
 	l := len(s.buf)
@@ -452,6 +485,45 @@ func (s *Serializer) GetVString() (v string) {
 	v = string(s.buf[s.pos : s.pos+l])
 	s.pos += l
 	return v
+}
+func (s *Serializer) ReadFloat32s(dst []float32) {
+	sl := len(dst)
+	slBytes := sl * 4
+	if s.pos+slBytes > len(s.buf) {
+		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+slBytes, len(s.buf)-s.pos))
+	}
+	if sl == 0 {
+		return
+	}
+	if isLittleEndian {
+		vs := unsafe.Slice((*byte)(unsafe.Pointer(&dst[0])), slBytes)
+		copy(vs, s.buf[s.pos:s.pos+slBytes])
+		s.pos += slBytes
+		return
+	}
+	for i := 0; i < sl; i++ {
+		dst[i] = s.GetFloat32()
+	}
+}
+
+func (s *Serializer) ReadFloat64s(dst []float64) {
+	sl := len(dst)
+	slBytes := sl * 8
+	if s.pos+slBytes > len(s.buf) {
+		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+slBytes, len(s.buf)-s.pos))
+	}
+	if sl == 0 {
+		return
+	}
+	if isLittleEndian {
+		vs := unsafe.Slice((*byte)(unsafe.Pointer(&dst[0])), slBytes)
+		copy(vs, s.buf[s.pos:s.pos+slBytes])
+		s.pos += slBytes
+		return
+	}
+	for i := 0; i < sl; i++ {
+		dst[i] = s.GetDouble()
+	}
 }
 
 func (s *Serializer) Eof() bool {

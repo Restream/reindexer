@@ -123,6 +123,36 @@ func TestSerializerReadWriteFixedWidthRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSerializerWriteReadFloatArrays(t *testing.T) {
+	f32 := []float32{1.25, -2.5, 3.75}
+	f64 := []float64{10.125, -11.5, 12.875}
+
+	ser := NewSerializer(nil)
+	if _, err := ser.WriteFloat32s(f32); err != nil {
+		t.Fatalf("WriteFloat32s failed: %v", err)
+	}
+	if _, err := ser.WriteFloat64s(f64); err != nil {
+		t.Fatalf("WriteFloat64s failed: %v", err)
+	}
+
+	rd := NewSerializer(ser.Bytes())
+	got32 := make([]float32, len(f32))
+	got64 := make([]float64, len(f64))
+	rd.ReadFloat32s(got32)
+	rd.ReadFloat64s(got64)
+
+	for i := range f32 {
+		if got32[i] != f32[i] {
+			t.Fatalf("float32 mismatch at %d: got=%f want=%f", i, got32[i], f32[i])
+		}
+	}
+	for i := range f64 {
+		if got64[i] != f64[i] {
+			t.Fatalf("float64 mismatch at %d: got=%f want=%f", i, got64[i], f64[i])
+		}
+	}
+}
+
 func BenchmarkSerializerEncodeTypicalDocument(b *testing.B) {
 	tags := []string{"books", "science", "math", "history"}
 	scores := []int{10, 42, 17, 5, 99, 100, 77, 54}

@@ -520,8 +520,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 		case reflect.Float32:
 			if !isPtr {
 				sl := (*[1 << 28]float32)(ptr)[offset : offset+count : offset+count]
-				for i := 0; i < count; i++ {
-					sl[i] = float32(asFloat(rdser, subtag))
+				if subtag == TAG_FLOAT {
+					rdser.ReadFloat32s(sl)
+				} else {
+					for i := 0; i < count; i++ {
+						sl[i] = float32(asFloat(rdser, subtag))
+					}
 				}
 			} else {
 				sl := (*[1 << 28]*float32)(ptr)[offset : offset+count : offset+count]
@@ -533,8 +537,13 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 		case reflect.Float64:
 			if !isPtr {
 				sl := (*[1 << 27]float64)(ptr)[offset : offset+count : offset+count]
-				for i := 0; i < count; i++ {
-					sl[i] = asFloat(rdser, subtag)
+				if subtag == TAG_DOUBLE {
+					rdser.ReadFloat64s(sl)
+				} else {
+					for i := 0; i < count; i++ {
+						sl[i] = asFloat(rdser, subtag)
+					}
+
 				}
 			} else {
 				sl := (*[1 << 28]*float64)(ptr)[offset : offset+count : offset+count]

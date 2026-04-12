@@ -674,14 +674,10 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 				}
 			case reflect.Float32:
 				sl := (*[1 << 28]float32)(ptr)[:l:l]
-				for _, v := range sl {
-					rdser.PutFloat32(v)
-				}
+				_, _ = rdser.WriteFloat32s(sl)
 			case reflect.Float64:
 				sl := (*[1 << 27]float64)(ptr)[:l:l]
-				for _, v := range sl {
-					rdser.PutDouble(v)
-				}
+				_, _ = rdser.WriteFloat64s(sl)
 			case reflect.String:
 				sl := (*[1 << 27]string)(ptr)[:l:l]
 				if f.isUuid {
