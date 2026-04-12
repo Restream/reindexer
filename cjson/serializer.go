@@ -11,6 +11,10 @@ import (
 )
 
 var serPool sync.Pool
+var isLittleEndian = func() bool {
+	var v uint16 = 0x0102
+	return *(*byte)(unsafe.Pointer(&v)) == 0x02
+}()
 
 type Serializer struct {
 	buf  []byte
@@ -95,15 +99,19 @@ func (s *Serializer) PutUInt64(v uint64) *Serializer {
 }
 
 func (s *Serializer) PutUuid(v [2]uint64) *Serializer {
-	s.PutUInt64(v[0])
-	s.PutUInt64(v[1])
+	l := len(s.buf)
+	s.grow(16)
+	binary.LittleEndian.PutUint64(s.buf[l:], v[0])
+	binary.LittleEndian.PutUint64(s.buf[l+8:], v[1])
 	return s
 }
 
 func (s *Serializer) PutFloatVector(vec []float32) *Serializer {
 	s.PutVarUInt(uint64(len(vec)) << 1)
-	for _, value := range vec {
-		s.writeIntBits(int64(math.Float32bits(value)), unsafe.Sizeof(value))
+	l := len(s.buf)
+	s.grow(len(vec) * 4)
+	for i, value := range vec {
+		binary.LittleEndian.PutUint32(s.buf[l+i*4:], math.Float32bits(value))
 	}
 	return s
 }
@@ -201,8 +209,9 @@ func (s *Serializer) writeIntBits(v int64, sz uintptr) {
 }
 
 func (s *Serializer) WriteString(vx string) *Serializer {
-	v := []byte(vx)
-	s.Write(v)
+	l := len(s.buf)
+	s.grow(len(vx))
+	copy(s.buf[l:], vx)
 	return s
 }
 
@@ -234,12 +243,16 @@ func (s *Serializer) WriteInts16(v []int16) (n int, err error) {
 	slBytes := sl * 2
 	l := len(s.buf)
 	s.grow(slBytes)
+	if sl > 0 && isLittleEndian {
+		vs := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), slBytes)
+		copy(s.buf[l:], vs)
+		return slBytes, nil
+	}
+
 	for i := 0; i < sl; i++ {
 		v64 := uint16(v[i])
-		s.buf[l] = byte(v64)
-		l += 1
-		s.buf[l] = byte(v64 >> 8)
-		l += 1
+		binary.LittleEndian.PutUint16(s.buf[l:], v64)
+		l += 2
 	}
 	return slBytes, nil
 }
@@ -249,24 +262,16 @@ func (s *Serializer) WriteInts(v []int) (n int, err error) {
 	slBytes := sl * 8
 	l := len(s.buf)
 	s.grow(slBytes)
+	if sl > 0 && unsafe.Sizeof(int(0)) == 8 && isLittleEndian {
+		vs := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), slBytes)
+		copy(s.buf[l:], vs)
+		return slBytes, nil
+	}
+
 	for i := 0; i < sl; i++ {
 		v64 := uint64(v[i])
-		s.buf[l] = byte(v64)
-		l += 1
-		s.buf[l] = byte(v64 >> 8)
-		l += 1
-		s.buf[l] = byte(v64 >> 16)
-		l += 1
-		s.buf[l] = byte(v64 >> 24)
-		l += 1
-		s.buf[l] = byte(v64 >> 32)
-		l += 1
-		s.buf[l] = byte(v64 >> 40)
-		l += 1
-		s.buf[l] = byte(v64 >> 48)
-		l += 1
-		s.buf[l] = byte(v64 >> 56)
-		l += 1
+		binary.LittleEndian.PutUint64(s.buf[l:], v64)
+		l += 8
 	}
 	return slBytes, nil
 }
