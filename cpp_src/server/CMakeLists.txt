@@ -3,26 +3,42 @@ cmake_minimum_required(VERSION 3.18)
 
 project(reindexer_server_library)
 
-set (SWAGGER_VERSION "3.x")
 set (GH_FACE_VERSION "5.12.0")
 set (GH_FACE_TAG "v${GH_FACE_VERSION}")
 set (TARGET reindexer_server_library)
 set (SERVER_LIB_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE)
 
 file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
-    "file(READ ${PROJECT_BINARY_DIR}/swagger/index.html indexhtml)
-    STRING(REPLACE \"https://petstore.swagger.io/v2/swagger.json\" \"swagger.yml\" indexhtml \"\${indexhtml}\")
-    file(WRITE ${PROJECT_BINARY_DIR}/swagger/index.html \"\${indexhtml}\")"
+    "execute_process(
+       COMMAND \"${CMAKE_COMMAND}\" -E copy
+               \"${PROJECT_BINARY_DIR}/swagger-initializer.js\"
+               \"${PROJECT_BINARY_DIR}/swagger/swagger-initializer.js\"
+       RESULT_VARIABLE ret
+     )
+     if(NOT \"\${ret}\" STREQUAL \"0\")
+       message(FATAL_ERROR \"Could not copy '${PROJECT_BINARY_DIR}/swagger-initializer.js'\")
+     endif()"
 )
+
+set(SWAGGER_VERSION "5.32.2")
+set(SWAGGER_TAG "v${SWAGGER_VERSION}")
+set(SWAGGER_ARCHIVE_DIR "swagger-ui-${SWAGGER_VERSION}")
 
 set(SWAGGER_LOCAL_DIST "${PROJECT_SOURCE_DIR}/contrib/swagger-ui-dist" CACHE PATH
     "Path to prebuilt Swagger UI dist")
 option(SWAGGER_ALLOW_DOWNLOAD "Allow downloading Swagger UI when local dist is absent" ON)
 
+set(SWAGGER_SPEC_URL "swagger.yml")
+
+configure_file(
+    "${PROJECT_SOURCE_DIR}/contrib/swagger-initializer.js.in"
+    "${PROJECT_BINARY_DIR}/swagger-initializer.js"
+    @ONLY
+)
+
 file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
     "set(swagger_dst \"${PROJECT_BINARY_DIR}/swagger\")
      set(swagger_local_dist \"${SWAGGER_LOCAL_DIST}\")
-     set(swagger_allow_download \"${SWAGGER_ALLOW_DOWNLOAD}\")
 
      execute_process(
        COMMAND \"${CMAKE_COMMAND}\" -E remove_directory \"\${swagger_dst}\"
@@ -41,13 +57,14 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
          message(FATAL_ERROR \"Could not copy local swagger dist from '\${swagger_local_dist}'\")
        endif()
      else()
-       if(NOT swagger_allow_download)
+       if(NOT ${SWAGGER_ALLOW_DOWNLOAD})
          message(FATAL_ERROR
            \"Local Swagger UI dist was not found at '\${swagger_local_dist}', and download is disabled\")
        endif()
 
        file(
-         DOWNLOAD \"https://codeload.github.com/swagger-api/swagger-ui/tar.gz/${SWAGGER_VERSION}\"
+         DOWNLOAD
+         \"https://github.com/swagger-api/swagger-ui/archive/refs/tags/${SWAGGER_TAG}.tar.gz\"
          \"${PROJECT_BINARY_DIR}/swagger.tar.gz\"
          STATUS dl_status
          SHOW_PROGRESS
@@ -69,18 +86,18 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
 
        execute_process(
          COMMAND \"${CMAKE_COMMAND}\" -E copy_directory
-                 \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist\"
+                 \"${PROJECT_BINARY_DIR}/${SWAGGER_ARCHIVE_DIR}/dist\"
                  \"\${swagger_dst}\"
          RESULT_VARIABLE ret
        )
        if(NOT \"\${ret}\" STREQUAL \"0\")
          message(FATAL_ERROR
-           \"Could not copy directory '${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist'\")
+           \"Could not copy directory '${PROJECT_BINARY_DIR}/${SWAGGER_ARCHIVE_DIR}/dist'\")
        endif()
 
        execute_process(
          COMMAND \"${CMAKE_COMMAND}\" -E remove_directory
-                 \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}\"
+                 \"${PROJECT_BINARY_DIR}/${SWAGGER_ARCHIVE_DIR}\"
          RESULT_VARIABLE ret
        )
        file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")
@@ -96,7 +113,13 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
        message(FATAL_ERROR \"Could not copy '${PROJECT_SOURCE_DIR}/contrib/server.yml'\")
      endif()
 
-     execute_process(COMMAND \"${CMAKE_COMMAND}\" -P \"${PROJECT_BINARY_DIR}/swagger_replace.cmake\")"
+     execute_process(
+       COMMAND \"${CMAKE_COMMAND}\" -P \"${PROJECT_BINARY_DIR}/swagger_replace.cmake\"
+       RESULT_VARIABLE ret
+     )
+     if(NOT \"\${ret}\" STREQUAL \"0\")
+       message(FATAL_ERROR \"Could not generate 'swagger-initializer.js'\")
+     endif()"
 )
 
 file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
