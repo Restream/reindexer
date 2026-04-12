@@ -1378,47 +1378,50 @@ func (db *reindexerImpl) queryFrom(d *dsl.DSL) (*Query, error) {
 
 func dsnParse(dsn any) (string, []url.URL) {
 	var dsnSlice []string
-	var scheme string
 
 	switch v := dsn.(type) {
 	case string:
 		dsnSlice = []string{v}
 	case []string:
 		if len(v) == 0 {
-			panic(fmt.Errorf("Empty multi DSN config. DSN: '%#v'. ", dsn))
+			panic(fmt.Errorf("empty multi DSN config. DSN: '%#v'", dsn))
 		}
 		dsnSlice = v
 	default:
-		panic(fmt.Errorf("DSN format not supported. Support []string or string. DSN: '%#v'. ", dsn))
+		panic(fmt.Errorf("DSN format not supported. Support []string or string. DSN: '%#v'", dsn))
 	}
 
-	dsnParsed := make([]url.URL, 0, len(dsnSlice))
+	dsnParsed := make([]url.URL, len(dsnSlice))
+	var scheme string
+
 	for i := range dsnSlice {
-		if dsnSlice[i] == "builtin" {
-			dsnSlice[i] += "://"
+		raw := dsnSlice[i]
+		if raw == "builtin" {
+			raw = "builtin://"
+			dsnSlice[i] = raw
 		}
 
-		u, err := url.Parse(dsnSlice[i])
+		u, err := url.Parse(raw)
 		if err != nil {
-			panic(fmt.Errorf("Can't parse DB DSN '%s'", dsn))
+			panic(fmt.Errorf("can't parse DB DSN '%s': %w", raw, err))
 		}
+
 		if scheme != "" && scheme != u.Scheme {
-			maskDsn := func(u *url.URL) string {
+			if u.User != nil {
 				if password, ok := u.User.Password(); ok {
-					maskLogin := func(username string) string {
-						if len(username) > 4 {
-							return username[2:] + "..." + username[len(username)-2:]
-						} else {
-							return "..."
-						}
+					username := u.User.Username()
+					if len(username) > 4 {
+						username = username[2:] + "..." + username[len(username)-2:]
+					} else {
+						username = "..."
 					}
-					u.User = url.UserPassword(maskLogin(u.User.Username()), fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(password))))
+					u.User = url.UserPassword(username, fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(password))))
 				}
-				return u.String()
 			}
-			panic(fmt.Sprintf("DSN has a different schemas. %s", maskDsn(u)))
+			panic(fmt.Sprintf("DSN has a different schemas. %s", u.String()))
 		}
-		dsnParsed = append(dsnParsed, *u)
+
+		dsnParsed[i] = *u
 		scheme = u.Scheme
 	}
 
@@ -1426,12 +1429,18 @@ func dsnParse(dsn any) (string, []url.URL) {
 }
 
 func dsnString(dsnParsed []url.URL) string {
-	dsnLabelParts := []string{}
-	for _, dsn := range dsnParsed {
-		dsnLabelParts = append(dsnLabelParts, strings.TrimSpace(dsn.String()))
+	if len(dsnParsed) == 0 {
+		return ""
 	}
 
-	return strings.Join(dsnLabelParts, ",")
+	var b strings.Builder
+	for i := range dsnParsed {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strings.TrimSpace(dsnParsed[i].String()))
+	}
+	return b.String()
 }
 
 func (db *reindexerImpl) subscribe(ctx context.Context, opts *events.EventsStreamOptions) *events.EventsStream {

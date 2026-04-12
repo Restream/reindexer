@@ -68,10 +68,10 @@ func (s *Serializer) Append(s2 Serializer) {
 	sl := len(s2.buf)
 	l := len(s.buf)
 	s.grow(sl)
-	for i := 0; i < sl; i++ {
-
-		s.buf[i+l] = s2.buf[i]
-	}
+	//for i := 0; i < sl; i++ {
+	//	s.buf[i+l] = s2.buf[i]
+	//}
+	copy(s.buf[l:], s2.buf)
 }
 
 func (s *Serializer) PutUInt8(v uint8) *Serializer {
@@ -180,9 +180,23 @@ func (s *Serializer) PutValue(v reflect.Value) error {
 func (s *Serializer) writeIntBits(v int64, sz uintptr) {
 	l := len(s.buf)
 	s.grow(int(sz))
-	for i := 0; i < int(sz); i++ {
-		s.buf[i+l] = byte(v)
-		v = v >> 8
+	//for i := 0; i < int(sz); i++ {
+	//	s.buf[i+l] = byte(v)
+	//	v = v >> 8
+	switch sz {
+	case 1:
+		s.buf[l] = byte(v)
+	case 2:
+		binary.LittleEndian.PutUint16(s.buf[l:], uint16(v))
+	case 4:
+		binary.LittleEndian.PutUint32(s.buf[l:], uint32(v))
+	case 8:
+		binary.LittleEndian.PutUint64(s.buf[l:], uint64(v))
+	default:
+		for i := 0; i < int(sz); i++ {
+			s.buf[i+l] = byte(v)
+			v = v >> 8
+		}
 	}
 }
 
@@ -197,9 +211,10 @@ func (s *Serializer) PutVBytes(v []byte) *Serializer {
 	s.PutVarUInt(uint64(sl))
 	l := len(s.buf)
 	s.grow(sl)
-	for i := 0; i < sl; i++ {
-		s.buf[i+l] = v[i]
-	}
+	//for i := 0; i < sl; i++ {
+	//	s.buf[i+l] = v[i]
+	//}
+	copy(s.buf[l:], v)
 	return s
 }
 
@@ -207,9 +222,10 @@ func (s *Serializer) Write(v []byte) (n int, err error) {
 	sl := len(v)
 	l := len(s.buf)
 	s.grow(sl)
-	for i := 0; i < sl; i++ {
-		s.buf[i+l] = v[i]
-	}
+	//for i := 0; i < sl; i++ {
+	//	s.buf[i+l] = v[i]
+	//}
+	copy(s.buf[l:], v)
 	return sl, nil
 }
 
@@ -291,9 +307,10 @@ func (s *Serializer) PutVString(v string) *Serializer {
 	l := len(s.buf)
 	s.grow(sl)
 
-	for i := 0; i < sl; i++ {
-		s.buf[i+l] = v[i]
-	}
+	//for i := 0; i < sl; i++ {
+	//s.buf[i+l] = v[i]
+	//}
+	copy(s.buf[l:], []byte(v))
 	return s
 }
 func (s *Serializer) Truncate(pos int) {
@@ -354,8 +371,21 @@ func (s *Serializer) readIntBits(sz uintptr) (v int64) {
 		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+int(sz), len(s.buf)-s.pos))
 	}
 
-	for i := int(sz) - 1; i >= 0; i-- {
-		v = (int64(s.buf[i+s.pos]) & 0xFF) | (v << 8)
+	//for i := int(sz) - 1; i >= 0; i-- {
+	//	v = (int64(s.buf[i+s.pos]) & 0xFF) | (v << 8)
+	switch sz {
+	case 1:
+		v = int64(s.buf[s.pos])
+	case 2:
+		v = int64(binary.LittleEndian.Uint16(s.buf[s.pos:]))
+	case 4:
+		v = int64(binary.LittleEndian.Uint32(s.buf[s.pos:]))
+	case 8:
+		v = int64(binary.LittleEndian.Uint64(s.buf[s.pos:]))
+	default:
+		for i := int(sz) - 1; i >= 0; i-- {
+			v = (int64(s.buf[i+s.pos]) & 0xFF) | (v << 8)
+		}
 	}
 	s.pos += int(sz)
 	return v
@@ -365,8 +395,22 @@ func (s *Serializer) readUIntBits(sz uintptr) (v uint64) {
 		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+int(sz), len(s.buf)-s.pos))
 	}
 
-	for i := int(sz) - 1; i >= 0; i-- {
-		v = (uint64(s.buf[i+s.pos]) & 0xFF) | (v << 8)
+	//for i := int(sz) - 1; i >= 0; i-- {
+	//	v = (uint64(s.buf[i+s.pos]) & 0xFF) | (v << 8)
+	switch sz {
+	case 1:
+		v = uint64(s.buf[s.pos])
+	case 2:
+		v = uint64(binary.LittleEndian.Uint16(s.buf[s.pos:]))
+	case 4:
+		v = uint64(binary.LittleEndian.Uint32(s.buf[s.pos:]))
+	case 8:
+		v = binary.LittleEndian.Uint64(s.buf[s.pos:])
+	default:
+		for i := int(sz) - 1; i >= 0; i-- {
+			v = (uint64(s.buf[i+s.pos]) & 0xFF) | (v << 8)
+		}
+
 	}
 	s.pos += int(sz)
 	return v
