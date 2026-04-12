@@ -7,7 +7,7 @@
 package jsonschema
 
 import (
-	"encoding/json"
+	"github.com/goccy/go-json"
 
 	"net"
 	"net/url"

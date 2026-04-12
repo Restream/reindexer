@@ -1,7 +1,7 @@
 package reindexer
 
 import (
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"fmt"
 	"math/rand"
 	"strconv"

@@ -3,7 +3,7 @@ package reindexer
 import (
 	"bytes"
 	"encoding/gob"
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"fmt"
 	"math/rand"
 	"strings"

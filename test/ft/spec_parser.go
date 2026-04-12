@@ -2,7 +2,7 @@ package ft
 
 import (
 	"embed"
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"fmt"
 	"os"
 )
