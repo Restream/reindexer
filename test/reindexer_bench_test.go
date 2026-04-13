@@ -3,13 +3,13 @@ package reindexer
 import (
 	"bytes"
 	"encoding/gob"
-	"github.com/goccy/go-json"
 	"fmt"
 	"math/rand"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	"github.com/restream/reindexer/v5/cjson"
@@ -73,7 +73,7 @@ func initKnnNs(indexType string, metric string) {
 		panic(fmt.Sprintf("Namespace: %s, err: %s", ns, err.Error()))
 	}
 	fvIndexOpts := reindexer.FloatVectorIndexOpts{
-		Metric: metric,
+		Metric:    metric,
 		Dimension: kBenchFloatVectorDimension,
 	}
 	if indexType == "hnsw" {
@@ -86,12 +86,12 @@ func initKnnNs(indexType string, metric string) {
 	} else {
 		panic(fmt.Sprintf("Cannot define fv index type: %s", ns))
 	}
-	fvIndexDef := reindexer.IndexDef {
-		Name: "vect",
+	fvIndexDef := reindexer.IndexDef{
+		Name:      "vect",
 		JSONPaths: []string{"Vect"},
 		IndexType: indexType,
 		FieldType: "float_vector",
-		Config: fvIndexOpts,
+		Config:    fvIndexOpts,
 	}
 	if err := DBD.UpdateIndex(ns, fvIndexDef); err != nil {
 		panic(fmt.Sprintf("Add index into namespace: %s, err: %s", ns, err.Error()))
@@ -915,7 +915,7 @@ func BenchmarkKnnIvfL2WithVectors(b *testing.B) {
 func benchmarkFloatVectorInsert(b *testing.B, indexType string, metric string) {
 	ns := knnBenchNsName(indexType, metric)
 	for i := 0; i < b.N; i++ {
-		_, err := DBD.Insert(ns, newKnnItem(i + kBenchKnnNsSize))
+		_, err := DBD.Insert(ns, newKnnItem(i+kBenchKnnNsSize))
 		if err != nil {
 			panic(err)
 		}

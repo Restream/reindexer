@@ -72,9 +72,6 @@ func (s *Serializer) Append(s2 Serializer) {
 	sl := len(s2.buf)
 	l := len(s.buf)
 	s.grow(sl)
-	//for i := 0; i < sl; i++ {
-	//	s.buf[i+l] = s2.buf[i]
-	//}
 	copy(s.buf[l:], s2.buf)
 }
 
@@ -188,9 +185,6 @@ func (s *Serializer) PutValue(v reflect.Value) error {
 func (s *Serializer) writeIntBits(v int64, sz uintptr) {
 	l := len(s.buf)
 	s.grow(int(sz))
-	//for i := 0; i < int(sz); i++ {
-	//	s.buf[i+l] = byte(v)
-	//	v = v >> 8
 	switch sz {
 	case 1:
 		s.buf[l] = byte(v)
@@ -220,9 +214,6 @@ func (s *Serializer) PutVBytes(v []byte) *Serializer {
 	s.PutVarUInt(uint64(sl))
 	l := len(s.buf)
 	s.grow(sl)
-	//for i := 0; i < sl; i++ {
-	//	s.buf[i+l] = v[i]
-	//}
 	copy(s.buf[l:], v)
 	return s
 }
@@ -231,9 +222,6 @@ func (s *Serializer) Write(v []byte) (n int, err error) {
 	sl := len(v)
 	l := len(s.buf)
 	s.grow(sl)
-	//for i := 0; i < sl; i++ {
-	//	s.buf[i+l] = v[i]
-	//}
 	copy(s.buf[l:], v)
 	return sl, nil
 }
@@ -344,10 +332,6 @@ func (s *Serializer) PutVString(v string) *Serializer {
 	s.PutVarUInt(uint64(sl))
 	l := len(s.buf)
 	s.grow(sl)
-
-	//for i := 0; i < sl; i++ {
-	//s.buf[i+l] = v[i]
-	//}
 	copy(s.buf[l:], []byte(v))
 	return s
 }
@@ -372,7 +356,7 @@ func (s *Serializer) GetCArrayTag() carraytag {
 }
 
 func (s *Serializer) GetUInt64() (v uint64) {
-	return s.readUIntBits(unsafe.Sizeof(v))
+	return s.ReadUIntBits(unsafe.Sizeof(v))
 }
 
 func (s *Serializer) GetDouble() (v float64) {
@@ -408,9 +392,6 @@ func (s *Serializer) readIntBits(sz uintptr) (v int64) {
 	if s.pos+int(sz) > len(s.buf) {
 		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+int(sz), len(s.buf)-s.pos))
 	}
-
-	//for i := int(sz) - 1; i >= 0; i-- {
-	//	v = (int64(s.buf[i+s.pos]) & 0xFF) | (v << 8)
 	switch sz {
 	case 1:
 		v = int64(s.buf[s.pos])
@@ -428,13 +409,10 @@ func (s *Serializer) readIntBits(sz uintptr) (v int64) {
 	s.pos += int(sz)
 	return v
 }
-func (s *Serializer) readUIntBits(sz uintptr) (v uint64) {
+func (s *Serializer) ReadUIntBits(sz uintptr) (v uint64) {
 	if s.pos+int(sz) > len(s.buf) {
 		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+int(sz), len(s.buf)-s.pos))
 	}
-
-	//for i := int(sz) - 1; i >= 0; i-- {
-	//	v = (uint64(s.buf[i+s.pos]) & 0xFF) | (v << 8)
 	switch sz {
 	case 1:
 		v = uint64(s.buf[s.pos])

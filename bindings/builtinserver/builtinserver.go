@@ -33,9 +33,7 @@ func err2go(ret C.reindexer_error) error {
 
 func str2c(str string) C.reindexer_string {
 	var p unsafe.Pointer
-	if len(str) > 0 {
-		p = unsafe.Pointer(unsafe.StringData(str))
-	}
+	p = unsafe.Pointer(unsafe.StringData(str))
 	return C.reindexer_string{
 		p: p,
 		n: C.int(len(str)),

@@ -104,11 +104,8 @@ func init() {
 }
 
 func str2c(str string) C.reindexer_string {
-	//  hdr := (*reflect.StringHeader)(unsafe.Pointer(&str))
 	var p unsafe.Pointer
-	if len(str) > 0 {
-		p = unsafe.Pointer(unsafe.StringData(str))
-	}
+	p = unsafe.Pointer(unsafe.StringData(str))
 	return C.reindexer_string{
 		p: p,
 		n: C.int(len(str)),

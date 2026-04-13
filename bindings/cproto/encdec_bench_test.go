@@ -5,6 +5,7 @@ import (
 
 	"github.com/golang/snappy"
 	"github.com/restream/reindexer/v5/bindings"
+	"github.com/stretchr/testify/require"
 )
 
 func BenchmarkRPCEncoderInt32ArrArg(b *testing.B) {
@@ -70,9 +71,8 @@ func BenchmarkRPCDecoderIntfArgs(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		dec := newRPCDecoder(reply)
-		if err := dec.errCode(); err != nil {
-			b.Fatal(err)
-		}
+		err := dec.errCode()
+		require.NoError(b, err)
 		cnt := dec.argsCount()
 		for j := 0; j < cnt; j++ {
 			_ = dec.intfArg()
@@ -93,8 +93,7 @@ func BenchmarkNetBufferDecompressReuse(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		nb.buf = compressed
-		if err := nb.decompress(); err != nil {
-			b.Fatal(err)
-		}
+		err := nb.decompress()
+		require.NoError(b, err)
 	}
 }

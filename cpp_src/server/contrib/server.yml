@@ -1,4 +1,4 @@
-openapi: 3.0.3
+openapi: '3.0.3'
 info:
   title: Reindexer REST API
   description: '**Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.

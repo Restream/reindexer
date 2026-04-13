@@ -59,11 +59,6 @@ const (
 var emptyLogger bindings.NullLogger
 
 func init() {
-	// В Golang 1.20 и выше rand.Seed не требуется, так как пакет math/rand использует глобальный генератор, который автоматически инициализируется с помощью crypto/rand.
-	// Поэтому нет необходимости вызывать rand.Seed вручную.
-	// rand.Seed(time.Now().UnixNano())
-	// В случае если нужен детерминированный генератор для тестов или локальный, можно использовать rand.NewSource с фиксированным сидом, например:
-	//  r := rand.New(rand.NewSource(seed))
 	bindings.RegisterBinding("cproto", new(NetCProto))
 	bindings.RegisterBinding("cprotos", new(NetCProto))
 	if runtime.GOOS != "windows" {
