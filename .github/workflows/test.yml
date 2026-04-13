@@ -13,7 +13,7 @@ jobs:
         "${{ matrix.compiler == 'Visual Studio 17 2022' && '-Ax64' || '' }}"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install NSIS
         uses: repolevedavaj/install-nsis@v1.0.3
         with:
@@ -47,7 +47,7 @@ jobs:
       SANITIZER: ${{matrix.sanitizer}}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Prepare Environment
         run: |
           ./.github/workflows/install_gtest.sh
@@ -124,9 +124,9 @@ jobs:
     steps:
       - name: Checkout repository
         if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         if: ${{ matrix.os == 'macos-15' && matrix.test == 'GO' }}
         with:
           go-version: '1.26.x'
@@ -222,7 +222,7 @@ jobs:
             cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
           fi
       - name: Clone PyReindexer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: restream/reindexer-py
       - name: Install PyReindexer
