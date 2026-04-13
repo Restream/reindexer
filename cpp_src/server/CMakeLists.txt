@@ -8,7 +8,6 @@ set (GH_FACE_VERSION "5.12.0")
 set (GH_FACE_TAG "v${GH_FACE_VERSION}")
 set (TARGET reindexer_server_library)
 set (SERVER_LIB_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE)
-
 file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
     "file(READ ${PROJECT_BINARY_DIR}/swagger/index.html indexhtml)
     STRING(REPLACE \"https://petstore.swagger.io/v2/swagger.json\" \"swagger.yml\" indexhtml \"\${indexhtml}\")
@@ -33,7 +32,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
   if(SWAGGER_DOWNLOAD)
     file(
       DOWNLOAD
-        \"https://codeload.github.com/swagger-api/swagger-ui/tar.gz/${SWAGGER_VERSION}\"
+        \"https://github.com/swagger-api/swagger-ui/archive/refs/tags/v${SWAGGER_VERSION}.tar.gz\"
         \"${PROJECT_BINARY_DIR}/swagger.tar.gz\"
       STATUS download_status
       SHOW_PROGRESS
