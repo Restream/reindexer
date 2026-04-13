@@ -688,13 +688,9 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 // Left expression possible values: field or function.
 // Right expression possible values: field, function, subquery, values.
 // At the moment supported combinations are:
-// - [field] condition [values]
-// - [field] condition [function]
-// - [field] condition [subquery]
-// - [field] condition [field]
-// - [subquery] condition [values]
-// - [function] condition [values]
-// - [function] condition [subquery]
+// - [field] condition [field|values|function|subquery]
+// - [subquery] condition [values|function]
+// - [function] condition [values|subquery]
 // Functions as left expressions: flat_array_len.
 // Functions as right expressions: now.
 func (q *Query) WhereExpressions(left IExpression, condition int, right IExpression) *Query {

@@ -114,11 +114,12 @@ std::string_view ExpressionTypeToString(ExpressionType type) {
 void ValidateExpressions(ExpressionType leftExpression, ExpressionType rightExpression, ValidationType type) {
 	static const fast_hash_map<ExpressionType, fast_hash_set<ExpressionType>> combinationsNoSubQueries = {
 		{ExpressionTypeField, {ExpressionTypeValues, ExpressionTypeExpression, ExpressionTypeField}},
-		{ExpressionTypeExpression, {ExpressionTypeField, ExpressionTypeValues}},
+		{ExpressionTypeExpression, {ExpressionTypeValues}},
 	};
 	static const fast_hash_map<ExpressionType, fast_hash_set<ExpressionType>> combinationsAll = {
 		{ExpressionTypeField, {ExpressionTypeValues, ExpressionTypeExpression, ExpressionTypeField, ExpressionTypeSubQuery}},
-		{ExpressionTypeExpression, {ExpressionTypeField, ExpressionTypeValues, ExpressionTypeSubQuery}},
+		{ExpressionTypeExpression, {ExpressionTypeValues, ExpressionTypeSubQuery}},
+		{ExpressionTypeSubQuery, {ExpressionTypeValues, ExpressionTypeExpression}},
 	};
 
 	const auto& allowedCombinations{type == ValidationType::Full ? combinationsAll : combinationsNoSubQueries};
@@ -138,7 +139,7 @@ void ValidateExpressions(ExpressionType leftExpression, ExpressionType rightExpr
 					allowedTypesToString(allowedCombinations, [](const auto& it) { return ExpressionTypeToString(it.first); }));
 	}
 	if (itLeftExpr->second.count(rightExpression) == 0) {
-		throw Error(errLogic, "Unsupported type of right expression '{}': {} is expected", ExpressionTypeToString(leftExpression),
+		throw Error(errLogic, "Unsupported type of right expression '{}': {} is expected", ExpressionTypeToString(rightExpression),
 					allowedTypesToString(itLeftExpr->second, [](ExpressionType type) { return ExpressionTypeToString(type); }));
 	}
 }

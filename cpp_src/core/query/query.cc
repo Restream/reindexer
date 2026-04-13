@@ -509,35 +509,52 @@ void Query::deserialize(Serializer& ser) {
 				auto rightType = expressions::GetValueType(right);
 				NextOp(op);
 				expressions::ValidateExpressions(leftType, rightType, expressions::ValidationType::Full);
-				if (rightType == ExpressionTypeSubQuery) {
-					if (leftType == ExpressionTypeExpression) {
-						Where(std::get<functions::FunctionVariant>(std::move(left)), condition, std::get<Query>(std::move(right)));
-					} else if (leftType == ExpressionTypeField) {
-						Where(std::get<std::string>(std::move(left)), condition, std::get<Query>(std::move(right)));
-					} else {
-						assertrx_throw(false);
+				switch (leftType) {
+					case ExpressionTypeField: {
+						std::string fieldName = std::get<std::string>(std::move(left));
+						switch (rightType) {
+							case ExpressionTypeValues:
+								Where(std::move(fieldName), condition, std::get<VariantArray>(std::move(right)));
+								break;
+							case ExpressionTypeExpression:
+								Where(std::move(fieldName), condition, std::get<functions::FunctionVariant>(std::move(right)));
+								break;
+							case ExpressionTypeSubQuery:
+								Where(std::move(fieldName), condition, std::get<Query>(std::move(right)));
+								break;
+							case ExpressionTypeField:
+								WhereBetweenFields(std::move(fieldName), condition, std::get<std::string>(std::move(right)));
+								break;
+							default:
+								assertrx_throw(false);
+						}
+						break;
 					}
-				} else {
-					if (leftType == ExpressionTypeField) {
-						if (rightType == ExpressionTypeExpression) {
-							Where(std::move(std::get<std::string>(left)), condition,
-								  std::get<functions::FunctionVariant>(std::move(right)));
-						} else if (rightType == ExpressionTypeValues) {
-							Where(std::move(std::get<std::string>(left)), condition, std::get<VariantArray>(std::move(right)));
-						} else if (rightType == ExpressionTypeField) {
-							WhereBetweenFields(std::move(std::get<std::string>(left)), condition, std::get<std::string>(std::move(right)));
+					case ExpressionTypeExpression: {
+						functions::FunctionVariant func = std::get<functions::FunctionVariant>(std::move(left));
+						if (rightType == ExpressionTypeValues) {
+							Where(std::move(func), condition, std::get<VariantArray>(std::move(right)));
+						} else if (rightType == ExpressionTypeSubQuery) {
+							Where(std::move(func), condition, std::get<Query>(std::move(right)));
 						} else {
 							assertrx_throw(false);
 						}
-					} else if (leftType == ExpressionTypeExpression) {
-						Where(std::get<functions::FunctionVariant>(std::move(left)), condition, std::move(std::get<VariantArray>(right)));
-					} else if (leftType == ExpressionTypeSubQuery) {
-						if (rightType == ExpressionTypeField) {
-							Where(std::move(std::get<std::string>(left)), condition, std::get<Query>(std::move(right)));
-						}
-					} else {
-						assertrx_throw(false);
+						break;
 					}
+					case ExpressionTypeSubQuery: {
+						Query subquery = std::get<Query>(std::move(left));
+						if (rightType == ExpressionTypeValues) {
+							Where(std::move(subquery), condition, std::get<VariantArray>(std::move(right)));
+						} else if (rightType == ExpressionTypeExpression) {
+							Where(std::move(subquery), condition, std::get<functions::FunctionVariant>(std::move(right)));
+						} else {
+							assertrx_throw(false);
+						}
+						break;
+					}
+					case ExpressionTypeValues:
+					default:
+						assertrx_throw(false);
 				}
 				break;
 			}
