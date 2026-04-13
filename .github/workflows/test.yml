@@ -77,7 +77,7 @@ jobs:
           make -j4
           STRIP=/bin/true cpack
       - name: 'C++ tests'
-        if: ${{ matrix.os == 'macos-13' }}
+        if: ${{ matrix.os == 'macos-15' }}
         run: |
           echo "Running C++ directly in this job due to Action's problem with artifacts transition for macos-11 and macos-12 runners"
           cd build
