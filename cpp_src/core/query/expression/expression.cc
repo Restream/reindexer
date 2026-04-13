@@ -23,7 +23,8 @@ ExpressionValue Expression::Deserialize(Serializer& ser) {
 			return functions::Function::Deserialize(ser);
 		}
 		case ExpressionTypeSubQuery: {
-			return Query::Deserialize(ser);
+			Serializer subQuery{ser.GetVString()};
+			return Query::Deserialize(subQuery);
 		}
 		default:
 			throw Error{errParams, "Error deserializing expression: type ({}) is not supported"};
