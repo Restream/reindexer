@@ -217,9 +217,10 @@ func TestInvalidDSNFromGetStatus(t *testing.T) {
 	for _, tt := range tests {
 		testname := fmt.Sprintf("Test for dsn: %s", tt.dsn)
 		t.Run(testname, func(t *testing.T) {
-			dsn := fmt.Sprintf(tt.dsn)
+			dsn := tt.dsn
 			_, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
 			assert.ErrorContains(t, err, tt.want)
 		})
 	}
+
 }
