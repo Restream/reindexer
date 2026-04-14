@@ -62,7 +62,7 @@ altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel libgperftools-d
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
-    cmake_version=$(cmake --version  2>/dev/null | grep -oE '3(3.2[5-9]+\.[0-9]+)|(3\.[3-9][0-9]+\.[0-9]+)|(4\.[0-9]+\.[0-9]+)')
+    cmake_version=$(cmake --version  2>/dev/null | grep -oE '(3\.2[5-9]+\.[0-9]+)|(3\.[3-9][0-9]+\.[0-9]+)|(4\.[0-9]+\.[0-9]+)')
     if [ -n "$cmake_version" ]; then
         info_msg "Cmake with comaptable version $cmake_version found"
         return
