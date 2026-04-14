@@ -2,9 +2,9 @@ package dsl
 
 import (
 	"bytes"
-	"github.com/goccy/go-json"
 	"errors"
 	"fmt"
+	"github.com/goccy/go-json"
 	"reflect"
 	"regexp"
 	"strconv"

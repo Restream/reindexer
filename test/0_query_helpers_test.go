@@ -3,8 +3,8 @@ package reindexer
 import (
 	"bytes"
 	"context"
-	"github.com/goccy/go-json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"log"
 	"math"
 	"reflect"
@@ -25,7 +25,7 @@ type EqualPositions [][]string
 
 type queryTestEntryContainer struct {
 	op       int
-	data     interface{}
+	data     any
 	dataType int
 }
 
@@ -38,7 +38,7 @@ type queryTestEntry struct {
 	index     string
 	condition int
 	keys      []reflect.Value
-	ikeys     interface{}
+	ikeys     any
 	fieldIdx  [][]int
 }
 
@@ -62,7 +62,7 @@ type queryTest struct {
 	distinctIndexes []string
 	sortIndex       []string
 	sortDesc        bool
-	sortValues      map[string][]interface{}
+	sortValues      map[string][]any
 	limitItems      int
 	startOffset     int
 	reqTotalCount   bool
@@ -81,7 +81,7 @@ type queryTest struct {
 }
 
 type testNamespace struct {
-	items     map[string]interface{}
+	items     map[string]any
 	pkIdx     [][]int
 	pkIdxName string
 	fieldsIdx map[string][][]int
@@ -235,7 +235,7 @@ func newTestQuery(db *ReindexerWrapper, namespace string, needVerify ...bool) *q
 	return qt
 }
 
-func newTestNamespace(namespace string, item interface{}) {
+func newTestNamespace(namespace string, item any) {
 	testNamespacesMtx.Lock()
 	defer testNamespacesMtx.Unlock()
 
@@ -244,7 +244,7 @@ func newTestNamespace(namespace string, item interface{}) {
 	}
 
 	ns := &testNamespace{
-		items:     make(map[string]interface{}, 1000),
+		items:     make(map[string]any, 1000),
 		fieldsIdx: make(map[string][][]int),
 	}
 	testNamespaces[strings.ToLower(namespace)] = ns
@@ -281,25 +281,25 @@ func newTestTxCtx(ctx context.Context, db *ReindexerWrapper, namespace string) *
 	return tx
 }
 
-func (tx *txTest) Insert(s interface{}) error {
+func (tx *txTest) Insert(s any) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	return tx.tx.Insert(s)
 }
 
-func (tx *txTest) Update(s interface{}) error {
+func (tx *txTest) Update(s any) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	return tx.tx.Update(s)
 }
 
-func (tx *txTest) Upsert(s interface{}) error {
+func (tx *txTest) Upsert(s any) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	return tx.tx.Upsert(s)
 }
 
-func (tx *txTest) UpsertJSON(s interface{}) error {
+func (tx *txTest) UpsertJSON(s any) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	b, err := json.Marshal(s)
@@ -309,31 +309,31 @@ func (tx *txTest) UpsertJSON(s interface{}) error {
 	return tx.tx.UpsertJSON(b)
 }
 
-func (tx *txTest) Delete(s interface{}) error {
+func (tx *txTest) Delete(s any) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	delete(tx.ns.items, getPK(tx.ns, val))
 	return tx.tx.Delete(s)
 }
 
-func (tx *txTest) InsertAsync(s interface{}, cmpl bindings.Completion) error {
+func (tx *txTest) InsertAsync(s any, cmpl bindings.Completion) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	return tx.tx.InsertAsync(s, cmpl)
 }
 
-func (tx *txTest) UpdateAsync(s interface{}, cmpl bindings.Completion) error {
+func (tx *txTest) UpdateAsync(s any, cmpl bindings.Completion) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	return tx.tx.UpdateAsync(s, cmpl)
 }
 
-func (tx *txTest) UpsertAsync(s interface{}, cmpl bindings.Completion, precepts ...string) error {
+func (tx *txTest) UpsertAsync(s any, cmpl bindings.Completion, precepts ...string) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	return tx.tx.UpsertAsync(s, cmpl, precepts...)
 }
 
-func (tx *txTest) DeleteAsync(s interface{}, cmpl bindings.Completion) error {
+func (tx *txTest) DeleteAsync(s any, cmpl bindings.Completion) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	return tx.tx.DeleteAsync(s, cmpl)
@@ -526,7 +526,7 @@ func (qt *queryTest) DeepReplEqual() *queryTest {
 	return qt
 }
 
-func keysFromInterface(keys interface{}) []reflect.Value {
+func keysFromInterface(keys any) []reflect.Value {
 	res := []reflect.Value{}
 	if keys != nil {
 		if reflect.TypeOf(keys).Kind() == reflect.Slice || reflect.TypeOf(keys).Kind() == reflect.Array {
@@ -540,7 +540,7 @@ func keysFromInterface(keys interface{}) []reflect.Value {
 	return res
 }
 
-func (qt *queryTest) newQueryTestEntry(index string, condition int, keys interface{}) queryTestEntry {
+func (qt *queryTest) newQueryTestEntry(index string, condition int, keys any) queryTestEntry {
 	qte := queryTestEntry{index: index, condition: condition, ikeys: keys}
 
 	qte.keys = keysFromInterface(keys)
@@ -553,7 +553,7 @@ func (qt *queryTest) fieldSubQueryToString(index string, condition int, subQuery
 	return qte.toString()
 }
 
-func (qt *queryTest) where(index string, condition int, keys interface{}) *queryTest {
+func (qt *queryTest) where(index string, condition int, keys any) *queryTest {
 	qte := qt.newQueryTestEntry(index, condition, keys)
 	qt.entries.addEntry(qte, qt.nextOp)
 	qt.nextOp = opAND
@@ -568,7 +568,7 @@ func (qt *queryTest) whereFieldQuery(index string, condition int, subQuery *quer
 		if len(subQuery.selectFilters) == 0 {
 			panic(fmt.Errorf("Broken subQuery"))
 		}
-		var vals []interface{}
+		var vals []any
 		fieldIdx, _ := qt.ns.getField(index)
 		for it.Next() {
 			vv := getValues(it.Object(), fieldIdx)
@@ -589,7 +589,7 @@ func (qt *queryTest) whereFieldQuery(index string, condition int, subQuery *quer
 }
 
 // Where - Add where condition to DB query
-func (qt *queryTest) Where(index string, condition int, keys interface{}) *queryTest {
+func (qt *queryTest) Where(index string, condition int, keys any) *queryTest {
 	t := reflect.TypeOf(keys)
 	if t == reflect.TypeOf((*queryTest)(nil)).Elem() {
 		subQuery := keys.(queryTest)
@@ -623,12 +623,12 @@ func (qt *queryTest) WhereKnnString(index string, val string, params reindexer.K
 	return qt.where(index, bindings.QueryKnnCondition, nil)
 }
 
-func (qt *queryTest) subQueryToString(subQuery *queryTest, condition int, keys interface{}) string {
+func (qt *queryTest) subQueryToString(subQuery *queryTest, condition int, keys any) string {
 	qte := qt.newQueryTestEntry("("+subQuery.toString()+")", condition, keys)
 	return qte.toString()
 }
 
-func (qt *queryTest) whereQuery(t *testing.T, subQuery *queryTest, condition int, keys interface{}) *queryTest {
+func (qt *queryTest) whereQuery(t *testing.T, subQuery *queryTest, condition int, keys any) *queryTest {
 	if condition == reindexer.ANY || condition == reindexer.EMPTY {
 		subQuery.Limit(1)
 	}
@@ -661,7 +661,7 @@ func (qt *queryTest) whereQuery(t *testing.T, subQuery *queryTest, condition int
 	return qt
 }
 
-func (qt *queryTest) WhereQuery(t *testing.T, subQuery *queryTest, condition int, keys interface{}) *queryTest {
+func (qt *queryTest) WhereQuery(t *testing.T, subQuery *queryTest, condition int, keys any) *queryTest {
 	qt.q.WhereQuery(subQuery.q, condition, keys)
 	return qt.whereQuery(t, subQuery, condition, keys)
 }
@@ -707,7 +707,7 @@ func (qt *queryTest) WhereString(index string, condition int, keys ...string) *q
 	return qt.Where(index, condition, keys)
 }
 
-func (q *queryTest) WhereComposite(index string, condition int, keys ...interface{}) *queryTest {
+func (q *queryTest) WhereComposite(index string, condition int, keys ...any) *queryTest {
 	return q.Where(index, condition, keys)
 }
 
@@ -767,13 +767,13 @@ func (qt *queryTest) EqualPosition(fields ...string) *queryTest {
 }
 
 // Sort - Apply sort order to returned from query items
-func (qt *queryTest) Sort(sortIndex string, desc bool, values ...interface{}) *queryTest {
+func (qt *queryTest) Sort(sortIndex string, desc bool, values ...any) *queryTest {
 	if len(sortIndex) > 0 {
 		qt.q.Sort(sortIndex, desc, values...)
 		qt.sortIndex = append(qt.sortIndex, sortIndex)
 		qt.sortDesc = desc
 		if qt.sortValues == nil {
-			qt.sortValues = make(map[string][]interface{})
+			qt.sortValues = make(map[string][]any)
 		}
 		qt.sortValues[sortIndex] = values
 	}
@@ -830,7 +830,7 @@ func (qt *queryTest) Drop(field string) *queryTest {
 	return qt
 }
 
-func (qt *queryTest) Set(field string, values interface{}) *queryTest {
+func (qt *queryTest) Set(field string, values any) *queryTest {
 	qt.q.Set(field, values)
 
 	qt.db.SetSyncRequired()
@@ -838,7 +838,7 @@ func (qt *queryTest) Set(field string, values interface{}) *queryTest {
 	return qt
 }
 
-func (qt *queryTest) SetObject(field string, values interface{}) *queryTest {
+func (qt *queryTest) SetObject(field string, values any) *queryTest {
 	qt.q.SetObject(field, values)
 
 	qt.db.SetSyncRequired()
@@ -846,11 +846,11 @@ func (qt *queryTest) SetObject(field string, values interface{}) *queryTest {
 	return qt
 }
 
-func (qt *queryTest) Get() (item interface{}, found bool) {
+func (qt *queryTest) Get() (item any, found bool) {
 	return qt.q.Get()
 }
 
-func (qt *queryTest) GetCtx(ctx context.Context) (item interface{}, found bool) {
+func (qt *queryTest) GetCtx(ctx context.Context) (item any, found bool) {
 	return qt.q.GetCtx(ctx)
 }
 
@@ -1038,7 +1038,7 @@ func (qt *queryTest) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *re
 	return qt.q.ExecToJsonCtx(ctx, jsonRoots...)
 }
 
-func convertToDouble(v reflect.Value, sortStr string, fieldName string, item interface{}) float64 {
+func convertToDouble(v reflect.Value, sortStr string, fieldName string, item any) float64 {
 	switch v.Type().Kind() {
 	case reflect.String:
 		if result, err := strconv.ParseFloat(v.String(), 64); err == nil {
@@ -1066,7 +1066,7 @@ func convertToDouble(v reflect.Value, sortStr string, fieldName string, item int
 	panic(fmt.Errorf("Unknown field type on sort by '%s' index %s in item %+v", sortStr, fieldName, item))
 }
 
-func (value *sortExprValue) getValue(item interface{}, sortStr string) float64 {
+func (value *sortExprValue) getValue(item any, sortStr string) float64 {
 	if value.contain == containValue {
 		return value.value
 	}
@@ -1197,7 +1197,7 @@ func parseSortExpr(sortStr string, pos int, ns *testNamespace) ([]*sortExprEntry
 	return result, pos
 }
 
-func calculate(sortExpr []*sortExprEntry, item interface{}, sortStr string) float64 {
+func calculate(sortExpr []*sortExprEntry, item any, sortStr string) float64 {
 	var result float64 = 0.0
 	for _, sortEntry := range sortExpr {
 		var value float64
@@ -1226,7 +1226,7 @@ func calculate(sortExpr []*sortExprEntry, item interface{}, sortStr string) floa
 	return result
 }
 
-func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []reindexer.AggregationResult, checkEq bool) {
+func (qt *queryTest) Verify(t *testing.T, items []any, aggResults []reindexer.AggregationResult, checkEq bool) {
 	if len(qt.distinctIndexes) > 1 {
 		require.Equal(t, len(items), 0, "Returned items with several distincts")
 	}
@@ -1402,7 +1402,7 @@ func (qt *queryTest) Match(index string, keys ...string) *queryTest {
 }
 
 // Get value of items's reindex field by name
-func getValues(item interface{}, fieldIdx [][]int) (ret []reflect.Value) {
+func getValues(item any, fieldIdx [][]int) (ret []reflect.Value) {
 	vt := reflect.Indirect(reflect.ValueOf(item))
 
 	for _, idx := range fieldIdx {
@@ -1419,7 +1419,7 @@ func getValues(item interface{}, fieldIdx [][]int) (ret []reflect.Value) {
 }
 
 // getValuesByPath extracts all values matching a JSON path from a struct
-func getValuesByPath(item interface{}, jsonpath string) []reflect.Value {
+func getValuesByPath(item any, jsonpath string) []reflect.Value {
 	segments := strings.Split(jsonpath, ".")
 
 	results := make([]reflect.Value, 0)
@@ -1537,8 +1537,8 @@ func getPK(ns *testNamespace, val reflect.Value) string {
 	return buf.String()
 }
 
-func getPKComposite(ns *testNamespace, val reflect.Value) []interface{} {
-	res := make([]interface{}, 0)
+func getPKComposite(ns *testNamespace, val reflect.Value) []any {
+	res := make([]any, 0)
 
 	for _, idx := range ns.pkIdx {
 		v := val.FieldByIndex(idx)
@@ -1562,12 +1562,12 @@ func getPKComposite(ns *testNamespace, val reflect.Value) []interface{} {
 	return res
 }
 
-func getValuesForIndex(qt *queryTest, item interface{}, index string) []reflect.Value {
+func getValuesForIndex(qt *queryTest, item any, index string) []reflect.Value {
 	fields, _ := qt.ns.getField(index)
 	return getValues(item, fields)
 }
 
-func getEqualPositionMinArrSize(qt *queryTest, ep []string, item interface{}) int {
+func getEqualPositionMinArrSize(qt *queryTest, ep []string, item any) int {
 	arrLen := math.MaxUint32
 	for _, index := range ep {
 		vals := getValuesForIndex(qt, item, index)
@@ -1722,7 +1722,7 @@ func (qt *queryTest) CachedTotal(totalNames ...string) *queryTest {
 	return qt
 }
 
-func (qt *queryTest) SetContext(ctx interface{}) *queryTest {
+func (qt *queryTest) SetContext(ctx any) *queryTest {
 	qt.q.SetContext(ctx)
 	return qt
 }
@@ -1813,7 +1813,7 @@ func checkResult(cmpRes int, cond int) bool {
 	return result
 }
 
-func checkResultItem(t *testing.T, it *reindexer.Iterator, item interface{}) {
+func checkResultItem(t *testing.T, it *reindexer.Iterator, item any) {
 	defer it.Close()
 	require.Equal(t, 1, it.Count())
 	for it.Next() {
@@ -1821,7 +1821,7 @@ func checkResultItem(t *testing.T, it *reindexer.Iterator, item interface{}) {
 	}
 }
 
-func checkEqualPosition(t *testing.T, item interface{}, qt *queryTest) bool {
+func checkEqualPosition(t *testing.T, item any, qt *queryTest) bool {
 	for _, epIndexes := range qt.equalPositions {
 		arrIdx := 0
 		entry := qt.entries.getEntryByIndexName(epIndexes[0])
@@ -1852,7 +1852,7 @@ func checkEqualPosition(t *testing.T, item interface{}, qt *queryTest) bool {
 	return false
 }
 
-func compareComposite(t *testing.T, vals []reflect.Value, keyValue interface{}, item interface{}) int {
+func compareComposite(t *testing.T, vals []reflect.Value, keyValue any, item any) int {
 	if reflect.ValueOf(keyValue).Len() != len(vals) {
 		panic("Amount of subindexes and values to compare are different!")
 	}
@@ -1864,8 +1864,8 @@ func compareComposite(t *testing.T, vals []reflect.Value, keyValue interface{}, 
 	return cmpRes
 }
 
-func checkCompositeCondition(t *testing.T, vals []reflect.Value, cond *queryTestEntry, item interface{}) bool {
-	keys := cond.ikeys.([]interface{})
+func checkCompositeCondition(t *testing.T, vals []reflect.Value, cond *queryTestEntry, item any) bool {
+	keys := cond.ikeys.([]any)
 
 	if cond.condition == reindexer.RANGE {
 		if len(keys) != 2 {
@@ -1944,7 +1944,7 @@ func checkValue(t *testing.T, v reflect.Value, cond int, keys []reflect.Value) b
 	return false
 }
 
-func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item interface{}) bool {
+func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item any) bool {
 	var vals []reflect.Value
 	if len(cond.fieldIdx) > 0 {
 		vals = getValues(item, cond.fieldIdx)
@@ -1962,7 +1962,7 @@ func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item 
 		return checkDWithin(reindexer.Point{vals[0].Float(), vals[1].Float()}, reindexer.Point{cond.keys[0].Float(), cond.keys[1].Float()}, cond.keys[2].Float())
 	}
 
-	if len(vals) > 1 && len(cond.fieldIdx) > 1 && reflect.TypeOf(cond.ikeys).ConvertibleTo(reflect.TypeOf([]interface{}(nil))) {
+	if len(vals) > 1 && len(cond.fieldIdx) > 1 && reflect.TypeOf(cond.ikeys).ConvertibleTo(reflect.TypeOf([]any(nil))) {
 		return checkCompositeCondition(t, vals, cond, item)
 	}
 
@@ -1978,7 +1978,7 @@ func isIndexComposite(entry *queryBetweenFieldsTestEntry) bool {
 	return strings.Contains(entry.firstField, "+") || strings.Contains(entry.secondField, "+")
 }
 
-func verifyConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryBetweenFieldsTestEntry, item interface{}) bool {
+func verifyConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryBetweenFieldsTestEntry, item any) bool {
 	if isIndexComposite(entry) {
 		firstSubFields := strings.Split(entry.firstField, "+")
 		secondSubFields := strings.Split(entry.secondField, "+")
@@ -2020,7 +2020,7 @@ func compareTypes(v1 reflect.Value, v2 reflect.Value) bool {
 	}
 }
 
-func checkConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryBetweenFieldsTestEntry, item interface{}) bool {
+func checkConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryBetweenFieldsTestEntry, item any) bool {
 	firstVals := getValues(item, entry.firstFieldIdx)
 	secondVals := getValues(item, entry.secondFieldIdx)
 
@@ -2091,7 +2091,7 @@ func checkConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryBe
 	}
 }
 
-func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, item interface{}) bool {
+func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, item any) bool {
 	found := true
 	for i, cond := range qt.data {
 		if i == 0 {

@@ -473,7 +473,6 @@ func (t *Type) stringKeywords(tags []string) {
 				switch val {
 				case "date-time", "email", "hostname", "ipv4", "ipv6", "uri":
 					t.Format = val
-					break
 				}
 			case "default":
 				t.Default = val

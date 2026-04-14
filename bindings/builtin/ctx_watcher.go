@@ -21,7 +21,7 @@ const watcherChSize = 1000
 var ctxIDCounter uint64 = 1
 
 var resultChPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		newCh := make(chan struct{})
 		return &newCh
 	},

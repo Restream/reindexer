@@ -2,12 +2,13 @@ package reindexer
 
 import (
 	"context"
-	"github.com/goccy/go-json"
 	"math/rand"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,7 +54,7 @@ func init() {
 	tnamespaces[testJoinItemsRaceTxNs] = TestJoinItem{}
 }
 
-func newTestItemWithExtraFields1(id int, pkgsCount int) interface{} {
+func newTestItemWithExtraFields1(id int, pkgsCount int) any {
 	return &TestItemWithExtraFields1{
 		TestItem:     *newTestItem(id, pkgsCount).(*TestItem),
 		SomeInt:      rand.Int()%50 + 2000,
@@ -62,7 +63,7 @@ func newTestItemWithExtraFields1(id int, pkgsCount int) interface{} {
 	}
 }
 
-func newTestItemWithExtraFields2(id int, pkgsCount int) interface{} {
+func newTestItemWithExtraFields2(id int, pkgsCount int) any {
 	return &TestItemWithExtraFields2{
 		TestItem: *newTestItem(id, pkgsCount).(*TestItem),
 		Nested1: TestItemWithExtraFields2Nested2{
@@ -151,7 +152,7 @@ func TestRaceConditions(t *testing.T) {
 				return
 			case <-time.After(time.Millisecond * 5):
 				// Check race conditions on the new field, added via JSON
-				var item interface{}
+				var item any
 				if counter%2 == 0 {
 					item = newTestItemWithExtraFields1(1000+rand.Intn(100), 5)
 				} else {
@@ -253,7 +254,7 @@ func TestRaceConditions(t *testing.T) {
 					} else {
 						qj.Where("genre", reindexer.GE, 2)
 					}
-					qj.JoinHandler("prices", func(field string, item interface{}, subitems []interface{}) bool {
+					qj.JoinHandler("prices", func(field string, item any, subitems []any) bool {
 						return false
 					})
 					q.InnerJoin(qj, "prices").On("id", reindexer.SET, "price_id")
@@ -453,7 +454,7 @@ func TestRaceConditionsTx(t *testing.T) {
 						qj.Where("id", reindexer.SET,
 							[]int{rand.Intn(2000), rand.Intn(2000), rand.Intn(2000), rand.Intn(2000), rand.Intn(2000)})
 					}
-					qj.JoinHandler("prices", func(field string, item interface{}, subitems []interface{}) bool {
+					qj.JoinHandler("prices", func(field string, item any, subitems []any) bool {
 						return false
 					})
 					q.InnerJoin(qj, "prices").On("id", reindexer.SET, "price_id")
@@ -481,7 +482,7 @@ func TestRaceConditionsTx(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go writer()
 		wg.Add(1)

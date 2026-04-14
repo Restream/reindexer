@@ -13,7 +13,7 @@ func assertErrorMessage(t *testing.T, actual error, expected error) {
 	}
 }
 
-func OpenNamespaceWrapper(ns string, opts *reindexer.NamespaceOptions, s interface{}) (err error) {
+func OpenNamespaceWrapper(ns string, opts *reindexer.NamespaceOptions, s any) (err error) {
 	defer func() {
 		if ierr := recover(); ierr != nil {
 			err = ierr.(error)

@@ -30,7 +30,7 @@ var bufFree = newBufFreeBatcher()
 
 // Logger interface for reindexer
 type Logger interface {
-	Printf(level int, fmt string, msg ...interface{})
+	Printf(level int, fmt string, msg ...any)
 }
 
 // Separate mutexes for logger object itself and for reindexer_enable_logger call:
@@ -177,7 +177,7 @@ func bool2cint(v bool) C.int {
 	return 0
 }
 
-func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) error {
+func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...any) error {
 	if binding.rx != 0 {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}

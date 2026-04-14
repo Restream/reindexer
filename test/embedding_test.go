@@ -38,7 +38,7 @@ func init() {
 	tnamespaces[testIvfEmbedNs] = TestEmbedItemIvf{}
 }
 
-func newTestEmbedItemHNWS(id int) interface{} {
+func newTestEmbedItemHNWS(id int) any {
 	result := &TestEmbedItemHNWS{
 		ID:    mkID(id),
 		Name:  strconv.Itoa(id),
@@ -47,7 +47,7 @@ func newTestEmbedItemHNWS(id int) interface{} {
 	return result
 }
 
-func newTestEmbedItemIvf(id int, pkgsCount int) interface{} {
+func newTestEmbedItemIvf(id int, pkgsCount int) any {
 	result := &TestEmbedItemIvf{
 		ID: mkID(id),
 	}

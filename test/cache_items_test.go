@@ -26,7 +26,7 @@ func init() {
 	tnamespaces[testDisabledObjCacheNs] = TestItemPk{}
 }
 
-func (item *TestItemPk) DeepCopy() interface{} {
+func (item *TestItemPk) DeepCopy() any {
 	return &TestItemPk{}
 }
 

@@ -2,8 +2,8 @@ package reindexer
 
 import (
 	"context"
-	"github.com/goccy/go-json"
 	"errors"
+	"github.com/goccy/go-json"
 	"reflect"
 
 	"github.com/restream/reindexer/v5/bindings"

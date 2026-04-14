@@ -86,7 +86,7 @@ func FillTextTxItemAsyncTx(t *testing.T, count int, tx *txTest) {
 	assert.Equal(t, resCount, count, "Unexpected items count on commit")
 }
 
-func callTxMethod(t *testing.T, method func(interface{}, bindings.Completion) error) {
+func callTxMethod(t *testing.T, method func(any, bindings.Completion) error) {
 	type OtherItem struct {
 		Id   int64
 		Data int64
@@ -103,7 +103,7 @@ func callTxMethod(t *testing.T, method func(interface{}, bindings.Completion) er
 	assert.Equal(t, rerr.Code(), reindexer.ErrCodeParams)
 }
 
-func callTxMethodPrecepts(t *testing.T, method func(interface{}, bindings.Completion, ...string) error) {
+func callTxMethodPrecepts(t *testing.T, method func(any, bindings.Completion, ...string) error) {
 	type OtherItem struct {
 		Id   int64
 		Data int64

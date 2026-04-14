@@ -5,6 +5,7 @@ import "C"
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/restream/reindexer/v5"
@@ -43,8 +44,8 @@ func main() {
 	err = db.Upsert(NsName, &TestItem{
 		ID:       int(rand.Int() % 100),
 		Genre:    int64(rand.Int() % 100),
-		Name:     "SomeName " + string(rand.Int()%100),
-		Location: "SomeLocation " + string(rand.Int()%100),
+		Name:     "SomeName " + strconv.Itoa(rand.Int()%100),
+		Location: "SomeLocation " + strconv.Itoa(rand.Int()%100),
 		Amount:   rand.Int() % 200}, "id=serial()")
 	if err != nil {
 		panic(err)

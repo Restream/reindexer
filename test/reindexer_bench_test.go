@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+
 	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
@@ -76,14 +77,15 @@ func initKnnNs(indexType string, metric string) {
 		Metric:    metric,
 		Dimension: kBenchFloatVectorDimension,
 	}
-	if indexType == "hnsw" {
+	switch indexType {
+	case "hnsw":
 		fvIndexOpts.M = 16
 		fvIndexOpts.EfConstruction = 200
 		fvIndexOpts.MultithreadingMode = 1
 		fvIndexOpts.StartSize = kBenchKnnNsSize
-	} else if indexType == "ivf" {
+	case "ivf":
 		fvIndexOpts.CentroidsCount = kBenchKnnNsSize / 100
-	} else {
+	default:
 		panic(fmt.Sprintf("Cannot define fv index type: %s", ns))
 	}
 	fvIndexDef := reindexer.IndexDef{
@@ -119,10 +121,10 @@ func initKnn() {
 func init() {
 	rand.Seed(*benchmarkSeed)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		pkgs = append(pkgs, randInt32Arr(20, 10000, 10))
 	}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		priceIds = append(priceIds, randInt32Arr(10, 7000, 50))
 	}
 
@@ -131,7 +133,7 @@ func init() {
 	buf := &bytes.Buffer{}
 	gobenc := gob.NewEncoder(buf)
 
-	for i := 0; i < 100000; i++ {
+	for i := range 100000 {
 		testItemsSeed = append(testItemsSeed, newTestItem(i, 20).(*TestItem))
 
 		json, _ := json.Marshal(newTestItem(i+200000, 20))
@@ -142,7 +144,7 @@ func init() {
 		testItemsCJsonSeed = append(testItemsCJsonSeed, ser.Bytes())
 
 		gobenc.Encode(newTestItem(i, 20))
-		gobData := make([]byte, len(buf.Bytes()), len(buf.Bytes()))
+		gobData := append([]byte(nil), buf.Bytes()...)
 		copy(gobData, buf.Bytes())
 
 		testItemsGobSeed = append(testItemsGobSeed, gobData)
@@ -170,7 +172,7 @@ var cjsonState = cjson.NewState()
 
 var prepared = false
 
-func (item *TestItemBench) Join(field string, subitems []interface{}, context interface{}) {
+func (item *TestItemBench) Join(field string, subitems []any, context any) {
 	testJoinCtx := context.(*TestJoinCtx)
 	if testJoinCtx.allPrices == nil {
 		testJoinCtx.allPrices = make([]*TestJoinItem, 0, 50)
@@ -824,19 +826,20 @@ func BenchmarkSelectByIdxAndUpdate(b *testing.B) {
 }
 
 func generateBenchKnnParams(indexType string) reindexer.KnnSearchParam {
-	if indexType == "hnsw" {
+	switch indexType {
+	case "hnsw":
 		hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(kBenchKnnK, reindexer.BaseKnnSearchParam{}.SetK(kBenchKnnK))
 		if err != nil {
 			panic(fmt.Sprintf("Cannot generate knn search params for index %s", indexType))
 		}
 		return hnswSearchParams
-	} else if indexType == "ivf" {
+	case "ivf":
 		ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, reindexer.BaseKnnSearchParam{}.SetK(kBenchKnnK))
 		if err != nil {
 			panic(fmt.Sprintf("Cannot generate knn search params for index %s", indexType))
 		}
 		return ivfSearchParams
-	} else {
+	default:
 		panic(fmt.Sprintf("Unknown fv index type: %s", indexType))
 	}
 }

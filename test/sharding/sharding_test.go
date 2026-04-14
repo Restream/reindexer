@@ -4,8 +4,8 @@
 package sharding
 
 import (
-	"github.com/goccy/go-json"
 	"flag"
+	"github.com/goccy/go-json"
 	"log"
 	"os"
 	"reflect"

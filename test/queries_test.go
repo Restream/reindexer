@@ -2,7 +2,6 @@ package reindexer
 
 import (
 	"context"
-	"github.com/goccy/go-json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -14,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	"github.com/restream/reindexer/v5/dsl"
@@ -31,7 +32,7 @@ type IndexesTestCase struct {
 	Name      string
 	Namespace string
 	Options   sortDistinctOptions
-	Item      interface{}
+	Item      any
 }
 
 type StrictTestNest struct {
@@ -247,7 +248,7 @@ type TestArrayItemEqualPosition struct {
 	Value   int    `reindex:"value"`
 }
 
-type testItemsCreator func(int, int) interface{}
+type testItemsCreator func(int, int) any
 
 type CompositeFacetItem struct {
 	CompanyName string
@@ -327,7 +328,7 @@ var testCaseWithCommonIndexes = IndexesTestCase{
 	Namespace: testItemsNs,
 	Options: sortDistinctOptions{
 		SortIndexes:     []string{"", "NAME", "YEAR", "RATE", "RATE + (GENRE - 40) * ISDELETED"},
-		DistinctIndexes: [][]string{[]string{}, []string{"YEAR"}, []string{"NAME"}, []string{"YEAR", "NAME"}},
+		DistinctIndexes: [][]string{{}, {"YEAR"}, {"NAME"}, {"YEAR", "NAME"}},
 		TestComposite:   true,
 	},
 	Item: TestItem{},
@@ -338,7 +339,7 @@ var testCaseWithIDOnlyIndexes = IndexesTestCase{
 	Namespace: testItemsIdOnlyNs,
 	Options: sortDistinctOptions{
 		SortIndexes:     []string{"", "name", "year", "rate", "rate + (genre - 40) * isdeleted"},
-		DistinctIndexes: [][]string{[]string{}, []string{"year"}, []string{"name"}, []string{"year", "name"}},
+		DistinctIndexes: [][]string{{}, {"year"}, {"name"}, {"year", "name"}},
 		TestComposite:   false,
 	},
 	Item: TestItemIDOnly{},
@@ -349,7 +350,7 @@ var testCaseWithSparseIndexes = IndexesTestCase{
 	Namespace: testItemsWithSparseNs,
 	Options: sortDistinctOptions{
 		SortIndexes:     []string{"", "NAME", "YEAR", "RATE", "-ID + (END_TIME - START_TIME) / 100"},
-		DistinctIndexes: [][]string{[]string{}, []string{"YEAR"}, []string{"NAME"}, []string{"YEAR", "NAME"}},
+		DistinctIndexes: [][]string{{}, {"YEAR"}, {"NAME"}, {"YEAR", "NAME"}},
 		TestComposite:   false,
 	},
 	Item: TestItemWithSparse{},
@@ -409,7 +410,7 @@ func makeLikePattern(s string) string {
 	return result
 }
 
-func newTestItem(id int, pkgsCount int) interface{} {
+func newTestItem(id int, pkgsCount int) any {
 	startTime := rand.Int() % 50000
 	return &TestItem{
 		ID:            mkID(id),
@@ -440,7 +441,7 @@ func newTestItem(id int, pkgsCount int) interface{} {
 	}
 }
 
-func newTestItemSimple(id int, pkgsCount int) interface{} {
+func newTestItemSimple(id int, pkgsCount int) any {
 	return &TestItemSimple{
 		ID:   mkID(id),
 		Year: rand.Int()%50 + 2000,
@@ -448,7 +449,7 @@ func newTestItemSimple(id int, pkgsCount int) interface{} {
 	}
 }
 
-func newTestItemGeom(id int, pkgsCount int) interface{} {
+func newTestItemGeom(id int, pkgsCount int) any {
 	return &TestItemGeom{
 		ID:                  mkID(id),
 		PointRTreeLinear:    randPoint(),
@@ -459,7 +460,7 @@ func newTestItemGeom(id int, pkgsCount int) interface{} {
 	}
 }
 
-func newTestItemGeomSimple(id int, pkgsCount int) interface{} {
+func newTestItemGeomSimple(id int, pkgsCount int) any {
 	return &TestItemGeomSimple{
 		ID:                  mkID(id),
 		PointRTreeLinear:    randPoint(),
@@ -467,7 +468,7 @@ func newTestItemGeomSimple(id int, pkgsCount int) interface{} {
 	}
 }
 
-func newTestItemIDOnly(id int, pkgsCount int) interface{} {
+func newTestItemIDOnly(id int, pkgsCount int) any {
 	startTime := rand.Int() % 50000
 	return &TestItemIDOnly{
 		ID:            mkID(id),
@@ -498,7 +499,7 @@ func newTestItemIDOnly(id int, pkgsCount int) interface{} {
 	}
 }
 
-func newTestItemWithSparse(id int, pkgsCount int) interface{} {
+func newTestItemWithSparse(id int, pkgsCount int) any {
 	startTime := rand.Int() % 50000
 	return &TestItemWithSparse{
 		ID:            mkID(id),
@@ -949,7 +950,7 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 	if !testComposite {
 		return
 	}
-	compositeValues := []interface{}{[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)}}
+	compositeValues := []any{[]any{rand.Int() % 10, int64(rand.Int() % 50)}}
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
 		Where("age+genre", reindexer.EQ, compositeValues).
@@ -971,7 +972,7 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		Where("age+genre", reindexer.GE, compositeValues).
 		ExecAndVerify(t)
 
-	compositeValues = []interface{}{[]interface{}{randLocation(), float64(rand.Int()%100) / 10}}
+	compositeValues = []any{[]any{randLocation(), float64(rand.Int()%100) / 10}}
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
 		Where("location+rate", reindexer.EQ, compositeValues).
@@ -985,23 +986,23 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		Where("location+rate", reindexer.LT, compositeValues).
 		ExecAndVerify(t)
 
-	compositeValues = []interface{}{
-		[]interface{}{randLocation(), float64(rand.Int()%100) / 10},
-		[]interface{}{randLocation(), float64(rand.Int()%100) / 10},
+	compositeValues = []any{
+		[]any{randLocation(), float64(rand.Int()%100) / 10},
+		[]any{randLocation(), float64(rand.Int()%100) / 10},
 	}
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
 		Where("location+rate", reindexer.RANGE, compositeValues).
 		ExecAndVerify(t)
 
-	compositeValues = []interface{}{
-		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+	compositeValues = []any{
+		[]any{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]any{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]any{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]any{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]any{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]any{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]any{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]any{rand.Int() % 10, int64(rand.Int() % 50)},
 	}
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
 		Where("age+genre", reindexer.SET, compositeValues).
@@ -1013,9 +1014,9 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		WhereBetweenFields("age+genre", reindexer.LT, "rate+age").
 		ExecAndVerify(t)
 
-	compositeValues = []interface{}{
-		[]interface{}{randUuid(), rand.Int() % 10},
-		[]interface{}{randUuid(), rand.Int() % 10},
+	compositeValues = []any{
+		[]any{randUuid(), rand.Int() % 10},
+		[]any{randUuid(), rand.Int() % 10},
 	}
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
@@ -1516,7 +1517,7 @@ func TestWALQueries(t *testing.T) {
 		assert.NoError(t, jsonIt.Error())
 		assert.Greater(t, jsonIt.Count(), 0)
 		for jsonIt.Next() {
-			dict := map[string]interface{}{}
+			dict := map[string]any{}
 			err := json.Unmarshal(jsonIt.JSON(), &dict)
 			assert.NoError(t, err)
 			_, hasLSN := dict["lsn"]

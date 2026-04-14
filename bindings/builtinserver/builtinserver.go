@@ -73,7 +73,7 @@ func (server *BuiltinServer) stopServer(timeout time.Duration) error {
 	}
 }
 
-func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) error {
+func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, options ...any) error {
 	if server.builtin != nil {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}

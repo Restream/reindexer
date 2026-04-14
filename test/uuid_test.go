@@ -131,7 +131,7 @@ func upsertUniqueTestUuidStructNoTag(t *testing.T, rx *reindexer.Reindexer, ns s
 	return &item
 }
 
-func checkExplainSelect(t *testing.T, it reindexer.Iterator, item interface{}) {
+func checkExplainSelect(t *testing.T, it reindexer.Iterator, item any) {
 	require.NoError(t, it.Error())
 	assert.Equal(t, it.Count(), 1)
 	for it.Next() {

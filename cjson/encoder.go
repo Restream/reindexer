@@ -889,7 +889,7 @@ func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo,
 	return nil
 }
 
-func (enc *Encoder) Encode(src interface{}, wrser *Serializer) (stateToken int, err error) {
+func (enc *Encoder) Encode(src any, wrser *Serializer) (stateToken int, err error) {
 
 	v := reflect.ValueOf(src)
 	enc.state.lock.Lock()
@@ -915,7 +915,7 @@ func (enc *Encoder) Encode(src interface{}, wrser *Serializer) (stateToken int, 
 	return
 }
 
-func (enc *Encoder) EncodeRaw(src interface{}, wrser *Serializer) error {
+func (enc *Encoder) EncodeRaw(src any, wrser *Serializer) error {
 
 	v := reflect.ValueOf(src)
 	enc.state.lock.Lock()

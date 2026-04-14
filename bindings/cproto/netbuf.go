@@ -85,7 +85,7 @@ func (buf *NetBuffer) parseArgs() (err error) {
 	retCount := dec.argsCount()
 	if retCount > 0 {
 		if cap(buf.args) < retCount {
-			buf.args = make([]interface{}, retCount)
+			buf.args = make([]any, retCount)
 		} else {
 			buf.args = buf.args[:retCount]
 		}

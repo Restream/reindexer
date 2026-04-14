@@ -228,7 +228,7 @@ func fillExplainNs(t *testing.T, ns string, count int) {
 	tx.MustCommit()
 }
 
-func (item *TestItem) Join(field string, subitems []interface{}, context interface{}) {
+func (item *TestItem) Join(field string, subitems []any, context any) {
 	switch strings.ToLower(field) {
 	case "prices":
 		if item.Prices == nil {
@@ -309,7 +309,7 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 	// Verify join results with manual join
 	r1, err := DB.Query(testItemsForJoinNs).Where("genre", reindexer.EQ, 10).MustExec(t).FetchAll()
 	require.NoError(t, err)
-	rjcheck := make([]interface{}, 0, 1000)
+	rjcheck := make([]any, 0, 1000)
 
 	for _, iitem := range r1 {
 
@@ -457,10 +457,10 @@ func checkExplainJoinOnInjections(t *testing.T, res []reindexer.ExplainJoinOnInj
 	}
 }
 
-func getAffectedItems(t *testing.T, q *reindexer.Query, ns *testNamespace) (affected []interface{}, unaffected []interface{}) {
+func getAffectedItems(t *testing.T, q *reindexer.Query, ns *testNamespace) (affected []any, unaffected []any) {
 	affected, err := q.Exec().FetchAll()
 	require.NoError(t, err)
-	affectedPKs := make([][]interface{}, 0, len(affected))
+	affectedPKs := make([][]any, 0, len(affected))
 	for _, it := range affected {
 		affectedPKs = append(affectedPKs, getPKComposite(ns, reflect.Indirect(reflect.ValueOf(it))))
 	}
@@ -474,8 +474,8 @@ func getAffectedItems(t *testing.T, q *reindexer.Query, ns *testNamespace) (affe
 	return
 }
 
-func selectByPK(t *testing.T, items []interface{}, nsName string, ns *testNamespace) []interface{} {
-	ids := make([][]interface{}, 0, len(items))
+func selectByPK(t *testing.T, items []any, nsName string, ns *testNamespace) []any {
+	ids := make([][]any, 0, len(items))
 	for _, it := range items {
 		pks := getPKComposite(ns, reflect.Indirect(reflect.ValueOf(it)))
 		ids = append(ids, pks)
@@ -745,7 +745,7 @@ func TestJoin(t *testing.T) {
 		qjoin.Or().InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "ID")
 		qjoin.Or().InnerJoin(qj3, "PRICESX").On("LOCATION", reindexer.LT, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
 
-		rjcheck := make([]interface{}, 0, 100)
+		rjcheck := make([]any, 0, 100)
 
 		jr, err := DB.Query(testItemsForJoinNs).Where("GENRE", reindexer.GE, 1).MustExec(t).FetchAll()
 		require.NoError(t, err)
@@ -845,9 +845,9 @@ func TestJoinQueryResultsOnIterator(t *testing.T) {
 	qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID").
 		InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "Id")
 
-	var handlerSubitems []interface{}
+	var handlerSubitems []any
 
-	qjoin.JoinHandler("PRICES", func(field string, item interface{}, subitems []interface{}) (isContinue bool) {
+	qjoin.JoinHandler("PRICES", func(field string, item any, subitems []any) (isContinue bool) {
 
 		assert.True(t, strings.EqualFold(field, "prices"), "field expected: '%v'; actual: '%v'", "prices", field)
 		assert.NotNil(t, item, "item in handler is nil")
@@ -1079,7 +1079,7 @@ func TestStrictJoinHandlers(t *testing.T) {
 		qjoin := db.Query(nsJoined).Where("data", reindexer.GT, 0)
 		mainQ.InnerJoin(qjoin, "joined_data").On("id", reindexer.EQ, "id")
 		_, err := mainQ.
-			JoinHandler("joined_data", func(field string, item interface{}, subitems []interface{}) bool { return true }).
+			JoinHandler("joined_data", func(field string, item any, subitems []any) bool { return true }).
 			Exec().FetchAll()
 		require.ErrorContains(t, err, "join handler was found, but returned 'true' and the field was handled via reflection.")
 	})
@@ -1089,7 +1089,7 @@ func TestStrictJoinHandlers(t *testing.T) {
 		qjoin := db.Query(nsJoined).Where("data", reindexer.GT, 0)
 		mainQ.InnerJoin(qjoin, "joined_data").On("id", reindexer.EQ, "id")
 		_, err := mainQ.
-			JoinHandler("joined_data", func(field string, item interface{}, subitems []interface{}) bool { return false }).
+			JoinHandler("joined_data", func(field string, item any, subitems []any) bool { return false }).
 			Exec().FetchAll()
 		require.NoError(t, err)
 	})
@@ -1099,7 +1099,7 @@ func TestStrictJoinHandlers(t *testing.T) {
 		_, err := db.Query(nsMain).
 			InnerJoin(qjoin, "joined_data").
 			On("id", reindexer.EQ, "id").
-			JoinHandler("joined_data", func(field string, item interface{}, subitems []interface{}) bool { return false }).
+			JoinHandler("joined_data", func(field string, item any, subitems []any) bool { return false }).
 			Exec().FetchAll()
 		require.NoError(t, err)
 	})
@@ -1107,7 +1107,7 @@ func TestStrictJoinHandlers(t *testing.T) {
 	t.Run("expecting error with join handler set before the actual join", func(t *testing.T) {
 		qjoin := db.Query(nsJoined).Where("data", reindexer.GT, 0)
 		_, err := db.Query(nsMain).
-			JoinHandler("joined_data", func(field string, item interface{}, subitems []interface{}) bool { return false }).
+			JoinHandler("joined_data", func(field string, item any, subitems []any) bool { return false }).
 			InnerJoin(qjoin, "joined_data").
 			On("id", reindexer.EQ, "id").
 			Exec().FetchAll()

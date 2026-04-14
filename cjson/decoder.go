@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	ifaceSlice     []interface{}
+	ifaceSlice     []any
 	ifaceSliceType = reflect.TypeOf(ifaceSlice)
 )
 
@@ -195,7 +195,7 @@ func asString(rdser *Serializer, tagType int16) string {
 const maxInt = int(^uint(0) >> 1)
 const minInt = -(maxInt - 1)
 
-func asIface(rdser *Serializer, tagType int16) interface{} {
+func asIface(rdser *Serializer, tagType int16) any {
 	switch tagType {
 	case TAG_VARINT:
 		v := rdser.GetVarInt()
@@ -329,7 +329,7 @@ func mkValue(ctagType int16) (v reflect.Value) {
 	case TAG_BOOL:
 		v = reflect.New(reflect.TypeOf(false)).Elem()
 	case TAG_OBJECT:
-		v = reflect.New(reflect.TypeOf(make(map[string]interface{}))).Elem()
+		v = reflect.New(reflect.TypeOf(make(map[string]any))).Elem()
 	case TAG_ARRAY:
 		v = reflect.New(ifaceSliceType).Elem()
 	case TAG_FLOAT:
@@ -579,7 +579,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Interface:
-			sl := (*[1 << 27]interface{})(ptr)[offset : offset+count : offset+count]
+			sl := (*[1 << 27]any)(ptr)[offset : offset+count : offset+count]
 			for i := range count {
 				sl[i] = asIface(rdser, subtag)
 			}
@@ -652,7 +652,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		cctagsPath = append(cctagsPath, ctagName)
 		if k == reflect.Interface || (k == reflect.Map && v.Type().Elem().Kind() == reflect.Interface) {
 			if v.IsNil() {
-				v.Set(reflect.ValueOf(make(map[string]interface{})))
+				v.Set(reflect.ValueOf(make(map[string]any)))
 			}
 			mv = reflect.ValueOf(v.Interface())
 			v, isMap = mkValue(ctagType), true
@@ -836,7 +836,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 	return true
 }
 
-func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
+func (dec *Decoder) DecodeCPtr(cptr uintptr, dest any) (err error) {
 
 	pl := &payloadIface{p: cptr, t: &dec.state.payloadType}
 
@@ -892,7 +892,7 @@ func (dec *Decoder) Finalize() {
 	}
 }
 
-func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
+func (dec *Decoder) Decode(cjson []byte, dest any) (err error) {
 
 	dec.state.lock.RLock()
 	defer dec.state.lock.RUnlock()

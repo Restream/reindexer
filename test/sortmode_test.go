@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestSortModeNumericItem struct {
@@ -146,7 +147,7 @@ func StrToInt(s string) (v int, hasValue bool) {
 	negative := false
 	if s[0] == '-' {
 		negative = true
-		s = s[1:len(s)]
+		s = s[1:]
 	}
 
 	offset := strings.IndexFunc(s, func(r rune) bool { return r < '0' || r > '9' })
@@ -207,11 +208,12 @@ func TestSortDataIndexMode(t *testing.T) {
 
 	// Numeric
 	results, err := DB.Query(testSortDataNumericNs).Sort("item_numeric", false).Exec(t).FetchAll()
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	require.Zero(t, len(results)%2, "expected even number of results")
 
 	// Test: Numeric words are sorted
 	var nums []int
-	for i := 0; i < len(results); i++ {
+	for i := range results {
 		word := results[i].(*TestSortModeNumericItem).InsItem
 		num, _ := StrToInt(word)
 		nums = append(nums, num)
@@ -223,7 +225,8 @@ func TestSortDataIndexMode(t *testing.T) {
 
 	// ASCII
 	results, err = DB.Query(testSortDataAsciiNs).Sort("item_ascii", false).Exec(t).FetchAll()
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	require.Zero(t, len(results)%2, "expected even number of results")
 
 	// Test: ASCII words are sorted
 	for i := 0; i < len(results); i += 2 {
@@ -234,7 +237,8 @@ func TestSortDataIndexMode(t *testing.T) {
 
 	// UTF8
 	results, err = DB.Query(testSortDataUtfNs).Sort("item_utf", false).Exec(t).FetchAll()
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	require.Zero(t, len(results)%2, "expected even number of results")
 
 	// Test: UTF8 words are sorted
 	for i := 0; i < len(results); i += 2 {

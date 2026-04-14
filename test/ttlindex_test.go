@@ -38,7 +38,7 @@ func init() {
 
 func TestBasicCheckItemsTtlExpired(t *testing.T) {
 	tx := newTestTx(DB, testItemsWithTTLNs)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		new_item := TestItemWithTtl{
 			ID:   i,
 			Date: time.Now().Unix(),
@@ -46,7 +46,7 @@ func TestBasicCheckItemsTtlExpired(t *testing.T) {
 		}
 		assert.NoError(t, tx.Upsert(new_item))
 	}
-	time.Sleep(3)
+	time.Sleep(3 * time.Second) // wait for items to expire
 
 	results, err := DB.Query(testItemsWithTTLNs).Exec(t).FetchAll()
 	if err != nil {

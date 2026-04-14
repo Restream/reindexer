@@ -162,7 +162,7 @@ func UpdateFtIndexes(t *testing.T, enablePreselect bool) {
 	UpdateFtIndex(t, testMergeJoinItemNs2, "name", "Name", enablePreselect)
 }
 
-func CreateSort(t *testing.T, result []interface{}, rankList []float32) (res ByProc) {
+func CreateSort(t *testing.T, result []any, rankList []float32) (res ByProc) {
 	assert.Equal(t, len(result), len(rankList), "Percent Count from query is wrong")
 
 	for i, item := range result {
@@ -231,8 +231,8 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 	assert.Equal(t, len(r1)+len(r2)+len(r3), len(merge), "(%d+%d+%d) (%p, %p, %p)", len(r1), len(r2), len(r3), qs1, qs2, qs3)
 	assert.NotEqual(t, len(merge), 0, "Full text didn't return any result - something bad happened")
 
-	var items []interface{}
-	check := make(map[string]interface{})
+	var items []any
+	check := make(map[string]any)
 
 	for _, item := range r1 {
 		items = append(items, item)

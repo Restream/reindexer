@@ -1,8 +1,8 @@
 package reindexer
 
 import (
-	"github.com/goccy/go-json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -18,9 +18,9 @@ type ItemWithSparseArray struct {
 }
 
 type ItemWithHeteroArrays struct {
-	ID       int64         `json:"id" reindex:"id,hash,pk"`
-	ArrayIdx []int64       `json:"array_idx" reindex:"array_idx,hash,sparse"`
-	ArrayNon []interface{} `json:"array_hetero"`
+	ID       int64   `json:"id" reindex:"id,hash,pk"`
+	ArrayIdx []int64 `json:"array_idx" reindex:"array_idx,hash,sparse"`
+	ArrayNon []any   `json:"array_hetero"`
 }
 
 type Nested struct {
@@ -28,9 +28,9 @@ type Nested struct {
 }
 
 type ItemWithHeteroArraysObj struct {
-	ID       int64         `json:"id" reindex:"id,hash,pk"`
-	Nested   []Nested      `json:"nested"`
-	ArrayNon []interface{} `json:"array_nonidx"`
+	ID       int64    `json:"id" reindex:"id,hash,pk"`
+	Nested   []Nested `json:"nested"`
+	ArrayNon []any    `json:"array_nonidx"`
 }
 
 type testInnerObject struct {
@@ -69,7 +69,7 @@ type TestItemComplexObject struct {
 	Languages []string         `json:"languages"`
 	Numbers   []int            `json:"numbers"`
 	Objects   []testItemObject `json:"objects"`
-	Optional  interface{}      `json:"optional,omitempty"`
+	Optional  any              `json:"optional,omitempty"`
 }
 
 type NestedObject struct {
@@ -243,7 +243,7 @@ func FillAndDeleteDummyItems(t *testing.T) {
 	require.Equal(t, count, 3, "Delete failed")
 }
 
-func DropField(t *testing.T, fieldName string) (items []interface{}) {
+func DropField(t *testing.T, fieldName string) (items []any) {
 	res1, err := DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Drop(fieldName).Update().FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
@@ -255,7 +255,7 @@ func DropField(t *testing.T, fieldName string) (items []interface{}) {
 	return results
 }
 
-func UpdateItemField(t *testing.T, fieldName string, values interface{}, jsonObject bool) (items []interface{}) {
+func UpdateItemField(t *testing.T, fieldName string, values any, jsonObject bool) (items []any) {
 	var q *queryTest
 	if jsonObject {
 		_, ok := values.([]byte)
@@ -276,21 +276,21 @@ func UpdateItemField(t *testing.T, fieldName string, values interface{}, jsonObj
 	return results
 }
 
-func UpdateField(t *testing.T, fieldName string, values interface{}) (items []interface{}) {
+func UpdateField(t *testing.T, fieldName string, values any) (items []any) {
 	return UpdateItemField(t, fieldName, values, false)
 }
 
-func UpdateObjectJSON(t *testing.T, fieldName string, json []uint8) (items []interface{}) {
+func UpdateObjectJSON(t *testing.T, fieldName string, json []uint8) (items []any) {
 	return UpdateItemField(t, fieldName, json, true)
 }
 
-func hasJSONPath(path []string, data map[string]interface{}) bool {
+func hasJSONPath(path []string, data map[string]any) bool {
 	if len(path) > 0 {
 		if child, ok := data[path[0]]; ok {
 			if len(path) == 1 {
 				return true
 			} else {
-				if childMap, ok := child.(map[string]interface{}); ok {
+				if childMap, ok := child.(map[string]any); ok {
 					return hasJSONPath(path[1:], childMap)
 				}
 			}
@@ -329,7 +329,7 @@ func CheckUpdateWithExpressions2(t *testing.T) {
 	}
 }
 
-func checkExtraFieldForEquality(t *testing.T, items []interface{}, val string) {
+func checkExtraFieldForEquality(t *testing.T, items []any, val string) {
 	for i := 0; i < len(items); i++ {
 		obj := items[i].(*TestItemComplexObject).MainObj.Main
 		require.Equal(t, obj.Extra, val, "Field 'extra' has a wrong value = %s", obj.Extra, val)
@@ -524,11 +524,11 @@ func CheckAddObject(t *testing.T) {
 }
 
 func CheckAddObject2(t *testing.T) {
-	newClient := make(map[string]interface{})
+	newClient := make(map[string]any)
 	newClient["id"] = 1
 	newClient["name"] = "Donald Trump"
 	newClient["address"] = "Washington DC"
-	nested := make(map[string]interface{})
+	nested := make(map[string]any)
 	nested["nested_id"] = 100
 	nested["description"] = "weird"
 	nested["price"] = 699
@@ -882,7 +882,7 @@ func CheckIfFieldInJSON(t *testing.T, q *queryTest, field string) bool {
 	jsonIter := q.ExecToJson()
 	for jsonIter.Next() {
 		jsonB := jsonIter.JSON()
-		var data map[string]interface{}
+		var data map[string]any
 		require.NoError(t, json.Unmarshal(jsonB, &data))
 		json := string(jsonB[:])
 		if strings.Contains(json, field) {
@@ -897,7 +897,7 @@ func CheckAddComplexField(t *testing.T, path string, subfields []string) {
 	jsonIter := DB.Query(testFieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).ExecToJson()
 	for jsonIter.Next() {
 		jsonB := jsonIter.JSON()
-		var data map[string]interface{}
+		var data map[string]any
 		require.NoError(t, json.Unmarshal(jsonB, &data))
 		if hasJSONPath(subfields, data) == false {
 			fmt.Println(string(jsonB[:]))
@@ -907,7 +907,7 @@ func CheckAddComplexField(t *testing.T, path string, subfields []string) {
 }
 
 func checkTestItemsInsertUpdate(t *testing.T, ns string) {
-	actionMap := map[string]func(string, interface{}, ...string) (int, error){
+	actionMap := map[string]func(string, any, ...string) (int, error){
 		"INSERT": DB.Insert,
 		"UPDATE": DB.Update,
 	}
@@ -1182,15 +1182,15 @@ func TestUpdateSetHeterogeneousArray(t *testing.T) {
 
 	t.Run("update with heterogeneous array", func(t *testing.T) {
 		const ns = testUpdateHeteroArraysNs
-		item := &ItemWithHeteroArrays{ID: 1, ArrayIdx: []int64{1, 2, 3}, ArrayNon: []interface{}{3.14, "hi", "bro", 111}}
+		item := &ItemWithHeteroArrays{ID: 1, ArrayIdx: []int64{1, 2, 3}, ArrayNon: []any{3.14, "hi", "bro", 111}}
 		require.NoError(t, DB.Upsert(ns, item))
 
-		updateArr := []interface{}{"777", 333, "555"}
+		updateArr := []any{"777", 333, "555"}
 		q := DB.Query(ns).Where("id", reindexer.EQ, 1).Set("array_idx", updateArr)
 		_, err := q.Update().FetchAll()
 		require.NoError(t, err)
 
-		updateArrNon := []interface{}{"whatsup", 111, "bro"}
+		updateArrNon := []any{"whatsup", 111, "bro"}
 		q = DB.Query(ns).Where("id", reindexer.EQ, 1).Set("array_hetero", updateArrNon)
 		_, err = q.Update().FetchAll()
 		require.NoError(t, err)
@@ -1208,18 +1208,18 @@ func TestUpdateSetHeterogeneousArray(t *testing.T) {
 		item := &ItemWithHeteroArraysObj{
 			ID:       1,
 			Nested:   []Nested{{Field: 1}, {Field: 2}},
-			ArrayNon: []interface{}{"a", map[string]int{"field": 1}, 3},
+			ArrayNon: []any{"a", map[string]int{"field": 1}, 3},
 		}
 		require.NoError(t, DB.Upsert(ns, item))
 
 		// indexed arr
-		updateIdxArr := []interface{}{map[string]int{"field": 10}, map[string]string{"field": "20"}}
+		updateIdxArr := []any{map[string]int{"field": 10}, map[string]string{"field": "20"}}
 		q := DB.Query(ns).Where("id", reindexer.EQ, 1).SetObject("nested", updateIdxArr)
 		_, err := q.Update().FetchAll()
 		require.NoError(t, err)
 
 		// nonidx arr
-		updateNonidxArr := []interface{}{map[string]int{"field": 111}, map[string]string{"field": "abc"}}
+		updateNonidxArr := []any{map[string]int{"field": 111}, map[string]string{"field": "abc"}}
 		q = DB.Query(ns).Where("id", reindexer.EQ, 1).SetObject("array_nonidx", updateNonidxArr)
 		_, err = q.Update().FetchAll()
 		require.NoError(t, err)
@@ -1228,7 +1228,7 @@ func TestUpdateSetHeterogeneousArray(t *testing.T) {
 		expected := &ItemWithHeteroArraysObj{
 			ID:       1,
 			Nested:   []Nested{{Field: 10}, {Field: 20}},
-			ArrayNon: []interface{}{map[string]interface{}{"field": 111}, map[string]interface{}{"field": "abc"}},
+			ArrayNon: []any{map[string]any{"field": 111}, map[string]any{"field": "abc"}},
 		}
 		checkResultItem(t, DB.ExecSQL(selectText), expected)
 

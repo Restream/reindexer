@@ -852,7 +852,7 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 
 // Slow and generic method: convert c payload to go interface
 // Use only for debug purposes
-func (pl *payloadIface) getIface(field int) interface{} {
+func (pl *payloadIface) getIface(field int) any {
 
 	if !pl.t.Fields[field].IsArray {
 		switch pl.t.Fields[field].Type {
@@ -913,8 +913,8 @@ func (pl *payloadIface) getIface(field int) interface{} {
 	return nil
 }
 
-func (pl *payloadIface) getAsMap() map[string]interface{} {
-	ret := make(map[string]interface{})
+func (pl *payloadIface) getAsMap() map[string]any {
+	ret := make(map[string]any)
 
 	for f := 1; f < len(pl.t.Fields); f++ {
 		ret[pl.t.Fields[f].Name] = pl.getIface(f)

@@ -68,7 +68,7 @@ func init() {
 	tnamespaces[testQuantizationConfigNs] = TestQuantizationConfigNs{}
 }
 
-func newTestItemHnswST(id int, pkgsCount int) interface{} {
+func newTestItemHnswST(id int, pkgsCount int) any {
 	result := &TestItemHnswST{
 		ID: mkID(id),
 	}
@@ -81,7 +81,7 @@ func newTestItemHnswST(id int, pkgsCount int) interface{} {
 	return result
 }
 
-func newTestItemHnswMT(id int, pkgsCount int) interface{} {
+func newTestItemHnswMT(id int, pkgsCount int) any {
 	result := &TestItemHnswMT{
 		ID: mkID(id),
 	}
@@ -94,7 +94,7 @@ func newTestItemHnswMT(id int, pkgsCount int) interface{} {
 	return result
 }
 
-func newTestItemVecBF(id int, pkgsCount int) interface{} {
+func newTestItemVecBF(id int, pkgsCount int) any {
 	result := &TestItemVecBF{
 		ID: mkID(id),
 	}
@@ -107,7 +107,7 @@ func newTestItemVecBF(id int, pkgsCount int) interface{} {
 	return result
 }
 
-func newTestItemMultiIndexVec(id int, pkgsCount int) interface{} {
+func newTestItemMultiIndexVec(id int, pkgsCount int) any {
 	result := &TestItemMultiIndexVec{
 		ID:   mkID(id),
 		Vec1: make([]float32, kMultiIndexVecDimension),
@@ -142,7 +142,7 @@ func newTestItemMultiIndexVec(id int, pkgsCount int) interface{} {
 	return result
 }
 
-func newTestItemIvf(id int, pkgsCount int) interface{} {
+func newTestItemIvf(id int, pkgsCount int) any {
 	result := &TestItemIvf{
 		ID: mkID(id),
 	}
@@ -165,7 +165,7 @@ func removeSomeItems(t *testing.T, ns string, createItem testItemsCreator, maxEl
 }
 
 type RadiusProcessingF func(it *reindexer.Iterator, comparator AssertComparatorF)
-type AssertComparatorF func(t assert.TestingT, e1 interface{}, e2 interface{}, msgAndArgs ...interface{}) bool
+type AssertComparatorF func(t assert.TestingT, e1 any, e2 any, msgAndArgs ...any) bool
 
 func testWithRadiusWrapperImpl(t *testing.T, test func(RadiusProcessingF), knnBaseSearchParams *reindexer.BaseKnnSearchParam) {
 	var rBeg, rEnd float32
@@ -430,7 +430,7 @@ func TestChangeQuantizationConfig(t *testing.T) {
 	description, err := DB.DescribeNamespace(ns)
 	require.NoError(t, err)
 
-	configBin, err := json.Marshal(description.Indexes[1].Config.(map[string]interface{})["quantization_config"])
+	configBin, err := json.Marshal(description.Indexes[1].Config.(map[string]any)["quantization_config"])
 	require.NoError(t, err)
 
 	var curConfig bindings.QuantizationConfig
@@ -469,7 +469,7 @@ func TestChangeQuantizationConfig(t *testing.T) {
 	description, err = DB.DescribeNamespace(ns)
 	require.NoError(t, err)
 
-	configBin, err = json.Marshal(description.Indexes[1].Config.(map[string]interface{})["quantization_config"])
+	configBin, err = json.Marshal(description.Indexes[1].Config.(map[string]any)["quantization_config"])
 
 	err = json.Unmarshal(configBin, &curConfig)
 	require.NoError(t, err)

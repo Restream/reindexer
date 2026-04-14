@@ -97,7 +97,7 @@ func (rec *recMockConnection) hasError() *call {
 
 func (rec *recMockConnection) rpcCall() *call {
 	c := &call{
-		method: reflect.TypeFor[func(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error)](),
+		method: reflect.TypeFor[func(ctx context.Context, cmd int, netTimeout uint32, args ...any) (buf *NetBuffer, err error)](),
 	}
 	rec.mock.expCalls["rpcCall"] = c
 	return c

@@ -172,7 +172,7 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 	})
 
 	t.Run("can sort with appendable tag", func(t *testing.T) {
-		checkItems := func(t *testing.T, items []interface{}, expectedItems []interface{}) {
+		checkItems := func(t *testing.T, items []any, expectedItems []any) {
 			require.Equal(t, len(items), len(expectedItems))
 			for i := 0; i < len(items); i++ {
 				assert.True(t, reflect.DeepEqual(items[i], expectedItems[i]), "%v\ndoesn't equal to\n%v", items[i], expectedItems[i])
@@ -181,19 +181,19 @@ func TestSelectWithMultipleJsonPaths(t *testing.T) {
 
 		items, err := DBD.Query(ns).Sort("idx", false).Exec().FetchAll()
 		require.NoError(t, err)
-		checkItems(t, items, []interface{}{&testItem1, &testItem3, &testItem4, &testItem2})
+		checkItems(t, items, []any{&testItem1, &testItem3, &testItem4, &testItem2})
 
 		items, err = DBD.Query(ns).Sort("idx", true).Exec().FetchAll()
 		require.NoError(t, err)
-		checkItems(t, items, []interface{}{&testItem2, &testItem4, &testItem3, &testItem1})
+		checkItems(t, items, []any{&testItem2, &testItem4, &testItem3, &testItem1})
 
 		items, err = DBD.Query(ns2).Sort("arridx", false).Exec().FetchAll()
 		require.NoError(t, err)
-		checkItems(t, items, []interface{}{&testArrItem2, &testArrItem1, &testArrItem3})
+		checkItems(t, items, []any{&testArrItem2, &testArrItem1, &testArrItem3})
 
 		items, err = DBD.Query(ns2).Sort("arridx", true).Exec().FetchAll()
 		require.NoError(t, err)
-		checkItems(t, items, []interface{}{&testArrItem3, &testArrItem1, &testArrItem2})
+		checkItems(t, items, []any{&testArrItem3, &testArrItem1, &testArrItem2})
 	})
 }
 

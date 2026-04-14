@@ -204,8 +204,8 @@ func TestFtConfigCompatibility(t *testing.T) {
 	}
 
 	checkStopWordsFtConfig := func(index reindexer.IndexDescription) {
-		conf := index.Config.(map[string]interface{})
-		cfgStopWords := conf["stop_words"].([]interface{})
+		conf := index.Config.(map[string]any)
+		cfgStopWords := conf["stop_words"].([]any)
 		assert.Equal(t, len(cfgStopWords), len(config.StopWords))
 
 		for idx, wordI := range config.StopWords {
@@ -214,16 +214,16 @@ func TestFtConfigCompatibility(t *testing.T) {
 				assert.Equal(t, wordI, cfgStopWords[idx])
 			case reindexer.StopWord:
 				word := wordI.(reindexer.StopWord)
-				assert.Equal(t, word.Word, cfgStopWords[idx].(map[string]interface{})["word"])
-				assert.Equal(t, word.IsMorpheme, cfgStopWords[idx].(map[string]interface{})["is_morpheme"])
+				assert.Equal(t, word.Word, cfgStopWords[idx].(map[string]any)["word"])
+				assert.Equal(t, word.IsMorpheme, cfgStopWords[idx].(map[string]any)["is_morpheme"])
 			}
 		}
 	}
 
 	checkBm25FtConfig := func(index reindexer.IndexDescription, expectedBm25k1 float64,
 		expectedBm25b float64, expectedBm25Type string) {
-		conf := index.Config.(map[string]interface{})
-		rankFunConf := conf["bm25_config"].(map[string]interface{})
+		conf := index.Config.(map[string]any)
+		rankFunConf := conf["bm25_config"].(map[string]any)
 		cfgBm25k1 := rankFunConf["bm25_k1"]
 		cfgBm25b := rankFunConf["bm25_b"]
 		cfgBm25Type := rankFunConf["bm25_type"]
@@ -233,14 +233,14 @@ func TestFtConfigCompatibility(t *testing.T) {
 	}
 
 	t.Run("check string stop_words config with index create", func(t *testing.T) {
-		stopWordsStrs := append(make([]interface{}, 0), "под", "на", "из")
+		stopWordsStrs := append(make([]any, 0), "под", "на", "из")
 		config.StopWords = stopWordsStrs
 		index := addFtIndex("idxStopWordsStrs")
 		checkStopWordsFtConfig(index)
 	})
 
 	t.Run("check object stop_words config with index create", func(t *testing.T) {
-		stopWordsObjs := append(make([]interface{}, 0),
+		stopWordsObjs := append(make([]any, 0),
 			reindexer.StopWord{
 				Word:       "пред",
 				IsMorpheme: true,
@@ -257,7 +257,7 @@ func TestFtConfigCompatibility(t *testing.T) {
 	})
 
 	t.Run("check mixed stop_words config with index create", func(t *testing.T) {
-		stopWordsMix := append(make([]interface{}, 0),
+		stopWordsMix := append(make([]any, 0),
 			"под",
 			reindexer.StopWord{
 				Word:       "пред",

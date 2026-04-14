@@ -28,7 +28,7 @@ type ReindexerWrapper struct {
 	leaderServerID int
 }
 
-func NewReindexWrapper(dsn string, cluster arrayFlags, leaderServerID int, options ...interface{}) *ReindexerWrapper {
+func NewReindexWrapper(dsn string, cluster arrayFlags, leaderServerID int, options ...any) *ReindexerWrapper {
 	rx, err := reindexer.NewReindex(dsn, options...)
 	if err != nil {
 		panic(err)
@@ -59,7 +59,7 @@ func (dbw *ReindexerWrapper) IsSynced() bool {
 	return true
 }
 
-func (dbw *ReindexerWrapper) addSlave(dsn string, options ...interface{}) *ReindexerWrapper {
+func (dbw *ReindexerWrapper) addSlave(dsn string, options ...any) *ReindexerWrapper {
 	if dbw.dsn == dsn {
 		return nil
 	}
@@ -73,7 +73,7 @@ func (dbw *ReindexerWrapper) addSlave(dsn string, options ...interface{}) *Reind
 	return slaveDb
 }
 
-func (dbw *ReindexerWrapper) AddSlave(dsn string, count int, options ...interface{}) []*ReindexerWrapper {
+func (dbw *ReindexerWrapper) AddSlave(dsn string, count int, options ...any) []*ReindexerWrapper {
 	u, err := url.Parse(dsn)
 	if err != nil {
 		panic(err)
@@ -94,7 +94,7 @@ func (dbw *ReindexerWrapper) AddSlave(dsn string, count int, options ...interfac
 	return dbw.slaveList
 }
 
-func (dbw *ReindexerWrapper) addClusterNode(clusterNodeDsn string, options ...interface{}) *ReindexerWrapper {
+func (dbw *ReindexerWrapper) addClusterNode(clusterNodeDsn string, options ...any) *ReindexerWrapper {
 	nodeDb := NewReindexWrapper(clusterNodeDsn, cluster, dbw.leaderServerID, options...)
 	nodeDb.isMaster = false
 	nodeDb.SetSyncRequired()
@@ -103,7 +103,7 @@ func (dbw *ReindexerWrapper) addClusterNode(clusterNodeDsn string, options ...in
 	return nodeDb
 }
 
-func (dbw *ReindexerWrapper) AddClusterNodes(clusterDsns []string, options ...interface{}) []*ReindexerWrapper {
+func (dbw *ReindexerWrapper) AddClusterNodes(clusterDsns []string, options ...any) []*ReindexerWrapper {
 	count := len(clusterDsns)
 	if count == 1 {
 		return nil
@@ -130,7 +130,7 @@ func (dbw *ReindexerWrapper) SetLogger(log reindexer.Logger) {
 	}
 }
 
-func (dbw *ReindexerWrapper) OpenNamespace(namespace string, opts *reindexer.NamespaceOptions, s interface{}) (err error) {
+func (dbw *ReindexerWrapper) OpenNamespace(namespace string, opts *reindexer.NamespaceOptions, s any) (err error) {
 	err = dbw.Reindexer.OpenNamespace(namespace, opts, s)
 	dbw.SetSyncRequired()
 	if err != nil {
@@ -209,7 +209,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 	if err != nil {
 		return qt.q.MustExecCtx(ctx)
 	}
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	for _, item := range rm {
 		pk := getPK(qt.ns, reflect.Indirect(reflect.ValueOf(item)))
 		m[pk+reflect.TypeOf(item).String()] = item
@@ -328,25 +328,25 @@ func (dbw *ReindexerWrapper) DropIndex(namespace, index string) (err error) {
 	return
 }
 
-func (dbw *ReindexerWrapper) Upsert(namespace string, item interface{}, precepts ...string) (err error) {
+func (dbw *ReindexerWrapper) Upsert(namespace string, item any, precepts ...string) (err error) {
 	err = dbw.Reindexer.Upsert(namespace, item, precepts...)
 	dbw.SetSyncRequired()
 	return
 }
 
-func (dbw *ReindexerWrapper) Insert(namespace string, item interface{}, precepts ...string) (upd int, err error) {
+func (dbw *ReindexerWrapper) Insert(namespace string, item any, precepts ...string) (upd int, err error) {
 	upd, err = dbw.Reindexer.Insert(namespace, item, precepts...)
 	dbw.SetSyncRequired()
 	return
 }
 
-func (dbw *ReindexerWrapper) Update(namespace string, item interface{}, precepts ...string) (upd int, err error) {
+func (dbw *ReindexerWrapper) Update(namespace string, item any, precepts ...string) (upd int, err error) {
 	upd, err = dbw.Reindexer.Update(namespace, item, precepts...)
 	dbw.SetSyncRequired()
 	return
 }
 
-func (dbw *ReindexerWrapper) Delete(namespace string, item interface{}, precepts ...string) (err error) {
+func (dbw *ReindexerWrapper) Delete(namespace string, item any, precepts ...string) (err error) {
 	err = dbw.Reindexer.Delete(namespace, item, precepts...)
 	dbw.SetSyncRequired()
 	return
@@ -382,25 +382,25 @@ func (dbw *ReindexerWrapper) DeleteMeta(namespace string, key string) (err error
 	return
 }
 
-func (dbw *ReindexerWrapper) UpsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (err error) {
+func (dbw *ReindexerWrapper) UpsertCtx(ctx context.Context, namespace string, item any, precepts ...string) (err error) {
 	err = dbw.Reindexer.WithContext(ctx).Upsert(namespace, item, precepts...)
 	dbw.SetSyncRequired()
 	return
 }
 
-func (dbw *ReindexerWrapper) InsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (upd int, err error) {
+func (dbw *ReindexerWrapper) InsertCtx(ctx context.Context, namespace string, item any, precepts ...string) (upd int, err error) {
 	upd, err = dbw.Reindexer.WithContext(ctx).Insert(namespace, item, precepts...)
 	dbw.SetSyncRequired()
 	return
 }
 
-func (dbw *ReindexerWrapper) UpdateCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (upd int, err error) {
+func (dbw *ReindexerWrapper) UpdateCtx(ctx context.Context, namespace string, item any, precepts ...string) (upd int, err error) {
 	upd, err = dbw.Reindexer.WithContext(ctx).Update(namespace, item, precepts...)
 	dbw.SetSyncRequired()
 	return
 }
 
-func (dbw *ReindexerWrapper) DeleteCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (err error) {
+func (dbw *ReindexerWrapper) DeleteCtx(ctx context.Context, namespace string, item any, precepts ...string) (err error) {
 	err = dbw.Reindexer.WithContext(ctx).Delete(namespace, item, precepts...)
 	dbw.SetSyncRequired()
 	return

@@ -75,7 +75,7 @@ func newSortOrderValues(query *queryTest) *SortOrderValues {
 	}
 }
 
-func (so *SortOrderValues) GetVerifyItems(t *testing.T) []interface{} {
+func (so *SortOrderValues) GetVerifyItems(t *testing.T) []any {
 	items, err := so.q.Exec(t).FetchAll()
 	assert.NoError(t, err)
 
@@ -139,9 +139,9 @@ func TestForceSortOrder(t *testing.T) {
 	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Where("phone", reindexer.SET, []string{"111111", "222222"}).Sort("id", true, 1, 6, 2, 5).Offset(1).Limit(3))
 
 	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, ns).Sort("id+phone", false,
-		[]interface{}{7, "333333"},
-		[]interface{}{4, "444444"},
-		[]interface{}{5, "222222"},
+		[]any{7, "333333"},
+		[]any{4, "444444"},
+		[]any{5, "222222"},
 	))
 
 	it := newTestQuery(DB, ns).Sort("id", false, 7, 8, 6, 5).Sort("year", false, 2007, 2003, 2005, 2002).Exec(t)
