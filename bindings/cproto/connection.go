@@ -540,7 +540,7 @@ func (c *connectionImpl) awaitSeqNum(ctx context.Context) (seq uint32, remaining
 			return
 		}
 		if execDeadline, ok := ctx.Deadline(); ok {
-			remainingTimeout = execDeadline.Sub(time.Now())
+			remainingTimeout = time.Until(execDeadline)
 			if remainingTimeout <= 0 {
 				c.seqs <- seq
 				err = context.DeadlineExceeded

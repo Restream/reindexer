@@ -520,7 +520,8 @@ func TestCtxWatcherRace(t *testing.T) {
 		watcher := builtin.NewCtxWatcher(defWatchersPoolSize, defCtxWatchDelay)
 
 		// cancel context required for StopWatchOnCtx func
-		ctx, _ := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		ctxInfo, _ := watcher.StartWatchOnCtx(ctx)
 
 		wg := sync.WaitGroup{}

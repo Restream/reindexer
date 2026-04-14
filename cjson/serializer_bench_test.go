@@ -15,8 +15,8 @@ func BenchmarkSerializerEncodeTypicalDocument(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		ser.WriteString("doc-2026-04-12")
 		ser.PutVString("The Art of Query Planning")
@@ -44,8 +44,8 @@ func BenchmarkSerializerWriteIntsBatch(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(values) * 8))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		_, err := ser.WriteInts(values)
 		require.NoError(b, err)
@@ -61,8 +61,8 @@ func BenchmarkSerializerWriteInts16Batch(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(values) * 2))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		_, err := ser.WriteInts16(values)
 		require.NoError(b, err)
@@ -78,8 +78,8 @@ func BenchmarkSerializerPutFloatVectorBatch(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(vec) * 4))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		ser.PutFloatVector(vec)
 		ser.Close()

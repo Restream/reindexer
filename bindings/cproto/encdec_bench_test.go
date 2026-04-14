@@ -32,8 +32,8 @@ func BenchmarkRPCEncoderSnappyBytes(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		enc := newRPCEncoder(cmdSelect, uint32(i), true, false)
 		enc.bytesArg(payload)
 		_ = enc.bytes()
@@ -68,8 +68,8 @@ func BenchmarkRPCDecoderIntfArgs(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(reply)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		dec := newRPCDecoder(reply)
 		err := dec.errCode()
 		require.NoError(b, err)
@@ -90,8 +90,8 @@ func BenchmarkNetBufferDecompressReuse(b *testing.B) {
 	nb := &NetBuffer{}
 	b.ReportAllocs()
 	b.SetBytes(int64(len(raw)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		nb.buf = compressed
 		err := nb.decompress()
 		require.NoError(b, err)

@@ -22,8 +22,8 @@ func BenchmarkEncoderEncodeSliceFloat32(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(doc.Values) * 4))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		if err := enc.EncodeRaw(doc, ser); err != nil {
 			b.Fatalf("encode float32 slice: %v", err)
@@ -43,8 +43,8 @@ func BenchmarkEncoderEncodeSliceFloat64(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(doc.Values) * 8))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		if err := enc.EncodeRaw(doc, ser); err != nil {
 			b.Fatalf("encode float64 slice: %v", err)
@@ -74,8 +74,8 @@ func BenchmarkDecoderDecodeSliceFloat32(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(src.Values) * 4))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		dst = benchSliceDocF32{}
 		if err := dec.Decode(wire, &dst); err != nil {
 			b.Fatalf("decode float32 slice: %v", err)

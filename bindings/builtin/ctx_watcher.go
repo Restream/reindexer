@@ -120,7 +120,7 @@ func (watcher *CtxWatcher) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, er
 		}
 
 		if deadline, ok := ctx.Deadline(); ok {
-			execTimeout = int64(deadline.Sub(time.Now()) / time.Millisecond)
+			execTimeout = int64(time.Until(deadline) / time.Millisecond)
 			if execTimeout <= 0 {
 				return CCtxWrapper{}, context.DeadlineExceeded
 			}

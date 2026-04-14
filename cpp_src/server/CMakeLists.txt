@@ -13,15 +13,16 @@ file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
     STRING(REPLACE \"https://petstore.swagger.io/v2/swagger.json\" \"swagger.yml\" indexhtml \"\${indexhtml}\")
     file(WRITE ${PROJECT_BINARY_DIR}/swagger/index.html \"\${indexhtml}\")"
 )
-option(SWAGGER_DOWNLOAD "Download Swagger UI dist automatically" ON)
 set(SWAGGER_UI_DIST_DIR
-    "${PROJECT_SOURCE_DIR}/contrib/swagger-ui-dist"
-    CACHE PATH "Path to local swagger-ui-dist directory when SWAGGER_DOWNLOAD=OFF")
+    ""
+    CACHE PATH "Path to local swagger-ui-dist directory. If set and exists, local files are used; otherwise Swagger UI dist is downloaded.")
+set(FACE_DIST_DIR
+    ""
+    CACHE PATH "Path to local face dist directory. If set and exists, local files are used; otherwise face dist is downloaded.")
 
 file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
   "cmake_policy(SET CMP0012 NEW)
 
-  set(SWAGGER_DOWNLOAD \"${SWAGGER_DOWNLOAD}\")
   set(SWAGGER_UI_DIST_DIR \"${SWAGGER_UI_DIST_DIR}\")
   set(SWAGGER_VERSION \"${SWAGGER_VERSION}\")
   set(PROJECT_BINARY_DIR \"${PROJECT_BINARY_DIR}\")
@@ -29,7 +30,19 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
 
   file(MAKE_DIRECTORY \"${PROJECT_BINARY_DIR}/swagger\")
 
-  if(SWAGGER_DOWNLOAD)
+  if(SWAGGER_UI_DIST_DIR AND EXISTS \"${SWAGGER_UI_DIST_DIR}\")
+    execute_process(
+      COMMAND \"${CMAKE_COMMAND}\" -E copy_directory
+              \"${SWAGGER_UI_DIST_DIR}\"
+              \"${PROJECT_BINARY_DIR}/swagger\"
+      RESULT_VARIABLE ret
+    )
+    if(NOT \"\${ret}\" STREQUAL \"0\")
+      message(FATAL_ERROR \"Could not copy local Swagger UI dist from '${SWAGGER_UI_DIST_DIR}'\")
+    endif()
+  elseif(SWAGGER_UI_DIST_DIR)
+    message(FATAL_ERROR \"Local Swagger UI dist was not found at '${SWAGGER_UI_DIST_DIR}'\")
+  else()
     file(
       DOWNLOAD
         \"https://github.com/swagger-api/swagger-ui/archive/refs/tags/v${SWAGGER_VERSION}.tar.gz\"
@@ -70,21 +83,6 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
     )
 
     file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")
-  else()
-    if(NOT EXISTS \"${SWAGGER_UI_DIST_DIR}\")
-      message(FATAL_ERROR
-        \"Local Swagger UI dist was not found at '${SWAGGER_UI_DIST_DIR}', and download is disabled\")
-    endif()
-
-    execute_process(
-      COMMAND \"${CMAKE_COMMAND}\" -E copy_directory
-              \"${SWAGGER_UI_DIST_DIR}\"
-              \"${PROJECT_BINARY_DIR}/swagger\"
-      RESULT_VARIABLE ret
-    )
-    if(NOT \"\${ret}\" STREQUAL \"0\")
-      message(FATAL_ERROR \"Could not copy local Swagger UI dist from '${SWAGGER_UI_DIST_DIR}'\")
-    endif()
   endif()
 
   execute_process(
@@ -106,23 +104,39 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
   endif()
 ")
 file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
-    "file(
-  DOWNLOAD \"https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${GH_FACE_TAG}\"
-	\"${PROJECT_BINARY_DIR}/face.tar.gz\"
-     )
+    "set(FACE_DIST_DIR \"${FACE_DIST_DIR}\")
+     set(PROJECT_BINARY_DIR \"${PROJECT_BINARY_DIR}\")
      execute_process(
-	 COMMAND \"${CMAKE_COMMAND}\" -E remove_directory \"${PROJECT_BINARY_DIR}/face\"
-	 RESULT_VARIABLE ret
+	      COMMAND \"${CMAKE_COMMAND}\" -E remove_directory \"${PROJECT_BINARY_DIR}/face\"
+        RESULT_VARIABLE ret
      )
-     execute_process(
-	 COMMAND \"${CMAKE_COMMAND}\" -E tar xzf \"face.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-	 RESULT_VARIABLE ret
-     )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not untar 'face.tar.gz'\")
-     endif()
-     file(RENAME \"${PROJECT_BINARY_DIR}/reindexer-face-dist-${GH_FACE_VERSION}\" \"${PROJECT_BINARY_DIR}/face\")
-     file(REMOVE \"${PROJECT_BINARY_DIR}/face.tar.gz\")"
+      if(FACE_DIST_DIR AND EXISTS \"${FACE_DIST_DIR}\")
+       execute_process(
+         COMMAND \"${CMAKE_COMMAND}\" -E copy_directory
+                 \"${FACE_DIST_DIR}\"
+                 \"${PROJECT_BINARY_DIR}/face\"
+         RESULT_VARIABLE ret
+       )
+       if (NOT \"\${ret}\" STREQUAL \"0\")
+         message(FATAL_ERROR \"Could not copy local face dist from '${FACE_DIST_DIR}'\")
+       endif()
+     elseif(FACE_DIST_DIR)
+       message(FATAL_ERROR \"Local face dist was not found at '${FACE_DIST_DIR}'\")
+     else()
+       file(
+         DOWNLOAD \"https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${GH_FACE_TAG}\"
+                  \"${PROJECT_BINARY_DIR}/face.tar.gz\"
+       )
+       execute_process(
+         COMMAND \"${CMAKE_COMMAND}\" -E tar xzf \"face.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+         RESULT_VARIABLE ret
+       )
+       if (NOT \"\${ret}\" STREQUAL \"0\")
+         message(FATAL_ERROR \"Could not untar 'face.tar.gz'\")
+       endif()
+       file(RENAME \"${PROJECT_BINARY_DIR}/reindexer-face-dist-${GH_FACE_VERSION}\" \"${PROJECT_BINARY_DIR}/face\")
+       file(REMOVE \"${PROJECT_BINARY_DIR}/face.tar.gz\")
+     endif()"
 )
 
 if (LINK_RESOURCES)

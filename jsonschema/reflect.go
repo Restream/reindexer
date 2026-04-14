@@ -573,11 +573,11 @@ func (t *Type) setExtra(key, val string) {
 		t.Extras = map[string]any{}
 	}
 	if existingVal, ok := t.Extras[key]; ok {
-		switch existingVal.(type) {
+		switch existingVal := existingVal.(type) {
 		case string:
-			t.Extras[key] = []string{existingVal.(string), val}
+			t.Extras[key] = []string{existingVal, val}
 		case []string:
-			t.Extras[key] = append(existingVal.([]string), val)
+			t.Extras[key] = append(existingVal, val)
 		}
 	} else {
 		t.Extras[key] = val
@@ -653,7 +653,7 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s.Definitions == nil || len(s.Definitions) == 0 {
+	if len(s.Definitions) == 0 {
 		return b, nil
 	}
 	d, err := json.Marshal(struct {
@@ -676,7 +676,7 @@ func (t *Type) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if t.Extras == nil || len(t.Extras) == 0 {
+	if len(t.Extras) == 0 {
 		return b, nil
 	}
 	m, err := json.Marshal(t.Extras)

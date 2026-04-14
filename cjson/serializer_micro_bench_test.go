@@ -46,11 +46,9 @@ func BenchmarkSerializerPutFloatVector(b *testing.B) {
 
 func BenchmarkSerializerWriteString(b *testing.B) {
 	payload := "write-string-benchmark-payload-abcdefghijklmnopqrstuvwxyz"
-
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		ser.WriteString(payload)
 		benchBytesSink = ser.Bytes()
@@ -70,8 +68,7 @@ func BenchmarkSerializerWriteInts(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(values) * 8))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		_, _ = ser.WriteInts(values)
 		benchBytesSink = ser.Bytes()
@@ -82,7 +79,7 @@ func BenchmarkSerializerWriteInts(b *testing.B) {
 func BenchmarkSerializerGetDouble(b *testing.B) {
 	const count = 4096
 	wr := NewPoolSerializer()
-	for i := 0; i < count; i++ {
+	for i := range count {
 		wr.PutDouble(float64(i) * math.Pi)
 	}
 	payload := append([]byte(nil), wr.Bytes()...)
@@ -91,8 +88,8 @@ func BenchmarkSerializerGetDouble(b *testing.B) {
 	rd := NewSerializer(payload)
 	b.ReportAllocs()
 	b.SetBytes(8)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		if rd.pos+8 > len(rd.buf) {
 			rd.pos = 0
 		}
@@ -120,8 +117,8 @@ func BenchmarkSerializerPutUuid(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(16)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		ser.PutUuid(uuid)
 		benchBytesSink = ser.Bytes()
@@ -137,8 +134,8 @@ func BenchmarkSerializerPutVBytes(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		ser.PutVBytes(payload)
 		benchBytesSink = ser.Bytes()
@@ -154,8 +151,8 @@ func BenchmarkSerializerWrite(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		_, _ = ser.Write(payload)
 		benchBytesSink = ser.Bytes()
@@ -182,11 +179,9 @@ func BenchmarkSerializerWriteInts16(b *testing.B) {
 
 func BenchmarkSerializerPutVString(b *testing.B) {
 	payload := "put-vstring-benchmark-payload-abcdefghijklmnopqrstuvwxyz"
-
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ser := NewPoolSerializer()
 		ser.PutVString(payload)
 		benchBytesSink = ser.Bytes()
