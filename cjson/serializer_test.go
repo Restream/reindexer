@@ -77,7 +77,7 @@ func TestSerializerReadWriteFixedWidthRoundTrip(t *testing.T) {
 	ser.PutFloat32(1.25).PutDouble(-15.5)
 
 	rd := NewSerializer(ser.Bytes())
-	assert.EqualValues(t, 7, rd.ReadUIntBits(1))
+	assert.EqualValues(t, 7, rd.readUIntBits(1))
 	assert.EqualValues(t, 513, rd.GetUInt16())
 	assert.EqualValues(t, 1024, rd.GetUInt32())
 	assert.EqualValues(t, 1<<40+5, rd.GetUInt64())

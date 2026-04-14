@@ -356,7 +356,7 @@ func (s *Serializer) GetCArrayTag() carraytag {
 }
 
 func (s *Serializer) GetUInt64() (v uint64) {
-	return s.ReadUIntBits(unsafe.Sizeof(v))
+	return s.readUIntBits(unsafe.Sizeof(v))
 }
 
 func (s *Serializer) GetDouble() (v float64) {
@@ -409,7 +409,7 @@ func (s *Serializer) readIntBits(sz uintptr) (v int64) {
 	s.pos += int(sz)
 	return v
 }
-func (s *Serializer) ReadUIntBits(sz uintptr) (v uint64) {
+func (s *Serializer) readUIntBits(sz uintptr) (v uint64) {
 	if s.pos+int(sz) > len(s.buf) {
 		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+int(sz), len(s.buf)-s.pos))
 	}

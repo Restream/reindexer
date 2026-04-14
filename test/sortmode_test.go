@@ -1,7 +1,6 @@
 package reindexer
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -244,9 +243,7 @@ func TestSortDataIndexMode(t *testing.T) {
 	for i := 0; i < len(results); i += 2 {
 		lword := results[i].(*TestSortModeUtfItem).InsItem
 		rword := results[i+1].(*TestSortModeUtfItem).InsItem
-		if strings.ToLower(lword) != strings.ToLower(rword) {
-			panic(fmt.Errorf("Expected words %s and %s are the same", lword, rword))
-		}
+		assert.True(t, strings.EqualFold(lword, rword), "Expected words %s and %s are the same", lword, rword)
 	}
 
 	// Custom
