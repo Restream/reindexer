@@ -5,7 +5,7 @@ cd grpc
 git submodule update --init
 mkdir -p cmake/build
 cd cmake/build
-cmake -DCMAKE_BUILD_TYPE=Release -DgRPC_INSTALL=ON  -DgRPC_BUILD_TESTS=OF ../..
+cmake -DCMAKE_BUILD_TYPE=Release -DgRPC_INSTALL=ON  -DgRPC_BUILD_TESTS=OFF ../..
 make -j4
 sudo make install
 sudo ldconfig
