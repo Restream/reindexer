@@ -3,24 +3,12 @@ package cproto
 import (
 	"context"
 	"testing"
-	"unsafe"
 
 	"github.com/golang/snappy"
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
 	"github.com/stretchr/testify/require"
 )
-
-var str2cSink reindexerStringView
-
-type reindexerStringView struct {
-	p unsafe.Pointer
-	n int
-}
-
-func str2cByStringData(str string) reindexerStringView {
-	return reindexerStringView{p: unsafe.Pointer(unsafe.StringData(str)), n: len(str)}
-}
 
 func BenchmarkRPCEncoderInt32ArrArg(b *testing.B) {
 	values := make([]int32, 2048)
@@ -140,10 +128,6 @@ func BenchmarkNetBufferDecompressReuse(b *testing.B) {
 	}
 }
 
-func BenchmarkStr2CByStringData(b *testing.B) {
-	benchStr2CConversion(b, str2cByStringData)
-}
-
 func BenchmarkNetBufferParseArgs(b *testing.B) {
 	reply := buildParseArgsReplyPayload()
 	nb := &NetBuffer{
@@ -177,33 +161,6 @@ func BenchmarkNetBufferParseArgsTimeout(b *testing.B) {
 		if err != context.DeadlineExceeded {
 			b.Fatalf("expected context.DeadlineExceeded, got %v", err)
 		}
-	}
-}
-
-func benchStr2CConversion(b *testing.B, fn func(string) reindexerStringView) {
-	inputs := []string{
-		"",
-		"a",
-		"short-value",
-		"reindexer-cproto-string-conversion-benchmark",
-		string(make([]byte, 128)),
-		string(make([]byte, 4096)),
-	}
-	dyn128 := make([]byte, 128)
-	for i := range dyn128 {
-		dyn128[i] = byte('a' + i%26)
-	}
-	dyn4k := make([]byte, 4096)
-	for i := range dyn4k {
-		dyn4k[i] = byte(i)
-	}
-	inputs[4] = string(dyn128)
-	inputs[5] = string(dyn4k)
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		str2cSink = fn(inputs[i%len(inputs)])
 	}
 }
 
