@@ -354,12 +354,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	switch k {
 	case reflect.Slice:
 		offset = mkSlice(v, count)
-		ptr = unsafe.Pointer(v.Index(0).Addr().Pointer())
+		ptr = unsafe.Pointer(v.Pointer())
 	case reflect.Interface:
 		origV = *v
 		*v = reflect.ValueOf(reflect.New(ifaceSliceType).Interface()).Elem()
 		offset = mkSlice(v, count)
-		ptr = unsafe.Pointer(v.Index(0).Addr().Pointer())
+		ptr = unsafe.Pointer(v.Pointer())
 	case reflect.Array:
 		if v.Len() < count {
 			panic(fmt.Errorf("array bounds overflow. Required %d, but array len is %d", count, v.Len()))
@@ -789,15 +789,16 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				panic(fmt.Errorf("can not convert 'string' to '%s'", v.Type().Kind().String()))
 			}
 		default:
-			switch k {
-			case reflect.Slice:
+			if k == reflect.Slice {
 				el := reflect.New(v.Type().Elem()).Elem()
 				extSlice := reflect.Append(v, el)
 				v.Set(extSlice)
 				v = v.Index(v.Len() - 1)
-				v.SetFloat(asFloat(rdser, ctagType))
-			case reflect.Array:
+				k = v.Type().Kind()
+			} else if k == reflect.Array {
 				panic(fmt.Errorf("can not put single value into the fixed size array"))
+			}
+			switch k {
 			case reflect.Float32, reflect.Float64:
 				v.SetFloat(asFloat(rdser, ctagType))
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int64, reflect.Int32:
