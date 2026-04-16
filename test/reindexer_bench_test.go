@@ -120,7 +120,7 @@ func initKnn() {
 }
 
 func init() {
-	rand.Seed(*benchmarkSeed)
+	benchRandSeed(*benchmarkSeed)
 
 	for range 10 {
 		pkgs = append(pkgs, randInt32Arr(20, 10000, 10))
@@ -167,7 +167,23 @@ var (
 	testItemsJsonSeed  = make([][]byte, 0)
 	testItemsCJsonSeed = make([][]byte, 0)
 	testItemsGobSeed   = make([][]byte, 0)
+
+	benchRandMu sync.Mutex
+	benchRand   = rand.New(rand.NewSource(1))
 )
+
+func benchRandSeed(seed int64) {
+	benchRandMu.Lock()
+	benchRand.Seed(seed)
+	benchRandMu.Unlock()
+}
+
+func benchRandInt() int {
+	benchRandMu.Lock()
+	v := benchRand.Int()
+	benchRandMu.Unlock()
+	return v
+}
 
 var cjsonState = cjson.NewState()
 
@@ -192,19 +208,19 @@ func (item *TestItemBench) Join(field string, subitems []any, context any) {
 // DBD.Query(testBenchItemsNs)
 // DBD.Query(testBenchItemsNs).WhereInt("year", reindexer.EQ, 2010).Limit(1).GetJson()
 func newTestBenchItem(id int, pkgCount int) *TestItemBench {
-	rand.Seed(*benchmarkSeed)
-	startTime := rand.Int() % 50000
+	benchRandSeed(*benchmarkSeed)
+	startTime := benchRandInt() % 50000
 
 	return &TestItemBench{
 		ID:         int32(id),
-		Year:       int32(rand.Int()%50 + 2000),
-		Genre:      int64(rand.Int() % 50),
-		Age:        int32(rand.Int() % 5),
+		Year:       int32(benchRandInt()%50 + 2000),
+		Genre:      int64(benchRandInt() % 50),
+		Age:        int32(benchRandInt() % 5),
 		Packages:   randInt32Arr(pkgCount, 10000, 50),
-		PricesIDs:  priceIds[rand.Int()%len(priceIds)],
+		PricesIDs:  priceIds[benchRandInt()%len(priceIds)],
 		LocationID: randLocation(),
 		StartTime:  int32(startTime),
-		EndTime:    int32(startTime + (rand.Int()%5)*1000),
+		EndTime:    int32(startTime + (benchRandInt()%5)*1000),
 		Uuid:       randUuid(),
 		UuidStr:    randUuid(),
 	}
@@ -230,7 +246,7 @@ func FillTestItemsBench(start int, count int, pkgsCount int) {
 }
 
 func BenchmarkPrepare(b *testing.B) {
-	rand.Seed(*benchmarkSeed)
+	benchRandSeed(*benchmarkSeed)
 	if prepared {
 		return
 	}
@@ -242,7 +258,7 @@ func BenchmarkPrepare(b *testing.B) {
 }
 
 func BenchmarkSimpleInsert(b *testing.B) {
-	rand.Seed(*benchmarkSeed)
+	benchRandSeed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsSimpleNs)
 	for i := 0; i < b.N; i++ {
 		if err := tx.Upsert(TestItemSimple{ID: mkID(i), Year: rand.Int()%1000 + 10, Name: randString(), Phone: randString()}); err != nil {
@@ -253,7 +269,7 @@ func BenchmarkSimpleInsert(b *testing.B) {
 }
 
 func BenchmarkSimpleUpdate(b *testing.B) {
-	rand.Seed(*benchmarkSeed)
+	benchRandSeed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsSimpleNs)
 	for i := 0; i < b.N; i++ {
 		if err := tx.Upsert(TestItemSimple{ID: mkID(i), Year: rand.Int()%1000 + 10, Name: randString()}); err != nil {
@@ -264,7 +280,7 @@ func BenchmarkSimpleUpdate(b *testing.B) {
 }
 
 func BenchmarkSimpleUpdateAsync(b *testing.B) {
-	rand.Seed(*benchmarkSeed)
+	benchRandSeed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsSimpleNs)
 	for i := 0; i < b.N; i++ {
 		tx.UpsertAsync(TestItemSimple{ID: mkID(i), Year: rand.Int()%1000 + 10, Name: randString()},
@@ -278,11 +294,11 @@ func BenchmarkSimpleUpdateAsync(b *testing.B) {
 }
 
 func BenchmarkSimpleCmplxPKUpsert(b *testing.B) {
-	rand.Seed(*benchmarkSeed)
+	benchRandSeed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsSimpleComplexPkNs)
 
 	for i := 0; i < b.N; i++ {
-		if err := tx.Upsert(TestItemCmplxPK{ID: int32(i), Year: int32(rand.Int()%1000 + 10), Name: randString(), SubID: randString()}); err != nil {
+		if err := tx.Upsert(TestItemCmplxPK{ID: int32(i), Year: int32(benchRandInt()%1000 + 10), Name: randString(), SubID: randString()}); err != nil {
 			panic(err)
 		}
 	}
@@ -388,7 +404,7 @@ func BenchmarkUpdate(b *testing.B) {
 }
 
 func BenchmarkDeleteAndUpdate(b *testing.B) {
-	rand.Seed(*benchmarkSeed)
+	benchRandSeed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsInsertNs)
 	for i := 0; i < b.N; i++ {
 		tx.Delete(TestItem{ID: mkID(rand.Int() % b.N)})
@@ -433,7 +449,7 @@ func Benchmark4CondQuery(b *testing.B) {
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereString("age", reindexer.EQ, "2").
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
+			WhereInt32("packages", reindexer.SET, pkgs[benchRandInt()%len(pkgs)]...)
 		q.MustExec().FetchAll()
 	}
 }
@@ -445,7 +461,7 @@ func Benchmark4CondQueryTotal(b *testing.B) {
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereString("age", reindexer.EQ, "2").
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
+			WhereInt32("packages", reindexer.SET, pkgs[benchRandInt()%len(pkgs)]...)
 
 		q.MustExec().FetchAll()
 	}
@@ -486,7 +502,7 @@ func Benchmark3CondQuery(b *testing.B) {
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
+			WhereInt32("packages", reindexer.SET, pkgs[benchRandInt()%len(pkgs)]...)
 		q.MustExec().FetchAll()
 	}
 }
@@ -497,7 +513,7 @@ func Benchmark3CondQueryTotal(b *testing.B) {
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
+			WhereInt32("packages", reindexer.SET, pkgs[benchRandInt()%len(pkgs)]...)
 		q.MustExec().FetchAll()
 	}
 }
@@ -520,7 +536,7 @@ func Benchmark3CondQueryRestoreIdsCache(b *testing.B) {
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...) // Using subset of arrays for each request. Cache will restore
+			WhereInt32("packages", reindexer.SET, pkgs[benchRandInt()%len(pkgs)]...) // Using subset of arrays for each request. Cache will restore
 		q.MustExec().FetchAll()
 	}
 }
@@ -626,7 +642,7 @@ func Benchmark2CondQueryInnerJoin(b *testing.B) {
 }
 
 func Benchmark2CondQueryInnerJoinCachedRandom(b *testing.B) {
-	rand.Seed(*benchmarkSeed)
+	benchRandSeed(*benchmarkSeed)
 	ctx := &TestJoinCtx{}
 
 	for b.Loop() {
@@ -806,16 +822,16 @@ func BenchmarkFullScan(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
 	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).ReqTotal().
-			WhereInt("end_time", reindexer.GT, rand.Int()%10000)
+			WhereInt("end_time", reindexer.GT, benchRandInt()%10000)
 		q.MustExec().FetchAll()
 	}
 }
 
 func BenchmarkSelectByPKAndUpdate(b *testing.B) {
-	rand.Seed(*benchmarkSeed)
+	benchRandSeed(*benchmarkSeed)
 	for i := 0; i < b.N; i++ {
 		FillTestItemsBench(i, 1, 10)
-		DBD.Query(testBenchItemsNs).WhereInt("id", reindexer.EQ, mkID(rand.Int()%100000)).Limit(1).GetJson()
+		DBD.Query(testBenchItemsNs).WhereInt("id", reindexer.EQ, mkID(benchRandInt()%100000)).Limit(1).GetJson()
 	}
 }
 
