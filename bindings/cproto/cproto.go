@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 	"net/url"
 	"runtime"
@@ -113,7 +113,7 @@ func (binding *NetCProto) nextDSN(ctx context.Context, strategy string, stat *bi
 	case reconnectStrategyNext:
 		binding.dsn.active = (binding.dsn.active + 1) % len(binding.dsn.urls)
 	case reconnectStrategyRandom:
-		binding.dsn.active = rand.Intn(len(binding.dsn.urls))
+		binding.dsn.active = rand.IntN(len(binding.dsn.urls))
 	case reconnectStrategySynchronized:
 		if err := binding.processStrategySynchronized(ctx, stat); err != nil {
 			return err
@@ -208,7 +208,7 @@ func (binding *NetCProto) processStrategyReadOnly(ctx context.Context, stat *bin
 
 	var newClusterDSN *url.URL
 	if len(followersDSN) > 0 {
-		newClusterDSN = followersDSN[rand.Intn(len(followersDSN))]
+		newClusterDSN = followersDSN[rand.IntN(len(followersDSN))]
 	} else if leaderDSN != nil {
 		newClusterDSN = leaderDSN
 	}
@@ -234,7 +234,7 @@ func (binding *NetCProto) processStrategySynchronized(ctx context.Context, stat 
 	if len(clusterDSNs) == 0 {
 		return errors.New("can't find cluster node for reconnect")
 	}
-	newClusterDSN := clusterDSNs[rand.Intn(len(clusterDSNs))]
+	newClusterDSN := clusterDSNs[rand.IntN(len(clusterDSNs))]
 
 	if err := binding.setClusterDSN(newClusterDSN); err != nil {
 		return err

@@ -354,12 +354,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	switch k {
 	case reflect.Slice:
 		offset = mkSlice(v, count)
-		ptr = unsafe.Pointer(v.Pointer())
+		ptr = unsafe.Pointer(v.Index(0).Addr().Pointer())
 	case reflect.Interface:
 		origV = *v
 		*v = reflect.ValueOf(reflect.New(ifaceSliceType).Interface()).Elem()
 		offset = mkSlice(v, count)
-		ptr = unsafe.Pointer(v.Pointer())
+		ptr = unsafe.Pointer(v.Index(0).Addr().Pointer())
 	case reflect.Array:
 		if v.Len() < count {
 			panic(fmt.Errorf("array bounds overflow. Required %d, but array len is %d", count, v.Len()))
@@ -754,7 +754,8 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				v.SetString(str)
 			case k == reflect.Slice, k == reflect.Array:
 				elemK := v.Type().Elem().Kind()
-				if elemK == reflect.String {
+				switch elemK {
+				case reflect.String:
 					if k == reflect.Slice {
 						el := reflect.New(v.Type().Elem()).Elem()
 						el.SetString(str)
@@ -763,7 +764,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 					} else {
 						panic(fmt.Errorf("can not put single value into the fixed size array of strings '%s'", str))
 					}
-				} else if elemK == reflect.Interface {
+				case reflect.Interface:
 					if k == reflect.Slice {
 						el := reflect.New(v.Type().Elem()).Elem()
 						el.Set(reflect.ValueOf(str))
@@ -772,7 +773,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 					} else {
 						panic(fmt.Errorf("can not put single value into the fixed size array of interfaces '%s'", str))
 					}
-				} else {
+				default:
 					b, e := base64.StdEncoding.DecodeString(str)
 					if e != nil {
 						panic(fmt.Errorf("can not decode base64 '%s': %v", str, e))
@@ -788,16 +789,15 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				panic(fmt.Errorf("can not convert 'string' to '%s'", v.Type().Kind().String()))
 			}
 		default:
-			if k == reflect.Slice {
+			switch k {
+			case reflect.Slice:
 				el := reflect.New(v.Type().Elem()).Elem()
 				extSlice := reflect.Append(v, el)
 				v.Set(extSlice)
 				v = v.Index(v.Len() - 1)
-				k = v.Type().Kind()
-			} else if k == reflect.Array {
+				v.SetFloat(asFloat(rdser, ctagType))
+			case reflect.Array:
 				panic(fmt.Errorf("can not put single value into the fixed size array"))
-			}
-			switch k {
 			case reflect.Float32, reflect.Float64:
 				v.SetFloat(asFloat(rdser, ctagType))
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int64, reflect.Int32:

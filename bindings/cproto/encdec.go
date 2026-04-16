@@ -43,12 +43,10 @@ func (r *rpcEncoder) start(cmd int, seq uint32) {
 }
 
 func (r *rpcEncoder) startArgsChunck() {
-	b := r.ser.Bytes()
-	r.lastArgsChunckStart = len(b)
+	r.lastArgsChunckStart = len(r.ser.Bytes())
 	// num args
 	r.ser.PutVarUInt(0)
-	b = r.ser.Bytes()
-	(*(*uint32)(unsafe.Pointer(&b[8])))++
+	(*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])))++
 }
 
 func (r *rpcEncoder) bytesArg(v []byte) {
@@ -98,9 +96,8 @@ func (r *rpcEncoder) int64Arg(v int64) {
 }
 
 func (r *rpcEncoder) update() {
-	b := r.ser.Bytes()
-	b[r.lastArgsChunckStart]++
-	*(*uint32)(unsafe.Pointer(&b[8])) = uint32(len(b) - cprotoHdrLen)
+	r.ser.Bytes()[r.lastArgsChunckStart]++
+	*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])) = uint32(len(r.ser.Bytes()) - cprotoHdrLen)
 }
 
 func (r *rpcEncoder) bytes() []byte {

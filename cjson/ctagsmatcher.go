@@ -11,15 +11,15 @@ func (tm *tagsMatcher) Read(ser *Serializer, skip bool) {
 
 	tagsCount := int(ser.GetVarUInt())
 	if !skip {
-		tm.Tags = make([]string, tagsCount, tagsCount)
+		tm.Tags = make([]string, tagsCount)
 		tm.Names = make(map[string]int)
 
-		for i := 0; i < tagsCount; i++ {
+		for i := range tagsCount {
 			tm.Tags[i] = ser.GetVString()
 			tm.Names[tm.Tags[i]] = i
 		}
 	} else {
-		for i := 0; i < tagsCount; i++ {
+		for range tagsCount {
 			ser.GetVString()
 		}
 	}
