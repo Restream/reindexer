@@ -64,7 +64,10 @@ std::string Function::Dump() const {
 
 void SubQuery::Serialize(WrSerializer& ser) const {
 	ser.PutVarUint(Type());
-	Get().Serialize(ser);
+	{
+		const auto sizePosSaver = ser.StartVString();
+		Get().Serialize(ser);
+	}
 }
 
 const Query& SubQuery::Get() const { return subQuery_; }
