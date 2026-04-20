@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +56,8 @@ func writeAsyncReplicationConfig(t *testing.T, dbPath string, startupCfg *startu
 		if !startupCfg.isLeader {
 			role = "follower"
 		}
-		config := `retry_sync_interval_msec: 3000
+		var config strings.Builder
+		config.WriteString(`retry_sync_interval_msec: 3000
 role: ` + role + `
 syncs_per_thread: 2
 app_name: node_1
@@ -64,14 +66,14 @@ force_sync_on_wrong_data_hash: false
 batching_routines_count: 50
 sync_threads: 2
 log_level: info
-namespaces: []`
+namespaces: []`)
 		if len(followerDSNs) > 0 {
-			config += "\nnodes:\n"
+			config.WriteString("\nnodes:\n")
 		}
 		for _, dsn := range followerDSNs {
-			config += "  - dsn: " + dsn
+			config.WriteString("  - dsn: " + dsn)
 		}
-		_, err = f.Write([]byte(config))
+		_, err = f.Write([]byte(config.String()))
 		require.NoError(t, err)
 	}
 }
@@ -137,7 +139,7 @@ func MakeLegacyFollowerNoStorageCleanup(t *testing.T, binary string, cprotoDSN s
 	return MakeLegacyNode(t, binary, cprotoDSN, serverConfig, &startupConfig{removeStorage: false, serverID: serverID, isLeader: false}, followerDSNs...)
 }
 
-func GetData(t *testing.T, rx *reindexer.Reindexer, namespace string) []interface{} {
+func GetData(t *testing.T, rx *reindexer.Reindexer, namespace string) []any {
 	it := rx.Query(namespace).Exec()
 	defer it.Close()
 	data, errfs := it.FetchAll()
@@ -145,7 +147,7 @@ func GetData(t *testing.T, rx *reindexer.Reindexer, namespace string) []interfac
 	return data
 }
 
-func GetDataFromNodes(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer, namespace string) []interface{} {
+func GetDataFromNodes(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer, namespace string) []any {
 	dataLeader := GetData(t, rxLeader, namespace)
 	WaitForSyncWithLeaderLegacy(t, rxLeader, rxFollower)
 	dataFollower := GetData(t, rxFollower, namespace)
@@ -153,7 +155,7 @@ func GetDataFromNodes(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *r
 	return dataLeader
 }
 
-func GetDataFromNodesNoSync(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer, namespace string) []interface{} {
+func GetDataFromNodesNoSync(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer, namespace string) []any {
 	dataLeader := GetData(t, rxLeader, namespace)
 	dataFollower := GetData(t, rxFollower, namespace)
 	assert.Equal(t, dataLeader, dataFollower, "Data in tables does not equal\n%s\n%s", dataLeader, dataFollower)
@@ -192,7 +194,7 @@ func StartupServerFromBinary(t *testing.T, binary string, serverConfig *config.S
 
 func awaitServerStartup(t *testing.T, dsn string) (*reindexer.Reindexer, error) {
 	var err error
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		rx, err := reindexer.NewReindex(dsn)
 		if err == nil {
 			return rx, nil

@@ -1,4 +1,4 @@
-openapi: '3.0.1'
+openapi: '3.0.3'
 info:
   title: Reindexer REST API
   description: |
@@ -7,7 +7,7 @@ info:
     Reindexer is compact, fast and it does not have heavy dependencies.
   license:
     name: Apache 2.0
-    url: http://www.apache.org/licenses/LICENSE-2.0.html
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
   version: 5.12.1
 servers:
   - url: /api/v1
@@ -24,6 +24,10 @@ tags:
     description: Queries to reindexer (dsl/sql)
   - name: system
     description: System methods
+  - name: schema
+    description: Schema management
+  - name: transactions
+    description: Transactions management
 paths:
   /db:
     get:

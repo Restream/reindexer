@@ -18,11 +18,11 @@ elseif(LINUX_ISSUE MATCHES "altlinux")
   set(CPACK_GENERATOR "RPM")
   set(CPACK_PACKAGE_RELOCATABLE OFF)
   set(RPM_EXTRA_LIB_PREFIX "lib")
-elseif(LINUX_ISSUE MATCHES "Ubuntu" OR LINUX_ISSUE MATCHES "Debian" OR LINUX_ISSUE MATCHES "Mint")
+elseif(LINUX_ISSUE MATCHES "Ubuntu" OR LINUX_ISSUE MATCHES "Debian" OR LINUX_ISSUE MATCHES "Mint" OR LINUX_ISSUE MATCHES "Onyx3")
   set(CPACK_GENERATOR "DEB")
 endif()
 
-message("Target cpack package type was detected as '${RxPrepareCpackDeps}'")
+message("Target cpack package type was detected as '${CPACK_GENERATOR}'")
 
 SET(CPACK_PACKAGE_NAME "reindexer")
 SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "ReindexerDB server package")

@@ -1,4 +1,4 @@
-﻿#include "dataprocessor.h"
+#include "dataprocessor.h"
 #include <chrono>
 #include "core/ft/numtotext.h"
 #include "core/ft/typos.h"

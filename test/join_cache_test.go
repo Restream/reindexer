@@ -29,7 +29,7 @@ func RunInMultiThread(t *testing.T, fn func(*testing.T, *sync.WaitGroup), thread
 	wg.Wait()
 }
 
-func PrepareJoinQueryResult(t *testing.T, sort1 string, sort2 string) []interface{} {
+func PrepareJoinQueryResult(t *testing.T, sort1 string, sort2 string) []any {
 	qj1 := DB.Query(testJoinItemsCacheNs).Where("DEVICE", reindexer.EQ, "ottstb")
 	if sort1 != "" {
 		qj1.Sort(sort1, true)
@@ -56,7 +56,7 @@ func CheckTestCachedItemsJoinLeftQueries(t *testing.T, wg *sync.WaitGroup) {
 
 func CheckTestCachedItemsJoinInnerQueries(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
-	var result_without_cache []interface{}
+	var result_without_cache []any
 	for i := 0; i < 20; i++ {
 		qj1 := DB.Query(testJoinItemsCacheNs).Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
 		qj2 := DB.Query(testJoinItemsCacheNs).Where("DEVICE", reindexer.EQ, "iphone")
@@ -70,7 +70,7 @@ func CheckTestCachedItemsJoinInnerQueries(t *testing.T, wg *sync.WaitGroup) {
 
 		rjoin, _ := qjoin.MustExec(t).FetchAll()
 		if i == 0 {
-			result_without_cache = append([]interface{}(nil), rjoin...)
+			result_without_cache = append([]any(nil), rjoin...)
 		} else {
 			assert.Equal(t, rjoin, result_without_cache)
 		}
@@ -79,7 +79,7 @@ func CheckTestCachedItemsJoinInnerQueries(t *testing.T, wg *sync.WaitGroup) {
 
 func CheckTestCachedItemsJoinSortQueries(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
-	resultSort := [][]interface{}{PrepareJoinQueryResult(t, "device", "genre"),
+	resultSort := [][]any{PrepareJoinQueryResult(t, "device", "genre"),
 		PrepareJoinQueryResult(t, "location", "name"),
 		PrepareJoinQueryResult(t, "name", "name"),
 		PrepareJoinQueryResult(t, "amount", "rate"),

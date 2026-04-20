@@ -62,7 +62,7 @@ altlinux_rpms="gcc gcc-c++ make libsnappy-devel libleveldb-devel libgperftools-d
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
-    cmake_version=$(cmake --version  2>/dev/null | grep -oE '3(3.2[5-9]+\.[0-9]+)|(3\.[3-9][0-9]+\.[0-9]+)|(4\.[0-9]+\.[0-9]+)')
+    cmake_version=$(cmake --version  2>/dev/null | grep -oE '(3\.2[5-9]+\.[0-9]+)|(3\.[3-9][0-9]+\.[0-9]+)|(4\.[0-9]+\.[0-9]+)')
     if [ -n "$cmake_version" ]; then
         info_msg "Cmake with comaptable version $cmake_version found"
         return
@@ -74,7 +74,7 @@ install_cmake_linux () {
     info_msg "Installing 'cmake' package from github ....."
     case `uname -m` in
         x86_64)
-            curl -L https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-Linux-x86_64.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
+            curl -L https://github.com/Kitware/CMake/releases/download/v4.3.1/cmake-4.3.1-linux-x86_64.tar.gz  2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
             ;;
         *)
             warning_msg "Fallback to system 'cmake' package. Be sure, cmake version must be at least 3.25.x"
@@ -309,7 +309,7 @@ detect_installer() {
         . /etc/os-release
         # It is "ubuntu/debian" ?
         local OS=$(echo ${ID} | tr '[:upper:]' '[:lower:]')
-        if [ "$OS" = "ubuntu" -o "$OS" = "debian" -o "$OS" = "linuxmint" ]; then
+        if [ "$OS" = "ubuntu" -o "$OS" = "debian" -o "$OS" = "linuxmint" -o "$OS" = "osnova" ]; then
             OS_TYPE="debian" && return
         elif [ "$OS" = "almalinux" -a "$(echo ${ALMALINUX_MANTISBT_PROJECT} | tr '[:upper:]' '[:lower:]')" = "almalinux-8" ]; then
             OS_TYPE="almalinux8" && return

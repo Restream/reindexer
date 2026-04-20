@@ -55,7 +55,7 @@ func FillTestItemWide(ns string, typ reflect.Type, start int, count int) {
 	tx.MustCommit()
 }
 
-func MakeTestItemWide(typ reflect.Type, ID int) interface{} {
+func MakeTestItemWide(typ reflect.Type, ID int) any {
 	item := reflect.New(typ).Elem()
 	item.Field(0).SetInt(int64(ID))
 	for j := 1; j < typ.NumField(); j++ {

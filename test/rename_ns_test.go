@@ -26,7 +26,7 @@ const (
 	testExistNs    = "test_exist_namespace"
 )
 
-func GetAllDataFromNamespace(t *testing.T, namespace string) (item []interface{}, err error) {
+func GetAllDataFromNamespace(t *testing.T, namespace string) (item []any, err error) {
 	q := DB.Query(namespace).Sort("id", false)
 	it := q.Exec(t)
 	defer it.Close()

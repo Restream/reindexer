@@ -2,11 +2,10 @@ package cproto
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 	"net/url"
 	"runtime"
@@ -14,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
@@ -58,7 +59,6 @@ const (
 var emptyLogger bindings.NullLogger
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
 	bindings.RegisterBinding("cproto", new(NetCProto))
 	bindings.RegisterBinding("cprotos", new(NetCProto))
 	if runtime.GOOS != "windows" {
@@ -113,7 +113,7 @@ func (binding *NetCProto) nextDSN(ctx context.Context, strategy string, stat *bi
 	case reconnectStrategyNext:
 		binding.dsn.active = (binding.dsn.active + 1) % len(binding.dsn.urls)
 	case reconnectStrategyRandom:
-		binding.dsn.active = rand.Intn(len(binding.dsn.urls))
+		binding.dsn.active = rand.IntN(len(binding.dsn.urls))
 	case reconnectStrategySynchronized:
 		if err := binding.processStrategySynchronized(ctx, stat); err != nil {
 			return err
@@ -208,7 +208,7 @@ func (binding *NetCProto) processStrategyReadOnly(ctx context.Context, stat *bin
 
 	var newClusterDSN *url.URL
 	if len(followersDSN) > 0 {
-		newClusterDSN = followersDSN[rand.Intn(len(followersDSN))]
+		newClusterDSN = followersDSN[rand.IntN(len(followersDSN))]
 	} else if leaderDSN != nil {
 		newClusterDSN = leaderDSN
 	}
@@ -234,7 +234,7 @@ func (binding *NetCProto) processStrategySynchronized(ctx context.Context, stat 
 	if len(clusterDSNs) == 0 {
 		return errors.New("can't find cluster node for reconnect")
 	}
-	newClusterDSN := clusterDSNs[rand.Intn(len(clusterDSNs))]
+	newClusterDSN := clusterDSNs[rand.IntN(len(clusterDSNs))]
 
 	if err := binding.setClusterDSN(newClusterDSN); err != nil {
 		return err
@@ -272,7 +272,7 @@ func (binding *NetCProto) GetDSNs() []url.URL {
 	return binding.dsn.urls
 }
 
-func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) (err error) {
+func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options ...any) (err error) {
 	connPoolSize := defConnPoolSize
 	connPoolLBAlgorithm := defConnPoolLBAlgorithm
 	binding.appName = defAppName
@@ -379,7 +379,7 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoo
 	connParams := binding.createConnParams()
 
 	wg.Add(connPoolSize)
-	for i := 0; i < connPoolSize; i++ {
+	for i := range connPoolSize {
 		go func(binding *NetCProto, wg *sync.WaitGroup, i int) {
 			defer wg.Done()
 
@@ -842,7 +842,7 @@ func (binding *NetCProto) getAllConns() []connection {
 	return conns
 }
 
-func (binding *NetCProto) logMsg(level int, fmt string, msg ...interface{}) {
+func (binding *NetCProto) logMsg(level int, fmt string, msg ...any) {
 	binding.logMtx.RLock()
 	defer binding.logMtx.RUnlock()
 	if binding.logger != nil {
@@ -957,7 +957,7 @@ func (binding *NetCProto) reconnect(ctx context.Context) (conn connection, err e
 	return binding.pool.GetConnection(), err
 }
 
-func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...interface{}) (buf *NetBuffer, err error) {
+func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...any) (buf *NetBuffer, err error) {
 	var attempts int
 	switch op {
 	case opRd:
@@ -987,7 +987,7 @@ func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...
 	return
 }
 
-func (binding *NetCProto) rpcCallNoResults(ctx context.Context, op int, cmd int, args ...interface{}) error {
+func (binding *NetCProto) rpcCallNoResults(ctx context.Context, op int, cmd int, args ...any) error {
 	buf, err := binding.rpcCall(ctx, op, cmd, args...)
 	if buf != nil {
 		buf.Free()
@@ -999,10 +999,7 @@ func (binding *NetCProto) pinger() {
 	timeout := time.Second
 	ticker := time.NewTicker(timeout)
 	var ticksCount uint32
-	pingTimeoutSec := pingResponseTimeoutSec
-	if uint32(binding.timeouts.RequestTimeout/time.Second) > pingTimeoutSec {
-		pingTimeoutSec = uint32(binding.timeouts.RequestTimeout / time.Second)
-	}
+	pingTimeoutSec := max(uint32(binding.timeouts.RequestTimeout/time.Second), pingResponseTimeoutSec)
 	for now := range ticker.C {
 		ticksCount++
 		select {

@@ -29,7 +29,7 @@ type Data struct {
 }
 
 func serverUp(t *testing.T, cfg map[string]string, serverID int, ns []string) *reindexer.Reindexer {
-	opts := make([]interface{}, 0, 2)
+	opts := make([]any, 0, 2)
 	opts = append(opts, reindexer.WithCreateDBIfMissing())
 	srvCfg := &rxConfig.ServerConfig{
 		Net: rxConfig.NetConf{

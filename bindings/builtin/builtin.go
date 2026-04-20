@@ -6,17 +6,17 @@ package builtin
 import "C"
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
@@ -30,7 +30,7 @@ var bufFree = newBufFreeBatcher()
 
 // Logger interface for reindexer
 type Logger interface {
-	Printf(level int, fmt string, msg ...interface{})
+	Printf(level int, fmt string, msg ...any)
 }
 
 // Separate mutexes for logger object itself and for reindexer_enable_logger call:
@@ -104,8 +104,12 @@ func init() {
 }
 
 func str2c(str string) C.reindexer_string {
-	hdr := (*reflect.StringHeader)(unsafe.Pointer(&str))
-	return C.reindexer_string{p: unsafe.Pointer(hdr.Data), n: C.int(hdr.Len)}
+	var p unsafe.Pointer
+	p = unsafe.Pointer(unsafe.StringData(str))
+	return C.reindexer_string{
+		p: p,
+		n: C.int(len(str)),
+	}
 }
 
 func ctxErr(errCode int) error {
@@ -173,7 +177,7 @@ func bool2cint(v bool) C.int {
 	return 0
 }
 
-func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) error {
+func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...any) error {
 	if binding.rx != 0 {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}

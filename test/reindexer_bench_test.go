@@ -1,15 +1,17 @@
+//go:debug randseednop=0
 package reindexer
 
 import (
 	"bytes"
 	"encoding/gob"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	"github.com/restream/reindexer/v5/cjson"
@@ -73,25 +75,26 @@ func initKnnNs(indexType string, metric string) {
 		panic(fmt.Sprintf("Namespace: %s, err: %s", ns, err.Error()))
 	}
 	fvIndexOpts := reindexer.FloatVectorIndexOpts{
-		Metric: metric,
+		Metric:    metric,
 		Dimension: kBenchFloatVectorDimension,
 	}
-	if indexType == "hnsw" {
+	switch indexType {
+	case "hnsw":
 		fvIndexOpts.M = 16
 		fvIndexOpts.EfConstruction = 200
 		fvIndexOpts.MultithreadingMode = 1
 		fvIndexOpts.StartSize = kBenchKnnNsSize
-	} else if indexType == "ivf" {
+	case "ivf":
 		fvIndexOpts.CentroidsCount = kBenchKnnNsSize / 100
-	} else {
+	default:
 		panic(fmt.Sprintf("Cannot define fv index type: %s", ns))
 	}
-	fvIndexDef := reindexer.IndexDef {
-		Name: "vect",
+	fvIndexDef := reindexer.IndexDef{
+		Name:      "vect",
 		JSONPaths: []string{"Vect"},
 		IndexType: indexType,
 		FieldType: "float_vector",
-		Config: fvIndexOpts,
+		Config:    fvIndexOpts,
 	}
 	if err := DBD.UpdateIndex(ns, fvIndexDef); err != nil {
 		panic(fmt.Sprintf("Add index into namespace: %s, err: %s", ns, err.Error()))
@@ -119,10 +122,10 @@ func initKnn() {
 func init() {
 	rand.Seed(*benchmarkSeed)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		pkgs = append(pkgs, randInt32Arr(20, 10000, 10))
 	}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		priceIds = append(priceIds, randInt32Arr(10, 7000, 50))
 	}
 
@@ -131,7 +134,7 @@ func init() {
 	buf := &bytes.Buffer{}
 	gobenc := gob.NewEncoder(buf)
 
-	for i := 0; i < 100000; i++ {
+	for i := range 100000 {
 		testItemsSeed = append(testItemsSeed, newTestItem(i, 20).(*TestItem))
 
 		json, _ := json.Marshal(newTestItem(i+200000, 20))
@@ -142,7 +145,7 @@ func init() {
 		testItemsCJsonSeed = append(testItemsCJsonSeed, ser.Bytes())
 
 		gobenc.Encode(newTestItem(i, 20))
-		gobData := make([]byte, len(buf.Bytes()), len(buf.Bytes()))
+		gobData := make([]byte, len(buf.Bytes()))
 		copy(gobData, buf.Bytes())
 
 		testItemsGobSeed = append(testItemsGobSeed, gobData)
@@ -170,7 +173,7 @@ var cjsonState = cjson.NewState()
 
 var prepared = false
 
-func (item *TestItemBench) Join(field string, subitems []interface{}, context interface{}) {
+func (item *TestItemBench) Join(field string, subitems []any, context any) {
 	testJoinCtx := context.(*TestJoinCtx)
 	if testJoinCtx.allPrices == nil {
 		testJoinCtx.allPrices = make([]*TestJoinItem, 0, 50)
@@ -211,7 +214,7 @@ func FillTestItemsBench(start int, count int, pkgsCount int) {
 
 	wg := sync.WaitGroup{}
 	seeder := func(start int, count int) {
-		for i := 0; i < count; i++ {
+		for i := range count {
 			item := newTestBenchItem(mkID(start+i), pkgsCount)
 			if err := DBD.Upsert(testBenchItemsNs, item); err != nil {
 				panic(err)
@@ -425,7 +428,7 @@ func BenchmarkWarmup(b *testing.B) {
 
 func Benchmark4CondQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereString("age", reindexer.EQ, "2").
@@ -437,7 +440,7 @@ func Benchmark4CondQuery(b *testing.B) {
 
 func Benchmark4CondQueryTotal(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereString("age", reindexer.EQ, "2").
@@ -450,7 +453,7 @@ func Benchmark4CondQueryTotal(b *testing.B) {
 
 func Benchmark4CondRangeQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		startTime := rand.Int() % 50000
 		endTime := startTime + 10000
 		q := DBD.Query(testBenchItemsNs).Limit(20).
@@ -464,7 +467,7 @@ func Benchmark4CondRangeQuery(b *testing.B) {
 
 func Benchmark4CondRangeQueryTotal(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		startTime := rand.Int() % 50000
 		endTime := startTime + 10000
 		q := DBD.Query(testBenchItemsNs).Limit(20).
@@ -479,7 +482,7 @@ func Benchmark4CondRangeQueryTotal(b *testing.B) {
 
 func Benchmark3CondQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
@@ -490,7 +493,7 @@ func Benchmark3CondQuery(b *testing.B) {
 
 func Benchmark3CondQueryTotal(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
@@ -501,7 +504,7 @@ func Benchmark3CondQueryTotal(b *testing.B) {
 
 func Benchmark3CondQueryKillIdsCache(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
@@ -513,7 +516,7 @@ func Benchmark3CondQueryKillIdsCache(b *testing.B) {
 
 func Benchmark3CondQueryRestoreIdsCache(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
@@ -523,7 +526,7 @@ func Benchmark3CondQueryRestoreIdsCache(b *testing.B) {
 }
 
 func Benchmark2CondQuery(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016)
@@ -532,7 +535,7 @@ func Benchmark2CondQuery(b *testing.B) {
 }
 
 func Benchmark2CondQueryTotal(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016)
@@ -541,7 +544,7 @@ func Benchmark2CondQueryTotal(b *testing.B) {
 }
 
 func BenchmarkSubQueryEq(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		prices := priceIds[rand.Int()%len(priceIds)]
 		q := DBD.Query(testBenchItemsNs).Where("price_id", reindexer.EQ, DBD.Query("test_join_items").Select("id").WhereInt32("id", reindexer.EQ, prices[rand.Int()%len(prices)])).Limit(20)
 		q.MustExec().FetchAll()
@@ -549,7 +552,7 @@ func BenchmarkSubQueryEq(b *testing.B) {
 }
 
 func BenchmarkSubQuerySet(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		prices := priceIds[rand.Int()%len(priceIds)]
 		rangeMin := prices[rand.Int()%len(prices)]
 		q := DBD.Query(testBenchItemsNs).Where("price_id", reindexer.SET, DBD.Query("test_join_items").Select("id").WhereInt32("id", reindexer.RANGE, rangeMin, rangeMin+500)).Limit(20)
@@ -558,7 +561,7 @@ func BenchmarkSubQuerySet(b *testing.B) {
 }
 
 func BenchmarkSubQueryAggregate(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		prices := priceIds[rand.Int()%len(priceIds)]
 		q := DBD.Query(testBenchItemsNs).Where("price_id", reindexer.LT, DBD.Query("test_join_items").AggregateAvg("id").WhereInt32("id", reindexer.SET, prices...).Limit(500)).Limit(20)
 		q.MustExec().FetchAll()
@@ -567,7 +570,7 @@ func BenchmarkSubQueryAggregate(b *testing.B) {
 
 func Benchmark2CondQueryLeftJoin(b *testing.B) {
 	ctx := &TestJoinCtx{}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
@@ -581,7 +584,7 @@ func Benchmark2CondQueryLeftJoin(b *testing.B) {
 
 func Benchmark2CondQueryLeftJoinTotal(b *testing.B) {
 	ctx := &TestJoinCtx{}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
@@ -595,7 +598,7 @@ func Benchmark2CondQueryLeftJoinTotal(b *testing.B) {
 
 func Benchmark2CondQueryLeftJoinCachedTotal(b *testing.B) {
 	ctx := &TestJoinCtx{}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).CachedTotal().
 			WhereInt("genre", reindexer.EQ, 5).
@@ -609,7 +612,7 @@ func Benchmark2CondQueryLeftJoinCachedTotal(b *testing.B) {
 
 func Benchmark2CondQueryInnerJoin(b *testing.B) {
 	ctx := &TestJoinCtx{}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 
 		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
@@ -626,7 +629,7 @@ func Benchmark2CondQueryInnerJoinCachedRandom(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
 	ctx := &TestJoinCtx{}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		id_start := 7000 + rand.Int()%200
 		id_end := id_start + rand.Int()%(7200-id_start)
 		q2 := DBD.Query("test_join_items").WhereInt("id", reindexer.RANGE, id_start, id_end)
@@ -642,7 +645,7 @@ func Benchmark2CondQueryInnerJoinCachedRandom(b *testing.B) {
 
 func Benchmark2CondQueryInnerJoinCached(b *testing.B) {
 	ctx := &TestJoinCtx{}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 
 		q2 := DBD.Query("test_join_items").WhereInt("id", reindexer.RANGE, 7000, 7300)
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
@@ -657,7 +660,7 @@ func Benchmark2CondQueryInnerJoinCached(b *testing.B) {
 
 func Benchmark2CondQueryInnerJoinTotal(b *testing.B) {
 	ctx := &TestJoinCtx{}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 
 		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).ReqTotal().
@@ -672,7 +675,7 @@ func Benchmark2CondQueryInnerJoinTotal(b *testing.B) {
 
 func Benchmark2CondQueryInnerJoinCachedTotal(b *testing.B) {
 	ctx := &TestJoinCtx{}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).CachedTotal().
 			WhereInt("genre", reindexer.EQ, 5).
@@ -685,7 +688,7 @@ func Benchmark2CondQueryInnerJoinCachedTotal(b *testing.B) {
 }
 
 // func Benchmark2CondQueryPseudoJoin(b *testing.B) {
-// 	for i := 0; i < b.N; i++ {
+// 	for b.Loop() {
 
 // 		res, _ := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
 // 			WhereInt("genre", EQ, 5).
@@ -704,28 +707,28 @@ func Benchmark2CondQueryInnerJoinCachedTotal(b *testing.B) {
 // }
 
 func Benchmark1CondQuery(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).WhereInt("year", reindexer.GT, 2020)
 		q.MustExec().FetchAll()
 	}
 }
 
 func BenchmarkUuid(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).WhereUuid("uuid", reindexer.EQ, randUuid())
 		q.MustExec().FetchAll()
 	}
 }
 
 func BenchmarkUuidStr(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).WhereString("uuid_str", reindexer.EQ, randUuid())
 		q.MustExec().FetchAll()
 	}
 }
 
 func Benchmark1CondQueryUnsafe(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).WhereInt("year", reindexer.GT, 2020)
 		it := q.MustExec().AllowUnsafe(true)
 		for it.Next() {
@@ -736,7 +739,7 @@ func Benchmark1CondQueryUnsafe(b *testing.B) {
 }
 
 func Benchmark1CondQueryTotal(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).WhereInt("year", reindexer.GT, 2020).ReqTotal()
 		q.MustExec().FetchAll()
 	}
@@ -744,7 +747,7 @@ func Benchmark1CondQueryTotal(b *testing.B) {
 
 func BenchmarkSimpleByIdQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsSimpleNs).WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.Exec().FetchOne()
 	}
@@ -752,7 +755,7 @@ func BenchmarkSimpleByIdQuery(b *testing.B) {
 
 func BenchmarkSimpleByIdUnsafeQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsSimpleNs).WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		it := q.Exec().AllowUnsafe(true)
 		it.FetchOne()
@@ -761,7 +764,7 @@ func BenchmarkSimpleByIdUnsafeQuery(b *testing.B) {
 
 func BenchmarkSimpleByIdJsonQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsSimpleNs).WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.GetJson()
 	}
@@ -769,7 +772,7 @@ func BenchmarkSimpleByIdJsonQuery(b *testing.B) {
 
 func BenchmarkByIdQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.Exec().FetchOne()
 	}
@@ -777,7 +780,7 @@ func BenchmarkByIdQuery(b *testing.B) {
 
 func BenchmarkByIdComplexQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query("test_items_encdec").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.Exec().FetchOne()
 	}
@@ -785,7 +788,7 @@ func BenchmarkByIdComplexQuery(b *testing.B) {
 
 func BenchmarkByIdUnsafeQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.Exec().AllowUnsafe(true).FetchOne()
 	}
@@ -793,7 +796,7 @@ func BenchmarkByIdUnsafeQuery(b *testing.B) {
 
 func BenchmarkByIdJsonQuery(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.GetJson()
 	}
@@ -801,7 +804,7 @@ func BenchmarkByIdJsonQuery(b *testing.B) {
 
 func BenchmarkFullScan(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q := DBD.Query(testBenchItemsNs).Limit(20).ReqTotal().
 			WhereInt("end_time", reindexer.GT, rand.Int()%10000)
 		q.MustExec().FetchAll()
@@ -824,19 +827,20 @@ func BenchmarkSelectByIdxAndUpdate(b *testing.B) {
 }
 
 func generateBenchKnnParams(indexType string) reindexer.KnnSearchParam {
-	if indexType == "hnsw" {
+	switch indexType {
+	case "hnsw":
 		hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(kBenchKnnK, reindexer.BaseKnnSearchParam{}.SetK(kBenchKnnK))
 		if err != nil {
 			panic(fmt.Sprintf("Cannot generate knn search params for index %s", indexType))
 		}
 		return hnswSearchParams
-	} else if indexType == "ivf" {
+	case "ivf":
 		ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, reindexer.BaseKnnSearchParam{}.SetK(kBenchKnnK))
 		if err != nil {
 			panic(fmt.Sprintf("Cannot generate knn search params for index %s", indexType))
 		}
 		return ivfSearchParams
-	} else {
+	default:
 		panic(fmt.Sprintf("Unknown fv index type: %s", indexType))
 	}
 }
@@ -844,7 +848,7 @@ func generateBenchKnnParams(indexType string) reindexer.KnnSearchParam {
 func benchmarkKnn(b *testing.B, indexType string, metric string) {
 	ns := knnBenchNsName(indexType, metric)
 	knnParams := generateBenchKnnParams(indexType)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		DBD.Query(ns).
 			WhereKnn("vect", randVect(kBenchFloatVectorDimension), knnParams).
 			MustExec().
@@ -879,7 +883,7 @@ func BenchmarkKnnIvfL2(b *testing.B) {
 func benchmarkKnnWithVectors(b *testing.B, indexType string, metric string) {
 	ns := knnBenchNsName(indexType, metric)
 	knnParams := generateBenchKnnParams(indexType)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		DBD.Query(ns).
 			SelectAllFields().
 			WhereKnn("vect", randVect(kBenchFloatVectorDimension), knnParams).
@@ -915,7 +919,7 @@ func BenchmarkKnnIvfL2WithVectors(b *testing.B) {
 func benchmarkFloatVectorInsert(b *testing.B, indexType string, metric string) {
 	ns := knnBenchNsName(indexType, metric)
 	for i := 0; i < b.N; i++ {
-		_, err := DBD.Insert(ns, newKnnItem(i + kBenchKnnNsSize))
+		_, err := DBD.Insert(ns, newKnnItem(i+kBenchKnnNsSize))
 		if err != nil {
 			panic(err)
 		}

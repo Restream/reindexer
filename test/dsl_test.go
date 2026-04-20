@@ -1,8 +1,8 @@
 package reindexer
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"strconv"
 	"testing"
 
@@ -127,7 +127,7 @@ func fillTestDSLLikeConditionItem(t *testing.T, ns string, start int, count int)
 	tx.MustCommit()
 }
 
-func getTesDSLFtItemsDescr(items []interface{}) []string {
+func getTesDSLFtItemsDescr(items []any) []string {
 	resultDescr := make([]string, len(items))
 	for i, v := range items {
 		item := v.(*TestDSLFtItem)
@@ -136,7 +136,7 @@ func getTesDSLFtItemsDescr(items []interface{}) []string {
 	return resultDescr
 }
 
-func getTestDSLItemsIDs(items []interface{}) []int {
+func getTestDSLItemsIDs(items []any) []int {
 	resultIDs := make([]int, len(items))
 	for i, v := range items {
 		item := v.(*TestDSLItem)
@@ -145,7 +145,7 @@ func getTestDSLItemsIDs(items []interface{}) []int {
 	return resultIDs
 }
 
-func getTestDSLJoinItemsIDs(items []interface{}) []int {
+func getTestDSLJoinItemsIDs(items []any) []int {
 	resultIDs := make([]int, len(items))
 	for i, v := range items {
 		item := v.(*TestDSLJoinItem)
@@ -154,7 +154,7 @@ func getTestDSLJoinItemsIDs(items []interface{}) []int {
 	return resultIDs
 }
 
-func getTestDSLEqualPositionItemsIDs(items []interface{}) []int {
+func getTestDSLEqualPositionItemsIDs(items []any) []int {
 	resultIDs := make([]int, len(items))
 	for i, v := range items {
 		item := v.(*TestDSLEqualPositionItem)
@@ -163,7 +163,7 @@ func getTestDSLEqualPositionItemsIDs(items []interface{}) []int {
 	return resultIDs
 }
 
-func getTestDSLLikeCondItemsIDs(items []interface{}) []int {
+func getTestDSLLikeCondItemsIDs(items []any) []int {
 	resultIDs := make([]int, len(items))
 	for i, v := range items {
 		item := v.(*TestDSLLikeConditionItem)

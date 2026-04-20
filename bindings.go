@@ -24,7 +24,7 @@ const (
 	modeDelete = bindings.ModeDelete
 )
 
-func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *reindexerNamespace, item interface{}, mode int, precepts ...string) (count int, err error) {
+func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *reindexerNamespace, item any, mode int, precepts ...string) (count int, err error) {
 
 	if ns == nil {
 		ns, err = db.getNS(namespace)
@@ -37,7 +37,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 		return 0, fmt.Errorf("rq: nil value in item modify call for '%s' namespace", namespace)
 	}
 
-	for tryCount := 0; tryCount < 2; tryCount++ {
+	for range 2 {
 		ser := cjson.NewPoolSerializer()
 		defer ser.Close()
 
@@ -73,7 +73,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 
 		resultp := rdSer.readRawtItemParams(rawQueryParams.shardId)
 
-		if len(precepts) > 0 && (resultp.cptr != 0 || resultp.data != nil) && reflect.TypeOf(item).Kind() == reflect.Ptr {
+		if len(precepts) > 0 && (resultp.cptr != 0 || resultp.data != nil) && reflect.TypeOf(item).Kind() == reflect.Pointer {
 			nsArrEntry := nsArrayEntry{ns, ns.cjsonState.Copy()}
 			if _, err := unpackItem(db.binding, &nsArrEntry, &rawQueryParams, &resultp, false, true, item); err != nil {
 				return 0, err
@@ -85,14 +85,14 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 	return 0, err
 }
 
-func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.Serializer) (format int, stateToken int, err error) {
+func packItem(ns *reindexerNamespace, item any, json []byte, ser *cjson.Serializer) (format int, stateToken int, err error) {
 	if item != nil {
 		json, _ = item.([]byte)
 	}
 
 	if json == nil {
 		t := reflect.TypeOf(item)
-		if t.Kind() == reflect.Ptr {
+		if t.Kind() == reflect.Pointer {
 			t = t.Elem()
 		}
 		if ns.rtype.Name() != t.Name() || ns.rtype.PkgPath() != t.PkgPath() {
@@ -125,7 +125,7 @@ func (db *reindexerImpl) getNS(namespace string) (*reindexerNamespace, error) {
 	return ns, nil
 }
 
-func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, rqparams *rawResultQueryParams, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item interface{}) (interface{}, error) {
+func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, rqparams *rawResultQueryParams, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item any) (any, error) {
 	useCache := item == nil && (ns.deepCopyIface || allowUnsafe) && !nonCacheableData
 	needCopy := ns.deepCopyIface && !allowUnsafe
 	var err error
@@ -535,64 +535,64 @@ func (db *reindexerImpl) resetCaches() {
 	db.resetCachesCtx(context.Background())
 }
 
-func WithMaxUpdatesSize(maxUpdatesSizeBytes uint) interface{} {
+func WithMaxUpdatesSize(maxUpdatesSizeBytes uint) any {
 	return bindings.OptionBuiltinMaxUpdatesSize{MaxUpdatesSizeBytes: maxUpdatesSizeBytes}
 }
 
-func WithCgoLimit(cgoLimit int) interface{} {
+func WithCgoLimit(cgoLimit int) any {
 	return bindings.OptionCgoLimit{CgoLimit: cgoLimit}
 }
 
-func WithConnPoolSize(connPoolSize int) interface{} {
+func WithConnPoolSize(connPoolSize int) any {
 	return bindings.OptionConnPoolSize{ConnPoolSize: connPoolSize}
 }
 
-func WithConnPoolLoadBalancing(algorithm bindings.LoadBalancingAlgorithm) interface{} {
+func WithConnPoolLoadBalancing(algorithm bindings.LoadBalancingAlgorithm) any {
 	return bindings.OptionConnPoolLoadBalancing{Algorithm: algorithm}
 }
 
-func WithRetryAttempts(read int, write int) interface{} {
+func WithRetryAttempts(read int, write int) any {
 	return bindings.OptionRetryAttempts{Read: read, Write: write}
 }
 
-func WithServerConfig(startupTimeout time.Duration, serverConfig *config.ServerConfig) interface{} {
+func WithServerConfig(startupTimeout time.Duration, serverConfig *config.ServerConfig) any {
 	return bindings.OptionBuiltinWithServer{ServerConfig: serverConfig, StartupTimeout: startupTimeout}
 }
 
-func WithTimeouts(loginTimeout time.Duration, requestTimeout time.Duration) interface{} {
+func WithTimeouts(loginTimeout time.Duration, requestTimeout time.Duration) any {
 	return bindings.OptionTimeouts{LoginTimeout: loginTimeout, RequestTimeout: requestTimeout}
 }
 
-func WithCreateDBIfMissing() interface{} {
+func WithCreateDBIfMissing() any {
 	return bindings.OptionConnect{CreateDBIfMissing: true}
 }
 
-func WithNetCompression() interface{} {
+func WithNetCompression() any {
 	return bindings.OptionCompression{EnableCompression: true}
 }
 
-func WithDedicatedServerThreads() interface{} {
+func WithDedicatedServerThreads() any {
 	return bindings.OptionDedicatedThreads{DedicatedThreads: true}
 }
 
-func WithAppName(appName string) interface{} {
+func WithAppName(appName string) any {
 	return bindings.OptionAppName{AppName: appName}
 }
 
-func WithPrometheusMetrics() interface{} {
+func WithPrometheusMetrics() any {
 	return bindings.OptionPrometheusMetrics{EnablePrometheusMetrics: true}
 }
 
-func WithOpenTelemetry() interface{} {
+func WithOpenTelemetry() any {
 	return bindings.OptionOpenTelemetry{EnableTracing: true}
 }
 
-func WithStrictJoinHandlers() interface{} {
+func WithStrictJoinHandlers() any {
 	return bindings.OptionStrictJoinHandlers{EnableStrictJoinHandlers: true}
 }
 
 // Enables connection to Reindexer using TLS. If tls.Config is nil TLS is disabled
-func WithTLSConfig(config *tls.Config) interface{} {
+func WithTLSConfig(config *tls.Config) any {
 	return bindings.OptionTLS{Config: config}
 }
 
@@ -600,6 +600,6 @@ func WithTLSConfig(config *tls.Config) interface{} {
 // Strategy used for reconnect to server on connection error
 // AllowUnknownNodes allows to add dsn from cluster node, that was not set in client dsn list
 // Warning: you should not mix async and sync nodes' DSNs in initial DSNs' list, unless you really know what you are doing
-func WithReconnectionStrategy(strategy ReconnectStrategy, allowUnknownNodes bool) interface{} {
+func WithReconnectionStrategy(strategy ReconnectStrategy, allowUnknownNodes bool) any {
 	return bindings.OptionReconnectionStrategy{Strategy: string(strategy), AllowUnknownNodes: allowUnknownNodes}
 }

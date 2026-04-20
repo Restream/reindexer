@@ -1,4 +1,4 @@
-﻿#include "fastindextext.h"
+#include "fastindextext.h"
 #include <memory>
 #include "core/ft/filters/compositewordssplitter.h"
 #include "core/ft/filters/kblayout.h"

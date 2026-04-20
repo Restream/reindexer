@@ -2,9 +2,9 @@ package dsl
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/goccy/go-json"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -81,9 +81,9 @@ type EqualPosition struct {
 type sort Sort
 
 type Sort struct {
-	Field  string        `json:"field"`
-	Desc   bool          `json:"desc"`
-	Values []interface{} `json:"values,omitempty"`
+	Field  string `json:"field"`
+	Desc   bool   `json:"desc"`
+	Values []any  `json:"values,omitempty"`
 }
 
 type Filter struct {
@@ -92,7 +92,7 @@ type Filter struct {
 	Joined         *JoinQuery      `json:"Join_Query,omitempty"`
 	SubQ           *SubQuery       `json:"Subquery,omitempty"`
 	Cond           string          `json:"Cond,omitempty"`
-	Value          interface{}     `json:"Value,omitempty"`
+	Value          any             `json:"Value,omitempty"`
 	EqualPositions []EqualPosition `json:"equal_positions,omitempty"`
 	Filters        []Filter        `json:"Filters,omitempty"`
 }
@@ -293,7 +293,7 @@ func (f *Filter) UnmarshalJSON(data []byte) error {
 	return f.fillFilter(&flt)
 }
 
-func (f *Filter) parseValuesArray(rawValues []interface{}) (interface{}, error) {
+func (f *Filter) parseValuesArray(rawValues []any) (any, error) {
 	switch rawValues[0].(type) {
 	case bool:
 		values := make([]bool, len(rawValues))
@@ -362,7 +362,7 @@ func (f *Filter) parseValue(data string) error {
 			break
 		}
 		if strings.HasPrefix(data, `[`) && strings.HasSuffix(data, `]`) {
-			var rawValues []interface{}
+			var rawValues []any
 			err := json.Unmarshal([]byte(data), &rawValues)
 			if err != nil {
 				return err
@@ -410,7 +410,7 @@ func (f *Filter) parseValue(data string) error {
 			return fmt.Errorf("filter expects array or null for '%s' condition", f.Cond)
 		}
 
-		var rawValues []interface{}
+		var rawValues []any
 		err := json.Unmarshal([]byte(data), &rawValues)
 		if err != nil {
 			return err

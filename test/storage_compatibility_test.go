@@ -48,7 +48,7 @@ func TestStorageCompatibility(t *testing.T) {
 	t.Run("backward compatibility", func(t *testing.T) {
 		cfgFollower.Storage.Path = baseStoragePath + "backward/follower"
 		cfgLeader.Storage.Path = baseStoragePath + "backward/leader"
-		fillDataOnCurrentServer := func() []interface{} {
+		fillDataOnCurrentServer := func() []any {
 			rxFollower := helpers.MakeFollower(t, cfgFollower, followerServerId)
 			require.NoError(t, rxFollower.Status().Err)
 			defer rxFollower.Close()
@@ -65,7 +65,7 @@ func TestStorageCompatibility(t *testing.T) {
 			return helpers.GetDataFromNodes(t, rxLeader, rxFollower, ns)
 		}
 
-		readDataFromLegacyServer := func() []interface{} {
+		readDataFromLegacyServer := func() []any {
 			rxLeader, terminateLeader := helpers.StartupServerFromBinary(t, *legacyServerBinary, cfgLeader, leaderCproto)
 			defer terminateLeader()
 			rxFollower, terminateFollower := helpers.StartupServerFromBinary(t, *legacyServerBinary, cfgFollower, followerCproto)
@@ -87,7 +87,7 @@ func TestStorageCompatibility(t *testing.T) {
 	t.Run("forward compatibility", func(t *testing.T) {
 		cfgFollower.Storage.Path = baseStoragePath + "forward/follower"
 		cfgLeader.Storage.Path = baseStoragePath + "forward/leader"
-		fillDataOnLegacyServer := func() []interface{} {
+		fillDataOnLegacyServer := func() []any {
 			rxFollower, terminateFollower := helpers.MakeLegacyFollower(t, *legacyServerBinary, followerCproto, cfgFollower, followerServerId)
 			defer terminateFollower()
 			rxLeader, terminateLeader := helpers.MakeLegacyLeader(t, *legacyServerBinary, leaderCproto, cfgLeader, leaderServerId, followerCproto)
@@ -102,7 +102,7 @@ func TestStorageCompatibility(t *testing.T) {
 			return helpers.GetDataFromNodes(t, rxLeader, rxFollower, ns)
 		}
 
-		readDataFromCurrentServer := func() []interface{} {
+		readDataFromCurrentServer := func() []any {
 			rxFollower, err := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgFollower))
 			require.NoError(t, err)
 			defer rxFollower.Close()

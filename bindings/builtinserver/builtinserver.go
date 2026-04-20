@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"reflect"
 	"sync"
 	"time"
 	"unsafe"
@@ -33,8 +32,12 @@ func err2go(ret C.reindexer_error) error {
 }
 
 func str2c(str string) C.reindexer_string {
-	hdr := (*reflect.StringHeader)(unsafe.Pointer(&str))
-	return C.reindexer_string{p: unsafe.Pointer(hdr.Data), n: C.int(hdr.Len)}
+	var p unsafe.Pointer
+	p = unsafe.Pointer(unsafe.StringData(str))
+	return C.reindexer_string{
+		p: p,
+		n: C.int(len(str)),
+	}
 }
 
 func (server *BuiltinServer) checkStorageReady() bool {
@@ -70,7 +73,7 @@ func (server *BuiltinServer) stopServer(timeout time.Duration) error {
 	}
 }
 
-func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) error {
+func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, options ...any) error {
 	if server.builtin != nil {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}

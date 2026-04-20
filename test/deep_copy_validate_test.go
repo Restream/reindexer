@@ -7,7 +7,7 @@ import (
 )
 
 type DeepCopy interface {
-	DeepCopy() interface{}
+	DeepCopy() any
 }
 
 type PurchaseOption struct {
@@ -47,7 +47,7 @@ type NestedDeepCopyType struct {
 
 const testDeepCopyNs = "test_deep_copy_type_equality"
 
-func (po *PurchaseOption) DeepCopy() interface{} {
+func (po *PurchaseOption) DeepCopy() any {
 	return &PurchaseOption{
 		CurID:          po.CurID,
 		BonusPriceID:   po.BonusPriceID,
@@ -75,11 +75,11 @@ func gencopyPoFieldCopy(in *PurchaseOption) *PurchaseOption {
 	return in.DeepCopy().(*PurchaseOption)
 }
 
-func (bt *BrokenDeepCopyType) DeepCopy() interface{} {
+func (bt *BrokenDeepCopyType) DeepCopy() any {
 	return &PurchaseOption{}
 }
 
-func (st *SimpleDeepCopyType) DeepCopy() interface{} {
+func (st *SimpleDeepCopyType) DeepCopy() any {
 	return &SimpleDeepCopyType{
 		ID:    st.ID,
 		Name:  st.Name,
@@ -87,7 +87,7 @@ func (st *SimpleDeepCopyType) DeepCopy() interface{} {
 	}
 }
 
-func (n *NestedDeepCopyType) DeepCopy() interface{} {
+func (n *NestedDeepCopyType) DeepCopy() any {
 	return &NestedDeepCopyType{
 		po:                 gencopyPoFieldCopy(n.po),
 		SimpleDeepCopyType: n.SimpleDeepCopyType,

@@ -18,7 +18,7 @@ const (
 type IFunction interface {
 	FunctionType() int
 	Fields() []string
-	Args() []interface{}
+	Args() []any
 }
 
 type FlatArrayLen struct {
@@ -37,8 +37,8 @@ func (f FlatArrayLen) Fields() []string {
 	return []string{f.Field}
 }
 
-func (f FlatArrayLen) Args() []interface{} {
-	return []interface{}{}
+func (f FlatArrayLen) Args() []any {
+	return []any{}
 }
 
 func (f Now) FunctionType() int {
@@ -49,8 +49,8 @@ func (f Now) Fields() []string {
 	return []string{}
 }
 
-func (f Now) Args() []interface{} {
-	return []interface{}{f.TimeUnit}
+func (f Now) Args() []any {
+	return []any{f.TimeUnit}
 }
 
 func SerializeFunction(fn IFunction, ser *cjson.Serializer) {

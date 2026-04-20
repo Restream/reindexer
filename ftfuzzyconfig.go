@@ -41,7 +41,7 @@ type FtFuzzyConfig struct {
 	EnableKbLayout bool `json:"enable_kb_layout"`
 	// List of objects of stop words. Words from this list will be ignored when building indexes
 	// but can be included in search results in queries such as 'word*', 'word~' etc. if for the stop-word attribute is_morpheme is true
-	StopWords []interface{} `json:"stop_words"`
+	StopWords []any `json:"stop_words"`
 	// Log level of full text search engine
 	LogLevel int `json:"log_level"`
 	// Extra symbols, which will be threated as parts of word to addition to letters and digits

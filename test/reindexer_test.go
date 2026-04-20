@@ -22,7 +22,7 @@ type arrayFlags []string
 var DB *ReindexerWrapper
 var DBD *reindexer.Reindexer
 
-var tnamespaces map[string]interface{} = make(map[string]interface{}, 100)
+var tnamespaces map[string]any = make(map[string]any, 100)
 
 var testLogger *TestLogger
 
@@ -49,7 +49,7 @@ func (i *arrayFlags) Set(value string) error {
 	return nil
 }
 
-func (TestLogger) Printf(level int, format string, msg ...interface{}) {
+func (TestLogger) Printf(level int, format string, msg ...any) {
 	if level <= reindexer.TRACE {
 		log.Printf(format, msg...)
 	}
@@ -89,13 +89,14 @@ func TestMain(m *testing.M) {
 		testLogger = &TestLogger{}
 	}
 
-	opts := []interface{}{}
-	if udsn.Scheme == "builtin" {
+	opts := []any{}
+	switch udsn.Scheme {
+	case "builtin":
 		os.RemoveAll(udsn.Path)
-	} else if udsn.Scheme == "cproto" || udsn.Scheme == "cprotos" {
-		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
-	} else if udsn.Scheme == "ucproto" {
-		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithAppName("RxTestInstance")}
+	case "cproto", "cprotos":
+		opts = []any{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
+	case "ucproto":
+		opts = []any{reindexer.WithCreateDBIfMissing(), reindexer.WithAppName("RxTestInstance")}
 	}
 
 	DB = NewReindexWrapper(*dsn, cluster, 0, opts...)

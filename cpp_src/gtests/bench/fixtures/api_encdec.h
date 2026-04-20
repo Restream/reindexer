@@ -19,7 +19,7 @@ public:
 
 private:
 	template <typename Fn, typename Cl>
-	Benchmark* Register(const std::string& name, Fn fn, Cl* cl) {
+	benchmark::Benchmark* Register(const std::string& name, Fn fn, Cl* cl) {
 		std::string tn(benchName_);
 		tn.append("/").append(name);
 		return benchmark::RegisterBenchmark(tn.c_str(), std::bind(fn, cl, std::placeholders::_1));

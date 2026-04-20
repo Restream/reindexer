@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"unsafe"
 
+	"github.com/golang/snappy"
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
-	"github.com/golang/snappy"
 )
 
 type rpcEncoder struct {
@@ -152,7 +152,7 @@ func (r *rpcDecoder) intArg() int {
 	return int(r.ser.GetVarInt())
 }
 
-func (r *rpcDecoder) intfArg() interface{} {
+func (r *rpcDecoder) intfArg() any {
 	t := r.ser.GetVarUInt()
 	switch int(t) {
 	case bindings.ValueInt:

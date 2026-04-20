@@ -1,8 +1,8 @@
 package reindexer
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"math/rand"
 	"net/url"
 	"os"
@@ -111,7 +111,7 @@ func getLastLsnCounter(t *testing.T, ns string) int64 {
 	return stat.Replication.LastLSN.Counter
 }
 
-func newTestIndexesCompatibilityRegularItem(id int) interface{} {
+func newTestIndexesCompatibilityRegularItem(id int) any {
 	return &TestIndexesCompatibilityRegularItem{
 		ID:       1000000 + id,
 		StrField: randString(),
@@ -119,7 +119,7 @@ func newTestIndexesCompatibilityRegularItem(id int) interface{} {
 	}
 }
 
-func newTestIndexesCompatibilityDenseItem(id int) interface{} {
+func newTestIndexesCompatibilityDenseItem(id int) any {
 	return &TestIndexesCompatibilityDenseItem{
 		ID:       1000000 + id,
 		StrField: randString(),
@@ -283,7 +283,7 @@ func TestDenseIndexesCompatibility(t *testing.T) {
 		return ret
 	}
 
-	testImpl := func(t *testing.T, ns string, oldNewItem func(id int) interface{}, newNewItem func(id int) interface{}, newItemType interface{}) {
+	testImpl := func(t *testing.T, ns string, oldNewItem func(id int) any, newNewItem func(id int) any, newItemType any) {
 		const inserts = 100
 		for i := 0; i < inserts; i++ {
 			upd, err := DB.Insert(ns, oldNewItem(i))

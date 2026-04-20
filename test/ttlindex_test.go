@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestItemWithTtl struct {
@@ -38,7 +39,7 @@ func init() {
 
 func TestBasicCheckItemsTtlExpired(t *testing.T) {
 	tx := newTestTx(DB, testItemsWithTTLNs)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		new_item := TestItemWithTtl{
 			ID:   i,
 			Date: time.Now().Unix(),
@@ -46,19 +47,20 @@ func TestBasicCheckItemsTtlExpired(t *testing.T) {
 		}
 		assert.NoError(t, tx.Upsert(new_item))
 	}
-	time.Sleep(3)
+
+	_, err := tx.Commit()
+	require.NoError(t, err)
+	time.Sleep(3 * time.Second) // wait for items to expire
 
 	results, err := DB.Query(testItemsWithTTLNs).Exec(t).FetchAll()
-	if err != nil {
-		panic(err)
-	}
-	assert.Equal(t, len(results), 0, "Namespace should be empty!")
+	require.NoError(t, err)
+	require.Len(t, results, 0, "Namespace should be empty!")
 }
 
 func TestExpireTTL(t *testing.T) {
 	t.Run("Can insert index with expire_after", func(t *testing.T) {
-		for index := 0; index < 10; index++ {
-			err := DB.Upsert(testExpireTTLNs1, ItemExpireTTL{strconv.Itoa(index), time.Now().Unix()})
+		for i := range 10 {
+			err := DB.Upsert(testExpireTTLNs1, ItemExpireTTL{strconv.Itoa(i), time.Now().Unix()})
 			assert.NoError(t, err, "Can't Upsert data to namespace")
 		}
 	})

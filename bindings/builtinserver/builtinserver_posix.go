@@ -1,4 +1,6 @@
+//go:build !windows
 // +build !windows
+
 //go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake -DLINK_RESOURCES=On -DGO_BUILTIN_SERVER_EXPORT_PKG_PATH=\"../../bindings/builtinserver\" .. && make reindexer_server_library reindexer -j4"
 
 package builtinserver

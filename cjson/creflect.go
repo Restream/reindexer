@@ -117,9 +117,9 @@ type payloadType struct {
 func (pt *payloadType) Read(ser *Serializer, skip bool) {
 	pt.PStringHdrOffset = uintptr(ser.GetVarUInt())
 	fieldsCount := int(ser.GetVarUInt())
-	fields := make([]payloadFieldType, fieldsCount, fieldsCount)
+	fields := make([]payloadFieldType, fieldsCount)
 
-	for i := 0; i < fieldsCount; i++ {
+	for i := range fieldsCount {
 		fields[i].Type = int(ser.GetVarUInt())
 		if fields[i].Type == valueFloatVector {
 			fields[i].FloatVectorDimension = uint16(ser.GetVarUInt())
@@ -304,13 +304,14 @@ func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 
 	k := v.Type().Kind()
 	if pl.t.Fields[field].Type != valueFloatVector {
-		if k == reflect.Slice {
+		switch k {
+		case reflect.Slice:
 			el := reflect.New(v.Type().Elem()).Elem()
 			extSlice := reflect.Append(v, el)
 			v.Set(extSlice)
 			v = v.Index(v.Len() - 1)
 			k = v.Type().Kind()
-		} else if k == reflect.Array {
+		case reflect.Array:
 			panic(fmt.Errorf("can not put single indexed value into the fixed size array"))
 		}
 	}
@@ -343,23 +344,24 @@ func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 		v.SetString(pl.getUuid(field, idx))
 	case valueFloatVector:
 		vec := pl.getFloatVector(field, idx)
-		if k == reflect.Slice {
+		switch k {
+		case reflect.Slice:
 			extLen := v.Len() + len(vec)
 			extSlice := reflect.MakeSlice(v.Type(), extLen, extLen)
 			reflect.Copy(extSlice, v)
 			offset := v.Len()
-			for i := 0; i < len(vec); i++ {
+			for i := range vec {
 				extSlice.Index(i + offset).SetFloat(float64(vec[i]))
 			}
 			v.Set(extSlice)
-		} else if k == reflect.Array {
+		case reflect.Array:
 			if len(vec) > v.Len() {
 				panic(fmt.Errorf("can not put float vector of size '%d' into array of size '%d", len(vec), v.Len()))
 			}
-			for i := 0; i < len(vec); i++ {
+			for i := range vec {
 				v.Index(i).SetFloat(float64(vec[i]))
 			}
-		} else {
+		default:
 			panic(fmt.Errorf("can not put float vector value into not array field"))
 		}
 	default:
@@ -852,7 +854,7 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 
 // Slow and generic method: convert c payload to go interface
 // Use only for debug purposes
-func (pl *payloadIface) getIface(field int) interface{} {
+func (pl *payloadIface) getIface(field int) any {
 
 	if !pl.t.Fields[field].IsArray {
 		switch pl.t.Fields[field].Type {
@@ -913,8 +915,8 @@ func (pl *payloadIface) getIface(field int) interface{} {
 	return nil
 }
 
-func (pl *payloadIface) getAsMap() map[string]interface{} {
-	ret := make(map[string]interface{})
+func (pl *payloadIface) getAsMap() map[string]any {
+	ret := make(map[string]any)
 
 	for f := 1; f < len(pl.t.Fields); f++ {
 		ret[pl.t.Fields[f].Name] = pl.getIface(f)

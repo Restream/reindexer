@@ -1,4 +1,4 @@
-﻿#include "dataholder.h"
+#include "dataholder.h"
 #include <sstream>
 #include "core/ft/ft_fast/frisosplitter.h"
 #include "dataprocessor.h"

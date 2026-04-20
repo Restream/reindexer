@@ -1,5 +1,4 @@
 //go:build !unittest
-// +build !unittest
 
 package cproto
 
@@ -118,7 +117,7 @@ func TestCprotoPool(t *testing.T) {
 		require.NoError(t, err)
 
 		conns := make(map[connection]bool)
-		for i := 0; i < defConnPoolSize; i++ {
+		for range defConnPoolSize {
 			conn, err := c.getConnection(context.Background())
 			require.NoError(t, err)
 			if _, ok := conns[conn]; ok {
@@ -217,9 +216,10 @@ func TestInvalidDSNFromGetStatus(t *testing.T) {
 	for _, tt := range tests {
 		testname := fmt.Sprintf("Test for dsn: %s", tt.dsn)
 		t.Run(testname, func(t *testing.T) {
-			dsn := fmt.Sprintf(tt.dsn)
+			dsn := tt.dsn
 			_, err := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
 			assert.ErrorContains(t, err, tt.want)
 		})
 	}
+
 }

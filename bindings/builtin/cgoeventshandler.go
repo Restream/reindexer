@@ -6,7 +6,7 @@ package builtin
 import "C"
 
 import (
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"sync"
 	"sync/atomic"
 	"time"

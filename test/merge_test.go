@@ -9,6 +9,7 @@ import (
 
 	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestFullTextItem1 struct {
@@ -162,22 +163,23 @@ func UpdateFtIndexes(t *testing.T, enablePreselect bool) {
 	UpdateFtIndex(t, testMergeJoinItemNs2, "name", "Name", enablePreselect)
 }
 
-func CreateSort(t *testing.T, result []interface{}, rankList []float32) (res ByProc) {
-	assert.Equal(t, len(result), len(rankList), "Percent Count from query is wrong")
+func CreateSort(t *testing.T, result []any, rankList []float32) (res ByProc) {
+	require.Equal(t, len(result), len(rankList), "Percent Count from query is wrong")
 
 	for i, item := range result {
-		id := 0
+		var id int
 
-		switch item.(type) {
+		switch item := item.(type) {
 		case *TestFullTextItem1:
-			id = item.(*TestFullTextItem1).ID
+			id = item.ID
 		case *TestFullTextMergedItem:
-			id = item.(*TestFullTextMergedItem).ID
+			id = item.ID
 		case *TestFullTextItem2:
-			id = item.(*TestFullTextItem2).ID
+			id = item.ID
 		default:
-			assert.Fail(t, "[%d] Unknown type after merge: %T", i, item)
+			require.Failf(t, "unknown type after merge", "[%d] Unknown type after merge: %T", i, item)
 		}
+
 		res = append(res, SortFullText{id, rankList[i]})
 	}
 	return res
@@ -231,8 +233,8 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 	assert.Equal(t, len(r1)+len(r2)+len(r3), len(merge), "(%d+%d+%d) (%p, %p, %p)", len(r1), len(r2), len(r3), qs1, qs2, qs3)
 	assert.NotEqual(t, len(merge), 0, "Full text didn't return any result - something bad happened")
 
-	var items []interface{}
-	check := make(map[string]interface{})
+	var items []any
+	check := make(map[string]any)
 
 	for _, item := range r1 {
 		items = append(items, item)
@@ -249,31 +251,31 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 
 	//TEST MERGE IS WORKING AND WORKING WITHOUT CACHE
 	for _, item := range merge {
-		switch item.(type) {
+		switch item := item.(type) {
 		case *TestFullTextItem1:
-			key := strconv.Itoa(item.(*TestFullTextItem1).ID) + testFullTextItemNs1
+			key := strconv.Itoa(item.ID) + testFullTextItemNs1
 			sitem, ok := check[key]
 			assert.True(t, ok, "Item %s not fond in simple check", key)
 			assert.Equal(t, item, sitem, "Item not same as from cache")
 			delete(check, key)
 		case *TestFullTextMergedItem:
-			key := strconv.Itoa(item.(*TestFullTextMergedItem).ID) + testFullTextMergedItemNs
+			key := strconv.Itoa(item.ID) + testFullTextMergedItemNs
 			sitem, ok := check[key]
 			assert.True(t, ok, "Item %s not fond in simple check", key)
 			assert.Equal(t, item, sitem, "Item not same as from cache")
 			delete(check, key)
 		case *TestFullTextItem2:
-			key := strconv.Itoa(item.(*TestFullTextItem2).ID) + testFullTextItemNs2
+			key := strconv.Itoa(item.ID) + testFullTextItemNs2
 			sitem, ok := check[key]
 			assert.True(t, ok, "Item %s not fond in simple check", key)
 			assert.Equal(t, item, sitem, "Item not same as from cache")
 			delete(check, key)
 		default:
-			assert.Fail(t, "Unknown type after merge ")
+			assert.Fail(t, "Unknown type after merge")
 		}
 	}
 
-	assert.Equal(t, len(check), 0, "Not all data in merge")
+	assert.Empty(t, check, "Not all data in merge")
 
 	//TEST  SORT
 	sortedNew := CreateSort(t, r1, rr1)

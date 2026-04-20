@@ -167,7 +167,7 @@ type FtFastConfig struct {
 	// List of objects of stop words. Words from this list will be ignored when building indexes
 	// but can be included in search results in queries such as 'word*', 'word~' etc. if for the stop-word attribute is_morpheme is true.
 	// The list item can be either a reindexer.StopWord, or string
-	StopWords []interface{} `json:"stop_words"`
+	StopWords []any `json:"stop_words"`
 	// List of synonyms for replacement
 	Synonyms []struct {
 		// List source tokens in query, which will be replaced with alternatives

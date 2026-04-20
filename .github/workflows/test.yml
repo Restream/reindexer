@@ -13,9 +13,9 @@ jobs:
         "${{ matrix.compiler == 'Visual Studio 17 2022' && '-Ax64' || '' }}"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install NSIS
-        uses: repolevedavaj/install-nsis@v1.0.3
+        uses: repolevedavaj/install-nsis@v1.1.0
         with:
           nsis-version: '3.11'
       - name: Build Reindexer
@@ -47,7 +47,7 @@ jobs:
       SANITIZER: ${{matrix.sanitizer}}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Prepare Environment
         run: |
           ./.github/workflows/install_gtest.sh
@@ -88,7 +88,7 @@ jobs:
           rm -rf ./build/_CPack_Packages ./build/cpp_src/server/reindexer_server_resources
           tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
       - name: Archive Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
           path: artifacts.tar
@@ -124,12 +124,12 @@ jobs:
     steps:
       - name: Checkout repository
         if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         if: ${{ matrix.os == 'macos-15' && matrix.test == 'GO' }}
         with:
-          go-version: '1.24.x'
+          go-version: '1.26.x'
           check-latest: true
       - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
         if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
@@ -222,7 +222,7 @@ jobs:
             cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
           fi
       - name: Clone PyReindexer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: restream/reindexer-py
       - name: Install PyReindexer

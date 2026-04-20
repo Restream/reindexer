@@ -674,14 +674,10 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 				}
 			case reflect.Float32:
 				sl := (*[1 << 28]float32)(ptr)[:l:l]
-				for _, v := range sl {
-					rdser.PutFloat32(v)
-				}
+				_, _ = rdser.WriteFloat32s(sl)
 			case reflect.Float64:
 				sl := (*[1 << 27]float64)(ptr)[:l:l]
-				for _, v := range sl {
-					rdser.PutDouble(v)
-				}
+				_, _ = rdser.WriteFloat64s(sl)
 			case reflect.String:
 				sl := (*[1 << 27]string)(ptr)[:l:l]
 				if f.isUuid {
@@ -893,7 +889,7 @@ func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo,
 	return nil
 }
 
-func (enc *Encoder) Encode(src interface{}, wrser *Serializer) (stateToken int, err error) {
+func (enc *Encoder) Encode(src any, wrser *Serializer) (stateToken int, err error) {
 
 	v := reflect.ValueOf(src)
 	enc.state.lock.Lock()
@@ -919,7 +915,7 @@ func (enc *Encoder) Encode(src interface{}, wrser *Serializer) (stateToken int, 
 	return
 }
 
-func (enc *Encoder) EncodeRaw(src interface{}, wrser *Serializer) error {
+func (enc *Encoder) EncodeRaw(src any, wrser *Serializer) error {
 
 	v := reflect.ValueOf(src)
 	enc.state.lock.Lock()

@@ -3,6 +3,7 @@ package ft
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -24,7 +25,7 @@ func doRankingTest(t *testing.T, indexType string) {
 	testCases := ParseRankingTestCases()
 	expectedQualities := ParseRankingQuality()
 	newQualities := []RankingQuality{}
-	for i := 0; i < len(testCases); i++ {
+	for i := range testCases {
 		newQualities = append(newQualities, RankingQuality{expectedQualities[i].Description, expectedQualities[i].FastRankingQuality, expectedQualities[i].FuzzRankingQuality})
 	}
 
@@ -99,7 +100,7 @@ func getCasePositionInReference(description string, slice []RankingQuality) (int
 	return 0, false
 }
 
-func dbItemsToSliceOfDocuments(dbItems []interface{}) []string {
+func dbItemsToSliceOfDocuments(dbItems []any) []string {
 	result := []string{}
 
 	for _, dbItem := range dbItems {
@@ -142,12 +143,7 @@ func getEquivalentItemsMap(equivalentClassesOfItems [][]string) map[string][]str
 }
 
 func elemIsInSlice(elem string, slice []string) bool {
-	for _, sliceElem := range slice {
-		if sliceElem == elem {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, elem)
 }
 
 func TestFTFastRankingTest(t *testing.T) {
