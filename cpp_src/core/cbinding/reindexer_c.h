@@ -39,13 +39,14 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer
 reindexer_error reindexer_rollback_transaction(uintptr_t rx, uintptr_t tr);
 
 reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, reindexer_buffer data, reindexer_ctx_info ctx_info);
-reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json, int32_t* pt_versions, int pt_versions_count,
+reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json, int32_t* tm_versions, int tm_versions_count,
 							   reindexer_ctx_info ctx_info);
 
-reindexer_ret reindexer_select_query(uintptr_t rx, reindexer_buffer in, int as_json, int32_t* pt_versions, int pt_versions_count,
+reindexer_ret reindexer_select_query(uintptr_t rx, reindexer_buffer in, int as_json, int32_t* tm_versions, int tm_versions_count,
 									 reindexer_ctx_info ctx_info);
 reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexer_ctx_info ctx_info);
-reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexer_ctx_info ctx_info);
+reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, int32_t* tm_versions, int tm_versions_count,
+									 reindexer_ctx_info ctx_info);
 
 reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int ns_id);
 void reindexer_free_cjson(reindexer_buffer b);

@@ -36,7 +36,7 @@ public:
 	void Raw(std::string_view) noexcept {}
 
 	template <typename N, typename T>
-	void Array(N tagName, std::span<T> data, int /*offset*/ = 0) {
+	void Array(N tagName, std::span<T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
@@ -45,7 +45,7 @@ public:
 		}
 	}
 	template <typename N>
-	void Array(N tagName, std::span<Uuid> data, int /*offset*/ = 0) {
+	void Array(N tagName, std::span<Uuid> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
@@ -55,7 +55,7 @@ public:
 	}
 
 	template <typename T>
-	void Array(T tagName, std::span<p_string> data, int /*offset*/ = 0) {
+	void Array(T tagName, std::span<p_string> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
@@ -131,21 +131,20 @@ public:
 		}
 		skipTag();
 		packKeyName(tagName);
-		kv.Type().EvaluateOneOf(
-			[&](KeyValueType::Int) { packValue(int(kv)); }, [&](KeyValueType::Int64) { packValue(int64_t(kv)); },
-			[&](KeyValueType::Double) { packValue(double(kv)); }, [&](KeyValueType::Float) { packValue(float(kv)); },
-			[&](KeyValueType::String) { packValue(std::string_view(kv)); }, [&](KeyValueType::Null) { packNil(); },
-			[&](KeyValueType::Bool) { packValue(bool(kv)); },
-			[&](KeyValueType::Tuple) {
-				auto arrNode = Array(tagName);
-				for (auto& val : kv.getCompositeValues()) {
-					arrNode.Put(TagName::Empty(), val, offset);
-				}
-			},
-			[&](KeyValueType::Uuid) { packValue(Uuid{kv}); },
-			[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) noexcept {
-				assertrx_throw(false);
-			});
+		kv.Type().EvaluateOneOf([&](KeyValueType::Int) { packValue(int(kv)); }, [&](KeyValueType::Int64) { packValue(int64_t(kv)); },
+								[&](KeyValueType::Double) { packValue(double(kv)); }, [&](KeyValueType::Float) { packValue(float(kv)); },
+								[&](KeyValueType::String) { packValue(std::string_view(kv)); }, [&](KeyValueType::Null) { packNil(); },
+								[&](KeyValueType::Bool) { packValue(bool(kv)); },
+								[&](KeyValueType::Tuple) {
+									auto arrNode = Array(tagName);
+									for (auto& val : kv.getCompositeValues()) {
+										arrNode.Put(TagName::Empty(), val, offset);
+									}
+								},
+								[&](KeyValueType::Uuid) { packValue(Uuid{kv}); },
+								[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) {
+									assertrx_throw(false);
+								});
 		if (isArray()) {
 			skipTag();
 		}

@@ -77,6 +77,7 @@ struct [[nodiscard]] ServerConfig {
 	bool EnableGRPC;
 	std::string GRPCAddr;
 	size_t MaxHttpReqSize;
+	size_t MaxHttpRspSize;
 	std::chrono::seconds RPCQrIdleTimeout;
 	int64_t AllocatorCacheLimit;
 	float AllocatorCachePart;

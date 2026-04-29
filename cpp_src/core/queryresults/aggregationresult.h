@@ -105,9 +105,8 @@ public:
 	unsigned int GetDistinctRowCount() const { return distincts_.size() / fields_.size(); }
 	unsigned int GetDistinctColumnCount() const noexcept { return fields_.size(); }
 
-	template <typename T>
-	T As(unsigned int row, unsigned int column) const {
-		return distincts_[row * fields_.size() + column].As<T>(payloadType_, distinctsFields_);
+	std::string AsSingleString(unsigned int row, unsigned int column) const {
+		return distincts_[row * fields_.size() + column].AsSingleString(payloadType_, distinctsFields_);
 	}
 
 	const h_vector<std::string, 1>& GetFields() const& noexcept { return fields_; }

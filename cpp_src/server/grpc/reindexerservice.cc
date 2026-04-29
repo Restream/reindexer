@@ -3,7 +3,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
-#include "core/queryresults/joinresults.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "core/reindexer.h"
 #include "core/type_consts.h"
 #include "estl/lock.h"

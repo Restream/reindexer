@@ -9,7 +9,6 @@
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
 #include "iterator.h"
-#include "sort/pdqsort.hpp"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -24,7 +23,6 @@ constexpr int kMaxPlainIdsetSize = 16;
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 
 using base_idset = h_vector<IdType, 3>;	 // const_iterator must be trivial (used in union)
-using base_idset_ptr = intrusive_ptr<intrusive_atomic_rc_wrapper<const base_idset>>;
 using base_idsetset = btree::btree_set<IdType, std::less<IdType>, std::allocator<IdType>, kIdSetBtreeNodeSize>;
 
 enum class [[nodiscard]] IdSetEditMode {
@@ -33,22 +31,7 @@ enum class [[nodiscard]] IdSetEditMode {
 	Unordered  // Just add id, commit and erase is impossible
 };
 
-class [[nodiscard]] SortedIDsCtx {
-public:
-	SortedIDsCtx(SortType sortId, const std::vector<std::vector<IdType>>& externalSortedIds) noexcept
-		: sortId_{sortId}, externalSortedIds_{externalSortedIds} {}
-
-	SortType SortID() const noexcept { return sortId_; }
-	std::span<const IdType> ExternalSortedID(size_t idx) const noexcept {
-		assertrx_dbg(sortId_);
-		assertrx(sortId_ <= externalSortedIds_.size());
-		return std::span<const IdType>(&externalSortedIds_[sortId_ - 1][idx], 1);
-	}
-
-private:
-	SortType sortId_;
-	const std::vector<std::vector<IdType>>& externalSortedIds_;
-};
+using IdSetCRef = std::span<const IdType>;
 
 class [[nodiscard]] IdSetUnique {
 public:
@@ -63,7 +46,7 @@ public:
 	IdSetUnique& operator=(const IdSetUnique& other) = default;
 
 	bool Add(IdType id, IdSetEditMode, int) {
-		if (!empty()) [[unlikely]] {
+		if (!IsEmpty()) [[unlikely]] {
 			throw DuplicatedItemIDError(
 				id_.ToNumber(),
 				Error(errConflict, std::string("Duplicated item id, that has to be unique: ").append(std::to_string(id_.ToNumber()))));
@@ -82,33 +65,30 @@ public:
 
 	void Commit() const noexcept {}
 	constexpr static bool IsCommitted() noexcept { return true; }
-	bool IsEmpty() const noexcept { return empty(); }
-	size_t Size() const noexcept { return size(); }
-	size_t BTreeSize() const noexcept { return 0; }
+	bool IsEmpty() const noexcept { return !id_.IsValid(); }
+	size_t Size() const noexcept { return id_.IsValid() ? 1 : 0; }
+	size_t BTreeHeapSize() const noexcept { return 0; }
 	const base_idsetset* BTree() const noexcept { return nullptr; }
 	void ReserveForSorted(int) {}
-	std::string Dump() const;
+	void Dump(std::ostream&) const;
+	size_t PlainHeapSize() const noexcept { return 0; }
 
-	size_t size() const noexcept { return id_.IsValid() ? 1 : 0; }
-	size_t capacity() const noexcept { return 1; }
-	size_t heap_size() const noexcept { return 0; }
-	bool empty() const noexcept { return !id_.IsValid(); }
-
-	const_iterator begin() const noexcept { return std::span(data(), size()).begin(); }
-	const_iterator end() const noexcept { return std::span(data(), size()).end(); }
-	const_reverse_iterator rbegin() const noexcept { return std::span(data(), size()).rbegin(); }
-	const_reverse_iterator rend() const noexcept { return std::span(data(), size()).rend(); }
-
-	const IdType* data() const noexcept { return &id_; }
-
-	idset_iterator_range idset_range() const noexcept { return idset::iterators::range(*this); }
-	idset_reverse_iterator_range idset_reverse_range() const noexcept { return idset::iterators::reverse_range(*this); }
+	idset_iterator_range idset_range() const& noexcept {
+		IdSetCRef sp(*this);
+		return idset::iterators::range(sp.begin(), sp.end());
+	}
+	idset_iterator_range idset_range() const&& = delete;
+	idset_reverse_iterator_range idset_reverse_range() const& noexcept {
+		IdSetCRef sp(*this);
+		return idset::iterators::reverse_range(sp.rbegin(), sp.rend());
+	}
+	idset_reverse_iterator_range idset_reverse_range() const&& = delete;
+	operator IdSetCRef() const& noexcept { return IdSetCRef(&id_, Size()); }
+	operator IdSetCRef() const&& = delete;
 
 private:
 	IdType id_ = IdType::NotSet();
 };
-
-std::ostream& operator<<(std::ostream&, const IdSetUnique&);
 
 class [[nodiscard]] IdSetPlain : protected base_idset {
 public:
@@ -120,54 +100,16 @@ public:
 	using const_reverse_iterator = std::span<const IdType>::reverse_iterator;
 #endif	// REINDEX_DEBUG_CONTAINERS
 
-	using base_idset::size;
-	using base_idset::empty;
-	using base_idset::data;
-	using base_idset::erase;
 	using base_idset::reserve;
-	using base_idset::value_type;
-	using base_idset::capacity;
 	using base_idset::shrink_to_fit;
-	using base_idset::back;
-	using base_idset::heap_size;
 	using base_idset::operator[];
 	using idset_iterator = idset::iterators::ForwardIterator;
 	using idset_reverse_iterator = idset::iterators::ReverseIterator;
 	using idset_iterator_range = idset::iterators::ForwardIteratorRange;
 	using idset_reverse_iterator_range = idset::iterators::ReverseIteratorRange;
+	using Ptr = intrusive_ptr<intrusive_atomic_rc_wrapper<IdSetPlain>>;
 
 	IdSetPlain() = default;
-	bool Add(IdType id, IdSetEditMode editMode, int sortedIdxCount) {
-		grow((size() + 1) * (sortedIdxCount + 1));
-		if (editMode == IdSetEditMode::Unordered) {
-			push_back(id);
-			return true;
-		}
-
-		auto pos = std::lower_bound(base_idset::begin(), base_idset::end(), id);
-		if ((pos == base_idset::end() || *pos != id)) {
-			base_idset::insert(pos, id);
-			return true;
-		}
-		return false;
-	}
-
-	int Erase(IdType id) {
-		auto d = std::equal_range(base_idset::begin(), base_idset::end(), id);
-		int count = std::distance(d.second, d.first);
-		base_idset::erase(d.first, d.second);
-		return count;
-	}
-
-	void Commit() const noexcept {}
-	constexpr static bool IsCommitted() noexcept { return true; }
-	bool IsEmpty() const noexcept { return empty(); }
-	size_t Size() const noexcept { return size(); }
-	size_t BTreeSize() const noexcept { return 0; }
-	const base_idsetset* BTree() const noexcept { return nullptr; }
-	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
-	std::string Dump() const;
-
 	IdSetPlain(base_idset&& idset) noexcept : base_idset(std::move(idset)) {}
 
 	// Explicit construtors implementations to preserve IdSet's capacity (it's required for background indexes optimization)
@@ -201,6 +143,52 @@ public:
 		return *this;
 	}
 
+	static Ptr BuildFromUnsorted(base_idset&& ids);
+	bool Add(IdType id, IdSetEditMode editMode, int sortedIdxCount) {
+		grow((size() + 1) * (sortedIdxCount + 1));
+		if (editMode == IdSetEditMode::Unordered) {
+			push_back(id);
+			return true;
+		}
+
+		auto pos = std::lower_bound(base_idset::begin(), base_idset::end(), id);
+		if ((pos == base_idset::end() || *pos != id)) {
+			base_idset::insert(pos, id);
+			return true;
+		}
+		return false;
+	}
+	void AddUnordered(IdType id) { push_back(id); }
+	void AppendUnordered(auto first, auto last) { insert(base_idset::end(), first, last); }
+	void AppendUnordered(auto first, auto last, const std::vector<bool>& mask) {
+		for (; first != last; ++first) {
+			if (mask[first->ToNumber()]) {
+				push_back(*first);
+			}
+		}
+	}
+
+	int Erase(IdType id) {
+		auto d = std::equal_range(base_idset::begin(), base_idset::end(), id);
+		int count = std::distance(d.second, d.first);
+		base_idset::erase(d.first, d.second);
+		return count;
+	}
+
+	void Commit() const noexcept {}
+	constexpr static bool IsCommitted() noexcept { return true; }
+	bool IsEmpty() const noexcept { return empty(); }
+	size_t Size() const noexcept { return size(); }
+	size_t BTreeHeapSize() const noexcept { return 0; }
+	const base_idsetset* BTree() const noexcept { return nullptr; }
+	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
+	void Dump(std::ostream&) const;
+	size_t HeapSize() const noexcept { return heap_size(); }
+	size_t PlainHeapSize() const noexcept { return heap_size(); }
+
+	operator IdSetCRef() const& noexcept { return IdSetCRef(begin(), end()); }
+	operator IdSetCRef() const&& = delete;
+
 #if REINDEX_DEBUG_CONTAINERS
 	const_iterator begin() const noexcept { return base_idset::cbegin(); }
 	const_iterator end() const noexcept { return base_idset::cend(); }
@@ -213,13 +201,20 @@ public:
 	const_reverse_iterator rend() const noexcept { return std::span(data(), size()).rend(); }
 #endif	// !REINDEX_DEBUG_CONTAINERS
 
-	idset_iterator_range idset_range() const noexcept { return idset::iterators::range(*this); }
-	idset_reverse_iterator_range idset_reverse_range() const noexcept { return idset::iterators::reverse_range(*this); }
+	idset_iterator_range idset_range() const& noexcept { return idset::iterators::range(begin(), end()); }
+	idset_iterator_range idset_range() const&& = delete;
+	idset_reverse_iterator_range idset_reverse_range() const& noexcept { return idset::iterators::reverse_range(rbegin(), rend()); }
+	idset_reverse_iterator_range idset_reverse_range() const&& = delete;
+
+protected:
+	size_t plainCapacity() const noexcept { return base_idset::capacity(); }
+	size_t plainSize() const noexcept { return base_idset::size(); }
+	const IdType* plainData() const& noexcept { return base_idset::data(); }
+	IdType* plainData() & noexcept { return base_idset::data(); }
+	auto plainData() const&& = delete;
 };
 
-std::ostream& operator<<(std::ostream&, const IdSetPlain&);
-
-class [[nodiscard]] IdSet : public IdSetPlain {
+class [[nodiscard]] IdSet : private IdSetPlain {
 	friend class SingleSelectKeyResult;
 	template <typename>
 	friend class BtreeIndexForwardIteratorImpl;
@@ -227,17 +222,16 @@ class [[nodiscard]] IdSet : public IdSetPlain {
 	friend class BtreeIndexReverseIteratorImpl;
 
 public:
-	using Ptr = intrusive_ptr<intrusive_atomic_rc_wrapper<IdSet>>;
+	using idset_iterator = idset::iterators::ForwardIterator;
+	using idset_reverse_iterator = idset::iterators::ReverseIterator;
+	using idset_iterator_range = idset::iterators::ForwardIteratorRange;
+	using idset_reverse_iterator_range = idset::iterators::ReverseIteratorRange;
+
 	IdSet() noexcept = default;
 	IdSet(const IdSet& other) = default;
 	IdSet(IdSet&& other) noexcept = default;
 	IdSet& operator=(IdSet&& other) noexcept = default;
 	IdSet& operator=(const IdSet& other) = default;
-	static Ptr BuildFromUnsorted(base_idset&& ids) {
-		boost::sort::pdqsort_branchless(ids.begin(), ids.end());
-		ids.erase(std::unique(ids.begin(), ids.end()), ids.cend());	 // TODO: It would be better to integrate unique into sort
-		return make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>(std::move(ids));
-	}
 	bool Add(IdType id, IdSetEditMode editMode, int sortedIdxCount) {
 		auto [set, isUsingBtree] = set_.Get(std::memory_order_relaxed);
 		// reserve extra space for sort orders data
@@ -276,65 +270,6 @@ public:
 		push_back(id);
 	}
 
-	void SetUnordered(IdSetPlain&& other) {
-		assertrx(!set_.Get(std::memory_order_relaxed).first);
-		IdSetPlain::operator=(std::move(other));
-	}
-
-	template <typename InputIt>
-	void Append(InputIt first, InputIt last, IdSetEditMode editMode = IdSetEditMode::Auto) {
-		auto [set, isUsingBtree] = set_.Get(std::memory_order_relaxed);
-		if (editMode == IdSetEditMode::Unordered) {
-			assertrx(!set);
-			insert(base_idset::end(), first, last);
-		} else if (editMode == IdSetEditMode::Auto) {
-			if (!set) {
-				set = new base_idsetset;
-				set_.Reset(set, std::memory_order_relaxed);
-				set->insert(begin(), end());
-				resize(0);
-			}
-			assertrx(!size());
-			set->insert(first, last);
-			if (!isUsingBtree) {
-				setUsingBtree(true);
-			}
-		} else {
-			assertrx(0);
-		}
-	}
-
-	template <typename InputIt>
-	void Append(InputIt first, InputIt last, const std::vector<bool>& mask, IdSetEditMode editMode = IdSetEditMode::Auto) {
-		auto [set, isUsingBtree] = set_.Get(std::memory_order_relaxed);
-		if (editMode == IdSetEditMode::Unordered) {
-			assertrx(!set);
-			for (; first != last; ++first) {
-				if (mask[first->ToNumber()]) {
-					push_back(*first);
-				}
-			}
-		} else if (editMode == IdSetEditMode::Auto) {
-			if (!set) {
-				set = new base_idsetset;
-				set_.Reset(set, std::memory_order_relaxed);
-				set->insert(begin(), end());
-				resize(0);
-			}
-			assertrx(!size());
-			for (; first != last; ++first) {
-				if (mask[first->ToNumber()]) {
-					set->insert(*first);
-				}
-			}
-			if (!isUsingBtree) {
-				setUsingBtree(true);
-			}
-		} else {
-			assertrx(0);
-		}
-	}
-
 	bool Find(IdType id) const noexcept {
 		auto set = set_.Get(std::memory_order_relaxed).first;
 		if (!set) {
@@ -359,19 +294,7 @@ public:
 		}
 		return set->erase(id);
 	}
-	void Commit() {
-		if (!size()) {
-			auto set = set_.Get(std::memory_order_relaxed).first;
-			if (set) {
-				reserve(set->size());
-				for (auto id : *set) {
-					push_back(id);
-				}
-			}
-		}
-
-		setUsingBtree(false);
-	}
+	void Commit();
 
 	bool IsCommitted() const noexcept { return !set_.Get(std::memory_order_acquire).second; }
 	bool IsEmpty() const noexcept { return !Size(); }
@@ -383,10 +306,11 @@ public:
 		auto [set, isUsingBtree] = set_.Get(std::memory_order_acquire);
 		return isUsingBtree ? set : nullptr;
 	}
-	void Dump(auto&) const;
+	void Dump(std::ostream&) const;
 
+	size_t PlainHeapSize() const noexcept { return IdSetPlain::PlainHeapSize(); }
 	// UNSAFE (may race with concurrent Commit() calls)
-	size_t BTreeSize() const noexcept {
+	size_t BTreeHeapSize() const noexcept {
 		auto set = set_.Get(std::memory_order_relaxed).first;
 		return set ? sizeof(*set) + set->size() * sizeof(IdType) : 0;
 	}
@@ -396,11 +320,27 @@ public:
 		reserve(((set ? set->size() : size())) * (sortedIdxCount + 1));
 	}
 
-	idset_iterator_range idset_range() const noexcept { return idset::iterators::range(*this); }
-	idset_reverse_iterator_range idset_reverse_range() const noexcept { return idset::iterators::reverse_range(*this); }
+	idset_iterator_range idset_range() const& noexcept {
+		auto [set, isUsingBtree] = set_.Get(std::memory_order_acquire);
+		assertrx(!isUsingBtree || set);
+		return isUsingBtree ? idset::iterators::range(set->begin(), set->end())
+							: idset::iterators::range(IdSetPlain::begin(), IdSetPlain::end());
+	}
+	idset_iterator_range idset_range() const&& = delete;
+	idset_reverse_iterator_range idset_reverse_range() const& noexcept {
+		auto [set, isUsingBtree] = set_.Get(std::memory_order_acquire);
+		assertrx(!isUsingBtree || set);
+		return isUsingBtree ? idset::iterators::reverse_range(set->rbegin(), set->rend())
+							: idset::iterators::reverse_range(IdSetPlain::rbegin(), IdSetPlain::rend());
+	}
+	idset_reverse_iterator_range idset_reverse_range() const&& = delete;
 
 protected:
-	explicit IdSet(base_idset&& idset) noexcept : IdSetPlain(std::move(idset)) {}
+	size_t plainCapacity() const noexcept { return IdSetPlain::plainCapacity(); }
+	size_t plainSize() const noexcept { return IdSetPlain::plainSize(); }
+	const IdType* plainData() const& noexcept { return IdSetPlain::plainData(); }
+	IdType* plainData() & noexcept { return IdSetPlain::plainData(); }
+	auto plainData() const&& = delete;
 
 private:
 	void setUsingBtree(bool val) noexcept { set_.SetMark(val); }
@@ -463,8 +403,6 @@ private:
 
 	AtomicBtreePtr set_;
 };
-
-using IdSetCRef = std::span<const IdType>;
 
 namespace concepts {
 

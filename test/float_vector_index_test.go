@@ -1,11 +1,12 @@
 package reindexer
 
 import (
-	"github.com/goccy/go-json"
 	"log"
 	"math/rand"
 	"reflect"
 	"testing"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	"github.com/restream/reindexer/v5/bindings"
@@ -16,6 +17,11 @@ import (
 type TestItemHnswST struct {
 	ID  int                                `reindex:"id,,pk"`
 	Vec [kTestFloatVectorDimension]float32 `reindex:"vec,hnsw,metric=inner_product"`
+}
+
+type TestItemHnswSTArray struct {
+	ID  int                                       `reindex:"id,,pk"`
+	Vec [][kTestFloatVectorArrayDimension]float32 `reindex:"vec,hnsw,metric=cosine,start_size=100"`
 }
 
 type TestItemHnswMT struct {
@@ -52,6 +58,7 @@ const (
 
 const (
 	testHnswNsSTNs           = "test_items_hnsw_st"
+	testHnswNsSTNsArr        = "test_items_hnsw_st_arr"
 	testHnswNsMTNs           = "test_items_hnsw_mt"
 	testVecBfNs              = "test_items_vec_bf"
 	testIvfNs                = "test_items_ivf"
@@ -61,6 +68,7 @@ const (
 
 func init() {
 	tnamespaces[testHnswNsSTNs] = TestItemHnswST{}
+	tnamespaces[testHnswNsSTNsArr] = TestItemHnswSTArray{}
 	tnamespaces[testHnswNsMTNs] = TestItemHnswMT{}
 	tnamespaces[testVecBfNs] = TestItemVecBF{}
 	tnamespaces[testIvfNs] = TestItemIvf{}
@@ -76,6 +84,23 @@ func newTestItemHnswST(id int, pkgsCount int) any {
 		vect := randVect(kTestFloatVectorDimension)
 		for i := 0; i < kTestFloatVectorDimension; i++ {
 			result.Vec[i] = vect[i]
+		}
+	}
+	return result
+}
+
+func newTestItemHnswSTArray(id int, pkgsCount int) any {
+	result := &TestItemHnswSTArray{
+		ID: mkID(id),
+	}
+	arrSize := rand.Int() % kTestFloatVectorArraySize
+	result.Vec = make([][kTestFloatVectorArrayDimension]float32, arrSize)
+	for i := 0; i < arrSize; i++ {
+		if rand.Int()%10 != 0 {
+			vect := randVect(kTestFloatVectorArrayDimension)
+			for j := 0; j < kTestFloatVectorArrayDimension; j++ {
+				result.Vec[i][j] = vect[j]
+			}
 		}
 	}
 	return result
@@ -157,15 +182,17 @@ func newTestItemIvf(id int, pkgsCount int) any {
 
 func removeSomeItems(t *testing.T, ns string, createItem testItemsCreator, maxElements int) {
 	tx := newTestTx(DB, ns)
-	for i := rand.Int() % (maxElements / 100); i < maxElements; i += rand.Int() % (maxElements / 100) {
+	for i := rand.Int() % (maxElements / 100); i < maxElements; i += rand.Int() % (maxElements / 20) {
 		err := tx.Delete(createItem(i, 0))
 		require.NoError(t, err)
 	}
 	tx.MustCommit()
 }
 
-type RadiusProcessingF func(it *reindexer.Iterator, comparator AssertComparatorF)
-type AssertComparatorF func(t assert.TestingT, e1 any, e2 any, msgAndArgs ...any) bool
+type (
+	RadiusProcessingF func(it *reindexer.Iterator, comparator AssertComparatorF)
+	AssertComparatorF func(t assert.TestingT, e1 any, e2 any, msgAndArgs ...any) bool
+)
 
 func testWithRadiusWrapperImpl(t *testing.T, test func(RadiusProcessingF), knnBaseSearchParams *reindexer.BaseKnnSearchParam) {
 	var rBeg, rEnd float32
@@ -218,6 +245,42 @@ func TestHnswST(t *testing.T) {
 			returnedItem := it.Object().(*TestItemHnswST)
 			pk := getPK(query.ns, reflect.Indirect(reflect.ValueOf(returnedItem)))
 			insertedItem := query.ns.items[pk].(*TestItemHnswST)
+			assert.Equal(t, returnedItem.Vec, insertedItem.Vec)
+
+			radiusProcessing(it, assert.Greater)
+		}
+		assert.NoError(t, it.Error())
+		log.Println("HNSW_ST", it.Count())
+	}
+
+	testWithRadiusWrapper(t, test, &hnswSearchParams.BaseKnnSearchParam)
+}
+
+func TestHnswSTArray(t *testing.T) {
+	const ns = testHnswNsSTNsArr
+	const kMaxElements = kTestHNSWFloatVectorArrayMaxElements
+
+	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemHnswSTArray)
+	removeSomeItems(t, ns, newTestItemHnswSTArray, kMaxElements)
+	defer DB.DropIndex(ns, "vec") // Deallocate index
+
+	hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(1000, reindexer.BaseKnnSearchParam{}.SetK(500))
+	require.NoError(t, err)
+
+	newTestQuery(DB, ns).SelectAllFields().ExecAndVerify(t)
+
+	vec := randVect(kTestFloatVectorArrayDimension)
+	test := func(radiusProcessing RadiusProcessingF) {
+		query := newTestQuery(DB, ns).WhereKnn("vec", vec, hnswSearchParams).SelectAllFields()
+		query.q.WithRank()
+		it := query.Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+		for it.Next() {
+			require.NoError(t, it.Error())
+			returnedItem := it.Object().(*TestItemHnswSTArray)
+			pk := getPK(query.ns, reflect.Indirect(reflect.ValueOf(returnedItem)))
+			insertedItem := query.ns.items[pk].(*TestItemHnswSTArray)
 			assert.Equal(t, returnedItem.Vec, insertedItem.Vec)
 
 			radiusProcessing(it, assert.Greater)

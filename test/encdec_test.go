@@ -2,11 +2,12 @@ package reindexer
 
 import (
 	"fmt"
-	"github.com/goccy/go-json"
 	"math/rand"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
@@ -58,7 +59,7 @@ type TestItemEncDec struct {
 	Bools               []bool                `reindex:"bools"`
 	Name                string                `reindex:"name,tree"`
 	Countries           []string              `reindex:"countries,tree"`
-	Description         string                `reindex:"description,fuzzytext"`
+	Description         string                `reindex:"description,text"`
 	Rate                float64               `reindex:"rate,tree"`
 	CustomStringsPtr    TestCustomStringsPtrs `reindex:"custom_strings_ptrs"`
 	CustomStrings       TestCustomStrings     `reindex:"custom_strings"`

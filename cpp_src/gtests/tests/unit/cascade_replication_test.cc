@@ -1636,9 +1636,10 @@ void ReplWithQuantizationTestBody(auto& api, TestSyncType sync) {
 
 	auto& leader = cluster.Get(0)->api;
 
-	InitNsAndIndexes<Metric>(
+	std::ignore = InitNsAndIndexes<Metric>(
 		leader, kNsName, kHNSWInitSize / 2,
-		hnswlib::QuantizationConfig{.quantile = kQuantile, .sampleSize = kHNSWInitSize / 2, .quantizationThreshold = kHNSWInitSize});
+		hnswlib::QuantizationConfig{
+			.quantile = kQuantile, .sampleSize = kHNSWInitSize / 2, .quantizationThreshold = kHNSWInitSize - kInitEmptyItemsNum});
 
 	api.WaitSync(cluster.Get(0), cluster.Get(1), kNsName);
 
@@ -1652,7 +1653,7 @@ void ReplWithQuantizationTestBody(auto& api, TestSyncType sync) {
 		cluster.ShutdownServer(1);
 	}
 	for (size_t i = kHNSWInitSize / 2; i < kHNSWInitSize; ++i) {
-		auto item = newItemWithVector(leader, kNsName, i);
+		auto item = newItemWithVectors(leader, kNsName, i);
 		leader.Upsert(kNsName, item);
 	}
 
@@ -1670,8 +1671,10 @@ void ReplWithQuantizationTestBody(auto& api, TestSyncType sync) {
 	WaitQuantization(cluster.Get(1)->api, kNsName);
 	TEST_COUT << fmt::format("Follower quantized\n");
 
+	size_t emptyCnt = 0;
 	for (size_t i = kHNSWInitSize; i < 2 * kHNSWInitSize; ++i) {
-		auto item = newItemWithVector(leader, kNsName, i);
+		const bool empty = rand() % 10 == 0 && emptyCnt++ < size_t(0.2 * kHNSWInitSize);
+		auto item = empty ? newItemWithoutVectors(leader, kNsName, i) : newItemWithVectors(leader, kNsName, i);
 		leader.Upsert(kNsName, item);
 	}
 

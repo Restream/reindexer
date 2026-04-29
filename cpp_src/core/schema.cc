@@ -3,7 +3,7 @@
 #include "core/cjson/protobufschemabuilder.h"
 #include "core/cjson/tagsmatcher.h"
 #include "gason/gason.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -348,7 +348,7 @@ void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& split
 	}
 
 	auto& properties = isArray ? node["items"]["properties"] : node["properties"];
-	if (!properties.empty()) {
+	if (!properties.isEmpty()) {
 		for (auto& subnode : properties) {
 			splittedPath.emplace_back(std::string(subnode.key));
 			bool isSubnodeRequired = (required.find(std::string_view(subnode.key)) != required.end());

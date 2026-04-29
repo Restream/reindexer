@@ -166,7 +166,7 @@ type Query struct {
 	closed            bool
 	initBuf           [256]byte
 	nsArray           []nsArrayEntry
-	ptVersions        []int32
+	tmVersions        []int32
 	iterator          Iterator
 	jsonIterator      JSONIterator
 	items             []any
@@ -203,23 +203,6 @@ type IndexHnswSearchParam struct {
 type IndexIvfSearchParam struct {
 	BaseKnnSearchParam
 	NProbe int
-}
-
-type IExpression interface {
-	Type() int
-	Serialize(ser *cjson.Serializer)
-}
-
-type Field struct {
-	Name string
-}
-
-type Values struct {
-	Values []any
-}
-
-type SubQuery struct {
-	SubQuery *Query
 }
 
 func NewIndexBFSearchParam(baseParam BaseKnnSearchParam) (IndexBFSearchParam, error) {
@@ -293,36 +276,6 @@ func (p IndexIvfSearchParam) serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(p.NProbe)
 }
 
-func (f Field) Type() int {
-	return expressionTypeField
-}
-
-func (f Field) Serialize(ser *cjson.Serializer) {
-	ser.PutVarCUInt(int(f.Type()))
-	ser.PutVString(f.Name)
-}
-
-func (v Values) Type() int {
-	return expressionTypeValues
-}
-
-func (v Values) Serialize(ser *cjson.Serializer) {
-	ser.PutVarCUInt(int(v.Type()))
-	ser.PutVarCUInt(len(v.Values))
-	for _, v := range v.Values {
-		ser.PutValue(reflect.ValueOf(v))
-	}
-}
-
-func (q SubQuery) Type() int {
-	return expressionTypeSubQuery
-}
-
-func (s SubQuery) Serialize(ser *cjson.Serializer) {
-	ser.PutVarCUInt(int(s.Type()))
-	ser.PutVBytes(s.SubQuery.ser.Bytes())
-}
-
 var queryPool sync.Pool
 var enableDebug bool
 
@@ -359,7 +312,7 @@ func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
 		q.joinQueries = q.joinQueries[:0]
 		q.joinHandlers = q.joinHandlers[:0]
 		q.mergedQueries = q.mergedQueries[:0]
-		q.ptVersions = q.ptVersions[:0]
+		q.tmVersions = q.tmVersions[:0]
 		q.ser = cjson.NewSerializer(q.ser.Bytes()[:0])
 		q.closed = false
 		q.totalName = ""
@@ -411,7 +364,7 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 	qC.context = q.context
 	qC.joinType = q.joinType
 	qC.nsArray = append(q.nsArray[:0:0], q.nsArray...)
-	qC.ptVersions = append(q.ptVersions[:0:0], q.ptVersions...)
+	qC.tmVersions = append(q.tmVersions[:0:0], q.tmVersions...)
 	qC.items = append(q.items[:0:0], q.items...)
 	qC.json = append(q.json[:0:0], q.json...)
 	qC.jsonOffsets = append(q.jsonOffsets[:0:0], q.jsonOffsets...)
@@ -458,8 +411,8 @@ func (q *Query) Where(index string, condition int, keys any) *Query {
 		if t.Kind() == reflect.Pointer {
 			q.ser.PutVBytes(v.Interface().(*Query).ser.Bytes())
 		} else {
-			subQuery := v.Interface().(*Query)
-			q.ser.PutVBytes(subQuery.ser.Bytes())
+			ser := v.FieldByName("ser").Interface().(cjson.Serializer)
+			q.ser.PutVBytes(ser.Bytes())
 		}
 	} else {
 		q.ser.PutVarCUInt(queryCondition)
@@ -686,15 +639,16 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 	return q
 }
 
-// WhereExpressions - Add where condition with expressions.
-// Left expression possible values: field or function.
-// Right expression possible values: field, function, subquery, values.
+// WhereExpressions - Add where condition with expressions
+// Left expression possible values: field, function, subquery
+// Right expression possible values: field, function, subquery, values
 // At the moment supported combinations are:
 // - [field] condition [field|values|function|subquery]
 // - [subquery] condition [values|function]
 // - [function] condition [values|subquery]
-// Functions as left expressions: flat_array_len.
-// Functions as right expressions: now.
+// Functions as left expressions: flat_array_len
+// Functions as right expressions: now
+// Check IExpression interface and list of implementations nearby for more details.
 func (q *Query) WhereExpressions(left IExpression, condition int, right IExpression) *Query {
 	q.ser.PutVarCUInt(queryExpressions)
 	left.Serialize(&q.ser)

@@ -77,8 +77,6 @@ std::string_view ToText(IndexType it) {
 			return "ttl"sv;
 		case IndexType::FastFT:
 			return "text"sv;
-		case IndexType::FuzzyFT:
-			return "fuzzytext"sv;
 		case IndexType::RTree:
 			return "rtree"sv;
 		default:

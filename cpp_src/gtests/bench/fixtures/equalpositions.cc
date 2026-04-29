@@ -118,6 +118,7 @@ void EqualPositions::EqPos2GroupingSubArray(State& state) {
 			.EqualPositions({"array1[#].int_in_obj1", "array1[#].int_in_obj2"});
 	};
 	LowSelectivityItemsCounter<50> counter(state, 100);
+
 	benchQuery(qGen, state, counter);
 }
 

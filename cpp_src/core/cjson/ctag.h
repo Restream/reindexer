@@ -12,13 +12,8 @@
 // FIELD - 10bit index+1 of field in reindexer Payload (0 if no field)
 
 namespace reindexer {
-class Serializer;
-class WrSerializer;
 
 class [[nodiscard]] ctag {
-	friend class reindexer::Serializer;
-	friend class reindexer::WrSerializer;
-
 	static constexpr unsigned kTypeBits = 3;
 	static constexpr unsigned kNameBits = 12;
 	static constexpr unsigned kFieldBits = 10;
@@ -50,6 +45,15 @@ public:
 	RX_ALWAYS_INLINE constexpr bool operator==(ctag other) const noexcept { return tag_ == other.tag_; }
 	RX_ALWAYS_INLINE constexpr bool operator!=(ctag other) const noexcept { return !operator==(other); }
 
+	template <typename SerializerT>
+	static void Serialize(ctag tag, SerializerT& ser) {
+		ser.PutVarUint(tag.asNumber());
+	}
+	template <typename SerializerT>
+	static ctag Deserialize(SerializerT& ser) {
+		return ctag{ser.GetVarUInt()};
+	}
+
 private:
 	RX_ALWAYS_INLINE explicit constexpr ctag(uint32_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} {
 		assertrx_dbg(tag == tag_);
@@ -77,9 +81,6 @@ constexpr ctag kCTagEnd{TAG_END};
 // TTT - 6 bit type: one of TAG_VARINT,TAG_BOOL,TAG_STRING,TAG_DOUBLE,TAG_OBJECT. tag of array elements
 // NNN - 24 bit: count of elements in array
 class [[nodiscard]] carraytag {
-	friend class reindexer::Serializer;
-	friend class reindexer::WrSerializer;
-
 	static constexpr unsigned kCountBits = 24;
 	static constexpr unsigned kTypeBits = 6;
 	static constexpr uint32_t kCountMask = (uint32_t(1) << kCountBits) - uint32_t(1);
@@ -94,6 +95,15 @@ public:
 
 	RX_ALWAYS_INLINE constexpr bool operator==(carraytag other) const noexcept { return atag_ == other.atag_; }
 	RX_ALWAYS_INLINE constexpr bool operator!=(carraytag other) const noexcept { return !operator==(other); }
+
+	template <typename SerializerT>
+	static void Serialize(carraytag tag, SerializerT& ser) {
+		ser.PutUInt32(tag.asNumber());
+	}
+	template <typename SerializerT>
+	static carraytag Deserialize(SerializerT& ser) {
+		return carraytag{ser.GetUInt32()};
+	}
 
 private:
 	RX_ALWAYS_INLINE explicit constexpr carraytag(uint32_t atag) noexcept : carraytag{countImpl(atag), typeImpl(atag)} {

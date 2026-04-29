@@ -41,17 +41,27 @@ void ItemImpl::SetField(int field, VariantArray&& krs, NeedCreate needCopy) {
 		pl.Get(field, oldValues);
 		pl.Set(field, newValue, Append_False);
 		try {
-			// We should modify CJSON for any default value or array size change #1837
+			// TODO: We should modify CJSON for any default value or array size change #1837
 			bool modifyCjson = pl.HasDefaultValue(field);
 			if (!modifyCjson) {
-				if (ptField.IsArray()) {
+				if (ptField.Type().Is<KeyValueType::FloatVector>()) {
+					if (ptField.IsArray()) {
+						modifyCjson = oldValues.size() != newValue.size();
+						for (size_t i = 0, s = newValue.size(); !modifyCjson && i < s; ++i) {
+							modifyCjson =
+								!oldValues[i].Type().IsSame(newValue[i].Type()) ||
+								(oldValues[i].Type().Is<KeyValueType::FloatVector>() &&
+								 oldValues[i].As<ConstFloatVectorView>().Dimension() != newValue[i].As<ConstFloatVectorView>().Dimension());
+						}
+					} else {
+						assertrx_throw(oldValues.size() == 1);
+						assertrx_throw(newValue.size() <= 1);
+						const auto oldSize = oldValues[0].As<ConstFloatVectorView>().Dimension();
+						const auto newSize = newValue.empty() ? FloatVectorDimension() : newValue[0].As<ConstFloatVectorView>().Dimension();
+						modifyCjson = (oldSize != newSize);
+					}
+				} else if (ptField.IsArray()) {
 					modifyCjson = (oldValues.size() != newValue.size());
-				} else if (ptField.Type().Is<KeyValueType::FloatVector>()) {
-					assertrx_throw(oldValues.size() == 1);
-					assertrx_throw(newValue.size() <= 1);
-					const auto oldSize = oldValues[0].As<ConstFloatVectorView>().Dimension();
-					const auto newSize = newValue.empty() ? FloatVectorDimension() : newValue[0].As<ConstFloatVectorView>().Dimension();
-					modifyCjson = (oldSize != newSize) || pl.HasDefaultValue(field);
 				}
 			}
 			if (tupleData_ && !objectScalarIndexes_.test(field)) {
@@ -171,8 +181,9 @@ void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& 
 
 void ItemImpl::SetField(std::string_view jsonPath, VariantArray&& keys) { ModifyField(jsonPath, keys, FieldModeSet); }
 void ItemImpl::DropField(std::string_view jsonPath) { ModifyField(jsonPath, {}, FieldModeDrop); }
-Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
+Variant ItemImpl::GetField(int field, unsigned arrayIndex) { return GetPayload().Get(field, arrayIndex); }
 void ItemImpl::GetField(int field, VariantArray& values) { GetPayload().Get(field, values); }
+size_t ItemImpl::GetFieldLen(int field) { return GetPayload().GetFieldLen(field); }
 
 Error ItemImpl::FromMsgPack(std::string_view buf, size_t& offset) {
 	payloadValue_.Clone();
@@ -375,7 +386,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 }
 
 void ItemImpl::FromCJSON(ItemImpl& other, Recoder* recoder) {
-	FromCJSON(other.GetCJSON(), false, recoder);
+	FromCJSON(other.GetCJSON(WithTagsMatcher_False), false, recoder);
 	cjson_ = {};
 }
 
@@ -391,8 +402,8 @@ std::string_view ItemImpl::GetJSON() {
 	return ser_.Slice();
 }
 
-std::string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
-	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
+std::string_view ItemImpl::GetCJSON(WithTagsMatcher withTagsMatcher) {
+	withTagsMatcher &= tagsMatcher_.isUpdated();
 
 	if (!cjson_.empty() && !withTagsMatcher) {
 		return cjson_;
@@ -401,8 +412,8 @@ std::string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
 	return GetCJSON(ser_, withTagsMatcher);
 }
 
-std::string_view ItemImpl::GetCJSON(WrSerializer& ser, bool withTagsMatcher) {
-	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
+std::string_view ItemImpl::GetCJSON(WrSerializer& ser, WithTagsMatcher withTagsMatcher) {
+	withTagsMatcher &= tagsMatcher_.isUpdated();
 
 	if (!cjson_.empty() && !withTagsMatcher) {
 		ser.Write(cjson_);
@@ -462,7 +473,7 @@ void ItemImpl::BuildTupleIfEmpty() {
 }
 
 void ItemImpl::CopyIndexedVectorsValuesFrom(FloatVectorsGetter&& floatVectorsGettter) {
-	auto data = floatVectorsGettter(payloadType_, tagsMatcher_);
+	auto data = floatVectorsGettter(payloadType_, payloadValue_, tagsMatcher_);
 	if (data.empty()) {
 		return;
 	}
@@ -472,20 +483,36 @@ void ItemImpl::CopyIndexedVectorsValuesFrom(FloatVectorsGetter&& floatVectorsGet
 	Payload pl(payloadType_, payloadValue_);
 	floatVectorsHolder_.reserve(data.size());
 	if (IsUnsafe()) {
-		for (auto& [idxData, fvVariant] : data) {
-			if (fvVariant.DoHold()) {
-				if (floatVectorsHolder_.Add(FloatVector{std::move(fvVariant)})) {
-					pl.Set(idxData.ptField, Variant{floatVectorsHolder_.Back()});
+		VariantArray buf;
+		for (auto& [idxData, fvVariants] : data) {
+			buf.clear<false>();
+			buf.reserve(fvVariants.size());
+			for (auto& fvVar : fvVariants) {
+				if (fvVar.DoHold()) {
+					if (floatVectorsHolder_.Add(FloatVector{std::move(fvVar)})) {
+						buf.emplace_back(floatVectorsHolder_.Back());
+					} else {
+						buf.emplace_back(ConstFloatVectorView{});
+					}
+				} else {
+					buf.emplace_back(std::move(fvVar));
 				}
-			} else {
-				pl.Set(idxData.ptField, std::move(fvVariant));
 			}
+			pl.Set(idxData.ptField, buf);
 		}
 	} else {
-		for (auto& [idxData, fv] : data) {
-			if (floatVectorsHolder_.Add(FloatVector{std::move(fv)})) {
-				pl.Set(idxData.ptField, Variant{floatVectorsHolder_.Back()});
+		VariantArray buf;
+		for (auto& [idxData, fvVariants] : data) {
+			buf.clear<false>();
+			buf.reserve(fvVariants.size());
+			for (auto& fvVar : fvVariants) {
+				if (floatVectorsHolder_.Add(FloatVector{std::move(fvVar)})) {
+					buf.emplace_back(floatVectorsHolder_.Back());
+				} else {
+					buf.emplace_back(ConstFloatVectorView{});
+				}
 			}
+			pl.Set(idxData.ptField, buf);
 		}
 	}
 }

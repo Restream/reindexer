@@ -2,13 +2,14 @@ package reindexer
 
 import (
 	"fmt"
-	"github.com/goccy/go-json"
 	"math/rand"
 	"net/url"
 	"os"
 	"path"
 	"testing"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"

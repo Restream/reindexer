@@ -1,5 +1,5 @@
-#include "core/nsselecter/joinedselector.h"
-#include "core/queryresults/joinresults.h"
+#include "core/nsselecter/joins/items_processor.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "join_on_conditions_api.h"
 #include "test_helpers.h"
 
@@ -492,12 +492,12 @@ TEST_F(JoinSelectsApi, JoinsEasyStressTest) {
 	}
 }
 
-TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
-	using reindexer::JoinedSelector;
+TEST_F(JoinSelectsApi, PreSelectStoreValuesOptimizationStressTest) {
+	using reindexer::joins::PreSelect;
 	static const std::string rightNs = "rightNs";
 	static constexpr const char* data = "data";
 	static constexpr int maxDataValue = 10;
-	static constexpr int maxRightNsRowCount = maxDataValue * JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization();
+	static constexpr int maxRightNsRowCount = maxDataValue * PreSelect::MaxIterationsForValuesOptimization;
 	static constexpr int maxLeftNsRowCount = 10000;
 	static constexpr size_t leftNsCount = 50;
 	static std::vector<std::string> leftNs;

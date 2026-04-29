@@ -1005,11 +1005,11 @@ public:
 	void AddJoinQuery(JoinedQuery&&);
 	void VerifyForUpdate() const;
 	void VerifyForUpdateTransaction() const;
-	template <InjectionDirection injectionDirection>
-	size_t InjectConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
+	template <JoinConditionInsertionDirection insertionDirection>
+	size_t InsertConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
 											const QueryEntries& joinedQueryEntries, size_t joinedQueryNo,
 											const std::vector<std::unique_ptr<Index>>* indexesFrom) {
-		return entries_.InjectConditionsFromOnConditions<injectionDirection>(position, joinEntries, joinedQueryEntries, joinedQueryNo,
+		return entries_.InsertConditionsFromOnConditions<insertionDirection>(position, joinEntries, joinedQueryEntries, joinedQueryNo,
 																			 indexesFrom);
 	}
 

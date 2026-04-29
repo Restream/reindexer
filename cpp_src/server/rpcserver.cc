@@ -501,7 +501,6 @@ Error RPCServer::CommitTx(cproto::Context& ctx, int64_t txId, std::optional<int>
 	auto err = db.CommitTransaction(tr, qres);
 	if (err.ok()) {
 		auto tmp = qres.GetNamespaces();
-		int32_t ptVers = -1;
 		ResultFetchOpts opts;
 		int flags;
 		if (flagsOpts) {
@@ -513,11 +512,12 @@ Error RPCServer::CommitTx(cproto::Context& ctx, int64_t txId, std::optional<int>
 				flags |= kResultsWithPayloadTypes;
 			}
 		}
+		const int32_t ptVers = -1;
 		if (flags & kResultsWithPayloadTypes) {
 			opts = ResultFetchOpts{
-				.flags = flags, .ptVersions = {&ptVers, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
+				.flags = flags, .tmVersions = {&ptVers, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 		} else {
-			opts = ResultFetchOpts{.flags = flags, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
+			opts = ResultFetchOpts{.flags = flags, .tmVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 		}
 		clearTx(ctx, txId);
 		return sendResults(ctx, qres, RPCQrId(), opts);
@@ -649,17 +649,17 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 			return err;
 		}
 	}
-	int32_t ptVers = -1;
+	const int32_t ptVers = -1;
 	ResultFetchOpts opts;
 	if (tmUpdated) {
 		opts = ResultFetchOpts{.flags = kResultsWithItemID | kResultsWithPayloadTypes,
-							   .ptVersions = {&ptVers, 1},
+							   .tmVersions = {&ptVers, 1},
 							   .fetchOffset = 0,
 							   .fetchLimit = INT_MAX,
 							   .withAggregations = true};
 	} else {
 		opts = ResultFetchOpts{
-			.flags = kResultsWithItemID, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
+			.flags = kResultsWithItemID, .tmVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 	}
 	if (sendItemBack) {
 		if (format == FormatMsgPack) {
@@ -672,7 +672,20 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 	return sendResults(ctx, qres, RPCQrId(), opts);
 }
 
-Error RPCServer::DeleteQuery(cproto::Context& ctx, p_string queryBin, std::optional<int> flagsOpts) noexcept {
+static h_vector<int32_t, 4> pack2vec(p_string pack) {
+	// Get array of TagsMatcher versions from serialized string
+	Serializer ser(pack.data(), pack.size());
+	h_vector<int32_t, 4> vec;
+	int cnt = ser.GetVarUInt();
+	vec.reserve(cnt);
+	for (int i = 0; i < cnt; i++) {
+		vec.emplace_back(ser.GetVarUInt());
+	}
+	return vec;
+}
+
+Error RPCServer::DeleteQuery(cproto::Context& ctx, p_string queryBin, std::optional<int> flagsOpts,
+							 std::optional<p_string> tmVersionsPck) noexcept {
 	try {
 		Serializer ser(queryBin.data(), queryBin.size());
 		Query query = Query::Deserialize(ser);
@@ -682,18 +695,21 @@ Error RPCServer::DeleteQuery(cproto::Context& ctx, p_string queryBin, std::optio
 		const int flags = flagsOpts ? flagsOpts.value() : kResultsWithItemID;
 		QueryResults qres(flags);
 		auto err = getDB(ctx, kRoleDataWrite).Delete(query, qres);
-		if (!err.ok()) {
+		if (!err.ok()) [[unlikely]] {
 			return err;
 		}
-		int32_t ptVersion = -1;
-		ResultFetchOpts opts{
-			.flags = flags, .ptVersions = {&ptVersion, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
+		h_vector<int32_t, 4> tmVersions = {-1};
+		if (tmVersionsPck) [[likely]] {
+			tmVersions = pack2vec(*tmVersionsPck);
+		}
+		ResultFetchOpts opts{.flags = flags, .tmVersions = tmVersions, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 		return sendResults(ctx, qres, RPCQrId(), opts);
 	}
 	CATCH_AND_RETURN;
 }
 
-Error RPCServer::UpdateQuery(cproto::Context& ctx, p_string queryBin, std::optional<int> flagsOpts) noexcept {
+Error RPCServer::UpdateQuery(cproto::Context& ctx, p_string queryBin, std::optional<int> flagsOpts,
+							 std::optional<p_string> tmVersionsPck) noexcept {
 	try {
 		Serializer ser(queryBin.data(), queryBin.size());
 		Query query = Query::Deserialize(ser);
@@ -703,13 +719,15 @@ Error RPCServer::UpdateQuery(cproto::Context& ctx, p_string queryBin, std::optio
 		const int flags = flagsOpts ? flagsOpts.value() : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 		QueryResults qres(flags);
 		auto err = getDB(ctx, kRoleDataWrite).Update(query, qres);
-		if (!err.ok()) {
+		if (!err.ok()) [[unlikely]] {
 			return err;
 		}
 
-		int32_t ptVersion = -1;
-		ResultFetchOpts opts{
-			.flags = flags, .ptVersions = {&ptVersion, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
+		h_vector<int32_t, 4> tmVersions = {-1};
+		if (tmVersionsPck) [[likely]] {
+			tmVersions = pack2vec(*tmVersionsPck);
+		}
+		ResultFetchOpts opts{.flags = flags, .tmVersions = tmVersions, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 		return sendResults(ctx, qres, RPCQrId(), opts);
 	}
 	CATCH_AND_RETURN;
@@ -986,19 +1004,7 @@ void RPCServer::freeSnapshot(cproto::Context& ctx, int id) {
 	data->snapshots[id] = {Snapshot(), false};
 }
 
-static h_vector<int32_t, 4> pack2vec(p_string pack) {
-	// Get array of payload Type Versions
-	Serializer ser(pack.data(), pack.size());
-	h_vector<int32_t, 4> vec;
-	int cnt = ser.GetVarUInt();
-	vec.reserve(cnt);
-	for (int i = 0; i < cnt; i++) {
-		vec.emplace_back(ser.GetVarUInt());
-	}
-	return vec;
-}
-
-Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int limit, p_string ptVersionsPck) {
+Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int limit, p_string tmVersionsPck) {
 	Query query;
 	Serializer ser(queryBin);
 	try {
@@ -1029,14 +1035,14 @@ Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int 
 		freeQueryResults(ctx, id);
 		return ret;
 	}
-	auto ptVersions = pack2vec(ptVersionsPck);
+	auto tmVersions = pack2vec(tmVersionsPck);
 	ResultFetchOpts opts{
-		.flags = flags, .ptVersions = ptVersions, .fetchOffset = 0, .fetchLimit = unsigned(limit), .withAggregations = true};
+		.flags = flags, .tmVersions = tmVersions, .fetchOffset = 0, .fetchLimit = unsigned(limit), .withAggregations = true};
 
 	return sendResults(ctx, *qres, id, opts);
 }
 
-Error RPCServer::ExecSQL(cproto::Context& ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
+Error RPCServer::ExecSQL(cproto::Context& ctx, p_string querySql, int flags, int limit, p_string tmVersionsPck) {
 	const auto data = getClientDataSafe(ctx);
 	RPCQrId id{-1, data->caps.HasQrIdleTimeouts() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
 	RPCQrWatcher::Ref qres;
@@ -1055,9 +1061,9 @@ Error RPCServer::ExecSQL(cproto::Context& ctx, p_string querySql, int flags, int
 		freeQueryResults(ctx, id);
 		return ret;
 	}
-	auto ptVersions = pack2vec(ptVersionsPck);
+	auto tmVersions = pack2vec(tmVersionsPck);
 	ResultFetchOpts opts{
-		.flags = flags, .ptVersions = ptVersions, .fetchOffset = 0, .fetchLimit = unsigned(limit), .withAggregations = true};
+		.flags = flags, .tmVersions = tmVersions, .fetchOffset = 0, .fetchLimit = unsigned(limit), .withAggregations = true};
 
 	return sendResults(ctx, *qres, id, opts);
 }
@@ -1076,7 +1082,7 @@ Error RPCServer::FetchResults(cproto::Context& ctx, int reqId, int flags, int of
 	}
 
 	ResultFetchOpts opts{
-		.flags = flags, .ptVersions = {}, .fetchOffset = unsigned(offset), .fetchLimit = unsigned(limit), .withAggregations = false};
+		.flags = flags, .tmVersions = {}, .fetchOffset = unsigned(offset), .fetchLimit = unsigned(limit), .withAggregations = false};
 	return sendResults(ctx, *qres, id, opts);
 }
 

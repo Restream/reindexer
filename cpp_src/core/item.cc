@@ -1,7 +1,9 @@
 #include "core/item.h"
 #include "core/itemimpl.h"
+#include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
 #include "core/namespace/namespace.h"
+#include "tools/assertrx.h"
 #include "tools/catch_and_return.h"
 
 namespace reindexer {
@@ -122,14 +124,15 @@ Item::FieldRef& Item::FieldRef::operator=(VariantArray krs) {
 
 template <typename T>
 Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
-	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
-								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>;
+	constexpr static bool kIsStr = concepts::OneOf<T, std::string, key_string, p_string, std::string_view, const char*>;
+	constexpr static bool kIsFloatVector = concepts::OneOf<T, FloatVector, FloatVectorView, ConstFloatVectorView>;
+
 	const bool isRegularIndex = (field_ >= 0);
 	bool needCjsonModify = !isRegularIndex;
 	if (isRegularIndex) {
 		throwIfAssignFieldMultyJsonPath();
 		auto pl(itemImpl_->GetPayload());
-		needCjsonModify = (arr.size() != size_t(pl.GetArrayLen(field_)));
+		needCjsonModify = needCjsonModify || (arr.size() != size_t(pl.GetFieldLen(field_)));
 	}
 	if (needCjsonModify) {
 		auto krs = VariantArray::Create(arr);
@@ -164,6 +167,22 @@ Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 					itemImpl_->holder_->emplace_back(make_key_string(elem));
 				}
 				pl.Set(field_, pos++, Variant(p_string{itemImpl_->holder_->back()}, Variant::noHold));
+			}
+		}
+	} else if constexpr (kIsFloatVector) {
+		if (itemImpl_->IsUnsafe()) {
+			for (auto& elem : arr) {
+				pl.Set(field_, pos++, Variant(ConstFloatVectorView{elem}));
+			}
+		} else {
+			for (auto& elem : arr) {
+				if (elem.IsEmpty()) {
+					pl.Set(field_, pos++, Variant(ConstFloatVectorView{}));
+				} else {
+					[[maybe_unused]] const bool added = itemImpl_->floatVectorsHolder_.Add(FloatVector(elem));
+					assertrx_dbg(added);
+					pl.Set(field_, pos++, Variant(ConstFloatVectorView(itemImpl_->floatVectorsHolder_.Back())));
+				}
 			}
 		}
 	} else {
@@ -210,7 +229,7 @@ Error Item::FromCJSON(std::string_view slice, bool pkOnly) & noexcept {
 }
 void Item::FromCJSONImpl(std::string_view slice, bool pkOnly) & { impl_->FromCJSON(slice, pkOnly); }
 
-std::string_view Item::GetCJSON(bool withTagsMatcher) { return impl_->GetCJSON(withTagsMatcher); }
+std::string_view Item::GetCJSON(bool withTagsMatcher) { return impl_->GetCJSON(WithTagsMatcher(withTagsMatcher)); }
 
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
 
@@ -286,5 +305,8 @@ template Item::FieldRef& Item::FieldRef::operator=(std::span<const int64_t> arr)
 template Item::FieldRef& Item::FieldRef::operator=(std::span<const std::string> arr);
 template Item::FieldRef& Item::FieldRef::operator=(std::span<const double>);
 template Item::FieldRef& Item::FieldRef::operator=(std::span<const Uuid>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const FloatVector>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const FloatVectorView>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const ConstFloatVectorView>);
 
 }  // namespace reindexer

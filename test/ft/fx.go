@@ -27,34 +27,19 @@ var (
 	qualityCheck       = flag.Bool("qualitycheck", false, "run quality checks")
 )
 
-func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, indexType string, mergeLimit int) {
+func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, mergeLimit int) {
 	err := rx.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TextItem{})
 	if err != nil {
 		panic(fmt.Errorf("Couldn't create namespace: "+namespace, err))
 	}
 
-	var config any
-	if indexType == "fuzzytext" {
-		// Disable non exact searchers, disable stop word dictionat
-		cfg := reindexer.DefaultFtFuzzyConfig()
-		cfg.StopWords = make([]any, 0)
-		cfg.Stemmers = []string{}
-		cfg.EnableKbLayout = false
-		cfg.EnableTranslit = false
-		if mergeLimit > 0 {
-			cfg.MergeLimit = mergeLimit
-		}
-		config = cfg
-	} else {
-		cfg := reindexer.DefaultFtFastConfig()
-		cfg.StopWords = make([]any, 0)
-		cfg.Stemmers = []string{}
-		cfg.EnableKbLayout = false
-		cfg.EnableTranslit = false
-		if mergeLimit > 0 {
-			cfg.MergeLimit = mergeLimit
-		}
-		config = cfg
+	config := reindexer.DefaultFtFastConfig()
+	config.StopWords = make([]any, 0)
+	config.Stemmers = []string{}
+	config.EnableKbLayout = false
+	config.EnableTranslit = false
+	if mergeLimit > 0 {
+		config.MergeLimit = mergeLimit
 	}
 
 	rx.DropIndex(namespace, "text_field")
@@ -63,7 +48,7 @@ func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, indexTyp
 		Name:      "text_field",
 		JSONPaths: []string{"TextField"},
 		Config:    config,
-		IndexType: indexType,
+		IndexType: "text",
 		FieldType: "string",
 	})
 	if err != nil {

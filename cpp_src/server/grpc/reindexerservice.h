@@ -7,7 +7,6 @@
 #include "core/transaction/transaction.h"
 #include "estl/mutex.h"
 #include "net/ev/ev.h"
-#include "tools/serializer.h"
 
 namespace reindexer_server {
 class DBManager;
@@ -16,6 +15,7 @@ class DBManager;
 namespace reindexer {
 
 class Reindexer;
+class WrSerializer;
 
 namespace grpc {
 
@@ -49,7 +49,7 @@ public:
 	::grpc::Status ModifyItem(::grpc::ServerContext* context,
 							  ::grpc::ServerReaderWriter<ErrorResponse, ModifyItemRequest>* stream) override;
 	::grpc::Status ExecSql(::grpc::ServerContext* context, const SqlRequest* request,
-							 ::grpc::ServerWriter<QueryResultsResponse>* writer) override;
+						   ::grpc::ServerWriter<QueryResultsResponse>* writer) override;
 	::grpc::Status Select(::grpc::ServerContext* context, const SelectRequest* request,
 						  ::grpc::ServerWriter<QueryResultsResponse>* writer) override;
 	::grpc::Status Update(::grpc::ServerContext* context, const UpdateRequest* request,

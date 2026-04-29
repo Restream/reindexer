@@ -1,6 +1,5 @@
 //go:build embedding_test
 
-//go:debug randseednop=0
 package reindexer
 
 import (

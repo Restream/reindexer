@@ -1,4 +1,5 @@
 #include "pk_migration_service.h"
+#include "core/id_type.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/storage/storage_prefixes.h"
 #include "tools/logger.h"
@@ -16,23 +17,24 @@ void serializeItemPk(const ConstPayload& pl, const FieldsSet& pk, WrSerializer& 
 }
 }  // namespace
 
-bool PKMigrationService::migrateItem(size_t rowId, const FieldsSet& oldPk, const FieldsSet& newPk, WrSerializer& pkBuf,
+bool PKMigrationService::migrateItem(size_t id, const FieldsSet& oldPk, const FieldsSet& newPk, WrSerializer& pkBuf,
 									 WrSerializer& itemBuf) noexcept {
+	const auto rowId = IdType::FromNumber(id);
 	try {
 		ItemImpl item{nsImpl_.payloadType_, nsImpl_.items_[rowId], nsImpl_.tagsMatcher_};
 		item.Unsafe(true);
 		// Serialize the new one.
-		Error err{nsImpl_.tryWriteItemIntoStorage(newPk, item, IdType::FromNumber(rowId), pkBuf, itemBuf)};
+		Error err{nsImpl_.tryWriteItemIntoStorage(newPk, item, rowId, pkBuf, itemBuf)};
 		if (err.ok()) {
 			// Remove the old one if successfull.
 			serializeItemPk(item.GetConstPayload(), oldPk, pkBuf);
 			nsImpl_.storage_.Remove(pkBuf.Slice());
 		} else {
-			logFmt(LogError, "Failed to migrate '{}' item with row_id={}: {}", nsImpl_.name_, rowId, err.what());
+			logFmt(LogError, "Failed to migrate '{}' item with row_id={}: {}", nsImpl_.name_, id, err.what());
 			return false;
 		}
 	} catch (const std::exception& ex) {
-		logFmt(LogError, "Failed to migrate '{}' item with row_id={}: {}", nsImpl_.name_, rowId, ex.what());
+		logFmt(LogError, "Failed to migrate '{}' item with row_id={}: {}", nsImpl_.name_, id, ex.what());
 		return false;
 	}
 	return true;
@@ -50,6 +52,9 @@ void PKMigrationService::MigrateFromOldToNewPK(const FieldsSet& oldPk, const Fie
 			WrSerializer pkBuf, itemBuf;
 
 			for (size_t rowId = 0; rowId < nsImpl_.items_.size(); ++rowId) {
+				if (nsImpl_.items_[IdType::FromNumber(rowId)].IsFree()) {
+					continue;
+				}
 				if (!migrateItem(rowId, oldPk, newPk, pkBuf, itemBuf)) {
 					status = MigrationStatus_False;
 				}
@@ -78,13 +83,18 @@ void PKMigrationService::MigrateToNewPK(const FieldsSet& pk) noexcept {
 			nsImpl_.storage_.Flush(StorageFlushOpts{});
 
 			WrSerializer pkBuf, itemBuf;
-			for (size_t rowId = 0; rowId < nsImpl_.items_.size(); ++rowId) {
-				ItemImpl item{nsImpl_.payloadType_, nsImpl_.items_[rowId], nsImpl_.tagsMatcher_};
+			for (size_t id = 0; id < nsImpl_.items_.size(); ++id) {
+				const auto rowId = IdType::FromNumber(id);
+				auto& pv = nsImpl_.items_[rowId];
+				if (pv.IsFree()) {
+					continue;
+				}
+				ItemImpl item{nsImpl_.payloadType_, pv, nsImpl_.tagsMatcher_};
 				item.Unsafe(true);
 
-				Error err{nsImpl_.tryWriteItemIntoStorage(pk, item, IdType::FromNumber(rowId), pkBuf, itemBuf)};
+				Error err{nsImpl_.tryWriteItemIntoStorage(pk, item, rowId, pkBuf, itemBuf)};
 				if (!err.ok()) {
-					logFmt(LogError, "Failed to migrate '{}' item with row_id={}: {}", nsImpl_.name_, rowId, err.what());
+					logFmt(LogError, "Failed to migrate '{}' item with row_id={}: {}", nsImpl_.name_, id, err.what());
 					status = MigrationStatus_False;
 				}
 			}

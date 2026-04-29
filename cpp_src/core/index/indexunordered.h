@@ -53,6 +53,9 @@ public:
 	void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) override;
 	void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) override;
 
+	virtual void HashTablesStats(std::vector<char>& stats) const override;
+	virtual void ReserveHashTables(const std::vector<char>& stats) override;
+
 protected:
 	constexpr static int kMaxIdsetsForDistinct = 500;
 

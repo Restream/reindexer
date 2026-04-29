@@ -152,7 +152,7 @@
 
 <!-- tocstop -->
 
-> Version 5.12.1
+> Version 5.13.0
 
 ## Overview
 
@@ -161,6 +161,7 @@
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 Reindexer's goal is to provide fast search with complex queries.
 Reindexer is compact, fast and it does not have heavy dependencies.
+
 
 
 ## Path Table
@@ -325,13 +326,16 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 [GET]/db
 ```
 
+- Operation id  
+describeDatabases
+
 
 This operation will return list of all available databases.  
 
 
 #### Parameters(Query)
 
-```ts
+```typescript
 sort_order?: enum[asc, desc]
 ```
 
@@ -341,7 +345,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   // Total count of databases
   total_items?: integer
@@ -354,7 +358,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -368,7 +372,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -382,7 +386,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -396,7 +400,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -410,7 +414,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -428,6 +432,9 @@ sort_order?: enum[asc, desc]
 [POST]/db
 ```
 
+- Operation id  
+createDatabase
+
 
 This operation will create new database. If database already exists, then error will be returned.  
 
@@ -436,7 +443,7 @@ This operation will create new database. If database already exists, then error 
 
 - */*
 
-```ts
+```typescript
 {
   // Name of database
   name?: string
@@ -449,7 +456,7 @@ This operation will create new database. If database already exists, then error 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -463,7 +470,7 @@ This operation will create new database. If database already exists, then error 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -477,7 +484,7 @@ This operation will create new database. If database already exists, then error 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -491,7 +498,7 @@ This operation will create new database. If database already exists, then error 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -505,7 +512,7 @@ This operation will create new database. If database already exists, then error 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -519,7 +526,7 @@ This operation will create new database. If database already exists, then error 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -537,6 +544,9 @@ This operation will create new database. If database already exists, then error 
 [DELETE]/db/{database}
 ```
 
+- Operation id  
+dropDatabase
+
 
 This operation will remove entire database from memory and disk. All data, including namespaces, their documents and indexes will be erased. Can not be undone. USE WITH CAUTION.
 
@@ -546,7 +556,7 @@ This operation will remove entire database from memory and disk. All data, inclu
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -560,7 +570,7 @@ This operation will remove entire database from memory and disk. All data, inclu
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -574,7 +584,7 @@ This operation will remove entire database from memory and disk. All data, inclu
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -588,7 +598,7 @@ This operation will remove entire database from memory and disk. All data, inclu
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -602,7 +612,7 @@ This operation will remove entire database from memory and disk. All data, inclu
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -616,7 +626,7 @@ This operation will remove entire database from memory and disk. All data, inclu
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -634,6 +644,9 @@ This operation will remove entire database from memory and disk. All data, inclu
 [GET]/db/{database}/namespaces
 ```
 
+- Operation id  
+describeNamespaces
+
 
 This operation will list all available namespaces in specified database.  
 If database does not exist, then error will be returned.  
@@ -641,7 +654,7 @@ If database does not exist, then error will be returned.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 sort_order?: enum[asc, desc]
 ```
 
@@ -651,7 +664,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   items: {
     // Name of namespace
@@ -666,7 +679,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -680,7 +693,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -694,7 +707,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -708,7 +721,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -722,7 +735,7 @@ sort_order?: enum[asc, desc]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -740,6 +753,9 @@ sort_order?: enum[asc, desc]
 [POST]/db/{database}/namespaces
 ```
 
+- Operation id  
+openNamespace
+
 
 This operation will create new namespace in specified database.  
 If namespace already exists, then operation does nothing.  
@@ -749,7 +765,7 @@ If namespace already exists, then operation does nothing.
 
 - */*
 
-```ts
+```typescript
 {
   // Name of namespace
   name?: string
@@ -796,7 +812,7 @@ If namespace already exists, then operation does nothing.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -810,7 +826,7 @@ If namespace already exists, then operation does nothing.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -824,7 +840,7 @@ If namespace already exists, then operation does nothing.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -838,7 +854,7 @@ If namespace already exists, then operation does nothing.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -852,7 +868,7 @@ If namespace already exists, then operation does nothing.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -866,7 +882,7 @@ If namespace already exists, then operation does nothing.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -884,6 +900,9 @@ If namespace already exists, then operation does nothing.
 [GET]/db/{database}/namespaces/{name}
 ```
 
+- Operation id  
+describeCurrNamespace
+
 
 This operation will return specified namespace description, including options of namespace, and available indexes  
 
@@ -894,7 +913,7 @@ This operation will return specified namespace description, including options of
 
 `application/json`
 
-```ts
+```typescript
 {
   // Name of namespace
   name?: string
@@ -939,7 +958,7 @@ This operation will return specified namespace description, including options of
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -953,7 +972,7 @@ This operation will return specified namespace description, including options of
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -967,7 +986,7 @@ This operation will return specified namespace description, including options of
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -981,7 +1000,7 @@ This operation will return specified namespace description, including options of
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -995,7 +1014,7 @@ This operation will return specified namespace description, including options of
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1013,6 +1032,9 @@ This operation will return specified namespace description, including options of
 [DELETE]/db/{database}/namespaces/{name}
 ```
 
+- Operation id  
+dropNamespace
+
 
 This operation will delete namespace completely from memory and disk.  
 All documents, indexes and metadata from namespace will be removed.  
@@ -1025,7 +1047,7 @@ Can not be undone. USE WITH CAUTION.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1039,7 +1061,7 @@ Can not be undone. USE WITH CAUTION.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1053,7 +1075,7 @@ Can not be undone. USE WITH CAUTION.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1067,7 +1089,7 @@ Can not be undone. USE WITH CAUTION.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1081,7 +1103,7 @@ Can not be undone. USE WITH CAUTION.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1095,7 +1117,7 @@ Can not be undone. USE WITH CAUTION.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1113,6 +1135,9 @@ Can not be undone. USE WITH CAUTION.
 [DELETE]/db/{database}/namespaces/{name}/truncate
 ```
 
+- Operation id  
+truncateNamespace
+
 
 This operation will delete all items from namespace.  
 
@@ -1123,7 +1148,7 @@ This operation will delete all items from namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1137,7 +1162,7 @@ This operation will delete all items from namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1151,7 +1176,7 @@ This operation will delete all items from namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1165,7 +1190,7 @@ This operation will delete all items from namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1179,7 +1204,7 @@ This operation will delete all items from namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1193,7 +1218,7 @@ This operation will delete all items from namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1211,6 +1236,9 @@ This operation will delete all items from namespace.
 [GET]/db/{database}/namespaces/{name}/rename/{newname}
 ```
 
+- Operation id  
+renameNamespace
+
 
 This operation will rename namespace.  
 
@@ -1221,7 +1249,7 @@ This operation will rename namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1235,7 +1263,7 @@ This operation will rename namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1249,7 +1277,7 @@ This operation will rename namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1263,7 +1291,7 @@ This operation will rename namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1277,7 +1305,7 @@ This operation will rename namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1291,7 +1319,7 @@ This operation will rename namespace.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1309,25 +1337,28 @@ This operation will rename namespace.
 [GET]/db/{database}/namespaces/{name}/metalist
 ```
 
+- Operation id  
+getNamespaceMetalist
+
 
 This operation will return list of keys of all meta of specified namespace  
 
 
 #### Parameters(Query)
 
-```ts
+```typescript
 sort_order?: enum[asc, desc]
 ```
 
-```ts
+```typescript
 with_values?: boolean
 ```
 
-```ts
+```typescript
 offset?: integer
 ```
 
-```ts
+```typescript
 limit?: integer
 ```
 
@@ -1337,7 +1368,7 @@ limit?: integer
 
 `application/json`
 
-```ts
+```typescript
 // List of meta info of the specified namespace
 {
   // Total count of meta info in the namespace
@@ -1354,7 +1385,7 @@ limit?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1368,7 +1399,7 @@ limit?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1382,7 +1413,7 @@ limit?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1396,7 +1427,7 @@ limit?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1410,7 +1441,7 @@ limit?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1428,6 +1459,9 @@ limit?: integer
 [GET]/db/{database}/namespaces/{name}/metabykey/{key}
 ```
 
+- Operation id  
+getNamespaceMetaByKey
+
 
 This operation will return value of namespace's meta with specified key  
 
@@ -1438,7 +1472,7 @@ This operation will return value of namespace's meta with specified key
 
 `application/json`
 
-```ts
+```typescript
 // Meta info of the specified namespace
 {
   key: string
@@ -1450,7 +1484,7 @@ This operation will return value of namespace's meta with specified key
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1464,7 +1498,7 @@ This operation will return value of namespace's meta with specified key
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1478,7 +1512,7 @@ This operation will return value of namespace's meta with specified key
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1492,7 +1526,7 @@ This operation will return value of namespace's meta with specified key
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1506,7 +1540,7 @@ This operation will return value of namespace's meta with specified key
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1524,6 +1558,9 @@ This operation will return value of namespace's meta with specified key
 [DELETE]/db/{database}/namespaces/{name}/metabykey/{key}
 ```
 
+- Operation id  
+deleteNamespaceMetaByKey
+
 
 This operation will remove meta with specified key from namespace  
 
@@ -1534,7 +1571,7 @@ This operation will remove meta with specified key from namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1548,7 +1585,7 @@ This operation will remove meta with specified key from namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1562,7 +1599,7 @@ This operation will remove meta with specified key from namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1576,7 +1613,7 @@ This operation will remove meta with specified key from namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1590,7 +1627,7 @@ This operation will remove meta with specified key from namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1604,7 +1641,7 @@ This operation will remove meta with specified key from namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1622,6 +1659,9 @@ This operation will remove meta with specified key from namespace
 [PUT]/db/{database}/namespaces/{name}/metabykey
 ```
 
+- Operation id  
+putNamespaceMetaByKey
+
 
 This operation will set namespace's meta with specified key and value  
 
@@ -1630,7 +1670,7 @@ This operation will set namespace's meta with specified key and value
 
 - */*
 
-```ts
+```typescript
 // Meta info to be set
 {
   key: string
@@ -1644,7 +1684,7 @@ This operation will set namespace's meta with specified key and value
 
 `application/json`
 
-```ts
+```typescript
 {
   // Count of updated items
   updated?: integer
@@ -1655,7 +1695,7 @@ This operation will set namespace's meta with specified key and value
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1669,7 +1709,7 @@ This operation will set namespace's meta with specified key and value
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1683,7 +1723,7 @@ This operation will set namespace's meta with specified key and value
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1697,7 +1737,7 @@ This operation will set namespace's meta with specified key and value
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1711,7 +1751,7 @@ This operation will set namespace's meta with specified key and value
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1729,57 +1769,60 @@ This operation will set namespace's meta with specified key and value
 [GET]/db/{database}/namespaces/{name}/items
 ```
 
+- Operation id  
+getItems
+
 
 This operation will select documents from namespace with specified filters, and sort them by specified sort order. Paging with limit and offset are supported.  
 
 
 #### Parameters(Query)
 
-```ts
+```typescript
 limit?: integer
 ```
 
-```ts
+```typescript
 offset?: integer
 ```
 
-```ts
+```typescript
 sort_field?: string
 ```
 
-```ts
+```typescript
 sort_order?: enum[asc, desc]
 ```
 
-```ts
+```typescript
 filter?: string
 ```
 
-```ts
+```typescript
 fields?: string
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf, csv-file]
 ```
 
-```ts
+```typescript
 sharding?: enum[true, false]
 ```
 
-```ts
+```typescript
 with_shard_ids?: enum[true, false]
 ```
 
-```ts
+```typescript
 with_vectors?: enum[true, false]
 ```
 
-```ts
+```typescript
 with_columns?: enum[true, false]
 ```
 
-```ts
+```typescript
 width?: integer
 ```
 
@@ -1789,7 +1832,7 @@ width?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -1802,7 +1845,7 @@ width?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1816,7 +1859,7 @@ width?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1830,7 +1873,7 @@ width?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1844,7 +1887,7 @@ width?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1858,7 +1901,7 @@ width?: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1876,6 +1919,9 @@ width?: integer
 [PUT]/db/{database}/namespaces/{name}/items
 ```
 
+- Operation id  
+putItems
+
 
 This operation will UPDATE documents in namespace, by their primary keys.  
 Each document should be in request body as separate JSON object, e.g.  
@@ -1888,11 +1934,11 @@ Each document should be in request body as separate JSON object, e.g.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 precepts?: string[]
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf]
 ```
 
@@ -1900,7 +1946,7 @@ format?: enum[json, msgpack, protobuf]
 
 - */*
 
-```ts
+```typescript
 {
 }
 ```
@@ -1911,7 +1957,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   // Count of updated items
   updated?: integer
@@ -1924,7 +1970,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1938,7 +1984,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1952,7 +1998,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1966,7 +2012,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1980,7 +2026,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -1998,6 +2044,9 @@ format?: enum[json, msgpack, protobuf]
 [POST]/db/{database}/namespaces/{name}/items
 ```
 
+- Operation id  
+postItems
+
 
 This operation will INSERT documents to namespace, by their primary keys.  
 Each document should be in request body as separate JSON object, e.g.  
@@ -2010,11 +2059,11 @@ Each document should be in request body as separate JSON object, e.g.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 precepts?: string[]
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf]
 ```
 
@@ -2022,7 +2071,7 @@ format?: enum[json, msgpack, protobuf]
 
 - */*
 
-```ts
+```typescript
 {
 }
 ```
@@ -2033,7 +2082,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   // Count of updated items
   updated?: integer
@@ -2046,7 +2095,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2060,7 +2109,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2074,7 +2123,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2088,7 +2137,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2102,7 +2151,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2120,6 +2169,9 @@ format?: enum[json, msgpack, protobuf]
 [DELETE]/db/{database}/namespaces/{name}/items
 ```
 
+- Operation id  
+deleteItems
+
 
 This operation will DELETE documents from namespace, by their primary keys.  
 Each document should be in request body as separate JSON object, e.g.  
@@ -2132,7 +2184,7 @@ Each document should be in request body as separate JSON object, e.g.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 precepts?: string[]
 ```
 
@@ -2140,7 +2192,7 @@ precepts?: string[]
 
 - */*
 
-```ts
+```typescript
 {
 }
 ```
@@ -2151,7 +2203,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   // Count of updated items
   updated?: integer
@@ -2164,7 +2216,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2178,7 +2230,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2192,7 +2244,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2206,7 +2258,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2220,7 +2272,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2238,6 +2290,9 @@ precepts?: string[]
 [PATCH]/db/{database}/namespaces/{name}/items
 ```
 
+- Operation id  
+patchItems
+
 
 This operation will UPSERT documents in namespace, by their primary keys.  
 Each document should be in request body as separate JSON object, e.g.  
@@ -2250,11 +2305,11 @@ Each document should be in request body as separate JSON object, e.g.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 precepts?: string[]
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf]
 ```
 
@@ -2262,7 +2317,7 @@ format?: enum[json, msgpack, protobuf]
 
 - */*
 
-```ts
+```typescript
 {
 }
 ```
@@ -2273,7 +2328,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   // Count of updated items
   updated?: integer
@@ -2286,7 +2341,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2300,7 +2355,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2314,7 +2369,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2328,7 +2383,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2342,7 +2397,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2360,6 +2415,9 @@ format?: enum[json, msgpack, protobuf]
 [GET]/db/{database}/namespaces/{name}/indexes
 ```
 
+- Operation id  
+describeIndexes
+
 
 This operation will return list of available indexes, from specified database and namespace.  
 
@@ -2370,7 +2428,7 @@ This operation will return list of available indexes, from specified database an
 
 `application/json`
 
-```ts
+```typescript
 {
   items: {
     // Name of index, can contains letters, digits and underscores
@@ -2411,7 +2469,7 @@ This operation will return list of available indexes, from specified database an
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2425,7 +2483,7 @@ This operation will return list of available indexes, from specified database an
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2439,7 +2497,7 @@ This operation will return list of available indexes, from specified database an
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2453,7 +2511,7 @@ This operation will return list of available indexes, from specified database an
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2467,7 +2525,7 @@ This operation will return list of available indexes, from specified database an
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2485,6 +2543,9 @@ This operation will return list of available indexes, from specified database an
 [PUT]/db/{database}/namespaces/{name}/indexes
 ```
 
+- Operation id  
+putIndex
+
 
 This operation will update index parameters. E.g. type of field or type of index.  
 Operation synchronous, so it can take long time, if namespace contains bunch of documents  
@@ -2494,7 +2555,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 - */*
 
-```ts
+```typescript
 {
   // Name of index, can contains letters, digits and underscores
   name: string //default: id
@@ -2533,7 +2594,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2547,7 +2608,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2561,7 +2622,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2575,7 +2636,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2589,7 +2650,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2603,7 +2664,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2621,6 +2682,9 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 [POST]/db/{database}/namespaces/{name}/indexes
 ```
 
+- Operation id  
+postIndex
+
 
 This operation will create new index. If index already exists with different parameters, then error will be returned.  
 Operation synchronous, so it can take long time, if namespace contains bunch of documents.  
@@ -2630,7 +2694,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 - */*
 
-```ts
+```typescript
 {
   // Name of index, can contains letters, digits and underscores
   name: string //default: id
@@ -2669,7 +2733,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2683,7 +2747,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2697,7 +2761,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2711,7 +2775,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2725,7 +2789,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2739,7 +2803,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2757,6 +2821,9 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 [DELETE]/db/{database}/namespaces/{name}/indexes/{indexname}
 ```
 
+- Operation id  
+deleteIndex
+
 
 This operation will remove index from namespace. No data will be erased.  
 Operation synchronous, so it can take long time, if namespace contains bunch of documents.  
@@ -2768,7 +2835,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2782,7 +2849,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2796,7 +2863,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2810,7 +2877,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2824,7 +2891,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2838,7 +2905,7 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2856,6 +2923,9 @@ Operation synchronous, so it can take long time, if namespace contains bunch of 
 [GET]/db/{database}/namespaces/{name}/schema
 ```
 
+- Operation id  
+getSchema
+
 
 This operation will return current schema from specified database and namespace
 
@@ -2865,9 +2935,18 @@ This operation will return current schema from specified database and namespace
 
 `application/json`
 
-```ts
+```typescript
 {
-  "$ref": "JsonObjectDef"
+  required?: string[]
+  properties: {
+    field1:JsonObjectDef
+    field2:JsonObjectDef
+  }
+  items:JsonObjectDef
+  // Allow additional fields in this schema level. Allowed for objects only
+  additionalProperties?: boolean
+  // Entity type
+  type?: enum[object, string, number, array]
 }
 ```
 
@@ -2875,7 +2954,7 @@ This operation will return current schema from specified database and namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2889,7 +2968,7 @@ This operation will return current schema from specified database and namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2903,7 +2982,7 @@ This operation will return current schema from specified database and namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2917,7 +2996,7 @@ This operation will return current schema from specified database and namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2931,7 +3010,7 @@ This operation will return current schema from specified database and namespace
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2949,6 +3028,9 @@ This operation will return current schema from specified database and namespace
 [PUT]/db/{database}/namespaces/{name}/schema
 ```
 
+- Operation id  
+putSchema
+
 
 This operation will set namespace schema (information about available fields and field types)  
 
@@ -2957,9 +3039,18 @@ This operation will set namespace schema (information about available fields and
 
 - */*
 
-```ts
+```typescript
 {
-  "$ref": "JsonObjectDef"
+  required?: string[]
+  properties: {
+    field1:JsonObjectDef
+    field2:JsonObjectDef
+  }
+  items:JsonObjectDef
+  // Allow additional fields in this schema level. Allowed for objects only
+  additionalProperties?: boolean
+  // Entity type
+  type?: enum[object, string, number, array]
 }
 ```
 
@@ -2969,7 +3060,7 @@ This operation will set namespace schema (information about available fields and
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2983,7 +3074,7 @@ This operation will set namespace schema (information about available fields and
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -2997,7 +3088,7 @@ This operation will set namespace schema (information about available fields and
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3011,7 +3102,7 @@ This operation will set namespace schema (information about available fields and
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3025,7 +3116,7 @@ This operation will set namespace schema (information about available fields and
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3039,7 +3130,7 @@ This operation will set namespace schema (information about available fields and
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3057,13 +3148,16 @@ This operation will set namespace schema (information about available fields and
 [GET]/db/{database}/protobuf_schema
 ```
 
+- Operation id  
+getNsParamsSchema
+
 
 This operation allows to get client/server communication parameters as google protobuf schema (content of .proto file)  
 
 
 #### Parameters(Query)
 
-```ts
+```typescript
 ns?: string[]
 ```
 
@@ -3075,7 +3169,7 @@ ns?: string[]
 
 `text/plain`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3089,7 +3183,7 @@ ns?: string[]
 
 `text/plain`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3103,7 +3197,7 @@ ns?: string[]
 
 `text/plain`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3117,7 +3211,7 @@ ns?: string[]
 
 `text/plain`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3131,7 +3225,7 @@ ns?: string[]
 
 `text/plain`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3149,36 +3243,39 @@ ns?: string[]
 [GET]/db/{database}/query
 ```
 
+- Operation id  
+getQuery
+
 
 This operation queries documents from namespace by SQL query. Query can be preceded by `EXPLAIN` statement, then query execution plan will be returned with query results. Two level paging is supported. At first, applied normal SQL `LIMIT` and `OFFSET`, then `limit` and `offset` from http request.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 q: string
 ```
 
-```ts
+```typescript
 limit?: integer
 ```
 
-```ts
+```typescript
 offset?: integer
 ```
 
-```ts
+```typescript
 with_columns?: boolean
 ```
 
-```ts
+```typescript
 width?: integer
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf, csv-file]
 ```
 
-```ts
+```typescript
 sharding?: enum[true, false]
 ```
 
@@ -3188,7 +3285,7 @@ sharding?: enum[true, false]
 
 `application/json`
 
-```ts
+```typescript
 {
   items: {
   }[]
@@ -3230,7 +3327,7 @@ sharding?: enum[true, false]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3244,7 +3341,7 @@ sharding?: enum[true, false]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3258,7 +3355,7 @@ sharding?: enum[true, false]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3272,7 +3369,7 @@ sharding?: enum[true, false]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3286,7 +3383,7 @@ sharding?: enum[true, false]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3304,6 +3401,9 @@ sharding?: enum[true, false]
 [PUT]/db/{database}/query
 ```
 
+- Operation id  
+updateQuery
+
 
 This operation updates documents in namespace by DSL query.  
 
@@ -3312,7 +3412,7 @@ This operation updates documents in namespace by DSL query.
 
 - */*
 
-```ts
+```typescript
 {
   // Namespace name
   namespace: string
@@ -3492,7 +3592,7 @@ This operation updates documents in namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3506,7 +3606,7 @@ This operation updates documents in namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3520,7 +3620,7 @@ This operation updates documents in namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3534,7 +3634,7 @@ This operation updates documents in namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3548,7 +3648,7 @@ This operation updates documents in namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3562,7 +3662,7 @@ This operation updates documents in namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3580,21 +3680,24 @@ This operation updates documents in namespace by DSL query.
 [POST]/db/{database}/query
 ```
 
+- Operation id  
+postQuery
+
 
 This operation queries documents from namespace by DSL query.  
 
 
 #### Parameters(Query)
 
-```ts
+```typescript
 with_columns?: boolean
 ```
 
-```ts
+```typescript
 width?: integer
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf, csv-file]
 ```
 
@@ -3602,7 +3705,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 - */*
 
-```ts
+```typescript
 {
   // Namespace name
   namespace: string
@@ -3782,7 +3885,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   items: {
   }[]
@@ -3824,7 +3927,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3838,7 +3941,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3852,7 +3955,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3866,7 +3969,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3880,7 +3983,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -3898,6 +4001,9 @@ format?: enum[json, msgpack, protobuf, csv-file]
 [DELETE]/db/{database}/query
 ```
 
+- Operation id  
+deleteQuery
+
 
 This operation removes documents from namespace by DSL query.  
 
@@ -3906,7 +4012,7 @@ This operation removes documents from namespace by DSL query.
 
 - */*
 
-```ts
+```typescript
 {
   // Namespace name
   namespace: string
@@ -4086,7 +4192,7 @@ This operation removes documents from namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4100,7 +4206,7 @@ This operation removes documents from namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4114,7 +4220,7 @@ This operation removes documents from namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4128,7 +4234,7 @@ This operation removes documents from namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4142,7 +4248,7 @@ This operation removes documents from namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4156,7 +4262,7 @@ This operation removes documents from namespace by DSL query.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4174,9 +4280,12 @@ This operation removes documents from namespace by DSL query.
 [POST]/db/{database}/namespaces/{name}/transactions/begin
 ```
 
+- Operation id  
+beginTx
+
 #### Parameters(Query)
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf]
 ```
 
@@ -4186,7 +4295,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   // Unique transaction id
   tx_id?: string
@@ -4197,7 +4306,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4211,7 +4320,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4225,7 +4334,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4239,7 +4348,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4253,7 +4362,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4271,13 +4380,16 @@ format?: enum[json, msgpack, protobuf]
 [POST]/db/{database}/transactions/{tx_id}/commit
 ```
 
+- Operation id  
+commitTx
+
 #### Responses
 
 - 200 Successful operation
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4291,7 +4403,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4305,7 +4417,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4319,7 +4431,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4333,7 +4445,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4347,7 +4459,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4365,13 +4477,16 @@ format?: enum[json, msgpack, protobuf]
 [POST]/db/{database}/transactions/{tx_id}/rollback
 ```
 
+- Operation id  
+rollbackTx
+
 #### Responses
 
 - 200 Successful operation
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4385,7 +4500,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4399,7 +4514,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4413,7 +4528,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4427,7 +4542,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4441,7 +4556,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4459,6 +4574,9 @@ format?: enum[json, msgpack, protobuf]
 [PUT]/db/{database}/transactions/{tx_id}/items
 ```
 
+- Operation id  
+putItemsTx
+
 
 This will add UPDATE operation into transaction.  
 It UPDATEs documents in namespace, by their primary keys.  
@@ -4472,11 +4590,11 @@ Each document should be in request body as separate JSON object, e.g.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 precepts?: string[]
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf]
 ```
 
@@ -4484,7 +4602,7 @@ format?: enum[json, msgpack, protobuf]
 
 - */*
 
-```ts
+```typescript
 {
 }
 ```
@@ -4495,7 +4613,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4509,7 +4627,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4523,7 +4641,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4537,7 +4655,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4551,7 +4669,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4565,7 +4683,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4583,6 +4701,9 @@ format?: enum[json, msgpack, protobuf]
 [POST]/db/{database}/transactions/{tx_id}/items
 ```
 
+- Operation id  
+postItemsTx
+
 
 This will add INSERT operation into transaction.  
 It INSERTs documents to namespace, by their primary keys.  
@@ -4596,11 +4717,11 @@ Each document should be in request body as separate JSON object, e.g.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 precepts?: string[]
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf]
 ```
 
@@ -4608,7 +4729,7 @@ format?: enum[json, msgpack, protobuf]
 
 - */*
 
-```ts
+```typescript
 {
 }
 ```
@@ -4619,7 +4740,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4633,7 +4754,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4647,7 +4768,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4661,7 +4782,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4675,7 +4796,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4689,7 +4810,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4707,6 +4828,9 @@ format?: enum[json, msgpack, protobuf]
 [DELETE]/db/{database}/transactions/{tx_id}/items
 ```
 
+- Operation id  
+deleteItemsTx
+
 
 This will add DELETE operation into transaction.  
 It DELETEs documents from namespace, by their primary keys.  
@@ -4720,7 +4844,7 @@ Each document should be in request body as separate JSON object, e.g.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 precepts?: string[]
 ```
 
@@ -4728,7 +4852,7 @@ precepts?: string[]
 
 - */*
 
-```ts
+```typescript
 {
 }
 ```
@@ -4739,7 +4863,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4753,7 +4877,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4767,7 +4891,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4781,7 +4905,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4795,7 +4919,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4809,7 +4933,7 @@ precepts?: string[]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4827,6 +4951,9 @@ precepts?: string[]
 [PATCH]/db/{database}/transactions/{tx_id}/items
 ```
 
+- Operation id  
+patchItemsTx
+
 
 This will add UPSERT operation into transaction.  
 It UPDATEs documents in namespace, by their primary keys.  
@@ -4840,11 +4967,11 @@ Each document should be in request body as separate JSON object, e.g.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 precepts?: string[]
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf]
 ```
 
@@ -4852,7 +4979,7 @@ format?: enum[json, msgpack, protobuf]
 
 - */*
 
-```ts
+```typescript
 {
 }
 ```
@@ -4863,7 +4990,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4877,7 +5004,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4891,7 +5018,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4905,7 +5032,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4919,7 +5046,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4933,7 +5060,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4951,6 +5078,9 @@ format?: enum[json, msgpack, protobuf]
 [GET]/db/{database}/transactions/{tx_id}/query
 ```
 
+- Operation id  
+getQueryTx
+
 
 This will add DELETE/UPDATE SQL query into transaction.  
 This query UPDATEs/DELETEs documents from namespace  
@@ -4958,15 +5088,15 @@ This query UPDATEs/DELETEs documents from namespace
 
 #### Parameters(Query)
 
-```ts
+```typescript
 q: string
 ```
 
-```ts
+```typescript
 width?: integer
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf]
 ```
 
@@ -4976,7 +5106,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -4990,7 +5120,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5004,7 +5134,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5018,7 +5148,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5032,7 +5162,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5046,7 +5176,7 @@ format?: enum[json, msgpack, protobuf]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5064,6 +5194,9 @@ format?: enum[json, msgpack, protobuf]
 [DELETE]/db/{database}/transactions/{tx_id}/query
 ```
 
+- Operation id  
+deleteQueryTx
+
 
 This will add DELETE query into transaction.  
 DELETE query removes documents from namespace by DSL query.  
@@ -5071,7 +5204,7 @@ DELETE query removes documents from namespace by DSL query.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 tx_id?: string
 ```
 
@@ -5079,7 +5212,7 @@ tx_id?: string
 
 - */*
 
-```ts
+```typescript
 {
   // Namespace name
   namespace: string
@@ -5259,7 +5392,7 @@ tx_id?: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5273,7 +5406,7 @@ tx_id?: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5287,7 +5420,7 @@ tx_id?: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5301,7 +5434,7 @@ tx_id?: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5315,7 +5448,7 @@ tx_id?: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5329,7 +5462,7 @@ tx_id?: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5347,21 +5480,24 @@ tx_id?: string
 [GET]/db/{database}/suggest
 ```
 
+- Operation id  
+getSuggest
+
 
 This operation pareses SQL query, and suggests autocompletion variants  
 
 
 #### Parameters(Query)
 
-```ts
+```typescript
 q: string
 ```
 
-```ts
+```typescript
 pos: integer
 ```
 
-```ts
+```typescript
 line: integer
 ```
 
@@ -5371,7 +5507,7 @@ line: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   suggests?: string[]
 }
@@ -5381,7 +5517,7 @@ line: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5395,7 +5531,7 @@ line: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5409,7 +5545,7 @@ line: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5423,7 +5559,7 @@ line: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5437,7 +5573,7 @@ line: integer
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5455,21 +5591,24 @@ line: integer
 [POST]/db/{database}/sqlquery
 ```
 
+- Operation id  
+postSQLQuery
+
 
 This operation queries documents from namespace by SQL query. Query can be preceded by `EXPLAIN` statement, then query execution plan will be returned with query results.  
 
 
 #### Parameters(Query)
 
-```ts
+```typescript
 with_columns?: boolean
 ```
 
-```ts
+```typescript
 width?: integer
 ```
 
-```ts
+```typescript
 format?: enum[json, msgpack, protobuf, csv-file]
 ```
 
@@ -5477,10 +5616,8 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 - */*
 
-```ts
-{
-  "type": "string"
-}
+```typescript
+string
 ```
 
 #### Responses
@@ -5489,7 +5626,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   items: {
   }[]
@@ -5531,7 +5668,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5545,7 +5682,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5559,7 +5696,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5573,7 +5710,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5587,7 +5724,7 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5605,6 +5742,9 @@ format?: enum[json, msgpack, protobuf, csv-file]
 [GET]/check
 ```
 
+- Operation id  
+getSysInfo
+
 
 This operation will return system information about server version, uptime, and resources consumption
 
@@ -5614,7 +5754,7 @@ This operation will return system information about server version, uptime, and 
 
 `application/json`
 
-```ts
+```typescript
 {
   // Server version
   version?: string
@@ -5653,7 +5793,7 @@ This operation will return system information about server version, uptime, and 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5667,7 +5807,7 @@ This operation will return system information about server version, uptime, and 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5681,7 +5821,7 @@ This operation will return system information about server version, uptime, and 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5695,7 +5835,7 @@ This operation will return system information about server version, uptime, and 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5709,7 +5849,7 @@ This operation will return system information about server version, uptime, and 
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5727,6 +5867,9 @@ This operation will return system information about server version, uptime, and 
 [POST]/allocator/drop_cache
 ```
 
+- Operation id  
+postAllocatorDropCache
+
 
 Try to release free memory back to the operating system for reuse. Only for tcmalloc allocator.
 
@@ -5736,7 +5879,7 @@ Try to release free memory back to the operating system for reuse. Only for tcma
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5750,7 +5893,7 @@ Try to release free memory back to the operating system for reuse. Only for tcma
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5768,6 +5911,9 @@ Try to release free memory back to the operating system for reuse. Only for tcma
 [GET]/allocator/info
 ```
 
+- Operation id  
+getAllocatorInfo
+
 
 This operation will return memory usage information from tcmalloc allocator.
 
@@ -5779,7 +5925,7 @@ This operation will return memory usage information from tcmalloc allocator.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5793,7 +5939,7 @@ This operation will return memory usage information from tcmalloc allocator.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5807,7 +5953,7 @@ This operation will return memory usage information from tcmalloc allocator.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5821,7 +5967,7 @@ This operation will return memory usage information from tcmalloc allocator.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5835,7 +5981,7 @@ This operation will return memory usage information from tcmalloc allocator.
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5853,6 +5999,9 @@ This operation will return memory usage information from tcmalloc allocator.
 [GET]/user/role
 ```
 
+- Operation id  
+getUserRole
+
 
 Get the role of the currently authorized user in the Reindexer. If authorization is disabled, the owner's role is returned
 
@@ -5862,7 +6011,7 @@ Get the role of the currently authorized user in the Reindexer. If authorization
 
 `application/json`
 
-```ts
+```typescript
 {
   // User role
   user_role?: enum[owner, db_admin, data_write, data_read, none, unauthorized]
@@ -5873,7 +6022,7 @@ Get the role of the currently authorized user in the Reindexer. If authorization
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5891,6 +6040,9 @@ Get the role of the currently authorized user in the Reindexer. If authorization
 [GET]/db/{database}/namespaces/%23activitystats/items
 ```
 
+- Operation id  
+getActivityStats
+
 
 This operation will return detailed information about current activity of all connected to the database clients
 
@@ -5900,7 +6052,7 @@ This operation will return detailed information about current activity of all co
 
 `application/json`
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -5926,7 +6078,7 @@ This operation will return detailed information about current activity of all co
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5940,7 +6092,7 @@ This operation will return detailed information about current activity of all co
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5954,7 +6106,7 @@ This operation will return detailed information about current activity of all co
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5968,7 +6120,7 @@ This operation will return detailed information about current activity of all co
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -5982,7 +6134,7 @@ This operation will return detailed information about current activity of all co
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6000,6 +6152,9 @@ This operation will return detailed information about current activity of all co
 [GET]/db/{database}/namespaces/%23clientsstats/items
 ```
 
+- Operation id  
+getClientsStats
+
 
 This operation will return detailed information about all connections on the server
 
@@ -6009,7 +6164,7 @@ This operation will return detailed information about all connections on the ser
 
 `application/json`
 
-```ts
+```typescript
 {
   // Count of connected clients
   total_items?: integer
@@ -6056,7 +6211,7 @@ This operation will return detailed information about all connections on the ser
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6070,7 +6225,7 @@ This operation will return detailed information about all connections on the ser
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6084,7 +6239,7 @@ This operation will return detailed information about all connections on the ser
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6098,7 +6253,7 @@ This operation will return detailed information about all connections on the ser
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6112,7 +6267,7 @@ This operation will return detailed information about all connections on the ser
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6130,12 +6285,15 @@ This operation will return detailed information about all connections on the ser
 [GET]/db/{database}/namespaces/%23replicationstats/items
 ```
 
+- Operation id  
+getGlobalReplicationStats
+
 
 This operation will return detailed information about replication status on this node or cluster
 
 #### Parameters(Query)
 
-```ts
+```typescript
 filter: string
 ```
 
@@ -6145,7 +6303,7 @@ filter: string
 
 `application/json`
 
-```ts
+```typescript
 {
   // Total replication stat items count
   total_items?: integer
@@ -6200,7 +6358,7 @@ filter: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6214,7 +6372,7 @@ filter: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6228,7 +6386,7 @@ filter: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6242,7 +6400,7 @@ filter: string
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6260,6 +6418,9 @@ filter: string
 [GET]/db/{database}/namespaces/%23memstats/items
 ```
 
+- Operation id  
+getMemStats
+
 
 This operation will return detailed information about database memory consumption
 
@@ -6269,7 +6430,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -6442,7 +6603,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6456,7 +6617,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6470,7 +6631,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6484,7 +6645,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6498,7 +6659,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6516,6 +6677,9 @@ This operation will return detailed information about database memory consumptio
 [GET]/db/{database}/namespaces/%23perfstats/items
 ```
 
+- Operation id  
+getPerfStats
+
 
 This operation will return detailed information about database performance timings. By default performance stats is turned off.
 
@@ -6525,7 +6689,7 @@ This operation will return detailed information about database performance timin
 
 `application/json`
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -6654,7 +6818,7 @@ This operation will return detailed information about database performance timin
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6668,7 +6832,7 @@ This operation will return detailed information about database performance timin
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6682,7 +6846,7 @@ This operation will return detailed information about database performance timin
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6696,7 +6860,7 @@ This operation will return detailed information about database performance timin
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6710,7 +6874,7 @@ This operation will return detailed information about database performance timin
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6728,6 +6892,9 @@ This operation will return detailed information about database performance timin
 [GET]/db/{database}/namespaces/%23queriesperfstats/items
 ```
 
+- Operation id  
+getQueriesPerfStats
+
 
 This operation will return detailed information about database memory consumption. By default quires performance stat is turned off.
 
@@ -6737,7 +6904,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -6755,7 +6922,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6769,7 +6936,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6783,7 +6950,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6797,7 +6964,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6811,7 +6978,7 @@ This operation will return detailed information about database memory consumptio
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -6829,6 +6996,9 @@ This operation will return detailed information about database memory consumptio
 [GET]/db/{database}/namespaces/%23config/items
 ```
 
+- Operation id  
+getSystemConfigs
+
 
 This operation will return system configs
 
@@ -6838,7 +7008,7 @@ This operation will return system configs
 
 `application/json`
 
-```ts
+```typescript
 {
   items: {
     type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
@@ -6896,11 +7066,11 @@ This operation will return system configs
       optimization_sort_workers?: integer //default: 4
       // Maximum WAL size for this namespace (maximum count of WAL records)
       wal_size?: integer //default: 4000000
-      // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+      // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
       max_preselect_size?: integer //default: 1000
-      // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+      // Maximum preselect part of namespace's items for optimization of inner join by insertion of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
       max_preselect_part?: number //default: 0.1
-      // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
+      // Minimum preselect size for optimization of inner join by insertion of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
       min_preselect_size?: integer //default: 1000
       // Maximum number of IdSet iterations of namespace preliminary result size for optimization
       max_iterations_idset_preresult?: integer //default: 20000
@@ -7004,7 +7174,7 @@ This operation will return system configs
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7018,7 +7188,7 @@ This operation will return system configs
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7032,7 +7202,7 @@ This operation will return system configs
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7046,7 +7216,7 @@ This operation will return system configs
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7060,7 +7230,7 @@ This operation will return system configs
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7078,6 +7248,9 @@ This operation will return system configs
 [PUT]/db/{database}/namespaces/%23config/items
 ```
 
+- Operation id  
+putSystemConfig
+
 
 This operation will update system configuration:  
 - profiling configuration. It is used to enable recording of queries and overall performance;  
@@ -7088,7 +7261,7 @@ This operation will update system configuration:
 
 - */*
 
-```ts
+```typescript
 {
   type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
   profiling: {
@@ -7145,11 +7318,11 @@ This operation will update system configuration:
     optimization_sort_workers?: integer //default: 4
     // Maximum WAL size for this namespace (maximum count of WAL records)
     wal_size?: integer //default: 4000000
-    // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+    // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
     max_preselect_size?: integer //default: 1000
-    // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+    // Maximum preselect part of namespace's items for optimization of inner join by insertion of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
     max_preselect_part?: number //default: 0.1
-    // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
+    // Minimum preselect size for optimization of inner join by insertion of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
     min_preselect_size?: integer //default: 1000
     // Maximum number of IdSet iterations of namespace preliminary result size for optimization
     max_iterations_idset_preresult?: integer //default: 20000
@@ -7254,7 +7427,7 @@ This operation will update system configuration:
 
 `application/json`
 
-```ts
+```typescript
 {
   // Count of updated items
   updated?: integer
@@ -7265,7 +7438,7 @@ This operation will update system configuration:
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7279,7 +7452,7 @@ This operation will update system configuration:
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7293,7 +7466,7 @@ This operation will update system configuration:
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7307,7 +7480,7 @@ This operation will update system configuration:
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7321,7 +7494,7 @@ This operation will update system configuration:
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7339,12 +7512,15 @@ This operation will update system configuration:
 [GET]/db/default_configs
 ```
 
+- Operation id  
+getDefaultSystemConfigs
+
 
 This operation will return default system configs.
 
 #### Parameters(Query)
 
-```ts
+```typescript
 type: enum[namespaces, replication, async_replication, profiling, embedders] //default: namespaces
 ```
 
@@ -7354,7 +7530,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 `application/json`
 
-```ts
+```typescript
 {
   type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
   profiling: {
@@ -7411,11 +7587,11 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     optimization_sort_workers?: integer //default: 4
     // Maximum WAL size for this namespace (maximum count of WAL records)
     wal_size?: integer //default: 4000000
-    // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+    // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
     max_preselect_size?: integer //default: 1000
-    // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+    // Maximum preselect part of namespace's items for optimization of inner join by insertion of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
     max_preselect_part?: number //default: 0.1
-    // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
+    // Minimum preselect size for optimization of inner join by insertion of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
     min_preselect_size?: integer //default: 1000
     // Maximum number of IdSet iterations of namespace preliminary result size for optimization
     max_iterations_idset_preresult?: integer //default: 20000
@@ -7518,7 +7694,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7532,7 +7708,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7546,7 +7722,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7560,7 +7736,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 `application/json`
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -7574,7 +7750,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### SysInfo
 
-```ts
+```typescript
 {
   // Server version
   version?: string
@@ -7611,7 +7787,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### ActivityStats
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -7635,7 +7811,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### ClientsStats
 
-```ts
+```typescript
 {
   // Count of connected clients
   total_items?: integer
@@ -7680,7 +7856,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### ReplicationSyncStat
 
-```ts
+```typescript
 {
   // Syncs count
   count: integer
@@ -7693,7 +7869,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### GlobalReplicationStats
 
-```ts
+```typescript
 {
   // Total replication stat items count
   total_items?: integer
@@ -7746,7 +7922,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### Databases
 
-```ts
+```typescript
 {
   // Total count of databases
   total_items?: integer
@@ -7757,7 +7933,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### Database
 
-```ts
+```typescript
 {
   // Name of database
   name?: string
@@ -7766,7 +7942,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### Namespaces
 
-```ts
+```typescript
 {
   items: {
     // Name of namespace
@@ -7779,7 +7955,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### Namespace
 
-```ts
+```typescript
 {
   // Name of namespace
   name?: string
@@ -7822,7 +7998,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### Index
 
-```ts
+```typescript
 {
   // Name of index, can contains letters, digits and underscores
   name: string //default: id
@@ -7857,7 +8033,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### JsonObjectDef
 
-```ts
+```typescript
 {
   required?: string[]
   properties: {
@@ -7885,7 +8061,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### SchemaDef
 
-```ts
+```typescript
 {
   required?: string[]
   properties: {
@@ -7913,7 +8089,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### UpdateField
 
-```ts
+```typescript
 {
   // field name
   name: string
@@ -7928,7 +8104,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### Query
 
-```ts
+```typescript
 {
   // Namespace name
   namespace: string
@@ -8104,7 +8280,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### SubQuery
 
-```ts
+```typescript
 // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
 {
   // Namespace name
@@ -8220,7 +8396,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### EqualPositionDef
 
-```ts
+```typescript
 // Array fields to be searched with equal array indexes
 {
   positions?: string[]
@@ -8229,7 +8405,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### FilterDef
 
-```ts
+```typescript
 // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
 {
   // Expression on the left side of the condition. It may be a field or function.
@@ -8366,7 +8542,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### KnnSearchParamsDef
 
-```ts
+```typescript
 // Parameters for knn search
 {
   // Maximum count of returned vectors in KNN queries
@@ -8382,7 +8558,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### SortDef
 
-```ts
+```typescript
 // Specifies results sorting order
 {
   // Field or index name for sorting
@@ -8396,7 +8572,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### JoinedDef
 
-```ts
+```typescript
 {
   // Namespace name
   namespace: string
@@ -8511,7 +8687,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### OnDef
 
-```ts
+```typescript
 {
   // Field from left namespace (main query namespace)
   left_field: string
@@ -8526,7 +8702,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### AggregationsDef
 
-```ts
+```typescript
 {
   fields?: string[]
   // Aggregation function
@@ -8547,7 +8723,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### SubQueryAggregationsDef
 
-```ts
+```typescript
 {
   fields?: string[]
   // Aggregation function
@@ -8557,7 +8733,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### AggregationsSortDef
 
-```ts
+```typescript
 // Specifies facet aggregations results sorting order
 {
   // Field or index name for sorting
@@ -8569,7 +8745,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### FtStopWordObject
 
-```ts
+```typescript
 {
   // Stop word
   word?: string
@@ -8580,7 +8756,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### FloatVectorConfig
 
-```ts
+```typescript
 // Float Vector Index configuration
 {
   // Dimension of vectors in index
@@ -8617,7 +8793,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       name?: string
       // Embed service URL
       URL: string
-      // tag is used to cache results of injection
+      // tag is used to cache results of insertion
       cache_tag?: string
       fields?: string[]
       // Embedding application strategy
@@ -8638,7 +8814,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     query_embedder: {
       // Embed service URL
       URL: string
-      // tag is used to cache results of injection
+      // tag is used to cache results of insertion
       cache_tag?: string
       // Connection pool configuration
       pool: {
@@ -8658,7 +8834,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### FulltextConfig
 
-```ts
+```typescript
 // Fulltext Index configuration
 {
   // Enable search of concatenated adjacent terms. e.g. terms 'di caprio' will match word 'dicaprio'
@@ -8718,8 +8894,10 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   full_match_boost?: number //default: 1.1
   // Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)
   partial_match_decrease?: integer
-  // Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned 
+  // DEPRECATED. Minimum relevancy of found documents. 0: all found documents will be returned 1: only documents with rank >= 100 will be returned 
   min_relevancy?: number //default: 0.05
+  // Minimum rank of found documents. 0: all found documents will be returned 255: only documents with rank = 255 will be returned 
+  min_rank?: number //default: 5
   // Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 2 possible typo -It will seriously increase RAM usage, and decrease search speed
   max_typos?: integer
   // Maximum word length for building and matching variants with typos.
@@ -8807,7 +8985,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### FulltextFieldConfig
 
-```ts
+```typescript
 // Configuration for certain field if it differ from whole index configuration
 {
   // Field name
@@ -8829,7 +9007,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### FulltextSynonym
 
-```ts
+```typescript
 // Fulltext synonym definition
 {
   tokens?: string[]
@@ -8839,7 +9017,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### FulltextTermsBoost
 
-```ts
+```typescript
 // Fulltext terms boost definition
 {
   terms?: string[]
@@ -8850,7 +9028,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### MetaInfo
 
-```ts
+```typescript
 // Meta info to be set
 {
   key: string
@@ -8860,7 +9038,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### MetaListResponse
 
-```ts
+```typescript
 // List of meta info of the specified namespace
 {
   // Total count of meta info in the namespace
@@ -8875,7 +9053,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### MetaByKeyResponse
 
-```ts
+```typescript
 // Meta info of the specified namespace
 {
   key: string
@@ -8885,7 +9063,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### Items
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -8896,7 +9074,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### SuggestItems
 
-```ts
+```typescript
 {
   suggests?: string[]
 }
@@ -8904,7 +9082,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### QueryItems
 
-```ts
+```typescript
 {
   items: {
   }[]
@@ -8944,7 +9122,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### Indexes
 
-```ts
+```typescript
 {
   items: {
     // Name of index, can contains letters, digits and underscores
@@ -8983,22 +9161,13 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### ExplainDef
 
-```ts
-{
-  "oneOf": [
-    {
-      "$ref": "SingleQueryExplainDef"
-    },
-    {
-      "$ref": "MergedQueryExplainDef"
-    }
-  ]
-}
+```typescript
+undefined?: SingleQueryExplainDef | MergedQueryExplainDef
 ```
 
 ### SingleQueryExplainDef
 
-```ts
+```typescript
 // Explanations of query execution
 {
   // Namespace name
@@ -9092,34 +9261,34 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
         explain_preselect:SingleQueryExplainDef
         explain_select:SingleQueryExplainDef
       }[]
-      on_conditions_injections: {
+      on_conditions_insertions: {
         // Joinable ns name
         namespace?: string
         // Original ON-conditions clause. SQL-like string
         on_condition?: string
         // Total amount of time spent on checking and substituting all conditions
         total_time_us?: integer
-        // Result of injection attempt
+        // Result of insertion attempt
         success?: boolean
-        // Optional{succeed==false}. Explains condition injection failure
+        // Optional{succeed==false}. Explains condition insertion failure
         reason?: string
         // Values source: preselect values(by_value) or additional select(select)
         type?: string
-        // Injected condition. SQL-like string
-        injected_condition?: string
+        // Inserted condition. SQL-like string
+        inserted_condition?: string
         conditions: {
           // single condition from Join ON section. SQL-like string
           condition?: string
-          // total time elapsed from injection attempt start till the end of substitution or rejection
+          // total time elapsed from insertion attempt start till the end of substitution or rejection
           total_time_us?: integer
           explain_select:SingleQueryExplainDef
           // Optional. Aggregation type used in subquery
           agg_type?: enum[min, max, distinct]
-          // result of injection attempt
+          // result of insertion attempt
           success?: boolean
-          // Optional. Explains condition injection failure
+          // Optional. Explains condition insertion failure
           reason?: string
-          // substituted injected condition. SQL-like string
+          // substituted inserted condition. SQL-like string
           new_condition?: string
           // resulting size of query values set
           values_count?: integer
@@ -9137,34 +9306,34 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     }
     explain_select:SingleQueryExplainDef
   }[]
-  on_conditions_injections: {
+  on_conditions_insertions: {
     // Joinable ns name
     namespace?: string
     // Original ON-conditions clause. SQL-like string
     on_condition?: string
     // Total amount of time spent on checking and substituting all conditions
     total_time_us?: integer
-    // Result of injection attempt
+    // Result of insertion attempt
     success?: boolean
-    // Optional{succeed==false}. Explains condition injection failure
+    // Optional{succeed==false}. Explains condition insertion failure
     reason?: string
     // Values source: preselect values(by_value) or additional select(select)
     type?: string
-    // Injected condition. SQL-like string
-    injected_condition?: string
+    // Inserted condition. SQL-like string
+    inserted_condition?: string
     conditions: {
       // single condition from Join ON section. SQL-like string
       condition?: string
-      // total time elapsed from injection attempt start till the end of substitution or rejection
+      // total time elapsed from insertion attempt start till the end of substitution or rejection
       total_time_us?: integer
       explain_select:SingleQueryExplainDef
       // Optional. Aggregation type used in subquery
       agg_type?: enum[min, max, distinct]
-      // result of injection attempt
+      // result of insertion attempt
       success?: boolean
-      // Optional. Explains condition injection failure
+      // Optional. Explains condition insertion failure
       reason?: string
-      // substituted injected condition. SQL-like string
+      // substituted inserted condition. SQL-like string
       new_condition?: string
       // resulting size of query values set
       values_count?: integer
@@ -9184,7 +9353,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### MergedQueryExplainDef
 
-```ts
+```typescript
 {
   // Namespace name
   namespace?: string
@@ -9252,34 +9421,34 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
       explain_preselect:SingleQueryExplainDef
       explain_select:SingleQueryExplainDef
     }[]
-    on_conditions_injections: {
+    on_conditions_insertions: {
       // Joinable ns name
       namespace?: string
       // Original ON-conditions clause. SQL-like string
       on_condition?: string
       // Total amount of time spent on checking and substituting all conditions
       total_time_us?: integer
-      // Result of injection attempt
+      // Result of insertion attempt
       success?: boolean
-      // Optional{succeed==false}. Explains condition injection failure
+      // Optional{succeed==false}. Explains condition insertion failure
       reason?: string
       // Values source: preselect values(by_value) or additional select(select)
       type?: string
-      // Injected condition. SQL-like string
-      injected_condition?: string
+      // Inserted condition. SQL-like string
+      inserted_condition?: string
       conditions: {
         // single condition from Join ON section. SQL-like string
         condition?: string
-        // total time elapsed from injection attempt start till the end of substitution or rejection
+        // total time elapsed from insertion attempt start till the end of substitution or rejection
         total_time_us?: integer
         explain_select:SingleQueryExplainDef
         // Optional. Aggregation type used in subquery
         agg_type?: enum[min, max, distinct]
-        // result of injection attempt
+        // result of insertion attempt
         success?: boolean
-        // Optional. Explains condition injection failure
+        // Optional. Explains condition insertion failure
         reason?: string
-        // substituted injected condition. SQL-like string
+        // substituted inserted condition. SQL-like string
         new_condition?: string
         // resulting size of query values set
         values_count?: integer
@@ -9300,7 +9469,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### AggregationResDef
 
-```ts
+```typescript
 {
   fields?: string[]
   // Aggregation function
@@ -9318,21 +9487,19 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ### DistincOneItemDef
 
-```ts
-{
-  "type": "string"
-}
+```typescript
+string
 ```
 
 ### DistinctMultiItemDef
 
-```ts
+```typescript
 string[]
 ```
 
 ### QueryColumnDef
 
-```ts
+```typescript
 // Query columns for table outputs
 {
   // Column name
@@ -9348,7 +9515,7 @@ string[]
 
 ### StatusResponse
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -9360,7 +9527,7 @@ string[]
 
 ### ItemsUpdateResponse
 
-```ts
+```typescript
 {
   // Count of updated items
   updated?: integer
@@ -9371,7 +9538,7 @@ string[]
 
 ### UpdateResponse
 
-```ts
+```typescript
 {
   // Count of updated items
   updated?: integer
@@ -9380,7 +9547,7 @@ string[]
 
 ### DatabaseMemStats
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -9551,7 +9718,7 @@ string[]
 
 ### NamespaceMemStats
 
-```ts
+```typescript
 {
   // Name of namespace
   name?: string
@@ -9718,7 +9885,7 @@ string[]
 
 ### IndexMemStat
 
-```ts
+```typescript
 {
   // Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexed fields
   name?: string
@@ -9766,7 +9933,7 @@ string[]
 
 ### EmbedderStatus
 
-```ts
+```typescript
 {
   // Last request execution status
   last_request_result?: enum[OK, ERROR]
@@ -9781,7 +9948,7 @@ string[]
 
 ### EmbedderLastError
 
-```ts
+```typescript
 {
   // Error code. 0 - no error.
   code?: integer
@@ -9792,7 +9959,7 @@ string[]
 
 ### EmbeddersCacheMemStat
 
-```ts
+```typescript
 {
   // Tag of cache from configuration
   cache_tag?: string
@@ -9821,46 +9988,28 @@ string[]
 
 ### JoinCacheMemStats
 
-```ts
-{
-  "description": "Join cache stats. Stores results of selects to right table by ON condition",
-  "allOf": [
-    {
-      "$ref": "CacheMemStats"
-    }
-  ]
-}
+```typescript
+// Join cache stats. Stores results of selects to right table by ON condition
+undefined?: CacheMemStats
 ```
 
 ### QueryCacheMemStats
 
-```ts
-{
-  "description": "Query cache stats. Stores results of SELECT COUNT(*) by Where conditions",
-  "allOf": [
-    {
-      "$ref": "CacheMemStats"
-    }
-  ]
-}
+```typescript
+// Query cache stats. Stores results of SELECT COUNT(*) by Where conditions
+undefined?: CacheMemStats
 ```
 
 ### IndexCacheMemStats
 
-```ts
-{
-  "description": "Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys",
-  "allOf": [
-    {
-      "$ref": "CacheMemStats"
-    }
-  ]
-}
+```typescript
+// Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
+undefined?: CacheMemStats
 ```
 
 ### CacheMemStats
 
-```ts
+```typescript
 {
   // Total memory consumption by this cache
   total_size?: integer
@@ -9875,7 +10024,7 @@ string[]
 
 ### ReplicationStats
 
-```ts
+```typescript
 // State of namespace replication
 {
   // Last Log Sequence Number (LSN) of applied namespace modification represented as single integer
@@ -9920,7 +10069,7 @@ string[]
 
 ### DatabasePerfStats
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -10047,7 +10196,7 @@ string[]
 
 ### NamespacePerfStats
 
-```ts
+```typescript
 {
   // Name of namespace
   name?: string
@@ -10170,7 +10319,7 @@ string[]
 
 ### CommonPerfStats
 
-```ts
+```typescript
 {
   // Total count of queries to this object
   total_queries_count?: integer
@@ -10195,33 +10344,21 @@ string[]
 
 ### UpdatePerfStats
 
-```ts
-{
-  "description": "Performance statistics for update operations",
-  "allOf": [
-    {
-      "$ref": "CommonPerfStats"
-    }
-  ]
-}
+```typescript
+// Performance statistics for update operations
+undefined?: CommonPerfStats
 ```
 
 ### SelectPerfStats
 
-```ts
-{
-  "description": "Performance statistics for select operations",
-  "allOf": [
-    {
-      "$ref": "CommonPerfStats"
-    }
-  ]
-}
+```typescript
+// Performance statistics for select operations
+undefined?: CommonPerfStats
 ```
 
 ### TransactionsPerfStats
 
-```ts
+```typescript
 // Performance statistics for transactions
 {
   // Total transactions count for this namespace
@@ -10257,7 +10394,7 @@ string[]
 
 ### QueriesPerfStats
 
-```ts
+```typescript
 {
   // Total count of documents, matched specified filters
   total_items?: integer
@@ -10273,33 +10410,19 @@ string[]
 
 ### QueryPerfStats
 
-```ts
-{
-  "description": "Performance statistics per each query",
-  "allOf": [
-    {
-      "$ref": "CommonPerfStats"
-    },
-    {
-      "type": "object",
-      "properties": {
-        "query": {
-          "type": "string",
-          "description": "normalized SQL representation of query"
-        },
-        "longest_query": {
-          "type": "string",
-          "description": "not normalized SQL representation of longest query"
-        }
-      }
-    }
-  ]
-}
+```typescript
+// Performance statistics per each query
+undefined?: CommonPerfStats & {
+   // normalized SQL representation of query
+   query?: string
+   // not normalized SQL representation of longest query
+   longest_query?: string
+ }
 ```
 
 ### LRUCachePerfStats
 
-```ts
+```typescript
 // Performance statistics for specific LRU-cache instance
 {
   // Queries total count
@@ -10313,7 +10436,7 @@ string[]
 
 ### EmbedderCachePerfStat
 
-```ts
+```typescript
 // Performance statistics for specific Embedder LRU-cache instance
 {
   // Name. Identifier for linking settings
@@ -10329,7 +10452,7 @@ string[]
 
 ### EmbedderPerfStat
 
-```ts
+```typescript
 {
   // Total number of calls to a specific embedder
   total_queries_count?: integer
@@ -10395,7 +10518,7 @@ string[]
 
 ### SystemConfigItems
 
-```ts
+```typescript
 {
   items: {
     type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
@@ -10453,11 +10576,11 @@ string[]
       optimization_sort_workers?: integer //default: 4
       // Maximum WAL size for this namespace (maximum count of WAL records)
       wal_size?: integer //default: 4000000
-      // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+      // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
       max_preselect_size?: integer //default: 1000
-      // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+      // Maximum preselect part of namespace's items for optimization of inner join by insertion of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
       max_preselect_part?: number //default: 0.1
-      // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
+      // Minimum preselect size for optimization of inner join by insertion of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
       min_preselect_size?: integer //default: 1000
       // Maximum number of IdSet iterations of namespace preliminary result size for optimization
       max_iterations_idset_preresult?: integer //default: 20000
@@ -10559,7 +10682,7 @@ string[]
 
 ### SystemConfigItem
 
-```ts
+```typescript
 {
   type: enum[profiling, namespaces, replication, async_replication, embedders, action] //default: profiling
   profiling: {
@@ -10616,11 +10739,11 @@ string[]
     optimization_sort_workers?: integer //default: 4
     // Maximum WAL size for this namespace (maximum count of WAL records)
     wal_size?: integer //default: 4000000
-    // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+    // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
     max_preselect_size?: integer //default: 1000
-    // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+    // Maximum preselect part of namespace's items for optimization of inner join by insertion of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
     max_preselect_part?: number //default: 0.1
-    // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
+    // Minimum preselect size for optimization of inner join by insertion of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
     min_preselect_size?: integer //default: 1000
     // Maximum number of IdSet iterations of namespace preliminary result size for optimization
     max_iterations_idset_preresult?: integer //default: 20000
@@ -10721,7 +10844,7 @@ string[]
 
 ### ProfilingConfig
 
-```ts
+```typescript
 {
   // Enables tracking activity statistics
   activitystats?: boolean
@@ -10759,7 +10882,7 @@ string[]
 
 ### LongQueriesLogging
 
-```ts
+```typescript
 // Parameters for logging long queries and transactions
 {
   select: {
@@ -10785,7 +10908,7 @@ string[]
 
 ### SelectLogging
 
-```ts
+```typescript
 {
   // Threshold value for logging SELECT queries, if -1 logging is disabled
   threshold_us?: integer
@@ -10796,7 +10919,7 @@ string[]
 
 ### UpdateDeleteLogging
 
-```ts
+```typescript
 {
   // Threshold value for logging UPDATE and DELETE queries, if -1 logging is disabled
   threshold_us?: integer
@@ -10807,7 +10930,7 @@ string[]
 
 ### TransactionLogging
 
-```ts
+```typescript
 {
   // Threshold value for total transaction commit time, if -1 logging is disabled
   threshold_us?: integer
@@ -10818,7 +10941,7 @@ string[]
 
 ### NamespacesConfig
 
-```ts
+```typescript
 {
   // Name of namespace, or `*` for setting to all namespaces
   namespace?: string
@@ -10840,11 +10963,11 @@ string[]
   optimization_sort_workers?: integer //default: 4
   // Maximum WAL size for this namespace (maximum count of WAL records)
   wal_size?: integer //default: 4000000
-  // Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+  // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
   max_preselect_size?: integer //default: 1000
-  // Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
+  // Maximum preselect part of namespace's items for optimization of inner join by insertion of filters. If max_preselect_part is 0, then only max_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
   max_preselect_part?: number //default: 0.1
-  // Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
+  // Minimum preselect size for optimization of inner join by insertion of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value
   min_preselect_size?: integer //default: 1000
   // Maximum number of IdSet iterations of namespace preliminary result size for optimization
   max_iterations_idset_preresult?: integer //default: 20000
@@ -10879,7 +11002,7 @@ string[]
 
 ### ReplicationConfig
 
-```ts
+```typescript
 {
   // Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases
   server_id?: integer
@@ -10895,7 +11018,7 @@ string[]
 
 ### AsyncReplicationConfig
 
-```ts
+```typescript
 {
   // Replication role
   role: enum[none, follower, leader]
@@ -10940,7 +11063,7 @@ string[]
 
 ### EmbeddersConfig
 
-```ts
+```typescript
 {
   // Name. Identifier for linking settings. Special value '*' is supported (applies to all)
   cache_tag?: string
@@ -10953,7 +11076,7 @@ string[]
 
 ### ActionCommand
 
-```ts
+```typescript
 {
   // Command to execute
   command: enum[restart_replication, reset_replication_role]
@@ -10964,7 +11087,7 @@ string[]
 
 ### BeginTransactionResponse
 
-```ts
+```typescript
 {
   // Unique transaction id
   tx_id?: string
@@ -10973,7 +11096,7 @@ string[]
 
 ### UserRoleResponse
 
-```ts
+```typescript
 {
   // User role
   user_role?: enum[owner, db_admin, data_write, data_read, none, unauthorized]
@@ -10984,7 +11107,7 @@ string[]
 
 - application/json
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -10998,7 +11121,7 @@ string[]
 
 - application/json
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -11012,7 +11135,7 @@ string[]
 
 - application/json
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -11026,7 +11149,7 @@ string[]
 
 - application/json
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -11040,7 +11163,7 @@ string[]
 
 - application/json
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code
@@ -11054,7 +11177,7 @@ string[]
 
 - application/json
 
-```ts
+```typescript
 {
   success?: boolean
   // Duplicates HTTP response code

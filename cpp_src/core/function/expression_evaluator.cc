@@ -120,13 +120,16 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(Tokenizer
 								 }
 								 return {.value = Variant{}, .type = PrimaryToken::Type::Array};
 							 },
-							 [](KeyValueType::Float) noexcept -> PrimaryToken {
+							 [&](KeyValueType::FloatVector) -> PrimaryToken {
+								 throw Error(errParams, kWrongFieldTypeError, outTok.Text());
+							 },
+							 [](KeyValueType::Float) -> PrimaryToken {
 								 // Indexed field type can not be float
 								 assertrx_throw(false);
 								 abort();
 							 },
-							 [](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-												KeyValueType::FloatVector> auto) noexcept -> PrimaryToken {
+							 [](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+												KeyValueType::Null> auto) -> PrimaryToken {
 								 assertrx_throw(false);
 								 abort();
 							 });
@@ -141,7 +144,7 @@ ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(Tokenizer
 			},
 			[&, this](concepts::OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid, KeyValueType::FloatVector> auto)
 				-> PrimaryToken { throwUnexpectedTokenError(parser, outTok); },
-			[](KeyValueType::Float) noexcept -> PrimaryToken {
+			[](KeyValueType::Float) -> PrimaryToken {
 				// Indexed field type can not be float
 				assertrx_throw(false);
 				abort();

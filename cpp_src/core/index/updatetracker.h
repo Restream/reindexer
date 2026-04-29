@@ -77,7 +77,7 @@ public:
 			auto keyIt = idx_map.find(valIt);
 			assertrx(keyIt != idx_map.end());
 			keyIt->second.Unsorted().Commit();
-			assertrx(keyIt->second.Unsorted().size());
+			assertrx(keyIt->second.Unsorted().Size());
 		}
 	}
 

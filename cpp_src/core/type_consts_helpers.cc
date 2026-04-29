@@ -4,32 +4,6 @@
 
 namespace reindexer {
 
-CondType InvertJoinCondition(CondType cond) {
-	switch (cond) {
-		case CondSet:
-			return CondSet;
-		case CondEq:
-			return CondEq;
-		case CondGt:
-			return CondLt;
-		case CondLt:
-			return CondGt;
-		case CondGe:
-			return CondLe;
-		case CondLe:
-			return CondGe;
-		case CondAny:
-		case CondRange:
-		case CondAllSet:
-		case CondEmpty:
-		case CondLike:
-		case CondDWithin:
-		case CondKnn:
-			break;
-	}
-	throw Error(errForbidden, "Not invertible conditional operator '{}({})' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
-}
-
 CondType InvertNotCondition(CondType cond) {
 	switch (cond) {
 		case CondGt:
@@ -172,23 +146,6 @@ std::string_view AggTypeToStr(AggType t) noexcept {
 	return "unknown"sv;
 }
 
-std::string_view JoinTypeName(JoinType type) {
-	using namespace std::string_view_literals;
-
-	switch (type) {
-		case JoinType::InnerJoin:
-			return "INNER JOIN"sv;
-		case JoinType::OrInnerJoin:
-			return "OR INNER JOIN"sv;
-		case JoinType::LeftJoin:
-			return "LEFT JOIN"sv;
-		case JoinType::Merge:
-			return "MERGE"sv;
-	}
-	assertrx(false);
-	return "unknown"sv;
-}
-
 QueryRankType ToQueryRankType(VectorMetric metric) {
 	switch (metric) {
 		case VectorMetric::L2:
@@ -197,6 +154,18 @@ QueryRankType ToQueryRankType(VectorMetric metric) {
 			return QueryRankType::KnnCos;
 		case VectorMetric::InnerProduct:
 			return QueryRankType::KnnIP;
+	}
+	throw_as_assert;
+}
+
+std::string_view VectorMetricToStr(VectorMetric metric) {
+	switch (metric) {
+		case VectorMetric::L2:
+			return "l2";
+		case VectorMetric::Cosine:
+			return "cosine";
+		case VectorMetric::InnerProduct:
+			return "inner_product";
 	}
 	throw_as_assert;
 }

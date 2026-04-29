@@ -244,7 +244,7 @@ public:
 	}
 
 	template <typename T>
-	RX_ALWAYS_INLINE bool Is() const noexcept {	 // TODO
+	RX_ALWAYS_INLINE bool Is() const noexcept {
 		static constexpr KeyValueType v{T{}};
 		return v.value_ == value_;
 	}

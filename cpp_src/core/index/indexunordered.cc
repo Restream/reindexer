@@ -1,5 +1,6 @@
 #include "indexunordered.h"
 #include "core/dbconfig.h"
+#include "core/formatters/id_type_fmt.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "core/index/string_map.h"
 #include "core/indexdef.h"
@@ -186,21 +187,21 @@ struct [[nodiscard]] DeepClean {
 
 template <typename T>
 void IndexUnordered<T>::addMemStat(typename T::iterator it) noexcept {
-	this->memStat_.idsetPlainSize += sizeof(typename T::value_type) + it->second.Unsorted().heap_size();
-	this->memStat_.idsetBTreeSize += it->second.Unsorted().BTreeSize();
+	this->memStat_.idsetPlainSize += sizeof(typename T::value_type) + it->second.Unsorted().PlainHeapSize();
+	this->memStat_.idsetBTreeSize += it->second.Unsorted().BTreeHeapSize();
 	this->memStat_.dataSize += heap_size(it->first);
 }
 
 template <typename T>
 void IndexUnordered<T>::delMemStat(typename T::iterator it) noexcept {
-	this->memStat_.idsetPlainSize -= sizeof(typename T::value_type) + it->second.Unsorted().heap_size();
-	this->memStat_.idsetBTreeSize -= it->second.Unsorted().BTreeSize();
+	this->memStat_.idsetPlainSize -= sizeof(typename T::value_type) + it->second.Unsorted().PlainHeapSize();
+	this->memStat_.idsetBTreeSize -= it->second.Unsorted().BTreeHeapSize();
 	this->memStat_.dataSize -= heap_size(it->first);
 }
 
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
-	assertrx_dbg(!this->IsFulltext() || this->Type() == IndexFuzzyFT || this->Type() == IndexCompositeFuzzyFT);
+	assertrx_dbg(!this->IsFulltext());
 	// reset cache
 	if (key.IsNullValue()) {
 		assertrx_dbg(this->Opts().IsSparse() || this->Opts().IsArray());
@@ -247,7 +248,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) {
-	assertrx(!this->IsFulltext() || this->Type() == IndexFuzzyFT || this->Type() == IndexCompositeFuzzyFT);
+	assertrx(!this->IsFulltext());
 	if (key.IsNullValue()) {
 		std::ignore = this->empty_ids_.Unsorted().Erase(id);
 		this->isBuilt_ = false;
@@ -267,8 +268,8 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExis
 	}
 	assertf(!mustExist || delcnt || this->Opts().IsArray() || this->Opts().IsSparse(),
 			"Delete non-existing id from index '{}' id={}, key={} ({})", this->name_, id,
-			key.As<std::string>(this->payloadType_, this->Fields()),
-			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
+			key.AsSingleString(this->payloadType_, this->Fields()),
+			Variant(keyIt->first).AsSingleString(this->payloadType_, this->Fields()));
 	if (keyIt == idx_map.end()) {
 		return;
 	}
@@ -276,7 +277,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExis
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
 		if constexpr (is_str_map_v<T>) {
-			std::ignore = idx_map.template erase<StringMapEntryCleaner<true>>(
+			idx_map.template erase<StringMapEntryCleaner<true>>(
 				keyIt, {strHolder, this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() == CollateNone});
 		} else {
 			(void)idx_map.template erase<DeepClean>(keyIt);
@@ -499,12 +500,12 @@ void IndexUnordered<T>::Commit() {
 	}
 
 	logFmt(LogTrace, "IndexUnordered::Commit ({}) {} uniq keys, {} empty, {}", this->name_, this->idx_map.size(),
-		   this->empty_ids_.Unsorted().size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
+		   this->empty_ids_.Unsorted().Size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
 
 	if (tracker_.isCompleteUpdated()) {
 		for (auto& keyIt : this->idx_map) {
 			keyIt.second.Unsorted().Commit();
-			assertrx(keyIt.second.Unsorted().size());
+			assertrx(keyIt.second.Unsorted().Size());
 		}
 	} else {
 		tracker_.commitUpdated(idx_map);
@@ -517,15 +518,10 @@ void IndexUnordered<T>::UpdateSortedIds(const IUpdateSortedContext& ctx) {
 	assertrx_dbg(IsSupportSortedIdsBuild());
 
 	logFmt(LogTrace, "IndexUnordered::UpdateSortedIds ({}) {} uniq keys, {} empty", this->name_, this->idx_map.size(),
-		   this->empty_ids_.Unsorted().size());
-	// For all keys in index
-	for (auto& keyIt : this->idx_map) {
-		keyIt.second.UpdateSortedIds(ctx);
-	}
-
-	this->empty_ids_.UpdateSortedIds(ctx);
+		   this->empty_ids_.Unsorted().Size());
 
 	if constexpr (isPK) {
+		// PK stores sorted IDs in separated vector
 		const auto curSortId = ctx.GetCurSortId();
 		const auto& ids2Sorts = ctx.Ids2Sorts();
 		assertrx_dbg(curSortId <= pkSortedIds_.size());
@@ -541,7 +537,13 @@ void IndexUnordered<T>::UpdateSortedIds(const IUpdateSortedContext& ctx) {
 		int64_t additionalIdsetPlainSizeDiff = pkSortedIds.capacity() * sizeof(IdType);
 		additionalIdsetPlainSizeDiff -= oldCapacity * sizeof(IdType);
 		pkSortedIdsSizeBytes_.fetch_add(additionalIdsetPlainSizeDiff);
+	} else {
+		// Other indexes store sorted IDs inside ID sets
+		for (auto& keyIt : this->idx_map) {
+			keyIt.second.UpdateSortedIds(ctx);
+		}
 	}
+	this->empty_ids_.UpdateSortedIds(ctx);
 }
 
 template <typename T>
@@ -668,6 +670,44 @@ void IndexUnordered<T>::ReconfigureCache(const NamespaceCacheConfigData& cacheCf
 	}
 }
 
+template <typename T>
+concept HasDumpStats = requires(T t, std::vector<char>& stats) { t.dumpStats(stats); };
+
+template <typename T>
+concept HasCheckStatsCorrectness = requires(T t, const std::vector<char>& stats) { t.checkStatsCorrectness(stats); };
+
+template <typename T>
+concept HasReserveFromStats = requires(T t, const std::vector<char>& stats) { t.reserveFromStats(stats); };
+
+static_assert(HasDumpStats<unordered_payload_map<Index::KeyEntry>>);
+static_assert(HasCheckStatsCorrectness<unordered_payload_map<Index::KeyEntry>>);
+static_assert(HasReserveFromStats<unordered_payload_map<Index::KeyEntry>>);
+static_assert(HasDumpStats<unordered_str_map<Index::KeyEntry>>);
+static_assert(HasCheckStatsCorrectness<unordered_str_map<Index::KeyEntry>>);
+static_assert(HasReserveFromStats<unordered_str_map<Index::KeyEntry>>);
+
+template <typename T>
+void IndexUnordered<T>::HashTablesStats(std::vector<char>& stats) const {
+	if constexpr (HasDumpStats<T>) {
+		idx_map.dumpStats(stats);
+	} else {
+		(void)stats;
+	}
+}
+
+template <typename T>
+void IndexUnordered<T>::ReserveHashTables(const std::vector<char>& stats) {
+	if constexpr (HasCheckStatsCorrectness<T> && HasReserveFromStats<T>) {
+		if (!idx_map.checkStatsCorrectness(stats)) {
+			logFmt(LogError, "IndexUnordered::ReserveHashTables ({}), skipping incorrect stats", this->name_);
+			return;
+		}
+		idx_map.reserveFromStats(stats);
+	} else {
+		(void)stats;
+	}
+}
+
 template <typename KeyEntryT>
 static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 												 const NamespaceCacheConfigData& cacheCfg) {
@@ -689,7 +729,6 @@ static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadTy
 		case IndexInt64BTree:
 		case IndexDoubleBTree:
 		case IndexFastFT:
-		case IndexFuzzyFT:
 		case IndexCompositeBTree:
 		case IndexCompositeFastFT:
 		case IndexBool:
@@ -697,7 +736,6 @@ static std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadTy
 		case IndexInt64Store:
 		case IndexStrStore:
 		case IndexDoubleStore:
-		case IndexCompositeFuzzyFT:
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:

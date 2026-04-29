@@ -143,7 +143,7 @@ public:
 
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.
-	int Pos() const noexcept {
+	int Pos() const {
 		switch (type_) {
 			case SingleIdset:
 			case SingleIdSetWithDeferedSort: {

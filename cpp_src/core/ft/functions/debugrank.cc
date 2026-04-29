@@ -18,10 +18,6 @@ bool DebugRank::Process(ItemRef& res, PayloadType& plType, const FtFuncStruct& f
 	}
 
 	FtCtx::Ptr ftctx = reindexer::static_ctx_pointer_cast<FtCtx>(func.ctx);
-	if (!ftctx->GetData()->isWordPositions) {
-		throw Error(errParams, "debug_rank() is supported for 'text' index only");
-	}
-
 	FtCtxAreaData<AreaDebug>& dataFtCtx = *(reindexer::static_ctx_pointer_cast<FtCtxAreaData<AreaDebug>>(ftctx->GetData()));
 	if (!dataFtCtx.holders.has_value()) {
 		return false;

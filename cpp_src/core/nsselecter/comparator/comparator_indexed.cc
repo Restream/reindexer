@@ -251,17 +251,17 @@ std::string compositeComparatorCondStr(const typename reindexer::comparators::Va
 		if (values.empty()) {
 			return "IN []"s;
 		} else {
-			return fmt::format("IN [{}, ...]", reindexer::Variant{*values.begin()}.As<std::string>(payloadType, fields));
+			return fmt::format("IN [{}, ...]", reindexer::Variant{*values.begin()}.AsSingleString(payloadType, fields));
 		}
 	} else if constexpr (Cond == CondAllSet) {
 		if (values.values_.empty()) {
 			return "ALLSET []"s;
 		} else {
-			return fmt::format("ALLSET [{}, ...]", reindexer::Variant{values.values_.begin()->first}.As<std::string>(payloadType, fields));
+			return fmt::format("ALLSET [{}, ...]", reindexer::Variant{values.values_.begin()->first}.AsSingleString(payloadType, fields));
 		}
 	} else if constexpr (Cond == CondEq || Cond == CondLt || Cond == CondLe || Cond == CondGt || Cond == CondGe) {
 		return fmt::format("{} {}", reindexer::comparators::CondToStr<Cond>(),
-						   reindexer::Variant{values}.As<std::string>(payloadType, fields));
+						   reindexer::Variant{values}.AsSingleString(payloadType, fields));
 	}
 }
 
@@ -269,13 +269,18 @@ template <typename V>
 std::string compositeRangeComparatorCondStr(const V& value, const V& value2, const reindexer::PayloadType& payloadType,
 											const reindexer::FieldsSet& fields) {
 	using namespace std::string_literals;
-	return fmt::format("RANGE({}, {})", reindexer::Variant{value}.As<std::string>(payloadType, fields),
-					   reindexer::Variant{value2}.As<std::string>(payloadType, fields));
+	return fmt::format("RANGE({}, {})", reindexer::Variant{value}.AsSingleString(payloadType, fields),
+					   reindexer::Variant{value2}.AsSingleString(payloadType, fields));
 }
 
 std::string anyComparatorCondStr() {
 	using namespace std::string_literals;
 	return "IS NOT NULL"s;
+}
+
+std::string anyDistinctComparatorCondStr() {
+	using namespace std::string_literals;
+	return "DISTINCT"s;
 }
 
 std::string emptyComparatorCondStr() {
@@ -393,22 +398,22 @@ std::string ComparatorIndexedColumnScalarAnyDistinct<T>::ConditionStr() const {
 	return anyComparatorCondStr();
 }
 
-std::string ComparatorIndexedOffsetScalarAnyStringDistinct::ConditionStr() const { return anyComparatorCondStr(); }
+std::string ComparatorIndexedOffsetScalarAnyStringDistinct::ConditionStr() const { return anyDistinctComparatorCondStr(); }
 
 std::string ComparatorIndexedOffsetArrayAny::ConditionStr() const { return anyComparatorCondStr(); }
 
 template <typename T>
 std::string ComparatorIndexedOffsetArrayAnyDistinct<T>::ConditionStr() const {
-	return anyComparatorCondStr();
+	return anyDistinctComparatorCondStr();
 }
 
-std::string ComparatorIndexedOffsetArrayAnyStringDistinct::ConditionStr() const { return anyComparatorCondStr(); }
+std::string ComparatorIndexedOffsetArrayAnyStringDistinct::ConditionStr() const { return anyDistinctComparatorCondStr(); }
 
 std::string ComparatorIndexedJsonPathAny::ConditionStr() const { return anyComparatorCondStr(); }
 
 template <typename T>
 std::string ComparatorIndexedJsonPathAnyDistinct<T>::ConditionStr() const {
-	return anyComparatorCondStr();
+	return anyDistinctComparatorCondStr();
 }
 
 std::string ComparatorIndexedJsonPathAnyStringDistinct::ConditionStr() const { return anyComparatorCondStr(); }
@@ -548,11 +553,12 @@ std::string ComparatorIndexedCompositeBase::ConditionStr() const {
 ComparatorIndexedCompositeDistinct::ComparatorIndexedCompositeDistinct(const VariantArray& values, const CollateOpts& collate,
 																	   const FieldsSet& fields, const PayloadType& payloadType,
 																	   CondType cond)
-	: Base(values, collate, fields, payloadType, cond), distinct_(payloadType, fields) {
-	for (const auto& field : fields) {
-		compositeTypes_.emplace_back(payloadType_.Field(field).Type());
-	}
-}
+	: Base(values, collate, fields, payloadType, cond), distinct_(payloadType, fields) {}
+
+ComparatorIndexedCompositeAnyDistinct::ComparatorIndexedCompositeAnyDistinct(const FieldsSet& fields, const PayloadType& payloadType)
+	: distinct_(payloadType, fields) {}
+
+std::string ComparatorIndexedCompositeAnyDistinct::ConditionStr() const { return anyDistinctComparatorCondStr(); }
 
 ComparatorIndexedOffsetArrayDWithin::ComparatorIndexedOffsetArrayDWithin(size_t offset, const VariantArray& values)
 	: point_{GetValue<Point>(CondDWithin, values, 0)}, distance_{GetValue<double>(CondDWithin, values, 1)}, offset_{offset} {}
@@ -600,7 +606,7 @@ template std::string ComparatorIndexed<Point>::ConditionStr() const;
 template std::string ComparatorIndexed<Uuid>::ConditionStr() const;
 template <>
 std::string ComparatorIndexed<FloatVector>::ConditionStr() const {
-	return impl_.ConditionStr();
+	return std::visit([](const auto& impl) { return impl.ConditionStr(); }, impl_);
 }
 
 template <typename T>
@@ -994,9 +1000,13 @@ comparators::ComparatorIndexedVariant<PayloadValue> ComparatorIndexed<PayloadVal
 				return ComparatorIndexedCompositeDistinct{values, collate, fields, payloadType, cond};
 			}
 			return ComparatorIndexedComposite{values, collate, fields, payloadType, cond};
+		case CondAny:
+			if (distinct) {
+				return ComparatorIndexedCompositeAnyDistinct{fields, payloadType};
+			}
+			[[fallthrough]];
 		case CondLike:
 		case CondEmpty:
-		case CondAny:
 		case CondDWithin:
 		case CondKnn:
 			throw Error{errQueryExec, "Condition {} with type {}", CondTypeToStr(cond), typeToStr<PayloadValue>()};
@@ -1075,9 +1085,12 @@ comparators::ComparatorIndexedVariant<FloatVector> ComparatorIndexed<FloatVector
 	switch (cond) {
 		case CondAny: {
 			assertrx_dbg(!distinct);
-			assertrx_dbg(!isArray);
 			const auto offset = payloadType->Field(fields[0]).Offset();
-			return ComparatorIndexedFloatVectorAny{offset};
+			if (isArray) {
+				return ComparatorIndexedOffsetArrayAny{offset};
+			} else {
+				return ComparatorIndexedFloatVectorAny{offset};
+			}
 		}
 		case CondEmpty:
 		case CondEq:

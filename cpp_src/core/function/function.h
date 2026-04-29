@@ -20,6 +20,8 @@ class TagsMatcher;
 class Tokenizer;
 class NamespaceImpl;
 class NsContext;
+class WrSerializer;
+class Serializer;
 
 namespace builders {
 class JsonBuilder;

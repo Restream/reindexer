@@ -25,7 +25,7 @@ void NamespaceDef::FromJSON(const gason::JsonNode& root) {
 	auto indexesNode = root["indexes"];
 	auto schemaNode = root["schema"];
 	auto temporaryNode = root["temporary"];
-	isNameOnly = storageNode.empty() && indexesNode.empty() && schemaNode.empty() && temporaryNode.empty();
+	isNameOnly = storageNode.isEmpty() && indexesNode.isEmpty() && schemaNode.isEmpty() && temporaryNode.isEmpty();
 	if (!isNameOnly) {
 		storage.Enabled(storageNode["enabled"].As<bool>(true));
 		storage.DropOnFileFormatError(storageNode["drop_on_file_format_error"].As<bool>());
@@ -74,7 +74,7 @@ Error NsReplicationOpts::FromJSON(std::span<char> json) {
 
 void NsReplicationOpts::FromJSON(const gason::JsonNode& root) {
 	auto& tmNode = root["state_token"sv];
-	if (!tmNode.empty()) {
+	if (!tmNode.isEmpty()) {
 		tmStateToken.emplace(tmNode.As<int32_t>());
 	}
 	nsVersion = lsn_t(root["ns_version"sv].As<int64_t>());

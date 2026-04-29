@@ -39,7 +39,6 @@ static bool availablePkIndexType(IndexType it) {
 	switch (it) {
 		case IndexType::Store:
 		case IndexType::FastFT:
-		case IndexType::FuzzyFT:
 		case IndexType::RTree:
 			return false;
 		case IndexType::Hash:

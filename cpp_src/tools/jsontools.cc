@@ -1,5 +1,5 @@
 #include "jsontools.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 

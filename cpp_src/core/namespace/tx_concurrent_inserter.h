@@ -2,7 +2,7 @@
 
 #include <optional>
 #include <vector>
-#include "core/id_type.h"
+#include "core/index/float_vector/float_vector_id.h"
 #include "core/keyvalue/float_vector.h"
 #include "estl/fast_hash_map.h"
 
@@ -12,12 +12,12 @@ class [[nodiscard]] SingleIndexData {
 public:
 	struct [[nodiscard]] Vector {
 		using Type = float;
-		Vector(FloatVectorDimension dimensions) noexcept : id{IdType::NotSet()}, vec{FloatVector::CreateNotInitialized(dimensions)} {}
+		Vector(FloatVectorDimension dimensions) noexcept : id{IdType::NotSet(), 0}, vec{FloatVector::CreateNotInitialized(dimensions)} {}
 
-		void Reset() noexcept { id = IdType::NotSet(); }
-		bool IsValid() const noexcept { return id.IsValid(); }
+		void Reset() noexcept { id = {IdType::NotSet(), 0}; }
+		bool IsValid() const noexcept { return id.RowId().IsValid(); }
 
-		IdType id;
+		FloatVectorId id;
 		FloatVectorImpl<Type> vec;
 	};
 
@@ -27,7 +27,7 @@ public:
 		mapping_.reserve(expectedRows);
 	}
 
-	std::pair<ConstFloatVectorView, bool> Upsert(IdType id, ConstFloatVectorView data) {
+	std::pair<ConstFloatVectorView, bool> Upsert(FloatVectorId id, ConstFloatVectorView data) {
 		assertrx(data.IsEmpty() || data.Dimension() == dimensions_);
 		size_t vecID = 0;
 		bool added = false;
@@ -49,18 +49,18 @@ public:
 		}
 		return std::make_pair(ConstFloatVectorView{vecRef.vec}, added);
 	}
-	bool Delete(IdType id) {
+	bool Delete(FloatVectorId id) {
 		if (auto found = mapping_.find(id); found != mapping_.end()) {
-			const size_t vecID = found->second;
+			const auto vecID = found->second;
 			mapping_.erase(found);
 			assertrx_dbg(vectors_[vecID].IsValid());
 			vectors_[vecID].Reset();
-			vacantIDs_.emplace_back(IdType::FromNumber(vecID));
+			vacantIDs_.emplace_back(vecID);
 			return true;
 		}
 		return false;
 	}
-	std::optional<ConstFloatVectorView> TryGetValue(IdType id) {
+	std::optional<ConstFloatVectorView> TryGetValue(FloatVectorId id) const {
 		if (auto found = mapping_.find(id); found != mapping_.end()) {
 			const size_t vecID = found->second;
 			assertrx_dbg(vectors_[vecID].IsValid());
@@ -79,7 +79,7 @@ private:
 		if (vacantIDs_.empty()) {
 			vectors_.emplace_back(dimensions_);
 		} else {
-			ret = vacantIDs_.back().ToNumber();
+			ret = vacantIDs_.back();
 			vacantIDs_.pop_back();
 		}
 		return ret;
@@ -87,9 +87,9 @@ private:
 
 	const size_t field_{0};
 	const FloatVectorDimension dimensions_;
-	fast_hash_map<IdType, size_t> mapping_;
+	fast_hash_map<FloatVectorId, size_t> mapping_;
 	std::vector<Vector> vectors_;
-	std::vector<IdType> vacantIDs_;
+	std::vector<size_t> vacantIDs_;
 };
 
 class LocalTransaction;
@@ -100,7 +100,7 @@ public:
 	TransactionContext(const NamespaceImpl& ns, const LocalTransaction& tx);
 
 	bool HasMultithreadIndexes() const noexcept { return !indexesData_.empty(); }
-	ConstFloatVectorView Upsert(int field, IdType id, ConstFloatVectorView data) {
+	ConstFloatVectorView Upsert(int field, FloatVectorId id, ConstFloatVectorView data) {
 		if (auto indexData = getIndexData(field); indexData) {
 			auto [vec, sizeChanged] = indexData->Upsert(id, data);
 			buckets_ += size_t(sizeChanged);
@@ -108,13 +108,13 @@ public:
 		}
 		return ConstFloatVectorView();
 	}
-	bool Delete(int field, IdType id) {
+	bool Delete(int field, FloatVectorId id) {
 		if (auto indexData = getIndexData(field); indexData) {
 			return indexData->Delete(id);
 		}
 		return false;
 	}
-	std::optional<ConstFloatVectorView> TryGetValue(int field, IdType id) {
+	std::optional<ConstFloatVectorView> TryGetValue(int field, FloatVectorId id) const {
 		if (auto indexData = getIndexData(field); indexData) {
 			return indexData->TryGetValue(id);
 		}
@@ -134,6 +134,16 @@ public:
 
 private:
 	SingleIndexData* getIndexData(int field) {
+		assertrx_dbg(field > 0);
+		for (auto& d : indexesData_) {
+			if (d.Field() == size_t(field)) {
+				return &d;
+			}
+		}
+		return nullptr;
+	}
+
+	const SingleIndexData* getIndexData(int field) const {
 		assertrx_dbg(field > 0);
 		for (auto& d : indexesData_) {
 			if (d.Field() == size_t(field)) {

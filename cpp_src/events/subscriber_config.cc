@@ -237,7 +237,7 @@ void EventSubscriberConfig::FromJSON(const gason::JsonNode& root) {
 			s.nss.emplace(ns["name"sv].As<std::string>());
 		}
 		const auto& eventTypesNode = stream["event_types"sv];
-		if (eventTypesNode.empty() || begin(eventTypesNode) == end(eventTypesNode)) {
+		if (eventTypesNode.isEmpty() || begin(eventTypesNode) == end(eventTypesNode)) {
 			eventTypes_.clear();
 		} else {
 			const bool addCommonEvents = (!eventTypes_.empty() || streams_.size() == 1);

@@ -1,12 +1,14 @@
 #include "cjsonmodifier.h"
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
+#include "core/enums.h"
 #include "core/keyvalue/float_vectors_holder.h"
+#include "core/type_consts.h"
 #include "jsondecoder.h"
 #include "sparse_validator.h"
 #include "tagsmatcher.h"
 #include "tools/assertrx.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 
@@ -128,8 +130,25 @@ void CJsonModifier::insertField(Context& ctx) const {
 			const auto field = tagsMatcher_.tags2field(ctx.jsonPath);
 			const auto updateTagType = determineUpdateTagType(ctx, field.IndexNumber());
 			if (updateTagType.isFloatVectorRef) {
-				ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field.IndexNumber()});
-				ctx.wrser.PutVarUint(uint32_t(updateTagType.valueDims));
+				if (field.IsArray()) {
+					if (ctx.value.empty()) {
+						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field.IndexNumber()});
+						ctx.wrser.PutVarUint(0);
+					} else if (ctx.value.IsArrayValue()) {
+						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName});
+						ctx.wrser.PutCArrayTag(carraytag(ctx.value.size(), TAG_OBJECT));
+						for (const auto& v : ctx.value) {
+							ctx.wrser.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), field.IndexNumber()});
+							ctx.wrser.PutVarUint(v.As<ConstFloatVectorView>().Dimension().Value());
+						}
+					} else {
+						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field.IndexNumber()});
+						ctx.wrser.PutVarUint(uint32_t(updateTagType.valueDims));
+					}
+				} else {
+					ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field.IndexNumber()});
+					ctx.wrser.PutVarUint(uint32_t(updateTagType.valueDims));
+				}
 			} else if (field.IsRegularIndex()) {
 				putCJsonRef(updateTagType.rawType, tagName, field.IndexNumber(), ctx.value, ctx.wrser);
 			} else {
@@ -183,19 +202,27 @@ CJsonModifier::UpdateTagType CJsonModifier::determineUpdateTagType(const Context
 			}
 		}
 		if (fieldType.IsFloatVector() && !ctx.value.IsNullValue()) {
+			if (!fieldType.IsArray()) {
+				if (ctx.value.empty()) {
+					throw Error(errParams, "Attempt to insert empty VariantArray into single float vector field [{}]", fieldType.Name());
+				}
+				if (ctx.value.size() != 1) {
+					throw Error(errParams, "Attempt to insert multiple ({}) float vectors into single float vector field [{}]",
+								ctx.value.size(), fieldType.Name());
+				}
+			}
+			for (const auto& v : ctx.value) {
+				const auto vec = v.As<ConstFloatVectorView>();
+				if (!vec.Dimension().IsZero() && vec.Dimension() != fieldType.FloatVectorDimension()) {
+					throw Error(errParams, "Float vector field [{}] expects {} dimensions, but got {}", fieldType.Name(),
+								fieldType.FloatVectorDimension().Value(), vec.Dimension().Value());
+				}
+			}
 			if (ctx.value.empty()) {
-				throw Error(errParams, "Attempt to insert empty VariantArray into single float vector field [{}]", fieldType.Name());
+				return UpdateTagType{TAG_ARRAY, FloatVectorDimension{}};
+			} else {
+				return UpdateTagType{TAG_ARRAY, ctx.value[0].As<ConstFloatVectorView>().Dimension()};
 			}
-			if (ctx.value.size() != 1) {
-				throw Error(errParams, "Attempt to insert multiple ({}) float vectors into single float vector field [{}]",
-							ctx.value.size(), fieldType.Name());
-			}
-			auto vec = ConstFloatVectorView(ctx.value[0]);
-			if (!vec.Dimension().IsZero() && vec.Dimension() != fieldType.FloatVectorDimension()) {
-				throw Error(errParams, "Float vector field [{}] expects {} dimensions, but got {}", fieldType.Name(),
-							fieldType.FloatVectorDimension().Value(), vec.Dimension().Value());
-			}
-			return UpdateTagType{TAG_ARRAY, vec.Dimension()};
 		}
 	}
 
@@ -445,6 +472,7 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 	const TagType tagType = tag.Type();
 
 	TagsPathScope<IndexedTagsPath> pathScope(tagsPath_, tagName);
+	const auto fieldProperty = tagsMatcher_.tags2field(tagsPath_);
 
 	if (isIndexed(field)) {
 		writeCTag(tag, ctx);
@@ -456,8 +484,7 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 		// Just skip NULL tags - value will be inserted later.
 		return true;
 	}
-	const auto resultTagType = tagMatched ? determineUpdateTagType(ctx, field) : UpdateTagType{tagType};
-	ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
+	const auto resultTagType = tagMatched ? determineUpdateTagType(ctx, fieldProperty.IndexNumber()) : UpdateTagType{tagType};
 
 	if (tagMatched) {
 		if (ctx.updateArrayElements && (tagType != TAG_ARRAY || resultTagType.isFloatVectorRef)) {
@@ -465,30 +492,54 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 		}
 		if (resultTagType.rawType != TAG_NULL) {
 			if (resultTagType.isFloatVectorRef) {
-				ctx.wrser.PutCArrayTag(carraytag{uint32_t(resultTagType.valueDims), TAG_FLOAT});
-			} else if (resultTagType.rawType == TAG_ARRAY) {
-				auto type = arrayKvType2Tag(ctx.value);
-				ctx.wrser.PutCArrayTag(carraytag{uint32_t(ctx.value.size()), type});
-				const bool isObjsArr = (type == TAG_OBJECT);
-				for (const auto& item : ctx.value) {
-					if (isObjsArr) {
-						type = item.Type().ToTagType();
-						ctx.wrser.PutCTag(ctag{type});
+				if (fieldProperty.IsArray()) {
+					skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
+					if (ctx.value.IsArrayValue()) {
+						ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
+						ctx.wrser.PutCArrayTag(carraytag(ctx.value.size(), TAG_OBJECT));
+						for (const auto& v : ctx.value) {
+							ctx.wrser.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), fieldProperty.IndexNumber()});
+							ctx.wrser.PutVarUint(v.As<ConstFloatVectorView>().Dimension().Value());
+						}
+					} else {
+						ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, fieldProperty.IndexNumber()});
+						ctx.wrser.PutVarUint(resultTagType.valueDims.Value());
 					}
-					copyCJsonValue(type, item, ctx.wrser);
+				} else {
+					ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
+					ctx.wrser.PutCArrayTag(carraytag{uint32_t(resultTagType.valueDims), TAG_FLOAT});
+					skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 				}
-			} else if (ctx.value.empty()) {
-				throw Error(errLogic, "Update value for field [{}] cannot be empty", tagsMatcher_.tag2name(tagName));
-			} else if (ctx.value.size() == 1) {
-				const auto item = ctx.value.front();
-				copyCJsonValue(item.Type().ToTagType(), item, ctx.wrser);
 			} else {
-				throw Error(errParams, "Unexpected value to update");
+				ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
+				if (resultTagType.rawType == TAG_ARRAY) {
+					auto type = arrayKvType2Tag(ctx.value);
+					ctx.wrser.PutCArrayTag(carraytag(ctx.value.size(), type));
+					const bool isObjsArr = (type == TAG_OBJECT);
+					for (const auto& item : ctx.value) {
+						if (isObjsArr) {
+							type = item.Type().ToTagType();
+							ctx.wrser.PutCTag(ctag{type});
+						}
+						copyCJsonValue(type, item, ctx.wrser);
+					}
+				} else if (ctx.value.empty()) {
+					throw Error(errLogic, "Update value for field [{}] cannot be empty", tagsMatcher_.tag2name(tagName));
+				} else if (ctx.value.size() == 1) {
+					const auto item = ctx.value.front();
+					copyCJsonValue(item.Type().ToTagType(), item, ctx.wrser);
+				} else {
+					throw Error(errParams, "Unexpected value to update");
+				}
+				skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 			}
+		} else {
+			ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
+			skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 		}
-		skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 		return true;
 	}
+	ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
 
 	if (tagType == TAG_OBJECT) {
 		TagsPathScope<IndexedTagsPath> pathScopeObj(ctx.currObjPath, tagName);
@@ -638,13 +689,14 @@ bool CJsonModifier::buildCJSON(Context& ctx) {
 	const auto field = tag.Field();
 	if (tagType == TAG_ARRAY) {
 		const bool isIndexedField = isIndexed(field);
-		bool isFloatVector = isIndexedField && pt_.Field(tag.Field()).Type().Is<KeyValueType::FloatVector>();
+		const bool isFloatVector = isIndexedField && pt_.Field(field).Type().Is<KeyValueType::FloatVector>();
 		if (isFloatVector) {
+			auto& pvOffset = ctx.fieldsArrayOffsets[field];
 			// Embed float vector into CJSON as float array
 			const carraytag atag(ctx.rdser.GetVarUInt(), TAG_FLOAT);
 			ctx.wrser.PutCArrayTag(atag);
-			assertrx_dbg(ctx.fieldsArrayOffsets[field] == 0);
-			auto value = ctx.payload->Get(field, ctx.fieldsArrayOffsets[field]);
+			assertrx_dbg(pvOffset == 0 || pt_.Field(field).IsArray());
+			auto value = ctx.payload->Get(field, pvOffset);
 			const auto view = ConstFloatVectorView(value);
 			if (view.IsStripped()) [[unlikely]] {
 				throw Error(errLogic, "CJsonModifier: Attempt to serialize stripped vector into CJSON");
@@ -654,9 +706,9 @@ bool CJsonModifier::buildCJSON(Context& ctx) {
 			for (float v : span) {
 				ctx.wrser.PutFloat(v);
 			}
-			ctx.fieldsArrayOffsets[field] += 1;
+			++pvOffset;
 		} else {
-			const carraytag atag{isIndexedField ? carraytag(ctx.rdser.GetVarUInt(), pt_.Field(tag.Field()).Type().ToTagType())
+			const carraytag atag{isIndexedField ? carraytag(ctx.rdser.GetVarUInt(), pt_.Field(field).Type().ToTagType())
 												: ctx.rdser.GetCArrayTag()};
 			ctx.wrser.PutCArrayTag(atag);
 			const auto arrSize = atag.Count();

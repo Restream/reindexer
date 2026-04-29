@@ -1,4 +1,5 @@
 #include "indexordered.h"
+#include "core/formatters/id_type_fmt.h"
 #include "core/id_type.h"
 #include "core/nsselecter/btreeindexiterator.h"
 #include "core/rdxcontext.h"
@@ -204,7 +205,7 @@ void IndexOrdered<T>::MakeSortOrders(IUpdateSortedContext& ctx) {
 	this->sortOrders_.resize(totalIds);
 	size_t idx = 0;
 	auto fill = [&](const auto& keyEntry, const key_type* key) {
-		for (auto id : keyEntry.Unsorted()) {
+		for (auto id : keyEntry.Unsorted().idset_range()) {
 			if (id >= IdType::FromNumber(ids2Sorts.size()) || ids2Sorts[id.ToNumber()] == SortIdNotExists) [[unlikely]] {
 				logFmt(
 					LogError,
@@ -267,7 +268,6 @@ static std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType
 		case IndexIntHash:
 		case IndexInt64Hash:
 		case IndexFastFT:
-		case IndexFuzzyFT:
 		case IndexCompositeHash:
 		case IndexCompositeFastFT:
 		case IndexBool:
@@ -275,7 +275,6 @@ static std::unique_ptr<Index> IndexOrdered_New(const IndexDef& idef, PayloadType
 		case IndexInt64Store:
 		case IndexStrStore:
 		case IndexDoubleStore:
-		case IndexCompositeFuzzyFT:
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:

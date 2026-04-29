@@ -1,10 +1,12 @@
 #pragma once
 
 #include "tools/lsn.h"
-#include "tools/serializer.h"
 #include "wal/walrecord.h"
 
 namespace reindexer {
+
+class Serializer;
+class WrSerializer;
 
 enum [[nodiscard]] SnapshotRecordOpts {
 	kShallowSnapshotChunk = 1 << 0,

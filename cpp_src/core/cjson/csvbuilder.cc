@@ -43,6 +43,9 @@ CsvBuilder::CsvBuilder(WrSerializer& ser, CsvOrdering& ordering)
 
 CsvBuilder::~CsvBuilder() noexcept(false) {
 	if (std::uncaught_exceptions() == 0) {
+		// The End() call may throw if the internal WrSerializer is unable to allocate memory due to logical
+		// (GrowthPolicy) or system (std::bad_alloc) limitations. Checking std::uncaught_exceptions() allows us
+		// to avoid throwing an exception in scenarios where we're already handling another exception.
 		End();
 	}
 }

@@ -6,17 +6,20 @@
 
 #include "core/type_consts.h"
 #include "tools/clock.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 
 class SelectIteratorContainer;
-class JoinedSelector;
-struct JoinOnInjection;
-struct ConditionInjection;
+struct JoinOnInsertion;
+struct ConditionInsertion;
 
-typedef std::vector<JoinedSelector> JoinedSelectors;
-typedef std::vector<JoinOnInjection> OnConditionInjections;
+namespace joins {
+class ItemsProcessor;
+}
+
+typedef std::vector<joins::ItemsProcessor> ItemsProcessors;
+typedef std::vector<JoinOnInsertion> OnConditionInsertions;
 
 class [[nodiscard]] SubQueryExplain {
 public:
@@ -116,9 +119,9 @@ public:
 	void PutCount(int cnt) noexcept { count_ = cnt; }
 	void PutSortIndex(std::string_view index) noexcept { sortIndex_ = index; }
 	void PutSelectors(const SelectIteratorContainer* qres) noexcept { selectors_ = qres; }
-	void PutJoinedSelectors(const JoinedSelectors* jselectors) noexcept { jselectors_ = jselectors; }
+	void PutItemsProcessors(const ItemsProcessors* jitemsprocessors) noexcept { jitemsprocessors_ = jitemsprocessors; }
 	void SetPreselectTime(Duration preselectTime) noexcept { basics_.preselect = preselectTime; }
-	void PutOnConditionInjections(const OnConditionInjections* onCondInjections) noexcept { onInjections_ = onCondInjections; }
+	void PutOnConditionInsertions(const OnConditionInsertions* onCondInsertions) noexcept { onInsertions_ = onCondInsertions; }
 	void SetSortOptimization(bool enable) noexcept { sortOptimization_ = enable; }
 	void SetSubQueriesExplains(std::vector<SubQueryExplain>&& subQueriesExpl) noexcept { subqueries_ = std::move(subQueriesExpl); }
 
@@ -145,8 +148,8 @@ private:
 	const std::string_view nsName_;
 	std::string_view sortIndex_;
 	const SelectIteratorContainer* selectors_ = nullptr;
-	const JoinedSelectors* jselectors_ = nullptr;
-	const OnConditionInjections* onInjections_ = nullptr;  ///< Optional
+	const ItemsProcessors* jitemsprocessors_ = nullptr;
+	const OnConditionInsertions* onInsertions_ = nullptr;  ///< Optional
 	std::vector<SubQueryExplain> subqueries_;
 
 	int iters_ = 0;
@@ -178,30 +181,30 @@ private:
 };
 
 /**
- * @brief Describes the process of a single JOIN-query ON-conditions injection into the Where clause of a main query
+ * @brief Describes the process of a single JOIN-query ON-conditions insertion into the Where clause of a main query
  */
-struct [[nodiscard]] JoinOnInjection {
+struct [[nodiscard]] JoinOnInsertion {
 	std::string_view rightNsName;							   ///< joinable ns name
 	std::string joinCond;									   ///< original ON-conditions clause. SQL-like string
 	Explain::Duration totalTime_ = Explain::Duration::zero();  ///< total amount of time spent on checking and substituting all conditions
-	bool succeed = false;									   ///< result of injection attempt
-	std::string_view reason;								   ///< optional{succeed==false}. Explains condition injection failure
+	bool succeed = false;									   ///< result of insertion attempt
+	std::string_view reason;								   ///< optional{succeed==false}. Explains condition insertion failure
 	enum { ByValue, Select } type = ByValue;				   ///< byValue or Select
-	WrSerializer injectedCond;								   ///< injected condition. SQL-like string
-	std::vector<ConditionInjection> conditions;				   ///< individual conditions processing results
+	WrSerializer insertedCond;								   ///< inserted condition. SQL-like string
+	std::vector<ConditionInsertion> conditions;				   ///< individual conditions processing results
 };
 
 /**
- * @brief Describes an injection attempt of a single condition from the ON-clause of a JOIN-query
+ * @brief Describes an insertion attempt of a single condition from the ON-clause of a JOIN-query
  */
-struct [[nodiscard]] ConditionInjection {
+struct [[nodiscard]] ConditionInsertion {
 	std::string initCond;  ///< single condition from Join ON section. SQL-like string
 	Explain::Duration totalTime_ =
-		Explain::Duration::zero();			///< total time elapsed from injection attempt start till the end of substitution or rejection
-	std::string explain;					///< optional{JoinOnInjection.type == Select}. Explain raw string from Select subquery.
+		Explain::Duration::zero();			///< total time elapsed from insertion attempt start till the end of substitution or rejection
+	std::string explain;					///< optional{JoinOnInsertion.type == Select}. Explain raw string from Select subquery.
 	AggType aggType = AggType::AggUnknown;	///< aggregation type used in subquery
-	bool succeed = false;					///< result of injection attempt
-	std::string_view reason;				///< optional{succeed==false}. Explains condition injection failure
+	bool succeed = false;					///< result of insertion attempt
+	std::string_view reason;				///< optional{succeed==false}. Explains condition insertion failure
 	bool orChainPart_ = false;				///< additional failure reason flag. Used in case if condition field was filled before  and
 											///< also it does not fit because it is an OR chain part
 	std::string newCond;					///< substituted condition in QueryEntry. SQL-like string

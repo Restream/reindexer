@@ -1,5 +1,6 @@
 .idea/
 .vscode/ipch
+.cursor/
 reindexer.cbp
 reindexer.iml
 .DS_Store

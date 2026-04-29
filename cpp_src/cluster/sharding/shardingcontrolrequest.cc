@@ -43,7 +43,7 @@ void ApplyLeaderConfigCommand::GetJSON(JsonBuilder& json) const {
 void ApplyLeaderConfigCommand::FromJSON(const gason::JsonNode& payload) {
 	config = payload["config"].As<std::string_view>();
 	auto& sourceIdNode = payload["source_id"];
-	sourceId = sourceIdNode.empty() ? std::optional<int64_t>() : sourceIdNode.As<int64_t>();
+	sourceId = sourceIdNode.isEmpty() ? std::optional<int64_t>() : sourceIdNode.As<int64_t>();
 }
 
 void SaveConfigCommand::GetJSON(JsonBuilder& json) const {

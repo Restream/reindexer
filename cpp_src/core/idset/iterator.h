@@ -9,22 +9,7 @@
 #include <vector>
 #endif	// REINDEX_DEBUG_CONTAINERS
 
-namespace reindexer {
-namespace idset {
-
-template <class T>
-concept IdSetLike = requires(T a) {
-	{ a.IsCommitted() } -> std::same_as<bool>;
-	{ a.IsEmpty() } -> std::same_as<bool>;
-	{ a.Size() } -> std::same_as<size_t>;
-	{ a.BTreeSize() } -> std::same_as<size_t>;
-	{ a.BTree() } -> std::same_as<const btree::btree_set<IdType>*>;
-	{ a.Commit() } -> std::same_as<void>;
-	a.idset_range();
-	a.idset_reverse_range();
-};
-
-namespace iterators {
+namespace reindexer::idset::iterators {
 
 template <typename SequentialIterator, typename BtreeIterator>
 class [[nodiscard]] Iterator {
@@ -140,25 +125,17 @@ using ReverseIterator = Iterator<SequentialReverseIterator, BtreeReverseIterator
 using ForwardIteratorRange = IteratorRange<ForwardIterator>;
 using ReverseIteratorRange = IteratorRange<ReverseIterator>;
 
-template <IdSetLike IdSet>
-ForwardIteratorRange range(const IdSet& idSet) noexcept {
-	auto set = idSet.BTree();
-	assertrx_dbg(idSet.IsCommitted() == !set);
-	return set ? ForwardIteratorRange{ForwardIterator{set->begin()}, ForwardIterator{set->end()}}
-			   : ForwardIteratorRange{ForwardIterator{idSet.begin()}, ForwardIterator{idSet.end()}};
+template <std::forward_iterator IteratorT>
+ForwardIteratorRange range(IteratorT&& beg, IteratorT&& end) noexcept {
+	return ForwardIteratorRange{ForwardIterator{std::forward<IteratorT>(beg)}, ForwardIterator{std::forward<IteratorT>(end)}};
 }
 
-template <IdSetLike IdSet>
-ReverseIteratorRange reverse_range(const IdSet& idSet) noexcept {
-	auto set = idSet.BTree();
-	assertrx_dbg(idSet.IsCommitted() == !set);
-	return set ? ReverseIteratorRange{ReverseIterator{set->rbegin()}, ReverseIterator{set->rend()}}
-			   : ReverseIteratorRange{ReverseIterator{idSet.rbegin()}, ReverseIterator{idSet.rend()}};
+template <std::forward_iterator IteratorT>
+ReverseIteratorRange reverse_range(IteratorT&& rbeg, IteratorT&& rend) noexcept {
+	return ReverseIteratorRange{ReverseIterator{std::forward<IteratorT>(rbeg)}, ReverseIterator{std::forward<IteratorT>(rend)}};
 }
 
-}  // namespace iterators
-}  // namespace idset
-}  // namespace reindexer
+}  // namespace reindexer::idset::iterators
 
 namespace std {
 template <typename SequentialIterator, typename BtreeIterator>

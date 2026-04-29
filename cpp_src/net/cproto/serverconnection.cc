@@ -1,7 +1,7 @@
 #include "serverconnection.h"
 #include <snappy.h>
 #include "coroclientconnection.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer::net::cproto {
 

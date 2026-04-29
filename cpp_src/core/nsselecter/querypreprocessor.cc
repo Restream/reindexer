@@ -3,7 +3,6 @@
 #include "core/index/index.h"
 #include "core/keyvalue/fast_hash_set_variant.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/nsselecter/joinedselector.h"
 #include "core/nsselecter/selectiteratorcontainer.h"
 #include "core/payload/fieldsset.h"
 #include "core/query/dsl/dslencoder.h"
@@ -30,9 +29,9 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, NamespaceImpl* ns, 
 	  floatVectorsHolder_(ctx.floatVectorsHolder) {
 	if (forcedSortOrder_ && (start_ > QueryEntry::kDefaultOffset || count_ < QueryEntry::kDefaultLimit)) {
 		assertrx_throw(!query_.GetSortingEntries().empty());
-		const std::vector<JoinedSelector> emptyJoinedSelectors;
+		const std::vector<joins::ItemsProcessor> emptyJoinItemsProcessors;
 		const auto& sEntry = query_.GetSortingEntries()[0];
-		if (SortExpression::Parse(sEntry.expression, emptyJoinedSelectors).ByField()) {
+		if (SortExpression::Parse(sEntry.expression, emptyJoinItemsProcessors).ByField()) {
 			int indexNo = IndexValueType::NotSet;
 			std::ignore = ns_.tryGetIndexByNameOrJsonPath(sEntry.expression, indexNo);
 			if (indexNo < 0 || !ns_.indexes_[indexNo]->IsFulltext()) {
@@ -67,7 +66,7 @@ void QueryPreprocessor::ExcludeFtQuery(const RdxContext& rdxCtx) {
 				continue;
 			}
 			const auto& index = ns_.indexes_[qe.IndexNo()];
-			if (!IsFastFullText(index->Type())) {
+			if (!IsFullText(index->Type())) {
 				continue;
 			}
 			if (it->operation != OpAnd || (next != endIt && next->operation == OpOr) || !index->EnablePreselectBeforeFt()) {
@@ -237,17 +236,17 @@ int QueryPreprocessor::calculateMaxIterations(size_t from, size_t to, int maxMax
 	return res;
 }
 
-void QueryPreprocessor::InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& explainOnInjections, LogLevel logLevel,
+void QueryPreprocessor::InsertConditionsFromJoins(joins::ItemsProcessors& js, OnConditionInsertions& explainOnInsertions, LogLevel logLevel,
 												  bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx) {
 	h_vector<int, 256> maxIterations(Size());
 	std::span<int> maxItersSpan(maxIterations.data(), maxIterations.size());
 	const int maxIters = calculateMaxIterations(0, Size(), ns_.itemsCount(), maxItersSpan, inTransaction, enableSortOrders, rdxCtx);
 	const bool needExplain = query_.NeedExplain() || logLevel >= LogInfo;
 	if (needExplain) {
-		std::ignore = injectConditionsFromJoins<JoinOnExplainEnabled>(0, Size(), js, explainOnInjections, maxIters, maxIterations,
+		std::ignore = insertConditionsFromJoins<JoinOnExplainEnabled>(0, Size(), js, explainOnInsertions, maxIters, maxIterations,
 																	  inTransaction, enableSortOrders, rdxCtx);
 	} else {
-		std::ignore = injectConditionsFromJoins<JoinOnExplainDisabled>(0, Size(), js, explainOnInjections, maxIters, maxIterations,
+		std::ignore = insertConditionsFromJoins<JoinOnExplainDisabled>(0, Size(), js, explainOnInsertions, maxIters, maxIterations,
 																	   inTransaction, enableSortOrders, rdxCtx);
 	}
 	assertrx_dbg(maxIterations.size() == Size());
@@ -1572,7 +1571,7 @@ void QueryPreprocessor::AddDistinctEntries(const h_vector<Aggregator, 4>& aggreg
 
 std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(std::string& explainStr, AggType& oAggType,
 																				NamespaceImpl& rightNs, Query joinQuery,
-																				JoinPreResult::CPtr joinPreresult,
+																				joins::PreSelect::CPtr PreSelect,
 																				const QueryJoinEntry& joinEntry, CondType condition,
 																				int mainQueryMaxIterations, const RdxContext& rdxCtx) {
 	int64_t limit = 0;
@@ -1593,8 +1592,8 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 	joinQuery.Limit(limit + kExtraLimit);
 	joinQuery.Offset(QueryEntry::kDefaultOffset);
 	joinQuery.ClearSorting();
-	if (joinPreresult->sortOrder.index) {
-		joinQuery.Sort(joinPreresult->sortOrder.sortingEntry.expression, *joinPreresult->sortOrder.sortingEntry.desc);
+	if (PreSelect->sortOrder.index) {
+		joinQuery.Sort(PreSelect->sortOrder.sortingEntry.expression, *PreSelect->sortOrder.sortingEntry.desc);
 	}
 
 	joinQuery.aggregations_.clear();
@@ -1626,11 +1625,10 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 
 	LocalQueryResults qr;
 	Explain explain;
-	SelectCtxWithJoinPreSelect ctx{joinQuery, nullptr, JoinPreResultExecuteCtx{std::move(joinPreresult), mainQueryMaxIterations},
-								   floatVectorsHolder_};
+	JoinSelectCtx ctx{joinQuery, nullptr, joins::PreSelectExecuteCtx{std::move(PreSelect), mainQueryMaxIterations}, floatVectorsHolder_};
 	ctx.explain = &explain;
 	rightNs.Select(qr, ctx, rdxCtx);
-	if (ctx.preSelect.Mode() == JoinPreSelectMode::InjectionRejected || qr.Count() > size_t(limit)) {
+	if (ctx.preSelect.Mode() == joins::PreSelectMode::InsertionRejected || qr.Count() > size_t(limit)) {
 		return {CondAny, {}};
 	}
 
@@ -1682,17 +1680,17 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 }
 
 std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(CondType condition, const QueryJoinEntry& joinEntry,
-																				const JoinedSelector& joinedSelector,
+																				const joins::ItemsProcessor& joinItemsProcessor,
 																				const CollateOpts& collate) {
 	switch (condition) {
 		case CondEq:
 		case CondSet:
-			return {CondSet, joinedSelector.readValuesFromPreResult(joinEntry)};
+			return {CondSet, joinItemsProcessor.readValuesFromPreSelect(joinEntry)};
 		case CondLt:
 		case CondLe:
 		case CondGt:
 		case CondGe: {
-			const JoinPreResult::Values& values = std::get<JoinPreResult::Values>(joinedSelector.PreResult().payload);
+			const joins::PreSelect::Values& values = std::get<joins::PreSelect::Values>(joinItemsProcessor.PreSelectResults().payload);
 			VariantArray buffer, keyValues;
 			for (auto it : values) {
 				const PayloadValue& pv = it.GetItemRef().Value();
@@ -1734,7 +1732,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 }
 
 template <typename JS>
-size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS>& joinedSelectors, WrSerializer& ser) const {
+size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS>& joinItemsProcessors, WrSerializer& ser) const {
 	size_t totalQeValues = 0;
 	for (auto it = from; it < to; it = Next(it)) {
 		if (it != from || container_[it].operation != OpAnd) {
@@ -1743,7 +1741,7 @@ size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS
 		container_[it].Visit([](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { throw_as_assert; },
 							 [&](const QueryEntriesBracket& b) {
 								 ser << "(";
-								 briefDump(it + 1, Next(it), joinedSelectors, ser);
+								 briefDump(it + 1, Next(it), joinItemsProcessors, ser);
 								 dumpEqualPositions(0, ser, b.equalPositions);
 								 ser << ")";
 							 },
@@ -1755,7 +1753,7 @@ size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS
 								 ser << qe.DumpBrief() << ' ';
 								 totalQeValues += qe.Values().size();
 							 },
-							 [&joinedSelectors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinedSelectors) << ' '; },
+							 [&joinItemsProcessors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinItemsProcessors) << ' '; },
 							 [&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << ' '; },
 							 [&ser](const AlwaysFalse&) { ser << "AlwaysFalse" << ' '; },
 							 [&ser](const AlwaysTrue&) { ser << "AlwaysTrue" << ' '; },
@@ -1769,13 +1767,13 @@ size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS
 }
 
 template <typename ExplainPolicy>
-size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to, JoinedSelectors& js,
-													OnConditionInjections& explainOnInjections, int embracedMaxIterations,
+size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to, joins::ItemsProcessors& js,
+													OnConditionInsertions& explainOnInsertions, int embracedMaxIterations,
 													h_vector<int, 256>& maxIterations, bool inTransaction, bool enableSortOrders,
 													const RdxContext& rdxCtx) {
 	using namespace std::string_view_literals;
 
-	size_t injectedCount = 0;
+	size_t insertedCount = 0;
 	for (size_t cur = from; cur < to; cur = Next(cur)) {
 		container_[cur].Visit(
 			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { throw_as_assert; },
@@ -1783,40 +1781,40 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 				 QueryFunctionEntry>{},
 			[&](const QueryEntriesBracket&) {
 				const size_t injCount =
-					injectConditionsFromJoins<ExplainPolicy>(cur + 1, Next(cur), js, explainOnInjections, maxIterations[cur], maxIterations,
+					insertConditionsFromJoins<ExplainPolicy>(cur + 1, Next(cur), js, explainOnInsertions, maxIterations[cur], maxIterations,
 															 inTransaction, enableSortOrders, rdxCtx);
 				to += injCount;
-				injectedCount += injCount;
+				insertedCount += injCount;
 				assertrx_throw(to <= container_.size());
 			},
 			[&](const JoinQueryEntry& jqe) {
 				const auto joinIndex = jqe.joinIndex;
 				assertrx_throw(js.size() > joinIndex);
-				JoinedSelector& joinedSelector = js[joinIndex];
-				const JoinPreResult& preResult = joinedSelector.PreResult();
-				assertrx_throw(joinedSelector.PreSelectMode() == JoinPreSelectMode::Execute);
-				const bool byValues = std::holds_alternative<JoinPreResult::Values>(preResult.payload);
+				joins::ItemsProcessor& joinItemsProcessor = js[joinIndex];
+				const joins::PreSelect& preSelect = joinItemsProcessor.PreSelectResults();
+				assertrx_throw(joinItemsProcessor.PreSelectStrategy() == joins::PreSelectMode::Execute);
+				const bool byValues = std::holds_alternative<joins::PreSelect::Values>(preSelect.payload);
 
-				auto explainJoinOn = ExplainPolicy::AppendJoinOnExplain(explainOnInjections);
+				auto explainJoinOn = ExplainPolicy::AppendJoinOnExplain(explainOnInsertions);
 				explainJoinOn.Init(jqe, js, byValues);
 
 				// Checking if we are able to preselect something from RightNs, or there are preselected results
 				if (!byValues) {
-					const auto& rNsCfg = joinedSelector.RightNs()->config();
+					const auto& rNsCfg = joinItemsProcessor.RightNs()->config();
 					if (rNsCfg.maxPreselectSize == 0 && fp::IsZero(rNsCfg.maxPreselectPart)) {
 						explainJoinOn.Skipped("maxPreselectSize and maxPreselectPart == 0"sv);
 						return;
 					}
 				} else {
-					if (!std::get<JoinPreResult::Values>(preResult.payload).IsPreselectAllowed()) {
+					if (!std::get<joins::PreSelect::Values>(preSelect.payload).IsPreselectAllowed()) {
 						explainJoinOn.Skipped("Preselect is not allowed"sv);
 						return;
 					}
 				}
-				const auto& joinEntries = joinedSelector.joinQuery_.joinEntries_;
+				const auto& joinEntries = joinItemsProcessor.joinQuery_.joinEntries_;
 				assertrx_throw(joinEntries.empty() || joinEntries.front().Operation() != OpOr);
 				// LeftJoin-s shall not be in QueryEntries container_ by construction
-				assertrx_throw(joinedSelector.Type() == InnerJoin || joinedSelector.Type() == OrInnerJoin);
+				assertrx_throw(joinItemsProcessor.Type() == InnerJoin || joinItemsProcessor.Type() == OrInnerJoin);
 				// Checking if we have anything to inject into main Where clause
 				bool foundANDOrOR = false;
 				for (const auto& je : joinEntries) {
@@ -1831,12 +1829,12 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 				}
 
 				OpType op = GetOperation(cur);
-				if (joinedSelector.Type() == OrInnerJoin) {
+				if (joinItemsProcessor.Type() == OrInnerJoin) {
 					if (op == OpNot) {
 						throw Error(errQueryExec, "OR INNER JOIN with operation NOT");
 					}
 					op = OpOr;
-					joinedSelector.SetType(InnerJoin);
+					joinItemsProcessor.SetType(InnerJoin);
 				}
 
 				// inserting Bracket for JoinQuery itself into ExpressionTree
@@ -1846,14 +1844,14 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 				const size_t bracketStart = cur;
 				++cur;
 				++to;
-				++injectedCount;
-				size_t count = InjectConditionsFromOnConditions<InjectionDirection::IntoMain>(
-					cur, joinEntries, joinedSelector.joinQuery_.Entries(), joinIndex,
-					byValues ? nullptr : &joinedSelector.RightNs()->indexes_);
+				++insertedCount;
+				size_t count = InsertConditionsFromOnConditions<JoinConditionInsertionDirection::IntoMain>(
+					cur, joinEntries, joinItemsProcessor.joinQuery_.Entries(), joinIndex,
+					byValues ? nullptr : &joinItemsProcessor.RightNs()->indexes_);
 				initIndexedQueries(cur, cur + count);
 				cur += count;
 				to += count;
-				injectedCount += count;
+				insertedCount += count;
 				std::ignore = maxIterations.insert(maxIterations.begin() + bracketStart, count + 1, embracedMaxIterations);
 				std::span<int> maxItersSpan(maxIterations.data(), maxIterations.size());
 				maxIterations[bracketStart] = calculateMaxIterations(bracketStart + 1, Next(bracketStart), embracedMaxIterations,
@@ -1867,7 +1865,7 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 				for (size_t i = 0, s = joinEntries.size(); i < s; ++i) {
 					const QueryJoinEntry& joinEntry = joinEntries[i];
 					auto explainEntry = explainJoinOn.AppendOnEntryExplain();
-					explainEntry.InitialCondition(joinEntry, joinedSelector);
+					explainEntry.InitialCondition(joinEntry, joinItemsProcessor);
 					CondType condition = joinEntry.Condition();
 					OpType operation = joinEntry.Operation();
 					switch (operation) {
@@ -1916,14 +1914,16 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 					CondType queryCondition{CondAny};
 					VariantArray values;
 					if (byValues) {
-						assertrx_throw(joinedSelector.itemQuery_.Entries().Is<QueryEntry>(i));
-						assertrx_throw(joinedSelector.itemQuery_.Entries().Get<QueryEntry>(i).FieldName() == joinEntry.RightFieldName());
+						assertrx_throw(joinItemsProcessor.itemQuery_.Entries().Is<QueryEntry>(i));
+						assertrx_throw(joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(i).FieldName() ==
+									   joinEntry.RightFieldName());
 						static const CollateOpts collate;
 						const CollateOpts* collatePtr = &collate;
 						if (joinEntry.IsLeftFieldIndexed()) {
 							collatePtr = &ns_.indexes_[joinEntry.LeftIdxNo()]->Opts().collateOpts_;
 						}
-						std::tie(queryCondition, values) = queryValuesFromOnCondition(condition, joinEntry, joinedSelector, *collatePtr);
+						std::tie(queryCondition, values) =
+							queryValuesFromOnCondition(condition, joinEntry, joinItemsProcessor, *collatePtr);
 					} else {
 						bool skip = false;
 						switch (condition) {
@@ -1940,8 +1940,8 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 							case CondLe:
 							case CondGt:
 							case CondGe: {
-								const auto& qe = joinedSelector.itemQuery_.Entries().Get<QueryEntry>(i);
-								if (qe.IsFieldIndexed() && IsFullText(joinedSelector.RightNs()->indexes_[qe.IndexNo()]->Type())) {
+								const auto& qe = joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(i);
+								if (qe.IsFieldIndexed() && IsFullText(joinItemsProcessor.RightNs()->indexes_[qe.IndexNo()]->Type())) {
 									skip = true;
 									explainEntry.Skipped("Skipped due to condition Lt|Le|Gt|Ge|Range with fulltext index"sv);
 									break;
@@ -1963,8 +1963,8 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 							case CondEq:
 							case CondSet:
 							case CondAllSet: {
-								const auto& qe = joinedSelector.itemQuery_.Entries().Get<QueryEntry>(i);
-								if (qe.IsFieldIndexed() && IsFullText(joinedSelector.RightNs()->indexes_[qe.IndexNo()]->Type())) {
+								const auto& qe = joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(i);
+								if (qe.IsFieldIndexed() && IsFullText(joinItemsProcessor.RightNs()->indexes_[qe.IndexNo()]->Type())) {
 									skip = true;
 									explainEntry.Skipped("Skipped due to condition Eq|Set|AllSet with fulltext index"sv);
 									break;
@@ -1986,13 +1986,14 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 							std::string explainSelect;
 							AggType selectAggType;
 							std::tie(queryCondition, values) =
-								(!std::holds_alternative<SelectIteratorContainer>(preResult.payload)
-									 ? queryValuesFromOnCondition(explainSelect, selectAggType, *joinedSelector.RightNs(),
-																  Query{joinedSelector.RightNsName()}, joinedSelector.PreResultPtr(),
-																  joinEntry, condition, embracedMaxIterations, rdxCtx)
-									 : queryValuesFromOnCondition(explainSelect, selectAggType, *joinedSelector.RightNs(),
-																  joinedSelector.JoinQuery(), joinedSelector.PreResultPtr(), joinEntry,
-																  condition, embracedMaxIterations, rdxCtx));
+								(!std::holds_alternative<SelectIteratorContainer>(preSelect.payload)
+									 ? queryValuesFromOnCondition(explainSelect, selectAggType, *joinItemsProcessor.RightNs(),
+																  Query{joinItemsProcessor.RightNsName()},
+																  joinItemsProcessor.PreSelectResultPtr(), joinEntry, condition,
+																  embracedMaxIterations, rdxCtx)
+									 : queryValuesFromOnCondition(explainSelect, selectAggType, *joinItemsProcessor.RightNs(),
+																  joinItemsProcessor.JoinQuery(), joinItemsProcessor.PreSelectResultPtr(),
+																  joinEntry, condition, embracedMaxIterations, rdxCtx));
 
 							explainEntry.ExplainSelect(std::move(explainSelect), selectAggType);
 						}
@@ -2002,7 +2003,6 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 							Emplace<QueryEntry>(cur, operation, QueryField(joinEntry.LeftFieldData()), queryCondition, std::move(values));
 						explainEntry.Succeed([&](WrSerializer& ser) { return briefDump(cur, cur + inserted, js, ser); });
 						maxIterations.insert(maxIterations.cbegin() + cur, inserted, embracedMaxIterations);
-						initIndexedQueries(cur, cur + inserted);
 						cur += inserted;
 						count += inserted;
 						prevIsSkipped = false;
@@ -2013,7 +2013,7 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 							maxIterations.erase(maxIterations.cbegin() + (cur - orChainLength), maxIterations.begin() + cur);
 							cur -= orChainLength;
 							count -= orChainLength;
-							// marking On-injections as fail for removed entries
+							// marking On-insertions as fail for removed entries
 							explainJoinOn.FailOnEntriesAsOrChain(orChainLength);
 						}
 						prevIsSkipped = true;
@@ -2021,21 +2021,23 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 				}  // end of entries processing
 
 				if (count > 0) {
-					EncloseInBracket(cur - count, cur, OpAnd);
-					maxIterations.insert(maxIterations.cbegin() + (cur - count), embracedMaxIterations);
+					const auto beg = cur - count;
+					EncloseInBracket(beg, cur, OpAnd);
+					maxIterations.insert(maxIterations.cbegin() + (beg), embracedMaxIterations);
 
-					explainJoinOn.Succeed(
-						[this, cur, count, &js](WrSerializer& ser) { std::ignore = briefDump(cur - count, Next(cur - count), js, ser); });
+					const auto end = Next(beg);
+					explainJoinOn.Succeed([this, beg, end, &js](WrSerializer& ser) { std::ignore = briefDump(beg, end, js, ser); });
+					initIndexedQueries(beg, end);
 
 					++cur;
-					injectedCount += count + 1;
+					insertedCount += count + 1;
 					to += count + 1;
 				} else {
-					explainJoinOn.Skipped("Skipped as there are no injected conditions"sv);
+					explainJoinOn.Skipped("Skipped as there are no inserted conditions"sv);
 				}
 			});
 	}
-	return injectedCount;
+	return insertedCount;
 }
 
 class [[nodiscard]] JoinOnExplainDisabled {
@@ -2043,7 +2045,7 @@ class [[nodiscard]] JoinOnExplainDisabled {
 	struct [[nodiscard]] OnEntryExplain {
 		OnEntryExplain() noexcept = default;
 
-		RX_ALWAYS_INLINE void InitialCondition(const QueryJoinEntry&, const JoinedSelector&) const noexcept {}
+		RX_ALWAYS_INLINE void InitialCondition(const QueryJoinEntry&, const joins::ItemsProcessor&) const noexcept {}
 		template <typename CallBackT>
 		RX_ALWAYS_INLINE void Succeed(CallBackT&&) const noexcept {}
 		RX_ALWAYS_INLINE void Skipped(std::string_view) const noexcept {}
@@ -2052,9 +2054,9 @@ class [[nodiscard]] JoinOnExplainDisabled {
 	};
 
 public:
-	RX_ALWAYS_INLINE static JoinOnExplainDisabled AppendJoinOnExplain(OnConditionInjections&) noexcept { return {}; }
+	RX_ALWAYS_INLINE static JoinOnExplainDisabled AppendJoinOnExplain(OnConditionInsertions&) noexcept { return {}; }
 
-	RX_ALWAYS_INLINE void Init(const JoinQueryEntry&, const JoinedSelectors&, bool) const noexcept {}
+	RX_ALWAYS_INLINE void Init(const JoinQueryEntry&, const joins::ItemsProcessors&, bool) const noexcept {}
 	template <typename CallBackT>
 	RX_ALWAYS_INLINE void Succeed(CallBackT&&) const noexcept {}
 	RX_ALWAYS_INLINE void Skipped(std::string_view) const noexcept {}
@@ -2067,22 +2069,22 @@ public:
 class [[nodiscard]] JoinOnExplainEnabled {
 	using time_point_t = Explain::Clock::time_point;
 	struct [[nodiscard]] OnEntryExplain {
-		OnEntryExplain(ConditionInjection& explainEntry) noexcept : startTime_(Explain::Clock::now()), explainEntry_(explainEntry) {}
+		OnEntryExplain(ConditionInsertion& explainEntry) noexcept : startTime_(Explain::Clock::now()), explainEntry_(explainEntry) {}
 		~OnEntryExplain() noexcept { explainEntry_.totalTime_ = Explain::Clock::now() - startTime_; }
 		OnEntryExplain(const OnEntryExplain&) = delete;
 		OnEntryExplain(OnEntryExplain&&) = delete;
 		OnEntryExplain& operator=(const OnEntryExplain&) = delete;
 		OnEntryExplain& operator=(OnEntryExplain&&) = delete;
 
-		void InitialCondition(const QueryJoinEntry& joinEntry, const JoinedSelector& joinedSelector) {
-			explainEntry_.initCond = joinEntry.DumpCondition(joinedSelector);
+		void InitialCondition(const QueryJoinEntry& joinEntry, const joins::ItemsProcessor& joinItemsProcessor) {
+			explainEntry_.initCond = joinEntry.DumpCondition(joinItemsProcessor);
 		}
 		template <typename CallBackT>
-		void Succeed(CallBackT&& setInjectedCond) {
+		void Succeed(CallBackT&& setInsertedCond) {
 			explainEntry_.succeed = true;
 			explainEntry_.reason = "";
 			WrSerializer wser;
-			explainEntry_.valuesCount = setInjectedCond(wser);
+			explainEntry_.valuesCount = setInsertedCond(wser);
 			explainEntry_.newCond = std::string(trimSpaces(wser.Slice()));
 		}
 
@@ -2101,10 +2103,10 @@ class [[nodiscard]] JoinOnExplainEnabled {
 
 	private:
 		time_point_t startTime_;
-		ConditionInjection& explainEntry_;
+		ConditionInsertion& explainEntry_;
 	};
 
-	JoinOnExplainEnabled(JoinOnInjection& joinOn) noexcept : explainJoinOn_(joinOn), startTime_(Explain::Clock::now()) {}
+	JoinOnExplainEnabled(JoinOnInsertion& joinOn) noexcept : explainJoinOn_(joinOn), startTime_(Explain::Clock::now()) {}
 
 public:
 	JoinOnExplainEnabled(const JoinOnExplainEnabled&) = delete;
@@ -2112,21 +2114,21 @@ public:
 	JoinOnExplainEnabled& operator=(const JoinOnExplainEnabled&) = delete;
 	JoinOnExplainEnabled& operator=(JoinOnExplainEnabled&&) = delete;
 
-	static JoinOnExplainEnabled AppendJoinOnExplain(OnConditionInjections& explainOnInjections) {
-		return {explainOnInjections.emplace_back()};
+	static JoinOnExplainEnabled AppendJoinOnExplain(OnConditionInsertions& explainOnInsertions) {
+		return {explainOnInsertions.emplace_back()};
 	}
 	~JoinOnExplainEnabled() noexcept { explainJoinOn_.totalTime_ = Explain::Clock::now() - startTime_; }
 
-	void Init(const JoinQueryEntry& jqe, const JoinedSelectors& js, bool byValues) {
-		const JoinedSelector& joinedSelector = js[jqe.joinIndex];
-		explainJoinOn_.rightNsName = joinedSelector.RightNsName();
+	void Init(const JoinQueryEntry& jqe, const joins::ItemsProcessors& js, bool byValues) {
+		const joins::ItemsProcessor& joinItemsProcessor = js[jqe.joinIndex];
+		explainJoinOn_.rightNsName = joinItemsProcessor.RightNsName();
 		explainJoinOn_.joinCond = jqe.DumpOnCondition(js);
-		explainJoinOn_.type = byValues ? JoinOnInjection::ByValue : JoinOnInjection::Select;
+		explainJoinOn_.type = byValues ? JoinOnInsertion::ByValue : JoinOnInsertion::Select;
 	}
 	template <typename CallbackT>
-	void Succeed(CallbackT&& setInjectedCond) {
+	void Succeed(CallbackT&& setInsertedCond) {
 		explainJoinOn_.succeed = true;
-		setInjectedCond(explainJoinOn_.injectedCond);
+		setInsertedCond(explainJoinOn_.insertedCond);
 	}
 	void Skipped(std::string_view reason) noexcept {
 		if (explainJoinOn_.reason.empty()) {
@@ -2142,7 +2144,7 @@ public:
 		using namespace std::string_view_literals;
 		auto& conditions = explainJoinOn_.conditions;
 		assertrx_throw(conditions.size() >= orChainLength);
-		// Marking On-injections as fail for removed entries.
+		// Marking On-insertions as fail for removed entries.
 		for (size_t jsz = conditions.size(), j = jsz - orChainLength; j < jsz; ++j) {
 			conditions[j].succeed = false;
 			conditions[j].orChainPart_ = true;
@@ -2150,7 +2152,7 @@ public:
 	}
 
 private:
-	JoinOnInjection& explainJoinOn_;
+	JoinOnInsertion& explainJoinOn_;
 	time_point_t startTime_;
 };
 

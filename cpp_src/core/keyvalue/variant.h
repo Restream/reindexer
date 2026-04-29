@@ -6,6 +6,7 @@
 #include "core/key_value_type.h"
 #include "core/payload/payloadvalue.h"
 #include "estl/comparation_result.h"
+#include "estl/concepts.h"
 #include "estl/h_vector.h"
 #include "float_vector.h"
 #include "geometry.h"
@@ -13,9 +14,6 @@
 
 namespace reindexer {
 
-class WrSerializer;
-// NOLINTNEXTLINE (bugprone-forward-declaration-namespace)
-class Serializer;
 class PayloadType;
 class FieldsSet;
 class VariantArray;
@@ -64,6 +62,7 @@ public:
 		new (cast<void>()) PayloadValue(std::move(v));
 	}
 	explicit Variant(const VariantArray& values);
+	explicit Variant(const VariantArray& values, const PayloadType& pt, const FieldsSet& fields);
 	explicit Variant(Point);
 	explicit Variant(Uuid) noexcept;
 	explicit Variant(ConstFloatVectorView v, NoHoldT = noHold) noexcept : variant_{0, 0, KeyValueType::FloatVector{}, v.Payload()} {}
@@ -149,8 +148,7 @@ public:
 	template <typename T>
 	T As() const;
 
-	template <typename T>
-	T As(const PayloadType&, const FieldsSet&) const;
+	std::string AsSingleString(const PayloadType&, const FieldsSet&) const;
 
 	bool operator==(const Variant& other) const {
 		return Compare<NotComparable::Return, kDefaultNullsHandling>(other) == ComparationResult::Eq;
@@ -245,6 +243,9 @@ private:
 
 	bool isUuid() const noexcept { return uuid_.isUuid != 0; }
 	void convertToComposite(const PayloadType&, const FieldsSet&);
+	static Variant convertTupleToComposite(std::string_view val, const PayloadType&, const FieldsSet&);
+	static Variant convertTupleToScalar(std::string_view val);
+	static Variant convertCompositeToScalar(const PayloadValue&, const PayloadType&, const FieldsSet&);
 	void free() noexcept;
 	void copy(const Variant& other);
 	template <typename T>
@@ -313,6 +314,8 @@ template <>
 key_string Variant::As<key_string>() const;
 template <>
 ConstFloatVectorView Variant::As<ConstFloatVectorView>() const;
+template <>
+VariantArray Variant::As<VariantArray>() const;
 
 class [[nodiscard]] VariantArray : public h_vector<Variant, 2> {
 	using Base = h_vector<Variant, 2>;
@@ -414,10 +417,12 @@ public:
 		VariantArray res;
 		res.reserve(vs.size());
 		std::ranges::transform(vs, std::back_inserter(res), [&hold](const T& t) {
-			if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>) {
+			if constexpr (concepts::OneOf<T, std::string, std::string_view>) {
 				return Variant(p_string(&t), hold);
-			} else if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, key_string>) {
+			} else if constexpr (concepts::OneOf<T, const char*, key_string>) {
 				return Variant(p_string(t), hold);
+			} else if constexpr (concepts::OneOf<T, FloatVector, FloatVectorView, ConstFloatVectorView>) {
+				return Variant(ConstFloatVectorView(t), hold);
 			} else {
 				(void)hold;
 				return Variant(t);

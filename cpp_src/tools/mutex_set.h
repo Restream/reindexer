@@ -36,6 +36,7 @@ public:
 		Locks(Locks&&) noexcept = default;
 		Locks& operator=(Locks&&) noexcept = default;
 		void UnlockIfOwns() noexcept { unlock(); }
+		bool OwnsLock() const noexcept { return lck1_.owns_lock() || lck2_.owns_lock(); }
 		// std-compatible naming
 		void lock() {
 			if (lck1_.mutex()) {

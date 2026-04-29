@@ -1,6 +1,6 @@
 #include "msgpackbuilder.h"
 #include "core/type_consts_helpers.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "vendor/gason/gason.h"
 
 namespace reindexer::builders {

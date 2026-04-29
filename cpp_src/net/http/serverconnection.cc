@@ -9,7 +9,6 @@
 #include "time/fast_time.h"
 #include "tools/assertrx.h"
 #include "tools/errors.h"
-#include "tools/serializer.h"
 #include "tools/stringstools.h"
 
 namespace reindexer::net::http {
@@ -333,7 +332,7 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 	return ReadResT::Default;
 }
 
-void ServerConnection::ResponseWriter::SetHeader(const Header& hdr) noexcept {
+void ServerConnection::ResponseWriter::SetHeader(const Header& hdr) {
 	if (respSend_) {
 		return;
 	}

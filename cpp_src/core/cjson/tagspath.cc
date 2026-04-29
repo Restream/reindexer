@@ -4,6 +4,26 @@
 
 namespace reindexer {
 
+bool Compare(IndexedTagsPathView lhs, const TagsPath& rhs) noexcept {
+	const size_t ourSize = lhs.size();
+	const size_t otherSize = rhs.size();
+	if (otherSize > ourSize) {
+		return false;
+	}
+	size_t i = 0;
+	for (; i < otherSize; ++i) {
+		if (lhs[i] != rhs[i]) {
+			return false;
+		}
+	}
+	for (; i < ourSize; ++i) {
+		if (!lhs[i].IsTagIndex()) {
+			return false;
+		}
+	}
+	return true;
+}
+
 void Dump(auto& os, const TagsPath& path, TagsMatcher* tm) {
 	for (size_t i = 0; i < path.size(); ++i) {
 		if (i != 0) {

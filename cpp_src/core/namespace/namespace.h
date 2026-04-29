@@ -124,10 +124,6 @@ public:
 	}
 
 	void Truncate(const RdxContext& ctx) { nsFuncWrapper<&NamespaceImpl::Truncate>(ctx); }
-	template <typename JoinPreResultCtx>
-	void Select(LocalQueryResults& result, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& params, const RdxContext& ctx) {
-		nsFuncWrapper<&NamespaceImpl::Select>(result, params, ctx);
-	}
 	NamespaceDef GetDefinition(const RdxContext& ctx) { return nsFuncWrapper<&NamespaceImpl::GetDefinition>(ctx); }
 	NamespaceMemStat GetMemStat(const RdxContext& ctx) { return nsFuncWrapper<&NamespaceImpl::GetMemStat>(ctx); }
 	NamespacePerfStat GetPerfStat(const RdxContext& ctx);
@@ -284,13 +280,12 @@ private:
 		lock_guard lck(nsPtrSpinlock_);
 		return ns_;
 	}
-	void atomicStoreMainNs(NamespaceImpl* ns) {
+	void atomicStoreMainNs(NamespaceImpl::Ptr&& ns) {
 		lock_guard lck(nsPtrSpinlock_);
-		ns_.reset(ns);
+		ns_ = std::move(ns);
 	}
 
 	NamespaceImpl::Ptr ns_;
-	std::unique_ptr<NamespaceImpl> nsCopy_;
 	using Mutex = MarkedMutex<timed_mutex, MutexMark::CloneNs>;
 	mutable Mutex clonerMtx_;
 	mutable spinlock nsPtrSpinlock_;

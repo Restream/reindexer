@@ -1,7 +1,7 @@
 #include "resultserializer.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/tagsmatcher.h"
-#include "core/queryresults/joinresults.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "core/queryresults/queryresults.h"
 #include "core/type_consts.h"
 #include "tools/logger.h"
@@ -33,12 +33,6 @@ void WrResultSerializer::putQueryParams(const BindingCapabilities& caps, QueryRe
 	PutVarUint(opts_.fetchLimit);
 
 	if (opts_.flags & kResultsWithPayloadTypes) {
-		assertrx(opts_.ptVersions.data());
-		const auto mergedNsCount = results.GetMergedNSCount();
-		if (int(opts_.ptVersions.size()) != mergedNsCount) {
-			logFmt(LogWarning, "ptVersionsCount != results->GetMergedNSCount: {} != {}. Client's metadata can become inconsistent.",
-				   opts_.ptVersions.size(), mergedNsCount);
-		}
 		auto cntP = getPtUpdatesCount(results);
 		putPayloadTypes(*this, results, opts_, cntP.first, cntP.second);
 	}
@@ -191,7 +185,7 @@ void WrResultSerializer::putPayloadTypes(WrSerializer& ser, const QueryResults& 
 	ser.PutVarUint(cnt);
 	for (int nsid = 0; nsid < totalCnt; ++nsid) {
 		const TagsMatcher& tm = results.GetTagsMatcher(nsid);
-		if (int32_t(tm.version() ^ tm.stateToken()) != opts.ptVersions[nsid]) {
+		if (int32_t(tm.version() ^ tm.stateToken()) != opts.tmVersions[nsid]) {
 			ser.PutVarUint(nsid);
 			ser.PutVString(results.GetPayloadType(nsid)->Name());
 			const PayloadType& t = results.GetPayloadType(nsid);
@@ -207,17 +201,17 @@ void WrResultSerializer::putPayloadTypes(WrSerializer& ser, const QueryResults& 
 
 std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults& results) {
 	if (opts_.flags & kResultsWithPayloadTypes) {
-		assertrx(opts_.ptVersions.data());
+		assertrx(opts_.tmVersions.data());
 		const auto mergedNsCount = results.GetMergedNSCount();
-		if (int(opts_.ptVersions.size()) != mergedNsCount) {
-			logFmt(LogWarning, "ptVersionsCount != results->GetMergedNSCount: {} != {}. Client's meta data can become inconsistent.",
-				   opts_.ptVersions.size(), mergedNsCount);
+		if (int(opts_.tmVersions.size()) != mergedNsCount) [[unlikely]] {
+			logFmt(LogWarning, "tmVersionsCount != results->GetMergedNSCount: {} != {}. Client's meta data can become inconsistent.",
+				   opts_.tmVersions.size(), mergedNsCount);
+			assertrx_dbg(false);
 		}
-		int cnt = 0, totalCnt = std::min(mergedNsCount, int(opts_.ptVersions.size()));
-
+		int cnt = 0, totalCnt = std::min(mergedNsCount, int(opts_.tmVersions.size()));
 		for (int i = 0; i < totalCnt; i++) {
 			const TagsMatcher& tm = results.GetTagsMatcher(i);
-			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.ptVersions[i]) {
+			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.tmVersions[i]) {
 				++cnt;
 			}
 		}
@@ -227,7 +221,7 @@ std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults& re
 }
 
 bool WrResultSerializer::PutResults(QueryResults& result, const BindingCapabilities& caps, QueryResults::ProxiedRefsStorage* storage) {
-	if (result.IsWALQuery() && !(opts_.flags & kResultsWithRaw) && (opts_.flags & kResultsFormatMask) != kResultsJson) {
+	if (result.IsWALQuery() && !(opts_.flags & kResultsWithRaw) && (opts_.flags & kResultsFormatMask) != kResultsJson) [[unlikely]] {
 		throw Error(errParams,
 					"Query results contain WAL items. Query results from WAL must either be requested in JSON format or with client, "
 					"supporting RAW items");
@@ -279,7 +273,7 @@ bool WrResultSerializer::PutResults(QueryResults& result, const BindingCapabilit
 	}
 
 	putQueryParams(caps, result);
-	size_t saveLen = len_;
+	size_t saveLen = Len();
 	const bool storeAsPointers = (opts_.flags & kResultsFormatMask) == kResultsPtrs;
 	auto ptrStorage = storeAsPointers ? storage : nullptr;
 	if (ptrStorage && result.HasProxiedResults()) {
@@ -309,7 +303,7 @@ bool WrResultSerializer::PutResults(QueryResults& result, const BindingCapabilit
 			}
 		}
 		if (i == 0) {
-			grow((opts_.fetchLimit - 1) * (len_ - saveLen));
+			grow((opts_.fetchLimit - 1) * (Len() - saveLen));
 		}
 	}
 	return opts_.fetchOffset + opts_.fetchLimit >= result.Count();

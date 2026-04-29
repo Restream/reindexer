@@ -45,6 +45,9 @@ struct [[nodiscard]] WordIdTypeLess {
 	bool operator()(const WordIdType& lhs, const WordIdType& rhs) const noexcept { return lhs.data < rhs.data; }
 };
 
+using FoundWordsProcsType = fast_hash_map<WordIdType, float, WordIdTypeHash, WordIdTypeEqual, WordIdTypeLess>;
+using FoundWordsType = fast_hash_map<WordIdType, size_t, WordIdTypeHash, WordIdTypeEqual, WordIdTypeLess>;
+
 enum class [[nodiscard]] FtUseExternStatuses : bool { Yes, No };
 
 }  // namespace reindexer

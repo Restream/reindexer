@@ -80,22 +80,20 @@ private:
 };
 
 struct [[nodiscard]] IdSetCacheVal {
-	IdSetCacheVal() = default;
-	IdSetCacheVal(IdSet::Ptr&& i) noexcept : ids(std::move(i)) {}
-	size_t Size() const noexcept { return ids ? (sizeof(*ids.get()) + ids->heap_size()) : 0; }
+	IdSetCacheVal() noexcept = default;
+	IdSetCacheVal(IdSetPlain::Ptr&& i) noexcept : ids(std::move(i)) {}
+	size_t Size() const noexcept { return ids ? (sizeof(*ids.get()) + ids->HeapSize()) : 0; }
 	bool IsInitialized() const noexcept { return bool(ids); }
-
-	IdSet::Ptr ids;
-};
-
-template <typename T>
-T& operator<<(T& os, const IdSetCacheVal& v) {
-	if (v.ids) {
-		return os << *v.ids;
-	} else {
-		return os << "[]";
+	void Dump(std::ostream& os) const {
+		if (ids) {
+			ids->Dump(os);
+		} else {
+			os << "[]";
+		}
 	}
-}
+
+	IdSetPlain::Ptr ids;
+};
 
 using IdSetCacheBase =
 	LRUCache<LRUCacheImpl<IdSetCacheKey, IdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>, LRUWithAtomicPtr::Yes>;

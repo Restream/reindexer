@@ -34,7 +34,8 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 		VariantArray keys, resKeys;
 		auto newIndex = Index::New(to, PayloadType(index->GetPayloadType()), FieldsSet{fields}, ns.config_.cacheConfig, ns.itemsCount());
 		const auto isComposite = IsComposite(index->Type());
-		for (size_t rowId = 0; rowId < ns.items_.size(); ++rowId) {
+		for (size_t id = 0; id < ns.items_.size(); ++id) {
+			const auto rowId = IdType::FromNumber(id);
 			const auto& item = ns.items_[rowId];
 			if (item.IsFree()) {
 				continue;
@@ -57,7 +58,7 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 
 			resKeys.resize(0);
 			bool needClearCacheUnused = false;
-			newIndex->Upsert(resKeys, keys, IdType::FromNumber(rowId), needClearCacheUnused);
+			newIndex->Upsert(resKeys, keys, rowId, needClearCacheUnused);
 		}
 
 		auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};

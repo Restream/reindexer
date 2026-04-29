@@ -7,7 +7,7 @@
 #include "core/dbconfig.h"
 #include "core/defnsconfigs.h"
 #include "core/keyvalue/variant.h"
-#include "core/queryresults/joinresults.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
@@ -21,7 +21,7 @@
 #include "server/loggerwrapper.h"
 #include "spdlog/async.h"
 #include "spdlog/sinks/reopen_file_sink.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "vendor/gason/gason.h"
 
 TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
@@ -304,7 +304,7 @@ TEST_F(ReindexerApi, DistinctDiffType) {
 		reindexer::WrSerializer ser;
 		auto err = r.GetJSON(ser, false);
 		ASSERT_TRUE(err.ok()) << err.what();
-		Vals.insert(ser.c_str());
+		Vals.emplace(ser.Slice());
 	}
 	ASSERT_EQ(BaseVals, Vals);
 }
@@ -691,9 +691,6 @@ TEST_F(ReindexerApi, AddUnacceptablePKIndex) {
 	ASSERT_EQ(err.code(), errParams) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "text", "string", IndexOpts().PK()});
-	ASSERT_EQ(err.code(), errParams) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "fuzzytext", "string", IndexOpts().PK()});
 	ASSERT_EQ(err.code(), errParams) << err.what();
 
 	// Add valid index with the same name

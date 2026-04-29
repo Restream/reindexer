@@ -3,7 +3,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/id_type.h"
 #include "tools/logger.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 

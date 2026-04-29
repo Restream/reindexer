@@ -632,7 +632,7 @@ func (binding *NetCProto) DeleteMeta(ctx context.Context, namespace, key string)
 	return binding.rpcCallNoResults(ctx, opWr, cmdDeleteMeta, namespace, key)
 }
 
-func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	flags := 0
 	if asJson {
 		flags |= bindings.ResultsJson
@@ -645,7 +645,7 @@ func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool,
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := binding.rpcCall(ctx, opRd, cmdExecSQL, query, flags, int32(fetchCount), ptVersions)
+	buf, err := binding.rpcCall(ctx, opRd, cmdExecSQL, query, flags, int32(fetchCount), tmVersions)
 	if buf != nil {
 		buf.reqID = buf.args[1].(int)
 		if len(buf.args) > 2 {
@@ -655,7 +655,7 @@ func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool,
 	return buf, err
 }
 
-func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	flags := 0
 	if asJson {
 		flags |= bindings.ResultsJson
@@ -668,7 +668,7 @@ func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson b
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := binding.rpcCall(ctx, opRd, cmdSelect, data, flags, int32(fetchCount), ptVersions)
+	buf, err := binding.rpcCall(ctx, opRd, cmdSelect, data, flags, int32(fetchCount), tmVersions)
 	if buf != nil {
 		buf.reqID = buf.args[1].(int)
 		if len(buf.args) > 2 {
@@ -682,8 +682,9 @@ func (binding *NetCProto) DeleteQuery(ctx context.Context, data []byte) (binding
 	return binding.rpcCall(ctx, opWr, cmdDeleteQuery, data)
 }
 
-func (binding *NetCProto) UpdateQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
-	return binding.rpcCall(ctx, opWr, cmdUpdateQuery, data)
+func (binding *NetCProto) UpdateQuery(ctx context.Context, data []byte, tmVersions []int32) (bindings.RawBuffer, error) {
+	flags := bindings.ResultsCJson | bindings.ResultsWithPayloadTypes | bindings.ResultsWithItemID
+	return binding.rpcCall(ctx, opWr, cmdUpdateQuery, data, flags, tmVersions)
 }
 
 func (binding *NetCProto) OnChangeCallback(f func()) {

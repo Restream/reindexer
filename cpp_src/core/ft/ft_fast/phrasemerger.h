@@ -1,9 +1,8 @@
 #pragma once
 #include "core/ft/areaholder.h"
-#include "core/id_type.h"
 #include "core/index/ft_preselect.h"
 #include "dataholder.h"
-#include "estl/dynamic_bitset.h"
+#include "querymergedata.h"
 
 namespace reindexer {
 
@@ -53,69 +52,6 @@ int MergePositionsWithDist(const PositionsVector& positions, const PositionsVect
 	}
 	return minDist;
 }
-
-using FoundWordsProcsType = fast_hash_map<WordIdType, float, WordIdTypeHash, WordIdTypeEqual, WordIdTypeLess>;
-
-template <typename IdCont>
-class [[nodiscard]] SubtermResults {
-public:
-	struct [[nodiscard]] HoldT {};
-	struct [[nodiscard]] NoHoldT {};
-
-	SubtermResults(const IdCont& vids, std::string&& pattern, WordIdType patternId, float proc, float boost, HoldT) noexcept
-		: proc(proc), boost(boost), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
-	SubtermResults(const IdCont& vids, std::string_view pattern, WordIdType patternId, float proc, float boost, NoHoldT) noexcept
-		: proc(proc), boost(boost), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
-
-	const IdCont& Vids() const noexcept { return *vids_; }
-	std::string_view Pattern() const noexcept {
-		try {
-			return std::visit([](const auto& v) { return std::string_view(v); }, pattern_);
-		} catch (...) {
-			assertrx_dbg(false);
-
-			return std::string_view();
-		}
-	}
-	WordIdType PatternID() const noexcept { return patternId_; }
-
-	float proc = 0.0;
-	float boost = 1.0;
-
-private:
-	const IdCont* vids_ = nullptr;						   // indexes of documents (vdoc) containing the given word + position + field
-	std::variant<std::string, std::string_view> pattern_;  // word,translit,.....
-	WordIdType patternId_;
-};
-
-// text search results for a single token (word) in a search query
-template <typename IdCont>
-class [[nodiscard]] TermResults {
-public:
-	TermResults() = default;
-	TermResults(const FtDSLEntry& t) : term(t) {}
-	TermResults(FtDSLEntry&& t) : term(std::move(t)) {}
-
-	const OpType& Op() const noexcept { return term.Opts().op; }
-	OpType& Op() noexcept { return term.Opts().op; }
-	int GroupNum() const noexcept { return term.Opts().groupNum; }
-	int QPos() const noexcept { return term.Opts().qpos; }
-	int Distance() const noexcept { return term.Opts().distance; }
-
-	uint32_t idsCnt = 0;
-	FtDSLEntry term;
-	std::vector<size_t> synonymsGroups;
-
-	h_vector<SubtermResults<IdCont>, 8> subtermsResults;
-
-	void UpdateProcs(const FoundWordsProcsType& finalProcs) {
-		for (SubtermResults<IdCont>& sr : subtermsResults) {
-			if (auto it = finalProcs.find(sr.PatternID()); it != finalProcs.end()) {
-				sr.proc = it->second;
-			}
-		}
-	}
-};
 
 // Final information about found document
 struct [[nodiscard]] MergeInfo {
@@ -363,11 +299,17 @@ public:
 	using DocumentDataType = PhraseMergerDocumentData<MergeDataType>;
 	using BitsetType = DynamicBitset<64>;
 
-	PhraseMerger(DataHolder<IdCont>& holder, size_t fieldSize, int maxAreasInDoc, bool inTransaction, const RdxContext& ctx)
-		: holder_(holder), fieldSize_(fieldSize), maxAreasInDoc_(maxAreasInDoc), inTransaction_(inTransaction), ctx_(ctx) {}
+	PhraseMerger(DataHolder<IdCont>& holder, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc,
+				 bool inTransaction, const RdxContext& ctx)
+		: holder_(holder),
+		  docsExcluded_(docsExcluded),
+		  fieldSize_(fieldSize),
+		  maxAreasInDoc_(maxAreasInDoc),
+		  inTransaction_(inTransaction),
+		  ctx_(ctx) {}
 
 	template <typename Bm25T>
-	void Merge(std::vector<TermResults<IdCont>>& rawResults, size_t from, size_t to);
+	void Merge(PhraseResults<IdCont>& phrase);
 
 	size_t NumDocsMerged() const noexcept { return mergeData_.size(); }
 	const InfoType& GetMergeData(size_t mergedDocIdx) const noexcept { return mergeData_[mergedDocIdx]; }
@@ -377,51 +319,54 @@ public:
 	MergeDataType& GetMergeData() noexcept { return mergeData_; }
 	const MergeDataType& GetMergeData() const noexcept { return mergeData_; }
 
-	void GetMergedDocsScores(BitsetType& bm, std::vector<uint16_t>& scores) const {
-		bm.resize(0);
-		bm.resize(holder_.vdocs_.size(), false);
+	void GetMergedDocsBitmask(BitsetType& bm) const {
+		bm.ResizeAndReset(holder_.VDocsNumberInIndex());
 
 		for (const auto& md : mergeData_) {
 			if (md.proc > 0) {
 				bm.set(md.id.ToNumber());
+			}
+		}
+	}
 
-				if (phraseProc_ <= std::numeric_limits<uint16_t>::max() - scores[md.id.ToNumber()]) {
-					scores[md.id.ToNumber()] += phraseProc_;
-				}
+	void ExcludeMergedDocsFromBitmask(BitsetType& bm) const {
+		for (const auto& md : mergeData_) {
+			if (md.proc > 0) {
+				bm.reset(md.id.ToNumber());
+			}
+		}
+	}
+
+	void GetMergedDocsScore(std::vector<uint16_t>& scores) const {
+		for (const auto& md : mergeData_) {
+			if (md.proc > 0) {
+				scores[md.id.ToNumber()] +=
+					std::min<uint16_t>(phraseProc_, std::numeric_limits<uint16_t>::max() - scores[md.id.ToNumber()]);
 			}
 		}
 	}
 
 private:
-	void init(std::vector<TermResults<IdCont>>& rawResults, size_t from, size_t to) {
-		assertrx_throw(from < to);
-		assertrx_throw(to <= rawResults.size());
-		preselectedDocs_.resize(holder_.vdocs_.size(), true);
-		nextTermDocs_.resize(holder_.vdocs_.size(), false);
-		// upper estimate number of documents
-		uint32_t idsMaxCnt = rawResults[from].idsCnt;
-		maxMergedDocs_ = std::min(holder_.cfg_->mergeLimit, idsMaxCnt);
+	void init(PhraseResults<IdCont>& phrase) {
+		assertrx_throw(phrase.NumTerms() > 0);
+
+		preselectedDocs_.ResizeAndSet(holder_.VDocsNumberInIndex());
+		nextTermDocs_.ResizeAndReset(holder_.VDocsNumberInIndex());
+
+		maxMergedDocs_ = std::min(holder_.cfg_->mergeLimit, phrase.Term(0).MaxVDocs());
+		maxMergedDocs_ = std::min<uint32_t>(maxMergedDocs_, std::numeric_limits<MergeOffsetT>::max());
 		mergeData_.reserve(maxMergedDocs_);
 		mergeDataExtended_.reserve(maxMergedDocs_);
 
-		if (to - from > 1) {
-			idoffsets_.resize(holder_.vdocs_.size(), maxMergedDocs_);
+		if (phrase.NumTerms() > 1) {
+			idoffsets_.resize(holder_.VDocsNumberInIndex(), maxMergedDocs_);
 		}
 
-		maxDocId_ = holder_.vdocs_.size();
-
-		long long sumProc = 0.0;
-		for (size_t idx = from; idx < to; idx++) {
-			if (rawResults[idx].subtermsResults.size() > 0) {
-				sumProc += rawResults[idx].subtermsResults[0].proc;
-			}
-		}
-
-		assertrx_throw(sumProc >= 0 && sumProc < std::numeric_limits<uint16_t>::max());
-		phraseProc_ = static_cast<uint16_t>(sumProc);
+		maxDocId_ = holder_.VDocsNumberInIndex();
+		phraseProc_ = phrase.CalcProc16();
 	}
 
-	void preselectDocsContainingAllTerms(std::vector<TermResults<IdCont>>& rawResults, size_t from, size_t to);
+	void preselectDocsContainingAllTerms(PhraseResults<IdCont>& phrase);
 
 	template <typename Bm25T>
 	void mergePhraseTerm(TermResults<IdCont>& termRes, bool firstTerm);
@@ -436,6 +381,8 @@ private:
 	BitsetType nextTermDocs_;
 
 	DataHolder<IdCont>& holder_;
+	const FtMergeStatuses::Statuses& docsExcluded_;
+
 	size_t fieldSize_ = 0;
 	int maxAreasInDoc_ = 0;
 	uint32_t maxMergedDocs_ = 0;

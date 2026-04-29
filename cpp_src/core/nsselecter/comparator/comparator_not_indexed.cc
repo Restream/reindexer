@@ -19,7 +19,7 @@ std::string emptyComparatorCondStr() {
 
 void checkNonIndexedValueType(CondType condType, const Variant& v) {
 	auto t = v.Type();
-	if (!(t.template Is<KeyValueType::String>() || t.template Is<KeyValueType::Uuid>() || t.IsNumeric())) [[unlikely]] {
+	if (!t.template Is<KeyValueType::String>() && !t.template Is<KeyValueType::Uuid>() && !t.IsNumeric()) [[unlikely]] {
 		throw Error{errQueryExec, "Value type in '{}' for non indexed field must be string, numeric or uuid. Value type is '{}'",
 					CondTypeToStr(condType), t.Name()};
 	}

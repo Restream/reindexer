@@ -32,7 +32,6 @@ option(ENABLE_PCH "Enable precompiled headers for the build" OFF)
 option(WITH_BUILTIN_LEVELDB "Use builtin leveldb instead of system package" OFF)
 set(BUILD_ANN_INDEXES "all" CACHE STRING "Enable ANN indexes build: none, builtin, all. 'All' builds both builtin and FAISS-based indexes")
 set_property(CACHE BUILD_ANN_INDEXES PROPERTY STRINGS none builtin all)
-set(VERSION_SUFFIX "" CACHE STRING "Add extra suffix to version number")
 
 if(APPLE)
   option(ENABLE_OPENSSL "Enable OpenSSL" OFF)
@@ -67,7 +66,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.12.0")
+set (REINDEXER_VERSION_DEFAULT "5.13.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -165,6 +164,7 @@ endif()
 
 if(WITH_STDLIB_DEBUG)
   add_definitions(-DRX_WITH_STDLIB_DEBUG=1)
+  add_definitions(-DTSL_DEBUG=1)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_definitions(-D_GLIBCXX_DEBUG)
     add_definitions(-D_GLIBCXX_DEBUG_PEDANTIC)
@@ -403,7 +403,8 @@ if(ENABLE_PCH)
     $<$<COMPILE_LANGUAGE:CXX>:tools/errors.h>
     $<$<COMPILE_LANGUAGE:CXX>:tools/logger.h>
     $<$<COMPILE_LANGUAGE:CXX>:tools/lsn.h>
-    $<$<COMPILE_LANGUAGE:CXX>:tools/serializer.h>
+    $<$<COMPILE_LANGUAGE:CXX>:tools/serilize/serializer.h>
+    $<$<COMPILE_LANGUAGE:CXX>:tools/serilize/wrserializer.h>
     $<$<COMPILE_LANGUAGE:CXX>:tools/stringstools.h>
     $<$<COMPILE_LANGUAGE:CXX>:tools/varint.h>
     $<$<COMPILE_LANGUAGE:CXX>:tools/usingcontainer.h>
@@ -759,9 +760,6 @@ endif()
 if(NOT REINDEXER_VERSION_FULL)
   set(REINDEXER_VERSION_FULL "v${REINDEXER_VERSION_DEFAULT}")
 endif()
-if(NOT "${VERSION_SUFFIX}" STREQUAL "")
-  set(REINDEXER_VERSION_FULL "${REINDEXER_VERSION_FULL}_${VERSION_SUFFIX}")
-endif()
 
 set(REINDEXER_VERSION_H "#pragma once\n#define REINDEX_VERSION \"${REINDEXER_VERSION_FULL}\"\n")
 
@@ -780,9 +778,6 @@ set(REINDEXER_VERSION_REDUCED ${REINDEXER_VERSION})
 
 if(CMAKE_MATCH_1)
   set(REINDEXER_VERSION ${REINDEXER_VERSION}.${REINDEXER_RELEASE})
-endif()
-if(NOT "${VERSION_SUFFIX}" STREQUAL "" AND NOT CMAKE_MATCH_2)
-  set(REINDEXER_VERSION "${REINDEXER_VERSION}_${VERSION_SUFFIX}")
 endif()
 
 # Packing and installation

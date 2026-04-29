@@ -1,8 +1,7 @@
 #pragma once
 
 #include "core/enums.h"
-#include "core/ft/config/baseftconfig.h"
-#include "core/ft/filters/itokenfilter.h"
+#include "core/ft/config/ftconfig.h"
 #include "core/ft/ft_fast/dataholder.h"
 #include "core/ft/ftctx.h"
 #include "core/ft/ftdsl.h"
@@ -28,8 +27,8 @@ public:
 	void UpdateSortedIds(const IUpdateSortedContext&) override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
 	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
 
-	virtual IdSet::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
-							  const RdxContext&) = 0;
+	virtual IdSetPlain::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
+								   const RdxContext&) = 0;
 	void SetOpts(const IndexOpts& opts) override;
 	void Commit() override final {
 		// Do nothing
@@ -75,7 +74,7 @@ protected:
 	uint32_t hitsToCache_;
 
 	RHashMap<std::string, FtIndexFieldPros> ftFields_;
-	std::unique_ptr<BaseFTConfig> cfg_;
+	std::unique_ptr<FTConfig> cfg_;
 	mutable Mutex mtx_;
 };
 

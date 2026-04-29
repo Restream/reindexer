@@ -174,6 +174,9 @@ private:
 
 	Variant cjsonValueToVariant(TagType tag, KeyValueType dstType) const;
 	size_t decodeNestedArray(int indexNumber, size_t count, KeyValueType fieldType, size_t offset) const;
+	void decodeFloatVectorField(const PayloadFieldType&, unsigned count, TagType atagType, int indexNumber, TagName);
+	void decodeFloatVectorArray(const PayloadFieldType&, unsigned count, TagType atagType, int indexNumber, TagName);
+	ConstFloatVectorView decodeFloatVector(const PayloadFieldType&, unsigned count, TagType atagType) const;
 
 	TagsMatcher& tagsMatcher_;
 	TagsPath tagsPath_;

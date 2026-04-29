@@ -15,16 +15,16 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 	switch (v.getTag()) {
 		case gason::JsonTag::NUMBER:
 			return t.EvaluateOneOf(
-				[&](KeyValueType::Undefined) noexcept {
+				[&](KeyValueType::Undefined) {
 					int64_t val = v.toNumber();
 					return val > int64_t(INT_MIN) && val < int64_t(INT_MAX) ? Variant(static_cast<int>(val))
 																			: Variant(static_cast<int64_t>(val));
 				},
-				[&](KeyValueType::Double) noexcept { return Variant(double(v.toNumber())); },
-				[&](KeyValueType::Float) noexcept { return Variant(float(v.toNumber())); },
-				[&](KeyValueType::Int) noexcept { return Variant(static_cast<int>(v.toNumber())); },
-				[&](KeyValueType::Bool) noexcept { return Variant(static_cast<bool>(v.toNumber())); },
-				[&](KeyValueType::Int64) noexcept { return Variant(static_cast<int64_t>(v.toNumber())); },
+				[&](KeyValueType::Double) { return Variant(double(v.toNumber())); },
+				[&](KeyValueType::Float) { return Variant(float(v.toNumber())); },
+				[&](KeyValueType::Int) { return Variant(static_cast<int>(v.toNumber())); },
+				[&](KeyValueType::Bool) { return Variant(static_cast<bool>(v.toNumber())); },
+				[&](KeyValueType::Int64) { return Variant(static_cast<int64_t>(v.toNumber())); },
 				[&](KeyValueType::String) {
 					if (convertToString) {
 						return Variant(v.toNumber()).convert(KeyValueType::String{});
@@ -36,11 +36,11 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 									KeyValueType::FloatVector> auto) -> Variant { throwUnexpected(fieldName, t, "number"sv, kJSONFmt); });
 		case gason::JsonTag::DOUBLE:
 			return t.EvaluateOneOf(
-				[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Double> auto) noexcept { return Variant(v.toDouble()); },
-				[&](KeyValueType::Float) noexcept { return Variant(static_cast<float>(v.toDouble())); },
-				[&](KeyValueType::Int) noexcept { return Variant(static_cast<int>(v.toDouble())); },
-				[&](KeyValueType::Int64) noexcept { return Variant(static_cast<int64_t>(v.toDouble())); },
-				[&](KeyValueType::Bool) noexcept { return Variant(!fp::IsZero(v.toDouble())); },
+				[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Double> auto) { return Variant(v.toDouble()); },
+				[&](KeyValueType::Float) { return Variant(static_cast<float>(v.toDouble())); },
+				[&](KeyValueType::Int) { return Variant(static_cast<int>(v.toDouble())); },
+				[&](KeyValueType::Int64) { return Variant(static_cast<int64_t>(v.toDouble())); },
+				[&](KeyValueType::Bool) { return Variant(!fp::IsZero(v.toDouble())); },
 				[&](KeyValueType::String) {
 					if (convertToString) {
 						return Variant(v.toDouble()).convert(KeyValueType::String{});
@@ -118,8 +118,8 @@ Variant jsonValue2Variant(const gason::JsonValue& v, KeyValueType t, std::string
 						case gason::JsonTag::JFALSE:
 						case gason::JsonTag::STRING:
 						case gason::JsonTag::EMPTY:
-							throw Error(errLogic, "Error parsing json field '{}' - got value of unexpected type in array: {}", fieldName,
-										JsonTagToTypeStr(elem.value.getTag()));
+							throw Error(errLogic, "Error parsing json field '{}' - got value of unexpected type in float_vector: {}",
+										fieldName, JsonTagToTypeStr(elem.value.getTag()));
 					}
 				}
 				if (vect.empty()) {

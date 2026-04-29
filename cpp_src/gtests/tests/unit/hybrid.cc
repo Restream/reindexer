@@ -1,6 +1,7 @@
 #include "gtests/tests/fixtures/hybrid.h"
 #include <gmock/gmock.h>
 #include "core/cjson/jsonbuilder.h"
+#include "core/tag_name_index.h"
 #include "gtests/tools.h"
 #include "tools/fsops.h"
 
@@ -14,11 +15,21 @@ reindexer::Item HybridTest::newItem(int id) {
 		if (rand() % 10 != 0) {
 			json.Put(kFieldNameFt, "trampampam " + rt.RandString());
 		}
-		std::array<float, kDimension> buf;
+		std::array<float, kDimension<Scalar>> bufScalar;
 		for (const auto& fieldName : {kFieldNameIP, kFieldNameCos, kFieldNameL2}) {
 			if (rand() % 10 != 0) {
-				rndFloatVector(buf);
-				json.Array(fieldName, std::span<const float>(buf));
+				rndFloatVector(bufScalar);
+				json.Array(fieldName, std::span<const float>(bufScalar));
+			}
+		}
+		std::array<float, kDimension<Array>> bufArray;
+		for (const auto& fieldName : {kFieldNameIPArray, kFieldNameCosArray, kFieldNameL2Array}) {
+			auto arr = json.Array(fieldName);
+			for (size_t i = 0, s = rand() % 10; i < s; ++i) {
+				if (rand() % 10 != 0) {
+					rndFloatVector(bufArray);
+					arr.Array(reindexer::TagName::Empty(), std::span<const float>(bufArray));
+				}
 			}
 		}
 	}
@@ -39,30 +50,48 @@ void HybridTest::SetUp() {
 	rt.Connect("builtin://" + dir);
 	rt.OpenNamespace(kNsName);
 	rt.DefineNamespaceDataset(
-		kNsName, {
-					 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
-					 IndexDeclaration{kFieldNameFt, "text", "string", IndexOpts(), 0},
-					 IndexDeclaration{kFieldNameIP, "hnsw", "float_vector",
-									  IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
-																				.SetDimension(kDimension)
-																				.SetStartSize(100)
-																				.SetM(kM)
-																				.SetEfConstruction(kEfConstruction)
-																				.SetMetric(reindexer::VectorMetric::InnerProduct)),
-									  0},
-					 IndexDeclaration{kFieldNameCos, "ivf", "float_vector",
-									  IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
-																			   .SetDimension(kDimension)
-																			   .SetNCentroids(kMaxElements / 50)
-																			   .SetMetric(reindexer::VectorMetric::Cosine)),
-									  0},
-					 IndexDeclaration{kFieldNameL2, "ivf", "float_vector",
-									  IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
-																			   .SetDimension(kDimension)
-																			   .SetNCentroids(kMaxElements / 50)
-																			   .SetMetric(reindexer::VectorMetric::L2)),
-									  0},
-				 });
+		kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+				  IndexDeclaration{kFieldNameFt, "text", "string", IndexOpts(), 0},
+				  IndexDeclaration{kFieldNameIP, "hnsw", "float_vector",
+								   IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
+																			 .SetDimension(kDimension<Scalar>)
+																			 .SetStartSize(100)
+																			 .SetM(kM)
+																			 .SetEfConstruction(kEfConstruction)
+																			 .SetMetric(reindexer::VectorMetric::InnerProduct)),
+								   0},
+				  IndexDeclaration{kFieldNameIPArray, "hnsw", "float_vector",
+								   IndexOpts{}.Array(true).SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
+																						 .SetDimension(kDimension<Array>)
+																						 .SetStartSize(100)
+																						 .SetM(kM)
+																						 .SetEfConstruction(kEfConstruction)
+																						 .SetMetric(reindexer::VectorMetric::InnerProduct)),
+								   0},
+				  IndexDeclaration{kFieldNameCos, "ivf", "float_vector",
+								   IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
+																			.SetDimension(kDimension<Scalar>)
+																			.SetNCentroids(kMaxElements / 50)
+																			.SetMetric(reindexer::VectorMetric::Cosine)),
+								   0},
+				  IndexDeclaration{kFieldNameCosArray, "ivf", "float_vector",
+								   IndexOpts{}.Array(true).SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
+																						.SetDimension(kDimension<Array>)
+																						.SetNCentroids(kMaxElements / 50)
+																						.SetMetric(reindexer::VectorMetric::Cosine)),
+								   0},
+				  IndexDeclaration{kFieldNameL2, "ivf", "float_vector",
+								   IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
+																			.SetDimension(kDimension<Scalar>)
+																			.SetNCentroids(kMaxElements / 50)
+																			.SetMetric(reindexer::VectorMetric::L2)),
+								   0},
+				  IndexDeclaration{kFieldNameL2Array, "ivf", "float_vector",
+								   IndexOpts{}.Array(true).SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
+																						.SetDimension(kDimension<Array>)
+																						.SetNCentroids(kMaxElements / 50)
+																						.SetMetric(reindexer::VectorMetric::L2)),
+								   0}});
 
 	for (size_t i = 0; i < kMaxElements; ++i) {
 		auto item = newItem(i);
@@ -70,15 +99,17 @@ void HybridTest::SetUp() {
 	}
 }
 
-TEST_F(HybridTest, Queries) {
-	static std::array<float, kDimension> buf;
+template <HybridTest::IsArray isArray>
+void HybridTest::TestQueries() {
+	static std::array<float, kDimension<isArray>> buf;
 
 	for (const auto& knnField : knnFields_) {
+		const auto knnFieldName = isArray ? knnField.nameArray : knnField.nameScalar;
 		rndFloatVector(buf);
 		auto result = rt.Select(reindexer::Query{kNsName}
 									.Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString())
-									.WhereKNN(knnField.name, reindexer::ConstFloatVectorView{buf}, knnField.params)
-									.Sort(fmt::format("5 * rank({}) + 4 * rank({}) + 15", kFieldNameFt, knnField.name), false)
+									.WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params)
+									.Sort(fmt::format("5 * rank({}) + 4 * rank({}) + 15", kFieldNameFt, knnFieldName), false)
 									.WithRank());
 
 		rndFloatVector(buf);
@@ -86,14 +117,14 @@ TEST_F(HybridTest, Queries) {
 			reindexer::Query{kNsName}
 				.Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString())
 				.Or()
-				.WhereKNN(knnField.name, reindexer::ConstFloatVectorView{buf}, knnField.params)
-				.Sort(fmt::format("34 * 8 - 500 * rank({}, 0) - 29 + 1.0e+3 * rank({}, 1.0e+17) + 15", knnField.name, kFieldNameFt), false)
+				.WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params)
+				.Sort(fmt::format("34 * 8 - 500 * rank({}, 0) - 29 + 1.0e+3 * rank({}, 1.0e+17) + 15", knnFieldName, kFieldNameFt), false)
 				.WithRank());
 
 		rndFloatVector(buf);
 		result = rt.Select(reindexer::Query{kNsName}
 							   .Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString())
-							   .WhereKNN(knnField.name, reindexer::ConstFloatVectorView{buf}, knnField.params)
+							   .WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params)
 							   .Sort("RRF()", false)
 							   .WithRank());
 
@@ -101,11 +132,14 @@ TEST_F(HybridTest, Queries) {
 		result = rt.Select(reindexer::Query{kNsName}
 							   .Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString())
 							   .Or()
-							   .WhereKNN(knnField.name, reindexer::ConstFloatVectorView{buf}, knnField.params)
+							   .WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params)
 							   .Sort("RRF(rank_const = 3)", false)
 							   .WithRank());
 	}
 }
+
+TEST_F(HybridTest, QueriesArray) { TestQueries<Array>(); }
+TEST_F(HybridTest, QueriesScalar) { TestQueries<Scalar>(); }
 
 void HybridTest::check(const reindexer::Query& q) const {
 	const auto qRes = rt.Select(q);
@@ -151,30 +185,35 @@ void HybridTest::checkFailedRegex(const reindexer::Query& q, std::string_view ex
 	EXPECT_THAT(err, testing::MatchesRegex(expectErrRegex)) << q.GetSQL();
 }
 
+template <HybridTest::IsArray isArray>
 reindexer::Query HybridTest::makeHybridQuery() {
-	static std::array<float, kDimension> buf;
+	static std::array<float, kDimension<isArray>> buf;
 	rndFloatVector(buf);
 	currentKnnField_ = rand() % std::size(knnFields_);
 	const auto& knnField = knnFields_[currentKnnField_];
+	const auto knnFieldName = isArray ? knnField.nameArray : knnField.nameScalar;
 	auto q = reindexer::Query{kNsName}.WithRank().Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString());
 	if (rand() % 2) {
 		q.Or();
 	}
-	q.WhereKNN(knnField.name, reindexer::ConstFloatVectorView{buf}, knnField.params);
+	q.WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params);
 	return q;
 }
 
+template <HybridTest::IsArray isArray>
 reindexer::Query HybridTest::makeKnnQuery() const {
-	static std::array<float, kDimension> buf;
+	static std::array<float, kDimension<isArray>> buf;
 	rndFloatVector(buf);
 	const auto& knnField = randOneOf(knnFields_);
-	return reindexer::Query{kNsName}.WhereKNN(knnField.name, reindexer::ConstFloatVectorView{buf}, knnField.params).WithRank();
+	const auto knnFieldName = isArray ? knnField.nameArray : knnField.nameScalar;
+	return reindexer::Query{kNsName}.WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params).WithRank();
 }
 
 reindexer::Query HybridTest::makeFtQuery() const {
 	return reindexer::Query{kNsName}.Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString()).WithRank();
 }
 
+template <HybridTest::IsArray isArray>
 std::string HybridTest::rndReranker() const {
 	std::stringstream reranker;
 	if (rand() % 2) {
@@ -189,67 +228,79 @@ std::string HybridTest::rndReranker() const {
 		reranker << " * rank(" << kFieldNameFt << ") + ";
 		reranker << (rand() % 20'000 - 10'000);
 		const auto& knnField = knnFields_[currentKnnField_];
-		reranker << " * rank(" << knnField.name << ") + ";
+		const auto knnFieldName = isArray ? knnField.nameArray : knnField.nameScalar;
+		reranker << " * rank(" << knnFieldName << ") + ";
 		reranker << (rand() % 20'000 - 10'000);
 	}
 	return reranker.str();
 }
 
-TEST_F(HybridTest, Merge) {
-	check(makeHybridQuery().Merge(makeHybridQuery()));
-	check(makeHybridQuery().Limit(10).Merge(makeHybridQuery()));
-	check(makeHybridQuery().Offset(10).Merge(makeHybridQuery()));
-	check(makeHybridQuery().Offset(10).Limit(10).Merge(makeHybridQuery()));
-	check(makeHybridQuery().Sort(rndReranker(), true).Merge(makeHybridQuery()));
-	check(makeHybridQuery().Merge(makeHybridQuery().Sort(rndReranker(), true)));
-	check(makeHybridQuery().Sort(rndReranker(), false).Merge(makeHybridQuery().Sort(rndReranker(), false)));
-	check(makeHybridQuery().Sort(rndReranker(), true).Merge(makeHybridQuery().Sort(rndReranker(), true)));
+template <HybridTest::IsArray isArray>
+void HybridTest::TestMerge() {
+	check(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>()));
+	check(makeHybridQuery<isArray>().Limit(10).Merge(makeHybridQuery<isArray>()));
+	check(makeHybridQuery<isArray>().Offset(10).Merge(makeHybridQuery<isArray>()));
+	check(makeHybridQuery<isArray>().Offset(10).Limit(10).Merge(makeHybridQuery<isArray>()));
+	check(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Merge(makeHybridQuery<isArray>()));
+	check(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true)));
+	check(makeHybridQuery<isArray>()
+			  .Sort(rndReranker<isArray>(), false)
+			  .Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false)));
+	check(
+		makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true)));
 
-	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Offset(10)), "Limit and offset in inner merge query is not allowed");
-	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Limit(10)), "Limit and offset in inner merge query is not allowed");
+	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Offset(10)),
+				"Limit and offset in inner merge query is not allowed");
+	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Limit(10)),
+				"Limit and offset in inner merge query is not allowed");
 
-	checkFailed(makeHybridQuery().Sort(kFieldNameId, true).Merge(makeHybridQuery()),
+	checkFailed(makeHybridQuery<isArray>().Sort(kFieldNameId, true).Merge(makeHybridQuery<isArray>()),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Sort(kFieldNameId, true)),
+	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(kFieldNameId, true)),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery().Sort(rndReranker(), true).Sort(kFieldNameId, true).Merge(makeHybridQuery()),
+	checkFailed(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Sort(kFieldNameId, true).Merge(makeHybridQuery<isArray>()),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery().Sort(kFieldNameId, true).Merge(makeHybridQuery().Sort(rndReranker(), true)),
+	checkFailed(makeHybridQuery<isArray>().Sort(kFieldNameId, true).Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true)),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Sort(rndReranker(), true).Sort(kFieldNameId, true)),
+	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Sort(kFieldNameId, true)),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery().Sort(rndReranker(), true).Merge(makeHybridQuery().Sort(kFieldNameId, true)),
+	checkFailed(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Merge(makeHybridQuery<isArray>().Sort(kFieldNameId, true)),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
 
-	checkFailed(makeHybridQuery().Sort(rndReranker(), false).Merge(makeHybridQuery().Sort(rndReranker(), true)),
+	checkFailed(
+		makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false).Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true)),
+		"All merging queries should have the same ordering (ASC or DESC)");
+	checkFailed(
+		makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false)),
+		"All merging queries should have the same ordering (ASC or DESC)");
+	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false)),
 				"All merging queries should have the same ordering (ASC or DESC)");
-	checkFailed(makeHybridQuery().Sort(rndReranker(), true).Merge(makeHybridQuery().Sort(rndReranker(), false)),
-				"All merging queries should have the same ordering (ASC or DESC)");
-	checkFailed(makeHybridQuery().Merge(makeHybridQuery().Sort(rndReranker(), false)),
-				"All merging queries should have the same ordering (ASC or DESC)");
-	checkFailed(makeHybridQuery().Sort(rndReranker(), false).Merge(makeHybridQuery()),
+	checkFailed(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false).Merge(makeHybridQuery<isArray>()),
 				"All merging queries should have the same ordering (ASC or DESC)");
 
-	checkFailed(makeHybridQuery().Merge(makeFtQuery()),
+	checkFailed(makeHybridQuery<isArray>().Merge(makeFtQuery()),
 				"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
 				"time: 'hybrid query' VS 'fulltext query'");
 	checkFailedRegex(
-		makeHybridQuery().Merge(makeKnnQuery()),
+		makeHybridQuery<isArray>().Merge(makeKnnQuery<isArray>()),
 		"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
 		"time: 'hybrid query' VS 'knn with .* metric query'");
-	checkFailed(makeFtQuery().Merge(makeHybridQuery()),
+	checkFailed(makeFtQuery().Merge(makeHybridQuery<isArray>()),
 				"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
 				"time: 'fulltext query' VS 'hybrid query'");
 	checkFailedRegex(
-		makeKnnQuery().Merge(makeHybridQuery()),
+		makeKnnQuery<isArray>().Merge(makeHybridQuery<isArray>()),
 		"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
 		"time: 'knn with .* metric query' VS 'hybrid query'");
 	checkFailedRegex(
-		makeKnnQuery().Merge(makeFtQuery()),
+		makeKnnQuery<isArray>().Merge(makeFtQuery()),
 		"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
 		"time: 'knn with .* metric query' VS 'fulltext query'");
 	checkFailedRegex(
-		makeFtQuery().Merge(makeKnnQuery()),
+		makeFtQuery().Merge(makeKnnQuery<isArray>()),
 		"In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
 		"time: 'fulltext query' VS 'knn with .* metric query'");
 }
+
+TEST_F(HybridTest, MergeArray) { TestMerge<Array>(); }
+TEST_F(HybridTest, MergeScalar) { TestMerge<Scalar>(); }

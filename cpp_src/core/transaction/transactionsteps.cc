@@ -9,7 +9,9 @@ void TransactionSteps::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 			break;
 		case ModeInsert:
 		case ModeUpsert:
-			++expectedInsertionsCount_;
+			for (auto& idx : expectedFVInsertionsCount_) {
+				idx.AddCount(item.impl_->GetPayload().GetFieldLen(idx.IndexNo()));
+			}
 			break;
 		case ModeDelete:
 			++deletionsCount_;

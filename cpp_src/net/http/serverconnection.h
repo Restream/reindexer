@@ -4,7 +4,7 @@
 #include "net/iserverconnection.h"
 #include "picohttpparser/picohttpparser.h"
 #include "router.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer::net::http {
 
@@ -43,7 +43,7 @@ private:
 	class [[nodiscard]] ResponseWriter : public Writer {
 	public:
 		explicit ResponseWriter(ServerConnection* conn) : headers_(conn->wrBuf_.get_chunk()), conn_(conn) {}
-		virtual void SetHeader(const Header& hdr) noexcept override final;
+		virtual void SetHeader(const Header& hdr) override final;
 		virtual void SetRespCode(int code) noexcept override final;
 		virtual void SetContentLength(size_t len) noexcept override final;
 		void Write(chunk&& chunk, Writer::WriteMode mode = WriteMode::Default) override final;

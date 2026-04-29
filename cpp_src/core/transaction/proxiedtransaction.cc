@@ -28,7 +28,7 @@ Error ProxiedTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 		if (!clientItem.Status().ok()) {
 			throw clientItem.Status();
 		}
-		std::string_view serverCJson = item.impl_->GetCJSON(true);
+		std::string_view serverCJson = item.impl_->GetCJSON(WithTagsMatcher_True);
 		auto err = clientItem.Unsafe().FromCJSON(serverCJson);
 		if (!err.ok()) {
 			throw err;
@@ -43,7 +43,7 @@ Error ProxiedTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 		if (!clientItem.Status().ok()) {
 			return clientItem.Status();
 		}
-		std::string_view serverCJson = item.impl_->GetCJSON(true);
+		std::string_view serverCJson = item.impl_->GetCJSON(WithTagsMatcher_True);
 		auto err = clientItem.Unsafe().FromCJSON(serverCJson);
 		if (!err.ok()) {
 			return err;

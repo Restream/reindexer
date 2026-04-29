@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/cjson/tagsmatcher.h"
+#include "core/tag_name_index.h"
 namespace reindexer {
 
 class [[nodiscard]] MultidimensionalArrayChecker {
@@ -13,14 +14,19 @@ public:
 	}
 	bool Result() const noexcept { return result_; }
 	void SetTagsMatcher(const TagsMatcher*) const noexcept {}
-	MultidimensionalArrayChecker Object() noexcept { return {*this, false}; }
+	MultidimensionalArrayChecker Object() noexcept { return {*this, IsArray_False}; }
 	MultidimensionalArrayChecker Object(concepts::TagNameOrIndex auto) noexcept { return Object(); }
 	MultidimensionalArrayChecker Array(auto&) noexcept {
 		result_ = result_ || isArray_;
-		return {*this, true};
+		return {*this, IsArray_True};
 	}
 	template <typename T>
-	void Array(concepts::TagNameOrIndex auto, std::span<T>, unsigned) {
+	void Array(concepts::TagNameOrIndex auto tag, std::span<T> data, unsigned offset,
+			   TreatAsSingleElement treatAsSingleElement = TreatAsSingleElement_False) {
+		return Array(tag, data.size(), offset, treatAsSingleElement);
+	}
+	void Array(concepts::TagNameOrIndex auto, size_t /*array_size*/, unsigned /*offset*/,
+			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		result_ = result_ || isArray_;
 	}
 	void Array(concepts::TagNameOrIndex auto, Serializer& ser, TagType tagType, int count) {
@@ -43,9 +49,9 @@ public:
 	void Null(int, auto...) = delete;
 
 private:
-	MultidimensionalArrayChecker(MultidimensionalArrayChecker& parent, bool isArray) noexcept : parent_{&parent}, isArray_{isArray} {}
+	MultidimensionalArrayChecker(MultidimensionalArrayChecker& parent, IsArray isArray) noexcept : parent_{&parent}, isArray_{isArray} {}
 	MultidimensionalArrayChecker* parent_{nullptr};
-	bool isArray_{false};
+	IsArray isArray_{IsArray_False};
 	bool result_{false};
 };
 

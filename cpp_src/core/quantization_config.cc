@@ -7,7 +7,7 @@
 namespace hnswlib {
 void QuantizationConfig::FromJSON(const gason::JsonNode& root) {
 	quantizationType = decodeQuantizationType(root["quantization_type"].As<std::string_view>());
-	if (!root["quantile"].empty()) {
+	if (!root["quantile"].isEmpty()) {
 		quantile = root["quantile"].As<float>(1.f);
 		if (quantile < 0.95f || quantile > 1.f) {
 			throw reindexer::Error(errParams, "The quantile value must be within [0.95; 1.0]");

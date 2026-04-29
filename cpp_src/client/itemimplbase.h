@@ -5,7 +5,8 @@
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/query.h"
-#include "tools/serializer.h"
+#include "tools/serilize/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 namespace client {

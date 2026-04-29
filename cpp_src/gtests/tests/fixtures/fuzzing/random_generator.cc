@@ -258,7 +258,7 @@ std::string RandomGenerator::IndexFieldType(FieldType ft) {
 
 IndexType RandomGenerator::RndIndexType(IndexType it) {
 	if (RndErr()) {
-		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1, 1>();	// TODO
+		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1>();	 // TODO
 	}
 	return it;
 }
@@ -267,7 +267,7 @@ template <size_t N, const std::vector<IndexType>* Availables>
 IndexType RandomGenerator::rndIndexType(const std::vector<FieldType>& fieldTypes) {
 	if (RndErr()) {
 		// TODO rnd string
-		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1, 1>();	// TODO
+		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1>();	 // TODO
 	}
 	assertrx(!fieldTypes.empty());
 	std::vector<IndexType> availables;
@@ -285,7 +285,7 @@ IndexType RandomGenerator::rndIndexType(const std::vector<FieldType>& fieldTypes
 		availables = tmp;
 	}
 	if (availables.empty()) {
-		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1, 1>();	// TODO
+		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1>();	 // TODO
 	} else {
 		return RndWhich(availables);
 	}
@@ -297,10 +297,10 @@ IndexType RandomGenerator::RndIndexType(const std::vector<FieldType>& fieldTypes
 		{IndexType::Store, IndexType::Hash, IndexType::Tree},				   // Int
 		{IndexType::Store, IndexType::Hash, IndexType::Tree, IndexType::Ttl},  // Int64
 		{IndexType::Store, IndexType::Tree},								   // Double
-		{IndexType::Store, IndexType::Hash, IndexType::Tree},				   // String // TODO IndexType::FastFT IndexType::FuzzyFT
+		{IndexType::Store, IndexType::Hash, IndexType::Tree},				   // String // TODO IndexType::FastFT
 		{IndexType::Hash},													   // Uuid
 		{IndexType::RTree},													   // Point
-		{IndexType::Hash, IndexType::Tree}									   // Struct // TODO  IndexType::FastFT IndexType::FuzzyFT
+		{IndexType::Hash, IndexType::Tree}									   // Struct // TODO  IndexType::FastFT
 	};
 	return rndIndexType<std::extent_v<decltype(availableTypes)>, availableTypes>(fieldTypes);
 }

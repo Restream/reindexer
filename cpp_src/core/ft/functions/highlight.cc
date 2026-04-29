@@ -65,8 +65,7 @@ bool Highlight::Process(ItemRef& res, PayloadType& pl_type, const FtFuncStruct& 
 		size_t offset = 0;
 
 		for (auto& area : areasByArrayIdxs_[arrIdx]) {
-			std::pair<int, int> pos = ftctx->GetData()->isWordPositions ? splitterTask->Convert(area.first, area.second)
-																		: std::make_pair<int, int>(area.first, area.second);
+			std::pair<int, int> pos = splitterTask->Convert(area.first, area.second);
 
 			result_string.insert(pos.first + offset, func.funcArgs[0]);
 			offset += func.funcArgs[0].size();

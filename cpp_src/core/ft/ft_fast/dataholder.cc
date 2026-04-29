@@ -1,4 +1,4 @@
-#include "dataholder.h"
+﻿#include "dataholder.h"
 #include <sstream>
 #include "core/ft/ft_fast/frisosplitter.h"
 #include "dataprocessor.h"
@@ -75,7 +75,7 @@ WordIdType IDataHolder::findWord(std::string_view word) const {
 
 	for (auto step = steps.begin(); step != steps.end() - 1; ++step) {
 		auto it = step->suffixes_.lower_bound(word);
-		if (it != step->suffixes_.end() && size_t(step->suffixes_.word_len_at(GetSuffixWordId(it->second, *step))) == word.size()) {
+		if (it != step->suffixes_.end() && size_t(step->suffixes_.word_len_at(GetWordIdInStep(it->second, *step))) == word.size()) {
 			return it->second;
 		}
 	}
@@ -128,11 +128,11 @@ void DataHolder<IdCont>::Process(size_t fieldSize, bool multithread) {
 }
 
 template <typename IdCont>
-DataHolder<IdCont>::DataHolder(FtFastConfig* c) {
+DataHolder<IdCont>::DataHolder(FTConfig* c) {
 	cfg_ = c;
-	if (cfg_->splitterType == FtFastConfig::Splitter::Fast) {
+	if (cfg_->splitterType == FTConfig::Splitter::Fast) {
 		splitter_ = make_intrusive<FastTextSplitter>(cfg_->splitOptions);
-	} else if (cfg_->splitterType == FtFastConfig::Splitter::MMSegCN) {
+	} else if (cfg_->splitterType == FTConfig::Splitter::MMSegCN) {
 		splitter_ = make_intrusive<FrisoTextSplitter>();
 	} else {
 		assertrx_throw(false);

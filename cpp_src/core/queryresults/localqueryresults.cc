@@ -9,8 +9,8 @@
 #include "core/id_type.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespace.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "estl/gift_str.h"
-#include "joinresults.h"
 #include "server/outputparameters.h"
 #include "tools/catch_and_return.h"
 #include "vendor/gason/gason.h"
@@ -21,7 +21,7 @@ void LocalQueryResults::AddNamespace(NamespaceImplPtr ns, [[maybe_unused]] bool 
 	assertrx(noLock);
 	const NamespaceImpl* nsPtr = ns.get();
 	auto strHolder = ns->strHolder();
-	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder& nsData) { return nsData.ns == nsPtr; });
+	const auto it = std::ranges::find_if(nsData_, [nsPtr](const NsDataHolder& nsData) { return nsData.HoldsPointerTo(nsPtr); });
 	if (it != nsData_.cend()) {
 		assertrx(it->StrHolderPtr() == strHolder.get());
 		return;
@@ -29,19 +29,8 @@ void LocalQueryResults::AddNamespace(NamespaceImplPtr ns, [[maybe_unused]] bool 
 	nsData_.emplace_back(std::move(ns), std::move(strHolder));
 }
 
-void LocalQueryResults::AddNamespace(NamespaceImpl* ns, [[maybe_unused]] bool noLock) {
-	assertrx(noLock);
-	auto strHolder = ns->strHolder();
-	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder& nsData) { return nsData.ns == ns; });
-	if (it != nsData_.cend()) {
-		assertrx(it->StrHolderPtr() == strHolder.get());
-		return;
-	}
-	nsData_.emplace_back(ns, std::move(strHolder));
-}
-
 void LocalQueryResults::RemoveNamespace(const NamespaceImpl* ns) {
-	const auto it = std::find_if(nsData_.begin(), nsData_.end(), [ns](const NsDataHolder& nsData) { return nsData.ns == ns; });
+	const auto it = std::ranges::find_if(nsData_, [ns](const NsDataHolder& nsData) { return nsData.HoldsPointerTo(ns); });
 	assertrx(it != nsData_.end());
 	nsData_.erase(it);
 }
@@ -138,7 +127,7 @@ NsShardsIncarnationTags LocalQueryResults::GetIncarnationTags() const {
 int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 	int ctxIndex = joined_.size();
 	for (int ns = 0; ns < nsid; ++ns) {
-		ctxIndex += joined_[ns].GetJoinedSelectorsCount();
+		ctxIndex += joined_[ns].GetJoinItemsProcessorsCount();
 	}
 	return ctxIndex;
 }
@@ -232,7 +221,7 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::Ns
 		joins::ItemIterator itemIt = (begin() + idx).GetJoined();
 		if (itemIt.getJoinedItemsCount() > 0) {
 			EncoderDatasourceWithJoins joinsDs(itemIt, ctxs, nsNamesCache, GetJoinedNsCtxIndex(itemRef.Nsid()), itemRef.Nsid(),
-											   joined_[itemRef.Nsid()].GetJoinedSelectorsCount());
+											   joined_[itemRef.Nsid()].GetJoinItemsProcessorsCount());
 			h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
 			AdditionalDatasource ds =
 				needOutputRank ? AdditionalDatasource(items_.GetItemRefRanked(idx).Rank(), &joinsDs) : AdditionalDatasource(&joinsDs);
@@ -410,7 +399,7 @@ Error LocalQueryResults::IteratorImpl<QR>::GetCSV(WrSerializer& ser, CsvOrdering
 			joins::ItemIterator itemIt = (qr_->begin() + idx_).GetJoined();
 			if (itemIt.getJoinedItemsCount() > 0) {
 				EncoderDatasourceWithJoins joinsDs(itemIt, qr_->ctxs, nsNamesCache, qr_->GetJoinedNsCtxIndex(itemRef.Nsid()),
-												   itemRef.Nsid(), qr_->joined_[itemRef.Nsid()].GetJoinedSelectorsCount());
+												   itemRef.Nsid(), qr_->joined_[itemRef.Nsid()].GetJoinItemsProcessorsCount());
 				h_vector<IAdditionalDatasource<CsvBuilder>*, 2> dss;
 				AdditionalDatasourceCSV ds(&joinsDs);
 				dss.push_back(&ds);
@@ -530,10 +519,7 @@ void LocalQueryResults::addNSContext(const QueryResults& baseQr, size_t nsid, ls
 }
 
 LocalQueryResults::NsDataHolder::NsDataHolder(LocalQueryResults::NamespaceImplPtr&& _ns, StringsHolderPtr&& strHldr) noexcept
-	: ns(_ns.get()), nsPtr_{std::move(_ns)}, strHolder_{std::move(strHldr)} {}
-
-LocalQueryResults::NsDataHolder::NsDataHolder(NamespaceImpl* _ns, StringsHolderPtr&& strHldr) noexcept
-	: ns(_ns), strHolder_(std::move(strHldr)) {}
+	: nsPtr_{std::move(_ns)}, strHolder_{std::move(strHldr)} {}
 
 template class LocalQueryResults::IteratorImpl<const LocalQueryResults>;
 template class LocalQueryResults::IteratorImpl<LocalQueryResults>;

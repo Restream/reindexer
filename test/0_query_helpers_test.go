@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/goccy/go-json"
 	"log"
 	"math"
 	"reflect"
@@ -16,8 +15,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/goccy/go-json"
+
 	"github.com/restream/reindexer/v5"
 	"github.com/restream/reindexer/v5/bindings"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,7 +76,6 @@ type queryTest struct {
 	equalPositions  EqualPositions
 	readOnly        bool
 	deepReplEqual   bool
-	needVerify      bool
 	handClose       bool
 	selectFilters   []string
 	aggregations    []aggTest
@@ -151,6 +152,7 @@ var queryNames = map[int]string{
 	reindexer.GE:      ">=",
 	reindexer.LE:      "<=",
 	reindexer.SET:     "SET",
+	reindexer.ALLSET:  "ALLSET",
 	reindexer.RANGE:   "RANGE",
 	reindexer.ANY:     "ANY",
 	reindexer.EMPTY:   "EMPTY",
@@ -199,7 +201,7 @@ func printExplainRes(res *reindexer.ExplainResults) {
 }
 
 // Create new DB query
-func newTestQuery(db *ReindexerWrapper, namespace string, needVerify ...bool) *queryTest {
+func newTestQuery(db *ReindexerWrapper, namespace string) *queryTest {
 	var qt *queryTest
 	obj := queryTestPool.Get()
 	if obj != nil {
@@ -642,14 +644,15 @@ func (qt *queryTest) whereQuery(t *testing.T, subQuery *queryTest, condition int
 		require.NotEmpty(t, subQuery.selectFilters, "Broken subquery")
 		for it.Next() {
 			qte := qt.newQueryTestEntry(subQuery.selectFilters[0], condition, keys)
-			if checkCondition(t, subQuery.ns, &qte, it.Object()) {
+			if checkCondition(t, &qte, it.Object()) {
 				res = true
 				break
 			}
 		}
 	} else {
 		if aggRes[0].Value != nil {
-			res = checkValue(t, reflect.ValueOf(*aggRes[0].Value), condition, keysFromInterface(keys))
+			values := []reflect.Value{reflect.ValueOf(*aggRes[0].Value)}
+			res = checkValues(t, values, condition, keysFromInterface(keys))
 		}
 	}
 	if res {
@@ -1691,15 +1694,21 @@ func compareValues(t *testing.T, v1 reflect.Value, v2 reflect.Value) int {
 			return -1
 		}
 	case reflect.Array, reflect.Slice:
-		require.Equal(t, v1.Len(), v2.Len(), "Array sizes are different!")
-		for i := 0; i < v1.Len(); i++ {
+		v1Len := v1.Len()
+		v2Len := v2.Len()
+		minLen := min(v1Len, v2Len)
+		for i := 0; i < minLen; i++ {
 			res := compareValues(t, v1.Index(i), v2.Index(i))
 			if res > 0 {
 				return 1
-			}
-			if res < 0 {
+			} else if res < 0 {
 				return -1
 			}
+		}
+		if v1Len > v2Len {
+			return 1
+		} else if v1Len < v2Len {
+			return -1
 		}
 		return 0
 	}
@@ -1813,12 +1822,21 @@ func checkResult(cmpRes int, cond int) bool {
 	return result
 }
 
-func checkResultItem(t *testing.T, it *reindexer.Iterator, item any) {
+func checkResultItems[T any](t *testing.T, it *reindexer.Iterator, expected []T) {
 	defer it.Close()
-	require.Equal(t, 1, it.Count())
+	require.Equal(t, len(expected), it.Count())
+	actual := make([]T, 0, len(expected))
 	for it.Next() {
-		require.EqualValues(t, item, it.Object())
+		obj := it.Object()
+		ptr, ok := obj.(*T)
+		require.True(t, ok, "object is not of type *%T", *new(T))
+		actual = append(actual, *ptr)
 	}
+	assert.EqualValues(t, expected, actual)
+}
+
+func checkResultItem[T any](t *testing.T, it *reindexer.Iterator, expected *T) {
+	checkResultItems(t, it, []T{*expected})
 }
 
 func checkEqualPosition(t *testing.T, item any, qt *queryTest) bool {
@@ -1852,41 +1870,67 @@ func checkEqualPosition(t *testing.T, item any, qt *queryTest) bool {
 	return false
 }
 
-func compareComposite(t *testing.T, vals []reflect.Value, keyValue any, item any) int {
-	if reflect.ValueOf(keyValue).Len() != len(vals) {
-		panic("Amount of subindexes and values to compare are different!")
-	}
+func compareComposite(t *testing.T, vals []reflect.Value, keyValue any) int {
+	keyVal := reflect.ValueOf(keyValue)
+	require.Equal(t, keyVal.Len(), len(vals), fmt.Sprintf("Amount of values (%d) and keys (%d) to compare are different", keyVal.Len(), len(vals)))
 	cmpRes := 0
-	for j := 0; j < reflect.ValueOf(keyValue).Len() && cmpRes == 0; j++ {
-		subKey := reflect.ValueOf(keyValue).Index(j)
+	for j := 0; j < keyVal.Len() && cmpRes == 0; j++ {
+		subKey := keyVal.Index(j)
 		cmpRes = compareValues(t, vals[j], reflect.ValueOf(subKey.Interface()))
 	}
 	return cmpRes
 }
 
-func checkCompositeCondition(t *testing.T, vals []reflect.Value, cond *queryTestEntry, item any) bool {
+func checkCompositeCondition(t *testing.T, vals []reflect.Value, cond *queryTestEntry) bool {
 	keys := cond.ikeys.([]any)
 
 	if cond.condition == reindexer.RANGE {
-		if len(keys) != 2 {
-			panic("expected 2 keys in range condition")
-		}
-		return compareComposite(t, vals, keys[0], item) >= 0 && compareComposite(t, vals, keys[1], item) <= 0
+		require.Len(t, keys, 2, fmt.Sprintf("expected 2 keys in range condition, got %d", len(keys)))
+		return compareComposite(t, vals, keys[0]) >= 0 && compareComposite(t, vals, keys[1]) <= 0
 	}
-
+	if cond.condition == reindexer.ALLSET {
+		if len(keys) == 0 {
+			return false
+		}
+		keyVal := reflect.ValueOf(keys[0])
+		numCompFields := keyVal.Len()
+		if numCompFields == 0 {
+			return false
+		}
+		require.Equal(t, len(vals)%numCompFields, 0, fmt.Sprintf("vals length %d is not divisible by number of components %d", len(vals), numCompFields))
+		for _, key := range keys {
+			found := false
+			keyVal := reflect.ValueOf(key)
+			require.Equal(t, numCompFields, keyVal.Len(), fmt.Sprintf("Key has %d components, expected %d", keyVal.Len(), numCompFields))
+			for i := 0; i < len(vals); i += numCompFields {
+				components := make([]reflect.Value, numCompFields)
+				for j := 0; j < numCompFields; j++ {
+					components[j] = vals[i+j]
+				}
+				if compareComposite(t, components, key) == 0 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	}
 	for _, k := range keys {
 		var result bool
 		switch cond.condition {
 		case reindexer.EQ, reindexer.SET:
-			result = compareComposite(t, vals, k, item) == 0
+			result = compareComposite(t, vals, k) == 0
 		case reindexer.GT:
-			result = compareComposite(t, vals, k, item) > 0
+			result = compareComposite(t, vals, k) > 0
 		case reindexer.GE:
-			result = compareComposite(t, vals, k, item) >= 0
+			result = compareComposite(t, vals, k) >= 0
 		case reindexer.LT:
-			result = compareComposite(t, vals, k, item) < 0
+			result = compareComposite(t, vals, k) < 0
 		case reindexer.LE:
-			result = compareComposite(t, vals, k, item) <= 0
+			result = compareComposite(t, vals, k) <= 0
 		default:
 			panic("Unsupported condition")
 		}
@@ -1903,38 +1947,70 @@ func checkDWithin(point1 reindexer.Point, point2 reindexer.Point, distance float
 	return (diffX*diffX + diffY*diffY) <= (distance * distance)
 }
 
-func checkValue(t *testing.T, v reflect.Value, cond int, keys []reflect.Value) bool {
+func checkValues(t *testing.T, values []reflect.Value, cond int, keys []reflect.Value) bool {
 	if cond == reindexer.RANGE {
-		if len(keys) != 2 {
-			panic("expected 2 keys in range condition")
+		require.Len(t, keys, 2, fmt.Sprintf("expected 2 keys in range condition, got %d", len(keys)))
+		for _, v := range values {
+			if compareValues(t, v, keys[0]) >= 0 && compareValues(t, v, keys[1]) <= 0 {
+				return true
+			}
 		}
-		return compareValues(t, v, keys[0]) >= 0 && compareValues(t, v, keys[1]) <= 0
+		return false
+	} else if cond == reindexer.ALLSET {
+		if len(keys) == 0 {
+			return false
+		}
+		for _, k := range keys {
+			found := false
+			for _, v := range values {
+				if compareValues(t, v, k) == 0 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
 	} else {
 		for _, k := range keys {
 			switch cond {
 			case reindexer.EQ, reindexer.SET:
-				if compareValues(t, v, k) == 0 {
-					return true
+				for _, v := range values {
+					if compareValues(t, v, k) == 0 {
+						return true
+					}
 				}
 			case reindexer.GT:
-				if compareValues(t, v, k) > 0 {
-					return true
+				for _, v := range values {
+					if compareValues(t, v, k) > 0 {
+						return true
+					}
 				}
 			case reindexer.GE:
-				if compareValues(t, v, k) >= 0 {
-					return true
+				for _, v := range values {
+					if compareValues(t, v, k) >= 0 {
+						return true
+					}
 				}
 			case reindexer.LT:
-				if compareValues(t, v, k) < 0 {
-					return true
+				for _, v := range values {
+					if compareValues(t, v, k) < 0 {
+						return true
+					}
 				}
 			case reindexer.LE:
-				if compareValues(t, v, k) <= 0 {
-					return true
+				for _, v := range values {
+					if compareValues(t, v, k) <= 0 {
+						return true
+					}
 				}
 			case reindexer.LIKE:
-				if likeValues(v, k) {
-					return true
+				for _, v := range values {
+					if likeValues(v, k) {
+						return true
+					}
 				}
 			default:
 				panic("Unsupported condition")
@@ -1944,7 +2020,7 @@ func checkValue(t *testing.T, v reflect.Value, cond int, keys []reflect.Value) b
 	return false
 }
 
-func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item any) bool {
+func checkCondition(t *testing.T, cond *queryTestEntry, item any) bool {
 	var vals []reflect.Value
 	if len(cond.fieldIdx) > 0 {
 		vals = getValues(item, cond.fieldIdx)
@@ -1958,20 +2034,15 @@ func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item 
 	case reindexer.ANY:
 		return len(vals) > 0
 	case reindexer.DWITHIN:
-		require.Equal(t, 2, len(vals), "Expected point %#v in item %#v", vals, item)
+		require.Len(t, vals, 2, "Expected point %#v in item %#v", vals, item)
 		return checkDWithin(reindexer.Point{vals[0].Float(), vals[1].Float()}, reindexer.Point{cond.keys[0].Float(), cond.keys[1].Float()}, cond.keys[2].Float())
 	}
 
 	if len(vals) > 1 && len(cond.fieldIdx) > 1 && reflect.TypeOf(cond.ikeys).ConvertibleTo(reflect.TypeOf([]any(nil))) {
-		return checkCompositeCondition(t, vals, cond, item)
+		return checkCompositeCondition(t, vals, cond)
 	}
 
-	for _, v := range vals {
-		if checkValue(t, v, cond.condition, cond.keys) {
-			return true
-		}
-	}
-	return false
+	return checkValues(t, vals, cond.condition, cond.keys)
 }
 
 func isIndexComposite(entry *queryBetweenFieldsTestEntry) bool {
@@ -1991,13 +2062,13 @@ func verifyConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryB
 			}
 			qe.firstFieldIdx, _ = ns.getField(qe.firstField)
 			qe.secondFieldIdx, _ = ns.getField(qe.secondField)
-			if !checkConditionBetweenFields(t, ns, qe, item) {
+			if !checkConditionBetweenFields(t, qe, item) {
 				return false
 			}
 		}
 		return len(firstSubFields) > 0
 	} else {
-		return checkConditionBetweenFields(t, ns, entry, item)
+		return checkConditionBetweenFields(t, entry, item)
 	}
 }
 
@@ -2020,7 +2091,7 @@ func compareTypes(v1 reflect.Value, v2 reflect.Value) bool {
 	}
 }
 
-func checkConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryBetweenFieldsTestEntry, item any) bool {
+func checkConditionBetweenFields(t *testing.T, entry *queryBetweenFieldsTestEntry, item any) bool {
 	firstVals := getValues(item, entry.firstFieldIdx)
 	secondVals := getValues(item, entry.secondFieldIdx)
 
@@ -2107,7 +2178,7 @@ func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, 
 		var curFound bool
 		switch cond.dataType {
 		case oneFieldEntry:
-			curFound = checkCondition(t, ns, cond.data.(*queryTestEntry), item)
+			curFound = checkCondition(t, cond.data.(*queryTestEntry), item)
 		case twoFieldsEntry:
 			curFound = verifyConditionBetweenFields(t, ns, cond.data.(*queryBetweenFieldsTestEntry), item)
 		case bracket:

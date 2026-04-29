@@ -1,13 +1,17 @@
 #include "jsondecoder.h"
 #include <string_view>
+#include <tuple>
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
+#include "core/keyvalue/float_vector.h"
+#include "core/payload/payloadiface.h"
+#include "core/type_consts.h"
 #include "sparse_validator.h"
 #include "tagsmatcher.h"
 #include "tools/assertrx.h"
 #include "tools/flagguard.h"
 #include "tools/json2kv.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "vendor/gason/gason.h"
 
 namespace reindexer {
@@ -56,15 +60,7 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 			switch (elem.value.getTag()) {
 				case gason::JsonTag::ARRAY:
 					if (f.Type().Is<KeyValueType::FloatVector>()) {
-						validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), kJSONFmt);
-						validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(), 1, kJSONFmt);
-						objectScalarIndexes_.set(indexNumber);
-						Variant value = jsonValue2Variant(elem.value, f.Type(), f.Name(), &floatVectorsHolder_, ConvertToString_False,
-														  ConvertNull_True);
-						assertrx_dbg(value.Type().Is<KeyValueType::FloatVector>());
-						const auto count = ConstFloatVectorView(value).Dimension().Value();
-						pl.Set(indexNumber, std::move(value));
-						builder.ArrayRef(tagName, indexNumber, int(count));
+						decodeFloatVectorField(pl, builder, f, tagName, indexNumber, elem.value);
 					} else {
 						if (!f.IsArray()) [[unlikely]] {
 							throwUnexpectedArrayError(f.Name(), f.Type(), kJSONFmt);
@@ -87,15 +83,20 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 					}
 					break;
 				case gason::JsonTag::JSON_NULL:
-					if (f.Type().Is<KeyValueType::FloatVector>() || (f.IsArray() && !isInArray())) {
-						validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), kJSONFmt);
-						objectScalarIndexes_.set(indexNumber);
-						if (f.Type().Is<KeyValueType::FloatVector>()) {
+					if (f.Type().Is<KeyValueType::FloatVector>()) {
+						if (f.IsArray()) {
+							builder.Null(tagName);
+						} else {
+							validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), kJSONFmt);
+							objectScalarIndexes_.set(indexNumber);
 							pl.Set(indexNumber, Variant{ConstFloatVectorView{}});
 							builder.ArrayRef(tagName, indexNumber, 0);
-						} else {
-							builder.Null(tagName);
 						}
+						break;
+					} else if (f.IsArray() && !isInArray()) {
+						validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, indexNumber, isInArray(), kJSONFmt);
+						objectScalarIndexes_.set(indexNumber);
+						builder.Null(tagName);
 						break;
 					}
 					[[fallthrough]];
@@ -121,6 +122,69 @@ void JsonDecoder::decodeJsonObject(Payload& pl, CJsonBuilder& builder, const gas
 		}
 		tagsPath_.pop_back();
 	}
+}
+
+void JsonDecoder::decodeFloatVectorArray(Payload& pl, CJsonBuilder& builder, const PayloadFieldType& fieldType, TagName tagName,
+										 int indexNumber, const gason::JsonValue& jsonValue) {
+	using namespace std::string_view_literals;
+	if (jsonValue.isNull()) {
+		builder.ArrayRef(tagName, indexNumber, 0);
+		pl.Set(indexNumber, Variant{ConstFloatVectorView{}}, Append_True);
+		return;
+	}
+	if (!jsonValue.isArray() && !jsonValue.isObject()) {
+		throwUnexpected(fieldType.Name(), "float_vector"sv, gason::JsonTagToTypeStr(jsonValue.getTag()), kJSONFmt);
+	}
+	const auto beginIt = begin(jsonValue);
+	const auto endIt = end(jsonValue);
+	if (beginIt == endIt) {
+		if (!jsonValue.isArray()) {
+			throwUnexpected(fieldType.Name(), "float_vector"sv, gason::JsonTagToTypeStr(jsonValue.getTag()), kJSONFmt);
+		}
+		builder.ArrayRef(tagName, indexNumber, 0);
+		pl.Set(indexNumber, Variant{ConstFloatVectorView{}}, Append_True);
+	} else if (beginIt->isArray() || beginIt->isNull() || beginIt->isObject()) {
+		auto array = builder.Array(tagName);
+		for (auto it = beginIt; it != endIt; ++it) {
+			decodeFloatVectorArray(pl, array, fieldType, TagName::Empty(), indexNumber, it->value);
+		}
+	} else {
+		decodeFloatVector(pl, builder, fieldType, tagName, indexNumber, jsonValue);
+	}
+}
+
+void JsonDecoder::decodeFloatVectorField(Payload& pl, CJsonBuilder& builder, const PayloadFieldType& fieldType, TagName tagName,
+										 int indexNumber, const gason::JsonValue& jsonValue) {
+	using namespace std::string_view_literals;
+	if (fieldType.IsArray()) {
+		if (jsonValue.isNull() || jsonValue.isEmpty()) {
+			builder.Null(tagName);
+			return;
+		}
+		if (!jsonValue.isArray()) {
+			throwUnexpected(fieldType.Name(), "array"sv, gason::JsonTagToTypeStr(jsonValue.getTag()), kJSONFmt);
+		}
+		if (begin(jsonValue) == end(jsonValue)) {
+			std::ignore = builder.Array(tagName);
+		} else {
+			decodeFloatVectorArray(pl, builder, fieldType, tagName, indexNumber, jsonValue);
+		}
+	} else {
+		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, fieldType, indexNumber, isInArray(), kJSONFmt);
+		objectScalarIndexes_.set(indexNumber);
+		decodeFloatVector(pl, builder, fieldType, tagName, indexNumber, jsonValue);
+	}
+}
+
+void JsonDecoder::decodeFloatVector(Payload& pl, CJsonBuilder& builder, const PayloadFieldType& fieldType, TagName tagName, int indexNumber,
+									const gason::JsonValue& jsonValue) {
+	Variant value =
+		jsonValue2Variant(jsonValue, fieldType.Type(), fieldType.Name(), &floatVectorsHolder_, ConvertToString_False, ConvertNull_True);
+	assertrx_dbg(value.Type().Is<KeyValueType::FloatVector>());
+	const auto count = ConstFloatVectorView(value).Dimension().Value();
+	validateArrayFieldRestrictions(fieldType.Name(), IsArray_True, fieldType.ArrayDims(), count, kJSONFmt);
+	pl.Set(indexNumber, std::move(value), Append_True);
+	builder.ArrayRef(tagName, indexNumber, count);
 }
 
 JsonDecoder::HeteroArrayAnalizeResult JsonDecoder::analizeHeteroArray(const gason::JsonValue& array) const {
@@ -249,6 +313,7 @@ void JsonDecoder::decodeJsonSparse(Payload* pl, CJsonBuilder& builder, const gas
 			break;
 		}
 		case gason::JsonTag::OBJECT: {
+			validator.Object();
 			auto objNode = builder.Object(tagName);
 			if (pl) {
 				decodeJsonObject(*pl, objNode, v, matched);
@@ -270,8 +335,8 @@ void JsonDecoder::decodeJsonArraySparse(Payload* pl, CJsonBuilder& builder, cons
 	for (const auto& elem : v) {
 		const auto elemType = elem.value.getTag();
 		if (elemType == gason::JsonTag::OBJECT) {
+			arrayElementsValidation.Elem().Object();
 			decodeJson(pl, arrNode, elem.value, TagName::Empty(), matched);
-			std::ignore = arrayElementsValidation.Elem();
 		} else if (elemType == gason::JsonTag::ARRAY) {
 			decodeJsonArraySparse(pl, arrNode, elem.value, TagName::Empty(), matched, arrayElementsValidation);
 		} else {

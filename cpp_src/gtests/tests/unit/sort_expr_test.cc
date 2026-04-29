@@ -1,4 +1,4 @@
-#include "core/nsselecter/joinedselectormock.h"
+#include "core/nsselecter/joins/items_processor_mock.h"
 #include "core/sorting/sortexpression.h"
 #include "gtest/gtest.h"
 
@@ -233,11 +233,11 @@ TEST(StringFunctions, SortExpressionParse) {
 	enum [[nodiscard]] Result { SUCCESS, FAIL };
 	struct [[nodiscard]] Case {
 		Case(const char* e, std::vector<JoinedNsNameMock> js, SortExpression se)
-			: expression{e}, joinedSelectors{std::move(js)}, expected{std::move(se)}, result{SUCCESS} {}
+			: expression{e}, joinItemsProcessors{std::move(js)}, expected{std::move(se)}, result{SUCCESS} {}
 		Case(const char* e, std::vector<JoinedNsNameMock> js, Result r)
-			: expression{e}, joinedSelectors{std::move(js)}, expected{}, result{r} {}
+			: expression{e}, joinItemsProcessors{std::move(js)}, expected{}, result{r} {}
 		const char* expression;
-		std::vector<JoinedNsNameMock> joinedSelectors;
+		std::vector<JoinedNsNameMock> joinItemsProcessors;
 		SortExpression expected;
 		Result result;
 	} testCases[]{
@@ -492,10 +492,10 @@ TEST(StringFunctions, SortExpressionParse) {
 	for (const auto& tC : testCases) {
 		if (tC.result == FAIL) {
 			// NOLINTNEXTLINE (bugprone-unused-return-value)
-			EXPECT_THROW(auto expr = SortExpression::Parse(tC.expression, tC.joinedSelectors), reindexer::Error) << tC.expression;
+			EXPECT_THROW(auto expr = SortExpression::Parse(tC.expression, tC.joinItemsProcessors), reindexer::Error) << tC.expression;
 		} else {
 			try {
-				const auto parsed = SortExpression::Parse(tC.expression, tC.joinedSelectors);
+				const auto parsed = SortExpression::Parse(tC.expression, tC.joinItemsProcessors);
 				EXPECT_EQ(parsed, tC.expected) << "Parsed:\n"
 											   << parsed.Dump() << "\nExpected:\n"
 											   << tC.expected.Dump() << "\nExpression:\n"

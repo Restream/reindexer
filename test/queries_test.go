@@ -56,7 +56,7 @@ type TestItem struct {
 	Address       string          `json:"address"`
 	PostalCode    int             `json:"postal_code"`
 	EmptyInt      int             `json:"empty_int,omitempty"`
-	Description   string          `reindex:"description,fuzzytext"`
+	Description   string          `reindex:"description,text"`
 	Rate          float64         `reindex:"rate,tree"`
 	ExchangeRate  float64         `json:"exchange_rate"`
 	PollutionRate float32         `json:"pollution_rate"`
@@ -125,7 +125,7 @@ type TestItemWithSparse struct {
 	CompanyName   string          `json:"company_name" reindex:"company_name,hash,sparse"`
 	Address       string          `json:"address"`
 	PostalCode    int             `json:"postal_code"`
-	Description   string          `reindex:"description,fuzzytext"`
+	Description   string          `reindex:"description,text"`
 	Rate          float64         `reindex:"rate,tree"`
 	ExchangeRate  float64         `json:"exchange_rate"`
 	PollutionRate float32         `json:"pollution_rate"`
@@ -273,6 +273,7 @@ const (
 	testItemsCancelNs       = "test_items_cancel"
 	testItemsIdOnlyNs       = "test_items_id_only"
 	testItemsWithSparseNs   = "test_items_with_sparse"
+	testItemsSubqueryNs     = "test_items_subquery"
 	testSelectFilterNs      = "test_select_filter"
 	testItemsGeomNs         = "test_items_geom"
 	testItemsStDistanceNs   = "test_items_st_distance"
@@ -302,6 +303,7 @@ func init() {
 	tnamespaces[testItemsCancelNs] = TestItem{}
 	tnamespaces[testItemsIdOnlyNs] = TestItemIDOnly{}
 	tnamespaces[testItemsWithSparseNs] = TestItemWithSparse{}
+	tnamespaces[testItemsSubqueryNs] = TestItemSimple{}
 	tnamespaces[testSelectFilterNs] = TestItemSelectFilter{}
 	tnamespaces[testItemsGeomNs] = TestItemGeom{}
 	tnamespaces[testItemsStDistanceNs] = TestItemGeomSimple{}
@@ -1994,6 +1996,62 @@ func TestNowFunction(t *testing.T) {
 		require.NoError(t, err)
 		assert.EqualValues(t, itemsClientNow, itemsServerNow)
 	})
+
+	t.Run("subquery with now()", func(t *testing.T) {
+		subq := reindexer.SubQuery{SubQuery: DBD.Query(testItemsNowNs).Select("start_time").Where("id", reindexer.LT, 10)}
+		resItems, err := DBD.Query(testItemsNowNs).WhereExpressions(subq, reindexer.LE, reindexer.Now{TimeUnit: reindexer.Sec}).
+			MustExec().FetchAll()
+		require.NoError(t, err)
+		assert.Equal(t, len(resItems), 110)
+	})
+
+	t.Run("subquery with now(): empty result", func(t *testing.T) {
+		subq := reindexer.SubQuery{SubQuery: DBD.Query(testItemsNowNs).Select("start_time").Where("id", reindexer.LT, 10)}
+		resItems, err := DBD.Query(testItemsNowNs).WhereExpressions(subq, reindexer.GT, reindexer.Now{TimeUnit: reindexer.Nsec}).
+			MustExec().FetchAll()
+		require.NoError(t, err)
+		assert.Empty(t, resItems)
+	})
+}
+
+func TestSelectSubqueryWhereExpressions(t *testing.T) {
+	t.Parallel()
+
+	const ns = testItemsSubqueryNs
+	const nsSize = 10
+	tx := newTestTx(DB, ns)
+	items := []TestItemSimple{}
+	for i := 0; i < nsSize; i++ {
+		item := TestItemSimple{
+			ID:    i,
+			Year:  i,
+			Name:  fmt.Sprintf("name%d", i),
+			Phone: fmt.Sprintf("phone%d", i),
+		}
+		err := tx.Upsert(item)
+		require.NoError(t, err)
+		items = append(items, item)
+	}
+	tx.MustCommit()
+
+	t.Run("subquery WhereExpressions with field", func(t *testing.T) {
+		subq := reindexer.SubQuery{SubQuery: DBD.Query(ns).Select("year").Where("id", reindexer.LT, 5)}
+		it := DBD.Query(ns).WhereExpressions(reindexer.Field{Name: "id"}, reindexer.SET, subq).MustExec()
+		checkResultItems(t, it, items[:5])
+	})
+
+	t.Run("subquery WhereExpressions with value", func(t *testing.T) {
+		subq := reindexer.SubQuery{SubQuery: DBD.Query(ns).Select("year").Where("id", reindexer.LT, 5)}
+		it := DBD.Query(ns).WhereExpressions(subq, reindexer.SET, reindexer.Values{Values: []any{1, 2, 3}}).MustExec()
+		checkResultItems(t, it, items)
+	})
+
+	t.Run("subquery WhereExpressions with value: empty result", func(t *testing.T) {
+		subq := reindexer.SubQuery{SubQuery: DBD.Query(ns).Select("year").Where("id", reindexer.LT, 5)}
+		res, err := DBD.Query(ns).WhereExpressions(subq, reindexer.EQ, reindexer.Values{Values: []any{5}}).MustExec().FetchAll()
+		require.NoError(t, err)
+		assert.Empty(t, res)
+	})
 }
 
 func TestStrictMode(t *testing.T) {
@@ -2648,7 +2706,7 @@ func TestQueryExplain(t *testing.T) {
 			printExplainRes(explainRes)
 			assert.Empty(t, explainRes.Selectors)
 			assert.Empty(t, explainRes.SubQueriesExplains)
-			assert.Empty(t, explainRes.OnConditionsInjections)
+			assert.Empty(t, explainRes.OnConditionsInsertions)
 			require.Equal(t, len(explainRes.Merged), 2)
 
 			assert.Greater(t, explainRes.TotalUs, 0)

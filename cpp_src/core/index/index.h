@@ -71,6 +71,8 @@ public:
 	virtual void Delete(const Variant& key, IdType id, reindexer::MustExist mustExist, StringsHolder&, bool& clearCache) = 0;
 	virtual void Delete(const VariantArray& keys, IdType id, reindexer::MustExist mustExist, StringsHolder&, bool& clearCache) = 0;
 	virtual bool RefreshCompositeKey(const Variant& key) noexcept = 0;
+	virtual void HashTablesStats(std::vector<char>& stats) const { stats.resize(0); }
+	virtual void ReserveHashTables(const std::vector<char>& /*stats*/) {}
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const SelectContext&,
 									   const RdxContext&) = 0;

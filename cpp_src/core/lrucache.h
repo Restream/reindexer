@@ -82,7 +82,9 @@ private:
 		int hitCount = 0;
 		template <typename T>
 		void Dump(T& os) const {
-			os << "{val: " << val << ", hitCount: " << hitCount << '}';
+			os << "{val: ";
+			val.Dump(os);
+			os << ", hitCount: " << hitCount << '}';
 		}
 	};
 

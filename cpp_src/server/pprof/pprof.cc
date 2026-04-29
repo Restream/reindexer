@@ -8,7 +8,7 @@
 #include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
 
 #if REINDEX_WITH_GPERFTOOLS || REINDEX_WITH_JEMALLOC

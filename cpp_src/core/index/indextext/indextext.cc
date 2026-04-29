@@ -191,14 +191,14 @@ SelectKeyResults IndexText<T>::doSelectKey(std::string_view key, FtDSLQuery&& ds
 			   ckey ? "(will cache)" : "");
 	}
 
-	IdSet::Ptr mergedIds = Select(ftCtx, std::move(dsl), inTransaction, rankSortType, std::move(mergeStatuses), useExternSt, rdxCtx);
+	IdSetPlain::Ptr mergedIds = Select(ftCtx, std::move(dsl), inTransaction, rankSortType, std::move(mergeStatuses), useExternSt, rdxCtx);
 	SelectKeyResult res;
 	if (mergedIds) {
 		auto ftCtxDataBase = ftCtx.GetData();
 		bool need_put = (useExternSt == FtUseExternStatuses::No) && ckey.has_value();
 		// count the number of Areas and determine whether the request should be cached
-		if (ftCtx.Type() == FtCtxType::kFtArea && need_put && mergedIds->size()) {
-			auto config = dynamic_cast<FtFastConfig*>(cfg_.get());
+		if (ftCtx.Type() == FtCtxType::kFtArea && need_put && mergedIds->Size()) {
+			auto config = dynamic_cast<FTConfig*>(cfg_.get());
 			auto ftCtxDataArea = static_ctx_pointer_cast<FtCtxAreaData<Area>>(ftCtxDataBase);
 
 			if (config && config->maxTotalAreasToCache >= 0) {
@@ -222,8 +222,8 @@ SelectKeyResults IndexText<T>::doSelectKey(std::string_view key, FtDSLQuery&& ds
 				}
 			}
 		}
-		if (need_put && mergedIds->size()) {
-			cache_ft_.Put(*ckey, FtIdSetCacheVal{IdSet::Ptr(mergedIds), std::move(ftCtxDataBase)});
+		if (need_put && mergedIds->Size()) {
+			cache_ft_.Put(*ckey, FtIdSetCacheVal{IdSetPlain::Ptr(mergedIds), std::move(ftCtxDataBase)});
 		}
 
 		res.emplace_back(std::move(mergedIds));

@@ -1,8 +1,7 @@
 #pragma once
-#include "core/id_type.h"
 #include "estl/lazy_deque.h"
 #include "phrasemerger.h"
-#include "tools/float_comparison.h"
+#include "querymergedata.h"
 
 namespace reindexer {
 
@@ -10,41 +9,52 @@ namespace ft {
 
 // Intermediate information about document found at current merge step. Used only for queries with 2 or more terms
 struct [[nodiscard]] MergerDocumentData {
-	explicit MergerDocumentData(PositionsVector&& positions, float r, int q) noexcept
-		: nextTermPositions(std::move(positions)), rank(r), qpos(q) {}
-	explicit MergerDocumentData(float r, int q) noexcept : rank(r), qpos(q) {}
+	MergerDocumentData() noexcept = default;
+	explicit MergerDocumentData(PositionsVector&& positions, float r) noexcept : nextTermPositions(std::move(positions)), rank(r) {}
+	explicit MergerDocumentData(float r) noexcept : rank(r) {}
 	MergerDocumentData(MergerDocumentData&&) noexcept = default;
+	MergerDocumentData& operator=(MergerDocumentData&&) noexcept = default;
+	MergerDocumentData& operator=(const MergerDocumentData&) = default;
+
 	PositionsVector lastTermPositions;	// positions of matched document of current step
 	PositionsVector nextTermPositions;	// positions of matched document of next step
 	float rank = 0;						// Rank of current matched document
-	int32_t qpos = 0;					// Position in query
+
+	uint16_t lastTermCounted = 0;
+	uint16_t termsCounter = 0;
+	bool containsFullMultiWordSynonym = false;
+	bool canBeBoostedByFullMatch = false;
+
+	void InreaseTermsCounter(uint16_t termIdx) {
+		if (lastTermCounted < termIdx) {
+			++termsCounter;
+			lastTermCounted = termIdx;
+		}
+	}
 };
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 class [[nodiscard]] Merger {
 public:
-	using BitsetType = DynamicBitset<64>;
-
 	constexpr static bool kWithRegularAreas = std::is_same_v<MergeDataType, MergeDataAreas<Area>>;
 	constexpr static bool kWithDebugAreas = std::is_same_v<MergeDataType, MergeDataAreas<AreaDebug>>;
 	constexpr static bool kWithAreas = kWithRegularAreas || kWithDebugAreas;
 
 	using InfoType = typename MergeDataType::InfoType;
 
-	Merger(DataHolder<IdCont>& holder, FtMergeStatuses::Statuses& mergeStatuses, size_t fieldSize, int maxAreasInDoc, bool inTransaction,
+	Merger(DataHolder<IdCont>& holder, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc, bool inTransaction,
 		   const RdxContext& ctx)
 		: holder_(holder),
 		  fieldSize_(fieldSize),
 		  maxAreasInDoc_(maxAreasInDoc),
-		  mergeStatuses_(mergeStatuses),
+		  docsExcluded_(docsExcluded),
 		  inTransaction_(inTransaction),
 		  ctx_(ctx) {
-		assertrx_throw(mergeStatuses.size() == holder_.vdocs_.size());
+		assertrx_throw(docsExcluded.size() == holder_.VDocsNumberInIndex());
 	}
 
 	template <typename Bm25Type>
-	MergeDataType Merge(std::vector<TermResults<IdCont>>& rawResults, size_t totalORVids, const std::vector<size_t>& synonymsBounds,
-						RankSortType rankSortType);
+	MergeDataType Merge(QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType);
 
 private:
 	const InfoType& getMergeData(index_t docId) const noexcept { return mergeData_[idoffsets_[docId]]; }
@@ -53,117 +63,46 @@ private:
 	MergerDocumentData& getMergeDataExtended(index_t docId) noexcept { return mergeDataExtended_[idoffsets_[docId]]; }
 
 	template <typename Bm25Type>
-	void init(std::vector<TermResults<IdCont>>& rawResults, size_t docsSize, size_t maxMergedSize,
-			  const std::vector<size_t>& synonymsBounds) {
-		mergeData_.reserve(maxMergedSize);
-		if (rawResults.size() > 1) {
-			idoffsets_.resize(docsSize);
-			mergeDataExtended_.reserve(maxMergedSize);
+	void init(QueryMergeData<IdCont>& queryMergeData, uint32_t maxMergedSize) {
+		maxMergedDocs_ = std::min<uint32_t>(maxMergedSize, std::numeric_limits<MergeOffsetT>::max());
+		maxMergedDocs_ = std::min(maxMergedSize, holder_.cfg_->mergeLimit);
+		mergeData_.reserve(maxMergedDocs_);
+
+		if (!queryMergeData.Trivial()) {
+			idoffsets_.resize(holder_.VDocsNumberInIndex(), maxMergedDocs_);
+		}
+
+		if (!queryMergeData.Simple()) {
+			mergeDataExtended_.reserve(maxMergedDocs_);
 
 			if constexpr (kWithAreas) {
-				mergeData_.vectorAreas.reserve(maxMergedSize);
+				mergeData_.vectorAreas.reserve(maxMergedDocs_);
 			}
 		}
 
-		if (rawResults.size() == 1 && rawResults[0].subtermsResults.size() > 1) {
-			idoffsets_.resize(docsSize);
-		}
-
-		const size_t synonymsGroupsEnd = synonymsBounds.empty() ? 0 : synonymsBounds.back();
-
-		for (index_t termIdx = synonymsGroupsEnd; termIdx < rawResults.size(); ++termIdx) {
-			if (rawResults[termIdx].GroupNum() != -1) {
-				const int groupNum = rawResults[termIdx].GroupNum();
-				const size_t phraseBegin = termIdx;
-				size_t phraseEnd = phraseBegin + 1;
-
-				while (phraseEnd < rawResults.size() && rawResults[phraseEnd].GroupNum() == groupNum) {
-					phraseEnd++;
-				}
-
-				auto& merger = phraseMergers_.emplace_back(holder_, fieldSize_, maxAreasInDoc_, inTransaction_, ctx_);
-				merger.template Merge<Bm25Type>(rawResults, phraseBegin, phraseEnd);
-
-				termIdx = phraseEnd - 1;
-				continue;
+		// init phraseMerger for each phrase and merge phrase results
+		for (auto& qp : queryMergeData.queryParts) {
+			if (qp.IsPhrase()) {
+				auto& phraseMerger = phraseMergers_.emplace_back(holder_, docsExcluded_, fieldSize_, maxAreasInDoc_, inTransaction_, ctx_);
+				phraseMerger.template Merge<Bm25Type>(qp.Phrase());
 			}
 		}
 	}
 
-	size_t estimateNumDocsInMerge(const std::vector<TermResults<IdCont>>& rawResults, const std::vector<size_t>& synonymsBounds) {
-		size_t estimatedNumDocs = 0;
-		const size_t synonymsGroupsEnd = synonymsBounds.empty() ? 0 : synonymsBounds.back();
-
-		for (size_t synGrpIdx = 0; synGrpIdx < synonymsBounds.size(); ++synGrpIdx) {
-			const size_t synGroupBegin = synGrpIdx > 0 ? synonymsBounds[synGrpIdx - 1] : 0;
-			const size_t synGroupEnd = synonymsBounds[synGrpIdx];
-
-			for (index_t termIdx = synGroupBegin; termIdx < synGroupEnd; ++termIdx) {
-				for (const SubtermResults<IdCont>& subtermRes : rawResults[termIdx].subtermsResults) {
-					estimatedNumDocs += subtermRes.Vids().size();
-				}
-
-				if (rawResults[termIdx].Op() == OpAnd) {
-					break;
-				}
-			}
-		}
-
-		size_t phraseIdx = 0;
-		for (index_t termIdx = synonymsGroupsEnd; termIdx < rawResults.size(); ++termIdx) {
-			if (rawResults[termIdx].GroupNum() != -1) {
-				const OpType phraseOp = rawResults[termIdx].Op();
-				const int groupNum = rawResults[termIdx].GroupNum();
-				size_t phraseEnd = termIdx + 1;
-
-				while (phraseEnd < rawResults.size() && rawResults[phraseEnd].GroupNum() == groupNum) {
-					phraseEnd++;
-				}
-
-				if (phraseOp != OpNot) {
-					estimatedNumDocs += phraseMergers_.at(phraseIdx).NumDocsMerged();
-				}
-
-				if (phraseOp == OpAnd) {
-					return estimatedNumDocs;
-				}
-
-				termIdx = phraseEnd - 1;
-				phraseIdx++;
-				continue;
-			}
-
-			const auto termOp = rawResults[termIdx].Op();
-			if (termOp != OpNot) {
-				for (const SubtermResults<IdCont>& subtermRes : rawResults[termIdx].subtermsResults) {
-					estimatedNumDocs += subtermRes.Vids().size();
-				}
-			}
-
-			if (termOp == OpAnd) {
-				return estimatedNumDocs;
-			}
-		}
-
-		const auto& vdocs = holder_.vdocs_;
-		const size_t totalDocsCount = vdocs.size();
-
-		return std::min(estimatedNumDocs, totalDocsCount);
-	}
-
 	template <typename Bm25Type>
-	MergeDataType mergeSimple(TermResults<IdCont>& singleTermRes, RankSortType rankSortType);
+	MergeDataType mergeSimple(TermResults<IdCont>& singleTerm, RankSortType rankSortType);
 	template <typename Bm25Type>
-	void mergeTermResults(TermResults<IdCont>& termRes, index_t termIndex, std::vector<bool>* bitmask);
+	void mergeTerm(TermResults<IdCont>& term, uint16_t qpIdx);
 
 	template <typename Bm25T>
-	void mergePhraseResults(size_t phraseIdx, size_t phraseBegin, OpType phraseOp, int phraseQPos);
+	void mergePhrase(size_t phraseIdx, PhraseResults<IdCont>& phrase, uint16_t qpIdx);
 
 	void addFullMatchBoost(size_t numTerms) {
 		const auto& vdocs = holder_.vdocs_;
 		for (size_t idx = 0; idx < mergeData_.size(); ++idx) {
 			auto& md = mergeData_[idx];
-			if (size_t(vdocs[md.id.ToNumber()].wordsCount[md.field]) == numTerms) {
+			if ((mergeDataExtended_.empty() || mergeDataExtended_[idx].canBeBoostedByFullMatch) &&
+				size_t(vdocs[md.id.ToNumber()].wordsCount[md.field]) == numTerms) {
 				md.proc *= holder_.cfg_->fullMatchBoost;
 			}
 		}
@@ -176,7 +115,7 @@ private:
 		}
 
 		const float scalingFactor = maxProc > 255 ? 255.0 / maxProc : 1.0;
-		const float minProc = holder_.cfg_->minRelevancy * 100.0;
+		const float minProc = holder_.cfg_->minRank;
 
 		size_t numDocsPassed = mergeData_.size();
 		while (numDocsPassed > 0 && mergeData_[numDocsPassed - 1].proc < minProc) {
@@ -217,7 +156,9 @@ private:
 
 	size_t numDocs() const noexcept { return mergeData_.size(); }
 
-	void addDoc(int docId, index_t mergeStatus, float proc, uint8_t field) {
+	bool docAdded(int docId) const noexcept { return !idoffsets_.empty() && idoffsets_[docId] != maxMergedDocs_; }
+
+	void addDoc(int docId, float proc, uint8_t field) {
 		InfoType info{.id = IdType::FromNumber(docId), .proc = proc, .field = field};
 
 		if constexpr (kWithAreas) {
@@ -227,17 +168,15 @@ private:
 		}
 
 		mergeData_.push_back(std::move(info));
-		mergeStatuses_[docId] = mergeStatus;
 		if (!idoffsets_.empty()) {
 			idoffsets_[docId] = mergeData_.size() - 1;
 		}
 	}
 
-	void addDoc(int docId, index_t mergeStatus, float proc, uint8_t field, PositionsVector&& positions, int qpos, TermRankInfo& subtermInf,
-				const std::wstring& pattern) {
-		addDoc(docId, mergeStatus, proc, field);
+	void addDoc(int docId, float proc, uint8_t field, PositionsVector&& positions, TermRankInfo& subtermInf, const std::wstring& pattern) {
+		addDoc(docId, proc, field);
 		addLastDocAreas(positions, proc, subtermInf, pattern);
-		mergeDataExtended_.emplace_back(std::move(positions), proc, qpos);
+		mergeDataExtended_.emplace_back(std::move(positions), proc);
 	}
 
 	void addDocAreas(int docId, const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::wstring& pattern) {
@@ -286,47 +225,58 @@ private:
 		}
 	}
 
-	void removeDocs(const MergeDataType& docsToRemove) {
-		for (const auto& mdToRemove : docsToRemove) {
-			if (reindexer::fp::IsZero(mdToRemove.proc)) {
+	void calcTermBitmask(const TermResults<IdCont>& term, BitsetType& termMask);
+	void excludeTermFromBitmask(const TermResults<IdCont>& term, BitsetType& mask);
+
+	void calcTermScores(TermResults<IdCont>& term, const BitsetType& restrictingMask, BitsetType& termMask,
+						std::vector<uint16_t>& docsScore);
+
+	void buildRestrictingBitmask(QueryMergeData<IdCont>& queryData);
+	void preselectMostRelevantDocs(QueryMergeData<IdCont>& queryData);
+
+	size_t estimateNumDocsInMerge(QueryMergeData<IdCont>& queryData) {
+		size_t estimatedNumDocsOr = 0;
+		size_t estimatedNumDocsAnd = std::numeric_limits<size_t>::max();
+
+		size_t phraseIdx = 0;
+		for (auto& qp : queryData.queryParts) {
+			if (qp.IsPhrase()) {
+				++phraseIdx;
+			}
+
+			if (qp.Op() == OpNot) {
 				continue;
 			}
-			const auto docId = mdToRemove.id.ToNumber();
-			if (mergeStatuses_[docId] != 0 && mergeStatuses_[docId] != FtMergeStatuses::kExcluded) {
-				getMergeData(docId).proc = 0;
-			}
-			mergeStatuses_[docId] = FtMergeStatuses::kExcluded;
-		}
-	}
 
-	void removeAllDocsExcept(const std::vector<bool>& docsMask) noexcept {
-		for (auto& md : mergeData_) {
-			if (!docsMask[md.id.ToNumber()]) {
-				mergeStatuses_[md.id.ToNumber()] = FtMergeStatuses::kExcluded;
-				md.proc = 0;
+			size_t numDocs = qp.IsPhrase() ? phraseMergers_.at(phraseIdx - 1).NumDocsMerged() : qp.Term().EstimateNumDocsInMerge();
+			for (size_t synId : qp.SynonymsIds()) {
+				auto& syn = queryData.synonyms[synId];
+				numDocs += syn.Terms()[0].EstimateNumDocsInMerge();
+			}
+
+			if (qp.Op() == OpAnd) {
+				estimatedNumDocsAnd = std::min(estimatedNumDocsAnd, numDocs);
+			} else {
+				estimatedNumDocsOr += numDocs;
 			}
 		}
-	}
 
-	void calcTermBitmask(const TermResults<IdCont>& termRes, BitsetType& termMask);
-	void calcTermScores(TermResults<IdCont>& termRes, const BitsetType* restrictingMask, BitsetType& termMask,
-						std::vector<uint16_t>& docsScores);
-	void collectRestrictingMask(std::vector<TermResults<IdCont>>& rawResults, const std::vector<size_t>& synonymsBounds);
+		return std::min(std::min(estimatedNumDocsOr, estimatedNumDocsAnd), holder_.VDocsNumberInIndex());
+	}
 
 private:
-	MergeDataType mergeData_;
-	std::vector<MergerDocumentData> mergeDataExtended_;
-	std::vector<MergeOffsetT> idoffsets_;
-	bool hasBeenAnd_ = false;
-
-	BitsetType restrictingMask_;
-
 	DataHolder<IdCont>& holder_;
 	size_t fieldSize_ = 0;
 	int maxAreasInDoc_ = 0;
 
-	FtMergeStatuses::Statuses& mergeStatuses_;
+	FtMergeStatuses::Statuses& docsExcluded_;
 	lazy_deque<PhraseMerger<IdCont, MergeDataType, MergeOffsetT>> phraseMergers_;
+	MergeDataType mergeData_;
+	std::vector<MergerDocumentData> mergeDataExtended_;
+	uint32_t maxMergedDocs_ = 0;
+	std::vector<MergeOffsetT> idoffsets_;
+	BitsetType restrictingMask_;
+	bool needToCheckRemoved_ = true;
 
 	bool inTransaction_ = false;
 	const RdxContext& ctx_;

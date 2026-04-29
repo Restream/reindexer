@@ -3,8 +3,10 @@
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadiface.h"
 #include "cpp-btree/btree_map.h"
+#include "estl/extendible_hash_map.h"
 #include "sparse-map/sparse_map.h"
 #include "sparse-map/sparse_set.h"
+#include "vendor/hopscotch/hopscotch_map.h"
 #include "vendor/hopscotch/hopscotch_set.h"
 
 namespace reindexer {
@@ -69,6 +71,12 @@ public:
 	hash_composite(PT&& type, FS&& fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {
 		assertrx_dbg(type_);
 	}
+	hash_composite() = default;
+	hash_composite(const hash_composite& hc) = default;
+	hash_composite(hash_composite&& hc) noexcept = default;
+	hash_composite& operator=(const hash_composite& hc) = default;
+	hash_composite& operator=(hash_composite&& hc) = default;
+
 	size_t operator()(const PayloadValueWithHash& s) const noexcept { return s.GetHash(); }
 	size_t operator()(const PayloadValue& s) const { return ConstPayload(type_, s).GetHash(fields_); }
 
@@ -134,8 +142,60 @@ struct [[nodiscard]] no_deep_clean {
 	void operator()(const T&) const noexcept {}
 };
 
+using payload_map_rebalance_params = extendible_hash_map_rebalance_params<(1 << 19), 13>;
+
 template <typename T1>
 class [[nodiscard]] unordered_payload_map
+	: public extendible_hash_map<
+		  tsl::sparse_map<PayloadValue, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValue, T1>>,
+						  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
+		  payload_map_rebalance_params, PayloadValue, T1, hash_composite, equal_composite> {
+	using base_hash_map = extendible_hash_map<
+		tsl::sparse_map<PayloadValue, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValue, T1>>,
+						tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
+		payload_map_rebalance_params, PayloadValue, T1, hash_composite, equal_composite>;
+
+public:
+	using typename base_hash_map::value_type;
+	using typename base_hash_map::key_type;
+	using typename base_hash_map::mapped_type;
+	using typename base_hash_map::iterator;
+	using typename base_hash_map::const_iterator;
+
+	using base_hash_map::size;
+	using base_hash_map::empty;
+	using base_hash_map::find;
+	using base_hash_map::begin;
+	using base_hash_map::end;
+
+	static_assert(std::is_nothrow_move_constructible<std::pair<PayloadValue, T1>>::value, "Nothrow movebale key and value required");
+	unordered_payload_map(PayloadType&& pt, FieldsSet&& f)
+		: base_hash_map(hash_composite(PayloadType{pt}, FieldsSet{f}), equal_composite(PayloadType{pt}, FieldsSet{f})),
+		  payloadType_(std::move(pt)),
+		  fields_(std::move(f)) {}
+
+	unordered_payload_map(const unordered_payload_map& other) = default;
+	unordered_payload_map(unordered_payload_map&&) noexcept = default;
+	unordered_payload_map& operator=(unordered_payload_map&& other) noexcept = default;
+	unordered_payload_map& operator=(const unordered_payload_map&) = delete;
+	~unordered_payload_map() = default;
+
+	template <typename deep_cleaner>
+	void erase(iterator pos) {
+		static const deep_cleaner deep_clean;
+		deep_clean(*pos);
+		base_hash_map::erase(pos);
+	}
+
+	void stats(std::vector<std::vector<uint8_t>>& data) const { base_hash_map::stats(data); }
+
+private:
+	PayloadType payloadType_;
+	FieldsSet fields_;
+};
+
+template <typename T1>
+class [[nodiscard]] unordered_payload_map_fast
 	: private tsl::sparse_map<PayloadValueWithHash, T1, hash_composite, equal_composite,
 							  std::allocator<std::pair<PayloadValueWithHash, T1>>, tsl::sh::power_of_two_growth_policy<2>,
 							  tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
@@ -158,18 +218,18 @@ public:
 
 	static_assert(std::is_nothrow_move_constructible<std::pair<PayloadValueWithHash, T1>>::value,
 				  "Nothrow movebale key and value required");
-	unordered_payload_map(size_t size, PayloadType&& pt, FieldsSet&& f)
+	unordered_payload_map_fast(size_t size, PayloadType&& pt, FieldsSet&& f)
 		: base_hash_map(size, hash_composite(PayloadType{pt}, FieldsSet{f}), equal_composite(PayloadType{pt}, FieldsSet{f})),
 		  payloadType_(std::move(pt)),
 		  fields_(std::move(f)) {}
 
-	unordered_payload_map(PayloadType&& pt, FieldsSet&& f) : unordered_payload_map(1000, std::move(pt), std::move(f)) {}
+	unordered_payload_map_fast(PayloadType&& pt, FieldsSet&& f) : unordered_payload_map_fast(1000, std::move(pt), std::move(f)) {}
 
-	unordered_payload_map(const unordered_payload_map& other) = default;
-	unordered_payload_map(unordered_payload_map&&) noexcept = default;
-	unordered_payload_map& operator=(unordered_payload_map&& other) noexcept = default;
-	unordered_payload_map& operator=(const unordered_payload_map&) = delete;
-	~unordered_payload_map() = default;
+	unordered_payload_map_fast(const unordered_payload_map_fast& other) = default;
+	unordered_payload_map_fast(unordered_payload_map_fast&&) noexcept = default;
+	unordered_payload_map_fast& operator=(unordered_payload_map_fast&& other) noexcept = default;
+	unordered_payload_map_fast& operator=(const unordered_payload_map_fast&) = delete;
+	~unordered_payload_map_fast() = default;
 
 	std::pair<iterator, bool> insert(const std::pair<PayloadValue, T1>& v) {
 		PayloadValueWithHash key(v.first, payloadType_, fields_);
@@ -340,6 +400,8 @@ private:
 	PayloadType payload_type_;
 	bool with_tuple_ = false;
 };
+
+using payload_map_ft_rebalance_params = extendible_hash_map_rebalance_params<(1 << 19), 13>;
 
 // Unordered payload map implementation for fulltext indexes.
 // Composite fulltext indexes may be built over non-indexed fields and have to hold `-tuple` string to avoid memory invalidation.

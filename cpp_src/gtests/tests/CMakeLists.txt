@@ -9,6 +9,8 @@ list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_L
 option(XML_REPORT "Enable XML xUnit report" OFF)
 option(GH_CI_OSX "Option for Github CI on OSX" OFF)
 option(GTEST_SKIP_ASAN_MEMORY_HEAVY "Skips tests with high memory consumation in ASAN-build (mostly sharding-related tests). Option for Github tests with ASAN - free runners run out of memory" OFF)
+set(FT_TESTS_OPTIMIZATION_VARIANTS "auto" CACHE STRING "Select fulltext tests variants")
+set_property(CACHE FT_TESTS_OPTIMIZATION_VARIANTS PROPERTY STRINGS auto all cpu-optimized memory-optimized)
 set(GTEST_WORKERS "6" CACHE STRING "Number of workers for gtest_parallel")
 
 include_directories(fixtures mocks)
@@ -42,6 +44,22 @@ if(ENABLE_GRPC)
     else()
         message("tests: Protobuf not found")
     endif()
+endif()
+
+if(FT_TESTS_OPTIMIZATION_VARIANTS STREQUAL "all")
+  # Nop
+elseif(FT_TESTS_OPTIMIZATION_VARIANTS STREQUAL "cpu-optimized")
+  add_definitions(-DRX_FT_TESTS_OPT_CPU=1)
+elseif(FT_TESTS_OPTIMIZATION_VARIANTS STREQUAL "memory-optimized")
+  add_definitions(-DRX_FT_TESTS_OPT_MEM=1)
+elseif(FT_TESTS_OPTIMIZATION_VARIANTS STREQUAL "auto")
+  if(WITH_STDLIB_DEBUG)
+    add_definitions(-DRX_FT_TESTS_OPT_CPU=1)
+  elseif(WITH_ASAN OR WITH_TSAN)
+    add_definitions(-DRX_FT_TESTS_OPT_MEM=1)
+  endif()
+else()
+  message(FATAL_ERROR "Unexpected value for FT_TESTS_OPTIMIZATION_VARIANTS: ${FT_TESTS_OPTIMIZATION_VARIANTS}")
 endif()
 
 
@@ -81,7 +99,8 @@ if(ENABLE_PCH)
     ${REINDEXER_SOURCE_PATH}/tools/errors.h
     ${REINDEXER_SOURCE_PATH}/tools/logger.h
     ${REINDEXER_SOURCE_PATH}/tools/lsn.h
-    ${REINDEXER_SOURCE_PATH}/tools/serializer.h
+    ${REINDEXER_SOURCE_PATH}/tools/serilize/serializer.h
+    ${REINDEXER_SOURCE_PATH}/tools/serilize/wrserializer.h
     ${REINDEXER_SOURCE_PATH}/tools/stringstools.h
     ${REINDEXER_SOURCE_PATH}/tools/fsops.h
 

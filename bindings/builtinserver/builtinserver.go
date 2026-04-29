@@ -32,10 +32,8 @@ func err2go(ret C.reindexer_error) error {
 }
 
 func str2c(str string) C.reindexer_string {
-	var p unsafe.Pointer
-	p = unsafe.Pointer(unsafe.StringData(str))
 	return C.reindexer_string{
-		p: p,
+		p: unsafe.Pointer(unsafe.StringData(str)),
 		n: C.int(len(str)),
 	}
 }
@@ -245,20 +243,20 @@ func (server *BuiltinServer) UpdateQueryTx(txCtx *bindings.TxCtx, rawQuery []byt
 	return server.builtin.UpdateQueryTx(txCtx, rawQuery)
 }
 
-func (server *BuiltinServer) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	return server.builtin.Select(ctx, query, asJson, ptVersions, fetchCount)
+func (server *BuiltinServer) Select(ctx context.Context, query string, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+	return server.builtin.Select(ctx, query, asJson, tmVersions, fetchCount)
 }
 
-func (server *BuiltinServer) SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	return server.builtin.SelectQuery(ctx, rawQuery, asJson, ptVersions, fetchCount)
+func (server *BuiltinServer) SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+	return server.builtin.SelectQuery(ctx, rawQuery, asJson, tmVersions, fetchCount)
 }
 
 func (server *BuiltinServer) DeleteQuery(ctx context.Context, rawQuery []byte) (bindings.RawBuffer, error) {
 	return server.builtin.DeleteQuery(ctx, rawQuery)
 }
 
-func (server *BuiltinServer) UpdateQuery(ctx context.Context, rawQuery []byte) (bindings.RawBuffer, error) {
-	return server.builtin.UpdateQuery(ctx, rawQuery)
+func (server *BuiltinServer) UpdateQuery(ctx context.Context, rawQuery []byte, tmVersions []int32) (bindings.RawBuffer, error) {
+	return server.builtin.UpdateQuery(ctx, rawQuery, tmVersions)
 }
 
 func (server *BuiltinServer) EnableLogger(logger bindings.Logger) {

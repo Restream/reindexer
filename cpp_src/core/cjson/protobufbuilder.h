@@ -6,7 +6,7 @@
 #include "core/cjson/tagsmatcher.h"
 #include "core/enums.h"
 #include "core/keyvalue/p_string.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 
@@ -67,7 +67,8 @@ public:
 
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value ||
 												  std::is_same<T, bool>::value>::type* = nullptr>
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0) {
+	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0,
+			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		auto array = ArrayPacked(tag);
 		for (const T& item : data) {
 			array.put(TagName::Empty(), item);
@@ -75,13 +76,15 @@ public:
 	}
 
 	template <typename T, typename std::enable_if<std::is_same<reindexer::p_string, T>::value>::type* = nullptr>
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0) {
+	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0,
+			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		auto array = ArrayNotPacked(tag);
 		for (const T& item : data) {
 			array.put(tag, std::string_view(item));
 		}
 	}
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid> data, int /*offset*/ = 0) {
+	void Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid> data, int /*offset*/ = 0,
+			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		auto array = ArrayNotPacked(tag);
 		for (Uuid item : data) {
 			array.put(tag, item);

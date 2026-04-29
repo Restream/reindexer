@@ -1,8 +1,12 @@
 #pragma once
 
+#include "core/cjson/ctag.h"
 #include "core/payload/payloadiface.h"
+#include "tools/serilize/serializer.h"
 
 namespace reindexer {
+
+class WrSerializer;
 
 template <typename T>
 void buildPayloadTuple(const PayloadIface<T>& pl, const TagsMatcher* tagsMatcher, WrSerializer& wrser,
@@ -15,6 +19,7 @@ void putCJsonRef(TagType, TagName, int tagField, const VariantArray& values, WrS
 void putCJsonValue(TagType, TagName, const VariantArray& values, WrSerializer&);
 
 TagType arrayKvType2Tag(const VariantArray& values);
+// returns field number of heterogeneous array
 void skipCjsonTag(ctag tag, Serializer& rdser, std::array<unsigned, kMaxIndexes>* fieldsArrayOffsets = nullptr);
 Variant cjsonValueToVariant(TagType tag, Serializer& rdser, KeyValueType dstType);
 
@@ -34,6 +39,8 @@ CJsonNestedArrayAnalizeResult analizeNestedArray(size_t count, Serializer&);
 [[noreturn]] void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, KeyValueType obtainedType,
 								  std::string_view parserName);
 [[noreturn]] void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, std::string_view obtainedType,
+								  std::string_view parserName);
+[[noreturn]] void throwUnexpected(std::string_view fieldName, std::string_view expectedType, std::string_view obtainedType,
 								  std::string_view parserName);
 [[noreturn]] void throwUnexpectedObjectInIndex(std::string_view fieldName, std::string_view parserName);
 

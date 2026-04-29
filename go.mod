@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	github.com/goccy/go-json v0.10.6
 	github.com/golang/snappy v1.0.0
-	github.com/hashicorp/golang-lru v1.0.2
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/iancoleman/orderedmap v0.3.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1

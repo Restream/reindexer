@@ -2,9 +2,10 @@ package reindexer
 
 import (
 	"fmt"
-	"github.com/goccy/go-json"
 	"strconv"
 	"testing"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	"github.com/restream/reindexer/v5/dsl"

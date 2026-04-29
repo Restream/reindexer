@@ -1,21 +1,29 @@
 #pragma once
 
-#include "core/ft/config/ftfastconfig.h"
+#include "core/ft/config/ftconfig.h"
 #include "core/queryresults/queryresults.h"
 #include "reindexertestapi.h"
 
-class [[nodiscard]] FTApi : public ::testing::TestWithParam<reindexer::FtFastConfig::Optimization> {
+#if RX_FT_TESTS_OPT_CPU
+#define kRxFtTestTypes reindexer::FTConfig::Optimization::CPU
+#elif RX_FT_TESTS_OPT_MEM
+#define kRxFtTestTypes reindexer::FTConfig::Optimization::Memory
+#else  // RX_FT_TESTS_OPT_ALL
+#define kRxFtTestTypes reindexer::FTConfig::Optimization::Memory, reindexer::FTConfig::Optimization::CPU
+#endif	// RX_FT_TESTS_OPT_ALL
+
+class [[nodiscard]] FTApi : public ::testing::TestWithParam<reindexer::FTConfig::Optimization> {
 public:
 	enum { NS1 = 1, NS2 = 2, NS3 = 4, NS4 = 8 };
-	void Init(const reindexer::FtFastConfig& ftCfg, unsigned nses = NS1, const std::string& storage = std::string());
+	void Init(const reindexer::FTConfig& ftCfg, unsigned nses = NS1, const std::string& storage = std::string());
 
-	virtual reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2);
+	virtual reindexer::FTConfig GetDefaultConfig(size_t fieldsCount = 2);
 
-	void SetFTConfig(const reindexer::FtFastConfig& ftCfg);
+	void SetFTConfig(const reindexer::FTConfig& ftCfg);
 
-	reindexer::Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, std::string_view ns, const std::string& index,
+	reindexer::Error SetFTConfig(const reindexer::FTConfig& ftCfg, std::string_view ns, const std::string& index,
 								 const std::vector<std::string>& fields);
-	std::string GetFTConfigJSON(const reindexer::FtFastConfig& ftCfg, const std::vector<std::string>& fields);
+	std::string GetFTConfigJSON(const reindexer::FTConfig& ftCfg, const std::vector<std::string>& fields);
 
 	void FillData(int64_t count);
 	void Add(std::string_view ft1, std::string_view ft2, unsigned nses = NS1);

@@ -1327,7 +1327,7 @@ void ShardingApi::changeClusterLeader(int shardId) {
 	auto itemRS = qrReplStat.begin().GetItem();
 	gason::JsonParser parserRS;
 	auto nodes = parserRS.Parse(itemRS.GetJSON())["nodes"];
-	ASSERT_TRUE(!nodes.empty());
+	ASSERT_TRUE(!nodes.isEmpty());
 	int leaderId = -1;
 	for (auto& node : nodes) {
 		if (node["role"].As<std::string_view>() == "leader") {
@@ -1557,7 +1557,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 					auto item = qr.begin().GetItem();
 					gason::JsonParser parserRS;
 					auto nodes = parserRS.Parse(item.GetJSON())["nodes"];
-					ASSERT_TRUE(!nodes.empty());
+					ASSERT_TRUE(!nodes.isEmpty());
 
 					int leaderId = -1;
 					for (auto& node : nodes) {
@@ -3946,8 +3946,8 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 		auto orig = parserJson.Parse(serJson.Slice());
 
 		for (const auto& fieldName : csv2jsonSchema) {
-			if (converted[fieldName].empty() || orig[fieldName].empty()) {
-				EXPECT_TRUE(converted[fieldName].empty() && orig[fieldName].empty()) << "fieldName: " << fieldName;
+			if (converted[fieldName].isEmpty() || orig[fieldName].isEmpty()) {
+				EXPECT_TRUE(converted[fieldName].isEmpty() && orig[fieldName].isEmpty()) << "fieldName: " << fieldName;
 				continue;
 			}
 

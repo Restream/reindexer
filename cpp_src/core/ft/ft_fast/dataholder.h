@@ -1,13 +1,14 @@
 #pragma once
 #include <memory>
 #include <unordered_map>
-#include "core/ft/config/ftfastconfig.h"
-#include "core/ft/filters/itokenfilter.h"
-#include "core/ft/filters/synonyms.h"
+#include "core/ft/config/ftconfig.h"
 #include "core/ft/ft_fast/splitter.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/limits.h"
 #include "core/ft/stemmer.h"
+#include "core/ft/variants/kblayout.h"
+#include "core/ft/variants/synonyms.h"
+#include "core/ft/variants/translit.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "estl/suffix_map.h"
 #include "indextexttypes.h"
@@ -54,8 +55,6 @@ public:
 			keyEntry_ = nullptr;
 		}
 	}
-	// Temporary method for fuzzy index text. Should be removed with fuzzy index
-	void ResetKeyEntry() noexcept { keyEntry_ = nullptr; }
 	const FtKeyEntryData* KeyEntry() const noexcept { return keyEntry_; }
 
 	h_vector<float, 3> wordsCount;
@@ -178,8 +177,8 @@ public:
 	suffix_map<char, WordIdType>& GetSuffix() noexcept { return steps.back().suffixes_; }
 	TyposMap& GetTypos() noexcept { return steps.back().typos_; }
 	WordIdType findWord(std::string_view word) const;
-	uint32_t GetSuffixWordId(WordIdType id) const noexcept { return GetSuffixWordId(id, steps.back()); }
-	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step) const noexcept {
+	uint32_t GetWordIdInStep(WordIdType id) const noexcept { return GetWordIdInStep(id, steps.back()); }
+	uint32_t GetWordIdInStep(WordIdType id, const CommitStep& step) const noexcept {
 		assertrx(!id.IsEmpty());
 		assertrx(id.b.step_num < steps.size());
 
@@ -207,6 +206,8 @@ public:
 	}
 	std::string Dump() const;
 
+	size_t VDocsNumberInIndex() const noexcept { return vdocs_.size(); }
+
 private:
 	[[noreturn]] static void throwWordIdOverflow(uint32_t id);
 	[[noreturn]] void throwStepsOverflow() const;
@@ -216,11 +217,10 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	std::unordered_map<std::string, stemmer> stemmers_;
 
 	// translit generator for russian and english (returns word + weight)
-	ITokenFilter::Ptr translit_;
-	ITokenFilter::Ptr kbLayout_;
-	ITokenFilter::Ptr compositeWordsSplitter_;
+	std::unique_ptr<Translit> translit_;
+	std::unique_ptr<KbLayout> kbLayout_;
+	std::unique_ptr<Synonyms> synonyms_;
 
-	Synonyms::Ptr synonyms_;
 	TermsBoostMapT stemmedTermsBoost;
 
 	std::vector<CommitStep> steps;
@@ -235,7 +235,7 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	std::vector<std::unique_ptr<std::string>> bufStrs_;
 	size_t vdocsOffset_{0};
 	size_t szCnt{0};
-	FtFastConfig* cfg_{nullptr};
+	FTConfig* cfg_{nullptr};
 	// index - rowId, value vdocId (index in array vdocs_)
 	std::vector<uint32_t> rowId2Vdoc_;
 	intrusive_ptr<const ISplitter> splitter_;
@@ -244,19 +244,19 @@ public:	 // TODO: #1688 Fix private class data isolation here
 template <typename IdCont>
 class [[nodiscard]] DataHolder : public IDataHolder {
 public:
-	explicit DataHolder(FtFastConfig* c);
+	explicit DataHolder(FTConfig* c);
 	void Process(size_t fieldSize, bool multithread) final;
 	size_t GetMemStat() override final;
 	void StartCommit(bool complte_updated) override final;
 	void Clear() override final;
 	std::vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
 	const std::vector<PackedWordEntry<IdCont>>& GetWords() const noexcept { return words_; }
-	PackedWordEntry<IdCont>& GetWordById(WordIdType id) noexcept {
+	PackedWordEntry<IdCont>& GetWordEntry(WordIdType id) noexcept {
 		assertrx(!id.IsEmpty());
 		assertrx(id.b.id < words_.size());
 		return words_[id.b.id];
 	}
-	const PackedWordEntry<IdCont>& GetWordById(WordIdType id) const noexcept {
+	const PackedWordEntry<IdCont>& GetWordEntry(WordIdType id) const noexcept {
 		assertrx(!id.IsEmpty());
 		assertrx(id.b.id < words_.size());
 		return words_[id.b.id];

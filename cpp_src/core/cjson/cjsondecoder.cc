@@ -1,9 +1,11 @@
 #include "cjsondecoder.h"
 #include "cjsontools.h"
+#include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/float_vectors_holder.h"
+#include "core/payload/payloadiface.h"
+#include "core/type_consts.h"
 #include "sparse_validator.h"
 #include "tools/flagguard.h"
-#include "tools/serializer.h"
 
 namespace reindexer {
 
@@ -36,49 +38,25 @@ bool CJsonDecoder::decodeCJson(Filter filter, Recoder recoder, TagOptT) {
 		const auto indexNumber = field.IndexNumber();
 		if (filter.contains(indexNumber)) {
 			tagType = recoder.RegisterTagType(tagType, indexNumber);
+			const auto& fieldRef{pl_.Type().Field(indexNumber)};
 			if (tagType == TAG_NULL) {
-				wrSer_.PutCTag(ctag{TAG_NULL, tagName});
+				if (fieldRef.IsFloatVector() && (!fieldRef.IsArray() || tagName.IsEmpty())) {
+					wrSer_.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+					wrSer_.PutVarUint(0);
+				} else {
+					wrSer_.PutCTag(ctag{TAG_NULL, tagName});
+				}
 			} else if (recoder.Recode(rdSer_, pl_, tagName, wrSer_)) {
 				// No more actions needed after recoding
 			} else {
-				const auto& fieldRef{pl_.Type().Field(indexNumber)};
 				const KeyValueType fieldType{fieldRef.Type()};
 				if (tagType == TAG_ARRAY) {
 					const carraytag atag = rdSer_.GetCArrayTag();
 					const auto count = atag.Count();
 					const TagType atagType = atag.Type();
 					if (fieldRef.IsFloatVector()) {
-						ConstFloatVectorView vectView;
-						if (count != 0) {
-							if (atagType != TAG_DOUBLE && atagType != TAG_FLOAT && atagType != TAG_VARINT) {
-								throwUnexpectedArrayTypeForFloatVectorError(kCJSONFmt, fieldRef);
-							}
-							if (count != fieldRef.FloatVectorDimension().Value()) {
-								throwUnexpectedArraySizeForFloatVectorError(kCJSONFmt, fieldRef, count);
-							}
-							auto vect = FloatVector::CreateNotInitialized(fieldRef.FloatVectorDimension());
-							if (atagType == TAG_DOUBLE) {
-								for (size_t i = 0; i < count; ++i) {
-									vect.RawData()[i] = rdSer_.GetDouble();
-								}
-							} else if (atagType == TAG_FLOAT) {
-								for (size_t i = 0; i < count; ++i) {
-									vect.RawData()[i] = rdSer_.GetFloat();
-								}
-							} else if (atagType == TAG_VARINT) {
-								for (size_t i = 0; i < count; ++i) {
-									vect.RawData()[i] = rdSer_.GetVarint();
-								}
-							}
-							if (floatVectorsHolder_.Add(std::move(vect))) {
-								vectView = floatVectorsHolder_.Back();
-							}
-						}
-						objectScalarIndexes_.set(indexNumber);	// Indexed float vector is treated as scalar value
-						pl_.Set(indexNumber, Variant{vectView});
-						wrSer_.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
-						wrSer_.PutVarUint(count);
-					} else if (fieldRef.IsArray()) [[likely]] {
+						decodeFloatVectorField(fieldRef, count, atagType, indexNumber, tagName);
+					} else if (fieldRef.IsArray()) {
 						if (atagType == TAG_OBJECT) {
 							Serializer rdserCopy{rdSer_};
 							const auto [size, isNested] = analizeNestedArray(count, rdserCopy);
@@ -106,7 +84,7 @@ bool CJsonDecoder::decodeCJson(Filter filter, Recoder recoder, TagOptT) {
 							wrSer_.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
 							wrSer_.PutVarUint(count);
 						}
-					} else {
+					} else [[unlikely]] {
 						throwUnexpectedArrayError(fieldRef.Name(), fieldRef.Type(), kCJSONFmt);
 					}
 				} else {
@@ -134,6 +112,91 @@ bool CJsonDecoder::decodeCJson(Filter filter, Recoder recoder, TagOptT) {
 	}
 
 	return true;
+}
+
+ConstFloatVectorView CJsonDecoder::decodeFloatVector(const PayloadFieldType& fieldRef, unsigned count, TagType atagType) const {
+	if (count == 0) {
+		return {};
+	}
+	if (atagType != TAG_DOUBLE && atagType != TAG_FLOAT && atagType != TAG_VARINT) [[unlikely]] {
+		throwUnexpectedArrayTypeForFloatVectorError(kCJSONFmt, fieldRef);
+	}
+	if (count != fieldRef.FloatVectorDimension().Value()) [[unlikely]] {
+		throwUnexpectedArraySizeForFloatVectorError(kCJSONFmt, fieldRef, count);
+	}
+	auto vect = FloatVector::CreateNotInitialized(fieldRef.FloatVectorDimension());
+	auto* rawData = vect.RawData();
+	if (atagType == TAG_DOUBLE) {
+		for (size_t i = 0; i < count; ++i) {
+			rawData[i] = rdSer_.GetDouble();
+		}
+	} else if (atagType == TAG_FLOAT) {
+		for (size_t i = 0; i < count; ++i) {
+			rawData[i] = rdSer_.GetFloat();
+		}
+	} else if (atagType == TAG_VARINT) {
+		for (size_t i = 0; i < count; ++i) {
+			rawData[i] = rdSer_.GetVarint();
+		}
+	}
+	if (floatVectorsHolder_.Add(std::move(vect))) {
+		return floatVectorsHolder_.Back();
+	} else {
+		return {};
+	}
+}
+
+void CJsonDecoder::decodeFloatVectorField(const PayloadFieldType& fieldRef, unsigned count, TagType atagType, int indexNumber,
+										  TagName tagName) {
+	using namespace std::string_view_literals;
+	if (fieldRef.IsArray()) {
+		decodeFloatVectorArray(fieldRef, count, atagType, indexNumber, tagName);
+	} else {
+		const auto vectView = decodeFloatVector(fieldRef, count, atagType);
+		objectScalarIndexes_.set(indexNumber);	// Indexed float vector is treated as scalar value
+		pl_.Set(indexNumber, Variant{vectView});
+		wrSer_.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+		wrSer_.PutVarUint(count);
+	}
+}
+
+void CJsonDecoder::decodeFloatVectorArray(const PayloadFieldType& fieldRef, unsigned count, TagType atagType, int indexNumber,
+										  TagName tagName) {
+	using namespace std::string_view_literals;
+	assertrx_dbg(fieldRef.IsArray());
+	if (atagType == TAG_NULL) {
+		wrSer_.PutCTag(ctag{TAG_ARRAY, tagName});
+		wrSer_.PutCArrayTag(carraytag{count, TAG_OBJECT});
+		const auto pos = pl_.ResizeArray(indexNumber, count, Append_True);
+		for (unsigned i = 0; i < count; ++i) {
+			pl_.Set(indexNumber, pos + i, Variant{ConstFloatVectorView{}});
+			wrSer_.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), indexNumber});
+			wrSer_.PutVarUint(0);
+		}
+	} else if (atagType == TAG_OBJECT) {
+		wrSer_.PutCTag(ctag{TAG_ARRAY, tagName});
+		wrSer_.PutCArrayTag(carraytag{count, TAG_OBJECT});
+		for (unsigned i = 0; i < count; ++i) {
+			const auto tag = rdSer_.GetCTag();
+			const auto tagType = tag.Type();
+			if (tagType == TAG_NULL) {
+				pl_.Set(indexNumber, Variant{ConstFloatVectorView{}}, Append_True);
+				wrSer_.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), indexNumber});
+				wrSer_.PutVarUint(0);
+			} else if (tagType == TAG_ARRAY) {
+				assertrx_dbg(atagType == TAG_OBJECT);
+				const auto atag = rdSer_.GetCArrayTag();
+				decodeFloatVectorArray(fieldRef, atag.Count(), atag.Type(), indexNumber, TagName::Empty());
+			} else [[unlikely]] {
+				throwUnexpected(fieldRef.Name(), "float_vector"sv, "not-array"sv, kCJSONFmt);
+			}
+		}
+	} else {
+		const auto vectView = decodeFloatVector(fieldRef, count, atagType);
+		pl_.Set(indexNumber, Variant{vectView}, Append_True);
+		wrSer_.PutCTag(ctag{TAG_ARRAY, tagName, indexNumber});
+		wrSer_.PutVarUint(count);
+	}
 }
 
 size_t CJsonDecoder::decodeNestedArray(int indexNumber, size_t count, KeyValueType fieldType, size_t offset) const {
@@ -177,6 +240,7 @@ void CJsonDecoder::decodeCJson(Filter filter, Recoder recoder, TagType tagType, 
 		tagType = recoder.RegisterTagType(tagType, tagsPath_);
 		wrSer_.PutCTag(ctag{tagType, tagName});
 		if (tagType == TAG_OBJECT) {
+			validator.Object();
 			while (decodeCJson(filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamedTagOpt{}));
 		} else if (recoder.Recode(rdSer_, wrSer_)) {
 			// No more actions needed after recoding

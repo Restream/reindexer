@@ -95,7 +95,7 @@ void FtDSLQuery::closeGroup(wchar_t*& str, int groupTermCounter, int groupCounte
 			if (groupTermCounter > 1) {
 				fteIt->opts.distance = distance;
 			}
-			fteIt->opts.groupNum = groupCounter;
+			fteIt->opts.phraseNum = groupCounter;
 		}
 	}
 }
@@ -246,10 +246,8 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 		throw Error(errParams, "Fulltext query can not contain only 'NOT' terms (i.e. terms with minus)");
 	}
 
-	int cnt = 0;
 	for (auto& t : terms_) {
 		t.Opts().termLenBoost = float(t.pattern.length()) / maxPatternLen;
-		t.Opts().qpos = cnt++;
 	}
 }
 

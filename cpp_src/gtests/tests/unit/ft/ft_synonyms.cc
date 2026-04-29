@@ -20,7 +20,7 @@ TEST_P(FTSynonymsApi, CompositeRankWithSynonyms) {
 }
 
 TEST_P(FTSynonymsApi, SelectWithMultSynonymArea) {
-	reindexer::FtFastConfig config = GetDefaultConfig();
+	reindexer::FTConfig config = GetDefaultConfig();
 	// hyponyms as synonyms
 	config.synonyms = {{{"digit", "one", "two", "three", "big number"}, {"digit", "one", "two", "big number"}},
 					   {{"animal", "cat", "dog", "lion"}, {"animal", "cat", "dog", "lion"}}};
@@ -29,9 +29,9 @@ TEST_P(FTSynonymsApi, SelectWithMultSynonymArea) {
 
 	Add("digit cat empty one animal"sv);
 
-	CheckResults(R"s("big number animal")s", {}, false, true);	// Result is incorrect. Has to be fixed in issue #1393
-	CheckResults(R"s("digit animal")s", {{"!digit cat! empty !one animal!", ""}}, false, true);
-	CheckResults(R"s("two lion")s", {{"!digit cat! empty !one animal!", ""}}, false, true);
+	CheckResults("big number animal", {{"!digit cat! empty !one animal!", ""}}, false, true);
+	CheckResults("digit animal", {{"!digit cat! empty !one animal!", ""}}, false, true);
+	CheckResults("two lion", {{"!digit cat! empty !one animal!", ""}}, false, true);
 }
 
 TEST_P(FTSynonymsApi, SelectSynonyms) {
@@ -67,7 +67,7 @@ TEST_P(FTSynonymsApi, SelectMultiwordSynonyms) {
 	Add("nm1"sv, "генеральная ассамблея организации объединенных наций"sv, "test"sv);
 	Add("nm1"sv, "ассамблея генеральная наций объединенных организации"sv, "test"sv);
 	Add("nm1"sv, "генеральная прегенеральная ассамблея"sv, "организации объединенных свободных наций"sv);
-	Add("nm1"sv, "генеральная прегенеральная "sv, "организации объединенных свободных наций"sv);
+	Add("nm1"sv, "генеральная прегенеральная"sv, "организации объединенных свободных наций"sv);
 	Add("nm1"sv, "UN"sv, "UN"sv);
 
 	Add("nm1"sv, "word"sv, "test"sv);
@@ -87,25 +87,25 @@ TEST_P(FTSynonymsApi, SelectMultiwordSynonyms) {
 	CheckAllPermutations("", {"whole", "world"}, "",
 						 {{"!whole world!", "test"},
 						  {"!world whole!", "test"},
-						  {"!whole!", "!world!"},
-						  {"!world!", "test"},
-						  {"!whole!", "test"},
 						  {"!целый мир!", "test"},
-						  {"!целый!", "!мир!"},
+						  {"!UN!", "!UN!"},
 						  {"!планета!", "test"},
 						  {"!генеральная ассамблея организации объединенных наций!", "test"},
 						  {"!ассамблея генеральная наций объединенных организации!", "test"},
+						  {"!whole!", "!world!"},
+						  {"!целый!", "!мир!"},
 						  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
-						  {"!UN!", "!UN!"}});
+						  {"!world!", "test"},
+						  {"!whole!", "test"}});
 
 	CheckAllPermutations("", {"UN"}, "",
-						 {{"!целый мир!", "test"},
-						  {"!целый!", "!мир!"},
+						 {{"!UN!", "!UN!"},
 						  {"!планета!", "test"},
 						  {"!генеральная ассамблея организации объединенных наций!", "test"},
+						  {"!целый мир!", "test"},
 						  {"!ассамблея генеральная наций объединенных организации!", "test"},
-						  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
-						  {"!UN!", "!UN!"}});
+						  {"!целый!", "!мир!"},
+						  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"}});
 
 	CheckAllPermutations("", {"United", "+Nations"}, "",
 						 {{"!целый мир!", "test"},
@@ -121,14 +121,14 @@ TEST_P(FTSynonymsApi, SelectMultiwordSynonyms) {
 	CheckAllPermutations("", {"ООН"}, "", {});
 
 	CheckAllPermutations("", {"word"}, "",
-						 {{"!word!", "test"},
+						 {{"!одно слово!", "!word!"},
+						  {"!word!", "!одно!"},
+						  {"!word!", "!слово!"},
+						  {"!word!", "test"},
 						  {"test", "!word!"},
-						  {"!word!", "слово"},
-						  {"!word!", "одно"},
-						  {"!слово! всего лишь !одно!", "test"},
-						  {"!слово!", "!одно!"},
 						  {"!слово одно!", "test"},
-						  {"!одно слово!", "!word!"}});
+						  {"!слово!", "!одно!"},
+						  {"!слово! всего лишь !одно!", "test"}});
 }
 
 // issue #715
@@ -333,16 +333,14 @@ TEST_P(FTSynonymsApi, SelectWithFieldsListWithSynonyms) {
 	CheckAllPermutations("@ft2 ", {"word"}, "", {{"", "!одно слово!"}});
 }
 
-INSTANTIATE_TEST_SUITE_P(, FTSynonymsApi,
-						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),
-						 [](const auto& info) {
-							 switch (info.param) {
-								 case reindexer::FtFastConfig::Optimization::Memory:
-									 return "OptimizationByMemory";
-								 case reindexer::FtFastConfig::Optimization::CPU:
-									 return "OptimizationByCPU";
-								 default:
-									 assert(false);
-									 std::abort();
-							 }
-						 });
+INSTANTIATE_TEST_SUITE_P(, FTSynonymsApi, ::testing::Values(kRxFtTestTypes), [](const auto& info) {
+	switch (info.param) {
+		case reindexer::FTConfig::Optimization::Memory:
+			return "OptimizationByMemory";
+		case reindexer::FTConfig::Optimization::CPU:
+			return "OptimizationByCPU";
+		default:
+			assert(false);
+			std::abort();
+	}
+});

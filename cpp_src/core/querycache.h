@@ -3,7 +3,7 @@
 #include "core/lrucache.h"
 #include "core/query/query.h"
 #include "estl/h_vector.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "vendor/murmurhash/MurmurHash3.h"
 
 namespace reindexer {
@@ -30,8 +30,8 @@ public:
 	QueryCacheKey(const QueryCacheKey& other) = default;
 	QueryCacheKey& operator=(QueryCacheKey&& other) = default;
 	QueryCacheKey& operator=(const QueryCacheKey& other) = delete;
-	template <typename JoinedSelectorsT>
-	QueryCacheKey(const Query& q, uint8_t mode, const JoinedSelectorsT* jnss) {
+	template <typename JoinItemsProcessorsT>
+	QueryCacheKey(const Query& q, uint8_t mode, const JoinItemsProcessorsT* jnss) {
 		WrSerializer ser;
 		q.Serialize(ser, mode);
 		if (jnss) {

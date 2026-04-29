@@ -105,7 +105,7 @@ struct [[nodiscard]] ValuesHolder<key_string, CondAllSet> {
 template <>
 struct [[nodiscard]] ValuesHolder<PayloadValue, CondAllSet> {
 	struct [[nodiscard]] Type {
-		unordered_payload_map<int> values_;
+		unordered_payload_map_fast<int> values_;
 		fast_hash_set<int> allSetValues_;
 	};
 };
@@ -1343,10 +1343,22 @@ public:
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 
 private:
-	using CompositeTypes = h_vector<KeyValueType, 4>;
-
 	ComparatorIndexedDistinctPayload distinct_;
-	CompositeTypes compositeTypes_;
+};
+
+class [[nodiscard]] ComparatorIndexedCompositeAnyDistinct {
+public:
+	ComparatorIndexedCompositeAnyDistinct(const FieldsSet&, const PayloadType&);
+	RX_ALWAYS_INLINE bool Compare(const PayloadValue& pv, IdType /*rowId*/) { return distinct_.Compare(pv); }
+
+	void ExcludeDistinctValues(const PayloadValue& item, IdType) { distinct_.ExcludeValues(item); }
+
+	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
+	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
+	std::string ConditionStr() const;
+
+private:
+	ComparatorIndexedDistinctPayload distinct_;
 };
 
 class [[nodiscard]] ComparatorIndexedOffsetArrayDWithin {
@@ -1764,7 +1776,7 @@ struct [[nodiscard]] ComparatorIndexedVariantHelper<key_string> {
 
 template <>
 struct [[nodiscard]] ComparatorIndexedVariantHelper<PayloadValue> {
-	using type = std::variant<ComparatorIndexedComposite, ComparatorIndexedCompositeDistinct>;
+	using type = std::variant<ComparatorIndexedComposite, ComparatorIndexedCompositeDistinct, ComparatorIndexedCompositeAnyDistinct>;
 };
 
 template <>
@@ -1776,7 +1788,7 @@ struct [[nodiscard]] ComparatorIndexedVariantHelper<Point> {
 
 template <>
 struct [[nodiscard]] ComparatorIndexedVariantHelper<FloatVector> {
-	using type = ComparatorIndexedFloatVectorAny;
+	using type = std::variant<ComparatorIndexedOffsetArrayAny, ComparatorIndexedFloatVectorAny>;
 };
 
 template <typename T>
@@ -1982,7 +1994,7 @@ RX_ALWAYS_INLINE bool ComparatorIndexed<key_string>::Compare(const PayloadValue&
 
 template <>
 RX_ALWAYS_INLINE bool ComparatorIndexed<PayloadValue>::Compare(const PayloadValue& item, IdType rowId) {
-	static_assert(std::variant_size_v<comparators::ComparatorIndexedVariant<PayloadValue>> == 2);
+	static_assert(std::variant_size_v<comparators::ComparatorIndexedVariant<PayloadValue>> == 3);
 	++totalCalls_;
 	bool res{false};
 	switch (impl_.index()) {
@@ -1992,6 +2004,10 @@ RX_ALWAYS_INLINE bool ComparatorIndexed<PayloadValue>::Compare(const PayloadValu
 			return res;
 		case 1:
 			res = std::get_if<1>(&impl_)->Compare(item, rowId);
+			matchedCount_ += res;
+			return res;
+		case 2:
+			res = std::get_if<2>(&impl_)->Compare(item, rowId);
 			matchedCount_ += res;
 			return res;
 		default:
@@ -2059,22 +2075,38 @@ RX_ALWAYS_INLINE bool ComparatorIndexed<Point>::Compare(const PayloadValue& item
 
 template <>
 RX_ALWAYS_INLINE bool ComparatorIndexed<FloatVector>::Compare(const PayloadValue& item, IdType rowId) {
+	static_assert(std::variant_size_v<comparators::ComparatorIndexedVariant<FloatVector>> == 2);
 	++totalCalls_;
-	const bool res = impl_.Compare(item, rowId);
+	bool res;
+	switch (impl_.index()) {
+		case 0:
+			res = std::get_if<0>(&impl_)->Compare(item, rowId);
+			break;
+		case 1:
+			res = std::get_if<1>(&impl_)->Compare(item, rowId);
+			break;
+		default:
+			abort();
+	}
 	matchedCount_ += res;
 	return res;
 }
 template <>
 RX_ALWAYS_INLINE void ComparatorIndexed<FloatVector>::ExcludeDistinctValues(const PayloadValue& item, IdType rowId) {
-	impl_.ExcludeDistinctValues(item, rowId);
+	std::visit([&item, rowId](auto& impl) { impl.ExcludeDistinctValues(item, rowId); }, impl_);
 }
 template <>
 RX_ALWAYS_INLINE IsDistinct ComparatorIndexed<FloatVector>::IsDistinct() const {
-	return impl_.IsDistinct();
+	return std::visit([](const auto& impl) { return impl.IsDistinct(); }, impl_);
 }
 template <>
 RX_ALWAYS_INLINE double ComparatorIndexed<FloatVector>::costMultiplier() const noexcept {
-	return impl_.CostMultiplier();
+	try {
+		return std::visit([](const auto& impl) { return impl.CostMultiplier(); }, impl_);
+	} catch (...) {
+		assertrx_dbg(false);
+		return comparators::kNonIdxFieldComparatorCostMultiplier;
+	}
 }
 
 extern template std::string ComparatorIndexed<int>::ConditionStr() const;

@@ -1,4 +1,4 @@
-// +build !pprof_jemalloc
+//go:build !pprof_jemalloc
 
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>

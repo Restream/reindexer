@@ -27,8 +27,11 @@ public:
 	bool HasVectors() const noexcept { return allVectorFields_ || !vectorFields_.empty(); }
 
 	bool ContainsVector(int idx) const noexcept { return allVectorFields_ || vectorFields_.contains(idx); }
-
 	bool ContainsVector(const TagsPath& path) const { return allVectorFields_ || vectorFields_.contains(path); }
+	template <unsigned hvSize>
+	bool ContainsVector(const IndexedTagsPathImpl<hvSize>& tagsPath) const noexcept {
+		return allVectorFields_ || (!vectorFields_.empty() && vectorFields_.match(tagsPath));
+	}
 
 	const FieldsSet& RegularFields() const& noexcept {
 		assertrx_dbg(!allRegularFields_);
@@ -47,6 +50,13 @@ public:
 	static FieldsFilter FromPath(P&& path) {
 		return std::forward<P>(path);
 	}
+	template <typename P>
+	static FieldsFilter FromVectorPath(P&& path) {
+		FieldsFilter result;
+		result.allRegularFields_ = false;
+		result.vectorFields_ = FieldsSet{path};
+		return result;
+	}
 
 	auto RegularFields() const&& = delete;
 	auto TryRegularFields() const&& = delete;
@@ -58,8 +68,9 @@ public:
 private:
 	FieldsFilter(bool allReg, bool allVec) noexcept : allRegularFields_{allReg}, allVectorFields_{allVec} {}
 
-	template <typename P>
-	FieldsFilter(P&& path)	// NOLINT(bugprone-forwarding-reference-overload)
+	template <typename P,
+          typename = std::enable_if_t<!std::is_same_v<std::decay_t<P>, FieldsFilter>>>
+	FieldsFilter(P&& path)
 		: regularFields_{{std::forward<P>(path)}}, allRegularFields_{false} {}
 
 	template <concepts::ConvertibleToString Str>

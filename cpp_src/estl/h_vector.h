@@ -4,7 +4,7 @@
 #include <iostream>
 #include <limits>
 
-#ifdef REINDEX_DEBUG_CONTAINERS
+#if REINDEX_DEBUG_CONTAINERS
 #include <vector>
 #else  // !REINDEX_DEBUG_CONTAINERS
 #include <cstdint>
@@ -19,7 +19,7 @@
 #endif	// !REINDEX_DEBUG_CONTAINERS
 
 namespace reindexer {
-#ifdef REINDEX_DEBUG_CONTAINERS
+#if REINDEX_DEBUG_CONTAINERS
 
 template <typename T, int holdSize = 4, unsigned objSize = sizeof(T)>
 class [[nodiscard]] h_vector : public std::vector<T> {

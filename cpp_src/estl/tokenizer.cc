@@ -136,8 +136,10 @@ Token Tokenizer::NextToken(Flags flgs) {
 	return res;
 }
 
-size_t Tokenizer::GetPrevPos() const noexcept {
-	assertrx_throw(pos_ > 0);
+size_t Tokenizer::GetPrevPos() const {
+	if (pos_ == 0) [[unlikely]] {
+		throw Error(errLogic, "Tokenizer pos is 0");
+	}
 
 	// undo skip space
 	auto pos = pos_ - 1;

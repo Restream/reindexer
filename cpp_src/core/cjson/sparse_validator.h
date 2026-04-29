@@ -13,6 +13,7 @@ struct [[nodiscard]] NoValidation {
 	NoValidation& Elem() & noexcept { return *this; }
 	std::string_view Name() const noexcept { return {}; }
 	KeyValueType Type() const noexcept { return KeyValueType::Undefined{}; }
+	void Object() const noexcept {}
 	template <typename T>
 	void operator()(const T&) const noexcept {}
 };
@@ -82,6 +83,7 @@ public:
 				throwUnexpected(Name(), type_, v.Type(), parserName_);
 			});
 	}
+	void Object() const { throwUnexpectedObjectInIndex(Name(), parserName_); }
 
 	KeyValueType Type() const noexcept { return type_; }
 	std::string_view Name() const& { return tagsMatcher_.SparseName(sparseNumber_); }
@@ -110,6 +112,7 @@ public:
 
 	using SparseValidator::Type;
 	using SparseValidator::Name;
+	using SparseValidator::Object;
 	using SparseValidator::operator();
 
 	~SparseArrayValidator() noexcept(false) {

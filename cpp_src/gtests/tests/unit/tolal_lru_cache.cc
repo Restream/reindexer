@@ -8,25 +8,22 @@
 #include "debug/allocdebug.h"
 #include "gtests/tests/gtest_cout.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
-#include "tools/serializer.h"
 
 using reindexer::Query;
-using reindexer::WrSerializer;
-using reindexer::Serializer;
 using reindexer::QueryCountCache;
 using reindexer::QueryCacheKey;
 using reindexer::QueryCountCacheVal;
 using reindexer::EqQueryCacheKey;
 using reindexer::kCountCachedKeyMode;
 
-struct [[nodiscard]] CacheJoinedSelectorMock {
+struct [[nodiscard]] CacheJoinItemsProcessorMock {
 	std::string_view RightNsName() const noexcept { return rightNsName; }
 	int64_t LastUpdateTime() const noexcept { return lastUpdateTime; }
 
 	std::string rightNsName;
 	int64_t lastUpdateTime;
 };
-using CacheJoinedSelectorsMock = std::vector<CacheJoinedSelectorMock>;
+using CacheItemsProcessorsMock = std::vector<CacheJoinItemsProcessorMock>;
 
 TEST(LruCache, SimpleTest) {
 	constexpr int kNsCount = 10;
@@ -35,10 +32,12 @@ TEST(LruCache, SimpleTest) {
 	constexpr int kIterCount = 3000;
 
 	struct [[nodiscard]] QueryCacheData {
-		const CacheJoinedSelectorsMock* JoinedSelectorsPtr() const noexcept { return joinedSelectors.size() ? &joinedSelectors : nullptr; }
+		const CacheItemsProcessorsMock* ItemsProcessorsPtr() const noexcept {
+			return joinItemsProcessors.size() ? &joinItemsProcessors : nullptr;
+		}
 
 		Query q;
-		CacheJoinedSelectorsMock joinedSelectors = {};
+		CacheItemsProcessorsMock joinItemsProcessors = {};
 		bool cached = false;
 		int64_t expectedTotal = -1;
 	};
@@ -54,7 +53,7 @@ TEST(LruCache, SimpleTest) {
 		qs.emplace_back(QueryCacheData{
 			.q = Query(fmt::format("namespace_{}", i))
 					 .InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName)),
-			.joinedSelectors = {CacheJoinedSelectorMock{kJoinedNsName, 123}}});
+			.joinItemsProcessors = {CacheJoinItemsProcessorMock{kJoinedNsName, 123}}});
 	}
 	for (int j = 0; j < kDoubleJoinNsCount; ++j, ++i) {
 		const std::string kJoinedNsName1 = fmt::format("second_joined_namespace_{}", j);
@@ -67,15 +66,15 @@ TEST(LruCache, SimpleTest) {
 					Query(fmt::format("namespace_{}", i))
 						.InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName1))
 						.OrInnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName2)),
-				.joinedSelectors = {CacheJoinedSelectorMock{kJoinedNsName1, kUpdateTime1},
-									CacheJoinedSelectorMock{kJoinedNsName2, kUpdateTime2}}});
+				.joinItemsProcessors = {CacheJoinItemsProcessorMock{kJoinedNsName1, kUpdateTime1},
+										CacheJoinItemsProcessorMock{kJoinedNsName2, kUpdateTime2}}});
 		} else {
 			qs.emplace_back(QueryCacheData{
 				.q = Query(fmt::format("namespace_{}", i))
 						 .InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName1))
 						 .InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName2)),
-				.joinedSelectors = {CacheJoinedSelectorMock{kJoinedNsName1, kUpdateTime1},
-									CacheJoinedSelectorMock{kJoinedNsName2, kUpdateTime2}}});
+				.joinItemsProcessors = {CacheJoinItemsProcessorMock{kJoinedNsName1, kUpdateTime1},
+										CacheJoinItemsProcessorMock{kJoinedNsName2, kUpdateTime2}}});
 		}
 	}
 
@@ -85,7 +84,7 @@ TEST(LruCache, SimpleTest) {
 	for (i = 0; i < kIterCount; i++) {
 		auto idx = rand() % qs.size();
 		auto& qce = qs.at(idx);
-		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.JoinedSelectorsPtr()};
+		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessorsPtr()};
 		auto cached = cache.Get(ckey);
 		bool exist = qce.cached;
 
@@ -102,13 +101,13 @@ TEST(LruCache, SimpleTest) {
 	PRINTF("checking query update time change...\n");
 	auto& qce = qs.back();
 	if (!qce.cached) {
-		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.JoinedSelectorsPtr()};
+		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessorsPtr()};
 		auto cached = cache.Get(ckey);
 		ASSERT_FALSE(cached.valid) << "query missing in query cache";
 		cache.Put(ckey, QueryCountCacheVal{static_cast<size_t>(rand() % 10000)});
 	}
-	qce.joinedSelectors.back().lastUpdateTime += 100;
-	QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.JoinedSelectorsPtr()};
+	qce.joinItemsProcessors.back().lastUpdateTime += 100;
+	QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessorsPtr()};
 	auto cached = cache.Get(ckey);
 	ASSERT_FALSE(cached.valid) << "update time change did not affected the key";
 }
@@ -146,12 +145,12 @@ TEST(LruCache, StressTest) {
 			for (auto i = 0; i < iterCount; i++) {
 				auto idx = rand() % qs.size();
 				const auto& qce = qs.at(idx);
-				QueryCacheKey ckey{qce, kCountCachedKeyMode, static_cast<const CacheJoinedSelectorsMock*>(nullptr)};
+				QueryCacheKey ckey{qce, kCountCachedKeyMode, static_cast<const CacheItemsProcessorsMock*>(nullptr)};
 				auto cached = cache.Get(ckey);
 
 				if (cached.valid) {
 					ASSERT_TRUE(EqQueryCacheKey()(
-						QueryCacheKey{qs[idx], kCountCachedKeyMode, static_cast<const CacheJoinedSelectorsMock*>(nullptr)}, ckey))
+						QueryCacheKey{qs[idx], kCountCachedKeyMode, static_cast<const CacheItemsProcessorsMock*>(nullptr)}, ckey))
 						<< "queries are not EQUAL!\n";
 				} else {
 					size_t total = static_cast<size_t>(rand() % 1000);

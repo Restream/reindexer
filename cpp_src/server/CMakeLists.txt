@@ -4,14 +4,14 @@ cmake_minimum_required(VERSION 3.18)
 project(reindexer_server_library)
 
 set (SWAGGER_VERSION "5.32.2")
-set (GH_FACE_VERSION "5.12.0")
+set (GH_FACE_VERSION "5.13.1")
 set (GH_FACE_TAG "v${GH_FACE_VERSION}")
 set (TARGET reindexer_server_library)
 set (SERVER_LIB_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE)
 file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
-    "file(READ ${PROJECT_BINARY_DIR}/swagger/index.html indexhtml)
-    STRING(REPLACE \"https://petstore.swagger.io/v2/swagger.json\" \"swagger.yml\" indexhtml \"\${indexhtml}\")
-    file(WRITE ${PROJECT_BINARY_DIR}/swagger/index.html \"\${indexhtml}\")"
+  "file(READ ${PROJECT_BINARY_DIR}/swagger/swagger-initializer.js initializer)
+  STRING(REPLACE \"https://petstore.swagger.io/v2/swagger.json\" \"swagger.yml\" initializer \"\${initializer}\")
+  file(WRITE ${PROJECT_BINARY_DIR}/swagger/swagger-initializer.js \"\${initializer}\")"
 )
 set(SWAGGER_UI_DIST_DIR
     ""
@@ -124,7 +124,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
        message(FATAL_ERROR \"Local face dist was not found at '${FACE_DIST_DIR}'\")
      else()
        file(
-         DOWNLOAD \"https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${GH_FACE_TAG}\"
+         DOWNLOAD \"https://codeload.github.com/Restream/reindexer-face-dist/tar.gz/${GH_FACE_TAG}\"
                   \"${PROJECT_BINARY_DIR}/face.tar.gz\"
        )
        execute_process(

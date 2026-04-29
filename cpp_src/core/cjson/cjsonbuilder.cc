@@ -39,7 +39,7 @@ CJsonBuilder CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, ObjType type
 template CJsonBuilder CJsonBuilder::Array(TagName, ObjType);
 template CJsonBuilder CJsonBuilder::Array(TagIndex, ObjType);
 
-void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid> data, int /*offset*/) {
+void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid> data, int /*offset*/, TreatAsSingleElement) {
 	putTag(tag, TAG_ARRAY);
 	ser_.PutCArrayTag(carraytag(data.size(), TAG_UUID));
 	for (auto d : data) {
@@ -47,8 +47,8 @@ void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid
 	}
 	++count_;
 }
-template void CJsonBuilder::Array(TagName, std::span<const Uuid>, int);
-template void CJsonBuilder::Array(TagIndex, std::span<const Uuid>, int);
+template void CJsonBuilder::Array(TagName, std::span<const Uuid>, int, TreatAsSingleElement);
+template void CJsonBuilder::Array(TagIndex, std::span<const Uuid>, int, TreatAsSingleElement);
 
 void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, bool arg, int /*offset*/) {
 	if (type_ == ObjType::TypeArray) {
@@ -152,6 +152,7 @@ template void CJsonBuilder::Ref(TagIndex, const KeyValueType&, int);
 void CJsonBuilder::ArrayRef(concepts::TagNameOrIndex auto tag, int field, int count) {
 	putTag(tag, TAG_ARRAY, field);
 	ser_.PutVarUint(count);
+	++count_;
 }
 template void CJsonBuilder::ArrayRef(TagName, int, int);
 template void CJsonBuilder::ArrayRef(TagIndex, int, int);
@@ -169,9 +170,7 @@ void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, const Variant& kv, int
 			}
 		},
 		[&](KeyValueType::Uuid) { Put(tag, Uuid{kv}, offset); },
-		[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) noexcept {
-			assertrx_throw(false);
-		});
+		[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) { assertrx_throw(false); });
 }
 template void CJsonBuilder::Put(TagName, const Variant&, int);
 template void CJsonBuilder::Put(TagIndex, const Variant&, int);

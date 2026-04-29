@@ -1,7 +1,6 @@
 #include "index.h"
 #include "indexordered.h"
 #include "indextext/fastindextext.h"
-#include "indextext/fuzzyindextext.h"
 #include "rtree/indexrtree.h"
 #include "tools/logger.h"
 #include "ttlindex.h"
@@ -95,9 +94,6 @@ std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType&& payloadTyp
 		case IndexFastFT:
 		case IndexCompositeFastFT:
 			return FastIndexText_New(idef, std::move(payloadType), std::move(fields), cacheCfg);
-		case IndexFuzzyFT:
-		case IndexCompositeFuzzyFT:
-			return FuzzyIndexText_New(idef, std::move(payloadType), std::move(fields), cacheCfg);
 		case IndexTtl:
 			return TtlIndex_New(idef, std::move(payloadType), std::move(fields), cacheCfg);
 		case ::IndexRTree:

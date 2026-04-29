@@ -14,7 +14,9 @@ public:
 		: kKnn_{kKnn}, knnDefault_{knnDefault}, kFt_{kFt}, ftDefault_{ftDefault}, c_{c} {}
 
 	RankT Calculate(double rankKnn, RankT rankFt) const noexcept { return RankT(kKnn_ * rankKnn + kFt_ * rankFt.Value() + c_); }
+	RankT Calculate(RankT rankKnn, RankT rankFt) const noexcept { return Calculate(rankKnn.Value(), rankFt); }
 	RankT CalculateJustKnn(double rankKnn) const noexcept { return RankT(kKnn_ * rankKnn + kFt_ * ftDefault_ + c_); }
+	RankT CalculateJustKnn(RankT rankKnn) const noexcept { return CalculateJustKnn(rankKnn.Value()); }
 	RankT CalculateJustFt(RankT rankFt) const noexcept { return RankT(kKnn_ * knnDefault_ + kFt_ * rankFt.Value() + c_); }
 
 private:

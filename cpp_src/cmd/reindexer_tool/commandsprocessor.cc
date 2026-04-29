@@ -1118,7 +1118,7 @@ void CommandsProcessor<DBInterface>::commandSelectSQL(std::string_view command) 
 					for (unsigned int i = 0; i < nRows; i++) {
 						comma = false;
 						for (unsigned j = 0; j < nColumn; j++) {
-							output_() << (comma ? ", " : "") << agg.template As<std::string>(i, j);
+							output_() << (comma ? ", " : "") << agg.AsSingleString(i, j);
 							comma = true;
 						}
 						output_() << std::endl;

@@ -17,6 +17,8 @@ class AsyncStorage;
 class PayloadType;
 class NamespaceImpl;
 class FloatVectorIndex;
+class Serializer;
+class WrSerializer;
 
 namespace ann_storage_cache {
 

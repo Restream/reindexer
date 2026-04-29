@@ -50,7 +50,6 @@ struct [[nodiscard]] FtCtxData : public intrusive_atomic_rc_base {
 	typedef intrusive_ptr<FtCtxData> Ptr;
 	RanksHolder::Ptr ranks;
 	std::optional<RHashMap<IdType, size_t>> holders;
-	bool isWordPositions = false;
 	std::string extraWordSymbols;
 	FtCtxType type;
 	intrusive_ptr<const ISplitter> splitter;
@@ -85,7 +84,6 @@ public:
 	RanksHolder::Ptr RanksPtr() const noexcept { return data_->ranks; }
 
 	void SetSplitter(intrusive_ptr<const ISplitter> s) noexcept { data_->splitter = std::move(s); }
-	void SetWordPosition(bool v) noexcept { data_->isWordPositions = v; }
 
 	const FtCtxData::Ptr& GetData() const& noexcept { return data_; }
 	auto GetData() && = delete;

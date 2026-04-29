@@ -70,8 +70,28 @@ struct JsonValue {
 	JsonValue(JsonTag t = JsonTag::JSON_NULL, void* payload = nullptr) noexcept : ival(uintptr_t(payload)), tag(t) {}
 	JsonTag getTag() const noexcept { return tag; }
 	bool isNegative() const noexcept { return (getTag() == JsonTag::NUMBER && negative) || (getTag() == JsonTag::DOUBLE && fval < 0.0); }
+	bool isObject() const noexcept { return getTag() == JsonTag::OBJECT; }
+	bool isArray() const noexcept { return getTag() == JsonTag::ARRAY; }
+	bool isEmpty() const noexcept { return getTag() == JsonTag::EMPTY; }
+	bool isNull() const noexcept { return getTag() == JsonTag::JSON_NULL; }
 
-	int64_t toNumber() const {
+	bool isNumber() const noexcept {
+		switch (getTag()) {
+			case JsonTag::NUMBER:
+			case JsonTag::DOUBLE:
+				return true;
+			case JsonTag::JSON_NULL:
+			case JsonTag::JTRUE:
+			case JsonTag::JFALSE:
+			case JsonTag::ARRAY:
+			case JsonTag::OBJECT:
+			case JsonTag::STRING:
+			case JsonTag::EMPTY:
+				return false;
+		}
+		abort();
+	}
+	int64_t toNumber() const noexcept {
 		switch (getTag()) {
 			case JsonTag::NUMBER:
 				return ival;
@@ -86,9 +106,9 @@ struct JsonValue {
 			case JsonTag::EMPTY:
 				break;
 		}
-		throw_as_assert;
+		abort();
 	}
-	double toDouble() const {
+	double toDouble() const noexcept {
 		switch (getTag()) {
 			case JsonTag::NUMBER:
 				return ival;
@@ -103,7 +123,7 @@ struct JsonValue {
 			case JsonTag::EMPTY:
 				break;
 		}
-		throw_as_assert;
+		abort();
 	}
 	std::string_view toString() const noexcept {
 		assertrx(getTag() == JsonTag::STRING);
@@ -130,12 +150,11 @@ struct JsonNode {
 	JsonValue value;
 	JsonNode* next;
 	JsonString key;
-	static JsonNode Empty() { return JsonNode{{JsonTag::EMPTY}, nullptr, {}}; }
 
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type* = nullptr>
 	T As(T defval = T(), T minv = std::numeric_limits<T>::lowest(), T maxv = std::numeric_limits<T>::max()) const {
-		if (empty()) {
+		if (isEmpty()) {
 			return defval;
 		}
 		if (value.getTag() != JsonTag::DOUBLE && value.getTag() != JsonTag::NUMBER) {
@@ -158,7 +177,7 @@ struct JsonNode {
 												  !std::is_same<T, bool>::value>::type* = nullptr>
 	T As(reindexer::CheckUnsigned checkUnsigned, T defval = T(), T minv = std::numeric_limits<T>::lowest(),
 		 T maxv = std::numeric_limits<T>::max()) const {
-		if (empty()) {
+		if (isEmpty()) {
 			return defval;
 		}
 		if (value.getTag() != JsonTag::DOUBLE && value.getTag() != JsonTag::NUMBER) {
@@ -189,7 +208,7 @@ struct JsonNode {
 	template <typename T,
 			  typename std::enable_if<std::is_same<std::string, T>::value || std::is_same<std::string_view, T>::value>::type* = nullptr>
 	T As(T defval = T()) const {
-		if (empty()) {
+		if (isEmpty()) {
 			return defval;
 		}
 		if (value.getTag() != JsonTag::STRING) {
@@ -199,7 +218,7 @@ struct JsonNode {
 	}
 	template <typename T, typename std::enable_if<std::is_same<T, bool>::value>::type* = nullptr>
 	T As(T defval = T()) const {
-		if (empty()) {
+		if (isEmpty()) {
 			return defval;
 		}
 		switch (value.getTag()) {
@@ -221,9 +240,11 @@ struct JsonNode {
 
 	const JsonNode& operator[](std::string_view sv) const;
 	const JsonNode& findCaseInsensitive(std::string_view key) const;
-	bool empty() const noexcept { return value.getTag() == JsonTag::EMPTY; }
-	bool isObject() const noexcept { return value.getTag() == JsonTag::OBJECT; }
-	bool isArray() const noexcept { return value.getTag() == JsonTag::ARRAY; }
+	bool isEmpty() const noexcept { return value.isEmpty(); }
+	bool isObject() const noexcept { return value.isObject(); }
+	bool isArray() const noexcept { return value.isArray(); }
+	bool isNull() const noexcept { return value.isNull(); }
+	bool isNumber() const noexcept { return value.isNumber(); }
 	JsonNode* toNode() const;
 	static JsonNode EmptyNode() noexcept;
 };

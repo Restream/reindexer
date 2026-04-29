@@ -93,16 +93,20 @@ bool EqualPositionComparator::compareField(size_t field, const Variant& v) {
 
 void GroupingEqualPositionComparator::BindField(const std::string& name, const VariantArray& values, CondType cond,
 												const std::string& fieldStr) {
-	fieldPathPart_.emplace_back();
-	equal_position_helpers::ParseStrPath(fieldStr, fieldPathPart_.back());
-	for (auto& v : fieldPathPart_.back()) {
+	fieldStrs_.push_back(fieldStr);
+	fieldPaths_.emplace_back();
+	equal_position_helpers::ParseStrPath(fieldStrs_.back(), fieldPaths_.back());
+	TagsPath tagsPath;
+	for (auto& v : fieldPaths_.back()) {
 		if (v.type == PathPartType::Name) {
 			v.tag = tm_->name2tag(v.name);
 			if (v.tag.IsEmpty()) {
 				throw Error(Error(errParams, "Equal position tag is empty. Name {}", v.name));
 			}
+			tagsPath.emplace_back(v.tag);
 		}
 	}
+	filters_.emplace_back(FieldsFilter::FromPath(tagsPath));
 	Context& ctx = ctx_.emplace_back(CollateOpts{});
 
 	ctx.cond = cond;
@@ -121,26 +125,25 @@ bool GroupingEqualPositionComparator::Compare(const PayloadValue& pv, IdType /*r
 	++totalCalls_;
 	ConstPayload pl(payloadType_, pv);
 	size_t minLevel = INT_MAX;
-
-	h_vector<h_vector<VariantArray, 2>, 2> eqPosVals;
-	eqPosVals.resize(fieldPathPart_.size());
-	for (size_t i = 0; i < fieldPathPart_.size(); i++) {
-		BaseEncoder<FieldsExtractorGrouping> encoder(tm_, nullptr);
-		const std::span<FieldPathPart> p(fieldPathPart_[i]);
+	eqPosVals.Clear(fieldPaths_.size());
+	for (size_t i = 0; i < fieldPaths_.size(); i++) {
+		BaseEncoder<FieldsExtractorGrouping> encoder(tm_, &filters_[i]);
+		const std::span<FieldPathPart> p(fieldPaths_[i]);
 		unsigned int index;
-		FieldsExtractorGroupingState state{eqPosVals[i], index, p};
+		FieldEqPosCache ev{eqPosVals, i};
+		FieldsExtractorGroupingState state{ev, index, p};
 		FieldsExtractorGrouping extractor{state};
 		encoder.Encode(pl, extractor);
-		minLevel = std::min(minLevel, size_t(eqPosVals[i].size()));
+		minLevel = std::min(minLevel, eqPosVals.LevelSize(i));
 	}
 
 	bool res = false;
 	for (size_t level = 0; level < minLevel; level++) {
 		unsigned cmpFieldCounter = 0;
-		for (size_t f = 0; f < eqPosVals.size(); f++) {
+		for (size_t f = 0; f < fieldPaths_.size(); f++) {
 			bool cmpVal = false;
-			for (size_t v = 0; v < eqPosVals[f][level].size(); v++) {
-				if (compareField(f, eqPosVals[f][level][v])) {
+			for (size_t v = 0; v < eqPosVals.ValuesSize(f, level); v++) {
+				if (compareField(f, eqPosVals.Value(f, level, v))) {
 					cmpVal = true;
 					break;
 				}
@@ -151,7 +154,7 @@ bool GroupingEqualPositionComparator::Compare(const PayloadValue& pv, IdType /*r
 				break;
 			}
 		}
-		if (cmpFieldCounter == eqPosVals.size()) {
+		if (cmpFieldCounter == fieldPaths_.size()) {
 			res = true;
 			break;
 		}
@@ -176,15 +179,12 @@ bool GroupingEqualPositionComparator::compareField(size_t field, const Variant& 
 
 namespace equal_position_helpers {
 
-void checkIncorrectIndex() {}
-
 static FieldPathPart parsePathPart(std::string_view str, size_t& index) {
-	auto checkIncorrectIndex =
-		[&index, str]() {
-			if (index >= str.size()) {
-				throw Error(errParams, "Equal position path parse error. Incorrect path");
-			}
-		};
+	auto checkIncorrectIndex = [&index, str]() {
+		if (index >= str.size()) {
+			throw Error(errParams, "Equal position path parse error. Incorrect path");
+		}
+	};
 
 	FieldPathPart p;
 	size_t begin = index;
@@ -243,5 +243,14 @@ void ParseStrPath(std::string_view str, FieldPath& path) {
 }
 
 }  // namespace equal_position_helpers
+
+void FieldEqPosCacheImpl::AddValue(Variant&& v, size_t fieldIndex, size_t index) {
+	if (fieldIndex >= vals_.size()) [[unlikely]] {
+		vals_.resize(fieldIndex + 1);
+	}
+
+	Resize(fieldIndex , index+1);
+	cache_[vals_[fieldIndex][index]].emplace_back(std::move(v));
+}
 
 }  // namespace reindexer

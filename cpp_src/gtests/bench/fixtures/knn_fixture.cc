@@ -1,7 +1,7 @@
 #include "knn_fixture.h"
 #include <thread>
 #include "allocs_tracker.h"
-#include "core/ft/config/ftfastconfig.h"
+#include "core/ft/config/ftconfig.h"
 #include "gtests/tools.h"
 #include "yaml-cpp/yaml.h"
 
@@ -25,7 +25,7 @@ static constexpr size_t kWordsInFtIndex = 1'000;
 static constexpr size_t kDimention = 32;
 static constexpr size_t kNsSize = 10'000;
 #else	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
-static constexpr size_t kDimention = 256;
+static constexpr size_t kDimention = 32;
 static constexpr size_t kNsSize = 100'000;
 #endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
 #endif	// REINDEX_WITH_TSAN
@@ -142,7 +142,7 @@ KnnBench<indexType, metric>::KnnBench(Reindexer* db, std::string_view name, With
 		}
 	}
 	IndexOpts ftIndexOpts;
-	ftIndexOpts.SetConfig(IndexFastFT, FtFastConfig{1}.GetJSON({}));
+	ftIndexOpts.SetConfig(IndexFastFT, FTConfig{1}.GetJSON({}));
 	nsdef_.AddIndex("ft", "text", "string", ftIndexOpts);
 }
 
@@ -439,6 +439,8 @@ void KnnBench<indexType, metric>::OrHybridLinear(State& state) {
 	benchQuery(q, state, itemsCounter);
 }
 
+#if !defined(RX_WITH_STDLIB_DEBUG) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+
 static bool GetQuantizationStatus(Reindexer* db, std::string_view nsName, std::string_view indexName) {
 	QueryResults qr;
 	auto err = db->Select(reindexer::Query("#memstats").Where("name", CondEq, nsName), qr);
@@ -484,6 +486,7 @@ void KnnBench<indexType, metric>::Sleep(State& state) {
 		WaitQuantization(db_, nsdef_.name, "vec");
 	}
 }
+#endif	// !defined(RX_WITH_STDLIB_DEBUG) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 
 template <IndexType indexType, VectorMetric metric>
 void KnnBench<indexType, metric>::RegisterAllCases() {

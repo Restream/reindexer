@@ -1,5 +1,4 @@
 #include "args.h"
-#include "tools/serializer.h"
 
 namespace reindexer {
 namespace net {

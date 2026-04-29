@@ -47,17 +47,14 @@ public:
 	uint64_t Hash() const noexcept {
 		static constexpr std::hash<FloatVectorDimension::value_type> hashDim;
 		static constexpr std::hash<UnderlingT> hashData;
-		if (IsStripped()) {
-			return hashDim(Dimension().Value());
-		} else {
-			auto res = hashDim(Dimension().Value());
-			const auto data{Span()};
-			for (size_t i = 0; i < data.size(); ++i) {
-				res = (res << 1) | (res >> 63);
-				res ^= hashData(data[i]);
-			}
-			return res;
+		assertrx(!IsStripped());
+		auto res = hashDim(Dimension().Value());
+		const auto data{Span()};
+		for (size_t i = 0; i < data.size(); ++i) {
+			res = (res << 1) | (res >> 63);
+			res ^= hashData(data[i]);
 		}
+		return res;
 	}
 
 protected:

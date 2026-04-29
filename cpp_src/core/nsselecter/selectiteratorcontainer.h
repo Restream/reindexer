@@ -17,16 +17,19 @@ namespace reindexer {
 
 struct SelectCtx;
 class RdxContext;
-class JoinedSelector;
 class QueryPreprocessor;
 class NamespaceImpl;
 class RanksHolder;
 class Reranker;
 
+namespace joins {
+class ItemsProcessor;
+}
+
 struct [[nodiscard]] JoinSelectIterator {
 	size_t joinIndex;
 	double Cost() const noexcept { return std::numeric_limits<float>::max(); }
-	void Dump(WrSerializer&, const std::vector<JoinedSelector>&) const;
+	void Dump(WrSerializer&, const std::vector<joins::ItemsProcessor>&) const;
 };
 
 struct [[nodiscard]] SelectIteratorsBracket : private Bracket {
@@ -123,11 +126,11 @@ public:
 		return false;
 	}
 
-	bool IsSelectIterator(size_t i) const noexcept {
+	bool IsSelectIterator(size_t i) const {
 		assertrx_throw(i < Size());
 		return container_[i].Is<SelectIterator>();
 	}
-	bool IsJoinIterator(size_t i) const noexcept {
+	bool IsJoinIterator(size_t i) const {
 		assertrx_throw(i < container_.size());
 		return container_[i].Is<JoinSelectIterator>();
 	}
@@ -140,7 +143,7 @@ public:
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SelectIterator, ComparatorsPackT> auto& comp)
 				RX_POST_LMBD_ALWAYS_INLINE { return comp.IsDistinct(); });
 	}
-	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<JoinedSelector>* js) const;
+	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<joins::ItemsProcessor>* js) const;
 
 	void Clear(bool preserveDistincts);
 	int GetMaxIterations() const noexcept { return maxIterations_; }
@@ -183,7 +186,7 @@ private:
 	bool checkIfSatisfyAllConditions(iterator begin, iterator end, const PayloadValue&, bool* finish, IdType rowId, IdType properRowId,
 									 bool match);
 	static std::string explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder& builder,
-								   const std::vector<JoinedSelector>*);
+								   const std::vector<joins::ItemsProcessor>*);
 	template <bool reverse>
 	static IdType getNextItemId(const_iterator begin, const_iterator end, IdType from);
 	static bool isIdset(const_iterator it, const_iterator end);
@@ -221,7 +224,7 @@ private:
 
 	/// @return end() if empty or last opened bracket is empty
 	iterator lastAppendedOrClosed();
-	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JoinedSelector>&, WrSerializer&);
+	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<joins::ItemsProcessor>&, WrSerializer&);
 
 	PayloadType pt_;
 	SelectCtx* ctx_;

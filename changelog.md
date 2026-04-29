@@ -1,3 +1,44 @@
+# Version 5.13.0 (29.04.2026)
+## Core
+- [fea] Optimized [grouping equal positions](readme.md#search-in-array-fields-with-matching-indexes-using-grouping) comparator
+- [fea] Added implicit conversion between scalar values and single-value composites
+- [fea] Added extendible hashing into `hash`-indexes. This slightly increases mean insertion time, but makes it much more stable, allowing to avoid huge latency spikes on resizing
+- [fea] Improved estimate cost calculation for [equal_positions](readme.md#search-in-array-fields-with-matching-indexes)
+- [fix] Disallowed creating a `sparse` index over JSON fields with type 'object'. Previously this behavior could cause a few critical bugs and inconsistent states, and was mostly unusable. **This may break compatibility if you have object fields in your sparse indexes**
+- [fix] Fixed data migration on PK update, when some of the documents are marked as 'deleted'
+- [fix] Fixed support for subqueries on the left side of `WhereExpressions`
+
+## Fulltext
+- [fea] Reworked initial term variants generation logic. Now the search engine uses variants from previous steps to generate more variants on the current step. For example, variants received from the typos-handling mechanism will be used for stemming, etc.
+- [fea] Changed ranking for multiword synonyms. Now rank divides proportionally between all the new terms
+- [fea] Changed logic around [base ranking config](fulltext.md#base-ranking-config). Now full match will always have the best rank, and all the other base ranks will be proportionally decreased according to the configured values. **This may break compatibility in some cases, because from now on there is no way to make full-match rank lower than any other base rank**
+- [fea] `MinRelevancy` parameter in [config](fulltext.md#base-config-parameters) has been deprecated. Added new `MinRank` parameter, which covers the full ranking range
+- [fea] Deprecated `FuzzyTextIndex` and related configs were removed completely
+- [fix] Fixed crash during `IS NOT NULL` filtering condition and `EnablePreselectBeforeFt` index option interaction
+
+## Vector indexes
+- [fea] Added support for multiple vectors in a single field (i.e. [array vector indexes](float_vector.md#knn-search-by-array-indexes))
+- [fix] Fixed crash in dequantizing of empty (null) vectors during [quantization config update](float_vector.md#updating-and-disabling-quantization)
+
+## Reindexer server
+- [fea] Added memory limit for max response size (default value is 1 GB) to avoid unexpected OOMs. Limit may be changed via `net.max_http_rsp_size` yaml-config option, `--max-http-rsp` CLI flag or `RX_MAX_HTTP_RSP` Docker env
+- [fea] Optimized tags synchronization for Update/Delete queries (new logic allows reducing response sizes by cutting off CJSON tags dictionary)
+- [fea] Updated swagger to v5.32
+
+## Go connector
+- [fea] Bumped dependency versions and updated min Go version (v1.24.0)
+- [fea] Optimized some of the CJSON marshaling logic
+- [fea] Updated content returned in `IsSortable` and `Conditions` fields of the `IndexDescription` object. Now it corresponds to the actual index capabilities
+- [upd] Updated fulltext config structure according to changes in core fulltext indexes
+
+## Face
+- [fea] Added vertical resize for the JSON preview window on the `Index edit` page
+- [fea] Added new fields to the `Vector index settings`
+
+# Version 5.12.2 (07.04.2026)
+## Go connector
+- [fix] Fixed decoding of empty slice into single `interface{}`
+
 # Version 5.12.1 (03.04.2026)
 ## Core
 - [fix] Fixed crash during error handling in `IndexUpdate` when PK is missing
@@ -691,7 +732,7 @@
 
 ## Face
 - [fea] Increased max allowed value of the `position_boost` field
-- [fea] Added "Minimum preselect size for optimization of inner join by injection of filters" field to NS config 
+- [fea] Added "Minimum preselect size for optimization of inner join by insertion of filters" field to NS config 
 - [fea] Added `UUID` index type to PK options
 - [fix] Fixed the issue related to Aggregation result displaying
 - [fix] Fixed the pagination issue

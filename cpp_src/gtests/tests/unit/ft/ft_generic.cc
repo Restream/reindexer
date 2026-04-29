@@ -252,7 +252,7 @@ TEST_P(FTGenericApi, SelectWithDistance) {
 
 TEST_P(FTGenericApi, AreasOnSuffix) {
 	auto ftCfg = GetDefaultConfig();
-	ftCfg.optimization = reindexer::FtFastConfig::Optimization::CPU;
+	ftCfg.optimization = reindexer::FTConfig::Optimization::CPU;
 	Init(ftCfg);
 
 	Add("the nos1 the nos2 the nosmn the nose"sv);
@@ -336,7 +336,7 @@ TEST_P(FTGenericApi, DebugInfo) {
 R"###({"ft1":"слово
  <!>{term_rank:93.89933, term:простая, pattern:простая, bm25_norm:0.9399332, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} простая
  {term_rank:85.76488, term:фраза, pattern:фраза, bm25_norm:0.9399332, term_len_boost:0.9142857, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0} фраза<!!>
- что то еще.","rank()":102.0})###",
+ что то еще.","rank()":84.0})###",
 R"##({"ft1":"слово
  <!>{term_rank:92.031586, term:начало, pattern:начало, bm25_norm:0.96248657, term_len_boost:0.95714283, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} начало
  {term_rank:94.18042, term:простая, pattern:простая, bm25_norm:0.9436916, term_len_boost:1, position_rank:0.998, norm_dist:0, proc:100, full_match_boost:0}
@@ -413,7 +413,7 @@ R"###({"ft1":"слово начало
 		//clang-format off
 		std::vector<std::string> dataCompare = {
 			R"({"ft1":"{term_rank:102.23141, term:жил, pattern:жил, bm25_norm:1.0223141, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} жил
- {term_rank:77.61817, term:жил, pattern:ил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:76, full_match_boost:0}
+ {term_rank:77.61731, term:жил, pattern:пил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:75.99915, full_match_boost:0}
  {term_rank:102.12917, term:пил, pattern:пил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} пил гулял"})"};
 		//clang-format on
 		removeLineEnd(dataCompare);
@@ -1051,57 +1051,6 @@ TEST_P(FTGenericApi, RebuildAfterDeletion) {
 	ASSERT_EQ(res.Count(), 2);
 }
 
-TEST_P(FTGenericApi, Unique) {
-	Init(GetDefaultConfig());
-
-	std::vector<std::string> data;
-	std::set<size_t> check;
-	std::set<std::string> checks;
-	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ }, reindexer::LoggerPolicy::WithLocks, int(LogTrace));
-
-	for (int i = 0; i < 1000; ++i) {
-		bool inserted = false;
-		size_t n;
-		std::string s;
-
-		while (!inserted) {
-			n = rand();
-			auto res = check.insert(n);
-			inserted = res.second;
-		}
-
-		inserted = false;
-
-		while (!inserted) {
-			s = rt.RandString();
-			auto res = checks.insert(s);
-			inserted = res.second;
-		}
-
-		data.push_back(s + std::to_string(n));
-	}
-
-	for (size_t i = 0; i < data.size(); i++) {
-		Add(data[i], data[i]);
-		if (i % 5 == 0) {
-			for (size_t j = 0; j < i; j++) {
-				if (i == 40 && j == 26) {
-					int a = 3;	// NOLINT(*unused-but-set-variable) This code is just to load CPU by non-rx stuff
-					a++;
-					(void)a;
-				}
-				auto res = StressSelect(data[j]);
-				if (res.Count() != 1) {
-					for (auto it : res) {
-						auto ritem(it.GetItem(false));
-					}
-					abort();
-				}
-			}
-		}
-	}
-}
-
 TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
 	auto ftCfg = GetDefaultConfig(3);
 	ftCfg.summationRanksByFieldsRatio = 0.0f;
@@ -1422,13 +1371,13 @@ TEST_P(FTGenericApi, SetFtFieldsCfgErrors) {
 	cfg.maxTypos = -1;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	EXPECT_FALSE(err.ok());
-	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'max_typos' - -1 is out of bounds: [0,4]");
+	EXPECT_STREQ(err.what(), "FTConfig: Value of 'max_typos' - -1 is out of bounds: [0,4]");
 
 	// maxTypos > 4
 	cfg.maxTypos = 5;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	EXPECT_FALSE(err.ok());
-	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'max_typos' - 5 is out of bounds: [0,4]");
+	EXPECT_STREQ(err.what(), "FTConfig: Value of 'max_typos' - 5 is out of bounds: [0,4]");
 }
 
 TEST_P(FTGenericApi, IndexUpdateWithFieldsConfigs) {
@@ -1539,11 +1488,11 @@ TEST_P(FTGenericApi, StrictMode) {
 }
 
 TEST_P(FTGenericApi, ConfigBm25Coefficients) {
-	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
+	reindexer::FTConfig cfgDef = GetDefaultConfig();
 	cfgDef.maxAreasInDoc = 100;
-	reindexer::FtFastConfig cfg = cfgDef;
+	reindexer::FTConfig cfg = cfgDef;
 	cfg.bm25Config.bm25b = 0.0;
-	cfg.bm25Config.bm25Type = reindexer::FtFastConfig::Bm25Config::Bm25Type::rx;
+	cfg.bm25Config.bm25Type = reindexer::FTConfig::Bm25Config::Bm25Type::rx;
 
 	Init(cfg);
 	Add("nm1"sv, "слово пусто слова пусто словами"sv, ""sv);
@@ -1578,7 +1527,7 @@ TEST_P(FTGenericApi, ConfigBm25Coefficients) {
 				  {"otherword !targetword!", ""}},
 				 true);
 	cfg = cfgDef;
-	cfg.bm25Config.bm25Type = reindexer::FtFastConfig::Bm25Config::Bm25Type::wordCount;
+	cfg.bm25Config.bm25Type = reindexer::FTConfig::Bm25Config::Bm25Type::wordCount;
 	cfg.fieldsCfg[0].positionWeight = 0.0;
 	cfg.fullMatchBoost = 1.0;
 
@@ -1601,15 +1550,15 @@ TEST_P(FTGenericApi, ConfigBm25Coefficients) {
 }
 
 TEST_P(FTGenericApi, ConfigFtProc) {
-	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
+	reindexer::FTConfig cfgDef = GetDefaultConfig();
 	cfgDef.synonyms = {{{"тестов"}, {"задача"}}};
-	reindexer::FtFastConfig cfg = cfgDef;
+	reindexer::FTConfig cfg = cfgDef;
 
-	cfg.rankingConfig.fullMatch = 100;
-	cfg.rankingConfig.stemmerPenalty = 1;  // for idf/tf boost
-	cfg.rankingConfig.translit = 50;
-	cfg.rankingConfig.kblayout = 40;
-	cfg.rankingConfig.synonyms = 30;
+	cfg.rankingConfig.SetFullMatch(100);
+	cfg.rankingConfig.SetStemmerPenalty(1);	 // for idf/tf boost
+	cfg.rankingConfig.SetTranslit(30);
+	cfg.rankingConfig.SetKblayout(50);
+	cfg.rankingConfig.SetSynonyms(40);
 	Init(cfg);
 	Add("nm1"sv, "маленький тест"sv, "");
 	Add("nm1"sv, "один тестов очень очень тестов тестов тестов"sv, "");
@@ -1620,7 +1569,20 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	Add("nm1"sv, "Местов"sv, "");
 	Add("nm1"sv, "МестоД"sv, "");
 
-	reindexer::Error err;
+	CheckResults("тестов",
+				 {{"маленький !тест!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"!ntcnjd!", ""},
+				  {"!задача!", ""},
+				  {"!testov!", ""}},
+				 true);
+
+	cfg.rankingConfig.SetTranslit(50);
+	cfg.rankingConfig.SetKblayout(40);
+	cfg.rankingConfig.SetSynonyms(30);
+	reindexer::Error err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов",
 				 {{"маленький !тест!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
@@ -1629,56 +1591,58 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				  {"!ntcnjd!", ""},
 				  {"!задача!", ""}},
 				 true);
+
 	cfg = cfgDef;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов",
 				 {{"!задача!", ""},
-				  {"!testov!", ""},
 				  {"!ntcnjd!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"маленький !тест!", ""}},
-				 true);
-	cfg = cfgDef;
-	cfg.rankingConfig.stemmerPenalty = 500;
-	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
-	ASSERT_TRUE(err.ok()) << err.what();
-	CheckResults("тестов",
-				 {{"!задача!", ""},
 				  {"!testov!", ""},
-				  {"!ntcnjd!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
 	cfg = cfgDef;
-	cfg.rankingConfig.stemmerPenalty = -1;
+	cfg.rankingConfig.SetStemmerPenalty(500);
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов",
+				 {{"!задача!", ""},
+				  {"!ntcnjd!", ""},
+				  {"!testov!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""}},
+				 true);
+
+	cfg = cfgDef;
+	cfg.rankingConfig.SetStemmerPenalty(-1);
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_EQ(err.code(), errParseJson);
-	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'stemmer_proc_penalty' - -1 is out of bounds: [0,500]");
+	EXPECT_STREQ(err.what(), "FTConfig: Value of 'stemmer_proc_penalty' - -1 is out of bounds: [0,500]");
 
 	cfg = cfgDef;
-	cfg.rankingConfig.synonyms = 500;
+	cfg.rankingConfig.SetSynonyms(100);
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов",
 				 {{"!задача!", ""},
-				  {"!testov!", ""},
 				  {"!ntcnjd!", ""},
+				  {"!testov!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
-	cfg = cfgDef;
-	cfg.rankingConfig.synonyms = 501;
-	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
-	ASSERT_EQ(err.code(), errParseJson);
-	EXPECT_STREQ(err.what(), "FtFastConfig: Value of 'synonyms_proc' - 501 is out of bounds: [0,500]");
 
 	cfg = cfgDef;
-	cfg.rankingConfig.translit = 200;
+	cfg.rankingConfig.SetSynonyms(501);
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_EQ(err.code(), errParseJson);
+	EXPECT_STREQ(err.what(), "FTConfig: Value of 'synonyms_proc' - 501 is out of bounds: [0,500]");
+
+	cfg = cfgDef;
+	cfg.rankingConfig.SetTranslit(100);
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов",
@@ -1691,70 +1655,71 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 true);
 
 	cfg = cfgDef;
-	cfg.rankingConfig.typo = 300;
-	cfg.rankingConfig.translit = 200;
+	cfg.rankingConfig.SetTypo(100);
+	cfg.rankingConfig.SetTranslit(99);
 	cfg.maxTypos = 4;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов~",
-				 {{"!Местов!", ""},
-				  {"!МестоД!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"маленький !тест!", ""},
-				  {"!testov!", ""},
-				  {"!задача!", ""},
-				  {"!ntcnjd!", ""}},
-				 true);
-
-	cfg = cfgDef;
-	cfg.rankingConfig.typo = 300;
-	cfg.rankingConfig.typoPenalty = 150;
-	cfg.rankingConfig.translit = 200;
-	cfg.maxTypos = 4;
-	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
-	ASSERT_TRUE(err.ok()) << err.what();
-	CheckResults("тестов~",
-				 {{"!Местов!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"!МестоД!", ""},
-				  {"!testov!", ""},
-				  {"маленький !тест!", ""},
-				  {"!задача!", ""},
-				  {"!ntcnjd!", ""}},
-				 true);
-
-	cfg = cfgDef;
-	cfg.rankingConfig.typo = 300;
-	cfg.rankingConfig.typoPenalty = 500;
-	cfg.rankingConfig.translit = 200;
-	cfg.maxTypos = 4;
-	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
-	ASSERT_TRUE(err.ok()) << err.what();
-	CheckResults("тестов~",
-				 {{"один !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"!testov!", ""},
+				 {{"!testov!", ""},
 				  {"!Местов!", ""},
 				  {"!задача!", ""},
+				  {"!МестоД!", ""},
 				  {"!ntcnjd!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
+				 true);
+
+	cfg = cfgDef;
+	cfg.rankingConfig.SetTypo(100);
+	cfg.rankingConfig.SetTypoPenalty(20);
+	cfg.rankingConfig.SetTranslit(99);
+	cfg.maxTypos = 4;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов~",
+				 {{"!testov!", ""},
+				  {"!задача!", ""},
+				  {"!Местов!", ""},
+				  {"!ntcnjd!", ""},
+				  {"!МестоД!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"маленький !тест!", ""}},
+				 true);
+
+	cfg = cfgDef;
+	cfg.rankingConfig.SetTypo(100);
+	cfg.rankingConfig.SetTypoPenalty(100);
+	cfg.rankingConfig.SetTranslit(100);
+	cfg.maxTypos = 4;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов~",
+				 {{"!testov!", ""},
+				  {"!задача!", ""},
+				  {"!ntcnjd!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"маленький !тест!", ""},
+				  {"!Местов!", ""},
+				  {"!МестоД!", ""}},
 				 true);
 }
 
 TEST_P(FTGenericApi, BoostingTerms) {
-	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
+	reindexer::FTConfig cfgDef = GetDefaultConfig();
 	cfgDef.synonyms = {{{"тест"}, {"задача"}}};
-	reindexer::FtFastConfig cfg = cfgDef;
+	reindexer::FTConfig cfg = cfgDef;
 
-	cfg.rankingConfig.fullMatch = 100;
-	cfg.rankingConfig.stemmerPenalty = 1;  // for idf/tf boost
-	cfg.rankingConfig.translit = 50;
-	cfg.rankingConfig.kblayout = 40;
-	cfg.rankingConfig.synonyms = 80;
+	cfg.rankingConfig.SetFullMatch(100);
+	cfg.rankingConfig.SetStemmerPenalty(1);	 // for idf/tf boost
+	cfg.rankingConfig.SetTranslit(50);
+	cfg.rankingConfig.SetKblayout(40);
+	cfg.rankingConfig.SetSynonyms(80);
 	cfg.termsBoost["Задачи"] = 5.0;
-	cfg.termsBoost["задание"] = 4.0;
+	cfg.termsBoost["задание"] = 3.0;
 	Init(cfg);
 
 	Add("nm1"sv, "некоторый тест тест"sv, "");
@@ -1767,10 +1732,10 @@ TEST_P(FTGenericApi, BoostingTerms) {
 }
 
 TEST_P(FTGenericApi, TyposCollision) {
-	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
-	reindexer::FtFastConfig cfg = cfgDef;
-	cfg.rankingConfig.fullMatch = 100;
-	cfg.rankingConfig.typo = 100;
+	reindexer::FTConfig cfgDef = GetDefaultConfig();
+	reindexer::FTConfig cfg = cfgDef;
+	cfg.rankingConfig.SetFullMatch(100);
+	cfg.rankingConfig.SetTypo(99);
 	cfg.maxTypos = 4;
 	Init(cfg);
 
@@ -2050,7 +2015,7 @@ TEST_P(FTGenericApi, TotalCountWithFtPreselect) {
 }
 
 TEST_P(FTGenericApi, StopWordsWithMorphemes) {
-	reindexer::FtFastConfig cfg = GetDefaultConfig();
+	reindexer::FTConfig cfg = GetDefaultConfig();
 
 	Init(cfg);
 	Add("Шахматы из слоновой кости"sv);
@@ -2147,8 +2112,8 @@ TEST_P(FTGenericApi, FrisoTest) {
 			res.push_back(word.As<std::string>());
 		}
 		task->SetText(str);
-		const std::vector<reindexer::WordWithPos>& entrances = task->GetResults();
-		auto words = entrances | std::views::transform([](const auto& e) { return e.word; });
+		const std::vector<reindexer::WordWithPos>& occurences = task->GetResults();
+		auto words = occurences | std::views::transform([](const auto& e) { return e.word; });
 
 		ASSERT_EQ(words.size(), res.size()) << "id=" << id << " " << PrintArray(words, "words ") << " " << PrintArray(res, "res ");
 		for (size_t j = 0; j < words.size(); j++) {
@@ -2158,9 +2123,9 @@ TEST_P(FTGenericApi, FrisoTest) {
 }
 
 TEST_P(FTGenericApi, FrisoTestSelect) {
-	reindexer::FtFastConfig cfg = GetDefaultConfig();
+	reindexer::FTConfig cfg = GetDefaultConfig();
 	cfg.stopWords = {};
-	cfg.splitterType = reindexer::FtFastConfig::Splitter::MMSegCN;
+	cfg.splitterType = reindexer::FTConfig::Splitter::MMSegCN;
 	Init(cfg);
 
 	std::unordered_map<std::string, std::set<int>> index;
@@ -2214,8 +2179,8 @@ TEST_P(FTGenericApi, FrisoTestSelect) {
 }
 
 TEST_P(FTGenericApi, FrisoTextPostprocess) {
-	reindexer::FtFastConfig cfg = GetDefaultConfig();
-	cfg.splitterType = reindexer::FtFastConfig::Splitter::MMSegCN;
+	reindexer::FTConfig cfg = GetDefaultConfig();
+	cfg.splitterType = reindexer::FTConfig::Splitter::MMSegCN;
 	cfg.stopWords = {};
 	cfg.maxAreasInDoc = 10;
 	Init(cfg);
@@ -2286,7 +2251,7 @@ TEST_P(FTGenericApi, FrisoTextPostprocess) {
 TEST_F(FTGenericApi, BetweenFieldsIsNotSupported) {
 	// Fulltext index can not be used as a part of 'between fields' condition
 
-	Init(reindexer::FtFastConfig(2), NS1);
+	Init(reindexer::FTConfig(2), NS1);
 	rt.AddIndex("nm1", reindexer::IndexDef{"str_idx", {"str_idx"}, "hash", "string", IndexOpts()});
 	rt.UpsertJSON("nm1", R"j({"id":0, "ft1":"ft1_str", "ft2": "ft2_str", "str_idx": "str_idx_value", "non_idx": "non_idx_value"})j");
 
@@ -2453,7 +2418,7 @@ TEST_P(FTGenericApi, SelectRepeatingItemsFromArray) {
 
 TEST_P(FTGenericApi, JoiningQueryTerms) {
 	auto ftCfg = GetDefaultConfig();
-	ftCfg.optimization = reindexer::FtFastConfig::Optimization::CPU;
+	ftCfg.optimization = reindexer::FTConfig::Optimization::CPU;
 	ftCfg.maxTypos = 3;
 	ftCfg.stemmers = {};
 	Init(ftCfg);
@@ -2504,16 +2469,14 @@ TEST_P(FTGenericApi, OperatorsInExtraWordSymbols) {
 	CheckResults("\\=слово\\*", {{"!=слово*!", ""}}, true);
 }
 
-INSTANTIATE_TEST_SUITE_P(, FTGenericApi,
-						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),
-						 [](const auto& info) {
-							 switch (info.param) {
-								 case reindexer::FtFastConfig::Optimization::Memory:
-									 return "OptimizationByMemory";
-								 case reindexer::FtFastConfig::Optimization::CPU:
-									 return "OptimizationByCPU";
-								 default:
-									 assert(false);
-									 std::abort();
-							 }
-						 });
+INSTANTIATE_TEST_SUITE_P(, FTGenericApi, ::testing::Values(kRxFtTestTypes), [](const auto& info) {
+	switch (info.param) {
+		case reindexer::FTConfig::Optimization::Memory:
+			return "OptimizationByMemory";
+		case reindexer::FTConfig::Optimization::CPU:
+			return "OptimizationByCPU";
+		default:
+			assert(false);
+			std::abort();
+	}
+});

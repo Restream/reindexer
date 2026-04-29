@@ -2,12 +2,13 @@
 
 #if RX_WITH_BUILTIN_ANN_INDEXES
 
-#include <queue>
 #include <variant>
+#include "core/enums.h"
+#include "core/id_type.h"
+#include "core/rank_t.h"
 #include "estl/concepts.h"
 #include "estl/h_vector.h"
 #include "estl/overloaded.h"
-#include "hnswlib/hnswlib.h"
 #include "vendor_subdirs/faiss/MetricType.h"
 
 namespace reindexer {
@@ -17,11 +18,20 @@ public:
 	EmptyKnnRawResult() = default;
 };
 
-class [[nodiscard]] HnswKnnRawResult : public std::priority_queue<std::pair<float, hnswlib::labeltype>> {
-	using Base = std::priority_queue<std::pair<float, hnswlib::labeltype>>;
-
+class [[nodiscard]] HnswKnnRawResult {
 public:
-	HnswKnnRawResult(Base&& b) noexcept : Base{std::move(b)} {}
+	HnswKnnRawResult(size_t k) : dists_(k), ids_(k) {}
+	const h_vector<RankT, 128>& Dists() const& noexcept { return dists_; }
+	h_vector<RankT, 128>& Dists() & noexcept { return dists_; }
+	h_vector<IdType, 128>& Ids() & noexcept { return ids_; }
+	const h_vector<IdType, 128>& Ids() const& noexcept { return ids_; }
+
+	auto Ids() const&& = delete;
+	auto Dists() const&& = delete;
+
+private:
+	h_vector<RankT, 128> dists_;
+	h_vector<IdType, 128> ids_;
 };
 
 class [[nodiscard]] IvfKnnRawResult {
@@ -55,8 +65,7 @@ public:
 
 	// NOLINTNEXTLINE (bugprone-exception-escape)
 	size_t Size() const noexcept {
-		return std::visit(overloaded{[](const HnswKnnRawResult& r) noexcept { return r.size(); },
-									 [](const IvfKnnRawResult& r) noexcept -> size_t { return r.Ids().size(); },
+		return std::visit(overloaded{[](const auto& r) noexcept -> size_t { return r.Ids().size(); },
 									 [](const EmptyKnnRawResult&) noexcept -> size_t { return 0; }},
 						  AsVariant());
 	}

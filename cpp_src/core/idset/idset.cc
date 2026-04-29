@@ -1,57 +1,58 @@
 #include "core/idset/idset.h"
+#include "sort/pdqsort.hpp"
 
 namespace reindexer {
 
-std::string IdSetUnique::Dump() const {
-	std::string buf = "[";
+void IdSetUnique::Dump(std::ostream& os) const {
+	os << "[";
 
-	if (!empty()) {
-		buf += std::to_string(id_.ToNumber());
+	if (!IsEmpty()) {
+		os << id_.ToNumber();
 	}
 
-	buf += ']';
-	return buf;
+	os << ']';
 }
 
-std::string IdSetPlain::Dump() const {
-	std::string buf = "[";
+IdSetPlain::Ptr IdSetPlain::BuildFromUnsorted(base_idset&& ids) {
+	boost::sort::pdqsort_branchless(ids.begin(), ids.end());
+	ids.erase(std::unique(ids.begin(), ids.end()), ids.cend());	 // TODO: It would be better to integrate unique into sort
+	return make_intrusive<intrusive_atomic_rc_wrapper<IdSetPlain>>(std::move(ids));
+}
+
+void IdSetPlain::Dump(std::ostream& os) const {
+	os << "[";
 
 	for (auto id : *this) {
-		buf += std::to_string(id.ToNumber()) + ' ';
+		os << id.ToNumber() << ' ';
 	}
 
-	buf += ']';
-	return buf;
+	os << ']';
 }
 
-std::ostream& operator<<(std::ostream& os, const IdSetUnique& idset) {
-	if (idset.empty()) {
-		return os << "[]";
-	}
-	return os << '[' << idset.begin()->ToNumber() << ']';
-}
-
-std::ostream& operator<<(std::ostream& os, const IdSetPlain& idset) {
-	os << '[';
-	for (auto b = idset.begin(), it = b, e = idset.end(); it != e; ++it) {
-		if (it != b) {
-			os << ", ";
+void IdSet::Commit() {
+	if (!size()) {
+		auto set = set_.Get(std::memory_order_relaxed).first;
+		if (set) {
+			reserve(set->size());
+			for (auto id : *set) {
+				push_back(id);
+			}
 		}
-		os << it->ToNumber();
 	}
-	return os << ']';
+
+	setUsingBtree(false);
 }
 
-void IdSet::Dump(auto& os) const {
+void IdSet::Dump(std::ostream& os) const {
 	auto [set, isUsingBtree] = set_.Get(std::memory_order_acquire);
-	os << "<IdSetPlain>: " << static_cast<const IdSetPlain&>(*this) << "\nusingBtree_: " << std::boolalpha << isUsingBtree;
+	os << "<IdSetPlain>: ";
+	static_cast<const IdSetPlain&>(*this).Dump(os);
+	os << "\nusingBtree_: " << std::boolalpha << isUsingBtree;
 	if (set) {
 		os << "\nset_: ";
 		set->dump(os);
 	}
 	os << std::endl;
 }
-
-template void IdSet::Dump(std::ostream&) const;
 
 }  // namespace reindexer

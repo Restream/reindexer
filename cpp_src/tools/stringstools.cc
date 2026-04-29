@@ -7,7 +7,7 @@
 #include "itoa/itoa.h"
 #include "tools/assertrx.h"
 #include "tools/randomgenerator.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/strntoll.h"
 #include "utf8cpp/utf8.h"
 #include "vendor/double-conversion/double-conversion.h"

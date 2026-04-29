@@ -363,7 +363,8 @@ Several parameters of full text search engine can be configured from application
 |   |    PositionWeight     |   float  | Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range                                                                                                                                                                     |      0.1      |
 |   |    FullMatchBoost     |   float  | Boost of full match of search phrase with doc                                                                                                                                                                                                                                                                                     |      1.1      |
 |   | PartialMatchDecrease  |    int   | Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)                                                                                                                                                                                                       |      15       |
-|   |     MinRelevancy      |   float  | Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned                                                                                                                                                                                                |     0.05      |
+|   |     MinRelevancy      |   float  | **Deprecated**. Use `MinRank` instead. Minimum rank of found documents. 0: all found documents will be returned; 1: only documents with relevancy >= 100% will be returned                                                                                                                                                                                                |     0.05      |
+|   |       MinRank         |    int   | Minimum rank of found documents. 0: all found documents will be returned; 255: only documents with relevancy == 255 will be returned                                                                                                                                                                                                |      5        |
 |   |       MaxTypos        |    int   | Maximum possible typos in word. 0: typos are disabled, words with typos will not match. N: words with N possible typos will match. Check [typos handling](#typos-handling-details) section for detailed description.                                                                                                              |       2       |
 |   |    MaxTyposInWord     |    int   | Deprecated, use MaxTypos instead of this. Cannot be used with MaxTypos. Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed |       -       |
 |   |      MaxTypoLen       |    int   | Maximum word length for building and matching variants with typos.                                                                                                                                                                                                                                                                |      15       |
@@ -392,6 +393,7 @@ Several parameters of full text search engine can be configured from application
 |   |     SplitterType      |  string  | Text breakdown algorithm. Available values: 'mmseg_cn' and 'fast'                                                                                                                                                                                                                                                                    |    "fast"     |
 |   |  WordPartDelimiters   |  string  | Symbols, which will be treated as word part delimiters     |    "-/+_`'"     |
 |   |   MinWordPartSize     |    int   | Min word part size for indexing and searching     |      3       |
+|   | EnablePreselectBeforeFt |  bool  | If true, then non-fulltext filtering conditions will be executed before fulltext index selection     |    false     |
 
 ### Stopwords details
 The list item can be either a string or a structure containing a string (the stopword) and a bool attribute (`is_morpheme`) indicating whether the stopword can be part of a word that can be shown in query-results.
@@ -443,23 +445,22 @@ FtTyposDetailedConfig: config for more precise typos algorithm tuning.
 
 FtBaseRanking: config for the base relevancy of the word in different forms.
 
-|   |       Parameter name         |   Type   |                                                                                                                        Description                                                                                                                        | Default value |
-|---|:----------------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
-|   | FullMatch                    |    int   | Relevancy of full word match                                                                                                           
-   |      100      |   
-|   | ConcatProc                   |    int   | Base relevancy of concatenated terms match                                                                                                           
-                                                                                                                   |      90       |   
-|   | PrefixMin                    |    int   | Minimum relevancy of prefix word match.                                                                                                                                                                                                                   |       50      |           
-|   | SuffixMin                    |    int   | Minimum relevancy of suffix word match.                                                                                                                                                                                                                   |       10      | 
-|   | Typo                         |    int   | Base relevancy of typo match                                                                                                                                                                                                                              |       85      |
-|   | TypoPenalty                  |    int   | Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm. The minimum rank after applying penalties will be at least 1.                                                                                              |       15      |
-|   | StemmerPenalty               |    int   | Penalty for the variants, created by stemming. The minimum rank after applying penalties will be at least 1.                                                                                                                                              |       15      |
-|   | Kblayout                     |    int   | Relevancy of the match in incorrect kblayout                                                                                                                                                                                                              |       90      |
-|   | Translit                     |    int   | Relevancy of the match in translit                                                                                                                                                                                                                        |       90      |
-|   | Synonyms                     |    int   | Relevancy of synonyms match                                                                                                                                                                                                                               |       95      |
-|   | Delimited                    |    int   |  Relevancy of the delimited word part match     |        80      |
+|   |       Parameter name         |   Type   | Description                                                       | Default value |
+|---|:----------------------------:|:--------:|:-----------------------------------------------------------------:|:-------------:|
+|   | FullMatch                    |    int   | Relevancy of full word match                                      |      100      |
+|   | ConcatProc                   |    int   | Base relevancy of concatenated terms match                        |      90       |
+|   | PrefixMin                    |    int   | Minimum relevancy of prefix word match.                           |       50      |
+|   | SuffixMin                    |    int   | Minimum relevancy of suffix word match.                           |       10      |
+|   | Typo                         |    int   | Base relevancy of typo match                                      |       85      |
+|   | TypoPenalty                  |    int   | Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm. The minimum rank after applying penalties will be at least 1                                           |       15      |
+|   | StemmerPenalty               |    int   | Penalty for the variants, created by stemming. The minimum rank after applying penalties will be at least 1                                                                                                |       15      |
+|   | Kblayout                     |    int   | Relevancy of the match in incorrect kblayout                      |       90      |
+|   | Translit                     |    int   | Relevancy of the match in translit                                |       90      |
+|   | Synonyms                     |    int   | Relevancy of synonyms match                                       |       95      |
+|   | Delimited                    |    int   |  Relevancy of the delimited word part match                       |        80     |
 
 ### Text splitters
+
 Reindexer supports two algorithms to break texts into words: `fast` and `mmseg_cn`.
 
 Default `fast` algorithm is based on the definition of a word in the form of an alpha (from supported Unicode subset), number and an extended character, everything else (whitespaces, special characters, unsupported Unicode subsets, etc.) will be treated as a delimiters.

@@ -4,13 +4,24 @@
 #include <sstream>
 #include "tagslengths.h"
 #include "tagsmatcher.h"
+#include "tools/serilize/serializer.h"
 
 namespace reindexer {
+
+class WrSerializer;
+
 namespace builders {
 class [[nodiscard]] JsonBuilder {
 public:
 	JsonBuilder(WrSerializer& ser, ObjType type = ObjType::TypeObject, const TagsMatcher* tm = nullptr, bool emitTrailingForFloat = true);
-	~JsonBuilder() { End(); }
+	~JsonBuilder() noexcept(false) {
+		if (std::uncaught_exceptions() == 0) {
+			// The End() call may throw if the internal WrSerializer is unable to allocate memory due to logical
+			// (GrowthPolicy) or system (std::bad_alloc) limitations. Checking std::uncaught_exceptions() allows us
+			// to avoid throwing an exception in scenarios where we're already handling another exception.
+			End();
+		}
+	}
 	JsonBuilder(const JsonBuilder&) = delete;
 	JsonBuilder(JsonBuilder&& other) noexcept
 		: ser_(other.ser_), tm_(other.tm_), type_(other.type_), count_(other.count_), emitTrailingForFloat_(other.emitTrailingForFloat_) {
@@ -31,21 +42,22 @@ public:
 	JsonBuilder Array(concepts::TagNameOrIndex auto tag, int size = KUnknownFieldSize) { return Array(getNameByTag(tag), size); }
 
 	template <typename T>
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0) {
+	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0,
+			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		JsonBuilder node = Array(tag);
 		for (const auto& d : data) {
 			node.Put(TagName::Empty(), d);
 		}
 	}
 	template <typename T>
-	void Array(std::string_view n, std::span<const T> data, int /*offset*/ = 0) {
+	void Array(std::string_view n, std::span<const T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		JsonBuilder node = Array(n);
 		for (const auto& d : data) {
 			node.Put(TagName::Empty(), d);
 		}
 	}
 	template <typename T>
-	void Array(std::string_view n, std::initializer_list<T> data, int /*offset*/ = 0) {
+	void Array(std::string_view n, std::initializer_list<T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		JsonBuilder node = Array(n);
 		for (const auto& d : data) {
 			node.Put(TagName::Empty(), d);

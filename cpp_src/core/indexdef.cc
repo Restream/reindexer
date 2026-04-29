@@ -2,7 +2,7 @@
 #include "cjson/jsonbuilder.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "type_consts_helpers.h"
 #include "vendor/frozen/unordered_map.h"
 
@@ -11,10 +11,12 @@ namespace {
 using namespace std::string_view_literals;
 
 static constexpr auto kCondsGeneral = {"SET"sv, "ALLSET"sv, "EQ"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
-static constexpr auto kCondsGeneralArray = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv};
+static constexpr auto kCondsGeneralArray = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
 static constexpr auto kCondsGeneralSparse = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
+static constexpr auto kCondsString = {"SET"sv, "ALLSET"sv, "EQ"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv, "LIKE"sv};
+static constexpr auto kCondsStringArray = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv, "LIKE"sv};
+static constexpr auto kCondsStringSparse = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv, "LIKE"sv};
 static constexpr auto kCondsText = {"EQ"sv, "SET"sv};
-static constexpr auto kCondsBool = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv};
 static constexpr auto kCondsGeom = {"DWITHIN"sv};
 static constexpr auto kCondsVector = {"KNN"sv, "ANY"sv, "EMPTY"sv};
 static constexpr std::initializer_list<std::string_view> kCondsDummy = {};
@@ -35,6 +37,14 @@ public:
 				return kCondsGeneralSparse;
 			}
 		}
+		if (conditions_.data() == kCondsString.begin()) {
+			if (isArray) {
+				return kCondsStringArray;
+			}
+			if (isSparse) {
+				return kCondsStringSparse;
+			}
+		}
 		return conditions_;
 	}
 
@@ -47,23 +57,21 @@ constexpr static auto kAvailableIndexes = frozen::make_unordered_map<IndexType, 
 	// clang-format off
 	{IndexIntHash,          {"int"sv,          "hash"sv,      kCondsGeneral}},
 	{IndexInt64Hash,        {"int64"sv,        "hash"sv,      kCondsGeneral}},
-	{IndexStrHash,          {"string"sv,       "hash"sv,      kCondsGeneral}},
+	{IndexStrHash,          {"string"sv,       "hash"sv,      kCondsString}},
 	{IndexCompositeHash,    {"composite"sv,    "hash"sv,      kCondsGeneral}},
 	{IndexIntBTree,         {"int"sv,          "tree"sv,      kCondsGeneral}},
 	{IndexInt64BTree,       {"int64"sv,        "tree"sv,      kCondsGeneral}},
 	{IndexDoubleBTree,      {"double"sv,       "tree"sv,      kCondsGeneral}},
 	{IndexCompositeBTree,   {"composite"sv,    "tree"sv,      kCondsGeneral}},
-	{IndexStrBTree,         {"string"sv,       "tree"sv,      kCondsGeneral}},
+	{IndexStrBTree,         {"string"sv,       "tree"sv,      kCondsString}},
 	{IndexIntStore,         {"int"sv,          "-"sv,         kCondsGeneral}},
-	{IndexBool,             {"bool"sv,         "-"sv,         kCondsBool}},
+	{IndexBool,             {"bool"sv,         "-"sv,         kCondsGeneral}},
 	{IndexInt64Store,       {"int64"sv,        "-"sv,         kCondsGeneral}},
-	{IndexStrStore,         {"string"sv,       "-"sv,         kCondsGeneral}},
+	{IndexStrStore,         {"string"sv,       "-"sv,         kCondsString}},
 	{IndexDoubleStore,      {"double"sv,       "-"sv,         kCondsGeneral}},
 	{IndexTtl,              {"int64"sv,        "ttl"sv,       kCondsGeneral}},
 	{IndexCompositeFastFT,  {"composite"sv,    "text"sv,      kCondsText}},
-	{IndexCompositeFuzzyFT, {"composite"sv,    "fuzzytext"sv, kCondsText}},
 	{IndexFastFT,           {"string"sv,       "text"sv,      kCondsText}},
-	{IndexFuzzyFT,          {"string"sv,       "fuzzytext"sv, kCondsText}},
 	{IndexRTree,            {"point"sv,        "rtree"sv,     kCondsGeom}},
 	{IndexUuidHash,         {"uuid"sv,         "hash"sv,      kCondsGeneral}},
 	{IndexUuidStore,        {"uuid"sv,         "-"sv,         kCondsGeneral}},
@@ -132,11 +140,9 @@ bool IndexDef::isSortable() const noexcept {
 		case IndexRTree:
 		case IndexUuidHash:
 		case IndexUuidStore:
-			return !bool(opts_.IsArray());
 		case IndexFastFT:
-		case IndexFuzzyFT:
 		case IndexCompositeFastFT:
-		case IndexCompositeFuzzyFT:
+			return true;
 		case IndexHnsw:
 		case IndexVectorBruteforce:
 		case IndexIvf:
@@ -285,7 +291,7 @@ IndexDef IndexDef::FromJSON(const gason::JsonNode& root) {
 	opts.Dense(root["is_dense"sv].As<bool>());
 	opts.Sparse(root["is_sparse"sv].As<bool>());
 	auto isDisableColumnIndexNode = root["is_no_column"];
-	if (isDisableColumnIndexNode.empty()) {
+	if (isDisableColumnIndexNode.isEmpty()) {
 		opts.NoIndexColumn(*opts.IsDense() || *opts.IsSparse() || *opts.IsArray() || IsComposite(indexTypeEnum) ||
 						   IsFullText(indexTypeEnum) || IsFloatVector(indexTypeEnum));
 	} else {

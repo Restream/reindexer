@@ -1,8 +1,12 @@
+#pragma once
+
+#include <algorithm>
 #include <bitset>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -12,8 +16,11 @@ public:
 	DynamicBitset() noexcept : size_(0) {}
 
 	explicit DynamicBitset(size_t size, bool value = false) : size_(size) {
-		size_t blocks = (size + BlockSize - 1) / BlockSize;
-		data_.resize(blocks, value ? BlockType().set() : BlockType());
+		const size_t blocks = blocksCount(size);
+		data_.resize(blocks);
+		if (value) {
+			fillAllTrueRespectSize();
+		}
 	}
 
 	void set(size_t pos, bool value = true) noexcept {
@@ -23,11 +30,7 @@ public:
 	}
 
 	// setting all bits to true
-	void set() noexcept {
-		for (auto& block : data_) {
-			block.set();
-		}
-	}
+	void set() noexcept { fillAllTrueRespectSize(); }
 
 	// setting bit to false
 	void reset(size_t pos) noexcept {
@@ -52,20 +55,32 @@ public:
 	bool operator[](size_t pos) const noexcept { return get(pos); }
 
 	void resize(size_t newSize, bool value = false) {
-		size_t newBlocks = (newSize + BlockSize - 1) / BlockSize;
+		const size_t oldSize = size_;
+		const size_t oldBlocks = blocksCount(oldSize);
+		const size_t newBlocks = blocksCount(newSize);
 		if (newBlocks < data_.size()) {
 			data_.resize(newBlocks);
 		} else if (newBlocks > data_.size()) {
-			data_.resize(newBlocks, value ? BlockType().set() : BlockType());
+			data_.resize(newBlocks, value ? fullSetBlock() : BlockType{});
 		}
 
-		size_t oldSize = size_;
-		size_t oldNumBlocks = data_.size();
 		size_ = newSize;
-		// filling only last block
-		for (size_t i = oldSize; i < newSize && i < oldNumBlocks * BlockSize; ++i) {
-			set(i, value);
+
+		if (newSize > oldSize) {
+			// Newly added blocks are already initialized by resize(newBlocks, fullSetBlock()).
+			// We only need to fill the tail in the old last block.
+			if (oldBlocks == newBlocks) {
+				const size_t newEndBit = (newSize % BlockSize == 0) ? BlockSize : (newSize % BlockSize);
+				setBitsInBlock(oldBlocks - 1, oldSize % BlockSize, newEndBit, value);
+			} else {
+				const size_t oldTailBit = oldSize % BlockSize;
+				if (oldTailBit != 0) {
+					setBitsInBlock(oldBlocks - 1, oldTailBit, BlockSize, value);
+				}
+			}
 		}
+
+		trimUnusedBits();
 	}
 
 	DynamicBitset& operator&=(const DynamicBitset& other) {
@@ -76,6 +91,7 @@ public:
 		for (size_t i = 0; i < data_.size(); ++i) {
 			data_[i] &= other.data_[i];
 		}
+		trimUnusedBits();
 
 		return *this;
 	}
@@ -88,7 +104,29 @@ public:
 		for (size_t i = 0; i < data_.size(); ++i) {
 			data_[i] |= other.data_[i];
 		}
+		trimUnusedBits();
 
+		return *this;
+	}
+
+	DynamicBitset& Exclude(const DynamicBitset& other) {
+		if (size_ != other.size_) {
+			throw std::invalid_argument("Bitsets must be of the same size");
+		}
+
+		for (size_t i = 0; i < data_.size(); ++i) {
+			data_[i] &= (~other.data_[i]);
+		}
+		trimUnusedBits();
+
+		return *this;
+	}
+
+	DynamicBitset& Invert() {
+		for (size_t i = 0; i < data_.size(); ++i) {
+			data_[i] = ~data_[i];
+		}
+		trimUnusedBits();
 		return *this;
 	}
 
@@ -117,8 +155,138 @@ public:
 		}
 	}
 
+	// Fast path for repeated patterns like: resize(0); resize(N, false)
+	void ResizeAndReset(size_t newSize) {
+		const size_t newBlocks = blocksCount(newSize);
+		data_.resize(newBlocks);
+		for (auto& block : data_) {
+			block.reset();
+		}
+		size_ = newSize;
+	}
+	// Fast path for repeated patterns like: resize(0); resize(N, true)
+	void ResizeAndSet(size_t newSize) {
+		const size_t newBlocks = blocksCount(newSize);
+		data_.resize(newBlocks);
+		size_ = newSize;
+		fillAllTrueRespectSize();
+	}
+
+	void AccumulateAnd(DynamicBitset& bs) {
+		if (this != &bs) {
+			if (this->size()) {
+				*this &= bs;
+			} else {
+				swap(bs);
+			}
+		}
+	}
+
+	void AccumulateOr(DynamicBitset& bs) {
+		if (this != &bs) {
+			if (this->size()) {
+				*this |= bs;
+			} else {
+				swap(bs);
+			}
+		}
+	}
+
+	size_t PopCount() const noexcept {
+		size_t res = 0;
+		for (const auto& b : data_) {
+			res += b.count();
+		}
+
+		return res;
+	}
+
 private:
 	using BlockType = std::bitset<BlockSize>;
+
+	static constexpr size_t blocksCount(size_t size) noexcept { return (size + BlockSize - 1) / BlockSize; }
+	static const BlockType& fullSetBlock() noexcept {
+		thread_local const BlockType block = [] {
+			BlockType b;
+			b.set();
+			return b;
+		}();
+		return block;
+	}
+	static BlockType makeRangeMask(size_t beginBit, size_t endBitExclusive) noexcept {
+		BlockType mask;
+		assertrx_dbg(beginBit < endBitExclusive);
+		const size_t width = endBitExclusive - beginBit;
+		mask = fullSetBlock();
+		mask >>= (BlockSize - width);
+		mask <<= beginBit;
+		return mask;
+	}
+
+	void fillRange(size_t begin, size_t end, bool value) noexcept {
+		if (begin >= end) {
+			return;
+		}
+		const size_t firstBlock = begin / BlockSize;
+		const size_t lastBlock = (end - 1) / BlockSize;
+		const size_t firstBit = begin % BlockSize;
+		const size_t lastBitExclusive = ((end - 1) % BlockSize) + 1;
+
+		if (firstBlock == lastBlock) {
+			setBitsInBlock(firstBlock, firstBit, lastBitExclusive, value);
+			return;
+		}
+
+		setBitsInBlock(firstBlock, firstBit, BlockSize, value);
+		const BlockType fillValue = value ? fullSetBlock() : BlockType{};
+		std::fill(data_.begin() + firstBlock + 1, data_.begin() + lastBlock, fillValue);
+		setBitsInBlock(lastBlock, 0, lastBitExclusive, value);
+	}
+
+	void setBitsInBlock(size_t blockIdx, size_t beginBit, size_t endBitExclusive, bool value) noexcept {
+		if (beginBit >= endBitExclusive) [[unlikely]] {
+			return;
+		}
+		if (beginBit == 0 && endBitExclusive == BlockSize) {
+			if (value) {
+				data_[blockIdx].set();
+			} else {
+				data_[blockIdx].reset();
+			}
+			return;
+		}
+		const BlockType mask = makeRangeMask(beginBit, endBitExclusive);
+		if (value) {
+			data_[blockIdx] |= mask;
+		} else {
+			data_[blockIdx] &= ~mask;
+		}
+	}
+
+	void trimUnusedBits() noexcept {
+		const size_t usedBitsInLastBlock = size_ % BlockSize;
+		if (usedBitsInLastBlock == 0) {
+			return;
+		}
+		BlockType mask = fullSetBlock();
+		mask >>= (BlockSize - usedBitsInLastBlock);
+		data_.back() &= mask;
+	}
+
+	void fillAllTrueRespectSize() noexcept {
+		const size_t usedBitsInLastBlock = size_ % BlockSize;
+		if (usedBitsInLastBlock == 0) {
+			for (auto& block : data_) {
+				block.set();
+			}
+			return;
+		}
+		for (size_t i = 0; i + 1 < data_.size(); ++i) {
+			data_[i].set();
+		}
+		data_.back() = makeRangeMask(0, usedBitsInLastBlock);
+	}
+
 	std::vector<BlockType> data_;
 	size_t size_;
 };

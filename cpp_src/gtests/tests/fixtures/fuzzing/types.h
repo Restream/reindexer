@@ -19,7 +19,7 @@ std::ostream& operator<<(std::ostream&, FieldType);
 using FieldPath = std::vector<size_t>;
 std::ostream& operator<<(std::ostream&, const FieldPath&);
 
-enum class [[nodiscard]] IndexType { Store, Hash, Tree, Ttl, FastFT, FuzzyFT, RTree, END = RTree };
+enum class [[nodiscard]] IndexType { Store, Hash, Tree, Ttl, FastFT, RTree, END = RTree };
 std::string_view ToText(IndexType);
 std::ostream& operator<<(std::ostream&, IndexType);
 

@@ -9,8 +9,8 @@
 #include "core/cjson/tagsmatcher.h"
 #include "core/dbconfig.h"
 #include "core/item.h"
-#include "core/joincache.h"
 #include "core/namespacedef.h"
+#include "core/nsselecter/joins/cache.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
 #include "core/querycache.h"
@@ -38,9 +38,6 @@ using reindexer::datastorage::StorageType;
 class Index;
 class Embedder;
 class EmbeddersCache;
-template <typename>
-struct SelectCtxWithJoinPreSelect;
-struct JoinPreResult;
 class DBConfigProvider;
 class QueryPreprocessor;
 class RdxContext;
@@ -55,6 +52,14 @@ class Snapshot;
 class SnapshotChunk;
 struct SnapshotOpts;
 class ExpressionEvaluator;
+
+namespace joins {
+class ItemsProcessor;
+struct PreSelect;
+
+template <typename T>
+class SelectStrategy;
+}  // namespace joins
 
 namespace long_actions {
 template <typename T>
@@ -157,8 +162,10 @@ class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // 
 		bool requiresCleanup_{false};
 	};
 
+	template <typename T>
+	friend class joins::SelectStrategy;
 	friend class NsSelecter;
-	friend class JoinedSelector;
+	friend class joins::ItemsProcessor;
 	friend class WALSelecter;
 	friend class NsFtFuncInterface;
 	friend class QueryPreprocessor;
@@ -217,8 +224,13 @@ class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // 
 	};
 
 	class [[nodiscard]] Items final : public std::vector<PayloadValue> {
+		using Base = std::vector<PayloadValue>;
+
 	public:
-		bool exists(IdType id) const noexcept { return id.ToNumber() < ptrdiff_t(size()) && !(*this)[id.ToNumber()].IsFree(); }
+		bool exists(IdType id) const noexcept { return id.ToNumber() < ptrdiff_t(size()) && !(*this)[id].IsFree(); }
+		PayloadValue& operator[](IdType id) & noexcept { return Base::operator[](id.ToNumber()); }
+		const PayloadValue& operator[](IdType id) const& noexcept { return Base::operator[](id.ToNumber()); }
+		auto operator[](IdType id) const&& = delete;
 	};
 
 public:
@@ -379,8 +391,8 @@ public:
 	void Truncate(const RdxContext&);
 	void Refill(std::vector<Item>&, const RdxContext&);
 
-	template <typename JoinPreResultCtx>
-	void Select(LocalQueryResults& result, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& params, const RdxContext&);
+	template <typename SelectCtxT>
+	void Select(LocalQueryResults& result, SelectCtxT& params, const RdxContext&);
 	NamespaceDef GetDefinition(const RdxContext& ctx);
 	NamespaceMemStat GetMemStat(const RdxContext&);
 	NamespacePerfStat GetPerfStat(const RdxContext&);
@@ -408,7 +420,7 @@ public:
 
 	PayloadType GetPayloadType(const RdxContext& ctx) const;
 
-	void FillResult(LocalQueryResults& result, const IdSet& ids) const;
+	void FillResult(LocalQueryResults& result, const IdSetPlain& ids) const;
 
 	ReplicationState GetReplState(const RdxContext&) const;
 	ReplicationStateV2 GetReplStateV2(const RdxContext&) const;
@@ -431,6 +443,8 @@ public:
 	std::shared_ptr<const reindexer::QueryEmbedder> QueryEmbedder(std::string_view fieldName, const RdxContext& ctx) const;
 
 private:
+	void loadHashMapStats() noexcept;
+
 	struct [[nodiscard]] SysRecordsVersions {
 		uint64_t idxVersion{0};
 		uint64_t tagsVersion{0};
@@ -543,13 +557,15 @@ private:
 
 	void setFieldsBasedOnPrecepts(ItemImpl* ritem, UpdatesContainer& replUpdates, const NsContext& ctx);
 
-	void putToJoinCache(JoinCacheRes& res, std::shared_ptr<const JoinPreResult> preResult) const;
-	void putToJoinCache(JoinCacheRes& res, JoinCacheVal&& val) const;
-	void getFromJoinCache(const Query&, const JoinedQuery&, JoinCacheRes& out) const;
-	void getFromJoinCache(const Query&, JoinCacheRes& out) const;
-	void getFromJoinCacheImpl(JoinCacheRes& out) const;
-	void getInsideFromJoinCache(JoinCacheRes& ctx) const;
+	void putToJoinCache(joins::CacheRes& res, std::shared_ptr<const joins::PreSelect> preSelect) const;
+	void putToJoinCache(joins::CacheRes& res, joins::CacheVal&& val) const;
+	void getFromJoinCache(const Query&, const JoinedQuery&, joins::CacheRes& out) const;
+	void getFromJoinCache(const Query&, joins::CacheRes& out) const;
+	void getFromJoinCacheImpl(joins::CacheRes& out) const;
+	void getInsideFromJoinCache(joins::CacheRes& ctx) const;
 	int64_t lastUpdateTimeNano() const noexcept { return repl_.updatedUnixNano; }
+	void getFloatVectorView(VariantArray& result, const Index& index, IdType rowId, size_t elementsCount, bool isMultithreadTxInsertion,
+							const TransactionContext* txCtx, int field);
 
 	const FieldsSet* pkFields() const noexcept;
 
@@ -580,7 +596,6 @@ private:
 
 	bool SortOrdersBuilt() const noexcept { return indexOptimizer_.IsOptimizationCompleted(); }
 
-	int64_t correctMaxIterationsIdSetPreResult(int64_t maxIterationsIdSetPreResult) const;
 	void rebuildIndexesToCompositeMapping() noexcept;
 	PayloadChecksum calculateItemChecksum(IdType rowId, int removedIdxId = -1) const noexcept;
 
@@ -674,8 +689,10 @@ private:
 	void clearNamespaceCaches();
 	[[noreturn]] void throwIndexUpsertErrorWithPKInfo(const ConstPayload&, const std::exception&);
 
-	Variant getFloatVector(IdType, const FloatVectorIndex&, const PayloadType* = nullptr, const TagsMatcher* = nullptr,
+	Variant getFloatVector(FloatVectorId, const FloatVectorIndex&, const PayloadType* = nullptr, const TagsMatcher* = nullptr,
 						   const FieldsSet* = nullptr) const;
+	h_vector<Variant, 1> getFloatVectorArray(IdType rowId, size_t arrSize, const FloatVectorIndex&, const PayloadType* = nullptr,
+											 const TagsMatcher* = nullptr, const FieldsSet* = nullptr) const;
 	FloatVectorsGetter floatVectorsGetterFn(IdType rowId, const FieldsSet* = nullptr) const noexcept;
 
 	void quantize(std::string_view index, const RdxContext& ctx);
@@ -686,7 +703,7 @@ private:
 
 	NamespaceConfigData config_;
 	QueryCountCache queryCountCache_;
-	JoinCache joinCache_;
+	joins::Cache joinCache_;
 	// Replication variables
 	WALTracker wal_;
 	ReplicationState repl_;

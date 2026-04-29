@@ -9,7 +9,7 @@ protected:
 		rt.OpenNamespace(nmName);
 		rt.DefineNamespaceDataset(nmName, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
 										   IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0}});
-		reindexer::FtFastConfig cfg(0);
+		reindexer::FTConfig cfg(0);
 		cfg.enableNumbersSearch = true;
 		cfg.logLevel = 5;
 		cfg.maxStepSize = 100;

@@ -42,12 +42,13 @@ private:
 		size_t outterSize_{0};
 	};
 	static ArrayAnalizeResult analizeArray(const msgpack_object* const begin, const msgpack_object* const end);
+	static ArrayAnalizeResult analizeFVArray(const msgpack_object* const begin, const msgpack_object* const end, const PayloadFieldType&);
 	static FastArrayAnalizeResult fastAnalizeArray(const msgpack_object* const begin, const msgpack_object* const end);
 	void decode(CJsonBuilder& builder, const msgpack_object& obj, TagName);
 	template <typename Validator>
 	void decode(CJsonBuilder& builder, const msgpack_object& obj, TagName, const Validator&);
 	void decodeFloatVector(const PayloadFieldType&, int indexNumber, CJsonBuilder&, TagName, const msgpack_object* const begin,
-						   const msgpack_object* const end, size_t arraySize);
+						   const msgpack_object* const end, size_t arraySize, int plFieldPos);
 	void decodeArray(const PayloadFieldType&, int& plFieldPos, int indexNumber, CJsonBuilder&, TagName, const msgpack_object* const begin,
 					 const msgpack_object* const end, size_t arraySize);
 	void decodeNestedArray(const PayloadFieldType&, int& plFieldPos, int indexNumber, CJsonBuilder&, const msgpack_object* const begin,

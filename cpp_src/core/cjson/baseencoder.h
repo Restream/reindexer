@@ -1,9 +1,12 @@
 #pragma once
 
+#include "core/cjson/multidimensional_array_checker.h"
 #include "core/payload/payloadiface.h"
-#include "fieldextractor.h"
+#include "estl/concepts.h"
+#include "fields_explorer/field_array_analizer.h"
+#include "fields_explorer/fields_array_value_extractor.h"
 #include "tagslengths.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 
@@ -59,7 +62,8 @@ public:
 private:
 	using IndexedTagsPathInternalT = IndexedTagsPathImpl<16>;
 	constexpr static bool kWithTagsPathTracking = std::is_same_v<ProtobufBuilder, Builder>;
-	constexpr static bool kWithFieldExtractor = std::is_same_v<FieldsExtractor, Builder>;
+	constexpr static bool kWithFieldArrayAnalizer = concepts::OneOf<Builder, cjson::FieldArrayAnalizer, cjson::FieldsArrayValueExtractor>;
+	constexpr static bool kWithMultidimensionalArrayChecker = std::is_same_v<Builder, MultidimensionalArrayChecker>;
 
 	struct [[nodiscard]] DummyTagsPathScope {
 		DummyTagsPathScope(TagsPath&, TagName) noexcept {}

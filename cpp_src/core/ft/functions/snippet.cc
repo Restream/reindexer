@@ -250,9 +250,6 @@ bool Snippet::Process(ItemRef& res, PayloadType& plType, const FtFuncStruct& fun
 	FtCtx::Ptr ftctx = reindexer::static_ctx_pointer_cast<FtCtx>(func.ctx);
 	auto& dataFtCtx = *(reindexer::static_ctx_pointer_cast<FtCtxAreaData<Area>>(ftctx->GetData()));
 
-	if (!dataFtCtx.isWordPositions) {
-		throw Error(errParams, "Snippet function does not work with ft_fuzzy index");
-	}
 	if (!dataFtCtx.holders.has_value()) {
 		return false;
 	}

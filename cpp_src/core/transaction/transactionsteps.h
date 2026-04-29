@@ -2,6 +2,7 @@
 
 #include "core/item.h"
 #include "core/itemimpl.h"
+#include "core/payload/payloadtype.h"
 #include "core/query/query.h"
 #include "transaction.h"
 
@@ -56,13 +57,37 @@ public:
 
 class [[nodiscard]] TransactionSteps {
 public:
+	class [[nodiscard]] FVInsertionsCount {
+	public:
+		explicit FVInsertionsCount(size_t indexNo) noexcept : indexNo_(indexNo) {}
+		size_t IndexNo() const noexcept { return indexNo_; }
+		size_t InsertionsCount() const noexcept { return insertionsCount_; }
+		void AddCount(size_t count) noexcept { insertionsCount_ += count; }
+
+	private:
+		size_t indexNo_;
+		size_t insertionsCount_{0};
+	};
+
+	TransactionSteps(const PayloadType& pt) {
+		for (size_t i = 0, s = pt.NumFields(); i < s; ++i) {
+			const auto& fld = pt.Field(i);
+			if (fld.IsFloatVector()) {
+				expectedFVInsertionsCount_.emplace_back(i);
+			}
+		}
+	}
 	void Insert(Item&& item, lsn_t lsn) {
-		++expectedInsertionsCount_;
+		for (auto& idx : expectedFVInsertionsCount_) {
+			idx.AddCount(item.impl_->GetPayload().GetFieldLen(idx.IndexNo()));
+		}
 		steps.emplace_back(std::move(item), ModeInsert, lsn);
 	}
 	void Update(Item&& item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeUpdate, lsn); }
 	void Upsert(Item&& item, lsn_t lsn) {
-		++expectedInsertionsCount_;
+		for (auto& idx : expectedFVInsertionsCount_) {
+			idx.AddCount(item.impl_->GetPayload().GetFieldLen(idx.IndexNo()));
+		}
 		steps.emplace_back(std::move(item), ModeUpsert, lsn);
 	}
 	void Delete(Item&& item, lsn_t lsn) {
@@ -77,7 +102,8 @@ public:
 	size_t CalculateNewCapacity(size_t currentSize) const noexcept;
 	bool HasDeleteItemSteps() const noexcept { return deletionsCount_ > 0; }
 	unsigned DeletionsCount() const noexcept { return deletionsCount_; }
-	unsigned ExpectedInsertionsCount() const noexcept { return expectedInsertionsCount_; }
+	const std::vector<FVInsertionsCount>& ExpectedFVInsertionsCount() const& noexcept { return expectedFVInsertionsCount_; }
+	auto ExpectedFVInsertionsCount() const&& = delete;
 	unsigned UpdateQueriesCount() const noexcept { return updateQueriesCount_; }
 	unsigned DeleteQueriesCount() const noexcept { return deleteQueriesCount_; }
 
@@ -87,7 +113,7 @@ private:
 	unsigned updateQueriesCount_{0};
 	unsigned deletionsCount_{0};
 	unsigned deleteQueriesCount_{0};
-	unsigned expectedInsertionsCount_{0};
+	std::vector<FVInsertionsCount> expectedFVInsertionsCount_;
 };
 
 }  // namespace reindexer

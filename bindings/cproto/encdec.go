@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/golang/snappy"
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
+	"github.com/golang/snappy"
 )
 
 type rpcEncoder struct {

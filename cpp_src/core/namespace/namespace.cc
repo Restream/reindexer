@@ -28,6 +28,8 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 		if (needNamespaceCopy(nsl, tx) &&
 			(tx.GetSteps().size() >= static_cast<uint32_t>(txSizeToAlwaysCopy_.load(std::memory_order_relaxed)) ||
 			 isExpectingSelectsOnNamespace(nsl, ctx))) {
+			NamespaceImpl::Ptr nsCopy;
+
 			PerfStatCalculatorMT nsCopyCalc(copyStatsCounter_, enablePerfCounters);
 			calc.SetCounter(nsl->updatePerfCounter_);
 			calc.LockHit();
@@ -43,25 +45,25 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 
 				cg.Reset();
 				auto lvectorIndexes = nsl->getVectorIndexes();
-				nsCopy_.reset(new NamespaceImpl(
+				nsCopy.reset(new NamespaceImpl(
 					*nsl, !lvectorIndexes.empty() ? tx.CalculateNewCapacity(nsl->itemsCount()) : nsl->itemsCount(), storageLock));
 				nsCopyCalc.HitManualy();
 				NsContext nsCtx(ctx);
 				nsCtx.isCopiedNsRequest = true;
-				nsCopy_->CommitTransaction(tx, result, nsCtx, statCalculator);
-				nsCopy_->optimizeIndexes(nsCtx);
-				nsCopy_->warmupFtIndexes();
+				nsCopy->CommitTransaction(tx, result, nsCtx, statCalculator);
+				nsCopy->optimizeIndexes(nsCtx);
+				nsCopy->warmupFtIndexes();
 				try {
-					nsCopy_->storage_.InheritUpdatesFrom(nsl->storage_,
-														 storageLock);	// Updates can not be flushed until tx is committed into ns copy
+					nsCopy->storage_.InheritUpdatesFrom(nsl->storage_,
+														storageLock);  // Updates can not be flushed until tx is committed into ns copy
 				} catch (Error& e) {
 					// This exception should never be seen - there are no good ways to recover from it
 					assertf(false, "Error during storage moving in namespace ({}) copying: {}", nsl->name_, e.what());
 				}
 
-				calc.SetCounter(nsCopy_->updatePerfCounter_);
+				calc.SetCounter(nsCopy->updatePerfCounter_);
 				nsl->markReadOnly();
-				atomicStoreMainNs(nsCopy_.release());
+				atomicStoreMainNs(std::move(nsCopy));
 				wasCopied = true;  // NOLINT(*deadcode.DeadStores)
 				hasCopy_.store(false, std::memory_order_release);
 				if (!ns_->isTemporary() && !nsCtx.IsInSnapshot()) {
@@ -84,14 +86,14 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by exception:'{}'",
 					   nsl->GetName(ctx.rdxContext), e.what());
 				calc.Disable();
-				nsCopy_.reset();
+				result.Clear();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			} catch (...) {
 				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by unknown exception",
 					   nsl->GetName(ctx.rdxContext));
 				calc.Disable();
-				nsCopy_.reset();
+				result.Clear();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			}

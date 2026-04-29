@@ -4,10 +4,12 @@
 #include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/explaincalc.h"
+#include "sort/pdqsort.hpp"
 
 namespace reindexer {
 
 class FtFunctionsHolder;
+struct QueryResultsContext;
 
 class [[nodiscard]] RxSelector {
 	class [[nodiscard]] NsLockerItem {
@@ -282,11 +284,6 @@ public:
 										   FloatVectorsHolderMap* fvHolder, const RdxContext& ctx);
 
 private:
-	struct QueryResultsContext;
-
-	template <typename Locker>
-	static JoinedSelectors prepareJoinedSelectors(const Query& q, LocalQueryResults& result, Locker& locks, FtFunctionsHolder& func,
-												  std::vector<QueryResultsContext>&, SetLimit0ForChangeJoin limit0, const RdxContext& ctx);
 	template <typename LockerT>
 	static std::vector<SubQueryExplain> preselectSubQueries(Query& mainQuery, std::vector<LocalQueryResults>& queryResultsHolder, LockerT&,
 															FtFunctionsHolder&, const RdxContext&);
@@ -296,8 +293,6 @@ private:
 	template <typename LockerT>
 	static VariantArray selectSubQuery(const Query& subQuery, const Query& mainQuery, LockerT&, LocalQueryResults&, FtFunctionsHolder&,
 									   std::variant<std::string, size_t> fieldOrKeys, std::vector<SubQueryExplain>&, const RdxContext&);
-	static StoredValuesOptimizationStatus isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns,
-																					 const Query& mainQ);
 
 	template <typename LockerType>
 	static void preselectSubQuriesMain(const Query& q, std::optional<Query>& queryCopy, LockerType& locks, FtFunctionsHolder& func,

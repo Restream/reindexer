@@ -50,7 +50,7 @@ protected:
 			"bool_array":[true, false],
 			"bool_array2":[false, true],
 			"extra" : "{}",
-			"sparse_field": {},
+			"sparse_field": null,
 			"nested":{{
 				"bonus":{},
 				"nested_array":[
@@ -78,7 +78,7 @@ protected:
 			"array_field": [1,2,3],
 			"string_array":["first", "second", "third"],
 			"extra" : "{}",
-			"sparse_field": {},
+			"sparse_field": null,
 			"nested":{{"bonus":{}, "nested_array":[{{"id":1,"name":"first", "prices":[1,2,3]}},{{"id":2,"name":"second","prices":[4,5,6]}},{{"id":3,"name":"third", "nested":{{"array":[0,0,0]}}, "prices":[7,8,9]}}]}}, "nested2":{{"bonus2":{}}}
 			}})json";
 

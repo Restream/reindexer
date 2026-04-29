@@ -48,21 +48,22 @@ public:
 	CsvBuilder Array(concepts::TagNameOrIndex auto tag, int size = KUnknownFieldSize) { return Array(getNameByTag(tag), size); }
 
 	template <typename T>
-	void Array(concepts::TagNameOrIndex auto tag, std::span<T> data, int /*offset*/ = 0) {
+	void Array(concepts::TagNameOrIndex auto tag, std::span<T> data, int /*offset*/ = 0,
+			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		CsvBuilder node = Array(tag);
 		for (const auto& d : data) {
 			node.Put(TagName::Empty(), d);
 		}
 	}
 	template <typename T>
-	void Array(std::string_view n, std::span<T> data, int /*offset*/ = 0) {
+	void Array(std::string_view n, std::span<T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		CsvBuilder node = Array(n);
 		for (const auto& d : data) {
 			node.Put(TagName::Empty(), d);
 		}
 	}
 	template <typename T>
-	void Array(std::string_view n, std::initializer_list<T> data, int /*offset*/ = 0) {
+	void Array(std::string_view n, std::initializer_list<T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		CsvBuilder node = Array(n);
 		for (const auto& d : data) {
 			node.Put(TagName::Empty(), d);

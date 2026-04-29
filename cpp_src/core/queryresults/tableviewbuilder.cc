@@ -5,7 +5,7 @@
 
 #include "estl/gift_str.h"
 #include "tools/jsontools.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/terminalutils.h"
 #include "vendor/gason/gason.h"
 #include "vendor/utf8cpp/utf8.h"

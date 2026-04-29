@@ -22,9 +22,6 @@ class [[nodiscard]] IvfIndex final : public FloatVectorIndex {
 public:
 	IvfIndex(const IndexDef&, PayloadType&&, FieldsSet&&, LogCreation);
 
-	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
-	using Base::Delete;
-
 	std::unique_ptr<Index> Clone(size_t newCapacity) const override;
 	IndexMemStat GetMemStat(const RdxContext&) const noexcept override;
 	StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
@@ -33,11 +30,11 @@ public:
 						 uint8_t version) override;
 	void RebuildCentroids(float dataPart) override;
 
-	uint64_t GetHash(IdType rowId) const override { return FloatVectorIndex::getFloatVectorView(rowId).Hash(); }
+	uint64_t GetHash(FloatVectorId id) const override { return FloatVectorIndex::getFloatVectorView(id).Hash(); }
 
 	bool QuantizationAvailable() const override { return false; }
 	bool IsQuantized() const override { return false; }
-	void Quantize() override { assertrx(false); }
+	void Quantize(size_t /*itemsCount*/) override { assertrx(false); }
 	void SwitchMapOnQuantized() override { assertrx(false); }
 
 private:
@@ -48,26 +45,31 @@ private:
 	constexpr static uint64_t kStorageMagic = 0x3B3B3B3B2A2A2A2A;
 	IvfIndex(const IvfIndex&);
 
+	template <bool isArray>
+	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&, const auto& map, const auto& prepareId) const;
 	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const override;
+	template <bool isArray>
+	KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const;
 	KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const override;
 
-	Variant upsert(ConstFloatVectorView, IdType id, bool& clearCache) override;
-	[[noreturn]] Variant upsertConcurrent(ConstFloatVectorView, IdType id, bool& clearCache) override;
+	Variant upsert(ConstFloatVectorView, FloatVectorId id, bool& clearCache) override;
+	[[noreturn]] Variant upsertConcurrent(ConstFloatVectorView, FloatVectorId id, bool& clearCache) override;
+	void del(FloatVectorId, MustExist, IsLast) override;
 
-	ConstFloatVectorView getFloatVectorViewImpl(IdType) const override;
+	ConstFloatVectorView getFloatVectorViewImpl(FloatVectorId) const override;
 
 	static std::unique_ptr<faiss::IndexFlat> newSpace(size_t dimension, VectorMetric);
 	void clearMap() noexcept;
 	constexpr static size_t ivfTrainingSize(size_t nCentroids) noexcept { return nCentroids * 39; }
 	faiss::MetricType faissMetric() const noexcept;
-	void reconstruct(IdType, FloatVector&) const;
+	void reconstruct(FloatVectorId, FloatVector&) const;
 	static void trainIdx(faiss::IndexIVFFlat& idx, const float* vecs, const float* norms, size_t vecsCount);
 
 	size_t nCentroids_;
 	std::unique_ptr<faiss::IndexFlat> space_;
 
-	std::vector<faiss::idx_t> n2RowId_;
-	IDHashMapT<IdType, size_t> rowId2N_;
+	std::vector<faiss::idx_t> n2FvId_;
+	IDHashMapT<FloatVectorId, size_t> fvId2N_;
 	std::unique_ptr<faiss::IndexIVFFlat> map_;
 };
 

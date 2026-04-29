@@ -85,7 +85,6 @@ func parseSchema(st reflect.Type) *bindings.SchemaDef {
 		return &schemaDef
 	}
 	return nil
-
 }
 
 func peekNamedOption(name string, options *[]string) string {
@@ -228,13 +227,17 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 		}
 
 		if isIndexFloatVector(idxType) {
-			if subArray {
-				return fmt.Errorf("array float_vector index is not supported")
-			}
-			if (t.Kind() != reflect.Array && t.Kind() != reflect.Slice) || t.Elem().Kind() != reflect.Float32 {
+			if t.Kind() != reflect.Array && t.Kind() != reflect.Slice {
 				return fmt.Errorf("float_vector index allowed only for float32 array/slice field type")
 			}
-			opts.isArray = false
+			opts.isArray = subArray
+			for t.Elem().Kind() != reflect.Float32 {
+				if t.Elem().Kind() != reflect.Array && t.Elem().Kind() != reflect.Slice {
+					return fmt.Errorf("float_vector index allowed only for float32 array/slice field type")
+				}
+				t = t.Elem()
+				opts.isArray = true
+			}
 			namedOpts := parseNamedOptions(&idxSettings)
 
 			var fvOpts bindings.FloatVectorIndexOpts
@@ -391,7 +394,6 @@ func parseCompositeName(indexName string) string {
 }
 
 func parseCompositeJsonPaths(indexName string) []string {
-
 	indexConents := strings.Split(indexName, "=")
 	return strings.Split(indexConents[0], "+")
 }
@@ -459,7 +461,6 @@ func parseByKeyWord(idxSettingsBuf *[]string, keyWord string) bool {
 }
 
 func getFieldType(t reflect.Type) (string, error) {
-
 	switch t.Kind() {
 	case reflect.Bool:
 		return "bool", nil
@@ -487,7 +488,6 @@ func getFieldType(t reflect.Type) (string, error) {
 }
 
 func getJoinedField(val reflect.Value, joined map[string][]int, name string) (ret reflect.Value) {
-
 	if idx, ok := joined[name]; ok {
 		ret = reflect.Indirect(reflect.Indirect(val).FieldByIndex(idx))
 	}

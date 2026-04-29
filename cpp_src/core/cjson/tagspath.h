@@ -2,10 +2,10 @@
 
 #include <cstdlib>
 #include <functional>
-#include <span>
 
 #include "core/tag_name_index.h"
 #include "estl/h_vector.h"
+#include "indexed_path_node.h"
 #include "tools/assertrx.h"
 #include "tools/customhash.h"
 
@@ -15,51 +15,6 @@ class TagsMatcher;
 
 using TagsPath = h_vector<TagName, 16>;
 void Dump(auto& os, const TagsPath&, TagsMatcher* = nullptr);
-
-class [[nodiscard]] IndexedPathNode {
-public:
-	explicit IndexedPathNode(TagName name) noexcept : name_{name}, type_{Name} {}
-	explicit IndexedPathNode(TagIndex index) noexcept : index_{index}, type_{Index} {}
-	TagName GetTagName() const noexcept {
-		assertrx_dbg(IsTagName());
-		return name_;
-	}
-	TagIndex GetTagIndex() const noexcept {
-		assertrx_dbg(IsTagIndex());
-		return index_;
-	}
-	TagIndex& GetTagIndexRef() & noexcept {
-		assertrx_dbg(IsTagIndex());
-		return index_;
-	}
-	bool IsTagName() const noexcept { return type_ == Name; }
-	bool IsTagNameEmpty() const noexcept { return type_ == Name && name_.IsEmpty(); }
-	bool IsTagIndex() const noexcept { return type_ == Index; }
-	bool IsTagIndexNotAll() const noexcept { return IsTagIndex() && !index_.IsAll(); }
-	bool Match(TagIndex tag) const noexcept { return type_ == Index && index_ == tag; }
-	bool Match(TagName tag) const noexcept { return type_ == Name && name_ == tag; }
-	bool operator==(const IndexedPathNode& other) const noexcept {
-		if (type_ != other.type_) {
-			return false;
-		}
-		switch (type_) {
-			case Index:
-				return index_ == other.index_;
-			case Name:
-				return name_ == other.name_;
-			default:
-				assertrx_dbg(false);
-				return false;
-		}
-	}
-	bool operator==(TagName name) const noexcept { return type_ == Name && name_ == name; }
-	bool operator==(TagIndex index) const noexcept { return type_ == Index && index_ == index; }
-
-private:
-	TagIndex index_{TagIndex::All()};
-	TagName name_{TagName::Empty()};
-	enum [[nodiscard]] { Index, Name } type_;
-};
 
 enum [[nodiscard]] IndexedTagsPathCompareType { IgnoreAllOmittedIndexes, NotIgnoreLeftTrailingIndexes, NotIgnoreTrailingIndexes };
 
@@ -103,6 +58,8 @@ inline auto ComparePrefix(IndexedTagsPathView lhs, IndexedTagsPathView rhs) noex
 	return PrefixCompRes{lI, rI, result};
 }
 
+bool Compare(IndexedTagsPathView lhs, const TagsPath& rhs) noexcept;
+
 template <unsigned hvSize>
 class [[nodiscard]] IndexedTagsPathImpl : public h_vector<IndexedPathNode, hvSize> {
 public:
@@ -114,25 +71,7 @@ public:
 			this->emplace_back(t);
 		}
 	}
-	bool Compare(const TagsPath& other) const noexcept {
-		const size_t ourSize = this->size();
-		const size_t otherSize = other.size();
-		if (otherSize > ourSize) {
-			return false;
-		}
-		size_t i = 0;
-		for (; i < otherSize; ++i) {
-			if ((*this)[i] != other[i]) {
-				return false;
-			}
-		}
-		for (; i < ourSize; ++i) {
-			if (!(*this)[i].IsTagIndex()) {
-				return false;
-			}
-		}
-		return true;
-	}
+	bool Compare(const TagsPath& other) const noexcept { return reindexer::Compare(*this, other); }
 	bool IsNestedOrEqualTo(const TagsPath& other) const noexcept {
 		const size_t ourSize = this->size();
 		if (ourSize > other.size()) {

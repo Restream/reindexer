@@ -2,7 +2,7 @@
 
 #include "core/cjson/tagspath.h"
 #include "core/keyvalue/variant.h"
-#include "tools/serializer.h"
+#include "tools/serilize/serializer.h"
 
 namespace reindexer {
 

@@ -226,7 +226,7 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 				// NOLINTNEXTLINE(bugprone-exception-escape) TODO: Currently there are no good ways to recover, crash is intended
 				loop.spawn(wg, [this, i]() noexcept {
 					// 3) Perform wal-sync/force-sync for each follower
-					nodeReplicationRoutine(nodes[i]);
+					nodeReplicationRoutine(nodes[i]);  // NOLINT(rx-safety-noexcept-throw-call)
 				});
 			}
 			// Await termination
@@ -695,6 +695,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 			~TmpNsGuard() {
 				if (tmpNsName.size()) {
 					logWarn("{}: Dropping tmp ns on error: '{}'", serverId_, tmpNsName);
+					// NOLINTNEXTLINE(rx-safety-noexcept-throw-call): not throwing
 					if (auto err = client_.WithLSN(lsn_t(0, serverId_)).DropNamespace(tmpNsName); err.ok()) {
 						logWarn("{}: '{}' was dropped", serverId_, tmpNsName);
 					} else {

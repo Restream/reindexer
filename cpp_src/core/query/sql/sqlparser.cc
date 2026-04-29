@@ -1,6 +1,7 @@
 #include "sqlparser.h"
 #include <charconv>
 #include "core/keyvalue/geometry.h"
+#include "core/nsselecter/joins/helpers.h"
 #include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
 #include "core/type_consts_helpers.h"
@@ -1423,7 +1424,7 @@ void SQLParser::parseJoinEntries(Tokenizer& parser, const std::string& mainNs, J
 		if (ns1 != mainNs || ns2 != jquery.NsName()) {
 			if (ns2 == mainNs && ns1 == jquery.NsName()) {
 				std::swap(fld1, fld2);
-				condition = InvertJoinCondition(condition);
+				condition = joins::InvertJoinCondition(condition);
 				reverseNamespacesOrder = true;
 			} else {
 				throw Error(errParseSQL, "Unexpected tables with ON statement: ('{}' and '{}') but expected ('{}' and '{}'), {}", ns1, ns2,

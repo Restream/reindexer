@@ -21,22 +21,18 @@ struct [[nodiscard]] FtDslOpts {
 	bool typos = false;
 	bool exact = false;
 	bool number = false;
-	int groupNum = -1;
+	int phraseNum = -1;
 	OpType op = OpOr;
 	float boost = 1.0;
 	float termLenBoost = 1.0;
 	int distance = INT_MAX;
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
-	int qpos = 0;
 
-	FtDslOpts GetStemOpts(bool keepSuff) const {
-		FtDslOpts res = *this;
-		res.pref = true;
-		if (!keepSuff) {
-			res.suff = false;
-		}
-		return res;
-	}
+	FtDslOpts() = default;
+	FtDslOpts(const FtDslOpts&) = default;
+	FtDslOpts& operator=(const FtDslOpts&) = default;
+	FtDslOpts& operator=(FtDslOpts&&) = default;
+	FtDslOpts(FtDslOpts&&) noexcept = default;
 
 	FtDslOpts JoinWithPrevTermOpts(const FtDslOpts& prevTermOpts) const {
 		FtDslOpts res = *this;
@@ -61,6 +57,10 @@ public:
 			return false;
 		}
 
+		if (opts.phraseNum != otherTerm.Opts().phraseNum) {
+			return false;
+		}
+
 		return true;
 	}
 
@@ -72,6 +72,7 @@ public:
 	const FtDslOpts& Opts() const noexcept { return opts; }
 	FtDslOpts& Opts() noexcept { return opts; }
 	const std::wstring& Pattern() const noexcept { return pattern; }
+	std::wstring& Pattern() noexcept { return pattern; }
 
 	friend class FtDSLQuery;
 

@@ -73,6 +73,10 @@ public:
 		}
 	}
 	FieldsSet() = default;
+	FieldsSet(const FieldsSet&) = default;
+	FieldsSet(FieldsSet&&) noexcept = default;
+	FieldsSet& operator=(const FieldsSet&) = default;
+	FieldsSet& operator=(FieldsSet&&) noexcept = default;
 
 	void push_back(const std::string& jsonPath) {
 		if (!contains(jsonPath)) {

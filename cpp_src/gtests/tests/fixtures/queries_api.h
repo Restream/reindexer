@@ -9,7 +9,7 @@
 #include "gtests/tools.h"
 #include "queries_verifier.h"
 #include "reindexer_api.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 class [[nodiscard]] TestQuery : private reindexer::Query {
 public:
@@ -58,7 +58,7 @@ public:
 				IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts{}, 0},
 				IndexDeclaration{kFieldNameCountries, "tree", "string", IndexOpts{}.Array(), 0},
 				IndexDeclaration{kFieldNameAge, "hash", "int", IndexOpts{}.NoIndexColumn(), 0},
-				IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameDescription, "text", "string", IndexOpts{}, 0},
 				IndexDeclaration{kFieldNameRate, "tree", "double", IndexOpts{}, 0},
 				IndexDeclaration{kFieldNameIsDeleted, "-", "bool", IndexOpts{}, 0},
 				IndexDeclaration{kFieldNameActor, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},

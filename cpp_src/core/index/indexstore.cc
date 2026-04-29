@@ -1,4 +1,5 @@
 #include "indexstore.h"
+#include "core/formatters/id_type_fmt.h"
 #include "core/keyvalue/uuid.h"
 #include "core/rdxcontext.h"
 #include "tools/errors.h"
@@ -33,12 +34,12 @@ void IndexStore<key_string>::Delete(const Variant& key, [[maybe_unused]] IdType 
 		const auto staticSizeApproximate = size_t(float(sizeof(unordered_str_map<int>::value_type)) / str_map.max_load_factor());
 		memStat_.dataSize -= staticSizeApproximate + strSize;
 		strHolder.Add(std::move(keyIt->first), strSize);
-		std::ignore = str_map.template erase<no_deep_clean>(keyIt);
+		str_map.template erase<no_deep_clean>(keyIt);
 	}
 }
 template <typename T>
 void IndexStore<T>::Delete(const Variant& /*key*/, IdType /* id */, MustExist, StringsHolder&, bool& /*clearCache*/) {
-	assertrx_dbg(!IsFulltext() || Type() == IndexFuzzyFT || Type() == IndexCompositeFuzzyFT);
+	assertrx_dbg(!IsFulltext());
 }
 
 template <typename T>
@@ -99,7 +100,7 @@ Variant IndexStore<PayloadValue>::Upsert(const Variant& key, IdType /*id*/, bool
 
 template <typename T>
 Variant IndexStore<T>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
-	assertrx_dbg(!IsFulltext() || Type() == IndexFuzzyFT || Type() == IndexCompositeFuzzyFT);
+	assertrx_dbg(!IsFulltext());
 	if (!IsColumnIndexDisabled() && !key.Type().Is<KeyValueType::Null>()) {
 		idx_data.resize(std::max<size_t>(id.ToNumber() + 1, idx_data.size()));
 		idx_data[id.ToNumber()] = static_cast<T>(key);
@@ -222,11 +223,9 @@ std::unique_ptr<Index> IndexStore_New(const IndexDef& idef, PayloadType&& payloa
 		case IndexInt64Hash:
 		case IndexDoubleBTree:
 		case IndexFastFT:
-		case IndexFuzzyFT:
 		case IndexCompositeBTree:
 		case IndexCompositeHash:
 		case IndexCompositeFastFT:
-		case IndexCompositeFuzzyFT:
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:

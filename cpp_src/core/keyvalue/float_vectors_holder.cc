@@ -3,7 +3,8 @@
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/keyvalue/float_vectors_keeper.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/nsselecter/joinedselector.h"
+#include "core/nsselecter/joins/items_processor.h"
+#include "core/queryresults/itemref.h"
 #include "core/queryresults/localqueryresults.h"
 
 namespace reindexer {
@@ -11,13 +12,16 @@ namespace reindexer {
 namespace {
 constexpr uint32_t kLimitNumberProcessedElements = 5000;
 
-void checkPayloadVectorField([[maybe_unused]] const Payload& payload, [[maybe_unused]] FloatVectorIndexData idx) {
+void checkPayloadVectorField([[maybe_unused]] const Payload& payload, [[maybe_unused]] const ConstPayload& nsPayload,
+							 [[maybe_unused]] FloatVectorIndexData idx) {
 #ifdef RX_WITH_STDLIB_DEBUG
 	VariantArray buffer;
 	payload.Get(idx.ptField, buffer);
-	assertrx_dbg(buffer.size() == 1);
-	assertrx_dbg(buffer[0].Type().Is<KeyValueType::FloatVector>());
-	assertrx_dbg(ConstFloatVectorView(buffer[0]).IsStrippedOrEmpty());
+	assertrx_dbg(buffer.size() == nsPayload.GetFieldLen(idx.ptField));
+	for (const auto& v : buffer) {
+		assertrx_dbg(v.Type().Is<KeyValueType::FloatVector>());
+		assertrx_dbg(ConstFloatVectorView(v).IsStrippedOrEmpty());
+	}
 #endif	// RX_WITH_STDLIB_DEBUG
 }
 }  // namespace
@@ -52,17 +56,17 @@ void FloatVectorsHolderMap::Add(const NamespaceImpl& ns, const It& it, const It&
 		nsIt = std::prev(vectorsByNs_.end());
 	}
 
-	std::vector<IdType> ids;
-	std::vector<ConstFloatVectorView> vectorsData;
+	std::vector<FloatVectorId> ids;
+	std::vector<ConstFloatVectorView> vectors;
 	ids.reserve(kLimitNumberProcessedElements);
-	vectorsData.reserve(kLimitNumberProcessedElements);
+	vectors.reserve(kLimitNumberProcessedElements);
 
 	for (size_t i = 0; i < nsIt->indexesCnt; ++i) {
 		assertrx_dbg(nsIt->indexes[i].has_value());
 		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 		auto& info = *(nsIt->indexes[i]);
 		if (filter.ContainsVector(info.index.ptField)) {
-			add(ns, info, it, end, ids, vectorsData);
+			add(ns, info, it, end, ids, vectors);
 		}
 	}
 }
@@ -78,7 +82,7 @@ bool FloatVectorsHolderMap::Empty() const noexcept {
 
 template <typename It>
 void FloatVectorsHolderMap::updatePayload(const NamespaceImpl& ns, const FloatVectorIndexData& index, It it, const It& end,
-										  std::span<ConstFloatVectorView> vectorsData) {
+										  std::span<ConstFloatVectorView> vectors) {
 	const auto field = index.ptField;
 	size_t idx = 0;
 	for (; it != end; ++it) {
@@ -87,17 +91,20 @@ void FloatVectorsHolderMap::updatePayload(const NamespaceImpl& ns, const FloatVe
 		if (id.IsValid()) {
 			itemRef.Value().Clone();
 			Payload payload{ns.payloadType_, itemRef.Value()};
-			checkPayloadVectorField(payload, index);
-			assertrx_throw(idx < vectorsData.size());
-			const auto& view = vectorsData[idx++];
-			if (!view.IsEmpty()) {
-				payload.Set(field, Variant{view});
+			checkPayloadVectorField(payload, ConstPayload{ns.payloadType_, ns.items_[id]}, index);
+			const auto count = payload.GetFieldLen(index.ptField);
+			assertrx_throw(idx + count <= vectors.size());
+			for (unsigned i = 0; i < count; ++i) {
+				const auto& view = vectors[idx++];
+				if (!view.IsEmpty()) {
+					payload.Set(field, i, Variant{view});
+				}
 			}
 		}
 	}
 }
 
-void FloatVectorsKeeper::getFloatVectors(const KeeperTag& tag, std::span<IdType> ids, std::vector<ConstFloatVectorView>& vectorsData,
+void FloatVectorsKeeper::getFloatVectors(const KeeperTag& tag, std::span<FloatVectorId> ids, std::vector<ConstFloatVectorView>& vectorsData,
 										 auto&& floatVectorGetter) {
 	vectorsData.resize(0);
 	vectorsData.reserve(ids.size());
@@ -109,7 +116,13 @@ void FloatVectorsKeeper::getFloatVectors(const KeeperTag& tag, std::span<IdType>
 	for (auto id : ids) {
 		auto [itVector, newAdded] = map_.try_emplace(id, queue_.end());
 		if (newAdded) {
-			itVector->second = queue_.emplace(std::next(tag.Get()), ownerID, floatVectorGetter(id, index_), itVector);
+			try {
+				itVector->second = queue_.emplace(std::next(tag.Get()), ownerID, floatVectorGetter(id, index_), itVector);
+			} catch (...) {
+				assertrx_dbg(false);
+				map_.erase(itVector);
+				throw;
+			}
 		} else {
 			// update owner
 			if (itVector->second->owner < ownerID) {
@@ -125,47 +138,51 @@ void FloatVectorsKeeper::getFloatVectors(const KeeperTag& tag, std::span<IdType>
 
 template <typename It>
 void FloatVectorsHolderMap::add(const NamespaceImpl& ns, const FloatVectorIndexInfo& indexInfo, It it, const It& end,
-								std::vector<IdType>& ids, std::vector<ConstFloatVectorView>& vectorsData) {
+								std::vector<FloatVectorId>& ids, std::vector<ConstFloatVectorView>& vectors) {
 	const auto& tag = indexInfo.tag;
 	const auto& index = indexInfo.index;
 	auto& keeper = index.ptr->GetKeeper();
 
-	ids.resize(0);
+	ids.clear();
+	vectors.clear();
 
-	auto floatVectorGetter = [&ns](IdType id, const FloatVectorIndex& index) { return FloatVector{ns.getFloatVector(id, index)}; };
+	auto floatVectorGetter = [&ns](FloatVectorId id, const FloatVectorIndex& index) { return FloatVector{ns.getFloatVector(id, index)}; };
 
 	It itCurr = it;
 	for (; it != end; ++it) {
 		ItemRef& itemRef = it.GetItemRef();
 		const auto id = itemRef.Id();
 		if (id.IsValid()) {
-			ids.push_back(id);
+			ConstPayload payload{ns.payloadType_, ns.items_[id]};
+			for (unsigned i = 0, count = payload.GetFieldLen(index.ptField); i < count; ++i) {
+				ids.emplace_back(id, i);
+			}
 			if (ids.size() >= kLimitNumberProcessedElements) {
 				auto itNext = it;
 				++itNext;
-				keeper.getFloatVectors(tag, ids, vectorsData, floatVectorGetter);
-				assertrx_throw(ids.size() == vectorsData.size());
-				updatePayload(ns, index, itCurr, itNext, vectorsData);
+				keeper.getFloatVectors(tag, ids, vectors, floatVectorGetter);
+				assertrx_throw(ids.size() == vectors.size());
+				updatePayload(ns, index, itCurr, itNext, vectors);
 
-				ids.resize(0);
-				vectorsData.resize(0);
+				ids.clear();
+				vectors.resize(0);
 				itCurr = itNext;
 			}
 		}
 	}
 
 	if (!ids.empty()) {
-		keeper.getFloatVectors(tag, ids, vectorsData, floatVectorGetter);
-		assertrx_throw(ids.size() == vectorsData.size());
-		updatePayload(ns, index, itCurr, end, vectorsData);
+		keeper.getFloatVectors(tag, ids, vectors, floatVectorGetter);
+		assertrx_throw(ids.size() == vectors.size());
+		updatePayload(ns, index, itCurr, end, vectors);
 
-		ids.resize(0);
-		vectorsData.resize(0);
+		ids.clear();
+		vectors.clear();
 	}
 }
 
 template void FloatVectorsHolderMap::Add(const NamespaceImpl&, const LocalQueryResults::Iterator&, const LocalQueryResults::Iterator&,
 										 const FieldsFilter&);
-template void FloatVectorsHolderMap::Add(const NamespaceImpl&, const JoinPreResult::Values::Iterator&,
-										 const JoinPreResult::Values::Iterator&, const FieldsFilter&);
+template void FloatVectorsHolderMap::Add(const NamespaceImpl&, const joins::PreSelect::Values::Iterator&,
+										 const joins::PreSelect::Values::Iterator&, const FieldsFilter&);
 }  // namespace reindexer

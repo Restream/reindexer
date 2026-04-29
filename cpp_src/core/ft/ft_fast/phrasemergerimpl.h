@@ -11,11 +11,9 @@ namespace ft {
 constexpr size_t kUseBinarySearchBorder = 8;
 
 template <typename IdCont, typename Calculator, bool UseBinarySearch>
-std::pair<float, uint8_t> calcTermRankImpl(const TermResults<IdCont>& rawRes, Calculator bm25Calc, const IdRelType& relid,
-										   TermRankInfo& termInf, const DataHolder<IdCont>& holder) {
-	// Find field with max rank
-	const auto& opts = rawRes.term.Opts();
-	uint8_t field = 0;
+std::pair<float, uint8_t> calcTermRankImpl(const FtDslOpts& termOpts, Calculator bm25Calc, const IdRelType& relid, TermRankInfo& termInf,
+										   const DataHolder<IdCont>& holder) {
+	uint8_t fieldWithMaxRank = 0;
 
 	h_vector<float, 4> ranksInFields;
 	bool needToSumWinner = false;
@@ -31,7 +29,7 @@ std::pair<float, uint8_t> calcTermRankImpl(const TermResults<IdCont>& rawRes, Ca
 		++idx;
 		if constexpr (UseBinarySearch) {
 			auto nextFieldIt =
-				std::lower_bound(positions.cbegin() + idx, positions.cend(), field, [](PosType p, uint32_t f) { return p.field() <= f; });
+				std::lower_bound(positions.cbegin() + idx, positions.cend(), f, [](PosType p, uint32_t f) { return p.field() <= f; });
 			idx += (nextFieldIt - (positions.cbegin() + idx));
 		} else {
 			while (idx < positions.size() && positions[idx].field() == f) {
@@ -40,7 +38,7 @@ std::pair<float, uint8_t> calcTermRankImpl(const TermResults<IdCont>& rawRes, Ca
 		}
 
 		// skip field with zero boost
-		if (reindexer::fp::IsZero(rawRes.term.Opts().fieldsOpts[f].boost)) {
+		if (reindexer::fp::IsZero(termOpts.fieldsOpts[f].boost)) {
 			continue;
 		}
 
@@ -48,21 +46,21 @@ std::pair<float, uint8_t> calcTermRankImpl(const TermResults<IdCont>& rawRes, Ca
 		const size_t fieldEnd = idx;
 		const size_t wordsInField = fieldEnd - fieldBegin;
 		const float bm25 = bm25Calc.Get(wordsInField, holder.vdocs_[relid.Id()].wordsCount[f], holder.avgWordsCount_[f]);
-		const float normBm25Tmp = FtFastFieldConfig::bound(bm25, fldCfg.bm25Weight, fldCfg.bm25Boost);
+		const float normBm25Tmp = FTFieldConfig::bound(bm25, fldCfg.bm25Weight, fldCfg.bm25Boost);
 		termInf.positionRank = fldCfg.calcPositionRank(positions[fieldBegin].pos());
-		termInf.termLenBoost = FtFastFieldConfig::bound(opts.termLenBoost, fldCfg.termLenWeight, fldCfg.termLenBoost);
+		termInf.termLenBoost = FTFieldConfig::bound(termOpts.termLenBoost, fldCfg.termLenWeight, fldCfg.termLenBoost);
 
 		// final term rank calculation
-		const float termRankTmp = opts.fieldsOpts[f].boost * normBm25Tmp * termInf.termLenBoost * termInf.positionRank;
+		const float termRankTmp = termOpts.fieldsOpts[f].boost * normBm25Tmp * termInf.termLenBoost * termInf.positionRank;
 
 		if (termRankTmp > termInf.termRank) {
-			field = f;
+			fieldWithMaxRank = f;
 			termInf.termRank = termRankTmp;
 			termInf.bm25Norm = normBm25Tmp;
-			needToSumWinner = opts.fieldsOpts[f].needSumRank;
+			needToSumWinner = termOpts.fieldsOpts[f].needSumRank;
 		}
 
-		if (opts.fieldsOpts[f].needSumRank) {
+		if (termOpts.fieldsOpts[f].needSumRank) {
 			ranksInFields.push_back(termRankTmp);
 		}
 	}
@@ -77,18 +75,18 @@ std::pair<float, uint8_t> calcTermRankImpl(const TermResults<IdCont>& rawRes, Ca
 		}
 	}
 
-	assertrx_dbg(opts.boost >= 0.0 && termInf.proc >= 0.0);
-	termInf.termRank = opts.boost * termInf.proc * termInf.termRank;
-	return std::make_pair(termInf.termRank, field);
+	assertrx_dbg(termOpts.boost >= 0.0 && termInf.proc >= 0.0);
+	termInf.termRank = termOpts.boost * termInf.proc * termInf.termRank;
+	return {termInf.termRank, fieldWithMaxRank};
 }
 
 template <typename IdCont, typename Calculator>
-std::pair<float, uint8_t> calcTermRank(const TermResults<IdCont>& rawRes, Calculator bm25Calc, const IdRelType& relid,
-									   TermRankInfo& termInf, const DataHolder<IdCont>& holder) {
+std::pair<float, uint8_t> calcTermRank(const FtDslOpts& termOpts, Calculator bm25Calc, const IdRelType& relid, TermRankInfo& termInf,
+									   const DataHolder<IdCont>& holder) {
 	if (relid.Pos().size() >= kUseBinarySearchBorder) {
-		return calcTermRankImpl<IdCont, Calculator, true>(rawRes, bm25Calc, relid, termInf, holder);
+		return calcTermRankImpl<IdCont, Calculator, true>(termOpts, bm25Calc, relid, termInf, holder);
 	} else {
-		return calcTermRankImpl<IdCont, Calculator, false>(rawRes, bm25Calc, relid, termInf, holder);
+		return calcTermRankImpl<IdCont, Calculator, false>(termOpts, bm25Calc, relid, termInf, holder);
 	}
 }
 
@@ -161,25 +159,24 @@ inline float maxFieldsBoost(const IdRelType& relid, const FtDslOpts& termOpts) {
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 template <typename Bm25T>
-void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResults<IdCont>& termRes, bool firstTerm) {
+void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResults<IdCont>& term, bool isFirstTerm) {
 	const auto& vdocs = holder_.vdocs_;
 	const size_t totalDocsCount = vdocs.size();
 
 	// loop on subterm (word, translit, stemmer,...)
-	for (SubtermResults<IdCont>& subtermRes : termRes.subtermsResults) {
+	for (SubtermResults<IdCont>& subterm : term) {
 		if (!inTransaction_) {
 			ThrowOnCancel(ctx_);
 		}
-		Bm25Calculator<Bm25T> bm25(totalDocsCount, subtermRes.Vids().size(), holder_.cfg_->bm25Config.bm25k1,
+		Bm25Calculator<Bm25T> bm25(totalDocsCount, subterm.Occurences().size(), holder_.cfg_->bm25Config.bm25k1,
 								   holder_.cfg_->bm25Config.bm25b);
 
-		auto& subtermDocs = subtermRes.Vids();
-		for (auto&& positionsInDoc : subtermDocs) {
-			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(positionsInDoc), const IdRelType&>) ||
-							  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(positionsInDoc), IdRelType&>),
-						  "Expecting positionsInDoc is movable for packed vector and not movable for simple vector");
+		for (auto&& occurence : subterm.Occurences()) {
+			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(occurence), const IdRelType&>) ||
+							  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(occurence), IdRelType&>),
+						  "Expecting occurence is movable for packed vector and not movable for simple vector");
 
-			const index_t docId = positionsInDoc.Id();
+			const index_t docId = occurence.Id();
 			if (docId > maxDocId_) {
 				break;
 			}
@@ -188,26 +185,25 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 				continue;
 			}
 
-			if (idoffsets_[docId] == maxMergedDocs_ && (!firstTerm || NumDocsMerged() >= holder_.cfg_->mergeLimit)) {
+			if (idoffsets_[docId] == maxMergedDocs_ && (!isFirstTerm || NumDocsMerged() >= maxMergedDocs_)) {
 				continue;
 			}
 
 			// Find field with max rank
 			TermRankInfo termInf;
-			termInf.proc = subtermRes.proc;
-			termInf.pattern = subtermRes.Pattern();
+			termInf.proc = subterm.Proc();
+			termInf.pattern = subterm.Pattern();
 
-			auto [termRank, field] = calcTermRank(termRes, bm25, positionsInDoc, termInf, holder_);
+			auto [termRank, field] = calcTermRank(term.Opts(), bm25, occurence, termInf, holder_);
 			if (reindexer::fp::IsZero(termRank)) {
 				continue;
 			}
 
 			if (holder_.cfg_->logLevel >= LogTrace) [[unlikely]] {
-				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subtermRes.Pattern(), bm25.GetIDF(),
-					   termRes.term.Opts().termLenBoost);
+				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subterm.Pattern(), bm25.GetIDF(), term.Opts().termLenBoost);
 			}
 
-			if (firstTerm) {
+			if (isFirstTerm) {
 				if (idoffsets_[docId] < maxMergedDocs_) {
 					auto& md = GetMergeData(idoffsets_[docId]);
 					auto& mdExt = GetMergeDataExtended(idoffsets_[docId]);
@@ -215,27 +211,27 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 						mdExt.rank = termRank;
 						md.proc = termRank;
 					}
-					mergeDataExtended_[idoffsets_[docId]].AddPositions(positionsInDoc.Pos(), termRes.term.Pattern(), termInf);
+					mergeDataExtended_[idoffsets_[docId]].AddPositions(occurence.Pos(), term.Pattern(), termInf);
 					continue;
 				}
 
 				InfoType info{.id = IdType::FromNumber(docId), .proc = termRank, .field = field};
 				mergeData_.emplace_back(std::move(info));
 				PositionsVector positions;
-				InitFrom(std::move(positionsInDoc.Pos()), positions);
-				mergeDataExtended_.emplace_back(std::move(positions), termRank, termRes.term.Pattern(), termInf);
+				InitFrom(std::move(occurence.Pos()), positions);
+				mergeDataExtended_.emplace_back(std::move(positions), termRank, term.Pattern(), termInf);
 				idoffsets_[docId] = mergeData_.size() - 1;
 			} else {
 				auto& md = GetMergeData(idoffsets_[docId]);
 				auto& mdExt = GetMergeDataExtended(idoffsets_[docId]);
-				const int minDist = mdExt.MergeWithDist(positionsInDoc.Pos(), termRes.Distance(), termRes.term.Pattern(), termInf);
+				const int minDist = mdExt.MergeWithDist(occurence.Pos(), term.Distance(), term.Pattern(), termInf);
 
 				if (mdExt.nextPhrasePositions.empty()) {
 					continue;
 				}
 
 				const float normDist =
-					FtFastFieldConfig::bound(1.0 / (minDist < 1 ? 1 : minDist), holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
+					FTFieldConfig::bound(1.0 / (minDist < 1 ? 1 : minDist), holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
 				const float finalRank = normDist * termRank;
 				//'rank' of the current subTerm is greater than the previous subTerm, update the overall 'rank'
 				// and save the rank of the subTerm for possible further updates
@@ -266,36 +262,31 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 }
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
-void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingAllTerms(std::vector<TermResults<IdCont>>& rawResults,
-																						size_t from, size_t to) {
+void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingAllTerms(PhraseResults<IdCont>& phrase) {
 	const auto& vdocs = holder_.vdocs_;
 
-	for (size_t i = from; i < to; ++i) {
-		if (i > from) {
+	for (size_t i = 0; i < phrase.NumTerms(); ++i) {
+		if (i > 0) {
 			nextTermDocs_.reset();
 		}
 
 		index_t maxTermDocId = 0;
 
-		for (SubtermResults<IdCont>& subtermRes : rawResults[i].subtermsResults) {
+		for (SubtermResults<IdCont>& subterm : phrase.Term(i)) {
 			if (!inTransaction_) {
 				ThrowOnCancel(ctx_);
 			}
 
-			auto& subtermDocs = subtermRes.Vids();
-			for (auto&& positionsInDoc : subtermDocs) {
-				static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(positionsInDoc), const IdRelType&>) ||
-								  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(positionsInDoc), IdRelType&>),
-							  "Expecting positionsInDoc is movable for packed vector and not movable for simple vector");
-
-				const index_t docId = positionsInDoc.Id();
+			auto& occurences = subterm.Occurences();
+			for (auto&& occurence : occurences) {
+				const index_t docId = occurence.Id();
 				if (docId > maxDocId_) {
 					break;
 				}
 
 				maxTermDocId = std::max(maxTermDocId, docId);
 				// check removed only on final stage
-				if (i + 1 == to && preselectedDocs_[docId] && vdocs[docId].IsRemoved()) {
+				if (i + 1 == phrase.NumTerms() && preselectedDocs_[docId] && vdocs[docId].IsRemoved()) {
 					continue;
 				}
 
@@ -307,27 +298,19 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingA
 
 		preselectedDocs_ &= nextTermDocs_;
 	}
+
+	std::ignore = preselectedDocs_.Exclude(docsExcluded_);
 }
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 template <typename Bm25T>
-void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::Merge(std::vector<TermResults<IdCont>>& rawResults, size_t from, size_t to) {
-	static_assert(sizeof(Bm25Calculator<Bm25T>) <= 32, "Bm25Calculator<Bm25T> size is greater than 32 bytes");
+void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::Merge(PhraseResults<IdCont>& phrase) {
+	init(phrase);
+	preselectDocsContainingAllTerms(phrase);
 
-	init(rawResults, from, to);
-
-	preselectDocsContainingAllTerms(rawResults, from, to);
-	for (size_t i = from; i < to; ++i) {
-		bool firstTerm = (i == from);
-		mergePhraseTerm<Bm25T>(rawResults[i], firstTerm);
-	}
-
-	// looks like that doesnt work correctly
-	// Update full match rank
-	for (auto& md : mergeData_) {
-		if (size_t(holder_.vdocs_[md.id.ToNumber()].wordsCount[md.field]) == rawResults.size()) {
-			md.proc *= holder_.cfg_->fullMatchBoost;
-		}
+	for (size_t i = 0; i < phrase.NumTerms(); ++i) {
+		bool isFirstTerm = (i == 0);
+		mergePhraseTerm<Bm25T>(phrase.Term(i), isFirstTerm);
 	}
 }
 

@@ -1,9 +1,10 @@
 package reindexer
 
 import (
-	"github.com/goccy/go-json"
 	"log"
 	"testing"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"

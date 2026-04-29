@@ -1,6 +1,6 @@
 #include "itemcomparator.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/queryresults/joinresults.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "nsselecter.h"
 
 namespace {
@@ -31,7 +31,7 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 	FieldsCompRes joinedNsRes;
 	for (const auto& comp : comparators_) {
 		const ComparationResult res = std::visit(
-			overloaded{[&](CompareByExpression c) noexcept {
+			overloaded{[&](CompareByExpression c) {
 						   assertrx_throw(expressionIndex < ctx_.sortingContext.exprResults.size());
 						   const auto& eR{ctx_.sortingContext.exprResults[expressionIndex++]};
 						   const auto lR{eR[lhs.SortExprResultsIdx()]};
@@ -48,20 +48,20 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 					   [&](CompareByJoinedField c) {
 						   if (joinedNsRes.firstDifferentFieldIdx == kNotComputed) {
 							   const auto& jNs = joined_;
-							   const auto& joinedSelector = *jNs.joinedSelector;
+							   const auto& joinItemsProcessor = *jNs.joinItemsProcessor;
 							   const joins::ItemIterator ljIt{joinResults_, lhs.Id()};
 							   const joins::ItemIterator rjIt{joinResults_, rhs.Id()};
 							   const auto ljfIt = ljIt.at(c.joinedNs);
 							   const auto rjfIt = rjIt.at(c.joinedNs);
 							   if (ljfIt == ljIt.end() || ljfIt.ItemsCount() == 0 || rjfIt == rjIt.end() || rjfIt.ItemsCount() == 0)
 								   [[unlikely]] {
-								   throw Error(errQueryExec, "Not found value joined from ns {}", joinedSelector.RightNsName());
+								   throw Error(errQueryExec, "Not found value joined from ns {}", joinItemsProcessor.RightNsName());
 							   }
 							   if (ljfIt.ItemsCount() > 1 || rjfIt.ItemsCount() > 1) [[unlikely]] {
-								   throw Error(errQueryExec, "Found more than 1 value joined from ns {}", joinedSelector.RightNsName());
+								   throw Error(errQueryExec, "Found more than 1 value joined from ns {}", joinItemsProcessor.RightNsName());
 							   }
 							   joinedNsRes.fieldsCmpRes =
-								   ConstPayload{joinedSelector.RightNs()->payloadType_, ljfIt[0].Value()}
+								   ConstPayload{joinItemsProcessor.RightNs()->payloadType_, ljfIt[0].Value()}
 									   .Compare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(
 										   rjfIt[0].Value(), jNs.fields, joinedNsRes.firstDifferentFieldIdx, jNs.collateOpts);
 						   }
@@ -143,15 +143,15 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 		overloaded{[&](const SortingContext::ExpressionEntry& e) { insert.expr(e.data.desc); },
 				   [&](const SortingContext::JoinedFieldEntry& e) {
 					   auto& jns = joined_;
-					   if (jns.joinedSelector == nullptr) {
-						   assertrx_throw(ctx_.joinedSelectors);
-						   assertrx_throw(ctx_.joinedSelectors->size() > e.nsIdx);
-						   jns.joinedSelector = &(*ctx_.joinedSelectors)[e.nsIdx];
+					   if (jns.joinItemsProcessor == nullptr) {
+						   assertrx_throw(ctx_.joinItemsProcessors);
+						   assertrx_throw(ctx_.joinItemsProcessors->size() > e.nsIdx);
+						   jns.joinItemsProcessor = &(*ctx_.joinItemsProcessors)[e.nsIdx];
 					   } else {
-						   assertrx_dbg(&(*ctx_.joinedSelectors)[e.nsIdx] == jns.joinedSelector);
+						   assertrx_dbg(&(*ctx_.joinItemsProcessors)[e.nsIdx] == jns.joinItemsProcessor);
 					   }
-					   assertrx_dbg(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult().payload));
-					   const auto& ns = *jns.joinedSelector->RightNs();
+					   assertrx_dbg(!std::holds_alternative<joins::PreSelect::Values>(jns.joinItemsProcessor->PreSelectResults().payload));
+					   const auto& ns = *jns.joinItemsProcessor->RightNs();
 					   const int fieldIdx = e.index;
 					   if (fieldIdx == IndexValueType::SetByJsonPath || ns.indexes_[fieldIdx]->Opts().IsSparse()) {
 						   TagsPath tagsPath;
@@ -316,7 +316,7 @@ ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t& 
 					return std::make_pair(Variant(*(static_cast<const Uuid*>(rawData) + lId.ToNumber())),
 										  Variant(*(static_cast<const Uuid*>(rawData) + rId.ToNumber())));
 				},
-				[](KeyValueType::Float) noexcept -> std::pair<Variant, Variant> {
+				[](KeyValueType::Float) -> std::pair<Variant, Variant> {
 					// Indexed fields can not contain float
 					throw_as_assert;
 				},
@@ -325,9 +325,9 @@ ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t& 
 			cmpRes =
 				values.first.template Compare<NotComparable::Throw, kDefaultNullsHandling>(values.second, opts ? *opts : CollateOpts());
 		} else {
-			cmpRes = ConstPayload(ns_.payloadType_, ns_.items_[lId.ToNumber()])
+			cmpRes = ConstPayload(ns_.payloadType_, ns_.items_[lId])
 						 .CompareField<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(
-							 ns_.items_[rId.ToNumber()], field, fields_, tagPathIdx, opts ? *opts : CollateOpts());
+							 ns_.items_[rId], field, fields_, tagPathIdx, opts ? *opts : CollateOpts());
 		}
 		if (cmpRes != ComparationResult::Eq) {
 			firstDifferentFieldIdx = i;

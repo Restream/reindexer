@@ -1,5 +1,5 @@
 #include "indexrtree.h"
-
+#include "core/formatters/id_type_fmt.h"
 #include "core/rdxcontext.h"
 #include "greenesplitter.h"
 #include "linearsplitter.h"
@@ -40,7 +40,7 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 		Visitor(SortType sId, unsigned distinct, unsigned iCountInNs, SelectKeyResult& r)
 			: sortId_{sId}, itemsCountInNs_{distinct ? 0u : iCountInNs}, res_{r} {}
 		bool operator()(const typename Map::value_type& v) override {
-			idsCount_ += v.second.Unsorted().size();
+			idsCount_ += v.second.Unsorted().Size();
 			res_.emplace_back(v.second, sortId_);
 			return ScanWin();
 		}
@@ -115,8 +115,8 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	assertf(!mustExist || this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '{}' id={}, key={} ({})", this->name_, id,
-			Variant(keys).template As<std::string>(this->payloadType_, this->Fields()),
-			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
+			Variant(keys).AsSingleString(this->payloadType_, this->Fields()),
+			Variant(keyIt->first).AsSingleString(this->payloadType_, this->Fields()));
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);

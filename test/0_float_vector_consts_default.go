@@ -2,11 +2,19 @@
 
 package reindexer
 
-const kTestFloatVectorDimension       = 512
-const kTestHNSWFloatVectorMaxElements = 10000
-const kTestIVFFloatVectorMaxElements  = 10000
-const kTestBFloatVectorMaxElements    = 10000
-const kBenchKnnNsSize                 = 30000
-const kBenchKnnTxSize                 = 3000
-const kBenchFloatVectorDimension      = 256
-const kBenchKnnK                      = 1000
+const (
+	kTestFloatVectorDimension       = 512
+	kTestHNSWFloatVectorMaxElements = 10000
+	kTestIVFFloatVectorMaxElements  = 10000
+	kTestBFloatVectorMaxElements    = 10000
+	kBenchKnnNsSize                 = 30000
+	kBenchKnnTxSize                 = 3000
+	kBenchFloatVectorDimension      = 256
+	kBenchKnnK                      = 1000
+)
+
+const (
+	kTestFloatVectorArraySize            = 64
+	kTestFloatVectorArrayDimension       = 64
+	kTestHNSWFloatVectorArrayMaxElements = 1000
+)

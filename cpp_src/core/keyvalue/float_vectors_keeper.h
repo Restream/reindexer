@@ -1,7 +1,7 @@
 #pragma once
 
 #include <span>
-#include "core/id_type.h"
+#include "core/index/float_vector/float_vector_id.h"
 #include "core/keyvalue/float_vector.h"
 #include "estl/elist.h"
 #include "estl/mutex.h"
@@ -19,7 +19,7 @@ private:
 	using DataQueue = elist<Descriptor>;
 
 	struct [[nodiscard]] Descriptor {
-		Descriptor(OwnerIdType o, FloatVector&& v, std::unordered_map<IdType, DataQueue::iterator>::iterator it)
+		Descriptor(OwnerIdType o, FloatVector&& v, std::unordered_map<FloatVectorId, DataQueue::iterator>::iterator it)
 			: owner(o), vect(std::move(v)), mapIt(it) {}
 		Descriptor(Descriptor&& o) noexcept = default;
 		Descriptor(const Descriptor& o) noexcept = default;
@@ -29,7 +29,7 @@ private:
 		bool deleted{false};
 		OwnerIdType owner{kInvalidOwnerId};
 		FloatVector vect;
-		std::unordered_map<IdType, DataQueue::iterator>::iterator mapIt;
+		std::unordered_map<FloatVectorId, DataQueue::iterator>::iterator mapIt;
 	};
 
 	FloatVectorsKeeper(const FloatVectorIndex& index) : index_(index) {}
@@ -64,7 +64,7 @@ public:
 	KeeperTag Register();
 	void Deregister(const KeeperTag& tag) noexcept;
 
-	void Remove(IdType id);
+	void Remove(FloatVectorId);
 	void RemoveUnused();
 
 	size_t GetMemStat() const;
@@ -72,14 +72,14 @@ public:
 private:
 	friend class FloatVectorsHolderMap;
 
-	void getFloatVectors(const KeeperTag& tag, std::span<IdType> ids, std::vector<ConstFloatVectorView>& vectorsData,
+	void getFloatVectors(const KeeperTag& tag, std::span<FloatVectorId> ids, std::vector<ConstFloatVectorView>& vectorsData,
 						 auto&& floatVectorGetter);
 
 	const FloatVectorIndex& index_;
 	OwnerIdType currOwner_{0};
 
 	DataQueue queue_;
-	using DocsMap = std::unordered_map<IdType, DataQueue::iterator>;
+	using DocsMap = std::unordered_map<FloatVectorId, DataQueue::iterator>;
 	DocsMap map_;
 
 	mutable mutex lock_;

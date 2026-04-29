@@ -25,7 +25,7 @@ std::string stringifyJson(const gason::JsonNode& elem, bool escapeStrings = true
 template <typename T, template <typename, auto...> class ContainerT, auto... Args>
 ContainerT<T, Args...> readNodeValues(const gason::JsonNode& node) {
 	ContainerT<T, Args...> values;
-	if (node.empty()) {
+	if (node.isEmpty()) {
 		return values;
 	}
 	const auto tag{node.value.getTag()};
@@ -62,7 +62,7 @@ namespace details {
 template <bool required, typename T, typename JsonT, typename... Args>
 Error tryReadJsonValue(std::string* errLog, const gason::JsonNode& parent, std::string_view valueName, T& value, Args&&... args) {
 	Error result;
-	if (!parent[valueName].empty()) {
+	if (!parent[valueName].isEmpty()) {
 		try {
 			value = parent[valueName].As<JsonT>(value, std::forward<Args>(args)...);
 		} catch (const gason::Exception& ex) {

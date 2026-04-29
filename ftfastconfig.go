@@ -133,8 +133,10 @@ type FtFastConfig struct {
 	// Relevancy step of partial match: relevancy = kFullMatchProc - partialMatchDecrease * (non matched symbols) / (matched symbols)
 	// For example: partialMatchDecrease: 15, word in index 'terminator', pattern 'termin'. matched: 6 symbols, unmatched: 4. relevancy = 100 - (15*4)/6 = 80
 	PartialMatchDecrease int `json:"partial_match_decrease"`
-	// Minimum rank of found documents
+	// Minimum relevancy of found documents
 	MinRelevancy float64 `json:"min_relevancy"`
+	// Minimum rank of found documents
+	MinRank int `json:"min_rank"`
 	// Maximum possible typos in word.
 	// 0: typos is disabled, words with typos will not match
 	// N: words with N possible typos will match
@@ -200,7 +202,7 @@ type FtFastConfig struct {
 	// 'memory': compressed vector of document identifiers
 	// 'cpu':  uncompressed vector of document identifiers
 	Optimization string `json:"optimization,omitempty"`
-	// Enable to execute others queries before the ft query
+	// If true, then non-fulltext filtering conditions will be executed before fulltext index selection
 	EnablePreselectBeforeFt bool `json:"enable_preselect_before_ft"`
 	// Config for subterm rank multiplier
 	FtBaseRankingConfig *FtBaseRanking `json:"base_ranking,omitempty"`
@@ -226,6 +228,7 @@ func DefaultFtFastConfig() FtFastConfig {
 		FullMatchBoost:          1.1,
 		PartialMatchDecrease:    15,
 		MinRelevancy:            0.05,
+		MinRank:                 5,
 		MaxTypos:                2,
 		MaxTypoLen:              15,
 		TyposDetailedConfig:     &FtTyposDetailedConfig{MaxTypoDistance: 0, MaxSymbolPermutationDistance: 1, MaxExtraLetters: 2, MaxMissingLetters: 2},

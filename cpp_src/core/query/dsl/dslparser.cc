@@ -276,7 +276,7 @@ static void parseEqualPositions(const JsonValue& dsl, Query& query);
 
 VariantArray getValues(const JsonNode& dsl) {
 	const auto valuesJson = dsl.findCaseInsensitive("value"sv);
-	if (valuesJson.empty()) {
+	if (valuesJson.isEmpty()) {
 		return {};
 	}
 	VariantArray values;
@@ -285,7 +285,7 @@ VariantArray getValues(const JsonNode& dsl) {
 }
 
 static OpType parseOptionalOperation(const JsonNode& parser) {
-	if (const auto opJson = parser.findCaseInsensitive("op"sv); !opJson.empty()) {
+	if (const auto opJson = parser.findCaseInsensitive("op"sv); !opJson.isEmpty()) {
 		return get<OpType>(kOpMap, opJson.As<std::string_view>(), "operation enum");
 	} else {
 		return OpAnd;
@@ -294,17 +294,17 @@ static OpType parseOptionalOperation(const JsonNode& parser) {
 
 static KnnSearchParams parseKnnParams(const JsonNode& json) {
 	const auto paramsJson = json.findCaseInsensitive("params"sv);
-	if (paramsJson.empty()) {
+	if (paramsJson.isEmpty()) {
 		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain 'params'"};
 	}
 	const auto kJson = paramsJson.findCaseInsensitive(KnnSearchParams::kKName);
 	const auto radiusJson = paramsJson.findCaseInsensitive(KnnSearchParams::kRadiusName);
 	std::optional<size_t> k;
 	std::optional<float> radius;
-	if (!kJson.empty()) {
+	if (!kJson.isEmpty()) {
 		k = kJson.As<size_t>(CheckUnsigned_True, 0, 1);
 	}
-	if (!radiusJson.empty()) {
+	if (!radiusJson.isEmpty()) {
 		radius = radiusJson.As<float>();
 	}
 
@@ -313,13 +313,13 @@ static KnnSearchParams parseKnnParams(const JsonNode& json) {
 					KnnSearchParams::kRadiusName};
 	}
 
-	if (const auto efJson = paramsJson.findCaseInsensitive(KnnSearchParams::kEfName); !efJson.empty()) {
-		if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.empty()) {
+	if (const auto efJson = paramsJson.findCaseInsensitive(KnnSearchParams::kEfName); !efJson.isEmpty()) {
+		if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.isEmpty()) {
 			throw Error{errParseDSL, "Wrong DSL format: KNN query cannot contain both of 'params.{}' and 'params.{}",
 						KnnSearchParams::kEfName, KnnSearchParams::kNProbeName};
 		}
 		return HnswSearchParams{}.K(k).Radius(radius).Ef(efJson.As<size_t>(CheckUnsigned_True, 1, k ? *k : 1));
-	} else if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.empty()) {
+	} else if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.isEmpty()) {
 		if (nprobeJson.value.isNegative()) {
 			throw Error{errParseDSL, "Wrong DSL format: KNN query parameter 'params.{}' cannot be negative", KnnSearchParams::kNProbeName};
 		}
@@ -333,7 +333,7 @@ void addWhereKNN(const JsonNode& fieldNode, const JsonNode& filter, Query& q) {
 	auto knnParams = parseKnnParams(filter);
 
 	const auto valuesDsl = filter.findCaseInsensitive("value"sv);
-	if (valuesDsl.empty()) {
+	if (valuesDsl.isEmpty()) {
 		throw Error{errParseDSL, "Wrong DSL format: Knn condition without value"};
 	}
 
@@ -368,7 +368,7 @@ void addWhereKNN(const JsonNode& fieldNode, const JsonNode& filter, Query& q) {
 
 ExpressionType parseExpressionType(const JsonNode& expr) {
 	const auto type{expr.findCaseInsensitive("type"sv)};
-	if (type.empty()) {
+	if (type.isEmpty()) {
 		throw Error{errParseDSL, "Wrong DSL format: expression type '{}' is not set"};
 	}
 	return expressions::MakeExpressionType(type.As<std::string_view>());
@@ -376,7 +376,7 @@ ExpressionType parseExpressionType(const JsonNode& expr) {
 
 static void parseExpressions(const JsonNode& leftExpr, const JsonNode& rightExpr, CondType condition, Query& q) {
 	auto parseValueAsString = [](const JsonNode& expr) -> std::string_view {
-		if (const auto v = expr.findCaseInsensitive("value"sv); !v.empty()) {
+		if (const auto v = expr.findCaseInsensitive("value"sv); !v.isEmpty()) {
 			checkJsonValueType(v.value, "value"sv, JsonTag::STRING);
 			return v.As<std::string_view>();
 		}
@@ -414,7 +414,7 @@ static void parseLeftExpressionWithSubquery(const JsonNode& le, CondType cond, Q
 	checkJsonValueType(le.value, "left_expression"sv, JsonTag::OBJECT);
 	auto leType = parseExpressionType(le);
 	expressions::ValidateExpressions(leType, ExpressionTypeSubQuery, expressions::ValidationType::Full);
-	if (const auto v = le.findCaseInsensitive("value"sv); !v.empty()) {
+	if (const auto v = le.findCaseInsensitive("value"sv); !v.isEmpty()) {
 		switch (leType) {
 			case ExpressionTypeField:
 				q.Where(v.As<std::string_view>(), cond, std::move(subQuery));
@@ -437,7 +437,7 @@ static void parseRightExpressionWithSubquery(Query&& subQuery, CondType cond, co
 		throw Error(errParseDSL, "Unsupported type of right expression '{}': expression\\values is expected",
 					expressions::ExpressionTypeToString(reType));
 	}
-	if (const auto v = re.findCaseInsensitive("value"sv); !v.empty()) {
+	if (const auto v = re.findCaseInsensitive("value"sv); !v.isEmpty()) {
 		switch (reType) {
 			case ExpressionTypeExpression:
 				q.Where(std::move(subQuery), cond, functions::Function::FromExpression(v.As<std::string_view>()));
@@ -455,17 +455,17 @@ static void parseRightExpressionWithSubquery(Query&& subQuery, CondType cond, co
 
 static void parseFilter(const JsonNode& filter, Query& q) {
 	checkJsonValueType(filter.value, "filter"sv, JsonTag::OBJECT);
-	if (const auto ep = filter.findCaseInsensitive("equal_positions"sv); !ep.empty()) {
+	if (const auto ep = filter.findCaseInsensitive("equal_positions"sv); !ep.isEmpty()) {
 		checkJsonValueType(ep.value, "equal_positions"sv, JsonTag::ARRAY);
 		parseEqualPositions(ep.value, q);
 		return;
-	} else if (const auto joinQuery = filter.findCaseInsensitive("join_query"sv); !joinQuery.empty()) {
+	} else if (const auto joinQuery = filter.findCaseInsensitive("join_query"sv); !joinQuery.isEmpty()) {
 		checkJsonValueType(joinQuery.value, "join_query"sv, JsonTag::OBJECT);
 		parseSingleJoinQuery(joinQuery.value, q, filter);
 		return;
 	}
 	const OpType op = parseOptionalOperation(filter);
-	if (const auto bracket = filter.findCaseInsensitive("filters"sv); !bracket.empty()) {
+	if (const auto bracket = filter.findCaseInsensitive("filters"sv); !bracket.isEmpty()) {
 		checkJsonValueType(bracket.value, bracket.key, JsonTag::ARRAY);
 		q.NextOp(op).OpenBracket();
 		for (const auto& f : bracket) {
@@ -476,7 +476,7 @@ static void parseFilter(const JsonNode& filter, Query& q) {
 	}
 
 	std::optional<CondType> condition;
-	if (const auto condNode = filter.findCaseInsensitive("cond"sv); !condNode.empty()) {
+	if (const auto condNode = filter.findCaseInsensitive("cond"sv); !condNode.isEmpty()) {
 		condition = get<CondType>(cond_map, condNode.As<std::string_view>(), "condition enum"sv);
 	}
 	auto getCondition = [&condition] {
@@ -487,34 +487,34 @@ static void parseFilter(const JsonNode& filter, Query& q) {
 		return *condition;
 	};
 	q.NextOp(op);
-	if (const auto firstField = filter.findCaseInsensitive("first_field"sv); !firstField.empty()) {
+	if (const auto firstField = filter.findCaseInsensitive("first_field"sv); !firstField.isEmpty()) {
 		q.WhereBetweenFields(firstField.As<std::string_view>(), getCondition(),
 							 filter.findCaseInsensitive("second_field"sv).As<std::string_view>());
-	} else if (const auto subQueryJson = filter.findCaseInsensitive("subquery"sv); !subQueryJson.empty()) {
+	} else if (const auto subQueryJson = filter.findCaseInsensitive("subquery"sv); !subQueryJson.isEmpty()) {
 		Query subQuery;
 		parse(subQueryJson.value, subQuery);
-		if (const auto field = filter.findCaseInsensitive("field"sv); !field.empty()) {
+		if (const auto field = filter.findCaseInsensitive("field"sv); !field.isEmpty()) {
 			q.Where(field.As<std::string_view>(), getCondition(), std::move(subQuery));
-			if (const auto valuesJson = filter.findCaseInsensitive("value"sv); !valuesJson.empty()) {
+			if (const auto valuesJson = filter.findCaseInsensitive("value"sv); !valuesJson.isEmpty()) {
 				throw Error{errParseDSL, "Wrong DSL format: 'value', 'subquery' and 'field' fields in one filter"};
 			}
-		} else if (const auto le = filter.findCaseInsensitive("left_expression"sv); !le.empty()) {
+		} else if (const auto le = filter.findCaseInsensitive("left_expression"sv); !le.isEmpty()) {
 			parseLeftExpressionWithSubquery(le, getCondition(), std::move(subQuery), q);
-		} else if (const auto re = filter.findCaseInsensitive("right_expression"sv); !re.empty()) {
+		} else if (const auto re = filter.findCaseInsensitive("right_expression"sv); !re.isEmpty()) {
 			parseRightExpressionWithSubquery(std::move(subQuery), getCondition(), re, q);
 		} else {
 			q.Where(std::move(subQuery), getCondition(), getValues(filter));
 		}
-	} else if (const auto le = filter.findCaseInsensitive("left_expression"sv); !le.empty()) {
+	} else if (const auto le = filter.findCaseInsensitive("left_expression"sv); !le.isEmpty()) {
 		checkJsonValueType(le.value, "left_expression"sv, JsonTag::OBJECT);
 		const auto re = filter.findCaseInsensitive("right_expression"sv);
-		if (re.empty()) {
+		if (re.isEmpty()) {
 			throw Error{errParseDSL, "Wrong DSL format: 'right_expression' is not set"};
 		}
 		// Expresssions will replace fields in the future
 		checkJsonValueType(re.value, "right_expression"sv, JsonTag::OBJECT);
 		parseExpressions(le, re, getCondition(), q);
-	} else if (const auto fieldNode = filter.findCaseInsensitive("field"sv); !fieldNode.empty()) {
+	} else if (const auto fieldNode = filter.findCaseInsensitive("field"sv); !fieldNode.isEmpty()) {
 		if (auto cond = getCondition(); cond == CondKnn) {
 			addWhereKNN(fieldNode, filter, q);
 		} else {

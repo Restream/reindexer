@@ -37,6 +37,8 @@ private:
 		std::optional<TagIndex> ArrayIndex() const noexcept { return arrayIndex_; }
 		int Index() const noexcept { return fieldIndex_; }
 		bool IsIndex() const noexcept { return isIndex_; }
+		bool IsUpdateArrayPart() const noexcept { return isUpdateArrayPart_; }
+		bool IsForAllItems() const noexcept { return isForAllItems_; }
 		std::string_view Name() const noexcept;
 
 	private:
@@ -62,6 +64,8 @@ private:
 		int fieldIndex_{IndexValueType::SetByJsonPath};
 		std::optional<TagIndex> arrayIndex_;
 		bool isIndex_{false};
+		bool isUpdateArrayPart_{false};
+		bool isForAllItems_{false};
 	};
 
 	struct [[nodiscard]] VectorIndex {

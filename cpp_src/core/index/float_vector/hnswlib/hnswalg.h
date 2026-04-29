@@ -14,6 +14,7 @@
 #include <queue>
 #include <random>
 #include <ranges>
+#include "core/index/float_vector/float_vector_id.h"
 #include "core/index/float_vector/hnswlib/space_cosine.h"
 #include "core/index/float_vector/hnswlib/space_ip.h"
 #include "core/index/float_vector/hnswlib/space_l2.h"
@@ -1284,15 +1285,16 @@ public:
 	}
 
 	// *NOT* thread-safe
-	void loadIndex(IReader& reader, SpaceInterface* s, std::vector<uint64_t>& hashes) {
+	void loadIndex(IReader& reader, SpaceInterface* s, auto& hashes) {
 		clear();
 
-		max_elements_ = reader.GetVarUInt();
+		size_t max_elements = reader.GetVarUInt();
 		const auto cur_count = reader.GetVarUInt();
 		cur_element_count.store(cur_count);
-		if (cur_count > max_elements_) {
+		if (cur_count > max_elements) {
 			throw std::runtime_error("Current elements count is larger than max elements count");
 		}
+		max_elements_ = std::max(max_elements, max_elements_);
 		maxlevel_ = reader.GetVarInt();
 		enterpoint_node_ = reader.GetVarUInt();
 		if (cur_count) {
@@ -1312,7 +1314,7 @@ public:
 				params.Deserialize(reader);
 				quantizer_ = reader.WithQuantizer() ? std::make_unique<Quantizer>(*this, std::move(params)) : nullptr;
 
-				hashes.resize(max_elements_);
+				hashes.Reserve(max_elements_);
 			}
 		}
 
@@ -1346,7 +1348,7 @@ public:
 			if (quantizer_) {
 				auto from = std::span(origVecBuf.get(), fstdistfunc_.Dims());
 				if (!isDeleted) {
-					hashes[label] = reindexer::ConstFloatVectorView(from).Hash();
+					hashes.Set(reindexer::FloatVectorId::FromNumber(label), reindexer::ConstFloatVectorView(from).Hash());
 				}
 				auto to = std::span(reinterpret_cast<uint8_t*>(cur_element_ptr), fstdistfunc_.Dims());
 				fstdistfunc_.Sq8CorrectiveOffsets()[i] = quantizer_->Quantize(from, to);

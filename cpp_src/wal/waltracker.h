@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/keyvalue/variant.h>
+#include <cassert>
 #include <vector>
 #include "core/formatters/lsn_fmt.h"
 #include "tools/errors.h"
@@ -91,7 +92,12 @@ public:
 		std::span<const uint8_t> GetRaw() const noexcept { return wt_->records_[idx_ % wt_->walSize_]; }
 		lsn_t GetLSN() const noexcept {
 			auto server = wt_->records_[idx_ % wt_->walSize_].server;
-			return lsn_t(idx_, server);
+			try {
+				return lsn_t(idx_, server);
+			} catch (const std::exception& e) {
+				assertf(false, "Error getting LSN: {}", e.what());
+				return lsn_t();
+			}
 		}
 		int64_t idx_;
 		const WALTracker* wt_;

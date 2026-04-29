@@ -4,7 +4,6 @@
 #include "core/reindexer.h"
 
 using benchmark::State;
-using benchmark::internal::Benchmark;
 
 using reindexer::NamespaceDef;
 using reindexer::Reindexer;

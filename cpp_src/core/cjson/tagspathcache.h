@@ -7,6 +7,7 @@
 #include "core/key_value_type.h"
 #include "core/tag_name_index.h"
 #include "estl/h_vector.h"
+#include "indexed_path_node.h"
 #include "tools/assertrx.h"
 
 namespace reindexer {
@@ -65,23 +66,31 @@ public:
 	}
 	FieldProperties Lookup(std::span<const TagName> path) const noexcept {
 		assertrx(!path.empty());
-		auto cache = this;
+		const TagsPathCache* cache = this;
 		for (;;) {
 			const auto tag = path[0].AsNumber();
-			if (cache->entries_.size() <= tag) {
-				return FieldProperties{FieldProperties::kNotIndexed};
+			const auto fieldProperties = checkPathTag(tag, path, cache);
+			if (fieldProperties) {
+				return *fieldProperties;
 			}
-			const CacheEntry& cacheEntry = cache->entries_[tag];
-			if (path.size() == 1) {
-				return cacheEntry.field_;
-			}
-
-			if (!cacheEntry.subCache_) {
-				return FieldProperties{FieldProperties::kNotIndexed};
-			}
-			cache = cacheEntry.subCache_.get();
-			path = path.subspan(1);
 		}
+	}
+
+	FieldProperties Lookup(std::span<const IndexedPathNode> path) const noexcept {
+		assertrx(!path.empty() && path.back().IsTagName());
+		const TagsPathCache* cache = this;
+		while (!path.empty()) {
+			if (!path[0].IsTagName()) {
+				path = path.subspan(1);
+				continue;
+			}
+			const auto tag = path[0].GetTagName().AsNumber();
+			const auto fieldProperties = checkPathTag(tag, path, cache);
+			if (fieldProperties) {
+				return *fieldProperties;
+			}
+		}
+		assertrx(0);
 	}
 
 	void Walk(std::vector<TagName>& path, const std::invocable<const FieldProperties&> auto& visitor) const {
@@ -105,6 +114,24 @@ public:
 	bool Empty() const noexcept { return entries_.empty(); }
 
 private:
+	template <typename T>
+	static std::optional<FieldProperties> checkPathTag(size_t tag, std::span<const T>& path, const TagsPathCache*& cache) noexcept {
+		assertrx_dbg(!path.empty());
+		if (cache->entries_.size() <= tag) {
+			return FieldProperties{FieldProperties::kNotIndexed};
+		}
+		const CacheEntry& cacheEntry = cache->entries_[tag];
+		if (path.size() == 1) {
+			return cacheEntry.field_;
+		}
+		if (!cacheEntry.subCache_) {
+			return FieldProperties{FieldProperties::kNotIndexed};
+		}
+		cache = cacheEntry.subCache_.get();
+		path = path.subspan(1);
+		return std::nullopt;
+	}
+
 	struct [[nodiscard]] CacheEntry {
 		std::shared_ptr<TagsPathCache> subCache_;
 		FieldProperties field_{FieldProperties::kNotIndexed};

@@ -48,6 +48,9 @@ private:
 						  const item_fields_validator::SparseValidator&);
 	void decodeJsonArraySparse(Payload*, CJsonBuilder&, const gason::JsonValue&, TagName, Matched,
 							   item_fields_validator::SparseArrayValidator&);
+	void decodeFloatVectorField(Payload&, CJsonBuilder&, const PayloadFieldType&, TagName, int indexNumber, const gason::JsonValue&);
+	void decodeFloatVectorArray(Payload&, CJsonBuilder&, const PayloadFieldType&, TagName, int indexNumber, const gason::JsonValue&);
+	void decodeFloatVector(Payload&, CJsonBuilder&, const PayloadFieldType&, TagName, int indexNumber, const gason::JsonValue&);
 	InArray isInArray() const noexcept { return InArray(arrayLevel_ > 0); }
 
 	TagsMatcher& tagsMatcher_;

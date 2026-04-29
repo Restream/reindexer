@@ -233,7 +233,7 @@ type NamespaceMemStat struct {
 	// Query cache stats. Stores results of SELECT COUNT(*) by Where conditions
 	QueryCache *CacheMemStat `json:"query_cache,omitempty"`
 	// Embedders memory statistic
-	EmbeddingСaches []struct {
+	EmbeddingCaches []struct {
 		// Tag of cache from configuration
 		CacheTag string `json:"cache_tag"`
 		// Capacity of cache
@@ -644,11 +644,11 @@ type DBNamespacesConfig struct {
 	OptimizationSortWorkers int `json:"optimization_sort_workers"`
 	// Maximum WAL size for this namespace (maximum count of WAL records)
 	WALSize int64 `json:"wal_size"`
-	// Minimum preselect size for optimization of inner join by injection of filters. It is using if (MaxPreselectPart * ns.size) is less than this value
+	// Minimum preselect size for optimization of inner join by insertion of filters. It is using if (MaxPreselectPart * ns.size) is less than this value
 	MinPreselectSize int64 `json:"min_preselect_size"`
-	// Maximum preselect size for optimization of inner join by injection of filters
+	// Maximum preselect size for optimization of inner join by insertion of filters
 	MaxPreselectSize int64 `json:"max_preselect_size"`
-	// Maximum preselect part of namespace's items for optimization of inner join by injection of filters
+	// Maximum preselect part of namespace's items for optimization of inner join by insertion of filters
 	MaxPreselectPart float64 `json:"max_preselect_part"`
 	// Maximum number of IdSet iterations of namespace preliminary result size for optimization
 	// expected values [201..2.147.483.647], default value 20.000

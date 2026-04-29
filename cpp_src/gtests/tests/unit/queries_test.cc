@@ -121,7 +121,7 @@ TEST_F(QueriesApi, SelectionResultsJsonTest) {
 			SCOPED_TRACE(field);
 			auto node = json[field];
 			jsonArr.Clear();
-			if (!node.empty()) {
+			if (!node.isEmpty()) {
 				if (node.isArray()) {
 					for (auto& it : node) {
 						jsonArr.emplace_back(reindexer::jsonValue2Variant(it.value, reindexer::KeyValueType::Undefined{}, field, nullptr,
@@ -874,7 +874,12 @@ static std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {
 
 TEST_F(QueriesApi, ForcedSortOffsetTest) {
 	FillForcedSortNamespace();
-	for (size_t i = 0; i < 100; ++i) {
+#if RX_WITH_STDLIB_DEBUG
+	constexpr size_t kIterations = 20;
+#else	// !RX_WITH_STDLIB_DEBUG
+	constexpr size_t kIterations = 100;
+#endif	// RX_WITH_STDLIB_DEBUG
+	for (size_t i = 0; i < kIterations; ++i) {
 		const auto forcedSortOrder =
 			generateForcedSortOrder(forcedSortOffsetMaxValue * 1.1, rand() % static_cast<int>(forcedSortOffsetNsSize * 1.1));
 		const size_t offset = rand() % static_cast<size_t>(forcedSortOffsetNsSize * 1.1);
@@ -1287,10 +1292,10 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 			}
 
 			for (const auto& fieldName : csv2jsonSchema) {
-				if (fieldName == "joined_nss_map" && !converted[fieldName].empty()) {
+				if (fieldName == "joined_nss_map" && !converted[fieldName].isEmpty()) {
 					EXPECT_EQ(converted[fieldName].value.getTag(), gason::JsonTag::OBJECT);
 					for (auto& node : converted[fieldName]) {
-						EXPECT_TRUE(!orig[node.key].empty()) << "not found joined data: " << node.key;
+						EXPECT_TRUE(!orig[node.key].isEmpty()) << "not found joined data: " << node.key;
 						auto origStr = reindexer::stringifyJson(orig[node.key]);
 						auto convertedStr = reindexer::stringifyJson(node);
 						EXPECT_EQ(origStr, convertedStr);
@@ -1298,8 +1303,8 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 					}
 					continue;
 				}
-				if (converted[fieldName].empty() || orig[fieldName].empty()) {
-					EXPECT_TRUE(converted[fieldName].empty() && orig[fieldName].empty()) << "fieldName: " << fieldName;
+				if (converted[fieldName].isEmpty() || orig[fieldName].isEmpty()) {
+					EXPECT_TRUE(converted[fieldName].isEmpty() && orig[fieldName].isEmpty()) << "fieldName: " << fieldName;
 					continue;
 				}
 				switch (orig[fieldName].value.getTag()) {
@@ -1810,7 +1815,7 @@ TEST_F(QueriesApi, FlatArrayFunctionArrayTest) {
 		auto root = parser.Parse(item.GetJSON());
 		auto countriesNonIndexed = root[kFieldNameCountries + nonIndexPrefix];
 		for (const auto& it : countriesNonIndexed) {
-			if (!it.empty()) {
+			if (!it.isEmpty()) {
 				++countriesNonIndexedCount;
 			}
 		}
@@ -1843,7 +1848,7 @@ TEST_F(QueriesApi, FlatArrayFunctionArrayTest) {
 		auto root = parser.Parse(item.GetJSON());
 		auto pricesNonIndexed = root[kFieldNamePriceId + nonIndexPrefix];
 		for (const auto& it : pricesNonIndexed) {
-			if (!it.empty()) {
+			if (!it.isEmpty()) {
 				++count;
 			}
 		}

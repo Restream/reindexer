@@ -19,6 +19,8 @@ char* u32toax(uint32_t value, char* buffer, int n);
 
 namespace reindexer {
 
+class WrSerializer;
+
 extern const char* kDefaultExtraWordsSymbols;
 extern const char* kDefaultWordPartDelimiters;
 

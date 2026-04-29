@@ -41,7 +41,7 @@ func setNsCopyConfigs(namespace string, rx *reindexer.Reindexer) error {
 	return rx.Upsert(reindexer.ConfigNamespaceName, item)
 }
 
-func doSearchTest(t *testing.T, indexType string) {
+func doSearchTest(t *testing.T) {
 
 	rx, err := reindexer.NewReindex(*dsn)
 	require.NoError(t, err)
@@ -52,7 +52,7 @@ func doSearchTest(t *testing.T, indexType string) {
 		testCase := testC
 
 		namespace := "ft_" + strconv.Itoa(i)
-		createReindexDbInstance(rx, namespace, indexType, 0) //
+		createReindexDbInstance(rx, namespace, 0) //
 		fillReindexWithData(rx, namespace, testCase.AllDocuments)
 		t.Run("Running test case: "+testCase.Description, func(t *testing.T) {
 			for _, validQ := range testCase.ValidQueries {
@@ -92,7 +92,7 @@ func doSearchTest(t *testing.T, indexType string) {
 	}
 }
 
-func doFTIndexCopy(t *testing.T, indexType string) {
+func doFTIndexCopy(t *testing.T) {
 	rx, err := reindexer.NewReindex(*dsn)
 	require.NoError(t, err)
 	defer rx.Close()
@@ -104,7 +104,7 @@ func doFTIndexCopy(t *testing.T, indexType string) {
 		thrashCount = 30000
 	)
 
-	createReindexDbInstance(rx, ns, indexType, thrashCount+dataCount)
+	createReindexDbInstance(rx, ns, thrashCount+dataCount)
 	err = setNsCopyConfigs(ns, rx)
 	assert.NoError(t, err)
 
@@ -127,15 +127,11 @@ func doFTIndexCopy(t *testing.T, indexType string) {
 }
 
 func TestFTFastSearch(t *testing.T) {
-	doSearchTest(t, "text")
-}
-
-func TestFTFuzzySearch(t *testing.T) {
-	doSearchTest(t, "fuzzytext")
+	doSearchTest(t)
 }
 
 func TestFTIndexCopy(t *testing.T) {
-	doFTIndexCopy(t, "text")
+	doFTIndexCopy(t)
 }
 
 func TestFTSynonymsAfterTx(t *testing.T) {

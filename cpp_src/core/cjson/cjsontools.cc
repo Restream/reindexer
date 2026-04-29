@@ -213,11 +213,19 @@ static void CJsonBuilderRef(CJsonBuilderT& builder, const PayloadIfaceT& pl, con
 	const PayloadFieldType& fieldType = pl.Type().Field(field);
 
 	if (fieldType.IsFloatVector()) {
-		const auto value = pl.Get(field, 0);
-		const auto count = ConstFloatVectorView(value).Dimension().Value();
-		builder.ArrayRef(tagName, field, int(count));
+		if (fieldType.IsArray()) {
+			auto arr = builder.Array(tagName);
+			for (const auto view : pl.template GetArray<ConstFloatVectorView>(field)) {
+				const auto dim = view.Dimension().Value();
+				arr.ArrayRef(TagName::Empty(), field, int(dim));
+			}
+		} else {
+			const auto value = pl.Get(field, 0);
+			const auto dim = ConstFloatVectorView(value).Dimension().Value();
+			builder.ArrayRef(tagName, field, int(dim));
+		}
 	} else if (fieldType.IsArray()) {
-		builder.ArrayRef(tagName, field, pl.GetArrayLen(field));
+		builder.ArrayRef(tagName, field, pl.GetFieldLen(field));
 	} else {
 		builder.Ref(tagName, pl.Get(field, 0).Type(), field);
 	}
@@ -366,11 +374,16 @@ void throwUnexpectedObjectInIndex(std::string_view fieldName, std::string_view p
 }
 
 void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, KeyValueType obtainedType, std::string_view parserName) {
-	throwUnexpected(fieldName, expectedType, obtainedType.Name(), parserName);
+	throwUnexpected(fieldName, expectedType.Name(), obtainedType.Name(), parserName);
 }
 
 void throwUnexpected(std::string_view fieldName, KeyValueType expectedType, std::string_view obtainedType, std::string_view parserName) {
-	throw Error(errLogic, "Error parsing {} field '{}' - got {}, expected {}", parserName, fieldName, obtainedType, expectedType.Name());
+	throwUnexpected(fieldName, expectedType.Name(), obtainedType, parserName);
+}
+
+void throwUnexpected(std::string_view fieldName, std::string_view expectedType, std::string_view obtainedType,
+					 std::string_view parserName) {
+	throw Error(errLogic, "Error parsing {} field '{}' - got {}, expected {}", parserName, fieldName, obtainedType, expectedType);
 }
 
 template <typename PL>
@@ -426,6 +439,7 @@ private:
 	}
 
 	void dumpCjsonValue(TagType type) const {
+		using namespace std::string_view_literals;
 		switch (type) {
 			case TAG_VARINT:
 				dump_ << cjson_.GetVarint();
@@ -550,38 +564,42 @@ private:
 				dump_ << '\n';
 				indent(indentLevel);
 				const uint32_t count = cjson_.GetVarUInt();
-				dump_ << "Count: "sv << count;
 				if (pl_) {
-					dump_ << " -> ["sv;
 					buf.clear<false>();
 					pl_->Get(field, buf);
 					if (pl_->Type().Field(field).IsFloatVector()) {
-						assertf(buf.size() == 1, "{}", buf.size());
-						++cnt;
-						assertf(cnt == 1, "{}", cnt);
-						const ConstFloatVectorView vect{buf[0]};
-						if (vect.IsEmpty()) {
-							dump_ << " -> <empty>"sv;
+						if (buf.empty() && pl_->Type().Field(field).IsArray()) {
+							assertrx(cnt == 0);
+							dump_ << " -> []"sv;
 						} else {
-							dump_ << " -> " << vect.Dimension().Value();
-							if (vect.IsStripped()) {
-								dump_ << "[<stripped>]"sv;
+							assertf(buf.size() > cnt, "{} > {}", buf.size(), cnt);
+							const ConstFloatVectorView vect{buf[cnt]};
+							++cnt;
+							if (vect.IsEmpty()) {
+								dump_ << " -> <empty fv>"sv;
 							} else {
-								dump_ << '[';
-								for (uint32_t i = 0; i < std::min(uint32_t(vect.Dimension()), kMaxArrayOutput); ++i) {
-									if (i != 0) {
-										dump_ << ", "sv;
-									}
-									dump_ << vect.Data()[i];
-								}
-								if (uint32_t(vect.Dimension()) > kMaxArrayOutput) {
-									dump_ << ", ...]"sv;
+								dump_ << " -> " << vect.Dimension().Value();
+								if (vect.IsStripped()) {
+									dump_ << "[<stripped>]"sv;
 								} else {
-									dump_ << ']';
+									dump_ << '[';
+									for (uint32_t i = 0; i < std::min(uint32_t(vect.Dimension()), kMaxArrayOutput); ++i) {
+										if (i != 0) {
+											dump_ << ", "sv;
+										}
+										dump_ << vect.Data()[i];
+									}
+									if (uint32_t(vect.Dimension()) > kMaxArrayOutput) {
+										dump_ << ", ...]"sv;
+									} else {
+										dump_ << ']';
+									}
 								}
 							}
 						}
 					} else {
+						dump_ << "Count: "sv << count;
+						dump_ << " -> ["sv;
 						assertf(buf.size() >= cnt + count, "{} >= {} + {}", buf.size(), cnt, count);
 						for (size_t i = 0; i < std::min(count, kMaxArrayOutput); ++i) {
 							if (i != 0) {
@@ -596,6 +614,8 @@ private:
 						}
 						cnt += count;
 					}
+				} else {
+					dump_ << "Count: "sv << count;
 				}
 			} break;
 			case TAG_NULL:

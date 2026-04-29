@@ -87,6 +87,69 @@ FieldsComparator::FieldsComparator(std::string_view lField, CondType cond, std::
 	name_ = nameStream.str();
 }
 
+void FieldsComparator::SetLeftField(const FieldsSet& fields) {
+	assertrx_throw(!leftFieldSet_);
+	setField(fields, ctx_[0].lCtx_);
+	leftFieldSet_ = true;
+}
+
+void FieldsComparator::SetRightField(const FieldsSet& fields) {
+	assertrx_throw(leftFieldSet_);
+	validateFieldsSizes(fields);
+	setField(fields, ctx_[0].rCtx_);
+}
+
+void FieldsComparator::SetLeftField(const FieldsSet& fset, KeyValueType type, IsArray isArray, const CollateOpts& cOpts) {
+	assertrx_throw(!leftFieldSet_);
+	collateOpts_ = &cOpts;
+	if (type.Is<KeyValueType::Composite>()) {
+		ctx_.clear();
+		ctx_.resize(fset.size());
+		setCompositeField<true>(fset);
+	} else {
+		setField(ctx_[0].lCtx_, fset, type, isArray);
+	}
+	leftFieldSet_ = true;
+}
+
+void FieldsComparator::SetRightField(const FieldsSet& fset, KeyValueType type, IsArray isArray) {
+	assertrx_throw(leftFieldSet_);
+	validateFieldsSizes(fset);
+	if (type.Is<KeyValueType::Composite>()) {
+		if (ctx_.size() != fset.size()) [[unlikely]] {
+			throw Error{errQueryExec, "Attempt to compare composite indexes with different size: {}", name_};
+		}
+		setCompositeField<false>(fset);
+	} else {
+		validateTypes(ctx_[0].lCtx_.type_, type);
+		setField(ctx_[0].rCtx_, fset, type, isArray);
+	}
+}
+
+void FieldsComparator::validateFieldsSizes(const FieldsSet& newFields) {
+	assertrx_dbg(leftFieldSet_);
+	if (ctx_.size() != newFields.size() && (ctx_.size() == 1 || newFields.size() == 1)) [[unlikely]] {
+		throw Error{errQueryExec, "Multifield composite index cannot be compared with single field: {}", name_};
+	}
+}
+
+void FieldsComparator::setField(const FieldsSet& fields, FieldContext& fctx) {
+	assertrx_dbg(fields.size() == 1);
+	assertrx_dbg(fields[0] == IndexValueType::SetByJsonPath);
+	setField(fields.getTagsPath(0), fctx);
+}
+
+void FieldsComparator::setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, IsArray isArray) {
+	fctx.fields_ = std::move(fset);
+	fctx.type_ = type;
+	fctx.isArray_ = isArray;
+	if (fctx.fields_.getTagsPathsLength() == 0) {
+		const auto ft{payloadType_->Field(fctx.fields_[0])};
+		fctx.offset_ = ft.Offset();
+		fctx.sizeof_ = ft.ElemSizeof();
+	}
+}
+
 template <typename LArr, typename RArr>
 bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 	static constexpr bool needCompareTypes{std::is_same_v<LArr, VariantArray> || std::is_same_v<RArr, VariantArray>};
@@ -280,6 +343,26 @@ void FieldsComparator::validateTypes(KeyValueType lType, KeyValueType rType) con
 							KeyValueType::FloatVector> auto) {
 			throw Error{errQueryExec, "Field of type {} cannot be compared with another field: {}", lType.Name(), name_};
 		});
+}
+
+template <bool left>
+void FieldsComparator::setCompositeField(const FieldsSet& fields) {
+	size_t tagsPathIdx = 0;
+	for (size_t i = 0; i < fields.size(); ++i) {
+		const bool isRegularIndex = fields[i] != IndexValueType::SetByJsonPath && fields[i] < payloadType_.NumFields();
+		if (isRegularIndex) {
+			FieldsSet f;
+			f.push_back(fields[i]);
+			const auto ft{payloadType_.Field(fields[i])};
+			setField(left ? ctx_[i].lCtx_ : ctx_[i].rCtx_, std::move(f), ft.Type(), ft.IsArray());
+			if constexpr (!left) {
+				validateTypes(ctx_[i].lCtx_.type_, ctx_[i].rCtx_.type_);
+			}
+		} else {
+			assertrx_dbg(tagsPathIdx < fields.getTagsPathsLength());
+			setField(fields.getTagsPath(tagsPathIdx++), left ? ctx_[i].lCtx_ : ctx_[i].rCtx_);
+		}
+	}
 }
 
 }  // namespace reindexer

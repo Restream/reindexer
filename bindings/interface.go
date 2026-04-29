@@ -52,7 +52,7 @@ type EmbedderConfig struct {
 	Fields []string `json:"fields,omitempty"`
 	// Name, used to access the cache. Optional, if not specified, caching is not used
 	CacheTag string `json:"cache_tag,omitempty"`
-	// Embedding injection strategy. Optional
+	// Embedding insertion strategy. Optional
 	// `always` :       Default value, always embed
 	// `empty_only` :   When the user specified any value for the embedded field (non-empty vector), then automatic embedding is not performed
 	// `strict` :       When the user sets some value for the embedded field (non-empty vector), we return an error. If the field is empty, we automatically embed
@@ -344,10 +344,10 @@ type RawBinding interface {
 	GetMeta(ctx context.Context, namespace, key string) (RawBuffer, error)
 	DeleteMeta(ctx context.Context, namespace, key string) error
 	ModifyItem(ctx context.Context, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (RawBuffer, error)
-	Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
-	SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
+	Select(ctx context.Context, query string, asJson bool, tmVersions []int32, fetchCount int) (RawBuffer, error)
+	SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, tmVersions []int32, fetchCount int) (RawBuffer, error)
 	DeleteQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
-	UpdateQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
+	UpdateQuery(ctx context.Context, rawQuery []byte, tmVersions []int32) (RawBuffer, error)
 	EnableLogger(logger Logger)
 	DisableLogger()
 	GetLogger() Logger

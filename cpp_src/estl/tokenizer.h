@@ -72,7 +72,7 @@ public:
 	void SkipSpace() noexcept;
 	bool End() const noexcept { return cur_ == q_.end(); }
 	size_t GetPos() const noexcept { return pos_; }
-	size_t GetPrevPos() const noexcept;
+	size_t GetPrevPos() const;
 	void SetPos(size_t pos) noexcept {
 		int delta = pos - pos_;
 		pos_ += delta;

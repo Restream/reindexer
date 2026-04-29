@@ -1,7 +1,7 @@
 #pragma once
 #include <span>
 #include "core/queryresults/queryresults.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 
@@ -9,7 +9,7 @@ class QueryResults;
 
 struct [[nodiscard]] ResultFetchOpts {
 	int flags;
-	std::span<int32_t> ptVersions;
+	std::span<const int32_t> tmVersions;
 	unsigned fetchOffset;
 	unsigned fetchLimit;
 	bool withAggregations;
@@ -18,14 +18,14 @@ struct [[nodiscard]] ResultFetchOpts {
 class [[nodiscard]] WrResultSerializer : public WrSerializer {
 public:
 	WrResultSerializer(
-		const ResultFetchOpts& opts = {.flags = 0, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = 0, .withAggregations = true})
+		const ResultFetchOpts& opts = {.flags = 0, .tmVersions = {}, .fetchOffset = 0, .fetchLimit = 0, .withAggregations = true})
 		: opts_(opts) {
 		resetUnknownFlags();
 	}
 	template <unsigned N>
 	WrResultSerializer(
 		uint8_t (&buf)[N],
-		const ResultFetchOpts& opts = {.flags = 0, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = 0, .withAggregations = true})
+		const ResultFetchOpts& opts = {.flags = 0, .tmVersions = {}, .fetchOffset = 0, .fetchLimit = 0, .withAggregations = true})
 		: WrSerializer(buf), opts_(opts) {
 		resetUnknownFlags();
 	}

@@ -1,5 +1,4 @@
 //go:build !windows
-// +build !windows
 
 //go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake -DGO_BUILTIN_EXPORT_PKG_PATH=\"../bindings/builtin\" .. && make reindexer -j4"
 

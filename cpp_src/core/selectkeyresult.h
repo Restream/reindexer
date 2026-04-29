@@ -49,10 +49,8 @@ public:
 		static_assert(KeyEntryT::IdSetType::IsCommitted());
 		ids_ = ids.Sorted(sortCtx);
 	}
-	explicit SingleSelectKeyResult(IdSet::Ptr&& ids) : tempIds_(std::move(ids)), ids_(tempIds_->begin(), tempIds_->end()) {
-		assertrx_throw(tempIds_->IsCommitted());
-	}
-	explicit SingleSelectKeyResult(const IdSet& ids) noexcept : ids_(ids) { assertrx_throw(ids.IsCommitted()); }
+	explicit SingleSelectKeyResult(IdSetPlain::Ptr&& ids) noexcept : tempIds_(std::move(ids)), ids_(*tempIds_) {}
+	explicit SingleSelectKeyResult(const IdSetPlain& ids) noexcept : ids_(ids) {}
 	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) noexcept : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
 	SingleSelectKeyResult(const SingleSelectKeyResult& other) noexcept
 		: tempIds_(other.tempIds_),
@@ -112,7 +110,7 @@ public:
 		return *this;
 	}
 
-	IdSet::Ptr tempIds_;
+	IdSetPlain::Ptr tempIds_;
 	IdSetCRef ids_;
 
 protected:
@@ -221,8 +219,8 @@ public:
 	/// @param opts - merge customization options
 	/// @return Pointer to a sorted IdSet object made
 	/// from all the SingleSelectKeyResult inner objects.
-	IdSet::Ptr MergeIdsets(MergeOptions&& opts, size_t idsCount) {
-		IdSet::Ptr mergedIds;
+	IdSetPlain::Ptr MergeIdsets(MergeOptions&& opts, size_t idsCount) {
+		IdSetPlain::Ptr mergedIds;
 		if (opts.genericSort) {
 			mergedIds = mergeGenericSort(idsCount);
 		} else if (idsCount < kSelectionSortIdsCount || size() < kMinSetsForHeapSort) {
@@ -235,7 +233,7 @@ public:
 		}
 		clear();
 		deferedExplicitSort = false;
-		emplace_back(IdSet::Ptr(mergedIds));
+		emplace_back(IdSetPlain::Ptr(mergedIds));
 		return mergedIds;
 	}
 
@@ -243,7 +241,7 @@ public:
 	bool IsCached() const noexcept { return cached; }
 
 private:
-	IdSet::Ptr mergeGenericSort(size_t idsCount) {
+	IdSetPlain::Ptr mergeGenericSort(size_t idsCount) {
 		base_idset ids;
 		size_t actualSize = 0;
 		ids.resize(idsCount);
@@ -265,11 +263,11 @@ private:
 			}
 		}
 		assertrx(idsCount == actualSize);
-		return IdSet::BuildFromUnsorted(std::move(ids));
+		return IdSetPlain::BuildFromUnsorted(std::move(ids));
 	}
 
-	IdSet::Ptr mergeSelectionSort(size_t idsCount) {
-		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
+	IdSetPlain::Ptr mergeSelectionSort(size_t idsCount) {
+		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSetPlain>>();
 		mergedIds->reserve(idsCount);
 
 		auto firstSetIt = std::partition(begin(), end(), [](const SingleSelectKeyResult& v) noexcept { return !v.useBtree_; });
@@ -350,8 +348,8 @@ private:
 		return mergedIds;
 	}
 
-	IdSet::Ptr mergeHeapSort(size_t idsCount) {
-		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
+	IdSetPlain::Ptr mergeHeapSort(size_t idsCount) {
+		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSetPlain>>();
 		mergedIds->reserve(idsCount);
 
 		struct [[nodiscard]] IdSetGreater {

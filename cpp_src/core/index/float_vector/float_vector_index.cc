@@ -1,5 +1,8 @@
 #include "float_vector_index.h"
 #include "core/embedding/embedder.h"
+#include "core/idset/idset.h"
+#include "core/index/float_vector/float_vector_id.h"
+#include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/float_vectors_keeper.h"
 #include "core/rdxcontext.h"
 #include "knn_raw_result.h"
@@ -11,6 +14,9 @@ namespace reindexer {
 FloatVectorIndex::FloatVectorIndex(const FloatVectorIndex& other)
 	: Index(other),
 	  memStat_(other.memStat_),
+	  emptyKeys_(other.emptyKeys_),
+	  emptyVectors_(other.emptyVectors_),
+	  emptyVectorsCounters_(other.emptyVectorsCounters_),
 	  emptyValues_(other.emptyValues_),
 	  keeper_(FloatVectorsKeeper::Create(*this)),
 	  metric_(other.metric_) {}
@@ -18,7 +24,6 @@ FloatVectorIndex::FloatVectorIndex(const FloatVectorIndex& other)
 FloatVectorIndex::FloatVectorIndex(const IndexDef& idef, PayloadType&& pt, FieldsSet&& fields)
 	: Index{idef, std::move(pt), std::move(fields)}, keeper_(FloatVectorsKeeper::Create(*this)) {
 	assertrx_dbg(idef.Opts().IsFloatVector());
-	assertrx_throw(!idef.Opts().IsArray());
 	keyType_ = selectKeyType_ = KeyValueType::FloatVector{};
 	memStat_.name = name_;
 	if (opts_.FloatVector().Embedding().has_value()) {
@@ -33,15 +38,44 @@ FloatVectorIndex::FloatVectorIndex(const IndexDef& idef, PayloadType&& pt, Field
 	metric_ = idef.Opts().FloatVector().Metric();
 }
 
-void FloatVectorIndex::Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder& stringsHolder, bool& clearCache) {
-	assertrx_dbg(keys.size() == 1);
-	keeper_->Remove(id);
+void FloatVectorIndex::Delete(const Variant&, IdType, reindexer::MustExist, StringsHolder&, bool&) { assertrx_dbg(0 && "not implemented"); }
+
+void FloatVectorIndex::Delete(const VariantArray& keys, IdType rowId, MustExist mustExist, StringsHolder&, bool&) {
+	const auto count = keys.size();
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
-	if (emptyValues_.Unsorted().Find(id)) {
-		std::ignore = emptyValues_.Unsorted().Erase(id);
-		memStat_.uniqKeysCount = emptyValues_.Unsorted().IsEmpty() ? 0 : 1;
+	if (const auto itEmptyValues = emptyValues_.find(rowId); itEmptyValues != emptyValues_.cend()) {
+		assertrx_dbg(keys.empty());
+		assertrx_dbg(emptyVectorsCounters_.find(rowId) == emptyVectorsCounters_.cend());
+		emptyValues_.erase(itEmptyValues);
+		std::ignore = emptyKeys_.Unsorted().Erase(rowId);
+	} else if (const auto itEmptiesCount = emptyVectorsCounters_.find(rowId); itEmptiesCount == emptyVectorsCounters_.cend()) {
+		for (unsigned i = 0; i < count; ++i) {
+			const FloatVectorId id{rowId, i};
+			keeper_->Remove(id);
+			del(id, mustExist, IsLast(i == count - 1));
+		}
 	} else {
-		Delete(keys[0], id, mustExist, stringsHolder, clearCache);
+		auto& emptiesCount = itEmptiesCount->second;
+		assertrx_dbg(emptiesCount > 0);
+		for (unsigned i = 0; i < count; ++i) {
+			const FloatVectorId id{rowId, i};
+			keeper_->Remove(id);
+			if (const auto itEmpty = emptyVectors_.find(id); itEmpty == emptyVectors_.cend()) {
+				del(id, mustExist, IsLast(i == count - 1));
+			} else if (emptiesCount == 1) {
+				emptyVectors_.erase(itEmpty);
+				emptyVectorsCounters_.erase(itEmptiesCount);
+				std::ignore = emptyKeys_.Unsorted().Erase(rowId);
+				for (++i; i < count; ++i) {
+					keeper_->Remove({rowId, i});
+					del({rowId, i}, mustExist, IsLast(i == count - 1));
+				}
+				return;
+			} else {
+				emptyVectors_.erase(itEmpty);
+				--emptiesCount;
+			}
+		}
 	}
 }
 
@@ -57,11 +91,12 @@ SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType condi
 				throw Error(errLogic, "FloatVectorIndex({}): Comparator for 'IS NULL' vector index condition is not implemented", Name());
 			}
 			SelectKeyResult res;
-			res.emplace_back(emptyValues_, sortId);
+			res.emplace_back(emptyKeys_, sortId);
 			return SelectKeyResults(std::move(res));
 		}
 		case CondAny:
-			return ComparatorIndexed<FloatVector>{Name(), condition, {}, nullptr, IsArray_False, IsDistinct_False, payloadType_, Fields()};
+			return ComparatorIndexed<FloatVector>{Name(),			condition,		  {},			nullptr,
+												  Opts().IsArray(), IsDistinct_False, payloadType_, Fields()};
 		case CondEq:
 		case CondSet:
 		case CondAllSet:
@@ -79,14 +114,29 @@ SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType condi
 }
 
 void FloatVectorIndex::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
-	assertrx_dbg(keys.size() == 1);
-	result.emplace_back(Upsert(keys[0], id, clearCache));
+	if (keys.empty()) {
+		const auto [it, inserted] = emptyValues_.insert(id);
+		assertrx_dbg(inserted);
+		try {
+			std::ignore = emptyKeys_.Unsorted().Add(id, IdSetEditMode::Auto, sortedIdxCount_);
+		} catch (...) {
+			emptyValues_.erase(it);
+			throw;
+		}
+	} else {
+		for (unsigned i = 0, count = keys.size(); i < count; ++i) {
+			result.emplace_back(Upsert(ConstFloatVectorView{keys[i]}, {id, i}, clearCache));
+		}
+	}
 }
 
 Variant FloatVectorIndex::Upsert(const Variant& key, IdType id, bool& clearCache) {
+	return Upsert(ConstFloatVectorView{key}, {id, 0}, clearCache);
+}
+
+Variant FloatVectorIndex::Upsert(ConstFloatVectorView vect, FloatVectorId id, bool& clearCache) {
 	using namespace std::string_view_literals;
 	keeper_->Remove(id);
-	const ConstFloatVectorView vect{key};
 	if (vect.IsEmpty()) {
 		// Do not lock empty values mutex here
 		return upsertEmptyVectImpl(id);
@@ -95,7 +145,7 @@ Variant FloatVectorIndex::Upsert(const Variant& key, IdType id, bool& clearCache
 	return upsert(vect, id, clearCache);
 }
 
-Variant FloatVectorIndex::UpsertConcurrent(const Variant& key, IdType id, bool& clearCache) {
+Variant FloatVectorIndex::UpsertConcurrent(const Variant& key, FloatVectorId id, bool& clearCache) {
 	using namespace std::string_view_literals;
 	if (!IsSupportMultithreadTransactions()) {
 		throw Error(errLogic, "Index {} does not support concurrent upsertions"sv, Name());
@@ -128,15 +178,17 @@ KnnRawResult FloatVectorIndex::SelectRaw(ConstFloatVectorView key, const KnnSear
 }
 
 void FloatVectorIndex::Commit() {
-	emptyValues_.Unsorted().Commit();
-	logFmt(LogTrace, "FloatVectorIndex::Commit ({}) {} empty", name_, emptyValues_.Unsorted().size());
+	emptyKeys_.Unsorted().Commit();
+	logFmt(LogTrace, "FloatVectorIndex::Commit ({}) {} empty", name_, emptyKeys_.Unsorted().Size());
 }
 
 IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) const noexcept {
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
 	auto res = memStat_;
-	res.indexingStructSize = emptyValues_.Unsorted().Size() * sizeof(IdType);
+	res.indexingStructSize =
+		emptyVectors_.size() * sizeof(FloatVectorId) + emptyKeys_.Unsorted().Size() * sizeof(IdType);  // TODO calculate mem stat for empty
 	res.vectorsKeeperSize = keeper_->GetMemStat();
+	res.uniqKeysCount = emptyKeys_.Unsorted().IsEmpty() ? 0 : 1;
 	if (opts_.FloatVector().Embedding().has_value()) {
 		int fieldNo = 0;
 		if (payloadType_.FieldByName(name_, fieldNo)) {
@@ -234,12 +286,12 @@ IndexPerfStat FloatVectorIndex::GetIndexPerfStat() {
 	return stat;
 }
 
-ConstFloatVectorView FloatVectorIndex::getFloatVectorView(IdType id) const {
+ConstFloatVectorView FloatVectorIndex::getFloatVectorView(FloatVectorId id) const {
 	// Intentionally don't lock emptyValuesInsertionMtx_ here - only upserts may be multithreaded
-	if (emptyValues_.Unsorted().Find(id)) {
+	assertrx_dbg(emptyValues_.find(id.RowId()) == emptyValues_.cend());
+	if (const auto it = emptyVectors_.find(id); it != emptyVectors_.cend()) {
 		return {};
 	}
-
 	return getFloatVectorViewImpl(id);
 }
 
@@ -259,14 +311,26 @@ void FloatVectorIndex::checkForSelect(ConstFloatVectorView key) const {
 	checkVectorDims(key, "search"sv);
 }
 
-Variant FloatVectorIndex::upsertEmptyVectImpl(IdType id) {
-	std::ignore = emptyValues_.Unsorted().Add(id, IdSetEditMode::Auto, sortedIdxCount_);
-	memStat_.uniqKeysCount = 1;
+Variant FloatVectorIndex::upsertEmptyVectImpl(FloatVectorId id) {
+	const auto [countersIt, newRowId] = emptyVectorsCounters_.try_emplace(id.RowId(), 0);
+	if (newRowId) {
+		std::ignore = emptyKeys_.Unsorted().Add(id.RowId(), IdSetEditMode::Auto, sortedIdxCount_);
+	}
+	try {
+		emptyVectors_.emplace(id);
+	} catch (...) {
+		if (newRowId) {
+			emptyVectorsCounters_.erase(countersIt);
+			std::ignore = emptyKeys_.Unsorted().Erase(id.RowId());
+		}
+		throw;
+	}
+	++(countersIt->second);
 	return Variant{ConstFloatVectorView{}};
 }
 
-void FloatVectorIndex::WriterBase::writePK(IdType id) {
-	VariantArray pks = getPK_(id);
+void FloatVectorIndex::WriterBase::writePK(FloatVectorId fvId) {
+	VariantArray pks = getPK_(fvId.RowId());
 	if (!isCompositePK_) {
 		ser_.PutVariant(pks[0]);
 	} else {
@@ -275,9 +339,13 @@ void FloatVectorIndex::WriterBase::writePK(IdType id) {
 			ser_.PutVariant(v);
 		}
 	}
+	if (isArray_) {
+		ser_.PutVarUint(fvId.ArrayIndex());
+	}
 }
 
-IdType FloatVectorIndex::LoaderBase::readPKEncodedData(void* destBuf, Serializer& ser, std::string_view name, std::string_view idxType) {
+FloatVectorId FloatVectorIndex::LoaderBase::readPKEncodedData(void* destBuf, Serializer& ser, std::string_view name,
+															  std::string_view idxType) {
 	Variant key;
 	if (!isCompositePK_) {
 		key = ser.GetVariant();
@@ -293,11 +361,12 @@ IdType FloatVectorIndex::LoaderBase::readPKEncodedData(void* destBuf, Serializer
 		}
 		key = Variant(keyParts);
 	}
-	const IdType itemID = getVectorData_(std::move(key), destBuf);
+	const uint32_t arrIdx = isArray_ ? ser.GetVarUInt() : 0;
+	const IdType itemID = getVectorData_(std::move(key), arrIdx, destBuf);
 	if (!itemID.IsValid()) [[unlikely]] {
 		throw Error(errLogic, "{}::LoadIndexCache:{}: unable to find indexed item with requested PK", idxType, name);
 	}
-	return itemID;
+	return {itemID, arrIdx};
 }
 
 }  // namespace reindexer

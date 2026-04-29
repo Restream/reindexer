@@ -8,7 +8,7 @@
 #include <stack>
 #include "activity_context.h"
 #include "core/cjson/jsonbuilder.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/timetools.h"
 
 namespace reindexer {

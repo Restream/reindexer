@@ -2,11 +2,12 @@ package reindexer
 
 import (
 	"fmt"
-	"github.com/goccy/go-json"
 	"math/rand"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/require"
@@ -61,6 +62,7 @@ type TestItemComplexObject struct {
 	Code      int64            `reindex:"code" json:"code"`
 	IsEnabled bool             `reindex:"is_enabled" json:"is_enabled"`
 	Vec       []float32        `reindex:"vec,hnsw,m=16,ef_construction=200,metric=inner_product,dimension=16"`
+	VecArr    [][]float32      `reindex:"vec_arr,hnsw,m=16,ef_construction=200,metric=inner_product,dimension=16"`
 	Desc      string           `reindex:"desc" json:"desc"`
 	MainObj   testItemObject   `reindex:"main_obj" json:"main_obj"`
 	Size      int              `json:"size"`
@@ -197,6 +199,7 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 		ID:        id,
 		Code:      rand.Int63() % 10000000,
 		Vec:       randVect(16),
+		VecArr:    randVectArr(rand.Int()%10, 16),
 		IsEnabled: (rand.Int() % 2) == 0,
 		Desc:      randString(),
 		Size:      rand.Int()%200000 + 100,
@@ -982,7 +985,7 @@ func TestUpdate(t *testing.T) {
 func TestUpdateFields(t *testing.T) {
 	const ns = testFieldsUpdateNs
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 200; i++ {
 		require.NoError(t, DB.Upsert(ns, newTestItemComplexObject(i)))
 	}
 
@@ -1155,7 +1158,6 @@ func TestUpdateExpressionWithArrayRemove(t *testing.T) {
 		require.EqualValues(t, expected, res.Array)
 		selectAndFetchAll(t, ns)
 	})
-
 }
 
 func TestUpdateExpressionWithFlatArrayLen(t *testing.T) {

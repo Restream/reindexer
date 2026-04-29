@@ -4,7 +4,7 @@
 namespace reindexer {
 
 class [[nodiscard]] FtKeyEntryData : public KeyEntry<IdSetPlain> {
-	using Base = KeyEntry<IdSetPlain>;
+	using Base = KeyEntry<reindexer::IdSetPlain>;
 	friend class FtKeyEntry;
 
 public:

@@ -85,16 +85,16 @@ std::string_view strategyToStr(FloatVectorIndexOpts::EmbedderOpts::Strategy stra
 
 FloatVectorIndexOpts::PoolOpts parsePoolConfig(const gason::JsonNode& node) {
 	FloatVectorIndexOpts::PoolOpts opts;
-	if (!node[kConnectorPoolConnections].empty()) {
+	if (!node[kConnectorPoolConnections].isEmpty()) {
 		opts.connections = node[kConnectorPoolConnections].As<size_t>();
 	}
-	if (!node[kConnectorPoolConnectTO].empty()) {
+	if (!node[kConnectorPoolConnectTO].isEmpty()) {
 		opts.connect_timeout_ms = node[kConnectorPoolConnectTO].As<size_t>();
 	}
-	if (!node[kConnectorPoolReadTO].empty()) {
+	if (!node[kConnectorPoolReadTO].isEmpty()) {
 		opts.read_timeout_ms = node[kConnectorPoolReadTO].As<size_t>();
 	}
-	if (!node[kConnectorPoolWriteTO].empty()) {
+	if (!node[kConnectorPoolWriteTO].isEmpty()) {
 		opts.write_timeout_ms = node[kConnectorPoolWriteTO].As<size_t>();
 	}
 	return opts;
@@ -103,10 +103,10 @@ FloatVectorIndexOpts::PoolOpts parsePoolConfig(const gason::JsonNode& node) {
 FloatVectorIndexOpts::EmbedderOpts parseEmbedderConfig(const gason::JsonNode& node, std::string_view name) {
 	FloatVectorIndexOpts::EmbedderOpts opts;
 	opts.endpointUrl = node[kEmbedderURL].As<std::string>();
-	if (!node[kEmbedderName].empty()) {
+	if (!node[kEmbedderName].isEmpty()) {
 		opts.name = reindexer::toLower(node[kEmbedderName].As<std::string>());
 	}
-	if (!node[kEmbedderCacheTag].empty()) {
+	if (!node[kEmbedderCacheTag].isEmpty()) {
 		opts.cacheTag = reindexer::toLower(node[kEmbedderCacheTag].As<std::string>());
 	}
 	if (name == kUpsertEmbedder) {
@@ -123,12 +123,12 @@ FloatVectorIndexOpts::EmbedderOpts parseEmbedderConfig(const gason::JsonNode& no
 			opts.fields.emplace_back(std::move(field));
 		}
 
-		if (!node[kEmbedderStrategy].empty()) {
+		if (!node[kEmbedderStrategy].isEmpty()) {
 			auto strategy = node[kEmbedderStrategy].As<std::string_view>();
 			opts.strategy = parseStrategy(strategy, name);
 		}
 	}
-	if (!node[kConnectorPool].empty()) {
+	if (!node[kConnectorPool].isEmpty()) {
 		const auto& poolConf = node[kConnectorPool];
 		opts.pool = parsePoolConfig(poolConf);
 	}
@@ -139,12 +139,12 @@ FloatVectorIndexOpts::EmbedderOpts parseEmbedderConfig(const gason::JsonNode& no
 FloatVectorIndexOpts::EmbeddingOpts parseEmbeddingConfig(const gason::JsonNode& node) {
 	FloatVectorIndexOpts::EmbeddingOpts opts;
 
-	if (!node[kUpsertEmbedder].empty()) {
+	if (!node[kUpsertEmbedder].isEmpty()) {
 		const auto& upsertConf = node[kUpsertEmbedder];
 		opts.upsertEmbedder = parseEmbedderConfig(upsertConf, kUpsertEmbedder);
 	}
 
-	if (!node[kQueryEmbedder].empty()) {
+	if (!node[kQueryEmbedder].isEmpty()) {
 		const auto& queryConf = node[kQueryEmbedder];
 		opts.queryEmbedder = parseEmbedderConfig(queryConf, kQueryEmbedder);
 	}
@@ -299,7 +299,6 @@ void FloatVectorIndexOpts::Validate(IndexType idxType) {
 		case IndexInt64BTree:
 		case IndexInt64Hash:
 		case IndexDoubleBTree:
-		case IndexFuzzyFT:
 		case IndexCompositeBTree:
 		case IndexCompositeHash:
 		case IndexBool:
@@ -307,7 +306,6 @@ void FloatVectorIndexOpts::Validate(IndexType idxType) {
 		case IndexInt64Store:
 		case IndexStrStore:
 		case IndexDoubleStore:
-		case IndexCompositeFuzzyFT:
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
@@ -346,28 +344,28 @@ FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::str
 	} else {
 		throw reindexer::Error{errParams, "Unknown vector metric '{}'", metricStr};
 	}
-	if (const auto startSize = root["start_size"sv]; !startSize.empty()) {
+	if (const auto startSize = root["start_size"sv]; !startSize.isEmpty()) {
 		result.SetStartSize(startSize.As<size_t>(reindexer::CheckUnsigned_True, 0, 0, reindexer::IdType::Max().ToNumber()));
 	}
-	if (const auto m = root["m"sv]; !m.empty()) {
+	if (const auto m = root["m"sv]; !m.isEmpty()) {
 		result.SetM(m.As<size_t>(reindexer::CheckUnsigned_True, 0, kHnswMMin, kHnswMMax));
 	}
-	if (const auto efConstruction = root["ef_construction"sv]; !efConstruction.empty()) {
+	if (const auto efConstruction = root["ef_construction"sv]; !efConstruction.isEmpty()) {
 		result.SetEfConstruction(efConstruction.As<size_t>(reindexer::CheckUnsigned_True, 0, kHnswEfConstrMin, kHnswEfConstrMax));
 	}
-	if (const auto nCentroids = root["centroids_count"sv]; !nCentroids.empty()) {
+	if (const auto nCentroids = root["centroids_count"sv]; !nCentroids.isEmpty()) {
 		result.SetNCentroids(nCentroids.As<size_t>(reindexer::CheckUnsigned_True, 0, kIvfNCentroidsMin, kIvfNCentroidsMax));
 	}
-	if (const auto multithreading = root["multithreading"sv]; !multithreading.empty()) {
+	if (const auto multithreading = root["multithreading"sv]; !multithreading.isEmpty()) {
 		result.SetMultithreading(static_cast<MultithreadingMode>(multithreading.As<int>()));
 	}
-	if (const auto embedding = root[kEmbedding]; !embedding.empty()) {
+	if (const auto embedding = root[kEmbedding]; !embedding.isEmpty()) {
 		result.embedding_ = parseEmbeddingConfig(embedding);
 	}
-	if (const auto radius = root["radius"sv]; !radius.empty()) {
+	if (const auto radius = root["radius"sv]; !radius.isEmpty()) {
 		result.SetRadius(radius.As<float>());
 	}
-	if (const auto configNode = root[kQuantizationConfig]; !configNode.empty()) {
+	if (const auto configNode = root[kQuantizationConfig]; !configNode.isEmpty()) {
 		hnswlib::QuantizationConfig config;
 		config.FromJSON(configNode);
 		result.SetQuantizationConfig(std::move(config));
@@ -390,17 +388,7 @@ void FloatVectorIndexOpts::GetJson(reindexer::builders::JsonBuilder& json) const
 	using namespace std::string_view_literals;
 
 	json.Put("dimension"sv, uint32_t(dimension_));
-	switch (metric_) {
-		case reindexer::VectorMetric::L2:
-			json.Put("metric"sv, "l2"sv);
-			break;
-		case reindexer::VectorMetric::InnerProduct:
-			json.Put("metric"sv, "inner_product"sv);
-			break;
-		case reindexer::VectorMetric::Cosine:
-			json.Put("metric"sv, "cosine"sv);
-			break;
-	}
+	json.Put("metric"sv, VectorMetricToStr(metric_));
 	if (startSize_ != 0) {
 		json.Put("start_size"sv, startSize_);
 	}
@@ -473,9 +461,6 @@ FloatVectorIndexOpts::DiffResult FloatVectorIndexOpts::Compare(const FloatVector
 }
 
 void IndexOpts::validateForFloatVector() const {
-	if (IsArray()) {
-		throw reindexer::Error(errNotValid, "FloatVector index cannot be array");
-	}
 	if (IsSparse()) {
 		throw reindexer::Error(errNotValid, "FloatVector index cannot be sparse");
 	}
@@ -517,9 +502,6 @@ IndexOpts& IndexOpts::PK(bool value) & {
 }
 
 IndexOpts& IndexOpts::Array(bool value) & {
-	if (value && floatVector_) {
-		throw reindexer::Error(errNotValid, "FloatVector index cannot be array");
-	}
 	options = value ? options | kIndexOptArray : options & ~(kIndexOptArray);
 	return *this;
 }

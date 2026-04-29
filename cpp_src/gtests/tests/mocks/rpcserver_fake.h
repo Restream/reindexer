@@ -32,7 +32,7 @@ public:
 
 	Error Ping(cproto::Context& ctx);
 	Error Login(cproto::Context& ctx, p_string login, p_string password, p_string db);
-	Error Select(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
+	Error Select(cproto::Context& ctx, p_string query, int flags, int limit, p_string tmVersions);
 	Error OpenNamespace(cproto::Context& ctx, p_string ns);
 	Error DropNamespace(cproto::Context& ctx, p_string ns);
 	Error CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);

@@ -6,7 +6,7 @@
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
 #include "itemimplrawdata.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 
@@ -46,8 +46,9 @@ public:
 		return objectScalarIndexes_.test(index);
 	}
 
-	Variant GetField(int field);
+	Variant GetField(int field, unsigned arrayIndex = 0);
 	void GetField(int field, VariantArray&);
+	size_t GetFieldLen(int field);
 	FieldsSet PkFields() const { return pkFields_; }
 	TagName NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
 	int FieldIndex(std::string_view name) const {
@@ -64,8 +65,8 @@ public:
 	Error FromJSON(std::string_view slice, char** endp = nullptr, bool pkOnly = false);
 	void FromCJSON(ItemImpl& other, Recoder*);
 
-	std::string_view GetCJSON(bool withTagsMatcher = false);
-	std::string_view GetCJSON(WrSerializer& ser, bool withTagsMatcher = false);
+	std::string_view GetCJSON(WithTagsMatcher = WithTagsMatcher_False);
+	std::string_view GetCJSON(WrSerializer& ser, WithTagsMatcher = WithTagsMatcher_False);
 	void FromCJSON(std::string_view slice, bool pkOnly = false, Recoder* = nullptr);
 	Error FromMsgPack(std::string_view sbuf, size_t& offset);
 	Error FromProtobuf(std::string_view sbuf);

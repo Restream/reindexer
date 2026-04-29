@@ -4,14 +4,15 @@
 #include <cstdlib>
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
-#include "core/nsselecter/joinedselector.h"
-#include "core/nsselecter/joinedselectormock.h"
+#include "core/nsselecter/joins/helpers.h"
+#include "core/nsselecter/joins/items_processor.h"
+#include "core/nsselecter/joins/items_processor_mock.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/expression/expression.h"
 #include "core/type_consts.h"
 #include "estl/algorithm.h"
 #include "query.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/string_regexp_functions.h"
 
 namespace reindexer {
@@ -25,9 +26,9 @@ void checkSubqueryCondition(CondType cond) {
 }  // namespace
 
 template <typename JS>
-std::string JoinQueryEntry::Dump(const std::vector<JS>& joinedSelectors) const {
+std::string JoinQueryEntry::Dump(const std::vector<JS>& joinItemsProcessors) const {
 	WrSerializer ser;
-	const auto& js = joinedSelectors.at(joinIndex);
+	const auto& js = joinItemsProcessors.at(joinIndex);
 	const auto& q = js.JoinQuery();
 	ser << js.Type() << " (" << q.GetSQL() << ") ON ";
 	ser << '(';
@@ -37,30 +38,32 @@ std::string JoinQueryEntry::Dump(const std::vector<JS>& joinedSelectors) const {
 		} else {
 			assertrx(jqe.Operation() == OpAnd);
 		}
-		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << InvertJoinCondition(jqe.Condition()) << ' ' << jqe.LeftFieldName();
+		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << joins::InvertJoinCondition(jqe.Condition()) << ' '
+			<< jqe.LeftFieldName();
 	}
 	ser << ')';
 	return std::string{ser.Slice()};
 }
-template std::string JoinQueryEntry::Dump(const JoinedSelectors&) const;
-template std::string JoinQueryEntry::Dump(const std::vector<JoinedSelectorMock>&) const;
+template std::string JoinQueryEntry::Dump(const joins::ItemsProcessors&) const;
+template std::string JoinQueryEntry::Dump(const std::vector<JoinItemsProcessorMock>&) const;
 
 template <typename JS>
-std::string JoinQueryEntry::DumpOnCondition(const std::vector<JS>& joinedSelectors) const {
+std::string JoinQueryEntry::DumpOnCondition(const std::vector<JS>& joinItemsProcessors) const {
 	WrSerializer ser;
-	const auto& js = joinedSelectors.at(joinIndex);
+	const auto& js = joinItemsProcessors.at(joinIndex);
 	const auto& q = js.JoinQuery();
 	ser << js.Type() << " ON (";
 	for (const auto& jqe : q.joinEntries_) {
 		if (&jqe != &q.joinEntries_.front()) {
 			ser << ' ' << jqe.Operation() << ' ';
 		}
-		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << InvertJoinCondition(jqe.Condition()) << ' ' << jqe.LeftFieldName();
+		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << joins::InvertJoinCondition(jqe.Condition()) << ' '
+			<< jqe.LeftFieldName();
 	}
 	ser << ')';
 	return std::string{ser.Slice()};
 }
-template std::string JoinQueryEntry::DumpOnCondition(const JoinedSelectors&) const;
+template std::string JoinQueryEntry::DumpOnCondition(const joins::ItemsProcessors&) const;
 
 bool QueryField::operator==(const QueryField& other) const noexcept {
 	if (fieldName_ != other.fieldName_ || idxNo_ != other.idxNo_ || fieldsSet_ != other.fieldsSet_ ||
@@ -761,11 +764,11 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 	return false;
 }
 
-template <InjectionDirection injectionDirection>
-size_t QueryEntries::InjectConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
+template <JoinConditionInsertionDirection insertionDirection>
+size_t QueryEntries::InsertConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
 													  const QueryEntries& joinedQueryEntries, size_t joinedQueryNo,
 													  const std::vector<std::unique_ptr<Index>>* indexesFrom) {
-	size_t injectedCount = 0;
+	size_t insertedCount = 0;
 	for (size_t i = 0, s = joinEntries.size(); i < s; ++i) {
 		if (i + 1 < s && joinEntries[i + 1].Operation() == OpOr) {
 			continue;
@@ -798,28 +801,26 @@ size_t QueryEntries::InjectConditionsFromOnConditions(size_t position, const h_v
 				}
 				break;
 		}
-		if constexpr (injectionDirection == InjectionDirection::FromMain) {
-			injectedCount +=
-				injectConditionsFromOnCondition(position + injectedCount, jEntry.RightFieldName(), jEntry.LeftFieldName(), condition,
-												joinedQueryEntries, QueryEntry::InjectedFromMain, joinedQueryNo, indexesFrom);
+		if constexpr (insertionDirection == JoinConditionInsertionDirection::FromMain) {
+			insertedCount +=
+				insertConditionsFromOnCondition(position + insertedCount, jEntry.RightFieldName(), jEntry.LeftFieldName(), condition,
+												joinedQueryEntries, QueryEntry::InsertedFromMain, joinedQueryNo, indexesFrom);
 		} else {
-			injectedCount +=
-				injectConditionsFromOnCondition(position + injectedCount, jEntry.LeftFieldName(), jEntry.RightFieldName(), condition,
-												joinedQueryEntries, joinedQueryNo, QueryEntry::InjectedFromMain, indexesFrom);
+			insertedCount +=
+				insertConditionsFromOnCondition(position + insertedCount, jEntry.LeftFieldName(), jEntry.RightFieldName(), condition,
+												joinedQueryEntries, joinedQueryNo, QueryEntry::InsertedFromMain, indexesFrom);
 		}
 	}
-	return injectedCount;
+	return insertedCount;
 }
-template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::FromMain>(size_t, const h_vector<QueryJoinEntry, 1>&,
-																							 const QueryEntries&, size_t,
-																							 const std::vector<std::unique_ptr<Index>>*);
-template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::IntoMain>(size_t, const h_vector<QueryJoinEntry, 1>&,
-																							 const QueryEntries&, size_t,
-																							 const std::vector<std::unique_ptr<Index>>*);
+template size_t QueryEntries::InsertConditionsFromOnConditions<JoinConditionInsertionDirection::FromMain>(
+	size_t, const h_vector<QueryJoinEntry, 1>&, const QueryEntries&, size_t, const std::vector<std::unique_ptr<Index>>*);
+template size_t QueryEntries::InsertConditionsFromOnConditions<JoinConditionInsertionDirection::IntoMain>(
+	size_t, const h_vector<QueryJoinEntry, 1>&, const QueryEntries&, size_t, const std::vector<std::unique_ptr<Index>>*);
 
-size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std::string& fieldName, const std::string& joinedFieldName,
-													 CondType condition, const QueryEntries& joinedQueryEntries, size_t injectedFrom,
-													 size_t injectingInto, const std::vector<std::unique_ptr<Index>>* indexesFrom) {
+size_t QueryEntries::insertConditionsFromOnCondition(size_t position, const std::string& fieldName, const std::string& joinedFieldName,
+													 CondType condition, const QueryEntries& joinedQueryEntries, size_t insertedFrom,
+													 size_t insertedInto, const std::vector<std::unique_ptr<Index>>* indexesFrom) {
 	switch (condition) {
 		case CondEq:
 		case CondSet:
@@ -837,7 +838,7 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 		case CondKnn:
 			return 0;
 	}
-	size_t injectedCount = 0;
+	size_t insertedCount = 0;
 	for (size_t j = 0, next, size = joinedQueryEntries.Size(); j < size; j = next) {
 		next = joinedQueryEntries.Next(j);
 		if (next < size && joinedQueryEntries.GetOperation(next) == OpOr) {
@@ -847,7 +848,7 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 			continue;
 		}
 		const QueryEntry& qe = joinedQueryEntries.Get<QueryEntry>(j);
-		if (qe.IsInjectedFrom(injectingInto)) {
+		if (qe.IsInsertedFrom(insertedInto)) {
 			continue;
 		}
 		CondType entryCondition = qe.Condition();
@@ -887,8 +888,8 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 					case CondEq:
 					case CondSet:
 					case CondAllSet: {
-						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondSet, qe.Values(), injectedFrom);
-						injectedCount += inserted;
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondSet, qe.Values(), insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
@@ -896,8 +897,8 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 					case CondLe:
 					case CondGt:
 					case CondGe: {
-						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
-						injectedCount += inserted;
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
@@ -919,8 +920,8 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 					case CondLe:
 					case CondGt:
 					case CondGe: {
-						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
-						injectedCount += inserted;
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
@@ -944,21 +945,21 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
 						const auto inserted = Emplace<QueryEntry>(
 							position, OpAnd, fieldName, CondLt,
-							VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, injectedFrom);
-						injectedCount += inserted;
+							VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 					} break;
 					case CondLt:
 					case CondLe: {
-						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
-						injectedCount += inserted;
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
 					case CondRange: {
 						const auto inserted =
-							Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, VariantArray{qe.Values()[1]}, injectedFrom);
-						injectedCount += inserted;
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, VariantArray{qe.Values()[1]}, insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
@@ -983,26 +984,26 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
 						const auto inserted = Emplace<QueryEntry>(
 							position, OpAnd, fieldName, CondLe,
-							VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, injectedFrom);
-						injectedCount += inserted;
+							VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 					} break;
 					case CondLt: {
-						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
-						injectedCount += inserted;
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
 					case CondLe: {
-						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, qe.Values(), injectedFrom);
-						injectedCount += inserted;
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, qe.Values(), insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
 					case CondRange: {
 						const auto inserted =
-							Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, VariantArray{qe.Values()[1]}, injectedFrom);
-						injectedCount += inserted;
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, VariantArray{qe.Values()[1]}, insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
@@ -1027,21 +1028,21 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
 						const auto inserted = Emplace<QueryEntry>(
 							position, OpAnd, fieldName, CondGt,
-							VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, injectedFrom);
-						injectedCount += inserted;
+							VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 					} break;
 					case CondGt:
 					case CondGe: {
-						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
-						injectedCount += inserted;
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
 					case CondRange: {
 						const auto inserted =
-							Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, VariantArray{qe.Values()[0]}, injectedFrom);
-						injectedCount += inserted;
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, VariantArray{qe.Values()[0]}, insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
@@ -1066,26 +1067,26 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
 						const auto inserted = Emplace<QueryEntry>(
 							position, OpAnd, fieldName, CondGe,
-							VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, injectedFrom);
-						injectedCount += inserted;
+							VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 					} break;
 					case CondGt: {
-						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
-						injectedCount += inserted;
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
 					case CondGe: {
-						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, qe.Values(), injectedFrom);
-						injectedCount += inserted;
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, qe.Values(), insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
 					case CondRange: {
 						const auto inserted =
-							Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, VariantArray{qe.Values()[0]}, injectedFrom);
-						injectedCount += inserted;
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, VariantArray{qe.Values()[0]}, insertedFrom);
+						insertedCount += inserted;
 						position += inserted;
 						break;
 					}
@@ -1108,7 +1109,7 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 				break;
 		}
 	}
-	return injectedCount;
+	return insertedCount;
 }
 
 bool KnnQueryEntry::operator==(const KnnQueryEntry& other) const noexcept {
@@ -1129,16 +1130,16 @@ bool KnnQueryEntry::operator==(const KnnQueryEntry& other) const noexcept {
 }
 
 template <typename JS>
-std::string QueryJoinEntry::DumpCondition(const JS& joinedSelector, bool needOp) const {
+std::string QueryJoinEntry::DumpCondition(const JS& joinItemsProcessor, bool needOp) const {
 	WrSerializer ser;
-	const auto& q = joinedSelector.JoinQuery();
+	const auto& q = joinItemsProcessor.JoinQuery();
 	if (needOp) {
 		ser << ' ' << op_ << ' ';
 	}
-	ser << q.NsName() << '.' << RightFieldName() << ' ' << InvertJoinCondition(condition_) << ' ' << LeftFieldName();
+	ser << q.NsName() << '.' << RightFieldName() << ' ' << joins::InvertJoinCondition(condition_) << ' ' << LeftFieldName();
 	return std::string{ser.Slice()};
 }
-template std::string QueryJoinEntry::DumpCondition(const JoinedSelector&, bool) const;
+template std::string QueryJoinEntry::DumpCondition(const joins::ItemsProcessor&, bool) const;
 
 void QueryEntries::dumpEqualPositions(size_t level, WrSerializer& ser, const EqualPositions_t& equalPositions) {
 	for (const auto& eq : equalPositions) {
@@ -1183,7 +1184,7 @@ std::string SubQueryFieldEntry::Dump(const std::vector<Query>& subQueries) const
 void SubQueryFieldEntry::checkCondition(CondType cond) const { checkSubqueryCondition(cond); }
 
 template <typename JS>
-void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinedSelectors,
+void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinItemsProcessors,
 						const std::vector<Query>& subQueries, WrSerializer& ser) {
 	for (const_iterator it = begin; it != end; ++it) {
 		for (size_t i = 0; i < level; ++i) {
@@ -1198,7 +1199,7 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 			[&ser, subQueries](const SubQueryFunctionEntry& sqe) { ser << sqe.Dump(subQueries); },
 			[&](const QueryEntriesBracket& b) {
 				ser << "(\n";
-				dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, subQueries, ser);
+				dump(level + 1, it.cbegin(), it.cend(), joinItemsProcessors, subQueries, ser);
 				dumpEqualPositions(level + 1, ser, b.equalPositions);
 				for (size_t i = 0; i < level; ++i) {
 					ser << "   ";
@@ -1206,16 +1207,16 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 				ser << ")\n";
 			},
 			[&ser](const QueryEntry& qe) { ser << qe.Dump() << '\n'; }, [&ser](const QueryFunctionEntry& qe) { ser << qe.Dump() << '\n'; },
-			[&joinedSelectors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
+			[&joinItemsProcessors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinItemsProcessors) << '\n'; },
 			[&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << '\n'; }, [&ser](const AlwaysFalse&) { ser << "AlwaysFalse\n"; },
 			[&ser](const AlwaysTrue&) { ser << "AlwaysTrue\n"; }, [&ser](const MultiDistinctQueryEntry& qe) { ser << qe.Dump() << "\n"; },
 			[&ser](const KnnQueryEntry& qe) { ser << qe.Dump() << '\n'; });
 	}
 }
-template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinedSelector>&, const std::vector<Query>&,
-								 WrSerializer&);
-template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinedSelectorMock>&, const std::vector<Query>&,
-								 WrSerializer&);
+template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<joins::ItemsProcessor>&,
+								 const std::vector<Query>&, WrSerializer&);
+template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinItemsProcessorMock>&,
+								 const std::vector<Query>&, WrSerializer&);
 
 std::string KnnQueryEntry::Dump() const {
 	using namespace std::string_literals;

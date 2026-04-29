@@ -117,7 +117,7 @@ struct [[nodiscard]] NamespaceConfigData {
 	int64_t minPreselectSize = 1'000;
 	int64_t maxPreselectSize = 1'000;
 	double maxPreselectPart = 0.1;
-	int64_t maxIterationsIdSetPreResult = 20'000;
+	int64_t maxIterationsIdSetPreSelect = 20'000;
 	bool idxUpdatesCountingMode = false;
 	int syncStorageFlushLimit = 20'000;
 	int annStorageCacheBuildTimeout = 5'000;
@@ -166,7 +166,7 @@ struct [[nodiscard]] EmbeddersConfigData {
 	std::string cacheTag;
 	EmbedderConfigData configData;
 
-	Error FromJSON(const gason::JsonNode& v);
+	Error FromJSON(const gason::JsonNode& v) noexcept;
 	void GetJSON(JsonBuilder& jb) const;
 
 	static Error FromDefault(std::vector<EmbeddersConfigData>& defaultEmbeddersConfs) noexcept;

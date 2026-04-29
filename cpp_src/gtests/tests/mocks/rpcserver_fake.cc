@@ -62,7 +62,7 @@ Error RPCServerFake::Stop() {
 	}
 }
 
-Error RPCServerFake::Select(cproto::Context& ctx, p_string /*query*/, int /*flags*/, int /*limit*/, p_string /*ptVersions*/) {
+Error RPCServerFake::Select(cproto::Context& ctx, p_string /*query*/, int /*flags*/, int /*limit*/, p_string /*tmVersions*/) {
 	static constexpr size_t kQueryResultsPoolSize = 1024;
 	std::this_thread::sleep_for(conf_.selectDelay);
 	int qrId;

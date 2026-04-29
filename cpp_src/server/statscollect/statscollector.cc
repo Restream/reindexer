@@ -170,18 +170,18 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 					gason::JsonParser parser;
 					auto root = parser.Parse(json);
 					auto nodeSelect = root["selects"];
-					if (!nodeSelect.empty() && nodeSelect.isObject()) {
+					if (!nodeSelect.isEmpty() && nodeSelect.isObject()) {
 						prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, nodeSelect["last_sec_qps"].As<int64_t>());
 						prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType, nodeSelect["last_sec_avg_latency_us"].As<int64_t>());
 					}
 					auto nodeUpdates = root["updates"];
-					if (!nodeUpdates.empty() && nodeUpdates.isObject()) {
+					if (!nodeUpdates.isEmpty() && nodeUpdates.isObject()) {
 						prometheus_->RegisterQPS(dbName, nsName, kUpdateQueryType, nodeUpdates["last_sec_qps"].As<int64_t>());
 						prometheus_->RegisterLatency(dbName, nsName, kUpdateQueryType,
 													 nodeUpdates["last_sec_avg_latency_us"].As<int64_t>());
 					}
 					auto nodeIndexes = root["indexes"];
-					if (!nodeIndexes.empty() && nodeIndexes.isArray()) {
+					if (!nodeIndexes.isEmpty() && nodeIndexes.isArray()) {
 						for (auto it = gason::begin(nodeIndexes); it != gason::end(nodeIndexes); ++it) {
 							std::string indexName;
 							Error err = tryReadRequiredJsonValue(nullptr, *it, "name", indexName);
@@ -192,7 +192,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 							auto processEmbed = [&](std::string_view name) {
 								Error err;
 								auto nodeEmb = (*it)[name];
-								if (!nodeEmb.empty()) {
+								if (!nodeEmb.isEmpty()) {
 									int64_t val = 0;
 									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_qps", val);
 									if (err.ok()) {

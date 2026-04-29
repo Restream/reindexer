@@ -250,6 +250,14 @@ func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, tota
 	return jsonBuf.Bytes(), offsets, explain, nil
 }
 
+func makeTMVersionsSlice(nsArray []nsArrayEntry, tmVersions []int32) []int32 {
+	tmVersions = tmVersions[:0]
+	for _, ns := range nsArray {
+		tmVersions = append(tmVersions, ns.localCjsonState.Version^ns.localCjsonState.StateToken)
+	}
+	return tmVersions
+}
+
 func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool) (result bindings.RawBuffer, err error) {
 	// Ordering in q.nsArray is matter and must correspond to the ordering in C++
 	if ns, err := db.getNS(q.Namespace); err == nil {
@@ -269,7 +277,7 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 		}
 	}
 
-	if err := db.appendJoinQueries(q, &ser); err != nil {
+	if err := db.appendJoinQueries(q, &ser, true); err != nil {
 		return nil, err
 	}
 
@@ -291,15 +299,12 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 		}
 	}
 
-	for _, ns := range q.nsArray {
-		q.ptVersions = append(q.ptVersions, ns.localCjsonState.Version^ns.localCjsonState.StateToken)
-	}
 	fetchCount := q.fetchCount
 	if asJson {
 		// json iterator not support fetch queries
 		fetchCount = -1
 	}
-	result, err = db.binding.SelectQuery(ctx, ser.Bytes(), asJson, q.ptVersions, fetchCount)
+	result, err = db.binding.SelectQuery(ctx, ser.Bytes(), asJson, makeTMVersionsSlice(q.nsArray, q.tmVersions), fetchCount)
 
 	if err == nil && result.GetBuf() == nil {
 		panic(fmt.Errorf("rq: result.Buffer is nil"))
@@ -357,12 +362,7 @@ func (db *reindexerImpl) prepareSQL(ctx context.Context, namespace, query string
 
 	nsArray = append(nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 
-	ptVersions := make([]int32, 0, 16)
-	for _, ns := range nsArray {
-		ptVersions = append(ptVersions, ns.localCjsonState.Version^ns.localCjsonState.StateToken)
-	}
-
-	result, err = db.binding.Select(ctx, query, asJson, ptVersions, defaultFetchCount)
+	result, err = db.binding.Select(ctx, query, asJson, makeTMVersionsSlice(nsArray, make([]int32, 0, len(nsArray))), defaultFetchCount)
 	return
 }
 
@@ -376,15 +376,15 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Query.Delete", q.Namespace)).ObserveDuration()
 	}
 
-	// Ordering in q.nsArray is matter and must correspond to the ordering in C++
 	if ns, err := db.getNS(q.Namespace); err == nil {
+		q.nsArray = q.nsArray[:0]
 		q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 	} else {
 		return 0, err
 	}
 
 	q.ser.PutVarCUInt(queryEnd)
-	err := db.appendJoinQueries(q, &q.ser)
+	err := db.appendJoinQueries(q, &q.ser, false)
 	if err != nil {
 		return 0, err
 	}
@@ -398,7 +398,7 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 	ser := newSerializer(result.GetBuf())
 	// skip total count
 	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
-		q.nsArray[0].cjsonState.ReadPayloadType(&ser.Serializer, db.binding, q.nsArray[0].name)
+		q.nsArray[nsid].cjsonState.ReadPayloadType(&ser.Serializer, db.binding, q.nsArray[nsid].name)
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
@@ -414,12 +414,14 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 	return rawQueryParams.count, err
 }
 
-func (db *reindexerImpl) appendJoinQueries(q *Query, ser *cjson.Serializer) error {
+func (db *reindexerImpl) appendJoinQueries(q *Query, ser *cjson.Serializer, appendNsArray bool) error {
 	for _, sq := range q.joinQueries {
-		if ns, err := db.getNS(sq.Namespace); err == nil {
-			q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
-		} else {
-			return err
+		if appendNsArray {
+			if ns, err := db.getNS(sq.Namespace); err == nil {
+				q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
+			} else {
+				return err
+			}
 		}
 
 		ser.PutVarCUInt(sq.joinType)
@@ -439,20 +441,20 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Query.Update", q.Namespace)).ObserveDuration()
 	}
 
-	// Ordering in q.nsArray is matter and must correspond to the ordering in C++
 	if ns, err := db.getNS(q.Namespace); err == nil {
+		q.nsArray = q.nsArray[:0]
 		q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 	} else {
 		return errIterator(err)
 	}
 
 	q.ser.PutVarCUInt(queryEnd)
-	err := db.appendJoinQueries(q, &q.ser)
+	err := db.appendJoinQueries(q, &q.ser, false)
 	if err != nil {
 		return errIterator(err)
 	}
 
-	result, err := db.binding.UpdateQuery(ctx, q.ser.Bytes())
+	result, err := db.binding.UpdateQuery(ctx, q.ser.Bytes(), makeTMVersionsSlice(q.nsArray, q.tmVersions))
 	if err != nil {
 		return errIterator(err)
 	}
@@ -460,7 +462,7 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 	ser := newSerializer(result.GetBuf())
 	// skip total count
 	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
-		q.nsArray[0].cjsonState.ReadPayloadType(&ser.Serializer, db.binding, q.nsArray[0].name)
+		q.nsArray[nsid].cjsonState.ReadPayloadType(&ser.Serializer, db.binding, q.nsArray[nsid].name)
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {

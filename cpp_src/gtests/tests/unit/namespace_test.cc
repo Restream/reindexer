@@ -13,7 +13,7 @@
 #include "ns_api.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/timetools.h"
 #include "vendor/gason/gason.h"
 
@@ -2913,20 +2913,36 @@ TEST_F(NsApi, TestUpdateFieldWithConsistentNowValues) {
 }
 
 TEST_F(NsApi, TestUpdateFieldWithConsistentNowInWhereClause) {
-	DefineDefaultNamespace();
+	rt.OpenNamespace(default_namespace);
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int64", IndexOpts().PK(), 0},
+											   IndexDeclaration{intField, "hash", "int64", IndexOpts(), 0}});
 
-	int64_t updateTimeMsec =
-		std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
+	auto now = [] {
+		return std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
+	};
+	int64_t updateTimeMsec = now();
+	const int64_t delayMsec = 3'000;
+	const int items = 6'000;
+	const int64_t maxDiffMsec = items / 2 + delayMsec;
 
-	for (int i = 0; i < 20'000; ++i) {
+	for (int i = 0; i < items; ++i) {
 		Item item = NewItem(default_namespace);
 		item[idIdxName] = i;
-		item[intField] = updateTimeMsec + i;
+		item[intField] = updateTimeMsec + (i / 2) + delayMsec;
 		Upsert(default_namespace, item);
 	}
-
+	for (auto nowV = now(); nowV < updateTimeMsec + delayMsec; nowV = now()) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
 	auto qr = rt.ExecSQL("update test_namespace set timeField = NOW(msec) WHERE int_field = NOW(msec);");
-	ASSERT_GT(qr.Count(), 0);
+	if (now() - updateTimeMsec > maxDiffMsec) {
+		GTEST_SKIP();
+	}
+	ASSERT_EQ(qr.Count(), 2);
+	for (auto& it : qr) {
+		auto item = it.GetItem(false);
+		ASSERT_EQ(item["timeField"].As<int64_t>(), item["int_field"].As<int64_t>());
+	}
 }
 
 TEST_F(NsApi, TestUpdateFieldWithExpressions) {

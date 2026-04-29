@@ -1,7 +1,7 @@
 #include "ft_merge_limit.h"
 #include "allocs_tracker.h"
 
-#include "core/ft/config/ftfastconfig.h"
+#include "core/ft/config/ftconfig.h"
 // #include "helpers.h"
 // #include "tools/clock.h"
 // #include "tools/fsops.h"
@@ -13,9 +13,9 @@ FullTextMergeLimit::FullTextMergeLimit(Reindexer* db, const std::string& name, s
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
 #endif
-	static reindexer::FtFastConfig ftCfg(1);
+	static reindexer::FTConfig ftCfg(1);
 	static IndexOpts ftIndexOpts;
-	ftCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+	ftCfg.optimization = reindexer::FTConfig::Optimization::Memory;
 	ftCfg.stopWords = {};
 	ftCfg.splitOptions.SetSymbols("1234567890", "");
 	ftCfg.mergeLimit = 0x1FFFFFF;

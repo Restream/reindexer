@@ -380,16 +380,35 @@ Error RPCClient::DeleteMeta(std::string_view nsName, const std::string& key, con
 	return conn_.Call(mkCommand(cproto::kCmdDeleteMeta, &ctx), nsName, key).Status();
 }
 
+static h_vector<int32_t, 4> getTMVersionsVec(const CoroQueryResults::NsArray& nsArray) {
+	h_vector<int32_t, 4> vers;
+	vers.reserve(nsArray.size());
+	for (auto& ns : nsArray) {
+		auto tm = ns->GetTagsMatcher();
+		vers.emplace_back(tm.version() ^ tm.stateToken());
+	}
+	return vers;
+}
+
+static void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
+	ser.PutVarUint(vec.size());
+	for (auto v : vec) {
+		ser.PutVarUint(v);
+	}
+}
+
 Error RPCClient::Delete(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	query.Serialize(ser);
 
-	CoroQueryResults::NsArray nsArray;
-	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.emplace_back(getNamespace(q.NsName())); });
+	CoroQueryResults::NsArray nsArray{getNamespace(query.NsName())};
+	const auto vers = getTMVersionsVec(nsArray);
+	WrSerializer pser;
+	vec2pack(vers, pser);
 
 	const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.NetTimeout, result.i_.lazyMode_);
-	auto ret = conn_.Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), flags);
+	auto ret = conn_.Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), flags, pser.Slice());
 	try {
 		if (ret.Status().ok()) {
 			const auto args = ret.GetArgs(2);
@@ -405,12 +424,14 @@ Error RPCClient::Update(const Query& query, CoroQueryResults& result, const Inte
 	WrSerializer ser;
 	query.Serialize(ser);
 
-	CoroQueryResults::NsArray nsArray;
-	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	CoroQueryResults::NsArray nsArray{getNamespace(query.NsName())};
+	const auto vers = getTMVersionsVec(nsArray);
+	WrSerializer pser;
+	vec2pack(vers, pser);
 
 	const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.NetTimeout, result.i_.lazyMode_);
-	auto ret = conn_.Call(mkCommand(cproto::kCmdUpdateQuery, &ctx), ser.Slice(), flags);
+	auto ret = conn_.Call(mkCommand(cproto::kCmdUpdateQuery, &ctx), ser.Slice(), flags, pser.Slice());
 	try {
 		if (ret.Status().ok()) {
 			const auto args = ret.GetArgs(2);
@@ -420,14 +441,6 @@ Error RPCClient::Update(const Query& query, CoroQueryResults& result, const Inte
 		return err;
 	}
 	return ret.Status();
-}
-
-void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
-	// Get array of payload Type Versions
-	ser.PutVarUint(vec.size());
-	for (auto v : vec) {
-		ser.PutVarUint(v);
-	}
 }
 
 Error RPCClient::ExecSQL(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {
@@ -456,11 +469,8 @@ Error RPCClient::selectImpl(const Query& query, CoroQueryResults& result, millis
 	WrSerializer qser;
 	query.Serialize(qser);
 	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
-	h_vector<int32_t, 4> vers;
-	for (auto& ns : nsArray) {
-		auto tm = ns->GetTagsMatcher();
-		vers.push_back(tm.version() ^ tm.stateToken());
-	}
+
+	const auto vers = getTMVersionsVec(nsArray);
 	WrSerializer pser;
 	vec2pack(vers, pser);
 	const int kInitialFetchAmount = result.FetchAmount() > 0 ? result.FetchAmount() : config_.FetchAmount;

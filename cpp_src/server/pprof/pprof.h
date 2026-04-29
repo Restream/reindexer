@@ -2,7 +2,6 @@
 
 #include <string>
 #include "net/http/router.h"
-#include "tools/serializer.h"
 
 namespace reindexer_server {
 

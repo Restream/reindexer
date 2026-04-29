@@ -1,4 +1,5 @@
 #include "ann_storage_cache_helper.h"
+#include "core/formatters/id_type_fmt.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/storage/storage_prefixes.h"
 #include "namespaceimpl.h"
@@ -103,9 +104,11 @@ bool Writer::TryUpdateNextPart(RLockT&& lock, AsyncStorage& storage, UpdateInfo&
 			const auto t1 = system_clock_w::now_coarse();
 			storage.WriteSync(StorageOpts(), GetStorageKey(ann->Name()), ser.Slice());
 			const auto t2 = system_clock_w::now_coarse();
-			logFmt(LogInfo, "[{}] Storage cache for ANN index was updated: size: {} KB; creation time: {} ms; writing time: {} ms", nsName,
-				   ser.Len() / 1024, std::chrono::duration_cast<milliseconds>((t1 - t0)).count(),
-				   std::chrono::duration_cast<milliseconds>((t2 - t1)).count());
+			logFmt(LogInfo,
+				   "[{}] Storage cache for ANN index '{}' was updated: size: {} KB; creation time: {} ms; writing time: {} ms; "
+				   "last update ts: {}",
+				   nsName, indexName, ser.Len() / 1024, std::chrono::duration_cast<milliseconds>((t1 - t0)).count(),
+				   std::chrono::duration_cast<milliseconds>((t2 - t1)).count(), lastUpdateTime_.count());
 
 			updateInfo.Update(indexName, lastUpdateTime_);
 			return true;
@@ -150,19 +153,19 @@ Writer::StorageCacheWriteResult Writer::writeSingleIndexCache(FloatVectorIndex& 
 
 	auto getPKSingle = [this, pkField](IdType id) {
 		VariantArray ret;
-		if (size_t(id.ToNumber()) >= ns_.items_.size() || ns_.items_[id.ToNumber()].IsFree()) [[unlikely]] {
+		if (size_t(id.ToNumber()) >= ns_.items_.size() || ns_.items_[id].IsFree()) [[unlikely]] {
 			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
-		ConstPayload pl(ns_.payloadType_, ns_.items_[id.ToNumber()]);
+		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);
 		pl.Get(pkField, ret);
 		return ret;
 	};
 	auto getPKComposite = [this, &pkFields](IdType id) {
 		VariantArray ret, tmp;
-		if (size_t(id.ToNumber()) >= ns_.items_.size() || ns_.items_[id.ToNumber()].IsFree()) [[unlikely]] {
+		if (size_t(id.ToNumber()) >= ns_.items_.size() || ns_.items_[id].IsFree()) [[unlikely]] {
 			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
-		ConstPayload pl(ns_.payloadType_, ns_.items_[id.ToNumber()]);
+		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);
 		for (const int f : pkFields) {
 			pl.Get(f, tmp);
 			ret.emplace_back(tmp[0]);
@@ -242,16 +245,16 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 			Serializer ser(dataSlice);
 			const auto version = ser.GetUInt8();
 			if (version > kANNCacheFormatVersion) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): unsupported format version {}", nsName_, keySlice, version);
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				keysToRemove.emplace_back(keySlice);
 				continue;
 			}
 			const auto cachedLastUpdate = nanoseconds(ser.GetUInt64());
 			if (cachedLastUpdate != lastUpdate) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): outdated: {{required_last_update: {}, found_last_update: {}}}",
 					   nsName_, keySlice, lastUpdate.count(), cachedLastUpdate.count());
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				keysToRemove.emplace_back(keySlice);
 				continue;
 			}
@@ -259,9 +262,9 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 
 			const int field = nameToField(indexName);
 			if (field >= kMaxIndexes || field < 0) {
-				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): unable to map index name to index field number (got {})", nsName_,
 					   keySlice, field);
+				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				keysToRemove.emplace_back(keySlice);
 				continue;
 			}

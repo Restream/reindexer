@@ -7,7 +7,6 @@
 #include "core/namespace/stringsholder.h"
 #include "core/rdxcontext.h"
 #include "itemref.h"
-#include "tools/serializer.h"
 
 namespace reindexer {
 
@@ -205,13 +204,9 @@ public:
 	// Add owning ns pointer
 	// noLock has always to be 'true' (i.e. this method can only be called under Namespace's lock)
 	void AddNamespace(NamespaceImplPtr, bool noLock);
-	// Add non-owning ns pointer
-	// noLock has always to be 'true' (i.e. this method can only be called under Namespace's lock)
-	void AddNamespace(NamespaceImpl*, bool noLock);
 	void RemoveNamespace(const NamespaceImpl* ns);
 	bool IsNamespaceAdded(const NamespaceImpl* ns) const noexcept {
-		return std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder& nsData) { return nsData.ns == ns; }) !=
-			   nsData_.cend();
+		return std::ranges::any_of(nsData_, [ns](const NsDataHolder& nsData) { return nsData.HoldsPointerTo(ns); });
 	}
 	FloatVectorsHolderMap& GetFloatVectorsHolder() & noexcept { return floatVectorsHolder_; }
 
@@ -228,15 +223,13 @@ private:
 	class [[nodiscard]] NsDataHolder {
 	public:
 		NsDataHolder(NamespaceImplPtr&& _ns, StringsHolderPtr&& strHldr) noexcept;
-		NsDataHolder(NamespaceImpl* _ns, StringsHolderPtr&& strHldr) noexcept;
 		NsDataHolder(const NsDataHolder&) = delete;
 		NsDataHolder(NsDataHolder&&) noexcept = default;
 		NsDataHolder& operator=(const NsDataHolder&) = delete;
 		NsDataHolder& operator=(NsDataHolder&&) = default;
 
 		const StringsHolderPtr::element_type* StrHolderPtr() const& noexcept { return strHolder_.get(); }
-
-		const NamespaceImpl* ns{nullptr};
+		bool HoldsPointerTo(const NamespaceImpl* ptr) const noexcept { return ptr == nsPtr_.get(); }
 
 	private:
 		NamespaceImplPtr nsPtr_;

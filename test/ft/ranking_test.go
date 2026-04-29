@@ -14,7 +14,7 @@ import (
 	_ "github.com/restream/reindexer/v5/bindings/builtin"
 )
 
-func doRankingTest(t *testing.T, indexType string) {
+func doRankingTest(t *testing.T) {
 
 	totalSearchQuality := 0.0
 
@@ -34,7 +34,7 @@ func doRankingTest(t *testing.T, indexType string) {
 		testCase := testC
 
 		namespace := "ft_rank_" + strconv.Itoa(i)
-		createReindexDbInstance(rx, namespace, indexType, 0)
+		createReindexDbInstance(rx, namespace, 0)
 		fillReindexWithData(rx, namespace, testCase.AllDocuments)
 
 		t.Run("Running test case: "+testCase.Description, func(t *testing.T) {
@@ -62,16 +62,9 @@ func doRankingTest(t *testing.T, indexType string) {
 
 						k, is_found := getCasePositionInReference(testCase.Description, expectedQualities)
 						if is_found {
-							if indexType == "fuzzytext" {
-								assert.GreaterOrEqualf(t, qualityRound2f, expectedQualities[k].FuzzRankingQuality, "Fuzz ranking quality has dropped")
-								if qualityRound2f > expectedQualities[k].FuzzRankingQuality {
-									newQualities[k].FuzzRankingQuality = qualityRound2f
-								}
-							} else {
-								assert.GreaterOrEqualf(t, qualityRound2f, expectedQualities[k].FastRankingQuality, "Fast ranking quality has dropped")
-								if qualityRound2f > expectedQualities[k].FastRankingQuality {
-									newQualities[k].FastRankingQuality = qualityRound2f
-								}
+							assert.GreaterOrEqualf(t, qualityRound2f, expectedQualities[k].FastRankingQuality, "Fast ranking quality has dropped")
+							if qualityRound2f > expectedQualities[k].FastRankingQuality {
+								newQualities[k].FastRankingQuality = qualityRound2f
 							}
 						} else {
 							t.Fail()
@@ -147,9 +140,5 @@ func elemIsInSlice(elem string, slice []string) bool {
 }
 
 func TestFTFastRankingTest(t *testing.T) {
-	doRankingTest(t, "text")
-}
-
-func TestFTFuzzyRankingTest(t *testing.T) {
-	doRankingTest(t, "fuzzytext")
+	doRankingTest(t)
 }

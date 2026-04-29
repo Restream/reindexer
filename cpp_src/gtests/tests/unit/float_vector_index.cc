@@ -2,12 +2,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest-param-test.h>
 #include <random>
+#include <ranges>
 #include <thread>
 #include "core/cjson/jsonbuilder.h"
-#include "core/id_type.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
-#include "tools/errors.h"
 #include "tools/fsops.h"
 #include "vendor/fmt/ranges.h"
 
@@ -78,21 +77,16 @@ static void checkOrdering(const reindexer::QueryResults& qr, reindexer::VectorMe
 	}
 }
 
-size_t FloatVector::deleteSomeItems(std::string_view nsName, int maxElements, std::unordered_set<int>& emptyVectors) {
+void FloatVector::deleteSomeItems(std::string_view nsName, int maxElements, std::unordered_set<int>& emptyVectors,
+								  std::unordered_map<int, size_t>& vectorsCount) {
 	const auto step = std::max(maxElements / 100, 3);
-	size_t deleted = 0;
-	int prev = -1;
 	for (int i = rand() % step; i < maxElements; i += rand() % step) {
 		auto item = rt.NewItem(nsName);
 		item["id"] = i;
 		rt.Delete(nsName, item);
-		if (i != prev) {
-			++deleted;
-			prev = i;
-		}
+		vectorsCount.erase(i);
 		emptyVectors.erase(i);
 	}
-	return deleted;
 }
 
 void FloatVector::rebuildCentroids() {
@@ -147,56 +141,88 @@ void FloatVector::checkEmptyIndexSelection(std::string_view ns, std::string_view
 	EXPECT_EQ(qr.Count(), 0);
 }
 
-template <size_t Dimension>
-reindexer::Item FloatVector::newItem(std::string_view nsName, std::string_view fieldName, int id, std::unordered_set<int>& emptyVectors) {
+template <size_t Dimension, FloatVector::IsArray isArray>
+reindexer::Item FloatVector::newItem(std::string_view nsName, std::string_view fieldName, int id, std::unordered_set<int>& emptyVectors,
+									 std::unordered_map<int, size_t>& vectorsCount) {
 	if (rand() % 2) {
-		return newItemDirect<Dimension>(nsName, fieldName, id, emptyVectors);
+		return newItemDirect<Dimension, isArray>(nsName, fieldName, id, emptyVectors, vectorsCount);
 	} else {
-		return newItemFromJson<Dimension>(nsName, fieldName, id, emptyVectors);
+		return newItemFromJson<Dimension, isArray>(nsName, fieldName, id, emptyVectors, vectorsCount);
 	}
 }
 
-template <size_t Dimension>
+template <size_t Dimension, FloatVector::IsArray isArray>
 reindexer::Item FloatVector::newItemDirect(std::string_view nsName, std::string_view fieldName, int id,
-										   std::unordered_set<int>& emptyVectors) {
+										   std::unordered_set<int>& emptyVectors, std::unordered_map<int, size_t>& vectorsCount) {
 	auto item = rt.NewItem(nsName);
 	item[kFieldNameId] = id;
-	if (rand() % 10 != 0) {
-		std::array<float, Dimension> buf;
-		::rndFloatVector(buf);
-		item[fieldName] = reindexer::ConstFloatVectorView{buf};
-	} else {
-		if (rand() % 2 == 0) {
-			item[fieldName] = reindexer::ConstFloatVectorView{};
+	std::array<float, Dimension> buf;
+	if (isArray && (rand() % 10 != 0)) {
+		std::vector<reindexer::FloatVector> vectors;
+		const auto arraySize = rand() % 16;
+		vectors.resize(arraySize);
+		for (int i = 0; i < arraySize; ++i) {
+			if (rand() % 10 != 0) {
+				::rndFloatVector(buf);
+				vectors.emplace_back(buf);
+				++vectorsCount[id];
+			} else {
+				vectors.emplace_back();
+				emptyVectors.insert(id);
+			}
 		}
-		emptyVectors.insert(id);
+		if (arraySize == 0) {
+			emptyVectors.insert(id);
+		}
+		item[fieldName] = vectors;
+	} else {
+		if (rand() % 10 != 0) {
+			::rndFloatVector(buf);
+			item[fieldName] = reindexer::ConstFloatVectorView{buf};
+			++vectorsCount[id];
+		} else {
+			if (rand() % 2 == 0) {
+				item[fieldName] = reindexer::ConstFloatVectorView{};
+			}
+			emptyVectors.insert(id);
+		}
 	}
 	return item;
 }
 
 template <size_t Dimension>
+void FloatVector::newVectorFromJson(reindexer::JsonBuilder& json, std::string_view fieldName, int id, std::unordered_set<int>& emptyVectors,
+									std::unordered_map<int, size_t>& vectorsCount) {
+	if (rand() % 10 != 0) {
+		std::array<float, Dimension> buf;
+		::rndFloatVector(buf);
+		json.Array(fieldName, std::span<const float>(buf));
+		++vectorsCount[id];
+	} else {
+		if (rand() % 2 == 1) {
+			json.AddArray(fieldName);
+		} else {
+			json.Null(fieldName);
+		}
+		emptyVectors.insert(id);
+	}
+}
+
+template <size_t Dimension, FloatVector::IsArray isArray>
 reindexer::Item FloatVector::newItemFromJson(std::string_view nsName, std::string_view fieldName, int id,
-											 std::unordered_set<int>& emptyVectors) {
+											 std::unordered_set<int>& emptyVectors, std::unordered_map<int, size_t>& vectorsCount) {
 	reindexer::WrSerializer ser;
 	{
 		reindexer::JsonBuilder json(ser);
 		json.Put(kFieldNameId, id);
-		if (rand() % 10 != 0) {
-			std::array<float, Dimension> buf;
-			::rndFloatVector(buf);
-			json.Array(fieldName, std::span<const float>(buf));
-		} else {
-			switch (rand() % 3) {
-				case 0:
-					json.AddArray(fieldName);
-					break;
-				case 1:
-					json.Null(fieldName);
-					break;
-				default:
-					break;
+		if (isArray && (rand() % 10 != 0)) {
+			const auto arraySize = rand() % 16;
+			auto array = json.Array(fieldName);
+			for (int i = 0; i < arraySize; ++i) {
+				newVectorFromJson<Dimension>(array, {}, id, emptyVectors, vectorsCount);
 			}
-			emptyVectors.insert(id);
+		} else {
+			newVectorFromJson<Dimension>(json, fieldName, id, emptyVectors, vectorsCount);
 		}
 	}
 	auto item = rt.NewItem(nsName);
@@ -207,20 +233,20 @@ reindexer::Item FloatVector::newItemFromJson(std::string_view nsName, std::strin
 	return item;
 }
 
-template <size_t Dimension>
+template <size_t Dimension, FloatVector::IsArray isArray>
 void FloatVector::upsertItems(std::string_view nsName, std::string_view fieldName, int startId, int endId,
-							  std::unordered_set<int>& emptyVectors, HasIndex hasIndex) {
+							  std::unordered_set<int>& emptyVectors, std::unordered_map<int, size_t>& vectorsCount, HasIndex hasIndex) {
 	assert(startId < endId);
 	for (int id = startId; id < endId; ++id) {
-		auto item = hasIndex == HasIndex::Yes ? newItem<Dimension>(nsName, fieldName, id, emptyVectors)
-											  : newItemFromJson<Dimension>(nsName, fieldName, id, emptyVectors);
+		auto item = hasIndex == HasIndex::Yes ? newItem<Dimension, isArray>(nsName, fieldName, id, emptyVectors, vectorsCount)
+											  : newItemFromJson<Dimension, isArray>(nsName, fieldName, id, emptyVectors, vectorsCount);
 		rt.Upsert(nsName, item);
 	}
 }
 
 enum class [[nodiscard]] QueryWith : size_t { OnlyK, KandR, OnlyR };
 
-template <size_t Dimension, typename SearchParamGetterT>
+template <size_t Dimension, FloatVector::IsArray isArray, typename SearchParamGetterT>
 void FloatVector::runMultithreadQueries(size_t threads, size_t queriesPerThread, std::string_view nsName, std::string_view fieldName,
 										const SearchParamGetterT& getKNNParam) {
 	std::vector<std::thread> threadsStorage;
@@ -242,7 +268,7 @@ void FloatVector::runMultithreadQueries(size_t threads, size_t queriesPerThread,
 					const auto result =
 						rt.Select(reindexer::Query{nsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, std::move(params)));
 
-					if (queryCase == QueryWith::OnlyR) {
+					if (!isArray && queryCase == QueryWith::OnlyR) {
 						EXPECT_EQ(prevQrCount, result.Count());
 					}
 					checkOrdering(result, GetParam(), radius);
@@ -260,65 +286,78 @@ void FloatVector::runMultithreadQueries(size_t threads, size_t queriesPerThread,
 }
 
 static void checkIndexMemstat(ReindexerTestApi<reindexer::Reindexer>& rx, std::string_view ns, std::string_view vectorIndex, size_t dims,
-							  size_t vectors, const std::unordered_set<int>& emptyVectors) {
+							  const std::unordered_set<int>& emptyVectors, const std::unordered_map<int, size_t>& vectorsCount) {
 	auto qr = rx.Select(reindexer::Query("#memstats").Where("name", CondEq, ns));
 	ASSERT_EQ(qr.Count(), 1);
 	auto memstats = qr.begin().GetItem(false);
 	auto json = memstats.GetJSON();
-	vectors -= emptyVectors.size();
+	const auto count = std::accumulate(vectorsCount.begin(), vectorsCount.end(), 0, [](auto c, const auto& vc) { return c + vc.second; });
 	auto expectedRegex = fmt::format(
 		R"(\{{"uniq_keys_count":{},"data_size":{},"indexing_struct_size":[1-9][0-9]+,"vectors_keeper_size":[1-9][0-9]+,"is_built":true,("is_quantized":false,)*"name":"{}"\}})",
-		vectors + (emptyVectors.empty() ? 0 : 1), vectors * dims * sizeof(float), vectorIndex);
+		count + (emptyVectors.empty() ? 0 : 1), count * dims * sizeof(float), vectorIndex);
 	ASSERT_THAT(json, testing::ContainsRegex(expectedRegex));
 }
 
-TEST_P(FloatVector, HnswIndex) try {
-	constexpr static auto kNsName = "hnsw_ns"sv;
+template <FloatVector::IsArray isArray>
+void FloatVector::TestHnswIndex() try {
+	constexpr static auto kNsName = isArray ? "hnsw_array_ns"sv : "hnsw_scalar_ns";
 	constexpr static auto kFieldNameHnsw = "hnsw"sv;
-#if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
-	constexpr static size_t kDimension = 64;
-	constexpr static size_t kMaxElements = 1'000;
+#if defined(RX_WITH_STDLIB_DEBUG)
+	constexpr static size_t kDimension = isArray ? 4 : 16;
+	constexpr static size_t kMaxElements = 100;
+#elif defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
+	constexpr static size_t kDimension = isArray ? 8 : 64;
+	constexpr static size_t kMaxElements = 300;
 #else
-	constexpr static size_t kDimension = 1'024;
+	constexpr static size_t kDimension = isArray ? 128 : 1'024;
 	constexpr static size_t kMaxElements = 3'000;
 #endif
 	constexpr static size_t kM = 16;
 	constexpr static size_t kEfConstruction = 200;
 
 	rt.OpenNamespace(kNsName);
-	rt.DefineNamespaceDataset(kNsName, {
-										   IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
-										   IndexDeclaration{kFieldNameHnsw, "hnsw", "float_vector",
-															IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
-																									  .SetDimension(kDimension)
-																									  .SetStartSize(100)
-																									  .SetM(kM)
-																									  .SetEfConstruction(kEfConstruction)
-																									  .SetMetric(GetParam())),
-															0},
-									   });
+	rt.DefineNamespaceDataset(
+		kNsName, {
+					 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+					 IndexDeclaration{kFieldNameHnsw, "hnsw", "float_vector",
+									  IndexOpts{}.Array(isArray).SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
+																							   .SetDimension(kDimension)
+																							   .SetStartSize(100)
+																							   .SetM(kM)
+																							   .SetEfConstruction(kEfConstruction)
+																							   .SetMetric(GetParam())),
+									  0},
+				 });
 
 	checkEmptyIndexSelection<reindexer::HnswSearchParams, kDimension>(kNsName, kFieldNameHnsw);
 
 	std::unordered_set<int> emptyVectors;
-	upsertItems<kDimension>(kNsName, kFieldNameHnsw, 0, kMaxElements, emptyVectors);
+	std::unordered_map<int, size_t> vectorsCount;
+	upsertItems<kDimension, isArray>(kNsName, kFieldNameHnsw, 0, kMaxElements, emptyVectors, vectorsCount);
 	auto res = rt.UpdateQR(reindexer::Query(kNsName).Set("non_idx", 12345).Where(kFieldNameId, CondEq, 1));
 	ASSERT_EQ(res.Count(), 1);
-	const auto deleted = deleteSomeItems(kNsName, kMaxElements, emptyVectors);
-	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameHnsw, [&](std::optional<size_t> k, std::optional<float> radius) {
+	deleteSomeItems(kNsName, kMaxElements, emptyVectors, vectorsCount);
+	runMultithreadQueries<kDimension, isArray>(4, 20, kNsName, kFieldNameHnsw, [&](std::optional<size_t> k, std::optional<float> radius) {
 		return reindexer::HnswSearchParams{}.K(k).Radius(radius);
 	});
-	checkIndexMemstat(rt, kNsName, kFieldNameHnsw, kDimension, kMaxElements - deleted, emptyVectors);
+	checkIndexMemstat(rt, kNsName, kFieldNameHnsw, kDimension, emptyVectors, vectorsCount);
 }
 CATCH_AND_ASSERT
 
-TEST_F(FloatVector, HnswIndexMTRace) try {
-	constexpr static auto kNsName = "hnsw_mt_race_ns"sv;
+TEST_P(FloatVector, HnswArrayIndex) { TestHnswIndex<Array>(); }
+TEST_P(FloatVector, HnswScalarIndex) { TestHnswIndex<Scalar>(); }
+
+template <FloatVector::IsArray isArray>
+void FloatVector::TestHnswIndexMTRace() try {
+	constexpr static auto kNsName = isArray ? "hnsw_array_mt_race_ns"sv : "hnsw_scalar_mt_race_ns"sv;
 	constexpr static auto kFieldNameHnsw = "hnsw"sv;
-	constexpr static size_t kDimension = 8;
+	constexpr static size_t kDimension = isArray ? 4 : 8;
 	constexpr static size_t kM = 16;
 	constexpr static size_t kSelectThreads = 2;
-#if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
+#if defined(RX_WITH_STDLIB_DEBUG)
+	constexpr static size_t kTransactions = 4;
+	constexpr static size_t kEfConstruction = 50;
+#elif defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 	constexpr static size_t kTransactions = 5;
 	constexpr static size_t kEfConstruction = 100;
 #else
@@ -327,19 +366,19 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 #endif
 
 	rt.OpenNamespace(kNsName);
-	rt.DefineNamespaceDataset(
-		kNsName,
-		{
-			IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
-			IndexDeclaration{kFieldNameHnsw, "hnsw", "float_vector",
-							 IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
-																	   .SetDimension(kDimension)
-																	   .SetMultithreading(MultithreadingMode::MultithreadTransactions)
-																	   .SetM(kM)
-																	   .SetEfConstruction(kEfConstruction)
-																	   .SetMetric(reindexer::VectorMetric::Cosine)),
-							 0},
-		});
+	rt.DefineNamespaceDataset(kNsName,
+							  {
+								  IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+								  IndexDeclaration{kFieldNameHnsw, "hnsw", "float_vector",
+												   IndexOpts{}.Array(isArray).SetFloatVector(
+													   IndexHnsw, FloatVectorIndexOpts{}
+																	  .SetDimension(kDimension)
+																	  .SetMultithreading(MultithreadingMode::MultithreadTransactions)
+																	  .SetM(kM)
+																	  .SetEfConstruction(kEfConstruction)
+																	  .SetMetric(reindexer::VectorMetric::Cosine)),
+												   0},
+							  });
 
 	unsigned id = 0;
 	std::unordered_map<reindexer::IdType, std::string> expectedData;
@@ -369,11 +408,12 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 
 		auto tx = rt.NewTransaction(kNsName);
 		std::unordered_set<int> emptyVectors;
+		std::unordered_map<int, size_t> vectorsCount;
 		int totalNewItems = 0;
 		for (size_t j = 0; j < unsigned(rand() % 50 + 250); ++j) {
 			if (id < 10 || rand() % 10) {
 				// Insert new item
-				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, id, emptyVectors);
+				auto item = newItem<kDimension, isArray>(kNsName, kFieldNameHnsw, id, emptyVectors, vectorsCount);
 				std::string json(item.GetJSON());
 				expectedData[reindexer::IdType::FromNumber(id)] = std::move(json);
 				auto err = tx.Upsert(std::move(item));
@@ -384,7 +424,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 			if (id > 10 && rand() % 8 == 0) {
 				// Update existing id
 				auto updID = rand() % id;
-				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, updID, emptyVectors);
+				auto item = newItem<kDimension, isArray>(kNsName, kFieldNameHnsw, updID, emptyVectors, vectorsCount);
 				std::string json(item.GetJSON());
 				if (auto found = expectedData.find(reindexer::IdType::FromNumber(updID)); found != expectedData.end()) {
 					found->second = std::move(json);
@@ -395,7 +435,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 			if (id > 10 && rand() % 8 == 0) {
 				// Delete existing id
 				auto delID = rand() % id;
-				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, delID, emptyVectors);
+				auto item = newItem<kDimension, isArray>(kNsName, kFieldNameHnsw, delID, emptyVectors, vectorsCount);
 				if (expectedData.erase(reindexer::IdType::FromNumber(delID))) {
 					--totalNewItems;
 				}
@@ -406,7 +446,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 			if (rand() % 20 == 0) {
 				// Delete non existing id
 				auto delID = id + rand() % 1000 + 1000;
-				auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, delID, emptyVectors);
+				auto item = newItem<kDimension, isArray>(kNsName, kFieldNameHnsw, delID, emptyVectors, vectorsCount);
 				ASSERT_EQ(expectedData.erase(reindexer::IdType::FromNumber(delID)), 0);
 				auto err = tx.Delete(std::move(item));
 				ASSERT_TRUE(err.ok()) << err.what();
@@ -414,7 +454,7 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 		}
 		while (totalNewItems < 201) {
 			// Insert more items to force multithreading insertion
-			auto item = newItem<kDimension>(kNsName, kFieldNameHnsw, id, emptyVectors);
+			auto item = newItem<kDimension, isArray>(kNsName, kFieldNameHnsw, id, emptyVectors, vectorsCount);
 			std::string json(item.GetJSON());
 			expectedData[reindexer::IdType::FromNumber(id)] = std::move(json);
 			auto err = tx.Insert(std::move(item));
@@ -450,14 +490,21 @@ TEST_F(FloatVector, HnswIndexMTRace) try {
 }
 CATCH_AND_ASSERT
 
-TEST_P(FloatVector, VecBruteforceIndex) try {
-	constexpr static auto kNsName = "vec_bf_ns"sv;
+TEST_F(FloatVector, TestHnswArrayIndexMTRace) { TestHnswIndexMTRace<Array>(); }
+TEST_F(FloatVector, TestHnswScalarIndexMTRace) { TestHnswIndexMTRace<Scalar>(); }
+
+template <FloatVector::IsArray isArray>
+void FloatVector::TestVecBruteforceIndex() try {
+	constexpr static auto kNsName = isArray ? "vec_bf_array_ns"sv : "vec_bf_scalar_ns"sv;
 	constexpr static auto kFieldNameVec = "vec"sv;
-#if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
-	constexpr static size_t kDimension = 64;
-	constexpr static size_t kMaxElements = 5'000;
+#if defined(RX_WITH_STDLIB_DEBUG)
+	constexpr static size_t kDimension = isArray ? 4 : 16;
+	constexpr static size_t kMaxElements = 300;
+#elif defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
+	constexpr static size_t kDimension = isArray ? 8 : 64;
+	constexpr static size_t kMaxElements = 1'000;
 #else
-	constexpr static size_t kDimension = 1'024;
+	constexpr static size_t kDimension = isArray ? 128 : 1'024;
 	constexpr static size_t kMaxElements = 10'000;
 #endif
 
@@ -466,7 +513,7 @@ TEST_P(FloatVector, VecBruteforceIndex) try {
 		kNsName, {
 					 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
 					 IndexDeclaration{kFieldNameVec, "vec_bf", "float_vector",
-									  IndexOpts{}.SetFloatVector(
+									  IndexOpts{}.Array(isArray).SetFloatVector(
 										  IndexVectorBruteforce,
 										  FloatVectorIndexOpts{}.SetDimension(kDimension).SetStartSize(100).SetMetric(GetParam())),
 									  0},
@@ -475,44 +522,50 @@ TEST_P(FloatVector, VecBruteforceIndex) try {
 	checkEmptyIndexSelection<reindexer::BruteForceSearchParams, kDimension>(kNsName, kFieldNameVec);
 
 	std::unordered_set<int> emptyVectors;
-	upsertItems<kDimension>(kNsName, kFieldNameVec, 0, kMaxElements, emptyVectors);
-	const auto deleted = deleteSomeItems(kNsName, kMaxElements, emptyVectors);
-	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameVec, [&](std::optional<size_t> k, std::optional<float> radius) {
+	std::unordered_map<int, size_t> vectorsCount;
+	upsertItems<kDimension, isArray>(kNsName, kFieldNameVec, 0, kMaxElements, emptyVectors, vectorsCount);
+	deleteSomeItems(kNsName, kMaxElements, emptyVectors, vectorsCount);
+	runMultithreadQueries<kDimension, isArray>(4, 20, kNsName, kFieldNameVec, [&](std::optional<size_t> k, std::optional<float> radius) {
 		return reindexer::BruteForceSearchParams{}.K(k).Radius(radius);
 	});
-	checkIndexMemstat(rt, kNsName, kFieldNameVec, kDimension, kMaxElements - deleted, emptyVectors);
+	checkIndexMemstat(rt, kNsName, kFieldNameVec, kDimension, emptyVectors, vectorsCount);
 }
 CATCH_AND_ASSERT
 
-TEST_P(FloatVector, IvfIndex) try {
-	constexpr static auto kNsName = "ivf_ns"sv;
+TEST_P(FloatVector, VecBruteforceArrayIndex) { TestVecBruteforceIndex<Array>(); }
+TEST_P(FloatVector, VecBruteforceScalarIndex) { TestVecBruteforceIndex<Scalar>(); }
+
+template <FloatVector::IsArray isArray>
+void FloatVector::TestIvfIndex() try {
+	constexpr static auto kNsName = isArray ? "ivf_array_ns"sv : "ivf_scalar_ns"sv;
 	constexpr static auto kFieldNameIvf = "ivf"sv;
-#if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
-	constexpr static size_t kDimension = 64;
-	constexpr static size_t kMaxElements = 5'000;
+#if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(RX_WITH_STDLIB_DEBUG)
+	constexpr static size_t kDimension = isArray ? 8 : 64;
+	constexpr static size_t kMaxElements = isArray ? 300 : 1'200;
 #else
-	constexpr static size_t kDimension = 1'024;
+	constexpr static size_t kDimension = isArray ? 256 : 1'024;
 	constexpr static size_t kMaxElements = 10'000;
 #endif
 	std::array<float, kDimension> buf;
+	constexpr size_t kNCentroids = isArray ? (kMaxElements / 20) : (kMaxElements / 60);
 
 	rt.OpenNamespace(kNsName);
 	rt.DefineNamespaceDataset(
-		kNsName,
-		{
-			IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
-			IndexDeclaration{
-				kFieldNameIvf, "ivf", "float_vector",
-				IndexOpts{}.SetFloatVector(
-					IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements / 50).SetMetric(GetParam())),
-				0},
-		});
+		kNsName, {
+					 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+					 IndexDeclaration{
+						 kFieldNameIvf, "ivf", "float_vector",
+						 IndexOpts{}.Array(isArray).SetFloatVector(
+							 IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kNCentroids).SetMetric(GetParam())),
+						 0},
+				 });
 
 	checkEmptyIndexSelection<reindexer::IvfSearchParams, kDimension>(kNsName, kFieldNameIvf);
 
 	std::unordered_set<int> emptyVectors;
-	upsertItems<kDimension>(kNsName, kFieldNameIvf, 0, kMaxElements, emptyVectors);
-	const auto deleted = deleteSomeItems(kNsName, kMaxElements, emptyVectors);
+	std::unordered_map<int, size_t> vectorsCount;
+	upsertItems<kDimension, isArray>(kNsName, kFieldNameIvf, 0, kMaxElements, emptyVectors, vectorsCount);
+	deleteSomeItems(kNsName, kMaxElements, emptyVectors, vectorsCount);
 	::rndFloatVector(buf);
 	for (size_t iter = 0; iter < 2; ++iter) {
 		size_t k = rand() % kMaxElements + 10;
@@ -523,19 +576,23 @@ TEST_P(FloatVector, IvfIndex) try {
 			checkOrdering(result, GetParam(), radius);
 			radius = (result.begin() + result.Count() / 2).GetItemRefRanked().Rank().Value();
 		}
-		checkIndexMemstat(rt, kNsName, kFieldNameIvf, kDimension, kMaxElements - deleted, emptyVectors);
+		checkIndexMemstat(rt, kNsName, kFieldNameIvf, kDimension, emptyVectors, vectorsCount);
 		if (iter == 0) {
 			rebuildCentroids();
 		}
 	}
-	runMultithreadQueries<kDimension>(4, 20, kNsName, kFieldNameIvf, [&](std::optional<size_t> k, std::optional<float> radius) {
+	runMultithreadQueries<kDimension, isArray>(4, 20, kNsName, kFieldNameIvf, [&](std::optional<size_t> k, std::optional<float> radius) {
 		return reindexer::IvfSearchParams{}.K(k).Radius(radius).NProbe(32);
 	});
 }
 CATCH_AND_ASSERT
 
-TEST_F(FloatVector, HnswIndexUpdateQuery) try {
-	constexpr static auto kNsName = "hnsw_ns"sv;
+TEST_P(FloatVector, IvfArrayIndex) { TestIvfIndex<Array>(); }
+TEST_P(FloatVector, IvfScalarIndex) { TestIvfIndex<Scalar>(); }
+
+template <FloatVector::IsArray isArray>
+void FloatVector::TestHnswIndexUpdateQuery() try {
+	constexpr static auto kNsName = isArray ? "hnsw_array_ns"sv : "hnsw_scalar_ns"sv;
 	constexpr static auto kFieldNameHnsw = "hnsw"sv;
 
 	rt.OpenNamespace(kNsName);
@@ -543,7 +600,7 @@ TEST_F(FloatVector, HnswIndexUpdateQuery) try {
 		kNsName, {
 					 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
 					 IndexDeclaration{kFieldNameHnsw, kFieldNameHnsw, "float_vector",
-									  IndexOpts{}.SetFloatVector(
+									  IndexOpts{}.Array(isArray).SetFloatVector(
 										  IndexHnsw, FloatVectorIndexOpts{}.SetDimension(8).SetM(16).SetEfConstruction(200).SetMetric(
 														 reindexer::VectorMetric::L2)),
 									  0},
@@ -552,23 +609,32 @@ TEST_F(FloatVector, HnswIndexUpdateQuery) try {
 	rt.UpsertJSON(kNsName, R"json({"id":0})json");
 	rt.UpsertJSON(kNsName, R"json({"id":1,"hnsw":null})json");
 	rt.UpsertJSON(kNsName, R"json({"id":2,"hnsw":[]})json");
+	if constexpr (isArray) {
+		rt.UpsertJSON(kNsName, R"json({"id":3,"hnsw":[null]})json");
+		rt.UpsertJSON(kNsName, R"json({"id":4,"hnsw":[[]]})json");
+	}
+	constexpr int itemsCount = isArray ? 5 : 3;
 	std::array<float, 8> buf;
 	::rndFloatVector(buf);
 	const reindexer::ConstFloatVectorView setVec{buf};
 	const auto updateQuery = reindexer::Query(kNsName).Set(kFieldNameHnsw, setVec);
 	SCOPED_TRACE(updateQuery.GetSQL());
 	auto res = rt.UpdateQR(updateQuery);
-	EXPECT_EQ(res.Count(), 3);
+	EXPECT_EQ(res.Count(), itemsCount);
 	validateIndexValueInQueryResults(kFieldNameHnsw, res, setVec.Span());
 
 	res = rt.Select(reindexer::Query(kNsName).SelectAllFields());
-	EXPECT_EQ(res.Count(), 3);
+	EXPECT_EQ(res.Count(), itemsCount);
 	validateIndexValueInQueryResults("hnsw", res, setVec.Span());
 }
 CATCH_AND_ASSERT
 
-TEST_F(FloatVector, HnswIndexItemSet) try {
-	constexpr static auto kNsName = "hnsw_ns"sv;
+TEST_F(FloatVector, HnswArrayIndexUpdateQuery) { TestHnswIndexUpdateQuery<Array>(); }
+TEST_F(FloatVector, HnswScalarIndexUpdateQuery) { TestHnswIndexUpdateQuery<Scalar>(); }
+
+template <FloatVector::IsArray isArray>
+void FloatVector::HnswIndexItemSet() try {
+	constexpr static auto kNsName = isArray ? "hnsw_array_ns"sv : "hnsw_scalar_ns"sv;
 	constexpr static auto kFieldNameHnsw = "hnsw"sv;
 
 	rt.OpenNamespace(kNsName);
@@ -576,19 +642,23 @@ TEST_F(FloatVector, HnswIndexItemSet) try {
 		kNsName, {
 					 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
 					 IndexDeclaration{kFieldNameHnsw, kFieldNameHnsw, "float_vector",
-									  IndexOpts{}.SetFloatVector(
+									  IndexOpts{}.Array(isArray).SetFloatVector(
 										  IndexHnsw, FloatVectorIndexOpts{}.SetDimension(8).SetM(16).SetEfConstruction(200).SetMetric(
 														 reindexer::VectorMetric::L2)),
 									  0},
 				 });
 
-	constexpr std::string_view kJSONs[] = {R"json({"id":0})json", R"json({"id":1,"hnsw":null})json", R"json({"id":2,"hnsw":[]})json"};
+	std::vector<std::string_view> JSONs = {R"json({"id":0})json", R"json({"id":1,"hnsw":null})json", R"json({"id":2,"hnsw":[]})json"};
+	if constexpr (isArray == Array) {
+		JSONs.emplace_back(R"json({"id":3,"hnsw":[null]})json");
+		JSONs.emplace_back(R"json({"id":4,"hnsw":[[]]})json");
+	}
 
 	std::array<float, 8> buf;
 	::rndFloatVector(buf);
 	const reindexer::ConstFloatVectorView vec{buf};
 
-	for (auto& json : kJSONs) {
+	for (auto& json : JSONs) {
 		SCOPED_TRACE(json);
 		auto item = rt.NewItem(kNsName);
 		auto err = item.FromJSON(json);
@@ -598,6 +668,9 @@ TEST_F(FloatVector, HnswIndexItemSet) try {
 	}
 }
 CATCH_AND_ASSERT
+
+TEST_F(FloatVector, HnswArrayIndexItemSet) { HnswIndexItemSet<Array>(); }
+TEST_F(FloatVector, HnswScalarIndexItemSet) { HnswIndexItemSet<Scalar>(); }
 
 TEST_F(FloatVector, ParseDslIndexDef) try {
 	using namespace std::string_literals;
@@ -695,72 +768,109 @@ TEST_F(FloatVector, SqlQuery) try {
 }
 CATCH_AND_ASSERT
 
-TEST_P(FloatVector, Queries) try {
-	constexpr static auto kNsName = "fv_queries_ns"sv;
+template <IndexType>
+struct QueryIndexParams;
+
+template <>
+struct [[nodiscard]] QueryIndexParams<IndexType::IndexIvf> {
+	QueryIndexParams(size_t maxElements, size_t dimension, reindexer::VectorMetric metric) {
+		std::ignore = searchParams.K(maxElements).NProbe(32);
+		opts.SetDimension(dimension).SetNCentroids(maxElements / 50).SetMetric(metric);
+	}
+	std::string name = "ivf";
+	reindexer::IvfSearchParams searchParams;
+	FloatVectorIndexOpts opts;
+};
+
+template <>
+struct [[nodiscard]] QueryIndexParams<IndexType::IndexHnsw> {
+	QueryIndexParams(size_t maxElements, size_t dimension, reindexer::VectorMetric metric) {
+		std::ignore = searchParams.K(maxElements).Ef(maxElements * 2);
+		opts.SetDimension(dimension).SetMetric(metric).SetEfConstruction(5).SetStartSize(maxElements / 2).SetM(8);
+	}
+	std::string name = "hnsw";
+	reindexer::HnswSearchParams searchParams;
+	FloatVectorIndexOpts opts;
+};
+
+template <>
+struct [[nodiscard]] QueryIndexParams<IndexType::IndexVectorBruteforce> {
+	QueryIndexParams(size_t maxElements, size_t dimension, reindexer::VectorMetric metric) {
+		std::ignore = searchParams.K(maxElements);
+		opts.SetDimension(dimension).SetMetric(metric).SetStartSize(maxElements);
+	}
+	std::string name = "vec_bf";
+	reindexer::BruteForceSearchParams searchParams;
+	FloatVectorIndexOpts opts;
+};
+
+template <FloatVector::IsArray isArray, IndexType indexType>
+void FloatVector::TestQueries() try {
+	constexpr static auto kNsName = isArray ? "fv_array_queries_ns"sv : "fv_scalar_queries_ns"sv;
 	constexpr static auto kFieldNameBool = "bool"sv;
-	const static std::string kFieldNameIvf = "ivf";
-#if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
-	constexpr static size_t kDimension = 64;
-	constexpr static size_t kMaxElements = 5'000;
+#if defined(RX_WITH_STDLIB_DEBUG)
+	constexpr static size_t kDimension = isArray ? 4 : 16;
+	constexpr static size_t kMaxElements = 300;
+#elif defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
+	constexpr static size_t kDimension = isArray ? 8 : 64;
+	constexpr static size_t kMaxElements = 1'000;
 #else
-	constexpr static size_t kDimension = 1'024;
+	constexpr static size_t kDimension = isArray ? 128 : 1'024;
 	constexpr static size_t kMaxElements = 10'000;
 #endif
 	std::array<float, kDimension> buf;
-	const auto params = reindexer::IvfSearchParams{}.K(kMaxElements).NProbe(32);
+	const auto indexParams = QueryIndexParams<indexType>(kMaxElements, kDimension, GetParam());
+	const auto searchParams = indexParams.searchParams;
+	const auto& fieldName = indexParams.name;
 
 	rt.OpenNamespace(kNsName);
-	rt.DefineNamespaceDataset(
-		kNsName,
-		{
-			IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
-			IndexDeclaration{kFieldNameBool, "-", "bool", IndexOpts{}, 0},
-			IndexDeclaration{
-				kFieldNameIvf, "ivf", "float_vector",
-				IndexOpts{}.SetFloatVector(
-					IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElements / 50).SetMetric(GetParam())),
-				0},
-		});
+	rt.DefineNamespaceDataset(kNsName, {
+										   IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+										   IndexDeclaration{kFieldNameBool, "-", "bool", IndexOpts{}, 0},
+										   IndexDeclaration{fieldName, fieldName, "float_vector",
+															IndexOpts{}.Array(isArray).SetFloatVector(indexType, indexParams.opts), 0},
+									   });
 
 	size_t i = 0;
 	std::unordered_set<int> emptyVectors;
+	std::unordered_map<int, size_t> vectorsCount;
 	for (; i < kMaxElements / 3; ++i) {
-		auto item = newItem<kDimension>(kNsName, kFieldNameIvf, i, emptyVectors);
+		auto item = newItem<kDimension, isArray>(kNsName, fieldName, i, emptyVectors, vectorsCount);
 		item[kFieldNameBool] = bool(rand() % 2);
 		rt.Upsert(kNsName, item);
 	}
 	for (; i < 2 * kMaxElements / 3; ++i) {
-		auto item = newItem<kDimension>(kNsName, kFieldNameIvf, i, emptyVectors);
+		auto item = newItem<kDimension, isArray>(kNsName, fieldName, i, emptyVectors, vectorsCount);
 		item[kFieldNameBool] = bool(rand() % 2);
 		rt.Upsert(kNsName, item);
 	}
 	for (; i < kMaxElements; ++i) {
-		auto item = newItem<kDimension>(kNsName, kFieldNameIvf, i, emptyVectors);
+		auto item = newItem<kDimension, isArray>(kNsName, fieldName, i, emptyVectors, vectorsCount);
 		item[kFieldNameBool] = bool(rand() % 2);
 		rt.Upsert(kNsName, item);
 	}
 	::rndFloatVector(buf);
 	auto result = rt.Select(
-		reindexer::Query{kNsName}.Where(kFieldNameId, CondGt, 5).WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params));
+		reindexer::Query{kNsName}.Where(kFieldNameId, CondGt, 5).WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams));
 	checkOrdering(result, GetParam());
 	::rndFloatVector(buf);
 	result = rt.Select(reindexer::Query{kNsName}
 						   .Where(kFieldNameBool, CondEq, true)
 						   .OpenBracket()
 						   .Where(kFieldNameId, CondGt, 5)
-						   .WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params)
+						   .WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams)
 						   .CloseBracket());
 	checkOrdering(result, GetParam());
 	::rndFloatVector(buf);
 	result =
-		rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params).Sort("rank()", false));
+		rt.Select(reindexer::Query{kNsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams).Sort("rank()", false));
 	::rndFloatVector(buf);
 	result = rt.Select(reindexer::Query{kNsName}
-						   .WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params)
-						   .Sort("rank(" + kFieldNameIvf + ')', false));
+						   .WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams)
+						   .Sort("rank(" + fieldName + ')', false));
 	::rndFloatVector(buf);
 	std::map<reindexer::IdType, reindexer::RankT> ranks;
-	result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params).WithRank());
+	result = rt.Select(reindexer::Query{kNsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams).WithRank());
 	for (auto& i : result) {
 		const auto& item = i.GetItemRefRanked();
 		ranks[item.NotRanked().Id()] = item.Rank();
@@ -769,7 +879,7 @@ TEST_P(FloatVector, Queries) try {
 						   .Where(kFieldNameBool, CondEq, true)
 						   .OpenBracket()
 						   .Where(kFieldNameId, CondGt, 5)
-						   .WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params)
+						   .WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams)
 						   .CloseBracket()
 						   .WithRank());
 	for (auto& i : result) {
@@ -785,15 +895,23 @@ TEST_P(FloatVector, Queries) try {
 	::rndFloatVector(buf);
 	result = rt.Select(reindexer::Query{kNsName}
 						   .Where(kFieldNameId, CondLt, kMaxElements / 2.0)
-						   .WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params)
+						   .WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams)
 						   .Merge(reindexer::Query{kNsName}
 									  .Where(kFieldNameId, CondGt, kMaxElements / 2.0)
-									  .WhereKNN(kFieldNameIvf, reindexer::ConstFloatVectorView{buf}, params)));
+									  .WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams)));
 }
 CATCH_AND_ASSERT
 
-TEST_F(FloatVector, DeleteIndex) try {
-	constexpr static auto kNsName = "fv_delete_index_ns"sv;
+TEST_P(FloatVector, TestQueriesArrayIvf) { TestQueries<Array, IndexIvf>(); }
+TEST_P(FloatVector, TestQueriesScalarIvf) { TestQueries<Scalar, IndexIvf>(); }
+TEST_P(FloatVector, TestQueriesArrayHnsw) { TestQueries<Array, IndexHnsw>(); }
+TEST_P(FloatVector, TestQueriesScalarHnsw) { TestQueries<Scalar, IndexHnsw>(); }
+TEST_P(FloatVector, TestQueriesArrayBruteforce) { TestQueries<Array, IndexVectorBruteforce>(); }
+TEST_P(FloatVector, TestQueriesScalarBruteforce) { TestQueries<Scalar, IndexVectorBruteforce>(); }
+
+template <FloatVector::IsArray isArray>
+void FloatVector::TestDeleteIndex() try {
+	constexpr static auto kNsName = isArray ? "fv_array_delete_index_ns"sv : "fv_scalar_delete_index_ns"sv;
 	constexpr static auto kFieldNameBool = "bool"sv;
 	constexpr static auto kFieldNameIvf = "ivf"sv;
 	constexpr static size_t kDimension = 10;
@@ -807,15 +925,16 @@ TEST_F(FloatVector, DeleteIndex) try {
 			IndexDeclaration{kFieldNameBool, "hash", "int", IndexOpts{}, 0},
 			IndexDeclaration{
 				kFieldNameIvf, "ivf", "float_vector",
-				IndexOpts{}.SetFloatVector(
+				IndexOpts{}.Array(isArray).SetFloatVector(
 					IndexIvf,
 					FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(5).SetMetric(reindexer::VectorMetric::InnerProduct)),
 				0},
 		});
 
 	std::unordered_set<int> emptyVectors;
+	std::unordered_map<int, size_t> vectorsCount;
 	for (size_t i = 0; i < kItemCount; ++i) {
-		auto item = newItem<kDimension>(kNsName, kFieldNameIvf, i, emptyVectors);
+		auto item = newItem<kDimension, isArray>(kNsName, kFieldNameIvf, i, emptyVectors, vectorsCount);
 		item[kFieldNameBool] = rand() % 100;
 		rt.Upsert(kNsName, item);
 	}
@@ -824,6 +943,9 @@ TEST_F(FloatVector, DeleteIndex) try {
 	rt.DropIndex(kNsName, kFieldNameIvf);
 }
 CATCH_AND_ASSERT
+
+TEST_F(FloatVector, DeleteArrayIndex) { TestDeleteIndex<Array>(); }
+TEST_F(FloatVector, DeleteScalarIndex) { TestDeleteIndex<Scalar>(); }
 
 static std::string indexName(size_t idxNumber) {
 	constexpr static const char* kIndexNameBase = "fv_";
@@ -861,32 +983,76 @@ reindexer::FloatVector FloatVector::rndFloatVector() {
 	}
 }
 
-template <size_t Dimension>
-reindexer::Item FloatVector::newItem(std::string_view nsName, size_t fieldsCount, std::vector<std::vector<reindexer::FloatVector>>& items) {
+template <size_t Dimension, FloatVector::IsArray isArray>
+reindexer::Item FloatVector::newItem(std::string_view nsName, size_t fieldsCount,
+									 std::vector<std::vector<std::vector<reindexer::FloatVector>>>& items) {
 	const int id = items.size();
 	items.emplace_back();
-	return newItem<Dimension>(nsName, fieldsCount, id, items);
+	return newItem<Dimension, isArray>(nsName, fieldsCount, id, items);
 }
 
-static void putJsonField(reindexer::JsonBuilder& json, std::string_view fieldName, reindexer::ConstFloatVectorView value) {
-	if (!value.IsEmpty() || rand() % 3 == 0) {
-		json.Array(fieldName, value.Span());
+template <bool isArray>
+static void putJsonField(reindexer::JsonBuilder& json, std::string_view fieldName, std::vector<reindexer::FloatVector>& values);
+
+template <>
+void putJsonField<false>(reindexer::JsonBuilder& json, std::string_view fieldName, std::vector<reindexer::FloatVector>& values) {
+	assertrx(values.size() == 1);
+	if (!values[0].IsEmpty() || rand() % 3 == 0) {
+		json.Array(fieldName, values[0].Span());
 	} else if (rand() % 2 == 0) {
 		json.Null(fieldName);
 	}
 }
 
+template <>
+void putJsonField<true>(reindexer::JsonBuilder& json, std::string_view fieldName, std::vector<reindexer::FloatVector>& values) {
+	if (values.empty()) {
+		switch (rand() % 3) {
+			case 0:
+				json.Null(fieldName);
+				return;
+			case 1:
+				return;
+			default:
+				break;
+		}
+	}
+	auto array = json.Array(fieldName);
+	for (const auto& v : values) {
+		if (!v.IsEmpty() || rand() % 2 == 0) {
+			array.Array(reindexer::TagName::Empty(), v.Span());
+		} else {
+			array.Null(reindexer::TagName::Empty());
+		}
+	}
+}
+
+template <size_t Dimension, FloatVector::IsArray isArray>
+std::vector<reindexer::FloatVector> FloatVector::rndFVField() {
+	std::vector<reindexer::FloatVector> result;
+	if constexpr (!isArray) {
+		result.emplace_back(rndFloatVector<Dimension>());
+	} else {
+		const unsigned size = rand() % 5;
+		result.reserve(size);
+		for (unsigned i = 0; i < size; ++i) {
+			result.emplace_back(rndFloatVector<Dimension>());
+		}
+	}
+	return result;
+}
+
 static int regularFieldValue(int id) noexcept { return id + 100; }
 
-template <size_t Dimension>
+template <size_t Dimension, FloatVector::IsArray isArray>
 reindexer::Item FloatVector::newItem(std::string_view nsName, size_t fieldsCount, int id,
-									 std::vector<std::vector<reindexer::FloatVector>>& items) {
+									 std::vector<std::vector<std::vector<reindexer::FloatVector>>>& items) {
 	assertrx(size_t(id) < items.size());
 	auto& vectors = items[id];
 	vectors.clear();
 	vectors.reserve(fieldsCount);
 	for (size_t i = 0; i < fieldsCount; ++i) {
-		vectors.emplace_back(rndFloatVector<Dimension>());
+		vectors.emplace_back(rndFVField<Dimension, isArray>());
 	}
 	reindexer::WrSerializer ser;
 	{
@@ -894,17 +1060,17 @@ reindexer::Item FloatVector::newItem(std::string_view nsName, size_t fieldsCount
 		json.Put(kFieldNameId, id);
 		json.Put(kFieldNameRegular, regularFieldValue(id));
 		for (size_t i = 1; i < fieldsCount; i += 2) {
-			putJsonField(json, fieldName(i), vectors[i].View());
+			putJsonField<isArray>(json, fieldName(i), vectors[i]);
 		}
 		{
 			auto obj = json.Object(kObjectName);
 			for (size_t i = 2; i < fieldsCount; i += 4) {
-				putJsonField(obj, fieldName(i), vectors[i].View());
+				putJsonField<isArray>(obj, fieldName(i), vectors[i]);
 			}
 			{
 				auto nestedObj = obj.Object(kObjectName);
 				for (size_t i = 0; i < fieldsCount; i += 4) {
-					putJsonField(nestedObj, fieldName(i), vectors[i].View());
+					putJsonField<isArray>(nestedObj, fieldName(i), vectors[i]);
 				}
 			}
 		}
@@ -915,42 +1081,6 @@ reindexer::Item FloatVector::newItem(std::string_view nsName, size_t fieldsCount
 		throw err;
 	}
 	return resultItem;
-}
-
-static void checkItemAfterUpdate(reindexer::Item& item, int expectedId, const size_t indexesCount,
-								 const std::vector<std::vector<reindexer::FloatVector>>& vectors) {
-	const auto id = item[kFieldNameId].As<int>();
-	ASSERT_EQ(id, expectedId);
-	ASSERT_EQ(item[kFieldNameRegular].As<int>(), regularFieldValue(id));
-	ASSERT_LT(id, vectors.size());
-	const std::vector<reindexer::FloatVector>& currentData = vectors[id];
-	const auto json = item.GetJSON();
-
-	gason::JsonParser parser;
-	auto parsedJson = parser.Parse(json);
-
-	ASSERT_JSON_FIELD_INT_EQ(parsedJson, kFieldNameId, id);
-	ASSERT_JSON_FIELD_INT_EQ(parsedJson, kFieldNameRegular, regularFieldValue(id));
-
-	for (size_t j = 0; j < indexesCount; ++j) {
-		ASSERT_JSON_FIELD_ARRAY_EQ(parsedJson, fieldPath(j), currentData[j].Span());
-		const auto foundSpan = item[indexName(j)].As<reindexer::ConstFloatVectorView>().Span();
-		const auto expectedSpan = currentData[j].Span();
-		ASSERT_EQ(foundSpan.size(), expectedSpan.size());
-		for (size_t i = 0, s = foundSpan.size(); i < s; ++i) {
-			ASSERT_EQ(foundSpan[i], expectedSpan[i]);
-		}
-	}
-}
-
-static void checkQRAfterUpdate(const reindexer::QueryResults& qr, int expectedId, const size_t indexesCount,
-							   const std::vector<std::vector<reindexer::FloatVector>>& vectors) {
-	ASSERT_EQ(qr.Count(), 1);
-	for (auto it : qr) {
-		ASSERT_TRUE(it.Status().ok()) << it.Status().what();
-		auto item = it.GetItem();
-		checkItemAfterUpdate(item, expectedId, indexesCount, vectors);
-	}
 }
 
 static void checkItemAfterDelete(reindexer::Item& item, int expectedId, const size_t indexesCount) {
@@ -981,24 +1111,115 @@ reindexer::Item FloatVector::itemForDelete(std::string_view nsName, int id) {
 	return item;
 }
 
-TEST_F(FloatVector, SelectFilters) try {
-	constexpr static auto kNsName = "fv_select_filters_ns"sv;
+template <bool isArray>
+static void checkFieldValue(gason::JsonNode& parsedJson, const reindexer::Item&, const std::string& fieldPath, const std::string& indexName,
+							const std::vector<reindexer::FloatVector>& currentData);
+
+template <>
+void checkFieldValue<false>(gason::JsonNode& parsedJson, const reindexer::Item& item, const std::string& fieldPath,
+							const std::string& indexName, const std::vector<reindexer::FloatVector>& currentData) {
+	assertrx(currentData.size() == 1);
+	ASSERT_JSON_FIELD_ARRAY_EQ(parsedJson, fieldPath, currentData[0].Span());
+	const auto foundSpan = item[indexName].As<reindexer::ConstFloatVectorView>().Span();
+	const auto expectedSpan = currentData[0].Span();
+	ASSERT_EQ(foundSpan.size(), expectedSpan.size());
+	for (size_t i = 0, s = foundSpan.size(); i < s; ++i) {
+		ASSERT_EQ(foundSpan[i], expectedSpan[i]);
+	}
+}
+
+template <>
+void checkFieldValue<true>(gason::JsonNode& parsedJson, const reindexer::Item& item, const std::string& fieldPath,
+						   const std::string& indexName, const std::vector<reindexer::FloatVector>& expectedData) {
+	if (expectedData.empty()) {
+		ASSERT_JSON_FIELD_IS_NULL(parsedJson, fieldPath)
+	} else {
+		const auto jsonField = findJsonField(parsedJson, fieldPath);
+		if (jsonField.isNull() || (jsonField.isArray() && (begin(jsonField) == end(jsonField)))) {
+			if (!expectedData.empty()) {
+				ASSERT_TRUE(expectedData.size() == 1 && expectedData[0].IsEmpty());
+			}
+		} else if (jsonField.isArray() && begin(jsonField) != end(jsonField) && begin(jsonField)->isNumber()) {
+			ASSERT_EQ(expectedData.size(), 1);
+			ASSERT_JSON_ARRAY_EQ(jsonField, fieldPath + '[' + std::to_string(0) + ']', expectedData[0].Span());
+		} else {
+			size_t i = 0;
+			for (auto arrayItem : jsonField) {
+				ASSERT_LT(i, expectedData.size());
+				if (expectedData[i].IsEmpty()) {
+					ASSERT_JSON_IS_NULL(arrayItem.value, fieldPath + '[' + std::to_string(i) + ']')
+				} else {
+					ASSERT_JSON_ARRAY_EQ(arrayItem, fieldPath + '[' + std::to_string(i) + ']', expectedData[i].Span());
+				}
+				++i;
+			}
+			EXPECT_EQ(i, expectedData.size());
+		}
+	}
+	const reindexer::VariantArray itemArray(item[indexName]);
+	ASSERT_EQ(itemArray.size(), expectedData.size());
+	for (size_t i = 0; i < expectedData.size(); ++i) {
+		const auto foundSpan = itemArray[i].As<reindexer::ConstFloatVectorView>().Span();
+		const auto expectedSpan = expectedData[i].Span();
+		ASSERT_EQ(foundSpan.size(), expectedSpan.size());
+		for (size_t i = 0, s = foundSpan.size(); i < s; ++i) {
+			ASSERT_EQ(foundSpan[i], expectedSpan[i]);
+		}
+	}
+}
+
+template <bool isArray>
+static void checkItemAfterUpdate(reindexer::Item& item, int expectedId, const size_t indexesCount,
+								 const std::vector<std::vector<std::vector<reindexer::FloatVector>>>& vectors) {
+	const auto id = item[kFieldNameId].As<int>();
+	ASSERT_EQ(id, expectedId);
+	ASSERT_EQ(item[kFieldNameRegular].As<int>(), regularFieldValue(id));
+	ASSERT_LT(id, vectors.size());
+	const auto json = item.GetJSON();
+
+	gason::JsonParser parser;
+	auto parsedJson = parser.Parse(json);
+
+	ASSERT_JSON_FIELD_INT_EQ(parsedJson, kFieldNameId, id);
+	ASSERT_JSON_FIELD_INT_EQ(parsedJson, kFieldNameRegular, regularFieldValue(id));
+
+	const auto& currentVectors = vectors[id];
+	assertrx(currentVectors.size() == indexesCount);
+	for (size_t j = 0; j < indexesCount; ++j) {
+		checkFieldValue<isArray>(parsedJson, item, fieldPath(j), indexName(j), currentVectors[j]);
+	}
+}
+
+template <bool isArray>
+static void checkQRAfterUpdate(const reindexer::QueryResults& qr, int expectedId, const size_t indexesCount,
+							   const std::vector<std::vector<std::vector<reindexer::FloatVector>>>& vectors) {
+	ASSERT_EQ(qr.Count(), 1);
+	for (auto it : qr) {
+		ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+		auto item = it.GetItem();
+		checkItemAfterUpdate<isArray>(item, expectedId, indexesCount, vectors);
+	}
+}
+
+template <FloatVector::IsArray isArray>
+void FloatVector::TestSelectFilters() try {
+	constexpr static auto kNsName = isArray ? "fv_array_select_filters_ns"sv : "fv_scalar_select_filters_ns"sv;
 	constexpr static size_t kDimension = 5;
 	constexpr static size_t kMaxElements = 1'000;
 	constexpr static size_t kIndexesCount = 20;
 
 	std::vector<std::pair<IndexType, IndexOpts>> indexOpts{
-		{IndexIvf, IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
-															.SetDimension(kDimension)
-															.SetNCentroids(kMaxElements / 3)
-															.SetMetric(reindexer::VectorMetric::InnerProduct))},
+		{IndexIvf, IndexOpts{}.Array(isArray).SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
+																		   .SetDimension(kDimension)
+																		   .SetNCentroids(kMaxElements / 3)
+																		   .SetMetric(reindexer::VectorMetric::InnerProduct))},
 		{IndexHnsw,
-		 IndexOpts{}.SetFloatVector(
+		 IndexOpts{}.Array(isArray).SetFloatVector(
 			 IndexHnsw,
 			 FloatVectorIndexOpts{}.SetDimension(kDimension).SetM(16).SetEfConstruction(50).SetMetric(reindexer::VectorMetric::L2))},
 		{IndexVectorBruteforce,
-		 IndexOpts{}.SetFloatVector(IndexVectorBruteforce,
-									FloatVectorIndexOpts{}.SetDimension(kDimension).SetMetric(reindexer::VectorMetric::Cosine))}};
+		 IndexOpts{}.Array(isArray).SetFloatVector(
+			 IndexVectorBruteforce, FloatVectorIndexOpts{}.SetDimension(kDimension).SetMetric(reindexer::VectorMetric::Cosine))}};
 
 	rt.OpenNamespace(kNsName);
 	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
@@ -1008,12 +1229,12 @@ TEST_F(FloatVector, SelectFilters) try {
 		rt.AddIndex(kNsName, reindexer::IndexDef{indexName(i), {fieldPath(i)}, idxOpts.first, idxOpts.second});
 	}
 
-	std::vector<std::vector<reindexer::FloatVector>> vectors;
+	std::vector<std::vector<std::vector<reindexer::FloatVector>>> vectors;
 
 	vectors.reserve(kMaxElements);
 
 	for (size_t i = 0; i < kMaxElements; ++i) {
-		auto item = newItem<kDimension>(kNsName, kIndexesCount, vectors);
+		auto item = newItem<kDimension, isArray>(kNsName, kIndexesCount, vectors);
 		rt.Upsert(kNsName, item);
 	}
 
@@ -1044,7 +1265,7 @@ TEST_F(FloatVector, SelectFilters) try {
 			const auto id = item[kFieldNameId].As<int>();
 			ASSERT_LT(id, vectors.size());
 			ASSERT_EQ(item[kFieldNameRegular].As<int>(), regularFieldValue(id));
-			const std::vector<reindexer::FloatVector>& currentData = vectors[id];
+			const auto& currentData = vectors[id];
 			const auto json = item.GetJSON();
 
 			gason::JsonParser parser;
@@ -1066,16 +1287,10 @@ TEST_F(FloatVector, SelectFilters) try {
 
 			for (size_t j = 0; j < kIndexesCount; ++j) {
 				if (returnedFields.count(j) == 0) {
-					ASSERT_JSON_FIELD_ABSENT_OR_IS_NULL(parsedJson, fieldPath(j));
+					ASSERT_JSON_FIELD_ABSENT_OR_IS_NULL(parsedJson, fieldPath(j) + (isArray ? "[0]" : ""));
 					EXPECT_THROW([[maybe_unused]] reindexer::Variant _{item[indexName(j)]}, reindexer::Error);
 				} else {
-					ASSERT_JSON_FIELD_ARRAY_EQ(parsedJson, fieldPath(j), currentData[j].Span());
-					const auto foundSpan = item[indexName(j)].As<reindexer::ConstFloatVectorView>().Span();
-					const auto expectedSpan = currentData[j].Span();
-					ASSERT_EQ(foundSpan.size(), expectedSpan.size());
-					for (size_t i = 0, s = foundSpan.size(); i < s; ++i) {
-						ASSERT_EQ(foundSpan[i], expectedSpan[i]);
-					}
+					checkFieldValue<isArray>(parsedJson, item, fieldPath(j), indexName(j), currentData[j]);
 				}
 			}
 		}
@@ -1083,44 +1298,52 @@ TEST_F(FloatVector, SelectFilters) try {
 		// update
 		{
 			const auto id = rand() % kMaxElements;
-			auto item = newItem<kDimension>(kNsName, kIndexesCount, id, vectors);
+			auto item = newItem<kDimension, isArray>(kNsName, kIndexesCount, id, vectors);
 			rt.Upsert(kNsName, item);
-			checkItemAfterUpdate(item, id, kIndexesCount, vectors);
+			checkItemAfterUpdate<isArray>(item, id, kIndexesCount, vectors);
 		}
 		{
 			const auto id = rand() % kMaxElements;
-			auto item = newItem<kDimension>(kNsName, kIndexesCount, id, vectors);
+			auto item = newItem<kDimension, isArray>(kNsName, kIndexesCount, id, vectors);
 			reindexer::QueryResults qr;
 			rt.Upsert(kNsName, item, qr);
-			checkItemAfterUpdate(item, id, kIndexesCount, vectors);
-			checkQRAfterUpdate(qr, id, kIndexesCount, vectors);
+			checkItemAfterUpdate<isArray>(item, id, kIndexesCount, vectors);
+			checkQRAfterUpdate<isArray>(qr, id, kIndexesCount, vectors);
 		}
 		{
 			const auto id = rand() % kMaxElements;
-			auto item = newItem<kDimension>(kNsName, kIndexesCount, id, vectors);
+			auto item = newItem<kDimension, isArray>(kNsName, kIndexesCount, id, vectors);
 			rt.Update(kNsName, item);
-			checkItemAfterUpdate(item, id, kIndexesCount, vectors);
+			checkItemAfterUpdate<isArray>(item, id, kIndexesCount, vectors);
 		}
 		{
 			const auto id = rand() % kMaxElements;
-			auto item = newItem<kDimension>(kNsName, kIndexesCount, id, vectors);
+			auto item = newItem<kDimension, isArray>(kNsName, kIndexesCount, id, vectors);
 			reindexer::QueryResults qr;
 			rt.Update(kNsName, item, qr);
-			checkItemAfterUpdate(item, id, kIndexesCount, vectors);
-			checkQRAfterUpdate(qr, id, kIndexesCount, vectors);
+			checkItemAfterUpdate<isArray>(item, id, kIndexesCount, vectors);
+			checkQRAfterUpdate<isArray>(qr, id, kIndexesCount, vectors);
 		}
 		{
 			const int id = rand() % kMaxElements;
 			const auto fldIdx = rand() % kIndexesCount;
-			vectors[id][fldIdx] = rndFloatVector<kDimension>();
-			const reindexer::ConstFloatVectorView vectView(vectors[id][fldIdx]);
+			vectors[id][fldIdx] = rndFVField<kDimension, isArray>();
+			const auto& itemVectors(vectors[id][fldIdx]);
 
-			auto query = reindexer::Query(kNsName)
-							 .Set(rand() % 2 == 0 ? fieldPath(fldIdx) : indexName(fldIdx), vectView)
-							 .Where(kFieldNameId, CondEq, id);
+			auto query = reindexer::Query(kNsName).Where(kFieldNameId, CondEq, id);
+			if (itemVectors.size() == 1 && rand() % 3 != 0) {
+				query.Set(rand() % 2 == 0 ? fieldPath(fldIdx) : indexName(fldIdx), itemVectors[0].View());
+			} else {
+				reindexer::VariantArray views;
+				views.reserve(itemVectors.size());
+				std::ranges::copy(std::views::transform(itemVectors, [](const auto& v) { return reindexer::Variant{v.View()}; }),
+								  std::back_inserter(views));
+				query.Set(rand() % 2 == 0 ? fieldPath(fldIdx) : indexName(fldIdx), views);
+			}
 			reindexer::QueryResults qr;
 			rt.Update(query, qr);
-			checkQRAfterUpdate(qr, id, kIndexesCount, vectors);
+			ASSERT_TRUE(qr.begin().Status().ok()) << qr.begin().Status().what();
+			checkQRAfterUpdate<isArray>(qr, id, kIndexesCount, vectors);
 		}
 	}
 
@@ -1145,29 +1368,37 @@ TEST_F(FloatVector, SelectFilters) try {
 				reindexer::QueryResults qr;
 				rt.Delete(kNsName, item, qr);
 				checkItemAfterDelete(item, id, kIndexesCount);
-				checkQRAfterUpdate(qr, id, kIndexesCount, vectors);
+				checkQRAfterUpdate<isArray>(qr, id, kIndexesCount, vectors);
 			} break;
 			default: {
 				reindexer::QueryResults qr;
 				rt.Delete(reindexer::Query(kNsName).Where(kFieldNameId, CondEq, id), qr);
-				checkQRAfterUpdate(qr, id, kIndexesCount, vectors);
+				checkQRAfterUpdate<isArray>(qr, id, kIndexesCount, vectors);
 			} break;
 		}
 	}
 }
 CATCH_AND_ASSERT
 
-TEST_P(FloatVector, UpdateIndex) try {
-	constexpr static auto kNsName = "float_vector_index_ns"sv;
+TEST_F(FloatVector, TestSelectFiltersArray) { TestSelectFilters<Array>(); }
+TEST_F(FloatVector, TestSelectFiltersScalar) { TestSelectFilters<Scalar>(); }
+
+template <FloatVector::IsArray isArray>
+void FloatVector::TestUpdateIndex(reindexer::VectorMetric metric) try {
+	constexpr static auto kNsName = isArray ? "float_vector_index_array_ns"sv : "float_vector_index_scalar_ns"sv;
 	static const std::string kFieldNameFloatVector = "float_vector";
 	constexpr static size_t kStartSize = 100;
-#if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
-	constexpr static size_t kDimension = 32;
-#else
-	constexpr static size_t kDimension = 1'024;
-#endif
 	constexpr static size_t kMaxElementsInStep = 100;
 	constexpr static size_t kK = kMaxElementsInStep * 5;
+#if defined(RX_WITH_STDLIB_DEBUG)
+	constexpr static size_t kDimension = isArray ? 4 : 16;
+#elif defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
+	constexpr static size_t kDimension = isArray ? 8 : 32;
+#else
+	constexpr static size_t kDimension = isArray ? 128 : 1'024;
+#endif
+	constexpr static size_t kTotalIDs = isArray ? (kMaxElementsInStep * 10) : kMaxElementsInStep * 40;
+
 	struct {
 		reindexer::IndexDef indexDef;
 		reindexer::KnnSearchParams searchParams;
@@ -1175,32 +1406,29 @@ TEST_P(FloatVector, UpdateIndex) try {
 		{{kFieldNameFloatVector,
 		  {kFieldNameFloatVector},
 		  IndexHnsw,
-		  IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
-													.SetDimension(kDimension)
-													.SetStartSize(kStartSize)
-													.SetM(16)
-													.SetEfConstruction(200)
-													.SetMetric(GetParam()))},
+		  IndexOpts{}.Array(isArray).SetFloatVector(
+			  IndexHnsw,
+			  FloatVectorIndexOpts{}.SetDimension(kDimension).SetStartSize(kStartSize).SetM(16).SetEfConstruction(200).SetMetric(metric))},
 		 reindexer::HnswSearchParams{}.K(kK).Ef(kK * 2)},
 		{{kFieldNameFloatVector,
 		  {kFieldNameFloatVector},
 		  IndexVectorBruteforce,
-		  IndexOpts{}.SetFloatVector(IndexVectorBruteforce,
-									 FloatVectorIndexOpts{}.SetDimension(kDimension).SetStartSize(kStartSize).SetMetric(GetParam()))},
+		  IndexOpts{}.Array(isArray).SetFloatVector(
+			  IndexVectorBruteforce, FloatVectorIndexOpts{}.SetDimension(kDimension).SetStartSize(kStartSize).SetMetric(metric))},
 		 reindexer::BruteForceSearchParams{}.K(kK)},
 		{{kFieldNameFloatVector,
 		  {kFieldNameFloatVector},
 		  IndexIvf,
-		  IndexOpts{}.SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
-												   .SetDimension(kDimension)
-												   .SetNCentroids(std::max<size_t>(kMaxElementsInStep / 30, 2))
-												   .SetMetric(GetParam()))},
+		  IndexOpts{}.Array(isArray).SetFloatVector(IndexIvf, FloatVectorIndexOpts{}
+																  .SetDimension(kDimension)
+																  .SetNCentroids(std::max<size_t>(kMaxElementsInStep / 30, 2))
+																  .SetMetric(metric))},
 		 reindexer::IvfSearchParams{}.K(kK).NProbe(std::max<size_t>(kK / 200, 2))},
 		{{kFieldNameFloatVector,
 		  {kFieldNameFloatVector},
 		  IndexIvf,
-		  IndexOpts{}.SetFloatVector(
-			  IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElementsInStep * 2).SetMetric(GetParam()))},
+		  IndexOpts{}.Array(isArray).SetFloatVector(
+			  IndexIvf, FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(kMaxElementsInStep * 2).SetMetric(metric))},
 		 reindexer::IvfSearchParams{}.K(kK).NProbe(std::max<size_t>(kK / 200, 2))},
 	};
 	const auto rndIndexParams = [&] { return paramsOfIndexes[rand() % (sizeof(paramsOfIndexes) / sizeof(paramsOfIndexes[0]))]; };
@@ -1208,11 +1436,12 @@ TEST_P(FloatVector, UpdateIndex) try {
 	rt.DefineNamespaceDataset(kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0}});
 	int currMaxId = 0;
 	std::unordered_set<int> emptyVectors;
+	std::unordered_map<int, size_t> vectorsCount;
 	auto updateSomeData = [&, lastMaxId = 0](HasIndex hasIndex) mutable {
 		lastMaxId = currMaxId;
 		currMaxId += (rand() % kMaxElementsInStep + 1);
-		upsertItems<kDimension>(kNsName, kFieldNameFloatVector, lastMaxId, currMaxId, emptyVectors, hasIndex);
-		deleteSomeItems(kNsName, currMaxId, emptyVectors);
+		upsertItems<kDimension, isArray>(kNsName, kFieldNameFloatVector, lastMaxId, currMaxId, emptyVectors, vectorsCount, hasIndex);
+		deleteSomeItems(kNsName, currMaxId, emptyVectors, vectorsCount);
 	};
 	auto testQueryNoIndex = [&] {
 		auto result = rt.Select(reindexer::Query{kNsName}.Where(kFieldNameId, CondEq, rand() % currMaxId));
@@ -1229,7 +1458,7 @@ TEST_P(FloatVector, UpdateIndex) try {
 	};
 	updateSomeData(HasIndex::No);
 	testQueryNoIndex();
-	while (size_t(currMaxId) < kMaxElementsInStep * 40) {
+	while (size_t(currMaxId) < kTotalIDs) {
 		{
 			reindexer::WrSerializer ser;
 			const auto& idxParams = rndIndexParams();
@@ -1260,6 +1489,18 @@ TEST_P(FloatVector, UpdateIndex) try {
 }
 CATCH_AND_ASSERT
 
+TEST_F(FloatVector, UpdateArrayIndex) {
+	auto metric = randMetric();
+	TestCout() << fmt::format("Running test for '{}'-metric", VectorMetricToStr(metric)) << std::endl;
+	TestUpdateIndex<Array>(metric);
+}
+TEST_F(FloatVector, UpdateScalarIndex) {
+	auto metric = randMetric();
+	TestCout() << fmt::format("Running test for '{}'-metric", VectorMetricToStr(metric)) << std::endl;
+	TestUpdateIndex<Scalar>(metric);
+}
+
+// TODO add array version in #2231
 TEST_F(FloatVector, WhereCondIsNullIsNotNull) try {
 	const static std::string kNsName = "float_vector_cond_ns";
 	constexpr static size_t kDimension = 32;
@@ -1279,6 +1520,7 @@ TEST_F(FloatVector, WhereCondIsNullIsNotNull) try {
 															.SetMetric(reindexer::VectorMetric::InnerProduct))}};
 	std::string nsName, idxName;
 	std::unordered_set<int> emptyVectors;
+	std::unordered_map<int, size_t> vectorsCount;
 	for (const auto& opts : indexOpts) {
 		idxName = indexName(opts.first);
 		nsName = kNsName + idxName;
@@ -1287,22 +1529,25 @@ TEST_F(FloatVector, WhereCondIsNullIsNotNull) try {
 		rt.AddIndex(nsName, reindexer::IndexDef{idxName, {idxName}, opts.first, opts.second});
 
 		emptyVectors.clear();
-		upsertItems<kDimension>(nsName, idxName, 0, kMaxElements, emptyVectors);
+		vectorsCount.clear();
+		upsertItems<kDimension, Scalar>(nsName, idxName, 0, kMaxElements, emptyVectors, vectorsCount);
 
 		auto qr = rt.Select(reindexer::Query(nsName).Where(idxName, CondEmpty, reindexer::VariantArray{}));
 		ASSERT_TRUE(qr.Count() > 0) << idxName;
 		ASSERT_EQ(emptyVectors.size(), qr.Count()) << idxName;
-		const auto deletedCount = deleteSomeItems(nsName, kMaxElements, emptyVectors);
+		size_t deletedCount = vectorsCount.size() + emptyVectors.size();
+		deleteSomeItems(nsName, kMaxElements, emptyVectors, vectorsCount);
+		deletedCount -= vectorsCount.size();
+		deletedCount -= emptyVectors.size();
 		ASSERT_TRUE(deletedCount > 0) << idxName;
 		qr = rt.Select(reindexer::Query(nsName).Where(idxName, CondEmpty, reindexer::VariantArray{}));
 		const auto isNullCount = qr.Count();
-		ASSERT_TRUE(isNullCount > 0) << idxName;
+		ASSERT_EQ(isNullCount, emptyVectors.size()) << idxName;
 		for (auto& it : qr) {
 			auto item = it.GetItem(false);
 			auto id = item["id"].As<int>();
 			ASSERT_TRUE(emptyVectors.end() != emptyVectors.find(id)) << idxName;
 		}
-		ASSERT_EQ(emptyVectors.size(), isNullCount) << idxName;
 		qr = rt.Select(reindexer::Query(nsName).Where(idxName, CondAny, reindexer::VariantArray{}));
 		for (auto& it : qr) {
 			auto item = it.GetItem(false);
@@ -1314,8 +1559,9 @@ TEST_F(FloatVector, WhereCondIsNullIsNotNull) try {
 }
 CATCH_AND_ASSERT
 
-TEST_F(FloatVector, KeeperQRIterateAfterDropIndex) try {
-	constexpr static auto kNsName = "fv_delete_index_ns_keeper"sv;
+template <FloatVector::IsArray isArray>
+void FloatVector::TestKeeperQRIterateAfterDropIndex() try {
+	constexpr static auto kNsName = isArray ? "fv_delete_index_array_ns_keeper"sv : "fv_delete_index_scalar_ns_keeper"sv;
 	constexpr static auto kFieldNameIvf = "ivf"sv;
 	constexpr static size_t kDimension = 10;
 	constexpr static size_t kItemCount = 10;
@@ -1328,15 +1574,16 @@ TEST_F(FloatVector, KeeperQRIterateAfterDropIndex) try {
 			IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
 			IndexDeclaration{
 				kFieldNameIvf, "ivf", "float_vector",
-				IndexOpts{}.SetFloatVector(
+				IndexOpts{}.Array(isArray).SetFloatVector(
 					IndexIvf,
 					FloatVectorIndexOpts{}.SetDimension(kDimension).SetNCentroids(5).SetMetric(reindexer::VectorMetric::InnerProduct)),
 				0},
 		});
 
 	std::unordered_set<int> emptyVectors;
+	std::unordered_map<int, size_t> vectorsCount;
 	for (size_t i = 0; i < kItemCount; ++i) {
-		auto item = newItem<kDimension>(kNsName, kFieldNameIvf, i, emptyVectors);
+		auto item = newItem<kDimension, isArray>(kNsName, kFieldNameIvf, i, emptyVectors, vectorsCount);
 		rt.Upsert(kNsName, item);
 	}
 
@@ -1357,6 +1604,9 @@ TEST_F(FloatVector, KeeperQRIterateAfterDropIndex) try {
 	}
 }
 CATCH_AND_ASSERT
+
+TEST_F(FloatVector, KeeperQRIterateAfterDropArrayIndex) { TestKeeperQRIterateAfterDropIndex<Array>(); }
+TEST_F(FloatVector, KeeperQRIterateAfterDropScalarIndex) { TestKeeperQRIterateAfterDropIndex<Scalar>(); }
 
 TEST_F(FloatVector, CheckPKDuringUpdateFVIndex) try {
 	constexpr static auto kNsName = "FV_PK_check_ns"sv;

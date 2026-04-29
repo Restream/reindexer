@@ -1,8 +1,8 @@
 
 #include "core/ft/ftsetcashe.h"
 #include "core/idset/idsetcache.h"
+#include "core/nsselecter/joins/cache.h"
 #include "core/querycache.h"
-#include "joincache.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -137,6 +137,6 @@ void LRUCacheImpl<K, V, HashT, EqualT>::Clear() {
 template class LRUCacheImpl<IdSetCacheKey, IdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>;
 template class LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>;
 template class LRUCacheImpl<QueryCacheKey, QueryCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
-template class LRUCacheImpl<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
+template class LRUCacheImpl<joins::CacheKey, joins::CacheVal, joins::hash_cache_key, joins::equal_cache_key>;
 
 }  // namespace reindexer

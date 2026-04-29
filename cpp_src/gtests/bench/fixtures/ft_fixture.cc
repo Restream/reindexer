@@ -5,7 +5,7 @@
 
 #include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/ft/config/ftfastconfig.h"
+#include "core/ft/config/ftconfig.h"
 #include "tools/errors.h"
 
 #include <dlfcn.h>
@@ -23,12 +23,12 @@ FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
 #endif
-	static reindexer::FtFastConfig ftFastCfg(1);
-	ftFastCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+	static reindexer::FTConfig ftFastCfg(1);
+	ftFastCfg.optimization = reindexer::FTConfig::Optimization::Memory;
 
 	// for benching merge_limit break #2244
 	ftLowDiversityCfg_.mergeLimit = 4000;
-	ftLowDiversityCfg_.optimization = reindexer::FtFastConfig::Optimization::Memory;
+	ftLowDiversityCfg_.optimization = reindexer::FTConfig::Optimization::Memory;
 
 	static IndexOpts ftFastIndexOpts;
 	ftFastIndexOpts.SetConfig(IndexCompositeFastFT, ftFastCfg.GetJSON({}));
@@ -42,20 +42,19 @@ FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
 		.AddIndex("description", "-", "string", IndexOpts())
 		.AddIndex("year", "tree", "int", IndexOpts())
 		.AddIndex("countries", "tree", "string", IndexOpts().Array())
-		.AddIndex(kFastIndexTextName_, {"countries", "description"}, "text", "composite", ftFastIndexOpts)
-		.AddIndex("searchfuzzy", {"countries", "description"}, "fuzzytext", "composite", IndexOpts());
+		.AddIndex(kFastIndexTextName_, {"countries", "description"}, "text", "composite", ftFastIndexOpts);
 	lowWordsDiversityNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("description1", "-", "string", IndexOpts())
 		.AddIndex("description2", "-", "string", IndexOpts())
 		.AddIndex(kLowDiversityIndexName_, {"description1", "description2"}, "text", "composite", ftLowDiversityIndexOpts);
 }
 
-template <reindexer::FtFastConfig::Optimization opt>
+template <reindexer::FTConfig::Optimization opt>
 void FullText::UpdateIndex(State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		static reindexer::FtFastConfig ftCfg(1);
+		static reindexer::FTConfig ftCfg(1);
 		ftCfg.optimization = opt;
 		setIndexConfig(nsdef_, kFastIndexTextName_, ftCfg);
 	}
@@ -155,8 +154,8 @@ void FullText::TurnOffSynonyms() {
 
 void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount,
 								std::optional<size_t> verySlowIterationCount) {
-	constexpr static auto Mem = reindexer::FtFastConfig::Optimization::Memory;
-	constexpr static auto CPU = reindexer::FtFastConfig::Optimization::CPU;
+	constexpr static auto Mem = reindexer::FTConfig::Optimization::Memory;
+	constexpr static auto CPU = reindexer::FTConfig::Optimization::CPU;
 
 	RegisterWrapper wrapSlow(slowIterationCount);  // std::numeric_limits<size_t>::max() test limit - default time
 	RegisterWrapper wrapVerySlow(verySlowIterationCount);
@@ -199,17 +198,6 @@ void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::o
 	wrapFast.SetOptions(Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch, this));
 	wrapFast.SetOptions(Register("Fast2TypoWordMatch.OptByCPU", &FullText::Fast2TypoWordMatch, this));
 	wrapFast.SetOptions(Register("Fast1WordWithAreaHighDiversity.OptByCPU", &FullText::Fast1WordWithAreaHighDiversity, this));
-
-	// Register("BuildFuzzyTextIndex", &FullText::BuildFuzzyTextIndex, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
-
-	// Register("Fuzzy1WordMatch", &FullText::Fuzzy1WordMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy2WordsMatch", &FullText::Fuzzy2WordsMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy1PrefixMatch", &FullText::Fuzzy1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy2PrefixMatch", &FullText::Fuzzy2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy1SuffixMatch", &FullText::Fuzzy1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy2SuffixMatch", &FullText::Fuzzy2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy1TypoWordMatch", &FullText::Fuzzy1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy2TypoWordMatch", &FullText::Fuzzy2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
 
 	Register("BuildInsert.Incremental", &FullText::BuildInsertIncremental, this)
 		->Iterations(id_seq_->Count())
@@ -618,27 +606,6 @@ void FullText::BuildFastTextIndex(benchmark::State& state) {
 	state.SetLabel("Commit ratio: " + std::to_string(ratio));
 }
 
-void FullText::BuildFuzzyTextIndex(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t mem = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, RndWord1()).Limit(20);
-
-		QueryResults qres;
-
-		mem = get_alloc_size();
-		auto err = db_->Select(q, qres);
-		mem = get_alloc_size() - mem;
-
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-	}
-	double ratio = mem / double(raw_data_sz_);
-	state.SetLabel("Commit ratio: " + std::to_string(ratio));
-}
-
 void FullText::Fast1WordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	TIMETRACKER("Fast1WordMatch.gist");
@@ -676,39 +643,6 @@ void FullText::Fast2WordsMatch(benchmark::State& state) {
 		cnt += qres.Count();
 	}
 
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy1WordMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Where("searchfuzzy", CondEq, RndWord1());
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy2WordsMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		auto q = Query(nsdef_.name).Where("searchfuzzy", CondEq, RndWord1() + ' ' + RndWord1());
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-		cnt += qres.Count();
-	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 
@@ -750,40 +684,6 @@ void FullText::Fast2PrefixMatch(benchmark::State& state) {
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 
-void FullText::Fuzzy1PrefixMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakePrefixWord());
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy2PrefixMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
 void FullText::Fast1SuffixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	TIMETRACKER("Fast1SuffixMatch.gist");
@@ -810,40 +710,6 @@ void FullText::Fast2SuffixMatch(benchmark::State& state) {
 		TIMEMEASURE();
 		Query q(nsdef_.name);
 		q.Where(kFastIndexTextName_, CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy1SuffixMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeSuffixWord());
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy2SuffixMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -893,40 +759,6 @@ void FullText::Fast2TypoWordMatch(benchmark::State& state) {
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 
-void FullText::Fuzzy1TypoWordMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeTypoWord());
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy2TypoWordMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
 std::vector<std::string> FullText::GetRandomCountries(size_t cnt) {
 	std::vector<std::string> result;
 	result.reserve(cnt);
@@ -936,10 +768,10 @@ std::vector<std::string> FullText::GetRandomCountries(size_t cnt) {
 	return result;
 }
 
-template <reindexer::FtFastConfig::Optimization opt>
+template <reindexer::FTConfig::Optimization opt>
 void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 	constexpr int kNsSize = 100'000;
-	static reindexer::FtFastConfig ftCfg(1);
+	static reindexer::FTConfig ftCfg(1);
 	static IndexOpts ftIndexOpts;
 	ftCfg.optimization = opt;
 	ftIndexOpts.SetConfig(IndexFastFT, ftCfg.GetJSON({}));
@@ -1106,7 +938,7 @@ void FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark
 	}
 }
 
-void FullText::setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FtFastConfig& ftCfg) {
+void FullText::setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FTConfig& ftCfg) {
 	const auto it =
 		std::find_if(nsDef.indexes.begin(), nsDef.indexes.end(), [indexName](const auto& idx) { return idx.Name() == indexName; });
 	assertrx(it != nsDef.indexes.end());
@@ -1123,7 +955,7 @@ unsigned FullText::initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::
 	const auto itemsPerStep = totalItems / maxStepsCount + 1;
 	assertrx(itemsPerStep > 2);
 	{
-		static reindexer::FtFastConfig ftCfg(1);
+		static reindexer::FTConfig ftCfg(1);
 		ftCfg.maxRebuildSteps = maxStepsCount;
 		ftCfg.maxStepSize = std::max(5, int(itemsPerStep / 2));
 		setIndexConfig(nsDef, indexName, ftCfg);

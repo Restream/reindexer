@@ -145,7 +145,7 @@ func init() {
 		testItemsCJsonSeed = append(testItemsCJsonSeed, ser.Bytes())
 
 		gobenc.Encode(newTestItem(i, 20))
-		gobData := make([]byte, len(buf.Bytes()))
+		gobData := append([]byte(nil), buf.Bytes()...)
 		copy(gobData, buf.Bytes())
 
 		testItemsGobSeed = append(testItemsGobSeed, gobData)

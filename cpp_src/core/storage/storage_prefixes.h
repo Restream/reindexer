@@ -17,6 +17,11 @@ static_assert(false, "Redefinition of kStorageWALPrefix");
 #endif	// kStorageWALPrefix
 #define kStorageWALPrefix "W"
 
+#ifdef kStorageHashTablesStatsPrefix
+static_assert(false, "Redefinition of kStorageHashTablesStatsPrefix");
+#endif	// kStorageHashTablesStatsPrefix
+#define kStorageHashTablesStatsPrefix "hash_tables_stats"
+
 namespace reindexer {
 constexpr inline std::string_view kStorageIndexesPrefix{"indexes"};
 constexpr inline std::string_view kStorageSchemaPrefix{"schema"};

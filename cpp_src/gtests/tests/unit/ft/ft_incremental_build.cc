@@ -30,7 +30,7 @@ public:
 
 	enum class [[nodiscard]] StrictSuffixValidation { No, Yes };
 
-	void Init(const reindexer::FtFastConfig& ftCfg) {
+	void Init(const reindexer::FTConfig& ftCfg) {
 		rt.reindexer = std::make_shared<reindexer::Reindexer>();
 		rt.Connect("builtin://");
 		rt.OpenNamespace(GetDefaultNamespace());
@@ -265,8 +265,8 @@ public:
 		return rt.Select(q);
 	}
 
-	reindexer::FtFastConfig CreateConfig() {
-		reindexer::FtFastConfig cfg(2);
+	reindexer::FTConfig CreateConfig() {
+		reindexer::FTConfig cfg(2);
 		cfg.logLevel = 5;
 		cfg.maxStepSize = 10;
 		cfg.maxRebuildSteps = GetStepsCount();

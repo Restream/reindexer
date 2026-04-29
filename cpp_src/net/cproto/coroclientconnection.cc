@@ -1,11 +1,10 @@
 #include "coroclientconnection.h"
-#include <errno.h>
 #include <snappy.h>
 #include <functional>
 #include "core/rdxcontext.h"
 #include "reindexer_version.h"
 #include "server/rpcqrwatcher.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {

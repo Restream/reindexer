@@ -11,7 +11,7 @@
 #include "core/type_consts.h"
 #include "estl/concepts.h"
 #include "estl/h_vector.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/verifying_updater.h"
 
 namespace reindexer {
@@ -35,10 +35,10 @@ struct [[nodiscard]] JoinQueryEntry {
 	bool operator!=(const JoinQueryEntry& other) const noexcept = default;
 
 	template <typename JS>
-	std::string Dump(const std::vector<JS>& joinedSelectors) const;
+	std::string Dump(const std::vector<JS>& joinItemsProcessors) const;
 
 	template <typename JS>
-	std::string DumpOnCondition(const std::vector<JS>& joinedSelectors) const;
+	std::string DumpOnCondition(const std::vector<JS>& joinItemsProcessors) const;
 
 	size_t joinIndex{std::numeric_limits<size_t>::max()};
 };
@@ -96,7 +96,7 @@ extern template void VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyVa
 
 class [[nodiscard]] QueryEntry : private QueryField {
 public:
-	enum [[nodiscard]] : size_t { NotInjected = std::numeric_limits<size_t>::max(), InjectedFromMain = NotInjected - 1 };
+	enum [[nodiscard]] : size_t { NotInserted = std::numeric_limits<size_t>::max(), InsertedFromMain = NotInserted - 1 };
 	struct [[nodiscard]] DistinctTag {};
 	struct [[nodiscard]] ForcedSortOptEntryTag {};
 	struct [[nodiscard]] IgnoreEmptyValues {};
@@ -104,8 +104,8 @@ public:
 	static constexpr unsigned kDefaultOffset = 0;
 
 	template <concepts::ConvertibleToString Str, concepts::ConvertibleToVariantArray VA>
-	QueryEntry(Str&& fieldName, CondType cond, VA&& v, size_t injectedFrom = NotInjected)
-		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, injectedFrom_{injectedFrom} {
+	QueryEntry(Str&& fieldName, CondType cond, VA&& v, size_t insertedFrom = NotInserted)
+		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, insertedFrom_{insertedFrom} {
 		std::ignore = adjust(AdjustMode::Default);
 		Verify();
 		ommitExcesiveArguments();
@@ -186,7 +186,7 @@ public:
 
 	std::string Dump() const;
 	std::string DumpBrief() const;
-	bool IsInjectedFrom(size_t joinedQueryNo) const noexcept { return injectedFrom_ == joinedQueryNo; }
+	bool IsInsertedFrom(size_t joinedQueryNo) const noexcept { return insertedFrom_ == joinedQueryNo; }
 	bool NeedIsNull() const noexcept { return needIsNull_; }
 	void ResetNeedIsNull() noexcept { needIsNull_ = false; }
 	bool TryUpdateInplace(VariantArray& newValues) noexcept;
@@ -207,7 +207,7 @@ private:
 
 	VariantArray values_;
 	CondType condition_{CondAny};
-	size_t injectedFrom_{NotInjected};
+	size_t insertedFrom_{NotInserted};
 	IsDistinct distinct_{IsDistinct_False};
 	IsForcedSortOptEntry forcedSortOptEntry_{IsForcedSortOptEntry_False};
 	bool needIsNull_{false};
@@ -551,7 +551,7 @@ public:
 	bool FieldsHaveBeenSet() const noexcept { return leftField_.FieldsHaveBeenSet() && rightField_.FieldsHaveBeenSet(); }
 
 	template <typename JS>
-	std::string DumpCondition(const JS& joinedSelector, bool needOp = false) const;
+	std::string DumpCondition(const JS& joinItemsProcessor, bool needOp = false) const;
 
 	auto LeftFields() const&& = delete;
 	auto RightFields() const&& = delete;
@@ -586,15 +586,15 @@ public:
 	KnnQueryEntry(Str1&& fldName, Str2&& data, KnnSearchParams params)
 		: fieldName_{std::forward<Str1>(fldName)}, format_{DataFormatType::String}, data_{std::forward<Str2>(data)}, params_{params} {}
 	int IndexNo() const noexcept { return idxNo_; }
-	ConstFloatVectorView Value() const& noexcept {
+	ConstFloatVectorView Value() const& {
 		assertrx_throw(format_ == DataFormatType::Vector);
 		return ConstFloatVectorView{value_};
 	}
-	const std::string& Data() const& noexcept {
+	const std::string& Data() const& {
 		assertrx_throw(format_ == DataFormatType::String);
 		return data_;
 	}
-	DataFormatType Format() const noexcept {
+	DataFormatType Format() const {
 		assertrx_throw(format_ != DataFormatType::None);
 		return format_;
 	}
@@ -626,7 +626,7 @@ private:
 	KnnSearchParams params_;
 };
 
-enum class [[nodiscard]] InjectionDirection : bool { IntoMain, FromMain };
+enum class [[nodiscard]] JoinConditionInsertionDirection : bool { IntoMain, FromMain };
 class Index;
 
 using QueryEntriesTree =
@@ -671,14 +671,14 @@ public:
 	void Serialize(WrSerializer& ser, const std::vector<Query>& subQueries) const { serialize(cbegin(), cend(), ser, subQueries); }
 	bool CheckIfSatisfyConditions(const ConstPayload& pl) const { return checkIfSatisfyConditions(cbegin(), cend(), pl); }
 	static bool CheckIfSatisfyCondition(const VariantArray& lValues, CondType, const VariantArray& rValues);
-	template <InjectionDirection>
-	size_t InjectConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
+	template <JoinConditionInsertionDirection>
+	size_t InsertConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
 											const QueryEntries& joinedQueryEntries, size_t joinedQueryNo,
 											const std::vector<std::unique_ptr<Index>>* indexesFrom);
 	template <typename JS>
-	std::string Dump(const std::vector<JS>& joinedSelectors, const std::vector<Query>& subQueries) const {
+	std::string Dump(const std::vector<JS>& joinItemsProcessors, const std::vector<Query>& subQueries) const {
 		WrSerializer ser;
-		dump(0, cbegin(), cend(), joinedSelectors, subQueries, ser);
+		dump(0, cbegin(), cend(), joinItemsProcessors, subQueries, ser);
 		dumpEqualPositions(0, ser, equalPositions);
 		return std::string{ser.Slice()};
 	}
@@ -692,20 +692,20 @@ private:
 	static bool checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload&);
 	static bool checkIfSatisfyCondition(const QueryEntry&, const ConstPayload&);
 	static bool checkIfSatisfyCondition(const BetweenFieldsQueryEntry&, const ConstPayload&);
-	size_t injectConditionsFromOnCondition(size_t position, const std::string& fieldName, const std::string& joinedFieldName, CondType,
-										   const QueryEntries& joinedQueryEntries, size_t injectedFrom, size_t injectingInto,
+	size_t insertConditionsFromOnCondition(size_t position, const std::string& fieldName, const std::string& joinedFieldName, CondType,
+										   const QueryEntries& joinedQueryEntries, size_t insertedFrom, size_t insertedInto,
 										   const std::vector<std::unique_ptr<Index>>* indexesFrom);
 
 protected:
 	static void dumpEqualPositions(size_t level, WrSerializer&, const EqualPositions_t&);
 	template <typename JS>
-	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinedSelectors,
+	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinItemsProcessors,
 					 const std::vector<Query>& subQueries, WrSerializer&);
 };
 
-extern template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::FromMain>(
+extern template size_t QueryEntries::InsertConditionsFromOnConditions<JoinConditionInsertionDirection::FromMain>(
 	size_t, const h_vector<QueryJoinEntry, 1>&, const QueryEntries&, size_t, const std::vector<std::unique_ptr<Index>>*);
-extern template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::IntoMain>(
+extern template size_t QueryEntries::InsertConditionsFromOnConditions<JoinConditionInsertionDirection::IntoMain>(
 	size_t, const h_vector<QueryJoinEntry, 1>&, const QueryEntries&, size_t, const std::vector<std::unique_ptr<Index>>*);
 
 struct [[nodiscard]] SortingEntry {

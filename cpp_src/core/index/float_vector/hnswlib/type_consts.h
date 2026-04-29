@@ -13,7 +13,7 @@ enum class [[nodiscard]] MetricType {
 using CorrectiveOffset = float;
 
 using tableint = uint32_t;
-using labeltype = uint32_t;
+using labeltype = uint64_t;
 using linklistsizeint = uint32_t;
 
 static constexpr uint8_t kQuantizeBits = 8;

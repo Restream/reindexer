@@ -6,7 +6,7 @@
 #include "core/schema.h"
 #include "gason/gason.h"
 #include "tools/jsontools.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "vendor/frozen/string.h"
 #include "vendor/frozen/unordered_map.h"
 #include "vendor/msgpack/msgpackparser.h"
@@ -112,7 +112,7 @@ AggregationResult AggregationResult::from(Node root) {
 		isValid = node.isValid();
 	}
 	if constexpr (std::is_same_v<gason::JsonNode, Node>) {
-		isValid = !node.empty();
+		isValid = !node.isEmpty();
 	}
 	AggregationResult ret;
 	if (isValid) {
@@ -248,7 +248,7 @@ void AggregationResult::serialiseDistinct(ProtobufBuilder& builder, const Fields
 		std::span<const Variant> row = GetDistinctRow(i);
 		auto distinctsSubArray = DistinctRowObj.Array(parametersFields.Values(), row.size());
 		for (const auto& vv : row) {
-			distinctsSubArray.Put(TagName::Empty(), vv.As<std::string>(payloadType_, distinctsFields_));
+			distinctsSubArray.Put(TagName::Empty(), vv.AsSingleString(payloadType_, distinctsFields_));
 		}
 	}
 }
@@ -261,7 +261,7 @@ void AggregationResult::serialiseDistinct(Builder& builder, const Fields& parame
 	if (GetDistinctColumnCount() == 1) {
 		for (unsigned i = 0; i < dc; i++) {
 			std::span<const Variant> row = GetDistinctRow(i);
-			distinctsArray.Put(TagName::Empty(), row[0].As<std::string>(payloadType_, distinctsFields_));
+			distinctsArray.Put(TagName::Empty(), row[0].AsSingleString(payloadType_, distinctsFields_));
 		}
 	} else {
 		for (unsigned i = 0; i < dc; i++) {

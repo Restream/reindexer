@@ -101,11 +101,11 @@ public:
 	Error CommitTx(cproto::Context& ctx, int64_t txId, std::optional<int> flags);
 	Error RollbackTx(cproto::Context& ctx, int64_t txId);
 
-	Error DeleteQuery(cproto::Context& ctx, p_string query, std::optional<int> flags) noexcept;
-	Error UpdateQuery(cproto::Context& ctx, p_string query, std::optional<int> flags) noexcept;
+	Error DeleteQuery(cproto::Context& ctx, p_string query, std::optional<int> flags, std::optional<p_string> tmVersionsPck) noexcept;
+	Error UpdateQuery(cproto::Context& ctx, p_string query, std::optional<int> flags, std::optional<p_string> tmVersionsPck) noexcept;
 
-	Error Select(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
-	Error ExecSQL(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
+	Error Select(cproto::Context& ctx, p_string query, int flags, int limit, p_string tmVersions);
+	Error ExecSQL(cproto::Context& ctx, p_string query, int flags, int limit, p_string tmVersions);
 	Error FetchResults(cproto::Context& ctx, int reqId, int flags, int offset, int limit, std::optional<int64_t> qrUID);
 	Error CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
 	Error GetSQLSuggestions(cproto::Context& ctx, p_string query, int pos);

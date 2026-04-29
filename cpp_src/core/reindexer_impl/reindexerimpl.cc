@@ -925,7 +925,7 @@ void ReindexerImpl::setClusterOperationStatus(ClusterOperationStatus&& status, c
 	clusterStatus_ = std::move(status);
 }
 
-template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
+template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
 Error ReindexerImpl::applyNsFunction(std::string_view nsName, const RdxContext& rdxCtx, Arg arg, Args&&... args) {
 	Error err;
 	try {
@@ -1751,10 +1751,10 @@ void ReindexerImpl::handleDropANNCacheAction(const gason::JsonNode& action, cons
 	auto& nsNode = action["namespace"sv];
 	auto& indexNode = action["index"sv];
 	std::string_view indexName;
-	if (!indexNode.empty() && indexNode.As<std::string_view>() != kWildcard) {
+	if (!indexNode.isEmpty() && indexNode.As<std::string_view>() != kWildcard) {
 		indexName = indexNode.As<std::string_view>();
 	}
-	if (nsNode.empty() || nsNode.As<std::string_view>() == kWildcard) {
+	if (nsNode.isEmpty() || nsNode.As<std::string_view>() == kWildcard) {
 		for (auto& ns : getNamespaces(ctx)) {
 			ns.second->DropANNStorageCache(indexName, ctx);
 		}
@@ -1770,13 +1770,13 @@ void ReindexerImpl::handleRebuildIVFIndexAction(const gason::JsonNode& action, c
 	auto& dataPartNode = action["data_part"sv];
 	std::string_view indexName;
 	float dataPart = 1.0;
-	if (!indexNode.empty() && indexNode.As<std::string_view>() != kWildcard) {
+	if (!indexNode.isEmpty() && indexNode.As<std::string_view>() != kWildcard) {
 		indexName = indexNode.As<std::string_view>();
 	}
-	if (!dataPartNode.empty()) {
+	if (!dataPartNode.isEmpty()) {
 		dataPart = dataPartNode.As<float>();
 	}
-	if (nsNode.empty() || nsNode.As<std::string_view>() == kWildcard) {
+	if (nsNode.isEmpty() || nsNode.As<std::string_view>() == kWildcard) {
 		for (auto& ns : getNamespaces(ctx)) {
 			ns.second->RebuildIVFIndex(indexName, dataPart, ctx);
 		}
@@ -1887,7 +1887,7 @@ void ReindexerImpl::handleCreateEmbeddingsAction(const gason::JsonNode& action, 
 	using namespace std::string_view_literals;
 	const auto& nsNode = action["namespace"sv];
 	const auto batchSize = action["batch_size"sv].As<uint32_t>(kDefaultEmbeddingBatchSize);
-	if (nsNode.empty() || nsNode.As<std::string_view>() == kWildcard) {
+	if (nsNode.isEmpty() || nsNode.As<std::string_view>() == kWildcard) {
 		for (auto& ns : getNamespaces(ctx)) {
 			createEmbeddings(ns.second, batchSize, ctx);
 		}
@@ -1900,7 +1900,7 @@ void ReindexerImpl::handleClearEmbeddersCacheAction(const gason::JsonNode& actio
 	using namespace std::string_view_literals;
 	const auto& tagNode = action["cache_tag"sv];
 	std::string_view tagName;
-	if (!tagNode.empty()) {
+	if (!tagNode.isEmpty()) {
 		tagName = tagNode.As<std::string_view>();
 	}
 	embeddersCache_->Clear(tagName);
@@ -2018,6 +2018,7 @@ Error ReindexerImpl::initSystemNamespaces() {
 	}
 
 	auto replConfig = configProvider_.GetReplicationConfig();
+	// FIXME: Validate serverId before setting it and make SetServer noexcept
 	nsVersion_.SetServer(replConfig.serverID);
 
 	// Update nsVersion.serverID for system namespaces
@@ -2093,21 +2094,22 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 				activities_.Reset();
 			}
 
-			if (!configJson[kReplicationConfigType].empty()) {
+			if (!configJson[kReplicationConfigType].isEmpty()) {
 				auto replConf = configProvider_.GetReplicationConfig();
 				updateConfFile(replConf, kReplicationConfFilename);
 				{
 					auto wlck = nsLock_.SimpleWLock(ctx);
+					// FIXME: Validate serverId before setting it and make SetServer noexcept
 					nsVersion_.SetServer(replConf.serverID);
 				}
 				clusterManager_->Configure(std::move(replConf));
 			}
-			if (!configJson[kAsyncReplicationConfigType].empty()) {
+			if (!configJson[kAsyncReplicationConfigType].isEmpty()) {
 				auto asyncReplConf = configProvider_.GetAsyncReplicationConfig();
 				updateConfFile(asyncReplConf, kAsyncReplicationConfFilename);
 				clusterManager_->Configure(std::move(asyncReplConf));
 			}
-			if (!configJson[kShardingConfigType].empty()) {
+			if (!configJson[kShardingConfigType].isEmpty()) {
 				throw Error(errLogic, "Sharding configuration can not be updated directly. Use 'apply_sharding_config' action instead");
 			}
 
@@ -2152,7 +2154,7 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 
 void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std::vector<std::pair<std::string, Namespace::Ptr>>& namespaces,
 									   const RdxContext& ctx) {
-	if (!action.empty()) {
+	if (!action.isEmpty()) {
 		std::string_view command = action["command"].As<std::string_view>();
 		if (command == "set_leader_node"sv) {
 			if (!clusterConfig_) {
@@ -2749,13 +2751,20 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 								  const RdxContext& rdxCtx) noexcept {
 	NsCreationLockerT::Locks nsCreationLock;  // In case of error this lock should be destroyed after Namespace pointer
 	Namespace::Ptr ns;
-	try {
-		{
-			auto rlck = nsLock_.RLock(rdxCtx);
-			if (namespaces_.find(nsDef.name) != namespaces_.end()) {
-				return Error(errParams, "Namespace '{}' already exists", nsDef.name);
-			}
+	bool storageDirExisted = false;
+	bool nsWasCreated = false;
+	auto checkStorageDirExists = [this, &nsDef] {
+		return !storagePath_.empty() && (fs::Stat(fs::JoinPath(storagePath_, nsDef.name)) != fs::FileStatus::StatError);
+	};
+	auto checkAlreadyExistsLocking = [this, &nsDef](const RdxContext& rdxCtx) {
+		auto rlck = nsLock_.RLock(rdxCtx);
+		if (namespaces_.find(nsDef.name) != namespaces_.end()) {
+			throw Error(errParams, "Namespace '{}' already exists", nsDef.name);
 		}
+	};
+	try {
+		checkAlreadyExistsLocking(rdxCtx);
+
 		const bool allowSpecialChars = true;
 		if (!validateObjectName(nsDef.name, allowSpecialChars)) {
 			return Error(errParams, "Namespace name '{}' contains invalid character. Only alphas, digits,'_' and '-' are allowed",
@@ -2772,13 +2781,10 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		nsCreationLock = nsLock_.CreationLock(nsDef.name, rdxCtx);
 		rdxCtx.WithNoWaitSync(true);  // Do not wait sync after nsCreationLock
 
+		storageDirExisted = checkStorageDirExists();
 		if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
-			{
-				auto rlck = nsLock_.RLock(rdxCtx);
-				if (namespaces_.find(nsDef.name) != namespaces_.end()) {
-					return Error(errParams, "Namespace '{}' already exists", nsDef.name);
-				}
-			}
+			checkAlreadyExistsLocking(rdxCtx);
+
 			ns->EnableStorage(storagePath_, nsDef.storage, storageType_, rdxCtx);
 			ns->OnConfigUpdated(configProvider_, rdxCtx);
 			ns->LoadFromStorage(kStorageLoadingThreads, rdxCtx);
@@ -2802,6 +2808,7 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			if (!inserted) {
 				return Error(errParams, "Namespace '{}' already exists", nsDef.name);
 			}
+			nsWasCreated = true;
 			if (wasCreatedOut) {
 				*wasCreatedOut = true;
 			}
@@ -2834,7 +2841,7 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			if (nsDef.HasSchema()) {
 				ns->SetSchema(nsDef.schemaJson, rdxCtx);
 			}
-		} catch (const Error& err) {
+		} catch (Error& err) {
 			if (rdxCtx.GetOriginLSN().isEmpty() && err.code() == errWrongReplicationData) {
 				auto replState = ns->GetReplStateV2(rdxCtx);
 				if (replState.clusterStatus.role == ClusterOperationStatus::Role::SimpleReplica ||
@@ -2844,8 +2851,20 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 			}
 			return err;
 		}
+	} catch (std::exception& err) {
+		try {
+			if (!nsWasCreated && nsCreationLock.OwnsLock() && !storageDirExisted && checkStorageDirExists()) {
+				if (fs::RmDirAll(fs::JoinPath(storagePath_, nsDef.name)) < 0) {
+					logFmt(LogError, "fs::RmDirAll erro during AddNamespace error handling: '{}'", strerror(errno));
+				}
+			}
+			return err;
+		} catch (std::exception& err2) {
+			logFmt(LogError, "Exception during AddNamespace error handling: '{}'", err2.what());
+			return err2;
+		}
 	}
-	CATCH_AND_RETURN;
+
 	return {};
 }
 

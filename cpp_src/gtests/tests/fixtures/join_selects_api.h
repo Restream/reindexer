@@ -5,7 +5,7 @@
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
-#include "core/queryresults/joinresults.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "core/system_ns_names.h"
 #include "estl/gift_str.h"
 #include "estl/lock.h"
@@ -13,7 +13,7 @@
 #include "gason/gason.h"
 #include "reindexer_api.h"
 #include "tools/fsops.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 class [[nodiscard]] JoinSelectsApi : public ReindexerApi {
 protected:

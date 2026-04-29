@@ -7,8 +7,8 @@
 #include "estl/tokenizer.h"
 #include "tools/frozen_str_tools.h"
 #include "tools/jsontools.h"
-#include "tools/serializer.h"
-#include "updates/updaterecord.h"
+#include "tools/serilize/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "vendor/frozen/unordered_map.h"
 #include "vendor/gason/gason.h"
 

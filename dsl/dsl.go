@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/goccy/go-json"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
+
+	"github.com/goccy/go-json"
 )
 
 /*

@@ -53,7 +53,7 @@ type expectedExplain struct {
 	Selectors   []expectedExplain
 }
 
-type expectedExplainConditionInjection struct {
+type expectedExplainConditionInsertion struct {
 	InitialCondition   string
 	AggType            string
 	Succeed            bool
@@ -63,14 +63,14 @@ type expectedExplainConditionInjection struct {
 	ConditionSelectors []expectedExplain
 }
 
-type expectedExplainJoinOnInjections struct {
+type expectedExplainJoinOnInsertions struct {
 	RightNsName       string
 	JoinOnCondition   string
 	Succeed           bool
 	Reason            string
 	Type              string
 	InjectedCondition string
-	Conditions        []expectedExplainConditionInjection
+	Conditions        []expectedExplainConditionInsertion
 }
 
 type expectedExplainSubQuery struct {
@@ -423,7 +423,7 @@ func checkExplain(t *testing.T, res []reindexer.ExplainSelector, expected []expe
 	}
 }
 
-func checkExplainConditionInjection(t *testing.T, resConditions []reindexer.ExplainConditionInjection, expectedConditions []expectedExplainConditionInjection) {
+func checkExplainConditionInsertion(t *testing.T, resConditions []reindexer.ExplainConditionInsertion, expectedConditions []expectedExplainConditionInsertion) {
 	for i := 0; i < len(expectedConditions); i++ {
 		assert.Equal(t, expectedConditions[i].InitialCondition, resConditions[i].InitialCondition)
 		assert.Equal(t, expectedConditions[i].AggType, resConditions[i].AggType)
@@ -440,7 +440,7 @@ func checkExplainConditionInjection(t *testing.T, resConditions []reindexer.Expl
 	}
 }
 
-func checkExplainJoinOnInjections(t *testing.T, res []reindexer.ExplainJoinOnInjections, expected []expectedExplainJoinOnInjections) {
+func checkExplainJoinOnInsertions(t *testing.T, res []reindexer.ExplainJoinOnInsertions, expected []expectedExplainJoinOnInsertions) {
 	require.Equal(t, len(expected), len(res))
 	for i := 0; i < len(expected); i++ {
 		assert.Equal(t, expected[i].RightNsName, res[i].RightNsName)
@@ -448,11 +448,11 @@ func checkExplainJoinOnInjections(t *testing.T, res []reindexer.ExplainJoinOnInj
 		assert.Equal(t, expected[i].Succeed, res[i].Succeed)
 		assert.Equal(t, expected[i].Reason, res[i].Reason)
 		assert.Equal(t, expected[i].Type, res[i].Type)
-		assert.Equal(t, expected[i].InjectedCondition, res[i].InjectedCondition)
+		assert.Equal(t, expected[i].InjectedCondition, res[i].InsertedCondition)
 		if len(expected[i].Conditions) == 0 {
 			assert.Nil(t, res[i].Conditions)
 		} else {
-			checkExplainConditionInjection(t, res[i].Conditions, expected[i].Conditions)
+			checkExplainConditionInsertion(t, res[i].Conditions, expected[i].Conditions)
 		}
 	}
 }
@@ -1008,14 +1008,14 @@ func TestExplainJoin(t *testing.T) {
 			JoinSelect: nil,
 		},
 	}, "")
-	checkExplainJoinOnInjections(t, explainRes.OnConditionsInjections, []expectedExplainJoinOnInjections{
+	checkExplainJoinOnInsertions(t, explainRes.OnConditionsInsertions, []expectedExplainJoinOnInsertions{
 		{
 			RightNsName:       "test_explain_joined",
 			JoinOnCondition:   "INNER JOIN ON (test_explain_joined.id = id)",
 			Succeed:           true,
 			Type:              "by_value",
 			InjectedCondition: "(id IN (...) )",
-			Conditions: []expectedExplainConditionInjection{
+			Conditions: []expectedExplainConditionInsertion{
 				{
 					InitialCondition: "test_explain_joined.id = id",
 					Succeed:          true,
@@ -1030,7 +1030,7 @@ func TestExplainJoin(t *testing.T) {
 			Succeed:           true,
 			Type:              "by_value",
 			InjectedCondition: "(id IN (...) )",
-			Conditions: []expectedExplainConditionInjection{
+			Conditions: []expectedExplainConditionInsertion{
 				{
 					InitialCondition: "test_explain_joined.id = id",
 					Succeed:          true,

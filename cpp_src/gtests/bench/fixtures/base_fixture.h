@@ -13,7 +13,6 @@
 using std::placeholders::_1;
 
 using benchmark::State;
-using benchmark::internal::Benchmark;
 
 using reindexer::NamespaceDef;
 using reindexer::Reindexer;

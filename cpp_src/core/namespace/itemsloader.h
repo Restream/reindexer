@@ -93,6 +93,7 @@ private:
 	struct [[nodiscard]] ANNIndexInfo {
 		size_t field;
 		size_t dims;
+		IsArray isArray{IsArray_False};
 	};
 
 	void prepareANNData();
@@ -119,7 +120,7 @@ private:
 	// ANN-helpers
 	std::unique_ptr<ann_storage_cache::Reader> annCacheReader_;
 	std::vector<ANNIndexInfo> annIndexes_;
-	fast_hash_map<size_t, std::vector<FloatVector>> vectorsData_;
+	fast_hash_map<size_t, std::vector<h_vector<FloatVector, 1>>> vectorsData_;
 };
 
 class [[nodiscard]] IndexInserters {

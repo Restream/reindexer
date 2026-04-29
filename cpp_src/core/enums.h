@@ -74,6 +74,7 @@ BOOL_ENUM(AllowAdditionalProps)
 BOOL_ENUM(MustExist)
 BOOL_ENUM(PrefAndStemmersForbidden)
 BOOL_ENUM(SetLimit0ForChangeJoin)
+BOOL_ENUM(IsModifyQuery)
 BOOL_ENUM(JustCopy)
 BOOL_ENUM(EnableMultiJsonPath)
 BOOL_ENUM(NeedMaskingDSN)
@@ -82,6 +83,10 @@ BOOL_ENUM(Shrink)
 BOOL_ENUM(ForceAllColumns)
 BOOL_ENUM(LoadWithQuantizer)
 BOOL_ENUM(MigrationStatus)
+BOOL_ENUM(TreatAsSingleElement)
+BOOL_ENUM(WithTagsMatcher)
+BOOL_ENUM(IsLast)
+BOOL_ENUM(PhraseTerm)
 
 #undef BOOL_ENUM
 

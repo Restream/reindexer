@@ -3,16 +3,15 @@
 #include "aggregator.h"
 #include "core/enums.h"
 #include "core/index/ft_preselect.h"
+#include "core/nsselecter/joins/items_processor.h"
 #include "core/query/queryentry.h"
 #include "estl/h_vector.h"
-#include "joinedselector.h"
+#include "selectctx_traits.h"
 
 namespace reindexer {
 
 class NamespaceImpl;
 class QresExplainHolder;
-template <typename>
-struct SelectCtxWithJoinPreSelect;
 
 class [[nodiscard]] QueryPreprocessor : private QueryEntries {
 	class Merger;
@@ -57,14 +56,14 @@ public:
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return HasForcedSortOptimizationQueryEntry(); }
 	bool AvailableSelectBySortIndex() const noexcept { return !HasForcedSortOptimizationQueryEntry() || !forcedStage(); }
-	void InjectConditionsFromJoins(JoinedSelectors& js, OnConditionInjections& explainOnInjections, LogLevel, bool inTransaction,
+	void InsertConditionsFromJoins(joins::ItemsProcessors& js, OnConditionInsertions& explainOnInsertions, LogLevel, bool inTransaction,
 								   bool enableSortOrders, const RdxContext& rdxCtx);
 	void Reduce();
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
 	using QueryEntries::ToDsl;
-	template <typename JoinPreResultCtx>
-	SortingEntries GetSortingEntries(const SelectCtxWithJoinPreSelect<JoinPreResultCtx>&, QueryRankType queryRankType) const {
+	template <typename SelectCtxType>
+	SortingEntries GetSortingEntries(const SelectCtxType&, QueryRankType queryRankType) const {
 		if (ftEntry_) {
 			return {};
 		}
@@ -72,7 +71,7 @@ public:
 		// - query contains explicit specified sort order
 		// - query contains ranked query.
 		const bool disableOptimizedSortOrder =
-			!query_.GetSortingEntries().empty() || queryRankType != QueryRankType::No || !std::is_same_v<JoinPreResultCtx, void>;
+			!query_.GetSortingEntries().empty() || queryRankType != QueryRankType::No || !IsMainSelectCtx<SelectCtxType>;
 		// Queries with ordered indexes may have different selection plan depending on filters' values.
 		// This may lead to items reordering when SingleRange becomes main selection method.
 		// By default, all the results are ordered by internal IDs, but with SingleRange results will be ordered by values first.
@@ -82,11 +81,11 @@ public:
 
 	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
 	void ExcludeFtQuery(const RdxContext&);
-	FtMergeStatuses& GetFtMergeStatuses() noexcept {
+	FtMergeStatuses& GetFtMergeStatuses() {
 		assertrx_throw(ftPreselect_);
 		return *ftPreselect_;
 	}
-	FtPreselectT&& MoveFtPreselect() noexcept {
+	FtPreselectT&& MoveFtPreselect() {
 		assertrx_throw(ftPreselect_);
 		return std::move(*ftPreselect_);
 	}
@@ -160,16 +159,16 @@ private:
 	void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
 					  h_vector<FoundIndexInfo, 32>& foundIndexes) const;
 	/** @brief recurrently checks and injects Join ON conditions
-	 *  @returns injected conditions and EntryBrackets count
+	 *  @returns inserted conditions and EntryBrackets count
 	 */
 	template <typename ExplainPolicy>
-	size_t injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors&, OnConditionInjections&, int embracedMaxIterations,
+	size_t insertConditionsFromJoins(size_t from, size_t to, joins::ItemsProcessors&, OnConditionInsertions&, int embracedMaxIterations,
 									 h_vector<int, 256>& maxIterations, bool inTransaction, bool enableSortOrders, const RdxContext&);
 	std::pair<CondType, VariantArray> queryValuesFromOnCondition(std::string& outExplainStr, AggType&, NamespaceImpl& rightNs,
-																 Query joinQuery, JoinPreResult::CPtr, const QueryJoinEntry&, CondType,
+																 Query joinQuery, joins::PreSelect::CPtr, const QueryJoinEntry&, CondType,
 																 int mainQueryMaxIterations, const RdxContext&);
-	std::pair<CondType, VariantArray> queryValuesFromOnCondition(CondType condition, const QueryJoinEntry&, const JoinedSelector&,
-																 const CollateOpts&);
+	std::pair<CondType, VariantArray> queryValuesFromOnCondition(CondType condition, const QueryJoinEntry&,
+																 const joins::ItemsProcessor& joinItemsProcessor, const CollateOpts&);
 	void checkStrictMode(const QueryField&) const;
 	void checkAllowedCondition(const QueryField&, CondType) const;
 	int calculateMaxIterations(size_t from, size_t to, int maxMaxIters, std::span<int>& maxIterations, bool inTransaction,
@@ -184,7 +183,7 @@ private:
 	bool containsJoin(size_t) noexcept;
 
 	template <typename JS>
-	size_t briefDump(size_t from, size_t to, const std::vector<JS>& joinedSelectors, WrSerializer& ser) const;
+	size_t briefDump(size_t from, size_t to, const std::vector<JS>& joinItemsProcessors, WrSerializer& ser) const;
 
 	NamespaceImpl& ns_;
 	const Query& query_;

@@ -207,7 +207,5 @@ protected:
 	friend class CoroTransaction;
 };
 
-void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser);
-
 }  // namespace client
 }  // namespace reindexer

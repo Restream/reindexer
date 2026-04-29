@@ -33,7 +33,6 @@ void TransactionConcurrentInserter::operator()(const TransactionContext& ctx) no
 #define kThreadErrorFormat "[{}] Unable to concurrently index item: '{}'"
 
 void TransactionConcurrentInserter::threadFn(std::atomic<size_t>& nextId, const TransactionContext& ctx) noexcept {
-	VariantArray krefs, skrefs;
 	const PayloadType pt(ns_.payloadType_);
 
 	for (size_t i = nextId.fetch_add(1, std::memory_order_relaxed); i < ctx.Buckets(); i = nextId.fetch_add(1, std::memory_order_relaxed)) {
@@ -42,17 +41,20 @@ void TransactionConcurrentInserter::threadFn(std::atomic<size_t>& nextId, const 
 				assertrx_dbg(field > 0);
 				assertrx_dbg(field < size_t(ns_.indexes_.firstCompositePos()));
 				assertrx_dbg(dynamic_cast<FloatVectorIndex*>(ns_.indexes_[field].get()));
+				const auto id = vec->id;
+				Payload pl(pt, ns_.items_[id.RowId()]);
+				if (pl.GetFieldLen(field) <= id.ArrayIndex()) {
+					// if in intermediate transaction step the array is longer than in the result version, then skip its tail
+					continue;
+				}
 				auto& idx = *static_cast<FloatVectorIndex*>(ns_.indexes_[field].get());
-				krefs.resize(0);
 				bool needClearCache{false};
-				const IdType id = vec->id;
-				krefs.emplace_back(idx.UpsertConcurrent(Variant{ConstFloatVectorView{vec->vec}, Variant::noHold}, id, needClearCache));
-				assertrx(ns_.items_.exists(id));
-				Payload pl(pt, ns_.items_[id.ToNumber()]);
-				pl.Set(field, krefs);
+				auto value = idx.UpsertConcurrent(Variant{ConstFloatVectorView{vec->vec}, Variant::noHold}, id, needClearCache);
+				assertrx(ns_.items_.exists(id.RowId()));
+				pl.Set(field, id.ArrayIndex(), value);
 			} catch (std::exception& e) {
 				// TODO: Probably this error handling should be improved. Currently assuming that it's better to crash, than loss data
-				// Possible solution is to set an empty vector view and throw exception, but we do nos support empty vector view currently
+				// Possible solution is to set an empty vector view and throw exception, but we do not support empty vector view currently
 				// (those views will crash on assertion at any call)
 				assertf(false, kThreadErrorFormat, ns_.name_, e.what());
 				logFmt(LogError, kThreadErrorFormat, ns_.name_, e.what());

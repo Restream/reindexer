@@ -1,5 +1,6 @@
 #include "core/keyvalue/float_vectors_keeper.h"
 #include "core/index/float_vector/float_vector_index.h"
+#include "core/keyvalue/float_vector.h"
 
 namespace reindexer {
 
@@ -32,7 +33,7 @@ void FloatVectorsKeeper::Deregister(const KeeperTag& tag) noexcept {
 	tag.Get()->deleted = true;
 }
 
-void FloatVectorsKeeper::Remove(IdType id) {
+void FloatVectorsKeeper::Remove(FloatVectorId id) {
 	lock_guard lock(lock_);
 
 	auto itVector = map_.find(id);

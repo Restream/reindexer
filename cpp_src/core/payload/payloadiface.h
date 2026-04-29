@@ -4,6 +4,7 @@
 #include <type_traits>
 #include "core/cjson/tagsmatcher.h"
 #include "core/indexopts.h"
+#include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/variant.h"
 #include "fieldsset.h"
 #include "payload_checksum.h"
@@ -44,12 +45,15 @@ public:
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 		return std::span<const Elem>(reinterpret_cast<const Elem*>(v_->Ptr() + arr->offset), arr->len);
 	}
-	// Get array len
-	int GetArrayLen(int field) const {
+	// Get array len or 1
+	size_t GetFieldLen(int field) const {
 		assertrx(field < Type().NumFields());
-		assertrx(Type().Field(field).IsArray());
-		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		return arr->len;
+		if (Type().Field(field).IsArray()) {
+			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
+			return arr->len;
+		} else {
+			return 1;
+		}
 	}
 	// Get array or scalar as span of typed elements
 	template <typename Elem>
@@ -67,7 +71,6 @@ public:
 
 	// Resize array (grow)
 	// return index of 1-st position
-	// template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
 	int ResizeArray(int field, int grow, Append);
 
 	// Set element or array by field index
@@ -143,7 +146,8 @@ public:
 	size_t GetFieldSize(const FieldsSet& fields) const;
 	size_t GetFieldSize(std::string_view jsonPath, const TagsMatcher& tagsMatcher) const;
 	Variant GetComposite(const FieldsSet&, const h_vector<KeyValueType, 4>& expectedTypes) const;
-	VariantArray GetIndexedArrayData(const IndexedTagsPath& jsonPath, int field, int& offset, int& size) const;
+	void GetIndexedArrayParams(const IndexedTagsPath& jsonPath, int field, bool isFloatVectorIndex, int& offset, int& size) const;
+	VariantArray GetIndexedArrayData(const IndexedTagsPath& jsonPath, int field, bool isFloatVectorIndex, int& offset, int& size) const;
 	// very heavy, parse cjson
 	bool ContainsMultidimensionalArray(const FieldsFilter&) const;
 
@@ -165,7 +169,7 @@ public:
 	// Compare is EQ by field mask
 	bool IsEQ(const T& other, const FieldsSet& fields) const;
 	// Get hash of all document
-	PayloadChecksum GetChecksum(const std::function<uint64_t(unsigned int, ConstFloatVectorView)>& getVectorHashF) const noexcept;
+	PayloadChecksum GetChecksum(const std::function<uint64_t(unsigned int, ConstFloatVectorView, unsigned)>& getVectorHashF) const noexcept;
 
 	// Compare single field (indexed or non-indexed)
 	template <WithString, NotComparable, NullsHandling>

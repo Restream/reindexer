@@ -1,11 +1,17 @@
 #include <stdlib.h>
+#include <type_traits>
 
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/cjsontools.h"
-#include "core/cjson/field_size_evaluator.h"
+#include "core/cjson/fields_explorer/field_array_analizer.h"
+#include "core/cjson/fields_explorer/field_size_evaluator.h"
+#include "core/cjson/fields_explorer/fields_array_value_extractor.h"
+#include "core/cjson/fields_explorer/fields_value_extractor.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/multidimensional_array_checker.h"
+#include "core/key_value_type.h"
+#include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/stringsholder.h"
@@ -89,7 +95,7 @@ Variant PayloadIface<T>::get(int field, int idx, HoldT h) const {
 	const auto& fieldType = t_.Field(field);
 	if (fieldType.IsArray()) {
 		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), fieldType.Name(), idx, arr->len);
+		assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} >= len {}", Type().Name(), fieldType.Name(), idx, arr->len);
 
 		PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * fieldType.ElemSizeof());
 		return pv.Get(h);
@@ -134,8 +140,8 @@ void PayloadIface<T>::getByJsonPath(const P& path, VariantArray& krefs, KeyValue
 	}
 	const auto filter = FieldsFilter::FromPath(path);
 	ConstPayload pl(t_, *v_);
-	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	FieldsExtractor extractor(krefs, expectedType, path);
+	BaseEncoder<cjson::FieldsValueExtractor> encoder(nullptr, &filter);
+	cjson::FieldsValueExtractor extractor(path, krefs, expectedType);
 	encoder.Encode(pl, extractor);
 }
 
@@ -179,10 +185,10 @@ size_t PayloadIface<T>::getFieldSize(const P& path) const {
 
 	size_t fieldSize = 0;
 	const auto filter{FieldsFilter::FromPath(path)};
-	FieldSizeEvaluator sizeEvaluator{path, fieldSize};
+	cjson::FieldSizeEvaluator sizeEvaluator{path, fieldSize};
 
 	ConstPayload pl{t_, *v_};
-	BaseEncoder<FieldSizeEvaluator> encoder{nullptr, &filter};
+	BaseEncoder<cjson::FieldSizeEvaluator> encoder{nullptr, &filter};
 	encoder.Encode(pl, sizeEvaluator);
 	return fieldSize;
 }
@@ -200,11 +206,15 @@ size_t PayloadIface<T>::GetFieldSize(const FieldsSet& fields) const {
 	} else {
 		const auto& field{t_.Field(fields[0])};
 		if (field.IsFloatVector()) {
-			const auto value{Get(fields[0], 0)};
-			return ConstFloatVectorView(value).Dimension().Value();
+			size_t res = 0;
+			const auto field = fields[0];
+			for (size_t i = 0, s = GetFieldLen(field); i < s; ++i) {
+				res += ConstFloatVectorView{Get(field, i)}.Dimension().Value();
+			}
+			return res;
 		}
 		if (field.IsArray()) {
-			return GetArrayLen(fields[0]);
+			return GetFieldLen(fields[0]);
 		}
 		return 1;
 	}
@@ -246,28 +256,47 @@ Variant PayloadIface<T>::GetComposite(const FieldsSet& fields, const h_vector<Ke
 			throw Error(errParams, "Ambiguous composite value: it contains array with multiple values");
 		}
 	}
-	return Variant{buffer};
+	return (buffer.size() <= 1) ? buffer[0] : Variant{buffer};
 }
 
 template <typename T>
-VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath& tagsPath, int field, int& offset, int& size) const {
+VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath& tagsPath, int field, bool isFloatVectorIndex, int& offset,
+												  int& size) const {
+	if (tagsPath.empty()) [[unlikely]] {
+		throw Error(errParams, "GetIndexedArrayData(): tagsPath shouldn't be empty!");
+	}
+	if (field < 0 || field >= kMaxIndexes) [[unlikely]] {
+		throw Error(errParams, "GetIndexedArrayData(): field must be a valid index number");
+	}
+	const auto filter = isFloatVectorIndex ? FieldsFilter::FromVectorPath(tagsPath) : FieldsFilter::FromPath(tagsPath);
+	offset = -1;
+	size = -1;
+	typename cjson::FieldArrayAnalizer::FieldParams params{.index = offset, .length = size, .field = field};
+	ConstPayload pl(t_, *v_);
+	VariantArray values;
+	BaseEncoder<cjson::FieldsArrayValueExtractor> encoder(nullptr, &filter);
+	cjson::FieldsArrayValueExtractor extractor(tagsPath, values, KeyValueType::Undefined{}, params);
+	encoder.Encode(pl, extractor);
+	return values;
+}
+
+template <typename T>
+void PayloadIface<T>::GetIndexedArrayParams(const IndexedTagsPath& tagsPath, int field, bool isFloatVectorIndex, int& offset,
+											int& size) const {
 	if (tagsPath.empty()) {
 		throw Error(errParams, "GetIndexedArrayData(): tagsPath shouldn't be empty!");
 	}
 	if (field < 0 || field >= kMaxIndexes) {
 		throw Error(errParams, "GetIndexedArrayData(): field must be a valid index number");
 	}
-	VariantArray values;
-	const auto filter = FieldsFilter::FromPath(tagsPath);
-	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
+	const auto filter = isFloatVectorIndex ? FieldsFilter::FromVectorPath(tagsPath) : FieldsFilter::FromPath(tagsPath);
 	offset = -1;
 	size = -1;
-	FieldsExtractor::FieldParams params{.index = offset, .length = size, .field = field};
-	FieldsExtractor extractor(values, KeyValueType::Undefined{}, tagsPath, &params);
-
+	typename cjson::FieldArrayAnalizer::FieldParams params{.index = offset, .length = size, .field = field};
 	ConstPayload pl(t_, *v_);
+	BaseEncoder<cjson::FieldArrayAnalizer> encoder(nullptr, &filter);
+	cjson::FieldArrayAnalizer extractor(tagsPath, params);
 	encoder.Encode(pl, extractor);
-	return values;
 }
 
 template <typename T>
@@ -294,12 +323,16 @@ template <typename U, typename std::enable_if<!std::is_const<U>::value>::type*>
 void PayloadIface<T>::Set(int field, int idx, const Variant& v) {
 	assertrx(idx >= 0);
 	const auto& fieldType = t_.Field(field);
-	assertrx(fieldType.IsArray());
-	const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-	const auto elemSize = fieldType.ElemSizeof();
-	assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), fieldType.Name(), idx, arr->len);
-	PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * elemSize);
-	pv.Set(v);
+	if (fieldType.IsArray()) {
+		const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
+		const auto elemSize = fieldType.ElemSizeof();
+		assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), fieldType.Name(), idx, arr->len);
+		PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * elemSize);
+		pv.Set(v);
+	} else {
+		assertrx(idx == 0);
+		Field(field).Set(v);
+	}
 }
 
 template <>
@@ -373,10 +406,10 @@ void PayloadIface<T>::SerializeFields(WrSerializer& ser, const FieldsSet& fields
 				const TagsPath& tagsPath = fields.getTagsPath(tagPathIdx);
 				GetByJsonPath(tagsPath, varr, KeyValueType::Undefined{});
 			}
-			if (varr.empty()) {
+			if (varr.empty()) [[unlikely]] {
 				throw Error(errParams, "PK serializing error: field [{}] cannot not be empty", fields.getJsonPath(tagPathIdx));
 			}
-			if (varr.size() > 1) {
+			if (varr.size() > 1) [[unlikely]] {
 				throw Error(errParams, "PK serializing error: field [{}] cannot not be array", fields.getJsonPath(tagPathIdx));
 			}
 			ser.PutVariant(varr[0]);
@@ -513,7 +546,7 @@ size_t PayloadIface<T>::GetHash(const FieldsSet& fields) const {
 // Get complete hash
 template <typename T>
 PayloadChecksum PayloadIface<T>::GetChecksum(
-	const std::function<uint64_t(unsigned int, ConstFloatVectorView)>& getVectorHashF) const noexcept {
+	const std::function<uint64_t(unsigned int, ConstFloatVectorView, unsigned)>& getVectorHashF) const noexcept {
 	PayloadChecksum ret;
 	for (int field = 0, fields = t_.NumFields(); field < fields; ++field) {
 		ret.hashV1 <<= 1;
@@ -521,7 +554,17 @@ PayloadChecksum PayloadIface<T>::GetChecksum(
 		const auto& f = t_.Field(field);
 		auto fv = Field(field);
 		if (f.Type().IsSame(KeyValueType::FloatVector{})) {
-			ret ^= getVectorHashF(unsigned(field), ConstFloatVectorView(fv.Get()));
+			if (f.IsArray()) {
+				auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(fv.p_);
+				ret ^= arr->len;
+				uint8_t* p = v_->Ptr() + arr->offset;
+				for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
+					ret = ret.Rotl(13);
+					ret ^= getVectorHashF(unsigned(field), ConstFloatVectorView{PayloadFieldValue(f, p).Get()}, i);
+				}
+			} else {
+				ret ^= getVectorHashF(unsigned(field), ConstFloatVectorView(fv.Get()), 0);
+			}
 		} else if (f.IsArray()) {
 			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(fv.p_);
 			ret ^= arr->len;
@@ -746,15 +789,48 @@ void PayloadIface<T>::setArray(int field, const VariantArray& keys, Append appen
 		return;
 	}
 
-	int pos = ResizeArray(field, keys.size(), append);
-	const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 	auto& fieldType = t_.Field(field);
+	const auto fieldTypeKVT = fieldType.Type();
+	const bool checkFloatVectorDimension = fieldTypeKVT.template Is<KeyValueType::FloatVector>();
+
+	// Hot path: everything is already in field type, so no extra allocations are required.
+	size_t firstToPrepare = keys.size();
+	for (size_t i = 0; i < keys.size(); ++i) {
+		const Variant& kv = keys[i];
+		if (!kv.Type().IsSame(fieldTypeKVT)) [[unlikely]] {
+			firstToPrepare = i;
+			break;
+		}
+		if (checkFloatVectorDimension) [[unlikely]] {
+			PayloadFieldValue::CheckFloatVectorDimension(fieldType, kv);
+		}
+	}
+
+	// Slow path: conversion required. Convert only the suffix starting from the first mismatch
+	// and keep payload unchanged until every required conversion succeeds.
+	h_vector<Variant, 16> converted;
+	if (firstToPrepare != keys.size()) {
+		converted.reserve(keys.size() - firstToPrepare);
+		for (size_t i = firstToPrepare; i < keys.size(); ++i) {
+			converted.emplace_back(PayloadFieldValue::PrepareValueForField(fieldType, Variant{keys[i]}));
+		}
+	}
+
+	int pos = ResizeArray(field, int(keys.size()), append);
+	const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
 	const auto elemSize = fieldType.ElemSizeof();
 	auto arrElemPtr = v_->Ptr() + arr->offset + pos * elemSize;
-	for (const Variant& kv : keys) {
+
+	auto writeValue = [&](const Variant& kv) noexcept {
 		PayloadFieldValue pv(fieldType, arrElemPtr);
 		arrElemPtr += elemSize;
-		pv.Set(kv);
+		pv.SetPrechecked(kv);
+	};
+	for (size_t i = 0; i < firstToPrepare; ++i) {
+		writeValue(keys[i]);
+	}
+	for (const Variant& kv : converted) {
+		writeValue(kv);
 	}
 }
 

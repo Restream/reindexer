@@ -3,7 +3,8 @@
 #include "core/namespace/asyncstorage.h"
 #include "core/storage/storage_prefixes.h"
 #include "tools/logger.h"
-#include "tools/serializer.h"
+#include "tools/serilize/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 
@@ -46,7 +47,12 @@ lsn_t WALTracker::FirstLSN() const noexcept {
 	if (counter == 0) {
 		return lsn_t();
 	}
-	return lsn_t(counter - size(), records_[walOffset_].server);
+	try {
+		return lsn_t(counter - size(), records_[walOffset_].server);
+	} catch (const std::exception& e) {
+		assertf(false, "Error getting First LSN: {}", e.what());
+		std::abort();
+	}
 }
 
 lsn_t WALTracker::LSNByOffset(int64_t offset) const noexcept {
@@ -57,7 +63,12 @@ lsn_t WALTracker::LSNByOffset(int64_t offset) const noexcept {
 	if (counter == 0) {
 		return lsn_t();
 	}
-	return lsn_t(counter - offset, records_[(counter - offset) % walSize_].server);
+	try {
+		return lsn_t(counter - offset, records_[(counter - offset) % walSize_].server);
+	} catch (const std::exception& e) {
+		assertf(false, "Error getting LSN by offset: {}", e.what());
+		std::abort();
+	}
 }
 
 bool WALTracker::Resize(int64_t sz) {

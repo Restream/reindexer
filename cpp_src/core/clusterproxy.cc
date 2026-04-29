@@ -790,7 +790,7 @@ Error ClusterProxy::itemFollowerAction(const RdxContext& ctx, LeaderRefT clientT
 
 		client::Item clientItem = clientToLeader->NewItem(nsName);
 		if (clientItem.Status().ok()) {
-			auto jsonData = item.impl_->GetCJSON(true);
+			auto jsonData = item.impl_->GetCJSON(WithTagsMatcher_True);
 			err = clientItem.FromCJSON(jsonData);
 			if (!err.ok()) {
 				return err;
@@ -852,7 +852,7 @@ Error ClusterProxy::resultItemFollowerAction(const RdxContext& ctx, LeaderRefT c
 		if (!clientItem.Status().ok()) {
 			return clientItem.Status();
 		}
-		auto jsonData = item.impl_->GetCJSON(true);
+		auto jsonData = item.impl_->GetCJSON(WithTagsMatcher_True);
 		err = clientItem.FromCJSON(jsonData);
 		if (!err.ok()) {
 			return err;

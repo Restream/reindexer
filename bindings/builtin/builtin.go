@@ -104,10 +104,8 @@ func init() {
 }
 
 func str2c(str string) C.reindexer_string {
-	var p unsafe.Pointer
-	p = unsafe.Pointer(unsafe.StringData(str))
 	return C.reindexer_string{
-		p: p,
+		p: unsafe.Pointer(unsafe.StringData(str)),
 		n: C.int(len(str)),
 	}
 }
@@ -533,7 +531,7 @@ func (binding *Builtin) DeleteMeta(ctx context.Context, namespace, key string) e
 	return err2go(C.reindexer_delete_meta(binding.rx, str2c(namespace), str2c(key), ctxInfo.cCtx))
 }
 
-func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
 		return nil, err
 	} else if withLimiter {
@@ -546,7 +544,7 @@ func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, p
 	}
 	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
 
-	return ret2go(C.reindexer_select(binding.rx, str2c(query), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions)), ctxInfo.cCtx))
+	return ret2go(C.reindexer_select(binding.rx, str2c(query), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&tmVersions[0])), C.int(len(tmVersions)), ctxInfo.cCtx))
 }
 func (binding *Builtin) BeginTx(ctx context.Context, namespace string) (txCtx bindings.TxCtx, err error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
@@ -587,7 +585,7 @@ func (binding *Builtin) RollbackTx(txCtx *bindings.TxCtx) error {
 	return err2go(C.reindexer_rollback_transaction(binding.rx, C.uintptr_t(txID)))
 }
 
-func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
 		return nil, err
 	} else if withLimiter {
@@ -600,7 +598,7 @@ func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson boo
 	}
 	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
 
-	return ret2go(C.reindexer_select_query(binding.rx, buf2c(data), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions)), ctxInfo.cCtx))
+	return ret2go(C.reindexer_select_query(binding.rx, buf2c(data), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&tmVersions[0])), C.int(len(tmVersions)), ctxInfo.cCtx))
 }
 
 func (binding *Builtin) DeleteQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
@@ -619,7 +617,7 @@ func (binding *Builtin) DeleteQuery(ctx context.Context, data []byte) (bindings.
 	return ret2go(C.reindexer_delete_query(binding.rx, buf2c(data), ctxInfo.cCtx))
 }
 
-func (binding *Builtin) UpdateQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
+func (binding *Builtin) UpdateQuery(ctx context.Context, data []byte, tmVersions []int32) (bindings.RawBuffer, error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
 		return nil, err
 	} else if withLimiter {
@@ -632,7 +630,7 @@ func (binding *Builtin) UpdateQuery(ctx context.Context, data []byte) (bindings.
 	}
 	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
 
-	return ret2go(C.reindexer_update_query(binding.rx, buf2c(data), ctxInfo.cCtx))
+	return ret2go(C.reindexer_update_query(binding.rx, buf2c(data), (*C.int32_t)(unsafe.Pointer(&tmVersions[0])), C.int(len(tmVersions)), ctxInfo.cCtx))
 }
 
 // CGoLogger logger function for C

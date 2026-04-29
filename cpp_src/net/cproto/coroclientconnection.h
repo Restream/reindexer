@@ -7,7 +7,7 @@
 #include "cproto.h"
 #include "net/manualconnection.h"
 #include "tools/lsn.h"
-#include "tools/serializer.h"
+#include "tools/serilize/serializer.h"
 #include "urlparser/urlparser.h"
 
 namespace reindexer {

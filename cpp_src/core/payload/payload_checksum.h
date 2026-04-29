@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <cstdint>
 
 namespace reindexer {
@@ -15,6 +16,8 @@ struct [[nodiscard]] PayloadChecksum {
 		hashV1 ^= v;
 		hashV2 ^= v;
 	}
+	PayloadChecksum Rotl(unsigned v) const noexcept { return {std::rotl(hashV1, v), std::rotl(hashV2, v)}; }
+
 	bool operator==(const PayloadChecksum&) const noexcept = default;
 };
 

@@ -33,7 +33,8 @@ While using docker, you may pass reindexer server config options via environment
 - `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
 - `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is 0 (timeout disabled).
 - `RX_DISABLE_NS_LEAK` - disables intended namespaces memory leak on database destruction (will slow down server's termination). Usually, there are no reasons to change this value.
-- `RX_MAX_HTTP_REQ` - max HTTP-request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
+- `RX_MAX_HTTP_REQ` - max HTTP-request size (in bytes). Default value is `8388608` (= 8 MB). `0` means 'unlimited'.
+- `RX_MAX_HTTP_RSP` - max HTTP-response size (in bytes). Default value is `1073741824` (= 1 GB). `0` means 'unlimited'.
 - `RX_HTTP_READ_TIMEOUT` - execution timeout for HTTP read operations (in seconds). `0` means no timeout. Default value is `0`.
 - `RX_HTTP_WRITE_TIMEOUT` - execution timeout for HTTP write operations (in seconds). Write timeout is useful for RAFT clusters to avoid requests hanging when Reindexer does not have consensus. `0` means no timeout. Default value is `60`.
 - `RX_SSL_CERT` - path to ssl-certificate file. If it is not set Reindexer will be launched without TLS support.

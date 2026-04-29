@@ -10,6 +10,8 @@ public:
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 		nsdef_.AddIndex("int_array_index1", "hash", "int", IndexOpts().Array());
 		nsdef_.AddIndex("int_array_index2", "hash", "int", IndexOpts().Array());
+		nsdef_.AddIndex("int_array_index_md1", {"array1.int_in_obj1"}, "hash", "int", IndexOpts().Array());
+		nsdef_.AddIndex("int_array_index_md2", {"array1.int_in_obj2"}, "hash", "int", IndexOpts().Array());
 	}
 
 	void RegisterAllCases();

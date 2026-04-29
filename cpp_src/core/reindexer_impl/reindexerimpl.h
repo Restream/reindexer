@@ -52,7 +52,7 @@ class PrecomputedValues;
 class [[nodiscard]] ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<timed_mutex, MutexMark::ReindexerStats>;
-	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
+	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg arg, Args&&... args);
 	template <auto MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg&&, Args&&...);

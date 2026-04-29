@@ -382,7 +382,7 @@ static int jsonParse(std::span<char> str, char** endptr, JsonValue* value, JsonA
 }
 
 JsonNode* JsonNode::toNode() const {
-	if (empty() || value.getTag() == JsonTag::JSON_NULL) {
+	if (isEmpty() || value.getTag() == JsonTag::JSON_NULL) {
 		return nullptr;
 	}
 	if (value.getTag() != JsonTag::OBJECT && value.getTag() != JsonTag::ARRAY) {
@@ -400,8 +400,8 @@ const JsonNode& JsonNode::operator[](std::string_view key) const {
 			return v;
 		}
 	}
-	static const JsonNode empty_node = JsonNode::Empty();
-	return empty_node;
+	static const JsonNode emptyNode = JsonNode::EmptyNode();
+	return emptyNode;
 }
 
 const JsonNode& JsonNode::findCaseInsensitive(std::string_view key) const {
@@ -414,12 +414,11 @@ const JsonNode& JsonNode::findCaseInsensitive(std::string_view key) const {
 			return v;
 		}
 	}
-	static JsonNode empty_node = JsonNode::Empty();
-	return empty_node;
+	static JsonNode emptyNode = JsonNode::EmptyNode();
+	return emptyNode;
 }
 
-// TODO: Remove NOLINT after pyreindexer update. Issue #1736
-JsonNode JsonNode::EmptyNode() noexcept { return {{JsonTag::EMPTY}, nullptr, {}}; }	 // NOLINT(*EnumCastOutOfRange)
+JsonNode JsonNode::EmptyNode() noexcept { return {{JsonTag::EMPTY}, nullptr, {}}; }
 
 JsonNode JsonParser::Parse(std::span<char> str, size_t* length) & {
 	largeStrings_->clear();

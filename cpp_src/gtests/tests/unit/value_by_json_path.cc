@@ -4,6 +4,13 @@
 #include "core/payload/payloadiface.h"
 #include "reindexer_api.h"
 
+using reindexer::PayloadType;
+using reindexer::PayloadFieldType;
+using reindexer::Payload;
+using reindexer::PayloadValue;
+using reindexer::KeyValueType;
+using reindexer::VariantArray;
+
 TEST_F(ReindexerApi, GetValueByJsonPath) {
 	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	rt.AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
@@ -411,4 +418,47 @@ TEST_F(ReindexerApi, GetFieldSizeByJsonPath) {
 		EXPECT_EQ(pv.GetFieldSize("items2.obj3.obj4.items.obj5", tm), 4);
 		EXPECT_EQ(pv.GetFieldSize("items2.obj3.obj4.items.obj5.array3", tm), 7);
 	}
+}
+
+TEST_F(ReindexerApi, PayloadSetArrayErrorsHandling) {
+	PayloadType pt("test");
+	pt.Add(PayloadFieldType(KeyValueType::Int{}, "int_array_1", {"int_array_1"}, reindexer::IsArray_True));
+	pt.Add(PayloadFieldType(KeyValueType::Int{}, "int_array_2", {"int_array_2"}, reindexer::IsArray_True));
+	PayloadValue pv(pt.TotalSize());
+	Payload pl(pt, pv);
+	const VariantArray invalidArray = VariantArray::Create(123, "10", "unconvertible");
+	const VariantArray validArray = VariantArray::Create(5, 6);
+	const VariantArray unaffectedArray = VariantArray::Create(1, 2, 3);
+	VariantArray validArrayConverted(validArray.size());
+	for (size_t i = 0; i < validArray.size(); ++i) {
+		validArrayConverted[i] = validArray[i].convert(KeyValueType::Int{});
+	}
+
+	// Attempt to set invalid content
+	EXPECT_THROW(pl.Set(0, invalidArray), Error);
+	VariantArray out;
+	pl.Get(0, out);
+	// Value was not changed
+	EXPECT_TRUE(out.empty());
+	EXPECT_TRUE(out.IsArrayValue());
+
+	// Set valid content
+	pl.Set(0, validArray);
+	out.Clear();
+	pl.Get(0, out);
+	// Value was changed
+	EXPECT_EQ(out, validArrayConverted);
+
+	// Set one more field
+	pl.Set(1, unaffectedArray);
+
+	// Attempt to set invalid content once again
+	EXPECT_THROW(pl.Set(0, invalidArray), Error);
+	// Values were not changed
+	out.Clear();
+	pl.Get(0, out);
+	EXPECT_EQ(out, validArrayConverted);
+	out.Clear();
+	pl.Get(1, out);
+	EXPECT_EQ(out, unaffectedArray);
 }

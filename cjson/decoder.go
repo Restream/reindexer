@@ -351,20 +351,26 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	k := v.Kind()
 
 	offset := 0
+	var sliceV reflect.Value
 	switch k {
 	case reflect.Slice:
 		offset = mkSlice(v, count)
-		ptr = unsafe.Pointer(v.Pointer())
+		sliceV = *v
 	case reflect.Interface:
 		origV = *v
 		*v = reflect.ValueOf(reflect.New(ifaceSliceType).Interface()).Elem()
+		defer func() {
+			origV.Set(*v)
+			*v = origV
+		}()
 		offset = mkSlice(v, count)
-		ptr = unsafe.Pointer(v.Pointer())
+		sliceV = *v
 	case reflect.Array:
 		if v.Len() < count {
 			panic(fmt.Errorf("array bounds overflow. Required %d, but array len is %d", count, v.Len()))
 		}
-		ptr = unsafe.Pointer(v.Index(0).Addr().Pointer())
+		// Slice() creates a view backed by the array, so writes affect the original array.
+		sliceV = v.Slice(0, v.Len())
 		// offset is 0
 		// No concatenation for the fixed size arrays
 	default:
@@ -378,6 +384,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	if count == 0 {
 		return
 	}
+	ptr = sliceV.UnsafePointer()
 
 	if subtag != TAG_OBJECT {
 		k := v.Type().Elem().Kind()
@@ -591,10 +598,6 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			dec.decodeValue(pl, rdser, v.Index(i), fieldsoutcnt, cctagsPath)
 		}
 	}
-	if k == reflect.Interface {
-		origV.Set(*v)
-		*v = origV
-	}
 }
 
 func (dec *Decoder) tryToAddNewTag(cctagsPathStr string, cctagsPath []int16, v reflect.Value, name string, idx **[]int) {
@@ -789,15 +792,18 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				panic(fmt.Errorf("can not convert 'string' to '%s'", v.Type().Kind().String()))
 			}
 		default:
-			if k == reflect.Slice {
+			switch k {
+			case reflect.Slice:
 				el := reflect.New(v.Type().Elem()).Elem()
 				extSlice := reflect.Append(v, el)
 				v.Set(extSlice)
 				v = v.Index(v.Len() - 1)
 				k = v.Type().Kind()
-			} else if k == reflect.Array {
+			case reflect.Array:
 				panic(fmt.Errorf("can not put single value into the fixed size array"))
+			default:
 			}
+
 			switch k {
 			case reflect.Float32, reflect.Float64:
 				v.SetFloat(asFloat(rdser, ctagType))

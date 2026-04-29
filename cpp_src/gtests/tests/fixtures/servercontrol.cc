@@ -419,7 +419,7 @@ void ServerControl::Interface::Init() {
 		y["net"]["ssl_key"] = reindexer::fs::JoinPath(TLSPath(), kDefaultSSLKeyFile);
 	}
 	if (config_.maxUpdatesSize) {
-		y["net"]["maxupdatessize"] = config_.maxUpdatesSize;
+		y["net"]["max_updates_size"] = config_.maxUpdatesSize;
 	}
 	if (config_.asServerProcess) {
 		try {

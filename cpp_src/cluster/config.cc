@@ -7,7 +7,7 @@
 #include "gason/gason.h"
 #include "tools/catch_and_return.h"
 #include "tools/jsontools.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
 #include "vendor/urlparser/urlparser.h"
 #include "yaml-cpp/yaml.h"
@@ -152,7 +152,7 @@ void AsyncReplNodeConfig::FromJSON(const gason::JsonNode& root) {
 	dsn_ = std::move(tmpDsn);
 	{
 		auto& node = root["namespaces"];
-		if (!node.empty()) {
+		if (!node.isEmpty()) {
 			NsNamesHashSetT nss;
 			for (auto& objNode : node) {
 				nss.emplace(objNode.As<std::string>());
@@ -768,7 +768,7 @@ Error ShardingConfig::Key::FromJSON(const gason::JsonNode& root, KeyValueType& v
 		shardId = root["shard_id"].As<int>();
 		values.clear();
 		const auto& valuesNode = root["values"];
-		if (!valuesNode.empty()) {
+		if (!valuesNode.isEmpty()) {
 			algorithmType = ByValue;
 			for (const auto& vNode : valuesNode) {
 				try {

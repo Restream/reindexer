@@ -65,6 +65,17 @@ func randVect(dimension int) []float32 {
 	return result
 }
 
+func randVectArr(cnt int, dimension int) [][]float32 {
+	if cnt == 0 {
+		return nil
+	}
+	arr := make([][]float32, 0, cnt)
+	for j := 0; j < cnt; j++ {
+		arr = append(arr, randVect(dimension))
+	}
+	return arr
+}
+
 func randDevice() string {
 	return devices[rand.Int()%len(devices)]
 }
@@ -84,8 +95,34 @@ func randFloat(min int, max int) float64 {
 	return float64(rand.Intn(max-min)+min) / float64(divider)
 }
 
+func randFloat64Arr(cnt int, min int, max int) (arr []float64) {
+	if cnt == 0 {
+		return nil
+	}
+	arr = make([]float64, 0, cnt)
+	for j := 0; j < cnt; j++ {
+		arr = append(arr, randFloat(min, max))
+	}
+	return arr
+}
+
 func randPoint() reindexer.Point {
 	return reindexer.Point{randFloat(-10, 10), randFloat(-10, 10)}
+}
+
+func randBool() bool {
+	return rand.Int()%2 != 0
+}
+
+func randBoolArr(cnt int) (arr []bool) {
+	if cnt == 0 {
+		return nil
+	}
+	arr = make([]bool, 0, cnt)
+	for j := 0; j < cnt; j++ {
+		arr = append(arr, randBool())
+	}
+	return arr
 }
 
 func randIntArr(cnt int, start int, rng int) (arr []int) {
@@ -106,6 +143,17 @@ func randInt32Arr(cnt int, start int, rng int) (arr []int32) {
 	arr = make([]int32, 0, cnt)
 	for j := 0; j < cnt; j++ {
 		arr = append(arr, int32(start+rand.Int()%rng))
+	}
+	return arr
+}
+
+func randInt64Arr(cnt int, start int, rng int) (arr []int64) {
+	if cnt == 0 {
+		return nil
+	}
+	arr = make([]int64, 0, cnt)
+	for j := 0; j < cnt; j++ {
+		arr = append(arr, int64(start+rand.Int()%rng))
 	}
 	return arr
 }

@@ -2,7 +2,8 @@
 
 #include "core/keyvalue/variant.h"
 #include "tools/masking.h"
-#include "tools/serializer.h"
+#include "tools/serilize/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 namespace net {

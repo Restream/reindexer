@@ -49,6 +49,7 @@ RX_ALWAYS_INLINE int64_t zigzag_decode64(uint64_t n) noexcept {
 inline size_t uint32_pack(uint32_t value, uint8_t* out) noexcept {
 	size_t rv = 0;
 	if (value >= 0x80) {
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		out[rv++] = value | 0x80;
 		value >>= 7;
 		if (value >= 0x80) {
@@ -65,6 +66,7 @@ inline size_t uint32_pack(uint32_t value, uint8_t* out) noexcept {
 		}
 	}
 	// assert: value<128
+	// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 	out[rv++] = value;
 	return rv;
 }

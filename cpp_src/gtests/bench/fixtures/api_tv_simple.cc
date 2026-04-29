@@ -2,7 +2,7 @@
 #include <thread>
 #include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/nsselecter/joinedselector.h"
+#include "core/nsselecter/joins/items_processor.h"
 #include "core/queryresults/queryresults.h"
 #include "helpers.h"
 #include "tools/string_regexp_functions.h"
@@ -51,7 +51,7 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this)->Iterations(k0CondJoinIters);
 	Register("Query0CondInnerJoinUnlimitLowSelectivity", &ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity, this)
 		->Iterations(k0CondJoinIters);
-	Register("Query0CondInnerJoinPreResultStoreValues", &ApiTvSimple::Query0CondInnerJoinPreResultStoreValues, this)
+	Register("Query0CondInnerJoinPreResultStoreValues", &ApiTvSimple::Query0CondInnerPreSelectStoreValues, this)
 		->Iterations(k0CondJoinIters);
 	Register("InnerJoinInjectConditionFromMain", &ApiTvSimple::InnerJoinInjectConditionFromMain, this);
 	Register("InnerJoinRejectInjection", &ApiTvSimple::InnerJoinRejectInjection, this);
@@ -136,11 +136,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 		.AddIndex("str_ft_coll_none", "text", "string", IndexOpts())
 		.AddIndex("str_ft_coll_ascii", "text", "string", IndexOpts(0, CollateASCII))
 		.AddIndex("str_ft_coll_utf8", "text", "string", IndexOpts(0, CollateUTF8))
-		.AddIndex("str_ft_coll_num", "text", "string", IndexOpts(0, CollateNumeric))
-		.AddIndex("str_fuzzy_coll_none", "fuzzytext", "string", IndexOpts())
-		.AddIndex("str_fuzzy_coll_ascii", "fuzzytext", "string", IndexOpts(0, CollateASCII))
-		.AddIndex("str_fuzzy_coll_utf8", "fuzzytext", "string", IndexOpts(0, CollateUTF8))
-		.AddIndex("str_fuzzy_coll_num", "fuzzytext", "string", IndexOpts(0, CollateNumeric));
+		.AddIndex("str_ft_coll_num", "text", "string", IndexOpts(0, CollateNumeric));
 
 	err = db_->AddNamespace(strNsDef);
 	if (!err.ok()) {
@@ -237,10 +233,6 @@ reindexer::Item ApiTvSimple::MakeStrItem() {
 		bld.Put("str_ft_coll_ascii", "fta" + idStr);
 		bld.Put("str_ft_coll_utf8", "ftu" + idStr);
 		bld.Put("str_ft_coll_num", idStr + "ftn");
-		bld.Put("str_fuzzy_coll_none", "fu" + idStr);
-		bld.Put("str_fuzzy_coll_ascii", "fua" + idStr);
-		bld.Put("str_fuzzy_coll_utf8", "fuu" + idStr);
-		bld.Put("str_fuzzy_coll_num", idStr + "fun");
 		bld.Put("field_int", id);
 		bld.Put("field_str", "value_" + idStr);
 		bld.End();
@@ -500,14 +492,14 @@ void ApiTvSimple::InnerJoinRejectInjection(benchmark::State& state) {
 	benchQuery(q, state, allowEmptyResult);
 }
 
-void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& state) {
-	using reindexer::JoinedSelector;
+void ApiTvSimple::Query0CondInnerPreSelectStoreValues(benchmark::State& state) {
+	using reindexer::joins::PreSelect;
 	static const std::string rightNs = "rightNs";
 	static const std::vector<std::string> leftNs = {"leftNs1", "leftNs2", "leftNs3", "leftNs4"};
 	static constexpr const char* id = "id";
 	static constexpr const char* data = "data";
 	static constexpr int maxDataValue = 10;
-	static constexpr int maxRightNsRowCount = maxDataValue * (JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization() - 1);
+	static constexpr int maxRightNsRowCount = maxDataValue * (PreSelect::MaxIterationsForValuesOptimization - 1);
 	static constexpr int maxLeftNsRowCount = 10000;
 
 	const auto createNs = [this, &state](const std::string& ns) {

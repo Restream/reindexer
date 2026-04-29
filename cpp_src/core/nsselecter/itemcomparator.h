@@ -41,7 +41,7 @@ private:
 		Desc desc;
 	};
 	struct [[nodiscard]] Joined {
-		const JoinedSelector* joinedSelector{nullptr};
+		const joins::ItemsProcessor* joinItemsProcessor{nullptr};
 		FieldsSet fields;
 		h_vector<const CollateOpts*, 1> collateOpts;
 	};

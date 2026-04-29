@@ -15,9 +15,9 @@
 
 #include "core/enums.h"
 #include "core/nsselecter/distincthelpers.h"
-#include "core/nsselecter/joinedselectormock.h"
+#include "core/nsselecter/joins/items_processor_mock.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "core/query/query.h"
-#include "core/queryresults/joinresults.h"
 #include "core/queryresults/queryresults.h"
 #include "core/reindexer.h"
 #include "core/sorting/sortexpression.h"
@@ -181,8 +181,8 @@ protected:
 						query.SetEntry<reindexer::QueryFunctionEntry>(i, sqe.FunctionVariant(), sqe.Condition(), std::move(values));
 				});
 		}
-		auto joinedSelectors = getJoinedSelectors(query);
-		for (auto& js : joinedSelectors) {
+		auto joinItemsProcessors = getJoinItemsProcessors(query);
+		for (auto& js : joinItemsProcessors) {
 			const reindexer::Error err = rx.Select(js.JoinQuery(), js.QueryResults());
 			ASSERT_TRUE(err.ok()) << err.what();
 			Verify(js.QueryResults().ToLocalQr(), reindexer::Query(static_cast<const reindexer::Query&>(js.JoinQuery())), rx);
@@ -211,7 +211,7 @@ protected:
 
 			const auto joined = qr[i].GetJoined();
 			bool conditionsSatisfied =
-				checkConditions(itemr, &joined, query.Entries().cbegin(), query.Entries().cend(), joinedSelectors, indexesFields);
+				checkConditions(itemr, &joined, query.Entries().cbegin(), query.Entries().cend(), joinItemsProcessors, indexesFields);
 			if (!conditionsSatisfied) {
 				std::stringstream ss;
 				ss << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl;
@@ -228,7 +228,7 @@ protected:
 				ss << "explain: " << qr.GetExplainResults();
 				EXPECT_TRUE(conditionsSatisfied) << ss.str();
 				TEST_COUT << query.GetSQL() << std::endl;
-				printFailedQueryEntries(query.Entries(), joinedSelectors, query.GetSubQueries());
+				printFailedQueryEntries(query.Entries(), joinItemsProcessors, query.GetSubQueries());
 			}
 			EXPECT_FALSE(checkDistincts(itemr, query, distincts, reindexer::Invert_False)) << "Distinction check failed";
 
@@ -237,7 +237,7 @@ protected:
 
 			for (size_t j = 0; j < query.GetSortingEntries().size(); ++j) {
 				const reindexer::SortingEntry& sortingEntry(query.GetSortingEntries()[j]);
-				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinedSelectors);
+				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinItemsProcessors);
 
 				reindexer::Variant sortedValue;
 				CollateOpts collate;
@@ -309,7 +309,7 @@ protected:
 				continue;
 			}
 			bool conditionsSatisfied = checkConditions(insertedItem.second, nullptr, query.Entries().cbegin(), query.Entries().cend(),
-													   joinedSelectors, indexesFields);
+													   joinItemsProcessors, indexesFields);
 
 			if (conditionsSatisfied) {
 				bool hasErr = checkDistincts(insertedItem.second, query, distincts, reindexer::Invert_True);
@@ -396,7 +396,7 @@ protected:
 private:
 	bool checkConditions(const reindexer::Item& item, const reindexer::joins::ItemIterator* joined,
 						 reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
-						 const std::vector<JoinedSelectorMock>& joinedSelectors, const IndexesData& indexesFields) {
+						 const std::vector<JoinItemsProcessorMock>& joinItemsProcessors, const IndexesData& indexesFields) {
 		bool result = true;
 		for (; it != to; ++it) {
 			OpType op = it->operation;
@@ -414,7 +414,7 @@ private:
 						skip = true;
 						return false;
 					}
-					return checkConditions(item, joined, it.cbegin(), it.cend(), joinedSelectors, indexesFields);
+					return checkConditions(item, joined, it.cbegin(), it.cend(), joinItemsProcessors, indexesFields);
 				},
 				[&](const reindexer::QueryEntry& qe) {
 					if ((op == OpOr && result) || qe.Distinct()) {
@@ -431,12 +431,12 @@ private:
 					return checkCondition(item, qe);
 				},
 				[&](const reindexer::JoinQueryEntry& jqe) {
-					assertrx(jqe.joinIndex < joinedSelectors.size());
-					if (joinedSelectors[jqe.joinIndex].Type() == OrInnerJoin) {
+					assertrx(jqe.joinIndex < joinItemsProcessors.size());
+					if (joinItemsProcessors[jqe.joinIndex].Type() == OrInnerJoin) {
 						assertrx(op != OpNot);
 						op = OpOr;
 					}
-					const auto& js = joinedSelectors[jqe.joinIndex];
+					const auto& js = joinItemsProcessors[jqe.joinIndex];
 					const auto& rightIndexesFields = indexesFields_[js.RightNsName()];
 					std::optional<reindexer::LocalQueryResults> joinedQR;
 					if (joined) {
@@ -552,10 +552,11 @@ private:
 		return hasErr;
 	}
 
-	bool checkSingleJoinedItem(const reindexer::Item& leftItem, const reindexer::Item& rightItem, const JoinedSelectorMock& joinedSelector,
-							   const IndexesData& leftIndexesFields, const IndexesData& rightIndexesFields) {
+	bool checkSingleJoinedItem(const reindexer::Item& leftItem, const reindexer::Item& rightItem,
+							   const JoinItemsProcessorMock& joinItemsProcessor, const IndexesData& leftIndexesFields,
+							   const IndexesData& rightIndexesFields) {
 		bool result = true;
-		const auto& joinEntries{joinedSelector.JoinQuery().joinEntries_};
+		const auto& joinEntries{joinItemsProcessor.JoinQuery().joinEntries_};
 		assertrx(!joinEntries.empty());
 		assertrx(joinEntries[0].Operation() != OpOr);
 		for (const auto& je : joinEntries) {
@@ -586,24 +587,24 @@ private:
 	}
 
 	bool checkCondition(const reindexer::Item& item, const std::optional<reindexer::LocalQueryResults>& actuallyJoinedQr,
-						const JoinedSelectorMock& joinedSelector, const IndexesData& leftIndexesFields,
+						const JoinItemsProcessorMock& joinItemsProcessor, const IndexesData& leftIndexesFields,
 						const IndexesData& rightIndexesFields) {
 		unsigned curOffset = 0;
 		unsigned expectedJoinedCount = 0;
 		bool matched = false;
 
-		for (auto& it : joinedSelector.QueryResults()) {
+		for (auto& it : joinItemsProcessor.QueryResults()) {
 			const reindexer::Item rightItem = it.GetItem(false);
-			if (checkSingleJoinedItem(item, rightItem, joinedSelector, leftIndexesFields, rightIndexesFields)) {
+			if (checkSingleJoinedItem(item, rightItem, joinItemsProcessor, leftIndexesFields, rightIndexesFields)) {
 				matched = true;
 				++curOffset;
 				if (!actuallyJoinedQr.has_value()) {
 					break;
 				}
-				if (curOffset < joinedSelector.Offset()) {
+				if (curOffset < joinItemsProcessor.Offset()) {
 					break;
 				}
-				if (joinedSelector.Limit() == 0) {
+				if (joinItemsProcessor.Limit() == 0) {
 					break;
 				}
 				++expectedJoinedCount;
@@ -619,14 +620,14 @@ private:
 				err = it.GetJSON(expWser, false);
 				EXPECT_TRUE(err.ok()) << err.what();
 				EXPECT_EQ(actWser.Slice(), expWser.Slice()) << "Actual joined content does not correspond to the expected item";
-				if (expectedJoinedCount == joinedSelector.Limit()) {
+				if (expectedJoinedCount == joinItemsProcessor.Limit()) {
 					break;
 				}
 			}
 		}
 		if (actuallyJoinedQr.has_value() && (expectedJoinedCount != actuallyJoinedQr->Count())) {
 			EXPECT_EQ(expectedJoinedCount, actuallyJoinedQr->Count())
-				<< "Unexpected joined items count for " << joinedSelector.JoinQuery().NsName();
+				<< "Unexpected joined items count for " << joinItemsProcessor.JoinQuery().NsName();
 			return false;
 		}
 		return matched;
@@ -1128,8 +1129,8 @@ private:
 		return false;
 	}
 
-	static std::vector<JoinedSelectorMock> getJoinedSelectors(const reindexer::Query& query) {
-		std::vector<JoinedSelectorMock> result;
+	static std::vector<JoinItemsProcessorMock> getJoinItemsProcessors(const reindexer::Query& query) {
+		std::vector<JoinItemsProcessorMock> result;
 		result.reserve(query.GetJoinQueries().size());
 		for (auto jq : query.GetJoinQueries()) {
 			auto limit = jq.Limit();
@@ -1178,7 +1179,7 @@ private:
 		return it->second;
 	}
 
-	static void printFailedQueryEntries(const reindexer::QueryEntries& failedEntries, const std::vector<JoinedSelectorMock>& js,
+	static void printFailedQueryEntries(const reindexer::QueryEntries& failedEntries, const std::vector<JoinItemsProcessorMock>& js,
 										const std::vector<reindexer::Query>& subQueries) {
 		TestCout() << "Failed entries: ";
 		printQueryEntries(failedEntries.cbegin(), failedEntries.cend(), js, subQueries);
@@ -1186,7 +1187,7 @@ private:
 	}
 
 	static void printQueryEntries(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
-								  const std::vector<JoinedSelectorMock>& js, const std::vector<reindexer::Query>& subQueries) {
+								  const std::vector<JoinItemsProcessorMock>& js, const std::vector<reindexer::Query>& subQueries) {
 		TestCout() << "(";
 		for (; it != to; ++it) {
 			TestCout() << (it->operation == OpAnd ? "AND" : (it->operation == OpOr ? "OR" : "NOT"));

@@ -64,7 +64,7 @@ if (NOT WIN32)
 
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
-    "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
+    "tools/errors.h" "tools/serilize/serializer.h" "tools/serilize/wrserializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
     "tools/verifying_updater.h" "tools/customlocal.h" "tools/clock.h" "tools/enum_compare.h" "tools/float_comparison.h" "tools/timetools.h" "core/function/error.h"
     "core/reindexer.h" "core/type_consts.h" "core/type_formats.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/payload/payload_checksum.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h" "core/id_type.h" "core/indexopts.h"
@@ -76,6 +76,7 @@ if (NOT WIN32)
     "core/namespace/incarnationtags.h" "core/keyvalue/p_string.h" "core/quantization_config.h" "core/keyvalue/float_vector.h" "core/enums.h" "core/tag_name_index.h"
     "core/keyvalue/float_vectors_holder.h"
     "core/itemimplrawdata.h" "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "core/cjson/ctag.h" "core/rank_t.h" "core/system_ns_names.h"
+    "core/cjson/indexed_path_node.h" "core/index/float_vector/float_vector_id.h"
     "estl/cow.h" "core/shardedmeta.h" "estl/overloaded.h" "estl/concepts.h" "estl/types_pack.h"
     "core/queryresults/localqueryresults.h" "core/query/fields_names_filter.h" "core/queryresults/fields_filter.h" "core/function/function.h"
     "estl/h_vector.h" "estl/marked_mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/chunk.h" "estl/expected.h" "estl/gift_str.h"

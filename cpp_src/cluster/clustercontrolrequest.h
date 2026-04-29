@@ -2,7 +2,6 @@
 #include <span>
 #include <variant>
 #include "tools/errors.h"
-#include "tools/serializer.h"
 
 namespace gason {
 struct JsonNode;
@@ -10,9 +9,15 @@ struct JsonNode;
 
 namespace reindexer {
 
+class WrSerializer;
+
+namespace builders {
+class JsonBuilder;
+}  // namespace builders
+
 struct [[nodiscard]] SetClusterLeaderCommand {
 	int leaderServerId = -1;
-	void GetJSON(JsonBuilder& json) const;
+	void GetJSON(builders::JsonBuilder& json) const;
 	void FromJSON(const gason::JsonNode& payload);
 };
 

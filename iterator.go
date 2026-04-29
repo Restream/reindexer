@@ -3,9 +3,10 @@ package reindexer
 import (
 	"context"
 	"fmt"
-	"github.com/goccy/go-json"
 	"reflect"
 	"strings"
+
+	"github.com/goccy/go-json"
 
 	"github.com/prometheus/client_golang/prometheus"
 	otelattr "go.opentelemetry.io/otel/attribute"
@@ -80,44 +81,44 @@ type SingleQueryExplainResults struct {
 	// Filter selectors, used to proccess query conditions
 	Selectors []ExplainSelector `json:"selectors,omitempty"`
 	// Explaining attempts to inject Join queries ON-conditions into the Main Query WHERE clause
-	OnConditionsInjections []ExplainJoinOnInjections `json:"on_conditions_injections,omitempty"`
+	OnConditionsInsertions []ExplainJoinOnInsertions `json:"on_conditions_insertions,omitempty"`
 	// Explaining of subqueries' preselect
 	SubQueriesExplains []ExplainSubQuery `json:"subqueries,omitempty"`
 }
 
-// Describes the process of a single JOIN-query ON-conditions injection into the Where clause of a main query
-type ExplainJoinOnInjections struct {
+// Describes the process of a single JOIN-query ON-conditions insertion into the Where clause of a main query
+type ExplainJoinOnInsertions struct {
 	// joinable ns name
 	RightNsName string `json:"namespace"`
 	// original ON-conditions clause. SQL-like string
 	JoinOnCondition string `json:"on_condition"`
 	// total amount of time spent on checking and substituting all conditions
 	TotalTimeUs int `json:"total_time_us"`
-	// result of injection attempt
+	// result of insertion attempt
 	Succeed bool `json:"success"`
-	// optional{succeed==false}. Explains condition injection failure
+	// optional{succeed==false}. Explains condition insertion failure
 	Reason string `json:"reason,omitempty"`
 	// by_value or select
 	Type string `json:"type"`
-	// Injected condition. SQL-like string
-	InjectedCondition string `json:"injected_condition"`
+	// Inserted condition. SQL-like string
+	InsertedCondition string `json:"inserted_condition"`
 	// individual conditions processing results
-	Conditions []ExplainConditionInjection `json:"conditions,omitempty"`
+	Conditions []ExplainConditionInsertion `json:"conditions,omitempty"`
 }
 
-// Describes an injection attempt of a single condition from the ON-clause of a JOIN-query
-type ExplainConditionInjection struct {
+// Describes an insertion attempt of a single condition from the ON-clause of a JOIN-query
+type ExplainConditionInsertion struct {
 	// single condition from Join ON section. SQL-like string
 	InitialCondition string `json:"condition"`
-	// total time elapsed from injection attempt start till the end of substitution or rejection
+	// total time elapsed from insertion attempt start till the end of substitution or rejection
 	TotalTime int `json:"total_time_us"`
-	// optoinal{JoinOnInjection.type == Select}. Explain raw string from Select subquery
+	// optoinal{JoinOnInsertion.type == Select}. Explain raw string from Select subquery
 	Explain *ExplainResults `json:"explain_select,omitempty"`
 	// Optional. Aggregation type used in subquery
 	AggType string `json:"agg_type,omitempty"`
-	// result of injection attempt
+	// result of insertion attempt
 	Succeed bool `json:"success"`
-	// optional{succeed==false}. Explains condition injection failure
+	// optional{succeed==false}. Explains condition insertion failure
 	Reason string `json:"reason,omitempty"`
 	// substituted condition in QueryEntry. SQL-like string
 	NewCondition string `json:"new_condition"`

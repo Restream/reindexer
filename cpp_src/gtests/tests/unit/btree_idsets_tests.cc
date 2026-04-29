@@ -3,7 +3,7 @@
 #include "core/index/index.h"
 #include "core/index/string_map.h"
 #include "core/nsselecter/btreeindexiterator.h"
-#include "core/queryresults/joinresults.h"
+#include "core/nsselecter/joins/queryresults.h"
 
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	std::string strValueToCheck = lastStrValue;

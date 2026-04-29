@@ -515,9 +515,9 @@ Non-nested fields. Index has `json_paths: ["f"]` or `json_paths: ["obj"]` depend
 | `{"f": [1, null]}`             | +           | -              | +      | +             |
 | `{"f": 0}`                     | -           | -              | -      | -             |
 | `{"f": [0]}`                   | -           | -              | -      | -             |
-| `{"obj": {}}`                  | -           | n              | -      | -             |
-| `{"obj": {"f": null}}`         | -           | n              | -      | -             |
-| `{"obj": {"f": null, "a": 0}}` | -           | n              | -      | -             |
+| `{"obj": {}}`                  | -           | n              | n      | n             |
+| `{"obj": {"f": null}}`         | -           | n              | n      | n             |
+| `{"obj": {"f": null, "a": 0}}` | -           | n              | n      | n             |
 
 Non-nested fields. Index has `json_paths: ["f1", "f2"]` or `json_paths: ["obj1", "obj2"]` depending on context:
 | Documents                                                        | Array with multiple jsonpaths |
@@ -2329,3 +2329,4 @@ Landing: https://reindexer.io/
 Packages repo: https://repo.reindexer.io/
 
 More documentation (RU): https://reindexer.io/reindexer-docs/
+

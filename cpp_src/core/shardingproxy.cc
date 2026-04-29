@@ -92,10 +92,10 @@ ShardingProxy::ShardingProxy(ReindexerConfig cfg)
 			{{{"apply_sharding_config", ImplCallBackT::Type::User},
 			  [this](const gason::JsonNode& action, const ImplCallBackT::ExtrasT&, const RdxContext& ctx) {
 				  auto& locallyNode = action["locally"];
-				  const bool locally = !locallyNode.empty() && locallyNode.As<bool>();
+				  const bool locally = !locallyNode.isEmpty() && locallyNode.As<bool>();
 				  if (locally) {
 					  const std::optional<int64_t> externalSourceId =
-						  action["source_id"].empty() ? std::optional<int64_t>() : action["source_id"].As<int64_t>();
+						  action["source_id"].isEmpty() ? std::optional<int64_t>() : action["source_id"].As<int64_t>();
 					  Error (ShardingProxy::*method)(const gason::JsonNode&, std::optional<int64_t>, const RdxContext&) noexcept =
 						  &ShardingProxy::handleNewShardingConfigLocally;
 					  auto err = std::invoke(method, this, action["config"], externalSourceId, ctx);
@@ -312,7 +312,7 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode& configJSON, 
 Error ShardingProxy::handleNewShardingConfigLocally(const gason::JsonNode& configJSON, std::optional<int64_t> externalSourceId,
 													const RdxContext& ctx) noexcept {
 	try {
-		if (configJSON.empty()) {
+		if (configJSON.isEmpty()) {
 			if (auto lockedConfigCandidate = configCandidate_.SharedLock(ctx); lockedConfigCandidate.Config()) {
 				return Error(errParams,
 							 "Attempt to reset the config if there is an unprocessed config candidate with sourceId - {}. Try later.",

@@ -2,6 +2,7 @@
 #include "core/function/function.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
+#include "tools/serilize/serializer.h"
 
 namespace reindexer::expressions {
 

@@ -32,6 +32,10 @@ if [ -n "$RX_MAX_HTTP_REQ" ]; then
     RX_ARGS="$RX_ARGS --max-http-req $RX_MAX_HTTP_REQ"
 fi
 
+if [ -n "$RX_MAX_HTTP_RSP" ]; then
+    RX_ARGS="$RX_ARGS --max-http-rsp $RX_MAX_HTTP_RSP"
+fi
+
 if [ -n "$RX_HTTP_READ_TIMEOUT" ]; then
     RX_ARGS="$RX_ARGS --http-read-timeout $RX_HTTP_READ_TIMEOUT"
 fi

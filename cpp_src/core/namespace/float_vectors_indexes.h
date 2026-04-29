@@ -12,6 +12,6 @@ struct [[nodiscard]] FloatVectorIndexData {
 };
 
 struct [[nodiscard]] FloatVectorsIndexes : h_vector<FloatVectorIndexData, 2> {};
-struct [[nodiscard]] FloatVectorsIndexesValues : h_vector<std::pair<FloatVectorIndexData, Variant>, 2> {};	// per Item
+struct [[nodiscard]] FloatVectorsIndexesValues : h_vector<std::pair<FloatVectorIndexData, h_vector<Variant, 1>>, 2> {};	 // per Item
 
 }  // namespace reindexer

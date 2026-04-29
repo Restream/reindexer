@@ -28,7 +28,7 @@
 #include "tools/flagguard.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
 #include "vendor/sort/pdqsort.hpp"
 #include "wal/walrecord.h"
@@ -210,7 +210,7 @@ int HTTPServer::GetSQLSuggest(http::Context& ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.whatStr()));
 	}
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	reindexer::JsonBuilder builder(ser);
 	auto node = builder.Array("suggests");
 	for (auto& suggest : suggestions) {
@@ -271,7 +271,7 @@ int HTTPServer::DeleteQuery(http::Context& ctx) {
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	reindexer::JsonBuilder builder(ser);
 	builder.Put("updated", res.Count());
 	builder.End();
@@ -295,7 +295,7 @@ int HTTPServer::UpdateQuery(http::Context& ctx) {
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	reindexer::JsonBuilder builder(ser);
 	builder.Put("updated", res.Count());
 	builder.End();
@@ -322,7 +322,7 @@ int HTTPServer::GetDatabases(http::Context& ctx) {
 		});
 	}
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	{
 		JsonBuilder builder(ser);
 		builder.Put("total_items", dbs.size());
@@ -412,7 +412,7 @@ int HTTPServer::GetNamespaces(http::Context& ctx) {
 		});
 	}
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	{
 		JsonBuilder builder(ser);
 		builder.Put("total_items", nsDefs.size());
@@ -443,7 +443,7 @@ int HTTPServer::GetNamespace(http::Context& ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusNotFound, "Namespace is not found"));
 	}
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	nsDefs[0].GetJSON(ser);
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
@@ -542,7 +542,7 @@ int HTTPServer::GetItems(http::Context& ctx) {
 		fields += FieldsNamesFilter::kAllVectorFieldsName;
 	}
 
-	reindexer::WrSerializer querySer;
+	WrSerializer querySer;
 	querySer << "SELECT " << fields << " FROM " << nsName;
 	if (!filterParam.empty()) {
 		querySer << " WHERE " << filterParam;
@@ -633,7 +633,7 @@ int HTTPServer::GetMetaList(http::Context& ctx) {
 		std::advance(keysEnd, limit);
 	}
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	JsonBuilder builder(ser);
 	builder.Put("total_items", keys.size());
 	JsonBuilder arrNode = builder.Array("meta");
@@ -670,7 +670,7 @@ int HTTPServer::GetMetaByKey(http::Context& ctx) {
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	JsonBuilder builder(ser);
 	builder.Put("key", key);
 	builder.Put("value", value);
@@ -734,7 +734,7 @@ int HTTPServer::GetIndexes(http::Context& ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusNotFound, "Namespace is not found"));
 	}
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	{
 		JsonBuilder builder(ser);
 		builder.Put("total_items", nsDefs[0].indexes.size());
@@ -847,12 +847,12 @@ int HTTPServer::GetProtobufSchema(http::Context& ctx) {
 		}
 	}
 
-	WrSerializer ser;
+	auto ser = makeRestrictedWrSerializer(ctx);
 	const auto err = db.GetProtobufSchema(ser, nses);
 	if (!err.ok()) {
 		return status(ctx, http::HttpStatus(err));
 	}
-	return ctx.String(http::StatusOK, ser.Slice());
+	return ctx.String(http::StatusOK, ser.DetachChunk());
 }
 
 int HTTPServer::DeleteIndex(http::Context& ctx) {
@@ -875,7 +875,7 @@ int HTTPServer::DeleteIndex(http::Context& ctx) {
 }
 
 int HTTPServer::Check(http::Context& ctx) {
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	{
 		JsonBuilder builder(ser);
 		builder.Put("version", REINDEX_VERSION);
@@ -1163,7 +1163,7 @@ int HTTPServer::modifyItemsJSON(http::Context& ctx, std::string_view nsName, std
 		}
 	}
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	JsonBuilder builder(ser);
 	builder.Put(kParamUpdated, cnt);
 	builder.Put(kParamSuccess, true);
@@ -1211,7 +1211,7 @@ int HTTPServer::modifyItemsMsgPack(http::Context& ctx, std::string_view nsName, 
 		}
 	}
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	MsgPackBuilder msgpackBuilder(ser, ObjType::TypeObject, precepts.empty() ? 2 : 3);
 	msgpackBuilder.Put(kParamUpdated, totalItems);
 	msgpackBuilder.Put(kParamSuccess, true);
@@ -1230,7 +1230,7 @@ int HTTPServer::modifyItemsMsgPack(http::Context& ctx, std::string_view nsName, 
 }
 
 int HTTPServer::modifyItemsProtobuf(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts, ItemModifyMode mode) {
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	ProtobufBuilder builder(ser);
 
 	auto sendResponse = [&](int items, const Error& err) {
@@ -1419,7 +1419,7 @@ int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& re
 	const auto offset = qrOption.ExternalOffset();
 	const auto limit = qrOption.ExternalLimit();
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	JsonBuilder builder(ser);
 
 	auto iarray = builder.Array(kParamItems);
@@ -1546,8 +1546,8 @@ int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res
 		}
 	};
 
-	WrSerializer wrSerRes(ctx.writer->GetChunk()), wrSerChunk;
-	wrSerChunk.Reserve(kChunkMaxSize);
+	auto wrSerRes = makeRestrictedWrSerializer(ctx);
+	WrSerializer wrSerChunk;
 	const auto schema = res.GetSchema(0);
 	const bool withSchema = schema && !schema->IsEmpty();
 	if (!res.IsLocal() && !withSchema) {
@@ -1601,7 +1601,7 @@ int HTTPServer::queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults&
 		++paramsToSend;
 	}
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	MsgPackBuilder msgpackBuilder(ser, ObjType::TypeObject, paramsToSend);
 
 	const auto offset = qrOption.ExternalOffset();
@@ -1649,7 +1649,7 @@ int HTTPServer::queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults&
 
 int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption,
 									 bool withColumns, int width) {
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	ProtobufBuilder protobufBuilder(ser);
 
 	const auto offset = qrOption.ExternalOffset();
@@ -1820,7 +1820,7 @@ int HTTPServer::status(http::Context& ctx, const http::HttpStatus& status) {
 }
 
 int HTTPServer::msgpackStatus(http::Context& ctx, const http::HttpStatus& status) {
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	MsgPackBuilder msgpackBuilder(ser, ObjType::TypeObject, 3);
 	msgpackBuilder.Put(kParamSuccess, status.code == http::StatusOK);
 	msgpackBuilder.Put(kParamResponseCode, status.code);
@@ -1830,7 +1830,7 @@ int HTTPServer::msgpackStatus(http::Context& ctx, const http::HttpStatus& status
 }
 
 int HTTPServer::jsonStatus(http::Context& ctx, const http::HttpStatus& status) {
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	JsonBuilder builder(ser);
 	builder.Put(kParamSuccess, status.code == http::StatusOK);
 	builder.Put(kParamResponseCode, int(status.code));
@@ -1840,7 +1840,7 @@ int HTTPServer::jsonStatus(http::Context& ctx, const http::HttpStatus& status) {
 }
 
 int HTTPServer::protobufStatus(http::Context& ctx, const http::HttpStatus& status) {
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	ProtobufBuilder builder(ser);
 	builder.Put(kProtoErrorResultsFields.at(kParamSuccess), status.code == http::StatusOK);
 	builder.Put(kProtoErrorResultsFields.at(kParamResponseCode), int(status.code));
@@ -2067,7 +2067,7 @@ int HTTPServer::BeginTx(http::Context& ctx) {
 	}
 	const auto txId = addTx(std::move(dbName), std::move(tx));
 
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 
 	switch (getDataFormat(ctx)) {
 		case DataFormat::JSON: {
@@ -2243,7 +2243,7 @@ void HTTPServer::OnResponse(http::Context& ctx) {
 
 int HTTPServer::GetRole(http::Context& ctx) {
 	auto response = [&](UserRole role) {
-		WrSerializer ser(ctx.writer->GetChunk());
+		auto ser = makeRestrictedWrSerializer(ctx);
 		JsonBuilder builder(ser);
 		builder.Put("user_role", UserRoleName(role));
 		builder.End();
@@ -2271,7 +2271,7 @@ bool HTTPServer::isParameterSetOn(std::string_view val) const noexcept {
 
 int HTTPServer::GetDefaultConfigs(http::Context& ctx) {
 	std::string_view configType = ctx.request->params.Get("type"sv);
-	WrSerializer ser(ctx.writer->GetChunk());
+	auto ser = makeRestrictedWrSerializer(ctx);
 	reindexer::JsonBuilder builder(ser);
 
 	if (Error ret = reindexer::GetDefaultConfigs(configType, builder); !ret.ok()) {
@@ -2302,6 +2302,10 @@ HTTPServer::DataFormat HTTPServer::getDataFormat(const http::Context& ctx) {
 
 void HTTPServer::throwUnsupportedOpFormat(const http::Context& ctx) {
 	throw Error(errParams, "Unsupported format '{}' for '{}'", ctx.request->params.Get("format"sv), ctx.request->path);
+}
+
+WrSerializer HTTPServer::makeRestrictedWrSerializer(http::Context& ctx) noexcept {
+	return WrSerializer(ctx.writer->GetChunk(), WrSerializer::GrowthPolicy(serverConfig_.MaxHttpRspSize));
 }
 
 }  // namespace reindexer_server

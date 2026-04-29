@@ -4,10 +4,21 @@
 #include "core/cjson/field_extractor_grouping.h"
 #include "core/cjson/jsondecoder.h"
 #include "reindexer_api.h"
+#include "tools/serilize/serializer.h"
+
+#include "core/cjson/jsonbuilder.h"
 
 class [[nodiscard]] FieldExtractorEqApi : public ReindexerApi {
 public:
-	void SetUp() override {}
+	void SetUp() override {
+		ReindexerApi::SetUp();
+		rt.OpenNamespace(default_namespace);
+
+		DefineNamespaceDataset(default_namespace, {
+													  IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+
+												  });
+	}
 	void Test(std::string_view json, std::string_view pathString, const std::vector<VariantArray>& resultVals) {
 		reindexer::PayloadTypeImpl pti("ns");
 		reindexer::PayloadFieldType ft(reindexer::KeyValueType::String{}, "-tuple", {}, reindexer::IsArray_False);
@@ -43,22 +54,25 @@ public:
 		}
 		reindexer::BaseEncoder<reindexer::FieldsExtractorGrouping> encoder(&tm, nullptr);
 		const std::span<reindexer::FieldPathPart> p(path);
-		reindexer::h_vector<reindexer::VariantArray, 2> vals;
 		unsigned int index = 0;
-		reindexer::FieldsExtractorGroupingState state{vals,index,p};
+		reindexer::FieldEqPosCacheImpl cache;
+		cache.Clear(1);
+		reindexer::FieldEqPosCache vals{cache, 0};
+		reindexer::FieldsExtractorGroupingState state{vals, index, p};
 		reindexer::FieldsExtractorGrouping extractor{state};
 		reindexer::ConstPayload cpl(pti, value);
 		encoder.Encode(cpl, extractor);
-		ASSERT_EQ(vals.size(), resultVals.size());
-		for (size_t i = 0; i < vals.size(); i++) {
-			ASSERT_EQ(vals[i].size(), resultVals[i].size()) << "index=" << i;
-			for (size_t j = 0; j < vals[i].size(); j++) {
-				if (vals[i][j].Type().IsSame(reindexer::KeyValueType::Null{}) &&
+		ASSERT_EQ(cache.LevelSize(0), resultVals.size());
+		for (size_t i = 0; i < cache.LevelSize(0); i++) {
+			ASSERT_EQ(cache.ValuesSize(0, i), resultVals[i].size()) << "index=" << i;
+			for (size_t j = 0; j < cache.ValuesSize(0, i); j++) {
+				if (cache.Value(0, i, j).Type().IsSame(reindexer::KeyValueType::Null{}) &&
 					resultVals[i][j].Type().IsSame(reindexer::KeyValueType::Null{})) {
 					continue;
 				}
-				ASSERT_EQ(vals[i][j], resultVals[i][j]) << "i=" << i << " j=" << j << " vals=" << vals[i][j].As<std::string>()
-														<< " resultVals=" << resultVals[i][j].As<std::string>();
+				ASSERT_EQ(cache.Value(0, i, j), resultVals[i][j])
+					<< "i=" << i << " j=" << j << " vals=" << cache.Value(0, i, j).As<std::string>()
+					<< " resultVals=" << resultVals[i][j].As<std::string>();
 			}
 		}
 	}

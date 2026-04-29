@@ -360,11 +360,7 @@ TEST_F(FieldExtractorEqApi, NestedArrays) {
 	{
 		const std::string_view pathString = "arr[#]";
 		SCOPED_TRACE(pathString);
-		const std::vector<reindexer::VariantArray> resultVals = {
-			{i64v(1), i64v(2), i64v(3)},
-			{i64v(4), i64v(5)},
-			{}
-		};
+		const std::vector<reindexer::VariantArray> resultVals = {{i64v(1), i64v(2), i64v(3)}, {i64v(4), i64v(5)}, {}};
 		Test(json, pathString, resultVals);
 	}
 	{

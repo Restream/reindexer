@@ -94,7 +94,7 @@ struct [[nodiscard]] SortingContext {
 		}
 		return false;
 	}
-	const Entry& getFirstColumnEntry() const noexcept {
+	const Entry& getFirstColumnEntry() const {
 		assertrx_throw(!entries.empty());
 		return entries[0];
 	}

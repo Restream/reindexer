@@ -21,7 +21,7 @@ struct [[nodiscard]] HTTPClientData final : public http::ClientData {
 	AuthContext auth;
 };
 
-class [[nodiscard]] HTTPServer final {
+class [[nodiscard]] HTTPServer {
 public:
 	HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, Prometheus* prometheusI = nullptr,
 			   IStatsWatcher* statsWatcherI = nullptr);
@@ -144,6 +144,7 @@ private:
 	DataFormat dataFormatFromStr(std::string_view str);
 	DataFormat getDataFormat(const http::Context& ctx);
 	[[noreturn]] void throwUnsupportedOpFormat(const http::Context& ctx);
+	WrSerializer makeRestrictedWrSerializer(http::Context& ctx) noexcept;
 
 	DBManager& dbMgr_;
 	Pprof pprof_;

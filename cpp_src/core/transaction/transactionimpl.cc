@@ -231,7 +231,8 @@ LocalTransaction TransactionImpl::Transform(TransactionImpl& tx) {
 		tx.status_ = Error(errNotValid, "Transformed into local tx");
 		return l;
 	} else if (auto* empty = std::get_if<Empty>(&tx.tx_); empty && !tx.status_.ok()) {
-		LocalTransaction l(std::move(tx.data_), std::make_unique<TransactionSteps>(), std::move(tx.status_));
+		auto steps = std::make_unique<TransactionSteps>(tx.data_->GetPayloadType());
+		LocalTransaction l(std::move(tx.data_), std::move(steps), std::move(tx.status_));
 		tx.status_ = Error(errNotValid, "Transformed into local tx");
 		return l;
 	}

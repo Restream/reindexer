@@ -9,11 +9,11 @@
 namespace reindexer {
 
 class ItemImpl;
-class JoinedSelector;
 class NamespaceImpl;
 class Reranker;
 
 namespace joins {
+class ItemsProcessor;
 class NamespaceResults;
 }  // namespace joins
 
@@ -45,7 +45,7 @@ struct [[nodiscard]] ProxiedField {
 
 struct [[nodiscard]] JoinedIndex {
 	JoinedIndex(size_t nsInd, std::string c) : nsIdx{nsInd}, column{std::move(c)}, index{IndexValueType::NotSet} {}
-	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
+	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<joins::ItemsProcessor>&) const;
 	bool operator==(const JoinedIndex& other) const noexcept {
 		return nsIdx == other.nsIdx && column == other.column && index == other.index;
 	}
@@ -130,7 +130,7 @@ struct [[nodiscard]] ProxiedDistanceFromPoint {
 struct [[nodiscard]] DistanceJoinedIndexFromPoint {
 	DistanceJoinedIndexFromPoint(size_t nsInd, std::string c, Point p)
 		: nsIdx{nsInd}, column{std::move(c)}, index{IndexValueType::NotSet}, point{p} {}
-	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
+	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<joins::ItemsProcessor>&) const;
 	bool operator==(const DistanceJoinedIndexFromPoint& other) const noexcept {
 		return nsIdx == other.nsIdx && column == other.column && index == other.index && point == other.point;
 	}
@@ -167,7 +167,8 @@ struct [[nodiscard]] ProxiedDistanceBetweenFields {
 struct [[nodiscard]] DistanceBetweenIndexAndJoinedIndex {
 	DistanceBetweenIndexAndJoinedIndex(std::string c, size_t jNsInd, std::string jc)
 		: column{std::move(c)}, index{IndexValueType::NotSet}, jNsIdx{jNsInd}, jColumn{std::move(jc)}, jIndex{IndexValueType::NotSet} {}
-	double GetValue(ConstPayload, TagsMatcher&, IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
+	double GetValue(ConstPayload, TagsMatcher&, IdType rowId, const joins::NamespaceResults&,
+					const std::vector<joins::ItemsProcessor>&) const;
 	bool operator==(const DistanceBetweenIndexAndJoinedIndex& other) const noexcept {
 		return column == other.column && index == other.index && jNsIdx == other.jNsIdx && jColumn == other.jColumn &&
 			   jIndex == other.jIndex;
@@ -188,7 +189,7 @@ struct [[nodiscard]] DistanceBetweenJoinedIndexes {
 		  nsIdx2{nsInd2},
 		  column2{std::move(c2)},
 		  index2{IndexValueType::NotSet} {}
-	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
+	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<joins::ItemsProcessor>&) const;
 	bool operator==(const DistanceBetweenJoinedIndexes& other) const noexcept {
 		return nsIdx1 == other.nsIdx1 && column1 == other.column1 && index1 == other.index1 && nsIdx2 == other.nsIdx2 &&
 			   column2 == other.column2 && index2 == other.index2;
@@ -205,7 +206,7 @@ struct [[nodiscard]] DistanceBetweenJoinedIndexes {
 struct [[nodiscard]] DistanceBetweenJoinedIndexesSameNs {
 	DistanceBetweenJoinedIndexesSameNs(size_t nsInd, std::string c1, std::string c2)
 		: nsIdx{nsInd}, column1{std::move(c1)}, index1{IndexValueType::NotSet}, column2{std::move(c2)}, index2{IndexValueType::NotSet} {}
-	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
+	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<joins::ItemsProcessor>&) const;
 	bool operator==(const DistanceBetweenJoinedIndexesSameNs& other) const noexcept {
 		return nsIdx == other.nsIdx && column1 == other.column1 && index1 == other.index1 && column2 == other.column2 &&
 			   index2 == other.index2;
@@ -261,20 +262,20 @@ class [[nodiscard]] SortExpression
 public:
 	using Base::Base;
 	template <typename T>
-	static SortExpression Parse(std::string_view, const std::vector<T>& joinedSelectors);
-	double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults* results, const std::vector<JoinedSelector>& js,
+	static SortExpression Parse(std::string_view, const std::vector<T>& joinItemsProcessors);
+	double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults* results, const std::vector<joins::ItemsProcessor>& js,
 					 RankT proc, TagsMatcher& tagsMatcher, uint32_t shardIdHash) const {
 		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher, shardIdHash);
 	}
 	bool ByField() const noexcept;
 	bool ByJoinedField() const noexcept;
-	SortExprFuncs::JoinedIndex& GetJoinedIndex() noexcept;
+	SortExprFuncs::JoinedIndex& GetJoinedIndex();
 	void PrepareIndexes(const NamespaceImpl&);
 	static void PrepareSortIndex(std::string& column, int& index, const NamespaceImpl&, IsRanked);
 
 	std::string Dump() const;
-	static VariantArray GetJoinedFieldValues(IdType rowId, const joins::NamespaceResults& joinResults, const std::vector<JoinedSelector>&,
-											 size_t nsIdx, std::string_view column, int index);
+	static VariantArray GetJoinedFieldValues(IdType rowId, const joins::NamespaceResults& joinResults,
+											 const std::vector<joins::ItemsProcessor>&, size_t nsIdx, std::string_view column, int index);
 
 	Reranker ToReranker(const NamespaceImpl&, Desc) const;
 	[[noreturn]] static void ThrowNonReranker();
@@ -287,20 +288,20 @@ private:
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	template <typename T>
 	std::string_view parse(std::string_view expr, bool* containIndexOrFunction, bool* isRrf, std::string_view fullExpr,
-						   const std::vector<T>& joinedSelectors);
+						   const std::vector<T>& joinItemsProcessors);
 	template <typename T, typename SkipSW>
-	void parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr, ArithmeticOpType,
+	void parseDistance(std::string_view& expr, const std::vector<T>& joinItemsProcessors, std::string_view fullExpr, ArithmeticOpType,
 					   bool negative, const SkipSW& skipSpaces);
 	template <typename T, typename SkipSW>
-	void parseRank(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr, ArithmeticOpType,
+	void parseRank(std::string_view& expr, const std::vector<T>& joinItemsProcessors, std::string_view fullExpr, ArithmeticOpType,
 				   bool negative, const SkipSW& skipSpaces);
 	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, const joins::NamespaceResults*,
-							const std::vector<JoinedSelector>&, RankT, TagsMatcher&, uint32_t);
+							const std::vector<joins::ItemsProcessor>&, RankT, TagsMatcher&, uint32_t);
 
 	void openBracketBeforeLastAppended();
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
-	static const PayloadValue& getJoinedValue(IdType rowId, const joins::NamespaceResults& joinResults, const std::vector<JoinedSelector>&,
-											  size_t nsIdx);
+	static const PayloadValue& getJoinedValue(IdType rowId, const joins::NamespaceResults& joinResults,
+											  const std::vector<joins::ItemsProcessor>&, size_t nsIdx);
 	void reduce();
 	Changed constantsFirstInMultiplications(iterator from, iterator to);
 	Changed multiplyConstants();

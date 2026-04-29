@@ -3,7 +3,8 @@
 #include "core/embedding/embedder.h"
 #include "core/keyvalue/key_string.h"
 #include "payloadtypeimpl.h"
-#include "tools/serializer.h"
+#include "tools/serilize/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 

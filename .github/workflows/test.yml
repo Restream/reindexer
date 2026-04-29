@@ -36,8 +36,6 @@ jobs:
             sanitizer: ASAN
           - os: ubuntu-latest
             sanitizer: TSAN
-            cc: gcc-12
-            cxx: g++-12
       fail-fast: false
     runs-on: ${{matrix.os}}
     env:
@@ -133,7 +131,7 @@ jobs:
           check-latest: true
       - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
         if: ${{ matrix.os != 'macos-15' || matrix.test == 'GO' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
       - name: 'Untar Artifacts'
@@ -188,7 +186,7 @@ jobs:
       OS: ${{matrix.os}}
     steps:
       - name: Download ${{matrix.os}} Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{matrix.os}}
       - name: 'Untar Artifacts'

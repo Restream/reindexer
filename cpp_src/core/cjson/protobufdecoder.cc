@@ -151,6 +151,9 @@ void ProtobufDecoder::decodeArray(CJsonBuilder& builder, const ProtobufValue& it
 			}
 		} else {
 			if (item.itemType.Is<KeyValueType::Composite>()) {
+				if (field.IsSparseIndex()) [[unlikely]] {
+					validator.Object();
+				}
 				CJsonProtobufObjectBuilder obj(array, TagName::Empty(), arraysStorage_);
 				while (!parser.IsEof()) {
 					decode(obj, parser.ReadValue(), validator.Elem());
@@ -194,6 +197,7 @@ void ProtobufDecoder::decode(CJsonBuilder& builder, const ProtobufValue& item, c
 				item.itemType.EvaluateOneOf(
 					[&](KeyValueType::String) { setValue(builder, item, validator); },
 					[&](KeyValueType::Composite) {
+						validator.Object();
 						CJsonProtobufObjectBuilder objBuilder(builder, item.tagName, arraysStorage_);
 						ProtobufObject object(item.As<std::string_view>(), *schema_, tagsPath_, tm_);
 						decodeObject(objBuilder, object);

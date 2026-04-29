@@ -1,7 +1,7 @@
 #include "ft_base.h"
 #include <fstream>
 #include <ranges>
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
 
 namespace reindexer::bench {

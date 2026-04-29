@@ -39,7 +39,7 @@ private:
 			shrinkCache();
 			setHitsCount(hitsCount);
 		}
-		// NOLINTNEXTLINE(bugprone-exception-escape)
+		// NOLINTNEXTLINE(bugprone-exception-escape,rx-safety-noexcept-throw-call)
 		~IndexCacheSetter() { setHitsCount(kDefaultCacheHits); }
 
 	private:
@@ -93,7 +93,7 @@ private:
 	void Query2CondLeftJoin3Cond(State& state);
 	void Query0CondInnerJoinUnlimit(State& state);
 	void Query0CondInnerJoinUnlimitLowSelectivity(State& state);
-	void Query0CondInnerJoinPreResultStoreValues(State& state);
+	void Query0CondInnerPreSelectStoreValues(State& state);
 	template <typename Total>
 	void Query2CondInnerJoin2Cond(State& state);
 	template <typename Total>

@@ -6,6 +6,7 @@
 #include "core/itemimplrawdata.h"
 #include "fields_filter.h"
 #include "localqueryresults.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer_server {
 class RPCQrWatcher;

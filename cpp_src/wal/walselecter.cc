@@ -79,7 +79,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 			WALRecord rec = *it;
 			switch (rec.type) {
 				case WalItemUpdate:
-					if (ns_->items_[rec.id.ToNumber()].IsFree()) {
+					if (ns_->items_[rec.id].IsFree()) {
 						if (snapshot) {
 							assertrx(!start);
 							assertrx(count < 0);
@@ -91,9 +91,9 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 						start--;
 					} else if (count) {
 						// Put as usual ItemRef
-						[[maybe_unused]] const auto iLSN = lsn_t(ns_->items_[rec.id.ToNumber()].GetLSN());
+						[[maybe_unused]] const auto iLSN = lsn_t(ns_->items_[rec.id].GetLSN());
 						assertf(iLSN.Counter() == (lsn_t(it.GetLSN()).Counter()), "lsn {} != {}, ns={}", iLSN, it.GetLSN(), ns_->name_);
-						result.AddItemRef(rec.id, ns_->items_[rec.id.ToNumber()]);
+						result.AddItemRef(rec.id, ns_->items_[rec.id]);
 						count--;
 					}
 					result.totalCount++;
@@ -181,13 +181,14 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 			}
 		}
 		for (size_t id = 0; count && id < ns_->items_.size(); ++id) {
-			if (ns_->items_[id].IsFree()) {
+			const auto rowId = IdType::FromNumber(id);
+			if (ns_->items_[rowId].IsFree()) {
 				continue;
 			}
 			if (start) {
 				start--;
 			} else if (count) {
-				result.AddItemRef(IdType::FromNumber(id), ns_->items_[id]);
+				result.AddItemRef(rowId, ns_->items_[rowId]);
 				count--;
 			}
 			result.totalCount++;

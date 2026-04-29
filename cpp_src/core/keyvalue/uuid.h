@@ -76,6 +76,16 @@ public:
 	static std::optional<Uuid> TryParse(std::string_view) noexcept;
 	void PutToStr(std::span<char>) const noexcept;
 
+	template <typename SerializerT>
+	static void Serialize(const Uuid& uuid, SerializerT& ser) {
+		ser.PutUInt64(uuid[0]);
+		ser.PutUInt64(uuid[1]);
+	}
+	template <typename SerializerT>
+	static Uuid Deserialize(SerializerT& ser) {
+		return ser.GetVarUInt();
+	}
+
 private:
 	explicit Uuid(uint64_t v1, uint64_t v2) noexcept : data_{v1, v2} {}
 	uint64_t operator[](unsigned i) const noexcept {

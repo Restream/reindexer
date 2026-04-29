@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include "core/id_type.h"
+#include "core/index/float_vector/float_vector_id.h"
 #include "core/keyvalue/float_vector.h"
 #include "estl/h_vector.h"
 
@@ -33,7 +33,7 @@ public:
 		if (vect.IsEmpty()) {
 			return false;
 		}
-		emplace_back(std::move(vect));
+		emplace_back(vect);
 		return true;
 	}
 	ConstFloatVectorView Back() const noexcept { return ConstFloatVectorView{back()}; }
@@ -63,10 +63,10 @@ private:
 
 	template <typename It>
 	void updatePayload(const NamespaceImpl& ns, const FloatVectorIndexData& index, It it, const It& end,
-					   std::span<ConstFloatVectorView> vectorsData);
+					   std::span<ConstFloatVectorView> vectors);
 	template <typename It>
-	void add(const NamespaceImpl& ns, const FloatVectorIndexInfo& indexInfo, It it, const It& end, std::vector<IdType>& ids,
-			 std::vector<ConstFloatVectorView>& vectorsData);
+	void add(const NamespaceImpl& ns, const FloatVectorIndexInfo& indexInfo, It it, const It& end, std::vector<FloatVectorId>&,
+			 std::vector<ConstFloatVectorView>& vectors);
 
 	std::vector<NsFloatVectorIndexes> vectorsByNs_;
 };

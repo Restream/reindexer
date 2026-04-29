@@ -5,6 +5,7 @@
 #include "estl/lock.h"
 #include "estl/mutex.h"
 #include "ft_api.h"
+#include "gtests/tests/gtest_cout.h"
 #include "tools/fsops.h"
 
 using namespace std::string_view_literals;
@@ -125,11 +126,6 @@ TEST_P(FTStressApi, ConcurrencyCheck) {
 TEST_P(FTStressApi, LargeMergeLimit) {
 	// Check if results are bounded by merge limit
 	auto ftCfg = GetDefaultConfig();
-#if RX_WITH_STDLIB_DEBUG
-	if (ftCfg.optimization != reindexer::FtFastConfig::Optimization::CPU) {
-		GTEST_SKIP_("Test is too large. Do not run in twice in debug build");
-	}
-#endif	// RX_WITH_STDLIB_DEBUG
 	ftCfg.mergeLimit = 100'000;
 	Init(ftCfg);
 	const std::string kBase1 = "aaaa";
@@ -173,16 +169,64 @@ TEST_P(FTStressApi, LargeMergeLimit) {
 	}
 }
 
-INSTANTIATE_TEST_SUITE_P(, FTStressApi,
-						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),
-						 [](const auto& info) {
-							 switch (info.param) {
-								 case reindexer::FtFastConfig::Optimization::Memory:
-									 return "OptimizationByMemory";
-								 case reindexer::FtFastConfig::Optimization::CPU:
-									 return "OptimizationByCPU";
-								 default:
-									 assert(false);
-									 std::abort();
-							 }
-						 });
+TEST_P(FTStressApi, Unique) {
+	Init(GetDefaultConfig());
+
+	std::vector<std::string> data;
+	std::set<size_t> check;
+	std::set<std::string> checks;
+
+	for (int i = 0; i < 1000; ++i) {
+		bool inserted = false;
+		size_t n;
+		std::string s;
+
+		while (!inserted) {
+			n = rand();
+			auto res = check.insert(n);
+			inserted = res.second;
+		}
+
+		inserted = false;
+
+		while (!inserted) {
+			s = rt.RandString();
+			auto res = checks.insert(s);
+			inserted = res.second;
+		}
+
+		data.push_back(s + std::to_string(n));
+	}
+
+	for (size_t i = 0; i < data.size(); i++) {
+		Add(data[i], data[i]);
+		if (i % 5 == 0) {
+			for (size_t j = 0; j < i; j++) {
+				if (i == 40 && j == 26) {
+					int a = 3;	// NOLINT(*unused-but-set-variable) This code is just to load CPU by non-rx stuff
+					a++;
+					(void)a;
+				}
+				auto res = StressSelect(data[j]);
+				if (res.Count() != 1) {
+					for (auto it : res) {
+						TestCout() << "Item: " << it.GetItem(false).GetJSON() << std::endl;
+					}
+					abort();
+				}
+			}
+		}
+	}
+}
+
+INSTANTIATE_TEST_SUITE_P(, FTStressApi, ::testing::Values(kRxFtTestTypes), [](const auto& info) {
+	switch (info.param) {
+		case reindexer::FTConfig::Optimization::Memory:
+			return "OptimizationByMemory";
+		case reindexer::FTConfig::Optimization::CPU:
+			return "OptimizationByCPU";
+		default:
+			assert(false);
+			std::abort();
+	}
+});

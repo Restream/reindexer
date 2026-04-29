@@ -1,17 +1,17 @@
 //go:build sharding_test
-// +build sharding_test
 
 package sharding
 
 import (
 	"flag"
-	"github.com/goccy/go-json"
 	"log"
 	"os"
 	"reflect"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5"
 	_ "github.com/restream/reindexer/v5/bindings/cproto"

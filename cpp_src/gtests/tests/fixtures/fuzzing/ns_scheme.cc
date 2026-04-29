@@ -2,7 +2,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "index.h"
 #include "random_generator.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace fuzzing {
 

@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "base_fixture.h"
-#include "core/ft/config/ftfastconfig.h"
+#include "core/ft/config/ftconfig.h"
 #include "ft_base.h"
 #include "tools/clock.h"
 #include "tools/fsops.h"
@@ -26,7 +26,7 @@ private:
 
 	virtual reindexer::Item MakeItem(benchmark::State&) override;
 
-	template <reindexer::FtFastConfig::Optimization>
+	template <reindexer::FTConfig::Optimization>
 	void UpdateIndex(State&);
 	void Insert(State& state);
 	void BuildInsertIncremental(State& state);
@@ -52,32 +52,23 @@ private:
 
 	void BuildCommonIndexes(State& state);
 	void BuildFastTextIndex(State& state);
-	void BuildFuzzyTextIndex(State& state);
 
 	void Fast1WordMatch(State& state);
 	void Fast2WordsMatch(State& state);
-	void Fuzzy1WordMatch(State& state);
-	void Fuzzy2WordsMatch(State& state);
 
 	void Fast1PrefixMatch(State& state);
 	void Fast2PrefixMatch(State& state);
-	void Fuzzy1PrefixMatch(State& state);
-	void Fuzzy2PrefixMatch(State& state);
 
 	void Fast1SuffixMatch(State& state);
 	void Fast2SuffixMatch(State& state);
-	void Fuzzy1SuffixMatch(State& state);
-	void Fuzzy2SuffixMatch(State& state);
 
 	void Fast1TypoWordMatch(State& state);
 	void Fast2TypoWordMatch(State& state);
-	void Fuzzy1TypoWordMatch(State& state);
-	void Fuzzy2TypoWordMatch(State& state);
 
 	void BuildStepFastIndex(State& state);
 	void Last(State& state);
 
-	template <reindexer::FtFastConfig::Optimization>
+	template <reindexer::FTConfig::Optimization>
 	void InitForAlternatingUpdatesAndSelects(State&);
 	void AlternatingUpdatesAndSelects(benchmark::State&);
 	void AlternatingUpdatesAndSelectsByComposite(benchmark::State&);
@@ -86,7 +77,7 @@ private:
 	[[nodiscard]] std::vector<std::string> GetRandomCountries(size_t cnt = 5);
 	reindexer::Item MakeLowDiversityItem(int id);
 
-	reindexer::FtFastConfig ftLowDiversityCfg_;
+	reindexer::FTConfig ftLowDiversityCfg_;
 	std::vector<std::string> words2_;
 	std::vector<std::string> countries_;
 
@@ -209,7 +200,7 @@ private:
 
 	void updateAlternatingNs(reindexer::WrSerializer&, benchmark::State&);
 	reindexer::Error readDictFile(const std::string& fileName, std::vector<std::string>& words);
-	void setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FtFastConfig& cfg);
+	void setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FTConfig& cfg);
 	unsigned int initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::string_view indexName, benchmark::IterationCount iters);
 	void dropNamespace(std::string_view name, benchmark::State&);
 	const std::string alternatingNs_ = "FtAlternatingUpdatesAndSelects";

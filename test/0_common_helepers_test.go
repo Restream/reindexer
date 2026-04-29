@@ -2,6 +2,8 @@ package reindexer
 
 import (
 	"fmt"
+	"math/rand"
+	"reflect"
 	"testing"
 
 	"github.com/restream/reindexer/v5"
@@ -21,4 +23,17 @@ func OpenNamespaceWrapper(ns string, opts *reindexer.NamespaceOptions, s any) (e
 		}
 	}()
 	return DB.OpenNamespace(ns, opts, s)
+}
+
+func GetRandomElementFromSlice(slice any) any {
+	v := reflect.ValueOf(slice)
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		if v.Len() == 0 {
+			return nil
+		}
+		return v.Index(rand.Intn(v.Len())).Interface()
+	default:
+		return slice
+	}
 }

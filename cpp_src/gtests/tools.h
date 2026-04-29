@@ -111,7 +111,7 @@ T randBin(long long min, long long max) noexcept {
 	return static_cast<T>((rand() % (max - min)) + min) / static_cast<T>(divider);
 }
 
-inline reindexer::Point randPoint(long long range) noexcept {
+inline reindexer::Point randPoint(long long range) {
 	return reindexer::Point{randBin<double>(-range, range), randBin<double>(-range, range)};
 }
 
@@ -173,23 +173,38 @@ inline std::function<void()> exceptionWrapper(std::function<void()>&& func) {
 	};
 }
 
+inline reindexer::VectorMetric randMetric() noexcept {
+	switch(rand() % 3) {
+		case 0:
+			return reindexer::VectorMetric::Cosine;
+		case 1:
+			return reindexer::VectorMetric::InnerProduct;
+		case 2:
+		default:
+			return reindexer::VectorMetric::L2;
+	}
+}
+
 #define ASSERT_JSON_CONTAIN_FIELD(json, fieldName) ASSERT_FALSE(findJsonField(json, fieldName).empty()) << fieldName;
 
 #define ASSERT_JSON_NOT_CONTAIN_FIELD(json, fieldName) ASSERT_TRUE(findJsonField(json, fieldName).empty()) << fieldName;
 
-#define ASSERT_JSON_FIELD_ABSENT_OR_IS_NULL(json, fieldName)                \
-	if (const auto& node = findJsonField(json, fieldName); !node.empty()) { \
-		ASSERT_EQ(node.value.getTag(), gason::JsonTag::JSON_NULL);          \
+#define ASSERT_JSON_FIELD_ABSENT_OR_IS_NULL(json, fieldName)                  \
+	if (const auto& node = findJsonField(json, fieldName); !node.isEmpty()) { \
+		ASSERT_EQ(node.value.getTag(), gason::JsonTag::JSON_NULL);            \
 	}
 
-#define ASSERT_JSON_FIELD_IS_NULL(json, fieldName)                                    \
-	if (const auto& node = findJsonField(json, fieldName); !node.empty()) {           \
-		const auto tag = node.value.getTag();                                         \
-		ASSERT_TRUE(tag == gason::JsonTag::JSON_NULL || tag == gason::JsonTag::ARRAY) \
-			<< "fieldName: " << fieldName << "; tag: " << JsonTagToTypeStr(tag);      \
-		if (tag == gason::JsonTag::ARRAY) {                                           \
-			ASSERT_EQ(begin(node.value), end(node.value));                            \
-		}                                                                             \
+#define ASSERT_JSON_IS_NULL(json, fieldName)                                      \
+	const auto tag = json.getTag();                                               \
+	ASSERT_TRUE(tag == gason::JsonTag::JSON_NULL || tag == gason::JsonTag::ARRAY) \
+		<< "fieldName: " << fieldName << "; tag: " << JsonTagToTypeStr(tag);      \
+	if (tag == gason::JsonTag::ARRAY) {                                           \
+		ASSERT_EQ(begin(json), end(json));                                        \
+	}
+
+#define ASSERT_JSON_FIELD_IS_NULL(json, fieldName)                            \
+	if (const auto& node = findJsonField(json, fieldName); !node.isEmpty()) { \
+		ASSERT_JSON_IS_NULL(node.value, fieldName);                           \
 	}
 
 #define ASSERT_JSON_FIELD_INT_EQ(json, fieldName, expectedVal)                      \
@@ -210,19 +225,26 @@ inline std::function<void()> exceptionWrapper(std::function<void()>&& func) {
 		ASSERT_EQ(field.value.toDouble(), expectedVal) << fieldName;                \
 	}
 
-#define ASSERT_JSON_FIELD_ARRAY_EQ(json, fieldName, expectedVal)                                                \
+#define ASSERT_JSON_ARRAY_EQ(json, fieldName, expectedVal)                                                      \
 	if (expectedVal.empty()) {                                                                                  \
-		ASSERT_JSON_FIELD_IS_NULL(json, fieldName);                                                             \
+		ASSERT_JSON_IS_NULL(json.value, fieldName);                                                             \
 	} else {                                                                                                    \
-		const auto& node = findJsonField(json, fieldName);                                                      \
-		ASSERT_TRUE(node.isArray()) << JsonTagToTypeStr(node.value.getTag());                                   \
+		ASSERT_TRUE(json.isArray()) << JsonTagToTypeStr(json.value.getTag());                                   \
 		auto expectedIt = expectedVal.begin();                                                                  \
 		const auto expectedEnd = expectedVal.end();                                                             \
-		auto it = begin(node.value);                                                                            \
-		const auto end = gason::end(node.value);                                                                \
+		auto it = begin(json.value);                                                                            \
+		const auto end = gason::end(json.value);                                                                \
 		for (; it != end && expectedIt != expectedEnd; ++it, ++expectedIt) {                                    \
 			ASSERT_EQ(it->As<std::remove_cv_t<std::remove_reference_t<decltype(*expectedIt)>>>(), *expectedIt); \
 		}                                                                                                       \
 		ASSERT_EQ(it, end);                                                                                     \
 		ASSERT_EQ(expectedIt, expectedEnd);                                                                     \
+	}
+
+#define ASSERT_JSON_FIELD_ARRAY_EQ(json, fieldName, expectedVal) \
+	if (expectedVal.empty()) {                                   \
+		ASSERT_JSON_FIELD_IS_NULL(json, fieldName);              \
+	} else {                                                     \
+		const auto& node = findJsonField(json, fieldName);       \
+		ASSERT_JSON_ARRAY_EQ(node, fieldName, expectedVal);      \
 	}

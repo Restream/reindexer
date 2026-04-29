@@ -12,13 +12,13 @@ protected:
 
 class [[nodiscard]] FTSelectFunctionsApiF : public FTSelectFunctionsApi {
 public:
-	reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2) override {
-		reindexer::FtFastConfig cfg(fieldsCount);
+	reindexer::FTConfig GetDefaultConfig(size_t fieldsCount = 2) override {
+		reindexer::FTConfig cfg(fieldsCount);
 		cfg.enableNumbersSearch = true;
 		cfg.logLevel = 5;
 		cfg.mergeLimit = 20000;
 		cfg.maxStepSize = 100;
-		cfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+		cfg.optimization = reindexer::FTConfig::Optimization::Memory;
 		return cfg;
 	}
 };
@@ -497,7 +497,7 @@ TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
 	const unsigned int kItemCount = 70'000;	 // This values has to be larger than 65k
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.mergeLimit = 1'000'000;
-	ftCfg.optimization = reindexer::FtFastConfig::Optimization::CPU;
+	ftCfg.optimization = reindexer::FTConfig::Optimization::CPU;
 	ftCfg.maxAreasInDoc = 100000;
 	Init(ftCfg);
 	const std::vector<std::string_view> words = {"zero",	 "one",		"two",	   "three",		"four",		"five",	   "six",
@@ -564,16 +564,14 @@ TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
 }
 #endif
 
-INSTANTIATE_TEST_SUITE_P(, FTSelectFunctionsApi,
-						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),
-						 [](const auto& info) {
-							 switch (info.param) {
-								 case reindexer::FtFastConfig::Optimization::Memory:
-									 return "OptimizationByMemory";
-								 case reindexer::FtFastConfig::Optimization::CPU:
-									 return "OptimizationByCPU";
-								 default:
-									 assert(false);
-									 std::abort();
-							 }
-						 });
+INSTANTIATE_TEST_SUITE_P(, FTSelectFunctionsApi, ::testing::Values(kRxFtTestTypes), [](const auto& info) {
+	switch (info.param) {
+		case reindexer::FTConfig::Optimization::Memory:
+			return "OptimizationByMemory";
+		case reindexer::FTConfig::Optimization::CPU:
+			return "OptimizationByCPU";
+		default:
+			assert(false);
+			std::abort();
+	}
+});

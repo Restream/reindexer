@@ -20,50 +20,35 @@ public:
 	PayloadFieldValue(const PayloadFieldType& t, uint8_t* v) noexcept : t_(t), p_(v) {}
 	// Single value operations
 	void Set(Variant kv) {
-		t_.Type().EvaluateOneOf(
-			[&kv](KeyValueType::Int64) {
-				if (kv.Type().Is<KeyValueType::Int>()) {
-					std::ignore = kv.convert(KeyValueType::Int64{});
-				}
-			},
-			[&kv](KeyValueType::Int) {
-				if (kv.Type().Is<KeyValueType::Int64>()) {
-					std::ignore = kv.convert(KeyValueType::Int{});
-				}
-			},
-			[&kv](KeyValueType::Uuid) {
-				if (kv.Type().Is<KeyValueType::String>()) {
-					std::ignore = kv.convert(KeyValueType::Uuid{});
-				}
-			},
-			[](concepts::OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Double, KeyValueType::Float, KeyValueType::Composite,
-							   KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::FloatVector> auto) noexcept {
-			});
-		if (!kv.Type().IsSame(t_.Type())) {
-			throwSetTypeMissmatch(kv);
-		}
-
-		t_.Type().EvaluateOneOf(
-			[&](KeyValueType::Int) noexcept { copyVariantToPtr<int>(kv); },
-			[&](KeyValueType::Bool) noexcept { copyVariantToPtr<bool>(kv); },
-			[&](KeyValueType::Int64) noexcept { copyVariantToPtr<int64_t>(kv); },
-			[&](KeyValueType::Double) noexcept { copyVariantToPtr<double>(kv); },
-			[&](KeyValueType::String) noexcept { copyVariantToPtr<p_string>(kv); }, [&](KeyValueType::Uuid) { copyVariantToPtr<Uuid>(kv); },
-			[&](KeyValueType::FloatVector) {
-				assertrx(!kv.DoHold());
-				ConstFloatVectorView vect{kv};
-				if (!vect.IsEmpty() && t_.FloatVectorDimension() != vect.Dimension()) {
-					throw Error{errNotValid, "Attempt to write vector of dimension {} in a float vector field of dimension {}",
-								vect.Dimension().Value(), t_.FloatVectorDimension().Value()};
-				}
-				uint64_t v = vect.Payload();
-				std::memcpy(p_, &v, sizeof(uint64_t));
-			},
-			[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-							   KeyValueType::Float> auto) noexcept {
-				assertrx(0);
-				abort();
-			});
+		kv = PrepareValueForField(t_, std::move(kv));
+		SetPrechecked(kv);
+	}
+	void SetPrechecked(const Variant& kv) noexcept {
+		const auto fieldTypeKVT = t_.Type();
+		assertrx_dbg(fieldTypeKVT.IsSame(kv.Type()));
+		fieldTypeKVT.EvaluateOneOf([&](KeyValueType::Int) noexcept { copyVariantToPtr<int>(kv); },
+								   [&](KeyValueType::Bool) noexcept { copyVariantToPtr<bool>(kv); },
+								   [&](KeyValueType::Int64) noexcept { copyVariantToPtr<int64_t>(kv); },
+								   [&](KeyValueType::Double) noexcept { copyVariantToPtr<double>(kv); },
+								   [&](KeyValueType::String) noexcept { copyVariantToPtr<p_string>(kv); },
+								   [&](KeyValueType::Uuid) noexcept {
+									   try {
+										   copyVariantToPtr<Uuid>(kv);
+									   } catch (std::exception&) {
+										   std::abort();
+									   }
+								   },
+								   [&](KeyValueType::FloatVector) noexcept {
+									   assertrx(!kv.DoHold());
+									   ConstFloatVectorView vect{kv};
+									   uint64_t v = vect.Payload();
+									   std::memcpy(p_, &v, sizeof(uint64_t));
+								   },
+								   [](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+													  KeyValueType::Null, KeyValueType::Float> auto) noexcept {
+									   assertrx(0);
+									   std::abort();
+								   });
 	}
 	Variant Get() noexcept { return Get(Variant::noHold); }
 	template <typename HoldT>
@@ -146,6 +131,60 @@ public:
 									   });
 	}
 
+	static Variant PrepareValueForField(const PayloadFieldType& fieldType, Variant kv) {
+		const auto fieldTypeKVT = fieldType.Type();
+		if (kv.Type().IsSame(fieldTypeKVT)) [[likely]] {
+			CheckFloatVectorDimension(fieldType, kv);
+			return kv;
+		}
+
+		return fieldTypeKVT.EvaluateOneOf(
+			[&](KeyValueType::Int) -> Variant {
+				if (kv.Type().Is<KeyValueType::Int64>()) [[likely]] {
+					std::ignore = kv.convert(fieldTypeKVT);
+					return kv;
+				}
+				throwSetTypeMissmatch(fieldType, kv);
+			},
+			[&](KeyValueType::Int64) -> Variant {
+				if (kv.Type().Is<KeyValueType::Int>()) [[likely]] {
+					std::ignore = kv.convert(fieldTypeKVT);
+					return kv;
+				}
+				throwSetTypeMissmatch(fieldType, kv);
+			},
+			[&](KeyValueType::Uuid) -> Variant {
+				if (kv.Type().Is<KeyValueType::String>()) {
+					auto result = Uuid::TryParse(p_string(kv));
+					if (result.has_value()) [[likely]] {
+						return Variant{*result};
+					}
+				}
+				throwSetTypeMissmatch(fieldType, kv);
+			},
+			[&](KeyValueType::Bool) -> Variant { throwSetTypeMissmatch(fieldType, kv); },
+			[&](KeyValueType::String) -> Variant { throwSetTypeMissmatch(fieldType, kv); },
+			[&](KeyValueType::Double) -> Variant { throwSetTypeMissmatch(fieldType, kv); },
+			[&](KeyValueType::FloatVector) -> Variant { throwSetTypeMissmatch(fieldType, kv); },
+			[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+							   KeyValueType::Float> auto) -> Variant {
+				assertrx(0);
+				abort();
+			});
+	}
+
+	static RX_ALWAYS_INLINE void CheckFloatVectorDimension(const PayloadFieldType& fieldType, const Variant& kv) {
+		if (!fieldType.Type().Is<KeyValueType::FloatVector>()) [[likely]] {
+			return;
+		}
+		assertrx_dbg(kv.Type().Is<KeyValueType::FloatVector>());
+		ConstFloatVectorView vect{kv};
+		if (!vect.IsEmpty() && fieldType.FloatVectorDimension() != vect.Dimension()) [[unlikely]] {
+			throw Error{errNotValid, "Attempt to write vector of dimension {} in a float vector field of dimension {}",
+						vect.Dimension().Value(), fieldType.FloatVectorDimension().Value()};
+		}
+	}
+
 	// Type of value, not owning
 	const PayloadFieldType& t_;
 	// Value data, not owning
@@ -177,7 +216,7 @@ private:
 		return std::hash<T>()(v);
 	}
 
-	[[noreturn]] void throwSetTypeMissmatch(const Variant& kv);
+	[[noreturn]] static void throwSetTypeMissmatch(const PayloadFieldType& fieldType, const Variant& kv);
 };
 
 }  // namespace reindexer

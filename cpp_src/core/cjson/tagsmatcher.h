@@ -6,7 +6,7 @@
 #include "core/payload/payloadtype.h"
 #include "estl/cow.h"
 #include "tools/randomgenerator.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 
@@ -29,6 +29,7 @@ public:
 		return res.IsEmpty() ? impl_.clone()->name2tag(name, canAdd, wasUpdated_) : res;
 	}
 	FieldProperties tags2field(std::span<const TagName> path) const noexcept { return impl_->tags2field(path); }
+	FieldProperties tags2field(std::span<const IndexedPathNode> path) const noexcept { return impl_->tags2field(path); }
 	const std::string& tag2name(TagName tag) const& { return impl_->tag2name(tag); }
 	auto tag2name(TagName) const&& = delete;
 	TagsPath path2tag(std::string_view jsonPath) const { return impl_->path2tag(jsonPath); }

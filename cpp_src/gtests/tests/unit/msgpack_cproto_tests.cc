@@ -64,7 +64,7 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	for (size_t i = 0; i < rows; ++i) {
 		auto row = distinct.GetDistinctRow(i);
 		assertrx(row.size() == 1);
-		found.insert(reindexer::stoi(row[0].As<std::string>(distinct.GetPayloadType(), distinct.GetDistinctFields())));
+		found.insert(reindexer::stoi(row[0].AsSingleString(distinct.GetPayloadType(), distinct.GetDistinctFields())));
 	}
 	ASSERT_EQ(distinct.GetDistinctRowCount(), found.size());
 

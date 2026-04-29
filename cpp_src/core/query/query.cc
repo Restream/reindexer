@@ -5,7 +5,8 @@
 #include "core/query/sql/sqlencoder.h"
 #include "core/query/sql/sqlparser.h"
 #include "core/type_consts_helpers.h"
-#include "tools/serializer.h"
+#include "tools/serilize/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 

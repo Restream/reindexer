@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/ft/config/ftfastconfig.h"
+#include "core/ft/config/ftconfig.h"
 #include "core/ft/ft_fast/dataholder.h"
 #include "indextext.h"
 
@@ -22,15 +22,15 @@ public:
 		// Creates uncommitted copy
 		return std::unique_ptr<Index>(new FastIndexText<Map>(*this));
 	}
-	IdSet::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
-					  const RdxContext&) override;
+	IdSetPlain::Ptr Select(FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType, FtMergeStatuses&&, FtUseExternStatuses,
+						   const RdxContext&) override;
 	IndexMemStat GetMemStat(const RdxContext&) const override;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	void SetOpts(const IndexOpts& opts) override;
 	FtMergeStatuses GetFtMergeStatuses(const RdxContext& rdxCtx) override {
 		this->build(rdxCtx);
-		return {FtMergeStatuses::Statuses(holder_->vdocs_.size(), 0), std::vector<bool>(holder_->rowId2Vdoc_.size(), false),
+		return {FtMergeStatuses::Statuses(holder_->vdocs_.size(), false), std::vector<bool>(holder_->rowId2Vdoc_.size(), false),
 				&holder_->rowId2Vdoc_};
 	}
 	reindexer::FtPreselectT FtPreselect(const RdxContext& rdxCtx) override;
@@ -45,24 +45,24 @@ private:
 	}
 
 	template <typename MergeType>
-	IdSet::Ptr afterSelect(FtCtx& fctx, MergeType&& mergeData, RankSortType, FtMergeStatuses&& statuses, FtUseExternStatuses);
+	IdSetPlain::Ptr afterSelect(FtCtx& fctx, MergeType&& mergeData, RankSortType, FtMergeStatuses&& statuses, FtUseExternStatuses);
 
 	template <auto(RanksHolder::*rankGetter)>
-	void sortAfterSelect(IdSet& mergedIds, RanksHolder&, RankSortType);
+	void sortAfterSelect(IdSetPlain& mergedIds, RanksHolder&, RankSortType);
 
 	template <typename VectorType>
-	IdSet::Ptr applyOptimizationAndSelect(DataHolder<VectorType>* d, FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType,
-										  FtMergeStatuses&& statuses, FtUseExternStatuses, const RdxContext& rdxCtx);
+	IdSetPlain::Ptr applyOptimizationAndSelect(DataHolder<VectorType>* d, FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType,
+											   FtMergeStatuses&& statuses, FtUseExternStatuses, const RdxContext& rdxCtx);
 
 	template <typename VectorType, FtUseExternStatuses useExternalStatuses>
-	IdSet::Ptr applyCtxTypeAndSelect(DataHolder<VectorType>* d, FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType,
-									 FtMergeStatuses&& statuses, FtUseExternStatuses useExternSt, const RdxContext& rdxCtx);
+	IdSetPlain::Ptr applyCtxTypeAndSelect(DataHolder<VectorType>* d, FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType,
+										  FtMergeStatuses&& statuses, FtUseExternStatuses useExternSt, const RdxContext& rdxCtx);
 
 	void commitFulltextImpl() override;
-	FtFastConfig* getConfig() const noexcept { return dynamic_cast<FtFastConfig*>(this->cfg_.get()); }
-	void initConfig(const FtFastConfig* = nullptr);
-	void initHolder(FtFastConfig&);
-	void initTermBoosts(FtFastConfig&);
+	FTConfig* getConfig() const noexcept { return dynamic_cast<FTConfig*>(this->cfg_.get()); }
+	void initConfig(const FTConfig* = nullptr);
+	void initHolder(FTConfig&);
+	void initTermBoosts(FTConfig&);
 	template <class Data>
 	void buildVdocs(Data& data);
 	template <typename MergeType, typename F>

@@ -291,7 +291,7 @@ void ReplicationDataHash::GetJSON(JsonBuilder& builder) const {
 
 void ReplicationDataHash::FromJSON(const gason::JsonNode& root) {
 	hashV1 = root["data_hash"].As<uint64_t>();
-	if (!root["checksum"].empty()) {
+	if (!root["checksum"].isEmpty()) {
 		hashV2 = root["checksum"].As<uint64_t>();
 	} else {
 		hashV2 = std::nullopt;
@@ -313,7 +313,7 @@ bool ReplicationDataHash::IsEqualByAnyVersionTo(PayloadChecksum o) const noexcep
 }
 
 static bool LoadLsn(lsn_t& to, const gason::JsonNode& node) {
-	if (!node.empty()) {
+	if (!node.isEmpty()) {
 		if (node.value.getTag() == gason::JsonTag::OBJECT) {
 			to.FromJSON(node);
 		} else {
@@ -360,7 +360,7 @@ void ReplicationState::FromJSON(std::span<char> json) {
 		token = root["admissible_token"].As<std::string>();
 		std::ignore = LoadLsn(nsVersion, root["ns_version"]);
 		auto clStatusNode = root["clusterization_status"];
-		if (!clStatusNode.empty()) {
+		if (!clStatusNode.isEmpty()) {
 			clusterStatus.FromJSON(clStatusNode);
 		}
 		{

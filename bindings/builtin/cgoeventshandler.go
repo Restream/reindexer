@@ -6,11 +6,12 @@ package builtin
 import "C"
 
 import (
-	"github.com/goccy/go-json"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"github.com/goccy/go-json"
 
 	"github.com/restream/reindexer/v5/bindings"
 )

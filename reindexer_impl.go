@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	lru "github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	otel "go.opentelemetry.io/otel"
 	otelattr "go.opentelemetry.io/otel/attribute"
@@ -81,21 +81,16 @@ type reindexerImpl struct {
 	events *events.EventsHandler
 }
 
-type cacheItems struct {
-	// cached items
-	items *lru.Cache
-}
-
 // Motivation:
 // Key:
 // - id + shardID - unique logic identifier of the document in the sharded cluster;
 // - nsTag - required to handled FORCE-syncs in the clusters. Int64 representation of the LsnT. Contains server ID and timestamp part. Using it as the part of the key to avoid
-// recaching during force-sync (those syncs could apear under the heavy load). Timestamp is required to hadn;e nodes' restarts in the sharded cluster (currenty items' IDs are not consistant between restarts)
+// recaching during force-sync (those syncs could apear under the heavy load). Timestamp is required to hadnle nodes' restarts in the sharded cluster (currently items' IDs are not consistant between restarts)
 // Item:
 // - itemVersion - LSN's counter (does not contain server ID). Represents incremental document's version. Outdated documents will be removed from cache
 // and will not be cached multiple times.
 // - shardingVersion - source ID of the sharding config. It is not incremental, so it can not work as version. Multiple recaching of the same item is possible,
-// but expecting, that sharding config version should be changed very rarelly and probably even in some kind of the maintenance mode.
+// but expecting, that sharding config version should be changed very rarely and probably even in some kind of the maintenance mode.
 
 type cacheKey struct {
 	id      int
@@ -110,6 +105,11 @@ type cacheItem struct {
 	itemVersion int64
 	// version of the sharding config
 	shardingVersion int64
+}
+
+type cacheItems struct {
+	// cached items
+	items *lru.Cache[cacheKey, *cacheItem]
 }
 
 func (ci *cacheItems) Reset() {
@@ -144,16 +144,11 @@ func (ci *cacheItems) Get(key cacheKey) (*cacheItem, bool) {
 	if ci.items == nil {
 		return nil, false
 	}
-
-	item, ok := ci.items.Get(key)
-	if ok {
-		return item.(*cacheItem), ok
-	}
-	return nil, false
+	return ci.items.Get(key)
 }
 
 func newCacheItems(count uint64) (*cacheItems, error) {
-	cache, err := lru.New(int(count))
+	cache, err := lru.New[cacheKey, *cacheItem](int(count))
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,7 @@
 
 #include "tools/clock.h"
 #include "tools/logger.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
 #include "tools/thread_exception_wrapper.h"
 
@@ -104,28 +104,28 @@ size_t DataProcessor<IdCont>::commitIdRelSets(const WordsVector& preprocWords, w
 	auto preprocWordsSize = preprocWords.size();
 	for (auto keyIt = words_um.begin(), endIt = words_um.end(); keyIt != endIt; ++keyIt, ++i) {
 		// Pack idrelset
-		PackedWordEntry<IdCont>* word = nullptr;
+		PackedWordEntry<IdCont>* wordEntry = nullptr;
 		if (preprocWordsSize > i) {
 			if (auto widPtr = std::get_if<WordIdType>(&preprocWords[i]); widPtr) {
 				assertrx_dbg(!widPtr->IsEmpty());
-				word = &holder.GetWordById(*widPtr);
+				wordEntry = &holder.GetWordEntry(*widPtr);
 			}
 		}
-		if (!word) {
-			word = &(*wIt);
+		if (!wordEntry) {
+			wordEntry = &(*wIt);
 			++wIt;
 			idsetcnt += sizeof(*wIt);
 		}
 
 		if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
-			word->vids.insert_back(keyIt->second.vids_.begin(), keyIt->second.vids_.end());
+			wordEntry->vids.insert_back(keyIt->second.vids_.begin(), keyIt->second.vids_.end());
 		} else {
-			word->vids.insert(word->vids.end(), std::make_move_iterator(keyIt->second.vids_.begin()),
-							  std::make_move_iterator(keyIt->second.vids_.end()));
+			wordEntry->vids.insert(wordEntry->vids.end(), std::make_move_iterator(keyIt->second.vids_.begin()),
+								   std::make_move_iterator(keyIt->second.vids_.end()));
 		}
 		keyIt->second.vids_ = IdRelSet();
-		word->vids.shrink_to_fit();
-		idsetcnt += word->vids.heap_size();
+		wordEntry->vids.shrink_to_fit();
+		idsetcnt += wordEntry->vids.heap_size();
 	}
 	return idsetcnt;
 }
@@ -258,31 +258,31 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 
 				assertrx_throw(field < fieldscount);
 
-				const std::vector<WordWithPos>& entrances = task->GetResults();
-				vdoc.wordsCount[field] = entrances.size();
+				const std::vector<WordWithPos>& occurences = task->GetResults();
+				vdoc.wordsCount[field] = occurences.size();
 
-				for (const auto& e : entrances) {
-					const auto whash = h(e.word);
-					if (e.word.empty() || cfg->stopWords.find(e.word, whash) != cfg->stopWords.end()) {
+				for (const auto& occurence : occurences) {
+					const auto whash = h(occurence.word);
+					if (occurence.word.empty() || cfg->stopWords.find(occurence.word, whash) != cfg->stopWords.end()) {
 						continue;
 					}
 
-					if (cfg->splitOptions.ContainsDelims(e.word)) {
-						cfg->splitOptions.RemoveDelims(e.word, wordWithoutDelims);
+					if (cfg->splitOptions.ContainsDelims(occurence.word)) {
+						cfg->splitOptions.RemoveDelims(occurence.word, wordWithoutDelims);
 						if (cfg->stopWords.find(wordWithoutDelims) != cfg->stopWords.end()) {
 							continue;
 						}
 					}
 
-					auto [idxIt, emplaced] = ctx->words_um.try_emplace_prehashed(whash, e.word);
+					auto [idxIt, emplaced] = ctx->words_um.try_emplace_prehashed(whash, occurence.word);
 					(void)emplaced;
-					const int mfcnt = idxIt->second.vids_.Add(vdocId, e.pos, field, arrayIdx);
+					const int mfcnt = idxIt->second.vids_.Add(vdocId, occurence.pos, field, arrayIdx);
 					if (mfcnt > vdoc.mostFreqWordCount[field]) {
 						vdoc.mostFreqWordCount[field] = mfcnt;
 					}
 
-					if (enableNumbersSearch && is_number(e.word)) {
-						buildVirtualWord(e.word, ctx->words_um, vdocId, field, arrayIdx, e.pos, virtualWords);
+					if (enableNumbersSearch && is_number(occurence.word)) {
+						buildVirtualWord(occurence.word, ctx->words_um, vdocId, field, arrayIdx, occurence.pos, virtualWords);
 					}
 				}
 			}

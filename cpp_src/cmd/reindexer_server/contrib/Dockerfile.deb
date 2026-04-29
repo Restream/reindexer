@@ -18,7 +18,7 @@ RUN cd /src && \
 
 FROM debian:stable-slim
 
-ARG RX_VERSION=v5.3.0
+ARG RX_VERSION=v5.13.0
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh

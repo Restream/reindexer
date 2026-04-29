@@ -165,7 +165,7 @@ struct [[nodiscard]] p_string {
 		return reinterpret_cast<const std::string*>(ptr());
 	}
 
-	key_string getKeyString() const noexcept {
+	key_string getKeyString() const {
 		if (type() == tagKeyString) {
 			auto str = reinterpret_cast<key_string_impl*>(const_cast<void*>(ptr()));
 			return key_string(str);

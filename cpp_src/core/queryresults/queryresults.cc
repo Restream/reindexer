@@ -1,9 +1,9 @@
 #include "queryresults.h"
-#include "core/nsselecter/joinedselector.h"
+#include "core/nsselecter/joins/items_processor.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "core/query/query.h"
 #include "core/sorting/sortexpression.h"
 #include "core/type_consts.h"
-#include "joinresults.h"
 #include "tools/catch_and_return.h"
 #include "tools/float_comparison.h"
 
@@ -488,7 +488,7 @@ uint32_t QueryResults::GetJoinedField(int parentNsId) const noexcept {
 		for (int ns = 0; ns < parentNsId; ++ns) {
 			assertrx_dbg(local_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-			joinedField += local_->qr.joined_[size_t(ns)].GetJoinedSelectorsCount();
+			joinedField += local_->qr.joined_[size_t(ns)].GetJoinItemsProcessorsCount();
 		}
 	}
 	return joinedField;
@@ -665,7 +665,7 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 				if (ritItemParams.nsid >= int(qData->joinedSize)) {
 					return reindexer::joins::ItemIterator::CreateEmpty();
 				}
-				rqr.NsJoinRes()->data.jr.SetJoinedSelectorsCount(qData->joinedSize);
+				rqr.NsJoinRes()->data.jr.SetItemsProcessorsCount(qData->joinedSize);
 
 				auto jField = qr_->GetJoinedField(ritItemParams.nsid);
 				for (size_t i = 0; i < joinedData.size(); ++i, ++jField) {
@@ -989,7 +989,7 @@ public:
 		comparators_.reserve(q.GetSortingEntries().size());
 		for (size_t i = 0; i < q.GetSortingEntries().size(); ++i) {
 			const auto& se = q.GetSortingEntries()[i];
-			auto expr = SortExpression::Parse<JoinedSelector>(se.expression, {});
+			auto expr = SortExpression::Parse<joins::ItemsProcessor>(se.expression, {});
 			if (expr.ByField()) {
 				int index = IndexValueType::SetByJsonPath;
 				std::string field;

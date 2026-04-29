@@ -57,13 +57,17 @@ It is recommended to take values of the order between $4 * \sqrt{number\: of\: v
 ### Examples
 ```go
 // For a vector field, the data type must be array or slice of `float32`.
+// For an array vector field, the data type must be slice of array or slice of `float32`.
 type Item struct {
-	Id      int           `reindex:"id,,pk"`
+	Id        int             `reindex:"id,,pk"`
 	// In case of a slice, `dimension` should be explicitly specified in the field tag.
-	VecBF   []float32     `reindex:"vec_bf,vec_bf,start_size=1000,metric=l2,dimension=1000"`
+	VecBF     []float32       `reindex:"vec_bf,vec_bf,start_size=1000,metric=l2,dimension=1000"`
 	// In case of an array, `dimension` is taken to be equal to the size of the array.
-	VecHnsw [2048]float32 `reindex:"vec_hnsw,hnsw,m=16,ef_construction=200,start_size=1000,metric=inner_product,multithreading=1"`
-	VecIvf  [1024]float32 `reindex:"vec_ivf,ivf,centroids_count=80,metric=cosine,radius=0.5"`
+	VecHnsw   [2048]float32   `reindex:"vec_hnsw,hnsw,m=16,ef_construction=200,start_size=1000,metric=inner_product,multithreading=1"`
+	VecIvf    [1024]float32   `reindex:"vec_ivf,ivf,centroids_count=80,metric=cosine,radius=0.5"`
+	// Array float vector index:
+	ArrVecBf  [][]float32     `reindex:"arr_vec_bf,vec_bf,start_size=1000,metric=l2,dimension=1000"`
+	ArrVecIvf [][1024]float32 `reindex:"arr_vec_ivf,ivf,centroids_count=80,metric=cosine,radius=0.5"`
 }
 ```
 
@@ -89,6 +93,8 @@ if err != nil {
 ```
 
 ### Embedding configuration
+> Notice: not yet available for array float vector indexes
+
 Reindexer is able to perform automatic remote HTTP API calls to receive embedding for documents' fields or strings in KNN queries conditions. Currently, reindexer's core simply sends fields/conditions content to external user's service and expects to receive embedding results.
 
 Embedding service has to implement this [openapi spec](embedders_api.yaml).
@@ -131,7 +137,7 @@ To configure automatic embedding you should set `config` field in the target vec
 - `URL` - Embed service URL. The address of the service where embedding requests will be sent. Required
 - `cache_tag` - Name, used to access the cache. Optional, if not specified, caching is not used
 - `fields` - List of index fields to calculate embedding for. Required. Sparse or composite fields are not supported. Don't use fields with precept (may produce incorrect results)
-- `embedding_strategy` - Embedding injection strategy. Optional
+- `embedding_strategy` - Embedding insertion strategy. Optional
   + `always` - Default value, always embed
   + `empty_only` - When the user specified any value for the embedded field (non-empty vector), then automatic embedding is not performed
   + `strict` - When the user sets some value for the embedded field (non-empty vector), we return an error. If the field is empty, we automatically embed
@@ -422,7 +428,7 @@ Result:
 
 ## KNN search
 Supported filtering operations on floating-point vector fields are `KNN`, `Empty`, and `Any`.
-It is not possible to use multiple `KNN` filters in a query, and it is impossible to combine filtering by `KNN` and fulltext.
+It is not possible to use multiple `KNN` filters in a query, but it is possible to combine filtering by `KNN` and fulltext (see [here](hybrid.md)).
 
 Parameters set for a `KNN` query depend on the specific index type. It is required to specify `k` or `radius` (or both) for every index type. `k` is the maximum number of documents returned from the index for subsequent filtering.
 
@@ -551,6 +557,36 @@ Result:
 {"id": 0, "rank()": 1.245}
 ```
 `rank` can also be used to sort by expression. Described in detail [here](readme.md/#sort).
+
+## KNN search by array indexes
+
+A KNN-index with `is_array: false` is treated as 'scalar' and may contain either a single vector or an empty array (`[]`). In cases when you need to index multiple vectors per document within the same index, the flag `is_array: true` may be used. Array vector indexes allow setting from 0 to N vectors in each document as a 2-dimensional array of floats. After KNN search, deduplication per item is performed: if several found vectors belong to the same item, only the best matched vector will be counted in the resulting metric value. Consequently, a KNN query with parameter `k` may return fewer than `k` items.
+
+For example, if a namespace with an array vector index `fv` and `metric=L2` contains the following items:
+```JSON
+{"id": 0, "fv": [[1.0, 1.0], [1.1, 1.0], [1.0, 1.1]]}
+{"id": 1, "fv": [[2.0, 0.0]]}
+{"id": 2, "fv": [[3.0, 0.0]]}
+```
+The result of the query
+```sql
+SELECT * FROM test_ns WHERE KNN(fv, [1.0, 1.0], k=3)
+```
+will contain a single item
+```JSON
+{"id": 0, "fv": [[1.0, 1.0], [1.1, 1.0], [1.0, 1.1]]}
+```
+because all three most suitable vectors belong to this item.
+
+Declaration of the array vector index in Go looks as follows:
+```go
+type TestItemHnswSTArray struct {
+	ID   int              `reindex:"id,,pk"`
+	Vec1 [][1024]float32  `reindex:"vec,hnsw,metric=cosine,multithreading=1"`		 // Syntax with slice of arrays
+	Vec2 [][]float32      `reindex:"vec,hnsw,metric=cosine,multithreading=1,dimension=1024"` // Syntax with slice of slices
+}
+```
+Index may also be created explicitly via an `AddIndex` call, using `IsArray: true` in the `reindexer.IndexDef` object.
 
 ## Query examples
 - Simple `KNN` query on `hnsw` index:

@@ -10,6 +10,7 @@
 #include "sparse_index_data.h"
 #include "tagspath.h"
 #include "tagspathcache.h"
+#include "tools/serilize/serializer.h"
 #include "tools/randomgenerator.h"
 
 namespace reindexer {
@@ -67,6 +68,15 @@ public:
 	auto tag2name(TagName) const&& = delete;
 
 	FieldProperties tags2field(const std::span<const TagName> path) const noexcept {
+		if (path.empty()) {
+			return FieldProperties{FieldProperties::kNotIndexed};
+		}
+		return pathCache_.Lookup(path);
+	}
+	FieldProperties tags2field(std::span<const IndexedPathNode> path) const noexcept {
+		while (!path.empty() && path.back().IsTagIndex()) {
+			path = path.subspan(0, path.size() - 1);
+		}
 		if (path.empty()) {
 			return FieldProperties{FieldProperties::kNotIndexed};
 		}

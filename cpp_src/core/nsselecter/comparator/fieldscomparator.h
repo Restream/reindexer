@@ -48,42 +48,10 @@ public:
 	const std::string& Name() const&& = delete;
 	const std::string& Dump() const& noexcept { return Name(); }
 	const std::string& Dump() const&& = delete;
-	void SetLeftField(const FieldsSet& fields) {
-		assertrx_throw(!leftFieldSet_);
-		setField(fields, ctx_[0].lCtx_);
-		leftFieldSet_ = true;
-	}
-	void SetRightField(const FieldsSet& fields) {
-		assertrx_throw(leftFieldSet_);
-		setField(fields, ctx_[0].rCtx_);
-	}
-	void SetLeftField(const FieldsSet& fset, KeyValueType type, IsArray isArray, const CollateOpts& cOpts) {
-		assertrx_throw(!leftFieldSet_);
-		collateOpts_ = &cOpts;
-		if (type.Is<KeyValueType::Composite>()) {
-			ctx_.clear();
-			ctx_.resize(fset.size());
-			setCompositeField<true>(fset);
-		} else {
-			setField(ctx_[0].lCtx_, fset, type, isArray);
-		}
-		leftFieldSet_ = true;
-	}
-	void SetRightField(const FieldsSet& fset, KeyValueType type, IsArray isArray) {
-		assertrx_throw(leftFieldSet_);
-		if ((ctx_.size() > 1) != type.Is<KeyValueType::Composite>()) {
-			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: {}", name_};
-		}
-		if (type.Is<KeyValueType::Composite>()) {
-			if (ctx_.size() != fset.size()) {
-				throw Error{errQueryExec, "Comparing composite indexes should be the same size: {}", name_};
-			}
-			setCompositeField<false>(fset);
-		} else {
-			validateTypes(ctx_[0].lCtx_.type_, type);
-			setField(ctx_[0].rCtx_, fset, type, isArray);
-		}
-	}
+	void SetLeftField(const FieldsSet& fields);
+	void SetRightField(const FieldsSet& fields);
+	void SetLeftField(const FieldsSet& fset, KeyValueType type, IsArray isArray, const CollateOpts& cOpts);
+	void SetRightField(const FieldsSet& fset, KeyValueType type, IsArray isArray);
 	int GetMatchedCount(bool invert) const noexcept {
 		assertrx_dbg(totalCalls_ >= matchedCount_);
 		return invert ? (totalCalls_ - matchedCount_) : matchedCount_;
@@ -104,41 +72,12 @@ private:
 		FieldContext rCtx_;
 	};
 
+	void validateFieldsSizes(const FieldsSet& newFields);
 	void setField(const TagsPath& tpath, FieldContext& fctx) { fctx.fields_.push_back(tpath); }
-	void setField(const FieldsSet& fields, FieldContext& fctx) {
-		assertrx_dbg(fields.size() == 1);
-		assertrx_dbg(fields[0] == IndexValueType::SetByJsonPath);
-		setField(fields.getTagsPath(0), fctx);
-	}
-	void setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, IsArray isArray) {
-		fctx.fields_ = std::move(fset);
-		fctx.type_ = type;
-		fctx.isArray_ = isArray;
-		if (fctx.fields_.getTagsPathsLength() == 0) {
-			const auto ft{payloadType_->Field(fctx.fields_[0])};
-			fctx.offset_ = ft.Offset();
-			fctx.sizeof_ = ft.ElemSizeof();
-		}
-	}
+	void setField(const FieldsSet& fields, FieldContext& fctx);
+	void setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, IsArray isArray);
 	template <bool left>
-	void setCompositeField(const FieldsSet& fields) {
-		size_t tagsPathIdx = 0;
-		for (size_t i = 0; i < fields.size(); ++i) {
-			const bool isRegularIndex = fields[i] != IndexValueType::SetByJsonPath && fields[i] < payloadType_.NumFields();
-			if (isRegularIndex) {
-				FieldsSet f;
-				f.push_back(fields[i]);
-				const auto ft{payloadType_.Field(fields[i])};
-				setField(left ? ctx_[i].lCtx_ : ctx_[i].rCtx_, std::move(f), ft.Type(), ft.IsArray());
-				if constexpr (!left) {
-					validateTypes(ctx_[i].lCtx_.type_, ctx_[i].rCtx_.type_);
-				}
-			} else {
-				assertrx_dbg(tagsPathIdx < fields.getTagsPathsLength());
-				setField(fields.getTagsPath(tagsPathIdx++), left ? ctx_[i].lCtx_ : ctx_[i].rCtx_);
-			}
-		}
-	}
+	void setCompositeField(const FieldsSet& fields);
 	template <typename LArr, typename RArr>
 	bool compare(const LArr& lhs, const RArr& rhs) const;
 	bool compare(const PayloadValue& item, const Context&) const;

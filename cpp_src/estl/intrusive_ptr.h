@@ -16,7 +16,7 @@ public:
 
 	constexpr intrusive_ptr() noexcept : px{nullptr} {}
 	constexpr intrusive_ptr(std::nullptr_t) noexcept : intrusive_ptr() {}
-	intrusive_ptr(T* p) noexcept : px(p) { intrusive_ptr_add_ref(px); }
+	explicit intrusive_ptr(T* p) noexcept : px(p) { intrusive_ptr_add_ref(px); }
 	intrusive_ptr(T* p, bool add_ref) noexcept : px(p) {
 		if (add_ref) {
 			intrusive_ptr_add_ref(px);

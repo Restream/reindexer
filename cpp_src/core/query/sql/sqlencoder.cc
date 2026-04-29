@@ -2,10 +2,11 @@
 
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/p_string.h"
+#include "core/nsselecter/joins/helpers.h"
 #include "core/queryresults/aggregationresult.h"
 #include "core/type_consts_helpers.h"
 #include "tools/logger.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 enum class [[nodiscard]] NeedQuote : bool { No = false, Yes = true };
 enum class [[nodiscard]] FunctionAsString : bool { No = false, Yes = true };
@@ -77,8 +78,8 @@ void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer& ser, bool stripAr
 			ser << ' ' << e.Operation() << ' ';
 		}
 		if (e.ReverseNamespacesOrder()) {
-			ser << jq.NsName() << '.' << e.RightFieldName() << ' ' << InvertJoinCondition(e.Condition()) << ' ' << query_.NsName() << '.'
-				<< e.LeftFieldName();
+			ser << jq.NsName() << '.' << e.RightFieldName() << ' ' << joins::InvertJoinCondition(e.Condition()) << ' ' << query_.NsName()
+				<< '.' << e.LeftFieldName();
 		} else {
 			ser << query_.NsName() << '.' << e.LeftFieldName() << ' ' << e.Condition() << ' ' << jq.NsName() << '.' << e.RightFieldName();
 		}

@@ -25,7 +25,7 @@ public:
 	ProtobufSchemaBuilder(const ProtobufSchemaBuilder&) = delete;
 	ProtobufSchemaBuilder& operator=(ProtobufSchemaBuilder&&) = delete;
 	ProtobufSchemaBuilder& operator=(const ProtobufSchemaBuilder&) = delete;
-	~ProtobufSchemaBuilder();
+	~ProtobufSchemaBuilder() noexcept(false);
 
 	void Field(std::string_view name, TagName, const FieldProps& props);
 	ProtobufSchemaBuilder Object(TagName, std::string_view name, bool buildTypesOnly = false,

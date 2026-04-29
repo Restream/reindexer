@@ -223,9 +223,9 @@ struct [[nodiscard]] IndexOpts {
 	IndexOpts& SetFloatVector(IndexType, FloatVectorIndexOpts) &;
 	IndexOpts&& SetFloatVector(IndexType idxType, FloatVectorIndexOpts fv) &&;
 	IndexOpts&& SetFloatVector(IndexType idxType) && { return std::move(SetFloatVector(idxType)); }
-	const FloatVectorIndexOpts& FloatVector() const& {
-		assertrx_throw(floatVector_);
-		return *floatVector_;
+	const FloatVectorIndexOpts& FloatVector() const& noexcept {
+		static const FloatVectorIndexOpts empty = FloatVectorIndexOpts();
+		return floatVector_.has_value() ? *floatVector_ : empty;
 	}
 	auto FloatVector() const&& = delete;
 

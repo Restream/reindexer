@@ -34,13 +34,13 @@ public:
 	Aggregator& operator=(Aggregator&&) = delete;
 
 	AggType Type() const noexcept { return aggType_; }
-	const h_vector<std::string, 1>& Names() const& noexcept {
+	const h_vector<std::string, 1>& Names() const& {
 		assertrx_throw(isValid_);
 		return names_;
 	}
 	auto Names() const&& = delete;
 
-	const FieldsSet& GetFieldSet() const& noexcept {
+	const FieldsSet& GetFieldSet() const& {
 		assertrx_throw(isValid_);
 		return fields_;
 	}
@@ -51,7 +51,7 @@ private:
 	class MultifieldComparator;
 	class SinglefieldComparator;
 	struct MultifieldOrderedMap;
-	using MultifieldUnorderedMap = unordered_payload_map<int>;
+	using MultifieldUnorderedMap = unordered_payload_map_fast<int>;
 	using SinglefieldOrderedMap = btree::btree_map<Variant, int, SinglefieldComparator>;
 	using SinglefieldUnorderedMap = fast_hash_map<Variant, int>;
 	using Facets = std::variant<MultifieldOrderedMap, MultifieldUnorderedMap, SinglefieldOrderedMap, SinglefieldUnorderedMap>;

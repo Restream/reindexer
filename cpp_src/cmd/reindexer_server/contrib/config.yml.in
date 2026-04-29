@@ -23,7 +23,11 @@ net:
   # Default is 60 seconds.
   http_write_timeout: 60
   # Max replicated online-updates queue size in bytes (defaul value is 1GB)
-  maxupdatessize: 1073741824
+  max_updates_size: 1073741824
+  # Max HTTP response size in bytes. Default value is 1 GB. 0 is 'unlimited'
+  max_http_rsp_size: 1073741824
+  # Max HTTP request size in bytes. Default value is 8 MB. 0 is 'unlimited' (streaming is not supported)
+  max_http_req_size: 8388608
 
 # Logger configuration
 logger:
