@@ -4,18 +4,19 @@ import (
 	"context"
 	"sync"
 
-	"github.com/restream/reindexer/v5/bindings"
 	"github.com/golang/snappy"
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 var bufPool sync.Pool
 
 type NetBuffer struct {
-	buf   []byte
-	conn  connection
-	reqID int
-	uid   int64
-	args  []any
+	buf       []byte
+	snappyBuf []byte
+	conn      connection
+	reqID     int
+	uid       int64
+	args      []any
 }
 
 func (buf *NetBuffer) Fetch(ctx context.Context, offset, limit int, asJson bool) (err error) {
@@ -84,8 +85,13 @@ func (buf *NetBuffer) parseArgs() (err error) {
 	}
 	retCount := dec.argsCount()
 	if retCount > 0 {
-		for range retCount {
-			buf.args = append(buf.args, dec.intfArg())
+		if cap(buf.args) < retCount {
+			buf.args = make([]any, retCount)
+		} else {
+			buf.args = buf.args[:retCount]
+		}
+		for i := range retCount {
+			buf.args[i] = dec.intfArg()
 		}
 	}
 	return
@@ -134,6 +140,18 @@ func newNetBuffer(size int, conn connection) (buf *NetBuffer) {
 }
 
 func (buf *NetBuffer) decompress() (err error) {
-	buf.buf, err = snappy.Decode(nil, buf.buf)
+	decodedLen, err := snappy.DecodedLen(buf.buf)
+	if err != nil {
+		return err
+	}
+	if cap(buf.snappyBuf) < decodedLen {
+		buf.snappyBuf = make([]byte, decodedLen)
+	}
+	decoded, err := snappy.Decode(buf.snappyBuf[:decodedLen], buf.buf)
+	if err != nil {
+		return err
+	}
+	buf.snappyBuf = buf.buf[:0]
+	buf.buf = decoded
 	return err
 }
