@@ -74,24 +74,12 @@ func (buf *NetBuffer) parseArgs() (err error) {
 	}
 	dec := newRPCDecoder(buf.buf)
 	if err = dec.errCode(); err != nil {
-		if rerr, ok := err.(bindings.Error); ok {
-			if rerr.Code() == bindings.ErrTimeout {
-				err = context.DeadlineExceeded
-			} else if rerr.Code() == bindings.ErrCanceled {
-				err = context.Canceled
-			}
-		}
 		return
 	}
 	retCount := dec.argsCount()
 	if retCount > 0 {
-		if cap(buf.args) < retCount {
-			buf.args = make([]any, retCount)
-		} else {
-			buf.args = buf.args[:retCount]
-		}
-		for i := range retCount {
-			buf.args[i] = dec.intfArg()
+		for range retCount {
+			buf.args = append(buf.args, dec.intfArg())
 		}
 	}
 	return

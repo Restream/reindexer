@@ -107,6 +107,11 @@ func (s *Serializer) PutFloatVector(vec []float32) *Serializer {
 	s.PutVarUInt(uint64(len(vec)) << 1)
 	l := len(s.buf)
 	s.grow(len(vec) * 4)
+	if len(vec) > 0 && isLittleEndian {
+		vs := unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*4)
+		copy(s.buf[l:], vs)
+		return s
+	}
 	for i, value := range vec {
 		binary.LittleEndian.PutUint32(s.buf[l+i*4:], math.Float32bits(value))
 	}
@@ -305,6 +310,12 @@ func (s *Serializer) PutVarInt(v int64) {
 }
 
 func (s *Serializer) PutVarUInt(v uint64) *Serializer {
+	if v < 0x80 {
+		l := len(s.buf)
+		s.grow(1)
+		s.buf[l] = byte(v)
+		return s
+	}
 	l := len(s.buf)
 	s.grow(10)
 	rl := binary.PutUvarint(s.buf[l:], v)
@@ -388,6 +399,14 @@ func (s *Serializer) GetVBytes() (v []byte) {
 	return v
 }
 
+func (s *Serializer) SkipVString() {
+	l := int(s.GetVarUInt())
+	if s.pos+l > len(s.buf) {
+		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", l, len(s.buf)-s.pos))
+	}
+	s.pos += l
+}
+
 func (s *Serializer) readIntBits(sz uintptr) (v int64) {
 	if s.pos+int(sz) > len(s.buf) {
 		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+int(sz), len(s.buf)-s.pos))
@@ -433,6 +452,12 @@ func (s *Serializer) readUIntBits(sz uintptr) (v uint64) {
 }
 
 func (s *Serializer) GetVarUInt() uint64 {
+	if s.pos < len(s.buf) {
+		if b := s.buf[s.pos]; b < 0x80 {
+			s.pos++
+			return uint64(b)
+		}
+	}
 	ret, l := binary.Uvarint(s.buf[s.pos:])
 	s.pos += l
 	return ret

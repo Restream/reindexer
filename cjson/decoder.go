@@ -221,30 +221,8 @@ func asIface(rdser *Serializer, tagType int16) any {
 	}
 }
 
-func canReuseSlice(v reflect.Value, subtag int16) bool {
-	if v.Kind() != reflect.Slice || v.Len() != 0 || subtag == TAG_OBJECT {
-		return false
-	}
-	elem := v.Type().Elem()
-	if elem.Kind() == reflect.Ptr {
-		elem = elem.Elem()
-	}
-	switch elem.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64, reflect.Bool, reflect.String, reflect.Interface:
-		return true
-	default:
-		return false
-	}
-}
-
-func mkSlice(v *reflect.Value, count int, reuse bool) (offset int) {
+func mkSlice(v *reflect.Value, count int) (offset int) {
 	offset = v.Len()
-	if reuse && v.Cap() >= count {
-		v.SetLen(count)
-		return
-	}
 	switch a := v.Addr().Interface().(type) {
 	case *[]string:
 		if offset == 0 {
@@ -376,7 +354,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	var sliceV reflect.Value
 	switch k {
 	case reflect.Slice:
-		offset = mkSlice(v, count, canReuseSlice(*v, subtag))
+		offset = mkSlice(v, count)
 		sliceV = *v
 	case reflect.Interface:
 		origV = *v
@@ -385,7 +363,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			origV.Set(*v)
 			*v = origV
 		}()
-		offset = mkSlice(v, count, false)
+		offset = mkSlice(v, count)
 		sliceV = *v
 	case reflect.Array:
 		if v.Len() < count {

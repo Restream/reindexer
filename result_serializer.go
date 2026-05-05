@@ -96,8 +96,7 @@ func (s *resultSerializer) readRawQueryParamsKeepExtras(v *rawResultQueryParams,
 		ptCount := int(s.GetVarUInt())
 		for range ptCount {
 			nsid := int(s.GetVarUInt())
-			nsname := s.GetVString()
-			_ = nsname
+			s.SkipVString()
 			if (len(updatePayloadType)) != 1 {
 				panic(fmt.Errorf("Internal error: Got payload types from raw query params, but there are no updatePayloadType"))
 			}

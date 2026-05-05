@@ -1,12 +1,13 @@
 package cproto
 
 import (
+	"context"
 	"fmt"
 	"unsafe"
 
+	"github.com/golang/snappy"
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
-	"github.com/golang/snappy"
 )
 
 type rpcEncoder struct {
@@ -117,11 +118,19 @@ func newRPCDecoder(buf []byte) rpcDecoder {
 
 func (r *rpcDecoder) errCode() error {
 	code := r.ser.GetVarUInt()
-	str := r.ser.GetVString()
-	if code != 0 {
-		return bindings.NewError(str, int(code))
+	switch int(code) {
+	case 0:
+		r.ser.SkipVString()
+		return nil
+	case bindings.ErrTimeout:
+		r.ser.SkipVString()
+		return context.DeadlineExceeded
+	case bindings.ErrCanceled:
+		r.ser.SkipVString()
+		return context.Canceled
+	default:
+		return bindings.NewError(r.ser.GetVString(), int(code))
 	}
-	return nil
 }
 
 func (r *rpcDecoder) argsCount() int {

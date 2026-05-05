@@ -117,6 +117,24 @@ type payloadType struct {
 func (pt *payloadType) Read(ser *Serializer, skip bool) {
 	pt.PStringHdrOffset = uintptr(ser.GetVarUInt())
 	fieldsCount := int(ser.GetVarUInt())
+	if skip {
+		for range fieldsCount {
+			fieldType := int(ser.GetVarUInt())
+			if fieldType == valueFloatVector {
+				ser.GetVarUInt()
+			}
+			ser.SkipVString()
+			ser.GetVarUInt()
+			ser.GetVarUInt()
+			ser.GetVarUInt()
+			jsonPathCnt := ser.GetVarUInt()
+			for ; jsonPathCnt != 0; jsonPathCnt-- {
+				ser.SkipVString()
+			}
+		}
+		return
+	}
+
 	fields := make([]payloadFieldType, fieldsCount)
 
 	for i := range fieldsCount {
@@ -132,12 +150,10 @@ func (pt *payloadType) Read(ser *Serializer, skip bool) {
 		fields[i].IsArray = ser.GetVarUInt() != 0
 		jsonPathCnt := ser.GetVarUInt()
 		for ; jsonPathCnt != 0; jsonPathCnt-- {
-			ser.GetVString()
+			ser.SkipVString()
 		}
 	}
-	if !skip {
-		pt.Fields = fields
-	}
+	pt.Fields = fields
 }
 
 type payloadIface struct {
