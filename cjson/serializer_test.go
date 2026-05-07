@@ -39,6 +39,17 @@ func TestSerializerPutFloatVectorEncoding(t *testing.T) {
 	}
 }
 
+func TestSerializerSkipVString(t *testing.T) {
+	ser := NewSerializer(nil)
+	ser.PutVString("skip-me")
+	ser.PutVString("keep-me")
+
+	rd := NewSerializer(ser.Bytes())
+	rd.SkipVString()
+	assert.Equal(t, "keep-me", rd.GetVString())
+	assert.True(t, rd.Eof())
+}
+
 func TestSerializerWriteIntsAndWriteInts16(t *testing.T) {
 	t.Run("WriteInts16", func(t *testing.T) {
 		ser := NewSerializer(nil)

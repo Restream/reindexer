@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/golang/snappy"
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
-	"github.com/golang/snappy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -117,12 +117,16 @@ func BenchmarkNetBufferDecompressReuse(b *testing.B) {
 	}
 	compressed := snappy.Encode(nil, raw)
 
-	nb := &NetBuffer{}
+	nb := &NetBuffer{buf: append([]byte(nil), compressed...)}
+	err := nb.decompress()
+	require.NoError(b, err)
+
 	b.ReportAllocs()
 	b.SetBytes(int64(len(raw)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		nb.buf = compressed
+
+	for b.Loop() {
+		nb.buf, nb.snappyBuf = nb.snappyBuf[:len(compressed)], nb.buf[:0]
+		copy(nb.buf, compressed)
 		err := nb.decompress()
 		require.NoError(b, err)
 	}

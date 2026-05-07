@@ -20,7 +20,7 @@ func (tm *tagsMatcher) Read(ser *Serializer, skip bool) {
 		}
 	} else {
 		for range tagsCount {
-			ser.GetVString()
+			ser.SkipVString()
 		}
 	}
 }
