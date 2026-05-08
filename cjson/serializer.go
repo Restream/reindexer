@@ -303,10 +303,11 @@ func (s *Serializer) WriteFloat64s(v []float64) (n int, err error) {
 }
 
 func (s *Serializer) PutVarInt(v int64) {
-	l := len(s.buf)
-	s.grow(10)
-	rl := binary.PutVarint(s.buf[l:], v)
-	s.buf = s.buf[:rl+l]
+	uv := uint64(v) << 1
+	if v < 0 {
+		uv = ^uv
+	}
+	s.PutVarUInt(uv)
 }
 
 func (s *Serializer) PutVarUInt(v uint64) *Serializer {
@@ -343,7 +344,7 @@ func (s *Serializer) PutVString(v string) *Serializer {
 	s.PutVarUInt(uint64(sl))
 	l := len(s.buf)
 	s.grow(sl)
-	copy(s.buf[l:], []byte(v))
+	copy(s.buf[l:], v)
 	return s
 }
 func (s *Serializer) Truncate(pos int) {
@@ -474,6 +475,13 @@ func (s *Serializer) GetUuid() string {
 }
 
 func (s *Serializer) GetVarInt() int64 {
+	if s.pos < len(s.buf) {
+		if b := s.buf[s.pos]; b < 0x80 {
+			s.pos++
+			uv := uint64(b)
+			return int64(uv>>1) ^ -int64(uv&1)
+		}
+	}
 	ret, l := binary.Varint(s.buf[s.pos:])
 	s.pos += l
 	return ret

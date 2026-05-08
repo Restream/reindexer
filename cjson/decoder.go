@@ -116,7 +116,7 @@ func skipTag(rdser *Serializer, tagType int16) {
 		rdser.GetVarUInt()
 	case TAG_NULL:
 	case TAG_STRING:
-		rdser.GetVString()
+		rdser.SkipVString()
 	case TAG_UUID:
 		rdser.GetUuid()
 	case TAG_FLOAT:
@@ -207,7 +207,7 @@ func asIface(rdser *Serializer, tagType int16) any {
 	case TAG_DOUBLE:
 		return rdser.GetDouble()
 	case TAG_BOOL:
-		return rdser.GetVarInt() != 0
+		return rdser.GetVarUInt() != 0
 	case TAG_STRING:
 		return rdser.GetVString()
 	case TAG_NULL:

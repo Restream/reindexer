@@ -193,6 +193,40 @@ func BenchmarkSerializerPutVString(b *testing.B) {
 	benchBytesSink = ser.Bytes()
 }
 
+func BenchmarkSerializerPutVarInt(b *testing.B) {
+	for _, value := range []int64{0, 42, -42, 8192, -8192} {
+		b.Run(fmt.Sprintf("value=%d", value), func(b *testing.B) {
+			ser := NewSerializer(make([]byte, 0, binary.MaxVarintLen64))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				ser.Reset()
+				ser.PutVarInt(value)
+			}
+			benchBytesSink = ser.Bytes()
+		})
+	}
+}
+
+func BenchmarkSerializerGetVarInt(b *testing.B) {
+	for _, value := range []int64{0, 42, -42, 8192, -8192} {
+		b.Run(fmt.Sprintf("value=%d", value), func(b *testing.B) {
+			wr := NewSerializer(nil)
+			wr.PutVarInt(value)
+			payload := wr.Bytes()
+			rd := NewSerializer(payload)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if rd.pos >= len(rd.buf) {
+					rd.pos = 0
+				}
+				benchUint64Sink ^= uint64(rd.GetVarInt())
+			}
+		})
+	}
+}
+
 func BenchmarkSerializerReadUIntBits(b *testing.B) {
 	sizes := []uintptr{1, 2, 4, 8}
 	for _, sz := range sizes {

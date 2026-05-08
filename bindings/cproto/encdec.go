@@ -167,7 +167,7 @@ func (r *rpcDecoder) intfArg() any {
 	case bindings.ValueInt:
 		return int(r.ser.GetVarInt())
 	case bindings.ValueBool:
-		return r.ser.GetVarInt() != 0
+		return r.ser.GetVarUInt() != 0
 	case bindings.ValueString:
 		return r.ser.GetVBytes()
 	case bindings.ValueInt64:
