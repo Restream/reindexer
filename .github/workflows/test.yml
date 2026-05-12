@@ -18,25 +18,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $url = "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip"
-          $archive = Join-Path $env:RUNNER_TEMP "nsis-3.11.zip"
-          $installDir = Join-Path $env:RUNNER_TEMP "nsis"
-          $expectedHash = "c7d27f780ddb6cffb4730138cd1591e841f4b7edb155856901cdf5f214394fa1"
-
-          Invoke-WebRequest -Uri $url -OutFile $archive -MaximumRedirection 10
-
-          $actualHash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actualHash -ne $expectedHash) {
-            throw "NSIS checksum mismatch. Expected $expectedHash, got $actualHash"
+          choco install nsis.portable --version=3.11.0 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) {
+            throw "Chocolatey failed to install nsis.portable"
           }
-
-          Expand-Archive -Path $archive -DestinationPath $installDir -Force
-          $nsisPath = Join-Path $installDir "nsis-3.11"
-          if (!(Test-Path (Join-Path $nsisPath "makensis.exe"))) {
-            throw "makensis.exe was not found in $nsisPath"
-          }
-
-          $nsisPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          makensis /VERSION
       - name: Build Reindexer
         run: |
           mkdir build && cd build
