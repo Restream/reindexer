@@ -194,7 +194,7 @@ func (pl *payloadIface) ptr(field, idx, typ int) unsafe.Pointer {
 const hexChars = "0123456789abcdef"
 
 func createUuid(v [2]uint64) string {
-	buf := make([]byte, 36)
+	var buf [36]byte
 	buf[0] = hexChars[(v[0]>>60)&0xF]
 	buf[1] = hexChars[(v[0]>>56)&0xF]
 	buf[2] = hexChars[(v[0]>>52)&0xF]
@@ -231,7 +231,7 @@ func createUuid(v [2]uint64) string {
 	buf[33] = hexChars[(v[1]>>8)&0xF]
 	buf[34] = hexChars[(v[1]>>4)&0xF]
 	buf[35] = hexChars[v[1]&0xF]
-	return string(buf)
+	return string(buf[:])
 }
 
 func (pl *payloadIface) getInt(field, idx int) int {

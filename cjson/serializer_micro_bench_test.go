@@ -10,6 +10,7 @@ import (
 var (
 	benchUint64Sink uint64
 	benchBytesSink  []byte
+	benchStringSink string
 )
 
 func benchmarkSerializerBytesOp(b *testing.B, op func(*Serializer, []byte), headerReserve int) {
@@ -149,6 +150,34 @@ func BenchmarkSerializerPutUuid(b *testing.B) {
 		ser.PutUuid(uuid)
 	}
 	benchBytesSink = ser.Bytes()
+}
+
+func BenchmarkSerializerGetUuid(b *testing.B) {
+	uuid := [2]uint64{0x0102030405060708, 0x1112131415161718}
+	wr := NewSerializer(nil)
+	wr.PutUuid(uuid)
+	payload := wr.Bytes()
+	rd := NewSerializer(payload)
+
+	b.ReportAllocs()
+	b.SetBytes(16)
+	b.ResetTimer()
+	for b.Loop() {
+		if rd.pos >= len(rd.buf) {
+			rd.pos = 0
+		}
+		benchStringSink = rd.GetUuid()
+	}
+}
+
+func BenchmarkCreateUuid(b *testing.B) {
+	uuid := [2]uint64{0x0102030405060708, 0x1112131415161718}
+
+	b.ReportAllocs()
+	b.SetBytes(16)
+	for b.Loop() {
+		benchStringSink = createUuid(uuid)
+	}
 }
 
 func BenchmarkSerializerPutVBytes(b *testing.B) {

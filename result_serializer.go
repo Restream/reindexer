@@ -38,6 +38,8 @@ type resultSerializer struct {
 	rankFormat *uint64
 }
 
+var rankFormatSingleFloat = uint64(bindings.RankFormatSingleFloat)
+
 type updatePayloadTypeFunc func(nsid int)
 
 func newSerializer(buf []byte) resultSerializer {
@@ -86,6 +88,14 @@ func (s *resultSerializer) readRawtItemParams(shardId int) (v rawResultItemParam
 }
 
 func (s *resultSerializer) readRawQueryParamsKeepExtras(v *rawResultQueryParams, updatePayloadType ...updatePayloadTypeFunc) {
+	s.readRawQueryParamsInto(v, true, updatePayloadType...)
+}
+
+func (s *resultSerializer) readRawQueryParamsResetMissingExtras(v *rawResultQueryParams, updatePayloadType ...updatePayloadTypeFunc) {
+	s.readRawQueryParamsInto(v, false, updatePayloadType...)
+}
+
+func (s *resultSerializer) readRawQueryParamsInto(v *rawResultQueryParams, keepMissingTags bool, updatePayloadType ...updatePayloadTypeFunc) {
 
 	v.flags = int(s.GetVarUInt())
 	v.totalcount = int(s.GetVarUInt())
@@ -103,18 +113,19 @@ func (s *resultSerializer) readRawQueryParamsKeepExtras(v *rawResultQueryParams,
 			updatePayloadType[0](nsid)
 		}
 	}
-	s.readExtraResults(v)
+	s.readExtraResults(v, keepMissingTags)
 	s.flags = v.flags
 	s.rankFormat = v.rankFormat
 }
 
 func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayloadTypeFunc) (v rawResultQueryParams) {
-	s.readRawQueryParamsKeepExtras(&v, updatePayloadType...)
+	s.readRawQueryParamsResetMissingExtras(&v, updatePayloadType...)
 	return v
 }
 
-func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
+func (s *resultSerializer) readExtraResults(v *rawResultQueryParams, keepMissingTags bool) {
 	firstAgg := true
+	hasIncarnationTags := false
 	v.shardingConfigVersion = -1
 	v.shardId = bindings.ShardingNotSet
 	for {
@@ -138,17 +149,38 @@ func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 		case bindings.QueryResultShardId:
 			v.shardId = int(s.GetVarUInt())
 		case bindings.QueryResultIncarnationTags:
-			shardsCnt := uint(s.GetVarUInt())
-			v.nsIncarnationTags = make(nsTagsMap)
+			hasIncarnationTags = true
+			shardsCnt := int(s.GetVarUInt())
+			if v.nsIncarnationTags == nil {
+				v.nsIncarnationTags = make(nsTagsMap, shardsCnt)
+			}
+			var seenBuf [8]int
+			seen := seenBuf[:0]
+			if shardsCnt > len(seenBuf) {
+				seen = make([]int, 0, shardsCnt)
+			}
 			for range shardsCnt {
 				shardID := int(s.GetVarInt())
-				nsCnt := uint(s.GetVarUInt())
+				nsCnt := int(s.GetVarUInt())
 				if nsCnt > 0 {
-					sl := make([]int64, nsCnt)
+					sl := v.nsIncarnationTags[shardID]
+					if cap(sl) < nsCnt {
+						sl = make([]int64, nsCnt)
+					} else {
+						sl = sl[:nsCnt]
+					}
 					for j := range nsCnt {
 						sl[j] = s.GetVarInt()
 					}
 					v.nsIncarnationTags[shardID] = sl
+					seen = append(seen, shardID)
+				} else {
+					delete(v.nsIncarnationTags, shardID)
+				}
+			}
+			for shardID := range v.nsIncarnationTags {
+				if !hasShardID(seen, shardID) {
+					delete(v.nsIncarnationTags, shardID)
 				}
 			}
 		case bindings.QueryResultRankFormat:
@@ -156,7 +188,21 @@ func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 			if format != bindings.RankFormatSingleFloat {
 				panic(fmt.Sprintf("unexpected rank format value: %d - only supported format is 0 (single float rank)", format))
 			}
-			v.rankFormat = &format
+			v.rankFormat = &rankFormatSingleFloat
 		}
 	}
+	if !keepMissingTags && !hasIncarnationTags && len(v.nsIncarnationTags) > 0 {
+		for shardID := range v.nsIncarnationTags {
+			delete(v.nsIncarnationTags, shardID)
+		}
+	}
+}
+
+func hasShardID(ids []int, shardID int) bool {
+	for _, id := range ids {
+		if id == shardID {
+			return true
+		}
+	}
+	return false
 }

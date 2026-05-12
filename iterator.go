@@ -225,7 +225,9 @@ func (it *Iterator) setBuffer(result bindings.RawBuffer, cleanup bool) {
 	it.ser = newSerializer(result.GetBuf())
 	it.result = result
 	if cleanup {
-		it.rawQueryParams = it.ser.readRawQueryParams(func(nsid int) {
+		nsIncarnationTags := it.rawQueryParams.nsIncarnationTags
+		it.rawQueryParams = rawResultQueryParams{nsIncarnationTags: nsIncarnationTags}
+		it.ser.readRawQueryParamsResetMissingExtras(&it.rawQueryParams, func(nsid int) {
 			it.nsArray[nsid].localCjsonState = it.nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer, it.db.binding, it.nsArray[nsid].name)
 		})
 	} else {
@@ -409,11 +411,26 @@ func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item any) error
 			return bindings.NewError(fmt.Sprintf("can not find field with tag '%s' in struct '%s' for put join results from '%s'",
 				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeLogic)
 		}
+		oldLen := v.Len()
+		newLen := oldLen + len(subitems)
 		if v.IsNil() {
-			v.Set(reflect.MakeSlice(reflect.SliceOf(reflect.PointerTo(it.nsArray[nsIndex+nsIndexOffset].rtype)), 0, len(subitems)))
+			v.Set(reflect.MakeSlice(reflect.SliceOf(reflect.PointerTo(it.nsArray[nsIndex+nsIndexOffset].rtype)), newLen, newLen))
+		} else if newLen <= v.Cap() {
+			v.Set(v.Slice(0, newLen))
+		} else {
+			newCap := newLen
+			if oldCap := v.Cap(); oldCap > 0 {
+				newCap = oldCap * 2
+				if newCap < newLen {
+					newCap = newLen
+				}
+			}
+			nv := reflect.MakeSlice(v.Type(), newLen, newCap)
+			reflect.Copy(nv, v)
+			v.Set(nv)
 		}
-		for _, subitem := range subitems {
-			v.Set(reflect.Append(v, reflect.ValueOf(subitem)))
+		for i, subitem := range subitems {
+			v.Index(oldLen + i).Set(reflect.ValueOf(subitem))
 		}
 	}
 	return nil

@@ -1,6 +1,9 @@
 package cjson
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 type benchSliceDocF32 struct {
 	ID     int       `json:"id"`
@@ -10,6 +13,11 @@ type benchSliceDocF32 struct {
 type benchSliceDocF64 struct {
 	ID     int       `json:"id"`
 	Values []float64 `json:"values"`
+}
+
+type benchSliceStruct struct {
+	ID   int
+	Name string
 }
 
 func BenchmarkEncoderEncodeSliceFloat32(b *testing.B) {
@@ -205,4 +213,58 @@ func BenchmarkDecoderDecodeSliceFloat64Reuse(b *testing.B) {
 		}
 	}
 	benchUint64Sink = uint64(len(dst.Values))
+}
+
+func BenchmarkDecoderMkSliceExtend(b *testing.B) {
+	const count = 64
+
+	b.Run("int-empty", func(b *testing.B) {
+		var dst []int
+		v := reflect.ValueOf(&dst).Elem()
+		b.ReportAllocs()
+		for b.Loop() {
+			dst = nil
+			benchUint64Sink += uint64(mkSlice(&v, count))
+		}
+	})
+
+	b.Run("int-append-no-cap", func(b *testing.B) {
+		dst := make([]int, 1, 1)
+		v := reflect.ValueOf(&dst).Elem()
+		b.ReportAllocs()
+		for b.Loop() {
+			dst = dst[:1:1]
+			benchUint64Sink += uint64(mkSlice(&v, count))
+		}
+	})
+
+	b.Run("int-append-reuse-cap", func(b *testing.B) {
+		dst := make([]int, 1, count+1)
+		v := reflect.ValueOf(&dst).Elem()
+		b.ReportAllocs()
+		for b.Loop() {
+			dst = dst[:1]
+			benchUint64Sink += uint64(mkSlice(&v, count))
+		}
+	})
+
+	b.Run("struct-append-no-cap", func(b *testing.B) {
+		dst := make([]benchSliceStruct, 1, 1)
+		v := reflect.ValueOf(&dst).Elem()
+		b.ReportAllocs()
+		for b.Loop() {
+			dst = dst[:1:1]
+			benchUint64Sink += uint64(mkSlice(&v, count))
+		}
+	})
+
+	b.Run("struct-append-reuse-cap", func(b *testing.B) {
+		dst := make([]benchSliceStruct, 1, count+1)
+		v := reflect.ValueOf(&dst).Elem()
+		b.ReportAllocs()
+		for b.Loop() {
+			dst = dst[:1]
+			benchUint64Sink += uint64(mkSlice(&v, count))
+		}
+	})
 }
