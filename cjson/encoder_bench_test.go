@@ -220,6 +220,7 @@ func TestParseUuidMatchesSlowPath(t *testing.T) {
 		"",
 		"550e8400-e29b-41d4-a716-446655440000",
 		"550e8400e29b41d4a716446655440000",
+		"ffffffff-ffff-ffff-ffff-ffffffffffff",
 		"00000000-0000-0000-0000-000000000000",
 		"550e8400-e29b-41d4-2716-446655440000",
 		"550e8400-e29b-41d4-a716-44665544000x",
