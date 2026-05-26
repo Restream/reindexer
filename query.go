@@ -560,9 +560,6 @@ func (q *Query) finishWhere() *Query {
 // - slice/arrays of values
 // - nil for CondAny/CondEmpty
 func (q *Query) WhereQuery(subQuery *Query, condition int, keys any) *Query {
-	t := reflect.TypeOf(keys)
-	v := reflect.ValueOf(keys)
-
 	q.ser.PutVarCUInt(querySubQueryCondition)
 	q.ser.PutVarCUInt(q.nextOp)
 	q.ser.PutVBytes(subQuery.ser.Bytes())
@@ -572,7 +569,12 @@ func (q *Query) WhereQuery(subQuery *Query, condition int, keys any) *Query {
 
 	if keys == nil {
 		q.ser.PutVarUInt(0)
-	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		return q
+	}
+
+	t := reflect.TypeOf(keys)
+	v := reflect.ValueOf(keys)
+	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		q.ser.PutVarCUInt(v.Len())
 		for i := range v.Len() {
 			q.ser.PutValue(v.Index(i))

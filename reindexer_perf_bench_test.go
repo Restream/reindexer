@@ -91,6 +91,39 @@ func BenchmarkQueryBuildSliceWhere(b *testing.B) {
 	}
 }
 
+func BenchmarkQueryWhereQueryKeys(b *testing.B) {
+	b.Run("nil", func(b *testing.B) {
+		subQuery := newBenchPerfQuery().WhereInt("age", GE, 18)
+		defer subQuery.close()
+		for b.Loop() {
+			q := newBenchPerfQuery().WhereQuery(subQuery, SET, nil)
+			benchPerfBytesSink = q.ser.Bytes()
+			q.close()
+		}
+	})
+
+	b.Run("scalar", func(b *testing.B) {
+		subQuery := newBenchPerfQuery().WhereInt("age", GE, 18)
+		defer subQuery.close()
+		for b.Loop() {
+			q := newBenchPerfQuery().WhereQuery(subQuery, SET, 42)
+			benchPerfBytesSink = q.ser.Bytes()
+			q.close()
+		}
+	})
+
+	b.Run("slice", func(b *testing.B) {
+		keys := []int{1, 2, 3, 4, 5, 6, 7, 8}
+		subQuery := newBenchPerfQuery().WhereInt("age", GE, 18)
+		defer subQuery.close()
+		for b.Loop() {
+			q := newBenchPerfQuery().WhereQuery(subQuery, SET, keys)
+			benchPerfBytesSink = q.ser.Bytes()
+			q.close()
+		}
+	})
+}
+
 func BenchmarkQueryBuildKnn(b *testing.B) {
 	vec := make([]float32, 256)
 	for i := range vec {
@@ -306,16 +339,19 @@ func BenchmarkReindexerPackItem(b *testing.B) {
 	}
 	ser := cjson.NewPoolSerializer()
 	defer ser.Close()
-	if _, _, err := packItem(ns, item, nil, ser); err != nil {
+	if _, _, _, err := packItem(ns, item, nil, ser); err != nil {
 		b.Fatal(err)
 	}
 
 	b.ReportAllocs()
 	for b.Loop() {
 		ser.Reset()
-		format, token, err := packItem(ns, item, nil, ser)
+		format, token, itemIsPtr, err := packItem(ns, item, nil, ser)
 		if err != nil {
 			b.Fatal(err)
+		}
+		if itemIsPtr {
+			benchPerfIntSink++
 		}
 		benchPerfIntSink += format + token + len(ser.Bytes())
 	}
@@ -334,9 +370,12 @@ func BenchmarkReindexerPackJSON(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		ser.Reset()
-		format, token, err := packItem(ns, nil, json, ser)
+		format, token, itemIsPtr, err := packItem(ns, nil, json, ser)
 		if err != nil {
 			b.Fatal(err)
+		}
+		if itemIsPtr {
+			b.Fatal("json packItem unexpectedly reported pointer item")
 		}
 		benchPerfIntSink += format + token + len(ser.Bytes())
 	}
@@ -443,9 +482,12 @@ func BenchmarkReindexerModifyPreceptsSerialize(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		ser.Reset()
-		format, token, err := packItem(ns, item, nil, ser)
+		format, token, itemIsPtr, err := packItem(ns, item, nil, ser)
 		if err != nil {
 			b.Fatal(err)
+		}
+		if itemIsPtr {
+			benchPerfIntSink++
 		}
 		benchPerfIntSink += format + token + len(precepts) + len(ser.Bytes())
 	}

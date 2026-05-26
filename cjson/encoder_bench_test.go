@@ -5,6 +5,8 @@ import (
 	"encoding/gob"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type benchEncoderNestedDoc struct {
@@ -208,6 +210,30 @@ func BenchmarkParseUuid(b *testing.B) {
 					b.Fatal(err)
 				}
 				benchUint64Sink ^= parsed[0] ^ parsed[1]
+			}
+		})
+	}
+}
+
+func TestParseUuidMatchesSlowPath(t *testing.T) {
+	for _, uuid := range []string{
+		"",
+		"550e8400-e29b-41d4-a716-446655440000",
+		"550e8400e29b41d4a716446655440000",
+		"00000000-0000-0000-0000-000000000000",
+		"550e8400-e29b-41d4-2716-446655440000",
+		"550e8400-e29b-41d4-a716-44665544000x",
+		"550e8400-e29b41d4-a716-446655440000",
+		"550e8400-e29b-41d4-a716-44665544000",
+	} {
+		t.Run(uuid, func(t *testing.T) {
+			got, gotErr := ParseUuid(uuid)
+			want, wantErr := parseUuidSlow(uuid)
+			assert.Equal(t, want, got)
+			if wantErr == nil {
+				assert.NoError(t, gotErr)
+			} else if assert.Error(t, gotErr) {
+				assert.Equal(t, wantErr.Error(), gotErr.Error())
 			}
 		})
 	}

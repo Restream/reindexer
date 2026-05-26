@@ -43,8 +43,9 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 
 		format := 0
 		stateToken := 0
+		itemIsPtr := false
 
-		if format, stateToken, err = packItem(ns, item, nil, ser); err != nil {
+		if format, stateToken, itemIsPtr, err = packItem(ns, item, nil, ser); err != nil {
 			return
 		}
 
@@ -73,7 +74,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 
 		resultp := rdSer.readRawtItemParams(rawQueryParams.shardId)
 
-		if len(precepts) > 0 && (resultp.cptr != 0 || resultp.data != nil) && reflect.TypeOf(item).Kind() == reflect.Pointer {
+		if len(precepts) > 0 && (resultp.cptr != 0 || resultp.data != nil) && itemIsPtr {
 			nsArrEntry := nsArrayEntry{ns, ns.cjsonState.Copy()}
 			if _, err := unpackItem(db.binding, &nsArrEntry, &rawQueryParams, &resultp, false, true, item); err != nil {
 				return 0, err
@@ -85,7 +86,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 	return 0, err
 }
 
-func packItem(ns *reindexerNamespace, item any, json []byte, ser *cjson.Serializer) (format int, stateToken int, err error) {
+func packItem(ns *reindexerNamespace, item any, json []byte, ser *cjson.Serializer) (format int, stateToken int, itemIsPtr bool, err error) {
 	if item != nil {
 		json, _ = item.([]byte)
 	}
@@ -93,10 +94,13 @@ func packItem(ns *reindexerNamespace, item any, json []byte, ser *cjson.Serializ
 	if json == nil {
 		t := reflect.TypeOf(item)
 		if t.Kind() == reflect.Pointer {
+			itemIsPtr = true
 			t = t.Elem()
 		}
-		if ns.rtype.Name() != t.Name() || ns.rtype.PkgPath() != t.PkgPath() {
-			panic(ErrWrongType)
+		if t != ns.rtype {
+			if ns.rtype.Name() != t.Name() || ns.rtype.PkgPath() != t.PkgPath() {
+				panic(ErrWrongType)
+			}
 		}
 
 		format = bindings.FormatCJson
