@@ -534,9 +534,13 @@ func getFieldType(t reflect.Type) (string, error) {
 	return "", errInvalidReflection
 }
 
+func joinedFieldByIndex(val reflect.Value, idx []int) reflect.Value {
+	return reflect.Indirect(reflect.Indirect(val).FieldByIndex(idx))
+}
+
 func getJoinedField(val reflect.Value, joined map[string][]int, name string) (ret reflect.Value) {
 	if idx, ok := joined[name]; ok {
-		ret = reflect.Indirect(reflect.Indirect(val).FieldByIndex(idx))
+		ret = joinedFieldByIndex(val, idx)
 	}
 	return ret
 }
