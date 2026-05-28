@@ -527,7 +527,6 @@ func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *Namespace
 		cacheItems:    cacheItems,
 		rtype:         t,
 		name:          namespace,
-		joined:        make(map[string][]int),
 		opts:          *opts,
 		cjsonState:    cjson.NewState(),
 		deepCopyIface: haveDeepCopy,

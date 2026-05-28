@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/restream/reindexer/v5/bindings"
@@ -42,6 +43,23 @@ type indexOptions struct {
 	isComposite bool
 }
 
+type parseIndexesCacheEntry struct {
+	indexDefs []bindings.IndexDef
+	joined    map[string][]int
+}
+
+var (
+	parseIndexesCache sync.Map // map[reflect.Type]*parseIndexesCacheEntry
+	parseSchemaCache  sync.Map // map[reflect.Type]*bindings.SchemaDef
+)
+
+func normalizedStructType(st reflect.Type) reflect.Type {
+	if st.Kind() == reflect.Pointer {
+		return st.Elem()
+	}
+	return st
+}
+
 func parseRxTags(field reflect.StructField) (idxName string, idxType string, idxSettings []string) {
 	tag, isSet := field.Tag.Lookup("reindex")
 	tagsSlice := strings.SplitN(tag, ",", 3)
@@ -62,14 +80,42 @@ func parseRxTags(field reflect.StructField) (idxName string, idxType string, idx
 }
 
 func parseIndexes(st reflect.Type, joined *map[string][]int) (indexDefs []bindings.IndexDef, err error) {
-	if err = parseIndexesImpl(&indexDefs, st, false, "", "", joined, nil); err != nil {
+	st = normalizedStructType(st)
+	if joined != nil && *joined != nil && len(*joined) > 0 {
+		if err = parseIndexesImpl(&indexDefs, st, false, "", "", joined, nil); err != nil {
+			return nil, err
+		}
+		return indexDefs, nil
+	}
+
+	if cached, ok := parseIndexesCache.Load(st); ok {
+		entry := cached.(*parseIndexesCacheEntry)
+		if joined != nil {
+			*joined = entry.joined
+		}
+		return entry.indexDefs, nil
+	}
+
+	joinedMap := make(map[string][]int)
+	if err = parseIndexesImpl(&indexDefs, st, false, "", "", &joinedMap, nil); err != nil {
 		return nil, err
 	}
 
-	return indexDefs, nil
+	entry := &parseIndexesCacheEntry{indexDefs: indexDefs, joined: joinedMap}
+	cached, _ := parseIndexesCache.LoadOrStore(st, entry)
+	entry = cached.(*parseIndexesCacheEntry)
+	if joined != nil {
+		*joined = entry.joined
+	}
+	return entry.indexDefs, nil
 }
 
 func parseSchema(st reflect.Type) *bindings.SchemaDef {
+	st = normalizedStructType(st)
+	if cached, ok := parseSchemaCache.Load(st); ok {
+		return cached.(*bindings.SchemaDef)
+	}
+
 	reflector := &jsonschema.Reflector{}
 	reflector.FieldIsInScheme = func(f reflect.StructField) bool {
 		_, _, idxSettings := parseRxTags(f)
@@ -82,7 +128,8 @@ func parseSchema(st reflect.Type) *bindings.SchemaDef {
 	reflector.FullyQualifyTypeNames = true
 	if schema := reflector.ReflectFromType(st); schema != nil {
 		schemaDef := bindings.SchemaDef(*schema)
-		return &schemaDef
+		cached, _ := parseSchemaCache.LoadOrStore(st, &schemaDef)
+		return cached.(*bindings.SchemaDef)
 	}
 	return nil
 }
@@ -487,9 +534,13 @@ func getFieldType(t reflect.Type) (string, error) {
 	return "", errInvalidReflection
 }
 
+func joinedFieldByIndex(val reflect.Value, idx []int) reflect.Value {
+	return reflect.Indirect(reflect.Indirect(val).FieldByIndex(idx))
+}
+
 func getJoinedField(val reflect.Value, joined map[string][]int, name string) (ret reflect.Value) {
 	if idx, ok := joined[name]; ok {
-		ret = reflect.Indirect(reflect.Indirect(val).FieldByIndex(idx))
+		ret = joinedFieldByIndex(val, idx)
 	}
 	return ret
 }

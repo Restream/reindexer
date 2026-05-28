@@ -453,7 +453,7 @@ func (tx *Tx) modifyInternal(item any, json []byte, mode int, precepts ...string
 			format := 0
 			stateToken := 0
 
-			if format, stateToken, err = packItem(tx.ns, item, json, ser); err != nil {
+			if format, stateToken, _, err = packItem(tx.ns, item, json, ser); err != nil {
 				return err
 			}
 
@@ -547,7 +547,7 @@ func (tx *Tx) modifyInternalAsync(item any, json []byte, mode int, cmpl bindings
 	format := 0
 	stateToken := 0
 
-	if format, stateToken, err = packItem(tx.ns, item, json, ser); err != nil {
+	if format, stateToken, _, err = packItem(tx.ns, item, json, ser); err != nil {
 		internalCmpl(nil, err)
 		return err
 	}

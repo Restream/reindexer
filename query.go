@@ -169,6 +169,7 @@ type Query struct {
 	tmVersions        []int32
 	iterator          Iterator
 	jsonIterator      JSONIterator
+	aggregateFacet    AggregateFacetRequest
 	items             []any
 	json              []byte
 	jsonOffsets       []int
@@ -284,12 +285,10 @@ func init() {
 }
 
 func mktrace(buf *[]byte) {
-	if enableDebug {
-		if *buf == nil {
-			*buf = make([]byte, 0x4000)
-		}
-		*buf = (*buf)[0:runtime.Stack((*buf)[0:cap((*buf))], false)]
+	if *buf == nil {
+		*buf = make([]byte, 0x4000)
 	}
+	*buf = (*buf)[0:runtime.Stack((*buf)[0:cap((*buf))], false)]
 }
 
 // Create new DB query
@@ -321,7 +320,9 @@ func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
 		q.whereEntriesCount = 0
 		q.openedBrackets = q.openedBrackets[:0]
 	}
-	mktrace(&q.traceNew)
+	if enableDebug {
+		mktrace(&q.traceNew)
+	}
 
 	q.Namespace = namespace
 	q.db = db
@@ -348,7 +349,9 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 	if qC == nil {
 		qC = &Query{}
 	}
-	mktrace(&qC.traceNew)
+	if enableDebug {
+		mktrace(&qC.traceNew)
+	}
 
 	qC.ser = cjson.NewSerializer(qC.initBuf[:0])
 
@@ -400,38 +403,153 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 // - []interface{} with 1 value per subindex for composite indexes
 // - *Query for subquery where-filters
 func (q *Query) Where(index string, condition int, keys any) *Query {
-	t := reflect.TypeOf(keys)
+	switch v := keys.(type) {
+	case nil:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarUInt(0)
+		return q.finishWhere()
+	case *Query:
+		q.putSubQueryWhere(index, condition, v.ser.Bytes())
+		return q.finishWhere()
+	case Query:
+		q.putSubQueryWhere(index, condition, v.ser.Bytes())
+		return q.finishWhere()
+	case int:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(1)
+		q.putIntValue(v)
+		return q.finishWhere()
+	case int32:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(1)
+		q.ser.PutVarCUInt(valueInt).PutVarInt(int64(v))
+		return q.finishWhere()
+	case int64:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(1)
+		q.ser.PutVarCUInt(valueInt64).PutVarInt(v)
+		return q.finishWhere()
+	case string:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(1)
+		q.ser.PutVarCUInt(valueString).PutVString(v)
+		return q.finishWhere()
+	case bool:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(1)
+		q.putBoolValue(v)
+		return q.finishWhere()
+	case float32:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(1)
+		q.ser.PutVarCUInt(valueDouble).PutDouble(float64(v))
+		return q.finishWhere()
+	case float64:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(1)
+		q.ser.PutVarCUInt(valueDouble).PutDouble(v)
+		return q.finishWhere()
+	case []int:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.putIntValue(value)
+		}
+		return q.finishWhere()
+	case []int32:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarCUInt(valueInt).PutVarInt(int64(value))
+		}
+		return q.finishWhere()
+	case []int64:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarCUInt(valueInt64).PutVarInt(value)
+		}
+		return q.finishWhere()
+	case []string:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarCUInt(valueString).PutVString(value)
+		}
+		return q.finishWhere()
+	case []bool:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.putBoolValue(value)
+		}
+		return q.finishWhere()
+	case []float32:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarCUInt(valueDouble).PutDouble(float64(value))
+		}
+		return q.finishWhere()
+	case []float64:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarCUInt(valueDouble).PutDouble(value)
+		}
+		return q.finishWhere()
+	case []any:
+		q.putWhereHeader(index, condition)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutValue(reflect.ValueOf(value))
+		}
+		return q.finishWhere()
+	}
+
 	v := reflect.ValueOf(keys)
 
-	if keys != nil && (t == reflect.TypeFor[Query]() || (t.Kind() == reflect.Pointer && t.Elem() == reflect.TypeFor[Query]())) {
-		q.ser.PutVarCUInt(queryFieldSubQueryCondition)
-		q.ser.PutVarCUInt(q.nextOp)
-		q.ser.PutVString(index)
-		q.ser.PutVarCUInt(condition)
-		if t.Kind() == reflect.Pointer {
-			q.ser.PutVBytes(v.Interface().(*Query).ser.Bytes())
-		} else {
-			ser := v.FieldByName("ser").Interface().(cjson.Serializer)
-			q.ser.PutVBytes(ser.Bytes())
+	q.putWhereHeader(index, condition)
+	if k := v.Kind(); k == reflect.Slice || k == reflect.Array {
+		l := v.Len()
+		q.ser.PutVarCUInt(l)
+		for i := range l {
+			q.ser.PutValue(v.Index(i))
 		}
-	} else {
-		q.ser.PutVarCUInt(queryCondition)
-		q.ser.PutVString(index)
-		q.ser.PutVarCUInt(q.nextOp)
-		q.ser.PutVarCUInt(condition)
-
-		if keys == nil {
-			q.ser.PutVarUInt(0)
-		} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-			q.ser.PutVarCUInt(v.Len())
-			for i := 0; i < v.Len(); i++ {
-				q.ser.PutValue(v.Index(i))
-			}
-		} else {
-			q.ser.PutVarCUInt(1)
-			q.ser.PutValue(v)
-		}
+		return q.finishWhere()
 	}
+
+	q.ser.PutVarCUInt(1)
+	q.ser.PutValue(v)
+	return q.finishWhere()
+}
+
+func (q *Query) putWhereHeader(index string, condition int) {
+	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
+}
+
+func (q *Query) putSubQueryWhere(index string, condition int, data []byte) {
+	q.ser.PutVarCUInt(queryFieldSubQueryCondition).PutVarCUInt(q.nextOp).PutVString(index).PutVarCUInt(condition).PutVBytes(data)
+}
+
+func (q *Query) putIntValue(v int) {
+	if strconv.IntSize == 64 {
+		q.ser.PutVarCUInt(valueInt64).PutVarInt(int64(v))
+	} else {
+		q.ser.PutVarCUInt(valueInt).PutVarInt(int64(v))
+	}
+}
+
+func (q *Query) putBoolValue(v bool) {
+	q.ser.PutVarCUInt(valueBool)
+	if v {
+		q.ser.PutVarUInt(1)
+	} else {
+		q.ser.PutVarUInt(0)
+	}
+}
+
+func (q *Query) finishWhere() *Query {
 	q.whereEntriesCount++
 	q.nextOp = opAND
 	return q
@@ -442,9 +560,6 @@ func (q *Query) Where(index string, condition int, keys any) *Query {
 // - slice/arrays of values
 // - nil for CondAny/CondEmpty
 func (q *Query) WhereQuery(subQuery *Query, condition int, keys any) *Query {
-	t := reflect.TypeOf(keys)
-	v := reflect.ValueOf(keys)
-
 	q.ser.PutVarCUInt(querySubQueryCondition)
 	q.ser.PutVarCUInt(q.nextOp)
 	q.ser.PutVBytes(subQuery.ser.Bytes())
@@ -454,9 +569,14 @@ func (q *Query) WhereQuery(subQuery *Query, condition int, keys any) *Query {
 
 	if keys == nil {
 		q.ser.PutVarUInt(0)
-	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		return q
+	}
+
+	t := reflect.TypeOf(keys)
+	v := reflect.ValueOf(keys)
+	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		q.ser.PutVarCUInt(v.Len())
-		for i := 0; i < v.Len(); i++ {
+		for i := range v.Len() {
 			q.ser.PutValue(v.Index(i))
 		}
 	} else {
@@ -701,8 +821,8 @@ func (q *Query) AggregateFacet(fields ...string) *AggregateFacetRequest {
 	for _, f := range fields {
 		q.ser.PutVString(f)
 	}
-	r := AggregateFacetRequest{q}
-	return &r
+	q.aggregateFacet.query = q
+	return &q.aggregateFacet
 }
 
 func (r *AggregateFacetRequest) setAggregateType(aggregateType int, value int) *AggregateFacetRequest {
@@ -925,18 +1045,24 @@ func (q *Query) close() {
 	if q.closed {
 		q.panicTrace("Close call on already closed query")
 	}
-	mktrace(&q.traceClose)
+	if enableDebug {
+		mktrace(&q.traceClose)
+	}
 
 	for i, jq := range q.joinQueries {
 		jq.closed = true
-		mktrace(&jq.traceClose)
+		if enableDebug {
+			mktrace(&jq.traceClose)
+		}
 		queryPool.Put(jq)
 		q.joinQueries[i] = nil
 	}
 
 	for i, mq := range q.mergedQueries {
 		mq.closed = true
-		mktrace(&mq.traceClose)
+		if enableDebug {
+			mktrace(&mq.traceClose)
+		}
 		queryPool.Put(mq)
 		q.mergedQueries[i] = nil
 	}
@@ -985,26 +1111,37 @@ func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 	return q.db.deleteQuery(ctx, q)
 }
 
-func getValueJSON(value any) string {
-	ok := false
-	var err error
-	var objectJSON []byte
-	t := reflect.TypeOf(value)
+var emptyObjectJSON = []byte("{}")
+
+func getValueJSON(value any) []byte {
 	if value == nil {
-		objectJSON = []byte("{}")
-	} else if t.Kind() == reflect.Struct || t.Kind() == reflect.Map {
-		objectJSON, err = json.Marshal(value)
+		return emptyObjectJSON
+	}
+	if objectJSON, ok := value.([]byte); ok {
+		return objectJSON
+	}
+	t := reflect.TypeOf(value)
+	if t.Kind() == reflect.Struct || t.Kind() == reflect.Map {
+		objectJSON, err := json.Marshal(value)
 		if err != nil {
 			panic(err)
 		}
-	} else if objectJSON, ok = value.([]byte); !ok {
-		panic(errors.New("SetObject doesn't support this type of objects: " + t.Kind().String()))
+		return objectJSON
 	}
-	return string(objectJSON)
+	panic(errors.New("SetObject doesn't support this type of objects: " + t.Kind().String()))
 }
 
 // SetObject adds update of object field request for update query
 func (q *Query) SetObject(field string, values any) *Query {
+	switch v := values.(type) {
+	case nil:
+		return q.putSetObjectBytes(field, emptyObjectJSON)
+	case []byte:
+		return q.putSetObjectBytes(field, v)
+	case [][]byte:
+		return q.putSetObjectBytesArray(field, v)
+	}
+
 	size := 1
 	isArray := false
 	t := reflect.TypeOf(values)
@@ -1013,15 +1150,32 @@ func (q *Query) SetObject(field string, values any) *Query {
 		size = v.Len()
 		isArray = true
 	}
-	jsonValues := make([]string, size)
+	var jsonValue []byte
+	var jsonValues [][]byte
 	if isArray {
-		for i := 0; i < size; i++ {
+		jsonValues = make([][]byte, size)
+		for i := range size {
 			jsonValues[i] = getValueJSON(v.Index(i).Interface())
 		}
 	} else if size > 0 {
-		jsonValues[0] = getValueJSON(values)
+		jsonValue = getValueJSON(values)
+	}
+	q.putSetObjectHeader(field, size, isArray)
+	for i := range size {
+		// function/value flag
+		q.ser.PutVarUInt(0)
+		q.ser.PutVarCUInt(valueString)
+		if isArray {
+			q.ser.PutVBytes(jsonValues[i])
+		} else {
+			q.ser.PutVBytes(jsonValue)
+		}
 	}
 
+	return q
+}
+
+func (q *Query) putSetObjectHeader(field string, size int, isArray bool) {
 	q.ser.PutVarCUInt(queryUpdateObject)
 	q.ser.PutVString(field)
 
@@ -1033,18 +1187,122 @@ func (q *Query) SetObject(field string, values any) *Query {
 	} else {
 		q.ser.PutVarCUInt(0)
 	}
-	for i := 0; i < size; i++ {
-		// function/value flag
+}
+
+func (q *Query) putSetObjectBytes(field string, value []byte) *Query {
+	q.putSetObjectHeader(field, 1, false)
+	q.ser.PutVarUInt(0)
+	q.ser.PutVarCUInt(valueString)
+	q.ser.PutVBytes(value)
+	return q
+}
+
+func (q *Query) putSetObjectBytesArray(field string, values [][]byte) *Query {
+	q.putSetObjectHeader(field, len(values), true)
+	for _, value := range values {
 		q.ser.PutVarUInt(0)
 		q.ser.PutVarCUInt(valueString)
-		q.ser.PutVString(jsonValues[i])
+		q.ser.PutVBytes(value)
 	}
-
 	return q
 }
 
 // Set adds update field request for update query
 func (q *Query) Set(field string, values any) *Query {
+	switch v := values.(type) {
+	case int:
+		q.putSetHeader(field, queryUpdateField, false)
+		q.ser.PutVarCUInt(1).PutVarUInt(0)
+		q.putIntValue(v)
+		return q
+	case int32:
+		q.putSetHeader(field, queryUpdateField, false)
+		q.ser.PutVarCUInt(1).PutVarUInt(0)
+		q.ser.PutVarCUInt(valueInt).PutVarInt(int64(v))
+		return q
+	case int64:
+		q.putSetHeader(field, queryUpdateField, false)
+		q.ser.PutVarCUInt(1).PutVarUInt(0)
+		q.ser.PutVarCUInt(valueInt64).PutVarInt(v)
+		return q
+	case string:
+		q.putSetHeader(field, queryUpdateField, false)
+		q.ser.PutVarCUInt(1).PutVarUInt(0)
+		q.ser.PutVarCUInt(valueString).PutVString(v)
+		return q
+	case bool:
+		q.putSetHeader(field, queryUpdateField, false)
+		q.ser.PutVarCUInt(1).PutVarUInt(0)
+		q.putBoolValue(v)
+		return q
+	case float32:
+		q.putSetHeader(field, queryUpdateField, false)
+		q.ser.PutVarCUInt(1).PutVarUInt(0)
+		q.ser.PutVarCUInt(valueDouble).PutDouble(float64(v))
+		return q
+	case float64:
+		q.putSetHeader(field, queryUpdateField, false)
+		q.ser.PutVarCUInt(1).PutVarUInt(0)
+		q.ser.PutVarCUInt(valueDouble).PutDouble(v)
+		return q
+	case []int:
+		q.putSetHeader(field, setCmdForLen(len(v)), true)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarUInt(0)
+			q.putIntValue(value)
+		}
+		return q
+	case []int32:
+		q.putSetHeader(field, setCmdForLen(len(v)), true)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarUInt(0)
+			q.ser.PutVarCUInt(valueInt).PutVarInt(int64(value))
+		}
+		return q
+	case []int64:
+		q.putSetHeader(field, setCmdForLen(len(v)), true)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarUInt(0)
+			q.ser.PutVarCUInt(valueInt64).PutVarInt(value)
+		}
+		return q
+	case []string:
+		q.putSetHeader(field, setCmdForLen(len(v)), true)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarUInt(0)
+			q.ser.PutVarCUInt(valueString).PutVString(value)
+		}
+		return q
+	case []bool:
+		q.putSetHeader(field, setCmdForLen(len(v)), true)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarUInt(0)
+			q.putBoolValue(value)
+		}
+		return q
+	case []float32:
+		q.putSetHeader(field, setCmdForLen(len(v)), true)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarUInt(0)
+			q.ser.PutVarCUInt(valueDouble).PutDouble(float64(value))
+		}
+		return q
+	case []float64:
+		q.putSetHeader(field, setCmdForLen(len(v)), true)
+		q.ser.PutVarCUInt(len(v))
+		for _, value := range v {
+			q.ser.PutVarUInt(0)
+			q.ser.PutVarCUInt(valueDouble).PutDouble(value)
+		}
+		return q
+	}
+
 	t := reflect.TypeOf(values)
 	if t.Kind() == reflect.Struct || t.Kind() == reflect.Map {
 		return q.SetObject(field, values)
@@ -1074,7 +1332,7 @@ func (q *Query) Set(field string, values any) *Query {
 			q.ser.PutVarUInt(1) // is array
 		}
 		q.ser.PutVarCUInt(v.Len())
-		for i := 0; i < v.Len(); i++ {
+		for i := range v.Len() {
 			// function/value flag
 			q.ser.PutVarUInt(0)
 			q.ser.PutValue(v.Index(i))
@@ -1089,6 +1347,25 @@ func (q *Query) Set(field string, values any) *Query {
 		q.ser.PutValue(v)
 	}
 	return q
+}
+
+func setCmdForLen(l int) int {
+	if l <= 1 {
+		return queryUpdateFieldV2
+	}
+	return queryUpdateField
+}
+
+func (q *Query) putSetHeader(field string, cmd int, isArray bool) {
+	q.ser.PutVarCUInt(cmd)
+	q.ser.PutVString(field)
+	if cmd == queryUpdateFieldV2 {
+		if isArray {
+			q.ser.PutVarUInt(1)
+		} else {
+			q.ser.PutVarUInt(0)
+		}
+	}
 }
 
 // Drop removes field from item within Update statement

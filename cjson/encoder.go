@@ -124,45 +124,85 @@ func parseStructField(sf reflect.StructField) (name string, skip, omitEmpty bool
 	return
 }
 
-func (enc *Encoder) encodeStruct(v reflect.Value, rdser *Serializer, idx []int) error {
-	for field := 0; field < v.NumField(); field++ {
+func (enc *Encoder) encodeStruct(v reflect.Value, rdser *Serializer, cache *ctagsWCache) error {
+	t := v.Type()
+	numField := v.NumField()
+	var entries []ctagsWCacheEntry
+	if cache != nil {
+		entries = *cache
+	}
+	for field := range numField {
+		if cache != nil {
+			// We have not interface fields on top level, so using cache.
+			if field < len(entries) {
+				ce := &entries[field]
+				if ce.ctagName != 0 || ce.isPrivate {
+					if !ce.isPrivate {
+						// process field, except private unexported fields
+						err := enc.encodeValue(v.Field(field), rdser, ce.fieldInfo, &ce.subCache)
+						if err != nil {
+							return err
+						}
+					}
+					continue
+				}
+			}
 
-		iidx := idx
-		var ce *ctagsWCacheEntry
-		if iidx == nil {
-			// if idx is null - we have top level interface field,
-			// in this case we can have any untyped data in deep, so
-			// ctagsCache 'name path' -> type will not work
-			// So here is using slow path: use reflect to obtain info about each field
-			ce = &ctagsWCacheEntry{}
-		} else {
-			// We have not interface fields on top level, so using cache
-			iidx = append(idx, field)
-			ce = enc.state.ctagsWCache.Lookup(iidx)
-		}
+			ce := cache.LookupField(field)
+			if ce.ctagName != 0 || ce.isPrivate {
+				if !ce.isPrivate {
+					// process field, except private unexported fields
+					err := enc.encodeValue(v.Field(field), rdser, ce.fieldInfo, &ce.subCache)
+					if err != nil {
+						return err
+					}
+				}
+				continue
+			}
 
-		if ce.ctagName == 0 && !ce.isPrivate {
-			// No data in cache: use reflect to get data about field
+			// No data in cache: use reflect to get data about field.
 			vv := v.Field(field)
-			f := v.Type().Field(field)
+			f := t.Field(field)
 			name, skip, omitempty := parseStructField(f)
 			ctagName := 0
 			if !skip {
 				ctagName = enc.name2tag(name)
 			}
-			if enc.tmUpdated {
-				// if tagsMatcher or lock is updated - we have temporary tags, do not cache them
-				ce = &ctagsWCacheEntry{}
-			}
 
-			ce.fieldInfo = mkFieldInfo(vv, ctagName, f)
-			ce.isPrivate = len(f.PkgPath) != 0 || skip
-			ce.isOmitEmpty = omitempty
+			fi := mkFieldInfo(vv, ctagName, f)
+			fi.isPrivate = len(f.PkgPath) != 0 || skip
+			fi.isOmitEmpty = omitempty
+
+			var subCache *ctagsWCache
+			if !enc.tmUpdated {
+				ce.fieldInfo = fi
+				if !fi.isPrivate {
+					subCache = &ce.subCache
+				}
+			}
+			if !fi.isPrivate {
+				// process field, except private unexported fields
+				err := enc.encodeValue(v.Field(field), rdser, fi, subCache)
+				if err != nil {
+					return err
+				}
+			}
+			continue
 		}
 
-		if !ce.isPrivate {
-			// process field, except private unexported fields
-			err := enc.encodeValue(v.Field(field), rdser, ce.fieldInfo, iidx)
+		// Top-level interface field: use slow path, because ctagsCache name path -> type will not work.
+		vv := v.Field(field)
+		f := t.Field(field)
+		name, skip, omitempty := parseStructField(f)
+		ctagName := 0
+		if !skip {
+			ctagName = enc.name2tag(name)
+		}
+		fi := mkFieldInfo(vv, ctagName, f)
+		fi.isPrivate = len(f.PkgPath) != 0 || skip
+		fi.isOmitEmpty = omitempty
+		if !fi.isPrivate {
+			err := enc.encodeValue(v.Field(field), rdser, fi, nil)
 			if err != nil {
 				return err
 			}
@@ -188,7 +228,7 @@ func (enc *Encoder) name2tag(name string) int {
 	return tagName
 }
 
-func (enc *Encoder) encodeMap(v reflect.Value, rdser *Serializer, idx []int) error {
+func (enc *Encoder) encodeMap(v reflect.Value, rdser *Serializer, cache *ctagsWCache) error {
 	keys := v.MapKeys()
 
 	f := fieldInfo{}
@@ -213,7 +253,7 @@ func (enc *Encoder) encodeMap(v reflect.Value, rdser *Serializer, idx []int) err
 		}
 
 		f.ctagName = enc.name2tag(keyName)
-		err := enc.encodeValue(vv, rdser, f, idx)
+		err := enc.encodeValue(vv, rdser, f, cache)
 		if err != nil {
 			return err
 		}
@@ -249,7 +289,7 @@ func generateError(ch byte, str string) (res [2]uint64, err error) {
 	return
 }
 
-func ParseUuid(str string) (res [2]uint64, err error) {
+func parseUuidSlow(str string) (res [2]uint64, err error) {
 	switch len(str) {
 	case 0:
 		return
@@ -591,7 +631,7 @@ func ParseUuid(str string) (res [2]uint64, err error) {
 	return
 }
 
-func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo, idx []int) error {
+func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo, cache *ctagsWCache) error {
 	l := v.Len()
 	if l == 0 && f.isOmitEmpty {
 		return nil
@@ -712,7 +752,7 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 						f = mkFieldInfo(vv, 0, reflect.StructField{})
 						f.isOmitEmpty = false
 					}
-					err := enc.encodeValue(vv, rdser, f, idx)
+					err := enc.encodeValue(vv, rdser, f, cache)
 					if err != nil {
 						return err
 					}
@@ -768,7 +808,7 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 						f = mkFieldInfo(vv, 0, reflect.StructField{})
 						f.isOmitEmpty = false
 					}
-					err := enc.encodeValue(vv, rdser, f, idx)
+					err := enc.encodeValue(vv, rdser, f, cache)
 					if err != nil {
 						return err
 					}
@@ -779,7 +819,7 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 	return nil
 }
 
-func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo, idx []int) error {
+func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo, cache *ctagsWCache) error {
 
 	if f.isNullable && v.IsNil() {
 		if !f.isOmitEmpty {
@@ -842,7 +882,7 @@ func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo,
 			rdser.PutVString(val)
 		}
 	case reflect.Slice, reflect.Array:
-		err := enc.encodeSlice(v, rdser, f, idx)
+		err := enc.encodeSlice(v, rdser, f, cache)
 		if err != nil {
 			return err
 		}
@@ -856,20 +896,20 @@ func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo,
 		}
 		if !f.isAnon {
 			rdser.PutCTag(mkctag(TAG_OBJECT, f.ctagName, 0))
-			err := enc.encodeStruct(v, rdser, idx)
+			err := enc.encodeStruct(v, rdser, cache)
 			if err != nil {
 				return err
 			}
 			rdser.PutCTag(mkctag(TAG_END, 0, 0))
 		} else {
-			err := enc.encodeStruct(v, rdser, idx)
+			err := enc.encodeStruct(v, rdser, cache)
 			if err != nil {
 				return err
 			}
 		}
 	case reflect.Map:
 		rdser.PutCTag(mkctag(TAG_OBJECT, f.ctagName, 0))
-		err := enc.encodeMap(v, rdser, idx)
+		err := enc.encodeMap(v, rdser, cache)
 		if err != nil {
 			return err
 		}
@@ -896,20 +936,20 @@ func (enc *Encoder) Encode(src any, wrser *Serializer) (stateToken int, err erro
 	defer enc.state.lock.Unlock()
 
 	pos := len(wrser.Bytes())
-	wrser.PutVarUInt(TAG_END)
-	wrser.PutUInt32(0)
 	enc.tagsMatcher = &enc.state.tagsMatcher
 	enc.tmUpdated = false
-	err = enc.encodeValue(v, wrser, mkFieldInfo(v, 0, reflect.StructField{}), make([]int, 0, 10))
+	err = enc.encodeValue(v, wrser, mkFieldInfo(v, 0, reflect.StructField{}), &enc.state.ctagsWCache)
 	if err != nil {
 		return
 	}
 
 	if enc.tmUpdated {
+		payloadLen := len(wrser.buf) - pos
+		wrser.grow(int(unsafe.Sizeof(uint32(0))) + 1)
+		copy(wrser.buf[pos+int(unsafe.Sizeof(uint32(0)))+1:], wrser.buf[pos:pos+payloadLen])
+		wrser.buf[pos] = TAG_END
 		*(*uint32)(unsafe.Pointer(&wrser.Bytes()[pos+1])) = uint32(len(wrser.buf) - pos)
 		enc.tagsMatcher.WriteUpdated(wrser)
-	} else {
-		wrser.TruncateStart(int(unsafe.Sizeof(uint32(0))) + 1)
 	}
 	stateToken = int(enc.state.StateToken)
 	return
@@ -923,7 +963,7 @@ func (enc *Encoder) EncodeRaw(src any, wrser *Serializer) error {
 	enc.tmUpdated = false
 
 	enc.tagsMatcher = &enc.state.tagsMatcher
-	err := enc.encodeValue(v, wrser, mkFieldInfo(v, 0, reflect.StructField{}), make([]int, 0, 10))
+	err := enc.encodeValue(v, wrser, mkFieldInfo(v, 0, reflect.StructField{}), &enc.state.ctagsWCache)
 	if err != nil {
 		return err
 	}
