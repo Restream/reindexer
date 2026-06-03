@@ -1,5 +1,7 @@
 #include "distinct_api.h"
 
+namespace reindexer_tests {
+
 TEST_F(DistinctApi, Serialize) {
 	const std::string sql = "SELECT distinct(v1, v2, v3), * FROM " + default_namespace;
 	const std::string json =
@@ -71,3 +73,5 @@ TEST_F(DistinctApi, Verify) {
 	};
 	verifyIndex();
 }
+
+}  // namespace reindexer_tests

@@ -2,6 +2,7 @@
 #include "core/query/dsl/dslencoder.h"
 #include "core/query/dsl/dslparser.h"
 #include "core/query/expression/expression.h"
+#include "core/query/sql/sql_formatters.h"
 #include "core/query/sql/sqlencoder.h"
 #include "core/query/sql/sqlparser.h"
 #include "core/type_consts_helpers.h"
@@ -164,9 +165,21 @@ Query Query::FromJSON(std::string_view dsl) {
 
 std::string Query::GetJSON() const { return dsl::toDsl(*this); }
 
-WrSerializer& Query::GetSQL(WrSerializer& ser, bool stripArgs) const { return SQLEncoder(*this).GetSQL(ser, stripArgs); }
+WrSerializer& Query::GetSQL(WrSerializer& ser, bool stripArgs, Pretty pretty) const {
+	if (pretty) {
+		PrettySqlFormatter formatter(ser);
+		SQLEncoder(*this, formatter).DumpSQL(stripArgs);
+	} else {
+		SingleLineSqlFormatter formatter(ser);
+		SQLEncoder(*this, formatter).DumpSQL(stripArgs);
+	}
+	return ser;
+}
+
 WrSerializer& Query::GetSQL(WrSerializer& ser, QueryType realType, bool stripArgs) const {
-	return SQLEncoder(*this, realType).GetSQL(ser, stripArgs);
+	SingleLineSqlFormatter formatter(ser);
+	SQLEncoder(*this, realType, formatter).DumpSQL(stripArgs);
+	return ser;
 }
 
 std::string Query::GetSQL(bool stripArgs) const {
@@ -174,9 +187,16 @@ std::string Query::GetSQL(bool stripArgs) const {
 	return std::string(GetSQL(ser, stripArgs).Slice());
 }
 
-std::string Query::GetSQL(QueryType realType) const {
+std::string Query::GetSQL(QueryType realType, Pretty pretty) const {
 	WrSerializer ser;
-	return std::string(SQLEncoder(*this, realType).GetSQL(ser, false).Slice());
+	if (pretty) {
+		PrettySqlFormatter formatter(ser);
+		SQLEncoder(*this, realType, formatter).DumpSQL(false);
+	} else {
+		SingleLineSqlFormatter formatter(ser);
+		SQLEncoder(*this, realType, formatter).DumpSQL(false);
+	}
+	return std::string(ser.Slice());
 }
 
 Query& Query::EqualPositions(EqualPosition_t&& ep) & {

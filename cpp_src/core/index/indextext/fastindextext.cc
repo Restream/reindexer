@@ -112,8 +112,8 @@ void FastIndexText<T>::Delete(const Variant& key, IdType id, MustExist mustExist
 	this->delMemStat(keyIt);
 	int delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
-	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt || !mustExist,
-			"Delete non-existent id from index '{}' id={}, key={}", this->name_, id, key.As<std::string>());
+	assertf(this->opts_.IsArray() || delcnt || !mustExist, "Delete non-existent id from index '{}' id={}, key={}", this->name_, id,
+			key.As<std::string>());
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
@@ -316,7 +316,7 @@ template <typename VectorType, FtUseExternStatuses useExternalStatuses>
 IdSetPlain::Ptr FastIndexText<T>::applyCtxTypeAndSelect(DataHolder<VectorType>* d, FtCtx& ftCtx, FtDSLQuery&& dsl, bool inTransaction,
 														RankSortType rankSortType, FtMergeStatuses&& statuses,
 														FtUseExternStatuses useExternSt, const RdxContext& rdxCtx) {
-	Selector<VectorType> selector{*d, this->Fields().size(), holder_->cfg_->maxAreasInDoc};
+	Selector<VectorType> selector{*d, holder_->cfg_->splitOptions, this->Fields().size(), holder_->cfg_->maxAreasInDoc};
 	ftCtx.SetSplitter(this->holder_->GetSplitter());
 
 	switch (ftCtx.Type()) {
@@ -422,15 +422,21 @@ void FastIndexText<T>::commitFulltextImpl() {
 		}
 	} catch (Error& e) {
 		logFmt(LogError, "FastIndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
-		this->holder_->steps.clear();
+		holder_->steps.clear();
+		holder_->stepsWords_.clear();
+		holder_->lastStepWords_.clear();
 		throw;
 	} catch (std::exception& e) {
 		logFmt(LogError, "FastIndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
-		this->holder_->steps.clear();
+		holder_->steps.clear();
+		holder_->stepsWords_.clear();
+		holder_->lastStepWords_.clear();
 		throw;
 	} catch (...) {
 		logFmt(LogError, "FastIndexText::Commit exception: <unknown error>. Index will be rebuilt on the next query");
-		this->holder_->steps.clear();
+		holder_->steps.clear();
+		holder_->stepsWords_.clear();
+		holder_->lastStepWords_.clear();
 		throw;
 	}
 }

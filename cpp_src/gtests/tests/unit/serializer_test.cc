@@ -3,6 +3,8 @@
 
 #include "tools/serilize/wrserializer.h"
 
+namespace reindexer_tests {
+
 TEST(WrSerializer, GrowthPolicyNoExceedsMaxCapacity) {
 	reindexer::WrSerializer ser{reindexer::WrSerializer::GrowthPolicy{1024}};
 	const std::string payload(1024, 'x');
@@ -54,3 +56,5 @@ TEST(WrSerializer, GrowthPolicyDefault) {
 		EXPECT_TRUE(isPageAligned(ser.Cap()));
 	}
 }
+
+}  // namespace reindexer_tests

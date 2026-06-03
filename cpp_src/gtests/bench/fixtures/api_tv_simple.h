@@ -1,5 +1,6 @@
 #pragma once
 
+#include <benchmark/benchmark.h>
 #include <unordered_map>
 
 #include "api_tv_simple_base.h"
@@ -7,12 +8,16 @@
 
 using namespace std::string_view_literals;
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] ApiTvSimple : private ApiTvSimpleBase {
 	using Base = ApiTvSimpleBase;
 
 public:
 	~ApiTvSimple() override = default;
 	ApiTvSimple(Reindexer* db, std::string_view name, size_t maxItems) : Base(db, name, maxItems, "string_select_ns"sv) {
+		using reindexer::IndexOpts;
+
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "tree", "int64", IndexOpts())
 			.AddIndex("year", "tree", "int", IndexOpts())
@@ -21,7 +26,7 @@ public:
 			.AddIndex("age", "hash", "int", IndexOpts())
 			.AddIndex("price_id", "hash", "int", IndexOpts().Array())
 			.AddIndex("location", "hash", "string", IndexOpts())
-			.AddIndex("end_time", "hash", "int", IndexOpts())
+			.AddIndex("end_time", "tree", "int", IndexOpts())
 			.AddIndex("start_time", "tree", "int", IndexOpts())
 			.AddIndex("uuid", "hash", "uuid", IndexOpts())
 			.AddIndex("uuid_str", "hash", "string", IndexOpts());
@@ -113,8 +118,24 @@ private:
 	void QueryForcedSortDistinctLowSelectivityHash(State&);
 	void QueryForcedSortDistinctTree(State&);
 
+	template <typename Total, typename Sort>
+	void Query3CondOr(State&);
+	template <typename Total>
+	void QueryUncommitedWithBrackets(State&);
+	template <typename Total>
+	void QueryUncommitedWithUnorderedCond(State&);
+	template <typename Total, typename Sort>
+	void Query3CondRangeDistinctLowSelNoUnordered(benchmark::State& state);
+	template <typename Total, typename Sort>
+	void Query4CondRangeDistinctHighSel(benchmark::State& state);
+	template <typename Total, typename Sort>
+	void Query4CondRangeDistinctLowSel(benchmark::State& state);
+
+	void DisableBackgroundIndexOptimization(State& state);
+	void RestoreBackgroundIndexOptimization(State& state);
+
 	void query2CondIdSet(State& state, const std::vector<std::vector<int>>& idsets);
-	std::vector<Variant> generateForcedSort(int minVal, int maxVal, unsigned cnt);
+	std::vector<reindexer::Variant> generateForcedSort(int minVal, int maxVal, unsigned cnt);
 
 	constexpr static int kMinYear = 2000;
 	constexpr static int kMaxYear = 2049;
@@ -133,4 +154,7 @@ private:
 	reindexer::WrSerializer wrSer_;
 	std::string mainNs_{"main_ns"};
 	std::string rightNs_{"right_ns"};
+	std::string configBackupJson_;
 };
+
+}  // namespace reindexer_benchmarks

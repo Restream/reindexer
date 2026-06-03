@@ -3,6 +3,8 @@
 #include "tools/fsops.h"
 #include "tools/timetools.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
 
 void ClusterOperationProxyApi::ItemTracker::AddCommited(std::string&& json, ItemInfo&& info) {
@@ -45,7 +47,7 @@ void ClusterOperationProxyApi::ItemTracker::AddUnknown(std::string&& json, ItemI
 
 void ClusterOperationProxyApi::ItemTracker::Validate(client::QueryResults& qr) {
 	bool validateOk = true;
-	reindexer::WrSerializer ser;
+	WrSerializer ser;
 	for (auto& it : qr) {
 		ser.Reset();
 		auto err = it.GetJSON(ser, false);
@@ -151,3 +153,5 @@ int ClusterOperationProxyApi::GetRandFollower(int clusterSize, int leaderId) {
 		}
 	}
 }
+
+}  // namespace reindexer_tests

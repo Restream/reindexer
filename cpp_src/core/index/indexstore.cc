@@ -11,7 +11,7 @@ template <>
 IndexStore<Point>::IndexStore(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields)
 	: Index(idef, std::move(payloadType), std::move(fields)) {
 	keyType_ = selectKeyType_ = KeyValueType::Double{};
-	opts_.Array(true);
+	std::ignore = opts_.Array(true);
 }
 
 template <>

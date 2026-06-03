@@ -3,7 +3,6 @@
 #include <functional>
 #include <type_traits>
 #include "core/index/payload_map.h"
-#include "core/index/string_map.h"
 #include "core/keyvalue/geometry.h"
 #include "estl/fast_hash_set.h"
 
@@ -32,9 +31,8 @@ public:
 		}
 	};
 
-	using key_type = typename std::conditional<std::is_same_v<typename T::key_type, PayloadValueWithHash>, PayloadValue,
-											   typename std::conditional<std::is_same_v<typename T::key_type, key_string_with_hash>,
-																		 key_string, typename T::key_type>::type>::type;
+	using key_type =
+		typename std::conditional<std::is_same_v<typename T::key_type, PayloadValueWithHash>, PayloadValue, typename T::key_type>::type;
 	using pointers_set = fast_hash_set_s<key_type, hash_ptr<key_type>, equal_ptr<key_type>, less_ptr<key_type>>;
 	using points_set = fast_hash_set_s<Point, std::hash<Point>, point_strict_equal, point_strict_less>;
 	using generic_set = fast_hash_set_s<key_type, std::hash<key_type>, std::equal_to<key_type>, std::less<key_type>>;

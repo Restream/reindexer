@@ -15,6 +15,10 @@
 #include "tools/string_regexp_functions.h"
 #include "tools/stringstools.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
 namespace {
 
 static const std::wstring symbols =
@@ -214,3 +218,5 @@ TEST_F(ReindexerApi, NumToText) {
 	r = reindexer::NumToText::convert("1000000000000000000000000000", resNum) == std::vector<std::string_view>{};
 	ASSERT_TRUE(r) << out(resNum);
 }
+
+}  // namespace reindexer_tests

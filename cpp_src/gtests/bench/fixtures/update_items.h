@@ -4,10 +4,14 @@
 #include "array"
 #include "base_fixture.h"
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] UpdateItems : protected BaseFixture {
 public:
 	~UpdateItems() override = default;
 	UpdateItems(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+		using reindexer::IndexOpts;
+
 		nsdef_.AddIndex(std::string(kFieldId), "hash", "int", IndexOpts().PK());
 		nsdef_.AddIndex(std::string(kFieldScalar), "tree", "string", IndexOpts());
 		nsdef_.AddIndex(std::string(kFieldScalarSparse), "tree", "string", IndexOpts().Sparse());
@@ -138,3 +142,5 @@ private:
 	static constexpr std::array<std::string_view, 2> kFieldArraySubSparse = {"first_sparse", "second_sparse"};
 	static constexpr std::array<std::string_view, 2> kFieldArraySubNotIndex = {"first_not_index", "second_not_index"};
 };
+
+}  // namespace reindexer_benchmarks

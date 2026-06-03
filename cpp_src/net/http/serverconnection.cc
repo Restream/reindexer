@@ -19,7 +19,7 @@ static const std::string_view kStrEOL = "\r\n"sv;
 extern std::unordered_map<int, std::string_view> kHTTPCodes;
 
 ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Router& router, size_t maxRequestSize)
-	: ConnectionST(std::move(s), loop, false, maxRequestSize < kConnReadbufSize ? maxRequestSize : kConnReadbufSize),
+	: ConnectionST(std::move(s), loop, false, (maxRequestSize && maxRequestSize < kConnReadbufSize) ? maxRequestSize : kConnReadbufSize),
 	  router_(router),
 	  maxRequestSize_(maxRequestSize) {
 	callback(io_, ev::READ);

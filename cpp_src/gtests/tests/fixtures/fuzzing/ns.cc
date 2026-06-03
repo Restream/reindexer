@@ -4,6 +4,8 @@
 #include "index.h"
 #include "tools/assertrx.h"
 
+namespace reindexer_tests {
+
 struct [[nodiscard]] FieldPathHash {
 	size_t operator()(const fuzzing::FieldPath& fp) const noexcept {
 		constexpr static std::hash<size_t> hasher;
@@ -199,3 +201,5 @@ void Ns::Dump(std::ostream& os) const {
 }
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

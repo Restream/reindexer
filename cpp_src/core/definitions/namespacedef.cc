@@ -1,5 +1,5 @@
 #include "namespacedef.h"
-#include "cjson/jsonbuilder.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/namespace/namespace.h"
 #include "vendor/gason/gason.h"
 

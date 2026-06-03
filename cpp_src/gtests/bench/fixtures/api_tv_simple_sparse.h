@@ -5,12 +5,16 @@
 
 using namespace std::string_view_literals;
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] ApiTvSimpleSparse : private ApiTvSimpleBase {
 	using Base = ApiTvSimpleBase;
 
 public:
 	~ApiTvSimpleSparse() override = default;
 	ApiTvSimpleSparse(Reindexer* db, std::string_view name, size_t maxItems) : Base(db, name, maxItems, ""sv) {
+		using reindexer::IndexOpts;
+
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "tree", "int64", IndexOpts().Sparse())
 			.AddIndex("year", "tree", "int", IndexOpts().Sparse())
@@ -61,3 +65,5 @@ private:
 
 	int counter_ = 0;
 };
+
+}  // namespace reindexer_benchmarks

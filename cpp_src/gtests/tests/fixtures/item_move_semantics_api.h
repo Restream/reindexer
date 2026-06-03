@@ -4,6 +4,8 @@
 #include "gason/gason.h"
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] ItemMoveSemanticsApi : public ReindexerApi {
 protected:
 	const std::string pkField = "bookid";
@@ -12,6 +14,8 @@ protected:
 	std::vector<Item> items_;
 
 	void SetUp() override {
+		using reindexer::IndexOpts;
+
 		ReindexerApi::SetUp();
 		rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 		rt.AddIndex(default_namespace, {"bookid", "hash", "int", IndexOpts().PK()});
@@ -68,3 +72,5 @@ protected:
 		}
 	}
 };
+
+}  // namespace reindexer_tests

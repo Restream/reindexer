@@ -5,10 +5,10 @@
 #include <vector>
 
 namespace reindexer {
-
 class KeyValueType;
-
 }  // namespace reindexer
+
+namespace reindexer_tests {
 
 namespace fuzzing {
 
@@ -24,3 +24,5 @@ std::string_view ToText(IndexType);
 std::ostream& operator<<(std::ostream&, IndexType);
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

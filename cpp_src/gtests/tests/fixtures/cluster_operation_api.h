@@ -2,17 +2,21 @@
 
 #include "client/raftclient.h"
 #include "cluster/config.h"
+#include "net/ev/ev.h"
 #include "reindexer_api.h"
 #include "servercontrol.h"
+
+namespace reindexer::net::ev {
+class dynamic_loop;
+}  // namespace reindexer::net::ev
+
+namespace reindexer_tests {
 
 using reindexer::lsn_t;
 using reindexer::client::RaftClient;
 using reindexer::cluster::AsyncReplicationMode;
 using reindexer::DSN;
 
-namespace reindexer::net::ev {
-class dynamic_loop;
-}
 using reindexer::net::ev::dynamic_loop;
 
 class [[nodiscard]] ClusterOperationApi : public ::testing::Test {
@@ -120,3 +124,5 @@ public:
 		size_t maxUpdatesSize_ = 0;
 	};
 };
+
+}  // namespace reindexer_tests

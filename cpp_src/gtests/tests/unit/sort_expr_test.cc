@@ -2,6 +2,8 @@
 #include "core/sorting/sortexpression.h"
 #include "gtest/gtest.h"
 
+namespace reindexer_tests {
+
 namespace {
 
 using reindexer::Point;
@@ -506,3 +508,5 @@ TEST(StringFunctions, SortExpressionParse) {
 		}
 	}
 }
+
+}  // namespace reindexer_tests

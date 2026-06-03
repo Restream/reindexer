@@ -8,6 +8,8 @@
 #include "fmt/printf.h"
 #include "gtests/tests/gtest_cout.h"
 
+namespace reindexer_tests {
+
 using std::string;
 
 using reindexer::Error;
@@ -140,3 +142,5 @@ protected:
 	reindexer::h_vector<std::string_view> colors_ = {"red", "green", "blue", "yellow", "purple", "orange"};
 	reindexer::h_vector<std::string_view> names_ = {"bubble", "dog", "tomorrow", "car", "dinner", "dish"};
 };
+
+}  // namespace reindexer_tests

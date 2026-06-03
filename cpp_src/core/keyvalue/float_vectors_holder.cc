@@ -4,7 +4,6 @@
 #include "core/keyvalue/float_vectors_keeper.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joins/items_processor.h"
-#include "core/queryresults/itemref.h"
 #include "core/queryresults/localqueryresults.h"
 
 namespace reindexer {

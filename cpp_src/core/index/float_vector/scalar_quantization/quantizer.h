@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <span>
+#include "core/enums.h"
 #include "estl/concepts.h"
 #include "estl/defines.h"
 #include "quantization_params.h"
@@ -9,25 +10,23 @@
 namespace hnswlib {
 class [[nodiscard]] Quantizer {
 public:
-	template <typename MapT>
-	explicit Quantizer(const MapT& hnsw, QuantizingParams params)
+	explicit Quantizer(size_t dim, reindexer::VectorMetric metric, QuantizingParams params, auto statisticFn)
 		: params_(std::move(params)),
 		  // for the 1-quantile make a reserve for outliers in 1 pct
-		  kConfidenceInterval_([quantile = params_.Quantile(hnsw.fstdistfunc_.Dims())]() {
+		  kConfidenceInterval_([quantile = params_.Quantile(dim)]() {
 			  assertrx_throw(quantile >= 0.95f && quantile <= 1.f);
 			  return (1.f / quantile <= 1.01f) ? 1.01f : (1.f / quantile);
 		  }()),
-		  kDim(hnsw.fstdistfunc_.Dims()),
-		  kMetric(hnsw.fstdistfunc_.Metric()),
-		  statistic_(*this, [&hnsw]() noexcept { return hnsw.cur_element_count.load(std::memory_order_relaxed); }) {}
+		  kDim(dim),
+		  kMetric(metric),
+		  statistic_(*this, std::move(statisticFn)) {}
 
-	template <typename MapT>
-	explicit Quantizer(const MapT& hnsw, const Quantizer& other)
+	explicit Quantizer(const Quantizer& other, auto statisticFn)
 		: params_(other.params_),
 		  kConfidenceInterval_(other.kConfidenceInterval_),
 		  kDim(other.kDim),
 		  kMetric(other.kMetric),
-		  statistic_(other.statistic_, *this, [&hnsw]() noexcept { return hnsw.cur_element_count.load(std::memory_order_relaxed); }) {}
+		  statistic_(other.statistic_, *this, std::move(statisticFn)) {}
 
 	CorrectiveOffset Quantize(auto from, auto to) const noexcept { return quantize(from, to); }
 
@@ -94,7 +93,7 @@ private:
 	template <reindexer::concepts::OneOf<QuantizingParams, std::nullopt_t> DequantizeParams = std::nullopt_t>
 	CorrectiveOffset quantize(auto from, auto to, const DequantizeParams& dequantizeParams = std::nullopt) const noexcept {
 		CorrectiveOffset res{};
-		const bool isL2 = kMetric == hnswlib::MetricType::L2;
+		const bool isL2 = kMetric == reindexer::VectorMetric::L2;
 		float mathExpectShift = 0.f;
 		std::transform(from.begin(), from.end(), to.begin(), [&](auto _val) noexcept {
 			float val = _val;
@@ -129,7 +128,7 @@ private:
 
 	const float kConfidenceInterval_;
 	const size_t kDim;
-	const MetricType kMetric;
+	const reindexer::VectorMetric kMetric;
 
 	struct [[nodiscard]] Statistic {
 		Statistic(const Quantizer& q, auto curSizeFn) noexcept : quantizer_(q), curSizeFn_(std::move(curSizeFn)) {}

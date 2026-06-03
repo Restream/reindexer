@@ -17,9 +17,12 @@
 #include "tools/timetools.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests {
+
 using QueryResults = ReindexerApi::QueryResults;
 using Item = ReindexerApi::Item;
 using Reindexer = ReindexerApi::Reindexer;
+using reindexer::IndexOpts;
 
 TEST_F(NsApi, TupleColumnSize) {
 	// Check, that -tuple index does not have column subindex
@@ -3011,13 +3014,13 @@ static void checkQueryDsl(const Query& src) {
 
 TEST_F(NsApi, TestModifyQueriesSqlEncoder) {
 	constexpr std::string_view sqlUpdate =
-		"UPDATE ns SET field1 = 'mrf',field2 = field2+1,field3 = ['one','two','three','four','five'] WHERE a = true AND location = "
+		"UPDATE ns SET field1 = 'mrf', field2 = field2+1, field3 = ['one', 'two', 'three', 'four', 'five'] WHERE a = true AND location = "
 		"'msk'";
 	Query q1 = Query::FromSQL(sqlUpdate);
 	EXPECT_EQ(q1.GetSQL(), sqlUpdate);
 	checkQueryDsl(q1);
 
-	constexpr std::string_view sqlDrop = "UPDATE ns DROP field1,field2 WHERE a = true AND location = 'msk'";
+	constexpr std::string_view sqlDrop = "UPDATE ns DROP field1, field2 WHERE a = true AND location = 'msk'";
 	Query q2 = Query::FromSQL(sqlDrop);
 	EXPECT_EQ(q2.GetSQL(), sqlDrop);
 	checkQueryDsl(q2);
@@ -3043,7 +3046,7 @@ TEST_F(NsApi, TestModifyQueriesSqlEncoder) {
 	EXPECT_EQ(q6.GetSQL(), sqlIndexUpdate);
 	checkQueryDsl(q6);
 
-	constexpr std::string_view sqlSpeccharsUpdate = R"(UPDATE ns SET f1 = 'HELLO\n\r\b\f',f2 = '\t',f3 = '\"')";
+	constexpr std::string_view sqlSpeccharsUpdate = R"(UPDATE ns SET f1 = 'HELLO\n\r\b\f', f2 = '\t', f3 = '\"')";
 	Query q7 = Query::FromSQL(sqlSpeccharsUpdate);
 	EXPECT_EQ(q7.GetSQL(), sqlSpeccharsUpdate);
 	checkQueryDsl(q7);
@@ -3559,19 +3562,19 @@ TEST_F(NsApi, ArrayDistinct) {
 		Case{.name = "no limit, no offset",
 			 .query = reindexer::Query(default_namespace).Distinct("idx"),
 			 .expectedIDs = {0, 2, 7, 8, 9, 10},
-			 .expectedAggString = R"j(.*"distincts":\["0","1","77","10","11","45","99","100"\].*)j"},
+			 .expectedAggString = R"j(.*"distincts":\["11","1","77","99","100","10","45","0"\].*)j"},
 		Case{.name = "no limit, with offset",
 			 .query = reindexer::Query(default_namespace).Distinct("idx").Offset(2),
 			 .expectedIDs = {7, 8, 9, 10},
-			 .expectedAggString = R"j(.*"distincts":\["1","77","10","45","99","100"\].*)j"},
+			 .expectedAggString = R"j(.*"distincts":\["77","1","99","100","10","45"\].*)j"},
 		Case{.name = "with limit, no offset",
 			 .query = reindexer::Query(default_namespace).Distinct("idx").Limit(4),
 			 .expectedIDs = {0, 2, 7, 8},
-			 .expectedAggString = R"j(.*"distincts":\["0","1","77","10","11","45"\].*)j"},
+			 .expectedAggString = R"j(.*"distincts":\["11","1","77","10","45","0"\].*)j"},
 		Case{.name = "with limit, with offset",
 			 .query = reindexer::Query(default_namespace).Distinct("idx").Offset(1).Limit(2),
 			 .expectedIDs = {2, 7},
-			 .expectedAggString = R"j(.*"distincts":\["1","77","11"\].*)j"},
+			 .expectedAggString = R"j(.*"distincts":\["11","1","77"\].*)j"},
 	};
 
 	for (auto& c : cases) {
@@ -3818,3 +3821,5 @@ TEST(AsyncStorage, ConsistReadWriteRemoveTest) {
 		read(i);
 	}
 }
+
+}  // namespace reindexer_tests

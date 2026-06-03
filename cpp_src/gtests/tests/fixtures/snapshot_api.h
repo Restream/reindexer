@@ -8,6 +8,8 @@
 #include "rpcclient_api.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] SnapshotTestApi : public RPCClientTestApi {
 protected:
 	struct [[nodiscard]] NsDataState {
@@ -143,11 +145,11 @@ protected:
 		return state;
 	}
 
-	void Connect(net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient, reindexer::Reindexer& localRx) {
+	void Connect(reindexer::net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient, reindexer::Reindexer& localRx) {
 		Connect(localRx);
 		Connect(loop, rxClient);
 	}
-	void Connect(net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient) {
+	void Connect(reindexer::net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient) {
 		reindexer::client::ConnectOpts opts;
 		std::ignore = opts.CreateDBIfMissing();
 		auto err = rxClient.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
@@ -250,3 +252,5 @@ private:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 };
+
+}  // namespace reindexer_tests

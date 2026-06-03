@@ -357,7 +357,7 @@ void addWhereKNN(const JsonNode& fieldNode, const JsonNode& filter, Query& q) {
 			values.push_back(vDsl.As<double>());
 		}
 
-		auto vector = ConstFloatVector{std::span<float>{values}};
+		auto vector = FloatVector{std::span<float>{values}};
 		if (vector.Span().empty()) {
 			throw Error{errParseDSL, "Wrong DSL format: Knn condition with empty vector"};
 		}

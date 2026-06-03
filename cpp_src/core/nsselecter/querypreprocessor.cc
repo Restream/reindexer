@@ -12,6 +12,7 @@
 #include "core/type_consts.h"
 #include "nsselecter.h"
 #include "qresexplainholder.h"
+#include "sorting_heuristics.h"
 #include "substitutionhelpers.h"
 
 namespace reindexer {
@@ -742,72 +743,13 @@ SortingEntries QueryPreprocessor::detectOptimalSortOrder() const {
 	if (!AvailableSelectBySortIndex()) {
 		return {};
 	}
-	if (const Index* maxIdx = findMaxIndex(cbegin(), cend())) {
+	sorting_heuristics::NamespaceData nsData{.indexes = ns_.indexes_, .itemsCount = ns_.itemsCount()};
+	if (const Index* maxIdx = sorting_heuristics::AdviceSortingIndex(*this, nsData); maxIdx) {
 		SortingEntries sortingEntries;
 		sortingEntries.emplace_back(maxIdx->Name(), false);
 		return sortingEntries;
 	}
 	return {};
-}
-
-const Index* QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const {
-	thread_local h_vector<FoundIndexInfo, 32> foundIndexes;
-	foundIndexes.clear<false>();
-	findMaxIndex(begin, end, foundIndexes);
-	boost::sort::pdqsort(foundIndexes.begin(), foundIndexes.end(), [](const FoundIndexInfo& l, const FoundIndexInfo& r) noexcept {
-		if (l.isFitForSortOptimization > r.isFitForSortOptimization) {
-			return true;
-		}
-		if (l.isFitForSortOptimization == r.isFitForSortOptimization) {
-			return l.size > r.size;
-		}
-		return false;
-	});
-	if (!foundIndexes.empty() && foundIndexes[0].isFitForSortOptimization) {
-		return foundIndexes[0].index;
-	}
-	return nullptr;
-}
-
-void QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
-									 h_vector<FoundIndexInfo, 32>& foundIndexes) const {
-	for (auto it = begin; it != end; ++it) {
-		const auto foundIdx = it->Visit(
-			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) -> FoundIndexInfo {
-				throw_as_assert;
-			},
-			[this, it, end](const QueryEntry& entry) -> FoundIndexInfo {
-				// Consider only isolated root entries with ordered indexes
-				auto cur = it, next = it;
-				++next;
-				if (entry.IsFieldIndexed() && !entry.Distinct() && cur->operation == OpAnd && (next == end || next->operation != OpOr)) {
-					const auto idxPtr = ns_.indexes_[entry.IndexNo()].get();
-					if (idxPtr->IsOrdered() && !idxPtr->Opts().IsArray()) {
-						const auto cond = entry.Condition();
-						if (IsOrderedCondition(cond)) {
-							return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Compatible};
-						} else if (cond == CondEq || cond == CondSet || cond == CondAllSet) {
-							// Do not apply implicit sort if one of those conditions exist
-							return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Incompatible};
-						}
-					}
-				}
-				return {};
-			},
-			[](const concepts::OneOf<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry,
-									 MultiDistinctQueryEntry, QueryEntriesBracket, QueryFunctionEntry> auto&) noexcept {
-				return FoundIndexInfo();
-			});
-		if (foundIdx.index) {
-			auto found = std::find_if(foundIndexes.begin(), foundIndexes.end(),
-									  [foundIdx](const FoundIndexInfo& i) { return i.index == foundIdx.index; });
-			if (found == foundIndexes.end()) {
-				foundIndexes.emplace_back(foundIdx);
-			} else {
-				found->isFitForSortOptimization &= foundIdx.isFitForSortOptimization;
-			}
-		}
-	}
 }
 
 namespace {

@@ -6,6 +6,8 @@
 #include "gtests/tools.h"
 #include "replication_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] ReplicationLoadApi : public ReplicationApi {
 public:
 	void InitNs() {
@@ -46,9 +48,9 @@ public:
 
 		for (size_t i = 0; i < count; ++i) {
 			api.UpsertJSON("some", fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", counter_++, rand(),
-											   api.RandString(), randStrUuid()));
+											   api.RandString(), reindexer_tests_tools::randStrUuid()));
 			api.UpsertJSON("some1", fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", counter_++, rand(),
-												api.RandString(), randStrUuid()));
+												api.RandString(), reindexer_tests_tools::randStrUuid()));
 		}
 	}
 	BaseApi::QueryResultsType SimpleSelect(size_t num) {
@@ -154,3 +156,5 @@ public:
 protected:
 	size_t counter_;
 };
+
+}  // namespace reindexer_tests

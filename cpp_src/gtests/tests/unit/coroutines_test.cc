@@ -7,6 +7,8 @@
 #include "net/ev/ev.h"
 #include "tools/clock.h"
 
+namespace reindexer_tests {
+
 using reindexer::net::ev::dynamic_loop;
 using std::chrono::duration_cast;
 using std::chrono::seconds;
@@ -376,7 +378,7 @@ TEST(Coroutines, FIFOChannels) {
 	dynamic_loop loop;
 	channel<int> ch(3), chEnd;
 	constexpr int kValue = -999;
-	auto pushRoutine = exceptionWrapper([&] {
+	auto pushRoutine = reindexer_tests_tools::exceptionWrapper([&] {
 		launchOrder.emplace_back(current());
 		ch.push(kValue);
 		terminationOrder.emplace_back(current());
@@ -387,13 +389,13 @@ TEST(Coroutines, FIFOChannels) {
 	ASSERT_GT(ch.capacity(), kIntermediateReadSize);  // Particular read is essential test condition
 	ASSERT_LT(ch.capacity(), kPushRountinesBatch);	  // Channel overflow is essential test condition
 
-	loop.spawn(exceptionWrapper([&] {
+	loop.spawn(reindexer_tests_tools::exceptionWrapper([&] {
 		read.reserve(kPushRountinesBatch * 2);
 		for (unsigned i = 0; i < kPushRountinesBatch; ++i) {
 			loop.spawn(pushRoutine);
 		}
 		loop.yield();
-		loop.spawn(exceptionWrapper([&] {
+		loop.spawn(reindexer_tests_tools::exceptionWrapper([&] {
 			EXPECT_EQ(ch.size(), ch.capacity());
 			for (unsigned i = 0; i < kIntermediateReadSize; ++i) {
 				auto res = ch.pop();
@@ -432,3 +434,5 @@ TEST(Coroutines, FIFOChannels) {
 }
 
 // NOLINTEND(rx-perf-lambda-to-std-function-allocation)
+
+}  // namespace reindexer_tests

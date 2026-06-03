@@ -2,12 +2,16 @@
 
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] CompositeIndexesApi : public ReindexerApi {
 public:
 	enum [[nodiscard]] CompositeIndexType { CompositeIndexHash, CompositeIndexBTree };
 
 public:
 	void SetUp() override {
+		using reindexer::IndexOpts;
+
 		ReindexerApi::SetUp();
 		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts(), 0},
@@ -37,13 +41,13 @@ public:
 		Upsert(default_namespace, item);
 	}
 
-	Error tryAddCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {
+	Error tryAddCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const reindexer::IndexOpts& opts) {
 		reindexer::IndexDef indexDeclr{getCompositeIndexName(indexes), reindexer::JsonPaths(indexes), indexTypeToName(type), "composite",
 									   opts};
 		return rt.reindexer->AddIndex(default_namespace, indexDeclr);
 	}
 
-	void addCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {
+	void addCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const reindexer::IndexOpts& opts) {
 		Error err = tryAddCompositeIndex(std::move(indexes), type, opts);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
@@ -104,3 +108,5 @@ public:
 	static constexpr char compositePlus = '+';
 	static constexpr std::string_view kSubindexesNamespace = "subindexes_namespace";
 };
+
+}  // namespace reindexer_tests

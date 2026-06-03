@@ -1,5 +1,7 @@
 #include "auth_tools.h"
 
+namespace reindexer_tests {
+
 bool WithSecurity() noexcept { return std::getenv("RX_TEST_SECURITY_REQUIRED"); }
 
 std::string TLSPath() noexcept {
@@ -45,3 +47,5 @@ reindexer::DSN MakeDsn(reindexer_server::UserRole role, int serverId, int port, 
 }
 
 reindexer::fast_hash_map<int, reindexer::fast_hash_map<reindexer_server::UserRole, TestUserDataFactory::User>> TestUserDataFactory::users_;
+
+}  // namespace reindexer_tests

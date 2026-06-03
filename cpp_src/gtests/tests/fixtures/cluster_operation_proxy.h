@@ -4,6 +4,8 @@
 #include "cluster_operation_api.h"
 #include "estl/mutex.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] ClusterOperationProxyApi : public ClusterOperationApi {
 public:
 	class [[nodiscard]] ItemTracker {
@@ -91,3 +93,5 @@ public:
 	const Defaults& GetDefaults() const override;
 	int GetRandFollower(int clusterSize, int leaderId);
 };
+
+}  // namespace reindexer_tests

@@ -1,3 +1,5 @@
+#include "core/index/float_vector/float_vector_index.h"
+#include "core/index/float_vector/hnswlib/hnswalg.h"
 #include "core/system_ns_names.h"
 #include "fmt/printf.h"
 #include "gtests/tests/fixtures/quantization_helpers.h"
@@ -6,29 +8,34 @@
 #include "tools/fsops.h"
 #include "tools/scope_guard.h"
 
+namespace reindexer_tests {
+
+using reindexer::MultithreadingMode;
+using reindexer::IndexOpts;
+using reindexer::FloatVectorIndexOpts;
+
 namespace sq8_test {
 
-template <typename MetricT>
+template <reindexer::VectorMetric metric>
 void DataSamplerBaseTestBody() {
 	const size_t kHnswRandomSeed = 100;
 
-	MetricT space(kDimension);
-	const auto map = std::make_unique<hnswlib::HierarchicalNSWST>(&space, kHNSWInitSize, kM, kEfConstruction, kHnswRandomSeed,
-																  reindexer::ReplaceDeleted_True);
+	const auto map = std::make_unique<hnswlib::HierarchicalNSWImpl<float, hnswlib::Synchronization::None>>(
+		metric, kDimension, kHNSWInitSize, kM, kEfConstruction, kHnswRandomSeed, reindexer::ReplaceDeleted_True);
 
 	std::vector<std::vector<float>> points(kHNSWInitSize);
 
 	for (size_t i = 0; i < kHNSWInitSize; ++i) {
 		points[i] = MakePoint();
-		map->template addPoint<hnswlib::DummyLocker>(points[i].data(), i);
+		map->AddPointNoLock(points[i].data(), i);
 	}
 
 	const int partialSampleSize = 0.25 * points.size();
 
-	auto partialIndexes = hnswlib::HNSWView<hnswlib::HierarchicalNSWST>::GetSampleIndexes(partialSampleSize, map->cur_element_count);
+	auto partialIndexes = hnswlib::HNSWView<std::nullptr_t>::GetSampleIndexes(partialSampleSize, map->cur_element_count);
 	auto samples = hnswlib::HNSWView(*map, partialIndexes);
 
-	const auto dim = map->fstdistfunc_.Dims();
+	const auto dim = map->fstdistfunc_.Dim();
 	int cnt = 0;
 	for (auto& sample : samples) {
 		for (const auto& comp : sample) {
@@ -39,9 +46,188 @@ void DataSamplerBaseTestBody() {
 	ASSERT_EQ(cnt, partialSampleSize * dim);
 }
 
-TEST(Quantization, DataSamplerTest_L2) { DataSamplerBaseTestBody<hnswlib::L2Space>(); }
-TEST(Quantization, DataSamplerTest_IP) { DataSamplerBaseTestBody<hnswlib::InnerProductSpace>(); }
-TEST(Quantization, DataSamplerTest_Cosine) { DataSamplerBaseTestBody<hnswlib::CosineSpace>(); }
+TEST(Quantization, DataSamplerTest_L2) { DataSamplerBaseTestBody<reindexer::VectorMetric::L2>(); }
+TEST(Quantization, DataSamplerTest_IP) { DataSamplerBaseTestBody<reindexer::VectorMetric::InnerProduct>(); }
+TEST(Quantization, DataSamplerTest_Cosine) { DataSamplerBaseTestBody<reindexer::VectorMetric::Cosine>(); }
+
+class [[nodiscard]] HnswTestWriter final : public hnswlib::IWriter {
+public:
+	void PutVarUInt(uint32_t v) override { ser_.PutVarUint(v); }
+	void PutVarUInt(uint64_t v) override { ser_.PutVarUint(v); }
+	void PutVarInt(int64_t v) override { ser_.PutVarint(v); }
+	void PutVarInt(int32_t v) override { ser_.PutVarint(v); }
+	void PutFloat(float v) override { ser_.PutFloat(v); }
+	void PutVString(std::string_view slice) override { ser_.PutVString(slice); }
+	void AppendPKByID(hnswlib::labeltype label) override {
+		const auto fvId = reindexer::FloatVectorId::FromNumber(label);
+		ser_.PutVariant(reindexer::VariantArray{reindexer::Variant{fvId.RowId().ToNumber()}}[0]);
+	}
+
+	std::string_view Slice() const noexcept { return ser_.Slice(); }
+
+private:
+	reindexer::WrSerializer ser_;
+};
+
+class [[nodiscard]] HnswTestReader final : public hnswlib::IReader {
+public:
+	HnswTestReader(std::string_view data, std::span<const reindexer::h_vector<reindexer::FloatVector, 1>> vectorData) noexcept
+		: ser_{data}, getVectorData_(vectorData, sizeof(float) * kDimension) {}
+
+	uint64_t GetVarUInt() override { return ser_.GetVarUInt(); }
+	int64_t GetVarInt() override { return ser_.GetVarint(); }
+	float GetFloat() override { return ser_.GetFloat(); }
+	std::string_view GetVString() override { return ser_.GetVString(); }
+	hnswlib::labeltype ReadPkEncodedData(float* destBuf) override {
+		reindexer::Variant key;
+		key = ser_.GetVariant();
+		const reindexer::IdType itemID = getVectorData_(std::move(key), 0, destBuf);
+		EXPECT_TRUE(itemID.IsValid());
+		return reindexer::FloatVectorId{itemID, 0}.AsNumber();
+	}
+	bool WithQuantizer() const override { return true; }
+
+private:
+	reindexer::Serializer ser_;
+	const reindexer::FloatVectorIndexRawDataInserter getVectorData_;
+};
+
+template <reindexer::VectorMetric metric, hnswlib::Synchronization sync>
+void HnswHashStorageBaseTestBody() {
+	using namespace reindexer;
+	using HnswT = hnswlib::HierarchicalNSWImpl<float, sync>;
+	using QuantizedHnswT = hnswlib::HierarchicalNSWImpl<uint8_t, sync>;
+
+	const size_t kHnswRandomSeed = 100;
+	constexpr size_t kPointsCount = 100;
+	const auto vectorHash = [](const FloatVector& point) {
+		auto res = ConstFloatVectorView(point).Hash();
+		EXPECT_GT(res, 0);
+		return res;
+	};
+	const auto emptyHash = ConstFloatVectorView{}.Hash();
+
+	auto map = std::make_unique<HnswT>(metric, kDimension, kPointsCount + 1, kM, kEfConstruction, kHnswRandomSeed, ReplaceDeleted_True);
+
+	std::unordered_map<FloatVectorId, FloatVector> points;
+	std::vector<h_vector<FloatVector, 1>> vectorsData(kPointsCount + 1);
+
+	for (size_t i = 0; i < kPointsCount; ++i) {
+		const auto [it, inserted] = points.insert({FloatVectorId{IdType::FromNumber(i), 0}, FloatVector(MakePoint())});
+		ASSERT_TRUE(inserted);
+		vectorsData[i].emplace_back(it->second);
+	}
+
+	if constexpr (sync == hnswlib::Synchronization::OnInsertions) {
+		const size_t kNumThreads = 5;
+		const auto kBatchSize = kPointsCount / kNumThreads;
+		const size_t kNumBatches = (kPointsCount + kBatchSize - 1) / kBatchSize;
+
+		std::vector<std::thread> threads;
+		threads.reserve(kNumThreads);
+
+		std::atomic<size_t> nextBatch{0};
+		for (size_t i = 0; i < kNumThreads; ++i) {
+			threads.emplace_back([&]() {
+				while (true) {
+					size_t batchId = nextBatch.fetch_add(1, std::memory_order_relaxed);
+					if (batchId >= kNumBatches) {
+						break;
+					}
+
+					size_t begin = batchId * kBatchSize;
+					size_t end = std::min(begin + kBatchSize, kBatchSize);
+					for (size_t i = begin; i < begin + end; ++i) {
+						auto label = FloatVectorId{IdType::FromNumber(i), 0};
+						map->AddPointConcurrent(points[label].RawData(), label.AsNumber());
+					}
+				}
+			});
+		}
+
+		for (auto& thread : threads) {
+			thread.join();
+		}
+	} else {
+		for (const auto& [fvId, vec] : points) {
+			map->AddPointNoLock(vec.RawData(), fvId.AsNumber());
+		}
+	}
+
+	for (const auto& [fvId, vec] : points) {
+		ASSERT_EQ(map->GetHash(fvId.AsNumber()), vectorHash(points[fvId])) << fmt::format("rowId = {}", fvId.RowId().ToNumber());
+	}
+
+	const auto deletedFvId = FloatVectorId{IdType::FromNumber(0), 0};
+	map->MarkDelete(deletedFvId.AsNumber());
+	ASSERT_EQ(map->GetHash(deletedFvId.AsNumber()), emptyHash);
+
+	const auto replacementLabel = FloatVectorId{IdType::FromNumber(kPointsCount), 0};
+	ASSERT_EQ(map->GetHash(replacementLabel.AsNumber()), emptyHash);
+
+	points[replacementLabel] = FloatVector(MakePoint());
+	vectorsData[kPointsCount].emplace_back(points[replacementLabel]);
+
+	map->AddPointNoLock(points[replacementLabel].RawData(), replacementLabel.AsNumber());
+	ASSERT_EQ(map->GetHash(replacementLabel.AsNumber()), vectorHash(points[replacementLabel]));
+
+	auto checkHashes = [&](const auto& hnsw) {
+		for (const auto& [fvId, vec] : points) {
+			ASSERT_EQ(hnsw.GetHash(fvId.AsNumber()), fvId == deletedFvId ? emptyHash : vectorHash(vec));
+		}
+	};
+
+	HnswT copied(*map, map->MaxElements() + 1);
+	checkHashes(copied);
+
+	hnswlib::QuantizationConfig config{.quantile = kQuantile, .sampleSize = kPointsCount / 2, .quantizationThreshold = 1};
+	QuantizedHnswT quantized(*map, map->MaxElements() + 1, std::optional(config));
+	checkHashes(quantized);
+
+	QuantizedHnswT quantizedCopy(quantized, quantized.MaxElements() + 1);
+	checkHashes(quantizedCopy);
+
+	auto resizeTest = [&checkHashes](auto& hnsw) {
+		hnsw.ResizeIndex(hnsw.MaxElements() + 1);
+		checkHashes(hnsw);
+	};
+
+	resizeTest(*map);
+	resizeTest(quantized);
+
+	auto reloadTest = [&](auto& hsnw) {
+		auto quantizingParams = hsnw.quantizer_ ? std::optional{hsnw.quantizer_->Params()} : std::nullopt;
+
+		HnswTestWriter writer;
+		map->SaveIndex(writer, 0);
+		auto reader = HnswTestReader(writer.Slice(), vectorsData);
+		auto reloaded =
+			std::decay_t<decltype(hsnw)>(reader, metric, kDimension, kHnswRandomSeed, ReplaceDeleted_True, std::move(quantizingParams));
+
+		checkHashes(reloaded);
+	};
+
+	reloadTest(*map);
+	reloadTest(quantized);
+}
+
+TEST(Quantization, HnswHashStorageTest_L2) { HnswHashStorageBaseTestBody<reindexer::VectorMetric::L2, hnswlib::Synchronization::None>(); }
+TEST(Quantization, HnswHashStorageTest_IP) {
+	HnswHashStorageBaseTestBody<reindexer::VectorMetric::InnerProduct, hnswlib::Synchronization::None>();
+}
+TEST(Quantization, HnswHashStorageTest_Cosine) {
+	HnswHashStorageBaseTestBody<reindexer::VectorMetric::Cosine, hnswlib::Synchronization::None>();
+}
+
+TEST(Quantization, HnswHashStorageConcurrentTest_L2) {
+	HnswHashStorageBaseTestBody<reindexer::VectorMetric::L2, hnswlib::Synchronization::OnInsertions>();
+}
+TEST(Quantization, HnswHashStorageConcurrentTest_IP) {
+	HnswHashStorageBaseTestBody<reindexer::VectorMetric::InnerProduct, hnswlib::Synchronization::OnInsertions>();
+}
+TEST(Quantization, HnswHashStorageConcurrentTest_Cosine) {
+	HnswHashStorageBaseTestBody<reindexer::VectorMetric::Cosine, hnswlib::Synchronization::OnInsertions>();
+}
 
 class [[nodiscard]] QuantizationApi : public ::testing::Test {
 protected:
@@ -327,8 +513,8 @@ void IndexQuantizingConcurrentTestBody(auto& api) {
 
 #if RX_WITH_STDLIB_DEBUG
 TEST_F(QuantizationApi, IndexQuantizingConcurrentTest_RND) {
-	auto metric = randMetric();
-	TestCout() << fmt::format("Running test for '{}'-metric", VectorMetricToStr(metric)) << std::endl;
+	auto metric = reindexer_tests_tools::randMetric();
+	TestCout() << fmt::format("Running test for '{}'-metric", reindexer::VectorMetricToStr(metric)) << std::endl;
 	switch (metric) {
 		case reindexer::VectorMetric::Cosine:
 			IndexQuantizingConcurrentTestBody<reindexer::VectorMetric::Cosine>(api);
@@ -425,7 +611,7 @@ void SearchWithRadiusTestBody(auto& api) {
 
 #if RX_WITH_STDLIB_DEBUG
 TEST_F(QuantizationApi, SearchWithRadiusTest_RND) {
-	auto metric = randMetric();
+	auto metric = reindexer_tests_tools::randMetric();
 	TestCout() << fmt::format("Running test for '{}'-metric", VectorMetricToStr(metric)) << std::endl;
 	switch (metric) {
 		case reindexer::VectorMetric::Cosine:
@@ -448,3 +634,5 @@ TEST_F(QuantizationApi, SearchWithRadiusTest_Cosine) { SearchWithRadiusTestBody<
 #endif	// RX_WITH_STDLIB_DEBUG
 
 }  // namespace sq8_test
+
+}  // namespace reindexer_tests

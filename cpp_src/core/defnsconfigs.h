@@ -1,6 +1,6 @@
 #pragma once
 
-#include "namespacedef.h"
+#include "core/definitions/namespacedef.h"
 #include "system_ns_names.h"
 
 namespace reindexer {

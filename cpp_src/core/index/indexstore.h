@@ -27,7 +27,7 @@ public:
 
 	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexStore<T>(*this)); }
 	IndexMemStat GetMemStat(const RdxContext&) const override;
-	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string> || std::is_same_v<T, key_string_with_hash>; }
+	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string>; }
 	void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
 	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) override;
 	virtual bool IsDestroyPartSupported() const noexcept override final { return true; }

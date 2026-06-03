@@ -2,8 +2,6 @@
 #include "mergerimpl.h"
 #include "selecter.h"
 #include "tools/objects_pool.h"
-#include "tools/scope_guard.h"
-#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 
@@ -20,19 +18,28 @@ void Selector<IdCont>::filterStopWordsAndAdd(TermVariants& termVariants, h_vecto
 
 template <typename IdCont>
 void Selector<IdCont>::tryToCorrectKbLayout(TermVariants& termVariants) {
+	if (!holder_.cfg_->enableKbLayout) {
+		for (TermVariant& v : termVariants) {
+			v.RemovePossibleExtraTermSymbol(splitOptions_);
+		}
+		return;
+	}
+
 	const FTRankingConfig& rankingCfg = holder_.cfg_->rankingConfig;
 	newVariants.resize(0);
 	newVariants.reserve(termVariants.size());
 
 	__RX_VAR_FROM_POOL__(std::wstring, correctedPattern)
 
-	for (const TermVariant& v : termVariants) {
+	for (TermVariant& v : termVariants) {
 		// NOLINTNEXTLINE(bugprone-use-after-move)
 		holder_.kbLayout_->Transform(v.pattern, correctedPattern);
 		if (!correctedPattern.empty() && correctedPattern != v.pattern) {
 			float kblayoutProc = v.proc * rankingCfg.KbLayoutCoeff();
 			newVariants.emplace_back(std::move(correctedPattern), kblayoutProc, v);
 		}
+
+		v.RemovePossibleExtraTermSymbol(splitOptions_);
 	}
 
 	filterStopWordsAndAdd(termVariants, newVariants);
@@ -128,9 +135,7 @@ void Selector<IdCont>::tryToCorrectTypos(TermVariants& termVariants) {
 			if (auto wfIt = wordsFound.find(wId); wfIt != wordsFound.end()) {
 				newVariants[wfIt->second].Unite(v, proc);
 			} else {
-				const auto& step = holder_.GetStep(wId);
-				auto wIdInStep = holder_.GetWordIdInStep(wId, step);
-				std::string_view word(step.suffixes_.word_at(wIdInStep));
+				std::string_view word = holder_.GetWord(wId);
 				wordsFound[wId] = newVariants.size();
 				newVariants.emplace_back(word, proc, v);
 				if (newVariants.back().pattern.size() < kMinTypoVariantStemLen) {
@@ -145,6 +150,10 @@ void Selector<IdCont>::tryToCorrectTypos(TermVariants& termVariants) {
 
 template <typename IdCont>
 void Selector<IdCont>::transliterate(TermVariants& termVariants) {
+	if (!holder_.cfg_->enableTranslit) {
+		return;
+	}
+
 	const FTRankingConfig& rankingCfg = holder_.cfg_->rankingConfig;
 	newVariants.resize(0);
 	newVariants.reserve(termVariants.size());
@@ -304,13 +313,11 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 					continue;
 				}
 
-				const uint32_t wordIdInStep = holder_.GetWordIdInStep(wordId, step);
-				const char* word = suffixes.word_at(wordIdInStep);
-				const size_t wordLength = suffixes.word_len_at(wordIdInStep);
+				const std::string_view word = holder_.GetWord(wordId);
 
-				const size_t wordLengthBeforePattern = suffixPtr - word;
+				const size_t wordLengthBeforePattern = suffixPtr - word.data();
 				const bool isPrefix = (wordLengthBeforePattern == 0);
-				const size_t wordLengthAfterPattern = wordLength - wordLengthBeforePattern - variant.PatternUtf8().length();
+				const size_t wordLengthAfterPattern = word.length() - wordLengthBeforePattern - variant.PatternUtf8().length();
 				const bool isSuffix = (wordLengthAfterPattern == 0);
 
 				if (!variant.suff && !isPrefix) {
@@ -321,8 +328,8 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 				}
 
 				// ToDo fix it (broken for russian utf8 symbols)
-				const int matchDif = std::abs(long(wordLength - variant.PatternUtf8().length() + wordLengthBeforePattern));
-				const float boost = std::max(getTermBoost(word), variant.boost);
+				const int matchDif = std::abs(long(word.length() - variant.PatternUtf8().length() + wordLengthBeforePattern));
+				const float boost = std::max(getTermBoost(std::string(word)), variant.boost);
 				const float decreasePenalty =
 					static_cast<float>(holder_.cfg_->partialMatchDecrease * matchDif) / std::max<float>(variant.PatternUtf8().length(), 3);
 				float proc = std::max<float>(variant.proc - decreasePenalty, isPrefix ? rankingCfg.PrefixMin() : rankingCfg.SuffixMin());
@@ -385,6 +392,89 @@ static FtDslOpts calcSubstitutionOptions(const ft::QueryMergeData<IdCont>& query
 
 template <typename IdCont>
 template <FtUseExternStatuses useExternSt>
+h_vector<size_t, 4> Selector<IdCont>::addSynonymsBySplittingTermVariants(TermVariants& termVariants,
+																		 const FtMergeStatuses::Statuses& docsExcluded,
+																		 ft::QueryMergeData<IdCont>& queryMergeData) {
+	const FTRankingConfig& rankingCfg = holder_.cfg_->rankingConfig;
+	const StopWordsSetT& stopWords = holder_.cfg_->stopWords;
+
+	h_vector<size_t, 4> synonymIds;
+
+	for (auto& tv : termVariants) {
+		if (!tv.split || tv.pattern.size() <= kMinSplitSize) {
+			continue;
+		}
+		const std::string& patternUtf8 = tv.PatternUtf8();
+		auto splitIt = patternUtf8.begin();
+		size_t splitIdx = 0;
+		while (splitIdx < kMinSplitSize) {
+			std::ignore = utf8::unchecked::next(splitIt);
+			++splitIdx;
+		}
+
+		while (splitIdx + kMinSplitSize < tv.pattern.size()) {
+			std::wstring_view firstSplitPart(tv.pattern.begin(), tv.pattern.begin() + splitIdx);
+			std::string_view firstSplitPartUtf8(patternUtf8.begin(), splitIt);
+			std::wstring_view secondSplitPart(tv.pattern.begin() + splitIdx, tv.pattern.end());
+			std::string_view secondSplitPartUtf8(splitIt, patternUtf8.end());
+
+			if (!holder_.FindWord(firstSplitPartUtf8, true).IsEmpty() && !holder_.FindWord(secondSplitPartUtf8, true).IsEmpty() &&
+				stopWords.find(firstSplitPartUtf8) == stopWords.end() && stopWords.find(secondSplitPartUtf8) == stopWords.end()) {
+				ft::Synonym<IdCont> synData;
+				const FtDslOpts& opts = termVariants.Opts();
+
+				// adding first synonym part
+				TermVariants firstPartVariants(opts);
+				firstPartVariants.emplace_back(std::wstring(firstSplitPart), (tv.proc / 2.0) * rankingCfg.SplitCoeff());
+				firstPartVariants.back().suff = false;
+				if (firstSplitPart.size() < kMinSplitVariantStemLen) {
+					firstPartVariants.back().stem = false;
+				}
+
+				transliterate(firstPartVariants);
+				stem(firstPartVariants);
+				for (auto& v : firstPartVariants) {
+					v.boost = getTermBoost(v.PatternUtf8());
+				}
+
+				ft::TermResults<IdCont> firstPartTerm =
+					buildTermResults<useExternSt>(FtDSLEntry(std::wstring(firstSplitPart), opts), firstPartVariants, docsExcluded);
+				queryMergeData.totalORVids += firstPartTerm.MaxVDocs();
+				synData.AddTerm(std::move(firstPartTerm));
+
+				// adding second synonym part
+				TermVariants secondPartVariants(opts);
+				secondPartVariants.emplace_back(std::wstring(secondSplitPart), (tv.proc / 2.0) * rankingCfg.SplitCoeff());
+				secondPartVariants.back().pref = false;
+				if (secondSplitPart.size() < kMinSplitVariantStemLen) {
+					secondPartVariants.back().stem = false;
+				}
+
+				transliterate(secondPartVariants);
+				stem(secondPartVariants);
+				for (auto& v : secondPartVariants) {
+					v.boost = getTermBoost(v.PatternUtf8());
+				}
+
+				ft::TermResults<IdCont> secondPartTerm =
+					buildTermResults<useExternSt>(FtDSLEntry(std::wstring(secondSplitPart), opts), secondPartVariants, docsExcluded);
+				queryMergeData.totalORVids += secondPartTerm.MaxVDocs();
+				synData.AddTerm(std::move(secondPartTerm));
+
+				queryMergeData.synonyms.emplace_back(std::move(synData));
+				synonymIds.push_back(queryMergeData.synonyms.size() - 1);
+			}
+
+			std::ignore = utf8::unchecked::next(splitIt);
+			++splitIdx;
+		}
+	}
+
+	return synonymIds;
+}
+
+template <typename IdCont>
+template <FtUseExternStatuses useExternSt>
 void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStatuses::Statuses& docsExcluded, bool inTransaction,
 										   const RdxContext& rdxCtx, ft::QueryMergeData<IdCont>& queryMergeData) {
 	const FTRankingConfig& rankingCfg = holder_.cfg_->rankingConfig;
@@ -412,6 +502,7 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 		}
 
 		const bool exact = term.Opts().exact;
+		h_vector<size_t, 4> synonymIds;
 
 		if (phraseTerm) {
 			tryToCorrectKbLayout(termVariants);
@@ -424,16 +515,20 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 				stem(termVariants);
 			}
 		} else if (exact) {
-			tryToCorrectKbLayout(termVariants);
 			tryToCorrectTypos(termVariants);
 		} else {
 			bool needJoinWithPrevTerm = holder_.cfg_->enableTermsConcat && queryTermIdx > 0;
 			if (needJoinWithPrevTerm && term.CanBeJoinedWith(query.GetTerm(queryTermIdx - 1))) {
 				FtDSLEntry joinedTerm = term.JoinWithPrevTerm(query.GetTerm(queryTermIdx - 1));
 				termVariants.emplace_back(std::move(joinedTerm.Pattern()), rankingCfg.Concat(), joinedTerm.Opts());
+				termVariants.back().split = false;
 			}
 
 			tryToCorrectKbLayout(termVariants);
+			if (term.Opts().op == OpOr && holder_.cfg_->enableTermsSplit) {
+				synonymIds = addSynonymsBySplittingTermVariants<useExternSt>(termVariants, docsExcluded, queryMergeData);
+			}
+
 			tryToCorrectTypos(termVariants);
 			tryToSplit(termVariants, PhraseTerm_False);
 			transliterate(termVariants);
@@ -448,6 +543,7 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 		}
 
 		ft::TermResults<IdCont> nextTerm = buildTermResults<useExternSt>(term, termVariants, docsExcluded);
+
 		queryMergeData.totalORVids += nextTerm.MaxVDocs();
 		if (phraseTerm) {
 			if (nextPhrase.NumTerms() && curPhraseNum != term.Opts().phraseNum) {
@@ -460,6 +556,10 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 			nextPhrase.Add(std::move(nextTerm));
 		} else {
 			queryMergeData.queryParts.emplace_back(std::move(nextTerm));
+			for (size_t synonymId : synonymIds) {
+				queryMergeData.queryParts.back().AddSynonymId(synonymId);
+			}
+
 			if (termVariants.Op() != OpNot) {
 				variantsForSubstitution.emplace_back(std::move(termVariants));
 				variantsForSubstitutionPositions.emplace_back(queryMergeData.queryParts.size() - 1);

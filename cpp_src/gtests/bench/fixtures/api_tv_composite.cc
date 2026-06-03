@@ -4,11 +4,10 @@
 #include "core/query/query.h"
 #include "helpers.h"
 
-using benchmark::AllocsTracker;
-
 using reindexer::Query;
-using reindexer::Variant;
 using namespace std::string_view_literals;
+
+namespace reindexer_benchmarks {
 
 reindexer::Error ApiTvComposite::Initialize() {
 	auto err = BaseFixture::Initialize();
@@ -370,3 +369,5 @@ void ApiTvComposite::SortByTreeCompositeIntStrCollateUTF8(benchmark::State& stat
 	const auto q = Query(nsdef_.name).Sort("id+name"sv, false).Limit(20);
 	benchQuery(q, state);
 }
+
+}  // namespace reindexer_benchmarks

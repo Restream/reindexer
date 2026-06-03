@@ -514,7 +514,7 @@ size_t PayloadIface<T>::GetHash(const FieldsSet& fields) const {
 	VariantArray keys1;
 	size_t tagPathIdx = 0;
 	for (auto field : fields) {
-		ret *= 127;
+		ret *= kHashMagic;
 		if (field != IndexValueType::SetByJsonPath) {
 			auto& f = t_.Field(field);
 			if (f.IsArray()) {

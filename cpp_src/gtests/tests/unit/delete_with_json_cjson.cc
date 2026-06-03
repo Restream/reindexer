@@ -1,5 +1,7 @@
 #include "get_pk_api.h"
 
+namespace reindexer_tests {
+
 #define SIMPLE_ITEM_NAMESPACE "test_extrack_pk_simple"
 #define NESTED_ITEM_NAMESPACE "test_extract_pk_nested"
 #define NESTED_ITEM_WITH_OBJ_NAMESPACE "test_extract_pk_nested_obj"
@@ -58,6 +60,7 @@
 
 using std::ignore;
 using std::string;
+using reindexer::IndexOpts;
 
 TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 	CHECK_SUCCESS(CreateNamespace(NamespaceDef(SIMPLE_ITEM_NAMESPACE)
@@ -346,3 +349,5 @@ TEST_F(ExtractPK, NestedCJSONWithObject) {
 	CHECK_SUCCESS(db_->Select(Query(NESTED_ITEM_WITH_OBJ_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), qRes));
 	ASSERT_TRUE(!qRes.Count()) << "Result of selection must be empty";
 }
+
+}  // namespace reindexer_tests

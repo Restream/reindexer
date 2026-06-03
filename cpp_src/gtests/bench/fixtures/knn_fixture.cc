@@ -5,9 +5,21 @@
 #include "gtests/tools.h"
 #include "yaml-cpp/yaml.h"
 
-namespace reindexer::knn_bench {
+namespace reindexer_benchmarks::knn_bench {
 
 using namespace std::string_view_literals;
+using reindexer::VectorMetric;
+using reindexer::QueryResults;
+using reindexer::IndexOpts;
+using reindexer::FloatVectorIndexOpts;
+using reindexer::FTConfig;
+using reindexer::MultithreadingMode;
+using reindexer::ConstFloatVectorView;
+using reindexer::Query;
+using reindexer::HnswSearchParams;
+using reindexer::IvfSearchParams;
+using reindexer::Item;
+using reindexer::Error;
 
 static constexpr int kMaxValueOrTreeIndex = 1'000'000;
 
@@ -114,7 +126,7 @@ private:
 
 template <IndexType indexType, VectorMetric metric>
 KnnBench<indexType, metric>::KnnBench(Reindexer* db, std::string_view name, WithQuantization withQuantization)
-	: BaseFixture(db, name, kNsSize * 3), bench::FullTextBase{kWordsInFtIndex}, withQuantization_(withQuantization) {
+	: BaseFixture(db, name, kNsSize * 3), FullTextBase{kWordsInFtIndex}, withQuantization_(withQuantization) {
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 	nsdef_.AddIndex("tree", "tree", "int", IndexOpts());
 	switch (indexType) {
@@ -128,7 +140,7 @@ KnnBench<indexType, metric>::KnnBench(Reindexer* db, std::string_view name, With
 							  .SetStartSize(kNsSize);
 
 			if (withQuantization_ == WithQuantization::Yes) {
-				fvOpts.SetQuantizationConfig({.quantile = 1.f, .sampleSize = kNsSize, .quantizationThreshold = kNsSize});
+				std::ignore = fvOpts.SetQuantizationConfig({.quantile = 1.f, .sampleSize = kNsSize, .quantizationThreshold = kNsSize});
 			}
 
 			nsdef_.AddIndex("vec", "hnsw", "float_vector", IndexOpts().SetFloatVector(IndexHnsw, std::move(fvOpts)));
@@ -141,9 +153,8 @@ KnnBench<indexType, metric>::KnnBench(Reindexer* db, std::string_view name, With
 			break;
 		}
 	}
-	IndexOpts ftIndexOpts;
-	ftIndexOpts.SetConfig(IndexFastFT, FTConfig{1}.GetJSON({}));
-	nsdef_.AddIndex("ft", "text", "string", ftIndexOpts);
+
+	nsdef_.AddIndex("ft", "text", "string", IndexOpts().SetConfig(IndexFastFT, FTConfig{1}.GetJSON({})));
 }
 
 template KnnBench<IndexType::Hnsw, VectorMetric::L2>::KnnBench(Reindexer*, std::string_view, WithQuantization);
@@ -165,7 +176,7 @@ Item KnnBench<indexType, metric>::MakeItem(State&, int id) {
 		item["id"sv] = id;
 		item["tree"sv] = rand() % kMaxValueOrTreeIndex;
 		static std::array<float, kDimention> vect;
-		rndFloatVector(vect);
+		reindexer_tests_tools::rndFloatVector(vect);
 		item["vec"sv] = ConstFloatVectorView{vect};
 	}
 	return item;
@@ -173,7 +184,7 @@ Item KnnBench<indexType, metric>::MakeItem(State&, int id) {
 
 template <IndexType indexType, VectorMetric metric>
 void KnnBench<indexType, metric>::Fill(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto tx = db_->NewTransaction(nsdef_.name);
@@ -202,7 +213,7 @@ void KnnBench<indexType, metric>::Fill(State& state) {
 
 template <IndexType indexType, VectorMetric metric>
 void KnnBench<indexType, metric>::Insert(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeItem(state);
 		if (!item.Status().ok()) {
@@ -219,7 +230,7 @@ void KnnBench<indexType, metric>::Insert(State& state) {
 
 template <IndexType indexType, VectorMetric metric>
 void KnnBench<indexType, metric>::Update(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeItem(state, rand() % id_seq_->Current());
 		if (!item.Status().ok()) {
@@ -236,7 +247,7 @@ void KnnBench<indexType, metric>::Update(State& state) {
 
 template <IndexType indexType, VectorMetric metric>
 void KnnBench<indexType, metric>::FillFtIndex(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto tx = db_->NewTransaction(nsdef_.name);
 		if (!tx.Status().ok()) {
@@ -271,7 +282,7 @@ void KnnBench<indexType, metric>::FillFtIndex(State& state) {
 
 template <IndexType indexType, VectorMetric metric>
 void KnnBench<indexType, metric>::DeleteFtIndex(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		const auto err = db_->DropIndex(nsdef_.name, reindexer::IndexDef("ft"));
 		if (!err.ok()) {
@@ -324,7 +335,7 @@ template <KnnParams knnParams>
 void KnnBench<indexType, metric>::Knn(State& state) {
 	static std::array<float, kDimention> vect;
 	const auto q = [&] {
-		rndFloatVector(vect);
+		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name).WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}());
 	};
 	ItemsCounter<knnParams> itemsCounter{state};
@@ -336,7 +347,7 @@ template <KnnParams knnParams>
 void KnnBench<indexType, metric>::KnnWithVectors(State& state) {
 	static std::array<float, kDimention> vect;
 	const auto q = [&] {
-		rndFloatVector(vect);
+		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name)
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}())
 			.SelectAllFields();
@@ -350,7 +361,7 @@ template <KnnParams knnParams>
 void KnnBench<indexType, metric>::KnnWithCondition(State& state) {
 	static std::array<float, kDimention> vect;
 	const auto q = [&] {
-		rndFloatVector(vect);
+		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name)
 			.Where("tree"sv, CondGt, rand() % (kMaxValueOrTreeIndex / 2))
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}());
@@ -365,7 +376,7 @@ void KnnBench<indexType, metric>::KnnWith2Conditions(State& state) {
 	static std::array<float, kDimention> vect;
 	const auto halfOfItemsCount = id_seq_->Current() / 2;
 	const auto q = [&] {
-		rndFloatVector(vect);
+		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name)
 			.Where("id"sv, CondGt, rand() % halfOfItemsCount)
 			.Where("tree"sv, CondGt, rand() % (kMaxValueOrTreeIndex / 2))
@@ -380,7 +391,7 @@ template <KnnParams knnParams>
 void KnnBench<indexType, metric>::AndHybridRrf(State& state) {
 	static std::array<float, kDimention> vect;
 	const auto q = [&] {
-		rndFloatVector(vect);
+		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name)
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}())
 			.Where("ft"sv, CondEq, RndWord1() + ' ' + RndWord1())
@@ -395,7 +406,7 @@ template <KnnParams knnParams>
 void KnnBench<indexType, metric>::AndHybridLinear(State& state) {
 	static std::array<float, kDimention> vect;
 	const auto q = [&] {
-		rndFloatVector(vect);
+		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name)
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}())
 			.Where("ft"sv, CondEq, RndWord1() + ' ' + RndWord1())
@@ -410,7 +421,7 @@ template <KnnParams knnParams>
 void KnnBench<indexType, metric>::OrHybridRrf(State& state) {
 	static std::array<float, kDimention> vect;
 	const auto q = [&] {
-		rndFloatVector(vect);
+		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name)
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}())
 			.Or()
@@ -427,7 +438,7 @@ template <KnnParams knnParams>
 void KnnBench<indexType, metric>::OrHybridLinear(State& state) {
 	static std::array<float, kDimention> vect;
 	const auto q = [&] {
-		rndFloatVector(vect);
+		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name)
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}())
 			.Or()
@@ -478,7 +489,7 @@ static void WaitQuantization(Reindexer* db, std::string_view nsName, std::string
 
 template <IndexType indexType, VectorMetric metric>
 void KnnBench<indexType, metric>::Sleep(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		std::this_thread::sleep_for(std::chrono::seconds(20));
 	}
@@ -547,4 +558,4 @@ template void KnnBench<IndexType::Ivf, VectorMetric::L2>::RegisterAllCases();
 template void KnnBench<IndexType::Ivf, VectorMetric::Cosine>::RegisterAllCases();
 template void KnnBench<IndexType::Ivf, VectorMetric::InnerProduct>::RegisterAllCases();
 
-}  // namespace reindexer::knn_bench
+}  // namespace reindexer_benchmarks::knn_bench

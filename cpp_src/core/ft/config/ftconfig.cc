@@ -40,6 +40,7 @@ void FTRankingConfig::parse(const gason::JsonNode& node) {
 	using namespace std::string_view_literals;
 	fullMatch = node["full_match_proc"sv].As<>(kDefaultFullMatch, 0, 500);
 	concat = node["concat_proc"sv].As<>(kDefaultConcat, 0, 500);
+	split = node["split_proc"sv].As<>(kDefaultSplit, 0, 500);
 	prefixMin = node["prefix_min_proc"sv].As<>(kDefaultPrefixMin, 0, 500);
 	suffixMin = node["suffix_min_proc"sv].As<>(kDefaultSuffixMin, 0, 500);
 	typo = node["base_typo_proc"sv].As<>(kDefaultTypo, 0, 500);
@@ -55,6 +56,7 @@ void FTRankingConfig::getJson(JsonBuilder& jsonBuilder) const {
 	using namespace std::string_view_literals;
 	jsonBuilder.Put("full_match_proc"sv, fullMatch);
 	jsonBuilder.Put("concat_proc"sv, concat);
+	jsonBuilder.Put("split_proc"sv, split);
 	jsonBuilder.Put("prefix_min_proc"sv, prefixMin);
 	jsonBuilder.Put("suffix_min_proc"sv, suffixMin);
 	jsonBuilder.Put("base_typo_proc"sv, typo);
@@ -216,6 +218,7 @@ void FTConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexF
 
 		using namespace std::string_view_literals;
 		enableTermsConcat = root["enable_terms_concat"sv].As<>(enableTermsConcat);
+		enableTermsSplit = root["enable_terms_split"sv].As<>(enableTermsSplit);
 		enableTranslit = root["enable_translit"sv].As<>(enableTranslit);
 		enableNumbersSearch = root["enable_numbers_search"sv].As<>(enableNumbersSearch);
 		enableKbLayout = root["enable_kb_layout"sv].As<>(enableKbLayout);
@@ -339,6 +342,7 @@ std::string FTConfig::GetJSON(const fast_hash_map<std::string, int>& fields) con
 	JsonBuilder jsonBuilder(wrser);
 
 	jsonBuilder.Put("enable_terms_concat"sv, enableTermsConcat);
+	jsonBuilder.Put("enable_terms_split"sv, enableTermsSplit);
 	jsonBuilder.Put("enable_translit"sv, enableTranslit);
 	jsonBuilder.Put("enable_numbers_search"sv, enableNumbersSearch);
 	jsonBuilder.Put("enable_kb_layout"sv, enableKbLayout);

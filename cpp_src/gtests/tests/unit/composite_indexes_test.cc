@@ -3,9 +3,12 @@
 #include "vendor/fmt/ranges.h"
 #include "yaml-cpp/yaml.h"
 
+namespace reindexer_tests {
+
 using QueryResults = ReindexerApi::QueryResults;
 using Item = ReindexerApi::Item;
 using Reindexer = ReindexerApi::Reindexer;
+using reindexer::IndexOpts;
 
 TEST_F(CompositeIndexesApi, CompositeIndexesAddTest) {
 	addCompositeIndex({kFieldNameBookid, kFieldNameBookid2}, CompositeIndexHash, IndexOpts().PK());
@@ -385,3 +388,5 @@ TEST_F(CompositeIndexesApi, CompositePartsOrdering) {
 		EXPECT_EQ(err.whatStr(), fmt::format("Cannot remove index '{}': it's a part of a composite index 'text_composite'", idx));
 	}
 }
+
+}  // namespace reindexer_tests

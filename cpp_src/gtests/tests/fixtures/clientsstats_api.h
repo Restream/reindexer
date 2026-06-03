@@ -5,6 +5,8 @@
 #include "client/cororeindexer.h"
 #include "server/server.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] ClientsStatsApi : public ::testing::Test {
 public:
 	void TearDown() override;
@@ -44,3 +46,5 @@ private:
 	std::vector<std::unique_ptr<std::thread>> reconnectThreads_;
 	std::vector<std::unique_ptr<std::thread>> startStopStatThreads_;
 };
+
+}  // namespace reindexer_tests

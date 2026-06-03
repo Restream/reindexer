@@ -3,6 +3,8 @@
 
 using reindexer::Query;
 
+namespace reindexer_benchmarks {
+
 reindexer::Error ApiTvSimpleBase::Initialize() {
 	assertrx(db_);
 	for (int i = 0; i < 10; ++i) {
@@ -17,7 +19,7 @@ reindexer::Error ApiTvSimpleBase::Initialize() {
 	}
 	uuids_.reserve(1'000);
 	for (size_t i = 0; i < 1'000; ++i) {
-		uuids_.emplace_back(randStrUuid());
+		uuids_.emplace_back(reindexer_tests_tools::randStrUuid());
 	}
 	devices_ = {"iphone", "android", "smarttv", "stb", "ottstb"};
 	locations_ = {"mos", "ct", "dv", "sth", "vlg", "sib", "ural"};
@@ -85,7 +87,7 @@ template void ApiTvSimpleBase::Query2Cond<BaseFixture::NoTotal>(State&);
 template void ApiTvSimpleBase::Query2Cond<BaseFixture::ReqTotal>(State&);
 template void ApiTvSimpleBase::Query2Cond<BaseFixture::CachedTotal>(State&);
 
-template <typename Total>
+template <typename Total, typename Sort>
 void ApiTvSimpleBase::Query3Cond(benchmark::State& state) {
 	const auto q = [&] {
 		const size_t randomPackage = random<size_t>(0, packages_.size() - 1);
@@ -101,11 +103,14 @@ void ApiTvSimpleBase::Query3Cond(benchmark::State& state) {
 	};
 	benchQuery(q, state);
 }
-template void ApiTvSimpleBase::Query3Cond<BaseFixture::NoTotal>(State&);
-template void ApiTvSimpleBase::Query3Cond<BaseFixture::ReqTotal>(State&);
-template void ApiTvSimpleBase::Query3Cond<BaseFixture::CachedTotal>(State&);
+template void ApiTvSimpleBase::Query3Cond<BaseFixture::NoTotal, BaseFixture::NoSort>(State&);
+template void ApiTvSimpleBase::Query3Cond<BaseFixture::ReqTotal, BaseFixture::NoSort>(State&);
+template void ApiTvSimpleBase::Query3Cond<BaseFixture::CachedTotal, BaseFixture::NoSort>(State&);
+template void ApiTvSimpleBase::Query3Cond<BaseFixture::NoTotal, BaseFixture::AscSort>(State&);
+template void ApiTvSimpleBase::Query3Cond<BaseFixture::ReqTotal, BaseFixture::AscSort>(State&);
+template void ApiTvSimpleBase::Query3Cond<BaseFixture::CachedTotal, BaseFixture::AscSort>(State&);
 
-template <typename Total>
+template <typename Total, typename Sort>
 void ApiTvSimpleBase::Query4Cond(benchmark::State& state) {
 	const auto q = [&] {
 		const size_t randomIndex = random<size_t>(0, packages_.size() - 1);
@@ -114,18 +119,21 @@ void ApiTvSimpleBase::Query4Cond(benchmark::State& state) {
 					 .Where("age", CondEq, 2)
 					 .Where("year", CondRange, {2010, 2016})
 					 .Where("packages", CondSet, packages_.at(randomIndex))
-					 .Sort("year", false)
 					 .Limit(20);
 		Total::Apply(q);
+		Sort::Apply(q, "year");
 		return q;
 	};
 	benchQuery(q, state);
 }
-template void ApiTvSimpleBase::Query4Cond<BaseFixture::NoTotal>(State&);
-template void ApiTvSimpleBase::Query4Cond<BaseFixture::ReqTotal>(State&);
-template void ApiTvSimpleBase::Query4Cond<BaseFixture::CachedTotal>(State&);
+template void ApiTvSimpleBase::Query4Cond<BaseFixture::NoTotal, BaseFixture::NoSort>(State&);
+template void ApiTvSimpleBase::Query4Cond<BaseFixture::ReqTotal, BaseFixture::NoSort>(State&);
+template void ApiTvSimpleBase::Query4Cond<BaseFixture::CachedTotal, BaseFixture::NoSort>(State&);
+template void ApiTvSimpleBase::Query4Cond<BaseFixture::NoTotal, BaseFixture::AscSort>(State&);
+template void ApiTvSimpleBase::Query4Cond<BaseFixture::ReqTotal, BaseFixture::AscSort>(State&);
+template void ApiTvSimpleBase::Query4Cond<BaseFixture::CachedTotal, BaseFixture::AscSort>(State&);
 
-template <typename Total>
+template <typename Total, typename Sort>
 void ApiTvSimpleBase::Query4CondRange(benchmark::State& state) {
 	const auto q = [&] {
 		const int startTime = random<int>(0, 30000);
@@ -136,16 +144,19 @@ void ApiTvSimpleBase::Query4CondRange(benchmark::State& state) {
 					 .Where("year", CondRange, {2010, 2016})
 					 .Where("start_time", CondGt, startTime)
 					 .Where("end_time", CondLt, endTime)
-					 .Sort("year", false)
 					 .Limit(20);
+		Sort::Apply(q, "year");
 		Total::Apply(q);
 		return q;
 	};
 	benchQuery(q, state);
 }
-template void ApiTvSimpleBase::Query4CondRange<BaseFixture::NoTotal>(State&);
-template void ApiTvSimpleBase::Query4CondRange<BaseFixture::ReqTotal>(State&);
-template void ApiTvSimpleBase::Query4CondRange<BaseFixture::CachedTotal>(State&);
+template void ApiTvSimpleBase::Query4CondRange<BaseFixture::NoTotal, BaseFixture::NoSort>(State&);
+template void ApiTvSimpleBase::Query4CondRange<BaseFixture::ReqTotal, BaseFixture::NoSort>(State&);
+template void ApiTvSimpleBase::Query4CondRange<BaseFixture::CachedTotal, BaseFixture::NoSort>(State&);
+template void ApiTvSimpleBase::Query4CondRange<BaseFixture::NoTotal, BaseFixture::AscSort>(State&);
+template void ApiTvSimpleBase::Query4CondRange<BaseFixture::ReqTotal, BaseFixture::AscSort>(State&);
+template void ApiTvSimpleBase::Query4CondRange<BaseFixture::CachedTotal, BaseFixture::AscSort>(State&);
 
 void ApiTvSimpleBase::GetByRangeIDAndSortByHash(benchmark::State& state) {
 	const auto q = [&] {
@@ -189,3 +200,5 @@ void ApiTvSimpleBase::Query3CondRestoreIdsCache(benchmark::State& state) {
 	};
 	benchQuery(q, state);
 }
+
+}  // namespace reindexer_benchmarks

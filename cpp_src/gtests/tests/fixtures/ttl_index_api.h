@@ -3,9 +3,13 @@
 #include <thread>
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] TtlIndexApi : public ReindexerApi {
 public:
 	void SetUp() override {
+		using reindexer::IndexOpts;
+
 		ReindexerApi::SetUp();
 		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
@@ -99,3 +103,5 @@ protected:
 	const char* kFieldDate = "date";
 	int id = 0;
 };
+
+}  // namespace reindexer_tests

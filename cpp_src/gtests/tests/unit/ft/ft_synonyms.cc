@@ -1,6 +1,8 @@
 #include <gtest/gtest-param-test.h>
 #include "ft_api.h"
 
+namespace reindexer_tests {
+
 using namespace std::string_view_literals;
 
 class [[nodiscard]] FTSynonymsApi : public FTApi {
@@ -344,3 +346,5 @@ INSTANTIATE_TEST_SUITE_P(, FTSynonymsApi, ::testing::Values(kRxFtTestTypes), [](
 			std::abort();
 	}
 });
+
+}  // namespace reindexer_tests

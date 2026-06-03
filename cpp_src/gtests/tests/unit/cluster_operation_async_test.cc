@@ -3,6 +3,8 @@
 #include "gtests/tests/gtest_cout.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
 
 TEST_F(ClusterOperationAsyncApi, AsyncReplicationForClusterNamespaces) {
@@ -263,3 +265,5 @@ TEST_F(ClusterOperationAsyncApi, AsyncReplicationBetweenClustersLeaderMode) {
 
 	loop.run();
 }
+
+}  // namespace reindexer_tests

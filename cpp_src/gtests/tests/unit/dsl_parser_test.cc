@@ -1,5 +1,7 @@
 #include "join_selects_api.h"
 
+namespace reindexer_tests {
+
 static void checkQueryDslParse(const reindexer::Query& q) {
 	const std::string dsl = q.GetJSON();
 	Query parsedQuery;
@@ -142,6 +144,7 @@ TEST_F(JoinSelectsApi, DSL_SQLConvertionTest) {
 	const auto sql = testQueryFromDSL.GetSQL();
 	const Query testQueryFromSQL = Query::FromSQL(sql);
 	ASSERT_EQ(sql, testQueryFromSQL.GetSQL()) << "SQL: " << sql;
-	ASSERT_EQ("SELECT *, vectors() FROM ns1 WHERE NOT INNER JOIN ns2 ON  NOT ns1.lfield IN ns2.rfield ORDER BY 'ns2.respons' LIMIT 12",
-			  sql);
+	ASSERT_EQ("SELECT *, vectors() FROM ns1 WHERE NOT INNER JOIN ns2 ON NOT ns1.lfield IN ns2.rfield ORDER BY 'ns2.respons' LIMIT 12", sql);
 }
+
+}  // namespace reindexer_tests

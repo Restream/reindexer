@@ -10,38 +10,42 @@ namespace reindexer {
 
 template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
-	if (key.IsNullValue()) {
-		if (this->empty_ids_.Unsorted().Add(id, IdSetEditMode::Auto, this->sortedIdxCount_)) {
+	try {
+		if (key.IsNullValue()) {
+			if (this->empty_ids_.Unsorted().Add(id, IdSetEditMode::Auto, this->sortedIdxCount_)) {
+				this->cache_.ResetImpl();
+				clearCache = true;
+				this->isBuilt_ = false;
+			}
+			// Return invalid ref
+			return Variant();
+		}
+
+		const ref_type refKey = static_cast<ref_type>(key);
+		auto keyIt = this->idx_map.lower_bound(refKey);
+		if (keyIt == this->idx_map.end() || this->idx_map.key_comp()(refKey, keyIt->first)) {
+			keyIt = this->idx_map.insert(keyIt, {static_cast<key_type>(key), typename T::mapped_type()});
+		} else {
+			this->delMemStat(keyIt);
+		}
+
+		if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSetEditMode::Ordered : IdSetEditMode::Auto, this->sortedIdxCount_)) {
+			this->isBuilt_ = false;
 			this->cache_.ResetImpl();
 			clearCache = true;
-			this->isBuilt_ = false;
 		}
-		// Return invalid ref
-		return Variant();
-	}
+		this->tracker_.markUpdated(this->idx_map, keyIt);
+		this->addMemStat(keyIt);
 
-	const ref_type refKey = static_cast<ref_type>(key);
-	auto keyIt = this->idx_map.lower_bound(refKey);
-	if (keyIt == this->idx_map.end() || this->idx_map.key_comp()(refKey, keyIt->first)) {
-		keyIt = this->idx_map.insert(keyIt, {static_cast<key_type>(key), typename T::mapped_type()});
-	} else {
-		this->delMemStat(keyIt);
-	}
-
-	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSetEditMode::Ordered : IdSetEditMode::Auto, this->sortedIdxCount_)) {
-		this->isBuilt_ = false;
-		this->cache_.ResetImpl();
-		clearCache = true;
-	}
-	this->tracker_.markUpdated(this->idx_map, keyIt);
-	this->addMemStat(keyIt);
-
-	if constexpr (std::is_same_v<StoreIndexKeyType<T>, key_string>) {
-		return (IndexStore<StoreIndexKeyType<T>>::shouldHoldOriginalValueInStrMap() && refKey != keyIt->first)
-				   ? IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache)
-				   : IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
-	} else {
-		return IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
+		if constexpr (std::is_same_v<StoreIndexKeyType<T>, key_string>) {
+			return (IndexStore<StoreIndexKeyType<T>>::shouldHoldOriginalValueInStrMap() && refKey != keyIt->first)
+					   ? IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache)
+					   : IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
+		} else {
+			return IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
+		}
+	} catch (const DuplicatedItemIDError& dupPkErr) {
+		IndexUnordered<T>::rethrowDuplicatedPKError(key, dupPkErr);
 	}
 }
 

@@ -3,10 +3,14 @@
 #include "gtests/tools.h"
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] RuntimeIndexesApi : public ReindexerApi {
 public:
 	void SetUp() override {
 		using namespace std::string_literals;
+		using reindexer::IndexOpts;
+
 		ReindexerApi::SetUp();
 
 		rt.OpenNamespace(default_namespace);
@@ -30,6 +34,8 @@ public:
 
 protected:
 	void FillNamespaces(size_t since, size_t till) {
+		using namespace reindexer_tests_tools;
+
 		for (size_t i = since; i < till; ++i) {
 			int id = static_cast<int>(i);
 
@@ -57,6 +63,8 @@ protected:
 	}
 
 	void AddRuntimeIntArrayIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeIntIndexName(indexNumber);
 		rt.AddIndex(default_namespace, {indexName, "hash", "int", IndexOpts().Array()});
 	}
@@ -73,11 +81,15 @@ protected:
 	}
 
 	void AddRuntimeUuidIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeUuidIndexName(indexNumber);
 		rt.AddIndex(default_namespace, {indexName, "hash", "uuid", IndexOpts()});
 	}
 
 	void AddRuntimeUuidArrayIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeUuidArrayIndexName(indexNumber);
 		rt.AddIndex(default_namespace, {indexName, "hash", "uuid", IndexOpts().Array()});
 	}
@@ -87,9 +99,9 @@ protected:
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(default_namespace);
 			if (rand() % 2 == 0) {
-				item[indexName] = randStrUuid();
+				item[indexName] = reindexer_tests_tools::randStrUuid();
 			} else {
-				item[indexName] = randUuid();
+				item[indexName] = reindexer_tests_tools::randUuid();
 			}
 			Upsert(default_namespace, item);
 		}
@@ -104,7 +116,7 @@ protected:
 				const size_t s = rand() % 20;
 				uuids.reserve(s);
 				for (size_t i = 0; i < s; ++i) {
-					uuids.emplace_back(randStrUuid());
+					uuids.emplace_back(reindexer_tests_tools::randStrUuid());
 				}
 				item[indexName] = uuids;
 			} else {
@@ -112,7 +124,7 @@ protected:
 				const size_t s = rand() % 20;
 				uuids.reserve(s);
 				for (size_t i = 0; i < s; ++i) {
-					uuids.emplace_back(randUuid());
+					uuids.emplace_back(reindexer_tests_tools::randUuid());
 				}
 				item[indexName] = uuids;
 			}
@@ -125,10 +137,9 @@ protected:
 	void DropRuntimeStringIndex(int indexNumber) { rt.DropIndex(default_namespace, getRuntimeStringIndexName(indexNumber)); }
 
 	void AddRuntimeStringIndex(int indexNumber, bool pk = false) {
-		IndexOpts opts;
-		if (pk) {
-			opts.PK();
-		}
+		using reindexer::IndexOpts;
+
+		const IndexOpts opts = IndexOpts().PK(pk);
 		std::string indexName = getRuntimeStringIndexName(indexNumber);
 		rt.AddIndex(default_namespace, {indexName, "hash", "string", opts});
 	}
@@ -143,6 +154,8 @@ protected:
 	}
 
 	void AddRuntimeCompositeIndex(bool pk = false) {
+		using reindexer::IndexOpts;
+
 		std::string indexName(getRuntimeCompositeIndexName(pk));
 		rt.AddIndex(default_namespace, {indexName, getRuntimeCompositeIndexParts(pk), "tree", "composite", IndexOpts().PK(pk)});
 	}
@@ -150,21 +163,29 @@ protected:
 	void DropRuntimeCompositeIndex(bool pk = false) { rt.DropIndex(default_namespace, getRuntimeCompositeIndexName(pk)); }
 
 	void AddRuntimeQPointIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeQPointIndexName(indexNumber);
 		rt.AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Quadratic)});
 	}
 
 	void AddRuntimeLPointIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeLPointIndexName(indexNumber);
 		rt.AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Linear)});
 	}
 
 	void AddRuntimeGPointIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeGPointIndexName(indexNumber);
 		rt.AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Greene)});
 	}
 
 	void AddRuntimeSPointIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeSPointIndexName(indexNumber);
 		rt.AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::RStar)});
 	}
@@ -173,7 +194,7 @@ protected:
 		std::string indexName = getRuntimeQPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = randPoint(10);
+			item[indexName] = reindexer_tests_tools::randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -182,7 +203,7 @@ protected:
 		std::string indexName = getRuntimeLPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = randPoint(10);
+			item[indexName] = reindexer_tests_tools::randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -191,7 +212,7 @@ protected:
 		std::string indexName = getRuntimeGPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = randPoint(10);
+			item[indexName] = reindexer_tests_tools::randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -200,7 +221,7 @@ protected:
 		std::string indexName = getRuntimeSPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = randPoint(10);
+			item[indexName] = reindexer_tests_tools::randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -266,3 +287,5 @@ private:
 
 	static const int max_runtime_indexes = 10;
 };
+
+}  // namespace reindexer_tests

@@ -8,7 +8,7 @@
 #include "client/reindexerconfig.h"
 #include "client/rpcformat.h"
 #include "cluster/config.h"
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 #include "core/query/query.h"
 #include "core/shardedmeta.h"
 #include "coroutine/mutex.h"
@@ -22,6 +22,7 @@ struct ClusterOperationStatus;
 class SnapshotChunk;
 struct SnapshotOpts;
 struct ClusterControlRequestData;
+struct SQLSuggestions;
 
 namespace sharding {
 struct ShardingControlRequestData;
@@ -145,7 +146,7 @@ public:
 	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const InternalRdxContext& ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const InternalRdxContext& ctx);
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx);
-	Error GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string>& suggests);
+	Error GetSqlSuggestions(std::string_view query, int pos, SQLSuggestions& suggests);
 	Error Status(bool forceCheck, const InternalRdxContext& ctx);
 	Error Version(std::string& version, const InternalRdxContext& ctx);
 	bool RequiresStatusCheck() const noexcept { return conn_.IsRunning() && conn_.RequiresStatusCheck(); }

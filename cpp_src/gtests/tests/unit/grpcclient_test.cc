@@ -3,6 +3,8 @@
 #include "grpcclient_api.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests {
+
 TEST_F(GrpcClientApi, SelectCJSON) try {
 	reindexer::Query q(default_namespace);
 	q.InnerJoin(kIdField, kIdField, CondEq, reindexer::Query(default_namespace + "2"));
@@ -130,5 +132,7 @@ TEST_F(GrpcClientApi, SelectJSON) {
 		}
 	}
 }
+
+}  // namespace reindexer_tests
 
 #endif

@@ -6,13 +6,15 @@
 #include <memory>
 
 #include "allocs_tracker.h"
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 #include "core/reindexer.h"
 #include "sequence.h"
 
+namespace reindexer_benchmarks {
+
 using std::placeholders::_1;
 
-using benchmark::State;
+using ::benchmark::State;
 
 using reindexer::NamespaceDef;
 using reindexer::Reindexer;
@@ -96,8 +98,8 @@ protected:
 			state.SkipWithError("Results does not contain any value");
 		}
 	}
-	void benchQuery(const reindexer::Query& q, benchmark::State& state) {
-		benchmark::AllocsTracker allocsTracker(state);
+	void benchQuery(const reindexer::Query& q, ::benchmark::State& state) {
+		AllocsTracker allocsTracker(state);
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			reindexer::QueryResults qres;
 			auto err = db_->Select(q, qres);
@@ -107,8 +109,8 @@ protected:
 			checkNotEmpty(qres, state);
 		}
 	}
-	void benchQuery(auto queryGenerator, benchmark::State& state) {
-		benchmark::AllocsTracker allocsTracker(state);
+	void benchQuery(auto queryGenerator, ::benchmark::State& state) {
+		AllocsTracker allocsTracker(state);
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			reindexer::QueryResults qres;
 			auto err = db_->Select(queryGenerator(), qres);
@@ -119,8 +121,8 @@ protected:
 		}
 	}
 
-	void benchUpdate(auto queryGenerator, benchmark::State& state) {
-		benchmark::AllocsTracker allocsTracker(state);
+	void benchUpdate(auto queryGenerator, ::benchmark::State& state) {
+		AllocsTracker allocsTracker(state);
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			reindexer::QueryResults qres;
 			auto err = db_->Update(queryGenerator(), qres);
@@ -131,8 +133,8 @@ protected:
 		}
 	}
 
-	void benchQuery(const reindexer::Query& q, benchmark::State& state, auto& itemsCounter) {
-		benchmark::AllocsTracker allocsTracker(state);
+	void benchQuery(const reindexer::Query& q, ::benchmark::State& state, auto& itemsCounter) {
+		AllocsTracker allocsTracker(state);
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			reindexer::QueryResults qres;
 			auto err = db_->Select(q, qres);
@@ -142,8 +144,8 @@ protected:
 			itemsCounter(qres);
 		}
 	}
-	void benchQuery(auto queryGenerator, benchmark::State& state, auto& itemsCounter) {
-		benchmark::AllocsTracker allocsTracker(state);
+	void benchQuery(auto queryGenerator, ::benchmark::State& state, auto& itemsCounter) {
+		AllocsTracker allocsTracker(state);
 		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 			reindexer::QueryResults qres;
 			auto err = db_->Select(queryGenerator(), qres);
@@ -155,13 +157,20 @@ protected:
 	}
 
 	struct [[nodiscard]] NoTotal {
-		RX_ALWAYS_INLINE static void Apply(reindexer::Query&) noexcept {}
+		static void Apply(reindexer::Query&) noexcept {}
 	};
 	struct [[nodiscard]] ReqTotal {
-		RX_ALWAYS_INLINE static void Apply(reindexer::Query& q) noexcept { q.ReqTotal(); }
+		static void Apply(reindexer::Query& q) noexcept { q.ReqTotal(); }
 	};
 	struct [[nodiscard]] CachedTotal {
-		RX_ALWAYS_INLINE static void Apply(reindexer::Query& q) noexcept { q.CachedTotal(); }
+		static void Apply(reindexer::Query& q) noexcept { q.CachedTotal(); }
+	};
+
+	struct [[nodiscard]] NoSort {
+		static void Apply(reindexer::Query&, std::string_view) noexcept {}
+	};
+	struct [[nodiscard]] AscSort {
+		static void Apply(reindexer::Query& q, std::string_view field) { q.Sort(field, false); }
 	};
 
 	std::string RandString();
@@ -172,3 +181,5 @@ protected:
 	std::shared_ptr<Sequence> id_seq_;
 	bool useBenchamrkPrefixName_;
 };
+
+}  // namespace reindexer_benchmarks

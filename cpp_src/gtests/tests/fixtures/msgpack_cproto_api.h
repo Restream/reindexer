@@ -1,8 +1,8 @@
 #pragma once
 
 #include "core/cjson/jsonbuilder.h"
+#include "core/definitions/indexopts.h"
 #include "core/enums.h"
-#include "core/indexopts.h"
 #include "core/type_consts.h"
 #include "reindexer_api.h"
 #include "rpc_test_client.h"
@@ -10,6 +10,10 @@
 #include "tools/dsn.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
+
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
 
 class [[nodiscard]] MsgPackCprotoApi : public ReindexerApi {
 public:
@@ -43,7 +47,7 @@ public:
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 
-		client_.reset(new reindexer::client::RPCTestClient());
+		client_.reset(new RPCTestClient());
 		err = client_->Connect(reindexer::DSN("cproto://127.0.0.1:25677/" + kDbName), reindexer::client::ConnectOpts().CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -120,5 +124,7 @@ protected:
 
 	reindexer_server::Server server_;
 	std::unique_ptr<std::thread> serverThread_;
-	std::unique_ptr<reindexer::client::RPCTestClient> client_;
+	std::unique_ptr<RPCTestClient> client_;
 };
+
+}  // namespace reindexer_tests

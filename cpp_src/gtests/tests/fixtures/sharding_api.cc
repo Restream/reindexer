@@ -5,6 +5,8 @@
 #include "gtests/tests/gtest_cout.h"
 #include "yaml-cpp/yaml.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
 
 void ShardingApi::Init(InitShardingConfig c) {
@@ -157,7 +159,7 @@ void ShardingApi::Init(InitShardingConfig c) {
 }
 
 void ShardingApi::SetUp() {
-	std::ignore = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+	std::ignore = fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 	ReindexerApi::SetUp();
 }
 
@@ -166,7 +168,7 @@ void ShardingApi::TearDown() {
 	ReindexerApi::TearDown();
 	Stop();
 	svc_.clear();
-	std::ignore = reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+	std::ignore = fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 }
 
 bool ShardingApi::StopByIndex(size_t idx) {
@@ -284,7 +286,7 @@ client::Item ShardingApi::CreateItem(std::string_view nsName, client::Reindexer&
 		return item;
 	}
 	wrser.Reset();
-	reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+	JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 	jsonBuilder.Put(kFieldId, int(index));
 	jsonBuilder.Put(kFieldLocation, key);
 	jsonBuilder.Put(kFieldShard, key);
@@ -423,3 +425,5 @@ void ShardingApi::checkMasking() {
 		}
 	}
 }
+
+}  // namespace reindexer_tests

@@ -53,7 +53,7 @@ public:
 	Error EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const RdxContext& ctx);
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions, const RdxContext& ctx);
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions, const RdxContext& ctx);
 	Error Status() noexcept;
 	Error GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& ctx);
@@ -166,6 +166,6 @@ private:
 	void clientToCoreQueryResults(client::QueryResults&, LocalQueryResults&);
 	bool shouldProxyQuery(const Query& q);
 
-	ReindexerImpl::CallbackMap addCallbacks(ReindexerImpl::CallbackMap&& callbackMap) const;
+	static ReindexerImpl::CallbackMap addCallbacks(ReindexerImpl::CallbackMap&& callbackMap);
 };
 }  // namespace reindexer

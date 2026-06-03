@@ -8,6 +8,8 @@
 #include "tools/dsn.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] RPCClientTestApi : public ::testing::Test {
 public:
 	virtual ~RPCClientTestApi() = default;
@@ -39,8 +41,8 @@ protected:
 	private:
 		std::unique_ptr<RPCServerFake> server_;
 		std::unique_ptr<std::thread> serverThread_;
-		net::ev::dynamic_loop loop_;
-		net::ev::async stop_;
+		reindexer::net::ev::dynamic_loop loop_;
+		reindexer::net::ev::async stop_;
 		std::atomic<bool> terminate_;
 		std::atomic<bool> serverIsReady_;
 		DSN dsn_;
@@ -85,3 +87,5 @@ private:
 	std::unordered_map<std::string, std::unique_ptr<TestServer>> fakeServers_;
 	std::unordered_map<std::string, ServerData> realServers_;
 };
+
+}  // namespace reindexer_tests

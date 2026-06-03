@@ -8,6 +8,7 @@
 #include "core/id_type.h"
 #include "core/namespace/namespacestat.h"
 #include "core/namespace/snapshot/snapshot.h"
+#include "core/query/sql/sql_suggestions.h"
 #include "debug/crashqueryreporter.h"
 #include "events/subscriber_config.h"
 #include "net/cproto/cproto.h"
@@ -1100,13 +1101,13 @@ Error RPCServer::CloseResults(cproto::Context& ctx, int reqId, std::optional<int
 }
 
 Error RPCServer::GetSQLSuggestions(cproto::Context& ctx, p_string query, int pos) {
-	std::vector<std::string> suggests;
+	SQLSuggestions suggests;
 	Error err = getDB(ctx, kRoleDataRead).GetSqlSuggestions(query, pos, suggests);
 
 	if (err.ok()) {
 		cproto::Args ret;
-		ret.reserve(suggests.size());
-		for (auto& suggest : suggests) {
+		ret.reserve(suggests.suggestions.size());
+		for (auto& suggest : suggests.suggestions) {
 			ret.emplace_back(std::move(suggest));
 		}
 		ctx.Return(ret);

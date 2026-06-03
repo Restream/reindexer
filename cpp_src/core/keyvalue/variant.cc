@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include "core/payload/payloadiface.h"
+#include "estl/sparse_hash_int.h"
 #include "estl/tuple_utils.h"
 #include "tools/compare.h"
 #include "tools/float_comparison.h"
@@ -946,29 +947,33 @@ size_t Variant::Hash() const noexcept {
 			std::terminate();
 		}
 	} else {
-		return variant_.type.EvaluateOneOf([&](KeyValueType::Int) noexcept { return std::hash<int>()(variant_.value_int); },
-										   [&](KeyValueType::Bool) noexcept { return std::hash<bool>()(variant_.value_bool); },
-										   [&](KeyValueType::Int64) noexcept { return std::hash<int64_t>()(variant_.value_int64); },
-										   [&](KeyValueType::Double) noexcept { return std::hash<double>()(variant_.value_double); },
-										   [&](KeyValueType::Float) noexcept { return std::hash<float>()(variant_.value_float); },
-										   [&](KeyValueType::String) noexcept { return std::hash<p_string>()(this->operator p_string()); },
-										   [&](KeyValueType::Uuid) noexcept {
-											   try {
-												   return std::hash<Uuid>()(Uuid{*this});
-											   } catch (...) {
-												   // Supressing clang-tidy warning. Never expect this
-												   std::terminate();
-											   }
-										   },
-										   [](KeyValueType::Null) noexcept { return std::hash<int>()(0); },
-										   [&](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined,
-															   KeyValueType::FloatVector> auto) noexcept -> size_t {
+		return variant_.type.EvaluateOneOf(
+			[&](KeyValueType::Int) noexcept {
+				// Expecting the smae hash values for int and int64
+				return hash_int<int64_t>()(int64_t(variant_.value_int));
+			},
+			[&](KeyValueType::Int64) noexcept { return hash_int<int64_t>()(variant_.value_int64); },
+			[&](KeyValueType::Bool) noexcept { return variant_.value_bool ? size_t(0x6a09e667f3bcc908) : size_t(0xbb67ae8584caa73b); },
+			[&](KeyValueType::Double) noexcept { return std::hash<double>()(variant_.value_double); },
+			[&](KeyValueType::Float) noexcept { return std::hash<float>()(variant_.value_float); },
+			[&](KeyValueType::String) noexcept { return std::hash<p_string>()(this->operator p_string()); },
+			[&](KeyValueType::Uuid) noexcept {
+				try {
+					return std::hash<Uuid>()(Uuid{*this});
+				} catch (...) {
+					// Supressing clang-tidy warning. Never expect this
+					std::terminate();
+				}
+			},
+			[](KeyValueType::Null) noexcept { return std::hash<int>()(0); },
+			[&](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined,
+								KeyValueType::FloatVector> auto) noexcept -> size_t {
 #ifdef NDEBUG
-											   abort();
+				abort();
 #else
-											   assertf(false, "Unexpected variant type: {}", variant_.type.Name());
+				assertf(false, "Unexpected variant type: {}", variant_.type.Name());
 #endif
-										   });
+			});
 	}
 }
 
@@ -1373,16 +1378,20 @@ Variant Variant::convertTupleToComposite(std::string_view val, const PayloadType
 		}
 		const auto& fieldDesc = payloadType.Field(field);
 		const auto fieldType = fieldDesc.Type();
-		auto v = ser.GetVariant();
+
 		if (fieldType.Is<KeyValueType::FloatVector>()) [[unlikely]] {
 			throw Error(errLogic, "Unable to convert tuple with float vector fields to PaylodValue");
 		}
 		if (fieldDesc.IsArray()) [[unlikely]] {
 			throw Error(errLogic, "Unable to convert tuple with array fields to PaylodValue");
 		}
-		if (fieldType.Is<KeyValueType::String>() && !v.Type().Is<KeyValueType::String>()) {
+		auto kvt = ser.GetKeyValueType();
+		if (fieldType.Is<KeyValueType::String>() && !kvt.Is<KeyValueType::String>()) [[unlikely]] {
+			auto v = ser.GetRawVariant(kvt);
 			convertedStringsWSer.PutVariant(v.convert(KeyValueType::String{}));
 			convertedFields.set(field);
+		} else {
+			ser.SkipRawVariant(kvt);
 		}
 	}
 	auto convertedStrings = convertedStringsWSer.Slice();
@@ -1402,10 +1411,13 @@ Variant Variant::convertTupleToComposite(std::string_view val, const PayloadType
 
 	Payload pl(payloadType, pv);
 	for (auto field : fields) {
-		auto v = ser.GetVariant();
-		if (convertedFields.test(field)) {
+		const auto kvt = ser.GetKeyValueType();
+
+		if (convertedFields.test(field)) [[unlikely]] {
+			ser.SkipRawVariant(kvt);
 			pl.Set(field, convertedStringsRSer.GetVariant());
 		} else {
+			auto v = ser.GetRawVariant(kvt);
 			pl.Set(field, v.convert(payloadType.Field(field).Type()));
 		}
 	}
@@ -1546,6 +1558,7 @@ void VariantArray::Dump(T& os, CheckIsStringPrintable checkPrintableString) cons
 }
 
 template void VariantArray::Dump(WrSerializer&, CheckIsStringPrintable) const;
+template void VariantArray::Dump(WrSerializer&, const PayloadType&, const FieldsSet&, CheckIsStringPrintable) const;
 template void VariantArray::Dump(std::ostream&, CheckIsStringPrintable) const;
 template void VariantArray::Dump(std::stringstream&, CheckIsStringPrintable) const;
 

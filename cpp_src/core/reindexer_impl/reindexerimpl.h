@@ -24,7 +24,7 @@
 #include "tools/filecontentwatcher.h"
 #include "tools/mutex_set.h"
 #include "tools/nsversioncounter.h"
-#include "tools/tcmallocheapwathcher.h"
+#include "tools/tcmallocheapwatcher.h"
 
 namespace reindexer {
 
@@ -33,6 +33,7 @@ struct ClusterControlRequestData;
 class IUpdatesObserverV3;
 class UpdatesFilters;
 class EmbeddersCache;
+struct SQLSuggestions;
 
 namespace cluster {
 struct NodeData;
@@ -52,7 +53,7 @@ class PrecomputedValues;
 class [[nodiscard]] ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<timed_mutex, MutexMark::ReindexerStats>;
-	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg arg, Args&&... args);
 	template <auto MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext& ctx, Arg&&, Args&&...);
@@ -123,7 +124,7 @@ public:
 	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const RdxContext& ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const RdxContext& ctx);
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const RdxContext& ctx);
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions, const RdxContext& ctx);
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions, const RdxContext& ctx);
 	Error GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& ctx) noexcept;
 	Error SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const RdxContext& ctx) noexcept;
@@ -413,7 +414,7 @@ private:
 	Locker nsLock_;
 
 #ifdef REINDEX_WITH_GPERFTOOLS
-	TCMallocHeapWathcher heapWatcher_;
+	TCMallocHeapWatcher heapWatcher_;
 #endif
 
 	ActivityContainer& activities_;

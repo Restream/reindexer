@@ -5,24 +5,24 @@
 #include "base_fixture.h"
 #include "ft_base.h"
 
-namespace reindexer::knn_bench {
+namespace reindexer_benchmarks::knn_bench {
 
 enum class [[nodiscard]] IndexType { Hnsw, Ivf };
 enum class [[nodiscard]] KnnParams { K, K_Radius, Radius };
 enum class [[nodiscard]] WithQuantization { No, Yes };
 
-template <IndexType, VectorMetric>
-class [[nodiscard]] KnnBench : private BaseFixture, private bench::FullTextBase {
+template <IndexType, reindexer::VectorMetric>
+class [[nodiscard]] KnnBench : private BaseFixture, private FullTextBase {
 public:
 	~KnnBench() override = default;
 	KnnBench(Reindexer* db, std::string_view name, WithQuantization = WithQuantization::No);
 
-	Error Initialize() override {
-		Error err = BaseFixture::Initialize();
+	reindexer::Error Initialize() override {
+		reindexer::Error err = BaseFixture::Initialize();
 		if (!err.ok()) {
 			return err;
 		}
-		return bench::FullTextBase::Initialize();
+		return FullTextBase::Initialize();
 	}
 	void RegisterAllCases();
 
@@ -30,8 +30,8 @@ private:
 	template <KnnParams>
 	class ItemsCounter;
 
-	Item MakeItem(State&) override;
-	Item MakeItem(State&, int id);
+	reindexer::Item MakeItem(State&) override;
+	reindexer::Item MakeItem(State&, int id);
 
 	void Fill(State&);
 	void FillFtIndex(State&);
@@ -62,4 +62,4 @@ private:
 	const WithQuantization withQuantization_;
 };
 
-}  // namespace reindexer::knn_bench
+}  // namespace reindexer_benchmarks::knn_bench

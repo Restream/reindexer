@@ -6,6 +6,8 @@
 #include "utf8cpp/utf8/checked.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests {
+
 static constexpr auto kBasicTimeout = std::chrono::seconds(200);
 
 template <typename DB>
@@ -288,7 +290,7 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 	using namespace reindexer;
 	ReplicationTestState state;
 	{
-		Query qr = Query(reindexer::kMemStatsNamespace).Where("name", CondEq, ns);
+		Query qr = Query(kMemStatsNamespace).Where("name", CondEq, ns);
 		QueryResultsType res;
 		auto err = reindexer->WithTimeout(kBasicTimeout).Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -306,7 +308,7 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
 			state.updateUnixNano = root["replication"]["updated_unix_nano"].As<uint64_t>();
 			try {
-				reindexer::ClusterOperationStatus clStatus;
+				ClusterOperationStatus clStatus;
 				clStatus.FromJSON(root["replication"]["clusterization_status"]);
 				state.role = clStatus.role;
 			} catch (...) {
@@ -499,3 +501,5 @@ void ReindexerTestApi<reindexer::Reindexer>::AwaitIndexOptimization(std::string_
 
 template class ReindexerTestApi<reindexer::Reindexer>;
 template class ReindexerTestApi<reindexer::client::Reindexer>;
+
+}  // namespace reindexer_tests

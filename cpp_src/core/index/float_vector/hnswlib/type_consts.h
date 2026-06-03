@@ -3,13 +3,6 @@
 
 namespace hnswlib {
 
-enum class [[nodiscard]] MetricType {
-	NONE,
-	L2,
-	INNER_PRODUCT,
-	COSINE,
-};
-
 using CorrectiveOffset = float;
 
 using tableint = uint32_t;

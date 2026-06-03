@@ -1,6 +1,6 @@
 //go:build windows
 
-//go:generate cmd /c cd ..\.. && mkdir build & cd build && cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target reindexer -- -j4
+//go:generate cmd /c cd ..\.. && mkdir build & cd build && cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target reindexer -- -j8
 
 package builtin
 

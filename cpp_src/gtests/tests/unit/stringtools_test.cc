@@ -3,6 +3,8 @@
 #include "gtest/gtest.h"
 #include "tools/stringstools.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] CustomStrCompareApi : public virtual ::testing::Test {
 public:
 	enum class [[nodiscard]] ComparisonResult { Less, Greater, Equal };
@@ -407,3 +409,5 @@ TEST(StringToolsTest, EscapeSpecificValues) {
 	EXPECT_EQ(reindexer::unescapeString("line1\\nline2"), "line1\nline2");
 	EXPECT_EQ(reindexer::unescapeString("tab\\there"), "tab\there");
 }
+
+}  // namespace reindexer_tests

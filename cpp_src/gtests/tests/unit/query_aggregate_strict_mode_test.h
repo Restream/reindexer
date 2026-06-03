@@ -3,9 +3,11 @@
 #include "client/cororeindexer.h"
 #include "client/queryresults.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/indexdef.h"
+#include "core/definitions/indexdef.h"
 #include "core/type_consts.h"
 #include "rpc_test_client.h"
+
+namespace reindexer_tests {
 
 template <typename Client>
 struct [[nodiscard]] QueryResType {
@@ -19,6 +21,8 @@ struct [[nodiscard]] QueryResType<reindexer::client::CoroReindexer> {
 
 template <typename Client>
 void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
+	using reindexer::IndexOpts;
+
 	using QueryResType = typename QueryResType<Client>::type;
 
 	const reindexer::client::InternalRdxContext ctx;
@@ -47,7 +51,7 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		auto err = item.FromJSON(wrser.Slice(), &endp);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		if constexpr (std::is_same_v<Client, reindexer::client::RPCTestClient>) {
+		if constexpr (std::is_same_v<Client, RPCTestClient>) {
 			err = client->Upsert(kNsName, item, reindexer::client::RPCDataFormat::MsgPack);
 		} else {
 			err = client->Upsert(kNsName, item);
@@ -152,3 +156,5 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		}
 	}
 }
+
+}  // namespace reindexer_tests

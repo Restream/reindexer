@@ -1,6 +1,8 @@
 #include "json_helpers.h"
 #include "tools/stringstools.h"
 
+namespace reindexer_tests {
+
 namespace json_helpers::impl {
 std::string::size_type findField(const std::string& str, const char* fieldName, std::string::size_type pos) {
 	return str.find('"' + std::string(fieldName) + "\":", pos);
@@ -67,3 +69,5 @@ std::vector<std::string> adoptValuesType(std::initializer_list<const char*> valu
 	return result;
 }
 }  // namespace json_helpers::impl
+
+}  // namespace reindexer_tests

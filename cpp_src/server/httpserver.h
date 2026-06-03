@@ -22,6 +22,11 @@ struct [[nodiscard]] HTTPClientData final : public http::ClientData {
 };
 
 class [[nodiscard]] HTTPServer {
+	struct [[nodiscard]] DefaultAdditionalStatus {
+		void operator()(const auto&) const noexcept {}
+		size_t FieldsCount() const noexcept { return 0; }
+	};
+
 public:
 	HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, Prometheus* prometheusI = nullptr,
 			   IStatsWatcher* statsWatcherI = nullptr);
@@ -38,6 +43,8 @@ public:
 	int GetSQLQuery(http::Context& ctx);
 	int PostSQLQuery(http::Context& ctx);
 	int GetSQLSuggest(http::Context& ctx);
+	int QueryConvertSql(http::Context& ctx) { return queryConvert(ctx, QueryFormat::Sql); }
+	int QueryConvertDsl(http::Context& ctx) { return queryConvert(ctx, QueryFormat::Dsl); }
 	int GetDatabases(http::Context& ctx);
 	int PostDatabase(http::Context& ctx);
 	int DeleteDatabase(http::Context& ctx);
@@ -82,6 +89,7 @@ public:
 
 private:
 	enum class [[nodiscard]] DataFormat { JSON, MsgPack, Protobuf, CSVFile };
+	enum class [[nodiscard]] QueryFormat { Sql, Dsl, PrettySql, Unknown };
 
 	struct [[nodiscard]] IQRSerializingOption {
 		virtual ~IQRSerializingOption() = default;
@@ -96,6 +104,8 @@ private:
 	class ReqularQueryResultsOption;
 	class ItemsQueryResultsOption;
 
+	QueryFormat parseFormat(std::string_view formatStr) noexcept;
+	int queryConvert(http::Context& ctx, QueryFormat);
 	Error modifyItem(Reindexer& db, std::string_view nsName, Item& item, ItemModifyMode mode);
 	Error modifyItem(Reindexer& db, std::string_view nsName, Item& item, QueryResults&, ItemModifyMode mode);
 	int modifyItems(http::Context& ctx, ItemModifyMode mode);
@@ -118,10 +128,14 @@ private:
 	void queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData,
 						   const IQRSerializingOption& qrOption, bool withColumns, int width);
 	int statusOK(http::Context& ctx, chunk&& chunk);
-	int status(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	int jsonStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	int msgpackStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	int protobufStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
+	template <typename Fn = DefaultAdditionalStatus>
+	int status(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus(), const Fn& additional = {});
+	template <typename Fn = DefaultAdditionalStatus>
+	int jsonStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus(), const Fn& additional = {});
+	template <typename Fn = DefaultAdditionalStatus>
+	int msgpackStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus(), const Fn& additional = {});
+	template <typename Fn = DefaultAdditionalStatus>
+	int protobufStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus(), const Fn& additional = {});
 	unsigned prepareLimit(std::string_view limitParam, int limitDefault = kDefaultLimit);
 	unsigned prepareOffset(std::string_view offsetParam, int offsetDefault = kDefaultOffset);
 	int modifyQueryTxImpl(http::Context& ctx, const std::string& dbName, std::string_view txId, Query& q);
@@ -137,7 +151,7 @@ private:
 	void removeExpiredTx();
 	void deadlineTimerCb(ev::periodic&, int) { removeExpiredTx(); }
 
-	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults& res, http::Context& ctx);
+	Error execQueryByType(const reindexer::Query& query, reindexer::QueryResults& res, http::Context& ctx);
 	bool isParameterSetOn(std::string_view val) const noexcept;
 	int getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const;
 

@@ -20,6 +20,8 @@
 #include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
 
 static void CheckServerIDs(std::vector<std::vector<ServerControl>>& svc) {
@@ -35,7 +37,7 @@ static void CheckServerIDs(std::vector<std::vector<ServerControl>>& svc) {
 			err = qr.begin().GetJSON(ser, false);
 			ASSERT_TRUE(err.ok()) << err.what();
 			gason::JsonParser parser;
-			auto root = parser.Parse(reindexer::giftStr(ser.Slice()));
+			auto root = parser.Parse(giftStr(ser.Slice()));
 			const auto serverId = root["replication"]["server_id"].As<int>(-1);
 			ASSERT_EQ(serverId, idx);
 			ser.Reset();
@@ -278,11 +280,11 @@ void ShardingApi::runSerialTest(std::string_view nsName) {
 				startId = shardsUniqueItems[key];
 			}
 			for (size_t j = 0; j < kItemsCountByShard[shard]; ++j) {
-				reindexer::client::Item item = rx->NewItem(nsName);
+				client::Item item = rx->NewItem(nsName);
 				ASSERT_TRUE(item.Status().ok());
 
 				WrSerializer wrser;
-				reindexer::JsonBuilder jsonBuilder(wrser);
+				JsonBuilder jsonBuilder(wrser);
 				jsonBuilder.Put(kFieldId, int(j));
 				jsonBuilder.Put(kFieldLocation, key);
 				jsonBuilder.Put(kSerialFieldName, int(0));
@@ -310,7 +312,7 @@ void ShardingApi::runSerialTest(std::string_view nsName) {
 					<< "i = " << i << "; shard = " << shard << "; location = " << key;
 				size_t correctSerial = startId + j + 1;
 				for (auto it : qr) {
-					reindexer::client::Item itm = it.GetItem();
+					client::Item itm = it.GetItem();
 					std::string_view json = itm.GetJSON();
 					std::string_view::size_type pos = json.find(kSerialFieldName + "\":" + std::to_string(correctSerial));
 					ASSERT_TRUE(pos != std::string_view::npos) << correctSerial;
@@ -348,11 +350,11 @@ void ShardingApi::runUpdateItemsTest(std::string_view nsName) {
 			const std::string updated = "updated_" + RandString();
 			const std::string key = "key" + std::to_string(shard + 1);
 
-			reindexer::client::Item item = rx->NewItem(nsName);
+			client::Item item = rx->NewItem(nsName);
 			ASSERT_TRUE(item.Status().ok());
 
 			WrSerializer wrser;
-			reindexer::JsonBuilder jsonBuilder(wrser);
+			JsonBuilder jsonBuilder(wrser);
 			jsonBuilder.Put(kFieldId, int(shard));
 			jsonBuilder.Put(kFieldLocation, key);
 			jsonBuilder.Put(kFieldData, updated);
@@ -374,7 +376,7 @@ void ShardingApi::runUpdateItemsTest(std::string_view nsName) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(qr.Count(), 1) << "i = " << i << "; shard = " << shard << "; location = " << key;
 			for (auto it : qr) {
-				reindexer::client::Item itm = it.GetItem();
+				client::Item itm = it.GetItem();
 				std::string_view json = itm.GetJSON();
 				ASSERT_TRUE(json == wrser.Slice());
 			}
@@ -399,7 +401,7 @@ void ShardingApi::runDeleteItemsTest(std::string_view nsName) {
 			itemJson = std::string(it.GetJSON());
 		}
 
-		reindexer::client::Item item = rx->NewItem(nsName);
+		client::Item item = rx->NewItem(nsName);
 		ASSERT_TRUE(item.Status().ok());
 
 		Error err = item.FromJSON(itemJson);
@@ -525,7 +527,7 @@ void ShardingApi::runTransactionsTest(std::string_view nsName) {
 			const std::string key = std::string("key" + std::to_string(shard + 1));
 			const int modes[] = {ModeUpsert, ModeDelete};
 			for (int mode : modes) {
-				reindexer::client::Transaction tr = rx->NewTransaction(nsName);
+				client::Transaction tr = rx->NewTransaction(nsName);
 				ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 				for (int id = 0; id < rowsInTr; ++id) {
 					if ((mode == ModeDelete) && (shard % 2 == 0)) {
@@ -540,7 +542,7 @@ void ShardingApi::runTransactionsTest(std::string_view nsName) {
 					ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 					WrSerializer wrser;
-					reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+					JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 					jsonBuilder.Put(kFieldId, int(id));
 					jsonBuilder.Put(kFieldLocation, key);
 					jsonBuilder.Put(kFieldData, RandString());
@@ -663,14 +665,14 @@ void ShardingApi::runTransactionsTest(std::string_view nsName, const std::map<in
 	for (size_t shard = 0; shard < kShards; ++shard) {
 		const auto& keys = shardDataDistrib.at(shard);
 
-		reindexer::client::Transaction tr = rx->NewTransaction(nsName);
+		client::Transaction tr = rx->NewTransaction(nsName);
 		ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 		for (const auto& key : keys) {
 			client::Item item = tr.NewItem();
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 			WrSerializer wrser;
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, key);
 			jsonBuilder.End();
 
@@ -787,7 +789,7 @@ void ShardingApi::fillShard(int shard, const std::set<T>& data, const std::strin
 		auto item = rx->NewItem(kNsName);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+		JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, value);
 		jsonBuilder.End();
 
@@ -837,7 +839,7 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 	Error err = rx->AddNamespace(nsDef);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	reindexer::client::Transaction tr = rx->NewTransaction(kNsName);
+	client::Transaction tr = rx->NewTransaction(kNsName);
 	ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 
 	const auto itemTmpltBase = fmt::format("{{{{\"{}\": {{}}, \"{}\": \"{}\"}}}}", kFieldId, kSharingIdx, kShardKeyTmplt);
@@ -1001,14 +1003,14 @@ ShardingApi::ShardingConfig ShardingApi::makeShardingConfigByDistrib(std::string
 
 Error ShardingApi::applyNewShardingConfig(client::Reindexer& rx, const ShardingConfig& config, ApplyType type,
 										  std::optional<int64_t> sourceId) const {
-	reindexer::client::Item item = rx.NewItem(kConfigNamespace);
+	client::Item item = rx.NewItem(kConfigNamespace);
 	if (!item.Status().ok()) {
 		return item.Status();
 	}
 
 	{
 		WrSerializer wrser;
-		reindexer::JsonBuilder jsonBuilder(wrser);
+		JsonBuilder jsonBuilder(wrser);
 		jsonBuilder.Put("type", "action");
 		auto action = jsonBuilder.Object("action");
 		action.Put("command", "apply_sharding_config");
@@ -1047,7 +1049,7 @@ void ShardingApi::checkMaskedDSNsInConfig(int shardId) {
 			auto serverId = shard * kNodesInCluster + nodeId++;
 			auto expected = MakeDsn(reindexer_server::UserRole::kRoleSharding, serverId, GetDefaults().defaultRpcPort + serverId,
 									"shard" + std::to_string(serverId));
-			EXPECT_EQ(fmt::format("{}", expected), dsn);
+			EXPECT_EQ(fmt::format("{}", expected), fmt::format("{}", dsn));
 		}
 	}
 }
@@ -1115,7 +1117,7 @@ void ShardingApi::MultyThreadApplyConfigTest(ShardingApi::ApplyType type) {
 			auto item = rx.NewItem(kNonShardedNs);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, i);
 			jsonBuilder.End();
 
@@ -1226,12 +1228,12 @@ TEST_F(ShardingApi, RuntimeShardingConfigLocallyResetTest) {
 	auto shCfg = getShardingConfigFrom(rx);
 	assertrx(shCfg.has_value());
 
-	reindexer::client::Item item = rx.NewItem(kConfigNamespace);
+	client::Item item = rx.NewItem(kConfigNamespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	{
 		WrSerializer wrser;
-		reindexer::JsonBuilder jsonBuilder(wrser);
+		JsonBuilder jsonBuilder(wrser);
 		jsonBuilder.Put("type", "action");
 		auto action = jsonBuilder.Object("action");
 		action.Put("command", "apply_sharding_config");
@@ -1295,7 +1297,7 @@ int64_t ShardingApi::getSourceIdFrom(const ServerControl::Interface::Ptr& server
 	return cfg.has_value() ? cfg->sourceId : int64_t(ShardingSourceId::NotSet);
 }
 
-std::optional<ShardingApi::ShardingConfig> ShardingApi::getShardingConfigFrom(reindexer::client::Reindexer& rx) {
+std::optional<ShardingApi::ShardingConfig> ShardingApi::getShardingConfigFrom(client::Reindexer& rx) {
 	client::QueryResults qr;
 	Query q = Query(kConfigNamespace).Where("type", CondEq, "sharding");
 	auto err = rx.Select(q, qr);
@@ -1373,7 +1375,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 			auto item = rx.NewItem(kNonShardedNs);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, i);
 			jsonBuilder.End();
 
@@ -1727,7 +1729,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithFilledNssTest) {
 			item = rx->NewItem(kNsName);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, val);
 			jsonBuilder.End();
 
@@ -3278,7 +3280,7 @@ static void CheckCachedCountAggregations(client::Reindexer& rx, const std::strin
 }
 
 template <typename T>
-T getField(std::string_view field, reindexer::client::QueryResults::Iterator& it) {
+T getField(std::string_view field, client::QueryResults::Iterator& it) {
 	auto item = it.GetItem();
 	std::string_view json = item.GetJSON();
 	gason::JsonParser parser;
@@ -3367,7 +3369,7 @@ template <typename T>
 class [[nodiscard]] CompareFields<T> {
 public:
 	CompareFields(std::string_view f, std::vector<T> v = {}) : field_{f}, forcedValues_{std::move(v)} {}
-	int operator()(reindexer::client::QueryResults::Iterator& it) {
+	int operator()(client::QueryResults::Iterator& it) {
 		T v = getField<T>(field_, it);
 		int result = 0;
 		if (prevValue_) {
@@ -3387,7 +3389,7 @@ public:
 		prevValue_ = std::move(v);
 		return result;
 	}
-	std::tuple<T> GetValues(reindexer::client::QueryResults::Iterator& it) const { return std::make_tuple(getField<T>(field_, it)); }
+	std::tuple<T> GetValues(client::QueryResults::Iterator& it) const { return std::make_tuple(getField<T>(field_, it)); }
 	std::tuple<T> GetPrevValues() const {
 		assert(prevValue_.has_value());
 		return std::make_tuple(*prevValue_);
@@ -3410,7 +3412,7 @@ class [[nodiscard]] CompareFields<T, Ts...> : private CompareFields<Ts...> {
 public:
 	CompareFields(std::string_view f, string_view<Ts>... args, std::vector<std::tuple<T, Ts...>> v = {})
 		: Base{args...}, impl_{f}, forcedValues_{std::move(v)} {}
-	int operator()(reindexer::client::QueryResults::Iterator& it) {
+	int operator()(client::QueryResults::Iterator& it) {
 		if (!forcedValues_.empty() && impl_.HavePrevValue()) {
 			const auto prevValues = GetPrevValues();
 			const auto values = GetValues(it);
@@ -3433,7 +3435,7 @@ public:
 		}
 		return res;
 	}
-	std::tuple<T, Ts...> GetValues(reindexer::client::QueryResults::Iterator& it) const {
+	std::tuple<T, Ts...> GetValues(client::QueryResults::Iterator& it) const {
 		return std::tuple_cat(impl_.GetValues(it), Base::GetValues(it));
 	}
 	std::tuple<T, Ts...> GetPrevValues() const { return std::tuple_cat(impl_.GetPrevValues(), Base::GetPrevValues()); }
@@ -3451,11 +3453,11 @@ template <typename... Ts>
 class [[nodiscard]] CompareExpr {
 public:
 	CompareExpr(std::vector<std::string>&& fields, std::function<double(Ts...)>&& f) : fields_{std::move(fields)}, func_{std::move(f)} {}
-	int operator()(reindexer::client::QueryResults::Iterator& it) { return impl(it, std::index_sequence_for<Ts...>{}); }
+	int operator()(client::QueryResults::Iterator& it) { return impl(it, std::index_sequence_for<Ts...>{}); }
 
 private:
 	template <size_t... I>
-	int impl(reindexer::client::QueryResults::Iterator& it, std::index_sequence<I...>) {
+	int impl(client::QueryResults::Iterator& it, std::index_sequence<I...>) {
 		const double r = func_(getField<Ts>(fields_[I], it)...);
 		int result = 0;
 		if (prevResult_ && !fp::EqualWithinULPs(*prevResult_, r)) {
@@ -3472,7 +3474,7 @@ private:
 class [[nodiscard]] ShardingApi::CompareShardId {
 public:
 	CompareShardId(const ShardingApi& api) noexcept : api_{api} {}
-	int operator()(reindexer::client::QueryResults::Iterator& it) {
+	int operator()(client::QueryResults::Iterator& it) {
 		std::string keyValue = getField<std::string>(api_.kFieldLocation, it);
 		keyValue = keyValue.substr(3);
 		size_t curShardId = std::stoi(keyValue);
@@ -3507,7 +3509,7 @@ TEST_F(ShardingApi, OrderBy) {
 		std::variant<std::vector<int>, std::vector<std::string>, std::vector<std::tuple<int, std::string>>,
 					 std::vector<std::tuple<std::string, int>>>
 			forcedValues;
-		std::function<int(reindexer::client::QueryResults::Iterator&)> test;
+		std::function<int(client::QueryResults::Iterator&)> test;
 		bool testId{false};
 	};
 	std::set<std::string> compositeIndexes{kFieldIdLocation, kFieldLocationId, kIndexDataIntLocation, kIndexLocationDataInt};
@@ -3866,7 +3868,7 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 			auto item = rx->NewItem(kNsName);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, value);
 			const auto& valStr = std::to_string(value);
 			jsonBuilder.Put("Field" + valStr, "data" + valStr);
@@ -3923,7 +3925,7 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 
 	auto csv2jsonSchema = std::vector<std::string>{"id", "Field0", "Field1", "Field2", "Field3", "Field4", "Field5", "Field6", "Field7"};
 
-	std::vector<reindexer::TagName> orderingVec;
+	std::vector<TagName> orderingVec;
 	const auto& tm = qr.GetTagsMatcher(0);
 	for (const auto& tagName : csv2jsonSchema) {
 		auto tag = tm.name2tag(tagName);
@@ -3931,9 +3933,9 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 		orderingVec.emplace_back(tag);
 	}
 
-	auto ordering = reindexer::CsvOrdering{orderingVec};
+	auto ordering = CsvOrdering{orderingVec};
 
-	reindexer::WrSerializer serCsv, serJson;
+	WrSerializer serCsv, serJson;
 	for (auto& q : qr) {
 		err = q.GetCSV(serCsv, ordering);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -3942,7 +3944,7 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		gason::JsonParser parserCsv, parserJson;
-		auto converted = parserCsv.Parse(std::string_view(reindexer::csv2json(serCsv.Slice(), csv2jsonSchema)));
+		auto converted = parserCsv.Parse(std::string_view(csv2json(serCsv.Slice(), csv2jsonSchema)));
 		auto orig = parserJson.Parse(serJson.Slice());
 
 		for (const auto& fieldName : csv2jsonSchema) {
@@ -3962,3 +3964,5 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 		serJson.Reset();
 	}
 }
+
+}  // namespace reindexer_tests

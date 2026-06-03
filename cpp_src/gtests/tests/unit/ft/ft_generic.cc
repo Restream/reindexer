@@ -17,9 +17,12 @@
 #include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
 
+namespace reindexer_tests {
+
 using namespace std::string_view_literals;
 using reindexer::fast_hash_map;
 using reindexer::Query;
+using reindexer::IndexOpts;
 
 class [[nodiscard]] FTGenericApi : public FTApi {
 protected:
@@ -205,6 +208,28 @@ TEST_P(FTGenericApi, SelectWithPlusWithSingleAlternative) {
 
 	// FT search by single mandatory word with single alternative
 	CheckAllPermutations("", {"+монитор*"}, "", {{"!мониторы!", ""}});
+}
+
+TEST_P(FTGenericApi, DisableTranslitKbLayout) {
+	Init(GetDefaultConfig());
+	Add("монитор"sv);
+	Add("vjybnjh"sv);
+	Add("monitor"sv);
+
+	CheckAllPermutations("", {"монитор"}, "", {{"!монитор!", ""}, {"!vjybnjh!", ""}, {"!monitor!", ""}});
+
+	auto cfg = GetDefaultConfig();
+	cfg.enableKbLayout = false;
+	auto err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	CheckAllPermutations("", {"монитор"}, "", {{"!монитор!", ""}, {"!monitor!", ""}});
+
+	cfg.enableTranslit = false;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	CheckAllPermutations("", {"монитор"}, "", {{"!монитор!", ""}});
 }
 
 TEST_P(FTGenericApi, SelectWithMinus) {
@@ -1519,12 +1544,12 @@ TEST_P(FTGenericApi, ConfigBm25Coefficients) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	CheckResults("targetword",
-				 {{"otherword !targetword! otherword !targetword targetword!", ""},
-				  {"otherword !targetword! otherword !targetword!", ""},
+				 {{"otherword !targetword! otherword !targetword!", ""},
+				  {"otherword !targetword! otherword !targetword targetword!", ""},
+				  {"otherword !targetword!", ""},
 				  {"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! "
 				   "otherword otherword otherword otherword otherword otherword otherword otherword !targetword!",
-				   ""},
-				  {"otherword !targetword!", ""}},
+				   ""}},
 				 true);
 	cfg = cfgDef;
 	cfg.bm25Config.bm25Type = reindexer::FTConfig::Bm25Config::Bm25Type::wordCount;
@@ -1571,8 +1596,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 
 	CheckResults("тестов",
 				 {{"маленький !тест!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!задача!", ""},
 				  {"!testov!", ""}},
@@ -1585,8 +1610,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов",
 				 {{"маленький !тест!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"!testov!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!задача!", ""}},
@@ -1599,8 +1624,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!задача!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!testov!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1612,8 +1637,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!задача!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!testov!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""}},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""}},
 				 true);
 
 	cfg = cfgDef;
@@ -1630,8 +1655,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!задача!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!testov!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1649,8 +1674,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!testov!", ""},
 				  {"!задача!", ""},
 				  {"!ntcnjd!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1666,8 +1691,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				  {"!задача!", ""},
 				  {"!МестоД!", ""},
 				  {"!ntcnjd!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1684,8 +1709,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				  {"!Местов!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!МестоД!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1700,8 +1725,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!testov!", ""},
 				  {"!задача!", ""},
 				  {"!ntcnjd!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""},
 				  {"!Местов!", ""},
 				  {"!МестоД!", ""}},
@@ -2458,6 +2483,47 @@ TEST_P(FTGenericApi, JoiningQueryTerms) {
 				 true);
 }
 
+TEST_P(FTGenericApi, SplittingQueryTerms) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.optimization = reindexer::FTConfig::Optimization::CPU;
+	ftCfg.maxTypos = 3;
+	ftCfg.stemmers = {};
+	Init(ftCfg);
+	Add("ди каприо"sv);
+	Add("Леонардо ДиКаприо снимался в Выжившем"sv);
+	Add("леонардо дикаприо снимался в выжившем"sv);
+	Add("Леонардо ДеКаприо снимался в Выжившем"sv);
+	Add("Леонардо Ди каприоснимался в Выжившем"sv);
+	Add("леонардодикаприо снимался в выжившем"sv);
+	Add("леонардо дикаприоснимался в выжившем"sv);
+	Add("dikaprio snimalsya"sv);
+	Add("Маша ела кашу. Каша кушалась сама. Маша кашляла."sv);
+
+	CheckResults("дикаприо",
+				 {{"Леонардо !ДиКаприо! снимался в Выжившем", ""},
+				  {"леонардо !дикаприо! снимался в выжившем", ""},
+				  {"!dikaprio! snimalsya", ""},
+				  {"!ди каприо!", ""}},
+				 true);
+
+	CheckResults("дикаприоснимался",
+				 {{"леонардо !дикаприоснимался! в выжившем", ""},
+				  {"Леонардо !Ди каприоснимался! в Выжившем", ""},
+				  {"Леонардо !ДиКаприо снимался! в Выжившем", ""},
+				  {"леонардо !дикаприо снимался! в выжившем", ""},
+				  {"!dikaprio snimalsya!", ""}},
+				 true);
+
+	CheckResults("дикаприоснялся", {}, true);
+}
+
+TEST_P(FTGenericApi, WordWithDot) {
+	Init(GetDefaultConfig());
+	Add("Sentence that contains a word with dot. in it.");
+
+	CheckResults("dot.", {{"Sentence that contains a word with !dot!. in it.", ""}}, true);
+}
+
 TEST_P(FTGenericApi, OperatorsInExtraWordSymbols) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.splitOptions.SetSymbols("-/+_`'=*", "");
@@ -2480,3 +2546,5 @@ INSTANTIATE_TEST_SUITE_P(, FTGenericApi, ::testing::Values(kRxFtTestTypes), [](c
 			std::abort();
 	}
 });
+
+}  // namespace reindexer_tests

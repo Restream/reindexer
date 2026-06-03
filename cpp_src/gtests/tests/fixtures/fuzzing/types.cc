@@ -4,6 +4,8 @@
 #include <vector>
 #include "core/key_value_type.h"
 
+namespace reindexer_tests {
+
 namespace fuzzing {
 
 std::ostream& operator<<(std::ostream& os, FieldType ft) {
@@ -88,3 +90,5 @@ std::string_view ToText(IndexType it) {
 std::ostream& operator<<(std::ostream& os, IndexType it) { return os << ToText(it); }
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

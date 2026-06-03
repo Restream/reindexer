@@ -2,7 +2,7 @@
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/defnsconfigs.h"
-#include "core/indexdef.h"
+#include "core/definitions/indexdef.h"
 #include "core/type_consts.h"
 #include "gason/gason.h"
 #include "tools/catch_and_return.h"

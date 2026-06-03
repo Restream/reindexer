@@ -10,6 +10,8 @@
 #include "vendor/fmt/ranges.h"
 #include "yaml-cpp/yaml.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
 
 void ClusterOperationApi::SetUp() { std::ignore = fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
@@ -359,7 +361,7 @@ void ClusterOperationApi::Cluster::FillItem(BaseApi& api, BaseApi::ItemType& ite
 	if (!param.emptyVector) {
 		std::array<float, kVectorDims> buf;
 		for (float& v : buf) {
-			v = randBin<float>(-10, 10);
+			v = reindexer_tests_tools::randBin<float>(-10, 10);
 		}
 		json = fmt::format(R"json({{"id":{},"int":{},"string":"{}","ft_str":"{}","vec":[{:f}]}})json", id, rand(), api.RandString(),
 						   api.RandString(), fmt::join(buf, ","));
@@ -508,3 +510,5 @@ YAML::Node ClusterOperationApi::Cluster::CreateClusterConfig(size_t initialServe
 															 int syncThreadsCount) {
 	return Cluster::CreateClusterConfigStatic(initialServerId, count, defaults_, nsList, resyncTimeout, maxSyncCount, syncThreadsCount);
 }
+
+}  // namespace reindexer_tests

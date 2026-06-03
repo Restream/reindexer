@@ -2,9 +2,13 @@
 
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] SparseIndexesApi : public ReindexerApi {
 protected:
 	void SetUp() override {
+		using reindexer::IndexOpts;
+
 		ReindexerApi::SetUp();
 		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "string", IndexOpts().PK(), 0},
@@ -96,3 +100,5 @@ protected:
 	const char* kFieldName = "name";
 	const char* kFieldSerialNumber = "serialNumber";
 };
+
+}  // namespace reindexer_tests

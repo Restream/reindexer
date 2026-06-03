@@ -101,16 +101,6 @@ public:
 private:
 	enum class [[nodiscard]] NeedSwitch : bool { Yes = true, No = false };
 	enum class [[nodiscard]] MergeOrdered : bool { Yes = true, No = false };
-	struct [[nodiscard]] FoundIndexInfo {
-		enum class [[nodiscard]] ConditionType { Incompatible = 0, Compatible = 1 };
-
-		FoundIndexInfo() noexcept : index(nullptr), size(0), isFitForSortOptimization(0) {}
-		FoundIndexInfo(const Index* i, ConditionType ct) noexcept : index(i), size(i->Size()), isFitForSortOptimization(unsigned(ct)) {}
-
-		const Index* index;
-		uint64_t size : 63;
-		uint64_t isFitForSortOptimization : 1;
-	};
 
 	static void setQueryIndex(QueryField&, int idxNo, const NamespaceImpl&);
 	SortingEntries detectOptimalSortOrder() const;
@@ -155,9 +145,6 @@ private:
 	MergeResult mergeQueryEntriesRange(QueryEntry& range, QueryEntry& ge, IsDistinct, size_t position, const CmpArgs&...);
 	const std::vector<int>* getCompositeIndex(int field) const noexcept;
 	void initIndexedQueries(size_t begin, size_t end);
-	const Index* findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
-	void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
-					  h_vector<FoundIndexInfo, 32>& foundIndexes) const;
 	/** @brief recurrently checks and injects Join ON conditions
 	 *  @returns inserted conditions and EntryBrackets count
 	 */

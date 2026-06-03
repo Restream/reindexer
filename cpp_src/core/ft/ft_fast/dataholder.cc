@@ -24,6 +24,8 @@ void IDataHolder::Clear() {
 	vdocsOffset_ = 0;
 	szCnt = 0;
 	rowId2Vdoc_.resize(0);
+	stepsWords_.clear();
+	lastStepWords_.clear();
 }
 
 std::string IDataHolder::Dump() const {
@@ -66,21 +68,32 @@ void IDataHolder::throwStepsOverflow() const {
 				steps.size() - 1, kWordIdMaxStepVal);
 }
 
-WordIdType IDataHolder::findWord(std::string_view word) const {
-	WordIdType id;
-	id.SetEmpty();
-	if (steps.size() <= 1) {
-		return id;
-	}
+WordIdType IDataHolder::FindWord(const std::string_view& word, bool searchLastStep) const {
+	word_hash wh;
+	word_equal we;
+	size_t hash = wh(word);
 
-	for (auto step = steps.begin(); step != steps.end() - 1; ++step) {
-		auto it = step->suffixes_.lower_bound(word);
-		if (it != step->suffixes_.end() && size_t(step->suffixes_.word_len_at(GetWordIdInStep(it->second, *step))) == word.size()) {
-			return it->second;
+	if (auto it = stepsWords_.find(hash); it != stepsWords_.end()) {
+		for (WordIdType wid : it->second) {
+			if (we(GetWord(wid), word)) {
+				return wid;
+			}
 		}
 	}
 
-	return id;
+	if (searchLastStep) {
+		if (auto itLast = lastStepWords_.find(hash); itLast != lastStepWords_.end()) {
+			for (WordIdType wid : itLast->second) {
+				if (we(GetWord(wid), word)) {
+					return wid;
+				}
+			}
+		}
+	}
+
+	WordIdType emptyId;
+	emptyId.SetEmpty();
+	return emptyId;
 }
 
 template <typename IdCont>
@@ -104,6 +117,8 @@ void DataHolder<IdCont>::StartCommit(bool complete_updated) {
 		status_ = FullRebuild;
 
 		Clear();
+		words_.clear();
+		lastStepWords_.clear();
 	} else if (NeedRecommitLast()) {
 		status_ = RecommitLast;
 		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
@@ -113,12 +128,20 @@ void DataHolder<IdCont>::StartCommit(bool complete_updated) {
 		}
 
 		steps.back().clear();
+		lastStepWords_.clear();
 	} else {  // if the last step is full, then create a new
 		for (auto& word : words_) {
 			word.SaveState();
 		}
 		status_ = CreateNew;
 		steps.emplace_back(CommitStep{});
+		for (auto& [wHash, Ids] : lastStepWords_) {
+			auto& w = stepsWords_[wHash];
+			for (auto id : Ids) {
+				w.emplace_back(id);
+			}
+		}
+		lastStepWords_.clear();
 	}
 }
 

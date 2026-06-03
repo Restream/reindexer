@@ -2,7 +2,7 @@
 
 #include <bitset>
 #include <optional>
-#include "core/indexdef.h"
+#include "core/definitions/indexdef.h"
 #include "core/rdxcontext.h"
 #include "estl/contexted_locks.h"
 #include "estl/mutex.h"
@@ -21,8 +21,6 @@ class Serializer;
 class WrSerializer;
 
 namespace ann_storage_cache {
-
-constexpr static uint8_t kANNCacheFormatVersion = 2;
 
 std::string GetStorageKey(std::string_view name) noexcept;
 bool IsANNCacheEnabledByEnv() noexcept;

@@ -3,7 +3,7 @@
 #include <span>
 #include <type_traits>
 #include "core/cjson/tagsmatcher.h"
-#include "core/indexopts.h"
+#include "core/definitions/collateopts.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/variant.h"
 #include "fieldsset.h"

@@ -3,11 +3,12 @@
 #include <span>
 #include <string_view>
 #include "core/embedding/connectorpool.h"
+#include "core/embedding/embedderscache.h"
 #include "core/embedding/embeddingconfig.h"
-#include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/variant.h"
 #include "core/perfstatcounter.h"
 #include "estl/h_vector.h"
+#include "estl/thread_annotation_attributes.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -40,7 +41,7 @@ protected:
 				 PoolConfig&& poolConfig, const std::shared_ptr<EmbeddersCache>& cache);
 
 	void calculate(const RdxContext& ctx, const embedding::Adapter& srcAdapter, system_clock_w::time_point tmStart, bool enablePerfStat,
-				   h_vector<ConstFloatVector, 1>& products) const;
+				   embedding::ValueT& products) const;
 
 	const std::string name_;
 	const std::string fieldName_;
@@ -51,18 +52,18 @@ protected:
 
 	class [[nodiscard]] LastError {
 	public:
-		Error GetLastError() const {
-			std::lock_guard lock(mtx_);
+		Error GetLastError() const RX_REQUIRES(!mtx_) {
+			lock_guard lock(mtx_);
 			return err_;
 		}
-		void SetError(Error e) {
-			std::lock_guard lock(mtx_);
+		void SetError(Error e) RX_REQUIRES(!mtx_) {
+			lock_guard lock(mtx_);
 			err_ = std::move(e);
 		}
 
 	private:
-		mutable std::mutex mtx_;
-		Error err_;
+		mutable mutex mtx_;
+		Error err_ RX_GUARDED_BY(mtx_);
 	};
 
 	struct [[nodiscard]] Statistic {
@@ -101,7 +102,7 @@ public:
 	auto FieldName() const&& noexcept = delete;
 
 	void Calculate(const RdxContext& ctx, std::span<const std::vector<std::pair<std::string, VariantArray>>> sources,
-				   h_vector<ConstFloatVector, 1>& products) const;
+				   embedding::ValueT& products) const;
 
 	const h_vector<std::string, 1>& Fields() const& noexcept { return config_.fields; }
 	auto Fields() const&& noexcept = delete;
@@ -127,7 +128,7 @@ public:
 	QueryEmbedder& operator=(const QueryEmbedder&) = delete;
 	QueryEmbedder& operator=(QueryEmbedder&&) noexcept = delete;
 
-	void Calculate(const RdxContext& ctx, const std::string& text, h_vector<ConstFloatVector, 1>& products) const;
+	void Calculate(const RdxContext& ctx, const std::string& text, embedding::ValueT& products) const;
 	void EnablePerfStat(bool enable) const noexcept { enablePerfStat_.store(enable, std::memory_order_relaxed); }
 
 private:

@@ -1,4 +1,6 @@
 #include "httpserver.h"
+#include <exception>
+#include <string_view>
 
 #include "base64/base64.h"
 #include "core/cjson/csvbuilder.h"
@@ -7,7 +9,10 @@
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufschemabuilder.h"
 #include "core/dbconfig.h"
+#include "core/enums.h"
 #include "core/id_type.h"
+#include "core/query/sql/sql_suggestions.h"
+#include "core/queryresults/queryresults.h"
 #include "core/queryresults/tableviewbuilder.h"
 #include "core/schema.h"
 #include "core/type_consts.h"
@@ -120,33 +125,49 @@ HTTPServer::HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConf
 	  logger_(logger),
 	  startTs_(system_clock_w::now()) {}
 
-Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults& res, http::Context& ctx) {
-	const auto q = reindexer::Query::FromSQL(sqlQuery);
+Error HTTPServer::execQueryByType(const reindexer::Query& query, reindexer::QueryResults& res, http::Context& ctx) {
 	const std::string_view sharding = ctx.request->params.Get("sharding"sv, "on"sv);
-	switch (q.Type()) {
+	switch (query.Type()) {
 		case QuerySelect: {
 			return (!isParameterSetOn(sharding) ? getDB<kRoleDataRead>(ctx).WithShardId(ShardingKeyType::ProxyOff, false)
 												: getDB<kRoleDataRead>(ctx))
-				.Select(q, res);
+				.Select(query, res);
 		}
 		case QueryDelete: {
 			return (!isParameterSetOn(sharding) ? getDB<kRoleDataWrite>(ctx).WithShardId(ShardingKeyType::ProxyOff, false)
 												: getDB<kRoleDataWrite>(ctx))
-				.Delete(q, res);
+				.Delete(query, res);
 		}
 		case QueryUpdate: {
 			return (!isParameterSetOn(sharding) ? getDB<kRoleDataWrite>(ctx).WithShardId(ShardingKeyType::ProxyOff, false)
 												: getDB<kRoleDataWrite>(ctx))
-				.Update(q, res);
+				.Update(query, res);
 		}
 		case QueryTruncate: {
 			return (!isParameterSetOn(sharding) ? getDB<kRoleDBAdmin>(ctx).WithShardId(ShardingKeyType::ProxyOff, false)
 												: getDB<kRoleDBAdmin>(ctx))
-				.TruncateNamespace(q.NsName());
+				.TruncateNamespace(query.NsName());
 		}
 	}
-	throw Error(errParams, "unknown query type {}", int(q.Type()));
+	throw Error(errParams, "unknown query type {}", int(query.Type()));
 }
+
+class [[nodiscard]] PutLocation {
+public:
+	PutLocation(TokenizerRange r) noexcept : range_(r) {}
+	void operator()(auto& builder) const {
+		using namespace std::string_view_literals;
+		auto node = builder.Object("location"sv, 4);
+		node.Put("line_start"sv, int64_t(range_.lineStart));
+		node.Put("column_start"sv, int64_t(range_.columnStart));
+		node.Put("line_end"sv, int64_t(range_.lineEnd));
+		node.Put("column_end"sv, int64_t(range_.columnEnd));
+	}
+	size_t FieldsCount() const noexcept { return 1; }
+
+private:
+	const TokenizerRange range_;
+};
 
 int HTTPServer::GetSQLQuery(http::Context& ctx) {
 	const std::string sqlQuery = urldecode2(ctx.request->params.Get("q"sv));
@@ -162,7 +183,13 @@ int HTTPServer::GetSQLQuery(http::Context& ctx) {
 
 	reindexer::QueryResults res;
 	reindexer::ActiveQueryScope scope(sqlQuery);
-	const auto err = execSqlQueryByType(sqlQuery, res, ctx);
+	reindexer::Query query;
+	try {
+		query = reindexer::Query::FromSQL(sqlQuery);
+	} catch (const SqlParserError& err) {
+		return status(ctx, http::HttpStatus(err.AsError()), PutLocation(err.Range()));
+	}
+	const auto err = execQueryByType(query, res, ctx);
 	if (!err.ok()) {
 		return status(ctx, http::HttpStatus(err));
 	}
@@ -204,20 +231,32 @@ int HTTPServer::GetSQLSuggest(http::Context& ctx) {
 
 	logFmt(LogTrace, "GetSQLSuggest() incoming data: {}, {}", sqlQuery, bytePos);
 
-	std::vector<std::string> suggestions;
+	SQLSuggestions suggestions;
 	err = getDB<kRoleDataRead>(ctx).GetSqlSuggestions(sqlQuery, bytePos, suggestions);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.whatStr()));
 	}
 
 	auto ser = makeRestrictedWrSerializer(ctx);
-	reindexer::JsonBuilder builder(ser);
-	auto node = builder.Array("suggests");
-	for (auto& suggest : suggestions) {
-		node.Put(TagName::Empty(), suggest);
+	{
+		reindexer::JsonBuilder builder(ser);
+		{
+			auto node = builder.Array("suggests");
+			for (auto& suggest : suggestions.suggestions) {
+				node.Put(TagName::Empty(), suggest);
+			}
+		}
+		if (!suggestions.errorMessage.empty()) {
+			builder.Put("error", suggestions.errorMessage);
+		}
+		if (suggestions.errorRange) {
+			auto node = builder.Object("error_location");
+			node.Put("line_start", suggestions.errorRange->lineStart);
+			node.Put("column_start", suggestions.errorRange->columnStart);
+			node.Put("line_end", suggestions.errorRange->lineEnd);
+			node.Put("column_end", suggestions.errorRange->columnEnd);
+		}
 	}
-	node.End();
-	builder.End();
 
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
@@ -229,11 +268,68 @@ int HTTPServer::PostSQLQuery(http::Context& ctx) {
 	}
 	reindexer::QueryResults res;
 	reindexer::ActiveQueryScope scope(sqlQuery);
-	const auto err = execSqlQueryByType(sqlQuery, res, ctx);
+	reindexer::Query query;
+	try {
+		query = reindexer::Query::FromSQL(sqlQuery);
+	} catch (const SqlParserError& err) {
+		return status(ctx, http::HttpStatus(err.AsError()), PutLocation(err.Range()));
+	}
+	const auto err = execQueryByType(query, res, ctx);
 	if (!err.ok()) {
 		return status(ctx, http::HttpStatus(err));
 	}
 	return queryResults(ctx, res, ReqularQueryResultsOption(res));
+}
+
+HTTPServer::QueryFormat HTTPServer::parseFormat(std::string_view formatStr) noexcept {
+	if (reindexer::iequals(formatStr, "sql")) {
+		return QueryFormat::Sql;
+	} else if (reindexer::iequals(formatStr, "dsl")) {
+		return QueryFormat::Dsl;
+	} else if (reindexer::iequals(formatStr, "pretty_sql")) {
+		return QueryFormat::PrettySql;
+	} else {
+		return QueryFormat::Unknown;
+	}
+}
+
+int HTTPServer::queryConvert(http::Context& ctx, QueryFormat incomingFormat) {
+	assertrx(incomingFormat == QueryFormat::Sql || incomingFormat == QueryFormat::Dsl);
+	const std::string strQuery = ctx.body->Read();
+	if (strQuery.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Query is empty"));
+	}
+	const std::string formatStr = urldecode2(ctx.request->params.Get("to"sv));
+	if (formatStr.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Missing `to` parameter"));
+	}
+	const auto format = parseFormat(formatStr);
+	try {
+		const auto q = incomingFormat == QueryFormat::Sql ? reindexer::Query::FromSQL(strQuery) : reindexer::Query::FromJSON(strQuery);
+		WrSerializer ser(ctx.writer->GetChunk());
+		{
+			JsonBuilder builder(ser);
+			switch (format) {
+				case QueryFormat::Sql:
+					builder.Put("format", "sql");
+					builder.Put("query", q.GetSQL(q.Type()));
+					break;
+				case QueryFormat::Dsl:
+					builder.Put("format", "dsl");
+					builder.Raw("query", q.GetJSON());
+					break;
+				case QueryFormat::PrettySql:
+					builder.Put("format", "pretty_sql");
+					builder.Put("query", q.GetSQL(q.Type(), Pretty_True));
+					break;
+				case QueryFormat::Unknown:
+					return status(ctx, http::HttpStatus(http::StatusBadRequest, "Unknown format '" + formatStr + '\''));
+			}
+		}
+		return ctx.JSON(http::StatusOK, ser.DetachChunk());
+	} catch (const std::exception& err) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.what()));
+	}
 }
 
 int HTTPServer::PostQuery(http::Context& ctx) {
@@ -563,9 +659,9 @@ int HTTPServer::GetItems(http::Context& ctx) {
 		querySer << " OFFSET " << prepareOffset(offsetParam);
 	}
 
-	auto q = Query::FromSQL(querySer.Slice());
+	reindexer::Query query = Query::FromSQL(querySer.Slice());
 	if (ctx.request->params.Get("format"sv) != kCSVFileFmt) {
-		q.ReqTotal();
+		query.ReqTotal();
 	}
 
 	int flags = kResultsCJson | kResultsWithPayloadTypes;
@@ -574,7 +670,7 @@ int HTTPServer::GetItems(http::Context& ctx) {
 	}
 
 	reindexer::QueryResults res(flags);
-	const auto ret = db.Select(q, res);
+	const auto ret = db.Select(query, res);
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(ret));
 	}
@@ -1059,6 +1155,9 @@ void HTTPServer::Start(const std::string& addr, ev::dynamic_loop& loop) {
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteQueryTx>("/api/v1/db/:db/transactions/:tx/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostMemReset>("/api/v1/allocator/drop_cache", this);
 	router_.GET<HTTPServer, &HTTPServer::GetMemInfo>("/api/v1/allocator/info", this);
+
+	router_.POST<HTTPServer, &HTTPServer::QueryConvertSql>("/api/v1/query/convert/sql", this);
+	router_.POST<HTTPServer, &HTTPServer::QueryConvertDsl>("/api/v1/query/convert/dsl", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetRole>("/api/v1/user/role", this);
 
@@ -1805,46 +1904,53 @@ int HTTPServer::statusOK(http::Context& ctx, chunk&& chunk) {
 	}
 }
 
-int HTTPServer::status(http::Context& ctx, const http::HttpStatus& status) {
+template <typename Fn>
+int HTTPServer::status(http::Context& ctx, const http::HttpStatus& status, const Fn& additional) {
 	switch (getDataFormat(ctx)) {
 		case DataFormat::JSON:
-			return jsonStatus(ctx, status);
+			return jsonStatus(ctx, status, additional);
 		case DataFormat::MsgPack:
-			return msgpackStatus(ctx, status);
+			return msgpackStatus(ctx, status, additional);
 		case DataFormat::Protobuf:
-			return protobufStatus(ctx, status);
+			return protobufStatus(ctx, status, additional);
 		case DataFormat::CSVFile:
 		default:
 			throw Error(errLogic, "'HTTPServer::status' is not implemented for '{}' format", ctx.request->params.Get("format"sv));
 	}
 }
 
-int HTTPServer::msgpackStatus(http::Context& ctx, const http::HttpStatus& status) {
+template <typename Fn>
+int HTTPServer::msgpackStatus(http::Context& ctx, const http::HttpStatus& status, const Fn& additional) {
 	auto ser = makeRestrictedWrSerializer(ctx);
-	MsgPackBuilder msgpackBuilder(ser, ObjType::TypeObject, 3);
+	MsgPackBuilder msgpackBuilder(ser, ObjType::TypeObject, 3 + additional.FieldsCount());
 	msgpackBuilder.Put(kParamSuccess, status.code == http::StatusOK);
 	msgpackBuilder.Put(kParamResponseCode, status.code);
 	msgpackBuilder.Put(kParamDescription, status.what);
+	additional(msgpackBuilder);
 	msgpackBuilder.End();
 	return ctx.MSGPACK(status.code, ser.DetachChunk());
 }
 
-int HTTPServer::jsonStatus(http::Context& ctx, const http::HttpStatus& status) {
+template <typename Fn>
+int HTTPServer::jsonStatus(http::Context& ctx, const http::HttpStatus& status, const Fn& additional) {
 	auto ser = makeRestrictedWrSerializer(ctx);
 	JsonBuilder builder(ser);
 	builder.Put(kParamSuccess, status.code == http::StatusOK);
 	builder.Put(kParamResponseCode, int(status.code));
 	builder.Put(kParamDescription, status.what);
+	additional(builder);
 	builder.End();
 	return ctx.JSON(status.code, ser.DetachChunk());
 }
 
-int HTTPServer::protobufStatus(http::Context& ctx, const http::HttpStatus& status) {
+template <typename Fn>
+int HTTPServer::protobufStatus(http::Context& ctx, const http::HttpStatus& status, const Fn& additional) {
 	auto ser = makeRestrictedWrSerializer(ctx);
 	ProtobufBuilder builder(ser);
 	builder.Put(kProtoErrorResultsFields.at(kParamSuccess), status.code == http::StatusOK);
 	builder.Put(kProtoErrorResultsFields.at(kParamResponseCode), int(status.code));
 	builder.Put(kProtoErrorResultsFields.at(kParamDescription), status.what);
+	additional(builder);
 	builder.End();
 	return ctx.Protobuf(status.code, ser.DetachChunk());
 }

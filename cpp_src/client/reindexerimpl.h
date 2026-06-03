@@ -17,6 +17,9 @@
 #include "net/ev/ev.h"
 
 namespace reindexer {
+
+struct SQLSuggestions;
+
 namespace client {
 
 struct ConnectionsPoolData;
@@ -69,7 +72,7 @@ public:
 	Error PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const InternalRdxContext& ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const InternalRdxContext& ctx);
 	Error DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx);
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions);
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions);
 	Error Status(bool forceCheck, const InternalRdxContext& ctx);
 	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) noexcept;
 	Error CommitTransaction(Transaction& tr, QueryResults& results, const InternalRdxContext& ctx);

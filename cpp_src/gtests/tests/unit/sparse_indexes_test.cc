@@ -1,6 +1,10 @@
 #include "gmock/gmock.h"
 #include "sparse_indexes_api.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
 TEST_F(SparseIndexesApi, SparseIndexSelectAll) { CheckSelectAll(); }
 TEST_F(SparseIndexesApi, SelectByTreeSparseIndex) { CheckSelectByTreeIndex(); }
 TEST_F(SparseIndexesApi, SelectByHashSparseIndex) { CheckSelectByHashIndex(); }
@@ -90,3 +94,5 @@ TEST_F(SparseIndexesApi, ObjectInsertIntoSparseTreeNotBreakBgOptimization) {
 	qr = rt.Select(Query(default_namespace).Where(kFieldId, CondEq, Variant("broken_tree_regression")));
 	ASSERT_EQ(qr.Count(), 0);
 }
+
+}  // namespace reindexer_tests

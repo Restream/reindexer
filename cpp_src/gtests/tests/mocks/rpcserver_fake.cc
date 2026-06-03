@@ -6,6 +6,8 @@
 #include "net/listener.h"
 #include "reindexer_version.h"
 
+namespace reindexer_tests {
+
 RPCServerFake::RPCServerFake(const RPCServerConfig& conf) : startTs_(system_clock_w::now()), conf_(conf), state_(Init) {}
 
 Error RPCServerFake::Ping(cproto::Context&) {
@@ -130,3 +132,5 @@ void RPCServerFake::Start(const std::string& addr, ev::dynamic_loop& loop, Error
 }
 
 RPCServerStatus RPCServerFake::Status() const { return state_; }
+
+}  // namespace reindexer_tests

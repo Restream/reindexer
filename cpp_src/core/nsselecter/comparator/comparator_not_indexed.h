@@ -118,39 +118,6 @@ private:
 	VariantArray buffer_;
 };
 
-template <CondType Cond>
-class [[nodiscard]] ComparatorNotIndexedImpl<Cond, true> : private ComparatorNotIndexedImplBase<Cond> {
-	using Base = ComparatorNotIndexedImplBase<Cond>;
-
-public:
-	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath)
-		: Base{values}, distinct_{}, payloadType_{payloadType}, fieldPath_{fieldPath} {}
-
-	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
-		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
-		for (const Variant& v : buffer_) {
-			if (Base::Compare(v) == 0 && distinct_.Compare(v)) {
-				return true;
-			}
-		}
-		return false;
-	}
-	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
-	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
-		for (Variant& v : buffer_) {
-			distinct_.ExcludeValues(std::move(v));
-		}
-	}
-	using Base::ConditionStr;
-
-private:
-	ComparatorNotIndexedDistinct distinct_;
-	PayloadType payloadType_;
-	TagsPath fieldPath_;
-	VariantArray buffer_;
-};
-
 template <>
 class [[nodiscard]] ComparatorNotIndexedImpl<CondAny, false> {
 public:
@@ -236,19 +203,6 @@ private:
 };
 
 template <>
-class [[nodiscard]] ComparatorNotIndexedImpl<CondEmpty, true> : private ComparatorNotIndexedImpl<CondEmpty, false> {
-	using Base = ComparatorNotIndexedImpl<CondEmpty, false>;
-
-public:
-	ComparatorNotIndexedImpl(const PayloadType& payloadType, const TagsPath& fieldPath) : Base{payloadType, fieldPath} {}
-
-	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
-	using Base::ExcludeDistinctValues;
-	using Base::ConditionStr;
-	using Base::Compare;
-};
-
-template <>
 class [[nodiscard]] ComparatorNotIndexedImpl<CondDWithin, false> {
 public:
 	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath);
@@ -270,39 +224,6 @@ protected:
 	TagsPath fieldPath_;
 	Point point_;
 	double distance_;
-};
-
-template <>
-class [[nodiscard]] ComparatorNotIndexedImpl<CondDWithin, true> : private ComparatorNotIndexedImpl<CondDWithin, false> {
-	using Base = ComparatorNotIndexedImpl<CondDWithin, false>;
-
-public:
-	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath)
-		: Base{values, payloadType, fieldPath} {}
-
-	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
-		VariantArray buffer;
-		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer, KeyValueType::Undefined{});
-		if (buffer.size() != 2 || !buffer[0].Type().Is<KeyValueType::Double>() || !buffer[0].Type().Is<KeyValueType::Double>()) {
-			return false;
-		}
-		const Point p{buffer[0].As<double>(), buffer[1].As<double>()};
-		return DWithin(p, point_, distance_) && distinct_.Compare(Variant{p});
-	}
-	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
-	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		VariantArray buffer;
-		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer, KeyValueType::Undefined{});
-		if (buffer.size() != 2 || !buffer[0].Type().Is<KeyValueType::Double>() || !buffer[0].Type().Is<KeyValueType::Double>()) {
-			return;
-		}
-		const Point p{buffer[0].As<double>(), buffer[1].As<double>()};
-		distinct_.ExcludeValues(Variant{p});
-	}
-	using Base::ConditionStr;
-
-private:
-	ComparatorNotIndexedDistinct distinct_;
 };
 
 template <>
@@ -338,50 +259,13 @@ protected:
 	fast_hash_set<int> allSetValues_;
 };
 
-template <>
-class [[nodiscard]] ComparatorNotIndexedImpl<CondAllSet, true> : private ComparatorNotIndexedImpl<CondAllSet, false> {
-	using Base = ComparatorNotIndexedImpl<CondAllSet, false>;
-
-public:
-	ComparatorNotIndexedImpl(const VariantArray& values, const PayloadType& payloadType, const TagsPath& fieldPath)
-		: Base{values, payloadType, fieldPath} {}
-
-	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
-		allSetValues_.clear();
-		ConstPayload{payloadType_, item}.GetByJsonPath(fieldPath_, buffer_, KeyValueType::Undefined{});
-		bool haveNotDistinct = false;
-		for (const Variant& v : buffer_) {
-			const auto it = values_.find(v);
-			if (it != values_.cend()) {
-				allSetValues_.emplace(it->second);
-				if (distinct_.Compare(it->first)) {
-					haveNotDistinct = true;
-				}
-				if (haveNotDistinct && allSetValues_.size() == values_.size()) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_False; }
-	void ExcludeDistinctValues(const PayloadValue&, IdType /*rowId*/) const noexcept {}
-
-	using Base::ConditionStr;
-
-private:
-	ComparatorNotIndexedDistinct distinct_;
-};
-
-using ComparatorNotIndexedVariant = std::variant<
-	ComparatorNotIndexedImpl<CondAny, false>, ComparatorNotIndexedImpl<CondEmpty, false>, ComparatorNotIndexedImpl<CondEq, false>,
-	ComparatorNotIndexedImpl<CondLt, false>, ComparatorNotIndexedImpl<CondLe, false>, ComparatorNotIndexedImpl<CondGt, false>,
-	ComparatorNotIndexedImpl<CondGe, false>, ComparatorNotIndexedImpl<CondRange, false>, ComparatorNotIndexedImpl<CondLike, false>,
-	ComparatorNotIndexedImpl<CondSet, false>, ComparatorNotIndexedImpl<CondAllSet, false>, ComparatorNotIndexedImpl<CondDWithin, false>,
-	ComparatorNotIndexedImpl<CondAny, true>, ComparatorNotIndexedImpl<CondEmpty, true>, ComparatorNotIndexedImpl<CondEq, true>,
-	ComparatorNotIndexedImpl<CondLt, true>, ComparatorNotIndexedImpl<CondLe, true>, ComparatorNotIndexedImpl<CondGt, true>,
-	ComparatorNotIndexedImpl<CondGe, true>, ComparatorNotIndexedImpl<CondRange, true>, ComparatorNotIndexedImpl<CondLike, true>,
-	ComparatorNotIndexedImpl<CondSet, true>, ComparatorNotIndexedImpl<CondAllSet, true>, ComparatorNotIndexedImpl<CondDWithin, true>>;
+using ComparatorNotIndexedVariant =
+	std::variant<ComparatorNotIndexedImpl<CondAny, false>, ComparatorNotIndexedImpl<CondEmpty, false>,
+				 ComparatorNotIndexedImpl<CondEq, false>, ComparatorNotIndexedImpl<CondLt, false>, ComparatorNotIndexedImpl<CondLe, false>,
+				 ComparatorNotIndexedImpl<CondGt, false>, ComparatorNotIndexedImpl<CondGe, false>,
+				 ComparatorNotIndexedImpl<CondRange, false>, ComparatorNotIndexedImpl<CondLike, false>,
+				 ComparatorNotIndexedImpl<CondSet, false>, ComparatorNotIndexedImpl<CondAllSet, false>,
+				 ComparatorNotIndexedImpl<CondDWithin, false>, ComparatorNotIndexedImpl<CondAny, true>>;
 
 }  // namespace comparators
 
@@ -406,7 +290,7 @@ public:
 	void SetNotOperationFlag(bool isNotOperation) noexcept { isNotOperation_ = isNotOperation; }
 
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType rowId) {
-		static_assert(std::variant_size_v<comparators::ComparatorNotIndexedVariant> == 24);
+		static_assert(std::variant_size_v<comparators::ComparatorNotIndexedVariant> == 13);
 		bool res;
 		++totalCalls_;
 		switch (impl_.index()) {
@@ -449,39 +333,6 @@ public:
 			case 12:
 				res = std::get_if<12>(&impl_)->Compare(item, rowId);
 				break;
-			case 13:
-				res = std::get_if<13>(&impl_)->Compare(item, rowId);
-				break;
-			case 14:
-				res = std::get_if<14>(&impl_)->Compare(item, rowId);
-				break;
-			case 15:
-				res = std::get_if<15>(&impl_)->Compare(item, rowId);
-				break;
-			case 16:
-				res = std::get_if<16>(&impl_)->Compare(item, rowId);
-				break;
-			case 17:
-				res = std::get_if<17>(&impl_)->Compare(item, rowId);
-				break;
-			case 18:
-				res = std::get_if<18>(&impl_)->Compare(item, rowId);
-				break;
-			case 19:
-				res = std::get_if<19>(&impl_)->Compare(item, rowId);
-				break;
-			case 20:
-				res = std::get_if<20>(&impl_)->Compare(item, rowId);
-				break;
-			case 21:
-				res = std::get_if<21>(&impl_)->Compare(item, rowId);
-				break;
-			case 22:
-				res = std::get_if<22>(&impl_)->Compare(item, rowId);
-				break;
-			case 23:
-				res = std::get_if<23>(&impl_)->Compare(item, rowId);
-				break;
 			default:
 				abort();
 		}
@@ -489,7 +340,7 @@ public:
 		return res;
 	}
 	void ExcludeDistinctValues(const PayloadValue& item, IdType rowId) {
-		static_assert(std::variant_size_v<comparators::ComparatorNotIndexedVariant> == 24);
+		static_assert(std::variant_size_v<comparators::ComparatorNotIndexedVariant> == 13);
 		switch (impl_.index()) {
 			case 0:
 				return std::get_if<0>(&impl_)->ExcludeDistinctValues(item, rowId);
@@ -517,28 +368,6 @@ public:
 				return std::get_if<11>(&impl_)->ExcludeDistinctValues(item, rowId);
 			case 12:
 				return std::get_if<12>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 13:
-				return std::get_if<13>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 14:
-				return std::get_if<14>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 15:
-				return std::get_if<15>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 16:
-				return std::get_if<16>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 17:
-				return std::get_if<17>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 18:
-				return std::get_if<18>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 19:
-				return std::get_if<19>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 20:
-				return std::get_if<20>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 21:
-				return std::get_if<21>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 22:
-				return std::get_if<22>(&impl_)->ExcludeDistinctValues(item, rowId);
-			case 23:
-				return std::get_if<23>(&impl_)->ExcludeDistinctValues(item, rowId);
 			default:
 				abort();
 		}

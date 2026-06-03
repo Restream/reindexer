@@ -4,6 +4,8 @@
 #include "cluster_operation_api.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] ClusterOperationExtrasApi : public ClusterOperationApi {
 public:
 	void SetUp() override {	 // -V524
@@ -54,3 +56,5 @@ protected:
 		ASSERT_TRUE(false) << "Stats: " << wser.Slice();
 	}
 };
+
+}  // namespace reindexer_tests

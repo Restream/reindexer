@@ -14,6 +14,7 @@
 #include "knn_raw_result.h"
 #include "sort/pdqsort.hpp"
 #include "tools/blas_extension.h"
+#include "tools/cpucheck.h"
 #include "tools/logger.h"
 #include "tools/normalize.h"
 
@@ -115,7 +116,8 @@ Variant IvfIndex::upsertConcurrent(ConstFloatVectorView, FloatVectorId, bool&) {
 	throw Error(errLogic, "IVF indexes do not support concurrent upsertions");
 }
 
-void IvfIndex::del(FloatVectorId id, MustExist mustExist, IsLast) {
+void IvfIndex::del(FloatVectorId id, MustExist mustExist) {
+	(void)mustExist;
 	if (map_) {
 		const faiss::idx_t faissId = id.AsNumber();
 		map_->remove_ids(faiss::IDSelectorArray{1, &faissId});
@@ -548,7 +550,7 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 }
 
 Error IvfIndex::LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&& getVectorData,
-							   LoadWithQuantizer, uint8_t /*version*/) {
+							   LoadWithQuantizer) {
 	class [[nodiscard]] ViewReader final : public faiss::IOReader, private LoaderBase {
 	public:
 		ViewReader(std::string _name, std::string_view view, FloatVectorIndexRawDataInserter&& getVectorData, bool isCompositePK,

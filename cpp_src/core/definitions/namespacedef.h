@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include "core/indexdef.h"
+#include "core/definitions/indexdef.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
 #include "tools/stringstools.h"

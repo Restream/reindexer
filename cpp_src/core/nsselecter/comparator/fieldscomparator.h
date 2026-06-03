@@ -1,8 +1,8 @@
 #pragma once
 
 #include "const.h"
+#include "core/definitions/collateopts.h"
 #include "core/id_type.h"
-#include "core/indexopts.h"
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadtype.h"
 #include "core/payload/payloadtypeimpl.h"

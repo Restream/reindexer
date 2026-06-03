@@ -3,6 +3,8 @@
 #include "ft_api.h"
 #include "gtests/tests/gtest_cout.h"
 
+namespace reindexer_tests {
+
 using namespace std::string_view_literals;
 
 class [[nodiscard]] FTSelectFunctionsApi : public FTApi {
@@ -575,3 +577,5 @@ INSTANTIATE_TEST_SUITE_P(, FTSelectFunctionsApi, ::testing::Values(kRxFtTestType
 			std::abort();
 	}
 });
+
+}  // namespace reindexer_tests

@@ -5,6 +5,10 @@
 #include "gtests/tools.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
+using reindexer_tests_tools::rndFloatVector;
+
 static constexpr auto kBasicTimeout = std::chrono::seconds(200);
 
 reindexer::Item HybridTest::newItem(int id) {
@@ -42,6 +46,9 @@ reindexer::Item HybridTest::newItem(int id) {
 }
 
 void HybridTest::SetUp() {
+	using reindexer::IndexOpts;
+	using reindexer::FloatVectorIndexOpts;
+
 	constexpr static size_t kM = 16;
 	constexpr static size_t kEfConstruction = 200;
 
@@ -204,7 +211,7 @@ template <HybridTest::IsArray isArray>
 reindexer::Query HybridTest::makeKnnQuery() const {
 	static std::array<float, kDimension<isArray>> buf;
 	rndFloatVector(buf);
-	const auto& knnField = randOneOf(knnFields_);
+	const auto& knnField = reindexer_tests_tools::randOneOf(knnFields_);
 	const auto knnFieldName = isArray ? knnField.nameArray : knnField.nameScalar;
 	return reindexer::Query{kNsName}.WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params).WithRank();
 }
@@ -304,3 +311,5 @@ void HybridTest::TestMerge() {
 
 TEST_F(HybridTest, MergeArray) { TestMerge<Array>(); }
 TEST_F(HybridTest, MergeScalar) { TestMerge<Scalar>(); }
+
+}  // namespace reindexer_tests

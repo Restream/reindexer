@@ -11,6 +11,8 @@
 #include "reindexer_api.h"
 #include "tools/serilize/wrserializer.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] TestQuery : private reindexer::Query {
 public:
 	using Query::Query;
@@ -31,6 +33,9 @@ public:
 class [[nodiscard]] QueriesApi : public ReindexerApi, public QueriesVerifier {
 public:
 	void SetUp() override {
+		using reindexer::CollateOpts;
+		using reindexer::IndexOpts;
+
 		ReindexerApi::SetUp();
 
 		setPkFields(default_namespace, {kFieldNameId, kFieldNameTemp});
@@ -402,6 +407,8 @@ protected:
 	}
 
 	void FillGeomNamespace() {
+		using namespace reindexer_tests_tools;
+
 		static size_t lastId = 0;
 		reindexer::WrSerializer ser;
 		for (size_t i = 0; i < geomNsSize; ++i) {
@@ -601,6 +608,8 @@ protected:
 	}
 
 	Item GenerateDefaultNsItem(int idValue, size_t packagesCount) {
+		using namespace reindexer_tests_tools;
+
 		Item item = NewItem(default_namespace);
 		item[kFieldNameId] = idValue;
 		item[kFieldNameYear] = rand() % 50 + 2000;
@@ -674,6 +683,8 @@ protected:
 	void CheckMergeQueriesWithAggregation();
 
 	void CheckGeomQueries() {
+		using namespace reindexer_tests_tools;
+
 		for (size_t i = 0; i < 10; ++i) {
 			// Checks that DWithin and sort by Distance work and verifies the result
 			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBin<double>(0, 1)));
@@ -873,6 +884,8 @@ protected:
 	}
 
 	void InitNSObj() {
+		using reindexer::IndexOpts;
+
 		rt.OpenNamespace(nsWithObject);
 		DefineNamespaceDataset(nsWithObject, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
 		reindexer::WrSerializer ser;
@@ -1269,3 +1282,5 @@ protected:
 	size_t conditionsNsSize = 0;
 	std::vector<std::pair<int, int>> forcedSortOffsetValues;
 };
+
+}  // namespace reindexer_tests

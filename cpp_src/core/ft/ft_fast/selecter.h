@@ -10,6 +10,7 @@ constexpr int kMaxStemSkipLen = 1;
 
 constexpr int kMinTypoVariantStemLen = 5;
 constexpr int kMinSplitVariantStemLen = 5;
+constexpr int kMinSplitSize = 2;
 
 class [[nodiscard]] TermVariant {
 public:
@@ -24,7 +25,8 @@ public:
 		  pref{other.pref},
 		  suff{other.suff},
 		  typos{other.typos},
-		  lowRelevance{other.lowRelevance} {}
+		  lowRelevance{other.lowRelevance},
+		  split{other.split} {}
 	TermVariant(std::string_view p, float pr, const TermVariant& other)
 		: proc{pr},
 		  stem{other.stem},
@@ -33,6 +35,7 @@ public:
 		  suff{other.suff},
 		  typos{other.typos},
 		  lowRelevance{other.lowRelevance},
+		  split{other.split},
 		  patternUtf8{p} {
 		utf8_to_utf16(patternUtf8, pattern);
 	}
@@ -46,6 +49,17 @@ public:
 		pref |= other.pref;
 		suff |= other.suff;
 		typos |= other.typos;
+		split |= other.split;
+	}
+
+	void RemovePossibleExtraTermSymbol(const SplitOptions& splitOptions) {
+		// #2507 Remove .,:; symbols from the end of the term pattern
+		if (pattern.size() > 1 && !splitOptions.IsWordSymbol(pattern.back())) {
+			pattern.pop_back();
+			if (!patternUtf8.empty()) {
+				utf16_to_utf8(pattern, patternUtf8);
+			}
+		}
 	}
 
 	std::wstring pattern;
@@ -58,6 +72,7 @@ public:
 	bool suff = false;
 	bool typos = false;
 	bool lowRelevance = false;
+	bool split = true;
 
 	const std::string& PatternUtf8() {
 		if (patternUtf8.empty() && !pattern.empty()) {
@@ -100,10 +115,12 @@ public:
 	void reserve(size_t capacity) { termVariants_.reserve(capacity); }
 	size_t size() const noexcept { return termVariants_.size(); }
 
+	TermVariant& back() noexcept { return termVariants_.back(); }
 	TermVariant& operator[](size_t idx) noexcept { return termVariants_[idx]; }
 	const TermVariant& operator[](size_t idx) const noexcept { return termVariants_[idx]; }
 
 	OpType Op() const noexcept { return termOpts_.op; }
+	const FtDslOpts& Opts() const noexcept { return termOpts_; }
 
 private:
 	StorageType termVariants_;
@@ -113,8 +130,8 @@ private:
 template <typename IdCont>
 class [[nodiscard]] Selector {
 public:
-	Selector(DataHolder<IdCont>& holder, size_t fieldSize, int maxAreasInDoc)
-		: holder_(holder), fieldSize_(fieldSize), maxAreasInDoc_(maxAreasInDoc) {}
+	Selector(DataHolder<IdCont>& holder, const SplitOptions& splitOptions, size_t fieldSize, int maxAreasInDoc)
+		: holder_(holder), splitOptions_(splitOptions), fieldSize_(fieldSize), maxAreasInDoc_(maxAreasInDoc) {}
 
 	template <FtUseExternStatuses useExternSt, typename MergedDataType>
 	MergedDataType Process(FtDSLQuery&& query, bool inTransaction, RankSortType rankSortType, FtMergeStatuses::Statuses&& docsExcluded,
@@ -137,6 +154,10 @@ private:
 	void boostVariants(TermVariants& termVariants);
 
 	template <FtUseExternStatuses useExternSt>
+	h_vector<size_t, 4> addSynonymsBySplittingTermVariants(TermVariants& termVariants, const FtMergeStatuses::Statuses& docsExcluded,
+														   ft::QueryMergeData<IdCont>& queryMergeData);
+
+	template <FtUseExternStatuses useExternSt>
 	ft::TermResults<IdCont> buildTermResults(const FtDSLEntry& term, TermVariants& termVariants,
 											 const FtMergeStatuses::Statuses& docsExcluded);
 
@@ -149,6 +170,7 @@ private:
 								FtMergeStatuses::Statuses& docsExcluded, bool inTransaction, const RdxContext& rdxCtx);
 
 	DataHolder<IdCont>& holder_;
+	const SplitOptions& splitOptions_;
 	size_t fieldSize_;
 	int maxAreasInDoc_;
 

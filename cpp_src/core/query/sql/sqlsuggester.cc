@@ -1,9 +1,10 @@
 
 #include "sqlsuggester.h"
 #include <unordered_map>
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 #include "core/query/query.h"
 #include "core/system_ns_names.h"
+#include "sql_suggestions.h"
 #include "sqltokentype.h"
 
 namespace reindexer {
@@ -12,8 +13,7 @@ static bool checkIfTokenStartsWith(std::string_view src, std::string_view patter
 	return checkIfStartsWith(src, pattern) && src.length() < pattern.length();
 }
 
-std::vector<std::string> SQLSuggester::GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces,
-													  GetSchemaF getSchema) {
+SQLSuggestions SQLSuggester::GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchema) {
 	Query query;
 	SQLSuggester suggester{query};
 	suggester.ctx_.suggestionsPos = pos;
@@ -21,13 +21,17 @@ std::vector<std::string> SQLSuggester::GetSuggestions(std::string_view q, size_t
 	suggester.enumNamespaces_ = std::move(enumNamespaces);
 	suggester.getSchema_ = std::move(getSchema);
 
+	SQLSuggestions result;
 	try {
 		Tokenizer tokens{q};
 		std::ignore = suggester.Parse(tokens);
-		// NOLINTBEGIN(bugprone-empty-catch)
-	} catch (const Error&) {
+	} catch (const SqlParserError& e) {
+		result.errorRange = e.Range();
+		result.errorMessage = e.whatStr();
+	} catch (const SQLParser::ErrorEOF&) {	// NOLINT(bugprone-empty-catch)
+	} catch (const Error& e) {
+		result.errorMessage = e.whatStr();
 	}
-	// NOLINTEND(bugprone-empty-catch)
 
 	for (SqlParsingCtx::SuggestionData& item : suggester.ctx_.suggestions) {
 		suggester.checkForTokenSuggestions(item);
@@ -35,10 +39,11 @@ std::vector<std::string> SQLSuggester::GetSuggestions(std::string_view q, size_t
 
 	for (auto& it : suggester.ctx_.suggestions) {
 		if (!it.variants.empty()) {
-			return {it.variants.begin(), it.variants.end()};
+			result.suggestions = {std::make_move_iterator(it.variants.begin()), std::make_move_iterator(it.variants.end())};
+			break;
 		}
 	}
-	return {};
+	return result;
 }
 
 static const std::unordered_map<SqlTokenType, std::unordered_set<std::string>> sqlTokenMatchings = {

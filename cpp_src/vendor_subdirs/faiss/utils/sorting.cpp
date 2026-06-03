@@ -21,6 +21,12 @@
 
 namespace faiss {
 
+#if _OPENMP >= 202011
+#define OMP_MASTER _Pragma("omp masked")
+#else
+#define OMP_MASTER _Pragma("omp master")
+#endif
+
 /*****************************************************************************
  * Argsort
  ****************************************************************************/
@@ -175,8 +181,14 @@ void fvec_argsort_parallel(size_t n, const float* vals, size_t* perm) {
         segs[t] = seg;
     }
 #ifdef FAISS_WITH_OPENMP
-    int prev_nested = omp_get_nested();
+#if _OPENMP >= 201811
+    const int max_supported_omp_levels = omp_get_supported_active_levels();
+    const int prev_active_levels = omp_get_max_active_levels();
+    omp_set_max_active_levels(max_supported_omp_levels);
+#else // _OPENMP < 201811
+    const int prev_nested = omp_get_nested();
     omp_set_nested(1);
+#endif // _OPENMP < 201811
 #endif // FAISS_WITH_OPENMP
 
     int nseg = nt;
@@ -207,7 +219,11 @@ void fvec_argsort_parallel(size_t n, const float* vals, size_t* perm) {
     }
     assert(permA == perm);
 #ifdef FAISS_WITH_OPENMP
+#if _OPENMP >= 201811
+    omp_set_max_active_levels(prev_active_levels);
+#else // _OPENMP < 201811
     omp_set_nested(prev_nested);
+#endif // _OPENMP < 201811
 #endif // FAISS_WITH_OPENMP
     delete[] perm2;
 }
@@ -297,7 +313,7 @@ void bucket_sort_parallel(
 #pragma omp barrier
 
         double t1 = getmillisecs();
-#pragma omp master
+OMP_MASTER
         {
             // compute cumulative sum
             for (size_t i = 0; i < vmax; i++) {
@@ -326,7 +342,7 @@ void bucket_sort_parallel(
 #pragma omp barrier
         double t3 = getmillisecs();
 
-#pragma omp master
+OMP_MASTER
         { // shift back lims
             for (size_t i = vmax; i > 0; i--) {
                 lims[i] = lims[i - 1];
@@ -530,7 +546,7 @@ void bucket_sort_inplace_parallel(
         // this thread's things to write
         ToWrite<TI>& to_write = all_to_write[rank];
 
-#pragma omp master
+OMP_MASTER
         {
             // compute cumulative sum
             for (size_t i = 0; i < nbucket; i++) {
@@ -575,7 +591,7 @@ void bucket_sort_inplace_parallel(
                 n_to_write += to_write_2.lims.back();
             }
 
-#pragma omp master
+OMP_MASTER
             {
                 if (verbose >= 1) {
                     printf("ROUND %d n_to_write=%zd\n", round, n_to_write);

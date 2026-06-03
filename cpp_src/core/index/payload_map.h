@@ -6,7 +6,6 @@
 #include "estl/extendible_hash_map.h"
 #include "sparse-map/sparse_map.h"
 #include "sparse-map/sparse_set.h"
-#include "vendor/hopscotch/hopscotch_map.h"
 #include "vendor/hopscotch/hopscotch_set.h"
 
 namespace reindexer {

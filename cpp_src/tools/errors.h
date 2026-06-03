@@ -7,6 +7,7 @@
 #include "core/type_consts.h"
 #include "estl/defines.h"
 #include "estl/intrusive_ptr.h"
+#include "estl/tokenizer_range.h"
 
 #if defined(REINDEX_CORE_BUILD)
 #include "fmt/format.h"
@@ -226,5 +227,28 @@ private:
 };
 
 std::ostream& operator<<(std::ostream& os, const Error& error);
+
+class [[nodiscard]] SqlParserError : public Error {
+public:
+	SqlParserError() noexcept = default;
+	template <typename... Args>
+	SqlParserError(TokenizerRange range, format_details::RxFormatString<Args...> fmt, Args&&... args) noexcept
+		: Error(errParseSQL, std::move(fmt), std::forward<Args>(args)...), range_(range) {}
+	SqlParserError(Error&& err, TokenizerRange range) noexcept : Error(std::move(err)), range_(range) {
+		assertrx_dbg(code() == errParseSQL);
+	}
+	SqlParserError(const Error& err, TokenizerRange range) noexcept : Error(err), range_(range) {
+		assertrx_dbg(code() == errParseSQL);
+	}
+
+	const Error& AsError() const& noexcept { return *this; }
+	Error&& AsError() && noexcept { return std::move(*this); }
+	auto AsError() const&& = delete;
+
+	TokenizerRange Range() const noexcept { return range_; }
+
+private:
+	TokenizerRange range_;
+};
 
 }  // namespace reindexer

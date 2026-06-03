@@ -3,6 +3,8 @@
 #include "ns_scheme.h"
 #include "random_generator.h"
 
+namespace reindexer_tests {
+
 namespace fuzzing {
 
 class Index;
@@ -28,3 +30,5 @@ private:
 };
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

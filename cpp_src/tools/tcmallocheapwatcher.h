@@ -14,18 +14,18 @@ class MallocExtension;
 
 namespace reindexer {
 
-class [[nodiscard]] TCMallocHeapWathcher {
+class [[nodiscard]] TCMallocHeapWatcher {
 public:
-	TCMallocHeapWathcher();
-	explicit TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio);
-	explicit TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio,
+	TCMallocHeapWatcher();
+	explicit TCMallocHeapWatcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio);
+	explicit TCMallocHeapWatcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio,
 								  std::shared_ptr<spdlog::logger> logger);
 
-	TCMallocHeapWathcher(const TCMallocHeapWathcher&) = delete;
-	TCMallocHeapWathcher& operator=(const TCMallocHeapWathcher&) = delete;
-	TCMallocHeapWathcher(TCMallocHeapWathcher&&) = default;
-	TCMallocHeapWathcher& operator=(TCMallocHeapWathcher&&) = default;
-	~TCMallocHeapWathcher();
+	TCMallocHeapWatcher(const TCMallocHeapWatcher&) = delete;
+	TCMallocHeapWatcher& operator=(const TCMallocHeapWatcher&) = delete;
+	TCMallocHeapWatcher(TCMallocHeapWatcher&&) = default;
+	TCMallocHeapWatcher& operator=(TCMallocHeapWatcher&&) = default;
+	~TCMallocHeapWatcher();
 
 	void CheckHeapUsagePeriodic();
 

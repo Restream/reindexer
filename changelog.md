@@ -1,3 +1,43 @@
+# Version 5.14.0 (03.06.2026)
+## Core
+- [fea] Improved heuristic for scan order selection when a multi-condition query requires sorting but background index optimization has not run (typical for mixed read/write workloads)
+- [fea] Improved planner logic for scan order selection when explicit sorting is not required
+- [fea] Replaced hash value mixing logic for `composite` indexes. The new implementation significantly reduces collision probability on insert into `hash-composite` indexes (mean insert time reduced by 5-20% depending on composite value composition)
+- [fix] Fixed `checksum mismatch` error when loading data from disk after removing a UUID index
+
+## Fulltext
+- [fea] Added term splitting (handles missing whitespace). For example, query `leonardodicaprio` can now match a document with `Leonardo Di'Caprio`. See `EnableTermsSplit` and `SplitProc` in the [fulltext index config](fulltext.md#base-config-parameters)
+- [fix] Fixed search for terms ending with a dot-character (`.`) — previously this conflicted with incorrect keyboard layout search
+- [fix] Fixed `EnableTranslit` and `EnableKbLayout` flag behavior — since v5.12.0, transliteration and wrong keyboard layout search could not be disabled by setting these flags to `False`
+
+## Vector indexes
+- [fea] Added support for vector arrays in [auto-embedding on insert](float_vector.md#embedding-configuration). Auto-embedding can now be used for data chunking on the embedding service side
+
+## Reindexer server
+- [fea] Added HTTP endpoints `POST /api/v1/query/convert/dsl` and `POST /api/v1/query/convert/sql` to convert and prettify SQL/DSL queries
+- [fea] HTTP endpoint `GET /db/{database}/suggest` now returns parsing error details
+- [fix] Fixed `--max-http-req=0` flag behavior. A zero value now sets the maximum request size to `unlimited`
+
+## Reindexer tool
+- [fea] Added `dry-run` mode to validate a dump file without applying it. [More on validation](cpp_src/cmd/reindexer_tool/readme.md#what-dry-run-validates)
+- [fea] Added progress bar display while applying a dump
+
+## Go connector
+- [fea] Optimized CJSON encoding/decoding
+- [fea] Optimized Query building process
+
+## Build/Deploy
+- [fea] Added pre-built packages for Fedora 43/44
+- [upd] Deprecated Fedora 41/42 pre-built packages
+
+## Face
+- [fea] Added `queued_namespace_syncs` column to `Statistics` table
+- [fea] Implemented Backend-side `Prettify` for Frontend: the new prettify version not only formats the query but also places parentheses according to actual operator precedence
+- [fea] Improved error interpretation for SQL editor
+- [fea] Added `EnableTermsSplit` and `SplitProc` to `Fulltext` config
+- [fix] Fixed default value for UUID field
+
+
 # Version 5.13.0 (29.04.2026)
 ## Core
 - [fea] Optimized [grouping equal positions](readme.md#search-in-array-fields-with-matching-indexes-using-grouping) comparator

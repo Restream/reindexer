@@ -5,6 +5,10 @@
 #include "core/reindexer.h"
 #include "queries_verifier.h"
 
+namespace reindexer_tests {
+
+namespace fuzzing {
+
 class [[nodiscard]] Fuzzing : public QueriesVerifier {
 public:
 	void SetUp() override {
@@ -22,3 +26,7 @@ private:
 protected:
 	reindexer::Reindexer rx_;
 };
+
+}  // namespace fuzzing
+
+}  // namespace reindexer_tests

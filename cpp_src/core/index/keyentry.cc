@@ -66,6 +66,7 @@ KeyEntry<IdSetT>::IdSetRef KeyEntry<IdSetT>::sortedIDsView(SortType sortId) & no
 	requires(concepts::IdSetWithSortedIDs<IdSetT>)
 {
 	const size_t size = IdSetT::plainSize(), capacity = IdSetT::plainCapacity();
+	(void)capacity;
 	assertrx_dbg(IdSetT::IsCommitted());
 	assertf(capacity >= (sortId + 1) * size, "error ids_.capacity()={},sortId={},ids_.size()={}", capacity, sortId, size);
 	return IdSetRef(IdSetT::plainData() + sortId * size, size);

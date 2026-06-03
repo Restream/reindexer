@@ -2,8 +2,17 @@
 
 #include <cstring>
 #include <functional>
-#include "sparse-map/sparse_map.h"
+#include <memory>
+#include "estl/defines.h"
 #include "tools/assertrx.h"
+
+namespace tsl {
+namespace detail_sparse_hash {
+class ThreadTaskQueue;
+}
+}  // namespace tsl
+
+namespace reindexer {
 
 template <size_t NumBucketsInPart = (1 << 19), size_t NumBitsToSelectPart = 13, size_t MinLoadFactorPercents = 10,
 		  size_t MaxLoadFactorPercents = 65>
@@ -176,11 +185,11 @@ public:
 	size_t max_load_factor() const noexcept { return kMaxLoadFactor; }
 
 	template <class... Args>
-	std::pair<iterator, bool> emplace(const Key& key, Args&&... value_type_args) {
+	RX_ALWAYS_INLINE std::pair<iterator, bool> emplace(const Key& key, Args&&... value_type_args) {
 		return insert(key, std::forward<Args>(value_type_args)...);
 	}
 
-	void erase(iterator it) {
+	RX_ALWAYS_INLINE void erase(iterator it) {
 		assertrx_dbg(it.it_ != parts_[it.partIdx_]->end());
 		std::ignore = parts_[it.partIdx_]->erase(it.it_);
 		--size_;
@@ -189,44 +198,57 @@ public:
 	}
 
 	template <class K>
-	size_t erase(const K& key) {
+	RX_ALWAYS_INLINE size_t erase(const K& key) {
 		size_t hash = h_(key);
-		rebalance(partIdx(hash));
+		size_t pIdx = partIdx(hash);
 
-		size_t res = parts_[partIdx(hash)]->erase(key, hash);
+		size_t res = parts_[pIdx]->erase(key, hash);
 		size_ -= res;
 		removesCounter_ += res;
+		rebalance(pIdx);
 		return res;
 	}
 
-	std::pair<iterator, bool> insert(const value_type& v) { return insert(v.first, v.second); }
+	RX_ALWAYS_INLINE std::pair<iterator, bool> insert(const value_type& v) { return insert(v.first, v.second); }
 
 	template <class K, class... Args>
-	std::pair<iterator, bool> insert(const K& key, Args&&... value_type_args) {
+	RX_ALWAYS_INLINE std::pair<iterator, bool> insert(const K& key, Args&&... value_type_args) {
 		size_t hash = h_(key);
+		// Rebalance before insertion to avoid iterator's invalidation
 		rebalance(partIdx(hash));
 		auto res = insert_impl_with_hash(key, hash, std::forward<Args>(value_type_args)...);
-		if (res.second) {
-			++size_;
-		}
+		size_ += res.second;
 		return res;
 	}
 
-	T& operator[](const Key& key) {
-		size_t hash = h_(key);
-		rebalance(partIdx(hash));
-
-		auto res = parts_[partIdx(hash)]->try_emplace_with_hash(hash, key);
-
-		if (res.second) {
-			++size_;
+	template <class LookupKey, std::invocable MaterilizeKeyT, class... Args>
+	RX_ALWAYS_INLINE std::pair<iterator, bool> find_or_insert(const LookupKey& lookupKey, MaterilizeKeyT&& materializeKey,
+															  Args&&... value_type_args) {
+		size_t hash = h_(lookupKey);
+		size_t pIdx = partIdx(hash);
+		auto it = parts_[pIdx]->find(lookupKey, hash);
+		if (it != parts_[pIdx]->end()) {
+			return {iterator(this, pIdx, it), false};
 		}
 
+		// Rebalance before insertion to avoid iterator's invalidation
+		rebalance(pIdx);
+		auto res = insert_impl_with_hash(materializeKey(), hash, std::forward<Args>(value_type_args)...);
+		size_ += res.second;
+		return res;
+	}
+
+	RX_ALWAYS_INLINE T& operator[](const Key& key) {
+		size_t hash = h_(key);
+		// Rebalance before insertion to avoid iterator's invalidation
+		rebalance(partIdx(hash));
+		auto res = parts_[partIdx(hash)]->try_emplace_with_hash(hash, key);
+		size_ += res.second;
 		return res.first->second;
 	}
 
 	template <class K>
-	iterator find(const K& key) {
+	RX_ALWAYS_INLINE iterator find(const K& key) {
 		size_t hash = h_(key);
 		size_t pIdx = partIdx(hash);
 		auto it = parts_[pIdx]->find(key, hash);
@@ -238,7 +260,7 @@ public:
 	}
 
 	template <class K>
-	const_iterator find(const K& key) const {
+	RX_ALWAYS_INLINE const_iterator find(const K& key) const {
 		size_t hash = h_(key);
 		size_t pIdx = partIdx(hash);
 		auto it = parts_[pIdx]->find(key, hash);
@@ -284,27 +306,28 @@ public:
 		size_t pos = 0;
 		uint32_t partsUsed = 0;
 		uint32_t tmp = 0;
-		loadFromStats(stats, pos, partsUsed);
-		loadFromStats(stats, pos, tmp);
-		if (tmp != kMaxParts) {
+
+		if (!safeLoadFromStats(stats, pos, partsUsed) || !safeLoadFromStats(stats, pos, tmp)) {
 			return false;
 		}
-		if (partsUsed > kMaxParts) {
+
+		if (tmp != kMaxParts || partsUsed > kMaxParts) {
 			return false;
 		}
 
 		for (size_t i = 0; i < partsUsed; ++i) {
 			uint32_t buckets_count = 0;
-			loadFromStats(stats, pos, buckets_count);
-			if (buckets_count > kMaxBucketsCountForCorrectStats) {
+			if (!safeLoadFromStats(stats, pos, buckets_count) || buckets_count > kMaxBucketsCountForCorrectStats) {
 				return false;
 			}
 
 			uint32_t sz = 0;
-			loadFromStats(stats, pos, sz);
+			if (!safeLoadFromStats(stats, pos, sz)) {
+				return false;
+			}
 
 			const uint8_t* b = reinterpret_cast<const uint8_t*>(&stats[pos]);
-			if (!BaseHashMapType::stats_correct(buckets_count, b, sz)) {
+			if (pos + sz > stats.size() || !BaseHashMapType::stats_correct(buckets_count, b, sz)) {
 				return false;
 			}
 			pos += sz;
@@ -312,8 +335,7 @@ public:
 
 		for (size_t i = 0; i < kMaxParts; ++i) {
 			uint32_t partToUse = 0;
-			loadFromStats(stats, pos, partToUse);
-			if (partToUse >= partsUsed) {
+			if (!safeLoadFromStats(stats, pos, partToUse) || partToUse >= partsUsed) {
 				return false;
 			}
 		}
@@ -384,16 +406,29 @@ public:
 	size_t num_parts() const noexcept { return partsUsed_; }
 
 private:
-	size_t partIdx(size_t hash) const noexcept { return partsToUse_[hash & (kMaxParts - 1)]; }
+	RX_ALWAYS_INLINE size_t partIdx(size_t hash) const noexcept { return partsToUse_[hash & (kMaxParts - 1)]; }
 
 	void addToStats(std::vector<char>& stats, uint32_t v) const {
 		stats.resize(stats.size() + sizeof(v));
 		memcpy(&stats[stats.size() - sizeof(v)], &v, sizeof(v));
 	}
 
+	template <class ValueType>
+	bool hasValue(const std::vector<char>& stats, size_t pos, const ValueType&) const noexcept {
+		return pos + sizeof(ValueType) <= stats.size();
+	}
+
 	void loadFromStats(const std::vector<char>& stats, size_t& pos, uint32_t& v) const noexcept {
 		memcpy(&v, &stats[pos], sizeof(v));
 		pos += sizeof(v);
+	}
+
+	bool safeLoadFromStats(const std::vector<char>& stats, size_t& pos, uint32_t& v) const noexcept {
+		if (!hasValue(stats, pos, v)) {
+			return false;
+		}
+		loadFromStats(stats, pos, v);
+		return true;
 	}
 
 	template <class K, class... Args>
@@ -483,22 +518,29 @@ private:
 		--partsUsed_;
 	}
 
-	void rebalance(size_t partIdx) {
+	RX_ALWAYS_INLINE void rebalance(size_t partIdx) {
 		if (parts_[partIdx]->size() >= kCriticalPartSize && partsSplitCounts_[partIdx] > 1) [[unlikely]] {
-			addNewPart();
-			rebalanceParts(partIdx, partsUsed_ - 1);
+			rebalanceAddNewPartImpl(partIdx);
 		} else if (removesCounter_ > kNumRemovesToJoinMinParts && parts_[partIdx]->size() < kMinPartSize && partsUsed_ > 1) [[unlikely]] {
-			removesCounter_ = 0;
-			size_t smallest = partIdx != 0 ? 0 : 1;
-			for (size_t i = 0; i < partsUsed_; ++i) {
-				if (i != partIdx && parts_[i]->size() < parts_[smallest]->size()) {
-					smallest = i;
-				}
-			}
+			rebalanceJoinPartsImpl(partIdx);
+		}
+	}
+	RX_NO_INLINE void rebalanceAddNewPartImpl(size_t partIdx) {
+		addNewPart();
+		rebalanceParts(partIdx, partsUsed_ - 1);
+	}
 
-			if (parts_[partIdx]->size() + parts_[smallest]->size() <= kCriticalPartSize / 2) {
-				joinParts(partIdx, smallest);
+	RX_NO_INLINE void rebalanceJoinPartsImpl(size_t partIdx) {
+		removesCounter_ = 0;
+		size_t smallest = partIdx != 0 ? 0 : 1;
+		for (size_t i = 0; i < partsUsed_; ++i) {
+			if (i != partIdx && parts_[i]->size() < parts_[smallest]->size()) {
+				smallest = i;
 			}
+		}
+
+		if (parts_[partIdx]->size() + parts_[smallest]->size() <= kCriticalPartSize / 2) {
+			joinParts(partIdx, smallest);
 		}
 	}
 
@@ -513,3 +555,5 @@ private:
 
 	size_t removesCounter_ = 0;
 };
+
+}  // namespace reindexer

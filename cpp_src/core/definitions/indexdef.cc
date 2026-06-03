@@ -1,9 +1,9 @@
-#include "core/indexdef.h"
-#include "cjson/jsonbuilder.h"
+#include "core/definitions/indexdef.h"
+#include "core/cjson/jsonbuilder.h"
+#include "core/type_consts_helpers.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
 #include "tools/serilize/wrserializer.h"
-#include "type_consts_helpers.h"
 #include "vendor/frozen/unordered_map.h"
 
 namespace {
@@ -14,8 +14,10 @@ static constexpr auto kCondsGeneral = {"SET"sv, "ALLSET"sv, "EQ"sv, "LT"sv, "LE"
 static constexpr auto kCondsGeneralArray = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
 static constexpr auto kCondsGeneralSparse = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv};
 static constexpr auto kCondsString = {"SET"sv, "ALLSET"sv, "EQ"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv, "LIKE"sv};
-static constexpr auto kCondsStringArray = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv, "LIKE"sv};
-static constexpr auto kCondsStringSparse = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv, "EMPTY"sv, "LT"sv, "LE"sv, "GT"sv, "GE"sv, "RANGE"sv, "LIKE"sv};
+static constexpr auto kCondsStringArray = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv,   "EMPTY"sv, "LT"sv,
+										   "LE"sv,	"GT"sv,		"GE"sv, "RANGE"sv, "LIKE"sv};
+static constexpr auto kCondsStringSparse = {"SET"sv, "ALLSET"sv, "EQ"sv, "ANY"sv,	"EMPTY"sv, "LT"sv,
+											"LE"sv,	 "GT"sv,	 "GE"sv, "RANGE"sv, "LIKE"sv};
 static constexpr auto kCondsText = {"EQ"sv, "SET"sv};
 static constexpr auto kCondsGeom = {"DWITHIN"sv};
 static constexpr auto kCondsVector = {"KNN"sv, "ANY"sv, "EMPTY"sv};
@@ -223,6 +225,27 @@ IndexDef::DiffResult IndexDef::Compare(const IndexDef& o) const noexcept {
 		.Set(opts_.Compare(o.opts_));
 }
 
+bool IndexDef::IsBasicCompatibility(const DiffResult& diff) noexcept {
+	// clang-format off
+	return diff.AllOfIsEqual(
+		IndexDef::Diff::Name,
+		IndexDef::Diff::IndexType,
+		IndexDef::Diff::FieldType,
+		IndexDef::Diff::JsonPaths,
+		IndexDef::Diff::ExpireAfter,
+
+		IndexOpts::OptsDiff::kIndexOptPK,
+		IndexOpts::OptsDiff::kIndexOptSparse,
+		IndexOpts::OptsDiff::kIndexOptArray,
+
+		IndexOpts::ParamsDiff::CollateOpts,
+		IndexOpts::ParamsDiff::RTreeIndexType,
+
+		FloatVectorIndexOpts::Diff::Base
+	);
+	// clang-format on
+}
+
 ::IndexType IndexDef::DetermineIndexType(std::string_view indexName, std::string_view indexType, std::string_view fieldType) {
 	if (indexType == ""sv) {
 		if (fieldType == "double"sv) {
@@ -285,22 +308,22 @@ IndexDef IndexDef::FromJSON(const gason::JsonNode& root) {
 	auto indexType = root["index_type"sv].As<std::string>();
 	auto expireAfter = root["expire_after"sv].As<int64_t>();
 	const auto indexTypeEnum = DetermineIndexType(name, indexType, fieldType);
-	IndexOpts opts;
-	opts.PK(root["is_pk"sv].As<bool>());
-	opts.Array(root["is_array"sv].As<bool>());
-	opts.Dense(root["is_dense"sv].As<bool>());
-	opts.Sparse(root["is_sparse"sv].As<bool>());
+	IndexOpts opts = IndexOpts()
+						 .PK(root["is_pk"sv].As<bool>())
+						 .Array(root["is_array"sv].As<bool>())
+						 .Dense(root["is_dense"sv].As<bool>())
+						 .Sparse(root["is_sparse"sv].As<bool>());
 	auto isDisableColumnIndexNode = root["is_no_column"];
 	if (isDisableColumnIndexNode.isEmpty()) {
-		opts.NoIndexColumn(*opts.IsDense() || *opts.IsSparse() || *opts.IsArray() || IsComposite(indexTypeEnum) ||
-						   IsFullText(indexTypeEnum) || IsFloatVector(indexTypeEnum));
+		std::ignore = opts.NoIndexColumn(*opts.IsDense() || *opts.IsSparse() || *opts.IsArray() || IsComposite(indexTypeEnum) ||
+										 IsFullText(indexTypeEnum) || IsFloatVector(indexTypeEnum));
 	} else {
-		opts.NoIndexColumn(isDisableColumnIndexNode.As<bool>());
+		std::ignore = opts.NoIndexColumn(isDisableColumnIndexNode.As<bool>());
 	}
 	if (fieldType == "uuid"sv && opts.IsSparse()) {
 		throw Error(errParams, "UUID index cannot be sparse");
 	}
-	opts.SetConfig(indexTypeEnum, stringifyJson(root["config"sv]));
+	std::ignore = opts.SetConfig(indexTypeEnum, stringifyJson(root["config"sv]));
 	const std::string rtreeType = root["rtree_type"sv].As<std::string>();
 	if (rtreeType.empty()) {
 		if (indexType == "rtree"sv || fieldType == "point"sv) {
@@ -308,13 +331,13 @@ IndexDef IndexDef::FromJSON(const gason::JsonNode& root) {
 		}
 	} else {
 		if (rtreeType == kRTreeLinear) {
-			opts.RTreeType(IndexOpts::Linear);
+			std::ignore = opts.RTreeType(IndexOpts::Linear);
 		} else if (rtreeType == kRTreeQuadratic) {
-			opts.RTreeType(IndexOpts::Quadratic);
+			std::ignore = opts.RTreeType(IndexOpts::Quadratic);
 		} else if (rtreeType == kRTreeGreene) {
-			opts.RTreeType(IndexOpts::Greene);
+			std::ignore = opts.RTreeType(IndexOpts::Greene);
 		} else if (rtreeType == kRTreeRStar) {
-			opts.RTreeType(IndexOpts::RStar);
+			std::ignore = opts.RTreeType(IndexOpts::RStar);
 		} else {
 			throw Error(errParams, "Unknown RTree type {}", rtreeType);
 		}
@@ -328,7 +351,7 @@ IndexDef IndexDef::FromJSON(const gason::JsonNode& root) {
 			throw Error(errParams, "Unknown collate mode {}", collateStr);
 		}
 		CollateMode collateValue = collateIt->first;
-		opts.SetCollateMode(collateValue);
+		std::ignore = opts.SetCollateMode(collateValue);
 		if (collateValue == CollateCustom) {
 			opts.collateOpts_ = CollateOpts(root["sort_order_letters"sv].As<std::string>());
 		}

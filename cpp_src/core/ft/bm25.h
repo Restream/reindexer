@@ -1,6 +1,7 @@
 #pragma once
 
 #include <math.h>
+#include "estl/defines.h"
 
 namespace reindexer {
 

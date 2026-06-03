@@ -86,7 +86,7 @@ Error EmbedderBase::GetLastError() const { return statistic_.lastError.GetLastEr
 bool EmbedderBase::GetLastStatus() const noexcept { return statistic_.lastStatus.load(std::memory_order_relaxed); }
 
 void EmbedderBase::calculate(const RdxContext& ctx, const embedding::Adapter& srcAdapter, system_clock_w::time_point tmStart,
-							 bool enablePerfStat, h_vector<ConstFloatVector, 1>& products) const {
+							 bool enablePerfStat, embedding::ValueT& products) const {
 	if (enablePerfStat) {
 		statistic_.totalQueriesCount.fetch_add(1, std::memory_order_relaxed);
 	}
@@ -99,7 +99,7 @@ void EmbedderBase::calculate(const RdxContext& ctx, const embedding::Adapter& sr
 		auto product = cache_->Get(config_.tag, srcAdapter, enablePerfStat);
 		if (product.has_value()) {
 			PerfStatCalculatorMT embedderTimesCachCalculator(statistic_.embedderTimesCache, tmStart, enablePerfStat);
-			products.emplace_back(std::move(product.value()));
+			products.insert(products.end(), std::make_move_iterator(product->begin()), std::make_move_iterator(product->end()));
 			return;	 // NOTE: stop calculation
 		}
 	}
@@ -124,7 +124,7 @@ void EmbedderBase::calculate(const RdxContext& ctx, const embedding::Adapter& sr
 	}
 
 	logFmt(LogTrace, "Embedding data: {}", response.content);
-	auto error = embedding::Adapter::VectorFromJSON(response.content, products);
+	auto error = embedding::Adapter::VectorsFromJSON(response.content, products);
 	if (!error.ok()) {
 		throw error;
 	}
@@ -143,7 +143,7 @@ bool UpsertEmbedder::IsAuxiliaryField(std::string_view fieldName) const noexcept
 }
 
 void UpsertEmbedder::Calculate(const RdxContext& ctx, std::span<const std::vector<std::pair<std::string, VariantArray>>> sources,
-							   h_vector<ConstFloatVector, 1>& products) const {
+							   embedding::ValueT& products) const {
 	const bool enablePerfStat = enablePerfStat_.load(std::memory_order_relaxed);
 	PerfStatCalculatorMT allTime(statistic_.embedderTimes, enablePerfStat);
 	system_clock_w::time_point tmStart;
@@ -189,7 +189,7 @@ QueryEmbedder::QueryEmbedder(std::string_view name, std::string_view fieldName, 
 							 const std::shared_ptr<EmbeddersCache>& cache, bool enablePerfStat)
 	: EmbedderBase(name, kFormatText, fieldName, std::move(config), std::move(poolConfig), cache), enablePerfStat_(enablePerfStat) {}
 
-void QueryEmbedder::Calculate(const RdxContext& ctx, const std::string& text, h_vector<ConstFloatVector, 1>& products) const {
+void QueryEmbedder::Calculate(const RdxContext& ctx, const std::string& text, embedding::ValueT& products) const {
 	const bool enablePerfStat = enablePerfStat_.load(std::memory_order_relaxed);
 	PerfStatCalculatorMT allTime(statistic_.embedderTimes, enablePerfStat);
 	system_clock_w::time_point tmStart;

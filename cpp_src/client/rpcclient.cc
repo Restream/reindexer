@@ -4,8 +4,9 @@
 #include "client/snapshot.h"
 #include "cluster/clustercontrolrequest.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
+#include "core/definitions/namespacedef.h"
 #include "core/namespace/namespacestat.h"
-#include "core/namespacedef.h"
+#include "core/query/sql/sql_suggestions.h"
 #include "core/schema.h"
 #include "estl/dummy_mutex.h"
 #include "estl/gift_str.h"
@@ -572,16 +573,16 @@ Error RPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalR
 	}
 }
 
-Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string>& suggests) {
+Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, SQLSuggestions& suggests) {
 	try {
 		auto ret = conn_.Call(mkCommand(cproto::kCmdGetSQLSuggestions), query, pos);
 		if (ret.Status().ok()) {
 			auto rargs = ret.GetArgs();
-			suggests.clear();
-			suggests.reserve(rargs.size());
+			suggests.suggestions.clear();
+			suggests.suggestions.reserve(rargs.size());
 
 			for (auto& rarg : rargs) {
-				suggests.push_back(rarg.As<std::string>());
+				suggests.suggestions.push_back(rarg.As<std::string>());
 			}
 		}
 		return ret.Status();

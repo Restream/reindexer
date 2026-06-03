@@ -115,38 +115,8 @@ ComparatorNotIndexed::ImplVariantType ComparatorNotIndexed::createImpl(CondType 
 																	   reindexer::IsDistinct distinct) {
 	using namespace comparators;
 	if (distinct) {
-		switch (cond) {
-			case CondEq:
-			case CondSet:
-			case CondAllSet:
-				if (values.size() == 1) {
-					return ComparatorNotIndexedImpl<CondEq, true>{values, payloadType, fieldPath};
-				} else if (cond == CondAllSet) {
-					return ComparatorNotIndexedImpl<CondAllSet, true>{values, payloadType, fieldPath};
-				} else {
-					return ComparatorNotIndexedImpl<CondSet, true>{values, payloadType, fieldPath};
-				}
-			case CondLt:
-				return ComparatorNotIndexedImpl<CondLt, true>{values, payloadType, fieldPath};
-			case CondLe:
-				return ComparatorNotIndexedImpl<CondLe, true>{values, payloadType, fieldPath};
-			case CondGt:
-				return ComparatorNotIndexedImpl<CondGt, true>{values, payloadType, fieldPath};
-			case CondGe:
-				return ComparatorNotIndexedImpl<CondGe, true>{values, payloadType, fieldPath};
-			case CondRange:
-				return ComparatorNotIndexedImpl<CondRange, true>{values, payloadType, fieldPath};
-			case CondLike:
-				return ComparatorNotIndexedImpl<CondLike, true>{values, payloadType, fieldPath};
-			case CondDWithin:
-				return ComparatorNotIndexedImpl<CondDWithin, true>{values, payloadType, fieldPath};
-			case CondAny:
-				return ComparatorNotIndexedImpl<CondAny, true>{payloadType, fieldPath};
-			case CondEmpty:
-				return ComparatorNotIndexedImpl<CondEmpty, true>{payloadType, fieldPath};
-			case CondKnn:
-				throw_as_assert;
-		}
+		assertrx_throw(cond == CondAny);
+		return ComparatorNotIndexedImpl<CondAny, true>{payloadType, fieldPath};
 	} else {
 		switch (cond) {
 			case CondEq:

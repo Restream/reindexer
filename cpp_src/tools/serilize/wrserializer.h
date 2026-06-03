@@ -252,6 +252,7 @@ public:
 		if (!v.IsStrippedOrEmpty()) {
 			const uint64_t memSize = sizeof(Float) * v.Dimension().Value();
 			grow(memSize);
+			// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 			memcpy(&buf_[len_], v.Data(), memSize);
 			len_ += memSize;
 		}
@@ -426,7 +427,7 @@ public:
 	size_t Len() const noexcept { return len_; }
 	size_t Cap() const noexcept { return cap_; }
 	void Reserve(size_t cap) {
-		if (cap > cap_) {
+		if (cap > cap_) [[unlikely]] {
 			auto b = std::make_unique<uint8_t[]>(cap);
 			memcpy(b.get(), buf_, len_);
 			if (HasAllocatedBuffer()) {
@@ -442,7 +443,7 @@ public:
 
 protected:
 	RX_ALWAYS_INLINE void grow(size_t sz) {
-		if (len_ + sz > cap_) {
+		if (len_ + sz > cap_) [[unlikely]] {
 			Reserve(growthPolicy_.GetNewCapacity(cap_, len_ + sz));
 			assertrx_dbg(len_ + sz <= cap_);
 		}

@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include "core/indexopts.h"
+#include "core/definitions/collateopts.h"
 #include "core/keyvalue/variant.h"
 #include "core/type_consts.h"
 #include "estl/comparation_result.h"

@@ -4,6 +4,8 @@
 #include "core/reindexer.h"
 #include "tools/fsops.h"
 
+namespace reindexer_benchmarks {
+
 std::string HumanReadableNumber(size_t number, bool si, const std::string& unitLabel) {
 	const std::string siPrefix = "kMGTPE";
 	const std::string prefix = "KMGTPE";
@@ -80,3 +82,5 @@ std::shared_ptr<reindexer::Reindexer> InitBenchDB(std::string_view dbDir) {
 	}
 	return DB;
 }
+
+}  // namespace reindexer_benchmarks

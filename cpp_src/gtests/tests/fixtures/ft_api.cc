@@ -1,6 +1,10 @@
 #include "ft_api.h"
 
+namespace reindexer_tests {
+
 void FTApi::Init(const reindexer::FTConfig& ftCfg, unsigned nses, const std::string& storage) {
+	using reindexer::IndexOpts;
+
 	rt.reindexer = std::make_shared<reindexer::Reindexer>();
 	rt.Connect("builtin://" + storage);
 
@@ -66,7 +70,7 @@ reindexer::Error FTApi::SetFTConfig(const reindexer::FTConfig& ftCfg, std::strin
 								 [&index](const reindexer::IndexDef& idef) { return idef.Name() == index; });
 	assertrx(it != nses[0].indexes.end());
 	auto opts = it->Opts();
-	opts.SetConfig(IndexFastFT, GetFTConfigJSON(ftCfg, fields));
+	std::ignore = opts.SetConfig(IndexFastFT, GetFTConfigJSON(ftCfg, fields));
 	it->SetOpts(std::move(opts));
 
 	return rt.reindexer->UpdateIndex(ns, *it);
@@ -360,3 +364,5 @@ void FTApi::CheckResults(const std::string& query, const reindexer::QueryResults
 					  << printQueryResults(qr, kHas3Fields);
 	}
 }
+
+}  // namespace reindexer_tests

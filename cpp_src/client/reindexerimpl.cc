@@ -193,7 +193,7 @@ Error ReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string>&
 Error ReindexerImpl::DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx) {
 	return sendCommand<Error>(DbCmdDeleteMeta, ctx, std::move(nsName), key);
 }
-Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions) {
+Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions) {
 	return sendCommand<Error>(DbCmdGetSqlSuggestions, InternalRdxContext(), std::move(sqlQuery), std::move(pos), suggestions);
 }
 
@@ -586,7 +586,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				break;
 			}
 			case DbCmdGetSqlSuggestions: {
-				execCommand(cmd, [&conn](std::string_view query, int pos, std::vector<std::string>& suggests) {
+				execCommand(cmd, [&conn](std::string_view query, int pos, SQLSuggestions& suggests) {
 					return conn.rx.GetSqlSuggestions(query, pos, suggests);
 				});
 				break;

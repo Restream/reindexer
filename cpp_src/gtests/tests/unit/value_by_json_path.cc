@@ -4,6 +4,9 @@
 #include "core/payload/payloadiface.h"
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
 using reindexer::PayloadType;
 using reindexer::PayloadFieldType;
 using reindexer::Payload;
@@ -462,3 +465,5 @@ TEST_F(ReindexerApi, PayloadSetArrayErrorsHandling) {
 	pl.Get(1, out);
 	EXPECT_EQ(out, unaffectedArray);
 }
+
+}  // namespace reindexer_tests

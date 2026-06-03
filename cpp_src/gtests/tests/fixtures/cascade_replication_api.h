@@ -3,6 +3,8 @@
 #include "servercontrol.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
 template <typename T>
 class [[nodiscard]] CascadeReplicationApiP : public ::testing::TestWithParam<T> {
 protected:
@@ -76,3 +78,5 @@ public:
 
 using CascadeReplicationApi = CascadeReplicationApiP<void*>;
 using Sq8CascadeReplicationApi = CascadeReplicationApiP<sq8_test::TestSyncType>;
+
+}  // namespace reindexer_tests

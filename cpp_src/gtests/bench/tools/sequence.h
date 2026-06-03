@@ -6,6 +6,8 @@
 
 #include "helpers.h"
 
+namespace reindexer_benchmarks {
+
 namespace internal {
 
 template <typename fromT, typename toT>
@@ -74,3 +76,5 @@ private:
 };
 
 using Sequence = SequenceBase<int>;
+
+}  // namespace reindexer_benchmarks

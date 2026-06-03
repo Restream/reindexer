@@ -31,6 +31,8 @@
   * [Get namespace schema](#get-namespace-schema)
   * [Set namespace schema](#set-namespace-schema)
   * [Get protobuf communication parameters schema](#get-protobuf-communication-parameters-schema)
+  * [Convert SQL query](#convert-sql-query)
+  * [Convert DSL query](#convert-dsl-query)
   * [Query documents from namespace](#query-documents-from-namespace)
   * [Update documents in namespace](#update-documents-in-namespace-1)
   * [Query documents from namespace](#query-documents-from-namespace-1)
@@ -95,6 +97,7 @@
   * [MetaByKeyResponse](#metabykeyresponse)
   * [Items](#items)
   * [SuggestItems](#suggestitems)
+  * [QueryConversionResponse](#queryconversionresponse)
   * [QueryItems](#queryitems)
   * [Indexes](#indexes)
   * [ExplainDef](#explaindef)
@@ -105,6 +108,7 @@
   * [DistinctMultiItemDef](#distinctmultiitemdef)
   * [QueryColumnDef](#querycolumndef)
   * [StatusResponse](#statusresponse)
+  * [SqlStatusResponse](#sqlstatusresponse)
   * [ItemsUpdateResponse](#itemsupdateresponse)
   * [UpdateResponse](#updateresponse)
   * [DatabaseMemStats](#databasememstats)
@@ -152,7 +156,7 @@
 
 <!-- tocstop -->
 
-> Version 5.13.0
+> Version 5.14.0
 
 ## Overview
 
@@ -193,6 +197,8 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | GET | [/db/{database}/namespaces/{name}/schema](#getdbdatabasenamespacesnameschema) | Get namespace schema |
 | PUT | [/db/{database}/namespaces/{name}/schema](#putdbdatabasenamespacesnameschema) | Set namespace schema |
 | GET | [/db/{database}/protobuf_schema](#getdbdatabaseprotobuf_schema) | Get protobuf communication parameters schema |
+| POST | [/query/convert/sql](#postqueryconvertsql) | Convert SQL query |
+| POST | [/query/convert/dsl](#postqueryconvertdsl) | Convert DSL query |
 | GET | [/db/{database}/query](#getdbdatabasequery) | Query documents from namespace |
 | PUT | [/db/{database}/query](#putdbdatabasequery) | Update documents in namespace |
 | POST | [/db/{database}/query](#postdbdatabasequery) | Query documents from namespace |
@@ -261,6 +267,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | MetaByKeyResponse | [MetaByKeyResponse](#metabykeyresponse) | Meta info of the specified namespace |
 | Items | [Items](#items) |  |
 | SuggestItems | [SuggestItems](#suggestitems) |  |
+| QueryConversionResponse | [QueryConversionResponse](#queryconversionresponse) |  |
 | QueryItems | [QueryItems](#queryitems) |  |
 | Indexes | [Indexes](#indexes) |  |
 | ExplainDef | [ExplainDef](#explaindef) |  |
@@ -271,6 +278,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | DistinctMultiItemDef | [DistinctMultiItemDef](#distinctmultiitemdef) | Distinct fields values |
 | QueryColumnDef | [QueryColumnDef](#querycolumndef) | Query columns for table outputs |
 | StatusResponse | [StatusResponse](#statusresponse) |  |
+| SqlStatusResponse | [SqlStatusResponse](#sqlstatusresponse) |  |
 | ItemsUpdateResponse | [ItemsUpdateResponse](#itemsupdateresponse) |  |
 | UpdateResponse | [UpdateResponse](#updateresponse) |  |
 | DatabaseMemStats | [DatabaseMemStats](#databasememstats) |  |
@@ -3237,6 +3245,398 @@ ns?: string[]
 
 ***
 
+### Convert SQL query
+
+```
+[POST]/query/convert/sql
+```
+
+- Operation id  
+convertSqlQuery
+
+
+Get SQL query and convert it into sql, prettified sql or dsl formats
+
+#### Parameters(Query)
+
+```typescript
+to: enum[sql, pretty_sql, dsl]
+```
+
+#### RequestBody
+
+- */*
+
+```typescript
+string
+```
+
+#### Responses
+
+- 200 Successful operation
+
+`application/json`
+
+```typescript
+{
+  format?: enum[sql, pretty_sql, dsl]
+  query?: Query | string
+}
+```
+
+- 400 Invalid arguments supplied
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 403 Forbidden
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 404 Entry not found
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 408 Context timeout
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 500 Unexpected internal error
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+***
+
+### Convert DSL query
+
+```
+[POST]/query/convert/dsl
+```
+
+- Operation id  
+convertDslQuery
+
+
+Get DSL query and convert it into sql, prettified sql or dsl formats
+
+#### Parameters(Query)
+
+```typescript
+to: enum[sql, pretty_sql, dsl]
+```
+
+#### RequestBody
+
+- */*
+
+```typescript
+{
+  // Namespace name
+  namespace: string
+  // Type of query
+  type?: enum[select, update, delete, truncate]
+  // Maximum count of returned items
+  limit?: integer
+  // Offset of first returned item
+  offset?: integer
+  // Ask query to calculate total documents, match condition
+  req_total?: enum[disabled, enabled, cached] //default: disabled
+  // If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
+  filters: {
+    // Expression on the left side of the condition. It may be a field or function.
+    left_expression: {
+      // Explicit expression type
+      type?: enum[field, expression]
+      // Field name or function (as expression).
+      value?: string
+    }
+    // Expression on the right side of the condition. It may be a field, function, or value.
+    right_expression: {
+      // Explicit expression type
+      type?: enum[field, expression, values]
+      // Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN. Function value as expression. Field name as a string.
+      value: {
+      }
+    }
+    // Condition operator
+    cond?: enum[EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN, KNN]
+    // Logic operator
+    op?: enum[AND, OR, NOT]
+    filters:FilterDef[]
+    join_query: {
+      // Namespace name
+      namespace: string
+      // Join type
+      type: enum[LEFT, INNER, ORINNER]
+      filters:FilterDef[]
+      // Specifies results sorting order
+      sort: {
+        // Field or index name for sorting
+        field: string
+        values: {
+        }[]
+        // Descent or ascent sorting direction
+        desc?: boolean
+      }[]
+      // Maximum count of returned items
+      limit?: integer
+      // Offset of first returned item
+      offset?: integer
+      on: {
+        // Field from left namespace (main query namespace)
+        left_field: string
+        // Field from right namespace (joined query namespace)
+        right_field: string
+        // Condition operator
+        cond: enum[EQ, GT, GE, LE, LT, SET]
+        // Logic operator
+        op?: enum[AND, OR, NOT]
+      }[]
+      select_filter?: string[]
+    }
+    // Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched against 'is null'/'is not null conditions'
+    subquery: {
+      // Namespace name
+      namespace: string
+      // Maximum count of returned items
+      limit?: integer
+      // Offset of first returned item
+      offset?: integer
+      // Ask query to calculate total documents, match condition
+      req_total?: enum[disabled, enabled, cached] //default: disabled
+      filters:FilterDef[]
+      sort:SortDef[]
+      select_filter?: string //default: id[]
+      aggregations: {
+        fields?: string[]
+        // Aggregation function
+        type: enum[SUM, AVG, MIN, MAX]
+      }[]
+    }
+    // Array fields to be searched with equal array indexes
+    equal_positions: {
+      positions?: string[]
+    }[]
+    // Parameters for knn search
+    params: {
+      // Maximum count of returned vectors in KNN queries
+      k?: integer
+      // Raduis for filtering vectors by metric
+      radius?: number
+      // Applicable for HNSW index only. The size of the dynamic list for the nearest neighbors used during a query. Ef must be >= K. Default value = K
+      ef?: integer
+      // Applicable for IVF index only. The number of Voronoi cells to search during a query
+      nprobe?: integer
+    }
+    // DEPRECATED. Use left_expression instead. Field json path or index name for filter
+    field?: string
+    // DEPRECATED. Use right_expression instead. Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5], 5.0]' for DWITHIN, or float vector for KNN
+    value: {
+    }
+    // DEPRECATED. Use left_expression instead. First field json path or index name for filter by two fields
+    first_field?: string
+    // DEPRECATED. Use right_expression instead. Second field json path or index name for filter by two fields
+    second_field?: string
+  }[]
+  sort:SortDef[]
+  merge_queries: {
+    // Namespace name
+    namespace: string
+    // Type of query
+    type?: enum[select, update, delete, truncate]
+    // Maximum count of returned items
+    limit?: integer
+    // Offset of first returned item
+    offset?: integer
+    // Ask query to calculate total documents, match condition
+    req_total?: enum[disabled, enabled, cached] //default: disabled
+    filters:FilterDef[]
+    sort:SortDef[]
+    merge_queries:Query[]
+    select_filter?: string //default: id[]
+    select_functions?: string[]
+    drop_fields?: string[]
+    update_fields: {
+      // field name
+      name: string
+      // update entry type
+      type?: enum[object, expression, value]
+      // is updated value an array
+      is_array?: boolean
+      values: {
+      }[]
+    }[]
+    aggregations: {
+      fields?: string[]
+      // Aggregation function
+      type: enum[SUM, AVG, MIN, MAX, FACET, DISTINCT]
+      // Specifies facet aggregations results sorting order
+      sort: {
+        // Field or index name for sorting
+        field: string
+        // Descent or ascent sorting direction
+        desc?: boolean
+      }[]
+      // Number of rows to get from result set. Allowed only for FACET
+      limit?: integer
+      // Index of the first row to get from result set. Allowed only for FACET
+      offset?: integer
+    }[]
+    // Add query execution explain information
+    explain?: boolean
+    // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
+    select_with_rank?: boolean
+    // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
+    strict_mode?: enum[none, names, indexes] //default: names
+  }[]
+  select_filter?: string //default: id[]
+  select_functions?: string[]
+  drop_fields?: string[]
+  update_fields:UpdateField[]
+  aggregations:AggregationsDef[]
+  // Add query execution explain information
+  explain?: boolean
+  // Output fulltext or KNN rank in QueryResult. Allowed only with fulltext or KNN queries query
+  select_with_rank?: boolean
+  // Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions
+  strict_mode?: enum[none, names, indexes] //default: names
+}
+```
+
+#### Responses
+
+- 200 Successful operation
+
+`application/json`
+
+```typescript
+{
+  format?: enum[sql, pretty_sql, dsl]
+  query?: Query | string
+}
+```
+
+- 400 Invalid arguments supplied
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 403 Forbidden
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 404 Entry not found
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 408 Context timeout
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 500 Unexpected internal error
+
+`application/json`
+
+```typescript
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+***
+
 ### Query documents from namespace
 
 ```
@@ -3329,11 +3729,22 @@ sharding?: enum[true, false]
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -3343,11 +3754,22 @@ sharding?: enum[true, false]
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -3357,11 +3779,22 @@ sharding?: enum[true, false]
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -3371,11 +3804,22 @@ sharding?: enum[true, false]
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -3385,11 +3829,22 @@ sharding?: enum[true, false]
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -5510,6 +5965,19 @@ line: integer
 ```typescript
 {
   suggests?: string[]
+  // Error message
+  error?: string
+  // Error position
+  error_location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -5670,11 +6138,22 @@ string
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -5684,11 +6163,22 @@ string
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -5698,11 +6188,22 @@ string
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -5712,11 +6213,22 @@ string
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -5726,11 +6238,22 @@ string
 
 ```typescript
 {
-  success?: boolean
+  success: boolean
   // Duplicates HTTP response code
-  response_code?: integer
+  response_code: integer
   // Text description of error details
-  description?: string
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 
@@ -8839,6 +9362,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 {
   // Enable search of concatenated adjacent terms. e.g. terms 'di caprio' will match word 'dicaprio'
   enable_terms_concat?: boolean //default: true
+  // Enable search of term parts. e.g. terms 'dicaprio' will match words 'di' and 'caprio' (works only for terms without + and -)
+  enable_terms_split?: boolean //default: true
   // Enable russian translit variants processing. e.g. term 'luntik' will match word 'лунтик'
   enable_translit?: boolean //default: true
   // Enable number variants processing. e.g. term '100' will match words one hundred
@@ -8959,6 +9484,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     full_match_proc?: integer
     // Base relevancy of concatenated terms match
     concat_proc?: integer
+    // Base relevancy of term parts match
+    split_proc?: integer
     // Minimum relevancy of prefix word match
     prefix_min_proc?: integer
     // Minimum relevancy of suffix word match
@@ -9077,6 +9604,28 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 ```typescript
 {
   suggests?: string[]
+  // Error message
+  error?: string
+  // Error position
+  error_location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
+}
+```
+
+### QueryConversionResponse
+
+```typescript
+{
+  format?: enum[sql, pretty_sql, dsl]
+  query?: Query | string
 }
 ```
 
@@ -9522,6 +10071,29 @@ string[]
   response_code?: integer
   // Text description of error details
   description?: string
+}
+```
+
+### SqlStatusResponse
+
+```typescript
+{
+  success: boolean
+  // Duplicates HTTP response code
+  response_code: integer
+  // Text description of error details
+  description: string
+  // Error location
+  location: {
+    // Line where the error starts, starting from 0
+    line_start?: integer
+    // Error position in bytes, starting from 0
+    column_start?: integer
+    // Line where the error ends, starting from 0
+    line_end?: integer
+    // Error position in bytes, starting from 0
+    column_end?: integer
+  }
 }
 ```
 

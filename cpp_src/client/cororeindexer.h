@@ -6,7 +6,7 @@
 #include "client/internalrdxcontext.h"
 #include "client/item.h"
 #include "client/reindexerconfig.h"
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 #include "core/query/query.h"
 #include "core/shardedmeta.h"
 #include "net/ev/ev.h"
@@ -17,6 +17,7 @@ struct SnapshotOpts;
 struct ReplicationStateV2;
 struct ClusterOperationStatus;
 class DSN;
+struct SQLSuggestions;
 
 namespace sharding {
 struct ShardingControlRequestData;
@@ -197,7 +198,7 @@ public:
 	/// @param sqlQuery - sql query.
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions) noexcept;
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions) noexcept;
 	/// Get current connection status
 	/// @param forceCheck - forces to check status immediately (otherwise result of periodic check will be returned)
 	Error Status(bool forceCheck = false) noexcept;

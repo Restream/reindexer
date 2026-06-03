@@ -23,8 +23,6 @@ var (
 	benchmarkSeedCPU   = flag.Int("seedcpu", 1, "number threads for seeding")
 	benchmarkSeed      = flag.Int64("seed", time.Now().Unix(), "seed number for random")
 	legacyServerBinary = flag.String("legacyserver", "", "legacy server binary for compatibility check")
-	saveTestArtifacts  = flag.Bool("testartifacts", false, "save test artifact files")
-	qualityCheck       = flag.Bool("qualitycheck", false, "run quality checks")
 )
 
 func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, mergeLimit int) {

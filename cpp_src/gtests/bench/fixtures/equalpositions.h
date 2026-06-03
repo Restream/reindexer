@@ -3,10 +3,14 @@
 #include <string>
 #include "base_fixture.h"
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] EqualPositions : protected BaseFixture {
 public:
 	~EqualPositions() override = default;
 	EqualPositions(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+		using reindexer::IndexOpts;
+
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 		nsdef_.AddIndex("int_array_index1", "hash", "int", IndexOpts().Array());
 		nsdef_.AddIndex("int_array_index2", "hash", "int", IndexOpts().Array());
@@ -40,3 +44,5 @@ private:
 	static const unsigned kArray2Start = 10;
 	static const unsigned kArray2End = 30;
 };
+
+}  // namespace reindexer_benchmarks

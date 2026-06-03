@@ -3,7 +3,7 @@
 #include <atomic>
 #include <thread>
 #include <unordered_map>
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 #include "estl/fast_hash_map.h"
 #include "estl/lock.h"
 #include "estl/mutex.h"

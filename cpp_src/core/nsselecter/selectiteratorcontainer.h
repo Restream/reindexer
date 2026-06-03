@@ -148,31 +148,6 @@ public:
 	void Clear(bool preserveDistincts);
 	int GetMaxIterations() const noexcept { return maxIterations_; }
 	std::string Dump() const;
-	static bool IsExpectingOrderedResults(const QueryEntry& qe) noexcept {
-		const auto cond = qe.Condition();
-		if (IsOrderedCondition(cond)) {
-			return true;
-		}
-		switch (cond) {
-			case CondLt:
-			case CondLe:
-			case CondGt:
-			case CondGe:
-			case CondRange:
-			case CondAny:
-			case CondEq:
-			case CondSet:
-			case CondAllSet:
-			case CondEmpty:
-			case CondLike:
-				return qe.Values().size() <= 1;
-			case CondDWithin:
-			case CondKnn:
-				return false;
-			default:
-				std::abort();
-		}
-	}
 	void MergeRanked(RanksHolder::Ptr&, const Reranker&, const NamespaceImpl&);
 
 private:

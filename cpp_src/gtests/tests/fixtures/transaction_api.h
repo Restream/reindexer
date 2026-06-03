@@ -4,6 +4,8 @@
 #include "reindexer_api.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] TransactionApi : public ReindexerApi {
 public:
 	struct [[nodiscard]] DataRange {
@@ -18,6 +20,8 @@ public:
 	}
 
 	void OpenNamespace(Reindexer& reindexer) {
+		using reindexer::IndexOpts;
+
 		Error err = reindexer.OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(reindexer, default_namespace,
@@ -108,3 +112,5 @@ protected:
 	const char* kFieldData1 = "data1";
 	const char* kFieldData2 = "data2";
 };
+
+}  // namespace reindexer_tests

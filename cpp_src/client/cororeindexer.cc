@@ -127,7 +127,7 @@ Error CoroReindexer::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespa
 Error CoroReindexer::EnumDatabases(std::vector<std::string>& dbList) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->EnumDatabases(dbList, ctx_));
 }
-Error CoroReindexer::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggests) noexcept {
+Error CoroReindexer::GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggests) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->GetSqlSuggestions(sqlQuery, pos, suggests));
 }
 Error CoroReindexer::Status(bool forceCheck) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Status(forceCheck, ctx_)); }

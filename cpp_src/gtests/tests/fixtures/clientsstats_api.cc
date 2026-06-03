@@ -5,6 +5,8 @@
 #include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
 
+namespace reindexer_tests {
+
 using reindexer::net::ev::dynamic_loop;
 using reindexer::client::CoroReindexer;
 using reindexer::client::CoroQueryResults;
@@ -14,8 +16,8 @@ using namespace reindexer;
 // NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 
 void ClientsStatsApi::RunServerInThread(bool statEnable) {
-	const std::string kdbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "clientstats_test");
-	std::ignore = reindexer::fs::RmDirAll(kdbPath);
+	const std::string kdbPath = fs::JoinPath(fs::GetTempDir(), "clientstats_test");
+	std::ignore = fs::RmDirAll(kdbPath);
 	YAML::Node y;
 	y["storage"]["path"] = kdbPath;
 	y["metrics"]["clientsstats"] = statEnable ? true : false;
@@ -73,7 +75,7 @@ void ClientsStatsApi::ClientLoopReconnect() {
 			ASSERT_TRUE(err.ok()) << err.what();
 			std::string resString;
 			for (auto it = result.begin(); it != result.end(); ++it) {
-				reindexer::WrSerializer sr;
+				WrSerializer sr;
 				err = it.GetJSON(sr, false);
 				ASSERT_TRUE(err.ok()) << err.what();
 				std::string_view sv = sr.Slice();
@@ -92,7 +94,7 @@ uint32_t ClientsStatsApi::StatsTxCount(CoroReindexer& rx) {
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(resultCs.Count(), 1);
 	auto it = resultCs.begin();
-	reindexer::WrSerializer wrser;
+	WrSerializer wrser;
 	err = it.GetJSON(wrser, false);
 	EXPECT_TRUE(err.ok()) << err.what();
 	try {
@@ -122,7 +124,7 @@ void ClientsStatsApi::ClientSelectLoop(size_t coroutines) {
 					ASSERT_TRUE(err.ok()) << err.what();
 					std::string resString;
 					for (auto it = result.begin(); it != result.end(); ++it) {
-						reindexer::WrSerializer sr;
+						WrSerializer sr;
 						err = it.GetJSON(sr, false);
 						ASSERT_TRUE(err.ok()) << err.what();
 						std::string_view sv = sr.Slice();
@@ -169,3 +171,5 @@ void ClientsStatsApi::StopThreads() {
 }
 
 // NOLINTEND(rx-perf-lambda-to-std-function-allocation)
+
+}  // namespace reindexer_tests

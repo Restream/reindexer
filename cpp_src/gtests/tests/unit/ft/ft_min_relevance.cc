@@ -1,6 +1,10 @@
 #include <gtest/gtest-param-test.h>
 #include "ft_api.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
 class [[nodiscard]] FTMinRelevanceApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_min_relevance"; }
@@ -76,3 +80,5 @@ TEST_F(FTMinRelevanceApi, CorrectDocWithMinRelevanceAndEmptyDoc) {
 		ASSERT_TRUE(false) << "Intersection must be empty: " << ss.str();
 	}
 }
+
+}  // namespace reindexer_tests

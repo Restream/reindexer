@@ -4,8 +4,6 @@
 #include "core/keyvalue/geometry.h"
 #include "estl/h_vector.h"
 
-struct CollateOpts;
-
 namespace reindexer {
 
 struct [[nodiscard]] DefaultRTreeTraits {

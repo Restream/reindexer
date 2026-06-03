@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/quantization_config.h"
+#include "core/definitions/quantization_config.h"
 #include "estl/fast_hash_set.h"
 #include "hnsw_view_iterator.h"
 #include "tools/errors.h"
@@ -47,7 +47,7 @@ std::pair<float, float> FindNthMinMax(auto&& s, size_t dataSize, float quantile)
 struct [[nodiscard]] QuantizingParams {
 	QuantizingParams() = default;
 	QuantizingParams(const auto& hnsw, QuantizationConfig conf) : config(std::move(conf)) {
-		const auto dim = hnsw.fstdistfunc_.Dims();
+		const auto dim = hnsw.fstdistfunc_.Dim();
 		minQ = 0.f;
 		maxQ = 0.f;
 		size_t size = 0;

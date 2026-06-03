@@ -2,6 +2,8 @@
 
 #include <vector>
 #include "core/idset/idset.h"
+#include "core/type_consts.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -68,6 +70,7 @@ private:
 		requires(concepts::IdSetWithSortedIDs<IdSetT>)
 	{
 		const size_t size = IdSetT::plainSize(), capacity = IdSetT::plainCapacity();
+		(void)capacity;
 		assertrx_dbg(IdSetT::IsCommitted());
 		assertf(capacity >= (sortId + 1) * size, "error ids_.capacity()={},sortId={},ids_.size()={}", capacity, sortId, size);
 		return IdSetCRef(IdSetT::plainData() + sortId * size, size);

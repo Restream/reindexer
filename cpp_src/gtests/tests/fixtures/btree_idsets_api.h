@@ -2,9 +2,13 @@
 
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] BtreeIdsetsApi : public ReindexerApi {
 public:
 	void SetUp() override {
+		using reindexer::IndexOpts;
+
 		ReindexerApi::SetUp();
 		rt.OpenNamespace(default_namespace);
 		rt.OpenNamespace(joinedNsName);
@@ -85,3 +89,5 @@ protected:
 
 	const std::string joinedNsName = "joined_ns";
 };
+
+}  // namespace reindexer_tests

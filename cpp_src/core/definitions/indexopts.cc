@@ -9,12 +9,13 @@
 #else  // REINDEX_WITH_ASAN
 #include <regex>
 #endif	// REINDEX_WITH_ASAN
-#include "cjson/jsonbuilder.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/enums.h"
 #include "core/id_type.h"
 #include "tools/errors.h"
-#include "type_consts_helpers.h"
 #include "vendor/gason/gason.h"
+
+namespace reindexer {
 
 namespace {
 constexpr size_t kFVDimensionMin = 1;
@@ -225,18 +226,6 @@ void getJsonEmbedderConfig(const FloatVectorIndexOpts::EmbedderOpts& opts, reind
 
 }  // namespace
 
-CollateOpts::CollateOpts(const std::string& sortOrderUTF8) : mode(CollateCustom), sortOrderTable(sortOrderUTF8) {}
-
-template <typename T>
-void CollateOpts::Dump(T& os) const {
-	using namespace reindexer;
-	os << mode;
-	if (mode == CollateCustom) {
-		os << ": [" << sortOrderTable.GetSortOrderCharacters() << ']';
-	}
-}
-template void CollateOpts::Dump<std::ostream>(std::ostream&) const;
-
 void FloatVectorIndexOpts::Validate(IndexType idxType) {
 	if (dimension_ < kFVDimensionMin) {
 		throw reindexer::Error{errParams, "Float vector index dimension should not be less then {}", kFVDimensionMin};
@@ -332,43 +321,44 @@ FloatVectorIndexOpts FloatVectorIndexOpts::ParseJson(IndexType idxType, std::str
 	gason::JsonParser parser;
 	auto root = parser.Parse(json);
 
-	result.SetDimension(
+	std::ignore = result.SetDimension(
 		FloatVectorDimensionInt(root["dimension"sv].As<FloatVectorDimensionInt>(reindexer::CheckUnsigned_True, 0, kFVDimensionMin)));
 	const auto metricStr = root["metric"sv].As<std::string_view>();
 	if (reindexer::iequals(metricStr, "l2"sv)) {
-		result.SetMetric(reindexer::VectorMetric::L2);
+		std::ignore = result.SetMetric(reindexer::VectorMetric::L2);
 	} else if (reindexer::iequals(metricStr, "inner_product"sv)) {
-		result.SetMetric(reindexer::VectorMetric::InnerProduct);
+		std::ignore = result.SetMetric(reindexer::VectorMetric::InnerProduct);
 	} else if (reindexer::iequals(metricStr, "cosine"sv)) {
-		result.SetMetric(reindexer::VectorMetric::Cosine);
+		std::ignore = result.SetMetric(reindexer::VectorMetric::Cosine);
 	} else {
 		throw reindexer::Error{errParams, "Unknown vector metric '{}'", metricStr};
 	}
 	if (const auto startSize = root["start_size"sv]; !startSize.isEmpty()) {
-		result.SetStartSize(startSize.As<size_t>(reindexer::CheckUnsigned_True, 0, 0, reindexer::IdType::Max().ToNumber()));
+		std::ignore = result.SetStartSize(startSize.As<size_t>(reindexer::CheckUnsigned_True, 0, 0, reindexer::IdType::Max().ToNumber()));
 	}
 	if (const auto m = root["m"sv]; !m.isEmpty()) {
-		result.SetM(m.As<size_t>(reindexer::CheckUnsigned_True, 0, kHnswMMin, kHnswMMax));
+		std::ignore = result.SetM(m.As<size_t>(reindexer::CheckUnsigned_True, 0, kHnswMMin, kHnswMMax));
 	}
 	if (const auto efConstruction = root["ef_construction"sv]; !efConstruction.isEmpty()) {
-		result.SetEfConstruction(efConstruction.As<size_t>(reindexer::CheckUnsigned_True, 0, kHnswEfConstrMin, kHnswEfConstrMax));
+		std::ignore =
+			result.SetEfConstruction(efConstruction.As<size_t>(reindexer::CheckUnsigned_True, 0, kHnswEfConstrMin, kHnswEfConstrMax));
 	}
 	if (const auto nCentroids = root["centroids_count"sv]; !nCentroids.isEmpty()) {
-		result.SetNCentroids(nCentroids.As<size_t>(reindexer::CheckUnsigned_True, 0, kIvfNCentroidsMin, kIvfNCentroidsMax));
+		std::ignore = result.SetNCentroids(nCentroids.As<size_t>(reindexer::CheckUnsigned_True, 0, kIvfNCentroidsMin, kIvfNCentroidsMax));
 	}
 	if (const auto multithreading = root["multithreading"sv]; !multithreading.isEmpty()) {
-		result.SetMultithreading(static_cast<MultithreadingMode>(multithreading.As<int>()));
+		std::ignore = result.SetMultithreading(static_cast<MultithreadingMode>(multithreading.As<int>()));
 	}
 	if (const auto embedding = root[kEmbedding]; !embedding.isEmpty()) {
 		result.embedding_ = parseEmbeddingConfig(embedding);
 	}
 	if (const auto radius = root["radius"sv]; !radius.isEmpty()) {
-		result.SetRadius(radius.As<float>());
+		std::ignore = result.SetRadius(radius.As<float>());
 	}
 	if (const auto configNode = root[kQuantizationConfig]; !configNode.isEmpty()) {
 		hnswlib::QuantizationConfig config;
 		config.FromJSON(configNode);
-		result.SetQuantizationConfig(std::move(config));
+		std::ignore = result.SetQuantizationConfig(std::move(config));
 	}
 
 	result.Validate(idxType);
@@ -587,3 +577,5 @@ void IndexOpts::Dump(T& os) const {
 }
 
 template void IndexOpts::Dump<std::ostream>(std::ostream&) const;
+
+}  // namespace reindexer

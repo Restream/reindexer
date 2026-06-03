@@ -1,5 +1,5 @@
 #if REINDEX_WITH_GPERFTOOLS
-#include "tcmallocheapwathcher.h"
+#include "tcmallocheapwatcher.h"
 
 #include <gperftools/malloc_extension.h>
 #include <cmath>
@@ -9,10 +9,10 @@ namespace reindexer {
 static const size_t kReleaseChunkSize = 1024 * 1048576;		///< Max size in bytes to release in one interation
 static const size_t kHeapFreeMinThreshold = 200 * 1048576;	///< Do not release parts if pageHeapFree less than that
 
-TCMallocHeapWathcher::TCMallocHeapWathcher() : TCMallocHeapWathcher(nullptr, -1, -1.0) {}
+TCMallocHeapWatcher::TCMallocHeapWatcher() : TCMallocHeapWatcher(nullptr, -1, -1.0) {}
 
-TCMallocHeapWathcher::TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio,
-										   std::shared_ptr<spdlog::logger> logger)
+TCMallocHeapWatcher::TCMallocHeapWatcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio,
+										 std::shared_ptr<spdlog::logger> logger)
 	: mallocExtention_(mallocExtention),
 	  cacheLimit_(cacheLimit),
 	  maxCacheRatio_(maxCacheRatio),
@@ -20,17 +20,17 @@ TCMallocHeapWathcher::TCMallocHeapWathcher(MallocExtension* mallocExtention, int
 	  heapChunkReleasePeriod_(std::chrono::milliseconds(100)),
 	  logger_(std::move(logger)) {}
 
-TCMallocHeapWathcher::TCMallocHeapWathcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio)
-	: TCMallocHeapWathcher(mallocExtention, cacheLimit, maxCacheRatio, nullptr) {}
+TCMallocHeapWatcher::TCMallocHeapWatcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio)
+	: TCMallocHeapWatcher(mallocExtention, cacheLimit, maxCacheRatio, nullptr) {}
 
 template <typename... Args>
-void TCMallocHeapWathcher::logDebug(spdlog::format_string_t<Args...> fmt, Args&&... args) {
+void TCMallocHeapWatcher::logDebug(spdlog::format_string_t<Args...> fmt, Args&&... args) {
 	if (logger_) {
 		logger_->debug(fmt, std::forward<Args>(args)...);
 	}
 }
 
-TCMallocHeapWathcher::~TCMallocHeapWathcher() {
+TCMallocHeapWatcher::~TCMallocHeapWatcher() {
 	try {
 		logDebug("Heap watcher destructed");
 		// NOLINTBEGIN(bugprone-empty-catch)
@@ -39,7 +39,7 @@ TCMallocHeapWathcher::~TCMallocHeapWathcher() {
 	// NOLINTEND(bugprone-empty-catch)
 }
 
-void TCMallocHeapWathcher::CheckHeapUsagePeriodic() {
+void TCMallocHeapWatcher::CheckHeapUsagePeriodic() {
 	static std::once_flag startupFirstCallFlag;
 	std::call_once(startupFirstCallFlag, [&]() {
 		logDebug(

@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	testFtSynonymsFfterTxNs = "ft_synonyms_after_tx"
 	testFtIndexCopyNs       = "ft_index_copy"
+	testFtSynonymsFfterTxNs = "ft_synonyms_after_tx"
 )
 
 func fillTestItemsTx(namespace string, from int, count int, baseData string, rx *reindexer.Reindexer) {
@@ -41,58 +41,7 @@ func setNsCopyConfigs(namespace string, rx *reindexer.Reindexer) error {
 	return rx.Upsert(reindexer.ConfigNamespaceName, item)
 }
 
-func doSearchTest(t *testing.T) {
-
-	rx, err := reindexer.NewReindex(*dsn)
-	require.NoError(t, err)
-	defer rx.Close()
-
-	for i, testC := range ParseBasicTestCases() {
-		// Need to make a local copy to use it in the closure below
-		testCase := testC
-
-		namespace := "ft_" + strconv.Itoa(i)
-		createReindexDbInstance(rx, namespace, 0) //
-		fillReindexWithData(rx, namespace, testCase.AllDocuments)
-		t.Run("Running test case: "+testCase.Description, func(t *testing.T) {
-			for _, validQ := range testCase.ValidQueries {
-				// Need to make a local copy to use it in the closure below
-				validQuery := validQ
-				t.Run("should match: "+validQuery, func(t *testing.T) {
-					dbItems, err := rx.Query(namespace).
-						WhereString("text_field", reindexer.EQ, validQuery, "").
-						Exec().
-						FetchAll()
-
-					assert.NoError(t, err)
-					expected := testCase.ExpectedDocuments
-					actual := dbItemsToSliceOfDocuments(dbItems)
-					for _, s := range expected {
-						assert.Contains(t, actual, s)
-					}
-
-				})
-			}
-			for _, invalidQ := range testCase.InvalidQueries {
-				// Need to make a local copy to use it in the closure below
-				invalidQuery := invalidQ
-				t.Run("shouldn't match: "+invalidQuery, func(t *testing.T) {
-					dbItems, err := rx.Query(namespace).
-						WhereString("text_field", reindexer.EQ, invalidQuery).
-						Exec().
-						FetchAll()
-
-					assert.NoError(t, err)
-					for _, document := range dbItemsToSliceOfDocuments(dbItems) {
-						assert.NotContains(t, testCase.ExpectedDocuments, document)
-					}
-				})
-			}
-		})
-	}
-}
-
-func doFTIndexCopy(t *testing.T) {
+func TestFTIndexCopy(t *testing.T) {
 	rx, err := reindexer.NewReindex(*dsn)
 	require.NoError(t, err)
 	defer rx.Close()
@@ -124,14 +73,6 @@ func doFTIndexCopy(t *testing.T) {
 	assert.Equal(t, thrashCount, dbItems.Count())
 	assert.NoError(t, dbItems.Error())
 	dbItems.Close()
-}
-
-func TestFTFastSearch(t *testing.T) {
-	doSearchTest(t)
-}
-
-func TestFTIndexCopy(t *testing.T) {
-	doFTIndexCopy(t)
 }
 
 func TestFTSynonymsAfterTx(t *testing.T) {

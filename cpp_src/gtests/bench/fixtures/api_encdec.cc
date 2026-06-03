@@ -5,7 +5,9 @@
 #include "helpers.h"
 #include "tools/jsontools.h"
 
-using benchmark::AllocsTracker;
+using reindexer::IndexOpts;
+
+namespace reindexer_benchmarks {
 
 ApiEncDec::ApiEncDec(Reindexer* db, std::string&& name) : db_(db), benchName_(std::move(name)) {}
 
@@ -16,7 +18,6 @@ ApiEncDec::~ApiEncDec() {
 		std::cerr << "Error while closing namespace '" << nsName_ << "'. Reason: " << err.what() << std::endl;
 	}
 }
-
 void ApiEncDec::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("FromCJSON", &ApiEncDec::FromCJSON, this);
@@ -291,3 +292,5 @@ void ApiEncDec::GetMsgPack(benchmark::State& state) {
 		benchmark::DoNotOptimize(ret);
 	}
 }
+
+}  // namespace reindexer_benchmarks

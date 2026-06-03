@@ -2,6 +2,8 @@
 
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] NestedArraysApi : public ReindexerApi {
 public:
 	void SetUp() override;
@@ -35,3 +37,5 @@ protected:
 	std::optional<std::string> lastIntValue_;
 	std::optional<std::string> lastStrValue_;
 };
+
+}  // namespace reindexer_tests

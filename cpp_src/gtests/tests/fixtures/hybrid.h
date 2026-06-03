@@ -2,6 +2,8 @@
 
 #include "reindexertestapi.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] HybridTest : public ::testing::TestWithParam<reindexer::VectorMetric> {
 protected:
 	enum [[nodiscard]] IsArray : bool { Array = true, Scalar = false };
@@ -57,3 +59,5 @@ protected:
 		{kFieldNameL2, kFieldNameL2Array, reindexer::IvfSearchParams{}.K(kMaxElements / 4).NProbe(5)}};
 	size_t currentKnnField_ = 0;
 };
+
+}  // namespace reindexer_tests

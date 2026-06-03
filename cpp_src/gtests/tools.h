@@ -8,6 +8,8 @@
 #include "tools/stringstools.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests_tools {
+
 static constexpr std::string_view hexChars = "0123456789aAbBcCdDeEfF";
 static constexpr std::string_view nilUUID = "00000000-0000-0000-0000-000000000000";
 static constexpr unsigned uuidDelimPositions[] = {8, 13, 18, 23};
@@ -174,7 +176,7 @@ inline std::function<void()> exceptionWrapper(std::function<void()>&& func) {
 }
 
 inline reindexer::VectorMetric randMetric() noexcept {
-	switch(rand() % 3) {
+	switch (rand() % 3) {
 		case 0:
 			return reindexer::VectorMetric::Cosine;
 		case 1:
@@ -185,43 +187,45 @@ inline reindexer::VectorMetric randMetric() noexcept {
 	}
 }
 
-#define ASSERT_JSON_CONTAIN_FIELD(json, fieldName) ASSERT_FALSE(findJsonField(json, fieldName).empty()) << fieldName;
+#define ASSERT_JSON_CONTAIN_FIELD(json, fieldName) \
+	ASSERT_FALSE(reindexer_tests_tools::findJsonField(json, fieldName).empty()) << fieldName;
 
-#define ASSERT_JSON_NOT_CONTAIN_FIELD(json, fieldName) ASSERT_TRUE(findJsonField(json, fieldName).empty()) << fieldName;
+#define ASSERT_JSON_NOT_CONTAIN_FIELD(json, fieldName) \
+	ASSERT_TRUE(reindexer_tests_tools::findJsonField(json, fieldName).empty()) << fieldName;
 
 #define ASSERT_JSON_FIELD_ABSENT_OR_IS_NULL(json, fieldName)                  \
-	if (const auto& node = findJsonField(json, fieldName); !node.isEmpty()) { \
+	if (const auto& node = reindexer_tests_tools::findJsonField(json, fieldName); !node.isEmpty()) { \
 		ASSERT_EQ(node.value.getTag(), gason::JsonTag::JSON_NULL);            \
 	}
 
 #define ASSERT_JSON_IS_NULL(json, fieldName)                                      \
 	const auto tag = json.getTag();                                               \
 	ASSERT_TRUE(tag == gason::JsonTag::JSON_NULL || tag == gason::JsonTag::ARRAY) \
-		<< "fieldName: " << fieldName << "; tag: " << JsonTagToTypeStr(tag);      \
+		<< "fieldName: " << fieldName << "; tag: " << gason::JsonTagToTypeStr(tag);      \
 	if (tag == gason::JsonTag::ARRAY) {                                           \
-		ASSERT_EQ(begin(json), end(json));                                        \
+		ASSERT_EQ(gason::begin(json), gason::end(json));                                        \
 	}
 
 #define ASSERT_JSON_FIELD_IS_NULL(json, fieldName)                            \
-	if (const auto& node = findJsonField(json, fieldName); !node.isEmpty()) { \
+	if (const auto& node = reindexer_tests_tools::findJsonField(json, fieldName); !node.isEmpty()) { \
 		ASSERT_JSON_IS_NULL(node.value, fieldName);                           \
 	}
 
 #define ASSERT_JSON_FIELD_INT_EQ(json, fieldName, expectedVal)                      \
 	{                                                                               \
-		const auto field = findJsonField(json, fieldName);                          \
+		const auto field = reindexer_tests_tools::findJsonField(json, fieldName);                          \
 		const auto tag = field.value.getTag();                                      \
 		ASSERT_TRUE(tag == gason::JsonTag::DOUBLE || tag == gason::JsonTag::NUMBER) \
-			<< "fieldName: " << fieldName << "; tag: " << JsonTagToTypeStr(tag);    \
+			<< "fieldName: " << fieldName << "; tag: " << gason::JsonTagToTypeStr(tag);    \
 		ASSERT_EQ(field.value.toNumber(), expectedVal) << fieldName;                \
 	}
 
 #define ASSERT_JSON_FIELD_FLOAT_EQ(json, fieldName, expectedVal)                    \
 	{                                                                               \
-		const auto field = findJsonField(json, fieldName);                          \
+		const auto field = reindexer_tests_tools::findJsonField(json, fieldName);                          \
 		const auto tag = field.value.getTag();                                      \
 		ASSERT_TRUE(tag == gason::JsonTag::DOUBLE || tag == gason::JsonTag::NUMBER) \
-			<< "fieldName: " << fieldName << "; tag: " << JsonTagToTypeStr(tag);    \
+			<< "fieldName: " << fieldName << "; tag: " << gason::JsonTagToTypeStr(tag);    \
 		ASSERT_EQ(field.value.toDouble(), expectedVal) << fieldName;                \
 	}
 
@@ -229,13 +233,13 @@ inline reindexer::VectorMetric randMetric() noexcept {
 	if (expectedVal.empty()) {                                                                                  \
 		ASSERT_JSON_IS_NULL(json.value, fieldName);                                                             \
 	} else {                                                                                                    \
-		ASSERT_TRUE(json.isArray()) << JsonTagToTypeStr(json.value.getTag());                                   \
+		ASSERT_TRUE(json.isArray()) << gason::JsonTagToTypeStr(json.value.getTag());                                   \
 		auto expectedIt = expectedVal.begin();                                                                  \
 		const auto expectedEnd = expectedVal.end();                                                             \
-		auto it = begin(json.value);                                                                            \
+		auto it = gason::begin(json.value);                                                                            \
 		const auto end = gason::end(json.value);                                                                \
-		for (; it != end && expectedIt != expectedEnd; ++it, ++expectedIt) {                                    \
-			ASSERT_EQ(it->As<std::remove_cv_t<std::remove_reference_t<decltype(*expectedIt)>>>(), *expectedIt); \
+		for (; it != end && expectedIt != expectedEnd; ++it, ++expectedIt) {                                     \
+			ASSERT_EQ(it->As<std::remove_cv_t<std::remove_reference_t<decltype(*expectedIt)>> >(), *expectedIt); \
 		}                                                                                                       \
 		ASSERT_EQ(it, end);                                                                                     \
 		ASSERT_EQ(expectedIt, expectedEnd);                                                                     \
@@ -245,6 +249,7 @@ inline reindexer::VectorMetric randMetric() noexcept {
 	if (expectedVal.empty()) {                                   \
 		ASSERT_JSON_FIELD_IS_NULL(json, fieldName);              \
 	} else {                                                     \
-		const auto& node = findJsonField(json, fieldName);       \
+		const auto& node = reindexer_tests_tools::findJsonField(json, fieldName);       \
 		ASSERT_JSON_ARRAY_EQ(node, fieldName, expectedVal);      \
 	}
+}  // namespace reindexer_tests_tools

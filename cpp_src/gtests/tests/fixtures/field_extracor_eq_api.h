@@ -8,6 +8,8 @@
 
 #include "core/cjson/jsonbuilder.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] FieldExtractorEqApi : public ReindexerApi {
 public:
 	void SetUp() override {
@@ -15,7 +17,7 @@ public:
 		rt.OpenNamespace(default_namespace);
 
 		DefineNamespaceDataset(default_namespace, {
-													  IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+													  IndexDeclaration{"id", "hash", "int", reindexer::IndexOpts().PK(), 0},
 
 												  });
 	}
@@ -78,3 +80,5 @@ public:
 	}
 	Variant i64v(int v) { return Variant(int64_t(v)); }
 };
+
+}  // namespace reindexer_tests

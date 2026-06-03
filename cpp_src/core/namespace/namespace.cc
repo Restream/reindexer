@@ -25,6 +25,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 		auto clonerLck = statCalculator.CreateLock<contexted_unique_lock>(clonerMtx_, ctx.rdxContext);
 
 		nsl = ns_;
+		auto nslName = nsl->GetName(ctx.rdxContext);
 		if (needNamespaceCopy(nsl, tx) &&
 			(tx.GetSteps().size() >= static_cast<uint32_t>(txSizeToAlwaysCopy_.load(std::memory_order_relaxed)) ||
 			 isExpectingSelectsOnNamespace(nsl, ctx))) {
@@ -33,7 +34,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 			PerfStatCalculatorMT nsCopyCalc(copyStatsCounter_, enablePerfCounters);
 			calc.SetCounter(nsl->updatePerfCounter_);
 			calc.LockHit();
-			logFmt(LogTrace, "Namespace::CommitTransaction creating copy for ({})", nsl->GetName(ctx.rdxContext));
+			logFmt(LogTrace, "Namespace::CommitTransaction creating copy for ({})", nslName);
 			hasCopy_.store(true, std::memory_order_release);
 			CounterGuardAIR32 cg(nsl->cancelCommitCnt_);
 			try {
@@ -83,21 +84,19 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 					}
 				}
 			} catch (Error& e) {
-				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by exception:'{}'",
-					   nsl->GetName(ctx.rdxContext), e.what());
+				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by exception:'{}'", nslName, e.what());
 				calc.Disable();
 				result.Clear();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			} catch (...) {
-				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by unknown exception",
-					   nsl->GetName(ctx.rdxContext));
+				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by unknown exception", nslName);
 				calc.Disable();
 				result.Clear();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			}
-			logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) has succeed", nsl->GetName(ctx.rdxContext));
+			logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) has succeed", nslName);
 			if (clonerLck.owns_lock()) {
 				nsl = ns_;
 				clonerLck.unlock();

@@ -477,6 +477,7 @@ void IndexIVF::search_preassigned(
             "iterable inverted lists don't support max_codes and store_pairs");
 
     size_t nlistv = 0, ndis = 0, nheap = 0;
+    (void)ndis; // Suppress GCC 16 warning
 
     using HeapForIP = CMin<float, idx_t>;
     using HeapForL2 = CMax<float, idx_t>;

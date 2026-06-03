@@ -17,6 +17,7 @@
 #include "itemcomparator.h"
 #include "qresexplainholder.h"
 #include "querypreprocessor.h"
+#include "sorting_heuristics.h"
 #include "tools/assertrx.h"
 #include "tools/logger.h"
 
@@ -214,7 +215,7 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectAndPreSelectCtx<Joi
 																										 // queries), TODO: enable right
 																										 // queries)
 				(qPreproc.Size() && qPreproc.GetQueryEntries().GetOperation(0) == OpNot) ||				 // Not in first condition
-				!isSortOptimizationEffective(qPreproc.GetQueryEntries(), ctx,
+				!isSortOptimizationEffective(qPreproc.GetQueryEntries(), ctx, needCalcTotal,
 											 rdxCtx)  // Optimization is not effective (e.g. query contains more effective filters)
 			) {
 				ctx.sortingContext.resetOptimization();
@@ -1245,7 +1246,7 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 			sortingEntry.index = IndexValueType::SetByJsonPath;
 			if (ns_->tryGetIndexByNameOrJsonPath(sortingEntry.expression, sortingEntry.index)) {
 				reindexer::Index* sortIndex = ns_->indexes_[sortingEntry.index].get();
-				if (sortIndex->IsFloatVector()) {
+				if (sortIndex->IsFloatVector()) [[unlikely]] {
 					throw Error(errQueryExec, "Ordering by float vector index is not allowed: '{}'", sortingEntry.expression);
 				}
 				entry.index = sortIndex;
@@ -1344,251 +1345,10 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 	ctx.sortingContext.exprResults.resize(ctx.sortingContext.expressions.size());
 }
 
-enum class [[nodiscard]] CostCountingPolicy : bool { Any, ExceptTargetSortIdxSeq };
-
-template <CostCountingPolicy countingPolicy>
-class [[nodiscard]] CostCalculator {
-public:
-	explicit CostCalculator(size_t _totalCost) noexcept : totalCost_(_totalCost) {}
-	void BeginSequence() noexcept {
-		isInSequence_ = true;
-		hasInappositeEntries_ = false;
-		onlyTargetSortIdxInSequence_ = true;
-		curCost_ = 0;
-	}
-	void EndSequence() noexcept {
-		if (isInSequence_ && !hasInappositeEntries_) {
-			if ((countingPolicy == CostCountingPolicy::Any) || !onlyTargetSortIdxInSequence_) {
-				totalCost_ = std::min(curCost_, totalCost_);
-			}
-		}
-		isInSequence_ = false;
-		onlyTargetSortIdxInSequence_ = true;
-		curCost_ = 0;
-	}
-	bool IsInOrSequence() const noexcept { return isInSequence_; }
-	void Add(const SelectKeyResults& results, bool isTargetSortIndex) {
-		if constexpr (countingPolicy == CostCountingPolicy::ExceptTargetSortIdxSeq) {
-			if (!isInSequence_ && isTargetSortIndex) {
-				return;
-			}
-		}
-		onlyTargetSortIdxInSequence_ = onlyTargetSortIdxInSequence_ && isTargetSortIndex;
-		Add(results);
-	}
-	void Add(const SelectKeyResults& results) {
-		std::visit(
-			overloaded{
-				[this](const SelectKeyResultsVector& selRes) {
-					for (const SelectKeyResult& res : selRes) {
-						if (isInSequence_) {
-							curCost_ += res.GetMaxIterations(totalCost_);
-						} else {
-							totalCost_ = res.GetMaxIterations(totalCost_);
-						}
-					}
-				},
-				[this](const concepts::OneOf<ComparatorNotIndexed, Template<ComparatorIndexed, bool, int, int64_t, double, key_string,
-																			PayloadValue, Point, Uuid, FloatVector>> auto&) {
-					hasInappositeEntries_ = true;
-				}},
-			results.AsVariant());
-	}
-	size_t TotalCost() const noexcept { return totalCost_; }
-	void MarkInapposite() noexcept { hasInappositeEntries_ = true; }
-	bool OnNewEntry(const QueryEntries& qentries, size_t i, size_t next) {
-		const OpType op = qentries.GetOperation(i);
-		switch (op) {
-			case OpAnd: {
-				EndSequence();
-				if (next != qentries.Size() && qentries.GetOperation(next) == OpOr) {
-					BeginSequence();
-				}
-				return true;
-			}
-			case OpOr: {
-				if (hasInappositeEntries_) {
-					return false;
-				}
-				if (next != qentries.Size() && qentries.GetOperation(next) == OpOr) {
-					BeginSequence();
-				}
-				return true;
-			}
-			case OpNot: {
-				if (next != qentries.Size() && qentries.GetOperation(next) == OpOr) {
-					BeginSequence();
-				}
-				hasInappositeEntries_ = true;
-				return false;
-			}
-		}
-		throw Error(errLogic, "Unexpected op value: {}", int(op));
-	}
-
-private:
-	bool isInSequence_ = false;
-	bool onlyTargetSortIdxInSequence_ = true;
-	bool hasInappositeEntries_ = false;
-	size_t curCost_ = 0;
-	size_t totalCost_ = std::numeric_limits<size_t>::max();
-};
-
-size_t NsSelecter::calculateNormalCost(const QueryEntries& qentries, SelectCtx& ctx, const RdxContext& rdxCtx) {
-	const size_t totalItemsCount = ns_->itemsCount();
-	CostCalculator<CostCountingPolicy::ExceptTargetSortIdxSeq> costCalculator(totalItemsCount);
-	enum { SortIndexNotFound = 0, SortIndexFound, SortIndexHasUnorderedConditions } sortIndexSearchState = SortIndexNotFound;
-	for (size_t next, i = 0, sz = qentries.Size(); i != sz; i = next) {
-		next = qentries.Next(i);
-		const bool calculateEntry = costCalculator.OnNewEntry(qentries, i, next);
-		qentries.Visit(
-			i,
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&)
-				RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry>{},
-			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(
-				const concepts::OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, KnnQueryEntry> auto&)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
-			[&](const QueryEntry& qe) {
-				if (!qe.IsFieldIndexed()) {
-					costCalculator.MarkInapposite();
-					return;
-				}
-				if (qe.IndexNo() == ctx.sortingContext.uncommitedIndex) {
-					if (sortIndexSearchState == SortIndexNotFound) {
-						const bool isExpectingIdSet =
-							qentries.GetOperation(i) == OpAnd && (next == sz || qentries.GetOperation(next) != OpOr);
-						if (isExpectingIdSet && !SelectIteratorContainer::IsExpectingOrderedResults(qe)) {
-							sortIndexSearchState = SortIndexHasUnorderedConditions;
-							return;
-						} else {
-							sortIndexSearchState = SortIndexFound;
-						}
-					}
-					if (!costCalculator.IsInOrSequence()) {
-						// Count cost only for the OR-sequences with mixed indexes: 'ANY_IDX OR TARGET_SORT_IDX',
-						// 'TARGET_SORT_IDX OR ANY_IDX1 OR ANY_IDX2', etc.
-						return;
-					}
-				}
-
-				if (!calculateEntry || costCalculator.TotalCost() == 0 || sortIndexSearchState == SortIndexHasUnorderedConditions) {
-					return;
-				}
-
-				auto& index = ns_->indexes_[qe.IndexNo()];
-				if (IsFullText(index->Type())) {
-					costCalculator.MarkInapposite();
-					return;
-				}
-
-				Index::SelectContext indexSelectContext;
-				indexSelectContext.opts.disableIdSetCache = 1;
-				indexSelectContext.opts.itemsCountInNamespace = totalItemsCount;
-				indexSelectContext.opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
-				indexSelectContext.opts.inTransaction = ctx.inTransaction;
-
-				try {
-					SelectKeyResults results = index->SelectKey(qe.Values(), qe.Condition(), 0, indexSelectContext, rdxCtx);
-					costCalculator.Add(results, qe.IndexNo() == ctx.sortingContext.uncommitedIndex);
-				} catch (const Error&) {
-					costCalculator.MarkInapposite();
-				}
-			});
-	}
-	costCalculator.EndSequence();
-
-	if (sortIndexSearchState == SortIndexHasUnorderedConditions) {
-		return 0;
-	}
-	return costCalculator.TotalCost();
-}
-
-size_t NsSelecter::calculateOptimizedCost(size_t costNormal, const QueryEntries& qentries, SelectCtx& ctx, const RdxContext& rdxCtx) {
-	// 'costOptimized == costNormal + 1' reduces internal iterations count for the tree in the res.GetMaxIterations() call
-	CostCalculator<CostCountingPolicy::Any> costCalculator(costNormal + 1);
-	for (size_t next, i = 0, sz = qentries.Size(); i != sz; i = next) {
-		next = qentries.Next(i);
-		if (!costCalculator.OnNewEntry(qentries, i, next)) {
-			continue;
-		}
-		qentries.Visit(
-			i, Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&)
-				RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			[&costCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry,
-																			  KnnQueryEntry, QueryFunctionEntry> auto&)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { costCalculator.MarkInapposite(); },
-			[&](const QueryEntry& qe) {
-				if (!qe.IsFieldIndexed() || qe.IndexNo() != ctx.sortingContext.uncommitedIndex) {
-					costCalculator.MarkInapposite();
-					return;
-				}
-
-				Index::SelectContext indexSelectContext;
-				indexSelectContext.opts.itemsCountInNamespace = ns_->itemsCount();
-				indexSelectContext.opts.disableIdSetCache = 1;
-				indexSelectContext.opts.unbuiltSortOrders = 1;
-				indexSelectContext.opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
-				indexSelectContext.opts.inTransaction = ctx.inTransaction;
-
-				try {
-					SelectKeyResults results =
-						ns_->indexes_[qe.IndexNo()]->SelectKey(qe.Values(), qe.Condition(), 0, indexSelectContext, rdxCtx);
-					costCalculator.Add(results);
-				} catch (std::exception&) {
-					costCalculator.MarkInapposite();
-				}
-			});
-	}
-	costCalculator.EndSequence();
-	return costCalculator.TotalCost();
-}
-
-bool NsSelecter::isSortOptimizationEffective(const QueryEntries& qentries, SelectCtx& ctx, const RdxContext& rdxCtx) {
-	if (qentries.Size() == 0) {
-		return true;
-	}
-	if (qentries.Size() == 1 && qentries.Is<QueryEntry>(0)) {
-		const auto& qe = qentries.Get<QueryEntry>(0);
-		if (qe.IndexNo() == ctx.sortingContext.uncommitedIndex) {
-			return SelectIteratorContainer::IsExpectingOrderedResults(qe);
-		}
-	}
-
-	const size_t expectedMaxIterationsNormal = calculateNormalCost(qentries, ctx, rdxCtx);
-	if (expectedMaxIterationsNormal == 0) {
-		return false;
-	}
-	const size_t totalItemsCount = ns_->itemsCount();
-	const auto costNormal = size_t(double(expectedMaxIterationsNormal) * log2(expectedMaxIterationsNormal));
-	if (costNormal >= totalItemsCount) {
-		// Check if it's more effective to iterate over all the items via btree, than select and sort ids via the most effective index
-		return true;
-	}
-
-	size_t costOptimized = calculateOptimizedCost(costNormal, qentries, ctx, rdxCtx);
-	if (costNormal >= costOptimized) {
-		return true;  // If max iterations count with btree indexes is better than with any other condition (including sort overhead)
-	}
-	if (expectedMaxIterationsNormal <= 150) {
-		return false;  // If there is very good filtering condition (case for the issues #1489)
-	}
-	if (ctx.isForceAll || ctx.HasLimit()) {
-		if (expectedMaxIterationsNormal < 2000) {
-			return false;  // Skip attempt to check limit if there is good enough unordered filtering condition
-		}
-	}
-	if (!ctx.isForceAll && ctx.HasLimit()) {
-		// If optimization will be disabled, selector will must iterate over all the results, ignoring limit
-		// Experimental value. It was chosen during debugging request from issue #1402.
-		// TODO: It's possible to evaluate this multiplier, based on the query conditions, but the only way to avoid corner cases is to
-		// allow user to hint this optimization.
-		const size_t limitMultiplier = std::max(size_t(20), size_t(totalItemsCount / expectedMaxIterationsNormal) * 4);
-		const auto offset = ctx.HasOffset() ? ctx.offset : 1;
-		costOptimized = limitMultiplier * (ctx.limit + offset);
-	}
-	return costOptimized <= costNormal;
+bool NsSelecter::isSortOptimizationEffective(const QueryEntries& qentries, const SelectCtx& ctx, bool needCalcTotal,
+											 const RdxContext& rdxCtx) {
+	sorting_heuristics::NamespaceData nsData{.indexes = ns_->indexes_, .itemsCount = ns_->itemsCount()};
+	return sorting_heuristics::IsSortOptimizationEffective(qentries, ctx, needCalcTotal, nsData, rdxCtx);
 }
 
 void NsSelecter::writeAggregationResultMergeSubQuery(LocalQueryResults& result, h_vector<Aggregator, 4>&& aggregators, SelectCtx& ctx) {

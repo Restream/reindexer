@@ -4,9 +4,11 @@
 #include "core/function/function.h"
 #include "helpers.h"
 
-using benchmark::AllocsTracker;
 using reindexer::Query;
 using reindexer::QueryResults;
+using reindexer::IndexOpts;
+
+namespace reindexer_benchmarks {
 
 void ApiTvSimpleComparators::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
@@ -26,17 +28,17 @@ void ApiTvSimpleComparators::RegisterAllCases() {
 	Register("Query2Cond", &ApiTvSimpleComparators::Query2Cond<NoTotal>, BasePtr());
 	Register("Query2CondTotal", &ApiTvSimpleComparators::Query2Cond<ReqTotal>, BasePtr());
 	Register("Query2CondCachedTotal", &ApiTvSimpleComparators::Query2Cond<CachedTotal>, BasePtr());
-	Register("Query3Cond", &ApiTvSimpleComparators::Query3Cond<NoTotal>, BasePtr());
-	Register("Query3CondTotal", &ApiTvSimpleComparators::Query3Cond<ReqTotal>, BasePtr());
-	Register("Query3CondCachedTotal", &ApiTvSimpleComparators::Query3Cond<CachedTotal>, BasePtr());
+	Register("Query3Cond", &ApiTvSimpleComparators::Query3Cond<NoTotal, AscSort>, BasePtr());
+	Register("Query3CondTotal", &ApiTvSimpleComparators::Query3Cond<ReqTotal, AscSort>, BasePtr());
+	Register("Query3CondCachedTotal", &ApiTvSimpleComparators::Query3Cond<CachedTotal, AscSort>, BasePtr());
 	Register("Query3CondKillIdsCache", &ApiTvSimpleComparators::Query3CondKillIdsCache, BasePtr());
 	Register("Query3CondRestoreIdsCache", &ApiTvSimpleComparators::Query3CondRestoreIdsCache, BasePtr());
-	Register("Query4Cond", &ApiTvSimpleComparators::Query4Cond<NoTotal>, BasePtr());
-	Register("Query4CondTotal", &ApiTvSimpleComparators::Query4Cond<ReqTotal>, BasePtr());
-	Register("Query4CondCachedTotal", &ApiTvSimpleComparators::Query4Cond<CachedTotal>, BasePtr());
-	Register("Query4CondRange", &ApiTvSimpleComparators::Query4CondRange<NoTotal>, BasePtr());
-	Register("Query4CondRangeTotal", &ApiTvSimpleComparators::Query4CondRange<ReqTotal>, BasePtr());
-	Register("Query4CondRangeCachedTotal", &ApiTvSimpleComparators::Query4CondRange<CachedTotal>, BasePtr());
+	Register("Query4Cond", &ApiTvSimpleComparators::Query4Cond<NoTotal, AscSort>, BasePtr());
+	Register("Query4CondTotal", &ApiTvSimpleComparators::Query4Cond<ReqTotal, AscSort>, BasePtr());
+	Register("Query4CondCachedTotal", &ApiTvSimpleComparators::Query4Cond<CachedTotal, AscSort>, BasePtr());
+	Register("Query4CondRange", &ApiTvSimpleComparators::Query4CondRange<NoTotal, AscSort>, BasePtr());
+	Register("Query4CondRangeTotal", &ApiTvSimpleComparators::Query4CondRange<ReqTotal, AscSort>, BasePtr());
+	Register("Query4CondRangeCachedTotal", &ApiTvSimpleComparators::Query4CondRange<CachedTotal, AscSort>, BasePtr());
 
 	Register("QueryDistinctOneField", &ApiTvSimpleComparators::QueryDistinctOneField, this);
 	Register("QueryDistinctTwoField", &ApiTvSimpleComparators::QueryDistinctTwoField, this);
@@ -47,7 +49,6 @@ void ApiTvSimpleComparators::RegisterAllCases() {
 	Register("QueryDistinctTwoFieldArrayLimit", &ApiTvSimpleComparators::QueryDistinctTwoFieldArrayLimit, this);
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
-
 reindexer::Error ApiTvSimpleComparators::Initialize() {
 	auto err = Base::Initialize();
 	if (!err.ok()) {
@@ -256,3 +257,5 @@ void ApiTvSimpleComparators::QueryDistinctTwoFieldArrayLimit(benchmark::State& s
 		}
 	}
 }
+
+}  // namespace reindexer_benchmarks

@@ -2,6 +2,10 @@
 #include "core/cjson/jsonbuilder.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
 void NestedArraysApi::SetUp() {
 	auto dir = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "/nested_arrays_test");
 	std::ignore = reindexer::fs::RmDirAll(dir);
@@ -349,3 +353,5 @@ TEST_F(NestedArraysApi, UpdateDropArrayItem) {
 				"[[211],[221,223],[231,233]],"
 				"[[311,313],[],[331,332,333]]]");
 }
+
+}  // namespace reindexer_tests

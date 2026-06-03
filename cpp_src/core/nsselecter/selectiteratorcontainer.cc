@@ -17,6 +17,7 @@
 #include "estl/stable_sort.h"
 #include "nsselecter.h"
 #include "querypreprocessor.h"
+#include "sorting_heuristics.h"
 #include "tools/logger.h"
 #include "tools/use_pmr.h"
 
@@ -922,7 +923,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 												   (op == OpAnd) && !qe.Distinct() && (begin == 0) &&
 												   (next == end || queries.GetOperation(next) != OpOr);
 					if (enableSortIndexOptimize) {
-						if (!IsExpectingOrderedResults(qe)) {
+						if (!sorting_heuristics::IsExpectingOrderedResults(qe)) {
 							// Disable sorting index optimization if it somehow has incompatible conditions
 							enableSortIndexOptimize = false;
 						}

@@ -3,6 +3,8 @@
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
+namespace reindexer_tests {
+
 const std::string RPCClientTestApi::kDefaultRPCServerAddr = "127.0.0.1:" + std::to_string(RPCClientTestApi::kDefaultRPCPort);
 
 void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLogin) {
@@ -179,3 +181,5 @@ void RPCClientTestApi::FillData(client::CoroReindexer& rx, std::string_view nsNa
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 }
+
+}  // namespace reindexer_tests

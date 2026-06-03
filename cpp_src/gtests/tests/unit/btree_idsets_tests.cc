@@ -5,6 +5,8 @@
 #include "core/nsselecter/btreeindexiterator.h"
 #include "core/nsselecter/joins/queryresults.h"
 
+namespace reindexer_tests {
+
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	std::string strValueToCheck = lastStrValue;
 	auto qr = rt.Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck));
@@ -194,3 +196,5 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	}
 	EXPECT_TRUE(pos == 0);
 }
+
+}  // namespace reindexer_tests

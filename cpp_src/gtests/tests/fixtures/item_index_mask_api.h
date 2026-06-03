@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] ItemIndexMaskApi : public ReindexerApi {
 public:
 	const char* kFieldId = "id";
@@ -8,6 +10,8 @@ public:
 	const char* kFieldTwo = "f2";
 
 	void SetUp() override {
+		using reindexer::IndexOpts;
+
 		ReindexerApi::SetUp();
 		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
@@ -39,3 +43,5 @@ public:
 		rt.SetSchema(default_namespace, jsonschema);
 	}
 };
+
+}  // namespace reindexer_tests

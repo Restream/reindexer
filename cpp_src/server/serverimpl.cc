@@ -26,7 +26,7 @@
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
-#include "tools/tcmallocheapwathcher.h"
+#include "tools/tcmallocheapwatcher.h"
 #ifdef _WIN32
 #include "winservice.h"
 #endif
@@ -291,10 +291,10 @@ int ServerImpl::run() {
 
 #if REINDEX_WITH_GPERFTOOLS
 	ev::periodic tcmallocHeapWatchDog;
-	TCMallocHeapWathcher heapWatcher;
+	TCMallocHeapWatcher heapWatcher;
 	if (alloc_ext::TCMallocIsAvailable()) {
 		heapWatcher =
-			TCMallocHeapWathcher(alloc_ext::instance(), config_.AllocatorCacheLimit, config_.AllocatorCachePart, spdlog::get("server"));
+			TCMallocHeapWatcher(alloc_ext::instance(), config_.AllocatorCacheLimit, config_.AllocatorCachePart, spdlog::get("server"));
 		tcmallocHeapWatchDog.set(loop_);
 		tcmallocHeapWatchDog.set([&heapWatcher](ev::timer&, int) { heapWatcher.CheckHeapUsagePeriodic(); });
 

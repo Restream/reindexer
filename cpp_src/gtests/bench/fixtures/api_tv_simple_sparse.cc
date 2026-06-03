@@ -2,11 +2,12 @@
 #include "allocs_tracker.h"
 #include "helpers.h"
 
-using benchmark::AllocsTracker;
 using reindexer::Query;
 using reindexer::QueryResults;
 
 constexpr char kJoinNamespace[] = "JoinItems";
+
+namespace reindexer_benchmarks {
 
 void ApiTvSimpleSparse::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
@@ -43,7 +44,6 @@ void ApiTvSimpleSparse::RegisterAllCases() {
 	Register("Query4CondNotNULL66", &ApiTvSimpleSparse::Query4CondNotNULL66, this);
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
-
 reindexer::Item ApiTvSimpleSparse::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be stored in app
@@ -234,3 +234,5 @@ void ApiTvSimpleSparse::query4CondParameterizable(benchmark::State& state, std::
 					   .Limit(20);
 	benchQuery(q, state);
 }
+
+}  // namespace reindexer_benchmarks

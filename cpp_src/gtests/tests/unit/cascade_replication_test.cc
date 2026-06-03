@@ -7,6 +7,8 @@
 #include "quantization_helpers.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
 
 TEST_F(CascadeReplicationApi, MasterSlaveSyncByWalAddRow) {
@@ -339,7 +341,7 @@ TEST_F(CascadeReplicationApi, TransactionTest) {
 
 	auto tr = master->api.reindexer->NewTransaction(ns1.nsName_);
 	for (unsigned int i = 0; i < kRows; i++) {
-		reindexer::client::Item item = tr.NewItem();
+		client::Item item = tr.NewItem();
 		auto err = item.FromJSON("{\"id\":" + std::to_string(i + kRows * 10) + "}");
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = tr.Upsert(std::move(item));
@@ -798,7 +800,7 @@ TEST_F(CascadeReplicationApi, DISABLED_RenameSlaveNs) {
 	// tmpNsDef.isTemporary = true;
 	// err = master->api.reindexer->AddNamespace(tmpNsDef);
 	// ASSERT_TRUE(err.ok()) << err.what();
-	// reindexer::client::Item item = master->api.NewItem(tmpNsName);
+	// client::Item item = master->api.NewItem(tmpNsName);
 	// err = item.FromJSON("{\"id\":" + std::to_string(10) + "}");
 	// ASSERT_TRUE(err.ok()) << err.what();
 	// err = master->api.reindexer->Upsert(tmpNsName, item);
@@ -917,7 +919,7 @@ TEST_F(CascadeReplicationApi, RestrictUpdates) {
 	master->AddFollower(slave);
 
 	for (unsigned int i = 0; i < count; i++) {
-		reindexer::client::Item item = master->api.NewItem("ns1");
+		client::Item item = master->api.NewItem("ns1");
 		std::string itemJson = fmt::format(R"json({{"id": {}, "data": "{}" }})json", i + from, dataString);
 		auto err = item.Unsafe().FromJSON(itemJson);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -948,19 +950,18 @@ TEST_F(CascadeReplicationApi, LSNConflictWithSQLUpdate) {
 	//  5. perform full namespace update # here statement based replication could break the leader
 	//  6. restart follower
 	//  7. wait sync
-	const std::string kBaseStoragePath = reindexer::fs::JoinPath(kBaseTestsetDbPath, "LSNConflictWithSQLUpdate");
+	const std::string kBaseStoragePath = fs::JoinPath(kBaseTestsetDbPath, "LSNConflictWithSQLUpdate");
 	const std::string kNsName = "ns1";
 	constexpr size_t kDataCount = 20;
 	ServerControl leaderSc;
-	leaderSc.InitServer(
-		ServerControlConfig(0, 7770, 7880, reindexer::fs::JoinPath(kBaseStoragePath, "leader"), "db", true, 1024 * 1024 * 1024));
+	leaderSc.InitServer(ServerControlConfig(0, 7770, 7880, fs::JoinPath(kBaseStoragePath, "leader"), "db", true, 1024 * 1024 * 1024));
 	auto leader = leaderSc.Get();
 
 	leader->MakeLeader();
 	TestNamespace1 testns1(leader, kNsName);
 
 	ServerControl followerSc;
-	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
+	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
 	auto follower = followerSc.Get();
 	follower->MakeFollower();
 	leader->AddFollower(follower);
@@ -976,7 +977,7 @@ TEST_F(CascadeReplicationApi, LSNConflictWithSQLUpdate) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), kDataCount);
 
-	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
+	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
 	WaitSync(leader, followerSc.Get(), kNsName);
 }
 
@@ -1111,8 +1112,8 @@ TEST_F(CascadeReplicationApi, WriteIntoSlaveNsAfterReconfiguration) {
 	WaitSync(cluster.Get(0), cluster.Get(1), kNs1);
 	WaitSync(cluster.Get(0), cluster.Get(1), kNs2);
 
-	auto createItem = [](const ServerPtr& node, const std::string& ns, int itemId) -> reindexer::client::Item {
-		reindexer::client::Item item = node->api.NewItem(ns);
+	auto createItem = [](const ServerPtr& node, const std::string& ns, int itemId) -> client::Item {
+		client::Item item = node->api.NewItem(ns);
 		auto err = item.FromJSON("{\"id\":" + std::to_string(itemId) + "}");
 		EXPECT_TRUE(err.ok()) << err.what();
 		return item;
@@ -1373,9 +1374,9 @@ TEST_F(CascadeReplicationApi, ForceSyncStress) {
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	auto addRow = [](reindexer::client::Reindexer& rx, std::string_view ns, int id) {
-		reindexer::client::Item item = rx.NewItem(ns);
-		auto json = fmt::format(R"j({{"id":{},"data":"{}"}})j", id, reindexer::randStringAlph(32));
+	auto addRow = [](client::Reindexer& rx, std::string_view ns, int id) {
+		client::Item item = rx.NewItem(ns);
+		auto json = fmt::format(R"j({{"id":{},"data":"{}"}})j", id, randStringAlph(32));
 		auto err = item.Unsafe(true).FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 		return rx.Upsert(ns, item);
@@ -1409,14 +1410,14 @@ TEST_F(CascadeReplicationApi, ForceSyncStress) {
 		TestNamespace1 ns21(cluster.Get(1), nsName2);
 	}
 
-	auto createTx = [](reindexer::client::Reindexer& rx, std::string_view ns, int from, int to) {
+	auto createTx = [](client::Reindexer& rx, std::string_view ns, int from, int to) {
 		auto tx = rx.NewTransaction(ns);
 		if (!tx.Status().ok()) {
 			return tx;
 		}
 		for (int id = from; id < to; ++id) {
-			reindexer::client::Item item = tx.NewItem();
-			auto err = item.FromJSON(fmt::format(R"j({{"id":{},"data":"{}"}})j", id, reindexer::randStringAlph(32)));
+			client::Item item = tx.NewItem();
+			auto err = item.FromJSON(fmt::format(R"j({{"id":{},"data":"{}"}})j", id, randStringAlph(32)));
 			EXPECT_TRUE(err.ok()) << err.what();
 			err = tx.Upsert(std::move(item));
 			EXPECT_TRUE(err.ok()) << err.what();
@@ -1586,7 +1587,7 @@ TEST_F(CascadeReplicationApi, ReplTokensNegativeTest) {
 	int count = 0;
 	while (true) {
 		client::QueryResults qr;
-		leader->api.Select(Query(reindexer::kReplicationStatsNamespace).Where("type", CondEq, "async"), qr);
+		leader->api.Select(Query(kReplicationStatsNamespace).Where("type", CondEq, "async"), qr);
 
 		WrSerializer ser;
 		auto err = qr.begin().GetJSON(ser);
@@ -1623,7 +1624,7 @@ TEST_F(CascadeReplicationApi, ReplTokensNegativeTest) {
 
 namespace sq8_test {
 
-template <reindexer::VectorMetric Metric>
+template <VectorMetric Metric>
 void ReplWithQuantizationTestBody(auto& api, TestSyncType sync) {
 	constexpr static auto kNsName = "hnsw_quantization_repl_test_ns";
 
@@ -1716,3 +1717,5 @@ INSTANTIATE_TEST_SUITE_P(, Sq8CascadeReplicationApi, ::testing::Values(TestSyncT
 							 }
 						 });
 }  // namespace sq8_test
+
+}  // namespace reindexer_tests

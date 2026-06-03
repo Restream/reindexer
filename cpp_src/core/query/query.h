@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <initializer_list>
+#include "core/enums.h"
 #include "core/keyvalue/geometry.h"
 #include "estl/concepts.h"
 #include "estl/forward_like.h"
@@ -62,8 +63,9 @@ public:
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
 	/// @param ser - serializer to store SQL string
+	/// @param pretty - output in pretty sql format
 	/// @param stripArgs - replace condition values with '?'
-	WrSerializer& GetSQL(WrSerializer& ser, bool stripArgs = false) const;
+	WrSerializer& GetSQL(WrSerializer& ser, bool stripArgs = false, Pretty pretty = Pretty_False) const;
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
 	/// @param ser - serializer to store SQL string
@@ -78,8 +80,9 @@ public:
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
 	/// @param realType - replaces original query's type
+	/// @param pretty - output in pretty sql format
 	/// @return Query in SQL format
-	[[nodiscard]] std::string GetSQL(QueryType realType) const;
+	[[nodiscard]] std::string GetSQL(QueryType realType, Pretty pretty = Pretty_False) const;
 
 	/// Parses JSON dsl set. Throws Error-exception on errors
 	/// @param dsl - dsl set.
@@ -428,7 +431,7 @@ public:
 	/// @param params - search params, depending on the specific vector index type.
 	/// @return Query object ready to be executed.
 	template <concepts::ConvertibleToString Str>
-	Query& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) & {
+	Query& WhereKNN(Str&& field, FloatVector vec, KnnSearchParams params) & {
 		if (nextOp_ == OpNot) {
 			throw Error(errLogic, "NOT operation is not allowed with knn condition");
 		}
@@ -438,16 +441,16 @@ public:
 		return *this;
 	}
 	template <concepts::ConvertibleToString Str>
-	[[nodiscard]] Query&& WhereKNN(Str&& field, ConstFloatVector vec, KnnSearchParams params) && {
+	[[nodiscard]] Query&& WhereKNN(Str&& field, FloatVector vec, KnnSearchParams params) && {
 		return std::move(WhereKNN(std::forward<Str>(field), std::move(vec), std::move(params)));
 	}
 	template <concepts::ConvertibleToString Str>
 	Query& WhereKNN(Str&& field, ConstFloatVectorView vec, KnnSearchParams params) & {
-		return WhereKNN(std::forward<Str>(field), ConstFloatVector{vec.Span()}, std::move(params));
+		return WhereKNN(std::forward<Str>(field), FloatVector{vec.Span()}, std::move(params));
 	}
 	template <concepts::ConvertibleToString Str>
 	[[nodiscard]] Query&& WhereKNN(Str&& field, ConstFloatVectorView vec, KnnSearchParams params) && {
-		return std::move(WhereKNN(std::forward<Str>(field), ConstFloatVector{vec.Span()}, std::move(params)));
+		return std::move(WhereKNN(std::forward<Str>(field), FloatVector{vec.Span()}, std::move(params)));
 	}
 
 	/// Vectors search with autoembedding. Adds KNN-condition to get K nearest neighbors of the 'data'.

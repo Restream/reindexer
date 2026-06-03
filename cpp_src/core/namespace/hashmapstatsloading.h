@@ -25,7 +25,7 @@ struct [[nodiscard]] IndexHashMapStats {
 	std::vector<char> stats;
 };
 
-Error LoadIndexesHashMapStats(AsyncStorage& storage_, const std::string& storageKey, std::vector<IndexHashMapStats>& indexesStats);
+Error LoadIndexesHashMapStats(AsyncStorage& storage_, const std::string& storageKey, std::vector<IndexHashMapStats>& indexesStats) noexcept;
 
 void UpdateNamespaceHashMapsStats(size_t numThreads, std::string_view namespaceName, const std::vector<std::unique_ptr<Index>>& indexes,
 								  AsyncStorage& storage, const std::string& storageKey) noexcept;

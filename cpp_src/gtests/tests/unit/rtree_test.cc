@@ -9,6 +9,11 @@
 #include "reindexer_api.h"
 #include "tools/float_comparison.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+using reindexer_tests_tools::randPoint;
+
 namespace {
 
 static constexpr long long kRange = 1000ll;
@@ -152,7 +157,7 @@ static void TestSearch() {
 	for (size_t i = 0; i < 1000; ++i) {
 		SearchVisitor<RTree> DWithinVisitor;
 		const reindexer::Point point{randPoint(kRange)};
-		const double distance = randBin<double>(0, 100);
+		const double distance = reindexer_tests_tools::randBin<double>(0, 100);
 		for (const auto& r : data) {
 			if (reindexer::DWithin(point, r, distance)) {
 				DWithinVisitor.Add(r);
@@ -185,7 +190,7 @@ static void TestDelete() {
 
 	size_t deletedCount = 0;
 	for (size_t i = 0; i < 1000; ++i) {
-		DeleteVisitor<RTree> visitor{{randPoint(kRange), randPoint(kRange)}};
+		DeleteVisitor<RTree> visitor{{reindexer_tests_tools::randPoint(kRange), randPoint(kRange)}};
 		if (tree.DeleteOneIf(visitor)) {
 			++deletedCount;
 		}
@@ -250,7 +255,7 @@ static void TestMap() {
 	for (size_t i = 0; i < 1000; ++i) {
 		SearchVisitor<Map> visitor;
 		const reindexer::Point point{randPoint(kRange)};
-		const double distance = randBin<double>(0, 100);
+		const double distance = reindexer_tests_tools::randBin<double>(0, 100);
 		for (const auto& r : data) {
 			if (reindexer::DWithin(point, r.first, distance)) {
 				visitor.Add(r);
@@ -318,3 +323,5 @@ TEST_F(ReindexerApi, EmptyRTreeSparseValues) {
 		ASSERT_TRUE(qr.Count() == 1);
 	}
 }
+
+}  // namespace reindexer_tests

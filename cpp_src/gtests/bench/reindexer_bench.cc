@@ -11,6 +11,8 @@
 #include "join_items.h"
 #include "update_items.h"
 
+namespace reindexer_benchmarks {
+
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 const int kItemsInBenchDataset = 5'000;
 const int kItemsInComparatorsBenchDataset = 5'000;
@@ -22,8 +24,7 @@ const int kItemsInBenchDataset = 500'000;
 const int kItemsInComparatorsBenchDataset = 100'000;
 #endif
 
-// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
-int main(int argc, char** argv) {
+int BenchMain(int argc, char** argv) {
 	using namespace std::string_view_literals;
 
 #ifdef HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
@@ -114,3 +115,8 @@ int main(int argc, char** argv) {
 
 	return 0;
 }
+
+}  // namespace reindexer_benchmarks
+
+// NOLINTNEXTLINE (bugprone-exception-escape) `main` is required to be in global namespace
+int main(int argc, char** argv) { return reindexer_benchmarks::BenchMain(argc, argv); }

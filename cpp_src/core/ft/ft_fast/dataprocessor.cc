@@ -1,4 +1,4 @@
-#include "dataprocessor.h"
+﻿#include "dataprocessor.h"
 #include <chrono>
 #include "core/ft/numtotext.h"
 #include "core/ft/typos.h"
@@ -28,7 +28,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	const auto preprocWords = insertIntoSuffix(words_um, holder_);
 	const auto tm2 = system_clock_w::now();
 	// Step 4: Commit suffixes array. It runs in parallel with next step
-	auto& suffixes = holder_.GetSuffix();
+	auto& suffixes = holder_.GetLastStepSuffix();
 	auto tm3 = tm2, tm4 = tm2;
 	std::thread sufBuildThread = runInThread(exwr, [&suffixes, &tm3] {
 		suffixes.build();
@@ -56,7 +56,8 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	const auto tm6 = system_clock_w::now();
 
 	logFmt(LogInfo, "FastIndexText[{}] built with [{} uniq words, {} typos, {}KB text size, {}KB suffixarray size, {}KB idrelsets size]",
-		   holder_.steps.size(), words_um.size(), holder_.GetTypos().size(), szCnt / 1024, suffixes.heap_size() / 1024, idsetcnt / 1024);
+		   holder_.steps.size(), words_um.size(), holder_.GetLastStepTypos().size(), szCnt / 1024, suffixes.heap_size() / 1024,
+		   idsetcnt / 1024);
 
 	logFmt(LogInfo,
 		   "DataProcessor::Process elapsed {} ms total [ build words {} ms | suffixes preproc {} ms | build typos {} ms | build "
@@ -69,7 +70,8 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 template <typename IdCont>
 typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuffix(words_map& words_um, DataHolder<IdCont>& holder) {
 	auto& words = holder.GetWords();
-	auto& suffix = holder.GetSuffix();
+	auto& suffix = holder.GetLastStepSuffix();
+	word_hash wh;
 
 	suffix.reserve(words_um.size() * 20, words_um.size());
 
@@ -80,7 +82,7 @@ typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuf
 		// if we still don't have that word, we add it to new suffix tree, otherwise we just add information to current word
 
 		auto id = words.size();
-		WordIdType pos = holder.findWord(keyIt.first);
+		WordIdType pos = holder.FindWord(keyIt.first, false);
 
 		if (!pos.IsEmpty()) {
 			found.emplace_back(pos);
@@ -91,6 +93,7 @@ typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuf
 		words.emplace_back();
 		pos = holder.BuildWordId(id);
 		suffix.insert(keyIt.first, pos);
+		holder.lastStepWords_[wh(keyIt.first)].emplace_back(pos);
 	}
 	return found;
 }
@@ -437,7 +440,7 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& 
 	}
 
 	exwr.RethrowException();
-	holder_.GetTypos().Build(threadsTyposDatas, stepNum, numThreads);
+	holder_.GetLastStepTypos().Build(threadsTyposDatas, stepNum, numThreads);
 }
 
 template <typename IdCont>

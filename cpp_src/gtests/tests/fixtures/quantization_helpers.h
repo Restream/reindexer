@@ -1,13 +1,15 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include <thread>
 #include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
-#include "core/index/float_vector/hnswlib/hnswlib.h"
-#include "core/indexdef.h"
+#include "core/definitions/indexdef.h"
 #include "core/query/query.h"
 #include "gtests/tests/gtest_cout.h"
 #include "yaml-cpp/yaml.h"
+
+namespace reindexer_tests {
 
 namespace sq8_test {
 
@@ -163,8 +165,11 @@ auto newTxItemWithVectors(auto& tx, int id) {
 	return deserializeItem(std::move(item), id, false);
 }
 
-template <reindexer::VectorMetric Metric, MultithreadingMode mode = MultithreadingMode::SingleThread>
+template <reindexer::VectorMetric Metric, reindexer::MultithreadingMode mode = reindexer::MultithreadingMode::SingleThread>
 [[nodiscard]] auto InitNsAndIndexes(auto& api, std::string_view nsName, size_t size, hnswlib::QuantizationConfig quantizationConfig) {
+	using reindexer::IndexOpts;
+	using reindexer::FloatVectorIndexOpts;
+
 	auto fvBfOpts = FloatVectorIndexOpts{}.SetDimension(kDimension).SetStartSize(kHNSWMaxSize).SetMetric(Metric).SetMultithreading(mode);
 	auto fvHnswOpts = FloatVectorIndexOpts{fvBfOpts}.SetM(kM).SetEfConstruction(kEfConstruction);
 
@@ -230,3 +235,5 @@ void WaitDequantization(auto& api, std::string_view nsName, std::string_view ind
 enum class [[nodiscard]] TestSyncType { Online, WAL, Force };
 
 }  // namespace sq8_test
+
+}  // namespace reindexer_tests

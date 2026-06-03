@@ -2,11 +2,12 @@
 #include "allocs_tracker.h"
 
 #include "core/ft/config/ftconfig.h"
-// #include "helpers.h"
-// #include "tools/clock.h"
-// #include "tools/fsops.h"
 
-static uint8_t printFlags = benchmark::AllocsTracker::kPrintAllocs | benchmark::AllocsTracker::kPrintHold;
+using reindexer::IndexOpts;
+
+namespace reindexer_benchmarks {
+
+static uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
 FullTextMergeLimit::FullTextMergeLimit(Reindexer* db, const std::string& name, size_t maxItems)
 	: BaseFixture(db, name, maxItems, 1, false) {
@@ -14,16 +15,14 @@ FullTextMergeLimit::FullTextMergeLimit(Reindexer* db, const std::string& name, s
 	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
 #endif
 	static reindexer::FTConfig ftCfg(1);
-	static IndexOpts ftIndexOpts;
 	ftCfg.optimization = reindexer::FTConfig::Optimization::Memory;
 	ftCfg.stopWords = {};
 	ftCfg.splitOptions.SetSymbols("1234567890", "");
 	ftCfg.mergeLimit = 0x1FFFFFF;
 	ftCfg.maxTypos = 0;
-	ftIndexOpts.SetConfig(IndexFastFT, ftCfg.GetJSON({}));
-	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex(kFastIndexTextName_, "text", "string", ftIndexOpts);
+	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex(kFastIndexTextName_, "text", "string", IndexOpts().SetConfig(IndexFastFT, ftCfg.GetJSON({})));
 }
-
 void FullTextMergeLimit::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("Insert", &FullTextMergeLimit::Insert, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
@@ -88,7 +87,7 @@ void FullTextMergeLimit::Insert(State& state) {
 			indexes[m][v] = true;
 		}
 	}
-	benchmark::AllocsTracker allocsTracker(state, printFlags);
+	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		std::string phrase;
 		for (int h = 0; h < id_seq_->Count(); h++) {
@@ -120,7 +119,7 @@ void FullTextMergeLimit::Insert(State& state) {
 }
 
 void FullTextMergeLimit::BuildFastTextIndex(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state, printFlags);
+	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
 		q.Where(kFastIndexTextName_, CondEq, kWords_[0]).Limit(20);
@@ -134,7 +133,7 @@ void FullTextMergeLimit::BuildFastTextIndex(benchmark::State& state) {
 }
 
 void FullTextMergeLimit::FastTextIndexSelect(benchmark::State& state, const std::string& qs) {
-	benchmark::AllocsTracker allocsTracker(state, printFlags);
+	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
 		q.Where(kFastIndexTextName_, CondEq, qs);
@@ -147,3 +146,5 @@ void FullTextMergeLimit::FastTextIndexSelect(benchmark::State& state, const std:
 		}
 	}
 }
+
+}  // namespace reindexer_benchmarks

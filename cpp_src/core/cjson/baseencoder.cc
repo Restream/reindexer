@@ -7,9 +7,11 @@
 #include "core/cjson/fields_explorer/fields_array_value_extractor.h"
 #include "core/cjson/fields_explorer/fields_value_extractor.h"
 #include "core/cjson/tagspath.h"
+#include "core/key_value_type.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
 #include "core/queryresults/fields_filter.h"
+#include "core/type_consts.h"
 #include "csvbuilder.h"
 #include "field_extractor_grouping.h"
 #include "jsonbuilder.h"
@@ -328,7 +330,16 @@ bool BaseEncoder<Builder>::encodeImpl(ConstPayload* pl, ctag tag, Serializer& rd
 						std::ignore = encode(pl, rdser, arrNode, TagIndex{i});
 					}
 				} else if constexpr (kIsNotDummy) {
-					builder.Array(indexedTag, rdser, atagType, atagCount);
+					if (atagType == TAG_UUID) {
+						auto arr = builder.Array(indexedTag);
+						for (size_t i = 0; i < atagCount; ++i) {
+							Variant value = rdser.GetRawVariant(KeyValueType::Uuid());
+							std::ignore = value.convert(KeyValueType::String());
+							arr.Put(TagName::Empty(), std::move(value), 0);
+						}
+					} else {
+						builder.Array(indexedTag, rdser, atagType, atagCount);
+					}
 				} else {
 					const KeyValueType kvt{atagType};
 					for (size_t i = 0; i < atagCount; ++i) {
@@ -368,6 +379,9 @@ bool BaseEncoder<Builder>::encodeImpl(ConstPayload* pl, ctag tag, Serializer& rd
 				const KeyValueType kvt{tagType};
 				if constexpr (kIsNotDummy) {
 					Variant value = rdser.GetRawVariant(kvt);
+					if (tagType == TAG_UUID) [[unlikely]] {
+						std::ignore = value.convert(KeyValueType::String());
+					}
 					if constexpr (std::is_same_v<TagT, TagName>) {
 						builder.Put(indexedTag, std::move(value), 0);
 					} else {

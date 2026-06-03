@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/id_type.h"
+#include <cstdint>
 
 namespace reindexer {
 

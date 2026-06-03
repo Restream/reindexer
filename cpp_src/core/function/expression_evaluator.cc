@@ -1,4 +1,6 @@
 #include "expression_evaluator.h"
+
+#include "core/formatters/tokenizer_range.h"
 #include "core/function/function_invoker.h"
 #include "core/function/function_parser.h"
 #include "core/namespace/namespaceimpl.h"
@@ -29,7 +31,8 @@ void ExpressionEvaluator::captureArrayContent(Tokenizer& parser) {
 	}
 	for (;; tok = parser.NextToken(Tokenizer::Flags::NoFlags)) {
 		if (tok.Text() == "]"sv) [[unlikely]] {
-			throw Error(errParseSQL, "Expected field value, but found ']' in query, {}", parser.Where(tok));
+			const auto range = parser.Where(tok);
+			throw SqlParserError(range, "Expected field value, but found ']' in query, {}", range);
 		}
 		arrayValues_.emplace_back(Token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_False, NullAllowed_True));
 		tok = parser.NextToken(Tokenizer::Flags::NoFlags);
@@ -37,7 +40,8 @@ void ExpressionEvaluator::captureArrayContent(Tokenizer& parser) {
 			break;
 		}
 		if (tok.Text() != ","sv) [[unlikely]] {
-			throw Error(errParseSQL, "Expected ']' or ',', but found '{}' in query, {}", tok.Text(), parser.Where(tok));
+			const auto range = parser.Where(tok);
+			throw SqlParserError(range, "Expected ']' or ',', but found '{}' in query, {}", tok.Text(), range);
 		}
 	}
 }

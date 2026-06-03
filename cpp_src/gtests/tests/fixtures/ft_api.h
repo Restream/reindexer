@@ -4,6 +4,8 @@
 #include "core/queryresults/queryresults.h"
 #include "reindexertestapi.h"
 
+namespace reindexer_tests {
+
 #if RX_FT_TESTS_OPT_CPU
 #define kRxFtTestTypes reindexer::FTConfig::Optimization::CPU
 #elif RX_FT_TESTS_OPT_MEM
@@ -82,3 +84,5 @@ protected:
 	int counter_ = 0;
 	ReindexerTestApi<reindexer::Reindexer> rt;
 };
+
+}  // namespace reindexer_tests

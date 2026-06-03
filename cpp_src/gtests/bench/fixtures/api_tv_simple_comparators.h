@@ -5,6 +5,8 @@
 
 using namespace std::string_view_literals;
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] ApiTvSimpleComparators : private ApiTvSimpleBase {
 	using Base = ApiTvSimpleBase;
 
@@ -12,6 +14,8 @@ public:
 	~ApiTvSimpleComparators() override = default;
 	ApiTvSimpleComparators(Reindexer* db, std::string_view name, size_t maxItems)
 		: Base(db, name, maxItems, "string_select_ns_comparators"sv) {
+		using reindexer::IndexOpts;
+
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "-", "int64", IndexOpts())
 			.AddIndex("year", "-", "int", IndexOpts())
@@ -53,3 +57,5 @@ private:
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	reindexer::WrSerializer wrSer_;
 };
+
+}  // namespace reindexer_benchmarks

@@ -7,12 +7,18 @@
 #include "tools/fsops.h"
 #include "transaction_api.h"
 
+namespace reindexer_tests {
+
 #if defined(__GNUC__) && !defined(__clang__) && defined(REINDEX_WITH_TSAN)
 // GCC-only workaround for a known false-positive -Warray-bounds warning
 // triggered by std::thread when building with ThreadSanitizer.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
+
+using reindexer::IndexOpts;
+using reindexer::FloatVectorIndexOpts;
+using reindexer::MultithreadingMode;
 
 TEST_F(TransactionApi, ConcurrencyTest) {
 	using reindexer::fs::GetTempDir;
@@ -344,3 +350,5 @@ TEST_F(TransactionApi, ConcurrentTwoFloatVectorUpdateTest) {
 		++id;
 	}
 }
+
+}  // namespace reindexer_tests

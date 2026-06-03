@@ -42,9 +42,7 @@ public:
 						continue;
 					}
 
-					const auto& step = ctx.holder.GetStep(wordTypo.word);
-					auto wordIdSfx = ctx.holder.GetWordIdInStep(wordTypo.word, step);
-					std::string_view word(step.suffixes_.word_at(wordIdSfx));
+					std::string_view word = ctx.holder.GetWord(wordTypo.word);
 
 					if (!wordTypo.CheckMatch(word, typo)) {
 						continue;
@@ -80,13 +78,12 @@ public:
 						}
 					}
 
-					const uint8_t wordLength = step.suffixes_.word_len_at(wordIdSfx);
 					const int tcount = std::max(positions.size(), wordTypo.positions.size());  // Each letter switch equals to 1 typo
 					const auto& rankingConfig = ctx.holder.cfg_->rankingConfig;
 					const float proc =
 						std::max<float>(ctx.patternProc * rankingConfig.TypoCoeff() -
 											tcount * rankingConfig.TypoPenalty() /
-												std::max<float>((wordLength - tcount) / 3.f, FTRankingConfig::kMinProcAfterPenalty),
+												std::max<float>((word.length() - tcount) / 3.f, FTRankingConfig::kMinProcAfterPenalty),
 										1.f);
 
 					const auto [it, emplaced] = ctx.fixedVariants.try_emplace(wordTypo.word, proc);

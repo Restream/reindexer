@@ -8,13 +8,15 @@
 #include "core/ft/config/ftconfig.h"
 #include "tools/errors.h"
 
+namespace reindexer_benchmarks {
+
 #include <dlfcn.h>
 
 using benchmark::State;
-using benchmark::AllocsTracker;
 
 using reindexer::Query;
 using reindexer::QueryResults;
+using reindexer::IndexOpts;
 
 static uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
@@ -30,25 +32,19 @@ FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
 	ftLowDiversityCfg_.mergeLimit = 4000;
 	ftLowDiversityCfg_.optimization = reindexer::FTConfig::Optimization::Memory;
 
-	static IndexOpts ftFastIndexOpts;
-	ftFastIndexOpts.SetConfig(IndexCompositeFastFT, ftFastCfg.GetJSON({}));
-	ftFastIndexOpts.Dense();
-
-	static IndexOpts ftLowDiversityIndexOpts;
-	ftLowDiversityIndexOpts.SetConfig(IndexCompositeFastFT, ftLowDiversityCfg_.GetJSON({}));
-	ftLowDiversityIndexOpts.Dense();
+	IndexOpts ftFastIndexOpts = IndexOpts().SetConfig(IndexCompositeFastFT, ftFastCfg.GetJSON({})).Dense();
+	IndexOpts ftLowDiversityIndexOpts = IndexOpts().SetConfig(IndexCompositeFastFT, ftLowDiversityCfg_.GetJSON({})).Dense();
 
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("description", "-", "string", IndexOpts())
 		.AddIndex("year", "tree", "int", IndexOpts())
 		.AddIndex("countries", "tree", "string", IndexOpts().Array())
-		.AddIndex(kFastIndexTextName_, {"countries", "description"}, "text", "composite", ftFastIndexOpts);
+		.AddIndex(kFastIndexTextName_, {"countries", "description"}, "text", "composite", std::move(ftFastIndexOpts));
 	lowWordsDiversityNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("description1", "-", "string", IndexOpts())
 		.AddIndex("description2", "-", "string", IndexOpts())
-		.AddIndex(kLowDiversityIndexName_, {"description1", "description2"}, "text", "composite", ftLowDiversityIndexOpts);
+		.AddIndex(kLowDiversityIndexName_, {"description1", "description2"}, "text", "composite", std::move(ftLowDiversityIndexOpts));
 }
-
 template <reindexer::FTConfig::Optimization opt>
 void FullText::UpdateIndex(State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
@@ -772,9 +768,8 @@ template <reindexer::FTConfig::Optimization opt>
 void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 	constexpr int kNsSize = 100'000;
 	static reindexer::FTConfig ftCfg(1);
-	static IndexOpts ftIndexOpts;
 	ftCfg.optimization = opt;
-	ftIndexOpts.SetConfig(IndexFastFT, ftCfg.GetJSON({}));
+	const auto ftIndexOpts = IndexOpts().SetConfig(IndexFastFT, ftCfg.GetJSON({}));
 	AllocsTracker allocsTracker(state, printFlags);
 
 	dropNamespace(alternatingNs_, state);
@@ -943,7 +938,7 @@ void FullText::setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, c
 		std::find_if(nsDef.indexes.begin(), nsDef.indexes.end(), [indexName](const auto& idx) { return idx.Name() == indexName; });
 	assertrx(it != nsDef.indexes.end());
 	auto opts = it->Opts();
-	opts.SetConfig(IndexFastFT, ftCfg.GetJSON({}));
+	std::ignore = opts.SetConfig(IndexFastFT, ftCfg.GetJSON({}));
 	it->SetOpts(std::move(opts));
 	const auto err = db_->UpdateIndex(nsDef.name, *it);
 	(void)err;
@@ -972,3 +967,5 @@ void FullText::dropNamespace(std::string_view name, benchmark::State& state) {
 		}
 	}
 }
+
+}  // namespace reindexer_benchmarks

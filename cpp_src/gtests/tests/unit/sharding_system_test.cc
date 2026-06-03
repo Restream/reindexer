@@ -5,6 +5,8 @@
 #include "gtests/tests/gtest_cout.h"
 #include "sharding_system_api.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
 
 TEST_F(ShardingSystemApi, Reconnect) {
@@ -88,7 +90,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 		const std::string key = std::string("key" + std::to_string(kShards));
 
 		WrSerializer wrser;
-		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+		JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, index);
 		jsonBuilder.Put(kFieldLocation, key);
 		jsonBuilder.Put(kFieldData, RandString());
@@ -346,3 +348,5 @@ TEST_F(ShardingSystemApi, AwaitShardsTimeout) {
 		ValidateNamespaces(shard, {default_namespace}, nsDefs);
 	}
 }
+
+}  // namespace reindexer_tests

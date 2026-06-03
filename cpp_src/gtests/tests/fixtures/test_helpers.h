@@ -4,6 +4,8 @@
 #include "core/query/query.h"
 #include "gtests/tests/gtest_cout.h"
 
+namespace reindexer_tests {
+
 struct [[nodiscard]] QueryWatcher {
 	~QueryWatcher() {
 		if (::testing::Test::HasFailure()) {
@@ -37,3 +39,5 @@ std::string PrintItem(const ItemType& item) {
 	}
 	return out.str();
 }
+
+}  // namespace reindexer_tests

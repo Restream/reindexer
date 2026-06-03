@@ -9,6 +9,8 @@
 #include "gtests/tests/gtest_cout.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 
+namespace reindexer_tests {
+
 using reindexer::Query;
 using reindexer::QueryCountCache;
 using reindexer::QueryCacheKey;
@@ -169,3 +171,5 @@ TEST(LruCache, StressTest) {
 		EXPECT_TRUE(memoryConsumed <= cacheSize);
 	}
 }
+
+}  // namespace reindexer_tests

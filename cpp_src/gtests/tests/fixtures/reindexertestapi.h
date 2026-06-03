@@ -5,11 +5,13 @@
 #include "core/namespace/namespacestat.h"
 #include "core/reindexer.h"
 
+namespace reindexer_tests {
+
 struct [[nodiscard]] IndexDeclaration {
 	std::string_view indexName;
 	std::string_view fieldType;
 	std::string_view indexType;
-	IndexOpts indexOpts;
+	reindexer::IndexOpts indexOpts;
 	int64_t expireAfter;
 };
 
@@ -106,3 +108,5 @@ void ReindexerTestApi<reindexer::Reindexer>::AwaitIndexOptimization(std::string_
 
 extern template class ReindexerTestApi<reindexer::Reindexer>;
 extern template class ReindexerTestApi<reindexer::client::Reindexer>;
+
+}  // namespace reindexer_tests

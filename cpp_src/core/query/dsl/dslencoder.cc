@@ -41,7 +41,7 @@ enum class [[nodiscard]] QueryScope { Main, Subquery };
 
 constexpr static auto kExpressionTypeMap = frozen::make_unordered_map<ExpressionType, std::string_view>({
 	{ExpressionType::ExpressionTypeField, "field"sv},
-	{ExpressionType::ExpressionTypeExpression, "function"sv},
+	{ExpressionType::ExpressionTypeExpression, "expression"sv},
 	{ExpressionType::ExpressionTypeValues, "values"sv},
 	{ExpressionType::ExpressionTypeSubQuery, "subquery"sv},
 });
@@ -56,14 +56,17 @@ std::string_view get(const frozen::unordered_map<T, std::string_view, N>& m, con
 	return std::string_view();
 }
 
-static void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& builder) {
+static void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& builder, const VariantArray& forcedSortOrders) {
 	auto arrNode = builder.Array("sort"sv);
 
-	for (const SortingEntry& sortingEntry : sortingEntries) {
+	for (size_t i = 0, s = sortingEntries.size(); i < s; ++i) {
+		const SortingEntry& sortingEntry = sortingEntries[i];
 		auto obj = arrNode.Object();
 		obj.Put("field"sv, sortingEntry.expression);
 		obj.Put("desc"sv, *sortingEntry.desc);
-		obj.End();
+		if (i == 0 && !forcedSortOrders.empty()) {
+			obj.Array("values"sv, std::span<const Variant>(forcedSortOrders));
+		}
 	}
 }
 
@@ -143,7 +146,7 @@ static void encodeAggregationFunctions(const Query& query, JsonBuilder& builder)
 		switch (entry.Type()) {
 			case AggDistinct:
 			case AggFacet:
-				encodeSorting(entry.Sorting(), aggNode);
+				encodeSorting(entry.Sorting(), aggNode, {});
 			case AggSum:
 			case AggAvg:
 			case AggMin:
@@ -184,7 +187,7 @@ static void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& bui
 	node.Put("offset"sv, joinQuery.Offset());
 
 	encodeFilters(joinQuery, node);
-	encodeSorting(joinQuery.GetSortingEntries(), node);
+	encodeSorting(joinQuery.GetSortingEntries(), node, joinQuery.ForcedSortOrder());
 
 	auto arr1 = node.Array("on"sv);
 
@@ -339,7 +342,7 @@ static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 			if (scope != QueryScope::Subquery) {
 				encodeSelectFunctions(query, builder);
 			}
-			encodeSorting(query.GetSortingEntries(), builder);
+			encodeSorting(query.GetSortingEntries(), builder, query.ForcedSortOrder());
 			encodeFilters(query, builder);
 			if (scope != QueryScope::Subquery) {
 				encodeMergedQueries(query, builder);

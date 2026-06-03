@@ -3,12 +3,12 @@
 #include <random>
 #include "tools/errors.h"
 
-namespace reindexer::bench {
+namespace reindexer_benchmarks {
 
 class [[nodiscard]] FullTextBase {
 protected:
 	FullTextBase(size_t maxWord1Count = 0) noexcept : maxWord1Count_{maxWord1Count} {}
-	Error Initialize();
+	reindexer::Error Initialize();
 	int RndInt(int min, int max) { return randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{min, max}); }
 	size_t RndIndexOf(const auto& container) { return RndInt(0, container.size() - 1); }
 	const auto& RndFrom(const auto& container) { return container.at(RndIndexOf(container)); }
@@ -21,7 +21,7 @@ protected:
 	std::string MakeSuffixWord();
 
 private:
-	Error readDictFile(const std::string& fileName, std::vector<std::string>& words);
+	reindexer::Error readDictFile(const std::string& fileName, std::vector<std::string>& words);
 
 	std::vector<std::string> words1_;
 	size_t maxWord1Count_{0};
@@ -30,4 +30,4 @@ private:
 	std::uniform_int_distribution<int> randomGenerator_{};
 };
 
-}  // namespace reindexer::bench
+}  // namespace reindexer_benchmarks

@@ -11,6 +11,10 @@
 #include "tools/jsontools.h"
 #include "tools/timetools.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
 TEST_F(QueriesApi, QueriesStandardTestSet) {
 	try {
 		FillDefaultNamespace(0, 2500, 20);
@@ -256,11 +260,11 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		{"SELECT * FROM test_namespace WHERE 'index' = 5",
 		 Error{errParseSQL, "String is invalid at this location. (text = 'index'  location = line: 1 column: 36 41)"}},
 		{"SELECT * FROM test_namespace WHERE NOT index ALLSET 3489578", Query{"test_namespace"}.Not().Where("index", CondAllSet, 3489578)},
-		{"SELECT * FROM test_namespace WHERE NOT index ALLSET (0,1)", Query{"test_namespace"}.Not().Where("index", CondAllSet, {0, 1})},
+		{"SELECT * FROM test_namespace WHERE NOT index ALLSET (0, 1)", Query{"test_namespace"}.Not().Where("index", CondAllSet, {0, 1})},
 		{"SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000",
 		 Query{"test_namespace"}.Select({"ID", "Year", "Genre"}).Where("year", CondGt, "2016").Sort("year", true).Limit(10000000)},
-		{"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1','2','3') AND year > '2016') OR age IN "
-		 "('1','2','3','4') LIMIT 10000000",
+		{"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1', '2', '3') AND year > '2016') OR age IN "
+		 "('1', '2', '3', '4') LIMIT 10000000",
 		 Query{"test_namespace"}
 			 .Select({"ID"})
 			 .Where("name", CondLike, "something")
@@ -291,11 +295,11 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		 Query{"main_ns"}.Where("id", CondGt, Query{"second_ns"}.Aggregate(AggAvg, {"id"}).Where("id", CondLt, 10))},
 		{"SELECT * FROM main_ns WHERE id > (SELECT COUNT(*) FROM second_ns WHERE id < 10 LIMIT 0)",
 		 Query{"main_ns"}.Where("id", CondGt, Query{"second_ns"}.Where("id", CondLt, 10).ReqTotal())},
-		{"SELECT * FROM main_ns WHERE (SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL AND value IN (5,4,1)",
+		{"SELECT * FROM main_ns WHERE (SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL AND value IN (5, 4, 1)",
 		 Query{"main_ns"}
 			 .Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, VariantArray{})
 			 .Where("value", CondSet, {Variant{5}, Variant{4}, Variant{1}})},
-		{"SELECT * FROM main_ns WHERE ((SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL) AND value IN (5,4,1)",
+		{"SELECT * FROM main_ns WHERE ((SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL) AND value IN (5, 4, 1)",
 		 Query{"main_ns"}
 			 .OpenBracket()
 			 .Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, VariantArray{})
@@ -1120,7 +1124,7 @@ TEST_F(QueriesApi, TestCsvParsing) {
 			}
 		}
 
-		auto resFields = reindexer::parseCSVRow(ss.str());
+		auto resFields = parseCSVRow(ss.str());
 		ASSERT_EQ(resFields.size(), fields.size());
 
 		for (size_t i = 0; i < fields.size(); ++i) {
@@ -1280,7 +1284,7 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			gason::JsonParser parserCsv, parserJson;
-			auto converted = parserCsv.Parse(std::string_view(reindexer::csv2json(serCsv.Slice(), csv2jsonSchema)));
+			auto converted = parserCsv.Parse(std::string_view(csv2json(serCsv.Slice(), csv2jsonSchema)));
 			auto orig = parserJson.Parse(serJson.Slice());
 
 			// for check that all tags related to joined nss from json-result are present in csv-result
@@ -1545,10 +1549,11 @@ TEST_F(QueriesApi, SortByFieldWithDifferentTypes) {
 TEST_F(QueriesApi, SerializeDeserialize) {
 	Query queries[]{
 		Query(default_namespace).Where(Query(default_namespace), CondAny, VariantArray{}),
-		Query(default_namespace).Where(kFieldNameUuidArr, CondRange, randHeterogeneousUuidArray(2, 2)),
+		Query(default_namespace).Where(kFieldNameUuidArr, CondRange, reindexer_tests_tools::randHeterogeneousUuidArray(2, 2)),
 		Query(default_namespace)
 			.WhereComposite(kCompositeFieldUuidName, CondRange,
-							{VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())}),
+							{VariantArray::Create(reindexer_tests_tools::nilUuid(), RandString()),
+							 VariantArray::Create(reindexer_tests_tools::randUuid(), RandString())}),
 		Query(default_namespace).Where(Query(default_namespace).Where(kFieldNameId, CondEq, 10), CondAny, VariantArray{}),
 		Query(default_namespace).Not().Where(Query(default_namespace), CondEmpty, VariantArray{}),
 		Query(default_namespace).Where(kFieldNameId, CondLt, Query(default_namespace).Aggregate(AggAvg, {kFieldNameId})),
@@ -1597,7 +1602,8 @@ TEST_F(QueriesApi, SerializeDeserialize) {
 			.Where(kCompositeFieldIdTemp, CondEq, Query(default_namespace).Select({kCompositeFieldIdTemp}).Where(kFieldNameId, CondGt, 10)),
 		Query(default_namespace)
 			.Where(Query(default_namespace).Select({kCompositeFieldUuidName}).Where(kFieldNameId, CondGt, 10), CondRange,
-				   {VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())}),
+				   {VariantArray::Create(reindexer_tests_tools::nilUuid(), RandString()),
+					VariantArray::Create(reindexer_tests_tools::randUuid(), RandString())}),
 		Query(default_namespace)
 			.Where(Query(default_namespace).Select({kCompositeFieldAgeGenre}).Where(kFieldNameId, CondGt, 10).Limit(10), CondLe,
 				   {Variant(VariantArray::Create(rand() % 50, rand() % 50))}),
@@ -2047,3 +2053,5 @@ TEST_F(QueriesApi, NowFunctionTest) {
 		ASSERT_EQ(it2, qr2.end());
 	}
 }
+
+}  // namespace reindexer_tests

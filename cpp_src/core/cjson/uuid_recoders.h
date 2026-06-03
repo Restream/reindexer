@@ -32,7 +32,7 @@ private:
 	TagType fromType_ = TAG_UUID;
 };
 
-void RecoderUuidToString::Recode(Serializer& rdser, WrSerializer& wrser) const {
+inline void RecoderUuidToString::Recode(Serializer& rdser, WrSerializer& wrser) const {
 	if (fromType_ == TAG_UUID) {
 		wrser.PutStrUuid(rdser.GetUuid());
 	} else if (fromType_ == TAG_ARRAY) {
@@ -65,7 +65,7 @@ void RecoderUuidToString::Recode(Serializer& rdser, WrSerializer& wrser) const {
 	}
 }
 
-void RecoderUuidToString::recodeNestedArray(Serializer& rdser, WrSerializer& wrser, uint32_t size) const {
+inline void RecoderUuidToString::recodeNestedArray(Serializer& rdser, WrSerializer& wrser, uint32_t size) const {
 	wrser.PutCArrayTag(carraytag{size, TAG_OBJECT});
 	for (size_t i = 0; i < size; ++i) {
 		const ctag tag = rdser.GetCTag();
@@ -82,16 +82,19 @@ void RecoderUuidToString::recodeNestedArray(Serializer& rdser, WrSerializer& wrs
 	}
 }
 
+static constexpr std::string_view kNotStrToUuidErr = "Cannot convert non-string field to UUID";
+
 class [[nodiscard]] RecoderStringToUuidArray final : public Recoder {
 public:
 	explicit RecoderStringToUuidArray(int f) noexcept : field_{f} {}
 	TagType Type(TagType oldTagType) override {
+		fromType_ = oldTagType;
 		if (oldTagType == TAG_NULL) {
 			return TAG_NULL;
 		}
 		fromNotArrayField_ = oldTagType != TAG_ARRAY;
-		if (fromNotArrayField_ && oldTagType != TAG_STRING) {
-			throw Error(errLogic, "Cannot convert not string field to UUID");
+		if (fromNotArrayField_ && oldTagType != TAG_STRING && oldTagType != TAG_UUID) {
+			throw Error(errLogic, kNotStrToUuidErr);
 		}
 		return TAG_ARRAY;
 	}
@@ -100,7 +103,7 @@ public:
 	void Recode(Serializer&, WrSerializer&) const override { assertrx(false); }
 	void Recode(Serializer& rdser, Payload& pl, TagName tagName, WrSerializer& wrser) override {
 		if (fromNotArrayField_) {
-			pl.Set(field_, Variant{rdser.GetStrUuid()}, Append_True);
+			pl.Set(field_, Variant{fromType_ == TAG_UUID ? rdser.GetUuid() : rdser.GetStrUuid()}, Append_True);
 			wrser.PutCTag(ctag{TAG_ARRAY, tagName, field_});
 			wrser.PutVarUint(1);
 		} else {
@@ -117,13 +120,20 @@ private:
 		if (arrayType == TAG_OBJECT) {
 			recodeNestedArray(rdser, pl, tagName, wrser, count);
 		} else {
-			if (count > 0 && atag.Type() != TAG_STRING) {
-				throw Error(errLogic, "Cannot convert non-string field to UUID");
+			const auto type = atag.Type();
+			if (count > 0 && type != TAG_STRING && type != TAG_UUID) {
+				throw Error(errLogic, kNotStrToUuidErr);
 			}
 			varBuf_.clear<false>();
 			varBuf_.reserve(count);
-			for (size_t i = 0; i < count; ++i) {
-				varBuf_.emplace_back(rdser.GetStrUuid());
+			if (type == TAG_UUID) {
+				for (size_t i = 0; i < count; ++i) {
+					varBuf_.emplace_back(rdser.GetUuid());
+				}
+			} else {
+				for (size_t i = 0; i < count; ++i) {
+					varBuf_.emplace_back(rdser.GetStrUuid());
+				}
 			}
 			pl.Set(field_, varBuf_, Append_True);
 			wrser.PutCTag(ctag{TAG_ARRAY, tagName, field_});
@@ -140,10 +150,10 @@ private:
 			if (tagType == TAG_ARRAY) {
 				recodeArray(rdser, pl, TagName::Empty(), wrser);
 			} else {
-				if (tagType != TAG_STRING) {
-					throw Error(errLogic, "Cannot convert non-string field to UUID");
+				if (tagType != TAG_STRING && tagType != TAG_UUID) {
+					throw Error(errLogic, kNotStrToUuidErr);
 				}
-				pl.Set(field_, Variant{rdser.GetStrUuid()}, Append_True);
+				pl.Set(field_, Variant{tagType == TAG_UUID ? rdser.GetUuid() : rdser.GetStrUuid()}, Append_True);
 				wrser.PutCTag(ctag{TAG_UUID, TagName::Empty(), field_});
 			}
 		}
@@ -151,6 +161,7 @@ private:
 
 	const int field_{std::numeric_limits<int>::max()};
 	VariantArray varBuf_;
+	TagType fromType_ = TAG_STRING;
 	bool fromNotArrayField_{false};
 };
 
@@ -158,10 +169,11 @@ class [[nodiscard]] RecoderStringToUuid final : public Recoder {
 public:
 	explicit RecoderStringToUuid(int f) noexcept : field_{f} {}
 	TagType Type(TagType oldTagType) override {
+		fromType_ = oldTagType;
 		if (oldTagType == TAG_ARRAY) {
 			throw Error(errLogic, "Cannot convert array field to not array UUID");
-		} else if (oldTagType != TAG_STRING) {
-			throw Error(errLogic, "Cannot convert not string field to UUID");
+		} else if (oldTagType != TAG_STRING && oldTagType != TAG_UUID) {
+			throw Error(errLogic, kNotStrToUuidErr);
 		}
 		return TAG_UUID;
 	}
@@ -169,13 +181,14 @@ public:
 	bool Match(const TagsPath&) const noexcept override { return false; }
 	void Recode(Serializer&, WrSerializer&) const override { assertrx(false); }
 	void Recode(Serializer& rdser, Payload& pl, TagName tagName, WrSerializer& wrser) override {
-		pl.Set(field_, Variant{rdser.GetStrUuid()}, Append_True);
+		pl.Set(field_, Variant{fromType_ == TAG_UUID ? rdser.GetUuid() : rdser.GetStrUuid()}, Append_True);
 		wrser.PutCTag(ctag{TAG_UUID, tagName, field_});
 	}
 	void Prepare(IdType) noexcept override {}
 
 private:
 	const int field_{std::numeric_limits<int>::max()};
+	TagType fromType_ = TAG_STRING;
 };
 
 }  // namespace reindexer

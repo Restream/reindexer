@@ -373,7 +373,7 @@ public:
 					return *this;
 				case Type::Local:
 					// NOLINTNEXTLINE (bugprone-unchecked-optional-access)
-					localIt_ = *localIt_ + delta;
+					localIt_->operator+(delta);
 					return *this;
 				case Type::SingleRemote:
 				case Type::MultipleRemote:

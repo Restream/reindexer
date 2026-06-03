@@ -4,6 +4,8 @@
 #include "servercontrol.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
 using reindexer::fast_hash_map;
 using reindexer::WrSerializer;
 using reindexer::DSN;
@@ -165,3 +167,5 @@ protected:
 
 	std::vector<std::vector<ServerControl>> svc_;  //[shard][nodeId]
 };
+
+}  // namespace reindexer_tests

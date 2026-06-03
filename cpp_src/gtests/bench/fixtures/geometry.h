@@ -3,10 +3,14 @@
 #include <string>
 #include "base_fixture.h"
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] Geometry : private BaseFixture {
 public:
 	~Geometry() override = default;
 	Geometry(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+		using reindexer::IndexOpts;
+
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 	}
 
@@ -20,9 +24,11 @@ private:
 	void Insert(State& state);
 	template <size_t N>
 	void GetDWithin(State& state);
-	template <IndexOpts::RTreeIndexType rtreeType>
+	template <reindexer::IndexOpts::RTreeIndexType rtreeType>
 	void Reset(State& state);
 
 	reindexer::WrSerializer wrSer_;
 	int id_ = 0;
 };
+
+}  // namespace reindexer_benchmarks

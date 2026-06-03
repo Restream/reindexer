@@ -127,6 +127,8 @@ enum [[nodiscard]] ProcessStatus { FullRebuild, RecommitLast, CreateNew };
 
 class [[nodiscard]] IDataHolder {
 public:
+	using WordsMapType = tsl::hopscotch_map<size_t, h_vector<WordIdType, 1>>;
+
 	struct [[nodiscard]] CommitStep {
 		CommitStep() : wordOffset_(0) {}
 
@@ -154,14 +156,6 @@ public:
 	virtual void Clear() = 0;
 	virtual void StartCommit(bool complete_updated) = 0;
 	intrusive_ptr<const ISplitter> GetSplitter() const noexcept { return splitter_; }
-	CommitStep& GetStep(WordIdType id) noexcept {
-		assertrx(id.b.step_num < steps.size());
-		return steps[id.b.step_num];
-	}
-	const CommitStep& GetStep(WordIdType id) const noexcept {
-		assertrx(id.b.step_num < steps.size());
-		return steps[id.b.step_num];
-	}
 	bool NeedRebuild(bool complete_updated) const noexcept {
 		return steps.empty() || complete_updated || steps.size() >= size_t(cfg_->maxRebuildSteps) ||
 			   (steps.size() == 1 && steps.front().suffixes_.word_size() < size_t(cfg_->maxStepSize));
@@ -174,22 +168,34 @@ public:
 		}
 	}
 	bool NeedClear(bool complte_updated) const noexcept { return NeedRebuild(complte_updated) || !NeedRecommitLast(); }
-	suffix_map<char, WordIdType>& GetSuffix() noexcept { return steps.back().suffixes_; }
-	TyposMap& GetTypos() noexcept { return steps.back().typos_; }
-	WordIdType findWord(std::string_view word) const;
-	uint32_t GetWordIdInStep(WordIdType id) const noexcept { return GetWordIdInStep(id, steps.back()); }
-	uint32_t GetWordIdInStep(WordIdType id, const CommitStep& step) const noexcept {
-		assertrx(!id.IsEmpty());
-		assertrx(id.b.step_num < steps.size());
+	suffix_map<char, WordIdType>& GetLastStepSuffix() noexcept { return steps.back().suffixes_; }
+	TyposMap& GetLastStepTypos() noexcept { return steps.back().typos_; }
+	WordIdType FindWord(const std::string_view& word, bool searchLastStep) const;
 
+	CommitStep& GetStep(WordIdType id) noexcept {
+		assertrx(id.b.step_num < steps.size());
+		return steps[id.b.step_num];
+	}
+	const CommitStep& GetStep(WordIdType id) const noexcept {
+		assertrx(id.b.step_num < steps.size());
+		return steps[id.b.step_num];
+	}
+	std::string_view GetWord(WordIdType id) const noexcept {
+		assertrx(!id.IsEmpty());
+		const CommitStep& step = GetStep(id);
 		assertrx(id.b.id >= step.wordOffset_);
 		assertrx(id.b.id - step.wordOffset_ < step.suffixes_.word_size());
-		return id.b.id - step.wordOffset_;
+		uint32_t wordShiftInStep = id.b.id - step.wordOffset_;
+		const char* word = step.suffixes_.word_at(wordShiftInStep);
+		const size_t wordLength = step.suffixes_.word_len_at(wordShiftInStep);
+		return std::string_view(word, wordLength);
 	}
+
 	uint32_t GetWordsOffset() const noexcept {
 		assertrx(!steps.empty());
 		return steps.back().wordOffset_;
 	}
+
 	// returns id and found or not found
 	WordIdType BuildWordId(uint32_t id) const {
 		WordIdType wId;
@@ -208,11 +214,7 @@ public:
 
 	size_t VDocsNumberInIndex() const noexcept { return vdocs_.size(); }
 
-private:
-	[[noreturn]] static void throwWordIdOverflow(uint32_t id);
-	[[noreturn]] void throwStepsOverflow() const;
-
-public:	 // TODO: #1688 Fix private class data isolation here
+	// TODO: #1688 Fix private class data isolation here
 	// language and corresponding stemmer object
 	std::unordered_map<std::string, stemmer> stemmers_;
 
@@ -224,6 +226,10 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	TermsBoostMapT stemmedTermsBoost;
 
 	std::vector<CommitStep> steps;
+
+	WordsMapType stepsWords_;
+	WordsMapType lastStepWords_;
+
 	// array of unique documents
 	std::vector<VDocEntry> vdocs_;
 	size_t cur_vdoc_pos_ = 0;
@@ -239,6 +245,10 @@ public:	 // TODO: #1688 Fix private class data isolation here
 	// index - rowId, value vdocId (index in array vdocs_)
 	std::vector<uint32_t> rowId2Vdoc_;
 	intrusive_ptr<const ISplitter> splitter_;
+
+private:
+	[[noreturn]] static void throwWordIdOverflow(uint32_t id);
+	[[noreturn]] void throwStepsOverflow() const;
 };
 
 template <typename IdCont>

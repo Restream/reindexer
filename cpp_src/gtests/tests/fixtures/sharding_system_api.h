@@ -2,6 +2,8 @@
 
 #include "sharding_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] ShardingSystemApi : public ShardingApi {
 public:
 	const Defaults& GetDefaults() const override {
@@ -35,3 +37,5 @@ protected:
 		ASSERT_TRUE(false) << "shard: " << shard;
 	}
 };
+
+}  // namespace reindexer_tests

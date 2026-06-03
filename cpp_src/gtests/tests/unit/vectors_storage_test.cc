@@ -9,9 +9,11 @@
 #include "tools/fsops.h"
 #include "tools/serilize/wrserializer.h"
 
+namespace reindexer_tests {
+
 using reindexer::Query;
 using reindexer::ConstFloatVectorView;
-using reindexer::ConstFloatVector;
+using reindexer::FloatVector;
 using reindexer::KnnSearchParams;
 using reindexer::VectorMetric;
 using reindexer::Reindexer;
@@ -48,7 +50,7 @@ protected:
 	static inline void rndFloatVectorNotEmpty(std::vector<float>& buf, size_t dim) {
 		buf.resize(dim);
 		for (float& v : buf) {
-			v = randBin<float>(-10, 10);
+			v = reindexer_tests_tools::randBin<float>(-10, 10);
 		}
 	}
 
@@ -157,7 +159,7 @@ protected:
 			assertrx(counter++ < count * 10);  // in case of infinite loop
 
 			rndFloatVectorNotEmpty(buf, dims);
-			auto query = Query{kNsName<isArray>}.WhereKNN(idx, ConstFloatVector{buf}, param).WithRank().SelectAllFields();
+			auto query = Query{kNsName<isArray>}.WhereKNN(idx, FloatVector{buf}, param).WithRank().SelectAllFields();
 			auto qr = rt.Select(query);
 			EXPECT_GT(qr.Count(), 0);
 			bool hasDuplicatedRanks = false;
@@ -403,3 +405,5 @@ CATCH_AND_ASSERT
 
 TEST_F(VectorStorageApi, FloatStorageReloadScalar) { TestFloatStorageReload<Scalar>(); }
 TEST_F(VectorStorageApi, FloatStorageReloadArray) { TestFloatStorageReload<Array>(); }
+
+}  // namespace reindexer_tests

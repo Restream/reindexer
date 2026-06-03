@@ -3,9 +3,12 @@
 
 #include "core/query/dsl/query.json.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
+
 TEST(SchemaTest, BaseTest) {
-	static reindexer::JsonSchemaChecker check(kQueryJson, "query");
+	static JsonSchemaChecker check(kQueryJson, "query");
 	gason::JsonParser parser;
 
 	std::string_view dsl = R"#({
@@ -143,7 +146,7 @@ TEST(SchemaTest, AdditionalProperties) {
 	}
 	)#";
 
-	static reindexer::JsonSchemaChecker check;
+	static JsonSchemaChecker check;
 	Error e = check.Init(scemaStr, "query");
 	ASSERT_TRUE(e.ok()) << e.what();
 	gason::JsonParser parser;
@@ -243,3 +246,5 @@ TEST(SchemaTest, LevelAny3) {
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 }
+
+}  // namespace reindexer_tests

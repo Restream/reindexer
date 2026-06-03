@@ -9,9 +9,8 @@
 namespace reindexer {
 
 template <typename Map>
-using StoreIndexKeyType = std::conditional_t<
-	std::is_same_v<typename Map::key_type, PayloadValueWithHash>, PayloadValue,
-	std::conditional_t<std::is_same_v<typename Map::key_type, key_string_with_hash>, key_string, typename Map::key_type>>;
+using StoreIndexKeyType =
+	std::conditional_t<std::is_same_v<typename Map::key_type, PayloadValueWithHash>, PayloadValue, typename Map::key_type>;
 
 template <typename Map>
 class [[nodiscard]] IndexUnordered : public IndexStore<StoreIndexKeyType<Map>> {
@@ -21,8 +20,8 @@ class [[nodiscard]] IndexUnordered : public IndexStore<StoreIndexKeyType<Map>> {
 
 public:
 	using ref_type = std::conditional_t<std::is_same<typename Map::key_type, PayloadValueWithHash>::value, const PayloadValue&,
-										std::conditional_t<std::is_same_v<typename Map::key_type, key_string>, std::string_view,
-														   std::conditional_t<std::is_same_v<typename Map::key_type, key_string_with_hash>,
+										std::conditional_t<std::is_same_v<typename Map::key_type, PayloadValue>, const PayloadValue&,
+														   std::conditional_t<std::is_same_v<typename Map::key_type, key_string>,
 																			  std::string_view, typename Map::key_type>>>;
 	using key_type = StoreIndexKeyType<Map>;
 
@@ -67,6 +66,7 @@ protected:
 	void addMemStat(typename Map::iterator it) noexcept;
 	// NOLINTNEXTLINE (performance-unnecessary-value-param)
 	void delMemStat(typename Map::iterator it) noexcept;
+	[[noreturn]] void rethrowDuplicatedPKError(const Variant& key, const DuplicatedItemIDError& origErr);
 
 	// Index map
 	Map idx_map;
@@ -85,13 +85,12 @@ protected:
 private:
 	template <typename S>
 	void dump(S& os, std::string_view step, std::string_view offset) const;
+	std::pair<typename Map::iterator, bool> findOrInsert(const Variant& key);
 
 	// Sorted ID for primary key indexes with IdSetUnique
 	std::vector<std::vector<IdType>> pkSortedIds_;
 	std::atomic<int64_t> pkSortedIdsSizeBytes_{0};
 };
-
-constexpr unsigned maxSelectivityPercentForIdset() noexcept { return 30u; }
 
 std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 										  const NamespaceCacheConfigData& cacheCfg);

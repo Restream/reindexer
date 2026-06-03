@@ -3,6 +3,10 @@
 #include "join_on_conditions_api.h"
 #include "test_helpers.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
 TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
 	Query queryGenres{Query(genres_namespace).Not().Where(genreid, CondEq, 1)};
 	Query queryAuthors{Query(authors_namespace).Where(authorid, CondGe, 10).Where(authorid, CondLe, 25)};
@@ -1018,3 +1022,5 @@ TEST_F(JoinSelectsApi, SeveralJoinsByTheSameNs) {
 					   .LeftJoin("join_id", "id", CondEq, Query(joinNs)));
 	CheckJoinIds({{0, {{0}, {0, 1, 2}, {2}}}, {1, {{1}, {0, 1, 2, 3}, {3}}}}, qr);
 }
+
+}  // namespace reindexer_tests

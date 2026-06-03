@@ -7,53 +7,57 @@
 /// The base namespace
 namespace reindexer {
 
-class WrSerializer;
 class Query;
+class SingleLineSqlFormatter;
 
+template <typename Formatter = SingleLineSqlFormatter>
 class [[nodiscard]] SQLEncoder {
 public:
-	SQLEncoder(const Query& q) noexcept : SQLEncoder(q, q.Type()) {}
-	SQLEncoder(const Query& q, QueryType queryType) noexcept : query_(q), realQueryType_(queryType) {}
+	SQLEncoder(const Query& q, Formatter& formatter) noexcept : SQLEncoder(q, q.Type(), formatter) {}
+	SQLEncoder(const Query& q, QueryType queryType, Formatter& formatter) noexcept
+		: query_(q), realQueryType_(queryType), formatter_(formatter) {}
 
-	WrSerializer& GetSQL(WrSerializer& ser, bool stripArgs = false) const;
+	void DumpSQL(bool stripArgs = false) const;
 
 	/// Gets printable sql version of joined query set by idx.
 	/// @param idx - index of joined query in joinQueries_.
 	/// @param ser - serializer to store SQL string.
 	/// @param stripArgs - replace condition values with '?'.
-	void DumpSingleJoinQuery(size_t idx, WrSerializer& ser, bool stripArgs) const;
+	void DumpSingleJoinQuery(size_t idx, bool stripArgs) const;
 
-protected:
+private:
 	/// Builds print version of a query with join in sql format.
 	/// @param ser - serializer to store SQL string
 	/// @param stripArgs - replace condition values with '?'
-	void dumpJoined(WrSerializer& ser, bool stripArgs) const;
+	void dumpJoined(bool stripArgs) const;
 
 	/// Builds a print version of a query with merge queries in sql format.
 	/// @param ser - serializer to store SQL string
 	/// @param stripArgs - replace condition values with '?'
-	void dumpMerged(WrSerializer& ser, bool stripArgs) const;
+	void dumpMerged(bool stripArgs) const;
 
 	/// Builds a print version of a query's order by statement
 	/// @param ser - serializer to store SQL string
 	/// @param stripArgs - replace condition values with '?'
-	void dumpOrderBy(WrSerializer& ser, bool stripArgs) const;
+	void dumpOrderBy(bool stripArgs) const;
 
 	/// Builds a print version of all equal_position() functions in query.
 	/// @param ser - serializer to store SQL string
 	/// @param equalPositions - equal positions array
-	void dumpEqualPositions(WrSerializer& ser, const EqualPositions_t& equalPositions) const;
+	void dumpEqualPositions(const EqualPositions_t& equalPositions) const;
 
 	/// Builds a print version of all where condition entries.
 	/// @param from - iterator to first entry
 	/// @param to - iterator to last entry
 	/// @param ser - serializer to store SQL string
 	/// @param stripArgs - replace condition values with '?'
-	void dumpWhereEntries(QueryEntries::const_iterator from, QueryEntries::const_iterator to, WrSerializer& ser, bool stripArgs) const;
-	void dumpSQLWhere(WrSerializer& ser, bool stripArgs) const;
+	void dumpWhereEntries(QueryEntries::const_iterator from, QueryEntries::const_iterator to, bool stripArgs) const;
+	void dumpSQLWhere(bool stripArgs) const;
+	void printField(bool& needComma, std::string_view name) const;
 
 	const Query& query_;
 	const QueryType realQueryType_;
+	Formatter& formatter_;
 };
 
 }  // namespace reindexer

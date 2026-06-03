@@ -6,22 +6,27 @@
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 
+namespace reindexer_tests {
+
 using namespace std::string_view_literals;
 
 #ifndef REINDEX_WITH_TSAN
 
-using TestStringMapType =
-	extendible_hash_map<tsl::sparse_map<reindexer::key_string, size_t, reindexer::hash_key_string, reindexer::equal_key_string,
-										std::allocator<std::pair<reindexer::key_string, size_t>>, tsl::sh::power_of_two_growth_policy<2>,
-										tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
-						reindexer::str_map_rebalance_params, reindexer::key_string, size_t, reindexer::hash_key_string,
-						reindexer::equal_key_string>;
+using TestStringMapType = reindexer::extendible_hash_map<
+	tsl::sparse_map<reindexer::key_string, size_t, reindexer::hash_key_string, reindexer::equal_key_string,
+					std::allocator<std::pair<reindexer::key_string, size_t>>, tsl::sh::power_of_two_growth_policy<2>,
+					tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
+	reindexer::str_map_rebalance_params, reindexer::key_string, size_t, reindexer::hash_key_string, reindexer::equal_key_string>;
 
-TEST(ExtendibleHashMapTest, TestingStringHahMapOperations) try {
+TEST(ExtendibleHashMapTest, TestingStringHashMapOperations) try {
 	const size_t kNumBucketsInPart = reindexer::str_map_rebalance_params::kNumBucketsInPart;
 	TestStringMapType map;
 	for (size_t i = 0; i < kNumBucketsInPart; ++i) {
-		map.insert({reindexer::key_string("str" + std::to_string(i)), i});
+		auto str = reindexer::key_string("str" + std::to_string(i));
+		auto [it, inserted] = map.insert(str, i);
+		EXPECT_TRUE(inserted);
+		EXPECT_EQ(it->first, str);
+		EXPECT_EQ(it->second, i);
 	}
 
 	ASSERT_EQ(map.num_parts(), 2);
@@ -30,19 +35,29 @@ TEST(ExtendibleHashMapTest, TestingStringHahMapOperations) try {
 	}
 
 	for (size_t i = kNumBucketsInPart; i < 5 * kNumBucketsInPart; ++i) {
-		map.insert({reindexer::key_string("str" + std::to_string(i)), i});
+		auto str = reindexer::key_string("str" + std::to_string(i));
+		auto [it, inserted] = map.insert(str, i);
+		EXPECT_TRUE(inserted);
+		EXPECT_EQ(it->first, str);
+		EXPECT_EQ(it->second, i);
 	}
 
 	long long sumTime = 0;
 	long long maxTime = 0;
 
 	for (size_t i = 5 * kNumBucketsInPart; i < 6 * kNumBucketsInPart; ++i) {
+		auto str = reindexer::key_string("str" + std::to_string(i));
+
 		auto startTime = std::chrono::high_resolution_clock::now();
-		map.insert({reindexer::key_string("str" + std::to_string(i)), i});
+		auto [it, inserted] = map.insert({reindexer::key_string("str" + std::to_string(i)), i});
 		auto endTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
 		sumTime += duration.count();
 		maxTime = std::max<long long>(maxTime, duration.count());
+
+		EXPECT_TRUE(inserted);
+		EXPECT_EQ(it->first, str);
+		EXPECT_EQ(it->second, i);
 	}
 
 	TestCout() << "Max time " << maxTime << " microseconds" << std::endl;
@@ -66,14 +81,13 @@ TEST(ExtendibleHashMapTest, TestingStringHahMapOperations) try {
 }
 CATCH_AND_ASSERT
 
-using TestPayloadMapType =
-	extendible_hash_map<tsl::sparse_map<reindexer::PayloadValue, size_t, reindexer::hash_composite, reindexer::equal_composite,
-										std::allocator<std::pair<reindexer::PayloadValue, size_t>>, tsl::sh::power_of_two_growth_policy<2>,
-										tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
-						reindexer::payload_map_rebalance_params, reindexer::PayloadValue, size_t, reindexer::hash_composite,
-						reindexer::equal_composite>;
+using TestPayloadMapType = reindexer::extendible_hash_map<
+	tsl::sparse_map<reindexer::PayloadValue, size_t, reindexer::hash_composite, reindexer::equal_composite,
+					std::allocator<std::pair<reindexer::PayloadValue, size_t>>, tsl::sh::power_of_two_growth_policy<2>,
+					tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
+	reindexer::payload_map_rebalance_params, reindexer::PayloadValue, size_t, reindexer::hash_composite, reindexer::equal_composite>;
 
-TEST(ExtendibleHashMapTest, TestingPayloadHahMapOperations) try {
+TEST(ExtendibleHashMapTest, TestingPayloadHashMapOperations) try {
 	const size_t kNumBucketsInPart = reindexer::payload_map_rebalance_params::kNumBucketsInPart;
 
 	reindexer::PayloadTypeImpl pt("pt");
@@ -160,3 +174,5 @@ TEST(ExtendibleHashMapTest, TestingPayloadHahMapOperations) try {
 CATCH_AND_ASSERT
 
 #endif	// REINDEX_WITH_TSAN
+
+}  // namespace reindexer_tests

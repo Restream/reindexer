@@ -4,6 +4,8 @@
 #include "random_generator.h"
 #include "tools/serilize/wrserializer.h"
 
+namespace reindexer_tests {
+
 namespace fuzzing {
 
 void NsScheme::NewItem(reindexer::WrSerializer& ser, RandomGenerator& rnd, const std::vector<Index>& indexes) {
@@ -346,3 +348,5 @@ void NsScheme::Node::Dump(std::ostream& os, size_t offset) const {
 }
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

@@ -3,10 +3,14 @@
 #include <string>
 #include "base_fixture.h"
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] Aggregation : protected BaseFixture {
 public:
 	~Aggregation() override = default;
 	Aggregation(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+		using reindexer::IndexOpts;
+
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 		nsdef_.AddIndex("int_data", "hash", "int", IndexOpts());
 		nsdef_.AddIndex("int_array_data", "hash", "int", IndexOpts().Array());
@@ -30,3 +34,5 @@ private:
 	reindexer::WrSerializer wrSer_;
 	int id_ = 0;
 };
+
+}  // namespace reindexer_benchmarks

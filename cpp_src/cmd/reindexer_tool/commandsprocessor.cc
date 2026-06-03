@@ -1,22 +1,28 @@
 #include "commandsprocessor.h"
 
+#include <filesystem>
 #include <iomanip>
+#include <limits>
+#include <optional>
 #include <thread>
 
 #include "client/reindexer.h"
 #include "cluster/config.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/query/sql/sql_suggestions.h"
 #include "core/reindexer.h"
 #include "core/system_ns_names.h"
 #include "estl/condition_variable.h"
 #include "estl/gift_str.h"
 #include "estl/lock.h"
 #include "estl/mutex.h"
+#include "progress.h"
 #include "tableviewscroller.h"
 #include "tools/catch_and_return.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
 #include "tools/scope_guard.h"
+#include "vendor/hash/md5.h"
 #include "wal/walrecord.h"
 
 namespace reindexer_tool {
@@ -26,6 +32,8 @@ using reindexer::WrSerializer;
 using reindexer::NamespaceDef;
 using reindexer::JsonBuilder;
 using reindexer::Query;
+using reindexer::Expected;
+using reindexer::Unexpected;
 
 const std::string kConfigFile = "rxtool_settings.txt";
 
@@ -37,12 +45,16 @@ const std::string kVariableWithShardId = "with_shard_ids";
 const std::string kBenchNamespace = "rxtool_bench";
 const std::string kBenchIndex = "id";
 const std::string kDumpModePrefix = "-- __dump_mode:";
+const std::string kChecksumPrefix = "-- __checksum:";
 const std::string kDumpingNamespacePrefix = "-- Dumping namespace";
 const std::string kHeadCommandPrefix = "--";
+
+const std::string kChecksumMismatchMessage = "Dump checksum mismatch";
 
 constexpr int kBenchItemsCount = 10000;
 constexpr int kBenchDefaultTime = 5;
 constexpr int kMaxParallelOps = 5000;
+constexpr int kChecksumLength = 32;
 
 static void throwIfError(Error err) {
 	if (!err.ok()) {
@@ -50,9 +62,66 @@ static void throwIfError(Error err) {
 	}
 }
 
+static Expected<std::string> parseChecksum(std::string_view command) {
+	command.remove_prefix(kChecksumPrefix.size());
+	while (!command.empty() && std::isspace(static_cast<unsigned char>(command.front()))) {
+		command.remove_prefix(1);
+	}
+
+	if (!command.empty() && command.front() == '"') {
+		command.remove_prefix(1);
+		if (command.empty() || command.back() != '"') {
+			return Unexpected{Error{errParams, "Malformed quoted checksum value"}};
+		}
+		command.remove_suffix(1);
+	}
+
+	if (command.size() != kChecksumLength) {
+		return Unexpected{Error{errParams, "Checksum must be {} hex digits, got {} symbol(s)", kChecksumLength, command.size()}};
+	}
+	for (char ch : command) {
+		if (!std::isxdigit(static_cast<unsigned char>(ch))) {
+			return Unexpected{Error{errParams, "Checksum contains non-hex characters"}};
+		}
+	}
+
+	char resHex[kChecksumLength];
+	for (int i = 0; i < kChecksumLength; ++i) {
+		// for compatibility with MD5::getHash() output in lowercase
+		resHex[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(command[i])));
+	}
+	return std::string{resHex, kChecksumLength};
+}
+
+static void appendCommandToChecksum(MD5& md5, std::string_view command) {
+	if (command.empty() || reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kHeadCommandPrefix, command)) {
+		return;
+	}
+	md5.add(command.data(), command.size());
+}
+
+static std::optional<size_t> fileSize(const std::string& filename) {
+	std::error_code ec;
+	const auto size = std::filesystem::file_size(filename, ec);
+	if (ec || size > std::numeric_limits<size_t>::max()) {
+		return std::nullopt;
+	}
+	return static_cast<size_t>(size);
+}
+
+static size_t streamPositionToBytes(std::streampos pos, size_t fallback) noexcept {
+	if (pos == std::streampos(-1)) {
+		return fallback;
+	}
+	const auto offset = static_cast<std::streamoff>(pos);
+	return offset < 0 ? fallback : static_cast<size_t>(offset);
+}
+
 class [[nodiscard]] NamespaceIndex {
 public:
 	friend class DumpFileIndex;
+
+	explicit NamespaceIndex(std::string name) : name_(std::move(name)) {}
 
 	void ProcessCommand(std::string&& commandStr, size_t lineNum, std::streampos commandPos) {
 		if (commandStr.empty()) {
@@ -108,11 +177,13 @@ public:
 	size_t GetProgress() const { return (1000 * nextUpsertIdx_) / (numUpserts_ + 1); }
 
 private:
+	std::string name_;
 	std::pair<std::string, uint64_t> addCommand_;
 	std::vector<std::pair<std::string, uint64_t>> metaCommands_;
 
 	size_t firstUpsertLineNum_ = 0;
 	size_t numUpserts_ = 0;
+	size_t processedUpserts_ = 0;
 
 	std::streampos nextUpsertPos_;
 	size_t nextUpsertIdx_ = 0;
@@ -133,8 +204,11 @@ public:
 		try {
 			reindexer::lock_guard lock(dumpLock_);
 			headCommands_.resize(0);
-			nsDumps_.resize(0);
-			std::ifstream file(filename);
+			nsDumps_.clear();
+			expectedChecksum_.reset();
+			computedChecksum_.clear();
+			MD5 checksum;
+			std::ifstream file(filename, std::ios::binary);
 			if (!file) {
 				return Error(errSystem, "Can not open file: {}", filename);
 			}
@@ -143,10 +217,50 @@ public:
 			std::streampos commandPos;
 			size_t lineNum = 0;
 			bool lastNamespaceSelected = true;
+			std::string currentNamespace;
+			const auto totalBytes = fileSize(filename);
+			ConsoleProgress progress;
+			bool progressFinished = false;
+			auto progressGuard = reindexer::MakeScopeGuard([&] {
+				if (totalBytes && !progressFinished) {
+					progress.Done("Indexing dump: stopped");
+				}
+			});
+			auto updateProgress = [&] {
+				if (totalBytes) {
+					std::string nsInfo;
+					if (!currentNamespace.empty()) {
+						nsInfo = fmt::format(" (namespace: {})", currentNamespace);
+					}
+					progress.Print(fmt::format("Indexing dump{}", nsInfo), streamPositionToBytes(file.tellg(), *totalBytes), *totalBytes);
+				}
+			};
 
 			while (commandPos = file.tellg(), std::getline(file, command)) {
 				++lineNum;
-				if (command.empty()) {
+
+				auto isNotSpace = [](char c) { return !std::isspace(static_cast<unsigned char>(c)); };
+				// Trim spaces from the beginning of the command
+				if (auto it = std::find_if(command.begin(), command.end(), isNotSpace); it != command.end()) {
+					command.erase(command.begin(), it);
+				} else {
+					updateProgress();
+					continue;
+				}
+				// Trim spaces from the end of the command
+				command.erase(std::find_if(command.rbegin(), command.rend(), isNotSpace).base(), command.end());
+
+				if (reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kChecksumPrefix, command)) {
+					if (expectedChecksum_) {
+						return Error(errLogic, "Duplicate -- __checksum lines in dump file");
+					}
+
+					if (auto expected = parseChecksum(command)) {
+						expectedChecksum_ = std::move(expected.value());
+					} else {
+						return expected.error();
+					}
+					updateProgress();
 					continue;
 				}
 
@@ -161,9 +275,11 @@ public:
 						return Error(errLogic, "Incorrect namespace name in dump file command: {}", command);
 					}
 
+					currentNamespace = nsName;
 					lastNamespaceSelected = selectedNamespaces.empty() || selectedNamespaces.find(nsName) != selectedNamespaces.end();
 
-					nsDumps_.emplace_back();
+					nsDumps_.emplace_back(currentNamespace);
+					updateProgress();
 					continue;
 				}
 
@@ -172,13 +288,24 @@ public:
 						return Error(errLogic, "Can't parse dump file : unknown head command {}", command);
 					}
 					headCommands_.emplace_back(std::move(command), lineNum);
+					updateProgress();
 					continue;
 				}
+
+				appendCommandToChecksum(checksum, command);
 
 				if (lastNamespaceSelected) {
 					nsDumps_.back().ProcessCommand(std::move(command), lineNum, commandPos);
 				}
+				updateProgress();
 			}
+
+			computedChecksum_ = checksum.getHash();
+			if (totalBytes) {
+				progressFinished = true;
+				progress.Done("Indexing dump: done");
+			}
+
 			return errOK;
 		}
 		CATCH_AND_RETURN;
@@ -228,15 +355,31 @@ public:
 		CATCH_AND_RETURN;
 	}
 
-	void ProcessingEnded(size_t nsIndex) {
+	void ProcessingEnded(size_t nsIndex, size_t processedUpserts) {
 		reindexer::lock_guard lock(dumpLock_);
 		assertrx_dbg(nsDumps_[nsIndex].numProcessors_ > 0);
 		nsDumps_[nsIndex].numProcessors_--;
+		nsDumps_[nsIndex].processedUpserts_ += processedUpserts;
 	}
+
+	std::vector<ProgressInfo> GetProgressSnapshot() {
+		reindexer::lock_guard lock(dumpLock_);
+		std::vector<ProgressInfo> res;
+		res.reserve(nsDumps_.size());
+		for (const auto& ns : nsDumps_) {
+			res.emplace_back(ns.name_, ns.processedUpserts_, ns.numUpserts_, ns.numProcessors_);
+		}
+		return res;
+	}
+
+	const std::string& ComputedChecksum() const& noexcept { return computedChecksum_; }
+	const std::optional<std::string>& ExpectedChecksum() const& noexcept { return expectedChecksum_; }
 
 private:
 	std::vector<std::pair<std::string, uint64_t>> headCommands_;
 	std::vector<NamespaceIndex> nsDumps_;
+	std::optional<std::string> expectedChecksum_;
+	std::string computedChecksum_;
 	reindexer::mutex dumpLock_;
 };
 
@@ -454,7 +597,7 @@ Error CommandsProcessor<DBInterface>::Connect(const std::string& dsn, const Conn
 	try {
 		loadVariables();
 		if (!uri_.parse(dsn)) {
-			return Error(errNotValid, "Cannot connect to DB: Not a valid uri");
+			return Error(errNotValid, "Cannot connect to DB: Invalid URI");
 		}
 
 		return db().Connect(dsn, connectOpts);
@@ -472,10 +615,25 @@ static void printWarning(const std::string& msg) { std::cerr << "Warning: " << m
 static void printError(const Error& err, uint64_t lineNum) { std::cerr << fmt::format("LINE: {} ERROR: {}\n", lineNum, err.what()); }
 
 template <typename DBInterface>
-Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std::string& dumpMode) noexcept {
+Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std::string& dumpMode, bool dryRun,
+										  bool ignoreChecksumMismatch) noexcept {
 	try {
 		if (!dumpMode.empty()) {
 			setDumpMode(dumpMode);
+		}
+
+		if (dryRun) {
+			if (!command.empty()) {
+				return Error(errParams, "--dry-run is incompatible with -c/--command, use -f/--filename instead");
+			}
+			if (inFileName_.empty()) {
+				return Error(errParams, "--dry-run can only be used together with -f/--filename");
+			}
+			if (auto err = db().Status(); !err.ok()) {
+				printError(err);
+				return err;
+			}
+			return dryRunDumpFile();
 		}
 
 		if (!command.empty()) {
@@ -487,12 +645,13 @@ Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std:
 		}
 
 		if (!inFileName_.empty()) {
-			std::ifstream infile(inFileName_);
+			std::ifstream infile(inFileName_, std::ios::binary);
 			if (!infile) {
 				Error err(errTerminated, "ERROR: Can't open {}: {}", inFileName_, strerror(errno));
 				printError(err);
 				return err;
 			}
+			const auto inputFileSize = fileSize(inFileName_);
 			DumpFileIndex dumpFileIdx;
 			if (Error err = dumpFileIdx.Indexate(inFileName_, selectedNamespaces_); !err.ok()) {
 				printError(err);
@@ -501,9 +660,23 @@ Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std:
 					return err;
 				}
 				printWarning("Input file does not look like a dump file, file will be parsed sequentially");
-				fromFile(infile);
+				fromFile(infile, inputFileSize);
 				return errOK;
 			}
+
+			if (auto expectedChecksum = dumpFileIdx.ExpectedChecksum();
+				expectedChecksum && *expectedChecksum != dumpFileIdx.ComputedChecksum()) {
+				auto message = fmt::format("{}. Expected '{}', Computed '{}'", kChecksumMismatchMessage, *expectedChecksum,
+										   dumpFileIdx.ComputedChecksum());
+				if (ignoreChecksumMismatch) {
+					printWarning(message);
+				} else {
+					Error err(errParams, fmt::format("{}. Use --ignore-checksum-mismatch to apply dump despite mismatch", message));
+					printError(err);
+					return err;
+				}
+			}
+
 			fromDumpFile(infile, dumpFileIdx);
 			return errOK;
 		} else if (reindexer::isStdinRedirected()) {
@@ -512,6 +685,448 @@ Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std:
 		} else {
 			return interactive();
 		}
+	}
+	CATCH_AND_RETURN;
+}
+
+static std::string indexDefDiffDescription(const reindexer::IndexDef& dumpIdx, const reindexer::IndexDef& targetIdx) {
+	const auto diff = dumpIdx.Compare(targetIdx);
+	// Mirror NamespaceImpl::checkIfSameIndexExists() — restore considers two indexes the same when only
+	// "non-structural" options differ (dense flag, sort_order_letters, FT config, etc.). Anything that
+	// would actually break re-creation of the index is reported below.
+	if (reindexer::IndexDef::IsBasicCompatibility(diff)) {
+		return {};
+	}
+
+	std::vector<std::string> parts;
+	if (diff.Get<reindexer::IndexDef::Diff>() & uint8_t(reindexer::IndexDef::Diff::JsonPaths)) {
+		WrSerializer dumpJP, targetJP;
+		dumpJP << '[';
+		for (size_t i = 0; i < dumpIdx.JsonPaths().size(); ++i) {
+			if (i != 0) {
+				dumpJP << ',';
+			}
+			dumpJP << dumpIdx.JsonPaths()[i];
+		}
+		dumpJP << ']';
+		targetJP << '[';
+		for (size_t i = 0; i < targetIdx.JsonPaths().size(); ++i) {
+			if (i != 0) {
+				targetJP << ',';
+			}
+			targetJP << targetIdx.JsonPaths()[i];
+		}
+		targetJP << ']';
+		parts.emplace_back(fmt::format("json_paths {}!={}", dumpJP.Slice(), targetJP.Slice()));
+	}
+	if ((diff.Get<reindexer::IndexDef::Diff>() & uint8_t(reindexer::IndexDef::Diff::IndexType)) &&
+		dumpIdx.IndexTypeStr() != targetIdx.IndexTypeStr()) {
+		// IndexDef::Compare sets Diff::IndexType by comparing the resolved ::IndexType enum, which is
+		// derived from (indexType_, fieldType_). Two indexes can have identical IndexTypeStr() but
+		// different resolved enum values (e.g. indexType="" with fieldType="int" vs fieldType="double").
+		// Without the string check we would emit confusing "index_type 'hash'!='hash'"; the underlying
+		// difference is then surfaced via the field_type mismatch below.
+		parts.emplace_back(fmt::format("index_type '{}'!='{}'", dumpIdx.IndexTypeStr(), targetIdx.IndexTypeStr()));
+	}
+	if (diff.Get<reindexer::IndexDef::Diff>() & uint8_t(reindexer::IndexDef::Diff::FieldType)) {
+		// Diff::FieldType is purely a string comparison in IndexDef::Compare, so the bit being set
+		// already implies dumpIdx.FieldType() != targetIdx.FieldType() — no extra guard needed.
+		parts.emplace_back(fmt::format("field_type '{}'!='{}'", dumpIdx.FieldType(), targetIdx.FieldType()));
+	}
+	if (diff.Get<reindexer::IndexDef::Diff>() & uint8_t(reindexer::IndexDef::Diff::ExpireAfter)) {
+		parts.emplace_back(fmt::format("expire_after {}!={}", dumpIdx.ExpireAfter(), targetIdx.ExpireAfter()));
+	}
+	if (diff.Get<reindexer::IndexOpts::OptsDiff>() != 0 || diff.Get<reindexer::IndexOpts::ParamsDiff>() != 0 ||
+		diff.Get<reindexer::FloatVectorIndexOpts::Diff>() != 0) {
+		parts.emplace_back("options/params");
+	}
+	if (parts.empty()) {
+		return "differs";
+	}
+	std::string res = parts.front();
+	for (size_t i = 1; i < parts.size(); ++i) {
+		res += ", ";
+		res += parts[i];
+	}
+	return res;
+}
+
+std::string static namespaceIndexesMismatchDescription(const std::vector<reindexer::IndexDef>& dumpIdx,
+													   const std::vector<reindexer::IndexDef>& targetIdx) {
+	std::vector<std::string> diffs;
+
+	for (const auto& dumped : dumpIdx) {
+		const auto found = std::find_if(targetIdx.begin(), targetIdx.end(),
+										[&dumped](const reindexer::IndexDef& i) { return iequals(i.Name(), dumped.Name()); });
+		if (found == targetIdx.end()) {
+			diffs.emplace_back(fmt::format("index '{}' is missing on target", dumped.Name()));
+		} else if (auto desc = indexDefDiffDescription(dumped, *found); !desc.empty()) {
+			diffs.emplace_back(fmt::format("index '{}' differs: {}", dumped.Name(), desc));
+		}
+	}
+	for (const auto& targetIdxDef : targetIdx) {
+		const auto found = std::find_if(dumpIdx.begin(), dumpIdx.end(),
+										[&targetIdxDef](const reindexer::IndexDef& i) { return iequals(i.Name(), targetIdxDef.Name()); });
+		if (found == dumpIdx.end()) {
+			diffs.emplace_back(fmt::format("index '{}' is missing in dump", targetIdxDef.Name()));
+		}
+	}
+
+	if (diffs.empty()) {
+		return {};
+	}
+	std::string res = diffs.front();
+	for (size_t i = 1; i < diffs.size(); ++i) {
+		res += "; ";
+		res += diffs[i];
+	}
+	return res;
+}
+
+namespace {
+struct [[nodiscard]] DryRunError {
+	uint64_t line = 0;
+	std::string message;
+};
+}  // namespace
+
+static void dryRunPrintReport(std::ostream& out, const std::vector<DryRunError>& errors,
+							  const std::vector<std::string>& nonEmptyExistingDumpNamespaces,
+							  const std::vector<std::string>& targetOnlyNamespaces) noexcept {
+	if (!errors.empty()) {
+		out << "Dry run errors:" << std::endl;
+		for (const auto& err : errors) {
+			if (err.line == 0) {
+				out << (err.message.find(kChecksumMismatchMessage) != std::string::npos ? "  Warning: " : "  ERROR: ") << err.message
+					<< std::endl;
+			} else {
+				out << "  LINE: " << err.line << " ERROR: " << err.message << std::endl;
+			}
+		}
+	}
+
+	if (!nonEmptyExistingDumpNamespaces.empty()) {
+		out << "Existing non-empty namespaces present in dump (potential conflicts):" << std::endl;
+		for (const auto& nsName : nonEmptyExistingDumpNamespaces) {
+			out << "  " << nsName << std::endl;
+		}
+	}
+
+	if (!targetOnlyNamespaces.empty()) {
+		out << "Namespaces present on target but absent in dump:" << std::endl;
+		for (const auto& nsName : targetOnlyNamespaces) {
+			out << "  " << nsName << std::endl;
+		}
+	}
+}
+
+using NsDefMapT = reindexer::fast_hash_map<std::string, NamespaceDef, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
+
+static void dryRunValidateNamespace(std::string_view command, uint64_t lineNum, reindexer::Reindexer& validatorDb,
+									const NsDefMapT& targetNsDefs, StringsSetT& dumpNamespaces, std::vector<DryRunError>& errors) {
+	LineParser parser(command);
+	std::ignore = parser.NextToken();
+	const std::string_view subCommand = parser.NextToken();
+	if (!iequals(subCommand, "add")) {
+		errors.emplace_back(lineNum, fmt::format("Unknown \\namespaces subcommand: '{}'", subCommand));
+		return;
+	}
+
+	const std::string nsName = reindexer::unescapeString(parser.NextToken());
+	if (nsName.empty() || parser.CurPtr().empty()) {
+		errors.emplace_back(lineNum, fmt::format("Invalid \\namespaces add command: {}", command));
+		return;
+	}
+
+	NamespaceDef def("");
+	if (Error err = def.FromJSON(reindexer::giftStr(parser.CurPtr())); !err.ok()) {
+		errors.emplace_back(lineNum, fmt::format("Namespace structure is not valid: {}", err.what()));
+		return;
+	}
+	if (!iequals(nsName, def.name)) {
+		errors.emplace_back(lineNum, fmt::format("Namespace name '{}' does not match definition name '{}'", nsName, def.name));
+		return;
+	}
+
+	if (auto [_, inserted] = dumpNamespaces.emplace(def.name); !inserted) {
+		errors.emplace_back(lineNum, fmt::format("Duplicate \\NAMESPACES ADD for '{}'", def.name));
+		return;
+	}
+
+	if (auto targetIt = targetNsDefs.find(def.name); targetIt != targetNsDefs.end()) {
+		if (auto desc = namespaceIndexesMismatchDescription(def.indexes, targetIt->second.indexes); !desc.empty()) {
+			errors.emplace_back(lineNum, fmt::format("Indexes mismatch for namespace '{}': {}", def.name, desc));
+		}
+	}
+
+	def.storage = StorageOpts().Enabled(false);
+	if (Error err = validatorDb.OpenNamespace(def.name, def.storage); !err.ok()) {
+		errors.emplace_back(lineNum, fmt::format("Failed to open ns '{}' in validator: {}", def.name, err.what()));
+		return;
+	}
+	for (auto& idx : def.indexes) {
+		if (Error err = validatorDb.AddIndex(def.name, idx); !err.ok()) {
+			errors.emplace_back(lineNum,
+								fmt::format("Failed to add index '{}' to ns '{}' in validator: {}", idx.Name(), def.name, err.what()));
+			return;
+		}
+	}
+	if (def.HasSchema()) {
+		if (Error err = validatorDb.SetSchema(def.name, def.schemaJson); !err.ok()) {
+			errors.emplace_back(lineNum, fmt::format("Failed to set schema for ns '{}' in validator: {}", def.name, err.what()));
+		}
+	}
+}
+
+static void dryRunValidateUpsert(std::string_view command, uint64_t lineNum, reindexer::Reindexer& validatorDb,
+								 const StringsSetT& dumpNamespaces, std::vector<DryRunError>& errors) {
+	LineParser parser(command);
+	std::ignore = parser.NextToken();
+	const std::string nsName = reindexer::unescapeString(parser.NextToken());
+	if (nsName.empty() || parser.CurPtr().empty()) {
+		errors.emplace_back(lineNum, fmt::format("Invalid \\upsert command: {}", command));
+		return;
+	}
+	if (parser.CurPtr().front() == '[') {
+		errors.emplace_back(lineNum, "Impossible to update entire item with array - only objects are allowed");
+		return;
+	}
+
+	const bool isConfigNs = (std::string_view(nsName) == reindexer::kConfigNamespace);
+	if (isConfigNs) {
+		using namespace std::string_view_literals;
+		try {
+			gason::JsonParser p;
+			auto root = p.Parse(parser.CurPtr());
+			const auto type = root["type"].As<std::string_view>();
+			if (type == "action"sv || type == "sharding"sv) {
+				return;
+			}
+		} catch (const gason::Exception& ex) {
+			errors.emplace_back(lineNum, fmt::format("Unable to parse JSON for #config item: {}", ex.what()));
+			return;
+		}
+	}
+
+	if (dumpNamespaces.find(nsName) == dumpNamespaces.end()) {
+		errors.emplace_back(lineNum, fmt::format("\\UPSERT references namespace '{}' that has no preceding \\NAMESPACES ADD", nsName));
+		return;
+	}
+
+	auto item = validatorDb.NewItem(nsName);
+	if (Error err = item.Status(); !err.ok()) {
+		errors.emplace_back(lineNum, fmt::format("\\UPSERT into ns '{}' failed: {}", nsName, err.what()));
+		return;
+	}
+	if (Error err = item.Unsafe().FromJSON(parser.CurPtr()); !err.ok()) {
+		errors.emplace_back(lineNum, fmt::format("\\UPSERT JSON for ns '{}' is invalid: {}", nsName, err.what()));
+	}
+}
+
+static void dryRunValidateMeta(std::string_view command, uint64_t lineNum, const StringsSetT& dumpNamespaces,
+							   std::vector<DryRunError>& errors) {
+	LineParser parser(command);
+	std::ignore = parser.NextToken();
+	const std::string_view subCommand = parser.NextToken();
+	if (!iequals(subCommand, "put")) {
+		errors.emplace_back(lineNum, fmt::format("Unknown \\meta subcommand in dump: '{}'", subCommand));
+		return;
+	}
+	const std::string nsName = reindexer::unescapeString(parser.NextToken());
+	const std::string metaKey = reindexer::unescapeString(parser.NextToken());
+	if (nsName.empty() || metaKey.empty()) {
+		errors.emplace_back(lineNum,
+							fmt::format("Invalid \\meta put command ({}): {}", nsName.empty() ? "empty ns name" : "empty key", command));
+		return;
+	}
+	if (dumpNamespaces.find(nsName) == dumpNamespaces.end()) {
+		errors.emplace_back(lineNum, fmt::format("\\META PUT for namespace '{}' has no preceding \\NAMESPACES ADD", nsName));
+	}
+}
+
+static void dryRunValidateHeadCommand(std::string_view command, uint64_t lineNum, reindexer::Reindexer& validatorDb,
+									  const NsDefMapT& targetNsDefs, StringsSetT& dumpNamespaces, std::vector<DryRunError>& errors) {
+	if (command.empty()) {
+		// Empty entry produced by GetHeadCommands() for a namespace block that was filtered out by
+		// selectedNamespaces_ — nothing to validate.
+		return;
+	}
+	if (reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kDumpModePrefix, command)) {
+		DumpOptions opts;
+		if (Error err = opts.FromJSON(reindexer::giftStr(command.substr(kDumpModePrefix.size()))); !err.ok()) {
+			errors.emplace_back(lineNum, fmt::format("Unable to parse dump mode from cmd: {}", err.what()));
+		}
+		return;
+	}
+	if (reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kHeadCommandPrefix, command)) {
+		// Other comments (e.g. version banner, "Dumping namespace ..." headers) — no validation required.
+		return;
+	}
+
+	LineParser parser(command);
+	const auto token = parser.NextToken();
+	if (token.empty()) {
+		return;
+	}
+	if (iequals(token, "\\namespaces")) {
+		dryRunValidateNamespace(command, lineNum, validatorDb, targetNsDefs, dumpNamespaces, errors);
+	} else if (iequals(token, "\\meta")) {
+		dryRunValidateMeta(command, lineNum, dumpNamespaces, errors);
+	} else {
+		// \UPSERT is processed via GetUpserts(); anything else here is unexpected.
+		errors.emplace_back(lineNum, fmt::format("Unknown dump file command: {}", command));
+	}
+}
+
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::dryRunDumpFile() noexcept {
+	try {
+		std::ifstream infile(inFileName_, std::ios::binary);
+		if (!infile) {
+			Error err(errTerminated, "Can't open {}: {}", inFileName_, strerror(errno));
+			printError(err);
+			return err;
+		}
+
+		std::vector<NamespaceDef> targetNsList;
+		throwIfError(db().EnumNamespaces(targetNsList, reindexer::EnumNamespacesOpts().WithClosed().HideSystem()));
+		NsDefMapT targetNsDefs;
+		for (auto& nsDef : targetNsList) {
+			targetNsDefs.emplace(nsDef.name, std::move(nsDef));
+		}
+
+		// Local in-memory database used purely as a schema validator. Per-namespace storage is disabled
+		// below so that no files can be written even if the underlying builtin engine has a non-empty
+		// default storage path.
+		reindexer::Reindexer validatorDb;
+		throwIfError(validatorDb.Connect("builtin://", ConnectOpts().DisableReplication()));
+
+		std::vector<DryRunError> errors;
+		StringsSetT dumpNamespaces;
+
+		DumpFileIndex dumpFileIdx;
+		if (Error err = dumpFileIdx.Indexate(inFileName_, selectedNamespaces_); !err.ok()) {
+			errors.emplace_back(0, fmt::format("Failed to parse dump file: {}", err.what()));
+			dryRunPrintReport(std::cout, errors, /*nonEmptyExistingDumpNamespaces=*/{}, /*targetOnlyNamespaces=*/{});
+			std::cout << "Dry run finished: " << errors.size() << " error(s), 0 conflict(s), 0 target-only namespace(s)" << std::endl;
+			return Error(errParams, "Dry run found {} error(s) in dump file", errors.size());
+		}
+		if (auto expectedChecksum = dumpFileIdx.ExpectedChecksum();
+			expectedChecksum && *expectedChecksum != dumpFileIdx.ComputedChecksum()) {
+			errors.emplace_back(0, fmt::format("{}. Expected '{}', Computed '{}'", kChecksumMismatchMessage, *expectedChecksum,
+											   dumpFileIdx.ComputedChecksum()));
+		}
+
+		for (const auto& [cmd, lineNum] : dumpFileIdx.GetHeadCommands()) {
+			dryRunValidateHeadCommand(cmd, lineNum, validatorDb, targetNsDefs, dumpNamespaces, errors);
+		}
+
+		// \UPSERT validation is the heaviest part of dry-run on big dumps. It mirrors fromDumpFile():
+		// DumpFileIndex::GetUpserts is thread-safe (guarded by dumpLock_) and distributes batches among
+		// workers per-namespace via numProcessors_/ProcessingEnded(). Each worker validates JSON against
+		// the in-memory validatorDb, which supports concurrent NewItem/FromJSON on a single namespace.
+		const size_t numThreads = std::max<size_t>(1, static_cast<size_t>(numThreads_));
+		std::vector<std::vector<DryRunError>> threadErrors(numThreads);
+		std::vector<Error> threadErrs(numThreads);
+		std::atomic<bool> abort{false};
+		ConsoleProgress progress;
+		std::atomic<bool> progressDone{false};
+		std::thread progressThread([&] {
+			while (!progressDone.load(std::memory_order_relaxed)) {
+				progress.Print("Dry run upserts", dumpFileIdx.GetProgressSnapshot());
+				std::this_thread::sleep_for(std::chrono::milliseconds(200));
+			}
+			progress.Done(abort.load(std::memory_order_relaxed) ? "Dry run upserts: stopped" : "Dry run upserts: done");
+		});
+		auto stopProgress = [&] {
+			progressDone.exchange(true, std::memory_order_relaxed);
+			if (progressThread.joinable()) {
+				progressThread.join();
+			}
+		};
+		auto progressGuard = reindexer::MakeScopeGuard(stopProgress);
+		auto workerFn = [&](size_t threadIdx) {
+			std::vector<std::pair<std::string, uint64_t>> batch;
+			while (!abort.load(std::memory_order_relaxed)) {
+				size_t nsUsed = 0;
+				threadErrs[threadIdx] = dumpFileIdx.GetUpserts(infile, batch, kMaxParallelOps, nsUsed);
+				if (!threadErrs[threadIdx].ok()) {
+					abort.store(true, std::memory_order_relaxed);
+					return;
+				}
+				if (batch.empty()) {
+					return;
+				}
+				for (const auto& [cmd, lineNum] : batch) {
+					dryRunValidateUpsert(cmd, lineNum, validatorDb, dumpNamespaces, threadErrors[threadIdx]);
+				}
+				dumpFileIdx.ProcessingEnded(nsUsed, batch.size());
+			}
+		};
+
+		std::vector<std::thread> threads;
+		threads.reserve(numThreads);
+		for (size_t i = 0; i < numThreads; ++i) {
+			threads.emplace_back(workerFn, i);
+		}
+		for (auto& t : threads) {
+			t.join();
+		}
+		stopProgress();
+
+		for (size_t i = 0; i < numThreads; ++i) {
+			if (!threadErrs[i].ok()) {
+				errors.emplace_back(0, fmt::format("Failed to read \\UPSERT batch from dump: {}", threadErrs[i].what()));
+			}
+			for (auto& err : threadErrors[i]) {
+				errors.emplace_back(std::move(err));
+			}
+		}
+		std::stable_sort(errors.begin(), errors.end(), [](const DryRunError& a, const DryRunError& b) { return a.line < b.line; });
+
+		std::vector<std::string> nonEmptyExistingDumpNamespaces;
+		for (const auto& nsName : dumpNamespaces) {
+			if (targetNsDefs.find(nsName) == targetNsDefs.end()) {
+				continue;
+			}
+			typename DBInterface::QueryResultsT results;
+			if (Error err = db().Select(Query(nsName).Limit(1), results); !err.ok()) {
+				errors.emplace_back(0, fmt::format("Unable to check namespace '{}' emptiness: {}", nsName, err.what()));
+			} else if (results.Count() > 0) {
+				nonEmptyExistingDumpNamespaces.emplace_back(nsName);
+			}
+		}
+
+		std::vector<std::string> targetOnlyNamespaces;
+		for (const auto& [nsName, _] : targetNsDefs) {
+			// When -n filter is active, do not report target namespaces outside of the user-selected set;
+			// the user has explicitly limited the scope to those namespaces.
+			if (!selectedNamespaces_.empty() && selectedNamespaces_.find(nsName) == selectedNamespaces_.end()) {
+				continue;
+			}
+			if (dumpNamespaces.find(nsName) == dumpNamespaces.end()) {
+				targetOnlyNamespaces.emplace_back(nsName);
+			}
+		}
+		std::sort(nonEmptyExistingDumpNamespaces.begin(), nonEmptyExistingDumpNamespaces.end());
+		std::sort(targetOnlyNamespaces.begin(), targetOnlyNamespaces.end());
+
+		// Per task spec: non-zero exit code only when there are actual errors. Conflicts and target-only
+		// namespaces are warnings; we still print the report but return success in that case.
+		const bool hasIssues = !errors.empty() || !nonEmptyExistingDumpNamespaces.empty() || !targetOnlyNamespaces.empty();
+		if (!hasIssues) {
+			std::cout << "Dry run completed successfully: no problems found" << std::endl;
+			return errOK;
+		}
+
+		dryRunPrintReport(std::cout, errors, nonEmptyExistingDumpNamespaces, targetOnlyNamespaces);
+		std::cout << "Dry run finished: " << errors.size() << " error(s), " << nonEmptyExistingDumpNamespaces.size() << " conflict(s), "
+				  << targetOnlyNamespaces.size() << " target-only namespace(s)" << std::endl;
+
+		if (!errors.empty()) {
+			return Error(errParams, "Dry run found {} error(s) in dump file", errors.size());
+		}
+		return errOK;
 	}
 	CATCH_AND_RETURN;
 }
@@ -555,36 +1170,18 @@ Error CommandsProcessor<DBInterface>::process(const std::string& command) noexce
 #if REINDEX_WITH_REPLXX
 template <typename DBInterface>
 template <typename T>
-void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(const new_v_callback_t&)) {
+void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(const callback_t&)) {
 	(rx.*set_completion_callback)([this](const std::string& input, int) {
-		std::vector<std::string> completions;
+		reindexer::SQLSuggestions completions;
 		const auto err = getSuggestions(input, completions);
 		replxx::Replxx::completions_t result;
 		if (err.ok()) {
-			for (const std::string& suggestion : completions) {
+			for (const std::string& suggestion : completions.suggestions) {
 				result.emplace_back(suggestion);
 			}
 		}
 		return result;
 	});
-}
-
-template <typename DBInterface>
-template <typename T>
-void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(const old_v_callback_t&, void*)) {
-	(rx.*set_completion_callback)(
-		[this](const std::string& input, int, void*) {
-			std::vector<std::string> completions;
-			const auto err = getSuggestions(input, completions);
-			replxx::Replxx::completions_t result;
-			if (err.ok()) {
-				for (const std::string& suggestion : completions) {
-					result.emplace_back(suggestion);
-				}
-			}
-			return result;
-		},
-		nullptr);
 }
 #endif	// REINDEX_WITH_REPLXX
 
@@ -710,9 +1307,16 @@ bool CommandsProcessor<DBInterface>::isHavingReplicationConfig() {
 }
 
 template <typename DBInterface>
-void CommandsProcessor<DBInterface>::fromFile(std::istream& infile) {
+void CommandsProcessor<DBInterface>::fromFile(std::istream& infile, std::optional<size_t> inputFileSize) {
 	fromFile_ = true;
 	auto fromFileGuard = reindexer::MakeScopeGuard([this]() { fromFile_ = false; });
+	ConsoleProgress progress;
+	bool progressFinished = false;
+	auto progressGuard = reindexer::MakeScopeGuard([&] {
+		if (inputFileSize && !progressFinished) {
+			progress.Done("Restoring dump: stopped");
+		}
+	});
 
 	targetHasReplicationConfig_ = isHavingReplicationConfig();
 	if (targetHasReplicationConfig_) {
@@ -747,10 +1351,17 @@ void CommandsProcessor<DBInterface>::fromFile(std::istream& infile) {
 				throw err;
 			}
 		}
+		if (inputFileSize) {
+			progress.Print("Restoring dump", streamPositionToBytes(infile.tellg(), *inputFileSize), *inputFileSize);
+		}
 	}
 
 	if (!parallelCommands.empty()) {
 		throwIfError(parallelUpsertCommands(parallelCommands));
+	}
+	if (inputFileSize) {
+		progress.Done("Restoring dump: done");
+		progressFinished = true;
 	}
 }
 
@@ -773,7 +1384,23 @@ void CommandsProcessor<DBInterface>::fromDumpFile(std::ifstream& infile, DumpFil
 	}
 
 	std::vector<Error> errs(numThreads_);
-	bool abort = false;
+	std::atomic<bool> abort{false};
+	ConsoleProgress progress;
+	std::atomic<bool> progressDone{false};
+	std::thread progressThread([&] {
+		while (!progressDone.load(std::memory_order_relaxed)) {
+			progress.Print("Restoring dump upserts", dumpFileIdx.GetProgressSnapshot());
+			std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		}
+		progress.Done(abort.load(std::memory_order_relaxed) ? "Restoring dump upserts: stopped" : "Restoring dump upserts: done");
+	});
+	auto stopProgress = [&] {
+		progressDone.exchange(true, std::memory_order_relaxed);
+		if (progressThread.joinable()) {
+			progressThread.join();
+		}
+	};
+	auto progressGuard = reindexer::MakeScopeGuard(stopProgress);
 	auto workingThreadFun = [&](size_t threadIdx) {
 		std::vector<std::pair<std::string, uint64_t>> parallelCommands;
 		do {
@@ -784,14 +1411,18 @@ void CommandsProcessor<DBInterface>::fromDumpFile(std::ifstream& infile, DumpFil
 			}
 			errs[threadIdx] = dumpFileIdx.GetUpserts(infile, parallelCommands, maxCommands, nsUsed);
 			if (!errs[threadIdx].ok()) {
-				abort = true;
+				abort.store(true, std::memory_order_relaxed);
 				return;
 			}
 			if (!parallelCommands.empty()) {
 				errs[threadIdx] = parallelUpsertCommands(parallelCommands);
-				dumpFileIdx.ProcessingEnded(nsUsed);
+				dumpFileIdx.ProcessingEnded(nsUsed, parallelCommands.size());
+				if (!errs[threadIdx].ok()) {
+					abort.store(true, std::memory_order_relaxed);
+					return;
+				}
 			}
-		} while (!parallelCommands.empty() && !abort);
+		} while (!parallelCommands.empty() && !abort.load(std::memory_order_relaxed));
 	};
 
 	std::vector<std::thread> threads;
@@ -804,6 +1435,7 @@ void CommandsProcessor<DBInterface>::fromDumpFile(std::ifstream& infile, DumpFil
 	for (auto& thread : threads) {
 		thread.join();
 	}
+	stopProgress();
 
 	for (auto& err : errs) {
 		if (!err.ok()) {
@@ -813,7 +1445,7 @@ void CommandsProcessor<DBInterface>::fromDumpFile(std::ifstream& infile, DumpFil
 }
 
 template <typename DBInterface>
-Error CommandsProcessor<DBInterface>::getSuggestions(const std::string& input, std::vector<std::string>& suggestions) noexcept {
+Error CommandsProcessor<DBInterface>::getSuggestions(const std::string& input, reindexer::SQLSuggestions& suggestions) noexcept {
 	try {
 		if (!input.empty() && input[0] != '\\') {
 			Error err = db().GetSqlSuggestions(input, input.length() - 1, suggestions);
@@ -821,8 +1453,8 @@ Error CommandsProcessor<DBInterface>::getSuggestions(const std::string& input, s
 				return err;
 			}
 		}
-		if (suggestions.empty()) {
-			addCommandsSuggestions(input, suggestions);
+		if (suggestions.suggestions.empty()) {
+			addCommandsSuggestions(input, suggestions.suggestions);
 		}
 		return errOK;
 	}
@@ -1388,6 +2020,7 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 	}
 
 	reindexer::WrSerializer wrser;
+	MD5 checksum;
 
 	wrser << "-- Reindexer DB backup file" << '\n';
 	wrser << "-- VERSION 1.1" << '\n';
@@ -1399,6 +2032,7 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 
 	auto parametrizedDb = (dumpMode == DumpOptions::Mode::ShardedOnly) ? db() : db().WithShardId(ShardingKeyType::ProxyOff, false);
 
+	std::ranges::sort(doNsDefs, [&](const NamespaceDef& lhs, const NamespaceDef& rhs) { return lhs.name < rhs.name; });
 	for (auto& nsDef : doNsDefs) {
 		// skip system namespaces, except #config
 		if (reindexer::isSystemNamespaceNameFast(nsDef.name) && nsDef.name != reindexer::kConfigNamespace) {
@@ -1407,12 +2041,17 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 
 		wrser << "-- Dumping namespace '" << nsDef.name << "' ..." << '\n';
 
-		wrser << "\\NAMESPACES ADD " << reindexer::escapeString(nsDef.name) << " ";
-		nsDef.GetJSON(wrser);
-		wrser << '\n';
+		{
+			WrSerializer namespacesLine;
+			namespacesLine << "\\NAMESPACES ADD " << reindexer::escapeString(nsDef.name) << " ";
+			nsDef.GetJSON(namespacesLine);
+			appendCommandToChecksum(checksum, namespacesLine.Slice());
+			wrser << namespacesLine.Slice() << '\n';
+		}
 
 		std::vector<std::string> meta;
 		throwIfError(parametrizedDb.EnumMeta(nsDef.name, meta));
+		std::sort(meta.begin(), meta.end());
 
 		std::string mdata;
 		for (auto& mkey : meta) {
@@ -1424,8 +2063,11 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 				throwIfError(parametrizedDb.GetMeta(nsDef.name, mkey, mdata));
 			}
 
-			wrser << "\\META PUT " << reindexer::escapeString(nsDef.name) << " " << reindexer::escapeString(mkey) << " "
-				  << reindexer::escapeString(mdata) << '\n';
+			WrSerializer metaLine;
+			metaLine << "\\META PUT " << reindexer::escapeString(nsDef.name) << " " << reindexer::escapeString(mkey) << " "
+					 << reindexer::escapeString(mdata);
+			appendCommandToChecksum(checksum, metaLine.Slice());
+			wrser << metaLine.Slice() << '\n';
 		}
 
 		typename DBInterface::QueryResultsT itemResults;
@@ -1437,10 +2079,12 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 			if (cancelCtx_.IsCancelled()) {
 				throw Error(errCanceled, "Canceled");
 			}
-			wrser << "\\UPSERT " << reindexer::escapeString(nsDef.name) << ' ';
-			throwIfError(it.GetJSON(wrser, false));
+			WrSerializer upsertLine;
+			upsertLine << "\\UPSERT " << reindexer::escapeString(nsDef.name) << ' ';
+			throwIfError(it.GetJSON(upsertLine, false));
+			appendCommandToChecksum(checksum, upsertLine.Slice());
+			wrser << upsertLine.Slice() << '\n';
 
-			wrser << '\n';
 			if (wrser.Len() > 0x100000) {
 				output_() << wrser.Slice();
 				wrser.Reset();
@@ -1448,6 +2092,7 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 		}
 	}
 	output_() << wrser.Slice();
+	output_() << kChecksumPrefix << " \"" << checksum.getHash() << "\"\n";
 }
 
 template <typename DBInterface>
@@ -1691,7 +2336,7 @@ void CommandsProcessor<DBInterface>::commandBench(std::string_view command) {
 	}
 
 	NamespaceDef nsDef(kBenchNamespace);
-	nsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
+	nsDef.AddIndex("id", "hash", "int", reindexer::IndexOpts().PK());
 
 	throwIfError(db().AddNamespace(nsDef));
 	output_() << "Seeding " << kBenchItemsCount << " documents to bench namespace..." << std::endl;

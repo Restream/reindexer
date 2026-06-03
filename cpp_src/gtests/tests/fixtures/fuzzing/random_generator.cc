@@ -7,6 +7,8 @@
 #include "ns_scheme.h"
 #include "tools/clock.h"
 
+namespace reindexer_tests {
+
 namespace fuzzing {
 
 std::string& RandomGenerator::out() noexcept {
@@ -614,3 +616,5 @@ void RandomGenerator::RndWhereComposite(reindexer::Query& query, const std::stri
 }
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

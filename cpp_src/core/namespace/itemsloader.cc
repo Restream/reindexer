@@ -271,8 +271,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 		assertrx(vectorsDataIt != vectorsData_.end());
 		auto& vectorsData = vectorsDataIt->second;
 		loadErr = idxPtr->LoadIndexCache(cachedIndex->data, IsComposite(pkIdx->Type()),
-										 FloatVectorIndexRawDataInserter{vectorsData, *pkIdx, vecSizeBytes}, LoadWithQuantizer_True,
-										 cachedIndex->version);
+										 FloatVectorIndexRawDataInserter{vectorsData, *pkIdx, vecSizeBytes}, LoadWithQuantizer_True);
 		if (!loadErr.ok()) {
 			assertrx_dbg(false);  // Do not expect this error in test scenarios
 			logFmt(LogError, "[{}] Unable to restore ANN index '{}' from storage cache: {}", ns_.name_, cachedIndex->name, loadErr.what());

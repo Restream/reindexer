@@ -1,7 +1,7 @@
 #pragma once
 
 #include <chrono>
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
 #include "core/rdxcontext.h"
@@ -21,6 +21,7 @@ struct SnapshotOpts;
 struct ClusterControlRequestData;
 class IEventsObserver;		  // TODO: Make this class accessible to the external user #1714
 class EventSubscriberConfig;  // TODO: Make this class accessible to the external user #1714
+struct SQLSuggestions;
 
 namespace cluster {
 struct NodeData;
@@ -244,7 +245,7 @@ public:
 	/// @param sqlQuery - sql query.
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions) noexcept;
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions) noexcept;
 	/// Get current connection status
 	Error Status() noexcept;
 	/// Get version of the Reindexer

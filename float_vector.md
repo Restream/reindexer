@@ -93,7 +93,6 @@ if err != nil {
 ```
 
 ### Embedding configuration
-> Notice: not yet available for array float vector indexes
 
 Reindexer is able to perform automatic remote HTTP API calls to receive embedding for documents' fields or strings in KNN queries conditions. Currently, reindexer's core simply sends fields/conditions content to external user's service and expects to receive embedding results.
 

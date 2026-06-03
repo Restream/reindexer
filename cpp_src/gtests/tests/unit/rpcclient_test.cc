@@ -14,9 +14,12 @@
 #include "gtests/tools.h"
 #include "net/ev/ev.h"
 
+namespace reindexer_tests {
+
 // NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 
 using std::chrono::seconds;
+using reindexer_tests_tools::exceptionWrapper;
 
 TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 	// Should return error on request timeout
@@ -1345,3 +1348,5 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 }
 
 // NOLINTEND(rx-perf-lambda-to-std-function-allocation)
+
+}  // namespace reindexer_tests

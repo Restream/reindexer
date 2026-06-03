@@ -2,6 +2,8 @@
 #include "core/system_ns_names.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
 
 template <typename T>
@@ -248,3 +250,5 @@ CascadeReplicationApiP<T>::Cluster::~Cluster() {
 
 template class CascadeReplicationApiP<void*>;
 template class CascadeReplicationApiP<sq8_test::TestSyncType>;
+
+}  // namespace reindexer_tests

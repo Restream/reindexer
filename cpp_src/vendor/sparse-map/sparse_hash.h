@@ -277,9 +277,10 @@ public:
 	using const_iterator = const value_type*;
 
 private:
-	static const size_type CAPACITY_GROWTH_STEP = (Sparsity == tsl::sh::sparsity::high)		? 2
-												  : (Sparsity == tsl::sh::sparsity::medium) ? 4
-																							: 8;  // (Sparsity == tsl::sh::sparsity::low)
+	static constexpr size_type CAPACITY_GROWTH_STEP = (Sparsity == tsl::sh::sparsity::high) ? 2
+													  : (Sparsity == tsl::sh::sparsity::medium)
+														  ? 4
+														  : 8;	// (Sparsity == tsl::sh::sparsity::low)
 
 	/**
 	 * Bitmap size configuration.
@@ -626,6 +627,8 @@ public:
 		}
 	}
 
+	constexpr static size_type aligned_capacity(size_t size) noexcept { return align_up<sparse_array::CAPACITY_GROWTH_STEP>(size); }
+
 private:
 	template <typename... Args>
 	static void construct_value(allocator_type& alloc, value_type* value, Args&&... value_args) {
@@ -872,6 +875,14 @@ private:
 	}
 
 private:
+	template <size_type Align>
+	static constexpr size_type align_up(size_type x) noexcept {
+		static_assert(Align == 2 || Align == 4 || Align == 8, "Align must be 2, 4, or 8");
+		static_assert(std::is_unsigned_v<size_type>, "Size type must be unsigned for this trick");
+		// (x + Align - 1) & ~(Align - 1) - round value up to required power of 2
+		return (x + Align - 1) & ~(Align - 1);
+	}
+
 	value_type* m_values;
 
 	bitmap_type m_bitmap_vals;
@@ -1130,7 +1141,7 @@ public:
 
 			if (statsCorrect) {
 				for (size_t i = 0; i < buckets_stats.size() && i < m_sparse_buckets_data.size(); i++) {
-					m_sparse_buckets_data[i].reserve(buckets_stats[i], *this);
+					m_sparse_buckets_data[i].reserve(sparse_array::aligned_capacity(buckets_stats[i]), *this);
 				}
 			}
 		}
@@ -2039,7 +2050,7 @@ public:
 		buckets_sizes.resize(0);
 		buckets_sizes.reserve(m_sparse_buckets_data.size());
 		for (size_t i = 0; i < m_sparse_buckets_data.size(); i++) {
-			buckets_sizes.emplace_back(m_sparse_buckets_data[i].capacity());
+			buckets_sizes.emplace_back(m_sparse_buckets_data[i].size());
 		}
 	}
 

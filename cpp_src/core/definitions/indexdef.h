@@ -3,8 +3,8 @@
 #include <span>
 #include <string>
 #include <vector>
+#include "core/definitions/indexopts.h"
 #include "core/enums.h"
-#include "core/indexopts.h"
 #include "core/type_consts.h"
 #include "estl/expected.h"
 
@@ -77,6 +77,12 @@ public:
 
 	using DiffResult = compare_enum::Diff<IndexDef::Diff, IndexOpts::ParamsDiff, IndexOpts::OptsDiff, FloatVectorIndexOpts::Diff>;
 	DiffResult Compare(const IndexDef& o) const noexcept;
+
+	// Returns true if `diff` only contains differences that do not break index compatibility (i.e. an
+	// existing index can be safely reused as-is when re-adding the same definition). Callers like
+	// NamespaceImpl::checkIfSameIndexExists() and reindexer_tool's --dry-run use this to decide whether
+	// two IndexDefs are "the same enough" for restore-style operations.
+	[[nodiscard]] static bool IsBasicCompatibility(const DiffResult& diff) noexcept;
 
 private:
 	void initFromIndexType(::IndexType);

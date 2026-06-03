@@ -1,5 +1,6 @@
 #include "core/idset/idset.h"
 #include "sort/pdqsort.hpp"
+#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -11,6 +12,10 @@ void IdSetUnique::Dump(std::ostream& os) const {
 	}
 
 	os << ']';
+}
+
+void IdSetUnique::throwDuplicatedIDError() const {
+	throw DuplicatedItemIDError(id_.ToNumber(), Error(errConflict, "Duplicated item id, that has to be unique: {}", id_.ToNumber()));
 }
 
 IdSetPlain::Ptr IdSetPlain::BuildFromUnsorted(base_idset&& ids) {

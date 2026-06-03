@@ -1,5 +1,7 @@
 #include "item_index_mask_api.h"
 
+namespace reindexer_tests {
+
 TEST_F(ItemIndexMaskApi, MaskTest) {
 	auto itemBase = NewItem(default_namespace);
 	Error err = itemBase.FromJSON(R"({"id":1, "f1":10, "f2":20})");
@@ -64,3 +66,5 @@ TEST_F(ItemIndexMaskApi, MaskTest) {
 		}
 	}
 }
+
+}  // namespace reindexer_tests

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string>
 #include "core/keyvalue/variant.h"
 
 namespace reindexer {
@@ -78,9 +77,9 @@ public:
 		pos_ += delta;
 		cur_ += delta;
 	}
-	std::string Where();
-	std::string Where(const Token& token);
-	std::string Where(size_t start_pos, size_t last_pos);
+	TokenizerRange Where();
+	TokenizerRange Where(const Token& token) const noexcept;
+	TokenizerRange Where(size_t start_pos, size_t last_pos) const noexcept;
 	size_t Length() const noexcept { return q_.length(); }
 	const char* Begin() const noexcept { return q_.data(); }
 

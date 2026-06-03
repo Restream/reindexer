@@ -127,30 +127,30 @@ void CJsonModifier::insertField(Context& ctx) const {
 				continue;
 			}
 
-			const auto field = tagsMatcher_.tags2field(ctx.jsonPath);
-			const auto updateTagType = determineUpdateTagType(ctx, field.IndexNumber());
+			const auto fieldProperty = tagsMatcher_.tags2field(ctx.jsonPath);
+			const auto updateTagType = determineUpdateTagType(ctx, fieldProperty.IndexNumber());
 			if (updateTagType.isFloatVectorRef) {
-				if (field.IsArray()) {
+				if (fieldProperty.IsArray()) {
 					if (ctx.value.empty()) {
-						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field.IndexNumber()});
+						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, fieldProperty.IndexNumber()});
 						ctx.wrser.PutVarUint(0);
 					} else if (ctx.value.IsArrayValue()) {
 						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName});
 						ctx.wrser.PutCArrayTag(carraytag(ctx.value.size(), TAG_OBJECT));
 						for (const auto& v : ctx.value) {
-							ctx.wrser.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), field.IndexNumber()});
+							ctx.wrser.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), fieldProperty.IndexNumber()});
 							ctx.wrser.PutVarUint(v.As<ConstFloatVectorView>().Dimension().Value());
 						}
 					} else {
-						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field.IndexNumber()});
+						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, fieldProperty.IndexNumber()});
 						ctx.wrser.PutVarUint(uint32_t(updateTagType.valueDims));
 					}
 				} else {
-					ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field.IndexNumber()});
+					ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, fieldProperty.IndexNumber()});
 					ctx.wrser.PutVarUint(uint32_t(updateTagType.valueDims));
 				}
-			} else if (field.IsRegularIndex()) {
-				putCJsonRef(updateTagType.rawType, tagName, field.IndexNumber(), ctx.value, ctx.wrser);
+			} else if (fieldProperty.IsRegularIndex()) {
+				putCJsonRef(updateTagType.rawType, tagName, fieldProperty.IndexNumber(), ctx.value, ctx.wrser);
 			} else {
 				putCJsonValue(updateTagType.rawType, tagName, ctx.value, ctx.wrser);
 			}
@@ -250,7 +250,7 @@ bool CJsonModifier::checkIfFoundTag(Context& ctx, TagType tag, bool isLastItem) 
 	return true;
 }
 
-void CJsonModifier::writeCTag(const ctag& tag, Context& ctx) {
+void CJsonModifier::writeCTag(const ctag& tag, const FieldProperties& fieldProperty, Context& ctx) {
 	const TagType tagType = tag.Type();
 	bool tagMatched = checkIfFoundTag(ctx, tagType);
 	const int field = tag.Field();
@@ -270,12 +270,25 @@ void CJsonModifier::writeCTag(const ctag& tag, Context& ctx) {
 
 		if (tagMatched && ctx.fieldUpdated) {
 			const auto resultTagType = determineUpdateTagType(ctx, field);
-			ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
 			if (resultTagType.isFloatVectorRef) {
 				assertrx_throw(!ctx.updateArrayElements);
-				ctx.wrser.PutVarUint(uint32_t(resultTagType.valueDims));
-			} else if (resultTagType.rawType == TAG_ARRAY) {
-				ctx.wrser.PutVarUint(ctx.updateArrayElements ? count : ctx.value.size());
+				if (fieldProperty.IsArray() && ctx.value.IsArrayValue()) {
+					ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, -1});
+					ctx.wrser.PutCArrayTag(carraytag(ctx.value.size(), TAG_OBJECT));
+					for ([[maybe_unused]] const auto& v : ctx.value) {
+						ctx.wrser.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), fieldProperty.IndexNumber()});
+						assertrx_dbg(v.As<ConstFloatVectorView>().Dimension() == resultTagType.valueDims);
+						ctx.wrser.PutVarUint(resultTagType.valueDims.Value());
+					}
+				} else {
+					ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field});
+					ctx.wrser.PutVarUint(resultTagType.valueDims.Value());
+				}
+			} else {
+				ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
+				if (resultTagType.rawType == TAG_ARRAY) {
+					ctx.wrser.PutVarUint(ctx.updateArrayElements ? count : ctx.value.size());
+				}
 			}
 			return;
 		}
@@ -475,7 +488,7 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 	const auto fieldProperty = tagsMatcher_.tags2field(tagsPath_);
 
 	if (isIndexed(field)) {
-		writeCTag(tag, ctx);
+		writeCTag(tag, fieldProperty, ctx);
 		return true;
 	}
 
@@ -495,18 +508,18 @@ bool CJsonModifier::updateFieldInTuple(Context& ctx) {
 				if (fieldProperty.IsArray()) {
 					skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 					if (ctx.value.IsArrayValue()) {
-						ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
+						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, -1});
 						ctx.wrser.PutCArrayTag(carraytag(ctx.value.size(), TAG_OBJECT));
 						for (const auto& v : ctx.value) {
 							ctx.wrser.PutCTag(ctag{TAG_ARRAY, TagName::Empty(), fieldProperty.IndexNumber()});
 							ctx.wrser.PutVarUint(v.As<ConstFloatVectorView>().Dimension().Value());
 						}
 					} else {
-						ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, fieldProperty.IndexNumber()});
+						ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, fieldProperty.IndexNumber()});
 						ctx.wrser.PutVarUint(resultTagType.valueDims.Value());
 					}
 				} else {
-					ctx.wrser.PutCTag(ctag{resultTagType.rawType, tagName, field});
+					ctx.wrser.PutCTag(ctag{TAG_ARRAY, tagName, field});
 					ctx.wrser.PutCArrayTag(carraytag{uint32_t(resultTagType.valueDims), TAG_FLOAT});
 					skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 				}

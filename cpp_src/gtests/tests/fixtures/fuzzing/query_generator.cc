@@ -3,6 +3,8 @@
 #include "index.h"
 #include "ns.h"
 
+namespace reindexer_tests {
+
 namespace fuzzing {
 
 reindexer::Query QueryGenerator::operator()() {
@@ -47,3 +49,5 @@ reindexer::Query QueryGenerator::operator()() {
 }
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

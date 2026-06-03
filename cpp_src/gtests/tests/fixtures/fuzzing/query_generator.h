@@ -3,10 +3,10 @@
 #include "random_generator.h"
 
 namespace reindexer {
-
 class Query;
-
 }  // namespace reindexer
+
+namespace reindexer_tests {
 
 namespace fuzzing {
 
@@ -23,3 +23,5 @@ private:
 };
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

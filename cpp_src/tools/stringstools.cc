@@ -1035,7 +1035,7 @@ template <bool isUtf8>
 Error getBytePosInMultilineString(std::string_view str, const size_t line, const size_t charPos, size_t& bytePos) {
 	auto it = str.begin();
 	size_t currLine = 0, currCharPos = 0;
-	for (size_t i = 0; it != str.end() && ((currLine != line) || (currCharPos != charPos)); toNextCh<isUtf8>(it, str), ++i) {
+	for (; it != str.end() && ((currLine != line) || (currCharPos != charPos)); toNextCh<isUtf8>(it, str)) {
 		if (*it == '\n') {
 			++currLine;
 		} else if (currLine == line) {

@@ -8,6 +8,8 @@ using benchmark::State;
 using reindexer::NamespaceDef;
 using reindexer::Reindexer;
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] ApiEncDec {
 public:
 	ApiEncDec(Reindexer* db, std::string&& name);
@@ -47,3 +49,5 @@ private:
 	std::string itemMsgPack_;
 	constexpr static int kCjsonBenchItemID = 9973;
 };
+
+}  // namespace reindexer_benchmarks

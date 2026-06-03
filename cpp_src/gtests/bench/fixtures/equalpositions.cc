@@ -1,6 +1,8 @@
 #include "equalpositions.h"
 #include "core/cjson/jsonbuilder.h"
 
+namespace reindexer_benchmarks {
+
 void EqualPositions::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("Insert", &EqualPositions::Insert, this)->Iterations(1);
@@ -28,7 +30,7 @@ private:
 };
 
 void EqualPositions::Insert(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < kRowCount; ++i) {
 			auto item = MakeItem(state);
@@ -171,3 +173,5 @@ reindexer::Error EqualPositions::Initialize() {
 	}
 	return {};
 }
+
+}  // namespace reindexer_benchmarks

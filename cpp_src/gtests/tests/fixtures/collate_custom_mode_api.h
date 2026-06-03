@@ -2,10 +2,14 @@
 
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] CollateCustomModeAPI : public ReindexerApi {
 protected:
 	void PrepareNs(const std::shared_ptr<Reindexer>& reindexer, const std::string& nsName, const std::string& sortOrder,
 				   const std::vector<std::string_view>& sourceTable) {
+		using reindexer::IndexOpts;
+
 		auto err = reindexer->OpenNamespace(nsName, StorageOpts().Enabled(false));
 		EXPECT_TRUE(err.ok()) << err.what();
 
@@ -46,3 +50,5 @@ protected:
 	const char* kFieldID = "id";
 	const char* kFieldName = "name";
 };
+
+}  // namespace reindexer_tests

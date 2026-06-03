@@ -1,4 +1,5 @@
 #include <vector>
+#include "core/query/sql/sql_suggestions.h"
 #include "gtest/gtest.h"
 #include "reindexer_api.h"
 
@@ -23,6 +24,10 @@
 #include "spdlog/sinks/reopen_file_sink.h"
 #include "tools/serilize/wrserializer.h"
 #include "vendor/gason/gason.h"
+
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
 
 TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
 	const auto kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/base_tests/DeleteTemporaryNamespaceOnConnect");
@@ -1628,7 +1633,7 @@ TEST_F(ReindexerApi, JoinConditionsSqlParserTest) {
 }
 
 TEST_F(ReindexerApi, UpdateWithBoolParserTest) {
-	constexpr std::string_view sql = "UPDATE ns SET flag1 = true,flag2 = false WHERE id > 100";
+	constexpr std::string_view sql = "UPDATE ns SET flag1 = true, flag2 = false WHERE id > 100";
 	Query query = Query::FromSQL(sql);
 	ASSERT_EQ(query.UpdateFields().size(), 2);
 	EXPECT_EQ(query.UpdateFields().front().Column(), "flag1");
@@ -1754,15 +1759,18 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	auto validateSuggestions = [this](std::string_view sql, const std::unordered_set<std::string_view>& expected, size_t position) {
-		std::vector<std::string> suggestions;
+		reindexer::SQLSuggestions suggestions;
 		auto err = rt.reindexer->GetSqlSuggestions(sql, position, suggestions);
 		ASSERT_TRUE(err.ok()) << err.what();
-		for (auto& sugg : suggestions) {
+		if (suggestions.errorRange.has_value()) {
+			EXPECT_EQ(position, suggestions.errorRange->columnStart);
+		}
+		for (auto& sugg : suggestions.suggestions) {
 			EXPECT_TRUE(expected.find(sugg) != expected.end()) << sql << '\n'
 															   << std::string(position, ' ') << "^\nUnexpected suggestion: " << sugg;
 		}
 		for (auto& expSugg : expected) {
-			EXPECT_TRUE(std::find(suggestions.begin(), suggestions.end(), expSugg) != suggestions.end())
+			EXPECT_NE(std::find(suggestions.suggestions.begin(), suggestions.suggestions.end(), expSugg), suggestions.suggestions.end())
 				<< sql << '\n'
 				<< std::string(position, ' ') << "^\nExpected but not found suggestion: " << expSugg;
 		}
@@ -2561,3 +2569,5 @@ TEST_F(ReindexerApi, UnableToCallApiWithoutConnect) {
 	auto tx = rx->NewTransaction("ns");
 	EXPECT_EQ(tx.Status().code(), errNotValid);
 }
+
+}  // namespace reindexer_tests

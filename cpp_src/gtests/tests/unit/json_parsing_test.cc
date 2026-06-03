@@ -4,6 +4,8 @@
 #include "estl/gift_str.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests {
+
 TEST(JSONParsingTest, EmptyDocument) {
 	reindexer::Reindexer rx;
 	constexpr std::string_view kNsName("json_empty_doc_test");
@@ -94,3 +96,5 @@ TEST(JSONParsingTest, LargeAllocations) {
 		ASSERT_EQ(el.value.getTag(), gason::JsonTag::NUMBER);
 	}
 }
+
+}  // namespace reindexer_tests

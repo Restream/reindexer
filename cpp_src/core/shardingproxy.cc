@@ -1272,7 +1272,7 @@ Error ShardingProxy::DeleteMeta(std::string_view nsName, const std::string& key,
 	}
 }
 
-Error ShardingProxy::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions, const RdxContext& ctx) {
+Error ShardingProxy::GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions, const RdxContext& ctx) {
 	return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, ctx);
 }
 

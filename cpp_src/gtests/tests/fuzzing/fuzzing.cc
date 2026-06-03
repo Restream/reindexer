@@ -4,16 +4,20 @@
 #include "fuzzing/ns.h"
 #include "fuzzing/query_generator.h"
 
+namespace reindexer_tests {
+
+namespace fuzzing {
+
 TEST_F(Fuzzing, BaseTest) {
 	try {
-		const fuzzing::RandomGenerator::ErrFactorType errorFactor{0, 1};
+		const RandomGenerator::ErrFactorType errorFactor{0, 1};
 		reindexer::WrSerializer ser;
-		fuzzing::RandomGenerator rnd(errorFactor);
-		std::vector<fuzzing::Ns> namespaces;
+		RandomGenerator rnd(errorFactor);
+		std::vector<Ns> namespaces;
 		const size_t N = 1;
 		for (size_t i = 0; i < N; ++i) {
 			namespaces.emplace_back(rnd.GenerateNsName(), errorFactor);
-			fuzzing::Ns& ns = namespaces.back();
+			Ns& ns = namespaces.back();
 			auto err = rx_.OpenNamespace(ns.GetName());
 			EXPECT_TRUE(err.ok()) << err.what();
 			if (!err.ok()) {
@@ -21,7 +25,7 @@ TEST_F(Fuzzing, BaseTest) {
 			}
 			auto& indexes = ns.GetIndexes();
 			for (size_t j = 0; j < indexes.size();) {
-				const fuzzing::Index& idx = indexes[j];
+				const Index& idx = indexes[j];
 				const auto idxDef = idx.IndexDef(ns.GetRandomGenerator(), ns.GetScheme(), indexes);
 				err = rx_.AddIndex(ns.GetName(), idxDef);
 				EXPECT_TRUE(err.ok()) << err.what();
@@ -29,11 +33,11 @@ TEST_F(Fuzzing, BaseTest) {
 					ns.AddIndexToScheme(idx, j);  // TODO move to fuzzing::Ns
 					std::vector<FieldData> fields;
 					std::visit(reindexer::overloaded{
-								   [&](const fuzzing::Index::Child& c) {
+								   [&](const Index::Child& c) {
 									   fields.push_back(FieldData{ns.GetScheme().GetJsonPath(c.fieldPath),
 																  ToKeyValueType(ns.GetScheme().GetFieldType(c.fieldPath))});
 								   },
-								   [&](const fuzzing::Index::Children& c) {
+								   [&](const Index::Children& c) {
 									   for (const auto& child : c) {
 										   fields.push_back(FieldData{ns.GetScheme().GetJsonPath(child.fieldPath),
 																	  ToKeyValueType(ns.GetScheme().GetFieldType(child.fieldPath))});
@@ -103,7 +107,7 @@ TEST_F(Fuzzing, BaseTest) {
 			err = rx_.Select(reindexer::Query(ns.GetName()).ReqTotal(), qr);
 			EXPECT_TRUE(err.ok()) << err.what();
 		}
-		fuzzing::QueryGenerator queryGenerator{namespaces, errorFactor};
+		QueryGenerator queryGenerator{namespaces, errorFactor};
 		for (size_t i = 0; i < 100; ++i) {
 			auto query = queryGenerator();
 			reindexer::QueryResults qr;
@@ -117,6 +121,9 @@ TEST_F(Fuzzing, BaseTest) {
 		FAIL() << err.what();
 	}
 }
+
+}  // namespace fuzzing
+}  // namespace reindexer_tests
 
 // NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
 int main(int argc, char** argv) {
@@ -145,15 +152,15 @@ int main(int argc, char** argv) {
 	}
 	std::string out = args::get(output);
 	if (!out.empty()) {
-		fuzzing::RandomGenerator::SetOut(std::move(out));
+		reindexer_tests::fuzzing::RandomGenerator::SetOut(std::move(out));
 	}
 	const std::string in = args::get(input);
 	if (!in.empty()) {
-		fuzzing::RandomGenerator::SetIn(in);
+		reindexer_tests::fuzzing::RandomGenerator::SetIn(in);
 	}
 	std::string dsn = args::get(dbDsn);
 	if (!dsn.empty()) {
-		Fuzzing::SetDsn(std::move(dsn));
+		reindexer_tests::fuzzing::Fuzzing::SetDsn(std::move(dsn));
 	}
 
 	return RUN_ALL_TESTS();

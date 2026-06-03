@@ -2,6 +2,7 @@
 #include "function_parser.h"
 
 #include "core/cjson/jsonbuilder.h"
+#include "core/formatters/tokenizer_range.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/payload/payloadiface.h"
 #include "estl/tokenizer.h"
@@ -135,16 +136,19 @@ std::string Function::ToString() const {
 FlatArrayLen FlatArrayLen::FromSQL(Tokenizer& tokenizer) {
 	auto tok = tokenizer.NextToken();
 	if (tok.Text() != "(") {
-		throw Error(errParseDSL, "Expected '(' after function  name, but found '{}', {}", tok.Text(), tokenizer.Where(tok));
+		const auto range = tokenizer.Where(tok);
+		throw SqlParserError(range, "Expected '(' after function  name, but found '{}', {}", tok.Text(), range);
 	}
 	tok = tokenizer.NextToken();
 	if (tok.Type() != TokenName) {
-		throw Error(errParseSQL, "Expected field name, but found '{}' in query, {}", tok.Text(), tokenizer.Where(tok));
+		const auto range = tokenizer.Where(tok);
+		throw SqlParserError(range, "Expected field name, but found '{}' in query, {}", tok.Text(), range);
 	}
 	std::string field{tok.Text()};
 	tok = tokenizer.NextToken();
 	if (tok.Text() != ")") {
-		throw Error(errParseDSL, "Expected ')' in function call, but found '{}', {}", tok.Text(), tokenizer.Where(tok));
+		const auto range = tokenizer.Where(tok);
+		throw SqlParserError(range, "Expected ')' in function call, but found '{}', {}", tok.Text(), range);
 	}
 	return FlatArrayLen{std::move(field)};
 }
@@ -214,7 +218,8 @@ Now Now::FromSQL(Tokenizer& tokenizer) {
 	std::string timeUnit;
 	auto tok = tokenizer.NextToken();
 	if (tok.Text() != "(") {
-		throw Error(errParseDSL, "Expected '(' after function  name, but found '{}', {}", tok.Text(), tokenizer.Where(tok));
+		const auto range = tokenizer.Where(tok);
+		throw SqlParserError(range, "Expected '(' after function  name, but found '{}', {}", tok.Text(), range);
 	}
 	tok = tokenizer.NextToken();
 	if (tok.Type() == TokenName) {
@@ -222,7 +227,8 @@ Now Now::FromSQL(Tokenizer& tokenizer) {
 		tok = tokenizer.NextToken();
 	}
 	if (tok.Text() != ")") {
-		throw Error(errParseDSL, "Expected ')' in function call, but found '{}', {}", tok.Text(), tokenizer.Where(tok));
+		const auto range = tokenizer.Where(tok);
+		throw SqlParserError(range, "Expected ')' in function call, but found '{}', {}", tok.Text(), range);
 	}
 	if (timeUnit.empty()) {
 		return Now{};

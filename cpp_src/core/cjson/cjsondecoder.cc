@@ -247,17 +247,22 @@ void CJsonDecoder::decodeCJson(Filter filter, Recoder recoder, TagType tagType, 
 		} else if (tagType == TAG_ARRAY) {
 			auto val = validator.Array();
 			const carraytag atag = rdSer_.GetCArrayTag();
-			wrSer_.PutCArrayTag(atag);
+			const auto oldTagType = atag.Type();
+			const auto newTagType = recoder.RegisterTagType(oldTagType, tagsPath_);
 			const auto count = atag.Count();
-			const TagType atagType = atag.Type();
+			wrSer_.PutCArrayTag({count, newTagType});
 			CounterGuardIR32 g(arrayLevel_);
-			if (atagType == TAG_OBJECT) {
+			if (newTagType != oldTagType) {
+				for (size_t i = 0; i < count; ++i) {
+					recoder.Recode(rdSer_, wrSer_);
+				}
+			} else if (newTagType == TAG_OBJECT) {
 				for (size_t i = 0; i < count; ++i) {
 					decodeCJson(filter.MakeCleanCopy(), recoder.MakeCleanCopy(), NamelessTagOpt{});
 				}
 			} else {
 				for (size_t i = 0; i < count; ++i) {
-					copyCJsonValue(atagType, rdSer_, wrSer_, val.Elem());
+					copyCJsonValue(newTagType, rdSer_, wrSer_, val.Elem());
 				}
 			}
 		} else {

@@ -10,7 +10,7 @@ namespace reindexer {
 
 template <typename T>
 class [[nodiscard]] FloatVectorImplView {
-	using UnderlingT = std::remove_const_t<T>;
+	using UnderlyingT = std::remove_const_t<T>;
 	static constexpr unsigned kDimensionOffset = 48;
 	static constexpr uint64_t kPtrMask = (uint64_t(1) << kDimensionOffset) - 1;
 
@@ -31,7 +31,7 @@ public:
 		return reinterpret_cast<T*>(payload_ & kPtrMask);
 	}
 	uint64_t Payload() const noexcept { return payload_; }
-	std::span<const UnderlingT> Span() const noexcept {
+	std::span<const UnderlyingT> Span() const noexcept {
 		if (IsEmpty()) {
 			return {};
 		} else {
@@ -46,7 +46,7 @@ public:
 	static FloatVectorImplView FromUint64(uint64_t v) noexcept { return FloatVectorImplView{v}; }
 	uint64_t Hash() const noexcept {
 		static constexpr std::hash<FloatVectorDimension::value_type> hashDim;
-		static constexpr std::hash<UnderlingT> hashData;
+		static constexpr std::hash<UnderlyingT> hashData;
 		assertrx(!IsStripped());
 		auto res = hashDim(Dimension().Value());
 		const auto data{Span()};
@@ -93,7 +93,7 @@ public:
 template <typename T>
 class [[nodiscard]] FloatVectorImpl : private std::unique_ptr<T[]> {
 	using Base = std::unique_ptr<T[]>;
-	using UnderlingT = std::remove_const_t<T>;
+	using UnderlyingT = std::remove_const_t<T>;
 
 public:
 	FloatVectorImpl() noexcept : Base{nullptr} {}
@@ -105,8 +105,8 @@ public:
 		Base::operator=(std::move(other));
 		return *this;
 	}
-	explicit FloatVectorImpl(std::span<const UnderlingT> data) : dimension_(FloatVectorDimension(data.size())) {
-		UnderlingT* newData = new UnderlingT[dimension_.Value()];
+	explicit FloatVectorImpl(std::span<const UnderlyingT> data) : dimension_(FloatVectorDimension(data.size())) {
+		UnderlyingT* newData = new UnderlyingT[dimension_.Value()];
 		std::memcpy(newData, data.data(), dimension_.Value() * sizeof(T));
 		static_cast<Base&>(*this) = Base{newData};
 	}
@@ -118,12 +118,12 @@ public:
 	explicit FloatVectorImpl(ConstFloatVectorView other) : FloatVectorImpl{std::span<const T>{other.Data(), other.Dimension().Value()}} {}
 	template <typename U>
 	explicit FloatVectorImpl(const FloatVectorImpl<U>& other) : dimension_{other.Dimension()} {
-		static_assert(std::is_same_v<std::remove_const_t<U>, UnderlingT>);
-		std::unique_ptr<UnderlingT> newData{new UnderlingT[dimension_.Value()]};
+		static_assert(std::is_same_v<std::remove_const_t<U>, UnderlyingT>);
+		std::unique_ptr<UnderlyingT> newData{new UnderlyingT[dimension_.Value()]};
 		std::memcpy(newData.get(), other.RawData(), dimension_.Value() * sizeof(T));
 		static_cast<Base&>(*this) = Base{newData.release()};
 	}
-	std::span<const UnderlingT> Span() const& noexcept {
+	std::span<const UnderlyingT> Span() const& noexcept {
 		if (IsEmpty()) {
 			return {};
 		} else {
@@ -131,15 +131,15 @@ public:
 		}
 	}
 	ConstFloatVectorView View() const& noexcept { return ConstFloatVectorView{Span()}; }
-	UnderlingT* RawData() & noexcept {
+	T* RawData() & noexcept {
 		assertrx(!IsEmpty());
 		return this->get();
 	}
-	const UnderlingT* RawData() const& noexcept {
+	const UnderlyingT* RawData() const& noexcept {
 		assertrx(!IsEmpty());
 		return this->get();
 	}
-	UnderlingT* Release() && noexcept {
+	T* Release() && noexcept {
 		assertrx(!IsEmpty());
 		return this->release();
 	}
@@ -159,7 +159,7 @@ public:
 
 private:
 	FloatVectorImpl(FloatVectorDimension dimension) : dimension_(dimension) {
-		std::unique_ptr<UnderlingT[]> newData{new UnderlingT[dimension_.Value()]};
+		std::unique_ptr<UnderlyingT[]> newData{new UnderlyingT[dimension_.Value()]};
 		static_cast<Base&>(*this) = Base{newData.release()};
 	}
 
@@ -167,7 +167,6 @@ private:
 };
 
 using FloatVector = FloatVectorImpl<float>;
-using ConstFloatVector = FloatVectorImpl<const float>;
 
 template <typename T>
 inline ConstFloatVectorView::ConstFloatVectorView(const FloatVectorImpl<T>& vec) noexcept : Base{vec.Span()} {}

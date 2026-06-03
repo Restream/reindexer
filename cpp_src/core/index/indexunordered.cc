@@ -1,9 +1,9 @@
 #include "indexunordered.h"
 #include "core/dbconfig.h"
+#include "core/definitions/indexdef.h"
 #include "core/formatters/id_type_fmt.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "core/index/string_map.h"
-#include "core/indexdef.h"
 #include "core/rdxcontext.h"
 #include "rtree/greenesplitter.h"
 #include "rtree/linearsplitter.h"
@@ -14,6 +14,13 @@
 #include "tools/logger.h"
 
 namespace reindexer {
+
+template <typename Map>
+concept has_fused_find_or_insert = requires(Map map, typename Map::key_type key) {
+	{
+		map.find_or_insert(key, [] {})
+	};
+};
 
 template <typename T>
 IndexUnordered<T>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
@@ -165,11 +172,6 @@ size_t heap_size<key_string>(const key_string& kt) {
 	return kt.heap_size();
 }
 
-template <>
-size_t heap_size<key_string_with_hash>(const key_string_with_hash& kt) {
-	return kt.heap_size();
-}
-
 struct [[nodiscard]] DeepClean {
 	template <typename T>
 	void operator()(T& v) const {
@@ -199,51 +201,61 @@ void IndexUnordered<T>::delMemStat(typename T::iterator it) noexcept {
 	this->memStat_.dataSize -= heap_size(it->first);
 }
 
+template <typename Map>
+void IndexUnordered<Map>::rethrowDuplicatedPKError(const Variant& key, const DuplicatedItemIDError& origErr) {
+	Error newErr;
+	try {
+		WrSerializer wrser;
+		wrser << "Can't insert item in PK index, duplicate key - ";
+		key.Dump(wrser, this->GetPayloadType(), this->Fields(), CheckIsStringPrintable::No);
+		newErr = Error(errLogic, wrser.Slice());
+	} catch (...) {
+		assertrx_dbg(false);
+		throw origErr;
+	}
+	throw DuplicatedItemIDError(origErr.ID(), std::move(newErr));
+}
+
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
-	assertrx_dbg(!this->IsFulltext());
-	// reset cache
-	if (key.IsNullValue()) {
-		assertrx_dbg(this->Opts().IsSparse() || this->Opts().IsArray());
-		if (this->empty_ids_.Unsorted().Add(id, IdSetEditMode::Auto, this->sortedIdxCount_)) {
+	try {
+		assertrx_dbg(!this->IsFulltext());
+		// reset cache
+		if (key.IsNullValue()) {
+			assertrx_dbg(this->Opts().IsSparse() || this->Opts().IsArray());
+			if (this->empty_ids_.Unsorted().Add(id, IdSetEditMode::Auto, this->sortedIdxCount_)) {
+				cache_.ResetImpl();
+				clearCache = true;
+				this->isBuilt_ = false;
+			}
+			// Return invalid ref
+			return Variant();
+		}
+
+		auto [keyIt, inserted] = findOrInsert(key);
+		if (!inserted) {
+			refreshCompositeKeyImpl(key, keyIt);
+			delMemStat(keyIt);
+		}
+
+		if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSetEditMode::Ordered : IdSetEditMode::Auto, this->sortedIdxCount_)) {
 			cache_.ResetImpl();
 			clearCache = true;
 			this->isBuilt_ = false;
 		}
-		// Return invalid ref
-		return Variant();
-	}
+		this->tracker_.markUpdated(this->idx_map, keyIt);
 
-	const ref_type refKey = static_cast<ref_type>(key);
-	typename T::iterator keyIt = this->idx_map.find(refKey);
-	if (keyIt == this->idx_map.end()) {
-		keyIt = this->idx_map.insert({static_cast<key_type>(key), typename T::mapped_type()}).first;
-	} else {
-		refreshCompositeKeyImpl(key, keyIt);
-		delMemStat(keyIt);
-		if (this->opts_.IsPK()) {
-			WrSerializer wrser;
-			wrser << "Can't insert item in PK index, duplicate key - ";
-			key.Dump(wrser, this->GetPayloadType(), this->Fields(), CheckIsStringPrintable::No);
-			throw Error(errLogic, wrser.Slice());
+		addMemStat(keyIt);
+
+		if constexpr (std::is_same_v<StoreIndexKeyType<T>, key_string>) {
+			return (IndexStore<StoreIndexKeyType<T>>::shouldHoldOriginalValueInStrMap() && static_cast<ref_type>(key) != keyIt->first)
+					   ? IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache)
+					   : IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
 		}
+		return IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
+	} catch (const DuplicatedItemIDError& dupPkErr) {
+		rethrowDuplicatedPKError(key, dupPkErr);
 	}
-
-	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSetEditMode::Ordered : IdSetEditMode::Auto, this->sortedIdxCount_)) {
-		cache_.ResetImpl();
-		clearCache = true;
-		this->isBuilt_ = false;
-	}
-	this->tracker_.markUpdated(this->idx_map, keyIt);
-
-	addMemStat(keyIt);
-
-	if constexpr (std::is_same_v<StoreIndexKeyType<T>, key_string>) {
-		return (IndexStore<StoreIndexKeyType<T>>::shouldHoldOriginalValueInStrMap() && refKey != keyIt->first)
-				   ? IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache)
-				   : IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
-	}
-	return IndexStore<StoreIndexKeyType<T>>::Upsert(Variant{keyIt->first}, id, clearCache);
 }
 
 template <typename T>
@@ -266,8 +278,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExis
 		cache_.ResetImpl();
 		clearCache = true;
 	}
-	assertf(!mustExist || delcnt || this->Opts().IsArray() || this->Opts().IsSparse(),
-			"Delete non-existing id from index '{}' id={}, key={} ({})", this->name_, id,
+	assertf(!mustExist || delcnt || this->Opts().IsArray(), "Delete non-existing id from index '{}' id={}, key={} ({})", this->name_, id,
 			key.AsSingleString(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).AsSingleString(this->payloadType_, this->Fields()));
 	if (keyIt == idx_map.end()) {
@@ -424,10 +435,10 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 					return false;
 				}
 				// Check selectivity:
-				// if ids count too much (more than maxSelectivityPercentForIdset() of namespace),
+				// if ids count too much (more than kMaxSelectivityPercentForIdset of namespace),
 				// and index not optimized, or we have >4 other conditions
 				return res.size() > 1u && ((2 * idsCount > size_t(ctx.opts.maxIterations)) ||
-										   (100u * idsCount / ctx.opts.itemsCountInNamespace > maxSelectivityPercentForIdset()));
+										   (100u * idsCount / ctx.opts.itemsCountInNamespace > kMaxSelectivityPercentForIdset));
 			};
 
 			bool scanWin = false;
@@ -652,6 +663,21 @@ void IndexUnordered<T>::dump(S& os, std::string_view step, std::string_view offs
 }
 
 template <typename T>
+RX_ALWAYS_INLINE std::pair<typename T::iterator, bool> IndexUnordered<T>::findOrInsert(const Variant& key) {
+	const ref_type refKey = static_cast<ref_type>(key);
+	if constexpr (has_fused_find_or_insert<T>) {
+		return this->idx_map.find_or_insert(refKey,
+											[&key]() noexcept(noexcept(static_cast<key_type>(key))) { return static_cast<key_type>(key); });
+	} else {
+		auto keyIt = this->idx_map.find(refKey);
+		if (keyIt == this->idx_map.end()) {
+			return {this->idx_map.insert({static_cast<key_type>(key), typename T::mapped_type()}).first, true};
+		}
+		return {keyIt, false};
+	}
+}
+
+template <typename T>
 void IndexUnordered<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue& q) {
 	if constexpr (Base::template HasAddTask<decltype(idx_map)>::value) {
 		idx_map.add_destroy_task(&q);
@@ -697,14 +723,16 @@ void IndexUnordered<T>::HashTablesStats(std::vector<char>& stats) const {
 
 template <typename T>
 void IndexUnordered<T>::ReserveHashTables(const std::vector<char>& stats) {
+	if (stats.empty()) {
+		return;
+	}
+
 	if constexpr (HasCheckStatsCorrectness<T> && HasReserveFromStats<T>) {
 		if (!idx_map.checkStatsCorrectness(stats)) {
 			logFmt(LogError, "IndexUnordered::ReserveHashTables ({}), skipping incorrect stats", this->name_);
 			return;
 		}
 		idx_map.reserveFromStats(stats);
-	} else {
-		(void)stats;
 	}
 }
 
@@ -794,5 +822,10 @@ template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, GreeneSplitter, 
 template class IndexUnordered<GeometryMap<Index::KeyEntry, GreeneSplitter, 16, 4>>;
 template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, RStarSplitter, 32, 4>>;
 template class IndexUnordered<GeometryMap<Index::KeyEntry, RStarSplitter, 32, 4>>;
+
+static_assert(has_fused_find_or_insert<unordered_number_map<int, Index::KeyEntry>>);
+static_assert(has_fused_find_or_insert<unordered_str_map<Index::KeyEntry>>);
+static_assert(has_fused_find_or_insert<unordered_payload_map<Index::KeyEntry>>);
+static_assert(has_fused_find_or_insert<unordered_uuid_map<Index::KeyEntry>>);
 
 }  // namespace reindexer

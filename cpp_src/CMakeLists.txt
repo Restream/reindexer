@@ -66,7 +66,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.13.0")
+set (REINDEXER_VERSION_DEFAULT "5.14.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")

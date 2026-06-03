@@ -42,9 +42,15 @@ public:
 		return std::min(res, 1.0f);
 	}
 
+	float SplitCoeff() const noexcept {
+		float res = static_cast<float>(split) / (static_cast<float>(fullMatch) + 0.001f);
+		return std::min(res, 1.0f);
+	}
+
 	float StemProc(float proc) const noexcept { return std::max<float>(proc - stemmerPenalty, kMinProcAfterPenalty); }
 	void SetFullMatch(int v) noexcept { fullMatch = v; }
 	void SetConcat(int v) noexcept { concat = v; }
+	void SetSplit(int v) noexcept { split = v; }
 	void SetPrefixMin(int v) noexcept { prefixMin = v; }
 	void SetSuffixMin(int v) noexcept { suffixMin = v; }
 	void SetTypo(int v) noexcept { typo = v; }
@@ -57,6 +63,7 @@ public:
 
 	int FullMatch() const noexcept { return fullMatch; }
 	int Concat() const noexcept { return concat; }
+	int Split() const noexcept { return split; }
 	int PrefixMin() const noexcept { return prefixMin; }
 	int SuffixMin() const noexcept { return suffixMin; }
 	int Typo() const noexcept { return typo; }
@@ -71,6 +78,7 @@ public:
 private:
 	static constexpr int kDefaultFullMatch = 100;
 	static constexpr int kDefaultConcat = 90;
+	static constexpr int kDefaultSplit = 90;
 	static constexpr int kDefaultPrefixMin = 20;
 	static constexpr int kDefaultSuffixMin = 10;
 	static constexpr int kDefaultTypo = 85;
@@ -85,6 +93,8 @@ private:
 	int fullMatch = kDefaultFullMatch;
 	// Relevancy of joined terms match
 	int concat = kDefaultConcat;
+	// Relevancy of splitted terms match
+	int split = kDefaultSplit;
 	// Minimum relevance of prefix word match.
 	int prefixMin = kDefaultPrefixMin;
 	// Minimum relevance of suffix word match.
@@ -145,6 +155,7 @@ public:
 	uint32_t mergeLimit = 20000;
 	std::vector<std::string> stemmers = {"en", "ru"};
 	bool enableTermsConcat = true;
+	bool enableTermsSplit = true;
 	bool enableTranslit = true;
 	bool enableKbLayout = true;
 	bool enableNumbersSearch = false;

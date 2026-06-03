@@ -6,7 +6,6 @@
 #include <limits>
 #include <new>
 #include <string_view>
-#include "estl/defines.h"
 #include "estl/fast_hash_traits.h"
 
 #ifdef _MSC_VER

@@ -4,7 +4,10 @@
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
+using reindexer_tests_tools::exceptionWrapper;
 
 // NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 
@@ -279,7 +282,7 @@ TEST_F(ClusterOperationExtrasApi, RestrictUpdates) {
 
 		auto leader = cluster.GetNode(leaderId);
 		for (unsigned int i = 0; i < count; i++) {
-			reindexer::client::Item item = leader->api.NewItem(kNsName);
+			client::Item item = leader->api.NewItem(kNsName);
 			std::string itemJson = fmt::format(R"json({{"id": {}, "string": "{}" }})json", i + from, dataString);
 			auto err = item.Unsafe().FromJSON(itemJson);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -427,3 +430,5 @@ TEST_F(ClusterOperationExtrasApi, LogLevel) {
 }
 
 // NOLINTEND(rx-perf-lambda-to-std-function-allocation)
+
+}  // namespace reindexer_tests

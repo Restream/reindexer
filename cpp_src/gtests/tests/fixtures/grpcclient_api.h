@@ -14,6 +14,8 @@
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] GrpcClientApi : public ReindexerApi {
 public:
 	void SetUp() {
@@ -353,3 +355,5 @@ protected:
 };
 
 #endif
+
+}  // namespace reindexer_tests

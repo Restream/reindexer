@@ -1,7 +1,7 @@
 #pragma once
 
+#include "core/definitions/collateopts.h"
 #include "core/index/index.h"
-#include "core/indexopts.h"
 #include "core/sorting/sortexpression.h"
 #include "estl/h_vector.h"
 

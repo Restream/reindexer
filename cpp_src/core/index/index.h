@@ -4,8 +4,8 @@
 #include <vector>
 #include "core/idset/idset.h"
 #include "core/index/keyentry.h"
-#include "core/indexdef.h"
-#include "core/indexopts.h"
+#include "core/definitions/indexdef.h"
+#include "core/definitions/indexopts.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacestat.h"
 #include "core/nsselecter/ranks_holder.h"
@@ -213,5 +213,7 @@ constexpr inline bool IsOrderedCondition(CondType condition) noexcept {
 			std::abort();
 	}
 }
+
+constexpr unsigned kMaxSelectivityPercentForIdset = 30u;
 
 }  // namespace reindexer

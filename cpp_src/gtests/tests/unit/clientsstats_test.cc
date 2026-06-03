@@ -7,6 +7,8 @@
 #include "tools/semversion.h"
 #include "tools/stringstools.h"
 
+namespace reindexer_tests {
+
 using reindexer::net::ev::dynamic_loop;
 using reindexer::client::CoroReindexer;
 using reindexer::client::CoroQueryResults;
@@ -111,7 +113,7 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		err = reindexer.OpenNamespace(nsName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = reindexer.AddIndex(nsName, reindexer::IndexDef{"id", "hash", "int", IndexOpts().PK()});
+		err = reindexer.AddIndex(nsName, reindexer::IndexDef{"id", "hash", "int", reindexer::IndexOpts().PK()});
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		auto tx1 = reindexer.NewTransaction(nsName);
@@ -206,7 +208,7 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 		err = reindexer.OpenNamespace(nsName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = reindexer.AddIndex(nsName, reindexer::IndexDef{"id", "hash", "int", IndexOpts().PK()});
+		err = reindexer.AddIndex(nsName, reindexer::IndexDef{"id", "hash", "int", reindexer::IndexOpts().PK()});
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		std::vector<CoroTransaction> txs;
@@ -260,3 +262,5 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 }
 
 // NOLINTEND(rx-perf-lambda-to-std-function-allocation)
+
+}  // namespace reindexer_tests

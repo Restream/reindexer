@@ -1,6 +1,8 @@
 #include "ft_api.h"
 #include "gtests/tests/gtest_cout.h"
 
+namespace reindexer_tests {
+
 using namespace std::string_view_literals;
 
 class [[nodiscard]] FTIncrementalBuildApi : public FTApi {
@@ -31,6 +33,8 @@ public:
 	enum class [[nodiscard]] StrictSuffixValidation { No, Yes };
 
 	void Init(const reindexer::FTConfig& ftCfg) {
+		using reindexer::IndexOpts;
+
 		rt.reindexer = std::make_shared<reindexer::Reindexer>();
 		rt.Connect("builtin://");
 		rt.OpenNamespace(GetDefaultNamespace());
@@ -677,3 +681,5 @@ TEST_F(FTIncrementalBuildApi, DecreasingStepsSizeRandomQueriesDefMergeLimit) {
 	DataDumpGuard g(wordsData);
 	CheckRandomizedBasics(wordsData, steps);
 }
+
+}  // namespace reindexer_tests

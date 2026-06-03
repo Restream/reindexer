@@ -8,15 +8,13 @@
 #include "types.h"
 
 namespace reindexer {
-
 class WrSerializer;
-
 namespace builders {
 class JsonBuilder;
 }  // namespace builders
-using builders::JsonBuilder;
-
 }  // namespace reindexer
+
+namespace reindexer_tests {
 
 namespace fuzzing {
 
@@ -65,8 +63,8 @@ private:
 	void fillChildren(Node::Children&, RandomGenerator&, unsigned level, bool& canBeArray, bool& canBeSparse);
 	const Node::Children& findLastContainer(const FieldPath&) const;
 	Node::Children& findLastContainer(const FieldPath&);
-	void toJson(reindexer::JsonBuilder&, const Node::Children&, RandomGenerator&, const std::vector<Index>&);
-	void rndValueToJson(reindexer::JsonBuilder&, FieldType, std::string_view name, const std::vector<size_t>& idxNumbers,
+	void toJson(reindexer::builders::JsonBuilder&, const Node::Children&, RandomGenerator&, const std::vector<Index>&);
+	void rndValueToJson(reindexer::builders::JsonBuilder&, FieldType, std::string_view name, const std::vector<size_t>& idxNumbers,
 						const std::vector<Index>&, RandomGenerator&);
 	static bool isTtl(const std::vector<size_t>& idxNumbers, const std::vector<Index>&) noexcept;
 
@@ -75,3 +73,5 @@ private:
 };
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

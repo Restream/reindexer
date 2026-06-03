@@ -79,9 +79,7 @@ protected:
 	template <typename It, typename SelectCtxT>
 	void sortResults(LoopCtx<SelectCtxT>& sctx, It begin, It end, const SortingOptions& sortingOptions, const joins::NamespaceResults*);
 
-	size_t calculateNormalCost(const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
-	size_t calculateOptimizedCost(size_t costNormal, const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
-	bool isSortOptimizationEffective(const QueryEntries& qe, SelectCtx& ctx, const RdxContext& rdxCtx);
+	bool isSortOptimizationEffective(const QueryEntries& qe, const SelectCtx& ctx, bool needCalcTotal, const RdxContext& rdxCtx);
 	static void validateField(StrictMode strictMode, std::string_view name, const NamespaceName& nsName, const TagsMatcher& tagsMatcher);
 	void checkStrictModeAgg(StrictMode strictMode, std::string_view name, const NamespaceName& nsName,
 							const TagsMatcher& tagsMatcher) const;

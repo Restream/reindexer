@@ -47,6 +47,38 @@ constexpr bool IsComposite(IndexType type) noexcept {
 	}
 }
 
+constexpr bool IsHashOrBTree(IndexType type) noexcept {
+	switch (type) {
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexUuidHash:
+		case IndexTtl:
+		case IndexCompositeHash:
+		case IndexCompositeBTree:
+			return true;
+		case IndexCompositeFastFT:
+		case IndexFastFT:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexRTree:
+		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
+		default:
+			return false;
+	}
+}
+
 constexpr bool IsFullText(IndexType type) noexcept {
 	switch (type) {
 		case IndexFastFT:

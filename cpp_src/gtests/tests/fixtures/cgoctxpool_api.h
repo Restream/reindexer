@@ -3,14 +3,16 @@
 #include <gtest/gtest.h>
 #include "core/cancelcontextpool.h"
 
+namespace reindexer {
+std::ostream& operator<<(std::ostream& os, const reindexer::CancelType& cancel) { return os << static_cast<int>(cancel); }
+}  // namespace reindexer
+
+namespace reindexer_tests {
+
 using std::unique_ptr;
 using reindexer::ContextsPoolImpl;
 using reindexer::CancelContextImpl;
 using reindexer::IRdxCancelContext;
-
-namespace reindexer {
-std::ostream& operator<<(std::ostream& os, const CancelType& cancel) { return os << static_cast<int>(cancel); }
-}  // namespace reindexer
 
 namespace CGOCtxPoolTests {
 
@@ -33,3 +35,5 @@ protected:
 };
 
 }  // namespace CGOCtxPoolTests
+
+}  // namespace reindexer_tests

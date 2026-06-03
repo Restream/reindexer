@@ -7,6 +7,8 @@
 #include "reindexer_api.h"
 #include "schema.pb.h"
 
+namespace reindexer_tests {
+
 const int64_t KIdValue = 13;
 const std::string kNameValue = "John White Snow";
 const int64_t kAgeValue = 21;
@@ -122,7 +124,7 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 			})z";
 	// clang-format on
 	rt.OpenNamespace(default_namespace);
-	rt.AddIndex(default_namespace, reindexer::IndexDef("id", {"id"}, "hash", "int", IndexOpts().PK()));
+	rt.AddIndex(default_namespace, reindexer::IndexDef("id", {"id"}, "hash", "int", reindexer::IndexOpts().PK()));
 	rt.SetSchema(default_namespace, schema);
 	std::ignore = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
@@ -668,10 +670,10 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	rt.OpenNamespace(default_namespace);
 
 	rt.AddIndex(default_namespace,
-				reindexer::IndexDef("indexedPackedDouble", {"indexedPackedDouble"}, "tree", "double", IndexOpts().Array()));
+				reindexer::IndexDef("indexedPackedDouble", {"indexedPackedDouble"}, "tree", "double", reindexer::IndexOpts().Array()));
 
 	rt.AddIndex(default_namespace,
-				reindexer::IndexDef("indexedUnpackedDouble", {"indexedUnpackedDouble"}, "tree", "string", IndexOpts().Array()));
+				reindexer::IndexDef("indexedUnpackedDouble", {"indexedUnpackedDouble"}, "tree", "string", reindexer::IndexOpts().Array()));
 
 	rt.SetSchema(default_namespace, jsonSchema);
 	std::ignore = rt.GetSchema(default_namespace, ProtobufSchemaType);
@@ -761,5 +763,7 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(item2.GetJSON() == item3.GetJSON());
 }
+
+}  // namespace reindexer_tests
 
 #endif

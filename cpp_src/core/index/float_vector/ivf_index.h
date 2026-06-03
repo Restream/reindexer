@@ -26,15 +26,14 @@ public:
 	IndexMemStat GetMemStat(const RdxContext&) const noexcept override;
 	StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 											const std::atomic_int32_t& cancel) noexcept override;
-	Error LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&&, LoadWithQuantizer,
-						 uint8_t version) override;
+	Error LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&&, LoadWithQuantizer) override;
 	void RebuildCentroids(float dataPart) override;
 
 	uint64_t GetHash(FloatVectorId id) const override { return FloatVectorIndex::getFloatVectorView(id).Hash(); }
 
 	bool QuantizationAvailable() const override { return false; }
 	bool IsQuantized() const override { return false; }
-	void Quantize(size_t /*itemsCount*/) override { assertrx(false); }
+	void Quantize() override { assertrx(false); }
 	void SwitchMapOnQuantized() override { assertrx(false); }
 
 private:
@@ -54,7 +53,7 @@ private:
 
 	Variant upsert(ConstFloatVectorView, FloatVectorId id, bool& clearCache) override;
 	[[noreturn]] Variant upsertConcurrent(ConstFloatVectorView, FloatVectorId id, bool& clearCache) override;
-	void del(FloatVectorId, MustExist, IsLast) override;
+	void del(FloatVectorId, MustExist) override;
 
 	ConstFloatVectorView getFloatVectorViewImpl(FloatVectorId) const override;
 

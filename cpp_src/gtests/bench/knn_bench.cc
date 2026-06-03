@@ -3,10 +3,11 @@
 #include "helpers.h"
 #include "knn_fixture.h"
 
-// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
-int main(int argc, char** argv) {
+namespace reindexer_benchmarks {
+
+int BenchMain(int argc, char** argv) {
 	using namespace std::string_view_literals;
-	namespace knn_bench = reindexer::knn_bench;
+	namespace knn_bench = reindexer_benchmarks::knn_bench;
 
 #ifdef HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
 	benchmark::MaybeReenterWithoutASLR(argc, argv);
@@ -93,3 +94,8 @@ int main(int argc, char** argv) {
 
 	return 0;
 }
+
+}  // namespace reindexer_benchmarks
+
+// NOLINTNEXTLINE (bugprone-exception-escape) `main` is required to be in global namespace
+int main(int argc, char** argv) { return reindexer_benchmarks::BenchMain(argc, argv); }

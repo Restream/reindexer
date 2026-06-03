@@ -19,7 +19,7 @@ extern L2SqrPtrT<uint8_t> L2SqrPtrU;
 }  // namespace impl
 
 template <typename T>
-RX_ALWAYS_INLINE float L2SqrDistance(const T* x, const T* y, size_t d) {
+RX_ALWAYS_INLINE float L2SqrDistance(const T* x, const T* y, size_t d) noexcept {
 	if constexpr (std::is_same_v<T, float>) {
 		return impl::L2SqrPtrF(x, y, d);
 	} else if constexpr (std::is_same_v<T, uint8_t>) {

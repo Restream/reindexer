@@ -16,7 +16,9 @@
 #include <sys/prctl.h>
 #endif
 
-namespace reindexer {
+namespace reindexer_tests {
+
+using reindexer::Error;
 
 static const std::thread::id kMainThreadID = std::this_thread::get_id();
 
@@ -91,4 +93,4 @@ Error WaitEndProcess(pid_t PID) {
 	return errOK;
 }
 
-}  // namespace reindexer
+}  // namespace reindexer_tests

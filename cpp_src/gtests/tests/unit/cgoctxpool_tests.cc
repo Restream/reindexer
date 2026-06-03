@@ -3,6 +3,8 @@
 #include "estl/lock.h"
 #include "estl/mutex.h"
 
+namespace reindexer_tests {
+
 namespace CGOCtxPoolTests {
 
 using reindexer::CancelType;
@@ -378,3 +380,5 @@ TEST_F(CGOCtxPoolApi, GeneralConcurrencyCheck) {
 }
 
 }  // namespace CGOCtxPoolTests
+
+}  // namespace reindexer_tests

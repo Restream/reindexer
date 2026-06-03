@@ -5,12 +5,20 @@
 #include <ranges>
 #include <thread>
 #include "core/cjson/jsonbuilder.h"
+#include "core/id_type.h"
+#include "core/index/float_vector/hnswlib/type_consts.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 #include "tools/fsops.h"
 #include "vendor/fmt/ranges.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+using reindexer::FloatVectorIndexOpts;
+using reindexer::MultithreadingMode;
 using namespace std::string_view_literals;
+
 static constexpr auto kFieldNameId = "id";
 static constexpr std::string_view kFieldNameRegular = "regular_field"sv;
 
@@ -122,7 +130,7 @@ void FloatVector::checkEmptyIndexSelection(std::string_view ns, std::string_view
 	const auto k = rand() % 100 + 10;
 	const float radius = float(rand() % 20) / 10.;
 	std::array<float, kDims> buf;
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 
 	auto addEf = [&](ParamT&& param) {
 		if constexpr (std::is_same_v<ParamT, reindexer::HnswSearchParams>) {
@@ -163,7 +171,7 @@ reindexer::Item FloatVector::newItemDirect(std::string_view nsName, std::string_
 		vectors.resize(arraySize);
 		for (int i = 0; i < arraySize; ++i) {
 			if (rand() % 10 != 0) {
-				::rndFloatVector(buf);
+				reindexer_tests_tools::rndFloatVector(buf);
 				vectors.emplace_back(buf);
 				++vectorsCount[id];
 			} else {
@@ -177,7 +185,7 @@ reindexer::Item FloatVector::newItemDirect(std::string_view nsName, std::string_
 		item[fieldName] = vectors;
 	} else {
 		if (rand() % 10 != 0) {
-			::rndFloatVector(buf);
+			reindexer_tests_tools::rndFloatVector(buf);
 			item[fieldName] = reindexer::ConstFloatVectorView{buf};
 			++vectorsCount[id];
 		} else {
@@ -195,7 +203,7 @@ void FloatVector::newVectorFromJson(reindexer::JsonBuilder& json, std::string_vi
 									std::unordered_map<int, size_t>& vectorsCount) {
 	if (rand() % 10 != 0) {
 		std::array<float, Dimension> buf;
-		::rndFloatVector(buf);
+		reindexer_tests_tools::rndFloatVector(buf);
 		json.Array(fieldName, std::span<const float>(buf));
 		++vectorsCount[id];
 	} else {
@@ -256,7 +264,7 @@ void FloatVector::runMultithreadQueries(size_t threads, size_t queriesPerThread,
 		threadsStorage.emplace_back([&, this] {
 			std::array<float, Dimension> buf;
 			for (size_t j = 0; j < queriesPerThread; ++j) {
-				::rndFloatVector(buf);
+				reindexer_tests_tools::rndFloatVector(buf);
 				std::optional<float> radius = std::nullopt;
 				size_t prevQrCount = 0;
 				for (auto queryCase : {QueryWith::OnlyK, QueryWith::KandR, QueryWith::OnlyR}) {
@@ -286,15 +294,27 @@ void FloatVector::runMultithreadQueries(size_t threads, size_t queriesPerThread,
 }
 
 static void checkIndexMemstat(ReindexerTestApi<reindexer::Reindexer>& rx, std::string_view ns, std::string_view vectorIndex, size_t dims,
-							  const std::unordered_set<int>& emptyVectors, const std::unordered_map<int, size_t>& vectorsCount) {
+							  const std::unordered_set<int>& emptyVectors, const std::unordered_map<int, size_t>& vectorsCount,
+							  std::optional<size_t> M) {
 	auto qr = rx.Select(reindexer::Query("#memstats").Where("name", CondEq, ns));
 	ASSERT_EQ(qr.Count(), 1);
 	auto memstats = qr.begin().GetItem(false);
 	auto json = memstats.GetJSON();
 	const auto count = std::accumulate(vectorsCount.begin(), vectorsCount.end(), 0, [](auto c, const auto& vc) { return c + vc.second; });
+
+	auto dataSize = dims * sizeof(float);
+	if (M) {
+		if (*M != 0) {
+			// HNSW size per element, not required for Bruteforce
+			dataSize += 2 * (*M) * sizeof(hnswlib::tableint) + sizeof(hnswlib::linklistsizeint) + sizeof(uint64_t);
+		}
+		dataSize += sizeof(hnswlib::labeltype);
+	}
+	dataSize *= count;
+
 	auto expectedRegex = fmt::format(
 		R"(\{{"uniq_keys_count":{},"data_size":{},"indexing_struct_size":[1-9][0-9]+,"vectors_keeper_size":[1-9][0-9]+,"is_built":true,("is_quantized":false,)*"name":"{}"\}})",
-		count + (emptyVectors.empty() ? 0 : 1), count * dims * sizeof(float), vectorIndex);
+		count + (emptyVectors.empty() ? 0 : 1), dataSize, vectorIndex);
 	ASSERT_THAT(json, testing::ContainsRegex(expectedRegex));
 }
 
@@ -340,7 +360,7 @@ void FloatVector::TestHnswIndex() try {
 	runMultithreadQueries<kDimension, isArray>(4, 20, kNsName, kFieldNameHnsw, [&](std::optional<size_t> k, std::optional<float> radius) {
 		return reindexer::HnswSearchParams{}.K(k).Radius(radius);
 	});
-	checkIndexMemstat(rt, kNsName, kFieldNameHnsw, kDimension, emptyVectors, vectorsCount);
+	checkIndexMemstat(rt, kNsName, kFieldNameHnsw, kDimension, emptyVectors, vectorsCount, kM);
 }
 CATCH_AND_ASSERT
 
@@ -389,7 +409,7 @@ void FloatVector::TestHnswIndexMTRace() try {
 	auto selectFn = [this, &terminate] {
 		while (!terminate) {
 			std::array<float, kDimension> buf;
-			::rndFloatVector(buf);
+			reindexer_tests_tools::rndFloatVector(buf);
 			auto k = rand() % 100 + 10;
 			const auto result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameHnsw, reindexer::ConstFloatVectorView{buf},
 																			 reindexer::HnswSearchParams{}.K(k).Ef(k)));
@@ -528,7 +548,7 @@ void FloatVector::TestVecBruteforceIndex() try {
 	runMultithreadQueries<kDimension, isArray>(4, 20, kNsName, kFieldNameVec, [&](std::optional<size_t> k, std::optional<float> radius) {
 		return reindexer::BruteForceSearchParams{}.K(k).Radius(radius);
 	});
-	checkIndexMemstat(rt, kNsName, kFieldNameVec, kDimension, emptyVectors, vectorsCount);
+	checkIndexMemstat(rt, kNsName, kFieldNameVec, kDimension, emptyVectors, vectorsCount, 0);
 }
 CATCH_AND_ASSERT
 
@@ -566,7 +586,7 @@ void FloatVector::TestIvfIndex() try {
 	std::unordered_map<int, size_t> vectorsCount;
 	upsertItems<kDimension, isArray>(kNsName, kFieldNameIvf, 0, kMaxElements, emptyVectors, vectorsCount);
 	deleteSomeItems(kNsName, kMaxElements, emptyVectors, vectorsCount);
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	for (size_t iter = 0; iter < 2; ++iter) {
 		size_t k = rand() % kMaxElements + 10;
 		std::optional<float> radius = std::nullopt;
@@ -576,7 +596,7 @@ void FloatVector::TestIvfIndex() try {
 			checkOrdering(result, GetParam(), radius);
 			radius = (result.begin() + result.Count() / 2).GetItemRefRanked().Rank().Value();
 		}
-		checkIndexMemstat(rt, kNsName, kFieldNameIvf, kDimension, emptyVectors, vectorsCount);
+		checkIndexMemstat(rt, kNsName, kFieldNameIvf, kDimension, emptyVectors, vectorsCount, std::nullopt);
 		if (iter == 0) {
 			rebuildCentroids();
 		}
@@ -615,7 +635,7 @@ void FloatVector::TestHnswIndexUpdateQuery() try {
 	}
 	constexpr int itemsCount = isArray ? 5 : 3;
 	std::array<float, 8> buf;
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	const reindexer::ConstFloatVectorView setVec{buf};
 	const auto updateQuery = reindexer::Query(kNsName).Set(kFieldNameHnsw, setVec);
 	SCOPED_TRACE(updateQuery.GetSQL());
@@ -655,7 +675,7 @@ void FloatVector::HnswIndexItemSet() try {
 	}
 
 	std::array<float, 8> buf;
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	const reindexer::ConstFloatVectorView vec{buf};
 
 	for (auto& json : JSONs) {
@@ -703,7 +723,7 @@ CATCH_AND_ASSERT
 std::pair<reindexer::FloatVector, std::string> FloatVector::rndFloatVectorForSerializers(bool withSpace) {
 	constexpr static size_t kDimension = 2'048;
 	std::array<float, kDimension> buf;
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	reindexer::WrSerializer ser;
 	for (auto it = buf.begin(); it != buf.end(); ++it) {
 		if (it != buf.begin()) {
@@ -775,7 +795,7 @@ template <>
 struct [[nodiscard]] QueryIndexParams<IndexType::IndexIvf> {
 	QueryIndexParams(size_t maxElements, size_t dimension, reindexer::VectorMetric metric) {
 		std::ignore = searchParams.K(maxElements).NProbe(32);
-		opts.SetDimension(dimension).SetNCentroids(maxElements / 50).SetMetric(metric);
+		std::ignore = opts.SetDimension(dimension).SetNCentroids(maxElements / 50).SetMetric(metric);
 	}
 	std::string name = "ivf";
 	reindexer::IvfSearchParams searchParams;
@@ -786,7 +806,7 @@ template <>
 struct [[nodiscard]] QueryIndexParams<IndexType::IndexHnsw> {
 	QueryIndexParams(size_t maxElements, size_t dimension, reindexer::VectorMetric metric) {
 		std::ignore = searchParams.K(maxElements).Ef(maxElements * 2);
-		opts.SetDimension(dimension).SetMetric(metric).SetEfConstruction(5).SetStartSize(maxElements / 2).SetM(8);
+		std::ignore = opts.SetDimension(dimension).SetMetric(metric).SetEfConstruction(5).SetStartSize(maxElements / 2).SetM(8);
 	}
 	std::string name = "hnsw";
 	reindexer::HnswSearchParams searchParams;
@@ -797,7 +817,7 @@ template <>
 struct [[nodiscard]] QueryIndexParams<IndexType::IndexVectorBruteforce> {
 	QueryIndexParams(size_t maxElements, size_t dimension, reindexer::VectorMetric metric) {
 		std::ignore = searchParams.K(maxElements);
-		opts.SetDimension(dimension).SetMetric(metric).SetStartSize(maxElements);
+		std::ignore = opts.SetDimension(dimension).SetMetric(metric).SetStartSize(maxElements);
 	}
 	std::string name = "vec_bf";
 	reindexer::BruteForceSearchParams searchParams;
@@ -849,11 +869,11 @@ void FloatVector::TestQueries() try {
 		item[kFieldNameBool] = bool(rand() % 2);
 		rt.Upsert(kNsName, item);
 	}
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	auto result = rt.Select(
 		reindexer::Query{kNsName}.Where(kFieldNameId, CondGt, 5).WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams));
 	checkOrdering(result, GetParam());
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	result = rt.Select(reindexer::Query{kNsName}
 						   .Where(kFieldNameBool, CondEq, true)
 						   .OpenBracket()
@@ -861,14 +881,14 @@ void FloatVector::TestQueries() try {
 						   .WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams)
 						   .CloseBracket());
 	checkOrdering(result, GetParam());
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	result =
 		rt.Select(reindexer::Query{kNsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams).Sort("rank()", false));
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	result = rt.Select(reindexer::Query{kNsName}
 						   .WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams)
 						   .Sort("rank(" + fieldName + ')', false));
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	std::map<reindexer::IdType, reindexer::RankT> ranks;
 	result = rt.Select(reindexer::Query{kNsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams).WithRank());
 	for (auto& i : result) {
@@ -892,7 +912,7 @@ void FloatVector::TestQueries() try {
 		}
 	}
 
-	::rndFloatVector(buf);
+	reindexer_tests_tools::rndFloatVector(buf);
 	result = rt.Select(reindexer::Query{kNsName}
 						   .Where(kFieldNameId, CondLt, kMaxElements / 2.0)
 						   .WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams)
@@ -976,7 +996,7 @@ template <size_t Dimension>
 reindexer::FloatVector FloatVector::rndFloatVector() {
 	std::array<float, Dimension> buf;
 	if (rand() % 10 != 0) {
-		::rndFloatVector(buf);
+		reindexer_tests_tools::rndFloatVector(buf);
 		return reindexer::FloatVector{reindexer::ConstFloatVectorView{buf}};
 	} else {
 		return {};
@@ -1134,12 +1154,12 @@ void checkFieldValue<true>(gason::JsonNode& parsedJson, const reindexer::Item& i
 	if (expectedData.empty()) {
 		ASSERT_JSON_FIELD_IS_NULL(parsedJson, fieldPath)
 	} else {
-		const auto jsonField = findJsonField(parsedJson, fieldPath);
-		if (jsonField.isNull() || (jsonField.isArray() && (begin(jsonField) == end(jsonField)))) {
+		const auto jsonField = reindexer_tests_tools::findJsonField(parsedJson, fieldPath);
+		if (jsonField.isNull() || (jsonField.isArray() && (gason::begin(jsonField) == gason::end(jsonField)))) {
 			if (!expectedData.empty()) {
 				ASSERT_TRUE(expectedData.size() == 1 && expectedData[0].IsEmpty());
 			}
-		} else if (jsonField.isArray() && begin(jsonField) != end(jsonField) && begin(jsonField)->isNumber()) {
+		} else if (jsonField.isArray() && gason::begin(jsonField) != gason::end(jsonField) && gason::begin(jsonField)->isNumber()) {
 			ASSERT_EQ(expectedData.size(), 1);
 			ASSERT_JSON_ARRAY_EQ(jsonField, fieldPath + '[' + std::to_string(0) + ']', expectedData[0].Span());
 		} else {
@@ -1448,12 +1468,12 @@ void FloatVector::TestUpdateIndex(reindexer::VectorMetric metric) try {
 		result = rt.Select(reindexer::Query{kNsName}
 							   .Strict(StrictModeNone)
 							   .Where(kFieldNameId, CondLt, rand() % currMaxId)
-							   .Where(kFieldNameFloatVector, CondLt, randBin<float>(-1'000'000, 1'000'000)));
+							   .Where(kFieldNameFloatVector, CondLt, reindexer_tests_tools::randBin<float>(-1'000'000, 1'000'000)));
 	};
 	auto testQueryIndexed = [&](const reindexer::KnnSearchParams& searchParams) {
 		auto result = rt.Select(reindexer::Query{kNsName}.Where(kFieldNameId, CondEq, rand() % currMaxId));
 		std::array<float, kDimension> buf;
-		::rndFloatVector(buf);
+		reindexer_tests_tools::rndFloatVector(buf);
 		result = rt.Select(reindexer::Query{kNsName}.WhereKNN(kFieldNameFloatVector, reindexer::ConstFloatVectorView{buf}, searchParams));
 	};
 	updateSomeData(HasIndex::No);
@@ -1490,13 +1510,13 @@ void FloatVector::TestUpdateIndex(reindexer::VectorMetric metric) try {
 CATCH_AND_ASSERT
 
 TEST_F(FloatVector, UpdateArrayIndex) {
-	auto metric = randMetric();
-	TestCout() << fmt::format("Running test for '{}'-metric", VectorMetricToStr(metric)) << std::endl;
+	auto metric = reindexer_tests_tools::randMetric();
+	TestCout() << fmt::format("Running test for '{}'-metric", reindexer::VectorMetricToStr(metric)) << std::endl;
 	TestUpdateIndex<Array>(metric);
 }
 TEST_F(FloatVector, UpdateScalarIndex) {
-	auto metric = randMetric();
-	TestCout() << fmt::format("Running test for '{}'-metric", VectorMetricToStr(metric)) << std::endl;
+	auto metric = reindexer_tests_tools::randMetric();
+	TestCout() << fmt::format("Running test for '{}'-metric", reindexer::VectorMetricToStr(metric)) << std::endl;
 	TestUpdateIndex<Scalar>(metric);
 }
 
@@ -1671,3 +1691,5 @@ INSTANTIATE_TEST_SUITE_P(, FloatVector,
 									 std::abort();
 							 }
 						 });
+
+}  // namespace reindexer_tests

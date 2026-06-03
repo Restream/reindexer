@@ -1,17 +1,22 @@
-#include <queue>
+#if RX_WITH_BUILTIN_ANN_INDEXES
+
 #include "core/idset/idset.h"
 #include "core/index/float_vector/float_vector_id.h"
 #include "core/index/float_vector/float_vector_index.h"
 #include "core/index/float_vector/hnswlib/type_consts.h"
 #include "core/rank_t.h"
-#if RX_WITH_BUILTIN_ANN_INDEXES
 
+#include "core/index/float_vector/hnswlib/bruteforce.h"
+#include "core/index/float_vector/hnswlib/hnsw.h"
 #include "core/query/knn_search_params.h"
 #include "hnsw_index.h"
 #include "knn_ctx.h"
 #include "knn_raw_result.h"
+#include "tools/cpucheck.h"
 #include "tools/logger.h"
-#include "tools/normalize.h"
+
+using HierarchicalNSWST = hnswlib::HierarchicalNSW<hnswlib::Synchronization::None>;
+using HierarchicalNSWMT = hnswlib::HierarchicalNSW<hnswlib::Synchronization::OnInsertions>;
 
 namespace reindexer {
 
@@ -38,101 +43,54 @@ static void PrintVecInstructionsLevel(std::string_view indexType, std::string_vi
 	}
 }
 
-constexpr static ReplaceDeleted kHNSWAllowReplaceDeleted = ReplaceDeleted_True;
-constexpr static int kHnswRandomSeed = 100;
-
-template <>
-HnswIndexBase<hnswlib::HierarchicalNSWST>::HnswIndexBase(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-														 size_t currentNsSize, LogCreation log)
+template <typename Map>
+HnswIndexBase<Map>::HnswIndexBase(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, size_t currentNsSize,
+								  LogCreation log)
 	: Base{idef, std::move(payloadType), std::move(fields)},
-	  space_{newSpace(Dimension().Value(), metric_)},
 	  map_{Opts().IsArray(),
-		   std::make_unique<hnswlib::HierarchicalNSWST>(space_.get(), std::max(idef.Opts().FloatVector().StartSize(), currentNsSize),
-														idef.Opts().FloatVector().M(), idef.Opts().FloatVector().EfConstruction(),
-														kHnswRandomSeed, kHNSWAllowReplaceDeleted)} {
-	PrintVecInstructionsLevel("singlethread HNSW", idef.Name(), idef.Opts().FloatVector().Metric(), log);
-}
-
-template <>
-HnswIndexBase<hnswlib::HierarchicalNSWMT>::HnswIndexBase(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-														 size_t currentNsSize, LogCreation log)
-	: Base{idef, std::move(payloadType), std::move(fields)},
-	  space_{newSpace(Dimension().Value(), metric_)},
-	  map_{Opts().IsArray(),
-		   std::make_unique<hnswlib::HierarchicalNSWMT>(space_.get(), std::max(idef.Opts().FloatVector().StartSize(), currentNsSize),
-														idef.Opts().FloatVector().M(), idef.Opts().FloatVector().EfConstruction(),
-														kHnswRandomSeed, kHNSWAllowReplaceDeleted)} {
-	PrintVecInstructionsLevel("multithread HNSW", idef.Name(), idef.Opts().FloatVector().Metric(), log);
+		   metric_,
+		   Dimension().Value(),
+		   std::max(idef.Opts().FloatVector().StartSize(), currentNsSize),
+		   idef.Opts().FloatVector().M(),
+		   idef.Opts().FloatVector().EfConstruction()} {
+	PrintVecInstructionsLevel(fmt::format("{} HNSW", std::is_same_v<Map, HierarchicalNSWST> ? "singlethread" : "multithread"), idef.Name(),
+							  idef.Opts().FloatVector().Metric(), log);
 }
 
 template <>
 HnswIndexBase<hnswlib::BruteforceSearch>::HnswIndexBase(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
 														size_t currentNsSize, LogCreation log)
 	: Base{idef, std::move(payloadType), std::move(fields)},
-	  space_{newSpace(Dimension().Value(), metric_)},
-	  map_{Opts().IsArray(),
-		   std::make_unique<hnswlib::BruteforceSearch>(space_.get(), std::max(idef.Opts().FloatVector().StartSize(), currentNsSize))} {
+	  map_{metric_, Dimension().Value(), std::max(idef.Opts().FloatVector().StartSize(), currentNsSize)} {
 	PrintVecInstructionsLevel("bruteforce", idef.Name(), idef.Opts().FloatVector().Metric(), log);
 }
 
 template <typename Map>
-HnswIndexBase<Map>::HnswIndexBase(const HnswIndexBase& other, size_t newCapacity)
-	: Base{other},
-	  space_{newSpace(Dimension().Value(), metric_)},
-	  map_{Opts().IsArray(), other.map_, Dimension().Value(), metric_, newCapacity} {}
-
-template <typename Map>
-std::unique_ptr<hnswlib::SpaceInterface> HnswIndexBase<Map>::newSpace(size_t dimension, VectorMetric metric, bool quantized) {
-	using ReturnT = std::unique_ptr<hnswlib::SpaceInterface>;
-
-	switch (metric) {
-		case VectorMetric::L2:
-			return quantized ? ReturnT{std::make_unique<hnswlib::L2SpaceSq8>(dimension)} : std::make_unique<hnswlib::L2Space>(dimension);
-		case VectorMetric::InnerProduct:
-			return quantized ? ReturnT{std::make_unique<hnswlib::InnerProductSpaceSq8>(dimension)}
-							 : std::make_unique<hnswlib::InnerProductSpace>(dimension);
-		case VectorMetric::Cosine:
-			return quantized ? ReturnT{std::make_unique<hnswlib::CosineSpaceSq8>(dimension)}
-							 : std::make_unique<hnswlib::CosineSpace>(dimension);
-	}
-	throw_as_assert;
-}
+HnswIndexBase<Map>::HnswIndexBase(const HnswIndexBase& other, size_t newCapacity) : Base{other}, map_{other.map_, newCapacity} {}
 
 template <typename Map>
 void HnswIndexBase<Map>::clearMap() noexcept {
 	// This method is used in exception handling. It potentially may throw, but we will not be able to handle this exception properly
 	const auto& fvOpts = Opts().FloatVector();
 	map_.Reset();
-	space_.reset();
 	try {
-		space_ = newSpace(Dimension().Value(), metric_);
-		if constexpr (std::is_same_v<Map, hnswlib::BruteforceSearch>) {
-			map_ = std::make_unique<Map>(space_.get(), fvOpts.StartSize());
-		} else {
-			map_ = {Opts().IsArray(), std::make_unique<Map>(space_.get(), fvOpts.StartSize(), fvOpts.M(), fvOpts.EfConstruction(),
-															kHnswRandomSeed, kHNSWAllowReplaceDeleted)};
-		}
+		map_ = Map(Opts().IsArray(), metric_, Dimension().Value(), fvOpts.StartSize(), fvOpts.M(), fvOpts.EfConstruction());
 	} catch (std::exception& e) {
 		logFmt(LogError, "Unexpected critical exception: {}. Termination...", e.what());
 		std::abort();
 	}
 }
 
+template <>
+void HnswIndexBase<hnswlib::BruteforceSearch>::clearMap() noexcept = delete;
+
 template <typename Map>
 Variant HnswIndexBase<Map>::upsert(ConstFloatVectorView vect, FloatVectorId id, bool& clearCache) {
-	if (auto curMaxSize = map_.GetWritable()->getMaxElements(); map_->getCurrentElementCount() >= curMaxSize) {
-		std::ignore = map_.GetWritable()->resizeIndex(newSize(curMaxSize));
-		if (IsQuantized()) {
-			map_.ReserveHashes(map_->getMaxElements());
-		}
+	if (auto curMaxSize = map_.MaxElements(); map_.CurrentElementCount() >= curMaxSize) {
+		map_.ResizeIndex(newSize(curMaxSize));
 	}
 	clearCache = true;
-	map_.GetWritable()->addPointNoLock(vect.Data(), id.AsNumber());
-	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
-		if (IsQuantized()) {
-			map_.SetHash(id, vect.Hash());
-		}
-	}
+	map_.AddPointNoLock(vect, id);
 	vect.Strip();
 	return Variant{vect};
 }
@@ -143,41 +101,24 @@ Variant HnswIndexBase<Map>::upsertConcurrent(ConstFloatVectorView, FloatVectorId
 }
 
 template <>
-Variant HnswIndexBase<hnswlib::HierarchicalNSWMT>::upsertConcurrent(ConstFloatVectorView vect, FloatVectorId id, bool& clearCache) {
-	if (map_.GetWritable()->getCurrentElementCount() >= map_.GetWritable()->getMaxElements()) [[unlikely]] {
+Variant HnswIndexBase<HierarchicalNSWMT>::upsertConcurrent(ConstFloatVectorView vect, FloatVectorId id, bool& clearCache) {
+	if (map_.CurrentElementCount() >= map_.MaxElements()) [[unlikely]] {
 		throw Error(errLogic, "Unable to resize '{}' HNSW index during concurrent upsert. Expecting reserve before upsertion", Name());
 	}
 	clearCache = true;
-	map_.GetWritable()->addPointConcurrent(vect.Data(), id.AsNumber());
-	if (IsQuantized()) {
-		map_.SetHashConcurrent(id, vect.Hash());
-	}
+	map_.AddPointConcurrent(vect, id);
 	vect.Strip();
 	return Variant{vect};
 }
 
-template <>
-void HnswIndexBase<hnswlib::BruteforceSearch>::del(FloatVectorId id, MustExist, IsLast isLast) {
-	map_.GetWritable()->removePoint(id.AsNumber());
-	if (isLast && IsQuantized()) {
-		map_.ClearHash(id.RowId());
-	}
+template <typename Map>
+void HnswIndexBase<Map>::del(FloatVectorId id, MustExist) {
+	map_.MarkDelete(id);
 }
 
 template <>
-void HnswIndexBase<hnswlib::HierarchicalNSWMT>::del(FloatVectorId id, MustExist, IsLast isLast) {
-	map_.GetWritable()->markDelete(id.AsNumber());
-	if (isLast && IsQuantized()) {
-		map_.ClearHash(id.RowId());
-	}
-}
-
-template <>
-void HnswIndexBase<hnswlib::HierarchicalNSWST>::del(FloatVectorId id, MustExist, IsLast isLast) {
-	map_.GetWritable()->markDelete(id.AsNumber());
-	if (isLast && IsQuantized()) {
-		map_.ClearHash(id.RowId());
-	}
+void HnswIndexBase<hnswlib::BruteforceSearch>::del(FloatVectorId id, MustExist) {
+	map_.RemovePoint(id.AsNumber());
 }
 
 template <typename Map>
@@ -188,33 +129,34 @@ std::unique_ptr<Index> HnswIndexBase<Map>::Clone(size_t newCapacity) const {
 template <>
 IndexMemStat HnswIndexBase<hnswlib::BruteforceSearch>::GetMemStat(const RdxContext& ctx) const noexcept {
 	auto stats = FloatVectorIndex::GetMemStat(ctx);
-	const auto uniqKeysCount = map_->getCurrentElementCount();
+	const auto uniqKeysCount = map_.CurrentElementCount();
 	stats.isBuilt = true;  // Bruteforce is always 'built'
 	stats.uniqKeysCount += uniqKeysCount;
-	stats.dataSize += uniqKeysCount * sizeof(FloatType) * Dimension().Value();	// TODO maybe map_->size_per_element_
-	stats.indexingStructSize +=
-		map_->dict_external_to_internal.allocated_mem_size() + (map_->getMaxElements() - uniqKeysCount) * map_->size_per_element_;
+	stats.dataSize += uniqKeysCount * map_.ElementSize();
+	stats.indexingStructSize += map_.AllocatedMemSize();
 	return stats;
 }
 
 template <typename Map>
 IndexMemStat HnswIndexBase<Map>::GetMemStat(const RdxContext& ctx) const noexcept {
 	auto stats = FloatVectorIndex::GetMemStat(ctx);
-	const auto uniqKeysCount = map_->getCurrentElementCount() - map_->getDeletedCountUnsafe();
-	const bool isQuantized = map_->IsQuantizedNoThrow();
+	const auto uniqKeysCount = map_.CurrentElementCount() - map_.DeletedCountUnsafe();
 	stats.isBuilt = true;  // HNSW is always 'built'
-	stats.isQuantized = isQuantized;
+	stats.isQuantized = map_.IsQuantized();
 	stats.uniqKeysCount += uniqKeysCount;
-	stats.dataSize += uniqKeysCount * (isQuantized ? sizeof(uint8_t) : sizeof(FloatType)) * Dimension().Value();
-	stats.indexingStructSize += map_->allocatedMemSize() + sizeof(Map);
+	stats.dataSize += uniqKeysCount * map_.ElementSize();
+	stats.indexingStructSize += map_.AllocatedMemSize();
 	stats.indexingStructSize -= stats.dataSize;	 // Don't calculate actual data size twice
-	stats.indexingStructSize += map_.HashMemStat();
 	return stats;
 }
 
 template <typename Map>
-std::priority_queue<std::pair<float, hnswlib::labeltype>> HnswIndexBase<Map>::search(ConstFloatVectorView key,
-																					 const KnnSearchParams& params) const {
+bool HnswIndexBase<Map>::IsSupportMultithreadTransactions() const noexcept {
+	return std::is_same_v<Map, HierarchicalNSWMT>;
+}
+
+template <typename Map>
+hnswlib::SearchResultQueue HnswIndexBase<Map>::search(ConstFloatVectorView key, const KnnSearchParams& params) const {
 	static constexpr bool isBF = std::is_same_v<Map, hnswlib::BruteforceSearch>;
 
 	h_vector<float, 2048> normalizedStorage;
@@ -239,11 +181,11 @@ std::priority_queue<std::pair<float, hnswlib::labeltype>> HnswIndexBase<Map>::se
 	}
 
 	if (radius) {
-		return map_->searchRange(keyData, normL2, metric_ == VectorMetric::L2 ? *radius : -*radius, ef);
+		return map_.SearchRange(keyData, normL2, metric_ == VectorMetric::L2 ? *radius : -*radius, ef);
 	} else {
 		assertrx_dbg(k && *k != 0);
 		// NOLINTNEXTLINE (bugprone-unchecked-optional-access) K cannot be empty if radius is empty
-		return map_->searchKnn(keyData, normL2, std::min(*k, map_->getCurrentElementCount()), ef);
+		return map_.SearchKnn(keyData, normL2, *k, ef);
 	}
 }
 
@@ -349,20 +291,16 @@ ConstFloatVectorView HnswIndexBase<Map>::getFloatVectorViewImpl(FloatVectorId id
 	if (IsQuantized()) {
 		return ConstFloatVectorView::CreateStripped(Dimension());
 	} else {
-		const FloatType* ptr = reinterpret_cast<const FloatType*>(map_->ptrByExternalLabel(id.AsNumber()));
-		return ConstFloatVectorView{std::span<const float>{ptr, Dimension().Value()}};
+		return ConstFloatVectorView{std::span{map_.FloatPtrByExternalLabel(id.AsNumber()), Dimension().Value()}};
 	}
 }
 
 template <typename Map>
 void HnswIndexBase<Map>::GrowFor(size_t newElementsCount) {
-	const auto requiredSize = newElementsCount + map_.GetWritable()->getCurrentElementCount();
+	const auto requiredSize = newElementsCount + map_.CurrentElementCount();
 
-	if (const auto curMaxSize = map_.GetWritable()->getMaxElements(); requiredSize > curMaxSize) {
-		std::ignore = map_.GetWritable()->resizeIndex(requiredSize);
-		if (IsQuantized()) {
-			map_.ReserveHashes(map_->getMaxElements());
-		}
+	if (const auto curMaxSize = map_.MaxElements(); requiredSize > curMaxSize) {
+		map_.ResizeIndex(requiredSize);
 	}
 }
 
@@ -410,14 +348,14 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 	};
 
 	try {
-		if (map_->getDeletedCountUnsafe() > map_->getCurrentElementCount() / 2) {
+		if (map_.DeletedCountUnsafe() > map_.CurrentElementCount() / 2) {
 			res.err = Error{errParams, "Too many deleted elements: {}/{}. Do not creating cache (full rebuild is recommended)",
-							map_->getDeletedCountUnsafe(), map_->getCurrentElementCount()};
+							map_.DeletedCountUnsafe(), map_.CurrentElementCount()};
 			return res;
 		}
 		Writer writer(Name(), wser, std::move(getPK), isCompositePK, Opts().IsArray());
 		writer.PutVarUInt(kStorageMagic);
-		map_->saveIndex(writer, cancel);
+		map_.SaveIndex(writer, cancel);
 	} catch (Error& err) {
 		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		res.err = std::move(err);
@@ -433,53 +371,48 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 
 template <>
 Error HnswIndexBase<hnswlib::BruteforceSearch>::LoadIndexCache(std::string_view /*data*/, bool /*isCompositePK*/,
-															   FloatVectorIndexRawDataInserter&& /*getVectorData*/, LoadWithQuantizer,
-															   uint8_t /*version*/
-) {
+															   FloatVectorIndexRawDataInserter&& /*getVectorData*/, LoadWithQuantizer) {
 	return Error(errLogic, "{}:Bruteforce index can not be loaded from binary cache", Name());
 }
 
 template <typename Map>
 Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&& getVectorData,
-										 LoadWithQuantizer withQuantizer, uint8_t version) {
+										 LoadWithQuantizer withQuantizer) {
 	class [[nodiscard]] Reader final : public hnswlib::IReader, private LoaderBase {
 	public:
 		Reader(std::string_view name, std::string_view data, FloatVectorIndexRawDataInserter&& getVectorData, bool isCompositePK,
-			   LoadWithQuantizer withQuantizer, IsArray isArray, size_t version) noexcept
+			   LoadWithQuantizer withQuantizer, IsArray isArray) noexcept
 			: hnswlib::IReader(),
 			  LoaderBase{std::move(getVectorData), isCompositePK, isArray},
 			  name_{name},
 			  ser_{data},
-			  withQuantizer_(withQuantizer),
-			  version_(version) {}
+			  withQuantizer_(withQuantizer) {}
 
 		uint64_t GetVarUInt() override { return ser_.GetVarUInt(); }
 		int64_t GetVarInt() override { return ser_.GetVarint(); }
 		float GetFloat() override { return ser_.GetFloat(); }
 		std::string_view GetVString() override { return ser_.GetVString(); }
-		hnswlib::labeltype ReadPkEncodedData(char* destBuf) override {
+		hnswlib::labeltype ReadPkEncodedData(float* destBuf) override {
 			using namespace std::string_view_literals;
 			return hnswlib::labeltype(readPKEncodedData(destBuf, ser_, name_, "HNSWIndex"sv).AsNumber());
 		}
 		size_t RemainingSize() const noexcept { return ser_.Len() - ser_.Pos(); }
 
-		bool WithQuantizer() override { return *withQuantizer_; }
-		uint8_t Version() override { return version_; }
+		bool WithQuantizer() const override { return *withQuantizer_; }
 
 	private:
 		std::string_view name_;
 		Serializer ser_;
 		LoadWithQuantizer withQuantizer_;
-		uint8_t version_;
 	};
 
 	try {
-		Reader reader(Name(), data, std::move(getVectorData), isCompositePK, withQuantizer, Opts().IsArray(), version);
+		Reader reader(Name(), data, std::move(getVectorData), isCompositePK, withQuantizer, Opts().IsArray());
 		const uint64_t magic = reader.GetVarUInt();
 		if (magic != kStorageMagic) {
 			throw std::runtime_error("Incorrect HNSW storage magic");
 		}
-		map_->loadIndex(reader, space_.get(), map_.Hashes());
+		map_.LoadIndex(reader);
 		if (reader.RemainingSize()) {
 			throw Error(errLogic, "HNSWIndex::LoadIndexCache:{} has unparsed data: {} bytes", Name(), reader.RemainingSize());
 		}
@@ -500,27 +433,8 @@ Error HnswIndexBase<Map>::LoadIndexCache(std::string_view data, bool isComposite
 }
 
 template <typename Map>
-void HnswIndexBase<Map>::MapWrapper::CalcOrigHashes(size_t dim, size_t itemsCount) {
-	assertrx_throw(!intermediateHashes_);
-	intermediateHashes_.emplace(isArray_);
-	intermediateHashes_->ReserveForce(isArray_ ? itemsCount : map_->getMaxElements());
-
-	const auto curElementCount = map_->getCurrentElementCount();
-	[[maybe_unused]] const auto curDelCount = map_->getDeletedCountUnsafe();
-
-	size_t count = 0;
-	for (hnswlib::tableint internalId = 0; internalId < curElementCount; ++internalId) {
-		if (map_->isMarkedDeleted(internalId)) {
-			continue;
-		}
-
-		intermediateHashes_->Set(
-			FloatVectorId::FromNumber(map_->getExternalLabel(internalId)),
-			ConstFloatVectorView(std::span{reinterpret_cast<const float*>(map_->getDataByInternalId(internalId)), dim}).Hash());
-		++count;
-	}
-
-	assertrx_throw(curElementCount - curDelCount == count);
+uint64_t HnswIndexBase<Map>::GetHash(FloatVectorId id) const {
+	return map_.GetHash(id);
 }
 
 template <>
@@ -529,58 +443,26 @@ uint64_t HnswIndexBase<hnswlib::BruteforceSearch>::GetHash(FloatVectorId id) con
 }
 
 template <typename Map>
-uint64_t HnswIndexBase<Map>::GetHash(FloatVectorId id) const {
-	if (auto view = FloatVectorIndex::getFloatVectorView(id); view.IsStripped()) {
-		assertrx(IsQuantized());
-		return map_.GetHash(id);
-	} else {
-		assertrx(!IsQuantized());
-		return view.Hash();
-	}
-}
-
-template <typename Map>
 bool HnswIndexBase<Map>::QuantizationAvailable() const {
-	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
-		return map_.QuantizationAvailable() &&
-			   (opts_.FloatVector().QuantizationConfig() &&
-				(map_->getCurrentElementCount() >= opts_.FloatVector().QuantizationConfig()->quantizationThreshold));
-	} else {
-		return false;
-	}
+	return map_.QuantizationAvailable() &&
+		   (opts_.FloatVector().QuantizationConfig() &&
+			(map_.CurrentElementCount() >= opts_.FloatVector().QuantizationConfig()->quantizationThreshold));
 }
 
 template <typename Map>
 bool HnswIndexBase<Map>::IsQuantized() const {
-	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
-		return map_->IsQuantized();
-	} else {
-		return false;
-	}
+	return map_.IsQuantized();
 }
 
 template <typename Map>
-void HnswIndexBase<Map>::Quantize(size_t itemsCount) {
+void HnswIndexBase<Map>::Quantize() {
 	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
 		if (auto config = opts_.FloatVector().QuantizationConfig(); config) {
-			if (!map_.QuantizationAvailable()) {
-				throw Error(errLogic, "Index already quantized");
-			}
-
-			try {
-				map_.CalcOrigHashes(Dimension().Value(), itemsCount);
-				// It should be after calculating the hashes, so that if an exception is thrown by any of the methods,
-				// quantizedMap_ always remains empty in the catch section.
-				map_.Quantize(*config);
-			} catch (...) {
-				map_.IntermediateHashes() = std::nullopt;
-				throw;
-			}
+			map_.Quantize(*config);
 		} else {
 			throw Error(errLogic, "Empty quantization config");
 		}
 	} else {
-		(void)itemsCount;
 		assertrx(false);
 	}
 }
@@ -588,12 +470,7 @@ void HnswIndexBase<Map>::Quantize(size_t itemsCount) {
 template <typename Map>
 void HnswIndexBase<Map>::SwitchMapOnQuantized() {
 	if constexpr (!std::is_same_v<Map, hnswlib::BruteforceSearch>) {
-		if (!map_.GetWritable()->IsQuantized()) {
-			logFmt(LogError,
-				   "Failed to swap quantized HNSW graph maps. The temporary quantized map is empty, while the main map is not "
-				   "quantized.");
-			assertrx_throw(false);
-		}
+		map_.SwitchMapOnQuantized();
 	} else {
 		assertrx(false);
 	}
@@ -616,9 +493,9 @@ std::unique_ptr<Index> HnswIndex_New(const IndexDef& idef, PayloadType&& payload
 									 LogCreation log) {
 	switch (idef.Opts().FloatVector().Multithreading()) {
 		case MultithreadingMode::SingleThread:
-			return std::make_unique<HnswIndexST>(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
+			return std::make_unique<HnswIndexBase<HierarchicalNSWST>>(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
 		case MultithreadingMode::MultithreadTransactions:
-			return std::make_unique<HnswIndexMT>(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
+			return std::make_unique<HnswIndexBase<HierarchicalNSWMT>>(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
 		default:
 			throw Error(errLogic, "Unsupported multithreading mode: {}", int(idef.Opts().FloatVector().Multithreading()));
 	}
@@ -626,7 +503,7 @@ std::unique_ptr<Index> HnswIndex_New(const IndexDef& idef, PayloadType&& payload
 
 std::unique_ptr<Index> BruteForceVectorIndex_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, size_t currentNsSize,
 												 LogCreation log) {
-	return std::make_unique<BruteForceVectorIndex>(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
+	return std::make_unique<HnswIndexBase<hnswlib::BruteforceSearch>>(idef, std::move(payloadType), std::move(fields), currentNsSize, log);
 }
 
 }  // namespace reindexer

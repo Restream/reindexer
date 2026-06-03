@@ -1,27 +1,18 @@
 #pragma once
 
 #include <optional>
+#include "core/definitions/collateopts.h"
+#include "core/definitions/quantization_config.h"
 #include "core/enums.h"
-#include "core/quantization_config.h"
-#include "core/type_consts.h"
 #include "core/type_consts_helpers.h"
 #include "estl/h_vector.h"
-#include "sortingprioritiestable.h"
 #include "tools/enum_compare.h"
 
 namespace reindexer::builders {
 class JsonBuilder;
 }  // namespace reindexer::builders
 
-struct [[nodiscard]] CollateOpts {
-	explicit CollateOpts(CollateMode mode = CollateNone) noexcept : mode(mode) {}
-	explicit CollateOpts(const std::string& sortOrderUTF8);
-
-	CollateMode mode = CollateNone;
-	reindexer::SortingPrioritiesTable sortOrderTable;
-	template <typename T>
-	void Dump(T& os) const;
-};
+namespace reindexer {
 
 enum [[nodiscard]] IndexOpt : uint8_t {
 	kIndexOptPK = 1 << 7,
@@ -267,3 +258,5 @@ T& operator<<(T& os, IndexOpts::RTreeIndexType t) {
 	}
 	std::abort();
 }
+
+}  // namespace reindexer

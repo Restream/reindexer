@@ -1,5 +1,5 @@
 #include "core/cjson/jsonbuilder.h"
-#include "core/index/float_vector/hnswlib/hnswlib.h"
+#include "core/index/float_vector/hnswlib/hnsw_interface.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
 #include "tools/float_comparison.h"

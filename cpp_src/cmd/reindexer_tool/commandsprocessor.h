@@ -1,6 +1,8 @@
 #pragma once
+
+#include <optional>
 #include <unordered_map>
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 #include "core/rdxcontext.h"
 #include "dumpoptions.h"
 #include "estl/fast_hash_set.h"
@@ -13,13 +15,13 @@
 
 namespace reindexer {
 class DSN;
+struct SQLSuggestions;
 }  // namespace reindexer
 
 namespace reindexer_tool {
 
 #if REINDEX_WITH_REPLXX
-typedef std::function<replxx::Replxx::completions_t(const std::string&, int, void*)> old_v_callback_t;
-typedef std::function<replxx::Replxx::completions_t(const std::string& input, int& contextLen)> new_v_callback_t;
+typedef std::function<replxx::Replxx::completions_t(const std::string& input, int& contextLen)> callback_t;
 #endif	// REINDEX_WITH_REPLXX
 
 class DumpFileIndex;
@@ -45,11 +47,11 @@ public:
 
 	template <typename ConnectOpts>
 	Error Connect(const std::string& dsn, const ConnectOpts& connectOpts) noexcept;
-	Error Run(const std::string& command, const std::string& dumpMode) noexcept;
+	Error Run(const std::string& command, const std::string& dumpMode, bool dryRun, bool ignoreChecksumMismatch) noexcept;
 
 private:
 	void setDumpMode(const std::string& mode);
-	Error getSuggestions(const std::string& input, std::vector<std::string>& suggestions) noexcept;
+	Error getSuggestions(const std::string& input, reindexer::SQLSuggestions& suggestions) noexcept;
 	void loadVariables();
 	reindexer::DSN getCurrentDsn(bool withPath = false) const;
 	void queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
@@ -79,8 +81,9 @@ private:
 	bool isHavingReplicationConfig(reindexer::WrSerializer& wser, std::string_view type);
 
 	Error interactive() noexcept;
-	void fromFile(std::istream& in);
+	void fromFile(std::istream& in, std::optional<size_t> fileSize = std::nullopt);
 	void fromDumpFile(std::ifstream& in, DumpFileIndex& dumpFileIdx);
+	Error dryRunDumpFile() noexcept;
 
 	Error getAvailableDatabases(std::vector<std::string>&) noexcept;
 
@@ -91,9 +94,7 @@ private:
 
 #if REINDEX_WITH_REPLXX
 	template <typename T>
-	void setCompletionCallback(T& rx, void (T::*set_completion_callback)(const new_v_callback_t&));
-	template <typename T>
-	void setCompletionCallback(T& rx, void (T::*set_completion_callback)(const old_v_callback_t&, void*));
+	void setCompletionCallback(T& rx, void (T::*set_completion_callback)(const callback_t&));
 #endif	// REINDEX_WITH_REPLXX
 
 	Error process(const std::string& command) noexcept;

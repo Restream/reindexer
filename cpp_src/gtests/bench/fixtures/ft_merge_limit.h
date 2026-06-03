@@ -6,6 +6,8 @@
 
 #include "base_fixture.h"
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] FullTextMergeLimit : private BaseFixture {
 public:
 	virtual ~FullTextMergeLimit() {}
@@ -27,3 +29,5 @@ private:
 	const std::vector<std::string> kWords_ = {"корова", "бык", "дорога", "гора", "машина", "ведро", "титан", "телефон", "ключ", "мопед"};
 	const std::string kEndWord = "разд";
 };
+
+}  // namespace reindexer_benchmarks

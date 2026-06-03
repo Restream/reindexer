@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 
 namespace reindexer {
 

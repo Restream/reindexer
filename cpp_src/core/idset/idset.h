@@ -3,13 +3,11 @@
 #include <algorithm>
 #include <atomic>
 #include <span>
-#include <string>
-#include "core/type_consts.h"
 #include "cpp-btree/btree_set.h"
+#include "estl/defines.h"
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
 #include "iterator.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -47,16 +45,14 @@ public:
 
 	bool Add(IdType id, IdSetEditMode, int) {
 		if (!IsEmpty()) [[unlikely]] {
-			throw DuplicatedItemIDError(
-				id_.ToNumber(),
-				Error(errConflict, std::string("Duplicated item id, that has to be unique: ").append(std::to_string(id_.ToNumber()))));
+			throwDuplicatedIDError();
 		}
 		id_ = id;
 		return true;
 	}
 
 	int Erase(IdType id) {
-		if (id_.ToNumber() == id.ToNumber()) {
+		if (id_ == id) {
 			id_ = IdType::NotSet();
 			return 1;
 		}
@@ -87,6 +83,8 @@ public:
 	operator IdSetCRef() const&& = delete;
 
 private:
+	[[noreturn]] void throwDuplicatedIDError() const;
+
 	IdType id_ = IdType::NotSet();
 };
 
@@ -184,7 +182,7 @@ public:
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
 	void Dump(std::ostream&) const;
 	size_t HeapSize() const noexcept { return heap_size(); }
-	size_t PlainHeapSize() const noexcept { return heap_size(); }
+	RX_ALWAYS_INLINE size_t PlainHeapSize() const noexcept { return heap_size(); }
 
 	operator IdSetCRef() const& noexcept { return IdSetCRef(begin(), end()); }
 	operator IdSetCRef() const&& = delete;
@@ -296,7 +294,7 @@ public:
 	}
 	void Commit();
 
-	bool IsCommitted() const noexcept { return !set_.Get(std::memory_order_acquire).second; }
+	RX_ALWAYS_INLINE bool IsCommitted() const noexcept { return !set_.Get(std::memory_order_acquire).second; }
 	bool IsEmpty() const noexcept { return !Size(); }
 	size_t Size() const noexcept {
 		auto [set, isUsingBtree] = set_.Get(std::memory_order_acquire);
@@ -308,9 +306,9 @@ public:
 	}
 	void Dump(std::ostream&) const;
 
-	size_t PlainHeapSize() const noexcept { return IdSetPlain::PlainHeapSize(); }
+	RX_ALWAYS_INLINE size_t PlainHeapSize() const noexcept { return IdSetPlain::PlainHeapSize(); }
 	// UNSAFE (may race with concurrent Commit() calls)
-	size_t BTreeHeapSize() const noexcept {
+	RX_ALWAYS_INLINE size_t BTreeHeapSize() const noexcept {
 		auto set = set_.Get(std::memory_order_relaxed).first;
 		return set ? sizeof(*set) + set->size() * sizeof(IdType) : 0;
 	}

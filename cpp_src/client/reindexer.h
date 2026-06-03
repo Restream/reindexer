@@ -4,8 +4,8 @@
 #include "client/queryresults.h"
 #include "client/reindexerconfig.h"
 #include "client/transaction.h"
-#include "core/indexdef.h"
-#include "core/namespacedef.h"
+#include "core/definitions/indexdef.h"
+#include "core/definitions/namespacedef.h"
 #include "core/shardedmeta.h"
 #include "internalrdxcontext.h"
 
@@ -13,6 +13,7 @@ namespace reindexer {
 
 struct ReplicationStateV2;
 class DSN;
+struct SQLSuggestions;
 
 namespace client {
 
@@ -186,7 +187,7 @@ public:
 	/// @param sqlQuery - sql query.
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions) noexcept;
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions) noexcept;
 	/// Get current connection status
 	/// WARNING: Status() request may call completion in current thread. Beware of possible deadlocks, using mutexes in this completion
 	/// @param forceCheck - forces to check status immediately (otherwise result of periodic check will be returned)

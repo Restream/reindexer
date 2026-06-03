@@ -5,12 +5,12 @@
 #include "debug/allocdebug.h"
 #include "debug/backtrace.h"
 
-namespace benchmark {
+namespace reindexer_benchmarks {
 
 struct [[nodiscard]] AllocsTracker {
 	enum [[nodiscard]] PrintOpts { kNoPrint = 1 << 0, kPrintAllocs = 1 << 1, kPrintHold = 1 << 2 };
 
-	AllocsTracker(State& state, uint8_t printFlags = kPrintAllocs)
+	AllocsTracker(::benchmark::State& state, uint8_t printFlags = kPrintAllocs)
 		: total_sz(get_alloc_size_total()),
 		  total_cnt(get_alloc_cnt_total()),
 		  held_mem(get_alloc_size()),
@@ -41,7 +41,7 @@ struct [[nodiscard]] AllocsTracker {
 protected:
 	size_t total_sz, total_cnt;
 	size_t held_mem, held_allocs;
-	State& state;
+	::benchmark::State& state;
 	uint8_t flags;
 
 private:
@@ -55,4 +55,4 @@ private:
 	}
 };
 
-}  // namespace benchmark
+}  // namespace reindexer_benchmarks

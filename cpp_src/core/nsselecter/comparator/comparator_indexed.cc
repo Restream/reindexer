@@ -57,32 +57,6 @@ std::string_view typeToStr<reindexer::FloatVector>() noexcept {
 	return "float_vector"sv;
 }
 
-template <typename T, CondType Cond>
-typename reindexer::comparators::ValuesHolder<T, Cond>::Type getInitValues(const reindexer::VariantArray& values) {
-	if constexpr (Cond == CondRange) {
-		return {reindexer::comparators::GetValue<T>(Cond, values, 0), reindexer::comparators::GetValue<T>(Cond, values, 1)};
-	} else if constexpr (Cond == CondSet || Cond == CondAllSet) {
-		return {};
-	} else if constexpr (Cond == CondEq || Cond == CondLt || Cond == CondLe || Cond == CondGt || Cond == CondGe) {
-		return reindexer::comparators::GetValue<T>(Cond, values, 0);
-	}
-}
-
-template <CondType Cond>
-typename reindexer::comparators::ValuesHolder<reindexer::key_string, Cond>::Type getInitStringValues(const reindexer::VariantArray& values,
-																									 const CollateOpts& collate) {
-	if constexpr (Cond == CondRange) {
-		return {reindexer::comparators::GetValue<reindexer::key_string>(Cond, values, 0),
-				reindexer::comparators::GetValue<reindexer::key_string>(Cond, values, 1)};
-	} else if constexpr (Cond == CondSet) {
-		return {collate};
-	} else if constexpr (Cond == CondAllSet) {
-		return {collate, {}};
-	} else if constexpr (Cond == CondEq || Cond == CondLt || Cond == CondLe || Cond == CondGt || Cond == CondGe || Cond == CondLike) {
-		return reindexer::comparators::GetValue<reindexer::key_string>(Cond, values, 0);
-	}
-}
-
 template <typename T, typename SetT>
 void initComparatorSet(const reindexer::VariantArray& from, reindexer::comparators::DataHolder<T>& to, SetT&& set) {
 	for (const reindexer::Variant& v : from) {
@@ -137,7 +111,7 @@ void initComparator(CondType cond, const reindexer::VariantArray& from, reindexe
 }
 
 void initStringComparator(CondType cond, const reindexer::VariantArray& from, reindexer::comparators::DataHolder<reindexer::key_string>& to,
-						  const CollateOpts& collate) {
+						  const reindexer::CollateOpts& collate) {
 	using namespace reindexer::comparators;
 	using SetType = DataHolder<reindexer::key_string>::SetType;
 	using AllSetType = DataHolder<reindexer::key_string>::AllSetType;

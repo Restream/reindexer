@@ -18,7 +18,7 @@ extern InnerProductPtrT<uint8_t> InnerProductPtrU;
 }  // namespace impl
 
 template <typename T>
-RX_ALWAYS_INLINE float InnerProductDistance(const T* x, const T* y, size_t d) {
+RX_ALWAYS_INLINE float InnerProductDistance(const T* x, const T* y, size_t d) noexcept {
 	if constexpr (std::is_same_v<T, float>) {
 		return impl::InnerProductPtrF(x, y, d);
 	} else if constexpr (std::is_same_v<T, uint8_t>) {

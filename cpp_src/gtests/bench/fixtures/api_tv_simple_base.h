@@ -2,6 +2,8 @@
 
 #include "base_fixture.h"
 
+namespace reindexer_benchmarks {
+
 class [[nodiscard]] ApiTvSimpleBase : protected BaseFixture {
 	using Base = BaseFixture;
 
@@ -28,11 +30,11 @@ protected:
 	void Query1Cond(State&);
 	template <typename Total>
 	void Query2Cond(State&);
-	template <typename Total>
+	template <typename Total, typename Sort>
 	void Query3Cond(State&);
-	template <typename Total>
+	template <typename Total, typename Sort>
 	void Query4Cond(State&);
-	template <typename Total>
+	template <typename Total, typename Sort>
 	void Query4CondRange(State&);
 	void StringsSelect(State&);
 	void GetByRangeIDAndSortByHash(State&);
@@ -49,3 +51,5 @@ protected:
 	std::vector<std::string> locations_;
 	std::vector<std::string> devices_;
 };
+
+}  // namespace reindexer_benchmarks

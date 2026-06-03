@@ -2,12 +2,16 @@
 
 #include "join_selects_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] JoinOnConditionsApi : public JoinSelectsApi {
 public:
 	void SetUp() override { JoinSelectsApi::Init(reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_on_conditions_test")); }
 
 	void CreateCondSetTable(const std::string& leftNs, const std::string& rightNs, const std::vector<int>& leftNsData,
 							const std::vector<std::vector<int>>& rightNsData) {
+		using reindexer::IndexOpts;
+
 		rt.OpenNamespace(leftNs);
 		DefineNamespaceDataset(leftNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
 		rt.OpenNamespace(rightNs);
@@ -87,3 +91,5 @@ public:
 		}
 	}
 };
+
+}  // namespace reindexer_tests

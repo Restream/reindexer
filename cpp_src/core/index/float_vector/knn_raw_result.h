@@ -1,5 +1,4 @@
 #pragma once
-
 #if RX_WITH_BUILTIN_ANN_INDEXES
 
 #include <variant>

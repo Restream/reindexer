@@ -3,9 +3,13 @@
 #include <gtest/gtest.h>
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] NsApi : public ReindexerApi {
 protected:
 	void DefineDefaultNamespace() {
+		using reindexer::IndexOpts;
+
 		rt.OpenNamespace(default_namespace);
 		// clang-format off
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0},
@@ -36,6 +40,8 @@ protected:
 	}
 
 	void AddUnindexedData() {
+		using reindexer::IndexOpts;
+
 		rt.AddIndex(default_namespace,
 					reindexer::IndexDef("objects.more.array", {"objects.more.array"}, "hash", "int64", IndexOpts().Array(), 100000000000));
 		constexpr auto jsonPattern =
@@ -91,6 +97,8 @@ protected:
 	}
 
 	void CreateEmptyArraysNamespace(std::string_view nsName) {
+		using reindexer::IndexOpts;
+
 		rt.OpenNamespace(nsName);
 		DefineNamespaceDataset(nsName, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0},
 										IndexDeclaration{indexedArrayField.c_str(), "hash", "int", IndexOpts().Array(), 0}});
@@ -115,6 +123,8 @@ protected:
 	}
 
 	void TruncateNamespace(const std::function<Error(const std::string&)>& truncate) {
+		using reindexer::IndexOpts;
+
 		rt.OpenNamespace(truncate_namespace);
 		DefineNamespaceDataset(
 			truncate_namespace,
@@ -175,3 +185,5 @@ protected:
 	const int idNum = 1;
 	const uint8_t upsertTimes = 3;
 };
+
+}  // namespace reindexer_tests

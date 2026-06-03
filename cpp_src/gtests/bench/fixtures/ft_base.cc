@@ -4,7 +4,10 @@
 #include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
 
-namespace reindexer::bench {
+using reindexer::Error;
+using reindexer::WrSerializer;
+
+namespace reindexer_benchmarks {
 
 Error FullTextBase::Initialize() { return readDictFile(RX_BENCH_DICT_PATH, words1_); }
 
@@ -15,13 +18,13 @@ std::string FullTextBase::MakeTypoWord() {
 	word[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(word.length() - 1)})] =
 		wchars.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(wchars.size() - 1)}));
 	word += L"~";
-	return utf16_to_utf8(word);
+	return reindexer::utf16_to_utf8(word);
 }
 
 std::wstring FullTextBase::GetRandomUTF16WordByLength(size_t minLen) {
 	std::wstring word;
 	for (; word.length() < minLen;) {
-		word = utf8_to_utf16(RndWord1());
+		word = reindexer::utf8_to_utf16(RndWord1());
 	}
 	return word;
 }
@@ -48,7 +51,7 @@ std::string FullTextBase::MakePrefixWord() {
 	word.erase(pos, word.length() - pos);
 	word += L"*";
 
-	return utf16_to_utf8(word);
+	return reindexer::utf16_to_utf8(word);
 }
 
 std::string FullTextBase::MakeSuffixWord() {
@@ -56,7 +59,7 @@ std::string FullTextBase::MakeSuffixWord() {
 	auto cnt = RndInt(0, word.length() / 2);
 	word.erase(0, cnt);
 	word = L"*" + word;
-	return utf16_to_utf8(word);
+	return reindexer::utf16_to_utf8(word);
 }
 
 Error FullTextBase::readDictFile(const std::string& fileName, std::vector<std::string>& words) {
@@ -77,4 +80,4 @@ Error FullTextBase::readDictFile(const std::string& fileName, std::vector<std::s
 	return Error();
 }
 
-}  // namespace reindexer::bench
+}  // namespace reindexer_benchmarks

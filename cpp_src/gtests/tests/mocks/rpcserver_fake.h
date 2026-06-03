@@ -6,6 +6,8 @@
 #include "net/listener.h"
 #include "server/dbmanager.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer_server;
 using namespace reindexer::net;
 using namespace reindexer;
@@ -56,3 +58,5 @@ protected:
 	std::set<int> unusedQrIds_;
 	std::atomic_size_t closeQRRequestsCounter_{0};
 };
+
+}  // namespace reindexer_tests

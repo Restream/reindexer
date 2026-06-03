@@ -5,6 +5,10 @@
 #include "net/ev/ev.h"
 #include "snapshot_api.h"
 
+namespace reindexer_tests {
+
+using reindexer_tests_tools::exceptionWrapper;
+
 const std::string SnapshotTestApi::kDefaultRPCServerAddr = std::string("127.0.0.1:") + std::to_string(SnapshotTestApi::kDefaultRPCPort);
 
 // ASAN randomly breaks on coroutines here
@@ -298,3 +302,5 @@ TEST_F(SnapshotTestApi, MaxWALDepthWithWALOverflow) {
 	}));
 	loop.run();
 }
+
+}  // namespace reindexer_tests

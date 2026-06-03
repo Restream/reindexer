@@ -1,6 +1,8 @@
 #include "update_items.h"
 #include "core/cjson/jsonbuilder.h"
 
+namespace reindexer_benchmarks {
+
 reindexer::Error UpdateItems::Initialize() {
 	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
@@ -41,7 +43,6 @@ void UpdateItems::RegisterAllCases() {
 	Register("NineFieldLimit1000", &UpdateItems::NineFieldLimit1000, this);
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
-
 static std::vector<std::string> RandStrLocal(unsigned stringCount, unsigned stringMaxLen) {
 	std::vector<std::string> ret;
 	ret.reserve(stringCount);
@@ -260,3 +261,5 @@ void UpdateItems::nineField(State& state, unsigned int limit) {
 }
 void UpdateItems::NineFieldLimit1(State& state) { nineField(state, 1); }
 void UpdateItems::NineFieldLimit1000(State& state) { nineField(state, kCount1000); }
+
+}  // namespace reindexer_benchmarks

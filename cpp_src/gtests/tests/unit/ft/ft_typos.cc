@@ -1,6 +1,8 @@
 #include <gtest/gtest-param-test.h>
 #include "ft_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] FTTyposApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_typos_default_namespace"; }
@@ -741,3 +743,5 @@ INSTANTIATE_TEST_SUITE_P(, FTTyposApi, ::testing::Values(kRxFtTestTypes), [](con
 			std::abort();
 	}
 });
+
+}  // namespace reindexer_tests

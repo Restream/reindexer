@@ -2,6 +2,8 @@
 #include "core/ft/ftdsl.h"
 #include "ft_api.h"
 
+namespace reindexer_tests {
+
 using namespace std::string_view_literals;
 
 class [[nodiscard]] FTDSLParserApi : public FTApi {
@@ -215,3 +217,5 @@ INSTANTIATE_TEST_SUITE_P(, FTDSLParserApi, ::testing::Values(kRxFtTestTypes), []
 			std::abort();
 	}
 });
+
+}  // namespace reindexer_tests

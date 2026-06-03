@@ -103,7 +103,7 @@ Error Reindexer::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesO
 	RETURN_RESULT_NOEXCEPT(impl_->EnumNamespaces(defs, opts, ctx_));
 }
 Error Reindexer::EnumDatabases(std::vector<std::string>& dbList) noexcept { RETURN_RESULT_NOEXCEPT(impl_->EnumDatabases(dbList, ctx_)); }
-Error Reindexer::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggests) noexcept {
+Error Reindexer::GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggests) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->GetSqlSuggestions(sqlQuery, pos, suggests));
 }
 Error Reindexer::Status(bool forceCheck) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Status(forceCheck, ctx_)); }

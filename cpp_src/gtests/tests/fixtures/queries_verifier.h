@@ -26,6 +26,8 @@
 #include "tools/float_comparison.h"
 #include "tools/string_regexp_functions.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] QueriesVerifier : public virtual ::testing::Test {
 	struct [[nodiscard]] PkHash {
 		size_t operator()(const std::vector<reindexer::VariantArray>& pk) const noexcept {
@@ -159,8 +161,8 @@ protected:
 					} else {
 						const auto aggRes = qr.GetAggregationResults()[0].GetValue();
 						if (aggRes) {
-							res = compareValue<BetweenFields::No>(reindexer::Variant(*aggRes), sqe.Condition(), sqe.Values(), CollateOpts(),
-																  reindexer::KeyValueType::Double{});
+							res = compareValue<BetweenFields::No>(reindexer::Variant(*aggRes), sqe.Condition(), sqe.Values(),
+																  reindexer::CollateOpts(), reindexer::KeyValueType::Double{});
 						}
 					}
 					if (res) {
@@ -240,7 +242,7 @@ protected:
 				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinItemsProcessors);
 
 				reindexer::Variant sortedValue;
-				CollateOpts collate;
+				reindexer::CollateOpts collate;
 				if (sortExpr.ByField()) {
 					sortedValue = itemr[sortingEntry.expression];
 					collate = indexesCollates[sortingEntry.expression];
@@ -390,7 +392,7 @@ protected:
 		ASSERT_TRUE(success) << ns << ' ' << indexName;
 	}
 
-	reindexer::fast_hash_map<std::string, CollateOpts> indexesCollates;
+	reindexer::fast_hash_map<std::string, reindexer::CollateOpts> indexesCollates;
 	reindexer::fast_hash_map<std::string, InsertedItemsByPk> insertedItems_;
 
 private:
@@ -636,7 +638,7 @@ private:
 	bool checkOnCondition(const reindexer::Item& leftItem, const reindexer::Item& rightItem, const std::string& leftIndexName,
 						  const std::string& rightIndexName, CondType cond, const IndexesData& leftIndexesFields,
 						  const IndexesData& rightIndexesFields) {
-		const CollateOpts& collate = indexesCollates[leftIndexName];
+		const reindexer::CollateOpts& collate = indexesCollates[leftIndexName];
 		// TODO Composite
 		const std::string leftFieldName = getFieldsName({leftIndexName}, leftIndexesFields).second[0];
 		const std::string rightFieldName = getFieldsName({rightIndexName}, rightIndexesFields).second[0];
@@ -655,7 +657,7 @@ private:
 		if (isGeomConditions(qentry.Condition())) {
 			return checkGeomConditions(item, qentry, indexesFields);
 		}
-		const CollateOpts& collate = indexesCollates[qentry.FieldName()];
+		const reindexer::CollateOpts& collate = indexesCollates[qentry.FieldName()];
 
 		if (isIndexComposite(qentry.FieldName(), indexesFields)) {
 			return checkCompositeCondition(item, qentry, collate, indexesFields);
@@ -760,7 +762,7 @@ private:
 	}
 
 	static auto compareCompositeValues(const reindexer::VariantArray& indexesValues, const reindexer::Variant& keyValue,
-									   const CollateOpts& opts) {
+									   const reindexer::CollateOpts& opts) {
 		reindexer::VariantArray compositeValues = keyValue.getCompositeValues();
 		EXPECT_EQ(indexesValues.size(), compositeValues.size());
 		auto cmpRes = reindexer::ComparationResult::Eq;
@@ -774,8 +776,8 @@ private:
 		return cmpRes;
 	}
 
-	static bool checkCompositeCondition(const reindexer::Item& item, const reindexer::QueryEntry& qentry, const CollateOpts& opts,
-										const IndexesData& indexesFields) {
+	static bool checkCompositeCondition(const reindexer::Item& item, const reindexer::QueryEntry& qentry,
+										const reindexer::CollateOpts& opts, const IndexesData& indexesFields) {
 		const auto fields = getCompositeFields(qentry.FieldName(), indexesFields);
 
 		const reindexer::VariantArray& indexesValues = getValues(item, fields);
@@ -828,7 +830,7 @@ private:
 	enum class [[nodiscard]] BetweenFields : bool { Yes = true, No = false };
 
 	template <BetweenFields betweenFields>
-	static auto compare(const reindexer::Variant& v, const reindexer::Variant& k, const CollateOpts& opts,
+	static auto compare(const reindexer::Variant& v, const reindexer::Variant& k, const reindexer::CollateOpts& opts,
 						reindexer::KeyValueType fieldType) {
 		if constexpr (betweenFields == BetweenFields::Yes) {
 			return v.RelaxCompare<reindexer::WithString::Yes, reindexer::NotComparable::Return, reindexer::NullsHandling::NotComparable>(
@@ -843,7 +845,7 @@ private:
 	}
 
 	template <BetweenFields betweenFields>
-	static bool checkAllSet(const reindexer::VariantArray& values, const reindexer::VariantArray& keys, const CollateOpts& opts,
+	static bool checkAllSet(const reindexer::VariantArray& values, const reindexer::VariantArray& keys, const reindexer::CollateOpts& opts,
 							reindexer::KeyValueType fieldType) {
 		try {
 			for (const auto& k : keys) {
@@ -870,7 +872,7 @@ private:
 
 	template <BetweenFields betweenFields>
 	static bool compareValue(const reindexer::Variant& value, CondType condition, const reindexer::VariantArray& keys,
-							 const CollateOpts& opts, reindexer::KeyValueType fieldType) {
+							 const reindexer::CollateOpts& opts, reindexer::KeyValueType fieldType) {
 		try {
 			switch (condition) {
 				case CondGe:
@@ -989,7 +991,7 @@ private:
 		EXPECT_GT(item.NumFields(), 0);
 		assertrx(!isGeomConditions(qentry.Condition()));
 
-		const CollateOpts& collate = indexesCollates[qentry.LeftFieldName()];
+		const reindexer::CollateOpts& collate = indexesCollates[qentry.LeftFieldName()];
 
 		if (isIndexComposite(qentry, indexesFields)) {
 			return checkCompositeCondition(item, qentry, indexesFields);
@@ -1270,3 +1272,5 @@ private:
 	reindexer::fast_hash_map<std::string, std::vector<std::string>> ns2pk_;
 	reindexer::fast_hash_map<std::string, IndexesData> indexesFields_;
 };
+
+}  // namespace reindexer_tests

@@ -8,27 +8,33 @@
 
 namespace reindexer {
 
-Error LoadIndexesHashMapStats(AsyncStorage& storage_, const std::string& storageKey, std::vector<IndexHashMapStats>& indexesStats) {
-	indexesStats.resize(0);
-	indexesStats.reserve(100);
-	std::string content;
+Error LoadIndexesHashMapStats(AsyncStorage& storage_, const std::string& storageKey,
+							  std::vector<IndexHashMapStats>& indexesStats) noexcept {
+	try {
+		indexesStats.resize(0);
+		indexesStats.reserve(100);
+		std::string content;
 
-	Error status = storage_.Read(StorageOpts().FillCache(), storageKey, content);
-	if (!status.ok()) [[unlikely]] {
-		return status;
-	}
+		Error status = storage_.Read(StorageOpts().FillCache(), storageKey, content);
+		if (!status.ok()) [[unlikely]] {
+			return status;
+		}
 
-	Serializer ser(content.data(), content.size());
-	auto version = ser.GetUInt64();
-	if (version != kHashMapStatsVersion) {
-		return Error(errVersion, "Error on loading hash map stats, incorrect version " + std::to_string(version) + ", current version is " +
-									 std::to_string(kHashMapStatsVersion));
-	}
-	while (!ser.Eof()) {
-		std::string_view indexName = ser.GetSlice();
-		std::string_view stats = ser.GetSlice();
+		Serializer ser(content.data(), content.size());
+		auto version = ser.GetUInt64();
+		if (version != kHashMapStatsVersion) {
+			return Error(errVersion, "Error on loading hash map stats, incorrect version " + std::to_string(version) +
+										 ", current version is " + std::to_string(kHashMapStatsVersion));
+		}
 
-		indexesStats.emplace_back(indexName, stats);
+		while (!ser.Eof()) {
+			std::string_view indexName = ser.GetSlice();
+			std::string_view stats = ser.GetSlice();
+
+			indexesStats.emplace_back(indexName, stats);
+		}
+	} catch (std::exception& e) {
+		return std::move(e);
 	}
 
 	return errOK;
@@ -80,8 +86,10 @@ void UpdateNamespaceHashMapsStats(size_t numThreads, std::string_view namespaceN
 		ser.PutUInt64(kHashMapStatsVersion);
 		for (const auto& task : tasks) {
 			for (size_t idx = 0; idx < task.indexes.size(); ++idx) {
-				ser.PutSlice(task.indexes[idx]->Name());
-				ser.PutSlice(std::string_view(task.indexesStats[idx].data(), task.indexesStats[idx].size()));
+				if (!task.indexesStats[idx].empty()) {
+					ser.PutSlice(task.indexes[idx]->Name());
+					ser.PutSlice(std::string_view(task.indexesStats[idx].data(), task.indexesStats[idx].size()));
+				}
 			}
 		}
 

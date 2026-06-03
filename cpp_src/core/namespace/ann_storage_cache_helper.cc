@@ -8,6 +8,8 @@
 
 namespace reindexer::ann_storage_cache {
 
+constexpr static uint8_t kANNCacheFormatVersion = 3;
+
 std::string GetStorageKey(std::string_view name) noexcept {
 	std::string key(kStorageANNCachePrefix);
 	key.append(".").append(toLower(name));
@@ -88,12 +90,6 @@ bool Writer::TryUpdateNextPart(RLockT&& lock, AsyncStorage& storage, UpdateInfo&
 				counterGuard.Disable();
 				return false;
 			}
-			if (!res.err.ok()) {
-				logFmt(LogWarning, "[{}] Unable to create storage cache for ANN index '{}': {}. Skipping this index", ns_.name_,
-					   ann->Name(), res.err.what());
-				updateInfo.Update(ann->Name(), lastUpdateTime_);  // Still performing time update
-				continue;
-			}
 
 			const std::string indexName = ann->Name();
 			const auto nsName = ns_.name_;
@@ -101,16 +97,26 @@ bool Writer::TryUpdateNextPart(RLockT&& lock, AsyncStorage& storage, UpdateInfo&
 			// !!! Unlockig namespace mutex to perform WriteSync without any locks
 			lock.unlock();
 
-			const auto t1 = system_clock_w::now_coarse();
-			storage.WriteSync(StorageOpts(), GetStorageKey(ann->Name()), ser.Slice());
-			const auto t2 = system_clock_w::now_coarse();
-			logFmt(LogInfo,
-				   "[{}] Storage cache for ANN index '{}' was updated: size: {} KB; creation time: {} ms; writing time: {} ms; "
-				   "last update ts: {}",
-				   nsName, indexName, ser.Len() / 1024, std::chrono::duration_cast<milliseconds>((t1 - t0)).count(),
-				   std::chrono::duration_cast<milliseconds>((t2 - t1)).count(), lastUpdateTime_.count());
+			if (res.err.ok()) {
+				const auto t1 = system_clock_w::now_coarse();
+				storage.WriteSync(StorageOpts(), GetStorageKey(ann->Name()), ser.Slice());
+				const auto t2 = system_clock_w::now_coarse();
+				logFmt(LogInfo,
+					   "[{}] Storage cache for ANN index '{}' was updated: size: {} KB; creation time: {} ms; writing time: {} ms; "
+					   "last update ts: {}",
+					   nsName, indexName, ser.Len() / 1024, std::chrono::duration_cast<milliseconds>((t1 - t0)).count(),
+					   std::chrono::duration_cast<milliseconds>((t2 - t1)).count(), lastUpdateTime_.count());
+			} else {
+				const auto t1 = system_clock_w::now_coarse();
+				storage.RemoveSync(StorageOpts(), GetStorageKey(ann->Name()));
+				const auto t2 = system_clock_w::now_coarse();
+				logFmt(LogWarning,
+					   "[{}] Unable to create storage cache for ANN index '{}': {}. Skipping this index. Storage cleanup time: {} ms",
+					   ns_.name_, ann->Name(), res.err.what(), std::chrono::duration_cast<milliseconds>((t2 - t1)).count(),
+					   lastUpdateTime_.count());
+			}
 
-			updateInfo.Update(indexName, lastUpdateTime_);
+			updateInfo.Update(indexName, lastUpdateTime_);	// Performing time update in any case
 			return true;
 		}
 	}
@@ -244,8 +250,9 @@ Reader::Reader(std::string_view nsName, nanoseconds lastUpdate, unsigned int pkF
 			}
 			Serializer ser(dataSlice);
 			const auto version = ser.GetUInt8();
-			if (version > kANNCacheFormatVersion) {
-				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): unsupported format version {}", nsName_, keySlice, version);
+			if (version != kANNCacheFormatVersion) {
+				logFmt(LogInfo, "[{}] Skipping ANN cache entry ({}): unsupported format version {}. Expected {}", nsName_, keySlice,
+					   version, kANNCacheFormatVersion);
 				assertrx_dbg(false);  // Do not expecting this error in test scenarios
 				keysToRemove.emplace_back(keySlice);
 				continue;

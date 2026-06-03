@@ -9,7 +9,7 @@
 #include "core/cjson/tagsmatcher.h"
 #include "core/dbconfig.h"
 #include "core/item.h"
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 #include "core/nsselecter/joins/cache.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"

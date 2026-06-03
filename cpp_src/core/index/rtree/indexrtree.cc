@@ -45,7 +45,7 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 			return ScanWin();
 		}
 		bool ScanWin() const noexcept {
-			return itemsCountInNs_ && res_.size() > 1u && (100u * idsCount_ / itemsCountInNs_ > maxSelectivityPercentForIdset());
+			return itemsCountInNs_ && res_.size() > 1u && (100u * idsCount_ / itemsCountInNs_ > kMaxSelectivityPercentForIdset);
 		}
 
 	private:
@@ -114,7 +114,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	this->delMemStat(keyIt);
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
-	assertf(!mustExist || this->Opts().IsSparse() || delcnt, "Delete non-existent id from index '{}' id={}, key={} ({})", this->name_, id,
+	assertf(!mustExist || delcnt, "Delete non-existent id from index '{}' id={}, key={} ({})", this->name_, id,
 			Variant(keys).AsSingleString(this->payloadType_, this->Fields()),
 			Variant(keyIt->first).AsSingleString(this->payloadType_, this->Fields()));
 

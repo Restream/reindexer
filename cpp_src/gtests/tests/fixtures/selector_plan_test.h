@@ -5,9 +5,13 @@
 #include "core/system_ns_names.h"
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] SelectorPlanTest : public ReindexerApi {
 public:
 	void SetUp() override {
+		using reindexer::IndexOpts;
+
 		ReindexerApi::SetUp();
 
 		rt.OpenNamespace(btreeNs);
@@ -88,3 +92,5 @@ private:
 		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
 };
+
+}  // namespace reindexer_tests

@@ -3,9 +3,9 @@
 #include "cluster/clustercontrolrequest.h"
 #include "cluster/consts.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
+#include "core/definitions/namespacedef.h"
 #include "core/system_ns_names.h"
 #include "estl/shared_mutex.h"
-#include "namespacedef.h"
 #include "tools/catch_and_return.h"
 #include "tools/clusterproxyloghelper.h"
 
@@ -163,7 +163,7 @@ ClusterProxy::~ClusterProxy() {
 	}
 }
 
-ReindexerImpl::CallbackMap ClusterProxy::addCallbacks(ReindexerImpl::CallbackMap&& callbackMap) const {
+ReindexerImpl::CallbackMap ClusterProxy::addCallbacks(ReindexerImpl::CallbackMap&& callbackMap) {
 	// TODO: add callbacks for actions of ClusterProxy level
 	return std::move(callbackMap);
 }
@@ -404,7 +404,7 @@ Error ClusterProxy::DeleteMeta(std::string_view nsName, const std::string& key, 
 	return CallProxyFunction(DeleteMeta)(ctx, nsName, action, nsName, key);
 }
 
-Error ClusterProxy::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions, const RdxContext& ctx) {
+Error ClusterProxy::GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions, const RdxContext& ctx) {
 	return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, ctx);
 }
 

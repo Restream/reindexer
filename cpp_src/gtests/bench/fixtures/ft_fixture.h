@@ -12,7 +12,9 @@
 
 // #define ENABLE_TIME_TRACKER
 
-class [[nodiscard]] FullText : private BaseFixture, private reindexer::bench::FullTextBase {
+namespace reindexer_benchmarks {
+
+class [[nodiscard]] FullText : private BaseFixture, private FullTextBase {
 public:
 	virtual ~FullText() {}
 	FullText(Reindexer* db, const std::string& name, size_t maxItems);
@@ -211,3 +213,5 @@ private:
 
 	NamespaceDef lowWordsDiversityNsDef_;
 };
+
+}  // namespace reindexer_benchmarks

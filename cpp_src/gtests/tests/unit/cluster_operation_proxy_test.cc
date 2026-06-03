@@ -10,9 +10,12 @@
 #include "gtests/tools.h"
 #include "vendor/gason/gason.h"
 
-using namespace reindexer;
-
 // NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
+
+namespace reindexer_tests {
+
+using namespace reindexer;
+using reindexer_tests_tools::exceptionWrapper;
 
 static std::string itemData(int id, std::string_view valueData, std::string_view modifyValueData) {
 	WrSerializer ser;
@@ -273,7 +276,6 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 
 		auto txInsertions = exceptionWrapper([&] {
 			net::ev::dynamic_loop thLoop;
-			// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 			thLoop.spawn(exceptionWrapper([&] {
 				client::CoroReindexer rx;
 				auto err = rx.Connect(dsn, thLoop);
@@ -309,7 +311,6 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 
 		auto singleInsertions = exceptionWrapper([&] {
 			net::ev::dynamic_loop thLoop;
-			// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 			thLoop.spawn(exceptionWrapper([&] {
 				client::CoroReindexer rx;
 				auto err = rx.Connect(dsn, thLoop);
@@ -585,8 +586,8 @@ static void CheckSetGetEnumDeleteMeta(ClusterOperationApi::Cluster& cluster, int
 }
 
 static void SelectHelper(int node, const std::string& nsName, ClusterOperationApi::Cluster& cluster, const std::string& itemJson,
-						 reindexer::IdType id = reindexer::IdType::NotSet()) {
-	reindexer::Query q(nsName);
+						 IdType id = IdType::NotSet()) {
+	Query q(nsName);
 	BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 	Error err = cluster.GetNode(node)->api.reindexer->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -599,7 +600,7 @@ static void SelectHelper(int node, const std::string& nsName, ClusterOperationAp
 }
 
 static void Select0Helper(int node, const std::string& nsName, ClusterOperationApi::Cluster& cluster) {
-	reindexer::Query q(nsName);
+	Query q(nsName);
 	BaseApi::QueryResultsType qr;
 	Error err = cluster.GetNode(node)->api.reindexer->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -1056,6 +1057,7 @@ TEST_F(ClusterOperationProxyApi, DeleteSelect) {
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
 	auto ports = GetDefaults();
+
 	loop.spawn(exceptionWrapper([&loop, &kNsName, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -1385,7 +1387,7 @@ TEST_F(ClusterOperationProxyApi, ChangeLeaderAndWrite) {
 		{
 			leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 			auto leaderClient = cluster.GetNode(leaderId)->api.reindexer;
-			reindexer::client::QueryResults qr;
+			client::QueryResults qr;
 			auto err = leaderClient->ExecSQL("select *, vectors() from ns1 order by id", qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			itemTracker.Validate(qr);
@@ -1501,5 +1503,7 @@ TEST_F(ClusterOperationProxyApi, SelectFromStatsTimeout) {
 
 	loop.run();
 }
+
+}  // namespace reindexer_tests
 
 // NOLINTEND(rx-perf-lambda-to-std-function-allocation)

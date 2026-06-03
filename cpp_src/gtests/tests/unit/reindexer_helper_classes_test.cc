@@ -4,6 +4,8 @@
 #include "fmt/format.h"
 #include "tools/enum_compare.h"
 
+namespace reindexer_tests {
+
 #define TEST_ENUM(name)                       \
 	enum class [[nodiscard]] name : uint8_t { \
 		none = 0,                             \
@@ -100,3 +102,5 @@ TEST(EnumDiffClass, BaseTest) {
 	SkipByMask(diffCopy, maskE1, maskE2, maskE3);
 	EXPECT_TRUE(diffCopy.Equal());
 }
+
+}  // namespace reindexer_tests

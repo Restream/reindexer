@@ -141,10 +141,11 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTerm(TermResults<IdCont>&
 			}
 
 			if (subterm.Suppressed()) {
-				// doc has been added
-				assertrx_dbg(idoffsets_[docId] < mergeDataExtended_.size());
-				auto& mdExt = getMergeDataExtended(docId);
-				mdExt.InreaseTermsCounter(qpIdx);
+				// if doc has been added with positive rank
+				if (idoffsets_[docId] < mergeDataExtended_.size()) {
+					auto& mdExt = getMergeDataExtended(docId);
+					mdExt.InreaseTermsCounter(qpIdx);
+				}
 				continue;
 			}
 

@@ -2,9 +2,11 @@
 #include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
 
+namespace reindexer_benchmarks {
+
 template <size_t N>
 void Aggregation::Insert(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < N; ++i) {
 			auto item = MakeItem(state);
@@ -94,3 +96,5 @@ void Aggregation::ArrayFacet(State& state) {
 	FacetNotEmptyChecker facetNotEmptyChecker{state};
 	benchQuery(q, state, facetNotEmptyChecker);
 }
+
+}  // namespace reindexer_benchmarks

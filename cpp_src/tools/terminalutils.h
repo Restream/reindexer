@@ -12,4 +12,5 @@ TerminalSize getTerminalSize();
 int getStringTerminalWidth(std::string_view str);
 bool isStdoutRedirected();
 bool isStdinRedirected();
+bool isStdoutAnsiSupported();
 }  // namespace reindexer

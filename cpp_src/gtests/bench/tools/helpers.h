@@ -12,11 +12,11 @@
 using reindexer::Variant;
 using reindexer::VariantArray;
 using reindexer::p_string;
-
 namespace reindexer {
 class Reindexer;
 }  // namespace reindexer
 
+namespace reindexer_benchmarks {
 namespace internal {
 
 template <typename T>
@@ -131,3 +131,5 @@ std::string FormatString(const char* msg, ...);
 std::string HumanReadableNumber(size_t number, bool si, const std::string& unitLabel = "");
 
 std::shared_ptr<reindexer::Reindexer> InitBenchDB(std::string_view dbDir);
+
+}  // namespace reindexer_benchmarks

@@ -36,15 +36,15 @@ public:
 
 private:
 	HNSWIterator& next() & noexcept {
-		compIdx_ = (compIdx_ + 1) % map_.fstdistfunc_.Dims();
+		compIdx_ = (compIdx_ + 1) % map_.fstdistfunc_.Dim();
 		internalIdIdx_ += compIdx_ == 0;
 		return *this;
 	}
 
 	HNSWIterator& offset(size_t _offset) & noexcept {
-		auto newCompIdx = compIdx_ + _offset % map_.fstdistfunc_.Dims();
-		internalIdIdx_ += _offset / map_.fstdistfunc_.Dims() + newCompIdx / map_.fstdistfunc_.Dims();
-		compIdx_ = newCompIdx % map_.fstdistfunc_.Dims();
+		auto newCompIdx = compIdx_ + _offset % map_.fstdistfunc_.Dim();
+		internalIdIdx_ += _offset / map_.fstdistfunc_.Dim() + newCompIdx / map_.fstdistfunc_.Dim();
+		compIdx_ = newCompIdx % map_.fstdistfunc_.Dim();
 
 		internalIdIdx_ = std::min<int>(internalIdIdx_, splitIndexes_.size());
 		return *this;
@@ -59,7 +59,7 @@ private:
 
 template <typename DataHandlerT>
 class [[nodiscard]] HNSWViewIterator {
-	size_t step(const DataHandlerT& map) const noexcept { return map.fstdistfunc_.Dims() * kSampleBatchSize; }
+	size_t step(const DataHandlerT& map) const noexcept { return map.fstdistfunc_.Dim() * kSampleBatchSize; }
 
 public:
 	explicit HNSWViewIterator(const DataHandlerT& map, const std::vector<tableint>& splitIndexes)
@@ -188,7 +188,7 @@ private:
 		switch (type) {
 			case ScalarQuantizeType::Full:
 			case ScalarQuantizeType::Partial: {
-				next(compIdx_, internalId_, map_.fstdistfunc_.Dims());
+				next(compIdx_, internalId_, map_.fstdistfunc_.Dim());
 				break;
 			}
 			case ScalarQuantizeType::Component: {
@@ -205,7 +205,7 @@ private:
 		switch (type) {
 			case ScalarQuantizeType::Full:
 			case ScalarQuantizeType::Partial: {
-				offset(compIdx_, internalId_, _offset, map_.fstdistfunc_.Dims());
+				offset(compIdx_, internalId_, _offset, map_.fstdistfunc_.Dim());
 				break;
 			}
 			case ScalarQuantizeType::Component: {
@@ -236,10 +236,10 @@ class [[nodiscard]] HNSWViewIterator {
 	size_t step(const DataHandlerT& map) const noexcept {
 		switch (type) {
 			case ScalarQuantizeType::Full: {
-				return map.fstdistfunc_.Dims() * map.cur_element_count;
+				return map.fstdistfunc_.Dim() * map.cur_element_count;
 			}
 			case ScalarQuantizeType::Partial: {
-				return map.fstdistfunc_.Dims() * kPartialSampleBatchSize;
+				return map.fstdistfunc_.Dim() * kPartialSampleBatchSize;
 				break;
 			}
 			case ScalarQuantizeType::Component: {
@@ -294,7 +294,7 @@ class [[nodiscard]] HNSWView {
 				return paritalSplitIndexes_.size() / kPartialSampleBatchSize + paritalSplitIndexes_.size() % kPartialSampleBatchSize;
 			}
 			case ScalarQuantizeType::Component: {
-				return map.fstdistfunc_.Dims();
+				return map.fstdistfunc_.Dim();
 			}
 			default:
 				assertrx(false);

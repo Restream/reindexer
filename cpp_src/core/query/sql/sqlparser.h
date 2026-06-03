@@ -22,6 +22,11 @@ class [[nodiscard]] SQLParser {
 	enum class [[nodiscard]] Nested : bool { Yes = true, No = false };
 
 public:
+	class [[nodiscard]] ErrorEOF : public Error {
+	public:
+		ErrorEOF() noexcept;
+	};
+
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
 	/// @return parsed query
@@ -86,7 +91,7 @@ protected:
 
 	/// Parse where entries
 	template <Nested>
-	void parseWhere(Tokenizer& parser);
+	void parseWhere(Tokenizer& parser, TokenizerRange whereLocation);
 	template <typename T>
 	void parseWhereCondition(Tokenizer&, T&& firstArg, OpType);
 
@@ -123,12 +128,12 @@ protected:
 
 	Query parseSubQuery(Tokenizer& parser);
 
-	void parseArray(Tokenizer& parser, std::string_view tokText, UpdateEntry* updateField) const;
+	void parseArray(Tokenizer& parser, const Token& tok, UpdateEntry* updateField) const;
 	void parseCommand(Tokenizer& parser) const;
 	VariantArray parseValues(Tokenizer& parser) const;
 	CondType parseCondition(Tokenizer& parser, OpType& op);
 
-	static CondType getCondType(std::string_view cond);
+	static CondType getCondType(const Token& cond, TokenizerRange tokenPosition);
 
 	SqlParsingCtx ctx_;
 	Query& query_;

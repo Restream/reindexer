@@ -3,6 +3,8 @@
 #include "cluster_operation_api.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] ClusterOperationAsyncApi : public ClusterOperationApi {
 public:
 	void SetUp() override {	 // -V524
@@ -16,3 +18,5 @@ public:
 		return defs;
 	}
 };
+
+}  // namespace reindexer_tests

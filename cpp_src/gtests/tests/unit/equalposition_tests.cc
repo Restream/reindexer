@@ -1,9 +1,12 @@
 #include "equalpositionapi.h"
 #include "gtests/tests/gtest_cout.h"
 
+namespace reindexer_tests {
+
 using QueryResults = ReindexerApi::QueryResults;
 using Item = ReindexerApi::Item;
 using Reindexer = ReindexerApi::Reindexer;
+using reindexer::IndexOpts;
 
 static bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
 	const auto res = key1.Compare<reindexer::NotComparable::Return, reindexer::NullsHandling::NotComparable>(key2);
@@ -301,3 +304,5 @@ TEST_F(EqualPositionApi, EqualPositionBrackets) {
 	check("SELECT id FROM ns2 WHERE a1=10 AND  a2=20  AND (id1=11 or id1=12) equal_position(a1, a2)", R"#({"id":0})#");
 	check("SELECT id FROM ns2 WHERE a1=10 AND  a2=20  AND equal_position(a1, a2) (id1=11 or id1=12)", R"#({"id":0})#");
 }
+
+}  // namespace reindexer_tests

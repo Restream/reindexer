@@ -1,5 +1,7 @@
 #include "tokenizer.h"
+#include "core/formatters/tokenizer_range.h"
 #include "double-conversion/double-conversion.h"
+#include "tools/errors.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -52,12 +54,14 @@ Token Tokenizer::NextToken(Flags flgs) {
 		while (++cur_ != q_.end() && *cur_ != '"') {
 			if (pos_ == startPos) {
 				if (*cur_ != '#' && *cur_ != '_' && !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
-					throw Error{errParseSQL, "Identifier should starts with alpha, digit, '_', '#' or '@', but found '{}'; {}", *cur_,
-								Where()};
+					const auto range = Where();
+					throw SqlParserError{range, "Identifier should starts with alpha, digit, '_', '#' or '@', but found '{}'; {}", *cur_,
+										 range};
 				}
 			} else if (*cur_ != '+' && *cur_ != '.' && *cur_ != '_' && *cur_ != '#' && *cur_ != '[' && *cur_ != ']' && *cur_ != '*' &&
 					   !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
-				throw Error{errParseSQL, "Identifier should not contain '{}'; {}", *cur_, Where()};
+				const auto range = Where();
+				throw SqlParserError{range, "Identifier should not contain '{}'; {}", *cur_, range};
 			}
 			res.text_.push_back(flgs.HasToLower() ? tolower(*cur_) : *cur_);
 			++pos_;
@@ -66,7 +70,8 @@ Token Tokenizer::NextToken(Flags flgs) {
 			res.text_.push_back('"');
 		}
 		if (cur_ == q_.end()) {
-			throw Error{errParseSQL, "Not found close '\"'; {}", Where()};
+			const auto range = Where();
+			throw SqlParserError{range, "Not found close '\"'; {}", range};
 		}
 		++cur_;
 		++pos_;
@@ -138,7 +143,7 @@ Token Tokenizer::NextToken(Flags flgs) {
 
 size_t Tokenizer::GetPrevPos() const {
 	if (pos_ == 0) [[unlikely]] {
-		throw Error(errLogic, "Tokenizer pos is 0");
+		throw SqlParserError(TokenizerRange{}, "Tokenizer pos is 0");
 	}
 
 	// undo skip space
@@ -162,24 +167,17 @@ size_t Tokenizer::GetPrevPos() const {
 	}
 }
 
-std::string Tokenizer::Where(size_t startPos, size_t lastPos) {
-	size_t line = 1;
-	size_t startColumn = 0;
-	charMultilinePos(q_, startPos, 0, line, startColumn);
+TokenizerRange Tokenizer::Where(size_t startPos, size_t lastPos) const noexcept {
+	TokenizerRange result;
+	charMultilinePos(q_, startPos, 0, result.lineStart, result.columnStart);
 
-	size_t lastColumn = startColumn;
-	charMultilinePos(q_, lastPos, startPos, line, lastColumn);
-
-	return std::string()
-		.append("line: ")
-		.append(std::to_string(line))
-		.append(" column: ")
-		.append(std::to_string(startColumn))
-		.append(" ")
-		.append(std::to_string(lastColumn));
+	result.lineEnd = result.lineStart;
+	result.columnEnd = result.columnStart;
+	charMultilinePos(q_, lastPos, startPos, result.lineEnd, result.columnEnd);
+	return result;
 }
 
-std::string Tokenizer::Where() {
+TokenizerRange Tokenizer::Where() {
 	size_t curPos = cur_ - q_.begin();
 	size_t lastPos = q_.length();
 	if (pos_ != lastPos) {
@@ -190,7 +188,7 @@ std::string Tokenizer::Where() {
 	return Where(curPos, lastPos);
 }
 
-std::string Tokenizer::Where(const Token& token) {
+TokenizerRange Tokenizer::Where(const Token& token) const noexcept {
 	size_t startPos = token.pos_;
 	size_t lastPos = startPos + token.Text().length();
 	if (lastPos >= q_.length()) {

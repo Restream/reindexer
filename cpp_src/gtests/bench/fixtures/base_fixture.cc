@@ -6,6 +6,8 @@
 #include "allocs_tracker.h"
 #include "core/system_ns_names.h"
 
+namespace reindexer_benchmarks {
+
 reindexer::Error BaseFixture::Initialize() {
 	assertrx(db_);
 	return db_->AddNamespace(nsdef_);
@@ -32,7 +34,7 @@ std::string BaseFixture::RandString() {
 // FIXTURES
 
 void BaseFixture::Insert(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (int i = 0; i < id_seq_->Count(); ++i) {
 			auto item = MakeItem(state);
@@ -49,8 +51,8 @@ void BaseFixture::Insert(State& state) {
 	}
 }
 
-void BaseFixture::Update(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+void BaseFixture::Update(::benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
 	id_seq_->Reset();
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeItem(state);
@@ -87,3 +89,5 @@ void BaseFixture::WaitForOptimization() {
 		std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	}
 }
+
+}  // namespace reindexer_benchmarks

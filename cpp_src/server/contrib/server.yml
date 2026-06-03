@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.13.0
+  version: 5.14.0
 servers:
   - url: /api/v1
 tags:
@@ -1742,6 +1742,130 @@ paths:
             text/plain:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
+  /query/convert/sql:
+    post:
+      tags:
+        - queries
+      summary: Convert SQL query
+      description: Get SQL query and convert it into sql, prettified sql or dsl formats
+      operationId: convertSqlQuery
+      parameters:
+        - name: to
+          in: query
+          description: Output format
+          required: true
+          schema:
+            type: string
+            enum:
+              - sql
+              - pretty_sql
+              - dsl
+      requestBody:
+        description: SQL query
+        content:
+          '*/*':
+            schema:
+              type: string
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryConversionResponse'
+        '400':
+          description: Invalid arguments supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '404':
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '408':
+          description: Context timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '500':
+          description: Unexpected internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+  /query/convert/dsl:
+    post:
+      tags:
+        - queries
+      summary: Convert DSL query
+      description: Get DSL query and convert it into sql, prettified sql or dsl formats
+      operationId: convertDslQuery
+      parameters:
+        - name: to
+          in: query
+          description: Output format
+          required: true
+          schema:
+            type: string
+            enum:
+              - sql
+              - pretty_sql
+              - dsl
+      requestBody:
+        description: DSL query
+        content:
+          '*/*':
+            schema:
+              $ref: '#/components/schemas/Query'
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryConversionResponse'
+        '400':
+          description: Invalid arguments supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '404':
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '408':
+          description: Context timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '500':
+          description: Unexpected internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
   /db/{database}/query:
     get:
       tags:
@@ -1816,31 +1940,31 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
         '403':
           description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
         '404':
           description: Entry not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
         '408':
           description: Context timeout
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
         '500':
           description: Unexpected internal error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
     put:
       tags:
         - queries
@@ -2837,31 +2961,31 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
         '403':
           description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
         '404':
           description: Entry not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
         '408':
           description: Context timeout
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
         '500':
           description: Unexpected internal error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/SqlStatusResponse'
       x-codegen-request-body-name: q
   /check:
     get:
@@ -4608,6 +4732,10 @@ components:
           description: Enable search of concatenated adjacent terms. e.g. terms 'di
             caprio' will match word 'dicaprio'
           default: true
+        enable_terms_split:
+          type: boolean
+          description: Enable search of term parts. e.g. terms 'dicaprio' will match words 'di' and 'caprio' (works only for terms without + and -)
+          default: true
         enable_translit:
           type: boolean
           description: Enable russian translit variants processing. e.g. term 'luntik'
@@ -4906,6 +5034,11 @@ components:
               minimum: 0
               type: integer
               description: Base relevancy of concatenated terms match
+            split_proc:
+              maximum: 500
+              minimum: 0
+              type: integer
+              description: Base relevancy of term parts match              
             prefix_min_proc:
               maximum: 500
               minimum: 0
@@ -5104,6 +5237,8 @@ components:
             type: object
             properties: {}
     SuggestItems:
+      required:
+        - suggests
       type: object
       properties:
         suggests:
@@ -5111,6 +5246,44 @@ components:
           description: Suggested query autocompletion variants
           items:
             type: string
+        error:
+          type: string
+          description: Error message
+        error_location:
+          type: object
+          description: Error position
+          properties:
+            line_start:
+              type: integer
+              minimum: 0
+              description: Line where the error starts, starting from 0
+            column_start:
+              type: integer
+              minimum: 0
+              description: Error position in bytes, starting from 0
+            line_end:
+              type: integer
+              minimum: 0
+              description: Line where the error ends, starting from 0
+            column_end:
+              type: integer
+              minimum: 0
+              description: Error position in bytes, starting from 0
+    QueryConversionResponse:
+      type: object
+      properties:
+        format:
+          type: string
+          enum:
+            - sql
+            - pretty_sql
+            - dsl
+        query:
+          oneOf:
+            - $ref: '#/components/schemas/Query'
+              description: query in DSL format
+            - type: string
+              description: SQL or prettified SQL query string
     QueryItems:
       type: object
       properties:
@@ -5472,6 +5645,41 @@ components:
         description:
           type: string
           description: Text description of error details
+    SqlStatusResponse:
+      required:
+        - success
+        - response_code
+        - description
+      type: object
+      properties:
+        success:
+          type: boolean
+        response_code:
+          type: integer
+          description: Duplicates HTTP response code
+        description:
+          type: string
+          description: Text description of error details
+        location:
+          type: object
+          description: Error location
+          properties:
+            line_start:
+              type: integer
+              minimum: 0
+              description: Line where the error starts, starting from 0
+            column_start:
+              type: integer
+              minimum: 0
+              description: Error position in bytes, starting from 0
+            line_end:
+              type: integer
+              minimum: 0
+              description: Line where the error ends, starting from 0
+            column_end:
+              type: integer
+              minimum: 0
+              description: Error position in bytes, starting from 0
     ItemsUpdateResponse:
       type: object
       properties:

@@ -2,6 +2,8 @@
 #include "server/dbmanager.h"
 #include "tools/dsn.h"
 
+namespace reindexer_tests {
+
 bool WithSecurity() noexcept;
 std::string TLSPath() noexcept;
 
@@ -32,7 +34,10 @@ reindexer::DSN MakeDsn(reindexer_server::UserRole role, const ServerControlInter
 	return MakeDsn(role, sc->Id(), sc->RpcPort(), sc->DbName());
 }
 
+}  // namespace reindexer_tests
+
 namespace reindexer {
+
 inline bool operator==(const reindexer::DSN& lhs, const reindexer::DSN& rhs) {
 	return (&reindexer::operator== <reindexer::DSN>)(lhs, rhs) || fmt::format("{}", lhs) == fmt::format("{}", rhs);
 }
@@ -43,4 +48,5 @@ inline bool operator==(const std::string& lhs, const reindexer::DSN& rhs) {
 }
 
 inline bool operator!=(const reindexer::DSN& lhs, const reindexer::DSN& rhs) { return !(lhs == rhs); }
+
 }  // namespace reindexer

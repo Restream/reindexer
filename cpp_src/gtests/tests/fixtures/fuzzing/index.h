@@ -10,6 +10,8 @@ namespace reindexer {
 class IndexDef;
 }  // namespace reindexer
 
+namespace reindexer_tests {
+
 namespace fuzzing {
 
 class RandomGenerator;
@@ -52,3 +54,5 @@ private:
 };
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

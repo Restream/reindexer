@@ -39,7 +39,7 @@ private:
 	void embedFieldValue(TagType, int field, Context& ctx, size_t idx) const;
 	void updateObject(Context&, TagName) const;
 	void updateArrayItem(TagType arrayType, const Variant& newValue, Context&) const;
-	void writeCTag(const ctag& tag, Context& ctx);
+	void writeCTag(const ctag& tag, const FieldProperties&, Context& ctx);
 	void updateArray(TagType atagType, uint32_t count, TagName, Context&);
 	void copyArray(TagName, Context&);
 	UpdateTagType determineUpdateTagType(const Context& ctx, int field) const;

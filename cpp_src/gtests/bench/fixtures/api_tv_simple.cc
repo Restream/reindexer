@@ -1,15 +1,21 @@
 #include "api_tv_simple.h"
 #include <thread>
 #include "allocs_tracker.h"
+#include "base_fixture.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/nsselecter/joins/items_processor.h"
+#include "core/nsselecter/joins/preselect.h"
+#include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
+#include "core/system_ns_names.h"
 #include "helpers.h"
 #include "tools/string_regexp_functions.h"
 
 using reindexer::Query;
+using reindexer::IndexOpts;
 
 constexpr char kJoinNamespace[] = "JoinItems";
+
+namespace reindexer_benchmarks {
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
 constexpr benchmark::IterationCount k0CondJoinIters = 8;
@@ -63,18 +69,18 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondInnerJoin3CondTotal", &ApiTvSimple::Query2CondInnerJoin3Cond<ReqTotal>, this);
 	Register("Query2CondInnerJoin3CondCachedTotal", &ApiTvSimple::Query2CondInnerJoin3Cond<CachedTotal>, this);
 
-	Register("Query3Cond", &ApiTvSimple::Query3Cond<NoTotal>, BasePtr());
-	Register("Query3CondTotal", &ApiTvSimple::Query3Cond<ReqTotal>, BasePtr());
-	Register("Query3CondCachedTotal", &ApiTvSimple::Query3Cond<CachedTotal>, BasePtr());
+	Register("Query3Cond", &ApiTvSimple::Query3Cond<NoTotal, AscSort>, BasePtr());
+	Register("Query3CondTotal", &ApiTvSimple::Query3Cond<ReqTotal, AscSort>, BasePtr());
+	Register("Query3CondCachedTotal", &ApiTvSimple::Query3Cond<CachedTotal, AscSort>, BasePtr());
 	Register("Query3CondKillIdsCache", &ApiTvSimple::Query3CondKillIdsCache, BasePtr());
 	Register("Query3CondRestoreIdsCache", &ApiTvSimple::Query3CondRestoreIdsCache, BasePtr());
 
-	Register("Query4Cond", &ApiTvSimple::Query4Cond<NoTotal>, BasePtr());
-	Register("Query4CondTotal", &ApiTvSimple::Query4Cond<ReqTotal>, BasePtr());
-	Register("Query4CondCachedTotal", &ApiTvSimple::Query4Cond<CachedTotal>, BasePtr());
-	Register("Query4CondRange", &ApiTvSimple::Query4CondRange<NoTotal>, BasePtr())->Iterations(kQuery4CondIters);
-	Register("Query4CondRangeTotal", &ApiTvSimple::Query4CondRange<ReqTotal>, BasePtr())->Iterations(kQuery4CondIters);
-	Register("Query4CondRangeCachedTotal", &ApiTvSimple::Query4CondRange<CachedTotal>, BasePtr())->Iterations(kQuery4CondIters);
+	Register("Query4Cond", &ApiTvSimple::Query4Cond<NoTotal, AscSort>, BasePtr());
+	Register("Query4CondTotal", &ApiTvSimple::Query4Cond<ReqTotal, AscSort>, BasePtr());
+	Register("Query4CondCachedTotal", &ApiTvSimple::Query4Cond<CachedTotal, AscSort>, BasePtr());
+	Register("Query4CondRange", &ApiTvSimple::Query4CondRange<NoTotal, AscSort>, BasePtr())->Iterations(kQuery4CondIters);
+	Register("Query4CondRangeTotal", &ApiTvSimple::Query4CondRange<ReqTotal, AscSort>, BasePtr())->Iterations(kQuery4CondIters);
+	Register("Query4CondRangeCachedTotal", &ApiTvSimple::Query4CondRange<CachedTotal, AscSort>, BasePtr())->Iterations(kQuery4CondIters);
 
 	Register("QueryForcedSortHash", &ApiTvSimple::QueryForcedSortHash, this);
 	Register("QueryForcedSortTree", &ApiTvSimple::QueryForcedSortTree, this);
@@ -95,11 +101,79 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("SubQuerySet", &ApiTvSimple::SubQuerySet, this);
 	Register("SubQueryAggregate", &ApiTvSimple::SubQueryAggregate, this);
 
-	// Those benches should be last, because they are recreating indexes cache
+	// ===========================================================================================================================
+	// !!! Those benchmarks are recreating indexes cache !!!
 	Register("Query4CondRangeDropCache", &ApiTvSimple::Query4CondRangeDropCache<NoTotal>, this)->Iterations(kQuery4CondIters);
 	Register("Query4CondRangeDropCacheTotal", &ApiTvSimple::Query4CondRangeDropCache<ReqTotal>, this)->Iterations(kQuery4CondIters);
 	Register("Query4CondRangeDropCacheCachedTotal", &ApiTvSimple::Query4CondRangeDropCache<CachedTotal>, this)
 		->Iterations(kQuery4CondIters);
+
+	// ===========================================================================================================================
+	// BEGIN: Benchmarks without background index optimization. Target checks:
+	// 1. Optimal sorting index detection, when there are no explicit sorting specified
+	// 2. Optimal plan selection, when explicit sorting is specified and scheduler have to choose between general sort and sorting
+	// btree-index
+	Register("DisableBackgroundIndexOptimization", &ApiTvSimple::DisableBackgroundIndexOptimization, this)->Iterations(1);
+
+	Register("NoOpt/Query1Cond/NoSort", &ApiTvSimple::Query1Cond<NoTotal>, BasePtr());
+	Register("NoOpt/Query1CondTotal/NoSort", &ApiTvSimple::Query1Cond<ReqTotal>, BasePtr());
+
+	Register("NoOpt/Query2Cond/NoSort", &ApiTvSimple::Query2Cond<NoTotal>, BasePtr());
+	Register("NoOpt/Query2CondTotal/NoSort", &ApiTvSimple::Query2Cond<ReqTotal>, BasePtr());
+
+	Register("NoOpt/Query3Cond/NoSort", &ApiTvSimple::Query3Cond<NoTotal, NoSort>, BasePtr());
+	Register("NoOpt/Query3CondTotal/NoSort", &ApiTvSimple::Query3Cond<ReqTotal, NoSort>, BasePtr());
+	Register("NoOpt/Query3Cond/WithSort", &ApiTvSimple::Query3Cond<NoTotal, AscSort>, BasePtr());
+	Register("NoOpt/Query3CondTotal/WithSort", &ApiTvSimple::Query3Cond<ReqTotal, AscSort>, BasePtr());
+
+	Register("NoOpt/Query3CondOr/NoSort", &ApiTvSimple::Query3CondOr<NoTotal, NoSort>, this);
+	Register("NoOpt/Query3CondOrTotal/NoSort", &ApiTvSimple::Query3CondOr<ReqTotal, NoSort>, this);
+	Register("NoOpt/Query3CondOr/WithSort", &ApiTvSimple::Query3CondOr<NoTotal, AscSort>, this);
+	Register("NoOpt/Query3CondOrTotal/WithSort", &ApiTvSimple::Query3CondOr<ReqTotal, AscSort>, this);
+
+	Register("NoOpt/Query4Cond/NoSort", &ApiTvSimple::Query4Cond<NoTotal, NoSort>, BasePtr());
+	Register("NoOpt/Query4CondTotal", &ApiTvSimple::Query4Cond<ReqTotal, NoSort>, BasePtr());
+	Register("NoOpt/Query4CondCachedTotal/NoSort", &ApiTvSimple::Query4Cond<CachedTotal, NoSort>, BasePtr());
+	Register("NoOpt/Query4Cond/WithSort", &ApiTvSimple::Query4Cond<NoTotal, AscSort>, BasePtr());
+	Register("NoOpt/Query4CondTotal/WithSort", &ApiTvSimple::Query4Cond<ReqTotal, AscSort>, BasePtr());
+	Register("NoOpt/Query4CondCachedTotal/WithSort", &ApiTvSimple::Query4Cond<CachedTotal, AscSort>, BasePtr());
+
+	Register("NoOpt/Query4CondRange/NoSort", &ApiTvSimple::Query4CondRange<NoTotal, NoSort>, BasePtr());
+	Register("NoOpt/Query4CondRangeTotal/NoSort", &ApiTvSimple::Query4CondRange<ReqTotal, NoSort>, BasePtr());
+	Register("NoOpt/Query4CondRange/WithSort", &ApiTvSimple::Query4CondRange<NoTotal, AscSort>, BasePtr());
+	Register("NoOpt/Query4CondRangeTotal/WithSort", &ApiTvSimple::Query4CondRange<ReqTotal, AscSort>, BasePtr());
+
+	Register("NoOpt/Query3CondRangeDistinctLowSelNoUnordered/NoSort",
+			 &ApiTvSimple::Query3CondRangeDistinctLowSelNoUnordered<NoTotal, NoSort>, this);
+	Register("NoOpt/Query3CondRangeDistinctLowSelNoUnorderedTotal/NoSort",
+			 &ApiTvSimple::Query3CondRangeDistinctLowSelNoUnordered<ReqTotal, NoSort>, this);
+	Register("NoOpt/Query3CondRangeDistinctLowSelNoUnordered/WithSort",
+			 &ApiTvSimple::Query3CondRangeDistinctLowSelNoUnordered<NoTotal, AscSort>, this);
+	Register("NoOpt/Query3CondRangeDistinctLowSelNoUnorderedTotal/WithSort",
+			 &ApiTvSimple::Query3CondRangeDistinctLowSelNoUnordered<ReqTotal, AscSort>, this);
+
+	Register("NoOpt/Query4CondRangeDistinctHighSel/NoSort", &ApiTvSimple::Query4CondRangeDistinctHighSel<NoTotal, NoSort>, this);
+	Register("NoOpt/Query4CondRangeDistinctHighSelTotal/NoSort", &ApiTvSimple::Query4CondRangeDistinctHighSel<ReqTotal, NoSort>, this);
+	Register("NoOpt/Query4CondRangeDistinctLowSel/NoSort", &ApiTvSimple::Query4CondRangeDistinctLowSel<NoTotal, NoSort>, this);
+	Register("Query4CondRangeDistinctLowSelTotal/NoSort", &ApiTvSimple::Query4CondRangeDistinctLowSel<ReqTotal, NoSort>, this);
+	Register("NoOpt/Query4CondRangeDistinctHighSel/WithSort", &ApiTvSimple::Query4CondRangeDistinctHighSel<NoTotal, AscSort>, this);
+	Register("NoOpt/Query4CondRangeDistinctHighSelTotal/WithSort", &ApiTvSimple::Query4CondRangeDistinctHighSel<ReqTotal, AscSort>, this);
+	Register("NoOpt/Query4CondRangeDistinctLowSel/WithSort", &ApiTvSimple::Query4CondRangeDistinctLowSel<NoTotal, AscSort>, this);
+	Register("NoOpt/Query4CondRangeDistinctLowSelTotal/WithSort", &ApiTvSimple::Query4CondRangeDistinctLowSel<ReqTotal, AscSort>, this);
+
+	Register("NoOpt/QueryWithBrackets/WithSort", &ApiTvSimple::QueryUncommitedWithBrackets<NoTotal>, this);
+	Register("NoOpt/QueryWithBracketsTotal/WithSort", &ApiTvSimple::QueryUncommitedWithBrackets<ReqTotal>, this);
+
+	Register("NoOpt/QueryWithUnorderedCond/WithSort", &ApiTvSimple::QueryUncommitedWithUnorderedCond<NoTotal>, this);
+	Register("NoOpt/QueryWithUnorderedCondTotal/WithSort", &ApiTvSimple::QueryUncommitedWithUnorderedCond<ReqTotal>, this);
+
+	Register("NoOpt/Query2CondInnerJoin3Cond/WithSort", &ApiTvSimple::Query2CondInnerJoin3Cond<NoTotal>, this);
+	Register("NoOpt/Query2CondInnerJoin3CondTotal/WithSort", &ApiTvSimple::Query2CondInnerJoin3Cond<ReqTotal>, this);
+	Register("NoOpt/Query2CondInnerJoin3CondCachedTotal/WithSort", &ApiTvSimple::Query2CondInnerJoin3Cond<CachedTotal>, this);
+
+	Register("RestoreBackgroundIndexOptimization", &ApiTvSimple::RestoreBackgroundIndexOptimization, this)->Iterations(1);
+	// END: Benchmarks without background index optimization
+
 	//  NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
@@ -270,7 +344,7 @@ reindexer::Item ApiTvSimple::MakeItem(benchmark::State&) {
 // FIXTURES
 
 void ApiTvSimple::WarmUpIndexes(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Error err;
 
@@ -468,9 +542,9 @@ void ApiTvSimple::Query2CondInnerJoin3Cond(benchmark::State& state) {
 				 .Where("year", CondRange, {2010, 2016})
 				 .InnerJoin("price_id", "id", CondSet, std::move(q4join))
 				 .Sort("year", false)
+
 				 .Limit(20);
 	Total::Apply(q);
-
 	benchQuery(q, state);
 }
 
@@ -535,7 +609,7 @@ void ApiTvSimple::Query0CondInnerPreSelectStoreValues(benchmark::State& state) {
 		createNs(leftNs[i]);
 		fill(leftNs[i], 0, maxLeftNsRowCount);
 	}
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		std::vector<std::thread> threads;
 		threads.reserve(leftNs.size());
@@ -561,7 +635,82 @@ void ApiTvSimple::Query0CondInnerPreSelectStoreValues(benchmark::State& state) {
 template <typename Total>
 void ApiTvSimple::Query4CondRangeDropCache(benchmark::State& state) {
 	IndexCacheSetter cacheDropper(*db_);
-	Query4CondRange<Total>(state);
+	Query4CondRange<Total, BaseFixture::AscSort>(state);
+}
+
+void ApiTvSimple::DisableBackgroundIndexOptimization(benchmark::State& state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		{
+			// Save current config
+			reindexer::QueryResults result;
+			auto err = db_->Select(Query(reindexer::kConfigNamespace).Where("type", CondEq, "namespaces"), result);
+			if (!err.ok()) {
+				state.SkipWithError(err.what());
+			}
+			assertrx(result.Count() == 1);
+			auto configItem = result.begin().GetItem(false);
+			configBackupJson_ = configItem.GetJSON();
+		}
+
+		{
+			// Disable background index optimization
+			reindexer::WrSerializer ser;
+			reindexer::JsonBuilder jb(ser);
+
+			jb.Put("type", "namespaces");
+			auto nsArray = jb.Array("namespaces");
+			auto ns = nsArray.Object();
+
+			ns.Put("namespace", nsdef_.name);
+			ns.Put("optimization_timeout_ms", 0);
+			ns.End();
+
+			nsArray.End();
+			jb.End();
+
+			auto item = db_->NewItem(nsdef_.name);
+			if (!item.Status().ok()) {
+				state.SkipWithError(item.Status().what());
+			}
+			auto err = item.FromJSON(ser.Slice());
+			if (!err.ok()) {
+				state.SkipWithError(err.what());
+			}
+			err = db_->Upsert(reindexer::kConfigNamespace, item);
+			if (!err.ok()) {
+				state.SkipWithError(err.what());
+			}
+		}
+		{
+			// Update item to reset optimized state
+			auto item = MakeItem(state);
+			if (!item.Status().ok()) {
+				state.SkipWithError(item.Status().what());
+			}
+
+			auto err = db_->Update(nsdef_.name, item);
+			if (!err.ok()) {
+				state.SkipWithError(err.what());
+			}
+		}
+	}
+}
+
+void ApiTvSimple::RestoreBackgroundIndexOptimization(benchmark::State& state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		auto item = db_->NewItem(nsdef_.name);
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what());
+		}
+		auto err = item.FromJSON(configBackupJson_);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+		err = db_->Upsert(reindexer::kConfigNamespace, item);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+	}
 }
 
 void ApiTvSimple::query2CondIdSet(benchmark::State& state, const std::vector<std::vector<int>>& idsets) {
@@ -597,3 +746,120 @@ void ApiTvSimple::Query2CondIdSet100(benchmark::State& state) { query2CondIdSet(
 void ApiTvSimple::Query2CondIdSet500(benchmark::State& state) { query2CondIdSet(state, idsets_.at(500)); }
 void ApiTvSimple::Query2CondIdSet2000(benchmark::State& state) { query2CondIdSet(state, idsets_.at(2000)); }
 void ApiTvSimple::Query2CondIdSet20000(benchmark::State& state) { query2CondIdSet(state, idsets_.at(20000)); }
+
+template <typename Total, typename Sort>
+void ApiTvSimple::Query3CondOr(benchmark::State& state) {
+	const auto q = [&] {
+		auto q =
+			Query(nsdef_.name).Where("genre", CondEq, 5).Where("year", CondRange, {2012, 2016}).Or().Where("year", CondEq, 2010).Limit(20);
+		Total::Apply(q);
+		Sort::Apply(q, "year");
+		return q;
+	};
+	benchQuery(q, state);
+}
+
+template <typename Total>
+void ApiTvSimple::QueryUncommitedWithBrackets(benchmark::State& state) {
+	const auto q = [&] {
+		const int startTime = random<int>(0, 30000);
+		const int endTime = startTime + 10000;
+
+		auto q = Query(nsdef_.name)
+					 .Where("year", CondRange, {2012, 2016})
+					 .Where("genre", CondEq, 5)
+					 .Or()
+					 .OpenBracket()
+					 .Where("year", CondLe, 2010)
+					 .Where("start_time", CondGt, startTime)
+					 .Where("end_time", CondLt, endTime)
+					 .CloseBracket()
+					 .Sort("year", false)
+					 .Limit(20);
+		Total::Apply(q);
+		return q;
+	};
+	benchQuery(q, state);
+}
+
+template <typename Total>
+void ApiTvSimple::QueryUncommitedWithUnorderedCond(benchmark::State& state) {
+	const auto q = [&] {
+		const int startTime = random<int>(0, 30000);
+		const int endTime = startTime + 10000;
+
+		auto q = Query(nsdef_.name)
+					 .Where("year", CondSet, {2010, 2012, 2014})
+					 .Where("start_time", CondGt, startTime)
+					 .Or()
+					 .Where("end_time", CondLt, endTime)
+					 .Where("year", CondRange, {2012, 2016})
+					 .Where("genre", CondEq, 5)
+					 .Sort("year", false)
+					 .Limit(20);
+		Total::Apply(q);
+		return q;
+	};
+	benchQuery(q, state);
+}
+
+template <typename Total, typename Sort>
+void ApiTvSimple::Query3CondRangeDistinctLowSelNoUnordered(State& state) {
+	const auto q = [&] {
+		const int startTime = random<int>(0, 30000);
+		const int endTime = startTime + 10000;
+
+		auto q = Query(nsdef_.name)
+					 .Where("year", CondRange, {2010, 2016})
+					 .Where("start_time", CondGt, startTime)
+					 .Where("end_time", CondLt, endTime)
+					 .Distinct("end_time")
+					 .Limit(20);
+		Total::Apply(q);
+		Sort::Apply(q, "end_time");
+		return q;
+	};
+	benchQuery(q, state);
+}
+
+template <typename Total, typename Sort>
+void ApiTvSimple::Query4CondRangeDistinctHighSel(State& state) {
+	const auto q = [&] {
+		const int startTime = random<int>(0, 30000);
+		const int endTime = startTime + 10000;
+
+		auto q = Query(nsdef_.name)
+					 .Where("genre", CondEq, 5)
+					 .Where("year", CondRange, {2010, 2016})
+					 .Where("start_time", CondGt, startTime)
+					 .Where("end_time", CondLt, endTime)
+					 .Distinct("year")
+					 .Limit(20);
+		Total::Apply(q);
+		Sort::Apply(q, "year");
+		return q;
+	};
+	benchQuery(q, state);
+}
+
+template <typename Total, typename Sort>
+void ApiTvSimple::Query4CondRangeDistinctLowSel(State& state) {
+	const auto q = [&] {
+		const int startTime = random<int>(0, 30000);
+		const int endTime = startTime + 10000;
+
+		auto q = Query(nsdef_.name)
+					 .Where("genre", CondEq, 5)
+					 .Where("year", CondRange, {2010, 2016})
+					 .Where("start_time", CondGt, startTime)
+					 .Where("end_time", CondLt, endTime)
+					 .Distinct("end_time")
+					 .Limit(20);
+		Total::Apply(q);
+		Sort::Apply(q, "year");
+		return q;
+	};
+	benchQuery(q, state);
+}
+
+}  // namespace reindexer_benchmarks

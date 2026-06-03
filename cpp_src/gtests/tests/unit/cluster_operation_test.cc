@@ -5,7 +5,10 @@
 #include "gtests/tools.h"
 #include "yaml-cpp/yaml.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
+using reindexer_tests_tools::exceptionWrapper;
 
 TEST_F(ClusterOperationApi, LeaderElections) {
 	// Check leader election on deffirent conditions
@@ -198,8 +201,7 @@ TEST_F(ClusterOperationApi, ForceAndWalSync) {
 				// Check special case for index update in WAL from issue #2136
 				indexUpdated = true;
 				auto err = leader->api.reindexer->UpdateIndex(
-					kNsSome,
-					reindexer::IndexDef{std::string(kIdField), {std::string(kIdField)}, "hash", "int", IndexOpts().PK().NoIndexColumn()});
+					kNsSome, IndexDef{std::string(kIdField), {std::string(kIdField)}, "hash", "int", IndexOpts().PK().NoIndexColumn()});
 				EXPECT_TRUE(err.ok()) << err.what();
 				TestCout() << "Wait sync 2" << std::endl;
 				cluster.WaitSync(kNsSome);
@@ -947,3 +949,5 @@ TEST_F(ClusterOperationApi, NamespaceVersioning) {
 
 	loop.run();
 }
+
+}  // namespace reindexer_tests

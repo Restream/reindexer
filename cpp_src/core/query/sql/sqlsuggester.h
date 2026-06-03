@@ -9,6 +9,8 @@ namespace reindexer {
 
 struct NamespaceDef;
 struct EnumNamespacesOpts;
+struct SQLSuggestions;
+
 class [[nodiscard]] SQLSuggester : public SQLParser {
 public:
 	using EnumNamespacesF = std::function<std::vector<NamespaceDef>(EnumNamespacesOpts opts)>;
@@ -20,8 +22,7 @@ public:
 	/// @param pos - pos of cursor in query.
 	/// @param enumNamespaces - functor which enums namespaces to be checked for existing fields.
 	/// @param getSchemaSuggestions - functor which get pointer to namespace's schema
-	static std::vector<std::string> GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces,
-												   GetSchemaF getSchemaSuggestions);
+	static SQLSuggestions GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchemaSuggestions);
 
 private:
 	/// Finds suggestions for token

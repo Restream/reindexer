@@ -1,6 +1,12 @@
 #include "queries_api.h"
 #include "gtests/tools.h"
 
+using namespace reindexer_tests_tools;
+
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
 void QueriesApi::CheckMergeQueriesWithLimit() {
 	Query q = Query{default_namespace}.Merge(Query{joinNs}.Limit(1));
 	QueryResults qr;
@@ -1658,3 +1664,5 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 		ASSERT_TRUE(false);
 	}
 }
+
+}  // namespace reindexer_tests

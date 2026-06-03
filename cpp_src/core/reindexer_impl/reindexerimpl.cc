@@ -18,6 +18,7 @@
 #include "core/index/index.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/query/functions_optimizations.h"
+#include "core/query/sql/sql_suggestions.h"
 #include "core/query/sql/sqlsuggester.h"
 #include "debug/crashqueryreporter.h"
 #include "rx_selector.h"
@@ -103,7 +104,7 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities,
 
 #ifdef REINDEX_WITH_GPERFTOOLS
 	if (alloc_ext::TCMallocIsAvailable()) {
-		heapWatcher_ = TCMallocHeapWathcher(alloc_ext::instance(), config_.allocatorCacheLimit, config_.allocatorCachePart);
+		heapWatcher_ = TCMallocHeapWatcher(alloc_ext::instance(), config_.allocatorCacheLimit, config_.allocatorCachePart);
 	}
 #endif
 
@@ -925,7 +926,7 @@ void ReindexerImpl::setClusterOperationStatus(ClusterOperationStatus&& status, c
 	clusterStatus_ = std::move(status);
 }
 
-template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::* MemFn, typename Arg, typename... Args>
 Error ReindexerImpl::applyNsFunction(std::string_view nsName, const RdxContext& rdxCtx, Arg arg, Args&&... args) {
 	Error err;
 	try {
@@ -1321,8 +1322,8 @@ struct [[nodiscard]] EmbeddingData {
 	const KnnQueryEntry& qe;
 };
 
-h_vector<ConstFloatVector, 1> calculateEmbedding(const EmbeddingData& embed, const RdxContext& ctx) {
-	h_vector<ConstFloatVector, 1> products;
+h_vector<FloatVector, 1> calculateEmbedding(const EmbeddingData& embed, const RdxContext& ctx) {
+	h_vector<FloatVector, 1> products;
 	embed.embedder->Calculate(ctx, embed.qe.Data(), products);
 	if (products.size() != 1) {
 		throw Error(errNotValid, "Unable to generate vector values with incorrect embedding result for index '{}'", embed.qe.FieldName());
@@ -2516,8 +2517,7 @@ void ReindexerImpl::onEmbeddersConfigLoad() {
 	(void)err;	// ignore
 }
 
-Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions,
-									   const RdxContext& rdxCtx) {
+Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions, const RdxContext& rdxCtx) {
 	std::vector<NamespaceDef> nses;
 
 	// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)

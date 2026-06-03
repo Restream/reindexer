@@ -585,7 +585,7 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 
 		// one document - one input vector of VariantArray
 		std::vector<std::pair<std::string, VariantArray>> source;
-
+		h_vector<FloatVector, 1> products;
 		for (int field = 1, numFields = payloadType_.NumFields(); field < numFields; ++field) {
 			auto embedder = payloadType_.Field(field).UpsertEmbedder();
 			if (!embedder) {
@@ -611,14 +611,17 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 			}
 
 			// ToDo in real life, work with several embedded devices requires asynchrony. Now we support only one
-			h_vector<ConstFloatVector, 1> products;
 			embedder->Calculate(ctx, std::span{&source, 1}, products);
-			if (products.size() != 1) {
+			if (products.size() != 1 && !payloadType_.Field(fieldId).IsArray()) {
 				throw Error(errLogic, "Unable to set vector values with incorrect embedding result");
 			}
 
 			VariantArray krs;
-			krs.emplace_back(products.front().View());
+			krs.reserve(products.size());
+			for (auto& p : products) {
+				krs.emplace_back(std::move(p));
+			}
+			products.clear<false>();
 
 			SetField(fieldId, std::move(krs), NeedCreate_False);
 		}

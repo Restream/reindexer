@@ -1,6 +1,5 @@
 #pragma once
 
-#include <unordered_set>
 #include "core/enums.h"
 #include "core/index/index.h"
 #include "core/namespace/float_vector_data_access.h"
@@ -85,8 +84,8 @@ public:
 	FloatVectorsKeeper& GetKeeper() const noexcept { return *keeper_; }
 	virtual StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 													const std::atomic_int32_t& cancel) noexcept = 0;
-	virtual Error LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&& getVecData, LoadWithQuantizer,
-								 uint8_t version) = 0;
+	virtual Error LoadIndexCache(std::string_view data, bool isCompositePK, FloatVectorIndexRawDataInserter&& getVecData,
+								 LoadWithQuantizer) = 0;
 	virtual void RebuildCentroids(float) {}
 	void ResetIndexPerfStat() override;
 	void EnablePerfStat(bool);
@@ -94,7 +93,7 @@ public:
 
 	virtual bool IsQuantized() const = 0;
 	virtual bool QuantizationAvailable() const = 0;
-	virtual void Quantize(size_t itemsCount) = 0;
+	virtual void Quantize() = 0;
 	virtual void SwitchMapOnQuantized() = 0;
 
 	void CopyEmptyValues(const FloatVectorIndex& other) {
@@ -136,7 +135,7 @@ private:
 	virtual KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const = 0;
 	virtual Variant upsert(ConstFloatVectorView, FloatVectorId, bool& clearCache) = 0;
 	virtual Variant upsertConcurrent(ConstFloatVectorView, FloatVectorId id, bool& clearCache) = 0;
-	virtual void del(FloatVectorId, MustExist, IsLast) = 0;
+	virtual void del(FloatVectorId, MustExist) = 0;
 
 	virtual ConstFloatVectorView getFloatVectorViewImpl(FloatVectorId) const = 0;
 

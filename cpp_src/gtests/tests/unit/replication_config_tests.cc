@@ -15,6 +15,8 @@
 
 #include "gtest/gtest.h"
 
+namespace reindexer_tests {
+
 #define __FILENAME__ (strrchr("/" __FILE__, '/') + 1)
 #define GTEST_TRACE_SCOPE(SCOPE_DESCRIPTION) testing::ScopedTrace trace(__FILE__, __LINE__, SCOPE_DESCRIPTION)
 #define GTEST_TRACE_FUNCTION() GTEST_TRACE_SCOPE(__FUNCTION__)
@@ -23,8 +25,8 @@ using namespace reindexer;
 
 class [[nodiscard]] ReplicationConfigTests : public ::testing::Test {
 public:
-	using ItemType = typename reindexer::Reindexer::ItemT;
-	using QueryResultsType = typename reindexer::Reindexer::QueryResultsT;
+	using ItemType = typename Reindexer::ItemT;
+	using QueryResultsType = typename Reindexer::QueryResultsT;
 	enum class [[nodiscard]] ConfigType { File, Namespace };
 
 	const std::chrono::milliseconds kReplicationConfLoadDelay = std::chrono::milliseconds(1200);
@@ -32,16 +34,16 @@ public:
 	const std::string kStoragePath = kSimpleReplConfigStoragePath;
 	const std::string kBuiltin = "builtin://" + kStoragePath;
 	const std::string kReplicationConfigFilename = "replication.conf";
-	const std::string kReplFilePath = reindexer::fs::JoinPath(kStoragePath, kReplicationConfigFilename);
+	const std::string kReplFilePath = fs::JoinPath(kStoragePath, kReplicationConfigFilename);
 
 	// defining test data
-	const reindexer::ReplicationConfigData initialReplConf{0, 2, {}};
-	const reindexer::ReplicationConfigData correctReplConf{10, 2, {}};
-	const reindexer::ReplicationConfigData updatedReplConf{100, 3, {}};
+	const ReplicationConfigData initialReplConf{0, 2, {}};
+	const ReplicationConfigData correctReplConf{10, 2, {}};
+	const ReplicationConfigData updatedReplConf{100, 3, {}};
 
-	const reindexer::ReplicationConfigData invalidReplConf{-10, 2, {}};
-	const reindexer::ReplicationConfigData invalidReplConf1000{1000, 2, {}};
-	const reindexer::ReplicationConfigData fallbackReplConf{0, 2, {}};
+	const ReplicationConfigData invalidReplConf{-10, 2, {}};
+	const ReplicationConfigData invalidReplConf1000{1000, 2, {}};
+	const ReplicationConfigData fallbackReplConf{0, 2, {}};
 
 	void SetUp() override { std::ignore = fs::RmDirAll(kStoragePath); }
 	void TearDown() override {}
@@ -90,7 +92,7 @@ public:
 		}
 	}
 
-	bool CheckReplicationConfigNS(reindexer::Reindexer& rx, const ReplicationConfigData& expectedConf, bool expectErrorParseJSON = false) {
+	bool CheckReplicationConfigNS(Reindexer& rx, const ReplicationConfigData& expectedConf, bool expectErrorParseJSON = false) {
 		GTEST_TRACE_FUNCTION();
 		QueryResultsType results;
 		auto err = rx.Select(Query(kConfigNamespace).Where("type", CondEq, "replication"), results);
@@ -125,7 +127,7 @@ public:
 		}
 	}
 
-	bool CheckNamespacesReplicationConfig(reindexer::Reindexer& rx, const ReplicationConfigData& expected) {
+	bool CheckNamespacesReplicationConfig(Reindexer& rx, const ReplicationConfigData& expected) {
 		GTEST_TRACE_FUNCTION();
 		{
 			GTEST_TRACE_SCOPE("Checking #memstats.server_id for non-system namespaces.");
@@ -152,15 +154,15 @@ public:
 
 		{
 			GTEST_TRACE_SCOPE("Checking ReplState.nsVersion.server_id for system namespaces");
-			std::vector<reindexer::NamespaceDef> nsDefs;
-			auto err = rx.EnumNamespaces(nsDefs, reindexer::EnumNamespacesOpts().OnlyNames());
+			std::vector<NamespaceDef> nsDefs;
+			auto err = rx.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames());
 			EXPECT_TRUE(err.ok()) << err.what();
 			for (auto& nsDef : nsDefs) {
 				if (nsDef.name.empty() || (nsDef.name[0] != '#')) {
 					// we will perform checks only for well-defined system namespaces
 					continue;
 				}
-				reindexer::ReplicationStateV2 replState;
+				ReplicationStateV2 replState;
 				auto error = rx.GetReplState(nsDef.name, replState);
 				EXPECT_TRUE(error.ok()) << error.what();
 				EXPECT_EQ(replState.nsVersion.Server(), expected.serverID) << "Check failed for NS \"" << nsDef.name << "\"";
@@ -170,20 +172,20 @@ public:
 	}
 
 	template <bool ExpectErrorOnUpsert = false>
-	void SetReplicationConfigNS(reindexer::Reindexer& rx, const ReplicationConfigData& config) {
+	void SetReplicationConfigNS(Reindexer& rx, const ReplicationConfigData& config) {
 		GTEST_TRACE_FUNCTION();
 		upsertConfigItemFromObject<decltype(config), ExpectErrorOnUpsert>(rx, "replication", config);
 	}
 
 	template <bool ExpectErrorOnUpsert = false>
-	void SetJSONtoConfigNS(reindexer::Reindexer& rx, std::string_view stringJSON) {
+	void SetJSONtoConfigNS(Reindexer& rx, std::string_view stringJSON) {
 		GTEST_TRACE_FUNCTION();
 		upsertConfigItemFromJSON<ExpectErrorOnUpsert>(rx, stringJSON);
 	}
 
 protected:
 	template <typename ValueT, bool ExpectErrorOnUpsert = false>
-	void upsertConfigItemFromObject(reindexer::Reindexer& rx, std::string_view type, const ValueT& object) {
+	void upsertConfigItemFromObject(Reindexer& rx, std::string_view type, const ValueT& object) {
 		GTEST_TRACE_FUNCTION();
 
 		WrSerializer ser;
@@ -200,7 +202,7 @@ protected:
 	}
 
 	template <bool ExpectErrorOnUpsert = false>
-	void upsertConfigItemFromJSON(reindexer::Reindexer& rx, const std::string_view stringJSON) {
+	void upsertConfigItemFromJSON(Reindexer& rx, const std::string_view stringJSON) {
 		GTEST_TRACE_FUNCTION();
 
 		auto item = rx.NewItem(kConfigNamespace);
@@ -372,7 +374,7 @@ TEST(DBConfigTests, ReadInvalidJsonConfiguration) {
 TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 	// 0. Warm up:
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
@@ -384,7 +386,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 		WriteConfigToFile(correctReplConf, kReplFilePath);
 		CheckReplicationConfigFile(kStoragePath, correctReplConf);
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 		CheckReplicationConfigNS(rt, correctReplConf);
@@ -398,7 +400,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 		WriteConfigToFile(invalidReplConf, kReplFilePath);
 		CheckReplicationConfigFile(kStoragePath, invalidReplConf);
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_EQ(err.code(), errParams) << err.what();
 	}
@@ -408,7 +410,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 		GTEST_TRACE_SCOPE("Starting with invalid replication.conf server_id = " + std::to_string(invalidReplConf1000.serverID));
 		WriteConfigToFile(invalidReplConf1000, kReplFilePath);
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_EQ(err.code(), errParams) << err.what();
 	}
@@ -420,7 +422,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 						"server_id: invalid\n"
 						"cluster_id: invalid\n");
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_EQ(err.code(), errParseYAML) << err.what();
 	}
@@ -431,7 +433,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 		WriteConfigToFile(updatedReplConf, kReplFilePath);
 		CheckReplicationConfigFile(kStoragePath, updatedReplConf);
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 		CheckReplicationConfigNS(rt, updatedReplConf);
@@ -448,19 +450,20 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
  *	All cases from 2 shall be done on existing db connection without restarts
  *	2. Write correct replication.conf from correctReplConf, CHECK readings - internal state and replication.conf shall be changed
  *	3. Write invalid replication.conf from invalidReplConf, CHECK readings - internal state and replication.conf shall NOT be changed
- *	4. Write invalid replication.conf from invalidReplConf1000, CHECK readings - internal state and replication.conf shall NOT be changed
+ *	4. Write invalid replication.conf from invalidReplConf1000, CHECK readings - internal state and replication.conf shall NOT be
+ * changed
  *	5. Write invalid replication.conf with non-numeric values, CHECK readings - internal state and replication.conf shall NOT be changed
  */
 TEST_F(ReplicationConfigTests, ReplicationConfChangedAtRuntime) {
 	// 0. Warm up: create and initialize new DB in kStoragePath
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	// 1. Write correct replication.conf from initialReplConf, CONNECT, verify - shall success
-	reindexer::Reindexer rt;
+	Reindexer rt;
 	{
 		GTEST_TRACE_SCOPE("Starting with replication.conf server_id = " + std::to_string(initialReplConf.serverID));
 		WriteConfigToFile(initialReplConf, kReplFilePath);
@@ -503,7 +506,8 @@ TEST_F(ReplicationConfigTests, ReplicationConfChangedAtRuntime) {
 		CheckNamespacesReplicationConfig(rt, correctReplConf);
 	}
 
-	// 5. Write invalid replication.conf with non-numeric values, CHECK readings - internal state and replication.conf shall NOT be changed
+	// 5. Write invalid replication.conf with non-numeric values, CHECK readings - internal state and replication.conf shall NOT be
+	// changed
 	{
 		GTEST_TRACE_SCOPE("Writing invalid replication.conf server_id = \"invalid\"");
 		const bool kExpectErrorParseYAML = true;
@@ -535,7 +539,7 @@ TEST_F(ReplicationConfigTests, ReplicationConfChangedAtRuntime) {
  */
 TEST_F(ReplicationConfigTests, SetServerIdToConfigWithReplicationConf) {
 	const bool kExpectErrorOnUpsert = true;
-	reindexer::Reindexer rt;
+	Reindexer rt;
 	Error err = rt.Connect(kBuiltin);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -618,7 +622,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 
 	// 1. Start with default db, set correct server_id, set invalid server_id, shutdown
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		{
 			GTEST_TRACE_SCOPE("Setting correct replication.server_id = " + std::to_string(correctReplConf.serverID) + " to #config");
 			Error err = rt.Connect(kBuiltin);
@@ -643,7 +647,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 
 	// 2. Start with invalid server_id, check fallback server_id present, set another invalid server_id, shutdown
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		{
 			GTEST_TRACE_SCOPE("Reloading with invalid replication.server_id = " + std::to_string(invalidReplConf.serverID) + " to #config");
 			ASSERT_TRUE(fs::Stat(kReplFilePath) == fs::StatError) << "replication.conf shall not exist when present.";
@@ -666,7 +670,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 
 	// 3. Start with invalid server_id, check fallback server_id present, restore correct server_id, shutdown
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		{
 			GTEST_TRACE_SCOPE("Reloading with invalid replication.server_id = " + std::to_string(invalidReplConf1000.serverID) +
 							  " in #config");
@@ -693,7 +697,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 		GTEST_TRACE_SCOPE("Reloading with correct replication.server_id = " + std::to_string(correctReplConf.serverID) + " in #config");
 		ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 		CheckReplicationConfigNS(rt, correctReplConf);
@@ -701,3 +705,5 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 		CheckNamespacesReplicationConfig(rt, correctReplConf);
 	}
 }
+
+}  // namespace reindexer_tests

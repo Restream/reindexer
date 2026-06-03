@@ -3,6 +3,8 @@
 #include <unordered_set>
 #include "gtest/gtest.h"
 
+namespace reindexer_tests {
+
 namespace json_helpers {
 namespace impl {
 std::string::size_type findField(const std::string& str, const char* fieldName, std::string::size_type pos);
@@ -96,3 +98,5 @@ inline void AssertJsonFieldAbsent(const std::string& str, const char* fieldName)
 }
 
 }  // namespace json_helpers
+
+}  // namespace reindexer_tests

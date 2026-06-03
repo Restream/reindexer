@@ -85,7 +85,7 @@ BOOL_ENUM(LoadWithQuantizer)
 BOOL_ENUM(MigrationStatus)
 BOOL_ENUM(TreatAsSingleElement)
 BOOL_ENUM(WithTagsMatcher)
-BOOL_ENUM(IsLast)
+BOOL_ENUM(Pretty)
 BOOL_ENUM(PhraseTerm)
 
 #undef BOOL_ENUM

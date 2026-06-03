@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 #include "reindexer_api.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
 class [[nodiscard]] CompositeUpdate : public ReindexerApi {
 public:
 	void SetUp() override {
@@ -102,3 +106,5 @@ TEST_F(CompositeUpdate, CompositeAndArray) {
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[23,23],"v1":23,"v2":22,"v3":1000,"v4":"b"})");
 	}
 }
+
+}  // namespace reindexer_tests

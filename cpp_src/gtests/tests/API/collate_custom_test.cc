@@ -1,5 +1,7 @@
 #include "collate_custom_mode_api.h"
 
+namespace reindexer_tests {
+
 const std::vector<std::string_view> sourceTable = {
 	reinterpret_cast<const char*>(u8"Вася"),	 reinterpret_cast<const char*>(u8"Johny"),	  reinterpret_cast<const char*>(u8"Mary"),
 	reinterpret_cast<const char*>(u8"Иван"),	 reinterpret_cast<const char*>(u8"Петр"),	  reinterpret_cast<const char*>(u8"Emmarose"),
@@ -155,3 +157,5 @@ TEST_F(CollateCustomModeAPI, CollateCustomTest4) {
 
 	CompareResults(qr, correctlyOrderedData);
 }
+
+}  // namespace reindexer_tests

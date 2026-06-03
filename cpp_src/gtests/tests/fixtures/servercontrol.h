@@ -10,6 +10,8 @@
 #include "reindexertestapi.h"
 #include "server/server.h"
 
+namespace reindexer_tests {
+
 #ifdef REINDEXER_WITH_SC_AS_PROCESS
 const bool kTestServersInSeparateProcesses = true;
 #else
@@ -222,3 +224,5 @@ private:
 
 extern template void ServerControl::Interface::UpdateConfigReplTokens(const std::string&);
 extern template void ServerControl::Interface::UpdateConfigReplTokens(const reindexer::NsNamesHashMapT<std::string>&);
+
+}  // namespace reindexer_tests

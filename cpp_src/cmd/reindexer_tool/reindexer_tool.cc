@@ -105,6 +105,10 @@ int main(int argc, char* argv[]) {
 												 Options::Single | Options::Global);
 
 	args::Flag createDBF(progOptions, "", "Creates target database if it is missing", {"createdb"});
+	args::Flag dryRun(progOptions, "", "Validate dump file without changing target database. Applicable only with -f/--filename",
+					  {"dry-run"});
+	args::Flag ignoreChecksumMismatch(
+		progOptions, "", "Do not abort restore when dump checksum mismatches (warning is still printed)", {"ignore-checksum-mismatch"});
 
 	args::Positional<std::string> dbName(progOptions, "DB name", "Name of a database to get connected to", Options::Single);
 
@@ -218,6 +222,17 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
+	if (args::get(dryRun)) {
+		if (args::get(fileName).empty()) {
+			std::cerr << "Error: --dry-run can only be used together with -f/--filename" << std::endl;
+			return 2;
+		}
+		if (!args::get(command).empty()) {
+			std::cerr << "Error: --dry-run is incompatible with -c/--command" << std::endl;
+			return 2;
+		}
+	}
+
 	if (repair && args::get(repair)) {
 		err = RepairTool::RepairStorage(dsn);
 		if (!err.ok()) {
@@ -250,16 +265,20 @@ int main(int argc, char* argv[]) {
 		CommandsProcessor<reindexer::client::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
 																		  args::get(selectedNamespaces), args::get(connThreads),
 																		  transactionSize, config, numConnects, numThreads);
-		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
+		err = commandsProcessor.Connect(dsn,
+										reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF) &&
+																						   !args::get(dryRun)));
 		if (err.ok()) {
-			runError = commandsProcessor.Run(args::get(command), args::get(dumpMode));
+			runError = commandsProcessor.Run(args::get(command), args::get(dumpMode), args::get(dryRun),
+											args::get(ignoreChecksumMismatch));
 		}
 	} else if (checkIfStartsWithCS("builtin://"sv, dsn)) {
 		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
 																  args::get(selectedNamespaces), args::get(connThreads), 0);
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
 		if (err.ok()) {
-			runError = commandsProcessor.Run(args::get(command), args::get(dumpMode));
+			runError = commandsProcessor.Run(args::get(command), args::get(dumpMode), args::get(dryRun),
+											args::get(ignoreChecksumMismatch));
 		}
 	} else {
 #ifdef _WIN32
@@ -272,5 +291,5 @@ int main(int argc, char* argv[]) {
 		std::cerr << "ERROR: " << err.what() << std::endl;
 	}
 
-	return runError.ok() ? 0 : 2;
+	return err.ok() && runError.ok() ? 0 : 2;
 }

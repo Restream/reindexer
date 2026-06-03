@@ -230,7 +230,6 @@ jobs:
           repository: restream/reindexer-py
       - name: Install PyReindexer
         run: |
-          python -m pip install -r requirements.txt
           python -m build
           python -m pip install .
       - name: Test PyReindexer

@@ -334,7 +334,7 @@ Error Reindexer::GetRaftInfo(cluster::RaftInfo& info) noexcept {
 		return impl_->GetRaftInfo(info, rdxCtx);
 	});
 }
-Error Reindexer::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions) noexcept {
+Error Reindexer::GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions) noexcept {
 	return callWithConnectCheck([&] {
 		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "SQL SUGGESTIONS"; });
 		return impl_->GetSqlSuggestions(sqlQuery, pos, suggestions, rdxCtx);
@@ -402,13 +402,29 @@ template <typename FnT, typename T>
 RX_ALWAYS_INLINE T Reindexer::callWithConnectCheck(FnT&& f) noexcept {
 	try {
 		if (!impl_->IsConnected()) [[unlikely]] {
-			return T(Error(errNotValid, "Reindexer is not connected. Call Connect() first"));
+			if constexpr (std::is_same_v<T, SqlParserError>) {
+				return T(Error(errNotValid, "Reindexer is not connected. Call Connect() first"), {});
+
+			} else {
+				return T(Error(errNotValid, "Reindexer is not connected. Call Connect() first"));
+			}
 		}
 		return f();
+	} catch (T& e) {
+		return std::move(e);
+
 	} catch (std::exception& e) {
-		return T(Error(e));
+		if constexpr (std::is_same_v<T, SqlParserError>) {
+			return T(Error(e), {});
+		} else {
+			return T(Error(e));
+		}
 	} catch (...) {
-		return T(kUnknowExceptioError);
+		if constexpr (std::is_same_v<T, SqlParserError>) {
+			return T(kUnknowExceptioError, {});
+		} else {
+			return T(kUnknowExceptioError);
+		}
 	}
 }
 

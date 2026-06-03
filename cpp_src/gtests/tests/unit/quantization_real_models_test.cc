@@ -1,4 +1,5 @@
 #include <fstream>
+#include "core/index/float_vector/scalar_quantization/hnsw_view_iterator.h"
 
 #if defined(__GNUC__) && ((__GNUC__ == 12) || (__GNUC__ == 13)) && defined(REINDEX_WITH_ASAN)
 // regex header is broken in GCC 12.0-13.3 with ASAN
@@ -12,6 +13,12 @@
 #include "gtests/tests/fixtures/quantization_helpers.h"
 #include "reindexertestapi.h"
 #include "tools/fsops.h"
+
+namespace reindexer_tests {
+
+using reindexer::FloatVectorIndexOpts;
+using reindexer::IndexOpts;
+using reindexer::MultithreadingMode;
 
 const size_t kDataSize = 10'001;
 const size_t kQueriesSize = 40'000;
@@ -130,7 +137,7 @@ static void CheckRecallRate(auto& api, std::string_view nsName, const auto& quer
 }
 
 TEST(Quantization, RealModelsTest) {
-	constexpr auto getSampleIndexes = hnswlib::HNSWView<hnswlib::HierarchicalNSWMT>::GetSampleIndexes;
+	constexpr auto getSampleIndexes = hnswlib::HNSWView<std::nullptr_t>::GetSampleIndexes;
 	const auto kNsName = "items_embeddings";
 
 	const auto kEmbeddingsPathEnv = std::getenv("RX_TEST_EMBEDDINGS_PATH");
@@ -216,3 +223,5 @@ TEST(Quantization, RealModelsTest) {
 		}
 	}
 }
+
+}  // namespace reindexer_tests

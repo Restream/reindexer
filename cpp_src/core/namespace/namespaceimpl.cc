@@ -1855,28 +1855,6 @@ FieldsSet NamespaceImpl::createFieldsSetFromJsonPaths(const IndexDef& indexDef) 
 	return fields;
 }
 
-static bool BasicCompatibilityOnly(IndexDef::DiffResult diff) {
-	// clang-format off
-	return
-		diff.AllOfIsEqual(
-			IndexDef::Diff::Name,
-			IndexDef::Diff::IndexType,
-			IndexDef::Diff::FieldType,
-			IndexDef::Diff::JsonPaths,
-			IndexDef::Diff::ExpireAfter,
-
-			IndexOpts::OptsDiff::kIndexOptPK,
-			IndexOpts::OptsDiff::kIndexOptSparse,
-			IndexOpts::OptsDiff::kIndexOptArray,
-
-			IndexOpts::ParamsDiff::CollateOpts,
-			IndexOpts::ParamsDiff::RTreeIndexType,
-
-			FloatVectorIndexOpts::Diff::Base
-		);
-	// clang-format on
-}
-
 bool NamespaceImpl::checkIfSameIndexExists(const IndexDef& indexDef, bool* requireTtlUpdate) const {
 	auto idxNameIt = indexesNames_.find(indexDef.Name());
 	if (idxNameIt != indexesNames_.end()) {
@@ -1887,7 +1865,7 @@ bool NamespaceImpl::checkIfSameIndexExists(const IndexDef& indexDef, bool* requi
 			}
 			oldIndexDef.SetExpireAfter(indexDef.ExpireAfter());
 		}
-		if (BasicCompatibilityOnly(indexDef.Compare(oldIndexDef))) {
+		if (IndexDef::IsBasicCompatibility(indexDef.Compare(oldIndexDef))) {
 			return true;
 		}
 		throw Error(errConflict, "Index '{}.{}' already exists with different settings", name_, indexDef.Name());
@@ -2754,7 +2732,7 @@ void NamespaceImpl::throwDuplicatePK(const ConstPayload& cpl, IdType itemId, IdT
 	VariantArray keys = getPkKeys(cpl, pkIndex, pkIndexIt->second);
 	WrSerializer wrser;
 	wrser << "Duplicate Primary Key {" << pkIndex->Name() << ": ";
-	keys.Dump(wrser, CheckIsStringPrintable::No);
+	keys.Dump(wrser, PayloadType(cpl.Type()), pkIndex->Fields(), CheckIsStringPrintable::No);
 	wrser << "} for rows [" << itemId.ToNumber() << ", " << conflictingItemId.ToNumber() << "]!";
 	throw Error(errLogic, wrser.Slice());
 }
@@ -3108,7 +3086,7 @@ IndexDef NamespaceImpl::getIndexDefinition(size_t i) const {
 	assertrx(i < indexes_.size());
 	const Index& index = *indexes_[i];
 
-	if (index.Opts().IsSparse() || static_cast<int>(i) >= payloadType_.NumFields()) {
+	if (static_cast<int>(i) >= payloadType_.NumFields()) {
 		int fIdx = 0;
 		JsonPaths jsonPaths;
 		for (auto& f : index.Fields()) {
@@ -3914,7 +3892,7 @@ void NamespaceImpl::loadHashMapStats() noexcept {
 
 		for (auto& index : indexes_) {
 			for (auto& st : indexesStats) {
-				if (index->Name() == st.indexName) {
+				if (iequals(index->Name(), st.indexName)) {
 					index->ReserveHashTables(st.stats);
 					break;
 				}
@@ -4479,7 +4457,7 @@ void NamespaceImpl::quantize(std::string_view indexName, const RdxContext& ctx) 
 		storage_.Flush(StorageFlushOpts{});
 	}
 
-	index->Quantize(items_.size());
+	index->Quantize();
 	logFmt(LogInfo, "[{}] Index '{}' was quantized in background", name_, index->Name());
 
 	rlock.unlock();
@@ -4518,8 +4496,8 @@ void NamespaceImpl::reloadNonQuantizedIndex(int idx) {
 
 	const auto vecSizeBytes = sizeof(float) * index.Opts().FloatVector().Dimension();
 	auto vectorsData = FloatVectorExtractor(storage_, index, *pk, payloadType_, tagsMatcher_).LoadVectorDataFromStorage(items_);
-	err = newIndex.LoadIndexCache(wrSer.Slice(), false, FloatVectorIndexRawDataInserter{vectorsData, vecSizeBytes}, LoadWithQuantizer_False,
-								  ann_storage_cache::kANNCacheFormatVersion);
+	err =
+		newIndex.LoadIndexCache(wrSer.Slice(), false, FloatVectorIndexRawDataInserter{vectorsData, vecSizeBytes}, LoadWithQuantizer_False);
 
 	if (!err.ok()) {
 		throw err;

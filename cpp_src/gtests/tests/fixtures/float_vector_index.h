@@ -7,6 +7,8 @@
 #include "core/reindexer.h"
 #include "reindexertestapi.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] FloatVector : public ::testing::TestWithParam<reindexer::VectorMetric> {
 protected:
 	enum class [[nodiscard]] HasIndex : bool { Yes = true, No = false };
@@ -80,3 +82,5 @@ protected:
 
 	ReindexerTestApi<reindexer::Reindexer> rt;
 };
+
+}  // namespace reindexer_tests

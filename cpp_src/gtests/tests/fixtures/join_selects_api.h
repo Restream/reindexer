@@ -15,6 +15,8 @@
 #include "tools/fsops.h"
 #include "tools/serilize/wrserializer.h"
 
+namespace reindexer_tests {
+
 class [[nodiscard]] JoinSelectsApi : public ReindexerApi {
 protected:
 	using BookId = int;
@@ -23,6 +25,8 @@ protected:
 	using QueryResultRows = std::map<BookId, QueryResultRow>;
 
 	void Init(const std::string& dbName = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_test")) RX_REQUIRES(!authorsMutex) {
+		using reindexer::IndexOpts;
+
 		std::ignore = reindexer::fs::RmDirAll(dbName);
 		rt.Connect("builtin://" + dbName);
 
@@ -479,3 +483,5 @@ protected:
 
 	reindexer::shared_timed_mutex authorsMutex;
 };
+
+}  // namespace reindexer_tests

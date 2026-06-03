@@ -28,24 +28,6 @@ struct [[nodiscard]] less_key_string {	// NOLINT(performance-move-constructor-in
 	std::shared_ptr<CollateOpts> collateOpts_;
 };
 
-class [[nodiscard]] key_string_with_hash : public key_string {
-public:
-	key_string_with_hash() noexcept : key_string() {}
-	key_string_with_hash(key_string s, CollateMode cm)
-		: key_string(std::move(s)), hash_(collateHash(*static_cast<key_string*>(this), cm)) {}
-	key_string_with_hash(const key_string_with_hash& o) noexcept : key_string(o), hash_(o.hash_) {}
-	// NOLINTNEXTLINE(bugprone-use-after-move)
-	key_string_with_hash(key_string_with_hash&& o) noexcept : key_string(std::move(o)), hash_(o.hash_) {}
-	key_string_with_hash& operator=(key_string_with_hash&& o) noexcept {
-		hash_ = o.hash_;
-		return static_cast<key_string_with_hash&>(key_string::operator=(std::move(o)));
-	}
-	uint32_t GetHash() const noexcept { return hash_; }
-
-private:
-	uint32_t hash_ = 0;
-};
-
 struct [[nodiscard]] equal_key_string {
 	using is_transparent = void;
 
@@ -70,7 +52,6 @@ struct [[nodiscard]] hash_key_string {
 	hash_key_string(CollateMode collateMode = CollateNone) noexcept : collateMode_(collateMode) {}
 	size_t operator()(const key_string& s) const noexcept { return collateHash(s, collateMode_); }
 	size_t operator()(std::string_view s) const noexcept { return collateHash(s, collateMode_); }
-	size_t operator()(const key_string_with_hash& s) const noexcept { return s.GetHash(); }
 
 private:
 	CollateMode collateMode_;
@@ -210,7 +191,7 @@ struct [[nodiscard]] StringMapEntryCleaner {
 
 	template <typename T>
 	constexpr static bool RequiresStringHolder() noexcept {
-		return std::is_same_v<std::remove_cv_t<T>, key_string_with_hash> || std::is_same_v<std::remove_cv_t<T>, key_string>;
+		return std::is_same_v<std::remove_cv_t<T>, key_string>;
 	}
 
 	template <typename T>

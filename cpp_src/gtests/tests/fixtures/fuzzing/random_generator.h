@@ -10,12 +10,12 @@
 #include "types.h"
 
 namespace reindexer {
-
 class Query;
 class Uuid;
 class KeyValueType;
-
 }  // namespace reindexer
+
+namespace reindexer_tests {
 
 namespace fuzzing {
 
@@ -259,3 +259,5 @@ private:
 };
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

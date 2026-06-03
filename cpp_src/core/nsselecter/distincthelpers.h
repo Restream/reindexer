@@ -31,7 +31,7 @@ struct [[nodiscard]] DistinctHasher {
 		(void)vals;
 		int h = 0;
 		for (const auto& v : vals) {
-			h = (h * 127) ^
+			h = (h * VariantArray::kHashMagic) ^
 				v.Type().EvaluateOneOf(
 					[&](concepts::OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String,
 										KeyValueType::Bool, KeyValueType::Int, KeyValueType::Uuid, KeyValueType::Null> auto) noexcept {

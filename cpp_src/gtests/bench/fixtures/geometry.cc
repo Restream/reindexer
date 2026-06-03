@@ -3,15 +3,19 @@
 #include "core/cjson/jsonbuilder.h"
 #include "gtests/tools.h"
 
+namespace reindexer_benchmarks {
+
 namespace {
 
 constexpr double kRange = 100.0;
 
 }  // namespace
 
+using reindexer::IndexOpts;
+
 template <size_t N>
 void Geometry::Insert(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < N; ++i) {
 			auto item = MakeItem(state);
@@ -29,14 +33,14 @@ void Geometry::Insert(State& state) {
 
 template <size_t N>
 void Geometry::GetDWithin(benchmark::State& state) {
-	const auto q = [&] { return reindexer::Query(nsdef_.name).DWithin("point", randPoint(kRange), kRange / N); };
+	const auto q = [&] { return reindexer::Query(nsdef_.name).DWithin("point", reindexer_tests_tools::randPoint(kRange), kRange / N); };
 	LowSelectivityItemsCounter itemsCounter(state);
 	benchQuery(q, state, itemsCounter);
 }
 
 template <IndexOpts::RTreeIndexType rtreeType>
 void Geometry::Reset(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		id_ = 0;
 		nsdef_ = reindexer::NamespaceDef(nsdef_.name);
@@ -120,7 +124,7 @@ reindexer::Item Geometry::MakeItem(benchmark::State& state) {
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);
 	bld.Put("id", id_++);
-	const reindexer::Point point = randPoint(kRange);
+	const reindexer::Point point = reindexer_tests_tools::randPoint(kRange);
 	bld.Array("point", {point.X(), point.Y()});
 	bld.End();
 	const auto err = item.FromJSON(wrSer_.Slice());
@@ -130,3 +134,5 @@ reindexer::Item Geometry::MakeItem(benchmark::State& state) {
 
 	return item;
 }
+
+}  // namespace reindexer_benchmarks

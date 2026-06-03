@@ -91,6 +91,7 @@ public:
 			}
 		}
 		assertrx(0);
+		return FieldProperties{FieldProperties::kNotIndexed};
 	}
 
 	void Walk(std::vector<TagName>& path, const std::invocable<const FieldProperties&> auto& visitor) const {

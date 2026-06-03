@@ -3,6 +3,8 @@
 #include "sharding_extras_api.h"
 #include "vendor/gason/gason.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
 
 #ifndef REINDEX_WITH_TSAN
@@ -346,7 +348,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 TEST_F(ShardingExtrasApi, TagsMatcherConfusion) {
 	const std::string kNewField = "new_field";
 	auto buildItem = [&](WrSerializer& wrser, int id, std::string&& location, const std::string& data, std::string&& newFieldValue) {
-		reindexer::JsonBuilder jsonBuilder(wrser);
+		JsonBuilder jsonBuilder(wrser);
 		jsonBuilder.Put(kFieldId, int(id));
 		jsonBuilder.Put(kFieldLocation, location);
 		jsonBuilder.Put(kFieldData, data);
@@ -357,7 +359,7 @@ TEST_F(ShardingExtrasApi, TagsMatcherConfusion) {
 	for (size_t i = 0; i < NodesCount(); i += 2) {
 		size_t shard = 1;
 		const std::string updated = "updated_" + RandString();
-		reindexer::client::Item item = getNode(i)->api.reindexer->NewItem(default_namespace);
+		client::Item item = getNode(i)->api.reindexer->NewItem(default_namespace);
 		ASSERT_TRUE(item.Status().ok());
 
 		WrSerializer wrser;
@@ -398,7 +400,7 @@ TEST_F(ShardingExtrasApi, DiffTmInResultFromShards) {
 		client::Item item = rx.NewItem(default_namespace);
 		ASSERT_TRUE(item.Status().ok());
 		WrSerializer wrser;
-		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+		JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, id);
 		for (const auto& [key, value] : data) {
 			jsonBuilder.Put(key, value);
@@ -598,7 +600,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 						client::Item item = tx.NewItem();
 						ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 						WrSerializer wrser;
-						reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+						JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 						jsonBuilder.Put(kFieldId, int(index));
 						jsonBuilder.Put(kFieldLocation, key);
 						jsonBuilder.Put(kFieldData, RandString());
@@ -678,7 +680,7 @@ TEST_F(ShardingExtrasApi, StrictMode) {
 	client::Item item = rx.NewItem(default_namespace);
 	ASSERT_TRUE(item.Status().ok());
 	WrSerializer wrser;
-	reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+	JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 	jsonBuilder.Put(kFieldId, 0);
 	jsonBuilder.Put(kFieldLocation, "key1");
 	jsonBuilder.Put(kFieldForSingleShard, kValue);
@@ -821,12 +823,12 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 		followerId = (leaderId + 1) % cfg.nodesInCluster;
 	}
 
-	auto setActivity = [](std::shared_ptr<reindexer::client::Reindexer> rx, bool on) {
+	auto setActivity = [](std::shared_ptr<client::Reindexer> rx, bool on) {
 		client::QueryResults qr;
 		Error err = rx->Select(fmt::format("update #config set profiling.activitystats={} where type='profiling'", on), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 	};
-	auto dumpActivity = [](std::shared_ptr<reindexer::client::Reindexer> rx) {
+	auto dumpActivity = [](std::shared_ptr<client::Reindexer> rx) {
 		client::QueryResults qr;
 		Error err = rx->Select("select * from #activitystats", qr);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -890,3 +892,5 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 	}
 }
 #endif
+
+}  // namespace reindexer_tests

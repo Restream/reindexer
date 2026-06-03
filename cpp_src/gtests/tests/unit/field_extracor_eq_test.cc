@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "field_extracor_eq_api.h"
 
+namespace reindexer_tests {
+
 TEST_F(FieldExtractorEqApi, ObjectInArrayTwoField) {
 	const std::string_view json = R"#(
 		{
@@ -764,3 +766,5 @@ TEST_F(FieldExtractorEqApi, ComplexNestedArraysWithAdditionalDepth) {
 		Test(json, pathString, resultVals);
 	}
 }
+
+}  // namespace reindexer_tests

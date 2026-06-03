@@ -16,14 +16,13 @@ class chunk;
 class EmbeddersLRUCache;
 
 namespace embedding {
-using ValueT = ConstFloatVector;
-using ValuesT = h_vector<ValueT, 1>;
+using ValueT = h_vector<FloatVector, 1>;
 using StrorageKeyT = std::string;
 using BaseKeyT = std::string;
 
 class [[nodiscard]] Adapter final {
 public:
-	static Error VectorFromJSON(const StrorageKeyT& json, ValuesT& result) noexcept;
+	static Error VectorsFromJSON(const StrorageKeyT& json, ValueT& result) noexcept;
 
 	explicit Adapter(const BaseKeyT& source);
 	explicit Adapter(std::span<const std::vector<std::pair<std::string, VariantArray>>> sources);
@@ -32,7 +31,7 @@ public:
 	chunk Content() const;
 
 private:
-	static void vectorFromJSON(const gason::JsonNode& root, ValuesT& result);
+	static void vectorsFromJSON(const gason::JsonNode& root, ValueT& result);
 
 	StrorageKeyT view_;
 };
@@ -54,7 +53,7 @@ public:
 
 	void IncludeTag(std::string_view tag);
 	std::optional<embedding::ValueT> Get(const CacheTag& tag, const embedding::Adapter& srcAdapter, bool enablePerfStat);
-	void Put(const CacheTag& tag, const embedding::Adapter& srcAdapter, const embedding::ValuesT& values);
+	void Put(const CacheTag& tag, const embedding::Adapter& srcAdapter, const embedding::ValueT& values);
 
 	bool IsActive() const noexcept;
 	NamespaceMemStat GetMemStat() const;

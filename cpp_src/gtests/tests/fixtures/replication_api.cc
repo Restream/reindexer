@@ -2,6 +2,8 @@
 #include "estl/lock.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
 ReplicationApi::ReplicationApi() : kStoragePath(reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test/")) {}
 
 bool ReplicationApi::StopServer(size_t id) {
@@ -190,3 +192,5 @@ void ReplicationApi::TearDown() {
 	svc_.clear();
 	std::ignore = reindexer::fs::RmDirAll(kStoragePath + "node");
 }
+
+}  // namespace reindexer_tests

@@ -52,7 +52,7 @@ void FloatVectorIndex::Delete(const VariantArray& keys, IdType rowId, MustExist 
 		for (unsigned i = 0; i < count; ++i) {
 			const FloatVectorId id{rowId, i};
 			keeper_->Remove(id);
-			del(id, mustExist, IsLast(i == count - 1));
+			del(id, mustExist);
 		}
 	} else {
 		auto& emptiesCount = itEmptiesCount->second;
@@ -61,14 +61,14 @@ void FloatVectorIndex::Delete(const VariantArray& keys, IdType rowId, MustExist 
 			const FloatVectorId id{rowId, i};
 			keeper_->Remove(id);
 			if (const auto itEmpty = emptyVectors_.find(id); itEmpty == emptyVectors_.cend()) {
-				del(id, mustExist, IsLast(i == count - 1));
+				del(id, mustExist);
 			} else if (emptiesCount == 1) {
 				emptyVectors_.erase(itEmpty);
 				emptyVectorsCounters_.erase(itEmptiesCount);
 				std::ignore = emptyKeys_.Unsorted().Erase(rowId);
 				for (++i; i < count; ++i) {
 					keeper_->Remove({rowId, i});
-					del({rowId, i}, mustExist, IsLast(i == count - 1));
+					del({rowId, i}, mustExist);
 				}
 				return;
 			} else {

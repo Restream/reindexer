@@ -5,21 +5,15 @@
 #pragma once
 
 #include <cmath>
+#include <optional>
 #include <vector>
-#include "core/index/float_vector/scalar_quantization/quantization_params.h"
-#include "fmt/format.h"
-#ifndef _MSC_VER
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#pragma GCC diagnostic ignored "-Wtype-limits"
-#endif
-
+#include "core/enums.h"
+#include "core/index/float_vector/hnswlib/type_consts.h"
 #include "estl/defines.h"
-#include "tools/cpucheck.h"
 #include "tools/normalize.h"
+
+#include "tools/distances/ip_dist.h"
+#include "tools/distances/l2_dist.h"
 
 #if RX_WITH_STDLIB_DEBUG
 #include <set>
@@ -29,106 +23,38 @@
 
 namespace hnswlib {
 
-// This can be extended to store state for filtering (e.g. from a std::set)
-class [[nodiscard]] BaseFilterFunctor {
-public:
-	virtual bool operator()(hnswlib::labeltype id) { return true; }
-	virtual ~BaseFilterFunctor() {}
-};
-
-template <typename dist_t>
-class [[nodiscard]] BaseSearchStopCondition {
-public:
-	virtual void add_point_to_result(labeltype label, const void* datapoint, dist_t dist) = 0;
-
-	virtual void remove_point_from_result(labeltype label, const void* datapoint, dist_t dist) = 0;
-
-	virtual bool should_stop_search(dist_t candidate_dist, dist_t lowerBound) = 0;
-
-	virtual bool should_consider_candidate(dist_t candidate_dist, dist_t lowerBound) = 0;
-
-	virtual bool should_remove_extra() = 0;
-
-	virtual void filter_results(std::vector<std::pair<dist_t, labeltype>>& candidates) = 0;
-
-	virtual ~BaseSearchStopCondition() {}
-};
-
 template <typename T>
-class [[nodiscard]] pairGreater {
-public:
-	bool operator()(const T& p1, const T& p2) { return p1.first > p2.first; }
-};
-
-template <typename T>
-static void writeBinaryPOD(std::ostream& out, const T& podRef) {
-	out.write((char*)&podRef, sizeof(T));
-}
-
-template <typename T>
-static void readBinaryPOD(std::istream& in, T& podRef) {
-	in.read((char*)&podRef, sizeof(T));
-}
-
-using DISTFUNC = float (*)(const void*, const void*, const void*) noexcept;
-
-struct [[nodiscard]] DistCalculatorParam {
-	DISTFUNC f{nullptr};
-	MetricType metric{MetricType::NONE};
-	size_t dims{0};
-	QuantizingParams quantizingParams{};
-
-	float CalcDist(const void* lhs, const void* rhs, CorrectiveOffset lhsCorr, CorrectiveOffset rhsCorr) const noexcept {
-		switch (metric) {
-			case MetricType::L2: {
-				return quantizingParams.alpha_2 * f(lhs, rhs, &dims) + lhsCorr + rhsCorr;
-			}
-			case MetricType::COSINE:
-			case MetricType::INNER_PRODUCT: {
-				return -(quantizingParams.alpha_2 * -f(lhs, rhs, &dims) + lhsCorr + rhsCorr);
-			}
-			case MetricType::NONE:
-			default:
-				std::abort();
-		}
-	}
-};
-
 class [[nodiscard]] DistCalculator {
 public:
-	DistCalculator() = default;
-	DistCalculator(DistCalculatorParam&& param, size_t maxElements) : maxElements_{maxElements}, param_{std::move(param)} {
-		assertrx(param_.f);
-		assertrx(param_.metric != MetricType::NONE);
-		assertrx(param_.dims > 0);
-		if (maxElements_ && param_.metric == MetricType::COSINE) {
-			normCoefs_ = std::make_unique<float[]>(maxElements);
+	explicit DistCalculator(reindexer::VectorMetric metric, size_t dim, size_t maxElements, std::optional<float> alpha2 = std::nullopt)
+		: metric_(metric), dim_(dim), alpha2_(initAlpha2(alpha2)), distFn_(initDistFn()), maxElements_{maxElements} {
+		assertrx(dim_ > 0);
+		if (maxElements_ && metric_ == reindexer::VectorMetric::Cosine) {
+			normCoefs_ = std::make_unique<float[]>(maxElements_);
+		}
+		if constexpr (std::is_same_v<T, uint8_t>) {
+			correctiveOffsets_.resize(maxElements_);
 		}
 	}
-#if RX_WITH_STDLIB_DEBUG
-	DistCalculator(DistCalculator&& other) noexcept
-		: maxElements_{other.maxElements_},
-		  param_{std::move(other.param_)},
-		  normCoefs_{std::move(other.normCoefs_)},
-		  correctiveOffsets_(other.correctiveOffsets_),
-		  initialized_{std::move(other.initialized_)} {}
 
-	DistCalculator& operator=(DistCalculator&& other) noexcept {
-		if (&other != this) {
-			reindexer::scoped_lock lck(mtx_, other.mtx_);
-			maxElements_ = other.maxElements_;
-			param_ = std::move(other.param_);
-			normCoefs_ = std::move(other.normCoefs_);
-			correctiveOffsets_ = other.correctiveOffsets_;
-			initialized_ = std::move(other.initialized_);
+	template <typename OtherT>
+	explicit DistCalculator(const DistCalculator<OtherT>& other, size_t newMaxElements, std::optional<float> alpha2 = std::nullopt)
+		: metric_(other.metric_),
+		  dim_(other.dim_),
+		  alpha2_(initAlpha2(alpha2)),
+		  distFn_(initDistFn()),
+		  maxElements_(std::max(other.maxElements_, newMaxElements)),
+		  normCoefs_(maxElements_ && metric_ == reindexer::VectorMetric::Cosine ? std::make_unique<float[]>(maxElements_) : nullptr),
+		  correctiveOffsets_(other.correctiveOffsets_) {
+		copyValuesFrom(other);
+		if constexpr (std::is_same_v<T, uint8_t>) {
+			correctiveOffsets_.resize(maxElements_);
 		}
-		return *this;
 	}
-#endif	// RX_WITH_STDLIB_DEBUG
 
 	void Resize(size_t newSize) {
 		if (maxElements_ != newSize) {
-			if (param_.metric == MetricType::COSINE) {
+			if (metric_ == reindexer::VectorMetric::Cosine) {
 				assertrx_dbg(normCoefs_);
 				auto newData = std::make_unique<float[]>(newSize);
 				const size_t copyCount = std::min(newSize, maxElements_) * sizeof(float);
@@ -137,37 +63,24 @@ public:
 			} else {
 				assertrx_dbg(!normCoefs_);
 			}
-			maxElements_ = newSize;
 
-			if (!correctiveOffsets_.empty()) {
-				correctiveOffsets_.resize(maxElements_);
+			if constexpr (std::is_same_v<T, float>) {
+				assertrx(correctiveOffsets_.empty());
+			} else {
+				static_assert(std::is_same_v<T, uint8_t>);
+				assertrx(correctiveOffsets_.size() == maxElements_);
+				correctiveOffsets_.resize(newSize);
 			}
+
+			maxElements_ = newSize;
 		}
 	}
-	void CopyValuesFrom(const DistCalculator& other) {
-		if (maxElements_ < other.maxElements_) {
-			throw std::logic_error("Unable to copy norm values for dist calc");
-		}
-		if (param_.metric == MetricType::COSINE) {
-			assertrx_dbg(normCoefs_);
-			assertrx_dbg(other.normCoefs_);
-			const size_t copyCount = other.maxElements_ * sizeof(float);
-			std::memcpy(normCoefs_.get(), other.normCoefs_.get(), copyCount);
-#if RX_WITH_STDLIB_DEBUG
-			reindexer::scoped_lock lck(mtx_, other.mtx_);
-			const auto it = initialized_.equal_range(other.maxElements_).second;
-			auto initCopy = other.initialized_;
-			initCopy.insert(it, initialized_.end());
-			initialized_ = std::move(initCopy);
-#endif	// RX_WITH_STDLIB_DEBUG
-		}
-	}
-	RX_ALWAYS_INLINE void AddNorm(const void* v, unsigned id) noexcept {
+
+	RX_ALWAYS_INLINE void AddNorm(const float* v, unsigned id) noexcept {
 		assertrx_dbg(id < maxElements_);
-		if (param_.metric == MetricType::COSINE) {
+		if (metric_ == reindexer::VectorMetric::Cosine) {
 			assertrx_dbg(normCoefs_);
-			// FIXME! here can be passed uint8_t* after loading from storage quantized graph (by method 'loadIndex')
-			normCoefs_[id] = reindexer::ann::CalculateL2Module(static_cast<const float*>(v), int32_t(param_.dims));
+			normCoefs_[id] = reindexer::ann::CalculateL2Module(v, dim_);
 #if RX_WITH_STDLIB_DEBUG
 			reindexer::lock_guard lck(mtx_);
 			initialized_.emplace(id);
@@ -179,7 +92,7 @@ public:
 	RX_ALWAYS_INLINE void MoveNorm(unsigned oldId, unsigned newId) noexcept {
 		assertrx_dbg(oldId < maxElements_);
 		assertrx_dbg(newId < maxElements_);
-		if (param_.metric == MetricType::COSINE) {
+		if (metric_ == reindexer::VectorMetric::Cosine) {
 			assertrx_dbg(normCoefs_);
 			normCoefs_.get()[newId] = normCoefs_.get()[oldId];
 #if RX_WITH_STDLIB_DEBUG
@@ -192,10 +105,10 @@ public:
 			assertrx_dbg(!normCoefs_);
 		}
 	}
-	RX_ALWAYS_INLINE void EraseNorm(unsigned id) noexcept {
+	RX_ALWAYS_INLINE void EraseNorm([[maybe_unused]] unsigned id) noexcept {
 		assertrx_dbg(id < maxElements_);
 #if RX_WITH_STDLIB_DEBUG
-		if (param_.metric == MetricType::COSINE) {
+		if (metric_ == reindexer::VectorMetric::Cosine) {
 			reindexer::lock_guard lck(mtx_);
 			assertrx_dbg(initialized_.find(id) != initialized_.end());
 			initialized_.erase(id);
@@ -204,12 +117,15 @@ public:
 		}
 #endif	// RX_WITH_STDLIB_DEBUG
 	}
-	RX_ALWAYS_INLINE size_t Dims() const noexcept { return param_.dims; }
-	RX_ALWAYS_INLINE MetricType Metric() const noexcept { return param_.metric; }
-	RX_ALWAYS_INLINE float operator()(const void* v1, unsigned id1, const void* v2, unsigned id2) const {
-		auto dist = param_.CalcDist(v1, v2, getCorrectiveOffset(id1), getCorrectiveOffset(id2));
 
-		if (param_.metric == MetricType::COSINE) {
+	RX_ALWAYS_INLINE size_t Dim() const noexcept { return dim_; }
+	RX_ALWAYS_INLINE reindexer::VectorMetric Metric() const noexcept { return metric_; }
+
+	RX_ALWAYS_INLINE float operator()(const T* v1, unsigned id1, const T* v2, unsigned id2) const {
+		assertrx_dbg(distFn_);
+		float dist = (this->*distFn_)(v1, v2, getCorrectiveOffset(id1), getCorrectiveOffset(id2));
+
+		if (metric_ == reindexer::VectorMetric::Cosine) {
 			assertrx(normCoefs_);
 			assertrx(id1 < maxElements_);
 			assertrx(id2 < maxElements_);
@@ -227,9 +143,11 @@ public:
 		}
 		return dist;
 	}
-	RX_ALWAYS_INLINE float operator()(const void* v1, const void* v2, unsigned id) const {
-		auto dist = param_.CalcDist(v1, v2, getCorrectiveOffset(v1), getCorrectiveOffset(id));
-		if (param_.metric == MetricType::COSINE) {
+	RX_ALWAYS_INLINE float operator()(const T* v1, const T* v2, unsigned id) const {
+		assertrx_dbg(distFn_);
+		float dist = (this->*distFn_)(v1, v2, getCorrectiveOffset(v1), getCorrectiveOffset(id));
+
+		if (metric_ == reindexer::VectorMetric::Cosine) {
 			assertrx_dbg(normCoefs_);
 			assertrx_dbg(id < maxElements_);
 #if RX_WITH_STDLIB_DEBUG
@@ -245,17 +163,70 @@ public:
 		return dist;
 	}
 
-	void UpdateQuantizeParams(QuantizingParams params) noexcept {
-		param_.quantizingParams = std::move(params);
-		correctiveOffsets_.resize(maxElements_);
-	}
-
 	std::vector<CorrectiveOffset>& Sq8CorrectiveOffsets() noexcept { return correctiveOffsets_; }
 	const std::vector<CorrectiveOffset>& Sq8CorrectiveOffsets() const noexcept { return correctiveOffsets_; }
 
 private:
+	template <typename OtherT>
+	friend class DistCalculator;
+
+	using DistFn = float (DistCalculator::*)(const T*, const T*, CorrectiveOffset, CorrectiveOffset) const noexcept;
+
+	const reindexer::VectorMetric metric_;
+	const size_t dim_ = 0;
+	const float alpha2_ = 1.f;
+	const DistFn distFn_ = nullptr;
+
+	float initAlpha2(std::optional<float> alpha2) {
+		if constexpr (std::is_same_v<T, float>) {
+			assertrx(!alpha2);
+			return 1.f;
+		} else {
+			static_assert(std::is_same_v<T, uint8_t>);
+			assertrx(alpha2);
+			return *alpha2;
+		}
+	}
+
+	RX_ALWAYS_INLINE float l2(const T* lhs, const T* rhs, CorrectiveOffset lhsCorr, CorrectiveOffset rhsCorr) const noexcept {
+		return alpha2_ * reindexer::vector_dists::L2SqrDistance(lhs, rhs, dim_) + lhsCorr + rhsCorr;
+	}
+	RX_ALWAYS_INLINE float ip(const T* lhs, const T* rhs, CorrectiveOffset lhsCorr, CorrectiveOffset rhsCorr) const noexcept {
+		return -(alpha2_ * reindexer::vector_dists::InnerProductDistance(lhs, rhs, dim_) + lhsCorr + rhsCorr);
+	}
+
+	DistFn initDistFn() const noexcept {
+		switch (metric_) {
+			case reindexer::VectorMetric::L2:
+				return &DistCalculator::l2;
+			case reindexer::VectorMetric::InnerProduct:
+			case reindexer::VectorMetric::Cosine:
+				return &DistCalculator::ip;
+			default:
+				std::abort();
+		}
+	}
+
+	void copyValuesFrom(const auto& other) {
+		if (maxElements_ < other.maxElements_) {
+			throw std::logic_error("Unable to copy norm values for dist calc");
+		}
+		if (metric_ == reindexer::VectorMetric::Cosine) {
+			assertrx_dbg(normCoefs_);
+			assertrx_dbg(other.normCoefs_);
+			const size_t copyCount = other.maxElements_ * sizeof(float);
+			std::memcpy(normCoefs_.get(), other.normCoefs_.get(), copyCount);
+#if RX_WITH_STDLIB_DEBUG
+			reindexer::scoped_lock lck(mtx_, other.mtx_);
+			const auto it = initialized_.equal_range(other.maxElements_).second;
+			auto initCopy = other.initialized_;
+			initCopy.insert(it, initialized_.end());
+			initialized_ = std::move(initCopy);
+#endif	// RX_WITH_STDLIB_DEBUG
+		}
+	}
+
 	size_t maxElements_{0};
-	DistCalculatorParam param_;
 	std::unique_ptr<float[]> normCoefs_;
 	std::vector<CorrectiveOffset> correctiveOffsets_;
 #if RX_WITH_STDLIB_DEBUG
@@ -264,70 +235,27 @@ private:
 #endif	// RX_WITH_STDLIB_DEBUG
 
 	RX_ALWAYS_INLINE CorrectiveOffset getCorrectiveOffset(unsigned id) const {
-		if (!correctiveOffsets_.empty() && id >= correctiveOffsets_.size()) [[unlikely]] {
-			throw std::logic_error(fmt::format("There are no corrective offsets for the vector with id {} in the graph.", id));
+		if constexpr (std::is_same_v<T, float>) {
+			assertrx(correctiveOffsets_.empty());
+			return CorrectiveOffset{};
+		} else {
+			static_assert(std::is_same_v<T, uint8_t>);
+			assertrx(correctiveOffsets_.size() > id);
+			return correctiveOffsets_[id];
 		}
-
-		return !correctiveOffsets_.empty() ? correctiveOffsets_[id] : CorrectiveOffset{};
 	}
 
-	RX_ALWAYS_INLINE CorrectiveOffset getCorrectiveOffset(const void* data) const noexcept {
-		if (correctiveOffsets_.empty()) {
-			return {};
+	RX_ALWAYS_INLINE CorrectiveOffset getCorrectiveOffset(const T* data) const noexcept {
+		if constexpr (std::is_same_v<T, float>) {
+			assertrx(correctiveOffsets_.empty());
+			return CorrectiveOffset{};
+		} else {
+			static_assert(std::is_same_v<T, uint8_t>);
+			CorrectiveOffset res{};
+			std::memcpy(&res, data + dim_, sizeof(CorrectiveOffset));
+			return res;
 		}
-
-		auto ptr = reinterpret_cast<const float*>(reinterpret_cast<const uint8_t*>(data) + param_.dims);
-		CorrectiveOffset res{};
-		std::memcpy(static_cast<void*>(&res), ptr, sizeof(CorrectiveOffset));
-		return res;
 	}
-};
-
-class [[nodiscard]] SpaceInterface {
-public:
-	// virtual void search(void *);
-	virtual size_t get_data_size() noexcept = 0;
-
-	virtual DistCalculatorParam get_dist_calculator_param() noexcept = 0;
-
-	virtual ~SpaceInterface() {}
-};
-
-struct [[nodiscard]] ResizeResult {
-	const void* oldPosition;
-	const void* newPosition;
-};
-
-class [[nodiscard]] IWriter {
-public:
-	virtual void PutVarUInt(uint64_t) = 0;
-	virtual void PutVarUInt(uint32_t) = 0;
-	virtual void PutVarInt(int64_t) = 0;
-	virtual void PutVarInt(int32_t) = 0;
-	virtual void PutVString(std::string_view) = 0;
-	virtual void PutFloat(float) = 0;
-	virtual void AppendPKByID(labeltype) = 0;
-};
-class [[nodiscard]] IReader {
-public:
-	virtual uint64_t GetVarUInt() = 0;
-	virtual int64_t GetVarInt() = 0;
-	virtual std::string_view GetVString() = 0;
-	virtual float GetFloat() = 0;
-	virtual labeltype ReadPkEncodedData(char* destBuf) = 0;
-	virtual bool WithQuantizer() = 0;
-
-	virtual uint8_t Version() = 0;
 };
 
 }  // namespace hnswlib
-
-#include "bruteforce.h"
-#include "hnswalg.h"
-#include "space_cosine.h"
-#include "space_ip.h"
-#include "space_l2.h"
-
-#ifndef _MSC_VER
-#pragma GCC diagnostic pop
-#endif

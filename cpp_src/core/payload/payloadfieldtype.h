@@ -7,8 +7,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "core/definitions/indexopts.h"
 #include "core/enums.h"
-#include "core/indexopts.h"
 #include "core/key_value_type.h"
 
 namespace reindexer {

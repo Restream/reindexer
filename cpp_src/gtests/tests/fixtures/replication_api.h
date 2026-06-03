@@ -4,6 +4,8 @@
 #include "estl/shared_mutex.h"
 #include "servercontrol.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer_server;
 
 // for now in default serve 0  always master - other slave - inited in ReplicationApi::SetUp
@@ -52,3 +54,5 @@ private:
 	std::vector<ServerControl> svc_;
 	mutable reindexer::mutex m_;
 };
+
+}  // namespace reindexer_tests

@@ -18,8 +18,8 @@ public:
 
 	explicit ResultHandler(Result& result) noexcept : result_{result} {}
 
-	void AddItem(Ctx& ctx, RankT rank, IdType rowId, IdType properRowId, const PayloadValue& item, TagsMatcher& tm, const PayloadType& pt,
-				 const NamespaceName& nsName) {
+	RX_ALWAYS_INLINE void AddItem(Ctx& ctx, RankT rank, IdType rowId, IdType properRowId, const PayloadValue& item, TagsMatcher& tm,
+								  const PayloadType& pt, const NamespaceName& nsName) {
 		if constexpr (IsJoinPreSelectResult) {
 			addItemForPreSelectBuild(ctx, rank, rowId, properRowId, item, tm, pt);
 		} else if constexpr (IsJoinSelectResult || IsMainSelectResult) {
@@ -77,8 +77,8 @@ public:
 	}
 
 private:
-	void addItem(Ctx& ctx, RankT rank, IdType rowId, IdType properRowId, const PayloadValue& item, TagsMatcher& tm, const PayloadType& pt,
-				 const NamespaceName& nsName) {
+	RX_ALWAYS_INLINE void addItem(Ctx& ctx, RankT rank, IdType rowId, IdType properRowId, const PayloadValue& item, TagsMatcher& tm,
+								  const PayloadType& pt, const NamespaceName& nsName) {
 		if (!ctx.sortingContext.expressions.empty()) {
 			if (result_.haveRank) {
 				result_.AddItemRef(rank, properRowId, unsigned(ctx.sortingContext.exprResults[0].size()), ctx.nsid);
@@ -94,15 +94,15 @@ private:
 			}
 		}
 
-		const int kLimitItems = 10000000;
+		constexpr size_t kLimitItems = 10'000'000;
 		size_t sz = result_.Count();
 		if (sz >= kLimitItems && !(sz % kLimitItems)) [[unlikely]] {
-			logFmt(LogWarning, "Too big query results ns='{}',count='{}',rowId='{}',q='{}'", nsName, sz, properRowId, ctx.query.GetSQL());
+			logFmt(LogWarning, "Too large query results ns='{}',count='{}',rowId='{}',q='{}'", nsName, sz, properRowId, ctx.query.GetSQL());
 		}
 	}
 
-	void addItemForPreSelectBuild(JoinPreSelectCtx& ctx, RankT rank, IdType rowId, IdType properRowId, const PayloadValue& item,
-								  TagsMatcher& tm, const PayloadType& pt) {
+	RX_ALWAYS_INLINE void addItemForPreSelectBuild(JoinPreSelectCtx& ctx, RankT rank, IdType rowId, IdType properRowId,
+												   const PayloadValue& item, TagsMatcher& tm, const PayloadType& pt) {
 		std::visit(overloaded{[rowId](IdSetPlain& ids) { ids.AddUnordered(rowId); },
 							  [&](joins::PreSelect::Values& values) {
 								  if (!ctx.sortingContext.expressions.empty()) {

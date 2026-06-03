@@ -6,6 +6,8 @@
 #include "args/args.hpp"
 #include "ft_fixture.h"
 
+namespace reindexer_benchmarks {
+
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 const int kItemsInBenchDataset = 1'000;
 #elif defined(RX_WITH_STDLIB_DEBUG)
@@ -14,8 +16,7 @@ const int kItemsInBenchDataset = 10'000;
 const int kItemsInBenchDataset = 100'000;
 #endif
 
-// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
-int main(int argc, char** argv) {
+int BenchMain(int argc, char** argv) {
 #ifdef HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
 	benchmark::MaybeReenterWithoutASLR(argc, argv);
 #endif	// HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
@@ -70,10 +71,15 @@ int main(int argc, char** argv) {
 #ifdef _GLIBCXX_DEBUG
 	::benchmark::RunSpecifiedBenchmarks();
 #else	// #ifdef _GLIBCXX_DEBUG
-	benchmark::Reporter reporter;
+	Reporter reporter;
 	::benchmark::RunSpecifiedBenchmarks(&reporter);
 #endif	// #ifdef _GLIBCXX_DEBUG
 	::benchmark::Shutdown();
 
 	return 0;
 }
+
+}  // namespace reindexer_benchmarks
+
+// NOLINTNEXTLINE (bugprone-exception-escape) `main` is required to be in global namespace
+int main(int argc, char** argv) { return reindexer_benchmarks::BenchMain(argc, argv); }

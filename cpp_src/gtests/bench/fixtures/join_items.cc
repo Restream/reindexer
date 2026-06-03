@@ -1,6 +1,8 @@
 #include "join_items.h"
 #include "helpers.h"
 
+namespace reindexer_benchmarks {
+
 reindexer::Error JoinItems::Initialize() {
 	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
@@ -57,3 +59,5 @@ std::string JoinItems::randomString(const std::string& prefix) {
 	result += names_.at(random<size_t>(0, names_.size() - 1));
 	return result;
 }
+
+}  // namespace reindexer_benchmarks

@@ -2,7 +2,7 @@
 
 #include <optional>
 
-#include "core/indexopts.h"
+#include "core/definitions/collateopts.h"
 #include "core/key_value_type.h"
 #include "core/payload/payloadvalue.h"
 #include "estl/comparation_result.h"
@@ -321,6 +321,8 @@ class [[nodiscard]] VariantArray : public h_vector<Variant, 2> {
 	using Base = h_vector<Variant, 2>;
 
 public:
+	constexpr static uint64_t kHashMagic = 0x9e3779b97f4a7c15ull;
+
 	VariantArray() noexcept = default;
 	VariantArray(const VariantArray&) = default;
 	VariantArray(VariantArray&&) = default;
@@ -355,7 +357,7 @@ public:
 	size_t Hash() const noexcept {
 		size_t ret = this->size();
 		for (auto& v : *this) {
-			ret = (ret * 127) ^ v.Hash();
+			ret = (ret * kHashMagic) ^ v.Hash();
 		}
 		return ret;
 	}

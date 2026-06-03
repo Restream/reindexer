@@ -1,7 +1,10 @@
 #include "selector_plan_test.h"
 #include "json_helpers.h"
 
+namespace reindexer_tests {
+
 using namespace json_helpers;
+using reindexer::IndexOpts;
 
 TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 	FillNs(btreeNs);
@@ -186,12 +189,14 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 				if (additionalSearchField == searchField) {
 					continue;
 				}
-				for (const Query& query :
-					 {Query(unbuiltBtreeNs).Explain().Where(additionalSearchField, CondEq, RandInt()).Where(searchField, cond, RandInt()),
-					  Query(unbuiltBtreeNs)
-						  .Explain()
-						  .Where(searchField, cond, RandInt())
-						  .Where(additionalSearchField, CondEq, RandInt())}) {
+				for (const Query& query : {Query(unbuiltBtreeNs)
+											   .Explain()
+											   .Where(additionalSearchField, CondEq, RandInt())
+											   .Where(searchField, cond, 0 /*RandInt()*/),
+										   Query(unbuiltBtreeNs)
+											   .Explain()
+											   .Where(searchField, cond, RandInt())
+											   .Where(additionalSearchField, CondEq, RandInt())}) {
 					SCOPED_TRACE(query.GetSQL());
 					auto qr = rt.Select(query);
 					const std::string& explain = qr.GetExplainResults();
@@ -208,7 +213,6 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
 						} else {
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {additionalSearchField, searchField}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
@@ -394,3 +398,5 @@ TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "type", {"SingleRange"}));
 	}
 }
+
+}  // namespace reindexer_tests

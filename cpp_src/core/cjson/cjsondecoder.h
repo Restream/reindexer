@@ -97,13 +97,27 @@ public:
 	class [[nodiscard]] DefaultRecoder {
 	public:
 		static RX_ALWAYS_INLINE DefaultRecoder MakeCleanCopy() noexcept { return DefaultRecoder(); }
-		RX_ALWAYS_INLINE bool Recode(Serializer&, WrSerializer&) const { return false; }
+		RX_ALWAYS_INLINE bool Recode(Serializer& rdser, WrSerializer& wrser) const {
+			assertrx_dbg(fromTagType_ != TAG_END);
+			if (fromTagType_ == TAG_UUID) {
+				wrser.PutStrUuid(rdser.GetUuid());
+				return true;
+			} else {
+				return false;
+			}
+		}
 		RX_ALWAYS_INLINE bool Recode(Serializer&, Payload&, TagName, WrSerializer&) const noexcept { return false; }
 		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, int) const noexcept {
 			// Do not recode index field
 			return tagType;
 		}
-		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath&) noexcept { return tagType; }
+		RX_ALWAYS_INLINE TagType RegisterTagType(TagType tagType, const TagsPath&) noexcept {
+			fromTagType_ = tagType;
+			return tagType == TAG_UUID ? TAG_STRING : tagType;
+		}
+
+	private:
+		TagType fromTagType_ = TAG_END;
 	};
 
 	class [[nodiscard]] CustomRecoder {

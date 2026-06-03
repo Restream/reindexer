@@ -313,17 +313,17 @@ public:
 			}
 		}
 
-		// Insert old value into affected composite indexes or refresh value in unaffected indexes
-		const auto pvBackup = Variant(modifier_.rollBackIndexData_.GetPayloadValueBackup());
+		// Insert current payload value into affected composite indexes or refresh value in unaffected indexes
+		const Variant pvCurVariant{plValue};
 		for (size_t i = indexes.firstCompositePos(); i < size_t(indexes.totalSize()); ++i) {
 			if (data[i]) {
 				bool needClearCache{false};
-				std::ignore = indexes[i]->Upsert(pvBackup, itemId_, needClearCache);
+				std::ignore = indexes[i]->Upsert(pvCurVariant, itemId_, needClearCache);
 				if (needClearCache) {
 					indexesCacheCleaner.Add(*indexes[i]);
 				}
 			} else {
-				bool refreshed = indexes[i]->RefreshCompositeKey(pvBackup);
+				bool refreshed = indexes[i]->RefreshCompositeKey(pvCurVariant);
 				assertrx_dbg(refreshed);
 				if (!refreshed) [[unlikely]] {
 					logFmt(LogError, "[{}]: Unable to refresh key for {} during update query", modifier_.ns_.name_, indexes[i]->Name());
@@ -1003,11 +1003,13 @@ void ItemModifier::updateEmbedding(IdType itemId, const RdxContext& rdxContext, 
 		}
 
 		// ToDo in real life, work with several embedded devices requires asynchrony. Now we support only one
-		h_vector<ConstFloatVector, 1> products;
+		h_vector<FloatVector, 1> products;
 		embedder.Calculate(rdxContext, std::span{&source, 1}, products);
 
 		VariantArray krs;
-		krs.emplace_back(ConstFloatVectorView{products.front()});
+		for (const auto& p : products) {
+			krs.emplace_back(ConstFloatVectorView{p});
+		}
 
 		UpdateEntry entry(embedder.FieldName(), {}, FieldModifyMode::FieldModeSet);
 		FieldData fldData(entry, ns_, affectedComposites_);

@@ -12,7 +12,7 @@ namespace logger_details {
 static LogWriter g_logWriter;
 static read_write_spinlock g_LoggerMtx;
 static std::atomic<LoggerPolicy> g_MtLogger = {LoggerPolicy::NotInit};
-std::atomic<int> g_LogLevel = LogTrace;
+std::atomic<int> g_LogLevel = LogInfo;
 
 RX_ALWAYS_INLINE void write(int level, char* buf) {
 	if (g_logWriter) {

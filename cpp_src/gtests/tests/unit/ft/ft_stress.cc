@@ -8,6 +8,8 @@
 #include "gtests/tests/gtest_cout.h"
 #include "tools/fsops.h"
 
+namespace reindexer_tests {
+
 using namespace std::string_view_literals;
 
 class [[nodiscard]] FTStressApi : public FTApi {
@@ -230,3 +232,5 @@ INSTANTIATE_TEST_SUITE_P(, FTStressApi, ::testing::Values(kRxFtTestTypes), [](co
 			std::abort();
 	}
 });
+
+}  // namespace reindexer_tests

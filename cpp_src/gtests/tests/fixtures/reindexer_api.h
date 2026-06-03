@@ -2,6 +2,8 @@
 
 #include "reindexertestapi.h"
 
+namespace reindexer_tests {
+
 using reindexer::Error;
 using reindexer::Variant;
 using reindexer::VariantArray;
@@ -48,3 +50,5 @@ protected:
 	void initializeDefaultNs();
 	static reindexer::Item getMemStat(Reindexer& rx, std::string_view ns);
 };
+
+}  // namespace reindexer_tests

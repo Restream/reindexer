@@ -578,9 +578,9 @@ public:
 
 	template <concepts::ConvertibleToString Str>
 	KnnQueryEntry(Str&& fldName, ConstFloatVectorView v, KnnSearchParams params)
-		: KnnQueryEntry{std::forward<Str>(fldName), ConstFloatVector{v.Span()}, params} {}
+		: KnnQueryEntry{std::forward<Str>(fldName), FloatVector{v.Span()}, params} {}
 	template <concepts::ConvertibleToString Str>
-	KnnQueryEntry(Str&& fldName, ConstFloatVector v, KnnSearchParams params)
+	KnnQueryEntry(Str&& fldName, FloatVector v, KnnSearchParams params)
 		: fieldName_{std::forward<Str>(fldName)}, format_{DataFormatType::Vector}, value_{std::move(v)}, params_{params} {}
 	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
 	KnnQueryEntry(Str1&& fldName, Str2&& data, KnnSearchParams params)
@@ -621,7 +621,7 @@ private:
 	std::string fieldName_;
 	int idxNo_{IndexValueType::NotSet};
 	DataFormatType format_{DataFormatType::None};
-	ConstFloatVector value_;
+	FloatVector value_;
 	std::string data_;
 	KnnSearchParams params_;
 };

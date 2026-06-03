@@ -3,6 +3,8 @@
 #include "core/query/query.h"
 #include "core/query/sql/sqlparser.h"
 
+namespace reindexer_tests {
+
 struct [[nodiscard]] SQLParserTests : public ::testing::TestWithParam<std::string> {};
 
 // --gtest_filter=*/SQLParserTests.NumberInDoubleQuotesParsedCorrectly/*
@@ -83,3 +85,5 @@ INSTANTIATE_TEST_SUITE_P(
 		std::pair{"update ns set a=1 where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 25 28)"})
 
 );
+
+}  // namespace reindexer_tests

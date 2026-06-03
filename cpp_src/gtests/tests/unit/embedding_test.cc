@@ -1,10 +1,13 @@
 #include "gtests/tests/fixtures/embedding_test.h"
 #include <gmock/gmock.h>
-#include "client/itemimpl.h"
 #include "core/system_ns_names.h"
 #include "gtests/tools.h"
 #include "tools/errors.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+using reindexer::FloatVectorIndexOpts;
 using namespace std::string_view_literals;
 static const std::string kFieldNameId{"id"};
 
@@ -1026,7 +1029,7 @@ static void upsertItems(ReindexerTestApi<reindexer::Reindexer>& rt, std::string_
 	std::vector<float> buf(dimension);
 	for (int id = startId; id < endId; ++id) {
 		for (float& v : buf) {
-			v = randBin<float>(-10, 10);
+			v = reindexer_tests_tools::randBin<float>(-10, 10);
 		}
 		auto item = rt.NewItem(nsName);
 		item[kFieldNameId] = id;
@@ -1153,3 +1156,5 @@ TEST_F(EmbeddingTest, SkipEmbeddingStrategy) {
 	changeIndexAndCheck(FloatVectorIndexOpts::EmbedderOpts::Strategy::EmptyOnly);
 	changeIndexAndCheck(FloatVectorIndexOpts::EmbedderOpts::Strategy::Strict);
 }
+
+}  // namespace reindexer_tests

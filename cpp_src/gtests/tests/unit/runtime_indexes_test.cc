@@ -1,5 +1,7 @@
 #include "runtime_indexes_api.h"
 
+namespace reindexer_tests {
+
 TEST_F(RuntimeIndexesApi, RuntimeIndexesAddTest) {
 	FillNamespaces(0, 100);
 
@@ -219,6 +221,8 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 	DropRuntimeUuidIndex(1);
 	DropRuntimeUuidArrayIndex(1);
 
+	using namespace reindexer_tests_tools;
+
 	CheckSelectValidity(Query(default_namespace));
 	CheckSelectValidity(Query(default_namespace).Where(getRuntimeStringIndexName(2).c_str(), CondGt, RandString()));
 
@@ -246,3 +250,5 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 							.Or()
 							.DWithin(getRuntimeSPointIndexName(2), randPoint(10), randBin<double>(0, 1)));
 }
+
+}  // namespace reindexer_tests

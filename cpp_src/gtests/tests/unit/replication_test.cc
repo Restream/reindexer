@@ -4,6 +4,8 @@
 #include "replication_load_api.h"
 #include "wal/walrecord.h"
 
+namespace reindexer_tests {
+
 using reindexer::Query;
 
 // clang-format off
@@ -473,14 +475,15 @@ TEST_F(ReplicationLoadApi, DuplicatePKFollowerTest) {
 	for (size_t i = 0; i < kItemCount; ++i) {
 		std::string jsonChange;
 		BaseApi::ItemType item = api.NewItem("some");
-		auto json = fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", i, i + 100, std::to_string(1 + 1000), nilUUID);
+		auto json = fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", i, i + 100, std::to_string(1 + 1000),
+								reindexer_tests_tools::nilUUID);
 		err = item.FromJSON(json);
 		api.Upsert("some", item);
 		jsonChange = json;
 		int idNew = i;
 		if (ids.find(i) != ids.end()) {
 			jsonChange = fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", kItemCount * 2 + i, i + 100,
-									 std::to_string(1 + 1000), nilUUID);
+									 std::to_string(1 + 1000), reindexer_tests_tools::nilUUID);
 			idNew = kItemCount * 2 + i;
 		}
 		items.emplace(idNew, std::make_pair(json, jsonChange));
@@ -733,3 +736,5 @@ TEST_F(ReplicationLoadApi, FollowerNamespaceOperations) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 #endif	// REINDEX_WITH_TSAN
+
+}  // namespace reindexer_tests
