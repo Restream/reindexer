@@ -305,33 +305,40 @@ func (s *Serializer) WriteFloat64s(v []float64) (n int, err error) {
 }
 
 func (s *Serializer) PutVarInt(v int64) {
-	uv := uint64(v) << 1
-	if v < 0 {
-		uv = ^uv
+	uv := uint64(v<<1) ^ uint64(v>>63)
+	if uv < 0x80 {
+		s.buf = append(s.buf, byte(uv))
+		return
 	}
-	s.PutVarUInt(uv)
+	if uv < 0x4000 {
+		s.buf = append(s.buf, byte(uv)|0x80, byte(uv>>7))
+		return
+	}
+	if uv < 0x200000 {
+		s.buf = append(s.buf, byte(uv)|0x80, byte(uv>>7)|0x80, byte(uv>>14))
+		return
+	}
+	l := len(s.buf)
+	if l+10 <= cap(s.buf) {
+		s.buf = s.buf[:l+10]
+	} else {
+		s.grow(10)
+	}
+	rl := binary.PutUvarint(s.buf[l:], uv)
+	s.buf = s.buf[:rl+l]
 }
 
 func (s *Serializer) PutVarUInt(v uint64) *Serializer {
 	if v < 0x80 {
-		l := len(s.buf)
-		s.grow(1)
-		s.buf[l] = byte(v)
+		s.buf = append(s.buf, byte(v))
 		return s
 	}
 	if v < 0x4000 {
-		l := len(s.buf)
-		s.grow(2)
-		s.buf[l] = byte(v) | 0x80
-		s.buf[l+1] = byte(v >> 7)
+		s.buf = append(s.buf, byte(v)|0x80, byte(v>>7))
 		return s
 	}
 	if v < 0x200000 {
-		l := len(s.buf)
-		s.grow(3)
-		s.buf[l] = byte(v) | 0x80
-		s.buf[l+1] = byte(v>>7) | 0x80
-		s.buf[l+2] = byte(v >> 14)
+		s.buf = append(s.buf, byte(v)|0x80, byte(v>>7)|0x80, byte(v>>14))
 		return s
 	}
 	l := len(s.buf)
@@ -342,13 +349,11 @@ func (s *Serializer) PutVarUInt(v uint64) *Serializer {
 }
 
 func (s *Serializer) PutCTag(v ctag) *Serializer {
-	s.PutVarUInt(uint64(v))
-	return s
+	return s.PutVarUInt(uint64(v))
 }
 
 func (s *Serializer) PutCArrayTag(v carraytag) *Serializer {
-	s.PutUInt32(uint32(v))
-	return s
+	return s.PutUInt32(uint32(v))
 }
 
 func (s *Serializer) PutVarCUInt(v int) *Serializer {
@@ -479,7 +484,7 @@ func (s *Serializer) GetCTag() ctag {
 func (s *Serializer) GetUuid() string {
 	v0 := s.GetUInt64()
 	v1 := s.GetUInt64()
-	return createUuid([2]uint64{v0, v1})
+	return createUuid(v0, v1)
 }
 
 func (s *Serializer) GetVarInt() int64 {
