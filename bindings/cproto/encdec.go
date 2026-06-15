@@ -102,15 +102,12 @@ func (r *rpcEncoder) int32ArrArg(v []int32) {
 }
 
 func appendRPCVarCUInt(buf []byte, v int) []byte {
-	return appendRPCVarUInt(buf, uint64(v))
-}
-
-func appendRPCVarUInt(buf []byte, v uint64) []byte {
-	for v >= 0x80 {
-		buf = append(buf, byte(v)|0x80)
-		v >>= 7
+	uv := uint64(v)
+	for uv >= 0x80 {
+		buf = append(buf, byte(uv)|0x80)
+		uv >>= 7
 	}
-	return append(buf, byte(v))
+	return append(buf, byte(uv))
 }
 
 func (r *rpcEncoder) int64Arg(v int64) {
