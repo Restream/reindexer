@@ -81,13 +81,33 @@ func (r *rpcEncoder) boolArg(v bool) {
 func (r *rpcEncoder) int32ArrArg(v []int32) {
 	r.ser.PutVarUInt(uint64(bindings.ValueString))
 
-	aser := cjson.Serializer{}
+	if len(v) <= 8 {
+		var stackBuf [96]byte
+		buf := appendRPCVarCUInt(stackBuf[:0], len(v))
+		for _, e := range v {
+			buf = appendRPCVarCUInt(buf, int(e))
+		}
+		r.ser.PutVBytes(buf)
+		r.update()
+		return
+	}
+
+	aser := cjson.NewSerializer(make([]byte, 0, len(v)*2+10))
 	aser.PutVarCUInt(len(v))
 	for _, e := range v {
 		aser.PutVarCUInt(int(e))
 	}
 	r.ser.PutVBytes(aser.Bytes())
 	r.update()
+}
+
+func appendRPCVarCUInt(buf []byte, v int) []byte {
+	uv := uint64(v)
+	for uv >= 0x80 {
+		buf = append(buf, byte(uv)|0x80)
+		uv >>= 7
+	}
+	return append(buf, byte(uv))
 }
 
 func (r *rpcEncoder) int64Arg(v int64) {
@@ -97,8 +117,9 @@ func (r *rpcEncoder) int64Arg(v int64) {
 }
 
 func (r *rpcEncoder) update() {
-	r.ser.Bytes()[r.lastArgsChunckStart]++
-	*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])) = uint32(len(r.ser.Bytes()) - cprotoHdrLen)
+	buf := r.ser.Bytes()
+	buf[r.lastArgsChunckStart]++
+	*(*uint32)(unsafe.Pointer(&buf[8])) = uint32(len(buf) - cprotoHdrLen)
 }
 
 func (r *rpcEncoder) bytes() []byte {

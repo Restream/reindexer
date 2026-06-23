@@ -193,45 +193,43 @@ func (pl *payloadIface) ptr(field, idx, typ int) unsafe.Pointer {
 
 const hexChars = "0123456789abcdef"
 
-func createUuid(v [2]uint64) string {
+var uuidHexByteToChars = func() [256]uint16 {
+	var table [256]uint16
+	for i := range table {
+		table[i] = uint16(hexChars[i>>4]) | uint16(hexChars[i&0xF])<<8
+	}
+	return table
+}()
+
+func putUuidHexByte(buf *[36]byte, pos int, b byte) {
+	pair := uuidHexByteToChars[b]
+	buf[pos] = byte(pair)
+	buf[pos+1] = byte(pair >> 8)
+}
+
+func createUuid(v0, v1 uint64) string {
 	var buf [36]byte
-	buf[0] = hexChars[(v[0]>>60)&0xF]
-	buf[1] = hexChars[(v[0]>>56)&0xF]
-	buf[2] = hexChars[(v[0]>>52)&0xF]
-	buf[3] = hexChars[(v[0]>>48)&0xF]
-	buf[4] = hexChars[(v[0]>>44)&0xF]
-	buf[5] = hexChars[(v[0]>>40)&0xF]
-	buf[6] = hexChars[(v[0]>>36)&0xF]
-	buf[7] = hexChars[(v[0]>>32)&0xF]
+	putUuidHexByte(&buf, 0, byte(v0>>56))
+	putUuidHexByte(&buf, 2, byte(v0>>48))
+	putUuidHexByte(&buf, 4, byte(v0>>40))
+	putUuidHexByte(&buf, 6, byte(v0>>32))
 	buf[8] = '-'
-	buf[9] = hexChars[(v[0]>>28)&0xF]
-	buf[10] = hexChars[(v[0]>>24)&0xF]
-	buf[11] = hexChars[(v[0]>>20)&0xF]
-	buf[12] = hexChars[(v[0]>>16)&0xF]
+	putUuidHexByte(&buf, 9, byte(v0>>24))
+	putUuidHexByte(&buf, 11, byte(v0>>16))
 	buf[13] = '-'
-	buf[14] = hexChars[(v[0]>>12)&0xF]
-	buf[15] = hexChars[(v[0]>>8)&0xF]
-	buf[16] = hexChars[(v[0]>>4)&0xF]
-	buf[17] = hexChars[v[0]&0xF]
+	putUuidHexByte(&buf, 14, byte(v0>>8))
+	putUuidHexByte(&buf, 16, byte(v0))
 	buf[18] = '-'
-	buf[19] = hexChars[(v[1]>>60)&0xF]
-	buf[20] = hexChars[(v[1]>>56)&0xF]
-	buf[21] = hexChars[(v[1]>>52)&0xF]
-	buf[22] = hexChars[(v[1]>>48)&0xF]
+	putUuidHexByte(&buf, 19, byte(v1>>56))
+	putUuidHexByte(&buf, 21, byte(v1>>48))
 	buf[23] = '-'
-	buf[24] = hexChars[(v[1]>>44)&0xF]
-	buf[25] = hexChars[(v[1]>>40)&0xF]
-	buf[26] = hexChars[(v[1]>>36)&0xF]
-	buf[27] = hexChars[(v[1]>>32)&0xF]
-	buf[28] = hexChars[(v[1]>>28)&0xF]
-	buf[29] = hexChars[(v[1]>>24)&0xF]
-	buf[30] = hexChars[(v[1]>>20)&0xF]
-	buf[31] = hexChars[(v[1]>>16)&0xF]
-	buf[32] = hexChars[(v[1]>>12)&0xF]
-	buf[33] = hexChars[(v[1]>>8)&0xF]
-	buf[34] = hexChars[(v[1]>>4)&0xF]
-	buf[35] = hexChars[v[1]&0xF]
-	return string(buf[:])
+	putUuidHexByte(&buf, 24, byte(v1>>40))
+	putUuidHexByte(&buf, 26, byte(v1>>32))
+	putUuidHexByte(&buf, 28, byte(v1>>24))
+	putUuidHexByte(&buf, 30, byte(v1>>16))
+	putUuidHexByte(&buf, 32, byte(v1>>8))
+	putUuidHexByte(&buf, 34, byte(v1))
+	return unsafe.String(&buf[0], len(buf))
 }
 
 func (pl *payloadIface) getInt(field, idx int) int {
@@ -246,7 +244,8 @@ func (pl *payloadIface) getInt64(field, idx int) int64 {
 
 func (pl *payloadIface) getUuid(field, idx int) string {
 	p := pl.ptr(field, idx, valueUuid)
-	return createUuid(*(*[2]uint64)(p))
+	v := (*[2]uint64)(p)
+	return createUuid(v[0], v[1])
 }
 
 func (pl *payloadIface) getFloatVector(field, idx int) []float32 {
@@ -839,7 +838,7 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 				copy(*a, tmp)
 			}
 			for j := 0; j < cnt; i, j = i+1, j+1 {
-				(*a)[i] = createUuid([2]uint64{pi[j*2], pi[j*2+1]})
+				(*a)[i] = createUuid(pi[j*2], pi[j*2+1])
 			}
 		} else {
 			var slice reflect.Value
@@ -853,10 +852,10 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 				sv := slice.Index(i)
 				if sv.Type().Kind() == reflect.Ptr {
 					el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
-					el.Elem().SetString(createUuid([2]uint64{pi[j*2], pi[j*2+1]}))
+					el.Elem().SetString(createUuid(pi[j*2], pi[j*2+1]))
 					sv.Set(el)
 				} else {
-					sv.SetString(createUuid([2]uint64{pi[j*2], pi[j*2+1]}))
+					sv.SetString(createUuid(pi[j*2], pi[j*2+1]))
 				}
 			}
 			v.Set(slice)
