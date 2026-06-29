@@ -1,20 +1,23 @@
 #include "aggregation.h"
+#include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
-#include "tools/randompoint.h"
+#include "core/query/query.h"
+
+namespace reindexer_benchmarks {
 
 template <size_t N>
 void Aggregation::Insert(State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
+	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < N; ++i) {
 			auto item = MakeItem(state);
 			if (!item.Status().ok()) {
-				state.SkipWithError(item.Status().what().c_str());
+				state.SkipWithError(item.Status().what());
 			}
 
 			auto err = db_->Insert(nsdef_.name, item);
 			if (!err.ok()) {
-				state.SkipWithError(err.what().c_str());
+				state.SkipWithError(err.what());
 			}
 		}
 	}
@@ -41,7 +44,7 @@ reindexer::Error Aggregation::Initialize() {
 reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
-	item.Unsafe();
+	std::ignore = item.Unsafe();
 
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);
@@ -51,52 +54,48 @@ reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	bld.Put("str_data", RandString());
 	auto arr = bld.Array("int_array_data");
 	for (size_t i = 0, s = rand() % 100 + 100; i < s; ++i) {
-		arr.Put({}, rand() % 1000);
+		arr.Put(reindexer::TagName::Empty(), rand() % 1000);
 	}
 	arr.End();
 	bld.End();
 	const auto err = item.FromJSON(wrSer_.Slice());
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 	return item;
 }
 
-void Aggregation::Facet(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		reindexer::Query q(nsdef_.name);
-		q.Aggregate(AggFacet, {"int_data"});
-		reindexer::QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+class [[nodiscard]] Aggregation::FacetNotEmptyChecker {
+public:
+	FacetNotEmptyChecker(State& state) noexcept : state_{state} {}
+
+	void operator()(reindexer::QueryResults& qres) {
+		const auto& aggRes = qres.GetAggregationResults();
+		if (aggRes.empty() || aggRes[0].GetFacets().empty()) [[unlikely]] {
+			state_.SkipWithError("Results does not contain any value");
 		}
 	}
+
+private:
+	State& state_;
+};
+
+void Aggregation::Facet(State& state) {
+	const auto q = reindexer::Query(nsdef_.name).Aggregate(AggFacet, {"int_data"});
+	FacetNotEmptyChecker facetNotEmptyChecker{state};
+	benchQuery(q, state, facetNotEmptyChecker);
 }
 
-void Aggregation::MultiFacet(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		reindexer::Query q(nsdef_.name);
-		q.Aggregate(AggFacet, {"int_data", "str_data"});
-		reindexer::QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-	}
+void Aggregation::MultiFacet(State& state) {
+	const auto q = reindexer::Query(nsdef_.name).Aggregate(AggFacet, {"int_data", "str_data"});
+	FacetNotEmptyChecker facetNotEmptyChecker{state};
+	benchQuery(q, state, facetNotEmptyChecker);
 }
 
-void Aggregation::ArrayFacet(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		reindexer::Query q(nsdef_.name);
-		q.Aggregate(AggFacet, {"int_array_data"});
-		reindexer::QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-	}
+void Aggregation::ArrayFacet(State& state) {
+	const auto q = reindexer::Query(nsdef_.name).Aggregate(AggFacet, {"int_array_data"});
+	FacetNotEmptyChecker facetNotEmptyChecker{state};
+	benchQuery(q, state, facetNotEmptyChecker);
 }
+
+}  // namespace reindexer_benchmarks

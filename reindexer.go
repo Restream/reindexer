@@ -2,10 +2,14 @@ package reindexer
 
 import (
 	"context"
+	"errors"
+	"reflect"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/dsl"
-	"github.com/restream/reindexer/v4/events"
+	"github.com/goccy/go-json"
+
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/dsl"
+	"github.com/restream/reindexer/v5/events"
 )
 
 // Condition types
@@ -89,6 +93,9 @@ type Reindexer struct {
 // IndexDef - Inddex  definition struct
 type IndexDef bindings.IndexDef
 
+// Float vector options
+type FloatVectorIndexOpts bindings.FloatVectorIndexOpts
+
 // Error - reindexer Error interface
 type Error interface {
 	Error() string
@@ -100,7 +107,7 @@ type Point [2]float64
 
 // Joinable is an interface for append joined items
 type Joinable interface {
-	Join(field string, subitems []interface{}, context interface{})
+	Join(field string, subitems []any, context any)
 }
 
 // JoinHandler it's function for handle join results.
@@ -110,21 +117,21 @@ type Joinable interface {
 // Automatic join strategy is defined as:
 // - use Join method to perform join (in case item implements Joinable interface)
 // - use reflection to perform join otherwise
-type JoinHandler func(field string, item interface{}, subitems []interface{}) (useAutomaticJoinStrategy bool)
+type JoinHandler func(field string, item any, subitems []any) (useAutomaticJoinStrategy bool)
 
 type DeepCopy interface {
-	DeepCopy() interface{}
+	DeepCopy() any
 }
 
 // Logger interface for reindexer
 type Logger interface {
-	Printf(level int, fmt string, msg ...interface{})
+	Printf(level int, fmt string, msg ...any)
 }
 
 type nullLogger struct {
 }
 
-func (nullLogger) Printf(level int, fmt string, msg ...interface{}) {
+func (nullLogger) Printf(level int, fmt string, msg ...any) {
 }
 
 var (
@@ -146,31 +153,84 @@ var (
 	ErrDeepCopyType        = bindings.NewError("rq: DeepCopy() returns wrong type", ErrCodeParams)
 )
 
-type AggregationResult struct {
-	Fields []string `json:"fields"`
-	Type   string   `json:"type"`
-	Value  *float64 `json:"value,omitempty"`
-	Facets []struct {
-		Values []string `json:"values"`
-		Count  int      `json:"count"`
-	} `json:"facets,omitempty"`
-	Distincts []string `json:"distincts,omitempty"`
+type Facet struct {
+	Values []string `json:"values"`
+	Count  int      `json:"count"`
 }
 
-// NewReindex Create new instanse of Reindexer DB
-// Returns pointer to created instance
-// The absolute path for Windows builtin should look like 'builtin://C:/my/folder/db'
-func NewReindex(dsn interface{}, options ...interface{}) *Reindexer {
-	rx := &Reindexer{
-		impl: newReindexImpl(dsn, options...),
-		ctx:  context.TODO(),
+type aggregationResultSer struct {
+	Fields    []string `json:"fields"`
+	Type      string   `json:"type"`
+	Value     *float64 `json:"value,omitempty"`
+	Facets    []Facet  `json:"facets,omitempty"`
+	Distincts []any    `json:"distincts,omitempty"`
+}
+
+type AggregationResult struct {
+	Fields    []string
+	Type      string
+	Value     *float64
+	Facets    []Facet
+	Distincts [][]string
+}
+
+func (v *AggregationResult) UnmarshalJSON(bytes []byte) error {
+	resSer := aggregationResultSer{}
+	err := json.Unmarshal(bytes, &resSer)
+	if err != nil {
+		return err
 	}
-	return rx
+	v.Fields = resSer.Fields
+	v.Type = resSer.Type
+	v.Value = resSer.Value
+	v.Facets = resSer.Facets
+
+	if len(resSer.Distincts) == 0 {
+		return nil
+	}
+	v.Distincts = make([][]string, len(resSer.Distincts))
+	if reflect.TypeOf(resSer.Distincts[0]).Kind() == reflect.Slice {
+		for i := 0; i < len(resSer.Distincts); i++ {
+			a1 := resSer.Distincts[i].([]any)
+			as := make([]string, len(a1))
+			for j := range a1 {
+				if reflect.TypeOf(a1[j]).Kind() != reflect.String {
+					return errors.New("Distinct value type must be string")
+				}
+				as[j] = a1[j].(string)
+			}
+			v.Distincts[i] = as
+		}
+	} else {
+		for i := 0; i < len(resSer.Distincts); i++ {
+			as := make([]string, 1)
+			as[0] = resSer.Distincts[i].(string)
+			v.Distincts[i] = as
+		}
+	}
+	return nil
 }
 
 // Status will return current db status
 func (db *Reindexer) Status() bindings.Status {
 	return db.impl.getStatus(db.ctx)
+}
+
+// NewReindex creates a new instance of Reindexer.
+// Returns created instance and error if occurred (e.g., DB locked or unreachable).
+// In case of CPROTO binding this error may be temporary (e.g., remote server is unavailable) and Reindexer object is still usable,
+// despite this error (binding will try to perform reconnect on the next call).
+// The absolute path for Windows builtin should look like 'builtin://C:/my/folder/db'.
+func NewReindex(dsn any, options ...any) (*Reindexer, error) {
+	rx := &Reindexer{
+		impl: newReindexImpl(dsn, options...),
+		ctx:  context.TODO(),
+	}
+
+	if err := rx.Status().Err; err != nil {
+		return rx, err
+	}
+	return rx, nil
 }
 
 // SetLogger sets logger interface for output reindexer logs
@@ -255,12 +315,12 @@ func (opts *NamespaceOptions) ObjCacheSize(count int) *NamespaceOptions {
 
 // OpenNamespace Open or create new namespace and indexes based on passed struct.
 // IndexDef fields of struct are marked by `reindex:` tag
-func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s interface{}) (err error) {
+func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s any) (err error) {
 	return db.impl.openNamespace(db.ctx, namespace, opts, s)
 }
 
 // RegisterNamespace Register go type against namespace. There are no data and indexes changes will be performed
-func (db *Reindexer) RegisterNamespace(namespace string, opts *NamespaceOptions, s interface{}) (err error) {
+func (db *Reindexer) RegisterNamespace(namespace string, opts *NamespaceOptions, s any) (err error) {
 	return db.impl.registerNamespace(db.ctx, namespace, opts, s)
 }
 
@@ -287,7 +347,7 @@ func (db *Reindexer) CloseNamespace(namespace string) error {
 // Upsert (Insert or Update) item to index
 // Item must be the same type as item passed to OpenNamespace, or []byte with json
 // If the precepts are provided and the item is a pointer, the value pointed by item will be updated
-func (db *Reindexer) Upsert(namespace string, item interface{}, precepts ...string) error {
+func (db *Reindexer) Upsert(namespace string, item any, precepts ...string) error {
 	return db.impl.upsert(db.ctx, namespace, item, precepts...)
 }
 
@@ -295,7 +355,7 @@ func (db *Reindexer) Upsert(namespace string, item interface{}, precepts ...stri
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was inserted, 1 if item was inserted
 // If the precepts are provided and the item is a pointer, the value pointed by item will be updated
-func (db *Reindexer) Insert(namespace string, item interface{}, precepts ...string) (int, error) {
+func (db *Reindexer) Insert(namespace string, item any, precepts ...string) (int, error) {
 	return db.impl.insert(db.ctx, namespace, item, precepts...)
 }
 
@@ -303,21 +363,21 @@ func (db *Reindexer) Insert(namespace string, item interface{}, precepts ...stri
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was updated, 1 if item was updated
 // If the precepts are provided and the item is a pointer, the value pointed by item will be updated
-func (db *Reindexer) Update(namespace string, item interface{}, precepts ...string) (int, error) {
+func (db *Reindexer) Update(namespace string, item any, precepts ...string) (int, error) {
 	return db.impl.update(db.ctx, namespace, item, precepts...)
 }
 
 // Delete - remove single item from namespace by PK
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // If the precepts are provided and the item is a pointer, the value pointed by item will be updated
-func (db *Reindexer) Delete(namespace string, item interface{}, precepts ...string) error {
+func (db *Reindexer) Delete(namespace string, item any, precepts ...string) error {
 	return db.impl.delete(db.ctx, namespace, item, precepts...)
 }
 
 // ConfigureIndex - congigure index.
 // config argument must be struct with index configuration
 // Deprecated: Use UpdateIndex instead.
-func (db *Reindexer) ConfigureIndex(namespace, index string, config interface{}) error {
+func (db *Reindexer) ConfigureIndex(namespace, index string, config any) error {
 	return db.impl.configureIndex(db.ctx, namespace, index, config)
 }
 
@@ -421,4 +481,9 @@ func (db *Reindexer) WithContext(ctx context.Context) *Reindexer {
 		ctx:  ctx,
 	}
 	return dbC
+}
+
+// DBMSVersion return current DBMS version or error
+func (db *Reindexer) DBMSVersion() (string, error) {
+	return db.impl.dbmsVersion()
 }

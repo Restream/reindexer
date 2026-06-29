@@ -1,54 +1,69 @@
 #include "queryentry.h"
 
+#include <algorithm>
 #include <cstdlib>
-#include <unordered_set>
-#include "core/nsselecter/joinedselector.h"
-#include "core/nsselecter/joinedselectormock.h"
+#include <sstream>
+#include "core/cjson/jsonbuilder.h"
+#include "core/nsselecter/joins/helpers.h"
+#include "core/nsselecter/joins/items_processor.h"
+#include "core/nsselecter/joins/items_processor_mock.h"
 #include "core/payload/payloadiface.h"
+#include "core/query/expression/expression.h"
 #include "core/type_consts.h"
+#include "estl/algorithm.h"
 #include "query.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/string_regexp_functions.h"
 
 namespace reindexer {
 
+namespace {
+void checkSubqueryCondition(CondType cond) {
+	if (cond == CondAny || cond == CondEmpty || cond == CondKnn) {
+		throw Error{errQueryExec, "Condition {} with field and subquery", CondTypeToStr(cond)};
+	}
+}
+}  // namespace
+
 template <typename JS>
-std::string JoinQueryEntry::Dump(const std::vector<JS>& joinedSelectors) const {
+std::string JoinQueryEntry::Dump(const std::vector<JS>& joinItemsProcessors) const {
 	WrSerializer ser;
-	const auto& js = joinedSelectors.at(joinIndex);
+	const auto& js = joinItemsProcessors.at(joinIndex);
 	const auto& q = js.JoinQuery();
 	ser << js.Type() << " (" << q.GetSQL() << ") ON ";
 	ser << '(';
-	for (const auto& jqe : q.joinEntries_) {
-		if (&jqe != &q.joinEntries_.front()) {
+	for (const auto& jqe : q.JoinEntries()) {
+		if (&jqe != &q.JoinEntries().front()) {
 			ser << ' ' << jqe.Operation() << ' ';
 		} else {
 			assertrx(jqe.Operation() == OpAnd);
 		}
-		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << InvertJoinCondition(jqe.Condition()) << ' ' << jqe.LeftFieldName();
+		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << joins::InvertJoinCondition(jqe.Condition()) << ' '
+			<< jqe.LeftFieldName();
 	}
 	ser << ')';
 	return std::string{ser.Slice()};
 }
-template std::string JoinQueryEntry::Dump(const JoinedSelectors&) const;
-template std::string JoinQueryEntry::Dump(const std::vector<JoinedSelectorMock>&) const;
+template std::string JoinQueryEntry::Dump(const joins::ItemsProcessors&) const;
+template std::string JoinQueryEntry::Dump(const std::vector<JoinItemsProcessorMock>&) const;
 
 template <typename JS>
-std::string JoinQueryEntry::DumpOnCondition(const std::vector<JS>& joinedSelectors) const {
+std::string JoinQueryEntry::DumpOnCondition(const std::vector<JS>& joinItemsProcessors) const {
 	WrSerializer ser;
-	const auto& js = joinedSelectors.at(joinIndex);
+	const auto& js = joinItemsProcessors.at(joinIndex);
 	const auto& q = js.JoinQuery();
 	ser << js.Type() << " ON (";
-	for (const auto& jqe : q.joinEntries_) {
-		if (&jqe != &q.joinEntries_.front()) {
+	for (const auto& jqe : q.JoinEntries()) {
+		if (&jqe != &q.JoinEntries().front()) {
 			ser << ' ' << jqe.Operation() << ' ';
 		}
-		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << InvertJoinCondition(jqe.Condition()) << ' ' << jqe.LeftFieldName();
+		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << joins::InvertJoinCondition(jqe.Condition()) << ' '
+			<< jqe.LeftFieldName();
 	}
 	ser << ')';
 	return std::string{ser.Slice()};
 }
-template std::string JoinQueryEntry::DumpOnCondition(const JoinedSelectors&) const;
+template std::string JoinQueryEntry::DumpOnCondition(const joins::ItemsProcessors&) const;
 
 bool QueryField::operator==(const QueryField& other) const noexcept {
 	if (fieldName_ != other.fieldName_ || idxNo_ != other.idxNo_ || fieldsSet_ != other.fieldsSet_ ||
@@ -80,9 +95,13 @@ static void checkIndexData([[maybe_unused]] int idxNo, [[maybe_unused]] const Fi
 	}
 }
 
-void QueryField::SetIndexData(int idxNo, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
+void QueryField::SetIndexData(int idxNo, std::string_view idxName, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
 							  QueryField::CompositeTypesVecT&& compositeFieldsTypes) & {
 	checkIndexData(idxNo, fields, fieldType, compositeFieldsTypes);
+	// Explicit equality check to avoid extra allocation on Centos7, when index name is already set
+	if (fieldName_ != idxName) {
+		fieldName_.assign(idxName);
+	}
 	idxNo_ = idxNo;
 	fieldsSet_ = std::move(fields);
 	fieldType_ = fieldType;
@@ -90,7 +109,7 @@ void QueryField::SetIndexData(int idxNo, FieldsSet&& fields, KeyValueType fieldT
 	compositeFieldsTypes_ = std::move(compositeFieldsTypes);
 }
 
-bool QueryField::HaveEmptyField() const noexcept {
+bool QueryField::HaveEmptyField() const {
 	size_t tagsNo = 0;
 	for (auto f : Fields()) {
 		if (f == IndexValueType::SetByJsonPath) {
@@ -103,21 +122,25 @@ bool QueryField::HaveEmptyField() const noexcept {
 	return Fields().empty();
 }
 
-bool QueryEntry::operator==(const QueryEntry& other) const noexcept {
+bool QueryEntry::operator==(const QueryEntry& other) const {
 	return QueryField::operator==(other) && condition_ == other.condition_ && distinct_ == other.distinct_ &&
-		   values_.RelaxCompare<WithString::Yes, NotComparable::Return>(other.values_) == ComparationResult::Eq;
+		   forcedSortOptEntry_ == other.forcedSortOptEntry_ && needIsNull_ == other.needIsNull_ &&
+		   values_.RelaxCompare<WithString::Yes, NotComparable::Return, kDefaultNullsHandling>(other.values_) == ComparationResult::Eq;
 }
 
 template <VerifyQueryEntryFlags flags>
 void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
+	if (cond == CondKnn) [[unlikely]] {
+		throw Error{errLogic, "Use KNN query instead of regular query with KNN condition"};
+	}
 	if constexpr (flags & VerifyQueryEntryFlags::ignoreEmptyValues) {
 		if (values.empty()) {
 			return;
 		}
 	}
 	const auto checkArgsCount = [&](size_t argsCountReq) {
-		if (values.size() != argsCountReq) {
-			throw Error{errLogic, "Condition %s must have exact %d argument, but %d arguments was provided", CondTypeToStr(cond),
+		if (values.size() != argsCountReq) [[unlikely]] {
+			throw Error{errParams, "Condition {} must have exact {} argument, but {} arguments were provided", CondTypeToStr(cond),
 						argsCountReq, values.size()};
 		}
 	};
@@ -128,8 +151,9 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 			break;
 		case CondAny:
 		case CondEmpty:
-			if (!values.empty() && !(values.size() == 1 && values[0].Type().Is<KeyValueType::Null>())) {
-				throw Error{errLogic, "Condition %s must have no argument or single null argument, but %d not null arguments was provided",
+			if (std::any_of(values.begin(), values.end(), [](const Variant& v) noexcept { return !v.IsNullValue(); })) [[unlikely]] {
+				throw Error{errParams,
+							"Condition {} must have no argument or single null argument, but {} not null arguments were provided",
 							CondTypeToStr(cond), values.size()};
 			}
 			break;
@@ -138,22 +162,83 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray& values) {
 		case CondLt:
 		case CondLe:
 			checkArgsCount(1);
+			if (values[0].IsNullValue()) [[unlikely]] {
+				throw Error{errParams, "Conditions CondGe|CondGt|CondLt|CondLe can't have null argument", CondTypeToStr(cond)};
+			}
 			break;
 		case CondLike:
 			checkArgsCount(1);
-			if (!values[0].Type().Is<KeyValueType::String>()) {
-				throw Error{errLogic, "Condition %s must have string argument, but %s argument was provided", CondTypeToStr(cond),
+			if (!values[0].Type().Is<KeyValueType::String>()) [[unlikely]] {
+				throw Error{errParams, "Condition {} must have string argument, but {} argument was provided", CondTypeToStr(cond),
 							values[0].Type().Name()};
 			}
 			break;
 		case CondRange:
+			checkArgsCount(2);
+			if (values[0].IsNullValue() || values[1].IsNullValue()) [[unlikely]] {
+				throw Error{errParams, "Condition {} can't have null argument", CondTypeToStr(cond)};
+			}
+			break;
 		case CondDWithin:
 			checkArgsCount(2);
+			if (values[0].IsNullValue() || values[1].IsNullValue()) [[unlikely]] {
+				throw Error{errParams, "Condition {} can't have null argument", CondTypeToStr(cond)};
+			}
+			if (values[1].Type().IsNumeric() && values[1].As<double>() < 0.0) [[unlikely]] {
+				throw Error{errParams, "Condition {} can't have negative radius value", CondTypeToStr(cond)};
+			}
+			break;
+		case CondKnn:
+			assertrx_dbg(false);  // Handled before this switch
 			break;
 	}
 }
 template void VerifyQueryEntryValues<VerifyQueryEntryFlags::null>(CondType, const VariantArray&);
 template void VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(CondType, const VariantArray&);
+
+bool QueryEntry::adjust(AdjustMode mode) noexcept {
+	bool adjusted = false;
+	switch (condition_) {
+		case CondEq:
+		case CondSet:
+		case CondAllSet: {
+			if (values_.empty()) {
+				break;
+			}
+			const auto it = unstable_remove_if(values_.begin(), values_.end(), [](const Variant& v) noexcept { return v.IsNullValue(); });
+			if (it == values_.end()) {
+				break;
+			} else if (it == values_.begin()) {
+				if (mode != AdjustMode::DryRun) {
+					values_.clear();
+					condition_ = CondEmpty;
+				}
+				adjusted = true;
+			} else {
+				if (mode != AdjustMode::DryRun) {
+					std::ignore = values_.erase(it, values_.cend());
+					if (values_.size() == 1) {
+						condition_ = CondEq;
+					}
+					needIsNull_ = true;
+				}
+				adjusted = true;
+			}
+		}
+		case CondAny:
+		case CondEmpty:
+		case CondGe:
+		case CondGt:
+		case CondLe:
+		case CondLt:
+		case CondLike:
+		case CondDWithin:
+		case CondRange:
+		case CondKnn:
+			break;
+	}
+	return adjusted;
+}
 
 std::string QueryEntry::Dump() const {
 	WrSerializer ser;
@@ -174,48 +259,143 @@ std::string QueryEntry::Dump() const {
 	if (severalValues) {
 		ser << ')';
 	}
+	if (ForcedSortOptEntry()) {
+		ser << " [forced sort optimization entry]";
+	}
 	return std::string{ser.Slice()};
 }
 
 std::string QueryEntry::DumpBrief() const {
 	WrSerializer ser;
-	{
-		ser << FieldName() << ' ' << Condition() << ' ';
-		const bool severalValues = (Values().size() > 1);
-		if (severalValues) {
-			ser << "(...)";
-		} else {
+	ser << FieldName() << ' ' << Condition() << ' ';
+	switch (Values().size()) {
+		case 0:
+			break;
+		case 1:
 			ser << '\'' << Values().front().As<std::string>() << '\'';
-		}
+			break;
+		default:
+			ser << "(...)";
+			break;
 	}
 	return std::string(ser.Slice());
 }
 
+bool QueryEntry::TryUpdateInplace(VariantArray& newValues) noexcept {
+	if (needIsNull_) {
+		return false;
+	}
+	std::swap(values_, newValues);
+	if (!adjust(AdjustMode::DryRun)) {
+		try {
+			Verify();
+			return true;
+			// NOLINTBEGIN(bugprone-empty-catch)
+		} catch (...) {
+		}
+		// NOLINTEND(bugprone-empty-catch)
+	}
+	std::swap(values_, newValues);
+	return false;
+}
+
+const functions::Function& FunctionEntry::Function() const& {
+	return std::visit([](const auto& f) -> const functions::Function& { return f; }, function_);
+}
+
+std::string FunctionEntry::Dump() const {
+	WrSerializer ser;
+	if (HasComparisonField()) {
+		ser << comparisonField_.FieldName();
+		ser << ' ' << condition_;
+		ser << Function().ToString();
+	} else {
+		ser << Function().ToString();
+		ser << ' ' << condition_;
+	}
+	ser << ' ';
+	return std::string{ser.Slice()};
+}
+
+bool QueryFunctionEntry::operator==(const QueryFunctionEntry& other) const {
+	return FunctionEntry::operator==(other) &&
+		   values_.RelaxCompare<WithString::Yes, NotComparable::Return, kDefaultNullsHandling>(other.values_) == ComparationResult::Eq;
+}
+
+std::string QueryFunctionEntry::Dump() const {
+	WrSerializer ser;
+	ser << FunctionEntry::Dump();
+	const bool severalValues = (Values().size() > 1);
+	if (severalValues) {
+		ser << '(';
+	}
+	for (auto& v : Values()) {
+		if (&v != &*Values().begin()) {
+			ser << ',';
+		}
+		ser << '\'' << v.As<std::string>() << '\'';
+	}
+	if (severalValues) {
+		ser << ')';
+	}
+	return std::string{ser.Slice()};
+}
+
+std::string QueryFunctionEntry::DumpBrief() const {
+	WrSerializer ser;
+	ser << FunctionEntry::Dump();
+	switch (Values().size()) {
+		case 0:
+			break;
+		case 1:
+			ser << '\'' << Values().front().As<std::string>() << '\'';
+			break;
+		default:
+			ser << "(...)";
+			break;
+	}
+	return std::string{ser.Slice()};
+}
+
+std::string SubQueryFunctionEntry::Dump(const std::vector<impl::Query>& subQueries) const {
+	WrSerializer ser;
+	ser << FunctionEntry::Dump();
+	ser << " (" << subQueries.at(QueryIndex()).GetSQL() << ')';
+	return std::string{ser.Slice()};
+}
+
+void SubQueryFunctionEntry::checkCondition(CondType condition) const { checkSubqueryCondition(condition); }
+
 AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, SortingEntries&& sort, unsigned limit, unsigned offset)
 	: type_(type), fields_(std::move(fields)), sortingEntries_{std::move(sort)}, limit_(limit), offset_(offset) {
 	switch (type_) {
+		case AggDistinct:
 		case AggFacet:
 			if (fields_.empty()) {
-				throw Error(errQueryExec, "Empty set of fields for aggregation %s", AggTypeToStr(type_));
+				throw Error(errQueryExec, "Empty set of fields for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
-		case AggDistinct:
+
 		case AggMin:
 		case AggMax:
 		case AggSum:
 		case AggAvg:
 			if (fields_.size() != 1) {
-				throw Error{errQueryExec, "For aggregation %s is available exactly one field", AggTypeToStr(type_)};
+				throw Error{errQueryExec, "For aggregation {} is available exactly one field", AggTypeToStr(type_)};
 			}
 			break;
 		case AggCount:
 		case AggCountCached:
 			if (!fields_.empty()) {
-				throw Error(errQueryExec, "Not empty set of fields for aggregation %s", AggTypeToStr(type_));
+				throw Error(errQueryExec, "Not empty set of fields for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
 		case AggUnknown:
+		default:
 			throw Error{errQueryExec, "Unknown aggregation type"};
+	}
+	if (std::any_of(fields_.begin(), fields_.end(), [](const auto& f) { return strEmpty(f); })) {
+		throw Error(errQueryExec, "Empty field name for aggregation {}", AggTypeToStr(type_));
 	}
 	switch (type_) {
 		case AggDistinct:
@@ -226,42 +406,39 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, 
 		case AggCount:
 		case AggCountCached:
 			if (limit_ != QueryEntry::kDefaultLimit || offset_ != QueryEntry::kDefaultOffset) {
-				throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
+				throw Error(errQueryExec, "Limit or offset are not available for aggregation {}", AggTypeToStr(type_));
 			}
 			if (!sortingEntries_.empty()) {
-				throw Error(errQueryExec, "Sort is not available for aggregation %s", AggTypeToStr(type_));
+				throw Error(errQueryExec, "Sort is not available for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
-		case AggUnknown:
-			throw Error{errQueryExec, "Unknown aggregation type"};
 		case AggFacet:
 			break;
+		case AggUnknown:
+		default:
+			throw Error{errQueryExec, "Unknown aggregation type"};
 	}
 }
 
 void AggregateEntry::AddSortingEntry(SortingEntry&& sorting) {
 	if (type_ != AggFacet) {
-		throw Error(errQueryExec, "Sort is not available for aggregation %s", AggTypeToStr(type_));
+		throw Error(errQueryExec, "Sort is not available for aggregation {}", AggTypeToStr(type_));
 	}
 	sortingEntries_.emplace_back(std::move(sorting));
 }
 
 void AggregateEntry::SetLimit(unsigned l) {
 	if (type_ != AggFacet) {
-		throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
+		throw Error(errQueryExec, "Limit or offset are not available for aggregation {}", AggTypeToStr(type_));
 	}
 	limit_ = l;
 }
 
 void AggregateEntry::SetOffset(unsigned o) {
 	if (type_ != AggFacet) {
-		throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
+		throw Error(errQueryExec, "Limit or offset are not available for aggregation {}", AggTypeToStr(type_));
 	}
 	offset_ = o;
-}
-
-bool BetweenFieldsQueryEntry::operator==(const BetweenFieldsQueryEntry& other) const noexcept {
-	return leftField_ == other.leftField_ && rightField_ == other.rightField_ && Condition() == other.Condition();
 }
 
 std::string BetweenFieldsQueryEntry::Dump() const {
@@ -271,8 +448,8 @@ std::string BetweenFieldsQueryEntry::Dump() const {
 }
 
 void BetweenFieldsQueryEntry::checkCondition(CondType cond) const {
-	if (cond == CondAny || cond == CondEmpty || cond == CondDWithin) {
-		throw Error{errLogic, "Condition '%s' is inapplicable between two fields", CondTypeToStr(cond)};
+	if (cond == CondAny || cond == CondEmpty || cond == CondDWithin || cond == CondKnn) {
+		throw Error{errLogic, "Condition '{}' is inapplicable between two fields", CondTypeToStr(cond)};
 	}
 }
 
@@ -282,12 +459,12 @@ void QueryEntries::serialize(CondType cond, const VariantArray& values, WrSerial
 		assertrx_throw(values.size() == 2);
 		ser.PutVarUint(3);
 		if (values[0].Type().Is<KeyValueType::Tuple>()) {
-			const Point point = static_cast<Point>(values[0]);
+			const Point point = values[0].As<Point>();
 			ser.PutVariant(Variant(point.X()));
 			ser.PutVariant(Variant(point.Y()));
 			ser.PutVariant(values[1]);
 		} else {
-			const Point point = static_cast<Point>(values[1]);
+			const Point point = values[1].As<Point>();
 			ser.PutVariant(Variant(point.X()));
 			ser.PutVariant(Variant(point.Y()));
 			ser.PutVariant(values[0]);
@@ -300,7 +477,7 @@ void QueryEntries::serialize(CondType cond, const VariantArray& values, WrSerial
 	}
 }
 
-void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer& ser, const std::vector<Query>& subQueries) {
+void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer& ser, const std::vector<impl::Query>& subQueries) {
 	for (; it != to; ++it) {
 		const OpType op = it->operation;
 		it->Visit(
@@ -323,6 +500,37 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 					subQueries.at(sqe.QueryIndex()).Serialize(ser);
 				}
 			},
+			[&ser, op, &subQueries](const SubQueryFunctionEntry& sqe) {
+				ser.PutVarUint(QueryExpressions);
+				switch (sqe.GetSubqueryType()) {
+					case SubQueryFunctionEntry::SubQueryType::Left:
+						expressions::SubQuery(subQueries.at(sqe.QueryIndex())).Serialize(ser);
+						ser.PutVarUint(op);
+						ser.PutVarUint(sqe.Condition());
+						expressions::Function(sqe.FunctionVariant()).Serialize(ser);
+						break;
+					case SubQueryFunctionEntry::SubQueryType::Right:
+						expressions::Function(sqe.FunctionVariant()).Serialize(ser);
+						ser.PutVarUint(op);
+						ser.PutVarUint(sqe.Condition());
+						expressions::SubQuery(subQueries.at(sqe.QueryIndex())).Serialize(ser);
+						break;
+				}
+			},
+			[&](const QueryFunctionEntry& entry) {
+				ser.PutVarUint(QueryExpressions);
+				if (entry.HasComparisonField()) {
+					expressions::Field{entry.ComparisonField().FieldName()}.Serialize(ser);
+					ser.PutVarUint(op);
+					ser.PutVarUint(entry.Condition());
+					expressions::Function{entry.FunctionVariant()}.Serialize(ser);
+				} else {
+					expressions::Function{entry.FunctionVariant()}.Serialize(ser);
+					ser.PutVarUint(op);
+					ser.PutVarUint(entry.Condition());
+					expressions::Values{entry.Values()}.Serialize(ser);
+				}
+			},
 			[&](const QueryEntriesBracket&) {
 				ser.PutVarUint(QueryOpenBracket);
 				ser.PutVarUint(op);
@@ -330,14 +538,12 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 				ser.PutVarUint(QueryCloseBracket);
 			},
 			[&ser, op](const QueryEntry& entry) {
-				entry.Distinct() ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
+				ser.PutVarUint(QueryCondition);
 				ser.PutVString(entry.FieldName());
-				if (entry.Distinct()) {
-					return;
-				}
 				ser.PutVarUint(op);
 				serialize(entry.Condition(), entry.Values(), ser);
 			},
+			[](const MultiDistinctQueryEntry&) { assertrx_throw(false); },
 			[&ser, op](const JoinQueryEntry& jqe) {
 				ser.PutVarUint(QueryJoinCondition);
 				ser.PutVarUint((op == OpAnd) ? JoinType::InnerJoin : JoinType::OrInnerJoin);
@@ -357,34 +563,21 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 			[&ser, op](const AlwaysTrue&) {
 				ser.PutVarUint(QueryAlwaysTrueCondition);
 				ser.PutVarUint(op);
+			},
+			[&](const KnnQueryEntry& qe) {
+				ser.PutVarUint(QueryKnnConditionExt);
+				ser.PutVString(qe.FieldName());
+				ser.PutVarUint(op);
+				auto format = qe.Format();
+				ser.PutVarUint(format);
+				if (format == KnnQueryEntry::DataFormatType::Vector) {
+					ser.PutFloatVectorView(qe.Value());
+				} else {
+					ser.PutVString(qe.Data());
+				}
+				qe.Params().Serialize(ser);
 			});
 	}
-}
-
-bool UpdateEntry::operator==(const UpdateEntry& obj) const noexcept {
-	return isExpression_ == obj.isExpression_ && column_ == obj.column_ && mode_ == obj.mode_ && values_ == obj.values_;
-}
-
-bool QueryJoinEntry::operator==(const QueryJoinEntry& other) const noexcept {
-	return op_ == other.op_ && condition_ == other.condition_ && leftField_ == other.leftField_ && rightField_ == other.rightField_;
-}
-
-bool AggregateEntry::operator==(const AggregateEntry& obj) const noexcept {
-	return fields_ == obj.fields_ && type_ == obj.type_ && sortingEntries_ == obj.sortingEntries_ && limit_ == obj.limit_ &&
-		   offset_ == obj.offset_;
-}
-
-bool SortingEntry::operator==(const SortingEntry& obj) const noexcept {
-	if (expression != obj.expression) {
-		return false;
-	}
-	if (desc != obj.desc) {
-		return false;
-	}
-	if (index != obj.index) {
-		return false;
-	}
-	return true;
 }
 
 bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload& pl) {
@@ -399,25 +592,20 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 			break;
 		}
 		const bool lastResult = it->Visit(
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE -> bool {
-				assertrx_throw(0);
-				abort();
-			},
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const SubQueryFieldEntry&) RX_POST_LMBD_ALWAYS_INLINE -> bool {
-				assertrx_throw(0);
-				abort();
-			},
+			[] RX_PRE_LMBD_ALWAYS_INLINE(
+				const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, JoinQueryEntry, SubQueryFunctionEntry> auto&)
+				RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; },
 			[&it, &pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket&)
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
 			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const QueryFunctionEntry&) -> bool { throw_as_assert; },
 			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const BetweenFieldsQueryEntry& qe)
 				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const JoinQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE -> bool {
-				assertrx_throw(0);
-				abort();
-			},
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const MultiDistinctQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const KnnQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; }	// TODO
+		);
 		result = (lastResult != (it->operation == OpNot));
 	}
 	return result;
@@ -439,28 +627,47 @@ bool QueryEntries::checkIfSatisfyCondition(const BetweenFieldsQueryEntry& qEntry
 
 bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType condition, const VariantArray& rValues) {
 	switch (condition) {
-		case CondType::CondAny:
+		case CondAny:
+			for (const Variant& value : lValues) {
+				if (!value.IsNullValue()) {
+					return true;
+				}
+			}
 			return !lValues.empty();
-		case CondType::CondEmpty:
+		case CondEmpty:
+			if (lValues.IsObjectValue()) [[unlikely]] {
+				return false;
+			}
+			for (const Variant& value : lValues) {
+				if (value.IsNullValue()) {
+					return true;
+				}
+			}
 			return lValues.empty();
-		case CondType::CondEq:
-		case CondType::CondSet:
+		case CondEq:
+		case CondSet:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Eq) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res == ComparationResult::Eq) {
 						return true;
 					}
 				}
 			}
 			return false;
-		case CondType::CondAllSet:
+		case CondAllSet:
 			if (lValues.size() < rValues.size()) {
 				return false;
 			}
 			for (const auto& v : rValues) {
 				auto it = lValues.cbegin();
 				for (; it != lValues.cend(); ++it) {
-					if (it->RelaxCompare<WithString::Yes, NotComparable::Return>(v) == ComparationResult::Eq) {
+					auto res = (it->IsNullValue() || v.IsNullValue())
+								   ? it->RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(v)
+								   : it->RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(v);
+					if (res == ComparationResult::Eq) {
 						break;
 					}
 				}
@@ -469,61 +676,82 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 				}
 			}
 			return true;
-		case CondType::CondLt:
+		case CondLt:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Lt) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res == ComparationResult::Lt) {
 						return true;
 					}
 				}
 			}
 			return false;
-		case CondType::CondLe:
+		case CondLe:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) & ComparationResult::Le) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res & ComparationResult::Le) {
 						return true;
 					}
 				}
 			}
 			return false;
-		case CondType::CondGt:
+		case CondGt:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) == ComparationResult::Gt) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res == ComparationResult::Gt) {
 						return true;
 					}
 				}
 			}
 			return false;
-		case CondType::CondGe:
+		case CondGe:
 			for (const auto& lhs : lValues) {
 				for (const auto& rhs : rValues) {
-					if (lhs.RelaxCompare<WithString::Yes, NotComparable::Return>(rhs) & ComparationResult::Ge) {
+					auto res = (rhs.IsNullValue() || lhs.IsNullValue())
+								   ? lhs.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rhs)
+								   : lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rhs);
+					if (res & ComparationResult::Ge) {
 						return true;
 					}
 				}
 			}
 			return false;
-		case CondType::CondRange:
+		case CondRange:
 			for (const auto& v : lValues) {
-				if (v.RelaxCompare<WithString::Yes, NotComparable::Return>(rValues[0]) == ComparationResult::Lt ||
-					v.RelaxCompare<WithString::Yes, NotComparable::Return>(rValues[1]) == ComparationResult::Gt) {
+				auto res = (v.IsNullValue() || rValues[0].IsNullValue())
+							   ? v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rValues[0])
+							   : v.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rValues[0]);
+				if (res == ComparationResult::Lt) {
+					return false;
+				}
+
+				res = (v.IsNullValue() || rValues[1].IsNullValue())
+						  ? v.RelaxCompare<WithString::Yes, NotComparable::Return, kWhereCompareNullHandling>(rValues[1])
+						  : v.RelaxCompare<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(rValues[1]);
+				if (res == ComparationResult::Gt) {
 					return false;
 				}
 			}
 			return true;
-		case CondType::CondLike:
+		case CondLike:
 			for (const auto& v : lValues) {
 				if (!v.Type().Is<KeyValueType::String>()) {
-					throw Error(errLogic, "Condition LIKE must be applied to data of string type, but %s was provided", v.Type().Name());
+					throw Error(errLogic, "Condition LIKE must be applied to data of string type, but {} was provided", v.Type().Name());
 				}
 				if (matchLikePattern(std::string_view(v), std::string_view(rValues[0]))) {
 					return true;
 				}
 			}
 			return false;
-		case CondType::CondDWithin: {
+		case CondDWithin: {
 			Point point;
 			double distance;
 			if (rValues[0].Type().Is<KeyValueType::Tuple>()) {
@@ -535,22 +763,22 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 			}
 			return DWithin(static_cast<Point>(lValues), point, distance);
 		}
-		default:
-			assertrx(0);
+		case CondKnn:
+			throw_as_assert;
 	}
 	return false;
 }
 
-template <InjectionDirection injectionDirection>
-size_t QueryEntries::InjectConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
+template <JoinConditionInsertionDirection insertionDirection>
+size_t QueryEntries::InsertConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
 													  const QueryEntries& joinedQueryEntries, size_t joinedQueryNo,
 													  const std::vector<std::unique_ptr<Index>>* indexesFrom) {
-	size_t injectedCount = 0;
+	size_t insertedCount = 0;
 	for (size_t i = 0, s = joinEntries.size(); i < s; ++i) {
-		const QueryJoinEntry& jEntry = joinEntries[i];
 		if (i + 1 < s && joinEntries[i + 1].Operation() == OpOr) {
 			continue;
 		}
+		const QueryJoinEntry& jEntry = joinEntries[i];
 		CondType condition = jEntry.Condition();
 		switch (jEntry.Operation()) {
 			case OpAnd:
@@ -573,32 +801,31 @@ size_t QueryEntries::InjectConditionsFromOnConditions(size_t position, const h_v
 					case CondEmpty:
 					case CondDWithin:
 					case CondLike:
+					case CondKnn:
 						continue;
 				}
 				break;
 		}
-		if constexpr (injectionDirection == InjectionDirection::FromMain) {
-			injectedCount +=
-				injectConditionsFromOnCondition(position + injectedCount, jEntry.RightFieldName(), jEntry.LeftFieldName(), condition,
-												joinedQueryEntries, QueryEntry::InjectedFromMain, joinedQueryNo, indexesFrom);
+		if constexpr (insertionDirection == JoinConditionInsertionDirection::FromMain) {
+			insertedCount +=
+				insertConditionsFromOnCondition(position + insertedCount, jEntry.RightFieldName(), jEntry.LeftFieldName(), condition,
+												joinedQueryEntries, QueryEntry::InsertedFromMain, joinedQueryNo, indexesFrom);
 		} else {
-			injectedCount +=
-				injectConditionsFromOnCondition(position + injectedCount, jEntry.LeftFieldName(), jEntry.RightFieldName(), condition,
-												joinedQueryEntries, joinedQueryNo, QueryEntry::InjectedFromMain, indexesFrom);
+			insertedCount +=
+				insertConditionsFromOnCondition(position + insertedCount, jEntry.LeftFieldName(), jEntry.RightFieldName(), condition,
+												joinedQueryEntries, joinedQueryNo, QueryEntry::InsertedFromMain, indexesFrom);
 		}
 	}
-	return injectedCount;
+	return insertedCount;
 }
-template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::FromMain>(size_t, const h_vector<QueryJoinEntry, 1>&,
-																							 const QueryEntries&, size_t,
-																							 const std::vector<std::unique_ptr<Index>>*);
-template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::IntoMain>(size_t, const h_vector<QueryJoinEntry, 1>&,
-																							 const QueryEntries&, size_t,
-																							 const std::vector<std::unique_ptr<Index>>*);
+template size_t QueryEntries::InsertConditionsFromOnConditions<JoinConditionInsertionDirection::FromMain>(
+	size_t, const h_vector<QueryJoinEntry, 1>&, const QueryEntries&, size_t, const std::vector<std::unique_ptr<Index>>*);
+template size_t QueryEntries::InsertConditionsFromOnConditions<JoinConditionInsertionDirection::IntoMain>(
+	size_t, const h_vector<QueryJoinEntry, 1>&, const QueryEntries&, size_t, const std::vector<std::unique_ptr<Index>>*);
 
-size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std::string& fieldName, const std::string& joinedFieldName,
-													 CondType condition, const QueryEntries& joinedQueryEntries, size_t injectedFrom,
-													 size_t injectingInto, const std::vector<std::unique_ptr<Index>>* indexesFrom) {
+size_t QueryEntries::insertConditionsFromOnCondition(size_t position, const std::string& fieldName, const std::string& joinedFieldName,
+													 CondType condition, const QueryEntries& joinedQueryEntries, size_t insertedFrom,
+													 size_t insertedInto, const std::vector<std::unique_ptr<Index>>* indexesFrom) {
 	switch (condition) {
 		case CondEq:
 		case CondSet:
@@ -613,9 +840,10 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 		case CondEmpty:
 		case CondDWithin:
 		case CondLike:
+		case CondKnn:
 			return 0;
 	}
-	size_t injectedCount = 0;
+	size_t insertedCount = 0;
 	for (size_t j = 0, next, size = joinedQueryEntries.Size(); j < size; j = next) {
 		next = joinedQueryEntries.Next(j);
 		if (next < size && joinedQueryEntries.GetOperation(next) == OpOr) {
@@ -625,7 +853,7 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 			continue;
 		}
 		const QueryEntry& qe = joinedQueryEntries.Get<QueryEntry>(j);
-		if (qe.IsInjectedFrom(injectingInto)) {
+		if (qe.IsInsertedFrom(insertedInto)) {
 			continue;
 		}
 		CondType entryCondition = qe.Condition();
@@ -650,6 +878,7 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 					case CondEmpty:
 					case CondDWithin:
 					case CondLike:
+					case CondKnn:
 						continue;
 				}
 				break;
@@ -663,24 +892,27 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 				switch (entryCondition) {
 					case CondEq:
 					case CondSet:
-					case CondAllSet:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondSet, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondAllSet: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondSet, qe.Values(), insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondLt:
 					case CondLe:
 					case CondGt:
-					case CondGe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondGe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondRange:
 					case CondAny:
 					case CondEmpty:
 					case CondDWithin:
 					case CondLike:
+					case CondKnn:
 						break;
 				}
 				break;
@@ -692,16 +924,18 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 					case CondLt:
 					case CondLe:
 					case CondGt:
-					case CondGe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondGe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, entryCondition, qe.Values(), insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondRange:
 					case CondAny:
 					case CondEmpty:
 					case CondDWithin:
 					case CondLike:
+					case CondKnn:
 						break;
 				}
 				break;
@@ -714,29 +948,33 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 							break;
 						}
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt,
-											VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
-											injectedFrom);
-						++injectedCount;
-						++position;
+						const auto inserted = Emplace<QueryEntry>(
+							position, OpAnd, fieldName, CondLt,
+							VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 					} break;
 					case CondLt:
-					case CondLe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondLe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
-					case CondRange:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, VariantArray{qe.Values()[1]}, injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondRange: {
+						const auto inserted =
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, VariantArray{qe.Values()[1]}, insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondGt:
 					case CondGe:
 					case CondAny:
 					case CondEmpty:
 					case CondDWithin:
 					case CondLike:
+					case CondKnn:
 						break;
 				}
 				break;
@@ -749,33 +987,38 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 							break;
 						}
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe,
-											VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
-											injectedFrom);
-						++injectedCount;
-						++position;
+						const auto inserted = Emplace<QueryEntry>(
+							position, OpAnd, fieldName, CondLe,
+							VariantArray{*std::max_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 					} break;
-					case CondLt:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondLt: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLt, qe.Values(), insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
-					case CondLe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondLe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, qe.Values(), insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
-					case CondRange:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, VariantArray{qe.Values()[1]}, injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondRange: {
+						const auto inserted =
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondLe, VariantArray{qe.Values()[1]}, insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondGt:
 					case CondGe:
 					case CondAny:
 					case CondEmpty:
 					case CondDWithin:
 					case CondLike:
+					case CondKnn:
 						break;
 				}
 				break;
@@ -788,29 +1031,33 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 							break;
 						}
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt,
-											VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
-											injectedFrom);
-						++injectedCount;
-						++position;
+						const auto inserted = Emplace<QueryEntry>(
+							position, OpAnd, fieldName, CondGt,
+							VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 					} break;
 					case CondGt:
-					case CondGe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondGe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
-					case CondRange:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, VariantArray{qe.Values()[0]}, injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondRange: {
+						const auto inserted =
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, VariantArray{qe.Values()[0]}, insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondLt:
 					case CondLe:
 					case CondAny:
 					case CondEmpty:
 					case CondDWithin:
 					case CondLike:
+					case CondKnn:
 						break;
 				}
 				break;
@@ -823,33 +1070,38 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 							break;
 						}
 						const CollateOpts& collate = (*indexesFrom)[qe.IndexNo()]->Opts().collateOpts_;
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe,
-											VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})},
-											injectedFrom);
-						++injectedCount;
-						++position;
+						const auto inserted = Emplace<QueryEntry>(
+							position, OpAnd, fieldName, CondGe,
+							VariantArray{*std::min_element(qe.Values().begin(), qe.Values().end(), Variant::Less{collate})}, insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 					} break;
-					case CondGt:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					case CondGt: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGt, qe.Values(), insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
-					case CondGe:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, qe.Values(), injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondGe: {
+						const auto inserted = Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, qe.Values(), insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
-					case CondRange:
-						Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, VariantArray{qe.Values()[0]}, injectedFrom);
-						++injectedCount;
-						++position;
+					}
+					case CondRange: {
+						const auto inserted =
+							Emplace<QueryEntry>(position, OpAnd, fieldName, CondGe, VariantArray{qe.Values()[0]}, insertedFrom);
+						insertedCount += inserted;
+						position += inserted;
 						break;
+					}
 					case CondLt:
 					case CondLe:
 					case CondAny:
 					case CondEmpty:
 					case CondDWithin:
 					case CondLike:
+					case CondKnn:
 						break;
 				}
 				break;
@@ -858,23 +1110,41 @@ size_t QueryEntries::injectConditionsFromOnCondition(size_t position, const std:
 			case CondEmpty:
 			case CondDWithin:
 			case CondLike:
+			case CondKnn:
 				break;
 		}
 	}
-	return injectedCount;
+	return insertedCount;
+}
+
+bool KnnQueryEntry::operator==(const KnnQueryEntry& other) const noexcept {
+	if ((fieldName_ != other.fieldName_) || (format_ != other.format_) || (data_ != other.data_)) {
+		return false;
+	}
+	const auto values = value_.Span();
+	const auto otherValues = other.value_.Span();
+	if (values.size() != otherValues.size()) {
+		return false;
+	}
+	for (size_t i = 0, s = values.size(); i < s; ++i) {
+		if (!fp::ExactlyEqual(values[i], otherValues[i])) {
+			return false;
+		}
+	}
+	return true;
 }
 
 template <typename JS>
-std::string QueryJoinEntry::DumpCondition(const JS& joinedSelector, bool needOp) const {
+std::string QueryJoinEntry::DumpCondition(const JS& joinItemsProcessor, bool needOp) const {
 	WrSerializer ser;
-	const auto& q = joinedSelector.JoinQuery();
+	const auto& q = joinItemsProcessor.JoinQuery();
 	if (needOp) {
 		ser << ' ' << op_ << ' ';
 	}
-	ser << q.NsName() << '.' << RightFieldName() << ' ' << InvertJoinCondition(condition_) << ' ' << LeftFieldName();
+	ser << q.NsName() << '.' << RightFieldName() << ' ' << joins::InvertJoinCondition(condition_) << ' ' << LeftFieldName();
 	return std::string{ser.Slice()};
 }
-template std::string QueryJoinEntry::DumpCondition(const JoinedSelector&, bool) const;
+template std::string QueryJoinEntry::DumpCondition(const joins::ItemsProcessor&, bool) const;
 
 void QueryEntries::dumpEqualPositions(size_t level, WrSerializer& ser, const EqualPositions_t& equalPositions) {
 	for (const auto& eq : equalPositions) {
@@ -892,7 +1162,7 @@ void QueryEntries::dumpEqualPositions(size_t level, WrSerializer& ser, const Equ
 	}
 }
 
-std::string SubQueryEntry::Dump(const std::vector<Query>& subQueries) const {
+std::string SubQueryEntry::Dump(const std::vector<impl::Query>& subQueries) const {
 	std::stringstream ss;
 	ss << '(' << subQueries.at(QueryIndex()).GetSQL() << ") " << Condition() << ' ';
 	if (Values().size() > 1) {
@@ -910,20 +1180,17 @@ std::string SubQueryEntry::Dump(const std::vector<Query>& subQueries) const {
 	return ss.str();
 }
 
-std::string SubQueryFieldEntry::Dump(const std::vector<Query>& subQueries) const {
+std::string SubQueryFieldEntry::Dump(const std::vector<impl::Query>& subQueries) const {
 	std::stringstream ss;
 	ss << FieldName() << ' ' << Condition() << " (" << subQueries.at(QueryIndex()).GetSQL() << ')';
 	return ss.str();
 }
 
-void SubQueryFieldEntry::checkCondition(CondType cond) const {
-	if (cond == CondAny || cond == CondEmpty) {
-		throw Error{errQueryExec, "Condition %s with field and subquery", cond == CondAny ? "Any" : "Empty"};
-	}
-}
+void SubQueryFieldEntry::checkCondition(CondType cond) const { checkSubqueryCondition(cond); }
+
 template <typename JS>
-void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinedSelectors,
-						const std::vector<Query>& subQueries, WrSerializer& ser) {
+void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinItemsProcessors,
+						const std::vector<impl::Query>& subQueries, WrSerializer& ser) {
 	for (const_iterator it = begin; it != end; ++it) {
 		for (size_t i = 0; i < level; ++i) {
 			ser << "   ";
@@ -931,26 +1198,62 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 		if (it != begin || it->operation != OpAnd) {
 			ser << it->operation << ' ';
 		}
-		it->Visit([&ser, subQueries](const SubQueryEntry& sqe) { ser << sqe.Dump(subQueries); },
-				  [&ser, subQueries](const SubQueryFieldEntry& sqe) { ser << sqe.Dump(subQueries); },
-				  [&](const QueryEntriesBracket& b) {
-					  ser << "(\n";
-					  dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, subQueries, ser);
-					  dumpEqualPositions(level + 1, ser, b.equalPositions);
-					  for (size_t i = 0; i < level; ++i) {
-						  ser << "   ";
-					  }
-					  ser << ")\n";
-				  },
-				  [&ser](const QueryEntry& qe) { ser << qe.Dump() << '\n'; },
-				  [&joinedSelectors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
-				  [&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << '\n'; },
-				  [&ser](const AlwaysFalse&) { ser << "AlwaysFalse\n"; }, [&ser](const AlwaysTrue&) { ser << "AlwaysTrue\n"; });
+		it->Visit(
+			[&ser, subQueries](const SubQueryEntry& sqe) { ser << sqe.Dump(subQueries); },
+			[&ser, subQueries](const SubQueryFieldEntry& sqe) { ser << sqe.Dump(subQueries); },
+			[&ser, subQueries](const SubQueryFunctionEntry& sqe) { ser << sqe.Dump(subQueries); },
+			[&](const QueryEntriesBracket& b) {
+				ser << "(\n";
+				dump(level + 1, it.cbegin(), it.cend(), joinItemsProcessors, subQueries, ser);
+				dumpEqualPositions(level + 1, ser, b.equalPositions);
+				for (size_t i = 0; i < level; ++i) {
+					ser << "   ";
+				}
+				ser << ")\n";
+			},
+			[&ser](const QueryEntry& qe) { ser << qe.Dump() << '\n'; }, [&ser](const QueryFunctionEntry& qe) { ser << qe.Dump() << '\n'; },
+			[&joinItemsProcessors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinItemsProcessors) << '\n'; },
+			[&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << '\n'; }, [&ser](const AlwaysFalse&) { ser << "AlwaysFalse\n"; },
+			[&ser](const AlwaysTrue&) { ser << "AlwaysTrue\n"; }, [&ser](const MultiDistinctQueryEntry& qe) { ser << qe.Dump() << "\n"; },
+			[&ser](const KnnQueryEntry& qe) { ser << qe.Dump() << '\n'; });
 	}
 }
-template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinedSelector>&, const std::vector<Query>&,
-								 WrSerializer&);
-template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinedSelectorMock>&, const std::vector<Query>&,
-								 WrSerializer&);
+template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<joins::ItemsProcessor>&,
+								 const std::vector<impl::Query>&, WrSerializer&);
+template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinItemsProcessorMock>&,
+								 const std::vector<impl::Query>&, WrSerializer&);
+
+std::string KnnQueryEntry::Dump() const {
+	using namespace std::string_literals;
+	if (format_ == DataFormatType::Vector) {
+		assertrx_throw(!value_.Span().empty());
+		return fieldName_ + " KNN ["s + std::to_string(value_.Span()[0]) + "] k: "s + params_.Dump();
+	}
+
+	assertrx_throw(format_ == DataFormatType::String && !data_.empty());
+	return fieldName_ + " KNN ["s + data_ + "] k: "s + params_.Dump();
+}
+
+void KnnQueryEntry::ToDsl(JsonBuilder& builder) const {
+	using namespace std::string_view_literals;
+
+	builder.Put("cond"sv, "knn"sv);
+	builder.Put("field"sv, fieldName_);
+
+	if (format_ == KnnQueryEntry::DataFormatType::Vector) {
+		assertrx_throw(!value_.Span().empty());
+		auto valuesArray = builder.Array("value"sv);
+		const auto values = value_.Span();
+		for (const auto v : values) {
+			valuesArray.Put(TagName::Empty(), v);
+		}
+	} else {
+		assertrx_throw(format_ == KnnQueryEntry::DataFormatType::String && !data_.empty());
+		builder.Put("value"sv, data_);
+	}
+
+	auto params = builder.Object("params"sv);
+	params_.ToDsl(params);
+}
 
 }  // namespace reindexer

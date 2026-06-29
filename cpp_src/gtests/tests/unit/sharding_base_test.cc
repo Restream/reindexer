@@ -4,27 +4,41 @@
 #include <future>
 #include "cluster/sharding/ranges.h"
 #include "core/cjson/csvbuilder.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/itemimpl.h"
+#include "core/query/impl.h"
+#include "core/query/query_impl.h"
 #include "core/queryresults/queryresults.h"
+#include "core/system_ns_names.h"
+#include "estl/condition_variable.h"
+#include "estl/gift_str.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "estl/tuple_utils.h"
+#include "gtests/tests/gtest_cout.h"
 #include "gtests/tests/unit/csv2jsonconverter.h"
 #include "sharding_api.h"
+#include "tools/float_comparison.h"
+#include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
+
+namespace reindexer_tests {
+
+using namespace reindexer;
+using impl::Impl;
 
 static void CheckServerIDs(std::vector<std::vector<ServerControl>>& svc) {
 	WrSerializer ser;
 	size_t idx = 0;
 	for (auto& cluster : svc) {
 		for (auto& sc : cluster) {
-			auto rx = sc.Get()->api.reindexer;
-			client::QueryResults qr;
-			auto err = rx->Select(Query("#config").Where("type", CondEq, "replication"), qr);
-			ASSERT_TRUE(err.ok()) << err.what();
+			auto& rx = sc.Get()->api;
+			client::QueryResults qr = rx.Select(Query(kConfigNamespace).Where("type", CondEq, "replication"));
 			ASSERT_EQ(qr.Count(), 1);
-			err = qr.begin().GetJSON(ser, false);
+			auto err = qr.begin().GetJSON(ser, false);
 			ASSERT_TRUE(err.ok()) << err.what();
 			gason::JsonParser parser;
-			auto root = parser.Parse(reindexer::giftStr(ser.Slice()));
+			auto root = parser.Parse(giftStr(ser.Slice()));
 			const auto serverId = root["replication"]["server_id"].As<int>(-1);
 			ASSERT_EQ(serverId, idx);
 			ser.Reset();
@@ -36,7 +50,7 @@ static void CheckServerIDs(std::vector<std::vector<ServerControl>>& svc) {
 void ShardingApi::runSelectTest(std::string_view nsName) {
 	TestCout() << "Running SelectTest" << std::endl;
 	for (size_t i = 0; i < NodesCount(); ++i) {
-		std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
+		auto& rx = getNode(i)->api;
 		for (size_t shard = 0; shard < kShards; ++shard) {
 			const std::string key = "key" + std::to_string(shard + 1);
 			constexpr size_t kExpectedDataCount = 40;
@@ -46,9 +60,9 @@ void ShardingApi::runSelectTest(std::string_view nsName) {
 				client::QueryResults qr;
 				Query q = Query(nsName)
 							  .Where(kFieldLocation, CondEq, key)
-							  .InnerJoin(kFieldId, kFieldId, CondEq, Query(nsName).Where(kFieldLocation, CondEq, key));
+							  .InnerJoin(Query(nsName).Where(kFieldLocation, CondEq, key), kFieldId, CondEq, kFieldId);
 
-				Error err = rx->Select(q, qr);
+				Error err = rx.SelectErr(q, qr);
 				ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
 				ASSERT_EQ(qr.Count(), kExpectedDataCount);
 				ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet);
@@ -96,9 +110,9 @@ void ShardingApi::runSelectTest(std::string_view nsName) {
 					Query(nsName)
 						.Where(kFieldLocation, CondEq, key)
 						.Where(kFieldId, CondEq,
-							   Query(nsName).Select({kFieldId}).Where(kFieldId, CondSet, requestedIDs).Where(kFieldLocation, CondEq, key));
+							   Query(nsName).Select(kFieldId).Where(kFieldId, CondSet, requestedIDs).Where(kFieldLocation, CondEq, key));
 
-				Error err = rx->Select(q, qr);
+				Error err = rx.SelectErr(q, qr);
 				ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
 				ASSERT_EQ(qr.Count(), kExpectedSubqueryDataCount);
 				ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet);
@@ -127,18 +141,15 @@ void ShardingApi::runUpdateTest(std::string_view nsName) {
 	using namespace std::string_literals;
 	TestCout() << "Running UpdateTest" << std::endl;
 	for (size_t i = 0; i < NodesCount(); ++i) {
-		std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
+		auto& rx = getNode(i)->api;
 		for (size_t shard = 0; shard < kShards; ++shard) {
 			// key1, key2, key3(proxy shardId=0)
 			{
 				const std::string key = "key" + std::to_string(shard + 1);
 				const std::string updated = "updated_" + RandString();
 				client::QueryResults qr;
-				Query q = Query(nsName).Set(kFieldData, updated);
-				q.Where(kFieldLocation, CondEq, key);
-				q.type_ = QueryUpdate;
-				Error err = rx->Update(q, qr);
-				ASSERT_TRUE(err.ok()) << err.what() << "; location = " << key;
+				Query q = Query(nsName).Update().Set(kFieldData, updated).Where(kFieldLocation, CondEq, key);
+				rx.Update(q, qr);
 				const std::string expectedLocation = "\"location\":\""s + key + '"';
 				const std::string expectedData = "\"data\":\""s + updated + '"';
 				EXPECT_EQ(qr.Count(), 40);
@@ -155,12 +166,9 @@ void ShardingApi::runUpdateTest(std::string_view nsName) {
 				const std::string updatedErr = "updated_" + RandString();
 				Query qNoShardKey = Query(nsName).Set(kFieldData, updatedErr);
 				client::QueryResults qrErr;
-				Error err = rx->Update(qNoShardKey, qrErr);
-				ASSERT_FALSE(err.ok()) << err.what();
+				auto err = rx.UpdateErr(qNoShardKey, qrErr);  // ignore error
 				Query qNoShardKeySelect = Query(nsName);
-				client::QueryResults qrSelect;
-				err = rx->Select(qNoShardKeySelect, qrSelect);
-				ASSERT_TRUE(err.ok()) << err.what();
+				client::QueryResults qrSelect = rx.Select(qNoShardKeySelect);
 				ASSERT_NE(qrSelect.GetShardingConfigVersion(), ShardingSourceId::NotSet);
 				for (auto it : qrSelect) {
 					auto item = it.GetItem();
@@ -181,8 +189,7 @@ void ShardingApi::runDeleteTest(std::string_view nsName) {
 		for (size_t shard = 0; shard < kShards; ++shard) {
 			const std::string key = "key" + std::to_string(shard + 1);
 			client::QueryResults qr;
-			Error err = rx->Delete(Query::FromSQL(fmt::sprintf("delete from %s where %s = '%s'", nsName, kFieldLocation, key)), qr);
-			ASSERT_TRUE(err.ok()) << err.what() << "; location = " << key;
+			Error err = rx->Delete(QueryImpl::FromSQL(fmt::format("delete from {} where {} = '{}'", nsName, kFieldLocation, key)), qr);
 			ASSERT_EQ(qr.Count(), 40) << "location = " << key;
 			ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet) << "location = " << key;
 			std::string toFind = "\"location\":\"" + key + "\"";
@@ -267,11 +274,11 @@ void ShardingApi::runSerialTest(std::string_view nsName) {
 				startId = shardsUniqueItems[key];
 			}
 			for (size_t j = 0; j < kItemsCountByShard[shard]; ++j) {
-				reindexer::client::Item item = rx->NewItem(nsName);
+				client::Item item = rx->NewItem(nsName);
 				ASSERT_TRUE(item.Status().ok());
 
 				WrSerializer wrser;
-				reindexer::JsonBuilder jsonBuilder(wrser);
+				JsonBuilder jsonBuilder(wrser);
 				jsonBuilder.Put(kFieldId, int(j));
 				jsonBuilder.Put(kFieldLocation, key);
 				jsonBuilder.Put(kSerialFieldName, int(0));
@@ -292,14 +299,14 @@ void ShardingApi::runSerialTest(std::string_view nsName) {
 
 				Query q = Query(nsName).Where(kFieldLocation, CondEq, key).Where(kFieldId, CondEq, int(j));
 				client::QueryResults qr;
-				err = rx->Select(q, qr);
+				err = rx->Select(*Impl{q}, qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.Count(), 1) << "i = " << i << "; shard = " << shard << "; location = " << key;
 				ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet)
 					<< "i = " << i << "; shard = " << shard << "; location = " << key;
 				size_t correctSerial = startId + j + 1;
 				for (auto it : qr) {
-					reindexer::client::Item itm = it.GetItem();
+					client::Item itm = it.GetItem();
 					std::string_view json = itm.GetJSON();
 					std::string_view::size_type pos = json.find(kSerialFieldName + "\":" + std::to_string(correctSerial));
 					ASSERT_TRUE(pos != std::string_view::npos) << correctSerial;
@@ -337,11 +344,11 @@ void ShardingApi::runUpdateItemsTest(std::string_view nsName) {
 			const std::string updated = "updated_" + RandString();
 			const std::string key = "key" + std::to_string(shard + 1);
 
-			reindexer::client::Item item = rx->NewItem(nsName);
+			client::Item item = rx->NewItem(nsName);
 			ASSERT_TRUE(item.Status().ok());
 
 			WrSerializer wrser;
-			reindexer::JsonBuilder jsonBuilder(wrser);
+			JsonBuilder jsonBuilder(wrser);
 			jsonBuilder.Put(kFieldId, int(shard));
 			jsonBuilder.Put(kFieldLocation, key);
 			jsonBuilder.Put(kFieldData, updated);
@@ -357,13 +364,13 @@ void ShardingApi::runUpdateItemsTest(std::string_view nsName) {
 			}
 			ASSERT_TRUE(err.ok()) << err.what();
 
-			Query q = Query(nsName).Where(kFieldLocation, CondEq, key).Where(kFieldId, CondEq, int(shard));
+			QueryImpl q = *Impl{Query(nsName).Where(kFieldLocation, CondEq, key).Where(kFieldId, CondEq, int(shard))};
 			client::QueryResults qr;
 			err = rx->Select(q, qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(qr.Count(), 1) << "i = " << i << "; shard = " << shard << "; location = " << key;
 			for (auto it : qr) {
-				reindexer::client::Item itm = it.GetItem();
+				client::Item itm = it.GetItem();
 				std::string_view json = itm.GetJSON();
 				ASSERT_TRUE(json == wrser.Slice());
 			}
@@ -378,7 +385,7 @@ void ShardingApi::runDeleteItemsTest(std::string_view nsName) {
 		const std::string key = "key" + std::to_string(shard + 1);
 		std::string itemJson;
 		{
-			Query q = Query(nsName).Where(kFieldLocation, CondEq, key).Where(kFieldId, CondEq, int(shard));
+			QueryImpl q = *Impl{Query(nsName).Where(kFieldLocation, CondEq, key).Where(kFieldId, CondEq, int(shard))};
 			client::QueryResults qr;
 			Error err = rx->Select(q, qr);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -388,7 +395,7 @@ void ShardingApi::runDeleteItemsTest(std::string_view nsName) {
 			itemJson = std::string(it.GetJSON());
 		}
 
-		reindexer::client::Item item = rx->NewItem(nsName);
+		client::Item item = rx->NewItem(nsName);
 		ASSERT_TRUE(item.Status().ok());
 
 		Error err = item.FromJSON(itemJson);
@@ -397,7 +404,7 @@ void ShardingApi::runDeleteItemsTest(std::string_view nsName) {
 		err = rx->Delete(nsName, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		Query q = Query(nsName).Where(kFieldLocation, CondEq, key).Where(kFieldId, CondEq, int(shard));
+		QueryImpl q = *Impl{Query(nsName).Where(kFieldLocation, CondEq, key).Where(kFieldId, CondEq, int(shard))};
 		client::QueryResults qr;
 		err = rx->Select(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -420,7 +427,7 @@ void ShardingApi::runUpdateIndexTest(std::string_view nsName) {
 			ASSERT_EQ(nsdefs.size(), 1);
 			ASSERT_EQ(nsdefs.front().name, nsName);
 			ASSERT_TRUE(std::find_if(nsdefs.front().indexes.begin(), nsdefs.front().indexes.end(),
-									 [](const IndexDef& index) { return index.name_ == "new"; }) != nsdefs.front().indexes.end());
+									 [](const IndexDef& index) { return index.Name() == "new"; }) != nsdefs.front().indexes.end());
 			err = rx->DropIndex(nsName, indexDef);
 			ASSERT_TRUE(err.ok()) << err.what();
 			nsdefs.clear();
@@ -429,38 +436,32 @@ void ShardingApi::runUpdateIndexTest(std::string_view nsName) {
 			ASSERT_EQ(nsdefs.size(), 1);
 			ASSERT_EQ(nsdefs.front().name, nsName);
 			ASSERT_TRUE(std::find_if(nsdefs.front().indexes.begin(), nsdefs.front().indexes.end(),
-									 [](const IndexDef& index) { return index.name_ == "new"; }) == nsdefs.front().indexes.end());
+									 [](const IndexDef& index) { return index.Name() == "new"; }) == nsdefs.front().indexes.end());
 		}
 	}
 }
 
 void ShardingApi::runDropNamespaceTest(std::string_view nsName) {
 	TestCout() << "Running DropNamespaceTest" << std::endl;
-	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
-	Error err = rx->TruncateNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto& rx = getNode(0)->api;
+	rx.TruncateNamespace(nsName);
 
 	for (size_t shard = 0; shard < kShards; ++shard) {
 		const std::string key = "key" + std::to_string(shard + 1);
 		client::QueryResults qr;
-		err = rx->Select(Query(nsName).Where(kFieldLocation, CondEq, key), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx.Select(Query(nsName).Where(kFieldLocation, CondEq, key), qr);
 		ASSERT_EQ(qr.Count(), 0) << qr.Count();
 		ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet) << "shard = " << shard << "; location = " << key;
 	}
 
 	client::QueryResults qr;
-	err = rx->Select(Query(nsName), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rx.Select(Query(nsName), qr);
 	ASSERT_EQ(qr.Count(), 0) << qr.Count();
 	ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet);
 
-	err = rx->DropNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rx.DropNamespace(nsName);
 
-	std::vector<NamespaceDef> nsdefs;
-	err = rx->EnumNamespaces(nsdefs, EnumNamespacesOpts().HideSystem().HideTemporary().WithFilter(nsName));
-	ASSERT_TRUE(err.ok()) << err.what();
+	std::vector<NamespaceDef> nsdefs = rx.EnumNamespaces(EnumNamespacesOpts().HideSystem().HideTemporary().WithFilter(nsName));
 	ASSERT_TRUE(nsdefs.empty());
 }
 
@@ -494,7 +495,7 @@ void ShardingApi::checkTransactionErrors(client::Reindexer& rx, std::string_view
 			err = rx.CommitTransaction(tr, qr);
 			EXPECT_FALSE(err.ok());
 			std::string_view kExpectedErr = "Unable to commit tx with error status:";
-			EXPECT_EQ(err.what().substr(0, kExpectedErr.size()), kExpectedErr);
+			EXPECT_EQ(err.whatStr().substr(0, kExpectedErr.size()), kExpectedErr);
 		} else {
 			// Check if rollback will still succeed
 			err = rx.RollBackTransaction(tr);
@@ -507,20 +508,18 @@ void ShardingApi::runTransactionsTest(std::string_view nsName) {
 	TestCout() << "Running TransactionsTest" << std::endl;
 	const int rowsInTr = 10;
 	for (size_t i = 0; i < NodesCount(); ++i) {
-		std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
-		Error err = rx->TruncateNamespace(nsName);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto& rx = getNode(i)->api;
+		rx.TruncateNamespace(nsName);
 		for (size_t shard = 0; shard < kShards; ++shard) {
 			const std::string key = std::string("key" + std::to_string(shard + 1));
 			const int modes[] = {ModeUpsert, ModeDelete};
 			for (int mode : modes) {
-				reindexer::client::Transaction tr = rx->NewTransaction(nsName);
+				client::Transaction tr = rx.NewTransaction(nsName);
 				ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 				for (int id = 0; id < rowsInTr; ++id) {
 					if ((mode == ModeDelete) && (shard % 2 == 0)) {
-						Query q = Query(nsName).Where(kFieldLocation, CondEq, key);
-						q.type_ = QueryDelete;
-						err = tr.Modify(std::move(q));
+						Query q = Query(nsName).Delete().Where(kFieldLocation, CondEq, key);
+						auto err = tr.Modify(*Impl{std::move(q)});
 						ASSERT_TRUE(err.ok()) << err.what();
 						break;
 					}
@@ -529,13 +528,13 @@ void ShardingApi::runTransactionsTest(std::string_view nsName) {
 					ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 					WrSerializer wrser;
-					reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+					JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 					jsonBuilder.Put(kFieldId, int(id));
 					jsonBuilder.Put(kFieldLocation, key);
 					jsonBuilder.Put(kFieldData, RandString());
 					jsonBuilder.End();
 
-					err = item.FromJSON(wrser.Slice());
+					auto err = item.FromJSON(wrser.Slice());
 					ASSERT_TRUE(err.ok()) << err.what();
 
 					if (mode == ModeUpsert) {
@@ -546,14 +545,9 @@ void ShardingApi::runTransactionsTest(std::string_view nsName) {
 					ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; shard = " << shard << "; key = " << key
 										  << "; mode = " << mode << "; id = " << id;
 				}
-				client::QueryResults qrTx;
-				err = rx->CommitTransaction(tr, qrTx);
-				ASSERT_TRUE(err.ok()) << err.what() << "; connection = " << i << "; shard = " << shard << "; mode = " << mode;
+				client::QueryResults qrTx = rx.CommitTransaction(tr);
 
-				client::QueryResults qr;
-
-				err = rx->Select(Query(nsName).Where(kFieldLocation, CondEq, key), qr);
-				ASSERT_TRUE(err.ok()) << err.what();
+				client::QueryResults qr = rx.Select(Query(nsName).Where(kFieldLocation, CondEq, key));
 				if (mode == ModeUpsert) {
 					ASSERT_EQ(qr.Count(), rowsInTr) << "; connection = " << i << "; shard = " << shard << "; location = " << key;
 				} else if (mode == ModeDelete) {
@@ -562,18 +556,14 @@ void ShardingApi::runTransactionsTest(std::string_view nsName) {
 
 				if (mode == ModeUpsert) {
 					const std::string updated = "updated_" + RandString();
-					tr = rx->NewTransaction(nsName);
+					tr = rx.NewTransaction(nsName);
 					ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
-					Query q = Query(nsName).Set(kFieldData, updated).Where(kFieldLocation, CondEq, key);
-					q.type_ = QueryUpdate;
-					err = tr.Modify(std::move(q));
+					Query q = Query(nsName).Update().Set(kFieldData, updated).Where(kFieldLocation, CondEq, key);
+					auto err = tr.Modify(*Impl{std::move(q)});
 					ASSERT_TRUE(err.ok()) << err.what();
-					client::QueryResults qrTx;
-					err = rx->CommitTransaction(tr, qrTx);
-					ASSERT_TRUE(err.ok()) << err.what();
+					client::QueryResults qrTx = rx.CommitTransaction(tr);
 
-					qr = client::QueryResults();
-					err = rx->Select(Query(nsName).Where(kFieldLocation, CondEq, key), qr);
+					qr = rx.Select(Query(nsName).Where(kFieldLocation, CondEq, key));
 					ASSERT_TRUE(err.ok()) << err.what();
 					std::string toFind = "\"location\":\"" + key + "\"";
 					for (auto it : qr) {
@@ -584,33 +574,32 @@ void ShardingApi::runTransactionsTest(std::string_view nsName) {
 				}
 			}
 
-			checkTransactionErrors(*rx, nsName);
+			checkTransactionErrors(*rx.reindexer, nsName);
 		}
 	}
 }
 
 TEST_F(ShardingApi, CheckMaskingTest) {
-	auto dsnTmplt = "cproto://%s:%s@127.0.0.1:6534/some_db";
+	constexpr auto dsnTmplt = "cproto://{}:{}@127.0.0.1:6534/some_db";
 	auto login = "userlogin";
 	auto passwd = "userpassword";
-	auto orig = fmt::sprintf(dsnTmplt, login, passwd);
-	auto masked = fmt::sprintf(dsnTmplt, maskLogin(login), maskPassword(passwd));
+	auto orig = fmt::format(dsnTmplt, login, passwd);
+	auto masked = fmt::format(dsnTmplt, maskLogin(login), maskPassword(passwd));
 	auto dsn = DSN(orig);
 
 	std::stringstream ss;
 	ss << dsn;
 	ASSERT_EQ(masked, ss.str());
 
-	Error err(errParams, "%s", dsn);
-	ASSERT_EQ(err.what(), masked);
+	Error err(errParams, "{}", dsn);
+	ASSERT_EQ(err.whatStr(), masked);
 
-	ASSERT_EQ(fmt::sprintf("%s", dsn), masked);
 	ASSERT_EQ(fmt::format("{}", dsn), masked);
 
 	ASSERT_TRUE(RelaxCompare(dsn, DSN(masked)));
 	auto maskedDsn = DSN(masked);
 
-	ASSERT_EQ(fmt::sprintf("%s", dsn), fmt::sprintf("%s", maskedDsn));
+	ASSERT_EQ(fmt::format("{}", dsn), fmt::format("{}", maskedDsn));
 }
 
 TEST_F(ShardingApi, BaseApiTestset) {
@@ -645,7 +634,7 @@ void ShardingApi::runTransactionsTest(std::string_view nsName, const std::map<in
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	client::QueryResults qr;
-	err = rx->Select(Query(nsName), qr);
+	err = rx->Select(*Impl{Query(nsName)}, qr);
 	ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << nsName;
 	ASSERT_EQ(qr.Count(), 0);
 	ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet);
@@ -653,14 +642,14 @@ void ShardingApi::runTransactionsTest(std::string_view nsName, const std::map<in
 	for (size_t shard = 0; shard < kShards; ++shard) {
 		const auto& keys = shardDataDistrib.at(shard);
 
-		reindexer::client::Transaction tr = rx->NewTransaction(nsName);
+		client::Transaction tr = rx->NewTransaction(nsName);
 		ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 		for (const auto& key : keys) {
 			client::Item item = tr.NewItem();
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 			WrSerializer wrser;
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, key);
 			jsonBuilder.End();
 
@@ -679,7 +668,7 @@ void ShardingApi::runTransactionsTest(std::string_view nsName, const std::map<in
 	}
 
 	qr = client::QueryResults();
-	err = rx->Select(Query(nsName), qr);
+	err = rx->Select(*Impl{Query(nsName)}, qr);
 	ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << nsName;
 	ASSERT_NE(qr.GetShardingConfigVersion(), ShardingSourceId::NotSet) << "ns = " << nsName;
 
@@ -701,7 +690,7 @@ void ShardingApi::runSelectTest(std::string_view nsName, const std::map<int, std
 	for (size_t i = 0; i < NodesCount(); ++i) {
 		std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
 		client::QueryResults qr;
-		Error err = rx->Select(Query(nsName), qr);
+		Error err = rx->Select(*Impl{Query(nsName)}, qr);
 
 		ASSERT_TRUE(err.ok()) << err.what() << "; node index = " << i;
 		ASSERT_EQ(qr.Count(), checkData.size()) << "node index = " << i;
@@ -730,7 +719,7 @@ void ShardingApi::runLocalSelectTest(std::string_view nsName, const std::map<int
 		q.Local();
 
 		client::QueryResults qr;
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 
 		ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << nsName;
 		ASSERT_EQ(qr.Count(), shardDataDistrib.at(shard).size()) << "Shard - " << shard;
@@ -777,7 +766,7 @@ void ShardingApi::fillShard(int shard, const std::set<T>& data, const std::strin
 		auto item = rx->NewItem(kNsName);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+		JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, value);
 		jsonBuilder.End();
 
@@ -806,11 +795,11 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 	cfg.nodesInCluster = 1;	 // Only one node in the cluster is needed for the test
 	cfg.additionalNss.emplace_back(kNsName);
 	cfg.additionalNss[0].indexName = kSharingIdx;
-	const char* kShardKeyTmplt = "Shard%dKey%d";
+	constexpr auto kShardKeyTmplt = "Shard{}Key{}";
 	cfg.additionalNss[0].keyValuesNodeCreation = [kShardKeyTmplt](int shard) {
 		ShardingConfig::Key key;
 		for (int i = 0; i < 3; ++i) {
-			key.values.emplace_back(Variant(fmt::sprintf(kShardKeyTmplt, shard, i)));
+			key.values.emplace_back(Variant(fmt::format(kShardKeyTmplt, shard, i)));
 		}
 		key.shardId = shard;
 		return key;
@@ -827,10 +816,11 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 	Error err = rx->AddNamespace(nsDef);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	reindexer::client::Transaction tr = rx->NewTransaction(kNsName);
+	client::Transaction tr = rx->NewTransaction(kNsName);
 	ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 
-	auto itemTmplt = fmt::sprintf("{\"%s\": %s, \"%s\": \"%s\"}", kFieldId, "%d", kSharingIdx, kShardKeyTmplt);
+	const auto itemTmpltBase = fmt::format("{{{{\"{}\": {{}}, \"{}\": \"{}\"}}}}", kFieldId, kSharingIdx, kShardKeyTmplt);
+	const auto itemTmplt = fmt::runtime(itemTmpltBase);
 	auto makeItem = [&tr](std::string_view rawItem) {
 		client::Item item = tr.NewItem();
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
@@ -842,16 +832,16 @@ TEST_F(ShardingApi, ShardingInvalidTxTest) {
 		return item;
 	};
 
-	for (const auto& rawItem : {fmt::sprintf(itemTmplt, 0, 2, 0), fmt::sprintf(itemTmplt, 1, 2, 1), fmt::sprintf(itemTmplt, 2, 2, 2)}) {
+	for (const auto& rawItem : {fmt::format(itemTmplt, 0, 2, 0), fmt::format(itemTmplt, 1, 2, 1), fmt::format(itemTmplt, 2, 2, 2)}) {
 		err = tr.Upsert(makeItem(rawItem));
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	err = tr.Upsert(makeItem(fmt::sprintf(itemTmplt, 3, 1, 1)));
+	err = tr.Upsert(makeItem(fmt::format(itemTmplt, 3, 1, 1)));
 	ASSERT_FALSE(err.ok()) << err.what();
-	ASSERT_EQ(err.what(),
-			  "Transaction query to a different shard: 1 (2 is expected); First tx shard key - 'Shard2Key0', current tx shard key - "
-			  "'Shard1Key1'");
+	ASSERT_STREQ(err.what(),
+				 "Transaction query to a different shard: 1 (2 is expected); First tx shard key - 'Shard2Key0', current tx shard key - "
+				 "'Shard1Key1'");
 }
 
 TEST_F(ShardingApi, BaseApiTestsetForRanges) {
@@ -990,14 +980,14 @@ ShardingApi::ShardingConfig ShardingApi::makeShardingConfigByDistrib(std::string
 
 Error ShardingApi::applyNewShardingConfig(client::Reindexer& rx, const ShardingConfig& config, ApplyType type,
 										  std::optional<int64_t> sourceId) const {
-	reindexer::client::Item item = rx.NewItem("#config");
+	client::Item item = rx.NewItem(kConfigNamespace);
 	if (!item.Status().ok()) {
 		return item.Status();
 	}
 
 	{
 		WrSerializer wrser;
-		reindexer::JsonBuilder jsonBuilder(wrser);
+		JsonBuilder jsonBuilder(wrser);
 		jsonBuilder.Put("type", "action");
 		auto action = jsonBuilder.Object("action");
 		action.Put("command", "apply_sharding_config");
@@ -1019,7 +1009,7 @@ Error ShardingApi::applyNewShardingConfig(client::Reindexer& rx, const ShardingC
 		}
 	}
 
-	auto err = rx.Upsert("#config", item);
+	auto err = rx.Upsert(kConfigNamespace, item);
 	if (!item.Status().ok()) {
 		return item.Status();
 	}
@@ -1036,7 +1026,7 @@ void ShardingApi::checkMaskedDSNsInConfig(int shardId) {
 			auto serverId = shard * kNodesInCluster + nodeId++;
 			auto expected = MakeDsn(reindexer_server::UserRole::kRoleSharding, serverId, GetDefaults().defaultRpcPort + serverId,
 									"shard" + std::to_string(serverId));
-			EXPECT_EQ(fmt::sprintf("%s", expected), dsn);
+			EXPECT_EQ(fmt::format("{}", expected), fmt::format("{}", dsn));
 		}
 	}
 }
@@ -1104,7 +1094,7 @@ void ShardingApi::MultyThreadApplyConfigTest(ShardingApi::ApplyType type) {
 			auto item = rx.NewItem(kNonShardedNs);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, i);
 			jsonBuilder.End();
 
@@ -1136,10 +1126,18 @@ void ShardingApi::MultyThreadApplyConfigTest(ShardingApi::ApplyType type) {
 			[this, &stopSelects, &kNonShardedNs](int shardId) {
 				do {
 					client::QueryResults qr;
-					Error err = svc_[shardId][0].Get()->api.reindexer->Select(Query(kNonShardedNs), qr);
+					Error err = svc_[shardId][0].Get()->api.reindexer->Select(*Impl{Query(kNonShardedNs)}, qr);
 
 					ASSERT_TRUE(err.ok()) << err.what() << "node index = " << shardId;
 					ASSERT_EQ(qr.Count(), 10);
+					unsigned cnt = 0;
+					for (auto& it : qr) {
+						auto item = it.GetItem();
+						ASSERT_TRUE(item.Status().ok()) << item.Status().what() << "node index = " << shardId;
+						[[maybe_unused]] auto json = item.GetJSON();
+						++cnt;
+					}
+					ASSERT_EQ(cnt, qr.Count());
 				} while (!stopSelects.load());
 			},
 			i);
@@ -1207,12 +1205,12 @@ TEST_F(ShardingApi, RuntimeShardingConfigLocallyResetTest) {
 	auto shCfg = getShardingConfigFrom(rx);
 	assertrx(shCfg.has_value());
 
-	reindexer::client::Item item = rx.NewItem("#config");
+	client::Item item = rx.NewItem(kConfigNamespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	{
 		WrSerializer wrser;
-		reindexer::JsonBuilder jsonBuilder(wrser);
+		JsonBuilder jsonBuilder(wrser);
 		jsonBuilder.Put("type", "action");
 		auto action = jsonBuilder.Object("action");
 		action.Put("command", "apply_sharding_config");
@@ -1223,7 +1221,7 @@ TEST_F(ShardingApi, RuntimeShardingConfigLocallyResetTest) {
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	auto err = rx.Upsert("#config", item);
+	auto err = rx.Upsert(kConfigNamespace, item);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	shCfg = getShardingConfigFrom(rx);
@@ -1244,12 +1242,13 @@ static bool CompareShardingConfigs(const cluster::ShardingConfig& lhs, const clu
 }
 
 void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config) {
+	Error error;
 	auto fromConfigNs = getShardingConfigFrom(*server->api.reindexer);
 	assertrx(fromConfigNs.has_value());
 	if (!CompareShardingConfigs(config, *fromConfigNs)) {
-		throw std::logic_error(
-			fmt::sprintf("The equality of config and fromConfigNs is expected, but:\nconfig:\n\t%s\nfromConfigNs:\n\t%s\n",
-						 config.GetJSON(cluster::MaskingDSN::Disabled), fromConfigNs->GetJSON(cluster::MaskingDSN::Disabled)));
+		error = std::logic_error(
+			fmt::format("The equality of config and fromConfigNs is expected, but:\nconfig:\n\t{}\nfromConfigNs:\n\t{}\n",
+						config.GetJSON(cluster::MaskingDSN::Disabled), fromConfigNs->GetJSON(cluster::MaskingDSN::Disabled)));
 	}
 
 	std::string configYAML;
@@ -1259,9 +1258,14 @@ void ShardingApi::checkConfigThrow(const ServerControl::Interface::Ptr& server, 
 	auto err = fromFileConfig.FromYAML(configYAML);
 	ASSERT_TRUE(err.ok()) << err.what();
 	if (!CompareShardingConfigs(config, fromFileConfig)) {
-		throw std::logic_error(
-			fmt::sprintf("The equality of config and fromFileConfig is expected, but:\nconfig:\n\t%s\nfromFileConfig:\n\t%s\n",
-						 config.GetJSON(cluster::MaskingDSN::Disabled), fromFileConfig.GetJSON(cluster::MaskingDSN::Disabled)));
+		error = std::logic_error(
+			fmt::format("{}The equality of config and fromFileConfig is expected, but:\nconfig:\n\t{}\nfromFileConfig:\n\t{}\n",
+						!error.ok() ? error.whatStr() + '\n' : "", config.GetJSON(cluster::MaskingDSN::Disabled),
+						fromFileConfig.GetJSON(cluster::MaskingDSN::Disabled)));
+	}
+
+	if (!error.ok()) {
+		throw error;
 	}
 }
 
@@ -1270,10 +1274,10 @@ int64_t ShardingApi::getSourceIdFrom(const ServerControl::Interface::Ptr& server
 	return cfg.has_value() ? cfg->sourceId : int64_t(ShardingSourceId::NotSet);
 }
 
-std::optional<ShardingApi::ShardingConfig> ShardingApi::getShardingConfigFrom(reindexer::client::Reindexer& rx) {
+std::optional<ShardingApi::ShardingConfig> ShardingApi::getShardingConfigFrom(client::Reindexer& rx) {
 	client::QueryResults qr;
-	Query q = Query("#config").Where("type", CondEq, "sharding");
-	auto err = rx.Select(q, qr);
+	Query q = Query(kConfigNamespace).Where("type", CondEq, "sharding");
+	auto err = rx.Select(*Impl{q}, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	if (qr.Count() == 0) {
 		return std::nullopt;
@@ -1293,20 +1297,16 @@ std::optional<ShardingApi::ShardingConfig> ShardingApi::getShardingConfigFrom(re
 }
 
 void ShardingApi::changeClusterLeader(int shardId) {
-	client::QueryResults qrReplStat;
-	Error err = svc_[shardId][0].Get()->api.reindexer->Select("select * from #replicationstats where type = 'cluster'", qrReplStat);
+	SCOPED_TRACE(fmt::format("node index: {}", shardId));
 
-	ASSERT_TRUE(err.ok()) << err.what();
+	auto qrReplStat = svc_[shardId][0].Get()->api.ExecSQL("select * from #replicationstats where type = 'cluster'");
 	ASSERT_TRUE(qrReplStat.Status().ok()) << qrReplStat.Status().what();
-
 	ASSERT_EQ(qrReplStat.Count(), 1);
 
 	auto itemRS = qrReplStat.begin().GetItem();
 	gason::JsonParser parserRS;
 	auto nodes = parserRS.Parse(itemRS.GetJSON())["nodes"];
-
-	ASSERT_TRUE(!nodes.empty());
-
+	ASSERT_TRUE(!nodes.isEmpty());
 	int leaderId = -1;
 	for (auto& node : nodes) {
 		if (node["role"].As<std::string_view>() == "leader") {
@@ -1314,14 +1314,11 @@ void ShardingApi::changeClusterLeader(int shardId) {
 			break;
 		}
 	}
-
 	ASSERT_GT(leaderId, -1);
 
 	auto newLeaderServerId = (leaderId - shardId * kNodesInCluster + 1) % kNodesInCluster + shardId * kNodesInCluster;
-
 	auto item = svc_[shardId][0].Get()->CreateClusterChangeLeaderItem(newLeaderServerId);
-	err = svc_[shardId][0].Get()->api.reindexer->Update("#config", item);
-	ASSERT_TRUE(err.ok()) << err.what() << "; node index = " << shardId;
+	svc_[shardId][0].Get()->api.Update(kConfigNamespace, item);
 }
 
 TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
@@ -1355,7 +1352,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 			auto item = rx.NewItem(kNonShardedNs);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, i);
 			jsonBuilder.End();
 
@@ -1369,6 +1366,8 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 		fillDataLocalNss(shardId);
 	}
 
+	waitSync(kNonShardedNs);
+
 	std::vector<std::thread> parallelSelectsPerShard;
 	parallelSelectsPerShard.reserve(parallelSelectsCount);
 	std::atomic<bool> stopSelects = false;
@@ -1378,10 +1377,18 @@ TEST_F(ShardingApi, RuntimeUpdateShardingCfgWithClusterTest) {
 			[this, &stopSelects, &kNonShardedNs](int shardId) {
 				do {
 					client::QueryResults qr;
-					Error err = svc_[shardId][0].Get()->api.reindexer->Select(Query(kNonShardedNs), qr);
+					Error err = svc_[shardId][0].Get()->api.reindexer->Select(*Impl{Query(kNonShardedNs)}, qr);
 
 					ASSERT_TRUE(err.ok()) << err.what() << "; node index = " << shardId;
 					ASSERT_EQ(qr.Count(), 10);
+					unsigned cnt = 0;
+					WrSerializer ser;
+					for (auto& it : qr) {
+						err = it.GetJSON(ser, false);
+						ASSERT_TRUE(err.ok()) << err.what() << "node index = " << shardId;
+						++cnt;
+					}
+					ASSERT_EQ(cnt, qr.Count());
 					std::this_thread::sleep_for(std::chrono::milliseconds(10));
 				} while (!stopSelects.load());
 			},
@@ -1523,15 +1530,13 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithDisabledNodesTest) {
 		parallelDisablingNodes.emplace_back(
 			[this, &stopDisableNodes, &stopServer, &startServer](int shardId) {
 				do {
-					client::QueryResults qr;
-					Error err = svc_[shardId][0].Get()->api.reindexer->Select("select * from #replicationstats where type = 'cluster'", qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+					auto qr = svc_[shardId][0].Get()->api.ExecSQL("select * from #replicationstats where type = 'cluster'");
 					ASSERT_EQ(qr.Count(), 1);
 
 					auto item = qr.begin().GetItem();
 					gason::JsonParser parserRS;
 					auto nodes = parserRS.Parse(item.GetJSON())["nodes"];
-					ASSERT_TRUE(!nodes.empty());
+					ASSERT_TRUE(!nodes.isEmpty());
 
 					int leaderId = -1;
 					for (auto& node : nodes) {
@@ -1614,7 +1619,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithActualConfigTest) {
 	for (int shardId = 0; shardId < shardsCount; ++shardId) {
 		std::next_permutation(nodeIds.begin(), nodeIds.end());
 		auto& shard = svc_[shardId];
-		shard[0].Get()->GetReplicationStats("cluster");	 // Await replication startup
+		std::ignore = shard[0].Get()->GetReplicationStats("cluster");  // Await replication startup
 		for (size_t i = 0; i < nodeIds.size(); ++i) {
 			const bool useIncorrectCfg = (i != nodeIds.size() - 1);
 			auto& localCfg = useIncorrectCfg ? configIncorrect : config;
@@ -1680,7 +1685,10 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithFilledNssTest) {
 	InitShardingConfig cfg;
 	cfg.shards = shardsCount;
 	Init(std::move(cfg));
-	auto oldConfig = config_;
+	auto oldConfigOpt = getShardingConfigFrom(*svc_[0][0].Get()->api.reindexer);
+	ASSERT_TRUE(oldConfigOpt);
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+	ShardingConfig oldConfig = *oldConfigOpt;
 
 	auto config = makeShardingConfigByDistrib(kNsName, shardDataDistribBySegment, shardsCount);
 
@@ -1698,7 +1706,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithFilledNssTest) {
 			item = rx->NewItem(kNsName);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, val);
 			jsonBuilder.End();
 
@@ -1716,7 +1724,7 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithFilledNssTest) {
 		err = applyNewShardingConfig(*rx, config, ApplyType::Shared);
 		ASSERT_FALSE(err.ok());
 
-		ASSERT_EQ(fmt::sprintf("Namespace 'ns' on the shard %d contains keys unrelated to the config(e.g. %d)", shardId, val), err.what())
+		ASSERT_EQ(fmt::format("Namespace 'ns' on the shard {} contains keys unrelated to the config(e.g. {})", shardId, val), err.what())
 			<< err.what();
 
 		err = rx->Delete(kNsName, deleteItem);
@@ -1725,8 +1733,8 @@ TEST_F(ShardingApi, RuntimeUpdateShardingWithFilledNssTest) {
 
 	// Checking that the original config has not changed on all nodes
 	for (size_t shard = 0; shard < kShards; ++shard) {
+		oldConfig.thisShardId = shard;
 		for (size_t node = 0; node < kNodesInCluster; ++node) {
-			oldConfig.thisShardId = shard;
 			checkConfig(svc_[shard][node].Get(), oldConfig);
 		}
 	}
@@ -1858,7 +1866,7 @@ TEST_F(ShardingApi, CheckSortQueryResultsByShardID) {
 	for (size_t i = 0; i < NodesCount(); ++i) {
 		std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
 		client::QueryResults qr(kResultsWithShardId);
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 
 		ASSERT_TRUE(err.ok()) << err.what() << "; node index = ";
 		ASSERT_EQ(qr.Count(), count);
@@ -1894,8 +1902,8 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 	for (auto thCnt : threadsCountVec) {
 		std::atomic<unsigned> requests = {0};
 		std::vector<std::thread> threads;
-		std::condition_variable cv;
-		std::mutex mtx;
+		reindexer::condition_variable cv;
+		reindexer::mutex mtx;
 		bool ready = false;
 		for (unsigned i = 0; i < thCnt; ++i) {
 			std::shared_ptr<client::Reindexer> rx = std::make_shared<client::Reindexer>();
@@ -1905,30 +1913,30 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 			ASSERT_TRUE(err.ok()) << err.what();
 
 			threads.emplace_back([&q, rx, &requests, &cv, &mtx, &ready] {
-				std::unique_lock lck(mtx);
+				reindexer::unique_lock lck(mtx);
 				cv.wait(lck, [&ready] { return ready; });
 				lck.unlock();
 				while (++requests < kTotalRequestsCount) {
 					client::QueryResults qr;
-					Error err = rx->Select(q, qr);
+					Error err = rx->Select(*Impl{q}, qr);
 					ASSERT_TRUE(err.ok()) << err.what();
 				}
 			});
 		}
 
 		// <Start profiling here>
-		std::unique_lock lck(mtx);
+		reindexer::unique_lock lck(mtx);
 		ready = true;
 		const auto beg = steady_clock_w::now();
 		cv.notify_all();
 		lck.unlock();
-		TestCout() << fmt::sprintf("Start with %d threads", thCnt) << std::endl;
+		TestCout() << fmt::format("Start with {} threads", thCnt) << std::endl;
 		for (auto& th : threads) {
 			th.join();
 		}
 		// <Stop profiling here>
 		const auto diff = steady_clock_w::now() - beg;
-		TestCout() << fmt::sprintf("Done with %d threads in %d usec", thCnt, diff.count() / 1000) << std::endl;
+		TestCout() << fmt::format("Done with {} threads in {} usec", thCnt, diff.count() / 1000) << std::endl;
 	}
 }
 
@@ -1940,16 +1948,16 @@ TEST_F(ShardingApi, Aggregations) {
 	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 	client::QueryResults qr;
 	Query q = Query(default_namespace).Aggregate(AggSum, {kFieldId}).Aggregate(AggMin, {kFieldId}).Aggregate(AggMax, {kFieldId});
-	Error err = rx->Select(q, qr);
+	Error err = rx->Select(*Impl{q}, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.GetAggregationResults().size(), 3);
-	EXPECT_EQ(qr.GetAggregationResults()[0].type, AggSum);
+	EXPECT_EQ(qr.GetAggregationResults()[0].GetType(), AggSum);
 	EXPECT_TRUE(qr.GetAggregationResults()[0].GetValue());
 	EXPECT_EQ(qr.GetAggregationResults()[0].GetValueOrZero(), (itemsCount - 1) * itemsCount / 2);
-	EXPECT_EQ(qr.GetAggregationResults()[1].type, AggMin);
+	EXPECT_EQ(qr.GetAggregationResults()[1].GetType(), AggMin);
 	EXPECT_TRUE(qr.GetAggregationResults()[1].GetValue());
 	EXPECT_EQ(qr.GetAggregationResults()[1].GetValueOrZero(), 0);
-	EXPECT_EQ(qr.GetAggregationResults()[2].type, AggMax);
+	EXPECT_EQ(qr.GetAggregationResults()[2].GetType(), AggMax);
 	EXPECT_TRUE(qr.GetAggregationResults()[2].GetValue());
 	EXPECT_EQ(qr.GetAggregationResults()[2].GetValueOrZero(), itemsCount - 1);
 }
@@ -1962,122 +1970,122 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1");
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Where(kFieldId, CondEq, 0);
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Where(kFieldLocation, CondEq, "key2");
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Duplication of shard key condition in the query");
+		EXPECT_STREQ(err.what(), "Duplication of shard key condition in the query");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Or().Where(kFieldId, CondEq, 0);
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition cannot be connected with other conditions by operator OR");
+		EXPECT_STREQ(err.what(), "Shard key condition cannot be connected with other conditions by operator OR");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldId, CondEq, 0).Or().Where(kFieldLocation, CondEq, "key1");
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition cannot be connected with other conditions by operator OR");
+		EXPECT_STREQ(err.what(), "Shard key condition cannot be connected with other conditions by operator OR");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Not().Where(kFieldLocation, CondEq, "key1");
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition cannot be negative");
+		EXPECT_STREQ(err.what(), "Shard key condition cannot be negative");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondGt, "key1");
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition can only be 'Eq'");
+		EXPECT_STREQ(err.what(), "Shard key condition can only be 'Eq'");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).WhereBetweenFields(kFieldLocation, CondEq, kFieldData);
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key cannot be compared with another field");
+		EXPECT_STREQ(err.what(), "Shard key cannot be compared with another field");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).OpenBracket().Where(kFieldLocation, CondEq, "key1").CloseBracket();
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition cannot be included in bracket");
+		EXPECT_STREQ(err.what(), "Shard key condition cannot be included in bracket");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).OpenBracket().OpenBracket().Where(kFieldLocation, CondEq, "key1").CloseBracket().CloseBracket();
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition cannot be included in bracket");
+		EXPECT_STREQ(err.what(), "Shard key condition cannot be included in bracket");
 	}
 	// JOIN
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
-					  .InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"));
-		Error err = rx->Select(q, qr);
+					  .InnerJoin(Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"), kFieldId, CondEq, kFieldId);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
 		Query q =
-			Query(default_namespace).Where(kFieldLocation, CondEq, "key1").InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace});
-		Error err = rx->Select(q, qr);
+			Query(default_namespace).Where(kFieldLocation, CondEq, "key1").InnerJoin(Query{default_namespace}, kFieldId, CondEq, kFieldId);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Join query must contain shard key");
+		EXPECT_STREQ(err.what(), "Join query must contain shard key");
 	}
 	{
 		client::QueryResults qr;
 		Query q =
-			Query(default_namespace).InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"));
-		Error err = rx->Select(q, qr);
+			Query(default_namespace).InnerJoin(Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"), kFieldId, CondEq, kFieldId);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
+		EXPECT_STREQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
-					  .InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace}.Where(kFieldLocation, CondEq, "key2"));
-		Error err = rx->Select(q, qr);
+					  .InnerJoin(Query{default_namespace}.Where(kFieldLocation, CondEq, "key2"), kFieldId, CondEq, kFieldId);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key from other node");
+		EXPECT_STREQ(err.what(), "Shard key from other node");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
-					  .InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace}.Not().Where(kFieldLocation, CondEq, "key1"));
-		Error err = rx->Select(q, qr);
+					  .InnerJoin(Query{default_namespace}.Not().Where(kFieldLocation, CondEq, "key1"), kFieldId, CondEq, kFieldId);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition cannot be negative");
+		EXPECT_STREQ(err.what(), "Shard key condition cannot be negative");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
-					  .InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace}.Not().Where(kFieldLocation, CondLike, "key1"));
-		Error err = rx->Select(q, qr);
+					  .InnerJoin(Query{default_namespace}.Not().Where(kFieldLocation, CondLike, "key1"), kFieldId, CondEq, kFieldId);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition can only be 'Eq'");
+		EXPECT_STREQ(err.what(), "Shard key condition can only be 'Eq'");
 	}
 	// MERGE
 	{
@@ -2085,95 +2093,95 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
 					  .Merge(Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"));
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Merge(Query{default_namespace});
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Merge query must contain shard key");
+		EXPECT_STREQ(err.what(), "Merge query must contain shard key");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Merge(Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"));
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
+		EXPECT_STREQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
 					  .Merge(Query{default_namespace}.Where(kFieldLocation, CondEq, "key2"));
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key from other node");
+		EXPECT_STREQ(err.what(), "Shard key from other node");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
 					  .Merge(Query{default_namespace}.OpenBracket().Where(kFieldLocation, CondEq, "key1").CloseBracket());
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition cannot be included in bracket");
+		EXPECT_STREQ(err.what(), "Shard key condition cannot be included in bracket");
 	}
 	{
 		client::QueryResults qr;
-		Query q = Query(default_namespace).Distinct(kFieldId);
-		Error err = rx->Select(q, qr);
+		Query q = Query(default_namespace).Distinct({kFieldId});
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Query to all shard can't contain aggregations AVG, Facet or Distinct");
+		EXPECT_STREQ(err.what(), "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 	}
 	for (const auto agg : {AggAvg, AggFacet, AggDistinct}) {
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Aggregate(agg, {kFieldId});
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Query to all shard can't contain aggregations AVG, Facet or Distinct");
+		EXPECT_STREQ(err.what(), "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).ReqTotal();
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).CachedTotal();
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	for (const auto agg : {AggSum, AggAvg, AggMin, AggMax, AggFacet, AggDistinct}) {
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Aggregate(agg, {kFieldId});
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
-		Query q = Query(default_namespace).Distinct(kFieldId).Where(kFieldLocation, CondEq, "key1");
-		Error err = rx->Select(q, qr);
+		Query q = Query(default_namespace).Distinct({kFieldId}).Where(kFieldLocation, CondEq, "key1");
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).ReqTotal().Where(kFieldLocation, CondEq, "key1");
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).CachedTotal().Where(kFieldLocation, CondEq, "key1");
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Sort(kFieldId + " * 10", false);
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
@@ -2182,8 +2190,8 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
-					  .Where(kFieldId, CondEq, Query{default_namespace}.Select({kFieldId}).Where(kFieldLocation, CondEq, "key1"));
-		Error err = rx->Select(q, qr);
+					  .Where(kFieldId, CondEq, Query{default_namespace}.Select(kFieldId).Where(kFieldLocation, CondEq, "key1"));
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
@@ -2191,85 +2199,85 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
 					  .Where(Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"), CondAny, VariantArray{});
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
-					  .Where(kFieldId, CondEq, Query{default_namespace}.Select({kFieldId}));
-		Error err = rx->Select(q, qr);
+					  .Where(kFieldId, CondEq, Query{default_namespace}.Select(kFieldId));
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Subquery must contain shard key");
+		EXPECT_STREQ(err.what(), "Subquery must contain shard key");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Where(Query{default_namespace}, CondAny, VariantArray{});
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Subquery must contain shard key");
+		EXPECT_STREQ(err.what(), "Subquery must contain shard key");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
-					  .Where(kFieldId, CondEq, Query{default_namespace}.Select({kFieldId}).Where(kFieldLocation, CondEq, "key1"));
-		Error err = rx->Select(q, qr);
+					  .Where(kFieldId, CondEq, Query{default_namespace}.Select(kFieldId).Where(kFieldLocation, CondEq, "key1"));
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
+		EXPECT_STREQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"), CondAny, VariantArray{});
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
+		EXPECT_STREQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
-					  .Where(kFieldId, CondEq, Query{default_namespace}.Select({kFieldId}).Where(kFieldLocation, CondEq, "key2"));
-		Error err = rx->Select(q, qr);
+					  .Where(kFieldId, CondEq, Query{default_namespace}.Select(kFieldId).Where(kFieldLocation, CondEq, "key2"));
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key from other node");
+		EXPECT_STREQ(err.what(), "Shard key from other node");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
 					  .Where(Query{default_namespace}.Where(kFieldLocation, CondEq, "key2"), CondAny, VariantArray{});
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key from other node");
+		EXPECT_STREQ(err.what(), "Shard key from other node");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
-					  .Where(kFieldId, CondEq, Query{default_namespace}.Select({kFieldId}).Not().Where(kFieldLocation, CondEq, "key1"));
-		Error err = rx->Select(q, qr);
+					  .Where(kFieldId, CondEq, Query{default_namespace}.Select(kFieldId).Not().Where(kFieldLocation, CondEq, "key1"));
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition cannot be negative");
+		EXPECT_STREQ(err.what(), "Shard key condition cannot be negative");
 	}
 	{
 		client::QueryResults qr;
 		Query q =
 			Query(default_namespace)
 				.Where(kFieldLocation, CondEq, "key1")
-				.Where(kFieldId, CondEq, Query{default_namespace}.Select({kFieldId}).Not().Where(kFieldLocation, CondAny, VariantArray{}));
-		Error err = rx->Select(q, qr);
+				.Where(kFieldId, CondEq, Query{default_namespace}.Select(kFieldId).Not().Where(kFieldLocation, CondAny, VariantArray{}));
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Sharding key value cannot be empty or an array");
+		EXPECT_STREQ(err.what(), "Sharding key value cannot be empty or an array");
 	}
 	{
 		client::QueryResults qr;
 		Query q = Query(default_namespace)
 					  .Where(kFieldLocation, CondEq, "key1")
 					  .Where(Query{default_namespace}.Not().Where(kFieldLocation, CondEq, "key1"), CondAny, VariantArray{});
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Shard key condition cannot be negative");
+		EXPECT_STREQ(err.what(), "Shard key condition cannot be negative");
 	}
 }
 
@@ -2377,7 +2385,7 @@ TEST_F(ShardingApi, ConfigYaml) {
 		}
 	}
 
-	struct TestCase {
+	struct [[nodiscard]] TestCase {
 		std::string yaml;
 		std::variant<Cfg, Error> expected;
 		std::optional<std::string> yamlForCompare = std::nullopt;
@@ -2386,7 +2394,7 @@ TEST_F(ShardingApi, ConfigYaml) {
 	auto substRangesInTemplate = [](const std::vector<std::string>& values) {
 		std::string res(kConfigTemplate);
 		for (size_t i = 0; i < 3; ++i) {
-			auto tmplt = fmt::sprintf("${%d}", i);
+			auto tmplt = fmt::format("${{{}}}", i);
 			res.replace(res.find(tmplt), tmplt.size(), values[i]);
 		}
 		return res;
@@ -2887,7 +2895,7 @@ proxy_conn_threads: 4
 			EXPECT_EQ(generatedYml, yaml4Cmp ? yaml4Cmp.value() : yaml);
 		} else {
 			EXPECT_FALSE(err.ok());
-			EXPECT_EQ(err.what(), std::get<Error>(expected).what());
+			EXPECT_EQ(err.whatStr(), std::get<Error>(expected).whatStr());
 		}
 	}
 }
@@ -2985,13 +2993,13 @@ TEST_F(ShardingApi, ConfigJson) {
 }
 
 TEST_F(ShardingApi, ConfigKeyValues) {
-	struct shardInfo {
+	struct [[nodiscard]] shardInfo {
 		bool result;
-		struct Key {
+		struct [[nodiscard]] Key {
 			Key(const char* c_str) : left(std::string(c_str)) {}
 			Key(std::string&& left, std::string&& right) : left(std::move(left)), right(std::move(right)) {}
 			std::string left, right;
-			operator std::string() const { return right.empty() ? left : fmt::sprintf("{\"range\": [%s, %s]}", left, right); }
+			operator std::string() const { return right.empty() ? left : fmt::format("{{\"range\": [{}, {}]}}", left, right); }
 		};
 		using ShardKeys = std::vector<Key>;
 		std::vector<ShardKeys> shards;
@@ -3033,7 +3041,7 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 		for (size_t i = 0; i <= info.shards.size(); i++) {
 			YAML::Node sY;
 			sY["shard_id"] = i;
-			sY["dsns"].push_back(fmt::sprintf("cproto://127.0.0.1:1900%d/shard%d", i, i));
+			sY["dsns"].push_back(fmt::format("cproto://127.0.0.1:1900{}/shard{}", i, i));
 			y["shards"].push_back(std::move(sY));
 		}
 		return YAML::Dump(y);
@@ -3124,7 +3132,7 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 	for (const auto& test : tests) {
 		std::string conf = generateConfigJson(test);
 		ShardingConfig config;
-		Error err = config.FromJSON(conf);
+		Error err = config.FromJSON(std::span(conf));
 		EXPECT_TRUE(err.ok() == test.result) << err.what() << "\nconfig:\n" << conf;
 	}
 
@@ -3150,29 +3158,30 @@ TEST_F(ShardingApi, RestrictionOnRequest) {
 	std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
 	{
 		client::QueryResults qr;
-		auto err = rx->Select(Query::FromSQL(fmt::sprintf("select * from %s where %s<'key3'", default_namespace, kFieldLocation)), qr);
+		auto err =
+			rx->Select(*Impl{Query::FromSQL(fmt::format("select * from {} where {}<'key3'", default_namespace, kFieldLocation))}, qr);
 		ASSERT_EQ(err.code(), errLogic);
 	}
 	{
 		client::QueryResults qr;
 		// key3 - proxy node
-		auto err = rx->Select(Query::FromSQL(fmt::sprintf("select * from %s where %s='key3' and %s='key2'", default_namespace,
-														  kFieldLocation, kFieldLocation)),
+		auto err = rx->Select(*Impl{Query::FromSQL(fmt::format("select * from {} where {}='key3' and {}='key2'", default_namespace,
+															   kFieldLocation, kFieldLocation))},
 							  qr);
 		ASSERT_EQ(err.code(), errLogic);
 	}
 	{
 		client::QueryResults qr;
-		auto err = rx->Select(Query::FromSQL(fmt::sprintf("select * from %s where %s='key1' and %s='key2'", default_namespace,
-														  kFieldLocation, kFieldLocation)),
+		auto err = rx->Select(*Impl{Query::FromSQL(fmt::format("select * from {} where {}='key1' and {}='key2'", default_namespace,
+															   kFieldLocation, kFieldLocation))},
 							  qr);
 		ASSERT_EQ(err.code(), errLogic);
 	}
 
 	{
 		client::QueryResults qr;
-		auto err = rx->Select(Query::FromSQL(fmt::sprintf("select * from %s where %s='key1' or %s='key2'", default_namespace,
-														  kFieldLocation, kFieldLocation)),
+		auto err = rx->Select(*Impl{Query::FromSQL(fmt::format("select * from {} where {}='key1' or {}='key2'", default_namespace,
+															   kFieldLocation, kFieldLocation))},
 							  qr);
 		ASSERT_EQ(err.code(), errLogic);
 	}
@@ -3180,7 +3189,7 @@ TEST_F(ShardingApi, RestrictionOnRequest) {
 		client::QueryResults qr;
 		Query q(default_namespace);
 		q.Where(kFieldLocation, CondEq, {"key1", "key2"});
-		auto err = rx->Select(q, qr);
+		auto err = rx->Select(*Impl{q}, qr);
 		ASSERT_EQ(err.code(), errLogic);
 	}
 }
@@ -3188,9 +3197,9 @@ static void CheckTotalCount(bool cached, client::Reindexer& rx, const std::strin
 	client::QueryResults qr;
 	Error err;
 	if (cached) {
-		err = rx.Select(Query(ns).CachedTotal().Limit(0), qr);
+		err = rx.Select(*Impl{Query(ns).CachedTotal().Limit(0)}, qr);
 	} else {
-		err = rx.Select(Query(ns).ReqTotal().Limit(0), qr);
+		err = rx.Select(*Impl{Query(ns).ReqTotal().Limit(0)}, qr);
 	}
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.TotalCount(), expected);
@@ -3201,55 +3210,55 @@ static void CheckCachedCountAggregations(client::Reindexer& rx, const std::strin
 	{
 		// Check distributed query without offset
 		client::QueryResults qr;
-		Error err = rx.Select(Query(ns).CachedTotal().Limit(0), qr);
+		Error err = rx.Select(*Impl{Query(ns).CachedTotal().Limit(0)}, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.TotalCount(), shardsCount * dataPerShard);
 		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
-		ASSERT_EQ(agg[0].type, AggCountCached);
+		ASSERT_EQ(agg[0].GetType(), AggCountCached);
 		ASSERT_TRUE(agg[0].GetValue());
 		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
 	{
 		// Check distributed query with offset
 		client::QueryResults qr;
-		Error err = rx.Select(Query(ns).CachedTotal().Limit(0).Offset(1), qr);
+		Error err = rx.Select(*Impl{Query(ns).CachedTotal().Limit(0).Offset(1)}, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.TotalCount(), shardsCount * dataPerShard);
 		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
-		ASSERT_EQ(agg[0].type, AggCount);  // Here agg type was change to 'AggCount' by internal proxy
+		ASSERT_EQ(agg[0].GetType(), AggCount);	// Here agg type was change to 'AggCount' by internal proxy
 		ASSERT_TRUE(agg[0].GetValue());
 		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
 	{
 		// Check single shard query without offset
 		client::QueryResults qr;
-		Error err = rx.Select(Query(ns).Where(fieldLocation, CondEq, "key2").CachedTotal().Limit(0), qr);
+		Error err = rx.Select(*Impl{Query(ns).Where(fieldLocation, CondEq, "key2").CachedTotal().Limit(0)}, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.TotalCount(), dataPerShard);
 		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
-		ASSERT_EQ(agg[0].type, AggCountCached);
+		ASSERT_EQ(agg[0].GetType(), AggCountCached);
 		ASSERT_TRUE(agg[0].GetValue());
 		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
 	{
 		// Check single shard query with offset
 		client::QueryResults qr;
-		Error err = rx.Select(Query(ns).Where(fieldLocation, CondEq, "key2").CachedTotal().Limit(0).Offset(1), qr);
+		Error err = rx.Select(*Impl{Query(ns).Where(fieldLocation, CondEq, "key2").CachedTotal().Limit(0).Offset(1)}, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.TotalCount(), dataPerShard);
 		auto& agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
-		ASSERT_EQ(agg[0].type, AggCountCached);
+		ASSERT_EQ(agg[0].GetType(), AggCountCached);
 		ASSERT_TRUE(agg[0].GetValue());
 		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
 }
 
 template <typename T>
-T getField(std::string_view field, reindexer::client::QueryResults::Iterator& it) {
+T getField(std::string_view field, client::QueryResults::Iterator& it) {
 	auto item = it.GetItem();
 	std::string_view json = item.GetJSON();
 	gason::JsonParser parser;
@@ -3278,7 +3287,7 @@ TEST_F(ShardingApi, SelectOffsetLimit) {
 	Fill(kNsName, rx, "key1", kMaxCountOnShard, kMaxCountOnShard);
 	Fill(kNsName, rx, "key2", kMaxCountOnShard * 2, kMaxCountOnShard);
 
-	struct LimitOffsetCase {
+	struct [[nodiscard]] LimitOffsetCase {
 		unsigned offset;
 		unsigned limit;
 		unsigned count;
@@ -3298,15 +3307,15 @@ TEST_F(ShardingApi, SelectOffsetLimit) {
 			q.ReqTotal();
 		}
 		client::QueryResults qr;
-		Error err = rx.Select(q, qr);
+		Error err = rx.Select(*Impl{q}, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(qr.Count(), v.count) << q.GetSQL();
+		ASSERT_EQ(qr.Count(), v.count) << *q.GetSQL();
 		if (checkCount) {
-			ASSERT_EQ(qr.TotalCount(), kMaxCountOnShard * kShards) << q.GetSQL();
+			ASSERT_EQ(qr.TotalCount(), kMaxCountOnShard * kShards) << *q.GetSQL();
 		}
 		int n = 0;
 		for (auto i = qr.begin(); i != qr.end(); ++i, ++n) {
-			ASSERT_EQ(getField<int>(kFieldId, i), v.offset + n) << q.GetSQL();
+			ASSERT_EQ(getField<int>(kFieldId, i), v.offset + n) << *q.GetSQL();
 		}
 	};
 
@@ -3335,10 +3344,10 @@ template <>
 class CompareFields<>;
 
 template <typename T>
-class CompareFields<T> {
+class [[nodiscard]] CompareFields<T> {
 public:
 	CompareFields(std::string_view f, std::vector<T> v = {}) : field_{f}, forcedValues_{std::move(v)} {}
-	int operator()(reindexer::client::QueryResults::Iterator& it) {
+	int operator()(client::QueryResults::Iterator& it) {
 		T v = getField<T>(field_, it);
 		int result = 0;
 		if (prevValue_) {
@@ -3358,7 +3367,7 @@ public:
 		prevValue_ = std::move(v);
 		return result;
 	}
-	std::tuple<T> GetValues(reindexer::client::QueryResults::Iterator& it) const { return std::make_tuple(getField<T>(field_, it)); }
+	std::tuple<T> GetValues(client::QueryResults::Iterator& it) const { return std::make_tuple(getField<T>(field_, it)); }
 	std::tuple<T> GetPrevValues() const {
 		assert(prevValue_.has_value());
 		return std::make_tuple(*prevValue_);
@@ -3373,7 +3382,7 @@ private:
 };
 
 template <typename T, typename... Ts>
-class CompareFields<T, Ts...> : private CompareFields<Ts...> {
+class [[nodiscard]] CompareFields<T, Ts...> : private CompareFields<Ts...> {
 	using Base = CompareFields<Ts...>;
 	template <typename>
 	using string_view = std::string_view;
@@ -3381,7 +3390,7 @@ class CompareFields<T, Ts...> : private CompareFields<Ts...> {
 public:
 	CompareFields(std::string_view f, string_view<Ts>... args, std::vector<std::tuple<T, Ts...>> v = {})
 		: Base{args...}, impl_{f}, forcedValues_{std::move(v)} {}
-	int operator()(reindexer::client::QueryResults::Iterator& it) {
+	int operator()(client::QueryResults::Iterator& it) {
 		if (!forcedValues_.empty() && impl_.HavePrevValue()) {
 			const auto prevValues = GetPrevValues();
 			const auto values = GetValues(it);
@@ -3404,7 +3413,7 @@ public:
 		}
 		return res;
 	}
-	std::tuple<T, Ts...> GetValues(reindexer::client::QueryResults::Iterator& it) const {
+	std::tuple<T, Ts...> GetValues(client::QueryResults::Iterator& it) const {
 		return std::tuple_cat(impl_.GetValues(it), Base::GetValues(it));
 	}
 	std::tuple<T, Ts...> GetPrevValues() const { return std::tuple_cat(impl_.GetPrevValues(), Base::GetPrevValues()); }
@@ -3419,17 +3428,17 @@ private:
 };
 
 template <typename... Ts>
-class CompareExpr {
+class [[nodiscard]] CompareExpr {
 public:
 	CompareExpr(std::vector<std::string>&& fields, std::function<double(Ts...)>&& f) : fields_{std::move(fields)}, func_{std::move(f)} {}
-	int operator()(reindexer::client::QueryResults::Iterator& it) { return impl(it, std::index_sequence_for<Ts...>{}); }
+	int operator()(client::QueryResults::Iterator& it) { return impl(it, std::index_sequence_for<Ts...>{}); }
 
 private:
 	template <size_t... I>
-	int impl(reindexer::client::QueryResults::Iterator& it, std::index_sequence<I...>) {
+	int impl(client::QueryResults::Iterator& it, std::index_sequence<I...>) {
 		const double r = func_(getField<Ts>(fields_[I], it)...);
 		int result = 0;
-		if (prevResult_ && *prevResult_ != r) {
+		if (prevResult_ && !fp::EqualWithinULPs(*prevResult_, r)) {
 			result = *prevResult_ < r ? 1 : -1;
 		}
 		prevResult_ = r;
@@ -3440,10 +3449,10 @@ private:
 	std::function<double(Ts...)> func_;
 };
 
-class ShardingApi::CompareShardId {
+class [[nodiscard]] ShardingApi::CompareShardId {
 public:
 	CompareShardId(const ShardingApi& api) noexcept : api_{api} {}
-	int operator()(reindexer::client::QueryResults::Iterator& it) {
+	int operator()(client::QueryResults::Iterator& it) {
 		std::string keyValue = getField<std::string>(api_.kFieldLocation, it);
 		keyValue = keyValue.substr(3);
 		size_t curShardId = std::stoi(keyValue);
@@ -3472,12 +3481,13 @@ TEST_F(ShardingApi, OrderBy) {
 	Init(std::move(cfg));
 	const size_t tableSize = rand() % 200 + 1;
 	Fill(default_namespace, 0, 0, tableSize);
-	struct SortCase {
+
+	struct [[nodiscard]] SortCase {
 		std::string expression;
 		std::variant<std::vector<int>, std::vector<std::string>, std::vector<std::tuple<int, std::string>>,
 					 std::vector<std::tuple<std::string, int>>>
 			forcedValues;
-		std::function<int(reindexer::client::QueryResults::Iterator&)> test;
+		std::function<int(client::QueryResults::Iterator&)> test;
 		bool testId{false};
 	};
 	std::set<std::string> compositeIndexes{kFieldIdLocation, kFieldLocationId, kIndexDataIntLocation, kIndexLocationDataInt};
@@ -3501,7 +3511,7 @@ TEST_F(ShardingApi, OrderBy) {
 		q.Where(kFieldId, CondEq, i);
 		client::QueryResults qr;
 		std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		if (qr.Count() == 1) {
 			auto it = qr.begin();
@@ -3525,9 +3535,9 @@ TEST_F(ShardingApi, OrderBy) {
 		 {},
 		 CompareExpr<int, int>{{kFieldId, kFieldNestedRand}, [](int id, int rand) { return id * 11 + rand; }},
 		 true},
-		{kIndexDataInt + " / 11 + " + kFieldNestedRand,
+		{kIndexDataInt + " / 16 + " + kFieldNestedRand,
 		 {},
-		 CompareExpr<int, int>{{kFieldDataInt, kFieldNestedRand}, [](int data, int rand) { return data / 11.0 + rand; }}},
+		 CompareExpr<int, int>{{kFieldDataInt, kFieldNestedRand}, [](int data, int rand) { return data / 16.0 + rand; }}},
 		{kFieldIdLocation, {}, CompareFields<int, std::string>{kFieldId, kFieldLocation}, true},
 		{kIndexDataIntLocation, {}, CompareFields<int, std::string>{kFieldDataInt, kFieldLocation}},
 		{kFieldLocationId, {}, CompareFields<std::string, int>{kFieldLocation, kFieldId}},
@@ -3555,7 +3565,7 @@ TEST_F(ShardingApi, OrderBy) {
 		 {},
 		 CompareExpr<int, int>{{kFieldDataInt, kSparseFieldDataInt}, [](int data, int sparse) { return 5.0 * sparse + data / 4.0; }}},
 	};
-	struct TestCase {
+	struct [[nodiscard]] TestCase {
 		TestCase(const SortCase& sc, bool d = ((rand() % 2) == 0)) : sort{sc}, desc{d} {}
 		SortCase sort;
 		bool desc;
@@ -3728,10 +3738,10 @@ TEST_F(ShardingApi, OrderBy) {
 				}
 			}
 		}
-		const std::string sql = q.GetSQL();
+		const std::string sql = *q.GetSQL();
 		client::QueryResults qr;
 		std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
-		Error err = rx->Select(q, qr);
+		Error err = rx->Select(*Impl{q}, qr);
 		ASSERT_TRUE(err.ok()) << err.what() << " NS SIZE: " << tableSize << "; " << sql;
 		EXPECT_EQ(qr.Count(), expectedResultSize) << "NS SIZE: " << tableSize << "; " << sql;
 		size_t count = 0;
@@ -3740,6 +3750,7 @@ TEST_F(ShardingApi, OrderBy) {
 			for (auto i = testCases.begin(), e = testCases.end(); i != e; ++i) {
 				const int result = i->sort.test(it);
 				if (prevResult == 0) {
+					SCOPED_TRACE(fmt::format("desc: {}; result: {}", i->desc, result));
 					EXPECT_TRUE(i->desc ? result <= 0 : result >= 0)
 						<< "NS SIZE: " << tableSize << "; " << sql << "\nPrevious Item: " << prevIt.GetItem().GetJSON()
 						<< "\nCurrent  Item: " << it.GetItem().GetJSON();
@@ -3753,6 +3764,49 @@ TEST_F(ShardingApi, OrderBy) {
 			++count;
 		}
 		EXPECT_EQ(count, expectedResultSize) << "NS SIZE: " << tableSize << "; " << sql;
+	}
+}
+
+TEST_F(ShardingApi, OrderBySortHash) {
+	InitShardingConfig cfg;
+	cfg.rowsInTableOnShard = 1000;
+	cfg.nodesInCluster = 1;
+	cfg.shards = 3;
+	cfg.createAdditionalIndexes = false;
+	Init(std::move(cfg));
+
+	auto getIds = [&](const std::string& sortExpr, std::vector<int>& ids) {
+		Query q{default_namespace};
+		q.Sort(sortExpr, true);
+		client::QueryResults qr;
+		std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
+		Error err = rx->Select(*Impl{q}, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		for (auto& it : qr) {
+			auto item = it.GetItem();
+			std::string_view json = item.GetJSON();
+			gason::JsonParser parser;
+			auto Node = parser.Parse(json);
+			int id = Node["id"].As<int>();
+			ids.emplace_back(id);
+		}
+	};
+	{
+		const std::string expr("hash()");
+		std::vector<int> ids1;
+		getIds(expr, ids1);
+		std::vector<int> ids2;
+		getIds(expr, ids2);
+		ASSERT_NE(ids1, ids2);
+	}
+	{
+		int seed = std::rand() % 10000;
+		const std::string expr("hash(" + std::to_string(seed) + ")");
+		std::vector<int> ids1;
+		getIds(expr, ids1);
+		std::vector<int> ids2;
+		getIds(expr, ids2);
+		ASSERT_EQ(ids1, ids2);
 	}
 }
 
@@ -3792,7 +3846,7 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 			auto item = rx->NewItem(kNsName);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, value);
 			const auto& valStr = std::to_string(value);
 			jsonBuilder.Put("Field" + valStr, "data" + valStr);
@@ -3843,23 +3897,23 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 
 	Query q = Query{kNsName};
 	client::QueryResults qr;
-	err = rx->Select(q, qr);
+	err = rx->Select(*Impl{q}, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(qr.Count(), count);
 
 	auto csv2jsonSchema = std::vector<std::string>{"id", "Field0", "Field1", "Field2", "Field3", "Field4", "Field5", "Field6", "Field7"};
 
-	std::vector<int> orderingVec;
+	std::vector<TagName> orderingVec;
 	const auto& tm = qr.GetTagsMatcher(0);
 	for (const auto& tagName : csv2jsonSchema) {
 		auto tag = tm.name2tag(tagName);
-		EXPECT_TRUE(tag > 0);
+		EXPECT_FALSE(tag.IsEmpty());
 		orderingVec.emplace_back(tag);
 	}
 
-	auto ordering = reindexer::CsvOrdering{orderingVec};
+	auto ordering = CsvOrdering{orderingVec};
 
-	reindexer::WrSerializer serCsv, serJson;
+	WrSerializer serCsv, serJson;
 	for (auto& q : qr) {
 		err = q.GetCSV(serCsv, ordering);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -3868,18 +3922,18 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		gason::JsonParser parserCsv, parserJson;
-		auto converted = parserCsv.Parse(std::string_view(reindexer::csv2json(serCsv.Slice(), csv2jsonSchema)));
+		auto converted = parserCsv.Parse(std::string_view(csv2json(serCsv.Slice(), csv2jsonSchema)));
 		auto orig = parserJson.Parse(serJson.Slice());
 
 		for (const auto& fieldName : csv2jsonSchema) {
-			if (converted[fieldName].empty() || orig[fieldName].empty()) {
-				EXPECT_TRUE(converted[fieldName].empty() && orig[fieldName].empty()) << "fieldName: " << fieldName;
+			if (converted[fieldName].isEmpty() || orig[fieldName].isEmpty()) {
+				EXPECT_TRUE(converted[fieldName].isEmpty() && orig[fieldName].isEmpty()) << "fieldName: " << fieldName;
 				continue;
 			}
 
-			if (orig[fieldName].value.getTag() == gason::JSON_NUMBER) {
+			if (orig[fieldName].value.getTag() == gason::JsonTag::NUMBER) {
 				EXPECT_EQ(orig[fieldName].As<int>(), converted[fieldName].As<int>());
-			} else if (orig[fieldName].value.getTag() == gason::JSON_STRING) {
+			} else if (orig[fieldName].value.getTag() == gason::JsonTag::STRING) {
 				EXPECT_EQ(orig[fieldName].As<std::string>(), converted[fieldName].As<std::string>());
 			}
 		}
@@ -3888,3 +3942,5 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 		serJson.Reset();
 	}
 }
+
+}  // namespace reindexer_tests

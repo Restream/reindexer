@@ -16,7 +16,9 @@
 #include <sys/prctl.h>
 #endif
 
-namespace reindexer {
+namespace reindexer_tests {
+
+using reindexer::Error;
 
 static const std::thread::id kMainThreadID = std::this_thread::get_id();
 
@@ -40,7 +42,7 @@ pid_t StartProcess(const std::string& program, const std::vector<std::string>& p
 			}
 		}
 		if (getppid() != ppid_before_fork) {
-			fprintf(stderr, "Parent process is dead\n");
+			fprintf(stderr, "reindexer error: parent process is dead\n");
 			exit(1);
 		}
 		int ret = execv(program.c_str(), &paramsPointers[0]);
@@ -62,7 +64,7 @@ Error EndProcess(pid_t PID) {
 #ifdef __linux__
 	int r = kill(PID, SIGTERM);
 	if (r != 0) {
-		return Error(errLogic, "errno=%d (%s)", errno, strerror(errno));
+		return Error(errLogic, "errno={} ({})", errno, strerror(errno));
 	}
 #else
 	(void)PID;
@@ -76,13 +78,13 @@ Error WaitEndProcess(pid_t PID) {
 	int status = 0;
 	pid_t waitres = waitpid(PID, &status, 0);
 	if (!WIFEXITED(status)) {
-		return Error(errLogic, "WIFEXITED(status): false. status: %d", status);
+		return Error(errLogic, "WIFEXITED(status): false. status: {}", status);
 	}
 	if (WEXITSTATUS(status)) {
-		return Error(errLogic, "WEXITSTATUS(status) != 0. status: %d", WEXITSTATUS(status));
+		return Error(errLogic, "WEXITSTATUS(status) != 0. status: {}", WEXITSTATUS(status));
 	}
 	if (waitres != PID) {
-		return Error(errLogic, "waitres != PID. errno=%d (%s)", errno, strerror(errno));
+		return Error(errLogic, "waitres != PID. errno={} ({})", errno, strerror(errno));
 	}
 #else
 	(void)PID;
@@ -91,4 +93,4 @@ Error WaitEndProcess(pid_t PID) {
 	return errOK;
 }
 
-}  // namespace reindexer
+}  // namespace reindexer_tests

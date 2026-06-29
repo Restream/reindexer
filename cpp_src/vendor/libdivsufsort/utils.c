@@ -24,6 +24,11 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 #include "divsufsort_private.h"
 
 
@@ -379,3 +384,7 @@ sa_simplesearch(const sauchar_t *T, saidx_t Tsize,
   if(idx != NULL) { *idx = (0 < (k - j)) ? j : i; }
   return k - j;
 }
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif

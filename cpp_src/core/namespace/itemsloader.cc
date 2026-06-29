@@ -1,17 +1,22 @@
 #include "itemsloader.h"
-#include "core/index/index.h"
+#include "core/id_type.h"
+#include "core/index/float_vector/float_vector_index.h"
+#include "core/keyvalue/float_vector.h"
+#include "core/storage/storage_prefixes.h"
 #include "tools/logger.h"
 
 namespace reindexer {
 
 ItemsLoader::LoadData ItemsLoader::Load() {
-	logPrintf(LogTrace, "Loading items to '%s' from storage", ns_.name_);
+	logFmt(LogTrace, "Loading items to '{}' from storage", ns_.name_);
+
+	prepareANNData();
 
 	std::thread readingTh = std::thread([this] {
 		try {
 			reading();
 		} catch (...) {
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			loadingData_.ex = std::current_exception();
 			terminated_ = true;
 			cv_.notify_all();
@@ -21,7 +26,7 @@ ItemsLoader::LoadData ItemsLoader::Load() {
 		try {
 			insertion();
 		} catch (...) {
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			loadingData_.ex = std::current_exception();
 			terminated_ = true;
 			cv_.notify_all();
@@ -30,11 +35,29 @@ ItemsLoader::LoadData ItemsLoader::Load() {
 	readingTh.join();
 	insertionTh.join();
 
+	loadCachedANNIndexes();
+
 	clearIndexCache();
 	if (loadingData_.ex) {
 		std::rethrow_exception(loadingData_.ex);
 	}
 	return loadingData_;
+}
+
+void ItemsLoader::prepareANNData() {
+	auto annIndexes = ns_.getVectorIndexes();
+	annIndexes_.resize(annIndexes.size());
+	std::transform(annIndexes.begin(), annIndexes.end(), annIndexes_.begin(), [](const FloatVectorIndexData& d) {
+		return ANNIndexInfo{.field = d.ptField, .dims = d.ptr->Opts().FloatVector().Dimension(), .isArray = d.ptr->Opts().IsArray()};
+	});
+
+	const auto [pkIdx, pkField] = ns_.getPkIdx();
+	if (pkIdx && !annIndexes.empty()) {
+		annCacheReader_ = std::make_unique<ann_storage_cache::Reader>(
+			ns_.name_, std::chrono::nanoseconds(ns_.lastUpdateTimeNano()), pkField, ns_.storage_,
+			[this](std::string_view name) { return ns_.getIndexByName(name); },
+			[this](size_t field) { return ns_.getIndexDefinition(field); });
+	}
 }
 
 void ItemsLoader::reading() {
@@ -53,12 +76,9 @@ void ItemsLoader::reading() {
 		 dbIter->Next()) {
 		std::string_view dataSlice = dbIter->Value();
 		if (dataSlice.size() > 0) {
-			if (!ns_.pkFields().size()) {
-				throw Error(errLogic, "Can't load data storage of '%s' - there are no PK fields in ns", ns_.name_);
-			}
 			if (dataSlice.size() < sizeof(int64_t)) {
 				lastErr = Error(errParseBin, "Not enough data in data slice");
-				logPrintf(LogTrace, "Error load item to '%s' from storage: '%s'", ns_.name_, lastErr.what());
+				logFmt(LogTrace, "Error load item to '{}' from storage: '{}'", ns_.name_, lastErr.what());
 				++errCount;
 				continue;
 			}
@@ -66,8 +86,8 @@ void ItemsLoader::reading() {
 			// Read LSN
 			int64_t lsn = *reinterpret_cast<const int64_t*>(dataSlice.data());
 			if (lsn < 0) {
-				lastErr = Error(errParseBin, "Invalid LSN value: %d", lsn);
-				logPrintf(LogTrace, "Error load item to '%s' from storage: '%s'", ns_.name_, lastErr.what());
+				lastErr = Error(errParseBin, "Invalid LSN value: {}", lsn);
+				logFmt(LogTrace, "Error load item to '{}' from storage: '{}'", ns_.name_, lastErr.what());
 				++errCount;
 				continue;
 			}
@@ -80,7 +100,7 @@ void ItemsLoader::reading() {
 			minLSN = std::min(minLSN, l.Counter());
 			dataSlice = dataSlice.substr(sizeof(lsn));
 
-			std::unique_lock lck(mtx_);
+			unique_lock lck(mtx_);
 			cv_.wait(lck, [this] { return !items_.IsFull() || terminated_; });
 			if (terminated_) {
 				return;
@@ -100,7 +120,7 @@ void ItemsLoader::reading() {
 			try {
 				item.impl.FromCJSON(dataSlice);
 			} catch (const Error& err) {
-				logPrintf(LogTrace, "Error load item to '%s' from storage: '%s'", ns_.name_, err.what());
+				logFmt(LogTrace, "Error load item to '{}' from storage: '{}'", ns_.name_, err.what());
 				++errCount;
 				lastErr = err;
 
@@ -113,6 +133,31 @@ void ItemsLoader::reading() {
 			// Preallocate payload here, because reading|parsing thread is faster than index insertion thread
 			item.preallocPl = PayloadValue(item.impl.GetConstPayload().RealSize());
 
+			for (const auto& idx : annIndexes_) {
+				if (!annCacheReader_ || !annCacheReader_->HasCacheFor(idx.field)) {
+					continue;
+				}
+
+				auto& vectors = vectorsData_[idx.field].emplace_back();
+				Payload pl = item.impl.GetPayload();
+				const size_t elemsCount = pl.GetFieldLen(idx.field);
+				vectors.reserve(elemsCount);
+				for (size_t i = 0; i < elemsCount; ++i) {
+					Variant vecVar = pl.Get(idx.field, i);
+					auto& cur = vectors.emplace_back();
+					if (vecVar.Type().Is<KeyValueType::FloatVector>()) {
+						if (ConstFloatVectorView vec = ConstFloatVectorView(vecVar); !vec.Dimension().IsZero()) {
+							assertrx(vec.Dimension() == FloatVectorDimension(idx.dims));
+							cur = FloatVector(vec);
+							pl.Set(idx.field, i, Variant{cur.View()});
+						}
+					} else {
+						logFmt(LogWarning, "[{}] Error load float vector from storage: actual type of the field is {}", ns_.name_,
+							   vecVar.Type().Name());
+					}
+				}
+			}
+
 			lck.lock();
 			const bool wasEmpty = items_.HasNoWrittenItems();
 			items_.WritePlaced();
@@ -122,7 +167,8 @@ void ItemsLoader::reading() {
 			}
 		}
 	}
-	std::lock_guard lck(mtx_);
+
+	lock_guard lck(mtx_);
 	terminated_ = true;
 	loadingData_.maxLSN = maxLSN;
 	loadingData_.minLSN = minLSN;
@@ -140,16 +186,16 @@ void ItemsLoader::insertion() {
 
 	assertrx(ns_.indexes_.firstCompositePos() != 0);
 
-	IndexInserters indexInserters(ns_.indexes_, ns_.payloadType_);
+	IndexInserters indexInserters(ns_.indexes_, ns_.payloadType_, annCacheReader_ ? annCacheReader_.get() : nullptr);
 	indexInserters.Run(indexInsertionThreads_);
 
-	span<ItemData> items;
+	std::span<ItemData> items;
 	VariantArray krefs, skrefs;
 	const unsigned totalIndexesSize = ns_.indexes_.totalSize();
 	const unsigned compositeIndexesSize = ns_.indexes_.compositeIndexesSize();
-	dummy_mutex dummyMtx;
+	DummyMutex dummyMtx;
 	do {
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		if (items_.IsFull()) {
 			requireNotification = true;
 		}
@@ -169,27 +215,27 @@ void ItemsLoader::insertion() {
 			}
 
 			if (totalIndexesSize > 1) {
-				indexInserters.BuildSimpleIndexesAsync(startId, items, span<PayloadValue>(ns_.items_.data() + startId, items.size()));
+				indexInserters.BuildSimpleIndexesAsync(startId, items, std::span<PayloadValue>(ns_.items_.data() + startId, items.size()));
 				indexInserters.AwaitIndexesBuild();
 			}
 
 			for (unsigned i = 0; i < items.size(); ++i) {
-				const auto id = i + startId;
-				auto& plData = ns_.items_[id];
+				const auto rowId = IdType::FromNumber(i + startId);
+				auto& plData = ns_.items_[rowId];
 				Payload pl(ns_.payloadType_, plData);
 				Payload plNew(items[i].impl.GetPayload());
 				// Index [0] must be inserted after all other simple indexes
-				doInsertField(ns_.indexes_, 0, id, pl, plNew, krefs, skrefs, dummyMtx);
+				doInsertField(ns_.indexes_, 0, rowId, pl, plNew, krefs, skrefs, dummyMtx, annCacheReader_.get());
 			}
 
 			if (compositeIndexesSize) {
 				indexInserters.BuildCompositeIndexesAsync();
 			}
 			for (unsigned i = 0; i < items.size(); ++i) {
-				auto& plData = ns_.items_[i + startId];
-				Payload pl(ns_.payloadType_, plData);
+				const auto rowId = IdType::FromNumber(i + startId);
+				auto& plData = ns_.items_[rowId];
 				plData.SetLSN(items[i].impl.Value().GetLSN());
-				ns_.repl_.dataHash ^= pl.GetHash();
+				ns_.repl_.dataHash ^= ns_.calculateItemChecksum(rowId);
 				ns_.itemsDataSize_ += plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
 			}
 			if (compositeIndexesSize) {
@@ -201,18 +247,124 @@ void ItemsLoader::insertion() {
 	} while (!terminated);
 }
 
+void ItemsLoader::loadCachedANNIndexes() {
+	if (!annCacheReader_ || vectorsData_.empty()) {
+		return;
+	}
+	ns_.annStorageCacheState_.Clear();
+
+	auto pkIdx = ns_.getPkIdx().first;
+	assertrx_throw(pkIdx);
+
+	const RdxContext dummyCtx;
+
+	std::vector<unsigned> indexesWithError;
+	for (auto cachedIndex = annCacheReader_->GetNextCachedIndex(); cachedIndex.has_value();
+		 cachedIndex = annCacheReader_->GetNextCachedIndex()) {
+		logFmt(LogInfo, "[{}] Trying to load ANN index '{}' from storage cache", ns_.name_, cachedIndex->name);
+		auto idxPtr = dynamic_cast<FloatVectorIndex*>(ns_.indexes_[cachedIndex->field].get());
+		assertrx(idxPtr);
+		assertrx(!idxPtr->Opts().IsSparse());
+		const auto vecSizeBytes = sizeof(float) * idxPtr->Opts().FloatVector().Dimension();
+		Error loadErr;
+		auto vectorsDataIt = vectorsData_.find(cachedIndex->field);
+		assertrx(vectorsDataIt != vectorsData_.end());
+		auto& vectorsData = vectorsDataIt->second;
+		loadErr = idxPtr->LoadIndexCache(cachedIndex->data, IsComposite(pkIdx->Type()),
+										 FloatVectorIndexRawDataInserter{vectorsData, *pkIdx, vecSizeBytes}, LoadWithQuantizer_True);
+		if (!loadErr.ok()) {
+			assertrx_dbg(false);  // Do not expect this error in test scenarios
+			logFmt(LogError, "[{}] Unable to restore ANN index '{}' from storage cache: {}", ns_.name_, cachedIndex->name, loadErr.what());
+			indexesWithError.emplace_back(cachedIndex->field);
+			continue;
+		}
+		if (idxPtr->IsQuantized() && !ns_.storage_.WithProxy()) {
+			ns_.storage_.WithProxy(true);
+		}
+		vectorsDataIt = vectorsData_.find(cachedIndex->field);
+		assertrx(vectorsDataIt != vectorsData_.end());
+		vectorsDataIt->second = std::vector<h_vector<FloatVector, 1>>{};
+		ns_.annStorageCacheState_.Update(idxPtr->Name(), cachedIndex->lastUpdate);
+
+		// Strip restored vectors
+		VariantArray resBuf;
+		for (size_t id = 0, s = ns_.items_.size(); id < s; ++id) {
+			const auto rowId = IdType::FromNumber(id);
+			Payload pl(ns_.payloadType_, ns_.items_[rowId]);
+			const auto elemsCount = pl.GetFieldLen(cachedIndex->field);
+			bool clearCache = false;
+			if (elemsCount == 0) {
+				idxPtr->Upsert(resBuf, VariantArray{}, rowId, clearCache);
+			}
+			for (uint32_t i = 0; i < elemsCount; ++i) {
+				Variant vecVar = pl.Get(cachedIndex->field, i);
+				if (vecVar.Type().Is<KeyValueType::FloatVector>()) {
+					ConstFloatVectorView vec = ConstFloatVectorView(vecVar);
+					if (vec.IsEmpty()) {
+						std::ignore = idxPtr->Upsert(vec, {rowId, i}, clearCache);
+					} else {
+						vec.Strip();
+						pl.Set(cachedIndex->field, i, Variant{vec});
+					}
+				} else {
+					logFmt(LogWarning, "[{}] Error load float vector from storage: actual type of the field is {}", ns_.name_,
+						   vecVar.Type().Name());
+				}
+			}
+		}
+		logFmt(LogInfo, "[{}] ANN index '{}' was restored from storage cache", ns_.name_, cachedIndex->name);
+	}
+	loadCachedANNIndexesFallback(indexesWithError);
+}
+
+void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& indexes) {
+	VariantArray krefs, skrefs;
+	for (auto field : indexes) {
+		auto& idxPtr = ns_.indexes_[field];
+		krefs.clear<false>();
+		auto vectorsDataIt = vectorsData_.find(field);
+		assertrx(vectorsDataIt != vectorsData_.end());
+		auto& vectorsData = vectorsDataIt->second;
+
+		for (size_t id = 0; id < ns_.items_.size(); ++id) {
+			const auto rowId = IdType::FromNumber(id);
+			auto& pv = ns_.items_[rowId];
+			if (pv.IsFree()) [[unlikely]] {
+				continue;
+			}
+			Payload pl(ns_.payloadType_, pv);
+			auto& vecArr = vectorsData[id];
+			skrefs.reserve(vecArr.size());
+			for (const auto& vec : vecArr) {
+				skrefs.emplace_back(ConstFloatVectorView{vec.View()});
+			}
+			bool needClearCache{false};
+			idxPtr->Upsert(krefs, skrefs, rowId, needClearCache);
+			pl.Set(field, krefs);
+			for (auto& vec : vecArr) {
+				vec = FloatVector{};
+			}
+		}
+		vectorsData = std::vector<h_vector<FloatVector, 1>>{};
+	}
+}
+
 void ItemsLoader::clearIndexCache() {
+	struct [[nodiscard]] NeverCancel final : index::ICancelable {
+		bool IsCanceled() const noexcept override { return false; }
+	};
+	static const NeverCancel kNeverCancel;
 	for (auto& idx : ns_.indexes_) {
 		idx->DestroyCache();
-		idx->Commit();
+		std::ignore = idx->Commit(kNeverCancel);
 	}
 }
 
 template <typename MutexT>
 void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned field, IdType id, Payload& pl, Payload& plNew,
-								VariantArray& krefs, VariantArray& skrefs, MutexT& mtx) {
+								VariantArray& krefs, VariantArray& skrefs, MutexT& mtx, const ann_storage_cache::Reader* annCache) {
 	Index& index = *indexes[field];
-	const bool isIndexSparse = index.Opts().IsSparse();
+	const IsSparse isIndexSparse = index.Opts().IsSparse();
 	if (isIndexSparse) {
 		assertrx(index.Fields().getTagsPathsLength() > 0);
 		try {
@@ -230,16 +382,21 @@ void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned
 		}
 	}
 
-	// Put value to index
-	krefs.resize(0);
-	bool needClearCache{false};
-	index.Upsert(krefs, skrefs, id, needClearCache);
+	if (!annCache || !annCache->HasCacheFor(field)) {
+		// Put value to index
+		krefs.resize(0);
+		bool needClearCache{false};
+		index.Upsert(krefs, skrefs, id, needClearCache);
+	} else {
+		// Just make vector view's copy
+		krefs = std::move(skrefs);
+	}
 
 	if (!isIndexSparse) {
 		// Put value to payload
 		// Array values may reallocate payload, so must be synchronized via mutex
 		if (pl.Type().Field(field).IsArray()) {
-			std::lock_guard lck(mtx);
+			lock_guard lck(mtx);
 			pl.Set(field, krefs);
 		} else {
 			if (krefs.size() != 1) {
@@ -251,7 +408,8 @@ void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned
 	}
 }
 
-IndexInserters::IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt) : indexes_(indexes), pt_(std::move(pt)) {
+IndexInserters::IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt, const ann_storage_cache::Reader* annCache)
+	: indexes_{indexes}, pt_{std::move(pt)}, annCache_{annCache} {
 	for (int i = 1; i < indexes_.firstCompositePos(); ++i) {
 		if (indexes_[i]->Opts().IsArray()) {
 			hasArrayIndexes_ = true;
@@ -272,7 +430,7 @@ void IndexInserters::Run(unsigned threadsCnt) {
 
 void IndexInserters::Stop() {
 	if (threads_.size()) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		shared_.terminate = true;
 		cvReady_.notify_all();
 	}
@@ -283,15 +441,15 @@ void IndexInserters::Stop() {
 }
 
 void IndexInserters::AwaitIndexesBuild() {
-	std::unique_lock lck(mtx_);
+	unique_lock lck(mtx_);
 	cvDone_.wait(lck, [this] { return readyThreads_ == threads_.size(); });
 	if (!status_.ok()) {
 		throw status_;
 	}
 }
 
-void IndexInserters::BuildSimpleIndexesAsync(unsigned startId, span<ItemsLoader::ItemData> newItems, span<PayloadValue> nsItems) {
-	std::lock_guard lck(mtx_);
+void IndexInserters::BuildSimpleIndexesAsync(unsigned startId, std::span<ItemsLoader::ItemData> newItems, std::span<PayloadValue> nsItems) {
+	lock_guard lck(mtx_);
 	shared_.newItems = newItems;
 	shared_.nsItems = nsItems;
 	shared_.startId = startId;
@@ -302,7 +460,7 @@ void IndexInserters::BuildSimpleIndexesAsync(unsigned startId, span<ItemsLoader:
 }
 
 void IndexInserters::BuildCompositeIndexesAsync() {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	shared_.composite = true;
 	readyThreads_ = 0;
 	++iteration_;
@@ -317,7 +475,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 
 	while (true) {
 		try {
-			std::unique_lock lck(mtx_);
+			unique_lock lck(mtx_);
 			cvReady_.wait(lck, [this, thisLoopIteration] { return shared_.terminate || iteration_ > thisLoopIteration; });
 			if (shared_.terminate) {
 				return;
@@ -334,7 +492,7 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 					const auto& plData = shared_.nsItems[i];
 					for (unsigned field = firstCompositeIndex + threadId - kTIDOffset; field < totalIndexes; field += threadsCnt) {
 						bool needClearCache{false};
-						indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
+						std::ignore = indexes_[field]->Upsert(Variant{plData}, IdType::FromNumber(id), needClearCache);
 					}
 				}
 			} else {
@@ -346,12 +504,12 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 						Payload pl(pt_, plData);
 						Payload plNew = item.GetPayload();
 						for (unsigned field = threadId - kTIDOffset + 1; field < firstCompositeIndex; field += threadsCnt) {
-							ItemsLoader::doInsertField(indexes_, field, id, pl, plNew, krefs, skrefs,
-													   plArrayMtxs_[id % plArrayMtxs_.size()]);
+							ItemsLoader::doInsertField(indexes_, field, IdType::FromNumber(id), pl, plNew, krefs, skrefs,
+													   plArrayMtxs_[id % plArrayMtxs_.size()], annCache_);
 						}
 					}
 				} else {
-					dummy_mutex dummyMtx;
+					DummyMutex dummyMtx;
 					for (unsigned i = 0; i < shared_.newItems.size(); ++i) {
 						const auto id = startId + i;
 						auto& item = shared_.newItems[i].impl;
@@ -359,7 +517,8 @@ void IndexInserters::insertionLoop(unsigned threadId) noexcept {
 						Payload pl(pt_, plData);
 						Payload plNew = item.GetPayload();
 						for (unsigned field = threadId - kTIDOffset + 1; field < firstCompositeIndex; field += threadsCnt) {
-							ItemsLoader::doInsertField(indexes_, field, id, pl, plNew, krefs, skrefs, dummyMtx);
+							ItemsLoader::doInsertField(indexes_, field, IdType::FromNumber(id), pl, plNew, krefs, skrefs, dummyMtx,
+													   annCache_);
 						}
 					}
 				}

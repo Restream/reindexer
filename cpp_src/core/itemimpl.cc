@@ -1,40 +1,142 @@
 #include "core/itemimpl.h"
+
+#include <memory>
+#include <span>
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/cjsonmodifier.h"
 #include "core/cjson/cjsontools.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/cjson/jsondecoder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufdecoder.h"
+#include "core/embedding/embedder.h"
+#include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
+#include "core/namespace/float_vector_data_access.h"
+#include "core/rdxcontext.h"
+#include "estl/gift_str.h"
+#include "function/function_parser.h"
 
 namespace reindexer {
 
-void ItemImpl::SetField(int field, const VariantArray& krs) {
+void ItemImpl::SetField(int field, VariantArray&& krs, NeedCreate needCopy) {
 	validateModifyArray(krs);
-	cjson_ = std::string_view();
-	payloadValue_.Clone();
-	if (!unsafe_ && !krs.empty() && krs[0].Type().Is<KeyValueType::String>() &&
-		!payloadType_.Field(field).Type().Is<KeyValueType::Uuid>()) {
-		VariantArray krsCopy;
-		krsCopy.reserve(krs.size());
-		if (!holder_) {
-			holder_ = std::make_unique<ItemImplRawData::HolderT>();
-		}
-		for (auto& kr : krs) {
-			auto& back = holder_->emplace_back(kr.As<key_string>());
-			krsCopy.emplace_back(p_string{back});
-		}
-		GetPayload().Set(field, krsCopy, false);
-	} else {
-		GetPayload().Set(field, krs, false);
+	cjson_ = {};
+
+	if (needCopy) {
+		payloadValue_.Clone();
 	}
+
+	const auto& ptField = payloadType_.Field(field);
+	if (ptField.JsonPaths().empty()) [[unlikely]] {
+		throw Error(errLogic, "Unable to set index value: index does not have jsonpath");
+	}
+
+	auto setFieldValueSafe = [this, &ptField, field](const VariantArray& newValue) {
+		auto pl = GetPayload();
+		VariantArray oldValues;
+		pl.Get(field, oldValues);
+		pl.Set(field, newValue, Append_False);
+		try {
+			// TODO: We should modify CJSON for any default value or array size change #1837
+			bool modifyCjson = pl.HasDefaultValue(field);
+			if (!modifyCjson) {
+				if (ptField.Type().Is<KeyValueType::FloatVector>()) {
+					if (ptField.IsArray()) {
+						modifyCjson = oldValues.size() != newValue.size();
+						for (size_t i = 0, s = newValue.size(); !modifyCjson && i < s; ++i) {
+							modifyCjson =
+								!oldValues[i].Type().IsSame(newValue[i].Type()) ||
+								(oldValues[i].Type().Is<KeyValueType::FloatVector>() &&
+								 oldValues[i].As<ConstFloatVectorView>().Dimension() != newValue[i].As<ConstFloatVectorView>().Dimension());
+						}
+					} else {
+						assertrx_throw(oldValues.size() == 1);
+						assertrx_throw(newValue.size() <= 1);
+						const auto oldSize = oldValues[0].As<ConstFloatVectorView>().Dimension();
+						const auto newSize = newValue.empty() ? FloatVectorDimension() : newValue[0].As<ConstFloatVectorView>().Dimension();
+						modifyCjson = (oldSize != newSize);
+					}
+				} else if (ptField.IsArray()) {
+					modifyCjson = (oldValues.size() != newValue.size());
+				}
+			}
+			if (tupleData_ && !objectScalarIndexes_.test(field)) {
+				modifyCjson = true;
+			}
+			if (modifyCjson) {
+				ModifyField(ptField.JsonPaths()[0], newValue, FieldModeSet);
+			}
+		} catch (...) {
+			pl.Set(field, oldValues, Append_False);
+			throw;
+		}
+	};
+
+	if (!unsafe_ && !krs.empty() && ptField.Type().IsOneOf<KeyValueType::String, KeyValueType::FloatVector>()) {
+		if (payloadType_.Field(field).Type().Is<KeyValueType::String>()) {
+			if (!holder_) {
+				holder_ = std::make_unique<ItemImplRawData::HolderT>();
+			}
+			for (auto& kr : krs) {
+				auto& back = holder_->emplace_back(kr.As<key_string>());
+				kr = Variant(p_string{back});
+			}
+		} else {
+			floatVectorsHolder_.reserve(floatVectorsHolder_.size() + krs.size());
+			for (auto& kr : krs) {
+				if (floatVectorsHolder_.Add(ConstFloatVectorView{kr})) {
+					kr = Variant(floatVectorsHolder_.Back());
+				}
+			}
+		}
+		setFieldValueSafe(krs);
+	} else {
+		std::ranges::for_each(krs, [&ptField](auto& v) { std::ignore = v.convert(ptField.Type()); });
+		setFieldValueSafe(krs);
+	}
+	objectScalarIndexes_.set(field);
+}
+
+ItemImpl::ItemImpl() = default;
+ItemImpl::~ItemImpl() = default;
+
+ItemImpl::ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields, std::shared_ptr<const Schema> schema)
+	: ItemImplRawData(PayloadValue(type.TotalSize(), nullptr, type.TotalSize() + 0x100)),
+	  payloadType_(std::move(type)),
+	  tagsMatcher_(tagsMatcher),
+	  pkFields_(pkFields),
+	  schema_(std::move(schema)) {
+	tagsMatcher_.clearUpdated();
+}
+
+ItemImpl::ItemImpl(ItemImpl&&) noexcept = default;
+ItemImpl& ItemImpl::operator=(ItemImpl&&) noexcept = default;
+
+ItemImpl::ItemImpl(PayloadType type, const TagsMatcher& tagsMatcher, const FieldsSet& pkFields, std::shared_ptr<const Schema> schema,
+				   ItemImplRawData&& rawData)
+	: ItemImplRawData(std::move(rawData)),
+	  payloadType_(std::move(type)),
+	  tagsMatcher_(tagsMatcher),
+	  pkFields_(pkFields),
+	  schema_(std::move(schema)) {}
+
+ItemImpl::ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema)
+	: ItemImplRawData(std::move(v)), payloadType_(std::move(type)), tagsMatcher_(tagsMatcher), schema_{std::move(schema)} {
+	tagsMatcher_.clearUpdated();
+}
+
+ItemImpl::ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema,
+				   const FieldsFilter& fieldsFilter)
+	: ItemImpl{std::move(type), std::move(v), tagsMatcher, std::move(schema)} {
+	fieldsFilter_ = &fieldsFilter;
 }
 
 void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray& keys, FieldModifyMode mode) {
-	ModifyField(tagsMatcher_.path2indexedtag(jsonPath, mode != FieldModeDrop), keys, mode);
+	ModifyField(tagsMatcher_.path2indexedtag(jsonPath, CanAddField(mode != FieldModeDrop)), keys, mode);
 }
 
 void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& keys, FieldModifyMode mode) {
@@ -48,7 +150,7 @@ void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& 
 	const auto cjsonV = pl.Get(0, 0);
 	std::string_view cjson(cjsonV);
 	if (cjson.empty()) {
-		buildPayloadTuple(pl, &tagsMatcher_, generatedCjson);
+		buildPayloadTuple(pl, &tagsMatcher_, generatedCjson, objectScalarIndexes_);
 		cjson = generatedCjson.Slice();
 	}
 
@@ -56,64 +158,69 @@ void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& 
 	try {
 		switch (mode) {
 			case FieldModeSet:
-				cjsonModifier.SetFieldValue(cjson, tagsPath, keys, ser_, pl);
+				cjsonModifier.SetFieldValue(cjson, tagsPath, keys, ser_, pl, floatVectorsHolder_, objectScalarIndexes_);
 				break;
 			case FieldModeSetJson:
-				cjsonModifier.SetObject(cjson, tagsPath, keys, ser_, pl);
+				cjsonModifier.SetObject(cjson, tagsPath, keys, ser_, pl, floatVectorsHolder_, objectScalarIndexes_);
 				break;
 			case FieldModeDrop:
-				cjsonModifier.RemoveField(cjson, tagsPath, ser_);
+				cjsonModifier.RemoveField(cjson, tagsPath, ser_, objectScalarIndexes_);
 				break;
 			case FieldModeArrayPushBack:
 			case FieldModeArrayPushFront:
-				throw Error(errLogic, "Update mode is not supported: %d", mode);
+				throw Error(errLogic, "Update mode is not supported: {}", int(mode));
 		}
 	} catch (const Error& e) {
-		throw Error(e.code(), "Error modifying field value: '%s'", e.what());
+		throw Error(e.code(), "Error modifying field value: '{}'", e.what());
 	} catch (std::exception& e) {
-		throw Error(errLogic, "Error modifying field value: '%s'", e.what());
+		throw Error(errLogic, "Error modifying field value: '{}'", e.what());
 	}
 
-	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
+	initTupleFrom(std::move(pl), ser_, Shrink_False);
 }
 
-void ItemImpl::SetField(std::string_view jsonPath, const VariantArray& keys) { ModifyField(jsonPath, keys, FieldModeSet); }
+void ItemImpl::SetField(std::string_view jsonPath, VariantArray&& keys) { ModifyField(jsonPath, keys, FieldModeSet); }
 void ItemImpl::DropField(std::string_view jsonPath) { ModifyField(jsonPath, {}, FieldModeDrop); }
-Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
+Variant ItemImpl::GetField(int field, unsigned arrayIndex) { return GetPayload().Get(field, arrayIndex); }
 void ItemImpl::GetField(int field, VariantArray& values) { GetPayload().Get(field, values); }
+size_t ItemImpl::GetFieldLen(int field) { return GetPayload().GetFieldLen(field); }
 
 Error ItemImpl::FromMsgPack(std::string_view buf, size_t& offset) {
 	payloadValue_.Clone();
-	Payload pl = GetPayload();
-	if (!msgPackDecoder_) {
-		msgPackDecoder_.reset(new MsgPackDecoder(tagsMatcher_));
-	}
+	cjson_ = {};
 
+	Payload pl = GetPayload();
+	std::string_view data = createSafeDataCopy(buf);
 	pl.Reset();
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	Error err = msgPackDecoder_->Decode(buf, pl, ser_, offset);
+	if (msgPackDecoder_) [[unlikely]] {
+		return Error(errLogic, "Unable to use FromMsgPack on the same item multiple times. Create new item instead");
+	}
+	msgPackDecoder_ = std::make_shared<MsgPackDecoder>(data, pl, ser_, tagsMatcher_, offset, floatVectorsHolder_, objectScalarIndexes_);
+
+	Error err = msgPackDecoder_->Decode();
 	if (err.ok()) {
-		tupleData_ = ser_.DetachLStr();
-		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
+		initTupleFrom(std::move(pl), ser_, Shrink_True);
 	}
 	return err;
 }
 
 Error ItemImpl::FromProtobuf(std::string_view buf) {
-	assertrx(ns_);
 	payloadValue_.Clone();
+	cjson_ = {};
+
 	Payload pl = GetPayload();
-	ProtobufDecoder decoder(tagsMatcher_, schema_);
+
+	std::string_view data = createSafeDataCopy(buf);
 
 	pl.Reset();
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	Error err = decoder.Decode(buf, pl, ser_);
+	ProtobufDecoder decoder(tagsMatcher_, schema_, data, pl, ser_, floatVectorsHolder_, objectScalarIndexes_);
+	Error err = decoder.Decode();
 	if (err.ok()) {
-		tupleData_ = ser_.DetachLStr();
-		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
+		initTupleFrom(std::move(pl), ser_, Shrink_True);
 	}
 	return err;
 }
@@ -122,12 +229,12 @@ Error ItemImpl::GetMsgPack(WrSerializer& wrser) {
 	int startTag = 0;
 	ConstPayload pl = GetConstPayload();
 
-	MsgPackEncoder msgpackEncoder(&tagsMatcher_);
+	MsgPackEncoder msgpackEncoder(&tagsMatcher_, fieldsFilter_);
 	const TagsLengths& tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
 	msgpackEncoder.Encode(pl, msgpackBuilder);
-	return Error();
+	return {};
 }
 
 std::string_view ItemImpl::GetMsgPack() {
@@ -140,23 +247,26 @@ std::string_view ItemImpl::GetMsgPack() {
 }
 
 Error ItemImpl::GetProtobuf(WrSerializer& wrser) {
-	assertrx(ns_);
 	ConstPayload pl = GetConstPayload();
-	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
-	ProtobufEncoder protobufEncoder(&tagsMatcher_);
+	ProtobufBuilder protobufBuilder(wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
+	ProtobufEncoder protobufEncoder(&tagsMatcher_, fieldsFilter_);
 	protobufEncoder.Encode(pl, protobufBuilder);
-	return Error();
+	return {};
 }
 
 void ItemImpl::Clear() {
-	static const TagsMatcher kEmptyTagsMaptcher;
-	tagsMatcher_ = kEmptyTagsMaptcher;
+	static const TagsMatcher kEmptyTagsMatcher;
+	tagsMatcher_ = kEmptyTagsMatcher;
 	precepts_.clear();
-	cjson_ = std::string_view();
-	holder_.reset();
+	cjson_ = {};
+	if (holder_) {
+		holder_->clear<true>();
+	}
+	floatVectorsHolder_ = FloatVectorsHolderVector();
+	msgPackDecoder_.reset();
 	sourceData_.reset();
 	largeJSONStrings_.clear();
-	tupleData_.reset();
+	tupleData_.Reset();
 	ser_ = WrSerializer();
 
 	GetPayload().Reset();
@@ -165,23 +275,19 @@ void ItemImpl::Clear() {
 	unsafe_ = false;
 	ns_.reset();
 	realValue_.Free();
+	objectScalarIndexes_.reset();
 }
 
 // Construct item from compressed json
 void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) {
 	payloadValue_.Clone();
-	std::string_view data = slice;
-	if (!unsafe_) {
-		sourceData_.reset(new char[slice.size()]);
-		std::copy(data.begin(), data.end(), sourceData_.get());
-		data = std::string_view(sourceData_.get(), data.size());
-	}
+	std::string_view data = createSafeDataCopy(slice);
 
 	// check tags matcher update
 	if (Serializer rdser(data); rdser.GetCTag() == kCTagEnd) {
 		const auto tmOffset = rdser.GetUInt32();
 		// read tags matcher update
-		Serializer tser(slice.substr(tmOffset));
+		Serializer tser(data.substr(tmOffset));
 		tagsMatcher_.deserialize(tser);
 		tagsMatcher_.setUpdated();
 		data = data.substr(1 + sizeof(uint32_t), tmOffset - 5);
@@ -191,38 +297,46 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 
 	Payload pl = GetPayload();
 	pl.Reset();
-	if (!holder_) {
-		holder_ = std::make_unique<ItemImplRawData::HolderT>();
+	ItemImplRawData::HolderT holder;
+	if (ser_.Cap() < ((rdser.Len() / 4) * 3)) {
+		// Usuallay result ser_'s size will be less, than rdser's size, because of index references. We can't calculate actual proportions,
+		// so just expecting x0.75
+		ser_.Reserve(rdser.Len());
 	}
-	CJsonDecoder decoder(tagsMatcher_, *holder_);
+	CJsonDecoder decoder(pl, rdser, ser_, tagsMatcher_, holder, floatVectorsHolder_, objectScalarIndexes_);
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
 	if (pkOnly && !pkFields_.empty()) {
-		if rx_unlikely (recoder) {
+		if (recoder) [[unlikely]] {
 			throw Error(errParams, "ItemImpl::FromCJSON: pkOnly mode is not compatible with non-null recoder");
 		}
-		decoder.Decode(pl, rdser, ser_, CJsonDecoder::RestrictingFilter(pkFields_));
+		decoder.Decode(CJsonDecoder::RestrictingFilter(pkFields_));
 	} else {
 		if (recoder) {
-			decoder.Decode(pl, rdser, ser_, CJsonDecoder::DummyFilter(), CJsonDecoder::DefaultRecoder(*recoder));
+			decoder.Decode(CJsonDecoder::DefaultFilter(fieldsFilter_), CJsonDecoder::CustomRecoder(*recoder));
 		} else {
-			decoder.Decode<>(pl, rdser, ser_);
+			decoder.Decode(CJsonDecoder::DefaultFilter(fieldsFilter_));
 		}
 	}
-
-	if (!rdser.Eof()) {
-		throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
+	if (!holder.empty()) {
+		if (!holder_) {
+			holder_ = std::make_unique<ItemImplRawData::HolderT>();
+		}
+		*holder_ = std::move(holder);
 	}
 
-	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
+	if (!rdser.Eof()) [[unlikely]] {
+		throw Error(errParseJson, "Internal error - left unparsed data {}", rdser.Pos());
+	}
+
+	initTupleFrom(std::move(pl), ser_, Shrink_True);
 }
 
 Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 	payloadValue_.Clone();
 	std::string_view data = slice;
-	cjson_ = std::string_view();
+	cjson_ = {};
 
 	if (!unsafe_) {
 		if (endp) {
@@ -235,12 +349,10 @@ Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 				std::copy(data.begin(), data.begin() + len, sourceData_.get());
 				data = std::string_view(sourceData_.get(), len);
 			} catch (const gason::Exception& e) {
-				return Error(errParseJson, "Error parsing json: '%s'", e.what());
+				return Error(errParseJson, "Error parsing json: '{}'", e.what());
 			}
 		} else {
-			sourceData_.reset(new char[slice.size()]);
-			std::copy(data.begin(), data.end(), sourceData_.get());
-			data = std::string_view(sourceData_.get(), data.size());
+			data = createSafeDataCopy(slice);
 		}
 	}
 
@@ -249,40 +361,39 @@ Error ItemImpl::FromJSON(std::string_view slice, char** endp, bool pkOnly) {
 	gason::JsonParser parser(&largeJSONStrings_);
 	try {
 		node = parser.Parse(giftStr(data), &len);
-		if (node.value.getTag() != gason::JSON_OBJECT) {
+		if (node.value.getTag() != gason::JsonTag::OBJECT) {
 			return Error(errParseJson, "Expected json object");
 		}
 		if (unsafe_ && endp) {
 			*endp = const_cast<char*>(data.data()) + len;
 		}
 	} catch (gason::Exception& e) {
-		return Error(errParseJson, "Error parsing json: '%s', pos: %d", e.what(), len);
+		return Error(errParseJson, "Error parsing json: '{}', pos: {}", e.what(), len);
 	}
 
 	// Split parsed json into indexes and tuple
-	JsonDecoder decoder(tagsMatcher_, pkOnly && !pkFields_.empty() ? &pkFields_ : nullptr);
+	JsonDecoder decoder(tagsMatcher_, floatVectorsHolder_, objectScalarIndexes_, pkOnly && !pkFields_.empty() ? &pkFields_ : nullptr);
 	Payload pl = GetPayload();
 	pl.Reset();
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
 	auto err = decoder.Decode(pl, ser_, node.value);
-
-	// Put tuple to field[0]
-	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr*>(tupleData_.get())), Variant::no_hold_t{}));
+	if (err.ok()) {
+		initTupleFrom(std::move(pl), ser_, Shrink_True);
+	}
 	return err;
 }
 
 void ItemImpl::FromCJSON(ItemImpl& other, Recoder* recoder) {
-	FromCJSON(other.GetCJSON(), false, recoder);
+	FromCJSON(other.GetCJSON(WithTagsMatcher_False), false, recoder);
 	cjson_ = {};
 }
 
 std::string_view ItemImpl::GetJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
 
-	JsonEncoder encoder(&tagsMatcher_);
+	JsonEncoder encoder(&tagsMatcher_, fieldsFilter_);
 	JsonBuilder builder(ser_, ObjType::TypePlain);
 
 	ser_.Reset();
@@ -291,20 +402,20 @@ std::string_view ItemImpl::GetJSON() {
 	return ser_.Slice();
 }
 
-std::string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
-	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
+std::string_view ItemImpl::GetCJSON(WithTagsMatcher withTagsMatcher) {
+	withTagsMatcher &= tagsMatcher_.isUpdated();
 
-	if (cjson_.size() && !withTagsMatcher) {
+	if (!cjson_.empty() && !withTagsMatcher) {
 		return cjson_;
 	}
 	ser_.Reset();
 	return GetCJSON(ser_, withTagsMatcher);
 }
 
-std::string_view ItemImpl::GetCJSON(WrSerializer& ser, bool withTagsMatcher) {
-	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
+std::string_view ItemImpl::GetCJSON(WrSerializer& ser, WithTagsMatcher withTagsMatcher) {
+	withTagsMatcher &= tagsMatcher_.isUpdated();
 
-	if (cjson_.size() && !withTagsMatcher) {
+	if (!cjson_.empty() && !withTagsMatcher) {
 		ser.Write(cjson_);
 		return ser.Slice();
 	}
@@ -312,11 +423,11 @@ std::string_view ItemImpl::GetCJSON(WrSerializer& ser, bool withTagsMatcher) {
 	ConstPayload pl(payloadType_, payloadValue_);
 
 	CJsonBuilder builder(ser, ObjType::TypePlain);
-	CJsonEncoder encoder(&tagsMatcher_);
+	CJsonEncoder encoder(&tagsMatcher_, fieldsFilter_);
 
 	if (withTagsMatcher) {
 		ser.PutCTag(kCTagEnd);
-		int pos = ser.Len();
+		auto pos = ser.Len();
 		ser.PutUInt32(0);
 		encoder.Encode(pl, builder);
 		uint32_t tmOffset = ser.Len();
@@ -325,27 +436,6 @@ std::string_view ItemImpl::GetCJSON(WrSerializer& ser, bool withTagsMatcher) {
 	} else {
 		encoder.Encode(pl, builder);
 	}
-
-	return ser.Slice();
-}
-
-std::string_view ItemImpl::GetCJSONWithTm() {
-	ser_.Reset();
-	return GetCJSONWithTm(ser_);
-}
-
-std::string_view ItemImpl::GetCJSONWithTm(WrSerializer& ser) {
-	ConstPayload pl(payloadType_, payloadValue_);
-	CJsonBuilder builder(ser, ObjType::TypePlain);
-	CJsonEncoder encoder(&tagsMatcher_);
-
-	ser.PutCTag(kCTagEnd);
-	int pos = ser.Len();
-	ser.PutUInt32(0);
-	encoder.Encode(pl, builder);
-	uint32_t tmOffset = ser.Len();
-	memcpy(ser.Buf() + pos, &tmOffset, sizeof(tmOffset));
-	tagsMatcher_.serialize(ser);
 
 	return ser.Slice();
 }
@@ -359,8 +449,9 @@ VariantArray ItemImpl::GetValueByJSONPath(std::string_view jsonPath) {
 
 void ItemImpl::validateModifyArray(const VariantArray& values) {
 	for (const auto& v : values) {
-		v.Type().EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool,
-										KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null, KeyValueType::Undefined>) {},
+		v.Type().EvaluateOneOf([](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+												  KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null,
+												  KeyValueType::Undefined, KeyValueType::FloatVector> auto) {},
 							   [](KeyValueType::Tuple) {
 								   throw Error(errParams,
 											   "Unable to use 'tuple'-value (array of arrays, array of points, etc) to modify item");
@@ -369,6 +460,198 @@ void ItemImpl::validateModifyArray(const VariantArray& values) {
 								   throw Error(errParams, "Unable to use 'composite'-value (object, array of objects, etc) to modify item");
 							   });
 	}
+}
+
+void ItemImpl::BuildTupleIfEmpty() {
+	if (!tupleData_) {
+		WrSerializer ser;
+		ser.PutUInt32(0);  // Empty lstring header
+		auto pl = GetPayload();
+		buildPayloadTuple(pl, &tagsMatcher_, ser, objectScalarIndexes_);
+		initTupleFrom(std::move(pl), ser, Shrink_True);
+	}
+}
+
+void ItemImpl::CopyIndexedVectorsValuesFrom(FloatVectorsGetter&& floatVectorsGettter) {
+	auto data = floatVectorsGettter(payloadType_, payloadValue_, tagsMatcher_);
+	if (data.empty()) {
+		return;
+	}
+
+	payloadValue_.Clone();
+	floatVectorsHolder_.resize(0);
+	Payload pl(payloadType_, payloadValue_);
+	floatVectorsHolder_.reserve(data.size());
+	if (IsUnsafe()) {
+		VariantArray buf;
+		for (auto& [idxData, fvVariants] : data) {
+			buf.clear<false>();
+			buf.reserve(fvVariants.size());
+			for (auto& fvVar : fvVariants) {
+				if (fvVar.DoHold()) {
+					if (floatVectorsHolder_.Add(FloatVector{std::move(fvVar)})) {
+						buf.emplace_back(floatVectorsHolder_.Back());
+					} else {
+						buf.emplace_back(ConstFloatVectorView{});
+					}
+				} else {
+					buf.emplace_back(std::move(fvVar));
+				}
+			}
+			pl.Set(idxData.ptField, buf);
+		}
+	} else {
+		VariantArray buf;
+		for (auto& [idxData, fvVariants] : data) {
+			buf.clear<false>();
+			buf.reserve(fvVariants.size());
+			for (auto& fvVar : fvVariants) {
+				if (floatVectorsHolder_.Add(FloatVector{std::move(fvVar)})) {
+					buf.emplace_back(floatVectorsHolder_.Back());
+				} else {
+					buf.emplace_back(ConstFloatVectorView{});
+				}
+			}
+			pl.Set(idxData.ptField, buf);
+		}
+	}
+}
+
+namespace {
+bool isFieldEmpty(const Payload& pl, int field) {
+	auto vec = pl.Get(field, 0).As<ConstFloatVectorView>();
+	return vec.IsEmpty();
+}
+
+bool checkEmbedderAllowed(const Payload& pl, int field, const UpsertEmbedder& embedder) {
+	switch (embedder.Strategy()) {
+		case EmbedderConfig::Strategy::Always:
+			return true;
+		case EmbedderConfig::Strategy::EmptyOnly:
+			return isFieldEmpty(pl, field);
+		case EmbedderConfig::Strategy::Strict:
+			if (!isFieldEmpty(pl, field)) {
+				throw Error{errConflict,
+							"Vector field '{}' must not contain a non-empty data if strict strategy for auto-embedding is configured",
+							embedder.FieldName()};
+			}
+			return true;
+	}
+	return false;
+}
+
+int checkEmbedderCalcField(const PayloadType& payloadType, std::string_view indexName, std::string_view fieldName) {
+	int fieldId = 0;
+	if (!payloadType.FieldByName(fieldName, fieldId)) {
+		throw Error(errLogic,
+					"Cannot automatically embed value in index field named '{}'. The auxiliary field '{}' was not found or is a composite "
+					"or sparse field. Embedding is supported only for scalar index fields",
+					indexName, fieldName);
+	}
+	return fieldId;
+}
+}  // namespace
+
+void ItemImpl::Embed(const RdxContext& ctx) {
+	std::bitset<kMaxIndexes> skipFieldsEmbed;
+	bool needReturn = false;
+	size_t i = 0;
+	while (i < precepts_.size()) {
+		auto sqlFunc = functions::FunctionParser::Parse(precepts_[i]);
+		if (sqlFunc.field == "*" && sqlFunc.funcName == "skip_embedding") {
+			precepts_.erase(precepts_.begin() + i);
+			needReturn = true;
+		} else if (sqlFunc.funcName == "skip_embedding") {
+			int fieldId = payloadType_.FieldByName(sqlFunc.field);
+			std::shared_ptr<const UpsertEmbedder> embedder = payloadType_.Field(fieldId).UpsertEmbedder();
+			if (!embedder) {
+				throw Error{errLogic, "'skip_embedding' posible only on float vector index", sqlFunc.field};
+			}
+			skipFieldsEmbed.set(fieldId, true);
+			precepts_.erase(precepts_.begin() + i);
+		} else {
+			++i;
+		}
+	}
+	if (needReturn) {
+		return;
+	}
+	try {
+		payloadValue_.Clone();
+		auto pl = GetPayload();
+
+		const auto unsafe = unsafe_;
+		unsafe_ = false;
+
+		// one document - one input vector of VariantArray
+		std::vector<std::pair<std::string, VariantArray>> source;
+		h_vector<FloatVector, 1> products;
+		for (int field = 1, numFields = payloadType_.NumFields(); field < numFields; ++field) {
+			auto embedder = payloadType_.Field(field).UpsertEmbedder();
+			if (!embedder) {
+				continue;  // do nothing
+			}
+			if (skipFieldsEmbed.test(field)) {
+				continue;
+			}
+			ThrowOnCancel(ctx);
+
+			int fieldId = payloadType_.FieldByName(embedder->FieldName());
+			if (!checkEmbedderAllowed(pl, fieldId, *embedder)) {
+				continue;  // skip embedder
+			}
+
+			source.resize(0);
+			for (const auto& fld : embedder->Fields()) {
+				int fldId = checkEmbedderCalcField(payloadType_, embedder->FieldName(), fld);
+
+				VariantArray data;
+				pl.Get(fldId, data);
+				source.emplace_back(fld, std::move(data));
+			}
+
+			// ToDo in real life, work with several embedded devices requires asynchrony. Now we support only one
+			embedder->Calculate(ctx, std::span{&source, 1}, products);
+			if (products.size() != 1 && !payloadType_.Field(fieldId).IsArray()) {
+				throw Error(errLogic, "Unable to set vector values with incorrect embedding result");
+			}
+
+			VariantArray krs;
+			krs.reserve(products.size());
+			for (auto& p : products) {
+				krs.emplace_back(std::move(p));
+			}
+			products.clear<false>();
+
+			SetField(fieldId, std::move(krs), NeedCreate_False);
+		}
+		unsafe_ = unsafe;
+	} catch (Error& err) {
+		if (err.code() == errTimeout || err.code() == errCanceled) {
+			throw Error{err.code(), "Embedding service is unavailable (request was canceled/timed out)"};
+		}
+		throw err;
+	} catch (...) {
+		throw Error{errLogic, "Unknown error in embedders"};
+	}
+}
+
+void ItemImpl::initTupleFrom(Payload&& pl, WrSerializer& ser, Shrink shrink) {
+	// Put tuple to field[0]
+	auto oldTuple = std::move(tupleData_);
+	tupleData_ = ser.DetachLStr(shrink);
+	ser = WrSerializer(oldTuple.DetachChunk());
+	pl.Set(0, Variant(p_string(reinterpret_cast<const l_string_hdr*>(tupleData_.Get())), Variant::noHold));
+}
+
+std::string_view ItemImpl::createSafeDataCopy(std::string_view slice) {
+	std::string_view data = slice;
+	if (!unsafe_) {
+		sourceData_.reset(new char[data.size()]);
+		std::copy(data.begin(), data.end(), sourceData_.get());
+		data = std::string_view(sourceData_.get(), data.size());
+	}
+	return data;
 }
 
 }  // namespace reindexer

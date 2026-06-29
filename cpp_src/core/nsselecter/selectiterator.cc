@@ -1,35 +1,31 @@
 #include "selectiterator.h"
 
-#include <algorithm>
-#include <cmath>
-#include "core/index/indexiterator.h"
-
 namespace reindexer {
 
 std::string_view SelectIterator::TypeName() const noexcept {
 	using namespace std::string_view_literals;
 	switch (type_) {
-		case Forward:
+		case Type::None:
+			return "None"sv;
+		case Type::Forward:
 			return "Forward"sv;
-		case Reverse:
+		case Type::Reverse:
 			return "Reverse"sv;
-		case SingleRange:
+		case Type::SingleRange:
 			return "SingleRange"sv;
-		case SingleIdset:
+		case Type::SingleIdset:
 			return "SingleIdset"sv;
-		case SingleIdSetWithDeferedSort:
+		case Type::SingleIdSetWithDeferedSort:
 			return "SingleIdSetWithDeferedSort"sv;
-		case RevSingleRange:
+		case Type::RevSingleRange:
 			return "RevSingleRange"sv;
-		case RevSingleIdset:
+		case Type::RevSingleIdset:
 			return "RevSingleIdset"sv;
-		case RevSingleIdSetWithDeferedSort:
+		case Type::RevSingleIdSetWithDeferedSort:
 			return "RevSingleIdSetWithDeferedSort"sv;
-		case OnlyComparator:
-			return "OnlyComparator"sv;
-		case Unsorted:
+		case Type::Unsorted:
 			return "Unsorted"sv;
-		case UnbuiltSortOrdersIndex:
+		case Type::UnbuiltSortOrdersIndex:
 			return "UnbuiltSortOrdersIndex"sv;
 		default:
 			return "<unknown>"sv;
@@ -40,14 +36,20 @@ std::string SelectIterator::Dump() const {
 	std::string ret = name + ' ' + std::string(TypeName()) + "(";
 
 	for (auto& it : *this) {
-		if (it.useBtree_) {
-			ret += "btree;";
-		}
-		if (it.isRange_) {
-			ret += "range;";
-		}
-		if (it.bsearch_) {
-			ret += "bsearch;";
+		switch (it.collectionType_) {
+			case SingleSelectKeyResult::Collection::NotSet:
+				break;
+			case SingleSelectKeyResult::Collection::FlatIdSet:
+				break;
+			case SingleSelectKeyResult::Collection::TreeIdSet:
+				ret += "btree;";
+				break;
+			case SingleSelectKeyResult::Collection::Range:
+				ret += "range;";
+				break;
+			case SingleSelectKeyResult::Collection::SingleIterator:
+				ret += "unbuilt idx;";
+				break;
 		}
 		ret += ",";
 		if (ret.length() > 256) {

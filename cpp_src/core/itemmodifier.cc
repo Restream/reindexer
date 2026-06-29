@@ -1,29 +1,176 @@
 #include "itemmodifier.h"
+
+#include <span>
+#include "core/cjson/tagsmatcher.h"
+#include "core/embedding/embedder.h"
+#include "core/function/expression_evaluator.h"
+#include "core/function/function_invoker.h"
+#include "core/function/function_parser.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/query/expressionevaluator.h"
-#include "core/selectfunc/functionexecutor.h"
+#include "estl/tokenizer.h"
+#include "index/float_vector/float_vector_index.h"
 #include "index/index.h"
+#include "tools/logger.h"
+#include "tools/scope_guard.h"
 
 namespace reindexer {
 
 std::string_view ItemModifier::FieldData::Name() const noexcept { return entry_.Column(); }
+
+ItemModifier::FieldData::PathData ItemModifier::FieldData::preprocIndexedTagsPath(const NamespaceImpl& ns,
+																				  const IndexedTagsPath& tagsPath) {
+	PathData pd;
+	for (size_t i = 0; i < tagsPath.size(); ++i) {
+		const auto& tag = tagsPath[i];
+		if (tag.IsTagName()) {
+			if (!pd.jsonPath.empty()) {
+				pd.jsonPath += '.';
+			}
+			const TagName tagName = tag.GetTagName();
+			pd.tagsPath.emplace_back(tagName);
+			pd.jsonPath += ns.tagsMatcher_.tag2name(tagName);
+			pd.tailIndexesInPath = 0;
+		} else {
+			++pd.indexesCountInPath;
+			++pd.tailIndexesInPath;
+		}
+	}
+	return pd;
+}
+
+bool ItemModifier::FieldData::initFromSimpleIndexName(std::string_view name, NamespaceImpl& ns) {
+	if (ns.tryGetIndexByName(name, fieldIndex_)) {
+		isIndex_ = true;
+		tagsPath_ = IndexedTagsPath(getTagsPathByIndexField(fieldIndex_, ns));
+		if (IsComposite(ns.indexes_[fieldIndex_]->Type())) {
+			isIndex_ = false;
+			fieldIndex_ = SetByJsonPath;
+		}
+		return true;
+	}
+	return false;
+}
+
+bool ItemModifier::FieldData::initFromSimpleJsonPath(std::string_view name, NamespaceImpl& ns) {
+	if (fieldIndex_ = ns.payloadType_.FieldByJsonPath(name); fieldIndex_ > 0) {
+		isIndex_ = true;
+		tagsPath_ = ns.tagsMatcher_.path2indexedtag(name, CanAddField_True);
+		return true;
+	}
+	return false;
+}
+
+bool ItemModifier::FieldData::initFromIndexedIndexName(const NamespaceImpl& ns, const PathData& pathData,
+													   const IndexedTagsPath& indexedTagsPath) {
+	// Handle 'idx_name[1]' for cases, when index name does not equal to jsonpath
+	int fieldIndex = SetByJsonPath;
+	if (ns.tryGetIndexByName(pathData.jsonPath, fieldIndex)) {
+		auto tmpTagsPath = getTagsPathByIndexField(fieldIndex, ns);
+		if ((tmpTagsPath.size() == 1) && (pathData.tailIndexesInPath == pathData.indexesCountInPath)) {
+			IndexedTagsPath tmpIndexedTagsPath(tmpTagsPath);
+			for (auto tagIt = (indexedTagsPath.end() - pathData.tailIndexesInPath); tagIt != indexedTagsPath.end(); ++tagIt) {
+				tmpIndexedTagsPath.emplace_back(*tagIt);
+			}
+			tagsPath_ = std::move(tmpIndexedTagsPath);
+			isIndex_ = true;
+			fieldIndex_ = fieldIndex;
+			return true;
+		} else {
+			const auto idxNameTagsPath = ns.tagsMatcher_.path2tag(ns.indexes_[fieldIndex]->Name());
+			const bool idxNameAndJsonPathAreEqual = !idxNameTagsPath.empty() && (idxNameTagsPath == tmpTagsPath);
+			if (!idxNameAndJsonPathAreEqual) [[unlikely]] {
+				throw Error(
+					errParams,
+					"Unable to update index '{}' by name, because array structure is ambiguous. Use JSON-path('{}') instead of index name",
+					pathData.jsonPath, ns.tagsMatcher_.Path2Name(tmpTagsPath));
+			}
+		}
+	}
+	return false;
+}
+
+void ItemModifier::FieldData::initFromIndexedPath(std::string_view name, NamespaceImpl& ns) {
+	IndexedTagsPath indexedTagsPath = ns.tagsMatcher_.path2indexedtag(name, CanAddField_True);
+	auto pathData = preprocIndexedTagsPath(ns, indexedTagsPath);
+
+	if (!initFromIndexedIndexName(ns, pathData, indexedTagsPath)) {
+		// Handle indexed jsonpath
+		const auto field = ns.tagsMatcher_.tags2field(pathData.tagsPath);
+		if (field.IsRegularIndex()) {
+			fieldIndex_ = field.IndexNumber();
+			isIndex_ = true;
+		} else {
+			isIndex_ = ns.tryGetIndexByJsonPath(pathData.jsonPath, fieldIndex_);
+		}
+		tagsPath_ = std::move(indexedTagsPath);
+	}
+	if (isIndex_) {
+		if (fieldIndex_ < ns.payloadType_.NumFields()) {
+			auto isForAll = false;
+			for (const auto& pathNode : tagsPath_) {
+				if (pathNode.IsTagIndex()) {
+					if (pathNode.GetTagIndex().IsAll()) {
+						isForAll = true;
+					} else if (isForAll) [[unlikely]] {
+						throw Error(errParams,
+									"Expressions like 'field[*].field[1]=10' are supported for sparse indexes/non-index fields only");
+					}
+				}
+			}
+		}
+
+		if (!tagsPath_.empty() && tagsPath_.back().IsTagIndexNotAll()) {
+			tagsPathWithLastIndex_ = tagsPath_;
+			arrayIndex_ = tagsPath_.back().GetTagIndex();
+			tagsPath_.pop_back();
+		}
+		isUpdateArrayPart_ = ArrayIndex() && !ArrayIndex()->IsAll();
+		for (const auto& tag : Tagspath()) {
+			if (tag.IsTagIndex()) {
+				isUpdateArrayPart_ = true;
+				if (tag.GetTagIndex().IsAll()) {
+					isForAllItems_ = true;
+					break;
+				}
+			}
+		}
+	}
+}
+
+TagsPath ItemModifier::FieldData::getTagsPathByIndexField(int& field, const NamespaceImpl& ns) {
+	assertrx_throw(field > 0);
+
+	TagsPath tagsPath;
+	const auto& idx = *ns.indexes_[field];
+	auto totalJsonPaths = (idx.Opts().IsSparse() || static_cast<int>(field) >= ns.payloadType_.NumFields())
+							  ? idx.Fields().size()
+							  : ns.payloadType_.Field(field).JsonPaths().size();
+
+	if (totalJsonPaths != 1) [[unlikely]] {
+		assertrx_dbg(totalJsonPaths);
+		throw Error(errParams, "Ambiguity when updating field with several json paths by index name: '{}'", idx.Name());
+	}
+
+	const auto& fields{idx.Fields()};
+	if (fields[0] == IndexValueType::SetByJsonPath) {
+		tagsPath = fields.getTagsPath(0);
+	} else {
+		field = fields[0];	// 'Composite' index with single subindex
+		const auto& jsonPath = ns.payloadType_.Field(field).JsonPaths()[0];
+		tagsPath = ns.tagsMatcher_.path2tag(jsonPath);
+		if (tagsPath.empty()) [[unlikely]] {
+			throw Error(errParams, "Cannot find field by json: '{}'", jsonPath);
+		}
+	}
+	return tagsPath;
+}
 
 void ItemModifier::FieldData::appendAffectedIndexes(const NamespaceImpl& ns, CompositeFlags& affectedComposites) const {
 	const auto firstCompositePos = ns.indexes_.firstCompositePos();
 	const auto firstSparsePos = ns.indexes_.firstSparsePos();
 	const auto totalIndexes = ns.indexes_.totalSize();
 	const bool isRegularIndex = IsIndex() && Index() < firstSparsePos;
-	const bool isSparseIndex = IsIndex() && Index() >= firstSparsePos && Index() < firstCompositePos;
-	if (isSparseIndex) {
-		// Composite indexes can not be created over sparse indexes, so just skipping rest of the checks for them
-		return;
-	}
-	const bool isCompositeIndex = IsIndex() && Index() >= firstCompositePos;
-	if (isCompositeIndex) {
-		// Composite indexes can not be created over another composite indexes, so just skipping rest of the checks for them
-		return;
-	}
 	std::bitset<kMaxIndexes> affected;
 	if (isRegularIndex) {
 		affected.set(Index());
@@ -57,8 +204,8 @@ void ItemModifier::FieldData::appendAffectedIndexes(const NamespaceImpl& ns, Com
 			continue;
 		}
 
-		if (!IsIndex()) {
-			// Fulltext composites may be created over non-index fields
+		if (!isRegularIndex) {
+			// Fulltext composites may be created over non-index and sparse fields
 			for (size_t tp = 0, end = fields.getTagsPathsLength(); tp < end; ++tp) {
 				if (Tagspath().IsNestedOrEqualTo(fields.getTagsPath(tp))) {
 					affectedComposites[idxId] = true;
@@ -69,19 +216,22 @@ void ItemModifier::FieldData::appendAffectedIndexes(const NamespaceImpl& ns, Com
 	}
 }
 
-class ItemModifier::RollBack_ModifiedPayload final : private RollBackBase {
+class [[nodiscard]] ItemModifier::RollBack_ModifiedPayload final : private RollBackBase {
 public:
 	RollBack_ModifiedPayload(ItemModifier& modifier, IdType id) noexcept : modifier_{modifier}, itemId_{id} {}
 	RollBack_ModifiedPayload(RollBack_ModifiedPayload&&) noexcept = default;
 	~RollBack_ModifiedPayload() override { RollBack(); }
 
-	void RollBack() {
+	// NOLINTNEXTLINE(bugprone-exception-escape) Termination here is better, than inconsistent state of the user's data
+	void RollBack() noexcept {
 		if (IsDisabled()) {
 			return;
 		}
 		auto indexesCacheCleaner{modifier_.ns_.GetIndexesCacheCleaner()};
 		const std::vector<bool>& data = modifier_.rollBackIndexData_.IndexStatus();
 		PayloadValue& plValue = modifier_.ns_.items_[itemId_];
+		plValue.Clone();
+
 		NamespaceImpl::IndexesStorage& indexes = modifier_.ns_.indexes_;
 
 		Payload plSave(modifier_.ns_.payloadType_, modifier_.rollBackIndexData_.GetPayloadValueBackup());
@@ -95,9 +245,9 @@ public:
 		for (size_t i = indexes.firstCompositePos(); i < size_t(indexes.totalSize()) && i < data.size(); ++i) {
 			if (data[i]) {
 				bool needClearCache{false};
-				indexes[i]->Delete(Variant(plValue), itemId_, *modifier_.ns_.strHolder(), needClearCache);
-				if (needClearCache && indexes[i]->IsOrdered()) {
-					indexesCacheCleaner.Add(indexes[i]->SortId());
+				indexes[i]->Delete(Variant(plValue), itemId_, MustExist_False, *modifier_.ns_.strHolder(), needClearCache);
+				if (needClearCache) {
+					indexesCacheCleaner.Add(*indexes[i]);
 				}
 			}
 		}
@@ -113,13 +263,13 @@ public:
 					} catch (const Error&) {
 						vals.resize(0);
 					}
-					modifier_.rollBackIndexData_.CjsonChanged();
 				} else {
 					cpl.Get(i, vals);
 				}
-				indexes[i]->Delete(vals, itemId_, *modifier_.ns_.strHolder(), needClearCache);
-				if (needClearCache && indexes[i]->IsOrdered()) {
-					indexesCacheCleaner.Add(indexes[i]->SortId());
+
+				indexes[i]->Delete(vals, itemId_, MustExist_False, *modifier_.ns_.strHolder(), needClearCache);
+				if (needClearCache) {
+					indexesCacheCleaner.Add(*indexes[i]);
 				}
 
 				VariantArray oldData;
@@ -136,29 +286,47 @@ public:
 				indexes[i]->Upsert(result, oldData, itemId_, needClearCache);
 				if (!indexes[i]->Opts().IsSparse()) {
 					Payload pl{modifier_.ns_.payloadType_, modifier_.ns_.items_[itemId_]};
-					pl.Set(i, result);
+					try {
+						pl.Set(i, result);
+					} catch (const Error& err) {
+						assertf(false, "[{}]: Failed to set index {} value: {}", modifier_.ns_.name_, i, err.what());
+						std::abort();
+					}
 				}
-				if (needClearCache && indexes[i]->IsOrdered()) {
-					indexesCacheCleaner.Add(indexes[i]->SortId());
+				if (needClearCache) {
+					indexesCacheCleaner.Add(*indexes[i]);
 				}
 			}
 		}
-		if (modifier_.rollBackIndexData_.IsCjsonChanged()) {
-			const Variant& v = cjsonKref.front();
+
+		// Compare cjson tuples
+		Variant oldTuple = plSave.Get(0, 0);
+		if (const Variant& v = cjsonKref.front(); oldTuple != v) {
 			bool needClearCache{false};
-			indexes[0]->Delete(v, itemId_, *modifier_.ns_.strHolder(), needClearCache);
-			VariantArray keys;
-			plSave.Get(0, keys);
-			indexes[0]->Upsert(res, keys, itemId_, needClearCache);
-			plCur.Set(0, res);
+			indexes[0]->Delete(v, itemId_, MustExist_True, *modifier_.ns_.strHolder(), needClearCache);
+			indexes[0]->Upsert(res, VariantArray{std::move(oldTuple)}, itemId_, needClearCache);
+			try {
+				plCur.Set(0, res);
+			} catch (const Error& err) {
+				assertf(false, "[{}]: Failed to set cjson tuple: {}", modifier_.ns_.name_, err.what());
+				std::abort();
+			}
 		}
 
-		for (size_t i = indexes.firstCompositePos(); i < size_t(indexes.totalSize()) && i < data.size(); ++i) {
+		// Insert current payload value into affected composite indexes or refresh value in unaffected indexes
+		const Variant pvCurVariant{plValue};
+		for (size_t i = indexes.firstCompositePos(); i < size_t(indexes.totalSize()); ++i) {
 			if (data[i]) {
 				bool needClearCache{false};
-				indexes[i]->Upsert(Variant(modifier_.rollBackIndexData_.GetPayloadValueBackup()), itemId_, needClearCache);
-				if (needClearCache && indexes[i]->IsOrdered()) {
-					indexesCacheCleaner.Add(indexes[i]->SortId());
+				std::ignore = indexes[i]->Upsert(pvCurVariant, itemId_, needClearCache);
+				if (needClearCache) {
+					indexesCacheCleaner.Add(*indexes[i]);
+				}
+			} else {
+				bool refreshed = indexes[i]->RefreshCompositeKey(pvCurVariant, itemId_);
+				assertrx_dbg(refreshed);
+				if (!refreshed) [[unlikely]] {
+					logFmt(LogError, "[{}]: Unable to refresh key for {} during update query", modifier_.ns_.name_, indexes[i]->Name());
 				}
 			}
 		}
@@ -175,91 +343,32 @@ private:
 };
 
 ItemModifier::FieldData::FieldData(const UpdateEntry& entry, NamespaceImpl& ns, CompositeFlags& affectedComposites)
-	: entry_(entry), tagsPathWithLastIndex_{std::nullopt}, arrayIndex_(IndexValueType::NotSet), isIndex_(false) {
-	if (ns.tryGetIndexByName(entry_.Column(), fieldIndex_)) {
-		isIndex_ = true;
-		const auto& idx = *ns.indexes_[fieldIndex_];
-		auto jsonPathsSize = (idx.Opts().IsSparse() || static_cast<int>(fieldIndex_) >= ns.payloadType_.NumFields())
-								 ? idx.Fields().size()
-								 : ns.payloadType_.Field(fieldIndex_).JsonPaths().size();
-
-		if (jsonPathsSize != 1) {
-			throw Error(errParams, "Ambiguity when updating field with several json paths by index name: '%s'", entry_.Column());
+	: entry_(entry), tagsPathWithLastIndex_{std::nullopt} {
+	if (!initFromSimpleIndexName(entry_.Column(), ns)) {
+		if (!initFromSimpleJsonPath(entry_.Column(), ns)) {
+			initFromIndexedPath(entry_.Column(), ns);
 		}
-
-		const auto& fields{idx.Fields()};
-		if (fields.size() != 1) {
-			throw Error(errParams, "Cannot update composite index: '%s'", entry_.Column());
-		}
-		if (fields[0] == IndexValueType::SetByJsonPath) {
-			if (fields.isTagsPathIndexed(0)) {
-				tagsPath_ = fields.getIndexedTagsPath(0);
-			} else {
-				tagsPath_ = IndexedTagsPath{fields.getTagsPath(0)};
-			}
-		} else {
-			fieldIndex_ = fields[0];  // 'Composite' index with single subindex
-			tagsPath_ = ns.tagsMatcher_.path2indexedtag(ns.payloadType_.Field(fieldIndex_).JsonPaths()[0], true);
-		}
-		if (tagsPath_.empty()) {
-			throw Error(errParams, "Cannot find field by json: '%s'", entry_.Column());
-		}
-		if (tagsPath_.back().IsWithIndex()) {
-			arrayIndex_ = tagsPath_.back().Index();
-			tagsPath_.back().SetIndex(IndexValueType::NotSet);
-		}
-	} else if (fieldIndex_ = ns.payloadType_.FieldByJsonPath(entry_.Column()); fieldIndex_ > 0) {
-		isIndex_ = true;
-		tagsPath_ = ns.tagsMatcher_.path2indexedtag(entry_.Column(), true);
-		if (tagsPath_.empty()) {
-			throw Error(errParams, "Cannot find field by json: '%s'", entry_.Column());
-		}
-	} else {
-		TagsPath tp;
-		IndexedTagsPath tagsPath = ns.tagsMatcher_.path2indexedtag(entry_.Column(), true);
-		std::string jsonPath;
-		for (size_t i = 0; i < tagsPath.size(); ++i) {
-			if (i) {
-				jsonPath += '.';
-			}
-			const auto tagName = tagsPath[i].NameTag();
-			tp.emplace_back(tagName);
-			jsonPath += ns.tagsMatcher_.tag2name(tagName);
-		}
-		fieldIndex_ = ns.tagsMatcher_.tags2field(tp.data(), tp.size());
-		if (fieldIndex_ >= 0) {
-			isIndex_ = true;
-		} else {
-			fieldIndex_ = 0;
-			isIndex_ = ns.getIndexByNameOrJsonPath(jsonPath, fieldIndex_) || ns.getSparseIndexByJsonPath(jsonPath, fieldIndex_);
-		}
-		tagsPath_ = std::move(tagsPath);
-		if (tagsPath_.empty()) {
-			throw Error(errParams, "Cannot find field by json: '%s'", entry_.Column());
-		}
-		if (isIndex_) {
-			auto& lastTag = tagsPath_.back();
-			if (lastTag.IsWithIndex()) {
-				tagsPathWithLastIndex_ = tagsPath_;
-				arrayIndex_ = lastTag.Index();
-				lastTag.SetIndex(IndexValueType::NotSet);
-			}
-		}
+	}
+	if (tagsPath_.empty()) [[unlikely]] {
+		throw Error(errParams, "Cannot find field by json: '{}'", entry_.Column());
 	}
 	appendAffectedIndexes(ns, affectedComposites);
 }
 
-ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, NamespaceImpl& ns,
-						   h_vector<updates::UpdateRecord, 2>& replUpdates, const NsContext& ctx)
+ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, NamespaceImpl& ns, UpdatesContainer& replUpdates,
+						   const NsContext& ctx, const functions::PrecomputedValues& precomputedValues)
 	: ns_(ns),
 	  updateEntries_(updateEntries),
 	  rollBackIndexData_(ns_.indexes_.totalSize()),
-	  affectedComposites_(ns_.indexes_.totalSize() - ns_.indexes_.firstCompositePos(), false) {
+	  affectedComposites_(ns_.indexes_.totalSize() - ns_.indexes_.firstCompositePos(), false),
+	  embedderHelper_(ns_),
+	  precomputedValues_(precomputedValues) {
 	const auto oldTmV = ns_.tagsMatcher_.version();
 	for (const UpdateEntry& updateField : updateEntries_) {
 		for (const auto& v : updateField.Values()) {
-			v.Type().EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool,
-											KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null, KeyValueType::Undefined>) {},
+			v.Type().EvaluateOneOf([](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float,
+													  KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid, KeyValueType::Null,
+													  KeyValueType::Undefined, KeyValueType::FloatVector> auto) {},
 								   [](KeyValueType::Tuple) {
 									   throw Error(
 										   errParams,
@@ -274,23 +383,111 @@ ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, Namesp
 		}
 		fieldsToModify_.emplace_back(updateField, ns_, affectedComposites_);
 	}
+	embedderHelper_.Init(fieldsToModify_);
 	ns_.replicateTmUpdateIfRequired(replUpdates, oldTmV, ctx);
 }
 
-[[nodiscard]] bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, h_vector<updates::UpdateRecord, 2>& replUpdates) {
+void ItemModifier::EmbedderHelper::prepareVectorIndexInfo() {
+	for (int fieldIndex = 1, numFields = ns_.payloadType_.NumFields(); fieldIndex < numFields; ++fieldIndex) {
+		std::shared_ptr<const UpsertEmbedder> embedder = ns_.payloadType_.Field(fieldIndex).UpsertEmbedder();
+		if (embedder) {
+			for (const auto& field : embedder->Fields()) {
+				int idx = 0;
+				if (!ns_.tryGetIndexByName(field, idx)) [[unlikely]] {
+					throw Error{errConflict, "Configuration 'embedding:upsert_embedder' configured with invalid base field name '{}'",
+								field};
+				}
+				if (idx >= ns_.indexes_.firstSparsePos()) [[unlikely]] {
+					throw Error(errParams,
+								"Auto embedding not supported for composite and sparce indexes."
+								"Field '{}' for embedding is invalid in namespace {}.",
+								field, ns_.name_);
+				}
+				addToIndex(idx, fieldIndex, autoEmbeddingIndexesList_);
+				addToIndex(fieldIndex, idx, vectorIndexesList_);
+			}
+		}
+	}
+}
+
+const h_vector<int, 2>& ItemModifier::EmbedderHelper::autoEmbeddingFieldsForVectorIndex(int field) const noexcept {
+	for (const auto& v : vectorIndexesList_) {
+		if (v.vecField == field) {
+			return v.autoEmbeddingFields;
+		}
+	}
+	static const h_vector<int, 2> empty;
+	return empty;
+}
+
+void ItemModifier::EmbedderHelper::RecalcVectorIndexesToModify(const Payload& pl, const ConstPayload& plOld) {
+	for (const auto& [field, _] : vectorIndexesList_) {
+		if (std::find(vectorIndexesToModify_.begin(), vectorIndexesToModify_.end(), field) != vectorIndexesToModify_.end()) {
+			continue;
+		}
+		std::shared_ptr<const UpsertEmbedder> embedder = ns_.payloadType_.Field(field).UpsertEmbedder();
+		if (!embedder) {
+			continue;
+		}
+		for (int f : autoEmbeddingFieldsForVectorIndex(field)) {
+			VariantArray fldDataNew;
+			pl.Get(f, fldDataNew);
+			VariantArray fldDataOld;
+			plOld.Get(f, fldDataOld);
+			if (fldDataNew != fldDataOld) {
+				AddVectorIndexToModify(field);
+				break;
+			}
+		}
+	}
+}
+
+void ItemModifier::EmbedderHelper::prepareSkipVectorIndexes(const std::vector<FieldData>& fieldsToModify) {
+	for (const FieldData& field : fieldsToModify) {
+		if (field.IsIndex() && !autoEmbeddingFieldsForVectorIndex(field.Index()).empty()) {
+			if (field.Details().IsExpression()) {
+				assertrx_throw(field.Details().Values().size() > 0);
+				std::string v = field.Details().Values().front().As<std::string>();
+				Tokenizer tokenizer(v);
+				Token tok = tokenizer.NextToken();
+				auto parsedFunction = functions::FunctionParser::ParseFunction(tokenizer, tok);
+				if (parsedFunction.funcName == "skip_embedding") [[likely]] {
+					skipVectorIndexes_.set(field.Index());
+					continue;
+				} else {
+					throw Error(errParams, "Incorrect value {}", field.Details().Values().front().As<std::string>());
+				}
+			}
+			if (field.Details().Mode() == FieldModeSet) {  // value is set, embedding_strategy is ignored
+				skipVectorIndexes_.set(field.Index());
+			}
+		}
+	}
+}
+
+bool ItemModifier::Modify(IdType itemId, const NsContext& ctx, UpdatesContainer& replUpdates) {
 	PayloadValue& pv = ns_.items_[itemId];
 	Payload pl(ns_.payloadType_, pv);
 	pv.Clone(pl.RealSize());
 
-	rollBackIndexData_.Reset(pv);
+	rollBackIndexData_.Reset(ns_, itemId, pv);
 	RollBack_ModifiedPayload rollBack = RollBack_ModifiedPayload(*this, itemId);
-	FunctionExecutor funcExecutor(ns_, replUpdates);
-	ExpressionEvaluator ev(ns_.payloadType_, ns_.tagsMatcher_, funcExecutor);
+	functions::FunctionInvoker funcInvoker(precomputedValues_, ns_, ns_.payloadType_, ns_.tagsMatcher_, replUpdates);
+	ExpressionEvaluator ev(ns_, funcInvoker);
 
-	deleteItemFromComposite(itemId);
+	auto indexesCacheCleaner = ns_.GetIndexesCacheCleaner();
+
+	deleteItemFromComposite(itemId, indexesCacheCleaner);
 	try {
+		auto compositesGuard =
+			MakeScopeGuard([this, itemId, &indexesCacheCleaner] { insertItemIntoComposite(itemId, indexesCacheCleaner); });
+
 		VariantArray values;
+		bool recalcEmbeddersOnSetObject = false;
 		for (FieldData& field : fieldsToModify_) {
+			if (field.IsIndex() && field.Details().IsExpression() && embedderHelper_.TestSkipVectorIndex(field.Index())) {
+				continue;
+			}
 			// values must be assigned a value in if else below
 			if (field.Details().IsExpression()) {
 				assertrx(field.Details().Values().size() > 0);
@@ -299,52 +496,60 @@ ItemModifier::ItemModifier(const std::vector<UpdateEntry>& updateEntries, Namesp
 				values = field.Details().Values();
 			}
 
-			if (values.IsArrayValue() && field.TagspathWithLastIndex().back().IsArrayNode()) {
+			if (values.IsArrayValue() && field.TagspathWithLastIndex().back().IsTagIndex()) [[unlikely]] {
 				throw Error(errParams, "Array items are supposed to be updated with a single value, not an array");
 			}
 
 			if (field.Details().Mode() == FieldModeSetJson || !field.IsIndex()) {
 				modifyCJSON(itemId, field, values, replUpdates, ctx);
+				if (field.Details().Mode() == FieldModeSetJson) {
+					recalcEmbeddersOnSetObject = true;
+				}
 			} else {
+				const auto& vectorIndex = embedderHelper_.GetVectorIndexForAutoEmbeddingField(field.Index());
+				if (!vectorIndex.empty()) {
+					VariantArray fldData;
+					pl.Get(field.Index(), fldData);
+					if (fldData != values) {
+						embedderHelper_.AddVectorIndexToModify(vectorIndex);
+					}
+				}
 				modifyField(itemId, field, pl, values);
 			}
 		}
-	} catch (...) {
-		insertItemIntoComposite(itemId);
-		throw;
+		if (recalcEmbeddersOnSetObject) {
+			ConstPayload plOld(ns_.payloadType_, rollBackIndexData_.GetPayloadValueBackup());
+			embedderHelper_.RecalcVectorIndexesToModify(pl, plOld);
+		}
+		updateEmbedding(itemId, ctx.rdxContext, pl);
+	} catch (const DuplicatedItemIDError& err) {
+		assertrx_throw(err.ID() < IdType::Max().ToNumber());
+		IdType conflictingItemId = IdType::FromNumber(err.ID());
+		PayloadValue& conflictingItemPV = ns_.items_[conflictingItemId];
+		ns_.throwDuplicatePK(ConstPayload(ns_.payloadType_, conflictingItemPV), itemId, conflictingItemId);
 	}
-	insertItemIntoComposite(itemId);
-	if (rollBackIndexData_.IsPkModified()) {
-		ns_.checkUniquePK(ConstPayload(ns_.payloadType_, pv), ctx.inTransaction, ctx.rdxContext);
-	}
-	rollBack.Disable();
 
+	rollBack.Disable();
 	ns_.markUpdated(IndexOptimization::Partial);
 
 	return rollBackIndexData_.IsPkModified();
 }
 
-void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values, h_vector<updates::UpdateRecord, 2>& replUpdates,
-							   const NsContext& ctx) {
+void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values, UpdatesContainer& replUpdates, const NsContext& ctx) {
 	PayloadValue& plData = ns_.items_[id];
 	const PayloadTypeImpl& pti(*ns_.payloadType_.get());
 	Payload pl(pti, plData);
-	VariantArray cjsonKref;
-	pl.Get(0, cjsonKref);
-	cjsonCache_.Reset();
-
-	const Variant& v = cjsonKref.front();
-	if (v.Type().Is<KeyValueType::String>()) {
-		cjsonCache_.Assign(std::string_view(p_string(v)));
-	}
+	const auto oldTuple = pl.Get(0, 0);
 
 	ItemImpl itemimpl(ns_.payloadType_, plData, ns_.tagsMatcher_);
+	itemimpl.Unsafe(true);
+	itemimpl.CopyIndexedVectorsValuesFrom(ns_.floatVectorsGetterFn(id));
 	itemimpl.ModifyField(field.Tagspath(), values, field.Details().Mode());
 
 	Item item = ns_.newItem();
-	Error err = item.Unsafe().FromCJSON(itemimpl.GetCJSON(true));
+	Error err = item.Unsafe().FromCJSON(itemimpl.GetCJSON(WithTagsMatcher_True));
 	if (!err.ok()) {
-		pl.Set(0, cjsonKref);
+		pl.Set(0, oldTuple);
 		throw err;
 	}
 
@@ -365,7 +570,7 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 		// update the indexes, and then tuple (1,2,...,0)
 		fieldIdx %= ns_.indexes_.firstCompositePos();
 		Index& index = *(ns_.indexes_[fieldIdx]);
-		bool isIndexSparse = index.Opts().IsSparse();
+		const IsSparse isIndexSparse = index.Opts().IsSparse();
 		assertrx(!isIndexSparse || (isIndexSparse && index.Fields().getTagsPathsLength() > 0));
 
 		if (isIndexSparse) {
@@ -385,42 +590,47 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 			}
 		}
 
-		if ((fieldIdx == 0) && (cjsonCache_.Size() > 0)) {
-			bool needClearCache{false};
-			rollBackIndexData_.CjsonChanged();
-			index.Delete(Variant(cjsonCache_.Get()), id, *strHolder, needClearCache);
-			if (needClearCache && index.IsOrdered()) {
-				indexesCacheCleaner.Add(index.SortId());
+		if (isIndexSparse) {
+			try {
+				pl.GetByJsonPath(index.Fields().getTagsPath(0), ns_.krefs, index.KeyType());
+			} catch (const Error&) {
+				ns_.krefs.resize(0);
 			}
+		} else if (index.Opts().IsFloatVector()) {
+			ns_.krefs.clear<false>();
+			const auto count = pl.GetFieldLen(fieldIdx);
+			ns_.krefs.reserve(count);
+			const FloatVectorIndex& fvIdx = static_cast<FloatVectorIndex&>(index);
+			for (unsigned i = 0; i < count; ++i) {
+				ns_.krefs.emplace_back(ns_.getFloatVector({id, i}, fvIdx));
+			}
+		} else if (index.Opts().IsArray()) {
+			pl.Get(fieldIdx, ns_.krefs, Variant::hold);
 		} else {
-			if (isIndexSparse) {
-				try {
-					pl.GetByJsonPath(index.Fields().getTagsPath(0), ns_.krefs, index.KeyType());
-				} catch (const Error&) {
-					ns_.krefs.resize(0);
-				}
-			} else if (index.Opts().IsArray()) {
-				pl.Get(fieldIdx, ns_.krefs, Variant::hold_t{});
-			} else {
-				pl.Get(fieldIdx, ns_.krefs);
-			}
-			if (ns_.krefs == ns_.skrefs) {
-				continue;
-			}
-			bool needClearCache{false};
+			pl.Get(fieldIdx, ns_.krefs);
+		}
+		if (ns_.krefs == ns_.skrefs) {
+			// Do not modify indexes, if documents content was not changed
+			continue;
+		}
+
+		bool needClearCache{false};
+		if (fieldIdx) {
 			rollBackIndexData_.IndexChanged(fieldIdx, index.Opts().IsPK());
-			index.Delete(ns_.krefs, id, *strHolder, needClearCache);
-			if (needClearCache && index.IsOrdered()) {
-				indexesCacheCleaner.Add(index.SortId());
-			}
+		}
+		index.Delete(ns_.krefs, id, MustExist_True, *strHolder, needClearCache);
+		if (needClearCache) {
+			indexesCacheCleaner.Add(index);
 		}
 
 		ns_.krefs.resize(0);
-		bool needClearCache{false};
-		rollBackIndexData_.IndexChanged(fieldIdx, index.Opts().IsPK());
+		const bool isTuple = (fieldIdx == 0);
+		if (!isTuple) {
+			rollBackIndexData_.IndexChanged(fieldIdx, index.Opts().IsPK());
+		}
 		index.Upsert(ns_.krefs, ns_.skrefs, id, needClearCache);
-		if (needClearCache && index.IsOrdered()) {
-			indexesCacheCleaner.Add(index.SortId());
+		if (!isTuple) {
+			indexesCacheCleaner.Add(index);
 		}
 
 		if (!isIndexSparse) {
@@ -431,37 +641,87 @@ void ItemModifier::modifyCJSON(IdType id, FieldData& field, VariantArray& values
 	impl->RealValue() = plData;
 }
 
-void ItemModifier::deleteItemFromComposite(IdType itemId) {
+void ItemModifier::deleteItemFromComposite(IdType itemId, auto& indexesCacheCleaner) {
 	auto strHolder = ns_.strHolder();
-	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
 	const auto firstCompositePos = ns_.indexes_.firstCompositePos();
-	const auto totalIndexes = ns_.indexes_.totalSize();
+	const auto totalIndexes = firstCompositePos + ns_.indexes_.compositeIndexesSize();
 	for (int i = firstCompositePos; i < totalIndexes; ++i) {
 		if (affectedComposites_[i - firstCompositePos]) {
 			bool needClearCache{false};
 			const auto& compositeIdx = ns_.indexes_[i];
-			rollBackIndexData_.IndexAndCJsonChanged(i, compositeIdx->Opts().IsPK());
-			compositeIdx->Delete(Variant(ns_.items_[itemId]), itemId, *strHolder, needClearCache);
-			if (needClearCache && compositeIdx->IsOrdered()) {
-				indexesCacheCleaner.Add(compositeIdx->SortId());
+			rollBackIndexData_.IndexChanged(i, compositeIdx->Opts().IsPK());
+			compositeIdx->Delete(Variant(ns_.items_[itemId]), itemId, MustExist_True, *strHolder, needClearCache);
+			if (needClearCache) {
+				indexesCacheCleaner.Add(*compositeIdx);
 			}
 		}
 	}
 }
 
-void ItemModifier::insertItemIntoComposite(IdType itemId) {
+void ItemModifier::insertItemIntoComposite(IdType itemId, auto& indexesCacheCleaner) {
 	const auto totalIndexes = ns_.indexes_.totalSize();
 	const auto firstCompositePos = ns_.indexes_.firstCompositePos();
 	for (int i = firstCompositePos; i < totalIndexes; ++i) {
+		auto& compositeIdx = *ns_.indexes_[i];
 		if (affectedComposites_[i - firstCompositePos]) {
+			rollBackIndexData_.IndexChanged(i, compositeIdx.Opts().IsPK());
 			bool needClearCache{false};
-			auto& compositeIdx = ns_.indexes_[i];
-			rollBackIndexData_.IndexChanged(i, compositeIdx->Opts().IsPK());
-			compositeIdx->Upsert(Variant(ns_.items_[itemId]), itemId, needClearCache);
-			if (needClearCache && compositeIdx->IsOrdered()) {
-				ns_.GetIndexesCacheCleaner().Add(compositeIdx->SortId());
+			std::ignore = compositeIdx.Upsert(Variant(ns_.items_[itemId]), itemId, needClearCache);
+			if (needClearCache) {
+				indexesCacheCleaner.Add(compositeIdx);
+			}
+		} else {
+			bool refreshed = compositeIdx.RefreshCompositeKey(Variant(ns_.items_[itemId]), itemId);
+			assertrx_dbg(refreshed);
+			if (!refreshed) [[unlikely]] {
+				logFmt(LogError, "[{}]: Unable to refresh key for {} during update query", ns_.name_, compositeIdx.Name());
 			}
 		}
+	}
+}
+
+static void convertToFloatVector(FloatVectorDimension dim, VariantArray& values) {
+	if (values.empty()) {
+		values.emplace_back(ConstFloatVectorView{});
+		std::ignore = values.MarkArray(false);
+		return;
+	} else if (values.IsNullValue()) {
+		assertrx_dbg(values.size() == 1);
+		values[0] = Variant{ConstFloatVectorView{}};
+		return;
+	}
+	if (values.size() != dim.Value()) [[unlikely]] {
+		throw Error(errParams, "It's not possible to Update float vector index of dimension {} with array of size {}", dim.Value(),
+					values.size());
+	}
+	auto vect = FloatVector::CreateNotInitialized(dim);
+	for (size_t i = 0, s = values.size(); i != s; ++i) {
+		vect.RawData()[i] = values[i].As<double>();
+	}
+	values.clear();
+	values.emplace_back(std::move(vect));
+}
+
+static void convertToFloatVectorArray(FloatVectorDimension dim, VariantArray& values) {
+	if (values.empty()) {
+		return;
+	} else if (values.IsNullValue()) {
+		values.Clear();
+		return;
+	}
+	if (!values[0].Type().IsNumeric()) {
+		for (Variant& v : values) {
+			v.Type().EvaluateOneOf(
+				[](KeyValueType::FloatVector) {},
+				[&](KeyValueType::Tuple) {
+					VariantArray val = v.As<VariantArray>();
+					convertToFloatVectorArray(dim, val);
+					v = Variant{val};
+				},
+				[](auto) { throw Error(errLogic, "Array of vectors allowed for update array float vector index only"); });
+		}
+	} else if (values.IsArrayValue()) {
+		return convertToFloatVector(dim, values);
 	}
 }
 
@@ -469,13 +729,33 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 	assertrx_throw(field.IsIndex());
 	Index& index = *(ns_.indexes_[field.Index()]);
 	if (!index.Opts().IsSparse() && field.Details().Mode() == FieldModeDrop /*&&
-		!(field.arrayIndex() != IndexValueType::NotSet || field.tagspath().back().IsArrayNode())*/) {	 // TODO #1218 allow to drop array fields
+		!(field.ArrayIndex() != IndexValueType::NotSet || field.tagspath().back().IsArrayNode())*/)  [[unlikely]]{	 // TODO #1218 allow to drop array fields
 		throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
 	}
 
-	assertrx(!index.Opts().IsSparse() || (index.Opts().IsSparse() && index.Fields().getTagsPathsLength() > 0));
-	if (!index.Opts().IsArray() && values.IsArrayValue()) {
-		throw Error(errParams, "It's not possible to Update single index fields with arrays!");
+	if (index.IsFloatVector()) {
+		if (index.Opts().IsArray()) {
+			convertToFloatVectorArray(static_cast<FloatVectorIndex&>(index).Dimension(), values);
+		} else if (values.IsArrayValue() || values.IsNullValue() || values.empty()) {
+			if (field.IsUpdateArrayPart()) {
+				throw Error(errLogic, "It's not possible to update float_vector element with {} vlaue",
+							values.IsArrayValue()  ? "array"
+							: values.IsNullValue() ? "null"
+												   : "empty");
+			}
+			convertToFloatVector(static_cast<FloatVectorIndex&>(index).Dimension(), values);
+		}
+	}
+
+	assertrx_throw(!index.Opts().IsSparse() || index.Fields().getTagsPathsLength() > 0);
+	if (!index.Opts().IsArray()) {
+		if (values.IsArrayValue()) [[unlikely]] {
+			throw Error(errParams, "It's not possible to Update single index fields with arrays!");
+		}
+
+		if (!index.IsFloatVector() && field.TagspathWithLastIndex().back().IsTagIndex()) [[unlikely]] {
+			throw Error(errParams, "Can't Update non-array index fields using array index");
+		}
 	}
 
 	if (index.Opts().GetCollateMode() == CollateUTF8) {
@@ -487,172 +767,276 @@ void ItemModifier::modifyField(IdType itemId, FieldData& field, Payload& pl, Var
 	auto strHolder = ns_.strHolder();
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
 
-	if (field.IsIndex()) {
-		modifyIndexValues(itemId, field, values, pl);
+	bool requiresTupleUpdate = index.Opts().IsSparse() || index.Opts().IsArray() || index.KeyType().Is<KeyValueType::Uuid>();
+	// We should modify CJSON for any default value #1837
+	requiresTupleUpdate = requiresTupleUpdate || pl.HasDefaultValue(field.Index());
+	if (!requiresTupleUpdate && index.IsFloatVector()) {
+		// If float vector is changing it's size, than we have to perform tuple update, to handle null and missing values properly
+		for (Variant& key : values) {
+			std::ignore = key.convert(KeyValueType::FloatVector{});
+		}
+		assertrx_throw(values.size() <= 1);
+		const auto oldSize = pl.Get(field.Index(), 0).As<ConstFloatVectorView>().Dimension();
+		const auto newSize = values.empty() ? FloatVectorDimension() : values[0].As<ConstFloatVectorView>().Dimension();
+		requiresTupleUpdate = (oldSize != newSize);
 	}
 
-	if (index.Opts().IsSparse() || index.Opts().IsArray() || index.KeyType().Is<KeyValueType::Uuid>()) {
+	modifyIndexValues(itemId, field, values, pl);
+
+	if (requiresTupleUpdate) {
 		ItemImpl item(ns_.payloadType_, *(pl.Value()), ns_.tagsMatcher_);
 		Variant oldTupleValue = item.GetField(0);
-		oldTupleValue.EnsureHold();
+		std::ignore = oldTupleValue.EnsureHold();
+
+		item.ModifyField(field.TagspathWithLastIndex(), values, field.Details().Mode());
+
 		bool needClearCache{false};
 		auto& tupleIdx = ns_.indexes_[0];
-		tupleIdx->Delete(oldTupleValue, itemId, *strHolder, needClearCache);
-		Variant tupleValue;
-		std::exception_ptr exception;
-		try {
-			item.ModifyField(field.TagspathWithLastIndex(), values, field.Details().Mode());
-		} catch (...) {
-			exception = std::current_exception();
-		}
-		tupleValue = tupleIdx->Upsert(item.GetField(0), itemId, needClearCache);
-		if (needClearCache && tupleIdx->IsOrdered()) {
-			indexesCacheCleaner.Add(tupleIdx->SortId());
+		tupleIdx->Delete(oldTupleValue, itemId, MustExist_True, *strHolder, needClearCache);
+		auto tupleValue = tupleIdx->Upsert(item.GetField(0), itemId, needClearCache);
+		if (needClearCache) {
+			indexesCacheCleaner.Add(*tupleIdx);
 		}
 		pl.Set(0, std::move(tupleValue));
-		if (exception) {
-			std::rethrow_exception(exception);
-		}
 	}
 }
 
 void ItemModifier::modifyIndexValues(IdType itemId, const FieldData& field, VariantArray& values, Payload& pl) {
 	Index& index = *(ns_.indexes_[field.Index()]);
-	if (values.IsNullValue() && !index.Opts().IsArray()) {
+	if (values.IsNullValue() && !index.Opts().IsArray()) [[unlikely]] {
 		throw Error(errParams, "Non-array index fields cannot be set to null!");
+	}
+	if (!index.Opts().IsSparse() && values.IsArrayValue() && std::ranges::any_of(values, [](const Variant& v) { return v.IsNullValue(); }))
+		[[unlikely]] {
+		throw Error(errParams, "Non-sparse indexes cannot contain null-values inside arrays");
 	}
 	auto strHolder = ns_.strHolder();
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
-	bool updateArrayPart = field.ArrayIndex() >= 0;
-	bool isForAllItems = false;
-	for (const auto& tag : field.Tagspath()) {
-		if (tag.IsArrayNode()) {
-			updateArrayPart = true;
-		}
-		if (tag.IsForAllItems()) {
-			isForAllItems = true;
-			continue;
-		}
-		if (isForAllItems && tag.IsWithIndex()) {
-			throw Error(errParams, "Expressions like 'field[*].field[1]=10' are supported for sparse indexes/non-index fields only");
-		}
+	if (field.IsForAllItems() && index.Opts().IsArray() && index.IsFloatVector()) {
+		throw Error(errParams, "Cannot update several values of float vector index");  // TODO maybe realize this
 	}
 
 	ns_.krefs.resize(0);
 	for (Variant& key : values) {
-		key.convert(index.KeyType());
+		std::ignore = key.convert(index.KeyType());
 	}
 
-	if (index.Opts().IsArray() && updateArrayPart && !index.Opts().IsSparse()) {
-		if (!values.IsArrayValue() && values.empty()) {
+	if (index.Opts().IsArray() && field.IsUpdateArrayPart() && !index.Opts().IsSparse()) {
+		if (!values.IsArrayValue() && values.empty()) [[unlikely]] {
 			throw Error(errParams, "Cannot update array item with an empty value");	 // TODO #1218 maybe delete this
 		}
+		if (field.IsForAllItems() && index.IsFloatVector()) {
+			throw Error(errParams, "Cannot update several values of float vector index");  // TODO maybe realize this
+		}
 		int offset = -1, length = -1;
-		isForAllItems = false;
-		for (const auto& tag : field.Tagspath()) {	// TODO: Move to FieldEntry?
-			if (tag.IsForAllItems()) {
-				isForAllItems = true;
-				continue;
-			}
-			if (isForAllItems && tag.IsWithIndex()) {
-				throw Error(errParams, "Expressions like 'field[*].field[1]=10' are supported for sparse indexes/non-index fields only");
+		ns_.skrefs = pl.GetIndexedArrayData(field.TagspathWithLastIndex(), field.Index(), index.IsFloatVector(), offset, length);
+		if (index.IsFloatVector()) {
+			const auto& fvIndex = static_cast<FloatVectorIndex&>(index);
+			for (size_t i = 0, s = ns_.skrefs.size(); i < s; ++i) {
+				auto& value = ns_.skrefs[i];
+				const ConstFloatVectorView view{value};
+				if (view.IsEmpty()) {
+					continue;
+				}
+				assertrx_dbg(view.IsStripped());
+				value = Variant(ns_.getFloatVector(FloatVectorId(itemId, i), fvIndex));
 			}
 		}
-
-		ns_.skrefs = pl.GetIndexedArrayData(field.TagspathWithLastIndex(), field.Index(), offset, length);
-		if (offset < 0 || length < 0) {
+		if (offset < 0 || length < 0) [[unlikely]] {
 			const auto& path = field.TagspathWithLastIndex();
 			std::string indexesStr;
-			for (auto& p : path) {
-				if (p.Index() >= 0) {
-					if (indexesStr.size()) {
-						indexesStr.append(",");
-					}
-					indexesStr.append(std::to_string(p.Index()));
+			for (const auto& p : path) {
+				if (p.IsTagIndexNotAll()) {
+					indexesStr += '[';
+					indexesStr.append(std::to_string(p.GetTagIndex().AsNumber()));
+					indexesStr += ']';
 				}
 			}
-			throw Error(errParams, "Requested array's index was not found: [%s]", indexesStr);
+			throw Error(errParams, "Requested array's index was not found: {}", indexesStr);
 		}
-		if (field.ArrayIndex() != IndexValueType::NotSet && field.ArrayIndex() >= length) {
-			throw Error(errLogic, "Array index is out of range: [%d/%d]", field.ArrayIndex(), length);
+
+		if (ns_.skrefs == values) {
+			// Index value was not changed
+			return;
+		}
+		if (index.IsFloatVector() && ns_.skrefs.size() != values.size()) {
+			throw Error(errParams, "Cannot update several values of float vector index");  // TODO maybe realize this #2468
 		}
 
 		if (!ns_.skrefs.empty()) {
 			bool needClearCache{false};
 			rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
-			index.Delete(ns_.skrefs.front(), itemId, *strHolder, needClearCache);
-			if (needClearCache && index.IsOrdered()) {
-				indexesCacheCleaner.Add(index.SortId());
+
+			index.Delete(ns_.skrefs, itemId, MustExist_True, *strHolder, needClearCache);
+			if (needClearCache) {
+				indexesCacheCleaner.Add(index);
 			}
 		}
 
 		bool needClearCache{false};
 		rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
 		index.Upsert(ns_.krefs, values, itemId, needClearCache);
-		if (needClearCache && index.IsOrdered()) {
-			indexesCacheCleaner.Add(index.SortId());
+		if (needClearCache) {
+			indexesCacheCleaner.Add(index);
 		}
 
-		if (isForAllItems) {
+		if (field.IsForAllItems()) {
 			for (int i = offset, end = offset + length; i < end; ++i) {
 				pl.Set(field.Index(), i, ns_.krefs.front());
 			}
-		} else if (field.ArrayIndex() == IndexValueType::NotSet) {
-			// Array may be resized
+		} else {
 			VariantArray v;
 			pl.Get(field.Index(), v);
-			v.erase(v.begin() + offset, v.begin() + offset + length);
-			v.insert(v.begin() + offset, ns_.krefs.begin(), ns_.krefs.end());
+			size_t sizeDiff = 0;
+			// Array may be resized
+			if (size_t(length) < ns_.krefs.size()) {
+				sizeDiff = ns_.krefs.size() - length;
+				std::ignore = v.insert(v.begin() + offset, ns_.krefs.begin(), ns_.krefs.begin() + sizeDiff);
+			} else if (size_t(length) > ns_.krefs.size()) {
+				std::ignore = v.erase(v.cbegin() + offset, v.cbegin() + offset + length - ns_.krefs.size());
+			}
+			std::ignore = std::copy(ns_.krefs.begin() + sizeDiff, ns_.krefs.end(), v.begin() + offset + sizeDiff);
 			pl.Set(field.Index(), v);
-		} else {
-			// Exactly one value was changed
-			pl.Set(field.Index(), offset, ns_.krefs.front());
 		}
 	} else {
 		if (index.Opts().IsSparse()) {
 			pl.GetByJsonPath(field.TagspathWithLastIndex(), ns_.skrefs, index.KeyType());
+		} else if (index.Opts().IsFloatVector()) {
+			const auto count = pl.GetFieldLen(field.Index());
+			ns_.skrefs.clear<false>();
+			ns_.skrefs.reserve(count);
+			const FloatVectorIndex& fvIdx = static_cast<FloatVectorIndex&>(index);
+			for (unsigned i = 0; i < count; ++i) {
+				ns_.skrefs.emplace_back(ns_.getFloatVector({itemId, i}, fvIdx));
+			}
 		} else {
-			pl.Get(field.Index(), ns_.skrefs, Variant::hold_t{});
+			pl.Get(field.Index(), ns_.skrefs, Variant::hold);
 		}
 
 		// Required when updating index array field with several tagpaths
 		VariantArray concatValues;
 		int offset = -1, length = -1;
-		pl.GetIndexedArrayData(field.TagspathWithLastIndex(), field.Index(), offset, length);
+		if (index.Opts().IsArray() && !field.IsUpdateArrayPart()) {
+			pl.GetIndexedArrayParams(field.TagspathWithLastIndex(), field.Index(), index.IsFloatVector(), offset, length);
+		}
 		const bool kConcatIndexValues =
-			index.Opts().IsArray() && !updateArrayPart &&
-			(length < int(ns_.skrefs.size()));	//  (length < int(ns_.skrefs.size()) - condition to avoid coping
+			index.Opts().IsArray() && !field.IsUpdateArrayPart() &&
+			(length < int(ns_.skrefs.size()));	//  (length < int(ns_.skrefs.size()) - condition to avoid copying
 												//  when length and ns_.skrefs.size() are equal; then concatValues == values
 		if (kConcatIndexValues) {
 			if (offset < 0 || length < 0) {
 				concatValues = ns_.skrefs;
-				concatValues.insert(concatValues.end(), values.begin(), values.end());
+				std::ignore = concatValues.insert(concatValues.cend(), values.begin(), values.end());
 			} else {
-				concatValues.insert(concatValues.end(), ns_.skrefs.begin(), ns_.skrefs.begin() + offset);
-				concatValues.insert(concatValues.end(), values.begin(), values.end());
-				concatValues.insert(concatValues.end(), ns_.skrefs.begin() + offset + length, ns_.skrefs.end());
+				std::ignore = concatValues.insert(concatValues.cend(), ns_.skrefs.begin(), ns_.skrefs.begin() + offset);
+				std::ignore = concatValues.insert(concatValues.cend(), values.begin(), values.end());
+				std::ignore = concatValues.insert(concatValues.cend(), ns_.skrefs.begin() + offset + length, ns_.skrefs.end());
 			}
 		}
 
-		if (!ns_.skrefs.empty()) {
-			bool needClearCache{false};
-			rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
-			index.Delete(ns_.skrefs, itemId, *strHolder, needClearCache);
-			if (needClearCache && index.IsOrdered()) {
-				indexesCacheCleaner.Add(index.SortId());
-			}
+		if (ns_.skrefs == (kConcatIndexValues ? concatValues : values)) {
+			// Index value was not changed
+			return;
 		}
 
 		bool needClearCache{false};
 		rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
+		index.Delete(ns_.skrefs, itemId, MustExist_True, *strHolder, needClearCache);
+		if (needClearCache) {
+			indexesCacheCleaner.Add(index);
+		}
+
+		rollBackIndexData_.IndexChanged(field.Index(), index.Opts().IsPK());
 		index.Upsert(ns_.krefs, kConcatIndexValues ? concatValues : values, itemId, needClearCache);
-		if (needClearCache && index.IsOrdered()) {
-			indexesCacheCleaner.Add(index.SortId());
+		if (needClearCache) {
+			indexesCacheCleaner.Add(index);
 		}
 		if (!index.Opts().IsSparse()) {
 			pl.Set(field.Index(), ns_.krefs);
 		}
 	}
+}
+
+void ItemModifier::getEmbeddingData(const Payload& pl, const UpsertEmbedder& embedder, std::vector<VariantArray>& data) const {
+	VariantArray fldData;
+	data.resize(0);
+	ns_.verifyEmbeddingFields(embedder.Fields(), embedder.FieldName(), "automatically embed value in");
+	for (const auto& field : embedder.Fields()) {
+		int idx = 0;
+		if (!ns_.tryGetIndexByName(field, idx)) [[unlikely]] {
+			throw Error{errConflict, "Configuration 'embedding:upsert_embedder' configured with invalid base field name '{}'", field};
+		}
+		pl.Get(idx, fldData);
+		data.push_back(std::move(fldData));
+	}
+}
+
+std::vector<std::pair<int, std::vector<VariantArray>>> ItemModifier::getEmbeddersSourceData(const Payload& pl) const {
+	std::vector<std::pair<int, std::vector<VariantArray>>> data;
+	for (int field = 1, numFields = ns_.payloadType_.NumFields(); field < numFields; ++field) {
+		if (ns_.payloadType_.Field(field).UpsertEmbedder()) {
+			data.push_back({field, {}});
+			getEmbeddingData(pl, *ns_.payloadType_.Field(field).UpsertEmbedder(), data.back().second);
+		}
+	}
+	return data;
+}
+
+void ItemModifier::updateEmbedding(IdType itemId, const RdxContext& rdxContext, Payload& pl) {
+	std::vector<std::pair<std::string, VariantArray>> source;
+	std::vector<VariantArray> updatedEmbeddingData;
+
+	const auto& vectorIndexToModify = embedderHelper_.GetVectorIndexesToModify();
+
+	for (auto index : vectorIndexToModify) {
+		if (embedderHelper_.TestSkipVectorIndex(index)) {
+			continue;
+		}
+		const auto& embedder = *ns_.payloadType_.Field(index).UpsertEmbedder();
+
+		source.resize(0);
+
+		for (const auto& fld : embedder.Fields()) {
+			VariantArray data;
+			pl.Get(fld, data);
+			source.emplace_back(fld, std::move(data));
+		}
+
+		// ToDo in real life, work with several embedded devices requires asynchrony. Now we support only one
+		h_vector<FloatVector, 1> products;
+		embedder.Calculate(rdxContext, std::span{&source, 1}, products);
+
+		VariantArray krs;
+		for (const auto& p : products) {
+			krs.emplace_back(ConstFloatVectorView{p});
+		}
+
+		UpdateEntry entry(embedder.FieldName(), {}, FieldModifyMode::FieldModeSet);
+		FieldData fldData(entry, ns_, affectedComposites_);
+		modifyField(itemId, fldData, pl, krs);
+	}
+}
+
+void ItemModifier::IndexRollBack::Reset(const NamespaceImpl& ns, IdType itemId, const PayloadValue& pv) {
+	pvSave_ = pv;
+	pvSave_.Clone();
+	floatVectorsHolder_ = FloatVectorsHolderVector();
+	Payload pl{ns.payloadType_, pvSave_};
+	VariantArray buf;
+	for (auto& [idxData, fvVariants] : ns.floatVectorsGetterFn(itemId)(ns.payloadType_, ns.items_[itemId], ns.tagsMatcher_)) {
+		buf.clear<false>();
+		buf.reserve(fvVariants.size());
+		for (auto& fvVar : fvVariants) {
+			if (floatVectorsHolder_.Add(FloatVector{std::move(fvVar)})) {
+				buf.emplace_back(floatVectorsHolder_.Back());
+			} else {
+				buf.emplace_back(ConstFloatVectorView{});
+			}
+		}
+		pl.Set(idxData.ptField, buf);
+	}
+	std::fill(data_.begin(), data_.end(), false);
+	pkModified_ = false;
 }
 
 }  // namespace reindexer

@@ -3,17 +3,22 @@
 #include "client/itemimpl.h"
 #include "client/namespace.h"
 #include "client/rpcclient.h"
-#include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/p_string.h"
+#include "core/query/query_impl.h"
 #include "net/cproto/coroclientconnection.h"
 
 namespace reindexer::client {
 
 CoroTransaction::~CoroTransaction() {
 	if (!IsFree()) {
-		getConn()->Call({net::cproto::kCmdRollbackTx, i_.requestTimeout_, i_.execTimeout_, lsn_t(), -1, ShardingKeyType::NotSetShard,
-						 nullptr, false, i_.sessionTs_},
-						i_.txId_);
+		try {
+			std::ignore = getConn()->Call({net::cproto::kCmdRollbackTx, i_.requestTimeout_, i_.execTimeout_, lsn_t(), -1,
+										   ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+										  i_.txId_);
+		} catch (std::exception& e) {
+			fprintf(stderr, "reindexer error: unexpected exception in ~CoroTransaction: %s\n", e.what());
+			assertrx_dbg(false);
+		}
 	}
 }
 
@@ -42,13 +47,13 @@ Error CoroTransaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 		.Status();
 }
 
-Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
+Error CoroTransaction::Modify(impl::Query&& query, lsn_t lsn) {
 	if (!i_.rpcClient_) {
 		return Error(errLogic, "Connection pointer in transaction is nullptr.");
 	}
 	WrSerializer ser;
 	query.Serialize(ser);
-	switch (query.type_) {
+	switch (query.Type()) {
 		case QueryUpdate: {
 			return i_.rpcClient_->conn_
 				.Call({cproto::kCmdUpdateQueryTx, i_.requestTimeout_, i_.execTimeout_, lsn, -1, ShardingKeyType::NotSetShard, nullptr,
@@ -66,7 +71,7 @@ Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
 		case QuerySelect:
 		case QueryTruncate:
 		default:
-			return Error(errParams, "Incorrect query type in transaction modify %d", query.type_);
+			return Error(errParams, "Incorrect query type in transaction modify {}", int(query.Type()));
 	}
 }
 
@@ -111,9 +116,13 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 
 		CoroQueryResults qr;
 		InternalRdxContext ctx = InternalRdxContext{}.WithTimeout(i_.execTimeout_).WithShardId(ShardingKeyType::ProxyOff, false);
-		err = i_.rpcClient_->Select(Query(i_.ns_->name).Limit(0), qr, ctx);
-		if (!err.ok()) {
-			return Error(errLogic, "Can't update TagsMatcher");
+		{
+			impl::Query query(i_.ns_->name);
+			query.Limit(0);
+			err = i_.rpcClient_->Select(query, qr, ctx);
+			if (!err.ok()) {
+				return Error(errLogic, "Can't update TagsMatcher");
+			}
 		}
 
 		auto nsTm = i_.ns_->GetTagsMatcher();
@@ -204,22 +213,23 @@ Item CoroTransaction::NewItem(ClientT* client) {
 template Item CoroTransaction::NewItem<ReindexerImpl>(ReindexerImpl* client);
 
 CoroTransaction::Impl::Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout,
-							std::chrono::milliseconds execTimeout, std::shared_ptr<Namespace>&& ns, int emmiterServerId) noexcept
+							std::chrono::milliseconds execTimeout, std::shared_ptr<Namespace>&& ns, int emitterServerId) noexcept
 	: txId_(txId),
 	  rpcClient_(rpcClient),
 	  requestTimeout_(requestTimeout),
 	  execTimeout_(execTimeout),
 	  localTm_(std::make_unique<TagsMatcher>(ns->GetTagsMatcher())),
 	  ns_(std::move(ns)),
-	  emmiterServerId_(emmiterServerId) {
-	assert(rpcClient_);
-	assert(ns_);
+	  emitterServerId_(emitterServerId) {
+	assertrx(rpcClient_);
+	assertrx(ns_);
 	const auto sessinTsOpt = rpcClient_->conn_.LoginTs();
 	if (sessinTsOpt.has_value()) {
-		sessionTs_ = sessinTsOpt.value();
+		sessionTs_ = *sessinTsOpt;
 	}
 }
 
+// NOLINTNEXTLINE (bugprone-throw-keyword-missing)
 CoroTransaction::Impl::Impl(Error&& status) noexcept : status_(std::move(status)), localTm_(std::make_unique<TagsMatcher>()) {}
 
 CoroTransaction::Impl::Impl(CoroTransaction::Impl&&) noexcept = default;

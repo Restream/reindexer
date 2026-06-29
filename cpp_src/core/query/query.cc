@@ -1,94 +1,29 @@
 #include "core/query/query.h"
+#include <algorithm>
+#include <string>
+#include "core/enums.h"
+#include "core/function/function.h"
 #include "core/query/dsl/dslencoder.h"
 #include "core/query/dsl/dslparser.h"
-#include "core/query/sql/sqlencoder.h"
+#include "core/query/query_impl.h"
+#include "core/query/queryentry.h"
+#include "core/query/sql/sql_formatters.h"
 #include "core/query/sql/sqlparser.h"
-#include "core/type_consts_helpers.h"
-#include "tools/serializer.h"
+#include "core/type_consts.h"
 
+namespace {
+constexpr std::string_view kOrNotOpErrorMsg =
+	"'OR NOT' operation is not supported yet. Use version with brackets instead: 'OR ( NOT ... )'";
+}  // namespace
+
+#if 0	// TODO
 namespace reindexer {
 
 using namespace std::string_view_literals;
 
-void Query::checkSubQuery() const {
-	if rx_unlikely (type_ != QuerySelect) {
-		throw Error{errQueryExec, "Subquery should be select"};
-	}
-	if rx_unlikely (!joinQueries_.empty()) {
-		throw Error{errQueryExec, "Join cannot be in subquery"};
-	}
-	if rx_unlikely (!mergeQueries_.empty()) {
-		throw Error{errQueryExec, "Merge cannot be in subquery"};
-	}
-	if rx_unlikely (!subQueries_.empty()) {
-		throw Error{errQueryExec, "Subquery cannot be in subquery"};
-	}
-	if rx_unlikely (!selectFunctions_.empty()) {
-		throw Error{errQueryExec, "Select function cannot be in subquery"};
-	}
-	if rx_unlikely (!updateFields_.empty()) {
-		throw Error{errQueryExec, "Subquery cannot update"};
-	}
-	if rx_unlikely (withRank_) {
-		throw Error{errQueryExec, "Subquery cannot request rank"};
-	}
-	if rx_unlikely (isSystemNamespaceNameFast(NsName())) {
-		throw Error{errQueryExec, "Queries to system namespaces ('%s') are not supported inside subquery", NsName()};
-	}
-	if rx_unlikely (IsWALQuery()) {
-		throw Error{errQueryExec, "WAL queries are not supported inside subquery"};
-	}
-}
-
-void Query::checkSubQueryNoData() const {
-	if rx_unlikely (!aggregations_.empty()) {
-		throw Error{errQueryExec, "Aggregation cannot be in subquery with condition Any or Empty"};
-	}
-	if rx_unlikely (HasLimit() && Limit() != 0) {
-		throw Error{errQueryExec, "Limit cannot be in subquery with condition Any or Empty"};
-	}
-	if rx_unlikely (HasOffset()) {
-		throw Error{errQueryExec, "Offset cannot be in subquery with condition Any or Empty"};
-	}
-	if rx_unlikely (calcTotal_ != ModeNoTotal) {
-		throw Error{errQueryExec, "Total request cannot be in subquery with condition Any or Empty"};
-	}
-	if rx_unlikely (!selectFilter_.empty()) {
-		throw Error{errQueryExec, "Select fields filter cannot be in subquery with condition Any or Empty"};
-	}
-	checkSubQuery();
-}
-
-void Query::checkSubQueryWithData() const {
-	if rx_unlikely ((aggregations_.size() + selectFilter_.size() + (calcTotal_ == ModeNoTotal ? 0 : 1)) != 1) {
-		throw Error{errQueryExec, "Subquery should contain exactly one of aggregation, select field filter or total request"};
-	}
-	if (!aggregations_.empty()) {
-		switch (aggregations_[0].Type()) {
-			case AggDistinct:
-			case AggUnknown:
-			case AggFacet:
-				throw Error{errQueryExec, "Aggregation %s cannot be in subquery", AggTypeToStr(aggregations_[0].Type())};
-			case AggMin:
-			case AggMax:
-			case AggAvg:
-			case AggSum:
-			case AggCount:
-			case AggCountCached:
-				break;
-		}
-	}
-	checkSubQuery();
-}
-
-void Query::VerifyForUpdate() const {
-	if (!subQueries_.empty()) {
-		throw Error{errQueryExec, "UPDATE and DELETE query cannot contain subqueries"};
-	}
-	if (!joinQueries_.empty()) {
-		throw Error{errQueryExec, "UPDATE and DELETE query cannot contain join"};
-	}
-}
+Query::Query(Query&& other) noexcept = default;
+Query::Query(const Query& other) = default;
+Query::~Query() = default;
 
 bool Query::operator==(const Query& obj) const {
 	if (entries_ != obj.entries_ || aggregations_ != obj.aggregations_ ||
@@ -100,7 +35,8 @@ bool Query::operator==(const Query& obj) const {
 		return false;
 	}
 	for (size_t i = 0, s = forcedSortOrder_.size(); i < s; ++i) {
-		if (forcedSortOrder_[i].RelaxCompare<WithString::Yes, NotComparable::Return>(obj.forcedSortOrder_[i]) != ComparationResult::Eq) {
+		if (forcedSortOrder_[i].RelaxCompare<WithString::Yes, NotComparable::Return, kDefaultNullsHandling>(obj.forcedSortOrder_[i]) !=
+			ComparationResult::Eq) {
 			return false;
 		}
 	}
@@ -116,673 +52,628 @@ bool JoinedQuery::operator==(const JoinedQuery& obj) const {
 	}
 	return Query::operator==(obj);
 }
-Query Query::FromSQL(std::string_view q) { return SQLParser::Parse(q); }
-
-Query Query::FromJSON(std::string_view dsl) {
-	Query q;
-	dsl::Parse(dsl, q);
-	return q;
-}
-
-std::string Query::GetJSON() const { return dsl::toDsl(*this); }
-
-WrSerializer& Query::GetSQL(WrSerializer& ser, bool stripArgs) const { return SQLEncoder(*this).GetSQL(ser, stripArgs); }
-WrSerializer& Query::GetSQL(WrSerializer& ser, QueryType realType, bool stripArgs) const {
-	return SQLEncoder(*this, realType).GetSQL(ser, stripArgs);
-}
-
-std::string Query::GetSQL(bool stripArgs) const {
-	WrSerializer ser;
-	return std::string(GetSQL(ser, stripArgs).Slice());
-}
-
-std::string Query::GetSQL(QueryType realType) const {
-	WrSerializer ser;
-	return std::string(SQLEncoder(*this, realType).GetSQL(ser, false).Slice());
-}
-
-Query& Query::EqualPositions(EqualPosition_t&& ep) & {
-	if (ep.size() < 2) {
-		throw Error(errParams, "EqualPosition must have at least 2 field. Fields: [%s]", ep.size() == 1 ? ep[0] : "");
-	}
-	QueryEntriesBracket* bracketPointer = entries_.LastOpenBracket();
-
-	if (bracketPointer == nullptr) {
-		entries_.equalPositions.emplace_back(std::move(ep));
-	} else {
-		bracketPointer->equalPositions.emplace_back(std::move(ep));
-	}
-	return *this;
-}
-
-void Query::Join(JoinedQuery&& jq) & {
-	switch (jq.joinType) {
-		case JoinType::Merge:
-			if (nextOp_ != OpAnd) {
-				throw Error(errParams, "Merge query with %s operation", OpTypeToStr(nextOp_));
-			}
-			mergeQueries_.emplace_back(std::move(jq));
-			return;
-		case JoinType::LeftJoin:
-			if (nextOp_ != OpAnd) {
-				throw Error(errParams, "Left join with %s operation", OpTypeToStr(nextOp_));
-			}
-			break;
-		case JoinType::OrInnerJoin:
-			if (nextOp_ == OpNot) {
-				throw Error(errParams, "Or inner join with %s operation", OpTypeToStr(nextOp_));
-			}
-			nextOp_ = OpOr;
-			[[fallthrough]];
-		case JoinType::InnerJoin:
-			entries_.Append(nextOp_, JoinQueryEntry(joinQueries_.size()));
-			nextOp_ = OpAnd;
-			break;
-	}
-	joinQueries_.emplace_back(std::move(jq));
-	adoptNested(joinQueries_.back());
-}
-
-void Query::checkSetObjectValue(const Variant& value) const {
-	if (!value.Type().Is<KeyValueType::String>()) {
-		throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueType::String with JSON-content",
-					value.Type().Name());
-	}
-}
-
-VariantArray Query::deserializeValues(Serializer& ser, CondType cond) const {
-	VariantArray values;
-	auto cnt = ser.GetVarUint();
-	if (cond == CondDWithin) {
-		if (cnt != 3) {
-			throw Error(errParseBin, "Expected point and distance for DWithin");
-		}
-		VariantArray point;
-		point.reserve(2);
-		point.emplace_back(ser.GetVariant().EnsureHold());
-		point.emplace_back(ser.GetVariant().EnsureHold());
-		values.reserve(2);
-		values.emplace_back(std::move(point));
-		values.emplace_back(ser.GetVariant().EnsureHold());
-	} else {
-		values.reserve(cnt);
-		while (cnt--) {
-			values.emplace_back(ser.GetVariant().EnsureHold());
-		}
-	}
-	return values;
-}
-
-void Query::deserializeJoinOn(Serializer&) { throw Error(errLogic, "Unexpected call. JoinOn actual only for JoinQuery"); }
-
-void Query::deserialize(Serializer& ser, bool& hasJoinConditions) {
-	bool end = false;
-	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
-	while (!end && !ser.Eof()) {
-		QueryItemType qtype = QueryItemType(ser.GetVarUint());
-		switch (qtype) {
-			case QueryCondition: {
-				const auto fieldName = ser.GetVString();
-				const OpType op = OpType(ser.GetVarUint());
-				const CondType condition = CondType(ser.GetVarUint());
-				VariantArray values = deserializeValues(ser, condition);
-				entries_.Append<QueryEntry>(op, std::string{fieldName}, condition, std::move(values));
-				break;
-			}
-			case QueryBetweenFieldsCondition: {
-				OpType op = OpType(ser.GetVarUint());
-				std::string firstField{ser.GetVString()};
-				CondType condition = static_cast<CondType>(ser.GetVarUint());
-				std::string secondField{ser.GetVString()};
-				entries_.Append<BetweenFieldsQueryEntry>(op, std::move(firstField), condition, std::move(secondField));
-				break;
-			}
-			case QueryAlwaysFalseCondition: {
-				const OpType op = OpType(ser.GetVarUint());
-				entries_.Append<AlwaysFalse>(op);
-				break;
-			}
-			case QueryAlwaysTrueCondition: {
-				const OpType op = OpType(ser.GetVarUint());
-				entries_.Append<AlwaysTrue>(op);
-				break;
-			}
-			case QueryJoinCondition: {
-				uint64_t type = ser.GetVarUint();
-				assertrx(type != JoinType::LeftJoin);
-				JoinQueryEntry joinEntry(ser.GetVarUint());
-				hasJoinConditions = true;
-				// NOLINTNEXTLINE(performance-move-const-arg)
-				entries_.Append((type == JoinType::OrInnerJoin) ? OpOr : OpAnd, std::move(joinEntry));
-				break;
-			}
-			case QueryAggregation: {
-				const AggType type = static_cast<AggType>(ser.GetVarUint());
-				size_t fieldsCount = ser.GetVarUint();
-				h_vector<std::string, 1> fields;
-				fields.reserve(fieldsCount);
-				while (fieldsCount--) {
-					fields.emplace_back(std::string(ser.GetVString()));
-				}
-				auto pos = ser.Pos();
-				bool aggEnd = false;
-				aggregations_.emplace_back(type, std::move(fields));
-				auto& ae = aggregations_.back();
-				while (!ser.Eof() && !aggEnd) {
-					auto atype = ser.GetVarUint();
-					switch (atype) {
-						case QueryAggregationSort: {
-							auto fieldName = ser.GetVString();
-							ae.AddSortingEntry({std::string(fieldName), ser.GetVarUint() != 0});
-							break;
-						}
-						case QueryAggregationLimit:
-							ae.SetLimit(ser.GetVarUint());
-							break;
-						case QueryAggregationOffset:
-							ae.SetOffset(ser.GetVarUint());
-							break;
-						default:
-							ser.SetPos(pos);
-							aggEnd = true;
-					}
-					pos = ser.Pos();
-				}
-				break;
-			}
-			case QueryDistinct: {
-				const auto fieldName = ser.GetVString();
-				if (!fieldName.empty()) {
-					entries_.Append<QueryEntry>(OpAnd, std::string{fieldName}, QueryEntry::DistinctTag{});
-				}
-				break;
-			}
-			case QuerySortIndex: {
-				SortingEntry sortingEntry;
-				sortingEntry.expression = std::string(ser.GetVString());
-				sortingEntry.desc = bool(ser.GetVarUint());
-				if (sortingEntry.expression.length()) {
-					sortingEntries_.push_back(std::move(sortingEntry));
-				}
-				auto cnt = ser.GetVarUint();
-				if (cnt != 0 && sortingEntries_.size() != 1) {
-					throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
-				}
-				forcedSortOrder_.reserve(cnt);
-				while (cnt--) {
-					forcedSortOrder_.push_back(ser.GetVariant().EnsureHold());
-				}
-				break;
-			}
-			case QueryJoinOn: {
-				deserializeJoinOn(ser);
-				break;
-			}
-			case QueryDebugLevel:
-				Debug(ser.GetVarUint());
-				break;
-			case QueryStrictMode:
-				Strict(StrictMode(ser.GetVarUint()));
-				break;
-			case QueryLimit:
-				count_ = ser.GetVarUint();
-				break;
-			case QueryOffset:
-				start_ = ser.GetVarUint();
-				break;
-			case QueryReqTotal:
-				calcTotal_ = CalcTotalMode(ser.GetVarUint());
-				break;
-			case QuerySelectFilter:
-				selectFilter_.emplace_back(ser.GetVString());
-				break;
-			case QueryEqualPosition: {
-				const unsigned bracketPosition = ser.GetVarUint();
-				const unsigned fieldsCount = ser.GetVarUint();
-				equalPositions.emplace_back(bracketPosition, fieldsCount);
-				for (auto& field : equalPositions.back().second) {
-					field = ser.GetVString();
-				}
-				break;
-			}
-			case QueryExplain:
-				Explain(true);
-				break;
-			case QueryLocal:
-				local_ = true;
-				break;
-			case QueryWithRank:
-				withRank_ = true;
-				break;
-			case QuerySelectFunction:
-				selectFunctions_.emplace_back(ser.GetVString());
-				break;
-			case QueryDropField: {
-				Drop(ser.GetVString());
-				break;
-			}
-			case QueryUpdateFieldV2: {
-				VariantArray val;
-				std::string field(ser.GetVString());
-				bool isArray = ser.GetVarUint();
-				auto numValues = ser.GetVarUint();
-				bool hasExpressions = false;
-				while (numValues--) {
-					hasExpressions = ser.GetVarUint();
-					val.emplace_back(ser.GetVariant().EnsureHold());
-				}
-				Set(std::move(field), std::move(val.MarkArray(isArray)), hasExpressions);
-				break;
-			}
-			case QueryUpdateField: {
-				VariantArray val;
-				std::string field(ser.GetVString());
-				auto numValues = ser.GetVarUint();
-				bool isArray = numValues > 1;
-				bool hasExpressions = false;
-				while (numValues--) {
-					hasExpressions = ser.GetVarUint();
-					val.emplace_back(ser.GetVariant().EnsureHold());
-				}
-				Set(std::move(field), std::move(val.MarkArray(isArray)), hasExpressions);
-				break;
-			}
-			case QueryUpdateObject: {
-				VariantArray val;
-				std::string field(ser.GetVString());
-				bool hasExpressions = false;
-				auto numValues = ser.GetVarUint();
-				val.MarkArray(ser.GetVarUint() == 1);
-				while (numValues--) {
-					hasExpressions = ser.GetVarUint();
-					val.emplace_back(ser.GetVariant().EnsureHold());
-				}
-				SetObject(std::move(field), std::move(val), hasExpressions);
-				break;
-			}
-			case QueryOpenBracket: {
-				OpType op = OpType(ser.GetVarUint());
-				entries_.OpenBracket(op);
-				break;
-			}
-			case QueryCloseBracket:
-				entries_.CloseBracket();
-				break;
-			case QueryEnd:
-				end = true;
-				break;
-			case QuerySubQueryCondition: {
-				OpType op = OpType(ser.GetVarUint());
-				Serializer subQuery{ser.GetVString()};
-				CondType condition = CondType(ser.GetVarUint());
-				VariantArray values = deserializeValues(ser, condition);
-				NextOp(op);
-				Where(Query::Deserialize(subQuery), condition, std::move(values));
-				break;
-			}
-			case QueryFieldSubQueryCondition: {
-				OpType op = OpType(ser.GetVarUint());
-				const auto fieldName = ser.GetVString();
-				CondType condition = CondType(ser.GetVarUint());
-				Serializer subQuery{ser.GetVString()};
-				NextOp(op);
-				Where(fieldName, condition, Query::Deserialize(subQuery));
-				break;
-			}
-			case QueryAggregationSort:
-			case QueryAggregationOffset:
-			case QueryAggregationLimit:
-			default:
-				throw Error(errParseBin, "Unknown type %d while parsing binary buffer", qtype);
-		}
-	}
-	for (auto&& eqPos : equalPositions) {
-		if (eqPos.first == 0) {
-			entries_.equalPositions.emplace_back(std::move(eqPos.second));
-		} else {
-			entries_.Get<QueryEntriesBracket>(eqPos.first - 1).equalPositions.emplace_back(std::move(eqPos.second));
-		}
-	}
-}
-
-void Query::serializeJoinEntries(WrSerializer&) const { throw Error(errLogic, "Unexpected call. JoinEntries actual only for JoinQuery"); }
-
-void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
-	ser.PutVString(NsName());
-	entries_.Serialize(ser, subQueries_);
-
-	if (!(mode & SkipAggregations)) {
-		for (const auto& agg : aggregations_) {
-			ser.PutVarUint(QueryAggregation);
-			ser.PutVarUint(agg.Type());
-			ser.PutVarUint(agg.Fields().size());
-			for (const auto& field : agg.Fields()) {
-				ser.PutVString(field);
-			}
-			for (const auto& se : agg.Sorting()) {
-				ser.PutVarUint(QueryAggregationSort);
-				ser.PutVString(se.expression);
-				ser.PutVarUint(se.desc);
-			}
-			if (agg.Limit() != QueryEntry::kDefaultLimit) {
-				ser.PutVarUint(QueryAggregationLimit);
-				ser.PutVarUint(agg.Limit());
-			}
-			if (agg.Offset() != QueryEntry::kDefaultOffset) {
-				ser.PutVarUint(QueryAggregationOffset);
-				ser.PutVarUint(agg.Offset());
-			}
-		}
-	}
-
-	if (!(mode & SkipSortEntries)) {
-		for (size_t i = 0, size = sortingEntries_.size(); i < size; ++i) {
-			const auto& sortginEntry = sortingEntries_[i];
-			ser.PutVarUint(QuerySortIndex);
-			ser.PutVString(sortginEntry.expression);
-			ser.PutVarUint(sortginEntry.desc);
-			if (i == 0) {
-				int cnt = forcedSortOrder_.size();
-				ser.PutVarUint(cnt);
-				for (auto& kv : forcedSortOrder_) {
-					ser.PutVariant(kv);
-				}
-			} else {
-				ser.PutVarUint(0);
-			}
-		}
-	}
-
-	if (mode & WithJoinEntries) {
-		serializeJoinEntries(ser);
-	}
-
-	for (const auto& equalPoses : entries_.equalPositions) {
-		ser.PutVarUint(QueryEqualPosition);
-		ser.PutVarUint(0);
-		ser.PutVarUint(equalPoses.size());
-		for (const auto& ep : equalPoses) {
-			ser.PutVString(ep);
-		}
-	}
-	for (size_t i = 0; i < entries_.Size(); ++i) {
-		if (entries_.IsSubTree(i)) {
-			const auto& bracket = entries_.Get<QueryEntriesBracket>(i);
-			for (const auto& equalPoses : bracket.equalPositions) {
-				ser.PutVarUint(QueryEqualPosition);
-				ser.PutVarUint(i + 1);
-				ser.PutVarUint(equalPoses.size());
-				for (const auto& ep : equalPoses) {
-					ser.PutVString(ep);
-				}
-			}
-		}
-	}
-
-	if (!(mode & SkipExtraParams)) {
-		ser.PutVarUint(QueryDebugLevel);
-		ser.PutVarUint(debugLevel_);
-
-		if (strictMode_ != StrictModeNotSet) {
-			ser.PutVarUint(QueryStrictMode);
-			ser.PutVarUint(int(strictMode_));
-		}
-	}
-
-	for (const auto& funcText : selectFunctions_) {
-		ser.PutVarUint(QueryItemType::QuerySelectFunction);
-		ser.PutVString(funcText);
-	}
-
-	if (!(mode & SkipLimitOffset)) {
-		if (HasLimit()) {
-			ser.PutVarUint(QueryLimit);
-			ser.PutVarUint(Limit());
-		}
-		if (HasOffset()) {
-			ser.PutVarUint(QueryOffset);
-			ser.PutVarUint(Offset());
-		}
-	}
-
-	if (!(mode & SkipExtraParams)) {
-		if (HasCalcTotal()) {
-			ser.PutVarUint(QueryReqTotal);
-			ser.PutVarUint(CalcTotal());
-		}
-
-		for (const auto& sf : selectFilter_) {
-			ser.PutVarUint(QuerySelectFilter);
-			ser.PutVString(sf);
-		}
-
-		if (explain_) {
-			ser.PutVarUint(QueryExplain);
-		}
-		if (local_) {
-			ser.PutVarUint(QueryLocal);
-		}
-		if (withRank_) {
-			ser.PutVarUint(QueryWithRank);
-		}
-	}
-
-	for (const auto& field : updateFields_) {
-		if (field.Mode() == FieldModeSet) {
-			ser.PutVarUint(QueryUpdateFieldV2);
-			ser.PutVString(field.Column());
-			ser.PutVarUint(field.Values().IsArrayValue());
-			ser.PutVarUint(field.Values().size());
-			for (const Variant& val : field.Values()) {
-				ser.PutVarUint(field.IsExpression());
-				ser.PutVariant(val);
-			}
-		} else if (field.Mode() == FieldModeDrop) {
-			ser.PutVarUint(QueryDropField);
-			ser.PutVString(field.Column());
-		} else if (field.Mode() == FieldModeSetJson) {
-			ser.PutVarUint(QueryUpdateObject);
-			ser.PutVString(field.Column());
-			ser.PutVarUint(field.Values().size());
-			ser.PutVarUint(field.Values().IsArrayValue());
-			for (const Variant& val : field.Values()) {
-				ser.PutVarUint(field.IsExpression());
-				ser.PutVariant(val);
-			}
-		} else {
-			throw Error(errLogic, "Unsupported item modification mode = %d", field.Mode());
-		}
-	}
-
-	ser.PutVarUint(QueryEnd);  // finita la commedia... of root query
-
-	if (!(mode & SkipJoinQueries)) {
-		for (const auto& jq : joinQueries_) {
-			if (!(mode & SkipLeftJoinQueries) || jq.joinType != JoinType::LeftJoin) {
-				ser.PutVarUint(static_cast<int>(jq.joinType));
-				jq.Serialize(ser, WithJoinEntries);
-			}
-		}
-	}
-
-	if (!(mode & SkipMergeQueries)) {
-		for (const auto& mq : mergeQueries_) {
-			ser.PutVarUint(static_cast<int>(mq.joinType));
-			mq.Serialize(ser, (mode | WithJoinEntries) & (~SkipSortEntries));
-		}
-	}
-}
-
-Query Query::Deserialize(Serializer& ser) {
-	Query res(ser.GetVString());
-	bool hasJoinConditions = false;
-	res.deserialize(ser, hasJoinConditions);
-
-	bool nested = false;
-	while (!ser.Eof()) {
-		auto joinType = JoinType(ser.GetVarUint());
-		JoinedQuery q1(std::string(ser.GetVString()));
-		q1.joinType = joinType;
-		q1.deserialize(ser, hasJoinConditions);
-		res.adoptNested(q1);
-		if (joinType == JoinType::Merge) {
-			res.mergeQueries_.emplace_back(std::move(q1));
-			nested = true;
-		} else {
-			Query& q = nested ? res.mergeQueries_.back() : res;
-			if (joinType != JoinType::LeftJoin && !hasJoinConditions) {
-				const size_t joinIdx = res.joinQueries_.size();
-				res.entries_.Append<JoinQueryEntry>((joinType == JoinType::OrInnerJoin) ? OpOr : OpAnd, joinIdx);
-			}
-			q.joinQueries_.emplace_back(std::move(q1));
-			q.adoptNested(q.joinQueries_.back());
-		}
-	}
-	return res;
-}
-
-Query& Query::Join(JoinType joinType, std::string leftField, std::string rightField, CondType cond, OpType op, Query&& qr) & {
-	auto jq = JoinedQuery{joinType, std::move(qr)};
-	jq.joinEntries_.emplace_back(op, cond, std::move(leftField), std::move(rightField));
-	Join(std::move(jq));
-	return *this;
-}
-
-Query& Query::Join(JoinType joinType, std::string leftField, std::string rightField, CondType cond, OpType op, const Query& qr) & {
-	auto jq = JoinedQuery{joinType, qr};
-	jq.joinEntries_.emplace_back(op, cond, std::move(leftField), std::move(rightField));
-	Join(std::move(jq));
-	return *this;
-}
-
-Query& Query::Merge(const Query& q) & {
-	mergeQueries_.emplace_back(JoinType::Merge, q);
-	adoptNested(mergeQueries_.back());
-	return *this;
-}
-
-Query& Query::Merge(Query&& q) & {
-	mergeQueries_.emplace_back(JoinType::Merge, std::move(q));
-	adoptNested(mergeQueries_.back());
-	return *this;
-}
 
 void Query::AddJoinQuery(JoinedQuery&& jq) {
 	adoptNested(jq);
 	joinQueries_.emplace_back(std::move(jq));
 }
 
-Query& Query::SortStDistance(std::string_view field, Point p, bool desc) & {
-	if (field.empty()) {
-		throw Error(errParams, "Field name for ST_Distance can not be empty");
+}  // namespace reindexer
+#endif	// TODO
+
+/// ============================================= TODO remove this
+
+namespace reindexer {
+#define CATCH_INTO(state)                                                \
+	catch (Error & e) {                                                  \
+		state = std::move(e);                                            \
+	}                                                                    \
+	catch (std::exception & e) {                                         \
+		state = std::move(e);                                            \
+	}                                                                    \
+	catch (...) {                                                        \
+		state = Error(errLogic, "Broken query for an unknown reason"sv); \
 	}
-	sortingEntries_.emplace_back(fmt::sprintf("ST_Distance(%s,ST_GeomFromText('point(%.12f %.12f)'))", field, p.X(), p.Y()), desc);
+
+#define CATCH_INTO_STATE CATCH_INTO(state_)
+
+#define CATCH_AND_RETURN_QUERY                                                 \
+	catch (Error & e) {                                                        \
+		return Query{std::move(e)};                                            \
+	}                                                                          \
+	catch (std::exception & e) {                                               \
+		return Query{std::move(e)};                                            \
+	}                                                                          \
+	catch (...) {                                                              \
+		return Query{Error(errLogic, "Broken query for an unknown reason"sv)}; \
+	}
+
+#define CATCH_AND_RETURN_UNEXPECTED                                               \
+	catch (Error & e) {                                                           \
+		return Unexpected{std::move(e)};                                          \
+	}                                                                             \
+	catch (std::exception & e) {                                                  \
+		return Unexpected{Error{errLogic, "Broken query: {}", e.what()}};         \
+	}                                                                             \
+	catch (...) {                                                                 \
+		return Unexpected{Error{errLogic, "Broken query for an unknown reason"}}; \
+	}
+
+// clang-format off
+#define TRY_IF_STATE_OK \
+	if (state_.ok()) [[likely]]{  \
+		try {
+
+#define CATCH_INTO_STATE_AND_RETURN_THIS \
+    } CATCH_INTO_STATE                     \
+	}                                    \
+	return *this;
+// clang-format on
+
+using namespace std::string_view_literals;
+
+Query::Query(Query&& other) noexcept : state_{std::move(other.state_)} {
+	if (state_.ok()) {
+		impl_ = std::move(other.impl_);
+	}
+}
+
+Query::Query(const Query& other) noexcept : state_{other.state_} {
+	if (state_.ok() && other.impl_) {
+		initImpl(*other.impl_);
+	}
+}
+
+Query::Query(impl::Query&& other) noexcept { initImpl(std::move(other)); }
+Query::Query(Error&& err) noexcept : state_{std::move(err)} {
+	assertrx(!state_.ok());	 // TODO _dbg
+}
+
+template <typename... Args>
+void Query::initImpl(Args&&... args) noexcept {
+	try {
+		impl_ = std::make_shared<impl::Query>(std::forward<Args>(args)...);
+	} CATCH_INTO_STATE
+}
+template void Query::initImpl(std::string&&, unsigned&, unsigned&, CalcTotalMode&) noexcept;
+
+Query Query::FromSQL(std::string_view sql) noexcept {
+	try {
+		return Query{impl::Query::FromSQL(sql)};
+	} CATCH_AND_RETURN_QUERY
+}
+
+Query Query::FromJSON(std::string_view dsl) noexcept {
+	try {
+		return Query{impl::Query::FromJSON(dsl)};
+	} CATCH_AND_RETURN_QUERY
+}
+
+Query& Query::ReqTotal() & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().CalcTotal(ModeAccurateTotal);
+	}
+	return *this;
+}
+Query& Query::CachedTotal() & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().CalcTotal(ModeCachedTotal);
+	}
 	return *this;
 }
 
-Query& Query::SortStDistance(std::string_view field1, std::string_view field2, bool desc) & {
-	if (field1.empty() || field2.empty()) {
-		throw Error(errParams, "Fields names for ST_Distance can not be empty");
+Query& Query::Update() & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().Type(QueryUpdate);
 	}
-	sortingEntries_.emplace_back(fmt::sprintf("ST_Distance(%s,%s)", field1, field2), desc);
 	return *this;
 }
 
-void Query::walkNested(bool withSelf, bool withMerged, bool withSubQueries,
-					   const std::function<void(Query& q)>& visitor) noexcept(noexcept(visitor(std::declval<Query&>()))) {
-	if (withSelf) {
-		visitor(*this);
+Query& Query::Delete() & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().Type(QueryDelete);
 	}
-	if (withMerged) {
-		for (auto& mq : mergeQueries_) {
-			visitor(mq);
+	return *this;
+}
+
+Expected<std::string> Query::GetSQL() const noexcept {
+	if (!state_.ok()) {
+		return Unexpected{state_};
+	}
+	try {
+		return impl().GetSQL();
+	} CATCH_AND_RETURN_UNEXPECTED
+}
+
+void Query::SetNsName(std::string nsName) & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().SetNsName(std::move(nsName));
+	}
+}
+
+Query& Query::WithRank() & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().WithRank();
+	}
+	return *this;
+}
+
+Query& Query::Limit(unsigned limit) & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().Limit(limit);
+	}
+	return *this;
+}
+Query& Query::Offset(unsigned offset) & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().Offset(offset);
+	}
+	return *this;
+}
+
+Query& Query::Local(bool on) & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().Local(on);
+	}
+	return *this;
+}
+
+Query& Query::Strict(StrictMode mode) & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().Strict(mode);
+	}
+	return *this;
+}
+
+Query& Query::Explain(bool on) & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().Explain(on);
+	}
+	return *this;
+}
+
+Query& Query::Debug(int level) & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().DebugLevel(level);
+	}
+	return *this;
+}
+
+Query& Query::Select(std::string field) & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().Select(std::move(field));
+	}
+	return *this;
+}
+
+Query& Query::SelectAllFields() & noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().SelectAllFields();
+	}
+	return *this;
+}
+
+void Query::AddFunction(std::string function) noexcept {
+	if (state_.ok()) [[likely]] {
+		impl().AddSelectFunction(std::move(function));
+	}
+}
+
+Query& Query::Set(std::string field, ValuesWrapper values, bool hasExpressions) & noexcept {
+	TRY_IF_STATE_OK
+		impl().Set(std::move(field), std::move(values), FieldModeSet, HasExpression(hasExpressions));
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::SetObject(std::string field, ValuesWrapper values, bool hasExpressions) & noexcept {
+	TRY_IF_STATE_OK
+		impl().Set(std::move(field), std::move(values), FieldModeSetJson, HasExpression(hasExpressions));
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Drop(std::string field) & noexcept {
+	TRY_IF_STATE_OK
+		impl().Set(std::move(field), {}, FieldModeDrop, HasExpression_False);
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Sort(std::string field, bool desc) & noexcept {
+	TRY_IF_STATE_OK
+		impl().Sort(std::move(field), Desc(desc), {});
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Sort(std::string field, bool desc, ValuesWrapper forcedSortOrder) & noexcept {
+	TRY_IF_STATE_OK
+		impl().Sort(std::move(field), Desc(desc), std::move(forcedSortOrder).Extract());
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::SortStDistance(std::string field, Point p, bool desc) & noexcept {
+	TRY_IF_STATE_OK
+		impl().SortStDistance(std::move(field), p, Desc(desc));
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::SortStDistance(std::string field1, std::string field2, bool desc) & noexcept {
+	TRY_IF_STATE_OK
+		impl().SortStDistance(std::move(field1), std::move(field2), Desc(desc));
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Aggregate(AggType type, h_vector<std::string, 1> fields, const std::vector<std::pair<std::string, bool>>& sort,
+						unsigned limit, unsigned offset) & noexcept {
+	TRY_IF_STATE_OK
+		impl().Aggregate(type, std::move(fields), sort, limit, offset);
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Distinct(h_vector<std::string, 1> fields) & noexcept {
+	TRY_IF_STATE_OK
+		impl().Aggregate(AggDistinct, std::move(fields));
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Where(std::string field, CondType cond, ValuesWrapper values) & noexcept {
+	TRY_IF_STATE_OK
+		impl().AppendQueryEntry<QueryEntry>(nextOp_, std::move(field), cond, std::move(values).Extract());
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::WhereComposite(std::string idx, CondType cond, std::span<const VariantArray> v) & noexcept {
+	TRY_IF_STATE_OK
+		VariantArray values;
+		values.reserve(v.size());
+		for (auto it = v.begin(); it != v.end(); it++) {
+			values.emplace_back(*it);
 		}
-		if (withSubQueries) {
-			for (auto& mq : mergeQueries_) {
-				for (auto& nq : mq.subQueries_) {
-					nq.walkNested(true, true, true, visitor);
-				}
+		impl().AppendQueryEntry<QueryEntry>(nextOp_, std::move(idx), cond, std::move(values));
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::WhereBetweenFields(std::string firstIdx, CondType cond, std::string secondIdx) & noexcept {
+	TRY_IF_STATE_OK
+		impl().AppendQueryEntry<BetweenFieldsQueryEntry>(nextOp_, std::move(firstIdx), cond, std::move(secondIdx));
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::DWithin(std::string field, Point p, double distance) & noexcept {
+	TRY_IF_STATE_OK
+		impl().AppendQueryEntry<QueryEntry>(nextOp_, std::move(field), CondDWithin, VariantArray::Create(p, distance));
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::DWithin(Query&& q, Point p, double distance) & noexcept {
+	TRY_IF_STATE_OK
+		return Where(std::move(q), CondDWithin, VariantArray::Create(p, distance));
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::WhereKNN(std::string field, FloatVector vec, KnnSearchParams params) & noexcept {
+	TRY_IF_STATE_OK
+		impl().AppendQueryEntry<KnnQueryEntry>(nextOp_, std::move(field), std::move(vec), std::move(params));
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::WhereKNN(std::string field, std::string data, KnnSearchParams params) & noexcept {
+	TRY_IF_STATE_OK
+		impl().AppendQueryEntry<KnnQueryEntry>(nextOp_, std::move(field), std::move(data), std::move(params));
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::WhereKNN(std::string field, ConstFloatVectorView vec, KnnSearchParams params) & noexcept {
+	TRY_IF_STATE_OK
+		impl().AppendQueryEntry<KnnQueryEntry>(nextOp_, std::move(field), FloatVector(vec), std::move(params));
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Where(Query&& subQuery, CondType cond, ValuesWrapper values) & noexcept {
+	TRY_IF_STATE_OK
+		if (subQuery.state_.ok()) [[likely]] {
+			if (subQuery.impl_.use_count() == 1) {
+				impl().AppendSubQuery(nextOp_, std::move(subQuery.impl()), cond, std::move(values).Extract());
+			} else {
+				impl().AppendSubQuery(nextOp_, subQuery.impl(), cond, std::move(values).Extract());
 			}
+			nextOp_ = OpAnd;
+		} else {
+			state_ = Error(errQueryExec, "Broken subquery '{}'", subQuery.state_.whatStr());
 		}
-	}
-	for (auto& jq : joinQueries_) {
-		visitor(jq);
-	}
-	for (auto& mq : mergeQueries_) {
-		for (auto& jq : mq.joinQueries_) {
-			visitor(jq);
-		}
-	}
-	if (withSubQueries) {
-		for (auto& nq : subQueries_) {
-			nq.walkNested(true, withMerged, true, visitor);
-		}
-	}
+	CATCH_INTO_STATE_AND_RETURN_THIS
 }
 
-void Query::WalkNested(bool withSelf, bool withMerged, bool withSubQueries, const std::function<void(const Query& q)>& visitor) const
-	noexcept(noexcept(visitor(std::declval<Query>()))) {
-	if (withSelf) {
-		visitor(*this);
-	}
-	if (withMerged) {
-		for (auto& mq : mergeQueries_) {
-			visitor(mq);
-		}
-		if (withSubQueries) {
-			for (auto& mq : mergeQueries_) {
-				for (auto& nq : mq.subQueries_) {
-					nq.WalkNested(true, true, true, visitor);
-				}
+Query& Query::Where(std::string&& field, CondType cond, Query&& subQuery) & noexcept {
+	TRY_IF_STATE_OK
+		if (subQuery.state_.ok()) [[likely]] {
+			if (subQuery.impl_.use_count() == 1) {
+				impl().AppendSubQuery(nextOp_, std::move(field), cond, std::move(subQuery.impl()));
+			} else {
+				impl().AppendSubQuery(nextOp_, std::move(field), cond, subQuery.impl());
 			}
+			nextOp_ = OpAnd;
+		} else {
+			state_ = Error(errQueryExec, "Broken subquery '{}'", subQuery.state_.whatStr());
+		}
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+template <concepts::Function Function>
+Query& Query::Where(Function&& function, CondType cond, ValuesWrapper values) & noexcept {
+	TRY_IF_STATE_OK
+		impl().AppendFunction(nextOp_, std::forward<Function>(function), cond, std::move(values).Extract());
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+template Query& Query::Where(functions::Now&&, CondType, ValuesWrapper) & noexcept;
+template Query& Query::Where(functions::Now&, CondType, ValuesWrapper) & noexcept;
+template Query& Query::Where(const functions::Now&, CondType, ValuesWrapper) & noexcept;
+template Query& Query::Where(functions::Serial&&, CondType, ValuesWrapper) & noexcept;
+template Query& Query::Where(functions::Serial&, CondType, ValuesWrapper) & noexcept;
+template Query& Query::Where(const functions::Serial&, CondType, ValuesWrapper) & noexcept;
+template Query& Query::Where(functions::FlatArrayLen&&, CondType, ValuesWrapper) & noexcept;
+template Query& Query::Where(functions::FlatArrayLen&, CondType, ValuesWrapper) & noexcept;
+template Query& Query::Where(const functions::FlatArrayLen&, CondType, ValuesWrapper) & noexcept;
+
+template <concepts::Function Function>
+Query& Query::Where(std::string field, CondType cond, Function&& function) & noexcept {
+	TRY_IF_STATE_OK
+		impl().AppendFunction(nextOp_, std::move(field), cond, std::forward<Function>(function));
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+template Query& Query::Where(std::string, CondType, functions::Now&&) & noexcept;
+template Query& Query::Where(std::string, CondType, functions::Now&) & noexcept;
+template Query& Query::Where(std::string, CondType, const functions::Now&) & noexcept;
+template Query& Query::Where(std::string, CondType, functions::Serial&&) & noexcept;
+template Query& Query::Where(std::string, CondType, functions::Serial&) & noexcept;
+template Query& Query::Where(std::string, CondType, const functions::Serial&) & noexcept;
+template Query& Query::Where(std::string, CondType, functions::FlatArrayLen&&) & noexcept;
+template Query& Query::Where(std::string, CondType, functions::FlatArrayLen&) & noexcept;
+template Query& Query::Where(std::string, CondType, const functions::FlatArrayLen&) & noexcept;
+
+Query& Query::Where(std::string field, CondType cond, functions::FunctionVariant&& function) & noexcept {
+	TRY_IF_STATE_OK
+		std::visit([&](auto& fn) { impl().AppendFunction(nextOp_, std::move(field), cond, std::move(fn)); }, function);
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Where(functions::FunctionVariant&& function, CondType cond, ValuesWrapper values) & noexcept {
+	TRY_IF_STATE_OK
+		std::visit([&](auto& fn) { impl().AppendFunction(nextOp_, std::move(fn), cond, std::move(values).Extract()); }, function);
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Where(functions::FunctionVariant&& function, CondType cond, Query&& subQuery) & noexcept {
+	TRY_IF_STATE_OK
+		if (subQuery.state_.ok()) [[likely]] {
+			if (subQuery.impl_.use_count() == 1) {
+				impl().Append(nextOp_, std::move(function), cond, std::move(subQuery.impl()));
+			} else {
+				impl().Append(nextOp_, std::move(function), cond, subQuery.impl());
+			}
+			nextOp_ = OpAnd;
+		} else {
+			state_ = Error(errQueryExec, "Broken subquery '{}'", subQuery.state_.whatStr());
+		}
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Where(Query&& subQuery, CondType cond, functions::FunctionVariant&& function) & noexcept {
+	TRY_IF_STATE_OK
+		if (subQuery.state_.ok()) [[likely]] {
+			if (subQuery.impl_.use_count() == 1) {
+				impl().Append(nextOp_, std::move(subQuery.impl()), cond, std::move(function));
+			} else {
+				impl().Append(nextOp_, subQuery.impl(), cond, std::move(function));
+			}
+			nextOp_ = OpAnd;
+		} else {
+			state_ = Error(errQueryExec, "Broken subquery '{}'", subQuery.state_.whatStr());
+		}
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::EqualPositions(EqualPosition_t&& equalPosition) & noexcept {
+	TRY_IF_STATE_OK
+		impl().EqualPositions(std::move(equalPosition));
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::EqualPositions(std::span<std::string> equalPosition) & noexcept {
+	TRY_IF_STATE_OK
+		impl().EqualPositions(EqualPosition_t(equalPosition.begin(), equalPosition.end()));
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Or() & noexcept {
+	if (state_.ok()) [[likely]] {
+		if (nextOp_ == OpNot) [[unlikely]] {
+			state_ = Error(errParams, kOrNotOpErrorMsg);
+		} else {
+			nextOp_ = OpOr;
 		}
 	}
-	for (auto& jq : joinQueries_) {
-		visitor(jq);
-	}
-	for (auto& mq : mergeQueries_) {
-		for (auto& jq : mq.joinQueries_) {
-			visitor(jq);
+	return *this;
+}
+
+Query& Query::Not() & noexcept {
+	if (state_.ok()) [[likely]] {
+		if (nextOp_ == OpOr) [[unlikely]] {
+			state_ = Error(errParams, kOrNotOpErrorMsg);
+		} else {
+			nextOp_ = OpNot;
 		}
 	}
-	if (withSubQueries) {
-		for (auto& nq : subQueries_) {
-			nq.WalkNested(true, withMerged, true, visitor);
+	return *this;
+}
+
+Query& Query::Merge(const Query& q) & noexcept {
+	TRY_IF_STATE_OK
+		if (q.state_.ok()) {
+			impl().Merge(q.impl());
+		} else {
+			state_ = Error(errQueryExec, "Merge broken query '{}'", q.state_.whatStr());
 		}
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Merge(Query&& q) & noexcept {
+	TRY_IF_STATE_OK
+		if (q.state_.ok()) {
+			if (q.impl_.use_count() == 1) {
+				impl().Merge(std::move(q.impl()));
+			} else {
+				impl().Merge(q.impl());
+			}
+		} else {
+			state_ = Error(errQueryExec, "Merge broken query '{}'", q.state_.whatStr());
+		}
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Join(JoinType joinType, Query&& q, OpType op, std::string leftField, CondType cond, std::string rightField) & noexcept {
+	TRY_IF_STATE_OK
+		if (q.state_.ok()) {
+			auto jq = q.impl_.use_count() == 1 ? impl::JoinedQuery{joinType, std::move(q.impl())} : impl::JoinedQuery{joinType, q.impl()};
+			jq.EmplaceOnEntry(op, std::move(leftField), cond, std::move(rightField));
+			impl().Join(nextOp_, std::move(jq));
+			nextOp_ = OpAnd;
+		} else {
+			state_ = Error(errQueryExec, "Join broken query '{}'", q.state_.whatStr());
+		}
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::Join(JoinType joinType, const Query& q, OpType op, std::string leftField, CondType cond, std::string rightField) & noexcept {
+	TRY_IF_STATE_OK
+		if (q.state_.ok()) {
+			impl::JoinedQuery jq{joinType, q.impl()};
+			jq.EmplaceOnEntry(op, std::move(leftField), cond, std::move(rightField));
+			impl().Join(nextOp_, std::move(jq));
+			nextOp_ = OpAnd;
+		} else {
+			state_ = Error(errQueryExec, "Join broken query '{}'", q.state_.whatStr());
+		}
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query::OnHelper Query::Join(JoinType joinType, Query&& q) & noexcept {
+	if (!q.state_.ok()) {
+		state_ = Error(errQueryExec, "Join broken query '{}'", q.state_.whatStr());
+	} else if (state_.ok()) {
+		try {
+			if (q.impl_.use_count() == 1) {
+				return {*this, std::exchange(nextOp_, OpAnd), std::make_unique<impl::JoinedQuery>(joinType, std::move(q.impl()))};
+			} else {
+				return {*this, std::exchange(nextOp_, OpAnd), std::make_unique<impl::JoinedQuery>(joinType, q.impl())};
+			}
+		} CATCH_INTO_STATE
 	}
+	return {*this, nextOp_, nullptr};
 }
 
-bool Query::IsWALQuery() const noexcept {
-	constexpr static std::string_view kLsnIndexName = "#lsn"sv;
-	constexpr static std::string_view kSlaveVersionIndexName = "#slave_version"sv;
-
-	if (entries_.Size() == 1 && entries_.Is<QueryEntry>(0) && kLsnIndexName == entries_.Get<QueryEntry>(0).FieldName()) {
-		return true;
-	} else if (entries_.Size() == 2 && entries_.Is<QueryEntry>(0) && entries_.Is<QueryEntry>(1)) {
-		const auto& index0 = entries_.Get<QueryEntry>(0).FieldName();
-		const auto& index1 = entries_.Get<QueryEntry>(1).FieldName();
-		return (kLsnIndexName == index0 && kSlaveVersionIndexName == index1) ||
-			   (kLsnIndexName == index1 && kSlaveVersionIndexName == index0);
+Query::OnHelper Query::Join(JoinType joinType, const Query& q) & noexcept {
+	if (!q.state_.ok()) {
+		state_ = Error(errQueryExec, "Join broken query '{}'", q.state_.whatStr());
+	} else if (state_.ok()) {
+		try {
+			return {*this, std::exchange(nextOp_, OpAnd), std::make_unique<impl::JoinedQuery>(joinType, q.impl())};
+		} CATCH_INTO_STATE
 	}
-	return false;
+	return {*this, nextOp_, nullptr};
 }
 
-void JoinedQuery::deserializeJoinOn(Serializer& ser) {
-	const OpType op = static_cast<OpType>(ser.GetVarUint());
-	const CondType condition = static_cast<CondType>(ser.GetVarUint());
-	std::string leftFieldName{ser.GetVString()};
-	std::string rightFieldName{ser.GetVString()};
-	joinEntries_.emplace_back(op, condition, std::move(leftFieldName), std::move(rightFieldName));
-}
-
-void JoinedQuery::serializeJoinEntries(WrSerializer& ser) const {
-	for (const auto& qje : joinEntries_) {
-		ser.PutVarUint(QueryJoinOn);
-		ser.PutVarUint(qje.Operation());
-		ser.PutVarUint(qje.Condition());
-		ser.PutVString(qje.LeftFieldName());
-		ser.PutVString(qje.RightFieldName());
+Query::OnHelperR Query::Join(JoinType joinType, Query&& q) && noexcept {
+	if (!q.state_.ok()) {
+		state_ = Error(errQueryExec, "Join broken query '{}'", q.state_.whatStr());
+	} else if (state_.ok()) {
+		try {
+			if (q.impl_.use_count() == 1) {
+				return {std::move(*this), std::exchange(nextOp_, OpAnd),
+						std::make_unique<impl::JoinedQuery>(joinType, std::move(q.impl()))};
+			} else {
+				return {std::move(*this), std::exchange(nextOp_, OpAnd), std::make_unique<impl::JoinedQuery>(joinType, q.impl())};
+			}
+		} CATCH_INTO_STATE
 	}
+	return {std::move(*this), nextOp_, nullptr};
 }
+
+Query::OnHelperR Query::Join(JoinType joinType, const Query& q) && noexcept {
+	if (!q.state_.ok()) {
+		state_ = Error(errQueryExec, "Join broken query '{}'", q.state_.whatStr());
+	} else if (state_.ok()) {
+		try {
+			return {std::move(*this), std::exchange(nextOp_, OpAnd), std::make_unique<impl::JoinedQuery>(joinType, q.impl())};
+		} CATCH_INTO_STATE
+	}
+	return {std::move(*this), nextOp_, nullptr};
+}
+
+Query& Query::OpenBracket() & noexcept {
+	TRY_IF_STATE_OK
+		impl().OpenBracket(nextOp_);
+		nextOp_ = OpAnd;
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+Query& Query::CloseBracket() & noexcept {
+	TRY_IF_STATE_OK
+		impl().CloseBracket();
+	CATCH_INTO_STATE_AND_RETURN_THIS
+}
+
+template <typename Q>
+[[nodiscard]] Q Query::OnHelperTempl<Q>::On(std::string index, CondType cond, std::string joinIndex) && noexcept {
+	if (!mainQuery_.state_.ok()) {
+		return std::forward<Q>(mainQuery_);
+	}
+	try {
+		assertrx(joiningQuery_);  // _dbg
+		joiningQuery_->EmplaceOnEntry(nextOnOp_, std::move(index), cond, std::move(joinIndex));
+		mainQuery_.impl().Join(op_, std::move(*joiningQuery_));
+	} CATCH_INTO(mainQuery_.state_)
+	return std::forward<Q>(mainQuery_);
+}
+template Query& Query::OnHelperTempl<Query&>::On(std::string, CondType, std::string) && noexcept;
+template Query&& Query::OnHelperTempl<Query&&>::On(std::string, CondType, std::string) && noexcept;
+
+template <typename Q>
+[[nodiscard]] Query::OnHelperGroup<Q>&& Query::OnHelperGroup<Q>::On(std::string index, CondType cond, std::string joinIndex) && noexcept {
+	if (!mainQuery_.state_.ok()) {
+		return std::move(*this);
+	}
+	try {
+		assertrx(joiningQuery_);  // _dbg
+		joiningQuery_->EmplaceOnEntry(nextOnOp_, std::move(index), cond, std::move(joinIndex));
+		nextOnOp_ = OpAnd;
+	} CATCH_INTO(mainQuery_.state_)
+	return std::move(*this);
+}
+template Query::OnHelperGroup<Query&>&& Query::OnHelperGroup<Query&>::On(std::string, CondType, std::string) && noexcept;
+template Query::OnHelperGroup<Query&&>&& Query::OnHelperGroup<Query&&>::On(std::string, CondType, std::string) && noexcept;
+
+template <typename Q>
+[[nodiscard]] Q Query::OnHelperGroup<Q>::CloseBracket() && noexcept {
+	if (!mainQuery_.state_.ok()) {
+		return std::forward<Q>(mainQuery_);
+	}
+	try {
+		assertrx(joiningQuery_);  // _dbg
+		mainQuery_.impl().Join(op_, std::move(*joiningQuery_));
+	} CATCH_INTO(mainQuery_.state_)
+	return std::forward<Q>(mainQuery_);
+}
+template Query& Query::OnHelperGroup<Query&>::CloseBracket() && noexcept;
+template Query&& Query::OnHelperGroup<Query&&>::CloseBracket() && noexcept;
 
 }  // namespace reindexer

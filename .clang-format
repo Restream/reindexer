@@ -154,6 +154,16 @@ LambdaBodyIndentation: Signature
 LineEnding:      DeriveLF
 MacroBlockBegin: ''
 MacroBlockEnd:   ''
+Macros:
+  - RX_GET_WITHOUT_MUTEX_ANALYSIS=[]()
+  - RX_MUTEX_ACCESS=private
+  - CATCH_INTO(state)=catch(...){}
+  - CATCH_INTO_STATE=catch(...){}
+  - CATCH_AND_RETURN=catch(...){}
+  - CATCH_AND_RETURN_QUERY=catch(...){}
+  - CATCH_AND_RETURN_UNEXPECTED=catch(...){}
+  - TRY_IF_STATE_OK={
+  - CATCH_INTO_STATE_AND_RETURN_THIS=}
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
 ObjCBinPackProtocolList: Auto
@@ -234,6 +244,7 @@ StatementMacros:
   - Q_UNUSED
   - QT_REQUIRE_VERSION
 TabWidth:        4
+TypenameMacros: []
 UseTab:          Always
 VerilogBreakBetweenInstancePorts: true
 WhitespaceSensitiveMacros:

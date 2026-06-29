@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-struct TerminalSize {
+struct [[nodiscard]] TerminalSize {
 	int width = 0;
 	int height = 0;
 };
@@ -12,4 +12,5 @@ TerminalSize getTerminalSize();
 int getStringTerminalWidth(std::string_view str);
 bool isStdoutRedirected();
 bool isStdinRedirected();
+bool isStdoutAnsiSupported();
 }  // namespace reindexer

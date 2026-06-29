@@ -1,5 +1,6 @@
 .idea/
 .vscode/ipch
+.cursor/
 reindexer.cbp
 reindexer.iml
 .DS_Store
@@ -8,6 +9,7 @@ logs
 
 # ignore user's files
 *.user
+.tmp-*
 
 # do not allow to commit binary and docs
 
@@ -19,8 +21,8 @@ __pycache__
 *.so
 .pytest_cache/
 qa_tests/logs/
-qa_tests/logs/
 qa_tests/venv/
+qa_tests/.venv/
 
 #ignore directory with compile commands
 .cache

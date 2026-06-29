@@ -1,4 +1,6 @@
 #include "clientsstats_api.h"
+#include "core/query/query_impl.h"
+#include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
 #include "gason/gason.h"
 #include "reindexer_version.h"
@@ -6,11 +8,16 @@
 #include "tools/semversion.h"
 #include "tools/stringstools.h"
 
+namespace reindexer_tests {
+
 using reindexer::net::ev::dynamic_loop;
 using reindexer::client::CoroReindexer;
 using reindexer::client::CoroQueryResults;
 using reindexer::client::CoroTransaction;
 using reindexer::coroutine::wait_group;
+using QueryImpl = reindexer::impl::Query;
+
+// NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 
 TEST_F(ClientsStatsApi, ClientsStatsConcurrent) {
 	// ClientsStats should work without races in concurrent environment
@@ -51,14 +58,14 @@ TEST_F(ClientsStatsApi, ClientsStatsData) {
 				auto err = clientPtr->Connect(GetConnectionString(), loop, opts.CreateDBIfMissing());
 				ASSERT_TRUE(err.ok()) << err.what();
 				CoroQueryResults result;
-				err = clientPtr->Select(reindexer::Query("#namespaces"), result);
+				err = clientPtr->Select(QueryImpl(reindexer::kNamespacesNamespace), result);
 				ASSERT_TRUE(err.ok()) << err.what();
 				nClients.emplace_back(std::move(clientPtr));
 			});
 		}
 		wg.wait();
 		CoroQueryResults result;
-		auto err = nClients[0]->Select(reindexer::Query("#clientsstats"), result);
+		auto err = nClients[0]->Select(QueryImpl(reindexer::kClientsStatsNamespace), result);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(result.Count(), kConnectionCount);
 		finished = true;
@@ -78,10 +85,10 @@ TEST_F(ClientsStatsApi, ClientsStatsOff) {
 		auto err = reindexer.Connect(GetConnectionString(), loop, opts.CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 		CoroQueryResults resultNs;
-		err = reindexer.Select(reindexer::Query("#namespaces"), resultNs);
+		err = reindexer.Select(QueryImpl(reindexer::kNamespacesNamespace), resultNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		CoroQueryResults resultCs;
-		err = reindexer.Select(reindexer::Query("#clientsstats"), resultCs);
+		err = reindexer.Select(QueryImpl(reindexer::kClientsStatsNamespace), resultCs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(resultCs.Count(), 0);
 		finished = true;
@@ -108,6 +115,9 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		err = reindexer.OpenNamespace(nsName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
+		err = reindexer.AddIndex(nsName, reindexer::IndexDef{"id", "hash", "int", reindexer::IndexOpts().PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+
 		auto tx1 = reindexer.NewTransaction(nsName);
 		ASSERT_FALSE(tx1.IsFree());
 		auto tx2 = reindexer.NewTransaction(nsName);
@@ -116,12 +126,11 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		auto beginTs = std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
 		loop.sleep(std::chrono::milliseconds(2000));  // Timeout to update send/recv rate
 		CoroQueryResults resultNs;
-		err = reindexer.Select(reindexer::Query("#namespaces"), resultNs);
+		err = reindexer.Select(QueryImpl(reindexer::kNamespacesNamespace), resultNs);
 		SetProfilingFlag(true, "profiling.activitystats", reindexer);
 
 		CoroQueryResults resultCs;
-		const std::string selectClientsStats = "SELECT * FROM #clientsstats";
-		err = reindexer.Select(selectClientsStats, resultCs);
+		err = reindexer.Select(QueryImpl(reindexer::kClientsStatsNamespace), resultCs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(resultCs.Count(), 1);
 		auto it = resultCs.begin();
@@ -133,13 +142,13 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		gason::JsonParser parser;
 		gason::JsonNode clientsStats = parser.Parse(wrser.Slice());
 		std::string curActivity = clientsStats["current_activity"].As<std::string>();
-		EXPECT_TRUE(curActivity == selectClientsStats) << "curActivity = [" << curActivity << "]";
+		EXPECT_TRUE(curActivity == "SELECT * FROM #clientsstats") << "curActivity = [" << curActivity << "]";
 		std::string curIP = clientsStats["ip"].As<std::string>();
 		std::vector<std::string> addrParts;
-		reindexer::split(curIP, ":", false, addrParts);
+		std::ignore = reindexer::split(curIP, ":", false, addrParts);
 		EXPECT_EQ(addrParts.size(), 2);
 		EXPECT_EQ(addrParts[0], kipaddress) << curIP;
-		int port = std::atoi(addrParts[1].c_str());
+		int port = std::atoi(addrParts[1].c_str());	 // NOLINT(bugprone-unchecked-string-to-number-conversion)
 		EXPECT_GT(port, 0) << curIP;
 		EXPECT_NE(port, kPortI) << curIP;
 		int64_t sentBytes = clientsStats["sent_bytes"].As<int64_t>();
@@ -201,6 +210,9 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 		err = reindexer.OpenNamespace(nsName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
+		err = reindexer.AddIndex(nsName, reindexer::IndexDef{"id", "hash", "int", reindexer::IndexOpts().PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+
 		std::vector<CoroTransaction> txs;
 		txs.reserve(kMaxTxCount);
 		for (size_t i = 0; i < 2 * kMaxTxCount; ++i) {
@@ -250,3 +262,7 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 	loop.run();
 	ASSERT_TRUE(finished);
 }
+
+// NOLINTEND(rx-perf-lambda-to-std-function-allocation)
+
+}  // namespace reindexer_tests

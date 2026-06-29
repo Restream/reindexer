@@ -8,7 +8,7 @@ namespace cluster {
 constexpr size_t kAsyncUpdatesRoutineStackSize = 64 * 1024;
 
 template <typename UpdateT, typename ContextT, typename ApplyUpdateFnT, typename OnUpdateResultFnT, typename ConvertResultFnT>
-class UpdatesBatcher {
+class [[nodiscard]] UpdatesBatcher {
 public:
 	UpdatesBatcher(net::ev::dynamic_loop& loop, size_t coroCount, ApplyUpdateFnT&& applyUpdateF, OnUpdateResultFnT&& onUpdateResult,
 				   ConvertResultFnT&& convert)
@@ -18,7 +18,7 @@ public:
 			channels_.emplace_back(std::make_unique<ResultChT>());
 			loop.spawn(
 				workersWg_,
-				[this]() noexcept {
+				[this]() noexcept {	 // NOLINT(bugprone-exception-escape)
 					while (true) {
 						auto itp = updatesCh_.pop();
 						if (!itp.second) {
@@ -80,7 +80,7 @@ private:
 		return err;
 	}
 
-	struct ContextedUpdate {
+	struct [[nodiscard]] ContextedUpdate {
 		const UpdateT* upd;
 		ContextT ctx;
 		uint64_t id;

@@ -1,29 +1,23 @@
 ﻿#include "dataholder.h"
 #include <sstream>
+#include "core/ft/ft_fast/frisosplitter.h"
 #include "dataprocessor.h"
-#include "selecter.h"
 
 namespace reindexer {
 
 size_t IDataHolder::GetMemStat() {
 	size_t res = 0;
 	for (auto& step : steps) {
-		res += step.typosHalf_.heap_size() + step.typosMax_.heap_size() + step.suffixes_.heap_size();
+		res += step.typos_.heap_size() + step.suffixes_.heap_size();
 	}
-	res += vdocs_.capacity() * sizeof(VDocEntry);
-	res += rowId2Vdoc_.capacity() * sizeof(rowId2Vdoc_[0]);
 	return res;
 }
 
 void IDataHolder::Clear() {
 	steps.resize(1);
 	steps.front().clear();
-	avgWordsCount_.clear();
-	vdocs_.clear();
-	vdocsTexts.clear();
-	vdocsOffset_ = 0;
-	szCnt = 0;
-	rowId2Vdoc_.clear();
+	stepsWords_.clear();
+	lastStepWords_.clear();
 }
 
 std::string IDataHolder::Dump() const {
@@ -58,29 +52,40 @@ std::string IDataHolder::Dump() const {
 }
 
 void IDataHolder::throwWordIdOverflow(uint32_t id) {
-	throw Error(errLogic, "Too large word ID value (%d). Fulltext index can not contain more than %d unique words", id, kWordIdMaxIdVal);
+	throw Error(errLogic, "Too large word ID value ({}). Fulltext index can not contain more than {} unique words", id, kWordIdMaxIdVal);
 }
 
 void IDataHolder::throwStepsOverflow() const {
-	throw Error(errLogic, "Too large index build step value (%d). Fulltext incremental build can not use more than %d steps",
+	throw Error(errLogic, "Too large index build step value ({}). Fulltext incremental build can not use more than {} steps",
 				steps.size() - 1, kWordIdMaxStepVal);
 }
 
-WordIdType IDataHolder::findWord(std::string_view word) const {
-	WordIdType id;
-	id.SetEmpty();
-	if (steps.size() <= 1) {
-		return id;
-	}
+WordIdType IDataHolder::FindWord(std::string_view word, bool searchLastStep) const {
+	word_hash wh;
+	word_equal we;
+	size_t hash = wh(word);
 
-	for (auto step = steps.begin(); step != steps.end() - 1; ++step) {
-		auto it = step->suffixes_.lower_bound(word);
-		if (it != step->suffixes_.end() && size_t(step->suffixes_.word_len_at(GetSuffixWordId(it->second, *step))) == word.size()) {
-			return it->second;
+	if (auto it = stepsWords_.find(hash); it != stepsWords_.end()) {
+		for (WordIdType wid : it->second) {
+			if (we(GetWord(wid), word)) {
+				return wid;
+			}
 		}
 	}
 
-	return id;
+	if (searchLastStep) {
+		if (auto itLast = lastStepWords_.find(hash); itLast != lastStepWords_.end()) {
+			for (WordIdType wid : itLast->second) {
+				if (we(GetWord(wid), word)) {
+					return wid;
+				}
+			}
+		}
+	}
+
+	WordIdType emptyId;
+	emptyId.SetEmpty();
+	return emptyId;
 }
 
 template <typename IdCont>
@@ -95,7 +100,7 @@ size_t DataHolder<IdCont>::GetMemStat() {
 template <typename IdCont>
 void DataHolder<IdCont>::Clear() {
 	IDataHolder::Clear();
-	words_.clear();
+	words_.resize(0);
 }
 
 template <typename IdCont>
@@ -104,35 +109,46 @@ void DataHolder<IdCont>::StartCommit(bool complete_updated) {
 		status_ = FullRebuild;
 
 		Clear();
+		words_.clear();
+		lastStepWords_.clear();
 	} else if (NeedRecommitLast()) {
 		status_ = RecommitLast;
 		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
 
 		for (auto& word : words_) {
-			word.vids.erase_back(word.cur_step_pos);
+			word.RestoreState();
 		}
 
 		steps.back().clear();
+		lastStepWords_.clear();
 	} else {  // if the last step is full, then create a new
 		for (auto& word : words_) {
-			word.cur_step_pos = word.vids.pos(word.vids.end());
+			word.SaveState();
 		}
 		status_ = CreateNew;
 		steps.emplace_back(CommitStep{});
+		for (auto& [wHash, Ids] : lastStepWords_) {
+			auto& w = stepsWords_[wHash];
+			for (auto id : Ids) {
+				w.emplace_back(id);
+			}
+		}
+		lastStepWords_.clear();
 	}
 }
 
 template <typename IdCont>
-void DataHolder<IdCont>::Process(size_t fieldSize, bool multithread) {
-	DataProcessor<IdCont>{*this, fieldSize}.Process(multithread);
+void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, size_t fieldSize,
+								 bool multithread, std::vector<h_vector<float, 3>>& wordsCounts) {
+	DataProcessor<IdCont>{*this, fieldSize}.Process(vdocsTexts, vdocsIds, numDocsTotal, multithread, wordsCounts);
 }
 
 template <typename IdCont>
-DataHolder<IdCont>::DataHolder(FtFastConfig* c) {
+DataHolder<IdCont>::DataHolder(FTConfig* c) {
 	cfg_ = c;
-	if (cfg_->splitterType == FtFastConfig::Splitter::Fast) {
-		splitter_ = make_intrusive<FastTextSplitter>(cfg_->extraWordSymbols);
-	} else if (cfg_->splitterType == FtFastConfig::Splitter::MMSegCN) {
+	if (cfg_->splitterType == FTConfig::Splitter::Fast) {
+		splitter_ = make_intrusive<FastTextSplitter>(cfg_->splitOptions);
+	} else if (cfg_->splitterType == FTConfig::Splitter::MMSegCN) {
 		splitter_ = make_intrusive<FrisoTextSplitter>();
 	} else {
 		assertrx_throw(false);

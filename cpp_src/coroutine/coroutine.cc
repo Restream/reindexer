@@ -4,7 +4,6 @@
 #include <iterator>
 #include <thread>
 #include "tools/clock.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 namespace coroutine {
@@ -25,11 +24,9 @@ void ordinator::entry() {
 				auto func = std::move(current_routine.func);
 				func();
 			} catch (std::exception& e) {
-				fprintf(stderr, "Unhandled exception in coroutine \"%u\": %s\n", index + 1, e.what());
-			} catch (reindexer::Error& e) {
-				fprintf(stderr, "Unhandled exception in coroutine \"%u\": %s\n", index + 1, e.what().c_str());
+				fprintf(stderr, "reindexer error: unhandled exception in coroutine \"%u\": %s\n", index + 1, e.what());
 			} catch (...) {
-				fprintf(stderr, "Unhandled exception in coroutine \"%u\": some custom exception\n", index + 1);
+				fprintf(stderr, "reindexer error: unhandled exception in coroutine \"%u\": some custom exception\n", index + 1);
 			}
 		}
 	}
@@ -106,7 +103,8 @@ void ordinator::suspend() {
 	}
 }
 
-void ordinator::push_to_call_stack(routine_t id) {
+// NOLINTNEXTLINE(bugprone-exception-escape)
+void ordinator::push_to_call_stack(routine_t id) noexcept {
 	if (id) {
 		rt_call_stack_.emplace_back(id);
 		return;

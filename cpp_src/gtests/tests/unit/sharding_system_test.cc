@@ -1,4 +1,15 @@
+#include "core/cjson/jsonbuilder.h"
+#include "core/query/impl.h"
+#include "estl/condition_variable.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
+#include "gtests/tests/gtest_cout.h"
 #include "sharding_system_api.h"
+
+namespace reindexer_tests {
+
+using namespace reindexer;
+using impl::Impl;
 
 TEST_F(ShardingSystemApi, Reconnect) {
 	Init();
@@ -15,7 +26,7 @@ TEST_F(ShardingSystemApi, Reconnect) {
 			bool succeed = false;
 			for (size_t i = 0; i < 20; ++i) {  // FIXME: Max retries count should be 1
 				client::QueryResults qr;
-				err = rx->Select(Query(default_namespace).Where(kFieldLocation, CondEq, location), qr);
+				err = rx->Select(*Impl{Query(default_namespace).Where(kFieldLocation, CondEq, location)}, qr);
 				if (err.ok()) {	 // First request may get an error, because disconnect event may not be handled yet
 					ASSERT_EQ(qr.Count(), 40) << "; shard = " << shard << "; node = " << clusterNodeId;
 					succeed = true;
@@ -27,7 +38,7 @@ TEST_F(ShardingSystemApi, Reconnect) {
 
 			client::QueryResults qr;
 			const std::string newValue = "most probably updated";
-			err = rx->Update(Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location), qr);
+			err = rx->Update(*Impl{Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location)}, qr);
 			ASSERT_TRUE(err.ok()) << err.what() << "; shard = " << shard << "; node = " << clusterNodeId;
 			ASSERT_EQ(qr.Count(), 40) << "; shard = " << shard << "; node = " << clusterNodeId;
 			StartByIndex(server);
@@ -55,7 +66,7 @@ TEST_F(ShardingSystemApi, ReconnectTimeout) {
 		const std::string location = "key" + std::to_string(shard);
 		client::QueryResults qr;
 		auto err = rx->WithTimeout(kTimeout).Update(
-			Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location), qr);
+			*Impl{Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location)}, qr);
 		if (err.code() != errTimeout && err.code() != errNetwork && err.code() != errUpdateReplication) {
 			ASSERT_TRUE(false) << err.what() << "(" << err.code() << ")" << "; shard = " << shard;
 		}
@@ -65,7 +76,7 @@ TEST_F(ShardingSystemApi, ReconnectTimeout) {
 		const std::string location = "key" + std::to_string(shard);
 		client::QueryResults qr;
 		auto err = rx->WithTimeout(kTimeout).Update(
-			Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location), qr);
+			*Impl{Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location)}, qr);
 		ASSERT_EQ(err.code(), errTimeout) << err.what() << "; shard = " << shard;
 	}
 }
@@ -81,7 +92,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 		const std::string key = std::string("key" + std::to_string(kShards));
 
 		WrSerializer wrser;
-		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+		JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, index);
 		jsonBuilder.Put(kFieldLocation, key);
 		jsonBuilder.Put(kFieldData, RandString());
@@ -92,7 +103,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 		return rx.Upsert(default_namespace, item);
 	};
 
-	struct RxWithStatus {
+	struct [[nodiscard]] RxWithStatus {
 		std::shared_ptr<client::Reindexer> client = std::make_shared<client::Reindexer>();
 		std::atomic<int> errors = 0;
 	};
@@ -129,12 +140,12 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 				ASSERT_TRUE(err.ok()) << err.what();
 				while (!stop) {
 					client::QueryResults qr;
-					err = rx.Select(Query(default_namespace).Where(kFieldLocation, CondEq, key), qr);
+					err = rx.Select(*Impl{Query(default_namespace).Where(kFieldLocation, CondEq, key)}, qr);
 					if (err.ok()) {
 						ASSERT_TRUE(qr.Count() == 40) << qr.Count();
 					}
 					qr = client::QueryResults();
-					err = rx.Select(Query(default_namespace), qr);
+					err = rx.Select(*Impl{Query(default_namespace)}, qr);
 					if (err.ok()) {
 						ASSERT_GE(qr.Count(), 40 * kShards);
 					}
@@ -175,7 +186,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 					for (size_t j = 0; j < kMaxErrors; ++j) {
 						client::QueryResults qr;
 						const auto query = Query(default_namespace).Where(kFieldLocation, CondEq, key);
-						err = rx.client->Select(query, qr);
+						err = rx.client->Select(*Impl{query}, qr);
 						if (err.ok()) {
 							ASSERT_EQ(qr.Count(), 40) << "; shard = " << currShard;
 							succeed = true;
@@ -241,9 +252,9 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 	cfg.nodesInCluster = 1;
 	Init(std::move(cfg));
 
-	std::mutex mtx;
+	reindexer::mutex mtx;
 	bool ready = false;
-	std::condition_variable cv;
+	reindexer::condition_variable cv;
 	const std::vector<std::string> kNamespaces = {default_namespace, kNewNs};
 
 	for (size_t shard = 1; shard < kShards; ++shard) {
@@ -255,7 +266,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 	tds.reserve(kThreads);
 	for (size_t i = 0; i < kThreads; ++i) {
 		tds.emplace_back([&] {
-			std::unique_lock lck(mtx);
+			unique_lock lck(mtx);
 			cv.wait(lck, [&ready] { return ready; });
 			lck.unlock();
 			for (auto& ns : kNamespaces) {
@@ -265,7 +276,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 		});
 	}
 
-	std::unique_lock lck(mtx);
+	unique_lock lck(mtx);
 	ready = true;
 	lck.unlock();
 	cv.notify_all();
@@ -339,3 +350,5 @@ TEST_F(ShardingSystemApi, AwaitShardsTimeout) {
 		ValidateNamespaces(shard, {default_namespace}, nsDefs);
 	}
 }
+
+}  // namespace reindexer_tests

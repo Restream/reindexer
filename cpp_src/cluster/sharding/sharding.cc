@@ -1,26 +1,38 @@
 #include "sharding.h"
+#include "cluster/consts.h"
 #include "cluster/stats/replicationstats.h"
 #include "core/clusterproxy.h"
-#include "core/defnsconfigs.h"
 #include "core/item.h"
+#include "core/query/impl.h"
 #include "core/type_consts.h"
+#include "estl/gift_str.h"
 #include "tools/logger.h"
 
 namespace reindexer {
 namespace sharding {
-
+namespace {
 constexpr size_t kMaxShardingProxyConnCount = 64;
 constexpr size_t kMaxShardingProxyConnConcurrency = 1024;
 
+void validate(const SubQueryFunctionEntry& sqe, std::string_view ns, const ShardingKeys& keys) {
+	for (size_t i = 0; i < sqe.Fields(); ++i) {
+		const auto& field{sqe.FieldData(i)};
+		if (keys.IsShardIndex(ns, field.FieldName())) {
+			throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key ({})", field.FieldName());
+		}
+	}
+}
+}  // namespace
+
 RoutingStrategy::RoutingStrategy(const cluster::ShardingConfig& config) : keys_(config) {}
 
-bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& shardKey) const {
+bool RoutingStrategy::getHostIdForQuery(const impl::Query& q, int& hostId, Variant& shardKey) const {
 	bool containsKey = false;
 	std::string_view ns = q.NsName();
 	for (auto it = q.Entries().cbegin(), next = it, end = q.Entries().cend(); it != end; ++it) {
 		++next;
 		it->Visit(
-			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry>{},
+			Skip<AlwaysTrue, AlwaysFalse, JoinQueryEntry, SubQueryEntry, MultiDistinctQueryEntry, KnnQueryEntry, QueryFunctionEntry>{},
 			[&](const QueryEntry& qe) {
 				if (containsKey) {
 					if (keys_.IsShardIndex(ns, qe.FieldName())) {
@@ -37,7 +49,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 						if (hostId == ShardingKeyType::ProxyOff) {
 							hostId = id;
 							shardKey = qe.Values()[0];
-							shardKey.EnsureHold();
+							std::ignore = shardKey.EnsureHold();
 						} else if (hostId != id) {
 							throw Error(errLogic, "Shard key from other node");
 						}
@@ -52,9 +64,10 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 			},
 			[&](const SubQueryFieldEntry& sqe) {
 				if (keys_.IsShardIndex(ns, sqe.FieldName())) {
-					throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key (%s)", sqe.FieldName());
+					throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key ({})", sqe.FieldName());
 				}
 			},
+			[&](const SubQueryFunctionEntry& sqe) { validate(sqe, ns, keys_); },
 			[&](const BetweenFieldsQueryEntry& qe) {
 				if (keys_.IsShardIndex(ns, qe.LeftFieldName()) || keys_.IsShardIndex(ns, qe.RightFieldName())) {
 					throw Error(errLogic, "Shard key cannot be compared with another field");
@@ -63,7 +76,8 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 			[&](const Bracket&) {
 				for (auto i = it.cbegin().PlainIterator(), end = it.cend().PlainIterator(); i != end; ++i) {
 					i->Visit(
-						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry>{},
+						Skip<AlwaysFalse, AlwaysTrue, JoinQueryEntry, Bracket, SubQueryEntry, MultiDistinctQueryEntry, KnnQueryEntry,
+							 QueryFunctionEntry>{},
 						[&](const QueryEntry& qe) {
 							if (keys_.IsShardIndex(ns, qe.FieldName())) {
 								throw Error(errLogic, "Shard key condition cannot be included in bracket");
@@ -71,10 +85,11 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 						},
 						[&](const SubQueryFieldEntry& sqe) {
 							if (keys_.IsShardIndex(ns, sqe.FieldName())) {
-								throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key (%s)",
+								throw Error(errLogic, "Subqueries can not be used in the conditions with sharding key ({})",
 											sqe.FieldName());
 							}
 						},
+						[&](const SubQueryFunctionEntry& sqe) { validate(sqe, ns, keys_); },
 						[&](const BetweenFieldsQueryEntry& qe) {
 							if (keys_.IsShardIndex(ns, qe.LeftFieldName()) || keys_.IsShardIndex(ns, qe.RightFieldName())) {
 								throw Error(errLogic, "Shard key cannot be compared with another field");
@@ -90,7 +105,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 	return containsKey;
 }
 
-std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const Query& q) const {
+std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const impl::Query& q) const {
 	int hostId = ShardingKeyType::ProxyOff;
 	Variant shardKey;
 	const std::string_view mainNs = q.NsName();
@@ -98,7 +113,7 @@ std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const 
 	bool hasShardingKeys = mainNsIsSharded && getHostIdForQuery(q, hostId, shardKey);
 	const bool mainQueryToAllShards = mainNsIsSharded && !hasShardingKeys;
 
-	for (const auto& jq : q.GetJoinQueries()) {
+	for (const auto& jq : q.JoinQueries()) {
 		if (!keys_.IsSharded(jq.NsName())) {
 			continue;
 		}
@@ -110,7 +125,7 @@ std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const 
 			}
 		}
 	}
-	for (const auto& mq : q.GetMergeQueries()) {
+	for (const auto& mq : q.MergeQueries()) {
 		if (!keys_.IsSharded(mq.NsName())) {
 			continue;
 		}
@@ -122,7 +137,7 @@ std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const 
 			}
 		}
 	}
-	for (const auto& sq : q.GetSubQueries()) {
+	for (const auto& sq : q.SubQueries()) {
 		if (!keys_.IsSharded(sq.NsName())) {
 			continue;
 		}
@@ -135,10 +150,10 @@ std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const 
 		}
 	}
 	if (mainQueryToAllShards || !hasShardingKeys) {
-		if (!q.GetJoinQueries().empty() || !q.GetMergeQueries().empty() || !q.GetSubQueries().empty()) {
+		if (!q.JoinQueries().empty() || !q.MergeQueries().empty() || !q.SubQueries().empty()) {
 			throw Error(errLogic, "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
 		}
-		for (const auto& agg : q.aggregations_) {
+		for (const auto& agg : q.Aggregations()) {
 			if (agg.Type() == AggAvg || agg.Type() == AggFacet || agg.Type() == AggDistinct || agg.Type() == AggUnknown) {
 				throw Error(errLogic, "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 			}
@@ -159,7 +174,7 @@ std::pair<int, Variant> RoutingStrategy::GetHostIdKeyPair(std::string_view ns, c
 
 		return {keys_.GetShardId(ns, v[0]), Variant(v[0]).EnsureHold()};
 	}
-	throw Error(errLogic, "Item does not contain proper sharding key for '%s' (key with name '%s' is expected)", ns, nsIndex.name);
+	throw Error(errLogic, "Item does not contain proper sharding key for '{}' (key with name '{}' is expected)", ns, nsIndex.name);
 }
 
 ConnectStrategy::ConnectStrategy(const cluster::ShardingConfig& config, Connections& connections, int thisShard) noexcept
@@ -183,24 +198,24 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::Connect(int shardId, Error& 
 	const auto reconnectTs = connections_.reconnectTs;
 	rlk.unlock();
 
-	std::unique_lock wlk(connections_.m);
+	unique_lock wlk(connections_.m);
 	if (connections_.shutdown) {
 		reconnectStatus = connections_.status;
 		return {};
 	}
 	if (reconnectTs == connections_.reconnectTs) {
-		logPrintf(LogInfo, "[sharding proxy] Performing reconnect...");
+		logFmt(LogInfo, "[sharding proxy] Performing reconnect...");
 		auto conn = doReconnect(shardId, reconnectStatus);
 		connections_.status = reconnectStatus;
 		connections_.reconnectTs = steady_clock_w::now();
-		const auto reconnectTs = connections_.reconnectTs;
-		logPrintf(LogInfo, "[sharding proxy] Reconnect result: %s", reconnectStatus.ok() ? "OK" : reconnectStatus.what());
+		const auto reconnectTs2 = connections_.reconnectTs;
+		logFmt(LogInfo, "[sharding proxy] Reconnect result: {}", reconnectStatus.ok() ? "OK" : reconnectStatus.what());
 
 		if (reconnectStatus.ok()) {
 			wlk.unlock();
 			rlk.lock();
 			// Stop unused connections
-			if (!connections_.shutdown && reconnectTs == connections_.reconnectTs) {
+			if (!connections_.shutdown && reconnectTs2 == connections_.reconnectTs) {
 				for (size_t i = 0; i < connections_.size(); ++i) {
 					if (i != connections_.actualIndex) {
 						connections_[i]->Stop();
@@ -230,8 +245,9 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 	for (size_t i = 0; i < size; ++i) {
 		auto conn = connections_[i];
 		auto& c = *conn;
+		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 		auto err = c.WithCompletion([i, stData, conn = std::move(conn)](const Error& err) {
-						std::lock_guard lck(stData->mtx);
+						lock_guard lck(stData->mtx);
 						++stData->completed;
 						if (err.ok()) {
 							stData->onlineIdx = i;
@@ -242,12 +258,13 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 						}
 					}).Status(true);
 		if (!err.ok()) {
-			std::lock_guard lck(stData->mtx);
+			lock_guard lck(stData->mtx);
 			++stData->completed;
 		}
 	}
-	const Query q = Query(std::string(kReplicationStatsNamespace)).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
-	std::unique_lock lck(stData->mtx);
+	const impl::Query q =
+		*impl::Impl(Query(std::string(kReplicationStatsNamespace)).Where("type", CondEq, Variant(cluster::kClusterReplStatsType)));
+	unique_lock lck(stData->mtx);
 	stData->cv.wait(lck, [stData] { return stData->onlineIdx >= 0 || stData->completed == stData->statuses.size(); });
 	const int idx = stData->onlineIdx;
 	lck.unlock();
@@ -262,7 +279,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 	if (err.code() == errNetwork) {
 		conn.Stop();
 
-		logPrintf(LogTrace, "[sharding proxy] Shard %d reconnects to shard %d via %s", thisShard_, shardID, dsns[idx]);
+		logFmt(LogTrace, "[sharding proxy] Shard {} reconnects to shard {} via {}", thisShard_, shardID, dsns[idx]);
 		err = conn.Connect(dsns[idx]);
 		qr = client::QueryResults();
 		if (err.ok()) {
@@ -291,9 +308,9 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 			if (stats.nodeStats.size()) {
 				auto res = tryConnectToLeader(dsns, stats, reconnectStatus);
 				if (reconnectStatus.ok()) {
-					logPrintf(
-						LogTrace, "[sharding proxy] Shard %d will proxy data to shard %d (cluster) via %s", thisShard_, shardID,
-						connections_.actualIndex.has_value() ? fmt::sprintf("%s", dsns[connections_.actualIndex.value()]) : "'Unknow DSN'");
+					logFmt(
+						LogTrace, "[sharding proxy] Shard {} will proxy data to shard {} (cluster) via {}", thisShard_, shardID,
+						connections_.actualIndex.has_value() ? fmt::format("{}", dsns[connections_.actualIndex.value()]) : "'Unknown DSN'");
 					return res;
 				}
 				break;
@@ -304,11 +321,11 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 			// Single node without cluster
 			connections_.actualIndex = idx;
 			reconnectStatus = Error();
-			logPrintf(LogTrace, "[sharding proxy] Shard %d will proxy data to shard %d (single node) via %s", thisShard_, shardID,
-					  dsns[connections_.actualIndex.value()]);
+			logFmt(LogTrace, "[sharding proxy] Shard {} will proxy data to shard {} (single node) via {}", thisShard_, shardID,
+				   dsns[connections_.actualIndex.value()]);
 			return connections_[idx];
 		default:
-			reconnectStatus = Error(errLogic, "Unexpected results count for #replicationstats: %d", qr.Count());
+			reconnectStatus = Error(errLogic, "Unexpected results count for #replicationstats: {}", qr.Count());
 	}
 
 	return {};
@@ -355,14 +372,14 @@ LocatorService::LocatorService(ClusterProxy& rx, cluster::ShardingConfig config)
 
 Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key>& keys) {
 	return fieldType.EvaluateOneOf(
-		[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
-				  KeyValueType::Uuid>) -> Error {
+		[&](concepts::OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float, KeyValueType::String, KeyValueType::Bool,
+							KeyValueType::Int, KeyValueType::Uuid> auto) -> Error {
 			try {
 				for (auto& k : keys) {
 					for (auto& [l, r, _] : k.values) {
 						(void)_;
-						l.convert(fieldType, nullptr, nullptr);
-						r.convert(fieldType, nullptr, nullptr);
+						std::ignore = l.convert(fieldType, nullptr, nullptr);
+						std::ignore = r.convert(fieldType, nullptr, nullptr);
 					}
 				}
 			} catch (const Error& err) {
@@ -370,17 +387,18 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 			}
 			return Error();
 		},
-		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) { return Error{errLogic, "Sharding by composite index is unsupported"}; },
-		[fieldType](OneOf<KeyValueType::Undefined, KeyValueType::Null>) {
-			return Error{errLogic, "Unsupported field type: %s", fieldType.Name()};
+		[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Tuple> auto) {
+			return Error{errLogic, "Sharding by composite index is unsupported"};
+		},
+		[fieldType](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector> auto) {
+			return Error{errLogic, "Unsupported field type: {}", fieldType.Name()};
 		});
 }
 
 Error LocatorService::validateConfig() {
 	for (auto& ns : config_.namespaces) {
-		const auto ftIndexes = rx_.GetFTIndexes(ns.ns);
-		if (ftIndexes.find(ns.index) != ftIndexes.cend()) {
-			return Error(errLogic, "Sharding by full text index is not supported: %s", ns.index);
+		if (rx_.IsFulltextOrVector(ns.ns, ns.index)) {
+			return Error(errLogic, "Sharding by full text or vector index is not supported: {}", ns.index);
 		}
 		int field = ShardingKeyType::NotSetShard;
 		PayloadType pt = rx_.GetPayloadType(ns.ns);
@@ -394,7 +412,7 @@ Error LocatorService::validateConfig() {
 				return err;
 			}
 		} else {
-			return Error(errLogic, "Sharding field is supposed to have index: '%s:%s'", ns.ns, ns.index);
+			return Error(errLogic, "Sharding field is supposed to have index: '{}:{}'", ns.ns, ns.index);
 		}
 	}
 	return errOK;
@@ -443,11 +461,11 @@ Error LocatorService::Start() {
 			auto& connection = connections.emplace_back(std::make_shared<client::Reindexer>(
 				client::Reindexer(cfg, proxyConnCount, proxyConnThreads).WithShardId(int(shardId), true)));
 
-			logPrintf(LogInfo, "[sharding proxy] Shard %d connects to shard %d via %s. Conns count: %d, threads count: %d", ActualShardId(),
-					  shardId, dsn, proxyConnCount, proxyConnThreads);
+			logFmt(LogInfo, "[sharding proxy] Shard {} connects to shard {} via {}. Conns count: {}, threads count: {}", ActualShardId(),
+				   shardId, dsn, proxyConnCount, proxyConnThreads);
 			status = connection->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 			if (!status.ok()) {
-				return Error(errLogic, "Error connecting to shard [%s]: %s", dsn, status.what());
+				return Error(errLogic, "Error connecting to shard [{}]: {}", dsn, status.what());
 			}
 		}
 
@@ -463,7 +481,7 @@ ConnectionsPtr LocatorService::GetShardsConnections(std::string_view ns, int sha
 	ConnectionsPtr connections = getConnectionsFromCache(ns, shardId, rebuildCache);
 	lk.unlock();
 	if (rebuildCache) {
-		std::unique_lock lck(m_);
+		unique_lock lck(m_);
 		connections = getConnectionsFromCache(ns, shardId, rebuildCache);
 		if (rebuildCache) {
 			connections = rebuildConnectionsVector(ns, shardId, status);
@@ -497,7 +515,7 @@ ConnectionsPtr LocatorService::GetAllShardsConnections(Error& status) {
 	return connections;
 }
 
-ConnectionsPtr LocatorService::GetShardsConnectionsWithId(const Query& q, Error& status) {
+ConnectionsPtr LocatorService::GetShardsConnectionsWithId(const impl::Query& q, Error& status) {
 	ShardIDsContainer ids = routingStrategy_.GetHostsIdsKeyPair(q).first;
 	assert(ids.size() > 0);
 	if (ids.size() > 1) {
@@ -548,11 +566,11 @@ ConnectionsPtr LocatorService::rebuildConnectionsVector(std::string_view ns, int
 
 ConnectionsPtr LocatorService::getConnectionsFromCache(std::string_view ns, int shardId, bool& requiresRebuild) {
 	ConnectionsPtr connections;
-	auto it = connectionsCache_.find(ns);
+	const auto it = connectionsCache_.find(ns);
 	if (it != connectionsCache_.end()) {
-		auto nsConnnectTableRow = it->second.find(shardId);
-		if (nsConnnectTableRow != it->second.end()) {
-			connections = nsConnnectTableRow->second;
+		const auto nsConnectTableRow = it->second.find(shardId);
+		if (nsConnectTableRow != it->second.end()) {
+			connections = nsConnectTableRow->second;
 			for (auto& connection : *connections) {
 				if (!connection.IsOnThisShard() && !connection.IsConnected()) {
 					requiresRebuild = true;
@@ -592,6 +610,27 @@ std::shared_ptr<client::Reindexer> LocatorService::getShardConnection(int shardI
 		return {};
 	}
 	return peekHostForShard(hostsConnections_[shardId], shardId, status);
+}
+
+Connections::Connections(Connections&& obj) noexcept
+	: base(static_cast<base&&>(obj)),
+	  actualIndex(std::move(obj.actualIndex)),
+	  reconnectTs(obj.reconnectTs),
+	  status(std::move(obj.status)),
+	  shutdown(obj.shutdown) {}
+
+Connections::Connections(const Connections& obj) noexcept
+	: base(obj), actualIndex(obj.actualIndex), reconnectTs(obj.reconnectTs), status(obj.status), shutdown(obj.shutdown) {}
+
+void Connections::Shutdown() {
+	lock_guard lck(m);
+	if (!shutdown) {
+		for (auto& conn : *this) {
+			conn->Stop();
+		}
+		shutdown = true;
+		status = Error(errTerminated, "Sharding proxy is already shut down");
+	}
 }
 
 }  // namespace sharding

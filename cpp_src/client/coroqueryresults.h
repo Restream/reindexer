@@ -5,13 +5,20 @@
 #include "client/item.h"
 #include "client/resultserializer.h"
 #include "core/namespace/incarnationtags.h"
+#include "core/rank_t.h"
 #include "tools/clock.h"
 #include "tools/lsn.h"
 
 namespace reindexer {
 
+namespace impl {
 class Query;
+}  // namespace impl
+
+namespace builders {
 struct CsvOrdering;
+}  // namespace builders
+using builders::CsvOrdering;
 
 namespace net {
 namespace cproto {
@@ -24,19 +31,19 @@ namespace client {
 
 using QrRawBuffer = h_vector<char, 0x100>;
 
-struct ParsedQrRawBuffer {
+struct [[nodiscard]] ParsedQrRawBuffer {
 	QrRawBuffer* buf = nullptr;
 	ResultSerializer::ParsingData parsingData;
 };
 
-struct LazyQueryResultsMode {};
+struct [[nodiscard]] LazyQueryResultsMode {};
 
 using std::chrono::seconds;
 using std::chrono::milliseconds;
 
 class QueryResults;
 
-class CoroQueryResults {
+class [[nodiscard]] CoroQueryResults {
 public:
 	using NsArray = h_vector<std::shared_ptr<Namespace>, 4>;
 
@@ -47,7 +54,7 @@ public:
 	CoroQueryResults(const CoroQueryResults&) = delete;
 	CoroQueryResults(CoroQueryResults&& o) noexcept : i_(std::move(o.i_)) { o.setClosed(); }
 	CoroQueryResults& operator=(const CoroQueryResults&) = delete;
-	CoroQueryResults& operator=(CoroQueryResults&& o) {
+	CoroQueryResults& operator=(CoroQueryResults&& o) noexcept {
 		if (this != &o) {
 			i_ = std::move(o.i_);
 			o.setClosed();
@@ -56,19 +63,22 @@ public:
 	}
 	~CoroQueryResults();
 
-	class Iterator {
+	class [[nodiscard]] Iterator {
 	public:
+		Iterator(const CoroQueryResults& qr, int idx) noexcept : qr_{&qr}, idx_{idx} {}
+
 		using JoinedData = h_vector<h_vector<ResultSerializer::ItemParams, 1>, 1>;
 		Error GetJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true);
-		[[nodiscard]] Error GetCSV(WrSerializer& wrser, CsvOrdering& ordering) noexcept;
+		Error GetCSV(WrSerializer& wrser, CsvOrdering& ordering) noexcept;
 		Item GetItem();
 		lsn_t GetLSN();
 		int GetNSID();
-		int GetID();
+		IdType GetID();
 		int GetShardID();
-		int16_t GetRank();
+		RankT GetRank();
+		bool IsRanked() noexcept;
 		bool IsRaw();
 		std::string_view GetRaw();
 		const JoinedData& GetJoined();
@@ -85,6 +95,11 @@ public:
 		bool operator!=(const Iterator& other) const noexcept { return idx_ != other.idx_; }
 		bool operator==(const Iterator& other) const noexcept { return idx_ == other.idx_; }
 		Iterator& operator*() { return *this; }
+		const ResultSerializer::ItemParams& GetItemParams() const& { return itemParams_; }
+
+	protected:
+		Iterator(const CoroQueryResults& qr, int idx, int pos, int nextPos, ResultSerializer::ItemParams&& params) noexcept
+			: qr_{&qr}, idx_{idx}, pos_{pos}, nextPos_{nextPos}, itemParams_{std::move(params)} {}
 
 		void readNext();
 		void getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen = true) const;
@@ -93,18 +108,18 @@ public:
 		bool isAvailable() const noexcept { return idx_ >= qr_->i_.fetchOffset_ && idx_ < qr_->i_.queryParams_.qcount; }
 		Error unavailableIdxError() const;
 
-		const CoroQueryResults* qr_;
-		int idx_, pos_, nextPos_;
+		const CoroQueryResults* qr_{nullptr};
+		int idx_{0}, pos_{0}, nextPos_{0};
 		ResultSerializer::ItemParams itemParams_;
 		JoinedData joinedData_;
 	};
-	struct QueryData {
+	struct [[nodiscard]] QueryData {
 		uint16_t joinedSize = 0;
 		h_vector<uint16_t, 8> mergedJoinedSizes;
 	};
 
-	Iterator begin() const noexcept { return Iterator{this, 0, 0, 0, {}, {}}; }
-	Iterator end() const noexcept { return Iterator{this, i_.queryParams_.qcount, 0, 0, {}, {}}; }
+	Iterator begin() const noexcept { return Iterator{*this, 0}; }
+	Iterator end() const noexcept { return Iterator{*this, i_.queryParams_.qcount}; }
 
 	size_t Count() const noexcept { return i_.queryParams_.qcount; }
 	int TotalCount() const noexcept { return i_.queryParams_.totalcount; }
@@ -157,14 +172,14 @@ private:
 	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, milliseconds timeout,
 					 bool lazyMode) noexcept
 		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout, lazyMode) {}
-	CoroQueryResults(const Query* q, net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, RPCQrId id,
-					 int fetchFlags, int fetchAmount, milliseconds timeout, bool lazyMode)
+	CoroQueryResults(const impl::Query* q, net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult,
+					 RPCQrId id, int fetchFlags, int fetchAmount, milliseconds timeout, bool lazyMode)
 		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout, lazyMode) {
 		Bind(rawResult, id, q);
 	}
 	CoroQueryResults(NsArray&& nsArray, Item& item);
 
-	void Bind(std::string_view rawResult, RPCQrId id, const Query* q);
+	void Bind(std::string_view rawResult, RPCQrId id, const impl::Query* q);
 	void fetchNextResults();
 	void handleFetchedBuf(net::cproto::CoroRPCAnswer& ans);
 	void parseExtraData();
@@ -178,7 +193,7 @@ private:
 	}
 	const net::cproto::CoroClientConnection* getConn() const noexcept { return i_.conn_; }
 
-	struct Impl {
+	struct [[nodiscard]] Impl {
 		Impl(int fetchFlags, int fetchAmount, bool lazyMode) noexcept
 			: fetchFlags_(fetchFlags), fetchAmount_(fetchAmount), lazyMode_(lazyMode) {
 			InitLazyData();

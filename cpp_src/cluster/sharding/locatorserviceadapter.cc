@@ -14,7 +14,7 @@ std::pair<int, Variant> LocatorServiceAdapter::GetShardIdKeyPair(std::string_vie
 	return locator_->GetShardIdKeyPair(ns, item);
 }
 
-std::pair<ShardIDsContainer, Variant> LocatorServiceAdapter::GetShardIdKeyPair(const Query& q) const {
+std::pair<ShardIDsContainer, Variant> LocatorServiceAdapter::GetShardIdKeyPair(const impl::Query& q) const {
 	return locator_->GetShardIdKeyPair(q);
 }
 

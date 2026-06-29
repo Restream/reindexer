@@ -2,22 +2,24 @@
 
 #include <optional>
 #include "core/dbconfig.h"
-#include "estl/mutex.h"
+#include "estl/marked_mutex.h"
 #include "tools/clock.h"
 
 namespace reindexer {
 
+namespace impl {
 class Query;
+}  // namespace impl
 class LocalTransaction;
-class ExplainCalc;
+class Explain;
 
 namespace long_actions {
 
 template <typename T>
-struct ActionWrapper {};
+struct [[nodiscard]] ActionWrapper {};
 
 // to store durations for different MutexMark types and methods calls in one array
-enum class DurationStorageIdx : unsigned {
+enum class [[nodiscard]] DurationStorageIdx : unsigned {
 	DbManager = 0u,
 	IndexText,
 	Namespace,
@@ -26,10 +28,12 @@ enum class DurationStorageIdx : unsigned {
 	CloneNs,
 	AsyncStorage,
 	DataFlush,
-	StorageSize
+	StorageDirOps,
+
+	StorageSize	 // This must be the last element
 };
 
-constexpr DurationStorageIdx DurationStorageIdxCast(MutexMark mark) {
+consteval DurationStorageIdx DurationStorageIdxCast(MutexMark mark) noexcept {
 	switch (mark) {
 		case MutexMark::DbManager:
 			return DurationStorageIdx::DbManager;
@@ -45,11 +49,14 @@ constexpr DurationStorageIdx DurationStorageIdxCast(MutexMark mark) {
 			return DurationStorageIdx::CloneNs;
 		case MutexMark::AsyncStorage:
 			return DurationStorageIdx::AsyncStorage;
+		case MutexMark::StorageDirOps:
+			return DurationStorageIdx::StorageDirOps;
 	}
 }
 
-enum class ExplainDuration {
+enum class [[nodiscard]] ExplainDuration {
 	Total,
+	Preselect,
 	Prepare,
 	Indexes,
 	Postprocess,
@@ -59,9 +66,9 @@ enum class ExplainDuration {
 };
 
 template <QueryType Enum>
-struct QueryEnum2Type : std::integral_constant<QueryType, Enum> {};
+struct [[nodiscard]] QueryEnum2Type : std::integral_constant<QueryType, Enum> {};
 
-struct LockDurationStorage {
+struct [[nodiscard]] LockDurationStorage {
 	using ArrayT = std::array<std::optional<std::chrono::microseconds>, size_t(DurationStorageIdx::StorageSize)>;
 	ArrayT durationStorage = {};
 	void Add(DurationStorageIdx idx, std::chrono::microseconds time) {
@@ -70,53 +77,53 @@ struct LockDurationStorage {
 	}
 };
 
-struct QueryParams {
-	const Query& query;
+struct [[nodiscard]] QueryParams {
+	const impl::Query& query;
 	LongQueriesLoggingParams loggingParams;
 };
 
-struct TransactionParams {
+struct [[nodiscard]] TransactionParams {
 	const LocalTransaction& tx;
 	LongTxLoggingParams thresholds;
 	const bool& wasCopied;
 };
 
 template <>
-struct ActionWrapper<LocalTransaction> : TransactionParams, LockDurationStorage {
+struct [[nodiscard]] ActionWrapper<LocalTransaction> : TransactionParams, LockDurationStorage {
 	template <typename... Args>
 	ActionWrapper(Args&&... args) : TransactionParams{std::forward<Args>(args)...}, LockDurationStorage() {}
 };
 
 template <>
-struct ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>> : QueryParams {
+struct [[nodiscard]] ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>> : QueryParams {
 	template <typename... Args>
 	ActionWrapper(Args&&... args) : QueryParams{std::forward<Args>(args)...} {}
 
 	using ArrayT = std::array<std::chrono::microseconds, size_t(ExplainDuration::ExplainDurationSize)>;
 	std::optional<ArrayT> durationStorage = std::nullopt;
 
-	void Add(const ExplainCalc&);
+	void Add(const Explain&);
 
 private:
-	using ExplainMethodType = system_clock_w::duration (ExplainCalc::*)() const noexcept;
+	using ExplainMethodType = system_clock_w::duration (Explain::*)() const noexcept;
 	template <ExplainMethodType... methods>
-	void add(const ExplainCalc&);
+	void add(const Explain&);
 };
 
 template <>
-struct ActionWrapper<QueryEnum2Type<QueryType::QueryUpdate>> : QueryParams, LockDurationStorage {
+struct [[nodiscard]] ActionWrapper<QueryEnum2Type<QueryType::QueryUpdate>> : QueryParams, LockDurationStorage {
 	template <typename... Args>
 	ActionWrapper(Args&&... args) : QueryParams{std::forward<Args>(args)...}, LockDurationStorage{} {}
 };
 
 template <>
-struct ActionWrapper<QueryEnum2Type<QueryType::QueryDelete>> : QueryParams, LockDurationStorage {
+struct [[nodiscard]] ActionWrapper<QueryEnum2Type<QueryType::QueryDelete>> : QueryParams, LockDurationStorage {
 	template <typename... Args>
 	ActionWrapper(Args&&... args) : QueryParams{std::forward<Args>(args)...}, LockDurationStorage{} {}
 };
 
 template <typename T>
-struct Logger {
+struct [[nodiscard]] Logger {
 	Logger() = default;
 	static constexpr bool isEnabled = !std::is_empty_v<ActionWrapper<T>>;
 

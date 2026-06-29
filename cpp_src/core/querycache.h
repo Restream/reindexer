@@ -1,14 +1,14 @@
 #pragma once
 
 #include "core/lrucache.h"
-#include "core/query/query.h"
+#include "core/query/query_impl.h"
 #include "estl/h_vector.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "vendor/murmurhash/MurmurHash3.h"
 
 namespace reindexer {
 
-struct QueryCountCacheVal {
+struct [[nodiscard]] QueryCountCacheVal {
 	QueryCountCacheVal() = default;
 	QueryCountCacheVal(size_t total) noexcept : totalCount(total) {}
 
@@ -21,7 +21,7 @@ struct QueryCountCacheVal {
 constexpr uint8_t kCountCachedKeyMode =
 	SkipMergeQueries | SkipLimitOffset | SkipAggregations | SkipSortEntries | SkipExtraParams | SkipLeftJoinQueries;
 
-class QueryCacheKey {
+class [[nodiscard]] QueryCacheKey {
 public:
 	using BufT = h_vector<uint8_t, 256>;
 
@@ -30,8 +30,8 @@ public:
 	QueryCacheKey(const QueryCacheKey& other) = default;
 	QueryCacheKey& operator=(QueryCacheKey&& other) = default;
 	QueryCacheKey& operator=(const QueryCacheKey& other) = delete;
-	template <typename JoinedSelectorsT>
-	QueryCacheKey(const Query& q, uint8_t mode, const JoinedSelectorsT* jnss) {
+	template <typename JoinItemsProcessorsT>
+	QueryCacheKey(const impl::Query& q, uint8_t mode, const JoinItemsProcessorsT* jnss) {
 		WrSerializer ser;
 		q.Serialize(ser, mode);
 		if (jnss) {
@@ -40,7 +40,7 @@ public:
 				ser.PutUInt64(jns.LastUpdateTime());
 			}
 		}
-		if rx_unlikely (ser.Len() > BufT::max_size()) {
+		if (ser.Len() > BufT::max_size()) [[unlikely]] {
 			throw Error(errLogic, "QueryCacheKey: buffer overflow");
 		}
 		buf_.assign(ser.Buf(), ser.Buf() + ser.Len());
@@ -54,13 +54,13 @@ private:
 	BufT buf_;
 };
 
-struct EqQueryCacheKey {
+struct [[nodiscard]] EqQueryCacheKey {
 	bool operator()(const QueryCacheKey& lhs, const QueryCacheKey& rhs) const noexcept {
 		return (lhs.buf().size() == rhs.buf().size()) && (memcmp(lhs.buf().data(), rhs.buf().data(), lhs.buf().size()) == 0);
 	}
 };
 
-struct HashQueryCacheKey {
+struct [[nodiscard]] HashQueryCacheKey {
 	size_t operator()(const QueryCacheKey& q) const noexcept {
 		uint64_t hash[2];
 		MurmurHash3_x64_128(q.buf().data(), q.buf().size(), 0, &hash);

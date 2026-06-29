@@ -5,16 +5,16 @@
 namespace reindexer {
 namespace cluster {
 
-AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, SharedSyncState<>& syncState, ReindexerImpl& thisNode,
-										 Clusterizator& clusterizator)
+AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, SharedSyncState& syncState, ReindexerImpl& thisNode,
+										 ClusterManager& clusterManager)
 	: statsCollector_(std::string(kAsyncReplStatsType)),
 	  updatesQueue_(q),
 	  syncState_(syncState),
 	  thisNode_(thisNode),
-	  clusterizator_(clusterizator) {}
+	  clusterManager_(clusterManager) {}
 
 void AsyncDataReplicator::Configure(AsyncReplConfigData config) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if ((config_.has_value() && config_.value() != config) || !config_.has_value()) {
 		stop();
 		config_ = std::move(config);
@@ -22,30 +22,30 @@ void AsyncDataReplicator::Configure(AsyncReplConfigData config) {
 }
 
 void AsyncDataReplicator::Configure(ReplicationConfigData config) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	if ((baseConfig_.has_value() && baseConfig_.value() != config) || !baseConfig_.has_value()) {
 		stop();
-		baseConfig_ = config;
+		baseConfig_ = std::move(config);
 	}
 }
 
 bool AsyncDataReplicator::IsExpectingStartup() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return isExpectingStartup();
 }
 
-void AsyncDataReplicator::Run() {
+void AsyncDataReplicator::Run(const std::shared_ptr<NamespacesSyncScheduler>& nssSyncScheduler) {
 	auto localNamespaces = getLocalNamespaces();
 	{
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (!isExpectingStartup()) {
-			log_.Warn([] { return "AsyncDataReplicator: startup is not expected"; });
+			logWarnSimple("AsyncDataReplicator: startup is not expected");
 			return;
 		}
 
 		// NOLINTBEGIN (bugprone-unchecked-optional-access) Optionals were checked in isExpectingStartup()
 		if (config_->nodes.size() > UpdatesQueueT::kMaxReplicas) {
-			throw Error(errParams, "Async replication nodes limit was reached: %d", UpdatesQueueT::kMaxReplicas);
+			throw Error(errParams, "Async replication nodes limit was reached: {}", UpdatesQueueT::kMaxReplicas);
 		}
 		statsCollector_.Init(config_->nodes);
 		log_.SetLevel(config_->logLevel);
@@ -60,19 +60,20 @@ void AsyncDataReplicator::Run() {
 				nodesShard.emplace_back(std::make_pair(j, config_->nodes[j]));
 			}
 			if (nodesShard.size()) {
-				replThreads_.emplace_back(baseConfig_->serverID, thisNode_, updatesQueue_.GetAsyncQueue(), config_->nodes, config_->mode,
-										  syncState_, statsCollector_, log_);
+				replThreads_.emplace_back(baseConfig_->serverID, thisNode_, updatesQueue_.GetAsyncQueue(), nssSyncScheduler, config_->nodes,
+										  config_->mode, syncState_, statsCollector_, log_);
 				replThreads_.back().Run(threadsConfig, std::move(nodesShard), config_->nodes.size());
 			}
 		}
 	}
 	if (config_->role == AsyncReplConfigData::Role::Leader) {
 		for (auto& ns : localNamespaces) {
-			if (!clusterizator_.NamespaceIsInClusterConfig(ns)) {
-				auto err = thisNode_.SetClusterizationStatus(
-					ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None}, RdxContext());
+			if (!clusterManager_.NamespaceIsInClusterConfig(ns)) {
+				auto err = thisNode_.SetClusterOperationStatus(
+					ns, ClusterOperationStatus{baseConfig_->serverID, ClusterOperationStatus::Role::None},
+					RdxContext().WithLeaderReplicationToken(key_string{baseConfig_->GeReplicationToken(ns)}));
 				if (!err.ok()) {
-					logWarn("SetClusterizationStatus for the local '%s' namespace error: %s", ns, err.what());
+					logWarn("SetClusterOperationStatus for the local '{}' namespace error: {}", ns, err.what());
 				}
 			}
 		}
@@ -81,7 +82,7 @@ void AsyncDataReplicator::Run() {
 }
 
 void AsyncDataReplicator::Stop(bool resetConfig) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	stop();
 	if (resetConfig) {
 		config_.reset();
@@ -98,20 +99,24 @@ ReplicationStats AsyncDataReplicator::GetReplicationStats() const {
 }
 
 bool AsyncDataReplicator::NamespaceIsInAsyncConfig(std::string_view nsName) const {
-	if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) {
+	if (isSystemNamespaceNameFastReplication(nsName)) {
 		return false;
 	}
 
 	const UpdatesQueueT::HashT h;
 	const size_t hash = h(nsName);
 
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return updatesQueue_.GetAsyncQueue()->TokenIsInWhiteList(nsName, hash);
 }
 
 bool AsyncDataReplicator::isExpectingStartup() const noexcept {
 	return config_.has_value() && baseConfig_.has_value() && config_->nodes.size() && baseConfig_->serverID >= 0 && !isRunning() &&
 		   config_->role != AsyncReplConfigData::Role::None;
+}
+
+size_t AsyncDataReplicator::threadsCount() const noexcept {
+	return config_.has_value() && config_->replThreadsCount > 0 ? config_->replThreadsCount : kDefaultReplThreadCount;
 }
 
 void AsyncDataReplicator::stop() {
@@ -123,7 +128,7 @@ void AsyncDataReplicator::stop() {
 			th.AwaitTermination();
 		}
 		replThreads_.clear();
-		statsCollector_.Reset();
+		statsCollector_.Clear();
 		updatesQueue_.GetAsyncQueue()->SetWritable(false, Error());
 		updatesQueue_.ReinitAsyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(), log_);
 	}
@@ -134,7 +139,7 @@ NsNamesHashSetT AsyncDataReplicator::getLocalNamespaces() {
 	NsNamesHashSetT namespaces;
 	auto err = thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary().WithClosed(), RdxContext());
 	if (!err.ok()) {
-		throw Error(errNotValid, "Unable to enum local namespaces on async repl configuration: %s", err.what());
+		throw Error(errNotValid, "Unable to enum local namespaces on async repl configuration: {}", err.what());
 	}
 	for (auto& ns : nsDefs) {
 		namespaces.emplace(std::move(ns.name));

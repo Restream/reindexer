@@ -2,12 +2,17 @@
 #include <fstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
+#include "core/formatters/checksum_fmt.h"
 #include "core/formatters/lsn_fmt.h"
+#include "core/system_ns_names.h"
+#include "estl/gift_str.h"
 #include "systemhelpers.h"
 #include "tools/crypt.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
 #include "vendor/yaml-cpp/yaml.h"
+
+namespace reindexer_tests {
 
 #ifndef REINDEXER_SERVER_PATH
 #define REINDEXER_SERVER_PATH ""
@@ -24,23 +29,102 @@ void WriteConfigFile(const std::string& path, const std::string& configYaml) {
 static constexpr auto kDefaultSSLCertFile = "cert.pem";
 static constexpr auto kDefaultSSLKeyFile = "key.pem";
 
+AsyncReplicationConfigTest::Node::Node(DSN _dsn, std::optional<NsSet> _nsList) : dsn(std::move(_dsn)), nsList(std::move(_nsList)) {}
+
+void AsyncReplicationConfigTest::Node::GetJSON(JsonBuilder& jb) const {
+	jb.Put("dsn", dsn);
+	auto arrNode = jb.Array("namespaces");
+	if (nsList) {
+		for (const auto& ns : *nsList) {
+			arrNode.Put(TagName::Empty(), ns);
+		}
+	}
+}
+
+AsyncReplicationConfigTest::AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers, std::string _appName,
+													   std::string _mode)
+	: role(std::move(_role)),
+	  mode(std::move(_mode)),
+	  nodes(std::move(_followers)),
+	  forceSyncOnLogicError(false),
+	  forceSyncOnWrongDataHash(true),
+	  appName(std::move(_appName)),
+	  serverId(0) {}
+
+AsyncReplicationConfigTest::AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers, bool _forceSyncOnLogicError,
+													   bool _forceSyncOnWrongDataHash, int _serverId, std::string _appName,
+													   NsSet _namespaces, std::string _mode, int _onlineUpdatesDelayMSec)
+	: role(std::move(_role)),
+	  mode(std::move(_mode)),
+	  nodes(std::move(_followers)),
+	  forceSyncOnLogicError(_forceSyncOnLogicError),
+	  forceSyncOnWrongDataHash(_forceSyncOnWrongDataHash),
+	  appName(std::move(_appName)),
+	  namespaces(std::move(_namespaces)),
+	  serverId(_serverId),
+	  onlineUpdatesDelayMSec(_onlineUpdatesDelayMSec) {}
+
+bool AsyncReplicationConfigTest::operator==(const AsyncReplicationConfigTest& config) const {
+	return role == config.role && mode == config.mode && nodes == config.nodes && forceSyncOnLogicError == config.forceSyncOnLogicError &&
+		   forceSyncOnWrongDataHash == config.forceSyncOnWrongDataHash && appName == config.appName && namespaces == config.namespaces &&
+		   serverId == config.serverId && syncThreads == config.syncThreads &&
+		   concurrentSyncsPerThread == config.concurrentSyncsPerThread && onlineUpdatesDelayMSec == config.onlineUpdatesDelayMSec;
+}
+
+std::string AsyncReplicationConfigTest::GetJSON() const {
+	WrSerializer wser;
+	JsonBuilder jb(wser);
+	GetJSON(jb);
+	return std::string(wser.Slice());
+}
+
+void AsyncReplicationConfigTest::GetJSON(JsonBuilder& jb) const {
+	jb.Put("app_name", appName);
+	jb.Put("server_id", serverId);
+	jb.Put("role", role);
+	jb.Put("mode", mode);
+	jb.Put("force_sync_on_logic_error", forceSyncOnLogicError);
+	jb.Put("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash);
+	jb.Put("sync_threads", syncThreads);
+	jb.Put("syncs_per_thread", concurrentSyncsPerThread);
+	jb.Put("online_updates_delay_msec", onlineUpdatesDelayMSec);
+	{
+		auto arrNode = jb.Array("namespaces");
+		for (const auto& ns : namespaces) {
+			arrNode.Put(TagName::Empty(), ns);
+		}
+	}
+	{
+		auto arrNode = jb.Array("nodes");
+		for (const auto& node : nodes) {
+			auto obj = arrNode.Object();
+			node.GetJSON(obj);
+		}
+	}
+}
+
 ServerControl::Interface::~Interface() {
-	Stop();
-	if (tr) {
-		tr->join();
+	try {
+		Stop();
+		if (tr) {
+			tr->join();
+		}
+		if (reindexerServerPIDWait != -1) {
+			auto err = WaitEndProcess(reindexerServerPIDWait);
+			assertf(err.ok(), "WaitEndProcess error: {}", err.what());
+		}
+		stopped_ = true;
+	} catch (const std::exception& err) {
+		fprintf(stderr, "reindexer error: unexpected exception in ~Interface: %s\n", err.what());
+		std::abort();
 	}
-	if (reindexerServerPIDWait != -1) {
-		auto err = reindexer::WaitEndProcess(reindexerServerPIDWait);
-		assertf(err.ok(), "WaitEndProcess error: %s", err.what());
-	}
-	stopped_ = true;
 }
 
 void ServerControl::Interface::Stop() {
 	if (config_.asServerProcess) {
 		if (reindexerServerPID != -1) {
-			auto err = reindexer::EndProcess(reindexerServerPID);
-			assertf(err.ok(), "EndProcess error: %s", err.what());
+			auto err = EndProcess(reindexerServerPID);
+			assertf(err.ok(), "EndProcess error: {}", err.what());
 			reindexerServerPIDWait = reindexerServerPID;
 			reindexerServerPID = -1;
 		}
@@ -56,6 +140,14 @@ ServerControl::~ServerControl() {
 	delete stopped_;
 }
 void ServerControl::Stop() { interface->Stop(); }
+
+std::string ServerControl::getTestLogPath() {
+	const char* testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
+	const char* testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+	std::string name;
+	name = name + "logs/" + testSetName + "/" + testName + "/";
+	return name;
+}
 
 ServerControl::ServerControl(ServerControl&& rhs) noexcept {
 	WLock lock(rhs.mtx_);
@@ -80,27 +172,26 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 	ReplicationConfigData replConf;
 	switch (type) {
 		case ConfigType::File: {
+			const auto dbPath = fs::JoinPath(config_.storagePath, config_.dbName);
 			std::string replConfYaml;
-			int read = fs::ReadFile(config_.storagePath + "/" + config_.dbName + "/" + kAsyncReplicationConfigFilename, replConfYaml);
+			int read = fs::ReadFile(fs::JoinPath(dbPath, kAsyncReplicationConfigFilename), replConfYaml);
 			EXPECT_TRUE(read > 0) << "Repl config read error";
 			auto err = asyncReplConf.FromYAML(replConfYaml);
 			EXPECT_TRUE(err.ok()) << err.what();
 			replConfYaml.clear();
-			read = fs::ReadFile(config_.storagePath + "/" + config_.dbName + "/" + kReplicationConfigFilename, replConfYaml);
+			read = fs::ReadFile(fs::JoinPath(dbPath, kReplicationConfigFilename), replConfYaml);
 			EXPECT_TRUE(read > 0) << "Repl config read error";
 			err = replConf.FromYAML(replConfYaml);
 			EXPECT_TRUE(err.ok()) << err.what();
 			break;
 		}
 		case ConfigType::Namespace: {
-			BaseApi::QueryResultsType results;
-			auto err = api.reindexer->Select(
-				Query(kConfigNs).Where("type", CondEq, "async_replication").Or().Where("type", CondEq, "replication"), results);
-			EXPECT_TRUE(err.ok()) << err.what();
+			BaseApi::QueryResultsType results =
+				api.Select(Query(kConfigNamespace).Where("type", CondEq, "async_replication").Or().Where("type", CondEq, "replication"));
 			EXPECT_TRUE(results.Status().ok()) << results.Status().what();
 			for (auto it : results) {
 				WrSerializer ser;
-				err = it.GetJSON(ser, false);
+				auto err = it.GetJSON(ser, false);
 				EXPECT_TRUE(err.ok()) << err.what();
 				try {
 					gason::JsonParser parser;
@@ -132,7 +223,7 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 	}
 	std::vector<AsyncReplicationConfigTest::Node> followers;
 	for (auto& node : asyncReplConf.nodes) {
-		followers.emplace_back(AsyncReplicationConfigTest::Node{std::move(node.dsn)});
+		followers.emplace_back(AsyncReplicationConfigTest::Node{node.GetRPCDsn()});
 		if (node.HasOwnNsList()) {
 			AsyncReplicationConfigTest::NsSet nss;
 			for (auto& ns : node.Namespaces()->data) {
@@ -160,18 +251,19 @@ void ServerControl::Interface::WriteClusterConfig(const std::string& configYaml)
 }
 
 void ServerControl::Interface::WriteShardingConfig(const std::string& configYaml) {
-	std::ofstream file(config_.storagePath + "/" + config_.dbName + "/" + kClusterShardingFilename, std::ios_base::trunc);
+	const auto dbPath = fs::JoinPath(config_.storagePath, config_.dbName);
+	std::ofstream file(fs::JoinPath(dbPath, kClusterShardingFilename), std::ios_base::trunc);
 	file << configYaml;
 	file.flush();
 }
 
-std::string ServerControl::Interface::dumpUserRecYAML() const noexcept {
+std::string ServerControl::Interface::dumpUserRecYAML() const {
 	YAML::Emitter res;
 	res << YAML::BeginMap;
 	for (const auto& [role, rec] : TestUserDataFactory::Get(config_.id)) {
 		res << YAML::Key << rec.login << YAML::Value;
 		res << YAML::BeginMap;
-		res << YAML::Key << "hash" << YAML::Value << fmt::format("$1${}${}", "rdx_salt", reindexer::MD5crypt(rec.password, "rdx_salt"));
+		res << YAML::Key << "hash" << YAML::Value << fmt::format("$1${}${}", "rdx_salt", MD5crypt(rec.password, "rdx_salt"));
 		res << YAML::Key << "roles" << YAML::Value;
 		res << YAML::BeginMap;
 		res << YAML::Key << YAML::Alias("") << YAML::Value << std::string(reindexer_server::UserRoleName(role));
@@ -204,29 +296,45 @@ void ServerControl::Interface::EnableAllProfilings() {
 			"memstats":true
 		}
 	})json";
-	auto item = api.reindexer->NewItem(kConfigNs);
+	auto item = api.reindexer->NewItem(kConfigNamespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	auto err = item.FromJSON(kJsonCfgProfiling);
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = api.reindexer->Upsert(kConfigNs, item);
+	err = api.reindexer->Upsert(kConfigNamespace, item);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::string_view type) {
-	Query qr = Query("#replicationstats").Where("type", CondEq, Variant(type));
-	BaseApi::QueryResultsType res;
-	auto err = api.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
-	assertf(res.Count() == 1, "Qr.Count()==%d\n", res.Count());
+	Query qr = Query(kReplicationStatsNamespace).Where("type", CondEq, Variant(type));
+	BaseApi::QueryResultsType res = api.Select(qr);
+	assertf(res.Count() == 1, "Qr.Count()=={}\n", res.Count());
 	WrSerializer wser;
-	err = res.begin().GetJSON(wser, false);
+	auto err = res.begin().GetJSON(wser, false);
 	EXPECT_TRUE(err.ok()) << err.what();
 	cluster::ReplicationStats stats;
-	err = stats.FromJSON(reindexer::giftStr(wser.Slice()));
+	err = stats.FromJSON(giftStr(wser.Slice()));
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(stats.type, type);
 	return stats;
 }
+
+std::string ServerControl::Interface::GetReplicationConfigFilePath() const {
+	return fs::JoinPath(fs::JoinPath(config_.storagePath, config_.dbName), kReplicationConfigFilename);
+}
+
+std::string ServerControl::Interface::GetAsyncReplicationConfigFilePath() const {
+	return fs::JoinPath(fs::JoinPath(config_.storagePath, config_.dbName), kAsyncReplicationConfigFilename);
+}
+
+std::string ServerControl::Interface::GetClusterConfigFilePath() const {
+	return fs::JoinPath(fs::JoinPath(config_.storagePath, config_.dbName), kClusterConfigFilename);
+}
+
+std::string ServerControl::Interface::GetShardingConfigFilePath() const {
+	return fs::JoinPath(fs::JoinPath(config_.storagePath, config_.dbName), kClusterShardingFilename);
+}
+
+std::string ServerControl::Interface::GetUsersYAMLFilePath() const { return fs::JoinPath(config_.storagePath, kUsersYAMLFilename); }
 
 std::string ServerControl::Interface::getLogName(const std::string& log, bool core) {
 	std::string name = getTestLogPath();
@@ -246,11 +354,11 @@ ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConf
 	  stopped_(stopped),
 	  config_(std::move(config)),
 	  kRPCDsn(MakeDsn(reindexer_server::UserRole::kRoleDBAdmin, config_.id, config_.rpcPort, config_.dbName)) {
-	std::string path = reindexer::fs::JoinPath(config_.storagePath, config_.dbName);
-	if (reindexer::fs::MkDirAll(path) < 0) {
-		assertf(false, "Unable to remove %s", path);
+	std::string path = fs::JoinPath(config_.storagePath, config_.dbName);
+	if (fs::MkDirAll(path) < 0) {
+		assertf(false, "Unable to remove {}", path);
 	}
-	WriteConfigFile(reindexer::fs::JoinPath(path, kStorageTypeFilename), "leveldb");
+	WriteConfigFile(fs::JoinPath(path, kStorageTypeFilename), "leveldb");
 	if (!ReplicationConfig.IsNull()) {
 		WriteReplicationConfig(YAML::Dump(ReplicationConfig));
 	}
@@ -276,9 +384,9 @@ ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConf
 	  config_(std::move(config)),
 	  kRPCDsn(MakeDsn(reindexer_server::UserRole::kRoleDBAdmin, config_.id, config_.rpcPort, config_.dbName)) {
 	if (WithSecurity()) {
-		std::string path = reindexer::fs::JoinPath(config_.storagePath, config_.dbName);
-		if (reindexer::fs::MkDirAll(path) < 0) {
-			assertf(false, "Unable to remove %s", path);
+		std::string path = fs::JoinPath(config_.storagePath, config_.dbName);
+		if (fs::MkDirAll(path) < 0) {
+			assertf(false, "Unable to remove {}", path);
 		}
 		WriteUsersYAMLFile(dumpUserRecYAML());
 	}
@@ -302,11 +410,11 @@ void ServerControl::Interface::Init() {
 	y["net"]["enable_cluster"] = true;
 	y["net"]["security"] = WithSecurity();
 	if (WithSecurity()) {
-		y["net"]["ssl_cert"] = reindexer::fs::JoinPath(TLSPath(), kDefaultSSLCertFile);
-		y["net"]["ssl_key"] = reindexer::fs::JoinPath(TLSPath(), kDefaultSSLKeyFile);
+		y["net"]["ssl_cert"] = fs::JoinPath(TLSPath(), kDefaultSSLCertFile);
+		y["net"]["ssl_key"] = fs::JoinPath(TLSPath(), kDefaultSSLKeyFile);
 	}
 	if (config_.maxUpdatesSize) {
-		y["net"]["maxupdatessize"] = config_.maxUpdatesSize;
+		y["net"]["max_updates_size"] = config_.maxUpdatesSize;
 	}
 	if (config_.asServerProcess) {
 		try {
@@ -315,7 +423,7 @@ void ServerControl::Interface::Init() {
 			if (reindexerServerPath.empty()) {	// -V547
 				throw Error(errLogic, "REINDEXER_SERVER_PATH empty");
 			}
-			reindexerServerPID = reindexer::StartProcess(reindexerServerPath, paramArray);
+			reindexerServerPID = StartProcess(reindexerServerPath, paramArray);
 		} catch (Error& e) {
 			EXPECT_TRUE(false) << e.what();
 		}
@@ -378,6 +486,9 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	asyncReplConf.onlineUpdatesDelayMSec = config.onlineUpdatesDelayMSec;
 	asyncReplConf.retrySyncIntervalMSec = 1000;
 	asyncReplConf.logLevel = LogTrace;
+	asyncReplConf.selfReplToken = config.selfReplicationToken;
+	auto err = checkSelfToken(asyncReplConf.selfReplToken);
+	ASSERT_TRUE(err.ok()) << err.what();
 	asyncReplConf.mode = cluster::AsyncReplConfigData::Str2mode(config.mode);
 	for (auto& node : config.nodes) {
 		asyncReplConf.nodes.emplace_back(cluster::AsyncReplNodeConfig{node.dsn});
@@ -393,39 +504,93 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	ReplicationConfigData replConf;
 	replConf.serverID = config.serverId;
 	replConf.clusterID = 2;
+	replConf.admissibleTokens = config.admissibleTokens;
+	err = mergeAdmissibleTokens(replConf.admissibleTokens);
+	ASSERT_TRUE(err.ok()) << err.what();
 
-	upsertConfigItemFromObject("replication", replConf);
-	upsertConfigItemFromObject("async_replication", asyncReplConf);
+	upsertConfigItemFromObject(replConf);
+	upsertConfigItemFromObject(asyncReplConf);
 }
 
-void ServerControl::Interface::AddFollower(const DSN& dsn, std::optional<std::vector<std::string>>&& nsList,
+template <typename T>
+T ServerControl::Interface::getConfigByType() const {
+	const std::string type = std::is_same_v<T, cluster::AsyncReplConfigData> ? "async_replication" : "replication";
+	BaseApi::QueryResultsType qr = api.Select(Query(kConfigNamespace).Where("type", CondEq, type));
+	EXPECT_EQ(qr.Count(), 1);
+	WrSerializer ser;
+	auto err = qr.begin().GetJSON(ser, false);
+	EXPECT_TRUE(err.ok()) << err.what();
+	T config;
+	gason::JsonParser parser;
+	err = config.FromJSON(parser.Parse(ser.Slice())[type]);
+	EXPECT_TRUE(err.ok()) << err.what();
+	return config;
+}
+
+template <typename T>
+void ServerControl::Interface::UpdateConfigReplTokens(const T& tok) {
+	constexpr bool isAdmissibleTokens = std::is_same_v<T, NsNamesHashMapT<std::string>>;
+	using ConfigT = std::conditional_t<isAdmissibleTokens, ReplicationConfigData, cluster::AsyncReplConfigData>;
+
+	auto config = getConfigByType<ConfigT>();
+	if constexpr (isAdmissibleTokens) {
+		config.admissibleTokens = tok;
+		auto err = mergeAdmissibleTokens(config.admissibleTokens);
+		ASSERT_TRUE(err.ok()) << err.what();
+	} else {
+		config.selfReplToken = tok;
+		auto err = checkSelfToken(config.selfReplToken);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	upsertConfigItemFromObject(config);
+}
+template void ServerControl::Interface::UpdateConfigReplTokens(const NsNamesHashMapT<std::string>&);
+template void ServerControl::Interface::UpdateConfigReplTokens(const std::string&);
+
+Error ServerControl::Interface::mergeAdmissibleTokens(NsNamesHashMapT<std::string>& tokens) const {
+	auto curConfig = getConfigByType<ReplicationConfigData>();
+
+	for (const auto& [ns, token] : curConfig.admissibleTokens) {
+		if (tokens.count(ns) != 0) {
+			auto newToken = tokens.at(ns);
+			if (newToken != token) {
+				return Error(errParams, "Replication config contain another token '{}' for namespace '{}'. Got - '{}'", token,
+							 std::string_view(ns), newToken);
+			}
+			continue;
+		}
+		tokens.insert({ns, token});
+	}
+	return {};
+}
+
+Error ServerControl::Interface::checkSelfToken(const std::string& token) const {
+	auto config = getConfigByType<cluster::AsyncReplConfigData>();
+	if (config.selfReplToken.empty()) {
+		return {};
+	}
+
+	if (config.selfReplToken != token) {
+		return Error(errParams, "Replication config contain another self replication token '{}'. Got - '{}'", config.selfReplToken, token);
+	}
+	return {};
+}
+
+void ServerControl::Interface::AddFollower(const ServerControl::Interface::Ptr& follower, std::optional<std::vector<std::string>>&& nsList,
 										   cluster::AsyncReplicationMode replMode) {
-	auto getCurConf = [this](cluster::AsyncReplConfigData& curConf) {
-		BaseApi::QueryResultsType qr;
-		auto err = api.reindexer->Select(Query(kConfigNs).Where("type", CondEq, "async_replication"), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(qr.Count(), 1);
-		WrSerializer ser;
-		err = qr.begin().GetJSON(ser, false);
-		ASSERT_TRUE(err.ok()) << err.what();
-		curConf = cluster::AsyncReplConfigData();
-		gason::JsonParser parser;
-		err = curConf.FromJSON(parser.Parse(ser.Slice())["async_replication"]);
-		ASSERT_TRUE(err.ok()) << err.what();
-	};
-	cluster::AsyncReplConfigData curConf;
-	getCurConf(curConf);
+	cluster::AsyncReplConfigData curConf = getConfigByType<cluster::AsyncReplConfigData>();
 	if (curConf.role != cluster::AsyncReplConfigData::Role::Leader) {
 		MakeLeader();
-		getCurConf(curConf);
+		curConf = getConfigByType<cluster::AsyncReplConfigData>();
 	}
 	cluster::AsyncReplNodeConfig newNode;
-	newNode.dsn = dsn;
+	newNode.SetRPCDsn(MakeDsn(reindexer_server::UserRole::kRoleReplication, follower));
 	if (replMode != cluster::AsyncReplicationMode::Default) {
 		newNode.SetReplicationMode(replMode);
 	}
 	auto found = std::find_if(curConf.nodes.begin(), curConf.nodes.end(),
-							  [&dsn](const cluster::AsyncReplNodeConfig& node) { return node.GetRPCDsn() == dsn; });
+							  [&newNode](const cluster::AsyncReplNodeConfig& node) { return node.GetRPCDsn() == newNode.GetRPCDsn(); });
 	ASSERT_TRUE(found == curConf.nodes.end());
 	curConf.nodes.emplace_back(std::move(newNode));
 	if (nsList.has_value()) {
@@ -442,13 +607,13 @@ void ServerControl::Interface::AddFollower(const DSN& dsn, std::optional<std::ve
 	curConf.logLevel = LogTrace;
 	curConf.mode = cluster::AsyncReplicationMode::Default;
 
-	upsertConfigItemFromObject("async_replication", curConf);
+	upsertConfigItemFromObject(curConf);
 }
 
 template <typename ValueT>
 void ServerControl::Interface::setNamespaceConfigItem(std::string_view nsName, std::string_view paramName, ValueT&& value) {
-	reindexer::WrSerializer ser;
-	reindexer::JsonBuilder jb(ser);
+	WrSerializer ser;
+	JsonBuilder jb(ser);
 
 	jb.Put("type", "namespaces");
 	auto nsArray = jb.Array("namespaces");
@@ -460,13 +625,7 @@ void ServerControl::Interface::setNamespaceConfigItem(std::string_view nsName, s
 	nsArray.End();
 	jb.End();
 
-	auto item = api.NewItem(kConfigNs);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-	auto err = item.FromJSON(ser.Slice());
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	api.Upsert(kConfigNs, item);
+	api.UpsertJSON(kConfigNamespace, ser.Slice());
 }
 
 bool ServerControl::IsRunning() { return !stopped_->load(); }
@@ -554,57 +713,57 @@ void ServerControl::WaitSync(const ServerControl::Interface::Ptr& s1, const Serv
 
 void ServerControl::Interface::ForceSync() {
 	Error err;
-	auto item = api.NewItem("#config");
+	auto item = api.NewItem(kConfigNamespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	err = item.FromJSON(R"json({"type":"action","action":{"command":"restart_replication"}})json");
 	ASSERT_TRUE(err.ok()) << err.what();
-	api.Upsert("#config", item);
+	api.Upsert(kConfigNamespace, item);
 }
 
-void ServerControl::Interface::ResetReplicationRole(const std::string& ns) {
+void ServerControl::Interface::ResetReplicationRole(std::string_view ns) {
 	auto err = TryResetReplicationRole(ns);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-Error ServerControl::Interface::TryResetReplicationRole(const std::string& ns) {
+Error ServerControl::Interface::TryResetReplicationRole(std::string_view ns) {
 	BaseApi::QueryResultsType res;
 	Error err;
-	auto item = api.NewItem("#config");
+	auto item = api.NewItem(kConfigNamespace);
 	if (!item.Status().ok()) {
 		return item.Status();
 	}
 	if (ns.size()) {
-		err =
-			item.FromJSON(fmt::sprintf(R"json({"type":"action","action":{"command":"reset_replication_role","namespace":"%s"}})json", ns));
+		err = item.FromJSON(
+			fmt::format(R"json({{"type":"action","action":{{"command":"reset_replication_role","namespace":"{}"}}}})json", ns));
 	} else {
 		err = item.FromJSON(R"json({"type":"action","action":{"command":"reset_replication_role"}})json");
 	}
 	if (!err.ok()) {
 		return err;
 	}
-	return api.reindexer->Upsert("#config", item);
+	return api.reindexer->Upsert(kConfigNamespace, item);
 }
 
 void ServerControl::Interface::SetClusterLeader(int leaderId) {
 	auto item = CreateClusterChangeLeaderItem(leaderId);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	api.Upsert("#config", item);
+	api.Upsert(kConfigNamespace, item);
 }
 
 void ServerControl::Interface::SetReplicationLogLevel(LogLevel level, std::string_view type) {
 	BaseApi::QueryResultsType res;
-	auto item = api.NewItem("#config");
+	auto item = api.NewItem(kConfigNamespace);
 	auto err = item.Status();
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = item.FromJSON(fmt::sprintf(R"json({"type":"action","action":{"command":"set_log_level","type":"%s","level":"%s"}})json", type,
-									 reindexer::logLevelToString(level)));
+	err = item.FromJSON(fmt::format(R"json({{"type":"action","action":{{"command":"set_log_level","type":"{}","level":"{}" }} }})json",
+									type, logLevelToString(level)));
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = api.reindexer->Upsert("#config", item);
+	err = api.reindexer->Upsert(kConfigNamespace, item);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 BaseApi::ItemType ServerControl::Interface::CreateClusterChangeLeaderItem(int leaderId) {
-	auto item = api.NewItem("#config");
+	auto item = api.NewItem(kConfigNamespace);
 	if (item.Status().ok()) {
 		WrSerializer ser;
 		JsonBuilder jb(ser);
@@ -627,8 +786,8 @@ std::vector<std::string> ServerControl::Interface::getCLIParamArray(bool enableS
 	paramArray.push_back("--db=" + config_.storagePath);
 
 	if (WithSecurity()) {
-		paramArray.push_back("--ssl-cert=" + reindexer::fs::JoinPath(TLSPath(), kDefaultSSLCertFile));
-		paramArray.push_back("--ssl-key=" + reindexer::fs::JoinPath(TLSPath(), kDefaultSSLKeyFile));
+		paramArray.push_back("--ssl-cert=" + fs::JoinPath(TLSPath(), kDefaultSSLCertFile));
+		paramArray.push_back("--ssl-key=" + fs::JoinPath(TLSPath(), kDefaultSSLKeyFile));
 		paramArray.push_back("--security");
 	}
 
@@ -654,7 +813,9 @@ std::vector<std::string> ServerControl::Interface::getCLIParamArray(bool enableS
 }
 
 template <typename ValueT>
-void ServerControl::Interface::upsertConfigItemFromObject(std::string_view type, const ValueT& object) {
+void ServerControl::Interface::upsertConfigItemFromObject(const ValueT& object) {
+	const std::string type = std::is_same_v<ValueT, cluster::AsyncReplConfigData> ? "async_replication" : "replication";
+
 	WrSerializer ser;
 	JsonBuilder jb(ser);
 	jb.Put("type", type);
@@ -669,9 +830,7 @@ void ServerControl::Interface::upsertConfigItemFromObject(std::string_view type,
 	}
 	jb.End();
 
-	auto item = api.NewItem(kConfigNs);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	auto err = item.FromJSON(ser.Slice());
-	ASSERT_TRUE(err.ok()) << err.what();
-	api.Upsert(kConfigNs, item);
+	api.UpsertJSON(kConfigNamespace, ser.Slice());
 }
+
+}  // namespace reindexer_tests

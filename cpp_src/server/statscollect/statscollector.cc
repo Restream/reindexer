@@ -1,14 +1,19 @@
 #include "statscollector.h"
+#include "core/query/query_impl.h"
+#include "core/system_ns_names.h"
 #include "dbmanager.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "prometheus.h"
 #include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/errors.h"
+#include "tools/jsontools.h"
 
 namespace reindexer_server {
 
 void StatsCollector::Start() {
-	std::lock_guard lck(threadMtx_);
+	reindexer::lock_guard lck(threadMtx_);
 	if (statsCollectingThread_.joinable()) {
 		throw reindexer::Error(errLogic, "Stats collectiong thread is already running");
 	}
@@ -18,7 +23,7 @@ void StatsCollector::Start() {
 	}
 }
 
-void StatsCollector::Restart(std::unique_lock<std::mutex>&& lck) noexcept {
+void StatsCollector::Restart(reindexer::unique_lock<reindexer::mutex>&& lck) noexcept {
 	try {
 #ifdef RX_WITH_STDLIB_DEBUG
 		assertrx(lck.mutex() == &threadMtx_);
@@ -56,7 +61,7 @@ void StatsCollector::Restart(std::unique_lock<std::mutex>&& lck) noexcept {
 }
 
 void StatsCollector::Stop() {
-	std::lock_guard lck(threadMtx_);
+	reindexer::lock_guard lck(threadMtx_);
 	if (statsCollectingThread_.joinable()) {
 		terminate_.store(true, std::memory_order_release);
 		statsCollectingThread_.join();
@@ -65,7 +70,7 @@ void StatsCollector::Stop() {
 }
 
 StatsWatcherSuspend StatsCollector::SuspendStatsThread() {
-	std::unique_lock lck(threadMtx_);
+	reindexer::unique_lock lck(threadMtx_);
 	if (statsCollectingThread_.joinable()) {
 		logger_.info("Suspending stats collector...");
 		terminate_.store(true, std::memory_order_release);
@@ -78,28 +83,28 @@ StatsWatcherSuspend StatsCollector::SuspendStatsThread() {
 
 void StatsCollector::OnInputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		getCounters(db, source, protocol).inputTraffic += bytes;
 	}
 }
 
 void StatsCollector::OnOutputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		getCounters(db, source, protocol).outputTraffic += bytes;
 	}
 }
 
 void StatsCollector::OnClientConnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		++(getCounters(db, source, protocol).clients);
 	}
 }
 
 void StatsCollector::OnClientDisconnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		auto& counters = getCounters(db, source, protocol);
 		if (counters.clients) {
 			--counters.clients;
@@ -152,21 +157,87 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 			collectedDBs.emplace(dbName, std::move(nsDefs));
 		}
 
-		constexpr static auto kPerfstatsNs = "#perfstats"sv;
-		constexpr static auto kMemstatsNs = "#memstats"sv;
-		static const auto kPerfstatsQuery = Query(std::string(kPerfstatsNs));
+		static const auto kPerfstatsQuery = impl::Query(kPerfStatsNamespace);
 		QueryResults qr;
 		status = db->Select(kPerfstatsQuery, qr);
 		if (status.ok()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
-				auto item = it.GetItem(false);
-				std::string nsName = item["name"].As<std::string>();
-				constexpr auto kSelectQueryType = "select"sv;
-				constexpr auto kUpdateQueryType = "update"sv;
-				prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, item["selects.last_sec_qps"].As<int64_t>());
-				prometheus_->RegisterQPS(dbName, nsName, kUpdateQueryType, item["updates.last_sec_qps"].As<int64_t>());
-				prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType, item["selects.last_sec_avg_latency_us"].As<int64_t>());
-				prometheus_->RegisterLatency(dbName, nsName, kUpdateQueryType, item["updates.last_sec_avg_latency_us"].As<int64_t>());
+				try {
+					auto item = it.GetItem(false);
+					std::string nsName = item["name"].As<std::string>();
+					constexpr auto kSelectQueryType = "select"sv;
+					constexpr auto kUpdateQueryType = "update"sv;
+					std::string_view json = item.GetJSON();
+					gason::JsonParser parser;
+					auto root = parser.Parse(json);
+					auto nodeSelect = root["selects"];
+					if (!nodeSelect.isEmpty() && nodeSelect.isObject()) {
+						prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, nodeSelect["last_sec_qps"].As<int64_t>());
+						prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType, nodeSelect["last_sec_avg_latency_us"].As<int64_t>());
+					}
+					auto nodeUpdates = root["updates"];
+					if (!nodeUpdates.isEmpty() && nodeUpdates.isObject()) {
+						prometheus_->RegisterQPS(dbName, nsName, kUpdateQueryType, nodeUpdates["last_sec_qps"].As<int64_t>());
+						prometheus_->RegisterLatency(dbName, nsName, kUpdateQueryType,
+													 nodeUpdates["last_sec_avg_latency_us"].As<int64_t>());
+					}
+					auto nodeIndexes = root["indexes"];
+					if (!nodeIndexes.isEmpty() && nodeIndexes.isArray()) {
+						for (auto it = gason::begin(nodeIndexes); it != gason::end(nodeIndexes); ++it) {
+							std::string indexName;
+							Error err = tryReadRequiredJsonValue(nullptr, *it, "name", indexName);
+							if (!err.ok()) {
+								continue;
+							}
+
+							auto processEmbed = [&](std::string_view name) {
+								Error err;
+								auto nodeEmb = (*it)[name];
+								if (!nodeEmb.isEmpty()) {
+									int64_t val = 0;
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_qps", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecQps(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_dps", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecDps(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_errors_count", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecErrorsCount(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "conn_in_use", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderConnInUse(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_avg_embed_latency_us", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecAvgLatencyUs(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "last_sec_avg_embed_latency_us", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderLastSecAvgEmbedLatencyUs(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "input_traffic_total_bytes", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderInputTrafficTotalBytes(dbName, nsName, indexName, name, val);
+									}
+									err = tryReadRequiredJsonValue(nullptr, nodeEmb, "output_traffic_total_bytes", val);
+									if (err.ok()) {
+										prometheus_->RegisterEmbedderOutputTrafficTotalBytes(dbName, nsName, indexName, name, val);
+									}
+								}
+							};
+							processEmbed("upsert_embedder");
+							processEmbed("query_embedder");
+						}
+					}
+
+				}  // NOLINTBEGIN(bugprone-empty-catch)
+				catch (std::exception&) {
+				}
+				// NOLINTEND(bugprone-empty-catch)
 			}
 		}
 
@@ -175,7 +246,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		}
 
 		qr.Clear();
-		static const auto kMemstatsQuery = Query(std::string(kMemstatsNs));
+		static const auto kMemstatsQuery = impl::Query(kMemStatsNamespace);
 		status = db->Select(kMemstatsQuery, qr);
 		if (status.ok()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
@@ -204,13 +275,13 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 	if (reindexer::alloc_ext::JEMallocIsAvailable()) {
 		size_t memoryConsumationBytes = 0;
 		size_t sz = sizeof(memoryConsumationBytes);
-		alloc_ext::mallctl("stats.allocated", &memoryConsumationBytes, &sz, NULL, 0);
+		std::ignore = alloc_ext::mallctl("stats.allocated", &memoryConsumationBytes, &sz, NULL, 0);
 		prometheus_->RegisterAllocatedMemory(memoryConsumationBytes);
 	}
 #endif	// REINDEX_WITH_JEMALLOC
 
 	{
-		std::lock_guard lck(countersMtx_);
+		reindexer::lock_guard lck(countersMtx_);
 		for (const auto& dbCounters : counters_) {
 			for (const auto& counter : dbCounters.counters) {
 				if (std::string_view(dbCounters.source) == "rpc"sv) {

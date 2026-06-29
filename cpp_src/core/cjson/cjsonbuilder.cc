@@ -1,147 +1,189 @@
 #include "cjsonbuilder.h"
+#include "core/type_consts.h"
+#include "sparse_validator.h"
 
-namespace reindexer {
+namespace reindexer::builders {
 
-CJsonBuilder::CJsonBuilder(WrSerializer& ser, ObjType type, const TagsMatcher* tm, int tagName) : tm_(tm), ser_(&ser), type_(type) {
+using namespace item_fields_validator;
+
+CJsonBuilder::CJsonBuilder(WrSerializer& ser, ObjType type, const TagsMatcher* tm, concepts::TagNameOrIndex auto tag)
+	: tm_(tm), ser_(ser), type_(type) {
 	switch (type_) {
 		case ObjType::TypeArray:
 		case ObjType::TypeObjectArray:
-			ser_->PutCTag(ctag{TAG_ARRAY, tagName});
-			savePos_ = ser_->Len();
-			ser_->PutCArrayTag(carraytag{0, TAG_NULL});
+			putTag(tag, TAG_ARRAY);
+			savePos_ = ser_.Len();
+			ser_.PutCArrayTag(carraytag{0, TAG_NULL});
 			break;
 		case ObjType::TypeObject:
-			ser_->PutCTag(ctag{TAG_OBJECT, tagName});
+			putTag(tag, TAG_OBJECT);
 			break;
 		case ObjType::TypePlain:
 			break;
 	}
 }
+template CJsonBuilder::CJsonBuilder(WrSerializer&, ObjType, const TagsMatcher*, TagName);
+template CJsonBuilder::CJsonBuilder(WrSerializer&, ObjType, const TagsMatcher*, TagIndex);
 
-CJsonBuilder CJsonBuilder::Object(int tagName) {
+CJsonBuilder CJsonBuilder::Object(concepts::TagNameOrIndex auto tag) {
 	++count_;
-	return CJsonBuilder(*ser_, ObjType::TypeObject, tm_, tagName);
+	return CJsonBuilder(ser_, ObjType::TypeObject, tm_, tag);
 }
+template CJsonBuilder CJsonBuilder::Object(TagName);
+template CJsonBuilder CJsonBuilder::Object(TagIndex);
 
-CJsonBuilder CJsonBuilder::Array(int tagName, ObjType type) {
-	if ((type_ == ObjType::TypeArray) || (type_ == ObjType::TypeObjectArray)) {
-		throw Error(errLogic, "Nested arrays are not supported. Use nested objects with array fields instead");
-	}
+CJsonBuilder CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, ObjType type) {
 	++count_;
-	return CJsonBuilder(*ser_, type, tm_, tagName);
+	return CJsonBuilder(ser_, type, tm_, tag);
 }
+template CJsonBuilder CJsonBuilder::Array(TagName, ObjType);
+template CJsonBuilder CJsonBuilder::Array(TagIndex, ObjType);
 
-void CJsonBuilder::Array(int tagName, span<const Uuid> data, int /*offset*/) {
-	ser_->PutCTag(ctag{TAG_ARRAY, tagName});
-	ser_->PutCArrayTag(carraytag(data.size(), TAG_UUID));
+void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid> data, int /*offset*/, TreatAsSingleElement) {
+	putTag(tag, TAG_ARRAY);
+	ser_.PutCArrayTag(carraytag(data.size(), TAG_UUID));
 	for (auto d : data) {
-		ser_->PutUuid(d);
+		ser_.PutUuid(d);
 	}
+	++count_;
 }
+template void CJsonBuilder::Array(TagName, std::span<const Uuid>, int, TreatAsSingleElement);
+template void CJsonBuilder::Array(TagIndex, std::span<const Uuid>, int, TreatAsSingleElement);
 
-CJsonBuilder& CJsonBuilder::Put(int tagName, bool arg, int /*offset*/) {
+void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, bool arg, int /*offset*/) {
 	if (type_ == ObjType::TypeArray) {
 		itemType_ = TAG_BOOL;
 	} else {
-		putTag(tagName, TAG_BOOL);
+		putTag(tag, TAG_BOOL);
 	}
-	ser_->PutBool(arg);
+	ser_.PutBool(arg);
 	++count_;
-	return *this;
 }
+template void CJsonBuilder::Put(TagName, bool, int);
+template void CJsonBuilder::Put(TagIndex, bool, int);
 
-CJsonBuilder& CJsonBuilder::Put(int tagName, int64_t arg, int /*offset*/) {
+void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, int64_t arg, int /*offset*/) {
 	if (type_ == ObjType::TypeArray) {
 		itemType_ = TAG_VARINT;
 	} else {
-		putTag(tagName, TAG_VARINT);
+		putTag(tag, TAG_VARINT);
 	}
-	ser_->PutVarint(arg);
+	ser_.PutVarint(arg);
 	++count_;
-	return *this;
 }
+template void CJsonBuilder::Put(TagName, int64_t, int);
+template void CJsonBuilder::Put(TagIndex, int64_t, int);
 
-CJsonBuilder& CJsonBuilder::Put(int tagName, int arg, int /*offset*/) {
+void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, int arg, int /*offset*/) {
 	if (type_ == ObjType::TypeArray) {
 		itemType_ = TAG_VARINT;
 	} else {
-		putTag(tagName, TAG_VARINT);
+		putTag(tag, TAG_VARINT);
 	}
-	ser_->PutVarint(arg);
+	ser_.PutVarint(arg);
 	++count_;
-	return *this;
 }
+template void CJsonBuilder::Put(TagName, int, int);
+template void CJsonBuilder::Put(TagIndex, int, int);
 
-CJsonBuilder& CJsonBuilder::Put(int tagName, double arg, int /*offset*/) {
+void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, double arg, int /*offset*/) {
 	if (type_ == ObjType::TypeArray) {
 		itemType_ = TAG_DOUBLE;
 	} else {
-		putTag(tagName, TAG_DOUBLE);
+		putTag(tag, TAG_DOUBLE);
 	}
-	ser_->PutDouble(arg);
+	ser_.PutDouble(arg);
 	++count_;
-	return *this;
+}
+template void CJsonBuilder::Put(TagName, double, int);
+template void CJsonBuilder::Put(TagIndex, double, int);
+
+void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, float arg, int /*offset*/) {
+	if (type_ == ObjType::TypeArray) {
+		itemType_ = TAG_FLOAT;
+	} else {
+		putTag(tag, TAG_FLOAT);
+	}
+	ser_.PutFloat(arg);
+	++count_;
 }
 
-CJsonBuilder& CJsonBuilder::Put(int tagName, std::string_view arg, int /*offset*/) {
+void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, std::string_view arg, int /*offset*/) {
 	if (type_ == ObjType::TypeArray) {
 		itemType_ = TAG_STRING;
 	} else {
-		putTag(tagName, TAG_STRING);
+		putTag(tag, TAG_STRING);
 	}
-	ser_->PutVString(arg);
+	ser_.PutVString(arg);
 	++count_;
-	return *this;
+}
+template void CJsonBuilder::Put(TagName, std::string_view, int);
+template void CJsonBuilder::Put(TagIndex, std::string_view, int);
+
+void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, Uuid arg, int /*offset*/) {
+	putTag(tag, TAG_UUID);
+	ser_.PutUuid(arg);
+	++count_;
 }
 
-CJsonBuilder& CJsonBuilder::Put(int tagName, Uuid arg, int /*offset*/) {
-	ser_->PutCTag(ctag{TAG_UUID, tagName});
-	ser_->PutUuid(arg);
-	return *this;
-}
-
-CJsonBuilder& CJsonBuilder::Null(int tagName) {
+void CJsonBuilder::Null(concepts::TagNameOrIndex auto tag) {
 	if (type_ == ObjType::TypeArray) {
 		itemType_ = TAG_NULL;
 	} else {
-		putTag(tagName, TAG_NULL);
+		putTag(tag, TAG_NULL);
 	}
 	++count_;
-	return *this;
 }
+template void CJsonBuilder::Null(TagName);
+template void CJsonBuilder::Null(TagIndex);
 
-CJsonBuilder& CJsonBuilder::Ref(int tagName, const Variant& v, int field) {
-	v.Type().EvaluateOneOf([&](OneOf<KeyValueType::Int, KeyValueType::Int64>) { ser_->PutCTag(ctag{TAG_VARINT, tagName, field}); },
-						   [&](KeyValueType::Bool) { ser_->PutCTag(ctag{TAG_BOOL, tagName, field}); },
-						   [&](KeyValueType::Double) { ser_->PutCTag(ctag{TAG_DOUBLE, tagName, field}); },
-						   [&](KeyValueType::String) { ser_->PutCTag(ctag{TAG_STRING, tagName, field}); },
-						   [&](KeyValueType::Uuid) { ser_->PutCTag(ctag{TAG_UUID, tagName, field}); },
-						   [&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) { ser_->PutCTag(ctag{TAG_NULL, tagName}); },
-						   [](OneOf<KeyValueType::Tuple, KeyValueType::Composite>) noexcept { std::abort(); });
-	return *this;
+void CJsonBuilder::Ref(concepts::TagNameOrIndex auto tag, const KeyValueType& type, int field) {
+	type.EvaluateOneOf(
+		[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64> auto) { putTag(tag, TAG_VARINT, field); },
+		[&](KeyValueType::Bool) { putTag(tag, TAG_BOOL, field); }, [&](KeyValueType::Double) { putTag(tag, TAG_DOUBLE, field); },
+		[&](KeyValueType::String) { putTag(tag, TAG_STRING, field); }, [&](KeyValueType::Uuid) { putTag(tag, TAG_UUID, field); },
+		[&](KeyValueType::Float) { putTag(tag, TAG_FLOAT, field); },
+		[&](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Null> auto) { putTag(tag, TAG_NULL); },
+		[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::FloatVector> auto) noexcept { std::abort(); });
 }
+template void CJsonBuilder::Ref(TagName, const KeyValueType&, int);
+template void CJsonBuilder::Ref(TagIndex, const KeyValueType&, int);
 
-CJsonBuilder& CJsonBuilder::ArrayRef(int tagName, int field, int count) {
-	ser_->PutCTag(ctag{TAG_ARRAY, tagName, field});
-	ser_->PutVarUint(count);
-	return *this;
+void CJsonBuilder::ArrayRef(concepts::TagNameOrIndex auto tag, int field, int count) {
+	putTag(tag, TAG_ARRAY, field);
+	ser_.PutVarUint(count);
+	++count_;
 }
+template void CJsonBuilder::ArrayRef(TagName, int, int);
+template void CJsonBuilder::ArrayRef(TagIndex, int, int);
 
-CJsonBuilder& CJsonBuilder::Put(int tagName, const Variant& kv, int offset) {
-	kv.Type().EvaluateOneOf([&](KeyValueType::Int) { Put(tagName, int(kv), offset); },
-							[&](KeyValueType::Int64) { Put(tagName, int64_t(kv), offset); },
-							[&](KeyValueType::Double) { Put(tagName, double(kv), offset); },
-							[&](KeyValueType::String) { Put(tagName, std::string_view(kv), offset); },
-							[&](KeyValueType::Null) { Null(tagName); }, [&](KeyValueType::Bool) { Put(tagName, bool(kv), offset); },
-							[&](KeyValueType::Tuple) {
-								auto arrNode = Array(tagName);
-								for (auto& val : kv.getCompositeValues()) {
-									arrNode.Put(nullptr, val);
-								}
-							},
-							[&](KeyValueType::Uuid) { Put(tagName, Uuid{kv}, offset); },
-							[](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
-	return *this;
+void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, const Variant& kv, int offset) {
+	kv.Type().EvaluateOneOf(
+		[&](KeyValueType::Int) { Put(tag, int(kv), offset); }, [&](KeyValueType::Int64) { Put(tag, int64_t(kv), offset); },
+		[&](KeyValueType::Double) { Put(tag, double(kv), offset); }, [&](KeyValueType::Float) { Put(tag, float(kv), offset); },
+		[&](KeyValueType::String) { Put(tag, std::string_view(kv), offset); }, [&](KeyValueType::Null) { Null(tag); },
+		[&](KeyValueType::Bool) { Put(tag, bool(kv), offset); },
+		[&](KeyValueType::Tuple) {
+			auto arrNode = Array(tag);
+			for (auto& val : kv.getCompositeValues()) {
+				arrNode.Put(TagName::Empty(), val);
+			}
+		},
+		[&](KeyValueType::Uuid) { Put(tag, Uuid{kv}, offset); },
+		[](concepts::OneOf<KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::FloatVector> auto) { assertrx_throw(false); });
 }
+template void CJsonBuilder::Put(TagName, const Variant&, int);
+template void CJsonBuilder::Put(TagIndex, const Variant&, int);
 
-}  // namespace reindexer
+void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, Serializer& ser, TagType tagType, int count) {
+	putTag(tag, TAG_ARRAY);
+	ser_.PutCArrayTag(carraytag(count, tagType));
+	while (count--) {
+		copyCJsonValue(tagType, ser, ser_, kNoValidation);
+	}
+	++count_;
+}
+template void CJsonBuilder::Array(TagName, Serializer&, TagType, int);
+template void CJsonBuilder::Array(TagIndex, Serializer&, TagType, int);
+
+}  // namespace reindexer::builders

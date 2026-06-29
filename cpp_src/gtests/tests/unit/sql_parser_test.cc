@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 
 #include "core/query/query.h"
+#include "core/query/query_impl.h"
 #include "core/query/sql/sqlparser.h"
 
-struct SQLParserTests : public ::testing::TestWithParam<std::string> {};
+namespace reindexer_tests {
+
+struct [[nodiscard]] SQLParserTests : public ::testing::TestWithParam<std::string> {};
 
 // --gtest_filter=*/SQLParserTests.NumberInDoubleQuotesParsedCorrectly/*
 TEST_P(SQLParserTests, NumberInDoubleQuotesParsedCorrectly) { EXPECT_NO_THROW(auto q = reindexer::SQLParser::Parse(GetParam())); }
@@ -40,15 +43,8 @@ INSTANTIATE_TEST_SUITE_P(SelectAndOrderBy, SQLParserTests,
 										   R"(SELECT * FROM ns ORDER BY '5 * "123"')", R"(SELECT * FROM ns ORDER BY '5 * "123abc"')",
 										   R"(SELECT * FROM ns ORDER BY "123abc123" ASC)",
 										   R"(SELECT * FROM ns ORDER BY "123" ASC, "123abc" ASC, "123abc123" ASC)",
-
-										   R"(SELECT * FROM ns ORDER BY '"123" + 123')",
-
-										   R"(SELECT * FROM ns ORDER BY '123 + "123"')",
-
-										   R"(SELECT * FROM ns ORDER BY '"ns.123" + 123')",
-
-										   R"(SELECT * FROM ns ORDER BY '123 + "ns.123"')",
-
+										   R"(SELECT * FROM ns ORDER BY '"123" + 123')", R"(SELECT * FROM ns ORDER BY '123 + "123"')",
+										   R"(SELECT * FROM ns ORDER BY '"ns.123" + 123')", R"(SELECT * FROM ns ORDER BY '123 + "ns.123"')",
 										   R"(SELECT * FROM ns ORDER BY "123" DESC, "123abc" DESC, "123abc123" DESC)")
 
 );
@@ -61,7 +57,7 @@ INSTANTIATE_TEST_SUITE_P(Delete, SQLParserTests,
 										   "DELETE FROM ns WHERE \"123\" = 123 AND \"abc123\" = 'some_value' AND \"123abc123\" = 123",
 										   "DELETE FROM ns WHERE \"123\" = 123 AND \"abc123\" = \"123abc123\" AND \"123abc123\" = 123"));
 
-struct SQLParserWhere : public ::testing::TestWithParam<std::pair<std::string, std::string>> {};
+struct [[nodiscard]] SQLParserWhere : public ::testing::TestWithParam<std::pair<std::string, std::string>> {};
 
 TEST_P(SQLParserWhere, CheckWhereError) {
 	auto [sql, errString] = GetParam();
@@ -80,13 +76,15 @@ INSTANTIATE_TEST_SUITE_P(
 	TestsSqlWhere, SQLParserWhere,
 	::testing::Values(
 		std::pair{"select * from ns where", "Expected condition after 'WHERE'"},
-		std::pair{"select * from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 26 26)"},
-		std::pair{"select * from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 28 28)"},
+		std::pair{"select * from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 23 26)"},
+		std::pair{"select * from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 24 27)"},
 		std::pair{"delete from ns where", "Expected condition after 'WHERE'"},
-		std::pair{"delete from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 24 24)"},
-		std::pair{"delete from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 26 26)"},
+		std::pair{"delete from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 21 24)"},
+		std::pair{"delete from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 22 25)"},
 		std::pair{"update ns set a=1 where", "Expected condition after 'WHERE'"},
-		std::pair{"update ns set a=1 where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 27 27)"},
-		std::pair{"update ns set a=1 where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 29 29)"})
+		std::pair{"update ns set a=1 where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 24 27)"},
+		std::pair{"update ns set a=1 where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 25 28)"})
 
 );
+
+}  // namespace reindexer_tests

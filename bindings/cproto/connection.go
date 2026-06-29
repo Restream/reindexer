@@ -8,15 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 type bufPtr struct {
@@ -69,7 +68,7 @@ const (
 	cmdDeleteQuery       = 34
 	cmdUpdateQuery       = 35
 	cmdSelect            = 48
-	cmdSelectSQL         = 49
+	cmdExecSQL           = 49
 	cmdFetchResults      = 50
 	cmdCloseResults      = 51
 	cmdDeleteMeta        = 63
@@ -83,12 +82,12 @@ const (
 )
 
 type connFactory interface {
-	newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, int64, error)
+	newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, string, int64, error)
 }
 
 type connFactoryImpl struct{}
 
-func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, int64, error) {
+func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, string, int64, error) {
 	return newConnection(ctx, params, loggerOwner, eventsHandler)
 }
 
@@ -102,10 +101,10 @@ type requestInfo struct {
 }
 
 type connection interface {
-	rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error)
-	rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error
-	rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...interface{})
-	rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...interface{})
+	rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...any) (buf *NetBuffer, err error)
+	rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...any) error
+	rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...any)
+	rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...any)
 	onError(err error)
 	hasError() (has bool)
 	curError() error
@@ -114,7 +113,7 @@ type connection interface {
 	getConnection() net.Conn
 	getSeqs() chan uint32
 	getRequestTimeout() uint32
-	logMsg(level int, fmt string, msg ...interface{})
+	logMsg(level int, fmt string, msg ...any)
 }
 
 type connectionImpl struct {
@@ -164,6 +163,7 @@ func newConnection(
 	ctx context.Context,
 	params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (
 	connection,
+	string,
 	int64,
 	error,
 ) {
@@ -181,7 +181,7 @@ func newConnection(
 		eventsHandler:          eventsHandler,
 		configTLS:              params.tls.Config,
 	}
-	for i := 0; i < queueSize; i++ {
+	for i := range queueSize {
 		c.seqs <- uint32(i)
 		c.requests[i].repl = make(sig, 1)
 	}
@@ -195,23 +195,23 @@ func newConnection(
 
 	if err := c.connect(intCtx, params.dsn); err != nil {
 		c.onError(err)
-		return c, 0, err
+		return c, "", 0, err
 	}
 
-	serverStartTS, err := c.login(intCtx, params.dsn, params.createDBIfMissing, params.appName, params.caps)
+	serverReindexerVersion, serverStartTS, err := c.login(intCtx, params.dsn, params.createDBIfMissing, params.appName, params.caps)
 	if err != nil {
 		c.onError(err)
-		return c, 0, err
+		return c, "", 0, err
 	}
 
-	return c, serverStartTS, nil
+	return c, serverReindexerVersion, serverStartTS, nil
 }
 
 func seqNumIsValid(seqNum uint32) bool {
 	return seqNum < maxSeqNum
 }
 
-func (c *connectionImpl) logMsg(level int, fmt string, msg ...interface{}) {
+func (c *connectionImpl) logMsg(level int, fmt string, msg ...any) {
 	if c.loggerOwner != nil {
 		if logger := c.loggerOwner.GetLogger(); logger != nil {
 			logger.Printf(level, fmt, msg)
@@ -290,7 +290,7 @@ func (c *connectionImpl) connect(ctx context.Context, dsn *url.URL) (err error) 
 	return
 }
 
-func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMissing bool, appName string, caps bindings.BindingCapabilities) (int64, error) {
+func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMissing bool, appName string, caps bindings.BindingCapabilities) (string, int64, error) {
 	password, username, path := "", "", dsn.Path
 	if dsn.User != nil {
 		username = dsn.User.Username()
@@ -302,16 +302,18 @@ func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMiss
 
 	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, createDBIfMissing, false, -1, bindings.ReindexerVersion, appName, caps.Value)
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
 	defer buf.Free()
 
+	var serverReindexerVersion string
 	var serverStartTS int64
 	if len(buf.args) > 1 {
+		serverReindexerVersion = string(buf.args[0].([]byte))
 		serverStartTS = buf.args[1].(int64)
 	}
 
-	return serverStartTS, nil
+	return serverReindexerVersion, serverStartTS, nil
 }
 
 func (c *connectionImpl) readLoop() {
@@ -393,7 +395,7 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 			}
 			trySetReqId(answ)
 		} else {
-			io.CopyN(ioutil.Discard, c.rdBuf, int64(size))
+			io.CopyN(io.Discard, c.rdBuf, int64(size))
 		}
 		return
 	}
@@ -437,7 +439,7 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 
 func needCancelAnswer(cmd int) bool {
 	switch cmd {
-	case cmdCommitTx, cmdModifyItem, cmdDeleteQuery, cmdUpdateQuery, cmdSelect, cmdSelectSQL, cmdFetchResults:
+	case cmdCommitTx, cmdModifyItem, cmdDeleteQuery, cmdUpdateQuery, cmdSelect, cmdExecSQL, cmdFetchResults:
 		return true
 	default:
 		return false
@@ -502,7 +504,7 @@ func nextSeqNum(seqNum uint32) uint32 {
 	return seqNum - maxSeqNum
 }
 
-func (c *connectionImpl) packRPC(cmd int, seq uint32, execTimeout int, args ...interface{}) {
+func (c *connectionImpl) packRPC(cmd int, seq uint32, execTimeout int, args ...any) {
 	in := newRPCEncoder(cmd, seq, atomic.LoadInt32(&c.enableSnappy) != 0, c.requestDedicatedThread)
 	for _, a := range args {
 		switch t := a.(type) {
@@ -538,7 +540,7 @@ func (c *connectionImpl) awaitSeqNum(ctx context.Context) (seq uint32, remaining
 			return
 		}
 		if execDeadline, ok := ctx.Deadline(); ok {
-			remainingTimeout = execDeadline.Sub(time.Now())
+			remainingTimeout = time.Until(execDeadline)
 			if remainingTimeout <= 0 {
 				c.seqs <- seq
 				err = context.DeadlineExceeded
@@ -557,7 +559,7 @@ func applyTimeout(ctx context.Context, timeout uint32) (context.Context, context
 	return context.WithTimeout(ctx, time.Second*time.Duration(timeout))
 }
 
-func (c *connectionImpl) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...interface{}) {
+func (c *connectionImpl) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...any) {
 	if err := c.curError(); err != nil {
 		cmpl(nil, err)
 		return
@@ -594,7 +596,7 @@ func (c *connectionImpl) rpcCallAsync(ctx context.Context, cmd int, netTimeout u
 	c.packRPC(cmd, seq, int(timeout.Milliseconds()), args...)
 }
 
-func (c *connectionImpl) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
+func (c *connectionImpl) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...any) (buf *NetBuffer, err error) {
 	intCtx, cancel := applyTimeout(ctx, netTimeout)
 	if cancel != nil {
 		defer cancel()
@@ -654,11 +656,11 @@ for_loop:
 	return buf, nil
 }
 
-func (c *connectionImpl) rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...interface{}) {
+func (c *connectionImpl) rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...any) {
 	c.packRPC(cmd, seq, int((time.Second * time.Duration(netTimeout)).Milliseconds()), args...)
 }
 
-func (c *connectionImpl) rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error {
+func (c *connectionImpl) rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...any) error {
 	buf, err := c.rpcCall(ctx, cmd, netTimeout, args...)
 	buf.Free()
 	return err

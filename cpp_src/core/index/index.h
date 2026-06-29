@@ -1,17 +1,16 @@
 #pragma once
 
-#include <bitset>
 #include <limits>
 #include <vector>
-#include "core/idset.h"
+#include "core/definitions/indexdef.h"
+#include "core/definitions/indexopts.h"
+#include "core/idset/idset.h"
 #include "core/index/keyentry.h"
-#include "core/indexdef.h"
-#include "core/indexopts.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacestat.h"
+#include "core/nsselecter/ranks_holder.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
-#include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
 #include "ft_preselect.h"
 #include "indexiterator.h"
@@ -20,13 +19,20 @@ namespace reindexer {
 
 class RdxContext;
 class StringsHolder;
-class SelectFunction;
 struct NamespaceCacheConfigData;
+class FtFunction;
 
-class Index {
+class [[nodiscard]] Index {
+	struct [[nodiscard]] SelectFuncCtx {
+		SelectFuncCtx(FtFunction& func, RanksHolder::Ptr& r, int idxNo) noexcept : selectFunc{func}, ranks{r}, indexNo{idxNo} {}
+		FtFunction& selectFunc;
+		RanksHolder::Ptr& ranks;
+		int indexNo;
+	};
+
 public:
-	struct SelectOpts {
-		SelectOpts()
+	struct [[nodiscard]] SelectOpts {
+		SelectOpts() noexcept
 			: itemsCountInNamespace(0),
 			  maxIterations(std::numeric_limits<int>::max()),
 			  distinct(0),
@@ -35,7 +41,8 @@ public:
 			  unbuiltSortOrders(0),
 			  indexesNotOptimized(0),
 			  inTransaction{0},
-			  ftSortType(0) {}
+			  rankSortType(0),
+			  strictMode(StrictModeNone) {}
 		unsigned itemsCountInNamespace;
 		int maxIterations;
 		unsigned distinct : 1;
@@ -44,10 +51,16 @@ public:
 		unsigned unbuiltSortOrders : 1;
 		unsigned indexesNotOptimized : 1;
 		unsigned inTransaction : 1;
-		unsigned ftSortType : 2;
+		unsigned rankSortType : 3;
+		StrictMode strictMode;
+	};
+	struct [[nodiscard]] SelectContext {
+		SelectOpts opts;
+		std::optional<SelectFuncCtx> selectFuncCtx;
 	};
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
+	using KeyEntryPK = reindexer::KeyEntry<IdSetUnique>;
 
 	Index(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields);
 	Index(const Index&);
@@ -55,29 +68,41 @@ public:
 	virtual ~Index() = default;
 	virtual Variant Upsert(const Variant& key, IdType id, bool& clearCache) = 0;
 	virtual void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) = 0;
-	virtual void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) = 0;
-	virtual void Delete(const VariantArray& keys, IdType id, StringsHolder&, bool& clearCache) = 0;
+	virtual void Delete(const Variant& key, IdType id, reindexer::MustExist mustExist, StringsHolder&, bool& clearCache) = 0;
+	virtual void Delete(const VariantArray& keys, IdType id, reindexer::MustExist mustExist, StringsHolder&, bool& clearCache) = 0;
+	virtual bool RefreshCompositeKey(const Variant& key, IdType id) noexcept = 0;
+	virtual void HashTablesStats(std::vector<char>& stats) const { stats.resize(0); }
+	virtual void ReserveHashTables(const std::vector<char>& /*stats*/) {}
 
-	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
-									   const BaseFunctionCtx::Ptr&, const RdxContext&) = 0;
+	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const SelectContext&,
+									   const RdxContext&) = 0;
 	// NOLINTBEGIN(*-unnecessary-value-param)
-	virtual SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&,
-									   FtPreselectT&&, const RdxContext&) {
+	virtual SelectKeyResults SelectKey(const VariantArray&, CondType, const SelectContext&, FtPreselectT&&, const RdxContext&) {
 		assertrx(0);
-		abort();
+		std::abort();
 	}
 	// NOLINTEND(*-unnecessary-value-param)
-	virtual void Commit() = 0;
+	virtual WasCanceled Commit(const index::ICancelable&) = 0;
 	virtual void CommitFulltext() {}
-	virtual void MakeSortOrders(UpdateSortedContext&) {}
+	virtual WasCanceled MakeSortOrders(index::IUpdateSortedContext&, const index::ICancelable&) { return WasCanceled_False; }
 
-	virtual void UpdateSortedIds(const UpdateSortedContext& ctx) = 0;
+	virtual WasCanceled UpdateSortedIds(const index::IUpdateSortedContext& ctx, const index::ICancelable&) = 0;
+	virtual bool IsSupportSortedIdsBuild() const noexcept = 0;
+
 	virtual size_t Size() const noexcept { return 0; }
-	virtual std::unique_ptr<Index> Clone() const = 0;
+	virtual std::unique_ptr<Index> Clone(size_t newCapacity) const = 0;
 	virtual bool IsOrdered() const noexcept { return false; }
 	virtual bool IsFulltext() const noexcept { return false; }
 	virtual bool IsUuid() const noexcept { return false; }
-	virtual IndexMemStat GetMemStat(const RdxContext&) = 0;
+	virtual reindexer::FloatVectorDimension FloatVectorDimension() const noexcept {
+		assertrx(0);
+		std::abort();
+	}
+	virtual QueryRankType RankedType() const noexcept {
+		assertrx(0);
+		std::abort();
+	}
+	virtual IndexMemStat GetMemStat(const RdxContext&) const = 0;
 	virtual int64_t GetTTLValue() const noexcept { return 0; }
 	virtual IndexIterator::Ptr CreateIterator() const { return nullptr; }
 
@@ -90,7 +115,7 @@ public:
 	void UpdatePayloadType(PayloadType&& payloadType) { payloadType_ = std::move(payloadType); }
 
 	static std::unique_ptr<Index> New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields_,
-									  const NamespaceCacheConfigData& cacheCfg);
+									  const NamespaceCacheConfigData& cacheCfg, size_t currentNsSize, LogCreation = LogCreation_False);
 
 	KeyValueType KeyType() const noexcept { return keyType_; }
 	KeyValueType SelectKeyType() const noexcept { return selectKeyType_; }
@@ -98,20 +123,20 @@ public:
 	const FieldsSet& Fields() const&& = delete;
 	const std::string& Name() const& noexcept { return name_; }
 	const std::string& Name() const&& = delete;
-	IndexType Type() const { return type_; }
+	IndexType Type() const noexcept { return type_; }
 	const std::vector<IdType>& SortOrders() const { return sortOrders_; }
 	const IndexOpts& Opts() const { return opts_; }
 	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }
 	void SetFields(FieldsSet&& fields) { fields_ = std::move(fields); }
-	[[nodiscard]] SortType SortId() const noexcept { return sortId_; }
-	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
+	SortType SortId() const noexcept { return sortId_; }
+	virtual void SetSortedIdxCount(unsigned sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
 	virtual FtMergeStatuses GetFtMergeStatuses(const RdxContext&) {
 		assertrx(0);
-		abort();
+		std::abort();
 	}
 	virtual reindexer::FtPreselectT FtPreselect(const RdxContext&) {
 		assertrx(0);
-		abort();
+		std::abort();
 	}
 	virtual bool EnablePreselectBeforeFt() const { return false; }
 
@@ -120,14 +145,17 @@ public:
 
 	virtual IndexPerfStat GetIndexPerfStat();
 	virtual void ResetIndexPerfStat();
+
 	virtual bool HoldsStrings() const noexcept = 0;
 	virtual void DestroyCache() {}
 	virtual void ClearCache() {}
-	virtual void ClearCache(const std::bitset<kMaxIndexes>&) {}
 	virtual bool IsBuilt() const noexcept { return isBuilt_; }
 	virtual void MarkBuilt() noexcept { isBuilt_ = true; }
-	virtual void EnableUpdatesCountingMode(bool) noexcept {}
+	virtual void EnableUpdatesCountingMode(bool) {}
 	virtual void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) = 0;
+	virtual bool IsSupportMultithreadTransactions() const noexcept { return false; }
+	virtual void GrowFor(size_t /*newElementsCount*/) {}
+	bool IsFloatVector() const noexcept;
 
 	virtual void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const { dump(os, step, offset); }
 
@@ -145,18 +173,16 @@ protected:
 	// Payload type of items
 	mutable PayloadType payloadType_;
 
-private:
 	// Fields in index
 	FieldsSet fields_;
 
-protected:
 	// Perfstat counter
 	PerfStatCounterMT commitPerfCounter_;
 	PerfStatCounterMT selectPerfCounter_;
 	KeyValueType keyType_ = KeyValueType::Undefined{};
 	KeyValueType selectKeyType_ = KeyValueType::Undefined{};
 	// Count of sorted indexes in namespace to reserve additional space in idsets
-	int sortedIdxCount_ = 0;
+	unsigned sortedIdxCount_ = 0;
 	bool isBuilt_{false};
 
 private:
@@ -164,25 +190,6 @@ private:
 	void dump(S& os, std::string_view step, std::string_view offset) const;
 };
 
-constexpr inline bool IsOrderedCondition(CondType condition) noexcept {
-	switch (condition) {
-		case CondLt:
-		case CondLe:
-		case CondGt:
-		case CondGe:
-		case CondRange:
-			return true;
-		case CondAny:
-		case CondEq:
-		case CondSet:
-		case CondAllSet:
-		case CondLike:
-		case CondEmpty:
-		case CondDWithin:
-			return false;
-		default:
-			abort();
-	}
-}
+constexpr unsigned kMaxSelectivityPercentForIdset = 30u;
 
 }  // namespace reindexer

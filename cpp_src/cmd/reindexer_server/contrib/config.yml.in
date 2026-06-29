@@ -3,12 +3,13 @@ storage:
   path: /var/lib/reindexer
   engine: leveldb
   startwitherrors: false
-  autorepair: false
 
 # Network configuration
 net:
   httpaddr: 0.0.0.0:9088
   rpcaddr: 0.0.0.0:6534
+  # Unix domain socket path for ucproto scheme. Empty string or "none"-value means, that unix-socket RPC-server is disabled
+  urpcaddr: none
   webroot: ${REINDEXER_INSTALL_PREFIX}/share/reindexer/web
   # Enables authorization via login/password (requires users.yml file in db directory)
   security: false
@@ -22,7 +23,11 @@ net:
   # Default is 60 seconds.
   http_write_timeout: 60
   # Max replicated online-updates queue size in bytes (defaul value is 1GB)
-  maxupdatessize: 1073741824
+  max_updates_size: 1073741824
+  # Max HTTP response size in bytes. Default value is 1 GB. 0 is 'unlimited'
+  max_http_rsp_size: 1073741824
+  # Max HTTP request size in bytes. Default value is 8 MB. 0 is 'unlimited' (streaming is not supported)
+  max_http_req_size: 8388608
 
 # Logger configuration
 logger:

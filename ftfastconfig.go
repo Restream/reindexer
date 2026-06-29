@@ -27,7 +27,7 @@ type FtTyposDetailedConfig struct {
 	// Values range: [-1,100]
 	// Default: 0
 	MaxTypoDistance int `json:"max_typo_distance"`
-	// Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbolws were switched with each other)
+	// Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbols were switched with each other)
 	// Values range: [-1,100]
 	// Default: 1
 	MaxSymbolPermutationDistance int `json:"max_symbol_permutation_distance"`
@@ -46,11 +46,19 @@ type FtBaseRanking struct {
 	// Values range: [0,500]
 	// Default: 100
 	FullMatch int `json:"full_match_proc"`
-	// Mininum relevancy of prefix word match.
+	// Base relevancy of concatenated terms match
+	// Values range: [0,500]
+	// Default: 90
+	ConcatProc int `json:"concat_proc"`
+	// Base relevancy of splitted terms match
+	// Values range: [0,500]
+	// Default: 90
+	SplitProc int `json:"split_proc"`
+	// Minimum relevancy of prefix word match.
 	// Values range: [0,500]
 	// Default: 50
 	PrefixMin int `json:"prefix_min_proc"`
-	// Mininum relevancy of suffix word match.
+	// Minimum relevancy of suffix word match.
 	// Values range: [0,500]
 	// Default: 10
 	SuffixMin int `json:"suffix_min_proc"`
@@ -78,6 +86,10 @@ type FtBaseRanking struct {
 	// Values range: [0,500]
 	// Default: 95
 	Synonyms int `json:"synonyms_proc"`
+	// Relevancy of the delimited word part match
+	// Values range: [0,500]
+	// Default: 80
+	Delimited int `json:"delimited_proc"`
 }
 
 type StopWord struct {
@@ -94,7 +106,7 @@ type Bm25ConfigType struct {
 	Bm25Type string `json:"bm25_type"`
 }
 
-// FtFastConfig configurarion of FullText search index
+// FtFastConfig configuration of FullText search index
 type FtFastConfig struct {
 	// boost of bm25 ranking. default value 1.
 	Bm25Boost float64 `json:"bm25_boost"`
@@ -102,7 +114,7 @@ type FtFastConfig struct {
 	// 0: bm25 will not change final rank.
 	// 1: bm25 will affect to final rank in 0 - 100% range
 	Bm25Weight float64 `json:"bm25_weight"`
-	// boost of search query term distance in found document. default vaule 1
+	// boost of search query term distance in found document. default value 1
 	DistanceBoost float64 `json:"distance_boost"`
 	// weight of search query terms distance in found document in final rank.
 	// 0: distance will not change final rank.
@@ -125,14 +137,16 @@ type FtFastConfig struct {
 	// Relevancy step of partial match: relevancy = kFullMatchProc - partialMatchDecrease * (non matched symbols) / (matched symbols)
 	// For example: partialMatchDecrease: 15, word in index 'terminator', pattern 'termin'. matched: 6 symbols, unmatched: 4. relevancy = 100 - (15*4)/6 = 80
 	PartialMatchDecrease int `json:"partial_match_decrease"`
-	// Minimum rank of found documents
+	// Minimum relevancy of found documents
 	MinRelevancy float64 `json:"min_relevancy"`
+	// Minimum rank of found documents
+	MinRank int `json:"min_rank"`
 	// Maximum possible typos in word.
 	// 0: typos is disabled, words with typos will not match
 	// N: words with N possible typos will match
 	// Values range: [0,4]
 	// Default: 2
-	// It is not recommended to set more than 2 possible typo: It will serously increase RAM usage, and decrease search speed
+	// It is not recommended to set more than 2 possible typo: It will seriously increase RAM usage, and decrease search speed
 	MaxTypos int `json:"max_typos"`
 	// Maximum word length for building and matching variants with typos. Default value is 15
 	MaxTypoLen int `json:"max_typo_len"`
@@ -146,8 +160,14 @@ type FtFastConfig struct {
 	// Default value is 20000. Increasing this value may refine ranking
 	// of queries with high frequency words
 	MergeLimit int `json:"merge_limit"`
+	// List of symbol types for keeping diacritic symbols (acc/accent, ara/arabic, heb/hebrew or cyr/cyrillic)
+	KeepDiacritics []string `json:"keep_diacritics"`
 	// List of used stemmers
 	Stemmers []string `json:"stemmers"`
+	// Enable concatenated terms variants processing
+	EnableTermsConcat bool `json:"enable_terms_concat"`
+	// Enable splitted terms variants processing
+	EnableTermsSplit bool `json:"enable_terms_split"`
 	// Enable translit variants processing
 	EnableTranslit bool `json:"enable_translit"`
 	// Enable wrong keyboard layout variants processing
@@ -155,7 +175,7 @@ type FtFastConfig struct {
 	// List of objects of stop words. Words from this list will be ignored when building indexes
 	// but can be included in search results in queries such as 'word*', 'word~' etc. if for the stop-word attribute is_morpheme is true.
 	// The list item can be either a reindexer.StopWord, or string
-	StopWords []interface{} `json:"stop_words"`
+	StopWords []any `json:"stop_words"`
 	// List of synonyms for replacement
 	Synonyms []struct {
 		// List source tokens in query, which will be replaced with alternatives
@@ -167,11 +187,15 @@ type FtFastConfig struct {
 	LogLevel int `json:"log_level"`
 	// Enable search by numbers as words and backwards
 	EnableNumbersSearch bool `json:"enable_numbers_search"`
-	// *DEPREEACTED* - all of the fulltex indexes will perform commit/warmup after copying transatcion
+	// *DEPRECATED* - all of the fulltex indexes will perform commit/warmup after copying transaction
 	// Enable auto index warmup after atomic namespace copy on transaction
 	EnableWarmupOnNsCopy bool `json:"enable_warmup_on_ns_copy"`
-	// Extra symbols, which will be threated as parts of word to addition to letters and digits
+	// Extra symbols, which will be treated as parts of word to addition to letters and digits
 	ExtraWordSymbols string `json:"extra_word_symbols"`
+	// Symbols, which will be treated as word part delimiters
+	WordPartDelimiters string `json:"word_part_delimiters"`
+	// Min word part size for indexing and searching
+	MinWordPartSize int `json:"min_word_part_size"`
 	// Ratio of summation of ranks of match one term in several fields
 	SumRanksByFieldsRatio float64 `json:"sum_ranks_by_fields_ratio"`
 	// Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited
@@ -184,7 +208,7 @@ type FtFastConfig struct {
 	// 'memory': compressed vector of document identifiers
 	// 'cpu':  uncompressed vector of document identifiers
 	Optimization string `json:"optimization,omitempty"`
-	// Enable to execute others queries before the ft query
+	// If true, then non-fulltext filtering conditions will be executed before fulltext index selection
 	EnablePreselectBeforeFt bool `json:"enable_preselect_before_ft"`
 	// Config for subterm rank multiplier
 	FtBaseRankingConfig *FtBaseRanking `json:"base_ranking,omitempty"`
@@ -210,23 +234,29 @@ func DefaultFtFastConfig() FtFastConfig {
 		FullMatchBoost:          1.1,
 		PartialMatchDecrease:    15,
 		MinRelevancy:            0.05,
+		MinRank:                 5,
 		MaxTypos:                2,
 		MaxTypoLen:              15,
 		TyposDetailedConfig:     &FtTyposDetailedConfig{MaxTypoDistance: 0, MaxSymbolPermutationDistance: 1, MaxExtraLetters: 2, MaxMissingLetters: 2},
 		MaxRebuildSteps:         50,
 		MaxStepSize:             4000,
 		MergeLimit:              20000,
+		KeepDiacritics:          []string{},
 		Stemmers:                []string{"en", "ru"},
+		EnableTermsConcat:       true,
+		EnableTermsSplit:        true,
 		EnableTranslit:          true,
 		EnableKbLayout:          true,
 		LogLevel:                0,
-		ExtraWordSymbols:        "/-+",
+		ExtraWordSymbols:        "-/+_`'",
+		WordPartDelimiters:      "-/+_`'",
+		MinWordPartSize:         3,
 		SumRanksByFieldsRatio:   0.0,
 		MaxAreasInDoc:           5,
 		MaxTotalAreasToCache:    -1,
 		Optimization:            "Memory",
 		EnablePreselectBeforeFt: false,
-		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95},
+		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, ConcatProc: 90, SplitProc: 90, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95, Delimited: 80},
 		Bm25Config:              &Bm25ConfigType{Bm25k1: 2.0, Bm25b: 0.75, Bm25Type: "rx_bm25"},
 	}
 }

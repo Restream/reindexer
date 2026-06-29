@@ -1,10 +1,12 @@
 #include "tokenizer.h"
+#include "core/formatters/tokenizer_range.h"
 #include "double-conversion/double-conversion.h"
+#include "tools/errors.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
 
-void tokenizer::skip_space() noexcept {
+void Tokenizer::SkipSpace() noexcept {
 	for (;;) {
 		while (cur_ != q_.end() && std::isspace(*cur_)) {
 			cur_++;
@@ -23,75 +25,78 @@ void tokenizer::skip_space() noexcept {
 	}
 }
 
-token tokenizer::next_token(flags flgs) {
-	skip_space();
+Token Tokenizer::NextToken(Flags flgs) {
+	SkipSpace();
 
 	if (cur_ == q_.end()) {
-		return token(TokenEnd);
+		return Token(TokenEnd, pos_);
 	}
 
-	token res(TokenSymbol);
+	Token res(TokenSymbol, pos_);
 
 	if (isalpha(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '@') {
-		res.type = TokenName;
+		res.type_ = TokenName;
 		int openBrackets{0};
 		do {
 			if (*cur_ == '*' && *(cur_ - 1) != '[') {
 				break;
 			}
-			res.text_.push_back(flgs.has_to_lower() ? tolower(*cur_++) : *cur_++);
+			res.text_.push_back(flgs.HasToLower() ? tolower(*cur_++) : *cur_++);
 			++pos_;
 		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '@' || *cur_ == '.' ||
 									  *cur_ == '*' || (*cur_ == '[' && (++openBrackets, true)) || (*cur_ == ']' && (--openBrackets >= 0))));
 	} else if (*cur_ == '"') {
-		res.type = TokenName;
+		res.type_ = TokenName;
 		const size_t startPos = ++pos_;
-		if (flgs.has_in_order_by()) {
+		if (flgs.HasInOrderBy()) {
 			res.text_.push_back('"');
 		}
 		while (++cur_ != q_.end() && *cur_ != '"') {
 			if (pos_ == startPos) {
 				if (*cur_ != '#' && *cur_ != '_' && !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
-					throw Error{errParseSQL, "Identifier should starts with alpha, digit, '_', '#' or '@', but found '%c'; %s", *cur_,
-								where()};
+					const auto range = Where();
+					throw SqlParserError{range, "Identifier should starts with alpha, digit, '_', '#' or '@', but found '{}'; {}", *cur_,
+										 range};
 				}
 			} else if (*cur_ != '+' && *cur_ != '.' && *cur_ != '_' && *cur_ != '#' && *cur_ != '[' && *cur_ != ']' && *cur_ != '*' &&
 					   !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
-				throw Error{errParseSQL, "Identifier should not contain '%c'; %s", *cur_, where()};
+				const auto range = Where();
+				throw SqlParserError{range, "Identifier should not contain '{}'; {}", *cur_, range};
 			}
-			res.text_.push_back(flgs.has_to_lower() ? tolower(*cur_) : *cur_);
+			res.text_.push_back(flgs.HasToLower() ? tolower(*cur_) : *cur_);
 			++pos_;
 		}
-		if (flgs.has_in_order_by()) {
+		if (flgs.HasInOrderBy()) {
 			res.text_.push_back('"');
 		}
 		if (cur_ == q_.end()) {
-			throw Error{errParseSQL, "Not found close '\"'; %s", where()};
+			const auto range = Where();
+			throw SqlParserError{range, "Not found close '\"'; {}", range};
 		}
 		++cur_;
 		++pos_;
-	} else if (isdigit(*cur_) || (!flgs.has_treat_sign_as_token() && (*cur_ == '-' || *cur_ == '+'))) {
-		res.type = TokenNumber;
+	} else if (isdigit(*cur_) || (!flgs.HasTreatSignAsToken() && (*cur_ == '-' || *cur_ == '+'))) {
+		res.type_ = TokenNumber;
 		do {
 			res.text_.push_back(*cur_++);
 			++pos_;
-		} while (cur_ != q_.end() && (isdigit(*cur_) || *cur_ == '.'));
-	} else if (flgs.has_treat_sign_as_token() && (*cur_ == '-' || *cur_ == '+')) {
-		res.type = TokenSign;
+		} while (cur_ != q_.end() && (isdigit(*cur_) || *cur_ == '.' || *cur_ == 'e' || (*(cur_ - 1) == 'e' && issign(*cur_))));
+	} else if (flgs.HasTreatSignAsToken() && (*cur_ == '-' || *cur_ == '+')) {
+		res.type_ = TokenSign;
 		res.text_.push_back(*cur_++);
 		++pos_;
 	} else if (cur_ != q_.end() && (*cur_ == '>' || *cur_ == '<' || *cur_ == '=')) {
-		res.type = TokenOp;
+		res.type_ = TokenOp;
 		do {
 			res.text_.push_back(*cur_++);
 			++pos_;
 		} while (cur_ != q_.end() && (*cur_ == '=' || *cur_ == '>' || *cur_ == '<') && res.text_.size() < 2);
 	} else if (*cur_ == '\'' || *cur_ == '`') {
-		res.type = TokenString;
-		char quote_chr = *cur_++;
-		++pos_;
+		res.type_ = TokenString;
+		char quoteChr = *cur_++;
+		res.pos_ = ++pos_;
 		while (cur_ != q_.end()) {
-			if (*cur_ == quote_chr) {
+			if (*cur_ == quoteChr) {
 				++cur_;
 				++pos_;
 				break;
@@ -132,15 +137,14 @@ token tokenizer::next_token(flags flgs) {
 		++pos_;
 	}
 
-	// null terminate it
-	res.text_.reserve(res.text_.size() + 1);
-	*(res.text_.begin() + res.text_.size()) = 0;
-	skip_space();
+	SkipSpace();
 	return res;
 }
 
-size_t tokenizer::getPrevPos() const noexcept {
-	assertrx_throw(pos_ > 0);
+size_t Tokenizer::GetPrevPos() const {
+	if (pos_ == 0) [[unlikely]] {
+		throw SqlParserError(TokenizerRange{}, "Tokenizer pos is 0");
+	}
 
 	// undo skip space
 	auto pos = pos_ - 1;
@@ -163,33 +167,43 @@ size_t tokenizer::getPrevPos() const noexcept {
 	}
 }
 
-std::string tokenizer::where() const {
-	int line = 1;
-	int col = 0;
-	for (auto pos = q_.begin(); pos != cur_; pos++) {
-		if (*pos == '\n') {
-			line++;
-			col = 0;
-		} else {
-			col++;
-		}
-	}
-	return std::string()
-		.append("line: ")
-		.append(std::to_string(line))
-		.append(" column: ")
-		.append(std::to_string(col))
-		.append(" ")
-		.append(std::to_string(q_.size()));
+TokenizerRange Tokenizer::Where(size_t startPos, size_t lastPos) const noexcept {
+	TokenizerRange result;
+	charMultilinePos(q_, startPos, 0, result.lineStart, result.columnStart);
+
+	result.lineEnd = result.lineStart;
+	result.columnEnd = result.columnStart;
+	charMultilinePos(q_, lastPos, startPos, result.lineEnd, result.columnEnd);
+	return result;
 }
 
-Variant getVariantFromToken(const token& tok) {
-	const std::string_view str = tok.text();
-	if (tok.type != TokenNumber || str.empty()) {
+TokenizerRange Tokenizer::Where() {
+	size_t curPos = cur_ - q_.begin();
+	size_t lastPos = q_.length();
+	if (pos_ != lastPos) {
+		if (const Token nextToken = PeekToken(); !nextToken.Text().empty()) {
+			lastPos = pos_ + nextToken.Text().length();
+		}
+	}
+	return Where(curPos, lastPos);
+}
+
+TokenizerRange Tokenizer::Where(const Token& token) const noexcept {
+	size_t startPos = token.pos_;
+	size_t lastPos = startPos + token.Text().length();
+	if (lastPos >= q_.length()) {
+		lastPos = q_.length();
+	}
+	return Where(startPos, lastPos);
+}
+
+Variant GetVariantFromToken(const Token& tok) {
+	const std::string_view str = tok.Text();
+	if (tok.Type() != TokenNumber || str.empty()) {
 		return Variant(make_key_string(str.data(), str.length()));
 	}
 
-	if (!isdigit(str[0]) && (str.size() == 1 || (str[0] != '+' && str[0] != '-'))) {
+	if (!isdigit(str[0]) && (str.size() == 1 || !issign(str[0]))) {
 		return Variant(make_key_string(str.data(), str.length()));
 	}
 
@@ -199,16 +213,31 @@ Variant getVariantFromToken(const token& tok) {
 	bool nullDecimalPart = true;
 
 	size_t decPointPos = str.size();
+	size_t ePos = str.size();
 	for (unsigned i = 1; i < str.size(); i++) {
 		if (str[i] == '.') {
-			if (isFloat) {
-				// second point - not a number
+			if (isFloat || ePos < str.size()) {
+				// second or incorrect point - not a number
 				return Variant(make_key_string(str.data(), str.length()));
 			}
 
 			decPointPos = i;
 
 			isFloat = true;
+			continue;
+		}
+
+		if (str[i] == 'e') {
+			if (ePos < str.size()) {
+				// second e not a number
+				return Variant(make_key_string(str.data(), str.length()));
+			}
+
+			ePos = i;
+			continue;
+		}
+
+		if (i == ePos + 1 && issign(str[i])) {
 			continue;
 		}
 
@@ -221,7 +250,15 @@ Variant getVariantFromToken(const token& tok) {
 		}
 	}
 
-	isFloat = !nullDecimalPart || (isFloat && decPointPos > maxSignsInInt);
+	if (ePos + 1 == str.size() || (ePos + 2 == str.size() && !isdigit(str[ePos + 1]))) {
+		return Variant(make_key_string(str.data(), str.length()));
+	}
+
+	if (ePos == 1 && !isdigit((str[0]))) {
+		return Variant(make_key_string(str.data(), str.length()));
+	}
+
+	isFloat = !nullDecimalPart || (isFloat && decPointPos > maxSignsInInt) || ePos < str.size();
 
 	if (!isFloat) {
 		auto intPart = str.substr(0, decPointPos);

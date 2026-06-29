@@ -1,11 +1,16 @@
 #include "dslparser.h"
+#include <string>
 #include "core/cjson/jschemachecker.h"
-#include "core/query/query.h"
+#include "core/enums.h"
+#include "core/query/expression/expression.h"
+#include "core/query/query_impl.h"
+#include "core/type_consts_helpers.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
 #include "tools/frozen_str_tools.h"
 #include "tools/json2kv.h"
 #include "tools/jsontools.h"
+#include "tools/scope_guard.h"
 #include "tools/stringstools.h"
 #include "vendor/frozen/unordered_map.h"
 
@@ -15,7 +20,7 @@ using namespace std::string_view_literals;
 namespace dsl {
 using gason::JsonValue;
 
-enum class Root {
+enum class [[nodiscard]] Root {
 	Namespace,
 	Limit,
 	Offset,
@@ -36,14 +41,13 @@ enum class Root {
 	Local,
 };
 
-enum class Sort { Desc, Field, Values };
-enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset, SelectFilter };
-enum class JoinEntry { LeftField, RightField, Cond, Op };
-enum class Filter { Cond, Op, Field, Value, Filters, JoinQuery, FirstField, SecondField, EqualPositions, SubQuery, Always };
-enum class Aggregation { Fields, Type, Sort, Limit, Offset };
-enum class EqualPosition { Positions };
-enum class UpdateField { Name, Type, Values, IsArray };
-enum class UpdateFieldType { Object, Expression, Value };
+enum class [[nodiscard]] Sort { Desc, Field, Values };
+enum class [[nodiscard]] JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset, SelectFilter };
+enum class [[nodiscard]] JoinEntry { LeftField, RightField, Cond, Op };
+enum class [[nodiscard]] Aggregation { Fields, Type, Sort, Limit, Offset };
+enum class [[nodiscard]] EqualPosition { Positions };
+enum class [[nodiscard]] UpdateField { Name, Type, Values, IsArray };
+enum class [[nodiscard]] UpdateFieldType { Object, Expression, Value };
 
 template <typename T, std::size_t N>
 constexpr auto MakeFastStrMap(const std::pair<std::string_view, T> (&items)[N]) {
@@ -90,19 +94,6 @@ constexpr static auto joined_entry_map = MakeFastStrMap<JoinEntry>(
 
 constexpr static auto join_types = MakeFastStrMap<JoinType>({{"inner", InnerJoin}, {"left", LeftJoin}, {"orinner", OrInnerJoin}});
 
-// additionalfor parse field 'filters'
-constexpr static auto filter_map = MakeFastStrMap<Filter>({{"cond", Filter::Cond},
-														   {"op", Filter::Op},
-														   {"field", Filter::Field},
-														   {"value", Filter::Value},
-														   {"filters", Filter::Filters},
-														   {"join_query", Filter::JoinQuery},
-														   {"first_field", Filter::FirstField},
-														   {"second_field", Filter::SecondField},
-														   {"equal_positions", Filter::EqualPositions},
-														   {"subquery", Filter::SubQuery},
-														   {"always", Filter::Always}});
-
 // additional for 'filter::cond' field
 constexpr static auto cond_map = MakeFastStrMap<CondType>({
 	{"any", CondAny},
@@ -118,6 +109,7 @@ constexpr static auto cond_map = MakeFastStrMap<CondType>({
 	{"match", CondEq},
 	{"like", CondLike},
 	{"dwithin", CondDWithin},
+	{"knn", CondKnn},
 });
 
 constexpr static auto kOpMap = MakeFastStrMap<OpType>({{"or", OpOr}, {"and", OpAnd}, {"not", OpNot}});
@@ -170,17 +162,10 @@ constexpr static auto kUpdateFieldTypeMap = MakeFastStrMap<UpdateFieldType>({
 	{"value", UpdateFieldType::Value},
 });
 
-static bool checkTag(const JsonValue& val, JsonTag tag) noexcept { return val.getTag() == tag; }
-
-template <typename... Tags>
-bool checkTag(const JsonValue& val, JsonTag tag, Tags... tags) noexcept {
-	return std::max(tag == val.getTag(), checkTag(val, tags...));
-}
-
 template <typename... JsonTags>
 void checkJsonValueType(const JsonValue& val, std::string_view name, JsonTags... possibleTags) {
-	if (!checkTag(val, possibleTags...)) {
-		throw Error(errParseJson, "Wrong type of field '%s'", name);
+	if (((val.getTag() != possibleTags) && ...)) {
+		throw Error(errParseJson, "Wrong type of field '{}'", name);
 	}
 }
 
@@ -189,7 +174,7 @@ T get(const frozen::unordered_map<std::string_view, T, N, frozen::nocase_hash_st
 	  std::string_view mapName) {
 	auto it = m.find(name);
 	if (it == m.end()) {
-		throw Error(errParseDSL, "Element [%s] not allowed in object of type [%s]", name, mapName);
+		throw Error(errParseDSL, "Element [{}] not allowed in object of type [{}]", name, mapName);
 	}
 	return it->second;
 }
@@ -198,23 +183,23 @@ template <typename Arr>
 void parseStringArray(const JsonValue& stringArray, Arr& array) {
 	for (const auto& element : stringArray) {
 		auto& value = element.value;
-		checkJsonValueType(value, "string array item", JSON_STRING);
+		checkJsonValueType(value, "string array item"sv, JsonTag::STRING);
 		array.emplace_back(value.toString());
 	}
 }
 
 template <typename Array>
 void parseValues(const JsonValue& values, Array& kvs, std::string_view fieldName) {
-	if (values.getTag() == JSON_ARRAY) {
+	if (values.getTag() == JsonTag::ARRAY) {
 		uint32_t objectsCount = 0;
 		for (const auto& elem : values) {
 			Variant kv;
-			if (elem.value.getTag() == JSON_OBJECT) {
+			if (elem.value.getTag() == JsonTag::OBJECT) {
 				kv = Variant(stringifyJson(elem));
 				++objectsCount;
-			} else if (elem.value.getTag() != JSON_NULL) {
-				kv = jsonValue2Variant(elem.value, KeyValueType::Undefined{}, fieldName);
-				kv.EnsureHold();
+			} else if (elem.value.getTag() != JsonTag::JSON_NULL) {
+				kv = jsonValue2Variant(elem.value, KeyValueType::Undefined{}, fieldName, nullptr, ConvertToString_False, ConvertNull_False);
+				std::ignore = kv.EnsureHold();
 			}
 			kvs.emplace_back(std::move(kv));
 		}
@@ -222,31 +207,31 @@ void parseValues(const JsonValue& values, Array& kvs, std::string_view fieldName
 		if ((0 < objectsCount) && (objectsCount < kvs.size())) {
 			throw Error(errParseJson, "Array with objects must be homogeneous");
 		}
-	} else if (values.getTag() != JSON_NULL) {
-		Variant kv(jsonValue2Variant(values, KeyValueType::Undefined{}, fieldName));
-		kv.EnsureHold();
+	} else if (values.getTag() != JsonTag::JSON_NULL) {
+		Variant kv(jsonValue2Variant(values, KeyValueType::Undefined{}, fieldName, nullptr, ConvertToString_False, ConvertNull_False));
+		std::ignore = kv.EnsureHold();
 		kvs.emplace_back(std::move(kv));
 	}
 }
 
-void parse(const JsonValue& root, Query& q);
+void parse(const JsonValue& root, impl::Query& q);
 
-static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
-	checkJsonValueType(entry, "Sort", JSON_OBJECT);
+static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntries, VariantArray& forcedSortOrder) {
+	checkJsonValueType(entry, "Sort"sv, JsonTag::OBJECT);
 	SortingEntry sortingEntry;
 	for (const auto& subelement : entry) {
 		auto& v = subelement.value;
 		std::string_view name = subelement.key;
 		switch (get<Sort>(kSortMap, name, "sort"sv)) {
 			case Sort::Desc:
-				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) {
-					throw Error(errParseJson, "Wrong type of field '%s'", name);
+				if ((v.getTag() != JsonTag::JTRUE) && (v.getTag() != JsonTag::JFALSE)) {
+					throw Error(errParseJson, "Wrong type of field '{}'", name);
 				}
-				sortingEntry.desc = (v.getTag() == JSON_TRUE);
+				sortingEntry.desc = Desc(v.getTag() == JsonTag::JTRUE);
 				break;
 
 			case Sort::Field:
-				checkJsonValueType(v, name, JSON_STRING);
+				checkJsonValueType(v, name, JsonTag::STRING);
 				sortingEntry.expression.assign(std::string(v.toString()));
 				break;
 
@@ -258,168 +243,294 @@ static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntrie
 				break;
 		}
 	}
-	if (!sortingEntry.expression.empty()) {
-		sortingEntries.push_back(std::move(sortingEntry));
-	}
+	sortingEntries.push_back(std::move(sortingEntry));
 }
 
-static void parseSort(const JsonValue& v, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
-	if (v.getTag() == JSON_ARRAY) {
+static void parseSort(const JsonValue& v, SortingEntries& sortingEntries, VariantArray& forcedSortOrder) {
+	if (v.getTag() == JsonTag::ARRAY) {
 		for (auto entry : v) {
 			parseSort(entry.value, sortingEntries, forcedSortOrder);
 		}
-	} else if (v.getTag() == JSON_OBJECT) {
+	} else if (v.getTag() == JsonTag::OBJECT) {
 		parseSortEntry(v, sortingEntries, forcedSortOrder);
 	} else {
 		throw Error(errConflict, "Wrong type of field 'Sort'");
 	}
 }
 
-void parseSingleJoinQuery(const JsonValue& join, Query& query);
-void parseEqualPositions(const JsonValue& dsl, Query& query);
-
-static void parseFilter(const JsonValue& filter, Query& q) {
-	OpType op = OpAnd;
-	CondType condition{CondEq};
-	VariantArray values;
-	std::string fields[2];
-	std::unique_ptr<Query> subquery;
-	bool always{};
-	checkJsonValueType(filter, "filter", JSON_OBJECT);
-	enum { ENTRY, BRACKET, TWO_FIELDS_ENTRY, JOIN, EQUAL_POSITIONS, SUB_QUERY, ALWAYS } entryType = ENTRY;
-	int elemsParsed = 0;
-	for (const auto& elem : filter) {
-		auto& v = elem.value;
-		std::string_view name(elem.key);
-		switch (get<Filter>(filter_map, name, "filter"sv)) {
-			case Filter::Cond:
-				checkJsonValueType(v, name, JSON_STRING);
-				condition = get<CondType>(cond_map, v.toString(), "condition enum"sv);
-				break;
-
-			case Filter::Op:
-				checkJsonValueType(v, name, JSON_STRING);
-				op = get<OpType>(kOpMap, v.toString(), "operation enum"sv);
-				break;
-
-			case Filter::Value:
-				parseValues(v, values, name);
-				break;
-
-			case Filter::JoinQuery:
-				checkJsonValueType(v, name, JSON_OBJECT);
-				parseSingleJoinQuery(v, q);
-				entryType = JOIN;
-				break;
-
-			case Filter::Field:
-				checkJsonValueType(v, name, JSON_STRING);
-				fields[0] = std::string(v.toString());
-				break;
-
-			case Filter::FirstField:
-				checkJsonValueType(v, name, JSON_STRING);
-				fields[0] = std::string(v.toString());
-				entryType = TWO_FIELDS_ENTRY;
-				break;
-
-			case Filter::SecondField:
-				checkJsonValueType(v, name, JSON_STRING);
-				fields[1] = std::string(v.toString());
-				entryType = TWO_FIELDS_ENTRY;
-				break;
-
-			case Filter::Filters: {
-				checkJsonValueType(v, name, JSON_ARRAY);
-				q.NextOp(op).OpenBracket();
-				for (const auto& f : v) {
-					parseFilter(f.value, q);
-				}
-				q.CloseBracket();
-				entryType = BRACKET;
-				break;
-			}
-			case Filter::EqualPositions:
-				parseEqualPositions(v, q);
-				entryType = EQUAL_POSITIONS;
-				break;
-			case Filter::SubQuery:
-				subquery = std::make_unique<Query>();
-				parse(v, *subquery);
-				entryType = SUB_QUERY;
-				break;
-			case Filter::Always:
-				if (v.getTag() == JSON_TRUE) {
-					always = true;
-				} else if (v.getTag() == JSON_FALSE) {
-					always = false;
-				} else {
-					throw Error{errParseDSL, "Wrong DSL format: 'always' fields in filter should be boolean"};
-				}
-				entryType = ALWAYS;
-				break;
+static void parseSort(const JsonValue& v, impl::Query& query) {
+	SortingEntries sortingEntries;
+	VariantArray forcedSortOrder;
+	parseSort(v, sortingEntries, forcedSortOrder);
+	for (size_t i = 0, s = sortingEntries.size(); i < s; ++i) {
+		auto& sortingEntry = sortingEntries[i];
+		if (i == 0) {
+			// NOLINTNEXTLINE (bugprone-use-after-move)
+			query.Sort(std::move(sortingEntry.expression), sortingEntry.desc, std::move(forcedSortOrder));
+		} else {
+			query.Sort(std::move(sortingEntry.expression), sortingEntry.desc, {});
 		}
-		++elemsParsed;
-	}
-	if (elemsParsed == 0) {
-		return;
-	}
-
-	switch (entryType) {
-		case ENTRY:
-			q.NextOp(op).Where(std::move(fields[0]), condition, std::move(values));
-			break;
-		case BRACKET:
-			q.SetLastOperation(op);
-			break;
-		case TWO_FIELDS_ENTRY:
-			q.NextOp(op).WhereBetweenFields(std::move(fields[0]), condition, std::move(fields[1]));
-			break;
-		case JOIN: {
-			assertrx(q.GetJoinQueries().size() > 0);
-			const auto& qjoin = q.GetJoinQueries().back();
-			if (qjoin.joinType == JoinType::LeftJoin) {
-				if (op != OpAnd) {
-					throw Error(errParseJson, "Operation %s is not allowed with LeftJoin", OpTypeToStr(op));
-				}
-			} else {
-				if (qjoin.joinType == JoinType::OrInnerJoin) {
-					if (op == OpNot) {
-						throw Error(errParseJson, "Operation NOT is not allowed with OrInnerJoin");
-					}
-					op = OpOr;
-				}
-				q.AppendQueryEntry<JoinQueryEntry>(op, q.GetJoinQueries().size() - 1);
-			}
-			break;
-		}
-		case EQUAL_POSITIONS:
-			break;
-		case SUB_QUERY:
-			q.NextOp(op);
-			if (fields[0].empty()) {
-				q.Where(std::move(*subquery), condition, std::move(values));
-			} else if (values.empty()) {
-				q.Where(std::move(fields[0]), condition, std::move(*subquery));
-			} else {
-				throw Error{errParseDSL, "Wrong DSL format: 'value', 'subquery' and 'field' fields in one filter"};
-			}
-			break;
-		case ALWAYS:
-			if (always) {
-				q.AppendQueryEntry<AlwaysTrue>(op);
-			} else {
-				q.AppendQueryEntry<AlwaysFalse>(op);
-			}
-			break;
 	}
 }
 
-static void parseJoinedEntries(const JsonValue& joinEntries, JoinedQuery& qjoin) {
-	checkJsonValueType(joinEntries, "Joined", JSON_ARRAY);
+static void parseSingleJoinQuery(const JsonValue& join, impl::Query& query, const JsonNode& parent);
+static void parseEqualPositions(const JsonValue& dsl, impl::Query& query);
+
+VariantArray getValues(const JsonNode& dsl) {
+	const auto valuesJson = dsl.findCaseInsensitive("value"sv);
+	if (valuesJson.isEmpty()) {
+		return {};
+	}
+	VariantArray values;
+	parseValues(valuesJson.value, values, "values"sv);
+	return values;
+}
+
+static OpType parseOptionalOperation(const JsonNode& parser) {
+	if (const auto opJson = parser.findCaseInsensitive("op"sv); !opJson.isEmpty()) {
+		return get<OpType>(kOpMap, opJson.As<std::string_view>(), "operation enum");
+	} else {
+		return OpAnd;
+	}
+}
+
+static KnnSearchParams parseKnnParams(const JsonNode& json) {
+	const auto paramsJson = json.findCaseInsensitive("params"sv);
+	if (paramsJson.isEmpty()) {
+		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain 'params'"};
+	}
+	const auto kJson = paramsJson.findCaseInsensitive(KnnSearchParams::kKName);
+	const auto radiusJson = paramsJson.findCaseInsensitive(KnnSearchParams::kRadiusName);
+	std::optional<size_t> k;
+	std::optional<float> radius;
+	if (!kJson.isEmpty()) {
+		k = kJson.As<size_t>(CheckUnsigned_True, 0, 1);
+	}
+	if (!radiusJson.isEmpty()) {
+		radius = radiusJson.As<float>();
+	}
+
+	if (!k && !radius) {
+		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain one of 'params.{}' or 'params.{}'", KnnSearchParams::kKName,
+					KnnSearchParams::kRadiusName};
+	}
+
+	if (const auto efJson = paramsJson.findCaseInsensitive(KnnSearchParams::kEfName); !efJson.isEmpty()) {
+		if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.isEmpty()) {
+			throw Error{errParseDSL, "Wrong DSL format: KNN query cannot contain both of 'params.{}' and 'params.{}",
+						KnnSearchParams::kEfName, KnnSearchParams::kNProbeName};
+		}
+		return HnswSearchParams{}.K(k).Radius(radius).Ef(efJson.As<size_t>(CheckUnsigned_True, 1, k ? *k : 1));
+	} else if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.isEmpty()) {
+		if (nprobeJson.value.isNegative()) {
+			throw Error{errParseDSL, "Wrong DSL format: KNN query parameter 'params.{}' cannot be negative", KnnSearchParams::kNProbeName};
+		}
+		return IvfSearchParams{}.K(k).Radius(radius).NProbe(nprobeJson.As<size_t>(CheckUnsigned_True, 0, 1));
+	} else {
+		return KnnSearchParamsBase{}.K(k).Radius(radius);
+	}
+}
+
+void addWhereKNN(OpType op, const JsonNode& fieldNode, const JsonNode& filter, impl::Query& q) {
+	auto knnParams = parseKnnParams(filter);
+
+	const auto valuesDsl = filter.findCaseInsensitive("value"sv);
+	if (valuesDsl.isEmpty()) {
+		throw Error{errParseDSL, "Wrong DSL format: Knn condition without value"};
+	}
+
+	if (valuesDsl.value.getTag() != JsonTag::ARRAY) {
+		auto value = valuesDsl.As<std::string>();
+		if (value.empty()) {
+			throw Error{errParseDSL, "Wrong DSL format: Knn condition with not array or string value"};
+		}
+
+		q.AppendQueryEntry<KnnQueryEntry>(op, fieldNode.As<std::string>(), std::move(value), std::move(knnParams));
+	} else {
+		thread_local static std::vector<float> values;
+		values.resize(0);
+		values.reserve(kMaxThreadLocalJSONVector);
+		auto guard = MakeScopeGuard([]() noexcept {
+			if (values.capacity() > kMaxThreadLocalJSONVector) {
+				values = std::vector<float>();
+			}
+		});
+		for (const auto vDsl : valuesDsl) {
+			values.push_back(vDsl.As<double>());
+		}
+
+		auto vector = FloatVector{std::span<float>{values}};
+		if (vector.Span().empty()) {
+			throw Error{errParseDSL, "Wrong DSL format: Knn condition with empty vector"};
+		}
+
+		q.AppendQueryEntry<KnnQueryEntry>(op, fieldNode.As<std::string>(), std::move(vector), std::move(knnParams));
+	}
+}
+
+ExpressionType parseExpressionType(const JsonNode& expr) {
+	const auto type{expr.findCaseInsensitive("type"sv)};
+	if (type.isEmpty()) {
+		throw Error{errParseDSL, "Wrong DSL format: expression type '{}' is not set"};
+	}
+	return expressions::MakeExpressionType(type.As<std::string_view>());
+}
+
+static void parseExpressions(OpType op, const JsonNode& leftExpr, const JsonNode& rightExpr, CondType condition, impl::Query& q) {
+	auto parseValueAsString = [](const JsonNode& expr) -> std::string {
+		if (const auto v = expr.findCaseInsensitive("value"sv); !v.isEmpty()) {
+			checkJsonValueType(v.value, "value"sv, JsonTag::STRING);
+			return v.As<std::string>();
+		}
+		return {};
+	};
+	const auto leftType{parseExpressionType(leftExpr)};
+	const auto rightType{parseExpressionType(rightExpr)};
+	expressions::ValidateExpressions(leftType, rightType, expressions::ValidationType::WithoutSubqueries);
+	if (leftType == ExpressionTypeField) {
+		auto leftField{parseValueAsString(leftExpr)};
+		if (rightType == ExpressionTypeField) {
+			q.AppendQueryEntry<BetweenFieldsQueryEntry>(op, std::move(leftField), condition, parseValueAsString(rightExpr));
+		} else if (rightType == ExpressionTypeExpression) {
+			q.AppendFunction(op, std::move(leftField), condition, functions::Function::FromExpression(parseValueAsString(rightExpr)));
+		} else if (rightType == ExpressionTypeValues) {
+			q.AppendQueryEntry<QueryEntry>(op, std::move(leftField), condition, getValues(rightExpr));
+		} else {
+			assertrx_throw(false);
+		}
+	} else if (leftType == ExpressionTypeExpression) {
+		auto leftFunction{functions::Function::FromExpression(parseValueAsString(leftExpr))};
+		if (rightType == ExpressionTypeField) {
+			q.AppendFunction(op, std::move(leftFunction), condition, VariantArray::Create(parseValueAsString(rightExpr)));
+		} else if (rightType == ExpressionTypeValues) {
+			q.AppendFunction(op, std::move(leftFunction), condition, getValues(rightExpr));
+		} else {
+			assertrx_throw(false);
+		}
+	} else {
+		assertrx_throw(false);
+	}
+}
+
+static void parseLeftExpressionWithSubquery(OpType op, const JsonNode& le, CondType cond, impl::Query&& subQuery, impl::Query& q) {
+	checkJsonValueType(le.value, "left_expression"sv, JsonTag::OBJECT);
+	auto leType = parseExpressionType(le);
+	expressions::ValidateExpressions(leType, ExpressionTypeSubQuery, expressions::ValidationType::Full);
+	if (const auto v = le.findCaseInsensitive("value"sv); !v.isEmpty()) {
+		switch (leType) {
+			case ExpressionTypeField:
+				q.AppendSubQuery(op, v.As<std::string>(), cond, std::move(subQuery));
+				break;
+			case ExpressionTypeExpression:
+				q.Append(op, functions::Function::FromExpression(v.As<std::string_view>()), cond, std::move(subQuery));
+				break;
+			case ExpressionTypeValues:
+			case ExpressionTypeSubQuery:
+			default:
+				assertrx_throw(false);
+		}
+	}
+}
+
+static void parseRightExpressionWithSubquery(OpType op, impl::Query&& subQuery, CondType cond, const JsonNode& re, impl::Query& q) {
+	checkJsonValueType(re.value, "right_expression"sv, JsonTag::OBJECT);
+	auto reType = parseExpressionType(re);
+	if (reType != ExpressionTypeExpression && reType != ExpressionTypeValues) {
+		throw Error(errParseDSL, "Unsupported type of right expression '{}': expression\\values is expected",
+					expressions::ExpressionTypeToString(reType));
+	}
+	if (const auto v = re.findCaseInsensitive("value"sv); !v.isEmpty()) {
+		switch (reType) {
+			case ExpressionTypeExpression:
+				q.Append(op, std::move(subQuery), cond, functions::Function::FromExpression(v.As<std::string_view>()));
+				break;
+			case ExpressionTypeValues:
+				q.AppendSubQuery(op, std::move(subQuery), cond, getValues(re));
+				break;
+			case ExpressionTypeField:
+			case ExpressionTypeSubQuery:
+			default:
+				assertrx_throw(false);
+		}
+	}
+}
+
+static void parseFilter(const JsonNode& filter, impl::Query& q) {
+	checkJsonValueType(filter.value, "filter"sv, JsonTag::OBJECT);
+	if (const auto ep = filter.findCaseInsensitive("equal_positions"sv); !ep.isEmpty()) {
+		checkJsonValueType(ep.value, "equal_positions"sv, JsonTag::ARRAY);
+		parseEqualPositions(ep.value, q);
+		return;
+	} else if (const auto joinQuery = filter.findCaseInsensitive("join_query"sv); !joinQuery.isEmpty()) {
+		checkJsonValueType(joinQuery.value, "join_query"sv, JsonTag::OBJECT);
+		parseSingleJoinQuery(joinQuery.value, q, filter);
+		return;
+	}
+	const OpType op = parseOptionalOperation(filter);
+	if (const auto bracket = filter.findCaseInsensitive("filters"sv); !bracket.isEmpty()) {
+		checkJsonValueType(bracket.value, bracket.key, JsonTag::ARRAY);
+		q.OpenBracket(op);
+		for (const auto& f : bracket) {
+			parseFilter(f, q);
+		}
+		q.CloseBracket();
+		return;
+	}
+
+	std::optional<CondType> condition;
+	if (const auto condNode = filter.findCaseInsensitive("cond"sv); !condNode.isEmpty()) {
+		condition = get<CondType>(cond_map, condNode.As<std::string_view>(), "condition enum"sv);
+	}
+	auto getCondition = [&condition] {
+		// Filter may contain an empty object, which is fine
+		if (!condition.has_value()) {
+			throw Error{errParseDSL, "Condition is not set for non-empty filter"};
+		}
+		return *condition;
+	};
+	if (const auto firstField = filter.findCaseInsensitive("first_field"sv); !firstField.isEmpty()) {
+		q.AppendQueryEntry<BetweenFieldsQueryEntry>(op, firstField.As<std::string>(), getCondition(),
+													filter.findCaseInsensitive("second_field"sv).As<std::string>());
+	} else if (const auto subQueryJson = filter.findCaseInsensitive("subquery"sv); !subQueryJson.isEmpty()) {
+		auto subQuery = impl::Query::CreateEmpty();
+		parse(subQueryJson.value, subQuery);
+		if (const auto field = filter.findCaseInsensitive("field"sv); !field.isEmpty()) {
+			q.AppendSubQuery(op, field.As<std::string>(), getCondition(), std::move(subQuery));
+			if (const auto valuesJson = filter.findCaseInsensitive("value"sv); !valuesJson.isEmpty()) {
+				throw Error{errParseDSL, "Wrong DSL format: 'value', 'subquery' and 'field' fields in one filter"};
+			}
+		} else if (const auto le = filter.findCaseInsensitive("left_expression"sv); !le.isEmpty()) {
+			parseLeftExpressionWithSubquery(op, le, getCondition(), std::move(subQuery), q);
+		} else if (const auto re = filter.findCaseInsensitive("right_expression"sv); !re.isEmpty()) {
+			parseRightExpressionWithSubquery(op, std::move(subQuery), getCondition(), re, q);
+		} else {
+			q.AppendSubQuery(op, std::move(subQuery), getCondition(), getValues(filter));
+		}
+	} else if (const auto le = filter.findCaseInsensitive("left_expression"sv); !le.isEmpty()) {
+		checkJsonValueType(le.value, "left_expression"sv, JsonTag::OBJECT);
+		const auto re = filter.findCaseInsensitive("right_expression"sv);
+		if (re.isEmpty()) {
+			throw Error{errParseDSL, "Wrong DSL format: 'right_expression' is not set"};
+		}
+		// Expresssions will replace fields in the future
+		checkJsonValueType(re.value, "right_expression"sv, JsonTag::OBJECT);
+		parseExpressions(op, le, re, getCondition(), q);
+	} else if (const auto fieldNode = filter.findCaseInsensitive("field"sv); !fieldNode.isEmpty()) {
+		if (auto cond = getCondition(); cond == CondKnn) {
+			addWhereKNN(op, fieldNode, filter, q);
+		} else {
+			q.AppendQueryEntry<QueryEntry>(op, fieldNode.As<std::string>(), cond, getValues(filter));
+		}
+	} else if (condition.has_value()) {
+		throw Error{errParseDSL, "Condition is set, but appropriate field/subquery was not found in filter"};
+	}
+}
+
+static void parseJoinedEntries(const JsonValue& joinEntries, impl::JoinedQuery& qjoin) {
+	checkJsonValueType(joinEntries, "Joined"sv, JsonTag::ARRAY);
 	for (const auto& element : joinEntries) {
 		auto& joinEntry = element.value;
-		checkJsonValueType(joinEntry, "Joined", JSON_OBJECT);
+		checkJsonValueType(joinEntry, "Joined"sv, JsonTag::OBJECT);
 
 		OpType op{OpAnd};
 		CondType cond{};
@@ -429,90 +540,107 @@ static void parseJoinedEntries(const JsonValue& joinEntries, JoinedQuery& qjoin)
 			std::string_view name = subelement.key;
 			switch (get<JoinEntry>(joined_entry_map, name, "join_query.on"sv)) {
 				case JoinEntry::LeftField:
-					checkJsonValueType(value, name, JSON_STRING);
+					checkJsonValueType(value, name, JsonTag::STRING);
 					leftField = std::string(value.toString());
 					break;
 				case JoinEntry::RightField:
-					checkJsonValueType(value, name, JSON_STRING);
+					checkJsonValueType(value, name, JsonTag::STRING);
 					rightField = std::string(value.toString());
 					break;
 				case JoinEntry::Cond:
-					checkJsonValueType(value, name, JSON_STRING);
+					checkJsonValueType(value, name, JsonTag::STRING);
 					cond = get<CondType>(cond_map, value.toString(), "condition enum"sv);
 					break;
 				case JoinEntry::Op:
-					checkJsonValueType(value, name, JSON_STRING);
+					checkJsonValueType(value, name, JsonTag::STRING);
 					op = get<OpType>(kOpMap, value.toString(), "operation enum"sv);
 					break;
 			}
 		}
-		qjoin.joinEntries_.emplace_back(op, cond, std::move(leftField), std::move(rightField));
+		qjoin.EmplaceOnEntry(op, std::move(leftField), cond, std::move(rightField));
 	}
 }
 
-void parseSingleJoinQuery(const JsonValue& join, Query& query) {
-	JoinedQuery qjoin;
+static void parseSingleJoinQuery(const JsonValue& join, impl::Query& query, const JsonNode& parent) {
+	auto qjoin = impl::JoinedQuery::CreateEmpty();
 	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
 	for (const auto& subelement : join) {
 		auto& value = subelement.value;
 		std::string_view name = subelement.key;
 		switch (get<JoinRoot>(joins_map, name, "join_query"sv)) {
 			case JoinRoot::Type:
-				checkJsonValueType(value, name, JSON_STRING);
-				qjoin.joinType = get<JoinType>(join_types, value.toString(), "join_types enum"sv);
+				checkJsonValueType(value, name, JsonTag::STRING);
+				qjoin.SetJoinType(get<JoinType>(join_types, value.toString(), "join_types enum"sv));
 				break;
 			case JoinRoot::Namespace:
-				checkJsonValueType(value, name, JSON_STRING);
+				checkJsonValueType(value, name, JsonTag::STRING);
 				qjoin.SetNsName(value.toString());
 				break;
 			case JoinRoot::Filters:
-				checkJsonValueType(value, name, JSON_ARRAY);
+				checkJsonValueType(value, name, JsonTag::ARRAY);
 				for (const auto& filter : value) {
-					parseFilter(filter.value, qjoin);
+					parseFilter(filter, qjoin);
 				}
 				break;
 			case JoinRoot::Sort:
-				parseSort(value, qjoin.sortingEntries_, qjoin.forcedSortOrder_);
+				parseSort(value, qjoin);
 				break;
 			case JoinRoot::Limit:
-				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
+				checkJsonValueType(value, name, JsonTag::NUMBER, JsonTag::DOUBLE);
 				qjoin.Limit(static_cast<unsigned>(value.toNumber()));
 				break;
 			case JoinRoot::Offset:
-				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
+				checkJsonValueType(value, name, JsonTag::NUMBER, JsonTag::DOUBLE);
 				qjoin.Offset(static_cast<unsigned>(value.toNumber()));
 				break;
 			case JoinRoot::On:
 				parseJoinedEntries(value, qjoin);
 				break;
 			case JoinRoot::SelectFilter: {
-				checkJsonValueType(value, name, JSON_ARRAY);
+				checkJsonValueType(value, name, JsonTag::ARRAY);
 				if (!qjoin.CanAddSelectFilter()) {
 					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 				}
 				std::vector<std::string> selectFilters;
 				parseStringArray(value, selectFilters);
-				qjoin.Select(std::move(selectFilters));
+				for (auto& filter : selectFilters) {
+					qjoin.Select(std::move(filter));
+				}
 				break;
 			}
 		}
 	}
-	query.AddJoinQuery(std::move(qjoin));
+	OpType op = parseOptionalOperation(parent);
+	if (qjoin.GetJoinType() == JoinType::LeftJoin) {
+		if (op != OpAnd) {
+			throw Error(errParseJson, "Operation {} is not allowed with LeftJoin", OpTypeToStr(op));
+		}
+		query.AddJoinQuery(std::move(qjoin));
+	} else {
+		if (qjoin.GetJoinType() == JoinType::OrInnerJoin) {
+			if (op == OpNot) {
+				throw Error(errParseJson, "Operation NOT is not allowed with OrInnerJoin");
+			}
+			op = OpOr;
+		}
+		query.AddJoinQuery(std::move(qjoin));
+		query.AppendQueryEntry<JoinQueryEntry>(op, query.JoinQueries().size() - 1);
+	}
 }
 
-static void parseMergeQueries(const JsonValue& mergeQueries, Query& query) {
+static void parseMergeQueries(const JsonValue& mergeQueries, impl::Query& query) {
 	for (const auto& element : mergeQueries) {
 		auto& merged = element.value;
-		checkJsonValueType(merged, "Merged", JSON_OBJECT);
-		JoinedQuery qmerged;
+		checkJsonValueType(merged, "Merged"sv, JsonTag::OBJECT);
+		auto qmerged = impl::JoinedQuery::CreateEmpty();
 		parse(merged, qmerged);
-		qmerged.joinType = Merge;
+		qmerged.SetJoinType(Merge);
 		query.Merge(std::move(qmerged));
 	}
 }
 
-static void parseAggregation(const JsonValue& aggregation, Query& query) {
-	checkJsonValueType(aggregation, "Aggregation", JSON_OBJECT);
+static void parseAggregation(const JsonValue& aggregation, impl::Query& query) {
+	checkJsonValueType(aggregation, "Aggregation"sv, JsonTag::OBJECT);
 	h_vector<std::string, 1> fields;
 	AggType type = AggUnknown;
 	SortingEntries sortingEntries;
@@ -523,45 +651,45 @@ static void parseAggregation(const JsonValue& aggregation, Query& query) {
 		std::string_view name = element.key;
 		switch (get<Aggregation>(kAggregationMap, name, "aggregations"sv)) {
 			case Aggregation::Fields:
-				checkJsonValueType(value, name, JSON_ARRAY);
+				checkJsonValueType(value, name, JsonTag::ARRAY);
 				for (const auto& subElem : value) {
-					if (subElem.value.getTag() != JSON_STRING) {
+					if (subElem.value.getTag() != JsonTag::STRING) {
 						throw Error(errParseJson, "Expected string in array 'fields'");
 					}
 					fields.emplace_back(subElem.value.toString());
 				}
 				break;
 			case Aggregation::Type:
-				checkJsonValueType(value, name, JSON_STRING);
+				checkJsonValueType(value, name, JsonTag::STRING);
 				type = get<AggType>(kAggregationTypes, value.toString(), "aggregation type enum"sv);
 				if (!query.CanAddAggregation(type)) {
 					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 				}
 				break;
 			case Aggregation::Sort: {
-				std::vector<Variant> forcedSortOrder;
+				VariantArray forcedSortOrder;
 				parseSort(value, sortingEntries, forcedSortOrder);
 				if (!forcedSortOrder.empty()) {
 					throw Error(errConflict, "Fixed values not available in aggregation sort");
 				}
 			} break;
 			case Aggregation::Limit:
-				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
+				checkJsonValueType(value, name, JsonTag::NUMBER, JsonTag::DOUBLE);
 				limit = value.toNumber();
 				break;
 			case Aggregation::Offset:
-				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
+				checkJsonValueType(value, name, JsonTag::NUMBER, JsonTag::DOUBLE);
 				offset = value.toNumber();
 				break;
 		}
 	}
-	query.aggregations_.emplace_back(type, std::move(fields), std::move(sortingEntries), limit, offset);
+	query.Aggregate(type, std::move(fields), std::move(sortingEntries), limit, offset);
 }
 
-void parseEqualPositions(const JsonValue& dsl, Query& query) {
+static void parseEqualPositions(const JsonValue& dsl, impl::Query& query) {
 	for (const auto& ar : dsl) {
 		auto subArray = ar.value;
-		checkJsonValueType(subArray, ar.key, JSON_OBJECT);
+		checkJsonValueType(subArray, ar.key, JsonTag::OBJECT);
 		for (const auto& element : subArray) {
 			auto& value = element.value;
 			std::string_view name = element.key;
@@ -569,7 +697,7 @@ void parseEqualPositions(const JsonValue& dsl, Query& query) {
 				case EqualPosition::Positions: {
 					EqualPosition_t ep;
 					for (const auto& f : value) {
-						checkJsonValueType(f.value, f.key, JSON_STRING);
+						checkJsonValueType(f.value, f.key, JsonTag::STRING);
 						ep.emplace_back(f.value.toString());
 					}
 					query.EqualPositions(std::move(ep));
@@ -579,156 +707,166 @@ void parseEqualPositions(const JsonValue& dsl, Query& query) {
 	}
 }
 
-static void parseUpdateFields(const JsonValue& updateFields, Query& query) {
+static void parseUpdateFields(const JsonValue& updateFields, impl::Query& query) {
 	for (const auto& item : updateFields) {
 		auto& field = item.value;
-		checkJsonValueType(field, item.key, JSON_OBJECT);
+		checkJsonValueType(field, item.key, JsonTag::OBJECT);
 		std::string fieldName;
-		bool isObject = false, isExpression = false;
+		bool isObject = false;
+		HasExpression hasExpression = HasExpression_False;
 		VariantArray values;
 		for (const auto& v : field) {
 			auto& value = v.value;
 			std::string_view name = v.key;
 			switch (get<UpdateField>(kUpdateFieldMap, name, "update_fields"sv)) {
 				case UpdateField::Name:
-					checkJsonValueType(value, name, JSON_STRING);
+					checkJsonValueType(value, name, JsonTag::STRING);
 					fieldName.assign(value.sval.data(), value.sval.size());
 					break;
 				case UpdateField::Type: {
-					checkJsonValueType(value, name, JSON_STRING);
+					checkJsonValueType(value, name, JsonTag::STRING);
 					switch (get<UpdateFieldType>(kUpdateFieldTypeMap, value.toString(), "update_fields_type"sv)) {
 						case UpdateFieldType::Object:
 							isObject = true;
 							break;
 						case UpdateFieldType::Expression:
-							isExpression = true;
+							hasExpression = HasExpression_True;
 							break;
 						case UpdateFieldType::Value:
-							isObject = isExpression = false;
+							isObject = false;
+							hasExpression = HasExpression_False;
 							break;
 					}
 					break;
 				}
 				case UpdateField::IsArray:
-					checkJsonValueType(value, name, JSON_TRUE, JSON_FALSE);
-					values.MarkArray(value.getTag() == JSON_TRUE);
+					checkJsonValueType(value, name, JsonTag::JTRUE, JsonTag::JFALSE);
+					// NOLINTNEXTLINE (bugprone-unused-return-value)
+					values.MarkArray(value.getTag() == JsonTag::JTRUE);
 					break;
 				case UpdateField::Values:
-					checkJsonValueType(value, name, JSON_ARRAY);
+					checkJsonValueType(value, name, JsonTag::ARRAY);
 					parseValues(value, values, name);
 					break;
 			}
 		}
-		if (isExpression && (values.size() != 1 || !values.front().Type().template Is<KeyValueType::String>())) {
+		if (hasExpression && (values.size() != 1 || !values.front().Type().template Is<KeyValueType::String>())) {
 			throw Error(errParseDSL, R"(The array "values" must contain only a string type value for the type "expression")");
 		}
 
 		if (isObject) {
-			query.SetObject(fieldName, std::move(values));
+			query.Set(fieldName, std::move(values), FieldModeSetJson, HasExpression_False);
 		} else {
-			query.Set(fieldName, std::move(values), isExpression);
+			query.Set(fieldName, std::move(values), FieldModeSet, hasExpression);
 		}
 	}
 }
 
-void parse(const JsonValue& root, Query& q) {
-	if (root.getTag() != JSON_OBJECT) {
-		throw Error(errParseJson, "Json is malformed: %d", root.getTag());
+void parse(const JsonValue& root, impl::Query& q) {
+	if (root.getTag() != JsonTag::OBJECT) {
+		throw Error(errParseJson, "Json is malformed: {}", root.getTag());
 	}
 	for (const auto& elem : root) {
 		auto& v = elem.value;
 		auto name = elem.key;
 		switch (get<Root>(kRootMap, name, "root"sv)) {
 			case Root::Namespace:
-				checkJsonValueType(v, name, JSON_STRING);
+				checkJsonValueType(v, name, JsonTag::STRING);
 				q.SetNsName(v.toString());
 				break;
 
 			case Root::Limit:
-				checkJsonValueType(v, name, JSON_NUMBER, JSON_DOUBLE);
+				checkJsonValueType(v, name, JsonTag::NUMBER, JsonTag::DOUBLE);
 				q.Limit(static_cast<unsigned>(v.toNumber()));
 				break;
 
 			case Root::Offset:
-				checkJsonValueType(v, name, JSON_NUMBER, JSON_DOUBLE);
+				checkJsonValueType(v, name, JsonTag::NUMBER, JsonTag::DOUBLE);
 				q.Offset(static_cast<unsigned>(v.toNumber()));
 				break;
 
 			case Root::Filters:
-				checkJsonValueType(v, name, JSON_ARRAY);
+				checkJsonValueType(v, name, JsonTag::ARRAY);
 				for (const auto& filter : v) {
-					parseFilter(filter.value, q);
+					parseFilter(filter, q);
 				}
 				break;
 
 			case Root::Sort:
-				parseSort(v, q.sortingEntries_, q.forcedSortOrder_);
+				parseSort(v, q);
 				break;
 			case Root::Merged:
-				checkJsonValueType(v, name, JSON_ARRAY);
+				checkJsonValueType(v, name, JsonTag::ARRAY);
 				parseMergeQueries(v, q);
 				break;
 			case Root::SelectFilter: {
 				if (!q.CanAddSelectFilter()) {
 					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 				}
-				checkJsonValueType(v, name, JSON_ARRAY);
+				checkJsonValueType(v, name, JsonTag::ARRAY);
 				std::vector<std::string> selectFilters;
 				parseStringArray(v, selectFilters);
-				q.Select(std::move(selectFilters));
+				for (auto& filter : selectFilters) {
+					q.Select(std::move(filter));
+				}
 				break;
 			}
-			case Root::SelectFunctions:
-				checkJsonValueType(v, name, JSON_ARRAY);
-				parseStringArray(v, q.selectFunctions_);
+			case Root::SelectFunctions: {
+				checkJsonValueType(v, name, JsonTag::ARRAY);
+				std::vector<std::string> selectFunctions;
+				parseStringArray(v, selectFunctions);
+				for (auto& fn : selectFunctions) {
+					q.AddSelectFunction(std::move(fn));
+				}
 				break;
+			}
 			case Root::ReqTotal:
-				checkJsonValueType(v, name, JSON_STRING);
+				checkJsonValueType(v, name, JsonTag::STRING);
 				q.CalcTotal(get<CalcTotalMode>(kReqTotalValues, v.toString(), "req_total enum"sv));
 				break;
 			case Root::Aggregations:
-				checkJsonValueType(v, name, JSON_ARRAY);
+				checkJsonValueType(v, name, JsonTag::ARRAY);
 				for (const auto& aggregation : v) {
 					parseAggregation(aggregation.value, q);
 				}
 				break;
 			case Root::Explain:
-				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
-				q.Explain(v.getTag() == JSON_TRUE);
+				checkJsonValueType(v, name, JsonTag::JFALSE, JsonTag::JTRUE);
+				q.Explain(v.getTag() == JsonTag::JTRUE);
 				break;
 			case Root::Local:
-				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
-				q.Local(v.getTag() == JSON_TRUE);
+				checkJsonValueType(v, name, JsonTag::JFALSE, JsonTag::JTRUE);
+				q.Local(v.getTag() == JsonTag::JTRUE);
 				break;
 			case Root::WithRank:
-				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
-				if (v.getTag() == JSON_TRUE) {
+				checkJsonValueType(v, name, JsonTag::JFALSE, JsonTag::JTRUE);
+				if (v.getTag() == JsonTag::JTRUE) {
 					q.WithRank();
 				}
 				break;
 			case Root::StrictMode:
-				checkJsonValueType(v, name, JSON_STRING);
+				checkJsonValueType(v, name, JsonTag::STRING);
 				q.Strict(strictModeFromString(std::string(v.toString())));
 				if (q.GetStrictMode() == StrictModeNotSet) {
-					throw Error(errParseDSL, "Unexpected strict mode value: %s", v.toString());
+					throw Error(errParseDSL, "Unexpected strict mode value: {}", v.toString());
 				}
 				break;
 			case Root::EqualPositions:
 				throw Error(errParseDSL, "Unsupported old DSL format. Equal positions should be in filters.");
 			case Root::QueryType:
-				checkJsonValueType(v, name, JSON_STRING);
-				q.type_ = get<QueryType>(kQueryTypes, v.toString(), "query_type"sv);
+				checkJsonValueType(v, name, JsonTag::STRING);
+				q.Type(get<QueryType>(kQueryTypes, v.toString(), "query_type"sv));
 				break;
 			case Root::DropFields:
-				checkJsonValueType(v, name, JSON_ARRAY);
+				checkJsonValueType(v, name, JsonTag::ARRAY);
 				for (const auto& element : v) {
 					auto& value = element.value;
-					checkJsonValueType(value, "string array item", JSON_STRING);
-					q.Drop(std::string(value.toString()));
+					checkJsonValueType(value, "string array item"sv, JsonTag::STRING);
+					q.Set(std::string(value.toString()), {}, FieldModeDrop, HasExpression_False);
 				}
 				break;
 			case Root::UpdateFields:
-				checkJsonValueType(v, name, JSON_ARRAY);
+				checkJsonValueType(v, name, JsonTag::ARRAY);
 				parseUpdateFields(v, q);
 				break;
 		}
@@ -737,7 +875,7 @@ void parse(const JsonValue& root, Query& q) {
 
 #include "query.json.h"
 
-void Parse(std::string_view str, Query& q) {
+void Parse(std::string_view str, impl::Query& q) {
 	static JsonSchemaChecker schemaChecker(kQueryJson, "query");
 	try {
 		gason::JsonParser parser;
@@ -748,11 +886,11 @@ void Parse(std::string_view str, Query& q) {
 		}
 		dsl::parse(root.value, q);
 	} catch (const gason::Exception& ex) {
-		throw Error(errParseJson, "Query: %s", ex.what());
+		throw Error(errParseJson, "Query: {}", ex.what());
 	} catch (const Error& err) {
 		throw err;
 	} catch (const std::exception& ex) {
-		throw Error(errParseJson, "Exception: %s", ex.what());
+		throw Error(errParseJson, "Exception: {}", ex.what());
 	} catch (...) {
 		throw Error(errParseJson, "Unknown Exception");
 	}

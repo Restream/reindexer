@@ -1,29 +1,29 @@
 # Reindexer data storage format
  
-Internally reindexer is processing documents in special objects, called `Payload`. Documents are stored splitted into 3 parts:
+Internally Reindexer processes documents in special objects called `Payload`. Documents are stored split into 3 parts:
 
 - untyped tuple of non-indexed fields;
 - fixed-type struct of indexed fields;
-- separate column storage binded to full scan indexes.
+- separate column storage bound to full scan indexes.
 
 # Motivation
 
-Main goal of documents splitting technique - get the best features from SQL, no-SQL and column databases.
-The untyped tuple is gives applications capability to store any JSON objects as reindexer documents without data schema migration.
-The fixed-type struct of indexed fields allows application and reindexer maintains consistent indexes and primary keys. Furthermore it helps to achieve best performance for full-scan and join queries - their
-performance are strongly depends on fields access time. 
+The main goal of the document splitting technique is to get the best features from SQL, no-SQL, and column databases.
+The untyped tuple gives applications the capability to store any JSON objects as Reindexer documents without data schema migration.
+The fixed-type struct of indexed fields allows the application and Reindexer to maintain consistent indexes and primary keys. Furthermore it helps achieve the best performance for full-scan and join queries — their
+performance strongly depends on field access time.
 
-Also there are optional column's storage is present. They are binded to full-scan indexes, and can speed up full-scan queries.
+Optional column storage may also be present. It is bound to full-scan indexes and can speed up full-scan queries.
 
 # Payload 
 
 Payload is fixed-type struct of indexed fields. Internal Payload API is represented by 3 top level classes: 
 
 - `PayloadValue` is shared copy on write fields structure. Size of structure is equal to sum of fields size + 8 bytes header;
-- `PayloafType` is payload structure definition. Contains vector of fields (names, types, sizes, offsets);
+- `PayloadType` is the payload structure definition. It contains a vector of fields (names, types, sizes, offsets);
 - `PayloadIface` is template of payload control interface. Holds pointer to PayloadValue and PayloadType.  There are 2 instantiation: `Payload` - can modify PayloadValue; class `ConstPayload` - read only interface, can't modify PayloadValue.
 
-Payload API is close to usual reflection API and contains methods `Set` and `Get` to manipulating fields
+The Payload API is close to a usual reflection API and contains methods `Set` and `Get` for manipulating fields
 See [payloadiface.h](payloadiface.h) for details.
 
 
@@ -59,18 +59,25 @@ Strings are stored as `reindexer::p_string`, which is 8-byte weak pointer to str
 
 
 ### key_string
-`reindexer::key_string` is derived from std::string, and in addition contains reference count and exported header with pointer + size fields
+`key_string` is immutable string with reference counter and exported header containing `size`-field. String data are *NOT* null-terminated.
 
-| Size in bytes          | Field                          |
-|------------------------|--------------------------------|
-| Vary <br> (depends on stl) | std::string                    |
-| 8                      | exported pointer to string's<br> char array |
-| 4                      | exported string len                     |
-| 4                      | alignment                      |
-| 8                      | ref counter                    |
+| Size in bytes          | Field                                        |
+|------------------------|----------------------------------------------|
+| 4                      | alignment / ref_counter                      |
+| 4                      | exported string length                       |
+| N                      | string data, emplaced right after the header |
 
-Exported header is used for direct payload access from non c++ application (e.g. golang binding to reindexer)
-Data in key_string is mutable.
+Exported header is used for direct payload access from non C++ application (e.g. golang binding to reindexer).
+
+### FloatVector
+
+`FloatVector`/`ConstFloatVector` - are the separete types to store float32-vectors. From implementation standpoint it is a simple `std::unique_ptr<float32[]` and vector's dimension value.
+
+`PayloadValue` itself does not store/own `FloatVector`. It holds `FloatVectorView/ConstFloatVectorView` instead, which are a simple views, implemented as a single uint64 value. This value contains optional 48-bit pointer to the actual vector value and 16-bit dimanesion value.
+
+`FloatVectorView` also have `striped`-state. In this state the view does not points to the actual vector and the only way to get vector's data is to request it from the corresponding index structure by appropriate document ID. The idea is to avoid vector data duplication and at the same time do not break linear index structure.
+
+In cases, when vector's data is requested by some kind of query, real vector values will be copied into `FloatVectorsHolderMap` or `FloatVectorsHolderVector` container and `ConstFloatVectorView` in the `PayloadValue` will be changed to it's unstripped version, pointing to the copied data.
 
 ### Embeded arrays in PayloadValue
 
@@ -145,9 +152,9 @@ Untyped typle of nonidexed fields is stored in `CJSON` format in 1-st field (nam
     // Dump all fields to stdout
     for (int i = 0; i < payload.NumFields(); i++) {
 		auto &field = payload.Type().Field(i);
-		printf("\n%s=", field.Name().c_str());
+		printf("\n{}=", field.Name().c_str());
 		for (auto &elem : payload.Get (i,keyRefs)) {
-			printf("%s", Variant(elem).toString().c_str());
+			printf("{}", Variant(elem).toString().c_str());
 		}
 	}
 
