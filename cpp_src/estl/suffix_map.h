@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string_view>
 #include <vector>
 #include "libdivsufsort/divsufsort.h"
@@ -9,6 +10,7 @@ namespace reindexer {
 template <typename CharT, typename V>
 class [[nodiscard]] suffix_map {
 	typedef size_t size_type;
+	typedef uint32_t word_len_type;
 	typedef unsigned char char_type;
 
 	class [[nodiscard]] value_type : public std::pair<const CharT*, V> {
@@ -134,7 +136,7 @@ public:
 
 	int insert(std::string_view word, const V& val) {
 		int wpos = text_.size();
-		size_t real_len = word.length();
+		const auto real_len = static_cast<word_len_type>(word.length());
 		text_.insert(text_.end(), word.begin(), word.end());
 		text_.emplace_back('\0');
 		mapped_.insert(mapped_.end(), real_len + 1, val);
@@ -146,7 +148,7 @@ public:
 
 	const CharT* word_at(int idx) const noexcept { return &text_[words_[idx]]; }
 
-	int16_t word_len_at(int idx) const noexcept { return words_len_[idx]; }
+	word_len_type word_len_at(int idx) const noexcept { return words_len_[idx]; }
 
 	void build() {
 		if (built_) {
@@ -181,8 +183,9 @@ public:
 
 	const std::vector<CharT>& text() const noexcept { return text_; }
 	size_t heap_size() noexcept {
-		return (sa_.capacity() + words_.capacity()) * sizeof(int) +			  //
-			   (lcp_.capacity() + words_len_.capacity()) * sizeof(int16_t) +  //
+		return (sa_.capacity() + words_.capacity()) * sizeof(int) +	 //
+			   lcp_.capacity() * sizeof(int16_t) +					 //
+			   words_len_.capacity() * sizeof(words_len_[0]) +		 //
 			   mapped_.capacity() * sizeof(V) + text_.capacity();
 	}
 
@@ -212,7 +215,7 @@ protected:
 
 	std::vector<int> sa_, words_;
 	std::vector<int16_t> lcp_;
-	std::vector<uint8_t> words_len_;
+	std::vector<word_len_type> words_len_;
 	std::vector<V> mapped_;
 	std::vector<CharT> text_;
 	bool built_ = false;

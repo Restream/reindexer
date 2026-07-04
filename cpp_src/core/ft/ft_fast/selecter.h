@@ -138,7 +138,10 @@ public:
 						   const RdxContext&);
 
 private:
-	float getTermBoost(const std::string& term) {
+	float getTermBoost(std::string_view term) {
+		if (holder_.stemmedTermsBoost.empty()) {
+			return -1.0f;
+		}
 		auto it = holder_.stemmedTermsBoost.find(term);
 		return it == holder_.stemmedTermsBoost.end() ? -1.0f : it->second;
 	}

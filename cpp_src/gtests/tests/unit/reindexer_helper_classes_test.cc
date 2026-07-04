@@ -2,6 +2,7 @@
 #include "gtests/tests/gtest_cout.h"
 
 #include "fmt/format.h"
+#include "estl/suffix_map.h"
 #include "tools/enum_compare.h"
 
 namespace reindexer_tests {
@@ -101,6 +102,18 @@ TEST(EnumDiffClass, BaseTest) {
 
 	SkipByMask(diffCopy, maskE1, maskE2, maskE3);
 	EXPECT_TRUE(diffCopy.Equal());
+}
+
+TEST(suffix_map, StoresLongWordLength) {
+	reindexer::suffix_map<char, int> suffixes;
+	const std::string longWord(300, 'a');
+
+	suffixes.insert(longWord, 42);
+	suffixes.build();
+
+	ASSERT_EQ(suffixes.word_size(), 1u);
+	EXPECT_EQ(static_cast<size_t>(suffixes.word_len_at(0)), longWord.size());
+	EXPECT_EQ(std::string_view(suffixes.word_at(0), suffixes.word_len_at(0)), std::string_view(longWord));
 }
 
 }  // namespace reindexer_tests

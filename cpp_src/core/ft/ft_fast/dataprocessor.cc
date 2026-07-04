@@ -91,6 +91,7 @@ typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuf
 		found.emplace_back(keyIt.first);
 
 		words.emplace_back();
+		words.back().charsLen = static_cast<uint32_t>(getUTF8StringCharactersCount(keyIt.first));
 		pos = holder.BuildWordId(id);
 		suffix.insert(keyIt.first, pos);
 		holder.lastStepWords_[wh(keyIt.first)].emplace_back(pos);

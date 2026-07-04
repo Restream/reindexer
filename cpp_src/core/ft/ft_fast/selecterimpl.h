@@ -290,6 +290,9 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 
 	for (auto& variant : termVariants) {
 		size_t matched = 0, vids = 0, excludedCnt = 0;
+		const std::string& patternUtf8 = variant.PatternUtf8();
+		const size_t patternBytes = patternUtf8.length();
+		const uint32_t patternChars = static_cast<uint32_t>(getUTF8StringCharactersCount(patternUtf8));
 		for (const auto& step : holder_.steps) {
 			if (variant.lowRelevance && totalVids >= lowRelevanceLimit) {
 				break;
@@ -297,27 +300,19 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 
 			auto& suffixes = step.suffixes_;
 			bool needStop = false;
-			for (auto wordIt = suffixes.lower_bound(variant.PatternUtf8()); wordIt != suffixes.end() && !needStop; ++wordIt) {
+			for (auto wordIt = suffixes.lower_bound(patternUtf8); wordIt != suffixes.end() && !needStop; ++wordIt) {
 				if (variant.lowRelevance && totalVids >= lowRelevanceLimit) {
 					break;
 				}
-				needStop = wordIt.lcp() < int(variant.PatternUtf8().length());
+				needStop = wordIt.lcp() < int(patternBytes);
 
 				const char* suffixPtr = wordIt->first;
 				const WordIdType wordId = wordIt->second;
-				const auto& wordEntry = holder_.GetWordEntry(wordId);
-
-				// ToDo This seems really bad for short suffix search...
-				if (useExternSt == FtUseExternStatuses::Yes && allVidsExcluded(docsExcluded, wordEntry.vids)) {
-					++excludedCnt;
-					continue;
-				}
-
 				const std::string_view word = holder_.GetWord(wordId);
 
 				const size_t wordLengthBeforePattern = suffixPtr - word.data();
 				const bool isPrefix = (wordLengthBeforePattern == 0);
-				const size_t wordLengthAfterPattern = word.length() - wordLengthBeforePattern - variant.PatternUtf8().length();
+				const size_t wordLengthAfterPattern = word.length() - wordLengthBeforePattern - patternBytes;
 				const bool isSuffix = (wordLengthAfterPattern == 0);
 
 				if (!variant.suff && !isPrefix) {
@@ -327,11 +322,18 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 					break;
 				}
 
-				// ToDo fix it (broken for russian utf8 symbols)
-				const int matchDif = std::abs(long(word.length() - variant.PatternUtf8().length() + wordLengthBeforePattern));
-				const float boost = std::max(getTermBoost(std::string(word)), variant.boost);
+				const auto& wordEntry = holder_.GetWordEntry(wordId);
+				// Keep the statuses scan after cheap wildcard checks: short suffix queries produce many suffix-map candidates.
+				if (useExternSt == FtUseExternStatuses::Yes && allVidsExcluded(docsExcluded, wordEntry.vids)) {
+					++excludedCnt;
+					continue;
+				}
+
+				const uint32_t matchDif = wordEntry.charsLen > patternChars ? wordEntry.charsLen - patternChars : 0;
+				const float boost = std::max(getTermBoost(word), variant.boost);
 				const float decreasePenalty =
-					static_cast<float>(holder_.cfg_->partialMatchDecrease * matchDif) / std::max<float>(variant.PatternUtf8().length(), 3);
+					static_cast<float>(holder_.cfg_->partialMatchDecrease) * static_cast<float>(matchDif) /
+					static_cast<float>(std::max<uint32_t>(patternChars, 3));
 				float proc = std::max<float>(variant.proc - decreasePenalty, isPrefix ? rankingCfg.PrefixMin() : rankingCfg.SuffixMin());
 				proc = std::min<float>(proc, variant.proc);
 				if (boost > 0.0f) {

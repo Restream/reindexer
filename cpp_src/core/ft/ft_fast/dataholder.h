@@ -82,6 +82,7 @@ public:
 	PackedWordEntry& operator=(PackedWordEntry&&) noexcept = default;
 
 	PackedIdRelVec vids;
+	uint32_t charsLen = 0;
 	// Necessary for correct rebuilding of the last step
 	PackedIdRelVec::state cur_step_state;
 	size_t cur_step_data_size = 0;
@@ -101,6 +102,7 @@ public:
 	PackedWordEntry& operator=(PackedWordEntry&&) noexcept = default;
 
 	IdRelVec vids;
+	uint32_t charsLen = 0;
 	// Necessary for correct rebuilding of the last step
 	size_t cur_step_data_size = 0;
 

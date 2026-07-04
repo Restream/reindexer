@@ -1359,6 +1359,44 @@ TEST_P(FTGenericApi, PartialMatchRank) {
 	CheckAllPermutations("@", {"ft1^1.1", "ft2^1"}, " ТНТ*", {{"", "!ТНТ!"}, {"!ТНТ4!", ""}}, true, ", ");
 }
 
+TEST_P(FTGenericApi, PartialMatchRankUsesUtf8CharLength) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.stopWords.clear();
+	ftCfg.stemmers.clear();
+	ftCfg.enableKbLayout = false;
+	ftCfg.enableTranslit = false;
+	ftCfg.partialMatchDecrease = 90;
+	Init(ftCfg);
+
+	const int exactId = Add("на"sv).second;
+	const int prefixId = Add("нат"sv).second;
+	const int suffixId = Add("она"sv).second;
+	const int containsId = Add("онат"sv).second;
+
+	auto rankFor = [this](std::string_view dsl, int id) -> float {
+		auto query = reindexer::Query("nm1").Where("ft3", CondEq, std::string(dsl)).And().Where("id", CondEq, id).WithRank();
+		auto qr = rt.Select(query);
+		EXPECT_EQ(qr.Count(), 1) << dsl << "; id=" << id;
+		if (qr.Count() != 1) {
+			return 0.0f;
+		}
+		return qr.begin().GetItemRefRanked().Rank().Value();
+	};
+
+	const float exactRank = rankFor("на"sv, exactId);
+	ASSERT_GT(exactRank, 0.0f);
+
+	const float prefixRank = rankFor("на*"sv, prefixId);
+	const float suffixRank = rankFor("*на"sv, suffixId);
+	const float containsRank = rankFor("*на*"sv, containsId);
+
+	EXPECT_GT(prefixRank, exactRank * 0.6f);
+	EXPECT_GT(suffixRank, exactRank * 0.45f);
+	EXPECT_GT(suffixRank, ftCfg.rankingConfig.SuffixMin());
+	EXPECT_GT(containsRank, exactRank * 0.25f);
+	EXPECT_GT(containsRank, ftCfg.rankingConfig.SuffixMin());
+}
+
 TEST_P(FTGenericApi, SelectFullMatch) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.fullMatchBoost = 0.9;
