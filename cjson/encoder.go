@@ -638,7 +638,12 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 	}
 	if f.elemKind == reflect.Uint8 {
 		rdser.PutCTag(mkctag(TAG_STRING, f.ctagName, 0))
-		rdser.PutVString(base64.StdEncoding.EncodeToString(v.Bytes()))
+		b := v.Bytes()
+		encodedLen := base64.StdEncoding.EncodedLen(len(b))
+		rdser.PutVarUInt(uint64(encodedLen))
+		offset := len(rdser.buf)
+		rdser.grow(encodedLen)
+		base64.StdEncoding.Encode(rdser.buf[offset:], b)
 	} else {
 		rdser.PutCTag(mkctag(TAG_ARRAY, f.ctagName, 0))
 

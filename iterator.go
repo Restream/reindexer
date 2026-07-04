@@ -390,8 +390,10 @@ func (it *Iterator) readItem(toObj any) (item any, rank float32) {
 		return
 	}
 
-	nsIndexOffset := it.joinedNsIndexOffset(params.nsid)
-
+	nsIndexOffset := 0
+	if subNSRes > 0 {
+		nsIndexOffset = it.joinedNsIndexOffset(params.nsid)
+	}
 	for nsIndex := 0; nsIndex < subNSRes; nsIndex++ {
 		siRes := int(it.ser.GetVarUInt())
 		if siRes == 0 {
@@ -401,7 +403,7 @@ func (it *Iterator) readItem(toObj any) (item any, rank float32) {
 		for i := range siRes {
 			subparams := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
 			subitems[i], it.err = unpackItem(it.db.binding, &it.nsArray[nsIndex+nsIndexOffset],
-				&it.rawQueryParams, &subparams, it.allowUnsafe, nonCacheble, toObj)
+				&it.rawQueryParams, &subparams, it.allowUnsafe, nonCacheble, nil)
 			if it.err != nil {
 				return
 			}
