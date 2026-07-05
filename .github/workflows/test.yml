@@ -3,14 +3,14 @@ name: build
 on: push
 jobs:
   build-windows-latest:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     strategy:
       matrix:
-        compiler: ['Visual Studio 17 2022', 'MinGW Makefiles']
+        compiler: ['Visual Studio 18 2026', 'MinGW Makefiles']
       fail-fast: false
     env:
       EXTRA_FLAGS:
-        "${{ matrix.compiler == 'Visual Studio 17 2022' && '-Ax64' || '' }}"
+        "${{ matrix.compiler == 'Visual Studio 18 2026' && '-Ax64' || '' }}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -18,15 +18,17 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           choco install nsis.portable --version=3.11.0 --yes --no-progress
-          if ($LASTEXITCODE -ne 0) {
-            throw "Chocolatey failed to install nsis.portable"
-          }
           makensis /VERSION
       - name: Build Reindexer
+        shell: pwsh
         run: |
-          mkdir build && cd build
-          cmake -G "${{matrix.compiler}}" -DBUILD_ANN_INDEXES=builtin .. $EXTRA_FLAGS
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          mkdir build
+          cd build
+          cmake -G "${{matrix.compiler}}" -DBUILD_ANN_INDEXES=builtin .. $env:EXTRA_FLAGS
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
