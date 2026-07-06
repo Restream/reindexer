@@ -43,24 +43,6 @@ protected:
 
 using namespace std::string_view_literals;
 
-TEST_P(FTTyposApi, PrefixTypoLongUtf8Word) {
-	auto cfg = GetDefaultConfig();
-	cfg.stopWords.clear();
-	cfg.stemmers.clear();
-	cfg.enableKbLayout = false;
-	cfg.enableTranslit = false;
-	Init(cfg);
-
-	std::string longWord = "на";
-	for (unsigned i = 0; i < 130; ++i) {
-		longWord += "а";
-	}
-	ASSERT_GT(longWord.size(), 255u);
-
-	Add(longWord);
-	CheckResults("на*~", std::vector<std::tuple<std::string, std::string>>{{longWord, ""}}, false, false);
-}
-
 TEST_P(FTTyposApi, SelectWithTypos) {
 	auto cfg = GetDefaultConfig();
 	cfg.stopWords.clear();

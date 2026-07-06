@@ -25,6 +25,7 @@ public:
 
 private:
 	enum class [[nodiscard]] FTBuildType { Full, Incremental };
+	enum class [[nodiscard]] ShortSuffixPreselectProfile { Zero, Tiny, Small, Medium, Half, Full };
 
 	virtual reindexer::Item MakeItem(benchmark::State&) override;
 
@@ -63,6 +64,7 @@ private:
 
 	void Fast1SuffixMatch(State& state);
 	void Fast2SuffixMatch(State& state);
+	void ShortSuffixPreselect(State& state, unsigned terms, ShortSuffixPreselectProfile profile);
 
 	void Fast1TypoWordMatch(State& state);
 	void Fast2TypoWordMatch(State& state);
@@ -78,6 +80,8 @@ private:
 
 	[[nodiscard]] std::vector<std::string> GetRandomCountries(size_t cnt = 5);
 	reindexer::Item MakeLowDiversityItem(int id);
+	reindexer::Item MakeShortSuffixPreselectItem(int id);
+	std::string MakeShortSuffixPreselectText(int id);
 
 	reindexer::FTConfig ftLowDiversityCfg_;
 	std::vector<std::string> words2_;
@@ -201,17 +205,20 @@ private:
 	};
 
 	void updateAlternatingNs(reindexer::WrSerializer&, benchmark::State&);
+	void ApplyShortSuffixPreselectFilter(reindexer::Query& q, ShortSuffixPreselectProfile profile) const;
 	reindexer::Error readDictFile(const std::string& fileName, std::vector<std::string>& words);
 	void setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FTConfig& cfg);
 	unsigned int initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::string_view indexName, benchmark::IterationCount iters);
 	void dropNamespace(std::string_view name, benchmark::State&);
 	const std::string alternatingNs_ = "FtAlternatingUpdatesAndSelects";
 	const std::string kFastIndexTextName_ = "searchfast";
+	const std::string kFastIndexTextPreselectName_ = "searchfast_preselect";
 	const std::string kLowDiversityIndexName_ = "search_ld";
 
 	size_t raw_data_sz_ = 0;
 
 	NamespaceDef lowWordsDiversityNsDef_;
+	NamespaceDef shortSuffixPreselectNsDef_;
 };
 
 }  // namespace reindexer_benchmarks

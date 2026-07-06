@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 #include "libdivsufsort/divsufsort.h"
@@ -9,8 +11,12 @@ namespace reindexer {
 
 template <typename CharT, typename V>
 class [[nodiscard]] suffix_map {
+public:
+	using word_len_type = uint16_t;
+	static constexpr size_t kMaxWordLen = std::numeric_limits<word_len_type>::max();
+
+private:
 	typedef size_t size_type;
-	typedef uint32_t word_len_type;
 	typedef unsigned char char_type;
 
 	class [[nodiscard]] value_type : public std::pair<const CharT*, V> {
@@ -135,6 +141,9 @@ public:
 	}
 
 	int insert(std::string_view word, const V& val) {
+		if (word.length() > kMaxWordLen) [[unlikely]] {
+			throw std::length_error("suffix_map word length overflow");
+		}
 		int wpos = text_.size();
 		const auto real_len = static_cast<word_len_type>(word.length());
 		text_.insert(text_.end(), word.begin(), word.end());

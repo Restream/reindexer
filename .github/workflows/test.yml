@@ -20,14 +20,16 @@ jobs:
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $true
           choco install nsis.portable --version=3.11.0 --yes --no-progress
+             if ($LASTEXITCODE -ne 0) {
+            throw "Chocolatey failed to install nsis.portable"
+          }
           makensis /VERSION
       - name: Build Reindexer
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $true
-          mkdir build
-          cd build
+          mkdir build && cd build
           cmake -G "${{matrix.compiler}}" -DBUILD_ANN_INDEXES=builtin .. $env:EXTRA_FLAGS
           cmake --build . --config Release
           cmake --build . --config Release --target face

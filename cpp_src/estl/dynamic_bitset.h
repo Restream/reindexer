@@ -201,6 +201,15 @@ public:
 		return res;
 	}
 
+	bool Any() const noexcept {
+		for (const auto& b : data_) {
+			if (b.any()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 private:
 	using BlockType = std::bitset<BlockSize>;
 

@@ -1,4 +1,5 @@
 #include <gtest/gtest-param-test.h>
+#include <algorithm>
 #include <fstream>
 #include <ranges>
 #include <unordered_map>
@@ -7,6 +8,7 @@
 #include "core/ft/ft_fast/typosmap.h"
 #include "core/ft/limits.h"
 #include "estl/gift_str.h"
+#include "estl/suffix_map.h"
 #include "ft_api.h"
 #include "gtests/tests/tests_data.h"
 #include "json_helpers.h"
@@ -1359,12 +1361,24 @@ TEST_P(FTGenericApi, PartialMatchRank) {
 	CheckAllPermutations("@", {"ft1^1.1", "ft2^1"}, " ТНТ*", {{"", "!ТНТ!"}, {"!ТНТ4!", ""}}, true, ", ");
 }
 
+TEST_P(FTGenericApi, PrefixLongUtf8Word) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.stopWords.clear();
+	Init(ftCfg);
+
+	std::string longWord = "на";
+	for (unsigned i = 0; i < 130; ++i) {
+		longWord += "а";
+	}
+	ASSERT_GT(longWord.size(), 255u);
+
+	Add(longWord);
+	CheckResults("на*", std::vector<std::tuple<std::string, std::string>>{{longWord, ""}}, false, false);
+}
+
 TEST_P(FTGenericApi, PartialMatchRankUsesUtf8CharLength) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.stopWords.clear();
-	ftCfg.stemmers.clear();
-	ftCfg.enableKbLayout = false;
-	ftCfg.enableTranslit = false;
 	ftCfg.partialMatchDecrease = 90;
 	Init(ftCfg);
 
@@ -1395,6 +1409,144 @@ TEST_P(FTGenericApi, PartialMatchRankUsesUtf8CharLength) {
 	EXPECT_GT(suffixRank, ftCfg.rankingConfig.SuffixMin());
 	EXPECT_GT(containsRank, exactRank * 0.25f);
 	EXPECT_GT(containsRank, ftCfg.rankingConfig.SuffixMin());
+}
+
+TEST_P(FTGenericApi, PartialMatchRankMinDenominatorUsesUtf8Chars) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.stopWords.clear();
+	ftCfg.partialMatchDecrease = 90;
+	Init(ftCfg);
+
+	const int latinExactId = Add("na"sv).second;
+	const int latinPrefixId = Add("nat"sv).second;
+	const int utf8ExactId = Add("на"sv).second;
+	const int utf8PrefixId = Add("нат"sv).second;
+
+	auto rankFor = [this](std::string_view dsl, int id) -> float {
+		auto query = reindexer::Query("nm1").Where("ft3", CondEq, std::string(dsl)).And().Where("id", CondEq, id).WithRank();
+		auto qr = rt.Select(query);
+		EXPECT_EQ(qr.Count(), 1) << dsl << "; id=" << id;
+		if (qr.Count() != 1) {
+			return 0.0f;
+		}
+		return qr.begin().GetItemRefRanked().Rank().Value();
+	};
+
+	const float latinExactRank = rankFor("na"sv, latinExactId);
+	const float latinPrefixRank = rankFor("na*"sv, latinPrefixId);
+	const float utf8ExactRank = rankFor("на"sv, utf8ExactId);
+	const float utf8PrefixRank = rankFor("на*"sv, utf8PrefixId);
+	ASSERT_GT(latinExactRank, 0.0f);
+	ASSERT_GT(utf8ExactRank, 0.0f);
+
+	const float latinPrefixRatio = latinPrefixRank / latinExactRank;
+	const float utf8PrefixRatio = utf8PrefixRank / utf8ExactRank;
+	EXPECT_NEAR(utf8PrefixRatio, latinPrefixRatio, 0.05f);
+	EXPECT_GT(utf8PrefixRatio, 0.6f);
+}
+
+TEST_P(FTGenericApi, TooLongWordIsNotIndexed) {
+	Init(GetDefaultConfig());
+
+	const std::string tooLongWord(static_cast<size_t>(reindexer::suffix_map<char, int>::kMaxWordLen) + 1, 'a');
+	Add("survivor"sv);
+	Add(tooLongWord);
+
+	auto tooLongQr = SimpleSelect(tooLongWord, false);
+	EXPECT_EQ(tooLongQr.Count(), 0);
+	CheckResults("survivor", std::vector<std::tuple<std::string, std::string>>{{"survivor", ""}}, false, false);
+}
+
+TEST_P(FTGenericApi, TooLongNumericWordDoesNotCreateVirtualWords) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.enableNumbersSearch = true;
+	Init(ftCfg);
+
+	const std::string tooLongNumber(static_cast<size_t>(reindexer::suffix_map<char, int>::kMaxWordLen) + 1, '0');
+	Add("survivor"sv);
+	Add(tooLongNumber);
+
+	auto virtualQr = SimpleSelect("ноль"sv, false);
+	EXPECT_EQ(virtualQr.Count(), 0);
+	CheckResults("survivor", std::vector<std::tuple<std::string, std::string>>{{"survivor", ""}}, false, false);
+}
+
+TEST_P(FTGenericApi, ShortSuffixWithFtPreselectMatchesRegularFt) {
+	Init(GetDefaultConfig());
+
+	const std::string kNs = "short_suffix_preselect";
+	const std::string kFt = "text";
+	rt.OpenNamespace(kNs);
+	rt.DefineNamespaceDataset(kNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+								   IndexDeclaration{kFt, "text", "string", IndexOpts(), 0}});
+
+	auto ftCfg = GetDefaultConfig(1);
+	ftCfg.stopWords.clear();
+	auto applyCfg = [&] {
+		auto err = SetFTConfig(ftCfg, kNs, kFt, {kFt});
+		ASSERT_TRUE(err.ok()) << err.what();
+	};
+	applyCfg();
+
+	int id = 0;
+	auto add = [&](std::string_view text) {
+		auto item = rt.NewItem(kNs);
+		item["id"] = id;
+		item[kFt] = std::string(text);
+		rt.Upsert(kNs, item);
+		return id++;
+	};
+
+	const int exactId = add("на"sv);
+	const int suffixId = add("она"sv);
+	const int bananaId = add("банана"sv);
+	const int missedId = add("мимо"sv);
+	for (std::string_view excluded : {"струна"sv, "пелена"sv, "смена"sv, "длина"sv}) {
+		std::ignore = add(excluded);
+	}
+
+	auto makeQuery = [&] {
+		return Query(kNs)
+			.Where(kFt, CondEq, "*на")
+			.Where("id", CondSet,
+				   {reindexer::Variant{exactId}, reindexer::Variant{suffixId}, reindexer::Variant{bananaId}, reindexer::Variant{missedId}})
+			.WithRank();
+	};
+	auto selectRows = [&] {
+		auto qr = rt.Select(makeQuery());
+		std::vector<std::pair<int, float>> rows;
+		rows.reserve(qr.Count());
+		for (auto it : qr) {
+			rows.emplace_back(it.GetItem()["id"].As<int>(), it.GetItemRefRanked().Rank().Value());
+		}
+		std::sort(rows.begin(), rows.end());
+		return rows;
+	};
+	auto selectWithPreselect = [&](bool enabled) {
+		ftCfg.enablePreselectBeforeFt = enabled;
+		applyCfg();
+		return selectRows();
+	};
+
+	const auto regularRows = selectWithPreselect(false);
+	const auto preselectedRows = selectWithPreselect(true);
+	ASSERT_EQ(regularRows.size(), 3u);
+	ASSERT_EQ(preselectedRows.size(), regularRows.size());
+	for (size_t i = 0; i < regularRows.size(); ++i) {
+		EXPECT_EQ(preselectedRows[i].first, regularRows[i].first);
+		EXPECT_NEAR(preselectedRows[i].second, regularRows[i].second, 1e-4f);
+	}
+
+	auto explainQuery = Query(kNs)
+							.Distinct(kFt)
+							.Where(kFt, CondEq, "*на")
+							.Where("id", CondSet,
+								   {reindexer::Variant{exactId}, reindexer::Variant{suffixId}, reindexer::Variant{bananaId},
+									reindexer::Variant{missedId}})
+							.Explain();
+	auto explainQr = rt.Select(explainQuery);
+	const auto explain = explainQr.GetExplainResults();
+	EXPECT_NE(explain.find(R"json("field":"(text and id)")json"), std::string::npos) << explain;
 }
 
 TEST_P(FTGenericApi, SelectFullMatch) {

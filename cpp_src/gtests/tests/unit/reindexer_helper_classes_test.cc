@@ -4,6 +4,7 @@
 #include "fmt/format.h"
 #include "estl/suffix_map.h"
 #include "tools/enum_compare.h"
+#include "vendor/utf8cpp/utf8/core.h"
 
 namespace reindexer_tests {
 
@@ -114,6 +115,45 @@ TEST(suffix_map, StoresLongWordLength) {
 	ASSERT_EQ(suffixes.word_size(), 1u);
 	EXPECT_EQ(static_cast<size_t>(suffixes.word_len_at(0)), longWord.size());
 	EXPECT_EQ(std::string_view(suffixes.word_at(0), suffixes.word_len_at(0)), std::string_view(longWord));
+}
+
+TEST(suffix_map, RejectsTooLongWord) {
+	reindexer::suffix_map<char, int> suffixes;
+	const std::string tooLongWord(static_cast<size_t>(reindexer::suffix_map<char, int>::kMaxWordLen) + 1, 'a');
+
+	EXPECT_THROW(suffixes.insert(tooLongWord, 42), std::length_error);
+}
+
+TEST(suffix_map, Utf8MatchesStartAndEndOnCodepointBoundaries) {
+	reindexer::suffix_map<char, int> suffixes;
+	const std::vector<std::string> words = {"она", "банана", "набат", "тонна"};
+	const std::vector<std::string> patterns = {"на", "ан", "он", "то", "нн"};
+	for (size_t i = 0; i < words.size(); ++i) {
+		suffixes.insert(words[i], int(i));
+	}
+	suffixes.build();
+
+	for (const auto& pattern : patterns) {
+		SCOPED_TRACE(pattern);
+		auto [begin, end] = suffixes.match_range(pattern);
+		ASSERT_NE(begin, end);
+		for (auto it = begin; it != end; ++it) {
+			const int wordIdx = it->second;
+			const char* const word = suffixes.word_at(wordIdx);
+			const size_t wordLen = suffixes.word_len_at(wordIdx);
+			const char* const match = it->first;
+			ASSERT_GE(match, word);
+			const size_t bytesBefore = match - word;
+			ASSERT_LE(bytesBefore + pattern.size(), wordLen);
+
+			const std::string_view prefix(word, bytesBefore);
+			const std::string_view matched(match, pattern.size());
+			const std::string_view suffix(match + pattern.size(), wordLen - bytesBefore - pattern.size());
+			EXPECT_TRUE(utf8::is_valid(prefix.begin(), prefix.end())) << words[wordIdx];
+			EXPECT_TRUE(utf8::is_valid(matched.begin(), matched.end())) << words[wordIdx];
+			EXPECT_TRUE(utf8::is_valid(suffix.begin(), suffix.end())) << words[wordIdx];
+		}
+	}
 }
 
 }  // namespace reindexer_tests
