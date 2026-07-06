@@ -2,11 +2,10 @@ package cproto
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 	"net/url"
 	"runtime"
@@ -15,8 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/goccy/go-json"
+
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 const (
@@ -58,7 +59,6 @@ const (
 var emptyLogger bindings.NullLogger
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
 	bindings.RegisterBinding("cproto", new(NetCProto))
 	bindings.RegisterBinding("cprotos", new(NetCProto))
 	if runtime.GOOS != "windows" {
@@ -76,6 +76,8 @@ type NetCProto struct {
 	isServerChanged    int32
 	onChangeCallback   func()
 	getReplicationStat func(ctx context.Context) (*bindings.ReplicationStat, error)
+	serverReindexerVer string
+	verMtx             sync.RWMutex
 	serverStartTime    int64
 	retryAttempts      bindings.OptionRetryAttempts
 	timeouts           bindings.OptionTimeouts
@@ -111,7 +113,7 @@ func (binding *NetCProto) nextDSN(ctx context.Context, strategy string, stat *bi
 	case reconnectStrategyNext:
 		binding.dsn.active = (binding.dsn.active + 1) % len(binding.dsn.urls)
 	case reconnectStrategyRandom:
-		binding.dsn.active = rand.Intn(len(binding.dsn.urls))
+		binding.dsn.active = rand.IntN(len(binding.dsn.urls))
 	case reconnectStrategySynchronized:
 		if err := binding.processStrategySynchronized(ctx, stat); err != nil {
 			return err
@@ -206,7 +208,7 @@ func (binding *NetCProto) processStrategyReadOnly(ctx context.Context, stat *bin
 
 	var newClusterDSN *url.URL
 	if len(followersDSN) > 0 {
-		newClusterDSN = followersDSN[rand.Intn(len(followersDSN))]
+		newClusterDSN = followersDSN[rand.IntN(len(followersDSN))]
 	} else if leaderDSN != nil {
 		newClusterDSN = leaderDSN
 	}
@@ -232,7 +234,7 @@ func (binding *NetCProto) processStrategySynchronized(ctx context.Context, stat 
 	if len(clusterDSNs) == 0 {
 		return errors.New("can't find cluster node for reconnect")
 	}
-	newClusterDSN := clusterDSNs[rand.Intn(len(clusterDSNs))]
+	newClusterDSN := clusterDSNs[rand.IntN(len(clusterDSNs))]
 
 	if err := binding.setClusterDSN(newClusterDSN); err != nil {
 		return err
@@ -270,14 +272,15 @@ func (binding *NetCProto) GetDSNs() []url.URL {
 	return binding.dsn.urls
 }
 
-func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) (err error) {
+func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options ...any) (err error) {
 	connPoolSize := defConnPoolSize
 	connPoolLBAlgorithm := defConnPoolLBAlgorithm
 	binding.appName = defAppName
 	binding.caps = *bindings.DefaultBindingCapabilities().
 		WithQrIdleTimeouts(true).
 		WithResultsWithShardIDs(true).
-		WithIncarnationTags(true)
+		WithIncarnationTags(true).
+		WithFloatRank(true)
 
 	for _, option := range options {
 		switch v := option.(type) {
@@ -285,36 +288,29 @@ func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options .
 			// nothing
 		case bindings.OptionOpenTelemetry:
 			// nothing
+		case bindings.OptionStrictJoinHandlers:
+			// nothing
 		case bindings.OptionConnPoolSize:
 			connPoolSize = v.ConnPoolSize
-
 		case bindings.OptionConnPoolLoadBalancing:
 			connPoolLBAlgorithm = v.Algorithm
-
 		case bindings.OptionRetryAttempts:
 			binding.retryAttempts = v
-
 		case bindings.OptionTimeouts:
 			binding.timeouts = v
-
 		case bindings.OptionConnect:
 			binding.connectOpts = v
-
 		case bindings.OptionCompression:
 			binding.compression = v
-
 		case bindings.OptionAppName:
 			binding.appName = v.AppName
-
 		case bindings.OptionDedicatedThreads:
 			binding.dedicatedThreads = v
-
 		case bindings.OptionReconnectionStrategy:
 			binding.dsn.reconnectionStrategy = v.Strategy
 			binding.dsn.allowUnknownNodes = v.AllowUnknownNodes
 		case bindings.OptionTLS:
 			binding.tls = v
-
 		default:
 			fmt.Printf("Unknown cproto option: %#v\n", option)
 		}
@@ -350,6 +346,22 @@ func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options .
 	return
 }
 
+func (binding *NetCProto) setServerReindexerVer(serverReindexerVer string) {
+	binding.verMtx.Lock()
+	defer binding.verMtx.Unlock()
+	binding.serverReindexerVer = serverReindexerVer
+}
+
+func (binding *NetCProto) DBMSVersion() (string, error) {
+	binding.verMtx.RLock()
+	defer binding.verMtx.RUnlock()
+	if binding.serverReindexerVer != "" {
+		return binding.serverReindexerVer, nil
+	}
+
+	return "", errors.New("login failed, DBMS version is not available")
+}
+
 func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoolLBAlgorithm bindings.LoadBalancingAlgorithm) error {
 	var wg sync.WaitGroup
 	for _, conn := range binding.pool.sharedConns {
@@ -367,17 +379,22 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoo
 	connParams := binding.createConnParams()
 
 	wg.Add(connPoolSize)
-	for i := 0; i < connPoolSize; i++ {
+	for i := range connPoolSize {
 		go func(binding *NetCProto, wg *sync.WaitGroup, i int) {
 			defer wg.Done()
 
-			conn, serverStartTS, _ := binding.dsn.connFactory.newConnection(ctx, connParams, binding, nil)
+			conn, serverReindexerVer, serverStartTS, _ := binding.dsn.connFactory.newConnection(ctx, connParams, binding, nil)
 			if serverStartTS > 0 {
 				old := atomic.SwapInt64(&binding.serverStartTime, serverStartTS)
 				if old != 0 && old != serverStartTS {
 					atomic.StoreInt32(&binding.isServerChanged, 1)
 				}
 			}
+
+			if serverReindexerVer != "" {
+				binding.setServerReindexerVer(serverReindexerVer)
+			}
+
 			binding.pool.sharedConns[i] = conn
 		}(binding, &wg, i)
 	}
@@ -405,13 +422,18 @@ func (binding *NetCProto) createConnParams() newConnParams {
 }
 
 func (binding *NetCProto) createEventConn(ctx context.Context, connParams newConnParams, eventsSubOptsJSON []byte) error {
-	conn, serverStartTS, err := binding.dsn.connFactory.newConnection(ctx, connParams, binding, binding.eventsHandler)
+	conn, serverReindexerVer, serverStartTS, err := binding.dsn.connFactory.newConnection(ctx, connParams, binding, binding.eventsHandler)
 	if serverStartTS > 0 {
 		old := atomic.SwapInt64(&binding.serverStartTime, serverStartTS)
 		if old != 0 && old != serverStartTS {
 			atomic.StoreInt32(&binding.isServerChanged, 1)
 		}
 	}
+
+	if serverReindexerVer != "" {
+		binding.setServerReindexerVer(serverReindexerVer)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -610,7 +632,7 @@ func (binding *NetCProto) DeleteMeta(ctx context.Context, namespace, key string)
 	return binding.rpcCallNoResults(ctx, opWr, cmdDeleteMeta, namespace, key)
 }
 
-func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	flags := 0
 	if asJson {
 		flags |= bindings.ResultsJson
@@ -623,7 +645,7 @@ func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool,
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := binding.rpcCall(ctx, opRd, cmdSelectSQL, query, flags, int32(fetchCount), ptVersions)
+	buf, err := binding.rpcCall(ctx, opRd, cmdExecSQL, query, flags, int32(fetchCount), tmVersions)
 	if buf != nil {
 		buf.reqID = buf.args[1].(int)
 		if len(buf.args) > 2 {
@@ -633,7 +655,7 @@ func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool,
 	return buf, err
 }
 
-func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	flags := 0
 	if asJson {
 		flags |= bindings.ResultsJson
@@ -646,7 +668,7 @@ func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson b
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := binding.rpcCall(ctx, opRd, cmdSelect, data, flags, int32(fetchCount), ptVersions)
+	buf, err := binding.rpcCall(ctx, opRd, cmdSelect, data, flags, int32(fetchCount), tmVersions)
 	if buf != nil {
 		buf.reqID = buf.args[1].(int)
 		if len(buf.args) > 2 {
@@ -660,8 +682,9 @@ func (binding *NetCProto) DeleteQuery(ctx context.Context, data []byte) (binding
 	return binding.rpcCall(ctx, opWr, cmdDeleteQuery, data)
 }
 
-func (binding *NetCProto) UpdateQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
-	return binding.rpcCall(ctx, opWr, cmdUpdateQuery, data)
+func (binding *NetCProto) UpdateQuery(ctx context.Context, data []byte, tmVersions []int32) (bindings.RawBuffer, error) {
+	flags := bindings.ResultsCJson | bindings.ResultsWithPayloadTypes | bindings.ResultsWithItemID
+	return binding.rpcCall(ctx, opWr, cmdUpdateQuery, data, flags, tmVersions)
 }
 
 func (binding *NetCProto) OnChangeCallback(f func()) {
@@ -701,7 +724,7 @@ func (binding *NetCProto) ReopenLogFiles() error {
 func (binding *NetCProto) Status(ctx context.Context) bindings.Status {
 	var totalQueueSize, totalQueueUsage, connUsage int
 	var remoteAddr string
-	conns := binding.getAllConns()
+	conns := binding.getAllRegularConns()
 	activeConns := 0
 	for _, conn := range conns {
 		if conn.hasError() {
@@ -803,13 +826,24 @@ func (binding *NetCProto) Unsubscribe(ctx context.Context) error {
 	}
 }
 
-func (binding *NetCProto) getAllConns() []connection {
+func (binding *NetCProto) getAllRegularConns() []connection {
 	binding.lock.RLock()
 	defer binding.lock.RUnlock()
 	return binding.pool.sharedConns
 }
 
-func (binding *NetCProto) logMsg(level int, fmt string, msg ...interface{}) {
+func (binding *NetCProto) getAllConns() []connection {
+	binding.lock.RLock()
+	defer binding.lock.RUnlock()
+	conns := make([]connection, len(binding.pool.sharedConns))
+	copy(conns, binding.pool.sharedConns)
+	if binding.pool.eventsConn != nil {
+		conns = append(conns, binding.pool.eventsConn)
+	}
+	return conns
+}
+
+func (binding *NetCProto) logMsg(level int, fmt string, msg ...any) {
 	binding.logMtx.RLock()
 	defer binding.logMtx.RUnlock()
 	if binding.logger != nil {
@@ -924,7 +958,7 @@ func (binding *NetCProto) reconnect(ctx context.Context) (conn connection, err e
 	return binding.pool.GetConnection(), err
 }
 
-func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...interface{}) (buf *NetBuffer, err error) {
+func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...any) (buf *NetBuffer, err error) {
 	var attempts int
 	switch op {
 	case opRd:
@@ -954,7 +988,7 @@ func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...
 	return
 }
 
-func (binding *NetCProto) rpcCallNoResults(ctx context.Context, op int, cmd int, args ...interface{}) error {
+func (binding *NetCProto) rpcCallNoResults(ctx context.Context, op int, cmd int, args ...any) error {
 	buf, err := binding.rpcCall(ctx, op, cmd, args...)
 	if buf != nil {
 		buf.Free()
@@ -966,10 +1000,7 @@ func (binding *NetCProto) pinger() {
 	timeout := time.Second
 	ticker := time.NewTicker(timeout)
 	var ticksCount uint32
-	pingTimeoutSec := pingResponseTimeoutSec
-	if uint32(binding.timeouts.RequestTimeout/time.Second) > pingTimeoutSec {
-		pingTimeoutSec = uint32(binding.timeouts.RequestTimeout / time.Second)
-	}
+	pingTimeoutSec := max(uint32(binding.timeouts.RequestTimeout/time.Second), pingResponseTimeoutSec)
 	for now := range ticker.C {
 		ticksCount++
 		select {

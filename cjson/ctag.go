@@ -25,6 +25,7 @@ const (
 	TAG_OBJECT = 6
 	TAG_END    = 7
 	TAG_UUID   = 8
+	TAG_FLOAT  = 9
 )
 
 func (c ctag) Name() int16 {
@@ -63,6 +64,8 @@ func tagTypeName(tagType int16) string {
 		return "<null>"
 	case TAG_UUID:
 		return "<uuid>"
+	case TAG_FLOAT:
+		return "<float>"
 	default:
 		return fmt.Sprintf("<unknown %d>", tagType)
 	}

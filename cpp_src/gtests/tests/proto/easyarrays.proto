@@ -1,10 +1,10 @@
 syntax = "proto3";
 
 message test_namespace {
-int64 id = 1;
+sint64 id = 1;
 message GeneratedType1 {
 repeated string strings = 3;
-repeated int64 nums = 4 [packed=true];
+repeated sint64 nums = 4 [packed=true];
 }
 GeneratedType1 object_of_array = 2;
 }

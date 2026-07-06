@@ -3,23 +3,26 @@
 #include "client/cororeindexer.h"
 #include "client/queryresults.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/indexdef.h"
-#include "core/reindexer.h"
+#include "core/definitions/indexdef.h"
 #include "core/type_consts.h"
 #include "rpc_test_client.h"
 
+namespace reindexer_tests {
+
 template <typename Client>
-struct QueryResType {
+struct [[nodiscard]] QueryResType {
 	using type = reindexer::client::QueryResults;
 };
 
 template <>
-struct QueryResType<reindexer::client::CoroReindexer> {
+struct [[nodiscard]] QueryResType<reindexer::client::CoroReindexer> {
 	using type = reindexer::client::CoroQueryResults;
 };
 
 template <typename Client>
 void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
+	using reindexer::IndexOpts;
+
 	using QueryResType = typename QueryResType<Client>::type;
 
 	const reindexer::client::InternalRdxContext ctx;
@@ -48,7 +51,7 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		auto err = item.FromJSON(wrser.Slice(), &endp);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		if constexpr (std::is_same_v<Client, reindexer::client::RPCTestClient>) {
+		if constexpr (std::is_same_v<Client, RPCTestClient>) {
 			err = client->Upsert(kNsName, item, reindexer::client::RPCDataFormat::MsgPack);
 		} else {
 			err = client->Upsert(kNsName, item);
@@ -59,7 +62,7 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 	// To verify that when aggregating by a nonexistent field, null optional will be received in the AggregationResult
 	const std::array<AggType, 6> aggTypes{AggType::AggSum, AggType::AggAvg,	  AggType::AggMin,
 										  AggType::AggMax, AggType::AggCount, AggType::AggCountCached};
-	enum StrictError { Ok, ErrName, ErrIndex };
+	enum [[nodiscard]] StrictError { Ok, ErrName, ErrIndex };
 
 	const std::map<AggType, double> results{
 		{AggType::AggSum, 499500.},	 // 1/2 * (0 + 999) * 1000 - by the formula of the sum of the arithmetic progression
@@ -67,8 +70,8 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		{AggType::AggCount, 1000},	{AggType::AggCountCached, 1000}};
 
 	const std::map<StrictError, std::string> errors{
-		{ErrName, "Current query strict mode allows aggregate existing fields only. There are no fields with name '%s' in namespace '%s'"},
-		{ErrIndex, "Current query strict mode allows aggregate index fields only. There are no indexes with name '%s' in namespace '%s'"}};
+		{ErrName, "Current query strict mode allows aggregate existing fields only. There are no fields with name '{}' in namespace '{}'"},
+		{ErrIndex, "Current query strict mode allows aggregate index fields only. There are no indexes with name '{}' in namespace '{}'"}};
 
 	const std::map<std::string, std::map<StrictMode, StrictError>> scenarios{
 		{kFieldId, {{StrictMode::StrictModeNone, Ok}, {StrictMode::StrictModeNames, Ok}, {StrictMode::StrictModeIndexes, Ok}}},
@@ -134,11 +137,11 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 						break;
 					}
 					case ErrName:
-						ASSERT_EQ(err.what(), fmt::sprintf(errors.at(ErrName), field, kNsName))
+						ASSERT_EQ(err.what(), fmt::format(fmt::runtime(errors.at(ErrName)), field, kNsName))
 							<< "AggType: " << type << "; " << err.what();
 						break;
 					case ErrIndex:
-						ASSERT_EQ(err.what(), fmt::sprintf(errors.at(ErrIndex), field, kNsName))
+						ASSERT_EQ(err.what(), fmt::format(fmt::runtime(errors.at(ErrIndex)), field, kNsName))
 							<< "AggType: " << type << "; " << err.what();
 						break;
 				}
@@ -153,3 +156,5 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		}
 	}
 }
+
+}  // namespace reindexer_tests

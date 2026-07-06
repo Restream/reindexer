@@ -1,13 +1,13 @@
 #pragma once
 
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
 
 namespace reindexer {
 
-class NsVersionCounter {
+class [[nodiscard]] NsVersionCounter {
 public:
-	void SetServer(int server) noexcept { counter_.SetServer(server); }
-	lsn_t GetNext() noexcept {
+	void SetServer(int server) { counter_.SetServer(server); }
+	lsn_t GetNext() {
 		if (!counter_.isEmpty()) {
 			return ++counter_;
 		}

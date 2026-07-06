@@ -1,9 +1,13 @@
 #include <thread>
 #include "auth_tools.h"
 #include "cascade_replication_api.h"
-#include "core/queryresults/queryresults.h"
+#include "cluster/consts.h"
+#include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
+#include "quantization_helpers.h"
 #include "vendor/gason/gason.h"
+
+namespace reindexer_tests {
 
 using namespace reindexer;
 
@@ -15,6 +19,7 @@ TEST_F(CascadeReplicationApi, MasterSlaveSyncByWalAddRow) {
 
 	std::vector<int> clusterConfig = {-1, 0};
 	Cluster cluster = CreateConfiguration(clusterConfig, port, 10, kDbPathMaster);
+	UpdateReplTokensByConfiguration(cluster, clusterConfig);
 
 	TestNamespace1 ns1(cluster.Get(0));
 	cluster.Get(0)->SetWALSize(100000, ns1.nsName_);
@@ -24,7 +29,7 @@ TEST_F(CascadeReplicationApi, MasterSlaveSyncByWalAddRow) {
 	WaitSync(cluster.Get(0), cluster.Get(1), ns1.nsName_);
 
 	const auto replState = cluster.Get(1)->GetState(ns1.nsName_);
-	ASSERT_EQ(replState.role, ClusterizationStatus::Role::SimpleReplica);
+	ASSERT_EQ(replState.role, ClusterOperationStatus::Role::SimpleReplica);
 
 	cluster.ShutdownServer(1);
 
@@ -63,6 +68,7 @@ TEST_F(CascadeReplicationApi, MasterSlaveStart) {
 
 	std::vector<int> clusterConfig = {-1, 0};
 	auto cluster = CreateConfiguration(clusterConfig, port, 10, kDbPathMaster);
+	UpdateReplTokensByConfiguration(cluster, clusterConfig);
 
 	// Insert 100 rows
 	std::string nsName("ns1");
@@ -183,9 +189,11 @@ TEST_F(CascadeReplicationApi, MasterSlaveSlave2) {
 	// Check WAL/force sync on cascade setups
 	auto SimpleTest = [this](int port, const std::vector<int>& clusterConfig) {
 		const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "MasterSlaveSlave2"));
+		std::ignore = fs::RmDirAll(kBaseDbPath);
 		const std::string kDbPathMaster(kBaseDbPath + "/test_");
 		const int serverId = 5;
 		auto cluster = CreateConfiguration(clusterConfig, port, serverId, kDbPathMaster);
+		UpdateReplTokensByConfiguration(cluster, clusterConfig);
 
 		auto master = cluster.Get(0);
 		TestNamespace1 ns1(master);
@@ -252,6 +260,8 @@ TEST_F(CascadeReplicationApi, MasterSlaveSlaveReload) {
 	*/
 	const std::vector<int> clusterConfig = {-1, 0, 0, 1, 2, 2};
 	auto cluster = CreateConfiguration(clusterConfig, port, serverId, kDbPathMaster);
+	UpdateReplTokensByConfiguration(cluster, clusterConfig);
+
 	auto leader = cluster.Get(0);
 	TestNamespace1 ns1(leader);
 	const int startId = 1000;
@@ -317,6 +327,7 @@ TEST_F(CascadeReplicationApi, TransactionTest) {
 	const int serverId = 5;
 	const std::vector<int> clusterConfig = {-1, 0, 1, 2, 3};
 	auto cluster = CreateConfiguration(clusterConfig, port, serverId, kDbPathMaster);
+	UpdateReplTokensByConfiguration(cluster, clusterConfig);
 	const size_t kRows = 100;
 
 	auto master = cluster.Get(0);
@@ -330,7 +341,7 @@ TEST_F(CascadeReplicationApi, TransactionTest) {
 
 	auto tr = master->api.reindexer->NewTransaction(ns1.nsName_);
 	for (unsigned int i = 0; i < kRows; i++) {
-		reindexer::client::Item item = tr.NewItem();
+		client::Item item = tr.NewItem();
 		auto err = item.FromJSON("{\"id\":" + std::to_string(i + kRows * 10) + "}");
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = tr.Upsert(std::move(item));
@@ -494,17 +505,25 @@ TEST_F(CascadeReplicationApi, ForceSync3Node) {
 	ServerControl slave1;
 	slave1.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave1", "db"));
 	slave1.Get()->MakeFollower();
-	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave1.Get()));
+	master->AddFollower(slave1.Get());
 
 	ServerControl slave2;
 	slave2.InitServer(ServerControlConfig(2, 7772, 7882, kBaseDbPath + "/slave2", "db"));
 	slave2.Get()->MakeFollower();
-	slave1.Get()->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave2.Get()));
+	slave1.Get()->AddFollower(slave2.Get());
 
 	ServerControl slave3;
 	slave3.InitServer(ServerControlConfig(3, 7773, 7883, kBaseDbPath + "/slave3", "db"));
 	slave3.Get()->MakeFollower();
-	slave2.Get()->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave3.Get()));
+	slave2.Get()->AddFollower(slave3.Get());
+
+	auto masterToken = randStringAlph(20);
+	auto slave1Token = randStringAlph(20);
+	auto slave2Token = randStringAlph(20);
+	UpdateReplicationConfigs(master, masterToken, {});
+	UpdateReplicationConfigs(slave1.Get(), slave1Token, masterToken);
+	UpdateReplicationConfigs(slave2.Get(), slave2Token, slave1Token);
+	UpdateReplicationConfigs(slave3.Get(), {}, slave2Token);
 
 	WaitSync(master, slave1.Get(), testns.nsName_);
 	WaitSync(master, slave2.Get(), testns.nsName_);
@@ -548,7 +567,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs1) {
 	slave->MakeFollower();
 	TestNamespace1 testns3(slave, "ns3");
 	testns3.AddRows(slave, c1, n);
-	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave));
+	master->AddFollower(slave);
 	testns3.AddRows(slave, c2, n);
 
 	WaitSync(master, slave, testns1.nsName_);
@@ -613,7 +632,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs2) {
 	TestNamespace1 testns4(slave, "ns1");
 	testns4.AddRows(slave, c1, n);
 	master->MakeLeader(AsyncReplicationConfigTest("leader", {}, true, true, 0, "node0"));
-	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave), {{"ns1"}});
+	master->AddFollower(slave, {{"ns1"}});
 	testns3.AddRows(slave, c2, n);
 
 	WaitSync(master, slave, testns1.nsName_);
@@ -673,7 +692,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs3) {
 	TestNamespace1 testns4(slave, "ns1");
 	testns4.AddRows(slave, c1, n);
 	master->SetReplicationConfig(AsyncReplicationConfigTest("leader", {}, true, true, 0, "node0"));
-	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave), {{"ns1"}});
+	master->AddFollower(slave, {{"ns1"}});
 	testns3.AddRows(slave, c2, n);
 
 	ASSERT_EQ(testns1.nsName_, testns4.nsName_);
@@ -705,7 +724,7 @@ TEST_F(CascadeReplicationApi, RenameError) {
 	ServerControl slave1;
 	slave1.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave1", "db"));
 	slave1.Get()->MakeFollower();
-	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave1.Get()));
+	master->AddFollower(slave1.Get());
 
 	WaitSync(master, slave1.Get(), testns.nsName_);
 
@@ -774,24 +793,23 @@ TEST_F(CascadeReplicationApi, DISABLED_RenameSlaveNs) {
 	err = slave->api.reindexer->RenameNamespace("ns1", "ns1RenameSlave");
 	ASSERT_FALSE(err.ok());
 
-	std::string tmpNsName("tmpNsName");
-	NamespaceDef tmpNsDef = NamespaceDef(tmpNsName, StorageOpts().Enabled().CreateIfMissing());
-	tmpNsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
-	tmpNsDef.isTemporary = true;
-	err = master->api.reindexer->AddNamespace(tmpNsDef);
-	ASSERT_TRUE(err.ok()) << err.what();
-	reindexer::client::Item item = master->api.NewItem(tmpNsName);
-	err = item.FromJSON("{\"id\":" + std::to_string(10) + "}");
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = master->api.reindexer->Upsert(tmpNsName, item);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = master->api.reindexer->RenameNamespace(tmpNsName, tmpNsName + "Rename");
-	ASSERT_FALSE(err.ok());
+	// TODO: User can't create temporary namespace this way anymore. But we could try to rewrite this test, using CreateTemporary
+	// std::string tmpNsName("tmpNsName");
+	// NamespaceDef tmpNsDef = NamespaceDef(tmpNsName, StorageOpts().Enabled().CreateIfMissing());
+	// tmpNsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
+	// tmpNsDef.isTemporary = true;
+	// err = master->api.reindexer->AddNamespace(tmpNsDef);
+	// ASSERT_TRUE(err.ok()) << err.what();
+	// client::Item item = master->api.NewItem(tmpNsName);
+	// err = item.FromJSON("{\"id\":" + std::to_string(10) + "}");
+	// ASSERT_TRUE(err.ok()) << err.what();
+	// err = master->api.reindexer->Upsert(tmpNsName, item);
+	// ASSERT_TRUE(err.ok()) << err.what();
+	// err = master->api.reindexer->RenameNamespace(tmpNsName, tmpNsName + "Rename");
+	// ASSERT_FALSE(err.ok());
 
-	BaseApi::QueryResultsType r1;
-	err = master->api.reindexer->Select("Select * from " + tmpNsName, r1);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(r1.Count() == 1);
+	// auto r1 = master->api.ExecSQL("Select * from " + tmpNsName);
+	// ASSERT_EQ(r1.Count(), 1);
 }
 
 TEST_F(CascadeReplicationApi, Node3ApplyWal) {
@@ -822,9 +840,9 @@ TEST_F(CascadeReplicationApi, Node3ApplyWal) {
 			auto slave1 = slave1Sc.Get();
 			auto slave2 = slave2Sc.Get();
 			slave1->MakeFollower();
-			master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave1));
+			master->AddFollower(slave1);
 			slave2->MakeFollower();
-			slave1->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave2));
+			slave1->AddFollower(slave2);
 			WaitSync(master, slave1, kNsName);
 			WaitSync(master, slave2, kNsName);
 		}
@@ -865,7 +883,7 @@ static int64_t AwaitUpdatesReplication(const ServerControl::Interface::Ptr& node
 		}
 		std::this_thread::sleep_for(step);
 	}
-	assertf(false, "Stats: %s", ser.Slice());
+	assertf(false, "Stats: {}", ser.Slice());
 	return 0;
 }
 
@@ -898,11 +916,11 @@ TEST_F(CascadeReplicationApi, RestrictUpdates) {
 		dataString.append("xxx");
 	}
 
-	master->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, slave));
+	master->AddFollower(slave);
 
 	for (unsigned int i = 0; i < count; i++) {
-		reindexer::client::Item item = master->api.NewItem("ns1");
-		std::string itemJson = fmt::sprintf(R"json({"id": %d, "data": "%s" })json", i + from, dataString);
+		client::Item item = master->api.NewItem("ns1");
+		std::string itemJson = fmt::format(R"json({{"id": {}, "data": "{}" }})json", i + from, dataString);
 		auto err = item.Unsafe().FromJSON(itemJson);
 		ASSERT_TRUE(err.ok()) << err.what();
 		master->api.Upsert(nsName, item);
@@ -932,22 +950,21 @@ TEST_F(CascadeReplicationApi, LSNConflictWithSQLUpdate) {
 	//  5. perform full namespace update # here statement based replication could break the leader
 	//  6. restart follower
 	//  7. wait sync
-	const std::string kBaseStoragePath = reindexer::fs::JoinPath(kBaseTestsetDbPath, "LSNConflictWithSQLUpdate");
+	const std::string kBaseStoragePath = fs::JoinPath(kBaseTestsetDbPath, "LSNConflictWithSQLUpdate");
 	const std::string kNsName = "ns1";
 	constexpr size_t kDataCount = 20;
 	ServerControl leaderSc;
-	leaderSc.InitServer(
-		ServerControlConfig(0, 7770, 7880, reindexer::fs::JoinPath(kBaseStoragePath, "leader"), "db", true, 1024 * 1024 * 1024));
+	leaderSc.InitServer(ServerControlConfig(0, 7770, 7880, fs::JoinPath(kBaseStoragePath, "leader"), "db", true, 1024 * 1024 * 1024));
 	auto leader = leaderSc.Get();
 
 	leader->MakeLeader();
 	TestNamespace1 testns1(leader, kNsName);
 
 	ServerControl followerSc;
-	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
+	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
 	auto follower = followerSc.Get();
 	follower->MakeFollower();
-	leader->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, follower));
+	leader->AddFollower(follower);
 	WaitSync(leader, follower, kNsName);
 
 	follower.reset();
@@ -960,7 +977,7 @@ TEST_F(CascadeReplicationApi, LSNConflictWithSQLUpdate) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), kDataCount);
 
-	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
+	followerSc.InitServer(ServerControlConfig(0, 7771, 7881, fs::JoinPath(kBaseStoragePath, "follower"), "db", true));
 	WaitSync(leader, followerSc.Get(), kNsName);
 }
 
@@ -993,7 +1010,7 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 		auto follower = nodes.back().Get();
 		follower->SetReplicationConfig(
 			AsyncReplicationConfigTest{"follower", {}, false, true, int(id), "node_" + std::to_string(id), std::move(nsSet)});
-		leader->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, follower));
+		leader->AddFollower(follower);
 		return follower;
 	};
 
@@ -1030,6 +1047,13 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 	// Create slaves
 	createFollower(semiNode);
 	createFollower(semiNode);
+
+	auto masterToken = randStringAlph(20);
+	auto semiNodeToken = randStringAlph(20);
+	UpdateReplicationConfigs(nodes[0].Get(), masterToken, {});
+	UpdateReplicationConfigs(nodes[1].Get(), semiNodeToken, masterToken);
+	UpdateReplicationConfigs(nodes[2].Get(), {}, semiNodeToken);
+	UpdateReplicationConfigs(nodes[2].Get(), {}, semiNodeToken);
 
 	for (size_t i = 1; i < nodes.size(); i++) {
 		for (size_t j = 0; j < kNsSyncCount; ++j) {
@@ -1068,7 +1092,7 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 		}
 	}
 }
-#endif
+#endif	// !defined(REINDEX_WITH_TSAN)
 
 TEST_F(CascadeReplicationApi, WriteIntoSlaveNsAfterReconfiguration) {
 	// Check if it is possible to write in slave's ns after removing this ns from replication ns list
@@ -1088,8 +1112,8 @@ TEST_F(CascadeReplicationApi, WriteIntoSlaveNsAfterReconfiguration) {
 	WaitSync(cluster.Get(0), cluster.Get(1), kNs1);
 	WaitSync(cluster.Get(0), cluster.Get(1), kNs2);
 
-	auto createItem = [](const ServerPtr& node, const std::string& ns, int itemId) -> reindexer::client::Item {
-		reindexer::client::Item item = node->api.NewItem(ns);
+	auto createItem = [](const ServerPtr& node, const std::string& ns, int itemId) -> client::Item {
+		client::Item item = node->api.NewItem(ns);
 		auto err = item.FromJSON("{\"id\":" + std::to_string(itemId) + "}");
 		EXPECT_TRUE(err.ok()) << err.what();
 		return item;
@@ -1232,8 +1256,11 @@ TEST_F(CascadeReplicationApi, ManyLeadersOneFollowerTest) {
 		nss.emplace_back(leaders.back().Get(), "ns_" + std::to_string(serverId));
 		nss.back().AddRows(leaders.back().Get(), 0, 10);
 
-		leaders.back().Get()->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, follower.Get()),
-										  std::vector{nss.back().nsName_});
+		leaders.back().Get()->AddFollower(follower.Get(), std::vector{nss.back().nsName_});
+
+		auto token = randStringAlph(20);
+		leaders.back().Get()->UpdateConfigReplTokens(token);
+		follower.Get()->UpdateConfigReplTokens(NsNamesHashMapT<std::string>{{NamespaceName(nss.back().nsName_), std::move(token)}});
 	}
 
 	auto sync = [&] {
@@ -1248,3 +1275,457 @@ TEST_F(CascadeReplicationApi, ManyLeadersOneFollowerTest) {
 	}
 	sync();
 }
+
+TEST_F(CascadeReplicationApi, DisabledStatementBaseWALDelete) {
+	constexpr int kWALStatementItemsCount = 100;
+	const int kBasePort = 7770;
+	const std::string nsName = "ns_wal_delete_check";
+	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "DisabledStatementBaseWALDelete/node_"));
+
+	std::vector<int> clusterConfig = {-1, 0};
+	Cluster cluster = CreateConfiguration(clusterConfig, kBasePort, 0, kBaseDbPath);
+
+	auto leader = cluster.Get(0);
+
+	auto err = leader->api.reindexer->OpenNamespace(nsName, StorageOpts{}.Enabled(true));
+	ASSERT_TRUE(err.ok()) << err.what();
+	leader->api.DefineNamespaceDataset(nsName, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
+
+	auto makeItemsWithData = [&](int data) {
+		for (int id = 0; id < kWALStatementItemsCount; ++id) {
+			auto item = leader->api.NewItem(nsName);
+			auto err = item.FromJSON(fmt::format("{{\"id\": {}, \"data\": {} }}", id, data));
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			leader->api.Upsert(nsName, item);
+		}
+	};
+
+	makeItemsWithData(0);
+
+	WaitSync(leader, cluster.Get(1), nsName);
+
+	const auto replState = cluster.Get(1)->GetState(nsName);
+	ASSERT_EQ(replState.role, ClusterOperationStatus::Role::SimpleReplica);
+
+	cluster.ShutdownServer(1);
+
+	makeItemsWithData(1);
+
+	auto q = Query::FromSQL(fmt::format("DELETE FROM {} WHERE data = 1", nsName));
+	leader->api.Delete(q);
+
+	auto getForceSyncsCount = [&] {
+		auto res = cluster.Get(0)->api.Select(Query::FromSQL("SELECT * FROM #replicationstats WHERE type = 'async'"));
+		gason::JsonParser parser;
+		auto root = parser.Parse(res.begin().GetItem().GetJSON());
+		return root["force_syncs"]["count"].As<int>();
+	};
+
+	int forceSyncsBefore = getForceSyncsCount();
+
+	cluster.InitServer(1, kBasePort + 1, kBasePort + 1000 + 1, kBaseDbPath + std::to_string(1), "db", true);
+
+	WaitSync(leader, cluster.Get(1), nsName);
+	std::this_thread::sleep_for(std::chrono::seconds(1));  // waiting for potential force-sync to complete
+
+	int forceSyncsAfter = getForceSyncsCount();
+	ASSERT_EQ(forceSyncsBefore, forceSyncsAfter);
+}
+
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic push
+TEST_F(CascadeReplicationApi, ForceSyncStress) {
+	// Check WAL/force sync on multiple rows
+	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "ForceSyncStress"));
+	const std::string kDbPathMaster(kBaseDbPath + "/test_");
+	const int port = 9999;
+#if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
+	constexpr int kMaxId = 30000;
+	constexpr int kNs1Size = 1000;
+	constexpr int kNs2Size = 2000;
+	constexpr int kTxSize = 50;
+#else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+	constexpr int kMaxId = 300000;
+	constexpr int kNs1Size = 6000;
+	constexpr int kNs2Size = 8000;
+	constexpr int kTxSize = 300;
+#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+	std::atomic<bool> done{false};
+	constexpr std::string_view kJsonCfgNss = R"=({
+		"namespaces": [
+		{
+			"namespace": "*",
+			"start_copy_policy_tx_size": 10000,
+			"copy_policy_multiplier": 5,
+			"tx_size_to_always_copy": 100000
+		},
+		{
+			"namespace": "ns1",
+			"start_copy_policy_tx_size": 10000,
+			"copy_policy_multiplier": 5,
+			"tx_size_to_always_copy": 1
+		}
+		],
+		"type": "namespaces"
+	})=";
+
+	std::vector<int> clusterConfig = {-1, -1};
+	auto cluster = CreateConfiguration(clusterConfig, port, 10, kDbPathMaster);
+	auto& follower = *cluster.Get(1)->api.reindexer;
+	auto& leader = *cluster.Get(0)->api.reindexer;
+	// Set tx copy policy for the node '2' to 'always copy'
+	{
+		auto item = follower.NewItem("#config");
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		auto err = item.FromJSON(kJsonCfgNss);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = follower.Upsert("#config", item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	auto addRow = [](client::Reindexer& rx, std::string_view ns, int id) {
+		client::Item item = rx.NewItem(ns);
+		auto json = fmt::format(R"j({{"id":{},"data":"{}"}})j", id, randStringAlph(32));
+		auto err = item.Unsafe(true).FromJSON(json);
+		EXPECT_TRUE(err.ok()) << err.what();
+		return rx.Upsert(ns, item);
+	};
+
+	const std::string nsName1("ns1");
+	const std::string nsName2("ns2");
+	{
+		TestCout() << "Filling namespaces..." << std::endl;
+		std::thread th1([&] {
+			TestNamespace1 ns1(cluster.Get(0), nsName1);
+			for (int i = 0; i < kNs1Size; ++i) {
+				auto err = addRow(leader, ns1.nsName_, i);
+				ASSERT_TRUE(err.ok()) << err.what();
+			}
+		});
+		std::thread th2([&] {
+			TestNamespace1 ns2(cluster.Get(0), nsName2);
+			for (int i = 0; i < kNs2Size; ++i) {
+				auto err = addRow(leader, ns2.nsName_, i);
+				ASSERT_TRUE(err.ok()) << err.what();
+			}
+		});
+		th1.join();
+		th2.join();
+		TestCout() << "Namespaces are ready..." << std::endl;
+	}
+	{
+		// Create namespaces on the follower
+		TestNamespace1 ns11(cluster.Get(1), nsName1);
+		TestNamespace1 ns21(cluster.Get(1), nsName2);
+	}
+
+	auto createTx = [](client::Reindexer& rx, std::string_view ns, int from, int to) {
+		auto tx = rx.NewTransaction(ns);
+		if (!tx.Status().ok()) {
+			return tx;
+		}
+		for (int id = from; id < to; ++id) {
+			client::Item item = tx.NewItem();
+			auto err = item.FromJSON(fmt::format(R"j({{"id":{},"data":"{}"}})j", id, randStringAlph(32)));
+			EXPECT_TRUE(err.ok()) << err.what();
+			err = tx.Upsert(std::move(item));
+			EXPECT_TRUE(err.ok()) << err.what();
+		}
+		return tx;
+	};
+	auto insertionThreadFuncT1 = [&](std::string_view ns) {
+		Error err;
+		int counter = 0;
+		while (err.ok()) {
+			err = addRow(follower, ns, rand() % kMaxId);
+			std::this_thread::yield();
+		}
+		ASSERT_EQ(err.code(), errWrongReplicationData) << err.what();
+		TestCout() << fmt::format("insertionThreadFuncT1 done with error: '{}'. Counter: {}", err.what(), counter) << std::endl;
+	};
+	auto insertionThreadFuncT2 = [&](std::string_view ns) {
+		Error err;
+		int counter = 0;
+		while (err.ok()) {
+			int v = rand() % 200;
+			err = follower.PutMeta(ns, "meta" + std::to_string(v), randStringAlph(12));
+			++counter;
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+		ASSERT_EQ(err.code(), errWrongReplicationData) << err.what();
+		TestCout() << fmt::format("insertionThreadFuncT2 done. Counter: {}", counter) << std::endl;
+	};
+	auto txThreadFuncT1 = [&](std::string_view ns) {
+		Error err;
+		int counter = 0;
+		while (err.ok()) {
+			auto from = rand() % kMaxId;
+			auto tx = createTx(follower, ns, from, from + kTxSize);
+			err = tx.Status();
+			if (err.ok()) {
+				client::QueryResults qr;
+				err = follower.CommitTransaction(tx, qr);
+				++counter;
+				std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			}
+		}
+		ASSERT_EQ(err.code(), errWrongReplicationData) << err.what();
+		TestCout() << fmt::format("txThreadFuncT1 done with error: '{}'. Counter: {}", err.what(), counter) << std::endl;
+	};
+	auto selectionThreadFuncT1 = [&]() {
+		int counter = 0;
+		while (!done.load()) {
+			auto limit = rand() % 500;
+			auto from = rand() % kMaxId;
+			client::QueryResults qr;
+			auto err = follower.Select(
+				Query(nsName1).Limit(limit).Where("id", counter % 2 ? CondGt : CondLe, from).InnerJoin("id", "id", CondEq, Query(nsName2)),
+				qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			++counter;
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		TestCout() << fmt::format("selectionThreadFuncT1 done. Counter: {}", counter) << std::endl;
+	};
+	auto selectionThreadFuncT2 = [&]() {
+		int counter = 0;
+		while (!done.load()) {
+			auto limit = rand() % 100;
+			auto from = rand() % kMaxId;
+			client::QueryResults qr;
+			auto err = follower.Select(
+				Query(nsName2).Limit(limit).Where("id", counter % 2 ? CondGt : CondLe, from).InnerJoin("id", "id", CondEq, Query(nsName1)),
+				qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			++counter;
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		TestCout() << fmt::format("selectionThreadFuncT1 done. Counter: {}", counter) << std::endl;
+	};
+	auto selectionThreadFuncT3 = [&](std::string_view ns) {
+		int counter = 0;
+		while (!done.load()) {
+			int v = rand() % 200;
+			std::string data;
+			auto err = follower.GetMeta(ns, "meta" + std::to_string(v), data);
+			ASSERT_TRUE(err.ok()) << err.what();
+			++counter;
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		TestCout() << fmt::format("selectionThreadFuncT3 done. Counter: {}", counter) << std::endl;
+	};
+
+	std::vector<std::thread> insertionThreads;
+	std::vector<std::thread> selectionThreads;
+
+	TestCout() << "Starting insertion threads..." << std::endl;
+	insertionThreads.emplace_back(insertionThreadFuncT1, nsName1);
+	insertionThreads.emplace_back(insertionThreadFuncT1, nsName2);
+	insertionThreads.emplace_back(insertionThreadFuncT1, nsName1);
+	insertionThreads.emplace_back(insertionThreadFuncT1, nsName2);
+	insertionThreads.emplace_back(txThreadFuncT1, nsName1);
+	insertionThreads.emplace_back(txThreadFuncT1, nsName2);
+	insertionThreads.emplace_back(insertionThreadFuncT2, nsName1);
+	insertionThreads.emplace_back(insertionThreadFuncT2, nsName2);
+
+	std::this_thread::sleep_for(std::chrono::seconds(5));
+
+	TestCout() << "Starting selection threads..." << std::endl;
+	selectionThreads.emplace_back(selectionThreadFuncT1);
+	selectionThreads.emplace_back(selectionThreadFuncT2);
+	selectionThreads.emplace_back(selectionThreadFuncT3, nsName1);
+	selectionThreads.emplace_back(selectionThreadFuncT3, nsName2);
+	std::this_thread::sleep_for(std::chrono::seconds(5));
+
+	TestCout() << "Switching to follower..." << std::endl;
+
+	cluster.Get(1)->MakeFollower();
+	cluster.Get(0)->MakeLeader();
+	cluster.Get(0)->AddFollower(cluster.Get(1));
+
+	TestCout() << "Joining insertion threads..." << std::endl;
+	for (auto& th : insertionThreads) {
+		th.join();
+	}
+	TestCout() << "Awaiting sync for ns1..." << std::endl;
+	WaitSync(cluster.Get(0), cluster.Get(1), nsName1);
+	TestCout() << "Awaiting sync for ns2..." << std::endl;
+	WaitSync(cluster.Get(0), cluster.Get(1), nsName2);
+	TestCout() << "Joining selection threads..." << std::endl;
+	done = true;
+	for (auto& th : selectionThreads) {
+		th.join();
+	}
+	TestCout() << "Checking select..." << std::endl;
+	{
+		auto limit = rand() % 500;
+		client::QueryResults qr;
+		auto err = follower.Select(Query(nsName1).Limit(limit).Where("id", CondGt, 999).InnerJoin("id", "id", CondEq, Query(nsName2)), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	TestCout() << "Done!" << std::endl;
+}
+#pragma GCC diagnostic pop
+
+TEST_F(CascadeReplicationApi, ReplTokensNegativeTest) {
+	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "ReplTokensNegativeTest"));
+
+	ServerControl leaderSc, followerSc, follower2Sc;
+	leaderSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/leader", "db"));
+	followerSc.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/follower", "db"));
+
+	auto leader = leaderSc.Get();
+	auto follower = followerSc.Get();
+	leader->MakeLeader();
+	follower->MakeFollower();
+	leader->AddFollower(follower);
+
+	TestNamespace1 ns1(leader, "ns1");
+	ns1.AddRows(leader, 0, 100);
+
+	WaitSync(leader, follower, ns1.nsName_);
+
+	auto leaderToken = randStringAlph(20);
+	auto wrongLeaderToken = randStringAlph(20);
+	UpdateReplicationConfigs(leader, leaderToken, {});
+	UpdateReplicationConfigs(follower, {}, wrongLeaderToken);
+
+	ns1.AddRows(leader, 100, 100);
+
+	const auto deadlineCount = 10;
+	int count = 0;
+	while (true) {
+		client::QueryResults qr;
+		leader->api.Select(Query(kReplicationStatsNamespace).Where("type", CondEq, "async"), qr);
+
+		WrSerializer ser;
+		auto err = qr.begin().GetJSON(ser);
+		ASSERT_TRUE(err.ok());
+
+		gason::JsonParser parser;
+		auto replStatsJson = parser.Parse(ser.Slice());
+		auto nodesStats = replStatsJson["nodes"];
+		auto it = std::find_if(begin(nodesStats), end(nodesStats), [&follower](const auto& node) {
+			using cmpT = bool (*)(const DSN&, const DSN&) noexcept;
+			cmpT compare = WithSecurity() ? cmpT(&RelaxCompare) : cmpT(&Compare);
+			return compare(DSN(node["dsn"].template As<std::string>()), follower->kRPCDsn);
+		});
+
+		ASSERT_NE(it, end(nodesStats));
+		auto lastErrorCode = (*it)["last_error"]["code"].As<int>();
+		if (lastErrorCode == 0) {
+			ASSERT_TRUE(count < deadlineCount)
+				<< "The time limit for an error to occur after applying the new replication config has been exceeded.";
+			count++;
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			continue;
+		}
+		ASSERT_EQ(lastErrorCode, errReplParams);
+		auto errMsg = (*it)["last_error"]["message"].As<std::string>();
+		ASSERT_TRUE(errMsg.starts_with("Different replication tokens on leader and follower for namespace 'ns1'.")) << errMsg;
+		break;
+	}
+	follower->UpdateConfigReplTokens(NsNamesHashMapT<std::string>{{NamespaceName(ns1.nsName_), leaderToken}});
+
+	ns1.AddRows(leader, 200, 100);
+	WaitSync(leader, follower, ns1.nsName_);
+}
+
+namespace sq8_test {
+
+template <VectorMetric Metric>
+void ReplWithQuantizationTestBody(auto& api, TestSyncType sync) {
+	constexpr static auto kNsName = "hnsw_quantization_repl_test_ns";
+
+	const std::string kBaseDbPath(fs::JoinPath(api.kBaseTestsetDbPath, "QuantizationWithReplication"));
+	const std::string kDbPathMaster(kBaseDbPath + "/test_");
+	const int port = 11111;
+
+	std::vector<int> clusterConfig = {-1, 0};
+	auto cluster = api.CreateConfiguration(clusterConfig, port, 10, kDbPathMaster);
+
+	auto& leader = cluster.Get(0)->api;
+
+	std::ignore = InitNsAndIndexes<Metric>(
+		leader, kNsName, kHNSWInitSize / 2,
+		hnswlib::QuantizationConfig{
+			.quantile = kQuantile, .sampleSize = kHNSWInitSize / 2, .quantizationThreshold = kHNSWInitSize - kInitEmptyItemsNum});
+
+	api.WaitSync(cluster.Get(0), cluster.Get(1), kNsName);
+
+	ASSERT_FALSE(GetQuantizationStatus(leader, kNsName));
+	ASSERT_FALSE(GetQuantizationStatus(cluster.Get(1)->api, kNsName));
+
+	if (sync != TestSyncType::Online) {
+		if (sync == TestSyncType::Force) {
+			cluster.Get(0)->SetWALSize(kHNSWInitSize / 3, kNsName);
+		}
+		cluster.ShutdownServer(1);
+	}
+	for (size_t i = kHNSWInitSize / 2; i < kHNSWInitSize; ++i) {
+		auto item = newItemWithVectors(leader, kNsName, i);
+		leader.Upsert(kNsName, item);
+	}
+
+	WaitQuantization(leader, kNsName);
+	TEST_COUT << fmt::format("Leader quantized\n");
+
+	if (sync != TestSyncType::Online) {
+		cluster.InitServer(1, port + 1, port + 1000 + 1, kDbPathMaster + std::to_string(1), "db", true);
+		// maybe can blink
+		ASSERT_FALSE(GetQuantizationStatus(cluster.Get(1)->api, kNsName));
+	}
+
+	api.WaitSync(cluster.Get(0), cluster.Get(1), kNsName);
+
+	WaitQuantization(cluster.Get(1)->api, kNsName);
+	TEST_COUT << fmt::format("Follower quantized\n");
+
+	size_t emptyCnt = 0;
+	for (size_t i = kHNSWInitSize; i < 2 * kHNSWInitSize; ++i) {
+		const bool empty = rand() % 10 == 0 && emptyCnt++ < size_t(0.2 * kHNSWInitSize);
+		auto item = empty ? newItemWithoutVectors(leader, kNsName, i) : newItemWithVectors(leader, kNsName, i);
+		leader.Upsert(kNsName, item);
+	}
+
+	api.WaitSync(cluster.Get(0), cluster.Get(1), kNsName);
+
+	CheckRecallRate(leader, kNsName, MakeQueryPoints(), 0.02 * kHNSWInitSize, 0.1 * kHNSWInitSize);
+	CheckRecallRate(cluster.Get(1)->api, kNsName, MakeQueryPoints(), 0.02 * kHNSWInitSize, 0.1 * kHNSWInitSize);
+}
+
+TEST_P(Sq8CascadeReplicationApi, QuantizationTest) {
+	switch (VectorMetric(std::rand() % 3)) {
+		case VectorMetric::L2:
+			TEST_COUT << "Chosen L2-metric\n";
+			return ReplWithQuantizationTestBody<VectorMetric::L2>(*this, GetParam());
+		case VectorMetric::InnerProduct:
+			TEST_COUT << "Chosen InnerProduct-metric\n";
+			return ReplWithQuantizationTestBody<VectorMetric::InnerProduct>(*this, GetParam());
+		case VectorMetric::Cosine:
+			TEST_COUT << "Chosen Cosine-metric\n";
+			return ReplWithQuantizationTestBody<VectorMetric::Cosine>(*this, GetParam());
+		default:
+			assert(false);
+			std::abort();
+	}
+}
+
+INSTANTIATE_TEST_SUITE_P(, Sq8CascadeReplicationApi, ::testing::Values(TestSyncType::Online, TestSyncType::WAL, TestSyncType::Force),
+						 [](const auto& info) {
+							 switch (info.param) {
+								 case TestSyncType::Online:
+									 return "Online";
+								 case TestSyncType::WAL:
+									 return "WAL";
+								 case TestSyncType::Force:
+									 return "Force";
+								 default:
+									 assert(false);
+									 std::abort();
+							 }
+						 });
+}  // namespace sq8_test
+
+}  // namespace reindexer_tests

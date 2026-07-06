@@ -29,6 +29,11 @@ Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 }
 
 Error Transaction::Modify(Query&& query, lsn_t lsn) {
+	try {
+		query.VerifyForUpdateTransaction();
+	} catch (std::exception& err) {
+		return err;
+	}
 	if (impl_) {
 		return impl_->Modify(std::move(query), lsn);
 	}
@@ -88,6 +93,7 @@ LocalTransaction Transaction::Transform(Transaction&& tx) {
 	return LocalTransaction(Error(errNotValid, "Empty local transaction"));
 }
 
+// NOLINTNEXTLINE (bugprone-throw-keyword-missing)
 Transaction::Transaction(Error err) : status_(std::move(err)) {}
 
 Transaction::Transaction(Transaction&& tr, sharding::LocatorServiceAdapter shardingRouter) : Transaction(std::move(tr)) {

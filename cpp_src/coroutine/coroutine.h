@@ -15,7 +15,7 @@ using routine_t = uint32_t;
 constexpr size_t k_default_stack_limit = 128 * 1024;
 
 /// @class Some kind of a coroutines scheduler. Exists as a singletone with thread_local storage duration.
-class ordinator {
+class [[nodiscard]] ordinator {
 public:
 	using cmpl_cb_t = std::function<void(routine_t)>;
 
@@ -65,7 +65,7 @@ public:
 
 private:
 	/// @class Holds coroutine's data such as stack and state
-	class routine {
+	class [[nodiscard]] routine {
 	public:
 		routine() noexcept = default;
 		~routine();
@@ -111,7 +111,7 @@ private:
 	};
 
 	/// @struct Pair of completion callback and it's unique ID
-	struct cmpl_cb_data {
+	struct [[nodiscard]] cmpl_cb_data {
 		cmpl_cb_t cb;
 		int64_t id;
 	};
@@ -123,7 +123,7 @@ private:
 	/// Add "parent" coroutine to coroutines call stack.
 	/// If new "parent" has id == 0, than the stack will be cleared, because main routine is unable to call suspend anyway
 	/// @param id - new "parent's" id
-	void push_to_call_stack(routine_t id);
+	void push_to_call_stack(routine_t id) noexcept;
 	/// Pop top coroutine's id from call stack.
 	/// @returns "Parent's" coroutine id. If stack is empty returns 0
 	routine_t pop_from_call_stack() noexcept;

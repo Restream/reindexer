@@ -1,8 +1,9 @@
 #include "rpcclient_api.h"
 #include "core/cjson/jsonbuilder.h"
 #include "tools/fsops.h"
-#include "tools/stringstools.h"
 #include "yaml-cpp/yaml.h"
+
+namespace reindexer_tests {
 
 const std::string RPCClientTestApi::kDefaultRPCServerAddr = "127.0.0.1:" + std::to_string(RPCClientTestApi::kDefaultRPCPort);
 
@@ -13,9 +14,7 @@ void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLog
 		stop_.set(loop_);
 		stop_.set([&](ev::async& sig) { sig.loop.break_loop(); });
 		stop_.start();
-		bool res = server_->Start(addr, loop_, errOnLogin);
-		assertrx(res);
-		(void)res;
+		server_->Start(addr, loop_, errOnLogin);
 		serverIsReady_ = true;
 		while (!terminate_) {
 			loop_.run();
@@ -48,7 +47,7 @@ void RPCClientTestApi::TestServer::Stop() {
 
 void RPCClientTestApi::StartDefaultRealServer() {
 	const std::string dbPath = std::string(kDbPrefix) + "/" + std::to_string(kDefaultRPCPort);
-	reindexer::fs::RmDirAll(dbPath);
+	std::ignore = reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	StartServer();
 }
@@ -103,7 +102,7 @@ void RPCClientTestApi::StartServer(const std::string& addr, Error errOnLogin) {
 			return;
 		}
 	}
-	assertf(false, "Server with dsn %s was not found", addr);
+	assertf(false, "Server with dsn {} was not found", addr);
 }
 
 Error RPCClientTestApi::StopServer(const std::string& addr) {
@@ -125,7 +124,7 @@ Error RPCClientTestApi::StopServer(const std::string& addr) {
 			return errOK;
 		}
 	}
-	assertf(false, "Server with dsn %s was not found", addr);
+	assertf(false, "Server with dsn {} was not found", addr);
 	abort();
 }
 
@@ -182,3 +181,5 @@ void RPCClientTestApi::FillData(client::CoroReindexer& rx, std::string_view nsNa
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 }
+
+}  // namespace reindexer_tests

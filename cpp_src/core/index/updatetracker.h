@@ -1,41 +1,38 @@
 #pragma once
 
 #include <functional>
-#include <mutex>
 #include <type_traits>
 #include "core/index/payload_map.h"
-#include "core/index/string_map.h"
 #include "core/keyvalue/geometry.h"
 #include "estl/fast_hash_set.h"
 
 namespace reindexer {
 
 template <typename T>
-class UpdateTracker {
+class [[nodiscard]] UpdateTracker {
 public:
 	// UpdateTracker is storing unique index key values, wich has been updated, and not commited
 	// For non-trivial types like key_string or PayloadType - payload pointer comparator is used.
 
 	template <typename T1>
-	struct hash_ptr {
+	struct [[nodiscard]] hash_ptr {
 		size_t operator()(const T1& obj) const noexcept { return std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(obj.get())); }
 	};
 	template <typename T1>
-	struct equal_ptr {
+	struct [[nodiscard]] equal_ptr {
 		bool operator()(const T1& lhs, const T1& rhs) const noexcept {
 			return reinterpret_cast<uintptr_t>(lhs.get()) == reinterpret_cast<uintptr_t>(rhs.get());
 		}
 	};
 	template <typename T1>
-	struct less_ptr {
+	struct [[nodiscard]] less_ptr {
 		bool operator()(const T1& lhs, const T1& rhs) const noexcept {
 			return reinterpret_cast<uintptr_t>(lhs.get()) < reinterpret_cast<uintptr_t>(rhs.get());
 		}
 	};
 
-	using key_type = typename std::conditional<std::is_same_v<typename T::key_type, PayloadValueWithHash>, PayloadValue,
-											   typename std::conditional<std::is_same_v<typename T::key_type, key_string_with_hash>,
-																		 key_string, typename T::key_type>::type>::type;
+	using key_type =
+		typename std::conditional<std::is_same_v<typename T::key_type, PayloadValueWithHash>, PayloadValue, typename T::key_type>::type;
 	using pointers_set = fast_hash_set_s<key_type, hash_ptr<key_type>, equal_ptr<key_type>, less_ptr<key_type>>;
 	using points_set = fast_hash_set_s<Point, std::hash<Point>, point_strict_equal, point_strict_less>;
 	using generic_set = fast_hash_set_s<key_type, std::hash<key_type>, std::equal_to<key_type>, std::less<key_type>>;
@@ -54,8 +51,8 @@ public:
 	}
 	UpdateTracker& operator=(const UpdateTracker<T>& other) = delete;
 
-	void markUpdated(T& idx_map, typename T::iterator& k, bool skipCommited = true) {
-		if (skipCommited && k->second.Unsorted().IsCommited()) {
+	void markUpdated(T& idx_map, typename T::iterator& k, bool skipCommitted = true) {
+		if (skipCommitted && k->second.Unsorted().IsCommitted()) {
 			return;
 		}
 		if (simpleCounting_) {
@@ -73,20 +70,32 @@ public:
 		emplaceUpdate(k);
 	}
 
-	void commitUpdated(T& idx_map) {
+	void commitUpdated(T& idx_map, unsigned sortedIdxCount) {
 		for (const auto& valIt : updated_) {
 			auto keyIt = idx_map.find(valIt);
 			assertrx(keyIt != idx_map.end());
-			keyIt->second.Unsorted().Commit();
-			assertrx(keyIt->second.Unsorted().size());
+			keyIt->second.Unsorted().Commit(sortedIdxCount);
+			assertrx(keyIt->second.Unsorted().Size());
 		}
 	}
 
-	void markDeleted(typename T::iterator& k) {
+	void markDeleted(typename T::iterator& k) noexcept {
 		if (simpleCounting_) {
 			++updatesCounter_;
 		} else {
 			eraseUpdate(k);
+		}
+	}
+	void refreshKey(const key_type& oldK, const key_type& newK) noexcept {
+		if (!simpleCounting_) {
+			if (updated_.erase(oldK)) {
+				try {
+					updated_.emplace(newK);
+				} catch (...) {
+					completeUpdate_ = true;
+					clearUpdates();
+				}
+			}
 		}
 	}
 	bool isUpdated() const noexcept { return !updated_.empty() || completeUpdate_ || (simpleCounting_ && updatesCounter_); }
@@ -102,7 +111,7 @@ public:
 	uint32_t updatesBuckets() const noexcept { return updatesBuckets_.load(std::memory_order_relaxed); }
 	uint32_t allocated() const noexcept { return allocatedMem_.load(std::memory_order_relaxed); }
 	uint32_t overflow() const noexcept { return overflowSize_.load(std::memory_order_relaxed); }
-	void enableCountingMode(bool val) noexcept {
+	void enableCountingMode(bool val) {
 		if (!simpleCounting_ && val) {
 			hash_map m;
 			std::swap(m, updated_);
@@ -117,7 +126,7 @@ public:
 	}
 
 protected:
-	void eraseUpdate(typename T::iterator& k) {
+	void eraseUpdate(typename T::iterator& k) noexcept {
 		updated_.erase(k->first);
 		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
@@ -131,7 +140,7 @@ protected:
 		allocatedMem_.store(getMapAllocatedMemSize(), std::memory_order_relaxed);
 		overflowSize_.store(getMapOverflowSize(), std::memory_order_relaxed);
 	}
-	void clearUpdates() {
+	void clearUpdates() noexcept {
 		updated_.clear();
 		updatesSize_.store(0, std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);

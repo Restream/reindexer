@@ -173,6 +173,7 @@ Stream::Stream(std::istream& input)
 		if (nUngets > 0) {
 			input.clear();
 			for (; nUngets > 0; --nUngets) {
+				// NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
 				if (char_traits::eof() != intro[--nIntroUsed]) input.putback(char_traits::to_char_type(intro[nIntroUsed]));
 			}
 		}

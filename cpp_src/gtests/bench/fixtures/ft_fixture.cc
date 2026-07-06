@@ -1,65 +1,67 @@
 #include "ft_fixture.h"
 #include <benchmark/benchmark.h>
 
-#include <fstream>
-#include <iterator>
 #include <thread>
 
+#include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/ft/config/ftfastconfig.h"
+#include "core/ft/config/ftconfig.h"
 #include "tools/errors.h"
-#include "tools/stringstools.h"
+
+namespace reindexer_benchmarks {
 
 #include <dlfcn.h>
 
 using benchmark::State;
-using benchmark::AllocsTracker;
 
 using reindexer::Query;
 using reindexer::QueryResults;
-using reindexer::utf16_to_utf8;
+using reindexer::IndexOpts;
 
 static uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
 FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
-	: BaseFixture(db, name, maxItems, 1, false), lowWordsDiversityNsDef_("LowWordsDiversityNs") {
+	: BaseFixture(db, name, maxItems, 1, false), ftLowDiversityCfg_(1), lowWordsDiversityNsDef_("LowWordsDiversityNs") {
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
 #endif
-	static reindexer::FtFastConfig ftCfg(1);
-	static IndexOpts ftIndexOpts;
-	ftCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
-	ftIndexOpts.config = ftCfg.GetJSON({});
-	ftIndexOpts.Dense();
+	static reindexer::FTConfig ftFastCfg(1);
+	ftFastCfg.optimization = reindexer::FTConfig::Optimization::Memory;
+
+	// for benching merge_limit break #2244
+	ftLowDiversityCfg_.mergeLimit = 4000;
+	ftLowDiversityCfg_.optimization = reindexer::FTConfig::Optimization::Memory;
+
+	IndexOpts ftFastIndexOpts = IndexOpts().SetConfig(IndexCompositeFastFT, ftFastCfg.GetJSON({})).Dense();
+	IndexOpts ftLowDiversityIndexOpts = IndexOpts().SetConfig(IndexCompositeFastFT, ftLowDiversityCfg_.GetJSON({})).Dense();
+
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("description", "-", "string", IndexOpts())
 		.AddIndex("year", "tree", "int", IndexOpts())
 		.AddIndex("countries", "tree", "string", IndexOpts().Array())
-		.AddIndex(kFastIndexTextName_, {"countries", "description"}, "text", "composite", ftIndexOpts)
-		.AddIndex("searchfuzzy", {"countries", "description"}, "fuzzytext", "composite", IndexOpts());
+		.AddIndex(kIndexTextName_, {"countries", "description"}, "text", "composite", std::move(ftFastIndexOpts));
 	lowWordsDiversityNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("description1", "-", "string", IndexOpts())
 		.AddIndex("description2", "-", "string", IndexOpts())
-		.AddIndex(kLowDiversityIndexName_, {"description1", "description2"}, "text", "composite", ftIndexOpts);
+		.AddIndex(kLowDiversityIndexName_, {"description1", "description2"}, "text", "composite", std::move(ftLowDiversityIndexOpts));
 }
-
-template <reindexer::FtFastConfig::Optimization opt>
+template <reindexer::FTConfig::Optimization opt>
 void FullText::UpdateIndex(State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		static reindexer::FtFastConfig ftCfg(1);
+		static reindexer::FTConfig ftCfg(1);
 		ftCfg.optimization = opt;
-		setIndexConfig(nsdef_, kFastIndexTextName_, ftCfg);
+		setIndexConfig(nsdef_, kIndexTextName_, ftCfg);
 	}
 
 	// Warm up the index
 	Query q(nsdef_.name);
-	q.Where(kFastIndexTextName_, CondEq, "lskfj");
+	q.Where(kIndexTextName_, CondEq, "lskfj");
 	QueryResults qres;
 	auto err = db_->Select(q, qres);
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 }
 
@@ -69,13 +71,7 @@ reindexer::Error FullText::Initialize() {
 		return err;
 	}
 
-	err = db_->AddNamespace(lowWordsDiversityNsDef_);
-	if (!err.ok()) {
-		return err;
-	}
-
-	words_.reserve(140000);
-	err = readDictFile(RX_BENCH_DICT_PATH, words_);
+	err = FullTextBase::Initialize();
 	if (!err.ok()) {
 		return err;
 	}
@@ -113,22 +109,62 @@ reindexer::Error FullText::Initialize() {
 		"Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe"
 	};
 	// clang-format on
+	err = db_->AddNamespace(lowWordsDiversityNsDef_);
+	if (!err.ok()) {
+		return err;
+	}
+
 	return {};
 }
 
-void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount) {
-	constexpr static auto Mem = reindexer::FtFastConfig::Optimization::Memory;
-	constexpr static auto CPU = reindexer::FtFastConfig::Optimization::CPU;
+void FullText::TurnOnSynonyms() {
+	for (size_t i = 0; i < words2_.size(); i++) {
+		const std::string& word = words2_[i];
+		const std::string& synWord = words2_[(i + 5) % words2_.size()];
+		const std::string& nextWord1 = words2_[(i + 10) % words2_.size()];
+		const std::string& nextWord2 = words2_[(i + 15) % words2_.size()];
+
+		std::string multiSynWord = std::string(nextWord1).append(" ").append(nextWord2);
+		ftLowDiversityCfg_.synonyms.emplace_back(std::vector<std::string>({word}), std::vector<std::string>({synWord, multiSynWord}));
+	}
+
+	for (size_t i = 0; i < words2_.size(); i++) {
+		const std::string& word1 = words2_[i];
+		const std::string& nextWord1 = words2_[(i + 5) % words2_.size()];
+		for (size_t j = i + 1; j < words2_.size(); j++) {
+			const std::string& word2 = words2_[j];
+			const std::string& nextWord2 = words2_[(j + 5) % words2_.size()];
+
+			ftLowDiversityCfg_.synonyms.emplace_back(std::vector<std::string>({std::string(word1).append(" ").append(word2)}),
+													 std::vector<std::string>({std::string(nextWord1).append(" ").append(nextWord2)}));
+		}
+	}
+
+	setIndexConfig(lowWordsDiversityNsDef_, kLowDiversityIndexName_, ftLowDiversityCfg_);
+}
+
+void FullText::TurnOffSynonyms() {
+	ftLowDiversityCfg_.synonyms.clear();
+	setIndexConfig(lowWordsDiversityNsDef_, kLowDiversityIndexName_, ftLowDiversityCfg_);
+}
+
+void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount,
+								std::optional<size_t> verySlowIterationCount) {
+	constexpr static auto Mem = reindexer::FTConfig::Optimization::Memory;
+	constexpr static auto CPU = reindexer::FTConfig::Optimization::CPU;
 
 	RegisterWrapper wrapSlow(slowIterationCount);  // std::numeric_limits<size_t>::max() test limit - default time
+	RegisterWrapper wrapVerySlow(verySlowIterationCount);
 	RegisterWrapper wrapFast(fastIterationCount);
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
-	Register("BuildAndInsertNs2", &FullText::BuildInsertLowDiversityNs, this)->Iterations(1000)->Unit(benchmark::kMicrosecond);
-	wrapSlow.SetOptions(Register("Fast3PhraseLowDiversity", &FullText::Fast3PhraseLowDiversity, this));
-	wrapSlow.SetOptions(Register("Fast3WordsLowDiversity", &FullText::Fast3WordsLowDiversity, this));
+	Register("BuildAndInsertNs2", &FullText::BuildInsertLowDiversityNs, this)->Iterations(25000)->Unit(benchmark::kMicrosecond);
+	wrapVerySlow.SetOptions(Register("Fast3PhraseLowDiversity", &FullText::Fast3PhraseLowDiversity, this));
+	wrapVerySlow.SetOptions(Register("Fast3WordsLowDiversity", &FullText::Fast3WordsLowDiversity, this));
 
-	wrapSlow.SetOptions(Register("Fast3WordsWithAreasLowDiversity", &FullText::Fast3WordsWithAreasLowDiversity, this));
-	wrapSlow.SetOptions(Register("Fast3PhraseWithAreasLowDiversity", &FullText::Fast3PhraseWithAreasLowDiversity, this));
+	wrapVerySlow.SetOptions(Register("Fast3WordsWithAreasLowDiversity", &FullText::Fast3WordsWithAreasLowDiversity, this));
+	wrapVerySlow.SetOptions(Register("Fast3PhraseWithAreasLowDiversity", &FullText::Fast3PhraseWithAreasLowDiversity, this));
+
+	wrapVerySlow.SetOptions(Register("Fast3WordsSynonymsLowDiversity", &FullText::Fast3WordsSynonymsLowDiversity, this));
 
 	wrapFast.SetOptions(Register("Fast2PhraseLowDiversity", &FullText::Fast2PhraseLowDiversity, this));
 	wrapFast.SetOptions(Register("Fast2AndWordLowDiversity", &FullText::Fast2AndWordLowDiversity, this));
@@ -158,17 +194,6 @@ void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::o
 	wrapFast.SetOptions(Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch, this));
 	wrapFast.SetOptions(Register("Fast2TypoWordMatch.OptByCPU", &FullText::Fast2TypoWordMatch, this));
 	wrapFast.SetOptions(Register("Fast1WordWithAreaHighDiversity.OptByCPU", &FullText::Fast1WordWithAreaHighDiversity, this));
-
-	// Register("BuildFuzzyTextIndex", &FullText::BuildFuzzyTextIndex, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
-
-	// Register("Fuzzy1WordMatch", &FullText::Fuzzy1WordMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy2WordsMatch", &FullText::Fuzzy2WordsMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy1PrefixMatch", &FullText::Fuzzy1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy2PrefixMatch", &FullText::Fuzzy2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy1SuffixMatch", &FullText::Fuzzy1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy2SuffixMatch", &FullText::Fuzzy2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy1TypoWordMatch", &FullText::Fuzzy1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	// Register("Fuzzy2TypoWordMatch", &FullText::Fuzzy2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
 
 	Register("BuildInsert.Incremental", &FullText::BuildInsertIncremental, this)
 		->Iterations(id_seq_->Count())
@@ -204,14 +229,14 @@ void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::o
 
 reindexer::Item FullText::MakeLowDiversityItem(int id) {
 	auto createText = [this]() {
-		const size_t wordCnt = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{5, 50});
+		const size_t wordCnt = RndInt(10, 25);
 		reindexer::WrSerializer r;
 		r.Reserve(wordCnt * 30);
 
 		for (size_t i = 0; i < wordCnt; i++) {
-			r << words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+			r << RndFrom(words2_);
 			if (i < wordCnt - 1) {
-				r << " ";
+				r << ' ';
 			}
 		}
 		return std::string(r.Slice());
@@ -226,7 +251,7 @@ reindexer::Item FullText::MakeLowDiversityItem(int id) {
 
 reindexer::Item FullText::MakeItem(benchmark::State&) {
 	auto item = db_->NewItem(nsdef_.name);
-	item.Unsafe(false);
+	std::ignore = item.Unsafe(false);
 
 	auto phrase = CreatePhrase();
 	auto countries = GetRandomCountries();
@@ -237,7 +262,7 @@ reindexer::Item FullText::MakeItem(benchmark::State&) {
 
 	item["id"] = id_seq_->Next();
 	item["description"] = phrase;
-	item["year"] = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{2000, 2049});
+	item["year"] = RndInt(2000, 2049);
 	item["countries"] = toArray<std::string>(countries);
 
 	return item;
@@ -255,41 +280,39 @@ void FullText::BuildInsertIncremental(State& state) {
 
 	auto err = BaseFixture::Initialize();
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
-		assertf(err.ok(), "%s", err.what());
+		state.SkipWithError(err.what());
+		assertf(err.ok(), "{}", err.what());
 	}
 
 	constexpr int kMaxStepsCount = 50;
-	const auto itemsPerStep = initStepsConfig(kMaxStepsCount, nsdef_, kFastIndexTextName_, state.max_iterations / kMaxIterStepsMultiplier);
+	const auto itemsPerStep = initStepsConfig(kMaxStepsCount, nsdef_, kIndexTextName_, state.max_iterations / kMaxIterStepsMultiplier);
 
 	auto execQuery = [&] {
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq,
-				words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})))
-			.Limit(20);
+		q.Where(kIndexTextName_, CondEq, RndWord1()).Limit(20);
 
 		QueryResults qres;
 		size_t memory = get_alloc_size();
 		err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 			return;
 		}
 		mem += get_alloc_size() - memory;
 	};
 
-	assertrx(!words_.empty());
+	assertrx(Words1Count());
 	const auto itemsWithoutRebuild = size_t((state.max_iterations - state.max_iterations / kMaxIterStepsMultiplier));
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeItem(state);
 		if (!item.Status().ok()) {
-			state.SkipWithError(item.Status().what().c_str());
-			assertf(item.Status().ok(), "%s", item.Status().what());
+			state.SkipWithError(item.Status().what());
+			assertf(item.Status().ok(), "{}", item.Status().what());
 		}
 		err = db_->Insert(nsdef_.name, item);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-			assertf(err.ok(), "%s", err.what());
+			state.SkipWithError(err.what());
+			assertf(err.ok(), "{}", err.what());
 		}
 
 		if ((++i) >= itemsWithoutRebuild && i % itemsPerStep == 0) {
@@ -308,13 +331,13 @@ void FullText::Insert(State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeItem(state);
 		if (!item.Status().ok()) {
-			state.SkipWithError(item.Status().what().c_str());
+			state.SkipWithError(item.Status().what());
 			continue;
 		}
 
 		auto err = db_->Insert(nsdef_.name, item);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -330,7 +353,7 @@ void FullText::BuildCommonIndexes(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -342,13 +365,13 @@ void FullText::BuildInsertLowDiversityNs(State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeLowDiversityItem(idCounter);
 		if (!item.Status().ok()) {
-			state.SkipWithError(item.Status().what().c_str());
+			state.SkipWithError(item.Status().what());
 			continue;
 		}
 
 		auto err = db_->Insert(lowWordsDiversityNsDef_.name, item);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		idCounter++;
 	}
@@ -358,7 +381,7 @@ void FullText::BuildInsertLowDiversityNs(State& state) {
 	QueryResults qres;
 	auto err = db_->Select(q, qres);
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 }
 
@@ -367,12 +390,9 @@ void FullText::Fast3PhraseLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w3 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		const std::string& w1 = RndFrom(words2_);
+		const std::string& w2 = RndFrom(words2_);
+		const std::string& w3 = RndFrom(words2_);
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
 		ftQuery.append("'").append(w1).append(" ").append(w2).append("' ").append(w3);
@@ -382,7 +402,7 @@ void FullText::Fast3PhraseLowDiversity(State& state) {
 		auto err = db_->Select(q, qres);
 
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -395,12 +415,9 @@ void FullText::Fast3WordsLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w3 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		const std::string& w1 = RndFrom(words2_);
+		const std::string& w2 = RndFrom(words2_);
+		const std::string& w3 = RndFrom(words2_);
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
 		ftQuery.append("+").append(w1).append(" +").append(w2).append(" +").append(w3);
@@ -410,11 +427,38 @@ void FullText::Fast3WordsLowDiversity(State& state) {
 		auto err = db_->Select(q, qres);
 
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
 
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+
+void FullText::Fast3WordsSynonymsLowDiversity(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	TurnOnSynonyms();
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(lowWordsDiversityNsDef_.name);
+		const std::string& w1 = RndFrom(words2_);
+		const std::string& w2 = RndFrom(words2_);
+		const std::string& w3 = RndFrom(words2_);
+		std::string ftQuery;
+		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
+		ftQuery.append(w1).append(" +").append(w2).append(" ").append(w3);
+		q.Where(kLowDiversityIndexName_, CondEq, std::move(ftQuery));
+		QueryResults qres;
+
+		auto err = db_->Select(q, qres);
+
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+		cnt += qres.Count();
+	}
+
+	TurnOffSynonyms();
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 
@@ -423,10 +467,8 @@ void FullText::Fast2PhraseLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		const std::string& w1 = RndFrom(words2_);
+		const std::string& w2 = RndFrom(words2_);
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + 32);
 		ftQuery.append("'").append(w1).append(" ").append(w2).append("'~50");
@@ -436,7 +478,7 @@ void FullText::Fast2PhraseLowDiversity(State& state) {
 		auto err = db_->Select(q, qres);
 
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -449,10 +491,8 @@ void FullText::Fast2AndWordLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		const std::string& w1 = RndFrom(words2_);
+		const std::string& w2 = RndFrom(words2_);
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + 32);
 		ftQuery.append("+").append(w1).append(" +").append(w2);
@@ -462,7 +502,7 @@ void FullText::Fast2AndWordLowDiversity(State& state) {
 		auto err = db_->Select(q, qres);
 
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -471,18 +511,15 @@ void FullText::Fast2AndWordLowDiversity(State& state) {
 }
 
 void FullText::Fast3PhraseWithAreasLowDiversity(State& state) {
-	const auto hilightStr = fmt::sprintf("%s = highlight(!,!)", kLowDiversityIndexName_);
+	const auto hilightStr = fmt::format("{} = highlight(!,!)", kLowDiversityIndexName_);
 
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w3 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		const std::string& w1 = RndFrom(words2_);
+		const std::string& w2 = RndFrom(words2_);
+		const std::string& w3 = RndFrom(words2_);
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
 		ftQuery.append("'").append(w1).append(" ").append(w2).append("' ").append(w3);
@@ -491,7 +528,7 @@ void FullText::Fast3PhraseWithAreasLowDiversity(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -499,20 +536,19 @@ void FullText::Fast3PhraseWithAreasLowDiversity(State& state) {
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 void FullText::Fast1WordWithAreaHighDiversity(State& state) {
-	const auto hilightStr = fmt::sprintf("%s = highlight(!,!)", kFastIndexTextName_);
+	const auto hilightStr = fmt::format("{} = highlight(!,!)", kIndexTextName_);
 
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		const std::string& word =
-			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
-		q.Where(kFastIndexTextName_, CondEq, word);
+		const std::string& word = RndWord1();
+		q.Where(kIndexTextName_, CondEq, word);
 		q.AddFunction(hilightStr);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -520,18 +556,15 @@ void FullText::Fast1WordWithAreaHighDiversity(State& state) {
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 void FullText::Fast3WordsWithAreasLowDiversity(State& state) {
-	const auto hilightStr = fmt::sprintf("%s = highlight(!,!)", kLowDiversityIndexName_);
+	const auto hilightStr = fmt::format("{} = highlight(!,!)", kLowDiversityIndexName_);
 
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w3 =
-			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		const std::string& w1 = RndFrom(words2_);
+		const std::string& w2 = RndFrom(words2_);
+		const std::string& w3 = RndFrom(words2_);
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
 		ftQuery.append(w1).append(" ").append(w2).append(" ").append(w3);
@@ -540,7 +573,7 @@ void FullText::Fast3WordsWithAreasLowDiversity(State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -553,9 +586,7 @@ void FullText::BuildFastTextIndex(benchmark::State& state) {
 	size_t mem = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq,
-				words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})))
-			.Limit(20);
+		q.Where(kIndexTextName_, CondEq, RndWord1()).Limit(20);
 
 		QueryResults qres;
 
@@ -564,30 +595,7 @@ void FullText::BuildFastTextIndex(benchmark::State& state) {
 		mem = get_alloc_size() - mem;
 
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-	}
-	double ratio = mem / double(raw_data_sz_);
-	state.SetLabel("Commit ratio: " + std::to_string(ratio));
-}
-
-void FullText::BuildFuzzyTextIndex(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t mem = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq,
-				words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})))
-			.Limit(20);
-
-		QueryResults qres;
-
-		mem = get_alloc_size();
-		auto err = db_->Select(q, qres);
-		mem = get_alloc_size() - mem;
-
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 	double ratio = mem / double(raw_data_sz_);
@@ -603,14 +611,13 @@ void FullText::Fast1WordMatch(benchmark::State& state) {
 		TIMEMEASURE();
 		Query q(nsdef_.name);
 
-		q.Where(kFastIndexTextName_, CondEq,
-				words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})));
+		q.Where(kIndexTextName_, CondEq, RndWord1());
 
 		QueryResults qres;
 
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -623,60 +630,15 @@ void FullText::Fast2WordsMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
-		Query q(nsdef_.name);
-		std::string words =
-			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})) + " " +
-			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
-
-		q.Where(kFastIndexTextName_, CondEq, std::move(words));
+		auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, RndWord1() + ' ' + RndWord1());
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
 
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy1WordMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-
-		q.Where("searchfuzzy", CondEq,
-				words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})));
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy2WordsMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		std::string words =
-			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})) + " " +
-			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
-
-		q.Where("searchfuzzy", CondEq, std::move(words));
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-		cnt += qres.Count();
-	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 
@@ -687,12 +649,12 @@ void FullText::Fast1PrefixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakePrefixWord());
+		q.Where(kIndexTextName_, CondEq, MakePrefixWord());
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -706,46 +668,12 @@ void FullText::Fast2PrefixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
+		q.Where(kIndexTextName_, CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy1PrefixMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakePrefixWord());
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy2PrefixMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -759,11 +687,11 @@ void FullText::Fast1SuffixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakeSuffixWord());
+		q.Where(kIndexTextName_, CondEq, MakeSuffixWord());
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -777,46 +705,12 @@ void FullText::Fast2SuffixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
+		q.Where(kIndexTextName_, CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy1SuffixMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeSuffixWord());
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy2SuffixMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -830,12 +724,12 @@ void FullText::Fast1TypoWordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakeTypoWord());
+		q.Where(kIndexTextName_, CondEq, MakeTypoWord());
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
@@ -849,122 +743,33 @@ void FullText::Fast2TypoWordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
+		q.Where(kIndexTextName_, CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy1TypoWordMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeTypoWord());
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-void FullText::Fuzzy2TypoWordMatch(benchmark::State& state) {
-	AllocsTracker allocsTracker(state, printFlags);
-	size_t cnt = 0;
-	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
-
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-		}
-		cnt += qres.Count();
-	}
-	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
-}
-
-std::string FullText::CreatePhrase() {
-	size_t wordCnt = 100;
-	reindexer::WrSerializer r;
-	r.Reserve(wordCnt * 30);
-
-	for (size_t i = 0; i < wordCnt; i++) {
-		r << words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
-		if (i < wordCnt - 1) {
-			r << " ";
-		}
-	}
-
-	return std::string(r.Slice());
-}
-
-std::string FullText::MakePrefixWord() {
-	auto word = GetRandomUTF16WordByLength(4);
-
-	auto pos = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{2, int(word.length() - 2)});
-	word.erase(pos, word.length() - pos);
-	word += L"*";
-
-	return reindexer::utf16_to_utf8(word);
-}
-
-std::string FullText::MakeSuffixWord() {
-	auto word = GetRandomUTF16WordByLength(4);
-	auto cnt = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(word.length() / 2)});
-	word.erase(0, cnt);
-	word = L"*" + word;
-	return utf16_to_utf8(word);
-}
-
-std::string FullText::MakeTypoWord() {
-	static const std::wstring wchars =
-		L"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
-	auto word = GetRandomUTF16WordByLength(2);
-	word[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(word.length() - 1)})] =
-		wchars.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(wchars.size() - 1)}));
-	word += L"~";
-	return utf16_to_utf8(word);
-}
-
-std::wstring FullText::GetRandomUTF16WordByLength(size_t minLen) {
-	std::wstring word;
-	for (; word.length() < minLen;) {
-		int index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)});
-		auto& w = words_.at(index);
-		word = reindexer::utf8_to_utf16(w);
-	}
-	return word;
 }
 
 std::vector<std::string> FullText::GetRandomCountries(size_t cnt) {
 	std::vector<std::string> result;
 	result.reserve(cnt);
-	for (auto i = cnt; i > 0; i--) {
-		result.emplace_back(
-			countries_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(countries_.size() - 1)})));
+	for (auto i = cnt; i > 0; --i) {
+		result.emplace_back(RndFrom(countries_));
 	}
 	return result;
 }
 
-template <reindexer::FtFastConfig::Optimization opt>
+template <reindexer::FTConfig::Optimization opt>
 void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 	constexpr int kNsSize = 100'000;
-	static reindexer::FtFastConfig ftCfg(1);
-	static IndexOpts ftIndexOpts;
+	static reindexer::FTConfig ftCfg(1);
 	ftCfg.optimization = opt;
-	ftIndexOpts.config = ftCfg.GetJSON({});
+	const auto ftIndexOpts = IndexOpts().SetConfig(IndexFastFT, ftCfg.GetJSON({}));
 	AllocsTracker allocsTracker(state, printFlags);
 
 	dropNamespace(alternatingNs_, state);
@@ -978,8 +783,8 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 			.AddIndex("search_comp_not_index_fields", {"field1", "field2"}, "text", "composite", ftIndexOpts);
 		auto err = db_->AddNamespace(nsDef);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
-			assertf(err.ok(), "%s", err.what());
+			state.SkipWithError(err.what());
+			assertf(err.ok(), "{}", err.what());
 		}
 		values_.clear();
 		values_.reserve(kNsSize);
@@ -997,56 +802,51 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 			bld.End();
 			auto item = db_->NewItem(alternatingNs_);
 			if (!item.Status().ok()) {
-				state.SkipWithError(item.Status().what().c_str());
+				state.SkipWithError(item.Status().what());
 				continue;
 			}
 			err = item.FromJSON(ser.Slice());
 			if (!err.ok()) {
-				state.SkipWithError(err.what().c_str());
+				state.SkipWithError(err.what());
 				continue;
 			}
 			err = db_->Insert(alternatingNs_, item);
 			if (!err.ok()) {
-				state.SkipWithError(err.what().c_str());
+				state.SkipWithError(err.what());
 			}
 		}
 	}
 
 	// Init index build
 	assert(!values_.empty());
-	const Query q1 =
-		Query(alternatingNs_)
-			.Where("search1", CondEq,
-				   values_[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)})]
-					   .search1);
+	const Query q1 = Query(alternatingNs_).Where("search1", CondEq, RndFrom(values_).search1);
 	QueryResults qres;
 	auto err = db_->Select(q1, qres);
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 
-	size_t index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
-	const Query q2 = Query(alternatingNs_).Where("search_comp", CondEq, values_[index].search1 + ' ' + values_[index].search2);
+	const auto& rndValue1 = RndFrom(values_);
+	const Query q2 = Query(alternatingNs_).Where("search_comp", CondEq, rndValue1.search1 + ' ' + rndValue1.search2);
 	qres.Clear();
 	err = db_->Select(q2, qres);
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 
-	index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
-	const Query q3 =
-		Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, values_[index].field1 + ' ' + values_[index].field2);
+	const auto& rndValue2 = RndFrom(values_);
+	const Query q3 = Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, rndValue2.field1 + ' ' + rndValue2.field2);
 	qres.Clear();
 	err = db_->Select(q3, qres);
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 }
 
 void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::State& state) {
 	using namespace std::string_literals;
 	assert(!values_.empty());
-	const int i = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
+	const int i = RndIndexOf(values_);
 	ser.Reset();
 	reindexer::JsonBuilder bld(ser);
 	bld.Put("id", i);
@@ -1057,28 +857,26 @@ void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::Stat
 	bld.Put("rand", rand());
 	bld.End();
 	auto item = db_->NewItem(alternatingNs_);
-	item.Unsafe(false);
+	std::ignore = item.Unsafe(false);
 	if (!item.Status().ok()) {
-		state.SkipWithError(item.Status().what().c_str());
+		state.SkipWithError(item.Status().what());
 		return;
 	}
 	auto err = item.FromJSON(ser.Slice());
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 		return;
 	}
 	err = db_->Update(alternatingNs_, item);
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 
-	const std::string sql =
-		"UPDATE "s + alternatingNs_ + " SET rand = " + std::to_string(rand()) + " WHERE id = " +
-		std::to_string(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)}));
+	const std::string sql = fmt::format("UPDATE {} SET rand = {} WHERE id = {}", alternatingNs_, rand(), RndIndexOf(values_));
 	QueryResults qres;
-	err = db_->Select(sql, qres);
+	err = db_->ExecSQL(sql, qres);
 	if (!err.ok()) {
-		state.SkipWithError(err.what().c_str());
+		state.SkipWithError(err.what());
 	}
 }
 
@@ -1089,16 +887,12 @@ void FullText::AlternatingUpdatesAndSelects(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		state.PauseTiming();
 		updateAlternatingNs(ser, state);
-		Query q =
-			Query(alternatingNs_)
-				.Where("search1", CondEq,
-					   values_[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)})]
-						   .search1);
+		const Query q = Query(alternatingNs_).Where("search1", CondEq, RndFrom(values_).search1);
 		QueryResults qres;
 		state.ResumeTiming();
 		const auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -1110,13 +904,13 @@ void FullText::AlternatingUpdatesAndSelectsByComposite(benchmark::State& state) 
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		state.PauseTiming();
 		updateAlternatingNs(ser, state);
-		const size_t index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
-		Query q = Query(alternatingNs_).Where("search_comp", CondEq, values_[index].search1 + ' ' + values_[index].search2);
+		const auto& rndValue = RndFrom(values_);
+		const Query q = Query(alternatingNs_).Where("search_comp", CondEq, rndValue.search1 + ' ' + rndValue.search2);
 		QueryResults qres;
 		state.ResumeTiming();
 		const auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
@@ -1128,35 +922,27 @@ void FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		state.PauseTiming();
 		updateAlternatingNs(ser, state);
-		const size_t index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
-		Query q = Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, values_[index].field1 + ' ' + values_[index].field2);
+		const auto& rndValue = RndFrom(values_);
+		Query q = Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, rndValue.field1 + ' ' + rndValue.field2);
 		QueryResults qres;
 		state.ResumeTiming();
 		const auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
 
-reindexer::Error FullText::readDictFile(const std::string& fileName, std::vector<std::string>& words) {
-	std::ifstream file;
-	file.open(fileName);
-	if (!file) {
-		return reindexer::Error(errNotValid, "%s", strerror(errno));
-	}
-	std::copy(std::istream_iterator<std::string>(file), std::istream_iterator<std::string>(), std::back_inserter(words));
-	return reindexer::Error();
-}
-
-void FullText::setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FtFastConfig& ftCfg) {
+void FullText::setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FTConfig& ftCfg) {
 	const auto it =
-		std::find_if(nsDef.indexes.begin(), nsDef.indexes.end(), [indexName](const auto& idx) { return idx.name_ == indexName; });
+		std::find_if(nsDef.indexes.begin(), nsDef.indexes.end(), [indexName](const auto& idx) { return idx.Name() == indexName; });
 	assertrx(it != nsDef.indexes.end());
-	it->opts_.config = ftCfg.GetJSON({});
+	auto opts = it->Opts();
+	std::ignore = opts.SetConfig(IndexFastFT, ftCfg.GetJSON({}));
+	it->SetOpts(std::move(opts));
 	const auto err = db_->UpdateIndex(nsDef.name, *it);
 	(void)err;
-	assertf(err.ok(), "err: %s", err.what());
+	assertf(err.ok(), "err: {}", err.what());
 }
 
 unsigned FullText::initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::string_view indexName, benchmark::IterationCount iters) {
@@ -1164,7 +950,7 @@ unsigned FullText::initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::
 	const auto itemsPerStep = totalItems / maxStepsCount + 1;
 	assertrx(itemsPerStep > 2);
 	{
-		static reindexer::FtFastConfig ftCfg(1);
+		static reindexer::FTConfig ftCfg(1);
 		ftCfg.maxRebuildSteps = maxStepsCount;
 		ftCfg.maxStepSize = std::max(5, int(itemsPerStep / 2));
 		setIndexConfig(nsDef, indexName, ftCfg);
@@ -1176,8 +962,10 @@ void FullText::dropNamespace(std::string_view name, benchmark::State& state) {
 	auto err = db_->DropNamespace(name);
 	if (!err.ok()) {
 		if (err.code() != errNotFound || err.what() != "Namespace '" + alternatingNs_ + "' does not exist") {
-			state.SkipWithError(err.what().c_str());
-			assertf(err.ok(), "%s", err.what());
+			state.SkipWithError(err.what());
+			assertf(err.ok(), "{}", err.what());
 		}
 	}
 }
+
+}  // namespace reindexer_benchmarks

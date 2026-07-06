@@ -3,16 +3,13 @@
 #include <benchmark/benchmark.h>
 
 #include "helpers.h"
-#include "vendor/spdlog/spdlog.h"
 
-using benchmark::ConsoleReporter;
-
-namespace benchmark {
+namespace reindexer_benchmarks {
 
 #ifndef _GLIBCXX_DEBUG
-class Reporter : public ConsoleReporter {
+class [[nodiscard]] Reporter : public ::benchmark::ConsoleReporter {
 protected:
-	void PrintHeader(const Run& run) {
+	void PrintHeader(const ::benchmark::BenchmarkReporter::Run& run) {
 		std::string str = FormatString("%-*s %13s %13s", static_cast<int>(name_field_width_), "Benchmark", "Time", "RPS");
 		if (!run.counters.empty()) {
 			if (output_options_ & OO_Tabular) {
@@ -32,12 +29,12 @@ protected:
 		GetOutputStream() << line << "\n" << str << line << "\n";
 	}
 
-	void PrintRunData(const Run& result) {
+	void PrintRunData(const ::benchmark::BenchmarkReporter::Run& result) {
 		auto& Out = GetOutputStream();
 
 		// CHECK ERROR
-		if (result.error_occurred) {
-			IgnoreColorPrint(Out, "ERROR OCCURRED: \'%s\'\n", result.error_message.c_str());
+		if (result.skipped != ::benchmark::internal::NotSkipped) {
+			IgnoreColorPrint(Out, "SKIPPED WITH MESSAGE: \'%s\'\n", result.skip_message.c_str());
 			return;
 		}
 
@@ -62,13 +59,13 @@ protected:
 			const std::size_t cNameLen = std::max(std::string::size_type(10), c.first.length());
 			const auto& s = HumanReadableNumber(c.second.value, true);
 			if (output_options_ & OO_Tabular) {
-				if (c.second.flags & Counter::kIsRate) {
+				if (c.second.flags & ::benchmark::Counter::kIsRate) {
 					IgnoreColorPrint(Out, " %*s/s", cNameLen - 2, s.c_str());
 				} else {
 					IgnoreColorPrint(Out, " %*s", cNameLen, s.c_str());
 				}
 			} else {
-				const char* unit = (c.second.flags & Counter::kIsRate) ? "/s" : "";
+				const char* unit = (c.second.flags & ::benchmark::Counter::kIsRate) ? "/s" : "";
 				IgnoreColorPrint(Out, " %s=%s%s", c.first.c_str(), s.c_str(), unit);
 			}
 		}
@@ -108,15 +105,15 @@ private:
 		va_end(args);
 	}
 
-	inline const char* GetTimeUnitString(TimeUnit unit) {
+	inline const char* GetTimeUnitString(::benchmark::TimeUnit unit) {
 		switch (unit) {
-			case kMillisecond:
+			case ::benchmark::kMillisecond:
 				return "ms";
-			case kMicrosecond:
+			case ::benchmark::kMicrosecond:
 				return "us";
-			case kNanosecond:
+			case ::benchmark::kNanosecond:
 				return "ns";
-			case kSecond:
+			case ::benchmark::kSecond:
 				return "s";
 			default:
 				abort();
@@ -125,4 +122,4 @@ private:
 };
 #endif	// #ifndef _GLIBCXX_DEBUG
 
-}  // namespace benchmark
+}  // namespace reindexer_benchmarks

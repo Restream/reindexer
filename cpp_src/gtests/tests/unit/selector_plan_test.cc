@@ -1,46 +1,10 @@
 #include "selector_plan_test.h"
+#include "json_helpers.h"
 
-template <>
-std::string SelectorPlanTest::readFieldValue<std::string>(const std::string& str, std::string::size_type pos) {
-	pos = findFieldValueStart(str, pos);
-	assertrx(str[pos] == '"');
-	++pos;
-	assertrx(pos < str.size());
-	const std::string::size_type end = str.find_first_of("\" ", pos);
-	assertrx(end != std::string::npos);
-	return str.substr(pos, end - pos);
-}
+namespace reindexer_tests {
 
-template <>
-bool SelectorPlanTest::readFieldValue<bool>(const std::string& str, std::string::size_type pos) {
-	pos = findFieldValueStart(str, pos);
-	if (reindexer::checkIfStartsWith("true", str.substr(pos))) {
-		return true;
-	} else if (reindexer::checkIfStartsWith("false", str.substr(pos))) {
-		return false;
-	} else {
-		assertrx(0);
-	}
-	return false;
-}
-
-template <>
-int SelectorPlanTest::readFieldValue<int>(const std::string& str, std::string::size_type pos) {
-	pos = findFieldValueStart(str, pos);
-	const std::string::size_type end = str.find_first_not_of("+-0123456789", pos);
-	assertrx(end != std::string::npos);
-	assertrx(end != pos);
-	return std::stoi(str.substr(pos, end - pos));
-}
-
-template <>
-int64_t SelectorPlanTest::readFieldValue<int64_t>(const std::string& str, std::string::size_type pos) {
-	pos = findFieldValueStart(str, pos);
-	const std::string::size_type end = str.find_first_not_of("+-0123456789", pos);
-	assertrx(end != std::string::npos);
-	assertrx(end != pos);
-	return std::stoll(str.substr(pos, end - pos));
-}
+using namespace json_helpers;
+using reindexer::IndexOpts;
 
 TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 	FillNs(btreeNs);
@@ -49,10 +13,8 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 		const bool searchByBtreeField = (searchField == kFieldTree1 || searchField == kFieldTree2);
 		for (CondType cond : {CondLt, CondLe, CondGt, CondGe}) {
 			{
-				reindexer::QueryResults qr;
 				const Query query{Query(btreeNs).Explain().Where(searchField, cond, RandInt())};
-				Error err = rt.reindexer->Select(query, qr);
-				ASSERT_TRUE(err.ok()) << err.what();
+				auto qr = rt.Select(query);
 				const std::string& explain = qr.GetExplainResults();
 				// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -64,14 +26,14 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {searchField}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
-					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
-					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {matched[0] == 0 ? "OnlyComparator" : "SingleRange"}));
+					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {indexMethods}));
+					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {matched[0] == 0 ? "Forward" : "SingleRange"}));
 				} else {
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {"-scan", searchField}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "items", {kNsSize}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
-					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"scan", "scan"}));
+					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {scanMethods, scanMethods}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "Comparator"}));
 				}
 			}
@@ -80,9 +42,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 				for (const Query& query :
 					 {Query(btreeNs).Explain().Where(additionalSearchField, CondEq, RandInt()).Where(searchField, cond, RandInt()),
 					  Query(btreeNs).Explain().Where(searchField, cond, RandInt()).Where(additionalSearchField, CondEq, RandInt())}) {
-					reindexer::QueryResults qr;
-					Error err = rt.reindexer->Select(query, qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+					auto qr = rt.Select(query);
 					const std::string& explain = qr.GetExplainResults();
 					// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -94,11 +54,11 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 						if (searchByBtreeField) {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {searchField}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {indexMethods, indexMethods}));
 						} else {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {indexMethods, scanMethods}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "Comparator"}));
 						}
 					}
@@ -109,10 +69,8 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 				const bool sortByBtreeField = (sortField == kFieldTree1 || sortField == kFieldTree2);
 				for (bool desc : {true, false}) {
 					{
-						reindexer::QueryResults qr;
 						const Query query{Query(btreeNs).Explain().Where(searchField, cond, RandInt()).Sort(sortField, desc)};
-						Error err = rt.reindexer->Select(query, qr);
-						ASSERT_TRUE(err.ok()) << err.what();
+						auto qr = rt.Select(query);
 						const std::string& explain = qr.GetExplainResults();
 						// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -123,12 +81,12 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {searchField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {indexMethods}));
 							} else {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {"-scan", searchField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "items", {kNsSize}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"scan", "scan"}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {scanMethods, scanMethods}));
 								ASSERT_NO_FATAL_FAILURE(
 									AssertJsonFieldEqualTo(explain, "type", {desc ? "RevSingleRange" : "SingleRange", "Comparator"}));
 							}
@@ -138,17 +96,18 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {searchField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {indexMethods}));
 							} else {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {"-scan", searchField}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "items", {kNsSize}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"scan", "scan"}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {scanMethods, scanMethods}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "Comparator"}));
 							}
 						}
 					}
 
+					const std::unordered_set<std::string> btreeMethods{"index", "index(cached)"};
 					for (const char* additionalSearchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
 						for (const Query& query : {Query(btreeNs)
 													   .Explain()
@@ -160,9 +119,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 													   .Where(searchField, cond, RandInt())
 													   .Where(additionalSearchField, CondEq, RandInt())
 													   .Sort(sortField, desc)}) {
-							reindexer::QueryResults qr;
-							Error err = rt.reindexer->Select(query, qr);
-							ASSERT_TRUE(err.ok()) << err.what();
+							auto qr = rt.Select(query);
 							const std::string& explain = qr.GetExplainResults();
 							// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -174,10 +131,10 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 								ASSERT_LE(cost[0], cost[1]);
 								if (searchByBtreeField) {
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {indexMethods, indexMethods}));
 								} else {
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {indexMethods, scanMethods}));
 									if (sortByBtreeField) {
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(
 											explain, "type", {desc ? "RevSingleIdset" : "SingleIdset", "Comparator"}));
@@ -201,10 +158,9 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 		const bool searchByBtreeField = (searchField == kFieldTree1 || searchField == kFieldTree2);
 		for (CondType cond : {CondLt, CondLe, CondGt, CondGe}) {
 			{
-				reindexer::QueryResults qr;
 				const Query query{Query(unbuiltBtreeNs).Explain().Where(searchField, cond, RandInt())};
-				Error err = rt.reindexer->Select(query, qr);
-				ASSERT_TRUE(err.ok()) << err.what();
+				SCOPED_TRACE(query.GetSQL());
+				auto qr = rt.Select(query);
 				const std::string& explain = qr.GetExplainResults();
 				// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -218,7 +174,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
 					ASSERT_NO_FATAL_FAILURE(
-						AssertJsonFieldEqualTo(explain, "type", {matched[0] == 0 ? "OnlyComparator" : "UnbuiltSortOrdersIndex"}));
+						AssertJsonFieldEqualTo(explain, "type", {matched[0] == 0 ? "Forward" : "UnbuiltSortOrdersIndex"}));
 				} else {
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {"-scan", searchField}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
@@ -233,15 +189,16 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 				if (additionalSearchField == searchField) {
 					continue;
 				}
-				for (const Query& query :
-					 {Query(unbuiltBtreeNs).Explain().Where(additionalSearchField, CondEq, RandInt()).Where(searchField, cond, RandInt()),
-					  Query(unbuiltBtreeNs)
-						  .Explain()
-						  .Where(searchField, cond, RandInt())
-						  .Where(additionalSearchField, CondEq, RandInt())}) {
-					reindexer::QueryResults qr;
-					Error err = rt.reindexer->Select(query, qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+				for (const Query& query : {Query(unbuiltBtreeNs)
+											   .Explain()
+											   .Where(additionalSearchField, CondEq, RandInt())
+											   .Where(searchField, cond, 0 /*RandInt()*/),
+										   Query(unbuiltBtreeNs)
+											   .Explain()
+											   .Where(searchField, cond, RandInt())
+											   .Where(additionalSearchField, CondEq, RandInt())}) {
+					SCOPED_TRACE(query.GetSQL());
+					auto qr = rt.Select(query);
 					const std::string& explain = qr.GetExplainResults();
 					// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -256,7 +213,6 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
 						} else {
-							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "field", {additionalSearchField, searchField}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "comparators"));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
@@ -276,10 +232,9 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 				const bool sortByBtreeField = (sortField == kFieldTree1 || sortField == kFieldTree2);
 				for (bool desc : {true, false}) {
 					{
-						reindexer::QueryResults qr;
 						const Query query{Query(unbuiltBtreeNs).Explain().Where(searchField, cond, RandInt()).Sort(sortField, desc)};
-						Error err = rt.reindexer->Select(query, qr);
-						ASSERT_TRUE(err.ok()) << err.what();
+						SCOPED_TRACE(query.GetSQL());
+						auto qr = rt.Select(query);
 						const std::string& explain = qr.GetExplainResults();
 						// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
@@ -291,11 +246,12 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index"}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 								if (matched[0] == 0) {
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"OnlyComparator"}));
 									if (sortField == searchField) {
+										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {desc ? "Reverse" : "Forward"}));
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {true}));
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {sortField}));
 									} else {
+										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"Forward"}));
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
 									}
@@ -350,11 +306,9 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 													   .Where(searchField, cond, RandInt())
 													   .Where(additionalSearchField, CondEq, RandInt())
 													   .Sort(sortField, desc)}) {
-							reindexer::QueryResults qr;
-							Error err = rt.reindexer->Select(query, qr);
-							ASSERT_TRUE(err.ok()) << err.what();
+							SCOPED_TRACE(query.GetSQL());
+							auto qr = rt.Select(query);
 							const std::string& explain = qr.GetExplainResults();
-							// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 							const auto cost = GetJsonFieldValues<int64_t>(explain, "cost");
 							ASSERT_EQ(2, cost.size());
@@ -406,12 +360,10 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 	// Check cases, when condition merge algorithm gets empty result sets multiple times in a row
 	const std::string nsName{"conditions_merge_always_false"};
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	for (int id = 0; id < 20; ++id) {
-		Item item = rt.reindexer->NewItem(nsName);
+		Item item(rt.NewItem(nsName));
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		item["id"] = id;
 		item["value"] = 123;
@@ -437,9 +389,7 @@ TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 							   .Where("id", CondSet, VariantArray{})
 							   .Where("value", CondAny, VariantArray{})
 							   .Explain()}) {
-		QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		auto qr = rt.Select(q);
 		ASSERT_EQ(qr.Count(), 0);
 		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "field", {"always_false"}));
 		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "keys", {1}));
@@ -448,3 +398,5 @@ TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "type", {"SingleRange"}));
 	}
 }
+
+}  // namespace reindexer_tests

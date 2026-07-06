@@ -1,7 +1,8 @@
 #include "terminalutils.h"
 
-#include <wchar.h>
+#include <cstdlib>
 #include <cstring>
+#include <wchar.h>
 #include "oscompat.h"
 #include "tools/errors.h"
 #include "utf8cpp/utf8.h"
@@ -11,6 +12,36 @@ namespace reindexer {
 
 bool isStdoutRedirected() { return (!isatty(fileno(stdout))); }
 bool isStdinRedirected() { return (!isatty(fileno(stdin))); }
+
+bool isStdoutAnsiSupported() {
+	if (isStdoutRedirected()) {
+		return false;
+	}
+
+#ifdef _WIN32
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
+	const HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+	if (hOut == INVALID_HANDLE_VALUE || hOut == nullptr) {
+		return false;
+	}
+	DWORD mode = 0;
+	if (!GetConsoleMode(hOut, &mode)) {
+		// Not a native Windows console (e.g. Git Bash / MSYS pseudo-TTY).
+		const char* term = std::getenv("TERM");
+		return term == nullptr || std::strcmp(term, "dumb") != 0;
+	}
+	if (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) {
+		return true;
+	}
+	const DWORD modeWithVt = mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	return SetConsoleMode(hOut, modeWithVt) != 0;
+#else
+	const char* term = std::getenv("TERM");
+	return term == nullptr || std::strcmp(term, "dumb") != 0;
+#endif
+}
 
 Error getTerminalSize(int fd, int& columns, int& lines) {
 	int retCode = -1;

@@ -11,9 +11,14 @@ namespace reindexer::client {
 
 CoroTransaction::~CoroTransaction() {
 	if (!IsFree()) {
-		getConn()->Call({net::cproto::kCmdRollbackTx, i_.requestTimeout_, i_.execTimeout_, lsn_t(), -1, ShardingKeyType::NotSetShard,
-						 nullptr, false, i_.sessionTs_},
-						i_.txId_);
+		try {
+			std::ignore = getConn()->Call({net::cproto::kCmdRollbackTx, i_.requestTimeout_, i_.execTimeout_, lsn_t(), -1,
+										   ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+										  i_.txId_);
+		} catch (std::exception& e) {
+			fprintf(stderr, "reindexer error: unexpected exception in ~CoroTransaction: %s\n", e.what());
+			assertrx_dbg(false);
+		}
 	}
 }
 
@@ -66,7 +71,7 @@ Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
 		case QuerySelect:
 		case QueryTruncate:
 		default:
-			return Error(errParams, "Incorrect query type in transaction modify %d", query.type_);
+			return Error(errParams, "Incorrect query type in transaction modify {}", int(query.type_));
 	}
 }
 
@@ -204,22 +209,23 @@ Item CoroTransaction::NewItem(ClientT* client) {
 template Item CoroTransaction::NewItem<ReindexerImpl>(ReindexerImpl* client);
 
 CoroTransaction::Impl::Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout,
-							std::chrono::milliseconds execTimeout, std::shared_ptr<Namespace>&& ns, int emmiterServerId) noexcept
+							std::chrono::milliseconds execTimeout, std::shared_ptr<Namespace>&& ns, int emitterServerId) noexcept
 	: txId_(txId),
 	  rpcClient_(rpcClient),
 	  requestTimeout_(requestTimeout),
 	  execTimeout_(execTimeout),
 	  localTm_(std::make_unique<TagsMatcher>(ns->GetTagsMatcher())),
 	  ns_(std::move(ns)),
-	  emmiterServerId_(emmiterServerId) {
-	assert(rpcClient_);
-	assert(ns_);
+	  emitterServerId_(emitterServerId) {
+	assertrx(rpcClient_);
+	assertrx(ns_);
 	const auto sessinTsOpt = rpcClient_->conn_.LoginTs();
 	if (sessinTsOpt.has_value()) {
-		sessionTs_ = sessinTsOpt.value();
+		sessionTs_ = *sessinTsOpt;
 	}
 }
 
+// NOLINTNEXTLINE (bugprone-throw-keyword-missing)
 CoroTransaction::Impl::Impl(Error&& status) noexcept : status_(std::move(status)), localTm_(std::make_unique<TagsMatcher>()) {}
 
 CoroTransaction::Impl::Impl(CoroTransaction::Impl&&) noexcept = default;

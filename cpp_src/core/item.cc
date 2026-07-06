@@ -1,18 +1,33 @@
-
 #include "core/item.h"
 #include "core/itemimpl.h"
+#include "core/keyvalue/float_vector.h"
 #include "core/keyvalue/p_string.h"
 #include "core/namespace/namespace.h"
+#include "tools/assertrx.h"
 #include "tools/catch_and_return.h"
 
 namespace reindexer {
 
+Item::Item(ItemImpl* impl, const FieldsFilter& fieldsFilter) : Item{impl} {
+	if (impl_) {
+		impl_->fieldsFilter_ = &fieldsFilter;
+	}
+}
+Item::Item(PayloadType pt, PayloadValue pv, const TagsMatcher& tm, std::shared_ptr<const Schema> schema, const FieldsFilter& fieldsFilter)
+	: Item(new ItemImpl(std::move(pt), std::move(pv), tm, std::move(schema), fieldsFilter)) {}
+
 Item& Item::operator=(Item&& other) noexcept {
 	if (&other != this) {
 		if (impl_) {
-			auto ns = impl_->GetNamespace();
+			auto ns = impl_->GetNamespace().lock();
 			if (ns) {
-				ns->ToPool(impl_);
+				try {
+					ns->ToPool(impl_);
+					// NOLINTBEGIN(bugprone-empty-catch)
+				} catch (...) {
+					assertrx_dbg(false);
+				}
+				// NOLINTEND(bugprone-empty-catch)
 				impl_ = nullptr;
 			}
 		}
@@ -32,23 +47,24 @@ KeyValueType Item::GetIndexType(int field) const noexcept {
 	return impl_->Type().Field(field).Type();
 }
 
-std::string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
+std::string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath(); }
 
 template <>
 Point Item::FieldRef::As<Point>() const {
 	auto va = (operator VariantArray());
 	if (va.size() != 2) {
-		throw Error(errParams, "Unable to convert field with %d scalar values to 2D Point", va.size());
+		throw Error(errParams, "Unable to convert field with {} scalar values to 2D Point", va.size());
 	}
 	return Point(va[0].As<double>(), va[1].As<double>());
 }
 
 Item::FieldRef::operator Variant() const {
+	throwIfNotSet();
 	VariantArray kr;
 	if (field_ >= 0) {
 		itemImpl_->GetPayload().Get(field_, kr);
 	} else {
-		kr = itemImpl_->GetValueByJSONPath(jsonPath_);
+		kr = itemImpl_->GetValueByJSONPath(jsonPath());
 	}
 
 	if (kr.size() != 1) {
@@ -58,19 +74,35 @@ Item::FieldRef::operator Variant() const {
 }
 
 Item::FieldRef::operator VariantArray() const {
+	throwIfNotSet();
 	if (field_ >= 0) {
 		VariantArray kr;
 		itemImpl_->GetPayload().Get(field_, kr);
 		return kr;
 	}
-	return itemImpl_->GetValueByJSONPath(jsonPath_);
+	return itemImpl_->GetValueByJSONPath(jsonPath());
+}
+
+void Item::FieldRef::throwIfAssignFieldMultyJsonPath() const {
+	int field = field_ >= 0 ? field_ : itemImpl_->Type()->FieldByJsonPath(jsonPath());
+
+	if (field < 0) {
+		return;
+	}
+
+	if (auto& fieldPl = itemImpl_->Type().Field(field); fieldPl.JsonPaths().size() > 1) {
+		throw Error(errLogic, "It is not allowed to use fields with multiple json paths in the Item::operator[]. Index name = `{}`",
+					fieldPl.Name());
+	}
 }
 
 Item::FieldRef& Item::FieldRef::operator=(Variant kr) {
-	if (field_ >= 0) {
+	throwIfAssignFieldMultyJsonPath();
+	assertrx_throw(field_ != 0);
+	if (field_ > 0) {
 		itemImpl_->SetField(field_, VariantArray{std::move(kr)});
 	} else {
-		itemImpl_->SetField(jsonPath_, VariantArray{std::move(kr)});
+		itemImpl_->SetField(jsonPath(), VariantArray{std::move(kr)});
 	}
 
 	return *this;
@@ -79,30 +111,43 @@ Item::FieldRef& Item::FieldRef::operator=(Variant kr) {
 Item::FieldRef& Item::FieldRef::operator=(const char* str) { return operator=(p_string(str)); }
 Item::FieldRef& Item::FieldRef::operator=(const std::string& str) { return operator=(p_string(&str)); }
 
-Item::FieldRef& Item::FieldRef::operator=(const VariantArray& krs) {
+Item::FieldRef& Item::FieldRef::operator=(VariantArray krs) {
+	throwIfAssignFieldMultyJsonPath();
+
 	if (field_ >= 0) {
-		itemImpl_->SetField(field_, krs);
+		itemImpl_->SetField(field_, std::move(krs));
 	} else {
-		itemImpl_->SetField(jsonPath_, krs);
+		itemImpl_->SetField(jsonPath(), std::move(krs));
 	}
 	return *this;
 }
 
 template <typename T>
-Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
-	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
-								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>;
-	if (field_ < 0) {
-		VariantArray krs;
-		krs.MarkArray();
-		krs.reserve(arr.size());
-		std::transform(arr.begin(), arr.end(), std::back_inserter(krs), [](const T& t) { return Variant(t); });
-		itemImpl_->SetField(jsonPath_, krs);
+Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
+	constexpr static bool kIsStr = concepts::OneOf<T, std::string, key_string, p_string, std::string_view, const char*>;
+	constexpr static bool kIsFloatVector = concepts::OneOf<T, FloatVector, FloatVectorView, ConstFloatVectorView>;
+
+	const bool isRegularIndex = (field_ >= 0);
+	bool needCjsonModify = !isRegularIndex;
+	if (isRegularIndex) {
+		throwIfAssignFieldMultyJsonPath();
+		auto pl(itemImpl_->GetPayload());
+		needCjsonModify = needCjsonModify || (arr.size() != size_t(pl.GetFieldLen(field_)));
+	}
+	if (needCjsonModify) {
+		auto krs = VariantArray::Create(arr);
+		std::ignore = krs.MarkArray();
+		if (isRegularIndex) {
+			itemImpl_->SetField(field_, std::move(krs));
+		} else {
+			itemImpl_->SetField(jsonPath(), std::move(krs));
+		}
 		return *this;
 	}
 
+	// Fast path, that works only if indexed array size was not changed
 	auto pl(itemImpl_->GetPayload());
-	int pos = pl.ResizeArray(field_, arr.size(), false);
+	int pos = pl.ResizeArray(field_, arr.size(), Append_False);
 
 	if constexpr (kIsStr) {
 		if (itemImpl_->IsUnsafe() || itemImpl_->Type()->Field(field_).Type().Is<KeyValueType::Uuid>()) {
@@ -121,7 +166,23 @@ Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
 				} else {
 					itemImpl_->holder_->emplace_back(make_key_string(elem));
 				}
-				pl.Set(field_, pos++, Variant(p_string{itemImpl_->holder_->back()}, Variant::no_hold_t{}));
+				pl.Set(field_, pos++, Variant(p_string{itemImpl_->holder_->back()}, Variant::noHold));
+			}
+		}
+	} else if constexpr (kIsFloatVector) {
+		if (itemImpl_->IsUnsafe()) {
+			for (auto& elem : arr) {
+				pl.Set(field_, pos++, Variant(ConstFloatVectorView{elem}));
+			}
+		} else {
+			for (auto& elem : arr) {
+				if (elem.IsEmpty()) {
+					pl.Set(field_, pos++, Variant(ConstFloatVectorView{}));
+				} else {
+					[[maybe_unused]] const bool added = itemImpl_->floatVectorsHolder_.Add(FloatVector(elem));
+					assertrx_dbg(added);
+					pl.Set(field_, pos++, Variant(ConstFloatVectorView(itemImpl_->floatVectorsHolder_.Back())));
+				}
 			}
 		}
 	} else {
@@ -132,11 +193,23 @@ Item::FieldRef& Item::FieldRef::operator=(span<const T> arr) {
 	return *this;
 }
 
+void Item::FieldRef::throwIfNotSet() const {
+	if (notSet_) {
+		throw Error{errParams, "Field {} is not set", Name()};
+	}
+}
+
 Item::~Item() {
 	if (impl_) {
-		auto ns = impl_->GetNamespace();
+		auto ns = impl_->GetNamespace().lock();
 		if (ns) {
-			ns->ToPool(impl_);
+			try {
+				ns->ToPool(impl_);
+				// NOLINTBEGIN(bugprone-empty-catch)
+			} catch (...) {
+				assertrx_dbg(false);
+			}
+			// NOLINTEND(bugprone-empty-catch)
 		} else {
 			delete impl_;
 		}
@@ -156,7 +229,7 @@ Error Item::FromCJSON(std::string_view slice, bool pkOnly) & noexcept {
 }
 void Item::FromCJSONImpl(std::string_view slice, bool pkOnly) & { impl_->FromCJSON(slice, pkOnly); }
 
-std::string_view Item::GetCJSON(bool withTagsMatcher) { return impl_->GetCJSON(withTagsMatcher); }
+std::string_view Item::GetCJSON(bool withTagsMatcher) { return impl_->GetCJSON(WithTagsMatcher(withTagsMatcher)); }
 
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
 
@@ -173,19 +246,46 @@ Error Item::GetProtobuf(WrSerializer& wrser) & noexcept { RETURN_RESULT_NOEXCEPT
 int Item::NumFields() const { return impl_->Type().NumFields(); }
 
 Item::FieldRef Item::operator[](int field) const {
-	if (rx_unlikely(field < 0 || field >= impl_->Type().NumFields())) {
-		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; %d]", impl_->Type().NumFields());
+	if (field < 0 || field >= impl_->Type().NumFields()) [[unlikely]] {
+		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; {}]", impl_->Type().NumFields());
 	}
-	return FieldRef(field, impl_);
+	const bool notSet = impl_->Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl_->fieldsFilter_ &&
+						!impl_->fieldsFilter_->ContainsVector(field);
+	return FieldRef(field, impl_, notSet);
 }
 
-Item::FieldRef Item::FieldRefByName(std::string_view name, ItemImpl& impl) noexcept {
+Item::FieldRef Item::FieldRefByNameOrJsonPath(std::string_view name, ItemImpl& impl) {
 	int field = 0;
-	return (impl.Type().FieldByName(name, field)) ? FieldRef(field, &impl) : FieldRef(name, &impl);
+
+	if (!impl.Type().FieldByName(name, field)) {
+		field = impl.Type()->FieldByJsonPath(name);
+		if (field > 0 && impl.Type().Field(field).JsonPaths().size() > 1) {
+			return FieldRef(name, &impl, false);
+		}
+	}
+
+	if (field > 0) {
+		const bool notSet = impl.Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl.fieldsFilter_ &&
+							!impl.fieldsFilter_->ContainsVector(field);
+		return FieldRef(field, &impl, notSet);
+	} else {
+		const auto& sparseIndexes = impl.tagsMatcher().SparseIndexes();
+		if (auto it = std::find_if(sparseIndexes.begin(), sparseIndexes.end(), [&name](const auto& data) { return data.name == name; });
+			it != sparseIndexes.end()) {
+			return FieldRef(impl.tagsMatcher().Path2Name(it->paths[0]), &impl, false);
+		}
+		return FieldRef(name, &impl, false);
+	}
 }
 
-int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
+void Item::Embed(const RdxContext& ctx) { impl_->Embed(ctx); }
+
+const ScalarIndexesSetT& Item::GetScalarIndexMask() const noexcept { return impl_->GetScalarIndexMask(); }
+
+TagName Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }
+size_t Item::GetFieldSize(const FieldsSet& fields) const { return impl_->GetConstPayload().GetFieldSize(fields); }
+size_t Item::GetFieldSize(std::string_view jsonPath) const { return impl_->GetConstPayload().GetFieldSize(jsonPath, impl_->tagsMatcher()); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
 void Item::SetPrecepts(std::vector<std::string> precepts) & { impl_->SetPrecepts(std::move(precepts)); }
 bool Item::IsTagsUpdated() const noexcept { return impl_->tagsMatcher().isUpdated(); }
@@ -198,11 +298,15 @@ Item& Item::Unsafe(bool enable) & noexcept {
 
 lsn_t Item::GetLSN() { return impl_->RealValue().IsFree() ? impl_->Value().GetLSN() : impl_->RealValue().GetLSN(); }
 void Item::setLSN(lsn_t lsn) { impl_->RealValue().IsFree() ? impl_->Value().SetLSN(lsn) : impl_->RealValue().SetLSN(lsn); }
+void Item::setFieldsFilter(const FieldsFilter& fieldsFilter) noexcept { impl_->fieldsFilter_ = &fieldsFilter; }
 
-template Item::FieldRef& Item::FieldRef::operator=(span<const int> arr);
-template Item::FieldRef& Item::FieldRef::operator=(span<const int64_t> arr);
-template Item::FieldRef& Item::FieldRef::operator=(span<const std::string> arr);
-template Item::FieldRef& Item::FieldRef::operator=(span<const double>);
-template Item::FieldRef& Item::FieldRef::operator=(span<const Uuid>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const int> arr);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const int64_t> arr);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const std::string> arr);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const double>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const Uuid>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const FloatVector>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const FloatVectorView>);
+template Item::FieldRef& Item::FieldRef::operator=(std::span<const ConstFloatVectorView>);
 
 }  // namespace reindexer

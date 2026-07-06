@@ -3,16 +3,16 @@
 #include "random_generator.h"
 
 namespace reindexer {
-
 class Query;
-
 }  // namespace reindexer
+
+namespace reindexer_tests {
 
 namespace fuzzing {
 
 class Ns;
 
-class QueryGenerator {
+class [[nodiscard]] QueryGenerator {
 public:
 	QueryGenerator(const std::vector<Ns>& nss, RandomGenerator::ErrFactorType errorFactor) : namespaces_{nss}, rndGen_{errorFactor} {}
 	reindexer::Query operator()();
@@ -23,3 +23,5 @@ private:
 };
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

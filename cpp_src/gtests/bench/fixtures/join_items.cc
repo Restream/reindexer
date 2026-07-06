@@ -1,6 +1,7 @@
 #include "join_items.h"
-
 #include "helpers.h"
+
+namespace reindexer_benchmarks {
 
 reindexer::Error JoinItems::Initialize() {
 	assertrx(db_);
@@ -41,7 +42,7 @@ reindexer::Item JoinItems::MakeItem(benchmark::State&) {
 		item["id"] = id_seq_->Next();
 		item["name"] = randomString("price");
 		// All strings passed in unsafe mode to item must be holded by app
-		item.Unsafe();
+		std::ignore = item.Unsafe();
 		item["location"] = locations_.at(random<size_t>(0, locations_.size() - 1));
 		item["device"] = devices_.at(random<size_t>(0, devices_.size() - 1));
 	}
@@ -58,3 +59,5 @@ std::string JoinItems::randomString(const std::string& prefix) {
 	result += names_.at(random<size_t>(0, names_.size() - 1));
 	return result;
 }
+
+}  // namespace reindexer_benchmarks
