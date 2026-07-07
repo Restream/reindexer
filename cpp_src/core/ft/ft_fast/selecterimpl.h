@@ -5,8 +5,6 @@
 
 namespace reindexer {
 
-static constexpr uint32_t kMinPartialMatchDenominator = 3;
-
 template <typename IdCont>
 void Selector<IdCont>::filterStopWordsAndAdd(TermVariants& termVariants, h_vector<TermVariant, 5>& newVariants) const {
 	const StopWordsSetT& stopWords = holder_.cfg_->stopWords;
@@ -289,13 +287,11 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 
 	size_t totalVids = 0;
 	size_t lowRelevanceLimit = 4 * holder_.cfg_->mergeLimit;
-	const bool hasExcludedDocs = useExternSt == FtUseExternStatuses::Yes && docsExcluded.Any();
 
 	for (auto& variant : termVariants) {
-		size_t matched = 0, vids = 0;
+		size_t matched = 0, vids = 0, excludedCnt = 0;
 		const std::string& patternUtf8 = variant.PatternUtf8();
 		const size_t patternBytes = patternUtf8.length();
-		const uint32_t patternChars = static_cast<uint32_t>(getUTF8StringCharactersCount(patternUtf8));
 		for (const auto& step : holder_.steps) {
 			if (variant.lowRelevance && totalVids >= lowRelevanceLimit) {
 				break;
@@ -311,6 +307,12 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 
 				const char* suffixPtr = wordIt->first;
 				const WordIdType wordId = wordIt->second;
+				const auto& wordEntry = holder_.GetWordEntry(wordId);
+				if (useExternSt == FtUseExternStatuses::Yes && allVidsExcluded(docsExcluded, wordEntry.vids)) {
+					++excludedCnt;
+					continue;
+				}
+
 				const std::string_view word = holder_.GetWord(wordId);
 
 				const size_t wordLengthBeforePattern = suffixPtr - word.data();
@@ -325,11 +327,9 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 					break;
 				}
 
-				const uint32_t wordChars = holder_.GetWordCharsLen(wordId);
-				const uint32_t matchDif = wordChars > patternChars ? wordChars - patternChars : 0;
+				const int matchDif = std::abs(long(word.length() - patternBytes + wordLengthBeforePattern));
 				const float decreasePenalty =
-					static_cast<float>(holder_.cfg_->partialMatchDecrease) * static_cast<float>(matchDif) /
-					static_cast<float>(std::max(patternChars, kMinPartialMatchDenominator));
+					static_cast<float>(holder_.cfg_->partialMatchDecrease * matchDif) / std::max<float>(patternBytes, 3);
 				const float boost = std::max(getTermBoost(word), variant.boost);
 				float proc = std::max<float>(variant.proc - decreasePenalty, isPrefix ? rankingCfg.PrefixMin() : rankingCfg.SuffixMin());
 				proc = std::min<float>(proc, variant.proc);
@@ -340,10 +340,6 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 				if (auto it = wordsFound.find(wordId); it != wordsFound.end()) {
 					res.Subterm(it->second).SetProc(std::max(res.Subterm(it->second).Proc(), proc));
 				} else {
-					const auto& wordEntry = holder_.GetWordEntry(wordId);
-					if (hasExcludedDocs && allVidsExcluded(docsExcluded, wordEntry.vids)) {
-						continue;
-					}
 					res.AddSubterm(wordEntry.vids, word, wordId, proc);
 					wordsFound[wordId] = res.NumSubterms() - 1;
 					matched++;
@@ -359,7 +355,8 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 		}
 
 		if (holder_.cfg_->logLevel >= LogInfo) [[unlikely]] {
-			logFmt(LogInfo, "Lookup variant '{}' ({}%), matched {} words, with {} vids", variant.FullPattern(), variant.proc, matched, vids);
+			logFmt(LogInfo, "Lookup variant '{}' ({}%), matched {} words, with {} vids, excluded {}", variant.FullPattern(), variant.proc,
+				   matched, vids, excludedCnt);
 		}
 	}
 

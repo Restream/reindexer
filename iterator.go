@@ -390,13 +390,18 @@ func (it *Iterator) readItem(toObj any) (item any, rank float32) {
 		return
 	}
 
-	nsIndexOffset := 0
-	if subNSRes > 0 {
-		nsIndexOffset = it.joinedNsIndexOffset(params.nsid)
+	if subNSRes == 0 {
+		if len(it.current.joinObj) > 0 {
+			clear(it.current.joinObj)
+		}
+		return
 	}
+
+	nsIndexOffset := it.joinedNsIndexOffset(params.nsid)
 	for nsIndex := 0; nsIndex < subNSRes; nsIndex++ {
 		siRes := int(it.ser.GetVarUInt())
 		if siRes == 0 {
+			it.current.joinObj[nsIndex] = nil
 			continue
 		}
 		subitems := make([]any, siRes)

@@ -13,6 +13,7 @@ template <typename CharT, typename V>
 class [[nodiscard]] suffix_map {
 public:
 	using word_len_type = uint16_t;
+	using WordsLenContainer = std::vector<word_len_type>;
 	static constexpr size_t kMaxWordLen = std::numeric_limits<word_len_type>::max();
 
 private:
@@ -194,7 +195,7 @@ public:
 	size_t heap_size() noexcept {
 		return (sa_.capacity() + words_.capacity()) * sizeof(int) +	 //
 			   lcp_.capacity() * sizeof(int16_t) +					 //
-			   words_len_.capacity() * sizeof(words_len_[0]) +		 //
+			   words_len_.capacity() * sizeof(WordsLenContainer::value_type) +	 //
 			   mapped_.capacity() * sizeof(V) + text_.capacity();
 	}
 
@@ -224,7 +225,7 @@ protected:
 
 	std::vector<int> sa_, words_;
 	std::vector<int16_t> lcp_;
-	std::vector<word_len_type> words_len_;
+	WordsLenContainer words_len_;
 	std::vector<V> mapped_;
 	std::vector<CharT> text_;
 	bool built_ = false;
