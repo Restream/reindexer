@@ -24,7 +24,6 @@ func benchmarkSerializerBytesOp(b *testing.B, op func(*Serializer, []byte), head
 			ser := NewSerializer(make([]byte, 0, size+headerReserve))
 			b.ReportAllocs()
 			b.SetBytes(int64(size))
-			b.ResetTimer()
 			for b.Loop() {
 				ser.Reset()
 				op(&ser, payload)
@@ -38,12 +37,16 @@ func BenchmarkSerializerWriteIntBits(b *testing.B) {
 	sizes := []uintptr{1, 2, 4, 8}
 	for _, sz := range sizes {
 		b.Run(fmt.Sprintf("size=%d", sz), func(b *testing.B) {
-			ser := NewSerializer(make([]byte, 0, b.N*int(sz)))
+			ser := NewSerializer(make([]byte, 0, 64<<10))
 			b.ReportAllocs()
 			b.SetBytes(int64(sz))
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			var i int64
+			for b.Loop() {
+				if len(ser.buf)+int(sz) > cap(ser.buf) {
+					ser.Reset()
+				}
 				ser.writeIntBits(int64(i), sz)
+				i++
 			}
 			benchBytesSink = ser.buf
 		})
@@ -59,7 +62,6 @@ func BenchmarkSerializerPutFloatVector(b *testing.B) {
 	ser := NewSerializer(make([]byte, 0, len(vec)*4+binary.MaxVarintLen64))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(vec) * 4))
-	b.ResetTimer()
 	for b.Loop() {
 		ser.Reset()
 		ser.PutFloatVector(vec)
@@ -72,7 +74,6 @@ func BenchmarkSerializerWriteString(b *testing.B) {
 	ser := NewSerializer(make([]byte, 0, len(payload)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
-	b.ResetTimer()
 	for b.Loop() {
 		ser.Reset()
 		ser.WriteString(payload)
@@ -93,7 +94,6 @@ func BenchmarkSerializerWriteInts(b *testing.B) {
 	ser := NewSerializer(make([]byte, 0, len(values)*8))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(values) * 8))
-	b.ResetTimer()
 	for b.Loop() {
 		ser.Reset()
 		_, _ = ser.WriteInts(values)
@@ -129,7 +129,6 @@ func BenchmarkSerializerAppend(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(src.Bytes())))
-	b.ResetTimer()
 	for b.Loop() {
 		dst.Reset()
 		dst.Append(src)
@@ -141,7 +140,6 @@ func BenchmarkSerializerGrow(b *testing.B) {
 	b.Run("reuse-capacity", func(b *testing.B) {
 		ser := NewSerializer(make([]byte, 0, 64))
 		b.ReportAllocs()
-		b.ResetTimer()
 		for b.Loop() {
 			ser.Reset()
 			ser.grow(16)
@@ -152,7 +150,6 @@ func BenchmarkSerializerGrow(b *testing.B) {
 	b.Run("nil-buffer", func(b *testing.B) {
 		var ser Serializer
 		b.ReportAllocs()
-		b.ResetTimer()
 		for b.Loop() {
 			ser.buf = nil
 			ser.grow(16)
@@ -164,7 +161,6 @@ func BenchmarkSerializerGrow(b *testing.B) {
 		base := make([]byte, 16, 16)
 		ser := NewSerializer(base)
 		b.ReportAllocs()
-		b.ResetTimer()
 		for b.Loop() {
 			ser.buf = base
 			ser.grow(1)
@@ -179,7 +175,6 @@ func BenchmarkSerializerPutUuid(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(16)
-	b.ResetTimer()
 
 	for b.Loop() {
 		ser.Reset()
@@ -197,7 +192,6 @@ func BenchmarkSerializerGetUuid(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(16)
-	b.ResetTimer()
 	for b.Loop() {
 		if rd.pos >= len(rd.buf) {
 			rd.pos = 0
@@ -215,7 +209,6 @@ func BenchmarkSerializerGetUInt16(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(2)
-	b.ResetTimer()
 	for b.Loop() {
 		if rd.pos+2 > len(rd.buf) {
 			rd.pos = 0
@@ -233,7 +226,6 @@ func BenchmarkSerializerGetUInt32(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(4)
-	b.ResetTimer()
 	for b.Loop() {
 		if rd.pos+4 > len(rd.buf) {
 			rd.pos = 0
@@ -251,7 +243,6 @@ func BenchmarkSerializerGetUInt64(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(8)
-	b.ResetTimer()
 	for b.Loop() {
 		if rd.pos+8 > len(rd.buf) {
 			rd.pos = 0
@@ -291,7 +282,6 @@ func BenchmarkSerializerWriteInts16(b *testing.B) {
 	ser := NewSerializer(make([]byte, 0, len(values)*2))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(values) * 2))
-	b.ResetTimer()
 	for b.Loop() {
 		ser.Reset()
 		_, _ = ser.WriteInts16(values)
@@ -304,7 +294,6 @@ func BenchmarkSerializerPutVString(b *testing.B) {
 	ser := NewSerializer(make([]byte, 0, len(payload)+binary.MaxVarintLen64))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
-	b.ResetTimer()
 	for b.Loop() {
 		ser.Reset()
 		ser.PutVString(payload)
@@ -317,7 +306,6 @@ func BenchmarkSerializerPutVarInt(b *testing.B) {
 		b.Run(fmt.Sprintf("value=%d", value), func(b *testing.B) {
 			ser := NewSerializer(make([]byte, 0, binary.MaxVarintLen64))
 			b.ReportAllocs()
-			b.ResetTimer()
 			for b.Loop() {
 				ser.Reset()
 				ser.PutVarInt(value)
@@ -331,7 +319,6 @@ func BenchmarkSerializerPutVarIntSequence(b *testing.B) {
 	values := [...]int64{0, 42, -42, 8192, -8192}
 	ser := NewSerializer(make([]byte, 0, len(values)*binary.MaxVarintLen64))
 	b.ReportAllocs()
-	b.ResetTimer()
 	for b.Loop() {
 		ser.Reset()
 		for _, value := range values {
@@ -346,7 +333,6 @@ func BenchmarkSerializerPutVarUInt(b *testing.B) {
 		b.Run(fmt.Sprintf("value=%d", value), func(b *testing.B) {
 			ser := NewSerializer(make([]byte, 0, binary.MaxVarintLen64))
 			b.ReportAllocs()
-			b.ResetTimer()
 			for b.Loop() {
 				ser.Reset()
 				ser.PutVarUInt(value)
@@ -360,7 +346,6 @@ func BenchmarkSerializerPutVarUIntSequence(b *testing.B) {
 	values := [...]uint64{0, 42, 8192, 1 << 28}
 	ser := NewSerializer(make([]byte, 0, len(values)*binary.MaxVarintLen64))
 	b.ReportAllocs()
-	b.ResetTimer()
 	for b.Loop() {
 		ser.Reset()
 		for _, value := range values {
@@ -375,7 +360,6 @@ func BenchmarkSerializerPutVarCUInt(b *testing.B) {
 		b.Run(fmt.Sprintf("value=%d", value), func(b *testing.B) {
 			ser := NewSerializer(make([]byte, 0, binary.MaxVarintLen64))
 			b.ReportAllocs()
-			b.ResetTimer()
 			for b.Loop() {
 				ser.Reset()
 				ser.PutVarCUInt(value)
@@ -393,7 +377,6 @@ func BenchmarkSerializerGetVarInt(b *testing.B) {
 			payload := wr.Bytes()
 			rd := NewSerializer(payload)
 			b.ReportAllocs()
-			b.ResetTimer()
 			for b.Loop() {
 				if rd.pos >= len(rd.buf) {
 					rd.pos = 0
