@@ -1,6 +1,9 @@
 #include "ft_fixture.h"
 #include <benchmark/benchmark.h>
 
+#include <algorithm>
+#include <array>
+#include <string_view>
 #include <thread>
 
 #include "allocs_tracker.h"
@@ -19,20 +22,45 @@ using reindexer::QueryResults;
 using reindexer::IndexOpts;
 
 static uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
+constexpr int kShortSuffixPreselectItems = 20'000;
+constexpr std::string_view kShortSuffixPreselectTerm1 = "*на";
+constexpr std::string_view kShortSuffixPreselectTerm2 = "*ка";
+
+std::string MakeShortSuffixPreselectToken(int value, std::string_view suffix) {
+	static constexpr std::array<std::string_view, 16> kSyllables = {"ба", "ве", "го", "ду", "же", "зи", "ко", "лу",
+																   "мы", "пе", "ра", "си", "то", "фу", "ха", "че"};
+	std::string token = "т";
+	++value;
+	do {
+		const std::string_view syllable = kSyllables[value % kSyllables.size()];
+		token.append(syllable.data(), syllable.size());
+		value /= kSyllables.size();
+	} while (value != 0);
+	token.append(suffix.data(), suffix.size());
+	return token;
+}
 
 FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
-	: BaseFixture(db, name, maxItems, 1, false), ftLowDiversityCfg_(1), lowWordsDiversityNsDef_("LowWordsDiversityNs") {
+	: BaseFixture(db, name, maxItems, 1, false),
+	  ftLowDiversityCfg_(1),
+	  lowWordsDiversityNsDef_("LowWordsDiversityNs"),
+	  shortSuffixPreselectNsDef_("ShortSuffixPreselectNs") {
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
 #endif
 	static reindexer::FTConfig ftFastCfg(1);
 	ftFastCfg.optimization = reindexer::FTConfig::Optimization::Memory;
+	static reindexer::FTConfig ftShortSuffixPreselectCfg(1);
+	ftShortSuffixPreselectCfg.optimization = reindexer::FTConfig::Optimization::Memory;
+	ftShortSuffixPreselectCfg.enablePreselectBeforeFt = true;
+	ftShortSuffixPreselectCfg.stopWords.clear();
 
 	// for benching merge_limit break #2244
 	ftLowDiversityCfg_.mergeLimit = 4000;
 	ftLowDiversityCfg_.optimization = reindexer::FTConfig::Optimization::Memory;
 
 	IndexOpts ftFastIndexOpts = IndexOpts().SetConfig(IndexCompositeFastFT, ftFastCfg.GetJSON({})).Dense();
+	IndexOpts ftShortSuffixPreselectIndexOpts = IndexOpts().SetConfig(IndexFastFT, ftShortSuffixPreselectCfg.GetJSON({})).Dense();
 	IndexOpts ftLowDiversityIndexOpts = IndexOpts().SetConfig(IndexCompositeFastFT, ftLowDiversityCfg_.GetJSON({})).Dense();
 
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
@@ -44,13 +72,16 @@ FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
 		.AddIndex("description1", "-", "string", IndexOpts())
 		.AddIndex("description2", "-", "string", IndexOpts())
 		.AddIndex(kLowDiversityIndexName_, {"description1", "description2"}, "text", "composite", std::move(ftLowDiversityIndexOpts));
+	shortSuffixPreselectNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex("year", "tree", "int", IndexOpts())
+		.AddIndex(kFastIndexTextPreselectName_, "text", "string", std::move(ftShortSuffixPreselectIndexOpts));
 }
 template <reindexer::FTConfig::Optimization opt>
 void FullText::UpdateIndex(State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		static reindexer::FTConfig ftCfg(1);
+		reindexer::FTConfig ftCfg(1);
 		ftCfg.optimization = opt;
 		setIndexConfig(nsdef_, kFastIndexTextName_, ftCfg);
 	}
@@ -112,6 +143,20 @@ reindexer::Error FullText::Initialize() {
 	err = db_->AddNamespace(lowWordsDiversityNsDef_);
 	if (!err.ok()) {
 		return err;
+	}
+	err = db_->AddNamespace(shortSuffixPreselectNsDef_);
+	if (!err.ok()) {
+		return err;
+	}
+	for (int id = 0; id < kShortSuffixPreselectItems; ++id) {
+		auto item = MakeShortSuffixPreselectItem(id);
+		if (!item.Status().ok()) {
+			return item.Status();
+		}
+		err = db_->Insert(shortSuffixPreselectNsDef_.name, item);
+		if (!err.ok()) {
+			return err;
+		}
 	}
 
 	return {};
@@ -182,6 +227,17 @@ void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::o
 	wrapFast.SetOptions(Register("Fast1TypoWordMatch.OptByMem", &FullText::Fast1TypoWordMatch, this));
 	wrapFast.SetOptions(Register("Fast2TypoWordMatch.OptByMem", &FullText::Fast2TypoWordMatch, this));
 	wrapFast.SetOptions(Register("Fast1WordWithAreaHighDiversity.OptByMem", &FullText::Fast1WordWithAreaHighDiversity, this));
+	auto shortSuffixPreselect = [this](benchmark::State& state, unsigned terms, ShortSuffixPreselectProfile profile) {
+		ShortSuffixPreselect(state, terms, profile);
+	};
+	static constexpr std::array shortSuffixPreselectProfiles{
+		std::pair{"Zero", ShortSuffixPreselectProfile::Zero},   std::pair{"Tiny", ShortSuffixPreselectProfile::Tiny},
+		std::pair{"Small", ShortSuffixPreselectProfile::Small}, std::pair{"Medium", ShortSuffixPreselectProfile::Medium},
+		std::pair{"Half", ShortSuffixPreselectProfile::Half},   std::pair{"Full", ShortSuffixPreselectProfile::Full}};
+	for (const auto& [name, profile] : shortSuffixPreselectProfiles) {
+		wrapSlow.SetOptions(RegisterF(std::string("Fast1ShortSuffixPreselect") + name, shortSuffixPreselect, 1u, profile));
+		wrapSlow.SetOptions(RegisterF(std::string("Fast2ShortSuffixPreselect") + name, shortSuffixPreselect, 2u, profile));
+	}
 
 	Register("SetOptimizationByCPU", &FullText::UpdateIndex<CPU>, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 
@@ -247,6 +303,25 @@ reindexer::Item FullText::MakeLowDiversityItem(int id) {
 	item["description1"] = createText();
 	item["description2"] = createText();
 	return item;
+}
+
+reindexer::Item FullText::MakeShortSuffixPreselectItem(int id) {
+	auto item = db_->NewItem(shortSuffixPreselectNsDef_.name);
+	std::ignore = item.Unsafe(false);
+
+	item["id"] = id;
+	item["year"] = 2000 + (id % 50);
+	item[kFastIndexTextPreselectName_] = MakeShortSuffixPreselectText(id);
+	return item;
+}
+
+std::string FullText::MakeShortSuffixPreselectText(int id) {
+	const int tokenId = id % 500;
+	std::string text = MakeShortSuffixPreselectToken(tokenId, "на");
+	text += ' ';
+	text += MakeShortSuffixPreselectToken(tokenId, "ка");
+	text += " общий текст";
+	return text;
 }
 
 reindexer::Item FullText::MakeItem(benchmark::State&) {
@@ -709,6 +784,70 @@ void FullText::Fast2SuffixMatch(benchmark::State& state) {
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+		cnt += qres.Count();
+	}
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+
+void FullText::ApplyShortSuffixPreselectFilter(Query& q, ShortSuffixPreselectProfile profile) const {
+	switch (profile) {
+		case ShortSuffixPreselectProfile::Zero:
+			q.Where("year", CondEq, 1999);
+			break;
+		case ShortSuffixPreselectProfile::Tiny:
+			q.Where("year", CondEq, 2000);
+			break;
+		case ShortSuffixPreselectProfile::Small:
+			q.Where("year", CondRange, {2000, 2004});
+			break;
+		case ShortSuffixPreselectProfile::Medium:
+			q.Where("year", CondRange, {2000, 2011});
+			break;
+		case ShortSuffixPreselectProfile::Half:
+			q.Where("year", CondRange, {2000, 2024});
+			break;
+		case ShortSuffixPreselectProfile::Full:
+			q.Where("year", CondRange, {2000, 2049});
+			break;
+	}
+}
+
+void FullText::ShortSuffixPreselect(benchmark::State& state, unsigned terms, ShortSuffixPreselectProfile profile) {
+	const std::string dsl = terms == 1 ? std::string(kShortSuffixPreselectTerm1)
+									   : std::string(kShortSuffixPreselectTerm1).append(" ").append(kShortSuffixPreselectTerm2);
+	auto makeQuery = [&] {
+		Query q(shortSuffixPreselectNsDef_.name);
+		ApplyShortSuffixPreselectFilter(q, profile);
+		q.Where(kFastIndexTextPreselectName_, CondEq, dsl).Limit(20);
+		return q;
+	};
+	{
+		QueryResults qres;
+		auto err = db_->Select(makeQuery(), qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+			return;
+		}
+		if (profile == ShortSuffixPreselectProfile::Zero) {
+			if (qres.Count() != 0) {
+				state.SkipWithError("zero preselect benchmark unexpectedly returned results");
+				return;
+			}
+		} else if (qres.Count() == 0) {
+			state.SkipWithError("short suffix preselect benchmark returned no results");
+			return;
+		}
+	}
+	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("ShortSuffixPreselect.gist");
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		TIMEMEASURE();
+		QueryResults qres;
+		auto err = db_->Select(makeQuery(), qres);
 		if (!err.ok()) {
 			state.SkipWithError(err.what());
 		}

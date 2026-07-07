@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 #include "libdivsufsort/divsufsort.h"
@@ -8,6 +11,12 @@ namespace reindexer {
 
 template <typename CharT, typename V>
 class [[nodiscard]] suffix_map {
+public:
+	using word_len_type = uint16_t;
+	using WordsLenContainer = std::vector<word_len_type>;
+	static constexpr size_t kMaxWordLen = std::numeric_limits<word_len_type>::max();
+
+private:
 	typedef size_t size_type;
 	typedef unsigned char char_type;
 
@@ -133,8 +142,11 @@ public:
 	}
 
 	int insert(std::string_view word, const V& val) {
+		if (word.length() > kMaxWordLen) [[unlikely]] {
+			throw std::length_error("suffix_map word length overflow");
+		}
 		int wpos = text_.size();
-		size_t real_len = word.length();
+		const auto real_len = static_cast<word_len_type>(word.length());
 		text_.insert(text_.end(), word.begin(), word.end());
 		text_.emplace_back('\0');
 		mapped_.insert(mapped_.end(), real_len + 1, val);
@@ -146,7 +158,7 @@ public:
 
 	const CharT* word_at(int idx) const noexcept { return &text_[words_[idx]]; }
 
-	int16_t word_len_at(int idx) const noexcept { return words_len_[idx]; }
+	word_len_type word_len_at(int idx) const noexcept { return words_len_[idx]; }
 
 	void build() {
 		if (built_) {
@@ -181,8 +193,9 @@ public:
 
 	const std::vector<CharT>& text() const noexcept { return text_; }
 	size_t heap_size() noexcept {
-		return (sa_.capacity() + words_.capacity()) * sizeof(int) +			  //
-			   (lcp_.capacity() + words_len_.capacity()) * sizeof(int16_t) +  //
+		return (sa_.capacity() + words_.capacity()) * sizeof(int) +	 //
+			   lcp_.capacity() * sizeof(int16_t) +					 //
+			   words_len_.capacity() * sizeof(WordsLenContainer::value_type) +	 //
 			   mapped_.capacity() * sizeof(V) + text_.capacity();
 	}
 
@@ -212,7 +225,7 @@ protected:
 
 	std::vector<int> sa_, words_;
 	std::vector<int16_t> lcp_;
-	std::vector<uint8_t> words_len_;
+	WordsLenContainer words_len_;
 	std::vector<V> mapped_;
 	std::vector<CharT> text_;
 	bool built_ = false;

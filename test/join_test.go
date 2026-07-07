@@ -32,6 +32,18 @@ type TestItemWithJoinedField struct {
 	JoinedField []*TestJoinItem `reindex:"j,,joined"`
 }
 
+type testJoinClearMainItem struct {
+	ID    int                     `reindex:"id,hash,pk"`
+	Left  []*testJoinClearSubItem `reindex:"left,,joined"`
+	Right []*testJoinClearSubItem `reindex:"right,,joined"`
+}
+
+type testJoinClearSubItem struct {
+	ID       int    `reindex:"id,,pk"`
+	ParentID int    `reindex:"parent_id,hash"`
+	Side     string `reindex:"side,hash"`
+}
+
 type explainNs struct {
 	Id                int          `reindex:"id,,pk"`
 	Data              int          `reindex:"data"`
@@ -1129,6 +1141,143 @@ func TestJoinedFieldUpsert(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, len(j), 0)
 	require.NotContains(t, string(j), "JoinedField")
+}
+
+func TestNextObjWithJoinedField(t *testing.T) {
+	t.Parallel()
+
+	mainID := rand.Intn(1000000) + 1000000
+	joinedID := mainID + 1
+	mainItem := TestItemWithJoinedField{Id: mainID}
+	joinedItem := &TestJoinItem{ID: joinedID, Name: "joined_next_obj"}
+
+	require.NoError(t, DB.Upsert(testJoinedFieldNs, mainItem))
+	require.NoError(t, DB.Upsert(testJoinItemsNs, joinedItem))
+
+	it := DB.Query(testJoinedFieldNs).
+		WhereInt("id", reindexer.EQ, mainID).
+		InnerJoin(DB.Query(testJoinItemsNs).WhereInt("id", reindexer.EQ, joinedID), "j").
+		On("id", reindexer.LT, "id").
+		Exec(t)
+	defer it.Close()
+
+	var item TestItemWithJoinedField
+	require.True(t, it.NextObj(&item))
+	require.NoError(t, it.Error())
+	require.Len(t, item.JoinedField, 1)
+	require.Equal(t, joinedID, item.JoinedField[0].ID)
+	require.Equal(t, joinedItem.Name, item.JoinedField[0].Name)
+	require.False(t, it.Next())
+
+	it = DB.Query(testJoinedFieldNs).
+		WhereInt("id", reindexer.EQ, mainID).
+		InnerJoin(DB.Query(testJoinItemsNs).WhereInt("id", reindexer.EQ, joinedID), "j").
+		On("id", reindexer.LT, "id").
+		Exec(t)
+	defer it.Close()
+
+	require.True(t, it.Next())
+	joinedObjects, err := it.JoinedObjects("j")
+	require.NoError(t, err)
+	require.Len(t, joinedObjects, 1)
+	require.Equal(t, joinedID, joinedObjects[0].(*TestJoinItem).ID)
+}
+
+func TestJoinedObjectsClearedForEmptyJoinedField(t *testing.T) {
+	mainNs, joinedNs := openJoinClearNamespaces(t)
+
+	require.NoError(t, DB.Upsert(mainNs, testJoinClearMainItem{ID: 1}))
+	require.NoError(t, DB.Upsert(mainNs, testJoinClearMainItem{ID: 2}))
+	require.NoError(t, DB.Upsert(joinedNs, testJoinClearSubItem{ID: 11, ParentID: 1, Side: "left"}))
+	require.NoError(t, DB.Upsert(joinedNs, testJoinClearSubItem{ID: 12, ParentID: 1, Side: "right"}))
+	require.NoError(t, DB.Upsert(joinedNs, testJoinClearSubItem{ID: 22, ParentID: 2, Side: "right"}))
+
+	it := DB.Query(mainNs).
+		WhereInt("id", reindexer.SET, 1, 2).
+		Sort("id", false).
+		LeftJoin(DB.Query(joinedNs).WhereString("side", reindexer.EQ, "left"), "left").
+		On("id", reindexer.EQ, "parent_id").
+		LeftJoin(DB.Query(joinedNs).WhereString("side", reindexer.EQ, "right"), "right").
+		On("id", reindexer.EQ, "parent_id").
+		Exec(t)
+	defer it.Close()
+
+	require.True(t, it.Next())
+	item := it.Object().(*testJoinClearMainItem)
+	require.Equal(t, 1, item.ID)
+	leftObjects, err := it.JoinedObjects("left")
+	require.NoError(t, err)
+	require.Len(t, leftObjects, 1)
+	require.Equal(t, 11, leftObjects[0].(*testJoinClearSubItem).ID)
+	rightObjects, err := it.JoinedObjects("right")
+	require.NoError(t, err)
+	require.Len(t, rightObjects, 1)
+	require.Equal(t, 12, rightObjects[0].(*testJoinClearSubItem).ID)
+
+	require.True(t, it.Next())
+	item = it.Object().(*testJoinClearMainItem)
+	require.Equal(t, 2, item.ID)
+	leftObjects, err = it.JoinedObjects("left")
+	require.NoError(t, err)
+	require.Empty(t, leftObjects)
+	rightObjects, err = it.JoinedObjects("right")
+	require.NoError(t, err)
+	require.Len(t, rightObjects, 1)
+	require.Equal(t, 22, rightObjects[0].(*testJoinClearSubItem).ID)
+
+	require.False(t, it.Next())
+	require.NoError(t, it.Error())
+}
+
+func TestJoinedObjectsClearedWhenRowHasNoJoinedItems(t *testing.T) {
+	mainNs, joinedNs := openJoinClearNamespaces(t)
+
+	require.NoError(t, DB.Upsert(mainNs, testJoinClearMainItem{ID: 1}))
+	require.NoError(t, DB.Upsert(mainNs, testJoinClearMainItem{ID: 2}))
+	require.NoError(t, DB.Upsert(joinedNs, testJoinClearSubItem{ID: 11, ParentID: 1, Side: "left"}))
+
+	it := DB.Query(mainNs).
+		WhereInt("id", reindexer.SET, 1, 2).
+		Sort("id", false).
+		LeftJoin(DB.Query(joinedNs).WhereString("side", reindexer.EQ, "left"), "left").
+		On("id", reindexer.EQ, "parent_id").
+		Exec(t)
+	defer it.Close()
+
+	require.True(t, it.Next())
+	item := it.Object().(*testJoinClearMainItem)
+	require.Equal(t, 1, item.ID)
+	leftObjects, err := it.JoinedObjects("left")
+	require.NoError(t, err)
+	require.Len(t, leftObjects, 1)
+	require.Equal(t, 11, leftObjects[0].(*testJoinClearSubItem).ID)
+
+	require.True(t, it.Next())
+	item = it.Object().(*testJoinClearMainItem)
+	require.Equal(t, 2, item.ID)
+	leftObjects, err = it.JoinedObjects("left")
+	require.NoError(t, err)
+	require.Empty(t, leftObjects)
+
+	require.False(t, it.Next())
+	require.NoError(t, it.Error())
+}
+
+func openJoinClearNamespaces(t *testing.T) (mainNs, joinedNs string) {
+	t.Helper()
+
+	suffix := rand.Int()
+	mainNs = fmt.Sprintf("test_join_clear_main_%d", suffix)
+	joinedNs = fmt.Sprintf("test_join_clear_joined_%d", suffix)
+
+	require.NoError(t, DB.OpenNamespace(mainNs, reindexer.DefaultNamespaceOptions().NoStorage(), testJoinClearMainItem{}))
+	require.NoError(t, DB.OpenNamespace(joinedNs, reindexer.DefaultNamespaceOptions().NoStorage(), testJoinClearSubItem{}))
+	t.Cleanup(func() {
+		require.NoError(t, DB.DropNamespace(mainNs))
+		require.NoError(t, DB.DropNamespace(joinedNs))
+	})
+
+	return mainNs, joinedNs
 }
 
 func TestJoinNonOpenedNs(t *testing.T) {

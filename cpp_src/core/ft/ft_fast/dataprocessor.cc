@@ -1,5 +1,6 @@
 ﻿#include "dataprocessor.h"
 #include <chrono>
+#include <limits>
 #include "core/ft/numtotext.h"
 #include "core/ft/typos.h"
 
@@ -13,6 +14,10 @@ using std::chrono::duration_cast;
 using std::chrono::milliseconds;
 
 namespace reindexer {
+
+static constexpr size_t kMaxFtWordBytes = std::numeric_limits<suffix_map<char, WordIdType>::word_len_type>::max();
+
+static bool IsFtWordIndexable(std::string_view word) noexcept { return !word.empty() && word.size() <= kMaxFtWordBytes; }
 
 template <typename IdCont>
 void DataProcessor<IdCont>::Process(bool multithread) {
@@ -74,6 +79,9 @@ typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuf
 	word_hash wh;
 
 	suffix.reserve(words_um.size() * 20, words_um.size());
+	if (words.empty()) {
+		words.reserve(words_um.size());
+	}
 
 	WordsVector found;
 	found.reserve(words_um.size());
@@ -262,11 +270,15 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 				assertrx_throw(field < fieldscount);
 
 				const std::vector<WordWithPos>& occurences = task->GetResults();
-				vdoc.wordsCount[field] = occurences.size();
+				vdoc.wordsCount[field] = 0.0;
 
 				for (const auto& occurence : occurences) {
+					if (!IsFtWordIndexable(occurence.word)) {
+						continue;
+					}
+					++vdoc.wordsCount[field];
 					const auto whash = h(occurence.word);
-					if (occurence.word.empty() || cfg->stopWords.find(occurence.word, whash) != cfg->stopWords.end()) {
+					if (cfg->stopWords.find(occurence.word, whash) != cfg->stopWords.end()) {
 						continue;
 					}
 
@@ -370,6 +382,9 @@ void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& w
 	auto& vdoc(holder_.vdocs_[docType]);
 	std::ignore = NumToText::convert(word, container);
 	for (const auto numberWord : container) {
+		if (!IsFtWordIndexable(numberWord)) {
+			continue;
+		}
 		WordEntry wentry;
 		auto idxIt = words_um.emplace(numberWord, std::move(wentry)).first;
 		const int mfcnt = idxIt->second.vids_.Add(docType, insertPos, field, arrayIdx);

@@ -312,7 +312,8 @@ func mkSlice(v *reflect.Value, count int) (offset int) {
 		if offset == 0 {
 			v.Set(reflect.MakeSlice(v.Type(), count, count))
 		} else {
-			v.Set(reflect.AppendSlice(*v, reflect.MakeSlice(v.Type(), count, count)))
+			v.Grow(count)
+			v.SetLen(offset + count)
 		}
 	}
 	return

@@ -124,11 +124,13 @@ func (r *rpcEncoder) update() {
 
 func (r *rpcEncoder) bytes() []byte {
 	if r.enableSnappy {
-		out := snappy.Encode(nil, r.ser.Bytes()[cprotoHdrLen:])
+		buf := r.ser.Bytes()
+		out := snappy.Encode(nil, buf[cprotoHdrLen:])
 		r.ser.Truncate(cprotoHdrLen)
 		r.ser.Write(out)
-		*(*uint16)(unsafe.Pointer(&r.ser.Bytes()[4])) |= cprotoVersionCompressionFlag
-		*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])) = uint32(len(r.ser.Bytes()) - cprotoHdrLen)
+		buf = r.ser.Bytes()
+		*(*uint16)(unsafe.Pointer(&buf[4])) |= cprotoVersionCompressionFlag
+		*(*uint32)(unsafe.Pointer(&buf[8])) = uint32(len(buf) - cprotoHdrLen)
 	}
 	return r.ser.Bytes()
 }
