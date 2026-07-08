@@ -5,7 +5,7 @@
 
 namespace reindexer_server {
 
-class LoggerWrapper {
+class [[nodiscard]] LoggerWrapper {
 public:
 	LoggerWrapper() = default;
 	LoggerWrapper(const char* name) : logger_(spdlog::get(name)) {}

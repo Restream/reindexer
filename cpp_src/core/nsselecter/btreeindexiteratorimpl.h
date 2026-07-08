@@ -1,286 +1,231 @@
 #pragma once
 
 #include <stddef.h>
-#include <climits>
-#include "core/idset.h"
-#include "core/type_consts.h"
+#include "core/idset/idset.h"
 
 namespace reindexer {
+namespace index {
+namespace iterators {
 
-template <class T>
-class BtreeIndexIteratorImpl {
+template <class IndexIterator, class IdSetIterator, class IdSetIteratorRange>
+class [[nodiscard]] BtreeIndexIteratorImplBase {
 public:
-	enum class IdsetType { Plain = 0, Btree };
+	using IndexIteratorType = IndexIterator;
+	using IdSetIteratorType = IdSetIterator;
 
-	explicit BtreeIndexIteratorImpl(const T& idxMap) : idxMap_(idxMap) {}
-	virtual ~BtreeIndexIteratorImpl() = default;
+	BtreeIndexIteratorImplBase() = default;
+	// NOLINTNEXTLINE(performance-unnecessary-value-param)
+	BtreeIndexIteratorImplBase(IndexIterator begin, IndexIterator end) : indexItBegin_(begin), indexItEnd_(end), indexIt_(indexItBegin_) {}
+	// NOLINTNEXTLINE(performance-unnecessary-value-param)
+	BtreeIndexIteratorImplBase(IndexIterator begin, IndexIterator end, const IdSetIteratorRange& nullValuesRange, size_t nullValuesCount)
+		: indexItBegin_(begin),
+		  indexItEnd_(end),
+		  indexIt_(indexItBegin_),
+		  nullValuesRange_(nullValuesRange),
+		  nullValuesIt_(nullValuesRange_.begin()),
+		  nullValuesCount_(nullValuesCount) {}
+	~BtreeIndexIteratorImplBase() = default;
 
-	virtual bool isOver() const noexcept = 0;
-	virtual void shiftToBegin() noexcept = 0;
-	virtual void next() noexcept = 0;
-
-	bool shiftToNextIdset() noexcept {
-		if (isOver()) {
-			return false;
+	std::pair<size_t, bool> MaxIterations(size_t limit) const noexcept {
+		size_t iterations = 0;
+		auto it = indexItBegin_;
+		for (; iterations < limit && it != indexItEnd_; ++it) {
+			iterations += it->second.Unsorted().Size();
 		}
-		for (next(); !isOver() && getCurrentIdsetSize() == 0;) {
-			next();
+		if ((nullValuesCount_ > 0) && (iterations + nullValuesCount_ < limit)) {
+			iterations += nullValuesCount_;
 		}
-		if (isOver()) {
-			return false;
-		}
-		shiftIdsetToBegin();
-		updateCurrentValue();
-		return true;
+		return {iterations, it == indexItEnd_};
 	}
 
-	void shiftIdsetToBegin() {
-		switch (currentIdsetType_) {
-			case IdsetType::Btree:
-				shiftBtreeIdsetToBegin();
-				break;
-			case IdsetType::Plain:
-				shiftPlainIdsetToBegin();
-				break;
+protected:
+	void skipEmptyIdSets() noexcept {
+		while ((indexIt_ != indexItEnd_) && (indexIt_->second.Unsorted().Size() == 0)) {
+			++indexIt_;
 		}
 	}
 
-	void shiftIdsetToNext() {
-		switch (currentIdsetType_) {
-			case IdsetType::Btree:
-				shiftBtreeIdsetToNext();
-				break;
-			case IdsetType::Plain:
-				shiftPlainIdsetToNext();
-				break;
+	IndexIterator indexItBegin_;
+	IndexIterator indexItEnd_;
+	IndexIterator indexIt_;
+	IdSetIterator idsetIt_;
+	IdSetIteratorRange idsetRange_;
+	IdSetIteratorRange nullValuesRange_;
+	IdSetIterator nullValuesIt_;
+	size_t nullValuesCount_ = 0;
+	bool nullValuesMode_ = false;
+};
+
+template <class IndexMap>
+class [[nodiscard]] BtreeIndexForwardIteratorImpl
+	: public BtreeIndexIteratorImplBase<typename IndexMap::const_iterator, typename IdSet::idset_iterator,
+										typename IdSet::idset_iterator_range> {
+	using Base =
+		BtreeIndexIteratorImplBase<typename IndexMap::const_iterator, typename IdSet::idset_iterator, typename IdSet::idset_iterator_range>;
+
+public:
+	BtreeIndexForwardIteratorImpl() = default;
+	BtreeIndexForwardIteratorImpl(Base::IndexIteratorType begin, Base::IndexIteratorType end) : Base(begin, end) {}
+	BtreeIndexForwardIteratorImpl(Base::IndexIteratorType begin, Base::IndexIteratorType end, const IdSet& nullValues)
+		: Base(begin, end, nullValues.idset_range(), nullValues.Size()) {}
+
+	void Start() noexcept {
+		if (this->nullValuesCount_ > 0) {
+			this->nullValuesIt_ = this->nullValuesRange_.begin();
+			this->nullValuesMode_ = true;
+		} else {
+			std::ignore = moveToIndexBegin();
 		}
 	}
-	bool isIdsetOver() const noexcept {
-		switch (currentIdsetType_) {
-			case IdsetType::Btree:
-				return isBtreeIdsetOver();
-			case IdsetType::Plain:
-				return isPlainIdsetOver();
-			default:
-				std::abort();
+
+	std::pair<bool, IdType> Next(IdType lastVal) noexcept {
+		if (this->nullValuesMode_) {
+			while (this->nullValuesIt_ != this->nullValuesRange_.end() && *this->nullValuesIt_ <= lastVal) {
+				++this->nullValuesIt_;
+			}
+			if (this->nullValuesIt_ != this->nullValuesRange_.end()) {
+				return {true, *this->nullValuesIt_};
+			}
+			this->nullValuesMode_ = false;
+			if (moveToIndexBegin()) {
+				if (this->idsetIt_ != this->idsetRange_.end()) {
+					return {true, *this->idsetIt_};
+				}
+			}
+		} else if (this->indexIt_ != this->indexItEnd_) {
+			while (this->idsetIt_ != this->idsetRange_.end() && *this->idsetIt_ <= lastVal) {
+				++this->idsetIt_;
+			}
+			if (this->idsetIt_ != this->idsetRange_.end()) {
+				return {true, *this->idsetIt_};
+			}
+			++this->indexIt_;
+			if (moveToValidIdset()) {
+				return {true, *this->idsetIt_};
+			}
+		}
+		return {false, IdType::Zero()};
+	}
+
+	void SkipKey() noexcept {
+		if (this->nullValuesMode_) {
+			std::ignore = moveToIndexBegin();
+			this->nullValuesMode_ = false;
+		} else {
+			if (this->indexIt_ != this->indexItEnd_) {
+				++this->indexIt_;
+				std::ignore = moveToValidIdset();
+			}
 		}
 	}
-	void updateCurrentValue() noexcept {
-		switch (currentIdsetType_) {
-			case IdsetType::Btree:
-				currVal_ = getBtreeIdsetCurrentValue();
-				break;
-			case IdsetType::Plain:
-				currVal_ = getPlainIdsetCurrentValue();
-				break;
-			default:
-				std::abort();
+
+private:
+	bool moveToIndexBegin() noexcept {
+		this->indexIt_ = this->indexItBegin_;
+		return moveToValidIdset();
+	}
+
+	bool moveToValidIdset() noexcept {
+		this->skipEmptyIdSets();
+		if (this->indexIt_ != this->indexItEnd_) {
+			this->idsetRange_ = this->indexIt_->second.Unsorted().idset_range();
+			this->idsetIt_ = this->idsetRange_.begin();
+			return true;
+		}
+		return false;
+	}
+};
+
+template <class IndexMap>
+class [[nodiscard]] BtreeIndexReverseIteratorImpl
+	: public BtreeIndexIteratorImplBase<typename IndexMap::const_reverse_iterator, typename IdSet::idset_reverse_iterator,
+										typename IdSet::idset_reverse_iterator_range> {
+	using Base = BtreeIndexIteratorImplBase<typename IndexMap::const_reverse_iterator, typename IdSet::idset_reverse_iterator,
+											typename IdSet::idset_reverse_iterator_range>;
+
+public:
+	BtreeIndexReverseIteratorImpl() = default;
+	BtreeIndexReverseIteratorImpl(typename IndexMap::const_iterator begin, typename IndexMap::const_iterator end)
+		: Base(typename IndexMap::const_reverse_iterator(end), typename IndexMap::const_reverse_iterator(begin)) {}
+	BtreeIndexReverseIteratorImpl(typename IndexMap::const_iterator begin, typename IndexMap::const_iterator end, const IdSet& nullValues)
+		: Base(typename IndexMap::const_reverse_iterator(end), typename IndexMap::const_reverse_iterator(begin),
+			   nullValues.idset_reverse_range(), nullValues.Size()) {}
+
+	void Start() noexcept {
+		std::ignore = moveToIndexRbegin();
+		if (this->indexIt_ == this->indexItEnd_) {
+			std::ignore = moveToNullValuesIdSet();
 		}
 	}
-	bool finishIteration() noexcept {
-		currVal_ = INT_MAX;
+
+	std::pair<bool, IdType> Next(IdType lastVal) noexcept {
+		if (this->nullValuesMode_) {
+			while (this->nullValuesIt_ != this->nullValuesRange_.end() && *this->nullValuesIt_ >= lastVal) {
+				++this->nullValuesIt_;
+			}
+			if (this->nullValuesIt_ != this->nullValuesRange_.end()) {
+				return {true, *this->nullValuesIt_};
+			}
+		} else if (this->indexIt_ != this->indexItEnd_) {
+			while (this->idsetIt_ != this->idsetRange_.end() && *this->idsetIt_ >= lastVal) {
+				++this->idsetIt_;
+			}
+			if (this->idsetIt_ != this->idsetRange_.end()) {
+				return {true, *this->idsetIt_};
+			}
+			++this->indexIt_;
+			if (moveToValidIdset()) {
+				if (this->idsetIt_ != this->idsetRange_.end()) {
+					return {true, *this->idsetIt_};
+				}
+			} else if (this->indexIt_ == this->indexItEnd_) {
+				if (moveToNullValuesIdSet()) {
+					if (this->nullValuesIt_ != this->nullValuesRange_.end()) {
+						return {true, *this->nullValuesIt_};
+					}
+				}
+			}
+		}
+		return {false, IdType::Zero()};
+	}
+
+	void SkipKey() noexcept {
+		if (this->nullValuesMode_) {
+			this->nullValuesIt_ = this->nullValuesRange_.end();
+		} else {
+			if (this->indexIt_ != this->indexItEnd_) {
+				++this->indexIt_;
+				std::ignore = moveToValidIdset();
+			}
+		}
+	}
+
+private:
+	bool moveToIndexRbegin() noexcept {
+		this->indexIt_ = this->indexItBegin_;
+		return moveToValidIdset();
+	}
+
+	bool moveToValidIdset() noexcept {
+		this->skipEmptyIdSets();
+		if (this->indexIt_ != this->indexItEnd_) {
+			this->idsetRange_ = this->indexIt_->second.Unsorted().idset_reverse_range();
+			this->idsetIt_ = this->idsetRange_.begin();
+			return true;
+		}
 		return false;
 	}
 
-	template <typename TIdSet>
-	void detectCurrentIdsetType(const TIdSet& idset) noexcept {
-		if (std::is_same<TIdSet, IdSet>() && !idset.IsCommited()) {
-			currentIdsetType_ = IdsetType::Btree;
-		} else {
-			currentIdsetType_ = IdsetType::Plain;
+	bool moveToNullValuesIdSet() noexcept {
+		if (this->nullValuesCount_ > 0) {
+			this->nullValuesIt_ = this->nullValuesRange_.begin();
+			this->nullValuesMode_ = true;
+			return true;
 		}
+		return false;
 	}
-
-	size_t getSize() const noexcept { return idxMap_.size(); }
-	size_t getCurrentIdsetSize() const noexcept {
-		switch (currentIdsetType_) {
-			case IdsetType::Btree:
-				return getBtreeIdsetSize();
-			case IdsetType::Plain:
-				return getPlainIdsetSize();
-			default:
-				std::abort();
-		}
-	}
-	const IdType& getValue() const { return currVal_; }
-
-protected:
-	virtual void shiftPlainIdsetToBegin() = 0;
-	virtual void shiftBtreeIdsetToBegin() = 0;
-	virtual void shiftPlainIdsetToNext() = 0;
-	virtual void shiftBtreeIdsetToNext() = 0;
-	virtual bool isPlainIdsetOver() const = 0;
-	virtual bool isBtreeIdsetOver() const = 0;
-	virtual IdType getPlainIdsetCurrentValue() const = 0;
-	virtual IdType getBtreeIdsetCurrentValue() const = 0;
-	virtual size_t getPlainIdsetSize() const = 0;
-	virtual size_t getBtreeIdsetSize() const = 0;
-
-	const T& idxMap_;
-	IdType currVal_ = INT_MIN;
-	IdsetType currentIdsetType_;
-
-	using ForwardIterator = typename T::const_iterator;
-	using ReverseIterator = typename T::const_reverse_iterator;
 };
 
-template <class T>
-class BtreeIndexForwardIteratorImpl : public BtreeIndexIteratorImpl<T> {
-public:
-	using Base = BtreeIndexIteratorImpl<T>;
-	explicit BtreeIndexForwardIteratorImpl(const T& idxMap) : Base(idxMap) {
-		this->idxMapItBegin_ = idxMap.begin();
-		this->idxMapItEnd_ = idxMap.end();
-		this->idxMapIt_ = this->idxMapItBegin_;
-	}
-	BtreeIndexForwardIteratorImpl(const T& idxMap, const typename Base::ForwardIterator& first, const typename Base::ForwardIterator& last)
-		: Base(idxMap) {
-		this->idxMapItBegin_ = first;
-		this->idxMapItEnd_ = last;
-		this->idxMapIt_ = this->idxMapItBegin_;
-	}
-	~BtreeIndexForwardIteratorImpl() override = default;
-
-	void shiftToBegin() noexcept override {
-		this->idxMapIt_ = this->idxMapItBegin_;
-		if (this->getSize() > 0) {
-			this->detectCurrentIdsetType(this->idxMapIt_->second.Unsorted());
-			this->currVal_ = INT_MIN;
-		}
-	}
-
-	void next() noexcept override {
-		++this->idxMapIt_;
-		if (!isOver()) {
-			this->detectCurrentIdsetType(this->idxMapIt_->second.Unsorted());
-		}
-	}
-
-	void shiftPlainIdsetToNext() noexcept override {
-		const auto& idset = this->idxMapIt_->second.Unsorted();
-		for (; it_ != idset.end() && *it_ <= this->currVal_; ++it_) {
-		}
-	}
-	void shiftBtreeIdsetToNext() noexcept override {
-		const IdSet& sortedIdset = static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted());
-		for (; itset_ != sortedIdset.set_->end() && *itset_ <= this->currVal_; ++itset_) {
-		}
-	}
-
-	bool isOver() const noexcept override { return this->idxMapIt_ == this->idxMapItEnd_; }
-	void shiftPlainIdsetToBegin() noexcept override { it_ = this->idxMapIt_->second.Unsorted().begin(); }
-	void shiftBtreeIdsetToBegin() noexcept override {
-		itset_ = static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->begin();
-	}
-	bool isPlainIdsetOver() const noexcept override { return it_ == this->idxMapIt_->second.Unsorted().end(); }
-	bool isBtreeIdsetOver() const noexcept override {
-		return itset_ == static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->end();
-	}
-	IdType getPlainIdsetCurrentValue() const noexcept override { return *it_; }
-	IdType getBtreeIdsetCurrentValue() const noexcept override { return *itset_; }
-	size_t getPlainIdsetSize() const noexcept override { return this->idxMapIt_->second.Unsorted().size(); }
-	size_t getBtreeIdsetSize() const noexcept override {
-		return static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->size();
-	}
-	std::pair<size_t, bool> getMaxIterations(size_t limitIters) noexcept {
-		size_t cnt = 0;
-		auto it = idxMapItBegin_;
-		for (; cnt < limitIters && it != idxMapItEnd_; ++it) {
-			this->detectCurrentIdsetType(it->second.Unsorted());
-			switch (this->currentIdsetType_) {
-				case Base::IdsetType::Btree:
-					cnt += static_cast<const IdSet&>(it->second.Unsorted()).set_->size();
-					break;
-				case Base::IdsetType::Plain:
-					cnt += it->second.Unsorted().size();
-					break;
-				default:
-					std::abort();
-			}
-		}
-		return {cnt, it == idxMapItEnd_};
-	}
-
-private:
-	union {
-		IdSetPlain::const_iterator it_;
-		base_idsetset::const_iterator itset_;
-	};
-
-	typename Base::ForwardIterator idxMapItBegin_;
-	typename Base::ForwardIterator idxMapItEnd_;
-	typename Base::ForwardIterator idxMapIt_;
-};
-
-template <class T>
-class BtreeIndexReverseIteratorImpl : public BtreeIndexIteratorImpl<T> {
-public:
-	using Base = BtreeIndexIteratorImpl<T>;
-	explicit BtreeIndexReverseIteratorImpl(const T& idxMap) : Base(idxMap) {
-		idxMapRitBegin_ = idxMap.rbegin();
-		idxMapRitEnd_ = idxMap.rend();
-		idxMapRit_ = idxMapRitBegin_;
-		this->currVal_ = INT_MAX;
-	}
-	BtreeIndexReverseIteratorImpl(const T& idxMap, const typename Base::ForwardIterator& first, const typename Base::ForwardIterator& last)
-		: Base(idxMap), idxMapRitBegin_(last), idxMapRitEnd_(first) {
-		idxMapRit_ = idxMapRitBegin_;
-	}
-
-	~BtreeIndexReverseIteratorImpl() override = default;
-
-	void shiftToBegin() noexcept override {
-		this->idxMapRit_ = this->idxMapRitBegin_;
-		if (this->getSize() > 0) {
-			this->detectCurrentIdsetType(this->idxMapRit_->second.Unsorted());
-			this->currVal_ = INT_MAX;
-		}
-	}
-
-	void shiftPlainIdsetToNext() noexcept override {
-		const auto& idset = this->idxMapRit_->second.Unsorted();
-		for (; rit_ != idset.rend() && *rit_ >= this->currVal_; ++rit_) {
-		}
-	}
-
-	void shiftBtreeIdsetToNext() noexcept override {
-		const IdSet& sortedIdset = static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted());
-		for (; ritset_ != sortedIdset.set_->rend() && *ritset_ >= this->currVal_; ++ritset_) {
-		}
-	}
-
-	void next() noexcept override {
-		++this->idxMapRit_;
-		if (!isOver()) {
-			this->detectCurrentIdsetType(this->idxMapRit_->second.Unsorted());
-		}
-	}
-
-	bool isOver() const noexcept override { return idxMapRit_ == idxMapRitEnd_; }
-	void shiftPlainIdsetToBegin() noexcept override { rit_ = this->idxMapRit_->second.Unsorted().rbegin(); }
-	void shiftBtreeIdsetToBegin() noexcept override {
-		ritset_ = static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted()).set_->rbegin();
-	}
-	bool isPlainIdsetOver() const noexcept override { return rit_ == this->idxMapRit_->second.Unsorted().rend(); }
-	bool isBtreeIdsetOver() const noexcept override {
-		return ritset_ == static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted()).set_->rend();
-	}
-	IdType getPlainIdsetCurrentValue() const noexcept override { return *rit_; }
-	IdType getBtreeIdsetCurrentValue() const noexcept override { return *ritset_; }
-	size_t getPlainIdsetSize() const noexcept override { return this->idxMapRit_->second.Unsorted().size(); }
-	size_t getBtreeIdsetSize() const noexcept override {
-		return static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted()).set_->size();
-	}
-
-private:
-	union {
-		IdSetPlain::const_reverse_iterator rit_;
-		base_idsetset::const_reverse_iterator ritset_;
-	};
-
-	typename Base::ReverseIterator idxMapRitBegin_;
-	typename Base::ReverseIterator idxMapRitEnd_;
-	typename Base::ReverseIterator idxMapRit_;
-};
-
+}  // namespace iterators
+}  // namespace index
 }  // namespace reindexer

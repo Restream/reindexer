@@ -2,13 +2,15 @@
 
 #include <string>
 #include <vector>
-
-#include "allocs_tracker.h"
 #include "base_fixture.h"
 
-class ApiTvComposite : private BaseFixture {
+namespace reindexer_benchmarks {
+
+class [[nodiscard]] ApiTvComposite : private BaseFixture {
 public:
-	ApiTvComposite(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	ApiTvComposite(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+		using reindexer::IndexOpts;
+
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts())
 			.AddIndex("sub_id", "tree", "string", IndexOpts().SetCollateMode(CollateNumeric))
 			.AddIndex("name", "hash", "string", IndexOpts().SetCollateMode(CollateUTF8))
@@ -79,7 +81,9 @@ private:
 	void ForcedSortWithSecondCondition(State& state);
 	void Query2CondIdSetComposite(State& state);
 
-	std::vector<VariantArray> compositeIdSet_;
+	std::vector<reindexer::VariantArray> compositeIdSet_;
 	std::vector<std::string> locations_;
 	std::vector<std::string> names_;
 };
+
+}  // namespace reindexer_benchmarks

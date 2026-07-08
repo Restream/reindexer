@@ -2,15 +2,16 @@ package reindexer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 
+	"github.com/goccy/go-json"
+
 	"github.com/prometheus/client_golang/prometheus"
 	otelattr "go.opentelemetry.io/otel/attribute"
 
-	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 type ExplainSelector struct {
@@ -29,10 +30,10 @@ type ExplainSelector struct {
 	// Count of processed documents, matched this selector
 	Matched int `json:"matched"`
 	// Count of scanned documents by this selector
-	Items int `json:"items"`
+	Items     int    `json:"items"`
 	Condition string `json:"condition"`
 	// Select iterator type
-	Type string `json:"type,omitempty"`
+	Type        string `json:"type,omitempty"`
 	Description string `json:"description,omitempty"`
 	// Preselect in joined namespace execution explainings
 	ExplainPreselect *ExplainResults `json:"explain_preselect,omitempty"`
@@ -42,73 +43,82 @@ type ExplainSelector struct {
 }
 
 type ExplainSubQuery struct {
-	Namespace string `json:"namespace"`
-	Explain ExplainResults `json:"explain"`
-	Keys int `json:"keys,omitempty"`
-	Field string `json:"field,omitempty"`
+	Namespace string         `json:"namespace"`
+	Explain   ExplainResults `json:"explain"`
+	Keys      int            `json:"keys,omitempty"`
+	Field     string         `json:"field,omitempty"`
 }
 
-// ExplainResults presents query plan
+// ExplainResults represents query plan
 type ExplainResults struct {
-	// Total query execution time
+	SingleQueryExplainResults
+	// Detailed execution plans for queries with MERGE (including main query)
+	Merged []SingleQueryExplainResults `json:"merged,omitempty"`
+}
+
+// SingleQueryExplainResults represents explain plan for single query
+type SingleQueryExplainResults struct {
+	// Main/merged query namespace name
+	Namespace string `json:"namespace,omitempty"`
+	// Total query execution time (for MERGE queries includes total_us of all merged queries)
 	TotalUs int `json:"total_us"`
-	// Query preselect build and select time
+	// Query preselect build and select time (for MERGE queries includes preselect_us of all merged queries)
 	PreselectUs int `json:"preselect_us"`
-	// Query prepare and optimize time
+	// Query prepare and optimize time (for MERGE queries includes prepare_us of all merged queries)
 	PrepareUs int `json:"prepare_us"`
-	// Indexes keys selection time
+	// Indexes keys selection time (for MERGE queries includes indexes_us of all merged queries)
 	IndexesUs int `json:"indexes_us"`
-	// Query post process time
+	// Query post process time (for MERGE queries includes postprocess_us of all merged queries)
 	PostprocessUS int `json:"postprocess_us"`
-	// Intersection loop time
+	// Intersection loop time (for MERGE queries includes loop_us of all merged queries)
 	LoopUs int `json:"loop_us"`
 	// Index, which used for sort results
 	SortIndex string `json:"sort_index"`
-	// General sort time
+	// General sort time (for MERGE queries includes general_sort_us of all merged queries and post-merge sorting time)
 	GeneralSortUs int `json:"general_sort_us"`
 	// Optimization of sort by uncompleted index has been performed
 	SortByUncommittedIndex bool `json:"sort_by_uncommitted_index"`
 	// Filter selectors, used to proccess query conditions
-	Selectors []ExplainSelector `json:"selectors"`
+	Selectors []ExplainSelector `json:"selectors,omitempty"`
 	// Explaining attempts to inject Join queries ON-conditions into the Main Query WHERE clause
-	OnConditionsInjections []ExplainJoinOnInjections `json:"on_conditions_injections,omitempty"`
+	OnConditionsInsertions []ExplainJoinOnInsertions `json:"on_conditions_insertions,omitempty"`
 	// Explaining of subqueries' preselect
 	SubQueriesExplains []ExplainSubQuery `json:"subqueries,omitempty"`
 }
 
-// Describes the process of a single JOIN-query ON-conditions injection into the Where clause of a main query
-type ExplainJoinOnInjections struct {
+// Describes the process of a single JOIN-query ON-conditions insertion into the Where clause of a main query
+type ExplainJoinOnInsertions struct {
 	// joinable ns name
 	RightNsName string `json:"namespace"`
 	// original ON-conditions clause. SQL-like string
 	JoinOnCondition string `json:"on_condition"`
 	// total amount of time spent on checking and substituting all conditions
 	TotalTimeUs int `json:"total_time_us"`
-	// result of injection attempt
+	// result of insertion attempt
 	Succeed bool `json:"success"`
-	// optional{succeed==false}. Explains condition injection failure
+	// optional{succeed==false}. Explains condition insertion failure
 	Reason string `json:"reason,omitempty"`
 	// by_value or select
 	Type string `json:"type"`
-	// Injected condition. SQL-like string
-	InjectedCondition string `json:"injected_condition"`
+	// Inserted condition. SQL-like string
+	InsertedCondition string `json:"inserted_condition"`
 	// individual conditions processing results
-	Conditions []ExplainConditionInjection `json:"conditions,omitempty"`
+	Conditions []ExplainConditionInsertion `json:"conditions,omitempty"`
 }
 
-// Describes an injection attempt of a single condition from the ON-clause of a JOIN-query
-type ExplainConditionInjection struct {
+// Describes an insertion attempt of a single condition from the ON-clause of a JOIN-query
+type ExplainConditionInsertion struct {
 	// single condition from Join ON section. SQL-like string
 	InitialCondition string `json:"condition"`
-	// total time elapsed from injection attempt start till the end of substitution or rejection
+	// total time elapsed from insertion attempt start till the end of substitution or rejection
 	TotalTime int `json:"total_time_us"`
-	// optoinal{JoinOnInjection.type == Select}. Explain raw string from Select subquery
+	// optoinal{JoinOnInsertion.type == Select}. Explain raw string from Select subquery
 	Explain *ExplainResults `json:"explain_select,omitempty"`
 	// Optional. Aggregation type used in subquery
 	AggType string `json:"agg_type,omitempty"`
-	// result of injection attempt
+	// result of insertion attempt
 	Succeed bool `json:"success"`
-	// optional{succeed==false}. Explains condition injection failure
+	// optional{succeed==false}. Explains condition insertion failure
 	Reason string `json:"reason,omitempty"`
 	// substituted condition in QueryEntry. SQL-like string
 	NewCondition string `json:"new_condition"`
@@ -133,7 +143,7 @@ func newIterator(
 	nsArray []nsArrayEntry,
 	joinToFields []string,
 	joinHandlers []JoinHandler,
-	queryContext interface{},
+	queryContext any,
 ) (it *Iterator) {
 	if q != nil {
 		it = &q.iterator
@@ -162,7 +172,10 @@ func newIterator(
 		}
 	}
 	if joinObjSize > 0 {
-		it.current.joinObj = make([][]interface{}, joinObjSize)
+		it.current.joinObj = make([][]any, joinObjSize)
+	}
+	if len(it.joinFields) > 0 {
+		it.clearJoinFieldCache()
 	}
 	it.setBuffer(result, true)
 
@@ -197,25 +210,111 @@ type Iterator struct {
 	nsArray        []nsArrayEntry
 	joinToFields   []string
 	joinHandlers   []JoinHandler
-	queryContext   interface{}
+	joinFields     [][]joinedFieldInfo
+	queryContext   any
 	query          *Query
 	allowUnsafe    bool
 	resPtr         int
 	ptr            int
 	current        struct {
-		obj     interface{}
-		joinObj [][]interface{}
-		rank    int
+		obj     any
+		joinObj [][]any
+		rank    float32
 	}
 	err     error
 	userCtx context.Context
+}
+
+type joinedFieldInfo struct {
+	index    []int
+	hasIndex bool
+}
+
+func (it *Iterator) clearJoinFieldCache() {
+	for i := range it.joinFields {
+		it.joinFields[i] = it.joinFields[i][:0]
+	}
+	it.joinFields = it.joinFields[:0]
+}
+
+func (it *Iterator) resetJoinFieldCache(joinObjSize int) {
+	if joinObjSize == 0 {
+		joinObjSize = len(it.joinToFields)
+		if it.query != nil {
+			for _, mq := range it.query.mergedQueries {
+				if len(mq.joinToFields) > joinObjSize {
+					joinObjSize = len(mq.joinToFields)
+				}
+			}
+		}
+		if joinObjSize == 0 {
+			it.joinFields = it.joinFields[:0]
+			return
+		}
+	}
+
+	parentCount := 1
+	if it.query != nil {
+		parentCount += len(it.query.mergedQueries)
+	}
+	if cap(it.joinFields) < parentCount {
+		it.joinFields = make([][]joinedFieldInfo, parentCount)
+	} else {
+		it.joinFields = it.joinFields[:parentCount]
+		for i := range it.joinFields {
+			it.joinFields[i] = it.joinFields[i][:0]
+		}
+	}
+	it.fillJoinFieldCache(0, it.joinToFields)
+	if it.query != nil {
+		for i, mq := range it.query.mergedQueries {
+			it.fillJoinFieldCache(i+1, mq.joinToFields)
+		}
+	}
+}
+
+func (it *Iterator) fillJoinFieldCache(parentNsID int, fields []string) {
+	if parentNsID >= len(it.joinFields) {
+		return
+	}
+	infos := it.joinFields[parentNsID]
+	if cap(infos) < len(fields) {
+		infos = make([]joinedFieldInfo, len(fields))
+	} else {
+		infos = infos[:len(fields)]
+	}
+	var joined map[string][]int
+	if parentNsID < len(it.nsArray) {
+		joined = it.nsArray[parentNsID].joined
+	}
+	for i, field := range fields {
+		var info joinedFieldInfo
+		if idx, ok := joined[field]; ok {
+			info.index = idx
+			info.hasIndex = true
+		}
+		infos[i] = info
+	}
+	it.joinFields[parentNsID] = infos
+}
+
+func (it *Iterator) getJoinFieldInfo(parentNsID, nsIndex int) (joinedFieldInfo, bool) {
+	if len(it.joinFields) == 0 {
+		it.resetJoinFieldCache(0)
+	}
+	if parentNsID < len(it.joinFields) && nsIndex < len(it.joinFields[parentNsID]) {
+		return it.joinFields[parentNsID][nsIndex], true
+	}
+	return joinedFieldInfo{}, false
 }
 
 func (it *Iterator) setBuffer(result bindings.RawBuffer, cleanup bool) {
 	it.ser = newSerializer(result.GetBuf())
 	it.result = result
 	if cleanup {
-		it.rawQueryParams = it.ser.readRawQueryParams(func(nsid int) {
+		nsIncarnationTags := it.rawQueryParams.nsIncarnationTags
+		it.rawQueryParams = rawResultQueryParams{nsIncarnationTags: nsIncarnationTags}
+		it.ser.readRawQueryParamsResetMissingExtras(&it.rawQueryParams, func(nsid int) {
 			it.nsArray[nsid].localCjsonState = it.nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer, it.db.binding, it.nsArray[nsid].name)
 		})
 	} else {
@@ -228,7 +327,7 @@ func (it *Iterator) setBuffer(result bindings.RawBuffer, cleanup bool) {
 // Next moves iterator pointer to the next element.
 // Returns bool, that indicates the availability of the next elements.
 // Decode result to given struct
-func (it *Iterator) NextObj(obj interface{}) (hasNext bool) {
+func (it *Iterator) NextObj(obj any) (hasNext bool) {
 	if it.ptr >= it.rawQueryParams.qcount || it.err != nil {
 		return
 	}
@@ -272,10 +371,10 @@ func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
 	return offset
 }
 
-func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
+func (it *Iterator) readItem(toObj any) (item any, rank float32) {
 	params := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
-	if (it.rawQueryParams.flags & bindings.ResultsWithPercents) != 0 {
-		rank = params.proc
+	if (it.rawQueryParams.flags & bindings.ResultsWithRank) != 0 {
+		rank = params.rank
 	}
 
 	subNSRes := 0
@@ -298,8 +397,8 @@ func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
 		if siRes == 0 {
 			continue
 		}
-		subitems := make([]interface{}, siRes)
-		for i := 0; i < siRes; i++ {
+		subitems := make([]any, siRes)
+		for i := range siRes {
 			subparams := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
 			subitems[i], it.err = unpackItem(it.db.binding, &it.nsArray[nsIndex+nsIndexOffset],
 				&it.rawQueryParams, &subparams, it.allowUnsafe, nonCacheble, toObj)
@@ -366,7 +465,7 @@ func (it *Iterator) fetchResults() {
 	}
 }
 
-func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{}) error {
+func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item any) error {
 	var field string
 	var handler JoinHandler
 	if parentNsID == 0 {
@@ -394,24 +493,50 @@ func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{
 				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeStrictMode)
 		}
 	} else {
-		v := getJoinedField(reflect.ValueOf(item), it.nsArray[parentNsID].joined, field)
+		var v reflect.Value
+		info, hasInfo := it.getJoinFieldInfo(parentNsID, nsIndex)
+		if hasInfo && info.hasIndex {
+			v = joinedFieldByIndex(reflect.ValueOf(item), info.index)
+		} else {
+			v = getJoinedField(reflect.ValueOf(item), it.nsArray[parentNsID].joined, field)
+		}
 		if !v.IsValid() {
 			return bindings.NewError(fmt.Sprintf("can not find field with tag '%s' in struct '%s' for put join results from '%s'",
 				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeLogic)
 		}
-		if v.IsNil() {
-			v.Set(reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(it.nsArray[nsIndex+nsIndexOffset].rtype)), 0, len(subitems)))
-		}
-		for _, subitem := range subitems {
-			v.Set(reflect.Append(v, reflect.ValueOf(subitem)))
+		oldLen := growJoinedSlice(v, len(subitems))
+		for i, subitem := range subitems {
+			v.Index(oldLen + i).Set(reflect.ValueOf(subitem))
 		}
 	}
 	return nil
 }
 
+func growJoinedSlice(v reflect.Value, add int) int {
+	oldLen := v.Len()
+	newLen := oldLen + add
+	if v.IsNil() {
+		v.Set(reflect.MakeSlice(v.Type(), newLen, newLen))
+	} else if newLen <= v.Cap() {
+		v.Set(v.Slice(0, newLen))
+	} else {
+		newCap := newLen
+		if oldCap := v.Cap(); oldCap > 0 {
+			newCap = oldCap * 2
+			if newCap < newLen {
+				newCap = newLen
+			}
+		}
+		nv := reflect.MakeSlice(v.Type(), newLen, newCap)
+		reflect.Copy(nv, v)
+		v.Set(nv)
+	}
+	return oldLen
+}
+
 // Object returns current object.
 // Will panic when pointer was not moved, Next() must be called before.
-func (it *Iterator) Object() interface{} {
+func (it *Iterator) Object() any {
 	if it.resPtr == 0 {
 		panic(errIteratorNotReady)
 	}
@@ -420,7 +545,7 @@ func (it *Iterator) Object() interface{} {
 
 // Rank returns current object search rank.
 // Will panic when pointer was not moved, Next() must be called before.
-func (it *Iterator) Rank() int {
+func (it *Iterator) Rank() float32 {
 	if it.resPtr == 0 {
 		panic(errIteratorNotReady)
 	}
@@ -428,7 +553,7 @@ func (it *Iterator) Rank() int {
 }
 
 // JoinedObjects returns objects slice, that result of join for the given field
-func (it *Iterator) JoinedObjects(field string) (objects []interface{}, err error) {
+func (it *Iterator) JoinedObjects(field string) (objects []any, err error) {
 	if it.resPtr == 0 {
 		return nil, errIteratorNotReady
 	}
@@ -461,12 +586,12 @@ func (it *Iterator) AllowUnsafe(allow bool) *Iterator {
 }
 
 // FetchAll returns all query results as slice []interface{} and closes the iterator.
-func (it *Iterator) FetchAll() (items []interface{}, err error) {
+func (it *Iterator) FetchAll() (items []any, err error) {
 	defer it.Close()
 	if !it.Next() {
 		return nil, it.err
 	}
-	items = make([]interface{}, it.rawQueryParams.qcount)
+	items = make([]any, it.rawQueryParams.qcount)
 	for i := range items {
 		items[i] = it.Object()
 		if !it.Next() {
@@ -478,7 +603,7 @@ func (it *Iterator) FetchAll() (items []interface{}, err error) {
 
 // FetchOne returns first element and closes the iterator.
 // When it's impossible (count is 0) err will be ErrNotFound.
-func (it *Iterator) FetchOne() (item interface{}, err error) {
+func (it *Iterator) FetchOne() (item any, err error) {
 	defer it.Close()
 	if it.Next() {
 		return it.Object(), it.err
@@ -491,13 +616,13 @@ func (it *Iterator) FetchOne() (item interface{}, err error) {
 
 // FetchAllWithRank returns resulting slice of objects and slice of objects ranks.
 // Closes iterator after use.
-func (it *Iterator) FetchAllWithRank() (items []interface{}, ranks []int, err error) {
+func (it *Iterator) FetchAllWithRank() (items []any, ranks []float32, err error) {
 	defer it.Close()
 	if !it.Next() {
 		return nil, nil, it.err
 	}
-	items = make([]interface{}, it.rawQueryParams.qcount)
-	ranks = make([]int, it.rawQueryParams.qcount)
+	items = make([]any, it.rawQueryParams.qcount)
+	ranks = make([]float32, it.rawQueryParams.qcount)
 	for i := range items {
 		items[i] = it.Object()
 		ranks[i] = it.Rank()
@@ -513,15 +638,14 @@ func (it *Iterator) FetchAllWithRank() (items []interface{}, ranks []int, err er
 
 // HasRank indicates if this iterator has info about search ranks.
 func (it *Iterator) HasRank() bool {
-	return (it.rawQueryParams.flags & bindings.ResultsWithPercents) != 0
+	return (it.rawQueryParams.flags & bindings.ResultsWithRank) != 0
 }
 
 // AggResults returns aggregation results (if present)
 func (it *Iterator) AggResults() (v []AggregationResult) {
 	l := len(it.rawQueryParams.aggResults)
 	v = make([]AggregationResult, l)
-
-	for i := 0; i < l; i++ {
+	for i := range l {
 		json.Unmarshal(it.rawQueryParams.aggResults[i], &v[i])
 	}
 

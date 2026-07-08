@@ -108,6 +108,9 @@ int msgpack_vrefbuffer_append_ref(msgpack_vrefbuffer* vbuf,
         const size_t nused = (size_t)(vbuf->tail - vbuf->array);
         const size_t nnext = nused * 2;
 
+		if (sizeof(struct iovec)*nnext == 0) {
+			return -1;
+		}
         struct iovec* nvec = (struct iovec*)realloc(
                 vbuf->array, sizeof(struct iovec)*nnext);
         if(nvec == NULL) {

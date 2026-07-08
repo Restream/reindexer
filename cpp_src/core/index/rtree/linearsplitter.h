@@ -6,8 +6,8 @@
 namespace reindexer {
 
 template <typename Entry, typename Node, typename Traits, typename Iterator, size_t MaxEntries, size_t MinEntries>
-class LinearSplitter : public GuttmanSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries,
-											  LinearSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries>> {
+class [[nodiscard]] LinearSplitter : public GuttmanSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries,
+															LinearSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries>> {
 	using Base = GuttmanSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries,
 								 LinearSplitter<Entry, Node, Traits, Iterator, MaxEntries, MinEntries>>;
 

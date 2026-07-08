@@ -2,7 +2,13 @@
 
 #include <stdint.h>
 
-typedef enum TagType {
+#ifdef __cplusplus
+#define REINDEX_CPP_NODISCARD [[nodiscard]]
+#else
+#define REINDEX_CPP_NODISCARD
+#endif
+
+typedef enum REINDEX_CPP_NODISCARD TagType {
 	TAG_VARINT = 0,
 	TAG_DOUBLE = 1,
 	TAG_STRING = 2,
@@ -12,11 +18,12 @@ typedef enum TagType {
 	TAG_OBJECT = 6,
 	TAG_END = 7,
 	TAG_UUID = 8,
+	TAG_FLOAT = 9,
 } TagType;
 
-static const uint8_t kMaxTagType = TAG_UUID;
+static const uint8_t kMaxTagType = TAG_FLOAT;
 
-typedef enum IndexType {
+typedef enum REINDEX_CPP_NODISCARD IndexType {
 	IndexStrHash = 0,
 	IndexStrBTree = 1,
 	IndexIntBTree = 2,
@@ -25,7 +32,7 @@ typedef enum IndexType {
 	IndexInt64Hash = 5,
 	IndexDoubleBTree = 6,
 	IndexFastFT = 7,
-	IndexFuzzyFT = 8,
+	// IndexFuzzyFT = 8,
 	IndexCompositeBTree = 9,
 	IndexCompositeHash = 10,
 	IndexCompositeFastFT = 11,
@@ -34,14 +41,18 @@ typedef enum IndexType {
 	IndexInt64Store = 14,
 	IndexStrStore = 15,
 	IndexDoubleStore = 16,
-	IndexCompositeFuzzyFT = 17,
+	// IndexCompositeFuzzyFT = 17,
 	IndexTtl = 18,
 	IndexRTree = 19,
 	IndexUuidHash = 20,
 	IndexUuidStore = 21,
+	IndexHnsw = 22,
+	IndexVectorBruteforce = 23,
+	IndexIvf = 24,
+	IndexDummy = 25,  // Special index type for IndexDrop calls
 } IndexType;
 
-typedef enum QueryItemType {
+typedef enum REINDEX_CPP_NODISCARD QueryItemType {
 	QueryCondition = 0,
 	QueryDistinct = 1,
 	QuerySortIndex = 2,
@@ -74,9 +85,14 @@ typedef enum QueryItemType {
 	QuerySubQueryCondition = 29,
 	QueryFieldSubQueryCondition = 30,
 	QueryLocal = 31,
+	QueryKnnCondition = 32,
+	QueryKnnConditionExt = 33,
+	QueryFunction = 34,					  // Deprecated
+	QueryFunctionSubQueryCondition = 35,  // Deprecated
+	QueryExpressions = 36,
 } QueryItemType;
 
-typedef enum QuerySerializeMode {
+typedef enum REINDEX_CPP_NODISCARD QuerySerializeMode {
 	Normal = 0x0,
 	SkipJoinQueries = 0x01,
 	SkipMergeQueries = 0x02,
@@ -88,7 +104,7 @@ typedef enum QuerySerializeMode {
 	SkipLeftJoinQueries = 0x80,
 } QuerySerializeMode;
 
-typedef enum CondType {
+typedef enum REINDEX_CPP_NODISCARD CondType {
 	CondAny = 0,
 	CondEq = 1,
 	CondLt = 2,
@@ -101,9 +117,23 @@ typedef enum CondType {
 	CondEmpty = 9,
 	CondLike = 10,
 	CondDWithin = 11,
+	CondKnn = 12,
 } CondType;
 
-enum ErrorCode {
+typedef enum REINDEX_CPP_NODISCARD FunctionType {
+	FunctionFlatArrayLen = 0,
+	FunctionNow = 1,
+	FunctionSerial = 2,
+} FunctionType;
+
+typedef enum REINDEX_CPP_NODISCARD ExpressionType {
+	ExpressionTypeField = 0,
+	ExpressionTypeValues = 1,
+	ExpressionTypeExpression = 2,
+	ExpressionTypeSubQuery = 3,
+} ExpressionType;
+
+enum REINDEX_CPP_NODISCARD ErrorCode {
 	errOK = 0,
 	errParseSQL = 1,
 	errQueryExec = 2,
@@ -146,46 +176,50 @@ enum ErrorCode {
 	errParseYAML = 39,
 	errNamespaceOverwritten = 40,
 	errConnectSSL = 41,
+	errVersion = 42,
+	errInvalidDefConfigs = 43,
 };
 
-enum SchemaType { JsonSchemaType, ProtobufSchemaType };
+enum REINDEX_CPP_NODISCARD SchemaType { JsonSchemaType, ProtobufSchemaType };
 
-enum QueryType { QuerySelect, QueryDelete, QueryUpdate, QueryTruncate };
+enum REINDEX_CPP_NODISCARD QueryType { QuerySelect, QueryDelete, QueryUpdate, QueryTruncate };
 
-enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
+enum REINDEX_CPP_NODISCARD OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
 
-enum ArithmeticOpType { OpPlus = 0, OpMinus = 1, OpMult = 2, OpDiv = 3 };
+enum REINDEX_CPP_NODISCARD ArithmeticOpType { OpPlus = 0, OpMinus = 1, OpMult = 2, OpDiv = 3 };
 
-enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggDistinct, AggCount, AggCountCached, AggUnknown = -1 };
+enum REINDEX_CPP_NODISCARD AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggDistinct, AggCount, AggCountCached, AggUnknown = -1 };
 
-enum JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
+enum REINDEX_CPP_NODISCARD JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
 
-enum CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
+enum REINDEX_CPP_NODISCARD CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
 
-enum DataFormat { FormatJson, FormatCJson, FormatMsgPack };
+enum REINDEX_CPP_NODISCARD DataFormat { FormatJson, FormatCJson, FormatMsgPack };
 
-enum QueryResultItemType {
+enum REINDEX_CPP_NODISCARD QueryResultItemType {
 	QueryResultEnd = 0,
 	QueryResultAggregation = 1,
 	QueryResultExplain = 2,
 	QueryResultShardingVersion = 3,
 	QueryResultShardId = 4,
 	QueryResultIncarnationTags = 5,
+	QueryResultRankFormat = 6,
 };
 
-enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
+enum REINDEX_CPP_NODISCARD CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
 
-enum StrictMode { StrictModeNotSet = 0, StrictModeNone, StrictModeNames, StrictModeIndexes };
+enum REINDEX_CPP_NODISCARD StrictMode { StrictModeNotSet = 0, StrictModeNone, StrictModeNames, StrictModeIndexes };
 
-typedef int IdType;
+enum REINDEX_CPP_NODISCARD RankFormat { SingleFloatValue = 0 };	 // For the future hybrid queries
+
 typedef unsigned SortType;
 
-static const SortType SortIdUnfilled = -1;
-static const SortType SortIdUnexists = -2;
+static const SortType SortIdNotFilled = -1;
+static const SortType SortIdNotExists = -2;
 
-typedef enum LogLevel { LogNone, LogError, LogWarning, LogInfo, LogTrace } LogLevel;
+typedef enum REINDEX_CPP_NODISCARD LogLevel { LogNone, LogError, LogWarning, LogInfo, LogTrace } LogLevel;
 
-enum {
+enum REINDEX_CPP_NODISCARD {
 	kResultsFormatMask = 0xF,
 	kResultsPure = 0x0,
 	kResultsPtrs = 0x1,
@@ -207,27 +241,26 @@ enum {
 	kResultsFlagMaxValue
 };
 
-typedef enum IndexOpt {
-	kIndexOptPK = 1 << 7,
-	kIndexOptArray = 1 << 6,
-	kIndexOptDense = 1 << 5,
-	kIndexOptSparse = 1 << 3,
-} IndexOpt;
+static const char kCJSONFmt[] = "cjson";
+static const char kJSONFmt[] = "json";
+static const char kMsgPackFmt[] = "msgpack";
+static const char kProtobufFmt[] = "protobuf";
+static const char kCSVFileFmt[] = "csv-file";
 
-typedef enum StotageOpt {
+typedef enum REINDEX_CPP_NODISCARD StotageOpt {
 	kStorageOptEnabled = 1 << 0,
 	kStorageOptDropOnFileFormatError = 1 << 1,
 	kStorageOptCreateIfMissing = 1 << 2,
 	kStorageOptVerifyChecksums = 1 << 3,
 	kStorageOptFillCache = 1 << 4,
 	kStorageOptSync = 1 << 5,
-	kStorageOptLazyLoad = 1 << 6,
-	kStorageOptAutorepair = 1 << 9,
+	// kStorageOptLazyLoad = 1 << 6, Deprecated
+	// kStorageOptAutorepair = 1 << 9, Deprecated
 } StorageOpt;
 
-enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
+enum REINDEX_CPP_NODISCARD CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
 
-enum FieldModifyMode {
+enum REINDEX_CPP_NODISCARD FieldModifyMode {
 	FieldModeSet = 0,
 	FieldModeDrop = 1,
 	FieldModeSetJson = 2,
@@ -235,9 +268,9 @@ enum FieldModifyMode {
 	FieldModeArrayPushFront = 4,
 };
 
-enum ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
+enum REINDEX_CPP_NODISCARD ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
 
-typedef struct StorageOpts {
+typedef struct REINDEX_CPP_NODISCARD StorageOpts {
 #ifdef __cplusplus
 	constexpr StorageOpts() noexcept : options(0), noQueryIdleThresholdSec(0) {}
 
@@ -247,8 +280,6 @@ typedef struct StorageOpts {
 	bool IsVerifyChecksums() const noexcept { return options & kStorageOptVerifyChecksums; }
 	bool IsFillCache() const noexcept { return options & kStorageOptFillCache; }
 	bool IsSync() const noexcept { return options & kStorageOptSync; }
-	bool IsLazyLoad() const noexcept { return options & kStorageOptLazyLoad; }
-	bool IsAutorepair() const noexcept { return options & kStorageOptAutorepair; }
 
 	StorageOpts& Enabled(bool value = true) noexcept {
 		options = value ? options | kStorageOptEnabled : options & ~(kStorageOptEnabled);
@@ -280,41 +311,31 @@ typedef struct StorageOpts {
 		return *this;
 	}
 
-	StorageOpts& LazyLoad(bool value = true) noexcept {
-		options = value ? options | kStorageOptLazyLoad : options & ~(kStorageOptLazyLoad);
-		return *this;
-	}
-
-	StorageOpts& Autorepair(bool value = true) noexcept {
-		options = value ? options | kStorageOptAutorepair : options & ~(kStorageOptAutorepair);
-		return *this;
-	}
 #endif
 	uint16_t options;
 	uint16_t noQueryIdleThresholdSec;
 } StorageOpts;
 
-typedef enum ConnectOpt {
+typedef enum REINDEX_CPP_NODISCARD ConnectOpt {
 	kConnectOptOpenNamespaces = 1,
 	kConnectOptAllowNamespaceErrors = 1 << 1,
-	kConnectOptAutorepair = 1 << 2,
+	// kConnectOptAutorepair = 1 << 2, // Deprecated
 	kConnectOptCheckClusterID = 1 << 3,
 	kConnectOptWarnVersion = 1 << 4,
 	kConnectOptDisableReplication = 1 << 5,
 } ConnectOpt;
 
-typedef enum StorageTypeOpt {
+typedef enum REINDEX_CPP_NODISCARD StorageTypeOpt {
 	kStorageTypeOptLevelDB = 0,
 	kStorageTypeOptRocksDB = 1,
 } StorageTypeOpt;
 
-typedef struct ConnectOpts {
+typedef struct REINDEX_CPP_NODISCARD ConnectOpts {
 #ifdef __cplusplus
 	constexpr ConnectOpts() noexcept : storage(kStorageTypeOptLevelDB), options(kConnectOptOpenNamespaces), expectedClusterID(-1) {}
 
 	bool IsOpenNamespaces() const noexcept { return options & kConnectOptOpenNamespaces; }
 	bool IsAllowNamespaceErrors() const noexcept { return options & kConnectOptAllowNamespaceErrors; }
-	bool IsAutorepair() const noexcept { return options & kConnectOptAutorepair; }
 	StorageTypeOpt StorageType() const noexcept {
 		if (storage == static_cast<uint16_t>(kStorageTypeOptRocksDB)) {
 			return kStorageTypeOptRocksDB;
@@ -332,11 +353,6 @@ typedef struct ConnectOpts {
 
 	ConnectOpts& AllowNamespaceErrors(bool value = true) noexcept {
 		options = value ? options | kConnectOptAllowNamespaceErrors : options & ~(kConnectOptAllowNamespaceErrors);
-		return *this;
-	}
-
-	ConnectOpts& Autorepair(bool value = true) noexcept {
-		options = value ? options | kConnectOptAutorepair : options & ~(kConnectOptAutorepair);
 		return *this;
 	}
 
@@ -361,27 +377,29 @@ typedef struct ConnectOpts {
 	int expectedClusterID;
 } ConnectOpts;
 
-enum IndexValueType { NotSet = -1, SetByJsonPath = -2 };
-enum ShardingAlgorithmType { ByValue, ByRange };
+enum REINDEX_CPP_NODISCARD IndexValueType { NotSet = -1, SetByJsonPath = -2 };
+enum REINDEX_CPP_NODISCARD ShardingAlgorithmType { ByValue, ByRange };
 
-enum BindingCapability {
+enum REINDEX_CPP_NODISCARD BindingCapability {
 	kBindingCapabilityQrIdleTimeouts = 1,
 	kBindingCapabilityResultsWithShardIDs = 1 << 1,
 	kBindingCapabilityIncarnationTags = 1 << 2,
+	kBindingCapabilityComplexRank = 1 << 3,
 };
 
-typedef struct BindingCapabilities {
+typedef struct REINDEX_CPP_NODISCARD BindingCapabilities {
 #ifdef __cplusplus
 	constexpr BindingCapabilities(int64_t c = 0) noexcept : caps(c) {}
 
 	bool HasQrIdleTimeouts() const noexcept { return caps & kBindingCapabilityQrIdleTimeouts; }
 	bool HasResultsWithShardIDs() const noexcept { return caps & kBindingCapabilityResultsWithShardIDs; }
 	bool HasIncarnationTags() const noexcept { return caps & kBindingCapabilityIncarnationTags; }
+	bool HasComplexRank() const noexcept { return caps & kBindingCapabilityComplexRank; }
 #endif
 	int64_t caps;
 } BindingCapabilities;
 
-typedef struct RPCQrId {
+typedef struct REINDEX_CPP_NODISCARD RPCQrId {
 #ifdef __cplusplus
 	explicit RPCQrId(int m = -1, int64_t u = -1) noexcept : main(m), uid(u) {}
 #endif
@@ -391,10 +409,18 @@ typedef struct RPCQrId {
 
 #ifdef __cplusplus
 namespace ShardingKeyType {
-enum ShardingKey { ProxyOff = -2, NotSetShard = -1 };
+enum REINDEX_CPP_NODISCARD ShardingKey { ProxyOff = -2, NotSetShard = -1 };
 }
 namespace ShardingSourceId {
-enum SourceId { NotSet = -1 };
+enum REINDEX_CPP_NODISCARD SourceId { NotSet = -1 };
+}
+namespace reindexer {
+enum class REINDEX_CPP_NODISCARD OptimizationState : int {
+	None,		// Not optimized: optimization either was not finished, or new data were added, or some data were deleted.
+	Partial,	// Some of the indexes are optimized: either some of the exisitng data were updated, or indexes list was changed.
+	Completed,	// All of the indexes are optimized.
+	Error		// Some critical error has occured during the optimization.
+};
 }
 #endif
 
@@ -405,21 +431,4 @@ static const int kSubscribersConfigFormatVersion = 1;
 static const int kMinSubscribersConfigFormatVersion = 1;
 static const int kEventSerializationFormatVersion = 1;
 
-// REINDEX_WITH_V3_FOLLOWERS
-enum SubscriptionOpt {
-	kSubscriptionOptIncrementSubscription = 1 << 0,
-};
-
-typedef struct SubscriptionOpts {
-#ifdef __cplusplus
-	SubscriptionOpts() : options(0) {}
-
-	bool IsIncrementSubscription() const { return options & kSubscriptionOptIncrementSubscription; }
-	SubscriptionOpts& IncrementSubscription(bool value = true) {
-		options = value ? options | kSubscriptionOptIncrementSubscription : options & ~(kSubscriptionOptIncrementSubscription);
-		return *this;
-	}
-#endif
-	uint16_t options;
-} SubscriptionOpts;
-// REINDEX_WITH_V3_FOLLOWERS
+enum { kMaxIndexes = 256 };	 // 'tuple'-index always occupies 1 slot

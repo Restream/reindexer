@@ -4,32 +4,7 @@
 
 namespace reindexer {
 
-[[nodiscard]] CondType InvertJoinCondition(CondType cond) {
-	switch (cond) {
-		case CondSet:
-			return CondSet;
-		case CondEq:
-			return CondEq;
-		case CondGt:
-			return CondLt;
-		case CondLt:
-			return CondGt;
-		case CondGe:
-			return CondLe;
-		case CondLe:
-			return CondGe;
-		case CondAny:
-		case CondRange:
-		case CondAllSet:
-		case CondEmpty:
-		case CondLike:
-		case CondDWithin:
-			break;
-	}
-	throw Error(errForbidden, "Not invertible conditional operator '%s(%s)' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
-}
-
-[[nodiscard]] CondType InvertNotCondition(CondType cond) {
+CondType InvertNotCondition(CondType cond) {
 	switch (cond) {
 		case CondGt:
 			return CondLe;
@@ -47,12 +22,13 @@ namespace reindexer {
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
+		case CondKnn:
 			break;
 	}
-	throw Error(errForbidden, "Not invertible conditional operator '%s(%s)' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
+	throw Error(errForbidden, "Not invertible conditional operator '{}({})' in query", CondTypeToStr(cond), CondTypeToStrShort(cond));
 }
 
-[[nodiscard]] std::string_view CondTypeToStr(CondType t) {
+std::string_view CondTypeToStr(CondType t) {
 	using namespace std::string_view_literals;
 	switch (t) {
 		case CondAny:
@@ -79,11 +55,13 @@ namespace reindexer {
 			return "CondLike"sv;
 		case CondDWithin:
 			return "CondDWithin"sv;
+		case CondKnn:
+			return "CondKnn"sv;
 	}
-	throw Error{errNotValid, "Invalid condition type: %d", t};
+	throw Error{errNotValid, "Invalid condition type: {}", int(t)};
 }
 
-[[nodiscard]] std::string_view CondTypeToStrShort(CondType cond) {
+std::string_view CondTypeToStrShort(CondType cond) {
 	using namespace std::string_view_literals;
 	switch (cond) {
 		case CondAny:
@@ -110,11 +88,13 @@ namespace reindexer {
 			return "LIKE"sv;
 		case CondDWithin:
 			return "DWITHIN"sv;
+		case CondKnn:
+			return "KNN"sv;
 	}
-	throw Error{errNotValid, "Invalid condition type: %d", cond};
+	throw Error{errNotValid, "Invalid condition type: {}", int(cond)};
 }
 
-[[nodiscard]] std::string_view TagTypeToStr(TagType t) {
+std::string_view TagTypeToStr(TagType t) {
 	using namespace std::string_view_literals;
 	switch (t) {
 		case TAG_VARINT:
@@ -135,11 +115,13 @@ namespace reindexer {
 			return "<null>"sv;
 		case TAG_UUID:
 			return "<uuid>"sv;
+		case TAG_FLOAT:
+			return "<float>"sv;
 	}
-	throw Error{errNotValid, "Invalid tag type: %d", t};
+	throw Error{errNotValid, "Invalid tag type: {}", int(t)};
 }
 
-[[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept {
+std::string_view AggTypeToStr(AggType t) noexcept {
 	using namespace std::string_view_literals;
 	switch (t) {
 		case AggMin:
@@ -164,21 +146,28 @@ namespace reindexer {
 	return "unknown"sv;
 }
 
-}  // namespace reindexer
-
-[[nodiscard]] std::string_view JoinTypeName(JoinType type) {
-	using namespace std::string_view_literals;
-
-	switch (type) {
-		case JoinType::InnerJoin:
-			return "INNER JOIN"sv;
-		case JoinType::OrInnerJoin:
-			return "OR INNER JOIN"sv;
-		case JoinType::LeftJoin:
-			return "LEFT JOIN"sv;
-		case JoinType::Merge:
-			return "MERGE"sv;
+QueryRankType ToQueryRankType(VectorMetric metric) {
+	switch (metric) {
+		case VectorMetric::L2:
+			return QueryRankType::KnnL2;
+		case VectorMetric::Cosine:
+			return QueryRankType::KnnCos;
+		case VectorMetric::InnerProduct:
+			return QueryRankType::KnnIP;
 	}
-	assertrx(false);
-	return "unknown"sv;
+	throw_as_assert;
 }
+
+std::string_view VectorMetricToStr(VectorMetric metric) {
+	switch (metric) {
+		case VectorMetric::L2:
+			return "l2";
+		case VectorMetric::Cosine:
+			return "cosine";
+		case VectorMetric::InnerProduct:
+			return "inner_product";
+	}
+	throw_as_assert;
+}
+
+}  // namespace reindexer

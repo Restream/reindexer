@@ -2,11 +2,15 @@
 
 #include "reindexer_api.h"
 
-class EqualPositionApi : public ReindexerApi {
+namespace reindexer_tests {
+
+class [[nodiscard]] EqualPositionApi : public ReindexerApi {
 public:
 	void SetUp() override {
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		using reindexer::IndexOpts;
+
+		ReindexerApi::SetUp();
+		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
 												   IndexDeclaration{kFieldA1, "hash", "int", IndexOpts().Array(), 0},
 												   IndexDeclaration{kFieldA2, "tree", "int", IndexOpts().Array(), 0},
@@ -54,3 +58,5 @@ protected:
 	const char* kFieldA2 = "a2";
 	const char* kFieldA3 = "a3";
 };
+
+}  // namespace reindexer_tests

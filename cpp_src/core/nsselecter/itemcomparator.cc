@@ -1,16 +1,17 @@
 #include "itemcomparator.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/queryresults/joinresults.h"
+#include "core/nsselecter/joins/queryresults.h"
 #include "nsselecter.h"
 
 namespace {
 
-constexpr static size_t kNotComputed{std::numeric_limits<size_t>::max()};
+constexpr size_t kNotComputed{std::numeric_limits<size_t>::max()};
 
-struct FieldsCompRes {
+struct [[nodiscard]] FieldsCompRes {
 	size_t firstDifferentFieldIdx{kNotComputed};
-	reindexer::ComparationResult fieldsCmpRes;
-	[[nodiscard]] reindexer::ComparationResult GetResult(bool desc) noexcept {
+	reindexer::ComparationResult fieldsCmpRes{reindexer::ComparationResult::NotComparable};
+
+	reindexer::ComparationResult GetResult(reindexer::Desc desc) noexcept {
 		if (firstDifferentFieldIdx == 0) {
 			return desc ? -fieldsCmpRes : fieldsCmpRes;
 		} else {
@@ -30,12 +31,13 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 	FieldsCompRes joinedNsRes;
 	for (const auto& comp : comparators_) {
 		const ComparationResult res = std::visit(
-			overloaded{[&](CompareByExpression c) noexcept {
+			overloaded{[&](CompareByExpression c) {
 						   assertrx_throw(expressionIndex < ctx_.sortingContext.exprResults.size());
 						   const auto& eR{ctx_.sortingContext.exprResults[expressionIndex++]};
 						   const auto lR{eR[lhs.SortExprResultsIdx()]};
 						   const auto rR{eR[rhs.SortExprResultsIdx()]};
-						   if (lR == rR) {
+						   static_assert(std::is_floating_point_v<std::decay_t<decltype(lR)>>);
+						   if (fp::ExactlyEqual(lR, rR)) {
 							   return ComparationResult::Eq;
 						   } else if (lR > rR) {
 							   return c.desc ? ComparationResult::Lt : ComparationResult::Gt;
@@ -46,21 +48,22 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 					   [&](CompareByJoinedField c) {
 						   if (joinedNsRes.firstDifferentFieldIdx == kNotComputed) {
 							   const auto& jNs = joined_;
-							   const auto& joinedSelector = *jNs.joinedSelector;
+							   const auto& joinItemsProcessor = *jNs.joinItemsProcessor;
 							   const joins::ItemIterator ljIt{joinResults_, lhs.Id()};
 							   const joins::ItemIterator rjIt{joinResults_, rhs.Id()};
 							   const auto ljfIt = ljIt.at(c.joinedNs);
 							   const auto rjfIt = rjIt.at(c.joinedNs);
-							   if (ljfIt == ljIt.end() || ljfIt.ItemsCount() == 0 || rjfIt == rjIt.end() || rjfIt.ItemsCount() == 0) {
-								   throw Error(errQueryExec, "Not found value joined from ns %s", joinedSelector.RightNsName());
+							   if (ljfIt == ljIt.end() || ljfIt.ItemsCount() == 0 || rjfIt == rjIt.end() || rjfIt.ItemsCount() == 0)
+								   [[unlikely]] {
+								   throw Error(errQueryExec, "Not found value joined from ns {}", joinItemsProcessor.RightNsName());
 							   }
-							   if (ljfIt.ItemsCount() > 1 || rjfIt.ItemsCount() > 1) {
-								   throw Error(errQueryExec, "Found more than 1 value joined from ns %s", joinedSelector.RightNsName());
+							   if (ljfIt.ItemsCount() > 1 || rjfIt.ItemsCount() > 1) [[unlikely]] {
+								   throw Error(errQueryExec, "Found more than 1 value joined from ns {}", joinItemsProcessor.RightNsName());
 							   }
 							   joinedNsRes.fieldsCmpRes =
-								   ConstPayload{joinedSelector.RightNs()->payloadType_, ljfIt[0].Value()}
-									   .Compare<WithString::No, NotComparable::Throw>(rjfIt[0].Value(), jNs.fields,
-																					  joinedNsRes.firstDifferentFieldIdx, jNs.collateOpts);
+								   ConstPayload{joinItemsProcessor.RightNs()->payloadType_, ljfIt[0].Value()}
+									   .Compare<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(
+										   rjfIt[0].Value(), jNs.fields, joinedNsRes.firstDifferentFieldIdx, jNs.collateOpts);
 						   }
 						   return joinedNsRes.GetResult(c.desc);
 					   },
@@ -77,13 +80,13 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 	}
 	// If values are equal, then sort by row ID, to give consistent results
 	return std::visit([&](const auto& e) noexcept { return e.data.desc ? lhs.Id() > rhs.Id() : lhs.Id() < rhs.Id(); },
-					  ctx_.sortingContext.entries[0]);
+					  ctx_.sortingContext.entries[0].AsVariant());
 }
 
-class ItemComparator::BackInserter {
+class [[nodiscard]] ItemComparator::BackInserter {
 public:
 	explicit BackInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
-	void expr(bool desc) { comparator_.comparators_.emplace_back(CompareByExpression{desc}); }
+	void expr(Desc desc) { comparator_.comparators_.emplace_back(CompareByExpression{desc}); }
 	void fields(TagsPath&& tp) { comparator_.fields_.push_back(std::move(tp)); }
 	void fields(Joined& joined, TagsPath&& tp) { joined.fields.push_back(std::move(tp)); }
 	void fields(int fieldIdx) {
@@ -97,8 +100,8 @@ public:
 		}
 	}
 	void fields(Joined& joined, int fieldIdx) { joined.fields.push_back(fieldIdx); }
-	void index(bool desc) { comparator_.comparators_.emplace_back(CompareByField{desc}); }
-	void joined(size_t nsIdx, bool desc) { comparator_.comparators_.emplace_back(CompareByJoinedField{nsIdx, desc}); }
+	void index(Desc desc) { comparator_.comparators_.emplace_back(CompareByField{desc}); }
+	void joined(size_t nsIdx, Desc desc) { comparator_.comparators_.emplace_back(CompareByJoinedField{nsIdx, desc}); }
 	void collateOpts(const CollateOpts* opts) { comparator_.collateOpts_.emplace_back(opts); }
 	void collateOpts(Joined& joined, const CollateOpts* opts) { joined.collateOpts.emplace_back(opts); }
 
@@ -106,16 +109,16 @@ private:
 	ItemComparator& comparator_;
 };
 
-class ItemComparator::FrontInserter {
+class [[nodiscard]] ItemComparator::FrontInserter {
 public:
-	FrontInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
-	void expr(bool desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByExpression{desc}); }
+	explicit FrontInserter(ItemComparator& comparator) noexcept : comparator_(comparator) {}
+	void expr(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.cbegin(), CompareByExpression{desc}); }
 	void fields(TagsPath&& tp) { comparator_.fields_.push_front(std::move(tp)); }
 	void fields(Joined& joined, TagsPath&& tp) { joined.fields.push_front(std::move(tp)); }
 	void fields(int fieldIdx) {
 		if (fieldIdx != SetByJsonPath && !comparator_.fields_.contains(fieldIdx)) {
 			comparator_.fields_.push_front(fieldIdx);
-			auto rawDataIt = comparator_.rawData_.insert(comparator_.rawData_.begin(), SortingContext::RawDataParams());
+			auto rawDataIt = comparator_.rawData_.insert(comparator_.rawData_.cbegin(), SortingContext::RawDataParams());
 			if (auto rawData = comparator_.ns_.indexes_[fieldIdx]->ColumnData(); rawData) {
 				rawDataIt->ptr = rawData;
 				rawDataIt->type = comparator_.ns_.payloadType_.Field(fieldIdx).Type();
@@ -123,12 +126,12 @@ public:
 		}
 	}
 	void fields(Joined& joined, int fieldIdx) { joined.fields.push_front(fieldIdx); }
-	void index(bool desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByField{desc}); }
-	void joined(size_t nsIdx, bool desc) {
-		comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByJoinedField{nsIdx, desc});
+	void index(Desc desc) { comparator_.comparators_.emplace(comparator_.comparators_.cbegin(), CompareByField{desc}); }
+	void joined(size_t nsIdx, Desc desc) {
+		comparator_.comparators_.emplace(comparator_.comparators_.cbegin(), CompareByJoinedField{nsIdx, desc});
 	}
-	void collateOpts(const CollateOpts* opts) { comparator_.collateOpts_.emplace(comparator_.collateOpts_.begin(), opts); }
-	void collateOpts(Joined& joined, const CollateOpts* opts) { joined.collateOpts.emplace(joined.collateOpts.begin(), opts); }
+	void collateOpts(const CollateOpts* opts) { comparator_.collateOpts_.emplace(comparator_.collateOpts_.cbegin(), opts); }
+	void collateOpts(Joined& joined, const CollateOpts* opts) { joined.collateOpts.emplace(joined.collateOpts.cbegin(), opts); }
 
 private:
 	ItemComparator& comparator_;
@@ -140,15 +143,15 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 		overloaded{[&](const SortingContext::ExpressionEntry& e) { insert.expr(e.data.desc); },
 				   [&](const SortingContext::JoinedFieldEntry& e) {
 					   auto& jns = joined_;
-					   if (jns.joinedSelector == nullptr) {
-						   assertrx_throw(ctx_.joinedSelectors);
-						   assertrx_throw(ctx_.joinedSelectors->size() > e.nsIdx);
-						   jns.joinedSelector = &(*ctx_.joinedSelectors)[e.nsIdx];
+					   if (jns.joinItemsProcessor == nullptr) {
+						   assertrx_throw(ctx_.joinItemsProcessors);
+						   assertrx_throw(ctx_.joinItemsProcessors->size() > e.nsIdx);
+						   jns.joinItemsProcessor = &(*ctx_.joinItemsProcessors)[e.nsIdx];
 					   } else {
-						   assertrx_dbg(&(*ctx_.joinedSelectors)[e.nsIdx] == jns.joinedSelector);
+						   assertrx_dbg(&(*ctx_.joinItemsProcessors)[e.nsIdx] == jns.joinItemsProcessor);
 					   }
-					   assertrx_dbg(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult().payload));
-					   const auto& ns = *jns.joinedSelector->RightNs();
+					   assertrx_dbg(!std::holds_alternative<joins::PreSelect::Values>(jns.joinItemsProcessor->PreSelectResults().payload));
+					   const auto& ns = *jns.joinItemsProcessor->RightNs();
 					   const int fieldIdx = e.index;
 					   if (fieldIdx == IndexValueType::SetByJsonPath || ns.indexes_[fieldIdx]->Opts().IsSparse()) {
 						   TagsPath tagsPath;
@@ -159,35 +162,29 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 						   } else {
 							   tagsPath = ns.tagsMatcher_.path2tag(e.field);
 						   }
-						   if (jns.fields.contains(tagsPath)) {
-							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+						   if (jns.fields.contains(tagsPath)) [[unlikely]] {
+							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 						   }
 						   insert.fields(jns, std::move(tagsPath));
 						   insert.joined(e.nsIdx, e.data.desc);
-						   if (fieldIdx != IndexValueType::SetByJsonPath) {
-							   insert.collateOpts(jns, &ns.indexes_[fieldIdx]->Opts().collateOpts_);
-						   } else {
-							   insert.collateOpts(jns, nullptr);
-						   }
+						   insert.collateOpts(
+							   jns, (fieldIdx == IndexValueType::SetByJsonPath) ? nullptr : &ns.indexes_[fieldIdx]->Opts().collateOpts_);
 					   } else {
 						   const auto& idx = *ns.indexes_[fieldIdx];
-						   if (idx.Opts().IsArray()) {
-							   throw Error(errQueryExec, "Sorting cannot be applied to array field.");
-						   }
 						   if (fieldIdx >= ns.indexes_.firstCompositePos()) {
 							   unsigned jsonPathsIndex = 0;
 							   const auto& fields = idx.Fields();
 							   for (unsigned i = 0, s = fields.size(); i < s; ++i) {
 								   const auto f = fields[i];
 								   if (f != IndexValueType::SetByJsonPath) {
-									   if (jns.fields.contains(f)) {
-										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+									   if (jns.fields.contains(f)) [[unlikely]] {
+										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 									   }
 									   insert.fields(jns, f);
 								   } else {
 									   TagsPath tagsPath = jns.fields.getTagsPath(jsonPathsIndex++);
-									   if (jns.fields.contains(tagsPath)) {
-										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+									   if (jns.fields.contains(tagsPath)) [[unlikely]] {
+										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 									   }
 									   insert.fields(jns, std::move(tagsPath));
 								   }
@@ -195,8 +192,8 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 								   insert.collateOpts(jns, &idx.Opts().collateOpts_);
 							   }
 						   } else {
-							   if (jns.fields.contains(fieldIdx)) {
-								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.field);
+							   if (jns.fields.contains(fieldIdx)) [[unlikely]] {
+								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.field);
 							   }
 							   insert.fields(jns, fieldIdx);
 							   insert.joined(e.nsIdx, e.data.desc);
@@ -215,31 +212,38 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 						   } else {
 							   tagsPath = ns_.tagsMatcher_.path2tag(e.data.expression);
 						   }
-						   if (fields_.contains(tagsPath)) {
-							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+						   if (fields_.contains(tagsPath)) [[unlikely]] {
+							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 						   }
 						   insert.fields(std::move(tagsPath));
 						   insert.index(e.data.desc);
 						   insert.collateOpts(e.opts);
 					   } else {
-						   if (ns_.indexes_[fieldIdx]->Opts().IsArray()) {
-							   throw Error(errQueryExec, "Sorting cannot be applied to array field.");
-						   }
 						   if (fieldIdx >= ns_.indexes_.firstCompositePos()) {
 							   const auto& fields = ns_.indexes_[fieldIdx]->Fields();
+							   unsigned jsonPathsIndex = 0;
 							   for (unsigned i = 0, s = fields.size(); i < s; ++i) {
 								   const auto field(fields[i]);
-								   assertrx_dbg(field != SetByJsonPath);
-								   if (fields_.contains(field)) {
-									   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+								   if (field != SetByJsonPath) {
+									   if (fields_.contains(field)) [[unlikely]] {
+										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
+									   }
+									   insert.fields(field);
+								   } else {
+									   // For fulltext composites only
+									   assertrx_dbg(IsFullText(ns_.indexes_[fieldIdx]->Type()));
+									   TagsPath tagsPath = fields.getTagsPath(jsonPathsIndex++);
+									   if (fields_.contains(tagsPath)) [[unlikely]] {
+										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
+									   }
+									   insert.fields(std::move(tagsPath));
 								   }
-								   insert.fields(field);
 								   insert.index(e.data.desc);
 								   insert.collateOpts(e.opts);
 							   }
 						   } else {
-							   if (fields_.contains(fieldIdx)) {
-								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+							   if (fields_.contains(fieldIdx)) [[unlikely]] {
+								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
 							   }
 							   insert.fields(fieldIdx);
 							   insert.index(e.data.desc);
@@ -247,7 +251,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 						   }
 					   }
 				   }},
-		sortingEntry);
+		sortingEntry.AsVariant());
 }
 
 void ItemComparator::BindForForcedSort() {
@@ -288,36 +292,42 @@ ComparationResult ItemComparator::compareFields(IdType lId, IdType rId, size_t& 
 			const auto rawData = rd.ptr;
 			auto values = rd.type.EvaluateOneOf(
 				[rawData, lId, rId](KeyValueType::Bool) noexcept {
-					return std::make_pair(Variant(*(static_cast<const bool*>(rawData) + lId)),
-										  Variant(*(static_cast<const bool*>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const bool*>(rawData) + lId.ToNumber())),
+										  Variant(*(static_cast<const bool*>(rawData) + rId.ToNumber())));
 				},
 				[rawData, lId, rId](KeyValueType::Int) noexcept {
-					return std::make_pair(Variant(*(static_cast<const int*>(rawData) + lId)),
-										  Variant(*(static_cast<const int*>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const int*>(rawData) + lId.ToNumber())),
+										  Variant(*(static_cast<const int*>(rawData) + rId.ToNumber())));
 				},
 				[rawData, lId, rId](KeyValueType::Int64) noexcept {
-					return std::make_pair(Variant(*(static_cast<const int64_t*>(rawData) + lId)),
-										  Variant(*(static_cast<const int64_t*>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const int64_t*>(rawData) + lId.ToNumber())),
+										  Variant(*(static_cast<const int64_t*>(rawData) + rId.ToNumber())));
 				},
 				[rawData, lId, rId](KeyValueType::Double) noexcept {
-					return std::make_pair(Variant(*(static_cast<const double*>(rawData) + lId)),
-										  Variant(*(static_cast<const double*>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const double*>(rawData) + lId.ToNumber())),
+										  Variant(*(static_cast<const double*>(rawData) + rId.ToNumber())));
 				},
 				[rawData, lId, rId](KeyValueType::String) noexcept {
-					return std::make_pair(Variant(p_string(static_cast<const std::string_view*>(rawData) + lId), Variant::no_hold_t{}),
-										  Variant(p_string(static_cast<const std::string_view*>(rawData) + rId), Variant::no_hold_t{}));
+					return std::make_pair(
+						Variant(p_string(static_cast<const std::string_view*>(rawData) + lId.ToNumber()), Variant::noHold),
+						Variant(p_string(static_cast<const std::string_view*>(rawData) + rId.ToNumber()), Variant::noHold));
 				},
 				[rawData, lId, rId](KeyValueType::Uuid) noexcept {
-					return std::make_pair(Variant(*(static_cast<const Uuid*>(rawData) + lId)),
-										  Variant(*(static_cast<const Uuid*>(rawData) + rId)));
+					return std::make_pair(Variant(*(static_cast<const Uuid*>(rawData) + lId.ToNumber())),
+										  Variant(*(static_cast<const Uuid*>(rawData) + rId.ToNumber())));
 				},
-				[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>)
-					-> std::pair<Variant, Variant> { throw_as_assert; });
-			cmpRes = values.first.template Compare<NotComparable::Throw>(values.second, opts ? *opts : CollateOpts());
+				[](KeyValueType::Float) -> std::pair<Variant, Variant> {
+					// Indexed fields can not contain float
+					throw_as_assert;
+				},
+				[](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+								   KeyValueType::FloatVector> auto) -> std::pair<Variant, Variant> { throw_as_assert; });
+			cmpRes =
+				values.first.template Compare<NotComparable::Throw, kDefaultNullsHandling>(values.second, opts ? *opts : CollateOpts());
 		} else {
 			cmpRes = ConstPayload(ns_.payloadType_, ns_.items_[lId])
-						 .CompareField<WithString::No, NotComparable::Throw>(ns_.items_[rId], field, fields_, tagPathIdx,
-																			 opts ? *opts : CollateOpts());
+						 .CompareField<WithString::No, NotComparable::Throw, kDefaultNullsHandling>(
+							 ns_.items_[rId], field, fields_, tagPathIdx, opts ? *opts : CollateOpts());
 		}
 		if (cmpRes != ComparationResult::Eq) {
 			firstDifferentFieldIdx = i;

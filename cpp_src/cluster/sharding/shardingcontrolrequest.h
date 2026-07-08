@@ -2,21 +2,18 @@
 #include <variant>
 #include "cluster/config.h"
 
-namespace reindexer {
-class JsonBuilder;
-}
-
 namespace gason {
 struct JsonNode;
-}
+}  // namespace gason
+
 namespace reindexer::sharding {
 
-struct EmptyCommand {
+struct [[nodiscard]] EmptyCommand {
 	void GetJSON(JsonBuilder&) const {}
 	void FromJSON(const gason::JsonNode&) {}
 };
 
-struct ApplyLeaderConfigCommand {
+struct [[nodiscard]] ApplyLeaderConfigCommand {
 	ApplyLeaderConfigCommand() = default;
 	ApplyLeaderConfigCommand(std::string_view config, std::optional<int64_t> sourceId) noexcept : config(config), sourceId(sourceId) {}
 
@@ -27,7 +24,7 @@ struct ApplyLeaderConfigCommand {
 	void FromJSON(const gason::JsonNode& payload);
 };
 
-struct SaveConfigCommand {
+struct [[nodiscard]] SaveConfigCommand {
 	SaveConfigCommand() = default;
 	SaveConfigCommand(std::string_view config, int64_t sourceId) noexcept : config(config), sourceId(sourceId) {}
 
@@ -38,7 +35,7 @@ struct SaveConfigCommand {
 	void FromJSON(const gason::JsonNode& payload);
 };
 
-struct ApplyConfigCommand {
+struct [[nodiscard]] ApplyConfigCommand {
 	ApplyConfigCommand() = default;
 	ApplyConfigCommand(int64_t sourceId) noexcept : sourceId(sourceId) {}
 
@@ -48,7 +45,7 @@ struct ApplyConfigCommand {
 	void FromJSON(const gason::JsonNode&);
 };
 
-struct ResetConfigCommand {
+struct [[nodiscard]] ResetConfigCommand {
 	ResetConfigCommand() = default;
 	ResetConfigCommand(int64_t sourceId) noexcept : sourceId(sourceId) {}
 
@@ -58,7 +55,7 @@ struct ResetConfigCommand {
 	void FromJSON(const gason::JsonNode&);
 };
 
-struct GetNodeConfigCommand {
+struct [[nodiscard]] GetNodeConfigCommand {
 	GetNodeConfigCommand() = default;
 	GetNodeConfigCommand(cluster::ShardingConfig config) noexcept : config(std::move(config)) {}
 
@@ -69,7 +66,7 @@ struct GetNodeConfigCommand {
 	void FromJSON(const gason::JsonNode&);
 };
 
-enum class ControlCmdType : int {
+enum class [[nodiscard]] ControlCmdType : int {
 	SaveCandidate = 0,
 	ResetOldSharding = 1,
 	ResetCandidate = 2,
@@ -89,10 +86,10 @@ void assign_if_constructible(T& data, Args&&... args) {
 	}
 }
 
-struct ShardingControlRequestData {
+struct [[nodiscard]] ShardingControlRequestData {
 	ShardingControlRequestData() noexcept = default;
 
-	Error FromJSON(span<char> json) noexcept;
+	Error FromJSON(std::span<char> json) noexcept;
 	void GetJSON(WrSerializer& ser) const;
 
 	template <typename... Args>
@@ -123,10 +120,10 @@ struct ShardingControlRequestData {
 	ShargindCommandDataType data;
 };
 
-struct ShardingControlResponseData {
+struct [[nodiscard]] ShardingControlResponseData {
 	ShardingControlResponseData() noexcept = default;
 
-	Error FromJSON(span<char> json) noexcept;
+	Error FromJSON(std::span<char> json) noexcept;
 	void GetJSON(WrSerializer& ser) const;
 
 	template <typename... Args>

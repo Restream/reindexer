@@ -1,12 +1,14 @@
 #pragma once
 
-#include <climits>
 #include <memory>
 
-#include "core/idset.h"
+#include "core/id_type.h"
+#include "core/idset/idset.h"
 #include "core/index/indexiterator.h"
+#include "core/index/keyentry.h"
 #include "core/nsselecter/comparator/comparator_indexed.h"
 #include "core/nsselecter/comparator/comparator_not_indexed.h"
+#include "estl/heapify.h"
 
 namespace reindexer {
 
@@ -15,144 +17,373 @@ namespace reindexer {
 /// contains only 1 IdSet for one of the following keys:
 /// 10, 11, 12, 13, ... 19 (For example all rowIds for
 /// the value '10').
-class SingleSelectKeyResult {
+class [[nodiscard]] SingleSelectKeyResult {
 	friend class SelectIterator;
 	friend class SelectKeyResult;
 
 public:
 	SingleSelectKeyResult() noexcept {}
-	explicit SingleSelectKeyResult(IndexIterator::Ptr&& indexForwardIter) noexcept : indexForwardIter_(std::move(indexForwardIter)) {
-		assertrx(indexForwardIter_ != nullptr);
+	~SingleSelectKeyResult() { destroyState(); }
+	explicit SingleSelectKeyResult(IndexIterator::Ptr&& indexForwardIter) noexcept
+		: idxFwdIter_{std::move(indexForwardIter)}, collectionType_{Collection::SingleIterator} {
+		assertrx(idxFwdIter_ != nullptr);
 	}
 	template <typename KeyEntryT>
-	explicit SingleSelectKeyResult(const KeyEntryT& ids, SortType sortId) noexcept {
-		if (ids.Unsorted().IsCommited()) {
-			ids_ = ids.Sorted(sortId);
+	explicit SingleSelectKeyResult(const KeyEntryT& ids, SortType sortId) noexcept
+		requires(concepts::KeyEntryWithSortedIDs<KeyEntryT>)
+	{
+		auto set = ids.Unsorted().BTree();
+		if (!set) {
+			assertrx_dbg(ids.Unsorted().IsCommitted());
+			collectionType_ = Collection::FlatIdSet;
+			new (&flatIds_) FlatIdSet{.storage{}, .view = ids.Sorted(sortId), .u{}};
 		} else {
-			assertrx(ids.Unsorted().BTree());
 			assertrx(!sortId);
-			set_ = ids.Unsorted().BTree();
-			useBtree_ = true;
+			assertrx_dbg(!ids.Unsorted().IsCommitted());
+			collectionType_ = Collection::TreeIdSet;
+			new (&treeIds_) TreeIdSet{.ptr = set, .u{}};
 		}
 	}
-	explicit SingleSelectKeyResult(IdSet::Ptr&& ids) noexcept : tempIds_(std::move(ids)), ids_(*tempIds_) {}
-	explicit SingleSelectKeyResult(IdSetCRef ids) noexcept : ids_(ids) {}
-	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) noexcept : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
-	SingleSelectKeyResult(const SingleSelectKeyResult& other) noexcept
-		: tempIds_(other.tempIds_),
-		  ids_(other.ids_),
-		  set_(other.set_),
-		  indexForwardIter_(other.indexForwardIter_),
-		  bsearch_(other.bsearch_),
-		  isRange_(other.isRange_),
-		  useBtree_(other.useBtree_) {
-		if (isRange_) {
-			rBegin_ = other.rBegin_;
-			rEnd_ = other.rEnd_;
-			rIt_ = other.rIt_;
-		} else {
-			if (useBtree_) {
-				setbegin_ = other.setbegin_;
-				setrbegin_ = other.setrbegin_;
-				setend_ = other.setend_;
-				setrend_ = other.setrend_;
-				itset_ = other.itset_;
-				ritset_ = other.ritset_;
-			} else {
-				begin_ = other.begin_;
-				end_ = other.end_;
-				it_ = other.it_;
-			}
-		}
+	template <typename KeyEntryT>
+	explicit SingleSelectKeyResult(const KeyEntryT& ids, const SortedIDsCtx& sortCtx) noexcept
+		requires(concepts::KeyEntryWithSortedIDs<KeyEntryT>)
+		: SingleSelectKeyResult(ids, sortCtx.SortID()) {}
+	template <typename KeyEntryT>
+	explicit SingleSelectKeyResult(const KeyEntryT& ids, const SortedIDsCtx& sortCtx) noexcept
+		requires(!concepts::KeyEntryWithSortedIDs<KeyEntryT>)
+		: flatIds_{FlatIdSet{.storage{}, .view = ids.Sorted(sortCtx), .u{}}}, collectionType_{Collection::FlatIdSet} {
+		static_assert(KeyEntryT::IdSetType::IsCommitted());
 	}
+	explicit SingleSelectKeyResult(IdSetPlain::Ptr&& ids) noexcept
+		: flatIds_{FlatIdSet{.storage = std::move(ids), .view{}, .u{}}}, collectionType_{Collection::FlatIdSet} {
+		assertrx_dbg(flatIds_.storage);
+		flatIds_.view = *flatIds_.storage;
+	}
+	explicit SingleSelectKeyResult(const IdSetPlain& ids) noexcept
+		: flatIds_{FlatIdSet{.storage{}, .view = ids, .u{}}}, collectionType_{Collection::FlatIdSet} {}
+	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) noexcept
+		: range_{Range{.values = std::make_pair(rBegin, rEnd), .u{}}}, collectionType_{Collection::Range} {
+		assertrx_dbg(rBegin <= rEnd);
+	}
+	SingleSelectKeyResult(const SingleSelectKeyResult& other) noexcept { copyStateFrom(other); }
+	SingleSelectKeyResult(SingleSelectKeyResult&& other) noexcept { moveStateFrom(std::move(other)); }
 	SingleSelectKeyResult& operator=(const SingleSelectKeyResult& other) noexcept {
 		if (&other != this) {
-			tempIds_ = other.tempIds_;
-			ids_ = other.ids_;
-			set_ = other.set_;
-			indexForwardIter_ = other.indexForwardIter_;
-			bsearch_ = other.bsearch_;
-			isRange_ = other.isRange_;
-			useBtree_ = other.useBtree_;
-			if (isRange_) {
-				rBegin_ = other.rBegin_;
-				rEnd_ = other.rEnd_;
-				rIt_ = other.rIt_;
-			} else {
-				if (useBtree_) {
-					setbegin_ = other.setbegin_;
-					setrbegin_ = other.setrbegin_;
-					setend_ = other.setend_;
-					setrend_ = other.setrend_;
-					itset_ = other.itset_;
-					ritset_ = other.ritset_;
-				} else {
-					begin_ = other.begin_;
-					end_ = other.end_;
-					it_ = other.it_;
-				}
-			}
+			destroyState();
+			copyStateFrom(other);
+		}
+		return *this;
+	}
+	SingleSelectKeyResult& operator=(SingleSelectKeyResult&& other) noexcept {
+		if (this != &other) {
+			destroyState();
+			moveStateFrom(std::move(other));
 		}
 		return *this;
 	}
 
-	IdSet::Ptr tempIds_;
-	IdSetCRef ids_;
+	size_t GetMaxIterations(size_t limitIters) const noexcept {
+		switch (collectionType_) {
+			case Collection::FlatIdSet:
+				return flatIds_.view.size();
+			case Collection::TreeIdSet:
+				return treeIds_.ptr->size();
+			case Collection::Range:
+				assertrx_dbg(range_.values.second.ToNumber() >= range_.values.first.ToNumber());
+				return range_.values.second.ToNumber() - range_.values.first.ToNumber();
+			case Collection::SingleIterator: {
+				const auto iters = idxFwdIter_->GetMaxIterations(limitIters);
+				return (iters == std::numeric_limits<size_t>::max()) ? limitIters : iters;
+			}
+			case Collection::NotSet:
+			default:
+				assertrx_dbg(false);
+				return 0;
+		}
+	}
+
+	void Start(bool reverse) {
+		switch (collectionType_) {
+			case Collection::NotSet:
+				throw Error(errLogic, "SingleSelectKeyResult::Start: collection type is not set");
+			case Collection::FlatIdSet:
+				resetUnionDirection(direction_, flatIds_);
+				if (reverse) {
+					const auto begin = flatIds_.view.rbegin();
+					const auto end = flatIds_.view.rend();
+					std::construct_at(&flatIds_.u.rev, begin, end, begin);
+				} else {
+					const auto begin = flatIds_.view.begin();
+					const auto end = flatIds_.view.end();
+					std::construct_at(&flatIds_.u.fwd, begin, end, begin);
+				}
+				break;
+			case Collection::TreeIdSet:
+				resetUnionDirection(direction_, treeIds_);
+				if (reverse) {
+					const auto begin = treeIds_.ptr->rbegin();
+					const auto end = treeIds_.ptr->rend();
+					std::construct_at(&treeIds_.u.rev, begin, end, begin);
+				} else {
+					const auto begin = treeIds_.ptr->begin();
+					const auto end = treeIds_.ptr->end();
+					std::construct_at(&treeIds_.u.fwd, begin, end, begin);
+				}
+				break;
+			case Collection::Range:
+				resetUnionDirection(direction_, range_);
+				if (reverse) {
+					const auto begin = range_.values.second.Decr();
+					const auto end = range_.values.first.Decr();
+					std::construct_at(&range_.u.rev, begin, end, begin);
+				} else {
+					const auto begin = range_.values.first;
+					const auto end = range_.values.second;
+					std::construct_at(&range_.u.fwd, begin, end, begin);
+				}
+				break;
+			case Collection::SingleIterator: {
+				idxFwdIter_->Start(reverse);
+				break;
+			}
+		}
+		direction_ = reverse ? Direction::Reverse : Direction::Forward;
+	}
+
+	bool OwnsFlatIDSet() const noexcept { return collectionType_ == Collection::FlatIdSet && flatIds_.storage; }
+	IdSetCRef TryGetFlatIDSet() const noexcept { return collectionType_ == Collection::FlatIdSet ? flatIds_.view : IdSetCRef(); }
 
 protected:
-	const base_idsetset* set_ = nullptr;
+	enum class [[nodiscard]] Collection : uint8_t { NotSet, FlatIdSet, TreeIdSet, Range, SingleIterator };
+	enum class [[nodiscard]] Direction : uint8_t { NotSet, Forward, Reverse };
 
-	union {
-		IdSetCRef::const_iterator begin_;
-		IdSetCRef::const_reverse_iterator rbegin_;
-		base_idsetset::const_iterator setbegin_;
-		base_idsetset::const_reverse_iterator setrbegin_;
-		int rBegin_ = 0;
-		int rrBegin_;
+	template <typename IterT>
+	struct [[nodiscard]] Iters {
+		IterT begin;
+		IterT end;
+		IterT it;
+	};
+	template <typename FwdIterT, typename RevIterT>
+	union [[nodiscard]] ItersUnion {
+		struct [[nodiscard]] RevT {};
+
+		ItersUnion() {
+			// Does not set active member
+		}
+		ItersUnion(Iters<FwdIterT> f) : fwd{std::move(f)} {}
+		ItersUnion(Iters<RevIterT> r)
+			requires(!std::is_same_v<Iters<FwdIterT>, Iters<RevIterT>>)
+			: rev{std::move(r)} {}
+		ItersUnion(Iters<RevIterT> r, RevT) : rev{std::move(r)} {}
+
+		Iters<FwdIterT> fwd;
+		Iters<RevIterT> rev;
 	};
 
-	union {
-		IdSetCRef::const_iterator end_;
-		IdSetCRef::const_reverse_iterator rend_;
-		base_idsetset::const_iterator setend_;
-		base_idsetset::const_reverse_iterator setrend_;
-		int rEnd_ = 0;
-		int rrEnd_;
+	struct [[nodiscard]] FlatIdSet {
+		using UnionT = ItersUnion<IdSetCRef::iterator, IdSetCRef::reverse_iterator>;
+
+		FlatIdSet Clone(Direction direction) const noexcept {
+			switch (direction) {
+				case Direction::Forward:
+					return FlatIdSet{.storage = storage, .view = view, .u = UnionT{u.fwd}};
+				case Direction::Reverse:
+					return FlatIdSet{.storage = storage, .view = view, .u = UnionT{u.rev}};
+				case Direction::NotSet:
+				default:
+					return FlatIdSet{.storage = storage, .view = view, .u = UnionT{}};
+			}
+		}
+
+		FlatIdSet Extract(Direction direction) && noexcept {
+			switch (direction) {
+				case Direction::Forward:
+					return FlatIdSet{.storage = std::move(storage), .view = view, .u = UnionT{std::move(u.fwd)}};
+				case Direction::Reverse:
+					return FlatIdSet{.storage = std::move(storage), .view = view, .u = UnionT{std::move(u.rev)}};
+				case Direction::NotSet:
+				default:
+					return FlatIdSet{.storage = std::move(storage), .view = view, .u = UnionT{}};
+			}
+		}
+
+		IdSetPlain::Ptr storage;
+		IdSetCRef view;
+		UnionT u;
 	};
 
-	union {
-		IdSetCRef::const_iterator it_;
-		IdSetCRef::const_reverse_iterator rit_;
-		base_idsetset::const_iterator itset_;
-		base_idsetset::const_reverse_iterator ritset_;
-		int rIt_ = 0;
-		int rrIt_;
+	struct [[nodiscard]] TreeIdSet {
+		using UnionT = ItersUnion<base_idsetset::const_iterator, base_idsetset::const_reverse_iterator>;
+
+		TreeIdSet Clone(Direction direction) const noexcept {
+			switch (direction) {
+				case Direction::Forward:
+					return TreeIdSet{.ptr = ptr, .u = UnionT{u.fwd}};
+				case Direction::Reverse:
+					return TreeIdSet{.ptr = ptr, .u = UnionT{u.rev}};
+				case Direction::NotSet:
+				default:
+					return TreeIdSet{.ptr = ptr, .u = UnionT{}};
+			}
+		}
+
+		TreeIdSet Extract(Direction direction) && noexcept {
+			switch (direction) {
+				case Direction::Forward:
+					return TreeIdSet{.ptr = ptr, .u = UnionT{std::move(u.fwd)}};
+				case Direction::Reverse:
+					return TreeIdSet{.ptr = ptr, .u = UnionT{std::move(u.rev)}};
+				case Direction::NotSet:
+				default:
+					return TreeIdSet{.ptr = ptr, .u = UnionT{}};
+			}
+		}
+
+		const base_idsetset* ptr;
+		UnionT u;
 	};
 
-	IndexIterator::Ptr indexForwardIter_;
+	struct [[nodiscard]] Range {
+		using UnionT = ItersUnion<IdType, IdType>;
 
-	// if isRange is true then bsearch is always false
-	bool bsearch_ = false;
-	bool isRange_ = false;
-	bool useBtree_ = false;
+		Range Clone(Direction direction) const noexcept {
+			switch (direction) {
+				case Direction::Forward:
+					return Range{.values = values, .u = UnionT{u.fwd}};
+				case Direction::Reverse:
+					return Range{.values = values, .u = UnionT{u.rev, UnionT::RevT{}}};
+				case Direction::NotSet:
+				default:
+					return Range{.values = values, .u = UnionT{}};
+			}
+		}
+
+		Range Extract(Direction direction) && noexcept {
+			switch (direction) {
+				case Direction::Forward:
+					return Range{.values = values, .u = UnionT{std::move(u.fwd)}};
+				case Direction::Reverse:
+					return Range{.values = values, .u = UnionT{std::move(u.rev), UnionT::RevT{}}};
+				case Direction::NotSet:
+				default:
+					return Range{.values = values, .u = UnionT{}};
+			}
+		}
+
+		std::pair<IdType, IdType> values;
+		UnionT u;
+	};
+
+	void copyStateFrom(const SingleSelectKeyResult& other) noexcept {
+		collectionType_ = other.collectionType_;
+		direction_ = other.direction_;
+		switch (collectionType_) {
+			case Collection::NotSet:
+				break;
+			case Collection::FlatIdSet:
+				new (&flatIds_) FlatIdSet(other.flatIds_.Clone(direction_));
+				break;
+			case Collection::TreeIdSet:
+				new (&treeIds_) TreeIdSet(other.treeIds_.Clone(direction_));
+				break;
+			case Collection::Range:
+				new (&range_) Range(other.range_.Clone(direction_));
+				break;
+			case Collection::SingleIterator:
+				new (&idxFwdIter_) IndexIterator::Ptr(other.idxFwdIter_);
+				break;
+		}
+	}
+
+	void moveStateFrom(SingleSelectKeyResult&& other) noexcept {
+		collectionType_ = other.collectionType_;
+		direction_ = other.direction_;
+		switch (collectionType_) {
+			case Collection::NotSet:
+				break;
+			case Collection::FlatIdSet:
+				new (&flatIds_) FlatIdSet(std::move(other.flatIds_).Extract(direction_));
+				break;
+			case Collection::TreeIdSet:
+				new (&treeIds_) TreeIdSet(std::move(other.treeIds_).Extract(direction_));
+				break;
+			case Collection::Range:
+				new (&range_) Range(std::move(other.range_).Extract(direction_));
+				break;
+			case Collection::SingleIterator:
+				new (&idxFwdIter_) IndexIterator::Ptr(std::move(other.idxFwdIter_));
+				break;
+		}
+		other.destroyState();
+		other.collectionType_ = Collection::NotSet;
+		other.direction_ = Direction::NotSet;
+	}
+
+	template <typename CollectionT>
+	static void resetUnionDirection(Direction direction, CollectionT& coll) noexcept {
+		switch (direction) {
+			case Direction::NotSet:
+				break;
+			case Direction::Forward:
+				std::destroy_at(&coll.u.fwd);
+				break;
+			case Direction::Reverse:
+				std::destroy_at(&coll.u.rev);
+				break;
+		}
+	}
+
+	void destroyState() noexcept {
+		switch (collectionType_) {
+			case Collection::NotSet:
+				break;
+			case Collection::FlatIdSet:
+				resetUnionDirection(direction_, flatIds_);
+				std::destroy_at(&flatIds_);
+				break;
+			case Collection::TreeIdSet:
+				resetUnionDirection(direction_, treeIds_);
+				std::destroy_at(&treeIds_);
+				break;
+			case Collection::Range:
+				resetUnionDirection(direction_, range_);
+				std::destroy_at(&range_);
+				break;
+			case Collection::SingleIterator:
+				std::destroy_at(&idxFwdIter_);
+				break;
+		}
+		collectionType_ = Collection::NotSet;
+		direction_ = Direction::NotSet;
+	}
+
+	union {
+		FlatIdSet flatIds_;
+		TreeIdSet treeIds_;
+		Range range_;
+		IndexIterator::Ptr idxFwdIter_;
+	};
+	Collection collectionType_ = Collection::NotSet;
+	Direction direction_ = Direction::NotSet;
 };
 
 /// Stores results of selecting data for 1 certain key,
 /// i.e. for condition "A>=10 && A<20" there will be
 /// 10 SingleSelectKeyResult objects (for each of the
 /// following keys: 10, 11, 12, 13, ... 19).
-class SelectKeyResult : public h_vector<SingleSelectKeyResult, 1> {
+class [[nodiscard]] SelectKeyResult : public h_vector<SingleSelectKeyResult, 1> {
 public:
 	constexpr static size_t kMinSetsForHeapSort = 16;
 	constexpr static size_t kSelectionSortIdsCount = 500;
 	constexpr static size_t kMinSetsForGenericSort = 30;
 
-	struct MergeOptions {
+	struct [[nodiscard]] MergeOptions {
 		bool genericSort;
 		bool shrinkResult;
 	};
 
 	bool deferedExplicitSort = false;
+	bool cached = false;
 
 	static size_t GetMergeSortCost(size_t idsCount, size_t idsetsCount) noexcept { return idsCount * idsetsCount; }
 	static size_t GetGenericSortCost(size_t idsCount) noexcept { return idsCount * log2(idsCount) + 2 * idsCount; }
@@ -176,19 +407,7 @@ public:
 	size_t GetMaxIterations(size_t limitIters = std::numeric_limits<size_t>::max()) const noexcept {
 		size_t cnt = 0;
 		for (const SingleSelectKeyResult& r : *this) {
-			if (r.indexForwardIter_) {
-				auto iters = r.indexForwardIter_->GetMaxIterations(limitIters);
-				if (iters == std::numeric_limits<size_t>::max()) {
-					return limitIters;
-				}
-				cnt += iters;
-			} else if (r.isRange_) {
-				cnt += std::abs(r.rEnd_ - r.rBegin_);
-			} else if (r.useBtree_) {
-				cnt += r.set_->size();
-			} else {
-				cnt += r.ids_.size();
-			}
+			cnt += r.GetMaxIterations(limitIters);
 			if (cnt > limitIters) {
 				return limitIters;
 			}
@@ -204,8 +423,8 @@ public:
 	/// @param opts - merge customization options
 	/// @return Pointer to a sorted IdSet object made
 	/// from all the SingleSelectKeyResult inner objects.
-	IdSet::Ptr MergeIdsets(MergeOptions&& opts, size_t idsCount) {
-		IdSet::Ptr mergedIds;
+	IdSetPlain::Ptr MergeIdsets(MergeOptions&& opts, size_t idsCount) {
+		IdSetPlain::Ptr mergedIds;
 		if (opts.genericSort) {
 			mergedIds = mergeGenericSort(idsCount);
 		} else if (idsCount < kSelectionSortIdsCount || size() < kMinSetsForHeapSort) {
@@ -218,76 +437,85 @@ public:
 		}
 		clear();
 		deferedExplicitSort = false;
-		emplace_back(IdSet::Ptr(mergedIds));
+		emplace_back(IdSetPlain::Ptr(mergedIds));
 		return mergedIds;
 	}
 
+	void MarkCached() noexcept { cached = true; }
+	bool IsCached() const noexcept { return cached; }
+
 private:
-	IdSet::Ptr mergeGenericSort(size_t idsCount) {
+	IdSetPlain::Ptr mergeGenericSort(size_t idsCount) {
 		base_idset ids;
 		size_t actualSize = 0;
 		ids.resize(idsCount);
 		auto rit = ids.begin();
 		for (auto it = begin(), endIt = end(); it != endIt; ++it) {
-			if rx_unlikely (it->isRange_) {
-				throw Error(errLogic, "Unable to merge 'range' idset ('generic sort mode')");
-			}
-			if (it->useBtree_) {
-				const auto sz = it->set_->size();
-				actualSize += sz;
-				std::copy(it->set_->begin(), it->set_->end(), rit);
-				rit += sz;
-			} else {
-				const auto sz = it->ids_.size();
-				actualSize += sz;
-				std::copy(it->ids_.begin(), it->ids_.end(), rit);
-				rit += sz;
+			switch (it->collectionType_) {
+				case SingleSelectKeyResult::Collection::NotSet:
+				case SingleSelectKeyResult::Collection::Range:
+				case SingleSelectKeyResult::Collection::SingleIterator:
+					throw Error(errLogic, "Select key result must be flat IdSet or tree IdSet for 'generic sort mode'");
+				case SingleSelectKeyResult::Collection::FlatIdSet: {
+					const auto sz = it->flatIds_.view.size();
+					actualSize += sz;
+					std::ranges::copy(it->flatIds_.view, rit);
+					rit += sz;
+					break;
+				}
+				case SingleSelectKeyResult::Collection::TreeIdSet: {
+					const auto sz = it->treeIds_.ptr->size();
+					actualSize += sz;
+					std::ranges::copy(*it->treeIds_.ptr, rit);
+					rit += sz;
+					break;
+				}
 			}
 		}
 		assertrx(idsCount == actualSize);
-		return IdSet::BuildFromUnsorted(std::move(ids));
+		return IdSetPlain::BuildFromUnsorted(std::move(ids));
 	}
 
-	IdSet::Ptr mergeSelectionSort(size_t idsCount) {
-		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
+	IdSetPlain::Ptr mergeSelectionSort(size_t idsCount) {
+		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSetPlain>>();
 		mergedIds->reserve(idsCount);
 
-		auto firstSetIt = std::partition(begin(), end(), [](const SingleSelectKeyResult& v) noexcept { return !v.useBtree_; });
+		auto firstSetIt = std::partition(begin(), end(), [](const SingleSelectKeyResult& v) noexcept {
+			return v.collectionType_ == SingleSelectKeyResult::Collection::FlatIdSet;
+		});
 		const auto vecsCnt = firstSetIt - begin();
 
 		h_vector<value_type*, 64> ptrsVec;
 		ptrsVec.reserve(size());
 
 		for (auto& v : *this) {
-			if rx_unlikely (v.isRange_) {
-				throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
+			switch (v.collectionType_) {
+				case SingleSelectKeyResult::Collection::NotSet:
+				case SingleSelectKeyResult::Collection::Range:
+				case SingleSelectKeyResult::Collection::SingleIterator:
+					throw Error(errLogic, "Select key result must be flat IdSet or tree IdSet for 'merge selection sort mode'");
+				case SingleSelectKeyResult::Collection::FlatIdSet:
+				case SingleSelectKeyResult::Collection::TreeIdSet: {
+					constexpr bool reverse = false;
+					v.Start(reverse);
+					ptrsVec.emplace_back(&v);
+					break;
+				}
 			}
-			ptrsVec.emplace_back(&v);
 		}
-		span<value_type*> vecSpan(ptrsVec.data(), vecsCnt);
-		span<value_type*> setSpan(ptrsVec.data() + vecsCnt, size() - vecsCnt);
+		std::span<value_type*> vecSpan(ptrsVec.data(), vecsCnt);
+		std::span<value_type*> setSpan(ptrsVec.data() + vecsCnt, size() - vecsCnt);
 
-		for (auto& v : vecSpan) {
-			assertrx_dbg(!v->useBtree_);
-			v->it_ = v->ids_.begin();
-			v->end_ = v->ids_.end();
-		}
-		for (auto& v : setSpan) {
-			assertrx_dbg(v->useBtree_);
-			v->itset_ = v->set_->begin();
-			v->setend_ = v->set_->end();
-		}
-
-		int min = INT_MIN;
+		IdType min = IdType::Min();
 		for (;;) {
-			int curMin = INT_MAX;
+			IdType curMin = IdType::Max();
 			for (auto vsIt = vecSpan.begin(), vsItEnd = vecSpan.end(); vsIt != vsItEnd;) {
-				auto& itvec = (*vsIt)->it_;
-				auto& vecend = (*vsIt)->end_;
+				auto& itvec = (*vsIt)->flatIds_.u.fwd.it;
+				const auto vecend = (*vsIt)->flatIds_.u.fwd.end;
 				for (;; ++itvec) {
 					if (itvec == vecend) {
 						std::swap(*vsIt, vecSpan.back());
-						vecSpan = span<value_type*>(vecSpan.data(), vecSpan.size() - 1);
+						vecSpan = std::span<value_type*>(vecSpan.data(), vecSpan.size() - 1);
 						--vsItEnd;
 						break;
 					}
@@ -302,12 +530,12 @@ private:
 				}
 			}
 			for (auto ssIt = setSpan.begin(), ssItEnd = setSpan.end(); ssIt != ssItEnd;) {
-				auto& itset = (*ssIt)->itset_;
-				auto& setend = (*ssIt)->setend_;
+				auto& itset = (*ssIt)->treeIds_.u.fwd.it;
+				const auto setend = (*ssIt)->treeIds_.u.fwd.end;
 				for (;; ++itset) {
 					if (itset == setend) {
 						std::swap(*ssIt, setSpan.back());
-						setSpan = span<value_type*>(setSpan.data(), setSpan.size() - 1);
+						setSpan = std::span<value_type*>(setSpan.data(), setSpan.size() - 1);
 						--ssItEnd;
 						break;
 					}
@@ -321,7 +549,7 @@ private:
 					}
 				}
 			}
-			if (curMin == INT_MAX) {
+			if (curMin == IdType::Max()) {
 				break;
 			}
 			min = curMin;
@@ -330,14 +558,16 @@ private:
 		return mergedIds;
 	}
 
-	IdSet::Ptr mergeHeapSort(size_t idsCount) {
-		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
+	IdSetPlain::Ptr mergeHeapSort(size_t idsCount) {
+		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSetPlain>>();
 		mergedIds->reserve(idsCount);
 
-		struct IdSetGreater {
+		struct [[nodiscard]] IdSetGreater {
 			bool operator()(const value_type* l, const value_type* r) noexcept {
-				const auto lval = l->useBtree_ ? *(l->itset_) : *(l->it_);
-				const auto rval = r->useBtree_ ? *(r->itset_) : *(r->it_);
+				const auto lval = (l->collectionType_ == SingleSelectKeyResult::Collection::TreeIdSet) ? *(l->treeIds_.u.fwd.it)
+																									   : *(l->flatIds_.u.fwd.it);
+				const auto rval = (r->collectionType_ == SingleSelectKeyResult::Collection::TreeIdSet) ? *(r->treeIds_.u.fwd.it)
+																									   : *(r->flatIds_.u.fwd.it);
 				return lval > rval;
 			}
 		};
@@ -345,28 +575,24 @@ private:
 		h_vector<value_type*, 64> ptrsVec;
 		ptrsVec.reserve(size());
 		for (auto& v : *this) {
-			if rx_unlikely (v.isRange_) {
-				throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
-			}
-
-			if (v.useBtree_) {
-				if (!v.set_->empty()) {
+			switch (v.collectionType_) {
+				case SingleSelectKeyResult::Collection::NotSet:
+				case SingleSelectKeyResult::Collection::Range:
+				case SingleSelectKeyResult::Collection::SingleIterator:
+					throw Error(errLogic, "Select key result must be flat IdSet or tree IdSet for 'merge heap sort mode'");
+				case SingleSelectKeyResult::Collection::FlatIdSet:
+				case SingleSelectKeyResult::Collection::TreeIdSet: {
+					constexpr bool reverse = false;
+					v.Start(reverse);
 					ptrsVec.emplace_back(&v);
-					v.itset_ = v.set_->begin();
-					v.setend_ = v.set_->end();
-				}
-			} else {
-				if (!v.ids_.empty()) {
-					ptrsVec.emplace_back(&v);
-					v.it_ = v.ids_.begin();
-					v.end_ = v.ids_.end();
+					break;
 				}
 			}
 		}
-		span<value_type*> idsetsSpan(ptrsVec.data(), ptrsVec.size());
+		std::span<value_type*> idsetsSpan(ptrsVec.data(), ptrsVec.size());
 		std::make_heap(idsetsSpan.begin(), idsetsSpan.end(), IdSetGreater{});
-		int min = INT_MIN;
-		auto handleMinValue = [&mergedIds, &idsetsSpan, &min](auto& it, auto end) noexcept {
+		IdType min = IdType::Min();
+		auto handleMinValue = [&mergedIds, &idsetsSpan, &min](auto& it, auto end) {
 			auto val = *it;
 			if (val > min) {
 				mergedIds->AddUnordered(val);
@@ -375,7 +601,7 @@ private:
 			do {
 				if (++it == end) {
 					std::swap(idsetsSpan.front(), idsetsSpan.back());
-					idsetsSpan = span<value_type*>(idsetsSpan.begin(), idsetsSpan.size() - 1);
+					idsetsSpan = std::span<value_type*>(idsetsSpan.begin(), idsetsSpan.size() - 1);
 					return;
 				}
 			} while (*it <= min);
@@ -383,41 +609,15 @@ private:
 
 		while (!idsetsSpan.empty()) {
 			auto& minV = *idsetsSpan.front();
-			if (minV.useBtree_) {
-				handleMinValue(minV.itset_, minV.setend_);
+			if (minV.collectionType_ == SingleSelectKeyResult::Collection::TreeIdSet) {
+				handleMinValue(minV.treeIds_.u.fwd.it, minV.treeIds_.u.fwd.end);
 			} else {
-				handleMinValue(minV.it_, minV.end_);
+				assertrx_dbg(minV.collectionType_ == SingleSelectKeyResult::Collection::FlatIdSet);
+				handleMinValue(minV.flatIds_.u.fwd.it, minV.flatIds_.u.fwd.end);
 			}
 			heapifyRoot<value_type*, IdSetGreater>(idsetsSpan);
 		}
 		return mergedIds;
-	}
-
-	template <typename T, typename CompareT>
-	RX_ALWAYS_INLINE void heapifyRoot(span<T> vec) noexcept {
-		static_assert(std::is_pointer_v<T>, "Expecting T being a pointer for the fast swaps");
-		T* target = vec.begin();
-		T* end = target + vec.size();
-		CompareT c;
-		for (size_t i = 0;;) {
-			T* cur = target;
-			const auto lIdx = (i << 1) + 1;
-			T* left = vec.begin() + lIdx;
-			T* right = left + 1;
-
-			if (left < end && c(*target, *left)) {
-				target = left;
-				i = lIdx;
-			}
-			if (right < end && c(*target, *right)) {
-				target = right;
-				i = lIdx + 1;
-			}
-			if (cur == target) {
-				return;
-			}
-			std::swap(*cur, *target);
-		}
 	}
 };
 
@@ -425,22 +625,45 @@ using SelectKeyResultsVector = h_vector<SelectKeyResult, 1>;
 
 /// Result of selecting data for
 /// each key in a query.
-class SelectKeyResults : public std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
-											 ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>,
-											 ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>> {
-	using Base = std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
-							  ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>,
-							  ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>>;
+class [[nodiscard]] SelectKeyResults
+	: public std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
+						  ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>,
+						  ComparatorIndexed<PayloadValue>, ComparatorIndexed<Point>, ComparatorIndexed<Uuid>,
+						  ComparatorIndexed<FloatVector>> {
+	using Base =
+		std::variant<SelectKeyResultsVector, ComparatorNotIndexed, ComparatorIndexed<bool>, ComparatorIndexed<int>,
+					 ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
+					 ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>>;
 
 public:
 	SelectKeyResults() noexcept : Base{SelectKeyResultsVector{}} {}
+	// NOLINTNEXTLINE(bugprone-exception-escape) h_vector has default capacity of 1
 	SelectKeyResults(SelectKeyResult&& res) noexcept : Base{SelectKeyResultsVector{std::move(res)}} {}
 	template <typename T>
 	SelectKeyResults(ComparatorIndexed<T>&& comp) noexcept : Base{std::move(comp)} {}
 	SelectKeyResults(ComparatorNotIndexed&& comp) noexcept : Base{std::move(comp)} {}
-	void Clear() noexcept { std::get<SelectKeyResultsVector>(*this).clear(); }
-	void EmplaceBack(SelectKeyResult&& sr) { std::get<SelectKeyResultsVector>(*this).emplace_back(std::move(sr)); }
-	SelectKeyResult&& Front() && noexcept { return std::move(std::get<SelectKeyResultsVector>(*this).front()); }
+	void Clear() noexcept {
+		auto vec = std::get_if<SelectKeyResultsVector>(this);
+		assertrx_dbg(vec);
+		if (vec) {
+			vec->clear();
+		};
+	}
+	void EmplaceBack(SelectKeyResult&& sr) {
+		auto vec = std::get_if<SelectKeyResultsVector>(this);
+		assertrx_dbg(vec);
+		if (vec) {
+			vec->emplace_back(std::move(sr));
+		};
+	}
+	[[nodiscard]] bool IsComparator() const noexcept { return !std::holds_alternative<SelectKeyResultsVector>(AsVariant()); }
+	SelectKeyResult&& Front() && {
+		auto vec = std::get_if<SelectKeyResultsVector>(this);
+		if (vec) {
+			return std::move(vec->front());
+		};
+		throw_assert(false);
+	}
 	const Base& AsVariant() const& noexcept { return *this; }
 	Base& AsVariant() & noexcept { return *this; }
 	auto AsVariant() const&& = delete;

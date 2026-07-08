@@ -25,6 +25,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+
 #include <cmath>
 
 #include "vendor/double-conversion/bignum-dtoa.h"
@@ -576,3 +581,7 @@ static void FixupMultiply10(int estimated_power, bool is_even, int* decimal_poin
 }
 
 }  // namespace double_conversion
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif

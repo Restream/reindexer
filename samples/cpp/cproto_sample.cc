@@ -3,6 +3,7 @@
 using namespace reindexer::client;
 using reindexer::Error;
 using reindexer::Query;
+using reindexer::IndexOpts;
 
 int main() {
 	// Initialize database

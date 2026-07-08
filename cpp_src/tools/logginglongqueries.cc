@@ -12,6 +12,8 @@ static std::string_view describeExplainDuration(ExplainDuration mark) {
 	switch (mark) {
 		case ExplainDuration::Total:
 			return "Total"sv;
+		case ExplainDuration::Preselect:
+			return "Preselect"sv;
 		case ExplainDuration::Prepare:
 			return "Prepare"sv;
 		case ExplainDuration::Indexes:
@@ -44,6 +46,8 @@ static MutexMark mutexMarkCast(DurationStorageIdx mark) {
 			return MutexMark::CloneNs;
 		case DurationStorageIdx::AsyncStorage:
 			return MutexMark::AsyncStorage;
+		case DurationStorageIdx::StorageDirOps:
+			return MutexMark::StorageDirOps;
 		case DurationStorageIdx::StorageSize:
 		case DurationStorageIdx::DataFlush:
 			break;
@@ -61,6 +65,7 @@ static std::string_view describeDurationStorageIdx(DurationStorageIdx idx) {
 		case DurationStorageIdx::ReindexerStats:
 		case DurationStorageIdx::CloneNs:
 		case DurationStorageIdx::AsyncStorage:
+		case DurationStorageIdx::StorageDirOps:
 			return DescribeMutexMark(mutexMarkCast(idx));
 		case DurationStorageIdx::DataFlush:
 			return "Data flush"sv;
@@ -87,8 +92,8 @@ template <>
 void Logger<QueryEnum2Type<QueryType::QuerySelect>>::Dump(std::chrono::microseconds time) {
 	if (wrapper_.loggingParams.thresholdUs >= 0 && time.count() > wrapper_.loggingParams.thresholdUs) {
 		std::ostringstream os;
-		os << fmt::sprintf("[slowlog] Long execution query: sql - %s; (%dus)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
-						   time.count());
+		os << fmt::format("[slowlog] Long execution query: sql - {}; ({}us)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
+						  time.count());
 
 		if (wrapper_.durationStorage) {
 			os << "[slowlog] Explain statistics:\n";
@@ -105,8 +110,8 @@ template <>
 void Logger<QueryEnum2Type<QueryType::QueryUpdate>>::Dump(std::chrono::microseconds time) {
 	if (wrapper_.loggingParams.thresholdUs >= 0 && time.count() > wrapper_.loggingParams.thresholdUs) {
 		std::ostringstream os;
-		os << fmt::sprintf("[slowlog] Long execution query: sql - %s; (%dus)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
-						   time.count());
+		os << fmt::format("[slowlog] Long execution query: sql - {}; ({}us)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
+						  time.count());
 		fillStorageInfo(os, wrapper_.durationStorage);
 		logPrint(LogWarning, os.str().data());
 	}
@@ -115,8 +120,8 @@ template <>
 void Logger<QueryEnum2Type<QueryType::QueryDelete>>::Dump(std::chrono::microseconds time) {
 	if (wrapper_.loggingParams.thresholdUs >= 0 && time.count() > wrapper_.loggingParams.thresholdUs) {
 		std::ostringstream os;
-		os << fmt::sprintf("[slowlog] Long execution query: sql - %s; (%dus)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
-						   time.count());
+		os << fmt::format("[slowlog] Long execution query: sql - {}; ({}us)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
+						  time.count());
 		fillStorageInfo(os, wrapper_.durationStorage);
 		logPrint(LogWarning, os.str().data());
 	}
@@ -137,21 +142,21 @@ void Logger<LocalTransaction>::Dump(std::chrono::microseconds time) {
 		std::ostringstream os;
 		fillStorageInfo(os, wrapper_.durationStorage);
 
-		logPrintf(LogWarning, "[slowlog] Long tx apply: namespace - %s; was%scopied; %d steps;%s%s\n%s", wrapper_.tx.GetNsName(),
-				  wrapper_.wasCopied ? " " : " not ", wrapper_.tx.GetSteps().size(),
-				  longAvgStep ? fmt::sprintf(" Exceeded the average step execution time limit (%dus);", avg_time) : "",
-				  longTotal ? fmt::sprintf(" Exceeded the total time limit (%dus);", time.count()) : "", os.str());
+		logFmt(LogWarning, "[slowlog] Long tx apply: namespace - {}; was{}copied; {} steps;{}{}\n{}", wrapper_.tx.GetNsName(),
+			   wrapper_.wasCopied ? " " : " not ", wrapper_.tx.GetSteps().size(),
+			   longAvgStep ? fmt::format(" Exceeded the average step execution time limit ({}us);", avg_time) : "",
+			   longTotal ? fmt::format(" Exceeded the total time limit ({}us);", time.count()) : "", os.str());
 	}
 }
 
 template <ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::ExplainMethodType... methods>
-void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::add(const ExplainCalc& explain) {
+void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::add(const Explain& explain) {
 	durationStorage = {std::chrono::duration_cast<std::chrono::microseconds>((explain.*methods)())...};
 }
 
-void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::Add(const ExplainCalc& explain) {
-	add<&ExplainCalc::Total, &ExplainCalc::Prepare, &ExplainCalc::Indexes, &ExplainCalc::Postprocess, &ExplainCalc::Loop,
-		&ExplainCalc::Sort>(explain);
+void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::Add(const Explain& explain) {
+	add<&Explain::Total, &Explain::Preselect, &Explain::Prepare, &Explain::Indexes, &Explain::Postprocess, &Explain::Loop, &Explain::Sort>(
+		explain);
 }
 
 template struct Logger<LocalTransaction>;

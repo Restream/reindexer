@@ -1,14 +1,15 @@
 package reindexer
 
 import (
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/goccy/go-json"
+
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +59,7 @@ type TestItemEncDec struct {
 	Bools               []bool                `reindex:"bools"`
 	Name                string                `reindex:"name,tree"`
 	Countries           []string              `reindex:"countries,tree"`
-	Description         string                `reindex:"description,fuzzytext"`
+	Description         string                `reindex:"description,text"`
 	Rate                float64               `reindex:"rate,tree"`
 	CustomStringsPtr    TestCustomStringsPtrs `reindex:"custom_strings_ptrs"`
 	CustomStrings       TestCustomStrings     `reindex:"custom_strings"`
@@ -91,9 +92,9 @@ type TestItemEncDec struct {
 	Map4                map[int]*int
 	Map5                map[int][]int
 	Map6                map[uint][]uint
-	Interface           interface{}
-	Interface2          interface{}
-	InterfaceNull       interface{}
+	Interface           any
+	Interface2          any
+	InterfaceNull       any
 	MapNull             map[string]int
 	SliceStrNull        []string
 	SliceNull           []int
@@ -104,8 +105,12 @@ type TestItemEncDec struct {
 	SliceF64            []float64
 	SliceF32            []float32
 	SliceBool           []bool
-	SliceIface          []interface{}
-	SliceIface1         []interface{}
+	SliceIface          []any
+	SliceIface1         []any
+	NestedArrayFld1     []any
+	NestedArrayFld2     [][]int
+	NestedArrayIdx1     [][]float64 `reindex:"nested_array,tree"`
+	NestedArrayIdx2     [][]string  `reindex:"nested_array_sparse,hash,sparse"`
 	UInt64              uint64
 	UInt32              uint32
 	UInt                uint
@@ -120,7 +125,7 @@ type TestItemEncDec struct {
 
 type HeterogeneousArrayItem struct {
 	ID        int `reindex:"id,,pk"`
-	Interface interface{}
+	Interface any
 }
 
 type SingleElemSliceItem struct {
@@ -136,43 +141,87 @@ type SingleElemSliceItem struct {
 }
 
 type SlicesConcatenationItem struct {
-	ID                 int           `json:"id" reindex:"id,,pk"`
-	IdxStrSlice        []string      `json:"idx_str_slice" reindex:"idx_str_slice"`
-	IdxInt64Slice      []int64       `json:"idx_int64_slice" reindex:"idx_int64_slice"`
-	IdxInt32Slice      []int32       `json:"idx_int32_slice" reindex:"idx_int32_slice"`
-	IdxInt16Slice      []int16       `json:"idx_int16_slice" reindex:"idx_int16_slice"`
-	IdxInt8Slice       []int8        `json:"idx_int8_slice" reindex:"idx_int8_slice"`
-	IdxFloat64Slice    []float64     `json:"idx_float64_slice" reindex:"idx_float64_slice"`
-	IdxBoolSlice       []bool        `json:"idx_bool_slice" reindex:"idx_bool_slice,-"`
-	NonIdxStrSlice     []string      `json:"non_idx_str_slice"`
-	NonIdxIntSlice     []int         `json:"non_idx_int_slice"`
-	NonIdxFloat32Slice []float32     `json:"non_idx_float32_slice"`
-	NonIdxBoolSlice    []bool        `json:"non_idx_bool_slice"`
-	NonIdxIfaceSlice   []interface{} `json:"non_idx_iface_slice"`
+	ID                 int       `json:"id" reindex:"id,,pk"`
+	IdxStrSlice        []string  `json:"idx_str_slice" reindex:"idx_str_slice"`
+	IdxInt64Slice      []int64   `json:"idx_int64_slice" reindex:"idx_int64_slice"`
+	IdxInt32Slice      []int32   `json:"idx_int32_slice" reindex:"idx_int32_slice"`
+	IdxInt16Slice      []int16   `json:"idx_int16_slice" reindex:"idx_int16_slice"`
+	IdxInt8Slice       []int8    `json:"idx_int8_slice" reindex:"idx_int8_slice"`
+	IdxFloat64Slice    []float64 `json:"idx_float64_slice" reindex:"idx_float64_slice"`
+	IdxBoolSlice       []bool    `json:"idx_bool_slice" reindex:"idx_bool_slice,-"`
+	NonIdxStrSlice     []string  `json:"non_idx_str_slice"`
+	NonIdxIntSlice     []int     `json:"non_idx_int_slice"`
+	NonIdxFloat32Slice []float32 `json:"non_idx_float32_slice"`
+	NonIdxBoolSlice    []bool    `json:"non_idx_bool_slice"`
+	NonIdxIfaceSlice   []any     `json:"non_idx_iface_slice"`
+}
+
+type DBItemNew struct {
+	UpdatedAt *time.Time `json:"updated_at" db:"updated_at" reindex:"updated_at"`
+	DeletedAt *time.Time `json:"-" db:"deleted_at"`
+	CreatedAt *time.Time `json:"-" db:"created_at"`
+}
+
+type testItemForCJson struct {
+	ID int64 `json:"id" reindex:"id,,pk"`
+	DBItemNew
+}
+
+type testItemCJson struct {
+	ID   int    `json:"id" reindex:"id,,pk"`
+	Name string `json:"name" reindex:"name"`
+}
+
+type arrInternal struct {
+	Value int `json:"value"`
+}
+
+type testItemSliceTagDecoding struct {
+	ID  int           `json:"id" reindex:"id,,pk"`
+	Arr []arrInternal `json:"arr"`
+}
+
+type testItemSlicePtrTagDecoding struct {
+	ID  int            `json:"id" reindex:"id,,pk"`
+	Arr *[]arrInternal `json:"arr"`
+}
+
+const (
+	testItemsEncdecNs                = "test_items_encdec"
+	testArrayEncdecNs                = "test_array_encdec"
+	testSingleElemSliceNs            = "test_single_elem_slice"
+	testSlicesConcatenationNs        = "test_slices_concatenation"
+	testUnsupportedConversionCJsonNs = "test_unsupported_conversion_cjson"
+	testCJsonEmojiNs                 = "test_cjson_emoji"
+	testSliceTagDecodingNs           = "test_slice_tag_decoding"
+	testSlicePtrTagDecodingNs        = "test_slice_ptr_tag_decoding"
+)
+
+func init() {
+	tnamespaces[testItemsEncdecNs] = TestItemEncDec{}
+	tnamespaces[testArrayEncdecNs] = HeterogeneousArrayItem{}
+	tnamespaces[testSingleElemSliceNs] = SingleElemSliceItem{}
+	tnamespaces[testSlicesConcatenationNs] = SlicesConcatenationItem{}
+	tnamespaces[testUnsupportedConversionCJsonNs] = testItemForCJson{}
+	tnamespaces[testCJsonEmojiNs] = testItemCJson{}
+	tnamespaces[testSliceTagDecodingNs] = testItemSliceTagDecoding{}
+	tnamespaces[testSlicePtrTagDecodingNs] = testItemSlicePtrTagDecoding{}
 }
 
 func FillHeteregeneousArrayItem() {
 	item := &HeterogeneousArrayItem{
 		ID:        1,
-		Interface: map[string]interface{}{"HeterogeneousArray": []interface{}{"John Doe", 32, 9.1, true, "Jesus Christ", 33, false}},
+		Interface: map[string]any{"HeterogeneousArray": []any{"John Doe", 32, 9.1, true, "Jesus Christ", 33, false}},
 	}
-	tx := newTestTx(DB, "test_array_encdec")
+	tx := newTestTx(DB, testArrayEncdecNs)
 	if err := tx.UpsertJSON(item); err != nil {
 		panic(err)
 	}
 	tx.MustCommit()
-
 }
 
-func init() {
-	tnamespaces["test_items_encdec"] = TestItemEncDec{}
-	tnamespaces["test_array_encdec"] = HeterogeneousArrayItem{}
-	tnamespaces["test_single_elem_slice"] = SingleElemSliceItem{}
-	tnamespaces["test_slices_concatenation"] = SlicesConcatenationItem{}
-}
-
-func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
-	tx := newTestTx(DB, "test_items_encdec")
+func FilltestItemsEncdecNs(start int, count int, pkgsCount int, asJson bool) {
+	tx := newTestTx(DB, testItemsEncdecNs)
 
 	for i := 0; i < count; i++ {
 		startTime := uint64(rand.Int() % 50000)
@@ -236,13 +285,13 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 				vint1,
 				vint2,
 			},
-			Interface: map[string]interface{}{
+			Interface: map[string]any{
 				"strfield": randString(),
-				"objectf": map[string]interface{}{
+				"objectf": map[string]any{
 					"strfield2":   "xxx",
 					"intfield":    4,
 					"intarrfield": []int{1, 2, 3},
-					"intfarr":     []interface{}{"xxx", 2, 1.2, false, true, "John Doe"},
+					"intfarr":     []any{"xxx", 2, 1.2, false, true, "John Doe"},
 					"time":        time.Unix(1234567890, 987654321),
 				},
 				"": "Empty field string value",
@@ -265,8 +314,8 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			SliceF32:           []float32{rand.Float32(), rand.Float32()},
 			SliceF64:           []float64{rand.Float64(), rand.Float64()},
 			SliceBool:          []bool{false, true},
-			SliceIface:         []interface{}{"aa", "bb"},
-			SliceIface1:        []interface{}{"aa", "bb", 3},
+			SliceIface:         []any{"aa", "bb"},
+			SliceIface1:        []any{"aa", "bb", 3},
 			Rate:               float64(rand.Int()%100) / 10.0,
 			IsDeleted:          rand.Int()%2 != 0,
 			PricesIDs:          randIntArr(10, 7000, 50),
@@ -282,6 +331,10 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			CustomInts64:       TestCustomInts64{TestCustomInt64(rand.Int63())},
 			CustomInts16:       TestCustomInts16{TestCustomInt16(rand.Intn(128))},
 			CustomFloats:       TestCustomFloats{TestCustomFloat(rand.Float64())},
+			NestedArrayFld1:    []any{"aa", []any{"bb", []string{"cc", "dd"}}},
+			NestedArrayFld2:    [][]int{{1, 2}, {3, 4}, {5, 6}},
+			NestedArrayIdx1:    [][]float64{{1, 2}, {3, 4}, {5, 6}},
+			NestedArrayIdx2:    [][]string{{"aa", "bb"}, {"cc", "dd"}, {"ee", "ff"}},
 		}
 		if asJson {
 			if err := tx.UpsertJSON(item); err != nil {
@@ -296,10 +349,29 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 	tx.MustCommit()
 }
 
+func checkIndexesWithEmptyTags(t *testing.T) {
+	expectedIndexes := map[string]string{
+		"EmptyReindexTagStr1": "-",
+		"EmptyReindexTagStr2": "hash",
+		"TextLabel":           "text",
+		"TextLabel2":          "text",
+	}
+
+	desc, err := DB.DescribeNamespace(testItemsEncdecNs)
+	require.NoError(t, err)
+	for _, index := range desc.Indexes {
+		if typ, ok := expectedIndexes[index.Name]; ok {
+			assert.Equal(t, typ, index.IndexType)
+			delete(expectedIndexes, index.Name)
+		}
+	}
+	assert.Empty(t, expectedIndexes, "Some of the indexes are missing")
+}
+
 func TestHeterogeneusArrayEncDec(t *testing.T) {
 	FillHeteregeneousArrayItem()
 
-	q := newTestQuery(DB, "test_array_encdec")
+	q := newTestQuery(DB, testArrayEncdecNs)
 	it := q.ExecToJson()
 	defer it.Close()
 	require.NoError(t, it.Error())
@@ -311,45 +383,26 @@ func TestHeterogeneusArrayEncDec(t *testing.T) {
 	}
 }
 
-func checkIndexesWithEmptyTags(t *testing.T) {
-	expectedIndexes := map[string]string{
-		"EmptyReindexTagStr1": "-",
-		"EmptyReindexTagStr2": "hash",
-		"TextLabel":           "text",
-		"TextLabel2":          "text",
-	}
-
-	desc, err := DB.DescribeNamespace("test_items_encdec")
-	require.NoError(t, err)
-	for _, index := range desc.Indexes {
-		if typ, ok := expectedIndexes[index.Name]; ok {
-			assert.Equal(t, typ, index.IndexType)
-			delete(expectedIndexes, index.Name)
-		}
-	}
-	assert.Empty(t, expectedIndexes, "Some of the indexes are missing")
-}
-
 func TestEncDec(t *testing.T) {
 	t.Parallel()
 	// Fill items by cjson encoder
-	FillTestItemsEncDec(0, 5000, 20, false)
+	FilltestItemsEncdecNs(0, 5000, 20, false)
 
 	// fill items in json format
-	FillTestItemsEncDec(5000, 10000, 20, true)
+	FilltestItemsEncdecNs(5000, 10000, 20, true)
 
 	checkIndexesWithEmptyTags(t)
 
 	// get and decode all items by cjson decoder
-	newTestQuery(DB, "test_items_encdec").ExecAndVerify(t)
+	newTestQuery(DB, testItemsEncdecNs).ExecAndVerify(t)
 
 	// get and decode all items in json format
-	q := newTestQuery(DB, "test_items_encdec")
+	q := newTestQuery(DB, testItemsEncdecNs)
 	it := q.ExecToJson()
 	defer it.Close()
 	require.NoError(t, it.Error())
 
-	iitems := make([]interface{}, 0, 5000)
+	iitems := make([]any, 0, 5000)
 	for it.Next() {
 		item := &TestItemEncDec{}
 		err := json.Unmarshal(it.JSON(), &item)
@@ -362,7 +415,7 @@ func TestEncDec(t *testing.T) {
 func TestSingleElemToSlice(t *testing.T) {
 	t.Parallel()
 
-	ns := "test_single_elem_slice"
+	const ns = testSingleElemSliceNs
 	item := SingleElemSliceItem{
 		ID:               1,
 		IdxStrSlice:      []string{"str1"},
@@ -393,7 +446,7 @@ func TestSingleElemToSlice(t *testing.T) {
 func TestSlicesConcatenation(t *testing.T) {
 	t.Parallel()
 
-	ns := "test_slices_concatenation"
+	const ns = testSlicesConcatenationNs
 	item := SlicesConcatenationItem{
 		ID:                 1,
 		IdxStrSlice:        []string{"str10", "str11", "str12", "str13"},
@@ -407,9 +460,9 @@ func TestSlicesConcatenation(t *testing.T) {
 		NonIdxIntSlice:     []int{10, 20, 30, 40, 50, 60},
 		NonIdxFloat32Slice: []float32{20.0, 40.5, 60.0, 70.5, 80.92},
 		NonIdxBoolSlice:    []bool{false, false, true, false},
-		NonIdxIfaceSlice:   []interface{}{"istr1", "istr2", 11, 22.4, true, false},
+		NonIdxIfaceSlice:   []any{"istr1", "istr2", 11, 22.4, true, false},
 	}
-	appendInterface := func(slice []interface{}, a interface{}) []interface{} {
+	appendInterface := func(slice []any, a any) []any {
 		ra := reflect.ValueOf(a)
 		if ra.Kind() == reflect.Slice {
 			for i := 0; i < ra.Len(); i++ {
@@ -419,7 +472,7 @@ func TestSlicesConcatenation(t *testing.T) {
 		}
 		return append(slice, a)
 	}
-	sl := make([]interface{}, 0)
+	sl := make([]any, 0)
 	rv := reflect.ValueOf(item)
 	for i := 0; i < rv.NumField(); i++ {
 		field := rv.Field(i).Interface()
@@ -505,5 +558,149 @@ func TestSlicesConcatenation(t *testing.T) {
 		resItem, ok := resItems[0].(*SlicesConcatenationItem)
 		require.True(t, ok)
 		require.Equal(t, *resItem, item)
+	})
+}
+
+func TestUnsupportedConversionCJson(t *testing.T) {
+	t.Parallel()
+
+	t.Run("check unsupported conversion cjson error", func(t *testing.T) {
+		const ns = testUnsupportedConversionCJsonNs
+
+		err := DBD.Upsert(ns, []byte(`{"id":1, "updated_at":12.3}`))
+		require.NoError(t, err)
+		_, err = DBD.Query(ns).
+			Where("id", reindexer.SET, []int64{1}).
+			Exec().FetchAll()
+		require.ErrorContains(t, err, "can not convert 'double' to 'struct'")
+	})
+}
+
+func TestEmojis(t *testing.T) {
+	t.Parallel()
+
+	t.Run("create and read items with emojis", func(t *testing.T) {
+		const ns = testCJsonEmojiNs
+		emojis := []string{
+			"👀", "😀", "👌🤌👋", "👁️‍🗨️", "🧑‍🧑‍🧒‍🧒👁️‍🗨️", "\U0001F63E\U0001F63A",
+			"\"🚅\" 🚝\"", "\\\"(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧", "\t🏁💬\"🧑‍🧑‍🧒‍🧒\"👁️‍🗨️\\\"\U0001F64E😀",
+		}
+
+		items := make([]testItemCJson, 0, len(emojis))
+		for i, emoji := range emojis {
+			item := testItemCJson{ID: i, Name: emoji}
+			err := DBD.Upsert(ns, item)
+			require.NoError(t, err)
+			items = append(items, item)
+		}
+
+		resItems, err := DBD.Query(ns).Exec().FetchAll()
+		require.NoError(t, err)
+		require.Len(t, resItems, len(emojis))
+
+		resItemsVal := make([]testItemCJson, len(resItems))
+		for i, resItem := range resItems {
+			resItemsVal[i] = *resItem.(*testItemCJson)
+		}
+		require.Equal(t, items, resItemsVal)
+	})
+}
+
+func TestSliceTagDecoding(t *testing.T) {
+	t.Parallel()
+	const ns = testSliceTagDecodingNs
+	const nsPtr = testSlicePtrTagDecodingNs
+	defaultItem := &testItemSliceTagDecoding{ID: 0, Arr: []arrInternal{{10}}}
+	defaultItemPtr := &testItemSlicePtrTagDecoding{ID: 0, Arr: &[]arrInternal{{10}}}
+
+	checkSingleItemInNs := func(t *testing.T) {
+		items, err := DB.Query(ns).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+
+		item, ok := items[0].(*testItemSliceTagDecoding)
+		require.True(t, ok)
+		require.NotNil(t, item.Arr)
+		require.Len(t, item.Arr, 0)
+	}
+
+	checkSingleItemWithPtrInNs := func(t *testing.T) {
+		items, err := DB.Query(nsPtr).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+
+		item, ok := items[0].(*testItemSlicePtrTagDecoding)
+		require.True(t, ok)
+		require.NotNil(t, item.Arr)
+		require.Len(t, *item.Arr, 0)
+	}
+
+	t.Run("update with empty json", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		err = DB.Upsert(ns, []byte(`{"id":0, "arr":[]}`))
+		require.NoError(t, err)
+
+		checkSingleItemInNs(t)
+	})
+
+	t.Run("update with empty int slice", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		updated, err := DB.Query(ns).Set("arr", []int{}).Update().FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(updated), 1)
+
+		checkSingleItemInNs(t)
+	})
+
+	t.Run("update with empty interface slice", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		updated, err := DB.Query(ns).Set("arr", []any{}).Update().FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(updated), 1)
+
+		checkSingleItemInNs(t)
+	})
+
+	t.Run("update with empty structs slice", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		updated, err := DB.Query(ns).Set("arr", []arrInternal{}).Update().FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(updated), 1)
+
+		checkSingleItemInNs(t)
+	})
+
+	t.Run("update with non-empty int slice (unconvertible)", func(t *testing.T) {
+		err := DB.Upsert(ns, defaultItem)
+		require.NoError(t, err)
+
+		it := DB.Query(ns).Set("arr", []int{1, 2, 3}).Update()
+		require.NoError(t, it.Error())
+		require.Equal(t, it.Count(), 1)
+		defer it.Close()
+
+		// Unable to put int slice into structs slice
+		assert.False(t, it.Next())
+		assert.Error(t, it.Error())
+		_, err = DB.Query(ns).MustExec(t).FetchAll()
+		assert.Error(t, err)
+	})
+
+	t.Run("update pointer with empty json", func(t *testing.T) {
+		err := DB.Upsert(nsPtr, defaultItemPtr)
+		require.NoError(t, err)
+
+		err = DB.Upsert(nsPtr, []byte(`{"id":0, "arr":[]}`))
+		require.NoError(t, err)
+
+		checkSingleItemWithPtrInNs(t)
 	})
 }

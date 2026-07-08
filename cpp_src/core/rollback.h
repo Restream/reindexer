@@ -2,9 +2,9 @@
 
 namespace reindexer {
 
-enum class NeedRollBack : bool { No = false, Yes = true };
+enum class [[nodiscard]] NeedRollBack : bool { No = false, Yes = true };
 
-class RollBackBase {
+class [[nodiscard]] RollBackBase {
 protected:
 	RollBackBase() noexcept = default;
 	virtual ~RollBackBase() = default;
@@ -13,7 +13,7 @@ protected:
 	RollBackBase& operator=(const RollBackBase&) = delete;
 	RollBackBase& operator=(RollBackBase&&) = delete;
 	virtual void Disable() noexcept { disabled_ = true; }
-	[[nodiscard]] bool IsDisabled() const noexcept { return disabled_; }
+	bool IsDisabled() const noexcept { return disabled_; }
 
 private:
 	bool disabled_{false};

@@ -6,20 +6,20 @@ package builtin
 import "C"
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 	"unsafe"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/goccy/go-json"
+
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 const defCgoLimit = 2000
@@ -30,7 +30,7 @@ var bufFree = newBufFreeBatcher()
 
 // Logger interface for reindexer
 type Logger interface {
-	Printf(level int, fmt string, msg ...interface{})
+	Printf(level int, fmt string, msg ...any)
 }
 
 // Separate mutexes for logger object itself and for reindexer_enable_logger call:
@@ -104,8 +104,10 @@ func init() {
 }
 
 func str2c(str string) C.reindexer_string {
-	hdr := (*reflect.StringHeader)(unsafe.Pointer(&str))
-	return C.reindexer_string{p: unsafe.Pointer(hdr.Data), n: C.int(hdr.Len)}
+	return C.reindexer_string{
+		p: unsafe.Pointer(unsafe.StringData(str)),
+		n: C.int(len(str)),
+	}
 }
 
 func ctxErr(errCode int) error {
@@ -173,7 +175,7 @@ func bool2cint(v bool) C.int {
 	return 0
 }
 
-func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) error {
+func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...any) error {
 	if binding.rx != 0 {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}
@@ -193,6 +195,8 @@ func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...
 		case bindings.OptionOpenTelemetry:
 			// nothing
 		case bindings.OptionBuiltinWithServer:
+			// nothing
+		case bindings.OptionStrictJoinHandlers:
 			// nothing
 		case bindings.OptionCgoLimit:
 			cgoLimit = v.CgoLimit
@@ -250,12 +254,13 @@ func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...
 	caps := *bindings.DefaultBindingCapabilities().
 		WithResultsWithShardIDs(true).
 		WithQrIdleTimeouts(true).
-		WithIncarnationTags(true)
+		WithIncarnationTags(true).
+		WithFloatRank(true)
 	ccaps := C.BindingCapabilities{
 		caps: C.int64_t(caps.Value),
 	}
 
-	return err2go(C.reindexer_connect_v4(binding.rx, str2c(u[0].Host+u[0].Path), opts, str2c(bindings.ReindexerVersion), ccaps))
+	return err2go(C.reindexer_connect(binding.rx, str2c(u[0].Host+u[0].Path), opts, str2c(bindings.ReindexerVersion), ccaps))
 }
 
 func (binding *Builtin) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, error) {
@@ -526,7 +531,7 @@ func (binding *Builtin) DeleteMeta(ctx context.Context, namespace, key string) e
 	return err2go(C.reindexer_delete_meta(binding.rx, str2c(namespace), str2c(key), ctxInfo.cCtx))
 }
 
-func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
 		return nil, err
 	} else if withLimiter {
@@ -539,7 +544,7 @@ func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, p
 	}
 	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
 
-	return ret2go(C.reindexer_select(binding.rx, str2c(query), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions)), ctxInfo.cCtx))
+	return ret2go(C.reindexer_select(binding.rx, str2c(query), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&tmVersions[0])), C.int(len(tmVersions)), ctxInfo.cCtx))
 }
 func (binding *Builtin) BeginTx(ctx context.Context, namespace string) (txCtx bindings.TxCtx, err error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
@@ -580,7 +585,7 @@ func (binding *Builtin) RollbackTx(txCtx *bindings.TxCtx) error {
 	return err2go(C.reindexer_rollback_transaction(binding.rx, C.uintptr_t(txID)))
 }
 
-func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
 		return nil, err
 	} else if withLimiter {
@@ -593,7 +598,7 @@ func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson boo
 	}
 	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
 
-	return ret2go(C.reindexer_select_query(binding.rx, buf2c(data), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions)), ctxInfo.cCtx))
+	return ret2go(C.reindexer_select_query(binding.rx, buf2c(data), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&tmVersions[0])), C.int(len(tmVersions)), ctxInfo.cCtx))
 }
 
 func (binding *Builtin) DeleteQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
@@ -612,7 +617,7 @@ func (binding *Builtin) DeleteQuery(ctx context.Context, data []byte) (bindings.
 	return ret2go(C.reindexer_delete_query(binding.rx, buf2c(data), ctxInfo.cCtx))
 }
 
-func (binding *Builtin) UpdateQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
+func (binding *Builtin) UpdateQuery(ctx context.Context, data []byte, tmVersions []int32) (bindings.RawBuffer, error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
 		return nil, err
 	} else if withLimiter {
@@ -625,7 +630,7 @@ func (binding *Builtin) UpdateQuery(ctx context.Context, data []byte) (bindings.
 	}
 	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
 
-	return ret2go(C.reindexer_update_query(binding.rx, buf2c(data), ctxInfo.cCtx))
+	return ret2go(C.reindexer_update_query(binding.rx, buf2c(data), (*C.int32_t)(unsafe.Pointer(&tmVersions[0])), C.int(len(tmVersions)), ctxInfo.cCtx))
 }
 
 // CGoLogger logger function for C
@@ -677,6 +682,7 @@ func (binding *Builtin) Finalize() error {
 	if binding.eventsHandler != nil && binding.rx != 0 {
 		binding.eventsHandler.Unsubscribe(binding.rx)
 	}
+	bufFree.free_buffers_sync()
 	C.destroy_reindexer(binding.rx)
 	binding.rx = 0
 	if binding.cgoLimiterStat != nil {
@@ -716,6 +722,10 @@ func (binding *Builtin) Unsubscribe(ctx context.Context) error {
 	return binding.eventsHandler.Unsubscribe(binding.rx)
 }
 
+func (binding *Builtin) DBMSVersion() (string, error) {
+	return C.GoString(C.reindexer_version()), nil
+}
+
 func newBufFreeBatcher() (bf *bufFreeBatcher) {
 	bf = &bufFreeBatcher{
 		bufs:   make([]*RawCBuffer, 0, 100),
@@ -732,33 +742,44 @@ type bufFreeBatcher struct {
 	cbufs  []C.reindexer_resbuffer
 	lock   sync.Mutex
 	kickCh chan struct{}
+
+	rxTerminationLock sync.Mutex
+}
+
+func (bf *bufFreeBatcher) free_buffers_impl() {
+	bf.rxTerminationLock.Lock()
+	defer bf.rxTerminationLock.Unlock()
+	bf.lock.Lock()
+	if len(bf.bufs) == 0 {
+		bf.lock.Unlock()
+		return
+	}
+	bf.bufs, bf.bufs2 = bf.bufs2, bf.bufs
+	bf.lock.Unlock()
+
+	for _, buf := range bf.bufs2 {
+		bf.cbufs = append(bf.cbufs, buf.cbuf)
+	}
+
+	C.reindexer_free_buffers(&bf.cbufs[0], C.int(len(bf.cbufs)))
+
+	for _, buf := range bf.bufs2 {
+		buf.cbuf.results_ptr = 0
+		bf.toPool(buf)
+	}
+	bf.cbufs = bf.cbufs[:0]
+	bf.bufs2 = bf.bufs2[:0]
 }
 
 func (bf *bufFreeBatcher) loop() {
 	for {
 		<-bf.kickCh
-
-		bf.lock.Lock()
-		if len(bf.bufs) == 0 {
-			bf.lock.Unlock()
-			continue
-		}
-		bf.bufs, bf.bufs2 = bf.bufs2, bf.bufs
-		bf.lock.Unlock()
-
-		for _, buf := range bf.bufs2 {
-			bf.cbufs = append(bf.cbufs, buf.cbuf)
-		}
-
-		C.reindexer_free_buffers(&bf.cbufs[0], C.int(len(bf.cbufs)))
-
-		for _, buf := range bf.bufs2 {
-			buf.cbuf.results_ptr = 0
-			bf.toPool(buf)
-		}
-		bf.cbufs = bf.cbufs[:0]
-		bf.bufs2 = bf.bufs2[:0]
+		bf.free_buffers_impl()
 	}
+}
+
+func (bf *bufFreeBatcher) free_buffers_sync() {
+	bf.free_buffers_impl()
 }
 
 func (bf *bufFreeBatcher) add(buf *RawCBuffer) {

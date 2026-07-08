@@ -1,35 +1,37 @@
 #include "snapshot.h"
 #include <sstream>
 #include "core/cjson/baseencoder.h"
-#include "core/formatters/lsn_fmt.h"
+#include "core/cjson/cjsonbuilder.h"
+#include "core/formatters/checksum_fmt.h"
+#include "core/id_type.h"
 
 namespace reindexer {
 
 static constexpr size_t kDefaultChunkSize = 500;
 
-Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, uint64_t expectedDataCount,
-				   ClusterizationStatus clusterStatus)
+Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion, PayloadChecksum expectedDataHash, uint64_t expectedDataCount,
+				   ClusterOperationStatus clusterStatus)
 	: tm_(std::move(tm)),
 	  expectedDataHash_(expectedDataHash),
 	  expectedDataCount_(expectedDataCount),
-	  clusterizationStatus_(std::move(clusterStatus)),
+	  clusterOperationStatus_(std::move(clusterStatus)),
 	  nsVersion_(nsVersion) {
-	walData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
+	walData_.AddItem(ItemRef(IdType::NotSet(), createTmItem(), 0, true));
 }
 
-Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDataHash, uint64_t expectedDataCount,
-				   ClusterizationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw)
+Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, PayloadChecksum expectedDataHash, uint64_t expectedDataCount,
+				   ClusterOperationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw)
 	: pt_(std::move(pt)),
 	  tm_(std::move(tm)),
 	  expectedDataHash_(expectedDataHash),
 	  expectedDataCount_(expectedDataCount),
-	  clusterizationStatus_(std::move(clusterStatus)),
+	  clusterOperationStatus_(std::move(clusterStatus)),
 	  lastLsn_(lastLsn),
 	  nsVersion_(nsVersion) {
-	if (raw.Items().size()) {
-		rawData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
+	if (raw.Items().Size()) {
+		rawData_.AddItem(ItemRef(IdType::NotSet(), createTmItem(), 0, true));
 	} else {
-		walData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
+		walData_.AddItem(ItemRef(IdType::NotSet(), createTmItem(), 0, true));
 	}
 
 	addRawData(std::move(raw));
@@ -45,7 +47,7 @@ Snapshot& Snapshot::operator=(Snapshot&& other) noexcept {
 	walData_ = std::move(other.walData_);
 	expectedDataHash_ = other.expectedDataHash_;
 	expectedDataCount_ = other.expectedDataCount_;
-	clusterizationStatus_ = other.clusterizationStatus_;
+	clusterOperationStatus_ = other.clusterOperationStatus_;
 	lastLsn_ = other.lastLsn_;
 	nsVersion_ = other.nsVersion_;
 	return *this;
@@ -59,8 +61,9 @@ Snapshot::~Snapshot() {
 std::string Snapshot::Dump() {
 	std::stringstream ss;
 	ss << fmt::format(
-		"Snapshot:\nNs version: {}\nLast LSN: {}\nDatahash: {}\nDatacount: {}\nRaw data blocks: {}\nWAL data blocks: {}\nWAL data:",
-		nsVersion_, lastLsn_, expectedDataHash_, expectedDataCount_, rawData_.Size(), walData_.Size());
+		"Snapshot:\nNs version: {}\nLast LSN: {}\nDatahash: {}\nDatacount: {}\nRaw data blocks: {}\nWAL data blocks: {}\nWAL "
+		"data:",
+		int64_t(nsVersion_), int64_t(lastLsn_), expectedDataHash_, expectedDataCount_, rawData_.Size(), walData_.Size());
 	size_t chNum = 0;
 	size_t itemNum = 0;
 	WrSerializer ser;
@@ -70,7 +73,7 @@ std::string Snapshot::Dump() {
 			ser.Reset();
 			WALRecord wrec(rec.Record());
 			wrec.Dump(ser, [](std::string_view) { return std::string("<cjson>"); });
-			ss << fmt::format("{}.{} LSN: {}, type: {}, dump: {}\n", chNum, itemNum, rec.LSN(), wrec.type, ser.Slice());
+			ss << fmt::format("{}.{} LSN: {}, type: {}, dump: {}\n", chNum, itemNum, int64_t(rec.LSN()), wrec.type, ser.Slice());
 			++itemNum;
 		}
 		++chNum;
@@ -83,7 +86,7 @@ void Snapshot::ItemsContainer::AddItem(ItemRef&& item) {
 	bool requireNewChunk = data_.empty() || (data_.back().items.size() >= kDefaultChunkSize && !batchRecord);
 	bool createEmptyChunk = false;
 	if (item.Raw() && item.Value().GetCapacity()) {
-		WALRecord rec(span<uint8_t>(item.Value().Ptr(), item.Value().GetCapacity()));
+		WALRecord rec(std::span<uint8_t>(item.Value().Ptr(), item.Value().GetCapacity()));
 		if (rec.inTransaction != batchRecord) {
 			requireNewChunk = true;
 		}
@@ -139,20 +142,21 @@ void Snapshot::addRawData(LocalQueryResults&& qr) {
 		wr.Pack(wrec);
 		PayloadValue val(wr.size(), wr.data());
 		val.SetLSN(lsn_t());
-		rawData_.AddItem(ItemRef(-1, val, 0, 0, true));
+		rawData_.AddItem(ItemRef(IdType::NotSet(), val, 0, true));
 	}
 }
 
 void Snapshot::addWalData(LocalQueryResults&& qr) { appendQr(walData_, std::move(qr)); }
 
 void Snapshot::appendQr(ItemsContainer& container, LocalQueryResults&& qr) {
-	auto&& items = qr.Items();
+	ItemRefVector& items = qr.Items();
 	if (container.ItemsCount() > 1) {
 		throw Error(errLogic, "Snapshot already has this kind of data");
 	}
-	for (auto&& item : items) {
-		container.AddItem(std::move(item));
+	for (const auto& it : items) {
+		container.AddItem(std::move(it.GetItemRef()));
 	}
+	container.SetVectorsHolder(std::move(qr.GetFloatVectorsHolder()));
 }
 
 void Snapshot::lockItems(bool lock) {
@@ -177,7 +181,7 @@ SnapshotChunk Snapshot::Iterator::Chunk() const {
 	bool wal = false;
 	size_t idx = idx_;
 	if (idx >= sn_->Size()) {
-		throw Error(errLogic, "Index out of range: %d", idx);
+		throw Error(errLogic, "Index out of range: {}", idx);
 	}
 
 	const auto* dataPtr = &sn_->rawData_;
@@ -196,13 +200,13 @@ SnapshotChunk Snapshot::Iterator::Chunk() const {
 			pwrec.resize(itemRef.Value().GetCapacity());
 			memcpy(pwrec.data(), itemRef.Value().Ptr(), pwrec.size());
 		} else if (shallow) {
-			assertrx(itemRef.Id() >= 0);
+			assertrx(itemRef.Id().IsValid());
 			pwrec.Pack(WALRecord(WalShallowItem, itemRef.Id()));
 		} else {
 			ser_.Reset();
 			ConstPayload pl(sn_->pt_, itemRef.Value());
 			CJsonBuilder builder(ser_, ObjType::TypePlain);
-			CJsonEncoder cjsonEncoder(&sn_->tm_);
+			CJsonEncoder cjsonEncoder(&sn_->tm_, nullptr);
 
 			cjsonEncoder.Encode(pl, builder);
 			pwrec.Pack(WALRecord(WalRawItem, itemRef.Id(), ser_.Slice()));

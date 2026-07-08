@@ -2,10 +2,12 @@
 #include "client/itemimplbase.h"
 #include "tools/catch_and_return.h"
 
-namespace reindexer {
-namespace client {
+namespace reindexer::client {
 
-Item::Item() : status_(errNotValid) {}
+const static Error kInvalidItemStatus{errNotValid, "Item is not valid"};
+
+// NOLINTNEXTLINE (bugprone-throw-keyword-missing)
+Item::Item() : status_(kInvalidItemStatus) {}
 
 Item::Item(Item&& other) noexcept = default;
 
@@ -37,5 +39,4 @@ Item& Item::Unsafe(bool enable) noexcept {
 	return *this;
 }
 
-}  // namespace client
-}  // namespace reindexer
+}  // namespace reindexer::client
