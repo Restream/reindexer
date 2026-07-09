@@ -3,6 +3,7 @@
 #include "core/cjson/fields_explorer/pathfilter.h"
 #include "fields_explorer.h"
 #include "tools/serilize/serializer.h"
+#include "tools/unaligned.h"
 
 namespace reindexer::cjson {
 
@@ -28,7 +29,8 @@ protected:
 	}
 
 	template <typename T>
-	void Array(const PathFilter& filter, TagIndex tagIndex, std::span<const T> data, unsigned offset,
+	    requires std::is_trivially_copyable_v<T>
+	void Array(const PathFilter& filter, TagIndex tagIndex, unaligned::view<T> data, unsigned offset,
 			   TreatAsSingleElement treatAsSingleElement = TreatAsSingleElement_False) noexcept {
 		Array(filter, tagIndex, data.size(), offset, treatAsSingleElement);
 	}

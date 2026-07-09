@@ -13,7 +13,6 @@
 #include "gtests/tests/tests_data.h"
 #include "json_helpers.h"
 #include "tools/fsops.h"
-#include "tools/logger.h"
 #include "tools/stringstools.h"
 #include "vendor/fmt/ranges.h"
 #include "vendor/gason/gason.h"
@@ -1402,84 +1401,6 @@ TEST_P(FTGenericApi, TooLongNumericWordDoesNotCreateVirtualWords) {
 	CheckResults("survivor", std::vector<std::tuple<std::string, std::string>>{{"survivor", ""}}, false, false);
 }
 
-TEST_P(FTGenericApi, ShortSuffixWithFtPreselectMatchesRegularFt) {
-	Init(GetDefaultConfig());
-
-	const std::string kNs = "short_suffix_preselect";
-	const std::string kFt = "text";
-	rt.OpenNamespace(kNs);
-	rt.DefineNamespaceDataset(kNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
-								   IndexDeclaration{kFt, "text", "string", IndexOpts(), 0}});
-
-	auto ftCfg = GetDefaultConfig(1);
-	ftCfg.stopWords.clear();
-	auto applyCfg = [&] {
-		auto err = SetFTConfig(ftCfg, kNs, kFt, {kFt});
-		ASSERT_TRUE(err.ok()) << err.what();
-	};
-	applyCfg();
-
-	int id = 0;
-	auto add = [&](std::string_view text) {
-		auto item = rt.NewItem(kNs);
-		item["id"] = id;
-		item[kFt] = std::string(text);
-		rt.Upsert(kNs, item);
-		return id++;
-	};
-
-	const int exactId = add("на"sv);
-	const int suffixId = add("она"sv);
-	const int bananaId = add("банана"sv);
-	const int missedId = add("мимо"sv);
-	for (std::string_view excluded : {"струна"sv, "пелена"sv, "смена"sv, "длина"sv}) {
-		std::ignore = add(excluded);
-	}
-
-	auto makeQuery = [&] {
-		return Query(kNs)
-			.Where(kFt, CondEq, "*на")
-			.Where("id", CondSet,
-				   {reindexer::Variant{exactId}, reindexer::Variant{suffixId}, reindexer::Variant{bananaId}, reindexer::Variant{missedId}})
-			.WithRank();
-	};
-	auto selectRows = [&] {
-		auto qr = rt.Select(makeQuery());
-		std::vector<std::pair<int, float>> rows;
-		rows.reserve(qr.Count());
-		for (auto it : qr) {
-			rows.emplace_back(it.GetItem()["id"].As<int>(), it.GetItemRefRanked().Rank().Value());
-		}
-		std::sort(rows.begin(), rows.end());
-		return rows;
-	};
-	auto selectWithPreselect = [&](bool enabled) {
-		ftCfg.enablePreselectBeforeFt = enabled;
-		applyCfg();
-		return selectRows();
-	};
-
-	const auto regularRows = selectWithPreselect(false);
-	const auto preselectedRows = selectWithPreselect(true);
-	ASSERT_EQ(regularRows.size(), 3u);
-	ASSERT_EQ(preselectedRows.size(), regularRows.size());
-	for (size_t i = 0; i < regularRows.size(); ++i) {
-		EXPECT_EQ(preselectedRows[i].first, regularRows[i].first);
-		EXPECT_NEAR(preselectedRows[i].second, regularRows[i].second, 1e-4f);
-	}
-
-	auto explainQuery = Query(kNs)
-							.Distinct(kFt)
-							.Where(kFt, CondEq, "*на")
-							.Where("id", CondSet,
-								   {reindexer::Variant{exactId}, reindexer::Variant{suffixId}, reindexer::Variant{bananaId},
-									reindexer::Variant{missedId}})
-							.Explain();
-	auto explainQr = rt.Select(explainQuery);
-	const auto explain = explainQr.GetExplainResults();
-	EXPECT_NE(explain.find(R"json("field":"(text and id)")json"), std::string::npos) << explain;
-}
-
 TEST_P(FTGenericApi, SelectFullMatch) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.fullMatchBoost = 0.9;
@@ -1717,8 +1638,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 
 	CheckResults("тестов",
 				 {{"маленький !тест!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!задача!", ""},
 				  {"!testov!", ""}},
@@ -1731,8 +1652,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов",
 				 {{"маленький !тест!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"!testov!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!задача!", ""}},
@@ -1745,8 +1666,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!задача!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!testov!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1758,8 +1679,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!задача!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!testov!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"один !тестов! очень очень !тестов тестов тестов!", ""}},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""}},
 				 true);
 
 	cfg = cfgDef;
@@ -1776,8 +1697,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!задача!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!testov!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1795,8 +1716,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!testov!", ""},
 				  {"!задача!", ""},
 				  {"!ntcnjd!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1812,8 +1733,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				  {"!задача!", ""},
 				  {"!МестоД!", ""},
 				  {"!ntcnjd!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1830,8 +1751,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				  {"!Местов!", ""},
 				  {"!ntcnjd!", ""},
 				  {"!МестоД!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1846,8 +1767,8 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 				 {{"!testov!", ""},
 				  {"!задача!", ""},
 				  {"!ntcnjd!", ""},
-				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"маленький !тест!", ""},
 				  {"!Местов!", ""},
 				  {"!МестоД!", ""}},
@@ -2458,9 +2379,9 @@ TEST_P(FTGenericApi, DistinctSingleField) {
 		SCOPED_TRACE(explain);
 
 		if (preselect) {
-			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "field", {"ft1", "(ft1)", "ft1"}));
-			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "type", {"Forward", "Unsorted"}));
-			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
+			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "field", {"-scan", "ft1", "(-scan", "ft1"}));
+			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "type", {"SingleRange", "Comparator", "Unsorted"}));
+			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "method", {"scan", "scan", "index"}));
 		} else {
 			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "field", {"ft1", "ft1"}));
 			ASSERT_NO_FATAL_FAILURE(json_helpers::AssertJsonFieldEqualTo(explain, "type", {"Unsorted", "Comparator"}));

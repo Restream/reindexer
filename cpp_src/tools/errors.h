@@ -104,7 +104,7 @@ std::string format([[maybe_unused]] RxFormatString<Args...> fmt, [[maybe_unused]
 	(void)f
 #endif	// NDEBUG
 
-#if defined(RX_WITH_STDLIB_DEBUG)
+#if REINDEX_WITH_DEBUG_ASSERT
 // Using (void)f here to force ';' usage after the macro
 #define assertf_dbg(e, f, ...)                                                         \
 	if (!(e)) [[unlikely]] {                                                           \
@@ -116,9 +116,9 @@ std::string format([[maybe_unused]] RxFormatString<Args...> fmt, [[maybe_unused]
 		}                                                                              \
 	}                                                                                  \
 	(void)f
-#else
+#else  // !REINDEX_WITH_DEBUG_ASSERT
 #define assertf_dbg(...) ((void)0)
-#endif	// RX_WITH_STDLIB_DEBUG
+#endif	// REINDEX_WITH_DEBUG_ASSERT
 
 class [[nodiscard]] Error : public std::exception {
 	using WhatT = intrusive_atomic_rc_wrapper<std::string>;

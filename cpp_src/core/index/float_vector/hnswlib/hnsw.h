@@ -4,6 +4,7 @@
 #include "core/index/float_vector/scalar_quantization/quantization_params.h"
 #include "core/keyvalue/float_vector.h"
 #include "hnsw_interface.h"
+
 namespace hnswlib {
 
 template <typename ValueT, Synchronization synchronization>
@@ -27,9 +28,7 @@ public:
 	RX_ALWAYS_INLINE bool IsMarkedDeleted(tableint internalId) const noexcept { return impl_->IsMarkedDeleted(internalId); }
 	RX_ALWAYS_INLINE const float* FloatPtrByExternalLabel(labeltype label) const { return impl_->FloatPtrByExternalLabel(label); }
 
-	RX_ALWAYS_INLINE void MarkDelete(reindexer::FloatVectorId id) {
-		impl_.GetWritable()->MarkDelete(id.AsNumber());
-	}
+	RX_ALWAYS_INLINE void MarkDelete(reindexer::FloatVectorId id) { impl_.GetWritable()->MarkDelete(id.AsNumber()); }
 
 	void AddPointNoLock(reindexer::ConstFloatVectorView vect, reindexer::FloatVectorId id);
 	void AddPointConcurrent(reindexer::ConstFloatVectorView vect, reindexer::FloatVectorId id);
@@ -48,14 +47,21 @@ public:
 		return impl_->SearchRange(queryDataRaw, queryDataNorm, radius, ef);
 	}
 
+	RX_ALWAYS_INLINE StreamingSearchSession BeginStreamingSearch(const float* queryDataRaw, std::optional<float> queryDataNorm,
+																 StreamingSearchOptions opts) const {
+		return impl_->BeginStreamingSearch(queryDataRaw, queryDataNorm, opts);
+	}
+
+	RX_ALWAYS_INLINE StreamingBatch ContinueStreamingSearch(StreamingSearchSession& session, size_t batchSize) const {
+		return impl_->ContinueStreamingSearch(session, batchSize);
+	}
+
 	RX_ALWAYS_INLINE bool IsQuantized() const noexcept { return impl_->IsQuantized(); }
 	RX_ALWAYS_INLINE bool QuantizationAvailable() const noexcept { return impl_.QuantizationAvailable(); }
 	void Quantize(const QuantizationConfig& config);
 	void SwitchMapOnQuantized();
 
-	RX_ALWAYS_INLINE size_t GetHash(reindexer::FloatVectorId id) const {
-		return impl_->GetHash(id.AsNumber());
-	}
+	RX_ALWAYS_INLINE size_t GetHash(reindexer::FloatVectorId id) const { return impl_->GetHash(id.AsNumber()); }
 
 	RX_ALWAYS_INLINE void Reset() noexcept { return impl_.Reset(); }
 

@@ -34,11 +34,13 @@ void IdSetPlain::Dump(std::ostream& os) const {
 	os << ']';
 }
 
-void IdSet::Commit() {
+void IdSet::Commit(size_type sortedIdxCount) {
 	if (!size()) {
 		auto set = set_.Get(std::memory_order_relaxed).first;
 		if (set) {
-			reserve(set->size());
+			// reserve extra space for sort orders data before IdSet commit
+			reserve(calcPlainReserveSize(set->size(), sortedIdxCount));
+
 			for (auto id : *set) {
 				push_back(id);
 			}

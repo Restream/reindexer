@@ -328,23 +328,30 @@ func (s *Serializer) PutVarInt(v int64) {
 	s.buf = s.buf[:rl+l]
 }
 
-func (s *Serializer) PutVarUInt(v uint64) *Serializer {
+func AppendVarUInt(buf []byte, v uint64) []byte {
 	if v < 0x80 {
-		s.buf = append(s.buf, byte(v))
-		return s
+		return append(buf, byte(v))
 	}
 	if v < 0x4000 {
-		s.buf = append(s.buf, byte(v)|0x80, byte(v>>7))
-		return s
+		return append(buf, byte(v)|0x80, byte(v>>7))
 	}
 	if v < 0x200000 {
-		s.buf = append(s.buf, byte(v)|0x80, byte(v>>7)|0x80, byte(v>>14))
-		return s
+		return append(buf, byte(v)|0x80, byte(v>>7)|0x80, byte(v>>14))
 	}
-	l := len(s.buf)
-	s.grow(10)
-	rl := binary.PutUvarint(s.buf[l:], v)
-	s.buf = s.buf[:rl+l]
+	l := len(buf)
+	if l+binary.MaxVarintLen64 <= cap(buf) {
+		buf = buf[:l+binary.MaxVarintLen64]
+	} else {
+		// Reserve up to MaxVarintLen64 bytes: PutUvarint writes in-place and does not grow the slice.
+		// Placeholder zeros are overwritten below; the slice is trimmed to the actual encoded length.
+		buf = append(buf, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	}
+	n := binary.PutUvarint(buf[l:], v)
+	return buf[:l+n]
+}
+
+func (s *Serializer) PutVarUInt(v uint64) *Serializer {
+	s.buf = AppendVarUInt(s.buf, v)
 	return s
 }
 

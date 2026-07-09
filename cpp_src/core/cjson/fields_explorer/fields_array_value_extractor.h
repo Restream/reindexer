@@ -5,6 +5,7 @@
 #include "field_array_analizer.h"
 #include "fields_explorer.h"
 #include "fields_value_extractor.h"
+#include "tools/unaligned.h"
 
 namespace reindexer::cjson {
 
@@ -29,9 +30,10 @@ protected:
 		FieldsValueExtractorStrategy::StartArray();
 	}
 	template <typename T>
-	void Array(const PathFilter& filter, TagIndex tagIndex, std::span<const T> data, unsigned offset,
+	    requires std::is_trivially_copyable_v<T>
+	void Array(const PathFilter& filter, TagIndex tagIndex, unaligned::view<T> data, unsigned offset,
 			   TreatAsSingleElement treatAsSingleElement = TreatAsSingleElement_False) {
-		FieldArrayAnalizerStrategy::Array(filter, tagIndex, data.size(), offset, treatAsSingleElement);
+		FieldArrayAnalizerStrategy::Array(filter, tagIndex, data, offset, treatAsSingleElement);
 		FieldsValueExtractorStrategy::Array(filter, tagIndex, data, offset, treatAsSingleElement);
 	}
 	void Array(const PathFilter& filter, TagIndex tagIndex, Serializer& ser, TagType tagType, int count) {

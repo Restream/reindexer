@@ -58,22 +58,21 @@ void ComparatorDistinctMulti::getData(const PayloadValue& item, std::vector<Dist
 												   KeyValueType::String, KeyValueType::Int, KeyValueType::Uuid> auto keyValueType) {
 								   using ViewType = decltype(keyValueType)::ViewType;
 								   const auto* bv = reinterpret_cast<const ViewType*>(raw.first);
-								   data.emplace_back(std::span<const ViewType>{bv + rowId.ToNumber(), 1}, IsArray_False);
+								   // Column index data is always aligned
+								   assertrx_dbg((reinterpret_cast<uintptr_t>(raw.first) % alignof(ViewType)) == 0);
+								   data.emplace_back(unaligned::view<ViewType>{bv + rowId.ToNumber(), 1}, IsArray_False);
 							   },
 							   [&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
 												   KeyValueType::Tuple, KeyValueType::FloatVector> auto) { assertrx_throw(false); });
 						   maxArraySize = std::max(maxArraySize, size_t(1));
 					   },
 					   [&](int i) {
-						   VariantArray b;
-
-						   PayloadFieldValue pfv = pv.Field(i);
-
+						   const PayloadFieldValue pfv = pv.Field(i);
 						   pfv.t_.Type().EvaluateOneOf(
 							   [&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Int, KeyValueType::Float,
 												   KeyValueType::Double, KeyValueType::String, KeyValueType::Uuid> auto keyValueType) {
 								   using PayloadFieldValueType = decltype(keyValueType)::PayloadFieldValueType;
-								   auto sp = pv.GetSpan<PayloadFieldValueType>(i);
+								   auto sp = pv.GetView<PayloadFieldValueType>(i);
 								   maxArraySize = std::max(maxArraySize, sp.size());
 								   data.emplace_back(sp, pfv.t_.IsArray());
 							   },
@@ -101,12 +100,12 @@ void ComparatorDistinctMultiArray::getData(const PayloadValue& item, std::vector
 	ConstPayload pv{payloadType_, item};
 	maxArraySize = 0;
 	for (const auto& d : dataSource_) {
-		PayloadFieldValue pfv = pv.Field(d);
+		const PayloadFieldValue pfv = pv.Field(d);
 		pfv.t_.Type().EvaluateOneOf(
 			[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Int, KeyValueType::Float, KeyValueType::Double,
 								KeyValueType::String, KeyValueType::Uuid> auto keyValueType) {
 				using PayloadFieldValueType = decltype(keyValueType)::PayloadFieldValueType;
-				auto sp = pv.GetArray<PayloadFieldValueType>(d);
+				auto sp = pv.GetView<PayloadFieldValueType>(d);
 				maxArraySize = std::max(maxArraySize, sp.size());
 				data.emplace_back(sp, IsArray_True);
 			},

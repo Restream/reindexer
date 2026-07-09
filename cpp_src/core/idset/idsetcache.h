@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include "core/idset/idset.h"
 #include "core/keyvalue/variant.h"
 #include "core/lrucache.h"
@@ -28,7 +29,9 @@ public:
 
 	IdSetCacheKey(const VariantArray& keys, CondType cond, SortType sort) noexcept : keys_(&keys), cond_(cond), sort_(sort) {}
 	IdSetCacheKey(const VariantArray& keys, CondType cond, RankSortType sort) noexcept : keys_(&keys), cond_(cond), sort_(SortT(sort)) {}
-	IdSetCacheKey(const IdSetCacheKey& other) : keys_(&hkeys_), cond_(other.cond_), sort_(other.sort_), hkeys_(*other.keys_) {}
+	IdSetCacheKey(const IdSetCacheKey& other) : keys_(&hkeys_), cond_(other.cond_), sort_(other.sort_), hkeys_(*other.keys_) {
+		hkeys_.EnsureHold();
+	}
 
 	// NOLINTNEXTLINE (bugprone-exception-escape)
 	IdSetCacheKey(IdSetCacheKey&& other) : keys_(&hkeys_), cond_(std::move(other.cond_)), sort_(std::move(other.sort_)) {
@@ -36,43 +39,48 @@ public:
 			hkeys_ = std::move(other.hkeys_);
 		} else {
 			hkeys_ = *other.keys_;
+			hkeys_.EnsureHold();
 		}
 	}
 	IdSetCacheKey& operator=(const IdSetCacheKey& other) {
-		if (&other != this) {
-			hkeys_ = *other.keys_;
-			keys_ = &hkeys_;
-			cond_ = other.cond_;
-			sort_ = other.sort_;
-		}
+		IdSetCacheKey tmp(other);
+		swap(tmp);
 		return *this;
 	}
 	// NOLINTNEXTLINE (bugprone-exception-escape)
 	IdSetCacheKey& operator=(IdSetCacheKey&& other) {
-		if (&other != this) {
-			if (&other.hkeys_ == other.keys_) {
-				hkeys_ = std::move(other.hkeys_);
-			} else {
-				hkeys_ = *other.keys_;
-			}
-			keys_ = &hkeys_;
-			cond_ = other.cond_;
-			sort_ = other.sort_;
+		if (this != &other) {
+			IdSetCacheKey tmp(std::move(other));
+			swap(tmp);
 		}
 		return *this;
 	}
 
-	size_t Size() const noexcept { return sizeof(IdSetCacheKey) + keys_->size() * sizeof(VariantArray::value_type); }
+	size_t Size() const noexcept {
+		size_t size = sizeof(IdSetCacheKey) + keys_->size() * sizeof(Variant);
+		for (const Variant& key : *keys_) {
+			size += key.HeldHeapSize();
+		}
+		return size;
+	}
 	SortType Sort() const noexcept { return sort_; }
 
 	template <typename T>
 	friend T& operator<<(T& os, const IdSetCacheKey& k) {
 		os << "{cond: " << CondTypeToStr(k.cond_) << ", sort: " << k.sort_ << ", keys: ";
-		k.hkeys_.Dump(os);
+		k.keys_->Dump(os);
 		return os << '}';
 	}
 
 private:
+	void swap(IdSetCacheKey& other) noexcept {
+		hkeys_.swap(other.hkeys_);
+		std::swap(cond_, other.cond_);
+		std::swap(sort_, other.sort_);
+		keys_ = &hkeys_;
+		other.keys_ = &other.hkeys_;
+	}
+
 	const VariantArray* keys_;
 	CondType cond_;
 	SortT sort_;

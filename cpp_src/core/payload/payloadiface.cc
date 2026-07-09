@@ -16,8 +16,10 @@
 #include "core/keyvalue/variant.h"
 #include "core/namespace/stringsholder.h"
 #include "core/queryresults/fields_filter.h"
+#include "core/payload/payload_access.h"
 #include "payloadiface.h"
 #include "payloadvalue.h"
+#include "tools/unaligned.h"
 
 namespace reindexer {
 
@@ -49,8 +51,7 @@ bool PayloadIface<T>::HasDefaultValue(int field) const {
 
 	const auto& fieldType = t_.Field(field);
 	if (fieldType.IsArray()) {
-		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		return (arr->len == 0);
+		return payload_access::readArrayMeta(v_->Ptr(), fieldType.Offset()).len == 0;
 	}
 	return Field(field).HasDefaultValue();
 }
@@ -72,12 +73,12 @@ void PayloadIface<T>::get(int field, VariantArray& keys, HoldT h) const {
 	keys.Clear();
 	const auto& fieldType = t_.Field(field);
 	if (fieldType.IsArray()) {
-		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		keys.reserve(arr->len);
+		const auto arr = payload_access::readArrayMeta(v_->Ptr(), fieldType.Offset());
+		keys.reserve(arr.len);
 		const auto elemSize = fieldType.ElemSizeof();
-		const auto arrPtr = v_->Ptr() + arr->offset;
+		const auto arrPtr = v_->Ptr() + arr.offset;
 
-		for (int i = 0, len = arr->len; i < len; i++) {
+		for (int i = 0, len = arr.len; i < len; i++) {
 			PayloadFieldValue pv(fieldType, arrPtr + i * elemSize);
 			keys.push_back(pv.Get(h));
 		}
@@ -94,10 +95,10 @@ Variant PayloadIface<T>::get(int field, int idx, HoldT h) const {
 
 	const auto& fieldType = t_.Field(field);
 	if (fieldType.IsArray()) {
-		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} >= len {}", Type().Name(), fieldType.Name(), idx, arr->len);
+		const auto arr = payload_access::readArrayMeta(v_->Ptr(), fieldType.Offset());
+		assertf(idx < arr.len, "Field '{}.{}' bound exceed idx {} >= len {}", Type().Name(), fieldType.Name(), idx, arr.len);
 
-		PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * fieldType.ElemSizeof());
+		PayloadFieldValue pv(fieldType, v_->Ptr() + arr.offset + idx * fieldType.ElemSizeof());
 		return pv.Get(h);
 	} else {
 		assertf(idx == 0, "Field '{}.{}' is not array, can't get idx {}", Type().Name(), fieldType.Name(), idx);
@@ -324,10 +325,10 @@ void PayloadIface<T>::Set(int field, int idx, const Variant& v) {
 	assertrx(idx >= 0);
 	const auto& fieldType = t_.Field(field);
 	if (fieldType.IsArray()) {
-		const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
+		const auto arr = payload_access::readArrayMeta(v_->Ptr(), fieldType.Offset());
 		const auto elemSize = fieldType.ElemSizeof();
-		assertf(idx < arr->len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), fieldType.Name(), idx, arr->len);
-		PayloadFieldValue pv(fieldType, v_->Ptr() + arr->offset + idx * elemSize);
+		assertf(idx < arr.len, "Field '{}.{}' bound exceed idx {} > len {}", Type().Name(), fieldType.Name(), idx, arr.len);
+		PayloadFieldValue pv(fieldType, v_->Ptr() + arr.offset + idx * elemSize);
 		pv.Set(v);
 	} else {
 		assertrx(idx == 0);
@@ -341,15 +342,17 @@ int PayloadIface<PayloadValue>::ResizeArray(int field, int count, Append append)
 	assertrx(fieldType.IsArray());
 
 	const size_t realSize = RealSize();
-	auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
+	const size_t metaOffset = fieldType.Offset();
+	auto arr = payload_access::readArrayMeta(v_->Ptr(), metaOffset);
 	const auto elemSize = fieldType.ElemSizeof();
 
 	const size_t grow = elemSize * count;
 	size_t strip = 0;
-	const size_t insert = arr->offset ? (arr->offset + arr->len * elemSize) : realSize;
+	const size_t insert = arr.offset ? (arr.offset + arr.len * elemSize) : realSize;
 	if (!append) {
-		strip = arr->len * elemSize;
-		arr->len = 0;
+		strip = arr.len * elemSize;
+		arr.len = 0;
+		payload_access::writeArrayMeta(v_->Ptr(), metaOffset, arr);
 	}
 
 	assertrx(insert <= realSize);
@@ -357,22 +360,27 @@ int PayloadIface<PayloadValue>::ResizeArray(int field, int count, Append append)
 	v_->Resize(realSize, realSize + grow - strip);
 	memmove(v_->Ptr() + insert + grow - strip, v_->Ptr() + insert, realSize - insert);
 
-	arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-	if (!arr->offset) {
-		arr->offset = insert;
+	arr = payload_access::readArrayMeta(v_->Ptr(), metaOffset);
+	if (!arr.offset) {
+		arr.offset = static_cast<unsigned>(insert);
+		payload_access::writeArrayMeta(v_->Ptr(), metaOffset, arr);
+		arr = payload_access::readArrayMeta(v_->Ptr(), metaOffset);
 	}
 
-	arr->len += count;
+	arr.len += count;
+	payload_access::writeArrayMeta(v_->Ptr(), metaOffset, arr);
 	// Move another arrays, after our
 	for (int f = 0; f < NumFields(); f++) {
 		if (f != field && t_.Field(f).IsArray()) {
-			auto* arrPtr = reinterpret_cast<PayloadFieldValue::Array*>(Field(f).p_);
-			if (arrPtr->offset >= insert) {
-				arrPtr->offset += grow - strip;
+			const size_t fMetaOffset = t_.Field(f).Offset();
+			auto arrPtr = payload_access::readArrayMeta(v_->Ptr(), fMetaOffset);
+			if (arrPtr.offset >= insert) {
+				arrPtr.offset += static_cast<unsigned>(grow - strip);
+				payload_access::writeArrayMeta(v_->Ptr(), fMetaOffset, arrPtr);
 			}
 		}
 	}
-	return arr->len - count;
+	return arr.len - count;
 }
 
 // Calc real size of payload with embedded arrays
@@ -381,9 +389,9 @@ size_t PayloadIface<T>::RealSize() const {
 	size_t sz = t_.TotalSize();
 	for (int field = 0, numFields = NumFields(); field < numFields; field++) {
 		if (const auto& fieldType = t_.Field(field); fieldType.IsArray()) {
-			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-			if (arr->offset >= sz) {
-				sz = arr->offset + arr->len * fieldType.ElemSizeof();
+			const auto arr = payload_access::readArrayMeta(v_->Ptr(), fieldType.Offset());
+			if (arr.offset >= sz) {
+				sz = arr.offset + arr.len * fieldType.ElemSizeof();
 			}
 		}
 	}
@@ -518,10 +526,10 @@ size_t PayloadIface<T>::GetHash(const FieldsSet& fields) const {
 		if (field != IndexValueType::SetByJsonPath) {
 			auto& f = t_.Field(field);
 			if (f.IsArray()) {
-				auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-				ret ^= arr->len;
-				uint8_t* p = v_->Ptr() + arr->offset;
-				for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
+				const auto arr = payload_access::readArrayMeta(v_->Ptr(), f.Offset());
+				ret ^= arr.len;
+				uint8_t* p = v_->Ptr() + arr.offset;
+				for (int i = 0; i < arr.len; i++, p += f.ElemSizeof()) {
 					ret ^= PayloadFieldValue(f, p).Hash();
 				}
 			} else {
@@ -555,10 +563,10 @@ PayloadChecksum PayloadIface<T>::GetChecksum(
 		auto fv = Field(field);
 		if (f.Type().IsSame(KeyValueType::FloatVector{})) {
 			if (f.IsArray()) {
-				auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(fv.p_);
-				ret ^= arr->len;
-				uint8_t* p = v_->Ptr() + arr->offset;
-				for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
+				const auto arr = payload_access::readArrayMeta(v_->Ptr(), f.Offset());
+				ret ^= arr.len;
+				uint8_t* p = v_->Ptr() + arr.offset;
+				for (int i = 0; i < arr.len; i++, p += f.ElemSizeof()) {
 					ret = ret.Rotl(13);
 					ret ^= getVectorHashF(unsigned(field), ConstFloatVectorView{PayloadFieldValue(f, p).Get()}, i);
 				}
@@ -566,10 +574,10 @@ PayloadChecksum PayloadIface<T>::GetChecksum(
 				ret ^= getVectorHashF(unsigned(field), ConstFloatVectorView(fv.Get()), 0);
 			}
 		} else if (f.IsArray()) {
-			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(fv.p_);
-			ret ^= arr->len;
-			uint8_t* p = v_->Ptr() + arr->offset;
-			for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
+			const auto arr = payload_access::readArrayMeta(v_->Ptr(), f.Offset());
+			ret ^= arr.len;
+			uint8_t* p = v_->Ptr() + arr.offset;
+			for (int i = 0; i < arr.len; i++, p += f.ElemSizeof()) {
 				ret.hashV2 = std::rotl(ret.hashV2, 13);
 				ret ^= PayloadFieldValue(f, p).Hash();
 			}
@@ -590,16 +598,16 @@ bool PayloadIface<T>::IsEQ(const T& other, const FieldsSet& fields) const {
 		if (field != IndexValueType::SetByJsonPath) {
 			auto& f = t_.Field(field);
 			if (f.IsArray()) {
-				auto* arr1 = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-				auto* arr2 = reinterpret_cast<PayloadFieldValue::Array*>(o.Field(field).p_);
-				if (arr1->len != arr2->len) {
+				const auto arr1 = payload_access::readArrayMeta(v_->Ptr(), f.Offset());
+				const auto arr2 = payload_access::readArrayMeta(o.v_->Ptr(), f.Offset());
+				if (arr1.len != arr2.len) {
 					return false;
 				}
 
-				uint8_t* p1 = v_->Ptr() + arr1->offset;
-				uint8_t* p2 = o.v_->Ptr() + arr2->offset;
+				uint8_t* p1 = v_->Ptr() + arr1.offset;
+				uint8_t* p2 = o.v_->Ptr() + arr2.offset;
 
-				for (int i = 0; i < arr1->len; i++, p1 += f.ElemSizeof(), p2 += f.ElemSizeof()) {
+				for (int i = 0; i < arr1.len; i++, p1 += f.ElemSizeof(), p2 += f.ElemSizeof()) {
 					if (!PayloadFieldValue(f, p1).IsEQ(PayloadFieldValue(f, p2))) {
 						return false;
 					}
@@ -719,15 +727,15 @@ void PayloadIface<T>::AddRefStrings(int field) noexcept {
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
-		auto str = *reinterpret_cast<const p_string*>((vptr + f.Offset()));
+		const auto str = unaligned::read<p_string>(vptr + f.Offset());
 		key_string_impl::addref_unsafe(str.getBaseKeyString());
 	} else {
 		const auto elemSize = f.ElemSizeof();
-		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(vptr + f.Offset());
-		const auto arrOffset = arr->offset;
-		for (int i = 0, arrLen = arr->len; i < arrLen; ++i) {
-			auto str = reinterpret_cast<const p_string*>(vptr + arrOffset + i * elemSize);
-			key_string_impl::addref_unsafe(str->getBaseKeyString());
+		const auto arr = payload_access::readArrayMeta(vptr, f.Offset());
+		const auto arrOffset = arr.offset;
+		for (int i = 0, arrLen = arr.len; i < arrLen; ++i) {
+			const auto str = unaligned::read<p_string>(vptr + arrOffset + i * elemSize);
+			key_string_impl::addref_unsafe(str.getBaseKeyString());
 		}
 	}
 }
@@ -747,15 +755,15 @@ void PayloadIface<T>::ReleaseStrings(int field) noexcept {
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
-		auto str = reinterpret_cast<p_string*>((vptr + f.Offset()));
-		key_string_impl::release_unsafe(str->getBaseKeyString());
+		auto str = unaligned::read<p_string>(vptr + f.Offset());
+		key_string_impl::release_unsafe(str.getBaseKeyString());
 	} else {
 		const auto elemSize = f.ElemSizeof();
-		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(vptr + f.Offset());
-		const auto arrOffset = arr->offset;
-		for (int i = 0, arrLen = arr->len; i < arrLen; ++i) {
-			auto str = reinterpret_cast<const p_string*>(vptr + arrOffset + i * elemSize);
-			key_string_impl::release_unsafe(str->getBaseKeyString());
+		const auto arr = payload_access::readArrayMeta(vptr, f.Offset());
+		const auto arrOffset = arr.offset;
+		for (int i = 0, arrLen = arr.len; i < arrLen; ++i) {
+			const auto str = unaligned::read<p_string>(vptr + arrOffset + i * elemSize);
+			key_string_impl::release_unsafe(str.getBaseKeyString());
 		}
 	}
 }
@@ -768,14 +776,14 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder& dest, bool copy) {
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
-		auto str = *reinterpret_cast<p_string*>((v_->Ptr() + f.Offset()));
+		const auto str = unaligned::read<p_string>(v_->Ptr() + f.Offset());
 		dest.emplace_back(str.getBaseKeyString(), copy);
 	} else {
-		auto arr = reinterpret_cast<PayloadFieldValue::Array*>(v_->Ptr() + f.Offset());
-		const auto arrPtr = v_->Ptr() + arr->offset;
+		const auto arr = payload_access::readArrayMeta(v_->Ptr(), f.Offset());
+		const auto arrPtr = v_->Ptr() + arr.offset;
 		const auto elemSize = f.ElemSizeof();
-		for (int i = 0, arrLen = arr->len; i < arrLen; i++) {
-			auto str = *reinterpret_cast<const p_string*>(arrPtr + i * elemSize);
+		for (int i = 0, arrLen = arr.len; i < arrLen; i++) {
+			const auto str = unaligned::read<p_string>(arrPtr + i * elemSize);
 			dest.emplace_back(str.getBaseKeyString(), copy);
 		}
 	}
@@ -817,9 +825,9 @@ void PayloadIface<T>::setArray(int field, const VariantArray& keys, Append appen
 	}
 
 	int pos = ResizeArray(field, int(keys.size()), append);
-	const auto* const arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
+	const auto arr = payload_access::readArrayMeta(v_->Ptr(), fieldType.Offset());
 	const auto elemSize = fieldType.ElemSizeof();
-	auto arrElemPtr = v_->Ptr() + arr->offset + pos * elemSize;
+	auto arrElemPtr = v_->Ptr() + arr.offset + pos * elemSize;
 
 	auto writeValue = [&](const Variant& kv) noexcept {
 		PayloadFieldValue pv(fieldType, arrElemPtr);

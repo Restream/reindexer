@@ -17,15 +17,20 @@ public:
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) override;
 	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	void Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
-	bool RefreshCompositeKey(const Variant& key) noexcept override;
+	bool RefreshCompositeKey(const Variant& key, IdType id) noexcept override;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
-	void Commit() override;
+	WasCanceled Commit(const index::ICancelable&) override;
 
-	void UpdateSortedIds(const IUpdateSortedContext& /*ctx*/) override { assertrx_dbg(!IsSupportSortedIdsBuild()); }
+	WasCanceled UpdateSortedIds(const index::IUpdateSortedContext& /*ctx*/, const index::ICancelable&) override {
+		assertrx_dbg(!IsSupportSortedIdsBuild());
+		return WasCanceled_False;
+	}
 	bool IsSupportSortedIdsBuild() const noexcept override { return false; }
 
-	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexStore<T>(*this)); }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/, IndexCloneKind kind) const override {
+		return std::unique_ptr<Index>(new IndexStore<T>(*this, kind));
+	}
 	IndexMemStat GetMemStat(const RdxContext&) const override;
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string>; }
 	void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
@@ -43,7 +48,8 @@ public:
 	struct [[nodiscard]] HasAddTask<H, std::void_t<decltype(std::declval<H>().add_destroy_task(nullptr))>> : public std::true_type {};
 
 protected:
-	IndexStore(const IndexStore& store) : Index(store), str_map(store.str_map), idx_data(store.idx_data), memStat_(store.memStat_) {}
+	IndexStore(const IndexStore& store, IndexCloneKind kind)
+		: Index(store, kind), str_map(store.str_map), idx_data(store.idx_data), memStat_(store.memStat_) {}
 	bool shouldHoldOriginalValueInStrMap() const noexcept {
 		if constexpr (!std::is_same_v<T, key_string>) {
 			return false;

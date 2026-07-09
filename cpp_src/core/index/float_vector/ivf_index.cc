@@ -70,8 +70,8 @@ IvfIndex::IvfIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& 
 	}
 }
 
-IvfIndex::IvfIndex(const IvfIndex& other)
-	: Base{other},
+IvfIndex::IvfIndex(const IvfIndex& other, IndexCloneKind kind)
+	: Base{other, kind},
 	  nCentroids_{other.nCentroids_},
 	  space_{other.map_ ? nullptr : static_cast<faiss::IndexFlat*>(faiss::clone_index(other.space_.get()))},
 	  n2FvId_{other.n2FvId_},
@@ -437,7 +437,7 @@ KnnRawResult IvfIndex::selectRaw(ConstFloatVectorView key, const KnnSearchParams
 	}
 }
 
-std::unique_ptr<Index> IvfIndex::Clone(size_t) const { return std::unique_ptr<IvfIndex>{new IvfIndex{*this}}; }
+std::unique_ptr<Index> IvfIndex::Clone(size_t, IndexCloneKind kind) const { return std::unique_ptr<IvfIndex>{new IvfIndex{*this, kind}}; }
 
 IndexMemStat IvfIndex::GetMemStat(const RdxContext& ctx) const noexcept {
 	auto stats = FloatVectorIndex::GetMemStat(ctx);

@@ -106,9 +106,11 @@ public:
 		return *this;
 	}
 	explicit FloatVectorImpl(std::span<const UnderlyingT> data) : dimension_(FloatVectorDimension(data.size())) {
-		UnderlyingT* newData = new UnderlyingT[dimension_.Value()];
-		std::memcpy(newData, data.data(), dimension_.Value() * sizeof(T));
-		static_cast<Base&>(*this) = Base{newData};
+		if (!data.empty()) {
+			UnderlyingT* newData = new UnderlyingT[dimension_.Value()];
+			std::memcpy(newData, data.data(), dimension_.Value() * sizeof(T));
+			static_cast<Base&>(*this) = Base{newData};
+		}
 	}
 
 	explicit FloatVectorImpl(Base&& ptr, std::constructible_from<FloatVectorDimension> auto dimension) noexcept(

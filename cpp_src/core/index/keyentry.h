@@ -2,19 +2,11 @@
 
 #include <vector>
 #include "core/idset/idset.h"
+#include "core/index/auxiliary_interfaces.h"
 #include "core/type_consts.h"
 #include "tools/errors.h"
 
 namespace reindexer {
-
-class [[nodiscard]] IUpdateSortedContext {
-public:
-	virtual ~IUpdateSortedContext() = default;
-	virtual int GetSortedIdxCount() const noexcept = 0;
-	virtual SortType GetCurSortId() const noexcept = 0;
-	virtual const std::vector<SortType>& Ids2Sorts() const& noexcept = 0;
-	virtual std::vector<SortType>& Ids2Sorts() & noexcept = 0;
-};
 
 class [[nodiscard]] SortedIDsCtx {
 public:
@@ -59,7 +51,7 @@ public:
 			return sortedIDsView(sortId);
 		}
 	}
-	void UpdateSortedIds(const IUpdateSortedContext& ctx)
+	void UpdateSortedIds(const index::IUpdateSortedContext& ctx)
 		requires(concepts::IdSetWithSortedIDs<IdSetT>);
 	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const;
 

@@ -376,7 +376,9 @@ std::string FTConfig::GetJSON(const fast_hash_map<std::string, int>& fields) con
 
 		for (const auto& [term, boost] : termsBoost) {
 			auto termObj = termsBoostNode.Object();
-			{ termObj.Array("terms"sv).Put(TagName::Empty(), term); }
+			{
+				termObj.Array("terms"sv).Put(TagName::Empty(), term);
+			}
 			termObj.Put("boost"sv, boost);
 		}
 	}

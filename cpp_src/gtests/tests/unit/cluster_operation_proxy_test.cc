@@ -5,11 +5,9 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/id_type.h"
 #include "core/system_ns_names.h"
-#include "estl/mutex.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 #include "vendor/gason/gason.h"
-
 // NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 
 namespace reindexer_tests {

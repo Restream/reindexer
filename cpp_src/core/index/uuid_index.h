@@ -11,12 +11,14 @@ class [[nodiscard]] UuidIndex : public IndexUnordered<MapType> {
 public:
 	UuidIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 		: Base{idef, std::move(payloadType), std::move(fields), cacheCfg} {}
-	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new UuidIndex(*this)); }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/, IndexCloneKind kind) const override {
+		return std::unique_ptr<Index>(new UuidIndex(*this, kind));
+	}
 	using Base::Upsert;
 	void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) override;	// TODO delete this after #1353
 
 private:
-	UuidIndex(const UuidIndex&) = default;
+	UuidIndex(const UuidIndex& other, IndexCloneKind kind) : Base{other, kind} {}
 };
 
 std::unique_ptr<Index> IndexUuid_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,

@@ -32,6 +32,7 @@ public:
 	bool NamespaceIsInClusterConfig(std::string_view nsName) const;
 	ReplicationStats GetReplicationStats() const;
 	void SetLogLevel(LogLevel level) noexcept { log_.SetLevel(level); }
+	LogLevel GetLogLevel() const noexcept { return log_.GetLevel(); }
 
 private:
 	static constexpr std::string_view logModuleName() noexcept { return std::string_view("syncreplicator"); }

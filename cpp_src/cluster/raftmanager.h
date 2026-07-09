@@ -7,8 +7,6 @@
 #include "cluster/stats/relicationstatscollector.h"
 #include "estl/mutex.h"
 #include "estl/thread_annotation_attributes.h"
-#include "tools/catch_and_return.h"
-
 namespace reindexer {
 
 struct ReplicationConfigData;
@@ -34,9 +32,7 @@ public:
 		voting_.SuggestLeader(serverId_, suggestion, response);
 	}
 	void LeadersPing(const cluster::NodeData& leader) { voting_.LeadersPing(leader); }
-	Error SendDesiredLeaderId(int nextLeaderId) noexcept {
-		RETURN_RESULT_NOEXCEPT(DesiredLeaderIdSender(loop_, nodes_, serverId_, nextLeaderId, log_)())
-	}
+	Error SendDesiredLeaderId(int nextLeaderId) noexcept;
 	void SetDesiredLeaderId(int desiredLeaderId) { voting_.SetDesiredLeaderId(serverId_, desiredLeaderId); }
 	int GetDesiredLeaderId() noexcept { return voting_.GetDesiredLeaderId(); }
 	void AwaitTermination();
@@ -53,27 +49,25 @@ private:
 		int serverId = -1;
 	};
 
+	// Noexcept wrapper. Designed to avoid coroutines switch during exception handling
 	class [[nodiscard]] DesiredLeaderIdSender {
 	public:
-		DesiredLeaderIdSender(net::ev::dynamic_loop&, const std::vector<RaftNode>&, int serverId, int nextLeaderId, const Logger&);
-		// NOLINTNEXTLINE (bugprone-exception-escape)
-		~DesiredLeaderIdSender() {
-			coroutine::wait_group wgStop;
-			for (auto& client : clients_) {
-				loop_.spawn(wgStop, [&client]() { client.Stop(); });
-			}
-			wgStop.wait();
-		}
+		DesiredLeaderIdSender(net::ev::dynamic_loop& loop, const std::vector<RaftNode>& nodes, int serverId, int nextLeaderId,
+							  const Logger& log) noexcept
+			: loop_(loop),
+			  nodes_(nodes),
+			  log_(log),
+			  thisServerId_(serverId),
+			  nextLeaderId_(nextLeaderId),
+			  nextServerNodeIndex_(nodes_.size()) {}
 
-		Error operator()();
+		Error Send() noexcept;
+		void StopClients() noexcept;
 
 	private:
+		Error startClients() noexcept;
+		Error sendDesiredServerIdToNode(size_t nodeId) noexcept;
 		constexpr std::string_view logModuleName() noexcept { return std::string_view("raftmanager:leadersender"); }
-		Error sendDesiredServerIdToNode(size_t nodeId) {
-			auto client = clients_[nodeId].WithTimeout(kDesiredLeaderTimeout);
-			auto err = client.Status(true);
-			return !err.ok() ? err : client.SetDesiredLeaderId(nextLeaderId_);
-		}
 
 		net::ev::dynamic_loop& loop_;
 		std::vector<client::RaftClient> clients_;

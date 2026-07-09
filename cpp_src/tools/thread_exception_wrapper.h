@@ -12,6 +12,7 @@ public:
 		lock_guard lck(mtx_);
 		if (!ex_) {
 			ex_ = std::move(ptr);
+			hasException_.store(true, std::memory_order_relaxed);
 		}
 	}
 	void RethrowException() {
@@ -22,12 +23,10 @@ public:
 			std::rethrow_exception(std::move(ptr));
 		}
 	}
-	bool HasException() const noexcept {
-		lock_guard lck(mtx_);
-		return bool(ex_);
-	}
+	bool HasException() const noexcept { return hasException_.load(std::memory_order_relaxed); }
 
 private:
+	std::atomic<bool> hasException_ = false;
 	std::exception_ptr ex_ = nullptr;
 	mutable mutex mtx_;
 };

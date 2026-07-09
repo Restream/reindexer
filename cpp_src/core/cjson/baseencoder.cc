@@ -21,6 +21,7 @@
 #include "tagsmatcher.h"
 #include "tools/assertrx.h"
 #include "tools/serilize/wrserializer.h"
+#include "tools/unaligned.h"
 
 namespace reindexer {
 
@@ -238,12 +239,24 @@ bool BaseEncoder<Builder>::encodeImpl(ConstPayload* pl, ctag tag, Serializer& rd
 				auto count = rdser.GetVarUInt();
 				if constexpr (kIsNotDummy) {
 					f.Type().EvaluateOneOf(
-						[&](KeyValueType::Bool) { builder.Array(indexedTag, pl->GetArray<bool>(tagField).subspan(cnt, count), cnt); },
-						[&](KeyValueType::Int) { builder.Array(indexedTag, pl->GetArray<int>(tagField).subspan(cnt, count), cnt); },
-						[&](KeyValueType::Int64) { builder.Array(indexedTag, pl->GetArray<int64_t>(tagField).subspan(cnt, count), cnt); },
-						[&](KeyValueType::Double) { builder.Array(indexedTag, pl->GetArray<double>(tagField).subspan(cnt, count), cnt); },
-						[&](KeyValueType::String) { builder.Array(indexedTag, pl->GetArray<p_string>(tagField).subspan(cnt, count), cnt); },
-						[&](KeyValueType::Uuid) { builder.Array(indexedTag, pl->GetArray<Uuid>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::Bool) {
+							builder.Array(indexedTag, pl->GetView<bool>(tagField).subspan(cnt, count), cnt);
+						},
+						[&](KeyValueType::Int) {
+							builder.Array(indexedTag, pl->GetView<int>(tagField).subspan(cnt, count), cnt);
+						},
+						[&](KeyValueType::Int64) {
+							builder.Array(indexedTag, pl->GetView<int64_t>(tagField).subspan(cnt, count), cnt);
+						},
+						[&](KeyValueType::Double) {
+							builder.Array(indexedTag, pl->GetView<double>(tagField).subspan(cnt, count), cnt);
+						},
+						[&](KeyValueType::String) {
+							builder.Array(indexedTag, pl->GetView<p_string>(tagField).subspan(cnt, count), cnt);
+						},
+						[&](KeyValueType::Uuid) {
+							builder.Array(indexedTag, pl->GetView<Uuid>(tagField).subspan(cnt, count), cnt);
+						},
 						[&](KeyValueType::FloatVector) {
 							if (pl->Field(tagField).t_.IsArray()) {
 								if (pl->GetFieldLen(tagField) == 0) {
@@ -267,7 +280,7 @@ bool BaseEncoder<Builder>::encodeImpl(ConstPayload* pl, ctag tag, Serializer& rd
 								if (view.IsStripped()) [[unlikely]] {
 									throw Error(errLogic, "Attempt to serialize stripped vector");
 								}
-								builder.Array(indexedTag, view.Span(), cnt, TreatAsSingleElement_True);
+								builder.Array(indexedTag, unaligned::view<float>(view.Span()), cnt, TreatAsSingleElement_True);
 							}
 							count = 1;
 						},
@@ -292,9 +305,9 @@ bool BaseEncoder<Builder>::encodeImpl(ConstPayload* pl, ctag tag, Serializer& rd
 				if constexpr (kIsNotDummy) {
 					if (f.IsFloatVector() && (!f.IsArray() || std::is_same_v<TagT, TagIndex>)) {
 						if constexpr (std::is_same_v<TagT, TagName>) {
-							builder.Array(indexedTag, std::span<const float>{}, 0);
+							builder.Array(indexedTag, unaligned::view<float>{}, 0);
 						} else {
-							builder.Array(indexedTag, std::span<const float>{}, indexedTag.AsNumber());
+							builder.Array(indexedTag, unaligned::view<float>{}, indexedTag.AsNumber());
 						}
 					} else {
 						builder.Null(indexedTag);
@@ -360,9 +373,9 @@ bool BaseEncoder<Builder>::encodeImpl(ConstPayload* pl, ctag tag, Serializer& rd
 						if (fieldProp.ValueType().template Is<KeyValueType::FloatVector>() &&
 							(!fieldProp.IsArray() || std::is_same_v<TagT, TagIndex>)) {
 							if constexpr (std::is_same_v<TagT, TagName>) {
-								builder.Array(indexedTag, std::span<const float>{}, 0);
+								builder.Array(indexedTag, unaligned::view<float>{}, 0);
 							} else {
-								builder.Array(indexedTag, std::span<const float>{}, indexedTag.AsNumber());
+								builder.Array(indexedTag, unaligned::view<float>{}, indexedTag.AsNumber());
 							}
 							break;
 						}

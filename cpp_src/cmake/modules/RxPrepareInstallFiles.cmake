@@ -64,7 +64,7 @@ if (NOT WIN32)
 
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
-    "tools/errors.h" "tools/serilize/serializer.h" "tools/serilize/wrserializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
+    "tools/errors.h" "tools/serilize/serializer.h" "tools/serilize/wrserializer.h" "tools/serilize/helpers.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
     "tools/verifying_updater.h" "tools/customlocal.h" "tools/clock.h" "tools/enum_compare.h" "tools/float_comparison.h" "tools/timetools.h" "core/function/error.h"
     "core/reindexer.h" "core/type_consts.h" "core/type_formats.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/payload/payload_checksum.h"
     "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/id_type.h"

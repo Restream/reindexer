@@ -26,6 +26,8 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(reindexer, default_namespace,
 							   {IndexDeclaration{kFieldId, "tree", "int", IndexOpts().PK(), 0},
+								IndexDeclaration{kFieldCategory, "hash", "int", IndexOpts(), 0},
+								IndexDeclaration{kFieldCategoryString, "tree", "string", IndexOpts(), 0},
 								IndexDeclaration{kFieldData, "text", "string",
 												 IndexOpts().SetConfig(IndexFastFT, R"xxx({"enable_warmup_on_ns_copy":false})xxx"), 0},
 								IndexDeclaration{kFieldData1, "text", "string",
@@ -50,6 +52,8 @@ public:
 		Item item = reindexer.NewItem(default_namespace);
 		if (item.Status().ok()) {
 			item[kFieldId] = id;
+			item[kFieldCategory] = id % 100;
+			item[kFieldCategoryString] = std::to_string(id % 100);
 			item[kFieldData] = fmt::format("{}_{}_{}", kFieldData, baseData, id);
 			item[kFieldData1] = fmt::format("{}_{}_{}", kFieldData1, baseData, id);
 			item[kFieldData2] = fmt::format("{}_{}_{}", kFieldData2, baseData, id);
@@ -108,6 +112,8 @@ public:
 
 protected:
 	const char* kFieldId = "id";
+	const char* kFieldCategory = "category";
+	const char* kFieldCategoryString = "category_string";
 	const char* kFieldData = "data";
 	const char* kFieldData1 = "data1";
 	const char* kFieldData2 = "data2";

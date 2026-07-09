@@ -41,10 +41,16 @@ void RaftManager::Configure(const ReplicationConfigData& baseConfig, const Clust
 // NOLINTNEXTLINE(bugprone-exception-escape) TODO: noexcept logger fallback
 std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 	coroutine::wait_group wg;
-	auto wgWaiter = MakeScopeGuard([&wg]() noexcept { wg.wait(); });
+	std::optional<RaftInfo::Role> roundResult;
+	struct {
+		size_t succeedPhase1 = 1;
+		size_t succeedPhase2 = 1;
+		size_t failed = 0;
+	} electionsStat;
+	std::vector<coroutine::routine_t> succeedRoutines;
+
 	const auto roundBeg = ClockT::now();
 	try {
-		std::vector<coroutine::routine_t> succeedRoutines;
 		succeedRoutines.reserve(nodes_.size());
 
 		const int nextLeaderId = voting_.GetDesiredLeaderId();
@@ -52,97 +58,96 @@ std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 		if (!isDesiredLeader && nextLeaderId != -1) {
 			std::ignore = endElections(-1, roundBeg, RaftInfo::Role::Follower);
 			logInfo("{}: Skipping elections (desired leader id is {})", serverId_, nextLeaderId);
-			return RaftInfo::Role::Follower;
-		}
-		int32_t term = beginElectionsTerm(nextLeaderId);
-		logInfo("{}: Starting new elections term. Term number: {}", serverId_, term);
-		succeedRoutines.resize(0);
-		struct {
-			size_t succeedPhase1 = 1;
-			size_t succeedPhase2 = 1;
-			size_t failed = 0;
-		} electionsStat;
-		for (size_t nodeId = 0; nodeId < nodes_.size(); ++nodeId) {
-			// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
-			loop_.spawn(wg, [this, &electionsStat, nodeId, term, &succeedRoutines, isDesiredLeader] {
-				auto& node = nodes_[nodeId];
-				if (!node.client.Status().ok()) {
-					auto err = node.client.Connect(node.dsn, loop_, createConnectionOpts());
-					(void)err;	// Error will be handled during the further requests
-				}
-				NodeData suggestion, result;
-				suggestion.serverId = serverId_;
-				suggestion.electionsTerm = term;
-				auto err = node.client.SuggestLeader(suggestion, result);
-				bool succeed = err.ok() && serverId_ == result.serverId;
-				if (succeed) {
-					logInfo("{}: Suggested as leader for node {}", serverId_, nodeId);
-					++electionsStat.succeedPhase1;
-				} else {
-					logInfo("{}: Error on leader suggest for node {} (response leader is {}): {}", serverId_, nodeId, result.serverId,
-							err.what());
-					++electionsStat.failed;
-				}
-				if (electionsStat.failed + electionsStat.succeedPhase1 == nodes_.size() + 1 ||
-					electionsStat.succeedPhase1 > (nodes_.size() + 1) / 2) {
-					std::vector<coroutine::routine_t> succeedRoutinesTmp;
-					while (succeedRoutines.size()) {
-						std::swap(succeedRoutinesTmp, succeedRoutines);
-						for (auto routine : succeedRoutinesTmp) {
-							std::ignore = coroutine::resume(routine);
-						}
-						succeedRoutinesTmp.clear();
+			roundResult = RaftInfo::Role::Follower;
+		} else {
+			int32_t term = beginElectionsTerm(nextLeaderId);
+			logInfo("{}: Starting new elections term. Term number: {}", serverId_, term);
+			for (size_t nodeId = 0; nodeId < nodes_.size(); ++nodeId) {
+				// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
+				loop_.spawn(wg, [this, &electionsStat, nodeId, term, &succeedRoutines, isDesiredLeader] {
+					auto& node = nodes_[nodeId];
+					if (!node.client.Status().ok()) {
+						auto err = node.client.Connect(node.dsn, loop_, createConnectionOpts());
+						(void)err;	// Error will be handled during the further requests
 					}
-					if (!succeed) {
+					NodeData suggestion, result;
+					suggestion.serverId = serverId_;
+					suggestion.electionsTerm = term;
+					auto err = node.client.SuggestLeader(suggestion, result);
+					bool succeed = err.ok() && serverId_ == result.serverId;
+					if (succeed) {
+						logInfo("{}: Suggested as leader for node {}", serverId_, nodeId);
+						++electionsStat.succeedPhase1;
+					} else {
+						logInfo("{}: Error on leader suggest for node {} (response leader is {}): {}", serverId_, nodeId, result.serverId,
+								err.what());
+						++electionsStat.failed;
+					}
+					if (electionsStat.failed + electionsStat.succeedPhase1 == nodes_.size() + 1 ||
+						electionsStat.succeedPhase1 > (nodes_.size() + 1) / 2) {
+						std::vector<coroutine::routine_t> succeedRoutinesTmp;
+						while (succeedRoutines.size()) {
+							std::swap(succeedRoutinesTmp, succeedRoutines);
+							for (auto routine : succeedRoutinesTmp) {
+								std::ignore = coroutine::resume(routine);
+							}
+							succeedRoutinesTmp.clear();
+						}
+						if (!succeed) {
+							return;
+						}
+					} else if (succeed) {
+						succeedRoutines.emplace_back(coroutine::current());
+						coroutine::suspend();
+					} else {
 						return;
 					}
-				} else if (succeed) {
-					succeedRoutines.emplace_back(coroutine::current());
-					coroutine::suspend();
-				} else {
-					return;
-				}
 
-				const bool leaderIsAvailable = !isDesiredLeader && LeaderIsAvailable(ClockT::now());
-				if (leaderIsAvailable || !isConsensus(electionsStat.succeedPhase1)) {
-					logInfo("{}: Skip leaders ping. Elections are outdated. leaderIsAvailable: {}. Successful requests: {}", serverId_,
-							leaderIsAvailable ? 1 : 0, electionsStat.succeedPhase1);
-					return;	 // These elections are outdated
-				}
-				err = node.client.LeadersPing(suggestion);
-				if (err.ok()) {
-					++electionsStat.succeedPhase2;
-				} else {
-					logInfo("{}: leader's ping error: {}", serverId_, err.what());
-				}
-			});
-		}
+					const bool leaderIsAvailable = !isDesiredLeader && LeaderIsAvailable(ClockT::now());
+					if (leaderIsAvailable || !isConsensus(electionsStat.succeedPhase1)) {
+						logInfo("{}: Skip leaders ping. Elections are outdated. leaderIsAvailable: {}. Successful requests: {}", serverId_,
+								leaderIsAvailable ? 1 : 0, electionsStat.succeedPhase1);
+						return;	 // These elections are outdated
+					}
+					err = node.client.LeadersPing(suggestion);
+					if (err.ok()) {
+						++electionsStat.succeedPhase2;
+					} else {
+						logInfo("{}: leader's ping error: {}", serverId_, err.what());
+					}
+				});
+			}
 
-		RaftInfo::Role result = nodes_.empty() ? RaftInfo::Role::Leader : RaftInfo::Role::Follower;
+			RaftInfo::Role result = nodes_.empty() ? RaftInfo::Role::Leader : RaftInfo::Role::Follower;
 
-		while (wg.wait_count()) {
-			wg.wait_next();
-			if (isConsensus(electionsStat.succeedPhase2)) {
-				result = RaftInfo::Role::Leader;
+			while (wg.wait_count()) {
+				wg.wait_next();
+				if (isConsensus(electionsStat.succeedPhase2)) {
+					result = RaftInfo::Role::Leader;
+					if (endElections(term, roundBeg, result)) {
+						logInfo("{}: end elections with role: leader", serverId_);
+						roundResult = result;
+						break;
+					}
+				}
+			}
+			if (!roundResult) {
+				logInfo("{}: votes stats: phase1: {}; phase2: {}; fails: {}", serverId_, electionsStat.succeedPhase1,
+						electionsStat.succeedPhase2, electionsStat.failed);
+
 				if (endElections(term, roundBeg, result)) {
-					logInfo("{}: end elections with role: leader", serverId_);
-					return result;
+					logInfo("{}: end elections with role: {}({})", serverId_, RaftInfo::RoleToStr(result), GetLeaderId());
+					roundResult = result;
+				} else {
+					logInfo("{}: Failed to end elections with chosen role: {}", serverId_, RaftInfo::RoleToStr(result));
 				}
 			}
 		}
-		logInfo("{}: votes stats: phase1: {}; phase2: {}; fails: {}", serverId_, electionsStat.succeedPhase1, electionsStat.succeedPhase2,
-				electionsStat.failed);
-
-		if (endElections(term, roundBeg, result)) {
-			logInfo("[{}: end elections with role: {}({})", serverId_, RaftInfo::RoleToStr(result), GetLeaderId());
-			return result;
-		} else {
-			logInfo("{}: Failed to end elections with chosen role: {}", serverId_, RaftInfo::RoleToStr(result));
-		}
-	} catch (std::exception& e) {
+	} catch (const std::exception& e) {
 		logError("{}: exception during the elections: {}", serverId_, e.what());
 	}
-	return std::nullopt;
+	wg.wait();
+	return roundResult;
 }
 
 bool RaftManager::FollowersAreAvailable() const noexcept {
@@ -340,30 +345,19 @@ bool RaftManager::endElections(int32_t term, ClockT::time_point roundBeg, RaftIn
 
 bool RaftManager::isConsensus(size_t num) const noexcept { return num >= GetConsensusForN(nodes_.size() + 1); }
 
-RaftManager::DesiredLeaderIdSender::DesiredLeaderIdSender(net::ev::dynamic_loop& loop, const std::vector<RaftNode>& nodes, int serverId,
-														  int nextLeaderId, const Logger& log)
-	: loop_(loop), nodes_(nodes), log_(log), thisServerId_(serverId), nextLeaderId_(nextLeaderId), nextServerNodeIndex_(nodes_.size()) {
-	client::ReindexerConfig rpcCfg;
-	rpcCfg.AppName = "raft_manager_tmp";
-	rpcCfg.NetTimeout = kRaftTimeout;
-	rpcCfg.EnableCompression = false;
-	rpcCfg.RequestDedicatedThread = true;
-	clients_.reserve(nodes_.size());
-	for (size_t i = 0; i < nodes_.size(); ++i) {
-		auto& client = clients_.emplace_back(rpcCfg);
-		auto err = client.Connect(nodes_[i].dsn, loop_);
-		(void)err;	// Ignore connection errors. Handle them on the status phase
-		if (nodes_[i].serverId == nextLeaderId_) {
-			nextServerNodeIndex_ = i;
-			err = client.WithTimeout(kDesiredLeaderTimeout).Status(true);
-			if (!err.ok()) {
-				throw Error(err.code(), "Target node {} is not available.", nodes_[i].dsn);
-			}
-		}
-	}
+Error RaftManager::SendDesiredLeaderId(int nextLeaderId) noexcept {
+	DesiredLeaderIdSender sender(loop_, nodes_, serverId_, nextLeaderId, log_);
+	auto err = sender.Send();
+	sender.StopClients();
+	return err;
 }
 
-Error RaftManager::DesiredLeaderIdSender::operator()() {
+Error RaftManager::DesiredLeaderIdSender::Send() noexcept {
+	auto err = startClients();
+	if (!err.ok()) {
+		return err;
+	}
+
 	uint32_t okCount = 1;
 	coroutine::wait_group wg;
 	std::string errString;
@@ -380,9 +374,9 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 			continue;
 		}
 
-		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
-		loop_.spawn(wg, [this, nodeId, &errString, &okCount] {
-			try {
+		try {
+			// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
+			loop_.spawn(wg, [this, nodeId, &errString, &okCount] {
 				logTrace("{} Sending desired server ID ({}) to node with server ID {}", thisServerId_, nextLeaderId_,
 						 nodes_[nodeId].serverId);
 				if (auto err = sendDesiredServerIdToNode(nodeId); err.ok()) {
@@ -390,10 +384,10 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 				} else {
 					errString += "[" + err.whatStr() + "]";
 				}
-			} catch (...) {
-				logInfo("{}: Unable to send desired leader: got unknown exception", thisServerId_);
-			}
-		});
+			});
+		} catch (std::exception& e) {
+			logError("{}: Unable to spawn desired leader sender coroutine: '{}'", thisServerId_, e.what());
+		}
 	}
 	wg.wait();
 
@@ -410,6 +404,47 @@ Error RaftManager::DesiredLeaderIdSender::operator()() {
 		return Error(errNetwork, "Can't send nextLeaderId to servers okCount {} err: {}", okCount, errString);
 	}
 	return Error();
+}
+
+// NOLINTNEXTLINE (bugprone-exception-escape) May throw std::bad_alloc, but there are no good ways to recover, crash is intended
+void RaftManager::DesiredLeaderIdSender::StopClients() noexcept {
+	coroutine::wait_group wgStop;
+	for (auto& client : clients_) {
+		loop_.spawn(wgStop, [&client]() noexcept { client.Stop(); });
+	}
+	wgStop.wait();
+	clients_.clear();
+}
+
+Error RaftManager::DesiredLeaderIdSender::startClients() noexcept {
+	if (clients_.empty() && !nodes_.empty()) {
+		try {
+			client::ReindexerConfig rpcCfg;
+			rpcCfg.AppName = "raft_manager_tmp";
+			rpcCfg.NetTimeout = kRaftTimeout;
+			rpcCfg.EnableCompression = false;
+			rpcCfg.RequestDedicatedThread = true;
+			clients_.reserve(nodes_.size());
+			for (size_t i = 0; i < nodes_.size(); ++i) {
+				auto& client = clients_.emplace_back(rpcCfg);
+				auto err = client.Connect(nodes_[i].dsn, loop_);
+				(void)err;	// Ignore connection errors. Handle them on the status phase
+				if (nodes_[i].serverId == nextLeaderId_) {
+					nextServerNodeIndex_ = i;
+				}
+			}
+		} catch (std::exception& e) {
+			StopClients();
+			return std::move(e);
+		}
+	}
+	return Error();
+}
+
+Error RaftManager::DesiredLeaderIdSender::sendDesiredServerIdToNode(size_t nodeId) noexcept {
+	auto client = clients_[nodeId].WithTimeout(kDesiredLeaderTimeout);
+	auto err = client.Status(true);
+	return !err.ok() ? err : client.SetDesiredLeaderId(nextLeaderId_);
 }
 
 bool RaftManager::VotingManager::TryToSetLeaderRoleInTerm(int32_t term) noexcept {

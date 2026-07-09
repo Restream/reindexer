@@ -7,6 +7,7 @@
 #if REINDEX_DEBUG_CONTAINERS
 #include <vector>
 #else  // !REINDEX_DEBUG_CONTAINERS
+#include <bit>
 #include <cstdint>
 #include <initializer_list>
 #include <string>
@@ -21,11 +22,11 @@
 namespace reindexer {
 #if REINDEX_DEBUG_CONTAINERS
 
-template <typename T, int holdSize = 4, unsigned objSize = sizeof(T)>
+template <typename T, int holdSize = 4, unsigned objSize = 0, unsigned objAlign = 0>
 class [[nodiscard]] h_vector : public std::vector<T> {
 public:
-	typedef unsigned size_type;
-	static constexpr auto kElemSize = objSize;
+	typedef std::vector<T>::size_type size_type;
+	static constexpr auto kElemSize = objSize ? objSize : sizeof(T);
 	static constexpr auto kHoldSize = holdSize;
 
 	using std::vector<T>::vector;
@@ -46,9 +47,60 @@ public:
 };
 #else  // !REINDEX_DEBUG_CONTAINERS
 
-template <typename T, unsigned holdSize = 4, unsigned objSize = sizeof(T)>
-class [[nodiscard]] h_vector {
+// TODO: Wrapper is required for GCC 10. It has to be removed after #2538
+template <typename To, typename From>
+	requires(sizeof(To) == sizeof(From) && std::is_trivially_copyable_v<From> && std::is_trivially_copyable_v<To>)
+constexpr auto bit_cast(const From& from) -> To {
+#ifdef __cpp_lib_bit_cast
+	return std::bit_cast<To>(from);
+#else	// !__cpp_lib_bit_cast
+	auto to = To();
+	std::memcpy(static_cast<void*>(&to), &from, sizeof(to));
+	return to;
+#endif	// !__cpp_lib_bit_cast
+}
+
+// objSize == 0 and objAlign == 0 mean "deduce from T" (T must be complete).
+// Explicit objSize/objAlign allow incomplete T in the header (validated in .cc).
+template <typename T, unsigned objSize>
+struct [[nodiscard]] h_vector_elem_size;
+
+template <typename T>
+struct [[nodiscard]] h_vector_elem_size<T, 0> {
+	static constexpr unsigned value = sizeof(T);
+};
+
+template <typename T, unsigned objSize>
+struct [[nodiscard]] h_vector_elem_size {
+	static constexpr unsigned value = objSize;
+};
+
+template <typename T, unsigned objSize, unsigned objAlign>
+struct [[nodiscard]] h_vector_elem_align {
+	static constexpr unsigned value = objAlign;
+};
+
+template <typename T, unsigned objSize>
+struct [[nodiscard]] h_vector_elem_align<T, objSize, 0> {
+	static constexpr unsigned value = objSize ? alignof(::max_align_t) : alignof(T);
+};
+
+template <typename T, unsigned objSize, unsigned objAlign>
+struct [[nodiscard]] h_vector_layout {
+	static constexpr unsigned kElemSize = h_vector_elem_size<T, objSize>::value;
+	static constexpr unsigned kElemAlign = h_vector_elem_align<T, objSize, objAlign>::value;
+	static constexpr unsigned kClassAlign = kElemAlign > alignof(void*) ? kElemAlign : alignof(void*);
+};
+
+template <typename T, unsigned holdSize = 4, unsigned objSize = 0, unsigned objAlign = 0,
+		  size_t Align = h_vector_layout<T, objSize, objAlign>::kClassAlign>
+class alignas(Align) [[nodiscard]] h_vector {
+	using Layout = h_vector_layout<T, objSize, objAlign>;
+
 	static_assert(holdSize > 0);
+	static_assert(objSize != 0 || Layout::kElemSize % Layout::kElemAlign == 0);
+	static_assert(Align >= Layout::kElemAlign, "h_vector class alignment must be >= SSO buffer alignment");
+	static_assert(Align <= alignof(::max_align_t), "Current implementation doesn't use aligned new for heap-allocated data");
 
 	class [[nodiscard]] StolenHeap {
 	public:
@@ -84,7 +136,7 @@ public:
 	typedef trivial_reverse_iterator<iterator> reverse_iterator;
 	typedef unsigned size_type;
 	typedef std::ptrdiff_t difference_type;
-	static constexpr auto kElemSize = objSize;
+	static constexpr auto kElemSize = Layout::kElemSize;
 	static_assert(std::is_trivial_v<reverse_iterator>, "Expecting trivial reverse iterator");
 	static_assert(std::is_trivial_v<const_reverse_iterator>, "Expecting trivial const reverse iterator");
 
@@ -92,7 +144,7 @@ public:
 	h_vector(StolenHeap&& heap) noexcept : h_vector() {
 		const auto cap = heap.Capacity();
 		if (cap > kHoldSize) {
-			e_.data_ = std::move(heap).Release();
+			heap_set_data(e_, std::move(heap).Release());
 			e_.cap_ = cap;
 			is_hdata_ = 0;
 		}
@@ -115,7 +167,7 @@ public:
 	h_vector(StolenHeap&& heap, InputIt first, InputIt last) : h_vector() {
 		const auto cap = heap.Capacity();
 		if (cap > kHoldSize && cap > (last - first)) {
-			e_.data_ = std::move(heap).Release();
+			heap_set_data(e_, std::move(heap).Release());
 			e_.cap_ = cap;
 			is_hdata_ = 0;
 		}
@@ -133,8 +185,8 @@ public:
 	}
 	h_vector(h_vector&& other) noexcept : e_{0, 0}, size_(0), is_hdata_(1) {
 		if (other.is_hdata()) {
-			const pointer p = reinterpret_cast<pointer>(hdata_);
-			const pointer op = reinterpret_cast<pointer>(other.hdata_);
+			const pointer p = reinterpret_cast<pointer>(hdata_.bytes);
+			const pointer op = reinterpret_cast<pointer>(other.hdata_.bytes);
 			const size_type osz = other.size();
 			for (size_type i = 0; i < osz; i++) {
 				new (static_cast<void*>(p + i)) T(std::move(op[i]));
@@ -143,7 +195,7 @@ public:
 				}
 			}
 		} else {
-			e_.data_ = other.e_.data_;
+			heap_set_data(e_, heap_get_data(other.e_));
 			e_.cap_ = other.capacity();
 			other.is_hdata_ = 1;
 			is_hdata_ = 0;
@@ -174,7 +226,7 @@ public:
 		}
 		return *this;
 	}
-#if defined(__GNUC__) && __GNUC__ >= 14 && __GNUC__ <= 15
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ <= 15
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
@@ -193,7 +245,7 @@ public:
 					}
 				}
 			} else {
-				e_.data_ = other.e_.data_;
+				heap_set_data(e_, heap_get_data(other.e_));
 				e_.cap_ = other.capacity();
 				other.is_hdata_ = 1;
 				is_hdata_ = 0;
@@ -203,7 +255,7 @@ public:
 		}
 		return *this;
 	}
-#if defined(__GNUC__) && __GNUC__ >= 14 && __GNUC__ <= 15
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ <= 15
 #pragma GCC diagnostic pop
 #endif
 	bool operator==(const h_vector& other) const noexcept(noexcept(std::declval<value_type>() == std::declval<value_type>())) {
@@ -253,7 +305,15 @@ public:
 	reverse_iterator rbegin() noexcept { return end(); }
 	reverse_iterator rend() noexcept { return begin(); }
 	size_type size() const noexcept { return size_; }
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ <= 15
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 	size_type capacity() const noexcept { return is_hdata_ ? kHoldSize : e_.cap_; }
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ <= 15
+#pragma GCC diagnostic pop
+#endif
 	bool empty() const noexcept { return size_ == 0; }
 	const_reference operator[](size_type pos) const noexcept {
 		rx_debug_check_subscript(pos);
@@ -327,6 +387,8 @@ public:
 		size_ = sz;
 	}
 	void reserve(size_type sz) {
+		static_assert(sizeof(T) <= kElemSize, "Object must fit into the actual storage");
+
 		if (sz > capacity()) {
 			if (sz > max_size()) [[unlikely]] {
 				throw std::logic_error("h_vector: max capacity overflow (requested: " + std::to_string(sz) +
@@ -336,7 +398,7 @@ public:
 				throw std::logic_error("h_vector: unexpected reserved size");
 			}
 			// NOLINTNEXTLINE(bugprone-sizeof-expression)
-			pointer new_data = static_cast<pointer>(operator new(sz * sizeof(T)));	// ?? dynamic
+			pointer new_data = static_cast<pointer>(operator new(sz * sizeof(T)));
 			pointer oold_data = ptr();
 			pointer old_data = oold_data;
 			// Creating those explicit old_sz variable for better vectorization
@@ -350,7 +412,7 @@ public:
 			if (!is_hdata()) {
 				operator delete(static_cast<void*>(oold_data));
 			}
-			e_.data_ = new_data;
+			heap_set_data(e_, new_data);
 			e_.cap_ = sz;
 			is_hdata_ = 0;
 		}
@@ -572,7 +634,7 @@ public:
 			return {};
 		}
 		clear<false>();
-		StolenHeap res{e_.data_, capacity()};
+		StolenHeap res{heap_get_data(e_), capacity()};
 		is_hdata_ = true;
 		return res;
 	}
@@ -586,41 +648,58 @@ public:
 	}
 
 private:
-	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_) : e_.data_; }
-	const_pointer ptr() const noexcept { return is_hdata() ? reinterpret_cast<const_pointer>(hdata_) : e_.data_; }
-	RX_ALWAYS_INLINE void destruct() noexcept {
-		if (is_hdata()) {
-			if constexpr (!std::is_trivially_destructible_v<T>) {
-				auto beg = reinterpret_cast<pointer>(hdata_), end = beg + size_;
-				for (auto ptr = beg; ptr != end; ++ptr) {
-					ptr->~T();
-				}
-			}
-		} else {
-			if constexpr (!std::is_trivially_destructible_v<T>) {
-				auto beg = e_.data_, end = beg + size_;
-				for (auto ptr = beg; ptr != end; ++ptr) {
-					ptr->~T();
-				}
-			}
-			operator delete(static_cast<void*>(e_.data_));
-		}
-	}
-
 #pragma pack(push, 1)
 	struct [[nodiscard]] edata {
-		pointer data_;
+		std::uintptr_t data_;
 		size_type cap_;
 	};
 #pragma pack(pop)
+
+	static_assert(sizeof(std::uintptr_t) >= sizeof(pointer));
 
 public:
 	static constexpr auto kHoldSize = (((holdSize + 1) * kElemSize) > sizeof(edata)) ? holdSize : (sizeof(edata) / kElemSize);
 
 private:
+	struct alignas(Layout::kElemAlign) [[nodiscard]] HData {
+		unsigned char bytes[kHoldSize * kElemSize];
+	};
+
+	static pointer heap_get_data(const edata& e) noexcept {
+		std::uintptr_t bits = 0;
+		std::memcpy(&bits, &e.data_, sizeof(bits));
+		return reindexer::bit_cast<pointer>(bits);
+	}
+	static void heap_set_data(edata& e, pointer p) noexcept {
+		const std::uintptr_t bits = reindexer::bit_cast<std::uintptr_t>(p);
+		std::memcpy(&e.data_, &bits, sizeof(bits));
+	}
+
+	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_.bytes) : heap_get_data(e_); }
+	const_pointer ptr() const noexcept { return is_hdata() ? reinterpret_cast<const_pointer>(hdata_.bytes) : heap_get_data(e_); }
+	RX_ALWAYS_INLINE void destruct() noexcept {
+		if (is_hdata()) {
+			if constexpr (!std::is_trivially_destructible_v<T>) {
+				auto beg = reinterpret_cast<pointer>(hdata_.bytes), end = beg + size_;
+				for (auto ptr = beg; ptr != end; ++ptr) {
+					ptr->~T();
+				}
+			}
+		} else {
+			const pointer data = heap_get_data(e_);
+			if constexpr (!std::is_trivially_destructible_v<T>) {
+				auto beg = data, end = beg + size_;
+				for (auto ptr = beg; ptr != end; ++ptr) {
+					ptr->~T();
+				}
+			}
+			operator delete(static_cast<void*>(data));
+		}
+	}
+
 	union {
 		edata e_;
-		uint8_t hdata_[kHoldSize * kElemSize];
+		HData hdata_;
 	};
 	size_type size_ : 31;
 	size_type is_hdata_ : 1;

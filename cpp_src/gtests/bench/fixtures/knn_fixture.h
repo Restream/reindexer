@@ -54,12 +54,20 @@ private:
 	void AndHybridLinear(State&);
 	template <KnnParams>
 	void OrHybridLinear(State&);
+	void StreamingKnnTree50pct(State&);
+	void StreamingKnnTree50pctLimit10(State&);
+	void StreamingKnn2Cond25pct(State&);
+	void StreamingKnnNoFilter(State&);
+	void prepareStreamingParams(State& state);
 	void Sleep(State&);
 
 	// NOLINTNEXTLINE(bugprone-random-generator-seed) Using the same seed here for more stable results
 	std::mt19937 randomEngine_{1};
 	std::uniform_int_distribution<int> randomGenerator_{};
 	const WithQuantization withQuantization_;
+	std::vector<float> streamingQuery_;
+	size_t streamingLimitTree50_{0};
+	size_t streamingLimit2Cond_{0};
 };
 
 }  // namespace reindexer_benchmarks::knn_bench

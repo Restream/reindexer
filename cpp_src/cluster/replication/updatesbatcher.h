@@ -26,7 +26,7 @@ public:
 						}
 						auto update = itp.first;
 						auto err = applyUpdateF_(*update.upd, update.ctx).err;
-						getResultCh(update.id).push(std::make_pair(std::move(update), std::move(err)));
+						getResultCh(update.id).push(BatchResult{std::move(update), std::move(err)});
 					}
 				},
 				kAsyncUpdatesRoutineStackSize);
@@ -73,9 +73,13 @@ private:
 	UpdateApplyStatus awaitNextResult() {
 		auto& results = *(channels_[nextResultsCh_]);
 		nextResultsCh_ = (nextResultsCh_ + 1) % channels_.size();
-		auto res = results.pop().first;
-		auto& update = res.first;
-		auto err = convert_(std::move(res.second), *update.upd);
+		auto [res, ok] = results.pop();
+		if (!ok) {
+			assertrx_dbg(false);
+			return Error(errLogic, "UpdatesBatcher: result channel is closed/empty while awaiting a batched update result");
+		}
+		auto& update = res.update;
+		auto err = convert_(std::move(res.err), *update.upd);
 		onUpdateResult_(*update.upd, err, std::move(update.ctx));
 		return err;
 	}
@@ -85,7 +89,11 @@ private:
 		ContextT ctx;
 		uint64_t id;
 	};
-	using ResultChT = coroutine::channel<std::pair<ContextedUpdate, Error>>;
+	struct [[nodiscard]] BatchResult {
+		ContextedUpdate update;
+		Error err;
+	};
+	using ResultChT = coroutine::channel<BatchResult>;
 
 	ResultChT& getResultCh(uint64_t id) noexcept { return *(channels_[id % channels_.size()]); }
 

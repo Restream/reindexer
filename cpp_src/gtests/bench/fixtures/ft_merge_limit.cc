@@ -21,7 +21,7 @@ FullTextMergeLimit::FullTextMergeLimit(Reindexer* db, const std::string& name, s
 	ftCfg.mergeLimit = 0x1FFFFFF;
 	ftCfg.maxTypos = 0;
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
-		.AddIndex(kFastIndexTextName_, "text", "string", IndexOpts().SetConfig(IndexFastFT, ftCfg.GetJSON({})));
+		.AddIndex(kIndexTextName_, "text", "string", IndexOpts().SetConfig(IndexFastFT, ftCfg.GetJSON({})));
 }
 void FullTextMergeLimit::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
@@ -108,7 +108,7 @@ void FullTextMergeLimit::Insert(State& state) {
 				}
 			}
 			item["id"] = h;
-			item[kFastIndexTextName_] = phrase;
+			item[kIndexTextName_] = phrase;
 			auto err = db_->Upsert(nsdef_.name, item);
 			if (!err.ok()) {
 				state.SkipWithError(err.what());
@@ -122,7 +122,7 @@ void FullTextMergeLimit::BuildFastTextIndex(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, kWords_[0]).Limit(20);
+		q.Where(kIndexTextName_, CondEq, kWords_[0]).Limit(20);
 
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -136,7 +136,7 @@ void FullTextMergeLimit::FastTextIndexSelect(benchmark::State& state, const std:
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, qs);
+		q.Where(kIndexTextName_, CondEq, qs);
 
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);

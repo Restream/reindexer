@@ -11,8 +11,8 @@
 
 namespace reindexer {
 
-FloatVectorIndex::FloatVectorIndex(const FloatVectorIndex& other)
-	: Index(other),
+FloatVectorIndex::FloatVectorIndex(const FloatVectorIndex& other, IndexCloneKind kind)
+	: Index(other, kind),
 	  memStat_(other.memStat_),
 	  emptyKeys_(other.emptyKeys_),
 	  emptyVectors_(other.emptyVectors_),
@@ -118,7 +118,7 @@ void FloatVectorIndex::Upsert(VariantArray& result, const VariantArray& keys, Id
 		const auto [it, inserted] = emptyValues_.insert(id);
 		assertrx_dbg(inserted);
 		try {
-			std::ignore = emptyKeys_.Unsorted().Add(id, IdSetEditMode::Auto, sortedIdxCount_);
+			std::ignore = emptyKeys_.Unsorted().Add(id, 0);
 		} catch (...) {
 			emptyValues_.erase(it);
 			throw;
@@ -160,7 +160,7 @@ Variant FloatVectorIndex::UpsertConcurrent(const Variant& key, FloatVectorId id,
 	return upsertConcurrent(vect, id, clearCache);
 }
 
-bool FloatVectorIndex::RefreshCompositeKey(const Variant& /*key*/) noexcept {
+bool FloatVectorIndex::RefreshCompositeKey(const Variant& /*key*/, IdType /*id*/) noexcept {
 	assertrx_dbg(0);
 	return false;
 }
@@ -177,9 +177,30 @@ KnnRawResult FloatVectorIndex::SelectRaw(ConstFloatVectorView key, const KnnSear
 	return selectRaw(key, p);
 }
 
-void FloatVectorIndex::Commit() {
-	emptyKeys_.Unsorted().Commit();
+KnnStreamingSession FloatVectorIndex::BeginKnnStreaming(ConstFloatVectorView key, size_t ef, const RdxContext& rdxCtx) const {
+	checkForSelect(key);
+	const auto indexWard(rdxCtx.BeforeIndexWork());
+	return beginStreaming(key, ef);
+}
+
+void FloatVectorIndex::ContinueKnnStreaming(KnnStreamingSession& session, size_t batchSize, KnnStreamingBatch& out,
+											const RdxContext& rdxCtx) const {
+	const auto indexWard(rdxCtx.BeforeIndexWork());
+	continueStreaming(session, batchSize, out);
+}
+
+KnnStreamingSession FloatVectorIndex::beginStreaming(ConstFloatVectorView, size_t) const {
+	throw Error(errQueryExec, "Streaming KNN search (KNN query without 'k' and 'radius') is supported for HNSW indexes only");
+}
+
+void FloatVectorIndex::continueStreaming(KnnStreamingSession&, size_t, KnnStreamingBatch&) const {
+	throw Error(errQueryExec, "Streaming KNN search (KNN query without 'k' and 'radius') is supported for HNSW indexes only");
+}
+
+WasCanceled FloatVectorIndex::Commit(const index::ICancelable& /*cancelable*/) {
+	emptyKeys_.Unsorted().Commit(0);
 	logFmt(LogTrace, "FloatVectorIndex::Commit ({}) {} empty", name_, emptyKeys_.Unsorted().Size());
+	return WasCanceled_False;
 }
 
 IndexMemStat FloatVectorIndex::GetMemStat(const RdxContext&) const noexcept {
@@ -314,7 +335,7 @@ void FloatVectorIndex::checkForSelect(ConstFloatVectorView key) const {
 Variant FloatVectorIndex::upsertEmptyVectImpl(FloatVectorId id) {
 	const auto [countersIt, newRowId] = emptyVectorsCounters_.try_emplace(id.RowId(), 0);
 	if (newRowId) {
-		std::ignore = emptyKeys_.Unsorted().Add(id.RowId(), IdSetEditMode::Auto, sortedIdxCount_);
+		std::ignore = emptyKeys_.Unsorted().Add(id.RowId(), 0);
 	}
 	try {
 		emptyVectors_.emplace(id);

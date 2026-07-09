@@ -131,11 +131,15 @@ public:
 									KeyValueType::Uuid> auto keyValueType) {
 					using ViewType = decltype(keyValueType)::ViewType;
 					const auto* bv = reinterpret_cast<const ViewType*>(d.first);
+					// Column index data is always aligned
+					assertrx_dbg((reinterpret_cast<uintptr_t>(d.first) % alignof(typename decltype(keyValueType)::ViewType)) == 0);
 					data.emplace_back(*(bv + rowId.ToNumber()));
 				},
 				[&](concepts::OneOf<KeyValueType::String> auto keyValueType) {
 					using ViewType = decltype(keyValueType)::ViewType;
 					const auto* bv = reinterpret_cast<const ViewType*>(d.first);
+					// Column index data is always aligned
+					assertrx_dbg((reinterpret_cast<uintptr_t>(d.first) % alignof(typename decltype(keyValueType)::ViewType)) == 0);
 					data.emplace_back(p_string(bv + rowId.ToNumber()));
 				},
 				[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple,
@@ -164,11 +168,17 @@ public:
 													   KeyValueType::Int, KeyValueType::Uuid> auto keyValueType) {
 									   using ViewType = decltype(keyValueType)::ViewType;
 									   const auto* bv = reinterpret_cast<const ViewType*>(raw.first);
+									   // Column index data is always aligned
+									   assertrx_dbg((reinterpret_cast<uintptr_t>(raw.first) %
+													 alignof(typename decltype(keyValueType)::ViewType)) == 0);
 									   data.emplace_back(*(bv + rowId.ToNumber()));
 								   },
 								   [&](concepts::OneOf<KeyValueType::String> auto keyValueType) {
 									   using ViewType = decltype(keyValueType)::ViewType;
 									   const auto* bv = reinterpret_cast<const ViewType*>(raw.first);
+									   // Column index data is always aligned
+									   assertrx_dbg((reinterpret_cast<uintptr_t>(raw.first) %
+													 alignof(typename decltype(keyValueType)::ViewType)) == 0);
 									   data.emplace_back(p_string(bv + rowId.ToNumber()));
 								   },
 

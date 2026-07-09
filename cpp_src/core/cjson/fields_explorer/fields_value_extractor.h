@@ -3,6 +3,7 @@
 #include <tuple>
 #include "fields_explorer.h"
 #include "tools/serilize/serializer.h"
+#include "tools/unaligned.h"
 
 namespace reindexer::cjson {
 
@@ -15,18 +16,19 @@ protected:
 	void StartArray() noexcept { std::ignore = values_.MarkArray(); }
 
 	template <typename T>
-	void Array(const PathFilter& filter, TagIndex tagIndex, std::span<const T> data, unsigned /*offset*/,
+	    requires std::is_trivially_copyable_v<T>
+	void Array(const PathFilter& filter, TagIndex tagIndex, unaligned::view<T> data, unsigned /*offset*/,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		if (!filter.Match()) {
 			return;
 		}
 		if (tagIndex.IsAll()) {
-			for (const auto& d : data) {
+			for (const auto d : data) {
 				put(Variant(d));
 			}
 		} else {
 			size_t i{0};
-			for (const auto& d : data) {
+			for (const auto d : data) {
 				if (i++ == tagIndex.AsNumber()) {
 					put(Variant(d));
 				}

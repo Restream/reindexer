@@ -15,12 +15,39 @@ class KnnCtx;
 class KnnSearchParams;
 class KnnRawResult;
 
+// 'KnnStreamingSession' is an opaque, move-only handle for a single search session. The whole session
+// (Begin + all the following Continue calls) must be performed under an external namespace read-lock and
+// while the underlying index is not modified.
+class [[nodiscard]] KnnStreamingSession {
+public:
+	struct [[nodiscard]] Impl {
+		virtual ~Impl() = default;
+	};
+
+	explicit KnnStreamingSession(std::unique_ptr<Impl> impl) noexcept : impl_{std::move(impl)} {}
+	KnnStreamingSession(KnnStreamingSession&&) noexcept = default;
+	KnnStreamingSession& operator=(KnnStreamingSession&&) noexcept = default;
+	KnnStreamingSession(const KnnStreamingSession&) = delete;
+	KnnStreamingSession& operator=(const KnnStreamingSession&) = delete;
+
+	Impl* GetImpl() const noexcept { return impl_.get(); }
+
+private:
+	std::unique_ptr<Impl> impl_;
+};
+
+struct [[nodiscard]] KnnStreamingBatch {
+	std::vector<IdType> ids;
+	std::vector<RankT> ranks;
+	bool exhausted = false;
+};
+
 class [[nodiscard]] FloatVectorIndex : public Index {
 public:
 	using PKGetterF = std::function<VariantArray(IdType)>;
 
 protected:
-	FloatVectorIndex(const FloatVectorIndex&);
+	FloatVectorIndex(const FloatVectorIndex&, IndexCloneKind);
 
 	class [[nodiscard]] WriterBase {
 	protected:
@@ -64,12 +91,18 @@ public:
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
 	Variant Upsert(ConstFloatVectorView, FloatVectorId, bool& clearCache);
 	Variant UpsertConcurrent(const Variant& key, FloatVectorId id, bool& clearCache);
-	bool RefreshCompositeKey(const Variant& key) noexcept override final;
+	bool RefreshCompositeKey(const Variant& key, IdType id) noexcept override final;
 	SelectKeyResult Select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&, const RdxContext&) const;
 	KnnRawResult SelectRaw(ConstFloatVectorView, const KnnSearchParams&, const RdxContext&) const;
-	void Commit() override final;
 
-	void UpdateSortedIds(const IUpdateSortedContext&) override final { assertrx_dbg(!IsSupportSortedIdsBuild()); }
+	KnnStreamingSession BeginKnnStreaming(ConstFloatVectorView, size_t ef, const RdxContext&) const;
+	void ContinueKnnStreaming(KnnStreamingSession&, size_t batchSize, KnnStreamingBatch& out, const RdxContext&) const;
+	WasCanceled Commit(const index::ICancelable&) override final;
+
+	WasCanceled UpdateSortedIds(const index::IUpdateSortedContext&, const index::ICancelable&) override final {
+		assertrx_dbg(!IsSupportSortedIdsBuild());
+		return WasCanceled_False;
+	}
 	bool IsSupportSortedIdsBuild() const noexcept override final { return false; }
 
 	const void* ColumnData() const noexcept override final { return nullptr; }
@@ -133,6 +166,8 @@ private:
 
 	virtual SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const = 0;
 	virtual KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const = 0;
+	virtual KnnStreamingSession beginStreaming(ConstFloatVectorView, size_t ef) const;
+	virtual void continueStreaming(KnnStreamingSession&, size_t batchSize, KnnStreamingBatch& out) const;
 	virtual Variant upsert(ConstFloatVectorView, FloatVectorId, bool& clearCache) = 0;
 	virtual Variant upsertConcurrent(ConstFloatVectorView, FloatVectorId id, bool& clearCache) = 0;
 	virtual void del(FloatVectorId, MustExist) = 0;

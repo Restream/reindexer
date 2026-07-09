@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/golang/snappy"
 	"github.com/restream/reindexer/v5/bindings"
 	"github.com/restream/reindexer/v5/cjson"
+	"github.com/golang/snappy"
 )
 
 type rpcEncoder struct {
@@ -81,11 +81,12 @@ func (r *rpcEncoder) boolArg(v bool) {
 func (r *rpcEncoder) int32ArrArg(v []int32) {
 	r.ser.PutVarUInt(uint64(bindings.ValueString))
 
+	// Fast path: stack [96]byte fits up to 8 worst-case int32 varints (1 + 8*10 bytes).
 	if len(v) <= 8 {
 		var stackBuf [96]byte
-		buf := appendRPCVarCUInt(stackBuf[:0], len(v))
+		buf := cjson.AppendVarUInt(stackBuf[:0], uint64(len(v)))
 		for _, e := range v {
-			buf = appendRPCVarCUInt(buf, int(e))
+			buf = cjson.AppendVarUInt(buf, uint64(int(e)))
 		}
 		r.ser.PutVBytes(buf)
 		r.update()
@@ -99,15 +100,6 @@ func (r *rpcEncoder) int32ArrArg(v []int32) {
 	}
 	r.ser.PutVBytes(aser.Bytes())
 	r.update()
-}
-
-func appendRPCVarCUInt(buf []byte, v int) []byte {
-	uv := uint64(v)
-	for uv >= 0x80 {
-		buf = append(buf, byte(uv)|0x80)
-		uv >>= 7
-	}
-	return append(buf, byte(uv))
 }
 
 func (r *rpcEncoder) int64Arg(v int64) {

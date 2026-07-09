@@ -1,6 +1,7 @@
 #include "terminate_handler.h"
 #include <iostream>
 #include <sstream>
+#include "tools/scope_guard.h"
 
 #ifndef _WIN32
 #include <cxxabi.h>
@@ -18,6 +19,8 @@ static void terminate_handler() {
 		const char* type = abi::__cxa_current_exception_type()->name();
 		int status;
 		const char* demangled = abi::__cxa_demangle(type, NULL, NULL, &status);
+		// NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
+		const auto deallocGrd = MakeScopeGuard([demangled] { free(const_cast<void*>(static_cast<const void*>(demangled))); });
 		sout << "*** Terminating with uncaught exception of type " << (demangled ? demangled : type);
 #else
 		sout << "*** Terminating with uncaught exception ";

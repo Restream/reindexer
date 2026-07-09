@@ -1112,6 +1112,12 @@ size_t QueryEntries::insertConditionsFromOnCondition(size_t position, const std:
 	return insertedCount;
 }
 
+bool QueryEntries::ContainsKnnCondition() const noexcept {
+	bool found = false;
+	VisitForEach([&found](const KnnQueryEntry&) noexcept { found = true; }, [](const auto&) noexcept {});
+	return found;
+}
+
 bool KnnQueryEntry::operator==(const KnnQueryEntry& other) const noexcept {
 	if ((fieldName_ != other.fieldName_) || (format_ != other.format_) || (data_ != other.data_)) {
 		return false;

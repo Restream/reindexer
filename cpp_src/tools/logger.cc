@@ -48,11 +48,8 @@ void logInstallWriter(LogWriter writer, LoggerPolicy policy, int globalLogLevel)
 		fputs(errorText.c_str(), stderr);
 		fputs("\n", stderr);
 		fflush(stderr);
-#if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
-		std::abort();
-#else
+		assertrx_dbg(false);
 		return;
-#endif
 	}
 
 	logger_details::g_MtLogger.store(policy, std::memory_order_relaxed);

@@ -4,7 +4,7 @@
 namespace reindexer {
 
 template <typename IdSetT>
-void KeyEntry<IdSetT>::UpdateSortedIds(const IUpdateSortedContext& ctx)
+void KeyEntry<IdSetT>::UpdateSortedIds(const index::IUpdateSortedContext& ctx)
 	requires(concepts::IdSetWithSortedIDs<IdSetT>)
 {
 	if (!IdSetT::IsCommitted()) [[unlikely]] {

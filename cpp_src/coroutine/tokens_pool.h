@@ -2,8 +2,7 @@
 
 #include "channel.h"
 
-namespace reindexer {
-namespace coroutine {
+namespace reindexer::coroutine {
 
 /// @class Tokens pool based on channel
 template <typename T>
@@ -26,6 +25,12 @@ public:
 			return *this;
 		}
 		/// Return token to it's pool
+		/// FIXME: #2558 to_pool() returns the token via channel::push(), which may resume() a coroutine waiting in
+		/// await_token(). When ~token runs during stack unwinding (the token is destroyed while an exception propagates,
+		/// e.g. a local token holder unwinding before it is moved into a spawned coroutine), this resume() switches fibers
+		/// with an in-flight exception and corrupts the per-thread exception machinery. The fix depends on channel gaining
+		/// a deferred-resume path on the unwind branch (see channel.h FIXME(#2558)); tokens_pool needs no separate change
+		/// once channel is safe. Until then the unsafe switch is caught by assertrx_dbg in ordinator::resume().
 		void to_pool() {
 			if (is_valid()) {
 				const T& val = value();
@@ -91,5 +96,4 @@ private:
 	OnTokenReturnF onTokenReturn_;
 };
 
-}  // namespace coroutine
-}  // namespace reindexer
+}  // namespace reindexer::coroutine

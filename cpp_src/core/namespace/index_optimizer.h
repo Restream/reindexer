@@ -3,11 +3,14 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include "core/index/index.h"
+#include "estl/contexted_cond_var.h"
+#include "estl/mutex.h"
 
 namespace reindexer {
+
+class RdxContext;
 
 struct NamespaceConfigData;
 
@@ -37,10 +40,11 @@ public:
 
 	bool IsOptimizationAvailable() const noexcept;
 	bool IsOptimizationCompleted() const noexcept { return State() == OptimizationState::Completed; }
+	void AwaitIdle(const RdxContext& ctx) const;
 	int64_t UpdateSortedContextMemory() const noexcept { return updateSortedContextMemory_.load(std::memory_order_relaxed); }
 	void ScheduleOptimization(IndexOptimization requestedOptimization) noexcept;
 	void UpdateSortedIdxCount(IndexesSpan indexes);
-	void TryOptimize(const Context& optCtx, const std::function<bool()>& isCanceledF) noexcept;
+	void TryOptimize(const Context& optCtx, const index::ICancelable& cancelable) noexcept;
 	void SetConfig(std::string_view nsName, IndexesSpan indexes, const Config& newCfg);
 	OptimizationState State() const noexcept { return optimizationState_.load(std::memory_order_acquire); }
 	const std::atomic<OptimizationState>& StateRef() const noexcept { return optimizationState_; }
@@ -48,11 +52,16 @@ public:
 private:
 	class UpdateSortedContext;
 
-	int getSortedIdxCount(IndexesSpan indexes) const noexcept;
-	void tryOptimize(const Context& ctx, const std::function<bool()>& isCanceledF);
+	unsigned getSortedIdxCount(IndexesSpan indexes) const noexcept;
+	void tryOptimize(const Context& ctx, const index::ICancelable& cancelable);
+	WasCanceled commitIndexes(size_t threadsCount, const Context& ctx, const index::ICancelable& cancelable);
+	WasCanceled updateSortedIDs(size_t threadsCount, const Context& ctx, OptimizationState optState, const index::ICancelable& cancelable);
 
 	std::atomic<OptimizationState> optimizationState_{OptimizationState::None};
 	std::atomic_int64_t updateSortedContextMemory_{0};
+	mutable std::atomic_uint32_t running_{0};
+	mutable mutex idleMtx_;
+	mutable contexted_cond_var idleCond_;
 	Config cfg_;
 };
 

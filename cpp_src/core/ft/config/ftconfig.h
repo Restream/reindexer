@@ -145,7 +145,7 @@ struct [[nodiscard]] FTFieldConfig {
 
 	RX_ALWAYS_INLINE static float bound(float k, float weight, float boost) noexcept { return (1.0 - weight) + k * boost * weight; }
 
-	RX_ALWAYS_INLINE float calcPositionRank(unsigned pos) noexcept { return bound(pos2rank(pos), positionWeight, positionBoost); }
+	RX_ALWAYS_INLINE float calcPositionRank(unsigned pos) const noexcept { return bound(pos2rank(pos), positionWeight, positionBoost); }
 };
 
 class [[nodiscard]] FTConfig {

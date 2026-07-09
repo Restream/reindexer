@@ -8,8 +8,8 @@
 #include "cluster/idatareplicator.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/dbconfig.h"
-#include "core/item.h"
 #include "core/definitions/namespacedef.h"
+#include "core/item.h"
 #include "core/nsselecter/joins/cache.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
@@ -128,13 +128,7 @@ namespace composite_substitution_helpers {
 class CompositeSearcher;
 }
 
-enum class [[nodiscard]] StoredValuesOptimizationStatus : int8_t {
-	DisabledByCompositeIndex,
-	DisabledByFullTextIndex,
-	DisabledByJoinedFieldSort,
-	DisabledByFloatVectorIndex,
-	Enabled
-};
+enum class [[nodiscard]] StoredValuesOptimizationStatus : int8_t { DisabledByCompositeIndex, DisabledByJoinedFieldSort, Enabled };
 
 class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // NOLINT(*performance.Padding) Padding does not
 	using IndexNamesMap = fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str>;

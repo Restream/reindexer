@@ -26,6 +26,7 @@ public:
 	ReplicationStats GetReplicationStats() const;
 	bool NamespaceIsInAsyncConfig(std::string_view nsName) const;
 	void SetLogLevel(LogLevel level) noexcept { log_.SetLevel(level); }
+	LogLevel GetLogLevel() const noexcept { return log_.GetLevel(); }
 
 private:
 	static constexpr std::string_view logModuleName() noexcept { return std::string_view("asyncreplicator"); }

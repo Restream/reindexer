@@ -105,13 +105,13 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergePhrase(size_t phraseIdx, 
 //  allmax=max(docRank)
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
-template <typename Bm25T>
-void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTerm(TermResults<IdCont>& term, uint16_t qpIdx) {
+template <typename Bm25T, typename DocsStatsGetter>
+void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTerm(TermResults<IdCont>& term, uint16_t qpIdx,
+															const DocsStatsGetter& docsStatsGetter) {
 	if (term.Op() == OpNot) {
 		return;
 	}
 
-	const auto& vdocs = holder_.vdocs_;
 	switchToNextWord();
 
 	for (SubtermResults<IdCont>& subterm : term) {
@@ -119,8 +119,9 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTerm(TermResults<IdCont>&
 			ThrowOnCancel(ctx_);
 		}
 
-		Bm25Calculator<Bm25T> bm25{static_cast<double>(holder_.VDocsNumberInIndex()), static_cast<double>(subterm.Occurences().size()),
-								   holder_.cfg_->bm25Config.bm25k1, holder_.cfg_->bm25Config.bm25b};
+		// first doc is always empty
+		Bm25Calculator<Bm25T> bm25{static_cast<double>(totalNumDocs_ - 1), static_cast<double>(subterm.Occurences().size()),
+								   cfg_->bm25Config.bm25k1, cfg_->bm25Config.bm25b};
 
 		for (auto&& occurence : subterm.Occurences()) {
 			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(occurence), const IdRelType&>) ||
@@ -136,7 +137,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTerm(TermResults<IdCont>&
 				continue;
 			}
 
-			if (needToCheckRemoved_ && vdocs[docId].IsRemoved()) {
+			if (needToCheckRemoved_ && docsStatsGetter.DocRemoved(docId)) {
 				continue;
 			}
 
@@ -153,11 +154,11 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTerm(TermResults<IdCont>&
 			TermRankInfo subtermInf;
 			subtermInf.proc = subterm.Proc();
 			subtermInf.pattern = subterm.Pattern();
-			auto [rank, field] = calcTermRank(term.Opts(), bm25, occurence, subtermInf, holder_);
+			auto [rank, field] = calcTermRank(term.Opts(), bm25, occurence, subtermInf, cfg_, docsStatsGetter);
 			if (fp::IsZero(rank)) {
 				continue;
 			}
-			if (holder_.cfg_->logLevel >= LogTrace) [[unlikely]] {
+			if (cfg_->logLevel >= LogTrace) [[unlikely]] {
 				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subterm.Pattern(), bm25.GetIDF(), term.Opts().termLenBoost);
 			}
 
@@ -176,8 +177,7 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTerm(TermResults<IdCont>&
 
 				// zero for first occurence in field
 				unsigned distance = PositionsDistance(mdExt.lastTermPositions, occurence.Pos());
-				const float normDist =
-					FTFieldConfig::bound(1.0 / float(std::max(distance, 1U)), holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
+				const float normDist = FTFieldConfig::bound(1.0 / float(std::max(distance, 1U)), cfg_->distanceWeight, cfg_->distanceBoost);
 				const float finalRank = normDist * rank;
 
 				if (finalRank > mdExt.rank) {
@@ -192,22 +192,21 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergeTerm(TermResults<IdCont>&
 }
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
-template <typename Bm25T>
-MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::mergeSimple(TermResults<IdCont>& singleTerm, RankSortType rankSortType) {
-	const auto& vdocs = holder_.vdocs_;
-
+template <typename Bm25T, typename DocsStatsGetter>
+MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::mergeSimple(TermResults<IdCont>& singleTerm, RankSortType rankSortType,
+																	   const DocsStatsGetter& docsStatsGetter) {
 	// loop on subterm (word, translit, stemmer,...)
 	for (auto& subterm : singleTerm) {
 		if (!inTransaction_) {
 			ThrowOnCancel(ctx_);
 		}
-		Bm25Calculator<Bm25T> bm25{static_cast<double>(holder_.VDocsNumberInIndex()), static_cast<double>(subterm.Occurences().size()),
-								   holder_.cfg_->bm25Config.bm25k1, holder_.cfg_->bm25Config.bm25b};
+		Bm25Calculator<Bm25T> bm25{static_cast<double>(totalNumDocs_ - 1), static_cast<double>(subterm.Occurences().size()),
+								   cfg_->bm25Config.bm25k1, cfg_->bm25Config.bm25b};
 
 		for (const IdRelType& occurence : subterm.Occurences()) {
 			const int docId = occurence.Id();
 
-			if (docsExcluded_[docId] || vdocs[docId].IsRemoved()) {
+			if (docsExcluded_[docId] || docsStatsGetter.DocRemoved(docId)) {
 				continue;
 			}
 
@@ -219,12 +218,12 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::mergeSimple(TermResul
 			TermRankInfo subtermInf;
 			subtermInf.proc = subterm.Proc();
 			subtermInf.pattern = subterm.Pattern();
-			auto [rank, field] = calcTermRank(singleTerm.Opts(), bm25, occurence, subtermInf, holder_);
+			auto [rank, field] = calcTermRank(singleTerm.Opts(), bm25, occurence, subtermInf, cfg_, docsStatsGetter);
 			if (fp::IsZero(rank)) {
 				continue;
 			}
 
-			if (holder_.cfg_->logLevel >= LogTrace) [[unlikely]] {
+			if (cfg_->logLevel >= LogTrace) [[unlikely]] {
 				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subterm.Pattern(), bm25.GetIDF(), singleTerm.Opts().termLenBoost);
 			}
 
@@ -244,7 +243,7 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::mergeSimple(TermResul
 		}
 	}
 
-	addFullMatchBoost(1);  // ToDo #2455
+	addFullMatchBoost(1, docsStatsGetter);	// ToDo #2455
 	postProcessResults(rankSortType);
 
 	return std::move(mergeData_);
@@ -252,7 +251,7 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::mergeSimple(TermResul
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 void Merger<IdCont, MergeDataType, MergeOffsetT>::calcTermBitmask(const TermResults<IdCont>& term, BitsetType& termMask) {
-	termMask.ResizeAndReset(holder_.VDocsNumberInIndex());
+	termMask.ResizeAndReset(totalNumDocs_);
 
 	bool allFieldsHavePositiveBoost = std::ranges::all_of(term.Opts().fieldsOpts, [](const auto& opts) { return opts.boost; });
 
@@ -291,7 +290,7 @@ template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 void Merger<IdCont, MergeDataType, MergeOffsetT>::calcTermScores(TermResults<IdCont>& term, const BitsetType& restrictingMask,
 																 BitsetType& termMask, std::vector<uint16_t>& docsScore) {
 	termMask.resize(0);
-	termMask.resize(holder_.VDocsNumberInIndex(), false);
+	termMask.resize(totalNumDocs_, false);
 
 	const float fieldsBoost = term.Opts().fieldsOpts[0].boost;
 	bool allFieldsHaveSameBoost = std::ranges::all_of(
@@ -385,9 +384,10 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::buildRestrictingBitmask(QueryM
 }
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
-void Merger<IdCont, MergeDataType, MergeOffsetT>::preselectMostRelevantDocs(QueryMergeData<IdCont>& queryMergeData) {
-	std::vector<uint16_t> docsScore(holder_.VDocsNumberInIndex());
-	auto& vdocs = holder_.vdocs_;
+template <typename DocsStatsGetter>
+void Merger<IdCont, MergeDataType, MergeOffsetT>::preselectMostRelevantDocs(QueryMergeData<IdCont>& queryMergeData,
+																			const DocsStatsGetter& docsStatsGetter) {
+	std::vector<uint16_t> docsScore(totalNumDocs_);
 	BitsetType tmpMask;
 
 	for (auto& syn : queryMergeData.synonyms) {
@@ -416,14 +416,14 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::preselectMostRelevantDocs(Quer
 	// sorting docs scores and collecting resulting mask
 	std::vector<size_t> sortData(std::numeric_limits<uint16_t>::max() + 1);
 	for (size_t i = 0; i < docsScore.size(); i++) {
-		if (!restrictingMask_[i] || vdocs[i].IsRemoved()) {
+		if (!restrictingMask_[i] || docsStatsGetter.DocRemoved(i)) {
 			docsScore[i] = 0;
 		}
 		sortData[docsScore[i]]++;
 	}
 
 	size_t docsWithPositiveScores = docsScore.size() - sortData[0];
-	if (docsWithPositiveScores > maxMergedDocs_ && holder_.cfg_->logLevel >= LogWarning) {
+	if (docsWithPositiveScores > maxMergedDocs_ && cfg_->logLevel >= LogWarning) {
 		logFmt(LogWarning,
 			   "The number of documents satisfying the query exceeds merge_limit : number_of_results={}, merge_limit={}. Selecting only "
 			   "the most relevant documents",
@@ -464,28 +464,29 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::preselectMostRelevantDocs(Quer
 }
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
-template <typename Bm25T>
-MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::Merge(QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType) {
+template <typename Bm25T, typename DocsStatsGetter>
+MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::Merge(QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType,
+																 const DocsStatsGetter& docsStatsGetter) {
 	static_assert(sizeof(Bm25Calculator<Bm25T>) <= 32, "Bm25Calculator<Bm25T> size is greater than 32 bytes");
 
-	if (queryMergeData.Empty() || holder_.VDocsNumberInIndex() == 0) {
+	if (queryMergeData.Empty() || totalNumDocs_ == 0) {
 		return std::move(mergeData_);
 	}
 
-	const size_t maxMergedSize = std::min(size_t(holder_.cfg_->mergeLimit), queryMergeData.totalORVids);
-	init<Bm25T>(queryMergeData, maxMergedSize);
+	const size_t maxMergedSize = std::min(size_t(cfg_->mergeLimit), queryMergeData.totalORVids);
+	init<Bm25T>(queryMergeData, maxMergedSize, docsStatsGetter);
 
 	queryMergeData.SortSubterms();
 	if (queryMergeData.Simple()) {
 		auto& singleTerm = queryMergeData.queryParts[0].Term();
-		return mergeSimple<Bm25T>(singleTerm, rankSortType);
+		return mergeSimple<Bm25T>(singleTerm, rankSortType, docsStatsGetter);
 	}
 
 	buildRestrictingBitmask(queryMergeData);
 	static const bool kDisable2PhaseMerge = std::getenv("REINDEXER_NO_2PHASE_FT_MERGE");
-	if (!kDisable2PhaseMerge && estimateNumDocsInMerge(queryMergeData) > holder_.cfg_->mergeLimit &&
-		holder_.VDocsNumberInIndex() > holder_.cfg_->mergeLimit && restrictingMask_.PopCount() > holder_.cfg_->mergeLimit) {
-		preselectMostRelevantDocs(queryMergeData);
+	if (!kDisable2PhaseMerge && estimateNumDocsInMerge(queryMergeData) > cfg_->mergeLimit && totalNumDocs_ > cfg_->mergeLimit &&
+		restrictingMask_.PopCount() > cfg_->mergeLimit) {
+		preselectMostRelevantDocs(queryMergeData, docsStatsGetter);
 	}
 
 	size_t phraseIdx = 0;
@@ -502,7 +503,7 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::Merge(QueryMergeData<
 		if (qp.IsPhrase()) {
 			mergePhrase<Bm25T>(phraseIdx - 1, qp.Phrase(), ++qpIdx);
 		} else {
-			mergeTerm<Bm25T>(qp.Term(), ++qpIdx);
+			mergeTerm<Bm25T>(qp.Term(), ++qpIdx, docsStatsGetter);
 		}
 	}
 
@@ -510,7 +511,7 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::Merge(QueryMergeData<
 	size_t numDocsBeforeSynonyms = mergeDataExtended_.size();
 	for (auto& syn : queryMergeData.synonyms) {
 		for (auto& term : syn.Terms()) {
-			mergeTerm<Bm25T>(term, ++qpIdx);
+			mergeTerm<Bm25T>(term, ++qpIdx, docsStatsGetter);
 		}
 
 		// mark docs which contain all terms of syn
@@ -553,12 +554,12 @@ MergeDataType Merger<IdCont, MergeDataType, MergeOffsetT>::Merge(QueryMergeData<
 	mergeData_.resize(newIdx);
 	mergeDataExtended_.resize(newIdx);
 
-	if (holder_.cfg_->logLevel >= LogInfo) [[unlikely]] {
+	if (cfg_->logLevel >= LogInfo) [[unlikely]] {
 		logFmt(LogInfo, "Complex merge ({} patterns, {} synonyms): out {} vids", queryMergeData.QueryLength(),
 			   queryMergeData.synonyms.size(), mergeData_.size());
 	}
 
-	addFullMatchBoost(queryMergeData.QueryLength());  // ToDo #2455
+	addFullMatchBoost(queryMergeData.QueryLength(), docsStatsGetter);  // ToDo #2455
 	postProcessResults(rankSortType);
 
 	return std::move(mergeData_);

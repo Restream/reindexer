@@ -87,6 +87,7 @@ BOOL_ENUM(TreatAsSingleElement)
 BOOL_ENUM(WithTagsMatcher)
 BOOL_ENUM(Pretty)
 BOOL_ENUM(PhraseTerm)
+BOOL_ENUM(WasCanceled)
 
 #undef BOOL_ENUM
 

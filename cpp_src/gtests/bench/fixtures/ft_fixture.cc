@@ -28,7 +28,7 @@ constexpr std::string_view kShortSuffixPreselectTerm2 = "*ка";
 
 std::string MakeShortSuffixPreselectToken(int value, std::string_view suffix) {
 	static constexpr std::array<std::string_view, 16> kSyllables = {"ба", "ве", "го", "ду", "же", "зи", "ко", "лу",
-																   "мы", "пе", "ра", "си", "то", "фу", "ха", "че"};
+																	"мы", "пе", "ра", "си", "то", "фу", "ха", "че"};
 	std::string token = "т";
 	++value;
 	do {
@@ -67,14 +67,14 @@ FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
 		.AddIndex("description", "-", "string", IndexOpts())
 		.AddIndex("year", "tree", "int", IndexOpts())
 		.AddIndex("countries", "tree", "string", IndexOpts().Array())
-		.AddIndex(kFastIndexTextName_, {"countries", "description"}, "text", "composite", std::move(ftFastIndexOpts));
+		.AddIndex(kIndexTextName_, {"countries", "description"}, "text", "composite", std::move(ftFastIndexOpts));
 	lowWordsDiversityNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("description1", "-", "string", IndexOpts())
 		.AddIndex("description2", "-", "string", IndexOpts())
 		.AddIndex(kLowDiversityIndexName_, {"description1", "description2"}, "text", "composite", std::move(ftLowDiversityIndexOpts));
 	shortSuffixPreselectNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("year", "tree", "int", IndexOpts())
-		.AddIndex(kFastIndexTextPreselectName_, "text", "string", std::move(ftShortSuffixPreselectIndexOpts));
+		.AddIndex(kIndexTextPreselectName_, "text", "string", std::move(ftShortSuffixPreselectIndexOpts));
 }
 template <reindexer::FTConfig::Optimization opt>
 void FullText::UpdateIndex(State& state) {
@@ -83,12 +83,12 @@ void FullText::UpdateIndex(State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::FTConfig ftCfg(1);
 		ftCfg.optimization = opt;
-		setIndexConfig(nsdef_, kFastIndexTextName_, ftCfg);
+		setIndexConfig(nsdef_, kIndexTextName_, ftCfg);
 	}
 
 	// Warm up the index
 	Query q(nsdef_.name);
-	q.Where(kFastIndexTextName_, CondEq, "lskfj");
+	q.Where(kIndexTextName_, CondEq, "lskfj");
 	QueryResults qres;
 	auto err = db_->Select(q, qres);
 	if (!err.ok()) {
@@ -231,9 +231,9 @@ void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::o
 		ShortSuffixPreselect(state, terms, profile);
 	};
 	static constexpr std::array shortSuffixPreselectProfiles{
-		std::pair{"Zero", ShortSuffixPreselectProfile::Zero},   std::pair{"Tiny", ShortSuffixPreselectProfile::Tiny},
+		std::pair{"Zero", ShortSuffixPreselectProfile::Zero},	std::pair{"Tiny", ShortSuffixPreselectProfile::Tiny},
 		std::pair{"Small", ShortSuffixPreselectProfile::Small}, std::pair{"Medium", ShortSuffixPreselectProfile::Medium},
-		std::pair{"Half", ShortSuffixPreselectProfile::Half},   std::pair{"Full", ShortSuffixPreselectProfile::Full}};
+		std::pair{"Half", ShortSuffixPreselectProfile::Half},	std::pair{"Full", ShortSuffixPreselectProfile::Full}};
 	for (const auto& [name, profile] : shortSuffixPreselectProfiles) {
 		wrapSlow.SetOptions(RegisterF(std::string("Fast1ShortSuffixPreselect") + name, shortSuffixPreselect, 1u, profile));
 		wrapSlow.SetOptions(RegisterF(std::string("Fast2ShortSuffixPreselect") + name, shortSuffixPreselect, 2u, profile));
@@ -311,7 +311,7 @@ reindexer::Item FullText::MakeShortSuffixPreselectItem(int id) {
 
 	item["id"] = id;
 	item["year"] = 2000 + (id % 50);
-	item[kFastIndexTextPreselectName_] = MakeShortSuffixPreselectText(id);
+	item[kIndexTextPreselectName_] = MakeShortSuffixPreselectText(id);
 	return item;
 }
 
@@ -360,11 +360,11 @@ void FullText::BuildInsertIncremental(State& state) {
 	}
 
 	constexpr int kMaxStepsCount = 50;
-	const auto itemsPerStep = initStepsConfig(kMaxStepsCount, nsdef_, kFastIndexTextName_, state.max_iterations / kMaxIterStepsMultiplier);
+	const auto itemsPerStep = initStepsConfig(kMaxStepsCount, nsdef_, kIndexTextName_, state.max_iterations / kMaxIterStepsMultiplier);
 
 	auto execQuery = [&] {
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, RndWord1()).Limit(20);
+		q.Where(kIndexTextName_, CondEq, RndWord1()).Limit(20);
 
 		QueryResults qres;
 		size_t memory = get_alloc_size();
@@ -611,14 +611,14 @@ void FullText::Fast3PhraseWithAreasLowDiversity(State& state) {
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 void FullText::Fast1WordWithAreaHighDiversity(State& state) {
-	const auto hilightStr = fmt::format("{} = highlight(!,!)", kFastIndexTextName_);
+	const auto hilightStr = fmt::format("{} = highlight(!,!)", kIndexTextName_);
 
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		const std::string& word = RndWord1();
-		q.Where(kFastIndexTextName_, CondEq, word);
+		q.Where(kIndexTextName_, CondEq, word);
 		q.AddFunction(hilightStr);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -661,7 +661,7 @@ void FullText::BuildFastTextIndex(benchmark::State& state) {
 	size_t mem = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, RndWord1()).Limit(20);
+		q.Where(kIndexTextName_, CondEq, RndWord1()).Limit(20);
 
 		QueryResults qres;
 
@@ -686,7 +686,7 @@ void FullText::Fast1WordMatch(benchmark::State& state) {
 		TIMEMEASURE();
 		Query q(nsdef_.name);
 
-		q.Where(kFastIndexTextName_, CondEq, RndWord1());
+		q.Where(kIndexTextName_, CondEq, RndWord1());
 
 		QueryResults qres;
 
@@ -705,7 +705,7 @@ void FullText::Fast2WordsMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
-		auto q = Query(nsdef_.name).Where(kFastIndexTextName_, CondEq, RndWord1() + ' ' + RndWord1());
+		auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, RndWord1() + ' ' + RndWord1());
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
@@ -724,7 +724,7 @@ void FullText::Fast1PrefixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakePrefixWord());
+		q.Where(kIndexTextName_, CondEq, MakePrefixWord());
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -743,7 +743,7 @@ void FullText::Fast2PrefixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
+		q.Where(kIndexTextName_, CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -762,7 +762,7 @@ void FullText::Fast1SuffixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakeSuffixWord());
+		q.Where(kIndexTextName_, CondEq, MakeSuffixWord());
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
@@ -780,7 +780,7 @@ void FullText::Fast2SuffixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
+		q.Where(kIndexTextName_, CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -821,7 +821,7 @@ void FullText::ShortSuffixPreselect(benchmark::State& state, unsigned terms, Sho
 	auto makeQuery = [&] {
 		Query q(shortSuffixPreselectNsDef_.name);
 		ApplyShortSuffixPreselectFilter(q, profile);
-		q.Where(kFastIndexTextPreselectName_, CondEq, dsl).Limit(20);
+		q.Where(kIndexTextPreselectName_, CondEq, dsl).Limit(20);
 		return q;
 	};
 	{
@@ -863,7 +863,7 @@ void FullText::Fast1TypoWordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakeTypoWord());
+		q.Where(kIndexTextName_, CondEq, MakeTypoWord());
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -882,7 +882,7 @@ void FullText::Fast2TypoWordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
+		q.Where(kIndexTextName_, CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);

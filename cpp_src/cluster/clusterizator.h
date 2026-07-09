@@ -66,6 +66,7 @@ private:
 
 	static bool replicationIsNotRequired(const UpdatesContainer& recs) noexcept;
 	void validateConfig() const;
+	void updateManagerLogLevel() noexcept;
 
 	mutable mutex mtx_;
 	UpdatesQueuePair<updates::UpdateRecord> updatesQueue_;

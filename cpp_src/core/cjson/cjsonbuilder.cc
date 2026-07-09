@@ -39,7 +39,7 @@ CJsonBuilder CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, ObjType type
 template CJsonBuilder CJsonBuilder::Array(TagName, ObjType);
 template CJsonBuilder CJsonBuilder::Array(TagIndex, ObjType);
 
-void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid> data, int /*offset*/, TreatAsSingleElement) {
+void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, unaligned::view<Uuid> data, int /*offset*/, TreatAsSingleElement) {
 	putTag(tag, TAG_ARRAY);
 	ser_.PutCArrayTag(carraytag(data.size(), TAG_UUID));
 	for (auto d : data) {
@@ -47,8 +47,8 @@ void CJsonBuilder::Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid
 	}
 	++count_;
 }
-template void CJsonBuilder::Array(TagName, std::span<const Uuid>, int, TreatAsSingleElement);
-template void CJsonBuilder::Array(TagIndex, std::span<const Uuid>, int, TreatAsSingleElement);
+template void CJsonBuilder::Array(TagName, unaligned::view<Uuid>, int, TreatAsSingleElement);
+template void CJsonBuilder::Array(TagIndex, unaligned::view<Uuid>, int, TreatAsSingleElement);
 
 void CJsonBuilder::Put(concepts::TagNameOrIndex auto tag, bool arg, int /*offset*/) {
 	if (type_ == ObjType::TypeArray) {

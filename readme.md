@@ -152,7 +152,7 @@ Reindexer has internal full text search engine. Full text search usage documenta
 
 ### Vector indexes (ANN/KNN)
 
-Reindexer has internal k-nearest neighbors search engine. k-nearest neighbors search usage documentation and examples are [here](float_vector.md)
+Reindexer has internal k-nearest neighbors search engine. k-nearest neighbors search usage documentation and examples are [here](float_vector.md). For selective post-filtered pages on HNSW, see [streaming KNN](float_vector.md#streaming-knn-hnsw) (omit `k` and `radius`, use `LIMIT`/`OFFSET` on the query).
 
 ### Hybrid search
 

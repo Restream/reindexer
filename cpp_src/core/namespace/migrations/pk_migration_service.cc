@@ -3,6 +3,7 @@
 #include "core/namespace/namespaceimpl.h"
 #include "core/storage/storage_prefixes.h"
 #include "tools/logger.h"
+#include "tools/unaligned.h"
 
 namespace reindexer {
 namespace migrations {
@@ -184,7 +185,7 @@ void PKMigrationService::iterateOverStorageItems(Fn&& onReadItem) noexcept {
 				continue;
 			}
 
-			const int64_t lsn{*reinterpret_cast<const int64_t*>(dataSlice.data())};
+			const int64_t lsn{unaligned::read<int64_t>(dataSlice.data())};
 			if (lsn < 0) {
 				continue;
 			}

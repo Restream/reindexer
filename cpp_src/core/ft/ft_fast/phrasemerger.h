@@ -299,17 +299,18 @@ public:
 	using DocumentDataType = PhraseMergerDocumentData<MergeDataType>;
 	using BitsetType = DynamicBitset<64>;
 
-	PhraseMerger(DataHolder<IdCont>& holder, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc,
+	PhraseMerger(size_t totalNumDocs, FTConfig* cfg, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc,
 				 bool inTransaction, const RdxContext& ctx)
-		: holder_(holder),
-		  docsExcluded_(docsExcluded),
+		: docsExcluded_(docsExcluded),
 		  fieldSize_(fieldSize),
 		  maxAreasInDoc_(maxAreasInDoc),
 		  inTransaction_(inTransaction),
-		  ctx_(ctx) {}
+		  ctx_(ctx),
+		  totalNumDocs_(totalNumDocs),
+		  cfg_(cfg) {}
 
-	template <typename Bm25T>
-	void Merge(PhraseResults<IdCont>& phrase);
+	template <typename Bm25T, typename DocsStatsGetter>
+	void Merge(PhraseResults<IdCont>& phrase, const DocsStatsGetter& docsStatsGetter);
 
 	size_t NumDocsMerged() const noexcept { return mergeData_.size(); }
 	const InfoType& GetMergeData(size_t mergedDocIdx) const noexcept { return mergeData_[mergedDocIdx]; }
@@ -320,7 +321,7 @@ public:
 	const MergeDataType& GetMergeData() const noexcept { return mergeData_; }
 
 	void GetMergedDocsBitmask(BitsetType& bm) const {
-		bm.ResizeAndReset(holder_.VDocsNumberInIndex());
+		bm.ResizeAndReset(totalNumDocs_);
 
 		for (const auto& md : mergeData_) {
 			if (md.proc > 0) {
@@ -350,26 +351,27 @@ private:
 	void init(PhraseResults<IdCont>& phrase) {
 		assertrx_throw(phrase.NumTerms() > 0);
 
-		preselectedDocs_.ResizeAndSet(holder_.VDocsNumberInIndex());
-		nextTermDocs_.ResizeAndReset(holder_.VDocsNumberInIndex());
+		preselectedDocs_.ResizeAndSet(totalNumDocs_);
+		nextTermDocs_.ResizeAndReset(totalNumDocs_);
 
-		maxMergedDocs_ = std::min(holder_.cfg_->mergeLimit, phrase.Term(0).MaxVDocs());
+		maxMergedDocs_ = std::min(cfg_->mergeLimit, phrase.Term(0).MaxVDocs());
 		maxMergedDocs_ = std::min<uint32_t>(maxMergedDocs_, std::numeric_limits<MergeOffsetT>::max());
 		mergeData_.reserve(maxMergedDocs_);
 		mergeDataExtended_.reserve(maxMergedDocs_);
 
 		if (phrase.NumTerms() > 1) {
-			idoffsets_.resize(holder_.VDocsNumberInIndex(), maxMergedDocs_);
+			idoffsets_.resize(totalNumDocs_, maxMergedDocs_);
 		}
 
-		maxDocId_ = holder_.VDocsNumberInIndex();
+		maxDocId_ = totalNumDocs_;
 		phraseProc_ = phrase.CalcProc16();
 	}
 
-	void preselectDocsContainingAllTerms(PhraseResults<IdCont>& phrase);
+	template <typename DocsStatsGetter>
+	void preselectDocsContainingAllTerms(PhraseResults<IdCont>& phrase, const DocsStatsGetter& docsStatsGetter);
 
-	template <typename Bm25T>
-	void mergePhraseTerm(TermResults<IdCont>& termRes, bool firstTerm);
+	template <typename Bm25T, typename DocsStatsGetter>
+	void mergePhraseTerm(TermResults<IdCont>& termRes, bool firstTerm, const DocsStatsGetter& docsStatsGetter);
 
 	uint16_t phraseProc_ = 0;
 
@@ -380,7 +382,6 @@ private:
 	BitsetType preselectedDocs_;
 	BitsetType nextTermDocs_;
 
-	DataHolder<IdCont>& holder_;
 	const FtMergeStatuses::Statuses& docsExcluded_;
 
 	size_t fieldSize_ = 0;
@@ -390,6 +391,9 @@ private:
 
 	bool inTransaction_ = false;
 	const RdxContext& ctx_;
+
+	size_t totalNumDocs_ = 0;
+	FTConfig* cfg_ = nullptr;
 };
 
 }  // namespace ft

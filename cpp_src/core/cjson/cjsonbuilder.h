@@ -1,10 +1,11 @@
 #pragma once
 
-#include <span>
+#include <cstring>
 #include "core/enums.h"
 #include "core/keyvalue/p_string.h"
 #include "core/type_consts.h"
 #include "tagsmatcher.h"
+#include "tools/unaligned.h"
 
 namespace reindexer {
 namespace builders {
@@ -13,14 +14,7 @@ public:
 	CJsonBuilder(WrSerializer& ser, ObjType objType = ObjType::TypeObject, const TagsMatcher* tm = nullptr)
 		: CJsonBuilder{ser, objType, tm, TagName::Empty()} {}
 	CJsonBuilder(WrSerializer&, ObjType, const TagsMatcher*, concepts::TagNameOrIndex auto);
-	~CJsonBuilder() noexcept(false) {
-		if (std::uncaught_exceptions() == 0) {
-			// The End() call may throw if the internal WrSerializer is unable to allocate memory due to logical
-			// (GrowthPolicy) or system (std::bad_alloc) limitations. Checking std::uncaught_exceptions() allows us
-			// to avoid throwing an exception in scenarios where we're already handling another exception.
-			End();
-		}
-	}
+	~CJsonBuilder() noexcept(false) { serialize_helpers::tryAppendEnd(*this); }
 	CJsonBuilder(const CJsonBuilder&) = delete;
 	CJsonBuilder(CJsonBuilder&& other) noexcept
 		: tm_(other.tm_), ser_(other.ser_), type_(other.type_), savePos_(other.savePos_), count_(other.count_), itemType_(other.itemType_) {
@@ -41,7 +35,7 @@ public:
 		throw Error(errLogic, "CJSON builder doesn't work with string tags [{}, {}]!", name.data(), int(type));
 	}
 
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const p_string> data, int /*offset*/ = 0,
+	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<p_string> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		putTag(tag, TAG_ARRAY);
 		ser_.PutCArrayTag(carraytag(data.size(), TAG_STRING));
@@ -50,9 +44,9 @@ public:
 		}
 		++count_;
 	}
-	void Array(concepts::TagNameOrIndex auto, std::span<const Uuid> data, int offset = 0,
+	void Array(concepts::TagNameOrIndex auto, unaligned::view<Uuid> data, int offset = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False);
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const int> data, int /*offset*/ = 0,
+	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<int> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		putTag(tag, TAG_ARRAY);
 		ser_.PutCArrayTag(carraytag(data.size(), TAG_VARINT));
@@ -61,7 +55,7 @@ public:
 		}
 		++count_;
 	}
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const int64_t> data, int /*offset*/ = 0,
+	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<int64_t> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		putTag(tag, TAG_ARRAY);
 		ser_.PutCArrayTag(carraytag(data.size(), TAG_VARINT));
@@ -70,7 +64,7 @@ public:
 		}
 		++count_;
 	}
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const bool> data, int /*offset*/ = 0,
+	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<bool> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		putTag(tag, TAG_ARRAY);
 		ser_.PutCArrayTag(carraytag(data.size(), TAG_BOOL));
@@ -79,7 +73,7 @@ public:
 		}
 		++count_;
 	}
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const double> data, int /*offset*/ = 0,
+	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<double> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		putTag(tag, TAG_ARRAY);
 		ser_.PutCArrayTag(carraytag(data.size(), TAG_DOUBLE));
@@ -88,7 +82,7 @@ public:
 		}
 		++count_;
 	}
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const float> data, int /*offset*/ = 0,
+	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<float> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		putTag(tag, TAG_ARRAY);
 		ser_.PutCArrayTag(carraytag(data.size(), TAG_FLOAT));
@@ -119,12 +113,16 @@ public:
 	void Put(concepts::TagNameOrIndex auto tag, const char* arg, int offset = 0) { return Put(tag, std::string_view(arg), offset); }
 	void End() {
 		switch (type_) {
-			case ObjType::TypeArray:
-				*(reinterpret_cast<carraytag*>(ser_.Buf() + savePos_)) = carraytag(count_, itemType_);
+			case ObjType::TypeArray: {
+				const carraytag tag(count_, itemType_);
+				std::memcpy(ser_.Buf() + savePos_, &tag, sizeof(tag));
 				break;
-			case ObjType::TypeObjectArray:
-				*(reinterpret_cast<carraytag*>(ser_.Buf() + savePos_)) = carraytag(count_, TAG_OBJECT);
+			}
+			case ObjType::TypeObjectArray: {
+				const carraytag tag(count_, TAG_OBJECT);
+				std::memcpy(ser_.Buf() + savePos_, &tag, sizeof(tag));
 				break;
+			}
 			case ObjType::TypeObject:
 				ser_.PutCTag(kCTagEnd);
 				break;

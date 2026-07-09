@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include "tools/errors.h"
+#include "vendor/fmt/ranges.h"
 
 #ifndef _WIN32
 #include <dlfcn.h>
@@ -69,18 +70,45 @@ typedef int (*T_sgemv_)(const char* trans, FINTEGER* m, FINTEGER* n, float* alph
 
 namespace reindexer::blas_ext {
 
-static LIB_TYPE findBLASPtr() {
 // TODO: Probably we should support more implementations
 #ifdef __APPLE__
-	constexpr std::string_view kPossibleBlasNames[] = {"libopenblas-pthread.dylib", "libopenblas.dylib", "libblas.dylib",
-													   "libflexiblas.dylib"};
+constexpr static std::string_view kPossibleBlasNames[] = {"libopenblas-pthread.dylib", "libopenblas.dylib", "libblas.dylib",
+														  "libflexiblas.dylib"};
 #elif _WIN32
-	constexpr std::string_view kPossibleBlasNames[] = {"libopenblas.dll", "openblas.dll",	  "libblas.dll",
-													   "blas.dll",		  "libflexiblas.dll", "flexiblas.dll"};
-#else
-	constexpr std::string_view kPossibleBlasNames[] = {"libopenblas-pthread.so", "libopenblas.so", "libopenblasp.so", "libopenblasp64.so",
-													   "libopenblas64.so",		 "libblas.so",	   "libflexiblas.so"};
-#endif
+constexpr static std::string_view kPossibleBlasNames[] = {"libopenblas.dll", "openblas.dll",	 "libblas.dll",
+														  "blas.dll",		 "libflexiblas.dll", "flexiblas.dll"};
+#else  // !_WIN32
+
+#if REINDEX_WITH_ASAN
+// There is false-positive leak detection in some of the old libopenblasp builds
+constexpr static std::string_view kPossibleBlasNames[] = {"libopenblas.so", "libopenblas.so.0"};
+#else	// !REINDEX_WITH_ASAN
+constexpr static std::string_view kPossibleBlasNames[] = {"libopenblas-pthread.so", "libopenblasp.so",	"libopenblasp.so.0",
+														  "libopenblas.so",			"libopenblas.so.0", "libblas.so",
+														  "libflexiblas.so"};
+#endif	// !REINDEX_WITH_ASAN
+#endif	// !_WIN32
+
+// TODO: Probably we should support more implementations
+#ifdef __APPLE__
+constexpr static std::string_view kPossibleLapackNames[] = {"liblapack.dylib", "libflexiblas.dylib", "libopenblas-pthread.dylib",
+															"libopenblas.dylib"};
+#elif _WIN32
+constexpr static std::string_view kPossibleLapackNames[] = {"liblapack.dll", "lapack.dll",		 "libopenblas.dll",
+															"openblas.dll",	 "libflexiblas.dll", "flexiblas.dll"};
+#else  // !_WIN32
+
+#if REINDEX_WITH_ASAN
+// There is false-positive leak detection in some of the old libopenblasp builds
+constexpr static std::string_view kPossibleLapackNames[] = {"liblapack.so", "liblapack.so.4", "libopenblas.so", "libopenblas.so.0"};
+#else	// !REINDEX_WITH_ASAN
+constexpr static std::string_view kPossibleLapackNames[] = {"liblapack.so",		"liblapack.so.4",	 "libopenblas-pthread.so",
+															"libopenblasp.so",	"libopenblasp.so.0", "libopenblas.so",
+															"libopenblas.so.0", "libflexiblas.so"};
+#endif	// !REINDEX_WITH_ASAN
+#endif	// !_WIN32
+
+static LIB_TYPE findBLASPtr() {
 	LIB_TYPE ptr = nullptr;
 	const auto kEnvPtr = std::getenv("RX_CUSTOM_BLAS_LIB_NAME");
 	if (kEnvPtr) {
@@ -99,17 +127,6 @@ static LIB_TYPE findBLASPtr() {
 }
 
 static LIB_TYPE findLAPACKPtr() {
-	// TODO: Probably we should support more implementations
-#ifdef __APPLE__
-	constexpr std::string_view kPossibleLapackNames[] = {"liblapack.dylib", "libflexiblas.dylib", "libopenblas-pthread.dylib",
-														 "libopenblas.dylib"};
-#elif _WIN32
-	constexpr std::string_view kPossibleLapackNames[] = {"liblapack.dll", "lapack.dll",		  "libopenblas.dll",
-														 "openblas.dll",  "libflexiblas.dll", "flexiblas.dll"};
-#else
-	constexpr std::string_view kPossibleLapackNames[] = {"liblapack.so",	"libflexiblas.so",	 "libopenblas-pthread.so", "libopenblas.so",
-														 "libopenblasp.so", "libopenblasp64.so", "libopenblas64.so"};
-#endif
 	LIB_TYPE ptr = nullptr;
 	const auto kEnvPtr = std::getenv("RX_CUSTOM_LAPACK_LIB_NAME");
 	if (kEnvPtr) {
@@ -139,13 +156,15 @@ static LIB_TYPE getLAPACKPtr() {
 
 void checkIfBLASAvailable() {
 	if (!getBLASPtr()) {
-		throw Error(errLogic, "Unable to link BLAS/MKL library: {}", LOAD_ERR());
+		throw Error(errLogic, "Unable to link BLAS/MKL library: '{}'. Checked implementations: [{}]", LOAD_ERR(),
+					fmt::join(kPossibleBlasNames, ", "));
 	}
 }
 
 void checkIfLAPACKAvailable() {
 	if (!getLAPACKPtr()) {
-		throw Error(errLogic, "Unable to link LAPACK library: {}", LOAD_ERR());
+		throw Error(errLogic, "Unable to link LAPACK library: '{}'. Checked implementations: [{}]", LOAD_ERR(),
+					fmt::join(kPossibleLapackNames, ", "));
 	}
 }
 

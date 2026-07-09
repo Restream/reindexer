@@ -17,7 +17,7 @@ class [[nodiscard]] QueryPreprocessor : private QueryEntries {
 	class Merger;
 	struct [[nodiscard]] Ranked {
 		QueryRankType queryRankType;
-		IndexValueType rankedIndexNo;
+		int rankedIndexNo = IndexValueType::NotSet;
 	};
 	enum class [[nodiscard]] EvaluationStage : uint8_t {
 		First,
@@ -54,6 +54,9 @@ public:
 							const SelectCtx&);
 	unsigned Start() const noexcept { return start_; }
 	unsigned Count() const noexcept { return count_; }
+	// Estimated number of items passing all the non-KNN conditions.
+	// Used by the streaming KNN estimator to size 'ef'/'batchSize'.
+	int CalculateMaxIterationsForStreamingKnn(bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx) const;
 	bool MoreThanOneEvaluation() const noexcept { return HasForcedSortOptimizationQueryEntry(); }
 	bool AvailableSelectBySortIndex() const noexcept { return !HasForcedSortOptimizationQueryEntry() || !forcedStage(); }
 	void InsertConditionsFromJoins(joins::ItemsProcessors& js, OnConditionInsertions& explainOnInsertions, LogLevel, bool inTransaction,

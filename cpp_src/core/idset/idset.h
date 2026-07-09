@@ -12,25 +12,25 @@
 namespace reindexer {
 
 constexpr int kIdSetBtreeNodeSize = 256;
-#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 // Maximum size of idset without building btree
-constexpr int kMaxPlainIdsetSize = 256;
-#else	// defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
+constexpr unsigned kMaxPlainIdsetSize = 256;
+#else	// defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 // Use smaller value in sanitizers build to get more IdSets states in testing environment
-constexpr int kMaxPlainIdsetSize = 16;
-#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+constexpr unsigned kMaxPlainIdsetSize = 16;
+#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 
 using base_idset = h_vector<IdType, 3>;	 // const_iterator must be trivial (used in union)
 using base_idsetset = btree::btree_set<IdType, std::less<IdType>, std::allocator<IdType>, kIdSetBtreeNodeSize>;
 
-enum class [[nodiscard]] IdSetEditMode {
-	Ordered,   // Keep idset ordered, and ready to select (insert is slow O(logN)+O(N))
-	Auto,	   // Prepare idset for fast ordering by commit (insert is fast O(logN))
-	Unordered  // Just add id, commit and erase is impossible
-};
+#ifndef REINDEX_DEBUG_CONTAINERS
+static_assert(sizeof(base_idset) == 16, "base_idset must be 16 bytes to keep indexing structures compact");
+#endif	// REINDEX_DEBUG_CONTAINERS
 
 using IdSetCRef = std::span<const IdType>;
 
+/// @brief Container that stores a single ID.
+/// Used for primary keys.
 class [[nodiscard]] IdSetUnique {
 public:
 	using const_iterator = std::span<const IdType>::iterator;
@@ -43,7 +43,9 @@ public:
 	IdSetUnique(const IdSetUnique&) = default;
 	IdSetUnique& operator=(const IdSetUnique& other) = default;
 
-	bool Add(IdType id, IdSetEditMode, int) {
+	/// @brief Adds a new ID into the set while keeping it ordered.
+	/// Used for primary keys.
+	bool Add(IdType id, base_idset::size_type) {
 		if (!IsEmpty()) [[unlikely]] {
 			throwDuplicatedIDError();
 		}
@@ -51,6 +53,8 @@ public:
 		return true;
 	}
 
+	/// @brief Removes an ID from the set.
+	/// @return the number of deleted items.
 	int Erase(IdType id) {
 		if (id_ == id) {
 			id_ = IdType::NotSet();
@@ -59,13 +63,14 @@ public:
 		return 0;
 	}
 
-	void Commit() const noexcept {}
+	/// @brief Does nothing for IdSetUnique, single ID is always sorted.
+	void Commit([[maybe_unused]] base_idset::size_type sortedIdxCount) const noexcept {}
 	constexpr static bool IsCommitted() noexcept { return true; }
 	bool IsEmpty() const noexcept { return !id_.IsValid(); }
 	size_t Size() const noexcept { return id_.IsValid() ? 1 : 0; }
 	size_t BTreeHeapSize() const noexcept { return 0; }
 	const base_idsetset* BTree() const noexcept { return nullptr; }
-	void ReserveForSorted(int) {}
+	void OnSortedIndexCountChanged(unsigned) {}
 	void Dump(std::ostream&) const;
 	size_t PlainHeapSize() const noexcept { return 0; }
 
@@ -88,6 +93,9 @@ private:
 	IdType id_ = IdType::NotSet();
 };
 
+/// @brief Container that stores ordered IDs in a vector.
+/// Besides the IDs themselves, it also stores a mapping from IDs to ordered index positions (sort orders), allowing
+/// traversal in the order of the corresponding index.
 class [[nodiscard]] IdSetPlain : protected base_idset {
 public:
 #if REINDEX_DEBUG_CONTAINERS
@@ -142,12 +150,11 @@ public:
 	}
 
 	static Ptr BuildFromUnsorted(base_idset&& ids);
-	bool Add(IdType id, IdSetEditMode editMode, int sortedIdxCount) {
-		grow((size() + 1) * (sortedIdxCount + 1));
-		if (editMode == IdSetEditMode::Unordered) {
-			push_back(id);
-			return true;
-		}
+
+	/// @brief Adds a new ID into the set while keeping it ordered.
+	/// Preserves the set in the committed (sorted) state.
+	bool Add(IdType id, base_idset::size_type sortedIdxCount) {
+		reserveForIdAndSortOrders(sortedIdxCount);
 
 		auto pos = std::lower_bound(base_idset::begin(), base_idset::end(), id);
 		if ((pos == base_idset::end() || *pos != id)) {
@@ -156,16 +163,14 @@ public:
 		}
 		return false;
 	}
-	void AddUnordered(IdType id) { push_back(id); }
-	void AppendUnordered(auto first, auto last) { insert(base_idset::end(), first, last); }
-	void AppendUnordered(auto first, auto last, const std::vector<bool>& mask) {
-		for (; first != last; ++first) {
-			if (mask[first->ToNumber()]) {
-				push_back(*first);
-			}
-		}
-	}
 
+	/// @brief Adds a new ID into the end of the set without any ordering (O(1)).
+	/// Commit() and Erase() should not be used after this type of insertion.
+	void AddUnordered(IdType id) { push_back(id); }
+
+	/// @brief Removes an ID from the set.
+	/// Assumes that the container is sorted (not filled through AddUnordered()).
+	/// @return the number of deleted items.
 	int Erase(IdType id) {
 		auto d = std::equal_range(base_idset::begin(), base_idset::end(), id);
 		int count = std::distance(d.second, d.first);
@@ -173,13 +178,21 @@ public:
 		return count;
 	}
 
-	void Commit() const noexcept {}
+	/// @brief Does nothing for IdSetPlain, assumes that the container is already sorted.
+	void Commit([[maybe_unused]] base_idset::size_type sortedIdxCount) const noexcept {}
 	constexpr static bool IsCommitted() noexcept { return true; }
 	bool IsEmpty() const noexcept { return empty(); }
 	size_t Size() const noexcept { return size(); }
 	size_t BTreeHeapSize() const noexcept { return 0; }
 	const base_idsetset* BTree() const noexcept { return nullptr; }
-	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
+	void OnSortedIndexCountChanged(base_idset::size_type sortedIdxCount) {
+		if (sortedIdxCount) {
+			reserve(calcPlainReserveSize(size(), sortedIdxCount));
+		} else {
+			// Deallocate reserved buffer. Special case for disabled sort orderes.
+			shrink_to_fit();
+		}
+	}
 	void Dump(std::ostream&) const;
 	size_t HeapSize() const noexcept { return heap_size(); }
 	RX_ALWAYS_INLINE size_t PlainHeapSize() const noexcept { return heap_size(); }
@@ -210,8 +223,24 @@ protected:
 	const IdType* plainData() const& noexcept { return base_idset::data(); }
 	IdType* plainData() & noexcept { return base_idset::data(); }
 	auto plainData() const&& = delete;
+	static base_idset::size_type calcPlainReserveSize(base_idset::size_type ids, base_idset::size_type sortedIdxCount) noexcept {
+		return ids * (sortedIdxCount + 1);
+	}
+	void reserveForIdAndSortOrders(base_idset::size_type sortedIdxCount) {
+		// reserve extra space for sort orders data
+		const auto requiredCap = calcPlainReserveSize(size() + 1, sortedIdxCount);
+		if (requiredCap > capacity()) {
+			reserve(std::max(requiredCap, capacity() * 2));
+		}
+	}
 };
 
+/// @brief Extended version of IdSetPlain that optimizes insertion time.
+/// @details It achieves this by switching the underlying storage between a vector and a btree depending on the data size.
+/// During background index optimization, Commit() is called (under the namespace read lock) and switches the storage to
+/// a vector regardless of the current IdSet size.
+/// Background index optimization runs in parallel with read queries, so if a btree is created at some point after an
+/// insertion, it can no longer be deallocated without taking the namespace write lock.
 class [[nodiscard]] IdSet : private IdSetPlain {
 	friend class SingleSelectKeyResult;
 	template <typename>
@@ -230,24 +259,23 @@ public:
 	IdSet(IdSet&& other) noexcept = default;
 	IdSet& operator=(IdSet&& other) noexcept = default;
 	IdSet& operator=(const IdSet& other) = default;
-	bool Add(IdType id, IdSetEditMode editMode, int sortedIdxCount) {
+
+	/// @brief Adds a new ID into the set while keeping it ordered.
+	/// @details It will be represented either as a small vector (insertion is O(logN)+O(N)) or as a btree (insertion is O(logN)).
+	/// Commit() will transfer data from the btree into the vector.
+	bool Add(IdType id, base_idset::size_type sortedIdxCount) {
 		auto [set, isUsingBtree] = set_.Get(std::memory_order_relaxed);
-		// reserve extra space for sort orders data
-		grow(((set ? set->size() : size()) + 1) * (sortedIdxCount + 1));
 
-		if (editMode == IdSetEditMode::Unordered) {
-			assertrx(!set);
-			push_back(id);
-			return true;
-		}
-
-		if (int(size()) >= kMaxPlainIdsetSize && !set && editMode == IdSetEditMode::Auto) {
+		if (size() >= kMaxPlainIdsetSize && !set) [[unlikely]] {
 			auto tmpSet = std::make_unique<base_idsetset>(begin(), end());
 			set = tmpSet.get();
 			set_.Reset(tmpSet.release(), std::memory_order_relaxed);
 		}
 
 		if (!set) {
+			assertrx_dbg(size() <= kMaxPlainIdsetSize);
+			IdSetPlain::reserveForIdAndSortOrders(sortedIdxCount);
+
 			auto pos = std::lower_bound(base_idset::begin(), base_idset::end(), id);
 			if ((pos == base_idset::end() || *pos != id)) {
 				base_idset::insert(pos, id);
@@ -256,18 +284,26 @@ public:
 			return false;
 		}
 
-		resize(0);
 		if (!isUsingBtree) {
+			clear();
 			setUsingBtree(true);
 		}
+
+		assertrx_dbg(size() == 0);
+		assertrx_dbg(!IsCommitted());
 		return set->insert(id).second;
 	}
 
+	/// @brief Adds a new ID into the end of the set without any ordering (O(1)).
+	/// @note Commit() and Erase() should not be used after this type of insertion.
 	void AddUnordered(IdType id) {
 		assertrx(!set_.Get(std::memory_order_relaxed).first);
 		push_back(id);
 	}
 
+	/// @brief Выполняет поиск ID в set'е.
+	/// @note Assumes that the container is sorted (not filled through AddUnordered()).
+	/// @return true if the ID is found.
 	bool Find(IdType id) const noexcept {
 		auto set = set_.Get(std::memory_order_relaxed).first;
 		if (!set) {
@@ -277,6 +313,9 @@ public:
 		return (set->find(id) != set->end());
 	}
 
+	/// @brief Removes an ID from the set.
+	/// @note Assumes that the container is sorted (not filled through AddUnordered()).
+	/// @return the number of deleted items.
 	int Erase(IdType id) noexcept {
 		auto [set, isUsingBtree] = set_.Get(std::memory_order_relaxed);
 		if (!set) {
@@ -292,7 +331,8 @@ public:
 		}
 		return set->erase(id);
 	}
-	void Commit();
+	/// @note Has to be called either in background thread under namespace read lock or in foreground thread under namespace write lock
+	void Commit(base_idset::size_type sortedIdxCount);
 
 	RX_ALWAYS_INLINE bool IsCommitted() const noexcept { return !set_.Get(std::memory_order_acquire).second; }
 	bool IsEmpty() const noexcept { return !Size(); }
@@ -307,15 +347,17 @@ public:
 	void Dump(std::ostream&) const;
 
 	RX_ALWAYS_INLINE size_t PlainHeapSize() const noexcept { return IdSetPlain::PlainHeapSize(); }
-	// UNSAFE (may race with concurrent Commit() calls)
+	/// @note UNSAFE: May race with concurrent Commit() calls and has to be called under namespace write lock
 	RX_ALWAYS_INLINE size_t BTreeHeapSize() const noexcept {
 		auto set = set_.Get(std::memory_order_relaxed).first;
 		return set ? sizeof(*set) + set->size() * sizeof(IdType) : 0;
 	}
-	// UNSAFE (may race with concurrent Commit() calls)
-	void ReserveForSorted(int sortedIdxCount) {
-		auto set = set_.Get(std::memory_order_relaxed).first;
-		reserve(((set ? set->size() : size())) * (sortedIdxCount + 1));
+	/// @note UNSAFE: May race with concurrent Commit() calls and has to be called under namespace write lock
+	void OnSortedIndexCountChanged(base_idset::size_type sortedIdxCount) {
+		auto [set, usingBtree] = set_.Get(std::memory_order_relaxed);
+		if (!usingBtree) {
+			IdSetPlain::OnSortedIndexCountChanged(sortedIdxCount);
+		}
 	}
 
 	idset_iterator_range idset_range() const& noexcept {
@@ -345,7 +387,7 @@ private:
 
 	class [[nodiscard]] AtomicBtreePtr {
 	public:
-		AtomicBtreePtr() = default;
+		AtomicBtreePtr() noexcept = default;
 		~AtomicBtreePtr() { deleteMarkedPtr(set_.load()); }
 		AtomicBtreePtr(const AtomicBtreePtr& other) {
 			if (auto [oset, isMarked] = other.Get(std::memory_order_acquire); oset) {
@@ -396,7 +438,7 @@ private:
 		void deleteMarkedPtr(uint64_t ptr) noexcept { delete unmark(ptr).first; }
 
 		// Contains pointer and synchronization mark
-		std::atomic<uint64_t> set_;
+		std::atomic<uint64_t> set_{0};
 	};
 
 	AtomicBtreePtr set_;

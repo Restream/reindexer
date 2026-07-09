@@ -13,6 +13,8 @@ struct [[nodiscard]] ResultFetchOpts {
 	unsigned fetchOffset;
 	unsigned fetchLimit;
 	bool withAggregations;
+	// ExecSQL clients may send tmVersions for the main NS only (JOIN acts as a filter).
+	bool allowIncompleteTmVersions = false;
 };
 
 class [[nodiscard]] WrResultSerializer : public WrSerializer {

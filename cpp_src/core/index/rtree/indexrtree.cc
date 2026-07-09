@@ -20,10 +20,10 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 
 	SelectKeyResult res;
 
-	if (condition != CondDWithin) {
+	if (condition != CondDWithin) [[unlikely]] {
 		throw Error(errQueryExec, "Only DWithin condition is available for RTree index");
 	}
-	if (keys.size() != 2) {
+	if (keys.size() != 2) [[unlikely]] {
 		throw Error(errQueryExec, "DWithin condition expects two arguments");
 	}
 	Point point;
@@ -81,7 +81,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 		this->delMemStat(keyIt);
 	}
 
-	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSetEditMode::Ordered : IdSetEditMode::Auto, this->sortedIdxCount_)) {
+	if (keyIt->second.Unsorted().Add(id, this->sortedIdxCount_)) {
 		this->isBuilt_ = false;
 		// reset cache
 		this->cache_.ResetImpl();

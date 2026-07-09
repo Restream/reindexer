@@ -17,14 +17,15 @@ namespace reindexer {
 
 static constexpr size_t kMaxFtWordBytes = std::numeric_limits<suffix_map<char, WordIdType>::word_len_type>::max();
 
-static bool IsFtWordIndexable(std::string_view word) noexcept { return !word.empty() && word.size() <= kMaxFtWordBytes; }
+RX_ALWAYS_INLINE static bool IsFtWordIndexable(std::string_view word) noexcept { return !word.empty() && word.size() <= kMaxFtWordBytes; }
 
 template <typename IdCont>
-void DataProcessor<IdCont>::Process(bool multithread) {
+void DataProcessor<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, bool multithreaded,
+									std::vector<h_vector<float, 3>>& wordsCounts) {
 	ExceptionPtrWrapper exwr;
 	words_map words_um;
 	const auto tm0 = system_clock_w::now();
-	size_t szCnt = buildWordsMap(words_um, multithread, holder_.splitter_);
+	size_t szCnt = buildWordsMap(vdocsTexts, vdocsIds, numDocsTotal, words_um, multithreaded, holder_.splitter_, wordsCounts);
 	const auto tm1 = system_clock_w::now();
 	auto& words = holder_.GetWords();
 	const size_t wrdOffset = words.size();
@@ -48,7 +49,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 
 	// Step 6: Build typos hash map
 	try {
-		buildTyposMap(wrdOffset, preprocWords, multithread);
+		buildTyposMap(wrdOffset, preprocWords, multithreaded);
 	} catch (...) {
 		exwr.SetException(std::current_exception());
 	}
@@ -60,7 +61,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	exwr.RethrowException();
 	const auto tm6 = system_clock_w::now();
 
-	logFmt(LogInfo, "FastIndexText[{}] built with [{} uniq words, {} typos, {}KB text size, {}KB suffixarray size, {}KB idrelsets size]",
+	logFmt(LogInfo, "IndexText[{}] built with [{} uniq words, {} typos, {}KB text size, {}KB suffixarray size, {}KB idrelsets size]",
 		   holder_.steps.size(), words_um.size(), holder_.GetLastStepTypos().size(), szCnt / 1024, suffixes.heap_size() / 1024,
 		   idsetcnt / 1024);
 
@@ -129,12 +130,12 @@ size_t DataProcessor<IdCont>::commitIdRelSets(const WordsVector& preprocWords, w
 		}
 
 		if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
-			wordEntry->vids.insert_back(keyIt->second.vids_.begin(), keyIt->second.vids_.end());
+			wordEntry->vids.insert_back(keyIt->second.begin(), keyIt->second.end());
 		} else {
-			wordEntry->vids.insert(wordEntry->vids.end(), std::make_move_iterator(keyIt->second.vids_.begin()),
-								   std::make_move_iterator(keyIt->second.vids_.end()));
+			wordEntry->vids.insert(wordEntry->vids.end(), std::make_move_iterator(keyIt->second.begin()),
+								   std::make_move_iterator(keyIt->second.end()));
 		}
-		keyIt->second.vids_ = IdRelSet();
+		keyIt->second = IdRelSet();
 		wordEntry->vids.shrink_to_fit();
 		idsetcnt += wordEntry->vids.heap_size();
 	}
@@ -195,11 +196,14 @@ void makeDocsDistribution(ContextT* ctxs, size_t ctxsCount, size_t docs) {
 }
 
 template <typename IdCont>
-size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithread, intrusive_ptr<const ISplitter> textSplitter) {
+size_t DataProcessor<IdCont>::buildWordsMap(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal,
+											words_map& words_um, bool multithreaded, intrusive_ptr<const ISplitter> textSplitter,
+											std::vector<h_vector<float, 3>>& wordsCounts) {
 	ExceptionPtrWrapper exwr;
-	uint32_t maxIndexWorkers = getMaxBuildWorkers(multithread);
+	uint32_t maxIndexWorkers = getMaxBuildWorkers(multithreaded);
 	size_t szCnt = 0;
-	auto& vdocsTexts = holder_.vdocsTexts;
+	wordsCounts.resize(vdocsTexts.size());
+
 	struct [[nodiscard]] context {
 		words_map words_um;
 		std::thread thread;
@@ -214,37 +218,13 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	};
 	std::unique_ptr<context[]> ctxs(new context[maxIndexWorkers]);
 	makeDocsDistribution(ctxs.get(), maxIndexWorkers, vdocsTexts.size());
-#ifdef RX_WITH_STDLIB_DEBUG
-	size_t to = 0;
-	auto printDistribution = [&] {
-		std::cerr << "Distribution:\n";
-		for (uint32_t i = 0; i < maxIndexWorkers; ++i) {
-			std::cerr << fmt::format("{}: {{ from: {}; to: {} }}", i, ctxs[i].from, ctxs[i].to) << std::endl;
-		}
-	};
-	for (uint32_t i = 0; i < maxIndexWorkers; ++i) {
-		if (to == vdocsTexts.size() && (ctxs[i].from || ctxs[i].to)) {
-			printDistribution();
-			assertrx_dbg(!ctxs[i].from);
-			assertrx_dbg(!ctxs[i].to);
-		} else if (ctxs[i].from > ctxs[i].to || (ctxs[i].from && ctxs[i].from != to)) {
-			printDistribution();
-			assertrx_dbg(ctxs[i].from <= ctxs[i].to);
-			assertrx_dbg(ctxs[i].from == to);
-		}
-		to = ctxs[i].to ? ctxs[i].to : to;
-	}
-	assertrx_dbg(ctxs[0].from == 0);
-	assertrx_dbg(to == vdocsTexts.size());
-#endif	// RX_WITH_STDLIB_DEBUG
+
 	ThreadsContainer bgThreads;
 
 	auto& cfg = holder_.cfg_;
-	auto& vdocs = holder_.vdocs_;
 	const size_t fieldscount = fieldSize_;
-	size_t offset = holder_.vdocsOffset_;
 	// build words map parallel in maxIndexWorkers threads
-	auto worker = [this, &ctxs, &vdocsTexts, offset, fieldscount, &cfg, &vdocs, &textSplitter](int i) {
+	auto worker = [this, &ctxs, &vdocsTexts, &vdocsIds, fieldscount, &cfg, &wordsCounts, &textSplitter](int i) {
 		auto ctx = &ctxs[i];
 		std::vector<std::string_view> virtualWords;
 		const size_t start = ctx->from;
@@ -254,12 +234,11 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 		std::string wordWithoutDelims;
 		auto task = textSplitter->CreateTask();
 		for (VDocIdType j = start; j < fin; ++j) {
-			const size_t vdocId = offset + j;
-			auto& vdoc = vdocs[vdocId];
-			vdoc.wordsCount.resize(fieldscount, 0.0);
-			vdoc.mostFreqWordCount.resize(fieldscount, 0.0);
-
+			const size_t vdocId = vdocsIds[j];
 			auto& vdocsText = vdocsTexts[j];
+			wordsCounts[j].resize(0);
+			wordsCounts[j].resize(fieldscount, 0.0);
+
 			for (size_t idx = 0, arrayIdx = 0, sz = vdocsText.size(); idx < sz; ++idx, ++arrayIdx) {
 				task->SetText(vdocsText[idx].first);
 				const unsigned field = vdocsText[idx].second;
@@ -270,13 +249,12 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 				assertrx_throw(field < fieldscount);
 
 				const std::vector<WordWithPos>& occurences = task->GetResults();
-				vdoc.wordsCount[field] = 0.0;
 
 				for (const auto& occurence : occurences) {
 					if (!IsFtWordIndexable(occurence.word)) {
 						continue;
 					}
-					++vdoc.wordsCount[field];
+					++wordsCounts[j][field];
 					const auto whash = h(occurence.word);
 					if (cfg->stopWords.find(occurence.word, whash) != cfg->stopWords.end()) {
 						continue;
@@ -291,13 +269,11 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 
 					auto [idxIt, emplaced] = ctx->words_um.try_emplace_prehashed(whash, occurence.word);
 					(void)emplaced;
-					const int mfcnt = idxIt->second.vids_.Add(vdocId, occurence.pos, field, arrayIdx);
-					if (mfcnt > vdoc.mostFreqWordCount[field]) {
-						vdoc.mostFreqWordCount[field] = mfcnt;
-					}
+					idxIt->second.Add(vdocId, occurence.pos, field, arrayIdx);
 
 					if (enableNumbersSearch && is_number(occurence.word)) {
-						buildVirtualWord(occurence.word, ctx->words_um, vdocId, field, arrayIdx, occurence.pos, virtualWords);
+						buildVirtualWord(occurence.word, ctx->words_um, vdocId, wordsCounts[j], field, arrayIdx, occurence.pos,
+										 virtualWords);
 					}
 				}
 			}
@@ -319,21 +295,10 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 			continue;
 		}
 		for (auto& it : ctx.words_um) {
-#if (defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)) && !defined(NDEBUG)
-			const auto fBeforeMove = it.first;
-			const auto sBeforeMove = it.second.MakeCopy();
-			const auto sCapacityBeforeMove = it.second.vids_.capacity();
-#endif	// (defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)) && !defined(NDEBUG)
 			auto [idxIt, emplaced] = words_um.try_emplace(std::move(it.first), std::move(it.second));
 			if (!emplaced) {
-#if (defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)) && !defined(NDEBUG)
-				// Make sure, that try_emplace did not moved the values
-				assertrx(it.first == fBeforeMove);
-				assertrx(it.second.vids_.size() == sBeforeMove.vids_.size());
-				assertrx(it.second.vids_.capacity() == sCapacityBeforeMove);
-#endif	// (defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)) && !defined(NDEBUG)
-				auto& resultVids = idxIt->second.vids_;
-				auto& newVids = it.second.vids_;
+				auto& resultVids = idxIt->second;
+				auto& newVids = it.second;
 				resultVids.insert(resultVids.end(), std::make_move_iterator(newVids.begin()), std::make_move_iterator(newVids.end()));
 			}
 		}
@@ -348,52 +313,36 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	}
 	exwr.RethrowException();
 
-	bgThreads.Add([this]() noexcept { std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts); });
-	bgThreads.Add([this]() noexcept { std::vector<std::unique_ptr<std::string>>().swap(holder_.bufStrs_); });
-
-	// Calculate avg words count per document for bm25 calculation
-	if (vdocs.size()) {
-		holder_.avgWordsCount_.resize(fieldscount, 0);
-		for (unsigned i = 0; i < fieldscount; i++) {
-			auto& avgRef = holder_.avgWordsCount_[i];
-			for (auto& vdoc : vdocs) {
-				avgRef += vdoc.wordsCount[i];
-			}
-			avgRef /= vdocs.size();
-		}
-	}
 	// Check and print potential stop words
+
 	if (holder_.cfg_->logLevel >= LogInfo) {
 		WrSerializer out;
 		for (auto& w : words_um) {
-			if (w.second.vids_.size() > vdocs.size() / 5 || int64_t(w.second.vids_.size()) > holder_.cfg_->mergeLimit) {
-				out << w.first << "(" << w.second.vids_.size() << ") ";
+			if ((numDocsTotal > 1000 && w.second.size() > numDocsTotal / 5) || int64_t(w.second.size()) > holder_.cfg_->mergeLimit) {
+				out << w.first << "(" << w.second.size() << ") ";
 			}
 		}
-		logFmt(LogInfo, "Total documents: {}. Potential stop words (with corresponding docs count): {}", vdocs.size(), out.Slice());
+		logFmt(LogInfo, "Total documents: {}. Potential stop words (with corresponding docs count): {}", numDocsTotal, out.Slice());
 	}
+
+	bgThreads.Add([&vdocsTexts]() noexcept { VDocsTexts().swap(vdocsTexts); });
 
 	return szCnt;
 }
 
 template <typename IdCont>
-void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, unsigned field,
-											 unsigned arrayIdx, size_t insertPos, std::vector<std::string_view>& container) {
-	auto& vdoc(holder_.vdocs_[docType]);
+void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType vdocId,
+											 h_vector<float, 3>& vdocWordsCounts, unsigned field, unsigned arrayIdx, size_t insertPos,
+											 std::vector<std::string_view>& container) {
 	std::ignore = NumToText::convert(word, container);
 	for (const auto numberWord : container) {
 		if (!IsFtWordIndexable(numberWord)) {
 			continue;
 		}
-		WordEntry wentry;
-		auto idxIt = words_um.emplace(numberWord, std::move(wentry)).first;
-		const int mfcnt = idxIt->second.vids_.Add(docType, insertPos, field, arrayIdx);
-		assertrx_throw(vdoc.mostFreqWordCount.size() > field);
-		assertrx_throw(vdoc.wordsCount.size() > field);
-		if (mfcnt > vdoc.mostFreqWordCount[field]) {
-			vdoc.mostFreqWordCount[field] = mfcnt;
-		}
-		++vdoc.wordsCount[field];
+		auto idxIt = words_um.emplace(numberWord, IdRelSet()).first;
+		idxIt->second.Add(vdocId, insertPos, field, arrayIdx);
+		assertrx_dbg(vdocWordsCounts.size() > field);
+		++vdocWordsCounts[field];
 	}
 }
 

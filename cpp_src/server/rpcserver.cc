@@ -1063,8 +1063,12 @@ Error RPCServer::ExecSQL(cproto::Context& ctx, p_string querySql, int flags, int
 		return ret;
 	}
 	auto tmVersions = pack2vec(tmVersionsPck);
-	ResultFetchOpts opts{
-		.flags = flags, .tmVersions = tmVersions, .fetchOffset = 0, .fetchLimit = unsigned(limit), .withAggregations = true};
+	ResultFetchOpts opts{.flags = flags,
+						 .tmVersions = tmVersions,
+						 .fetchOffset = 0,
+						 .fetchLimit = unsigned(limit),
+						 .withAggregations = true,
+						 .allowIncompleteTmVersions = true};
 
 	return sendResults(ctx, *qres, id, opts);
 }

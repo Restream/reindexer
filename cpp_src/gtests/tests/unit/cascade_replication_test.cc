@@ -1092,7 +1092,7 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 		}
 	}
 }
-#endif
+#endif	// !defined(REINDEX_WITH_TSAN)
 
 TEST_F(CascadeReplicationApi, WriteIntoSlaveNsAfterReconfiguration) {
 	// Check if it is possible to write in slave's ns after removing this ns from replication ns list
@@ -1340,7 +1340,17 @@ TEST_F(CascadeReplicationApi, ForceSyncStress) {
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "ForceSyncStress"));
 	const std::string kDbPathMaster(kBaseDbPath + "/test_");
 	const int port = 9999;
+#if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
+	constexpr int kMaxId = 30000;
+	constexpr int kNs1Size = 1000;
+	constexpr int kNs2Size = 2000;
+	constexpr int kTxSize = 50;
+#else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 	constexpr int kMaxId = 300000;
+	constexpr int kNs1Size = 6000;
+	constexpr int kNs2Size = 8000;
+	constexpr int kTxSize = 300;
+#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 	std::atomic<bool> done{false};
 	constexpr std::string_view kJsonCfgNss = R"=({
 		"namespaces": [
@@ -1388,14 +1398,14 @@ TEST_F(CascadeReplicationApi, ForceSyncStress) {
 		TestCout() << "Filling namespaces..." << std::endl;
 		std::thread th1([&] {
 			TestNamespace1 ns1(cluster.Get(0), nsName1);
-			for (int i = 0; i < 6000; ++i) {
+			for (int i = 0; i < kNs1Size; ++i) {
 				auto err = addRow(leader, ns1.nsName_, i);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
 		});
 		std::thread th2([&] {
 			TestNamespace1 ns2(cluster.Get(0), nsName2);
-			for (int i = 0; i < 8000; ++i) {
+			for (int i = 0; i < kNs2Size; ++i) {
 				auto err = addRow(leader, ns2.nsName_, i);
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
@@ -1451,7 +1461,7 @@ TEST_F(CascadeReplicationApi, ForceSyncStress) {
 		int counter = 0;
 		while (err.ok()) {
 			auto from = rand() % kMaxId;
-			auto tx = createTx(follower, ns, from, from + 300);
+			auto tx = createTx(follower, ns, from, from + kTxSize);
 			err = tx.Status();
 			if (err.ok()) {
 				client::QueryResults qr;

@@ -19,15 +19,25 @@
 #include "estl/shared_mutex.h"
 #include "estl/spin_lock.h"
 
+#include "tools/clock.h"
 #include "tools/flagguard.h"
 #include "tools/float_comparison.h"
 #include "tools/logger.h"
-#include "tools/clock.h"
+#include "tools/unaligned.h"
 
 #include "vendor/hopscotch/hopscotch_sc_map.h"
 
 namespace hnswlib {
 static_assert(sizeof(linklistsizeint) == sizeof(tableint), "Internal link lists logic requires the same size for this types");
+
+RX_ALWAYS_INLINE tableint readLinkListNeighbor(const void* linkList0, size_t neighborIdx) noexcept {
+	return reindexer::unaligned::read<tableint>(static_cast<const char*>(linkList0) + sizeof(linklistsizeint) +
+												neighborIdx * sizeof(tableint));
+}
+
+RX_ALWAYS_INLINE void writeLinkListNeighbor(void* linkList0, size_t neighborIdx, tableint value) noexcept {
+	reindexer::unaligned::write<tableint>(static_cast<char*>(linkList0) + sizeof(linklistsizeint) + neighborIdx * sizeof(tableint), value);
+}
 
 enum class [[nodiscard]] ExpectConcurrentUpdates : bool { No, Yes };
 
@@ -498,6 +508,9 @@ public:
 	bool IsQuantized() const noexcept override { return static_cast<bool>(quantizer_); }
 
 	auto prepareData(const float* data, float norm = 1.f) const {
+		// for restoring original vector length and correct quantization
+		norm = 1.f / norm;
+
 		auto deleter = [](const ValueT* ptr) noexcept {
 			if constexpr (std::is_same_v<ValueT, uint8_t>) {
 				delete[] ptr;
@@ -572,9 +585,7 @@ public:
 	};
 
 	inline labeltype ExternalLabel(tableint internal_id) const override {
-		labeltype return_label;
-		memcpy(&return_label, (data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_), sizeof(labeltype));
-		return return_label;
+		return reindexer::unaligned::read<labeltype>(data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_);
 	}
 
 	uint64_t GetHash(labeltype label) const override {
@@ -590,9 +601,7 @@ public:
 	}
 
 	inline uint64_t getHashByInternalId(tableint internal_id) const {
-		uint64_t hash = 0;
-		memcpy(&hash, (data_level0_memory_ + internal_id * size_data_per_element_ + hash_offset_), sizeof(hash));
-		return hash;
+		return reindexer::unaligned::read<uint64_t>(data_level0_memory_ + internal_id * size_data_per_element_ + hash_offset_);
 	}
 
 	inline void setHashByInternalId(tableint internal_id, uint64_t hash) const {
@@ -678,29 +687,35 @@ public:
 
 			LockGuard lock{link_list_locks_[curNodeNum]};
 
-			int* data;	// = reinterpret_cast<int*>(linkList0_ + curNodeNum * size_links_per_element0_);
-			if (layer == 0) {
-				data = reinterpret_cast<int*>(get_linklist0(curNodeNum));
-			} else {
-				data = reinterpret_cast<int*>(get_linklist(curNodeNum, layer));
-				//                    data = (int *) (linkLists_[curNodeNum] + (layer - 1) * size_links_per_element_);
+			const void* linkList0 = layer == 0 ? get_linklist0(curNodeNum) : get_linklist(curNodeNum, layer);
+			const size_t size = getListCount(static_cast<const linklistsizeint*>(linkList0));
+			const tableint firstNeighbor = size > 0 ? readLinkListNeighbor(linkList0, 0) : tableint(0);
+			const tableint secondNeighbor = size > 1 ? readLinkListNeighbor(linkList0, 1) : tableint(0);
+#if defined(REINDEXER_WITH_SSE)
+			if (size > 0) {
+				_mm_prefetch(reinterpret_cast<const char*>(visited_array + firstNeighbor), _MM_HINT_T0);
+				if (firstNeighbor + 64 < max_elements_) {
+					_mm_prefetch(reinterpret_cast<const char*>(visited_array + firstNeighbor + 64), _MM_HINT_T0);
+				}
+				_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(firstNeighbor)), _MM_HINT_T0);
+				if (size > 1) {
+					_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(secondNeighbor)), _MM_HINT_T0);
+				}
 			}
-			size_t size = getListCount(reinterpret_cast<linklistsizeint*>(data));
-			tableint* datal = reinterpret_cast<tableint*>(data + 1);
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
-			_mm_prefetch(reinterpret_cast<const char*>(visited_array + *(data + 1)), _MM_HINT_T0);
-			_mm_prefetch(reinterpret_cast<const char*>(visited_array + *(data + 1) + 64), _MM_HINT_T0);
-			_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(*datal)), _MM_HINT_T0);
-			_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(*(datal + 1))), _MM_HINT_T0);
-#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+#endif	// defined(REINDEXER_WITH_SSE)
 
 			for (size_t j = 0; j < size; j++) {
-				tableint candidate_id = *(datal + j);
+				const tableint candidate_id =
+					j == 0 ? firstNeighbor : (j == 1 && size > 1) ? secondNeighbor : readLinkListNeighbor(linkList0, j);
 //                    if (candidate_id == 0) continue;
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
-				_mm_prefetch(reinterpret_cast<const char*>(visited_array + *(datal + j + 1)), _MM_HINT_T0);
-				_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(*(datal + j + 1))), _MM_HINT_T0);
-#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+#if defined(REINDEXER_WITH_SSE)
+				if (j + 1 < size) {
+					const tableint nextNeighbor =
+						j == 0 && size > 1 ? secondNeighbor : readLinkListNeighbor(linkList0, j + 1);
+					_mm_prefetch(reinterpret_cast<const char*>(visited_array + nextNeighbor), _MM_HINT_T0);
+					_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(nextNeighbor)), _MM_HINT_T0);
+				}
+#endif	// defined(REINDEXER_WITH_SSE)
 				if (visited_array[candidate_id] == visited_array_tag) {
 					continue;
 				}
@@ -733,107 +748,230 @@ public:
 		return top_candidates;
 	}
 
-	// bare_bone_search means there is no check for deletions and stop condition is ignored in return of extra performance
-	template <bool bare_bone_search = true, bool collect_metrics = false>
-	PriorityQueue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> searchBaseLayerST(
-		tableint ep_id, const ValueT* data_point, float normCoef, size_t ef) const {
-		VisitedList* vl = visited_list_pool_->getFreeVisitedList();
-		vl_type* visited_array = vl->mass;
-		vl_type visited_array_tag = vl->curV;
+	struct [[nodiscard]] Layer0SearchState {
+	private:
+		struct [[nodiscard]] VisitedListPoolDeleter {
+			VisitedListPool* pool = nullptr;
+			void operator()(VisitedList* vl) const noexcept {
+				if (vl && pool) {
+					pool->releaseVisitedList(vl);
+				}
+			}
+		};
+		using VisitedListPtr = std::unique_ptr<VisitedList, VisitedListPoolDeleter>;
 
+	public:
 		using pair_t = std::pair<float, tableint>;
-		std::vector<pair_t> container1, container2;
-		container1.reserve(ef);
-		container2.reserve(ef);
-		PriorityQueue<pair_t, std::vector<pair_t>, CompareByFirst> top_candidates(CompareByFirst(), std::move(container1));
-		PriorityQueue<pair_t, std::vector<pair_t>, CompareByFirst> candidate_set(CompareByFirst(), std::move(container2));
+		using MaxHeapQueue = PriorityQueue<pair_t, std::vector<pair_t>, CompareByFirst>;
 
-		float lowerBound;
-		if (bare_bone_search || (!IsMarkedDeleted(ep_id))) {
+		enum class [[nodiscard]] Streaming : int { Disabled, Enabled };
+		Streaming streamingSearch = Streaming::Disabled;
+
+		void InitVisitedList(VisitedListPool* pool) { visited = {pool->getFreeVisitedList(), {pool}}; }
+		VisitedListPtr visited;
+		MaxHeapQueue top_candidates{CompareByFirst(), {}}, top_candidates_extras{CompareByFirst(), {}};
+		MaxHeapQueue candidate_set{CompareByFirst(), {}};
+		float lowerBound = std::numeric_limits<float>::max();
+		size_t ef = 0;
+		bool bareBoneSearch = true;
+	};
+
+	struct [[nodiscard]] StreamingSearchSessionImpl final : public StreamingSearchSession::Impl {
+		StreamingSearchSessionImpl() noexcept = default;
+		StreamingSearchSessionImpl(const StreamingSearchSessionImpl&) = delete;
+		StreamingSearchSessionImpl& operator=(const StreamingSearchSessionImpl&) = delete;
+		StreamingSearchSessionImpl(StreamingSearchSessionImpl&&) noexcept = default;
+		StreamingSearchSessionImpl& operator=(StreamingSearchSessionImpl&&) noexcept = default;
+
+	private:
+		template <typename, Synchronization>
+		friend class HierarchicalNSWImpl;
+
+		const HierarchicalNSWInterface<synchronization>* graph_ = nullptr;
+		Layer0SearchState state_;
+
+		using QueryHolderT = std::unique_ptr<const ValueT, void (*)(const ValueT*)>;
+		QueryHolderT queryHolder_ = QueryHolderT{nullptr, [](const ValueT*) {}};
+		const ValueT* queryData_ = nullptr;
+		float normCoef_ = 1.f;
+	};
+
+	tableint getLayer0EntryPoint(const ValueT* query_data, float normCoef) const {
+		tableint currObj = enterpoint_node_;
+		float curdist = normCoef * fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
+
+		for (int level = maxlevel_; level > 0; level--) {
+			bool changed = true;
+			while (changed) {
+				changed = false;
+				const void* linkList0 = get_linklist(currObj, level);
+				const int size = getListCount(static_cast<const linklistsizeint*>(linkList0));
+				metric_hops++;
+				metric_distance_computations += size;
+
+				for (int i = 0; i < size; i++) {
+					const tableint cand = readLinkListNeighbor(linkList0, i);
+					if (cand >= max_elements_) {
+						throw std::runtime_error("cand error");
+					}
+					float d = normCoef * fstdistfunc_(query_data, getDataByInternalId(cand), cand);
+					if (d < curdist) {
+						curdist = d;
+						currObj = cand;
+						changed = true;
+					}
+				}
+			}
+		}
+		return currObj;
+	}
+
+	void initLayer0SearchState(Layer0SearchState& state, tableint ep_id, const ValueT* data_point, float normCoef, size_t ef,
+							   bool bareBoneSearch) const {
+		state.ef = ef;
+		state.bareBoneSearch = bareBoneSearch;
+		state.InitVisitedList(visited_list_pool_.get());
+		vl_type* visited_array = state.visited->mass;
+		const vl_type visited_array_tag = state.visited->curV;
+
+		std::vector<typename Layer0SearchState::pair_t> vec1, vec2, vec3;
+		vec1.reserve(ef);
+		vec2.reserve(ef);
+		state.top_candidates = typename Layer0SearchState::MaxHeapQueue{CompareByFirst(), std::move(vec1)};
+		state.candidate_set = typename Layer0SearchState::MaxHeapQueue{CompareByFirst(), std::move(vec2)};
+		state.top_candidates_extras = typename Layer0SearchState::MaxHeapQueue{CompareByFirst(), std::move(vec3)};
+
+		if (bareBoneSearch || (!IsMarkedDeleted(ep_id))) {
 			auto ep_data = getDataByInternalId(ep_id);
 			float dist = normCoef * fstdistfunc_(data_point, ep_data, ep_id);
-			lowerBound = dist;
-			top_candidates.emplace(dist, ep_id);
-			candidate_set.emplace(-dist, ep_id);
+			state.lowerBound = dist;
+			if (state.streamingSearch == Layer0SearchState::Streaming::Disabled) {
+				state.top_candidates.emplace(dist, ep_id);
+			}
+			state.candidate_set.emplace(-dist, ep_id);
 		} else {
-			lowerBound = std::numeric_limits<float>::max();
-			candidate_set.emplace(-lowerBound, ep_id);
+			state.lowerBound = std::numeric_limits<float>::max();
+			state.candidate_set.emplace(-state.lowerBound, ep_id);
 		}
 
 		visited_array[ep_id] = visited_array_tag;
+	}
 
-		while (!candidate_set.empty()) {
-			std::pair<float, tableint> current_node_pair = candidate_set.top();
-			float candidate_dist = -current_node_pair.first;
+	bool layer0ShouldStopBeforePop(const Layer0SearchState& state) const {
+		if (state.candidate_set.empty()) {
+			return true;
+		}
+		const float candidate_dist = -state.candidate_set.top().first;
+		if (state.bareBoneSearch && state.streamingSearch == Layer0SearchState::Streaming::Disabled) {
+			return candidate_dist > state.lowerBound;
+		}
+		return candidate_dist > state.lowerBound && state.top_candidates.size() >= state.ef;
+	}
 
-			bool flag_stop_search;
-			if (bare_bone_search) {
-				flag_stop_search = candidate_dist > lowerBound;
-			} else {
-				flag_stop_search = candidate_dist > lowerBound && top_candidates.size() == ef;
+	template <bool collect_metrics = false>
+	void runLayer0Step(Layer0SearchState& state, const ValueT* data_point, float normCoef) const {
+		assertrx(!state.candidate_set.empty());
+
+		vl_type* visited_array = state.visited->mass;
+		const vl_type visited_array_tag = state.visited->curV;
+
+		std::pair<float, tableint> current_node_pair = state.candidate_set.top();
+		state.candidate_set.pop();
+
+		if (state.streamingSearch == Layer0SearchState::Streaming::Enabled) {
+			const float dist = -current_node_pair.first;
+			const tableint id = current_node_pair.second;
+			if (state.bareBoneSearch || !IsMarkedDeleted(id)) {
+				if (state.top_candidates.size() < state.ef) {
+					state.top_candidates.emplace(dist, id);
+				} else if (state.lowerBound > dist) {
+					state.top_candidates_extras.push(state.top_candidates.replace_top(dist, id));
+				}
+				state.lowerBound = state.top_candidates.top().first;
 			}
-			if (flag_stop_search) {
-				break;
+		}
+
+		const tableint current_node_id = current_node_pair.second;
+		const void* linkList0 = get_linklist0(current_node_id);
+		const size_t size = getListCount(static_cast<const linklistsizeint*>(linkList0));
+		if constexpr (collect_metrics) {
+			metric_hops++;
+			metric_distance_computations += size;
+		}
+
+		const tableint firstNeighbor = size > 0 ? readLinkListNeighbor(linkList0, 0) : tableint(0);
+		const tableint secondNeighbor = size > 1 ? readLinkListNeighbor(linkList0, 1) : tableint(0);
+#if defined(REINDEXER_WITH_SSE)
+		if (size > 0) {
+			_mm_prefetch(reinterpret_cast<const char*>(visited_array + firstNeighbor), _MM_HINT_T0);
+			if (firstNeighbor + 64 < max_elements_) {
+				_mm_prefetch(reinterpret_cast<const char*>(visited_array + firstNeighbor + 64), _MM_HINT_T0);
 			}
-			candidate_set.pop();
-
-			tableint current_node_id = current_node_pair.second;
-			int* data = reinterpret_cast<int*>(get_linklist0(current_node_id));
-			size_t size = getListCount(reinterpret_cast<linklistsizeint*>(data));
-			//                bool cur_node_deleted = IsMarkedDeleted(current_node_id);
-			if (collect_metrics) {
-				metric_hops++;
-				metric_distance_computations += size;
+			_mm_prefetch(data_level0_memory_ + firstNeighbor * size_data_per_element_ + offsetData_, _MM_HINT_T0);
+			if (size > 1) {
+				_mm_prefetch(static_cast<const char*>(linkList0) + 2 * sizeof(int), _MM_HINT_T0);
 			}
+		}
+#endif
 
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
-			_mm_prefetch(reinterpret_cast<const char*>(visited_array + *(data + 1)), _MM_HINT_T0);
-			_mm_prefetch(reinterpret_cast<const char*>(visited_array + *(data + 1) + 64), _MM_HINT_T0);
-			_mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
-			_mm_prefetch(reinterpret_cast<const char*>(data + 2), _MM_HINT_T0);
-#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+		for (size_t j = 1; j <= size; j++) {
+			const size_t neighborIdx = j - 1;
+			const tableint candidate_id = neighborIdx == 0
+												? firstNeighbor
+												: (neighborIdx == 1 && size > 1) ? secondNeighbor
+																				   : readLinkListNeighbor(linkList0, neighborIdx);
+#if defined(REINDEXER_WITH_SSE)
+			if (j < size) {
+				const tableint nextNeighbor =
+					j == 1 && size > 1 ? secondNeighbor : readLinkListNeighbor(linkList0, j);
+				_mm_prefetch(reinterpret_cast<const char*>(visited_array + nextNeighbor), _MM_HINT_T0);
+				_mm_prefetch(data_level0_memory_ + nextNeighbor * size_data_per_element_ + offsetData_, _MM_HINT_T0);
+			}
+#endif
+			if (!(visited_array[candidate_id] == visited_array_tag)) {
+				visited_array[candidate_id] = visited_array_tag;
 
-			for (size_t j = 1; j <= size; j++) {
-				int candidate_id = *(data + j);
-//                    if (candidate_id == 0) continue;
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
-				_mm_prefetch(reinterpret_cast<const char*>(visited_array + *(data + j + 1)), _MM_HINT_T0);
-				_mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
-							 _MM_HINT_T0);	////////////
-#endif										// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
-				if (!(visited_array[candidate_id] == visited_array_tag)) {
-					visited_array[candidate_id] = visited_array_tag;
+				const ValueT* currObj1 = getDataByInternalId(candidate_id);
+				const float dist = normCoef * fstdistfunc_(data_point, currObj1, candidate_id);
 
-					const ValueT* currObj1 = getDataByInternalId(candidate_id);
-					float dist = normCoef * fstdistfunc_(data_point, currObj1, candidate_id);
-					bool flag_consider_candidate;
-					flag_consider_candidate = top_candidates.size() < ef || lowerBound > dist;
+				if (state.streamingSearch == Layer0SearchState::Streaming::Enabled) {
+					state.candidate_set.emplace(-dist, candidate_id);
+				} else {
+					const bool flag_consider_candidate = state.top_candidates.size() < state.ef || state.lowerBound > dist;
 
 					if (flag_consider_candidate) {
-						candidate_set.emplace(-dist, candidate_id);
+						state.candidate_set.emplace(-dist, candidate_id);
 #if REINDEXER_WITH_SSE
-						_mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_,
-									 _MM_HINT_T0);	////////////////////////
-#endif												// REINDEXER_WITH_SSE
+						_mm_prefetch(data_level0_memory_ + state.candidate_set.top().second * size_data_per_element_, _MM_HINT_T0);
+#endif
 
-						if (bare_bone_search || !IsMarkedDeleted(candidate_id)) {
-							if (top_candidates.size() < ef) {
-								top_candidates.emplace(dist, candidate_id);
+						if (state.bareBoneSearch || !IsMarkedDeleted(candidate_id)) {
+							if (state.top_candidates.size() < state.ef) {
+								state.top_candidates.emplace(dist, candidate_id);
 							} else {
-								top_candidates.replace_top(dist, candidate_id);
+								state.top_candidates.replace_top(dist, candidate_id);
 							}
 						}
 
-						if (!top_candidates.empty()) {
-							lowerBound = top_candidates.top().first;
+						if (!state.top_candidates.empty()) {
+							state.lowerBound = state.top_candidates.top().first;
 						}
 					}
 				}
 			}
 		}
+	}
 
-		visited_list_pool_->releaseVisitedList(vl);
-		return top_candidates;
+	// bare_bone_search means there is no check for deletions and stop condition is ignored in return of extra performance
+	template <bool bare_bone_search = true, bool collect_metrics = false>
+	PriorityQueue<std::pair<float, tableint>, std::vector<std::pair<float, tableint>>, CompareByFirst> searchBaseLayerST(
+		tableint ep_id, const ValueT* data_point, float normCoef, size_t ef) const {
+		Layer0SearchState state;
+		initLayer0SearchState(state, ep_id, data_point, normCoef, ef, bare_bone_search);
+		while (!layer0ShouldStopBeforePop(state)) {
+			runLayer0Step<collect_metrics>(state, data_point, normCoef);
+		}
+		return std::move(state.top_candidates);
 	}
 
 	template <typename LockerT, ExpectConcurrentUpdates concurrentUpdates>
@@ -936,20 +1074,19 @@ public:
 				ll_cur = get_linklist(cur_c, level);
 			}
 
-			if (*ll_cur && !isUpdate) {
+			if (getListCount(ll_cur) != 0 && !isUpdate) {
 				throw std::runtime_error("The newly inserted element should have blank link list");
 			}
 			setListCount(ll_cur, selectedNeighbors.size());
-			tableint* data = reinterpret_cast<tableint*>(ll_cur + 1);
 			for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
-				if (data[idx] && !isUpdate) {
+				if (readLinkListNeighbor(ll_cur, idx) != 0 && !isUpdate) {
 					throw std::runtime_error("Possible memory corruption");
 				}
 				if (level > element_levels_[selectedNeighbors[idx]]) {
 					throw std::runtime_error("Trying to make a link on a non-existent level");
 				}
 
-				data[idx] = selectedNeighbors[idx];
+				writeLinkListNeighbor(ll_cur, idx, selectedNeighbors[idx]);
 			}
 		}
 
@@ -975,12 +1112,10 @@ public:
 				throw std::runtime_error("Trying to make a link on a non-existent level");
 			}
 
-			tableint* data = reinterpret_cast<tableint*>(ll_other + 1);
-
 			bool is_cur_c_present = false;
 			if (isUpdate) {
 				for (size_t j = 0; j < sz_link_list_other; j++) {
-					if (data[j] == cur_c) {
+					if (readLinkListNeighbor(ll_other, j) == cur_c) {
 						is_cur_c_present = true;
 						break;
 					}
@@ -991,7 +1126,7 @@ public:
 			// connections or run the heuristics.
 			if (!is_cur_c_present) {
 				if (sz_link_list_other < Mcurmax) {
-					data[sz_link_list_other] = cur_c;
+					writeLinkListNeighbor(ll_other, sz_link_list_other, cur_c);
 					setListCount(ll_other, sz_link_list_other + 1);
 				} else {
 					using SharedLock =
@@ -1009,17 +1144,17 @@ public:
 					candidates.emplace(d_max, cur_c);
 
 					for (size_t j = 0; j < sz_link_list_other; j++) {
-						const auto id1 = data[j];
+						const auto id1 = readLinkListNeighbor(ll_other, j);
 						SharedLock lck1{data_updates_locks_[std::min(id1, id2)]};
 						SharedLock lck2{data_updates_locks_[std::max(id1, id2)], reindexer::SkipLock(id1 == id2)};
-						candidates.emplace(fstdistfunc_(getDataByInternalId(data[j]), id1, getDataByInternalId(id2), id2), data[j]);
+						candidates.emplace(fstdistfunc_(getDataByInternalId(id1), id1, getDataByInternalId(id2), id2), id1);
 					}
 
 					getNeighborsByHeuristic2<LockerT, concurrentUpdates>(candidates, Mcurmax);
 
 					int indx = 0;
 					while (candidates.size() > 0) {
-						data[indx] = candidates.top().second;
+						writeLinkListNeighbor(ll_other, indx, candidates.top().second);
 						candidates.pop();
 						indx++;
 					}
@@ -1095,11 +1230,10 @@ public:
 			static_assert(sizeof(linklistsizeint) == sizeof(tableint), "Expecting equality of those sizes here");
 			// Write links and label; skip actual data
 			const char* cur_element_ptr = data_level0_memory_ + i * size_data_per_element_;
-			const auto* linkList0 = reinterpret_cast<const tableint*>(cur_element_ptr);
-			const linklistsizeint list0Size = getListCount(reinterpret_cast<const linklistsizeint*>(linkList0)) + 1;
-			const bool isDeleted = isListMarkedDeleted(linkList0);
+			const linklistsizeint list0Size = getListCount(reinterpret_cast<const linklistsizeint*>(cur_element_ptr)) + 1;
+			const bool isDeleted = isListMarkedDeleted(reinterpret_cast<const linklistsizeint*>(cur_element_ptr));
 			for (size_t j = 0; j < list0Size; ++j) {
-				writer.PutVarUInt(*(linkList0++));
+				writer.PutVarUInt(reindexer::unaligned::read<tableint>(cur_element_ptr + j * sizeof(tableint)));
 			}
 			if (isDeleted) {
 				auto data = cur_element_ptr + offsetData_;
@@ -1113,8 +1247,7 @@ public:
 					writer.PutVString(std::string_view(data, dim * sizeof(float)));
 				}
 			} else {
-				labeltype label;
-				std::memcpy(&label, (cur_element_ptr + label_offset_), sizeof(labeltype));
+				labeltype label = reindexer::unaligned::read<labeltype>(cur_element_ptr + label_offset_);
 				writer.AppendPKByID(label);
 			}
 		}
@@ -1236,11 +1369,7 @@ public:
 	}
 	bool IsMarkedDeleted(tableint internalId) const noexcept override { return isListMarkedDeleted(get_linklist0(internalId)); }
 
-	unsigned short int getListCount(const linklistsizeint* ptr) const {
-		unsigned short int size = 0;
-		std::memcpy(&size, ptr, sizeof(size));
-		return size;
-	}
+	unsigned short int getListCount(const linklistsizeint* ptr) const { return reindexer::unaligned::read<unsigned short int>(ptr); }
 
 	void setListCount(linklistsizeint* ptr, unsigned short int size) const { std::memcpy(ptr, &size, sizeof(size)); }
 
@@ -1446,9 +1575,8 @@ public:
 					ll_cur = get_linklist_at_level(neigh, layer);
 					size_t candSize = candidates.size();
 					setListCount(ll_cur, candSize);
-					tableint* data = reinterpret_cast<tableint*>(ll_cur + 1);
 					for (size_t idx = 0; idx < candSize; idx++) {
-						data[idx] = candidates.top().second;
+						writeLinkListNeighbor(ll_cur, idx, candidates.top().second);
 						candidates.pop();
 					}
 				}
@@ -1474,19 +1602,27 @@ public:
 				bool changed = true;
 				while (changed) {
 					changed = false;
-					unsigned int* data;
 					LockGuard lock{link_list_locks_[currObj]};
-					data = get_linklist_at_level(currObj, level);
-					int size = getListCount(data);
-					tableint* datal = reinterpret_cast<tableint*>(data + 1);
+					const void* linkList0 = get_linklist_at_level(currObj, level);
+					const int size = getListCount(static_cast<const linklistsizeint*>(linkList0));
+					const tableint firstNeighbor = size > 0 ? readLinkListNeighbor(linkList0, 0) : tableint(0);
+					const tableint secondNeighbor = size > 1 ? readLinkListNeighbor(linkList0, 1) : tableint(0);
 #if REINDEXER_WITH_SSE
-					_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(*datal)), _MM_HINT_T0);
+					if (size > 0) {
+						_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(firstNeighbor)), _MM_HINT_T0);
+					}
 #endif	// REINDEXER_WITH_SSE
 					for (int i = 0; i < size; i++) {
-#if defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)  // Asan reports overflow on prefetch
-						_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(*(datal + i + 1))), _MM_HINT_T0);
-#endif	// defined(REINDEXER_WITH_SSE) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
-						tableint cand = datal[i];
+#if defined(REINDEXER_WITH_SSE)
+						if (i + 1 < size) {
+							const tableint nextNeighbor =
+								i == 0 && size > 1 ? secondNeighbor : readLinkListNeighbor(linkList0, i + 1);
+							_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(nextNeighbor)), _MM_HINT_T0);
+						}
+#endif	// defined(REINDEXER_WITH_SSE)
+						const tableint cand = i == 0 ? firstNeighbor
+													 : (i == 1 && size > 1) ? secondNeighbor
+																			  : readLinkListNeighbor(linkList0, i);
 
 						float d;
 						{
@@ -1546,11 +1682,12 @@ public:
 	std::vector<tableint> getConnectionsWithLock(tableint internalId, int level) {
 		using LockGuard = typename LockerT::template LockGuard<typename LockVecT::MutexT>;
 		LockGuard lock{link_list_locks_[internalId]};
-		unsigned int* data = get_linklist_at_level(internalId, level);
-		int size = getListCount(data);
+		const void* linkList0 = get_linklist_at_level(internalId, level);
+		const int size = getListCount(static_cast<const linklistsizeint*>(linkList0));
 		std::vector<tableint> result(size);
-		tableint* ll = reinterpret_cast<tableint*>(data + 1);
-		memcpy(result.data(), ll, size * sizeof(tableint));
+		if (size > 0) {
+			std::memcpy(result.data(), static_cast<const char*>(linkList0) + sizeof(linklistsizeint), size * sizeof(tableint));
+		}
 		return result;
 	}
 
@@ -1630,7 +1767,7 @@ public:
 		if (quantizer_) {
 			quantizer_->UpdateStatistic(data_point_raw);
 			auto correctiveOffsetsPtr = reinterpret_cast<const uint8_t*>(data_point) + data_size_;
-			std::memcpy(&fstdistfunc_.Sq8CorrectiveOffsets()[cur_c], correctiveOffsetsPtr, sizeof(CorrectiveOffset));
+			fstdistfunc_.Sq8CorrectiveOffsets()[cur_c] = reindexer::unaligned::read<CorrectiveOffset>(correctiveOffsetsPtr);
 		}
 		if (curlevel) {
 			linkLists_[cur_c] = static_cast<char*>(malloc(size_links_per_element_ * curlevel + 1));
@@ -1651,14 +1788,12 @@ public:
 					bool changed = true;
 					while (changed) {
 						changed = false;
-						unsigned int* data;
 						DataLockGuard lock{link_list_locks_[currObj]};
-						data = get_linklist(currObj, level);
-						int size = getListCount(data);
+						const void* linkList0 = get_linklist(currObj, level);
+						const int size = getListCount(static_cast<const linklistsizeint*>(linkList0));
 
-						tableint* datal = reinterpret_cast<tableint*>(data + 1);
 						for (int i = 0; i < size; i++) {
-							tableint cand = datal[i];
+							const tableint cand = readLinkListNeighbor(linkList0, i);
 							if (cand >= max_elements_) {
 								throw std::runtime_error("cand error");
 							}
@@ -1716,53 +1851,137 @@ public:
 		return cur_c;
 	}
 
-	// Read-only concurrency expected
-	auto getTopCandidates(const ValueT* query_data, float normCoef, size_t ef) const {
-		tableint currObj = enterpoint_node_;
-		float curdist = normCoef * fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), enterpoint_node_);
+	// returns norm coefficient for query vector
+	float queryNormCoef(std::optional<float> query_data_norm) const {
+		const auto isCosineMetricAndQuantized = IsQuantized() && fstdistfunc_.Metric() == reindexer::VectorMetric::Cosine;
+		if (isCosineMetricAndQuantized && !query_data_norm) {
+			throw std::runtime_error("Norm is required for Cosine-metric during corrective offsets calculation in quantized graph");
+		}
 
-		for (int level = maxlevel_; level > 0; level--) {
-			bool changed = true;
-			while (changed) {
-				changed = false;
-				unsigned int* data;
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access) false-positive. Check was made above
+		return isCosineMetricAndQuantized ? 1.f / *query_data_norm : 1.f;
+	}
 
-				data = reinterpret_cast<unsigned int*>(get_linklist(currObj, level));
-				int size = getListCount(data);
-				metric_hops++;
-				metric_distance_computations += size;
+	StreamingSearchSession BeginStreamingSearch(const float* query_data_raw, std::optional<float> query_data_norm,
+												StreamingSearchOptions opts) const override {
+		static constexpr size_t kDefaultStreamingEf = 100;
 
-				tableint* datal = reinterpret_cast<tableint*>(data + 1);
-				for (int i = 0; i < size; i++) {
-					tableint cand = datal[i];
-					if (cand >= max_elements_) {
-						throw std::runtime_error("cand error");
-					}
-					float d = normCoef * fstdistfunc_(query_data, getDataByInternalId(cand), cand);
-					if (d < curdist) {
-						curdist = d;
-						currObj = cand;
-						changed = true;
-					}
-				}
+		StreamingSearchSessionImpl sessionImpl;
+		auto& state = sessionImpl.state_;
+		auto& queryHolder = sessionImpl.queryHolder_;
+		auto& queryData = sessionImpl.queryData_;
+		auto& normCoef = sessionImpl.normCoef_;
+
+		sessionImpl.graph_ = this;
+		state.streamingSearch = Layer0SearchState::Streaming::Enabled;
+
+		if (cur_element_count == 0) {
+			return StreamingSearchSession(std::move(sessionImpl));
+		}
+
+		normCoef = queryNormCoef(query_data_norm);
+		queryHolder = prepareData(query_data_raw, normCoef);
+		queryData = queryHolder.get();
+
+		const size_t ef = (opts.ef != 0) ? opts.ef : kDefaultStreamingEf;
+		const tableint entryPoint = getLayer0EntryPoint(queryData, normCoef);
+		const bool bareBone = !num_deleted_;
+		initLayer0SearchState(state, entryPoint, queryData, normCoef, ef, bareBone);
+
+		return StreamingSearchSession(std::move(sessionImpl));
+	}
+
+	void mergeExtrasIntoTopCandidates(Layer0SearchState& state) const {
+		if (state.top_candidates.size() >= state.ef || state.top_candidates_extras.empty()) {
+			return;
+		}
+
+		if (!state.top_candidates.empty()) {
+			auto topExtras = std::move(state.top_candidates_extras);
+
+			const size_t needFill = state.ef - state.top_candidates.size();
+			size_t extraDelta = topExtras.size() > needFill ? topExtras.size() - needFill : 0;
+			while (extraDelta-- > 0) {
+				state.top_candidates_extras.push(topExtras.top());
+				topExtras.pop();
+			}
+
+			while (!topExtras.empty() && state.top_candidates.size() < state.ef) {
+				state.top_candidates.push(topExtras.top());
+				topExtras.pop();
+			}
+			assertrx(topExtras.empty());
+		} else {
+			state.top_candidates = std::move(state.top_candidates_extras);
+			while (state.top_candidates.size() > state.ef) {
+				state.top_candidates_extras.push(state.top_candidates.top());
+				state.top_candidates.pop();
 			}
 		}
 
-		if (!num_deleted_) {
-			return searchBaseLayerST<true>(currObj, query_data, normCoef, ef);
-		} else {
-			return searchBaseLayerST<false>(currObj, query_data, normCoef, ef);
+		if (!state.top_candidates.empty()) {
+			state.lowerBound = state.top_candidates.top().first;
 		}
 	}
 
-	auto preSearch(const float* query_data_raw, std::optional<float> query_data_norm, size_t ef) const {
-		if (IsQuantized() && fstdistfunc_.Metric() == reindexer::VectorMetric::Cosine && !query_data_norm) {
-			throw std::runtime_error("Norm is required for Cosine-metric during corrective offsets calculation in quantized graph");
+	void emitStreamingBatch(Layer0SearchState& state, StreamingBatch& batch, size_t batchSize) const {
+		std::vector<std::pair<float, labeltype>> vec;
+		vec.reserve(batchSize);
+		batch.results = SearchResultQueue(std::less<std::pair<float, labeltype>>(), std::move(vec));
+
+		auto topCandidates = std::move(state.top_candidates);
+		while (topCandidates.size() > batchSize) {
+			state.top_candidates.push(topCandidates.top());
+			topCandidates.pop();
 		}
-		// NOLINTNEXTLINE(bugprone-unchecked-optional-access) false-positive. Check was made above
-		const float normCoef = IsQuantized() && fstdistfunc_.Metric() == reindexer::VectorMetric::Cosine ? 1.f / *query_data_norm : 1.f;
-		auto query_data_holder = prepareData(query_data_raw, 1.f / normCoef);
-		return std::make_tuple(getTopCandidates(query_data_holder.get(), normCoef, ef), std::move(query_data_holder), normCoef);
+
+		while (topCandidates.size() > 0) {
+			auto [dist, id] = topCandidates.top();
+			batch.results.emplace(dist, ExternalLabel(id));
+			topCandidates.pop();
+		}
+	}
+
+	StreamingBatch ContinueStreamingSearch(StreamingSearchSession& session, size_t batchSize) const override {
+		assertrx(session.impl_);
+		auto& sessionImpl = static_cast<StreamingSearchSessionImpl&>(*session.impl_);
+		auto& state = sessionImpl.state_;
+		const auto queryData = sessionImpl.queryData_;
+		const auto normCoef = sessionImpl.normCoef_;
+
+		StreamingBatch batch;
+		if (sessionImpl.graph_ != this) {
+			batch.exhausted = true;
+			return batch;
+		}
+		if (batchSize == 0) {
+			return batch;
+		}
+
+		const size_t origStateEf = state.ef;
+		state.ef = std::max(state.ef, batchSize);
+
+		mergeExtrasIntoTopCandidates(state);
+
+		while (!layer0ShouldStopBeforePop(state)) {
+			runLayer0Step(state, queryData, normCoef);
+		}
+
+		state.ef = origStateEf;
+		emitStreamingBatch(state, batch, batchSize);
+
+		batch.exhausted = state.candidate_set.empty() && state.top_candidates.empty() && state.top_candidates_extras.empty();
+		return batch;
+	}
+
+	// Read-only concurrency expected
+	auto search(const float* query_data_raw, std::optional<float> query_data_norm, size_t ef) const {
+		const float normCoef = queryNormCoef(query_data_norm);
+		auto query_data_holder = prepareData(query_data_raw, normCoef);
+		const tableint currObj = getLayer0EntryPoint(query_data_holder.get(), normCoef);
+		auto method = num_deleted_ == 0 ? &HierarchicalNSWImpl::searchBaseLayerST<true> : &HierarchicalNSWImpl::searchBaseLayerST<false>;
+		auto top_candidates = (this->*method)(currObj, query_data_holder.get(), normCoef, ef);
+		return std::make_tuple(std::move(top_candidates), std::move(query_data_holder), normCoef);
 	}
 
 	// Read-only concurrency expected
@@ -1775,7 +1994,7 @@ public:
 
 		ef = ef ? ef : k * 3 / 2;
 
-		auto [top_candidates, query_data_holder, normCoef] = preSearch(query_data_raw, query_data_norm, ef);
+		auto [top_candidates, query_data_holder, normCoef] = search(query_data_raw, query_data_norm, ef);
 		while (top_candidates.size() > k) {
 			top_candidates.pop();
 		}
@@ -1799,7 +2018,7 @@ public:
 			return SearchResultQueue();
 		}
 
-		auto [top_candidates, query_data_holder, normCoef] = preSearch(query_data_raw, query_data_norm, ef);
+		auto [top_candidates, query_data_holder, normCoef] = search(query_data_raw, query_data_norm, ef);
 		auto query_data = query_data_holder.get();
 
 		std::vector<std::pair<float, labeltype>> container;
@@ -1826,11 +2045,11 @@ public:
 			radius_queue.pop();
 
 			tableint current_id = cur.second;
-			int* data = reinterpret_cast<int*>(get_linklist0(current_id));
-			size_t size = getListCount(reinterpret_cast<linklistsizeint*>(data));
+			const void* linkList0 = get_linklist0(current_id);
+			const size_t size = getListCount(static_cast<const linklistsizeint*>(linkList0));
 
 			for (size_t j = 1; j <= size; j++) {
-				int candidate_id = *(data + j);
+				const tableint candidate_id = readLinkListNeighbor(linkList0, j - 1);
 				if (IsMarkedDeleted(candidate_id)) {
 					continue;
 				}

@@ -8,6 +8,7 @@
 #include "core/keyvalue/variant.h"
 #include "fieldsset.h"
 #include "payload_checksum.h"
+#include "core/payload/payload_access.h"
 #include "payloadfieldvalue.h"
 #include "payloadtype.h"
 #include "payloadvalue.h"
@@ -37,37 +38,26 @@ public:
 
 	bool HasDefaultValue(int field) const;
 
-	// Get array as span of typed elements
-	template <typename Elem>
-	std::span<const Elem> GetArray(int field) const& {
-		assertrx(field < Type().NumFields());
-		assertrx(Type().Field(field).IsArray());
-		auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-		return std::span<const Elem>(reinterpret_cast<const Elem*>(v_->Ptr() + arr->offset), arr->len);
-	}
 	// Get array len or 1
 	size_t GetFieldLen(int field) const {
 		assertrx(field < Type().NumFields());
 		if (Type().Field(field).IsArray()) {
-			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-			return arr->len;
+			return payload_access::readArrayMeta(v_->Ptr(), Type().Field(field).Offset()).len;
 		} else {
 			return 1;
 		}
 	}
-	// Get array or scalar as span of typed elements
+	// Get array or scalar as read-only view of typed elements
 	template <typename Elem>
-	std::span<const Elem> GetSpan(int field) const& {
+	unaligned::view<Elem> GetView(int field) const& {
 		assertrx(field < Type().NumFields());
 		if (Type().Field(field).IsArray()) {
-			auto* arr = reinterpret_cast<PayloadFieldValue::Array*>(Field(field).p_);
-			return std::span<const Elem>(reinterpret_cast<const Elem*>(v_->Ptr() + arr->offset), arr->len);
-		} else {
-			return std::span<const Elem>(reinterpret_cast<const Elem*>(Field(field).p_), 1);
+			return payload_access::arrayElems<Elem>(v_->Ptr(), Type().Field(field).Offset());
 		}
+		return {Field(field).p_, 1};
 	}
 	template <typename>
-	auto GetSpan(int) const&& = delete;
+	auto GetView(int) const&& = delete;
 
 	// Resize array (grow)
 	// return index of 1-st position

@@ -5,6 +5,7 @@
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadiface.h"
 #include "core/payload/payloadtype.h"
+#include "tools/unaligned.h"
 
 namespace reindexer {
 namespace DistinctHelpers {
@@ -15,8 +16,8 @@ struct [[nodiscard]] DataType {
 	DataType() = default;
 	template <typename T>
 	DataType(T&& d, IsArray a) noexcept : data(std::forward<T>(d)), isArray(a) {}
-	std::variant<std::span<const bool>, std::span<const int64_t>, std::span<const double>, std::span<const float>,
-				 std::span<const std::string_view>, std::span<const int32_t>, std::span<const Uuid>, std::span<const p_string>,
+	std::variant<unaligned::view<bool>, unaligned::view<int64_t>, unaligned::view<double>, unaligned::view<float>,
+				 unaligned::view<std::string_view>, unaligned::view<int32_t>, unaligned::view<Uuid>, unaligned::view<p_string>,
 				 VariantArray>
 		data;
 	IsArray isArray = IsArray_False;

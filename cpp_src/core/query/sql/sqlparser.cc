@@ -1244,11 +1244,9 @@ KnnSearchParams SQLParser::parseKnnParams(Tokenizer& parser) {
 			throw SqlParserError(range, "Expected ',' or ')', but found '{}', {}", tok.Text(), range);
 		}
 	} while (true);
-	if (!k && !radius) {
-		const auto range = parser.Where(tok);
-		throw SqlParserError(range, "The presence of one of the '{}' or '{}' parameters in KNN query is mandatory; {}",
-							 KnnSearchParams::kKName, KnnSearchParams::kRadiusName, range);
-	}
+	// Empty 'k' and empty 'radius' are allowed here: this enables streaming KNN search over an HNSW index
+	// Invalid combinations (e.g. IVF/bruteforce without 'k'/'radius')
+	// are rejected later by KnnSearchParams::Validate during query execution.
 	if (ef.has_value()) {
 		return HnswSearchParams().K(k).Radius(radius).Ef(*ef);
 	} else if (nprobe.has_value()) {
@@ -1281,11 +1279,16 @@ void SQLParser::parseKnn(Tokenizer& parser, OpType nextOp) {
 		if (tok.Type() == TokenString) {
 			std::string value(tok.Text());
 			tok = parser.NextToken();
-			if (tok.Text() != ","sv) {
+			KnnSearchParams params;
+			if (tok.Text() == ")"sv) {
+				params = KnnSearchParamsBase();
+			} else if (tok.Text() == ","sv) {
+				params = parseKnnParams(parser);
+			} else {
 				const auto range = parser.Where(tok);
-				throw SqlParserError(range, "Expected ',', but found '{}', {}", tok.Text(), range);
+				throw SqlParserError(range, "Expected ',' or ')', but found '{}', {}", tok.Text(), range);
 			}
-			query_.NextOp(nextOp).WhereKNN(std::move(field), std::move(value), parseKnnParams(parser));
+			query_.NextOp(nextOp).WhereKNN(std::move(field), std::move(value), params);
 			return;	 // NOTE: stop processing
 		}
 
@@ -1323,12 +1326,17 @@ void SQLParser::parseKnn(Tokenizer& parser, OpType nextOp) {
 	const ConstFloatVectorView vecView{std::span<float>(vec)};
 
 	tok = parser.NextToken();
-	if (tok.Text() != ","sv) {
+	KnnSearchParams params;
+	if (tok.Text() == ")"sv) {
+		params = KnnSearchParamsBase();
+	} else if (tok.Text() == ","sv) {
+		params = parseKnnParams(parser);
+	} else {
 		const auto range = parser.Where(tok);
-		throw SqlParserError(range, "Expected ',', but found '{}', {}", tok.Text(), range);
+		throw SqlParserError(range, "Expected ',' or ')', but found '{}', {}", tok.Text(), range);
 	}
 
-	query_.NextOp(nextOp).WhereKNN(std::move(field), vecView, parseKnnParams(parser));
+	query_.NextOp(nextOp).WhereKNN(std::move(field), vecView, params);
 }
 
 void SQLParser::parseDWithin(Tokenizer& parser, OpType nextOp) {

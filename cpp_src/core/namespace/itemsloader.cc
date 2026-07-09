@@ -4,6 +4,7 @@
 #include "core/keyvalue/float_vector.h"
 #include "core/storage/storage_prefixes.h"
 #include "tools/logger.h"
+#include "tools/unaligned.h"
 
 namespace reindexer {
 
@@ -84,7 +85,7 @@ void ItemsLoader::reading() {
 			}
 
 			// Read LSN
-			int64_t lsn = *reinterpret_cast<const int64_t*>(dataSlice.data());
+			int64_t lsn = unaligned::read<int64_t>(dataSlice.data());
 			if (lsn < 0) {
 				lastErr = Error(errParseBin, "Invalid LSN value: {}", lsn);
 				logFmt(LogTrace, "Error load item to '{}' from storage: '{}'", ns_.name_, lastErr.what());
@@ -350,9 +351,13 @@ void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& inde
 }
 
 void ItemsLoader::clearIndexCache() {
+	struct [[nodiscard]] NeverCancel final : index::ICancelable {
+		bool IsCanceled() const noexcept override { return false; }
+	};
+	static const NeverCancel kNeverCancel;
 	for (auto& idx : ns_.indexes_) {
 		idx->DestroyCache();
-		idx->Commit();
+		std::ignore = idx->Commit(kNeverCancel);
 	}
 }
 

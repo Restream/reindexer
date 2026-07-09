@@ -59,7 +59,7 @@ void IndexStore<Point>::Delete(const VariantArray& /*keys*/, IdType /*id*/, Must
 }
 
 template <typename T>
-bool IndexStore<T>::RefreshCompositeKey(const Variant& /*key*/) noexcept {
+bool IndexStore<T>::RefreshCompositeKey(const Variant& /*key*/, IdType /*id*/) noexcept {
 	assertrx_dbg(0);
 	return false;
 }
@@ -129,8 +129,9 @@ void IndexStore<Point>::Upsert(VariantArray& /*result*/, const VariantArray& /*k
 }
 
 template <typename T>
-void IndexStore<T>::Commit() {
+WasCanceled IndexStore<T>::Commit(const index::ICancelable&) {
 	logFmt(LogTrace, "IndexStore::Commit ({}) {} uniq strings", name_, str_map.size());
+	return WasCanceled_False;
 }
 
 template <typename T>

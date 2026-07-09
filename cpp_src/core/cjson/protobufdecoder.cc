@@ -1,5 +1,6 @@
 #include "protobufdecoder.h"
 #include "core/cjson/cjsontools.h"
+#include "core/payload/payload_access.h"
 #include "core/keyvalue/float_vectors_holder.h"
 #include "core/schema.h"
 #include "estl/protobufparser.h"
@@ -138,7 +139,7 @@ void ProtobufDecoder::decodeArray(CJsonBuilder& builder, const ProtobufValue& it
 				setValue(builder, item, kNoValidation);
 			}
 			validateArrayFieldRestrictions(f.Name(), f.IsArray(), f.ArrayDims(),
-										   reinterpret_cast<PayloadFieldValue::Array*>(pl_.Field(indexNumber).p_)->len, kProtobufFmt);
+										   payload_access::readArrayMeta(pl_.Ptr(), f.Offset()).len, kProtobufFmt);
 		}
 	} else {
 		CJsonBuilder& array = arraysStorage_.GetArray(item.tagName);

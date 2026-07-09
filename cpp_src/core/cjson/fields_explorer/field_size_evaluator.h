@@ -2,6 +2,7 @@
 
 #include "fields_explorer.h"
 #include "tools/serilize/serializer.h"
+#include "tools/unaligned.h"
 
 namespace reindexer::cjson {
 
@@ -13,7 +14,8 @@ protected:
 	void StartArray() const noexcept {}
 
 	template <typename T>
-	void Array(const PathFilter& filter, TagIndex, std::span<const T> data, unsigned /*offset*/,
+	    requires std::is_trivially_copyable_v<T>
+	void Array(const PathFilter& filter, TagIndex, unaligned::view<T> data, unsigned /*offset*/,
 			   TreatAsSingleElement = TreatAsSingleElement_False) noexcept {
 		if (filter.ExactMatch()) {
 			fieldSize_ += data.size();

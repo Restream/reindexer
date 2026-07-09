@@ -42,19 +42,18 @@ public:
 
 	using InfoType = typename MergeDataType::InfoType;
 
-	Merger(DataHolder<IdCont>& holder, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc, bool inTransaction,
-		   const RdxContext& ctx)
-		: holder_(holder),
-		  fieldSize_(fieldSize),
+	Merger(size_t totalNumDocs, FTConfig* cfg, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc,
+		   bool inTransaction, const RdxContext& ctx)
+		: fieldSize_(fieldSize),
 		  maxAreasInDoc_(maxAreasInDoc),
 		  docsExcluded_(docsExcluded),
 		  inTransaction_(inTransaction),
-		  ctx_(ctx) {
-		assertrx_throw(docsExcluded.size() == holder_.VDocsNumberInIndex());
-	}
+		  ctx_(ctx),
+		  totalNumDocs_(totalNumDocs),
+		  cfg_(cfg) {}
 
-	template <typename Bm25Type>
-	MergeDataType Merge(QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType);
+	template <typename Bm25Type, typename DocsStatsGetter>
+	MergeDataType Merge(QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType, const DocsStatsGetter& docsStatsGetter);
 
 private:
 	const InfoType& getMergeData(index_t docId) const noexcept { return mergeData_[idoffsets_[docId]]; }
@@ -62,14 +61,14 @@ private:
 	InfoType& getMergeData(index_t docId) noexcept { return mergeData_[idoffsets_[docId]]; }
 	MergerDocumentData& getMergeDataExtended(index_t docId) noexcept { return mergeDataExtended_[idoffsets_[docId]]; }
 
-	template <typename Bm25Type>
-	void init(QueryMergeData<IdCont>& queryMergeData, uint32_t maxMergedSize) {
+	template <typename Bm25Type, typename DocsStatsGetter>
+	void init(QueryMergeData<IdCont>& queryMergeData, uint32_t maxMergedSize, const DocsStatsGetter& docsStatsGetter) {
 		maxMergedDocs_ = std::min<uint32_t>(maxMergedSize, std::numeric_limits<MergeOffsetT>::max());
-		maxMergedDocs_ = std::min(maxMergedSize, holder_.cfg_->mergeLimit);
+		maxMergedDocs_ = std::min(maxMergedSize, cfg_->mergeLimit);
 		mergeData_.reserve(maxMergedDocs_);
 
 		if (!queryMergeData.Trivial()) {
-			idoffsets_.resize(holder_.VDocsNumberInIndex(), maxMergedDocs_);
+			idoffsets_.resize(totalNumDocs_, maxMergedDocs_);
 		}
 
 		if (!queryMergeData.Simple()) {
@@ -83,27 +82,28 @@ private:
 		// init phraseMerger for each phrase and merge phrase results
 		for (auto& qp : queryMergeData.queryParts) {
 			if (qp.IsPhrase()) {
-				auto& phraseMerger = phraseMergers_.emplace_back(holder_, docsExcluded_, fieldSize_, maxAreasInDoc_, inTransaction_, ctx_);
-				phraseMerger.template Merge<Bm25Type>(qp.Phrase());
+				auto& phraseMerger =
+					phraseMergers_.emplace_back(totalNumDocs_, cfg_, docsExcluded_, fieldSize_, maxAreasInDoc_, inTransaction_, ctx_);
+				phraseMerger.template Merge<Bm25Type>(qp.Phrase(), docsStatsGetter);
 			}
 		}
 	}
 
-	template <typename Bm25Type>
-	MergeDataType mergeSimple(TermResults<IdCont>& singleTerm, RankSortType rankSortType);
-	template <typename Bm25Type>
-	void mergeTerm(TermResults<IdCont>& term, uint16_t qpIdx);
+	template <typename Bm25Type, typename DocsStatsGetter>
+	MergeDataType mergeSimple(TermResults<IdCont>& singleTerm, RankSortType rankSortType, const DocsStatsGetter& docsStatsGetter);
+	template <typename Bm25Type, typename DocsStatsGetter>
+	void mergeTerm(TermResults<IdCont>& term, uint16_t qpIdx, const DocsStatsGetter& docsStatsGetter);
 
 	template <typename Bm25T>
 	void mergePhrase(size_t phraseIdx, PhraseResults<IdCont>& phrase, uint16_t qpIdx);
 
-	void addFullMatchBoost(size_t numTerms) {
-		const auto& vdocs = holder_.vdocs_;
+	template <typename DocsStatsGetter>
+	void addFullMatchBoost(size_t numTerms, const DocsStatsGetter& docsStatsGetter) {
 		for (size_t idx = 0; idx < mergeData_.size(); ++idx) {
 			auto& md = mergeData_[idx];
 			if ((mergeDataExtended_.empty() || mergeDataExtended_[idx].canBeBoostedByFullMatch) &&
-				size_t(vdocs[md.id.ToNumber()].wordsCount[md.field]) == numTerms) {
-				md.proc *= holder_.cfg_->fullMatchBoost;
+				docsStatsGetter.NumWordsInField(md.id.ToNumber(), md.field) == numTerms) {
+				md.proc *= cfg_->fullMatchBoost;
 			}
 		}
 	}
@@ -115,7 +115,7 @@ private:
 		}
 
 		const float scalingFactor = maxProc > 255 ? 255.0 / maxProc : 1.0;
-		const float minProc = holder_.cfg_->minRank;
+		const float minProc = cfg_->minRank;
 
 		size_t numDocsPassed = mergeData_.size();
 		while (numDocsPassed > 0 && mergeData_[numDocsPassed - 1].proc < minProc) {
@@ -232,7 +232,9 @@ private:
 						std::vector<uint16_t>& docsScore);
 
 	void buildRestrictingBitmask(QueryMergeData<IdCont>& queryData);
-	void preselectMostRelevantDocs(QueryMergeData<IdCont>& queryData);
+
+	template <typename DocsStatsGetter>
+	void preselectMostRelevantDocs(QueryMergeData<IdCont>& queryData, const DocsStatsGetter& docsStatsGetter);
 
 	size_t estimateNumDocsInMerge(QueryMergeData<IdCont>& queryData) {
 		size_t estimatedNumDocsOr = 0;
@@ -261,11 +263,10 @@ private:
 			}
 		}
 
-		return std::min(std::min(estimatedNumDocsOr, estimatedNumDocsAnd), holder_.VDocsNumberInIndex());
+		return std::min(std::min(estimatedNumDocsOr, estimatedNumDocsAnd), totalNumDocs_);
 	}
 
 private:
-	DataHolder<IdCont>& holder_;
 	size_t fieldSize_ = 0;
 	int maxAreasInDoc_ = 0;
 
@@ -280,6 +281,9 @@ private:
 
 	bool inTransaction_ = false;
 	const RdxContext& ctx_;
+
+	size_t totalNumDocs_ = 0;
+	FTConfig* cfg_ = nullptr;
 };
 
 }  // namespace ft

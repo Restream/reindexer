@@ -93,6 +93,7 @@ ReplicationStats AsyncDataReplicator::GetReplicationStats() const {
 	auto stats = statsCollector_.Get();
 	for (auto& node : stats.nodeStats) {
 		node.role = RaftInfo::Role::Follower;
+		node.isSynchronized = false;
 	}
 	stats.logLevel = log_.GetLevel();
 	return stats;

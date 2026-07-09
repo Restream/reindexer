@@ -197,23 +197,23 @@ void ItemsProcessor::BuildSelectIteratorsOfIndexedFields(int* maxIterations, uns
 			continue;
 		}
 
-		VariantArray values =
-			std::visit(overloaded{[&](const IdSetPlain& preselected) {
-									  const std::vector<IdType>* sortOrders = nullptr;
-									  if (preselect.sortOrder.index) {
-										  sortOrders = &(preselect.sortOrder.index->SortOrders());
-									  }
-									  return readValuesOfRightNsFrom(
-										  preselected,
-										  [this, sortOrders](IdType rowId) noexcept {
-											  const auto properRowId = sortOrders ? (*sortOrders)[rowId.ToNumber()] : rowId;
-											  return ConstPayload{rightNs_->payloadType_, rightNs_->items_[properRowId]};
-										  },
-										  joinEntry, rightNs_->payloadType_);
-								  },
-								  [&](const PreSelect::Values&) { return readValuesFromPreSelect(joinEntry); },
-								  [](const SelectIteratorContainer&) -> VariantArray { throw_as_assert; }},
-					   preselect.payload);
+		VariantArray values = std::visit(overloaded{[&](const IdSetPlain& preselected) {
+														const std::vector<IdType>* sortOrders = nullptr;
+														if (preselect.sortOrder.index) {
+															sortOrders = &(preselect.sortOrder.index->SortOrders());
+														}
+														return readValuesOfRightNsFrom(
+															preselected,
+															[this, sortOrders](IdType rowId) noexcept {
+																const auto properRowId =
+																	sortOrders ? (*sortOrders)[rowId.ToNumber()] : rowId;
+																return ConstPayload{rightNs_->payloadType_, rightNs_->items_[properRowId]};
+															},
+															joinEntry, rightNs_->payloadType_);
+													},
+													[&](const PreSelect::Values&) { return readValuesFromPreSelect(joinEntry); },
+													[](const SelectIteratorContainer&) -> VariantArray { throw_as_assert; }},
+										 preselect.payload);
 
 		if (leftIndex->Opts().GetCollateMode() == CollateUTF8) {
 			for (auto& key : values) {
@@ -284,6 +284,9 @@ std::vector<ItemsProcessor> ItemsProcessor::BuildForQuery(const Query& q, LocalQ
 		}
 		if (jq.HasCalcTotal()) [[unlikely]] {
 			throw Error(errParams, "Count()/count_cached() are not allowed in joined subqueries");
+		}
+		if (jq.Entries().ContainsKnnCondition()) [[unlikely]] {
+			throw Error(errParams, "KNN condition cannot be in joined subquery");
 		}
 
 		// Get common results from joined namespaces_
@@ -521,15 +524,13 @@ StoredValuesOptimizationStatus ItemsProcessor::isPreSelectValuesOptimizationEnab
 	auto status = StoredValuesOptimizationStatus::Enabled;
 	jItemQ.Entries().VisitForEach(
 		[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { assertrx_throw(0); },
-		Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry>{},
+		Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry, KnnQueryEntry>{},
 		[&jns, &status](const QueryEntry& qe) {
 			if (qe.IsFieldIndexed()) {
 				assertrx_throw(jns->indexes_.size() > static_cast<size_t>(qe.IndexNo()));
 				const IndexType indexType = jns->indexes_[qe.IndexNo()]->Type();
 				if (IsComposite(indexType)) {
 					status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
-				} else if (IsFullText(indexType)) {
-					status = StoredValuesOptimizationStatus::DisabledByFullTextIndex;
 				}
 			}
 		},
@@ -539,8 +540,6 @@ StoredValuesOptimizationStatus ItemsProcessor::isPreSelectValuesOptimizationEnab
 				const IndexType indexType = jns->indexes_[qe.LeftIdxNo()]->Type();
 				if (IsComposite(indexType)) {
 					status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
-				} else if (IsFullText(indexType)) {
-					status = StoredValuesOptimizationStatus::DisabledByFullTextIndex;
 				}
 			}
 			if (qe.IsRightFieldIndexed()) {
@@ -549,8 +548,7 @@ StoredValuesOptimizationStatus ItemsProcessor::isPreSelectValuesOptimizationEnab
 					status = StoredValuesOptimizationStatus::DisabledByCompositeIndex;
 				}
 			}
-		},
-		[&status](const KnnQueryEntry&) { status = StoredValuesOptimizationStatus::DisabledByFloatVectorIndex; });
+		});
 	if (status == StoredValuesOptimizationStatus::Enabled) {
 		for (const auto& se : mainQ.GetSortingEntries()) {
 			if (isSortedByJoinedField(se.expression, jItemQ.NsName())) {

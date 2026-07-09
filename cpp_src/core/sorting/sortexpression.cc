@@ -303,52 +303,52 @@ static Point parsePoint(std::string_view& expr, std::string_view funcName, std::
 												   0.0, 0.0, nullptr, nullptr};
 	if (funcName != "st_geomfromtext") {
 		throwParseError(fullExpr, expr.data() - fullExpr.data(),
-						"Unsupported function inside ST_Distance() : '" + std::string(funcName) + "'.");
+						"Unsupported function inside ST_Distance(): '" + std::string(funcName) + "'");
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (expr.empty() || (expr[0] != '\'' && expr[0] != '"')) {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected \" or '.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected \" or '");
 	}
 	const char openQuote = expr[0];
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (!checkIfStartsWith("point"sv, expr)) {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected 'point'.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected 'point'");
 	}
 	expr.remove_prefix(5);
 	skipSpaces();
 	if (expr.empty() || expr[0] != '(') {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected '('.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected '('");
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	int countOfCharsParsedAsDouble = 0;
 	const double x = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
 	if (countOfCharsParsedAsDouble == 0) {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected number.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected number");
 	}
 	expr.remove_prefix(countOfCharsParsedAsDouble);
 	skipSpaces();
 	countOfCharsParsedAsDouble = 0;
 	const double y = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
 	if (countOfCharsParsedAsDouble == 0) {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected number.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected number");
 	}
 	expr.remove_prefix(countOfCharsParsedAsDouble);
 	skipSpaces();
 	if (expr.empty() || expr[0] != ')') {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'");
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (expr.empty() || expr[0] != openQuote) {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), std::string("Expected ") + openQuote + '.');
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), std::string("Expected ") + openQuote);
 	}
 	expr.remove_prefix(1);
 	skipSpaces();
 	if (expr.empty() || expr[0] != ')') {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'.");
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'");
 	}
 	expr.remove_prefix(1);
 	return Point{x, y};
@@ -362,7 +362,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 	skipSpaces();
 	if (parsedIndexName1.joinItemsProcessorIt != joinItemsProcessors.cend()) {
 		if (expr.empty() || expr[0] != ',') {
-			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','.");
+			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','");
 		}
 		expr.remove_prefix(1);
 		skipSpaces();
@@ -396,7 +396,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		const auto point = parsePoint(expr, toLower(parsedIndexName1.name), fullExpr, skipSpaces);
 		skipSpaces();
 		if (expr.empty() || expr[0] != ',') {
-			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','.");
+			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','");
 		}
 		expr.remove_prefix(1);
 		skipSpaces();
@@ -414,7 +414,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		}
 	} else {
 		if (expr.empty() || expr[0] != ',') {
-			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','.");
+			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','");
 		}
 		expr.remove_prefix(1);
 		skipSpaces();
@@ -514,7 +514,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				OpenBracket({op, negative});
 				expr = parse(expr, containIndexOrFunction, isRrf, fullExpr, joinItemsProcessors);
 				if (expr.empty() || expr[0] != ')') {
-					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'."sv);
+					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'"sv);
 				}
 				expr.remove_prefix(1);
 				CloseBracket();
@@ -601,10 +601,10 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 								}
 								skipSpaces();
 							} else {
-								throwParseError(fullExpr, expr.data() - fullExpr.data(), "Unsupported function name : '" + funcName + "'.");
+								throwParseError(fullExpr, expr.data() - fullExpr.data(), "Unsupported function name: '" + funcName + "'");
 							}
 							if (expr.empty() || expr[0] != ')') {
-								throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'."sv);
+								throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ')'"sv);
 							}
 							expr.remove_prefix(1);
 						} else {
@@ -641,7 +641,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 					break;
 				default:
 					throwParseError(fullExpr, expr.data() - fullExpr.data(),
-									std::string("Expected ')', '+', '-', '*' of '/', but obtained '") + expr[0] + "'.");
+									std::string("Expected ')', '+', '-', '*' of '/', but obtained '") + expr[0] + "'");
 			}
 			expr.remove_prefix(1);
 			expectValue = true;
@@ -649,7 +649,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 		skipSpaces();
 	}
 	if (expectValue) {
-		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected value."sv);
+		throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected value"sv);
 	}
 	return expr;
 }

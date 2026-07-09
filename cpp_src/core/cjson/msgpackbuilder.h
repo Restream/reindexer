@@ -1,12 +1,13 @@
 #pragma once
 
-#include <span>
+#include <type_traits>
 #include "core/cjson/tagslengths.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/enums.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
 #include "vendor/msgpack/msgpack.h"
+#include "tools/unaligned.h"
 
 namespace gason {
 struct JsonNode;
@@ -36,31 +37,17 @@ public:
 	void Raw(std::string_view) noexcept {}
 
 	template <typename N, typename T>
-	void Array(N tagName, std::span<T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
+	    requires std::is_trivially_copyable_v<T>
+	void Array(N tagName, unaligned::view<T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
-		for (const T& v : data) {
-			packValue(v);
-		}
-	}
-	template <typename N>
-	void Array(N tagName, std::span<Uuid> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
-		skipTag();
-		packKeyName(tagName);
-		packArray(data.size());
-		for (Uuid v : data) {
-			packValue(v);
-		}
-	}
-
-	template <typename T>
-	void Array(T tagName, std::span<p_string> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
-		skipTag();
-		packKeyName(tagName);
-		packArray(data.size());
-		for (const p_string& v : data) {
-			packValue(std::string_view(v));
+		for (const T v : data) {
+			if constexpr (std::same_as<T, p_string>) {
+				packValue(std::string_view(v));
+			} else {
+				packValue(v);
+			}
 		}
 	}
 

@@ -10,20 +10,12 @@ size_t IDataHolder::GetMemStat() {
 	for (auto& step : steps) {
 		res += step.typos_.heap_size() + step.suffixes_.heap_size();
 	}
-	res += vdocs_.capacity() * sizeof(VDocEntry);
-	res += rowId2Vdoc_.capacity() * sizeof(rowId2Vdoc_[0]);
 	return res;
 }
 
 void IDataHolder::Clear() {
 	steps.resize(1);
 	steps.front().clear();
-	avgWordsCount_.resize(0);
-	vdocs_.resize(0);
-	vdocsTexts.resize(0);
-	vdocsOffset_ = 0;
-	szCnt = 0;
-	rowId2Vdoc_.resize(0);
 	stepsWords_.clear();
 	lastStepWords_.clear();
 }
@@ -68,7 +60,7 @@ void IDataHolder::throwStepsOverflow() const {
 				steps.size() - 1, kWordIdMaxStepVal);
 }
 
-WordIdType IDataHolder::FindWord(const std::string_view& word, bool searchLastStep) const {
+WordIdType IDataHolder::FindWord(std::string_view word, bool searchLastStep) const {
 	word_hash wh;
 	word_equal we;
 	size_t hash = wh(word);
@@ -146,8 +138,9 @@ void DataHolder<IdCont>::StartCommit(bool complete_updated) {
 }
 
 template <typename IdCont>
-void DataHolder<IdCont>::Process(size_t fieldSize, bool multithread) {
-	DataProcessor<IdCont>{*this, fieldSize}.Process(multithread);
+void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, size_t fieldSize,
+								 bool multithread, std::vector<h_vector<float, 3>>& wordsCounts) {
+	DataProcessor<IdCont>{*this, fieldSize}.Process(vdocsTexts, vdocsIds, numDocsTotal, multithread, wordsCounts);
 }
 
 template <typename IdCont>

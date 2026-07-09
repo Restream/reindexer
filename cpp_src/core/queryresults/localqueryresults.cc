@@ -54,7 +54,11 @@ struct [[nodiscard]] LocalQueryResults::Context {
 
 #ifndef REINDEX_DEBUG_CONTAINERS
 static_assert(LocalQueryResults::kSizeofContext >= sizeof(LocalQueryResults::Context),
-			  "LocalQueryResults::kSizeofContext should >= sizeof(LocalQueryResults::Context)");
+			  "LocalQueryResults::kSizeofContext should be >= sizeof(LocalQueryResults::Context)");
+static_assert(LocalQueryResults::kSizeofContext % alignof(LocalQueryResults::Context) == 0,
+			  "LocalQueryResults::kSizeofContext must be a multiple of alignof(Context)");
+static_assert(alignof(LocalQueryResults::Context) <= LocalQueryResults::kAlignContext,
+			  "LocalQueryResults::kAlignContext must be >= alignof(Context)");
 #endif	// REINDEX_DEBUG_CONTAINERS
 
 LocalQueryResults::LocalQueryResults() = default;

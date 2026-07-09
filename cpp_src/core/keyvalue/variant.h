@@ -183,8 +183,19 @@ public:
 	}
 	size_t Hash() const noexcept;
 	void EnsureUTF8() const;
-	Variant& EnsureHold() &;
+	Variant& EnsureHold() & {
+		if (isUuid() || variant_.hold == 1) {
+			return *this;
+		}
+		return ensureHoldImpl();
+	}
 	Variant EnsureHold() && { return std::move(EnsureHold()); }
+	size_t HeldHeapSize() const noexcept {
+		if (!DoHold() || isUuid()) {
+			return 0;
+		}
+		return heldHeapSizeImpl();
+	}
 
 	KeyValueType Type() const noexcept {
 		if (isUuid()) {
@@ -242,6 +253,8 @@ private:
 	ComparationResult relaxCompareImpl(const Variant& other, NullsHandling tupleNullsHandling, const CollateOpts& collateOpts) const;
 
 	bool isUuid() const noexcept { return uuid_.isUuid != 0; }
+	Variant& ensureHoldImpl() &;
+	size_t heldHeapSizeImpl() const noexcept;
 	void convertToComposite(const PayloadType&, const FieldsSet&);
 	static Variant convertTupleToComposite(std::string_view val, const PayloadType&, const FieldsSet&);
 	static Variant convertTupleToScalar(std::string_view val);

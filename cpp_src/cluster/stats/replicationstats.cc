@@ -248,13 +248,14 @@ Error NodeStatsCounter::GetLastError() const {
 }
 
 NodeStats NodeStatsCounter::Get() const {
-	NodeStats stats;
+	NodeStats stats{};
 	stats.dsn = dsn;
 	stats.namespaces = namespaces;
-	stats.updatesCount = 0;
 	stats.serverId = serverId.load(std::memory_order_relaxed);
 	stats.status = status.load(std::memory_order_relaxed);
 	stats.syncState = syncState.load(std::memory_order_relaxed);
+	stats.role = RaftInfo::Role::None;
+	stats.isSynchronized = false;
 	stats.lastError = GetLastError();
 	stats.nssSyncQueue = nssSyncQueueSize.load(std::memory_order_relaxed);
 	return stats;
@@ -365,6 +366,7 @@ ReplicationStats ReplicationStatCounter::Get() const {
 	}
 	if (thisNode_.has_value()) {
 		stats.nodeStats.emplace_back(thisNode_->Get());
+		stats.nodeStats.back().isSynchronized = false;
 	}
 	return stats;
 }

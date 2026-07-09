@@ -14,11 +14,12 @@ template <typename IdCont>
 class [[nodiscard]] DataProcessor {
 public:
 	using words_map =
-		tsl::hopscotch_map<std::string, WordEntry, word_hash, word_equal, std::allocator<std::pair<std::string, WordEntry>>, 30, true>;
+		tsl::hopscotch_map<std::string, IdRelSet, word_hash, word_equal, std::allocator<std::pair<std::string, IdRelSet>>, 30, true>;
 
 	DataProcessor(DataHolder<IdCont>& holder, size_t fieldSize) : holder_(holder), fieldSize_(fieldSize) {}
 
-	void Process(bool multithread);
+	void Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, bool multithread,
+				 std::vector<h_vector<float, 3>>& wordsCounts);
 
 private:
 	using WordVariant = std::variant<std::string_view, WordIdType>;
@@ -61,9 +62,10 @@ private:
 		std::vector<std::thread> threads_;
 	};
 
-	size_t buildWordsMap(words_map& m, bool multithread, intrusive_ptr<const ISplitter> textSplitter);
-	void buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, unsigned field, unsigned arrayIdx,
-						  size_t insertPos, std::vector<std::string_view>& container);
+	size_t buildWordsMap(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, words_map& m,
+						 bool multithreaded, intrusive_ptr<const ISplitter> textSplitter, std::vector<h_vector<float, 3>>& wordsCounts);
+	void buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType vdocId, h_vector<float, 3>& vdocWordsCounts,
+						  unsigned field, unsigned arrayIdx, size_t insertPos, std::vector<std::string_view>& container);
 	void buildTyposMap(uint32_t startPos, const WordsVector& preprocWords, bool multithread);
 	static WordsVector insertIntoSuffix(words_map& words_um, DataHolder<IdCont>& holder);
 	static size_t commitIdRelSets(const WordsVector& preprocWords, words_map& words_um, DataHolder<IdCont>& holder, size_t wrdOffset);

@@ -140,21 +140,10 @@ RX_NO_INLINE static std::string buildPreselectDescription(const joins::PreSelect
 							"using preselected_rows, because joined query contains composite index condition in the ON-clause and "
 							"joined query's expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreSelect);
-					case StoredValuesOptimizationStatus::DisabledByFullTextIndex:
-						return fmt::format(
-							"using preselected_rows, because joined query contains fulltext index condition in the ON-clause and joined "
-							"query's expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
-							props.qresMaxIterations, props.maxIterationsIdSetPreSelect);
 					case StoredValuesOptimizationStatus::DisabledByJoinedFieldSort:
 						return fmt::format(
 							"using preselected_rows, because sort by joined field was requested and joined query's "
 							"expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
-							props.qresMaxIterations, props.maxIterationsIdSetPreSelect);
-					case StoredValuesOptimizationStatus::DisabledByFloatVectorIndex:
-						return fmt::format(
-							"using preselected_rows, because joined query contains float vector index condition in the ON-clause and "
-							"joined "
-							"query's expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreSelect);
 					case StoredValuesOptimizationStatus::Enabled:
 						return fmt::format(

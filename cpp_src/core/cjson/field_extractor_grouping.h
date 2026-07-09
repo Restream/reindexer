@@ -7,6 +7,7 @@
 
 #include "core/nsselecter/comparator/equalposition_comparator.h"
 #include "tools/assertrx.h"
+#include "tools/unaligned.h"
 
 namespace reindexer {
 
@@ -60,7 +61,8 @@ public:
 	}
 
 	template <typename T>
-	void Array(concepts::TagNameOrIndex auto tag, std::span<T> data, unsigned /*offset*/,
+	    requires std::is_trivially_copyable_v<T>
+	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<T> data, unsigned /*offset*/,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		auto getValue = [&data](size_t i) -> Variant { return Variant(data[i]); };
 		std::ignore = processArray(data.size(), tag, getValue);

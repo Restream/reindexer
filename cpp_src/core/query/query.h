@@ -1101,6 +1101,7 @@ private:
 	void checkSubQueryNoData() const;
 	void checkSubQueryWithData() const;
 	void checkSubQuery() const;
+	void checkJoinedSubQuery() const;
 	void checkFunctionForLeftExpression(const functions::Function& f);
 	void checkFunctionForLeftExpression(const functions::FunctionVariant& f);
 	void checkFunctionForLeftExpression(const FunctionType& t);

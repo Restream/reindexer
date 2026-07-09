@@ -31,7 +31,7 @@ WarningsAsErrors: '*'
 HeaderFilterRegex: '.*/cpp_src/([^v]|v[^e]|ve[^n]|ven[^d]|vend[^o]|vendo[^r]).*$'
 FormatStyle:     none
 CheckOptions:
-    - { key: performance-unnecessary-value-param.AllowedTypes, value: 'span;IdType;ReplicationStatsCollector;KeyValueType' }
+    - { key: performance-unnecessary-value-param.AllowedTypes, value: 'span;IdType;ReplicationStatsCollector;KeyValueType;reverse_iterator' }
     - { key: performance-move-const-arg.CheckTriviallyCopyableMove, value: 0 }
     - {
         key: bugprone-unused-return-value.CheckedFunctions, 

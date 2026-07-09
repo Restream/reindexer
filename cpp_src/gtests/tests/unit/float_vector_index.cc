@@ -762,6 +762,15 @@ TEST_F(FloatVector, DslQuery) try {
 		const auto parsedQuery = Query::FromJSON(expectedDsl);
 		EXPECT_EQ(query, parsedQuery);
 	}
+	{
+		const std::string dsl =
+			R"json({"namespace":"ns","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":["*","vectors()"],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"knn","field":"hnsw","value":[)json" +
+			vecStr + R"json(]}],"merge_queries":[],"aggregations":[]})json";
+		const auto parsedQuery = Query::FromJSON(dsl);
+		const auto expectedQuery =
+			Query("ns"sv).WhereKNN("hnsw"sv, vec.View(), reindexer::KnnSearchParamsBase{}).SelectAllFields();
+		EXPECT_EQ(parsedQuery, expectedQuery) << "dsl: " << dsl;
+	}
 }
 CATCH_AND_ASSERT
 
@@ -784,6 +793,12 @@ TEST_F(FloatVector, SqlQuery) try {
 		EXPECT_EQ(generatedSql, expectedSql);
 		const auto parsedQuery = Query::FromSQL(expectedSql);
 		EXPECT_EQ(parsedQuery, query) << "original: " << expectedSql << "\nparsed: " << parsedQuery.GetSQL();
+	}
+	{
+		const std::string sql = "SELECT *, vectors() FROM ns WHERE KNN(hnsw, [" + vecStr + "])";
+		const auto parsedQuery = Query::FromSQL(sql);
+		const auto expectedQuery = Query("ns"sv).WhereKNN("hnsw"sv, vec.View(), reindexer::KnnSearchParamsBase{}).SelectAllFields();
+		EXPECT_EQ(parsedQuery, expectedQuery) << "sql: " << sql;
 	}
 }
 CATCH_AND_ASSERT

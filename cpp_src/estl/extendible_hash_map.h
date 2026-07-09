@@ -194,7 +194,7 @@ public:
 		std::ignore = parts_[it.partIdx_]->erase(it.it_);
 		--size_;
 		removesCounter_++;
-		rebalance(it.partIdx_);
+		std::ignore = rebalance(it.partIdx_);
 	}
 
 	template <class K>
@@ -205,7 +205,7 @@ public:
 		size_t res = parts_[pIdx]->erase(key, hash);
 		size_ -= res;
 		removesCounter_ += res;
-		rebalance(pIdx);
+		std::ignore = rebalance(pIdx);
 		return res;
 	}
 
@@ -214,11 +214,15 @@ public:
 	template <class K, class... Args>
 	RX_ALWAYS_INLINE std::pair<iterator, bool> insert(const K& key, Args&&... value_type_args) {
 		size_t hash = h_(key);
+		size_t pIdx = partIdx(hash);
 		// Rebalance before insertion to avoid iterator's invalidation
-		rebalance(partIdx(hash));
-		auto res = insert_impl_with_hash(key, hash, std::forward<Args>(value_type_args)...);
+		if (rebalance(pIdx)) {
+			pIdx = partIdx(hash);
+		}
+
+		auto res = parts_[pIdx]->try_emplace_with_hash(hash, key, std::forward<Args>(value_type_args)...);
 		size_ += res.second;
-		return res;
+		return {iterator(this, pIdx, res.first), res.second};
 	}
 
 	template <class LookupKey, std::invocable MaterilizeKeyT, class... Args>
@@ -232,17 +236,23 @@ public:
 		}
 
 		// Rebalance before insertion to avoid iterator's invalidation
-		rebalance(pIdx);
-		auto res = insert_impl_with_hash(materializeKey(), hash, std::forward<Args>(value_type_args)...);
+		if (rebalance(pIdx)) {
+			pIdx = partIdx(hash);
+		}
+		auto res = parts_[pIdx]->try_emplace_with_hash(hash, materializeKey(), std::forward<Args>(value_type_args)...);
 		size_ += res.second;
-		return res;
+		return {iterator(this, pIdx, res.first), res.second};
 	}
 
 	RX_ALWAYS_INLINE T& operator[](const Key& key) {
 		size_t hash = h_(key);
+		size_t pIdx = partIdx(hash);
 		// Rebalance before insertion to avoid iterator's invalidation
-		rebalance(partIdx(hash));
-		auto res = parts_[partIdx(hash)]->try_emplace_with_hash(hash, key);
+		if (rebalance(pIdx)) {
+			pIdx = partIdx(hash);
+		}
+
+		auto res = parts_[pIdx]->try_emplace_with_hash(hash, key);
 		size_ += res.second;
 		return res.first->second;
 	}
@@ -406,7 +416,17 @@ public:
 	size_t num_parts() const noexcept { return partsUsed_; }
 
 private:
-	RX_ALWAYS_INLINE size_t partIdx(size_t hash) const noexcept { return partsToUse_[hash & (kMaxParts - 1)]; }
+	size_t partIdx(uint64_t hash) const noexcept {
+		// using SplitMix64
+		uint64_t x = hash;
+		x ^= x >> 30;
+		x *= 0xbf58476d1ce4e5b9ULL;
+		x ^= x >> 27;
+		x *= 0x94d049bb133111ebULL;
+		x ^= x >> 31;
+		uint64_t bucket = x & (kMaxParts - 1);
+		return partsToUse_[bucket];
+	}
 
 	void addToStats(std::vector<char>& stats, uint32_t v) const {
 		stats.resize(stats.size() + sizeof(v));
@@ -434,13 +454,6 @@ private:
 	template <class K, class... Args>
 	std::pair<iterator, bool> insert_impl(const K& key, Args&&... value_type_args) {
 		size_t hash = h_(key);
-		size_t pIdx = partIdx(hash);
-		auto res = parts_[pIdx]->try_emplace_with_hash(hash, key, std::forward<Args>(value_type_args)...);
-		return {iterator(this, pIdx, res.first), res.second};
-	}
-
-	template <class K, class... Args>
-	std::pair<iterator, bool> insert_impl_with_hash(const K& key, size_t hash, Args&&... value_type_args) {
 		size_t pIdx = partIdx(hash);
 		auto res = parts_[pIdx]->try_emplace_with_hash(hash, key, std::forward<Args>(value_type_args)...);
 		return {iterator(this, pIdx, res.first), res.second};
@@ -518,13 +531,16 @@ private:
 		--partsUsed_;
 	}
 
-	RX_ALWAYS_INLINE void rebalance(size_t partIdx) {
+	RX_ALWAYS_INLINE bool rebalance(size_t partIdx) {
 		if (parts_[partIdx]->size() >= kCriticalPartSize && partsSplitCounts_[partIdx] > 1) [[unlikely]] {
 			rebalanceAddNewPartImpl(partIdx);
+			return true;
 		} else if (removesCounter_ > kNumRemovesToJoinMinParts && parts_[partIdx]->size() < kMinPartSize && partsUsed_ > 1) [[unlikely]] {
 			rebalanceJoinPartsImpl(partIdx);
 		}
+		return false;
 	}
+
 	RX_NO_INLINE void rebalanceAddNewPartImpl(size_t partIdx) {
 		addNewPart();
 		rebalanceParts(partIdx, partsUsed_ - 1);

@@ -1,4 +1,6 @@
 #include "clusterizator.h"
+#include <algorithm>
+#include "cluster/logger.h"
 #include "cluster/replication/ns_sync_scheduler.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 
@@ -54,6 +56,7 @@ Error ClusterManager::StartClusterRepl() noexcept {
 		}
 		validateConfig();
 		clusterReplicator_.Run(nssSyncScheduler_);
+		updateManagerLogLevel();
 	} catch (std::exception& e) {
 		return e;
 	}
@@ -68,6 +71,7 @@ Error ClusterManager::StartAsyncRepl() noexcept {
 		}
 		validateConfig();
 		asyncReplicator_.Run(nssSyncScheduler_);
+		updateManagerLogLevel();
 	} catch (std::exception& e) {
 		return e;
 	}
@@ -161,9 +165,19 @@ ReplicationStats ClusterManager::GetAsyncReplicationStats() const { return async
 
 ReplicationStats ClusterManager::GetClusterReplicationStats() const { return clusterReplicator_.GetReplicationStats(); }
 
-void ClusterManager::SetAsyncReplicatonLogLevel(LogLevel level) noexcept { asyncReplicator_.SetLogLevel(level); }
+void ClusterManager::SetAsyncReplicatonLogLevel(LogLevel level) noexcept {
+	asyncReplicator_.SetLogLevel(level);
+	updateManagerLogLevel();
+}
 
-void ClusterManager::SetClusterReplicatonLogLevel(LogLevel level) noexcept { clusterReplicator_.SetLogLevel(level); }
+void ClusterManager::SetClusterReplicatonLogLevel(LogLevel level) noexcept {
+	clusterReplicator_.SetLogLevel(level);
+	updateManagerLogLevel();
+}
+
+void ClusterManager::updateManagerLogLevel() noexcept {
+	log_.SetLevel(std::max(clusterReplicator_.GetLogLevel(), asyncReplicator_.GetLogLevel()));
+}
 
 bool ClusterManager::replicationIsNotRequired(const UpdatesContainer& recs) noexcept {
 	return recs.empty() || isSystemNamespaceNameFast(recs[0].NsName());

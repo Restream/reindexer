@@ -294,39 +294,36 @@ static OpType parseOptionalOperation(const JsonNode& parser) {
 
 static KnnSearchParams parseKnnParams(const JsonNode& json) {
 	const auto paramsJson = json.findCaseInsensitive("params"sv);
-	if (paramsJson.isEmpty()) {
-		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain 'params'"};
-	}
-	const auto kJson = paramsJson.findCaseInsensitive(KnnSearchParams::kKName);
-	const auto radiusJson = paramsJson.findCaseInsensitive(KnnSearchParams::kRadiusName);
 	std::optional<size_t> k;
 	std::optional<float> radius;
-	if (!kJson.isEmpty()) {
-		k = kJson.As<size_t>(CheckUnsigned_True, 0, 1);
-	}
-	if (!radiusJson.isEmpty()) {
-		radius = radiusJson.As<float>();
-	}
-
-	if (!k && !radius) {
-		throw Error{errParseDSL, "Wrong DSL format: KNN query should contain one of 'params.{}' or 'params.{}'", KnnSearchParams::kKName,
-					KnnSearchParams::kRadiusName};
-	}
-
-	if (const auto efJson = paramsJson.findCaseInsensitive(KnnSearchParams::kEfName); !efJson.isEmpty()) {
-		if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.isEmpty()) {
-			throw Error{errParseDSL, "Wrong DSL format: KNN query cannot contain both of 'params.{}' and 'params.{}",
-						KnnSearchParams::kEfName, KnnSearchParams::kNProbeName};
+	if (!paramsJson.isEmpty()) {
+		const auto kJson = paramsJson.findCaseInsensitive(KnnSearchParams::kKName);
+		const auto radiusJson = paramsJson.findCaseInsensitive(KnnSearchParams::kRadiusName);
+		if (!kJson.isEmpty()) {
+			k = kJson.As<size_t>(CheckUnsigned_True, 0, 1);
 		}
-		return HnswSearchParams{}.K(k).Radius(radius).Ef(efJson.As<size_t>(CheckUnsigned_True, 1, k ? *k : 1));
-	} else if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.isEmpty()) {
-		if (nprobeJson.value.isNegative()) {
-			throw Error{errParseDSL, "Wrong DSL format: KNN query parameter 'params.{}' cannot be negative", KnnSearchParams::kNProbeName};
+		if (!radiusJson.isEmpty()) {
+			radius = radiusJson.As<float>();
 		}
-		return IvfSearchParams{}.K(k).Radius(radius).NProbe(nprobeJson.As<size_t>(CheckUnsigned_True, 0, 1));
-	} else {
-		return KnnSearchParamsBase{}.K(k).Radius(radius);
+
+		// Empty 'k' and empty 'radius' are allowed here: this enables streaming KNN search over an HNSW index
+		// Invalid combinations (e.g. IVF/bruteforce without 'k'/'radius')
+		// are rejected later by KnnSearchParams::Validate during query execution.
+		if (const auto efJson = paramsJson.findCaseInsensitive(KnnSearchParams::kEfName); !efJson.isEmpty()) {
+			if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.isEmpty()) {
+				throw Error{errParseDSL, "Wrong DSL format: KNN query cannot contain both of 'params.{}' and 'params.{}",
+							KnnSearchParams::kEfName, KnnSearchParams::kNProbeName};
+			}
+			return HnswSearchParams{}.K(k).Radius(radius).Ef(efJson.As<size_t>(CheckUnsigned_True, 1, k ? *k : 1));
+		} else if (const auto nprobeJson = paramsJson.findCaseInsensitive(KnnSearchParams::kNProbeName); !nprobeJson.isEmpty()) {
+			if (nprobeJson.value.isNegative()) {
+				throw Error{errParseDSL, "Wrong DSL format: KNN query parameter 'params.{}' cannot be negative",
+							KnnSearchParams::kNProbeName};
+			}
+			return IvfSearchParams{}.K(k).Radius(radius).NProbe(nprobeJson.As<size_t>(CheckUnsigned_True, 0, 1));
+		}
 	}
+	return KnnSearchParamsBase{}.K(k).Radius(radius);
 }
 
 void addWhereKNN(const JsonNode& fieldNode, const JsonNode& filter, Query& q) {
@@ -488,6 +485,10 @@ static void parseFilter(const JsonNode& filter, Query& q) {
 	};
 	q.NextOp(op);
 	if (const auto firstField = filter.findCaseInsensitive("first_field"sv); !firstField.isEmpty()) {
+		const auto secondField = filter.findCaseInsensitive("second_field"sv);
+		if (secondField.isEmpty()) [[unlikely]] {
+			throw Error{errParseDSL, "Wrong DSL format: 'first_field' is set, but 'second_field' was not found in filter"};
+		}
 		q.WhereBetweenFields(firstField.As<std::string_view>(), getCondition(),
 							 filter.findCaseInsensitive("second_field"sv).As<std::string_view>());
 	} else if (const auto subQueryJson = filter.findCaseInsensitive("subquery"sv); !subQueryJson.isEmpty()) {
@@ -509,7 +510,7 @@ static void parseFilter(const JsonNode& filter, Query& q) {
 		checkJsonValueType(le.value, "left_expression"sv, JsonTag::OBJECT);
 		const auto re = filter.findCaseInsensitive("right_expression"sv);
 		if (re.isEmpty()) {
-			throw Error{errParseDSL, "Wrong DSL format: 'right_expression' is not set"};
+			throw Error{errParseDSL, "Wrong DSL format: 'left_expression' is set, but 'right_expression' was not found in filter"};
 		}
 		// Expresssions will replace fields in the future
 		checkJsonValueType(re.value, "right_expression"sv, JsonTag::OBJECT);
@@ -520,7 +521,11 @@ static void parseFilter(const JsonNode& filter, Query& q) {
 		} else {
 			q.Where(fieldNode.As<std::string_view>(), cond, getValues(filter));
 		}
-	} else if (condition.has_value()) {
+	} else if (!filter.findCaseInsensitive("second_field"sv).isEmpty()) [[unlikely]] {
+		throw Error{errParseDSL, "Wrong DSL format: 'second_field' is set, but 'first_field' was not found in filter"};
+	} else if (!filter.findCaseInsensitive("right_expression"sv).isEmpty()) [[unlikely]] {
+		throw Error{errParseDSL, "Wrong DSL format: 'right_expression' is set, but appropriate left operand was not found in filter"};
+	} else if (condition.has_value()) [[unlikely]] {
 		throw Error{errParseDSL, "Condition is set, but appropriate field/subquery was not found in filter"};
 	}
 }

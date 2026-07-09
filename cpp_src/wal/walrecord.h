@@ -81,7 +81,6 @@ struct [[nodiscard]] PackedWALRecord : public h_vector<uint8_t, 12> {
 	void Pack(const WALRecord& rec);
 };
 
-#pragma pack(push, 1)
 struct [[nodiscard]] MarkedPackedWALRecord : public PackedWALRecord {
 	MarkedPackedWALRecord(int16_t s) noexcept : server{s} {
 		assertrx_dbg(server >= lsn_t::kMinServerIDValue);
@@ -92,10 +91,14 @@ struct [[nodiscard]] MarkedPackedWALRecord : public PackedWALRecord {
 		assertrx_dbg(server >= lsn_t::kMinServerIDValue);
 		assertrx_dbg(server <= lsn_t::kMaxServerIDValue);
 	}
+	void Pack(int16_t _serverId, const WALRecord& rec);
 
 	int16_t server = -1;
-	void Pack(int16_t _serverId, const WALRecord& rec);
 };
-#pragma pack(pop)
+
+#ifndef REINDEX_DEBUG_CONTAINERS
+static_assert(sizeof(MarkedPackedWALRecord) <= 24,
+			  "Expecting MarkedPackedWALRecord to be less than or equal to 24 bytes. This size affects total WAL buffer size");
+#endif	// REINDEX_DEBUG_CONTAINERS
 
 }  // namespace reindexer

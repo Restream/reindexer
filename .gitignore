@@ -9,6 +9,7 @@ logs
 
 # ignore user's files
 *.user
+.tmp-*
 
 # do not allow to commit binary and docs
 

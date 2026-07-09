@@ -2,7 +2,6 @@
 #include "core/dbconfig.h"
 #include "core/definitions/indexdef.h"
 #include "core/formatters/id_type_fmt.h"
-#include "core/index/indextext/ftkeyentry.h"
 #include "core/index/string_map.h"
 #include "core/rdxcontext.h"
 #include "rtree/greenesplitter.h"
@@ -81,22 +80,6 @@ IndexUnordered<unordered_str_map<Index::KeyEntryPlain>>::IndexUnordered(const In
 	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
 
 template <>
-IndexUnordered<unordered_str_map<FtKeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-															  const NamespaceCacheConfigData& cacheCfg)
-	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(idef.Opts().collateOpts_),
-	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
-	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
-
-template <>
-IndexUnordered<unordered_payload_map_ft<FtKeyEntry>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
-																	 const NamespaceCacheConfigData& cacheCfg)
-	: Base(idef, std::move(payloadType), std::move(fields)),
-	  idx_map(PayloadType{Base::GetPayloadType()}, FieldsSet{Base::Fields()}),
-	  cacheMaxSize_(cacheCfg.idxIdsetCacheSize),
-	  hitsToCache_(cacheCfg.idxIdsetHitsToCache) {}
-
-template <>
 IndexUnordered<unordered_payload_map<Index::KeyEntryPK>>::IndexUnordered(const IndexDef& idef, PayloadType&& payloadType,
 																		 FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
 	: Base(idef, std::move(payloadType), std::move(fields)),
@@ -150,17 +133,15 @@ bool IndexUnordered<T>::HoldsStrings() const noexcept {
 }
 
 template <typename T>
-IndexUnordered<T>::IndexUnordered(const IndexUnordered& other)
-	: Base(other),
+IndexUnordered<T>::IndexUnordered(const IndexUnordered& other, IndexCloneKind kind)
+	: Base(other, kind),
 	  idx_map(other.idx_map),
 	  cacheMaxSize_(other.cacheMaxSize_),
 	  hitsToCache_(other.hitsToCache_),
 	  empty_ids_(other.empty_ids_),
 	  tracker_(other.tracker_),
-	  pkSortedIds_(other.pkSortedIds_),
-	  pkSortedIdsSizeBytes_(other.pkSortedIdsSizeBytes_.load()) {
-	cache_.CopyInternalPerfStatsFrom(other.cache_);
-}
+	  pkSortedIds_(kind == IndexCloneKind::Snapshot ? other.pkSortedIds_ : std::vector<std::vector<IdType>>(this->sortedIdxCount_)),
+	  pkSortedIdsSizeBytes_(kind == IndexCloneKind::Snapshot ? other.pkSortedIdsSizeBytes_.load(std::memory_order_relaxed) : 0) {}
 
 template <typename key_type>
 size_t heap_size(const key_type& /*kt*/) {
@@ -223,7 +204,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 		// reset cache
 		if (key.IsNullValue()) {
 			assertrx_dbg(this->Opts().IsSparse() || this->Opts().IsArray());
-			if (this->empty_ids_.Unsorted().Add(id, IdSetEditMode::Auto, this->sortedIdxCount_)) {
+			if (this->empty_ids_.Unsorted().Add(id, this->sortedIdxCount_)) {
 				cache_.ResetImpl();
 				clearCache = true;
 				this->isBuilt_ = false;
@@ -238,7 +219,7 @@ Variant IndexUnordered<T>::Upsert(const Variant& key, IdType id, bool& clearCach
 			delMemStat(keyIt);
 		}
 
-		if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSetEditMode::Ordered : IdSetEditMode::Auto, this->sortedIdxCount_)) {
+		if (keyIt->second.Unsorted().Add(id, this->sortedIdxCount_)) {
 			cache_.ResetImpl();
 			clearCache = true;
 			this->isBuilt_ = false;
@@ -303,7 +284,7 @@ void IndexUnordered<T>::Delete(const Variant& key, IdType id, MustExist mustExis
 }
 
 template <typename T>
-bool IndexUnordered<T>::RefreshCompositeKey(const Variant& key) noexcept {
+bool IndexUnordered<T>::RefreshCompositeKey(const Variant& key, IdType /*id*/) noexcept {
 	assertrx_dbg(IsComposite(this->Type()));
 	if constexpr (is_payload_map_v<T>) {
 		// This implementation updates existing pointer in composite index after PayloadValue update
@@ -366,8 +347,6 @@ bool IndexUnordered<T>::tryIdsetCache(const VariantArray& keys, CondType conditi
 	}
 	return scanWin;
 }
-
-static_assert(concepts::KeyEntryWithSortedIDs<FtKeyEntry>);
 
 template <typename T>
 SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType condition, SortType sortId,
@@ -499,37 +478,50 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 }
 
 template <typename T>
-void IndexUnordered<T>::Commit() {
-	this->empty_ids_.Unsorted().Commit();
+WasCanceled IndexUnordered<T>::Commit(const index::ICancelable& cancelable) {
+	this->empty_ids_.Unsorted().Commit(this->sortedIdxCount_);
 
 	if (!cache_.IsActive()) {
 		cache_.Reinitialize(cacheMaxSize_, hitsToCache_);
 	}
 
 	if (!tracker_.isUpdated()) {
-		return;
+		return WasCanceled_False;
 	}
+
+	RX_RETURN_IF_CANCELED(cancelable);
 
 	logFmt(LogTrace, "IndexUnordered::Commit ({}) {} uniq keys, {} empty, {}", this->name_, this->idx_map.size(),
 		   this->empty_ids_.Unsorted().Size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
 
 	if (tracker_.isCompleteUpdated()) {
+		size_t handledCounter = 0;
 		for (auto& keyIt : this->idx_map) {
-			keyIt.second.Unsorted().Commit();
+			if (handledCounter >= index::kCancelCheckFrequency) {
+				RX_RETURN_IF_CANCELED(cancelable);
+				handledCounter = 0;
+			}
+
+			keyIt.second.Unsorted().Commit(this->sortedIdxCount_);
 			assertrx(keyIt.second.Unsorted().Size());
+
+			handledCounter += keyIt.second.Unsorted().Size();
 		}
 	} else {
-		tracker_.commitUpdated(idx_map);
+		tracker_.commitUpdated(idx_map, this->sortedIdxCount_);
 	}
 	tracker_.clear();
+	return WasCanceled_False;
 }
 
 template <typename T>
-void IndexUnordered<T>::UpdateSortedIds(const IUpdateSortedContext& ctx) {
-	assertrx_dbg(IsSupportSortedIdsBuild());
-
+WasCanceled IndexUnordered<T>::UpdateSortedIds(const index::IUpdateSortedContext& ctx, const index::ICancelable& cancelable) {
 	logFmt(LogTrace, "IndexUnordered::UpdateSortedIds ({}) {} uniq keys, {} empty", this->name_, this->idx_map.size(),
 		   this->empty_ids_.Unsorted().Size());
+
+	assertrx_dbg(IsSupportSortedIdsBuild());
+
+	RX_RETURN_IF_CANCELED(cancelable);
 
 	if constexpr (isPK) {
 		// PK stores sorted IDs in separated vector
@@ -538,33 +530,48 @@ void IndexUnordered<T>::UpdateSortedIds(const IUpdateSortedContext& ctx) {
 		assertrx_dbg(curSortId <= pkSortedIds_.size());
 		auto& pkSortedIds = pkSortedIds_[curSortId - 1];
 		const size_t oldCapacity = pkSortedIds.capacity();
-		pkSortedIds.clear();
+		const size_t newSize = ids2Sorts.size();
+		pkSortedIds.reserve(newSize);
+		pkSortedIds.resize(newSize);
 		pkSortedIds.shrink_to_fit();
-		pkSortedIds.reserve(ids2Sorts.size());
-
-		for (const auto id : ids2Sorts) {
-			pkSortedIds.push_back(IdType::FromNumber(id));
-		}
 		int64_t additionalIdsetPlainSizeDiff = pkSortedIds.capacity() * sizeof(IdType);
 		additionalIdsetPlainSizeDiff -= oldCapacity * sizeof(IdType);
 		pkSortedIdsSizeBytes_.fetch_add(additionalIdsetPlainSizeDiff);
+
+		static_assert(sizeof(IdType) == sizeof(SortType));
+		for (size_t pos = 0; pos < newSize;) {
+			RX_RETURN_IF_CANCELED(cancelable);
+			const size_t end = std::min(pos + index::kCancelCheckFrequency, newSize);
+			for (; pos < end; ++pos) {
+				pkSortedIds[pos] = IdType::FromNumber(static_cast<IdType::UnderlyingType>(ids2Sorts[pos]));
+			}
+		}
 	} else {
+		size_t handledCounter = 0;
 		// Other indexes store sorted IDs inside ID sets
 		for (auto& keyIt : this->idx_map) {
+			if (handledCounter >= index::kCancelCheckFrequency) {
+				RX_RETURN_IF_CANCELED(cancelable);
+				handledCounter = 0;
+			}
+
 			keyIt.second.UpdateSortedIds(ctx);
+
+			handledCounter += keyIt.second.Unsorted().Size();
 		}
 	}
 	this->empty_ids_.UpdateSortedIds(ctx);
+	return WasCanceled_False;
 }
 
 template <typename T>
-void IndexUnordered<T>::SetSortedIdxCount(int sortedIdxCount) {
+void IndexUnordered<T>::SetSortedIdxCount(unsigned sortedIdxCount) {
 	if (this->sortedIdxCount_ != sortedIdxCount) {
 		this->sortedIdxCount_ = sortedIdxCount;
 		for (auto& keyIt : idx_map) {
-			keyIt.second.Unsorted().ReserveForSorted(sortedIdxCount);
+			keyIt.second.Unsorted().OnSortedIndexCountChanged(sortedIdxCount);
 		}
-		empty_ids_.Unsorted().ReserveForSorted(sortedIdxCount);
+		empty_ids_.Unsorted().OnSortedIndexCountChanged(sortedIdxCount);
 
 		if constexpr (isPK) {
 			pkSortedIds_.resize(sortedIdxCount);
@@ -806,10 +813,6 @@ template class IndexUnordered<str_map<Index::KeyEntry>>;
 template class IndexUnordered<payload_map<Index::KeyEntryPK>>;
 template class IndexUnordered<payload_map<Index::KeyEntryPlain>>;
 template class IndexUnordered<payload_map<Index::KeyEntry>>;
-
-template class IndexUnordered<unordered_str_map<FtKeyEntry>>;
-
-template class IndexUnordered<unordered_payload_map_ft<FtKeyEntry>>;
 
 template class IndexUnordered<unordered_uuid_map<Index::KeyEntryPK>>;
 template class IndexUnordered<unordered_uuid_map<Index::KeyEntryPlain>>;

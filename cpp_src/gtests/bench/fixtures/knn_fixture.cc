@@ -21,7 +21,7 @@ using reindexer::IvfSearchParams;
 using reindexer::Item;
 using reindexer::Error;
 
-static constexpr int kMaxValueOrTreeIndex = 1'000'000;
+static constexpr int kMaxValueTreeIndex = 1'000'000;
 
 #ifdef REINDEX_WITH_TSAN
 static constexpr size_t kK = 300;
@@ -102,17 +102,25 @@ consteval float radius<IndexType::Ivf, VectorMetric::Cosine>() noexcept {
 }
 #endif	// defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(RX_WITH_STDLIB_DEBUG)
 
+static constexpr int kHalfMaxValueTreeIndex = kMaxValueTreeIndex / 2;
+
 template <IndexType indexType, VectorMetric metric>
 template <KnnParams knnParams>
 class [[nodiscard]] KnnBench<indexType, metric>::ItemsCounter : private LowSelectivityItemsCounter<> {
 	using Base = LowSelectivityItemsCounter<>;
 
 public:
+	ItemsCounter(State& state, size_t limit) noexcept : Base{state}, limit_{limit} {}
 	using Base::Base;
 	~ItemsCounter() {
-		state_.counters["Items/Op"] = itemsCounter_ / state_.iterations();
-		if constexpr (knnParams != KnnParams::Radius) {
-			state_.counters["K"] = kK;
+		state_.counters["Items/Op"] = itemsCounter_ / std::max<size_t>(size_t(1), state_.iterations());
+
+		if (limit_.has_value()) {
+			state_.counters["Limit"] = *limit_;
+		} else {
+			if constexpr (knnParams != KnnParams::Radius) {
+				state_.counters["K"] = kK;
+			}
 		}
 	}
 	void operator()(const QueryResults& qres) noexcept {
@@ -121,6 +129,7 @@ public:
 	}
 
 private:
+	std::optional<size_t> limit_;
 	size_t itemsCounter_{0};
 };
 
@@ -174,7 +183,7 @@ Item KnnBench<indexType, metric>::MakeItem(State&, int id) {
 	Item item = db_->NewItem(nsdef_.name);
 	if (item.Status().ok()) {
 		item["id"sv] = id;
-		item["tree"sv] = rand() % kMaxValueOrTreeIndex;
+		item["tree"sv] = rand() % kMaxValueTreeIndex;
 		static std::array<float, kDimention> vect;
 		reindexer_tests_tools::rndFloatVector(vect);
 		item["vec"sv] = ConstFloatVectorView{vect};
@@ -209,6 +218,49 @@ void KnnBench<indexType, metric>::Fill(State& state) {
 		}
 		state.SetItemsProcessed(state.items_processed() + kNsSize);
 	}
+	if constexpr (indexType == IndexType::Hnsw) {
+		prepareStreamingParams(state);
+	}
+}
+
+template <IndexType indexType, VectorMetric metric>
+void KnnBench<indexType, metric>::prepareStreamingParams(State& state) {
+	if constexpr (indexType != IndexType::Hnsw) {
+		return;
+	}
+
+	streamingQuery_.resize(kDimention);
+	std::array<float, kDimention> buf{};
+	reindexer_tests_tools::rndFloatVector(buf);
+	streamingQuery_.assign(buf.begin(), buf.end());
+
+	const ConstFloatVectorView query{std::span<const float>{streamingQuery_.data(), streamingQuery_.size()}};
+	const int idThreshold = int(kNsSize / 2);
+	const auto refParams = HnswSearchParams{}.K(kK).Ef(kK);
+
+	QueryResults qr;
+	auto err = db_->Select(Query(nsdef_.name).Where("tree"sv, CondGt, kHalfMaxValueTreeIndex).WhereKNN("vec"sv, query, refParams), qr);
+	if (!err.ok()) {
+		state.SkipWithError(err.what());
+		return;
+	}
+	streamingLimitTree50_ = qr.Count();
+
+	qr.Clear();
+
+	err = db_->Select(Query(nsdef_.name)
+						  .Where("id"sv, CondGt, idThreshold)
+						  .Where("tree"sv, CondGt, kHalfMaxValueTreeIndex)
+						  .WhereKNN("vec"sv, query, refParams),
+					  qr);
+	if (!err.ok()) {
+		state.SkipWithError(err.what());
+		return;
+	}
+	streamingLimit2Cond_ = qr.Count();
+
+	state.counters["Limit/Tree50pct"] = streamingLimitTree50_;
+	state.counters["Limit/2Cond25pct"] = streamingLimit2Cond_;
 }
 
 template <IndexType indexType, VectorMetric metric>
@@ -363,7 +415,7 @@ void KnnBench<indexType, metric>::KnnWithCondition(State& state) {
 	const auto q = [&] {
 		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name)
-			.Where("tree"sv, CondGt, rand() % (kMaxValueOrTreeIndex / 2))
+			.Where("tree"sv, CondGt, rand() % kHalfMaxValueTreeIndex)
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}());
 	};
 	ItemsCounter<knnParams> itemsCounter{state};
@@ -379,7 +431,7 @@ void KnnBench<indexType, metric>::KnnWith2Conditions(State& state) {
 		reindexer_tests_tools::rndFloatVector(vect);
 		return Query(nsdef_.name)
 			.Where("id"sv, CondGt, rand() % halfOfItemsCount)
-			.Where("tree"sv, CondGt, rand() % (kMaxValueOrTreeIndex / 2))
+			.Where("tree"sv, CondGt, rand() % kHalfMaxValueTreeIndex)
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}());
 	};
 	ItemsCounter<knnParams> itemsCounter{state};
@@ -450,6 +502,87 @@ void KnnBench<indexType, metric>::OrHybridLinear(State& state) {
 	benchQuery(q, state, itemsCounter);
 }
 
+template <IndexType indexType, VectorMetric metric>
+void KnnBench<indexType, metric>::StreamingKnnTree50pct(State& state) {
+	if constexpr (indexType != IndexType::Hnsw) {
+		state.SkipWithError("Streaming KNN benchmarks are supported for HNSW indexes only");
+		return;
+	}
+	if (streamingLimitTree50_ == 0) {
+		state.SkipWithError("Run Fill before streaming benchmarks");
+	}
+
+	const ConstFloatVectorView query{std::span<const float>{streamingQuery_.data(), streamingQuery_.size()}};
+	const auto limit = streamingLimitTree50_;
+	const auto q = [&] {
+		return Query(nsdef_.name).Where("tree"sv, CondGt, kHalfMaxValueTreeIndex).WhereKNN("vec"sv, query, HnswSearchParams{}).Limit(limit);
+	};
+	ItemsCounter<KnnParams::K> itemsCounter{state, limit};
+	benchQuery(q, state, itemsCounter);
+}
+
+template <IndexType indexType, VectorMetric metric>
+void KnnBench<indexType, metric>::StreamingKnnTree50pctLimit10(State& state) {
+	if constexpr (indexType != IndexType::Hnsw) {
+		state.SkipWithError("Streaming KNN benchmarks are supported for HNSW indexes only");
+		return;
+	}
+	if (streamingQuery_.empty()) {
+		state.SkipWithError("Run Fill before streaming benchmarks");
+	}
+
+	static constexpr size_t kLimit = 10;
+	const ConstFloatVectorView query{std::span<const float>{streamingQuery_.data(), streamingQuery_.size()}};
+	const auto q = [&] {
+		return Query(nsdef_.name)
+			.Where("tree"sv, CondGt, kHalfMaxValueTreeIndex)
+			.WhereKNN("vec"sv, query, HnswSearchParams{})
+			.Limit(kLimit);
+	};
+	ItemsCounter<KnnParams::K> itemsCounter{state, kLimit};
+	benchQuery(q, state, itemsCounter);
+}
+
+template <IndexType indexType, VectorMetric metric>
+void KnnBench<indexType, metric>::StreamingKnn2Cond25pct(State& state) {
+	if constexpr (indexType != IndexType::Hnsw) {
+		state.SkipWithError("Streaming KNN benchmarks are supported for HNSW indexes only");
+		return;
+	}
+	if (streamingLimit2Cond_ == 0) {
+		state.SkipWithError("Run Fill before streaming benchmarks");
+	}
+
+	const int idThreshold = int(kNsSize / 2);
+	const ConstFloatVectorView query{std::span<const float>{streamingQuery_.data(), streamingQuery_.size()}};
+	const auto limit = streamingLimit2Cond_;
+	const auto q = [&] {
+		return Query(nsdef_.name)
+			.Where("id"sv, CondGt, idThreshold)
+			.Where("tree"sv, CondGt, kHalfMaxValueTreeIndex)
+			.WhereKNN("vec"sv, query, HnswSearchParams{})
+			.Limit(limit);
+	};
+	ItemsCounter<KnnParams::K> itemsCounter{state, limit};
+	benchQuery(q, state, itemsCounter);
+}
+
+template <IndexType indexType, VectorMetric metric>
+void KnnBench<indexType, metric>::StreamingKnnNoFilter(State& state) {
+	if constexpr (indexType != IndexType::Hnsw) {
+		state.SkipWithError("Streaming KNN benchmarks are supported for HNSW indexes only");
+		return;
+	}
+	if (streamingQuery_.empty()) {
+		state.SkipWithError("Run Fill before streaming benchmarks");
+	}
+
+	const ConstFloatVectorView query{std::span<const float>{streamingQuery_.data(), streamingQuery_.size()}};
+	const auto q = [&] { return Query(nsdef_.name).WhereKNN("vec"sv, query, HnswSearchParams{}).Limit(kK); };
+	ItemsCounter<KnnParams::K> itemsCounter{state, kK};
+	benchQuery(q, state, itemsCounter);
+}
+
 #if !defined(RX_WITH_STDLIB_DEBUG) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 
 static bool GetQuantizationStatus(Reindexer* db, std::string_view nsName, std::string_view indexName) {
@@ -510,6 +643,10 @@ void KnnBench<indexType, metric>::RegisterAllCases() {
 #endif	// !defined(RX_WITH_STDLIB_DEBUG) && !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 
 	Register("Knn/K"s, &KnnBench<indexType, metric>::Knn<KnnParams::K>, this);
+	if constexpr (indexType == IndexType::Hnsw) {
+		Register("StreamingKnn/NoFilter"s, &KnnBench<indexType, metric>::StreamingKnnNoFilter, this);
+	}
+
 	Register("Knn/K_Radius"s, &KnnBench<indexType, metric>::Knn<KnnParams::K_Radius>, this);
 	Register("Knn/Radius"s, &KnnBench<indexType, metric>::Knn<KnnParams::Radius>, this);
 	Register("KnnWithVectors/K"s, &KnnBench<indexType, metric>::KnnWithVectors<KnnParams::K>, this);
@@ -518,9 +655,18 @@ void KnnBench<indexType, metric>::RegisterAllCases() {
 
 	if constexpr (metric == VectorMetric::Cosine) {
 		Register("KnnWithCondition/K"s, &KnnBench<indexType, metric>::KnnWithCondition<KnnParams::K>, this);
+		if constexpr (indexType == IndexType::Hnsw) {
+			Register("StreamingKnn/Tree50pct"s, &KnnBench<indexType, metric>::StreamingKnnTree50pct, this);
+			Register("StreamingKnn/Tree50pct/limit10"s, &KnnBench<indexType, metric>::StreamingKnnTree50pctLimit10, this);
+		}
+
 		Register("KnnWithCondition/K_Radius"s, &KnnBench<indexType, metric>::KnnWithCondition<KnnParams::K_Radius>, this);
 		Register("KnnWithCondition/Radius"s, &KnnBench<indexType, metric>::KnnWithCondition<KnnParams::Radius>, this);
 		Register("KnnWith2Conditions/K"s, &KnnBench<indexType, metric>::KnnWith2Conditions<KnnParams::K>, this);
+		if constexpr (indexType == IndexType::Hnsw) {
+			Register("StreamingKnn/2Cond25pct"s, &KnnBench<indexType, metric>::StreamingKnn2Cond25pct, this);
+		}
+
 		Register("KnnWith2Conditions/K_Radius"s, &KnnBench<indexType, metric>::KnnWith2Conditions<KnnParams::K_Radius>, this);
 		Register("KnnWith2Conditions/Radius"s, &KnnBench<indexType, metric>::KnnWith2Conditions<KnnParams::Radius>, this);
 

@@ -42,6 +42,7 @@
 #include "tools/logger.h"
 #include "tools/scope_guard.h"
 #include "tools/timetools.h"
+#include "tools/unaligned.h"
 #include "tx_concurrent_inserter.h"
 #include "wal/walselecter.h"
 
@@ -118,7 +119,7 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl& src, size_t newCapacity, Async
 	  observers_{src.observers_},
 	  embeddersCache_{src.embeddersCache_} {
 	for (auto& idxIt : src.indexes_) {
-		indexes_.push_back(idxIt->Clone(newCapacity));
+		indexes_.push_back(idxIt->Clone(newCapacity, IndexCloneKind::Logical));
 	}
 	queryCountCache_.CopyInternalPerfStatsFrom(src.queryCountCache_);
 	joinCache_.CopyInternalPerfStatsFrom(src.joinCache_);
@@ -516,7 +517,7 @@ public:
 		Disable();
 	}
 	void SaveItem(IdType rowId, PayloadValue&& pv) { items_.emplace_back(rowId, std::move(pv)); }
-	void SaveTuple() { tuple_ = ns_.indexes_[0]->Clone(0); }
+	void SaveTuple() { tuple_ = ns_.indexes_[0]->Clone(0, IndexCloneKind::Snapshot); }
 	void MarkStorageRewrite() noexcept { storageWasRewritten_ = true; }
 
 	// NOLINTNEXTLINE (performance-noexcept-move-constructor)
@@ -782,7 +783,9 @@ void NamespaceImpl::AddIndex(const IndexDef& indexDef, const RdxContext& rdxCtx)
 	UpdatesContainer pendedRepl;
 	const NsContext ctx{rdxCtx};
 
+	CounterGuardAIR32 cg(cancelCommitCnt_);
 	auto wlck = dataWLock(rdxCtx, true);
+	cg.Reset();
 
 	verifyUpsertIndex("add", indexDef);
 	bool checkIdxEqualityNow = ctx.GetOriginLSN().isEmpty();
@@ -820,7 +823,9 @@ void NamespaceImpl::UpdateIndex(const IndexDef& indexDef, const RdxContext& rdxC
 	UpdatesContainer pendedRepl;
 	const NsContext ctx{rdxCtx};
 
+	CounterGuardAIR32 cg(cancelCommitCnt_);
 	auto wlck = dataWLock(rdxCtx);
+	cg.Reset();
 
 	FieldsSet oldPk;
 	if (const FieldsSet* pk = pkFields(); pk) {
@@ -845,7 +850,10 @@ void NamespaceImpl::DropIndex(const IndexDef& indexDef, const RdxContext& rdxCtx
 	UpdatesContainer pendedRepl;
 	const NsContext ctx{rdxCtx};
 
+	CounterGuardAIR32 cg(cancelCommitCnt_);
 	auto wlck = dataWLock(rdxCtx);
+	cg.Reset();
+
 	doDropIndex(indexDef, pendedRepl, ctx);
 	saveIndexesToStorage();
 	replicate(std::move(pendedRepl), std::move(wlck), false, nullptr, ctx);
@@ -855,6 +863,7 @@ void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext& rdxCtx)
 	UpdatesContainer pendedRepl;
 	const NsContext ctx{rdxCtx};
 
+	// Intentionally do not set cancelCommitCnt_ here
 	auto wlck = dataWLock(rdxCtx, true);
 
 	if (ctx.GetOriginLSN().isEmpty()) {
@@ -2100,6 +2109,7 @@ void NamespaceImpl::ModifyItem(Item& item, ItemModifyMode mode, const RdxContext
 	lockCalc.SetCounter(updatePerfCounter_);
 	lockCalc.LockHit();
 	lockCalc.Disable();
+
 	auto* pk = pkFields();
 	if (!pk) {
 		throwCannotModifyNsWithoutPK();
@@ -2463,7 +2473,7 @@ void NamespaceImpl::doUpsert(ItemImpl& item, IdType id, bool doUpdate, Transacti
 		bool needClearCache{false};
 		if (doUpdate) {
 			if (!needUpdateCompIndexes[field2 - indexes_.firstCompositePos()]) {
-				bool refreshed = idxRef.RefreshCompositeKey(Variant{plData});
+				bool refreshed = idxRef.RefreshCompositeKey(Variant{plData}, id);
 				assertrx_dbg(refreshed);
 				if (!refreshed) [[unlikely]] {
 					logFmt(LogError, "[{}]: Unable to refresh key for {} during item update", name_, idxRef.Name());
@@ -2720,8 +2730,9 @@ RX_ALWAYS_INLINE SelectKeyResult NamespaceImpl::getPkDocs(const ConstPayload& cp
 // find id by PK. NOT THREAD SAFE!
 std::pair<IdType, bool> NamespaceImpl::findByPK(ItemImpl* ritem, bool inTransaction, const RdxContext& ctx) {
 	SelectKeyResult res = getPkDocs(ritem->GetConstPayload(), inTransaction, ctx);
-	if (!res.empty() && !res[0].ids_.empty()) {
-		return {res[0].ids_[0], true};
+	if (!res.empty() && !res[0].TryGetFlatIDSet().empty()) {
+		assertrx_dbg(res[0].TryGetFlatIDSet().size() == 1);
+		return {res[0].TryGetFlatIDSet()[0], true};
 	}
 	return {IdType::NotSet(), false};
 }
@@ -2757,6 +2768,19 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 		return;
 	}
 
+	class [[nodiscard]] ConcurrentCancel final : public index::ICancelable {
+	public:
+		ConcurrentCancel(const NamespaceImpl& ns) noexcept : cancelCommitCnt_{ns.cancelCommitCnt_}, dbDestroyed_{ns.dbDestroyed_} {}
+
+		virtual bool IsCanceled() const noexcept override {
+			return cancelCommitCnt_.load(std::memory_order_relaxed) || dbDestroyed_.load(std::memory_order_relaxed);
+		}
+
+	private:
+		const std::atomic_int32_t& cancelCommitCnt_;
+		const std::atomic<bool>& dbDestroyed_;
+	};
+
 	indexOptimizer_.TryOptimize(
 		IndexOptimizer::Context{.nsName = name_,
 								.enablePerfCounters = enablePerfCounters_.load(),
@@ -2764,7 +2788,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 								.lastUpdateTime = std::chrono::milliseconds(lastUpdateTime_.load(std::memory_order_acquire)),
 								.indexes = indexes_,
 								.items = items_},
-		[this] { return cancelCommitCnt_.load(std::memory_order_relaxed) || dbDestroyed_.load(std::memory_order_relaxed); });
+		ConcurrentCancel(*this));
 }
 
 void NamespaceImpl::markUpdated(IndexOptimization requestedOptimization) {
@@ -3572,6 +3596,7 @@ void NamespaceImpl::SetClusterOperationStatus(ClusterOperationStatus&& status, c
 void NamespaceImpl::ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& ctx) {
 	UpdatesContainer pendedRepl;
 	SnapshotHandler handler(*this);
+
 	CounterGuardAIR32 cg(cancelCommitCnt_);
 	auto wlck = dataWLock(ctx, true);
 	cg.Reset();
@@ -3595,7 +3620,9 @@ void NamespaceImpl::SetTagsMatcher(TagsMatcher&& tm, const RdxContext& rdxCtx) {
 	UpdatesContainer pendedRepl;
 	const NsContext ctx{rdxCtx};
 
+	// Intentionally do not set cancelCommit_ here - this method is called by system activities, not by user
 	auto wlck = dataWLock(rdxCtx);
+
 	setTagsMatcher(std::move(tm), pendedRepl, ctx);
 	replicate(std::move(pendedRepl), std::move(wlck), true, nullptr, ctx);
 }
@@ -3728,7 +3755,10 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext* ctx) {
 		}
 	}
 	UpdatesContainer pendedRepl;
+
+	// Intentionally do not set cancelCommit_ here - this method is called in background thread, not by user
 	auto wlck = dataWLock(rdxCtx);
+
 	const auto now = std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now().time_since_epoch());
 	if (now == lastExpirationCheckTs_) {
 		return;
@@ -4014,7 +4044,7 @@ std::string NamespaceImpl::sysRecordName(std::string_view sysTag, uint64_t versi
 void NamespaceImpl::writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t& version, bool direct) {
 	size_t iterCount = (version > 0) ? 1 : kSysRecordsFirstWriteCopies;
 	for (size_t i = 0; i < iterCount; ++i, ++version) {
-		*(reinterpret_cast<uint64_t*>(const_cast<char*>(data.data()))) = version;
+		unaligned::write<uint64_t>(const_cast<char*>(data.data()), version);
 		if (direct) {
 			storage_.WriteSync(StorageOpts().FillCache().Sync(0 == version), sysRecordName(sysTag, version), data);
 		} else {
@@ -4053,7 +4083,10 @@ void NamespaceImpl::PutMeta(const std::string& key, std::string_view data, const
 	UpdatesContainer pendedRepl;
 	const NsContext ctx{rdxCtx};
 
+	// This method does not affects index data, but it's called directly be user's API, and can not be delayed by background indexes commit
+	CounterGuardAIR32 cg(cancelCommitCnt_);
 	auto wlck = dataWLock(rdxCtx);
+	cg.Reset();
 
 	putMeta(key, data, pendedRepl, ctx);
 	replicate(std::move(pendedRepl), std::move(wlck), false, nullptr, ctx);
@@ -4089,7 +4122,10 @@ void NamespaceImpl::DeleteMeta(const std::string& key, const RdxContext& rdxCtx)
 	UpdatesContainer pendedRepl;
 	const NsContext ctx{rdxCtx};
 
+	// This method does not affects index data, but it's called directly be user's API, and can not be delayed by background indexes commit
+	CounterGuardAIR32 cg(cancelCommitCnt_);
 	auto wlck = dataWLock(rdxCtx);
+	cg.Reset();
 
 	deleteMeta(key, pendedRepl, ctx);
 	replicate(std::move(pendedRepl), std::move(wlck), false, nullptr, ctx);

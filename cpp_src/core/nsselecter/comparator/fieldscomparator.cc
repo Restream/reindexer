@@ -2,8 +2,10 @@
 
 #include <sstream>
 #include "core/keyvalue/p_string.h"
+#include "core/payload/payload_access.h"
 #include "core/payload/payloadfieldvalue.h"
 #include "core/payload/payloadiface.h"
+#include "tools/unaligned.h"
 #include "core/type_consts_helpers.h"
 #include "tools/string_regexp_functions.h"
 
@@ -36,13 +38,13 @@ public:
 		using namespace reindexer;
 		assertrx_dbg(i < len_);
 		return type_.EvaluateOneOf(
-			[&](KeyValueType::Int64) noexcept { return Variant{*reinterpret_cast<const int64_t*>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Double) noexcept { return Variant{*reinterpret_cast<const double*>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Float) noexcept { return Variant{*reinterpret_cast<const float*>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::String) noexcept { return Variant{*reinterpret_cast<const p_string*>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Bool) noexcept { return Variant{*reinterpret_cast<const bool*>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Int) noexcept { return Variant{*reinterpret_cast<const int*>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Uuid) noexcept { return Variant{*reinterpret_cast<const Uuid*>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Int64) noexcept { return Variant{unaligned::read<int64_t>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Double) noexcept { return Variant{unaligned::read<double>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Float) noexcept { return Variant{unaligned::read<float>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::String) noexcept { return Variant{unaligned::read<p_string>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Bool) noexcept { return Variant{unaligned::read<bool>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Int) noexcept { return Variant{unaligned::read<int>(ptr_ + sizeof_ * i)}; },
+			[&](KeyValueType::Uuid) noexcept { return Variant{unaligned::read<Uuid>(ptr_ + sizeof_ * i)}; },
 			[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined,
 								KeyValueType::FloatVector> auto) -> Variant {
 				throw Error{errQueryExec, "Field type {} is not supported for two field comparing", type_.Name()};
@@ -291,8 +293,8 @@ bool FieldsComparator::compare(const PayloadValue& item, const Context& ctx) con
 			ConstPayload(payloadType_, item).GetByJsonPath(ctx.rCtx_.fields_.getTagsPath(0), rhs, ctx.rCtx_.type_);
 			result = compare(lhs, rhs);
 		} else if (ctx.rCtx_.isArray_) {
-			const PayloadFieldValue::Array* rArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.rCtx_.offset_);
-			result = compare(lhs, ArrayAdapter(item.Ptr() + rArr->offset, rArr->len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
+			const auto rArr = payload_access::readArrayMeta(item.Ptr(), ctx.rCtx_.offset_);
+			result = compare(lhs, ArrayAdapter(item.Ptr() + rArr.offset, rArr.len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 		} else {
 			result = compare(lhs, ArrayAdapter(item.Ptr() + ctx.rCtx_.offset_, 1, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 		}
@@ -300,25 +302,25 @@ bool FieldsComparator::compare(const PayloadValue& item, const Context& ctx) con
 		VariantArray rhs;
 		ConstPayload(payloadType_, item).GetByJsonPath(ctx.rCtx_.fields_.getTagsPath(0), rhs, ctx.rCtx_.type_);
 		if (ctx.lCtx_.isArray_) {
-			const PayloadFieldValue::Array* lArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.lCtx_.offset_);
-			result = compare(ArrayAdapter(item.Ptr() + lArr->offset, lArr->len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_), rhs);
+			const auto lArr = payload_access::readArrayMeta(item.Ptr(), ctx.lCtx_.offset_);
+			result = compare(ArrayAdapter(item.Ptr() + lArr.offset, lArr.len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_), rhs);
 		} else {
 			result = compare(ArrayAdapter(item.Ptr() + ctx.lCtx_.offset_, 1, ctx.lCtx_.sizeof_, ctx.lCtx_.type_), rhs);
 		}
 	} else if (ctx.lCtx_.isArray_) {
-		const PayloadFieldValue::Array* lArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.lCtx_.offset_);
+		const auto lArr = payload_access::readArrayMeta(item.Ptr(), ctx.lCtx_.offset_);
 		if (ctx.rCtx_.isArray_) {
-			const PayloadFieldValue::Array* rArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.rCtx_.offset_);
-			result = compare(ArrayAdapter(item.Ptr() + lArr->offset, lArr->len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
-							 ArrayAdapter(item.Ptr() + rArr->offset, rArr->len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
+			const auto rArr = payload_access::readArrayMeta(item.Ptr(), ctx.rCtx_.offset_);
+			result = compare(ArrayAdapter(item.Ptr() + lArr.offset, lArr.len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
+							 ArrayAdapter(item.Ptr() + rArr.offset, rArr.len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 		} else {
-			result = compare(ArrayAdapter(item.Ptr() + lArr->offset, lArr->len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
+			result = compare(ArrayAdapter(item.Ptr() + lArr.offset, lArr.len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
 							 ArrayAdapter(item.Ptr() + ctx.rCtx_.offset_, 1, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 		}
 	} else if (ctx.rCtx_.isArray_) {
-		const PayloadFieldValue::Array* rArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.rCtx_.offset_);
+		const auto rArr = payload_access::readArrayMeta(item.Ptr(), ctx.rCtx_.offset_);
 		result = compare(ArrayAdapter(item.Ptr() + ctx.lCtx_.offset_, 1, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
-						 ArrayAdapter(item.Ptr() + rArr->offset, rArr->len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
+						 ArrayAdapter(item.Ptr() + rArr.offset, rArr.len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 	} else {
 		result = compare(ArrayAdapter(item.Ptr() + ctx.lCtx_.offset_, 1, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
 						 ArrayAdapter(item.Ptr() + ctx.rCtx_.offset_, 1, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));

@@ -1,4 +1,4 @@
-FROM alpine:3.22 AS build
+FROM alpine:3.23 AS build
 
 RUN cd /tmp && apk update && \
     apk add git curl autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev protobuf-dev c-ares-dev patch && \
@@ -29,9 +29,9 @@ RUN mkdir build && \
     rm -rf /usr/local/lib/*.a /usr/local/include /usr/local/lib/libtcmalloc_debug* /usr/local/lib/libtcmalloc_minimal* \
     /usr/local/lib/libprofiler* /usr/local/lib/libtcmalloc.* /usr/local/share/doc /usr/local/share/man /usr/local/share/perl5 /usr/local/bin/pprof*
 
-FROM alpine:3.22
+FROM alpine:3.23
 
-ARG RX_VERSION=v5.14.0
+ARG RX_VERSION=v5.15.0
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh

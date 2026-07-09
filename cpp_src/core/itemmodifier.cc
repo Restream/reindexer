@@ -323,7 +323,7 @@ public:
 					indexesCacheCleaner.Add(*indexes[i]);
 				}
 			} else {
-				bool refreshed = indexes[i]->RefreshCompositeKey(pvCurVariant);
+				bool refreshed = indexes[i]->RefreshCompositeKey(pvCurVariant, itemId_);
 				assertrx_dbg(refreshed);
 				if (!refreshed) [[unlikely]] {
 					logFmt(LogError, "[{}]: Unable to refresh key for {} during update query", modifier_.ns_.name_, indexes[i]->Name());
@@ -671,7 +671,7 @@ void ItemModifier::insertItemIntoComposite(IdType itemId, auto& indexesCacheClea
 				indexesCacheCleaner.Add(compositeIdx);
 			}
 		} else {
-			bool refreshed = compositeIdx.RefreshCompositeKey(Variant(ns_.items_[itemId]));
+			bool refreshed = compositeIdx.RefreshCompositeKey(Variant(ns_.items_[itemId]), itemId);
 			assertrx_dbg(refreshed);
 			if (!refreshed) [[unlikely]] {
 				logFmt(LogError, "[{}]: Unable to refresh key for {} during update query", ns_.name_, compositeIdx.Name());

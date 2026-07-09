@@ -10,15 +10,19 @@ class [[nodiscard]] FieldsGetter {
 public:
 	FieldsGetter(const FieldsSet& fields, const PayloadType& plt, KeyValueType type) : fields_(fields), plt_(plt), type_(type) {}
 
-	h_vector<std::pair<std::string_view, uint32_t>, 8> getDocFields(const key_string& doc, std::vector<std::unique_ptr<std::string>>&) {
-		if (!utf8::is_valid(doc.cbegin(), doc.cend())) {
-			throw Error(errParams, "Invalid UTF8 string in FullText index");
+	h_vector<std::pair<std::string_view, uint32_t>, 8> getDocFields(const h_vector<key_string, 1>& docArray,
+																	std::vector<std::unique_ptr<std::string>>&) {
+		h_vector<std::pair<std::string_view, uint32_t>, 8> ret;
+		for (const key_string& doc : docArray) {
+			if (!utf8::is_valid(doc.cbegin(), doc.cend())) {
+				throw Error(errParams, "Invalid UTF8 string in FullText index");
+			}
+
+			ret.emplace_back(std::string_view(doc), 0);
 		}
 
-		return {{std::string_view(doc), 0}};
+		return ret;
 	}
-
-	VariantArray krefs;
 
 	// Specific implementation for composite index
 	h_vector<std::pair<std::string_view, uint32_t>, 8> getDocFields(const PayloadValue& doc,
@@ -55,6 +59,8 @@ public:
 		}
 		return ret;
 	}
+
+	VariantArray krefs;
 
 private:
 	const FieldsSet& fields_;

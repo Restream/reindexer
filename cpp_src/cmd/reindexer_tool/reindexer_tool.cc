@@ -184,7 +184,7 @@ int main(int argc, char* argv[]) {
 		if (checkIfStartsWithCS("cproto://"sv, db) || checkIfStartsWithCS("ucproto://"sv, db) || checkIfStartsWithCS("cprotos://"sv, db) ||
 			checkIfStartsWithCS("builtin://"sv, db)) {
 #ifdef _WIN32
-			if (checkIfStartsWithCS("ucproto://"sv, db) == 0) {
+			if (checkIfStartsWithCS("ucproto://"sv, db)) {
 				std::cerr << "Invalid DSN: ucproto:// is not supported on the Windows platform. Use cproto:// or builtin:// instead"
 						  << std::endl;
 				return 2;

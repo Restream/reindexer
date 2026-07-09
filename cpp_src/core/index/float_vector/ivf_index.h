@@ -22,7 +22,7 @@ class [[nodiscard]] IvfIndex final : public FloatVectorIndex {
 public:
 	IvfIndex(const IndexDef&, PayloadType&&, FieldsSet&&, LogCreation);
 
-	std::unique_ptr<Index> Clone(size_t newCapacity) const override;
+	std::unique_ptr<Index> Clone(size_t newCapacity, IndexCloneKind kind) const override;
 	IndexMemStat GetMemStat(const RdxContext&) const noexcept override;
 	StorageCacheWriteResult WriteIndexCache(WrSerializer&, PKGetterF&&, bool isCompositePK,
 											const std::atomic_int32_t& cancel) noexcept override;
@@ -42,7 +42,7 @@ private:
 											 false, tsl::mod_growth_policy<std::ratio<3, 2>>>;
 
 	constexpr static uint64_t kStorageMagic = 0x3B3B3B3B2A2A2A2A;
-	IvfIndex(const IvfIndex&);
+	IvfIndex(const IvfIndex&, IndexCloneKind);
 
 	template <bool isArray>
 	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&, const auto& map, const auto& prepareId) const;

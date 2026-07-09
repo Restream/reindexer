@@ -2,6 +2,7 @@
 
 #include "core/cjson/tagsmatcher.h"
 #include "core/tag_name_index.h"
+#include "tools/unaligned.h"
 namespace reindexer {
 
 class [[nodiscard]] MultidimensionalArrayChecker {
@@ -21,7 +22,8 @@ public:
 		return {*this, IsArray_True};
 	}
 	template <typename T>
-	void Array(concepts::TagNameOrIndex auto tag, std::span<T> data, unsigned offset,
+	    requires std::is_trivially_copyable_v<T>
+	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<T> data, unsigned offset,
 			   TreatAsSingleElement treatAsSingleElement = TreatAsSingleElement_False) {
 		return Array(tag, data.size(), offset, treatAsSingleElement);
 	}

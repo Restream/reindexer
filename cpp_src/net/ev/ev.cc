@@ -2,7 +2,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <sstream>
+#include "coroutine/coroutine.h"
 #include "debug/backtrace.h"
+#include "tools/assertrx.h"
 #include "tools/oscompat.h"
 
 #ifdef HAVE_EVENT_FD
@@ -23,6 +25,51 @@ namespace net {
 namespace ev {
 
 constexpr bool gEnableBusyLoop = false;
+
+void dynamic_loop::spawn(std::function<void()> func, size_t stack_size) {
+	auto tid = std::this_thread::get_id();
+	if (coroTid_ != std::thread::id() && coroTid_ != tid) {
+		// Every coroutine has to be spawned from the same thread
+		assertrx(false);
+	} else {
+		coroTid_ = tid;
+	}
+	coroutine::routine_t id = 0;
+	try {
+		id = coroutine::create(std::move(func), stack_size);
+		new_tasks_.emplace_back(id);
+	} catch (const std::exception& e) {
+		if (id) {
+			coroutine::abandon_unstarted(id);
+		}
+		fprintf(stderr, "reindexer error: unable to spawn coroutine \"%u\": %s\n", id, e.what());
+		assertrx_dbg(false);
+		throw;
+	}
+}
+
+void dynamic_loop::spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size) {
+	wg.add(1);
+	struct [[nodiscard]] WgWatcher {
+		coroutine::wait_group& wg;
+		bool committed = false;
+
+		~WgWatcher() {
+			if (!committed) {
+				wg.done();
+			}
+		}
+	} balance{.wg = wg};
+
+	spawn(
+		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
+		[f = std::move(func), &wg]() {	// NOLINT(*.NewDeleteLeaks) False positive
+			coroutine::wait_group_guard wgg(wg);
+			f();
+		},
+		stack_size);
+	balance.committed = true;
+}
 
 #ifdef HAVE_POSIX_LOOP
 #ifdef HAVE_EVENT_FD
@@ -469,6 +516,14 @@ void dynamic_loop::run() {
 	set_coro_cb();
 	bool has_coro_tasks = false;
 	while (!break_) {
+		// Loop-level drain of resumes deferred from an unwind path (see ordinator::defer_resume). This complements entry()'s
+		// per-fiber-exit drain: it is the point that rescues deferrals whose fiber keeps running after catching its own exception
+		// (e.g. in a loop) and therefore never reaches entry(). Draining at the TOP of the iteration is deliberate -- waiters resumed
+		// here that run to completion shrink running_tasks_ before the break check below, keeping the loop-exit decision consistent.
+		// A deferral enqueued LATER in the same iteration (e.g. while resuming new_tasks_ below) is not flushed by this pass; the
+		// tv == 0 guard before runonce() prevents the loop from blocking while such a deferral is pending, so it is drained on the
+		// next iteration. Together these guarantee a deferred waiter can never be stranded behind a blocking runonce(-1).
+		coroutine::flush_deferred_resumes();
 		while (new_tasks_.size()) {
 			has_coro_tasks = true;
 			running_tasks_.reserve(running_tasks_.size() + new_tasks_.size());
@@ -499,6 +554,12 @@ void dynamic_loop::run() {
 			if (tv < 0) {
 				tv = 0;
 			}
+		}
+		// Never block in runonce() while a deferred resume is still pending (e.g. one enqueued while resuming new_tasks_ above): force
+		// a non-blocking poll so the next iteration's flush_deferred_resumes() drains it. Without this a deferred waiter could be
+		// stranded behind a blocking runonce(-1) that has no wakeup source.
+		if (tv != 0 && coroutine::has_deferred_resumes()) {
+			tv = 0;
 		}
 		int ret = backend_.runonce(tv);
 

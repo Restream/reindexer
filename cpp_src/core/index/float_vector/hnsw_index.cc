@@ -66,7 +66,8 @@ HnswIndexBase<hnswlib::BruteforceSearch>::HnswIndexBase(const IndexDef& idef, Pa
 }
 
 template <typename Map>
-HnswIndexBase<Map>::HnswIndexBase(const HnswIndexBase& other, size_t newCapacity) : Base{other}, map_{other.map_, newCapacity} {}
+HnswIndexBase<Map>::HnswIndexBase(const HnswIndexBase& other, size_t newCapacity, IndexCloneKind kind)
+	: Base{other, kind}, map_{other.map_, newCapacity} {}
 
 template <typename Map>
 void HnswIndexBase<Map>::clearMap() noexcept {
@@ -122,8 +123,8 @@ void HnswIndexBase<hnswlib::BruteforceSearch>::del(FloatVectorId id, MustExist) 
 }
 
 template <typename Map>
-std::unique_ptr<Index> HnswIndexBase<Map>::Clone(size_t newCapacity) const {
-	return std::unique_ptr<HnswIndexBase<Map>>{new HnswIndexBase<Map>{*this, newCapacity}};
+std::unique_ptr<Index> HnswIndexBase<Map>::Clone(size_t newCapacity, IndexCloneKind kind) const {
+	return std::unique_ptr<HnswIndexBase<Map>>{new HnswIndexBase<Map>{*this, newCapacity, kind}};
 }
 
 template <>
@@ -284,6 +285,79 @@ SelectKeyResult HnswIndexBase<Map>::select(ConstFloatVectorView key, const KnnSe
 	result.emplace_back(std::move(resSet));
 	ctx.Add(std::move(dists));
 	return result;
+}
+
+namespace {
+
+struct [[nodiscard]] HnswStreamingSessionImpl final : KnnStreamingSession::Impl {
+	// Keeps the normalized Cosine query alive for the whole session: hnswlib stores a raw pointer (no copy for float).
+	h_vector<float, 2048> queryStorage;
+	hnswlib::StreamingSearchSession session;
+
+	template <typename Map>
+	HnswStreamingSessionImpl(const Map& map, ConstFloatVectorView key, VectorMetric metric, size_t ef)
+		: session{beginHnswStreamingSession(map, key, metric, ef, queryStorage)} {}
+
+private:
+	template <typename Map>
+	hnswlib::StreamingSearchSession beginHnswStreamingSession(const Map& map, ConstFloatVectorView key, VectorMetric metric, size_t ef,
+															  h_vector<float, 2048>& queryStorage) {
+		const float* keyData = key.Data();
+		std::optional<float> normL2 = std::nullopt;
+		if (metric == VectorMetric::Cosine) {
+			const auto dims = key.Dimension().Value();
+			queryStorage.resize(uint32_t(dims));
+			normL2 = 1.f / ann::NormalizeCopyVector(key.Data(), int32_t(dims), queryStorage.data());
+			keyData = queryStorage.data();
+		}
+		return map.BeginStreamingSearch(keyData, normL2, hnswlib::StreamingSearchOptions{.ef = ef});
+	}
+};
+}  // namespace
+
+template <typename Map>
+KnnStreamingSession HnswIndexBase<Map>::beginStreaming(ConstFloatVectorView key, size_t ef) const {
+	return KnnStreamingSession{std::make_unique<HnswStreamingSessionImpl>(map_, key, metric_, ef)};
+}
+
+template <typename Map>
+void HnswIndexBase<Map>::continueStreaming(KnnStreamingSession& session, size_t batchSize, KnnStreamingBatch& out) const {
+	auto* impl = static_cast<HnswStreamingSessionImpl*>(session.GetImpl());
+	assertrx_throw(impl);
+	auto hnswBatch = map_.ContinueStreamingSearch(impl->session, batchSize);
+	auto& results = hnswBatch.results;
+
+	out.exhausted = hnswBatch.exhausted;
+	const size_t n = results.size();
+	out.ids.resize(n);
+	out.ranks.resize(n);
+	if (n == 0) {
+		return;
+	}
+	for (auto i = n; !results.empty(); results.pop()) {
+		--i;
+		switch (metric_) {
+			case VectorMetric::L2:
+				out.ranks[i] = RankT{results.top().first};
+				break;
+			case VectorMetric::InnerProduct:
+			case VectorMetric::Cosine:
+				// IP and cosine metrics are sorted in reverse order in HNSW and have the opposite sign
+				out.ranks[i] = RankT{-results.top().first};
+				break;
+		}
+		out.ids[i] = FloatVectorId::FromNumber(results.top().second).RowId();
+	}
+}
+
+template <>
+KnnStreamingSession HnswIndexBase<hnswlib::BruteforceSearch>::beginStreaming(ConstFloatVectorView, size_t) const {
+	throw Error(errQueryExec, "Streaming KNN search (KNN query without 'k' and 'radius') is supported for HNSW indexes only");
+}
+
+template <>
+void HnswIndexBase<hnswlib::BruteforceSearch>::continueStreaming(KnnStreamingSession&, size_t, KnnStreamingBatch&) const {
+	throw Error(errQueryExec, "Streaming KNN search (KNN query without 'k' and 'radius') is supported for HNSW indexes only");
 }
 
 template <typename Map>

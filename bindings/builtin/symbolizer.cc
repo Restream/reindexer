@@ -2,7 +2,7 @@
 #include <iostream>
 #ifndef _WIN32
 #include <signal.h>
-#endif // _WIN32
+#endif	// _WIN32
 #include <sstream>
 #include <string_view>
 #include "debug/backtrace.h"
@@ -28,30 +28,32 @@ struct cgoSymbolizerArg {
 };
 
 extern "C" void cgoSymbolizer(cgoSymbolizerArg* arg) {
-	if (!resolver) resolver = reindexer::debug::TraceResolver::New();
+	if (!resolver) {
+		resolver = reindexer::debug::TraceResolver::New();
+	}
 	// Leak it!
 	auto* te = new reindexer::debug::TraceEntry(arg->pc);
 	if (resolver->Resolve(*te)) {
-		arg->file = te->srcFile_.data();
-		arg->func = te->funcName_.data();
-		arg->lineno = te->srcLine_;
+		arg->file = te->SrcFile().data();
+		arg->func = te->FuncName().data();
+		arg->lineno = te->SrcLine();
 	}
 }
 
 #ifdef _WIN32
 extern "C" void cgoSignalsInit() {}
-#else // !_WIN32
+#else	// !_WIN32
 static struct sigaction oldsa[32];
 
 static void cgoSighandler(int sig, siginfo_t* info, void* ucontext) {
 	reindexer::debug::print_crash_query(std::cout);
 	if (sig < 32) {
-        struct sigaction &old = oldsa[sig];
-        if (old.sa_flags & SA_SIGINFO) {
-            (old.sa_sigaction)(sig, info, ucontext);
-        } else {
-            (old.sa_handler)(sig);
-        }
+		struct sigaction& old = oldsa[sig];
+		if (old.sa_flags & SA_SIGINFO) {
+			(old.sa_sigaction)(sig, info, ucontext);
+		} else {
+			(old.sa_handler)(sig);
+		}
 	} else {
 		std::exit(-1);
 	}
@@ -66,7 +68,7 @@ extern "C" void cgoSignalsInit() {
 	sigaction(SIGABRT, &sa, &oldsa[SIGABRT]);
 	sigaction(SIGBUS, &sa, &oldsa[SIGBUS]);
 }
-#endif // _WIN32
+#endif	// _WIN32
 
 extern "C" void cgoTraceback(cgoTracebackArg* arg) {
 	std::string_view method;
@@ -77,6 +79,9 @@ extern "C" void cgoTraceback(cgoTracebackArg* arg) {
 		return;
 	}
 	uintptr_t addrlen = reindexer::debug::backtrace_internal(addrlist, sizeof(addrlist) / sizeof(addrlist[0]),
-															 reinterpret_cast<void*>(arg->context), method);
-	if (addrlen > 3) memcpy(arg->buf, addrlist + 3, std::min(addrlen - 3, arg->max) * sizeof(void*));
+															 reinterpret_cast<void*>(arg->sigContext), method);
+	constexpr uintptr_t kSkipFrames = 2;
+	if (addrlen > kSkipFrames) {
+		memcpy(arg->buf, addrlist + kSkipFrames, std::min(addrlen - kSkipFrames, arg->max) * sizeof(void*));
+	}
 }

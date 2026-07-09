@@ -14,6 +14,7 @@
 
 #include "tools/distances/ip_dist.h"
 #include "tools/distances/l2_dist.h"
+#include "tools/unaligned.h"
 
 #if RX_WITH_STDLIB_DEBUG
 #include <set>
@@ -251,8 +252,7 @@ private:
 			return CorrectiveOffset{};
 		} else {
 			static_assert(std::is_same_v<T, uint8_t>);
-			CorrectiveOffset res{};
-			std::memcpy(&res, data + dim_, sizeof(CorrectiveOffset));
+			CorrectiveOffset res = reindexer::unaligned::read<CorrectiveOffset>(data + dim_);
 			return res;
 		}
 	}

@@ -12,7 +12,7 @@ template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
 	try {
 		if (key.IsNullValue()) {
-			if (this->empty_ids_.Unsorted().Add(id, IdSetEditMode::Auto, this->sortedIdxCount_)) {
+			if (this->empty_ids_.Unsorted().Add(id, this->sortedIdxCount_)) {
 				this->cache_.ResetImpl();
 				clearCache = true;
 				this->isBuilt_ = false;
@@ -29,7 +29,7 @@ Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache)
 			this->delMemStat(keyIt);
 		}
 
-		if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSetEditMode::Ordered : IdSetEditMode::Auto, this->sortedIdxCount_)) {
+		if (keyIt->second.Unsorted().Add(id, this->sortedIdxCount_)) {
 			this->isBuilt_ = false;
 			this->cache_.ResetImpl();
 			clearCache = true;
@@ -59,7 +59,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 	}
 
 	// Get set of keys or single key
-	if (!IsOrderedCondition(condition)) {
+	if (!index::IsOrderedCondition(condition)) {
 		const bool isSortIndex = selectCtx.opts.unbuiltSortOrders || (sortId && this->sortId_ == sortId);
 		if (condition != CondAny || !isSortIndex) {
 			if (selectCtx.opts.unbuiltSortOrders && keys.size() > 1) {
@@ -195,8 +195,11 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 }
 
 template <typename T>
-void IndexOrdered<T>::MakeSortOrders(IUpdateSortedContext& ctx) {
+WasCanceled IndexOrdered<T>::MakeSortOrders(index::IUpdateSortedContext& ctx, const index::ICancelable& cancelable) {
 	logFmt(LogTrace, "IndexOrdered::MakeSortOrders ({})", this->name_);
+
+	RX_RETURN_IF_CANCELED(cancelable);
+
 	auto& ids2Sorts = ctx.Ids2Sorts();
 	size_t totalIds = 0;
 	for (auto it : ids2Sorts) {
@@ -205,11 +208,17 @@ void IndexOrdered<T>::MakeSortOrders(IUpdateSortedContext& ctx) {
 		}
 	}
 
+	RX_RETURN_IF_CANCELED(cancelable);
+
 	this->sortId_ = ctx.GetCurSortId();
 	this->sortOrders_.resize(totalIds);
 	size_t idx = 0;
-	auto fill = [&](const auto& keyEntry, const key_type* key) {
-		for (auto id : keyEntry.Unsorted().idset_range()) {
+	auto fill = [&](const auto& keyEntry, const key_type* key) -> WasCanceled {
+		const auto idsetRange = keyEntry.Unsorted().idset_range();
+		for (auto id : idsetRange) {
+			if (idx % index::kCancelCheckFrequency == 0) {
+				RX_RETURN_IF_CANCELED(cancelable);
+			}
 			if (id >= IdType::FromNumber(ids2Sorts.size()) || ids2Sorts[id.ToNumber()] == SortIdNotExists) [[unlikely]] {
 				logFmt(
 					LogError,
@@ -222,10 +231,18 @@ void IndexOrdered<T>::MakeSortOrders(IUpdateSortedContext& ctx) {
 				this->sortOrders_[idx++] = id;
 			}
 		}
+		return WasCanceled_False;
 	};
-	fill(this->empty_ids_, nullptr);
+	if (fill(this->empty_ids_, nullptr) == WasCanceled_True) {
+		return WasCanceled_True;
+	}
+
+	RX_RETURN_IF_CANCELED(cancelable);
+
 	for (auto& keyIt : this->idx_map) {
-		fill(keyIt.second, &keyIt.first);
+		if (fill(keyIt.second, &keyIt.first) == WasCanceled_True) {
+			return WasCanceled_True;
+		}
 	}
 	if (idx != totalIds) {
 		// Just in case. This sould never happen
@@ -246,6 +263,8 @@ void IndexOrdered<T>::MakeSortOrders(IUpdateSortedContext& ctx) {
 	}
 
 	assertf(idx == totalIds, "Internal error: Index {} is broken. totalids={}, but indexed={}\n", this->name_, totalIds, idx);
+
+	return WasCanceled_False;
 }
 
 template <typename T>

@@ -41,15 +41,19 @@ public:
 		sift_down(0, c_.size());
 	}
 
-	void replace_top(T&& value) {
+	T replace_top(T&& value) {
+		auto top = std::move(c_.front());
 		c_.front() = std::move(value);
 		sift_down(0, c_.size());
+		return top;
 	}
 
 	template <class... Args>
-	void replace_top(Args&&... args) {
+	T replace_top(Args&&... args) {
+		auto top = std::move(c_.front());
 		c_.front() = T(std::forward<Args>(args)...);
 		sift_down(0, c_.size());
+		return top;
 	}
 
 	void clear() { c_.clear(); }

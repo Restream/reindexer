@@ -1,8 +1,8 @@
 #include "gtest/gtest.h"
 #include "gtests/tests/gtest_cout.h"
 
-#include "fmt/format.h"
 #include "estl/suffix_map.h"
+#include "fmt/format.h"
 #include "tools/enum_compare.h"
 #include "vendor/utf8cpp/utf8/core.h"
 
@@ -109,7 +109,7 @@ TEST(suffix_map, StoresLongWordLength) {
 	reindexer::suffix_map<char, int> suffixes;
 	const std::string longWord(300, 'a');
 
-	suffixes.insert(longWord, 42);
+	std::ignore = suffixes.insert(longWord, 42);
 	suffixes.build();
 
 	ASSERT_EQ(suffixes.word_size(), 1u);
@@ -121,7 +121,7 @@ TEST(suffix_map, RejectsTooLongWord) {
 	reindexer::suffix_map<char, int> suffixes;
 	const std::string tooLongWord(static_cast<size_t>(reindexer::suffix_map<char, int>::kMaxWordLen) + 1, 'a');
 
-	EXPECT_THROW(suffixes.insert(tooLongWord, 42), std::length_error);
+	EXPECT_THROW(std::ignore = suffixes.insert(tooLongWord, 42), std::length_error);
 }
 
 TEST(suffix_map, Utf8MatchesStartAndEndOnCodepointBoundaries) {
@@ -129,7 +129,7 @@ TEST(suffix_map, Utf8MatchesStartAndEndOnCodepointBoundaries) {
 	const std::vector<std::string> words = {"она", "банана", "набат", "тонна"};
 	const std::vector<std::string> patterns = {"на", "ан", "он", "то", "нн"};
 	for (size_t i = 0; i < words.size(); ++i) {
-		suffixes.insert(words[i], int(i));
+		std::ignore = suffixes.insert(words[i], int(i));
 	}
 	suffixes.build();
 

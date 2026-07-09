@@ -11,6 +11,7 @@ namespace reindexer {
 class ItemComparator;
 class SingleQueryExplainCalc;
 class QueryPreprocessor;
+class SelectIteratorContainer;
 
 template <typename Result, typename PreSelectType>
 class ResultHandler;
@@ -66,7 +67,7 @@ protected:
 
 	h_vector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
 	void setLimitAndOffset(ItemRefVector& result, size_t offset, size_t limit);
-	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType, IndexValueType rankedIndexNo,
+	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType, int rankedIndexNo,
 							   bool availableSelectBySortIndex) const;
 	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, StrictMode, IsRanked);
 	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index, const std::vector<joins::ItemsProcessor>&,
@@ -90,6 +91,9 @@ protected:
 	[[noreturn]] RX_NO_INLINE void throwUnexpectedItemID(IdType rowId, IdType properRowId);
 	template <typename SelectCtxT>
 	void holdFloatVectors(LocalQueryResults&, SelectCtxT&, size_t offset, const FieldsFilter&) const;
+
+	bool detectStreamingKnn(const QueryPreprocessor& qPreproc, QueryRankType queryRankType, const SelectCtx& ctx) const;
+
 	NamespaceImpl* ns_;
 	FtFunction::Ptr ftFunc_;
 	RanksHolder::Ptr ranks_;

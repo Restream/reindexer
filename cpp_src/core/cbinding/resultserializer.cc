@@ -206,7 +206,9 @@ std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults& re
 		if (int(opts_.tmVersions.size()) != mergedNsCount) [[unlikely]] {
 			logFmt(LogWarning, "tmVersionsCount != results->GetMergedNSCount: {} != {}. Client's meta data can become inconsistent.",
 				   opts_.tmVersions.size(), mergedNsCount);
-			assertrx_dbg(false);
+			if (!opts_.allowIncompleteTmVersions) {
+				assertrx_dbg(false);
+			}
 		}
 		int cnt = 0, totalCnt = std::min(mergedNsCount, int(opts_.tmVersions.size()));
 		for (int i = 0; i < totalCnt; i++) {

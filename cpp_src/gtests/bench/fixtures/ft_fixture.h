@@ -211,8 +211,8 @@ private:
 	unsigned int initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::string_view indexName, benchmark::IterationCount iters);
 	void dropNamespace(std::string_view name, benchmark::State&);
 	const std::string alternatingNs_ = "FtAlternatingUpdatesAndSelects";
-	const std::string kFastIndexTextName_ = "searchfast";
-	const std::string kFastIndexTextPreselectName_ = "searchfast_preselect";
+	const std::string kIndexTextName_ = "search";
+	const std::string kIndexTextPreselectName_ = "search_preselect";
 	const std::string kLowDiversityIndexName_ = "search_ld";
 
 	size_t raw_data_sz_ = 0;

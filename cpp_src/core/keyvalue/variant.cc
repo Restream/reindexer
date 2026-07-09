@@ -34,7 +34,7 @@ Variant::Variant(const VariantArray& values) : variant_{0, 1, KeyValueType::Tupl
 	new (cast<void>()) key_string(make_key_string(ser.Slice()));
 }
 
-Variant::Variant(const VariantArray& values, const PayloadType& pt, const FieldsSet& fields) {
+Variant::Variant(const VariantArray& values, const PayloadType& pt, const FieldsSet& fields) : variant_{0, 0, KeyValueType::Null{}} {
 	WrSerializer ser;
 	ser.PutVarUint(values.size());
 	for (const Variant& kv : values) {
@@ -222,20 +222,36 @@ void Variant::copy(const Variant& other) {
 		[&](KeyValueType::Double) noexcept { variant_.value_double = other.variant_.value_double; },
 		[&](KeyValueType::Float) noexcept { variant_.value_float = other.variant_.value_float; },
 		[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Uuid> auto) noexcept {},
-		[&](KeyValueType::FloatVector) { *this = Variant(other.operator ConstFloatVectorView(), hold); });
+		[&](KeyValueType::FloatVector) {
+			FloatVector fv(other.operator ConstFloatVectorView());
+			variant_.value_uint64 = fv.View().Payload();
+			std::ignore = std::move(fv).Release();
+		});
 }
 
-Variant& Variant::EnsureHold() & {
-	if (isUuid() || variant_.hold == 1) {
-		return *this;
-	}
+Variant& Variant::ensureHoldImpl() & {
 	variant_.type.EvaluateOneOf(
-		[&](concepts::OneOf<KeyValueType::String, KeyValueType::Tuple> auto) { *this = Variant(this->operator key_string()); },
+		[&](KeyValueType::String) { *this = Variant(this->operator key_string()); }, [&](KeyValueType::Tuple) { assertrx(DoHold()); },
 		[&](KeyValueType::Composite) { *this = Variant(this->operator const PayloadValue&()); },
 		[&](KeyValueType::FloatVector) { *this = Variant(this->operator ConstFloatVectorView(), hold); },
 		[](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined,
 						   KeyValueType::Double, KeyValueType::Float, KeyValueType::Uuid> auto) noexcept {});
 	return *this;
+}
+
+size_t Variant::heldHeapSizeImpl() const noexcept {
+	return variant_.type.EvaluateOneOf(
+		[&](concepts::OneOf<KeyValueType::String, KeyValueType::Tuple> auto) { return cast<key_string>()->heap_size(); },
+		[&](KeyValueType::Composite) {
+			const auto& pv = static_cast<const PayloadValue&>(*this);
+			return pv.GetCapacity() + sizeof(PayloadValue::dataHeader);
+		},
+		[&](KeyValueType::FloatVector) {
+			const ConstFloatVectorView fv = static_cast<ConstFloatVectorView>(*this);
+			return fv.IsStrippedOrEmpty() ? size_t{0} : fv.Dimension().Value() * sizeof(float);
+		},
+		[](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined,
+						   KeyValueType::Double, KeyValueType::Float, KeyValueType::Uuid> auto) { return size_t{0}; });
 }
 
 template <>

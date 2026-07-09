@@ -152,7 +152,7 @@ if(GH_CI_OSX)
 endif()
 
 set(GTEST_TIMEOUT 800)
-if (WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG)
+if (WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG OR WITH_UBSAN)
     set(GTEST_TIMEOUT 2000)
 endif()
 
@@ -172,6 +172,11 @@ endif()
 
 if (WITH_TSAN)
     set_tests_properties(gtests PROPERTIES ENVIRONMENT TSAN_OPTIONS=suppressions=${REINDEXER_SOURCE_PATH}/gtests/tsan.suppressions)
+endif()
+
+if (WITH_UBSAN)
+    set(UBSAN_TEST_OPTS "halt_on_error=1:print_stacktrace=1")
+    set_tests_properties(gtests PROPERTIES ENVIRONMENT "UBSAN_OPTIONS=${UBSAN_TEST_OPTS}")
 endif()
 
 add_definitions(-DREINDEXER_TESTS_DATA_PATH="${REINDEXER_SOURCE_PATH}/gtests/tests_data")

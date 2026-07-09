@@ -173,34 +173,40 @@ KnnSearchParams KnnSearchParams::Deserialize(Serializer& ser) {
 	}
 }
 
-static void checkKandRadius(const auto& p) {
-	if (!p.K() && !p.Radius()) {
-		throw Error(errQueryExec, "K and Radius params can not be empty both");
-	};
+static void checkKNotZero(const auto& p) {
 	if (p.K() && *p.K() == 0) {
 		throw Error{errQueryExec, "KNN limit should not be 0"};
 	}
 }
 
+static void checkKandRadius(const auto& p) {
+	if (!p.K() && !p.Radius()) {
+		throw Error(errQueryExec, "K and Radius params can not be empty both");
+	};
+	checkKNotZero(p);
+}
+
 void KnnSearchParams::Validate() const {
-	std::visit(overloaded{[](const auto& p) { checkKandRadius(p); },
-						  [](const HnswSearchParams& p) {
-							  checkKandRadius(p);
-							  if (p.K() && p.Ef() < *p.K()) {
-								  throw Error{errQueryExec, "Ef should not be less than k in hnsw query"};
-							  }
-							  if (p.Ef() < 1) {
-								  throw Error{errQueryExec, "Value of 'ef' - {} is out of bounds: [1,{}]", p.Ef(),
-											  std::numeric_limits<size_t>::max()};
-							  }
-						  },
-						  [](const IvfSearchParams& p) {
-							  checkKandRadius(p);
-							  if (p.NProbe() == 0) {
-								  throw Error{errQueryExec, "Nprobe should not be 0"};
-							  }
-						  }},
-			   toVariant());
+	// Empty 'k' and empty 'radius' both are allowed for the streaming KNN search over an HNSW index
+	std::visit(
+		overloaded{[](const KnnSearchParamsBase& p) { checkKNotZero(p); }, [](const BruteForceSearchParams& p) { checkKandRadius(p); },
+				   [](const HnswSearchParams& p) {
+					   checkKNotZero(p);
+					   if (p.K() && p.Ef() < *p.K()) {
+						   throw Error{errQueryExec, "Ef should not be less than k in hnsw query"};
+					   }
+					   if (p.Ef() < 1) {
+						   throw Error{errQueryExec, "Value of 'ef' - {} is out of bounds: [1,{}]", p.Ef(),
+									   std::numeric_limits<size_t>::max()};
+					   }
+				   },
+				   [](const IvfSearchParams& p) {
+					   checkKandRadius(p);
+					   if (p.NProbe() == 0) {
+						   throw Error{errQueryExec, "Nprobe should not be 0"};
+					   }
+				   }},
+		toVariant());
 }
 
 template <typename Derived>

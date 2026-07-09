@@ -1,6 +1,7 @@
 #include "selectiteratorcontainer.h"
 
 #include <numeric>
+#include <optional>
 #include <span>
 #include <sstream>
 #include "core/id_type.h"
@@ -15,6 +16,8 @@
 #include "core/type_consts_helpers.h"
 #include "estl/concepts.h"
 #include "estl/stable_sort.h"
+#include "knn_streaming_estimator.h"
+#include "knn_streaming_index_iterator.h"
 #include "nsselecter.h"
 #include "querypreprocessor.h"
 #include "sorting_heuristics.h"
@@ -210,17 +213,6 @@ void SelectIteratorContainer::CheckFirstQuery() {
 		}
 	}
 	throw_as_assert;
-}
-
-// Let iterators choose most effective algorithm
-void SelectIteratorContainer::SetExpectMaxIterations(int expectedIterations) {
-	assertrx_throw(!Empty());
-	assertrx_throw(Is<SelectIterator>(0));
-	for (Container::iterator it = container_.begin() + 1; it != container_.end(); ++it) {
-		if (it->Is<SelectIterator>()) {
-			it->Value<SelectIterator>().SetExpectMaxIterations(expectedIterations);
-		}
-	}
 }
 
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe, const NamespaceImpl& ns, StrictMode strictMode) {
@@ -693,15 +685,39 @@ h_vector<SelectIteratorContainer::EqualPositions, 2> SelectIteratorContainer::pr
 	return result;
 }
 
-SelectKeyResult SelectIteratorContainer::processKnnQueryEntry(const KnnQueryEntry& qe, const NamespaceImpl& ns, RanksHolder::Ptr& ranks,
-															  const RdxContext& rdxCtx) {
-	const FloatVectorIndex& idx = static_cast<const FloatVectorIndex&>(*ns.indexes_[qe.IndexNo()]);
-	assertrx_throw(!ranks);
-	ranks = make_intrusive<RanksHolder>();
-	KnnCtx knnCtx{ranks};
+SelectKeyResult SelectIteratorContainer::processKnnQueryEntry(const QueryPreprocessor& qPreproc, const KnnQueryEntry& qe,
+															  const NamespaceImpl& ns, RanksHolder::Ptr& ranks, const RdxContext& rdxCtx) {
 	assertrx_throw(ctx_);
-	knnCtx.NeedSort(NeedSort(ctx_->sortingContext.entries.empty()));
-	return idx.Select(qe.Value(), qe.Params(), knnCtx, rdxCtx);
+	assertrx_throw(!ranks);
+
+	const FloatVectorIndex& idx = static_cast<const FloatVectorIndex&>(*ns.indexes_[qe.IndexNo()]);
+	ranks = make_intrusive<RanksHolder>();
+	if (streamingKnnMode_) {
+		const size_t offset = qPreproc.Start();
+		const size_t limit = qPreproc.Count();
+		const size_t needed =
+			size_t(offset) + size_t(limit);	 // 'limit' is huge (kDefaultLimit) when unbounded -> stop only on exhausted/cap
+
+		size_t ef = qe.Params().Hnsw().Ef();
+		if (ef == 1) {
+			const size_t itemsCount = ns.itemsCount();
+			const int maxItersRaw =
+				qPreproc.CalculateMaxIterationsForStreamingKnn(ctx_->inTransaction, ctx_->sortingContext.enableSortOrders, rdxCtx);
+			const size_t maxIters = (maxItersRaw > 0) ? size_t(maxItersRaw) : itemsCount;
+			ef = StreamingKnnEstimator::EstimateEf(maxIters, itemsCount, offset, limit);
+		}
+
+		IndexIterator::Ptr streamingIterator = make_intrusive<StreamingKnnIndexIterator>(
+			idx, StreamingKnnParams{.ef = ef, .needed = needed}, qe.Value(), std::span{ns.items_.data(), ns.items_.size()},
+			ns.indexes_[qe.IndexNo()]->GetSelectPerfCounter(), ns.enablePerfCounters_, rdxCtx);
+		SelectKeyResult res;
+		res.emplace_back(SingleSelectKeyResult(std::move(streamingIterator)));
+		return res;
+	} else {
+		KnnCtx knnCtx{ranks};
+		knnCtx.NeedSort(NeedSort(ctx_->sortingContext.entries.empty()));
+		return idx.Select(qe.Value(), qe.Params(), knnCtx, rdxCtx);
+	}
 }
 
 KnnRawResult SelectIteratorContainer::processKnnQueryEntryRaw(const KnnQueryEntry& qe, const NamespaceImpl& ns, const RdxContext& rdxCtx) {
@@ -1032,10 +1048,13 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 					if (qe.Format() != KnnQueryEntry::DataFormatType::Vector) {
 						throw Error(errNetwork, qe.Data());	 // NOTE: earlier we will save error in query data
 					}
-					[[maybe_unused]] auto inserted = Append<SelectIterator>(
-						op, processKnnQueryEntry(qe, ns, ranks, rdxCtx), IsDistinct_False, qe.FieldName(), qe.IndexNo(), ForcedFirst_True);
+					[[maybe_unused]] auto inserted =
+						Append<SelectIterator>(op, processKnnQueryEntry(qPreproc, qe, ns, ranks, rdxCtx), IsDistinct_False, qe.FieldName(),
+											   qe.IndexNo(), ForcedFirst_True);
 					assertrx_throw(inserted == 1);
-					lastAppendedOrClosed()->Value<SelectIterator>().SetUnsorted();
+					if (!streamingKnnMode_) {
+						lastAppendedOrClosed()->Value<SelectIterator>().SetUnsorted();
+					}
 				}
 				return ContainRanked_True;
 			});
@@ -1045,6 +1064,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 	return containRanked;
 }
 
+template <bool reverse>
 bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterator end, const PayloadValue& pv, bool* finish, IdType rowId,
 														  IdType properRowId, bool withJoinedItems) {
 	bool result = true;
@@ -1069,25 +1089,25 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 			}
 		}
 		bool lastFinish = false;
-		const bool lastResult =
-			it->Visit([](const KnnRawSelectResult&) -> bool { throw_as_assert; },
-					  [&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIteratorsBracket&) RX_POST_LMBD_ALWAYS_INLINE {
-						  return checkIfSatisfyAllConditions(it.begin(), it.end(), pv, &lastFinish, rowId, properRowId, withJoinedItems);
-					  },
-					  [&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIterator & sit) RX_POST_LMBD_ALWAYS_INLINE {
-						  const bool res = sit.Compare(rowId);
-						  lastFinish = sit.End();
-						  return res;
-					  },
-					  [&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator & jit) RX_POST_LMBD_ALWAYS_INLINE {
-						  assertrx_throw(ctx_ && ctx_->joinItemsProcessors);
-						  ConstPayload pl(*pt_, pv);
-						  auto& joinItemsProcessor = (*ctx_->joinItemsProcessors)[jit.joinIndex];
-						  return joinItemsProcessor.Process(properRowId, ctx_->nsid, pl, ctx_->floatVectorsHolder, withJoinedItems);
-					  },
-					  [&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(concepts::OneOf<ComparatorsPackT> auto& c)
-						  RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); },
-					  [] RX_PRE_LMBD_ALWAYS_INLINE(AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
+		const bool lastResult = it->Visit(
+			[](const KnnRawSelectResult&) -> bool { throw_as_assert; },
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIteratorsBracket&) RX_POST_LMBD_ALWAYS_INLINE {
+				return checkIfSatisfyAllConditions<reverse>(it.begin(), it.end(), pv, &lastFinish, rowId, properRowId, withJoinedItems);
+			},
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIterator & sit) RX_POST_LMBD_ALWAYS_INLINE {
+				const bool res = sit.Compare(rowId);
+				lastFinish = sit.End();
+				return res;
+			},
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator & jit) RX_POST_LMBD_ALWAYS_INLINE {
+				assertrx_throw(ctx_ && ctx_->joinItemsProcessors);
+				ConstPayload pl(*pt_, pv);
+				auto& joinItemsProcessor = (*ctx_->joinItemsProcessors)[jit.joinIndex];
+				return joinItemsProcessor.Process(properRowId, ctx_->nsid, pl, ctx_->floatVectorsHolder, withJoinedItems);
+			},
+			[&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(concepts::OneOf<ComparatorsPackT> auto& c)
+				RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 		switch (op) {
 			case OpOr:
 				result |= lastResult;
@@ -1109,6 +1129,10 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 
 	return result;
 }
+template bool SelectIteratorContainer::checkIfSatisfyAllConditions<true>(iterator, iterator, const PayloadValue&, bool*, IdType, IdType,
+																		 bool);
+template bool SelectIteratorContainer::checkIfSatisfyAllConditions<false>(iterator, iterator, const PayloadValue&, bool*, IdType, IdType,
+																		  bool);
 
 template <bool reverse>
 IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterator end, IdType from) {
@@ -1176,7 +1200,7 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 					[from] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<JoinSelectIterator, AlwaysTrue, ComparatorsPackT> auto&)
 						RX_POST_LMBD_ALWAYS_INLINE { return from; },
 					[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE {
-						return reverse ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
+						return (reverse) ? std::numeric_limits<IdType>::lowest() : std::numeric_limits<IdType>::max();
 					});
 				break;
 			case OpNot:
@@ -1286,8 +1310,8 @@ public:
 	MergerRanked(const SelectIterator& ftSelectIter, std::span<const RankT> ftRanks, std::span<const size_t> ftPositions)
 		: ftRanks_{ftRanks}, ftPositions_{ftPositions} {
 		assertrx_throw(ftSelectIter.size() == 1);
-		assertrx_throw(ftSelectIter[0].tempIds_);
-		ftIds_ = ftSelectIter[0].ids_;
+		assertrx_throw(ftSelectIter[0].OwnsFlatIDSet());
+		ftIds_ = ftSelectIter[0].TryGetFlatIDSet();
 	}
 
 	template <MergeType mergeType, bool desc, VectorMetric metric>
@@ -1540,6 +1564,16 @@ void SelectIteratorContainer::MergeRanked(RanksHolder::Ptr& ranks, const Reranke
 	} else {
 		mergeRanked<false>(ranks, reranker, ns);
 	}
+}
+
+h_vector<size_t, 8> SelectIteratorContainer::CollectDistinctConditions() const {
+	h_vector<size_t, 8> res;
+	for (size_t i = 0; i < Size(); i += Size(i)) {
+		if (IsDistinct(i)) {
+			res.emplace_back(i);
+		}
+	}
+	return res;
 }
 
 std::string SelectIteratorContainer::Dump() const {

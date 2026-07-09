@@ -415,7 +415,12 @@ namespace ShardingSourceId {
 enum REINDEX_CPP_NODISCARD SourceId { NotSet = -1 };
 }
 namespace reindexer {
-enum class REINDEX_CPP_NODISCARD OptimizationState : int { None, Partial, Completed, Error };
+enum class REINDEX_CPP_NODISCARD OptimizationState : int {
+	None,		// Not optimized: optimization either was not finished, or new data were added, or some data were deleted.
+	Partial,	// Some of the indexes are optimized: either some of the exisitng data were updated, or indexes list was changed.
+	Completed,	// All of the indexes are optimized.
+	Error		// Some critical error has occured during the optimization.
+};
 }
 #endif
 

@@ -22,7 +22,7 @@ private:
 	void BuildFastTextIndex(benchmark::State& state);
 	void FastTextIndexSelect(benchmark::State& state, const std::string& q);
 
-	const std::string kFastIndexTextName_ = "description";
+	const std::string kIndexTextName_ = "description";
 
 	std::unordered_set<int> generateDistrib(int count);
 

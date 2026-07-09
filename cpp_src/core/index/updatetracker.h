@@ -70,11 +70,11 @@ public:
 		emplaceUpdate(k);
 	}
 
-	void commitUpdated(T& idx_map) {
+	void commitUpdated(T& idx_map, unsigned sortedIdxCount) {
 		for (const auto& valIt : updated_) {
 			auto keyIt = idx_map.find(valIt);
 			assertrx(keyIt != idx_map.end());
-			keyIt->second.Unsorted().Commit();
+			keyIt->second.Unsorted().Commit(sortedIdxCount);
 			assertrx(keyIt->second.Unsorted().Size());
 		}
 	}

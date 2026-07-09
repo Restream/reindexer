@@ -8,6 +8,10 @@
 
 namespace reindexer {
 
+static int64_t ElapsedUs(system_clock_w::time_point from, system_clock_w::time_point to) noexcept {
+	return std::chrono::duration_cast<std::chrono::microseconds>(to - from).count();
+}
+
 void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& result, const NsContext& ctx) {
 	auto nsl = atomicLoadMainNs();
 	const bool enablePerfCounters = nsl->enablePerfCounters_.load(std::memory_order_relaxed);
@@ -37,6 +41,8 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 			logFmt(LogTrace, "Namespace::CommitTransaction creating copy for ({})", nslName);
 			hasCopy_.store(true, std::memory_order_release);
 			CounterGuardAIR32 cg(nsl->cancelCommitCnt_);
+			const auto tmStart = system_clock_w::now();
+			system_clock_w::time_point tmAwaitIdleStart, tmCopyStart, tmCommitStart, tmOptimizeStart, tmWarmupStart, tmWarmupEnd;
 			try {
 				auto nsRlck = statCalculator.CreateLock(*nsl, &NamespaceImpl::rLock, ctx.rdxContext);
 				tx.ValidatePK(nsl->pkFields());
@@ -44,16 +50,25 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				decltype(statCalculator)::LoggableLock<AsyncStorage::FullLock> storageLock{nsl->storage_.flushMtx_,
 																						   nsl->storage_.storageMtx_, statCalculator};
 
-				cg.Reset();
+				// Await background optimization. It's already canceled by cancelCommitCnt_ at this moment
+				tmAwaitIdleStart = system_clock_w::now();
+				nsl->indexOptimizer_.AwaitIdle(ctx.rdxContext);
+				tmCopyStart = system_clock_w::now();
+
 				auto lvectorIndexes = nsl->getVectorIndexes();
 				nsCopy.reset(new NamespaceImpl(
 					*nsl, !lvectorIndexes.empty() ? tx.CalculateNewCapacity(nsl->itemsCount()) : nsl->itemsCount(), storageLock));
+				cg.Reset();
 				nsCopyCalc.HitManualy();
 				NsContext nsCtx(ctx);
 				nsCtx.isCopiedNsRequest = true;
+				tmCommitStart = system_clock_w::now();
 				nsCopy->CommitTransaction(tx, result, nsCtx, statCalculator);
+				tmOptimizeStart = system_clock_w::now();
 				nsCopy->optimizeIndexes(nsCtx);
+				tmWarmupStart = system_clock_w::now();
 				nsCopy->warmupFtIndexes();
+				tmWarmupEnd = system_clock_w::now();
 				try {
 					nsCopy->storage_.InheritUpdatesFrom(nsl->storage_,
 														storageLock);  // Updates can not be flushed until tx is committed into ns copy
@@ -84,19 +99,25 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 					}
 				}
 			} catch (Error& e) {
-				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by exception:'{}'", nslName, e.what());
+				logFmt(LogInfo, "Namespace::CommitTransaction copying tx for ({}) was terminated by exception:'{}'", nslName, e.what());
 				calc.Disable();
 				result.Clear();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			} catch (...) {
-				logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) was terminated by unknown exception", nslName);
+				logFmt(LogInfo, "Namespace::CommitTransaction copying tx for ({}) was terminated by unknown exception", nslName);
 				calc.Disable();
 				result.Clear();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			}
-			logFmt(LogTrace, "Namespace::CommitTransaction copying tx for ({}) has succeed", nslName);
+			logFmt(LogInfo,
+				   "Namespace::CommitTransaction copying tx for ({}) has succeed, total time: {} us, await locks: {} us, "
+				   "await idle: {} us, copy time: {} us, commit transaction: {} us, optimize indexes: {} us, warmup ft indexes: {} us",
+				   nslName, ElapsedUs(tmStart, system_clock_w::now()), ElapsedUs(tmStart, tmAwaitIdleStart),
+				   ElapsedUs(tmAwaitIdleStart, tmCopyStart), ElapsedUs(tmCopyStart, tmCommitStart),
+				   ElapsedUs(tmCommitStart, tmOptimizeStart), ElapsedUs(tmOptimizeStart, tmWarmupStart),
+				   ElapsedUs(tmWarmupStart, tmWarmupEnd));
 			if (clonerLck.owns_lock()) {
 				nsl = ns_;
 				clonerLck.unlock();

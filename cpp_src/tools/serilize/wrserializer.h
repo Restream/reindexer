@@ -19,6 +19,7 @@
 #include "core/rank_t.h"
 #include "estl/chunk.h"
 #include "estl/membuf.h"
+#include "tools/serilize/helpers.h"
 #include "tools/stringstools.h"
 #include "tools/varint.h"
 
@@ -141,12 +142,15 @@ public:
 
 	// Put slice with 4 bytes len header
 	RX_ALWAYS_INLINE void PutSlice(std::string_view slice) {
-		PutUInt32(slice.size());
-		grow(slice.size());
-		// TODO: Check with newer version. Clang-tidy v22 is unable to validate len correctly
-		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
-		memcpy(&buf_[len_], slice.data(), slice.size());
-		len_ += slice.size();
+		const auto sz = slice.size();
+		PutUInt32(sz);
+		grow(sz);
+		if (sz) {
+			// TODO: Check with newer version. Clang-tidy v22 is unable to validate len correctly
+			// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
+			memcpy(&buf_[len_], slice.data(), sz);
+		}
+		len_ += sz;
 	}
 
 private:
@@ -193,14 +197,7 @@ public:
 			}
 			return *this;
 		}
-		~VStringHelper() noexcept(false) {
-			if (std::uncaught_exceptions() == 0) {
-				// The End() call may throw if the internal WrSerializer is unable to allocate memory due to logical
-				// (GrowthPolicy) or system (std::bad_alloc) limitations. Checking std::uncaught_exceptions() allows us
-				// to avoid throwing an exception in scenarios where we're already handling another exception.
-				End();
-			}
-		}
+		~VStringHelper() noexcept(false) { serialize_helpers::tryAppendEnd(*this); }
 		void End();
 
 	private:
@@ -387,6 +384,9 @@ public:
 
 	// Buffer manipulation functions
 	RX_ALWAYS_INLINE void Write(std::string_view slice) {
+		if (slice.empty()) {
+			return;
+		}
 		grow(slice.size());
 		// TODO: Check with newer version. Clang-tidy v22 is unable to validate len correctly
 		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)

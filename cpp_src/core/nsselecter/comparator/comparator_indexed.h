@@ -9,7 +9,9 @@
 #include "core/index/string_map.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
+#include "core/payload/payload_access.h"
 #include "core/payload/payloadfieldvalue.h"
+#include "tools/unaligned.h"
 #include "core/payload/payloadtype.h"
 #include "core/payload/payloadvalue.h"
 #include "estl/fast_hash_map.h"
@@ -153,26 +155,26 @@ class [[nodiscard]] ComparatorIndexedOffsetScalar : private DataHolder<T> {
 public:
 	ComparatorIndexedOffsetScalar(size_t offset, const VariantArray&, CondType);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const noexcept {
-		const T* ptr = reinterpret_cast<T*>(item.Ptr() + offset_);
+		const T value = unaligned::read<T>(item.Ptr() + offset_);
 		switch (this->cond_) {
 			case CondEq:
-				return SafeEqualWithFP(*ptr, this->value_);
+				return SafeEqualWithFP(value, this->value_);
 			case CondLt:
-				return *ptr < this->value_;
+				return value < this->value_;
 			case CondLe:
-				return *ptr <= this->value_;
+				return value <= this->value_;
 			case CondGt:
-				return *ptr > this->value_;
+				return value > this->value_;
 			case CondGe:
-				return *ptr >= this->value_;
+				return value >= this->value_;
 			case CondRange:
-				return this->value_ <= *ptr && *ptr <= this->value2_;
+				return this->value_ <= value && value <= this->value2_;
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
-				return this->setPtr_->find(*ptr) != this->setPtr_->cend();
+				return this->setPtr_->find(value) != this->setPtr_->cend();
 			case CondAllSet:
 				assertrx_dbg(this->allSetPtr_);
-				return this->allSetPtr_->values_.size() == 1 && this->allSetPtr_->values_.find(*ptr) != this->allSetPtr_->values_.cend();
+				return this->allSetPtr_->values_.size() == 1 && this->allSetPtr_->values_.find(value) != this->allSetPtr_->values_.cend();
 			case CondAny:
 			case CondEmpty:
 			case CondLike:
@@ -239,7 +241,7 @@ class [[nodiscard]] ComparatorIndexedOffsetScalarDistinct : private DataHolder<T
 public:
 	ComparatorIndexedOffsetScalarDistinct(size_t offset, const VariantArray&, CondType);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const noexcept {
-		const T& value = *reinterpret_cast<T*>(item.Ptr() + offset_);
+		const T value = unaligned::read<T>(item.Ptr() + offset_);
 		switch (this->cond_) {
 			case CondEq:
 				return SafeEqualWithFP(value, this->value_) && distinct_.Compare(value);
@@ -273,7 +275,7 @@ public:
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		distinct_.ExcludeValues(*reinterpret_cast<T*>(item.Ptr() + offset_));
+		distinct_.ExcludeValues(unaligned::read<T>(item.Ptr() + offset_));
 	}
 
 private:
@@ -335,57 +337,55 @@ public:
 			assertrx_dbg(this->allSetPtr_);
 			this->allSetPtr_->allSetValues_.clear();
 		}
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const auto* ptr = reinterpret_cast<const T*>(item.Ptr() + arr.offset);
-		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
+		for (const T elem : payload_access::arrayElems<T>(item.Ptr(), offset_)) {
 			switch (this->cond_) {
 				case CondEq:
-					if (SafeEqualWithFP(*ptr, this->value_)) {
+					if (SafeEqualWithFP(elem, this->value_)) {
 						return true;
 					}
 					continue;
 				case CondLt:
-					if (*ptr < this->value_) {
+					if (elem < this->value_) {
 						return true;
 					}
 					continue;
 				case CondLe:
-					if (*ptr <= this->value_) {
+					if (elem <= this->value_) {
 						return true;
 					}
 					continue;
 				case CondGt:
-					if (*ptr > this->value_) {
+					if (elem > this->value_) {
 						return true;
 					}
 					continue;
 				case CondGe:
-					if (*ptr >= this->value_) {
+					if (elem >= this->value_) {
 						return true;
 					}
 					continue;
 				case CondRange:
-					if (this->value_ <= *ptr && *ptr <= this->value2_) {
+					if (this->value_ <= elem && elem <= this->value2_) {
 						return true;
 					}
 					continue;
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
-					if (this->setPtr_->find(*ptr) != this->setPtr_->cend()) {
+					if (this->setPtr_->find(elem) != this->setPtr_->cend()) {
 						return true;
 					}
 					continue;
 				case CondAllSet: {
 					assertrx_dbg(this->allSetPtr_);
-					const auto it = this->allSetPtr_->values_.find(*ptr);
+					const auto it = this->allSetPtr_->values_.find(elem);
 					if (it != this->allSetPtr_->values_.cend()) {
 						this->allSetPtr_->allSetValues_.insert(it->second);
 						if (this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) {
 							return true;
 						}
 					}
-				}
 					continue;
+				}
 				case CondLike:
 				case CondAny:
 				case CondEmpty:
@@ -415,59 +415,57 @@ public:
 			assertrx_dbg(this->allSetPtr_);
 			this->allSetPtr_->allSetValues_.clear();
 		}
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const auto* ptr = reinterpret_cast<const T*>(item.Ptr() + arr.offset);
-		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
+		for (const T elem : payload_access::arrayElems<T>(item.Ptr(), offset_)) {
 			switch (this->cond_) {
 				case CondEq:
-					if (SafeEqualWithFP(*ptr, this->value_) && distinct_.Compare(*ptr)) {
+					if (SafeEqualWithFP(elem, this->value_) && distinct_.Compare(elem)) {
 						return true;
 					}
 					continue;
 				case CondLt:
-					if (*ptr < this->value_ && distinct_.Compare(*ptr)) {
+					if (elem < this->value_ && distinct_.Compare(elem)) {
 						return true;
 					}
 					continue;
 				case CondLe:
-					if (*ptr <= this->value_ && distinct_.Compare(*ptr)) {
+					if (elem <= this->value_ && distinct_.Compare(elem)) {
 						return true;
 					}
 					continue;
 				case CondGt:
-					if (*ptr > this->value_ && distinct_.Compare(*ptr)) {
+					if (elem > this->value_ && distinct_.Compare(elem)) {
 						return true;
 					}
 					continue;
 				case CondGe:
-					if (*ptr >= this->value_ && distinct_.Compare(*ptr)) {
+					if (elem >= this->value_ && distinct_.Compare(elem)) {
 						return true;
 					}
 					continue;
 				case CondRange:
-					if (this->value_ <= *ptr && *ptr <= this->value2_ && distinct_.Compare(*ptr)) {
+					if (this->value_ <= elem && elem <= this->value2_ && distinct_.Compare(elem)) {
 						return true;
 					}
 					continue;
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
-					if (this->setPtr_->find(*ptr) != this->setPtr_->cend() && distinct_.Compare(*ptr)) {
+					if (this->setPtr_->find(elem) != this->setPtr_->cend() && distinct_.Compare(elem)) {
 						return true;
 					}
 					continue;
 				case CondAllSet: {
 					assertrx_dbg(this->allSetPtr_);
 					bool haveDistinct = false;
-					const auto it = this->allSetPtr_->values_.find(*ptr);
+					const auto it = this->allSetPtr_->values_.find(elem);
 					if (it != this->allSetPtr_->values_.cend()) {
-						haveDistinct |= distinct_.Compare(*ptr);
+						haveDistinct |= distinct_.Compare(elem);
 						this->allSetPtr_->allSetValues_.insert(it->second);
 						if (haveDistinct && this->allSetPtr_->allSetValues_.size() == this->allSetPtr_->values_.size()) {
 							return true;
 						}
 					}
-				}
 					continue;
+				}
 				case CondLike:
 				case CondAny:
 				case CondEmpty:
@@ -483,10 +481,8 @@ public:
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const auto* ptr = reinterpret_cast<const T*>(item.Ptr() + arr.offset);
-		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
-			distinct_.ExcludeValues(*ptr);
+		for (const T elem : payload_access::arrayElems<T>(item.Ptr(), offset_)) {
+			distinct_.ExcludeValues(elem);
 		}
 	}
 
@@ -690,7 +686,7 @@ class [[nodiscard]] ComparatorIndexedOffsetScalarString : private DataHolder<key
 public:
 	ComparatorIndexedOffsetScalarString(size_t offset, const VariantArray&, const CollateOpts&, CondType);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
-		const std::string_view value = *reinterpret_cast<const p_string*>(item.Ptr() + offset_);
+		const std::string_view value = unaligned::read<p_string>(item.Ptr() + offset_);
 		switch (cond_) {
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
@@ -781,7 +777,7 @@ class [[nodiscard]] ComparatorIndexedOffsetScalarStringDistinct : private DataHo
 public:
 	ComparatorIndexedOffsetScalarStringDistinct(size_t offset, const VariantArray&, const CollateOpts&, CondType);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
-		const std::string_view value = *reinterpret_cast<const p_string*>(item.Ptr() + offset_);
+		const std::string_view value = unaligned::read<p_string>(item.Ptr() + offset_);
 		switch (cond_) {
 			case CondSet:
 				assertrx_dbg(this->setPtr_);
@@ -817,7 +813,7 @@ public:
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		distinct_.ExcludeValues(std::string_view(*reinterpret_cast<const p_string*>(item.Ptr() + offset_)));
+		distinct_.ExcludeValues(std::string_view(unaligned::read<p_string>(item.Ptr() + offset_)));
 	}
 
 private:
@@ -881,10 +877,8 @@ public:
 			assertrx_dbg(this->allSetPtr_);
 			this->allSetPtr_->allSetValues_.clear();
 		}
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
-		for (const p_string* const end = ptr + arr.len; ptr != end; ++ptr) {
-			const std::string_view value = *ptr;
+		for (const p_string elem : payload_access::arrayElems<p_string>(item.Ptr(), offset_)) {
+			const std::string_view value = elem;
 			switch (cond_) {
 				case CondSet:
 					if (setPtr_->find(value) != setPtr_->cend()) {
@@ -906,8 +900,8 @@ public:
 							return true;
 						}
 					}
-				}
 					continue;
+				}
 				case CondLike:
 					if (matchLikePattern(value, value_.valueView_)) {
 						return true;
@@ -966,10 +960,8 @@ public:
 			assertrx_dbg(this->allSetPtr_);
 			this->allSetPtr_->allSetValues_.clear();
 		}
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
-		for (const p_string* const end = ptr + arr.len; ptr != end; ++ptr) {
-			const std::string_view value = *ptr;
+		for (const p_string elem : payload_access::arrayElems<p_string>(item.Ptr(), offset_)) {
+			const std::string_view value = elem;
 			switch (cond_) {
 				case CondSet:
 					assertrx_dbg(this->setPtr_);
@@ -994,8 +986,8 @@ public:
 							return true;
 						}
 					}
-				}
 					continue;
+				}
 				case CondLike:
 					if (matchLikePattern(value, value_.valueView_) && distinct_.Compare(value)) {
 						return true;
@@ -1012,7 +1004,7 @@ public:
 					}
 					continue;
 				case CondLe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le && distinct_.Compare(value)) {
+					if ((collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Le) && distinct_.Compare(value)) {
 						return true;
 					}
 					continue;
@@ -1022,7 +1014,7 @@ public:
 					}
 					continue;
 				case CondGe:
-					if (collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge && distinct_.Compare(value)) {
+					if ((collateCompare(value, value_.valueView_, *collateOpts_) & ComparationResult::Ge) && distinct_.Compare(value)) {
 						return true;
 					}
 					continue;
@@ -1040,10 +1032,8 @@ public:
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
-		for (const p_string* const end = ptr + arr.len; ptr != end; ++ptr) {
-			distinct_.ExcludeValues(std::string_view(*ptr));
+		for (const p_string elem : payload_access::arrayElems<p_string>(item.Ptr(), offset_)) {
+			distinct_.ExcludeValues(std::string_view(elem));
 		}
 	}
 
@@ -1365,12 +1355,13 @@ class [[nodiscard]] ComparatorIndexedOffsetArrayDWithin {
 public:
 	ComparatorIndexedOffsetArrayDWithin(size_t offset, const VariantArray&);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
+		const auto arr = payload_access::readArrayMeta(item.Ptr(), offset_);
 		if (arr.len != 2) [[unlikely]] {
 			throw Error(errQueryExec, "DWithin with not point data");
 		}
-		const double* ptr = reinterpret_cast<const double*>(item.Ptr() + arr.offset);
-		return DWithin(Point{ptr[0], ptr[1]}, point_, distance_);
+		const double d0 = unaligned::read<double>(item.Ptr() + arr.offset);
+		const double d1 = unaligned::read<double>(item.Ptr() + arr.offset + sizeof(double));
+		return DWithin(Point{d0, d1}, point_, distance_);
 	}
 	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
@@ -1387,24 +1378,26 @@ class [[nodiscard]] ComparatorIndexedOffsetArrayDWithinDistinct {
 public:
 	ComparatorIndexedOffsetArrayDWithinDistinct(size_t offset, const VariantArray&);
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
+		const auto arr = payload_access::readArrayMeta(item.Ptr(), offset_);
 		if (arr.len != 2) [[unlikely]] {
 			throw Error(errQueryExec, "DWithin with not point data");
 		}
-		const double* ptr = reinterpret_cast<const double*>(item.Ptr() + arr.offset);
-		const Point p{ptr[0], ptr[1]};
+		const double d0 = unaligned::read<double>(item.Ptr() + arr.offset);
+		const double d1 = unaligned::read<double>(item.Ptr() + arr.offset + sizeof(double));
+		const Point p{d0, d1};
 		return DWithin(p, point_, distance_) && distinct_.Compare(p);
 	}
 	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
+		const auto arr = payload_access::readArrayMeta(item.Ptr(), offset_);
 		if (arr.len != 2) [[unlikely]] {
 			return;
 		}
-		const double* ptr = reinterpret_cast<const double*>(item.Ptr() + arr.offset);
-		distinct_.ExcludeValues(Point{ptr[0], ptr[1]});
+		const double d0 = unaligned::read<double>(item.Ptr() + arr.offset);
+		const double d1 = unaligned::read<double>(item.Ptr() + arr.offset + sizeof(double));
+		distinct_.ExcludeValues(Point{d0, d1});
 	}
 
 private:
@@ -1474,13 +1467,13 @@ class [[nodiscard]] ComparatorIndexedOffsetScalarAnyDistinct {
 public:
 	ComparatorIndexedOffsetScalarAnyDistinct(size_t offset) : offset_{offset} {}
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const noexcept {
-		return distinct_.Compare(*reinterpret_cast<T*>(item.Ptr() + offset_));
+		return distinct_.Compare(unaligned::read<T>(item.Ptr() + offset_));
 	}
 	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		distinct_.ExcludeValues(*reinterpret_cast<T*>(item.Ptr() + offset_));
+		distinct_.ExcludeValues(unaligned::read<T>(item.Ptr() + offset_));
 	}
 
 private:
@@ -1509,13 +1502,13 @@ class [[nodiscard]] ComparatorIndexedOffsetScalarAnyStringDistinct {
 public:
 	ComparatorIndexedOffsetScalarAnyStringDistinct(size_t offset, const CollateOpts& collate) : distinct_{collate}, offset_{offset} {}
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const noexcept {
-		return distinct_.Compare(*reinterpret_cast<p_string*>(item.Ptr() + offset_));
+		return distinct_.Compare(unaligned::read<p_string>(item.Ptr() + offset_));
 	}
 	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		distinct_.ExcludeValues(std::string_view(*reinterpret_cast<p_string*>(item.Ptr() + offset_)));
+		distinct_.ExcludeValues(std::string_view(unaligned::read<p_string>(item.Ptr() + offset_)));
 	}
 
 private:
@@ -1527,8 +1520,7 @@ class [[nodiscard]] ComparatorIndexedOffsetArrayAny {
 public:
 	ComparatorIndexedOffsetArrayAny(size_t offset) noexcept : offset_{offset} {}
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		return arr.len != 0;
+		return payload_access::readArrayMeta(item.Ptr(), offset_).len != 0;
 	}
 	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
@@ -1544,10 +1536,8 @@ class [[nodiscard]] ComparatorIndexedOffsetArrayAnyDistinct {
 public:
 	ComparatorIndexedOffsetArrayAnyDistinct(size_t offset) : offset_{offset} {}
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const auto* ptr = reinterpret_cast<const T*>(item.Ptr() + arr.offset);
-		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
-			if (distinct_.Compare(*ptr)) {
+		for (const T elem : payload_access::arrayElems<T>(item.Ptr(), offset_)) {
+			if (distinct_.Compare(elem)) {
 				return true;
 			}
 		}
@@ -1557,10 +1547,8 @@ public:
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const auto* ptr = reinterpret_cast<const T*>(item.Ptr() + arr.offset);
-		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
-			distinct_.ExcludeValues(*ptr);
+		for (const T elem : payload_access::arrayElems<T>(item.Ptr(), offset_)) {
+			distinct_.ExcludeValues(elem);
 		}
 	}
 
@@ -1576,10 +1564,8 @@ class [[nodiscard]] ComparatorIndexedOffsetArrayAnyStringDistinct {
 public:
 	ComparatorIndexedOffsetArrayAnyStringDistinct(size_t offset, const CollateOpts& collate) : distinct_{collate}, offset_{offset} {}
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) const {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
-		for (const auto* const end = ptr + arr.len; ptr != end; ++ptr) {
-			if (distinct_.Compare(*ptr)) {
+		for (const p_string elem : payload_access::arrayElems<p_string>(item.Ptr(), offset_)) {
+			if (distinct_.Compare(elem)) {
 				return true;
 			}
 		}
@@ -1589,10 +1575,8 @@ public:
 	std::string ConditionStr() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return IsDistinct_True; }
 	void ExcludeDistinctValues(const PayloadValue& item, IdType /*rowId*/) {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		const p_string* ptr = reinterpret_cast<const p_string*>(item.Ptr() + arr.offset);
-		for (const p_string* const end = ptr + arr.len; ptr != end; ++ptr) {
-			distinct_.ExcludeValues(std::string_view(*ptr));
+		for (const p_string elem : payload_access::arrayElems<p_string>(item.Ptr(), offset_)) {
+			distinct_.ExcludeValues(std::string_view(elem));
 		}
 	}
 
@@ -1699,8 +1683,7 @@ class [[nodiscard]] ComparatorIndexedOffsetArrayEmpty {
 public:
 	ComparatorIndexedOffsetArrayEmpty(size_t offset) noexcept : offset_{offset} {}
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType /*rowId*/) {
-		const PayloadFieldValue::Array& arr = *reinterpret_cast<const PayloadFieldValue::Array*>(item.Ptr() + offset_);
-		return arr.len == 0;
+		return payload_access::readArrayMeta(item.Ptr(), offset_).len == 0;
 	}
 	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;
@@ -1743,7 +1726,7 @@ class [[nodiscard]] ComparatorIndexedFloatVectorAny {
 public:
 	ComparatorIndexedFloatVectorAny(size_t offset) noexcept : offset_{offset} {}
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& item, IdType) noexcept {
-		return !ConstFloatVectorView::FromUint64(*reinterpret_cast<const uint64_t*>(item.Ptr() + offset_)).IsEmpty();
+		return !ConstFloatVectorView::FromUint64(unaligned::read<uint64_t>(item.Ptr() + offset_)).IsEmpty();
 	}
 	static double CostMultiplier() noexcept { return comparators::kIdxOffsetComparatorCostMultiplier; }
 	std::string ConditionStr() const;

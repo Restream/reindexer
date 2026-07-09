@@ -312,4 +312,13 @@ void HybridTest::TestMerge() {
 TEST_F(HybridTest, MergeArray) { TestMerge<Array>(); }
 TEST_F(HybridTest, MergeScalar) { TestMerge<Scalar>(); }
 
+TEST_F(HybridTest, StreamingKnnForbidden) {
+	static std::array<float, kDimension<Scalar>> buf;
+	rndFloatVector(buf);
+	checkFailed(reindexer::Query{kNsName}
+					.Where(kFieldNameFt, CondEq, "trampampam streaming")
+					.WhereKNN(kFieldNameIP, reindexer::ConstFloatVectorView{buf}, reindexer::HnswSearchParams{}.Ef(200)),
+				"Streaming KNN search does not support hybrid queries");
+}
+
 }  // namespace reindexer_tests

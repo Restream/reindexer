@@ -129,10 +129,11 @@ IdType FloatVectorIndexRawDataInserter::operator()(Variant&& key, uint32_t arrId
 					   ->SelectKey({key.convert(pkIndex_->SelectKeyType(), &pkIndex_->GetPayloadType(), &pkIndex_->Fields())}, CondEq, 0,
 								   kDummySelectContext, kDummyRdxContext)
 					   .Front();
-		if (res.empty() || res[0].ids_.empty()) {
+		if (res.empty() || res[0].TryGetFlatIDSet().empty()) {
 			throw Error(errLogic, "Requested PK does not exist");
 		}
-		return res[0].ids_[0];
+		assertrx_dbg(res[0].TryGetFlatIDSet().size() == 1);
+		return res[0].TryGetFlatIDSet()[0];
 	};
 
 	const auto rowId = pkIndex_ ? select(std::move(key)) : IdType::FromNumber(key.As<int>());

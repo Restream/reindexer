@@ -187,6 +187,9 @@ type KnnSearchParam interface {
 	serialize(*cjson.Serializer)
 }
 
+// BaseKnnSearchParam holds common KNN query parameters.
+// Omit both K and Radius for HNSW streaming search (use Limit/Offset on the query).
+// Bruteforce and IVF still require K and/or Radius — validated on the server.
 type BaseKnnSearchParam struct {
 	K      *int
 	Radius *float32

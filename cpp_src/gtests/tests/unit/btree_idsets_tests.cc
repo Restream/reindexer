@@ -136,20 +136,20 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 		auto it1 = m1.insert({i, reindexer::KeyEntry<reindexer::IdSet>()});
 		for (int i = 0; i < rand() % 100 + 50; ++i) {
 			const auto rowId = reindexer::IdType::FromNumber(i);
-			std::ignore = it1.first->second.Unsorted().Add(rowId, reindexer::IdSetEditMode::Unordered, 1);
+			it1.first->second.Unsorted().AddUnordered(rowId);
 			ids1.push_back(rowId);
 		}
 		auto it2 = m2.insert({i, reindexer::KeyEntry<reindexer::IdSetPlain>()});
 		for (int i = 0; i < rand() % 100 + 50; ++i) {
 			const auto rowId = reindexer::IdType::FromNumber(i);
-			std::ignore = it2.first->second.Unsorted().Add(rowId, reindexer::IdSetEditMode::Unordered, 1);
+			it2.first->second.Unsorted().AddUnordered(rowId);
 			ids2.push_back(rowId);
 		}
 	}
 
 	reindexer::Index::KeyEntry emptyIdsKeyEntry;
 	for (int i = 0; i < rand() % 100 + 50; ++i) {
-		std::ignore = emptyIdsKeyEntry.Unsorted().Add(reindexer::IdType::FromNumber(i), reindexer::IdSetEditMode::Unordered, 1);
+		emptyIdsKeyEntry.Unsorted().AddUnordered(reindexer::IdType::FromNumber(i));
 	}
 
 	size_t pos = 0;

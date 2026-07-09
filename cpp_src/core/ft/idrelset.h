@@ -131,7 +131,7 @@ private:
 
 class [[nodiscard]] IdRelSet : public std::vector<IdRelType> {
 public:
-	int Add(VDocIdType id, unsigned pos, unsigned field, unsigned arrayIdx) {
+	void Add(VDocIdType id, unsigned pos, unsigned field, unsigned arrayIdx) {
 		if (id > max_id_) {
 			max_id_ = id;
 		}
@@ -141,7 +141,6 @@ public:
 
 		auto& last = (empty() || back().Id() != id) ? emplace_back(id) : back();
 		last.Add(pos, field, arrayIdx);
-		return last.size();
 	}
 	void SimpleCommit() noexcept {
 		for (auto& val : *this) {

@@ -5,6 +5,8 @@
 
 namespace reindexer {
 
+static constexpr uint32_t kMinPartialMatchDenominator = 3;
+
 template <typename IdCont>
 void Selector<IdCont>::filterStopWordsAndAdd(TermVariants& termVariants, h_vector<TermVariant, 5>& newVariants) const {
 	const StopWordsSetT& stopWords = holder_.cfg_->stopWords;
@@ -276,7 +278,6 @@ static bool allVidsExcluded(const FtMergeStatuses::Statuses& docsExcluded, const
 }
 
 template <typename IdCont>
-template <FtUseExternStatuses useExternSt>
 ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& term, TermVariants& termVariants,
 														   const FtMergeStatuses::Statuses& docsExcluded) {
 	const FTRankingConfig& rankingCfg = holder_.cfg_->rankingConfig;
@@ -307,8 +308,9 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 
 				const char* suffixPtr = wordIt->first;
 				const WordIdType wordId = wordIt->second;
+
 				const auto& wordEntry = holder_.GetWordEntry(wordId);
-				if (useExternSt == FtUseExternStatuses::Yes && allVidsExcluded(docsExcluded, wordEntry.vids)) {
+				if (allVidsExcluded(docsExcluded, wordEntry.vids)) {
 					++excludedCnt;
 					continue;
 				}
@@ -327,10 +329,11 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 					break;
 				}
 
-				const int matchDif = std::abs(long(word.length() - patternBytes + wordLengthBeforePattern));
-				const float decreasePenalty =
-					static_cast<float>(holder_.cfg_->partialMatchDecrease * matchDif) / std::max<float>(patternBytes, 3);
-				const float boost = std::max(getTermBoost(word), variant.boost);
+				// ToDo fix it (broken for russian utf8 symbols)
+				const int matchDif = std::abs(long(word.length() - variant.PatternUtf8().length() + wordLengthBeforePattern));
+				const float boost = std::max(getTermBoost(std::string(word)), variant.boost);
+				const float decreasePenalty = static_cast<float>(holder_.cfg_->partialMatchDecrease * matchDif) /
+											  std::max<float>(variant.PatternUtf8().length(), kMinPartialMatchDenominator);
 				float proc = std::max<float>(variant.proc - decreasePenalty, isPrefix ? rankingCfg.PrefixMin() : rankingCfg.SuffixMin());
 				proc = std::min<float>(proc, variant.proc);
 				if (boost > 0.0f) {
@@ -390,7 +393,6 @@ static FtDslOpts calcSubstitutionOptions(const ft::QueryMergeData<IdCont>& query
 }
 
 template <typename IdCont>
-template <FtUseExternStatuses useExternSt>
 h_vector<size_t, 4> Selector<IdCont>::addSynonymsBySplittingTermVariants(TermVariants& termVariants,
 																		 const FtMergeStatuses::Statuses& docsExcluded,
 																		 ft::QueryMergeData<IdCont>& queryMergeData) {
@@ -437,7 +439,7 @@ h_vector<size_t, 4> Selector<IdCont>::addSynonymsBySplittingTermVariants(TermVar
 				}
 
 				ft::TermResults<IdCont> firstPartTerm =
-					buildTermResults<useExternSt>(FtDSLEntry(std::wstring(firstSplitPart), opts), firstPartVariants, docsExcluded);
+					buildTermResults(FtDSLEntry(std::wstring(firstSplitPart), opts), firstPartVariants, docsExcluded);
 				queryMergeData.totalORVids += firstPartTerm.MaxVDocs();
 				synData.AddTerm(std::move(firstPartTerm));
 
@@ -456,7 +458,7 @@ h_vector<size_t, 4> Selector<IdCont>::addSynonymsBySplittingTermVariants(TermVar
 				}
 
 				ft::TermResults<IdCont> secondPartTerm =
-					buildTermResults<useExternSt>(FtDSLEntry(std::wstring(secondSplitPart), opts), secondPartVariants, docsExcluded);
+					buildTermResults(FtDSLEntry(std::wstring(secondSplitPart), opts), secondPartVariants, docsExcluded);
 				queryMergeData.totalORVids += secondPartTerm.MaxVDocs();
 				synData.AddTerm(std::move(secondPartTerm));
 
@@ -473,7 +475,6 @@ h_vector<size_t, 4> Selector<IdCont>::addSynonymsBySplittingTermVariants(TermVar
 }
 
 template <typename IdCont>
-template <FtUseExternStatuses useExternSt>
 void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStatuses::Statuses& docsExcluded, bool inTransaction,
 										   const RdxContext& rdxCtx, ft::QueryMergeData<IdCont>& queryMergeData) {
 	const FTRankingConfig& rankingCfg = holder_.cfg_->rankingConfig;
@@ -525,7 +526,7 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 
 			tryToCorrectKbLayout(termVariants);
 			if (term.Opts().op == OpOr && holder_.cfg_->enableTermsSplit) {
-				synonymIds = addSynonymsBySplittingTermVariants<useExternSt>(termVariants, docsExcluded, queryMergeData);
+				synonymIds = addSynonymsBySplittingTermVariants(termVariants, docsExcluded, queryMergeData);
 			}
 
 			tryToCorrectTypos(termVariants);
@@ -541,8 +542,7 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 			v.boost = getTermBoost(v.PatternUtf8());
 		}
 
-		ft::TermResults<IdCont> nextTerm = buildTermResults<useExternSt>(term, termVariants, docsExcluded);
-
+		ft::TermResults<IdCont> nextTerm = buildTermResults(term, termVariants, docsExcluded);
 		queryMergeData.totalORVids += nextTerm.MaxVDocs();
 		if (phraseTerm) {
 			if (nextPhrase.NumTerms() && curPhraseNum != term.Opts().phraseNum) {
@@ -591,7 +591,7 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 				v.boost = getTermBoost(v.PatternUtf8());
 			}
 
-			ft::TermResults<IdCont> nextTerm = buildTermResults<useExternSt>(FtDSLEntry(word, substOpts), termVariants, docsExcluded);
+			ft::TermResults<IdCont> nextTerm = buildTermResults(FtDSLEntry(word, substOpts), termVariants, docsExcluded);
 			queryMergeData.totalORVids += nextTerm.MaxVDocs();
 			synData.AddTerm(std::move(nextTerm));
 		}
@@ -607,17 +607,19 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 }
 
 template <typename IdCont>
-template <typename MergedOffsetT, typename MergedDataType>
-MergedDataType Selector<IdCont>::mergeResults(ft::QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType,
-											  FtMergeStatuses::Statuses& docsExcluded, bool inTransaction, const RdxContext& rdxCtx) {
-	ft::Merger<IdCont, MergedDataType, MergedOffsetT> merger(holder_, docsExcluded, fieldSize_, maxAreasInDoc_, inTransaction, rdxCtx);
+template <typename MergedOffsetT, typename MergedDataType, typename DocsStatsGetter>
+MergedDataType Selector<IdCont>::mergeResults(size_t totalNumDocs, ft::QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType,
+											  FtMergeStatuses::Statuses& docsExcluded, bool inTransaction, const RdxContext& rdxCtx,
+											  const DocsStatsGetter& docsStatsGetter) {
+	ft::Merger<IdCont, MergedDataType, MergedOffsetT> merger(totalNumDocs, holder_.cfg_, docsExcluded, fieldSize_, maxAreasInDoc_,
+															 inTransaction, rdxCtx);
 	switch (holder_.cfg_->bm25Config.bm25Type) {
 		case FTConfig::Bm25Config::Bm25Type::rx:
-			return merger.template Merge<Bm25Rx>(queryMergeData, rankSortType);
+			return merger.template Merge<Bm25Rx>(queryMergeData, rankSortType, docsStatsGetter);
 		case FTConfig::Bm25Config::Bm25Type::classic:
-			return merger.template Merge<Bm25Classic>(queryMergeData, rankSortType);
+			return merger.template Merge<Bm25Classic>(queryMergeData, rankSortType, docsStatsGetter);
 		case FTConfig::Bm25Config::Bm25Type::wordCount:
-			return merger.template Merge<TermCount>(queryMergeData, rankSortType);
+			return merger.template Merge<TermCount>(queryMergeData, rankSortType, docsStatsGetter);
 		default:
 			assertrx_throw(false);
 			return MergedDataType();
@@ -625,18 +627,21 @@ MergedDataType Selector<IdCont>::mergeResults(ft::QueryMergeData<IdCont>& queryM
 }
 
 template <typename IdCont>
-template <FtUseExternStatuses useExternSt, typename MergedDataType>
-MergedDataType Selector<IdCont>::Process(FtDSLQuery&& query, bool inTransaction, RankSortType rankSortType,
-										 FtMergeStatuses::Statuses&& docsExcluded, const RdxContext& rdxCtx) {
+template <typename MergedDataType, typename DocsStatsGetter>
+MergedDataType Selector<IdCont>::Process(size_t totalNumDocs, FtDSLQuery&& query, bool inTransaction, RankSortType rankSortType,
+										 FtMergeStatuses::Statuses&& docsExcluded, const RdxContext& rdxCtx,
+										 const DocsStatsGetter& docsStatsGetter) {
 	ft::QueryMergeData<IdCont> queryMergeData;
-	buildQueryMergeData<useExternSt>(std::move(query), docsExcluded, inTransaction, rdxCtx, queryMergeData);
+	buildQueryMergeData(std::move(query), docsExcluded, inTransaction, rdxCtx, queryMergeData);
 
 	const auto maxMergedSize = std::min<uint32_t>(holder_.cfg_->mergeLimit, queryMergeData.totalORVids);
 	assertrx_throw(maxMergedSize < 0xFFFFFFFF);
 	if (maxMergedSize < 0xFFFF) {
-		return mergeResults<uint16_t, MergedDataType>(queryMergeData, rankSortType, docsExcluded, inTransaction, rdxCtx);
+		return mergeResults<uint16_t, MergedDataType>(totalNumDocs, queryMergeData, rankSortType, docsExcluded, inTransaction, rdxCtx,
+													  docsStatsGetter);
 	}
-	return mergeResults<uint32_t, MergedDataType>(queryMergeData, rankSortType, docsExcluded, inTransaction, rdxCtx);
+	return mergeResults<uint32_t, MergedDataType>(totalNumDocs, queryMergeData, rankSortType, docsExcluded, inTransaction, rdxCtx,
+												  docsStatsGetter);
 }
 
 }  // namespace reindexer

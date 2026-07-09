@@ -5,6 +5,7 @@
 
 #include "core/formatters/id_type_fmt.h"
 #include "core/id_type.h"
+#include "core/index/float_vector/float_vector_index.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joins/queryresults.h"
 #include "core/nsselecter/joins/select_strategy.h"
@@ -15,6 +16,7 @@
 #include "estl/type_traits.h"
 #include "forcedsorthelpers.h"
 #include "itemcomparator.h"
+#include "knn_streaming_index_iterator.h"
 #include "qresexplainholder.h"
 #include "querypreprocessor.h"
 #include "sorting_heuristics.h"
@@ -179,6 +181,9 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectAndPreSelectCtx<Joi
 	}
 
 	SelectIteratorContainer qres(ns_->payloadType_, &ctx);
+	if (detectStreamingKnn(qPreproc, rankedQueryEntry.queryRankType, ctx)) {
+		qres.SetStreamingKnnMode();
+	}
 	QresExplainHolder qresHolder(qres, (explain.IsEnabled() || logLevel >= LogTrace) ? QresExplainHolder::ExplainEnabled::Yes
 																					 : QresExplainHolder::ExplainEnabled::No);
 	LoopCtx lctx(qres, ctx, qPreproc, aggregators, explain);
@@ -293,26 +298,23 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectAndPreSelectCtx<Joi
 			std::ignore = qres.AppendFront<SelectIterator>(OpAnd, std::move(scan), IsDistinct_False, std::string(scanName),
 														   IndexValueType::NotSet, ForcedFirst_True);
 		}
-		// Get maximum iterations count, for right calculation comparators costs
-		qres.SortByCost(maxIterations);
-
-		// Check IdSet must be 1st
-		qres.CheckFirstQuery();
 
 		// Rewind all results iterators
 		qres.VisitForEach([](const KnnRawSelectResult&) { throw_as_assert; },
 						  Skip<JoinSelectIterator, SelectIteratorsBracket, AlwaysTrue, ComparatorsPackT>{},
 						  [reverse, maxIterations](SelectIterator& it) { it.Start(reverse, maxIterations); });
 
-		// Let iterators choose most efficient algorithm
-		assertrx_throw(qres.Size());
-		qres.SetExpectMaxIterations(maxIterations);
+		// Get maximum iterations count, for right calculation comparators costs
+		qres.SortByCost(maxIterations);
+
+		// Check IdSet must be 1st
+		qres.CheckFirstQuery();
 
 		explain.AddPostprocessTime();
 
 		// do not calc total by loop, if we have only 1 condition with 1 IdSet
-		lctx.calcTotal = needCalcTotal &&
-						 (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 || qres.Get<SelectIterator>(0).size() > 1);
+		lctx.calcTotal = needCalcTotal && (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 ||
+										   qres.Get<SelectIterator>(0).size() > 1 || qres.IsStreamingKnnMode());
 
 		// Aggregations can be calculated correctly in a single pass over the items array
 		// only if there is no limit and offset in the query,
@@ -453,6 +455,55 @@ void NsSelecter::holdFloatVectors(LocalQueryResults& result, MainSelectCtx& ctx,
 
 template <>
 void NsSelecter::holdFloatVectors(LocalQueryResults&, JoinSelectCtx&, size_t, const FieldsFilter&) const {}
+
+bool NsSelecter::detectStreamingKnn(const QueryPreprocessor& qPreproc, QueryRankType queryRankType, const SelectCtx& ctx) const {
+	const KnnQueryEntry* knnEntry = nullptr;
+	const auto& entries = qPreproc.GetQueryEntries();
+	for (size_t i = 0, sz = entries.Size(); i < sz; ++i) {
+		if (entries.Is<KnnQueryEntry>(i)) {
+			knnEntry = &entries.Get<KnnQueryEntry>(i);
+			break;
+		}
+	}
+	if (!knnEntry) {
+		return false;
+	}
+
+	const KnnSearchParams params = knnEntry->Params();
+	if (params.K().has_value()) {
+		return false;  // Regular knn-by-k search
+	}
+	const Index& index = *ns_->indexes_[knnEntry->IndexNo()];
+	if (params.Radius().has_value() || index.Opts().FloatVector().Radius().has_value()) {
+		return false;  // Query (or index default) radius is set -> regular range search
+	}
+
+	// At this point the query is a KNN search without 'k' and without an effective 'radius' -> streaming mode.
+
+	// Streaming search is available for pure KNN queries only (not hybrid / fulltext).
+	switch (queryRankType) {
+		case QueryRankType::KnnL2:
+		case QueryRankType::KnnIP:
+		case QueryRankType::KnnCos:
+			break;
+		case QueryRankType::Hybrid:
+			throw Error(errQueryExec, "Streaming KNN search does not support hybrid queries");
+		case QueryRankType::No:
+		case QueryRankType::FullText:
+		case QueryRankType::NotSet:
+			throw_as_assert;  // streaming candidate implies a single KNN ranked query
+	}
+
+	if (index.Type() != IndexHnsw) {
+		throw Error(errQueryExec,
+					"KNN query without 'k' and 'radius' (streaming search) is supported for HNSW indexes only, but index '{}' is not HNSW",
+					index.Name());
+	}
+	if (!ctx.query.GetSortingEntries().empty() || !ctx.query.ForcedSortOrder().empty()) {
+		throw Error(errQueryExec, "Streaming KNN search does not support ORDER BY");
+	}
+	return true;
+}
 
 size_t NsSelecter::GetMaxScanIterations(const NamespaceImpl& ns, const SortingContext& sortingCtx) {
 	const size_t itemsCount{ns.itemsCount()};
@@ -782,9 +833,12 @@ void NsSelecter::selectLoop(LoopCtx<SelectCtxT>& ctx, ResultsT& result, const Rd
 	VariantArray prevValues;
 	size_t multisortLimitLeft = 0;
 
+	const auto distinctNodeIndexes = qres.CollectDistinctConditions();
+
 	assertrx_throw(!qres.Empty());
 	assertrx_throw(qres.IsSelectIterator(0));
 	SelectIterator& firstIterator = qres.begin()->Value<SelectIterator>();
+	auto* streamingKnnIterator = firstIterator.TryGetKnnStreamingIterator();
 	IdType rowId = firstIterator.Val();
 	const CollateOpts* multisortCollateOpts = nullptr;
 	const auto& nsItems = ns_->items_;
@@ -811,10 +865,15 @@ void NsSelecter::selectLoop(LoopCtx<SelectCtxT>& ctx, ResultsT& result, const Rd
 			continue;
 		}
 		const bool withJoinedItems = (!ctx.start && ctx.count) || (sortingOptions.multiColumnByBtreeIndex && !multiSortFinished);
-		if (qres.Process<reverse>(pv, &finish, &rowId, properRowId, withJoinedItems)) {
+		if (qres.Process<reverse>(pv, &finish, &rowId, properRowId, withJoinedItems, distinctNodeIndexes)) {
+			if (streamingKnnIterator) {
+				streamingKnnIterator->NotifyFilterMatch();
+			}
+
 			sctx.matchedAtLeastOnce = true;
 			if constexpr (!kPreprocessingBeforeFT) {
-				const RankT rank = ranks_ ? ranks_->GetRank(firstIterator.Pos()) : RankT{};
+				const RankT rank = streamingKnnIterator ? streamingKnnIterator->CurrentRank()
+														: (ranks_ ? ranks_->GetRank(firstIterator.PosUnsorted()) : RankT{});
 				if ((ctx.start || !ctx.count) && sortingOptions.multiColumnByBtreeIndex && !multiSortFinished) {
 					VariantArray recentValues;
 					size_t lastResSize = result.Count();
@@ -1226,7 +1285,7 @@ static void removeQuotesFromExpression(std::string& expression) {
 	expression.erase(std::remove(expression.begin(), expression.end(), '"'), expression.end());
 }
 
-void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType queryRankType, IndexValueType rankedIndexNo,
+void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType queryRankType, int rankedIndexNo,
 									   bool availableSelectBySortIndex) const {
 	using namespace SortExprFuncs;
 	const auto strictMode = ctx.inTransaction

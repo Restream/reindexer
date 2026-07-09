@@ -136,8 +136,8 @@ void HnswHashStorageBaseTestBody() {
 					}
 
 					size_t begin = batchId * kBatchSize;
-					size_t end = std::min(begin + kBatchSize, kBatchSize);
-					for (size_t i = begin; i < begin + end; ++i) {
+					size_t end = std::min(begin + kBatchSize, kPointsCount);
+					for (size_t i = begin; i < end; ++i) {
 						auto label = FloatVectorId{IdType::FromNumber(i), 0};
 						map->AddPointConcurrent(points[label].RawData(), label.AsNumber());
 					}

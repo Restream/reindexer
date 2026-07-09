@@ -43,6 +43,12 @@ void Query::checkSubQuery() const {
 	}
 }
 
+void Query::checkJoinedSubQuery() const {
+	if (entries_.ContainsKnnCondition()) [[unlikely]] {
+		throw Error{errQueryExec, "KNN condition cannot be in joined subquery"};
+	}
+}
+
 void Query::checkSubQueryNoData() const {
 	if (!aggregations_.empty()) [[unlikely]] {
 		throw Error{errQueryExec, "Aggregation cannot be in subquery with condition Any or Empty"};
@@ -237,6 +243,7 @@ void Query::Join(JoinedQuery&& jq) & {
 			nextOp_ = OpAnd;
 			break;
 	}
+	jq.checkJoinedSubQuery();
 	joinQueries_.emplace_back(std::move(jq));
 	adoptNested(joinQueries_.back());
 }
@@ -786,6 +793,9 @@ Query Query::Deserialize(Serializer& ser) {
 		q1.joinType = joinType;
 		q1.deserialize(ser);
 		res.adoptNested(q1);
+		if (joinType != JoinType::Merge) {
+			q1.checkJoinedSubQuery();
+		}
 		if (joinType == JoinType::Merge) {
 			res.mergeQueries_.emplace_back(std::move(q1));
 			nested = true;
@@ -841,6 +851,7 @@ Query& Query::Merge(Query&& q) & {
 }
 
 void Query::AddJoinQuery(JoinedQuery&& jq) {
+	jq.checkJoinedSubQuery();
 	adoptNested(jq);
 	joinQueries_.emplace_back(std::move(jq));
 }

@@ -1,12 +1,13 @@
 #pragma once
 
-#include <span>
 #include <string_view>
+#include <type_traits>
 #include "core/cjson/tagslengths.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/enums.h"
 #include "core/keyvalue/p_string.h"
 #include "tools/serilize/wrserializer.h"
+#include "tools/unaligned.h"
 
 namespace reindexer {
 
@@ -65,29 +66,26 @@ public:
 	template <typename T>
 	void Null(T) noexcept {}
 
-	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value ||
-												  std::is_same<T, bool>::value>::type* = nullptr>
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0,
+	template <typename T>
+	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<T> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
-		auto array = ArrayPacked(tag);
-		for (const T& item : data) {
-			array.put(TagName::Empty(), item);
-		}
-	}
-
-	template <typename T, typename std::enable_if<std::is_same<reindexer::p_string, T>::value>::type* = nullptr>
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0,
-			   TreatAsSingleElement = TreatAsSingleElement_False) {
-		auto array = ArrayNotPacked(tag);
-		for (const T& item : data) {
-			array.put(tag, std::string_view(item));
-		}
-	}
-	void Array(concepts::TagNameOrIndex auto tag, std::span<const Uuid> data, int /*offset*/ = 0,
-			   TreatAsSingleElement = TreatAsSingleElement_False) {
-		auto array = ArrayNotPacked(tag);
-		for (Uuid item : data) {
-			array.put(tag, item);
+		if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T> || std::is_same_v<T, bool>) {
+			auto array = ArrayPacked(tag);
+			for (const T item : data) {
+				array.put(TagName::Empty(), item);
+			}
+		} else if constexpr (std::is_same_v<T, p_string>) {
+			auto array = ArrayNotPacked(tag);
+			for (const T item : data) {
+				array.put(tag, std::string_view(item));
+			}
+		} else if constexpr (std::is_same_v<T, Uuid>) {
+			auto array = ArrayNotPacked(tag);
+			for (Uuid item : data) {
+				array.put(tag, item);
+			}
+		} else {
+			static_assert(sizeof(T) == 0, "unsupported protobuf array element type");
 		}
 	}
 

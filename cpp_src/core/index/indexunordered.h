@@ -29,18 +29,20 @@ public:
 
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
-	bool RefreshCompositeKey(const Variant& key) noexcept override;
+	bool RefreshCompositeKey(const Variant& key, IdType id) noexcept override;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType cond, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
-	void Commit() override;
+	WasCanceled Commit(const index::ICancelable&) override;
 
-	void UpdateSortedIds(const IUpdateSortedContext&) override;
+	WasCanceled UpdateSortedIds(const index::IUpdateSortedContext&, const index::ICancelable&) override;
 	bool IsSupportSortedIdsBuild() const noexcept override { return true; }
 
-	std::unique_ptr<Index> Clone(size_t /*newCapacity*/) const override { return std::unique_ptr<Index>(new IndexUnordered<Map>(*this)); }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/, IndexCloneKind kind) const override {
+		return std::unique_ptr<Index>(new IndexUnordered<Map>(*this, kind));
+	}
 	IndexMemStat GetMemStat(const RdxContext&) const override;
 	size_t Size() const noexcept override final { return idx_map.size(); }
-	void SetSortedIdxCount(int sortedIdxCount) override;
+	void SetSortedIdxCount(unsigned sortedIdxCount) override;
 	IndexPerfStat GetIndexPerfStat() override;
 	void ResetIndexPerfStat() override;
 	bool HoldsStrings() const noexcept override;
@@ -58,7 +60,7 @@ public:
 protected:
 	constexpr static int kMaxIdsetsForDistinct = 500;
 
-	IndexUnordered(const IndexUnordered& other);
+	IndexUnordered(const IndexUnordered& other, IndexCloneKind kind);
 
 	bool tryIdsetCache(const VariantArray& keys, CondType condition, SortType sortId,
 					   const std::function<bool(SelectKeyResult&, size_t&)>& selector, SelectKeyResult& res);

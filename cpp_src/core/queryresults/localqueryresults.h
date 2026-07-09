@@ -167,13 +167,14 @@ public:
 	struct Context;
 	// precalc context size
 	// sizeof(PayloadType) + sizeof(TagsMatcher) + sizeof(FieldsFilter) + sizeof(shared_ptr) + sizeof(int64);
-	static constexpr int kSizeofContext = 408;
+	static constexpr unsigned kSizeofContext = 424;
+	static constexpr unsigned kAlignContext = alignof(::max_align_t);
 
 	// Order of storing contexts for namespaces:
 	// [0]      - main NS context
 	// [1;N]    - contexts of all the merged namespaces
 	// [N+1; M] - contexts of all the joined namespaces for all the merged namespaces:
-	using ContextsVector = h_vector<Context, 1, kSizeofContext>;
+	using ContextsVector = h_vector<Context, 1, kSizeofContext, kAlignContext>;
 	ContextsVector ctxs;
 
 	void addNSContext(const PayloadType& type, const TagsMatcher& tagsMatcher, const FieldsFilter& fieldsFilter,

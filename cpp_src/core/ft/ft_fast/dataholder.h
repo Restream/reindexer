@@ -9,63 +9,18 @@
 #include "core/ft/variants/kblayout.h"
 #include "core/ft/variants/synonyms.h"
 #include "core/ft/variants/translit.h"
-#include "core/index/indextext/ftkeyentry.h"
 #include "estl/suffix_map.h"
 #include "indextexttypes.h"
 #include "typosmap.h"
 
 namespace reindexer {
 
+using VDocsTexts = std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>>;
+
 static_assert(kMaxStepsCount <= TyposMap::kMaxStepNum, "TyposMap max steps overflow");
 static_assert(kTypoStepNumBits <= TyposMap::kStepBits, "TyposMap max steps overflow");
 
 class RdxContext;
-
-// unique document in the namespace (if different rows contain the same text document, then it will correspond to one vdoc)
-class [[nodiscard]] VDocEntry {
-public:
-	VDocEntry() noexcept = default;
-#ifdef REINDEX_FT_EXTRA_DEBUG
-	VDocEntry(std::string&& keyDoc, FtKeyEntryData* keyEntry) noexcept : keyDoc_(std::move(keyDoc)), keyEntry_(keyEntry) {}
-#else
-	VDocEntry(FtKeyEntryData* keyEntry) noexcept : keyEntry_(keyEntry) {}
-#endif
-	VDocEntry(const VDocEntry&) = delete;
-	VDocEntry(VDocEntry&& o) noexcept {
-		wordsCount = std::move(o.wordsCount);
-		mostFreqWordCount = std::move(o.mostFreqWordCount);
-		keyEntry_ = o.keyEntry_;
-		o.keyEntry_ = nullptr;
-#ifdef REINDEX_FT_EXTRA_DEBUG
-		std::string keyDoc_ = std::move(o.keyDoc_);
-#endif
-	}
-	VDocEntry& operator=(const VDocEntry&) = delete;
-	VDocEntry& operator=(VDocEntry&&) = delete;
-	~VDocEntry() {
-		if (keyEntry_) {
-			keyEntry_->SetVDocID(FtKeyEntryData::ndoc);
-		}
-	}
-
-	bool IsRemoved() const noexcept { return keyEntry_ == nullptr; }
-	void MarkRemoved() noexcept {
-		if (keyEntry_) {
-			keyEntry_->SetVDocID(FtKeyEntryData::ndoc);
-			keyEntry_ = nullptr;
-		}
-	}
-	const FtKeyEntryData* KeyEntry() const noexcept { return keyEntry_; }
-
-	h_vector<float, 3> wordsCount;
-	h_vector<float, 3> mostFreqWordCount;
-
-private:
-#ifdef REINDEX_FT_EXTRA_DEBUG
-	std::string keyDoc_;
-#endif
-	FtKeyEntryData* keyEntry_ = nullptr;
-};
 
 // documents for the word
 
@@ -109,20 +64,6 @@ public:
 	void RestoreState() { vids.erase_back(cur_step_data_size); }
 };
 
-class [[nodiscard]] WordEntry {
-public:
-	WordEntry() noexcept = default;
-	WordEntry(const IdRelSet& _vids) : vids_(_vids) {}
-	WordEntry(const WordEntry&) = delete;
-	WordEntry(WordEntry&&) noexcept = default;
-	WordEntry& operator=(const WordEntry&) = delete;
-	WordEntry& operator=(WordEntry&&) noexcept = default;
-
-	// Explicit copy
-	WordEntry MakeCopy() const { return WordEntry(vids_); }
-
-	IdRelSet vids_;
-};
 enum [[nodiscard]] ProcessStatus { FullRebuild, RecommitLast, CreateNew };
 
 class [[nodiscard]] IDataHolder {
@@ -151,7 +92,8 @@ public:
 	};
 
 	virtual ~IDataHolder() = default;
-	virtual void Process(size_t fieldSize, bool multithread) = 0;
+	virtual void Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, size_t fieldSize,
+						 bool multithread, std::vector<h_vector<float, 3>>& wordsCounts) = 0;
 	virtual size_t GetMemStat() = 0;
 	virtual void Clear() = 0;
 	virtual void StartCommit(bool complete_updated) = 0;
@@ -167,10 +109,10 @@ public:
 			steps.back().wordOffset_ = word_offset;
 		}
 	}
-	bool NeedClear(bool complte_updated) const noexcept { return NeedRebuild(complte_updated) || !NeedRecommitLast(); }
+
+	WordIdType FindWord(std::string_view word, bool searchLastStep) const;
 	suffix_map<char, WordIdType>& GetLastStepSuffix() noexcept { return steps.back().suffixes_; }
 	TyposMap& GetLastStepTypos() noexcept { return steps.back().typos_; }
-	WordIdType FindWord(const std::string_view& word, bool searchLastStep) const;
 
 	CommitStep& GetStep(WordIdType id) noexcept {
 		assertrx(id.b.step_num < steps.size());
@@ -212,8 +154,6 @@ public:
 	}
 	std::string Dump() const;
 
-	size_t VDocsNumberInIndex() const noexcept { return vdocs_.size(); }
-
 	// TODO: #1688 Fix private class data isolation here
 	// language and corresponding stemmer object
 	std::unordered_map<std::string, stemmer> stemmers_;
@@ -226,24 +166,15 @@ public:
 	TermsBoostMapT stemmedTermsBoost;
 
 	std::vector<CommitStep> steps;
-
 	WordsMapType stepsWords_;
 	WordsMapType lastStepWords_;
 
-	// array of unique documents
-	std::vector<VDocEntry> vdocs_;
-	size_t cur_vdoc_pos_ = 0;
 	ProcessStatus status_{CreateNew};
-	std::vector<double> avgWordsCount_;
 	// Virtual documents, merged. Addressable by VDocIdType
 	// Temp data for build
-	std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
-	std::vector<std::unique_ptr<std::string>> bufStrs_;
-	size_t vdocsOffset_{0};
-	size_t szCnt{0};
+
 	FTConfig* cfg_{nullptr};
 	// index - rowId, value vdocId (index in array vdocs_)
-	std::vector<uint32_t> rowId2Vdoc_;
 	intrusive_ptr<const ISplitter> splitter_;
 
 private:
@@ -255,7 +186,8 @@ template <typename IdCont>
 class [[nodiscard]] DataHolder : public IDataHolder {
 public:
 	explicit DataHolder(FTConfig* c);
-	void Process(size_t fieldSize, bool multithread) final;
+	void Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, size_t fieldSize, bool multithread,
+				 std::vector<h_vector<float, 3>>& wordsCounts) final;
 	size_t GetMemStat() override final;
 	void StartCommit(bool complte_updated) override final;
 	void Clear() override final;

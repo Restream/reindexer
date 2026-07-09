@@ -155,27 +155,8 @@ public:
 	~dynamic_loop();
 	void run();
 	void break_loop() noexcept { break_ = true; }
-	void spawn(std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
-		auto tid = std::this_thread::get_id();
-		if (coroTid_ != std::thread::id() && coroTid_ != tid) {
-			// Every coroutine has to be spawned from the same thread
-			assertrx(false);
-		} else {
-			coroTid_ = tid;
-		}
-		auto id = coroutine::create(std::move(func), stack_size);
-		new_tasks_.emplace_back(id);
-	}
-	void spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
-		wg.add(1);
-		spawn(
-			// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
-			[f = std::move(func), &wg]() {	// NOLINT(*.NewDeleteLeaks) False positive
-				coroutine::wait_group_guard wgg(wg);
-				f();
-			},
-			stack_size);
-	}
+	void spawn(std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit);
+	void spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit);
 	template <typename Rep, typename Period>
 	void sleep(std::chrono::duration<Rep, Period> dur);
 	template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename TerminateT>

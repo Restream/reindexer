@@ -167,6 +167,13 @@ public:
 	HnswSearchParams Hnsw() const;
 	IvfSearchParams Ivf() const;
 
+	std::optional<size_t> K() const {
+		return std::visit([](const auto& p) { return p.K(); }, toVariant());
+	}
+	std::optional<float> Radius() const {
+		return std::visit([](const auto& p) { return p.Radius(); }, toVariant());
+	}
+
 	void Validate() const;
 
 	void ToDsl(JsonBuilder& json) const {

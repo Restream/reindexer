@@ -1,5 +1,6 @@
 #include "aggregator.h"
 #include <algorithm>
+#include "core/payload/payload_access.h"
 #include "core/queryresults/aggregationresult.h"
 #include "estl/overloaded.h"
 
@@ -403,9 +404,9 @@ void Aggregator::Aggregate(const PayloadValue& data) {
 		if (!fieldType.IsArray()) {
 			aggregate(PayloadFieldValue(fieldType, data.Ptr() + fieldType.Offset()).Get());
 		} else {
-			PayloadFieldValue::Array* arr = reinterpret_cast<PayloadFieldValue::Array*>(data.Ptr() + fieldType.Offset());
-			uint8_t* ptr = data.Ptr() + arr->offset;
-			for (int i = 0; i < arr->len; i++, ptr += fieldType.ElemSizeof()) {
+			const auto arr = payload_access::readArrayMeta(data.Ptr(), fieldType.Offset());
+			uint8_t* ptr = data.Ptr() + arr.offset;
+			for (int i = 0; i < arr.len; i++, ptr += fieldType.ElemSizeof()) {
 				aggregate(PayloadFieldValue(fieldType, ptr).Get());
 			}
 		}

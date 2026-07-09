@@ -11,10 +11,15 @@ set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
 option(WITH_ASAN "Enable AddressSanitized build" OFF)
 option(WITH_TSAN "Enable ThreadSanitized build" OFF)
+option(WITH_UBSAN "Enable UndefinedBehaviorSanitized build" OFF)
 option(WITH_GCOV "Enable instrumented code coverage build" OFF)
 option(WITH_STDLIB_DEBUG "Enable compiler's debug flags for stdlib behaviour validation (gcc/clang)" OFF)
 option(WITH_LTO "Enable LTO (Release/RelWithDebInfo build only)" OFF)
 option(WITH_DEBUG_CONTAINERS "Enable extra debug" OFF)
+
+if(NOT WIN32 AND NOT APPLE)
+  option(WITH_CORO_STACK_GUARD "Use mmap for coroutine stacks with a low guard page (SIGSEGV on overflow)" ON)
+endif()
 
 if(WIN32)
   option(WITH_CPPTRACE "Enable CppTrace" ON)
@@ -66,7 +71,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.14.0")
+set (REINDEXER_VERSION_DEFAULT "5.15.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -88,7 +93,7 @@ if(MSVC)
   set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -Zi")
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
   set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
-elseif(WITH_ASAN)
+elseif(WITH_ASAN OR WITH_UBSAN)
   # Using O2 instead of O3 to build a bit faster
   # Also this allows to avoid SEGFAULT in libasan.so during coroutines interaction on CentOS7 (gcc-12).
   set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g1")
@@ -147,8 +152,16 @@ endif()
 
 set(EXTRA_FLAGS "")
 
-if(WITH_ASAN AND WITH_TSAN)
-  message(FATAL_ERROR "You cannot use the ASAN and TSAN options at the same time, CMake will exit.")
+if((WITH_ASAN AND WITH_TSAN) OR (WITH_ASAN AND WITH_UBSAN) OR (WITH_TSAN AND WITH_UBSAN))
+  message(FATAL_ERROR "You cannot enable more than one sanitizer option (WITH_ASAN, WITH_TSAN, WITH_UBSAN) at the same time.")
+endif()
+
+if(WITH_CORO_STACK_GUARD)
+  if(WIN32 OR APPLE)
+    message(FATAL_ERROR "WITH_CORO_STACK_GUARD is not supported on Windows or macOS")
+  endif()
+  add_definitions(-DREINDEX_KOISHI_STACK_GUARD)
+  message(STATUS "Coroutine stacks: low guard page (REINDEX_KOISHI_STACK_GUARD)")
 endif()
 
 if(WITH_ASAN)
@@ -157,6 +170,9 @@ if(WITH_ASAN)
 elseif(WITH_TSAN)
   set(EXTRA_FLAGS "-fsanitize=thread")
   add_definitions(-DREINDEX_WITH_TSAN)
+elseif(WITH_UBSAN)
+  set(EXTRA_FLAGS "-fsanitize=undefined")
+  add_definitions(-DREINDEX_WITH_UBSAN)
 endif()
 if(WITH_GCOV)
   set(EXTRA_FLAGS "-fprofile-arcs -ftest-coverage")
@@ -174,6 +190,10 @@ if(WITH_STDLIB_DEBUG)
   else()
     message("Option 'WITH_STDLIB_DEBUG' was requested, but there is not such option for current toolcain: '${CMAKE_CXX_COMPILER_ID}'. Disabling...")
   endif()
+endif()
+
+if(WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG OR WITH_UBSAN)
+  add_definitions(-DREINDEX_WITH_DEBUG_ASSERT=1)
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXTRA_FLAGS}")
@@ -344,6 +364,10 @@ add_definitions(-DKOISHI_HAVE_GETPAGESIZE)
 if(NOT APPLE AND NOT WITH_ASAN)
   add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
 endif()
+if(WITH_CORO_STACK_GUARD AND WITH_STDLIB_DEBUG)
+  # mmap is slower, but provides better isolation between coroutines
+  add_definitions(-DKOISHI_HAVE_MMAP)
+endif()
 add_definitions(-DBUILDING_KOISHI)
 add_definitions(-DYAML_CPP_STATIC_DEFINE)
 include_directories(${KOISHI_PATH}/include)
@@ -445,7 +469,7 @@ add_subdirectory(server/contrib)
 
 # tcmalloc
 ##########
-if(NOT WITH_ASAN AND NOT WITH_TSAN)
+if(NOT WITH_ASAN AND NOT WITH_TSAN AND NOT WITH_UBSAN)
   # tmalloc conflict with sanitizers, so disable it for sanitized builds
   if(ENABLE_TCMALLOC)
     find_package(Gperftools)

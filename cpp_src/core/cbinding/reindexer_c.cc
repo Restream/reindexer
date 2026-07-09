@@ -137,36 +137,56 @@ static query_results_ptr new_results(bool as_json) {
 	return query_results_ptr(std::move(res));
 }
 
+class TmVersionsParams {
+public:
+	TmVersionsParams() = default;
+	TmVersionsParams(const int32_t* data, int count, bool allowIncomplete = false) noexcept
+		: versions_((data != nullptr && count > 0) ? std::span<const int32_t>(data, static_cast<size_t>(count))
+													: std::span<const int32_t>{}),
+		  allowIncomplete_(allowIncomplete) {}
+
+	bool HasData() const noexcept { return !versions_.empty(); }
+	std::span<const int32_t> Versions() const noexcept { return versions_; }
+	bool AllowIncomplete() const noexcept { return allowIncomplete_; }
+
+private:
+	std::span<const int32_t> versions_;
+	bool allowIncomplete_ = false;
+};
+
 static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reindexer_resbuffer* out, int as_json = 0,
-					  const int32_t* tm_versions = nullptr, int tm_versions_count = 0) {
+					  TmVersionsParams tmVersions = {}) {
 	int flags = 0;
 	if (as_json) {
 		flags = kResultsJson;
 	} else {
-		flags = tm_versions ? (kResultsCJson | kResultsWithItemID | kResultsWithPayloadTypes) : (kResultsCJson | kResultsWithItemID);
+		flags = tmVersions.HasData() ? (kResultsCJson | kResultsWithItemID | kResultsWithPayloadTypes)
+									 : (kResultsCJson | kResultsWithItemID);
 	}
 	const bool rawResProxying =
 		result->IsRawProxiedBufferAvailable(flags) && WrResultSerializer::IsRawResultsSupported(bindingCaps.load(), *result);
 	std::string_view rawBufOut;
 	if (rawResProxying) {
 		result->ser.SetOpts({.flags = flags,
-							 .tmVersions = std::span<const int32_t>(tm_versions, tm_versions_count),
+							 .tmVersions = tmVersions.Versions(),
 							 .fetchOffset = 0,
 							 .fetchLimit = INT_MAX,
-							 .withAggregations = true});
+							 .withAggregations = true,
+							 .allowIncompleteTmVersions = tmVersions.AllowIncomplete()});
 		std::ignore = result->ser.PutResultsRaw(*result, &rawBufOut);
 		out->len = rawBufOut.size() ? rawBufOut.size() : result->ser.Len();
 		out->data = rawBufOut.size() ? uintptr_t(rawBufOut.data()) : uintptr_t(result->ser.Buf());
 	} else {
 		flags = as_json ? kResultsJson : (kResultsPtrs | kResultsWithItemID);
-		if (tm_versions && as_json == 0) {
+		if (tmVersions.HasData() && as_json == 0) {
 			flags |= kResultsWithPayloadTypes;
 		}
 		result->ser.SetOpts({.flags = flags,
-							 .tmVersions = std::span<const int32_t>(tm_versions, tm_versions_count),
+							 .tmVersions = tmVersions.Versions(),
 							 .fetchOffset = 0,
 							 .fetchLimit = INT_MAX,
-							 .withAggregations = true});
+							 .withAggregations = true,
+							 .allowIncompleteTmVersions = tmVersions.AllowIncomplete()});
 		std::ignore = result->ser.PutResults(*result, bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
 		out->len = result->ser.Len();
 		out->data = uintptr_t(result->ser.Buf());
@@ -348,7 +368,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 			if (err.ok()) {
 				const int32_t ptVers = -1;
 				bool tmUpdated = item.IsTagsUpdated();
-				results2c(std::move(res), &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
+				results2c(std::move(res), &out, 0, {tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0});
 			}
 		}
 		return ret2c(err, out);
@@ -419,7 +439,7 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer
 
 		if (err.ok()) {
 			int32_t ptVers = -1;
-			results2c(std::move(res), &out, 0, trw->tr_.IsTagsUpdated() ? &ptVers : nullptr, trw->tr_.IsTagsUpdated() ? 1 : 0);
+			results2c(std::move(res), &out, 0, {trw->tr_.IsTagsUpdated() ? &ptVers : nullptr, trw->tr_.IsTagsUpdated() ? 1 : 0});
 		}
 
 		return ret2c(err, out);
@@ -593,7 +613,7 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json
 			err = rdxKeeper.db().ExecSQL(querySV, *result);
 			if (err.ok()) {
 				const auto count = result->Count(), len = result->ser.Len(), cap = result->ser.Cap();
-				results2c(std::move(result), &out, as_json, tm_versions, tm_versions_count);
+				results2c(std::move(result), &out, as_json, {tm_versions, tm_versions_count, true});
 				if (cap >= kWarnLargeResultsLimit) {
 					logFmt(LogWarning, "Query too large results: count={}, size={}, cap={}, q={}", count, len, cap, str2cv(query));
 				}
@@ -636,7 +656,7 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 				logFmt(LogError, "Query error {}", err.what());
 			}
 			if (err.ok()) {
-				results2c(std::move(result), &out, as_json, tm_versions, tm_versions_count);
+				results2c(std::move(result), &out, as_json, {tm_versions, tm_versions_count});
 			} else {
 				if (result->ser.Cap() >= kWarnLargeResultsLimit) {
 					logFmt(LogWarning, "Query too large results: count={} size={},cap={}, q={}", result->Count(), result->ser.Len(),
@@ -703,7 +723,7 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, int32_t*
 				logFmt(LogError, "Query error {}", res.what());
 			}
 			if (res.ok()) {
-				results2c(std::move(result), &out, 0, tm_versions, tm_versions_count);
+				results2c(std::move(result), &out, 0, {tm_versions, tm_versions_count});
 			}
 		}
 		return ret2c(res, out);

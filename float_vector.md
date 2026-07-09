@@ -8,6 +8,7 @@
   * [Quantization (HNSW)](#quantization-configuration-for-hnsw-index)
 - [Float vector fields in selection results](#float-vector-fields-in-selection-results)
 - [KNN search](#knn-search)
+- [Streaming KNN (HNSW)](#streaming-knn-hnsw)
 - [KNN search with auto-embedding](#knn-search-with-auto-embedding)
 - [Rank](#rank)
 - [Query examples](#query-examples)
@@ -429,9 +430,9 @@ Result:
 Supported filtering operations on floating-point vector fields are `KNN`, `Empty`, and `Any`.
 It is not possible to use multiple `KNN` filters in a query, but it is possible to combine filtering by `KNN` and fulltext (see [here](hybrid.md)).
 
-Parameters set for a `KNN` query depend on the specific index type. It is required to specify `k` or `radius` (or both) for every index type. `k` is the maximum number of documents returned from the index for subsequent filtering.
+Parameters set for a `KNN` query depend on the specific index type. For bruteforce and `ivf` indexes, `k` or `radius` (or both) is required. `k` is the maximum number of documents returned from the index for subsequent filtering. For `hnsw`, `k` and `radius` may both be omitted to use [streaming KNN](#streaming-knn-hnsw) instead.
 
-In addition to the parameter `k` (or instead it), the query results can also be filtered by a `rank`-value using the parameter `radius`. It's named so because, under the `L2`-metric, it restricts vectors from query result to a sphere of the specified radius.
+In addition to the parameter `k` (or instead of it), the query results can also be filtered by a `rank`-value using the parameter `radius`. It's named so because, under the `L2`-metric, it restricts vectors from query result to a sphere of the specified radius.
 
 *Note: To avoid confusion, in case of `L2`-metric, for performance optimization, the ranks of vectors in the query result are actually squared distances to the query vector. Thus, while the parameter is called `radius`, the passed value is interpreted as the squared distance.*
 
@@ -442,7 +443,7 @@ Both parameters (`k` and `radius`) can be specified together, or only one of the
 When searching by `hnsw` index, you can additionally specify the `ef` parameter.
 Increasing this parameter allows you to get a higher quality result (recall rate), but at the same time slows down the search.
 See description [here](https://github.com/nmslib/hnswlib/blob/master/ALGO_PARAMS.md#search-parameters).
-Optional, minimum and default values are `k`.
+For a regular KNN query with `k`, `ef` must be `>= k` (default is `k`). For [streaming KNN](#streaming-knn-hnsw) without `k`, optional `ef > 1` overrides the server-side batch estimator; otherwise `ef` is chosen automatically.
 
 When searching by `ivf` index, you can additionally specify the `nprobe` parameter - the number of clusters to be looked at during the search.
 Increasing this parameter allows you to get a higher quality result (recall rate), but at the same time slows down the search.
@@ -453,15 +454,16 @@ KNN search condition is written as a function `KNN`, which takes the vector fiel
 ```sql
 SELECT * FROM test_ns WHERE KNN(vec_bf, [2.4, 3.5, ...], k=100, radius=1.23)
 SELECT * FROM test_ns WHERE KNN(vec_hnsw, [2.4, 3.5, ...], k=100, radius=-1.23, ef=200)
+SELECT * FROM test_ns WHERE category = 42 AND KNN(vec_hnsw, [2.4, 3.5, ...], ef=200) LIMIT 20 OFFSET 5
 SELECT * FROM test_ns WHERE KNN(vec_ivf, [2.4, 3.5, ...], k=100, nprobe=10)
 ```
 - Go\
 The `knn` query parameters are passed in the `reindexer.BaseKnnSearchParam` structure, or in specific structures for each index type: `reindexer.IndexBFSearchParam`, `reindexer.IndexHnswSearchParam` or `reindexer.IndexIvfSearchParam`.
 There are factory methods for constructing them:
 ```go
-func NewIndexBFSearchParam(baseParam BaseKnnSearchParam) (*IndexBFSearchParam, error)
-func NewIndexHnswSearchParam(ef int, baseParam BaseKnnSearchParam) (*IndexHnswSearchParam, error)
-func NewIndexIvfSearchParam(nprobe int, baseParam BaseKnnSearchParam) (*IndexIvfSearchParam, error)
+func NewIndexBFSearchParam(baseParam BaseKnnSearchParam) (IndexBFSearchParam, error)
+func NewIndexHnswSearchParam(ef int, baseParam BaseKnnSearchParam) (IndexHnswSearchParam, error)
+func NewIndexIvfSearchParam(nprobe int, baseParam BaseKnnSearchParam) (IndexIvfSearchParam, error)
 ```
 ```go
 knnBaseSearchParams := reindexer.BaseKnnSearchParam{}.SetK(4291)
@@ -481,6 +483,66 @@ if err != nil {
 	panic(err)
 }
 db.Query("test_ns").WhereKnn("vec_ivf", []float32{2.4, 3.5, ...}, ivfSearchParams)
+```
+
+## Streaming KNN (HNSW)
+
+### Purpose
+
+Streaming is for queries that combine **KNN on an HNSW index**, **other `WHERE` conditions**, and **`LIMIT`/`OFFSET`**, when the post-filter removes many vector candidates.
+
+With a fixed `k`, a small `k` may not leave enough rows after filtering; a large `k` scans the index unnecessarily. Streaming reads HNSW neighbors in batches until `offset + limit` rows pass the post-filter.
+
+### When it is used
+
+Streaming is enabled when **all** of the following are true:
+
+- the vector field uses an **HNSW** index;
+- the KNN condition has **no `k`** and **no effective `radius`** (neither in query params nor as the index default);
+- the query is ranked by vector KNN only (not a [hybrid](hybrid.md) fulltext + KNN query);
+
+Bruteforce and IVF still require `k` and/or `radius`.
+
+### How it works
+
+1. Estimate selectivity of the non-KNN filters (how many namespace rows are expected to match).
+2. From `offset + limit` and that selectivity, compute an initial batch size and search `ef`.
+3. Fetch the next batch of nearest neighbors from HNSW.
+4. Apply post-filters to each candidate; keep survivors with their ranks.
+5. If fewer than `offset + limit` survivors were collected, increase the next batch size using the ratio of scanned candidates to survivors.
+6. Stop when enough survivors are collected or the index is exhausted.
+7. Return the page: survivors are emitted in HNSW traversal order; `OFFSET` and `LIMIT` are applied as matches are found (no final re-sort).
+
+Optional `ef > 1` in KNN params overrides the auto-estimated value.
+
+### Limitations
+
+Streaming mode follows the same ranked-query semantics as KNN with explicit `k` (post-filter over vector candidates, `LIMIT`/`OFFSET`, joins, ...). Differences:
+
+- the candidate pool grows in batches until `offset + limit` matches pass the post-filter (or the index is exhausted), instead of a fixed `k`;
+- result order follows HNSW traversal (see [Rank](#rank) below): approximately by `rank()`, but not strictly sorted;
+- `ORDER BY` is not supported (including `ORDER BY rank()` and `ORDER BY rank(index)`);
+- KNN conditions cannot be used inside joined subqueries (`INNER JOIN` / `LEFT JOIN` right-hand query);
+- [hybrid](hybrid.md) fulltext + KNN queries are not supported (plain KNN ranked query only);
+- a default `radius` on the HNSW index switches to range search, not streaming;
+
+### Examples
+
+- SQL
+```sql
+SELECT *, RANK() FROM test_ns
+WHERE category = 42 AND KNN(vec_hnsw, [2.4, 3.5, ...], ef=200)
+LIMIT 20 OFFSET 5
+```
+- Go
+```go
+streamingParams, err := reindexer.NewIndexHnswSearchParam(200, reindexer.BaseKnnSearchParam{})
+if err != nil {
+	panic(err)
+}
+db.Query("test_ns").Where("category", reindexer.EQ, 42).
+	WhereKnn("vec_hnsw", []float32{2.4, 3.5, ...}, streamingParams).
+	Limit(20).Offset(5).WithRank().Exec()
 ```
 
 ## KNN search with auto-embedding
@@ -542,6 +604,8 @@ curl --location --request POST 'http://127.0.0.1:9088/api/v1/db/vectors_db/query
 By default, the results of queries with KNN are sorted by `rank`, that is equal to requested metric values.
 For indexes with the `l2` metric, from a lower value to a higher value, and with the `inner_product` and `cosine` metrics, from a higher value to a lower value.
 This is consistent with the best match for the specified metrics.
+
+In [streaming KNN](#streaming-knn-hnsw) mode, results are returned in **HNSW traversal order**: within each batch, candidates are roughly ordered by `rank` (increasing for `l2`, decreasing for `inner_product` and `cosine`), but **strict** monotonic ordering by `rank()` is **not** guaranteed—especially after post-filters remove rows or when better matches appear in a later batch. The returned page is the first `limit` survivors after `offset` in that traversal order, not a globally re-sorted top‑`k`. Explicit `ORDER BY` (including `ORDER BY rank()`) is not allowed.
 
 When it is necessary to get the `rank`-value of each document in the query result, it must be requested explicitly via the `RANK()` function in SQL or `WithRank()` in GO:
 ```sql

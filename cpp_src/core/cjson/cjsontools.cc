@@ -215,8 +215,8 @@ static void CJsonBuilderRef(CJsonBuilderT& builder, const PayloadIfaceT& pl, con
 	if (fieldType.IsFloatVector()) {
 		if (fieldType.IsArray()) {
 			auto arr = builder.Array(tagName);
-			for (const auto view : pl.template GetArray<ConstFloatVectorView>(field)) {
-				const auto dim = view.Dimension().Value();
+			for (const uint64_t payload : pl.template GetView<uint64_t>(field)) {
+				const auto dim = ConstFloatVectorView::FromUint64(payload).Dimension().Value();
 				arr.ArrayRef(TagName::Empty(), field, int(dim));
 			}
 		} else {

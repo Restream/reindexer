@@ -23,7 +23,7 @@ typename LRUCacheImpl<K, V, HashT, EqualT>::Iterator LRUCacheImpl<K, V, HashT, E
 
 	auto [it, emplaced] = items_.try_emplace(key);
 	if (emplaced) {
-		totalCacheSize_ += kElemSizeOverhead + sizeof(Entry) + key.Size();
+		totalCacheSize_ += kElemSizeOverhead + sizeof(Entry) + it->first.Size();
 		it->second.lruPos = lru_.insert(lru_.end(), &it->first);
 		if (!eraseLRU()) [[unlikely]] {
 			return Iterator();

@@ -55,7 +55,9 @@ private:
 	// Only key_string should be able to construct key_string_impl
 	explicit key_string_impl(std::string_view str) noexcept : refcounter_{0} {
 		export_hdr_.len = str.size();
-		std::memcpy(data_, str.data(), str.size());
+		if (!str.empty()) {
+			std::memcpy(data_, str.data(), str.size());
+		}
 	}
 
 	mutable std::atomic<int32_t> refcounter_;

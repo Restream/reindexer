@@ -1,6 +1,6 @@
 #include "index.h"
 #include "indexordered.h"
-#include "indextext/fastindextext.h"
+#include "indextext/indextext.h"
 #include "rtree/indexrtree.h"
 #include "tools/logger.h"
 #include "ttlindex.h"
@@ -22,9 +22,8 @@ Index::Index(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields
 		   idef.Opts().IsPK() ? ",pk" : "", idef.Opts().IsDense() ? ",dense" : "", idef.Opts().IsArray() ? ",array" : "");
 }
 
-Index::Index(const Index& obj)
+Index::Index(const Index& obj, IndexCloneKind kind)
 	: type_(obj.type_),
-	  sortOrders_(obj.sortOrders_),
 	  sortId_(obj.sortId_),
 	  opts_(obj.opts_),
 	  payloadType_(obj.payloadType_),
@@ -33,6 +32,12 @@ Index::Index(const Index& obj)
 	  selectKeyType_(obj.selectKeyType_),
 	  sortedIdxCount_(obj.sortedIdxCount_) {
 	reindexer::deepCopy(name_, obj.name_);	// Avoiding false positive TSAN-warning for COW strings on centos7
+	if (kind == IndexCloneKind::Snapshot) {
+		sortOrders_ = obj.sortOrders_;
+		isBuilt_ = obj.isBuilt_;
+	} else {
+		isBuilt_ = false;
+	}
 }
 
 static std::unique_ptr<Index> createANNIfAvailable(const IndexDef& idef, [[maybe_unused]] PayloadType&& payloadType,
@@ -93,7 +98,7 @@ std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType&& payloadTyp
 			return IndexStore_New(idef, std::move(payloadType), std::move(fields));
 		case IndexFastFT:
 		case IndexCompositeFastFT:
-			return FastIndexText_New(idef, std::move(payloadType), std::move(fields), cacheCfg);
+			return IndexText_New(idef, std::move(payloadType), std::move(fields), cacheCfg);
 		case IndexTtl:
 			return TtlIndex_New(idef, std::move(payloadType), std::move(fields), cacheCfg);
 		case ::IndexRTree:

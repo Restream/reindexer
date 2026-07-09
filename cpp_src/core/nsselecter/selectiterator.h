@@ -1,17 +1,25 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
+#include <iterator>
 #include "core/enums.h"
 #include "core/id_type.h"
 #include "core/selectkeyresult.h"
 #include "estl/concepts.h"
+#include "estl/heapify.h"
+#include "tools/gallop_search.h"
 
 namespace reindexer {
+
+class StreamingKnnIndexIterator;
 
 /// Allows to iterate over a result of selecting
 /// data for one certain key.
 class [[nodiscard]] SelectIterator : public SelectKeyResult {
 public:
-	enum {
+	enum class [[nodiscard]] Type : uint8_t {
+		None,
 		Forward,
 		Reverse,
 		SingleRange,
@@ -29,10 +37,10 @@ public:
 				   ForcedFirst forcedFirst = ForcedFirst_False) noexcept
 		: SelectKeyResult(std::move(res)),
 		  name(std::forward<Str>(n)),
-		  type_(Forward),
+		  type_(Type::None),
 		  forcedFirst_(forcedFirst),
-		  indexNo_(indexNo),
-		  distinct_(distinct) {}
+		  distinct_(distinct),
+		  indexNo_(indexNo) {}
 
 	/// Starts iteration process: prepares
 	/// object for further work.
@@ -41,73 +49,55 @@ public:
 	void Start(bool reverse, int maxIterations) {
 		const bool explicitSort = applyDeferedSort(maxIterations);
 
-		isReverse_ = reverse;
 		const auto begIt = begin();
 		lastPos_ = 0;
+		isReverse_ = reverse;
+		heap_.clear();
 
 		for (auto it = begIt, endIt = end(); it != endIt; ++it) {
-			if (it->isRange_) {
-				if (isReverse_) {
-					const auto rrBegin = it->rEnd_.Decr();
-					it->rrEnd_ = it->rBegin_.Decr();
-					it->rrBegin_ = rrBegin;
-					it->rrIt_ = rrBegin;
-				} else {
-					it->rIt_ = it->rBegin_;
-				}
-			} else {
-				if (it->useBtree_) {
-					assertrx_dbg(it->set_);
-					if (reverse) {
-						const auto setRBegin = it->set_->rbegin();
-						it->ritset_ = setRBegin;
-						it->setrbegin_ = setRBegin;
-						it->setrend_ = it->set_->rend();
-					} else {
-						const auto setBegin = it->set_->begin();
-						it->itset_ = setBegin;
-						it->setbegin_ = setBegin;
-						it->setend_ = it->set_->end();
-					}
-				} else {
-					if (isReverse_) {
-						const auto idsRBegin = it->ids_.rbegin();
-						it->rend_ = it->ids_.rend();
-						it->rit_ = idsRBegin;
-						it->rbegin_ = idsRBegin;
-					} else {
-						const auto idsBegin = it->ids_.begin();
-						it->end_ = it->ids_.end();
-						it->it_ = idsBegin;
-						it->begin_ = idsBegin;
-					}
-				}
-			}
+			it->Start(isReverse_);
 		}
 
-		lastVal_ = isReverse_ ? IdType::Max() : IdType::Min();
+		lastVal_ = (isReverse_) ? IdType::Max() : IdType::Min();
 		if (isUnsorted_) {
-			type_ = Unsorted;
+			type_ = Type::Unsorted;
 		} else if (size() == 1) {
-			if (begIt->indexForwardIter_) {
-				type_ = UnbuiltSortOrdersIndex;
-				begIt->indexForwardIter_->Start(reverse);
-			} else if (!isReverse_) {
-				type_ = begIt->isRange_ ? SingleRange : (explicitSort ? SingleIdSetWithDeferedSort : SingleIdset);
-			} else {
-				type_ = begIt->isRange_ ? RevSingleRange : (explicitSort ? RevSingleIdSetWithDeferedSort : RevSingleIdset);
+			switch (begIt->collectionType_) {
+				case SingleSelectKeyResult::Collection::NotSet:
+					throw_assert(false);
+				case SingleSelectKeyResult::Collection::SingleIterator:
+					type_ = Type::UnbuiltSortOrdersIndex;
+					break;
+				case SingleSelectKeyResult::Collection::Range:
+					type_ = isReverse_ ? Type::RevSingleRange : Type::SingleRange;
+					break;
+				case SingleSelectKeyResult::Collection::FlatIdSet:
+				case SingleSelectKeyResult::Collection::TreeIdSet:
+					if (isReverse_) {
+						type_ = explicitSort ? Type::RevSingleIdSetWithDeferedSort : Type::RevSingleIdset;
+					} else {
+						type_ = explicitSort ? Type::SingleIdSetWithDeferedSort : Type::SingleIdset;
+					}
+					break;
 			}
 		} else {
-			type_ = isReverse_ ? Reverse : Forward;
+			type_ = isReverse_ ? Type::Reverse : Type::Forward;
+			buildHeap();
 		}
+		assertrx_dbg(GetType() != Type::None);
 	}
 	/// Signalizes if iteration is over.
 	/// @return true if iteration is done.
-	RX_ALWAYS_INLINE bool End() const noexcept { return lastVal_ == (isReverse_ ? IdType::Min() : IdType::Max()); }
+	RX_ALWAYS_INLINE bool End() const noexcept {
+		assertrx_dbg(GetType() != Type::None);
+		return isReverse_ ? (lastVal_ == IdType::Min()) : (lastVal_ == IdType::Max());
+	}
 	/// Iterates to a next item of result. Increments 'matched' and 'total' counters.
 	/// @param minHint - rowId value to start from.
 	/// @return true if operation succeed.
 	RX_ALWAYS_INLINE bool Next(IdType minHint) noexcept {
+		assertrx_dbg(GetType() != Type::None);
+
 		++totalCalls_;
 		bool res = nextImpl(minHint);
 		matchedCount_ += int(res);
@@ -118,6 +108,8 @@ public:
 	/// @param targetId - rowId value to search.
 	/// @return true if targetId was found.
 	RX_ALWAYS_INLINE bool Compare(IdType targetId) noexcept {
+		assertrx_dbg(GetType() != Type::None);
+
 		++totalCalls_;
 		const auto val = Val();
 		if (isReverse_) {
@@ -138,30 +130,36 @@ public:
 	/// Sets Unsorted iteration mode
 	RX_ALWAYS_INLINE void SetUnsorted() noexcept { isUnsorted_ = true; }
 
+	StreamingKnnIndexIterator* TryGetKnnStreamingIterator() const noexcept;
+
 	/// Current rowId
 	RX_ALWAYS_INLINE IdType Val() const noexcept { return lastVal_; }
 
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.
-	int Pos() const {
+	/// Implemented for unsorted sets only
+	int PosUnsorted() const {
 		switch (type_) {
-			case SingleIdset:
-			case SingleIdSetWithDeferedSort: {
-				const auto& it = *begin();
-				assertrx_throw(!it.useBtree_);
-				return it.it_ - it.begin_;
+			case Type::Unsorted: {
+				const auto& res = operator[](lastPos_);
+				assertrx_throw(res.collectionType_ == SingleSelectKeyResult::Collection::FlatIdSet);
+				assertrx_dbg(res.direction_ == SingleSelectKeyResult::Direction::Forward);
+				return res.flatIds_.u.fwd.it - res.flatIds_.u.fwd.begin - 1;
 			}
-			case Forward:
-			case Reverse:
-			case SingleRange:
-			case RevSingleRange:
-			case RevSingleIdset:
-			case RevSingleIdSetWithDeferedSort:
-			case Unsorted:
-			case UnbuiltSortOrdersIndex:
+			case Type::SingleIdset:
+			case Type::SingleIdSetWithDeferedSort:
+			case Type::Forward:
+			case Type::Reverse:
+			case Type::SingleRange:
+			case Type::RevSingleRange:
+			case Type::RevSingleIdset:
+			case Type::RevSingleIdSetWithDeferedSort:
+			case Type::UnbuiltSortOrdersIndex:
+			case Type::None:
 			default:
-				assertrx_throw(!operator[](lastPos_).useBtree_ && (type_ != UnbuiltSortOrdersIndex));
-				return operator[](lastPos_).it_ - operator[](lastPos_).begin_ - 1;
+				// Not implemented
+				throw_assert(false);
+				return 0;
 		}
 	}
 
@@ -174,19 +172,38 @@ public:
 	/// Excludes last set of ids from each result
 	/// to remove duplicated keys
 	void ExcludeLastSet(IdType rowId) {
-		if (type_ == UnbuiltSortOrdersIndex) {
-			auto fwdIter = begin()->indexForwardIter_;
+		assertrx_dbg(GetType() != Type::None);
+
+		if (type_ == Type::UnbuiltSortOrdersIndex) {
+			assertrx_dbg(begin()->collectionType_ == SingleSelectKeyResult::Collection::SingleIterator);
+			auto& fwdIter = begin()->idxFwdIter_;
 			if (fwdIter->Value() == rowId) {
 				fwdIter->ExcludeLastSet();
 			}
 		} else if (!End() && lastPos_ != size() && lastVal_ == rowId) {
-			assertrx_throw(!operator[](lastPos_).isRange_);
-			if (operator[](lastPos_).useBtree_) {
-				operator[](lastPos_).itset_ = operator[](lastPos_).setend_;
-				operator[](lastPos_).ritset_ = operator[](lastPos_).setrend_;
+			auto& curRes = operator[](lastPos_);
+			if (curRes.collectionType_ == SingleSelectKeyResult::Collection::TreeIdSet) {
+				if (isReverse_) {
+					curRes.treeIds_.u.rev.it = curRes.treeIds_.u.rev.end;
+				} else {
+					curRes.treeIds_.u.fwd.it = curRes.treeIds_.u.fwd.end;
+				}
 			} else {
-				operator[](lastPos_).it_ = operator[](lastPos_).end_;
-				operator[](lastPos_).rit_ = operator[](lastPos_).rend_;
+				assertrx_throw(curRes.collectionType_ == SingleSelectKeyResult::Collection::FlatIdSet);
+				if (isReverse_) {
+					curRes.flatIds_.u.rev.it = curRes.flatIds_.u.rev.end;
+				} else {
+					curRes.flatIds_.u.fwd.it = curRes.flatIds_.u.fwd.end;
+				}
+			}
+			// Remove the last value from the heap; it must always be at the top
+			if (!heap_.empty()) {
+				assertrx(heap_.front().pos == lastPos_);
+				if (isReverse_) {
+					removeHeapRoot<RevHeapLess>(heap_);
+				} else {
+					removeHeapRoot<FwdHeapGreater>(heap_);
+				}
 			}
 		}
 	}
@@ -199,11 +216,14 @@ public:
 			emplace_back(std::move(r));
 		}
 		other.clear();
+		type_ = Type::None;
 	}
 	/// Cost value used for sorting: object with a smaller
 	/// cost goes before others.
 	double Cost(int expectedIterations) const noexcept {
-		if (type_ == UnbuiltSortOrdersIndex) {
+		assertrx_dbg(GetType() != Type::None);
+
+		if (type_ == Type::UnbuiltSortOrdersIndex) {
 			return -1;
 		}
 		if (forcedFirst_) {
@@ -213,7 +233,7 @@ public:
 		const auto sz = size();
 		if (distinct_) {
 			result += sz;
-		} else if (type_ != SingleIdSetWithDeferedSort && type_ != RevSingleIdSetWithDeferedSort && !deferedExplicitSort) {
+		} else if (type_ != Type::SingleIdSetWithDeferedSort && type_ != Type::RevSingleIdSetWithDeferedSort && !deferedExplicitSort) {
 			result += static_cast<double>(GetMaxIterations()) * sz;
 		} else {
 			result += static_cast<double>(CostWithDefferedSort(sz, GetMaxIterations(), expectedIterations));
@@ -223,31 +243,7 @@ public:
 
 	void SetNotOperationFlag(bool isNotOperation) noexcept { isNotOperation_ = isNotOperation; }
 
-	/// Switches SingleSelectKeyResult to btree search
-	/// mode if it's more efficient than just comparing
-	/// each object in sequence.
-	void SetExpectMaxIterations(int expectedIterations) noexcept {
-		if (expectedIterations == std::numeric_limits<int>::max()) {
-			// FIXME: Remove this branch. In some cases (check issues #1495 and #1935) maxIterations will have incorrect value.
-			// Previously we've been using int32 type to calculate 'itersbsearch', that led to integer overwhelming and
-			// setting 'bsearch_' to 'true'.
-			// Special case for 'std::numeric_limits<int>::max()' preserves this behavior until related issues do not fixed.
-			for (SingleSelectKeyResult& r : *this) {
-				r.bsearch_ = true;
-			}
-		} else {
-			for (SingleSelectKeyResult& r : *this) {
-				if (!r.isRange_ && r.ids_.size() > 8) {
-					const int64_t itersloop = r.ids_.size();
-					const int64_t itersbsearch = std::log2(r.ids_.size()) * int64_t(expectedIterations);
-					r.bsearch_ = itersbsearch < itersloop;
-				}
-			}
-		}
-	}
-
-	int Type() const noexcept { return type_; }
-
+	Type GetType() const noexcept { return type_; }
 	std::string_view TypeName() const noexcept;
 	std::string Dump() const;
 	reindexer::IsDistinct IsDistinct() const noexcept { return distinct_; }
@@ -256,30 +252,154 @@ public:
 	std::string name;
 
 private:
+	struct [[nodiscard]] HeapEntry {
+		IdType value;
+		unsigned pos;
+	};
+	using HeapT = h_vector<HeapEntry, 128>;
+
+	struct [[nodiscard]] FwdHeapGreater {
+		RX_ALWAYS_INLINE bool operator()(const HeapEntry& l, const HeapEntry& r) const noexcept {
+			return (l.value == r.value) ? (l.pos > r.pos) : (l.value > r.value);
+		}
+	};
+
+	struct [[nodiscard]] RevHeapLess {
+		RX_ALWAYS_INLINE bool operator()(const HeapEntry& l, const HeapEntry& r) const noexcept {
+			return (l.value == r.value) ? (l.pos > r.pos) : (l.value < r.value);
+		}
+	};
+
+	RX_ALWAYS_INLINE static bool advanceFwd(SingleSelectKeyResult& it, IdType bound, IdType& value) noexcept {
+		assertrx_dbg(it.direction_ == SingleSelectKeyResult::Direction::Forward);
+		switch (it.collectionType_) {
+			case SingleSelectKeyResult::Collection::NotSet:
+			case SingleSelectKeyResult::Collection::SingleIterator:
+				assertrx_dbg(false);
+				break;
+			case SingleSelectKeyResult::Collection::FlatIdSet:
+				if (it.flatIds_.u.fwd.it != it.flatIds_.u.fwd.end) {
+					it.flatIds_.u.fwd.it = GallopUpperBound(it.flatIds_.u.fwd.it, it.flatIds_.u.fwd.end, bound);
+					if (it.flatIds_.u.fwd.it != it.flatIds_.u.fwd.end) {
+						value = *it.flatIds_.u.fwd.it;
+						return true;
+					}
+				}
+				break;
+			case SingleSelectKeyResult::Collection::TreeIdSet:
+				if (it.treeIds_.u.fwd.it != it.treeIds_.u.fwd.end) {
+					if (*it.treeIds_.u.fwd.it <= bound) {
+						it.treeIds_.u.fwd.it = it.treeIds_.ptr->upper_bound(bound);
+					}
+					if (it.treeIds_.u.fwd.it != it.treeIds_.u.fwd.end) {
+						value = *it.treeIds_.u.fwd.it;
+						return true;
+					}
+				}
+				break;
+			case SingleSelectKeyResult::Collection::Range:
+				if (it.range_.u.fwd.it != it.range_.u.fwd.end) {
+					it.range_.u.fwd.it = std::min(it.range_.u.fwd.end, std::max(it.range_.u.fwd.it, bound.Incr()));
+					if (it.range_.u.fwd.it != it.range_.u.fwd.end) {
+						value = it.range_.u.fwd.it;
+						return true;
+					}
+				}
+				break;
+		}
+		return false;
+	}
+
+	RX_ALWAYS_INLINE static bool advanceRev(SingleSelectKeyResult& it, IdType bound, IdType& value) noexcept {
+		assertrx_dbg(it.direction_ == SingleSelectKeyResult::Direction::Reverse);
+
+		switch (it.collectionType_) {
+			case SingleSelectKeyResult::Collection::NotSet:
+			case SingleSelectKeyResult::Collection::SingleIterator:
+				assertrx_dbg(false);
+				break;
+			case SingleSelectKeyResult::Collection::FlatIdSet:
+				if (it.flatIds_.u.rev.it != it.flatIds_.u.rev.end) {
+					it.flatIds_.u.rev.it = GallopLowerBound(it.flatIds_.u.rev.it, it.flatIds_.u.rev.end, bound);
+					if (it.flatIds_.u.rev.it != it.flatIds_.u.rev.end) {
+						value = *it.flatIds_.u.rev.it;
+						return true;
+					}
+				}
+				break;
+			case SingleSelectKeyResult::Collection::TreeIdSet:
+				if (it.treeIds_.u.rev.it != it.treeIds_.u.rev.end) {
+					if (*it.treeIds_.u.rev.it >= bound) {
+						const auto lower = it.treeIds_.ptr->lower_bound(bound);
+						it.treeIds_.u.rev.it =
+							(lower == it.treeIds_.ptr->begin()) ? it.treeIds_.u.rev.end : std::make_reverse_iterator(lower);
+					}
+					if (it.treeIds_.u.rev.it != it.treeIds_.u.rev.end) {
+						value = *it.treeIds_.u.rev.it;
+						return true;
+					}
+				}
+				break;
+			case SingleSelectKeyResult::Collection::Range:
+				if (it.range_.u.rev.it != it.range_.u.rev.end) {
+					it.range_.u.rev.it = std::max(it.range_.u.rev.end, std::min(it.range_.u.rev.it, bound.Decr()));
+					if (it.range_.u.rev.it != it.range_.u.rev.end) {
+						value = it.range_.u.rev.it;
+						return true;
+					}
+				}
+				break;
+		}
+		return false;
+	}
+
+	void buildHeap() {
+		assertrx_dbg(GetType() == Type::Forward || GetType() == Type::Reverse);
+		if (size() < kMinSetsForHeapSort) {
+			return;
+		}
+		heap_.reserve(size());
+		auto it = begin();
+		const auto endIt = end();
+		for (unsigned pos = 0; it != endIt; ++it, ++pos) {
+			IdType value;
+			if (isReverse_ ? advanceRev(*it, IdType::Max(), value) : advanceFwd(*it, IdType::Min(), value)) {
+				heap_.push_back(HeapEntry{value, pos});
+			}
+		}
+		if (isReverse_) {
+			std::make_heap(heap_.begin(), heap_.end(), RevHeapLess{});
+		} else {
+			std::make_heap(heap_.begin(), heap_.end(), FwdHeapGreater{});
+		}
+	}
+
 	/// Iterates to a next item of result.
 	/// @param minHint - rowId value to start from.
 	/// @return true if operation succeed.
 	RX_ALWAYS_INLINE bool nextImpl(IdType minHint) noexcept {
 		switch (type_) {
-			case Forward:
+			case Type::Forward:
 				return nextFwd(minHint);
-			case Reverse:
+			case Type::Reverse:
 				return nextRev(minHint);
-			case SingleRange:
+			case Type::SingleRange:
 				return nextFwdSingleRange(minHint);
-			case SingleIdset:
-			case SingleIdSetWithDeferedSort:
+			case Type::SingleIdset:
+			case Type::SingleIdSetWithDeferedSort:
 				return nextFwdSingleIdset(minHint);
-			case RevSingleRange:
+			case Type::RevSingleRange:
 				return nextRevSingleRange(minHint);
-			case RevSingleIdset:
-			case RevSingleIdSetWithDeferedSort:
+			case Type::RevSingleIdset:
+			case Type::RevSingleIdSetWithDeferedSort:
 				return nextRevSingleIdset(minHint);
-			case Unsorted:
+			case Type::Unsorted:
 				return nextUnsorted();
-			case UnbuiltSortOrdersIndex:
+			case Type::UnbuiltSortOrdersIndex:
 				return nextUnbuiltSortOrders();
+			case Type::None:
 			default:
+				assertrx_dbg(false);
 				return false;
 		}
 	}
@@ -289,71 +409,77 @@ private:
 	// from minHint which is the least rowId.
 	// Generic next implementation
 	bool nextFwd(IdType minHint) noexcept {
+		if (!heap_.empty()) {
+			return nextFwdHeap(minHint);
+		}
 		const auto lastVal = (minHint > lastVal_) ? minHint.Decr() : lastVal_;
 		IdType minVal = IdType::Max();
 		const auto beg = begin();
 		for (auto it = beg, endIt = end(); it != endIt; ++it) {
-			if (it->useBtree_) {
-				if (it->itset_ != it->setend_) {
-					it->itset_ = it->set_->upper_bound(lastVal);
-					if (it->itset_ != it->setend_ && *it->itset_ < minVal) {
-						minVal = *it->itset_;
-						lastPos_ = it - beg;
-					}
-				}
-			} else {
-				if (it->isRange_ && it->rIt_ != it->rEnd_) {
-					it->rIt_ = std::min(it->rEnd_, std::max(it->rIt_, lastVal.Incr()));
-
-					if (it->rIt_ != it->rEnd_ && it->rIt_ < minVal) {
-						minVal = it->rIt_;
-						lastPos_ = it - beg;
-					}
-
-				} else if (!it->isRange_ && it->it_ != it->end_) {
-					for (; it->it_ != it->end_ && *it->it_ <= lastVal; ++it->it_) {
-					}
-					if (it->it_ != it->end_ && *it->it_ < minVal) {
-						minVal = *it->it_;
-						lastPos_ = it - beg;
-					}
-				}
+			if (IdType value; advanceFwd(*it, lastVal, value) && value < minVal) {
+				minVal = value;
+				lastPos_ = it - beg;
 			}
 		}
 		lastVal_ = minVal;
 		return lastVal_ != IdType::Max();
 	}
 	bool nextRev(IdType maxHint) noexcept {
+		if (!heap_.empty()) {
+			return nextRevHeap(maxHint);
+		}
 		const auto lastVal = (maxHint < lastVal_) ? maxHint.Incr() : lastVal_;
 
 		IdType maxVal = IdType::Min();
 		const auto beg = begin();
 		for (auto it = beg, endIt = end(); it != endIt; ++it) {
-			if (it->useBtree_ && it->ritset_ != it->setrend_) {
-				for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal; ++it->ritset_) {
-				}
-				if (it->ritset_ != it->setrend_ && *it->ritset_ > maxVal) {
-					maxVal = *it->ritset_;
-					lastPos_ = it - beg;
-				}
-			} else if (it->isRange_ && it->rrIt_ != it->rrEnd_) {
-				it->rrIt_ = std::max(it->rrEnd_, std::min(it->rrIt_, lastVal.Decr()));
-
-				if (it->rrIt_ != it->rrEnd_ && it->rrIt_ > maxVal) {
-					maxVal = it->rrIt_;
-					lastPos_ = it - beg;
-				}
-			} else if (!it->isRange_ && !it->useBtree_ && it->rit_ != it->rend_) {
-				for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal; ++it->rit_) {
-				}
-				if (it->rit_ != it->rend_ && *it->rit_ > maxVal) {
-					maxVal = *it->rit_;
-					lastPos_ = it - beg;
-				}
+			if (IdType value; advanceRev(*it, lastVal, value) && value > maxVal) {
+				maxVal = value;
+				lastPos_ = it - beg;
 			}
 		}
 		lastVal_ = maxVal;
 		return lastVal_ != IdType::Min();
+	}
+	bool nextFwdHeap(IdType minHint) noexcept {
+		const auto bound = (minHint > lastVal_) ? minHint.Decr() : lastVal_;
+		while (!heap_.empty()) {
+			auto& root = heap_.front();
+			if (root.value > bound) {
+				lastVal_ = root.value;
+				lastPos_ = root.pos;
+				return true;
+			}
+			IdType value;
+			if (advanceFwd(operator[](root.pos), bound, value)) {
+				root.value = value;
+				heapifyRoot<HeapEntry, FwdHeapGreater>(heap_);
+			} else {
+				removeHeapRoot<FwdHeapGreater>(heap_);
+			}
+		}
+		lastVal_ = IdType::Max();
+		return false;
+	}
+	bool nextRevHeap(IdType maxHint) noexcept {
+		const auto bound = (maxHint < lastVal_) ? maxHint.Incr() : lastVal_;
+		while (!heap_.empty()) {
+			auto& root = heap_.front();
+			if (root.value < bound) {
+				lastVal_ = root.value;
+				lastPos_ = root.pos;
+				return true;
+			}
+			IdType value;
+			if (advanceRev(operator[](root.pos), bound, value)) {
+				root.value = value;
+				heapifyRoot<HeapEntry, RevHeapLess>(heap_);
+			} else {
+				removeHeapRoot<RevHeapLess>(heap_);
+			}
+		}
+		lastVal_ = IdType::Min();
+		return false;
 	}
 	// Single range next implementation
 	bool nextFwdSingleRange(IdType minHint) noexcept {
@@ -362,12 +488,14 @@ private:
 		}
 
 		const auto begIt = begin();
-		if (lastVal_ < begIt->rBegin_) {
-			lastVal_ = begIt->rBegin_.Decr();
+		assertrx_dbg(begIt->direction_ == SingleSelectKeyResult::Direction::Forward);
+		assertrx_dbg(begIt->collectionType_ == SingleSelectKeyResult::Collection::Range);
+		if (lastVal_ < begIt->range_.u.fwd.begin) {
+			lastVal_ = begIt->range_.u.fwd.begin.Decr();
 		}
 
-		lastVal_ = (lastVal_ < begIt->rEnd_) ? lastVal_.Incr() : begIt->rEnd_;
-		if (lastVal_ == begIt->rEnd_) {
+		lastVal_ = (lastVal_ < begIt->range_.u.fwd.end) ? lastVal_.Incr() : begIt->range_.u.fwd.end;
+		if (lastVal_ == begIt->range_.u.fwd.end) {
 			lastVal_ = IdType::Max();
 		}
 		return lastVal_ != IdType::Max();
@@ -377,21 +505,16 @@ private:
 		const auto lastVal = (minHint > lastVal_) ? minHint.Decr() : lastVal_;
 
 		auto it = begin();
-		if (it->useBtree_) {
-			if (it->itset_ != it->setend_ && *it->itset_ <= lastVal) {
-				it->itset_ = it->set_->upper_bound(lastVal);
+		assertrx_dbg(it->direction_ == SingleSelectKeyResult::Direction::Forward);
+		if (it->collectionType_ == SingleSelectKeyResult::Collection::TreeIdSet) {
+			if (it->treeIds_.u.fwd.it != it->treeIds_.u.fwd.end && *it->treeIds_.u.fwd.it <= lastVal) {
+				it->treeIds_.u.fwd.it = it->treeIds_.ptr->upper_bound(lastVal);
 			}
-			lastVal_ = (it->itset_ != it->set_->end()) ? *it->itset_ : IdType::Max();
+			lastVal_ = (it->treeIds_.u.fwd.it != it->treeIds_.u.fwd.end) ? *it->treeIds_.u.fwd.it : IdType::Max();
 		} else {
-			if (it->bsearch_) {
-				if (it->it_ != it->end_ && *it->it_ <= lastVal) {
-					it->it_ = std::upper_bound(it->it_, it->end_, lastVal);
-				}
-			} else {
-				for (; it->it_ != it->end_ && *it->it_ <= lastVal; it->it_++) {
-				}
-			}
-			lastVal_ = (it->it_ != it->end_) ? *it->it_ : IdType::Max();
+			assertrx_dbg(it->collectionType_ == SingleSelectKeyResult::Collection::FlatIdSet);
+			it->flatIds_.u.fwd.it = GallopUpperBound(it->flatIds_.u.fwd.it, it->flatIds_.u.fwd.end, lastVal);
+			lastVal_ = (it->flatIds_.u.fwd.it != it->flatIds_.u.fwd.end) ? *it->flatIds_.u.fwd.it : IdType::Max();
 		}
 		return lastVal_ != IdType::Max();
 	}
@@ -401,35 +524,44 @@ private:
 		}
 
 		const auto begIt = begin();
-		if (lastVal_ > begIt->rrBegin_) {
-			lastVal_ = begIt->rrBegin_.Incr();
+		assertrx_dbg(begIt->direction_ == SingleSelectKeyResult::Direction::Reverse);
+		assertrx_dbg(begIt->collectionType_ == SingleSelectKeyResult::Collection::Range);
+		if (lastVal_ > begIt->range_.u.rev.begin) {
+			lastVal_ = begIt->range_.u.rev.begin.Incr();
 		}
 
-		lastVal_ = (lastVal_ > begIt->rrEnd_) ? lastVal_.Decr() : begIt->rrEnd_;
-		if (lastVal_ == begIt->rrEnd_) {
+		lastVal_ = (lastVal_ > begIt->range_.u.rev.end) ? lastVal_.Decr() : begIt->range_.u.rev.end;
+		if (lastVal_ == begIt->range_.u.rev.end) {
 			lastVal_ = IdType::Min();
 		}
 		return lastVal_ != IdType::Min();
 	}
 	bool nextRevSingleIdset(IdType maxHint) noexcept {
 		const auto lastVal = (maxHint < lastVal_) ? maxHint.Incr() : lastVal_;
-
 		auto it = begin();
 
-		if (it->useBtree_) {
-			for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal; ++it->ritset_) {
+		assertrx_dbg(it->direction_ == SingleSelectKeyResult::Direction::Reverse);
+		if (it->collectionType_ == SingleSelectKeyResult::Collection::TreeIdSet) {
+			const auto lower = it->treeIds_.ptr->lower_bound(lastVal);
+			if (lower == it->treeIds_.ptr->begin()) {
+				it->treeIds_.u.rev.it = it->treeIds_.u.rev.end;
+				lastVal_ = IdType::Min();
+			} else {
+				it->treeIds_.u.rev.it = std::make_reverse_iterator(lower);
+				lastVal_ = *it->treeIds_.u.rev.it;
 			}
-			lastVal_ = (it->ritset_ != it->setrend_) ? *it->ritset_ : IdType::Min();
 		} else {
-			for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal; ++it->rit_) {
-			}
-			lastVal_ = (it->rit_ != it->rend_) ? *it->rit_ : IdType::Min();
+			assertrx_dbg(it->collectionType_ == SingleSelectKeyResult::Collection::FlatIdSet);
+			it->flatIds_.u.rev.it = GallopLowerBound(it->flatIds_.u.rev.it, it->flatIds_.u.rev.end, lastVal);
+			lastVal_ = (it->flatIds_.u.rev.it != it->flatIds_.u.rev.end) ? *it->flatIds_.u.rev.it : IdType::Min();
 		}
 
 		return lastVal_ != IdType::Min();
 	}
+	// B-tree forward iterator next implementation
 	bool nextUnbuiltSortOrders() noexcept {
-		auto& iter = *begin()->indexForwardIter_;
+		assertrx_dbg(begin()->collectionType_ == SingleSelectKeyResult::Collection::SingleIterator);
+		auto& iter = *begin()->idxFwdIter_;
 		const bool res = iter.Next();
 		lastVal_ = iter.Value();
 		return res;
@@ -439,18 +571,23 @@ private:
 		if (lastPos_ == size()) {
 			return false;
 		}
-		if (operator[](lastPos_).it_ == operator[](lastPos_).end_) {
+		auto& curRes = operator[](lastPos_);
+		assertrx_dbg(curRes.direction_ == SingleSelectKeyResult::Direction::Forward);
+		assertrx_dbg(curRes.collectionType_ == SingleSelectKeyResult::Collection::FlatIdSet);
+		if (curRes.flatIds_.u.fwd.it == curRes.flatIds_.u.fwd.end) {
 			++lastPos_;
 			while (lastPos_ < size()) {
-				if (operator[](lastPos_).it_ != operator[](lastPos_).end_) {
-					lastVal_ = *(operator[](lastPos_).it_++);
+				assertrx_dbg(operator[](lastPos_).direction_ == SingleSelectKeyResult::Direction::Forward);
+				assertrx_dbg(operator[](lastPos_).collectionType_ == SingleSelectKeyResult::Collection::FlatIdSet);
+				if (operator[](lastPos_).flatIds_.u.fwd.it != operator[](lastPos_).flatIds_.u.fwd.end) {
+					lastVal_ = *(operator[](lastPos_).flatIds_.u.fwd.it++);
 					return true;
 				}
 				++lastPos_;
 			}
 			return false;
 		}
-		lastVal_ = *(operator[](lastPos_).it_++);
+		lastVal_ = *(operator[](lastPos_).flatIds_.u.fwd.it++);
 		return true;
 	}
 
@@ -469,15 +606,16 @@ private:
 
 	int totalCalls_ = 0;
 	IdType lastVal_ = IdType::Min();
-	int type_ = 0;
+	Type type_ = Type::None;
 	bool isUnsorted_ = false;
-	bool isReverse_ = false;
 	ForcedFirst forcedFirst_ = ForcedFirst_False;
 	bool isNotOperation_ = false;
+	reindexer::IsDistinct distinct_ = IsDistinct_False;
+	bool isReverse_ = false;
 	size_t lastPos_ = 0;
 	int matchedCount_ = 0;
 	int indexNo_ = IndexValueType::NotSet;
-	reindexer::IsDistinct distinct_ = IsDistinct_False;
+	HeapT heap_;
 };
 
 }  // namespace reindexer

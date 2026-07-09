@@ -165,6 +165,15 @@ void QueryPreprocessor::checkAllowedCondition(const QueryField& field, CondType 
 class JoinOnExplainEnabled;
 class JoinOnExplainDisabled;
 
+int QueryPreprocessor::CalculateMaxIterationsForStreamingKnn(bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx) const {
+	if (Size() == 0) {
+		return int(ns_.itemsCount());
+	}
+	h_vector<int, 256> maxIterations(Size());
+	std::span<int> maxItersSpan(maxIterations.data(), maxIterations.size());
+	return calculateMaxIterations(0, Size(), ns_.itemsCount(), maxItersSpan, inTransaction, enableSortOrders, rdxCtx);
+}
+
 int QueryPreprocessor::calculateMaxIterations(size_t from, size_t to, int maxMaxIters, std::span<int>& maxIterations, bool inTransaction,
 											  bool enableSortOrders, const RdxContext& rdxCtx) const {
 	int res = maxMaxIters;
@@ -469,7 +478,7 @@ QueryPreprocessor::Ranked QueryPreprocessor::GetQueryRankType() const {
 		if (it->Is<QueryEntry>()) {
 			const auto& qe = it->Value<QueryEntry>();
 			if (qe.IsFieldIndexed()) {
-				const auto indexNo = IndexValueType(qe.IndexNo());
+				const int indexNo = qe.IndexNo();
 				if (ns_.indexes_[indexNo]->IsFulltext()) {
 					if (qe.IsDistinctOnly()) {
 						// distinct() condition over fulltext field may be combined with anything
@@ -516,7 +525,7 @@ QueryPreprocessor::Ranked QueryPreprocessor::GetQueryRankType() const {
 				throwRankedWithFPCond();
 			}
 			const auto& qe = it->Value<KnnQueryEntry>();
-			const auto indexNo = IndexValueType(qe.IndexNo());
+			const int indexNo = qe.IndexNo();
 			switch (result.queryRankType) {
 				case QueryRankType::Hybrid:
 				case QueryRankType::KnnIP:
@@ -2134,6 +2143,9 @@ void QueryPreprocessor::VerifyOnStatementField(const QueryField& qField, const N
 	if (qField.IsFieldIndexed()) {
 		if (ns.indexes_[qField.IndexNo()]->IsFloatVector()) [[unlikely]] {
 			throw Error(errParams, "Float vector indexes are not allowed in ON statement: {}", qField.FieldName());
+		}
+		if (ns.indexes_[qField.IndexNo()]->IsFulltext()) [[unlikely]] {
+			throw Error(errParams, "Fulltext indexes are not allowed in ON statement: {}", qField.FieldName());
 		}
 		return;
 	}

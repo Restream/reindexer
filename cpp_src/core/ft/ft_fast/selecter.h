@@ -133,9 +133,9 @@ public:
 	Selector(DataHolder<IdCont>& holder, const SplitOptions& splitOptions, size_t fieldSize, int maxAreasInDoc)
 		: holder_(holder), splitOptions_(splitOptions), fieldSize_(fieldSize), maxAreasInDoc_(maxAreasInDoc) {}
 
-	template <FtUseExternStatuses useExternSt, typename MergedDataType>
-	MergedDataType Process(FtDSLQuery&& query, bool inTransaction, RankSortType rankSortType, FtMergeStatuses::Statuses&& docsExcluded,
-						   const RdxContext&);
+	template <typename MergedDataType, typename DocsStatsGetter>
+	MergedDataType Process(size_t totalNumDocs, FtDSLQuery&& query, bool inTransaction, RankSortType rankSortType,
+						   FtMergeStatuses::Statuses&& docsExcluded, const RdxContext&, const DocsStatsGetter&);
 
 private:
 	float getTermBoost(std::string_view term) {
@@ -156,21 +156,19 @@ private:
 	void addSynonyms(TermVariants& termVariants);
 	void boostVariants(TermVariants& termVariants);
 
-	template <FtUseExternStatuses useExternSt>
 	h_vector<size_t, 4> addSynonymsBySplittingTermVariants(TermVariants& termVariants, const FtMergeStatuses::Statuses& docsExcluded,
 														   ft::QueryMergeData<IdCont>& queryMergeData);
 
-	template <FtUseExternStatuses useExternSt>
 	ft::TermResults<IdCont> buildTermResults(const FtDSLEntry& term, TermVariants& termVariants,
 											 const FtMergeStatuses::Statuses& docsExcluded);
 
-	template <FtUseExternStatuses useExternSt>
 	void buildQueryMergeData(FtDSLQuery&& query, const FtMergeStatuses::Statuses& docsExcluded, bool inTransaction,
 							 const RdxContext& rdxCtx, ft::QueryMergeData<IdCont>& queryMergeData);
 
-	template <typename MergedOffsetT, typename MergedDataType>
-	MergedDataType mergeResults(ft::QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType,
-								FtMergeStatuses::Statuses& docsExcluded, bool inTransaction, const RdxContext& rdxCtx);
+	template <typename MergedOffsetT, typename MergedDataType, typename DocsStatsGetter>
+	MergedDataType mergeResults(size_t totalNumDocs, ft::QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType,
+								FtMergeStatuses::Statuses& docsExcluded, bool inTransaction, const RdxContext& rdxCtx,
+								const DocsStatsGetter& docsStatsGetter);
 
 	DataHolder<IdCont>& holder_;
 	const SplitOptions& splitOptions_;

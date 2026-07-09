@@ -323,7 +323,7 @@ public:
 
 		unique_lock lck(mtx_);
 		if (invalidated_) {
-			return std::make_pair(invalidationErr_, false);
+			return std::make_pair(invalidationErr_, true);
 		}
 		try {
 			logTraceW([&] { uq_rtfmt("Push new sync updates ({}) for {}", localData.dataSize, data[0].NsName()); }, __FILE__, __LINE__,
@@ -362,7 +362,7 @@ public:
 		{
 			lock_guard lck(mtx_);
 			if (invalidated_) {
-				return std::make_pair(invalidationErr_, false);
+				return std::make_pair(invalidationErr_, true);
 			}
 
 			logTraceW([&] { uq_rtfmt("Push new async updates ({}) for {}", data.size(), data[0].NsName()); }, __FILE__, __LINE__,

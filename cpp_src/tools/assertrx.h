@@ -28,16 +28,16 @@ namespace reindexer {
 	}
 #endif	// __cplusplus
 
-#ifndef RX_WITH_STDLIB_DEBUG
+#if !REINDEX_WITH_DEBUG_ASSERT
 #define assertrx_dbg(e) ((void)0)
-#else  // RX_WITH_STDLIB_DEBUG
+#else  // REINDEX_WITH_DEBUG_ASSERT
 
 #ifdef __cplusplus
-// Macro for the extra debug. Works only when RX_WITH_STDLIB_DEBUG is defined and NDEBUG is not defined
+// Macro for the extra debug. Works only when REINDEX_WITH_DEBUG_ASSERT is defined and NDEBUG is not defined
 #define assertrx_dbg(expr) assertrx(expr)
 #endif	// __cplusplus
 
-#endif	// !RX_WITH_STDLIB_DEBUG
+#endif	// !REINDEX_WITH_DEBUG_ASSERT
 
 #endif	// NDEBUG
 

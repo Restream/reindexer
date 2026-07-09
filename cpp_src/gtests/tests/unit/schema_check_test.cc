@@ -46,7 +46,7 @@ TEST(SchemaTest, BaseTest) {
 	{
 		auto root = parser.Parse(dslExtraTag);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [extra_tag] not allowed in [query] object.");
+		EXPECT_STREQ(err.what(), "Key [extra_tag] not allowed in [query] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
@@ -60,7 +60,7 @@ TEST(SchemaTest, BaseTest) {
 	{
 		auto root = parser.Parse(dslExtraTag2);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [extra_tag] not allowed in [query.sort] object.");
+		EXPECT_STREQ(err.what(), "Key [extra_tag] not allowed in [query.sort] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
@@ -77,7 +77,7 @@ TEST(SchemaTest, BaseTest) {
 	{
 		auto root = parser.Parse(dsl2Tag);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [type] can occur only once in [query.aggregations] object.");
+		EXPECT_STREQ(err.what(), "Key [type] can occur only once in [query.aggregations] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
@@ -87,7 +87,7 @@ TEST(SchemaTest, BaseTest) {
 	{
 		auto root = parser.Parse(dsl0Tag);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [namespace] must occur in [query] object.");
+		EXPECT_STREQ(err.what(), "Key [namespace] must occur in [query] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
@@ -108,7 +108,7 @@ TEST(SchemaTest, BaseTest) {
 	{
 		auto root = parser.Parse(dslSort2);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [desc1] not allowed in [query.sort] object.");
+		EXPECT_STREQ(err.what(), "Key [desc1] not allowed in [query.sort] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
@@ -119,7 +119,7 @@ TEST(SchemaTest, BaseTest) {
 	{
 		auto root = parser.Parse(dslSort3);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [field] must occur in [query.sort] object.");
+		EXPECT_STREQ(err.what(), "Key [field] must occur in [query.sort] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
@@ -130,7 +130,7 @@ TEST(SchemaTest, BaseTest) {
 	{
 		auto root = parser.Parse(dslSort4);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [field] must occur in [query.sort] object.");
+		EXPECT_STREQ(err.what(), "Key [field] must occur in [query.sort] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 }
@@ -169,7 +169,7 @@ TEST(SchemaTest, AdditionalProperties) {
 	{
 		auto root = parser.Parse(str2);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [v1] must occur in [query] object.");
+		EXPECT_STREQ(err.what(), "Key [v1] must occur in [query] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
@@ -181,7 +181,7 @@ TEST(SchemaTest, AdditionalProperties) {
 	{
 		auto root = parser.Parse(str3);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [subv] not allowed in [query.v2] object.");
+		EXPECT_STREQ(err.what(), "Key [subv] not allowed in [query.v2] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
@@ -216,7 +216,7 @@ TEST(SchemaTest, LevelAny3) {
 	{
 		auto root = parser.Parse(dsl2level);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what(), "Key [error] not allowed in [query.filters.filters.filters] object.");
+		EXPECT_STREQ(err.what(), "Key [error] not allowed in [query.filters.filters.filters] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 

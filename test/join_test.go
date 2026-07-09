@@ -118,6 +118,11 @@ const (
 	testExplainMainNs   = "test_explain_main"
 	testExplainJoinedNs = "test_explain_joined"
 
+	testJoinClearEmptyMain     = "test_join_clear_empty_main"
+	testJoinClearEmptyJoined   = "test_join_clear_empty_joined"
+	testJoinClearNoItemsMain   = "test_join_clear_noitems_main"
+	testJoinClearNoItemsJoined = "test_join_clear_noitems_joined"
+
 	// should not be in init()
 	testStrictJoinHandlersMainNs   = "strict_join_handlers_main"
 	testStrictJoinHandlersJoinedNs = "strict_join_handlers_joined"
@@ -130,6 +135,11 @@ func init() {
 
 	tnamespaces[testItemsForModifyJoinNs] = TestItem{}
 	tnamespaces[testModifyJoinItemsNs] = TestJoinItem{}
+
+	tnamespaces[testJoinClearEmptyMain] = testJoinClearMainItem{}
+	tnamespaces[testJoinClearEmptyJoined] = testJoinClearSubItem{}
+	tnamespaces[testJoinClearNoItemsMain] = testJoinClearMainItem{}
+	tnamespaces[testJoinClearNoItemsJoined] = testJoinClearSubItem{}
 
 	tnamespaces[testExplainMainNs] = explainNs{}
 	tnamespaces[testExplainJoinedNs] = explainNs{}
@@ -1184,7 +1194,7 @@ func TestNextObjWithJoinedField(t *testing.T) {
 }
 
 func TestJoinedObjectsClearedForEmptyJoinedField(t *testing.T) {
-	mainNs, joinedNs := openJoinClearNamespaces(t)
+	mainNs, joinedNs := testJoinClearEmptyMain, testJoinClearEmptyJoined
 
 	require.NoError(t, DB.Upsert(mainNs, testJoinClearMainItem{ID: 1}))
 	require.NoError(t, DB.Upsert(mainNs, testJoinClearMainItem{ID: 2}))
@@ -1230,7 +1240,7 @@ func TestJoinedObjectsClearedForEmptyJoinedField(t *testing.T) {
 }
 
 func TestJoinedObjectsClearedWhenRowHasNoJoinedItems(t *testing.T) {
-	mainNs, joinedNs := openJoinClearNamespaces(t)
+	mainNs, joinedNs := testJoinClearNoItemsMain, testJoinClearNoItemsJoined
 
 	require.NoError(t, DB.Upsert(mainNs, testJoinClearMainItem{ID: 1}))
 	require.NoError(t, DB.Upsert(mainNs, testJoinClearMainItem{ID: 2}))
@@ -1261,23 +1271,6 @@ func TestJoinedObjectsClearedWhenRowHasNoJoinedItems(t *testing.T) {
 
 	require.False(t, it.Next())
 	require.NoError(t, it.Error())
-}
-
-func openJoinClearNamespaces(t *testing.T) (mainNs, joinedNs string) {
-	t.Helper()
-
-	suffix := rand.Int()
-	mainNs = fmt.Sprintf("test_join_clear_main_%d", suffix)
-	joinedNs = fmt.Sprintf("test_join_clear_joined_%d", suffix)
-
-	require.NoError(t, DB.OpenNamespace(mainNs, reindexer.DefaultNamespaceOptions().NoStorage(), testJoinClearMainItem{}))
-	require.NoError(t, DB.OpenNamespace(joinedNs, reindexer.DefaultNamespaceOptions().NoStorage(), testJoinClearSubItem{}))
-	t.Cleanup(func() {
-		require.NoError(t, DB.DropNamespace(mainNs))
-		require.NoError(t, DB.DropNamespace(joinedNs))
-	})
-
-	return mainNs, joinedNs
 }
 
 func TestJoinNonOpenedNs(t *testing.T) {

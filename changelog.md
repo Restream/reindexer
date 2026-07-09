@@ -1,3 +1,39 @@
+# Version 5.15.0 (09.07.2026)
+## Core
+- [fea] Optimized ID-set intersection logic during queries. The new implementation adapts better to different ID distributions within sets
+- [fea] Added heap-based intersection for geo-queries with a large number of points. In certain scenarios, this can provide up to a 10x speedup (see the `RStarRTreePointDWithin/1%` benchmark)
+- [fea] Reduced the impact of background index optimization on write operations by increasing the granularity of optimization cancellation checks. Previously, background index optimization could trigger latency spikes for write operations
+- [fea] Made stack traces more informative for MUSL builds
+- [fea] Slightly optimized indexes memory layout under mixed write/read workloads
+- [fix] Fixed a bug with row invalidation in the joined cache
+- [fix] Added explicit error in case of `fulltext` index inside `JOIN's ON clause`. Previously those queries did not work correctly in the most of the cases
+
+## Fulltext
+- [fix] Fixed possible crash in long words (256+ bytes) indexing
+
+## Vector indexes
+- [fea] Added an optional [streaming fetch for HNSW indexes](float_vector.md#streaming-knn-hnsw). In this case, the query planner will rely on the query's final `limit`/`offset` instead of the `k` value
+
+## Replication
+- [fea] Added stricter checks for coroutine stack sizes
+- [fix] Fixed a rare issue where a RAFT cluster `leader` received a false error from Ping while another coroutine was handling an exception, causing it to fall back to the `candidate` role
+
+## Go connector
+- [fea] Optimized encoding/decoding logic for binary structures related to queries and query results
+- [fix] Fixed `NextObj` and joined-fields oncorrect interactions: previously it could generate panic even on the correct data
+
+## Build
+- [fea] Added `WITH_UBSAN` build option
+- [fea] Updated the base Docker image to `alpine:3.23`
+
+## Face
+- [fea] Changed format for the `Keep diacritics` option (`fulltext` indexes)
+- [fix] Fixed `Replication` table column width
+
+# Version 5.14.1 (23.06.2026)
+## Core
+- [fix] Fixed collisions in large index hash tables with extendible hashing
+
 # Version 5.14.0 (03.06.2026)
 ## Core
 - [fea] Improved heuristic for scan order selection when a multi-condition query requires sorting but background index optimization has not run (typical for mixed read/write workloads)

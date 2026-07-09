@@ -319,7 +319,7 @@ static void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const
 					}
 					// Distinct is not compatible with 'unbuiltSortOrders' mode - it will awlays create comparator
 					if (index.IsOrdered() && !index.Opts().IsArray() && !entry.Distinct()) {
-						if (IsOrderedCondition(cond)) {
+						if (index::IsOrderedCondition(cond)) {
 							return FoundIndexInfo{&index, FoundIndexInfo::ConditionType::Compatible};
 						} else if (maybeGoodUnorderedCond) {
 							// Do not apply implicit sort if one of those conditions exist
@@ -372,7 +372,7 @@ const Index* AdviceSortingIndex(const QueryEntries& qentries, const NamespaceDat
 
 bool IsExpectingOrderedResults(const QueryEntry& qe) noexcept {
 	const auto cond = qe.Condition();
-	if (IsOrderedCondition(cond)) {
+	if (index::IsOrderedCondition(cond)) {
 		return true;
 	}
 	switch (cond) {

@@ -15,7 +15,7 @@ class [[nodiscard]] HnswIndexBase final : public FloatVectorIndex {
 public:
 	HnswIndexBase(const IndexDef&, PayloadType&&, FieldsSet&&, size_t currentNsSize, LogCreation);
 
-	std::unique_ptr<Index> Clone(size_t newCapacity) const override;
+	std::unique_ptr<Index> Clone(size_t newCapacity, IndexCloneKind kind) const override;
 	IndexMemStat GetMemStat(const RdxContext&) const noexcept override;
 	bool IsSupportMultithreadTransactions() const noexcept override;
 	void GrowFor(size_t newElementsCount) override;
@@ -36,10 +36,12 @@ private:
 
 	constexpr static uint64_t kStorageMagic = 0x3A3A3A3A2B2B2B2B;
 
-	HnswIndexBase(const HnswIndexBase&, size_t newCapacity);
+	HnswIndexBase(const HnswIndexBase&, size_t newCapacity, IndexCloneKind);
 
 	SelectKeyResult select(ConstFloatVectorView, const KnnSearchParams&, KnnCtx&) const override;
 	KnnRawResult selectRaw(ConstFloatVectorView, const KnnSearchParams&) const override;
+	KnnStreamingSession beginStreaming(ConstFloatVectorView, size_t ef) const override;
+	void continueStreaming(KnnStreamingSession&, size_t batchSize, KnnStreamingBatch& out) const override;
 	void del(FloatVectorId, MustExist) override;
 	Variant upsert(ConstFloatVectorView, FloatVectorId id, bool& clearCache) override;
 	Variant upsertConcurrent(ConstFloatVectorView, FloatVectorId id, bool& clearCache) override;
