@@ -256,7 +256,7 @@ func (pl *payloadIface) getFloatVector(field, idx int) []float32 {
 		return []float32{}
 	} else {
 		dim := cFloatVectorView >> floatVectorDimensionOffset
-		return (*[1 << 30]float32)(unsafe.Pointer(ptr))[:dim:dim]
+		return (*[1 << 28]float32)(unsafe.Pointer(ptr))[:dim:dim]
 	}
 }
 
@@ -693,7 +693,7 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 			}
 		}
 	case valueFloat:
-		pi := (*[1 << 27]Cfloat)(ptr)[:cnt:cnt]
+		pi := (*[1 << 28]Cfloat)(ptr)[:cnt:cnt]
 		if v.Kind() == reflect.Array {
 			if v.Len() < cnt {
 				panic(fmt.Errorf("can not set %d values to array of %d elements", cnt, v.Len()))
@@ -758,7 +758,7 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 			}
 		}
 	case valueBool:
-		pb := (*[1 << 27]Cbool)(ptr)[:cnt:cnt]
+		pb := (*[1 << 30]Cbool)(ptr)[:cnt:cnt]
 		switch a := v.Addr().Interface().(type) {
 		case *[]bool:
 			if len(*a) == 0 {

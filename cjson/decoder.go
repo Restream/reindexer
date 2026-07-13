@@ -562,7 +562,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Bool:
 			if !isPtr {
-				sl := (*[1 << 27]bool)(ptr)[offset : offset+count : offset+count]
+				sl := (*[1 << 30]bool)(ptr)[offset : offset+count : offset+count]
 				for i := range count {
 					sl[i] = rdser.GetVarUInt() != 0
 				}
