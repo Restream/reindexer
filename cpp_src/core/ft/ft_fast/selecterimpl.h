@@ -293,6 +293,7 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 		size_t matched = 0, vids = 0, excludedCnt = 0;
 		const std::string& patternUtf8 = variant.PatternUtf8();
 		const size_t patternBytes = patternUtf8.length();
+		const auto patternChars = static_cast<uint32_t>(getUTF8StringCharactersCount(patternUtf8));
 		for (const auto& step : holder_.steps) {
 			if (variant.lowRelevance && totalVids >= lowRelevanceLimit) {
 				break;
@@ -329,11 +330,12 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 					break;
 				}
 
-				// ToDo fix it (broken for russian utf8 symbols)
-				const int matchDif = std::abs(long(word.length() - variant.PatternUtf8().length() + wordLengthBeforePattern));
+				const uint32_t wordChars = holder_.GetWordCharsLen(wordId);
+				const uint32_t unmatchedChars = wordChars > patternChars ? wordChars - patternChars : 0;
 				const float boost = std::max(getTermBoost(std::string(word)), variant.boost);
-				const float decreasePenalty = static_cast<float>(holder_.cfg_->partialMatchDecrease * matchDif) /
-											  std::max<float>(variant.PatternUtf8().length(), kMinPartialMatchDenominator);
+				const float decreasePenalty =
+					(static_cast<float>(holder_.cfg_->partialMatchDecrease) * static_cast<float>(unmatchedChars)) /
+					static_cast<float>(std::max(patternChars, kMinPartialMatchDenominator));
 				float proc = std::max<float>(variant.proc - decreasePenalty, isPrefix ? rankingCfg.PrefixMin() : rankingCfg.SuffixMin());
 				proc = std::min<float>(proc, variant.proc);
 				if (boost > 0.0f) {

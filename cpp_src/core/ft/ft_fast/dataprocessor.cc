@@ -80,9 +80,7 @@ typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuf
 	word_hash wh;
 
 	suffix.reserve(words_um.size() * 20, words_um.size());
-	if (words.empty()) {
-		words.reserve(words_um.size());
-	}
+	holder.ReserveWords(words.size() + words_um.size());
 
 	WordsVector found;
 	found.reserve(words_um.size());
@@ -99,7 +97,9 @@ typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuf
 		}
 		found.emplace_back(keyIt.first);
 
+		const auto charsLen = static_cast<typename DataHolder<IdCont>::WordCharsLenType>(getUTF8StringCharactersCount(keyIt.first));
 		words.emplace_back();
+		holder.AddWordCharsLen(charsLen);
 		pos = holder.BuildWordId(id);
 		suffix.insert(keyIt.first, pos);
 		holder.lastStepWords_[wh(keyIt.first)].emplace_back(pos);

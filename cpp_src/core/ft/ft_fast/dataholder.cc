@@ -94,6 +94,7 @@ size_t DataHolder<IdCont>::GetMemStat() {
 	for (auto& w : words_) {
 		res += sizeof(w) + w.vids.heap_size();
 	}
+	res += wordsCharsLen_.capacity() * sizeof(wordsCharsLen_[0]);
 	return res;
 }
 
@@ -101,6 +102,7 @@ template <typename IdCont>
 void DataHolder<IdCont>::Clear() {
 	IDataHolder::Clear();
 	words_.resize(0);
+	wordsCharsLen_.resize(0);
 }
 
 template <typename IdCont>
@@ -110,10 +112,12 @@ void DataHolder<IdCont>::StartCommit(bool complete_updated) {
 
 		Clear();
 		words_.clear();
+		wordsCharsLen_.clear();
 		lastStepWords_.clear();
 	} else if (NeedRecommitLast()) {
 		status_ = RecommitLast;
 		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
+		wordsCharsLen_.erase(wordsCharsLen_.begin() + steps.back().wordOffset_, wordsCharsLen_.end());
 
 		for (auto& word : words_) {
 			word.RestoreState();

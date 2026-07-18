@@ -185,6 +185,8 @@ private:
 template <typename IdCont>
 class [[nodiscard]] DataHolder : public IDataHolder {
 public:
+	using WordCharsLenType = uint16_t;
+
 	explicit DataHolder(FTConfig* c);
 	void Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, size_t fieldSize, bool multithread,
 				 std::vector<h_vector<float, 3>>& wordsCounts) final;
@@ -193,6 +195,19 @@ public:
 	void Clear() override final;
 	std::vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
 	const std::vector<PackedWordEntry<IdCont>>& GetWords() const noexcept { return words_; }
+	void ReserveWords(size_t capacity) {
+		words_.reserve(capacity);
+		wordsCharsLen_.reserve(capacity);
+	}
+	void AddWordCharsLen(WordCharsLenType charsLen) {
+		assertrx_dbg(wordsCharsLen_.size() < words_.size());
+		wordsCharsLen_.emplace_back(charsLen);
+	}
+	WordCharsLenType GetWordCharsLen(WordIdType id) const noexcept {
+		assertrx(!id.IsEmpty());
+		assertrx(id.b.id < wordsCharsLen_.size());
+		return wordsCharsLen_[id.b.id];
+	}
 	PackedWordEntry<IdCont>& GetWordEntry(WordIdType id) noexcept {
 		assertrx(!id.IsEmpty());
 		assertrx(id.b.id < words_.size());
@@ -204,6 +219,7 @@ public:
 		return words_[id.b.id];
 	}
 	std::vector<PackedWordEntry<IdCont>> words_;
+	std::vector<WordCharsLenType> wordsCharsLen_;
 };
 
 }  // namespace reindexer
