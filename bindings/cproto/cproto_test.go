@@ -76,7 +76,7 @@ func BenchmarkGetConn(b *testing.B) {
 	b.Run("getConn", func(b *testing.B) {
 		var conn connection
 		ctx := context.Background()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			conn, err = binding.getConnection(ctx)
 			if err != nil {
 				panic(err)

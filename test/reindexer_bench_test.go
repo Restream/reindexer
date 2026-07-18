@@ -244,70 +244,92 @@ func BenchmarkPrepare(b *testing.B) {
 func BenchmarkSimpleInsert(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsSimpleNs)
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		if err := tx.Upsert(TestItemSimple{ID: mkID(i), Year: rand.Int()%1000 + 10, Name: randString(), Phone: randString()}); err != nil {
 			panic(err)
 		}
+		i++
 	}
+	b.StartTimer()
 	tx.MustCommit()
+	b.StopTimer()
 }
 
 func BenchmarkSimpleUpdate(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsSimpleNs)
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		if err := tx.Upsert(TestItemSimple{ID: mkID(i), Year: rand.Int()%1000 + 10, Name: randString()}); err != nil {
 			panic(err)
 		}
+		i++
 	}
+	b.StartTimer()
 	tx.MustCommit()
+	b.StopTimer()
 }
 
 func BenchmarkSimpleUpdateAsync(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsSimpleNs)
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		tx.UpsertAsync(TestItemSimple{ID: mkID(i), Year: rand.Int()%1000 + 10, Name: randString()},
 			func(err error) {
 				if err != nil {
 					panic(err)
 				}
 			})
+		i++
 	}
+	b.StartTimer()
 	tx.MustCommit()
+	b.StopTimer()
 }
 
 func BenchmarkSimpleCmplxPKUpsert(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsSimpleComplexPkNs)
 
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		if err := tx.Upsert(TestItemCmplxPK{ID: int32(i), Year: int32(rand.Int()%1000 + 10), Name: randString(), SubID: randString()}); err != nil {
 			panic(err)
 		}
+		i++
 	}
+	b.StartTimer()
 	tx.MustCommit()
+	b.StopTimer()
 }
 
 func BenchmarkInsert(b *testing.B) {
 	tx := DBD.MustBeginTx(testBenchItemsInsertNs)
 
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		if err := tx.Upsert(testItemsSeed[i%len(testItemsSeed)]); err != nil {
 			panic(err)
 		}
+		i++
 	}
+	b.StartTimer()
 	tx.MustCommit()
+	b.StopTimer()
 }
 
 func BenchmarkCJsonEncode(b *testing.B) {
 
 	enc := cjsonState.NewEncoder()
 
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		ser := cjson.NewPoolSerializer()
 		enc.Encode(testItemsSeed[i%len(testItemsSeed)], ser)
 		ser.Close()
+		i++
 	}
 }
 
@@ -315,9 +337,11 @@ func BenchmarkCJsonDecode(b *testing.B) {
 
 	dec := cjsonState.NewDecoder(TestItem{}, nil)
 	defer dec.Finalize()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		ti := TestItem{}
 		dec.Decode(testItemsCJsonSeed[i%len(testItemsCJsonSeed)], &ti)
+		i++
 	}
 }
 
@@ -326,9 +350,11 @@ func BenchmarkGobEncode(b *testing.B) {
 	buf := &bytes.Buffer{}
 	enc := gob.NewEncoder(buf)
 
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		enc.Encode(testItemsSeed[i%len(testItemsSeed)])
 		buf.Reset()
+		i++
 	}
 }
 
@@ -337,66 +363,85 @@ func BenchmarkGobDecode(b *testing.B) {
 	buf := &bytes.Buffer{}
 	dec := gob.NewDecoder(buf)
 	buf.Write(testItemsGobSeed[0])
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		ti := TestItem{}
 		if err := dec.Decode(&ti); err != nil {
 			panic(err)
 		}
 		buf.Reset()
 		buf.Write(testItemsGobSeed[(i%(len(testItemsGobSeed)-1))+1])
+		i++
 	}
 }
 
 func BenchmarkJsonEncode(b *testing.B) {
 	// Just for the reference timings
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		ser := cjson.NewPoolSerializer()
 		enc := json.NewEncoder(ser)
 		enc.Encode(testItemsSeed[i%len(testItemsSeed)])
 		ser.Close()
+		i++
 	}
 }
 
 func BenchmarkJsonDecode(b *testing.B) {
 	// Just for the reference timings
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		ti := TestItem{}
 		json.Unmarshal(testItemsJsonSeed[i%len(testItemsJsonSeed)], &ti)
+		i++
 	}
 }
 
 func BenchmarkInsertJson(b *testing.B) {
 	tx := DBD.MustBeginTx(testBenchItemsInsertJsonNs)
 
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		if err := tx.UpsertJSON(testItemsJsonSeed[i%len(testItemsJsonSeed)]); err != nil {
 			panic(err)
 		}
+		i++
 	}
+	b.StartTimer()
 	tx.MustCommit()
+	b.StopTimer()
 }
 
 func BenchmarkUpdate(b *testing.B) {
 	tx := DBD.MustBeginTx(testBenchItemsInsertNs)
 
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		if err := tx.Upsert(testItemsSeed[i%len(testItemsSeed)]); err != nil {
 			panic(err)
 		}
+		i++
 	}
+	b.StartTimer()
 	tx.MustCommit()
+	b.StopTimer()
 }
 
 func BenchmarkDeleteAndUpdate(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
 	tx := DBD.MustBeginTx(testBenchItemsInsertNs)
-	for i := 0; i < b.N; i++ {
-		tx.Delete(TestItem{ID: mkID(rand.Int() % b.N)})
+	i := 0
+	deleteIDRange := len(testItemsSeed)
+	for b.Loop() {
+		tx.Delete(TestItem{ID: mkID(rand.Int() % deleteIDRange)})
 		if err := tx.Upsert(testItemsSeed[i%len(testItemsSeed)]); err != nil {
 			panic(err)
 		}
+		i++
 	}
+	b.StartTimer()
 	tx.Commit()
+	b.StopTimer()
 }
 
 func BenchmarkWarmup(b *testing.B) {
@@ -813,16 +858,20 @@ func BenchmarkFullScan(b *testing.B) {
 
 func BenchmarkSelectByPKAndUpdate(b *testing.B) {
 	rand.Seed(*benchmarkSeed)
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		FillTestItemsBench(i, 1, 10)
 		DBD.Query(testBenchItemsNs).WhereInt("id", reindexer.EQ, mkID(rand.Int()%100000)).Limit(1).GetJson()
+		i++
 	}
 }
 
 func BenchmarkSelectByIdxAndUpdate(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		FillTestItemsBench(i, 1, 10)
 		DBD.Query(testBenchItemsNs).WhereInt("year", reindexer.EQ, 2010).Limit(1).GetJson()
+		i++
 	}
 }
 
@@ -918,11 +967,13 @@ func BenchmarkKnnIvfL2WithVectors(b *testing.B) {
 
 func benchmarkFloatVectorInsert(b *testing.B, indexType string, metric string) {
 	ns := knnBenchNsName(indexType, metric)
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		_, err := DBD.Insert(ns, newKnnItem(i+kBenchKnnNsSize))
 		if err != nil {
 			panic(err)
 		}
+		i++
 	}
 }
 

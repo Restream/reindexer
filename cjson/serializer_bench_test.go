@@ -1,10 +1,13 @@
 package cjson
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+var benchSerializerLen int
 
 func BenchmarkSerializerEncodeTypicalDocument(b *testing.B) {
 	tags := []string{"books", "science", "math", "history"}
@@ -15,7 +18,7 @@ func BenchmarkSerializerEncodeTypicalDocument(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	
+
 	for b.Loop() {
 		ser := NewPoolSerializer()
 		ser.WriteString("doc-2026-04-12")
@@ -44,7 +47,7 @@ func BenchmarkSerializerWriteIntsBatch(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(values) * 8))
-	
+
 	for b.Loop() {
 		ser := NewPoolSerializer()
 		_, err := ser.WriteInts(values)
@@ -61,7 +64,7 @@ func BenchmarkSerializerWriteInts16Batch(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(values) * 2))
-	
+
 	for b.Loop() {
 		ser := NewPoolSerializer()
 		_, err := ser.WriteInts16(values)
@@ -78,10 +81,52 @@ func BenchmarkSerializerPutFloatVectorBatch(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(vec) * 4))
-	
+
 	for b.Loop() {
 		ser := NewPoolSerializer()
 		ser.PutFloatVector(vec)
 		ser.Close()
+	}
+}
+
+func BenchmarkSerializerPutValueInt(b *testing.B) {
+	v := reflect.ValueOf(123)
+	var buf [32]byte
+
+	b.ReportAllocs()
+	for b.Loop() {
+		ser := NewSerializer(buf[:0])
+		if err := ser.PutValue(v); err != nil {
+			b.Fatal(err)
+		}
+		benchSerializerLen = len(ser.Bytes())
+	}
+}
+
+func BenchmarkSerializerPutValueString(b *testing.B) {
+	v := reflect.ValueOf("benchmark")
+	var buf [64]byte
+
+	b.ReportAllocs()
+	for b.Loop() {
+		ser := NewSerializer(buf[:0])
+		if err := ser.PutValue(v); err != nil {
+			b.Fatal(err)
+		}
+		benchSerializerLen = len(ser.Bytes())
+	}
+}
+
+func BenchmarkSerializerPutValueSlice(b *testing.B) {
+	v := reflect.ValueOf([]int{1, 2, 3, 4})
+	var buf [128]byte
+
+	b.ReportAllocs()
+	for b.Loop() {
+		ser := NewSerializer(buf[:0])
+		if err := ser.PutValue(v); err != nil {
+			b.Fatal(err)
+		}
+		benchSerializerLen = len(ser.Bytes())
 	}
 }
