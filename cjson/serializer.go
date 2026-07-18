@@ -2,6 +2,7 @@ package cjson
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -15,6 +16,7 @@ var isLittleEndian = func() bool {
 	var v uint16 = 0x0102
 	return *(*byte)(unsafe.Pointer(&v)) == 0x02
 }()
+var errInvalidReflectionValue = errors.New("rq: invalid reflection value")
 
 type Serializer struct {
 	buf  []byte
@@ -181,10 +183,12 @@ func (s *Serializer) PutValue(v reflect.Value) error {
 		s.PutVarCUInt(valueTuple)
 		s.PutVarCUInt(v.Len())
 		for i := 0; i < v.Len(); i++ {
-			s.PutValue(v.Index(i))
+			if err := s.PutValue(v.Index(i)); err != nil {
+				return err
+			}
 		}
 	default:
-		panic(fmt.Errorf("rq: Invalid reflection type %s", v.Kind().String()))
+		return errInvalidReflectionValue
 	}
 	return nil
 }

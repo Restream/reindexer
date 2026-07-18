@@ -39,12 +39,12 @@ type SubQuery struct {
 	SubQuery *Query
 }
 
-// FlatArrayLen is the flat_array_len(field) expression; implements IFunction and IExpression.
+// FlatArrayLen is the flat_array_len(field) expression.
 type FlatArrayLen struct {
 	Field string
 }
 
-// Now is the now(time_unit) expression; implements IFunction and IExpression.
+// Now is the now(time_unit) expression.
 type Now struct {
 	TimeUnit TimeUnit
 }
@@ -87,48 +87,6 @@ func (s SubQuery) Serialize(ser *cjson.Serializer) {
 	ser.PutVBytes(s.SubQuery.ser.Bytes())
 }
 
-func (f FlatArrayLen) FunctionType() int {
-	return functionFlatArrayLen
-}
-
-func (f FlatArrayLen) Fields() []string {
-	return []string{f.Field}
-}
-
-func (f FlatArrayLen) Args() []any {
-	return []any{}
-}
-
-func (f Now) FunctionType() int {
-	return functionNow
-}
-
-func (f Now) Fields() []string {
-	return []string{}
-}
-
-func (f Now) Args() []any {
-	return []any{f.TimeUnit}
-}
-
-type IFunction interface {
-	FunctionType() int
-	Fields() []string
-	Args() []any
-}
-
-func SerializeFunction(fn IFunction, ser *cjson.Serializer) {
-	ser.PutVarCUInt(len(fn.Fields()))
-	for _, field := range fn.Fields() {
-		ser.PutVString(field)
-	}
-	ser.PutVarCUInt(len(fn.Args()))
-	for _, arg := range fn.Args() {
-		ser.PutValue(reflect.ValueOf(arg))
-	}
-	ser.PutVarCUInt(fn.FunctionType())
-}
-
 // Type reports expressionTypeExpression for the flat_array_len function node.
 func (f FlatArrayLen) Type() int {
 	return expressionTypeExpression
@@ -137,7 +95,10 @@ func (f FlatArrayLen) Type() int {
 // Serialize writes the function expression tag and flat_array_len payload.
 func (f FlatArrayLen) Serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(int(f.Type()))
-	SerializeFunction(f, ser)
+	ser.PutVarCUInt(1)
+	ser.PutVString(f.Field)
+	ser.PutVarCUInt(0)
+	ser.PutVarCUInt(functionFlatArrayLen)
 }
 
 // Type reports expressionTypeExpression for the now function node.
@@ -148,5 +109,8 @@ func (n Now) Type() int {
 // Serialize writes the function expression tag and now() payload.
 func (n Now) Serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(int(n.Type()))
-	SerializeFunction(n, ser)
+	ser.PutVarCUInt(0)
+	ser.PutVarCUInt(1)
+	ser.PutVarCUInt(valueString).PutVString(string(n.TimeUnit))
+	ser.PutVarCUInt(functionNow)
 }
