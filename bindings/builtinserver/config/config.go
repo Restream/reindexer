@@ -3,14 +3,13 @@ package config
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type StorageConf struct {
 	Path            string `yaml:"path"`
 	Engine          string `yaml:"engine"`
 	StartWithErrors bool   `yaml:"startwitherrors"`
-	Autorepair      bool   `yaml:"autorepair"`
 }
 
 const ServerThreadingDedicated = "dedicated"
@@ -25,9 +24,11 @@ type NetConf struct {
 	UnixRPCThreading    string `yaml:"urpc_threading"` // "dedicated" or "shared"
 	WebRoot             string `yaml:"webroot"`
 	Security            bool   `yaml:"security"`
+	MaxHttpRspSizeBytes uint64 `yaml:"max_http_rsp_size"`
+	MaxHttpReqSizeBytes uint64 `yaml:"max_http_req_size"`
 	HttpReadTimeoutSec  int    `yaml:"http_read_timeout,omitempty"`
 	HttpWriteTimeoutSec int    `yaml:"http_write_timeout,omitempty"`
-	MaxUpdatesSizeBytes uint   `yaml:"maxupdatessize,omitempty"`
+	MaxUpdatesSizeBytes uint64 `yaml:"max_updates_size,omitempty"`
 }
 
 type LoggerConf struct {
@@ -77,15 +78,19 @@ func DefaultServerConfig() *ServerConfig {
 			Path:            "/tmp/reindex",
 			Engine:          "leveldb",
 			StartWithErrors: false,
-			Autorepair:      false,
 		},
 		Net: NetConf{
-			HTTPAddr:      "0.0.0.0:9088",
-			HTTPThreading: "shared",
-			RPCAddr:       "0.0.0.0:6534",
-			RPCThreading:  "shared",
-			UnixRPCAddr:   "none",
-			Security:      false,
+			HTTPAddr:            "0.0.0.0:9088",
+			HTTPThreading:       "shared",
+			RPCAddr:             "0.0.0.0:6534",
+			RPCThreading:        "shared",
+			UnixRPCAddr:         "none",
+			Security:            false,
+			MaxHttpRspSizeBytes: 1024 * 1024 * 1024,
+			MaxHttpReqSizeBytes: 8 * 1024 * 1024,
+			HttpReadTimeoutSec:  0,
+			HttpWriteTimeoutSec: 60,
+			MaxUpdatesSizeBytes: 1024 * 1024 * 1024,
 		},
 		Logger: LoggerConf{
 			ServerLog: "stdout",

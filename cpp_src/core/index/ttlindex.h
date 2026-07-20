@@ -8,16 +8,19 @@ namespace reindexer {
 /// Stores UNIX timestamps, items expire after:
 /// IndexDef::expireAfter_ (seconds) + item value itself
 template <typename T>
-class TtlIndex : public IndexOrdered<T> {
+class [[nodiscard]] TtlIndex : public IndexOrdered<T> {
 public:
 	TtlIndex(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
-		: IndexOrdered<T>(idef, std::move(payloadType), std::move(fields), cacheCfg), expireAfter_(idef.expireAfter_) {}
-	TtlIndex(const TtlIndex<T>& other) : IndexOrdered<T>(other), expireAfter_(other.expireAfter_) {}
+		: IndexOrdered<T>(idef, std::move(payloadType), std::move(fields), cacheCfg), expireAfter_(idef.ExpireAfter()) {}
 	int64_t GetTTLValue() const noexcept override { return expireAfter_; }
-	std::unique_ptr<Index> Clone() const override { return std::make_unique<TtlIndex<T>>(*this); }
+	std::unique_ptr<Index> Clone(size_t /*newCapacity*/, IndexCloneKind kind) const override {
+		return std::unique_ptr<Index>(new TtlIndex<T>(*this, kind));
+	}
 	void UpdateExpireAfter(int64_t v) noexcept { expireAfter_ = v; }
 
 private:
+	TtlIndex(const TtlIndex<T>& other, IndexCloneKind kind) : IndexOrdered<T>(other, kind), expireAfter_(other.expireAfter_) {}
+
 	/// Expiration value in seconds.
 	int64_t expireAfter_ = 0;
 };

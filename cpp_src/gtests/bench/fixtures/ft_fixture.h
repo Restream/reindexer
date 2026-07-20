@@ -1,33 +1,35 @@
 #pragma once
 
 #include <fstream>
-#include <random>
 #include <string>
 #include <vector>
 
 #include "base_fixture.h"
-#include "core/ft/config/ftfastconfig.h"
-#include "core/ft/usingcontainer.h"
-#include "helpers.h"
+#include "core/ft/config/ftconfig.h"
+#include "ft_base.h"
 #include "tools/clock.h"
 #include "tools/fsops.h"
 
 // #define ENABLE_TIME_TRACKER
 
-class FullText : private BaseFixture {
+namespace reindexer_benchmarks {
+
+class [[nodiscard]] FullText : private BaseFixture, private FullTextBase {
 public:
 	virtual ~FullText() {}
 	FullText(Reindexer* db, const std::string& name, size_t maxItems);
 
 	virtual reindexer::Error Initialize() override;
-	void RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount);
+	void RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount,
+						  std::optional<size_t> verySlowIterationCount);
 
 private:
-	enum class FTBuildType { Full, Incremental };
+	enum class [[nodiscard]] FTBuildType { Full, Incremental };
+	enum class [[nodiscard]] ShortSuffixPreselectProfile { Zero, Tiny, Small, Medium, Half, Full };
 
 	virtual reindexer::Item MakeItem(benchmark::State&) override;
 
-	template <reindexer::FtFastConfig::Optimization>
+	template <reindexer::FTConfig::Optimization>
 	void UpdateIndex(State&);
 	void Insert(State& state);
 	void BuildInsertIncremental(State& state);
@@ -46,54 +48,46 @@ private:
 	void Fast2PhraseLowDiversity(State& state);
 	void Fast2AndWordLowDiversity(State& state);
 
+	void TurnOnSynonyms();
+	void TurnOffSynonyms();
+
+	void Fast3WordsSynonymsLowDiversity(State& state);
+
 	void BuildCommonIndexes(State& state);
 	void BuildFastTextIndex(State& state);
-	void BuildFuzzyTextIndex(State& state);
 
 	void Fast1WordMatch(State& state);
 	void Fast2WordsMatch(State& state);
-	void Fuzzy1WordMatch(State& state);
-	void Fuzzy2WordsMatch(State& state);
 
 	void Fast1PrefixMatch(State& state);
 	void Fast2PrefixMatch(State& state);
-	void Fuzzy1PrefixMatch(State& state);
-	void Fuzzy2PrefixMatch(State& state);
 
 	void Fast1SuffixMatch(State& state);
 	void Fast2SuffixMatch(State& state);
-	void Fuzzy1SuffixMatch(State& state);
-	void Fuzzy2SuffixMatch(State& state);
+	void ShortSuffixPreselect(State& state, unsigned terms, ShortSuffixPreselectProfile profile);
 
 	void Fast1TypoWordMatch(State& state);
 	void Fast2TypoWordMatch(State& state);
-	void Fuzzy1TypoWordMatch(State& state);
-	void Fuzzy2TypoWordMatch(State& state);
 
 	void BuildStepFastIndex(State& state);
 	void Last(State& state);
 
-	template <reindexer::FtFastConfig::Optimization>
+	template <reindexer::FTConfig::Optimization>
 	void InitForAlternatingUpdatesAndSelects(State&);
 	void AlternatingUpdatesAndSelects(benchmark::State&);
 	void AlternatingUpdatesAndSelectsByComposite(benchmark::State&);
 	void AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark::State&);
 
-	std::string CreatePhrase();
-
-	std::string MakePrefixWord();
-	std::string MakeSuffixWord();
-	std::string MakeTypoWord();
-
-	std::wstring GetRandomUTF16WordByLength(size_t minLen = 4);
-
-	std::vector<std::string> GetRandomCountries(size_t cnt = 5);
+	[[nodiscard]] std::vector<std::string> GetRandomCountries(size_t cnt = 5);
 	reindexer::Item MakeLowDiversityItem(int id);
+	reindexer::Item MakeShortSuffixPreselectItem(int id);
+	std::string MakeShortSuffixPreselectText(int id);
 
-	std::vector<std::string> words_;
+	reindexer::FTConfig ftLowDiversityCfg_;
 	std::vector<std::string> words2_;
 	std::vector<std::string> countries_;
-	struct Values {
+
+	struct [[nodiscard]] Values {
 		Values(std::string s1, std::string s2, std::string f1, std::string f2) noexcept
 			: search1{std::move(s1)}, search2{std::move(s2)}, field1{std::move(f1)}, field2{std::move(f2)} {}
 		std::string search1;
@@ -103,10 +97,10 @@ private:
 	};
 	std::vector<Values> values_;
 
-	class RegisterWrapper {
+	class [[nodiscard]] RegisterWrapper {
 	public:
 		RegisterWrapper(std::optional<size_t> iterationCoun) noexcept : iterationCoun_(iterationCoun) {}
-		void SetOptions(Benchmark* b) {
+		void SetOptions(benchmark::Benchmark* b) {
 			if (iterationCoun_.has_value()) {
 				b = b->Iterations(*iterationCoun_);
 			}
@@ -124,11 +118,11 @@ private:
 #define TIMEMEASURE()
 #endif
 
-	class TimeTracker {
+	class [[nodiscard]] TimeTracker {
 	public:
 		TimeTracker(const std::string& fileName) : fileName_(fileName) { timeOfTest_.reserve(10000); }
 
-		class TimeMeasure {
+		class [[nodiscard]] TimeMeasure {
 		public:
 			TimeMeasure(TimeTracker& t) : timeTracker_(t), t1_(reindexer::system_clock_w::now()) {}
 			~TimeMeasure() {
@@ -211,17 +205,20 @@ private:
 	};
 
 	void updateAlternatingNs(reindexer::WrSerializer&, benchmark::State&);
+	void ApplyShortSuffixPreselectFilter(reindexer::Query& q, ShortSuffixPreselectProfile profile) const;
 	reindexer::Error readDictFile(const std::string& fileName, std::vector<std::string>& words);
-	void setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FtFastConfig& cfg);
+	void setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FTConfig& cfg);
 	unsigned int initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::string_view indexName, benchmark::IterationCount iters);
 	void dropNamespace(std::string_view name, benchmark::State&);
 	const std::string alternatingNs_ = "FtAlternatingUpdatesAndSelects";
-	const std::string kFastIndexTextName_ = "searchfast";
+	const std::string kIndexTextName_ = "search";
+	const std::string kIndexTextPreselectName_ = "search_preselect";
 	const std::string kLowDiversityIndexName_ = "search_ld";
 
 	size_t raw_data_sz_ = 0;
-	std::mt19937 randomEngine_{1};
-	std::uniform_int_distribution<int> randomGenerator_{};
 
 	NamespaceDef lowWordsDiversityNsDef_;
+	NamespaceDef shortSuffixPreselectNsDef_;
 };
+
+}  // namespace reindexer_benchmarks

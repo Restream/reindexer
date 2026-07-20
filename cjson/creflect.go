@@ -5,21 +5,30 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 const (
-	valueInt    = bindings.ValueInt
-	valueBool   = bindings.ValueBool
-	valueInt64  = bindings.ValueInt64
-	valueDouble = bindings.ValueDouble
-	valueString = bindings.ValueString
-	valueUuid   = bindings.ValueUuid
+	valueInt         = bindings.ValueInt
+	valueBool        = bindings.ValueBool
+	valueInt64       = bindings.ValueInt64
+	valueDouble      = bindings.ValueDouble
+	valueString      = bindings.ValueString
+	valueUuid        = bindings.ValueUuid
+	valueFloatVector = bindings.ValueFloatVector
+	valueFloat       = bindings.ValueFloat
+	valueTuple       = bindings.ValueTuple
+)
+
+const (
+	floatVectorDimensionOffset = 48
+	floatVectorPtrMask         = (uint64(1) << floatVectorDimensionOffset) - uint64(1)
 )
 
 // to avoid gcc toolchain requirement
 // types from C. Danger expectation about go struct packing is like C struct packing
 type Cdouble float64
+type Cfloat float32
 type Cint int32
 type Cuint uint32
 type Cunsigned uint32
@@ -32,8 +41,7 @@ type ArrayHeader struct {
 }
 
 type PStringHeader struct {
-	cstr unsafe.Pointer
-	len  Cint
+	len Cuint
 }
 
 type LStringHeader struct {
@@ -41,12 +49,64 @@ type LStringHeader struct {
 	data [1]Cchar
 }
 
+const (
+	kLargeJSONStrFlag byte = 0x80
+)
+
+func lengthLargeJsonString(p *byte) uint {
+	ptr := uintptr(unsafe.Pointer(p))
+	return uint(*(*byte)(unsafe.Pointer(ptr - 1))) |
+		(uint(*(*byte)(unsafe.Pointer(ptr))) << 8) |
+		(uint(*(*byte)(unsafe.Pointer(ptr + 1))) << 16) |
+		((uint(*(*byte)(unsafe.Pointer(ptr + 2)) & (^kLargeJSONStrFlag))) << 24)
+}
+
+func lengthSmallJsonString(p *byte) uint {
+	ptr := uintptr(unsafe.Pointer(p))
+	return uint(*(*byte)(unsafe.Pointer(ptr))) |
+		(uint(*(*byte)(unsafe.Pointer(ptr + 1))) << 8) |
+		(uint(*(*byte)(unsafe.Pointer(ptr + 2))) << 16)
+}
+
+func jsonStringView(p *byte) []byte {
+	ptr := uintptr(unsafe.Pointer(p))
+
+	thirdByte := *(*byte)(unsafe.Pointer(ptr + 2))
+	var strPtr uintptr
+	var len uint
+	if thirdByte&kLargeJSONStrFlag != 0 {
+		len = lengthLargeJsonString(p)
+
+		if unsafe.Sizeof(strPtr) == 4 {
+			strPtr = uintptr(*(*byte)(unsafe.Pointer(ptr - 2))) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 3))) << 8) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 4))) << 16) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 5))) << 24)
+		} else {
+			strPtr = uintptr(*(*byte)(unsafe.Pointer(ptr - 2))) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 3))) << 8) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 4))) << 16) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 5))) << 24) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 6))) << 32) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 7))) << 40) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 8))) << 48) |
+				(uintptr(*(*byte)(unsafe.Pointer(ptr - 9))) << 56)
+		}
+	} else {
+		len = lengthSmallJsonString(p)
+		strPtr = ptr - uintptr(len)
+	}
+
+	return (*[1 << 30]byte)(unsafe.Pointer(strPtr))[:len:len]
+}
+
 type payloadFieldType struct {
-	Type    int
-	Name    string
-	Offset  uintptr
-	Size    uintptr
-	IsArray bool
+	Type                 int
+	Name                 string
+	Offset               uintptr
+	Size                 uintptr
+	FloatVectorDimension uint16
+	IsArray              bool
 }
 
 type payloadType struct {
@@ -57,22 +117,43 @@ type payloadType struct {
 func (pt *payloadType) Read(ser *Serializer, skip bool) {
 	pt.PStringHdrOffset = uintptr(ser.GetVarUInt())
 	fieldsCount := int(ser.GetVarUInt())
-	fields := make([]payloadFieldType, fieldsCount, fieldsCount)
+	if skip {
+		for range fieldsCount {
+			fieldType := int(ser.GetVarUInt())
+			if fieldType == valueFloatVector {
+				ser.GetVarUInt()
+			}
+			ser.SkipVString()
+			ser.GetVarUInt()
+			ser.GetVarUInt()
+			ser.GetVarUInt()
+			jsonPathCnt := ser.GetVarUInt()
+			for ; jsonPathCnt != 0; jsonPathCnt-- {
+				ser.SkipVString()
+			}
+		}
+		return
+	}
 
-	for i := 0; i < fieldsCount; i++ {
+	fields := make([]payloadFieldType, fieldsCount)
+
+	for i := range fieldsCount {
 		fields[i].Type = int(ser.GetVarUInt())
+		if fields[i].Type == valueFloatVector {
+			fields[i].FloatVectorDimension = uint16(ser.GetVarUInt())
+		} else {
+			fields[i].FloatVectorDimension = 0
+		}
 		fields[i].Name = ser.GetVString()
 		fields[i].Offset = uintptr(ser.GetVarUInt())
 		fields[i].Size = uintptr(ser.GetVarUInt())
 		fields[i].IsArray = ser.GetVarUInt() != 0
 		jsonPathCnt := ser.GetVarUInt()
 		for ; jsonPathCnt != 0; jsonPathCnt-- {
-			ser.GetVString()
+			ser.SkipVString()
 		}
 	}
-	if !skip {
-		pt.Fields = fields
-	}
+	pt.Fields = fields
 }
 
 type payloadIface struct {
@@ -112,45 +193,43 @@ func (pl *payloadIface) ptr(field, idx, typ int) unsafe.Pointer {
 
 const hexChars = "0123456789abcdef"
 
-func createUuid(v [2]uint64) string {
-	buf := make([]byte, 36)
-	buf[0] = hexChars[(v[0]>>60)&0xF]
-	buf[1] = hexChars[(v[0]>>56)&0xF]
-	buf[2] = hexChars[(v[0]>>52)&0xF]
-	buf[3] = hexChars[(v[0]>>48)&0xF]
-	buf[4] = hexChars[(v[0]>>44)&0xF]
-	buf[5] = hexChars[(v[0]>>40)&0xF]
-	buf[6] = hexChars[(v[0]>>36)&0xF]
-	buf[7] = hexChars[(v[0]>>32)&0xF]
+var uuidHexByteToChars = func() [256]uint16 {
+	var table [256]uint16
+	for i := range table {
+		table[i] = uint16(hexChars[i>>4]) | uint16(hexChars[i&0xF])<<8
+	}
+	return table
+}()
+
+func putUuidHexByte(buf *[36]byte, pos int, b byte) {
+	pair := uuidHexByteToChars[b]
+	buf[pos] = byte(pair)
+	buf[pos+1] = byte(pair >> 8)
+}
+
+func createUuid(v0, v1 uint64) string {
+	var buf [36]byte
+	putUuidHexByte(&buf, 0, byte(v0>>56))
+	putUuidHexByte(&buf, 2, byte(v0>>48))
+	putUuidHexByte(&buf, 4, byte(v0>>40))
+	putUuidHexByte(&buf, 6, byte(v0>>32))
 	buf[8] = '-'
-	buf[9] = hexChars[(v[0]>>28)&0xF]
-	buf[10] = hexChars[(v[0]>>24)&0xF]
-	buf[11] = hexChars[(v[0]>>20)&0xF]
-	buf[12] = hexChars[(v[0]>>16)&0xF]
+	putUuidHexByte(&buf, 9, byte(v0>>24))
+	putUuidHexByte(&buf, 11, byte(v0>>16))
 	buf[13] = '-'
-	buf[14] = hexChars[(v[0]>>12)&0xF]
-	buf[15] = hexChars[(v[0]>>8)&0xF]
-	buf[16] = hexChars[(v[0]>>4)&0xF]
-	buf[17] = hexChars[v[0]&0xF]
+	putUuidHexByte(&buf, 14, byte(v0>>8))
+	putUuidHexByte(&buf, 16, byte(v0))
 	buf[18] = '-'
-	buf[19] = hexChars[(v[1]>>60)&0xF]
-	buf[20] = hexChars[(v[1]>>56)&0xF]
-	buf[21] = hexChars[(v[1]>>52)&0xF]
-	buf[22] = hexChars[(v[1]>>48)&0xF]
+	putUuidHexByte(&buf, 19, byte(v1>>56))
+	putUuidHexByte(&buf, 21, byte(v1>>48))
 	buf[23] = '-'
-	buf[24] = hexChars[(v[1]>>44)&0xF]
-	buf[25] = hexChars[(v[1]>>40)&0xF]
-	buf[26] = hexChars[(v[1]>>36)&0xF]
-	buf[27] = hexChars[(v[1]>>32)&0xF]
-	buf[28] = hexChars[(v[1]>>28)&0xF]
-	buf[29] = hexChars[(v[1]>>24)&0xF]
-	buf[30] = hexChars[(v[1]>>20)&0xF]
-	buf[31] = hexChars[(v[1]>>16)&0xF]
-	buf[32] = hexChars[(v[1]>>12)&0xF]
-	buf[33] = hexChars[(v[1]>>8)&0xF]
-	buf[34] = hexChars[(v[1]>>4)&0xF]
-	buf[35] = hexChars[v[1]&0xF]
-	return string(buf)
+	putUuidHexByte(&buf, 24, byte(v1>>40))
+	putUuidHexByte(&buf, 26, byte(v1>>32))
+	putUuidHexByte(&buf, 28, byte(v1>>24))
+	putUuidHexByte(&buf, 30, byte(v1>>16))
+	putUuidHexByte(&buf, 32, byte(v1>>8))
+	putUuidHexByte(&buf, 34, byte(v1))
+	return unsafe.String(&buf[0], len(buf))
 }
 
 func (pl *payloadIface) getInt(field, idx int) int {
@@ -165,7 +244,20 @@ func (pl *payloadIface) getInt64(field, idx int) int64 {
 
 func (pl *payloadIface) getUuid(field, idx int) string {
 	p := pl.ptr(field, idx, valueUuid)
-	return createUuid(*(*[2]uint64)(p))
+	v := (*[2]uint64)(p)
+	return createUuid(v[0], v[1])
+}
+
+func (pl *payloadIface) getFloatVector(field, idx int) []float32 {
+	p := pl.ptr(field, idx, valueFloatVector)
+	cFloatVectorView := *(*uint64)(p)
+	ptr := uintptr(cFloatVectorView & floatVectorPtrMask)
+	if ptr == 0 {
+		return []float32{}
+	} else {
+		dim := cFloatVectorView >> floatVectorDimensionOffset
+		return (*[1 << 28]float32)(unsafe.Pointer(ptr))[:dim:dim]
+	}
 }
 
 func (pl *payloadIface) getFloat64(field, idx int) float64 {
@@ -182,6 +274,7 @@ const tagShift = 59
 const tagMask = uint64(7) << tagShift
 const lStringType = 1
 const keySringType = 5
+const jsonSringType = 6
 
 func (pl *payloadIface) getBytes(field, idx int) []byte {
 	p := pl.ptr(field, idx, valueString)
@@ -194,8 +287,12 @@ func (pl *payloadIface) getBytes(field, idx int) []byte {
 		strHdr := (*LStringHeader)(unsafe.Pointer(ppstring))
 		return (*[1 << 30]byte)(unsafe.Pointer(&strHdr.data))[:strHdr.len:strHdr.len]
 	case keySringType:
-		strHdr := (*PStringHeader)(unsafe.Pointer(ppstring + pl.t.PStringHdrOffset))
-		return (*[1 << 30]byte)(strHdr.cstr)[:strHdr.len:strHdr.len]
+		hdrPtr := ppstring + pl.t.PStringHdrOffset
+		strHdr := (*PStringHeader)(unsafe.Pointer(hdrPtr))
+		dataPtr := unsafe.Pointer(hdrPtr + unsafe.Sizeof(PStringHeader{}))
+		return (*[1 << 30]byte)(dataPtr)[:strHdr.len:strHdr.len]
+	case jsonSringType:
+		return jsonStringView((*uint8)(unsafe.Pointer(ppstring)))
 	default:
 		panic(fmt.Sprintf("Unknow string type in payload value: %d", psType))
 	}
@@ -221,14 +318,17 @@ func (pl *payloadIface) getArrayLen(field int) int {
 func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 
 	k := v.Type().Kind()
-	if k == reflect.Slice {
-		el := reflect.New(v.Type().Elem()).Elem()
-		extSlice := reflect.Append(v, el)
-		v.Set(extSlice)
-		v = v.Index(v.Len() - 1)
-		k = v.Type().Kind()
-	} else if k == reflect.Array {
-		panic(fmt.Errorf("can not put single indexed value into the fixed size array"))
+	if pl.t.Fields[field].Type != valueFloatVector {
+		switch k {
+		case reflect.Slice:
+			el := reflect.New(v.Type().Elem()).Elem()
+			extSlice := reflect.Append(v, el)
+			v.Set(extSlice)
+			v = v.Index(v.Len() - 1)
+			k = v.Type().Kind()
+		case reflect.Array:
+			panic(fmt.Errorf("can not put single indexed value into the fixed size array"))
+		}
 	}
 	switch pl.t.Fields[field].Type {
 	case valueBool:
@@ -257,6 +357,28 @@ func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 		v.SetString(pl.getString(field, idx))
 	case valueUuid:
 		v.SetString(pl.getUuid(field, idx))
+	case valueFloatVector:
+		vec := pl.getFloatVector(field, idx)
+		switch k {
+		case reflect.Slice:
+			extLen := v.Len() + len(vec)
+			extSlice := reflect.MakeSlice(v.Type(), extLen, extLen)
+			reflect.Copy(extSlice, v)
+			offset := v.Len()
+			for i := range vec {
+				extSlice.Index(i + offset).SetFloat(float64(vec[i]))
+			}
+			v.Set(extSlice)
+		case reflect.Array:
+			if len(vec) > v.Len() {
+				panic(fmt.Errorf("can not put float vector of size '%d' into array of size '%d", len(vec), v.Len()))
+			}
+			for i := range vec {
+				v.Index(i).SetFloat(float64(vec[i]))
+			}
+		default:
+			panic(fmt.Errorf("can not put float vector value into not array field"))
+		}
 	default:
 		panic(fmt.Errorf("unknown key value type '%d'", pl.t.Fields[field].Type))
 	}
@@ -265,6 +387,8 @@ func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Value) {
 
 	if cnt == 0 {
+		slice := reflect.MakeSlice(v.Type(), 0, 0)
+		v.Set(slice)
 		return
 	}
 
@@ -568,8 +692,73 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 				v.Set(slice)
 			}
 		}
+	case valueFloat:
+		pi := (*[1 << 28]Cfloat)(ptr)[:cnt:cnt]
+		if v.Kind() == reflect.Array {
+			if v.Len() < cnt {
+				panic(fmt.Errorf("can not set %d values to array of %d elements", cnt, v.Len()))
+			}
+			switch v.Type().Elem().Kind() {
+			case reflect.Float32:
+				for i = 0; i < cnt; i++ {
+					v.Index(i).SetFloat(float64(float32(pi[i])))
+				}
+			case reflect.Float64:
+				for i = 0; i < cnt; i++ {
+					v.Index(i).SetFloat(float64(float32(pi[i])))
+				}
+			default:
+				panic(fmt.Errorf("can not convert '[]%s' to '[]float32'", v.Type().Elem().Kind().String()))
+			}
+		} else {
+			switch a := v.Addr().Interface().(type) {
+			case *[]float64:
+				if len(*a) == 0 {
+					*a = make([]float64, cnt)
+				} else {
+					i = len(*a)
+					var tmp []float64
+					tmp, *a = *a, make([]float64, len(*a)+cnt)
+					copy(*a, tmp)
+				}
+				for j := 0; j < cnt; i, j = i+1, j+1 {
+					(*a)[i] = float64(float32(pi[j]))
+				}
+			case *[]float32:
+				if len(*a) == 0 {
+					*a = make([]float32, cnt)
+				} else {
+					i = len(*a)
+					var tmp []float32
+					tmp, *a = *a, make([]float32, len(*a)+cnt)
+					copy(*a, tmp)
+				}
+				for j := 0; j < cnt; i, j = i+1, j+1 {
+					(*a)[i] = float32(pi[j])
+				}
+			default:
+				var slice reflect.Value
+				if v.Len() == 0 {
+					slice = reflect.MakeSlice(v.Type(), cnt, cnt)
+				} else {
+					i = v.Len()
+					slice = reflect.Append(v, reflect.MakeSlice(v.Type(), cnt, cnt))
+				}
+				for j := 0; j < cnt; i, j = i+1, j+1 {
+					sv := slice.Index(i)
+					if sv.Type().Kind() == reflect.Ptr {
+						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
+						el.Elem().SetFloat(float64(float32(pi[j])))
+						sv.Set(el)
+					} else {
+						sv.SetFloat(float64(float32(pi[j])))
+					}
+				}
+				v.Set(slice)
+			}
+		}
 	case valueBool:
-		pb := (*[1 << 27]Cbool)(ptr)[:cnt:cnt]
+		pb := (*[1 << 30]Cbool)(ptr)[:cnt:cnt]
 		switch a := v.Addr().Interface().(type) {
 		case *[]bool:
 			if len(*a) == 0 {
@@ -649,7 +838,7 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 				copy(*a, tmp)
 			}
 			for j := 0; j < cnt; i, j = i+1, j+1 {
-				(*a)[i] = createUuid([2]uint64{pi[j*2], pi[j*2+1]})
+				(*a)[i] = createUuid(pi[j*2], pi[j*2+1])
 			}
 		} else {
 			var slice reflect.Value
@@ -663,14 +852,16 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 				sv := slice.Index(i)
 				if sv.Type().Kind() == reflect.Ptr {
 					el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
-					el.Elem().SetString(createUuid([2]uint64{pi[j*2], pi[j*2+1]}))
+					el.Elem().SetString(createUuid(pi[j*2], pi[j*2+1]))
 					sv.Set(el)
 				} else {
-					sv.SetString(createUuid([2]uint64{pi[j*2], pi[j*2+1]}))
+					sv.SetString(createUuid(pi[j*2], pi[j*2+1]))
 				}
 			}
 			v.Set(slice)
 		}
+	case valueFloatVector:
+		panic(fmt.Errorf("array of float vector is not supported"))
 	default:
 		panic(fmt.Errorf("got C array with elements of unknown C type %d in field '%s' for go type '%s'", pl.t.Fields[field].Type, pl.t.Fields[field].Name, v.Type().Elem().Kind().String()))
 	}
@@ -678,7 +869,7 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 
 // Slow and generic method: convert c payload to go interface
 // Use only for debug purposes
-func (pl *payloadIface) getIface(field int) interface{} {
+func (pl *payloadIface) getIface(field int) any {
 
 	if !pl.t.Fields[field].IsArray {
 		switch pl.t.Fields[field].Type {
@@ -692,6 +883,8 @@ func (pl *payloadIface) getIface(field int) interface{} {
 			return pl.getString(field, 0)
 		case valueUuid:
 			return pl.getUuid(field, 0)
+		case valueFloatVector:
+			return pl.getFloatVector(field, 0)
 		}
 	}
 
@@ -699,42 +892,46 @@ func (pl *payloadIface) getIface(field int) interface{} {
 
 	switch pl.t.Fields[field].Type {
 	case valueInt:
-		a := make([]int, l, l)
+		a := make([]int, l)
 		for i := 0; i < l; i++ {
 			a[i] = pl.getInt(field, i)
 		}
 		return a
 	case valueInt64:
-		a := make([]int64, l, l)
+		a := make([]int64, l)
 		for i := 0; i < l; i++ {
 			a[i] = pl.getInt64(field, i)
 		}
 		return a
 	case valueDouble:
-		a := make([]float64, l, l)
+		a := make([]float64, l)
 		for i := 0; i < l; i++ {
 			a[i] = pl.getFloat64(field, i)
 		}
 		return a
+	case valueFloat:
+		panic(fmt.Errorf("float32 can not be indexed"))
 	case valueString:
-		a := make([]string, l, l)
+		a := make([]string, l)
 		for i := 0; i < l; i++ {
 			a[i] = pl.getString(field, i)
 		}
 		return a
 	case valueUuid:
-		a := make([]string, l, l)
+		a := make([]string, l)
 		for i := 0; i < l; i++ {
 			a[i] = pl.getUuid(field, i)
 		}
 		return a
+	case valueFloatVector:
+		panic(fmt.Errorf("array of float vector is not supported"))
 	}
 
 	return nil
 }
 
-func (pl *payloadIface) getAsMap() map[string]interface{} {
-	ret := make(map[string]interface{})
+func (pl *payloadIface) getAsMap() map[string]any {
+	ret := make(map[string]any)
 
 	for f := 1; f < len(pl.t.Fields); f++ {
 		ret[pl.t.Fields[f].Name] = pl.getIface(f)

@@ -15,6 +15,10 @@
 #include "tools/string_regexp_functions.h"
 #include "tools/stringstools.h"
 
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
 namespace {
 
 static const std::wstring symbols =
@@ -26,7 +30,7 @@ static std::string randString() {
 	result.reserve(len + 1);
 	while (result.size() < len) {
 		const size_t f = rand() % symbols.size();
-		result += reindexer::utf16_to_utf8({symbols[f]});
+		result += reindexer::utf16_to_utf8(std::wstring_view(&symbols[f], 1));
 	}
 	return result;
 }
@@ -45,7 +49,7 @@ static std::string randLikePattern() {
 				result += '_';
 			} else {
 				const size_t f = rand() % symbols.size();
-				result += reindexer::utf16_to_utf8({symbols[f]});
+				result += reindexer::utf16_to_utf8(std::wstring_view(&symbols[f], 1));
 			}
 		}
 	}
@@ -64,7 +68,7 @@ static bool isLikePattern(const std::string& str, const std::string& pattern) {
 
 TEST(StringFunctions, IsLikeSqlPattern) {
 	using namespace std::string_view_literals;
-	srand(std::time(0));
+	srand(reindexer::system_clock_w::now_count());
 	struct {  // NOLINT (*performance.Padding) Padding does not matter here
 		int caseNumber;
 		std::string_view str;
@@ -117,7 +121,6 @@ TEST(StringFunctions, IsLikeSqlPattern) {
 
 // test to check
 // 1. equality of character length in bytes for uppercase and lowercase letters
-// 2. character length equality after the substitution function 'check_for_replacement'
 
 TEST(StringFunctions, ToLowerUTF8ByteLen) {
 	for (wchar_t a = 0; a < UINT16_MAX; ++a) {
@@ -129,20 +132,6 @@ TEST(StringFunctions, ToLowerUTF8ByteLen) {
 			return symUtf8.size();
 		};
 		ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(reindexer::ToLower(a)));
-		{
-			wchar_t replaceChar = a;
-			reindexer::check_for_replacement(replaceChar);
-			if (replaceChar != a) {
-				ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(replaceChar));
-			}
-		}
-		{
-			uint32_t replaceChar = a;
-			reindexer::check_for_replacement(replaceChar);
-			if (replaceChar != uint32_t(a)) {
-				ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(replaceChar));
-			}
-		}
 	}
 }
 
@@ -150,12 +139,9 @@ TEST(StringFunctions, ToLowerUTF8ByteLen) {
 TEST_F(ReindexerApi, LikeWithFullTextIndex) {
 	// Define structure of the Namespace, where one of
 	// the indexes is of type 'text' (Full text)
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"id", {"id"}, "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"name", {"name"}, "text", "string", IndexOpts()});
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", {"id"}, "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"name", {"name"}, "text", "string", IndexOpts()});
 
 	// Insert 100 items to newly created Namespace
 	std::vector<std::string> content;
@@ -169,8 +155,8 @@ TEST_F(ReindexerApi, LikeWithFullTextIndex) {
 
 	// Make sure query with 'Like' operator to FT index leads to error
 	QueryResults qr;
-	err = rt.reindexer->Select(Query(default_namespace).Where("name", CondLike, "%" + content[rand() % content.size()]), qr);
-	ASSERT_TRUE(!err.ok());
+	auto err = rt.reindexer->Select(Query(default_namespace).Where("name", CondLike, "%" + content[rand() % content.size()]), qr);
+	ASSERT_FALSE(err.ok());
 }
 
 TEST_F(ReindexerApi, NumToText) {
@@ -232,3 +218,5 @@ TEST_F(ReindexerApi, NumToText) {
 	r = reindexer::NumToText::convert("1000000000000000000000000000", resNum) == std::vector<std::string_view>{};
 	ASSERT_TRUE(r) << out(resNum);
 }
+
+}  // namespace reindexer_tests

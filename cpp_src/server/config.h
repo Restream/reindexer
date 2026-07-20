@@ -13,9 +13,10 @@ class Node;
 
 namespace reindexer_server {
 
-enum class ServerMode { Standalone, Builtin };
+enum class [[nodiscard]] ServerMode { Standalone, Builtin };
 
-struct ServerConfig {
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
+struct [[nodiscard]] ServerConfig {
 	// This timeout is required to avoid locks, when raft leader does not exist
 	constexpr static auto kDefaultHttpWriteTimeout = std::chrono::seconds(60);
 
@@ -54,7 +55,6 @@ struct ServerConfig {
 	std::string SslCertPath;
 	std::string SslKeyPath;
 	bool StartWithErrors;
-	bool Autorepair;
 	bool AllowNamespaceLeak;
 #ifndef _WIN32
 	std::string UserName;
@@ -77,6 +77,7 @@ struct ServerConfig {
 	bool EnableGRPC;
 	std::string GRPCAddr;
 	size_t MaxHttpReqSize;
+	size_t MaxHttpRspSize;
 	std::chrono::seconds RPCQrIdleTimeout;
 	int64_t AllocatorCacheLimit;
 	float AllocatorCachePart;
@@ -101,5 +102,6 @@ private:
 	bool tcMallocIsAvailable_;
 #endif	// REINDEX_WITH_GPERFTOOLS
 };
+// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
 }  // namespace reindexer_server

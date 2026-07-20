@@ -6,24 +6,122 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
-	"github.com/restream/reindexer/v4/jsonschema"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/jsonschema"
 )
 
+const (
+	MultithreadingMode_SingleThread            = 0
+	MultithreadingMode_MultithreadTransactions = 1
+)
+
+type EmbedderConnectionPoolConfig struct {
+	// Number connections to service. Optional
+	// Values range: [1,1024]
+	// Default: 10
+	Connections int `json:"connections,omitempty"`
+	// Connection\reconnection timeout to any embedding service (milliseconds)
+	// Min value: 100
+	// Default: 300
+	ConnectTimeout int `json:"connect_timeout_ms,omitempty"`
+	// Timeout reading data from embedding service (milliseconds). Optional
+	// Min value: 500
+	// Default: 5000
+	ReadTimeout int `json:"read_timeout_ms,omitempty"`
+	// Timeout writing data from embedding service (milliseconds). Optional
+	// Min value: 500
+	// Default: 5000
+	WriteTimeout int `json:"write_timeout_ms,omitempty"`
+}
+
+func DefaultEmbedderConnectionPoolConfig() *EmbedderConnectionPoolConfig {
+	return &EmbedderConnectionPoolConfig{
+		Connections:    10,
+		ConnectTimeout: 300,
+		ReadTimeout:    5000,
+		WriteTimeout:   5000,
+	}
+}
+
+type EmbedderConfig struct {
+	// Embedder name. Optional
+	Name string `json:"name,omitempty"`
+	// Embed service URL. The address of the service where embedding requests will be sent. Required
+	URL string `json:"URL"`
+	// List of index fields to calculate embedding. Required for UpsertEmbedder and optional for QueryEmbedder
+	Fields []string `json:"fields,omitempty"`
+	// Name, used to access the cache. Optional, if not specified, caching is not used
+	CacheTag string `json:"cache_tag,omitempty"`
+	// Embedding insertion strategy. Optional
+	// `always` :       Default value, always embed
+	// `empty_only` :   When the user specified any value for the embedded field (non-empty vector), then automatic embedding is not performed
+	// `strict` :       When the user sets some value for the embedded field (non-empty vector), we return an error. If the field is empty, we automatically embed
+	EmbeddingStrategy string `json:"embedding_strategy,omitempty"`
+	// Connection pool configuration
+	ConnectionPoolConfig *EmbedderConnectionPoolConfig `json:"pool,omitempty"`
+}
+
+func DefaultUpsertEmbedderConfig(url string, fields []string) *EmbedderConfig {
+	config := new(EmbedderConfig)
+	config.Name = "UpsertEmbedder"
+	config.URL = url
+	config.Fields = fields
+	config.CacheTag = ""
+	config.EmbeddingStrategy = "always"
+	config.ConnectionPoolConfig = DefaultEmbedderConnectionPoolConfig()
+	return config
+}
+
+func DefaultQueryEmbedderConfig(url string) *EmbedderConfig {
+	config := new(EmbedderConfig)
+	config.Name = "QueryEmbedder"
+	config.URL = url
+	config.CacheTag = ""
+	config.ConnectionPoolConfig = DefaultEmbedderConnectionPoolConfig()
+	return config
+}
+
+type EmbeddingConfig struct {
+	// Insert\Update\Upsert embedder configuration
+	UpsertEmbedder *EmbedderConfig `json:"upsert_embedder,omitempty"`
+	// Query embedder configuration
+	QueryEmbedder *EmbedderConfig `json:"query_embedder,omitempty"`
+}
+type QuantizationConfig struct {
+	Type       string  `json:"quantization_type"`
+	Quantile   float32 `json:"quantile,omitempty"`
+	SampleSize int64   `json:"sample_size,omitempty"`
+	Threshold  int64   `json:"quantization_threshold,omitempty"`
+}
+
+type FloatVectorIndexOpts struct {
+	Metric             string              `json:"metric"`
+	Dimension          int                 `json:"dimension"`
+	M                  int                 `json:"m,omitempty"`
+	EfConstruction     int                 `json:"ef_construction,omitempty"`
+	StartSize          int                 `json:"start_size,omitempty"`
+	CentroidsCount     int                 `json:"centroids_count,omitempty"`
+	MultithreadingMode int                 `json:"multithreading,omitempty"`
+	Radius             float32             `json:"radius,omitempty"`
+	EmbeddingConfig    *EmbeddingConfig    `json:"embedding,omitempty"`
+	QuantizationConfig *QuantizationConfig `json:"quantization_config,omitempty"`
+}
+
 type IndexDef struct {
-	Name        string      `json:"name"`
-	JSONPaths   []string    `json:"json_paths"`
-	IndexType   string      `json:"index_type"`
-	FieldType   string      `json:"field_type"`
-	IsPK        bool        `json:"is_pk"`
-	IsArray     bool        `json:"is_array"`
-	IsDense     bool        `json:"is_dense"`
-	IsSparse    bool        `json:"is_sparse"`
-	CollateMode string      `json:"collate_mode"`
-	SortOrder   string      `json:"sort_order_letters"`
-	ExpireAfter int         `json:"expire_after"`
-	Config      interface{} `json:"config"`
-	RTreeType   string      `json:"rtree_type"`
+	Name        string   `json:"name"`
+	JSONPaths   []string `json:"json_paths"`
+	IndexType   string   `json:"index_type"`
+	FieldType   string   `json:"field_type"`
+	IsPK        bool     `json:"is_pk"`
+	IsArray     bool     `json:"is_array"`
+	IsDense     bool     `json:"is_dense"`
+	IsNoColumn  bool     `json:"is_no_column"`
+	IsSparse    bool     `json:"is_sparse"`
+	CollateMode string   `json:"collate_mode"`
+	SortOrder   string   `json:"sort_order_letters"`
+	ExpireAfter int      `json:"expire_after"`
+	Config      any      `json:"config"`
+	RTreeType   string   `json:"rtree_type"`
 }
 
 type FieldDef struct {
@@ -108,7 +206,7 @@ func (so *ConnectOptions) StorageType(value uint16) *ConnectOptions {
 	return so
 }
 
-// Capabilties of chosen binding. This value will affect some of the serverside functions and serialization logic
+// Capabilities of chosen binding. This value will affect some of the serverside functions and serialization logic
 type BindingCapabilities struct {
 	Value int64
 }
@@ -147,13 +245,23 @@ func (bc *BindingCapabilities) WithIncarnationTags(value bool) *BindingCapabilit
 	return bc
 }
 
+// Enable float rank format
+func (bc *BindingCapabilities) WithFloatRank(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityComplexRank)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityComplexRank)
+	}
+	return bc
+}
+
 // go interface to reindexer_c.h interface
 type RawBuffer interface {
 	GetBuf() []byte
 	Free()
 }
 
-// go transanction context
+// go transaction context
 type TxCtx struct {
 	Result  RawBuffer
 	Id      uint64
@@ -167,13 +275,13 @@ type FetchMore interface {
 
 // Logger interface for reindexer
 type Logger interface {
-	Printf(level int, fmt string, msg ...interface{})
+	Printf(level int, fmt string, msg ...any)
 }
 
 type NullLogger struct {
 }
 
-func (NullLogger) Printf(level int, fmt string, msg ...interface{}) {
+func (NullLogger) Printf(level int, fmt string, msg ...any) {
 }
 
 func NewError(text string, code int) error {
@@ -212,7 +320,7 @@ type Stats struct {
 
 // Raw binding to reindexer
 type RawBinding interface {
-	Init(u []url.URL, eh EventsHandler, options ...interface{}) error
+	Init(u []url.URL, eh EventsHandler, options ...any) error
 	Clone() RawBinding
 	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(ctx context.Context, namespace string) error
@@ -236,10 +344,10 @@ type RawBinding interface {
 	GetMeta(ctx context.Context, namespace, key string) (RawBuffer, error)
 	DeleteMeta(ctx context.Context, namespace, key string) error
 	ModifyItem(ctx context.Context, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (RawBuffer, error)
-	Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
-	SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
+	Select(ctx context.Context, query string, asJson bool, tmVersions []int32, fetchCount int) (RawBuffer, error)
+	SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, tmVersions []int32, fetchCount int) (RawBuffer, error)
 	DeleteQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
-	UpdateQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
+	UpdateQuery(ctx context.Context, rawQuery []byte, tmVersions []int32) (RawBuffer, error)
 	EnableLogger(logger Logger)
 	DisableLogger()
 	GetLogger() Logger
@@ -250,6 +358,8 @@ type RawBinding interface {
 	GetDSNs() []url.URL
 	Subscribe(ctx context.Context, opts *SubscriptionOptions) error
 	Unsubscribe(ctx context.Context) error
+
+	DBMSVersion() (string, error)
 }
 
 type RawBindingChanging interface {

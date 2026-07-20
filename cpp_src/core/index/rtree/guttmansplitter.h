@@ -5,10 +5,11 @@
 namespace reindexer {
 
 template <typename Entry, typename Node, typename Traits, typename Iterator, size_t MaxEntries, size_t MinEntries, typename Child>
-class GuttmanSplitter : protected Splitter<Entry, Node, Traits, Iterator, MaxEntries> {
+class [[nodiscard]] GuttmanSplitter : protected Splitter<Entry, Node, Traits, Iterator, MaxEntries> {
 	using Base = Splitter<Entry, Node, Traits, Iterator, MaxEntries>;
 
 protected:
+	// NOLINTNEXTLINE (bugprone-crtp-constructor-accessibility)
 	GuttmanSplitter(Entry&& appendingEntry, Node& sourceNode, Iterator* it)
 		: Base{std::move(appendingEntry), sourceNode, it}, moved_(MaxEntries + 1, false) {}
 	~GuttmanSplitter() = default;

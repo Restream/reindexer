@@ -1,26 +1,31 @@
 ﻿#include "dataprocessor.h"
 #include <chrono>
+#include <limits>
 #include "core/ft/numtotext.h"
 #include "core/ft/typos.h"
 
-#include "frisosplitter.h"
 #include "tools/clock.h"
-#include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
+#include "tools/thread_exception_wrapper.h"
 
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
 
 namespace reindexer {
 
+static constexpr size_t kMaxFtWordBytes = std::numeric_limits<suffix_map<char, WordIdType>::word_len_type>::max();
+
+RX_ALWAYS_INLINE static bool IsFtWordIndexable(std::string_view word) noexcept { return !word.empty() && word.size() <= kMaxFtWordBytes; }
+
 template <typename IdCont>
-void DataProcessor<IdCont>::Process(bool multithread) {
+void DataProcessor<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, bool multithreaded,
+									std::vector<h_vector<float, 3>>& wordsCounts) {
 	ExceptionPtrWrapper exwr;
 	words_map words_um;
 	const auto tm0 = system_clock_w::now();
-	size_t szCnt = buildWordsMap(words_um, multithread, holder_.splitter_);
+	size_t szCnt = buildWordsMap(vdocsTexts, vdocsIds, numDocsTotal, words_um, multithreaded, holder_.splitter_, wordsCounts);
 	const auto tm1 = system_clock_w::now();
 	auto& words = holder_.GetWords();
 	const size_t wrdOffset = words.size();
@@ -29,7 +34,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	const auto preprocWords = insertIntoSuffix(words_um, holder_);
 	const auto tm2 = system_clock_w::now();
 	// Step 4: Commit suffixes array. It runs in parallel with next step
-	auto& suffixes = holder_.GetSuffix();
+	auto& suffixes = holder_.GetLastStepSuffix();
 	auto tm3 = tm2, tm4 = tm2;
 	std::thread sufBuildThread = runInThread(exwr, [&suffixes, &tm3] {
 		suffixes.build();
@@ -44,7 +49,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 
 	// Step 6: Build typos hash map
 	try {
-		buildTyposMap(wrdOffset, preprocWords);
+		buildTyposMap(wrdOffset, preprocWords, multithreaded);
 	} catch (...) {
 		exwr.SetException(std::current_exception());
 	}
@@ -56,26 +61,28 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	exwr.RethrowException();
 	const auto tm6 = system_clock_w::now();
 
-	logPrintf(
-		LogInfo,
-		"FastIndexText[%d] built with [%d uniq words, %d typos (%d + %d), %dKB text size, %dKB suffixarray size, %dKB idrelsets size]",
-		holder_.steps.size(), words_um.size(), holder_.GetTyposHalf().size() + holder_.GetTyposMax().size(), holder_.GetTyposHalf().size(),
-		holder_.GetTyposMax().size(), szCnt / 1024, suffixes.heap_size() / 1024, idsetcnt / 1024);
+	logFmt(LogInfo, "IndexText[{}] built with [{} uniq words, {} typos, {}KB text size, {}KB suffixarray size, {}KB idrelsets size]",
+		   holder_.steps.size(), words_um.size(), holder_.GetLastStepTypos().size(), szCnt / 1024, suffixes.heap_size() / 1024,
+		   idsetcnt / 1024);
 
-	logPrintf(LogInfo,
-			  "DataProcessor::Process elapsed %d ms total [ build words %d ms | suffixes preproc %d ms | build typos %d ms | build "
-			  "suffixarry %d ms | sort idrelsets %d ms]",
-			  duration_cast<milliseconds>(tm6 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
-			  duration_cast<milliseconds>(tm2 - tm1).count(), duration_cast<milliseconds>(tm5 - tm2).count(),
-			  duration_cast<milliseconds>(tm3 - tm2).count(), duration_cast<milliseconds>(tm4 - tm2).count());
+	logFmt(LogInfo,
+		   "DataProcessor::Process elapsed {} ms total [ build words {} ms | suffixes preproc {} ms | build typos {} ms | build "
+		   "suffixarry {} ms | sort idrelsets {} ms]",
+		   duration_cast<milliseconds>(tm6 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
+		   duration_cast<milliseconds>(tm2 - tm1).count(), duration_cast<milliseconds>(tm5 - tm2).count(),
+		   duration_cast<milliseconds>(tm3 - tm2).count(), duration_cast<milliseconds>(tm4 - tm2).count());
 }
 
 template <typename IdCont>
 typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuffix(words_map& words_um, DataHolder<IdCont>& holder) {
 	auto& words = holder.GetWords();
-	auto& suffix = holder.GetSuffix();
+	auto& suffix = holder.GetLastStepSuffix();
+	word_hash wh;
 
 	suffix.reserve(words_um.size() * 20, words_um.size());
+	if (words.empty()) {
+		words.reserve(words_um.size());
+	}
 
 	WordsVector found;
 	found.reserve(words_um.size());
@@ -84,7 +91,7 @@ typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuf
 		// if we still don't have that word, we add it to new suffix tree, otherwise we just add information to current word
 
 		auto id = words.size();
-		WordIdType pos = holder.findWord(keyIt.first);
+		WordIdType pos = holder.FindWord(keyIt.first, false);
 
 		if (!pos.IsEmpty()) {
 			found.emplace_back(pos);
@@ -95,6 +102,7 @@ typename DataProcessor<IdCont>::WordsVector DataProcessor<IdCont>::insertIntoSuf
 		words.emplace_back();
 		pos = holder.BuildWordId(id);
 		suffix.insert(keyIt.first, pos);
+		holder.lastStepWords_[wh(keyIt.first)].emplace_back(pos);
 	}
 	return found;
 }
@@ -108,24 +116,28 @@ size_t DataProcessor<IdCont>::commitIdRelSets(const WordsVector& preprocWords, w
 	auto preprocWordsSize = preprocWords.size();
 	for (auto keyIt = words_um.begin(), endIt = words_um.end(); keyIt != endIt; ++keyIt, ++i) {
 		// Pack idrelset
-		PackedWordEntry<IdCont>* word = nullptr;
+		PackedWordEntry<IdCont>* wordEntry = nullptr;
 		if (preprocWordsSize > i) {
 			if (auto widPtr = std::get_if<WordIdType>(&preprocWords[i]); widPtr) {
 				assertrx_dbg(!widPtr->IsEmpty());
-				word = &holder.GetWordById(*widPtr);
+				wordEntry = &holder.GetWordEntry(*widPtr);
 			}
 		}
-		if (!word) {
-			word = &(*wIt);
+		if (!wordEntry) {
+			wordEntry = &(*wIt);
 			++wIt;
 			idsetcnt += sizeof(*wIt);
 		}
 
-		word->vids.insert(word->vids.end(), std::make_move_iterator(keyIt->second.vids_.begin()),
-						  std::make_move_iterator(keyIt->second.vids_.end()));
-		keyIt->second.vids_ = IdRelSet();
-		word->vids.shrink_to_fit();
-		idsetcnt += word->vids.heap_size();
+		if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
+			wordEntry->vids.insert_back(keyIt->second.begin(), keyIt->second.end());
+		} else {
+			wordEntry->vids.insert(wordEntry->vids.end(), std::make_move_iterator(keyIt->second.begin()),
+								   std::make_move_iterator(keyIt->second.end()));
+		}
+		keyIt->second = IdRelSet();
+		wordEntry->vids.shrink_to_fit();
+		idsetcnt += wordEntry->vids.heap_size();
 	}
 	return idsetcnt;
 }
@@ -184,12 +196,15 @@ void makeDocsDistribution(ContextT* ctxs, size_t ctxsCount, size_t docs) {
 }
 
 template <typename IdCont>
-size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithread, intrusive_ptr<const ISplitter> textSplitter) {
+size_t DataProcessor<IdCont>::buildWordsMap(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal,
+											words_map& words_um, bool multithreaded, intrusive_ptr<const ISplitter> textSplitter,
+											std::vector<h_vector<float, 3>>& wordsCounts) {
 	ExceptionPtrWrapper exwr;
-	uint32_t maxIndexWorkers = getMaxBuildWorkers(multithread);
+	uint32_t maxIndexWorkers = getMaxBuildWorkers(multithreaded);
 	size_t szCnt = 0;
-	auto& vdocsTexts = holder_.vdocsTexts;
-	struct context {
+	wordsCounts.resize(vdocsTexts.size());
+
+	struct [[nodiscard]] context {
 		words_map words_um;
 		std::thread thread;
 		size_t from;
@@ -203,76 +218,62 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	};
 	std::unique_ptr<context[]> ctxs(new context[maxIndexWorkers]);
 	makeDocsDistribution(ctxs.get(), maxIndexWorkers, vdocsTexts.size());
-#ifdef RX_WITH_STDLIB_DEBUG
-	size_t to = 0;
-	auto printDistribution = [&] {
-		std::cerr << "Distribution:\n";
-		for (uint32_t i = 0; i < maxIndexWorkers; ++i) {
-			std::cerr << fmt::sprintf("%d: { from: %d; to: %d }", i, ctxs[i].from, ctxs[i].to) << std::endl;
-		}
-	};
-	for (uint32_t i = 0; i < maxIndexWorkers; ++i) {
-		if (to == vdocsTexts.size() && (ctxs[i].from || ctxs[i].to)) {
-			printDistribution();
-			assertrx_dbg(!ctxs[i].from);
-			assertrx_dbg(!ctxs[i].to);
-		} else if (ctxs[i].from > ctxs[i].to || (ctxs[i].from && ctxs[i].from != to)) {
-			printDistribution();
-			assertrx_dbg(ctxs[i].from <= ctxs[i].to);
-			assertrx_dbg(ctxs[i].from == to);
-		}
-		to = ctxs[i].to ? ctxs[i].to : to;
-	}
-	assertrx_dbg(ctxs[0].from == 0);
-	assertrx_dbg(to == vdocsTexts.size());
-#endif	// RX_WITH_STDLIB_DEBUG
+
 	ThreadsContainer bgThreads;
 
 	auto& cfg = holder_.cfg_;
-	auto& vdocs = holder_.vdocs_;
-	const int fieldscount = fieldSize_;
-	size_t offset = holder_.vdocsOffset_;
+	const size_t fieldscount = fieldSize_;
 	// build words map parallel in maxIndexWorkers threads
-	auto worker = [this, &ctxs, &vdocsTexts, offset, fieldscount, &cfg, &vdocs, &textSplitter](int i) {
+	auto worker = [this, &ctxs, &vdocsTexts, &vdocsIds, fieldscount, &cfg, &wordsCounts, &textSplitter](int i) {
 		auto ctx = &ctxs[i];
 		std::vector<std::string_view> virtualWords;
 		const size_t start = ctx->from;
 		const size_t fin = ctx->to;
 		const bool enableNumbersSearch = cfg->enableNumbersSearch;
 		const word_hash h;
+		std::string wordWithoutDelims;
 		auto task = textSplitter->CreateTask();
 		for (VDocIdType j = start; j < fin; ++j) {
-			const size_t vdocId = offset + j;
-			auto& vdoc = vdocs[vdocId];
-			vdoc.wordsCount.resize(fieldscount, 0.0);
-			vdoc.mostFreqWordCount.resize(fieldscount, 0.0);
-
+			const size_t vdocId = vdocsIds[j];
 			auto& vdocsText = vdocsTexts[j];
-			for (size_t field = 0, sz = vdocsText.size(); field < sz; ++field) {
-				task->SetText(vdocsText[field].first);
-				const int rfield = vdocsText[field].second;
-				assertrx(rfield < fieldscount);
+			wordsCounts[j].resize(0);
+			wordsCounts[j].resize(fieldscount, 0.0);
 
-				const std::vector<std::string_view>& words = task->GetResults();
-				vdoc.wordsCount[rfield] = words.size();
+			for (size_t idx = 0, arrayIdx = 0, sz = vdocsText.size(); idx < sz; ++idx, ++arrayIdx) {
+				task->SetText(vdocsText[idx].first);
+				const unsigned field = vdocsText[idx].second;
+				if (idx > 0 && field != vdocsTexts[j][idx - 1].second) {
+					arrayIdx = 0;
+				}
 
-				int insertPos = -1;
-				for (auto word : words) {
-					++insertPos;
-					const auto whash = h(word);
-					if (!word.length() || cfg->stopWords.find(word, whash) != cfg->stopWords.end()) {
+				assertrx_throw(field < fieldscount);
+
+				const std::vector<WordWithPos>& occurences = task->GetResults();
+
+				for (const auto& occurence : occurences) {
+					if (!IsFtWordIndexable(occurence.word)) {
+						continue;
+					}
+					++wordsCounts[j][field];
+					const auto whash = h(occurence.word);
+					if (cfg->stopWords.find(occurence.word, whash) != cfg->stopWords.end()) {
 						continue;
 					}
 
-					auto [idxIt, emplaced] = ctx->words_um.try_emplace_prehashed(whash, word);
-					(void)emplaced;
-					const int mfcnt = idxIt->second.vids_.Add(vdocId, insertPos, rfield);
-					if (mfcnt > vdoc.mostFreqWordCount[rfield]) {
-						vdoc.mostFreqWordCount[rfield] = mfcnt;
+					if (cfg->splitOptions.ContainsDelims(occurence.word)) {
+						cfg->splitOptions.RemoveDelims(occurence.word, wordWithoutDelims);
+						if (cfg->stopWords.find(wordWithoutDelims) != cfg->stopWords.end()) {
+							continue;
+						}
 					}
 
-					if (enableNumbersSearch && is_number(word)) {
-						buildVirtualWord(word, ctx->words_um, vdocId, field, insertPos, virtualWords);
+					auto [idxIt, emplaced] = ctx->words_um.try_emplace_prehashed(whash, occurence.word);
+					(void)emplaced;
+					idxIt->second.Add(vdocId, occurence.pos, field, arrayIdx);
+
+					if (enableNumbersSearch && is_number(occurence.word)) {
+						buildVirtualWord(occurence.word, ctx->words_um, vdocId, wordsCounts[j], field, arrayIdx, occurence.pos,
+										 virtualWords);
 					}
 				}
 			}
@@ -294,21 +295,10 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 			continue;
 		}
 		for (auto& it : ctx.words_um) {
-#if defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
-			const auto fBeforeMove = it.first;
-			const auto sBeforeMove = it.second.MakeCopy();
-			const auto sCapacityBeforeMove = it.second.vids_.capacity();
-#endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
 			auto [idxIt, emplaced] = words_um.try_emplace(std::move(it.first), std::move(it.second));
 			if (!emplaced) {
-#if defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
-				// Make sure, that try_emplace did not moved the values
-				assertrx(it.first == fBeforeMove);
-				assertrx(it.second.vids_.size() == sBeforeMove.vids_.size());
-				assertrx(it.second.vids_.capacity() == sCapacityBeforeMove);
-#endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
-				auto& resultVids = idxIt->second.vids_;
-				auto& newVids = it.second.vids_;
+				auto& resultVids = idxIt->second;
+				auto& newVids = it.second;
 				resultVids.insert(resultVids.end(), std::make_move_iterator(newVids.begin()), std::make_move_iterator(newVids.end()));
 			}
 		}
@@ -323,138 +313,98 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map& words_um, bool multithrea
 	}
 	exwr.RethrowException();
 
-	bgThreads.Add([this]() noexcept { std::vector<RVector<std::pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts); });
-	bgThreads.Add([this]() noexcept { std::vector<std::unique_ptr<std::string>>().swap(holder_.bufStrs_); });
-
-	// Calculate avg words count per document for bm25 calculation
-	if (vdocs.size()) {
-		holder_.avgWordsCount_.resize(fieldscount, 0);
-		for (int i = 0; i < fieldscount; i++) {
-			auto& avgRef = holder_.avgWordsCount_[i];
-			for (auto& vdoc : vdocs) {
-				avgRef += vdoc.wordsCount[i];
-			}
-			avgRef /= vdocs.size();
-		}
-	}
 	// Check and print potential stop words
+
 	if (holder_.cfg_->logLevel >= LogInfo) {
 		WrSerializer out;
 		for (auto& w : words_um) {
-			if (w.second.vids_.size() > vdocs.size() / 5 || int64_t(w.second.vids_.size()) > holder_.cfg_->mergeLimit) {
-				out << w.first << "(" << w.second.vids_.size() << ") ";
+			if ((numDocsTotal > 1000 && w.second.size() > numDocsTotal / 5) || int64_t(w.second.size()) > holder_.cfg_->mergeLimit) {
+				out << w.first << "(" << w.second.size() << ") ";
 			}
 		}
-		logPrintf(LogInfo, "Total documents: %d. Potential stop words (with corresponding docs count): %s", vdocs.size(), out.Slice());
+		logFmt(LogInfo, "Total documents: {}. Potential stop words (with corresponding docs count): {}", numDocsTotal, out.Slice());
 	}
+
+	bgThreads.Add([&vdocsTexts]() noexcept { VDocsTexts().swap(vdocsTexts); });
 
 	return szCnt;
 }
 
 template <typename IdCont>
-void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, int rfield, size_t insertPos,
+void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType vdocId,
+											 h_vector<float, 3>& vdocWordsCounts, unsigned field, unsigned arrayIdx, size_t insertPos,
 											 std::vector<std::string_view>& container) {
-	auto& vdoc(holder_.vdocs_[docType]);
-	NumToText::convert(word, container);
+	std::ignore = NumToText::convert(word, container);
 	for (const auto numberWord : container) {
-		WordEntry wentry;
-		auto idxIt = words_um.emplace(numberWord, std::move(wentry)).first;
-		const int mfcnt = idxIt->second.vids_.Add(docType, insertPos, rfield);
-		if (mfcnt > vdoc.mostFreqWordCount[rfield]) {
-			vdoc.mostFreqWordCount[rfield] = mfcnt;
+		if (!IsFtWordIndexable(numberWord)) {
+			continue;
 		}
-		++vdoc.wordsCount[rfield];
+		auto idxIt = words_um.emplace(numberWord, IdRelSet()).first;
+		idxIt->second.Add(vdocId, insertPos, field, arrayIdx);
+		assertrx_dbg(vdocWordsCounts.size() > field);
+		++vdocWordsCounts[field];
 	}
 }
 
 template <typename IdCont>
-void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& preprocWords) {
-	if (!holder_.cfg_->maxTypos) {
-		return;
-	}
-	if (preprocWords.empty()) {
+void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const WordsVector& preprocWords, bool multithread) {
+	if (!holder_.cfg_->maxTypos || preprocWords.empty()) {
 		return;
 	}
 
-	auto& typosHalf = holder_.GetTyposHalf();
-	auto& typosMax = holder_.GetTyposMax();
-	const auto wordsSize = preprocWords.size();
+	const size_t stepNum = holder_.steps.size() - 1;
 	const auto maxTypoLen = holder_.cfg_->maxTypoLen;
 	const auto maxTyposInWord = holder_.cfg_->MaxTyposInWord();
-	const auto halfMaxTypos = holder_.cfg_->maxTypos / 2;
-	if (maxTyposInWord == halfMaxTypos) {
-		assertrx_throw(maxTyposInWord > 0);
-		typos_context tctx[kMaxTyposInWord];
-		const auto multiplier = wordsSize * (10 << (maxTyposInWord - 1));
-		typosHalf.reserve(multiplier / 2, multiplier * 5);
-		auto wordPos = startPos;
+	assertrx_throw(maxTyposInWord > 0);
 
-		for (auto& word : preprocWords) {
-			const auto wordString = std::get_if<std::string_view>(&word);
-			if (!wordString) {
-				continue;
-			}
-			const auto wordId = holder_.BuildWordId(wordPos++);
-			mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-					typos_context::CallBack{[&typosHalf, wordId](std::string_view typo, int, const typos_context::TyposVec& positions) {
-						typosHalf.emplace(typo, WordTypo{wordId, positions});
-					}});
-		}
-	} else {
-		assertrx_throw(maxTyposInWord == halfMaxTypos + 1);
+	std::vector<std::pair<uint32_t, WordTypo>> typosData;
+	const size_t multiplier = preprocWords.size() * (10 << (maxTyposInWord - 1));
 
-		auto multiplier = wordsSize * (10 << (halfMaxTypos > 1 ? (halfMaxTypos - 1) : 0));
-		ExceptionPtrWrapper exwr;
-		std::thread maxTyposTh = runInThread(
-			exwr,
-			[&](size_t mult) noexcept {
-				typos_context tctx[kMaxTyposInWord];
+	const size_t numThreads = getMaxBuildWorkers(multithread);
+	std::vector<std::vector<std::pair<uint32_t, WordTypo>>> threadsTyposDatas(numThreads);
+
+	for (auto& td : threadsTyposDatas) {
+		td.reserve(multiplier / numThreads + 1);
+	}
+
+	std::vector<std::thread> ths(numThreads);
+	ExceptionPtrWrapper exwr;
+
+	for (size_t threadIdx = 0; threadIdx < numThreads; ++threadIdx) {
+		ths[threadIdx] =
+			runInThread(exwr, [threadIdx, numThreads, &preprocWords, startPos, maxTypoLen, maxTyposInWord, &threadsTyposDatas, this]() {
 				auto wordPos = startPos;
-				mult = wordsSize * (10 << (maxTyposInWord - 1)) - mult;
-				typosMax.reserve(multiplier / 2, multiplier * 5);
-				for (auto& word : preprocWords) {
+				std::wstring wordStringW, buf;
+				std::vector<std::pair<uint32_t, WordTypo>>& typosData = threadsTyposDatas[threadIdx];
+
+				for (const auto& word : preprocWords) {
 					const auto wordString = std::get_if<std::string_view>(&word);
 					if (!wordString) {
 						continue;
 					}
-					const auto wordId = holder_.BuildWordId(wordPos++);
-					mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-							typos_context::CallBack{[wordId, &typosMax, wordString](std::string_view typo, int level,
-																					const typos_context::TyposVec& positions) {
-								if (level <= 1 && typo.size() != wordString->size()) {
-									typosMax.emplace(typo, WordTypo{wordId, positions});
-								}
-							}});
-				}
-				typosMax.shrink_to_fit();
-			},
-			multiplier);
 
-		try {
-			auto wordPos = startPos;
-			typos_context tctx[kMaxTyposInWord];
-			typosHalf.reserve(multiplier / 2, multiplier * 5);
-			for (auto& word : preprocWords) {
-				const auto wordString = std::get_if<std::string_view>(&word);
-				if (!wordString) {
-					continue;
+					if (wordPos % numThreads != threadIdx) {
+						wordPos++;
+						continue;
+					}
+					const auto wordId = holder_.BuildWordId(wordPos++);
+
+					auto cb = [&typosData, wordId](std::wstring_view typo, const TyposVec& positions, std::wstring_view) {
+						typosData.emplace_back(TyposMap::CalcHash(typo), WordTypo{wordId, positions});
+					};
+
+					utf8_to_utf16(*wordString, wordStringW);
+					mktypos(wordStringW, maxTyposInWord, maxTypoLen, TyposCallBack{cb}, buf);
 				}
-				const auto wordId = holder_.BuildWordId(wordPos++);
-				mktypos(tctx, *wordString, maxTyposInWord, maxTypoLen,
-						typos_context::CallBack{
-							[wordId, &typosHalf, wordString](std::string_view typo, int level, const typos_context::TyposVec& positions) {
-								if (level > 1 || typo.size() == wordString->size()) {
-									typosHalf.emplace(typo, WordTypo{wordId, positions});
-								}
-							}});
-			}
-		} catch (...) {
-			exwr.SetException(std::current_exception());
-		}
-		maxTyposTh.join();
-		exwr.RethrowException();
+			});
 	}
-	typosHalf.shrink_to_fit();
+
+	for (auto& th : ths) {
+		th.join();
+	}
+
+	exwr.RethrowException();
+	holder_.GetLastStepTypos().Build(threadsTyposDatas, stepNum, numThreads);
 }
 
 template <typename IdCont>

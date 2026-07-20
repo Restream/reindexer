@@ -1,93 +1,88 @@
 #pragma once
 
 #include <vector>
-#include "core/idset.h"
-#include "sort/pdqsort.hpp"
+#include "core/idset/idset.h"
+#include "core/index/auxiliary_interfaces.h"
+#include "core/type_consts.h"
 #include "tools/errors.h"
 
 namespace reindexer {
 
-class UpdateSortedContext {
+class [[nodiscard]] SortedIDsCtx {
 public:
-	virtual ~UpdateSortedContext() = default;
-	virtual int getSortedIdxCount() const noexcept = 0;
-	virtual SortType getCurSortId() const noexcept = 0;
-	virtual const std::vector<SortType>& ids2Sorts() const noexcept = 0;
-	virtual std::vector<SortType>& ids2Sorts() noexcept = 0;
+	SortedIDsCtx(SortType sortId, const std::vector<std::vector<IdType>>& externalSortedIds) noexcept
+		: sortId_{sortId}, externalSortedIds_{externalSortedIds} {}
+
+	SortType SortID() const noexcept { return sortId_; }
+	std::span<const IdType> ExternalSortedID(size_t idx) const noexcept {
+		assertrx_dbg(sortId_);
+		assertrx(sortId_ <= externalSortedIds_.size());
+		return std::span<const IdType>(&externalSortedIds_[sortId_ - 1][idx], 1);
+	}
+
+private:
+	SortType sortId_;
+	const std::vector<std::vector<IdType>>& externalSortedIds_;
 };
 
 template <typename IdSetT>
-class KeyEntry {
+class [[nodiscard]] KeyEntry : private IdSetT {
 public:
-	IdSetT& Unsorted() noexcept { return ids_; }
-	const IdSetT& Unsorted() const noexcept { return ids_; }
-	IdSetRef Sorted(unsigned sortId) noexcept {
-		assertf(ids_.capacity() >= (sortId + 1) * ids_.size(), "error ids_.capacity()=%d,sortId=%d,ids_.size()=%d", ids_.capacity(), sortId,
-				ids_.size());
-		return IdSetRef(ids_.data() + sortId * ids_.size(), ids_.size());
-	}
-	IdSetCRef Sorted(unsigned sortId) const noexcept {
-		assertf(ids_.capacity() >= (sortId + 1) * ids_.size(), "error ids_.capacity()=%d,sortId=%d,ids_.size()=%d", ids_.capacity(), sortId,
-				ids_.size());
-		return IdSetCRef(ids_.data() + sortId * ids_.size(), ids_.size());
-	}
-	void UpdateSortedIds(const UpdateSortedContext& ctx) {
-		ids_.reserve((ctx.getSortedIdxCount() + 1) * ids_.size());
-		assertrx(ctx.getCurSortId());
+	using IdSetType = IdSetT;
 
-		auto idsAsc = Sorted(ctx.getCurSortId());
-
-		size_t idx = 0;
-		const auto& ids2Sorts = ctx.ids2Sorts();
-		[[maybe_unused]] const IdType maxRowId = IdType(ids2Sorts.size());
-		// For all ids of current key
-		for (auto rowid : ids_) {
-			assertf(rowid < maxRowId, "id=%d,ctx.ids2Sorts().size()=%d", rowid, maxRowId);
-			idsAsc[idx++] = ids2Sorts[rowid];
-		}
-		boost::sort::pdqsort_branchless(idsAsc.begin(), idsAsc.end());
+	IdSetT& Unsorted() & noexcept { return *this; }
+	const IdSetT& Unsorted() const& noexcept { return *this; }
+	auto Unsorted() const&& = delete;
+	IdSetCRef Sorted(SortType sortId) const&& = delete;
+	IdSetCRef Sorted(SortType sortId) const& noexcept
+		requires(concepts::IdSetWithSortedIDs<IdSetT>)
+	{
+		return sortedIDsView(sortId);
 	}
-	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
-		std::string newOffset;
-		if (ids_.size() > 10) {
-			newOffset.reserve(offset.size() + step.size() + 1);
-			newOffset += '\n';
-			newOffset += offset;
-			newOffset += step;
-		}
-		os << '{' << newOffset << "unsorted: " << Unsorted() << ',';
-		if (newOffset.empty()) {
-			os << ' ';
-		} else {
-			os << newOffset;
-		}
-		os << "sorted: [";
-		if (ids_.size() != 0) {
-			unsigned sortId = 0;
-			while (ids_.capacity() >= ids_.size() * (sortId + 1)) {
-				if (sortId != 0) {
-					os << ", ";
-				}
-				os << '[';
-				const auto sorted = Sorted(sortId);
-				for (auto b = sorted.begin(), it = b, e = sorted.end(); it != e; ++it) {
-					if (it != b) {
-						os << ", ";
-					}
-					os << *it;
-				}
-				os << ']';
-				++sortId;
+	auto Sorted(const SortedIDsCtx& sortCtx) const&& = delete;
+	IdSetCRef Sorted(const SortedIDsCtx& sortCtx) const& noexcept {
+		const auto sortId = sortCtx.SortID();
+		if constexpr (!concepts::IdSetWithSortedIDs<IdSetT>) {
+			if (sortId > 0 && !IdSetT::IsEmpty()) {
+				return sortCtx.ExternalSortedID(IdSetCRef(*this).begin()->ToNumber());
 			}
+			return IdSetCRef(*this);
+		} else {
+			return sortedIDsView(sortId);
 		}
-		os << ']';
-		if (!newOffset.empty()) {
-			os << '\n' << offset;
-		}
-		os << '}';
 	}
+	void UpdateSortedIds(const index::IUpdateSortedContext& ctx)
+		requires(concepts::IdSetWithSortedIDs<IdSetT>);
+	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const;
 
-	IdSetT ids_;
+private:
+	using IdSetRef = std::span<IdType>;
+
+	IdSetCRef sortedIDsView(SortType sortId) const& noexcept
+		requires(concepts::IdSetWithSortedIDs<IdSetT>)
+	{
+		const size_t size = IdSetT::plainSize(), capacity = IdSetT::plainCapacity();
+		(void)capacity;
+		assertrx_dbg(IdSetT::IsCommitted());
+		assertf(capacity >= (sortId + 1) * size, "error ids_.capacity()={},sortId={},ids_.size()={}", capacity, sortId, size);
+		return IdSetCRef(IdSetT::plainData() + sortId * size, size);
+	}
+	IdSetRef sortedIDsView(SortType sortId) & noexcept
+		requires(concepts::IdSetWithSortedIDs<IdSetT>);
+	auto sortedIDsView(SortType sortId) const&& = delete;
+	template <typename KeyEntryT>
+	static void dumpSorted(std::ostream& os, const KeyEntryT& keyEntry);
 };
+
+namespace concepts {
+
+template <class KeyEntryT>
+concept KeyEntryWithSortedIDs = IdSetWithSortedIDs<typename KeyEntryT::IdSetType>;
+
+}  // namespace concepts
+
+extern template class KeyEntry<IdSetUnique>;
+extern template class KeyEntry<IdSetPlain>;
+extern template class KeyEntry<IdSet>;
 
 }  // namespace reindexer

@@ -3,29 +3,34 @@
 #include <wchar.h>
 #include <iomanip>
 
-#include "client/coroqueryresults.h"
-#include "core/queryresults/queryresults.h"
+#include "estl/gift_str.h"
 #include "tools/jsontools.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/terminalutils.h"
 #include "vendor/gason/gason.h"
 #include "vendor/utf8cpp/utf8.h"
 #include "vendor/wcwidth/wcwidth.h"
 
-namespace reindexer {
+namespace reindexer::table_view {
 
 const std::string kSeparator = " | ";
 const int kSuppositiveScreenWidth = 100;
 
-bool ColumnData::IsNumber() const noexcept { return (type == gason::JSON_NUMBER) || (type == gason::JSON_DOUBLE); }
-
-bool ColumnData::IsBoolean() const noexcept { return (type == gason::JSON_TRUE) || (type == gason::JSON_FALSE); }
-
-bool ColumnData::PossibleToBreakTheLine() const noexcept {
-	return IsBoolean() || (type == gason::JSON_STRING) /*|| (type == gason::JSON_OBJECT) */ || (type == gason::JSON_ARRAY);
+bool ColumnData::IsNumber() const noexcept {
+	return (gason::JsonTag(type) == gason::JsonTag::NUMBER) || (gason::JsonTag(type) == gason::JsonTag::DOUBLE);
 }
 
-TableCalculator::TableCalculator(std::vector<std::string>&& jsonData, int outputWidth) : outputWidth_(outputWidth) {
+bool ColumnData::IsBoolean() const noexcept {
+	return (gason::JsonTag(type) == gason::JsonTag::JTRUE) || (gason::JsonTag(type) == gason::JsonTag::JFALSE);
+}
+
+bool ColumnData::PossibleToBreakTheLine() const noexcept {
+	return IsBoolean() || (gason::JsonTag(type) == gason::JsonTag::STRING) /*|| (gason::JsonTag(type) == gason::JsonTag::OBJECT) */ ||
+		   (gason::JsonTag(type) == gason::JsonTag::ARRAY);
+}
+
+TableCalculator::TableCalculator(std::vector<std::string>&& jsonData, int outputWidth, int columnsOpts)
+	: outputWidth_(outputWidth), opts_(columnsOpts) {
 	calculate(std::move(jsonData));
 }
 
@@ -43,7 +48,7 @@ void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
 			std::string fieldName = std::string(elem.key);
 			ColumnData& columnData = columnsData_[fieldName];
 
-			columnData.type = elem.value.getTag();
+			columnData.type = int(elem.value.getTag());
 			columnData.maxWidthCh = std::max(columnData.maxWidthCh, reindexer::getStringTerminalWidth(fieldValue));
 			if (columnData.entries == 0) {
 				header_.push_back(fieldName);
@@ -70,7 +75,9 @@ void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
 	for (auto it = header_.begin(); it != header_.end();) {
 		std::string columnName = *it;
 		ColumnData& columnData = columnsData_[columnName];
-		if ((columnData.entries <= int(rows_.size() / 3)) || (columnData.emptyValues == int(rows_.size()))) {
+		const bool removeEmptyColumn = (columnData.emptyValues == int(rows_.size())) && (opts_ & ColumnsOpts::kRemoveRareColumns);
+		const bool removeRareColumn = (columnData.entries <= int(rows_.size() / 3)) && (opts_ & ColumnsOpts::kRemoveEmptyColumns);
+		if (removeEmptyColumn || removeRareColumn) {
 			it = header_.erase(it);
 			columnsData_.erase(columnName);
 		} else {
@@ -112,12 +119,13 @@ void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
 	}
 }
 
-void TableViewBuilder::Build(std::ostream& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled) {
+void TableViewBuilder::Build(std::ostream& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled,
+							 int columnsOpts) {
 	if (isCanceled()) {
 		return;
 	}
 	TerminalSize terminalSize = reindexer::getTerminalSize();
-	TableCalculator tableCalculator(std::move(jsonData), terminalSize.width);
+	TableCalculator tableCalculator(std::move(jsonData), terminalSize.width, columnsOpts);
 	BuildHeader(o, tableCalculator, isCanceled);
 	BuildTable(o, tableCalculator, isCanceled);
 }
@@ -290,4 +298,4 @@ void TableViewBuilder::ensureFieldWidthIsOk(std::string& str, int maxWidth) {
 	}
 }
 
-}  // namespace reindexer
+}  // namespace reindexer::table_view

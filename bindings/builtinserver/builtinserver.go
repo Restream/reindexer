@@ -7,14 +7,13 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"reflect"
 	"sync"
 	"time"
 	"unsafe"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/bindings/builtin"
-	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/bindings/builtin"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
 )
 
 var defaultStartupTimeout time.Duration = time.Minute * 3
@@ -33,8 +32,10 @@ func err2go(ret C.reindexer_error) error {
 }
 
 func str2c(str string) C.reindexer_string {
-	hdr := (*reflect.StringHeader)(unsafe.Pointer(&str))
-	return C.reindexer_string{p: unsafe.Pointer(hdr.Data), n: C.int(hdr.Len)}
+	return C.reindexer_string{
+		p: unsafe.Pointer(unsafe.StringData(str)),
+		n: C.int(len(str)),
+	}
 }
 
 func (server *BuiltinServer) checkStorageReady() bool {
@@ -49,6 +50,9 @@ type BuiltinServer struct {
 }
 
 func (server *BuiltinServer) stopServer(timeout time.Duration) error {
+	if server.svc == 0 {
+		return nil
+	}
 	if err := err2go(C.stop_reindexer_server(server.svc)); err != nil {
 		return err
 	}
@@ -67,7 +71,7 @@ func (server *BuiltinServer) stopServer(timeout time.Duration) error {
 	}
 }
 
-func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, options ...interface{}) error {
+func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, options ...any) error {
 	if server.builtin != nil {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}
@@ -80,11 +84,23 @@ func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, option
 
 	for _, option := range options {
 		switch v := option.(type) {
+		// Each builtin option has to be handled here explicitly to avoid warning about 'unknown' builtin options
+		case bindings.OptionBuiltinAllocatorConfig:
+			// nothing
+		case bindings.OptionBuiltinMaxUpdatesSize:
+			// nothing
 		case bindings.OptionPrometheusMetrics:
+			// nothing
 		case bindings.OptionOpenTelemetry:
+			// nothing
+		case bindings.OptionStrictJoinHandlers:
+			// nothing
 		case bindings.OptionCgoLimit:
+			// nothing
 		case bindings.OptionBuiltintCtxWatch:
+			// nothing
 		case bindings.ConnectOptions:
+			// nothing
 		case bindings.OptionBuiltinWithServer:
 			if v.StartupTimeout != 0 {
 				startupTimeout = v.StartupTimeout
@@ -95,6 +111,8 @@ func (server *BuiltinServer) Init(u []url.URL, eh bindings.EventsHandler, option
 			if v.ShutdownTimeout != 0 {
 				server.shutdownTimeout = v.ShutdownTimeout
 			}
+		case bindings.OptionReindexerInstance:
+			fmt.Printf("Unexpected internal builtinserver option: %#v\n", option)
 		default:
 			fmt.Printf("Unknown builtinserver option: %#v\n", option)
 		}
@@ -225,20 +243,20 @@ func (server *BuiltinServer) UpdateQueryTx(txCtx *bindings.TxCtx, rawQuery []byt
 	return server.builtin.UpdateQueryTx(txCtx, rawQuery)
 }
 
-func (server *BuiltinServer) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	return server.builtin.Select(ctx, query, asJson, ptVersions, fetchCount)
+func (server *BuiltinServer) Select(ctx context.Context, query string, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+	return server.builtin.Select(ctx, query, asJson, tmVersions, fetchCount)
 }
 
-func (server *BuiltinServer) SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	return server.builtin.SelectQuery(ctx, rawQuery, asJson, ptVersions, fetchCount)
+func (server *BuiltinServer) SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, tmVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+	return server.builtin.SelectQuery(ctx, rawQuery, asJson, tmVersions, fetchCount)
 }
 
 func (server *BuiltinServer) DeleteQuery(ctx context.Context, rawQuery []byte) (bindings.RawBuffer, error) {
 	return server.builtin.DeleteQuery(ctx, rawQuery)
 }
 
-func (server *BuiltinServer) UpdateQuery(ctx context.Context, rawQuery []byte) (bindings.RawBuffer, error) {
-	return server.builtin.UpdateQuery(ctx, rawQuery)
+func (server *BuiltinServer) UpdateQuery(ctx context.Context, rawQuery []byte, tmVersions []int32) (bindings.RawBuffer, error) {
+	return server.builtin.UpdateQuery(ctx, rawQuery, tmVersions)
 }
 
 func (server *BuiltinServer) EnableLogger(logger bindings.Logger) {
@@ -262,6 +280,7 @@ func (server *BuiltinServer) Finalize() error {
 		return err
 	}
 	C.destroy_reindexer_server(server.svc)
+	server.svc = 0
 	server.builtin = nil
 	server.shutdownTimeout = 0
 	return nil
@@ -285,4 +304,8 @@ func (server *BuiltinServer) Subscribe(ctx context.Context, opts *bindings.Subsc
 
 func (server *BuiltinServer) Unsubscribe(ctx context.Context) error {
 	return server.builtin.Unsubscribe(ctx)
+}
+
+func (server *BuiltinServer) DBMSVersion() (string, error) {
+	return server.builtin.DBMSVersion()
 }

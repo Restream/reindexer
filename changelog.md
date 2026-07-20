@@ -1,3 +1,665 @@
+# Version 5.15.0 (09.07.2026)
+## Core
+- [fea] Optimized ID-set intersection logic during queries. The new implementation adapts better to different ID distributions within sets
+- [fea] Added heap-based intersection for geo-queries with a large number of points. In certain scenarios, this can provide up to a 10x speedup (see the `RStarRTreePointDWithin/1%` benchmark)
+- [fea] Reduced the impact of background index optimization on write operations by increasing the granularity of optimization cancellation checks. Previously, background index optimization could trigger latency spikes for write operations
+- [fea] Made stack traces more informative for MUSL builds
+- [fea] Slightly optimized indexes memory layout under mixed write/read workloads
+- [fix] Fixed a bug with row invalidation in the joined cache
+- [fix] Added explicit error in case of `fulltext` index inside `JOIN's ON clause`. Previously those queries did not work correctly in the most of the cases
+
+## Fulltext
+- [fix] Fixed possible crash in long words (256+ bytes) indexing
+
+## Vector indexes
+- [fea] Added an optional [streaming fetch for HNSW indexes](float_vector.md#streaming-knn-hnsw). In this case, the query planner will rely on the query's final `limit`/`offset` instead of the `k` value
+
+## Replication
+- [fea] Added stricter checks for coroutine stack sizes
+- [fix] Fixed a rare issue where a RAFT cluster `leader` received a false error from Ping while another coroutine was handling an exception, causing it to fall back to the `candidate` role
+
+## Go connector
+- [fea] Optimized encoding/decoding logic for binary structures related to queries and query results
+- [fix] Fixed `NextObj` and joined-fields oncorrect interactions: previously it could generate panic even on the correct data
+
+## Build
+- [fea] Added `WITH_UBSAN` build option
+- [fea] Updated the base Docker image to `alpine:3.23`
+
+## Face
+- [fea] Changed format for the `Keep diacritics` option (`fulltext` indexes)
+- [fix] Fixed `Replication` table column width
+
+# Version 5.14.1 (23.06.2026)
+## Core
+- [fix] Fixed collisions in large index hash tables with extendible hashing
+
+# Version 5.14.0 (03.06.2026)
+## Core
+- [fea] Improved heuristic for scan order selection when a multi-condition query requires sorting but background index optimization has not run (typical for mixed read/write workloads)
+- [fea] Improved planner logic for scan order selection when explicit sorting is not required
+- [fea] Replaced hash value mixing logic for `composite` indexes. The new implementation significantly reduces collision probability on insert into `hash-composite` indexes (mean insert time reduced by 5-20% depending on composite value composition)
+- [fix] Fixed `checksum mismatch` error when loading data from disk after removing a UUID index
+
+## Fulltext
+- [fea] Added term splitting (handles missing whitespace). For example, query `leonardodicaprio` can now match a document with `Leonardo Di'Caprio`. See `EnableTermsSplit` and `SplitProc` in the [fulltext index config](fulltext.md#base-config-parameters)
+- [fix] Fixed search for terms ending with a dot-character (`.`) — previously this conflicted with incorrect keyboard layout search
+- [fix] Fixed `EnableTranslit` and `EnableKbLayout` flag behavior — since v5.12.0, transliteration and wrong keyboard layout search could not be disabled by setting these flags to `False`
+
+## Vector indexes
+- [fea] Added support for vector arrays in [auto-embedding on insert](float_vector.md#embedding-configuration). Auto-embedding can now be used for data chunking on the embedding service side
+
+## Reindexer server
+- [fea] Added HTTP endpoints `POST /api/v1/query/convert/dsl` and `POST /api/v1/query/convert/sql` to convert and prettify SQL/DSL queries
+- [fea] HTTP endpoint `GET /db/{database}/suggest` now returns parsing error details
+- [fix] Fixed `--max-http-req=0` flag behavior. A zero value now sets the maximum request size to `unlimited`
+
+## Reindexer tool
+- [fea] Added `dry-run` mode to validate a dump file without applying it. [More on validation](cpp_src/cmd/reindexer_tool/readme.md#what-dry-run-validates)
+- [fea] Added progress bar display while applying a dump
+
+## Go connector
+- [fea] Optimized CJSON encoding/decoding
+- [fea] Optimized Query building process
+
+## Build/Deploy
+- [fea] Added pre-built packages for Fedora 43/44
+- [upd] Deprecated Fedora 41/42 pre-built packages
+
+## Face
+- [fea] Added `queued_namespace_syncs` column to `Statistics` table
+- [fea] Implemented Backend-side `Prettify` for Frontend: the new prettify version not only formats the query but also places parentheses according to actual operator precedence
+- [fea] Improved error interpretation for SQL editor
+- [fea] Added `EnableTermsSplit` and `SplitProc` to `Fulltext` config
+- [fix] Fixed default value for UUID field
+
+
+# Version 5.13.0 (29.04.2026)
+## Core
+- [fea] Optimized [grouping equal positions](readme.md#search-in-array-fields-with-matching-indexes-using-grouping) comparator
+- [fea] Added implicit conversion between scalar values and single-value composites
+- [fea] Added extendible hashing into `hash`-indexes. This slightly increases mean insertion time, but makes it much more stable, allowing to avoid huge latency spikes on resizing
+- [fea] Improved estimate cost calculation for [equal_positions](readme.md#search-in-array-fields-with-matching-indexes)
+- [fix] Disallowed creating a `sparse` index over JSON fields with type 'object'. Previously this behavior could cause a few critical bugs and inconsistent states, and was mostly unusable. **This may break compatibility if you have object fields in your sparse indexes**
+- [fix] Fixed data migration on PK update, when some of the documents are marked as 'deleted'
+- [fix] Fixed support for subqueries on the left side of `WhereExpressions`
+
+## Fulltext
+- [fea] Reworked initial term variants generation logic. Now the search engine uses variants from previous steps to generate more variants on the current step. For example, variants received from the typos-handling mechanism will be used for stemming, etc.
+- [fea] Changed ranking for multiword synonyms. Now rank divides proportionally between all the new terms
+- [fea] Changed logic around [base ranking config](fulltext.md#base-ranking-config). Now full match will always have the best rank, and all the other base ranks will be proportionally decreased according to the configured values. **This may break compatibility in some cases, because from now on there is no way to make full-match rank lower than any other base rank**
+- [fea] `MinRelevancy` parameter in [config](fulltext.md#base-config-parameters) has been deprecated. Added new `MinRank` parameter, which covers the full ranking range
+- [fea] Deprecated `FuzzyTextIndex` and related configs were removed completely
+- [fix] Fixed crash during `IS NOT NULL` filtering condition and `EnablePreselectBeforeFt` index option interaction
+
+## Vector indexes
+- [fea] Added support for multiple vectors in a single field (i.e. [array vector indexes](float_vector.md#knn-search-by-array-indexes))
+- [fix] Fixed crash in dequantizing of empty (null) vectors during [quantization config update](float_vector.md#updating-and-disabling-quantization)
+
+## Reindexer server
+- [fea] Added memory limit for max response size (default value is 1 GB) to avoid unexpected OOMs. Limit may be changed via `net.max_http_rsp_size` yaml-config option, `--max-http-rsp` CLI flag or `RX_MAX_HTTP_RSP` Docker env
+- [fea] Optimized tags synchronization for Update/Delete queries (new logic allows reducing response sizes by cutting off CJSON tags dictionary)
+- [fea] Updated swagger to v5.32
+
+## Go connector
+- [fea] Bumped dependency versions and updated min Go version (v1.24.0)
+- [fea] Optimized some of the CJSON marshaling logic
+- [fea] Updated content returned in `IsSortable` and `Conditions` fields of the `IndexDescription` object. Now it corresponds to the actual index capabilities
+- [upd] Updated fulltext config structure according to changes in core fulltext indexes
+
+## Face
+- [fea] Added vertical resize for the JSON preview window on the `Index edit` page
+- [fea] Added new fields to the `Vector index settings`
+
+# Version 5.12.2 (07.04.2026)
+## Go connector
+- [fix] Fixed decoding of empty slice into single `interface{}`
+
+# Version 5.12.1 (03.04.2026)
+## Core
+- [fix] Fixed crash during error handling in `IndexUpdate` when PK is missing
+- [fix] Fixed `composite` values validation in `ALLSET` operator
+- [fix] Fixed `composite` indexes error handling in [equal_position](readme.md#search-in-array-fields-with-matching-indexes)
+- [fix] Fixed negative radius validation in `DWithin` condition for [geo index](readme.md#geometry)
+
+## Vector indexes
+- [fix] Fixed disk ANN cache for `composite` primary keys. Previously it could lead to crash on startup
+- [fix] Fixed KNN search with radius for [quantized HNSW index](float_vector.md#quantization-configuration-for-hnsw-index)
+
+## Go connector
+- [fix] Fixed type tags handling for empty slices
+
+# Version 5.12.0 (20.03.2026)
+## Core
+- [fea] Added [now()-function](readme.md#nowunit) support into `WHERE`-clause. Now it may be used both in `UPDATE SET` and `WHERE` clauses
+- [fea] Added [flat_array_len()-function](readme.md#flat_array_lenfield_name) into `UPDATE SET`. Now it may be used both in `UPDATE SET` and `WHERE` clauses
+- [fea] Added `checksum` field into `#memstats`-namespaces as better alternative for `datahash`
+- [fea] Changed [grouping logic for equal_position](readme.md#search-in-array-fields-with-matching-indexes-using-grouping). New syntax/logic has better match with standard json-paths and also supports nested arrays in explicit way
+- [fix] Fixed possible memory leak during `composite`-indexes substitution inside WHERE-clauses (in cases, when `int`->`string` conversion was performed before `composite` substitution)
+- [fix] Fixed SQL parsing for queries with combination of `or inner join(...)` and `left join(...)`
+- [fix] Fixed storage data migration, when Primary key index was changed
+- [fix] Fixed `2D points` conversion on WHERE-clause (previously it could lead to crashes on assertion)
+- [fix] Added explicit check for `rtree` Primary keys. [Geo-indexes](readme.md#geometry) can not be PK anymore
+- [fix] Fixed [forced sort](readme.md#forced-sort) errors handling for [KNN-queries](float_vector.md), when query has `LIMIT` and `OFFSET`
+- [fix] Fixed `UUID`->`string` conversions for nested arrays on `UUID`-index deletion
+
+## Fulltext
+- [fea] Added [optional terms boost](fulltext.md#base-config-parameters), that allows to set rank multiplier for specific terms
+
+## Vector indexes
+- [fea] Added 8 bit scalar quantization for HNSW-index. [Read more...](float_vector.md#quantization-configuration-for-hnsw-index)
+- [fea] Added more effective vectorized implementations for `L2`, `IP` and `cosine` metrics.
+
+## Replication
+- [fea] Added `checksum` check instead of `datahash` - `checksum` implementation has lower collisions rate and higher impact from each document's field
+- [fix] Fixed some rare case, when `temporary` namespace could remain alive after replication error
+
+## Reindexer server
+- [fea] Changed [FilterDef](https://github.com/Restream/reindexer/blob/v5.12.0/cpp_src/server/contrib/server.yml#L4161) in Query DSL: some of the fields were marked as deprecated and `left_expression`/`right_expression` were as more unified alternatives for better [functions](readme.md#functions) support and future filtering expressions development
+
+## Go connector
+- [fea] Added unified `WhereExpressions` method for better [functions](readme.md#functions) support and future filtering expressions development
+- [fix] Fixed deserialization crash for queries, where `inner join` stays before [equal_position](readme.md#search-in-array-fields-with-matching-indexes) in brackets
+
+## Face
+- [fea] Added `Explain` visualization for queries with [MERGE](fulltext.md#merging-queries-results)
+- [fea] Added `Boost for specific fulltext terms` into fulltext config tab
+- [fix] Fixed up/down buttons for custom field on pagination section
+- [fix] Fixed the issue related to the page opening in a new window from left bar
+- [fix] Fixed the issue related to the page opening in a new window from `Namespace` tabs
+- [fix] Fixed `Explain` table in `Query Builder`
+
+# Version 5.11.1 (05.03.2026)
+## Fulltext
+- [fix] Fixed possible heap-use-after in composite fulltext indexes, created over non-indexed fields
+- [fix] Fixed composite fulltext index cache invalidation after `UPDATE`-queries
+- [fix] Fixed deleted docs handling, when selection results exceeding `merge_limit` and there are multiple build steps in incremental index
+
+## Vector indexes
+- [fix] Fixed possible buffer overflow in transactions logic in case of multithreading insertion into `HNSW`
+
+# Version 5.11.0 (06.02.2026)
+## Core
+- [fea] Optimized indexes memory layout for namespaces with large amount of items. Index `IdSet`-structures now produce noticeably less overhead
+- [fea] Added support for `JOIN` on `composite`-indexes (i.e. queries like `SELECT * FROM ns1 INNER JOIN (SELECT * ns2) ON ns1.composite = ns2.composite`)
+- [fea] Added support for [serial()/now() precepts](readme.md#atomic-on-update-functions) with non-indexed fields
+- [fea] Added more optimal `preselect` for `JOIN`-queries in cases, when right namespace is small and right query does not have filtering conditions with `IdSets`
+- [fea] Added new `EXPLAIN` format for `SELECT`-queries with [MERGE](fulltext.md#merging-queries-results). Now it contains aggregated timing information and separate explains for each query
+- [fix] Fixed [serial()/now() precepts](readme.md#atomic-on-update-functions) with indexed fields, when target `jsonpath` is missing in document
+- [fix] Fixed `UPDATE`-queries for indexed fields, when target `jsonpath` is missing in document
+- [fix] Fixed indexing of empty arrays after `UPDATE`-queries: previously those arrays won't be selected by `IS NULL` condition
+- [fix] Fixed memory leak in `composite`-indexes after particular item update via `UPDATE` query
+- [fix] Fixed `UPDATE DROP` for `composite`-index parts, when `jsonpath` of subindex has nested field
+- [fix] Fixed `UPDATE`-query interaction with `null`-fields
+- [fix] Fixed handling for duplicate `sparse`-indexes in [DISTINCT](readme.md#aggregations) with multiple fields
+- [fix] Fixed storage data migration after `Primary key` index update
+
+## Fulltext
+- [fea] Changed indexing structure for [typos handling](fulltext.md#typos-algorithm). New structure has noticeably less memory consumption
+- [fea] Added support for `ORDER BY ft_composite` created over non-indexed fields
+- [fix] Fixed few incorrect interactions between `UPDATE`-queries and `text composite` index with `null`/missing fields
+
+## Vector indexes
+- [fix] Fixed situation, when some row IDs in `KNN` results with `range search` could be incorrect (due to missing internal/external index mapping)
+
+## Reindexer server
+- [fix] Fixed QPS in [Prometheus-metrics](cpp_src/readme.md#prometheus-server-side) for `SELECT`-queries (after `5.9.0` it was always equal to `UPDATE`-queries QPS)
+- [fix] Fixed `columns` list content in HTTP query results response (now it will contain full list of existing columns)
+
+## Face
+- [fea] Removed autocomplete from index fields for create/edit index forms
+- [fea] Added caching of added float vector data config
+- [fea] Deleted `is_appendable` field from index config
+
+# Version 5.10.0 (29.12.2025)
+## Core
+- [fea] Added [filtering by field length](readme.md#functions)
+- [fea] Optimized selection plan for `tree` `sparse`-indexes with `is null`/`is not null` conditions
+- [fea] Support multifield sort by `tree` `sparse`-indexes
+- [fea] Improved index detection logic for target fields in [update-queries](readme.md#update-queries) in cases, when `jsonpath` does not equal to `index name`
+- [fix] Fixed [arrays concatenation](readme.md#concatenate-arrays) for `sparse`-indexes
+- [fix] Fixed `assertion throw` for non-existing fields in [forced sort](readme.md#forced-sort)
+- [fix] Fixed multiple issues with `collate numeric` [index option](readme.md#index-types-and-their-capabilities): `null`-values handling and space characters handling
+- [fix] Fixed original strings content preservation for `collate ascii` and `collate utf-8` (previously those strings could be normalized)
+- [fix] Disabled invalid config with multiple `jsonpaths` for [geo indexes](readme.md#geometry)
+- [fix] Fixed `update drop` for heterogeneous arrays with `sparse`-indexes
+- [fix] Fixed array fields rollback for unsuccessful [update-queries](readme.md#update-queries) in some corner cases
+
+## Fulltext
+- [fea] Added [terms concatenation](fulltext.md#base-config-parameters). Enabled by default. Check `EnableTermsConcat` flag and `ConcatProc` value
+- [fix] Fixed crash on `null`-values with `enable_preselect_before_ft: true` index option
+
+## Vector indexes
+- [fea] Added `embed_input_traffic` and `output_traffic` [prometheus metrics](cpp_src/readme.md#prometheus-server-side) for [auto-embedding](float_vector.md#knn-search-with-auto-embedding)
+- [fea] Added `skip_embedding()` precept for vector fields. Check [embedding configuration](float_vector.md#embedding-configuration) for details
+- [fix] Fixed [auto-embedding](float_vector.md#knn-search-with-auto-embedding) statistics in `#perfstats` after vector index update
+
+## Replication
+- [fea] Added `queued_namespace_syncs` field into `#replicationstats`. It shows current `WAL`/`force`-sync queue size for each node
+- [fea] Improved namespaces sync ordering. Now replicator tries to achieve better vectors data sharing
+- [fea] Extended [admissible_replication_tokens](replication.md#configuration) functionality: now those tokens may be used on `leader` to protect it from role switch by other node (useful in scenarios, when `follower` has to become new `leader`)
+
+## Go connector
+- [fix] Fixed `panic` in case of `inner join` with closed namespace
+
+## C++ connector
+- [fea] Added support for array-fields setting via `Item::operator[]`
+
+## Reindexer tool
+- [fea] Improved interaction with between [DB dump restoration](cpp_src/readme.md#dump-and-restore-database) and [auto-embedding](float_vector.md#knn-search-with-auto-embedding): auto-embedding will be skipped for existing data
+
+
+# Version 5.9.1 (23.11.2025)
+## Build
+- [fea] Added `WITH_BUILTIN_LEVELDB` option into CMakeLists to optionaly merge `libleveldb.a` into `libreindexer.a`
+- [fea] Added `VERSION_SUFFIX` option into CMakeLists to parametrize package version string
+
+# Version 5.9.0 (21.11.2025)
+## Core
+- [fea] Added direct support for nested arrays storing/indexing in `JSON`, `CJSON` and `MsgPack` (i.e. JSONs like this `{ "id": 7, "arr": [ 1, "string", [ 1, 2, 3], { "field": 10 }] }` now may be stored into database)
+- [fea] Allowed to sort `null`-values in `hash`-indexes (including `null's` inside arrays). `Nulls`-order is now consistent for different indexes/fields: `null` is considering less than any other value. **This changes behavior for some queries with `sparse tree` indexes: previously `nulls`-order was inconsistent and had depent on the selection plan and index/field type**
+- [fea] Added `TagsMatcher's` info into `#memstats`
+- [fea] Added fields check according to current `StrictMode` for joined fields inside `ON`-clause
+- [fea] Added `Distinct`-support for `composite`-indexes
+- [fix] Fixed assertion in ordered queries with `Distinct` over fulltext-indexes
+- [fix] Fixed background index optimization in cases, when target index contains `null`-values
+- [fix] Fixed `CJSON`-corruption after `UPDATE`-queries with non-existing array indexes
+
+## Fulltext
+- [fea] Improved merging logic, when [MergeLimit](fulltext.md#base-config-parameters) is exceeded. Search engine will try to find documents with maximum corresponding terms. This may be slower, but provides better quality. You may set environment variable `REINDEXER_NO_2PHASE_FT_MERGE=1` to disable 2-phase merging and fallback to the old merge logic
+- [fea] Supported [select functions](fulltext.md#using-select-functions) for array values in composite indexes
+- [fix] Allowed to index `null`-fields in `fulltext composite` indexes
+
+## Vector indexes
+- [fea] Added performance metrics for [auto-embedding logic](float_vector.md#knn-search-with-auto-embedding). Check `indexes` performance stats in `#perfstats` namespace for details (make sure, that `perfstats` are enabled in `#config`)
+- [fix] Fixed segmentation fault in KNN-queries with `radius`, when target index is empty
+- [fix] Disabled vector indexes update/create operations, when namespace does not have PK-index (it could led to disk storage corruption)
+
+## Go connector
+- [fea] Added support for nested arrays into `CJSON`-coding/decoding
+- [fix] Fixed Transactions with `Update`/`Delete`-queries. Now such transactions will return actual count of items, affected by the queries
+
+## Reindexer server
+- [fea] Added [Prometheus-metrics](cpp_src/readme.md#prometheus-server-side) for [auto-embedding logic](float_vector.md#knn-search-with-auto-embedding)
+- [fix] Fixed screening in `api/v1/db/:db/namespaces/:ns/meta*` endpoints
+
+## Reindexer tool
+- [fix] Fixed screening in `\meta`-calls
+
+## Face
+- [fea] Added total for `Memory Statistics` of namespace
+- [fix] Fixed issue appeared on `Performance Statistics` refresh
+- [fix] Fixed Embedder's URL validation to allow local domains
+
+# Version 5.8.1 (05.11.2025)
+## Core
+- [fix] Fixed `INNER JOIN` in composition with multicolumn sort by `tree` index and `LIMIT`. Previously, `joined`-array could be missing in the result items, although the result itself was correct
+
+# Version 5.8.0 (23.10.2025)
+## Core
+- [fea] Added [new EqualPosition syntax](readme.md#search-in-array-fields-with-matching-indexes-using-grouping) to perform grouping conditions over object arrays
+- [fea] Added [MERGE support](hybrid.md#merging-queries-results) for hybrid select results
+- [fea] Optimized comparator for multifield `Distinct` (for conditions like `Distinct(field1,field2,...)`)
+- [fea] Added `Distinct` support for fulltext indexed (works the same way as `Distinct` for regular indexes)
+- [fea] Optimized selection plan for empty query results
+- [fix] Fixed error handling in `composite`-index update/delete operations
+- [fix] Fixed [DSN masking](cpp_src/readme.md#masking) in `#config`-namespace
+- [fix] Fixed token's positions in SQL parsing error descriptions
+- [fix] Fixed data race in namespaces renaming
+
+## Fulltext
+- [fea] Added extra strict validation for non-existing fields/indexes in [fulltext dsl](fulltext.md#text-query-format)
+
+## Vector indexes
+- [fea] Added vector's data sharing between multiple query results to reduce peak memory footprint for results, containing vectors
+
+## Replication
+- [fix] Fixed possible "split mind" in RAFT-cluster
+
+## Sharding
+- [fea] Added forced RAFT-leader elections request after proxying errors during `#replicationstats` request for more stable errors handling
+- [fix] Disabled sharding by vector indexes
+
+## Reindexer tool
+- [fix] Fixed interactive mode termination after error
+
+## Face
+- [fea] Added new `vectors keeper size` field to the Statistics page
+
+# Version 5.7.0 (18.09.2025)
+## Core
+- [fea] Added support for [sorting](readme.md#sort) with array fields (i.e. `ORDER BY array_field`)
+- [fea] Json-paths ordering for [composite indexes](readme.md#complex-primary-keys-and-composite-indexes) was made consistent and now depends on initial json-paths ordering in indexes definition array
+- [fea] Improved error messages in cases, when user tries to create new PK-index over the field with duplicated values
+- [fea] Optimized dynamic memory allocations count in [JOIN-queries](readme.md#join)
+- [fix] Fixed crash during `null`-values handling in [equal_position](readme.md#search-in-array-fields-with-matching-array-indexes)
+- [fix] Fixed quotes handling in [sort expressions](readme.md#sort)
+
+## Fulltext
+- [fea] Sufficiently optimized ranks merging loop for queries with large relevant results count (up to 25% performance boost according to our [CPP-benchmarks](cpp_src/gtests/bench))
+- [fix] Fixed composite fulltext indexes update when target index has individual fields configs
+- [fix] Fixed crash when indexing arrays with `enable_numbers_search`
+- [fix] Fixed fast-path index update
+
+## Reindexer server
+- [fea] Added support for transaction in Protobuf and MsgPack format (in `/api/v1/db/:db/namespaces/:ns/transactions` endpoint)
+- [fix] Fixed crash on incorrect JSON for `equal_positions` and `join_query` fields in Query DSL parser
+- [fix] Fixed response for [GRPC EnumNamespaces](cpp_src/readme.md#grpc-api) with `onlyNames`-option
+
+## CXX API
+- [fea] Added few more safety checks for `client::Reindexer`
+- [fix] Fixed handling of nested json-paths in `reindexer::Item::operator[]` (i.e. cases like `item["obj.field"] = 10`)
+- [ref] Method `Select(std::string_view sql)` was renamed to `ExecSQL(std::string_view sql)`
+- [ref] Removed deprecated `temporary` flag from namespace's `#memstat`
+
+## Deploy
+- [upd] Updated base docker image from `alpine:3.21` to `alpine:3.22`
+
+# Version 5.6.0 (29.08.2025)
+## Core
+- [fea] Added subqueries and `or inner join` support for [UPDATE](readme.md#update-queries-with-inner-joins-and-subqueries) and [DELETE](readme.md#delete-queries) queries
+- [fea] Added more informative error message in case of unsuccessful index creation
+- [fea] Improved [anti-join](#anti-join) handling (excessive braces do not required anymore)
+- [fea] Added more strict validation for incorrect conditions with LEFT JOINS
+- [fea] Improved protobuf/msgpack content validation
+- [fea] Added more strict validation for [UPDATE-queries](#update-queries) targeting non-array fields
+- [fix] Fixed SQL/DSL(JSON) parsing of `NOT`-operator inside JOIN's ON-clause
+- [fix] Fixed case-insensitive namespaces names in DSL(JSON) queries
+- [fix] Fixed automatic indexes substitution for array-indexes with multiple `jsonpaths` and `sparse`-indexes
+- [fix] Fixed compatibility in empty arrays JOINs
+- [fix] Fixed incorrect LIMIT handling in queries with combination of array-field [DISTINCT/multi-DISTINCT](readme.md#aggregations) and [forced sort](readme.md#forced-sort)
+- [fix] Fixed `matched` field value in `explain` results for conditions with `NOT` operators
+
+## Vector indexes
+- [fea] Added automatic fallback in [hybrid query](hybrid.md), when [embedder](float_vector.md#embedding-configuration) is not available. This query will be executed as pure fulltext query without KNN-part
+- [fix] Fixed incorrect handling of the deleted vectors by [KNN-conditions](float_vector.md#knn-search) with `radius`
+- [fix] Changed [embedders](float_vector.md#embedding-configuration) validation logic to avoid indexes creation error on startup
+
+## Replication
+- [fea] Added proxying for UPDATE and DELETE queries with subqueries and inner joins
+
+## Reindexer tool
+- [fea] Added [storage conversion tool](cpp_src/readme.md#converting-storage-type-for-existing-database)
+
+## Deploy
+- [upd] Added deployment for `debian:13` (trixie)
+- [upd] Removed deployment for `debian:11` (bookworm)
+
+## Face
+- [fea] Added new fields to fulltext index config (`keep_diacritics`, `min_word_part_size` and `word_part_delimiters`)
+- [fix] Fixed ms measure for statistics column titles
+
+# Version 5.5.0 (31.07.2025)
+## Core
+- [fea] Added support for `INNER JOIN` (as filters) in `UPDATE`/`DELETE`-queries, including queries with self-joins (`UPDATE ns1 SET v=1 INNER JOIN ns1 ON ns1.idx IN ns1.allowed_ids INNER JOIN ns2 ON ns1.prices = ns2.price_id`)
+- [fea] Added support for mixed field types (scalars + arrays) into [multifield DISTINCT](readme.md#aggregations)
+- [fea] Added support for `JOINs` between null-values
+- [fix] Fixed multi-fields sort by `composite` indexes with `tree`-type (i.e. cases with `ORDER BY tree_composite_1, other_filed`)
+- [fix] Fixed PK index validation: now it can't be created, if there are duplicated values in the target field
+
+## Vector indexes
+- [fea] Change [auto-embedding API](embedders_api.yaml) for more embedding flexibility and future chunking support
+- [fix] Fixed data-race in distance calculation in multithread HNSW index
+- [fix] Fixed crash in `QueryResults` containing combination of multiple null/non-null vectors fields
+- [fix] Fixed error handling in case of inappropriate index update
+
+## Fulltext
+- [fea] Added specific handling for composite words with delimiters (e.g., `resident's`, that may be splitted into `resident` and `s`, or `Biot–Savart`, that may be splitted into `Biot` and `Savart`). Check `WordPartDelimiters` and `MinWordPartSize` [config fields](fulltext.md#base-config-parameters). Default value of the `ExtraWordSymbols` was also changed due to this feature
+- [fix] Fixed phrase search with `composite fulltext` indexes
+
+## Replication
+- [fix] Fixed logical race in async replication role switch of the target follower (may lead to unnecessary resync)
+- [fix] Added check for the replication role in `DropNamespace`-call (now follower's namespaces can't be deleted by user, if replication is active)
+
+## Go connector
+- [fea] Change interface of `NewReindex()`-call. Now it returns current status in `error` to force user to check DB's status
+- [fix] Changed `SetDefaultQueryDebug()` for better corner cases handling
+
+## Reindexer server
+- [fea] Support [multifield DISTINCT](readme.md#aggregations) in proto-schemas
+- [fix] Fixed integer types support in [Protobuf interface](cpp_src/readme.md#protobuf). **This breaks compatibility with old protobuf clients and requires repeated client generation for the new schema**
+
+## Reindexer tool
+- [fea] Added `-n`/`--namespaces` options to specify namespaces list, that will be restored from the dump file
+- [fix] Fixed erros output during dump restoration process
+
+## Face
+- [fea] Added validation of URL field in Auto-embedding Config form
+- [fea] Added blocking of `is_no_column` field for the composite field type
+- [fea] Added measures conversion for "String waiting to be deleted size" field
+- [fea] Removed default value for `radius` field in vector indexes config
+- [fix] Fixed error that appeared on statistics reset
+
+# Version 5.4.0 (27.06.2025)
+## Core
+- [fix] Added ignore empty sorting expression
+- [fix] Fixed invalidation of index cache
+- [fix] Added validation of types of arguments of condition `Set` in query
+- [fix] Added validation of types of arguments of forced sort
+- [fix] Turned off of optimization of forced sort by fulltext index
+- [fix] Fixed parsing of invalid item json
+- [fix] Added validation of operation `OR` in `join` `ON` statement
+
+## Vector indexes
+- [fea] Added [hybrid](hybrid.md) Fulltext and KNN query
+- [fea] Added [`radius`](float_vector.md#knn-search) search-parameter in KNN query
+- [fea] Added [`radius`](float_vector.md#creation) parameter in KNN index
+- [fea] Added [embedding action](float_vector.md#create-embedding-for-existing-documents)
+- [fea] Added selective rebuild vector index on the index's config update
+
+## Fulltext
+- [fea] Added ignore accent and vocalization marks. Check `keep_diacritics` in the fulltext index config
+- [fix] Fixed search by phrase with binary operator
+
+## Replication
+- [fea] Removed compatibility with V3-followers
+- [fix] Fixed possible `lsn` breaking during `WAL sync`
+
+## Go connector
+- [fix] Added support for condition `LIKE` in dsl query parser
+- [fix] Added validation of item values types in cjson parser
+
+## Reindexer server
+- [fix] Added parameter `width` in `HTTP` method `GET /db/{database}/namespaces/{name}/items`
+- [fix] Fixed format of result of `HTTP` method `POST /db/{database}/query`
+
+## Face
+- [fea] Added the index name locking during editing
+- [fea] Improved validation of the embedding configuration
+- [fea] Added the `radius` option to the vector index configuration
+- [fix] Fixed the inability to save an item if any of the item fields has a null value
+- [fix] Fixed a validation error that made it impossible to clear the Query embedding configuration
+- [fix] Fixed an error when canceling selected items for deletion
+- [fix] Fixed `max_typos` tooltips
+- [fix] Fixed the error of substituting default values of the profiling config
+
+# Version 5.3.0 (27.05.2025)
+## Core
+- [fea] Added random sorting via `hash()`/`hash(seed)` functions in [sort expressions](readme.md#sort)
+- [fea] Added support for exponential numbers in SQL parser
+- [fea] Allow to switch index type (from `array` to `scalar` and from `scalar` to `array`) for empty namespaces via `UpdateIndex` interface
+
+## Vector indexes
+- [fea] Added optional built-in [auto-embedding cache](float_vector.md#embedding-cache-configuration) with hybrid (RAM+disk) structure
+- [fea] Optimize single modification requests for `HNSW` indexes with enabled `multithreading` option. Now they have the same performance as `HNSW`-indexes with disabled `multithreading`
+- [fix] Fixed `AVX512` implementation of `L2` distance calculation for some specific dimensions count
+
+## Replication
+- [fix] Fixed possible hanging/timeout in `set_leader_node` config action
+
+## Sharding
+- [fix] Fixed incorrect sorting by expressions in distributed queries
+
+## Reindexer server
+- [fix] Fixed race in connections Listener during server termination
+
+## Reindexer tool
+- [fea] Added multithreading into dump restoration process. This allows to restore dumps with multiple namespaces 2.5-3 times faster if network is good enough
+- [fea] Added optional transactions into dump restoration process (`--txsize` option). This allows to speedup dumps restoration on local hosts a little more
+
+## Go connector
+- [fea] Improved parsing for `ttl`-index tags. Now `expire_after=xxx` option may be combined with any other options (like `dense` or `is_no_column`)
+- [fix] Fixed [events stream](readme.md#events-subscription) drop on idle connections
+
+## Build
+- [fea] Added `uninstall` target for `make`
+
+## Face
+- [fea] Added default configs requests from the backend
+- [fea] Added new fields for auto-embedding cache to `Statistics` -> `Memory`
+- [fix] Fixed items view on using query with `like`
+- [fix] Fixed Vector values disappearing issue that appeared on items deleting
+- [fix] Fixed result value view on using query with `distinct`
+
+# Version 5.2.1 (16.05.2025)
+## Core
+- [fix] Fixed [forced sort](readme.md#forced-sort) with `sparse` indexes
+
+## Fulltext
+- [fix] Fixed zero `rank` values in cached fulltext results
+
+## Replication
+- [fix] Added missing timeouts into replication requests/connections
+
+## Reindexer server
+- [fix] Fixed conflict between `OpenSSL's` handshake and connection rebalancing. Previously, this could lead to connections hanging
+
+## Go connector
+- [fix] Added missing `is_sortable` and `conditions` fields into `IndexDescription`. Information in these fields was actualized according to the current indexes behavior
+
+# Version 5.2.0 (29.04.2025)
+## Core
+- [fea] Added support for `distinct` with multiple fields (i.e. something like `distinct(field1, field2, field3)`)
+- [fea] Allowed `null`-values inside `IN()`-clause (they automatically will be transformed into `OR IS NULL`)
+- [fea] Made `IS NULL`/`IS NOT NULL` behavior more consistent between `sparse`-indexes and `non-indexed`-fields. Check [readme](readme.md#null-values-filtration) for more details
+- [fea] Added extra validation for `sprase` indexes. Previously incorrect values in those indexes were silently ignored and from now they will produce errors on insertion
+- [fix] Fixed crash in vector index during `index drop` operation
+- [fix] Fixed timings calculations in `#perfstats`/`#queriesperfstats`
+- [ref] Changed `Connect()`-method behavior. Now this call is required before any other database calls. **This may require changes in C++ code, that uses Reindexer**
+
+## Replication
+- [fea] Added optional [replication_token](replication.md#configuration) mechanism for extra validation
+- [fea] Added execution timeouts for all replication's queries
+- [fix] Fixed possible transaction's steps reordering in synchronous cluster proxy
+
+## Reindexer server
+- [fea] Added `GET /api/v1/db/default_configs` method to get default config JSONs
+- [fix] Fixed possible heap-use-after-free during RPC server termination
+- [fix] Fixed segfault in case of incorrect items format
+
+## Go connector
+- [fea] Added `DBMSVersion`-method to get builtin/remote `reindexer` version
+- [fea] Added [events](readme.md#events-subscription) on `forced`/`WAL` synchronization
+- [fea] Added support for multi-fields `distinct`. `AggregationResult` struct was slightly changed. **This requires changes in Go code that uses Distinct: for the single field distinct just take values with 0 index in each slice**
+- [fix] Fixed heap-user-after free in `DB.Close()`-call when `ActivityStats` flag was enabled
+
+## Build
+- [fix] Updated min cmake versions to fix build with latest `cmake`
+
+## Deploy
+- [fea] Added prebuilt package for `fedora:42`
+- [upd] Deprecated `fedora:40` repository
+
+## Face
+- [fea] Added embedding settings for the `float_vector` index types
+- [fea] Disabled the `is_no_column` flag for `sparse`-indexes
+- [fea] Changed the `is_no_column` flag visibility from disappearing to disabling
+- [fix] Fixed the Save button on the Config form after switching to the Schema tab
+
+# Version 5.1.0 (07.04.2025)
+## Core
+- [fea] Added separate `is_no_column` index option, which allows to disable column subindex (previously this option was included into `is_dense`)
+- [fix] Fixed race on concurrent creation of the same namespace by multiple users/replication
+- [fix] Fixed crash in strings comparator for `sparse`-indexes
+- [fix] Fixed timeout handling in `UPDATE`-queries
+- [fix] Disallowed to create `sparse PK` indexes
+
+## Vector indexes
+- [fea] Allow to use empty/null vector values in `UPDATE`-queries with `set`
+- [fea] Added support for `IS NULL`/`IS NOT NULL` conditions with indexed vector fields
+- [fea] Added [autoembedding logic](float_vectors.md#embedding-configuration) with external user's service for single documents insertion/modification, transactions and [SELECT-queries](float_vectors.md#knn-search-with-auto-embedding)
+- [fix] Fixed race in concurrent deleted point reusing in `HNSW` multithread transactions
+- [fix] Fixed vector index rebuild on config update
+
+## Replication
+- [fix] Fixed replicated `WAL` size on the `follower` after `force sync`
+
+## Reindexer server
+- [ref] Removed `autorepair` logic and related flags due to undesirable side effects. LevelDB's repair call could lead to sufficient storage slowdown, so any repair operations should be intentionally called via `reindexer_tool`
+
+## Go connector
+- [fix] Fixed possible `heap-use-after-free` in background results recycling logic after database closing (in `builtin`/`builtinserver` modes)
+- [fix] Fixed possible `heap-use-after-free` in `UnsubscribeUpdated()`-call during `builtinserver` termination
+
+## Face
+- [fea] Added `sync_state` labels for async and sync replications
+- [fea] Added new NC config fields: `ann_storage_cache_build_timeout_ms` and `tx_vec_insertion_threads`
+- [fea] Added new parameters for the `float_vector` index
+- [fea] Added `is_no_column` field to Indexes
+- [fix] Added info message about exceeding the acceptable MAX_SAFE_INTEGER value
+- [fix] Blocked unnecessary scheme saving
+
+# Version 5.0.1 (13.03.2025)
+## Core
+- [fix] Fixed incorrect aggregations (`min`, `max`, `avg`, `sum`) interaction with [force sort](readme.md#forced-sort)/`hash`-index sort and `LIMIT`
+- [fix] Fixed undefined behaviour in one of the background threads (it was the reason of the stalls on `Windows`-platform)
+- [fix] Fixed OSX build for `python` connector
+
+## Vector indexes
+- [fix] Fixed `cosine` normalization coefficient update in `HNSW` after corresponding vector reuse
+- [fix] Fixed multithread `HNSW` transactions with empty/null vector values
+- [fix] Fixed multithread `HNSW` transactions with multiple updates of the same item
+- [fix] Fixed possible incorrect `DELETE`-queries handling in multithread `HNSW` transactions
+- [fix] Fixed data race in multithread `HNSW` transactions after deleted vector reuse
+
+## Face
+- [fix] Fixed issue on the item list getting with checked `with_vectors` field
+- [fix] Changed disabled selectors background
+- [fix] Changed some column titles on the `Statistics` -> `Memory` -> `NS` (RU version)
+- [fix] Fixed displaying of aggregation fields view
+
+# Version 5.0.0 (04.03.2025)
+## Core
+- [fea] Added `HNSW`, `IVF` and `bruteforce` indexes for [ANN-search](float_vector.md)
+- [fea] Optimized internal memory layout for [key_strings](cpp_src/core/payload/readme.md#key_string) (allows to reduce memory consumption for each indexed string and each unique `-tuple`)
+- [fea] Added separate CJSON tag for float values for more effective memory consumption and JSON serialization (CPP/Go-bindings will use it automatically)
+- [fix] Fixed internal meta flush on namespace close (fixes false positive warning about datahash missmatch on database load)
+- [fix] Fixed incorrect `DISTINCT`, [force sort](readme.md#forced-sort) and `LIMIT` interaction
+- [fix] Fixed incorrect `force sort` and `always_false` virtual query entry interaction
+- [fix] Fixed possible `heap-use-after-free` error in documents with deep nested object-arrays
+- [fix] Fixed `segfault` on attempt to create array value with `precept`
+
+## Replication
+- [fix] Disabled buggy statement-based replication for `DELETE`-queries
+- [fix] Fixed WAL references cleanup for `TRUNCATE`-queries and `DELETE`-queries
+
+## Reindexer server
+- [fea] Added `--version` flag to output version information
+- [fea] Migrated to `openapi 3.0.1` in [REST API description](cpp_src/server/contrib/server.yml)
+
+## Reindexer tool
+- [fea] Added `--version` flag to output local version information and `\version` command to output remote server version information
+- [fix] Fixed `with_shard_id` env behavior
+
+## Go connector
+- [fea] Added support for tags related to `vector indexes` configuration
+- [fix] Fixed nil-values handling in item modification operations (`Insert`, `Delete`, etc.)
+
+## Build
+- [upd] Updated to C++20
+
+## Deploy
+- [fea] Enabled `ENABLE_V3_FOLLOWERS` flag for all prebuilt packages (this flag allows to Reindexer v5 to be a `leader` for Reindexer v3 followers). This is temporary functionality
+- [upd] Deprecated deploy for `ubuntu:20.04` packages
+- [upd] Packages were renamed to `reindexer-dev` and `reindexer-server` (without explicit major version)
+
+## Face
+- [fea] Added new Field type: float_vector.
+- [fea] Renamed fulltext_size to indexing_struct_size on the Memstats page
+- [fea] Added the "Vector fields" toggle to get the Vector fields
+- [fix] Fixed the Index configuration filling for non-text and non-vector indexes
+- [fix] Fixed the namespace name position in the page title
+
 # Version 4.20.0 (04.02.2025)
 ## Core
 - [fea] Optimized indexed strings memory layout (each unique indexed string now requires 20-36 bytes less memery, depending on platform)
@@ -34,8 +696,8 @@
 
 ## Reindexer server
 - [fea] Added `OpenSSL` support for HTTP-server (`https`) and RPC-server (`cprotos`). [Read more...](cpp_src/readme.md#tls-support)
-- [fea] Added special user roles `sharding` and `replication` with all required rights and restrictions for correspondig scenarios
-- [fea] Added support for SHA256/SHA512-based encription for user's passwords in `users.yml`. [Read more...](cpp_src/readme.md#authentication)
+- [fea] Added special user roles `sharding` and `replication` with all required rights and restrictions for corresponding scenarios
+- [fea] Added support for SHA256/SHA512-based encryption for user's passwords in `users.yml`. [Read more...](cpp_src/readme.md#authentication)
 - [fea] Added HTTP method `GET api/v1/user/role` to check current user's role
 - [fix] Fixed possible update buffer overflow for [events subscription](readme.md#events-subscription) in TCP-mode
 
@@ -57,7 +719,7 @@
 - [fix] Fixed possible origin LSN missmatch in snapshots during WAL/Force syncs
 
 ## Reindexer server
-- [fix] Fixed logical operations (`or`, `not`) parsining in JSON DSL joined queries
+- [fix] Fixed logical operations (`or`, `not`) parsing in JSON DSL joined queries
 
 ## Ported
 - [fea/fix] Ported all the fixes and features from [v3.29.0](https://github.com/Restream/reindexer/releases/tag/v3.29.0)
@@ -76,7 +738,7 @@
 
 ## Go connector
 - [fix] Unexported fields and fields, marked with `"json":-`, will not create indexes anymore (including nested ones). Check updated example [here](readme.md#nested-structs)
-- [fix] Unexported fields, makred with `joined` now produce explicit error (previously such fields silently did not work)
+- [fix] Unexported fields, marked with `joined` now produce explicit error (previously such fields silently did not work)
 
 ## Deploy
 - [fea] Added `RedOS 8` prebuilt packages
@@ -113,7 +775,7 @@
 # Version 4.17.0 *beta* (16.08.2024)
 ## Core
 - [fea] Updated [logging library](https://github.com/gabime/spdlog) to v1.14.1 and [formatting library](https://github.com/fmtlib/fmt) to v11.0.2
-- [fea] Optimized log level checks to avoid excessive serializtion in core logs
+- [fea] Optimized log level checks to avoid excessive serialization in core logs
 - [fea] Added support for [array_remove](readme.md#remove-array-elements-by-values) with scalar values in SQL
 - [fea] Added support for [array_remove](readme.md#remove-array-elements-by-values) with non-integral values
 - [fix] Disabled default values creation for object array indexes to avoid Go/Java connectors incompatibility
@@ -124,12 +786,12 @@
 - [fix] Disable network compression on Windows (it some cases it may lead to crashes)
 
 ## Reindexer tool
-- [fix] Fixed possible stucking in interactive mode on Windows
-
+- [fix] Fixed possible hang in interactive mode on Windows
+## Replication
 # Version 4.16.0 *beta* (26.07.2024)
 
 ## Reindexer server
-- [fea] Added RPC API for updates subcription
+- [fea] Added RPC API for updates subscription
 
 ## Go connector
 - [fea] Added database [events subscription](readme.md#events-subscription)
@@ -146,7 +808,7 @@
 
 ## Face
 - [fea] Increased max allowed value of the `position_boost` field
-- [fea] Added "Minimum preselect size for optimization of inner join by injection of filters" field to NS config 
+- [fea] Added "Minimum preselect size for optimization of inner join by insertion of filters" field to NS config 
 - [fea] Added `UUID` index type to PK options
 - [fix] Fixed the issue related to Aggregation result displaying
 - [fix] Fixed the pagination issue
@@ -163,11 +825,11 @@
 
 ## Core
 - [fea] Optimized comparators execution logic to avoid excessive runtime checks
-- [fea] Rewritten comparators for the composite indexes. New version does not extracts fields from the tuple in the each iteration. Overall performance boost for queries with composite conditions is up to ~40%
-- [fea] Added extra column subindex for the `hash`/`tree`-indexes. It requires extra memory, but gives ~20-50%% overall speedup (depending on the indexes selectivity). The column subindex may be disabled with the `dense` index option
+- [fea] Rewritten comparators for the composite indexes. The new version does not extract fields from the tuple in each iteration. Overall performance boost for queries with composite conditions is up to ~40%
+- [fea] Added extra column subindex for the `hash`/`tree`-indexes. It requires extra memory, but gives ~20-50%% overall speedup (depending on the indexes' selectivity). The column subindex may be disabled with the `dense` index option
 - [fea] Optimized general sorting logic for the `hash`/`store`-indexes: now it uses column subindexes if possible for the cache efficiency. In some cases this approach provides up to 45% performance gain for the low-selectivity indexes
-- [fea] Added extra column subindex for the `string` `store(-)` indexes. Previosly `store(-)` indexes have used the column for `int`, `int64`, `double`, `uuid` and `bool` types only. The column subindex may be disabled with the `dense` index option
-- [fix] Fixed types conversions for non-index fields in the select quieries
+- [fea] Added extra column subindex for the `string` `store(-)` indexes. Previously `store(-)` indexes have used the column for `int`, `int64`, `double`, `uuid` and `bool` types only. The column subindex may be disabled with the `dense` index option
+- [fix] Fixed types conversions for non-index fields in the select queries
 
 ## Go connector
 - [fix] Fixed `WhereUUID`-method. Now it works for non-index fields too
@@ -193,23 +855,23 @@
 - [fix] Fixed the search panel layout on the NS page
 - [fix] Fixed the incorrect message about the empty result of the Explain operation
 - [fix] Fixed caching of the NS config 
-- [fix] Fixed the inform window that appeared on the Cancel button on the NS Config page
+- [fix] Fixed inform window that appeared on the Cancel button on the NS Config page
 - [fix] Removed ESlint popup
 - [fix] Fixed the layout issues on the Index form
 - [fix] Fixed "see & edit" link on the Queries Perfstats page
-- [fix] Fixed the concole issue appeared on the SQL -> Explain query
-- [fix] Fixed extra data uploading on the Performace page
+- [fix] Fixed the console issue appeared on the SQL -> Explain query
+- [fix] Fixed extra data uploading on the Performance page
 - [fix] Fixed the console issues on the add/edit indexes
 - [fix] Fixed the mergeLimit variable
 
 # Version 4.14.0 *beta* (22.02.2024)
 
 ## Core
-- [fea] In C++ `Reindexer::Connect`-call is now thread-safe
+- [fea] In C++ `Reindexer::Connect`- call is now thread-safe
 
 ## Replication
 - [fea] Added more data consistency checks for the force syncs
-- [fix] Fixed situation, when some of the concurrently written documents could be lost during RAFT leader resync in case of leader's switch
+- [fix] Fixed situation, when some concurrently written documents could be lost during RAFT leader resync in case of leader's switch
 - [fix] Fixed possible request timeouts on the user's `set_leader_node` command
 - [fix] Fixed possible request timeouts during leadership transition
 - [fix] Fixed possible deadlock on the initial leader sync during sharding config synchronization
@@ -246,7 +908,7 @@
 - [fix] Fixed the empty space between the last NS and the Total section on the Memory page
 - [fix] Fixed the title changing on the NS page during a new NS creating
 - [fix] Fixed the tooltip position in the sidebar menu
-- [fix] Fixed “+” button for the Expire after field
+- [fix] Fixed “+” button for the Expires after field
 
 # Version 4.13.0 *beta* (22.12.2023)
 
@@ -304,7 +966,7 @@
 - [fix] Fixed the column titles in the table settings menu on the Performance page
 - [fix] Added the validation of the negative values for the index settings
 - [fix] Fixed the SQL query result table
-- [fix] Fixed the aggrigation panel
+- [fix] Fixed the aggregation panel
 - [fix] Fixed the items sorting 
 - [fix] Fixed the last column settings
 
@@ -337,21 +999,21 @@
 - [fix] Fixed server connections drops after outdated Close() call from RPC-client
 
 ## Go connector
-- [fix] Fixed client connections drops after some of the queries time outs (CPROTO)
+- [fix] Fixed client connections drops after some queries time outs (CPROTO)
 
 ## Replication
 - [fix] Fixed server ID validation
 
 ## Sharding
 - [fea] Changed default sorting order for distributed query results. If explicit sort was not requested, results will be sorted by shard IDs
-- [fix] Fixed reconnect between shards with RAFT cluster in case, when shard config does not contain all of the RAFT nodes
+- [fix] Fixed reconnect between shards with RAFT cluster in case, when shard config does not contain all the RAFT nodes
 
 ## Ported
 - [fea/fix] Ported all the features and fixes from [v3.13.2](https://github.com/Restream/reindexer/blob/v3.13.2/changelog.md#version-3132-23022023) and [v3.14.0](https://github.com/Restream/reindexer/blob/v3.14.0/changelog.md#version-3140-18032023)
 
 ## Face
 - [fea] Added the information about supported browsers
-- [fea] Replaced the Create new database label to the Choose a database in the main menu
+- [fea] Replaced 'Create new database' label to the Choose a database in the main menu
 - [fea] Forbade entering cyrillic symbols for DB and NS titles
 - [fea] Added the ability to rollback to the default DB config
 - [fea] Improved the filtering on the Namespace page
@@ -362,13 +1024,13 @@
 - [fea] Fixed the ability to change the Item limit on the page if it exceeds the item total
 - [fix] Added the redirect from a selected namespace to the index page during the DB changing
 - [fix] Fixed the pagination on the Connections page
-- [fix] Fixed minor issues with Queriesperfstats and Explain features
+- [fix] Fixed minor issues with Queries Perfstats and Explain features
 - [fix] Fixed the filtered list of Namespaces on the Memory page
 - [fix] Fixed the item list after removing of all items on a page
 - [fix] Fixed the displaying of the empty and fact result at the same time
 - [fix] Fixed the redirect to the Explain page during loading new items on the List and Grid list on the QUERY -> SQL page
 - [fix] Fixed the error appeared on the list resizing on the Query Builder page
-- [fix] Fixed the infinity requests to namespases on the Config page
+- [fix] Fixed the infinity requests to namespaces on the Config page
 - [fix] Fixed boolean values displaying in the Grid view 
 - [fix] Fixed the validator of the tag field
 - [fix] Fixed the error on the Explain page
@@ -385,7 +1047,7 @@
 
 ## Sharding
 - [fea] Added support for range-based based shard configs (check [sharding config example](cpp_src/cluster/sharding/sharding.conf) for details)
-- [fix] Fixed distibuted multishard queries for namespaces with upper case names
+- [fix] Fixed distributed multishard queries for namespaces with upper case names
 
 ## Go connector
 - [ref] Added version postfix to the modules' name (.../reindexer -> .../reindexer/v3)
@@ -413,19 +1075,19 @@
 
 # Version 4.7.0 *beta* (13.12.2022)
 ## Replication
-- [fea] Added `online_updates_delay_msec` param for async replication config. It significantly improves online updates batching and reduces CPU consumation for async online-replication.
-- [fea] Added config-action `set_log_level` and config-option `log_level` for sync/async replication to control replication logs independantly from main logs.
-- [fea] Improved overal online-replication performance
-- [fix] Fixed stucking on local namespaces requests, when cluster leader is not chosen
+- [fea] Added `online_updates_delay_msec` param for async replication config. It significantly improves online updates batching and reduces CPU consumption for async online-replication.
+- [fea] Added config-action `set_log_level` and config-option `log_level` for sync/async replication to control replication logs independently from the main logs.
+- [fea] Improved overall online-replication performance
+- [fix] Fixed stacking on local namespaces requests, when cluster leader is not chosen
 - [fix] Fixed compression flag (it was also fixed for C++ Reindexer's client)
 
 ## Build/Deploy
 - [fea] Added support for RedOS 7
 
 ## Face
-- [fea] Added tooltips to the sidbar buttons
+- [fea] Added tooltips to the sidebar buttons
 - [fea] Renewed the Onboarding UI
-- [fea] Replaced the scrolly component with the vue-scroll one
+- [fea] Replaced the scroll component with the vue-scroll one
 - [fea] Removed the "Pended updates" field from Statistics->Connections
 - [fea] Added strings_waiting_to_be_deleted_size to Statistics -> Memory for NC
 - [fea] Added the data-test attribute
@@ -433,9 +1095,9 @@
 - [fea] Added a default value for Rtree type
 - [fea] Made visible the default options of namespaces
 - [fix] Fixed console errors appeared on hover for the Client cell in the Current Statistics
-- [fix] Fixed disapiaring of the Item table part on the Namespace page
+- [fix] Fixed disappearing of the Item table part on the Namespace page
 - [fix] Fixed sending NULL value for max_preselect_part
-- [fix] Removed oldated libraries usage
+- [fix] Removed use of obsolete libraries
 - [fix] Fixed the column width resizing on the page reloading
 - [fix] Fixed the Expand/Collapse actions for lists
 - [fix] Fixed the Collapse all button on the Namespace page
@@ -446,7 +1108,7 @@
 
 # Version 4.6.1 *beta* (17.11.2022)
 ## Go connector
-- [fea] Add go.mod file with dependecies versions
+- [fea] Add go.mod file with dependencies versions
 - [ref] Cproto binding now requires explicit import of the `_ "github.com/restream/reindexer/bindings/cproto"`-module
 
 ## Repo
@@ -460,7 +1122,7 @@
 - [fea] Totally replace deprecated CPP-client with the new one
 
 ## Reindexer server
-- [fea] Add new logic for shared thread pool, which allows to create thread on request. Dedicated mode does not required for cluster and sharding anymore
+- [fea] Add new logic for shared thread pool, which allows to create thread on request. Dedicated mode is no longer required for cluster and sharding anymore
 - [fea] `enable-cluster` flags was deprecated. Cluster does not need any explicit options now
 
 ## Reindexer tool
@@ -470,7 +1132,7 @@
 - [fea] Add the Namespace settings button to the Namespace list
 - [fea] Add the ability to pin Namespaces in the Namespace list
 - [fea] Add the enable_preselect_before_ft option to the indexconfig
-- [fea] Improve the Precepts UI 
+- [fea] Improve the Precepts UI
 - [fea] Make the "Gear" button visible for tables
 - [fea] Redesign the Statistics->Memory page
 - [fea] Redesign the Statistics->Performance page
@@ -478,7 +1140,7 @@
 - [fea] Redesign the feature of the column resizing
 - [fix] Fix UI availability with DB config issues
 - [fix] Fix a misprint in the database config
-- [fix] Fix the issue with Scrolly on the Statistic spage
+- [fix] Fix the issue with Scroll on the Statistic page
 - [fix] Fix the title of the index editor
 - [fix] Remove the search bar from the Indexes page
 
@@ -497,7 +1159,7 @@
 - [fix] Fix potential connection leak
 
 ## Face
-- [fea] Increase cache life-time of a few resorses basing on Google recommendation
+- [fea] Increase cache life-time of a few resources basing on Google recommendation
 - [fea] Add strict_mode to the NS config
 - [fix] Fix the uptime issue
 - [fea] Add `max_areas_in_doc`, `max_total_areas_to_cache`, `optimization` to Indexes
@@ -506,7 +1168,7 @@
 - [fea] Add the pagination instead of the 'load more' feature
 - [fix] Fix the value array clearing
 - [fix] Change column headers on the Statistics -> Queries page
-- [fea] Add a fllag of the server unavailability 
+- [fea] Add a flag of the server unavailability 
 - [fea] Add the parsing of the 500 code response in the log
 - [fea] Add `sync_storage_flush_limit` to the config
 - [fix] Fix the column list for the grid view on the Statistics -> Memory page
@@ -573,7 +1235,7 @@
 # Version 4.2.0 *beta* (20.02.2022)
 ## Core
 - [fea] Add sharding support. Check [sharding.md](sharding.md) for details
-- [fea] Add support for mixed replication setups (now it's possible to replicate some of the sync cluster namespaces asynchronously)
+- [fea] Add support for mixed replication setups (now it's possible to replicate some the sync cluster namespaces asynchronously)
 - [fix] Now transactions will return error on commit, if there were any errors in previous operations with this transaction
 
 ## Build
@@ -1252,7 +1914,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fea] Add master's config check on slave connect
 - [fea] Disable automatic database creation on RPC-connect
 - [fix] Add force-resync after online replication errors
-- [fix] Fix lsn overflow after convertion to int
+- [fix] Fix lsn overflow after conversion to int
 
 ## go connector
 - [fea] Add replication status to memstats
@@ -1484,7 +2146,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 # go connector
 
-- [fix] Build builinserver with libunwind conflict fixed
+- [fix] Build builtinserver with libunwind conflict fixed
 - [fix] Query.Update panic fixed
 - [fix] Stronger check of namespace's item's type (PkgPath is included to check)
 
@@ -1653,7 +2315,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fea] Async C++ RPC client
 - [fix] Fixed incorrect behaviour with non indexed field conditions
 - [fix] Extra non indexed fields tests added
-- [fix] Json parser memleak fixed
+- [fix] Fixed Json parser memory leak
 
 ## Reindexer server
 
@@ -1778,7 +2440,7 @@ Storages for v3 and v4 are compatible in both ways.
 
 - [fea] Conditions to any fields, even not indexed
 - [fea] cproto network client added 
-- [fix] Query execution plan optimizator fixes.
+- [fix] Query execution plan optimization fixes.
 
 ## Reindexer tool
 
@@ -1839,7 +2501,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [ci] added sanity tests of packages installations
 
 ## Go connector
-- [fea] Checking for duplicate names in `json` struct's tags on OpenNamespace
+- [fea] Checking for duplicate names in `json` structs tags on OpenNamespace
 - [fea] Checking DeepCopy interface for correct return value on OpenNamespace
 - [fix] Fixed error with sync payload types, on json queries
 - [fix] Local imports of ./repo in benchmarks package broke gb
@@ -1907,7 +2569,7 @@ Storages for v3 and v4 are compatible in both ways.
 - [fea] Thread russian letter `ё` as `е` in full text index
 - [fix] Fixed incorrect behavior of full text search with term `*<stop-word>`
 - [fix] Fixed full text behavior with FtDSL started with `+`
-- [fix] Fix conflict of with leveldb's and reindexer's tcmalloc library
+- [fix] Fix conflict of with Leveldb's and reindexer's tcmalloc library
 
 ## Reindexer server
 - [fea] Added daemonize mode to reindexer_server
@@ -1978,4 +2640,3 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Limit cgo execution to 2K goroutines to avoid exceed of OS threads limit 
 - [ref] EnableStorage method was deprecated
 - [fix] Query builder did not reset opOR after InnerJoin
-

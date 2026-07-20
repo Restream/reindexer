@@ -1,89 +1,96 @@
 #pragma once
 
-#include <string>
-#include "core/ft/usingcontainer.h"
 #include "core/keyvalue/variant.h"
 
 namespace reindexer {
 
-enum token_type { TokenEnd, TokenName, TokenNumber, TokenString, TokenOp, TokenSymbol, TokenSign };
+enum [[nodiscard]] TokenType { TokenEnd, TokenName, TokenNumber, TokenString, TokenOp, TokenSymbol, TokenSign };
 
-class token {
+class [[nodiscard]] Token {
 public:
-	explicit token(token_type t = TokenSymbol) noexcept : type(t) {}
-	token(const token&) = delete;
-	token& operator=(const token&) = delete;
-	token(token&&) noexcept = default;
-	token& operator=(token&&) noexcept = default;
+	explicit Token(TokenType type = TokenSymbol, size_t pos = 0) noexcept : type_(type), pos_(pos) {}
+	template <std::input_iterator It>
+	Token(TokenType type, It textBeg, It textEnd) : type_(type), text_(textBeg, textEnd) {}
+	Token(const Token&) = delete;
+	Token& operator=(const Token&) = delete;
+	Token(Token&&) noexcept = default;
+	Token& operator=(Token&&) noexcept = default;
 
-	[[nodiscard]] RX_ALWAYS_INLINE std::string_view text() const noexcept { return std::string_view(text_.data(), text_.size()); }
+	RX_ALWAYS_INLINE std::string_view Text() const noexcept { return std::string_view(text_.data(), text_.size()); }
+	TokenType Type() const noexcept { return type_; }
 
-	token_type type = TokenSymbol;
-	RVector<char, 20> text_;
+private:
+	friend class Tokenizer;
+
+	TokenType type_ = TokenSymbol;
+	h_vector<char, 20> text_;
+	size_t pos_;
 };
 
-class tokenizer {
+class [[nodiscard]] Tokenizer {
 public:
-	class flags {
+	class [[nodiscard]] Flags {
 	public:
-		enum values : int { no_flags = 0, to_lower = 1, treat_sign_as_token = 1 << 1, in_order_by = 1 << 2, last = in_order_by };
+		enum [[nodiscard]] Values : int { NoFlags = 0, ToLower = 1, TreatSignAsToken = 1 << 1, InOrderBy = 1 << 2, Last = InOrderBy };
 
-		explicit flags(int f) noexcept : f_(f) {
-			assertrx(f <= (values::no_flags | values::to_lower | values::treat_sign_as_token | values::in_order_by | values::last));
+		explicit Flags(int f) noexcept : f_(f) {
+			assertrx(f <= (Values::NoFlags | Values::ToLower | Values::TreatSignAsToken | Values::InOrderBy | Values::Last));
 		}
-		flags(values f) noexcept : f_(f) {}
+		Flags(Values f) noexcept : f_(f) {}
 
-		RX_ALWAYS_INLINE bool has_to_lower() const noexcept { return f_ & values::to_lower; }
-		RX_ALWAYS_INLINE bool has_treat_sign_as_token() const noexcept { return f_ & values::treat_sign_as_token; }
-		RX_ALWAYS_INLINE bool has_in_order_by() const noexcept { return f_ & values::in_order_by; }
+		RX_ALWAYS_INLINE bool HasToLower() const noexcept { return f_ & Values::ToLower; }
+		RX_ALWAYS_INLINE bool HasTreatSignAsToken() const noexcept { return f_ & Values::TreatSignAsToken; }
+		RX_ALWAYS_INLINE bool HasInOrderBy() const noexcept { return f_ & Values::InOrderBy; }
 
 	private:
-		int f_ = values::no_flags;
+		int f_ = Values::NoFlags;
 	};
 
-	explicit tokenizer(std::string_view query) noexcept : q_(query), cur_(query.begin()) {}
-	token next_token(flags f = flags(flags::to_lower));
-	[[nodiscard]] token peek_token(flags f = flags(flags::to_lower)) {
-		auto save_cur = cur_;
-		auto save_pos = pos_;
-		auto res = next_token(f);
-		cur_ = save_cur;
-		pos_ = save_pos;
+	explicit Tokenizer(std::string_view query) noexcept : q_(query), cur_(query.begin()) {}
+	Token NextToken(Flags f = Flags(Flags::ToLower));
+	void SkipToken(Flags f = Flags(Flags::ToLower)) { std::ignore = NextToken(f); }
+	Token PeekToken(Flags f = Flags(Flags::ToLower)) {
+		auto saveCur = cur_;
+		auto savePos = pos_;
+		auto res = NextToken(f);
+		cur_ = saveCur;
+		pos_ = savePos;
 		return res;
 	}
-	[[nodiscard]] token peek_second_token(flags f = flags(flags::to_lower)) {
-		auto save_cur = cur_;
-		auto save_pos = pos_;
-		auto res = next_token(f);
-		if (res.type != TokenEnd) {
-			res = next_token(f);
+	Token PeekSecondToken(Flags f = Flags(Flags::ToLower)) {
+		auto saveCur = cur_;
+		auto savePos = pos_;
+		auto res = NextToken(f);
+		if (res.Type() != TokenEnd) {
+			res = NextToken(f);
 		}
-		cur_ = save_cur;
-		pos_ = save_pos;
+		cur_ = saveCur;
+		pos_ = savePos;
 		return res;
 	}
-	void skip_space() noexcept;
-	[[nodiscard]] bool end() const noexcept { return cur_ == q_.end(); }
-	[[nodiscard]] size_t getPos() const noexcept { return pos_; }
-	[[nodiscard]] size_t getPrevPos() const noexcept;
-	void setPos(size_t pos) noexcept {
+	void SkipSpace() noexcept;
+	bool End() const noexcept { return cur_ == q_.end(); }
+	size_t GetPos() const noexcept { return pos_; }
+	size_t GetPrevPos() const;
+	void SetPos(size_t pos) noexcept {
 		int delta = pos - pos_;
 		pos_ += delta;
 		cur_ += delta;
 	}
-	[[nodiscard]] std::string where() const;
-	[[nodiscard]] size_t length() const noexcept { return q_.length(); }
-	[[nodiscard]] const char* begin() const noexcept { return q_.data(); }
+	TokenizerRange Where();
+	TokenizerRange Where(const Token& token) const noexcept;
+	size_t Length() const noexcept { return q_.length(); }
+	const char* Begin() const noexcept { return q_.data(); }
 
 private:
+	TokenizerRange where(size_t start_pos, size_t last_pos) const noexcept;
+
 	std::string_view q_;
 	std::string_view::const_iterator cur_;
 	size_t pos_ = 0;
 };
 
-enum class CompositeAllowed : bool { No = false, Yes = true };
-enum class FieldAllowed : bool { No = false, Yes = true };
-Variant token2kv(const token& currTok, tokenizer& parser, CompositeAllowed allowComposite, FieldAllowed allowField);
-Variant getVariantFromToken(const token& tok);
+Variant Token2kv(const Token&, Tokenizer&, CompositeAllowed, FieldAllowed, NullAllowed);
+Variant GetVariantFromToken(const Token& tok);
 
 }  // namespace reindexer

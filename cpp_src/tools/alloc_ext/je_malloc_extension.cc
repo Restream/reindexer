@@ -5,7 +5,6 @@
 #ifndef _WIN32
 #include <dlfcn.h>
 #include <stdlib.h>
-#include <mutex>
 #endif	// _WIN32
 #endif	// REINDEX_WITH_JEMALLOC && !defined(_WIN32)
 
@@ -38,7 +37,7 @@ int mallctl(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t ne
 bool JEMallocIsAvailable() { return (getMallctlFn() != nullptr); }
 
 #else
-// suppress clang warngig
+// suppress clang warning
 int ___je_malloc_extension_dummy_suppress_warning;
 #endif	// REINDEX_WITH_JEMALLOC
 

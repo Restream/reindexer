@@ -1,6 +1,6 @@
 #include "iclientsstats.h"
 #include "cjson/jsonbuilder.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 

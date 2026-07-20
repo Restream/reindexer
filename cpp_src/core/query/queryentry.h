@@ -4,58 +4,69 @@
 #include <string>
 #include <vector>
 #include "core/expressiontree.h"
+#include "core/function/function.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/fieldsset.h"
+#include "core/query/knn_search_params.h"
 #include "core/type_consts.h"
+#include "estl/concepts.h"
 #include "estl/h_vector.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/verifying_updater.h"
 
 namespace reindexer {
 
 class Query;
+
+namespace builders {
+class JsonBuilder;
+}  // namespace builders
+using builders::JsonBuilder;
+
 template <typename T>
 class PayloadIface;
 using ConstPayload = PayloadIface<const PayloadValue>;
 class TagsMatcher;
 
-struct JoinQueryEntry {
+struct [[nodiscard]] JoinQueryEntry {
 	explicit JoinQueryEntry(size_t joinIdx) noexcept : joinIndex{joinIdx} {}
+
+	bool operator==(const JoinQueryEntry& other) const noexcept = default;
+	bool operator!=(const JoinQueryEntry& other) const noexcept = default;
+
+	template <typename JS>
+	std::string Dump(const std::vector<JS>& joinItemsProcessors) const;
+
+	template <typename JS>
+	std::string DumpOnCondition(const std::vector<JS>& joinItemsProcessors) const;
+
 	size_t joinIndex{std::numeric_limits<size_t>::max()};
-	bool operator==(const JoinQueryEntry& other) const noexcept { return joinIndex == other.joinIndex; }
-	bool operator!=(const JoinQueryEntry& other) const noexcept { return !operator==(other); }
-
-	template <typename JS>
-	std::string Dump(const std::vector<JS>& joinedSelectors) const;
-
-	template <typename JS>
-	std::string DumpOnCondition(const std::vector<JS>& joinedSelectors) const;
 };
 
-class QueryField {
+class [[nodiscard]] QueryField {
 public:
 	using CompositeTypesVecT = h_vector<KeyValueType, 4>;
 
-	template <typename Str>
+	template <concepts::ConvertibleToString Str>
 	explicit QueryField(Str&& fieldName) noexcept : fieldName_{std::forward<Str>(fieldName)} {}
 	QueryField(QueryField&&) noexcept = default;
 	QueryField(const QueryField&) = default;
 	QueryField& operator=(QueryField&&) noexcept = default;
 
-	[[nodiscard]] bool operator==(const QueryField&) const noexcept;
-	[[nodiscard]] bool operator!=(const QueryField& other) const noexcept { return !operator==(other); }
+	bool operator==(const QueryField&) const noexcept;
+	bool operator!=(const QueryField& other) const noexcept { return !operator==(other); }
 
-	[[nodiscard]] int IndexNo() const noexcept { return idxNo_; }
-	[[nodiscard]] bool IsFieldIndexed() const noexcept { return idxNo_ >= 0; }
-	[[nodiscard]] bool FieldsHaveBeenSet() const noexcept { return idxNo_ != IndexValueType::NotSet; }
-	[[nodiscard]] const FieldsSet& Fields() const& noexcept { return fieldsSet_; }
-	[[nodiscard]] const std::string& FieldName() const& noexcept { return fieldName_; }
-	[[nodiscard]] KeyValueType FieldType() const noexcept { return fieldType_; }
-	[[nodiscard]] KeyValueType SelectType() const noexcept { return selectType_; }
-	[[nodiscard]] const CompositeTypesVecT& CompositeFieldsTypes() const& noexcept { return compositeFieldsTypes_; }
-	[[nodiscard]] bool HaveEmptyField() const noexcept;
+	int IndexNo() const noexcept { return idxNo_; }
+	bool IsFieldIndexed() const noexcept { return idxNo_ >= 0; }
+	bool FieldsHaveBeenSet() const noexcept { return idxNo_ != IndexValueType::NotSet; }
+	const FieldsSet& Fields() const& noexcept { return fieldsSet_; }
+	const std::string& FieldName() const& noexcept { return fieldName_; }
+	KeyValueType FieldType() const noexcept { return fieldType_; }
+	KeyValueType SelectType() const noexcept { return selectType_; }
+	const CompositeTypesVecT& CompositeFieldsTypes() const& noexcept { return compositeFieldsTypes_; }
+	bool HaveEmptyField() const;
 	void SetField(FieldsSet&& fields) &;
-	void SetIndexData(int idxNo, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
+	void SetIndexData(int idxNo, std::string_view idxName, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
 					  CompositeTypesVecT&& compositeFieldsTypes) &;
 
 	QueryField& operator=(const QueryField&) = delete;
@@ -72,8 +83,8 @@ private:
 	CompositeTypesVecT compositeFieldsTypes_;
 };
 
-enum class VerifyQueryEntryFlags : unsigned { null = 0u, ignoreEmptyValues = 1u };
-[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator&(VerifyQueryEntryFlags lhs, VerifyQueryEntryFlags rhs) noexcept {
+enum class [[nodiscard]] VerifyQueryEntryFlags : unsigned { null = 0u, ignoreEmptyValues = 1u };
+RX_ALWAYS_INLINE constexpr bool operator&(VerifyQueryEntryFlags lhs, VerifyQueryEntryFlags rhs) noexcept {
 	using UnderlyingType = std::underlying_type_t<VerifyQueryEntryFlags>;
 	return static_cast<UnderlyingType>(lhs) & static_cast<UnderlyingType>(rhs);
 }
@@ -83,42 +94,59 @@ void VerifyQueryEntryValues(CondType, const VariantArray&);
 extern template void VerifyQueryEntryValues<VerifyQueryEntryFlags::null>(CondType, const VariantArray&);
 extern template void VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(CondType, const VariantArray&);
 
-class QueryEntry : private QueryField {
+class [[nodiscard]] QueryEntry : private QueryField {
 public:
-	enum : size_t { NotInjected = std::numeric_limits<size_t>::max(), InjectedFromMain = NotInjected - 1 };
-	struct DistinctTag {};
-	struct IgnoreEmptyValues {};
+	enum [[nodiscard]] : size_t { NotInserted = std::numeric_limits<size_t>::max(), InsertedFromMain = NotInserted - 1 };
+	struct [[nodiscard]] DistinctTag {};
+	struct [[nodiscard]] ForcedSortOptEntryTag {};
+	struct [[nodiscard]] IgnoreEmptyValues {};
 	static constexpr unsigned kDefaultLimit = UINT_MAX;
 	static constexpr unsigned kDefaultOffset = 0;
 
-	template <typename Str, typename VA,
-			  std::enable_if_t<std::is_constructible_v<std::string, Str> && std::is_constructible_v<VariantArray, VA>>* = nullptr>
-	QueryEntry(Str&& fieldName, CondType cond, VA&& v, size_t injectedFrom = NotInjected)
-		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, injectedFrom_{injectedFrom} {
+	template <concepts::ConvertibleToString Str, concepts::ConvertibleToVariantArray VA>
+	QueryEntry(Str&& fieldName, CondType cond, VA&& v, size_t insertedFrom = NotInserted)
+		: QueryField{std::forward<Str>(fieldName)}, values_{std::forward<VA>(v)}, condition_{cond}, insertedFrom_{insertedFrom} {
+		std::ignore = adjust(AdjustMode::Default);
 		Verify();
+		ommitExcesiveArguments();
 	}
-	template <typename Str>
-	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(true) {
+	template <concepts::ConvertibleToString Str>
+	QueryEntry(Str&& fieldName, DistinctTag) : QueryField(std::forward<Str>(fieldName)), condition_(CondAny), distinct_(IsDistinct_True) {
+		std::ignore = adjust(AdjustMode::Default);
 		Verify();
+		ommitExcesiveArguments();
 	}
-	template <typename VA, std::enable_if_t<std::is_constructible_v<VariantArray, VA>>* = nullptr>
+	template <concepts::ConvertibleToVariantArray VA>
 	QueryEntry(QueryField&& field, CondType cond, VA&& v) : QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond} {
+		std::ignore = adjust(AdjustMode::Default);
 		Verify();
+		ommitExcesiveArguments();
+	}
+	template <concepts::ConvertibleToVariantArray VA>
+	QueryEntry(QueryField&& field, CondType cond, VA&& v, ForcedSortOptEntryTag)
+		: QueryField{std::move(field)}, values_{std::forward<VA>(v)}, condition_{cond}, forcedSortOptEntry_{IsForcedSortOptEntry_True} {
+		std::ignore = adjust(AdjustMode::Default);
+		Verify();
+		ommitExcesiveArguments();
 	}
 	QueryEntry(QueryField&& field, CondType cond, IgnoreEmptyValues) : QueryField(std::move(field)), condition_(cond) {
-		verifyIgnoringEmptyValues();
+		std::ignore = adjust(AdjustMode::Default);
+		VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(condition_, values_);
+		ommitExcesiveArguments();
 	}
-	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
-	[[nodiscard]] const VariantArray& Values() const& noexcept { return values_; }
-	[[nodiscard]] VariantArray&& Values() && noexcept { return std::move(values_); }
-	[[nodiscard]] auto UpdatableValues(IgnoreEmptyValues) & noexcept {
-		return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_, &QueryEntry::verifyIgnoringEmptyValues>{*this};
+	template <concepts::ConvertibleToVariantArray VA>
+	QueryEntry(const QueryEntry& qe, CondType cond, VA&& v) : QueryField{qe}, values_{std::forward<VA>(v)}, condition_(cond) {
+		std::ignore = adjust(AdjustMode::Default);
+		Verify();
+		ommitExcesiveArguments();
 	}
-	[[nodiscard]] auto UpdatableValues() & noexcept {
-		return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_, &QueryEntry::verifyNotIgnoringEmptyValues>{*this};
-	}
-	[[nodiscard]] bool Distinct() const noexcept { return distinct_; }
-	void Distinct(bool d) noexcept { distinct_ = d; }
+	CondType Condition() const noexcept { return condition_; }
+	const VariantArray& Values() const& noexcept { return values_; }
+	VariantArray&& Values() && noexcept { return std::move(values_); }
+	auto UpdatableValues() & noexcept { return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_>{*this}; }
+	IsDistinct Distinct() const noexcept { return distinct_; }
+	IsForcedSortOptEntry ForcedSortOptEntry() const noexcept { return forcedSortOptEntry_; }
+	void Distinct(IsDistinct d) noexcept { distinct_ = d; }
 	using QueryField::IndexNo;
 	using QueryField::IsFieldIndexed;
 	using QueryField::FieldsHaveBeenSet;
@@ -140,7 +168,7 @@ public:
 	QueryField& FieldData() & noexcept { return static_cast<QueryField&>(*this); }
 	void ConvertValuesToFieldType() & {
 		for (Variant& v : values_) {
-			v.convert(SelectType());
+			std::ignore = v.convert(SelectType());
 		}
 	}
 	void ConvertValuesToFieldType(const PayloadType& pt) & {
@@ -148,32 +176,193 @@ public:
 			return;
 		}
 		for (Variant& v : values_) {
-			v.convert(SelectType(), &pt, &Fields());
+			std::ignore = v.convert(SelectType(), &pt, &Fields());
 		}
 	}
 	void Verify() const { VerifyQueryEntryValues(condition_, values_); }
 
-	[[nodiscard]] bool operator==(const QueryEntry&) const noexcept;
-	[[nodiscard]] bool operator!=(const QueryEntry& other) const noexcept { return !operator==(other); }
+	bool operator==(const QueryEntry&) const;
+	bool operator!=(const QueryEntry& other) const { return !operator==(other); }
 
-	[[nodiscard]] std::string Dump() const;
-	[[nodiscard]] std::string DumpBrief() const;
-	[[nodiscard]] bool IsInjectedFrom(size_t joinedQueryNo) const noexcept { return injectedFrom_ == joinedQueryNo; }
+	std::string Dump() const;
+	std::string DumpBrief() const;
+	bool IsInsertedFrom(size_t joinedQueryNo) const noexcept { return insertedFrom_ == joinedQueryNo; }
+	bool NeedIsNull() const noexcept { return needIsNull_; }
+	void ResetNeedIsNull() noexcept { needIsNull_ = false; }
+	bool TryUpdateInplace(VariantArray& newValues) noexcept;
+	bool IsDistinctOnly() const noexcept { return distinct_ && (condition_ == CondAny); }
 
 	auto Values() const&& = delete;
 	auto FieldData() const&& = delete;
 
 private:
-	void verifyIgnoringEmptyValues() const { VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(condition_, values_); }
-	void verifyNotIgnoringEmptyValues() const { VerifyQueryEntryValues(condition_, values_); }
+	enum class [[nodiscard]] AdjustMode { Default, DryRun };
+
+	bool adjust(AdjustMode mode) noexcept;
+	void ommitExcesiveArguments() {
+		if (condition_ == CondAny || condition_ == CondEmpty) {
+			values_.Clear();
+		}
+	}
 
 	VariantArray values_;
 	CondType condition_{CondAny};
-	bool distinct_{false};
-	size_t injectedFrom_{NotInjected};
+	size_t insertedFrom_{NotInserted};
+	IsDistinct distinct_{IsDistinct_False};
+	IsForcedSortOptEntry forcedSortOptEntry_{IsForcedSortOptEntry_False};
+	bool needIsNull_{false};
 };
 
-class BetweenFieldsQueryEntry {
+class [[nodiscard]] FunctionEntry {
+protected:
+	template <concepts::Function Function>
+	FunctionEntry(Function&& function, CondType condition)
+		: comparisonField_(""), function_(std::forward<Function>(function)), condition_(condition) {
+		setFieldsFromFunction();
+	}
+	FunctionEntry(functions::FunctionVariant&& function, CondType condition)
+		: comparisonField_(""), function_(std::move(function)), condition_(condition) {
+		setFieldsFromFunction();
+	}
+	FunctionEntry(const functions::FunctionVariant& function, CondType condition)
+		: comparisonField_(""), function_(function), condition_(condition) {
+		setFieldsFromFunction();
+	}
+
+public:
+	template <concepts::ConvertibleToString Str, concepts::Function Function>
+	FunctionEntry(Str&& comparisonField, CondType cond, Function&& function)
+		: comparisonField_(std::forward<Str>(comparisonField)), function_(function), condition_(cond) {}
+
+	template <concepts::ConvertibleToString Str>
+	FunctionEntry(Str&& comparisonField, CondType cond, functions::FunctionVariant&& function)
+		: comparisonField_(std::forward<Str>(comparisonField)), function_(std::move(function)), condition_(cond) {}
+
+	FunctionEntry(const FunctionEntry&) = default;
+	FunctionEntry& operator=(const FunctionEntry&) = delete;
+	FunctionEntry(FunctionEntry&&) = default;
+	FunctionEntry& operator=(FunctionEntry&&) = default;
+
+	bool operator==(const FunctionEntry& other) const = default;
+
+	const QueryField& FieldData(size_t field) const& noexcept { return fields_[field]; }
+	QueryField& FieldData(size_t field) & noexcept { return fields_[field]; }
+	size_t Fields() const noexcept { return fields_.size(); }
+	CondType Condition() const noexcept { return condition_; }
+	const QueryField& ComparisonField() const noexcept { return comparisonField_; }
+	QueryField& ComparisonField() noexcept { return comparisonField_; }
+	bool HasComparisonField() const noexcept { return !comparisonField_.FieldName().empty(); }
+
+	const functions::Function& Function() const&;
+	const functions::FunctionVariant& FunctionVariant() const& { return function_; }
+
+	std::string Dump() const;
+
+	auto FieldData(size_t) const&& = delete;
+	auto Function() const&& = delete;
+	auto FunctionVariant() const&& = delete;
+
+protected:
+	void setFieldsFromFunction() {
+		for (const auto& field : this->Function().FieldNames()) {
+			fields_.emplace_back(field);
+		}
+	}
+
+	QueryField comparisonField_;
+	h_vector<QueryField, 1> fields_;
+	functions::FunctionVariant function_;
+	CondType condition_{CondAny};
+};
+
+class [[nodiscard]] QueryFunctionEntry : public FunctionEntry {
+public:
+	using FunctionEntry::Fields;
+	using FunctionEntry::FieldData;
+	using FunctionEntry::Condition;
+	using FunctionEntry::Function;
+	using FunctionEntry::FunctionVariant;
+
+	template <concepts::Function Function, concepts::ConvertibleToVariantArray Values>
+	QueryFunctionEntry(Function&& function, CondType condition, Values&& values)
+		: FunctionEntry(std::forward<Function>(function), condition), values_(std::forward<Values>(values)) {}
+	template <concepts::ConvertibleToVariantArray Values>
+	QueryFunctionEntry(functions::FunctionVariant&& function, CondType condition, Values&& values)
+		: FunctionEntry(std::move(function), condition), values_(std::forward<Values>(values)) {}
+	template <concepts::ConvertibleToVariantArray Values>
+	QueryFunctionEntry(const functions::FunctionVariant& function, CondType condition, Values&& values)
+		: FunctionEntry(function, condition), values_(std::forward<Values>(values)) {}
+	template <concepts::ConvertibleToString Str, concepts::Function Function>
+	QueryFunctionEntry(Str&& comparisonField, CondType cond, Function&& function)
+		: FunctionEntry(std::forward<Str>(comparisonField), cond, std::forward<Function>(function)) {}
+	template <concepts::ConvertibleToString Str>
+	QueryFunctionEntry(Str&& comparisonField, CondType cond, functions::FunctionVariant&& function)
+		: FunctionEntry(std::forward<Str>(comparisonField), cond, std::move(function)) {}
+
+	QueryFunctionEntry(const QueryFunctionEntry&) = default;
+	QueryFunctionEntry(QueryFunctionEntry&&) = default;
+	QueryFunctionEntry& operator=(QueryFunctionEntry&&) = default;
+	QueryFunctionEntry& operator=(QueryFunctionEntry&) = delete;
+
+	bool operator==(const QueryFunctionEntry&) const;
+
+	const VariantArray& Values() const& noexcept { return values_; }
+	auto Values() const&& = delete;
+
+	std::string Dump() const;
+	std::string DumpBrief() const;
+
+private:
+	VariantArray values_;
+};
+
+class [[nodiscard]] SubQueryFunctionEntry : public FunctionEntry {
+public:
+	using FunctionEntry::Fields;
+	using FunctionEntry::FieldData;
+	using FunctionEntry::Condition;
+	using FunctionEntry::Function;
+	using FunctionEntry::FunctionVariant;
+
+	enum [[nodiscard]] SubQueryType { Left, Right };
+
+	template <concepts::Function Function>
+	SubQueryFunctionEntry(Function&& function, CondType condition, size_t queryIndex)
+		: FunctionEntry(std::forward<Function>(function), condition), queryIndex_(queryIndex), subqueryType_(Right) {
+		checkCondition(condition);
+	}
+	SubQueryFunctionEntry(functions::FunctionVariant&& function, CondType condition, size_t queryIndex)
+		: FunctionEntry(std::move(function), condition), queryIndex_(queryIndex), subqueryType_(Right) {
+		checkCondition(condition);
+	}
+
+	template <concepts::Function Function>
+	SubQueryFunctionEntry(size_t queryIndex, CondType condition, Function&& function)
+		: FunctionEntry(std::forward<Function>(function), condition), queryIndex_(queryIndex), subqueryType_(Left) {
+		checkCondition(condition);
+	}
+	SubQueryFunctionEntry(size_t queryIndex, CondType condition, functions::FunctionVariant&& function)
+		: FunctionEntry(std::move(function), condition), queryIndex_(queryIndex), subqueryType_(Left) {
+		checkCondition(condition);
+	}
+
+	bool operator==(const SubQueryFunctionEntry& other) const {
+		return FunctionEntry::operator==(other) && queryIndex_ == other.queryIndex_;
+	}
+
+	size_t QueryIndex() const noexcept { return queryIndex_; }
+	SubQueryType GetSubqueryType() const noexcept { return subqueryType_; }
+	std::string Dump(const std::vector<Query>& subQueries) const;
+
+private:
+	void checkCondition(CondType condition) const;
+
+	// index of Query in Query::subQueries_
+	size_t queryIndex_{std::numeric_limits<size_t>::max()};
+	SubQueryType subqueryType_;
+};
+
+class [[nodiscard]] BetweenFieldsQueryEntry {
 public:
 	template <typename StrL, typename StrR>
 	BetweenFieldsQueryEntry(StrL&& fstIdx, CondType cond, StrR&& sndIdx)
@@ -181,32 +370,28 @@ public:
 		checkCondition(cond);
 	}
 
-	[[nodiscard]] bool operator==(const BetweenFieldsQueryEntry&) const noexcept;
-	[[nodiscard]] bool operator!=(const BetweenFieldsQueryEntry& other) const noexcept { return !operator==(other); }
+	bool operator==(const BetweenFieldsQueryEntry&) const noexcept = default;
+	bool operator!=(const BetweenFieldsQueryEntry& other) const noexcept = default;
 
-	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
-	[[nodiscard]] int LeftIdxNo() const noexcept { return leftField_.IndexNo(); }
-	[[nodiscard]] int RightIdxNo() const noexcept { return rightField_.IndexNo(); }
-	[[nodiscard]] const std::string& LeftFieldName() const& noexcept { return leftField_.FieldName(); }
-	[[nodiscard]] const std::string& RightFieldName() const& noexcept { return rightField_.FieldName(); }
-	[[nodiscard]] const FieldsSet& LeftFields() const& noexcept { return leftField_.Fields(); }
-	[[nodiscard]] const FieldsSet& RightFields() const& noexcept { return rightField_.Fields(); }
-	[[nodiscard]] KeyValueType LeftFieldType() const noexcept { return leftField_.FieldType(); }
-	[[nodiscard]] KeyValueType RightFieldType() const noexcept { return rightField_.FieldType(); }
-	[[nodiscard]] const QueryField::CompositeTypesVecT& LeftCompositeFieldsTypes() const& noexcept {
-		return leftField_.CompositeFieldsTypes();
-	}
-	[[nodiscard]] const QueryField::CompositeTypesVecT& RightCompositeFieldsTypes() const& noexcept {
-		return rightField_.CompositeFieldsTypes();
-	}
-	[[nodiscard]] const QueryField& LeftFieldData() const& noexcept { return leftField_; }
-	[[nodiscard]] QueryField& LeftFieldData() & noexcept { return leftField_; }
-	[[nodiscard]] const QueryField& RightFieldData() const& noexcept { return rightField_; }
-	[[nodiscard]] QueryField& RightFieldData() & noexcept { return rightField_; }
-	[[nodiscard]] bool FieldsHaveBeenSet() const noexcept { return leftField_.FieldsHaveBeenSet() && rightField_.FieldsHaveBeenSet(); }
-	[[nodiscard]] bool IsLeftFieldIndexed() const noexcept { return leftField_.IsFieldIndexed(); }
-	[[nodiscard]] bool IsRightFieldIndexed() const noexcept { return rightField_.IsFieldIndexed(); }
-	[[nodiscard]] std::string Dump() const;
+	CondType Condition() const noexcept { return condition_; }
+	int LeftIdxNo() const noexcept { return leftField_.IndexNo(); }
+	int RightIdxNo() const noexcept { return rightField_.IndexNo(); }
+	const std::string& LeftFieldName() const& noexcept { return leftField_.FieldName(); }
+	const std::string& RightFieldName() const& noexcept { return rightField_.FieldName(); }
+	const FieldsSet& LeftFields() const& noexcept { return leftField_.Fields(); }
+	const FieldsSet& RightFields() const& noexcept { return rightField_.Fields(); }
+	KeyValueType LeftFieldType() const noexcept { return leftField_.FieldType(); }
+	KeyValueType RightFieldType() const noexcept { return rightField_.FieldType(); }
+	const QueryField::CompositeTypesVecT& LeftCompositeFieldsTypes() const& noexcept { return leftField_.CompositeFieldsTypes(); }
+	const QueryField::CompositeTypesVecT& RightCompositeFieldsTypes() const& noexcept { return rightField_.CompositeFieldsTypes(); }
+	const QueryField& LeftFieldData() const& noexcept { return leftField_; }
+	QueryField& LeftFieldData() & noexcept { return leftField_; }
+	const QueryField& RightFieldData() const& noexcept { return rightField_; }
+	QueryField& RightFieldData() & noexcept { return rightField_; }
+	bool FieldsHaveBeenSet() const noexcept { return leftField_.FieldsHaveBeenSet() && rightField_.FieldsHaveBeenSet(); }
+	bool IsLeftFieldIndexed() const noexcept { return leftField_.IsFieldIndexed(); }
+	bool IsRightFieldIndexed() const noexcept { return rightField_.IsFieldIndexed(); }
+	std::string Dump() const;
 
 	auto LeftFieldName() const&& = delete;
 	auto RightFieldName() const&& = delete;
@@ -225,17 +410,15 @@ private:
 	CondType condition_{CondAny};
 };
 
-struct AlwaysFalse {};
+struct [[nodiscard]] AlwaysFalse {};
 constexpr bool operator==(AlwaysFalse, AlwaysFalse) noexcept { return true; }
-struct AlwaysTrue {};
+struct [[nodiscard]] AlwaysTrue {};
 constexpr bool operator==(AlwaysTrue, AlwaysTrue) noexcept { return true; }
-
-class JsonBuilder;
 
 using EqualPosition_t = h_vector<std::string, 2>;
 using EqualPositions_t = std::vector<EqualPosition_t>;
 
-struct QueryEntriesBracket : public Bracket {
+struct [[nodiscard]] QueryEntriesBracket : public Bracket {
 	using Bracket::Bracket;
 	bool operator==(const QueryEntriesBracket& other) const noexcept {
 		return Bracket::operator==(other) && equalPositions == other.equalPositions;
@@ -243,19 +426,19 @@ struct QueryEntriesBracket : public Bracket {
 	EqualPositions_t equalPositions;
 };
 
-class SubQueryEntry {
+class [[nodiscard]] SubQueryEntry {
 public:
 	SubQueryEntry(CondType cond, size_t qIdx, VariantArray&& values) : condition_{cond}, queryIndex_{qIdx}, values_{std::move(values)} {
 		VerifyQueryEntryValues(condition_, values_);
 	}
-	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
-	[[nodiscard]] size_t QueryIndex() const noexcept { return queryIndex_; }
-	[[nodiscard]] const VariantArray& Values() const& noexcept { return values_; }
-	[[nodiscard]] bool operator==(const SubQueryEntry& other) const noexcept {
-		return condition_ == other.condition_ && queryIndex_ == other.queryIndex_;
+	CondType Condition() const noexcept { return condition_; }
+	size_t QueryIndex() const noexcept { return queryIndex_; }
+	const VariantArray& Values() const& noexcept { return values_; }
+	bool operator==(const SubQueryEntry& other) const noexcept {
+		return condition_ == other.condition_ && queryIndex_ == other.queryIndex_ &&
+			   values_.RelaxCompare<WithString::Yes, NotComparable::Return, kDefaultNullsHandling>(other.values_) == ComparationResult::Eq;
 	}
-	[[nodiscard]] bool operator!=(const SubQueryEntry& other) const noexcept { return !operator==(other); }
-	[[nodiscard]] std::string Dump(const std::vector<Query>& subQueries) const;
+	std::string Dump(const std::vector<Query>& subQueries) const;
 
 	auto Values() const&& = delete;
 
@@ -266,21 +449,18 @@ private:
 	VariantArray values_;
 };
 
-class SubQueryFieldEntry {
+class [[nodiscard]] SubQueryFieldEntry {
 public:
-	template <typename Str>
+	template <concepts::ConvertibleToString Str>
 	SubQueryFieldEntry(Str&& field, CondType cond, size_t qIdx) : field_{std::forward<Str>(field)}, condition_{cond}, queryIndex_{qIdx} {
 		checkCondition(cond);
 	}
-	[[nodiscard]] const std::string& FieldName() const& noexcept { return field_; }
-	[[nodiscard]] std::string&& FieldName() && noexcept { return std::move(field_); }
-	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
-	[[nodiscard]] size_t QueryIndex() const noexcept { return queryIndex_; }
-	[[nodiscard]] bool operator==(const SubQueryFieldEntry& other) const noexcept {
-		return field_ == other.field_ && condition_ == other.condition_ && queryIndex_ == other.queryIndex_;
-	}
-	[[nodiscard]] bool operator!=(const SubQueryFieldEntry& other) const noexcept { return !operator==(other); }
-	[[nodiscard]] std::string Dump(const std::vector<Query>& subQueries) const;
+	const std::string& FieldName() const& noexcept { return field_; }
+	std::string&& FieldName() && noexcept { return std::move(field_); }
+	CondType Condition() const noexcept { return condition_; }
+	size_t QueryIndex() const noexcept { return queryIndex_; }
+	bool operator==(const SubQueryFieldEntry& other) const noexcept = default;
+	std::string Dump(const std::vector<Query>& subQueries) const;
 
 	auto FieldName() const&& = delete;
 
@@ -293,16 +473,32 @@ private:
 	size_t queryIndex_{std::numeric_limits<size_t>::max()};
 };
 
-class UpdateEntry {
+class [[nodiscard]] MultiDistinctQueryEntry {
 public:
-	template <typename Str>
+	MultiDistinctQueryEntry(FieldsSet&& fields) noexcept : fields_(std::move(fields)) {}
+
+	void Verify() const noexcept {}
+
+	bool operator==(const MultiDistinctQueryEntry& other) const noexcept = default;
+
+	std::string Dump() const { return fields_.ToString(DumpWithMask_True); }
+	const FieldsSet& FieldNames() const& noexcept { return fields_; }
+	auto FieldNames() const&& = delete;
+
+private:
+	FieldsSet fields_;
+};
+
+class [[nodiscard]] UpdateEntry {
+public:
+	template <concepts::ConvertibleToString Str>
 	UpdateEntry(Str&& c, VariantArray&& v, FieldModifyMode m = FieldModeSet, bool e = false)
 		: column_(std::forward<Str>(c)), values_(std::move(v)), mode_(m), isExpression_(e) {
 		if (column_.empty()) {
 			throw Error{errParams, "Empty update column name"};
 		}
 	}
-	bool operator==(const UpdateEntry&) const noexcept;
+	bool operator==(const UpdateEntry& other) const noexcept = default;
 	bool operator!=(const UpdateEntry& obj) const noexcept { return !operator==(obj); }
 	std::string_view Column() const noexcept { return column_; }
 	const VariantArray& Values() const noexcept { return values_; }
@@ -319,49 +515,43 @@ private:
 	bool isExpression_{false};
 };
 
-class QueryJoinEntry {
+class [[nodiscard]] QueryJoinEntry {
 public:
-	QueryJoinEntry(OpType op, CondType cond, std::string&& leftFld, std::string&& rightFld, bool reverseNs = false) noexcept
-		: leftField_{std::move(leftFld)}, rightField_{std::move(rightFld)}, op_{op}, condition_{cond}, reverseNamespacesOrder_{reverseNs} {}
-	[[nodiscard]] bool operator==(const QueryJoinEntry&) const noexcept;
-	[[nodiscard]] bool operator!=(const QueryJoinEntry& other) const noexcept { return !operator==(other); }
-	[[nodiscard]] bool IsLeftFieldIndexed() const noexcept { return leftField_.IsFieldIndexed(); }
-	[[nodiscard]] bool IsRightFieldIndexed() const noexcept { return rightField_.IsFieldIndexed(); }
-	[[nodiscard]] int LeftIdxNo() const noexcept { return leftField_.IndexNo(); }
-	[[nodiscard]] int RightIdxNo() const noexcept { return rightField_.IndexNo(); }
-	[[nodiscard]] const FieldsSet& LeftFields() const& noexcept { return leftField_.Fields(); }
-	[[nodiscard]] const FieldsSet& RightFields() const& noexcept { return rightField_.Fields(); }
-	[[nodiscard]] KeyValueType LeftFieldType() const noexcept { return leftField_.FieldType(); }
-	[[nodiscard]] KeyValueType RightFieldType() const noexcept { return rightField_.FieldType(); }
-	[[nodiscard]] const QueryField::CompositeTypesVecT& LeftCompositeFieldsTypes() const& noexcept {
-		return leftField_.CompositeFieldsTypes();
+	QueryJoinEntry(OpType op, CondType cond, std::string&& leftFld, std::string&& rightFld, bool reverseNs = false)
+		: leftField_{std::move(leftFld)}, rightField_{std::move(rightFld)}, op_{op}, condition_{cond}, reverseNamespacesOrder_{reverseNs} {
+		if (condition_ == CondKnn) {
+			throw Error(errLogic, "Condition KNN cannot be used in ON statement");
+		}
 	}
-	[[nodiscard]] const QueryField::CompositeTypesVecT& RightCompositeFieldsTypes() const& noexcept {
-		return rightField_.CompositeFieldsTypes();
+	bool operator==(const QueryJoinEntry& other) const noexcept {
+		// reverseNamespacesOrder_ is intentionally ignored - it affects serialization order in SQL, but does not make any difference
+		// from query standpoint
+		return condition_ == other.condition_ && leftField_ == other.leftField_ && rightField_ == other.rightField_;
 	}
-	[[nodiscard]] OpType Operation() const noexcept { return op_; }
-	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
-	[[nodiscard]] const std::string& LeftFieldName() const& noexcept { return leftField_.FieldName(); }
-	[[nodiscard]] const std::string& RightFieldName() const& noexcept { return rightField_.FieldName(); }
-	[[nodiscard]] bool ReverseNamespacesOrder() const noexcept { return reverseNamespacesOrder_; }
-	[[nodiscard]] const QueryField& LeftFieldData() const& noexcept { return leftField_; }
-	[[nodiscard]] QueryField& LeftFieldData() & noexcept { return leftField_; }
-	[[nodiscard]] const QueryField& RightFieldData() const& noexcept { return rightField_; }
-	[[nodiscard]] QueryField& RightFieldData() & noexcept { return rightField_; }
-	void SetLeftIndexData(int idxNo, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
-						  QueryField::CompositeTypesVecT&& compositeFieldsTypes) & {
-		leftField_.SetIndexData(idxNo, std::move(fields), fieldType, selectType, std::move(compositeFieldsTypes));
-	}
-	void SetRightIndexData(int idxNo, FieldsSet&& fields, KeyValueType fieldType, KeyValueType selectType,
-						   QueryField::CompositeTypesVecT&& compositeFieldsTypes) & {
-		rightField_.SetIndexData(idxNo, std::move(fields), fieldType, selectType, std::move(compositeFieldsTypes));
-	}
-	void SetLeftField(FieldsSet&& fields) & { leftField_.SetField(std::move(fields)); }
-	void SetRightField(FieldsSet&& fields) & { rightField_.SetField(std::move(fields)); }
-	[[nodiscard]] bool FieldsHaveBeenSet() const noexcept { return leftField_.FieldsHaveBeenSet() && rightField_.FieldsHaveBeenSet(); }
+	bool operator!=(const QueryJoinEntry& other) const noexcept { return !operator==(other); }
+	bool IsLeftFieldIndexed() const noexcept { return leftField_.IsFieldIndexed(); }
+	bool IsRightFieldIndexed() const noexcept { return rightField_.IsFieldIndexed(); }
+	int LeftIdxNo() const noexcept { return leftField_.IndexNo(); }
+	int RightIdxNo() const noexcept { return rightField_.IndexNo(); }
+	const FieldsSet& LeftFields() const& noexcept { return leftField_.Fields(); }
+	const FieldsSet& RightFields() const& noexcept { return rightField_.Fields(); }
+	KeyValueType LeftFieldType() const noexcept { return leftField_.FieldType(); }
+	KeyValueType RightFieldType() const noexcept { return rightField_.FieldType(); }
+	const QueryField::CompositeTypesVecT& LeftCompositeFieldsTypes() const& noexcept { return leftField_.CompositeFieldsTypes(); }
+	const QueryField::CompositeTypesVecT& RightCompositeFieldsTypes() const& noexcept { return rightField_.CompositeFieldsTypes(); }
+	OpType Operation() const noexcept { return op_; }
+	CondType Condition() const noexcept { return condition_; }
+	const std::string& LeftFieldName() const& noexcept { return leftField_.FieldName(); }
+	const std::string& RightFieldName() const& noexcept { return rightField_.FieldName(); }
+	bool ReverseNamespacesOrder() const noexcept { return reverseNamespacesOrder_; }
+	const QueryField& LeftFieldData() const& noexcept { return leftField_; }
+	QueryField& LeftFieldData() & noexcept { return leftField_; }
+	const QueryField& RightFieldData() const& noexcept { return rightField_; }
+	QueryField& RightFieldData() & noexcept { return rightField_; }
+	bool FieldsHaveBeenSet() const noexcept { return leftField_.FieldsHaveBeenSet() && rightField_.FieldsHaveBeenSet(); }
 
 	template <typename JS>
-	std::string DumpCondition(const JS& joinedSelector, bool needOp = false) const;
+	std::string DumpCondition(const JS& joinItemsProcessor, bool needOp = false) const;
 
 	auto LeftFields() const&& = delete;
 	auto RightFields() const&& = delete;
@@ -382,13 +572,93 @@ private:
 												///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
 };
 
-enum class InjectionDirection : bool { IntoMain, FromMain };
+class [[nodiscard]] KnnQueryEntry {
+public:
+	enum class [[nodiscard]] DataFormatType : int8_t { None = -1, Vector = 0, String = 1 };
+
+	template <concepts::ConvertibleToString Str>
+	KnnQueryEntry(Str&& fldName, ConstFloatVectorView v, KnnSearchParams params)
+		: KnnQueryEntry{std::forward<Str>(fldName), FloatVector{v.Span()}, params} {}
+	template <concepts::ConvertibleToString Str>
+	KnnQueryEntry(Str&& fldName, FloatVector v, KnnSearchParams params)
+		: fieldName_{std::forward<Str>(fldName)}, format_{DataFormatType::Vector}, value_{std::move(v)}, params_{params} {}
+	template <concepts::ConvertibleToString Str1, concepts::ConvertibleToString Str2>
+	KnnQueryEntry(Str1&& fldName, Str2&& data, KnnSearchParams params)
+		: fieldName_{std::forward<Str1>(fldName)}, format_{DataFormatType::String}, data_{std::forward<Str2>(data)}, params_{params} {}
+	int IndexNo() const noexcept { return idxNo_; }
+	ConstFloatVectorView Value() const& {
+		assertrx_throw(format_ == DataFormatType::Vector);
+		return ConstFloatVectorView{value_};
+	}
+	const std::string& Data() const& {
+		assertrx_throw(format_ == DataFormatType::String);
+		return data_;
+	}
+	DataFormatType Format() const {
+		assertrx_throw(format_ != DataFormatType::None);
+		return format_;
+	}
+	KnnSearchParams Params() const noexcept { return params_; }
+	bool FieldsHaveBeenSet() const noexcept { return idxNo_ != IndexValueType::NotSet; }
+	const std::string& FieldName() const& noexcept { return fieldName_; }
+	void SetIndexNo(int idx, std::string_view idxName) noexcept {
+		idxNo_ = idx;
+		// Explicit equality check to avoid extra allocation on Centos7, when index name is already set
+		if (fieldName_ != idxName) {
+			fieldName_.assign(idxName);
+		}
+	}
+	std::string Dump() const;
+	void ToDsl(JsonBuilder& builder) const;
+	bool operator==(const KnnQueryEntry&) const noexcept;
+	bool operator!=(const KnnQueryEntry& other) const noexcept { return !operator==(other); }
+
+	auto Value() const&& = delete;
+	auto Data() const&& = delete;
+	auto FieldName() const&& = delete;
+
+private:
+	std::string fieldName_;
+	int idxNo_{IndexValueType::NotSet};
+	DataFormatType format_{DataFormatType::None};
+	FloatVector value_;
+	std::string data_;
+	KnnSearchParams params_;
+};
+
+enum class [[nodiscard]] JoinConditionInsertionDirection : bool { IntoMain, FromMain };
 class Index;
 
-class QueryEntries : public ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
-										   AlwaysTrue, SubQueryEntry, SubQueryFieldEntry> {
-	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
-								AlwaysTrue, SubQueryEntry, SubQueryFieldEntry>;
+using QueryEntriesTree =
+	ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue,
+				   SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry, MultiDistinctQueryEntry, QueryFunctionEntry, SubQueryFunctionEntry>;
+
+template <>
+template <>
+class [[nodiscard]] QueryEntriesTree::PostProcessor<QueryEntry> {
+public:
+	static constexpr bool NoOp = false;
+	static size_t Process(QueryEntriesTree& tree, size_t pos) {
+		assertrx_dbg(tree.Is<QueryEntry>(pos));
+		auto& qe = tree.Get<QueryEntry>(pos);
+		if (!qe.NeedIsNull()) [[likely]] {
+			return 0;
+		}
+		qe.ResetNeedIsNull();
+		const auto cond = qe.Condition();
+		const auto inserted = tree.Emplace<QueryEntry>(pos, OpAnd, qe.FieldName(), CondEmpty, VariantArray{});
+		const OpType op = tree.GetOperation(pos + 1);
+		tree.SetOperation(cond == CondAllSet ? OpAnd : OpOr, pos + 1);
+		tree.EncloseInBracket(pos, pos + 1 + inserted, op);
+		return inserted + 1;  // +1 position for the bracket
+	}
+};
+
+class [[nodiscard]] QueryEntries : public QueryEntriesTree {
+protected:
+	using Base = QueryEntriesTree;
+
+private:
 	explicit QueryEntries(Base&& b) : Base{std::move(b)} {}
 
 public:
@@ -400,15 +670,16 @@ public:
 	void ToDsl(const Query& parentQuery, JsonBuilder& builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
 	void Serialize(WrSerializer& ser, const std::vector<Query>& subQueries) const { serialize(cbegin(), cend(), ser, subQueries); }
 	bool CheckIfSatisfyConditions(const ConstPayload& pl) const { return checkIfSatisfyConditions(cbegin(), cend(), pl); }
+	bool ContainsKnnCondition() const noexcept;
 	static bool CheckIfSatisfyCondition(const VariantArray& lValues, CondType, const VariantArray& rValues);
-	template <InjectionDirection>
-	[[nodiscard]] size_t InjectConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
-														  const QueryEntries& joinedQueryEntries, size_t joinedQueryNo,
-														  const std::vector<std::unique_ptr<Index>>* indexesFrom);
+	template <JoinConditionInsertionDirection>
+	size_t InsertConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1>& joinEntries,
+											const QueryEntries& joinedQueryEntries, size_t joinedQueryNo,
+											const std::vector<std::unique_ptr<Index>>* indexesFrom);
 	template <typename JS>
-	std::string Dump(const std::vector<JS>& joinedSelectors, const std::vector<Query>& subQueries) const {
+	std::string Dump(const std::vector<JS>& joinItemsProcessors, const std::vector<Query>& subQueries) const {
 		WrSerializer ser;
-		dump(0, cbegin(), cend(), joinedSelectors, subQueries, ser);
+		dump(0, cbegin(), cend(), joinItemsProcessors, subQueries, ser);
 		dumpEqualPositions(0, ser, equalPositions);
 		return std::string{ser.Slice()};
 	}
@@ -422,49 +693,54 @@ private:
 	static bool checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload&);
 	static bool checkIfSatisfyCondition(const QueryEntry&, const ConstPayload&);
 	static bool checkIfSatisfyCondition(const BetweenFieldsQueryEntry&, const ConstPayload&);
-	[[nodiscard]] size_t injectConditionsFromOnCondition(size_t position, const std::string& fieldName, const std::string& joinedFieldName,
-														 CondType, const QueryEntries& joinedQueryEntries, size_t injectedFrom,
-														 size_t injectingInto, const std::vector<std::unique_ptr<Index>>* indexesFrom);
+	size_t insertConditionsFromOnCondition(size_t position, const std::string& fieldName, const std::string& joinedFieldName, CondType,
+										   const QueryEntries& joinedQueryEntries, size_t insertedFrom, size_t insertedInto,
+										   const std::vector<std::unique_ptr<Index>>* indexesFrom);
 
 protected:
 	static void dumpEqualPositions(size_t level, WrSerializer&, const EqualPositions_t&);
 	template <typename JS>
-	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinedSelectors,
+	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinItemsProcessors,
 					 const std::vector<Query>& subQueries, WrSerializer&);
 };
 
-extern template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::FromMain>(
+extern template size_t QueryEntries::InsertConditionsFromOnConditions<JoinConditionInsertionDirection::FromMain>(
 	size_t, const h_vector<QueryJoinEntry, 1>&, const QueryEntries&, size_t, const std::vector<std::unique_ptr<Index>>*);
-extern template size_t QueryEntries::InjectConditionsFromOnConditions<InjectionDirection::IntoMain>(
+extern template size_t QueryEntries::InsertConditionsFromOnConditions<JoinConditionInsertionDirection::IntoMain>(
 	size_t, const h_vector<QueryJoinEntry, 1>&, const QueryEntries&, size_t, const std::vector<std::unique_ptr<Index>>*);
 
-struct SortingEntry {
+struct [[nodiscard]] SortingEntry {
 	SortingEntry() noexcept = default;
-	template <typename Str>
+	template <concepts::ConvertibleToString Str>
 	SortingEntry(Str&& e, bool d) noexcept : expression(std::forward<Str>(e)), desc(d) {}
-	bool operator==(const SortingEntry&) const noexcept;
-	bool operator!=(const SortingEntry& se) const noexcept { return !operator==(se); }
+	bool operator==(const SortingEntry&) const noexcept = default;
+	bool operator!=(const SortingEntry& se) const noexcept = default;
+
 	std::string expression;
-	bool desc = false;
+	Desc desc = Desc_False;
 	int index = IndexValueType::NotSet;
 };
 
-struct SortingEntries : public h_vector<SortingEntry, 1> {};
+struct [[nodiscard]] SortingEntries : public h_vector<SortingEntry, 1> {};
 
-class AggregateEntry {
+class [[nodiscard]] AggregateEntry {
 public:
 	AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, SortingEntries&& sort = {}, unsigned limit = QueryEntry::kDefaultLimit,
 				   unsigned offset = QueryEntry::kDefaultOffset);
-	[[nodiscard]] bool operator==(const AggregateEntry&) const noexcept;
-	[[nodiscard]] bool operator!=(const AggregateEntry& ae) const noexcept { return !operator==(ae); }
-	[[nodiscard]] AggType Type() const noexcept { return type_; }
-	[[nodiscard]] const h_vector<std::string, 1>& Fields() const noexcept { return fields_; }
-	[[nodiscard]] const SortingEntries& Sorting() const noexcept { return sortingEntries_; }
-	[[nodiscard]] unsigned Limit() const noexcept { return limit_; }
-	[[nodiscard]] unsigned Offset() const noexcept { return offset_; }
-	void AddSortingEntry(SortingEntry&&);
-	void SetLimit(unsigned);
-	void SetOffset(unsigned);
+	bool operator==(const AggregateEntry&) const noexcept = default;
+	bool operator!=(const AggregateEntry& ae) const noexcept = default;
+	AggType Type() const noexcept { return type_; }
+	const h_vector<std::string, 1>& Fields() const noexcept { return fields_; }
+	const SortingEntries& Sorting() const noexcept { return sortingEntries_; }
+	unsigned Limit() const noexcept { return limit_; }
+	unsigned Offset() const noexcept { return offset_; }
+	void AddSortingEntry(SortingEntry&& sorting);
+	template <concepts::ConvertibleToString Str>
+	void Sort(Str&& sortExpr, bool desc) {
+		AddSortingEntry({std::forward<Str>(sortExpr), desc});
+	}
+	void SetLimit(unsigned l);
+	void SetOffset(unsigned o);
 
 private:
 	AggType type_{AggUnknown};

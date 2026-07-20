@@ -17,7 +17,7 @@ namespace sharding {
 
 class LocatorService;
 
-class LocatorServiceAdapter {
+class [[nodiscard]] LocatorServiceAdapter {
 public:
 	LocatorServiceAdapter() = default;
 	LocatorServiceAdapter(std::shared_ptr<LocatorService> locator) : locator_(std::move(locator)) {

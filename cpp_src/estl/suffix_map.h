@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 #include "libdivsufsort/divsufsort.h"
@@ -7,29 +10,28 @@
 namespace reindexer {
 
 template <typename CharT, typename V>
-class suffix_map {
+class [[nodiscard]] suffix_map {
+public:
+	using word_len_type = uint16_t;
+	static constexpr size_t kMaxWordLen = std::numeric_limits<word_len_type>::max();
+
+private:
 	typedef size_t size_type;
 	typedef unsigned char char_type;
 
-	class value_type : public std::pair<const CharT*, V> {
+	class [[nodiscard]] value_type : public std::pair<const CharT*, V> {
 	public:
 		value_type(std::pair<const CharT*, V>&& v) noexcept : std::pair<const CharT*, V>(std::move(v)) {}
 		value_type(const std::pair<const CharT*, V>& v) : std::pair<const CharT*, V>(v) {}
 		const value_type* operator->() const noexcept { return this; }
 	};
 
-	class iterator {
+	class [[nodiscard]] iterator {
 		friend class suffix_map;
 
 	public:
 		iterator(size_type idx, const suffix_map* m) noexcept : idx_(idx), m_(m) {}
 		iterator(const iterator& other) noexcept : idx_(other.idx_), m_(other.m_) {}
-		// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
-		iterator& operator=(const iterator& other) noexcept {
-			idx_ = other.idx_;
-			m_ = other.m_;
-			return *this;
-		}
 		value_type operator->() {
 			auto* p = &m_->text_[m_->sa_[idx_]];
 			return value_type(std::make_pair(p, m_->mapped_[m_->sa_[idx_]]));
@@ -115,6 +117,7 @@ public:
 			}
 			if (plt) {
 				if (mid == lo + 1) {
+					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 					if (strncmp(str.data(), &text_[sa_[mid]], std::min(str.length(), strlen(&text_[sa_[mid]]))) != 0) {
 						return end();
 					}
@@ -124,6 +127,7 @@ public:
 				hi = mid;
 			} else {
 				if (mid == hi - 1) {
+					// NOLINTNEXTLINE (bugprone-suspicious-stringview-data-usage)
 					if (hi >= sa_.size() || strncmp(str.data(), &text_[sa_[hi]], std::min(str.length(), strlen(&text_[sa_[hi]]))) != 0) {
 						return end();
 					}
@@ -137,8 +141,11 @@ public:
 	}
 
 	int insert(std::string_view word, const V& val) {
+		if (word.length() > kMaxWordLen) [[unlikely]] {
+			throw std::length_error("suffix_map word length overflow");
+		}
 		int wpos = text_.size();
-		size_t real_len = word.length();
+		const auto real_len = static_cast<word_len_type>(word.length());
 		text_.insert(text_.end(), word.begin(), word.end());
 		text_.emplace_back('\0');
 		mapped_.insert(mapped_.end(), real_len + 1, val);
@@ -150,7 +157,7 @@ public:
 
 	const CharT* word_at(int idx) const noexcept { return &text_[words_[idx]]; }
 
-	int16_t word_len_at(int idx) const noexcept { return words_len_[idx]; }
+	word_len_type word_len_at(int idx) const noexcept { return words_len_[idx]; }
 
 	void build() {
 		if (built_) {
@@ -185,8 +192,9 @@ public:
 
 	const std::vector<CharT>& text() const noexcept { return text_; }
 	size_t heap_size() noexcept {
-		return (sa_.capacity() + words_.capacity()) * sizeof(int) +			  //
-			   (lcp_.capacity() + words_len_.capacity()) * sizeof(int16_t) +  //
+		return (sa_.capacity() + words_.capacity()) * sizeof(int) +	 //
+			   lcp_.capacity() * sizeof(int16_t) +					 //
+			   words_len_.capacity() * sizeof(word_len_type) +		 //
 			   mapped_.capacity() * sizeof(V) + text_.capacity();
 	}
 
@@ -216,7 +224,7 @@ protected:
 
 	std::vector<int> sa_, words_;
 	std::vector<int16_t> lcp_;
-	std::vector<uint8_t> words_len_;
+	std::vector<word_len_type> words_len_;
 	std::vector<V> mapped_;
 	std::vector<CharT> text_;
 	bool built_ = false;

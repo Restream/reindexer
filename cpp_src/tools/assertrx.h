@@ -1,7 +1,5 @@
 #pragma once
 
-#include "estl/defines.h"
-
 namespace reindexer {
 
 [[noreturn]] void fail_throwrx(const char* assertion, const char* file, unsigned line, const char* function) noexcept(false);
@@ -20,20 +18,26 @@ namespace reindexer {
 [[noreturn]] void fail_assertrx(const char* assertion, const char* file, unsigned line, const char* function) noexcept;
 
 #ifdef __cplusplus
-#define assertrx(expr) (rx_likely(static_cast<bool>(expr)) ? void(0) : reindexer::fail_assertrx(#expr, __FILE__, __LINE__, __FUNCTION__))
-#define assertrx_throw(expr) (rx_likely(static_cast<bool>(expr)) ? void(0) : throw_assert(expr))
+#define assertrx(expr)                                                     \
+	if (!(expr)) [[unlikely]] {                                            \
+		reindexer::fail_assertrx(#expr, __FILE__, __LINE__, __FUNCTION__); \
+	}
+#define assertrx_throw(expr)    \
+	if (!(expr)) [[unlikely]] { \
+		throw_assert(expr);     \
+	}
 #endif	// __cplusplus
 
-#ifndef RX_WITH_STDLIB_DEBUG
+#if !REINDEX_WITH_DEBUG_ASSERT
 #define assertrx_dbg(e) ((void)0)
-#else  // RX_WITH_STDLIB_DEBUG
+#else  // REINDEX_WITH_DEBUG_ASSERT
 
 #ifdef __cplusplus
-// Macro for the extra debug. Works only when RX_WITH_STDLIB_DEBUG is defined and NDEBUG is not defined
+// Macro for the extra debug. Works only when REINDEX_WITH_DEBUG_ASSERT is defined and NDEBUG is not defined
 #define assertrx_dbg(expr) assertrx(expr)
 #endif	// __cplusplus
 
-#endif	// !RX_WITH_STDLIB_DEBUG
+#endif	// !REINDEX_WITH_DEBUG_ASSERT
 
 #endif	// NDEBUG
 

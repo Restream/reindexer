@@ -1,4 +1,5 @@
 #pragma once
+
 #include <memory>
 #include <string_view>
 #include <thread>
@@ -7,15 +8,18 @@
 
 namespace reindexer {
 
+class ExceptionPtrWrapper;
+
 template <typename IdCont>
-class DataProcessor {
+class [[nodiscard]] DataProcessor {
 public:
 	using words_map =
-		tsl::hopscotch_map<std::string, WordEntry, word_hash, word_equal, std::allocator<std::pair<std::string, WordEntry>>, 30, true>;
+		tsl::hopscotch_map<std::string, IdRelSet, word_hash, word_equal, std::allocator<std::pair<std::string, IdRelSet>>, 30, true>;
 
 	DataProcessor(DataHolder<IdCont>& holder, size_t fieldSize) : holder_(holder), fieldSize_(fieldSize) {}
 
-	void Process(bool multithread);
+	void Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, bool multithread,
+				 std::vector<h_vector<float, 3>>& wordsCounts);
 
 private:
 	using WordVariant = std::variant<std::string_view, WordIdType>;
@@ -23,7 +27,7 @@ private:
 	static_assert(std::is_trivially_destructible_v<WordVariant>, "Expecting trivial destructor");
 	static_assert(sizeof(WordVariant) <= 24, "Expecting same size as corresponding union");
 
-	class WordsVector : private std::vector<WordVariant> {
+	class [[nodiscard]] WordsVector : private std::vector<WordVariant> {
 		using Base = std::vector<WordVariant>;
 
 	public:
@@ -40,33 +44,7 @@ private:
 		using Base::operator[];
 	};
 
-	class ExceptionPtrWrapper {
-	public:
-		void SetException(std::exception_ptr&& ptr) noexcept {
-			std::lock_guard lck(mtx_);
-			if (!ex_) {
-				ex_ = std::move(ptr);
-			}
-		}
-		void RethrowException() {
-			std::lock_guard lck(mtx_);
-			if (ex_) {
-				auto ptr = std::move(ex_);
-				ex_ = nullptr;
-				std::rethrow_exception(std::move(ptr));
-			}
-		}
-		bool HasException() const noexcept {
-			std::lock_guard lck(mtx_);
-			return bool(ex_);
-		}
-
-	private:
-		std::exception_ptr ex_ = nullptr;
-		mutable std::mutex mtx_;
-	};
-
-	class ThreadsContainer {
+	class [[nodiscard]] ThreadsContainer {
 	public:
 		template <typename F>
 		void Add(F&& f) {
@@ -84,15 +62,15 @@ private:
 		std::vector<std::thread> threads_;
 	};
 
-	[[nodiscard]] size_t buildWordsMap(words_map& m, bool multithread, intrusive_ptr<const ISplitter> textSplitter);
-	void buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, int rfield, size_t insertPos,
-						  std::vector<std::string_view>& container);
-	void buildTyposMap(uint32_t startPos, const WordsVector& preprocWords);
-	[[nodiscard]] static WordsVector insertIntoSuffix(words_map& words_um, DataHolder<IdCont>& holder);
-	[[nodiscard]] static size_t commitIdRelSets(const WordsVector& preprocWords, words_map& words_um, DataHolder<IdCont>& holder,
-												size_t wrdOffset);
+	size_t buildWordsMap(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, words_map& m,
+						 bool multithreaded, intrusive_ptr<const ISplitter> textSplitter, std::vector<h_vector<float, 3>>& wordsCounts);
+	void buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType vdocId, h_vector<float, 3>& vdocWordsCounts,
+						  unsigned field, unsigned arrayIdx, size_t insertPos, std::vector<std::string_view>& container);
+	void buildTyposMap(uint32_t startPos, const WordsVector& preprocWords, bool multithread);
+	static WordsVector insertIntoSuffix(words_map& words_um, DataHolder<IdCont>& holder);
+	static size_t commitIdRelSets(const WordsVector& preprocWords, words_map& words_um, DataHolder<IdCont>& holder, size_t wrdOffset);
 	template <typename F, typename... Args>
-	[[nodiscard]] static std::thread runInThread(ExceptionPtrWrapper&, F&&, Args&&...) noexcept;
+	static std::thread runInThread(ExceptionPtrWrapper&, F&&, Args&&...) noexcept;
 
 	DataHolder<IdCont>& holder_;
 	size_t fieldSize_;

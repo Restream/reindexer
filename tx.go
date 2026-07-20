@@ -2,14 +2,15 @@ package reindexer
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	otelattr "go.opentelemetry.io/otel/attribute"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 )
 
 const maxAsyncRequests = 500
@@ -85,7 +86,7 @@ func (tx *Tx) startAsyncRoutines() error {
 	return tx.checkReqCount()
 }
 
-func (tx *Tx) Insert(item interface{}, precepts ...string) error {
+func (tx *Tx) Insert(item any, precepts ...string) error {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.Insert", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -102,7 +103,7 @@ func (tx *Tx) Insert(item interface{}, precepts ...string) error {
 	return tx.modifyInternal(item, nil, modeInsert, precepts...)
 }
 
-func (tx *Tx) Update(item interface{}, precepts ...string) error {
+func (tx *Tx) Update(item any, precepts ...string) error {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.Update", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -120,7 +121,7 @@ func (tx *Tx) Update(item interface{}, precepts ...string) error {
 }
 
 // Upsert (Insert or Update) item to namespace
-func (tx *Tx) Upsert(item interface{}, precepts ...string) error {
+func (tx *Tx) Upsert(item any, precepts ...string) error {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.Upsert", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -156,7 +157,7 @@ func (tx *Tx) UpsertJSON(json []byte, precepts ...string) error {
 }
 
 // Delete - remove item by id from namespace
-func (tx *Tx) Delete(item interface{}, precepts ...string) error {
+func (tx *Tx) Delete(item any, precepts ...string) error {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.Delete", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -191,7 +192,7 @@ func (tx *Tx) DeleteJSON(json []byte, precepts ...string) error {
 	return tx.modifyInternal(nil, json, modeDelete, precepts...)
 }
 
-func (tx *Tx) handleRecoverFromAsyncOp(rec interface{}) error {
+func (tx *Tx) handleRecoverFromAsyncOp(rec any) error {
 	tx.cmplCond.L.Lock()
 	atomic.AddUint32(&tx.asyncRspCnt, ^uint32(0))
 	tx.cmplCond.Broadcast()
@@ -205,7 +206,7 @@ func (tx *Tx) handleRecoverFromAsyncOp(rec interface{}) error {
 }
 
 // InsertAsync Insert item to namespace. Calls completion on result
-func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) (err error) {
+func (tx *Tx) InsertAsync(item any, cmpl bindings.Completion, precepts ...string) (err error) {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.InsertAsync", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -233,7 +234,7 @@ func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts .
 }
 
 // UpdateAsync Update item to namespace. Calls completion on result
-func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts ...string) (err error) {
+func (tx *Tx) UpdateAsync(item any, cmpl bindings.Completion, precepts ...string) (err error) {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.UpdateAsync", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -261,7 +262,7 @@ func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts .
 }
 
 // UpsertAsync (Insert or Update) item to namespace. Calls completion on result
-func (tx *Tx) UpsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) (err error) {
+func (tx *Tx) UpsertAsync(item any, cmpl bindings.Completion, precepts ...string) (err error) {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.UpsertAsync", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -311,7 +312,7 @@ func (tx *Tx) UpsertJSONAsync(json []byte, cmpl bindings.Completion, precepts ..
 }
 
 // DeleteAsync - remove item by id from namespace. Calls completion on result
-func (tx *Tx) DeleteAsync(item interface{}, cmpl bindings.Completion, precepts ...string) (err error) {
+func (tx *Tx) DeleteAsync(item any, cmpl bindings.Completion, precepts ...string) (err error) {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.DeleteAsync", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -440,18 +441,24 @@ func (tx *Tx) finalize() {
 	tx.finalized = true
 }
 
-func (tx *Tx) modifyInternal(item interface{}, json []byte, mode int, precepts ...string) (err error) {
-	for tryCount := 0; tryCount < 2; tryCount++ {
-		ser := cjson.NewPoolSerializer()
-		defer ser.Close()
-		format := 0
-		stateToken := 0
+func (tx *Tx) modifyInternal(item any, json []byte, mode int, precepts ...string) (err error) {
+	if item == nil && json == nil {
+		return fmt.Errorf("rq: nil value in transaction item modify call for '%s' namespace", tx.namespace)
+	}
 
-		if format, stateToken, err = packItem(tx.ns, item, json, ser); err != nil {
-			return err
-		}
+	for range 2 {
+		err := func() error {
+			ser := cjson.NewPoolSerializer()
+			defer ser.Close()
+			format := 0
+			stateToken := 0
 
-		err := tx.db.binding.ModifyItemTx(&tx.ctx, format, ser.Bytes(), mode, precepts, stateToken)
+			if format, stateToken, _, err = packItem(tx.ns, item, json, ser); err != nil {
+				return err
+			}
+
+			return tx.db.binding.ModifyItemTx(&tx.ctx, format, ser.Bytes(), mode, precepts, stateToken)
+		}()
 
 		if err != nil {
 			rerr, ok := err.(bindings.Error)
@@ -471,7 +478,7 @@ func (tx *Tx) modifyInternal(item interface{}, json []byte, mode int, precepts .
 type modifyInfo struct {
 	err      error
 	cmpl     bindings.Completion
-	item     interface{}
+	item     any
 	json     []byte
 	mode     int
 	precepts []string
@@ -517,7 +524,7 @@ func (tx *Tx) cmplHandlingRoutine(cmplCh chan modifyInfo) {
 	}
 }
 
-func (tx *Tx) modifyInternalAsync(item interface{}, json []byte, mode int, cmpl bindings.Completion, retriesRemain uint32, precepts ...string) (err error) {
+func (tx *Tx) modifyInternalAsync(item any, json []byte, mode int, cmpl bindings.Completion, retriesRemain uint32, precepts ...string) (err error) {
 	internalCmpl := func(buf bindings.RawBuffer, err error) {
 		if buf != nil {
 			buf.Free()
@@ -529,12 +536,18 @@ func (tx *Tx) modifyInternalAsync(item interface{}, json []byte, mode int, cmpl 
 		}
 	}
 
+	if item == nil && json == nil {
+		err := fmt.Errorf("rq: nil value in transaction item modify async call for '%s' namespace", tx.namespace)
+		internalCmpl(nil, err)
+		return err
+	}
+
 	ser := cjson.NewPoolSerializer()
 	defer ser.Close()
 	format := 0
 	stateToken := 0
 
-	if format, stateToken, err = packItem(tx.ns, item, json, ser); err != nil {
+	if format, stateToken, _, err = packItem(tx.ns, item, json, ser); err != nil {
 		internalCmpl(nil, err)
 		return err
 	}

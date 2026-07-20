@@ -2,15 +2,17 @@
 
 #include "sharding_api.h"
 
-class ShardingSystemApi : public ShardingApi {
+namespace reindexer_tests {
+
+class [[nodiscard]] ShardingSystemApi : public ShardingApi {
 public:
 	const Defaults& GetDefaults() const override {
-		static Defaults def{19200, 20200, fs::JoinPath(fs::GetTempDir(), "rx_test/ShardingSystemApi")};
+		static Defaults def{19200, 20200, reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "rx_test/ShardingSystemApi")};
 		return def;
 	}
 
 protected:
-	void ValidateNamespaces(size_t shard, const std::vector<std::string>& expected, const std::vector<NamespaceDef>& actual) {
+	void ValidateNamespaces(size_t shard, const std::vector<std::string>& expected, const std::vector<reindexer::NamespaceDef>& actual) {
 		if (actual.size() == expected.size()) {
 			bool hasUnexpectedNamespaces = false;
 			for (auto& ns : actual) {
@@ -35,3 +37,5 @@ protected:
 		ASSERT_TRUE(false) << "shard: " << shard;
 	}
 };
+
+}  // namespace reindexer_tests

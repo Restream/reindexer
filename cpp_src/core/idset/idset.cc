@@ -1,0 +1,65 @@
+#include "core/idset/idset.h"
+#include "sort/pdqsort.hpp"
+#include "tools/errors.h"
+
+namespace reindexer {
+
+void IdSetUnique::Dump(std::ostream& os) const {
+	os << "[";
+
+	if (!IsEmpty()) {
+		os << id_.ToNumber();
+	}
+
+	os << ']';
+}
+
+void IdSetUnique::throwDuplicatedIDError() const {
+	throw DuplicatedItemIDError(id_.ToNumber(), Error(errConflict, "Duplicated item id, that has to be unique: {}", id_.ToNumber()));
+}
+
+IdSetPlain::Ptr IdSetPlain::BuildFromUnsorted(base_idset&& ids) {
+	boost::sort::pdqsort_branchless(ids.begin(), ids.end());
+	ids.erase(std::unique(ids.begin(), ids.end()), ids.cend());	 // TODO: It would be better to integrate unique into sort
+	return make_intrusive<intrusive_atomic_rc_wrapper<IdSetPlain>>(std::move(ids));
+}
+
+void IdSetPlain::Dump(std::ostream& os) const {
+	os << "[";
+
+	for (auto id : *this) {
+		os << id.ToNumber() << ' ';
+	}
+
+	os << ']';
+}
+
+void IdSet::Commit(size_type sortedIdxCount) {
+	if (!size()) {
+		auto set = set_.Get(std::memory_order_relaxed).first;
+		if (set) {
+			// reserve extra space for sort orders data before IdSet commit
+			reserve(calcPlainReserveSize(set->size(), sortedIdxCount));
+
+			for (auto id : *set) {
+				push_back(id);
+			}
+		}
+	}
+
+	setUsingBtree(false);
+}
+
+void IdSet::Dump(std::ostream& os) const {
+	auto [set, isUsingBtree] = set_.Get(std::memory_order_acquire);
+	os << "<IdSetPlain>: ";
+	static_cast<const IdSetPlain&>(*this).Dump(os);
+	os << "\nusingBtree_: " << std::boolalpha << isUsingBtree;
+	if (set) {
+		os << "\nset_: ";
+		set->dump(os);
+	}
+	os << std::endl;
+}
+
+}  // namespace reindexer
