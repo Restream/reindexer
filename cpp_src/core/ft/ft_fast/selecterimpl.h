@@ -330,7 +330,7 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 					break;
 				}
 
-				const uint32_t wordChars = holder_.GetWordCharsLen(wordId);
+				const auto wordChars = static_cast<uint32_t>(getUTF8StringCharactersCount(word));
 				const uint32_t unmatchedChars = wordChars > patternChars ? wordChars - patternChars : 0;
 				const float boost = std::max(getTermBoost(std::string(word)), variant.boost);
 				const float decreasePenalty =
