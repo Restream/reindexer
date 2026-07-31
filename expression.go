@@ -39,12 +39,12 @@ type SubQuery struct {
 	SubQuery *Query
 }
 
-// FlatArrayLen is the flat_array_len(field) expression.
+// FlatArrayLen is the flat_array_len(field) expression; implements IFunction and IExpression.
 type FlatArrayLen struct {
 	Field string
 }
 
-// Now is the now(time_unit) expression.
+// Now is the now(time_unit) expression; implements IFunction and IExpression.
 type Now struct {
 	TimeUnit TimeUnit
 }
@@ -72,7 +72,9 @@ func (v Values) Serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(int(v.Type()))
 	ser.PutVarCUInt(len(v.Values))
 	for _, v := range v.Values {
-		ser.PutValue(reflect.ValueOf(v))
+		if err := ser.PutValue(reflect.ValueOf(v)); err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -85,6 +87,50 @@ func (q SubQuery) Type() int {
 func (s SubQuery) Serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(int(s.Type()))
 	ser.PutVBytes(s.SubQuery.ser.Bytes())
+}
+
+func (f FlatArrayLen) FunctionType() int {
+	return functionFlatArrayLen
+}
+
+func (f FlatArrayLen) Fields() []string {
+	return []string{f.Field}
+}
+
+func (f FlatArrayLen) Args() []any {
+	return []any{}
+}
+
+func (f Now) FunctionType() int {
+	return functionNow
+}
+
+func (f Now) Fields() []string {
+	return []string{}
+}
+
+func (f Now) Args() []any {
+	return []any{f.TimeUnit}
+}
+
+type IFunction interface {
+	FunctionType() int
+	Fields() []string
+	Args() []any
+}
+
+func SerializeFunction(fn IFunction, ser *cjson.Serializer) {
+	ser.PutVarCUInt(len(fn.Fields()))
+	for _, field := range fn.Fields() {
+		ser.PutVString(field)
+	}
+	ser.PutVarCUInt(len(fn.Args()))
+	for _, arg := range fn.Args() {
+		if err := ser.PutValue(reflect.ValueOf(arg)); err != nil {
+			panic(err)
+		}
+	}
+	ser.PutVarCUInt(fn.FunctionType())
 }
 
 // Type reports expressionTypeExpression for the flat_array_len function node.

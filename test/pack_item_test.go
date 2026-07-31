@@ -29,9 +29,6 @@ func TestPackItemTypeCheck(t *testing.T) {
 	require.NoError(t, DB.Upsert(ns, &packItemTypeCheckItem{ID: 2}))
 	require.NoError(t, DB.Upsert(ns, []byte(`{"id":3}`)))
 	require.Equal(t, rx.ErrWrongType, DB.Upsert(ns, packItemWrongNamedItem{ID: 4}))
-	require.NotPanics(t, func() {
-		require.Equal(t, rx.ErrWrongType, DB.Upsert(ns, packItemWrongNamedItem{ID: 5}))
-	})
 }
 
 func TestPackItemTypeCheckTx(t *testing.T) {

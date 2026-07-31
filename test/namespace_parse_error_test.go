@@ -18,17 +18,11 @@ type badExpireAfterNamespaceItem struct {
 }
 
 func TestOpenNamespaceInvalidCollateReturnsError(t *testing.T) {
-	var err error
-	require.NotPanics(t, func() {
-		err = DB.Reindexer.OpenNamespace("test_bad_collate_namespace", rx.DefaultNamespaceOptions(), badCollateNamespaceItem{})
-	})
-	require.Error(t, err)
+	err := DB.Reindexer.OpenNamespace("test_bad_collate_namespace", rx.DefaultNamespaceOptions(), badCollateNamespaceItem{})
+	require.EqualError(t, err, "collate mode is already set to '1'. Misunderstanding 'collate_utf8'")
 }
 
 func TestOpenNamespaceInvalidExpireAfterReturnsError(t *testing.T) {
-	var err error
-	require.NotPanics(t, func() {
-		err = DB.Reindexer.OpenNamespace("test_bad_expire_after_namespace", rx.DefaultNamespaceOptions(), badExpireAfterNamespaceItem{})
-	})
-	require.Error(t, err)
+	err := DB.Reindexer.OpenNamespace("test_bad_expire_after_namespace", rx.DefaultNamespaceOptions(), badExpireAfterNamespaceItem{})
+	require.EqualError(t, err, "'ExpireAfter' should be an integer value")
 }

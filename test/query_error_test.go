@@ -15,14 +15,17 @@ type queryErrorItem struct {
 	Name string `json:"name" reindex:"name"`
 }
 
-type unsupportedQueryExpression struct{}
+type customQueryExpression struct {
+	serialized *bool
+}
 
-func (unsupportedQueryExpression) Type() int {
+func (customQueryExpression) Type() int {
 	return 0
 }
 
-func (unsupportedQueryExpression) Serialize(*cjson.Serializer) {
-	panic("unsupported expression Serialize should not be called")
+func (e customQueryExpression) Serialize(ser *cjson.Serializer) {
+	*e.serialized = true
+	rx.Field{Name: "id"}.Serialize(ser)
 }
 
 func init() {
@@ -73,6 +76,7 @@ func TestQueryGetWrappersStillPanicOnError(t *testing.T) {
 
 func TestQueryBuilderErrors(t *testing.T) {
 	const ns = testQueryErrorNs
+	require.NoError(t, DB.Upsert(ns, queryErrorItem{ID: 1, Name: "one"}))
 
 	it := DB.Reindexer.Query(ns).CloseBracket().Exec()
 	require.Error(t, it.Error())
@@ -90,23 +94,37 @@ func TestQueryBuilderErrors(t *testing.T) {
 	require.Error(t, it.Error())
 	it.Close()
 
-	require.NotPanics(t, func() {
-		it = DB.Reindexer.Query(ns).
-			WhereExpressions(unsupportedQueryExpression{}, rx.EQ, rx.Values{Values: []any{1}}).
-			Exec()
-	})
+	serialized := false
+	item, found, err := DB.Reindexer.Query(ns).
+		WhereExpressions(customQueryExpression{serialized: &serialized}, rx.EQ, rx.Values{Values: []any{1}}).
+		GetErr()
+	require.NoError(t, err)
+	require.True(t, serialized)
+	require.True(t, found)
+	require.Equal(t, 1, item.(*queryErrorItem).ID)
+
+	it = DB.Reindexer.Query(ns).
+		WhereExpressions(nil, rx.EQ, rx.Values{Values: []any{1}}).
+		Exec()
 	require.Error(t, it.Error())
 	it.Close()
+
+	subQuery := DB.Reindexer.Query(ns).Sort("id", false, struct{}{})
+	it = DB.Reindexer.Query(ns).WhereQuery(subQuery, rx.EQ, 1).Exec()
+	require.EqualError(t, it.Error(), "rq: Invalid reflection type struct")
+	it.Close()
+	_, _, err = subQuery.GetErr()
+	require.EqualError(t, err, "rq: Invalid reflection type struct")
 }
 
-func TestQueryRepeatedExecReturnsError(t *testing.T) {
+func TestQueryRepeatedExecPanics(t *testing.T) {
 	const ns = testQueryErrorNs
 
 	q := DB.Reindexer.Query(ns).WhereInt("id", rx.EQ, 1)
 	it := q.Exec()
+	defer it.Close()
 	require.NoError(t, it.Error())
-	it2 := q.Exec()
-	require.Error(t, it2.Error())
-	it2.Close()
-	it.Close()
+	require.Panics(t, func() {
+		q.Exec()
+	})
 }

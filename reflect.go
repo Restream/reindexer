@@ -1,7 +1,6 @@
 package reindexer
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -30,11 +29,6 @@ var collateModes = map[string]int{
 	"collate_numeric": CollateNumeric,
 	"collate_custom":  CollateCustom,
 }
-
-var (
-	errDuplicateCollateMode = errors.New("collate mode is already set")
-	errInvalidExpireAfter   = errors.New("'ExpireAfter' should be an integer value")
-)
 
 type indexOptions struct {
 	isArray     bool
@@ -474,7 +468,7 @@ func parseCollate(idxSettingsBuf *[]string) (int, string, error) {
 
 		if newCollateMode, ok := collateModes[kvIdxSettings[0]]; ok {
 			if collateMode != CollateNone {
-				return 0, "", errDuplicateCollateMode
+				return 0, "", fmt.Errorf("collate mode is already set to '%d'. Misunderstanding '%s'", collateMode, idxSetting)
 			}
 
 			collateMode = newCollateMode
@@ -500,7 +494,7 @@ func parseExpireAfter(str string) (int, error) {
 		var err error
 		expireAfter, err = strconv.Atoi(str)
 		if err != nil {
-			return 0, errInvalidExpireAfter
+			return 0, fmt.Errorf("'ExpireAfter' should be an integer value")
 		}
 	}
 	return expireAfter, nil

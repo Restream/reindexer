@@ -138,7 +138,6 @@ const (
 var (
 	errQueryNilSubQuery                 = errors.New("rq: nil subquery")
 	errQueryNilExpression               = errors.New("rq: nil query expression")
-	errUnsupportedExpression            = errors.New("rq: unsupported query expression")
 	errKnnEfLessThanK                   = errors.New("Ef should not be less than K")
 	errKnnNProbeLessThanOne             = errors.New("Nprobe should not be less than 1")
 	errQueryOperationBeforeCloseBracket = errors.New("rq: operation before close bracket")
@@ -410,6 +409,16 @@ func (q *Query) setErr(err error) {
 	}
 }
 
+func subQueryErr(subQuery *Query) error {
+	if subQuery == nil {
+		return errQueryNilSubQuery
+	}
+	if subQuery.root != nil {
+		subQuery = subQuery.root
+	}
+	return subQuery.err
+}
+
 // Where - Add where condition to DB query
 // 'keys' may be:
 // - single value
@@ -424,13 +433,17 @@ func (q *Query) Where(index string, condition int, keys any) *Query {
 		q.ser.PutVarUInt(0)
 		return q.finishWhere()
 	case *Query:
-		if v == nil {
-			q.setErr(errQueryNilSubQuery)
+		if err := subQueryErr(v); err != nil {
+			q.setErr(err)
 			return q
 		}
 		q.putSubQueryWhere(index, condition, v.ser.Bytes())
 		return q.finishWhere()
 	case Query:
+		if err := subQueryErr(&v); err != nil {
+			q.setErr(err)
+			return q
+		}
 		q.putSubQueryWhere(index, condition, v.ser.Bytes())
 		return q.finishWhere()
 	case int:
@@ -588,8 +601,8 @@ func (q *Query) finishWhere() *Query {
 // - slice/arrays of values
 // - nil for CondAny/CondEmpty
 func (q *Query) WhereQuery(subQuery *Query, condition int, keys any) *Query {
-	if subQuery == nil {
-		q.setErr(errQueryNilSubQuery)
+	if err := subQueryErr(subQuery); err != nil {
+		q.setErr(err)
 		return q
 	}
 	q.ser.PutVarCUInt(querySubQueryCondition)
@@ -820,87 +833,42 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 func (q *Query) WhereExpressions(left IExpression, condition int, right IExpression) *Query {
 	q.ser.PutVarCUInt(queryExpressions)
 
-	switch v := left.(type) {
-	case nil:
-		q.setErr(errQueryNilExpression)
-		return q
-	case Field:
-		q.ser.PutVarCUInt(expressionTypeField)
-		q.ser.PutVString(v.Name)
-	case Values:
-		q.ser.PutVarCUInt(expressionTypeValues)
-		q.ser.PutVarCUInt(len(v.Values))
-		for _, value := range v.Values {
-			if err := q.ser.PutValue(reflect.ValueOf(value)); err != nil {
+	for i, expression := range [...]IExpression{left, right} {
+		if expression == nil {
+			q.setErr(errQueryNilExpression)
+			return q
+		}
+
+		switch v := expression.(type) {
+		case Field:
+			v.Serialize(&q.ser)
+		case Values:
+			q.ser.PutVarCUInt(expressionTypeValues)
+			q.ser.PutVarCUInt(len(v.Values))
+			for _, value := range v.Values {
+				if err := q.ser.PutValue(reflect.ValueOf(value)); err != nil {
+					q.setErr(err)
+					return q
+				}
+			}
+		case SubQuery:
+			if err := subQueryErr(v.SubQuery); err != nil {
 				q.setErr(err)
 				return q
 			}
+			v.Serialize(&q.ser)
+		case FlatArrayLen:
+			v.Serialize(&q.ser)
+		case Now:
+			v.Serialize(&q.ser)
+		default:
+			expression.Serialize(&q.ser)
 		}
-	case SubQuery:
-		if v.SubQuery == nil {
-			q.setErr(errQueryNilSubQuery)
-			return q
-		}
-		q.ser.PutVarCUInt(expressionTypeSubQuery)
-		q.ser.PutVBytes(v.SubQuery.ser.Bytes())
-	case FlatArrayLen:
-		q.ser.PutVarCUInt(expressionTypeExpression)
-		q.ser.PutVarCUInt(1)
-		q.ser.PutVString(v.Field)
-		q.ser.PutVarCUInt(0)
-		q.ser.PutVarCUInt(functionFlatArrayLen)
-	case Now:
-		q.ser.PutVarCUInt(expressionTypeExpression)
-		q.ser.PutVarCUInt(0)
-		q.ser.PutVarCUInt(1)
-		q.ser.PutVarCUInt(valueString).PutVString(string(v.TimeUnit))
-		q.ser.PutVarCUInt(functionNow)
-	default:
-		q.setErr(errUnsupportedExpression)
-		return q
-	}
 
-	q.ser.PutVarCUInt(q.nextOp)
-	q.ser.PutVarCUInt(condition)
-
-	switch v := right.(type) {
-	case nil:
-		q.setErr(errQueryNilExpression)
-		return q
-	case Field:
-		q.ser.PutVarCUInt(expressionTypeField)
-		q.ser.PutVString(v.Name)
-	case Values:
-		q.ser.PutVarCUInt(expressionTypeValues)
-		q.ser.PutVarCUInt(len(v.Values))
-		for _, value := range v.Values {
-			if err := q.ser.PutValue(reflect.ValueOf(value)); err != nil {
-				q.setErr(err)
-				return q
-			}
+		if i == 0 {
+			q.ser.PutVarCUInt(q.nextOp)
+			q.ser.PutVarCUInt(condition)
 		}
-	case SubQuery:
-		if v.SubQuery == nil {
-			q.setErr(errQueryNilSubQuery)
-			return q
-		}
-		q.ser.PutVarCUInt(expressionTypeSubQuery)
-		q.ser.PutVBytes(v.SubQuery.ser.Bytes())
-	case FlatArrayLen:
-		q.ser.PutVarCUInt(expressionTypeExpression)
-		q.ser.PutVarCUInt(1)
-		q.ser.PutVString(v.Field)
-		q.ser.PutVarCUInt(0)
-		q.ser.PutVarCUInt(functionFlatArrayLen)
-	case Now:
-		q.ser.PutVarCUInt(expressionTypeExpression)
-		q.ser.PutVarCUInt(0)
-		q.ser.PutVarCUInt(1)
-		q.ser.PutVarCUInt(valueString).PutVString(string(v.TimeUnit))
-		q.ser.PutVarCUInt(functionNow)
-	default:
-		q.setErr(errUnsupportedExpression)
-		return q
 	}
 
 	q.whereEntriesCount++
@@ -1130,15 +1098,15 @@ func (q *Query) ExecCtx(ctx context.Context) *Iterator {
 		q = q.root
 	}
 	if q.closed {
-		q.setErr(errQueryExecClosed)
-		return errIterator(q.err)
+		panic(errQueryExecClosed)
 	}
 	if q.executed {
-		q.setErr(errQueryExecExecuted)
-		return errIterator(q.err)
+		panic(errQueryExecExecuted)
 	}
 	if q.err != nil {
-		return errIterator(q.err)
+		err := q.err
+		q.close()
+		return errIterator(err)
 	}
 
 	q.executed = true
@@ -1157,15 +1125,15 @@ func (q *Query) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *JSONIte
 		q = q.root
 	}
 	if q.closed {
-		q.setErr(errQueryExecClosed)
-		return errJSONIterator(q.err)
+		panic(errQueryExecClosed)
 	}
 	if q.executed {
-		q.setErr(errQueryExecExecuted)
-		return errJSONIterator(q.err)
+		panic(errQueryExecExecuted)
 	}
 	if q.err != nil {
-		return errJSONIterator(q.err)
+		err := q.err
+		q.close()
+		return errJSONIterator(err)
 	}
 
 	q.executed = true
@@ -1183,7 +1151,7 @@ func (q *Query) close() {
 		q = q.root
 	}
 	if q.closed {
-		return
+		panic(errors.New("Close call on already closed query"))
 	}
 
 	for i, jq := range q.joinQueries {
@@ -1221,18 +1189,16 @@ func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 	}
 
 	if q.closed {
-		q.setErr(errQueryDeleteClosed)
-		return 0, q.err
+		panic(errQueryDeleteClosed)
 	}
 	if q.executed {
-		q.setErr(errQueryDeleteExecuted)
-		return 0, q.err
-	}
-	if q.err != nil {
-		return 0, q.err
+		panic(errQueryDeleteExecuted)
 	}
 
 	defer q.close()
+	if q.err != nil {
+		return 0, q.err
+	}
 
 	if q.tx != nil {
 		return q.db.deleteQueryTx(ctx, q, q.tx)
@@ -1549,15 +1515,15 @@ func (q *Query) UpdateCtx(ctx context.Context) *Iterator {
 		q = q.root
 	}
 	if q.closed {
-		q.setErr(errQueryUpdateClosed)
-		return errIterator(q.err)
+		panic(errQueryUpdateClosed)
 	}
 	if q.executed {
-		q.setErr(errQueryUpdateExecuted)
-		return errIterator(q.err)
+		panic(errQueryUpdateExecuted)
 	}
 	if q.err != nil {
-		return errIterator(q.err)
+		err := q.err
+		q.close()
+		return errIterator(err)
 	}
 
 	q.executed = true
@@ -1612,10 +1578,10 @@ func (q *Query) GetErrCtx(ctx context.Context) (item any, found bool, err error)
 	if err := iter.Error(); err != nil {
 		return nil, false, err
 	}
-	if iter.Next() {
-		return iter.Object(), true, nil
+	if !iter.Next() {
+		return nil, false, iter.Error()
 	}
-	return nil, false, nil
+	return iter.Object(), true, nil
 }
 
 // GetJson will execute query, and return 1 st item. Generates panic on error
@@ -1648,7 +1614,7 @@ func (q *Query) GetJsonErrCtx(ctx context.Context) (json []byte, found bool, err
 		return nil, false, it.Error()
 	}
 	if !it.Next() {
-		return nil, false, nil
+		return nil, false, it.Error()
 	}
 
 	return it.JSON(), true, nil
@@ -1667,6 +1633,7 @@ func (q *Query) join(q2 *Query, field string, joinType int) *Query {
 		q.setErr(errQueryJoinAlreadyJoined)
 		return q
 	}
+	q.setErr(q2.err)
 	if joinType != leftJoin {
 		q.ser.PutVarCUInt(queryJoinCondition)
 		q.ser.PutVarCUInt(joinType)
@@ -1748,6 +1715,7 @@ func (q *Query) Merge(q2 *Query) *Query {
 	if q2.root != nil {
 		q2 = q2.root
 	}
+	q.setErr(q2.err)
 	q2.root = q
 	q.mergedQueries = append(q.mergedQueries, q2)
 	return q
@@ -1760,8 +1728,7 @@ func (q *Query) Merge(q2 *Query) *Query {
 // `joinIndex` parameter specifies which field from namespace for the latest join query issued on `q` should be used during join
 func (q *Query) On(index string, condition int, joinIndex string) *Query {
 	if q.closed {
-		q.setErr(errQueryOnClosed)
-		return q
+		panic(errQueryOnClosed)
 	}
 	if q.root == nil {
 		q.setErr(errQueryOnRoot)
