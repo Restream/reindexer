@@ -18,6 +18,7 @@ public:
 private:
 	typedef size_t size_type;
 	typedef unsigned char char_type;
+	using WordsLenContainer = std::vector<word_len_type>;
 
 	class [[nodiscard]] value_type : public std::pair<const CharT*, V> {
 	public:
@@ -194,7 +195,7 @@ public:
 	size_t heap_size() noexcept {
 		return (sa_.capacity() + words_.capacity()) * sizeof(int) +	 //
 			   lcp_.capacity() * sizeof(int16_t) +					 //
-			   words_len_.capacity() * sizeof(word_len_type) +		 //
+			   words_len_.capacity() * sizeof(WordsLenContainer::value_type) +	 //
 			   mapped_.capacity() * sizeof(V) + text_.capacity();
 	}
 
@@ -224,7 +225,7 @@ protected:
 
 	std::vector<int> sa_, words_;
 	std::vector<int16_t> lcp_;
-	std::vector<word_len_type> words_len_;
+	WordsLenContainer words_len_;
 	std::vector<V> mapped_;
 	std::vector<CharT> text_;
 	bool built_ = false;
