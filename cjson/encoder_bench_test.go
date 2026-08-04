@@ -79,7 +79,6 @@ func benchmarkCJSONEncodeRaw(b *testing.B, doc any) {
 	ser.Close()
 
 	b.ReportAllocs()
-	b.ResetTimer()
 	for b.Loop() {
 		ser := NewPoolSerializer()
 		if err := enc.EncodeRaw(doc, ser); err != nil {
@@ -103,7 +102,6 @@ func BenchmarkGobEncoderTypicalDocument(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
 	for b.Loop() {
 		buf.Reset()
 		if err := enc.Encode(doc); err != nil {

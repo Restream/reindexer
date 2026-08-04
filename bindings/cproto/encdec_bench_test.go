@@ -17,12 +17,13 @@ func BenchmarkRPCEncoderInt32ArrArg(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		enc := newRPCEncoder(cmdSelect, uint32(i), false, false)
+	var seq uint32
+	for b.Loop() {
+		enc := newRPCEncoder(cmdSelect, seq, false, false)
 		enc.int32ArrArg(values)
 		_ = enc.bytes()
 		enc.ser.Close()
+		seq++
 	}
 }
 
@@ -34,12 +35,13 @@ func BenchmarkRPCEncoderSnappyBytes(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		enc := newRPCEncoder(cmdSelect, uint32(i), true, false)
+	var seq uint32
+	for b.Loop() {
+		enc := newRPCEncoder(cmdSelect, seq, true, false)
 		enc.bytesArg(payload)
 		_ = enc.bytes()
 		enc.ser.Close()
+		seq++
 	}
 }
 
@@ -48,8 +50,7 @@ func BenchmarkRPCEncoderStartArgsChunck(b *testing.B) {
 	defer enc.ser.Close()
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		enc.ser.Truncate(cprotoHdrLen)
 		enc.startArgsChunck()
 	}
@@ -65,8 +66,7 @@ func BenchmarkRPCEncoderUpdate(b *testing.B) {
 	enc.ser.PutVarInt(1)
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		enc.update()
 	}
 }
@@ -98,8 +98,7 @@ func BenchmarkRPCDecoderIntfArgs(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(reply)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		dec := newRPCDecoder(reply)
 		err := dec.errCode()
 		require.NoError(b, err)
@@ -141,8 +140,7 @@ func BenchmarkNetBufferParseArgs(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(reply)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		err := nb.parseArgs()
 		require.NoError(b, err)
 		if len(nb.args) != 5 {
@@ -159,8 +157,7 @@ func BenchmarkNetBufferParseArgsTimeout(b *testing.B) {
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(reply)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		err := nb.parseArgs()
 		if err != context.DeadlineExceeded {
 			b.Fatalf("expected context.DeadlineExceeded, got %v", err)
