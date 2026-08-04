@@ -3,6 +3,7 @@ package cjson
 import (
 	"encoding/binary"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -115,4 +116,10 @@ func TestSerializerWriteReadFloatArrays(t *testing.T) {
 
 	assert.Equal(t, f32, got32)
 	assert.Equal(t, f64, got64)
+}
+
+func TestSerializerPutValueReturnsNestedError(t *testing.T) {
+	ser := NewSerializer(nil)
+	err := ser.PutValue(reflect.ValueOf([]any{1, struct{}{}}))
+	require.EqualError(t, err, "rq: Invalid reflection type struct")
 }

@@ -72,7 +72,9 @@ func (v Values) Serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(int(v.Type()))
 	ser.PutVarCUInt(len(v.Values))
 	for _, v := range v.Values {
-		ser.PutValue(reflect.ValueOf(v))
+		if err := ser.PutValue(reflect.ValueOf(v)); err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -124,7 +126,9 @@ func SerializeFunction(fn IFunction, ser *cjson.Serializer) {
 	}
 	ser.PutVarCUInt(len(fn.Args()))
 	for _, arg := range fn.Args() {
-		ser.PutValue(reflect.ValueOf(arg))
+		if err := ser.PutValue(reflect.ValueOf(arg)); err != nil {
+			panic(err)
+		}
 	}
 	ser.PutVarCUInt(fn.FunctionType())
 }
@@ -137,7 +141,10 @@ func (f FlatArrayLen) Type() int {
 // Serialize writes the function expression tag and flat_array_len payload.
 func (f FlatArrayLen) Serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(int(f.Type()))
-	SerializeFunction(f, ser)
+	ser.PutVarCUInt(1)
+	ser.PutVString(f.Field)
+	ser.PutVarCUInt(0)
+	ser.PutVarCUInt(functionFlatArrayLen)
 }
 
 // Type reports expressionTypeExpression for the now function node.
@@ -148,5 +155,8 @@ func (n Now) Type() int {
 // Serialize writes the function expression tag and now() payload.
 func (n Now) Serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(int(n.Type()))
-	SerializeFunction(n, ser)
+	ser.PutVarCUInt(0)
+	ser.PutVarCUInt(1)
+	ser.PutVarCUInt(valueString).PutVString(string(n.TimeUnit))
+	ser.PutVarCUInt(functionNow)
 }

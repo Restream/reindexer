@@ -3,10 +3,7 @@ package reindexer
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"reflect"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -138,6 +135,27 @@ const (
 	defaultFetchCount = 1000
 )
 
+var (
+	errQueryNilSubQuery                 = errors.New("rq: nil subquery")
+	errQueryNilExpression               = errors.New("rq: nil query expression")
+	errKnnEfLessThanK                   = errors.New("Ef should not be less than K")
+	errKnnNProbeLessThanOne             = errors.New("Nprobe should not be less than 1")
+	errQueryOperationBeforeCloseBracket = errors.New("rq: operation before close bracket")
+	errQueryCloseBracketBeforeOpen      = errors.New("rq: close bracket before open it")
+	errQueryNilKnnSearchParams          = errors.New("rq: nil knn search params")
+	errQueryExecClosed                  = errors.New("Exec call on already closed query. You should create new Query")
+	errQueryExecExecuted                = errors.New("Exec call on already executed query. You should create new Query")
+	errQueryDeleteClosed                = errors.New("Delete call on already closed query. You should create new Query")
+	errQueryDeleteExecuted              = errors.New("Delete call on already executed query. You should create new Query")
+	errQueryUpdateClosed                = errors.New("Update call on already closed query. You should create new Query")
+	errQueryUpdateExecuted              = errors.New("Update call on already executed query. You should create new Query")
+	errQueryJoinNil                     = errors.New("query.Join call with nil query")
+	errQueryJoinAlreadyJoined           = errors.New("query.Join call on already joined query. You should create new Query")
+	errQueryMergeNil                    = errors.New("query.Merge call with nil query")
+	errQueryOnClosed                    = errors.New("query.On call on already closed query. You should create new Query")
+	errQueryOnRoot                      = errors.New("Can't join on root query")
+)
+
 type nsArrayEntry struct {
 	*reindexerNamespace
 	localCjsonState cjson.State
@@ -175,12 +193,11 @@ type Query struct {
 	jsonOffsets       []int
 	totalName         string
 	executed          bool
+	err               error
 	fetchCount        int
 	whereEntriesCount int
 	openedBrackets    []int
 	tx                *Tx
-	traceNew          []byte
-	traceClose        []byte
 }
 
 type KnnSearchParam interface {
@@ -215,14 +232,14 @@ func NewIndexBFSearchParam(baseParam BaseKnnSearchParam) (IndexBFSearchParam, er
 
 func NewIndexHnswSearchParam(ef int, baseParam BaseKnnSearchParam) (IndexHnswSearchParam, error) {
 	if baseParam.K != nil && ef < *baseParam.K {
-		return IndexHnswSearchParam{}, fmt.Errorf("Ef should not be less than K")
+		return IndexHnswSearchParam{}, errKnnEfLessThanK
 	}
 	return IndexHnswSearchParam{baseParam, ef}, nil
 }
 
 func NewIndexIvfSearchParam(nprobe int, baseParam BaseKnnSearchParam) (IndexIvfSearchParam, error) {
 	if nprobe < 1 {
-		return IndexIvfSearchParam{}, fmt.Errorf("Nprobe should not be less than 1")
+		return IndexIvfSearchParam{}, errKnnNProbeLessThanOne
 	}
 	return IndexIvfSearchParam{baseParam, nprobe}, nil
 }
@@ -281,18 +298,6 @@ func (p IndexIvfSearchParam) serialize(ser *cjson.Serializer) {
 }
 
 var queryPool sync.Pool
-var enableDebug bool
-
-func init() {
-	enableDebug = os.Getenv("REINDEXER_GODEBUG") != ""
-}
-
-func mktrace(buf *[]byte) {
-	if *buf == nil {
-		*buf = make([]byte, 0x4000)
-	}
-	*buf = (*buf)[0:runtime.Stack((*buf)[0:cap((*buf))], false)]
-}
 
 // Create new DB query
 func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
@@ -319,14 +324,11 @@ func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
 		q.closed = false
 		q.totalName = ""
 		q.executed = false
+		q.err = nil
 		q.nsArray = q.nsArray[:0]
 		q.whereEntriesCount = 0
 		q.openedBrackets = q.openedBrackets[:0]
 	}
-	if enableDebug {
-		mktrace(&q.traceNew)
-	}
-
 	q.Namespace = namespace
 	q.db = db
 	q.nextOp = opAND
@@ -352,10 +354,6 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 	if qC == nil {
 		qC = &Query{}
 	}
-	if enableDebug {
-		mktrace(&qC.traceNew)
-	}
-
 	qC.ser = cjson.NewSerializer(qC.initBuf[:0])
 
 	qC.db = db
@@ -376,6 +374,7 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 	qC.jsonOffsets = append(q.jsonOffsets[:0:0], q.jsonOffsets...)
 	qC.totalName = q.totalName
 	qC.executed = q.executed
+	qC.err = q.err
 	qC.fetchCount = q.fetchCount
 
 	qC.closed = q.closed
@@ -398,6 +397,28 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 
 }
 
+func (q *Query) setErr(err error) {
+	if err == nil {
+		return
+	}
+	if q.root != nil {
+		q = q.root
+	}
+	if q.err == nil {
+		q.err = err
+	}
+}
+
+func subQueryErr(subQuery *Query) error {
+	if subQuery == nil {
+		return errQueryNilSubQuery
+	}
+	if subQuery.root != nil {
+		subQuery = subQuery.root
+	}
+	return subQuery.err
+}
+
 // Where - Add where condition to DB query
 // 'keys' may be:
 // - single value
@@ -412,9 +433,17 @@ func (q *Query) Where(index string, condition int, keys any) *Query {
 		q.ser.PutVarUInt(0)
 		return q.finishWhere()
 	case *Query:
+		if err := subQueryErr(v); err != nil {
+			q.setErr(err)
+			return q
+		}
 		q.putSubQueryWhere(index, condition, v.ser.Bytes())
 		return q.finishWhere()
 	case Query:
+		if err := subQueryErr(&v); err != nil {
+			q.setErr(err)
+			return q
+		}
 		q.putSubQueryWhere(index, condition, v.ser.Bytes())
 		return q.finishWhere()
 	case int:
@@ -505,7 +534,10 @@ func (q *Query) Where(index string, condition int, keys any) *Query {
 		q.putWhereHeader(index, condition)
 		q.ser.PutVarCUInt(len(v))
 		for _, value := range v {
-			q.ser.PutValue(reflect.ValueOf(value))
+			if err := q.ser.PutValue(reflect.ValueOf(value)); err != nil {
+				q.setErr(err)
+				return q
+			}
 		}
 		return q.finishWhere()
 	}
@@ -517,13 +549,19 @@ func (q *Query) Where(index string, condition int, keys any) *Query {
 		l := v.Len()
 		q.ser.PutVarCUInt(l)
 		for i := range l {
-			q.ser.PutValue(v.Index(i))
+			if err := q.ser.PutValue(v.Index(i)); err != nil {
+				q.setErr(err)
+				return q
+			}
 		}
 		return q.finishWhere()
 	}
 
 	q.ser.PutVarCUInt(1)
-	q.ser.PutValue(v)
+	if err := q.ser.PutValue(v); err != nil {
+		q.setErr(err)
+		return q
+	}
 	return q.finishWhere()
 }
 
@@ -563,6 +601,10 @@ func (q *Query) finishWhere() *Query {
 // - slice/arrays of values
 // - nil for CondAny/CondEmpty
 func (q *Query) WhereQuery(subQuery *Query, condition int, keys any) *Query {
+	if err := subQueryErr(subQuery); err != nil {
+		q.setErr(err)
+		return q
+	}
 	q.ser.PutVarCUInt(querySubQueryCondition)
 	q.ser.PutVarCUInt(q.nextOp)
 	q.ser.PutVBytes(subQuery.ser.Bytes())
@@ -580,11 +622,17 @@ func (q *Query) WhereQuery(subQuery *Query, condition int, keys any) *Query {
 	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		q.ser.PutVarCUInt(v.Len())
 		for i := range v.Len() {
-			q.ser.PutValue(v.Index(i))
+			if err := q.ser.PutValue(v.Index(i)); err != nil {
+				q.setErr(err)
+				return q
+			}
 		}
 	} else {
 		q.ser.PutVarCUInt(1)
-		q.ser.PutValue(v)
+		if err := q.ser.PutValue(v); err != nil {
+			q.setErr(err)
+			return q
+		}
 	}
 	return q
 }
@@ -614,10 +662,12 @@ func (q *Query) OpenBracket() *Query {
 // CloseBracket - Close bracket for where condition to DB query
 func (q *Query) CloseBracket() *Query {
 	if q.nextOp != opAND {
-		panic(fmt.Errorf("rq: operation before close bracket"))
+		q.setErr(errQueryOperationBeforeCloseBracket)
+		return q
 	}
 	if len(q.openedBrackets) < 1 {
-		panic(fmt.Errorf("rq: close bracket before open it"))
+		q.setErr(errQueryCloseBracketBeforeOpen)
+		return q
 	}
 	q.ser.PutVarCUInt(queryCloseBracket)
 	q.openedBrackets = q.openedBrackets[:len(q.openedBrackets)-1]
@@ -701,6 +751,10 @@ func (q *Query) WhereUuid(index string, condition int, keys ...string) *Query {
 // WhereKnn - Add where condition to DB query with float-point vector arguments.
 // 'index' MUST be declared as "float_vector" index in this case
 func (q *Query) WhereKnn(index string, vec []float32, params KnnSearchParam) *Query {
+	if params == nil {
+		q.setErr(errQueryNilKnnSearchParams)
+		return q
+	}
 	q.ser.PutVarCUInt(queryKnnCondition).PutVString(index).PutVarCUInt(q.nextOp).PutFloatVector(vec)
 	params.serialize(&q.ser)
 	q.nextOp = opAND
@@ -712,6 +766,10 @@ func (q *Query) WhereKnn(index string, vec []float32, params KnnSearchParam) *Qu
 // Before this, you need to configure "query_embedder".
 // 'index' MUST be declared as "float_vector" index in this case
 func (q *Query) WhereKnnString(index string, val string, params KnnSearchParam) *Query {
+	if params == nil {
+		q.setErr(errQueryNilKnnSearchParams)
+		return q
+	}
 	q.ser.PutVarCUInt(queryKnnConditionExt).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(knnQueryDataFormatString).PutVString(val)
 	params.serialize(&q.ser)
 	q.nextOp = opAND
@@ -774,10 +832,44 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 // Check IExpression interface and list of implementations nearby for more details.
 func (q *Query) WhereExpressions(left IExpression, condition int, right IExpression) *Query {
 	q.ser.PutVarCUInt(queryExpressions)
-	left.Serialize(&q.ser)
-	q.ser.PutVarCUInt(q.nextOp)
-	q.ser.PutVarCUInt(condition)
-	right.Serialize(&q.ser)
+
+	for i, expression := range [...]IExpression{left, right} {
+		if expression == nil {
+			q.setErr(errQueryNilExpression)
+			return q
+		}
+
+		switch v := expression.(type) {
+		case Field:
+			v.Serialize(&q.ser)
+		case Values:
+			q.ser.PutVarCUInt(expressionTypeValues)
+			q.ser.PutVarCUInt(len(v.Values))
+			for _, value := range v.Values {
+				if err := q.ser.PutValue(reflect.ValueOf(value)); err != nil {
+					q.setErr(err)
+					return q
+				}
+			}
+		case SubQuery:
+			if err := subQueryErr(v.SubQuery); err != nil {
+				q.setErr(err)
+				return q
+			}
+			v.Serialize(&q.ser)
+		case FlatArrayLen:
+			v.Serialize(&q.ser)
+		case Now:
+			v.Serialize(&q.ser)
+		default:
+			expression.Serialize(&q.ser)
+		}
+
+		if i == 0 {
+			q.ser.PutVarCUInt(q.nextOp)
+			q.ser.PutVarCUInt(condition)
+		}
+	}
 
 	q.whereEntriesCount++
 	q.nextOp = opAND
@@ -865,7 +957,10 @@ func (q *Query) Sort(sortIndex string, desc bool, values ...any) *Query {
 
 	q.ser.PutVarCUInt(len(values))
 	for i := range values {
-		q.ser.PutValue(reflect.ValueOf(values[i]))
+		if err := q.ser.PutValue(reflect.ValueOf(values[i])); err != nil {
+			q.setErr(err)
+			return q
+		}
 	}
 
 	return q
@@ -1003,10 +1098,15 @@ func (q *Query) ExecCtx(ctx context.Context) *Iterator {
 		q = q.root
 	}
 	if q.closed {
-		q.panicTrace("Exec call on already closed query. You should create new Query")
+		panic(errQueryExecClosed)
 	}
 	if q.executed {
-		q.panicTrace("Exec call on already executed query. You should create new Query")
+		panic(errQueryExecExecuted)
+	}
+	if q.err != nil {
+		err := q.err
+		q.close()
+		return errIterator(err)
 	}
 
 	q.executed = true
@@ -1025,10 +1125,15 @@ func (q *Query) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *JSONIte
 		q = q.root
 	}
 	if q.closed {
-		q.panicTrace("Exec call on already closed query. You should create new Query")
+		panic(errQueryExecClosed)
 	}
 	if q.executed {
-		q.panicTrace("Exec call on already executed query. You should create new Query")
+		panic(errQueryExecExecuted)
+	}
+	if q.err != nil {
+		err := q.err
+		q.close()
+		return errJSONIterator(err)
 	}
 
 	q.executed = true
@@ -1046,26 +1151,17 @@ func (q *Query) close() {
 		q = q.root
 	}
 	if q.closed {
-		q.panicTrace("Close call on already closed query")
-	}
-	if enableDebug {
-		mktrace(&q.traceClose)
+		panic(errors.New("Close call on already closed query"))
 	}
 
 	for i, jq := range q.joinQueries {
 		jq.closed = true
-		if enableDebug {
-			mktrace(&jq.traceClose)
-		}
 		queryPool.Put(jq)
 		q.joinQueries[i] = nil
 	}
 
 	for i, mq := range q.mergedQueries {
 		mq.closed = true
-		if enableDebug {
-			mktrace(&mq.traceClose)
-		}
 		queryPool.Put(mq)
 		q.mergedQueries[i] = nil
 	}
@@ -1077,15 +1173,6 @@ func (q *Query) close() {
 	q.closed = true
 	q.tx = nil
 	queryPool.Put(q)
-}
-
-func (q *Query) panicTrace(msg string) {
-	if !enableDebug {
-		fmt.Println("To see query allocation/close traces set REINDEXER_GODEBUG=1 environment variable!")
-	} else {
-		fmt.Printf("Query allocation trace: %s\n\nQuery close trace %s\n\n", string(q.traceNew), string(q.traceClose))
-	}
-	panic(errors.New(msg))
 }
 
 // Delete will execute query, and delete items, matches query
@@ -1102,10 +1189,16 @@ func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 	}
 
 	if q.closed {
-		q.panicTrace("Delete call on already closed query. You should create new Query")
+		panic(errQueryDeleteClosed)
+	}
+	if q.executed {
+		panic(errQueryDeleteExecuted)
 	}
 
 	defer q.close()
+	if q.err != nil {
+		return 0, q.err
+	}
 
 	if q.tx != nil {
 		return q.db.deleteQueryTx(ctx, q, q.tx)
@@ -1116,22 +1209,22 @@ func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 
 var emptyObjectJSON = []byte("{}")
 
-func getValueJSON(value any) []byte {
+func getValueJSON(value any) ([]byte, error) {
 	if value == nil {
-		return emptyObjectJSON
+		return emptyObjectJSON, nil
 	}
 	if objectJSON, ok := value.([]byte); ok {
-		return objectJSON
+		return objectJSON, nil
 	}
 	t := reflect.TypeOf(value)
 	if t.Kind() == reflect.Struct || t.Kind() == reflect.Map {
 		objectJSON, err := json.Marshal(value)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
-		return objectJSON
+		return objectJSON, nil
 	}
-	panic(errors.New("SetObject doesn't support this type of objects: " + t.Kind().String()))
+	return nil, errors.New("SetObject doesn't support this type of objects: " + t.Kind().String())
 }
 
 // SetObject adds update of object field request for update query
@@ -1158,10 +1251,20 @@ func (q *Query) SetObject(field string, values any) *Query {
 	if isArray {
 		jsonValues = make([][]byte, size)
 		for i := range size {
-			jsonValues[i] = getValueJSON(v.Index(i).Interface())
+			var err error
+			jsonValues[i], err = getValueJSON(v.Index(i).Interface())
+			if err != nil {
+				q.setErr(err)
+				return q
+			}
 		}
 	} else if size > 0 {
-		jsonValue = getValueJSON(values)
+		var err error
+		jsonValue, err = getValueJSON(values)
+		if err != nil {
+			q.setErr(err)
+			return q
+		}
 	}
 	q.putSetObjectHeader(field, size, isArray)
 	for i := range size {
@@ -1306,6 +1409,12 @@ func (q *Query) Set(field string, values any) *Query {
 		return q
 	}
 
+	if values == nil {
+		q.putSetHeader(field, queryUpdateField, false)
+		q.ser.PutVarUInt(0) // size
+		return q
+	}
+
 	t := reflect.TypeOf(values)
 	if t.Kind() == reflect.Struct || t.Kind() == reflect.Map {
 		return q.SetObject(field, values)
@@ -1325,12 +1434,7 @@ func (q *Query) Set(field string, values any) *Query {
 	q.ser.PutVarCUInt(cmd)
 	q.ser.PutVString(field)
 
-	if values == nil {
-		if cmd == queryUpdateFieldV2 {
-			q.ser.PutVarUInt(0) // is array
-		}
-		q.ser.PutVarUInt(0) // size
-	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		if cmd == queryUpdateFieldV2 {
 			q.ser.PutVarUInt(1) // is array
 		}
@@ -1338,7 +1442,10 @@ func (q *Query) Set(field string, values any) *Query {
 		for i := range v.Len() {
 			// function/value flag
 			q.ser.PutVarUInt(0)
-			q.ser.PutValue(v.Index(i))
+			if err := q.ser.PutValue(v.Index(i)); err != nil {
+				q.setErr(err)
+				return q
+			}
 		}
 	} else {
 		if cmd == queryUpdateFieldV2 {
@@ -1347,7 +1454,10 @@ func (q *Query) Set(field string, values any) *Query {
 		q.ser.PutVarCUInt(1) // size
 		// function/value flag
 		q.ser.PutVarUInt(0)
-		q.ser.PutValue(v)
+		if err := q.ser.PutValue(v); err != nil {
+			q.setErr(err)
+			return q
+		}
 	}
 	return q
 }
@@ -1385,7 +1495,9 @@ func (q *Query) SetExpression(field string, value string) *Query {
 
 	q.ser.PutVarCUInt(1) // size
 	q.ser.PutVarUInt(1)  // is expression
-	q.ser.PutValue(reflect.ValueOf(value))
+	if err := q.ser.PutValue(reflect.ValueOf(value)); err != nil {
+		q.setErr(err)
+	}
 
 	return q
 }
@@ -1403,7 +1515,15 @@ func (q *Query) UpdateCtx(ctx context.Context) *Iterator {
 		q = q.root
 	}
 	if q.closed {
-		q.panicTrace("Update call on already closed query. You should create new Query")
+		panic(errQueryUpdateClosed)
+	}
+	if q.executed {
+		panic(errQueryUpdateExecuted)
+	}
+	if q.err != nil {
+		err := q.err
+		q.close()
+		return errIterator(err)
 	}
 
 	q.executed = true
@@ -1436,15 +1556,32 @@ func (q *Query) Get() (item any, found bool) {
 
 // GetCtx will execute query and return first item. Generates panic on error
 func (q *Query) GetCtx(ctx context.Context) (item any, found bool) {
+	item, found, err := q.GetErrCtx(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return item, found
+}
+
+// GetErr will execute query and return first item or error.
+func (q *Query) GetErr() (item any, found bool, err error) {
+	return q.GetErrCtx(context.Background())
+}
+
+// GetErrCtx will execute query and return first item or error.
+func (q *Query) GetErrCtx(ctx context.Context) (item any, found bool, err error) {
 	if q.root != nil {
 		q = q.root
 	}
-	iter := q.Limit(1).MustExecCtx(ctx)
+	iter := q.Limit(1).ExecCtx(ctx)
 	defer iter.Close()
-	if iter.Next() {
-		return iter.Object(), true
+	if err := iter.Error(); err != nil {
+		return nil, false, err
 	}
-	return nil, false
+	if !iter.Next() {
+		return nil, false, iter.Error()
+	}
+	return iter.Object(), true, nil
 }
 
 // GetJson will execute query, and return 1 st item. Generates panic on error
@@ -1454,19 +1591,33 @@ func (q *Query) GetJson() (json []byte, found bool) {
 
 // GetJsonCtx will execute query, and return first item. Generates panic on error
 func (q *Query) GetJsonCtx(ctx context.Context) (json []byte, found bool) {
+	json, found, err := q.GetJsonErrCtx(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return json, found
+}
+
+// GetJsonErr will execute query, and return first item as json or error.
+func (q *Query) GetJsonErr() (json []byte, found bool, err error) {
+	return q.GetJsonErrCtx(context.Background())
+}
+
+// GetJsonErrCtx will execute query, and return first item as json or error.
+func (q *Query) GetJsonErrCtx(ctx context.Context) (json []byte, found bool, err error) {
 	if q.root != nil {
 		q = q.root
 	}
 	it := q.Limit(1).ExecToJsonCtx(ctx)
 	defer it.Close()
 	if it.Error() != nil {
-		panic(it.Error())
+		return nil, false, it.Error()
 	}
 	if !it.Next() {
-		return nil, false
+		return nil, false, it.Error()
 	}
 
-	return it.JSON(), true
+	return it.JSON(), true, nil
 }
 
 // Join joins 2 queries
@@ -1474,9 +1625,15 @@ func (q *Query) join(q2 *Query, field string, joinType int) *Query {
 	if q.root != nil {
 		q = q.root
 	}
-	if q2.root != nil {
-		panic(errors.New("query.Join call on already joined query. You should create new Query"))
+	if q2 == nil {
+		q.setErr(errQueryJoinNil)
+		return q
 	}
+	if q2.root != nil {
+		q.setErr(errQueryJoinAlreadyJoined)
+		return q
+	}
+	q.setErr(q2.err)
 	if joinType != leftJoin {
 		q.ser.PutVarCUInt(queryJoinCondition)
 		q.ser.PutVarCUInt(joinType)
@@ -1551,9 +1708,14 @@ func (q *Query) Merge(q2 *Query) *Query {
 	if q.root != nil {
 		q = q.root
 	}
+	if q2 == nil {
+		q.setErr(errQueryMergeNil)
+		return q
+	}
 	if q2.root != nil {
 		q2 = q2.root
 	}
+	q.setErr(q2.err)
 	q2.root = q
 	q.mergedQueries = append(q.mergedQueries, q2)
 	return q
@@ -1566,10 +1728,11 @@ func (q *Query) Merge(q2 *Query) *Query {
 // `joinIndex` parameter specifies which field from namespace for the latest join query issued on `q` should be used during join
 func (q *Query) On(index string, condition int, joinIndex string) *Query {
 	if q.closed {
-		q.panicTrace("query.On call on already closed query. You should create new Query")
+		panic(errQueryOnClosed)
 	}
 	if q.root == nil {
-		panic(fmt.Errorf("Can't join on root query"))
+		q.setErr(errQueryOnRoot)
+		return q
 	}
 	q.ser.PutVarCUInt(queryJoinOn)
 	q.ser.PutVarCUInt(q.nextOp)

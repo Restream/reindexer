@@ -99,7 +99,7 @@ func packItem(ns *reindexerNamespace, item any, json []byte, ser *cjson.Serializ
 		}
 		if t != ns.rtype {
 			if ns.rtype.Name() != t.Name() || ns.rtype.PkgPath() != t.PkgPath() {
-				panic(ErrWrongType)
+				return 0, 0, false, ErrWrongType
 			}
 		}
 

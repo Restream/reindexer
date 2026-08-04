@@ -181,10 +181,12 @@ func (s *Serializer) PutValue(v reflect.Value) error {
 		s.PutVarCUInt(valueTuple)
 		s.PutVarCUInt(v.Len())
 		for i := 0; i < v.Len(); i++ {
-			s.PutValue(v.Index(i))
+			if err := s.PutValue(v.Index(i)); err != nil {
+				return err
+			}
 		}
 	default:
-		panic(fmt.Errorf("rq: Invalid reflection type %s", v.Kind().String()))
+		return fmt.Errorf("rq: Invalid reflection type %s", k.String())
 	}
 	return nil
 }

@@ -341,7 +341,11 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 					strings.SplitN(field.Tag.Get("reindex"), ",", 3), field.Name)
 			}
 
-			indexDef := makeIndexDef(parseCompositeName(reindexPath), parseCompositeJsonPaths(reindexPath), idxType, "composite", opts, CollateNone, "", parseExpireAfter(expireAfter), nil)
+			expireAfterValue, err := parseExpireAfter(expireAfter)
+			if err != nil {
+				return err
+			}
+			indexDef := makeIndexDef(parseCompositeName(reindexPath), parseCompositeJsonPaths(reindexPath), idxType, "composite", opts, CollateNone, "", expireAfterValue, nil)
 			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err
 			}
@@ -362,7 +366,10 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 				return err
 			}
 		} else if len(idxName) > 0 {
-			collateMode, sortOrderLetters := parseCollate(&idxSettings)
+			collateMode, sortOrderLetters, err := parseCollate(&idxSettings)
+			if err != nil {
+				return err
+			}
 			var fieldType string
 			if idxType == "rtree" {
 				fieldType = "point"
@@ -381,7 +388,11 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 					reindexPath, field.Name, jsonPath)
 			}
 
-			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, parseExpireAfter(expireAfter), nil)
+			expireAfterValue, err := parseExpireAfter(expireAfter)
+			if err != nil {
+				return err
+			}
+			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, expireAfterValue, nil)
 			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err
 			}
@@ -445,7 +456,7 @@ func parseCompositeJsonPaths(indexName string) []string {
 	return strings.Split(indexConents[0], "+")
 }
 
-func parseCollate(idxSettingsBuf *[]string) (int, string) {
+func parseCollate(idxSettingsBuf *[]string) (int, string, error) {
 	newIdxSettingsBuf := make([]string, 0)
 
 	collateMode := CollateNone
@@ -457,7 +468,7 @@ func parseCollate(idxSettingsBuf *[]string) (int, string) {
 
 		if newCollateMode, ok := collateModes[kvIdxSettings[0]]; ok {
 			if collateMode != CollateNone {
-				panic(fmt.Errorf("collate mode is already set to '%d'. Misunderstanding '%s'", collateMode, idxSetting))
+				return 0, "", fmt.Errorf("collate mode is already set to '%d'. Misunderstanding '%s'", collateMode, idxSetting)
 			}
 
 			collateMode = newCollateMode
@@ -474,19 +485,19 @@ func parseCollate(idxSettingsBuf *[]string) (int, string) {
 
 	*idxSettingsBuf = newIdxSettingsBuf
 
-	return collateMode, sortOrderLetters
+	return collateMode, sortOrderLetters, nil
 }
 
-func parseExpireAfter(str string) int {
+func parseExpireAfter(str string) (int, error) {
 	expireAfter := 0
 	if len(str) > 0 {
 		var err error
 		expireAfter, err = strconv.Atoi(str)
 		if err != nil {
-			panic(fmt.Errorf("'ExpireAfter' should be an integer value"))
+			return 0, fmt.Errorf("'ExpireAfter' should be an integer value")
 		}
 	}
-	return expireAfter
+	return expireAfter, nil
 }
 
 func parseByKeyWord(idxSettingsBuf *[]string, keyWord string) bool {
