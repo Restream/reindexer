@@ -24,17 +24,22 @@ using builders::ProtobufBuilder;
 using builders::CJsonBuilder;
 using builders::MsgPackBuilder;
 
+template <typename Builder>
+class [[nodiscard]] IAdditionalDatasource;
+
+template <typename Builder>
 class [[nodiscard]] IEncoderDatasourceWithJoins {
 public:
 	IEncoderDatasourceWithJoins() = default;
 	virtual ~IEncoderDatasourceWithJoins() = default;
 
-	virtual size_t GetJoinedRowsCount() const noexcept = 0;
+	virtual size_t GetJoinedFieldsCount() const noexcept = 0;
 	virtual size_t GetJoinedRowItemsCount(size_t rowId) const = 0;
 	virtual ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) = 0;
 	virtual const std::string& GetJoinedItemNamespace(size_t rowid) & noexcept = 0;
 	virtual const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) & noexcept = 0;
 	virtual const FieldsFilter& GetJoinedItemFieldsFilter(size_t rowid) & noexcept = 0;
+	virtual h_vector<IAdditionalDatasource<Builder>*, 2> BuildJoinedFieldDatasources(size_t /*joinedField*/, size_t /*rowId*/) = 0;
 
 	auto GetJoinedItemNamespace(size_t) && = delete;
 	auto GetJoinedItemTagsMatcher(size_t) && = delete;
@@ -45,7 +50,7 @@ template <typename Builder>
 class [[nodiscard]] IAdditionalDatasource {
 public:
 	virtual void PutAdditionalFields(Builder&) const = 0;
-	virtual IEncoderDatasourceWithJoins* GetJoinsDatasource() noexcept = 0;
+	virtual IEncoderDatasourceWithJoins<Builder>* GetJoinsDatasource() noexcept = 0;
 };
 
 template <typename Builder>
@@ -57,7 +62,7 @@ public:
 	void Encode(std::string_view tuple, Builder& wrSer,
 				const h_vector<IAdditionalDatasource<Builder>*, 2>& dss = h_vector<IAdditionalDatasource<Builder>*, 2>());
 
-	const TagsLengths& GetTagsMeasures(ConstPayload& pl, IEncoderDatasourceWithJoins* ds = nullptr);
+	const TagsLengths& GetTagsMeasures(ConstPayload& pl, IEncoderDatasourceWithJoins<Builder>* ds = nullptr);
 
 private:
 	using IndexedTagsPathInternalT = IndexedTagsPathImpl<16>;
@@ -74,9 +79,9 @@ private:
 	bool encode(ConstPayload* pl, Serializer& rdser, BuilderT&& builder, TagType indexedTag);
 	template <concepts::TagNameOrIndex TagType, typename BuilderT>
 	bool encodeImpl(ConstPayload* pl, ctag ctag, Serializer& rdser, BuilderT&& builder, TagType indexedTag);
-	void encodeJoinedItems(Builder& builder, IEncoderDatasourceWithJoins* ds, size_t joinedIdx);
+	void encodeJoinedItems(Builder& builder, IEncoderDatasourceWithJoins<Builder>* ds, size_t joinedIdx);
 	bool collectTagsSizes(ConstPayload& pl, Serializer& rdser);
-	void collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins* ds, size_t rowid);
+	void collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins<Builder>* ds, size_t joinedField);
 
 	std::string_view getPlTuple(ConstPayload& pl);
 

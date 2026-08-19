@@ -131,6 +131,15 @@ public:
 
 	std::optional<std::string> RxServerVersion() const noexcept { return rxVersion_; }
 
+	BindingCapabilities GetBindingCapabilities() const noexcept {
+		static const BindingCapabilities capsV1{kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs |
+												kBindingCapabilityIncarnationTags | kBindingCapabilityComplexRank};
+		static const BindingCapabilities capsV2{kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs |
+												kBindingCapabilityIncarnationTags | kBindingCapabilityComplexRank |
+												kBindingCapabilityQueryFormatV2};
+		return (queryFormat_ == QueryFormatV2) ? capsV2 : capsV1;
+	}
+
 private:
 	struct [[nodiscard]] RPCData {
 		// NOLINTNEXTLINE(bugprone-exception-escape)
@@ -214,6 +223,8 @@ private:
 	TimePointT loginTs_;
 	std::string compressedBuffer_;
 	std::optional<std::string> rxVersion_;
+	uint32_t cprotoVersion_ = kCprotoMinCompatVersion;
+	QueryFormat queryFormat_ = QueryFormatV1;
 };
 
 struct [[nodiscard]] CommandParams {

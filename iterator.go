@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/goccy/go-json"
 
@@ -141,8 +140,6 @@ func newIterator(
 	q *Query,
 	result bindings.RawBuffer,
 	nsArray []nsArrayEntry,
-	joinToFields []string,
-	joinHandlers []JoinHandler,
 	queryContext any,
 ) (it *Iterator) {
 	if q != nil {
@@ -154,28 +151,29 @@ func newIterator(
 	it.db = db
 	it.namespace = namespace
 	it.nsArray = nsArray
-	it.joinToFields = joinToFields
-	it.joinHandlers = joinHandlers
 	it.queryContext = queryContext
 	it.resPtr = 0
 	it.ptr = 0
 	it.err = nil
 	it.userCtx = userCtx
 	it.allowUnsafe = false
-	joinObjSize := len(it.joinToFields)
+	it.queryFormatVersion = db.binding.QueryFormatVersion()
 	if q != nil {
-		for _, mq := range q.mergedQueries {
-			joinSize := len(mq.joinToFields)
-			if joinSize > joinObjSize {
-				joinObjSize = joinSize
-			}
+		q.joinsTable = NewQueryJoinsTable(q, nsArray)
+		it.joinsTable = q.joinsTable
+	} else {
+		it.joinsTable = NewQueryJoinsTable(nil, nil)
+	}
+	if joinedTotal := it.joinsTable.GetJoinQueriesTotal(); joinedTotal > 0 {
+		if cap(it.current.joined) < joinedTotal {
+			it.current.joined = make([][]any, joinedTotal)
+		} else {
+			clear(it.current.joined)
+			it.current.joined = it.current.joined[:joinedTotal]
 		}
-	}
-	if joinObjSize > 0 {
-		it.current.joinObj = make([][]any, joinObjSize)
-	}
-	if len(it.joinFields) > 0 {
-		it.clearJoinFieldCache()
+	} else {
+		clear(it.current.joined)
+		it.current.joined = it.current.joined[:0]
 	}
 	it.setBuffer(result, true)
 
@@ -202,110 +200,26 @@ func newJSONIterator(ctx context.Context, q *Query, json []byte, jsonOffsets []i
 
 // Iterator presents query results
 type Iterator struct {
-	db             *reindexerImpl
-	namespace      string
-	ser            resultSerializer
-	rawQueryParams rawResultQueryParams
-	result         bindings.RawBuffer
-	nsArray        []nsArrayEntry
-	joinToFields   []string
-	joinHandlers   []JoinHandler
-	joinFields     [][]joinedFieldInfo
-	queryContext   any
-	query          *Query
-	allowUnsafe    bool
-	resPtr         int
-	ptr            int
-	current        struct {
-		obj     any
-		joinObj [][]any
-		rank    float32
+	db                 *reindexerImpl
+	namespace          string
+	ser                resultSerializer
+	rawQueryParams     rawResultQueryParams
+	result             bindings.RawBuffer
+	nsArray            []nsArrayEntry
+	joinsTable         *QueryJoinsTable
+	queryFormatVersion int
+	queryContext       any
+	query              *Query
+	allowUnsafe        bool
+	resPtr             int
+	ptr                int
+	current            struct {
+		obj    interface{}
+		joined [][]any
+		rank   float32
 	}
 	err     error
 	userCtx context.Context
-}
-
-type joinedFieldInfo struct {
-	index    []int
-	hasIndex bool
-}
-
-func (it *Iterator) clearJoinFieldCache() {
-	for i := range it.joinFields {
-		it.joinFields[i] = it.joinFields[i][:0]
-	}
-	it.joinFields = it.joinFields[:0]
-}
-
-func (it *Iterator) resetJoinFieldCache(joinObjSize int) {
-	if joinObjSize == 0 {
-		joinObjSize = len(it.joinToFields)
-		if it.query != nil {
-			for _, mq := range it.query.mergedQueries {
-				if len(mq.joinToFields) > joinObjSize {
-					joinObjSize = len(mq.joinToFields)
-				}
-			}
-		}
-		if joinObjSize == 0 {
-			it.joinFields = it.joinFields[:0]
-			return
-		}
-	}
-
-	parentCount := 1
-	if it.query != nil {
-		parentCount += len(it.query.mergedQueries)
-	}
-	if cap(it.joinFields) < parentCount {
-		it.joinFields = make([][]joinedFieldInfo, parentCount)
-	} else {
-		it.joinFields = it.joinFields[:parentCount]
-		for i := range it.joinFields {
-			it.joinFields[i] = it.joinFields[i][:0]
-		}
-	}
-	it.fillJoinFieldCache(0, it.joinToFields)
-	if it.query != nil {
-		for i, mq := range it.query.mergedQueries {
-			it.fillJoinFieldCache(i+1, mq.joinToFields)
-		}
-	}
-}
-
-func (it *Iterator) fillJoinFieldCache(parentNsID int, fields []string) {
-	if parentNsID >= len(it.joinFields) {
-		return
-	}
-	infos := it.joinFields[parentNsID]
-	if cap(infos) < len(fields) {
-		infos = make([]joinedFieldInfo, len(fields))
-	} else {
-		infos = infos[:len(fields)]
-	}
-	var joined map[string][]int
-	if parentNsID < len(it.nsArray) {
-		joined = it.nsArray[parentNsID].joined
-	}
-	for i, field := range fields {
-		var info joinedFieldInfo
-		if idx, ok := joined[field]; ok {
-			info.index = idx
-			info.hasIndex = true
-		}
-		infos[i] = info
-	}
-	it.joinFields[parentNsID] = infos
-}
-
-func (it *Iterator) getJoinFieldInfo(parentNsID, nsIndex int) (joinedFieldInfo, bool) {
-	if len(it.joinFields) == 0 {
-		it.resetJoinFieldCache(0)
-	}
-	if parentNsID < len(it.joinFields) && nsIndex < len(it.joinFields[parentNsID]) {
-		return it.joinFields[parentNsID][nsIndex], true
-	}
-	return joinedFieldInfo{}, false
 }
 
 func (it *Iterator) setBuffer(result bindings.RawBuffer, cleanup bool) {
@@ -314,11 +228,11 @@ func (it *Iterator) setBuffer(result bindings.RawBuffer, cleanup bool) {
 	if cleanup {
 		nsIncarnationTags := it.rawQueryParams.nsIncarnationTags
 		it.rawQueryParams = rawResultQueryParams{nsIncarnationTags: nsIncarnationTags}
-		it.ser.readRawQueryParamsResetMissingExtras(&it.rawQueryParams, func(nsid int) {
+		it.ser.readRawQueryParamsResetMissingExtras(&it.rawQueryParams, it.queryFormatVersion, func(nsid int) {
 			it.nsArray[nsid].localCjsonState = it.nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer, it.db.binding, it.nsArray[nsid].name)
 		})
 	} else {
-		it.ser.readRawQueryParamsKeepExtras(&it.rawQueryParams, func(nsid int) {
+		it.ser.readRawQueryParamsKeepExtras(&it.rawQueryParams, it.queryFormatVersion, func(nsid int) {
 			it.nsArray[nsid].localCjsonState = it.nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer, it.db.binding, it.nsArray[nsid].name)
 		})
 	}
@@ -337,7 +251,8 @@ func (it *Iterator) NextObj(obj any) (hasNext bool) {
 			return
 		}
 	}
-	it.current.obj, it.current.rank = it.readItem(obj)
+	clear(it.current.joined)
+	it.current.obj, it.current.rank, it.err = it.readItem(obj)
 	if it.err != nil {
 		return
 	}
@@ -350,77 +265,190 @@ func (it *Iterator) Next() (hasNext bool) {
 	return it.NextObj(nil)
 }
 
-func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
-	if it.query == nil {
-		return 1
+func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank float32, err error) {
+	if it.queryFormatVersion == bindings.QueryFormatV2 {
+		return it.readItemImpl(toObj)
 	}
-
-	// main NS + count of merged ones
-	offset := 1 + len(it.query.mergedQueries)
-
-	mergedNsIdx := parentNsID
-	if mergedNsIdx > 0 {
-		offset += len(it.query.joinQueries)
-		// it.query.mergedQueries doesn't store main object joined data
-		mergedNsIdx--
-	}
-
-	for i := 0; i < mergedNsIdx; i++ {
-		offset += len(it.query.mergedQueries[i].joinQueries)
-	}
-	return offset
+	return it.readItemV1(toObj)
 }
 
-func (it *Iterator) readItem(toObj any) (item any, rank float32) {
-	params := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
+func (it *Iterator) readItemV1(toObj interface{}) (item interface{}, rank float32, err error) {
+	itemParams := it.ser.readRawItemParams(it.rawQueryParams.shardId)
 	if (it.rawQueryParams.flags & bindings.ResultsWithRank) != 0 {
-		rank = params.rank
+		rank = itemParams.rank
 	}
 
-	subNSRes := 0
+	nonCacheable := ((it.rawQueryParams.flags & bindings.ResultsWithItemID) == 0) ||
+		len(it.rawQueryParams.nsIncarnationTags) == 0
+	hasJoinedFields := (it.rawQueryParams.flags & bindings.ResultsWithJoined) != 0
 
-	if (it.rawQueryParams.flags & bindings.ResultsWithJoined) != 0 {
-		subNSRes = int(it.ser.GetVarUInt())
-	}
-	nonCacheble := ((it.rawQueryParams.flags & bindings.ResultsWithItemID) == 0) ||
-		(len(it.rawQueryParams.nsIncarnationTags) == 0)
-	item, it.err = unpackItem(it.db.binding, &it.nsArray[params.nsid], &it.rawQueryParams, &params,
-		it.allowUnsafe && (subNSRes == 0), nonCacheble, toObj)
-	if it.err != nil {
-		return
+	item, err = unpackItem(it.db.binding, &it.nsArray[itemParams.nsid], &it.rawQueryParams,
+		&itemParams, it.allowUnsafe && !hasJoinedFields, nonCacheable, toObj)
+	if err != nil {
+		return nil, 0, err
 	}
 
-	if subNSRes == 0 {
-		if len(it.current.joinObj) > 0 {
-			clear(it.current.joinObj)
-		}
-		return
-	}
+	if hasJoinedFields {
+		joinedFields := int(it.ser.GetVarUInt())
+		for joinedField := 0; joinedField < joinedFields; joinedField++ {
+			itemsCount := int(it.ser.GetVarUInt())
+			if itemsCount == 0 {
+				it.current.joined[joinedField] = nil
+				continue
+			}
 
-	nsIndexOffset := it.joinedNsIndexOffset(params.nsid)
-	for nsIndex := 0; nsIndex < subNSRes; nsIndex++ {
-		siRes := int(it.ser.GetVarUInt())
-		if siRes == 0 {
-			it.current.joinObj[nsIndex] = nil
-			continue
-		}
-		subitems := make([]any, siRes)
-		for i := range siRes {
-			subparams := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
-			subitems[i], it.err = unpackItem(it.db.binding, &it.nsArray[nsIndex+nsIndexOffset],
-				&it.rawQueryParams, &subparams, it.allowUnsafe, nonCacheble, nil)
+			joinedNsId := it.joinsTable.GetJoinedNsId(itemParams.nsid, joinedField)
+			joinedItems := make([]interface{}, itemsCount)
+
+			for i := 0; i < itemsCount; i++ {
+				joinedItems[i], _, err = it.readItemParams(joinedNsId, nil)
+				if err != nil {
+					return nil, 0, err
+				}
+			}
+
+			it.current.joined[joinedField] = joinedItems
+			it.err = it.join(joinedField, joinedNsId, itemParams.nsid, item)
 			if it.err != nil {
-				return
+				return nil, 0, it.err
 			}
 		}
+	}
 
-		it.current.joinObj[nsIndex] = subitems
-		it.err = it.join(nsIndex, nsIndexOffset, params.nsid, item)
-		if it.err != nil {
-			return
+	return item, rank, nil
+}
+
+func (it *Iterator) readItemImpl(toObj interface{}) (item interface{}, rank float32, err error) {
+	itemParams := it.ser.readRawItemParams(it.rawQueryParams.shardId)
+	if (it.rawQueryParams.flags & bindings.ResultsWithRank) != 0 {
+		rank = itemParams.rank
+	}
+
+	nonCacheable := ((it.rawQueryParams.flags & bindings.ResultsWithItemID) == 0) ||
+		len(it.rawQueryParams.nsIncarnationTags) == 0
+	hasJoinedFields := (it.rawQueryParams.flags & bindings.ResultsWithJoined) != 0
+
+	item, err = unpackItem(it.db.binding, &it.nsArray[itemParams.nsid], &it.rawQueryParams,
+		&itemParams, it.allowUnsafe && !hasJoinedFields, nonCacheable, toObj)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if hasJoinedFields {
+		joinedFields := int(it.ser.GetVarUInt())
+		for joinedField := 0; joinedField < joinedFields; joinedField++ {
+			itemsCount := int(it.ser.GetVarUInt())
+			if itemsCount == 0 {
+				it.current.joined[joinedField] = nil
+				continue
+			}
+
+			joinedNsId := it.joinsTable.GetJoinedNsId(itemParams.nsid, joinedField)
+			joinedItems := make([]interface{}, itemsCount)
+
+			for i := 0; i < itemsCount; i++ {
+				joinedItems[i], _, err = it.readItemImpl(nil)
+				if err != nil {
+					return nil, 0, err
+				}
+			}
+
+			it.current.joined[joinedField] = joinedItems
+			it.err = it.join(joinedField, joinedNsId, itemParams.nsid, item)
+			if it.err != nil {
+				return nil, 0, it.err
+			}
 		}
 	}
-	return
+
+	return item, rank, nil
+}
+
+func (it *Iterator) readItemParams(nsid int, toObj interface{}) (interface{}, float32, error) {
+	itemParams := it.ser.readRawItemParams(it.rawQueryParams.shardId)
+	if nsid >= 0 {
+		itemParams.nsid = nsid
+	}
+
+	rank := float32(0)
+	if (it.rawQueryParams.flags & bindings.ResultsWithRank) != 0 {
+		rank = itemParams.rank
+	}
+
+	item, err := unpackItem(it.db.binding, &it.nsArray[itemParams.nsid], &it.rawQueryParams,
+		&itemParams, it.allowUnsafe, true, toObj)
+	return item, rank, err
+}
+
+func (it *Iterator) join(joinedField, joinedNsId, parentNsID int, item interface{}) error {
+	field := it.joinsTable.GetField(parentNsID, joinedField)
+	handler := it.joinsTable.GetHandler(parentNsID, joinedField)
+
+	subitems := it.current.joined[joinedField]
+	if handler != nil {
+		if !handler(field, item, subitems) {
+			return nil
+		}
+	}
+
+	if joinable, ok := item.(Joinable); ok {
+		joinable.Join(field, subitems, it.queryContext)
+	} else if it.query.db.strictJoinHandlers {
+		if handler == nil {
+			return bindings.NewError(fmt.Sprintf("join handler is missing. Field tag: '%s', struct: '%s', joined namespace: '%s'",
+				field, it.nsArray[0].rtype, it.nsArray[joinedNsId].name), ErrCodeStrictMode)
+		} else {
+			return bindings.NewError(fmt.Sprintf("join handler was found, but returned 'true' and the field was handled via reflection. Field tag: '%s', struct: '%s', joined namespace: '%s'",
+				field, it.nsArray[0].rtype, it.nsArray[joinedNsId].name), ErrCodeStrictMode)
+		}
+	} else {
+		var val reflect.Value
+		if meta, ok := it.joinsTable.GetFieldMetadata(parentNsID, joinedField); ok {
+			val = getJoinedFieldValueByIndex(reflect.ValueOf(item), meta.index)
+		} else {
+			val = getJoinedFieldValue(reflect.ValueOf(item), it.nsArray[parentNsID].joined, field)
+		}
+		if !val.IsValid() {
+			return bindings.NewError(
+				fmt.Sprintf("cannot put join result into '%s.%s': field not found in struct '%s' (joined namespace: '%s')",
+					it.nsArray[0].rtype, field, it.nsArray[0].rtype, it.nsArray[joinedNsId].name),
+				ErrCodeLogic,
+			)
+		}
+		oldLen := growJoinedSlice(val, len(subitems))
+		for _, subitem := range subitems {
+			val.Index(oldLen).Set(reflect.ValueOf(subitem))
+			oldLen++
+		}
+	}
+
+	return nil
+}
+
+func getJoinedFieldValueByIndex(val reflect.Value, idx []int) reflect.Value {
+	return reflect.Indirect(reflect.Indirect(val).FieldByIndex(idx))
+}
+
+func growJoinedSlice(v reflect.Value, add int) int {
+	oldLen := v.Len()
+	newLen := oldLen + add
+	if v.IsNil() {
+		v.Set(reflect.MakeSlice(v.Type(), newLen, newLen))
+	} else if newLen <= v.Cap() {
+		v.Set(v.Slice(0, newLen))
+	} else {
+		newCap := newLen
+		if oldCap := v.Cap(); oldCap > 0 {
+			newCap = oldCap * 2
+			if newCap < newLen {
+				newCap = newLen
+			}
+		}
+		nv := reflect.MakeSlice(v.Type(), newLen, newCap)
+		reflect.Copy(nv, v)
+		v.Set(nv)
+	}
+	return oldLen
 }
 
 func (it *Iterator) needMore() bool {
@@ -472,75 +500,6 @@ func (it *Iterator) fetchResults() {
 	}
 }
 
-func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item any) error {
-	var field string
-	var handler JoinHandler
-	if parentNsID == 0 {
-		field = it.joinToFields[nsIndex]
-		handler = it.joinHandlers[nsIndex]
-	} else {
-		field = it.query.mergedQueries[parentNsID-1].joinToFields[nsIndex]
-		handler = it.query.mergedQueries[parentNsID-1].joinHandlers[nsIndex]
-	}
-
-	subitems := it.current.joinObj[nsIndex]
-	if handler != nil {
-		if !handler(field, item, subitems) {
-			return nil
-		}
-	}
-	if joinable, ok := item.(Joinable); ok {
-		joinable.Join(field, subitems, it.queryContext)
-	} else if it.query.db.strictJoinHandlers {
-		if handler == nil {
-			return bindings.NewError(fmt.Sprintf("join handler is missing. Field tag: '%s', struct: '%s', joined namespace: '%s'",
-				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeStrictMode)
-		} else {
-			return bindings.NewError(fmt.Sprintf("join handler was found, but returned 'true' and the field was handled via reflection. Field tag: '%s', struct: '%s', joined namespace: '%s'",
-				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeStrictMode)
-		}
-	} else {
-		var v reflect.Value
-		info, hasInfo := it.getJoinFieldInfo(parentNsID, nsIndex)
-		if hasInfo && info.hasIndex {
-			v = joinedFieldByIndex(reflect.ValueOf(item), info.index)
-		} else {
-			v = getJoinedField(reflect.ValueOf(item), it.nsArray[parentNsID].joined, field)
-		}
-		if !v.IsValid() {
-			return bindings.NewError(fmt.Sprintf("can not find field with tag '%s' in struct '%s' for put join results from '%s'",
-				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeLogic)
-		}
-		oldLen := growJoinedSlice(v, len(subitems))
-		for i, subitem := range subitems {
-			v.Index(oldLen + i).Set(reflect.ValueOf(subitem))
-		}
-	}
-	return nil
-}
-
-func growJoinedSlice(v reflect.Value, add int) int {
-	oldLen := v.Len()
-	newLen := oldLen + add
-	if v.IsNil() {
-		v.Set(reflect.MakeSlice(v.Type(), newLen, newLen))
-	} else if newLen <= v.Cap() {
-		v.Set(v.Slice(0, newLen))
-	} else {
-		newCap := newLen
-		if oldCap := v.Cap(); oldCap > 0 {
-			newCap = oldCap * 2
-			if newCap < newLen {
-				newCap = newLen
-			}
-		}
-		nv := reflect.MakeSlice(v.Type(), newLen, newCap)
-		reflect.Copy(nv, v)
-		v.Set(nv)
-	}
-	return oldLen
-}
-
 // Object returns current object.
 // Will panic when pointer was not moved, Next() must be called before.
 func (it *Iterator) Object() any {
@@ -559,7 +518,7 @@ func (it *Iterator) Rank() float32 {
 	return it.current.rank
 }
 
-// JoinedObjects returns objects slice, that result of join for the given field
+// JoinedObjects returns joined items slice for root-level join query only.
 func (it *Iterator) JoinedObjects(field string) (objects []any, err error) {
 	if it.resPtr == 0 {
 		return nil, errIteratorNotReady
@@ -568,7 +527,7 @@ func (it *Iterator) JoinedObjects(field string) (objects []any, err error) {
 	if idx == -1 {
 		return nil, errJoinUnexpectedField
 	}
-	return it.current.joinObj[idx], nil
+	return it.current.joined[idx], nil
 }
 
 // Count returns count if query results
@@ -715,12 +674,10 @@ func (it *Iterator) GetTagsMatcherInfo(nsName string) (stateToken int32, version
 }
 
 func (it *Iterator) findJoinFieldIndex(field string) (index int) {
-	for index = range it.joinToFields {
-		if strings.EqualFold(it.joinToFields[index], field) {
-			return
-		}
+	if it.joinsTable == nil {
+		return -1
 	}
-	return -1
+	return it.joinsTable.FindFieldIndex(0, field)
 }
 
 // JSONIterator its iterator, but results presents as json documents

@@ -54,7 +54,7 @@ unsigned RdxActivityContext::nextId() noexcept {
 	return idCounter.fetch_add(1u, std::memory_order_relaxed);
 }
 
-RdxActivityContext::Ward::Ward(RdxActivityContext *cont, Activity::State state) noexcept : context_(cont) {
+RdxActivityContext::Ward::Ward(RdxActivityContext* cont, Activity::State state) noexcept : context_(cont) {
 	if (context_) {
 		prevState_ = context_->state_.exchange(serializeState(state), std::memory_order_relaxed);
 #ifndef NDEBUG
@@ -68,7 +68,7 @@ RdxActivityContext::Ward::Ward(RdxActivityContext *cont, Activity::State state) 
 	}
 }
 
-RdxActivityContext::Ward::Ward(RdxActivityContext *cont, MutexMark mutexMark) noexcept : context_(cont) {
+RdxActivityContext::Ward::Ward(RdxActivityContext* cont, MutexMark mutexMark) noexcept : context_(cont) {
 	if (context_) {
 		prevState_ = context_->state_.exchange(serializeState(mutexMark), std::memory_order_relaxed);
 #ifndef NDEBUG

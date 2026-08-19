@@ -13,4 +13,6 @@ int getStringTerminalWidth(std::string_view str);
 bool isStdoutRedirected();
 bool isStdinRedirected();
 bool isStdoutAnsiSupported();
+bool isStderrRedirected();
+bool isStderrAnsiSupported();
 }  // namespace reindexer

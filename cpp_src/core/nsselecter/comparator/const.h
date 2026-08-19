@@ -10,4 +10,6 @@ constexpr double kIdxJsonPathComparatorCostMultiplier = kNonIdxFieldComparatorCo
 constexpr double kIdxColumnComparatorCostMultiplier = 1.125;
 // Indexed values extraction by payload offset is also fast, but slower than extraction from column
 constexpr double kIdxOffsetComparatorCostMultiplier = 1.25;
+// Distinct SelectIterator: same ids*sz base as non-distinct Forward, discounted (planning heuristic).
+constexpr double kDistinctCostRatio = 0.25;
 }  // namespace reindexer::comparators

@@ -408,9 +408,9 @@ const JsonNode& JsonNode::findCaseInsensitive(std::string_view key) const {
 	if (value.getTag() != JsonTag::OBJECT && value.getTag() != JsonTag::JSON_NULL) {
 		throw Exception(std::string("Can't obtain json field '") + std::string(key) + "' from non-object json node");
 	}
-	const auto keyLower = reindexer::toLower(key);
+	const auto keyLower = reindexer::ToLower(key);
 	for (auto& v : (*this)) {
-		if (reindexer::toLower(v.key) == keyLower) {
+		if (reindexer::ToLower(v.key) == keyLower) {
 			return v;
 		}
 	}

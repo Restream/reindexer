@@ -6,7 +6,12 @@ namespace reindexer {
 namespace client {
 
 void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc,
-										 Options opts, ParsingData& parsingData) {
+										 Options opts, ParsingData& parsingData, QueryFormat queryFormat) {
+	if (queryFormat == QueryFormatV2) {
+		if (const uint64_t format{GetVarUInt()}; format != QueryFormatV2) {
+			throw Error(errParseBin, "QueryResults format version='{}' is not supported", format);
+		}
+	}
 	ret.flags = GetVarUInt();
 	ret.totalcount = GetVarUInt();
 	ret.qcount = GetVarUInt();

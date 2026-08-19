@@ -286,6 +286,10 @@ func (dbw *ReindexerWrapper) WaitForSyncWithLeader(t *testing.T) {
 func (dbw *ReindexerWrapper) TruncateNamespace(namespace string) (err error) {
 	err = dbw.Reindexer.TruncateNamespace(namespace)
 	dbw.SetSyncRequired()
+	if err != nil {
+		return
+	}
+	clearTestNamespaceItems(namespace)
 	return
 }
 

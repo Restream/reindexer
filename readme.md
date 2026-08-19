@@ -61,6 +61,7 @@ This document describes the Go connector and its API. For information about the 
     - [Transactions commit strategies](#transactions-commit-strategies)
     - [Implementation notes](#implementation-notes)
   - [Join](#join)
+    - [Nested Join](#nested-join)
     - [Anti-join](#anti-join)
     - [Joinable interface](#joinable-interface)
   - [Subqueries (nested queries)](#subqueries-nested-queries)
@@ -1294,6 +1295,213 @@ query3 := db.Query("items_with_join").
 Note that usually `Or` operator implements short-circuiting for `Where` conditions: if the previous condition is true the next one is not evaluated. But in case of `InnerJoin` it works differently: in `query1` (from the example above) both `InnerJoin` conditions are evaluated despite the result of `WhereInt`.
 `Limit(0)` as part of `InnerJoin` (`query3` from the example above) does not join any data - it works like a filter only to verify conditions.
 
+#### Nested Join
+
+A join query may also contain other join queries.
+
+In the following example, `books` joins `authors`, `authors` joins `locations`, and `locations` joins `countries`. Each `InnerJoin` or `LeftJoin` call accepts the query for the joined namespace. The subsequent `On` clause defines the join condition between the parent namespace and that joined namespace.
+
+```go
+type Book struct {
+	ID       int       `reindex:"id,,pk"`
+	Title    string    `reindex:"title"`
+	Price    int       `reindex:"price,tree"`
+	AuthorID int       `reindex:"author_id"`
+	Authors  []*Author `reindex:"authors,,joined"`
+}
+
+type Author struct {
+	ID         int         `reindex:"id,,pk"`
+	Name       string      `reindex:"name"`
+	Age        int         `reindex:"age,tree"`
+	LocationID int         `reindex:"location_id"`
+	Locations  []*Location `reindex:"locations,,joined"`
+}
+
+type Location struct {
+	ID        int        `reindex:"id,,pk"`
+	City      string     `reindex:"city"`
+	Code      int        `reindex:"code,tree"`
+	CountryID int        `reindex:"country_id"`
+	Countries []*Country `reindex:"countries,,joined"`
+}
+
+type Country struct {
+	ID     int    `reindex:"id,,pk"`
+	Name   string `reindex:"name"`
+	Active bool   `reindex:"active"`
+}
+```
+
+```go
+countries := db.Query("countries").
+	WhereBool("active", reindexer.EQ, true)
+
+locations := db.Query("locations").
+	WhereInt("code", reindexer.GE, 1)
+locations.InnerJoin(countries, "countries").
+	On("country_id", reindexer.EQ, "id")
+
+authors := db.Query("authors").
+	WhereInt("age", reindexer.GE, 40)
+authors.InnerJoin(locations, "locations").
+	On("location_id", reindexer.EQ, "id")
+
+books := db.Query("books").
+	WhereInt("price", reindexer.GE, 10)
+books.InnerJoin(authors, "authors").
+	On("author_id", reindexer.EQ, "id")
+
+it := books.Exec()
+defer it.Close()
+if err := it.Error(); err != nil {
+	panic(err)
+}
+
+for it.Next() {
+	book := it.Object().(*Book)
+	for _, author := range book.Authors {
+		for _, location := range author.Locations {
+			for _, country := range location.Countries {
+				fmt.Printf("%s by %s in %s, %s\n", book.Title, author.Name, location.City, country.Name)
+			}
+		}
+	}
+}
+```
+
+In the Go query builder, the source query of an `InnerJoin` or `LeftJoin` call defines the parent query for the new join. Multiple joins called on the same source query are added to the same join level:
+
+```go
+root := db.Query("root")
+
+// These are two joins of the root query.
+// They do not create level1 -> level2 nesting.
+root.InnerJoin(db.Query("level1"), "level1").
+	On("level1_id", reindexer.EQ, "id").
+	InnerJoin(db.Query("level2"), "level2").
+	On("level2_id", reindexer.EQ, "id")
+```
+
+Use a joined query as the parent when the next join must be nested:
+
+```go
+level1 := db.Query("level1")
+level1.InnerJoin(db.Query("level2"), "level2").
+	On("level2_id", reindexer.EQ, "id")
+
+root := db.Query("root")
+root.InnerJoin(level1, "level1").
+	On("level1_id", reindexer.EQ, "id")
+```
+
+In SQL, put a nested joined query in parentheses:
+
+```sql
+SELECT * FROM books
+WHERE price >= 10
+INNER JOIN (
+	SELECT * FROM authors
+	WHERE age >= 40
+	INNER JOIN (
+		SELECT * FROM locations
+		WHERE code >= 1
+		INNER JOIN countries ON locations.country_id = countries.id
+	) ON authors.location_id = locations.id
+) ON books.author_id = authors.id
+```
+
+Join queries may be combined with `MERGE`. If the main query and a merged query both need joins, describe those joins inside each query:
+
+```sql
+SELECT * FROM books
+WHERE price >= 10
+INNER JOIN (
+	SELECT * FROM authors
+	WHERE age >= 40
+	INNER JOIN locations ON authors.location_id = locations.id
+) ON books.author_id = authors.id
+MERGE (
+	SELECT * FROM archived_books
+	WHERE price >= 10
+	INNER JOIN (
+		SELECT * FROM authors
+		WHERE age >= 40
+		INNER JOIN locations ON authors.location_id = locations.id
+	) ON archived_books.author_id = authors.id
+)
+```
+
+`LEFT JOIN` and `INNER JOIN` keep their usual meaning wherever they appear. In the example below all matching `posts` are returned because the first join is a `LEFT JOIN`. The joined `comments`, however, are filtered by their own nested `INNER JOIN` with `moderation_flags`:
+
+```go
+posts := db.Query("posts")
+
+comments := db.Query("comments")
+comments.InnerJoin(db.Query("moderation_flags"), "flags").
+	On("flag_id", reindexer.EQ, "id")
+
+posts.LeftJoin(comments, "comments").
+	On("id", reindexer.EQ, "post_id")
+```
+
+Joined data is available through the same result APIs regardless of depth:
+
+```go
+it := books.Exec()
+defer it.Close()
+
+for it.Next() {
+	book := it.Object().(*Book)
+
+	// JoinedObjects returns the joined objects for this root-level field.
+	authors, err := it.JoinedObjects("authors")
+	if err != nil {
+		panic(err)
+	}
+
+	for i, rawAuthor := range authors {
+		author := rawAuthor.(*Author)
+		// Nested joined fields are already filled on the joined objects.
+		fmt.Println(book.Authors[i].ID, author.Locations)
+	}
+}
+```
+
+`ExecToJson` keeps the same structure. Joined rows appear as arrays on the item that owns that join:
+
+```json
+{
+  "id": 1,
+  "title": "Reindexer Guide",
+  "joined_authors": [
+    {
+      "id": 10,
+      "name": "Ada",
+      "joined_locations": [
+        {
+          "id": 20,
+          "city": "London",
+          "joined_countries": [
+            {"id": 30, "name": "United Kingdom", "active": true}
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+Join query details:
+
+1. Joins inside joins are supported for `SELECT` queries (including `SELECT` queries with `MERGE`).
+2. `UPDATE` and `DELETE` may use nested `INNER JOIN` queries as filters, but joined data is not returned from modification queries.
+3. To store `JOIN` results in a Go struct, the destination field must be exported and marked with the `reindex:"<field_name>,,joined"` struct tag. This tag is required for fields intended to receive joined data. Joined items may also be attached by implementing the `Joinable` interface or by using a custom `JoinHandler`.
+4. `JoinedObjects(field)` returns root-level joined fields. Joined objects returned by this method already contain their own nested joined data.
+5. Query options such as `Explain`, `Debug`, and `Strict` are applied recursively to joined queries at every depth.
+6. Older clients or servers that still use `QueryFormatV1` cannot serialize nested joins. The Go binding rejects such queries with `nested joins are not supported by QueryFormatV1`.
+7. For sharded namespaces, every joined query level must contain the required shard-key condition.
+
 #### Anti-join
 
 Reindexer does not support `ANTI JOIN` SQL construction, however, it supports logical operations with JOINs. In fact `NOT INNER JOIN ...` is totally equivalent to the `ANTI JOIN`:
@@ -2329,4 +2537,3 @@ Landing: https://reindexer.io/
 Packages repo: https://repo.reindexer.io/
 
 More documentation (RU): https://reindexer.io/reindexer-docs/
-

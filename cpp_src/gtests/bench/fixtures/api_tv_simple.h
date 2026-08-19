@@ -15,10 +15,12 @@ class [[nodiscard]] ApiTvSimple : private ApiTvSimpleBase {
 
 public:
 	~ApiTvSimple() override = default;
-	ApiTvSimple(Reindexer* db, std::string_view name, size_t maxItems) : Base(db, name, maxItems, "string_select_ns"sv) {
+	ApiTvSimple(Reindexer* db, std::string_view name, size_t maxItems)
+		: Base(db, name, maxItems, "string_select_ns"sv), maxItems_{maxItems} {
 		using reindexer::IndexOpts;
 
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
+			.AddIndex("unique_order", "tree", "int", IndexOpts())
 			.AddIndex("genre", "tree", "int64", IndexOpts())
 			.AddIndex("year", "tree", "int", IndexOpts())
 			.AddIndex("packages", "hash", "int", IndexOpts().Array())
@@ -96,6 +98,8 @@ private:
 	void Query2CondLeftJoin2Cond(State& state);
 	template <typename Total>
 	void Query2CondLeftJoin3Cond(State& state);
+	template <typename Total>
+	void Query2CondLeftNestedJoin(State& state);
 	void Query0CondInnerJoinUnlimit(State& state);
 	void Query0CondInnerJoinUnlimitLowSelectivity(State& state);
 	void Query0CondInnerPreSelectStoreValues(State& state);
@@ -103,6 +107,8 @@ private:
 	void Query2CondInnerJoin2Cond(State& state);
 	template <typename Total>
 	void Query2CondInnerJoin3Cond(State& state);
+	template <typename Total>
+	void Query2CondInnerNestedJoin(State& state);
 	void InnerJoinInjectConditionFromMain(benchmark::State&);
 	void InnerJoinRejectInjection(benchmark::State&);
 
@@ -126,10 +132,22 @@ private:
 	void QueryUncommitedWithUnorderedCond(State&);
 	template <typename Total, typename Sort>
 	void Query3CondRangeDistinctLowSelNoUnordered(benchmark::State& state);
+	void QueryWideRangePlanning(benchmark::State& state);
+	void QueryWideRange(benchmark::State& state);
+	void QueryWideRangeTotal(benchmark::State& state);
 	template <typename Total, typename Sort>
 	void Query4CondRangeDistinctHighSel(benchmark::State& state);
 	template <typename Total, typename Sort>
 	void Query4CondRangeDistinctLowSel(benchmark::State& state);
+
+	template <typename Sort>
+	void Query2Distinct(benchmark::State& state);
+	template <typename Sort>
+	void Query3Cond2Distinct(benchmark::State& state);
+	template <typename Sort, bool with3Cond>
+	void query2Distinct(benchmark::State& state);
+	template <typename Sort>
+	void Query2DistinctWeakEqRange(benchmark::State& state);
 
 	void DisableBackgroundIndexOptimization(State& state);
 	void RestoreBackgroundIndexOptimization(State& state);
@@ -155,6 +173,7 @@ private:
 	std::string mainNs_{"main_ns"};
 	std::string rightNs_{"right_ns"};
 	std::string configBackupJson_;
+	const size_t maxItems_;
 };
 
 }  // namespace reindexer_benchmarks

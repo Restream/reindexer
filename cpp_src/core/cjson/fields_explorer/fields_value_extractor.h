@@ -16,7 +16,7 @@ protected:
 	void StartArray() noexcept { std::ignore = values_.MarkArray(); }
 
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(const PathFilter& filter, TagIndex tagIndex, unaligned::view<T> data, unsigned /*offset*/,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		if (!filter.Match()) {

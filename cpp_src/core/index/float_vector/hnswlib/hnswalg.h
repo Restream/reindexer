@@ -705,13 +705,13 @@ public:
 #endif	// defined(REINDEXER_WITH_SSE)
 
 			for (size_t j = 0; j < size; j++) {
-				const tableint candidate_id =
-					j == 0 ? firstNeighbor : (j == 1 && size > 1) ? secondNeighbor : readLinkListNeighbor(linkList0, j);
+				const tableint candidate_id = j == 0				 ? firstNeighbor
+											  : (j == 1 && size > 1) ? secondNeighbor
+																	 : readLinkListNeighbor(linkList0, j);
 //                    if (candidate_id == 0) continue;
 #if defined(REINDEXER_WITH_SSE)
 				if (j + 1 < size) {
-					const tableint nextNeighbor =
-						j == 0 && size > 1 ? secondNeighbor : readLinkListNeighbor(linkList0, j + 1);
+					const tableint nextNeighbor = j == 0 && size > 1 ? secondNeighbor : readLinkListNeighbor(linkList0, j + 1);
 					_mm_prefetch(reinterpret_cast<const char*>(visited_array + nextNeighbor), _MM_HINT_T0);
 					_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(nextNeighbor)), _MM_HINT_T0);
 				}
@@ -916,14 +916,12 @@ public:
 
 		for (size_t j = 1; j <= size; j++) {
 			const size_t neighborIdx = j - 1;
-			const tableint candidate_id = neighborIdx == 0
-												? firstNeighbor
-												: (neighborIdx == 1 && size > 1) ? secondNeighbor
-																				   : readLinkListNeighbor(linkList0, neighborIdx);
+			const tableint candidate_id = neighborIdx == 0				   ? firstNeighbor
+										  : (neighborIdx == 1 && size > 1) ? secondNeighbor
+																		   : readLinkListNeighbor(linkList0, neighborIdx);
 #if defined(REINDEXER_WITH_SSE)
 			if (j < size) {
-				const tableint nextNeighbor =
-					j == 1 && size > 1 ? secondNeighbor : readLinkListNeighbor(linkList0, j);
+				const tableint nextNeighbor = j == 1 && size > 1 ? secondNeighbor : readLinkListNeighbor(linkList0, j);
 				_mm_prefetch(reinterpret_cast<const char*>(visited_array + nextNeighbor), _MM_HINT_T0);
 				_mm_prefetch(data_level0_memory_ + nextNeighbor * size_data_per_element_ + offsetData_, _MM_HINT_T0);
 			}
@@ -1615,14 +1613,13 @@ public:
 					for (int i = 0; i < size; i++) {
 #if defined(REINDEXER_WITH_SSE)
 						if (i + 1 < size) {
-							const tableint nextNeighbor =
-								i == 0 && size > 1 ? secondNeighbor : readLinkListNeighbor(linkList0, i + 1);
+							const tableint nextNeighbor = i == 0 && size > 1 ? secondNeighbor : readLinkListNeighbor(linkList0, i + 1);
 							_mm_prefetch(reinterpret_cast<char*>(getDataByInternalId(nextNeighbor)), _MM_HINT_T0);
 						}
 #endif	// defined(REINDEXER_WITH_SSE)
-						const tableint cand = i == 0 ? firstNeighbor
-													 : (i == 1 && size > 1) ? secondNeighbor
-																			  : readLinkListNeighbor(linkList0, i);
+						const tableint cand = i == 0				 ? firstNeighbor
+											  : (i == 1 && size > 1) ? secondNeighbor
+																	 : readLinkListNeighbor(linkList0, i);
 
 						float d;
 						{

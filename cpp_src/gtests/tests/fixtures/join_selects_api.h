@@ -5,7 +5,8 @@
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/item_context.h"
+#include "core/nsselecter/joins/iterators.h"
 #include "core/system_ns_names.h"
 #include "estl/gift_str.h"
 #include "estl/lock.h"
@@ -34,8 +35,14 @@ protected:
 		rt.OpenNamespace(books_namespace);
 		rt.OpenNamespace(genres_namespace);
 		rt.OpenNamespace(location_namespace);
+		rt.OpenNamespace(countries_namespace);
+
+		DefineNamespaceDataset(countries_namespace, {IndexDeclaration{countryid, "hash", "int", IndexOpts().PK(), 0},
+													 IndexDeclaration{countryName, "hash", "string", IndexOpts(), 0},
+													 IndexDeclaration{countryCode, "hash", "int", IndexOpts(), 0}});
 
 		DefineNamespaceDataset(location_namespace, {IndexDeclaration{locationid, "hash", "int", IndexOpts().PK(), 0},
+													IndexDeclaration{countryid_fk, "hash", "int", IndexOpts(), 0},
 													IndexDeclaration{code, "hash", "int", IndexOpts(), 0},
 													IndexDeclaration{city, "hash", "string", IndexOpts(), 0}});
 
@@ -54,6 +61,7 @@ protected:
 			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts(), 0}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts(), 0},
 			 IndexDeclaration{(pages + std::string("+") + bookid).c_str(), "hash", "composite", IndexOpts(), 0}});
 
+		FillCountriesNamespace();
 		FillLocationsNamespace();
 		FillGenresNamespace();
 		FillAuthorsNamespace(500);
@@ -72,7 +80,18 @@ protected:
 			item[locationid] = int(i);
 			item[code] = rand() % 65536;
 			item[city] = locations[i];
+			item[countryid_fk] = int(rand() % countries.size());
 			Upsert(location_namespace, item);
+		}
+	}
+
+	void FillCountriesNamespace() {
+		for (size_t i = 0; i < countries.size(); ++i) {
+			Item item = NewItem(countries_namespace);
+			item[countryid] = int(i);
+			item[countryCode] = rand() % 65536;
+			item[countryName] = countries[i];
+			Upsert(countries_namespace, item);
 		}
 	}
 
@@ -219,16 +238,17 @@ protected:
 			std::cout << "ROW: " << item.GetJSON() << std::endl;
 
 			int idx = 1;
-			auto itemIt = rowIt.GetJoined();
-			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
+			auto itemItCtx = rowIt.GetJoinedContext();
+			auto& itemIt = itemItCtx.iterator;
+			for (auto joinedFieldIt = itemIt.Begin(); joinedFieldIt != itemIt.End(); ++joinedFieldIt) {
 				std::cout << "JOINED: " << idx << std::endl;
-				for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
-					reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, qr.GetPayloadType(1), qr.GetTagsMatcher(1)));
+				for (auto it : joinedFieldIt.ToQueryResults(itemItCtx)) {
+					auto joinItem(it.GetItem());
 					std::cout << joinItem.GetJSON() << std::endl;
 				}
 				std::cout << std::endl;
 				++idx;
-				if (itemIt.getJoinedFieldsCount() > 1) {
+				if (itemIt.GetFieldsCount() > 1) {
 					std::cout << std::endl;
 				}
 			}
@@ -243,13 +263,10 @@ protected:
 			QueryResultRow& resultRow = testRes[bookId];
 
 			FillQueryResultFromItem(item, resultRow);
-			auto itemIt = rowIt.GetJoined();
-			auto joinedFieldIt = itemIt.begin();
-			LocalQueryResults jres = joinedFieldIt.ToQueryResults();
-			auto& lqr = qr.ToLocalQr();
-			jres.addNSContext(lqr.getPayloadType(1), lqr.getTagsMatcher(1), lqr.getFieldsFilter(1), lqr.getSchema(1), reindexer::lsn_t());
-			for (auto it : jres) {
-				Item joinedItem = it.GetItem(false);
+			auto joinedItemCtx{rowIt.GetJoinedContext()};
+			auto joinedFieldIt{joinedItemCtx.iterator.Begin()};
+			for (auto it : joinedFieldIt.ToQueryResults(joinedItemCtx)) {
+				Item joinedItem{it.GetItem(false)};
 				FillQueryResultFromItem(joinedItem, resultRow);
 			}
 		}
@@ -335,18 +352,18 @@ protected:
 
 			bool joinsBracketConditionsResult = false;
 			if ((static_cast<int>(priceFieldValue) >= 1000) && (static_cast<int>(priceFieldValue) <= 2000)) {
-				auto jitemIt = it.GetJoined();
-				auto authorNsFieldIt = jitemIt.at(0);
-				auto genreNsFieldIt = jitemIt.at(1);
-				if (authorNsFieldIt != jitemIt.end() && genreNsFieldIt != jitemIt.end() &&
+				auto jitemItCtx = it.GetJoinedContext();
+				auto& jitemIt = jitemItCtx.iterator;
+				auto authorNsFieldIt = jitemIt.At(0);
+				auto genreNsFieldIt = jitemIt.At(1);
+				if (authorNsFieldIt != jitemIt.End() && genreNsFieldIt != jitemIt.End() &&
 					(authorNsFieldIt.ItemsCount() > 0 || genreNsFieldIt.ItemsCount() > 0)) {
 					if (authorNsFieldIt.ItemsCount() > 0) {
 						Variant authorIdFieldValue = item[authorid_fk];
 						EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 10) && (static_cast<int>(authorIdFieldValue) <= 25));
-						for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
-							reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.GetPayloadType(1), qr.GetTagsMatcher(1));
-							Variant authorIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(1).FieldByName(authorid));
-							EXPECT_TRUE(authorIdFieldValue == authorIdFkFieldValue);
+						for (auto it : authorNsFieldIt.ToQueryResults(jitemItCtx)) {
+							auto item{it.GetItem()};
+							EXPECT_TRUE(authorIdFieldValue == Variant{item[authorid]});
 						}
 					}
 					if (genreNsFieldIt.ItemsCount() > 0) {
@@ -366,17 +383,17 @@ protected:
 			const bool pagesConditionResult = (static_cast<int>(pagesFieldValue) == 0);
 
 			bool joinsNoBracketConditionsResult = false;
-			auto jitemIt = it.GetJoined();
-			auto authorNsFieldIt = jitemIt.at(2);
-			if ((authorNsFieldIt != jitemIt.end() ||
-				 ((authorNsFieldIt = jitemIt.at(0)) != jitemIt.end() && jitemIt.at(1) == jitemIt.end())) &&
+			auto jitemItCtx = it.GetJoinedContext();
+			auto& jitemIt = jitemItCtx.iterator;
+			auto authorNsFieldIt = jitemIt.At(2);
+			if ((authorNsFieldIt != jitemIt.End() ||
+				 ((authorNsFieldIt = jitemIt.At(0)) != jitemIt.End() && jitemIt.At(1) == jitemIt.End())) &&
 				authorNsFieldIt.ItemsCount() > 0) {
 				Variant authorIdFieldValue = item[authorid_fk];
 				EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 300) && (static_cast<int>(authorIdFieldValue) <= 400));
-				for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
-					reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.GetPayloadType(3), qr.GetTagsMatcher(3));
-					Variant authorIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(3).FieldByName(authorid));
-					EXPECT_TRUE(authorIdFieldValue == authorIdFkFieldValue);
+				for (auto it : authorNsFieldIt.ToQueryResults(jitemItCtx)) {
+					auto item{it.GetItem()};
+					EXPECT_TRUE(authorIdFieldValue == Variant{item[authorid]});
 				}
 				joinsNoBracketConditionsResult = true;
 			}
@@ -442,6 +459,10 @@ protected:
 	const char* code = "code";
 	const char* locationid = "locationid";
 	const char* locationid_fk = "locationid_fk";
+	const char* countryid_fk = "countryid_fk";
+	const char* countryid = "countryid";
+	const char* countryName = "country_name";
+	const char* countryCode = "country_code";
 
 	const int DostoevskyAuthorId = 111777;
 
@@ -450,6 +471,7 @@ protected:
 	const std::string authors_namespace = "authors_namespace";
 	const std::string genres_namespace = "genres_namespace";
 	const std::string location_namespace = "location_namespace";
+	const std::string countries_namespace = "countries_namespace";
 
 	struct [[nodiscard]] Genre {
 		int id;
@@ -470,14 +492,30 @@ protected:
 		"Минск",
 		"Киев",
 		"Бердянск",
-		"Армянск",
+		"Новочеркасск",
 		"Грозный",
 		"Amsterdam",
 		"Paris",
 		"Berlin",
 		"New York",
 		"Rotterdam",
-		"Киевской шоссе 22"
+		"Калининград",
+		"Томск",
+		"Новосибирск",
+		"Londonderry",
+		"Belfast",
+		"Dublin",
+	};
+
+	const std::vector<std::string_view> countries = {
+		"Страна Северная",
+		"Страна Южная",
+		"Страна Западная",
+		"Страна Восточная",
+		"Страна Жаркая",
+		"Страна Холодная",
+		"Страна Развивающаяся",
+		"Страна Процветающая",
 	};
 	// clang-format on
 

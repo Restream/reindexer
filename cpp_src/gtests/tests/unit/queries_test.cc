@@ -1610,9 +1610,11 @@ TEST_F(QueriesApi, SerializeDeserialize) {
 	};
 	for (Query& q : queries) {
 		reindexer::WrSerializer wser;
-		q.Serialize(wser);
+		BindingCapabilities caps{kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs |
+								 kBindingCapabilityIncarnationTags | kBindingCapabilityComplexRank | kBindingCapabilityQueryFormatV2};
+		q.Serialize(wser, Normal, caps.GetQueryFormat());
 		reindexer::Serializer rser(wser.Slice());
-		const auto deserializedQuery = Query::Deserialize(rser);
+		const auto deserializedQuery = Query::Deserialize(rser, caps.GetQueryFormat());
 		EXPECT_EQ(q, deserializedQuery) << "Origin query:\n" << q.GetSQL() << "\nDeserialized query:\n" << deserializedQuery.GetSQL();
 	}
 }

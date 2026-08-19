@@ -31,7 +31,7 @@ const queueSize = 512
 const maxSeqNum = queueSize * 1000000
 
 const cprotoMagic = 0xEEDD1132
-const cprotoVersion = 0x104
+const cprotoVersion = 0x105
 const cprotoMinCompatVersion = 0x101
 const cprotoMinSnappyVersion = 0x103
 
@@ -82,12 +82,12 @@ const (
 )
 
 type connFactory interface {
-	newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, string, int64, error)
+	newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, string, int64, int, error)
 }
 
 type connFactoryImpl struct{}
 
-func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, string, int64, error) {
+func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (connection, string, int64, int, error) {
 	return newConnection(ctx, params, loggerOwner, eventsHandler)
 }
 
@@ -160,11 +160,11 @@ type newConnParams struct {
 }
 
 func newConnection(
-	ctx context.Context,
-	params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (
+	ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eventsHandler bindings.EventsHandler) (
 	connection,
 	string,
 	int64,
+	int,
 	error,
 ) {
 	c := &connectionImpl{
@@ -195,16 +195,16 @@ func newConnection(
 
 	if err := c.connect(intCtx, params.dsn); err != nil {
 		c.onError(err)
-		return c, "", 0, err
+		return c, "", 0, bindings.QueryFormatV1, err
 	}
 
-	serverReindexerVersion, serverStartTS, err := c.login(intCtx, params.dsn, params.createDBIfMissing, params.appName, params.caps)
+	serverReindexerVersion, serverStartTS, queryFormatVersion, err := c.login(intCtx, params.dsn, params.createDBIfMissing, params.appName, params.caps)
 	if err != nil {
 		c.onError(err)
-		return c, "", 0, err
+		return c, "", 0, bindings.QueryFormatV1, err
 	}
 
-	return c, serverReindexerVersion, serverStartTS, nil
+	return c, serverReindexerVersion, serverStartTS, queryFormatVersion, nil
 }
 
 func seqNumIsValid(seqNum uint32) bool {
@@ -290,7 +290,7 @@ func (c *connectionImpl) connect(ctx context.Context, dsn *url.URL) (err error) 
 	return
 }
 
-func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMissing bool, appName string, caps bindings.BindingCapabilities) (string, int64, error) {
+func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMissing bool, appName string, caps bindings.BindingCapabilities) (string, int64, int, error) {
 	password, username, path := "", "", dsn.Path
 	if dsn.User != nil {
 		username = dsn.User.Username()
@@ -302,9 +302,11 @@ func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMiss
 
 	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, createDBIfMissing, false, -1, bindings.ReindexerVersion, appName, caps.Value)
 	if err != nil {
-		return "", 0, err
+		return "", 0, bindings.QueryFormatV1, err
 	}
 	defer buf.Free()
+
+	queryFormatVersion := bindings.QueryFormatV1
 
 	var serverReindexerVersion string
 	var serverStartTS int64
@@ -312,8 +314,11 @@ func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMiss
 		serverReindexerVersion = string(buf.args[0].([]byte))
 		serverStartTS = buf.args[1].(int64)
 	}
+	if len(buf.args) > 2 {
+		queryFormatVersion = bindings.BindingCapabilities{Value: buf.args[2].(int64)}.QueryFormatVersion()
+	}
 
-	return serverReindexerVersion, serverStartTS, nil
+	return serverReindexerVersion, serverStartTS, queryFormatVersion, nil
 }
 
 func (c *connectionImpl) readLoop() {
@@ -351,7 +356,6 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 	if version < cprotoMinCompatVersion {
 		return fmt.Errorf("unsupported cproto version '%04X'. This client expects reindexer server v1.9.8+", version)
 	}
-
 	if c.enableCompression && version >= cprotoMinSnappyVersion {
 		enableSnappy := int32(1)
 		atomic.StoreInt32(&c.enableSnappy, enableSnappy)

@@ -53,11 +53,15 @@ public:
 	const OpType& Op() const noexcept { return term_.Opts().op; }
 	int PhraseNum() const noexcept { return term_.Opts().phraseNum; }
 	int Distance() const noexcept { return term_.Opts().distance; }
-	const std::wstring& Pattern() const noexcept { return term_.Pattern(); }
+	const std::u16string& Pattern() const noexcept { return term_.Pattern(); }
 	const FtDslOpts& Opts() const noexcept { return term_.Opts(); }
 
 	void AddSubterm(const IdCont& vids, std::string_view pattern, WordIdType patternId, float proc) {
 		subtermsResults_.emplace_back(vids, pattern, patternId, proc, typename ft::SubtermResults<IdCont>::NoHoldT{});
+		maxVDocs_ += vids.size();
+	}
+	void AddSubterm(const IdCont& vids, std::string&& pattern, WordIdType patternId, float proc) {
+		subtermsResults_.emplace_back(vids, std::move(pattern), patternId, proc, typename ft::SubtermResults<IdCont>::HoldT{});
 		maxVDocs_ += vids.size();
 	}
 

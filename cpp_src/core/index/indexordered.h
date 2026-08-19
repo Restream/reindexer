@@ -15,6 +15,7 @@ public:
 
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
+	Index::OrderedConditionEstimate EstimateOrderedCondition(CondType cond, const VariantArray& keys, size_t cap) const override;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	WasCanceled MakeSortOrders(index::IUpdateSortedContext& ctx, const index::ICancelable&) override;
 	IndexIterator::Ptr CreateIterator() const override;

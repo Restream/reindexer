@@ -767,8 +767,7 @@ TEST_F(FloatVector, DslQuery) try {
 			R"json({"namespace":"ns","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":["*","vectors()"],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"knn","field":"hnsw","value":[)json" +
 			vecStr + R"json(]}],"merge_queries":[],"aggregations":[]})json";
 		const auto parsedQuery = Query::FromJSON(dsl);
-		const auto expectedQuery =
-			Query("ns"sv).WhereKNN("hnsw"sv, vec.View(), reindexer::KnnSearchParamsBase{}).SelectAllFields();
+		const auto expectedQuery = Query("ns"sv).WhereKNN("hnsw"sv, vec.View(), reindexer::KnnSearchParamsBase{}).SelectAllFields();
 		EXPECT_EQ(parsedQuery, expectedQuery) << "dsl: " << dsl;
 	}
 }
@@ -1687,6 +1686,88 @@ TEST_F(FloatVector, CheckPKDuringUpdateFVIndex) try {
 	ASSERT_FALSE(err.ok());
 	ASSERT_EQ(err.whatStr(), fmt::format("Cannot remove PK index '{}' from namespace '{}': the namespace contains float vector index '{}'",
 										 kFieldNameId, kNsName, kFvField));
+}
+CATCH_AND_ASSERT
+
+TEST_F(FloatVector, KnnConditionInJoinedSubquery) try {
+	constexpr static auto kNsMain = "knn_join_main_ns"sv;
+	constexpr static auto kNsJoined = "knn_join_joined_ns"sv;
+	constexpr static auto kFieldNameHnsw = "hnsw"sv;
+	constexpr static size_t kDimension = 8;
+	constexpr static int kItemCount = 10;
+	constexpr static auto kExpectedErr = "KNN condition cannot be in joined subquery";
+
+	std::array<float, kDimension> buf;
+	for (auto ns : {kNsMain, kNsJoined}) {
+		rt.OpenNamespace(ns);
+		rt.DefineNamespaceDataset(ns,
+								  {
+									  IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+									  IndexDeclaration{kFieldNameHnsw, kFieldNameHnsw, "float_vector",
+													   IndexOpts{}.SetFloatVector(IndexHnsw, FloatVectorIndexOpts{}
+																								 .SetDimension(kDimension)
+																								 .SetM(16)
+																								 .SetEfConstruction(100)
+																								 .SetMetric(reindexer::VectorMetric::L2)),
+													   0},
+								  });
+		for (int id = 0; id < kItemCount; ++id) {
+			reindexer_tests_tools::rndFloatVector(buf);
+			rt.UpsertJSON(ns, fmt::format(R"json({{"id":{},"{}":[{}]}})json", id, kFieldNameHnsw, fmt::join(buf, ",")));
+		}
+	}
+
+	reindexer_tests_tools::rndFloatVector(buf);
+	const reindexer::ConstFloatVectorView vec{buf};
+	const auto knnParams = reindexer::HnswSearchParams{}.K(5).Ef(10);
+
+	// KNN condition in the joined subquery must be rejected on query construction
+	try {
+		std::ignore = reindexer::Query{kNsMain}.InnerJoin(kFieldNameId, kFieldNameId, CondEq,
+														  reindexer::Query{kNsJoined}.WhereKNN(kFieldNameHnsw, vec, knnParams));
+		ADD_FAILURE() << "Expected an exception for KNN condition in joined subquery";
+	} catch (const reindexer::Error& err) {
+		EXPECT_STREQ(err.what(), kExpectedErr);
+	}
+
+	// ... and on SQL parsing
+	try {
+		std::ignore =
+			reindexer::Query::FromSQL(fmt::format("SELECT * FROM {} INNER JOIN (SELECT * FROM {} WHERE KNN({}, [{}], k=5)) "
+												  "ON {}.id = {}.id",
+												  kNsMain, kNsJoined, kFieldNameHnsw, fmt::join(buf, ","), kNsMain, kNsJoined));
+		ADD_FAILURE() << "Expected an exception for KNN condition in joined subquery (SQL)";
+	} catch (const reindexer::Error& err) {
+		EXPECT_STREQ(err.what(), kExpectedErr);
+	}
+
+	// ... and on DSL parsing
+	try {
+		std::ignore = reindexer::Query::FromJSON(fmt::format(
+			R"json({{
+				"namespace": "{}",
+				"filters": [
+					{{
+						"join_query": {{
+							"type": "inner",
+							"namespace": "{}",
+							"filters": [{{"cond": "knn", "field": "{}", "value": [{}], "params": {{"k": 5}}}}],
+							"on": [{{"left_field": "id", "right_field": "id", "cond": "eq", "op": "and"}}]
+						}}
+					}}
+				]
+			}})json",
+			kNsMain, kNsJoined, kFieldNameHnsw, fmt::join(buf, ",")));
+		ADD_FAILURE() << "Expected an exception for KNN condition in joined subquery (DSL)";
+	} catch (const reindexer::Error& err) {
+		EXPECT_STREQ(err.what(), kExpectedErr);
+	}
+
+	// KNN condition in the main query combined with a join is still allowed
+	const auto qr = rt.Select(reindexer::Query{kNsMain}
+								  .WhereKNN(kFieldNameHnsw, vec, knnParams)
+								  .InnerJoin(kFieldNameId, kFieldNameId, CondEq, reindexer::Query{kNsJoined}));
+	EXPECT_GT(qr.Count(), 0);
 }
 CATCH_AND_ASSERT
 

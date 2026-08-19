@@ -1,4 +1,5 @@
 #include "core/ft/ftdsl.h"
+#include <cstdlib>
 #include "tools/float_comparison.h"
 
 namespace reindexer {
@@ -10,26 +11,43 @@ static bool is_term(int ch, const SplitOptions& opts) noexcept {
 		   || ch == '[' || ch == ';' || ch == ',' || ch == '.';
 }
 
-static bool is_quote(int ch) noexcept { return ch == '\'' || ch == '\"'; }
+static bool is_quote(char16_t ch) noexcept { return ch == u'\'' || ch == u'\"'; }
 
-static bool needToSkip(int ch, const SplitOptions& opts) noexcept {
-	return !is_term(ch, opts) && ch != '+' && ch != '-' && ch != '*' && ch != '\'' && ch != '\"' && ch != '@' && ch != '=' && ch != '\\';
+static bool needToSkip(char16_t ch, const SplitOptions& opts) noexcept {
+	return !is_term(ch, opts) && ch != u'+' && ch != u'-' && ch != u'*' && ch != u'\'' && ch != u'\"' && ch != u'@' && ch != u'=' &&
+		   ch != u'\\';
 }
 
 void FtDSLQuery::Parse(std::string_view q) {
-	std::wstring utf16str;
-	utf8_to_utf16(q, utf16str);
-	parseImpl(utf16str.data());
+	std::u16string u16str = utf8_to_utf16(q);
+	parseImpl(u16str.data());
 }
 
-static bool parseFloat(wchar_t*& str, float& res) {
-	wchar_t* b = str;
-	res = wcstof(b, &str);
-	return str != b;
+static bool isFloatChar(char16_t ch) noexcept { return IsDigit(ch) || ch == u'.' || ch == u'+' || ch == u'-' || ch == u'e' || ch == u'E'; }
+
+static bool parseFloat(char16_t*& str, float& res) {
+	char buf[64];
+	size_t i = 0;
+	char16_t* const beg = str;
+	while (*str && i + 1 < sizeof(buf) && isFloatChar(*str)) {
+		buf[i++] = char(*str++);
+	}
+	if (*str && isFloatChar(*str)) {
+		throw Error(errParseDSL, "Floating point number is too long in search query DSL");
+	}
+	buf[i] = '\0';
+	char* end = nullptr;
+	res = std::strtof(buf, &end);
+	if (end == buf) {
+		str = beg;
+		return false;
+	}
+	str = beg + (end - buf);
+	return true;
 }
 
-static void parseBoost(wchar_t*& str, float& boost) {
-	assertf_dbg(*str == '^', "Expected {} in parseBoost", "'^'");
+static void parseBoost(char16_t*& str, float& boost) {
+	assertf_dbg(*str == u'^', "Expected {} in parseBoost", "'^'");
 	++str;
 	boost = 1.0;
 	if (!*str) {
@@ -40,14 +58,14 @@ static void parseBoost(wchar_t*& str, float& boost) {
 	}
 }
 
-static void parseSuffixOpts(wchar_t*& str, FtDslOpts& opts) {
+static void parseSuffixOpts(char16_t*& str, FtDslOpts& opts) {
 	while (*str) {
-		if (*str == '^') {
+		if (*str == u'^') {
 			parseBoost(str, opts.boost);
-		} else if (*str == '*') {
+		} else if (*str == u'*') {
 			opts.pref = true;
 			++str;
-		} else if (*str == '~') {
+		} else if (*str == u'~') {
 			opts.typos = true;
 			++str;
 		} else {
@@ -56,19 +74,30 @@ static void parseSuffixOpts(wchar_t*& str, FtDslOpts& opts) {
 	}
 }
 
-static unsigned long parseDistance(wchar_t*& str) {
-	assertf_dbg(*str == '~', "Expected {} in parseDistance", "'~'");
+static unsigned long parseDistance(char16_t*& str) {
+	assertf_dbg(*str == u'~', "Expected {} in parseDistance", "'~'");
 	++str;
 	unsigned long distance = 1;
 	if (!*str) {
 		throw Error(errParseDSL, "Expected number after '~' operator in phrase, but found nothing");
 	}
-	if (!std::isdigit(*str)) {
+	if (!IsDigit(*str)) {
 		throw Error(errParseDSL, "Expected number after '~' operator in phrase, but found '{}' ", char(*str));
 	}
-	wchar_t* b = str;
-	distance = wcstoul(b, &str, 10);
-	if (*str && !std::isspace(*str)) {
+	char buf[32];
+	size_t i = 0;
+	char16_t* const beg = str;
+	while (*str && i + 1 < sizeof(buf) && IsDigit(*str)) {
+		buf[i++] = char(*str++);
+	}
+	if (*str && IsDigit(*str)) {
+		throw Error(errParseDSL, "Distance number is too long in search query DSL");
+	}
+	buf[i] = '\0';
+	char* end = nullptr;
+	distance = std::strtoul(buf, &end, 10);
+	str = beg + (end - buf);
+	if (*str && !std::isspace(static_cast<unsigned char>(*str))) {
 		throw Error(errParseDSL, "Expected space after '~digit' operator in phrase, but found '{}' ", char(*str));
 	}
 	if (distance == 0) {
@@ -77,16 +106,16 @@ static unsigned long parseDistance(wchar_t*& str) {
 	return distance;
 }
 
-static void eraseFirstSymbol(wchar_t* str) {
+static void eraseFirstSymbol(char16_t* str) {
 	while (*str) {
 		*str = *(str + 1);
 		str++;
 	}
 }
 
-void FtDSLQuery::closeGroup(wchar_t*& str, int groupTermCounter, int groupCounter) {
+void FtDSLQuery::closeGroup(char16_t*& str, int groupTermCounter, int groupCounter) {
 	unsigned long distance = 1;
-	if (*str == '~') {
+	if (*str == u'~') {
 		distance = parseDistance(str);
 	}
 	assertrx_throw(groupTermCounter <= int(terms_.size()));
@@ -100,13 +129,13 @@ void FtDSLQuery::closeGroup(wchar_t*& str, int groupTermCounter, int groupCounte
 	}
 }
 
-void FtDSLQuery::parseImpl(wchar_t* str) {
+void FtDSLQuery::parseImpl(char16_t* str) {
 	int groupTermCounter = 0;
 	bool inGroup = false;
 	bool hasAnythingExceptNot = false;
 	int groupCounter = 0;
 	size_t maxPatternLen = 1;
-	wchar_t groupQuote = '\'';
+	char16_t groupQuote = u'\'';
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
 	std::string utf8str;
 	std::ignore = fieldsOpts.insert(fieldsOpts.cend(), std::max(int(fields_.size()), 1), {1.0, false});
@@ -120,20 +149,20 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 			break;
 		}
 
-		if (*str == '@') {
+		if (*str == u'@') {
 			parseFieldsOpts(str, fieldsOpts);
 			continue;
 		}
 
 		FtDSLEntry fte;
 		fte.opts.fieldsOpts = fieldsOpts;
-		if (*str == '-') {
+		if (*str == u'-') {
 			if (inGroup) {
 				throw Error(errParseDSL, "Incorrect operator '-' inside of search phrase");
 			}
 			fte.opts.op = OpNot;
 			++str;
-		} else if (*str == '+') {
+		} else if (*str == u'+') {
 			if (!inGroup) {
 				fte.opts.op = OpAnd;
 			}
@@ -162,24 +191,24 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 			++str;
 		}
 
-		if (*str == '=') {
+		if (*str == u'=') {
 			fte.opts.exact = true;
 			++str;
 		}
-		if (*str == '*') {
+		if (*str == u'*') {
 			fte.opts.suff = true;
 			++str;
 		}
-		if (*str == '+' && inGroup) {
+		if (*str == u'+' && inGroup) {
 			++str;
 		}
-		if (*str == '-' && inGroup) {
+		if (*str == u'-' && inGroup) {
 			throw Error(errParseDSL, "Incorrect operator '-' inside of search phrase");
 		}
 
-		wchar_t* beg = str;
+		char16_t* beg = str;
 		for (; *str; str++) {
-			if (*str == '\\') {
+			if (*str == u'\\') {
 				eraseFirstSymbol(str);
 				if (!*str) {
 					throw Error(errParseDSL, "Expected symbol after \\ , but found nothing");
@@ -188,7 +217,7 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 				if (splitOptions_.NeedToRemoveDiacritics(*str)) {
 					*str = RemoveDiacritic(*str);
 				}
-			} else if ((*str == '*' || *str == '~') && str != beg) {
+			} else if ((*str == u'*' || *str == u'~') && str != beg) {
 				break;
 			} else if (inGroup && *str == groupQuote) {
 				break;
@@ -251,8 +280,8 @@ void FtDSLQuery::parseImpl(wchar_t* str) {
 	}
 }
 
-void FtDSLQuery::parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_vector<FtDslFieldOpts, 8>& fieldsOpts) {
-	while (*str && !(IsAlpha(*str) || IsDigit(*str) || *str == '*' || *str == '_' || *str == '+')) {
+void FtDSLQuery::parseFieldOpts(char16_t*& str, FtDslFieldOpts& defFieldOpts, h_vector<FtDslFieldOpts, 8>& fieldsOpts) {
+	while (*str && !(IsAlpha(*str) || IsDigit(*str) || *str == u'*' || *str == u'_' || *str == u'+')) {
 		++str;
 	}
 	if (!*str) {
@@ -260,7 +289,7 @@ void FtDSLQuery::parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_v
 	}
 
 	bool needSumRank = false;
-	if (*str == '+') {
+	if (*str == u'+') {
 		needSumRank = true;
 		++str;
 		if (!str) {
@@ -268,22 +297,22 @@ void FtDSLQuery::parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_v
 		}
 	}
 	auto beg = str;
-	while (*str && (IsAlpha(*str) || IsDigit(*str) || *str == '*' || *str == '_' || *str == '+' || *str == '.')) {
+	while (*str && (IsAlpha(*str) || IsDigit(*str) || *str == u'*' || *str == u'_' || *str == u'+' || *str == u'.')) {
 		++str;
 	}
 	auto end = str;
 
 	float boost = 1.0f;
-	if (*str == '^') {
+	if (*str == u'^') {
 		parseBoost(str, boost);
 	}
 
-	if (*beg == '*') {
+	if (*beg == u'*') {
 		defFieldOpts = {boost, needSumRank};
 		return;
 	}
 
-	std::string fname = utf16_to_utf8(std::wstring_view(beg, std::distance(beg, end)));
+	std::string fname = utf16_to_utf8(std::u16string_view(beg, std::distance(beg, end)));
 	auto f = fields_.find(fname);
 	if (f == fields_.end()) [[unlikely]] {
 		throw Error(errLogic, "Field '{}' is not included into fulltext index", fname);
@@ -298,8 +327,8 @@ void FtDSLQuery::parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_v
 	fieldsOpts[f->second.fieldNumber] = {boost, needSumRank};
 }
 
-void FtDSLQuery::parseFieldsOpts(wchar_t*& str, h_vector<FtDslFieldOpts, 8>& fieldsOpts) {
-	assertf_dbg(*str == '@', "Expected '@' in parseFieldsOpts, but was '{}'", int(*str));
+void FtDSLQuery::parseFieldsOpts(char16_t*& str, h_vector<FtDslFieldOpts, 8>& fieldsOpts) {
+	assertf_dbg(*str == u'@', "Expected '@' in parseFieldsOpts, but was '{}'", int(*str));
 	++str;
 
 	FtDslFieldOpts defFieldOpts{0.0, false};
@@ -309,7 +338,7 @@ void FtDSLQuery::parseFieldsOpts(wchar_t*& str, h_vector<FtDslFieldOpts, 8>& fie
 
 	for (; *str != 0; str++) {
 		parseFieldOpts(str, defFieldOpts, fieldsOpts);
-		if (*str != ',') {
+		if (*str != u',') {
 			break;
 		}
 	}

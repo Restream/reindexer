@@ -97,6 +97,8 @@ private:
 	template <typename Bm25T>
 	void mergePhrase(size_t phraseIdx, PhraseResults<IdCont>& phrase, uint16_t qpIdx);
 
+	// FullMatchBoost when field word count equals query term count.
+	// See fulltext_ranking.md#full-match-boost
 	template <typename DocsStatsGetter>
 	void addFullMatchBoost(size_t numTerms, const DocsStatsGetter& docsStatsGetter) {
 		for (size_t idx = 0; idx < mergeData_.size(); ++idx) {
@@ -108,6 +110,8 @@ private:
 		}
 	}
 
+	// MinRank filter, scale to 0-255, sort by rank.
+	// See fulltext_ranking.md#normalization-and-filtering
 	void postProcessResults(RankSortType rankSortType) {
 		float maxProc = 0.0;
 		for (auto& md : mergeData_) {
@@ -173,27 +177,28 @@ private:
 		}
 	}
 
-	void addDoc(int docId, float proc, uint8_t field, PositionsVector&& positions, TermRankInfo& subtermInf, const std::wstring& pattern) {
+	void addDoc(int docId, float proc, uint8_t field, PositionsVector&& positions, TermRankInfo& subtermInf,
+				const std::u16string& pattern) {
 		addDoc(docId, proc, field);
 		addLastDocAreas(positions, proc, subtermInf, pattern);
 		mergeDataExtended_.emplace_back(std::move(positions), proc);
 	}
 
-	void addDocAreas(int docId, const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::wstring& pattern) {
+	void addDocAreas(int docId, const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
 		if constexpr (kWithAreas) {
 			auto& md = getMergeData(docId);
 			addAreas(md.areaIndex, positions, rank, termInf, pattern);
 		}
 	}
 
-	void addLastDocAreas(const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::wstring& pattern) {
+	void addLastDocAreas(const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
 		if constexpr (kWithAreas) {
 			size_t lastAreaIdx = mergeData_.vectorAreas.size() - 1;
 			addAreas(lastAreaIdx, positions, rank, termInf, pattern);
 		}
 	}
 
-	void addAreas(size_t areaIdx, const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::wstring& pattern) {
+	void addAreas(size_t areaIdx, const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
 		if constexpr (kWithRegularAreas) {
 			auto& docAreas = mergeData_.vectorAreas[areaIdx];
 			for (auto pos : positions) {

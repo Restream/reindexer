@@ -1,6 +1,7 @@
 <!-- toc -->
 
 - [Creation](#creation)
+  * [Circuit breaker](#circuit-breaker)
   * [HNSW options](#hnsw-options)
   * [IVF options](#ivf-options)
   * [Embedding configuration](#embedding-configuration)
@@ -37,6 +38,15 @@ Minimum and default values are 1000.
 
 Automatic embedding of vector indexes is also supported. It is expected that the vector generation service is configured.
 Its URL is needed, and the basic index fields are specified. Contents of the base fields are passed to the service, and the service returns the calculated vector value.
+
+### Circuit breaker
+
+Network calls to the embedding service are protected by a circuit breaker. It is enabled by default. See [Embedding configuration](#embedding-configuration) for `circuit_breaker` settings:
+- after `threshold` consecutive failed network embedding requests (with less than `threshold_timeout_ms` idle between them) the breaker opens;
+- while open, cache-miss requests fail immediately for `cooldown_ms` without contacting the service (error text includes the remaining cooldown);
+- after cooldown, a single probe request is allowed; other requests still fail until it finishes;
+- probe success closes the breaker; probe failure keeps it open and restarts the cooldown;
+- a successful request in the closed state resets the error counter by default.
 
 ### HNSW options
 `Hnsw` index is also configured with the following parameters:
@@ -148,6 +158,17 @@ It is also optionally possible to configure a connection `pool`:
   + `connect_timeout_ms` - Connection/reconnection timeout to any embedding service (milliseconds). Optional, minimum 100, default 300
   + `read_timeout_ms` - Timeout reading data from embedding service (milliseconds). Optional, minimum 500, default 5000
   + `write_timeout_ms` - Timeout writing data from embedding service (milliseconds). Optional, minimum 500, default 5000
+  + `circuit_breaker` - Optional circuit breaker for cache-miss HTTP calls to the embedding service:
+    ```json
+    "circuit_breaker": {
+      "threshold": 16,
+      "threshold_timeout_ms": 15000,
+      "cooldown_ms": 7500
+    }
+    ```
+    - `threshold` - Consecutive failed network requests required to open the breaker. Optional, default 16. Value `0` disables the circuit breaker. Maximum 255
+    - `threshold_timeout_ms` - Idle timeout that resets the consecutive failure counter (milliseconds). Optional, default 15000. Value `0` disables idle reset
+    - `cooldown_ms` - Time to block cache-miss requests after the breaker opens (milliseconds). Optional, default 7500. Value `0` disables the circuit breaker
 
 Upsert embedder used in Insert/Update/Upsert operations, send format is json: /api/v1/embedder/*NAME*/produce?format=json.
 Query embedder starts with `WhereKNN`, sending a string as the search value (?format=text).
@@ -192,6 +213,7 @@ connectConfig := &bindings.EmbedderConnectionPoolConfig{
 	ConnectTimeout: 500,
 	ReadTimeout:    500,
 	WriteTimeout:   500,
+	CircuitBreaker: bindings.DefaultEmbedderCircuitBreakerConfig(),
 }
 embedderConfig := &bindings.EmbedderConfig{
 	URL:                  "http://127.0.0.1:8000",

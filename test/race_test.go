@@ -126,6 +126,7 @@ func setNsCopyConfigs(t *testing.T, namespace string) {
 
 func TestRaceConditions(t *testing.T) {
 	t.Parallel()
+
 	FillTestJoinItems(7000, 2000, testJoinItemsRaceNs)
 
 	done := make(chan bool)
@@ -318,6 +319,7 @@ func TestRaceConditions(t *testing.T) {
 
 func TestRaceConditionsTx(t *testing.T) {
 	t.Parallel()
+
 	FillTestJoinItems(7000, 2000, testJoinItemsRaceTxNs)
 	setNsCopyConfigs(t, "test_items_iter_race_tx")
 	setNsCopyConfigs(t, testJoinItemsRaceTxNs)
@@ -508,6 +510,10 @@ func TestRaceConditionsTx(t *testing.T) {
 	time.Sleep(time.Millisecond * 15000)
 	close(done)
 	wg.Wait()
+	// Truncate while event subscribers are still alive so Truncate / late TX events
+	// are consumed and do not leak into subsequent subscription tests.
+	require.NoError(t, DB.TruncateNamespace(testItemsRaceTxNs))
+	require.NoError(t, DB.TruncateNamespace(testJoinItemsRaceTxNs))
 	close(subsDone)
 	subsWg.Wait()
 }

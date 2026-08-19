@@ -13,8 +13,7 @@ Error EventSubscriberConfig::FromJSON(std::span<char> json) noexcept {
 		FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "UpdatesFilter: {}", ex.what());
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 

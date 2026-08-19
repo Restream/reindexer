@@ -157,7 +157,7 @@ public:
 	bool enableTermsConcat = true;
 	bool enableTermsSplit = true;
 	bool enableTranslit = true;
-	bool enableKbLayout = true;
+	enum class [[nodiscard]] KbLayoutMode { Disable, Enable, Heuristic } kbLayoutMode = KbLayoutMode::Heuristic;
 	bool enableNumbersSearch = false;
 
 	StopWordsSetT stopWords;
@@ -192,9 +192,6 @@ public:
 	uint8_t maxTypoLen = 15;
 	int maxTypoDistance = 0;
 	int maxSymbolPermutationDistance = 1;
-
-	int maxRebuildSteps = 50;
-	int maxStepSize = 4000;
 
 	struct [[nodiscard]] Bm25Config {
 		enum class [[nodiscard]] Bm25Type { classic, rx, wordCount };

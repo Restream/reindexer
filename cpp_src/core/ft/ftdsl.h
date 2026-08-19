@@ -45,8 +45,8 @@ struct [[nodiscard]] FtDslOpts {
 class [[nodiscard]] FtDSLEntry {
 public:
 	FtDSLEntry() = default;
-	FtDSLEntry(std::wstring&& p, const FtDslOpts& o) : pattern{std::move(p)}, opts{o} {}
-	FtDSLEntry(const std::wstring& p, const FtDslOpts& o) : pattern{p}, opts{o} {}
+	FtDSLEntry(std::u16string&& p, const FtDslOpts& o) : pattern{std::move(p)}, opts{o} {}
+	FtDSLEntry(const std::u16string& p, const FtDslOpts& o) : pattern{p}, opts{o} {}
 
 	bool CanBeJoinedWith(const FtDSLEntry& otherTerm) const noexcept {
 		if (opts.op != OpOr || otherTerm.Opts().op != OpOr) {
@@ -71,13 +71,13 @@ public:
 
 	const FtDslOpts& Opts() const noexcept { return opts; }
 	FtDslOpts& Opts() noexcept { return opts; }
-	const std::wstring& Pattern() const noexcept { return pattern; }
-	std::wstring& Pattern() noexcept { return pattern; }
+	const std::u16string& Pattern() const noexcept { return pattern; }
+	std::u16string& Pattern() noexcept { return pattern; }
 
 	friend class FtDSLQuery;
 
 private:
-	std::wstring pattern;
+	std::u16string pattern;
 	FtDslOpts opts;
 };
 
@@ -88,12 +88,12 @@ private:
 struct [[nodiscard]] FtDSLVariant {
 	FtDSLVariant() = default;
 	FtDSLVariant(FtDSLVariant&&) = default;
-	FtDSLVariant(std::wstring p, int pr, PrefAndStemmersForbidden psForbidden) noexcept
+	FtDSLVariant(std::u16string p, int pr, PrefAndStemmersForbidden psForbidden) noexcept
 		: pattern{std::move(p)}, proc{pr}, prefAndStemmersForbidden(psForbidden) {}
 
 	reindexer::FtDSLVariant& operator=(FtDSLVariant&& rhs) = default;
 
-	std::wstring pattern;
+	std::u16string pattern;
 	int proc = 0;
 	PrefAndStemmersForbidden prefAndStemmersForbidden = PrefAndStemmersForbidden_False;
 };
@@ -126,10 +126,10 @@ public:
 	h_vector<FtDSLEntry>::const_iterator end() const noexcept { return terms_.end(); }
 
 private:
-	void parseImpl(wchar_t* str);
-	void closeGroup(wchar_t*& str, int groupTermCounter, int groupCounter);
-	void parseFieldOpts(wchar_t*& str, FtDslFieldOpts& defFieldOpts, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
-	void parseFieldsOpts(wchar_t*& str, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
+	void parseImpl(char16_t* str);
+	void closeGroup(char16_t*& str, int groupTermCounter, int groupCounter);
+	void parseFieldOpts(char16_t*& str, FtDslFieldOpts& defFieldOpts, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
+	void parseFieldsOpts(char16_t*& str, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
 
 	std::function<int(const std::string&)> resolver_;
 

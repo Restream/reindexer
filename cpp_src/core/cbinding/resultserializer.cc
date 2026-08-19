@@ -1,7 +1,9 @@
 #include "resultserializer.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/tagsmatcher.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/item_context.h"
+#include "core/nsselecter/joins/iterators.h"
+#include "core/queryresults/itemrefcache.h"
 #include "core/queryresults/queryresults.h"
 #include "core/type_consts.h"
 #include "tools/logger.h"
@@ -23,6 +25,9 @@ constexpr int kKnownResultsFlagsMask = int(GetKnownFlagsBitMask(kResultsFlagMaxV
 void WrResultSerializer::resetUnknownFlags() noexcept { opts_.flags &= kKnownResultsFlagsMask; }
 
 void WrResultSerializer::putQueryParams(const BindingCapabilities& caps, QueryResults& results) {
+	if (caps.GetQueryFormat() == QueryFormatV2) {
+		PutVarUint(QueryFormatV2);
+	}
 	// Flags of present objects
 	PutVarUint(opts_.flags);
 	// Total
@@ -98,7 +103,7 @@ static ItemRef GetItemRefWithStore(QueryResults::Iterator& it, QueryResults::Pro
 
 template <typename ItT>
 void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::ProxiedRefsStorage* storage, const QueryResults* result,
-									   const BindingCapabilities& caps) {
+									   const BindingCapabilities& caps, ItemType itemType) {
 	const auto itemRef = GetItemRefWithStore(it, storage);
 
 	if (opts_.flags & kResultsWithItemID) {
@@ -107,7 +112,8 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 	}
 
 	if (opts_.flags & kResultsWithNsID) {
-		PutVarUint(itemRef.Nsid());
+		const auto nsid{(itemType == ItemType::Joined && caps.GetQueryFormat() == QueryFormatV1) ? 0 : itemRef.Nsid()};
+		PutVarUint(nsid);
 	}
 
 	if (opts_.flags & kResultsWithRank) {
@@ -206,7 +212,7 @@ std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults& re
 		if (int(opts_.tmVersions.size()) != mergedNsCount) [[unlikely]] {
 			logFmt(LogWarning, "tmVersionsCount != results->GetMergedNSCount: {} != {}. Client's meta data can become inconsistent.",
 				   opts_.tmVersions.size(), mergedNsCount);
-			if (!opts_.allowIncompleteTmVersions) {
+			if (!opts_.allowIncompleteTmVersions && results.Count() > 0) {
 				assertrx_dbg(false);
 			}
 		}
@@ -283,35 +289,68 @@ bool WrResultSerializer::PutResults(QueryResults& result, const BindingCapabilit
 	}
 
 	auto rowIt = result.begin() + opts_.fetchOffset;
-	for (unsigned i = 0, limit = opts_.fetchLimit; i < limit; ++i, ++rowIt) {
-		// Put Item ID and version
-		putItemParams(rowIt, rowIt.GetShardId(), storage, &result, caps);
-		if (opts_.flags & kResultsWithJoined) {
-			auto jIt = rowIt.GetJoined(storage);
-			PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
-			if (jIt.getJoinedItemsCount() > 0) {
-				size_t joinedField = rowIt.GetJoinedField();
-				for (auto it = jIt.begin(), end = jIt.end(); it != end; ++it, ++joinedField) {
-					PutVarUint(it.ItemsCount());
-					if (it.ItemsCount() == 0) {
-						continue;
-					}
-					LocalQueryResults qr = it.ToQueryResults();
-					qr.addNSContext(result, joinedField, lsn_t());
-					for (auto& jit : qr) {
-						putItemParams(jit, rowIt.GetShardId(), storage, nullptr, caps);
+	if (caps.GetQueryFormat() == QueryFormatV2) {
+		for (unsigned i = 0, limit = opts_.fetchLimit; i < limit; ++i, ++rowIt) {
+			putItem(rowIt, rowIt.GetShardId(), storage, result, caps, ItemType::Main);
+			if (i == 0) {
+				grow((opts_.fetchLimit - 1) * (Len() - saveLen));
+			}
+		}
+	} else {
+		for (unsigned i = 0, limit = opts_.fetchLimit; i < limit; ++i, ++rowIt) {
+			const int rowShardId = rowIt.GetShardId();
+			putItemParams(rowIt, rowShardId, storage, &result, caps, ItemType::Main);
+			if (opts_.flags & kResultsWithJoined) {
+				auto joinCtx{rowIt.GetJoinedContext(storage)};
+				auto& joinIt{joinCtx.iterator};
+				const auto joinedItemsCount{joinIt.GetItemsCount()};
+				PutVarUint(joinedItemsCount > 0 ? joinIt.GetFieldsCount() : 0);
+				if (joinedItemsCount > 0) {
+					for (auto fieldIt = joinIt.Begin(), end = joinIt.End(); fieldIt != end; ++fieldIt) {
+						const auto itemsCount{fieldIt.ItemsCount()};
+						PutVarUint(itemsCount);
+						if (itemsCount == 0) {
+							continue;
+						}
+						for (auto& it : fieldIt.ToQueryResults(joinCtx)) {
+							putItemParams(it, rowShardId, storage, nullptr, caps, ItemType::Joined);
+						}
 					}
 				}
 			}
-		}
-		if (i == 0) {
-			grow((opts_.fetchLimit - 1) * (Len() - saveLen));
+			if (i == 0) {
+				grow((opts_.fetchLimit - 1) * (Len() - saveLen));
+			}
 		}
 	}
 	return opts_.fetchOffset + opts_.fetchLimit >= result.Count();
 }
 
-bool WrResultSerializer::PutResultsRaw(QueryResults& result, std::string_view* rawBufOut) {
+template <typename ItT>
+void WrResultSerializer::putItem(ItT& rowIt, int shardId, QueryResults::ProxiedRefsStorage* storage, const QueryResults& result,
+								 const BindingCapabilities& caps, ItemType itemType) {
+	putItemParams(rowIt, shardId, storage, &result, caps, itemType);
+	if (opts_.flags & kResultsWithJoined) {
+		auto joinCtx{rowIt.GetJoinedContext(storage)};
+		auto& joinIt{joinCtx.iterator};
+		const auto joinedItemsCount{joinIt.GetItemsCount()};
+		PutVarUint(joinedItemsCount > 0 ? joinIt.GetFieldsCount() : 0);
+		if (joinedItemsCount > 0) {
+			for (auto fieldIt = joinIt.Begin(), end = joinIt.End(); fieldIt != end; ++fieldIt) {
+				const auto itemsCount{fieldIt.ItemsCount()};
+				PutVarUint(itemsCount);
+				if (itemsCount == 0) {
+					continue;
+				}
+				for (auto& it : fieldIt.ToQueryResults(joinCtx)) {
+					putItem(it, shardId, storage, result, caps, ItemType::Joined);
+				}
+			}
+		}
+	}
+}
+
+bool WrResultSerializer::PutResultsRaw(QueryResults& result, const BindingCapabilities& caps, std::string_view* rawBufOut) {
 	if (opts_.fetchOffset > result.Count()) {
 		opts_.fetchOffset = result.Count();
 	}
@@ -320,7 +359,7 @@ bool WrResultSerializer::PutResultsRaw(QueryResults& result, std::string_view* r
 		opts_.fetchLimit = result.Count() - opts_.fetchOffset;
 	}
 
-	result.FetchRawBuffer(opts_.flags, opts_.fetchOffset, opts_.fetchLimit);
+	result.FetchRawBuffer(opts_.flags, opts_.fetchOffset, opts_.fetchLimit, caps);
 
 	client::ParsedQrRawBuffer raw;
 	const bool holdsRemoteData = result.GetRawProxiedBuffer(raw);

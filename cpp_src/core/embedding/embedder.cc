@@ -14,6 +14,14 @@ namespace {
 constexpr std::string_view kFormatText("text");
 constexpr std::string_view kFormatJson("json");
 constexpr std::string_view kServerPathFormat("/api/v1/embedder/{}/produce?format={}");
+
+EmbedderCircuitBreaker::Config makeCircuitBreakerConfig(const CircuitBreakerConfig& cfg) noexcept {
+	return EmbedderCircuitBreaker::Config{
+		.threshold = cfg.threshold,
+		.thresholdTimeout = std::chrono::milliseconds{static_cast<std::chrono::milliseconds::rep>(cfg.threshold_timeout_ms)},
+		.cooldown = std::chrono::milliseconds{static_cast<std::chrono::milliseconds::rep>(cfg.cooldown_ms)},
+	};
+}
 }  // namespace
 
 EmbedderBase::EmbedderBase(std::string_view name, std::string_view format, std::string_view fieldName, EmbedderConfig&& config,
@@ -22,7 +30,8 @@ EmbedderBase::EmbedderBase(std::string_view name, std::string_view format, std::
 	  fieldName_{fieldName},
 	  serverPath_{fmt::format(kServerPathFormat, name, format)},
 	  cache_{cache},
-	  config_{std::move(config)} {
+	  config_{std::move(config)},
+	  circuitBreaker_{makeCircuitBreakerConfig(poolConfig.circuit_breaker)} {
 	pool_ = std::make_unique<ConnectorPool>(std::move(poolConfig));
 }
 
@@ -103,6 +112,10 @@ void EmbedderBase::calculate(const RdxContext& ctx, const embedding::Adapter& sr
 			return;	 // NOTE: stop calculation
 		}
 	}
+
+	// Cache miss: circuit breaker may reject without contacting the embedder.
+	auto permit = circuitBreaker_.Acquire(fieldName_);
+
 	PerfStatCalculatorMT embedderTimesCacheMissCalculator(statistic_.embedderTimesCacheMiss, tmStart, enablePerfStat);
 	PerfStatCalculatorMT connectionAwaitCalculator(statistic_.connectionAwait, enablePerfStat);
 	auto res = pool_->GetConnector(ctx);
@@ -122,6 +135,8 @@ void EmbedderBase::calculate(const RdxContext& ctx, const embedding::Adapter& sr
 	if (!response.ok) {
 		throw Error{errNetwork, "Failed to get embedding for '{}'. Problem with client: {}", fieldName_, response.content};
 	}
+
+	permit.ReportSuccess();
 
 	logFmt(LogTrace, "Embedding data: {}", response.content);
 	auto error = embedding::Adapter::VectorsFromJSON(response.content, products);

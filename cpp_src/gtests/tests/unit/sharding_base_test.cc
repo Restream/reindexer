@@ -997,7 +997,11 @@ ShardingApi::ShardingConfig ShardingApi::makeShardingConfigByDistrib(std::string
 	cfg.proxyConnCount = 3;
 	cfg.proxyConnThreads = 2;
 	cfg.proxyConnConcurrency = 4;
+#ifdef REINDEX_WITH_TSAN
+	cfg.configRollbackTimeout = std::chrono::seconds(20);
+#else	// !REINDEX_WITH_TSAN
 	cfg.configRollbackTimeout = std::chrono::seconds(10);
+#endif	// !REINDEX_WITH_TSAN
 	return cfg;
 }
 
@@ -1803,7 +1807,7 @@ TEST_F(ShardingApi, NsNamesCaseInsensitivityTest) {
 
 	fillShards(shardDataDistrib, kNsName, kFieldId);
 	waitSync(kNsName);
-	runSelectTest(toLower(kNsName), shardDataDistrib);
+	runSelectTest(ToLower(kNsName), shardDataDistrib);
 }
 
 TEST_F(ShardingApi, CheckUpdCfgNsAfterApplySharingCfg) {
@@ -3963,6 +3967,52 @@ TEST_F(ShardingApi, TestCsvQrDistributedQuery) {
 		serCsv.Reset();
 		serJson.Reset();
 	}
+}
+
+TEST_F(ShardingApi, ProxiedMergeJoinRepackOutput) {
+	InitShardingConfig cfg;
+	cfg.nodesInCluster = 1;
+	Init(std::move(cfg));
+
+	constexpr std::string_view kKey = "key1";
+	auto rx = getNode(0)->api.reindexer;
+
+	Query mergeQ = Query(default_namespace)
+					   .Where(kFieldLocation, CondEq, kKey)
+					   .InnerJoin(kFieldId, kFieldId, CondEq, Query(default_namespace).Where(kFieldLocation, CondEq, kKey));
+	// Select-filter by kFieldNestedRand is important - it makes query nonCacheble,
+	// and together with the flag kResultsWithItemID it leads to another executable path.
+	Query q = Query(default_namespace).Select({kFieldNestedRand}).Where(kFieldLocation, CondEq, kKey).Merge(std::move(mergeQ));
+
+	// The explicit flags trick is needed to force the proxy to repack the results,
+	// otherwise it will follow the RawProxying branch and miss the code we need to check.
+	client::QueryResults qr(kResultsCJson | kResultsWithItemID);
+	Error err = rx->Select(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_GT(qr.Count(), 0);
+
+	size_t mergeRows = 0;
+	for (auto it : qr) {
+		if (it.GetNSID() != 1) {
+			continue;
+		}
+		++mergeRows;
+		auto item = it.GetItem();
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		const auto json = item.GetJSON();
+
+		const auto& joinedData = it.GetJoined();
+		ASSERT_EQ(joinedData.size(), 1u) << "merge row must have one joined field: " << json;
+		ASSERT_EQ(joinedData[0].size(), 1u) << "self-join must return one row: " << json;
+
+		for (const auto& joinedItemData : joinedData[0]) {
+			ItemImpl joinedItem(qr.GetPayloadType(2), qr.GetTagsMatcher(2));
+			joinedItem.Unsafe(true);
+			joinedItem.FromCJSON(joinedItemData.data);
+			EXPECT_EQ(joinedItem.GetJSON(), json) << "joined row must match merge row on id";
+		}
+	}
+	ASSERT_GT(mergeRows, 0u);
 }
 
 }  // namespace reindexer_tests

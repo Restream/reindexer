@@ -39,7 +39,9 @@ void JoinItems::RegisterAllCases() { BaseFixture::RegisterAllCases(); }
 reindexer::Item JoinItems::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	if (item.Status().ok()) {
-		item["id"] = id_seq_->Next();
+		const int id = id_seq_->Next();
+		item["id"] = id;
+		item["parent_id"] = id_seq_->Start() + (id - id_seq_->Start()) % 50;
 		item["name"] = randomString("price");
 		// All strings passed in unsafe mode to item must be holded by app
 		std::ignore = item.Unsafe();

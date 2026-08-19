@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+
 #include "core/lrucache.h"
 #include "core/query/query.h"
 #include "estl/h_vector.h"
@@ -30,16 +32,11 @@ public:
 	QueryCacheKey(const QueryCacheKey& other) = default;
 	QueryCacheKey& operator=(QueryCacheKey&& other) = default;
 	QueryCacheKey& operator=(const QueryCacheKey& other) = delete;
-	template <typename JoinItemsProcessorsT>
-	QueryCacheKey(const Query& q, uint8_t mode, const JoinItemsProcessorsT* jnss) {
+	template <typename JoinItemsProcessor>
+	QueryCacheKey(const Query& q, uint8_t mode, std::span<JoinItemsProcessor> jnss) {
 		WrSerializer ser;
-		q.Serialize(ser, mode);
-		if (jnss) {
-			for (auto& jns : *jnss) {
-				ser.PutVString(jns.RightNsName());
-				ser.PutUInt64(jns.LastUpdateTime());
-			}
-		}
+		q.Serialize(ser, mode, QueryFormatV2);
+		serialize(jnss, ser);
 		if (ser.Len() > BufT::max_size()) [[unlikely]] {
 			throw Error(errLogic, "QueryCacheKey: buffer overflow");
 		}
@@ -51,6 +48,15 @@ public:
 	const BufT& buf() const noexcept { return buf_; }
 
 private:
+	template <typename JoinItemsProcessor>
+	static void serialize(std::span<JoinItemsProcessor> jnss, WrSerializer& ser) {
+		for (const auto& jns : jnss) {
+			ser.PutVString(jns.RightNsName());
+			ser.PutUInt64(jns.LastUpdateTime());
+			serialize(jns.ChildItemsProcessors(), ser);
+		}
+	}
+
 	BufT buf_;
 };
 

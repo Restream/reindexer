@@ -12,6 +12,7 @@ public:
 		using reindexer::IndexOpts;
 
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
+			.AddIndex("parent_id", "hash", "int", IndexOpts())
 			.AddIndex("name", "tree", "string", IndexOpts())
 			.AddIndex("location", "hash", "string", IndexOpts())
 			.AddIndex("device", "hash", "string", IndexOpts());

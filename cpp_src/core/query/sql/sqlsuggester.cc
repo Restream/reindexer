@@ -1,11 +1,10 @@
 
 #include "sqlsuggester.h"
-#include <unordered_map>
 #include "core/definitions/namespacedef.h"
 #include "core/query/query.h"
 #include "core/system_ns_names.h"
 #include "sql_suggestions.h"
-#include "sqltokentype.h"
+#include "sqltokenmatching.h"
 
 namespace reindexer {
 
@@ -44,53 +43,6 @@ SQLSuggestions SQLSuggester::GetSuggestions(std::string_view q, size_t pos, Enum
 		}
 	}
 	return result;
-}
-
-static const std::unordered_map<SqlTokenType, std::unordered_set<std::string>> sqlTokenMatchings = {
-	{Start, {"explain", "select", "delete", "update", "truncate", "local"}},
-	{StartAfterLocal, {"explain", "select"}},
-	{StartAfterExplain, {"select", "delete", "update", "local"}},
-	{StartAfterLocalExplain, {"select"}},
-	{AggregationSqlToken, {"sum", "avg", "max", "min", "facet", "count", "distinct", "rank()", "count_cached", "vectors()"}},
-	{SelectConditionsStart, {"where", "limit", "offset", "order", "join", "left", "inner", "equal_position", "merge", "or", ";"}},
-	{NestedSelectConditionsStart, {"where", "limit", "offset", "order", "equal_position"}},
-	{ConditionSqlToken, {">", ">=", "<", "<=", "<>", "in", "allset", "range", "is", "==", "="}},
-	{WhereFieldValueSqlToken, {"null", "empty", "not"}},
-	{WhereFieldNegateValueSqlToken, {"null", "empty"}},
-	{OpSqlToken, {"and", "or"}},
-	{WhereOpSqlToken, {"and", "or", "order", "equal_position"}},
-	{SortDirectionSqlToken, {"asc", "desc"}},
-	{JoinTypesSqlToken, {"join", "left", "inner"}},
-	{LeftSqlToken, {"join"}},
-	{InnerSqlToken, {"join"}},
-	{SelectSqlToken, {"select"}},
-	{OnSqlToken, {"on"}},
-	{BySqlToken, {"by"}},
-	{NotSqlToken, {"not"}},
-	{FieldSqlToken, {"field"}},
-	{FromSqlToken, {"from"}},
-	{SetSqlToken, {"set"}},
-	{WhereSqlToken, {"where"}},
-	{AllFieldsToken, {"*"}},
-	{ModifyConditionsStart, {"where", "limit", "offset", "order"}},
-	{UpdateOptionsSqlToken, {"set", "drop"}},
-	{EqualPositionSqlToken, {"equal_position"}},
-	{WhereFunction, {"ST_DWithin", "KNN", "flat_array_len"}},
-	{ST_GeomFromTextSqlToken, {"ST_GeomFromText"}},
-	{KnnParamsToken,
-	 {std::string{KnnSearchParams::kKName}, std::string{KnnSearchParams::kEfName}, std::string{KnnSearchParams::kNProbeName}}}};
-
-static void getMatchingTokens(SqlTokenType tokenType, const std::string& token, std::unordered_set<std::string>& variants) {
-	const auto suggestionsIt = sqlTokenMatchings.find(tokenType);
-	if (suggestionsIt == sqlTokenMatchings.end()) {
-		return;
-	}
-	const auto& suggestions = suggestionsIt->second;
-	for (auto it = suggestions.begin(); it != suggestions.end(); ++it) {
-		if (isBlank(token) || checkIfStartsWith(token, *it)) {
-			variants.insert(*it);
-		}
-	}
 }
 
 void SQLSuggester::getMatchingNamespacesNames(const std::string& token, std::unordered_set<std::string>& variants) {
@@ -171,48 +123,48 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData& ctx) {
 		case UpdateOptionsSqlToken:
 		case WhereFunction:
 		case KnnParamsToken:
-			getMatchingTokens(ctx.tokenType, ctx.token, ctx.variants);
+			getMatchingSqlTokens(ctx.tokenType, ctx.token, ctx.variants);
 			break;
 		case SingleSelectFieldSqlToken:
-			getMatchingTokens(AllFieldsToken, ctx.token, ctx.variants);
-			getMatchingTokens(AggregationSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(AllFieldsToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(AggregationSqlToken, ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case NamespaceSqlToken:
 			getMatchingNamespacesNames(ctx.token, ctx.variants);
 			break;
 		case WhereFieldOrSubquerySqlToken:
-			getMatchingTokens(SelectSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(SelectSqlToken, ctx.token, ctx.variants);
 			[[fallthrough]];
 		case AndSqlToken:
 		case WhereFieldSqlToken:
-			getMatchingTokens(JoinTypesSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(JoinTypesSqlToken, ctx.token, ctx.variants);
 			[[fallthrough]];
 		case NestedAndSqlToken:
 		case NestedWhereFieldSqlToken:
-			getMatchingTokens(NotSqlToken, ctx.token, ctx.variants);
-			getMatchingTokens(WhereFunction, ctx.token, ctx.variants);
+			getMatchingSqlTokens(NotSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(WhereFunction, ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
-			getMatchingTokens(EqualPositionSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(EqualPositionSqlToken, ctx.token, ctx.variants);
 			break;
 		case GeomFieldSqlToken:
-			getMatchingTokens(ST_GeomFromTextSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(ST_GeomFromTextSqlToken, ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case FieldNameSqlToken:
 			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case SortDirectionSqlToken:
-			getMatchingTokens(SortDirectionSqlToken, ctx.token, ctx.variants);
-			getMatchingTokens(FieldSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(SortDirectionSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(FieldSqlToken, ctx.token, ctx.variants);
 			break;
 		case JoinedFieldNameSqlToken:
 			getMatchingNamespacesNames(ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case WhereFieldValueOrSubquerySqlToken:
-			getMatchingTokens(SelectSqlToken, ctx.token, ctx.variants);
-			getMatchingTokens(WhereFieldValueSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(SelectSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(WhereFieldValueSqlToken, ctx.token, ctx.variants);
 			break;
 		case DeleteSqlToken:
 		case AggregationSqlToken:
@@ -233,8 +185,8 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData& ctx) {
 }
 
 bool SQLSuggester::findInPossibleTokens(SqlTokenType type, const std::string& v) {
-	const auto it = sqlTokenMatchings.find(type);
-	return it == sqlTokenMatchings.end() || (it->second.find(v) != it->second.end());
+	const auto it = sqlTokenMatchings().find(type);
+	return it == sqlTokenMatchings().end() || (it->second.find(v) != it->second.end());
 }
 
 bool SQLSuggester::findInPossibleFields(const std::string& tok) {

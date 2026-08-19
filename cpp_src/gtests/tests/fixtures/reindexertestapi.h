@@ -99,7 +99,7 @@ public:
 
 private:
 	constexpr static std::string_view kLetters = "abcdefghijklmnopqrstuvwxyz";
-	constexpr static std::wstring_view kRuLetters = L"абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+	constexpr static std::u16string_view kRuLetters = u"абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
 	bool verbose_ = false;
 };
 

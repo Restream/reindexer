@@ -271,6 +271,14 @@ func removeTestNamespace(namespace string) {
 	delete(testNamespaces, namespace)
 }
 
+func clearTestNamespaceItems(namespace string) {
+	testNamespacesMtx.Lock()
+	defer testNamespacesMtx.Unlock()
+	if ns, ok := testNamespaces[strings.ToLower(namespace)]; ok {
+		ns.items = make(map[string]any)
+	}
+}
+
 func newTestTx(db *ReindexerWrapper, namespace string) *txTest {
 	return newTestTxCtx(context.Background(), db, namespace)
 }

@@ -57,7 +57,6 @@ inline uint32_t _Hash_bytes(const void* ptr, uint32_t len) noexcept {
 	return hash;
 }
 
-uint32_t Hash(const std::wstring& s) noexcept;
 template <CollateMode collateMode>
 uint32_t collateHash(std::string_view s) noexcept;
 template <>
@@ -87,6 +86,5 @@ inline uint32_t collateHash(std::string_view s, CollateMode collateMode) noexcep
 			return collateHash<CollateNone>(s);
 	}
 }
-uint32_t HashTreGram(const wchar_t* ptr) noexcept;
 
 }  // namespace reindexer

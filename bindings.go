@@ -64,7 +64,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 		defer out.Free()
 
 		rdSer := newSerializer(out.GetBuf())
-		rawQueryParams := rdSer.readRawQueryParams(func(nsid int) {
+		rawQueryParams := rdSer.readRawQueryParams(db.queryFormatVersion(), func(nsid int) {
 			ns.cjsonState.ReadPayloadType(&rdSer.Serializer, db.binding, ns.name)
 		})
 
@@ -72,7 +72,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 			return 0, err
 		}
 
-		resultp := rdSer.readRawtItemParams(rawQueryParams.shardId)
+		resultp := rdSer.readRawItemParams(rawQueryParams.shardId)
 
 		if len(precepts) > 0 && (resultp.cptr != 0 || resultp.data != nil) && itemIsPtr {
 			nsArrEntry := nsArrayEntry{ns, ns.cjsonState.Copy()}
@@ -205,7 +205,7 @@ func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, rqparams *rawResultQu
 func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int, namespace string) (json []byte, offsets []int, explain []byte, err error) {
 
 	ser := newSerializer(rawResult)
-	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
+	rawQueryParams := ser.readRawQueryParams(db.queryFormatVersion(), func(nsid int) {
 		var state cjson.State
 		state.ReadPayloadType(&ser.Serializer, db.binding, namespace)
 	})
@@ -238,7 +238,7 @@ func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, tota
 	jsonBuf.WriteString("\":[")
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		item := ser.readRawtItemParams(rawQueryParams.shardId)
+		item := ser.readRawItemParams(rawQueryParams.shardId)
 		if i != 0 {
 			jsonBuf.WriteString(",")
 		}
@@ -254,6 +254,91 @@ func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, tota
 	return jsonBuf.Bytes(), offsets, explain, nil
 }
 
+func (db *reindexerImpl) appendQuery(jq *Query, joinType int, nsArray *[]nsArrayEntry, ser *cjson.Serializer, queryFormatVersion int) error {
+	if joinType != merge { // Merge context is added in prepareQuery().
+		if ns, err := db.getNS(jq.Namespace); err == nil {
+			*nsArray = append(*nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
+		} else {
+			return err
+		}
+	}
+
+	ser.PutVarCUInt(joinType)
+	ser.WriteQuery(jq, queryFormatVersion)
+	ser.PutVarCUInt(queryEnd)
+
+	if err := db.appendJoinQueries(jq, nsArray, ser, queryFormatVersion); err != nil {
+		return err
+	}
+
+	if err := db.appendMergeQueries(jq, nsArray, ser, queryFormatVersion); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (db *reindexerImpl) appendJoinQueries(q *Query, nsArray *[]nsArrayEntry, ser *cjson.Serializer, queryFormatVersion int) error {
+	ser.PutVarCUInt(len(q.joinQueries))
+	for _, sq := range q.joinQueries {
+		if err := db.appendQuery(sq, sq.joinType, nsArray, ser, queryFormatVersion); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *reindexerImpl) appendMergeQueries(q *Query, nsArray *[]nsArrayEntry, ser *cjson.Serializer, queryFormatVersion int) error {
+	ser.PutVarCUInt(len(q.mergedQueries))
+	for _, mq := range q.mergedQueries {
+		if err := db.appendQuery(mq, merge, nsArray, ser, queryFormatVersion); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *reindexerImpl) appendJoinQueriesV1(q *Query, ser *cjson.Serializer, appendNsArray bool) error {
+	if q.hasNestedJoins() {
+		return errors.New("nested joins are not supported by QueryFormatV1")
+	}
+	for _, sq := range q.joinQueries {
+		if appendNsArray {
+			if ns, err := db.getNS(sq.Namespace); err == nil {
+				q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
+			} else {
+				return err
+			}
+		}
+
+		ser.PutVarCUInt(sq.joinType)
+		ser.WriteQuery(sq, queryFormatVersionV1)
+		ser.PutVarCUInt(queryEnd)
+	}
+	return nil
+}
+
+func (db *reindexerImpl) appendMergeQueriesV1(q *Query, ser *cjson.Serializer) error {
+	for _, mq := range q.mergedQueries {
+		ser.PutVarCUInt(merge)
+		ser.WriteQuery(mq, queryFormatVersionV1)
+		ser.PutVarCUInt(queryEnd)
+
+		for _, sq := range mq.joinQueries {
+			if ns, err := db.getNS(sq.Namespace); err == nil {
+				q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
+			} else {
+				return err
+			}
+
+			ser.PutVarCUInt(sq.joinType)
+			ser.WriteQuery(sq, queryFormatVersionV1)
+			ser.PutVarCUInt(queryEnd)
+		}
+	}
+	return nil
+}
+
 func makeTMVersionsSlice(nsArray []nsArrayEntry, tmVersions []int32) []int32 {
 	tmVersions = tmVersions[:0]
 	for _, ns := range nsArray {
@@ -262,16 +347,20 @@ func makeTMVersionsSlice(nsArray []nsArrayEntry, tmVersions []int32) []int32 {
 	return tmVersions
 }
 
+func (db *reindexerImpl) queryFormatVersion() int {
+	return db.binding.QueryFormatVersion()
+}
+
 func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool) (result bindings.RawBuffer, err error) {
-	// Ordering in q.nsArray is matter and must correspond to the ordering in C++
+	// Ordering in q.nsArray should match the ordering in C++.
 	if ns, err := db.getNS(q.Namespace); err == nil {
 		q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 	} else {
 		return nil, err
 	}
 
-	ser := q.ser
-	ser.PutVarCUInt(queryEnd)
+	queryFormatVersion := db.queryFormatVersion()
+	q.ser.PutVarCUInt(queryEnd)
 
 	for _, sq := range q.mergedQueries {
 		if ns, err := db.getNS(sq.Namespace); err == nil {
@@ -281,25 +370,19 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 		}
 	}
 
-	if err := db.appendJoinQueries(q, &ser, true); err != nil {
-		return nil, err
-	}
-
-	for _, mq := range q.mergedQueries {
-		ser.PutVarCUInt(merge)
-		ser.Append(mq.ser)
-		ser.PutVarCUInt(queryEnd)
-
-		for _, sq := range mq.joinQueries {
-			if ns, err := db.getNS(sq.Namespace); err == nil {
-				q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
-			} else {
-				return nil, err
-			}
-
-			ser.PutVarCUInt(sq.joinType)
-			ser.Append(sq.ser)
-			ser.PutVarCUInt(queryEnd)
+	if queryFormatVersion == bindings.QueryFormatV2 {
+		if err := db.appendJoinQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return nil, err
+		}
+		if err := db.appendMergeQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := db.appendJoinQueriesV1(q, &q.ser, true); err != nil {
+			return nil, err
+		}
+		if err := db.appendMergeQueriesV1(q, &q.ser); err != nil {
+			return nil, err
 		}
 	}
 
@@ -308,7 +391,7 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 		// json iterator not support fetch queries
 		fetchCount = -1
 	}
-	result, err = db.binding.SelectQuery(ctx, ser.Bytes(), asJson, makeTMVersionsSlice(q.nsArray, q.tmVersions), fetchCount)
+	result, err = db.binding.SelectQuery(ctx, q.GetBytes(queryFormatVersion), asJson, makeTMVersionsSlice(q.nsArray, q.tmVersions), fetchCount)
 
 	if err == nil && result.GetBuf() == nil {
 		panic(fmt.Errorf("rq: result.Buffer is nil"))
@@ -330,7 +413,7 @@ func (db *reindexerImpl) execQuery(ctx context.Context, q *Query) *Iterator {
 	if err != nil {
 		return errIterator(err)
 	}
-	iter := newIterator(ctx, q.db, q.Namespace, q, result, q.nsArray, q.joinToFields, q.joinHandlers, q.context)
+	iter := newIterator(ctx, q.db, q.Namespace, q, result, q.nsArray, q.context)
 	return iter
 }
 
@@ -387,13 +470,21 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 		return 0, err
 	}
 
+	queryFormatVersion := db.queryFormatVersion()
 	q.ser.PutVarCUInt(queryEnd)
-	err := db.appendJoinQueries(q, &q.ser, false)
-	if err != nil {
+
+	if queryFormatVersion == bindings.QueryFormatV2 {
+		if err := db.appendJoinQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return 0, err
+		}
+		if err := db.appendMergeQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return 0, err
+		}
+	} else if err := db.appendJoinQueriesV1(q, &q.ser, false); err != nil {
 		return 0, err
 	}
 
-	result, err := db.binding.DeleteQuery(ctx, q.ser.Bytes())
+	result, err := db.binding.DeleteQuery(ctx, q.GetBytes(queryFormatVersion))
 	if err != nil {
 		return 0, err
 	}
@@ -401,12 +492,12 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 
 	ser := newSerializer(result.GetBuf())
 	// skip total count
-	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
+	rawQueryParams := ser.readRawQueryParams(queryFormatVersion, func(nsid int) {
 		q.nsArray[nsid].cjsonState.ReadPayloadType(&ser.Serializer, db.binding, q.nsArray[nsid].name)
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		_ = ser.readRawtItemParams(rawQueryParams.shardId)
+		_ = ser.readRawItemParams(rawQueryParams.shardId)
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Internal error: joined items in delete query result")
 		}
@@ -416,23 +507,6 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 	}
 
 	return rawQueryParams.count, err
-}
-
-func (db *reindexerImpl) appendJoinQueries(q *Query, ser *cjson.Serializer, appendNsArray bool) error {
-	for _, sq := range q.joinQueries {
-		if appendNsArray {
-			if ns, err := db.getNS(sq.Namespace); err == nil {
-				q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
-			} else {
-				return err
-			}
-		}
-
-		ser.PutVarCUInt(sq.joinType)
-		ser.Append(sq.ser)
-		ser.PutVarCUInt(queryEnd)
-	}
-	return nil
 }
 
 // Execute query
@@ -452,25 +526,33 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 		return errIterator(err)
 	}
 
+	queryFormatVersion := db.queryFormatVersion()
 	q.ser.PutVarCUInt(queryEnd)
-	err := db.appendJoinQueries(q, &q.ser, false)
-	if err != nil {
+
+	if queryFormatVersion == bindings.QueryFormatV2 {
+		if err := db.appendJoinQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return errIterator(err)
+		}
+		if err := db.appendMergeQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return errIterator(err)
+		}
+	} else if err := db.appendJoinQueriesV1(q, &q.ser, false); err != nil {
 		return errIterator(err)
 	}
 
-	result, err := db.binding.UpdateQuery(ctx, q.ser.Bytes(), makeTMVersionsSlice(q.nsArray, q.tmVersions))
+	result, err := db.binding.UpdateQuery(ctx, q.GetBytes(queryFormatVersion), makeTMVersionsSlice(q.nsArray[:1], q.tmVersions))
 	if err != nil {
 		return errIterator(err)
 	}
 
 	ser := newSerializer(result.GetBuf())
 	// skip total count
-	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
+	rawQueryParams := ser.readRawQueryParams(queryFormatVersion, func(nsid int) {
 		q.nsArray[nsid].cjsonState.ReadPayloadType(&ser.Serializer, db.binding, q.nsArray[nsid].name)
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		_ = ser.readRawtItemParams(rawQueryParams.shardId)
+		_ = ser.readRawItemParams(rawQueryParams.shardId)
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Internal error: joined items in update query result")
 		}
@@ -480,7 +562,7 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 		panic("Internal error: data after end of update query result")
 	}
 
-	return newIterator(ctx, q.db, q.Namespace, q, result, q.nsArray, nil, nil, nil)
+	return newIterator(ctx, q.db, q.Namespace, q, result, q.nsArray, nil)
 }
 
 // Execute query
@@ -497,7 +579,18 @@ func (db *reindexerImpl) updateQueryTx(ctx context.Context, q *Query, tx *Tx) *I
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Query.Update", q.Namespace)).ObserveDuration()
 	}
 
-	err := db.binding.UpdateQueryTx(&tx.ctx, q.ser.Bytes())
+	queryFormatVersion := db.queryFormatVersion()
+	if queryFormatVersion == bindings.QueryFormatV2 {
+		q.ser.PutVarCUInt(queryEnd)
+		if err := db.appendJoinQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return errIterator(err)
+		}
+		if err := db.appendMergeQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return errIterator(err)
+		}
+	}
+
+	err := db.binding.UpdateQueryTx(&tx.ctx, q.GetBytes(queryFormatVersion))
 	return errIterator(err)
 }
 
@@ -515,7 +608,18 @@ func (db *reindexerImpl) deleteQueryTx(ctx context.Context, q *Query, tx *Tx) (i
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Query.Delete", q.Namespace)).ObserveDuration()
 	}
 
-	err := db.binding.DeleteQueryTx(&tx.ctx, q.ser.Bytes())
+	queryFormatVersion := db.queryFormatVersion()
+	if queryFormatVersion == bindings.QueryFormatV2 {
+		q.ser.PutVarCUInt(queryEnd)
+		if err := db.appendJoinQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return 0, err
+		}
+		if err := db.appendMergeQueries(q, &q.nsArray, &q.ser, queryFormatVersion); err != nil {
+			return 0, err
+		}
+	}
+
+	err := db.binding.DeleteQueryTx(&tx.ctx, q.GetBytes(queryFormatVersion))
 	return 0, err
 }
 

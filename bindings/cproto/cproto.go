@@ -85,6 +85,7 @@ type NetCProto struct {
 	compression        bindings.OptionCompression
 	dedicatedThreads   bindings.OptionDedicatedThreads
 	caps               bindings.BindingCapabilities
+	queryFormatVersion int32
 	appName            string
 	eventsHandler      bindings.EventsHandler
 	termCh             chan struct{}
@@ -280,7 +281,9 @@ func (binding *NetCProto) Init(u []url.URL, eh bindings.EventsHandler, options .
 		WithQrIdleTimeouts(true).
 		WithResultsWithShardIDs(true).
 		WithIncarnationTags(true).
-		WithFloatRank(true)
+		WithFloatRank(true).
+		WithQueryFormatV2(true)
+	atomic.StoreInt32(&binding.queryFormatVersion, int32(bindings.QueryFormatV1))
 
 	for _, option := range options {
 		switch v := option.(type) {
@@ -352,6 +355,14 @@ func (binding *NetCProto) setServerReindexerVer(serverReindexerVer string) {
 	binding.serverReindexerVer = serverReindexerVer
 }
 
+func (binding *NetCProto) SetQueryFormatVersion(queryFormatVersion int) {
+	atomic.StoreInt32(&binding.queryFormatVersion, int32(queryFormatVersion))
+}
+
+func (binding *NetCProto) QueryFormatVersion() int {
+	return int(atomic.LoadInt32(&binding.queryFormatVersion))
+}
+
 func (binding *NetCProto) DBMSVersion() (string, error) {
 	binding.verMtx.RLock()
 	defer binding.verMtx.RUnlock()
@@ -383,7 +394,8 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoo
 		go func(binding *NetCProto, wg *sync.WaitGroup, i int) {
 			defer wg.Done()
 
-			conn, serverReindexerVer, serverStartTS, _ := binding.dsn.connFactory.newConnection(ctx, connParams, binding, nil)
+			conn, serverReindexerVer, serverStartTS, queryFormatVersion, _ := binding.dsn.connFactory.newConnection(ctx, connParams, binding, nil)
+			binding.SetQueryFormatVersion(queryFormatVersion)
 			if serverStartTS > 0 {
 				old := atomic.SwapInt64(&binding.serverStartTime, serverStartTS)
 				if old != 0 && old != serverStartTS {
@@ -422,7 +434,8 @@ func (binding *NetCProto) createConnParams() newConnParams {
 }
 
 func (binding *NetCProto) createEventConn(ctx context.Context, connParams newConnParams, eventsSubOptsJSON []byte) error {
-	conn, serverReindexerVer, serverStartTS, err := binding.dsn.connFactory.newConnection(ctx, connParams, binding, binding.eventsHandler)
+	conn, serverReindexerVer, serverStartTS, queryFormatVersion, err := binding.dsn.connFactory.newConnection(ctx, connParams, binding, binding.eventsHandler)
+	binding.SetQueryFormatVersion(queryFormatVersion)
 	if serverStartTS > 0 {
 		old := atomic.SwapInt64(&binding.serverStartTime, serverStartTS)
 		if old != 0 && old != serverStartTS {
@@ -679,7 +692,8 @@ func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson b
 }
 
 func (binding *NetCProto) DeleteQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
-	return binding.rpcCall(ctx, opWr, cmdDeleteQuery, data)
+	flags := bindings.ResultsCJson | bindings.ResultsWithPayloadTypes | bindings.ResultsWithItemID
+	return binding.rpcCall(ctx, opWr, cmdDeleteQuery, data, flags, []int32{-1})
 }
 
 func (binding *NetCProto) UpdateQuery(ctx context.Context, data []byte, tmVersions []int32) (bindings.RawBuffer, error) {

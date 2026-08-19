@@ -8,6 +8,7 @@ import (
 
 	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -104,6 +105,10 @@ func CheckTestCachedItemsJoinSortQueries(t *testing.T, wg *sync.WaitGroup) {
 }
 
 func TestJoinCache(t *testing.T) {
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(testItemsForJoinCacheNs))
+		require.NoError(t, DB.TruncateNamespace(testJoinItemsCacheNs))
+	}()
 
 	FillTestItems(testItemsForJoinCacheNs, 0, 10000, 20)
 	FillTestJoinItems(7000, 500, testJoinItemsCacheNs)

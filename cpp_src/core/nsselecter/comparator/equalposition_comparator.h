@@ -163,7 +163,7 @@ private:
 	int matchedCount_{0};
 	PayloadType payloadType_;
 	const TagsMatcher* tm_;
-	std::deque<std::string> fieldStrs_; //fieldPath - string_view on this string, recreating is not allowed
+	std::deque<std::string> fieldStrs_;	 // fieldPath - string_view on this string, recreating is not allowed
 	std::vector<FieldPath> fieldPaths_;
 	std::vector<FieldsFilter> filters_;
 	std::vector<Context> ctx_;

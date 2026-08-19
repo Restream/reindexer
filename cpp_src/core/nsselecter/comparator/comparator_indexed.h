@@ -11,13 +11,13 @@
 #include "core/keyvalue/variant.h"
 #include "core/payload/payload_access.h"
 #include "core/payload/payloadfieldvalue.h"
-#include "tools/unaligned.h"
 #include "core/payload/payloadtype.h"
 #include "core/payload/payloadvalue.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "tools/float_comparison.h"
 #include "tools/string_regexp_functions.h"
+#include "tools/unaligned.h"
 
 namespace reindexer {
 

@@ -16,14 +16,14 @@ struct [[nodiscard]] CacheKey {
 	CacheKey& operator=(const CacheKey& other) = delete;
 	void SetData(const Query& q) {
 		WrSerializer ser;
-		q.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
+		q.Serialize(ser, SkipMergeQueries, QueryFormatV2);
 		buf_.reserve(buf_.size() + ser.Len());
 		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
 	}
 	void SetData(const Query& q1, const Query& q2) {
 		WrSerializer ser;
-		q1.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
-		q2.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
+		q1.Serialize(ser, SkipMergeQueries, QueryFormatV2);
+		q2.Serialize(ser, SkipMergeQueries, QueryFormatV2);
 		buf_.reserve(buf_.size() + ser.Len());
 		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
 	}

@@ -114,6 +114,7 @@
   * [DatabaseMemStats](#databasememstats)
   * [NamespaceMemStats](#namespacememstats)
   * [IndexMemStat](#indexmemstat)
+  * [TextIndexStats](#textindexstats)
   * [EmbedderStatus](#embedderstatus)
   * [EmbedderLastError](#embedderlasterror)
   * [EmbeddersCacheMemStat](#embedderscachememstat)
@@ -156,7 +157,7 @@
 
 <!-- tocstop -->
 
-> Version 5.15.0
+> Version 5.16.0
 
 ## Overview
 
@@ -283,6 +284,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | DatabaseMemStats | [DatabaseMemStats](#databasememstats) |  |
 | NamespaceMemStats | [NamespaceMemStats](#namespacememstats) |  |
 | IndexMemStat | [IndexMemStat](#indexmemstat) |  |
+| TextIndexStats | [TextIndexStats](#textindexstats) |  |
 | EmbedderStatus | [EmbedderStatus](#embedderstatus) |  |
 | EmbedderLastError | [EmbedderLastError](#embedderlasterror) |  |
 | EmbeddersCacheMemStat | [EmbeddersCacheMemStat](#embedderscachememstat) |  |
@@ -6904,6 +6906,14 @@ This operation will return detailed information about database memory consumptio
       tracked_updates_overflow?: integer
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
+      text_index_stats: {
+        // Total number of virtual documents currently stored in the fulltext index
+        total_vdocs?: integer
+        // Number of removed virtual documents that are still kept until the next compaction
+        removed_vdocs?: integer
+        // How many times the fulltext virtual documents storage has been compacted
+        vdocs_compactions?: integer
+      }
       // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
       is_quantized?: boolean
       upsert_embedder: {
@@ -9151,6 +9161,15 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
         read_timeout_ms?: integer //default: 5000
         // Timeout writing data from embedding service (milliseconds)
         write_timeout_ms?: integer //default: 5000
+        // Optional circuit breaker for cache-miss HTTP calls to the embedding service
+        circuit_breaker: {
+          // Consecutive failed network requests required to open the breaker. Value 0 disables the circuit breaker
+          threshold?: integer //default: 16
+          // Idle timeout that resets the consecutive failure counter (milliseconds). Value 0 disables idle reset
+          threshold_timeout_ms?: integer //default: 15000
+          // Time to block cache-miss requests after the breaker opens (milliseconds). Value 0 disables the circuit breaker
+          cooldown_ms?: integer //default: 7500
+        }
       }
     }
     // Query embedding configuration
@@ -9169,6 +9188,15 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
         read_timeout_ms?: integer //default: 5000
         // Timeout writing data from embedding service (milliseconds)
         write_timeout_ms?: integer //default: 5000
+        // Optional circuit breaker for cache-miss HTTP calls to the embedding service
+        circuit_breaker: {
+          // Consecutive failed network requests required to open the breaker. Value 0 disables the circuit breaker
+          threshold?: integer //default: 16
+          // Idle timeout that resets the consecutive failure counter (milliseconds). Value 0 disables idle reset
+          threshold_timeout_ms?: integer //default: 15000
+          // Time to block cache-miss requests after the breaker opens (milliseconds). Value 0 disables the circuit breaker
+          cooldown_ms?: integer //default: 7500
+        }
       }
     }
   }
@@ -9188,8 +9216,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   enable_translit?: boolean //default: true
   // Enable number variants processing. e.g. term '100' will match words one hundred
   enable_numbers_search?: boolean
-  // Enable wrong keyboard layout variants processing. e.g. term 'keynbr' will match word 'лунтик'
-  enable_kb_layout?: boolean //default: true
+  // Wrong keyboard layout variants processing: disable, enable or heuristic. The 'heuristic' mode is recommended for most cases. It will try to guess the correct keyboard layout based on the search query and preselcted results. The 'disable' mode will completely disable the keyboard layout variants generation. The 'enable' mode will always generate all possible keyboard layout variants.
+  enable_kb_layout?: enum[disable, enable, heuristic] //default: heuristic
   // Log level of full text search engine
   log_level?: integer
   // Maximum documents count which will be processed in merge query results. Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed
@@ -9258,10 +9286,6 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     // Maximum number of symbols, which may be added to the initial term to transform it into the result word
     max_extra_letters?: integer
   }
-  // Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15.
-  max_rebuild_steps?: integer
-  // Maximum unique words to step
-  max_step_size?: integer
   // Ratio to summation of ranks of match one term in several fields. For example, if value of this ratio is K, request is '@+f1,+f2,+f3 word', ranks of match in fields are R1, R2, R3 and R2 < R1 < R3, final rank will be R = R2 + K*R1 + K*K*R3
   sum_ranks_by_fields_ratio?: number
   // Optimize the index by memory or by cpu
@@ -10066,6 +10090,14 @@ string[]
       tracked_updates_overflow?: integer
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
+      text_index_stats: {
+        // Total number of virtual documents currently stored in the fulltext index
+        total_vdocs?: integer
+        // Number of removed virtual documents that are still kept until the next compaction
+        removed_vdocs?: integer
+        // How many times the fulltext virtual documents storage has been compacted
+        vdocs_compactions?: integer
+      }
       // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
       is_quantized?: boolean
       upsert_embedder: {
@@ -10234,6 +10266,14 @@ string[]
     tracked_updates_overflow?: integer
     // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
     is_built?: boolean
+    text_index_stats: {
+      // Total number of virtual documents currently stored in the fulltext index
+      total_vdocs?: integer
+      // Number of removed virtual documents that are still kept until the next compaction
+      removed_vdocs?: integer
+      // How many times the fulltext virtual documents storage has been compacted
+      vdocs_compactions?: integer
+    }
     // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
     is_quantized?: boolean
     upsert_embedder: {
@@ -10318,6 +10358,14 @@ string[]
   tracked_updates_overflow?: integer
   // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
   is_built?: boolean
+  text_index_stats: {
+    // Total number of virtual documents currently stored in the fulltext index
+    total_vdocs?: integer
+    // Number of removed virtual documents that are still kept until the next compaction
+    removed_vdocs?: integer
+    // How many times the fulltext virtual documents storage has been compacted
+    vdocs_compactions?: integer
+  }
   // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
   is_quantized?: boolean
   upsert_embedder: {
@@ -10331,6 +10379,19 @@ string[]
     }
   }
   query_embedder:EmbedderStatus
+}
+```
+
+### TextIndexStats
+
+```ts
+{
+  // Total number of virtual documents currently stored in the fulltext index
+  total_vdocs?: integer
+  // Number of removed virtual documents that are still kept until the next compaction
+  removed_vdocs?: integer
+  // How many times the fulltext virtual documents storage has been compacted
+  vdocs_compactions?: integer
 }
 ```
 

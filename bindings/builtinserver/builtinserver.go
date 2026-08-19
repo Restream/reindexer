@@ -158,6 +158,10 @@ func (server *BuiltinServer) Clone() bindings.RawBinding {
 	return &BuiltinServer{}
 }
 
+func (server *BuiltinServer) QueryFormatVersion() int {
+	return server.builtin.QueryFormatVersion()
+}
+
 func (server *BuiltinServer) OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error {
 	return server.builtin.OpenNamespace(ctx, namespace, enableStorage, dropOnFileFormatError)
 }

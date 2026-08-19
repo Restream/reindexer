@@ -86,6 +86,8 @@ private:
 	void removeExpiredTxCb(reindexer::net::ev::periodic&, int);
 
 	template <typename ItT>
+	static Error packCJSONItemParams(WrSerializer& wrser, ItT& it, const OutputFlags& opts);
+	template <typename ItT>
 	static Error packCJSONItem(WrSerializer& wrser, ItT& it, const OutputFlags& opts);
 	static void packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr);
 

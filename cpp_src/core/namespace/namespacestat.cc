@@ -95,6 +95,12 @@ void EmbedderStatus::GetJSON(JsonBuilder& builder) const {
 	}
 }
 
+void TextIndexStats::GetJSON(JsonBuilder& builder) const {
+	builder.Put("total_vdocs", totalVdocs);
+	builder.Put("removed_vdocs", removedVdocs);
+	builder.Put("vdocs_compactions", vdocsCompactions);
+}
+
 void IndexMemStat::GetJSON(JsonBuilder& builder) const {
 	if (uniqKeysCount) {
 		builder.Put("uniq_keys_count", uniqKeysCount);
@@ -134,6 +140,10 @@ void IndexMemStat::GetJSON(JsonBuilder& builder) const {
 	}
 	if (isBuilt.has_value()) {
 		builder.Put("is_built", isBuilt.value());
+	}
+	if (textIndexStats.has_value()) {
+		auto obj = builder.Object("text_index_stats");
+		textIndexStats->GetJSON(obj);
 	}
 	if (isQuantized.has_value()) {
 		builder.Put("is_quantized", isQuantized.value());

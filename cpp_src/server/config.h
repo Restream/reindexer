@@ -81,6 +81,7 @@ struct [[nodiscard]] ServerConfig {
 	std::chrono::seconds RPCQrIdleTimeout;
 	int64_t AllocatorCacheLimit;
 	float AllocatorCachePart;
+	size_t BackgroundThreads;
 
 	constexpr static std::string_view kDedicatedThreading = "dedicated";
 	constexpr static std::string_view kSharedThreading = "shared";

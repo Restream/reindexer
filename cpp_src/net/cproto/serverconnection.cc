@@ -158,6 +158,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			ctx.stat.sizeStat.reqSizeBytes = size_t(hdr.len) + sizeof(hdr);
 			ctx.call->cmd = CmdCode(hdr.cmd);
 			ctx.call->seq = hdr.seq;
+			ctx.call->version = hdr.version;
 			Serializer ser(it.data(), hdr.len);
 			if (hdr.compressed) {
 				if (!snappy::Uncompress(it.data(), hdr.len, &uncompressed)) [[unlikely]] {
@@ -332,7 +333,7 @@ void ServerConnection::sendUpdates() {
 		return;
 	}
 
-	RPCCall callUpdate{kCmdUpdates, 0, {}, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
+	RPCCall callUpdate{kCmdUpdates, 0, kCprotoMinCompatVersion, {}, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
 	cproto::Context ctx{"", &callUpdate, this, {{}, {}}, false};
 
 	Args args;

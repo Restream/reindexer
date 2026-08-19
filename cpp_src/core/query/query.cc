@@ -280,7 +280,9 @@ VariantArray Query::deserializeValues(Serializer& ser, CondType cond) const {
 
 void Query::deserializeJoinOn(Serializer&) { throw Error(errLogic, "Unexpected call. JoinOn actual only for JoinQuery"); }
 
-void Query::deserialize(Serializer& ser) {
+void Query::deserialize(Serializer& ser) { deserialize(ser, QueryFormatV2); }
+
+void Query::deserialize(Serializer& ser, QueryFormat queryFormat) {
 	bool end = false;
 	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
 	while (!end && !ser.Eof()) {
@@ -348,6 +350,10 @@ void Query::deserialize(Serializer& ser) {
 				std::ignore = entries_.Append((type == JoinType::OrInnerJoin) ? OpOr : OpAnd, std::move(joinEntry));
 				break;
 			}
+			case QueryJoinOn: {
+				deserializeJoinOn(ser);
+				break;
+			}
 			case QueryAggregation: {
 				const AggType type = static_cast<AggType>(ser.GetVarUInt());
 				size_t fieldsCount = ser.GetVarUInt();
@@ -408,10 +414,6 @@ void Query::deserialize(Serializer& ser) {
 					}
 					forcedSortOrder_.emplace_back(std::move(v.EnsureHold()));
 				}
-				break;
-			}
-			case QueryJoinOn: {
-				deserializeJoinOn(ser);
 				break;
 			}
 			case QueryDebugLevel:
@@ -513,7 +515,7 @@ void Query::deserialize(Serializer& ser) {
 				CondType condition = CondType(ser.GetVarUInt());
 				VariantArray values = deserializeValues(ser, condition);
 				NextOp(op);
-				Where(Query::Deserialize(subQuery), condition, std::move(values));
+				Where(Query::Deserialize<Query>(subQuery, queryFormat), condition, std::move(values));
 				break;
 			}
 			case QueryFieldSubQueryCondition: {
@@ -522,18 +524,18 @@ void Query::deserialize(Serializer& ser) {
 				CondType condition = CondType(ser.GetVarUInt());
 				Serializer subQuery{ser.GetVString()};
 				NextOp(op);
-				Where(fieldName, condition, Query::Deserialize(subQuery));
+				Where(fieldName, condition, Query::Deserialize<Query>(subQuery, queryFormat));
 				break;
 			}
 			case QueryFunctionSubQueryCondition:
 			case QueryFunction:
 				throw Error{errParseBin, "Serialization type={} is deprecated", int(qtype)};
 			case QueryExpressions: {
-				auto left = expressions::Expression::Deserialize(ser);
+				auto left = expressions::Expression::Deserialize(ser, queryFormat);
 				auto leftType = expressions::GetValueType(left);
 				OpType op = OpType(ser.GetVarUInt());
 				CondType condition = CondType(ser.GetVarUInt());
-				auto right = expressions::Expression::Deserialize(ser);
+				auto right = expressions::Expression::Deserialize(ser, queryFormat);
 				auto rightType = expressions::GetValueType(right);
 				NextOp(op);
 				expressions::ValidateExpressions(leftType, rightType, expressions::ValidationType::Full);
@@ -608,9 +610,19 @@ void Query::deserialize(Serializer& ser) {
 
 void Query::serializeJoinEntries(WrSerializer&) const { throw Error(errLogic, "Unexpected call. JoinEntries actual only for JoinQuery"); }
 
-void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
+void Query::Serialize(WrSerializer& ser, uint8_t mode, QueryFormat queryFormat) const {
+	const bool withJoinQueries{!(mode & SkipJoinQueries)};
+	if (queryFormat == QueryFormatV2) {
+		ser.PutVarUint(QueryFormatV2);
+	} else if (withJoinQueries) {
+		for (const auto& jq : joinQueries_) {
+			if (!jq.GetJoinQueries().empty()) {
+				throw Error(errParams, "Nested JOINs are not supported by QueryFormatV1");
+			}
+		}
+	}
 	ser.PutVString(NsName());
-	entries_.Serialize(ser, subQueries_);
+	entries_.Serialize(ser, subQueries_, queryFormat);
 
 	if (!(mode & SkipAggregations)) {
 		for (const auto& agg : aggregations_) {
@@ -765,48 +777,65 @@ void Query::Serialize(WrSerializer& ser, uint8_t mode) const {
 
 	ser.PutVarUint(QueryEnd);  // finita la commedia... of root query
 
-	if (!(mode & SkipJoinQueries)) {
-		for (const auto& jq : joinQueries_) {
-			if (!(mode & SkipLeftJoinQueries) || jq.joinType != JoinType::LeftJoin) {
-				ser.PutVarUint(static_cast<int>(jq.joinType));
-				jq.Serialize(ser, WithJoinEntries);
+	if (queryFormat == QueryFormatV2) {
+		ser.PutVarUint(withJoinQueries ? static_cast<int>(joinQueries_.size()) : 0);
+		if (withJoinQueries) {
+			for (const auto& jq : joinQueries_) {
+				if (!(mode & SkipLeftJoinQueries) || jq.joinType != JoinType::LeftJoin) {
+					ser.PutVarUint(static_cast<int>(jq.joinType));
+					jq.Serialize(ser, WithJoinEntries, queryFormat);
+				}
 			}
 		}
-	}
 
-	if (!(mode & SkipMergeQueries)) {
-		for (const auto& mq : mergeQueries_) {
-			ser.PutVarUint(static_cast<int>(mq.joinType));
-			mq.Serialize(ser, (mode | WithJoinEntries) & (~SkipSortEntries));
+		const bool withMergeQueries{!(mode & SkipMergeQueries)};
+		ser.PutVarUint(withMergeQueries ? static_cast<int>(mergeQueries_.size()) : 0);
+		if (withMergeQueries) {
+			for (const auto& mq : mergeQueries_) {
+				ser.PutVarUint(static_cast<int>(mq.joinType));
+				mq.Serialize(ser, (mode | WithJoinEntries) & (~SkipSortEntries), queryFormat);
+			}
+		}
+	} else {
+		if (withJoinQueries) {
+			for (const auto& jq : joinQueries_) {
+				if (!(mode & SkipLeftJoinQueries) || jq.joinType != JoinType::LeftJoin) {
+					ser.PutVarUint(static_cast<int>(jq.joinType));
+					jq.Serialize(ser, WithJoinEntries, queryFormat);
+				}
+			}
+		}
+
+		if (!(mode & SkipMergeQueries)) {
+			for (const auto& mq : mergeQueries_) {
+				ser.PutVarUint(static_cast<int>(mq.joinType));
+				mq.Serialize(ser, (mode | WithJoinEntries) & (~SkipSortEntries), queryFormat);
+			}
 		}
 	}
 }
 
-Query Query::Deserialize(Serializer& ser) {
-	Query res(ser.GetVString());
-	res.deserialize(ser);
-
-	bool nested = false;
-	while (!ser.Eof()) {
-		auto joinType = JoinType(ser.GetVarUInt());
-		JoinedQuery q1(std::string(ser.GetVString()));
-		q1.joinType = joinType;
-		q1.deserialize(ser);
-		res.adoptNested(q1);
-		if (joinType != JoinType::Merge) {
-			q1.checkJoinedSubQuery();
+template <typename T>
+T Query::Deserialize(Serializer& ser, QueryFormat queryFormat) {
+	auto validateJoinType = [](JoinType joinType) {
+		if (joinType < JoinType::LeftJoin || joinType > JoinType::Merge) {
+			throw Error(errParams, "Unexpected join type in serialized query: {}", int(joinType));
 		}
-		if (joinType == JoinType::Merge) {
-			res.mergeQueries_.emplace_back(std::move(q1));
-			nested = true;
-		} else {
-			Query& q = nested ? res.mergeQueries_.back() : res;
-			q.joinQueries_.emplace_back(std::move(q1));
-			q.adoptNested(q.joinQueries_.back());
+	};
+	std::function<void(const Query&)> checkJoinEntries;
+	checkJoinEntries = [&checkJoinEntries](const Query& q) {
+		q.Entries().VisitForEach(
+			[size = q.GetJoinQueries().size()](const JoinQueryEntry& qe) {
+				if (qe.joinIndex >= size) [[unlikely]] {
+					throw Error(errQueryExec, "Invalid index for joined query after deserialization.");
+				}
+			},
+			[](const auto&) noexcept {});
+		for (const auto& jq : q.GetJoinQueries()) {
+			checkJoinEntries(jq);
 		}
-	}
-
-	auto checkJoinEntries = [](const Query& q) {
+	};
+	auto checkJoinEntriesV1 = [](const Query& q) {
 		q.Entries().VisitForEach(
 			[size = q.GetJoinQueries().size()](const JoinQueryEntry& qe) {
 				if (qe.joinIndex >= size) [[unlikely]] {
@@ -816,9 +845,66 @@ Query Query::Deserialize(Serializer& ser) {
 			[](const auto&) noexcept {});
 	};
 
-	checkJoinEntries(res);
-	for (const auto& mergeQuery : res.GetMergeQueries()) {
-		checkJoinEntries(mergeQuery);
+	if (queryFormat == QueryFormatV2) {
+		if (const uint64_t format{ser.GetVarUInt()}; format != QueryFormatV2) {
+			throw Error(errParseBin, "Unsupported Query format version='{}'", format);
+		}
+	}
+
+	T res{ser.GetVString()};
+	res.deserialize(ser, queryFormat);
+
+	if (queryFormat == QueryFormatV2) {
+		const auto joinQueriesCount{ser.GetVarUInt()};
+		if (joinQueriesCount > 0) {
+			res.joinQueries_.reserve(joinQueriesCount);
+			for (size_t i = 0; i < joinQueriesCount; ++i) {
+				const auto joinType{JoinType(ser.GetVarUInt())};
+				validateJoinType(joinType);
+				res.joinQueries_.emplace_back(joinType, JoinedQuery::Deserialize<JoinedQuery>(ser, queryFormat));
+				res.adoptNested(res.joinQueries_.back());
+			}
+		}
+
+		const auto mergeQueriesCount{ser.GetVarUInt()};
+		if (mergeQueriesCount > 0) {
+			res.mergeQueries_.reserve(mergeQueriesCount);
+			for (size_t i = 0; i < mergeQueriesCount; ++i) {
+				const auto mergeType{JoinType(ser.GetVarUInt())};
+				if (mergeType != JoinType::Merge) {
+					throw Error(errParams, "Unexpected merge query type in serialized query: {}", int(mergeType));
+				}
+				res.mergeQueries_.emplace_back(mergeType, JoinedQuery::Deserialize<JoinedQuery>(ser, queryFormat));
+				res.adoptNested(res.mergeQueries_.back());
+			}
+		}
+
+		checkJoinEntries(res);
+		for (const auto& mergeQuery : res.GetMergeQueries()) {
+			checkJoinEntries(mergeQuery);
+		}
+	} else {
+		bool nested{false};
+		while (!ser.Eof()) {
+			auto joinType{JoinType(ser.GetVarUInt())};
+			validateJoinType(joinType);
+			JoinedQuery q1{std::string(ser.GetVString())};
+			q1.joinType = joinType;
+			q1.deserialize(ser, queryFormat);
+			res.adoptNested(q1);
+			if (joinType == JoinType::Merge) {
+				res.mergeQueries_.emplace_back(std::move(q1));
+				nested = true;
+			} else {
+				Query& q{nested ? res.mergeQueries_.back() : res};
+				q.joinQueries_.emplace_back(std::move(q1));
+				q.adoptNested(q.joinQueries_.back());
+			}
+		}
+		checkJoinEntriesV1(res);
+		for (const auto& mergeQuery : res.GetMergeQueries()) {
+			checkJoinEntriesV1(mergeQuery);
+		}
 	}
 
 	return res;
@@ -890,11 +976,11 @@ void Query::walkNested(bool withSelf, bool withMerged, bool withSubQueries,
 		}
 	}
 	for (auto& jq : joinQueries_) {
-		visitor(jq);
+		jq.walkNested(true, withMerged, withSubQueries, visitor);
 	}
 	for (auto& mq : mergeQueries_) {
 		for (auto& jq : mq.joinQueries_) {
-			visitor(jq);
+			jq.walkNested(true, withMerged, withSubQueries, visitor);
 		}
 	}
 	if (withSubQueries) {
@@ -922,11 +1008,11 @@ void Query::WalkNested(bool withSelf, bool withMerged, bool withSubQueries, cons
 		}
 	}
 	for (auto& jq : joinQueries_) {
-		visitor(jq);
+		jq.WalkNested(true, withMerged, withSubQueries, visitor);
 	}
 	for (auto& mq : mergeQueries_) {
 		for (auto& jq : mq.joinQueries_) {
-			visitor(jq);
+			jq.WalkNested(true, withMerged, withSubQueries, visitor);
 		}
 	}
 	if (withSubQueries) {
@@ -934,6 +1020,12 @@ void Query::WalkNested(bool withSelf, bool withMerged, bool withSubQueries, cons
 			nq.WalkNested(true, withMerged, true, visitor);
 		}
 	}
+}
+
+bool Query::HasJoinQueries() const noexcept {
+	bool hasJoins = false;
+	WalkNested(true, true, false, [&hasJoins](const Query& q) noexcept { hasJoins |= !q.GetJoinQueries().empty(); });
+	return hasJoins;
 }
 
 bool Query::IsWALQuery() const noexcept {
@@ -972,5 +1064,8 @@ void JoinedQuery::serializeJoinEntries(WrSerializer& ser) const {
 		ser.PutVString(qje.RightFieldName());
 	}
 }
+
+template Query Query::Deserialize<Query>(Serializer& ser, QueryFormat queryFormat);
+template JoinedQuery Query::Deserialize<JoinedQuery>(Serializer& ser, QueryFormat queryFormat);
 
 }  // namespace reindexer

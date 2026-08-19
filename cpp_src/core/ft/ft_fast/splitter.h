@@ -22,9 +22,9 @@ class FastTextSplitter;
 class [[nodiscard]] SplitterTaskFast final : public ISplitterTask {
 public:
 	void SetText(std::string_view t) noexcept override {
-		convertedText_.clear();
+		convertedText_.resize(0);
 		text_ = t;
-		words_.clear();
+		words_.resize(0);
 	}
 	const std::vector<WordWithPos>& GetResults() override;
 	std::pair<int, int> Convert(unsigned int wordPosStart, unsigned int wordPosEnd) override;

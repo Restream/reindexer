@@ -20,10 +20,10 @@ public:
 							  const RdxContext& rdxCtx);
 
 	void Start(bool reverse) override;
-	IdType Value() const noexcept override { return lastVal_; }
-	bool Next() noexcept override;
+	std::pair<bool, IdType> Next() noexcept override;
 	void ExcludeLastSet() noexcept override {}
-	size_t GetMaxIterations(size_t limitIters) noexcept override;
+	MaxIterationsEstimate ProbeMaxIterations(size_t limitIters) noexcept override;
+	MaxIterationsEstimate GetPlanningEstimate() const noexcept override;
 	void SetMaxIterations(size_t iters) noexcept override { maxIterationsHint_ = iters; }
 
 	RankT CurrentRank() const noexcept { return currentRank_; }

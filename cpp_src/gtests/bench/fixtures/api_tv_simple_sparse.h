@@ -53,6 +53,8 @@ private:
 
 	void QueryInnerJoinPreselectByValues(State& state);
 	void QueryInnerJoinNoPreselect(State& state);
+	void QueryLeftNestedJoin(State& state);
+	void QueryInnerNestedJoin(State& state);
 
 	void Query4CondIsNULL10(State& state);
 	void Query4CondIsNULL33(State& state);

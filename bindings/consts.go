@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v5.15.0"
+const ReindexerVersion = "v5.16.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -182,6 +182,10 @@ const (
 	BindingCapabilityResultsWithShardIDs   = 1 << 1
 	BindingCapabilityNamespaceIncarnations = 1 << 2
 	BindingCapabilityComplexRank           = 1 << 3
+	BindingCapabilityQueryFormatV2         = 1 << 4
+
+	QueryFormatV1 = 1
+	QueryFormatV2 = 2
 
 	RankFormatSingleFloat = 0
 

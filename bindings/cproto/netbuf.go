@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/golang/snappy"
 	"github.com/restream/reindexer/v5/bindings"
+	"github.com/golang/snappy"
 )
 
 var bufPool sync.Pool

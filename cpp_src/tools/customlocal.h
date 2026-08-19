@@ -32,14 +32,14 @@ namespace custom_locale_impl {
 class [[nodiscard]] CustomLocale {
 public:
 	CustomLocale() noexcept;
-	void ToLower(std::wstring& data) const noexcept {
+	void ToLower(std::u16string& data) const noexcept {
 		for (auto& d : data) {
 			if (d < UINT16_MAX && d > 0) {
 				d = customLocale_[d].lower;
 			}
 		}
 	}
-	wchar_t ToLower(uint32_t ofs) const noexcept { return (ofs < UINT16_MAX) ? customLocale_[ofs].lower : wchar_t(ofs); }
+	uint32_t ToLower(uint32_t ofs) const noexcept { return (ofs < UINT16_MAX) ? customLocale_[ofs].lower : ofs; }
 	bool IsAlpha(uint32_t ofs) const noexcept { return (ofs < UINT16_MAX) && customLocale_[ofs].isAlpha; }
 
 	uint32_t RemoveDiacritic(uint32_t ofs) const noexcept {
@@ -90,16 +90,16 @@ extern const CustomLocale kCustomLocale;
 
 }  // namespace custom_locale_impl
 
-inline static void ToLower(std::wstring& data) noexcept { custom_locale_impl::kCustomLocale.ToLower(data); }
-inline static wchar_t ToLower(wchar_t ch) noexcept { return custom_locale_impl::kCustomLocale.ToLower(ch); }
+inline static void ToLower(std::u16string& data) noexcept { custom_locale_impl::kCustomLocale.ToLower(data); }
+inline static uint32_t ToLower(uint32_t ch) noexcept { return custom_locale_impl::kCustomLocale.ToLower(ch); }
 
-inline static bool IsAlpha(wchar_t ch) noexcept { return custom_locale_impl::kCustomLocale.IsAlpha(ch); }
-inline static bool IsDigit(wchar_t ch) noexcept { return ch >= '0' && ch <= '9'; }
+inline static bool IsAlpha(uint32_t ch) noexcept { return custom_locale_impl::kCustomLocale.IsAlpha(ch); }
+inline static bool IsDigit(uint32_t ch) noexcept { return ch >= '0' && ch <= '9'; }
 
-inline static wchar_t RemoveDiacritic(wchar_t ch) noexcept { return custom_locale_impl::kCustomLocale.RemoveDiacritic(ch); }
+inline static uint32_t RemoveDiacritic(uint32_t ch) noexcept { return custom_locale_impl::kCustomLocale.RemoveDiacritic(ch); }
 
-inline static bool IsDiacritic(wchar_t ch) noexcept { return custom_locale_impl::kCustomLocale.IsDiacritic(ch); }
+inline static bool IsDiacritic(uint32_t ch) noexcept { return custom_locale_impl::kCustomLocale.IsDiacritic(ch); }
 
-inline static wchar_t FitsMask(wchar_t ch, SymbolTypeMask mask) noexcept { return custom_locale_impl::kCustomLocale.FitsMask(ch, mask); }
+inline static bool FitsMask(uint32_t ch, SymbolTypeMask mask) noexcept { return custom_locale_impl::kCustomLocale.FitsMask(ch, mask); }
 
 }  // namespace reindexer

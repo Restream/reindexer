@@ -228,6 +228,9 @@ WasCanceled IndexOptimizer::updateSortedIDs(size_t threadsCount, const Context& 
 					try {
 						for (auto idxNum = nextIdx.fetch_add(1, std::memory_order_relaxed); idxNum < ctx.indexes.size();
 							 idxNum = nextIdx.fetch_add(1, std::memory_order_relaxed)) {
+							if (wasCanceled.load(std::memory_order_relaxed)) {
+								return;
+							}
 							auto& idx = ctx.indexes[idxNum];
 							if (forceBuildAllIndexMappings || !idx->IsBuilt()) {
 								const auto wasCanceledL = idx->UpdateSortedIds(sortCtx, cancelable);
@@ -246,6 +249,10 @@ WasCanceled IndexOptimizer::updateSortedIDs(size_t threadsCount, const Context& 
 				th.join();
 			}
 			exWrp.RethrowException();
+
+			if (wasCanceled.load(std::memory_order_relaxed)) {
+				return WasCanceled_True;
+			}
 		}
 	}
 	return WasCanceled_False;

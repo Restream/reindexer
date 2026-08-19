@@ -735,7 +735,8 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 				if (txConn) {
 					assertrx_dbg(conn.rx.GetConnPtr() == txConn);
 					WrSerializer ser;
-					std::get<1>(cd->arguments).Serialize(ser);
+					auto caps = txConn->GetBindingCapabilities();
+					std::get<1>(cd->arguments).Serialize(ser, Normal, caps.GetQueryFormat());
 					switch (std::get<1>(cd->arguments).type_) {
 						case QueryUpdate:
 							err = txConn

@@ -315,13 +315,23 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 			onRoleChanged(newRaftInfo.role, newRaftInfo.role == RaftInfo::Role::Leader ? serverId : newRaftInfo.leaderId);
 		}
 		raftInfo = newRaftInfo;
+
+		const int desiredAfterRole = raftManager_.GetDesiredLeaderId();
+		if (desiredAfterRole >= 0) {
+			if ((raftInfo.role == RaftInfo::Role::Leader && serverId == desiredAfterRole) ||
+				(raftInfo.role == RaftInfo::Role::Follower && raftInfo.leaderId == desiredAfterRole &&
+				 raftManager_.LeaderIsCommittedAvailable(RaftManager::ClockT::now()))) {
+				raftManager_.ClearDesiredLeaderId();
+			}
+		}
+
 		std::function<bool()> condPredicate;
 		if (raftInfo.role == RaftInfo::Role::Leader) {
 			logInfo("{}: Became leader", serverId);
 			condPredicate = [this]() { return raftManager_.FollowersAreAvailable(); };
 		} else if (raftInfo.role == RaftInfo::Role::Follower) {
 			logInfo("{}: Became follower ({})", serverId, raftInfo.leaderId);
-			condPredicate = [this]() noexcept { return raftManager_.LeaderIsAvailable(RaftManager::ClockT::now()); };
+			condPredicate = [this]() noexcept { return raftManager_.FollowerStayReady(RaftManager::ClockT::now()); };
 		} else {
 			assertrx(false);
 			std::abort();
@@ -343,7 +353,8 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 				}
 
 				int curLeaderId = raftManager_.GetLeaderId();
-				if (raftInfo.leaderId != curLeaderId && raftInfo.role == RaftInfo::Role::Follower) {
+				if (raftInfo.leaderId != curLeaderId && raftInfo.role == RaftInfo::Role::Follower &&
+					raftManager_.FollowerStayReady(RaftManager::ClockT::now())) {
 					logWarn("{}: Leader was changed: {} -> {}", serverId, raftInfo.leaderId, curLeaderId);
 					raftInfo.leaderId = curLeaderId;
 					onRoleChanged(RaftInfo::Role::Follower, raftInfo.leaderId);
@@ -364,10 +375,14 @@ void ClusterDataReplicator::handleClusterCommands(int serverId, const RaftInfo& 
 				}
 				if (err.ok()) {
 					try {
-						raftManager_.SetDesiredLeaderId(c.serverId);
+						const bool demotedLeader = raftManager_.SetDesiredLeaderId(c.serverId);
 						restartElections_ = true;
 						onRoleChanged(RaftInfo::Role::Candidate,
 									  curRaftInfo.role == RaftInfo::Role::Leader ? serverId : raftManager_.GetLeaderId());
+						// AwaitPingRoutines only after Candidate is published (writable drops immediately).
+						if (demotedLeader) {
+							raftManager_.AwaitPingRoutines();
+						}
 					} catch (std::exception& e) {
 						err = std::move(e);
 					}

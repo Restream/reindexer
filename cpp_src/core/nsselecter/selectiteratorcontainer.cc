@@ -151,13 +151,14 @@ void SelectIteratorContainer::moveJoinsToTheBeginningOfORs(std::span<unsigned> i
 
 double SelectIteratorContainer::cost(std::span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept {
 	return container_[indexes[cur]].Visit(
-		[&] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
-			RX_POST_LMBD_ALWAYS_INLINE noexcept { return cost(indexes, cur + 1, cur + Size(indexes[cur]), expectedIterations); },
+		[&] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&) RX_POST_LMBD_ALWAYS_INLINE noexcept {
+			return cost(indexes, cur + 1, cur + Size(indexes[cur]), expectedIterations);
+		},
 		[expectedIterations] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SelectIterator, ComparatorsPackT> auto& c)
 			RX_POST_LMBD_ALWAYS_INLINE noexcept { return c.Cost(expectedIterations); },
 		[] RX_PRE_LMBD_ALWAYS_INLINE(const JoinSelectIterator& jit) RX_POST_LMBD_ALWAYS_INLINE noexcept { return jit.Cost(); },
-		[expectedIterations] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&)
-			RX_POST_LMBD_ALWAYS_INLINE noexcept -> double { return expectedIterations; },
+		[expectedIterations] RX_PRE_LMBD_ALWAYS_INLINE(
+			const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept -> double { return expectedIterations; },
 		[] RX_PRE_LMBD_ALWAYS_INLINE(const KnnRawSelectResult&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return 0.0; });
 }
 
@@ -288,7 +289,7 @@ h_vector<SelectKeyResults, 2> SelectIteratorContainer::processQueryEntry(const Q
 			selectCtx.opts.forceComparator = 1;
 		}
 	}
-	selectCtx.opts.maxIterations = GetMaxIterations();
+	selectCtx.opts.maxIterations = GetPlanningBudget();
 	selectCtx.opts.indexesNotOptimized = !ctx_->sortingContext.enableSortOrders;
 	selectCtx.opts.inTransaction = ctx_->inTransaction;
 	selectCtx.opts.strictMode = strictMode;
@@ -320,7 +321,8 @@ h_vector<SelectKeyResults, 2> SelectIteratorContainer::processQueryEntry(const Q
 
 void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry& jqe, OpType op) {
 	assertrx_throw(ctx_);
-	auto& js = (*ctx_->joinItemsProcessors)[jqe.joinIndex];
+	assertrx_throw(!ctx_->joinItemsProcessors.empty());
+	auto& js = ctx_->joinItemsProcessors[jqe.joinIndex];
 	if (js.JoinQuery().joinEntries_.empty()) {
 		throw Error(errQueryExec, "Join without ON conditions");
 	}
@@ -343,65 +345,70 @@ void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry& jqe, OpType
 
 void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults&& selectResults, OpType op, const NamespaceImpl& ns,
 													   const QueryEntry& qe, reindexer::IsRanked isRanked, std::optional<OpType> nextOp) {
-	std::visit(overloaded{[&](SelectKeyResultsVector& selResults) {
-							  if (selResults.empty()) {
-								  if (op == OpAnd) {
-									  SelectKeyResult zeroScan;
-									  zeroScan.emplace_back(IdType::Zero(), IdType::Zero());
-									  std::ignore = Append(OpAnd, SelectIterator{std::move(zeroScan), IsDistinct_False, "always_false",
-																				 IndexValueType::NotSet, ForcedFirst_True});
-								  }
-								  return;
-							  }
+	std::visit(
+		overloaded{
+			[&](SelectKeyResultsVector& selResults) {
+				if (selResults.empty()) {
+					if (op == OpAnd) {
+						SelectKeyResult zeroScan;
+						zeroScan.emplace_back(IdType::Zero(), IdType::Zero());
+						std::ignore = Append(OpAnd, SelectIterator{std::move(zeroScan), IsDistinct_False, "always_false",
+																   IndexValueType::NotSet, ForcedFirst_True});
+					}
+					return;
+				}
 
-							  for (SelectKeyResult& res : selResults) {
-								  switch (op) {
-									  case OpOr: {
-										  const iterator last = lastAppendedOrClosed();
-										  assertrx_throw(last != end());
-										  if (last->Is<SelectIterator>() && !last->Value<SelectIterator>().IsDistinct() &&
-											  last->operation != OpNot) {
-											  using namespace std::string_view_literals;
-											  SelectIterator& it = last->Value<SelectIterator>();
-											  it.Append(std::move(res));
-											  it.name.append(" or "sv).append(qe.FieldName());
-											  break;
-										  }
-									  }
-										  [[fallthrough]];
-									  case OpNot:
-									  case OpAnd: {
-										  // Iterator Field Kind: Query entry results. Field known.
-										  [[maybe_unused]] auto inserted =
-											  Append<SelectIterator>(op, std::move(res), qe.Distinct(), std::string(qe.FieldName()),
-																	 qe.IndexNo(), ForcedFirst{*isRanked});
-										  assertrx_throw(inserted == 1);
-										  // last appended is always a SelectIterator
-										  SelectIterator& lastAppended = lastAppendedOrClosed()->Value<SelectIterator>();
-										  lastAppended.SetNotOperationFlag(op == OpNot);
-										  if (!nextOp.has_value() || nextOp.value() != OpOr) {
-											  const auto maxIterations = lastAppended.GetMaxIterations();
-											  const int cur = op == OpNot ? ns.items_.size() - maxIterations : maxIterations;
-											  maxIterations_ = (maxIterations_ > cur) ? cur : maxIterations_;
-										  }
-										  break;
-									  }
-									  default:
-										  throw Error(errQueryExec, "Unknown operator (code {}) in condition", int(op));
-								  }
-								  if (isRanked) {
-									  // last appended is always a SelectIterator
-									  lastAppendedOrClosed()->Value<SelectIterator>().SetUnsorted();
-								  }
-							  }
-						  },
-						  [&](concepts::OneOf<ComparatorNotIndexed, Template<ComparatorIndexed, bool, int, int64_t, double, key_string,
-																			 PayloadValue, Point, Uuid, FloatVector>> auto& c) {
-							  assertrx_throw(op != OpOr || lastAppendedOrClosed() != end());
-							  c.SetNotOperationFlag(op == OpNot);
-							  std::ignore = Append(op, std::move(c));
-						  }},
-			   selectResults.AsVariant());
+				for (SelectKeyResult& res : selResults) {
+					switch (op) {
+						case OpOr: {
+							const iterator last = lastAppendedOrClosed();
+							assertrx_throw(last != end());
+							if (last->Is<SelectIterator>() && !last->Value<SelectIterator>().IsDistinct() && last->operation != OpNot) {
+								using namespace std::string_view_literals;
+								SelectIterator& it = last->Value<SelectIterator>();
+								it.Append(std::move(res));
+								it.name.append(" or "sv).append(qe.FieldName());
+								break;
+							}
+						}
+							[[fallthrough]];
+						case OpNot:
+						case OpAnd: {
+							// Iterator Field Kind: Query entry results. Field known.
+							[[maybe_unused]] auto inserted = Append<SelectIterator>(
+								op, std::move(res), qe.Distinct(), std::string(qe.FieldName()), qe.IndexNo(), ForcedFirst{*isRanked});
+							assertrx_throw(inserted == 1);
+							// last appended is always a SelectIterator
+							SelectIterator& lastAppended = lastAppendedOrClosed()->Value<SelectIterator>();
+							lastAppended.SetNotOperationFlag(op == OpNot);
+							if (!nextOp.has_value() || nextOp.value() != OpOr) {
+								// Planning must not trigger a potentially wide index scan
+								auto estimate = lastAppended.GetPlanningEstimate();
+								if (op == OpNot) {
+									estimate = estimate.Complement(ns.items_.size());
+								}
+								const size_t estimatedIterations = std::min(estimate.value, size_t(std::numeric_limits<int>::max()));
+								const int cur = int(estimatedIterations);
+								planningBudget_ = (planningBudget_ > cur) ? cur : planningBudget_;
+							}
+							break;
+						}
+						default:
+							throw Error(errQueryExec, "Unknown operator (code {}) in condition", int(op));
+					}
+					if (isRanked) {
+						// last appended is always a SelectIterator
+						lastAppendedOrClosed()->Value<SelectIterator>().SetUnsorted();
+					}
+				}
+			},
+			[&](concepts::OneOf<ComparatorNotIndexed, Template<ComparatorIndexed, bool, int, int64_t, double, key_string, PayloadValue,
+															   Point, Uuid, FloatVector>> auto& c) {
+				assertrx_throw(op != OpOr || lastAppendedOrClosed() != end());
+				c.SetNotOperationFlag(op == OpNot);
+				std::ignore = Append(op, std::move(c));
+			}},
+		selectResults.AsVariant());
 }
 template <typename EqCompT>
 void SelectIteratorContainer::bindFieldEqualPositions(const NamespaceImpl& ns, const EqualPositions& eqPos, const QueryEntries& queries,
@@ -738,10 +745,10 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(QueryPreprocessor& q
 	(void)containRanked;
 }
 
-void SelectIteratorContainer::ExplainJSON(int iters, JsonBuilder& builder, const std::vector<joins::ItemsProcessor>* js) const {
+void SelectIteratorContainer::ExplainJSON(int iters, JsonBuilder& builder, std::span<const joins::ItemsProcessor> js) const {
 	std::ignore = explainJSON(cbegin(), cend(), iters, builder, js);
 	if (!preservedDistincts_.Empty()) [[unlikely]] {
-		std::ignore = explainJSON(preservedDistincts_.cbegin(), preservedDistincts_.cend(), iters, builder, nullptr);
+		std::ignore = explainJSON(preservedDistincts_.cbegin(), preservedDistincts_.cend(), iters, builder, {});
 	}
 }
 
@@ -778,7 +785,7 @@ void SelectIteratorContainer::Clear(bool preserveDistincts) {
 	}
 	clear();
 
-	maxIterations_ = std::numeric_limits<int>::max();
+	planningBudget_ = std::numeric_limits<int>::max();
 }
 
 [[noreturn]] static void throwORbetweenRankedAndNotRanked() {
@@ -936,8 +943,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 				}
 				if (qe.IsFieldIndexed()) {
 					bool enableSortIndexOptimize = ctx_ && (ctx_->sortingContext.uncommitedIndex == qe.IndexNo()) && !sortIndexFound &&
-												   (op == OpAnd) && !qe.Distinct() && (begin == 0) &&
-												   (next == end || queries.GetOperation(next) != OpOr);
+												   (op == OpAnd) && (begin == 0) && (next == end || queries.GetOperation(next) != OpOr);
 					if (enableSortIndexOptimize) {
 						if (!sorting_heuristics::IsExpectingOrderedResults(qe)) {
 							// Disable sorting index optimization if it somehow has incompatible conditions
@@ -1094,19 +1100,20 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIteratorsBracket&) RX_POST_LMBD_ALWAYS_INLINE {
 				return checkIfSatisfyAllConditions<reverse>(it.begin(), it.end(), pv, &lastFinish, rowId, properRowId, withJoinedItems);
 			},
-			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIterator & sit) RX_POST_LMBD_ALWAYS_INLINE {
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE {
 				const bool res = sit.Compare(rowId);
 				lastFinish = sit.End();
 				return res;
 			},
-			[&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator & jit) RX_POST_LMBD_ALWAYS_INLINE {
-				assertrx_throw(ctx_ && ctx_->joinItemsProcessors);
+			[&] RX_PRE_LMBD_ALWAYS_INLINE(JoinSelectIterator& jit) RX_POST_LMBD_ALWAYS_INLINE {
+				assertrx_throw(ctx_);
+				assertrx_throw(!ctx_->joinItemsProcessors.empty());
 				ConstPayload pl(*pt_, pv);
-				auto& joinItemsProcessor = (*ctx_->joinItemsProcessors)[jit.joinIndex];
+				auto& joinItemsProcessor = ctx_->joinItemsProcessors[jit.joinIndex];
 				return joinItemsProcessor.Process(properRowId, ctx_->nsid, pl, ctx_->floatVectorsHolder, withJoinedItems);
 			},
-			[&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(concepts::OneOf<ComparatorsPackT> auto& c)
-				RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); },
+			[&pv, properRowId] RX_PRE_LMBD_ALWAYS_INLINE(
+				concepts::OneOf<ComparatorsPackT> auto& c) RX_POST_LMBD_ALWAYS_INLINE { return c.Compare(pv, properRowId); },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; });
 		switch (op) {
 			case OpOr:
@@ -1142,8 +1149,9 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 			case OpOr: {
 				auto next = it->Visit(
 					[](const KnnRawSelectResult&) -> IdType { throw_as_assert; },
-					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
-						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
+					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&) RX_POST_LMBD_ALWAYS_INLINE {
+						return getNextItemId<reverse>(it.cbegin(), it.cend(), from);
+					},
 					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE {
 						if constexpr (reverse) {
 							if (sit.End()) {
@@ -1177,8 +1185,9 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 				from = result;
 				result = it->Visit(
 					[](const KnnRawSelectResult&) -> IdType { throw_as_assert; },
-					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&)
-						RX_POST_LMBD_ALWAYS_INLINE { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
+					[it, from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIteratorsBracket&) RX_POST_LMBD_ALWAYS_INLINE {
+						return getNextItemId<reverse>(it.cbegin(), it.cend(), from);
+					},
 					[from] RX_PRE_LMBD_ALWAYS_INLINE(const SelectIterator& sit) RX_POST_LMBD_ALWAYS_INLINE {
 						if constexpr (reverse) {
 							if (sit.End()) {
@@ -1579,12 +1588,12 @@ h_vector<size_t, 8> SelectIteratorContainer::CollectDistinctConditions() const {
 std::string SelectIteratorContainer::Dump() const {
 	WrSerializer ser;
 	assertrx_throw(ctx_);
-	dump(0, cbegin(), cend(), *ctx_->joinItemsProcessors, ser);
+	dump(0, cbegin(), cend(), ctx_->joinItemsProcessors, ser);
 	return std::string{ser.Slice()};
 }
 
 void SelectIteratorContainer::dump(size_t level, const_iterator begin, const_iterator end,
-								   const std::vector<joins::ItemsProcessor>& joinItemsProcessors, WrSerializer& ser) {
+								   std::span<const joins::ItemsProcessor> joinItemsProcessors, WrSerializer& ser) {
 	for (const_iterator it = begin; it != end; ++it) {
 		for (size_t i = 0; i < level; ++i) {
 			ser << "   ";
@@ -1608,8 +1617,8 @@ void SelectIteratorContainer::dump(size_t level, const_iterator begin, const_ite
 	}
 }
 
-void JoinSelectIterator::Dump(WrSerializer& ser, const std::vector<joins::ItemsProcessor>& joinItemsProcessors) const {
-	const auto& js = joinItemsProcessors.at(joinIndex);
+void JoinSelectIterator::Dump(WrSerializer& ser, std::span<const joins::ItemsProcessor> joinItemsProcessors) const {
+	const auto& js = joinItemsProcessors[joinIndex];
 	const auto& q = js.JoinQuery();
 	ser << js.Type() << " (" << q.GetSQL() << ") ON ";
 	ser << '(';

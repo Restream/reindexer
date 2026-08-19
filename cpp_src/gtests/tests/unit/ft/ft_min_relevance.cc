@@ -16,7 +16,6 @@ protected:
 		reindexer::FTConfig cfg(0);
 		cfg.enableNumbersSearch = true;
 		cfg.logLevel = 5;
-		cfg.maxStepSize = 100;
 		auto err = SetFTConfig(cfg, nmName, "ft1", {"ft1"});
 		ASSERT_TRUE(err.ok()) << err.what();
 	}

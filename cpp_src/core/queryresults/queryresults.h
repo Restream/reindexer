@@ -15,6 +15,11 @@ class RPCQrWatcher;
 namespace reindexer {
 
 class Query;
+struct ItemRefCache;
+
+namespace joins {
+class QueryJoinsTable;
+}  // namespace joins
 
 const std::string_view kWALParamLsn = "lsn";
 const std::string_view kWALParamItem = "item";
@@ -34,17 +39,6 @@ class [[nodiscard]] QueryResults {
 
 public:
 	enum class [[nodiscard]] Type { None, Local, SingleRemote, MultipleRemote, Mixed };
-	struct [[nodiscard]] ItemRefCache {
-		ItemRefCache() = default;
-		ItemRefCache(IdType id, RankT, uint16_t nsid, ItemImpl&& i, bool raw);
-		ItemRefCache(IdType id, uint16_t nsid, ItemImpl&& i, bool raw);
-		void Clear() noexcept {}
-
-		ItemImplRawData itemImpl;
-		WrSerializer wser;
-		ItemRefVariant ref;
-	};
-
 	struct JoinResStorage;
 
 private:
@@ -271,14 +265,16 @@ public:
 	bool NeedOutputShardId() const noexcept { return flags_ & kResultsNeedOutputShardId; }
 	bool HaveJoined() const noexcept;
 	void SetQuery(const Query* q);
-	bool IsWALQuery() const noexcept { return qData_.has_value() && qData_->isWalQuery; }
-	uint32_t GetJoinedField(int parentNsId) const noexcept;
-	bool IsRawProxiedBufferAvailable(int flags) const noexcept {
-		if (type_ != Type::SingleRemote || !remote_[0]->qr.IsInLazyMode()) {
+	bool IsWALQuery() const noexcept { return qData_.has_value() && qData_->IsWALQuery(); }
+	uint32_t GetJoinedNsId(int parentNsId, size_t joinedField) const noexcept;
+	bool IsRawProxiedBufferAvailable(int flags, BindingCapabilities caps) const noexcept {
+		if (type_ != Type::SingleRemote || !remote_[0]->qr.IsInLazyMode() || HaveJoined()) {
 			return false;
 		}
-
 		auto& remote = *remote_[0];
+		if (remote.qr.GetQueryFormat() != caps.GetQueryFormat()) {
+			return false;
+		}
 		const auto qrFlags =
 			remote.qr.GetFlags() ? (remote.qr.GetFlags() & ~kResultsWithPayloadTypes & ~kResultsWithShardId) : kResultsCJson;
 		const auto qrFormat = qrFlags & kResultsFormatMask;
@@ -287,8 +283,8 @@ public:
 		return qrFormat == reqFormat && (qrFlags & reqFlags) == reqFlags;
 	}
 	bool GetRawProxiedBuffer(client::ParsedQrRawBuffer& out) { return remote_[0]->qr.GetRawBuffer(out); }
-	void FetchRawBuffer(int flgs, int off, int lim) {
-		if (!IsRawProxiedBufferAvailable(flgs)) {
+	void FetchRawBuffer(int flgs, int off, int lim, BindingCapabilities caps) {
+		if (!IsRawProxiedBufferAvailable(flgs, caps)) {
 			throw Error(errLogic, "Raw buffer is not available");
 		}
 		remote_[0]->qr.FetchNextResults(flgs, off, lim);
@@ -314,7 +310,8 @@ public:
 
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
 		Item GetItem(bool enableHold = true);
-		joins::ItemIterator GetJoined(std::vector<ItemRefCache>* storage = nullptr);
+		joins::ItemIterator GetJoined(std::vector<ItemRefCache>* storage = nullptr) const;
+		joins::JoinedItemContext GetJoinedContext(std::vector<ItemRefCache>* storage = nullptr) const;
 		ItemRef GetItemRef(std::vector<ItemRefCache>* storage = nullptr);
 		ItemRefRanked GetItemRefRanked(std::vector<ItemRefCache>* storage = nullptr);
 		bool IsRanked() const noexcept { return qr_->HaveRank(); }
@@ -364,7 +361,7 @@ public:
 			} constexpr static rawGetter;
 			return std::visit(rawGetter, getVariantIt());
 		}
-		size_t GetJoinedField() const { return qr_->GetJoinedField(GetNsID()); }
+		size_t GetJoinedNsId(size_t joinedField) const { return qr_->GetJoinedNsId(GetNsID(), joinedField); }
 		Iterator& operator++();
 		Iterator& operator+(uint32_t delta) {
 			switch (qr_->type_) {
@@ -436,6 +433,19 @@ public:
 	private:
 		template <bool isRanked>
 		auto getItemRef(std::vector<ItemRefCache>* storage);
+
+		void packJoinedFieldItems(const QrMetaData<client::QueryResults>& rqr, uint16_t joinedNsId, size_t joinedField,
+								  const client::ResultSerializer::ItemParams& itemParams,
+								  const client::ResultSerializer::JoinedData& joinedData, std::vector<ItemRefCache>* storage,
+								  const joins::QueryJoinsTable& joinsTable) const;
+		void packJoinedItem(const QrMetaData<client::QueryResults>& rqr, uint16_t joinedNsId,
+							const client::ResultSerializer::ItemParams& itemData, LocalQueryResults& qrJoined,
+							std::vector<ItemRefCache>* storage) const;
+		void packItemParams(const client::ResultSerializer::ItemParams& itemData, const client::ResultSerializer::JoinedData& joinedData,
+							const QrMetaData<client::QueryResults>& rqr, std::vector<ItemRefCache>* storage,
+							const joins::QueryJoinsTable& joinsTable) const;
+
+		joins::ItemIterator getRemoteJoined(std::vector<ItemRefCache>* storage) const;
 
 		std::variant<QrMetaData<LocalQueryResults>*, QrMetaData<client::QueryResults>*> getVariantResult() const {
 			switch (qr_->type_) {
@@ -533,10 +543,21 @@ private:
 	void beginImpl() const;
 	void setFlags(int flags) noexcept { flags_ = flags; }
 
-	struct [[nodiscard]] QueryData {
-		bool isWalQuery = false;
-		uint16_t joinedSize = 0;
-		h_vector<uint16_t, 8> mergedJoinedSizes;
+	class [[nodiscard]] QueryData {
+	public:
+		explicit QueryData(const Query& q);
+		QueryData(QueryData&&) noexcept;
+		QueryData& operator=(QueryData&&) noexcept;
+		QueryData(const QueryData&) = delete;
+		QueryData& operator=(const QueryData&) = delete;
+		~QueryData();
+
+		bool IsWALQuery() const noexcept { return isWalQuery_; }
+		const joins::QueryJoinsTable* JoinsTable() const noexcept { return joinsTable_.get(); }
+
+	private:
+		bool isWalQuery_{false};
+		std::unique_ptr<joins::QueryJoinsTable> joinsTable_;
 	};
 
 	int64_t shardingConfigVersion_ = ShardingSourceId::NotSet;

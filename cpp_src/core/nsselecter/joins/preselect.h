@@ -19,6 +19,13 @@ struct [[nodiscard]] PreSelectProperties {
 };
 
 struct [[nodiscard]] PreSelect {
+	enum class [[nodiscard]] ValuesOptimizationStatus : int8_t {
+		DisabledByCompositeIndex,
+		DisabledByJoinedFieldSort,
+		DisabledByNestedJoin,
+		Enabled
+	};
+
 	class [[nodiscard]] Values : public ItemRefVector {
 	public:
 		Values(const PayloadType& pt, const TagsMatcher& tm) noexcept : payloadType{pt}, tagsMatcher{tm} {}
@@ -77,7 +84,7 @@ struct [[nodiscard]] PreSelect {
 	bool enableSortOrders = false;
 	bool btreeIndexOptimizationEnabled = true;
 	SortOrderContext sortOrder;
-	StoredValuesOptimizationStatus storedValuesOptStatus = StoredValuesOptimizationStatus::Enabled;
+	ValuesOptimizationStatus storedValuesOptStatus = ValuesOptimizationStatus::Enabled;
 	std::optional<PreSelectProperties> properties;
 	std::string explainPreSelect;
 };

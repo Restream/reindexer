@@ -1,6 +1,6 @@
 #include "itemcomparator.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/iterators.h"
 #include "nsselecter.h"
 
 namespace {
@@ -51,9 +51,9 @@ bool ItemComparator::operator()(const ItemRef& lhs, const ItemRef& rhs) const {
 							   const auto& joinItemsProcessor = *jNs.joinItemsProcessor;
 							   const joins::ItemIterator ljIt{joinResults_, lhs.Id()};
 							   const joins::ItemIterator rjIt{joinResults_, rhs.Id()};
-							   const auto ljfIt = ljIt.at(c.joinedNs);
-							   const auto rjfIt = rjIt.at(c.joinedNs);
-							   if (ljfIt == ljIt.end() || ljfIt.ItemsCount() == 0 || rjfIt == rjIt.end() || rjfIt.ItemsCount() == 0)
+							   const auto ljfIt = ljIt.At(c.joinedNs);
+							   const auto rjfIt = rjIt.At(c.joinedNs);
+							   if (ljfIt == ljIt.End() || ljfIt.ItemsCount() == 0 || rjfIt == rjIt.End() || rjfIt.ItemsCount() == 0)
 								   [[unlikely]] {
 								   throw Error(errQueryExec, "Not found value joined from ns {}", joinItemsProcessor.RightNsName());
 							   }
@@ -144,11 +144,10 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 				   [&](const SortingContext::JoinedFieldEntry& e) {
 					   auto& jns = joined_;
 					   if (jns.joinItemsProcessor == nullptr) {
-						   assertrx_throw(ctx_.joinItemsProcessors);
-						   assertrx_throw(ctx_.joinItemsProcessors->size() > e.nsIdx);
-						   jns.joinItemsProcessor = &(*ctx_.joinItemsProcessors)[e.nsIdx];
+						   assertrx_throw(ctx_.joinItemsProcessors.size() > e.nsIdx);
+						   jns.joinItemsProcessor = &ctx_.joinItemsProcessors[e.nsIdx];
 					   } else {
-						   assertrx_dbg(&(*ctx_.joinItemsProcessors)[e.nsIdx] == jns.joinItemsProcessor);
+						   assertrx_dbg(&ctx_.joinItemsProcessors[e.nsIdx] == jns.joinItemsProcessor);
 					   }
 					   assertrx_dbg(!std::holds_alternative<joins::PreSelect::Values>(jns.joinItemsProcessor->PreSelectResults().payload));
 					   const auto& ns = *jns.joinItemsProcessor->RightNs();

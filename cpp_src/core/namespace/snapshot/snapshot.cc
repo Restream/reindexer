@@ -19,8 +19,8 @@ Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion, PayloadChecksum expectedData
 	walData_.AddItem(ItemRef(IdType::NotSet(), createTmItem(), 0, true));
 }
 
-Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, PayloadChecksum expectedDataHash, uint64_t expectedDataCount,
-				   ClusterOperationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw)
+Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, PayloadChecksum expectedDataHash,
+				   uint64_t expectedDataCount, ClusterOperationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw)
 	: pt_(std::move(pt)),
 	  tm_(std::move(tm)),
 	  expectedDataHash_(expectedDataHash),

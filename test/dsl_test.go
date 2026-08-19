@@ -368,6 +368,59 @@ func TestDSLQueries(t *testing.T) {
 		// No results validation here
 	})
 
+	t.Run("nested join dsl query", func(t *testing.T) {
+		const jsonDSL = `
+		{
+			"namespace": "test_namespace_dsl",
+			"sort": {
+				"field": "id"
+			},
+			"filters": [
+				{
+					"op": "AND",
+					"join_query": {
+						"type": "inner",
+						"namespace": "test_namespace_dsl_joined_1",
+						"filters": [
+							{
+								"op": "AND",
+								"join_query": {
+									"type": "inner",
+									"namespace": "test_namespace_dsl",
+									"on": [
+										{
+											"left_field": "jid",
+											"right_field": "id",
+											"cond": "eq"
+										}
+									]
+								}
+							}
+						],
+						"on": [
+							{
+								"left_field": "id",
+								"right_field": "jid",
+								"cond": "eq"
+							}
+						]
+					}
+				}
+			]
+		}
+		`
+
+		execDSLTwice(t, func(t *testing.T, q *reindexer.Query) {
+			items, err := q.MustExec().FetchAll()
+			require.NoError(t, err)
+			expectedIDs := make([]int, 20)
+			for i := range expectedIDs {
+				expectedIDs[i] = 80 + i
+			}
+			require.Equal(t, expectedIDs, getTestDSLItemsIDs(items))
+		}, jsonDSL)
+	})
+
 	t.Run("dsl equality condition", func(t *testing.T) {
 		const jsonDSL = `
 		{
@@ -3143,7 +3196,7 @@ func TestCreateDSLQueriesErrors(t *testing.T) {
 			]
 		}
 		`
-		checkErrorQueryFrom(t, jsonDSL, "rq: nested join quieries are not supported")
+		checkErrorQueryFrom(t, jsonDSL, "rq: dsl join queries are not supported in this context")
 	})
 
 	const wrongJsonDSLTmplt = `

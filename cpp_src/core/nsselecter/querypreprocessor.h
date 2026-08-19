@@ -59,8 +59,8 @@ public:
 	int CalculateMaxIterationsForStreamingKnn(bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx) const;
 	bool MoreThanOneEvaluation() const noexcept { return HasForcedSortOptimizationQueryEntry(); }
 	bool AvailableSelectBySortIndex() const noexcept { return !HasForcedSortOptimizationQueryEntry() || !forcedStage(); }
-	void InsertConditionsFromJoins(joins::ItemsProcessors& js, OnConditionInsertions& explainOnInsertions, LogLevel, bool inTransaction,
-								   bool enableSortOrders, const RdxContext& rdxCtx);
+	void InsertConditionsFromJoins(std::span<joins::ItemsProcessor> js, OnConditionInsertions& explainOnInsertions, LogLevel,
+								   bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx);
 	void Reduce();
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
@@ -152,10 +152,11 @@ private:
 	 *  @returns inserted conditions and EntryBrackets count
 	 */
 	template <typename ExplainPolicy>
-	size_t insertConditionsFromJoins(size_t from, size_t to, joins::ItemsProcessors&, OnConditionInsertions&, int embracedMaxIterations,
-									 h_vector<int, 256>& maxIterations, bool inTransaction, bool enableSortOrders, const RdxContext&);
-	std::pair<CondType, VariantArray> queryValuesFromOnCondition(std::string& outExplainStr, AggType&, NamespaceImpl& rightNs,
-																 Query joinQuery, joins::PreSelect::CPtr, const QueryJoinEntry&, CondType,
+	size_t insertConditionsFromJoins(size_t from, size_t to, std::span<joins::ItemsProcessor>, OnConditionInsertions&,
+									 int embracedMaxIterations, h_vector<int, 256>& maxIterations, bool inTransaction,
+									 bool enableSortOrders, const RdxContext&);
+	std::pair<CondType, VariantArray> queryValuesFromOnCondition(std::string& outExplainStr, AggType&, Query joinQuery,
+																 joins::ItemsProcessor& joinItemsProcessor, const QueryJoinEntry&, CondType,
 																 int mainQueryMaxIterations, const RdxContext&);
 	std::pair<CondType, VariantArray> queryValuesFromOnCondition(CondType condition, const QueryJoinEntry&,
 																 const joins::ItemsProcessor& joinItemsProcessor, const CollateOpts&);
@@ -173,9 +174,10 @@ private:
 	bool containsJoin(size_t) noexcept;
 
 	template <typename JS>
-	size_t briefDump(size_t from, size_t to, const std::vector<JS>& joinItemsProcessors, WrSerializer& ser) const;
+	size_t briefDump(size_t from, size_t to, std::span<JS> joinItemsProcessors, WrSerializer& ser) const;
 
 	NamespaceImpl& ns_;
+	const int nsid_;
 	const Query& query_;
 	StrictMode strictMode_;
 	Desc desc_ = Desc_False;

@@ -19,7 +19,7 @@ public:
 	TCMallocHeapWatcher();
 	explicit TCMallocHeapWatcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio);
 	explicit TCMallocHeapWatcher(MallocExtension* mallocExtention, int64_t cacheLimit, float maxCacheRatio,
-								  std::shared_ptr<spdlog::logger> logger);
+								 std::shared_ptr<spdlog::logger> logger);
 
 	TCMallocHeapWatcher(const TCMallocHeapWatcher&) = delete;
 	TCMallocHeapWatcher& operator=(const TCMallocHeapWatcher&) = delete;

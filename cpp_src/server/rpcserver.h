@@ -137,7 +137,8 @@ public:
 
 protected:
 	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults& res, int fetchLimit, cproto::Context& ctx) noexcept;
-	Error sendResults(cproto::Context& ctx, QueryResults& qr, RPCQrId id, const ResultFetchOpts& opts);
+	Error sendResults(cproto::Context& ctx, QueryResults& qr, RPCQrId id, const ResultFetchOpts& opts, BindingCapabilities caps,
+					  bool allowRawProxying = true);
 	Error processTxItem(DataFormat format, std::string_view itemData, Item& item, ItemModifyMode mode, int stateToken) const noexcept;
 
 	RPCQrWatcher::Ref createQueryResults(cproto::Context& ctx, RPCQrId& id, int flags = 0);

@@ -10,8 +10,8 @@
 #include "sparse_index_data.h"
 #include "tagspath.h"
 #include "tagspathcache.h"
-#include "tools/serilize/serializer.h"
 #include "tools/randomgenerator.h"
+#include "tools/serilize/serializer.h"
 
 namespace reindexer {
 

@@ -1,4 +1,5 @@
 #include "api_tv_simple.h"
+#include <algorithm>
 #include <thread>
 #include "allocs_tracker.h"
 #include "base_fixture.h"
@@ -7,8 +8,8 @@
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
 #include "core/system_ns_names.h"
+#include "gtests/tools.h"
 #include "helpers.h"
-#include "tools/string_regexp_functions.h"
 
 using reindexer::Query;
 using reindexer::IndexOpts;
@@ -53,6 +54,9 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondLeftJoin3Cond", &ApiTvSimple::Query2CondLeftJoin3Cond<NoTotal>, this);
 	Register("Query2CondLeftJoin3CondTotal", &ApiTvSimple::Query2CondLeftJoin3Cond<ReqTotal>, this);
 	Register("Query2CondLeftJoin3CondCachedTotal", &ApiTvSimple::Query2CondLeftJoin3Cond<CachedTotal>, this);
+	Register("Query2CondLeftNestedJoin", &ApiTvSimple::Query2CondLeftNestedJoin<NoTotal>, this);
+	Register("Query2CondLeftNestedJoinTotal", &ApiTvSimple::Query2CondLeftNestedJoin<ReqTotal>, this);
+	Register("Query2CondLeftNestedJoinCachedTotal", &ApiTvSimple::Query2CondLeftNestedJoin<CachedTotal>, this);
 
 	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this)->Iterations(k0CondJoinIters);
 	Register("Query0CondInnerJoinUnlimitLowSelectivity", &ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity, this)
@@ -68,6 +72,9 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondInnerJoin3Cond", &ApiTvSimple::Query2CondInnerJoin3Cond<NoTotal>, this);
 	Register("Query2CondInnerJoin3CondTotal", &ApiTvSimple::Query2CondInnerJoin3Cond<ReqTotal>, this);
 	Register("Query2CondInnerJoin3CondCachedTotal", &ApiTvSimple::Query2CondInnerJoin3Cond<CachedTotal>, this);
+	Register("Query2CondInnerNestedJoin", &ApiTvSimple::Query2CondInnerNestedJoin<NoTotal>, this);
+	Register("Query2CondInnerNestedJoinTotal", &ApiTvSimple::Query2CondInnerNestedJoin<ReqTotal>, this);
+	Register("Query2CondInnerNestedJoinCachedTotal", &ApiTvSimple::Query2CondInnerNestedJoin<CachedTotal>, this);
 
 	Register("Query3Cond", &ApiTvSimple::Query3Cond<NoTotal, AscSort>, BasePtr());
 	Register("Query3CondTotal", &ApiTvSimple::Query3Cond<ReqTotal, AscSort>, BasePtr());
@@ -143,6 +150,10 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("NoOpt/Query4CondRange/WithSort", &ApiTvSimple::Query4CondRange<NoTotal, AscSort>, BasePtr());
 	Register("NoOpt/Query4CondRangeTotal/WithSort", &ApiTvSimple::Query4CondRange<ReqTotal, AscSort>, BasePtr());
 
+	Register("NoOpt/QueryWideRangePlanning/WithSort", &ApiTvSimple::QueryWideRangePlanning, this);
+	Register("NoOpt/QueryWideRange/WithSort", &ApiTvSimple::QueryWideRange, this);
+	Register("NoOpt/QueryWideRangeTotal/WithSort", &ApiTvSimple::QueryWideRangeTotal, this);
+
 	Register("NoOpt/Query3CondRangeDistinctLowSelNoUnordered/NoSort",
 			 &ApiTvSimple::Query3CondRangeDistinctLowSelNoUnordered<NoTotal, NoSort>, this);
 	Register("NoOpt/Query3CondRangeDistinctLowSelNoUnorderedTotal/NoSort",
@@ -161,6 +172,13 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("NoOpt/Query4CondRangeDistinctLowSel/WithSort", &ApiTvSimple::Query4CondRangeDistinctLowSel<NoTotal, AscSort>, this);
 	Register("NoOpt/Query4CondRangeDistinctLowSelTotal/WithSort", &ApiTvSimple::Query4CondRangeDistinctLowSel<ReqTotal, AscSort>, this);
 
+	Register("NoOpt/Query2Distinct/NoSort", &ApiTvSimple::Query2Distinct<NoSort>, this);
+	Register("NoOpt/Query2Distinct/WithSort", &ApiTvSimple::Query2Distinct<AscSort>, this);
+	Register("NoOpt/Query3Cond2Distinct/NoSort", &ApiTvSimple::Query3Cond2Distinct<NoSort>, this);
+	Register("NoOpt/Query3Cond2Distinct/WithSort", &ApiTvSimple::Query3Cond2Distinct<AscSort>, this);
+	Register("NoOpt/Query2DistinctWeakEqRange/NoSort", &ApiTvSimple::Query2DistinctWeakEqRange<NoSort>, this);
+	Register("NoOpt/Query2DistinctWeakEqRange/WithSort", &ApiTvSimple::Query2DistinctWeakEqRange<AscSort>, this);
+
 	Register("NoOpt/QueryWithBrackets/WithSort", &ApiTvSimple::QueryUncommitedWithBrackets<NoTotal>, this);
 	Register("NoOpt/QueryWithBracketsTotal/WithSort", &ApiTvSimple::QueryUncommitedWithBrackets<ReqTotal>, this);
 
@@ -170,6 +188,9 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("NoOpt/Query2CondInnerJoin3Cond/WithSort", &ApiTvSimple::Query2CondInnerJoin3Cond<NoTotal>, this);
 	Register("NoOpt/Query2CondInnerJoin3CondTotal/WithSort", &ApiTvSimple::Query2CondInnerJoin3Cond<ReqTotal>, this);
 	Register("NoOpt/Query2CondInnerJoin3CondCachedTotal/WithSort", &ApiTvSimple::Query2CondInnerJoin3Cond<CachedTotal>, this);
+	Register("NoOpt/Query2CondInnerNestedJoin/WithSort", &ApiTvSimple::Query2CondInnerNestedJoin<NoTotal>, this);
+	Register("NoOpt/Query2CondInnerNestedJoinTotal/WithSort", &ApiTvSimple::Query2CondInnerNestedJoin<ReqTotal>, this);
+	Register("NoOpt/Query2CondInnerNestedJoinCachedTotal/WithSort", &ApiTvSimple::Query2CondInnerNestedJoin<CachedTotal>, this);
 
 	Register("RestoreBackgroundIndexOptimization", &ApiTvSimple::RestoreBackgroundIndexOptimization, this)->Iterations(1);
 	// END: Benchmarks without background index optimization
@@ -185,7 +206,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 
 	countryLikePatterns_.reserve(countries_.size());
 	for (const auto& country : countries_) {
-		countryLikePatterns_.emplace_back(reindexer::makeLikePattern(country));
+		countryLikePatterns_.emplace_back(reindexer_tests_tools::makeLikePattern(country));
 	}
 
 	for (auto sz : idsetsSz_) {
@@ -237,7 +258,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 	NamespaceDef rightNsDef{rightNs_};
 	rightNsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("field", "hash", "int", IndexOpts())
-		.AddIndex("id_tree", "tree", "int", IndexOpts());
+		.AddIndex("unique_order", "tree", "int", IndexOpts());
 	err = db_->AddNamespace(rightNsDef);
 	if (!err.ok()) {
 		return err;
@@ -272,7 +293,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 		reindexer::JsonBuilder bld2(wrSer_);
 		bld2.Put("id", i);
 		bld2.Put("field", i);
-		bld2.Put("id_tree", i);
+		bld2.Put("unique_order", i);
 		bld2.End();
 		err = rItem.FromJSON(wrSer_.Slice());
 		if (!err.ok()) {
@@ -324,8 +345,10 @@ reindexer::Item ApiTvSimple::MakeItem(benchmark::State&) {
 	std::ignore = item.Unsafe();
 
 	auto startTime = random<int>(0, 50000);
+	const auto id = id_seq_->Next();
 
-	item["id"] = id_seq_->Next();
+	item["id"] = id;
+	item["unique_order"] = id;
 	item["genre"] = random<int64_t>(0, 49);
 	item["year"] = random<int>(kMinYear, kMaxYear);
 	item["packages"] = packages_.at(random<size_t>(0, packages_.size() - 1));
@@ -439,6 +462,25 @@ void ApiTvSimple::Query2CondLeftJoin3Cond(benchmark::State& state) {
 	benchQuery(q, state);
 }
 
+template <typename Total>
+void ApiTvSimple::Query2CondLeftNestedJoin(benchmark::State& state) {
+	auto q4nestedJoin =
+		Query(kJoinNamespace).Where("location", CondSet, {"mos", "dv", "sib", "ural"}).Where("id", CondLt, kPriceIdStart + kPriceIdRegion);
+	auto q4join = Query(kJoinNamespace)
+					  .Where("device", CondEq, {"ottstb", "smarttv", "stb"})
+					  .Where("location", CondSet, {"mos", "dv", "sib", "ural"})
+					  .LeftJoin("parent_id", "id", CondEq, std::move(q4nestedJoin));
+
+	auto q = Query(nsdef_.name)
+				 .Where("genre", CondEq, 5)
+				 .Where("year", CondRange, {2010, 2016})
+				 .LeftJoin("price_id", "id", CondSet, std::move(q4join))
+				 .Sort("year", false)
+				 .Limit(20);
+	Total::Apply(q);
+	benchQuery(q, state);
+}
+
 void ApiTvSimple::Query0CondInnerJoinUnlimit(benchmark::State& state) {
 	const auto q = [&] {
 		auto q4join = Query(rightNs_).Where("id", CondSet, randomNumArray<int>(10'000, 0, kTotalItemsMainJoinNs));
@@ -464,7 +506,7 @@ void ApiTvSimple::SubQueryEq(benchmark::State& state) {
 void ApiTvSimple::SubQuerySet(benchmark::State& state) {
 	const auto q = [&] {
 		const int rangeMin = rand() % (kTotalItemsMainJoinNs - 500);
-		auto subQuery = Query(rightNs_).Select({"id"}).Where("id_tree", CondRange, VariantArray::Create(rangeMin, rangeMin + 500));
+		auto subQuery = Query(rightNs_).Select({"id"}).Where("unique_order", CondRange, VariantArray::Create(rangeMin, rangeMin + 500));
 		return Query(mainNs_).Where("id", CondSet, std::move(subQuery));
 	};
 	benchQuery(q, state);
@@ -543,6 +585,25 @@ void ApiTvSimple::Query2CondInnerJoin3Cond(benchmark::State& state) {
 				 .InnerJoin("price_id", "id", CondSet, std::move(q4join))
 				 .Sort("year", false)
 
+				 .Limit(20);
+	Total::Apply(q);
+	benchQuery(q, state);
+}
+
+template <typename Total>
+void ApiTvSimple::Query2CondInnerNestedJoin(benchmark::State& state) {
+	auto q4nestedJoin =
+		Query(kJoinNamespace).Where("location", CondSet, {"mos", "dv", "sib", "ural"}).Where("id", CondLt, kPriceIdStart + kPriceIdRegion);
+	auto q4join = Query(kJoinNamespace)
+					  .Where("device", CondSet, {"ottstb", "smarttv", "stb"})
+					  .Where("location", CondSet, {"mos", "dv", "sib", "ural"})
+					  .InnerJoin("parent_id", "id", CondEq, std::move(q4nestedJoin));
+
+	auto q = Query(nsdef_.name)
+				 .Where("genre", CondEq, 5)
+				 .Where("year", CondRange, {2010, 2016})
+				 .InnerJoin("price_id", "id", CondSet, std::move(q4join))
+				 .Sort("year", false)
 				 .Limit(20);
 	Total::Apply(q);
 	benchQuery(q, state);
@@ -682,15 +743,22 @@ void ApiTvSimple::DisableBackgroundIndexOptimization(benchmark::State& state) {
 			}
 		}
 		{
-			// Update item to reset optimized state
-			auto item = MakeItem(state);
-			if (!item.Status().ok()) {
-				state.SkipWithError(item.Status().what());
-			}
+			// Dirty ~1% of documents so WarmUp's dense (committed) idsets do not dominate
+			// the subsequent NoOpt measurements
+			const int dirtyCount = std::max(1, id_seq_->Count() / 100);
+			id_seq_->Reset();
+			for (int i = 0; i < dirtyCount; ++i) {
+				auto item = MakeItem(state);
+				if (!item.Status().ok()) {
+					state.SkipWithError(item.Status().what());
+					break;
+				}
 
-			auto err = db_->Update(nsdef_.name, item);
-			if (!err.ok()) {
-				state.SkipWithError(err.what());
+				auto err = db_->Update(nsdef_.name, item);
+				if (!err.ok()) {
+					state.SkipWithError(err.what());
+					break;
+				}
 			}
 		}
 	}
@@ -803,6 +871,35 @@ void ApiTvSimple::QueryUncommitedWithUnorderedCond(benchmark::State& state) {
 	benchQuery(q, state);
 }
 
+void ApiTvSimple::QueryWideRangePlanning(State& state) {
+	const int rangeEnd = int((4 * maxItems_) / 5);
+	const auto q = Query(nsdef_.name)
+					   .Where("unique_order", CondRange, {1, rangeEnd})
+					   .Where("genre", CondRange, {0, 39})
+					   .Sort("unique_order", false)
+					   .Limit(20);
+	benchQuery(q, state);
+}
+
+void ApiTvSimple::QueryWideRange(State& state) {
+	const int rangeEnd = int((4 * maxItems_) / 5);
+	const auto q = Query(nsdef_.name).Where("unique_order", CondRange, {1, rangeEnd}).Sort("unique_order", false).Limit(20);
+	benchQuery(q, state);
+}
+
+void ApiTvSimple::QueryWideRangeTotal(State& state) {
+	const int rangeEnd = int((4 * maxItems_) / 5);
+	const auto q = Query(nsdef_.name).Where("unique_order", CondRange, {1, rangeEnd}).Sort("unique_order", false).Limit(20).ReqTotal();
+	auto checker = [rangeEnd, &state](const reindexer::QueryResults& qres) {
+		checkNotEmpty(qres, state);
+		if (qres.TotalCount() != size_t(rangeEnd)) [[unlikely]] {
+			const auto message = fmt::format("Wide range total count {} does not match expected {}", qres.TotalCount(), rangeEnd);
+			state.SkipWithError(message.c_str());
+		}
+	};
+	benchQuery(q, state, checker);
+}
+
 template <typename Total, typename Sort>
 void ApiTvSimple::Query3CondRangeDistinctLowSelNoUnordered(State& state) {
 	const auto q = [&] {
@@ -860,6 +957,72 @@ void ApiTvSimple::Query4CondRangeDistinctLowSel(State& state) {
 		return q;
 	};
 	benchQuery(q, state);
+}
+
+template <typename Sort>
+void ApiTvSimple::Query2Distinct(State& state) {
+	constexpr bool with3Cond = false;
+	query2Distinct<Sort, with3Cond>(state);
+}
+
+template <typename Sort>
+void ApiTvSimple::Query3Cond2Distinct(State& state) {
+	constexpr bool with3Cond = true;
+	query2Distinct<Sort, with3Cond>(state);
+}
+
+namespace {
+
+class [[nodiscard]] AggregationsOnlyChecker {
+public:
+	explicit AggregationsOnlyChecker(size_t expectedAggregations) noexcept : expectedAggregations_(expectedAggregations) {}
+
+	void operator()(reindexer::QueryResults& qres) const {
+		assertrx(qres.Count() == 0);
+		assertrx(qres.GetAggregationResults().size() == expectedAggregations_);
+	}
+
+private:
+	size_t expectedAggregations_;
+};
+
+}  // namespace
+
+template <typename Sort, bool with3Cond>
+void ApiTvSimple::query2Distinct(State& state) {
+	const auto q = [&] {
+		auto q = Query(nsdef_.name).Distinct("year").Distinct("end_time");
+		if constexpr (with3Cond) {
+			const size_t randomPackage = random<size_t>(0, packages_.size() - 1);
+			q.Where("genre", CondEq, 5).Where("year", CondRange, {2010, 2016}).Where("packages", CondSet, packages_.at(randomPackage));
+		}
+		Sort::Apply(q, "year");
+		return q;
+	};
+	AggregationsOnlyChecker checker{2};
+	benchQuery(q, state, checker);
+}
+
+template <typename Sort>
+void ApiTvSimple::Query2DistinctWeakEqRange(State& state) {
+	// Target path for multi-distinct heuristics:
+	// weak unordered Eq (triggers hasNonCompatibleDistinct&&hasUnorderedConds abort without multi-distinct ignore)
+	// + ordered Range on year (Compatible for AdviceSortingIndex / unbuilt).
+	const auto q = [&] {
+		const int startTime = random<int>(0, 30000);
+		const int endTime = startTime + 10000;
+		auto q = Query(nsdef_.name)
+					 .Distinct("year")
+					 .Distinct("end_time")
+					 .Where("age", CondEq, 2)
+					 .Where("year", CondRange, {2010, 2016})
+					 .Where("start_time", CondGt, startTime)
+					 .Where("end_time", CondLt, endTime);
+		Sort::Apply(q, "year");
+		return q;
+	};
+	AggregationsOnlyChecker checker{2};
+	benchQuery(q, state, checker);
 }
 
 }  // namespace reindexer_benchmarks

@@ -3,7 +3,8 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/item_context.h"
+#include "core/nsselecter/joins/iterators.h"
 #include "core/reindexer.h"
 #include "core/type_consts.h"
 #include "estl/lock.h"
@@ -445,7 +446,7 @@ void ReindexerService::packPayloadTypes(WrSerializer& wrser, const reindexer::Qu
 }
 
 template <typename ItT>
-Error ReindexerService::packCJSONItem(WrSerializer& wrser, ItT& it, const OutputFlags& opts) {
+Error ReindexerService::packCJSONItemParams(WrSerializer& wrser, ItT& it, const OutputFlags& opts) {
 	ItemRef itemRef = it.GetItemRef();
 	if (opts.withnsid()) {
 		wrser.PutVarUint(itemRef.Nsid());
@@ -458,6 +459,41 @@ Error ReindexerService::packCJSONItem(WrSerializer& wrser, ItT& it, const Output
 		wrser.PutRank(it.IsRanked() ? it.GetItemRefRanked().Rank() : RankT{});
 	}
 	return it.GetCJSON(wrser);
+}
+
+template <typename ItT>
+Error ReindexerService::packCJSONItem(WrSerializer& wrser, ItT& item, const OutputFlags& opts) {
+	Error status{packCJSONItemParams(wrser, item, opts)};
+	if (!status.ok()) {
+		return status;
+	}
+
+	auto joinContext{item.GetJoinedContext()};
+	auto& joinIt{joinContext.iterator};
+	const auto joinedItemsCount{joinIt.GetItemsCount()};
+	if (opts.withjoineditems() && joinedItemsCount > 0) {
+		wrser.PutVarUint(joinedItemsCount > 0 ? joinIt.GetFieldsCount() : 0);
+		if (joinedItemsCount == 0) {
+			return errOK;
+		}
+
+		for (auto fieldIt = joinIt.Begin(); fieldIt != joinIt.End(); ++fieldIt) {
+			const auto itemsCount{fieldIt.ItemsCount()};
+			wrser.PutVarUint(itemsCount);
+			if (itemsCount == 0) {
+				continue;
+			}
+
+			for (auto it : fieldIt.ToQueryResults(joinContext)) {
+				status = packCJSONItem(wrser, it, opts);
+				if (!status.ok()) {
+					return status;
+				}
+			}
+		}
+	}
+
+	return errOK;
 }
 
 Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults& qr, const OutputFlags& opts) {
@@ -529,31 +565,6 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 				status = packCJSONItem(wrser, item, opts);
 				if (!status.ok()) {
 					return status;
-				}
-
-				auto jIt = item.GetJoined();
-				if (opts.withjoineditems() && jIt.getJoinedItemsCount() > 0) {
-					wrser.PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
-					if (jIt.getJoinedItemsCount() == 0) {
-						continue;
-					}
-
-					size_t joinedField = item.GetJoinedField();
-					for (auto it = jIt.begin(), end = jIt.end(); it != end; ++it, ++joinedField) {
-						const auto itemsCnt = it.ItemsCount();
-						wrser.PutVarUint(itemsCnt);
-						if (itemsCnt == 0) {
-							continue;
-						}
-						LocalQueryResults jqr = it.ToQueryResults();
-						jqr.addNSContext(qr, joinedField, lsn_t());
-						for (size_t i = 0, cnt = jqr.Count(); i < cnt; i++) {
-							status = packCJSONItem(wrser, jqr.cbegin() + i, opts);
-							if (!status.ok()) {
-								return status;
-							}
-						}
-					}
 				}
 			}
 			break;

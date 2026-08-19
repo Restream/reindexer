@@ -29,6 +29,11 @@ public:
 		unsigned v_;
 	};
 
+	struct ItemParams;
+
+	using JoinedFieldData = std::vector<ResultSerializer::ItemParams>;
+	using JoinedData = h_vector<JoinedFieldData, 1>;
+
 	struct [[nodiscard]] ItemParams {
 		IdType id = IdType::NotSet();
 		uint16_t nsid = 0;
@@ -37,6 +42,7 @@ public:
 		std::string_view data;
 		bool raw = false;
 		int shardId = ShardingKeyType::ProxyOff;
+		JoinedData joined;
 	};
 
 	struct [[nodiscard]] QueryParams {
@@ -67,7 +73,7 @@ public:
 		return ser.GetVarUInt() & kResultsWithPayloadTypes;
 	}
 	void GetRawQueryParams(QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc, Options options,
-						   ParsingData& parsingData);
+						   ParsingData& parsingData, QueryFormat queryFormat);
 	void GetExtraParams(QueryParams& ret, Options opts);
 	ItemParams GetItemData(int flags, int shardId);
 };

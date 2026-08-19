@@ -33,26 +33,26 @@ void StreamingKnnIndexIterator::Start(bool reverse) {
 	}
 }
 
-bool StreamingKnnIndexIterator::Next() noexcept {
+std::pair<bool, IdType> StreamingKnnIndexIterator::Next() noexcept {
 	assertrx_dbg(session_);
 	if (continueCalls_ == 0) {
 		if (!continueStreaming(params_.ef)) {
 			lastVal_ = IdType::Min();
-			return false;
+			return {false, lastVal_};
 		}
 	}
 
 	while (true) {
 		if (advanceInCurrentBatch()) {
-			return true;
+			return {true, lastVal_};
 		}
 		if (exhausted_ || continueCalls_ >= kMaxContinueCalls) {
 			lastVal_ = IdType::Min();
-			return false;
+			return {false, lastVal_};
 		}
 		if (!fetchNextBatch()) {
 			lastVal_ = IdType::Min();
-			return false;
+			return {false, lastVal_};
 		}
 	}
 }
@@ -109,11 +109,12 @@ bool StreamingKnnIndexIterator::fetchNextBatch() noexcept {
 	return continueStreaming(batchSize);
 }
 
-size_t StreamingKnnIndexIterator::GetMaxIterations(size_t limitIters) noexcept {
-	if (maxIterationsHint_ > 0) {
-		return std::min(limitIters, maxIterationsHint_);
-	}
-	return std::min(limitIters, StreamingKnnEstimator::kMaxEfBatch);
+MaxIterationsEstimate StreamingKnnIndexIterator::ProbeMaxIterations(size_t limitIters) noexcept {
+	return MaxIterationsEstimate::Heuristic(std::min(limitIters, GetPlanningEstimate().value));
+}
+
+MaxIterationsEstimate StreamingKnnIndexIterator::GetPlanningEstimate() const noexcept {
+	return MaxIterationsEstimate::Heuristic(maxIterationsHint_ > 0 ? maxIterationsHint_ : StreamingKnnEstimator::kMaxEfBatch);
 }
 
 }  // namespace reindexer

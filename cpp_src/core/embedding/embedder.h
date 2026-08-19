@@ -2,6 +2,7 @@
 
 #include <span>
 #include <string_view>
+#include "core/embedding/circuitbreaker.h"
 #include "core/embedding/connectorpool.h"
 #include "core/embedding/embedderscache.h"
 #include "core/embedding/embeddingconfig.h"
@@ -49,6 +50,7 @@ protected:
 	const std::shared_ptr<EmbeddersCache> cache_;
 	const EmbedderConfig config_;
 	std::unique_ptr<ConnectorPool> pool_;
+	mutable EmbedderCircuitBreaker circuitBreaker_;
 
 	class [[nodiscard]] LastError {
 	public:

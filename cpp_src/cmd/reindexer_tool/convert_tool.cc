@@ -166,8 +166,7 @@ Error ConvertTool::ConvertStorage(std::string_view dsn, std::string_view convert
 		}
 
 		cleanupRequired = true;
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 
 	return errOK;
 }

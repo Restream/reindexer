@@ -50,7 +50,10 @@ private:
 	static RX_ALWAYS_INLINE double IDF(double totalDocCount, double matchedDocCount) noexcept {
 		return log(totalDocCount / (matchedDocCount + 1)) + 1;
 	}
-	static RX_ALWAYS_INLINE double TF(double termCountInDoc, double wordsInDoc) noexcept { return termCountInDoc / wordsInDoc; }
+	static RX_ALWAYS_INLINE double TF(double termCountInDoc, double wordsInDoc) noexcept {
+		(void)wordsInDoc;
+		return termCountInDoc;
+	}
 
 	const double k1_;
 	const double b_;

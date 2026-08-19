@@ -68,7 +68,7 @@ void SQLEncoder<Formatter>::DumpSingleJoinQuery(size_t idx, bool stripArgs) cons
 
 	const auto& jq = query_.GetJoinQueries()[idx];
 	ser << kJoinNames[jq.joinType];
-	if (jq.Entries().Empty() && !jq.HasLimit() && jq.GetSortingEntries().empty()) {
+	if (jq.Entries().Empty() && jq.GetJoinQueries().empty() && !jq.HasLimit() && jq.GetSortingEntries().empty()) {
 		ser << jq.NsName() << ' ';
 	} else {
 		{

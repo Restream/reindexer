@@ -1350,6 +1350,11 @@ func checkExplainSubqueries(t *testing.T, res []reindexer.ExplainSubQuery, expec
 func TestQueries(t *testing.T) {
 	t.Run("Common indexed queries", func(t *testing.T) {
 		t.Parallel()
+		defer func() {
+			require.NoError(t, DB.TruncateNamespace(testItemsNs))
+			require.NoError(t, DB.TruncateNamespace(testItemsGeomNs))
+			require.NoError(t, DB.TruncateNamespace(testItemsNotNs))
+		}()
 
 		FillTestItemsWithFunc(testItemsNs, 0, 2500, 20, newTestItem)
 		FillTestItemsWithFunc(testItemsNs, 2500, 2500, 0, newTestItem)
@@ -1412,6 +1417,9 @@ func TestQueries(t *testing.T) {
 
 	t.Run("Non Indexed queries", func(t *testing.T) {
 		t.Parallel()
+		defer func() {
+			require.NoError(t, DB.TruncateNamespace(testItemsIdOnlyNs))
+		}()
 
 		FillTestItemsWithFunc(testItemsIdOnlyNs, 0, 500, 20, newTestItemIDOnly)
 		FillTestItemsWithFunc(testItemsIdOnlyNs, 500, 500, 0, newTestItemIDOnly)
@@ -1424,6 +1432,9 @@ func TestQueries(t *testing.T) {
 
 	t.Run("Sparse indexed queries", func(t *testing.T) {
 		t.Parallel()
+		defer func() {
+			require.NoError(t, DB.TruncateNamespace(testItemsWithSparseNs))
+		}()
 
 		FillTestItemsWithFunc(testItemsWithSparseNs, 0, 2500, 20, newTestItemWithSparse)
 		FillTestItemsWithFunc(testItemsWithSparseNs, 2500, 2500, 0, newTestItemWithSparse)

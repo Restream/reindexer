@@ -117,7 +117,7 @@ protected:
 
 private:
 	template <typename N, typename Parent>
-	static void setParent(const N&, Parent*) noexcept {};
+	static void setParent(const N&, Parent*) noexcept {}
 	template <typename N, typename Parent>
 	static void setParent(const std::unique_ptr<N>& n, Parent* parent) noexcept(noexcept(n->SetParent(parent))) {
 		n->SetParent(parent);

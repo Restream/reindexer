@@ -18,6 +18,19 @@ TEST_F(JoinSelectsApi, JoinsDSLTest) {
 	checkQueryDslParse(queryBooks);
 }
 
+TEST_F(JoinSelectsApi, NestedJoinsDSLTest) {
+	Query queryLocations{location_namespace, 0, 100};
+	queryLocations.LeftJoin(countryid_fk, countryid, CondEq, Query{countries_namespace});
+
+	Query queryAuthors{authors_namespace, 0, 100};
+	queryAuthors.InnerJoin(locationid_fk, locationid, CondEq, std::move(queryLocations));
+
+	Query queryBooks{books_namespace, 0, 50};
+	queryBooks.InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
+
+	checkQueryDslParse(queryBooks);
+}
+
 TEST_F(JoinSelectsApi, EqualPositionDSLTest) {
 	Query query = Query(default_namespace);
 	query.Where("f1", CondEq, 1).Where("f2", CondEq, 2).Or().Where("f3", CondEq, 2);

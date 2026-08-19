@@ -11,6 +11,7 @@
 #include "core/dbconfig.h"
 #include "core/enums.h"
 #include "core/id_type.h"
+#include "core/nsselecter/joins/results.h"
 #include "core/query/sql/sql_suggestions.h"
 #include "core/queryresults/queryresults.h"
 #include "core/queryresults/tableviewbuilder.h"
@@ -1638,7 +1639,7 @@ int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res
 			}
 			ser << tm.tag2name(*it);
 		}
-		if (res.ToLocalQr().joined_.empty()) {
+		if (res.ToLocalQr().Joined().empty()) {
 			ser << "\n";
 		} else {
 			ser << ",joined_namespaces\n";

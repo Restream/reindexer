@@ -1,9 +1,13 @@
 #include "queryresults.h"
+#include "core/nsselecter/joins/item_context.h"
 #include "core/nsselecter/joins/items_processor.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/iterators.h"
+#include "core/nsselecter/joins/query_joins_table.h"
+#include "core/nsselecter/joins/results.h"
 #include "core/query/query.h"
 #include "core/sorting/sortexpression.h"
 #include "core/type_consts.h"
+#include "itemrefcache.h"
 #include "tools/catch_and_return.h"
 #include "tools/float_comparison.h"
 
@@ -25,11 +29,18 @@ struct [[nodiscard]] QueryResults::MergedData {
 
 struct [[nodiscard]] QueryResults::JoinResStorage {
 	void Clear() {
-		jr.Clear();
+		res.clear();
 		joinedRawData.clear();
 	}
 
-	joins::NamespaceResults jr;
+	void PrepareForItem(const client::ResultSerializer::ItemParams& itemParams) {
+		if (const size_t size = itemParams.nsid + 1; res.size() < size) {
+			res.resize(size);
+		}
+		res[itemParams.nsid].SetJoinedFieldsCount(itemParams.joined.size());
+	}
+
+	joins::Results res;
 	h_vector<ItemImplRawData, 1> joinedRawData;
 };
 
@@ -44,6 +55,12 @@ struct [[nodiscard]] QueryResults::ItemDataStorage {
 	int64_t idx;
 	DataT data;
 };
+
+QueryResults::QueryData::QueryData(const Query& q)
+	: isWalQuery_{q.IsWALQuery()}, joinsTable_{q.HasJoinQueries() ? std::make_unique<joins::QueryJoinsTable>(q) : nullptr} {}
+QueryResults::QueryData::QueryData(QueryData&&) noexcept = default;
+QueryResults::QueryData& QueryResults::QueryData::operator=(QueryData&&) noexcept = default;
+QueryResults::QueryData::~QueryData() = default;
 
 QueryResults::QueryResults(int flags) : flags_(flags) {}
 
@@ -441,7 +458,7 @@ bool QueryResults::HaveJoined() const noexcept {
 		case Type::Local: {
 			assertrx_dbg(local_);
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-			auto& joined = local_->qr.joined_;
+			auto& joined = local_->qr.Joined();
 			return !joined.empty() && std::any_of(joined.begin(), joined.end(), [](const auto& j) noexcept { return j.TotalItems(); });
 		}
 		case Type::SingleRemote:
@@ -455,50 +472,31 @@ bool QueryResults::HaveJoined() const noexcept {
 
 void QueryResults::SetQuery(const Query* q) {
 	if (q) {
-		QueryData data;
-		data.isWalQuery = q->IsWALQuery();
-		data.joinedSize = uint16_t(q->GetJoinQueries().size());
-		data.mergedJoinedSizes.reserve(q->GetMergeQueries().size());
-		for (const auto& mq : q->GetMergeQueries()) {
-			data.mergedJoinedSizes.emplace_back(mq.GetJoinQueries().size());
-		}
-		qData_.emplace(std::move(data));
+		qData_.emplace(QueryData{*q});
 	} else {
 		qData_.reset();
 	}
 }
 
-uint32_t QueryResults::GetJoinedField(int parentNsId) const noexcept {
-	uint32_t joinedField = 1;
-	if (qData_.has_value()) {
-		joinedField += qData_->mergedJoinedSizes.size();
-		int mergedNsIdx = parentNsId;
-		if (mergedNsIdx > 0) {
-			joinedField += qData_->joinedSize;
-			--mergedNsIdx;
-		}
-		for (int ns = 0; ns < mergedNsIdx; ++ns) {
-			assertrx(size_t(ns) < qData_->mergedJoinedSizes.size());
-			joinedField += qData_->mergedJoinedSizes[ns];
-		}
-	} else if (type_ == Type::Local) {
-		assertrx_dbg(local_);
-		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-		joinedField = local_->qr.joined_.size();
-		for (int ns = 0; ns < parentNsId; ++ns) {
-			assertrx_dbg(local_);
-			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-			joinedField += local_->qr.joined_[size_t(ns)].GetJoinItemsProcessorsCount();
+uint32_t QueryResults::GetJoinedNsId(int parentNsId, size_t joinedField) const noexcept {
+	if (qData_) {
+		const auto* joinsTable = qData_->JoinsTable();
+		assertrx_dbg(joinsTable);
+		if (joinsTable) {
+			return joinsTable->GetJoinedNsId(parentNsId, joinedField);
 		}
 	}
-	return joinedField;
+	if (type_ == Type::Local) {
+		assertrx_dbg(local_.has_value());
+		const auto& joinsTable{localUnsafe().qr.Joined().GetJoinsTable()};
+		assertrx_dbg(joinsTable.has_value());
+		if (joinsTable) {
+			return joinsTable->GetJoinedNsId(parentNsId, joinedField);
+		}
+	}
+	assertrx_dbg(type_ == Type::Local || qData_.has_value());
+	return 0;
 }
-
-QueryResults::ItemRefCache::ItemRefCache(IdType id, RankT rank, uint16_t nsid, ItemImpl&& i, bool raw)
-	: itemImpl(std::move(i)), ref{ItemRefRanked{rank, id, itemImpl.payloadValue_, nsid, raw}} {}
-
-QueryResults::ItemRefCache::ItemRefCache(IdType id, uint16_t nsid, ItemImpl&& i, bool raw)
-	: itemImpl(std::move(i)), ref{ItemRef{id, itemImpl.payloadValue_, nsid, raw}} {}
 
 Error QueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) {
 	try {
@@ -547,15 +545,13 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) noe
 										 return getCJSONviaJSON(wrser, withHdrLen, it);
 									 }},
 						  getVariantIt());
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 Error QueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) noexcept {
 	try {
 		return std::visit([&wrser, withHdrLen](auto&& it) { return it.GetMsgPack(wrser, withHdrLen); }, getVariantIt());
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 Error QueryResults::Iterator::GetProtobuf(WrSerializer& wrser) noexcept {
@@ -566,8 +562,7 @@ Error QueryResults::Iterator::GetProtobuf(WrSerializer& wrser) noexcept {
 										 return Error(errParams, "Protobuf is not supported for distributed and proxied queries");
 									 }},
 						  getVariantIt());
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 Item QueryResults::Iterator::GetItem(bool enableHold) {
@@ -635,79 +630,131 @@ void QueryResults::QrMetaData<QrT>::ResetJoinStorage(int64_t idx) const {
 Error QueryResults::Iterator::GetCSV(WrSerializer& ser, CsvOrdering& ordering) noexcept {
 	try {
 		return std::visit(overloaded{[&ser, &ordering](auto it) { return it.GetCSV(ser, ordering); }}, getVariantIt());
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
-joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>* storage) {
+void QueryResults::Iterator::packJoinedItem(const QrMetaData<client::QueryResults>& rqr, uint16_t joinedNsId,
+											const client::ResultSerializer::ItemParams& itemParams, LocalQueryResults& qrJoined,
+											std::vector<ItemRefCache>* storage) const {
+	ItemImpl itemimpl(rqr.qr.GetPayloadType(joinedNsId), rqr.qr.GetTagsMatcher(joinedNsId));
+	itemimpl.FromCJSON(itemParams.data);
+
+	if (qrJoined.haveRank) {
+		qrJoined.AddItemRef(itemParams.rank, itemParams.id, itemimpl.Value(), joinedNsId, true);
+	} else {
+		qrJoined.AddItemRef(itemParams.id, itemimpl.Value(), joinedNsId, true);
+	}
+
+	if (!storage) {
+		rqr.NsJoinRes()->data.joinedRawData.emplace_back(std::move(itemimpl));
+	} else {
+		if (qrJoined.haveRank) {
+			storage->emplace_back(itemParams.id, RankT{}, joinedNsId, std::move(itemimpl), true);
+		} else {
+			storage->emplace_back(itemParams.id, joinedNsId, std::move(itemimpl), true);
+		}
+	}
+}
+
+void QueryResults::Iterator::packJoinedFieldItems(const QrMetaData<client::QueryResults>& rqr, uint16_t joinedNsId, size_t joinedField,
+												  const client::ResultSerializer::ItemParams& itemParams,
+												  const client::ResultSerializer::JoinedData& joinedData,
+												  std::vector<ItemRefCache>* storage, const joins::QueryJoinsTable& joinsTable) const {
+	LocalQueryResults qr;
+	const auto& joinedItems{joinedData[joinedField]};
+	for (const auto& joinedItemParams : joinedItems) {
+		packJoinedItem(rqr, joinedNsId, joinedItemParams, qr, storage);
+		if (!joinedItemParams.joined.empty()) {
+			// V1 joined items nsid is not set (always = 0).
+			auto joinedItemParamsWithNsId = joinedItemParams;
+			joinedItemParamsWithNsId.nsid = joinedNsId;
+			packItemParams(joinedItemParamsWithNsId, joinedItemParamsWithNsId.joined, rqr, storage, joinsTable);
+		}
+	}
+	assertrx(itemParams.nsid < rqr.NsJoinRes()->data.res.size());
+	rqr.NsJoinRes()->data.res[itemParams.nsid].Insert(itemParams.id, joinedNsId, joinedField, std::move(qr));
+}
+
+void QueryResults::Iterator::packItemParams(const client::ResultSerializer::ItemParams& itemParams,
+											const client::ResultSerializer::JoinedData& joinedData,
+											const QrMetaData<client::QueryResults>& rqr, std::vector<ItemRefCache>* storage,
+											const joins::QueryJoinsTable& joinsTable) const {
+	rqr.NsJoinRes()->data.PrepareForItem(itemParams);
+	for (size_t joinedField = 0; joinedField < joinedData.size(); ++joinedField) {
+		int joinedNsId = 0;
+		if (joinsTable.TryGetJoinedNsId(itemParams.nsid, joinedField, joinedNsId)) {
+			packJoinedFieldItems(rqr, joinedNsId, joinedField, itemParams, joinedData, storage, joinsTable);
+		}
+	}
+}
+
+joins::ItemIterator QueryResults::Iterator::getRemoteJoined(std::vector<ItemRefCache>* storage) const {
+	validateProxiedIterator();
+
+	auto rit = qr_->remote_[0]->it;
+	const auto& joinedData = rit.GetJoined();
+	if (joinedData.empty()) {
+		return joins::ItemIterator::CreateEmpty();
+	}
+	if (!qr_->qData_.has_value()) {
+		throw Error(errLogic, "Unable to init joined data without initial query");
+	}
+	const auto* joinsTable = qr_->qData_->JoinsTable();
+	if (!joinsTable) [[unlikely]] {
+		throw Error(errLogic, "Unable to init joined data without joins table");
+	}
+
+	auto& rqr = *qr_->remote_[0];
+	const auto& ritItemParams = rit.GetItemParams();
+	if (storage || !rqr.CheckIfNsJoinStorageHasSameIdx(idx_)) {
+		try {
+			rqr.ResetJoinStorage(idx_);
+
+			rqr.NsJoinRes()->data.res.SetJoinsTable(*joinsTable);
+			rqr.NsJoinRes()->data.PrepareForItem(ritItemParams);
+
+			packItemParams(ritItemParams, joinedData, rqr, storage, *joinsTable);
+		} catch (...) {
+			if (rqr.NsJoinRes()) {
+				rqr.NsJoinRes()->idx = -1;
+			}
+			throw;
+		}
+	}
+
+	return joins::ItemIterator(&(rqr.NsJoinRes()->data.res[ritItemParams.nsid]), ritItemParams.id);
+}
+
+joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>* storage) const {
 	if (qr_->type_ == Type::Local) {
 		assertrx_dbg(localIt_);
 		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 		return localIt_->GetJoined();
 	} else if (qr_->type_ == Type::SingleRemote) {
-		validateProxiedIterator();
-
-		auto rit = qr_->remote_[0]->it;
-		const auto& joinedData = rit.GetJoined();
-		if (!joinedData.size()) {
-			return joins::ItemIterator::CreateEmpty();
-		}
-		if (!qr_->qData_.has_value()) {
-			throw Error(errLogic, "Unable to init joined data without initial query");
-		}
-
-		auto& rqr = *qr_->remote_[0];
-		const auto& ritItemParams = rit.GetItemParams();
-		if (storage || !rqr.CheckIfNsJoinStorageHasSameIdx(idx_)) {
-			try {
-				rqr.ResetJoinStorage(idx_);
-				const auto& qData = qr_->qData_;
-				if (ritItemParams.nsid >= int(qData->joinedSize)) {
-					return reindexer::joins::ItemIterator::CreateEmpty();
-				}
-				rqr.NsJoinRes()->data.jr.SetItemsProcessorsCount(qData->joinedSize);
-
-				auto jField = qr_->GetJoinedField(ritItemParams.nsid);
-				for (size_t i = 0; i < joinedData.size(); ++i, ++jField) {
-					LocalQueryResults qrJoined;
-					const auto& joinedItems = joinedData[i];
-					for (const auto& itemData : joinedItems) {
-						ItemImpl itemimpl(rqr.qr.GetPayloadType(jField), rqr.qr.GetTagsMatcher(jField));
-						itemimpl.FromCJSON(itemData.data);
-
-						if (qrJoined.haveRank) {
-							qrJoined.AddItemRef(itemData.rank, itemData.id, itemimpl.Value(), itemData.nsid, true);
-						} else {
-							qrJoined.AddItemRef(itemData.id, itemimpl.Value(), itemData.nsid, true);
-						}
-						if (!storage) {
-							rqr.NsJoinRes()->data.joinedRawData.emplace_back(std::move(itemimpl));
-						} else {
-							if (qrJoined.haveRank) {
-								storage->emplace_back(itemData.id, RankT{}, itemData.nsid, std::move(itemimpl), true);
-							} else {
-								storage->emplace_back(itemData.id, itemData.nsid, std::move(itemimpl), true);
-							}
-						}
-					}
-					rqr.NsJoinRes()->data.jr.Insert(ritItemParams.id, i, std::move(qrJoined));
-				}
-			} catch (...) {
-				if (rqr.NsJoinRes()) {
-					rqr.NsJoinRes()->idx = -1;
-				}
-				throw;
-			}
-		}
-
-		return joins::ItemIterator(&(rqr.NsJoinRes()->data.jr), ritItemParams.id);
+		return getRemoteJoined(storage);
 	}
 	// Distributed queries can not have joins
 	return reindexer::joins::ItemIterator::CreateEmpty();
 }
 
+joins::JoinedItemContext QueryResults::Iterator::GetJoinedContext(std::vector<ItemRefCache>* storage) const {
+	if (qr_->type_ == Type::Local) {
+		assertrx_dbg(localIt_);
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+		const auto* lqr{localIt_->Owner()};
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+		return joins::JoinedItemContext{localIt_->GetJoined(), &lqr->Joined(), *lqr};
+	} else if (qr_->type_ == Type::SingleRemote) {
+		const auto& rqr{*qr_->remote_[0]};
+		const auto& nsJoinRes{rqr.NsJoinRes()};
+		return joins::JoinedItemContext{getRemoteJoined(storage), nsJoinRes ? &nsJoinRes->data.res : nullptr, rqr.qr};
+	}
+	// Distributed queries can not have joins
+	return joins::JoinedItemContext{reindexer::joins::ItemIterator::CreateEmpty(), nullptr};
+}
+
 template <>
-QueryResults::ItemDataStorage<QueryResults::ItemRefCache>& QueryResults::QrMetaData<client::QueryResults>::ItemRefData(int64_t idx) {
+QueryResults::ItemDataStorage<ItemRefCache>& QueryResults::QrMetaData<client::QueryResults>::ItemRefData(int64_t idx) {
 	ItemImpl itemimpl(qr.GetPayloadType(0), qr.GetTagsMatcher(0));
 	const bool convertViaJSON = !hasCompatibleTm || !qr.IsCJSON();
 	Error err = fillItemImpl(it, itemimpl, convertViaJSON);

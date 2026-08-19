@@ -14,10 +14,11 @@ namespace reindexer_tests {
 namespace sq8_test {
 
 #if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(_GLIBCXX_DEBUG) || defined(RX_WITH_STDLIB_DEBUG)
-static constexpr inline bool kIsRelease = false;
+#define SQ8_TEST_IS_RELEASE 0
 #else
-static constexpr inline bool kIsRelease = true;
+#define SQ8_TEST_IS_RELEASE 1
 #endif
+static constexpr inline bool kIsRelease = SQ8_TEST_IS_RELEASE;
 
 constexpr static inline std::optional<float> kQuantile = kIsRelease ? std::nullopt : std::optional(0.995f);
 

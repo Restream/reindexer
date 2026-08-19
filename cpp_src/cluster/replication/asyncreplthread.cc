@@ -25,8 +25,7 @@ Error AsyncThreadParam::CheckReplicationMode(uint32_t nodeId) const noexcept {
 							 RaftInfo::RoleToStr(rp.first.role), RaftInfo::RoleToStr(rp.second.role));
 			}
 		}
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return Error();
 }
 

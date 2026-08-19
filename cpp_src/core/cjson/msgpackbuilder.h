@@ -6,8 +6,8 @@
 #include "core/enums.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
-#include "vendor/msgpack/msgpack.h"
 #include "tools/unaligned.h"
+#include "vendor/msgpack/msgpack.h"
 
 namespace gason {
 struct JsonNode;
@@ -37,7 +37,7 @@ public:
 	void Raw(std::string_view) noexcept {}
 
 	template <typename N, typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(N tagName, unaligned::view<T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		skipTag();
 		packKeyName(tagName);

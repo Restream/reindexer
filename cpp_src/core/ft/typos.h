@@ -40,12 +40,12 @@ public:
 	TyposVec& operator=(const TyposVec& o) noexcept = default;
 
 private:
-	value_type arr_[kMaxTyposInWord];
+	value_type arr_[kMaxTyposInWord]{};
 	size_type size_ = 0;
 };
 
-using TyposCallBack = std::function<void(std::wstring_view typo, const TyposVec& positions, std::wstring_view originalWord)>;
+using TyposCallBack = std::function<void(std::u16string_view typo, const TyposVec& positions, std::u16string_view originalWord)>;
 
-void mktypos(const std::wstring& word, size_t maxTyposInWord, uint8_t maxTyposLen, const TyposCallBack& callback, std::wstring& buf);
+void mktypos(const std::u16string& word, size_t maxTyposInWord, uint8_t maxTyposLen, const TyposCallBack& callback, std::u16string& buf);
 
 }  // namespace reindexer

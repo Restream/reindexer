@@ -89,6 +89,7 @@ public:
 
 	int GetFormat() const noexcept { return results_.GetFormat(); }
 	int GetFlags() const noexcept { return results_.GetFlags(); }
+	QueryFormat GetQueryFormat() const noexcept { return results_.GetQueryFormat(); }
 	bool IsInLazyMode() const noexcept { return results_.IsInLazyMode(); }
 	bool IsJSON() const noexcept { return results_.IsJSON(); }
 	bool IsCJSON() const noexcept { return results_.IsCJSON(); }

@@ -35,6 +35,8 @@ void ApiTvSimpleSparse::RegisterAllCases() {
 
 	Register("QueryJoinByValues", &ApiTvSimpleSparse::QueryInnerJoinPreselectByValues, this);
 	Register("QueryInnerJoinNoPreselect", &ApiTvSimpleSparse::QueryInnerJoinNoPreselect, this);
+	Register("QueryLeftNestedJoin", &ApiTvSimpleSparse::QueryLeftNestedJoin, this);
+	Register("QueryInnerNestedJoin", &ApiTvSimpleSparse::QueryInnerNestedJoin, this);
 
 	Register("Query4CondIsNULL10", &ApiTvSimpleSparse::Query4CondIsNULL10, this);
 	Register("Query4CondIsNULL33", &ApiTvSimpleSparse::Query4CondIsNULL33, this);
@@ -210,6 +212,34 @@ void ApiTvSimpleSparse::QueryInnerJoinNoPreselect(benchmark::State& state) {
 	const auto q = Query(nsdef_.name)
 					   .Where("year", CondRange, {2010, 2030})
 					   .LeftJoin("location", "location", CondSet, std::move(q4join))
+					   .Sort("year", false)
+					   .Limit(20);
+	benchQuery(q, state);
+}
+
+void ApiTvSimpleSparse::QueryLeftNestedJoin(benchmark::State& state) {
+	auto q4nestedJoin =
+		Query(kJoinNamespace).Where("location", CondSet, {"mos", "dv", "sib", "ural"}).Where("id", CondLt, kPriceIdStart + kPriceIdRegion);
+	auto q4join = Query(kJoinNamespace)
+					  .Where("device", CondSet, {"ottstb", "smarttv", "stb"})
+					  .LeftJoin("parent_id", "id", CondEq, std::move(q4nestedJoin));
+	const auto q = Query(nsdef_.name)
+					   .Where("year", CondRange, {2010, 2030})
+					   .LeftJoin("location", "location", CondSet, std::move(q4join))
+					   .Sort("year", false)
+					   .Limit(20);
+	benchQuery(q, state);
+}
+
+void ApiTvSimpleSparse::QueryInnerNestedJoin(benchmark::State& state) {
+	auto q4nestedJoin =
+		Query(kJoinNamespace).Where("location", CondSet, {"mos", "dv", "sib", "ural"}).Where("id", CondLt, kPriceIdStart + kPriceIdRegion);
+	auto q4join = Query(kJoinNamespace)
+					  .Where("device", CondSet, {"ottstb", "smarttv", "stb"})
+					  .InnerJoin("parent_id", "id", CondEq, std::move(q4nestedJoin));
+	const auto q = Query(nsdef_.name)
+					   .Where("year", CondRange, {2010, 2030})
+					   .InnerJoin("location", "location", CondSet, std::move(q4join))
 					   .Sort("year", false)
 					   .Limit(20);
 	benchQuery(q, state);

@@ -443,8 +443,7 @@ Error ReplThread<ClusterThreadParam>::syncShardingConfig(Node& node) noexcept {
 				.ShardingControlRequest({sharding::ControlCmdType::ApplyLeaderConfig, config, std::move(sourceId)}, res);
 		}
 		return Error(errTimeout, "{}:{} DB role switch waiting timeout", serverId_, node.uid);
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 template <typename BehaviourParamT>
@@ -978,6 +977,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 						nsData.latestLsn.NsVersion(), nsData.latestLsn.LSN());
 					std::ignore = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
 															 it.EmitterServerID() == node.serverId, Error());
+					bhvParam_.OnUpdateSucceed(node.uid, updatePtr->ID() + offset);
 					continue;
 				}
 				if (nsData.tx.IsFree() && it.IsRequiringTx()) {

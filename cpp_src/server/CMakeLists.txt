@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.18)
 project(reindexer_server_library)
 
 set (SWAGGER_VERSION "5.32.2")
-set (GH_FACE_VERSION "5.15.0")
+set (GH_FACE_VERSION "5.16.0")
 set (GH_FACE_TAG "v${GH_FACE_VERSION}")
 set (TARGET reindexer_server_library)
 set (SERVER_LIB_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE)
@@ -191,35 +191,6 @@ list(APPEND REINDEXER_LIBRARIES m)
 add_library(${TARGET} STATIC ${SRCS} ${VNDR_SRCS})
 include_directories(${PROJECT_SOURCE_DIR})
 include_directories(${PROJECT_SOURCE_DIR}/vendor)
-
-if(ENABLE_PCH)
-  set(PREC_HDRS
-    <vector>
-    <map>
-    <unordered_map>
-    <set>
-    <unordered_set>
-    <deque>
-    <memory>
-    <string>
-    <string_view>
-    <optional>
-    <chrono>
-    <functional>
-    <variant>
-    <thread>
-    <chrono>
-    <atomic>
-
-    ${REINDEXER_SOURCE_PATH}/estl/h_vector.h
-    ${REINDEXER_SOURCE_PATH}/core/reindexer.h
-    ${REINDEXER_SOURCE_PATH}/core/query/query.h
-    ${REINDEXER_SOURCE_PATH}/core/queryresults/queryresults.h
-    ${REINDEXER_SOURCE_PATH}/core/item.h
-  )
-
-  target_precompile_headers(${TARGET} PRIVATE ${PREC_HDRS})
-endif()
 
 if (LINK_RESOURCES)
     add_dependencies(${TARGET} reindexer_server_resources)

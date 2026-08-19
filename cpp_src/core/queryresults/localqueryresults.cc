@@ -9,11 +9,16 @@
 #include "core/id_type.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespace.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/item_context.h"
+#include "core/nsselecter/joins/iterators.h"
+#include "core/nsselecter/joins/results.h"
 #include "estl/gift_str.h"
+#include "itemrefcache.h"
 #include "server/outputparameters.h"
 #include "tools/catch_and_return.h"
 #include "vendor/gason/gason.h"
+
+#include <forward_list>
 
 namespace reindexer {
 
@@ -61,17 +66,61 @@ static_assert(alignof(LocalQueryResults::Context) <= LocalQueryResults::kAlignCo
 			  "LocalQueryResults::kAlignContext must be >= alignof(Context)");
 #endif	// REINDEX_DEBUG_CONTAINERS
 
-LocalQueryResults::LocalQueryResults() = default;
+LocalQueryResults::LocalQueryResults() noexcept = default;
 LocalQueryResults::LocalQueryResults(LocalQueryResults&& obj) noexcept = default;
 
 LocalQueryResults::LocalQueryResults(const ItemRefVector::ConstIterator& begin, const ItemRefVector::ConstIterator& end)
-	: items_(begin, end) {}
+	: items_{begin, end} {}
 
 LocalQueryResults& LocalQueryResults::operator=(LocalQueryResults&& obj) noexcept = default;
 
 LocalQueryResults::~LocalQueryResults() = default;
 
+void LocalQueryResults::SetJoined(const joins::Results& joined) {
+	joined_.reset();
+	joinedRef_ = const_cast<joins::Results*>(&joined);
+}
+
+const joins::Results& LocalQueryResults::Joined() const noexcept {
+	if (joinedRef_) {
+		return *joinedRef_;
+	}
+	if (joined_) {
+		return *joined_;
+	}
+	static joins::Results empty;
+	return empty;
+}
+
+joins::Results& LocalQueryResults::Joined() noexcept {
+	if (joinedRef_) {
+		return *joinedRef_;
+	}
+	if (!joined_) {
+		joined_ = std::make_unique<joins::Results>();
+	}
+	return *joined_;
+}
+
 void LocalQueryResults::Clear() { *this = LocalQueryResults(); }
+
+void LocalQueryResults::Swap(LocalQueryResults& other) noexcept {
+	items_.Swap(other.items_);
+	rawDataHolder_.swap(other.rawDataHolder_);
+	aggregationResults.swap(other.aggregationResults);
+	std::swap(totalCount, other.totalCount);
+	std::swap(haveRank, other.haveRank);
+	std::swap(nonCacheableData, other.nonCacheableData);
+	std::swap(needOutputRank, other.needOutputRank);
+	std::swap(outputShardId, other.outputShardId);
+	ctxs.swap(other.ctxs);
+	std::swap(joined_, other.joined_);
+	std::swap(joinedRef_, other.joinedRef_);
+	nsData_.swap(other.nsData_);
+	stringsHolder_.swap(other.stringsHolder_);
+	std::swap(floatVectorsHolder_, other.floatVectorsHolder_);
+	explainResults.swap(other.explainResults);
+}
 
 // Used to save strings when converting the client result to the server.
 // The server item is created, inserted into the result and deleted
@@ -85,15 +134,16 @@ std::string LocalQueryResults::Dump() const {
 			buf += ",";
 		}
 		buf += std::to_string(items_.GetItemRef(i).Id().ToNumber());
-		if (joined_.empty()) {
+		if (Joined().empty()) {
 			continue;
 		}
 		ConstIterator itemIt{*this, i};
 		auto joinIt = itemIt.GetJoined();
-		if (joinIt.getJoinedItemsCount() > 0) {
+		const auto joinedItemsCount{joinIt.GetItemsCount()};
+		if (joinedItemsCount > 0) {
 			buf += "[";
-			for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt) {
-				if (fieldIt != joinIt.begin()) {
+			for (auto fieldIt = joinIt.Begin(); fieldIt != joinIt.End(); ++fieldIt) {
+				if (fieldIt != joinIt.Begin()) {
 					buf += ";";
 				}
 				for (int j = 0; j < fieldIt.ItemsCount(); ++j) {
@@ -128,81 +178,124 @@ NsShardsIncarnationTags LocalQueryResults::GetIncarnationTags() const {
 	return ret;
 }
 
-int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
-	int ctxIndex = joined_.size();
-	for (int ns = 0; ns < nsid; ++ns) {
-		ctxIndex += joined_[ns].GetJoinItemsProcessorsCount();
-	}
-	return ctxIndex;
+int LocalQueryResults::GetJoinedNsCtxIndex(int nsid, int joinedField) const noexcept {
+	const auto& joinsTable{Joined().GetJoinsTable()};
+	assertrx(joinsTable.has_value());
+	return joinsTable->GetJoinedNsId(nsid, joinedField);
 }
 
-class [[nodiscard]] LocalQueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
+template <typename Builder>
+class [[nodiscard]] LocalQueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins<Builder> {
 public:
-	EncoderDatasourceWithJoins(const joins::ItemIterator& joinedItemIt, const ContextsVector& ctxs,
-							   ConstIterator::NsNamesCache& nsNamesCache, int ctxIdx, size_t nsid, size_t joinedCount)
-		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), nsNamesCache_(nsNamesCache), ctxId_(ctxIdx), nsid_{nsid} {
+	EncoderDatasourceWithJoins(const joins::Results& joined, const joins::ItemIterator& joinedItemIt, const ContextsVector& ctxs,
+							   ConstIterator::NsNamesCache& nsNamesCache, size_t nsid, bool needOutputRank, int outputShardId)
+		: joined_(joined),
+		  joinsTable_(joined.GetJoinsTable().value()),
+		  joinedItemIt_(joinedItemIt),
+		  ctxs_(ctxs),
+		  nsNamesCache_(nsNamesCache),
+		  nsid_(nsid),
+		  needOutputRank_(needOutputRank),
+		  dsShardId_(outputShardId) {
 		if (nsNamesCache.size() <= nsid_) {
 			nsNamesCache.resize(nsid_ + 1);
 		}
-		if (nsNamesCache[nsid_].size() < joinedCount) {
+		const size_t joinedFields{static_cast<size_t>(joinedItemIt_.GetFieldsCount())};
+		if (nsNamesCache[nsid_].size() < joinedFields) {
 			nsNamesCache[nsid_].clear();
-			nsNamesCache[nsid_].reserve(joinedCount);
+			nsNamesCache[nsid_].reserve(joinedFields);
 			fast_hash_map<std::string_view, int> namesCounters;
-			assertrx_dbg(ctxs_.size() >= ctxId_ + joinedCount);
-			for (size_t i = ctxId_, end = ctxId_ + joinedCount; i < end; ++i) {
-				const std::string& n = ctxs_[i].type_.Name();
-				if (auto [it, emplaced] = namesCounters.emplace(n, -1); !emplaced) {
+			for (size_t i = 0; i < joinedFields; ++i) {
+				const auto& name{ctxs_[joinsTable_.GetJoinedNsId(nsid_, i)].type_.Name()};
+				if (auto [it, emplaced] = namesCounters.emplace(name, -1); !emplaced) {
 					--it->second;
 				}
 			}
-			for (size_t i = ctxId_, end = ctxId_ + joinedCount; i < end; ++i) {
-				const std::string& n = ctxs_[i].type_.Name();
-				int& count = namesCounters[n];
+			for (size_t i = 0; i < joinedFields; ++i) {
+				const auto& name{ctxs_[joinsTable_.GetJoinedNsId(nsid_, i)].type_.Name()};
+				auto& count{namesCounters[name]};
 				if (count < 0) {
 					if (count == -1) {
-						nsNamesCache[nsid_].emplace_back(n);
+						nsNamesCache[nsid_].emplace_back(name);
 					} else {
 						count = 1;
-						nsNamesCache[nsid_].emplace_back("1_" + n);
+						nsNamesCache[nsid_].emplace_back("1_" + name);
 					}
 				} else {
-					nsNamesCache[nsid_].emplace_back(std::to_string(++count) + '_' + n);
+					nsNamesCache[nsid_].emplace_back(std::to_string(++count) + '_' + name);
 				}
 			}
 		}
 	}
 
-	size_t GetJoinedRowsCount() const noexcept override { return joinedItemIt_.getJoinedFieldsCount(); }
-	size_t GetJoinedRowItemsCount(size_t rowId) const override final {
-		auto fieldIt = joinedItemIt_.at(rowId);
+	h_vector<IAdditionalDatasource<Builder>*, 2> BuildJoinedFieldDatasources(size_t joinedField, size_t itemIdx) override {
+		const size_t joinedNsId{static_cast<size_t>(joinsTable_.GetJoinedNsId(nsid_, joinedField))};
+		if (joinedNsId < joined_.size()) {
+			assertrx(static_cast<int>(joinedField) < joinedItemIt_.GetFieldsCount());
+			const auto joinedFieldIt{joinedItemIt_.At(joinedField)};
+			const auto& itemref{joinedFieldIt[itemIdx]};
+
+			joins::ItemIterator joinedItemIt{joins::ItemIterator{&joined_[joinedNsId], itemref.Id()}};
+			const auto joinedItemsCount{joinedItemIt.GetItemsCount()};
+			if (joinedItemsCount > 0) {
+				datasourcesWithJoins_.emplace_front(joined_, joinedItemIt, ctxs_, nsNamesCache_, joinedNsId, needOutputRank_,
+													dsShardId_.GetShardId());
+
+				h_vector<IAdditionalDatasource<Builder>*, 2> datasources;
+				if (dsShardId_.GetShardId() > 0) {
+					datasources.emplace_back(&dsShardId_);
+				}
+
+				if (needOutputRank_) {
+					additionalDatasources_.emplace_front(
+						AdditionalDatasource<Builder>{joinedFieldIt.GetItemRefRanked(itemIdx).Rank(), &datasourcesWithJoins_.front()});
+				} else {
+					additionalDatasources_.emplace_front(AdditionalDatasource<Builder>{&datasourcesWithJoins_.front()});
+				}
+
+				datasources.emplace_back(&additionalDatasources_.front());
+				return datasources;
+			}
+		}
+		return {};
+	}
+
+	size_t GetJoinedFieldsCount() const noexcept override { return joinedItemIt_.GetFieldsCount(); }
+	size_t GetJoinedRowItemsCount(size_t joinedField) const override final {
+		auto fieldIt{joinedItemIt_.At(joinedField)};
 		return fieldIt.ItemsCount();
 	}
-	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) override {
-		auto fieldIt = joinedItemIt_.at(rowid);
-		const ItemRef& itemRef = fieldIt[plIndex];
-		const Context& ctx = ctxs_[ctxId_ + rowid];
+	ConstPayload GetJoinedItemPayload(size_t joinedField, size_t itemIdx) override {
+		auto fieldIt{joinedItemIt_.At(joinedField)};
+		const ItemRef& itemRef{fieldIt[itemIdx]};
+		const Context& ctx{getJoinedFieldCtx(joinedField)};
 		return ConstPayload(ctx.type_, itemRef.Value());
 	}
-	const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) & noexcept override {
-		const Context& ctx = ctxs_[ctxId_ + rowid];
-		return ctx.tagsMatcher_;
+	const TagsMatcher& GetJoinedItemTagsMatcher(size_t joinedField) & noexcept override {
+		return getJoinedFieldCtx(joinedField).tagsMatcher_;
 	}
-	const FieldsFilter& GetJoinedItemFieldsFilter(size_t rowid) & noexcept override {
-		const Context& ctx = ctxs_[ctxId_ + rowid];
-		return ctx.fieldsFilter_;
+	const FieldsFilter& GetJoinedItemFieldsFilter(size_t joinedField) & noexcept override {
+		return getJoinedFieldCtx(joinedField).fieldsFilter_;
 	}
-	const std::string& GetJoinedItemNamespace(size_t rowid) & noexcept override { return nsNamesCache_[nsid_][rowid]; }
+	const std::string& GetJoinedItemNamespace(size_t joinedField) & noexcept override { return nsNamesCache_[nsid_][joinedField]; }
 
 	auto GetJoinedItemNamespace(size_t) && = delete;
 	auto GetJoinedItemTagsMatcher(size_t) && = delete;
 	auto GetJoinedItemFieldsFilter(size_t) && = delete;
 
 private:
-	const joins::ItemIterator& joinedItemIt_;
+	const Context& getJoinedFieldCtx(size_t joinedField) const { return ctxs_[joinsTable_.GetJoinedNsId(nsid_, joinedField)]; }
+
+	const joins::Results& joined_;
+	const joins::QueryJoinsTable& joinsTable_;
+	const joins::ItemIterator joinedItemIt_;
 	const ContextsVector& ctxs_;
-	const ConstIterator::NsNamesCache& nsNamesCache_;
-	const int ctxId_;
+	ConstIterator::NsNamesCache& nsNamesCache_;
 	const size_t nsid_;
+	const bool needOutputRank_;
+	AdditionalDatasourceShardId<Builder> dsShardId_;
+	std::forward_list<EncoderDatasourceWithJoins> datasourcesWithJoins_;
+	std::forward_list<AdditionalDatasource<Builder>> additionalDatasources_;
 };
 
 void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::NsNamesCache& nsNamesCache) const {
@@ -212,27 +305,30 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::Ns
 		throw Error(errAssert, "Do not have corresponding context for nsid: {} in LocalQueryResults; {} contextes total", itemRef.Nsid(),
 					ctxs.size());
 	}
-	auto& ctx = ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
 		ser << "{}";
 		return;
 	}
+
+	auto& ctx{ctxs[itemRef.Nsid()]};
 	ConstPayload pl(ctx.type_, itemRef.Value());
 	JsonEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 	JsonBuilder builder(ser, ObjType::TypePlain);
-	if (!joined_.empty()) {
-		joins::ItemIterator itemIt = (begin() + idx).GetJoined();
-		if (itemIt.getJoinedItemsCount() > 0) {
-			EncoderDatasourceWithJoins joinsDs(itemIt, ctxs, nsNamesCache, GetJoinedNsCtxIndex(itemRef.Nsid()), itemRef.Nsid(),
-											   joined_[itemRef.Nsid()].GetJoinItemsProcessorsCount());
+	const auto& joined{Joined()};
+	if (!joined.empty()) {
+		joins::ItemIterator itemIt{(begin() + idx).GetJoined()};
+		const auto joinedItemsCount{itemIt.GetItemsCount()};
+		if (joinedItemsCount > 0) {
+			EncoderDatasourceWithJoins<JsonBuilder> joinsDs(joined, itemIt, ctxs, nsNamesCache, itemRef.Nsid(), needOutputRank,
+															outputShardId);
 			h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
 			AdditionalDatasource ds =
 				needOutputRank ? AdditionalDatasource(items_.GetItemRefRanked(idx).Rank(), &joinsDs) : AdditionalDatasource(&joinsDs);
-			dss.push_back(&ds);
-			AdditionalDatasourceShardId dsShardId(outputShardId);
+			dss.emplace_back(&ds);
+			AdditionalDatasourceShardId<JsonBuilder> dsShardId(outputShardId);
 			if (outputShardId >= 0) {
-				dss.push_back(&dsShardId);
+				dss.emplace_back(&dsShardId);
 			}
 			encoder.Encode(pl, builder, dss);
 
@@ -242,12 +338,12 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::Ns
 
 	h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
 
-	std::optional<AdditionalDatasource> ds;
+	std::optional<AdditionalDatasource<JsonBuilder>> ds;
 	if (needOutputRank) {
-		ds = AdditionalDatasource{items_.GetItemRefRanked(idx).Rank(), nullptr};
+		ds = AdditionalDatasource<JsonBuilder>{items_.GetItemRefRanked(idx).Rank(), nullptr};
 		dss.push_back(&*ds);
 	}
-	AdditionalDatasourceShardId dsShardId(outputShardId);
+	AdditionalDatasourceShardId<JsonBuilder> dsShardId(outputShardId);
 	if (outputShardId >= 0) {
 		dss.push_back(&dsShardId);
 	}
@@ -256,8 +352,14 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::Ns
 }
 
 template <typename QR>
-joins::ItemIterator LocalQueryResults::IteratorImpl<QR>::GetJoined() {
+joins::ItemIterator LocalQueryResults::IteratorImpl<QR>::GetJoined() const {
 	return reindexer::joins::ItemIterator::CreateFrom(*this);
+}
+
+template <typename QR>
+joins::JoinedItemContext LocalQueryResults::IteratorImpl<QR>::GetJoinedContext(std::vector<ItemRefCache>*) const {
+	const auto* qr{Owner()};
+	return joins::JoinedItemContext{GetJoined(), &qr->Joined(), *qr};
 }
 
 template <typename QR>
@@ -399,11 +501,12 @@ Error LocalQueryResults::IteratorImpl<QR>::GetCSV(WrSerializer& ser, CsvOrdering
 		CsvBuilder builder(ser, ordering);
 		CsvEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 
-		if (!qr_->joined_.empty()) {
+		if (!qr_->Joined().empty()) {
 			joins::ItemIterator itemIt = (qr_->begin() + idx_).GetJoined();
-			if (itemIt.getJoinedItemsCount() > 0) {
-				EncoderDatasourceWithJoins joinsDs(itemIt, qr_->ctxs, nsNamesCache, qr_->GetJoinedNsCtxIndex(itemRef.Nsid()),
-												   itemRef.Nsid(), qr_->joined_[itemRef.Nsid()].GetJoinItemsProcessorsCount());
+			const auto joinedItemsCount{itemIt.GetItemsCount()};
+			if (joinedItemsCount > 0) {
+				EncoderDatasourceWithJoins<CsvBuilder> joinsDs(qr_->Joined(), itemIt, qr_->ctxs, nsNamesCache, itemRef.Nsid(),
+															   qr_->needOutputRank, qr_->outputShardId);
 				h_vector<IAdditionalDatasource<CsvBuilder>*, 2> dss;
 				AdditionalDatasourceCSV ds(&joinsDs);
 				dss.push_back(&ds);
@@ -413,8 +516,7 @@ Error LocalQueryResults::IteratorImpl<QR>::GetCSV(WrSerializer& ser, CsvOrdering
 		}
 
 		encoder.Encode(pl, builder);
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 	return errOK;
 }
 

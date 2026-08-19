@@ -5,6 +5,7 @@
 #include <iterator>
 #include "core/enums.h"
 #include "core/id_type.h"
+#include "core/nsselecter/comparator/const.h"
 #include "core/selectkeyresult.h"
 #include "estl/concepts.h"
 #include "estl/heapify.h"
@@ -176,9 +177,8 @@ public:
 
 		if (type_ == Type::UnbuiltSortOrdersIndex) {
 			assertrx_dbg(begin()->collectionType_ == SingleSelectKeyResult::Collection::SingleIterator);
-			auto& fwdIter = begin()->idxFwdIter_;
-			if (fwdIter->Value() == rowId) {
-				fwdIter->ExcludeLastSet();
+			if (lastVal_ == rowId) {
+				begin()->idxFwdIter_->ExcludeLastSet();
 			}
 		} else if (!End() && lastPos_ != size() && lastVal_ == rowId) {
 			auto& curRes = operator[](lastPos_);
@@ -227,16 +227,16 @@ public:
 			return -1;
 		}
 		if (forcedFirst_) {
-			return -static_cast<double>(GetMaxIterations());
+			return -static_cast<double>(EstimateMaxIterations());
 		}
 		double result{0.0};
 		const auto sz = size();
 		if (distinct_) {
-			result += sz;
+			result += comparators::kDistinctCostRatio * static_cast<double>(EstimateMaxIterations()) * sz;
 		} else if (type_ != Type::SingleIdSetWithDeferedSort && type_ != Type::RevSingleIdSetWithDeferedSort && !deferedExplicitSort) {
-			result += static_cast<double>(GetMaxIterations()) * sz;
+			result += static_cast<double>(EstimateMaxIterations()) * sz;
 		} else {
-			result += static_cast<double>(CostWithDefferedSort(sz, GetMaxIterations(), expectedIterations));
+			result += static_cast<double>(CostWithDefferedSort(sz, EstimateMaxIterations(), expectedIterations));
 		}
 		return isNotOperation_ ? expectedIterations + result : result;
 	}
@@ -561,10 +561,9 @@ private:
 	// B-tree forward iterator next implementation
 	bool nextUnbuiltSortOrders() noexcept {
 		assertrx_dbg(begin()->collectionType_ == SingleSelectKeyResult::Collection::SingleIterator);
-		auto& iter = *begin()->idxFwdIter_;
-		const bool res = iter.Next();
-		lastVal_ = iter.Value();
-		return res;
+		auto [ok, rowId] = begin()->idxFwdIter_->Next();
+		lastVal_ = rowId;
+		return ok;
 	}
 	// Unsorted next implementation
 	bool nextUnsorted() noexcept {
@@ -594,7 +593,7 @@ private:
 	/// Performs ID sets merge and sort in case, when this sort was deferred earlier and still effective with current maxIterations value
 	bool applyDeferedSort(int maxIterations) {
 		if (deferedExplicitSort && maxIterations > 0 && !distinct_) {
-			const auto idsCount = GetMaxIterations();
+			const auto idsCount = EstimateMaxIterations();
 			if (IsGenericSortRecommended(size(), idsCount, size_t(maxIterations))) {
 				[[maybe_unused]] auto merged =
 					MergeIdsets(SelectKeyResult::MergeOptions{.genericSort = true, .shrinkResult = false}, idsCount);

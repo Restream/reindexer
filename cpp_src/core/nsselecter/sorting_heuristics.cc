@@ -1,4 +1,5 @@
 #include "sorting_heuristics.h"
+#include <numeric>
 #include "core/query/queryentry.h"
 #include "selectctx.h"
 #include "selectiteratorcontainer.h"
@@ -6,20 +7,62 @@ namespace reindexer::sorting_heuristics {
 
 namespace {
 
+RX_ALWAYS_INLINE bool isIsolatedEntry(OpType op, bool nextIsOr) noexcept { return op == OpAnd && !nextIsOr; }
+
+RX_ALWAYS_INLINE bool isIsolatedEntry(const QueryEntries& qentries, size_t i, size_t next) noexcept {
+	return isIsolatedEntry(qentries.GetOperation(i), next != qentries.Size() && qentries.GetOperation(next) == OpOr);
+}
+
+enum class [[nodiscard]] DistinctOnSortIndex : uint8_t {
+	None = 0,
+	Unordered,	// Distinct==sort, unordered condition
+	Ordered,	// ordered Distinct==sort with fully packed SelectKey
+	WideRange,	// ordered Distinct==sort, SelectKey not fully packed
+};
+
 struct [[nodiscard]] CostCalcResults {
 	size_t expectedMaxIters;
 	std::optional<size_t> bestDistinctUniques;
+	DistinctOnSortIndex distinctOnSortIndex = DistinctOnSortIndex::None;
 };
+
+bool hasCompletePackedKeys(const SelectKeyResults& results) {
+	return std::visit(overloaded{[](const SelectKeyResultsVector& selRes) {
+									 if (selRes.empty()) {
+										 return false;
+									 }
+									 for (const SelectKeyResult& res : selRes) {
+										 if (!res.GetPackedKeysCount()) {
+											 return false;
+										 }
+									 }
+									 return true;
+								 },
+								 [](const auto&) { return false; }},
+					  results.AsVariant());
+}
 
 struct [[nodiscard]] FoundIndexInfo {
 	enum class [[nodiscard]] ConditionType { Incompatible = 0, Compatible = 1 };
 
-	FoundIndexInfo() noexcept : index(nullptr), size(0), isFitForSortOptimization(0) {}
-	FoundIndexInfo(const Index* i, ConditionType ct) noexcept : index(i), size(i->Size()), isFitForSortOptimization(unsigned(ct)) {}
+	FoundIndexInfo() noexcept
+		: index(nullptr),
+		  entry(nullptr),
+		  estimate{.keys = 0, .ids = 0, .indexSize = 0, .complete = false},
+		  isFitForSortOptimization(false),
+		  scoreByKeys(false) {}
+	FoundIndexInfo(const Index* i, const QueryEntry* e, ConditionType ct) noexcept
+		: index(i),
+		  entry(e),
+		  estimate{.keys = 0, .ids = 0, .indexSize = i->Size(), .complete = false},
+		  isFitForSortOptimization(ct == ConditionType::Compatible),
+		  scoreByKeys(false) {}
 
 	const Index* index;
-	uint64_t size : 63;
-	uint64_t isFitForSortOptimization : 1;
+	const QueryEntry* entry;
+	Index::OrderedConditionEstimate estimate;
+	bool isFitForSortOptimization;
+	bool scoreByKeys;
 };
 
 class [[nodiscard]] CostCalculator {
@@ -28,7 +71,6 @@ public:
 	void BeginSequence() noexcept {
 		isInSequence_ = true;
 		hasInappositeEntries_ = false;
-		onlyTargetIdxInSequence_ = true;
 		curMaxIters_ = 0;
 	}
 	void EndSequence() noexcept {
@@ -36,28 +78,37 @@ public:
 			expectedMaxIters_ = std::min(curMaxIters_, expectedMaxIters_);
 		}
 		isInSequence_ = false;
-		onlyTargetIdxInSequence_ = true;
 		curMaxIters_ = 0;
 	}
 	bool IsInOrSequence() const noexcept { return isInSequence_; }
-	void Add(const SelectKeyResults& results, bool isTargetSortIndex, IsDistinct distinct, const Index& idx) {
-		onlyTargetIdxInSequence_ = onlyTargetIdxInSequence_ && isTargetSortIndex;
-		Add(results, distinct, idx);
-	}
-	void Add(const SelectKeyResults& results, IsDistinct distinct, const Index& idx) {
+	void Add(const SelectKeyResults& results, IsDistinct distinct = IsDistinct_False) {
 		std::visit(
 			overloaded{
 				[&](const SelectKeyResultsVector& selRes) {
-					size_t cost = 0;
-					for (const SelectKeyResult& res : selRes) {
-						cost += res.GetMaxIterations(expectedMaxIters_);
-					}
+					const size_t cost = std::accumulate(selRes.begin(), selRes.end(), size_t{0},
+														[limit = expectedMaxIters_](size_t c, const SelectKeyResult& res) noexcept {
+															return c + res.EstimateMaxIterations(limit);
+														});
 					if (isInSequence_) {
 						curMaxIters_ += cost;
 					} else {
 						expectedMaxIters_ = std::min(expectedMaxIters_, cost);
+						// Prefer key count already materialised by SelectKey (one SingleSelectKeyResult per btree key
+						// when Distinct packed explicit idsets). Avoids a second EstimateOrderedCondition walk.
+						// GetPackedKeysCount is nullopt for SingleIterator / Range — do not treat size() as uniques.
 						if (distinct) {
-							bestDistinctUniqueKeys_ = std::min(bestDistinctUniqueKeys_, idx.Size());
+							size_t packedKeys = 0;
+							for (const SelectKeyResult& res : selRes) {
+								const auto keys = res.GetPackedKeysCount();
+								if (!keys) {
+									packedKeys = 0;
+									break;
+								}
+								packedKeys += *keys;
+							}
+							if (packedKeys > 0) {
+								bestDistinctUniqueKeys_ = std::min(bestDistinctUniqueKeys_, packedKeys);
+							}
 						}
 					}
 				},
@@ -72,6 +123,7 @@ public:
 				   ? CostCalcResults{.expectedMaxIters = expectedMaxIters_, .bestDistinctUniques = std::nullopt}
 				   : CostCalcResults{.expectedMaxIters = expectedMaxIters_, .bestDistinctUniques = bestDistinctUniqueKeys_};
 	}
+	bool IsExhausted() const noexcept { return expectedMaxIters_ == 0; }
 	void MarkInapposite() noexcept { hasInappositeEntries_ = true; }
 	bool OnNewEntry(const QueryEntries& qentries, size_t i, size_t next) {
 		const OpType op = qentries.GetOperation(i);
@@ -105,7 +157,6 @@ public:
 
 private:
 	bool isInSequence_ = false;
-	bool onlyTargetIdxInSequence_ = true;
 	bool hasInappositeEntries_ = false;
 	size_t curMaxIters_ = 0;
 	size_t expectedMaxIters_ = std::numeric_limits<size_t>::max();
@@ -117,6 +168,7 @@ CostCalcResults calculateNormalCost(const QueryEntries& qentries, const SelectCt
 	const size_t totalItemsCount = nsData.itemsCount;
 	CostCalculator CostCalculator(totalItemsCount);
 	enum { SortIndexNotFound = 0, SortIndexFound, SortIndexHasUnorderedConditions } sortIndexSearchState = SortIndexNotFound;
+	auto distinctOnSortIndex = DistinctOnSortIndex::None;
 	for (size_t next, i = 0, sz = qentries.Size(); i != sz; i = next) {
 		next = qentries.Next(i);
 		const bool calculateEntry = CostCalculator.OnNewEntry(qentries, i, next);
@@ -133,11 +185,18 @@ CostCalcResults calculateNormalCost(const QueryEntries& qentries, const SelectCt
 					CostCalculator.MarkInapposite();
 					return;
 				}
+				const bool isIsolated = isIsolatedEntry(qentries, i, next);
+				// Fold Distinct==sort detection into this walk (avoids a second qentries pass in IsSortOptimizationEffective).
+				// Only isolated entries can become the unbuilt leader (same rule as enableSortIndexOptimize).
+				const bool isDistinctOnSortIndex = isIsolated && qe.Distinct() && qe.IndexNo() == ctx.sortingContext.uncommitedIndex;
+				if (distinctOnSortIndex == DistinctOnSortIndex::None && isDistinctOnSortIndex) {
+					// Ordered starts as WideRange until SelectKey proves packed keys (conservative for costOptimized).
+					distinctOnSortIndex =
+						index::IsOrderedCondition(qe.Condition()) ? DistinctOnSortIndex::WideRange : DistinctOnSortIndex::Unordered;
+				}
 				if (qe.IndexNo() == ctx.sortingContext.uncommitedIndex) {
 					if (sortIndexSearchState == SortIndexNotFound) {
-						const bool isExpectingIdSet =
-							qentries.GetOperation(i) == OpAnd && (next == sz || qentries.GetOperation(next) != OpOr);
-						if (isExpectingIdSet && !IsExpectingOrderedResults(qe)) {
+						if (isIsolated && !IsExpectingOrderedResults(qe)) {
 							sortIndexSearchState = SortIndexHasUnorderedConditions;
 							return;
 						} else {
@@ -146,8 +205,7 @@ CostCalcResults calculateNormalCost(const QueryEntries& qentries, const SelectCt
 					}
 				}
 
-				if (!calculateEntry || CostCalculator.GetResults().expectedMaxIters == 0 ||
-					sortIndexSearchState == SortIndexHasUnorderedConditions) {
+				if (!calculateEntry || CostCalculator.IsExhausted() || sortIndexSearchState == SortIndexHasUnorderedConditions) {
 					return;
 				}
 
@@ -166,7 +224,10 @@ CostCalcResults calculateNormalCost(const QueryEntries& qentries, const SelectCt
 
 				try {
 					SelectKeyResults results = index.SelectKey(qe.Values(), qe.Condition(), 0, indexSelectContext, rdxCtx);
-					CostCalculator.Add(results, qe.IndexNo() == ctx.sortingContext.uncommitedIndex, qe.Distinct(), index);
+					CostCalculator.Add(results, qe.Distinct());
+					if (isDistinctOnSortIndex && distinctOnSortIndex == DistinctOnSortIndex::WideRange && hasCompletePackedKeys(results)) {
+						distinctOnSortIndex = DistinctOnSortIndex::Ordered;
+					}
 				} catch (const Error&) {
 					CostCalculator.MarkInapposite();
 				}
@@ -175,14 +236,16 @@ CostCalcResults calculateNormalCost(const QueryEntries& qentries, const SelectCt
 	CostCalculator.EndSequence();
 
 	if (sortIndexSearchState == SortIndexHasUnorderedConditions) {
-		return CostCalcResults{.expectedMaxIters = 0, .bestDistinctUniques = std::nullopt};
+		return CostCalcResults{.expectedMaxIters = 0, .bestDistinctUniques = std::nullopt, .distinctOnSortIndex = distinctOnSortIndex};
 	}
-	return CostCalculator.GetResults();
+	auto res = CostCalculator.GetResults();
+	res.distinctOnSortIndex = distinctOnSortIndex;
+	return res;
 }
 
 size_t calculateOptimizedCost(size_t costNormal, const QueryEntries& qentries, const SelectCtx& ctx, const NamespaceData& nsData,
 							  const RdxContext& rdxCtx) {
-	// 'costOptimized == costNormal + 1' reduces internal iterations count for the tree in the res.GetMaxIterations() call
+	// 'costOptimized == costNormal + 1' reduces the bounded probe performed by res.EstimateMaxIterations()
 	CostCalculator CostCalculator(costNormal + 1);
 	for (size_t next, i = 0, sz = qentries.Size(); i != sz; i = next) {
 		next = qentries.Next(i);
@@ -202,10 +265,9 @@ size_t calculateOptimizedCost(size_t costNormal, const QueryEntries& qentries, c
 					return;
 				}
 
-				const bool isIsolated = qentries.GetOperation(i) == OpAnd && (next == sz || qentries.GetOperation(next) != OpOr);
 				auto& index = *nsData.indexes[qe.IndexNo()];
 
-				if (isIsolated && !qe.Distinct()) {
+				if (isIsolatedEntry(qentries, i, next)) {
 					Index::SelectContext indexSelectContext;
 					indexSelectContext.opts.itemsCountInNamespace = nsData.itemsCount;
 					indexSelectContext.opts.disableIdSetCache = 1;
@@ -215,12 +277,12 @@ size_t calculateOptimizedCost(size_t costNormal, const QueryEntries& qentries, c
 
 					try {
 						auto results = index.SelectKey(qe.Values(), qe.Condition(), 0, indexSelectContext, rdxCtx);
-						CostCalculator.Add(results, IsDistinct_False, index);
+						CostCalculator.Add(results);
 					} catch (std::exception&) {
 						CostCalculator.MarkInapposite();
 					}
 				} else {
-					// Non-isolated and distinct sorting filters will create scan select results in
+					// Non-isolated sorting filters will create scan select results in
 					// SelectIteratorContainer::prepareIteratorsForSelectLoop
 					CostCalculator.MarkInapposite();
 				}
@@ -228,6 +290,26 @@ size_t calculateOptimizedCost(size_t costNormal, const QueryEntries& qentries, c
 	}
 	CostCalculator.EndSequence();
 	return CostCalculator.GetResults().expectedMaxIters;
+}
+
+size_t nLogN(size_t n) noexcept { return size_t(double(n) * log2(n)); }
+
+// Distinct on the uncommitted sort index is handled by SkipKey in the unbuilt path, so shrinking
+// costNormal via bestDistinctUniques for Distinct on another indexes (except the sort one).
+// Exception: ReqTotal / force-all — SkipKey cannot help, and Distinct SelectKey competes for real.
+size_t adjustNormalCostForDistinct(size_t costNoDistincts, const CostCalcResults& normal, bool needCalcTotal, bool isForceAll) noexcept {
+	const bool skipDistinctCostShrink = normal.distinctOnSortIndex != DistinctOnSortIndex::None && !needCalcTotal && !isForceAll;
+	if (!skipDistinctCostShrink && normal.bestDistinctUniques) {
+		return std::min(nLogN(*normal.bestDistinctUniques), costNoDistincts);
+	}
+	return costNoDistincts;
+}
+
+size_t candidateScore(const FoundIndexInfo& fi) noexcept { return fi.scoreByKeys ? fi.estimate.keys : fi.estimate.ids; }
+
+size_t candidateLowerBound(const FoundIndexInfo& fi) noexcept {
+	const size_t value = candidateScore(fi);
+	return !fi.estimate.complete && value != std::numeric_limits<size_t>::max() ? value + 1 : value;
 }
 
 }  // namespace
@@ -247,32 +329,31 @@ bool IsSortOptimizationEffective(const QueryEntries& qentries, const SelectCtx& 
 
 	const auto expectedNormal = calculateNormalCost(qentries, ctx, nsData, rdxCtx);
 	const auto expectedMaxIterationsNormal = expectedNormal.expectedMaxIters;
-	if (expectedMaxIterationsNormal == 0) {
-		return false;
+	if (expectedMaxIterationsNormal <= 150) {
+		return false;  // If there is very good filtering condition (case for the issues #1489)
 	}
 	const size_t totalItemsCount = nsData.itemsCount;
-	// '3' is empirical constant here
-	const auto costNormalNoDistincts = size_t(double(expectedMaxIterationsNormal) * log2(expectedMaxIterationsNormal)) / 3;
-	// If we have distinct filters, than keys count for sorting is limited by min unique keys count
-	const auto costNormal = (expectedNormal.bestDistinctUniques
-								 ? std::min(size_t(double(*expectedNormal.bestDistinctUniques) * log2(*expectedNormal.bestDistinctUniques)),
-											costNormalNoDistincts)
-								 : costNormalNoDistincts);
+	const bool expectingLimitedIterations = !ctx.isForceAll && !needCalcTotal && ctx.HasLimit();
+	// '/ 3' is an empirical constant for post-filter sort cost relative to scan+sort.
+	const auto costNormal =
+		adjustNormalCostForDistinct(nLogN(expectedMaxIterationsNormal) / 3, expectedNormal, needCalcTotal, ctx.isForceAll);
 	if (costNormal >= totalItemsCount) {
-		// Check if it's more effective to iterate over all the items via btree, than select and sort ids via the most effective index
+		// More effective to iterate over all items via btree than select and sort via the best filter index
 		return true;
 	}
 
-	const bool expectingLimitedIterations = !ctx.isForceAll && !needCalcTotal && ctx.HasLimit();
+	// Distinct==Sort + ordered + limit: force unbuilt when Distinct==sort SelectKey was not fully
+	// packed — WideRange case where costOptimized probe itself is expensive.
+	if (expectedNormal.distinctOnSortIndex == DistinctOnSortIndex::WideRange && expectingLimitedIterations) {
+		return true;
+	}
+
 	// If query has limit, 'costOptimized' must be calculated as accurate as possible, because it will be used in further calculations.
 	// If query must perform full iterations loop, than we may use 'costNormal' as upper limit for 'costOptimized'.
 	const size_t maxOptimizedCost = expectingLimitedIterations ? totalItemsCount : costNormal;
 	size_t costOptimized = calculateOptimizedCost(maxOptimizedCost, qentries, ctx, nsData, rdxCtx);
 	if (costNormal >= costOptimized) {
 		return true;  // If max iterations count with btree indexes is better than with any other condition (including sort overhead)
-	}
-	if (expectedMaxIterationsNormal <= 150) {
-		return false;  // If there is very good filtering condition (case for the issues #1489)
 	}
 	if (ctx.isForceAll || ctx.HasLimit() || needCalcTotal) {
 		if (expectedMaxIterationsNormal < 2000) {
@@ -291,9 +372,9 @@ bool IsSortOptimizationEffective(const QueryEntries& qentries, const SelectCtx& 
 	return costOptimized <= costNormal;
 }
 
-static void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end, h_vector<FoundIndexInfo, 32>& foundIndexes,
-						 const NamespaceData& nsData) {
-	bool hasRootLevelDistincts = false;
+static void findOrderedIndexes(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
+							   h_vector<FoundIndexInfo, 32>& foundIndexes, const NamespaceData& nsData) {
+	bool hasNonCompatibleDistinct = false;
 	bool hasUnorderedConds = false;
 	for (auto it = begin; it != end; ++it) {
 		const auto foundIdx = it->Visit(
@@ -302,28 +383,44 @@ static void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const
 			},
 			[&](const QueryEntry& entry) -> FoundIndexInfo {
 				// Consider only isolated root entries with ordered indexes
+				if (!entry.IsFieldIndexed()) {
+					return {};
+				}
+
 				auto cur = it, next = it;
 				++next;
-				const bool isIsolated = cur->operation == OpAnd && (next == end || next->operation != OpOr);
-				hasRootLevelDistincts |= entry.IsFieldIndexed() && entry.Distinct();
-				if (entry.IsFieldIndexed() && isIsolated) {
-					const auto& index = *nsData.indexes[entry.IndexNo()];
+				const bool isIsolated = isIsolatedEntry(cur->operation, next != end && next->operation == OpOr);
+				const auto& index = *nsData.indexes[entry.IndexNo()];
+				const bool isOrderedIndex = index.IsOrdered();
+				if (entry.Distinct()) {
+					// Compatible Distinct leader = Distinct flag on an *ordered* condition after preprocessor
+					// merge (Lt/Gt/Range on the same field). Raw DistinctTag is CondAny and is NOT Compatible
+					// by itself — do not treat merged ordered Distinct as a reason to abort AdviceSortingIndex.
+					bool canBeCompatibleUnbuiltLeader = false;
+					if (isIsolated) {
+						canBeCompatibleUnbuiltLeader =
+							isOrderedIndex && !index.Opts().IsArray() && index::IsOrderedCondition(entry.Condition());
+					}
+					if (!canBeCompatibleUnbuiltLeader) {
+						hasNonCompatibleDistinct = true;
+					}
+				}
+				if (isIsolated) {
 					const auto cond = entry.Condition();
 					const bool maybeGoodUnorderedCond = (cond == CondEq || cond == CondSet || cond == CondAllSet);
 					if (maybeGoodUnorderedCond && IsHashOrBTree(index.Type())) {
-						const auto itemsCount = nsData.itemsCount;
-						const auto avgSelectivityPercentPerKey = itemsCount ? (index.Size() * 100ull / itemsCount) : 0;
-						if (avgSelectivityPercentPerKey * entry.Values().size() < kMaxSelectivityPercentForIdset) {
+						const auto uniqueIdxKeys = index.Size();
+						const auto expectedSelectivityPercent = uniqueIdxKeys ? (entry.Values().size() * 100ull / uniqueIdxKeys) : 0;
+						if (expectedSelectivityPercent < kMaxSelectivityPercentForIdset) {
 							hasUnorderedConds = true;
 						}
 					}
-					// Distinct is not compatible with 'unbuiltSortOrders' mode - it will awlays create comparator
-					if (index.IsOrdered() && !index.Opts().IsArray() && !entry.Distinct()) {
+					if (isOrderedIndex && !index.Opts().IsArray()) {
 						if (index::IsOrderedCondition(cond)) {
-							return FoundIndexInfo{&index, FoundIndexInfo::ConditionType::Compatible};
+							return FoundIndexInfo{&index, &entry, FoundIndexInfo::ConditionType::Compatible};
 						} else if (maybeGoodUnorderedCond) {
 							// Do not apply implicit sort if one of those conditions exist
-							return FoundIndexInfo{&index, FoundIndexInfo::ConditionType::Incompatible};
+							return FoundIndexInfo{&index, nullptr, FoundIndexInfo::ConditionType::Incompatible};
 						}
 					}
 				}
@@ -333,9 +430,9 @@ static void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const
 									 MultiDistinctQueryEntry, QueryEntriesBracket, QueryFunctionEntry> auto&) noexcept {
 				return FoundIndexInfo();
 			});
-		if (hasRootLevelDistincts && hasUnorderedConds) {
-			// If there are some potentially good ordered conditions, combined with disctincts, it's usually better to avoid implicit
-			// sorting. Looks like distinc's selectivity does not matter here
+		if (hasNonCompatibleDistinct && hasUnorderedConds) {
+			// Selective unordered Eq/Set plus Distinct that cannot lead unbuilt:
+			// prefer idset/comparator plans over inventing an implicit ORDER BY on another field.
 			foundIndexes.clear();
 			return;
 		}
@@ -346,28 +443,96 @@ static void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const
 				foundIndexes.emplace_back(foundIdx);
 			} else {
 				found->isFitForSortOptimization &= foundIdx.isFitForSortOptimization;
+				// Keep a Compatible entry for deferred scoring when available
+				if (foundIdx.isFitForSortOptimization) {
+					found->entry = foundIdx.entry;
+				}
 			}
 		}
 	}
 }
 
+// Fills estimate / scoreByKeys; clears isFitForSortOptimization for incomplete (wide) Distinct.
+static void probeAdviceCandidate(FoundIndexInfo& fi) {
+	assertrx_dbg(fi.isFitForSortOptimization);
+	assertrx_dbg(fi.entry);
+	assertrx_dbg(index::IsOrderedCondition(fi.entry->Condition()));
+	fi.estimate = fi.index->EstimateOrderedCondition(fi.entry->Condition(), fi.entry->Values(), kAdviceOrderedConditionProbeKeyCap);
+	fi.scoreByKeys = bool(fi.entry->Distinct());
+	if (!fi.estimate.complete && fi.entry->Distinct()) {
+		// Wide distinct is usually a bad candidate for main index: it can't use SkipKey() effectively,
+		// and also will degrade when sort orders will be built.
+		fi.isFitForSortOptimization = false;
+	}
+}
+
+// Prefer a complete estimate when it is provably no worse than every incomplete lower bound;
+// otherwise fall back to the largest Index::Size among compatible candidates.
+static const Index* rankAdviceCandidates(h_vector<FoundIndexInfo, 32>& foundIndexes) {
+	for (auto& fi : foundIndexes) {
+		if (!fi.isFitForSortOptimization) {
+			continue;
+		}
+		probeAdviceCandidate(fi);
+	}
+
+	const FoundIndexInfo* bestComplete = nullptr;
+	const FoundIndexInfo* fallback = nullptr;
+	size_t minIncompleteLowerBound = std::numeric_limits<size_t>::max();
+	bool hasIncomplete = false;
+	for (const auto& fi : foundIndexes) {
+		if (!fi.isFitForSortOptimization) {
+			continue;
+		}
+		const size_t score = candidateScore(fi);
+		if (!fallback || fi.estimate.indexSize > fallback->estimate.indexSize ||
+			(fi.estimate.indexSize == fallback->estimate.indexSize && score < candidateScore(*fallback))) {
+			fallback = &fi;
+		}
+		if (fi.estimate.complete) {
+			if (!bestComplete || score < candidateScore(*bestComplete) ||
+				(score == candidateScore(*bestComplete) && fi.estimate.indexSize > bestComplete->estimate.indexSize)) {
+				bestComplete = &fi;
+			}
+		} else {
+			hasIncomplete = true;
+			minIncompleteLowerBound = std::min(minIncompleteLowerBound, candidateLowerBound(fi));
+		}
+	}
+	assertrx_dbg(fallback);
+	if (bestComplete && (!hasIncomplete || candidateScore(*bestComplete) <= minIncompleteLowerBound)) {
+		return bestComplete->index;
+	}
+	return fallback ? fallback->index : nullptr;
+}
+
 const Index* AdviceSortingIndex(const QueryEntries& qentries, const NamespaceData& nsData) {
 	thread_local h_vector<FoundIndexInfo, 32> foundIndexes;
 	foundIndexes.clear<false>();
-	findMaxIndex(qentries.cbegin(), qentries.cend(), foundIndexes, nsData);
-	boost::sort::pdqsort(foundIndexes.begin(), foundIndexes.end(), [](const FoundIndexInfo& l, const FoundIndexInfo& r) noexcept {
-		if (l.isFitForSortOptimization > r.isFitForSortOptimization) {
-			return true;
+	findOrderedIndexes(qentries.cbegin(), qentries.cend(), foundIndexes, nsData);
+
+	size_t compatibleCount = 0;
+	FoundIndexInfo* singleCompatible = nullptr;
+	for (auto& fi : foundIndexes) {
+		if (fi.isFitForSortOptimization) {
+			++compatibleCount;
+			singleCompatible = &fi;
 		}
-		if (l.isFitForSortOptimization == r.isFitForSortOptimization) {
-			return l.size > r.size;
-		}
-		return false;
-	});
-	if (!foundIndexes.empty() && foundIndexes[0].isFitForSortOptimization) {
-		return foundIndexes[0].index;
 	}
-	return nullptr;
+	if (compatibleCount == 0) {
+		return nullptr;
+	}
+	// Single Compatible: probe only for Distinct (reject wide ranges). Non-distinct
+	// candidates need no estimate here — ranking already probes when count > 1.
+	if (compatibleCount == 1) {
+		assertrx_dbg(singleCompatible->entry);
+		if (singleCompatible->entry->Distinct()) {
+			probeAdviceCandidate(*singleCompatible);
+			return singleCompatible->isFitForSortOptimization ? singleCompatible->index : nullptr;
+		}
+		return singleCompatible->index;
+	}
+	return rankAdviceCandidates(foundIndexes);
 }
 
 bool IsExpectingOrderedResults(const QueryEntry& qe) noexcept {

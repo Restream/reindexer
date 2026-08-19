@@ -151,7 +151,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode& root, bool autoCorrect) 
 				EmbeddersConfigData data;
 				const auto err = data.FromJSON(cacheNode);
 				if (err.ok()) {
-					embeddersData.emplace(toLower(data.cacheTag), std::move(data.configData));	// NOLINT(performance-move-const-arg)
+					embeddersData.emplace(ToLower(data.cacheTag), std::move(data.configData));	// NOLINT(performance-move-const-arg)
 				} else {
 					ensureEndsWith(embeddersErrLogString, "\n") += err.whatStr();
 					embeddersHaveErrors = true;

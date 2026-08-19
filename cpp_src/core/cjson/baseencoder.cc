@@ -49,7 +49,8 @@ void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, cons
 	for (auto ds : dss) {
 		if (ds) {
 			if (const auto joinsDs = ds->GetJoinsDatasource()) {
-				for (size_t i = 0; i < joinsDs->GetJoinedRowsCount(); ++i) {
+				const size_t joinedFieldsCount{joinsDs->GetJoinedFieldsCount()};
+				for (size_t i = 0; i < joinedFieldsCount; ++i) {
 					encodeJoinedItems(objNode, joinsDs, i);
 				}
 			}
@@ -78,8 +79,9 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_ve
 	for (auto ds : dss) {
 		if (ds) {
 			if (const auto joinsDs = ds->GetJoinsDatasource()) {
-				for (size_t i = 0, cnt = joinsDs->GetJoinedRowsCount(); i < cnt; ++i) {
-					encodeJoinedItems(objNode, joinsDs, i);
+				const size_t joinedFieldsCount{joinsDs->GetJoinedFieldsCount()};
+				for (size_t joinedField = 0; joinedField < joinedFieldsCount; ++joinedField) {
+					encodeJoinedItems(objNode, joinsDs, joinedField);
 				}
 			}
 			ds->PutAdditionalFields(objNode);
@@ -88,7 +90,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_ve
 }
 
 template <typename Builder>
-const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEncoderDatasourceWithJoins* ds) {
+const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEncoderDatasourceWithJoins<Builder>* ds) {
 	tagsLengths_.clear();
 	Serializer rdser(getPlTuple(pl));
 	if (!rdser.Eof()) {
@@ -101,9 +103,10 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 		while (collectTagsSizes(pl, rdser)) {
 		}
 
-		if (ds && ds->GetJoinedRowsCount() > 0) {
-			for (size_t i = 0, rows = ds->GetJoinedRowsCount(); i < rows; ++i) {
-				collectJoinedItemsTagsSizes(ds, i);
+		if (ds) {
+			const size_t joinedFieldsCount{ds->GetJoinedFieldsCount()};
+			for (size_t joinedField = 0; joinedField < joinedFieldsCount; ++joinedField) {
+				collectJoinedItemsTagsSizes(ds, joinedField);
 			}
 		}
 
@@ -114,33 +117,34 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 }
 
 template <typename Builder>
-void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins* ds, size_t rowid) {
-	const size_t itemsCount = ds->GetJoinedRowItemsCount(rowid);
+void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins<Builder>* ds, size_t joinedField) {
+	const size_t itemsCount = ds->GetJoinedRowItemsCount(joinedField);
 	if (!itemsCount) {
 		return;
 	}
 
-	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(rowid), &ds->GetJoinedItemFieldsFilter(rowid));
+	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(joinedField), &ds->GetJoinedItemFieldsFilter(joinedField));
 	for (size_t i = 0; i < itemsCount; ++i) {
-		ConstPayload pl(ds->GetJoinedItemPayload(rowid, i));
+		ConstPayload pl(ds->GetJoinedItemPayload(joinedField, i));
 		std::ignore = subEnc.GetTagsMeasures(pl, nullptr);
 	}
 }
 
 template <typename Builder>
-void BaseEncoder<Builder>::encodeJoinedItems(Builder& builder, IEncoderDatasourceWithJoins* ds, size_t rowid) {
-	const size_t itemsCount = ds->GetJoinedRowItemsCount(rowid);
+void BaseEncoder<Builder>::encodeJoinedItems(Builder& builder, IEncoderDatasourceWithJoins<Builder>* ds, size_t joinedField) {
+	const size_t itemsCount = ds->GetJoinedRowItemsCount(joinedField);
 	if (!itemsCount) {
 		return;
 	}
 
-	std::string nsTagName("joined_" + ds->GetJoinedItemNamespace(rowid));
+	std::string nsTagName("joined_" + ds->GetJoinedItemNamespace(joinedField));
 	auto arrNode = builder.Array(nsTagName);
 
-	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(rowid), &ds->GetJoinedItemFieldsFilter(rowid));
+	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(joinedField), &ds->GetJoinedItemFieldsFilter(joinedField));
 	for (size_t i = 0; i < itemsCount; ++i) {
-		ConstPayload pl(ds->GetJoinedItemPayload(rowid, i));
-		subEnc.Encode(pl, arrNode);
+		ConstPayload pl(ds->GetJoinedItemPayload(joinedField, i));
+		auto nestedDatasources{ds->BuildJoinedFieldDatasources(joinedField, i)};
+		subEnc.Encode(pl, arrNode, nestedDatasources);
 	}
 }
 namespace {
@@ -239,24 +243,12 @@ bool BaseEncoder<Builder>::encodeImpl(ConstPayload* pl, ctag tag, Serializer& rd
 				auto count = rdser.GetVarUInt();
 				if constexpr (kIsNotDummy) {
 					f.Type().EvaluateOneOf(
-						[&](KeyValueType::Bool) {
-							builder.Array(indexedTag, pl->GetView<bool>(tagField).subspan(cnt, count), cnt);
-						},
-						[&](KeyValueType::Int) {
-							builder.Array(indexedTag, pl->GetView<int>(tagField).subspan(cnt, count), cnt);
-						},
-						[&](KeyValueType::Int64) {
-							builder.Array(indexedTag, pl->GetView<int64_t>(tagField).subspan(cnt, count), cnt);
-						},
-						[&](KeyValueType::Double) {
-							builder.Array(indexedTag, pl->GetView<double>(tagField).subspan(cnt, count), cnt);
-						},
-						[&](KeyValueType::String) {
-							builder.Array(indexedTag, pl->GetView<p_string>(tagField).subspan(cnt, count), cnt);
-						},
-						[&](KeyValueType::Uuid) {
-							builder.Array(indexedTag, pl->GetView<Uuid>(tagField).subspan(cnt, count), cnt);
-						},
+						[&](KeyValueType::Bool) { builder.Array(indexedTag, pl->GetView<bool>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::Int) { builder.Array(indexedTag, pl->GetView<int>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::Int64) { builder.Array(indexedTag, pl->GetView<int64_t>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::Double) { builder.Array(indexedTag, pl->GetView<double>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::String) { builder.Array(indexedTag, pl->GetView<p_string>(tagField).subspan(cnt, count), cnt); },
+						[&](KeyValueType::Uuid) { builder.Array(indexedTag, pl->GetView<Uuid>(tagField).subspan(cnt, count), cnt); },
 						[&](KeyValueType::FloatVector) {
 							if (pl->Field(tagField).t_.IsArray()) {
 								if (pl->GetFieldLen(tagField) == 0) {

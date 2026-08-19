@@ -17,6 +17,7 @@ namespace net {
 static std::atomic_uint_fast64_t counter_;
 
 constexpr int kListenCount = 500;
+constexpr size_t kMaxIdleConnections = 4096;
 
 template <ListenerType LT>
 Listener<LT>::Listener(ev::dynamic_loop& loop, std::shared_ptr<Shared> shared)
@@ -224,8 +225,9 @@ void Listener<LT>::timeout_cb(ev::periodic&, int) {
 		if (connections_[i]->IsFinished()) {
 			connections_[i]->Detach();
 			shared_->connsCountOnSharedListeners_.fetch_sub(1, std::memory_order_release);
-			if (enableReuseIdle) {	// -V547
+			if (enableReuseIdle && shared_->idle_.size() < kMaxIdleConnections) {
 				shared_->idle_.emplace_back(std::move(connections_[i]));
+				shared_->ts_ = steady_clock_w::now_coarse();
 			} else {
 				connections_[i].reset();
 			}
@@ -234,9 +236,19 @@ void Listener<LT>::timeout_cb(ev::periodic&, int) {
 				connections_[i] = std::move(connections_.back());
 			}
 			connections_.pop_back();
-			shared_->ts_ = steady_clock_w::now_coarse();
 		} else {
 			i++;
+		}
+	}
+
+	// Mixed acceptor keeps sockets in accepted_ until the first cproto frame triggers rebalance.
+	// Do not recycle into idle_: those never completed balancing and can poison rebalance_ on reuse.
+	for (auto it = accepted_.begin(); it != accepted_.end();) {
+		if ((*it)->IsFinished()) {
+			(*it)->Detach();
+			it = accepted_.erase(it);
+		} else {
+			++it;
 		}
 	}
 

@@ -385,6 +385,10 @@ func TestHeterogeneusArrayEncDec(t *testing.T) {
 
 func TestEncDec(t *testing.T) {
 	t.Parallel()
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(testItemsEncdecNs))
+	}()
+
 	// Fill items by cjson encoder
 	FilltestItemsEncdecNs(0, 5000, 20, false)
 

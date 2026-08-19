@@ -48,7 +48,7 @@ public:
 	CsvBuilder Array(concepts::TagNameOrIndex auto tag, int size = KUnknownFieldSize) { return Array(getNameByTag(tag), size); }
 
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<T> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		CsvBuilder node = Array(tag);

@@ -13,6 +13,10 @@ namespace reindexer {
 
 class Query;
 
+namespace joins {
+class QueryJoinsTable;
+}  // namespace joins
+
 namespace builders {
 struct CsvOrdering;
 }  // namespace builders
@@ -65,7 +69,6 @@ public:
 	public:
 		Iterator(const CoroQueryResults& qr, int idx) noexcept : qr_{&qr}, idx_{idx} {}
 
-		using JoinedData = h_vector<h_vector<ResultSerializer::ItemParams, 1>, 1>;
 		Error GetJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true);
@@ -79,7 +82,7 @@ public:
 		bool IsRanked() noexcept;
 		bool IsRaw();
 		std::string_view GetRaw();
-		const JoinedData& GetJoined();
+		const ResultSerializer::JoinedData& GetJoined();
 		Iterator& operator++();
 		Error Status() const noexcept {
 			if (!qr_->i_.status_.ok()) {
@@ -100,6 +103,8 @@ public:
 			: qr_{&qr}, idx_{idx}, pos_{pos}, nextPos_{nextPos}, itemParams_{std::move(params)} {}
 
 		void readNext();
+		ResultSerializer::ItemParams readItem(ResultSerializer&, int format);
+		ResultSerializer::ItemParams readItemV1(ResultSerializer&, int format);
 		void getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen = true) const;
 		void getCSVFromCJSON(std::string_view cjson, WrSerializer& wrser, CsvOrdering& ordering) const;
 		void checkIdx() const;
@@ -109,11 +114,6 @@ public:
 		const CoroQueryResults* qr_{nullptr};
 		int idx_{0}, pos_{0}, nextPos_{0};
 		ResultSerializer::ItemParams itemParams_;
-		JoinedData joinedData_;
-	};
-	struct [[nodiscard]] QueryData {
-		uint16_t joinedSize = 0;
-		h_vector<uint16_t, 8> mergedJoinedSizes;
 	};
 
 	Iterator begin() const noexcept { return Iterator{*this, 0}; }
@@ -143,10 +143,11 @@ public:
 
 	int GetFormat() const noexcept { return i_.queryParams_.flags & kResultsFormatMask; }
 	int GetFlags() const noexcept { return i_.queryParams_.flags; }
+	QueryFormat GetQueryFormat() const noexcept { return i_.queryFormat_; }
 	bool IsJSON() const noexcept { return GetFormat() == kResultsJson; }
 	bool IsCJSON() const noexcept { return GetFormat() == kResultsCJson; }
 	bool HaveJoined() const noexcept { return i_.queryParams_.flags & kResultsWithJoined; }
-	const std::optional<QueryData>& GetQueryData() const noexcept { return i_.qData_; }
+	const joins::QueryJoinsTable* GetJoinsTable() const noexcept { return i_.joinsTable_.get(); }
 	bool GetRawBuffer(ParsedQrRawBuffer& out) {
 		if (!Status().ok()) {
 			throw Status();
@@ -192,13 +193,15 @@ private:
 	const net::cproto::CoroClientConnection* getConn() const noexcept { return i_.conn_; }
 
 	struct [[nodiscard]] Impl {
-		Impl(int fetchFlags, int fetchAmount, bool lazyMode) noexcept
-			: fetchFlags_(fetchFlags), fetchAmount_(fetchAmount), lazyMode_(lazyMode) {
-			InitLazyData();
-		}
+		Impl(int fetchFlags, int fetchAmount, bool lazyMode) noexcept;
 		Impl(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, milliseconds timeout,
 			 bool lazyMode);
-		Impl(NsArray&& nsArray) noexcept : nsArray_(std::move(nsArray)) { InitLazyData(); }
+		Impl(NsArray&& nsArray) noexcept;
+		Impl(Impl&&) noexcept;
+		Impl& operator=(Impl&&) noexcept;
+		Impl(const Impl&) = delete;
+		Impl& operator=(const Impl&) = delete;
+		~Impl();
 		void InitLazyData() {
 			if (!lazyMode_) {
 				queryParams_.aggResults.emplace();
@@ -218,9 +221,10 @@ private:
 		ResultSerializer::QueryParams queryParams_;
 		bool lazyMode_ = false;
 		bool isBound_ = false;
+		QueryFormat queryFormat_ = QueryFormatV1;
 		Error status_;
 		steady_clock_w::time_point sessionTs_;
-		std::optional<QueryData> qData_;
+		std::unique_ptr<joins::QueryJoinsTable> joinsTable_;
 	};
 
 	Impl i_;

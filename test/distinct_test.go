@@ -35,6 +35,7 @@ func TestDistinctMultiField(t *testing.T) {
 	assert.NoError(t, err)
 
 	it := DBD.Query(ns).Distinct("V0", "V1").Exec()
+	defer it.Close()
 	assert.Equal(t, 2, it.Count())
 	aggRes := it.AggResults()
 	assert.Equal(t, 1, len(aggRes))
@@ -42,5 +43,4 @@ func TestDistinctMultiField(t *testing.T) {
 	assert.Equal(t, len(aggRes[0].Distincts), 2)
 	assert.Equal(t, fmt.Sprintf("%v", aggRes[0].Distincts[0]), "[10 s100]")
 	assert.Equal(t, fmt.Sprintf("%v", aggRes[0].Distincts[1]), "[11 s100]")
-
 }

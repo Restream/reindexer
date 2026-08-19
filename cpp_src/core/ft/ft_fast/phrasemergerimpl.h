@@ -10,6 +10,10 @@ namespace ft {
 
 constexpr size_t kUseBinarySearchBorder = 8;
 
+// occurrenceScore = queryBoost * subtermProc * fieldBoost * bm25Norm * termLenBoost * positionRank
+// bm25Norm = (1 - bm25Weight) + bm25 * bm25Boost * bm25Weight
+// See fulltext_ranking.md#score-of-one-subterm-occurrence, fulltext.md#field-selection,
+// fulltext.md#basic-document-ranking-algorithms
 template <typename Calculator, bool UseBinarySearch, typename DocsStatsGetter>
 std::pair<float, uint8_t> calcTermRankImpl(const FtDslOpts& termOpts, Calculator bm25Calc, const IdRelType& relid, TermRankInfo& termInf,
 										   const FTConfig* cfg, const DocsStatsGetter& docsStatsGetter) {
@@ -157,6 +161,9 @@ inline float maxFieldsBoost(const IdRelType& relid, const FtDslOpts& termOpts) {
 	}
 }
 
+// Phrase term merge: calcTermRank per subterm; for non-first terms apply distance penalty:
+// normDist = bound(1/distance, distanceWeight, distanceBoost); finalRank = normDist * termRank.
+// See fulltext.md#phrase-search, fulltext_ranking.md#multi-term-and-phrase-queries
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 template <typename Bm25T, typename DocsStatsGetter>
 void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResults<IdCont>& term, bool isFirstTerm,

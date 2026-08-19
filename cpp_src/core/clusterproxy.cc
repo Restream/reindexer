@@ -538,8 +538,7 @@ Error ClusterProxy::ResetShardingConfig(std::optional<cluster::ShardingConfig> c
 	try {
 		impl_.shardingConfig_.Set(std::move(config));
 		return impl_.tryLoadShardingConf();
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 void ClusterProxy::SaveNewShardingConfigFile(const cluster::ShardingConfig& config) const {
@@ -563,8 +562,7 @@ Error ClusterProxy::shardingControlRequestAction(const RdxContext& ctx, Args&&..
 		clusterProxyLog(LogTrace, "[{} proxy] {}", getServerIDRel(), REINDEXER_FUNC_NAME);
 		// kReplicationStatsNamespace required for impl_.NamespaceIsInClusterConfig(nsName) in proxyCall was true always
 		return proxyCall<decltype(ImplMethod), ImplMethod, Error>(ctx, kReplicationStatsNamespace, action, std::forward<Args>(args)...);
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 Error ClusterProxy::ShardingControlRequest(const sharding::ShardingControlRequestData& request, sharding::ShardingControlResponseData&,

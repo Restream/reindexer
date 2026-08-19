@@ -1,6 +1,7 @@
 #pragma once
 
 #include <random>
+#include <string>
 #include "tools/errors.h"
 
 namespace reindexer_benchmarks {
@@ -15,7 +16,7 @@ protected:
 	const std::string& RndWord1() & { return RndFrom(words1_); }
 	size_t Words1Count() const { return words1_.size(); }
 	std::string MakeTypoWord();
-	std::wstring GetRandomUTF16WordByLength(size_t minLen = 4);
+	std::u16string GetRandomUTF16WordByLength(size_t minLen = 4);
 	std::string CreatePhrase();
 	std::string MakePrefixWord();
 	std::string MakeSuffixWord();

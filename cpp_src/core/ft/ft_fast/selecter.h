@@ -11,13 +11,14 @@ constexpr int kMaxStemSkipLen = 1;
 constexpr int kMinTypoVariantStemLen = 5;
 constexpr int kMinSplitVariantStemLen = 5;
 constexpr int kMinSplitSize = 2;
+static_assert(kMinSplitSize > 0);
 
 class [[nodiscard]] TermVariant {
 public:
 	TermVariant() = default;
-	TermVariant(const std::wstring& p, float pr, const FtDslOpts& opts)
+	TermVariant(const std::u16string& p, float pr, const FtDslOpts& opts)
 		: pattern{p}, proc{pr}, pref{opts.pref}, suff{opts.suff}, typos{opts.typos} {}
-	TermVariant(std::wstring&& p, float pr, const TermVariant& other)
+	TermVariant(std::u16string&& p, float pr, const TermVariant& other)
 		: pattern{std::move(p)},
 		  proc{pr},
 		  stem{other.stem},
@@ -43,11 +44,13 @@ public:
 	TermVariant(TermVariant&& other) = default;
 	TermVariant& operator=(TermVariant&& other) = default;
 
-	void Unite(const TermVariant& other, float pr) {
+	void Unite(const TermVariant& other, float pr, bool stripWildcards = false) {
 		proc = std::max(proc, pr);
 		stem |= other.stem;
-		pref |= other.pref;
-		suff |= other.suff;
+		if (!stripWildcards) {
+			pref |= other.pref;
+			suff |= other.suff;
+		}
 		typos |= other.typos;
 		split |= other.split;
 	}
@@ -62,7 +65,7 @@ public:
 		}
 	}
 
-	std::wstring pattern;
+	std::u16string pattern;
 	float proc = 0.0f;
 	float boost = -1.0f;
 
@@ -107,9 +110,9 @@ public:
 	StorageType::const_iterator begin() const noexcept { return termVariants_.begin(); }
 	StorageType::const_iterator end() const noexcept { return termVariants_.end(); }
 
-	void emplace_back(const std::wstring& p, float pr) { termVariants_.emplace_back(p, pr, termOpts_); }
-	void emplace_back(std::wstring&& p, float pr) { termVariants_.emplace_back(std::move(p), pr, termOpts_); }
-	void emplace_back(std::wstring&& p, float pr, const FtDslOpts& opts) { termVariants_.emplace_back(std::move(p), pr, opts); }
+	void emplace_back(const std::u16string& p, float pr) { termVariants_.emplace_back(p, pr, termOpts_); }
+	void emplace_back(std::u16string&& p, float pr) { termVariants_.emplace_back(std::move(p), pr, termOpts_); }
+	void emplace_back(std::u16string&& p, float pr, const FtDslOpts& opts) { termVariants_.emplace_back(std::move(p), pr, opts); }
 	void emplace_back(TermVariant&& v) { termVariants_.emplace_back(std::move(v)); }
 
 	void reserve(size_t capacity) { termVariants_.reserve(capacity); }
@@ -148,7 +151,12 @@ private:
 
 	void filterStopWordsAndAdd(TermVariants& termVariants, h_vector<TermVariant, 5>& newVariants) const;
 
-	void tryToCorrectKbLayout(TermVariants& termVariants);
+	bool shouldEnableKbLayoutCorrection(const FtDSLEntry& term, const FtMergeStatuses::Statuses& docsExcluded) const;
+	bool exceedsKbLayoutHeuristicThresholds(std::u16string_view pattern, bool pref, bool suff,
+											const FtMergeStatuses::Statuses& docsExcluded, size_t wordsLimit, size_t docsLimit,
+											size_t& words, size_t& docs) const;
+
+	void tryToCorrectKbLayout(TermVariants& termVariants, bool enable);
 	void tryToSplit(TermVariants& termVariants, PhraseTerm phraseTerm);
 	void tryToCorrectTypos(TermVariants& termVariants);
 	void transliterate(TermVariants& termVariants);
@@ -161,6 +169,13 @@ private:
 
 	ft::TermResults<IdCont> buildTermResults(const FtDSLEntry& term, TermVariants& termVariants,
 											 const FtMergeStatuses::Statuses& docsExcluded);
+
+	void processExactTermVariant(TermVariant& variant, ft::TermResults<IdCont>& res, FoundWordsType& wordsFound, size_t& totalVids,
+								 const FtMergeStatuses::Statuses& docsExcluded);
+
+	void processSuffixTermVariant(TermVariant& variant, ft::TermResults<IdCont>& res, FoundWordsType& wordsFound, size_t& totalVids,
+								  size_t lowRelevanceLimit, const FtMergeStatuses::Statuses& docsExcluded,
+								  const FTRankingConfig& rankingCfg);
 
 	void buildQueryMergeData(FtDSLQuery&& query, const FtMergeStatuses::Statuses& docsExcluded, bool inTransaction,
 							 const RdxContext& rdxCtx, ft::QueryMergeData<IdCont>& queryMergeData);
@@ -175,6 +190,7 @@ private:
 	size_t fieldSize_;
 	int maxAreasInDoc_;
 
+	bool limitSingleAffixQuerySubterms_ = false;
 	h_vector<TermVariant, 5> newVariants;
 };
 

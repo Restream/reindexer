@@ -55,6 +55,8 @@ void ServerConfig::Reset() {
 	MaxHttpRspSize = 1024 * 1024 * 1024;
 	AllocatorCacheLimit = -1;
 	AllocatorCachePart = -1;
+	// 0: thread count is chosen automatically based on the number of CPU cores.
+	BackgroundThreads = 0;
 }
 
 reindexer::Error ServerConfig::ParseYaml(const std::string& yaml) {
@@ -205,6 +207,13 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 			allocatorNote,
 		{"allocator-cache-part"}, AllocatorCachePart, args::Options::Single);
 #endif
+
+	args::Group backgroundGroup(parser, "Background threads options");
+	args::ValueFlag<size_t> backgroundThreadsF(
+		backgroundGroup, "",
+		"Number of threads for process-wide background pool (fulltext and other indexes). "
+		"0 (default) means the thread count is chosen automatically based on the number of CPU cores",
+		{"background-threads"}, BackgroundThreads, args::Options::Single);
 
 	try {
 		parser.ParseCLI(argc, argv);
@@ -364,6 +373,9 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	if (maxUpdatesSizeF) {
 		MaxUpdatesSize = args::get(maxUpdatesSizeF);
 	}
+	if (backgroundThreadsF) {
+		BackgroundThreads = args::get(backgroundThreadsF);
+	}
 
 	return {};
 }
@@ -432,6 +444,7 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 #endif
 		AllocatorCacheLimit = root["system"]["allocator_cache_limit"].as<int64_t>(AllocatorCacheLimit);
 		AllocatorCachePart = root["system"]["allocator_cache_part"].as<float_t>(AllocatorCachePart);
+		BackgroundThreads = root["system"]["background_threads"].as<size_t>(BackgroundThreads);
 
 		DebugAllocs = root["debug"]["allocs"].as<bool>(DebugAllocs);
 		DebugPprof = root["debug"]["pprof"].as<bool>(DebugPprof);

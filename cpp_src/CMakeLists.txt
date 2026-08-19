@@ -33,7 +33,6 @@ option(ENABLE_GRPC "Enable GRPC service" OFF)
 option(ENABLE_SSE "Enable SSE instructions" ON)
 option(ENABLE_SERVER_AS_PROCESS_IN_TEST "Run reindexer servers as separate processes in tests" OFF)
 option(ENABLE_EXTRA_CLUSTER_LOGS "Enable extra logging related to RAFT-cluster" OFF)
-option(ENABLE_PCH "Enable precompiled headers for the build" OFF)
 option(WITH_BUILTIN_LEVELDB "Use builtin leveldb instead of system package" OFF)
 set(BUILD_ANN_INDEXES "all" CACHE STRING "Enable ANN indexes build: none, builtin, all. 'All' builds both builtin and FAISS-based indexes")
 set_property(CACHE BUILD_ANN_INDEXES PROPERTY STRINGS none builtin all)
@@ -54,13 +53,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "Ap
   set(CLANG ON)
 endif()
 
-if(ENABLE_PCH)
-  if (CLANG)
-    message("Disabling PCH for Clang - there are some compatibility problems")
-    set(ENABLE_PCH OFF CACHE INTERNAL "" FORCE)
-  endif()
-endif()
-
 if(NOT GRPC_PACKAGE_PROVIDER)
   set(GRPC_PACKAGE_PROVIDER "CONFIG")
 endif()
@@ -71,7 +63,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.15.0")
+set (REINDEXER_VERSION_DEFAULT "5.16.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -130,8 +122,8 @@ if(MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP -MD /bigobj")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
 else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wfloat-equal -Werror -Wswitch-enum -Winvalid-pch")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -Wall -Wextra -Wfloat-equal -Werror -Wswitch-enum -Wold-style-cast -Winvalid-pch -fexceptions")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wfloat-equal -Werror -Wswitch-enum")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -Wall -Wextra -Wfloat-equal -Werror -Wswitch-enum -Wold-style-cast -fexceptions")
   if(CLANG)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wthread-safety -Wthread-safety-beta")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wthread-safety -Wthread-safety-beta")
@@ -388,75 +380,17 @@ endif()
 if(MSVC)
   set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "/GR-")
 else()
-  set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "-fno-rtti -Wno-invalid-pch")
+  set_source_files_properties (${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "-fno-rtti")
 endif()
 
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET}_obj OBJECT ${SRCS})
 
-if(ENABLE_PCH)
-  set(PREC_HDRS
-    $<$<COMPILE_LANGUAGE:CXX>:<algorithm$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<vector$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<map$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<unordered_map$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<set$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<unordered_set$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<deque$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<memory$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<string$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<string_view$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<optional$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<chrono$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<functional$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<variant$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<thread$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<chrono$<ANGLE-R>>
-    $<$<COMPILE_LANGUAGE:CXX>:<atomic$<ANGLE-R>>
-
-    $<$<COMPILE_LANGUAGE:CXX>:estl/h_vector.h>
-    $<$<COMPILE_LANGUAGE:CXX>:estl/fast_hash_set.h>
-    $<$<COMPILE_LANGUAGE:CXX>:estl/fast_hash_map.h>
-    $<$<COMPILE_LANGUAGE:CXX>:estl/intrusive_ptr.h>
-    $<$<COMPILE_LANGUAGE:CXX>:estl/mutex.h>
-    $<$<COMPILE_LANGUAGE:CXX>:estl/shared_mutex.h>
-    $<$<COMPILE_LANGUAGE:CXX>:estl/smart_lock.h>
-    $<$<COMPILE_LANGUAGE:CXX>:estl/tokenizer.h>
-    $<$<COMPILE_LANGUAGE:CXX>:estl/contexted_locks.h>
-    $<$<COMPILE_LANGUAGE:CXX>:estl/cow.h>
-    $<$<COMPILE_LANGUAGE:CXX>:tools/errors.h>
-    $<$<COMPILE_LANGUAGE:CXX>:tools/logger.h>
-    $<$<COMPILE_LANGUAGE:CXX>:tools/lsn.h>
-    $<$<COMPILE_LANGUAGE:CXX>:tools/serilize/serializer.h>
-    $<$<COMPILE_LANGUAGE:CXX>:tools/serilize/wrserializer.h>
-    $<$<COMPILE_LANGUAGE:CXX>:tools/stringstools.h>
-    $<$<COMPILE_LANGUAGE:CXX>:tools/varint.h>
-    $<$<COMPILE_LANGUAGE:CXX>:tools/usingcontainer.h>
-    $<$<COMPILE_LANGUAGE:CXX>:vendor/sort/pdqsort.hpp>
-
-    $<$<COMPILE_LANGUAGE:CXX>:updates/updaterecord.h>
-    $<$<COMPILE_LANGUAGE:CXX>:updates/updatesqueue.h>
-
-    $<$<COMPILE_LANGUAGE:CXX>:cluster/config.h>
-
-    $<$<COMPILE_LANGUAGE:CXX>:core/expressiontree.h>
-    $<$<COMPILE_LANGUAGE:CXX>:core/keyvalue/variant.h>
-    $<$<COMPILE_LANGUAGE:CXX>:core/keyvalue/p_string.h>
-    $<$<COMPILE_LANGUAGE:CXX>:core/keyvalue/key_string.h>
-    $<$<COMPILE_LANGUAGE:CXX>:core/payload/payloadiface.h>
-    $<$<COMPILE_LANGUAGE:CXX>:core/rdxcontext.h>
-    $<$<COMPILE_LANGUAGE:CXX>:vendor/sparse-map/sparse_map.h>
-    $<$<COMPILE_LANGUAGE:CXX>:vendor/sparse-map/sparse_set.h>
-
-    $<$<COMPILE_LANGUAGE:CXX>:net/ev/ev.h>
-  )
-  target_precompile_headers(${TARGET}_obj PRIVATE ${PREC_HDRS})
-endif()
-
 add_definitions(-DREINDEX_CORE_BUILD=1)
 add_definitions(-DFMT_HEADER_ONLY=1)
 add_definitions(-DSPDLOG_FMT_EXTERNAL=1)
 add_definitions(-DFMT_USE_FULL_CACHE_DRAGONBOX=1)
+add_definitions(-DBS_THREAD_POOL_NATIVE_EXTENSIONS)
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
 if (ENABLE_EXTRA_CLUSTER_LOGS)

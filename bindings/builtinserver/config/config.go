@@ -41,6 +41,7 @@ type LoggerConf struct {
 
 type SystemConf struct {
 	User                string  `yaml:"user"`
+	BackgroundThreads   uint    `yaml:"background_threads"`
 	AllocatorCacheLimit int64   `yaml:"allocator_cache_limit"`
 	AllocatorCachePart  float32 `yaml:"allocator_cache_part"`
 }
@@ -99,6 +100,8 @@ func DefaultServerConfig() *ServerConfig {
 			LogLevel:  "error",
 		},
 		System: SystemConf{
+			// Process-wide pool: 0 selects the thread count automatically based on CPU cores.
+			BackgroundThreads:   0,
 			AllocatorCacheLimit: -1,
 			AllocatorCachePart:  -1,
 		},

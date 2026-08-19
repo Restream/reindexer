@@ -1,9 +1,19 @@
 #pragma once
 
+#include "core/embedding/circuitbreaker_defaults.h"
 #include "estl/h_vector.h"
 #include "fmt/format.h"
 
 namespace reindexer {
+
+struct [[nodiscard]] CircuitBreakerConfig {
+	size_t threshold{EmbedderCircuitBreakerDefaults::kThreshold};
+	size_t threshold_timeout_ms{EmbedderCircuitBreakerDefaults::kThresholdTimeoutMs};
+	size_t cooldown_ms{EmbedderCircuitBreakerDefaults::kCooldownMs};
+	bool operator==(const CircuitBreakerConfig& other) const noexcept = default;
+
+	bool Enabled() const noexcept { return threshold > 0 && cooldown_ms > 0; }
+};
 
 struct [[nodiscard]] PoolConfig {
 	size_t connections{10};
@@ -11,6 +21,7 @@ struct [[nodiscard]] PoolConfig {
 	size_t connect_timeout_ms{300};
 	size_t read_timeout_ms{5'000};
 	size_t write_timeout_ms{5'000};
+	CircuitBreakerConfig circuit_breaker{};
 	bool operator==(const PoolConfig& other) const noexcept = default;
 };
 

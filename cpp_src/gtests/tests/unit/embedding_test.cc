@@ -129,9 +129,8 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbeddingQueryOnly) try {
 )json"sv);
 	ASSERT_TRUE(indexDef) << indexDef.error().what();
 	auto embedding = indexDef->Opts().FloatVector().Embedding();
-	// NOLINTBEGIN(bugprone-unchecked-optional-access)
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 	const auto& embedOpts = embedding.value();
-	// NOLINTEND(bugprone-unchecked-optional-access)
 	ASSERT_TRUE(!embedOpts.upsertEmbedder.has_value());
 	ASSERT_TRUE(embedOpts.queryEmbedder.has_value());
 }
@@ -243,6 +242,94 @@ TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbedderPoolFull) try {
 }
 )json"sv);
 	ASSERT_TRUE(indexDef) << indexDef.error().what();
+}
+CATCH_AND_ASSERT
+
+TEST_F(EmbeddingTest, ParseDslIndexDefWithEmbedderCircuitBreaker) try {
+	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
+{
+	"name":"hnsw",
+	"json_paths":["hnsw"]
+	"field_type":"float_vector",
+	"index_type":"hnsw",
+	"is_pk":false,
+	"is_array":false,
+	"is_dense":false,
+	"is_sparse":false,
+	"collate_mode":"none",
+	"sort_order_letters":"",
+	"expire_after":0,
+	"config":{
+		"dimension":2048,
+		"metric":"l2",
+		"start_size":100,
+		"ef_construction":200,
+		"m":16,
+		"embedding": {
+			"upsert_embedder": {
+				"URL": "http://127.0.0.1:7777/embedder",
+				"cache_tag": "UpsertEmbedder",
+				"fields": [ "idx1", "idx2" ],
+				"pool": {
+					"connections": 10,
+					"circuit_breaker": {
+						"threshold": 8,
+						"threshold_timeout_ms": 12000,
+						"cooldown_ms": 3000
+					}
+				}
+			}
+		}
+	}
+}
+)json"sv);
+	ASSERT_TRUE(indexDef) << indexDef.error().what();
+	auto embedding = indexDef->Opts().FloatVector().Embedding();
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+	const auto& cb = embedding.value().upsertEmbedder.value().pool.circuit_breaker;
+	EXPECT_EQ(cb.threshold, 8);
+	EXPECT_EQ(cb.threshold_timeout_ms, 12000);
+	EXPECT_EQ(cb.cooldown_ms, 3000);
+}
+CATCH_AND_ASSERT
+
+TEST_F(EmbeddingTest, NegativeParseDslIndexDefWithEmbedderCircuitBreakerThreshold) try {
+	const auto indexDef = reindexer::IndexDef::FromJSON(R"json(
+{
+	"name":"hnsw",
+	"json_paths":["hnsw"]
+	"field_type":"float_vector",
+	"index_type":"hnsw",
+	"is_pk":false,
+	"is_array":false,
+	"is_dense":false,
+	"is_sparse":false,
+	"collate_mode":"none",
+	"sort_order_letters":"",
+	"expire_after":0,
+	"config":{
+		"dimension":2048,
+		"metric":"l2",
+		"start_size":100,
+		"ef_construction":200,
+		"m":16,
+		"embedding": {
+			"upsert_embedder": {
+				"URL": "http://127.0.0.1:7777/embedder",
+				"fields": [ "idx1" ],
+				"pool": {
+					"circuit_breaker": {
+						"threshold": 256
+					}
+				}
+			}
+		}
+	}
+}
+)json"sv);
+	ASSERT_FALSE(indexDef);
+	ASSERT_STREQ(indexDef.error().what(),
+				 "Configuration 'embedding:upsert_embedder:pool:circuit_breaker:threshold' should not be more than 255");
 }
 CATCH_AND_ASSERT
 

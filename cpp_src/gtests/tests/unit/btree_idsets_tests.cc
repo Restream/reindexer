@@ -1,9 +1,12 @@
+#include <limits>
 #include "btree_idsets_api.h"
 #include "core/id_type.h"
 #include "core/index/index.h"
 #include "core/index/string_map.h"
 #include "core/nsselecter/btreeindexiterator.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/item_context.h"
+#include "core/nsselecter/joins/iterators.h"
+#include "core/selectkeyresult.h"
 
 namespace reindexer_tests {
 
@@ -112,14 +115,16 @@ TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 		prevFieldTwo = currFieldTwo;
 
 		Variant prevJoinedFk;
-		auto itemIt = it.GetJoined();
-		reindexer::joins::JoinedFieldIterator joinedFieldIt = itemIt.begin();
+		auto joinedItemCtx = it.GetJoinedContext();
+		auto& joinedItemIt = joinedItemCtx.iterator;
+		reindexer::joins::FieldIterator joinedFieldIt = joinedItemIt.Begin();
 		EXPECT_TRUE(joinedFieldIt.ItemsCount() > 0);
-		for (int j = 0; j < joinedFieldIt.ItemsCount(); ++j) {
-			reindexer::ItemImpl joinedItem = joinedFieldIt.GetItem(j, qr.GetPayloadType(1), qr.GetTagsMatcher(1));
-			Variant joinedFkCurr = joinedItem.GetField(qr.GetPayloadType(1).FieldByName(kFieldIdFk));
+		auto qr = joinedFieldIt.ToQueryResults(joinedItemCtx);
+		for (auto it : qr) {
+			auto joinedItem = it.GetItem();
+			Variant joinedFkCurr = joinedItem[kFieldIdFk];
 			EXPECT_TRUE(joinedFkCurr == item[kFieldId]);
-			if (j != 0) {
+			if (it != qr.begin()) {
 				EXPECT_TRUE(joinedFkCurr >= prevJoinedFk);
 			}
 			prevJoinedFk = joinedFkCurr;
@@ -158,16 +163,18 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	reindexer::IdSet::idset_iterator emptyIdsIt{empty_ids_range.begin()};
 	reindexer::BtreeIndexIterator<typeof(m1)> bIt1(m1, emptyIds);
 	bIt1.Start(false);
-	while (pos < emptyIds.Size() && bIt1.Next()) {
-		EXPECT_EQ(bIt1.Value(), *emptyIdsIt);
+	while (pos < emptyIds.Size()) {
+		const auto [ok, value] = bIt1.Next();
+		ASSERT_TRUE(ok);
+		EXPECT_EQ(value, *emptyIdsIt);
 		++emptyIdsIt;
 		++pos;
 	}
 	EXPECT_TRUE(pos == emptyIds.Size());
 
 	pos = 0;
-	while (bIt1.Next()) {
-		EXPECT_EQ(bIt1.Value(), ids1[pos]);
+	for (auto [ok, value] = bIt1.Next(); ok; std::tie(ok, value) = bIt1.Next()) {
+		EXPECT_EQ(value, ids1[pos]);
 		++pos;
 	}
 	EXPECT_TRUE(pos == ids1.size());
@@ -175,8 +182,8 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	reindexer::BtreeIndexIterator<typeof(m2)> bIt2(m2, emptyIdsKeyEntry.Unsorted());
 	bIt2.Start(true);
 	pos = ids2.size() - 1;
-	while (bIt2.Next() && pos) {
-		EXPECT_EQ(bIt2.Value(), ids2[pos]);
+	for (auto [ok, value] = bIt2.Next(); ok && pos; std::tie(ok, value) = bIt2.Next()) {
+		EXPECT_EQ(value, ids2[pos]);
 		if (pos) {
 			--pos;
 		}
@@ -187,14 +194,82 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	reindexer::IdSet::idset_reverse_iterator emptyIdsRit{empty_ids_reverse_range.begin()};
 
 	pos = emptyIds.Size() - 1;
-	while (bIt2.Next()) {
-		EXPECT_EQ(bIt2.Value(), *emptyIdsRit);
+	for (auto [ok, value] = bIt2.Next(); ok; std::tie(ok, value) = bIt2.Next()) {
+		EXPECT_EQ(value, *emptyIdsRit);
 		if (pos) {
 			--pos;
 			++emptyIdsRit;
 		}
 	}
 	EXPECT_TRUE(pos == 0);
+}
+
+TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorEstimates) {
+	reindexer::number_map<int64_t, reindexer::Index::KeyEntryPlain> index;
+	for (int64_t key = 0; key < 3; ++key) {
+		auto [it, inserted] = index.insert({key, reindexer::Index::KeyEntryPlain{}});
+		ASSERT_TRUE(inserted);
+		it->second.Unsorted().AddUnordered(reindexer::IdType::FromNumber(2 * key));
+		it->second.Unsorted().AddUnordered(reindexer::IdType::FromNumber(2 * key + 1));
+	}
+
+	constexpr size_t kNamespaceItems = 100;
+	reindexer::BtreeIndexIterator<typeof(index)> iterator(index.begin(), index.end(), kNamespaceItems);
+
+	auto estimate = iterator.GetPlanningEstimate();
+	EXPECT_EQ(estimate.kind, reindexer::MaxIterationsEstimateKind::UpperBound);
+	EXPECT_EQ(estimate.value, kNamespaceItems);
+
+	estimate = iterator.ProbeMaxIterations(3);
+	EXPECT_EQ(estimate.kind, reindexer::MaxIterationsEstimateKind::AtLeast);
+	EXPECT_GE(estimate.value, 3);
+
+	// A censored probe must not masquerade as exact planning cardinality.
+	estimate = iterator.GetPlanningEstimate();
+	EXPECT_EQ(estimate.kind, reindexer::MaxIterationsEstimateKind::UpperBound);
+	EXPECT_EQ(estimate.value, kNamespaceItems);
+
+	estimate = iterator.ProbeMaxIterations(kNamespaceItems);
+	EXPECT_EQ(estimate.kind, reindexer::MaxIterationsEstimateKind::Exact);
+	EXPECT_EQ(estimate.value, 6);
+
+	estimate = iterator.GetPlanningEstimate();
+	EXPECT_EQ(estimate.kind, reindexer::MaxIterationsEstimateKind::Exact);
+	EXPECT_EQ(estimate.value, 6);
+
+	auto complement = estimate.Complement(kNamespaceItems);
+	EXPECT_EQ(complement.kind, reindexer::MaxIterationsEstimateKind::Exact);
+	EXPECT_EQ(complement.value, kNamespaceItems - 6);
+
+	complement = reindexer::MaxIterationsEstimate::UpperBound(6).Complement(kNamespaceItems);
+	EXPECT_EQ(complement.kind, reindexer::MaxIterationsEstimateKind::UpperBound);
+	EXPECT_EQ(complement.value, kNamespaceItems);
+
+	complement = reindexer::MaxIterationsEstimate::Heuristic(6).Complement(kNamespaceItems);
+	EXPECT_EQ(complement.kind, reindexer::MaxIterationsEstimateKind::UpperBound);
+	EXPECT_EQ(complement.value, kNamespaceItems);
+}
+
+TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorExactProbeBeyondCostBarrier) {
+	constexpr size_t kItems = 200'001;
+	reindexer::number_map<int64_t, reindexer::Index::KeyEntryPlain> index;
+	for (size_t key = 0; key < kItems; ++key) {
+		auto [it, inserted] = index.insert({key, reindexer::Index::KeyEntryPlain{}});
+		ASSERT_TRUE(inserted);
+		it->second.Unsorted().AddUnordered(reindexer::IdType::FromNumber(key));
+	}
+
+	reindexer::IndexIterator::Ptr iterator(
+		reindexer::make_intrusive<reindexer::BtreeIndexIterator<typeof(index)>>(index.begin(), index.end(), kItems));
+	reindexer::SelectKeyResult result;
+	result.emplace_back(std::move(iterator));
+
+	EXPECT_EQ(result.EstimateMaxIterations(), std::numeric_limits<size_t>::max());
+	EXPECT_EQ(result.GetPlanningEstimate().kind, reindexer::MaxIterationsEstimateKind::UpperBound);
+
+	const auto exact = result.ProbeMaxIterations(std::numeric_limits<size_t>::max());
+	EXPECT_EQ(exact.kind, reindexer::MaxIterationsEstimateKind::Exact);
+	EXPECT_EQ(exact.value, kItems);
 }
 
 }  // namespace reindexer_tests

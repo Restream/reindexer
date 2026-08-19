@@ -58,8 +58,6 @@ public:
 	virtual void ReserveHashTables(const std::vector<char>& stats) override;
 
 protected:
-	constexpr static int kMaxIdsetsForDistinct = 500;
-
 	IndexUnordered(const IndexUnordered& other, IndexCloneKind kind);
 
 	bool tryIdsetCache(const VariantArray& keys, CondType condition, SortType sortId,
@@ -89,9 +87,22 @@ private:
 	void dump(S& os, std::string_view step, std::string_view offset) const;
 	std::pair<typename Map::iterator, bool> findOrInsert(const Variant& key);
 
+	static int64_t idsetPlainSizeBytesForClone(const IndexUnordered& other, IndexCloneKind kind) noexcept {
+		int64_t plain = other.idsetPlainSizeBytes_.load(std::memory_order_relaxed);
+		if (kind != IndexCloneKind::Snapshot) {
+			// Logical clone copies idx_map but not pkSortedIds_; drop their contribution from the counter.
+			for (const auto& sIds : other.pkSortedIds_) {
+				plain -= int64_t(sIds.capacity() * sizeof(IdType));
+			}
+		}
+		assertrx_dbg(plain >= 0);
+		return plain;
+	}
+
 	// Sorted ID for primary key indexes with IdSetUnique
 	std::vector<std::vector<IdType>> pkSortedIds_;
-	std::atomic<int64_t> pkSortedIdsSizeBytes_{0};
+	// Live idset plain heap accounting (updated from wlock Upsert/Delete and rlock Commit/UpdateSortedIds).
+	std::atomic<int64_t> idsetPlainSizeBytes_{0};
 };
 
 std::unique_ptr<Index> IndexUnordered_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,

@@ -12,13 +12,13 @@ constexpr static uint64_t kMaxSynonymSize = 64;
 
 class [[nodiscard]] GroupOfSynonyms {
 public:
-	std::vector<std::vector<std::wstring>> queryWords;
-	std::vector<std::vector<std::wstring>> alternatives;
+	std::vector<std::vector<std::u16string>> queryWords;
+	std::vector<std::vector<std::u16string>> alternatives;
 	size_t maxWordParts = 0;
 
 	void Parse(const FTConfig::Synonym& synonym, const SplitOptions& splitOptions) {
-		std::wstring buf;
-		std::vector<std::wstring> parts;
+		std::u16string buf;
+		std::vector<std::u16string> parts;
 
 		for (const auto& tok : synonym.tokens) {
 			split(tok, buf, parts, splitOptions);
@@ -40,7 +40,7 @@ public:
 
 	Synonyms() = default;
 
-	void FindOne2OneSubstitutions(const std::wstring& word, h_vector<std::wstring, 5>& wordSubstitutions) {
+	void FindOne2OneSubstitutions(const std::u16string& word, h_vector<std::u16string, 5>& wordSubstitutions) {
 		wordSubstitutions.resize(0);
 		size_t groupsProcessed = 0;
 		if (auto it = index_.find(word); it != index_.end()) {
@@ -66,12 +66,12 @@ public:
 	}
 
 	struct [[nodiscard]] Substitution {
-		std::vector<std::wstring> substitutionWords;
+		std::vector<std::u16string> substitutionWords;
 		std::vector<size_t> positionsSubstituted;
 		float proc = 0.0;
 
 		Substitution() = default;
-		Substitution(const std::vector<std::wstring>& words, const std::vector<size_t>& positions, float p)
+		Substitution(const std::vector<std::u16string>& words, const std::vector<size_t>& positions, float p)
 			: substitutionWords(words), positionsSubstituted(positions), proc(p) {}
 
 		void TransformPositions(const std::vector<size_t>& positionsMapping) {
@@ -81,8 +81,8 @@ public:
 		}
 	};
 
-	static bool atLeastOneNewWord(const RSet<std::wstring>& uniqueWords, const std::vector<std::wstring>& words) {
-		for (const std::wstring& w : words) {
+	static bool atLeastOneNewWord(const RSet<std::u16string>& uniqueWords, const std::vector<std::u16string>& words) {
+		for (const std::u16string& w : words) {
 			if (uniqueWords.find(w) == uniqueWords.end()) {
 				return true;
 			}
@@ -96,7 +96,7 @@ public:
 		std::vector<std::pair<size_t, size_t>> substData(groups_.size() * maxGroupSize);
 		std::vector<bool> groupsFound(groups_.size(), false);
 
-		RSet<std::wstring> uniqueQueryWords;
+		RSet<std::u16string> uniqueQueryWords;
 		for (size_t wIdx = 0; wIdx < queryWords.size(); ++wIdx) {
 			for (size_t vIdx = 0; vIdx < queryWords[wIdx].size(); ++vIdx) {
 				uniqueQueryWords.insert(queryWords[wIdx][vIdx].pattern);
@@ -105,7 +105,7 @@ public:
 
 		for (size_t wIdx = 0; wIdx < queryWords.size(); ++wIdx) {
 			for (size_t vIdx = 0; vIdx < queryWords[wIdx].size(); ++vIdx) {
-				const std::wstring& variantPattern = queryWords[wIdx][vIdx].pattern;
+				const std::u16string& variantPattern = queryWords[wIdx][vIdx].pattern;
 				const float variantProc = queryWords[wIdx][vIdx].proc;
 
 				if (!queryWords[wIdx][vIdx].synonyms) {
@@ -180,6 +180,25 @@ public:
 		indexateSubstitutions();
 	}
 
+	size_t heap_size() const noexcept {
+		size_t res = groups_.capacity() * sizeof(GroupOfSynonyms);
+		for (const auto& group : groups_) {
+			res += group.queryWords.capacity() * sizeof(decltype(group.queryWords)::value_type);
+			for (const auto& queryWord : group.queryWords) {
+				res += queryWord.capacity() * sizeof(char16_t);
+			}
+			res += group.alternatives.capacity() * sizeof(decltype(group.alternatives)::value_type);
+			for (const auto& alternative : group.alternatives) {
+				res += alternative.capacity() * sizeof(char16_t);
+			}
+		}
+		for (const auto& [word, infos] : index_) {
+			res += word.capacity() * sizeof(char16_t);
+			res += infos.capacity() * sizeof(WordInfo);
+		}
+		return res;
+	}
+
 private:
 	struct [[nodiscard]] WordInfo {
 		size_t groupIdx = 0;
@@ -188,7 +207,7 @@ private:
 	};
 
 	std::vector<GroupOfSynonyms> groups_;
-	RHashMap<std::wstring, std::vector<WordInfo>> index_;
+	RHashMap<std::u16string, std::vector<WordInfo>> index_;
 	size_t maxGroupSize = 0;
 
 	void indexateSubstitutions() {
@@ -197,7 +216,7 @@ private:
 			const GroupOfSynonyms& group = groups_[gIdx];
 			maxGroupSize = std::max(maxGroupSize, group.queryWords.size() * group.maxWordParts);
 			for (size_t wIdx = 0; wIdx < group.queryWords.size(); ++wIdx) {
-				const std::vector<std::wstring>& queryWords = group.queryWords[wIdx];
+				const std::vector<std::u16string>& queryWords = group.queryWords[wIdx];
 				for (size_t pos = 0; pos < queryWords.size(); ++pos) {
 					index_[queryWords[pos]].emplace_back(WordInfo{.groupIdx = gIdx, .groupQueryWordIdx = wIdx, .groupQueryWordPos = pos});
 				}

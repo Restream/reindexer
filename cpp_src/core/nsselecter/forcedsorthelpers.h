@@ -66,14 +66,22 @@ public:
 		} else if (iter->second != cost_ - 1) {
 			static constexpr auto errMsg = "Forced sort value '{}' is duplicated. Deduplicated by the first occurrence.";
 			if constexpr (std::is_same_v<V, Variant>) {
-				logFmt(LogInfo, errMsg, iter->first.template As<std::string>());
+				logFmt(LogInfo, errMsg, asString(iter->first));
 			} else {
-				logFmt(LogInfo, errMsg, Variant{iter->first}.template As<std::string>());
+				logFmt(LogInfo, errMsg, asString(Variant{iter->first}));
 			}
 		}
 	}
 
 private:
+	std::string asString(const Variant& v) const {
+		if constexpr (std::is_same_v<Map, unordered_payload_map_fast<std::ptrdiff_t>>) {
+			return v.AsSingleString(map_.GetPayloadType(), map_.GetFieldsSet());
+		} else {
+			return v.template As<std::string>();
+		}
+	}
+
 	Map& map_;
 	typename Map::mapped_type cost_ = 1;
 };

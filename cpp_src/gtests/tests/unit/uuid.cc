@@ -13,17 +13,29 @@ namespace reindexer_tests {
 
 using reindexer::IndexOpts;
 
+namespace {
+
+constexpr std::string_view kHexChars = "0123456789aAbBcCdDeEfF";
+constexpr std::string_view kNilUUID = "00000000-0000-0000-0000-000000000000";
+constexpr unsigned kUuidDelimPositions[] = {8, 13, 18, 23};
+
+bool isUuidDelimPos(unsigned i) noexcept {
+	return std::find(std::begin(kUuidDelimPositions), std::end(kUuidDelimPositions), i) != std::end(kUuidDelimPositions);
+}
+
+}  // namespace
+
 static constexpr int kItemsCount = 100;
 static constexpr const char* nsName = "ns_uuid";
 
 TEST(UUID, FromString) {
-	reindexer::Uuid uuid(reindexer_tests_tools::nilUUID);
-	EXPECT_EQ(std::string(uuid), reindexer_tests_tools::nilUUID);
+	reindexer::Uuid uuid(kNilUUID);
+	EXPECT_EQ(std::string(uuid), kNilUUID);
 
 	for (int j = 0; j < 1000; ++j) {
 		const std::string strUuid = reindexer_tests_tools::randStrUuid();
 		uuid = reindexer::Uuid{strUuid};
-		EXPECT_EQ(std::string(uuid), reindexer::toLower(strUuid));
+		EXPECT_EQ(std::string(uuid), reindexer::ToLower(strUuid));
 	}
 }
 
@@ -33,11 +45,11 @@ TEST(UUID, FromString_InvalidChar) {
 		unsigned i;
 		do {
 			i = rand() % strUuid.size();
-		} while (reindexer_tests_tools::isUuidDelimPos(i));
+		} while (isUuidDelimPos(i));
 		char ch;
 		do {
 			ch = rand() % 256;
-		} while (reindexer_tests_tools::hexChars.find(ch) != std::string_view::npos);
+		} while (kHexChars.find(ch) != std::string_view::npos);
 		strUuid[i] = ch;
 		[[maybe_unused]] reindexer::Uuid uuid;
 		EXPECT_THROW(uuid = reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
@@ -47,8 +59,7 @@ TEST(UUID, FromString_InvalidChar) {
 TEST(UUID, FromString_InvalidSize) {
 	for (int j = 0; j < 1000; ++j) {
 		std::string strUuid = reindexer_tests_tools::randStrUuid();
-		std::vector<unsigned> delimPos(std::begin(reindexer_tests_tools::uuidDelimPositions),
-									   std::end(reindexer_tests_tools::uuidDelimPositions));
+		std::vector<unsigned> delimPos(std::begin(kUuidDelimPositions), std::end(kUuidDelimPositions));
 		const bool del = rand() % 2;
 		const unsigned count = rand() % 3 + 1;
 		for (unsigned i = 0; i < count; ++i) {
@@ -59,7 +70,7 @@ TEST(UUID, FromString_InvalidSize) {
 			if (del) {
 				strUuid.erase(idx, 1);
 			} else {
-				strUuid.insert(idx, 1, reindexer_tests_tools::hexChars[rand() % reindexer_tests_tools::hexChars.size()]);
+				strUuid.insert(idx, 1, kHexChars[rand() % kHexChars.size()]);
 			}
 			std::transform(delimPos.begin(), delimPos.end(), delimPos.begin(),
 						   [idx, del](unsigned i) { return idx < i ? (del ? i - 1 : i + 1) : i; });
@@ -72,10 +83,10 @@ TEST(UUID, FromString_InvalidSize) {
 TEST(UUID, FromString_InvalidVariant) {
 	for (int j = 0; j < 1000; ++j) {
 		std::string strUuid = reindexer_tests_tools::randStrUuid();
-		if (strUuid == reindexer_tests_tools::nilUUID) {
-			strUuid[19] = reindexer_tests_tools::hexChars[1 + rand() % 7];
+		if (strUuid == kNilUUID) {
+			strUuid[19] = kHexChars[1 + rand() % 7];
 		} else {
-			strUuid[19] = reindexer_tests_tools::hexChars[rand() % 8];
+			strUuid[19] = kHexChars[rand() % 8];
 		}
 		[[maybe_unused]] reindexer::Uuid uuid;
 		EXPECT_THROW(uuid = reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
@@ -88,7 +99,7 @@ TEST(UUID, ToVariant) {
 		const reindexer::Uuid uuid{strUuid};
 		reindexer::Variant varUuid{uuid};
 		EXPECT_EQ(reindexer::Uuid(varUuid), uuid);
-		EXPECT_EQ(std::string(reindexer::Uuid(varUuid)), reindexer::toLower(strUuid));
+		EXPECT_EQ(std::string(reindexer::Uuid(varUuid)), reindexer::ToLower(strUuid));
 	}
 }
 
@@ -101,9 +112,9 @@ TEST(UUID, ConvertVariant) {
 		const auto uuidFromVariant = varStr.As<reindexer::Uuid>();
 		EXPECT_EQ(uuid, uuidFromVariant);
 		const auto strFromVariant = varUuid.As<std::string>();
-		EXPECT_EQ(strFromVariant, reindexer::toLower(strUuid));
+		EXPECT_EQ(strFromVariant, reindexer::ToLower(strUuid));
 		const auto varConverted = varStr.convert(reindexer::KeyValueType::Uuid{});
-		EXPECT_EQ(reindexer::toLower(strUuid), varConverted.As<std::string>());
+		EXPECT_EQ(reindexer::ToLower(strUuid), varConverted.As<std::string>());
 		EXPECT_EQ(uuid, varConverted.As<reindexer::Uuid>());
 	}
 }
@@ -281,7 +292,7 @@ static void test(reindexer::Reindexer& rx, const std::vector<Values<T1, T2>>& va
 					if (values[i].scalar) {
 						EXPECT_EQ(v[0].As<T1>(), *values[i].scalar) << i;  // NOLINT(bugprone-unchecked-optional-access)
 					} else {
-						EXPECT_TRUE(v[0].As<T1>() == T1{reindexer_tests_tools::nilUUID} || v[0].As<T1>() == T1{})
+						EXPECT_TRUE(v[0].As<T1>() == T1{kNilUUID} || v[0].As<T1>() == T1{})
 							<< i << ' ' << v[0].As<T1>();  // TODO delete '|| v[0].As<T1>() == T1{}' after #1353
 					}
 				}

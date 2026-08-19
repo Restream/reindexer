@@ -9,6 +9,7 @@
 #include "client/reindexer.h"
 #include "cluster/config.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/definitions/indexdef.h"
 #include "core/query/sql/sql_suggestions.h"
 #include "core/reindexer.h"
 #include "core/system_ns_names.h"
@@ -200,7 +201,7 @@ static std::string_view removeQuotes(std::string_view str) {
 
 class [[nodiscard]] DumpFileIndex {
 public:
-	Error Indexate(const std::string& filename, const StringsSetT& selectedNamespaces) noexcept {
+	Error Indexate(const std::string& filename, const StringsSetT& selectedNamespaces, bool showProgress = true) noexcept {
 		try {
 			reindexer::lock_guard lock(dumpLock_);
 			headCommands_.resize(0);
@@ -219,7 +220,7 @@ public:
 			bool lastNamespaceSelected = true;
 			std::string currentNamespace;
 			const auto totalBytes = fileSize(filename);
-			ConsoleProgress progress;
+			ConsoleProgress progress(OutputStream::Stdout, showProgress);
 			bool progressFinished = false;
 			auto progressGuard = reindexer::MakeScopeGuard([&] {
 				if (totalBytes && !progressFinished) {
@@ -307,8 +308,7 @@ public:
 			}
 
 			return errOK;
-		}
-		CATCH_AND_RETURN;
+		} CATCH_AND_RETURN;
 	}
 
 	std::vector<std::pair<std::string, uint64_t>> GetHeadCommands() {
@@ -338,7 +338,7 @@ public:
 			std::sort(namespacesPriority.begin(), namespacesPriority.end(), [&](size_t lhs, size_t rhs) {
 				return nsDumps_[lhs].numProcessors_ < nsDumps_[rhs].numProcessors_ ||
 					   (nsDumps_[lhs].numProcessors_ == nsDumps_[rhs].numProcessors_ &&
-						nsDumps_[lhs].GetProgress() < nsDumps_[rhs].GetProgress());
+						nsDumps_[lhs].GetProgress() > nsDumps_[rhs].GetProgress());
 			});
 
 			for (size_t nsIndex : namespacesPriority) {
@@ -351,8 +351,7 @@ public:
 			}
 
 			return errOK;
-		}
-		CATCH_AND_RETURN;
+		} CATCH_AND_RETURN;
 	}
 
 	void ProcessingEnded(size_t nsIndex, size_t processedUpserts) {
@@ -450,6 +449,17 @@ const std::initializer_list<typename CommandsProcessor<DBInterface>::CommandDefi
 
 		\namespaces rename <oldName> <newName>
 		Rename namespace
+		)help"},
+		CommandDefinition{"\\index",		"Manipulate indexes",&CommandsProcessor::commandIndex,R"help(
+	Syntax:
+		\index add <namespace> <index json>
+		Add index to existing namespace
+
+		\index drop <namespace> <index name>
+		Drop index from namespace
+
+		\index update <namespace> <index json>
+		Update index in namespace
 		)help"},
 		CommandDefinition{"\\meta",		"Manipulate meta",&CommandsProcessor::commandMeta,R"help(
 	Syntax:
@@ -601,8 +611,7 @@ Error CommandsProcessor<DBInterface>::Connect(const std::string& dsn, const Conn
 		}
 
 		return db().Connect(dsn, connectOpts);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 template <typename DBInterface>
@@ -653,7 +662,7 @@ Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std:
 			}
 			const auto inputFileSize = fileSize(inFileName_);
 			DumpFileIndex dumpFileIdx;
-			if (Error err = dumpFileIdx.Indexate(inFileName_, selectedNamespaces_); !err.ok()) {
+			if (Error err = dumpFileIdx.Indexate(inFileName_, selectedNamespaces_, !noProgressMeter_); !err.ok()) {
 				printError(err);
 				if (!selectedNamespaces_.empty()) {
 					printWarning("Can not parse file sequentially because of selected namespaces set, ending...");
@@ -685,8 +694,7 @@ Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std:
 		} else {
 			return interactive();
 		}
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 static std::string indexDefDiffDescription(const reindexer::IndexDef& dumpIdx, const reindexer::IndexDef& targetIdx) {
@@ -1127,8 +1135,7 @@ Error CommandsProcessor<DBInterface>::dryRunDumpFile() noexcept {
 			return Error(errParams, "Dry run found {} error(s) in dump file", errors.size());
 		}
 		return errOK;
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 template <typename DBInterface>
@@ -1163,8 +1170,7 @@ Error CommandsProcessor<DBInterface>::process(const std::string& command) noexce
 			}
 		}
 		return Error(errParams, "Unknown command '{}'. Type '\\help' to list of available commands", token);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 #if REINDEX_WITH_REPLXX
@@ -1259,8 +1265,7 @@ Error CommandsProcessor<DBInterface>::interactive() noexcept {
 		}
 #endif
 		return errOK;
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 template <typename DBInterface>
@@ -1310,7 +1315,7 @@ template <typename DBInterface>
 void CommandsProcessor<DBInterface>::fromFile(std::istream& infile, std::optional<size_t> inputFileSize) {
 	fromFile_ = true;
 	auto fromFileGuard = reindexer::MakeScopeGuard([this]() { fromFile_ = false; });
-	ConsoleProgress progress;
+	ConsoleProgress progress(OutputStream::Stdout, !noProgressMeter_);
 	bool progressFinished = false;
 	auto progressGuard = reindexer::MakeScopeGuard([&] {
 		if (inputFileSize && !progressFinished) {
@@ -1385,7 +1390,7 @@ void CommandsProcessor<DBInterface>::fromDumpFile(std::ifstream& infile, DumpFil
 
 	std::vector<Error> errs(numThreads_);
 	std::atomic<bool> abort{false};
-	ConsoleProgress progress;
+	ConsoleProgress progress(OutputStream::Stdout, !noProgressMeter_);
 	std::atomic<bool> progressDone{false};
 	std::thread progressThread([&] {
 		while (!progressDone.load(std::memory_order_relaxed)) {
@@ -1457,8 +1462,7 @@ Error CommandsProcessor<DBInterface>::getSuggestions(const std::string& input, r
 			addCommandsSuggestions(input, suggestions.suggestions);
 		}
 		return errOK;
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 template <>
@@ -1516,6 +1520,8 @@ void CommandsProcessor<DBInterface>::addCommandsSuggestions(const std::string& c
 		} else {
 			checkForCommandNameMatch(token, {"add", "list", "drop"}, suggestions);
 		}
+	} else if (token == "\\index") {
+		checkForCommandNameMatch(parser.NextToken(), {"add", "drop", "update"}, suggestions);
 	} else if (token == "\\meta") {
 		checkForCommandNameMatch(parser.NextToken(), {"put", "list"}, suggestions);
 	} else if (token == "\\set") {
@@ -1698,76 +1704,98 @@ void CommandsProcessor<DBInterface>::commandSelectSQL(std::string_view command) 
 	auto& aggResults = results.GetAggregationResults();
 	if (aggResults.size() && !cancelCtx_.IsCancelled()) {
 		output_() << "Aggregations: " << std::endl;
-		for (auto& agg : aggResults) {
-			switch (agg.GetType()) {
-				case AggFacet: {
-					const auto& fields = agg.GetFields();
-					assertrx(!fields.empty());
-					reindexer::h_vector<int, 1> maxW;
-					maxW.reserve(fields.size());
-					for (const auto& field : fields) {
-						maxW.emplace_back(field.length());
-					}
-					for (auto& row : agg.GetFacets()) {
-						assertrx(row.values.size() == fields.size());
-						for (size_t i = 0; i < row.values.size(); ++i) {
-							maxW.at(i) = std::max(maxW.at(i), int(row.values[i].length()));
+		auto& outputType = variables_[kVariableOutput];
+		if (outputType == kOutputModeTable) {
+			for (auto& agg : aggResults) {
+				switch (agg.GetType()) {
+					case AggFacet: {
+						const auto& fields = agg.GetFields();
+						assertrx(!fields.empty());
+						reindexer::h_vector<int, 1> maxW;
+						maxW.reserve(fields.size());
+						for (const auto& field : fields) {
+							maxW.emplace_back(field.length());
 						}
-					}
-					int rowWidth = 8 + (maxW.size() - 1) * 2;
-					for (auto& mW : maxW) {
-						mW += 3;
-						rowWidth += mW;
-					}
-					for (size_t i = 0; i < fields.size(); ++i) {
-						if (i != 0) {
-							output_() << "| ";
+						for (auto& row : agg.GetFacets()) {
+							assertrx(row.values.size() == fields.size());
+							for (size_t i = 0; i < row.values.size(); ++i) {
+								maxW.at(i) = std::max(maxW.at(i), int(row.values[i].length()));
+							}
 						}
-						output_() << std::left << std::setw(maxW.at(i)) << fields[i];
-					}
-					output_() << "| count" << std::endl;
-					output_() << std::left << std::setw(rowWidth) << std::setfill('-') << "" << std::endl << std::setfill(' ');
-					for (auto& row : agg.GetFacets()) {
-						for (size_t i = 0; i < row.values.size(); ++i) {
+						int rowWidth = 8 + (maxW.size() - 1) * 2;
+						for (auto& mW : maxW) {
+							mW += 3;
+							rowWidth += mW;
+						}
+						for (size_t i = 0; i < fields.size(); ++i) {
 							if (i != 0) {
 								output_() << "| ";
 							}
-							output_() << std::left << std::setw(maxW.at(i)) << row.values[i];
+							output_() << std::left << std::setw(maxW.at(i)) << fields[i];
 						}
-						output_() << "| " << row.count << std::endl;
-					}
-				} break;
-				case AggDistinct: {
-					output_() << "Distinct (";
-					bool comma = false;
-					for (const auto& f : agg.GetFields()) {
-						output_() << (comma ? ", " : "") << f;
-						comma = true;
-					}
-					output_() << ')' << std::endl;
-					const unsigned int nRows = agg.GetDistinctRowCount();
-					const unsigned int nColumn = agg.GetDistinctColumnCount();
-					for (unsigned int i = 0; i < nRows; i++) {
-						comma = false;
-						for (unsigned j = 0; j < nColumn; j++) {
-							output_() << (comma ? ", " : "") << agg.AsSingleString(i, j);
+						output_() << "| count" << std::endl;
+						output_() << std::left << std::setw(rowWidth) << std::setfill('-') << "" << std::endl << std::setfill(' ');
+						for (auto& row : agg.GetFacets()) {
+							for (size_t i = 0; i < row.values.size(); ++i) {
+								if (i != 0) {
+									output_() << "| ";
+								}
+								output_() << std::left << std::setw(maxW.at(i)) << row.values[i];
+							}
+							output_() << "| " << row.count << std::endl;
+						}
+					} break;
+					case AggDistinct: {
+						output_() << "Distinct (";
+						bool comma = false;
+						for (const auto& f : agg.GetFields()) {
+							output_() << (comma ? ", " : "") << f;
 							comma = true;
 						}
-						output_() << std::endl;
-					}
-					output_() << "Returned " << nRows << " values" << std::endl;
-				} break;
-				case AggSum:
-				case AggAvg:
-				case AggMin:
-				case AggMax:
-				case AggCount:
-				case AggCountCached:
-				case AggUnknown:
-					assertrx(agg.GetFields().size() == 1);
-					output_() << reindexer::AggTypeToStr(agg.GetType()) << '(' << agg.GetFields().front() << ") = " << agg.GetValueOrZero()
-							  << std::endl;
+						output_() << ')' << std::endl;
+						const unsigned int nRows = agg.GetDistinctRowCount();
+						const unsigned int nColumn = agg.GetDistinctColumnCount();
+						for (unsigned int i = 0; i < nRows; i++) {
+							comma = false;
+							for (unsigned j = 0; j < nColumn; j++) {
+								output_() << (comma ? ", " : "") << agg.AsSingleString(i, j);
+								comma = true;
+							}
+							output_() << std::endl;
+						}
+						output_() << "Returned " << nRows << " values" << std::endl;
+					} break;
+					case AggSum:
+					case AggAvg:
+					case AggMin:
+					case AggMax:
+					case AggCount:
+					case AggCountCached:
+					case AggUnknown:
+						assertrx(agg.GetFields().size() == 1);
+						output_() << reindexer::AggTypeToStr(agg.GetType()) << '(' << agg.GetFields().front()
+								  << ") = " << agg.GetValueOrZero() << std::endl;
+				}
 			}
+		} else {
+			WrSerializer ser;
+			ser << '[' << '\n';
+			const bool prettyPrint = outputType == kOutputModePretty;
+			for (size_t i = 0, s = aggResults.size(); i < s; ++i) {
+				if (prettyPrint) {
+					WrSerializer json;
+					aggResults[i].GetJSON(json);
+					prettyPrintJSON(reindexer::giftStr(json.Slice()), ser);
+				} else {
+					aggResults[i].GetJSON(ser);
+				}
+				if (i + 1 != s) {
+					ser << ',';
+				}
+				ser << '\n';
+			}
+			ser << ']';
+			output_() << ser.Slice() << std::endl;
 		}
 	}
 }
@@ -1958,8 +1986,7 @@ Error CommandsProcessor<DBInterface>::parallelUpsertCommands(const std::vector<s
 		}
 
 		return lastErr;
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 template <typename DBInterface>
@@ -2032,12 +2059,42 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 
 	auto parametrizedDb = (dumpMode == DumpOptions::Mode::ShardedOnly) ? db() : db().WithShardId(ShardingKeyType::ProxyOff, false);
 
+	ConsoleProgress progress(OutputStream::Stderr, !noProgressMeter_);
+	bool progressFinished = false;
+	auto progressGuard = reindexer::MakeScopeGuard([&] {
+		if (!progressFinished) {
+			progress.Done("Dumping: stopped");
+		}
+	});
+
 	std::ranges::sort(doNsDefs, [&](const NamespaceDef& lhs, const NamespaceDef& rhs) { return lhs.name < rhs.name; });
+
+	std::vector<NamespaceDef> dumpNsDefs;
+	dumpNsDefs.reserve(doNsDefs.size());
 	for (auto& nsDef : doNsDefs) {
-		// skip system namespaces, except #config
 		if (reindexer::isSystemNamespaceNameFast(nsDef.name) && nsDef.name != reindexer::kConfigNamespace) {
 			continue;
 		}
+		dumpNsDefs.emplace_back(std::move(nsDef));
+	}
+
+	std::vector<ProgressInfo> nsProgress;
+	nsProgress.reserve(dumpNsDefs.size());
+	for (const auto& nsDef : dumpNsDefs) {
+		typename DBInterface::QueryResultsT countResults;
+		err = parametrizedDb.Select(Query(nsDef.name).ReqTotal().Limit(0), countResults);
+		throwIfError(err);
+		const int totalCount = countResults.TotalCount();
+		const size_t total = totalCount > 0 ? static_cast<size_t>(totalCount) : 0;
+		nsProgress.emplace_back(ProgressInfo{nsDef.name, 0, total, 0});
+	}
+
+	auto updateProgress = [&] { progress.Print("Dumping", std::span<const ProgressInfo>(nsProgress)); };
+
+	for (size_t nsIndex = 0; nsIndex < dumpNsDefs.size(); ++nsIndex) {
+		const auto& nsDef = dumpNsDefs[nsIndex];
+		nsProgress[nsIndex].activeWorkers = 1;
+		updateProgress();
 
 		wrser << "-- Dumping namespace '" << nsDef.name << "' ..." << '\n';
 
@@ -2089,10 +2146,21 @@ void CommandsProcessor<DBInterface>::commandDump(std::string_view command) {
 				output_() << wrser.Slice();
 				wrser.Reset();
 			}
+
+			if (++nsProgress[nsIndex].processed % kDumpUpdateFreq == 0) {
+				updateProgress();
+			}
 		}
+
+		nsProgress[nsIndex].activeWorkers = 0;
+		nsProgress[nsIndex].processed = nsProgress[nsIndex].total;
+		updateProgress();
 	}
 	output_() << wrser.Slice();
 	output_() << kChecksumPrefix << " \"" << checksum.getHash() << "\"\n";
+
+	progressFinished = true;
+	progress.Done("Dumping: done");
 }
 
 template <typename DBInterface>
@@ -2139,6 +2207,53 @@ void CommandsProcessor<DBInterface>::commandNamespaces(std::string_view command)
 		throwIfError(db().RenameNamespace(nsName, nsNewName));
 	} else {
 		throw Error(errParams, "Unknown sub command '{}' of namespaces command", subCommand);
+	}
+}
+
+template <typename DBInterface>
+void CommandsProcessor<DBInterface>::commandIndex(std::string_view command) {
+	LineParser parser(command);
+	std::ignore = parser.NextToken();
+
+	std::string_view subCommand = parser.NextToken();
+	if (iequals(subCommand, "add")) {
+		auto nsName = reindexer::unescapeString(parser.NextToken());
+		if (nsName.empty()) {
+			throw Error(errParams, "Namespace name is required for \\index add");
+		}
+		if (parser.CurPtr().empty()) {
+			throw Error(errParams, "Index definition JSON is required for \\index add");
+		}
+		auto indexDef = reindexer::IndexDef::FromJSON(reindexer::giftStr(parser.CurPtr()));
+		if (!indexDef.has_value()) {
+			throw indexDef.error();
+		}
+		throwIfError(db().AddIndex(nsName, indexDef.value()));
+	} else if (iequals(subCommand, "update")) {
+		auto nsName = reindexer::unescapeString(parser.NextToken());
+		if (nsName.empty()) {
+			throw Error(errParams, "Namespace name is required for \\index update");
+		}
+		if (parser.CurPtr().empty()) {
+			throw Error(errParams, "Index definition JSON is required for \\index update");
+		}
+		auto indexDef = reindexer::IndexDef::FromJSON(reindexer::giftStr(parser.CurPtr()));
+		if (!indexDef.has_value()) {
+			throw indexDef.error();
+		}
+		throwIfError(db().UpdateIndex(nsName, indexDef.value()));
+	} else if (iequals(subCommand, "drop")) {
+		auto nsName = reindexer::unescapeString(parser.NextToken());
+		if (nsName.empty()) {
+			throw Error(errParams, "Namespace name is required for \\index drop");
+		}
+		auto idxName = reindexer::unescapeString(parser.NextToken());
+		if (idxName.empty()) {
+			throw Error(errParams, "Index name is required for \\index drop");
+		}
+		throwIfError(db().DropIndex(nsName, reindexer::IndexDef(idxName)));
+	} else {
+		throw Error(errParams, "Unknown sub command '{}' of index command", subCommand);
 	}
 }
 

@@ -379,12 +379,14 @@ typedef struct REINDEX_CPP_NODISCARD ConnectOpts {
 
 enum REINDEX_CPP_NODISCARD IndexValueType { NotSet = -1, SetByJsonPath = -2 };
 enum REINDEX_CPP_NODISCARD ShardingAlgorithmType { ByValue, ByRange };
+enum REINDEX_CPP_NODISCARD QueryFormat { QueryFormatV1 = 1, QueryFormatV2 = 2 };
 
 enum REINDEX_CPP_NODISCARD BindingCapability {
 	kBindingCapabilityQrIdleTimeouts = 1,
 	kBindingCapabilityResultsWithShardIDs = 1 << 1,
 	kBindingCapabilityIncarnationTags = 1 << 2,
 	kBindingCapabilityComplexRank = 1 << 3,
+	kBindingCapabilityQueryFormatV2 = 1 << 4,
 };
 
 typedef struct REINDEX_CPP_NODISCARD BindingCapabilities {
@@ -395,6 +397,8 @@ typedef struct REINDEX_CPP_NODISCARD BindingCapabilities {
 	bool HasResultsWithShardIDs() const noexcept { return caps & kBindingCapabilityResultsWithShardIDs; }
 	bool HasIncarnationTags() const noexcept { return caps & kBindingCapabilityIncarnationTags; }
 	bool HasComplexRank() const noexcept { return caps & kBindingCapabilityComplexRank; }
+	bool HasQueryFormatV2() const noexcept { return caps & kBindingCapabilityQueryFormatV2; }
+	QueryFormat GetQueryFormat() const noexcept { return HasQueryFormatV2() ? QueryFormatV2 : QueryFormatV1; }
 #endif
 	int64_t caps;
 } BindingCapabilities;

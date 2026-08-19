@@ -5,9 +5,9 @@
 #include "core/payload/payload_access.h"
 #include "core/payload/payloadfieldvalue.h"
 #include "core/payload/payloadiface.h"
-#include "tools/unaligned.h"
 #include "core/type_consts_helpers.h"
 #include "tools/string_regexp_functions.h"
+#include "tools/unaligned.h"
 
 namespace {
 
@@ -37,18 +37,17 @@ public:
 	reindexer::Variant operator[](size_t i) const {
 		using namespace reindexer;
 		assertrx_dbg(i < len_);
-		return type_.EvaluateOneOf(
-			[&](KeyValueType::Int64) noexcept { return Variant{unaligned::read<int64_t>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Double) noexcept { return Variant{unaligned::read<double>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Float) noexcept { return Variant{unaligned::read<float>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::String) noexcept { return Variant{unaligned::read<p_string>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Bool) noexcept { return Variant{unaligned::read<bool>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Int) noexcept { return Variant{unaligned::read<int>(ptr_ + sizeof_ * i)}; },
-			[&](KeyValueType::Uuid) noexcept { return Variant{unaligned::read<Uuid>(ptr_ + sizeof_ * i)}; },
-			[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined,
-								KeyValueType::FloatVector> auto) -> Variant {
-				throw Error{errQueryExec, "Field type {} is not supported for two field comparing", type_.Name()};
-			});
+		return type_.EvaluateOneOf([&](KeyValueType::Int64) noexcept { return Variant{unaligned::read<int64_t>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Double) noexcept { return Variant{unaligned::read<double>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Float) noexcept { return Variant{unaligned::read<float>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::String) noexcept { return Variant{unaligned::read<p_string>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Bool) noexcept { return Variant{unaligned::read<bool>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Int) noexcept { return Variant{unaligned::read<int>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Uuid) noexcept { return Variant{unaligned::read<Uuid>(ptr_ + sizeof_ * i)}; },
+								   [&](concepts::OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,
+													   KeyValueType::Undefined, KeyValueType::FloatVector> auto) -> Variant {
+									   throw Error{errQueryExec, "Field type {} is not supported for two field comparing", type_.Name()};
+								   });
 	}
 	ConstIterator begin() const noexcept { return {*this, 0}; }
 	ConstIterator end() const noexcept { return {*this, len_}; }

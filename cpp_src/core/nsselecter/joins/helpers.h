@@ -8,6 +8,7 @@ namespace reindexer::joins {
 
 CondType InvertJoinCondition(CondType);
 std::string_view JoinTypeName(JoinType type) noexcept;
+bool IsSortedByJoinedField(std::string_view sortExpr, std::string_view joinedNs);
 
 }  // namespace reindexer::joins
 

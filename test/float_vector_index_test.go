@@ -226,7 +226,9 @@ func TestHnswST(t *testing.T) {
 
 	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemHnswST)
 	removeSomeItems(t, ns, newTestItemHnswST, kMaxElements)
-	defer DB.DropIndex(ns, "vec") // Deallocate index
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(ns))
+	}()
 
 	hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(1000, reindexer.BaseKnnSearchParam{}.SetK(500))
 	require.NoError(t, err)
@@ -262,7 +264,9 @@ func TestHnswSTArray(t *testing.T) {
 
 	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemHnswSTArray)
 	removeSomeItems(t, ns, newTestItemHnswSTArray, kMaxElements)
-	defer DB.DropIndex(ns, "vec") // Deallocate index
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(ns))
+	}()
 
 	hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(1000, reindexer.BaseKnnSearchParam{}.SetK(500))
 	require.NoError(t, err)
@@ -298,7 +302,9 @@ func TestHnswMT(t *testing.T) {
 
 	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemHnswMT)
 	removeSomeItems(t, ns, newTestItemHnswMT, kMaxElements)
-	defer DB.DropIndex(ns, "vec") // Deallocate index
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(ns))
+	}()
 
 	hnswSearchParams, err := reindexer.NewIndexHnswSearchParam(1000, reindexer.BaseKnnSearchParam{}.SetK(500))
 	require.NoError(t, err)
@@ -333,7 +339,9 @@ func TestVecBF(t *testing.T) {
 
 	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemVecBF)
 	removeSomeItems(t, ns, newTestItemVecBF, kMaxElements)
-	defer DB.DropIndex(ns, "vec") // Deallocate index
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(ns))
+	}()
 
 	bfSearchParams, err := reindexer.NewIndexBFSearchParam(reindexer.BaseKnnSearchParam{}.SetK(1000))
 	require.NoError(t, err)
@@ -368,7 +376,9 @@ func TestIvf(t *testing.T) {
 
 	FillTestItemsWithFuncParts(ns, 0, kMaxElements, kMaxElements/10, 0, newTestItemIvf)
 	removeSomeItems(t, ns, newTestItemIvf, kMaxElements)
-	defer DB.DropIndex(ns, "vec") // Deallocate index
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(ns))
+	}()
 
 	ivfSearchParams, err := reindexer.NewIndexIvfSearchParam(10, reindexer.BaseKnnSearchParam{}.SetK(1000))
 	require.NoError(t, err)
@@ -399,6 +409,10 @@ func TestAddKnnIndex(t *testing.T) {
 	const ns = testMultiIndexVecNs
 	const kMaxElements = kMultiIndexMaxElems / 5
 
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(ns))
+	}()
+
 	currentSize := 0
 	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
@@ -414,7 +428,6 @@ func TestAddKnnIndex(t *testing.T) {
 	}
 	err := DB.AddIndex(ns, indexDef)
 	require.NoError(t, err)
-	defer DB.DropIndex(ns, "vec1") // Deallocate index
 
 	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
@@ -437,7 +450,6 @@ func TestAddKnnIndex(t *testing.T) {
 	}
 	err = DB.AddIndex(ns, indexDef)
 	require.NoError(t, err)
-	defer DB.DropIndex(ns, "vec2") // Deallocate index
 
 	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
@@ -460,7 +472,6 @@ func TestAddKnnIndex(t *testing.T) {
 	}
 	err = DB.AddIndex(ns, indexDef)
 	require.NoError(t, err)
-	defer DB.DropIndex(ns, "vec3") // Deallocate index
 
 	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements
@@ -480,7 +491,6 @@ func TestAddKnnIndex(t *testing.T) {
 	}
 	err = DB.AddIndex(ns, indexDef)
 	require.NoError(t, err)
-	defer DB.DropIndex(ns, "vec4") // Deallocate index
 
 	FillTestItemsWithFuncParts(ns, currentSize, currentSize+kMaxElements, kMaxElements/10, 0, newTestItemMultiIndexVec)
 	currentSize += kMaxElements

@@ -84,7 +84,7 @@ RX_ALWAYS_INLINE constexpr bool isalpha(char c) noexcept { return (c >= 'A' && c
 RX_ALWAYS_INLINE constexpr bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
 RX_ALWAYS_INLINE constexpr bool issign(char c) noexcept { return (c == '+' || c == '-'); }
 RX_ALWAYS_INLINE constexpr char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
-std::string toLower(std::string_view src);
+std::string ToLower(std::string_view src);
 inline std::string_view skipSpace(std::string_view str) {
 	size_t i = 0;
 	for (; i < str.size() && std::isspace(str[i]); ++i);
@@ -133,12 +133,12 @@ public:
 	bool IsWord(std::string_view str) const noexcept;
 
 	bool ContainsDelims(std::string_view str) const;
-	bool ContainsDelims(std::wstring_view str) const;
+	bool ContainsDelims(std::u16string_view str) const;
 	void RemoveDelims(std::string_view str, std::string& res) const;
 	std::string RemoveDelims(std::string_view str) const;
 	std::string RemoveAccentsAndDiacritics(std::string_view str) const;
 
-	bool NeedToRemoveDiacritics(wchar_t ch) const noexcept { return FitsMask(ch, removeDiacriticsMask_); }
+	bool NeedToRemoveDiacritics(uint32_t ch) const noexcept { return FitsMask(ch, removeDiacriticsMask_); }
 
 	bool operator==(const SplitOptions& rhs) const noexcept = default;
 
@@ -178,8 +178,8 @@ struct [[nodiscard]] WordWithPos {
 	WordWithPos(std::string_view word, size_t pos) : word(word), pos(pos) {}
 };
 
-void split(const std::string& utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words);
-void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, const SplitOptions& options);
+void split(const std::string& utf8Str, std::u16string& utf16str, std::vector<std::u16string>& words);
+void split(std::string_view utf8Str, std::u16string& utf16str, std::vector<std::u16string>& words, const SplitOptions& options);
 void split(std::string_view str, std::string& buf, std::vector<WordWithPos>& words, const SplitOptions& options);
 size_t calcUtf8After(std::string_view s, size_t limit) noexcept;
 std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit, std::string_view delims) noexcept;
@@ -245,11 +245,11 @@ inline ComparationResult collateCompare(std::string_view lhs, std::string_view r
 	}
 }
 
-std::wstring utf8_to_utf16(std::string_view src);
-std::string utf16_to_utf8(std::wstring_view src);
-size_t utf16_to_utf8_size(std::wstring_view src);
-void utf8_to_utf16(std::string_view src, std::wstring& dst);
-void utf16_to_utf8(std::wstring_view src, std::string& dst);
+std::u16string utf8_to_utf16(std::string_view src);
+std::string utf16_to_utf8(std::u16string_view src);
+size_t utf16_to_utf8_size(std::u16string_view src);
+void utf8_to_utf16(std::string_view src, std::u16string& dst);
+void utf16_to_utf8(std::u16string_view src, std::string& dst);
 
 inline bool is_number(std::string_view str) noexcept {
 	uint16_t i = 0;
@@ -326,7 +326,7 @@ bool endsWith(const std::string& source, std::string_view ending) noexcept;
 std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
 Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
-void charMultilinePos(std::string_view str, size_t pos, size_t search_start, size_t& line, size_t& col) noexcept;
+void symbolMultilinePos(std::string_view str, size_t pos, size_t search_start, size_t& line, size_t& col) noexcept;
 
 std::string randStringAlph(size_t len);
 

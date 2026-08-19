@@ -21,4 +21,4 @@ void tryAppendEnd(auto& builder) {
 	}
 }
 
-} // namespace reindexer::serialize_helpers
+}  // namespace reindexer::serialize_helpers

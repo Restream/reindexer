@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.15.0
+  version: 5.16.0
 servers:
   - url: /api/v1
 tags:
@@ -1753,7 +1753,8 @@ paths:
       tags:
         - queries
       summary: Convert SQL query
-      description: Get SQL query and convert it into sql, prettified sql or dsl formats
+      description:
+        Get SQL query and convert it into sql, prettified sql or dsl formats
       operationId: convertSqlQuery
       parameters:
         - name: to
@@ -1815,7 +1816,8 @@ paths:
       tags:
         - queries
       summary: Convert DSL query
-      description: Get DSL query and convert it into sql, prettified sql or dsl formats
+      description:
+        Get DSL query and convert it into sql, prettified sql or dsl formats
       operationId: convertDslQuery
       parameters:
         - name: to
@@ -4405,7 +4407,8 @@ components:
       properties:
         k:
           type: integer
-          description: Maximum number of vector candidates from the index. Required for
+          description:
+            Maximum number of vector candidates from the index. Required for
             bruteforce and IVF. Optional for HNSW; omit together with radius for
             streaming KNN (see float_vector.md)
         radius:
@@ -4414,16 +4417,20 @@ components:
           format: float
         ef:
           type: integer
-          description: HNSW only. Dynamic candidate list size during search. For regular
-            KNN with k, ef must be >= k (default k). For streaming KNN without k,
-            ef > 1 overrides the server estimator; otherwise ef is chosen automatically
+          description:
+            HNSW only. Dynamic candidate list size during search. For regular
+            KNN with k, ef must be >= k (default k). For streaming KNN without
+            k, ef > 1 overrides the server estimator; otherwise ef is chosen
+            automatically
         nprobe:
           minimum: 1
           type: integer
-          description: Applicable for IVF index only. The number of Voronoi cells to
-            search during a query
-      description: Parameters for KNN search. Bruteforce and IVF require k and/or
-        radius. HNSW streaming omits both and uses query limit/offset instead
+          description:
+            Applicable for IVF index only. The number of Voronoi cells to search
+            during a query
+      description:
+        Parameters for KNN search. Bruteforce and IVF require k and/or radius.
+        HNSW streaming omits both and uses query limit/offset instead
     SortDef:
       required:
         - field
@@ -4754,6 +4761,35 @@ components:
                       description:
                         Timeout writing data from embedding service
                         (milliseconds)
+                    circuit_breaker:
+                      type: object
+                      description:
+                        Optional circuit breaker for cache-miss HTTP calls to
+                        the embedding service
+                      properties:
+                        threshold:
+                          type: integer
+                          minimum: 0
+                          maximum: 255
+                          default: 16
+                          description:
+                            Consecutive failed network requests required to open
+                            the breaker. Value 0 disables the circuit breaker
+                        threshold_timeout_ms:
+                          type: integer
+                          minimum: 0
+                          default: 15000
+                          description:
+                            Idle timeout that resets the consecutive failure
+                            counter (milliseconds). Value 0 disables idle reset
+                        cooldown_ms:
+                          type: integer
+                          minimum: 0
+                          default: 7500
+                          description:
+                            Time to block cache-miss requests after the breaker
+                            opens (milliseconds). Value 0 disables the circuit
+                            breaker
             query_embedder:
               type: object
               required:
@@ -4797,6 +4833,35 @@ components:
                       description:
                         Timeout writing data from embedding service
                         (milliseconds)
+                    circuit_breaker:
+                      type: object
+                      description:
+                        Optional circuit breaker for cache-miss HTTP calls to
+                        the embedding service
+                      properties:
+                        threshold:
+                          type: integer
+                          minimum: 0
+                          maximum: 255
+                          default: 16
+                          description:
+                            Consecutive failed network requests required to open
+                            the breaker. Value 0 disables the circuit breaker
+                        threshold_timeout_ms:
+                          type: integer
+                          minimum: 0
+                          default: 15000
+                          description:
+                            Idle timeout that resets the consecutive failure
+                            counter (milliseconds). Value 0 disables idle reset
+                        cooldown_ms:
+                          type: integer
+                          minimum: 0
+                          default: 7500
+                          description:
+                            Time to block cache-miss requests after the breaker
+                            opens (milliseconds). Value 0 disables the circuit
+                            breaker
     FulltextConfig:
       type: object
       properties:
@@ -4808,7 +4873,9 @@ components:
           default: true
         enable_terms_split:
           type: boolean
-          description: Enable search of term parts. e.g. terms 'dicaprio' will match words 'di' and 'caprio' (works only for terms without + and -)
+          description:
+            Enable search of term parts. e.g. terms 'dicaprio' will match words
+            'di' and 'caprio' (works only for terms without + and -)
           default: true
         enable_translit:
           type: boolean
@@ -4823,11 +4890,18 @@ components:
             one hundred
           default: false
         enable_kb_layout:
-          type: boolean
+          type: string
           description:
-            Enable wrong keyboard layout variants processing. e.g. term 'keynbr'
-            will match word 'лунтик'
-          default: true
+            "Wrong keyboard layout variants processing: disable, enable or heuristic.
+            The 'heuristic' mode is recommended for most cases.
+            It will try to guess the correct keyboard layout based on the search query and preselcted results.
+            The 'disable' mode will completely disable the keyboard layout variants generation.
+            The 'enable' mode will always generate all possible keyboard layout variants."
+          default: heuristic
+          enum:
+            - disable
+            - enable
+            - heuristic
         log_level:
           maximum: 4
           minimum: 0
@@ -5037,18 +5111,6 @@ components:
                 'Maximum number of symbols, which may be added to the initial
                 term to transform it into the result word'
           description: Config for more precise typos algorithm tuning
-        max_rebuild_steps:
-          maximum: 500
-          minimum: 0
-          type: integer
-          description:
-            Maximum steps without full rebuild of ft - more steps faster commit
-            slower select - optimal about 15.
-        max_step_size:
-          maximum: 1000000000
-          minimum: 5
-          type: integer
-          description: Maximum unique words to step
         sum_ranks_by_fields_ratio:
           maximum: 1
           minimum: 0
@@ -5141,7 +5203,7 @@ components:
               maximum: 500
               minimum: 0
               type: integer
-              description: Base relevancy of term parts match              
+              description: Base relevancy of term parts match
             prefix_min_proc:
               maximum: 500
               minimum: 0
@@ -6014,6 +6076,11 @@ components:
             'Shows whether KNN/fulltext indexing structure is fully built. If
             this field is missing, index does not require any specific build
             steps'
+        text_index_stats:
+          $ref: '#/components/schemas/TextIndexStats'
+          description:
+            'Fulltext-specific virtual documents statistics. Present only for
+            text indexes'
         is_quantized:
           type: boolean
           description:
@@ -6025,6 +6092,24 @@ components:
         query_embedder:
           $ref: '#/components/schemas/EmbedderStatus'
           description: Query embedder status
+    TextIndexStats:
+      type: object
+      properties:
+        total_vdocs:
+          type: integer
+          description:
+            'Total number of virtual documents currently stored in the fulltext
+            index'
+        removed_vdocs:
+          type: integer
+          description:
+            'Number of removed virtual documents that are still kept until the
+            next compaction'
+        vdocs_compactions:
+          type: integer
+          description:
+            'How many times the fulltext virtual documents storage has been
+            compacted'
     EmbedderStatus:
       type: object
       properties:

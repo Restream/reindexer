@@ -22,7 +22,7 @@ public:
 		return {*this, IsArray_True};
 	}
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<T> data, unsigned offset,
 			   TreatAsSingleElement treatAsSingleElement = TreatAsSingleElement_False) {
 		return Array(tag, data.size(), offset, treatAsSingleElement);

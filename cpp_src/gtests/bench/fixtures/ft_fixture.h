@@ -208,7 +208,6 @@ private:
 	void ApplyShortSuffixPreselectFilter(reindexer::Query& q, ShortSuffixPreselectProfile profile) const;
 	reindexer::Error readDictFile(const std::string& fileName, std::vector<std::string>& words);
 	void setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FTConfig& cfg);
-	unsigned int initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::string_view indexName, benchmark::IterationCount iters);
 	void dropNamespace(std::string_view name, benchmark::State&);
 	const std::string alternatingNs_ = "FtAlternatingUpdatesAndSelects";
 	const std::string kIndexTextName_ = "search";

@@ -391,8 +391,9 @@ void NoexceptThrowCallCheck::check(const MatchFinder::MatchResult& Result) {
 		if (!callViolates(Site, KeywordsLower, ExcludeSubstringsLower, Stack, *Result.Context, Path)) {
 			continue;
 		}
-		diag(Site.Loc, "noexcept function calls a non-noexcept callee that can reach a function whose name "
-					  "contains a configured keyword");
+		diag(Site.Loc,
+			 "noexcept function calls a non-noexcept callee that can reach a function whose name "
+			 "contains a configured keyword");
 		for (const CallPathStep& Step : Path) {
 			if (Step.Loc.isValid()) {
 				diag(Step.Loc, Step.Message, DiagnosticIDs::Note);

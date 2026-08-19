@@ -96,7 +96,6 @@ void IndexText<StoreType>::initHolder(FTConfig& cfg) {
 	}
 
 	vdocsIndexed_ = 0;
-	vdocsCommited_ = 0;
 
 	initTermBoosts(cfg);
 }
@@ -120,13 +119,14 @@ IndexText<StoreType>::IndexText(const IndexText<StoreType>& other, IndexCloneKin
 	  cacheMaxSize_(other.cacheMaxSize_),
 	  hitsToCache_(other.hitsToCache_),
 	  rowId2Vdoc_(other.rowId2Vdoc_),
+	  removedVdocs_(other.removedVdocs_),
+	  vdocsCompactions_(other.vdocsCompactions_),
 	  vdocs_(other.vdocs_),
 	  vdocSet_(other.vdocSet_.begin(), other.vdocSet_.end(), other.vdocSet_.bucket_count(), hash_vdoc(payloadType_, fields_, vdocs_),
 			   equal_vdoc(payloadType_, fields_, vdocs_)) {
 	cache_ft_.CopyInternalPerfStatsFrom(other.cache_ft_);
 
 	vdocsIndexed_ = 0;
-	vdocsCommited_ = 0;
 
 	initSearchers();
 	initConfig(other.cfg_.get());
@@ -190,7 +190,8 @@ void IndexText<StoreType>::SetOpts(const IndexOpts& opts) {
 			holder_->Clear();
 		}
 
-		holder_->status_ = FullRebuild;
+		holder_->needRebuild_ = true;
+
 		cache_ft_.Clear();
 	} else {
 		logFmt(LogInfo, "FulltextIndex config changed, cache cleared");
@@ -224,6 +225,11 @@ IndexMemStat IndexText<StoreType>::GetMemStat(const RdxContext& ctx) const {
 
 	ret.indexingStructSize += vdocsHeapSize_ + vdocs_.capacity() * sizeof(VDoc<StoreType>);
 	ret.dataSize += stringsHeapSize_;
+	ret.textIndexStats = TextIndexStats{
+		.totalVdocs = vdocs_.size() - 1,
+		.removedVdocs = removedVdocs_,
+		.vdocsCompactions = vdocsCompactions_,
+	};
 
 	return ret;
 }
@@ -246,6 +252,7 @@ void IndexText<StoreType>::excludeFromVdoc(IdType rowId, DataType& dataDetached)
 		// removing final row, need to remove vdoc
 		vdocSet_.erase(vdocId);
 		stringsHeapSize_ -= vdoc.strings_heap_size();
+		++removedVdocs_;
 	}
 
 	vdoc.RemoveRow(rowId, dataDetached);
@@ -476,7 +483,7 @@ static bool lessRank(RankT lhs, RankT rhs) noexcept { return lhs < rhs; }
 static bool lessRank(RanksHolder::RankPos lhs, RanksHolder::RankPos rhs) noexcept { return lhs.rank < rhs.rank; }
 
 template <typename StoreType>
-template <auto(RanksHolder::*rankGetter)>
+template <auto(RanksHolder::* rankGetter)>
 void IndexText<StoreType>::sortAfterSelect(IdSetPlain& mergedIds, RanksHolder& ranks, RankSortType rankSortType) {
 	std::vector<size_t> sortIds;
 	sortIds.reserve(mergedIds.Size());
@@ -802,7 +809,6 @@ void IndexText<StoreType>::cleanRemovedVdocs() {
 	}
 
 	vdocs_.resize(nextId);
-	vdocs_.shrink_to_fit();
 
 	for (uint32_t& vdocId : rowId2Vdoc_) {
 		vdocId = newVdocsIds_[vdocId];
@@ -811,29 +817,26 @@ void IndexText<StoreType>::cleanRemovedVdocs() {
 	for (uint32_t& vdocId : vdocSet_) {
 		vdocId = newVdocsIds_[vdocId];
 	}
+	removedVdocs_ = 0;
+	vdocs_.shrink_to_fit();
 }
 
 template <typename StoreType>
 void IndexText<StoreType>::commitFulltextImpl() {
 	try {
-		holder_->StartCommit(false);
 		auto tm0 = system_clock_w::now();
 		FieldsGetter gt(this->Fields(), this->payloadType_, this->KeyType());
 
-		switch (holder_->status_) {
-			case CreateNew:
-				vdocsCommited_ = vdocsIndexed_;
-				break;
-			case RecommitLast:
-				vdocsIndexed_ = vdocsCommited_;
-				break;
-			case FullRebuild:
-				vdocsIndexed_ = 0;
-				vdocsCommited_ = 0;
-				cleanRemovedVdocs();
-				break;
-			default:
-				assertrx(false);
+		const size_t totalVdocs = vdocs_.size() - 1;  // exclude empty sentinel
+		const bool needCompaction = removedVdocs_ > 0 && removedVdocs_ * 2 > totalVdocs;
+		if (needCompaction) {
+			logFmt(LogInfo, "FulltextIndex '{}': {} of {} vdocs removed, compacting and rebuilding", name_, removedVdocs_, totalVdocs);
+			holder_->Clear();
+		}
+
+		if (holder_->needRebuild_) {
+			vdocsIndexed_ = 0;
+			cleanRemovedVdocs();
 		}
 
 		std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
@@ -852,23 +855,23 @@ void IndexText<StoreType>::commitFulltextImpl() {
 
 		auto tm1 = system_clock_w::now();
 
-		std::vector<h_vector<float, 3>> wordCounts;
-		holder_->Process(vdocsTexts, vdocsIds, vdocs_.size(), Fields().size(), *!this->opts_.IsDense(), wordCounts);
+		std::vector<h_vector<float, 3>> vdocsWordsCountsByFields;
+		holder_->Process(vdocsTexts, vdocsIds, vdocs_.size(), Fields().size(), vdocsWordsCountsByFields, !*this->opts_.IsDense());
 		size_t idx = 0;
 		for (uint32_t vdocId = vdocsIndexed_; vdocId < vdocs_.size(); ++vdocId) {
 			if (vdocs_[vdocId].NumRows() == 0) {
 				continue;
 			}
-			vdocs_[vdocId].wordCounts_ = wordCounts[idx++];
+			vdocs_[vdocId].wordCounts_ = vdocsWordsCountsByFields[idx++];
 		}
 
-		// Calculate avg words count per document for bm25 calculation
+		// Calculate average words count per document for bm25 calculation
 		avgWordsCount_.resize(Fields().size(), 0);
 		for (unsigned i = 0; i < Fields().size(); i++) {
 			avgWordsCount_[i] = 0;
 			size_t nonEmptyCnt = 0;
 			for (auto& vdoc : vdocs_) {
-				if (vdoc.NumRows() > 0) {
+				if (vdoc.NumRows() > 0 && vdoc.wordCounts_.size() > 0) {
 					avgWordsCount_[i] += vdoc.wordCounts_[i];
 					++nonEmptyCnt;
 				}
@@ -879,6 +882,10 @@ void IndexText<StoreType>::commitFulltextImpl() {
 		}
 
 		vdocsIndexed_ = vdocs_.size();
+		holder_->needRebuild_ = false;
+		if (needCompaction) {
+			++vdocsCompactions_;
+		}
 
 		if (cfg_->logLevel >= LogInfo) [[unlikely]] {
 			auto tm2 = system_clock_w::now();
@@ -888,21 +895,15 @@ void IndexText<StoreType>::commitFulltextImpl() {
 		}
 	} catch (Error& e) {
 		logFmt(LogError, "IndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
-		holder_->steps.clear();
-		holder_->stepsWords_.clear();
-		holder_->lastStepWords_.clear();
+		holder_->Clear();
 		throw;
 	} catch (std::exception& e) {
 		logFmt(LogError, "IndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
-		holder_->steps.clear();
-		holder_->stepsWords_.clear();
-		holder_->lastStepWords_.clear();
+		holder_->Clear();
 		throw;
 	} catch (...) {
 		logFmt(LogError, "IndexText::Commit exception: <unknown error>. Index will be rebuilt on the next query");
-		holder_->steps.clear();
-		holder_->stepsWords_.clear();
-		holder_->lastStepWords_.clear();
+		holder_->Clear();
 		throw;
 	}
 }

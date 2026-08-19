@@ -1,10 +1,156 @@
 #include "tokenizer.h"
 #include "core/formatters/tokenizer_range.h"
 #include "double-conversion/double-conversion.h"
+#include "estl/defines.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
+namespace {
+
+struct [[nodiscard]] NumberLiteralInfo {
+	bool valid = false;
+	bool isFloat = false;
+	size_t decPointPos = 0;
+	size_t maxSignsInInt = 0;
+};
+
+bool IsExponentChar(char c) noexcept { return c == 'e' || c == 'E'; }
+
+NumberLiteralInfo AnalyzeNumberLiteral(std::string_view str, bool allowLeadingSign) noexcept {
+	NumberLiteralInfo info;
+	if (str.empty()) {
+		return info;
+	}
+
+	if (!isdigit(str[0]) && (str.size() == 1 || !issign(str[0]))) {
+		return info;
+	}
+
+	if (!allowLeadingSign && !isdigit(str[0])) {
+		return info;
+	}
+
+	bool isFloat = false;
+	// INT64_MAX(9'223'372'036'854'775'807) contains 19 digits + 1 for possible sign
+	const size_t maxSignsInInt = 19 + (isdigit(str[0]) ? 0 : 1);
+	bool nullDecimalPart = true;
+	bool hasMantissaDigit = isdigit(str[0]);
+
+	size_t decPointPos = str.size();
+	size_t ePos = str.size();
+	for (unsigned i = 1; i < str.size(); i++) {
+		if (str[i] == '.') {
+			if (isFloat || ePos < str.size()) {
+				return info;
+			}
+
+			decPointPos = i;
+
+			isFloat = true;
+			continue;
+		}
+
+		if (IsExponentChar(str[i])) {
+			if (ePos < str.size()) {
+				return info;
+			}
+
+			ePos = i;
+			continue;
+		}
+
+		if (i == ePos + 1 && issign(str[i])) {
+			continue;
+		}
+
+		if (!isdigit(str[i])) {
+			return info;
+		}
+
+		if (ePos == str.size()) {
+			hasMantissaDigit = true;
+		}
+
+		if (isFloat) {
+			nullDecimalPart = nullDecimalPart && str[i] == '0';
+		}
+	}
+
+	if (ePos + 1 == str.size() || (ePos + 2 == str.size() && !isdigit(str[ePos + 1]))) {
+		return info;
+	}
+
+	if (ePos == 1 && !isdigit(str[0])) {
+		return info;
+	}
+
+	if (!hasMantissaDigit) {
+		return info;
+	}
+
+	info.valid = true;
+	info.isFloat = !nullDecimalPart || (isFloat && decPointPos > maxSignsInInt) || ePos < str.size();
+	info.decPointPos = decPointPos;
+	info.maxSignsInInt = maxSignsInInt;
+	return info;
+}
+
+RX_ALWAYS_INLINE void ConsumeNameChars(std::string_view::const_iterator& cur, size_t& pos, std::string_view::const_iterator end,
+									   Token::StorageT& text, Tokenizer::Flags flgs, bool applyToLower) {
+	int openBrackets{0};
+	do {
+		if (*cur == '*' && !text.empty() && text.back() != '[') {
+			break;
+		}
+		text.push_back(applyToLower && flgs.HasToLower() ? tolower(*cur++) : *cur++);
+		++pos;
+	} while (cur != end && (isalpha(*cur) || isdigit(*cur) || *cur == '_' || *cur == '#' || *cur == '@' || *cur == '.' || *cur == '*' ||
+							(*cur == '[' && (++openBrackets, true)) || (*cur == ']' && (--openBrackets >= 0))));
+}
+
+RX_ALWAYS_INLINE void ConsumeNumberSuffixChars(std::string_view::const_iterator& cur, size_t& pos, std::string_view::const_iterator end,
+											   Token::StorageT& text) {
+	while (cur != end &&
+		   (isdigit(*cur) || *cur == '.' || IsExponentChar(*cur) || (!text.empty() && IsExponentChar(text.back()) && issign(*cur)))) {
+		text.push_back(*cur++);
+		++pos;
+	}
+}
+
+RX_ALWAYS_INLINE bool IsNameContinuationChar(char c) noexcept {
+	return isalpha(c) || isdigit(c) || c == '_' || c == '#' || c == '@' || c == '.' || c == '*' || c == '[' || c == ']';
+}
+
+void ClassifyDigitStartToken(h_vector<char, 20>& text, TokenType& type, std::string_view::const_iterator& cur, size_t& pos,
+							 std::string_view::const_iterator end, Tokenizer::Flags flgs) {
+	const auto startCur = cur;
+	const size_t startPos = pos;
+	ConsumeNumberSuffixChars(cur, pos, end, text);
+	const NumberLiteralInfo info = AnalyzeNumberLiteral(std::string_view{text.data(), text.size()}, false);
+	if (info.valid && (cur == end || !IsNameContinuationChar(*cur))) {
+		type = TokenNumber;
+		return;
+	}
+
+	cur = startCur;
+	pos = startPos;
+	text.clear();
+	// Name consume may stop earlier than number suffix (e.g. "123*456" stops at '*').
+	ConsumeNameChars(cur, pos, end, text, flgs, false);
+	if (AnalyzeNumberLiteral(std::string_view{text.data(), text.size()}, false).valid) {
+		type = TokenNumber;
+	} else {
+		type = TokenName;
+		if (flgs.HasToLower()) {
+			for (char& c : text) {
+				c = tolower(c);
+			}
+		}
+	}
+}
+
+}  // namespace
 
 void Tokenizer::SkipSpace() noexcept {
 	for (;;) {
@@ -36,15 +182,7 @@ Token Tokenizer::NextToken(Flags flgs) {
 
 	if (isalpha(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '@') {
 		res.type_ = TokenName;
-		int openBrackets{0};
-		do {
-			if (*cur_ == '*' && *(cur_ - 1) != '[') {
-				break;
-			}
-			res.text_.push_back(flgs.HasToLower() ? tolower(*cur_++) : *cur_++);
-			++pos_;
-		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '@' || *cur_ == '.' ||
-									  *cur_ == '*' || (*cur_ == '[' && (++openBrackets, true)) || (*cur_ == ']' && (--openBrackets >= 0))));
+		ConsumeNameChars(cur_, pos_, q_.end(), res.text_, flgs, true);
 	} else if (*cur_ == '"') {
 		res.type_ = TokenName;
 		const size_t startPos = ++pos_;
@@ -75,16 +213,30 @@ Token Tokenizer::NextToken(Flags flgs) {
 		}
 		++cur_;
 		++pos_;
-	} else if (isdigit(*cur_) || (!flgs.HasTreatSignAsToken() && (*cur_ == '-' || *cur_ == '+'))) {
-		res.type_ = TokenNumber;
-		do {
+	} else if (*cur_ == '-' || *cur_ == '+') {
+		if (flgs.HasTreatSignAsToken() || (cur_ + 1 != q_.end() && issign(*(cur_ + 1))) || cur_ + 1 == q_.end() ||
+			(!isdigit(*(cur_ + 1)) && *(cur_ + 1) != '.')) {
+			res.type_ = TokenSign;
 			res.text_.push_back(*cur_++);
 			++pos_;
-		} while (cur_ != q_.end() && (isdigit(*cur_) || *cur_ == '.' || *cur_ == 'e' || (*(cur_ - 1) == 'e' && issign(*cur_))));
-	} else if (flgs.HasTreatSignAsToken() && (*cur_ == '-' || *cur_ == '+')) {
-		res.type_ = TokenSign;
-		res.text_.push_back(*cur_++);
-		++pos_;
+		} else {
+			const auto savedCur = cur_;
+			const size_t savedPos = pos_;
+			res.text_.push_back(*cur_++);
+			++pos_;
+			ConsumeNumberSuffixChars(cur_, pos_, q_.end(), res.text_);
+			if (AnalyzeNumberLiteral(std::string_view{res.text_.data(), res.text_.size()}, true).valid) {
+				res.type_ = TokenNumber;
+			} else {
+				cur_ = savedCur + 1;
+				pos_ = savedPos + 1;
+				res.text_.clear();
+				res.text_.push_back(*savedCur);
+				res.type_ = TokenSign;
+			}
+		}
+	} else if (isdigit(*cur_)) {
+		ClassifyDigitStartToken(res.text_, res.type_, cur_, pos_, q_.end(), flgs);
 	} else if (cur_ != q_.end() && (*cur_ == '>' || *cur_ == '<' || *cur_ == '=')) {
 		res.type_ = TokenOp;
 		do {
@@ -167,13 +319,13 @@ size_t Tokenizer::GetPrevPos() const {
 	}
 }
 
-TokenizerRange Tokenizer::Where(size_t startPos, size_t lastPos) const noexcept {
+TokenizerRange Tokenizer::where(size_t startPos, size_t lastPos) const noexcept {
 	TokenizerRange result;
-	charMultilinePos(q_, startPos, 0, result.lineStart, result.columnStart);
+	symbolMultilinePos(q_, startPos, 0, result.lineStart, result.columnStart);
 
 	result.lineEnd = result.lineStart;
 	result.columnEnd = result.columnStart;
-	charMultilinePos(q_, lastPos, startPos, result.lineEnd, result.columnEnd);
+	symbolMultilinePos(q_, lastPos, startPos, result.lineEnd, result.columnEnd);
 	return result;
 }
 
@@ -185,7 +337,7 @@ TokenizerRange Tokenizer::Where() {
 			lastPos = pos_ + nextToken.Text().length();
 		}
 	}
-	return Where(curPos, lastPos);
+	return where(curPos, lastPos);
 }
 
 TokenizerRange Tokenizer::Where(const Token& token) const noexcept {
@@ -194,7 +346,7 @@ TokenizerRange Tokenizer::Where(const Token& token) const noexcept {
 	if (lastPos >= q_.length()) {
 		lastPos = q_.length();
 	}
-	return Where(startPos, lastPos);
+	return where(startPos, lastPos);
 }
 
 Variant GetVariantFromToken(const Token& tok) {
@@ -203,66 +355,14 @@ Variant GetVariantFromToken(const Token& tok) {
 		return Variant(make_key_string(str.data(), str.length()));
 	}
 
-	if (!isdigit(str[0]) && (str.size() == 1 || !issign(str[0]))) {
+	const NumberLiteralInfo info = AnalyzeNumberLiteral(str, true);
+	if (!info.valid) {
 		return Variant(make_key_string(str.data(), str.length()));
 	}
 
-	bool isFloat = false;
-	// INT64_MAX(9'223'372'036'854'775'807) contains 19 digits + 1 for possible sign
-	const size_t maxSignsInInt = 19 + (isdigit(str[0]) ? 0 : 1);
-	bool nullDecimalPart = true;
-
-	size_t decPointPos = str.size();
-	size_t ePos = str.size();
-	for (unsigned i = 1; i < str.size(); i++) {
-		if (str[i] == '.') {
-			if (isFloat || ePos < str.size()) {
-				// second or incorrect point - not a number
-				return Variant(make_key_string(str.data(), str.length()));
-			}
-
-			decPointPos = i;
-
-			isFloat = true;
-			continue;
-		}
-
-		if (str[i] == 'e') {
-			if (ePos < str.size()) {
-				// second e not a number
-				return Variant(make_key_string(str.data(), str.length()));
-			}
-
-			ePos = i;
-			continue;
-		}
-
-		if (i == ePos + 1 && issign(str[i])) {
-			continue;
-		}
-
-		if (!isdigit(str[i])) {
-			return Variant(make_key_string(str.data(), str.length()));
-		}
-
-		if (isFloat) {
-			nullDecimalPart = nullDecimalPart && str[i] == '0';
-		}
-	}
-
-	if (ePos + 1 == str.size() || (ePos + 2 == str.size() && !isdigit(str[ePos + 1]))) {
-		return Variant(make_key_string(str.data(), str.length()));
-	}
-
-	if (ePos == 1 && !isdigit((str[0]))) {
-		return Variant(make_key_string(str.data(), str.length()));
-	}
-
-	isFloat = !nullDecimalPart || (isFloat && decPointPos > maxSignsInInt) || ePos < str.size();
-
-	if (!isFloat) {
-		auto intPart = str.substr(0, decPointPos);
-		return intPart.size() <= maxSignsInInt ? Variant(stoll(intPart)) : Variant(make_key_string(str.data(), str.length()));
+	if (!info.isFloat) {
+		const auto intPart = str.substr(0, info.decPointPos);
+		return intPart.size() <= info.maxSignsInInt ? Variant(stoll(intPart)) : Variant(make_key_string(str.data(), str.length()));
 	}
 
 	using double_conversion::StringToDoubleConverter;

@@ -135,6 +135,11 @@ const (
 	defaultFetchCount = 1000
 )
 
+const (
+	queryFormatVersionV1 = bindings.QueryFormatV1
+	queryFormatVersionV2 = bindings.QueryFormatV2
+)
+
 var (
 	errQueryNilSubQuery                 = errors.New("rq: nil subquery")
 	errQueryNilExpression               = errors.New("rq: nil query expression")
@@ -169,35 +174,39 @@ func (*noCopy) Unlock() {}
 
 // Query represents a database query object
 type Query struct {
-	noCopy            noCopy
-	Namespace         string
-	db                *reindexerImpl
-	nextOp            int
-	ser               cjson.Serializer
-	root              *Query
-	joinQueries       []*Query
-	mergedQueries     []*Query
-	joinToFields      []string
-	joinHandlers      []JoinHandler
-	context           any
-	joinType          int
-	closed            bool
-	initBuf           [256]byte
-	nsArray           []nsArrayEntry
-	tmVersions        []int32
-	iterator          Iterator
-	jsonIterator      JSONIterator
-	aggregateFacet    AggregateFacetRequest
-	items             []any
-	json              []byte
-	jsonOffsets       []int
-	totalName         string
-	executed          bool
-	err               error
-	fetchCount        int
-	whereEntriesCount int
-	openedBrackets    []int
-	tx                *Tx
+	noCopy             noCopy
+	Namespace          string
+	db                 *reindexerImpl
+	nextOp             int
+	ser                cjson.Serializer
+	root               *Query
+	joinQueries        []*Query
+	mergedQueries      []*Query
+	joinToFields       []string
+	joinHandlers       []JoinHandler
+	context            any
+	joinType           int
+	closed             bool
+	initBuf            [256]byte
+	nsArray            []nsArrayEntry
+	tmVersions         []int32
+	iterator           Iterator
+	jsonIterator       JSONIterator
+	aggregateFacet     AggregateFacetRequest
+	items              []any
+	json               []byte
+	jsonOffsets        []int
+	totalName          string
+	executed           bool
+	err                error
+	fetchCount         int
+	whereEntriesCount  int
+	openedBrackets     []int
+	tx                 *Tx
+	queryFormatVersion int
+	traceNew           []byte
+	traceClose         []byte
+	joinsTable         *QueryJoinsTable
 }
 
 type KnnSearchParam interface {
@@ -297,6 +306,45 @@ func (p IndexIvfSearchParam) serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(p.NProbe)
 }
 
+func serializeSubQuery(subQuery *Query, ser *cjson.Serializer, queryFormatVersion int) {
+	queryBytes := subQuery.GetBytes(queryFormatVersion)
+	if subQuery.hasNestedJoins() {
+		ser.PutVarCUInt(len(queryBytes) + 3) // Query size: query + 3 extra bytes (queryEnd + 2 zero counts)
+		ser.Write(queryBytes)
+		ser.PutVarCUInt(queryEnd)
+		ser.PutVarCUInt(0) // join count: 0
+		ser.PutVarCUInt(0) // merge count: 0
+		return
+	}
+	if queryFormatVersion == queryFormatVersionV2 {
+		ser.PutVarCUInt(len(queryBytes) + 3)
+		ser.Write(queryBytes)
+		ser.PutVarCUInt(queryEnd)
+		ser.PutVarCUInt(0) // join count: 0
+		ser.PutVarCUInt(0) // merge count: 0
+		return
+	}
+	ser.PutVarCUInt(len(queryBytes))
+	ser.Write(queryBytes)
+}
+
+func (q *Query) hasNestedJoins() bool {
+	if q == nil {
+		return false
+	}
+	for _, joinQuery := range q.joinQueries {
+		if len(joinQuery.joinQueries) > 0 || joinQuery.hasNestedJoins() {
+			return true
+		}
+	}
+	for _, mergedQuery := range q.mergedQueries {
+		if mergedQuery.hasNestedJoins() {
+			return true
+		}
+	}
+	return false
+}
+
 var queryPool sync.Pool
 
 // Create new DB query
@@ -328,13 +376,19 @@ func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
 		q.nsArray = q.nsArray[:0]
 		q.whereEntriesCount = 0
 		q.openedBrackets = q.openedBrackets[:0]
+		q.joinsTable = nil
 	}
 	q.Namespace = namespace
 	q.db = db
 	q.nextOp = opAND
 	q.fetchCount = defaultFetchCount
 	q.tx = tx
+	q.queryFormatVersion = queryFormatVersionV1
+	if db != nil && db.binding != nil {
+		q.queryFormatVersion = db.binding.QueryFormatVersion()
+	}
 
+	q.ser.PutUInt8(0)
 	q.ser.PutVString(namespace)
 	return q
 }
@@ -359,6 +413,7 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 	qC.db = db
 	qC.Namespace = q.Namespace
 	qC.nextOp = q.nextOp
+	qC.queryFormatVersion = q.queryFormatVersion
 
 	qC.ser.Append(q.ser)
 
@@ -376,6 +431,7 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 	qC.executed = q.executed
 	qC.err = q.err
 	qC.fetchCount = q.fetchCount
+	qC.joinsTable = nil
 
 	qC.closed = q.closed
 	if q.root != nil && root == nil {
@@ -395,6 +451,18 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 	}
 	return qC
 
+}
+
+func (q *Query) GetBytes(queryFormatVersion int) []byte {
+	buf := q.ser.Bytes()
+	if len(buf) == 0 {
+		return buf
+	}
+	if queryFormatVersion == queryFormatVersionV2 {
+		buf[0] = byte(queryFormatVersion)
+		return buf
+	}
+	return buf[1:]
 }
 
 func (q *Query) setErr(err error) {
@@ -437,14 +505,14 @@ func (q *Query) Where(index string, condition int, keys any) *Query {
 			q.setErr(err)
 			return q
 		}
-		q.putSubQueryWhere(index, condition, v.ser.Bytes())
+		q.putWhereSubQuery(index, condition, v)
 		return q.finishWhere()
 	case Query:
 		if err := subQueryErr(&v); err != nil {
 			q.setErr(err)
 			return q
 		}
-		q.putSubQueryWhere(index, condition, v.ser.Bytes())
+		q.putWhereSubQuery(index, condition, &v)
 		return q.finishWhere()
 	case int:
 		q.putWhereHeader(index, condition)
@@ -569,8 +637,9 @@ func (q *Query) putWhereHeader(index string, condition int) {
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 }
 
-func (q *Query) putSubQueryWhere(index string, condition int, data []byte) {
-	q.ser.PutVarCUInt(queryFieldSubQueryCondition).PutVarCUInt(q.nextOp).PutVString(index).PutVarCUInt(condition).PutVBytes(data)
+func (q *Query) putWhereSubQuery(index string, condition int, subQuery *Query) {
+	q.ser.PutVarCUInt(queryFieldSubQueryCondition).PutVarCUInt(q.nextOp).PutVString(index).PutVarCUInt(condition)
+	serializeSubQuery(subQuery, &q.ser, q.queryFormatVersion)
 }
 
 func (q *Query) putIntValue(v int) {
@@ -607,7 +676,7 @@ func (q *Query) WhereQuery(subQuery *Query, condition int, keys any) *Query {
 	}
 	q.ser.PutVarCUInt(querySubQueryCondition)
 	q.ser.PutVarCUInt(q.nextOp)
-	q.ser.PutVBytes(subQuery.ser.Bytes())
+	serializeSubQuery(subQuery, &q.ser, q.queryFormatVersion)
 	q.ser.PutVarCUInt(condition)
 	q.nextOp = opAND
 	q.whereEntriesCount++
@@ -1154,13 +1223,22 @@ func (q *Query) close() {
 		panic(errors.New("Close call on already closed query"))
 	}
 
+	q.closeNestedQueries()
+	q.closed = true
+	q.tx = nil
+	queryPool.Put(q)
+}
+
+func (q *Query) closeNestedQueries() {
 	for i, jq := range q.joinQueries {
+		jq.closeNestedQueries()
 		jq.closed = true
 		queryPool.Put(jq)
 		q.joinQueries[i] = nil
 	}
 
 	for i, mq := range q.mergedQueries {
+		mq.closeNestedQueries()
 		mq.closed = true
 		queryPool.Put(mq)
 		q.mergedQueries[i] = nil
@@ -1170,9 +1248,10 @@ func (q *Query) close() {
 		q.joinHandlers[i] = nil
 	}
 
-	q.closed = true
+	ReleaseJoinsTable(q.joinsTable)
+	q.joinsTable = nil
+	q.iterator.joinsTable = nil
 	q.tx = nil
-	queryPool.Put(q)
 }
 
 // Delete will execute query, and delete items, matches query

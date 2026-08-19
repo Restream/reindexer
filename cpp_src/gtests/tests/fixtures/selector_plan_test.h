@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tuple>
 #include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
 #include "core/system_ns_names.h"
@@ -32,6 +33,31 @@ public:
 			Item item = makeItem(ns, i);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 			Upsert(ns, item);
+		}
+	}
+
+	struct [[nodiscard]] IndexValues {
+		int tree1 = 0;
+		int tree2 = 0;
+		int hash = 0;
+	};
+
+	void UpsertUnbuilt(int id, const IndexValues& values) {
+		Item item = NewItem(unbuiltBtreeNs);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item[kFieldId] = id;
+		item[kFieldTree1] = values.tree1;
+		item[kFieldTree2] = values.tree2;
+		item[kFieldHash] = values.hash;
+		Upsert(unbuiltBtreeNs, item);
+	}
+
+	template <typename ValuesFn>
+	void RefillUnbuilt(int rows, ValuesFn&& valuesForId) {
+		rt.TruncateNamespace(unbuiltBtreeNs);
+		for (int i = 0; i < rows; ++i) {
+			const auto [tree1, tree2, hash] = valuesForId(i);
+			UpsertUnbuilt(i, IndexValues{.tree1 = tree1, .tree2 = tree2, .hash = hash});
 		}
 	}
 

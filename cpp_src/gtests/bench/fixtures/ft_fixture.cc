@@ -360,7 +360,9 @@ void FullText::BuildInsertIncremental(State& state) {
 	}
 
 	constexpr int kMaxStepsCount = 50;
-	const auto itemsPerStep = initStepsConfig(kMaxStepsCount, nsdef_, kIndexTextName_, state.max_iterations / kMaxIterStepsMultiplier);
+	const auto totalItems = state.max_iterations / kMaxIterStepsMultiplier;
+	const auto itemsPerStep = totalItems / kMaxStepsCount + 1;
+	assertrx(itemsPerStep > 2);
 
 	auto execQuery = [&] {
 		Query q(nsdef_.name);
@@ -391,8 +393,6 @@ void FullText::BuildInsertIncremental(State& state) {
 		}
 
 		if ((++i) >= itemsWithoutRebuild && i % itemsPerStep == 0) {
-			// UpdateTracker will force full index rebuild if there are to many updates. kMaxIterStepsMultiplier is required to avoid the
-			// mechanism
 			execQuery();
 		}
 	}
@@ -1082,19 +1082,6 @@ void FullText::setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, c
 	const auto err = db_->UpdateIndex(nsDef.name, *it);
 	(void)err;
 	assertf(err.ok(), "err: {}", err.what());
-}
-
-unsigned FullText::initStepsConfig(int maxStepsCount, NamespaceDef& nsDef, std::string_view indexName, benchmark::IterationCount iters) {
-	const auto totalItems = iters;
-	const auto itemsPerStep = totalItems / maxStepsCount + 1;
-	assertrx(itemsPerStep > 2);
-	{
-		static reindexer::FTConfig ftCfg(1);
-		ftCfg.maxRebuildSteps = maxStepsCount;
-		ftCfg.maxStepSize = std::max(5, int(itemsPerStep / 2));
-		setIndexConfig(nsDef, indexName, ftCfg);
-	}
-	return itemsPerStep;
 }
 
 void FullText::dropNamespace(std::string_view name, benchmark::State& state) {

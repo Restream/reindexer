@@ -1,8 +1,8 @@
 #include "rx_module.h"
 #include <clang-tidy/ClangTidyModuleRegistry.h>
 #include "lambda_check.h"
-#include "noexcept_throw_call_check.h"
 #include "nodiscard_check.h"
+#include "noexcept_throw_call_check.h"
 
 namespace clang {
 namespace tidy {

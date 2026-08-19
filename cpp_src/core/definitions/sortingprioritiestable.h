@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <map>
 #include <string>
 #include "estl/intrusive_ptr.h"
@@ -20,13 +21,11 @@ public:
 	explicit SortingPrioritiesTable(const std::string& sortOrderUTF8);
 
 	/// Returns priority of a character.
-	/// @param c - character
+	/// @param c - character (BMP / UTF-16 code unit)
 	/// @returns int priority value
-	int GetPriority(wchar_t c) const noexcept {
+	int GetPriority(uint16_t c) const noexcept {
 		assertrx(sortOrder_.get() != nullptr);
-		// assertrx(static_cast<uint32_t>(c) < tableSize);
-		uint16_t ch(static_cast<uint16_t>(c));
-		return sortOrder_->operator[](ch);
+		return sortOrder_->operator[](c);
 	}
 
 	/// @returns string of sort order characters
@@ -37,7 +36,7 @@ private:
 	/// @param ch - character to check.
 	/// @param ranges - map with character's ranges
 	/// @returns true, if character is in one of existing ranges already.
-	bool checkForRangeIntersection(std::map<uint16_t, uint16_t>& ranges, wchar_t ch);
+	bool checkForRangeIntersection(std::map<uint16_t, uint16_t>& ranges, uint16_t ch);
 
 	constexpr static uint32_t kTableSize = 0x10000;
 	using SortOrderTable = intrusive_atomic_rc_wrapper<std::array<uint16_t, kTableSize>>;

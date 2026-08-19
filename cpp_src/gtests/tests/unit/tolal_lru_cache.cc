@@ -21,11 +21,16 @@ using reindexer::kCountCachedKeyMode;
 struct [[nodiscard]] CacheJoinItemsProcessorMock {
 	std::string_view RightNsName() const noexcept { return rightNsName; }
 	int64_t LastUpdateTime() const noexcept { return lastUpdateTime; }
+	std::span<const CacheJoinItemsProcessorMock> ChildItemsProcessors() const noexcept {
+		return std::span<const CacheJoinItemsProcessorMock>{childItemsProcessors.data(), childItemsProcessors.size()};
+	}
 
 	std::string rightNsName;
 	int64_t lastUpdateTime;
+	std::vector<CacheJoinItemsProcessorMock> childItemsProcessors = {};
 };
 using CacheItemsProcessorsMock = std::vector<CacheJoinItemsProcessorMock>;
+using CacheItemsProcessorsMockView = std::span<CacheJoinItemsProcessorMock>;
 
 TEST(LruCache, SimpleTest) {
 	constexpr int kNsCount = 10;
@@ -34,8 +39,8 @@ TEST(LruCache, SimpleTest) {
 	constexpr int kIterCount = 3000;
 
 	struct [[nodiscard]] QueryCacheData {
-		const CacheItemsProcessorsMock* ItemsProcessorsPtr() const noexcept {
-			return joinItemsProcessors.size() ? &joinItemsProcessors : nullptr;
+		const CacheItemsProcessorsMockView ItemsProcessors() noexcept {
+			return CacheItemsProcessorsMockView{joinItemsProcessors.data(), joinItemsProcessors.size()};
 		}
 
 		Query q;
@@ -86,7 +91,7 @@ TEST(LruCache, SimpleTest) {
 	for (i = 0; i < kIterCount; i++) {
 		auto idx = rand() % qs.size();
 		auto& qce = qs.at(idx);
-		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessorsPtr()};
+		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessors()};
 		auto cached = cache.Get(ckey);
 		bool exist = qce.cached;
 
@@ -103,15 +108,31 @@ TEST(LruCache, SimpleTest) {
 	PRINTF("checking query update time change...\n");
 	auto& qce = qs.back();
 	if (!qce.cached) {
-		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessorsPtr()};
+		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessors()};
 		auto cached = cache.Get(ckey);
 		ASSERT_FALSE(cached.valid) << "query missing in query cache";
 		cache.Put(ckey, QueryCountCacheVal{static_cast<size_t>(rand() % 10000)});
 	}
 	qce.joinItemsProcessors.back().lastUpdateTime += 100;
-	QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessorsPtr()};
+	QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessors()};
 	auto cached = cache.Get(ckey);
 	ASSERT_FALSE(cached.valid) << "update time change did not affected the key";
+
+	PRINTF("checking nested query update time change...\n");
+	QueryCacheData nestedQce{
+		.q = Query("namespace_nested")
+				 .InnerJoin(
+					 "joined_field", "main_field", CondEq,
+					 Query("joined_namespace").InnerJoin("nested_joined_field", "joined_field", CondEq, Query("nested_joined_namespace"))),
+		.joinItemsProcessors = {CacheJoinItemsProcessorMock{
+			.rightNsName = "joined_namespace",
+			.lastUpdateTime = 123,
+			.childItemsProcessors = {CacheJoinItemsProcessorMock{.rightNsName = "nested_joined_namespace", .lastUpdateTime = 321}}}}};
+	QueryCacheKey nestedCkey{nestedQce.q, kCountCachedKeyMode, nestedQce.ItemsProcessors()};
+	cache.Put(nestedCkey, QueryCountCacheVal{static_cast<size_t>(rand() % 10000)});
+	nestedQce.joinItemsProcessors.front().childItemsProcessors.front().lastUpdateTime += 100;
+	nestedCkey = QueryCacheKey{nestedQce.q, kCountCachedKeyMode, nestedQce.ItemsProcessors()};
+	ASSERT_FALSE(cache.Get(nestedCkey).valid) << "nested update time change did not affected the key";
 }
 
 TEST(LruCache, StressTest) {
@@ -147,12 +168,11 @@ TEST(LruCache, StressTest) {
 			for (auto i = 0; i < iterCount; i++) {
 				auto idx = rand() % qs.size();
 				const auto& qce = qs.at(idx);
-				QueryCacheKey ckey{qce, kCountCachedKeyMode, static_cast<const CacheItemsProcessorsMock*>(nullptr)};
+				QueryCacheKey ckey{qce, kCountCachedKeyMode, CacheItemsProcessorsMockView{}};
 				auto cached = cache.Get(ckey);
 
 				if (cached.valid) {
-					ASSERT_TRUE(EqQueryCacheKey()(
-						QueryCacheKey{qs[idx], kCountCachedKeyMode, static_cast<const CacheItemsProcessorsMock*>(nullptr)}, ckey))
+					ASSERT_TRUE(EqQueryCacheKey()(QueryCacheKey{qs[idx], kCountCachedKeyMode, CacheItemsProcessorsMockView{}}, ckey))
 						<< "queries are not EQUAL!\n";
 				} else {
 					size_t total = static_cast<size_t>(rand() % 1000);

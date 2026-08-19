@@ -56,30 +56,21 @@ bool TyposHandler::checkMaxTyposDist(const WordTypo& found, const TyposVec& curr
 	}
 }
 
-bool TyposHandler::checkMaxLettPermDist(std::string_view foundWord, const WordTypo& found, std::wstring_view currentWord,
+bool TyposHandler::checkMaxLettPermDist(std::u16string_view foundWord, const WordTypo& found, std::u16string_view currentWord,
 										const TyposVec& current) {
 	if (found.positions.size() == 0) {
 		return true;
 	}
 	static_assert(kMaxTyposInWord <= 2, "Code in this function is expecting specific size of the typos positions arrays");
-	utf8_to_utf16(foundWord, foundWordUTF16_);
 	switch (current.size()) {
 		case 0:
 			throw Error(errLogic, "Internal logic error. Unable to handle max_typos_distance or max_symbol_permutation_distance settings");
 		case 1: {
 			const auto foundP0 = found.positions[0];
 			const auto curP0 = current[0];
-			if (foundWordUTF16_[foundP0] == currentWord[curP0] && (!useMaxLettPermDist_ || uabs(curP0 - foundP0) <= maxLettPermDist_)) {
-				return true;
-			}
-			const auto foundP1 = found.positions[1];
-			return (found.positions.size() == 2 && foundWordUTF16_[foundP1] == currentWord[curP0] &&
-					(!useMaxLettPermDist_ || uabs(curP0 - foundP1) <= maxLettPermDist_));
-
 			if (found.positions.size() == 1) {
 				// current.len == 1 && found.len == 1. I.e. exactly one letter must be moved up to maxLettPermDist_ value
-				return (foundWordUTF16_[foundP0] == currentWord[curP0]) &&
-					   (!useMaxLettPermDist_ || uabs(curP0 - foundP0) <= maxLettPermDist_);
+				return (foundWord[foundP0] == currentWord[curP0]) && (!useMaxLettPermDist_ || uabs(curP0 - foundP0) <= maxLettPermDist_);
 			}
 			// current.len == 1 && found.len == 2. I.e. exactly one letter must be moved up to maxLettPermDist_ value and the other
 			// letter is missing in 'current'
@@ -90,8 +81,8 @@ bool TyposHandler::checkMaxLettPermDist(std::string_view foundWord, const WordTy
 			}
 
 			// Right letter position requires correction for the comparison with distance, but not for the letter itself
-			const auto foundRightLetter = foundWordUTF16_[foundRight--];
-			const auto foundLeftLetter = foundWordUTF16_[foundLeft];
+			const auto foundRightLetter = foundWord[foundRight--];
+			const auto foundLeftLetter = foundWord[foundLeft];
 			const auto curP0Letter = currentWord[curP0];
 			return (foundRightLetter == curP0Letter && (!useMaxLettPermDist_ || uabs(foundRight - curP0) <= maxLettPermDist_)) ||
 				   (foundLeftLetter == curP0Letter && (!useMaxLettPermDist_ || uabs(foundLeft - curP0) <= maxLettPermDist_));
@@ -112,15 +103,15 @@ bool TyposHandler::checkMaxLettPermDist(std::string_view foundWord, const WordTy
 				// Right letter position requires correction for the comparison with distance, but not for the letter itself
 				const auto curRightLetter = currentWord[curRight--];
 				const auto curLeftLetter = currentWord[curLeft];
-				const auto foundP0Letter = foundWordUTF16_[foundP0];
+				const auto foundP0Letter = foundWord[foundP0];
 				return (foundP0Letter == curRightLetter && (!useMaxLettPermDist_ || uabs((curRight - 1) - foundP0) <= maxLettPermDist_)) ||
 					   (foundP0Letter == curLeftLetter && (!useMaxLettPermDist_ || uabs(curLeft - foundP0) <= maxLettPermDist_));
 			}
 
 			// current.len == 2 && found.len == 2. I.e. two letters must be moved up to maxLettPermDist_ value
 			const auto foundP1 = found.positions[1];
-			const auto foundP0Letter = foundWordUTF16_[foundP0];
-			const auto foundP1Letter = foundWordUTF16_[foundP1];
+			const auto foundP0Letter = foundWord[foundP0];
+			const auto foundP1Letter = foundWord[foundP1];
 			const auto curP0Letter = currentWord[curP0];
 			const auto curP1Letter = currentWord[curP1];
 			const bool permutationOn00 =

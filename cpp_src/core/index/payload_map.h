@@ -265,6 +265,11 @@ public:
 		return base_hash_map::operator[](std::move(key));
 	}
 
+	const PayloadType& GetPayloadType() const& noexcept { return payloadType_; }
+	const FieldsSet& GetFieldsSet() const& noexcept { return fields_; }
+	auto GetPayloadType() const&& = delete;
+	auto GetFieldsSet() const&& = delete;
+
 private:
 	PayloadType payloadType_;
 	FieldsSet fields_;

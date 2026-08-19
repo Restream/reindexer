@@ -34,10 +34,10 @@ void ordinator::entry() {
 	}
 
 	// Per-fiber-exit drain point for deferred resumes. At this point func's frame is fully unwound, so std::uncaught_exceptions() == 0 and
-	// the fiber is still current/alive -- a safe point to perform resumes deferred from the unwind path. flush_deferred_resumes() drains the
-	// GLOBAL deferred list (not just this fiber's deferrals), so every fiber exit flushes all pending entries. This covers the dominant case
-	// where an exception escapes func() and is caught above. It is NOT the only drain point: a coroutine that catches its own exceptions and
-	// keeps running (e.g. in a loop) defers resumes without ever reaching here, and is drained by the loop-level flush in
+	// the fiber is still current/alive -- a safe point to perform resumes deferred from the unwind path. flush_deferred_resumes() drains
+	// the GLOBAL deferred list (not just this fiber's deferrals), so every fiber exit flushes all pending entries. This covers the dominant
+	// case where an exception escapes func() and is caught above. It is NOT the only drain point: a coroutine that catches its own
+	// exceptions and keeps running (e.g. in a loop) defers resumes without ever reaching here, and is drained by the loop-level flush in
 	// dynamic_loop::run() instead. This call sits outside the try/catch above on purpose: both flush_deferred_resumes() and resume() are
 	// noexcept, so any unexpected throw (e.g. bad_alloc while finalizing a nested coroutine) terminates deterministically here instead of
 	// crossing the koishi fiber boundary.

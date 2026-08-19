@@ -70,11 +70,11 @@ protected:
 	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType, int rankedIndexNo,
 							   bool availableSelectBySortIndex) const;
 	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, StrictMode, IsRanked);
-	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index, const std::vector<joins::ItemsProcessor>&,
+	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index, std::span<const joins::ItemsProcessor>,
 									   StrictMode);
 	void getSortIndexValue(const SortingContext& sortCtx, IdType rowId, VariantArray& value, RankT, const joins::NamespaceResults*,
-						   const joins::ItemsProcessors&, int shardId);
-	const CollateOpts& getSortIndexCollateOpts(const SortingContext& sortCtx, const joins::ItemsProcessors&);
+						   std::span<const joins::ItemsProcessor>, int shardId);
+	const CollateOpts& getSortIndexCollateOpts(const SortingContext& sortCtx, std::span<const joins::ItemsProcessor>);
 	void processLeftJoins(LocalQueryResults& qr, SelectCtx& sctx, size_t startPos, const RdxContext&);
 	bool checkIfThereAreLeftJoins(SelectCtx& sctx) const;
 	template <typename It, typename SelectCtxT>

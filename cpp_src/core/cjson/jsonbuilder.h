@@ -38,7 +38,7 @@ public:
 	JsonBuilder Array(concepts::TagNameOrIndex auto tag, int size = KUnknownFieldSize) { return Array(getNameByTag(tag), size); }
 
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<T> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		JsonBuilder node = Array(tag);
@@ -47,7 +47,7 @@ public:
 		}
 	}
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(std::string_view n, unaligned::view<T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		JsonBuilder node = Array(n);
 		for (const auto d : data) {
@@ -55,19 +55,19 @@ public:
 		}
 	}
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int offset = 0,
 			   TreatAsSingleElement treatAsSingleElement = TreatAsSingleElement_False) {
 		Array(tag, unaligned::view<T>(data), offset, treatAsSingleElement);
 	}
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(std::string_view n, std::span<const T> data, int offset = 0,
 			   TreatAsSingleElement treatAsSingleElement = TreatAsSingleElement_False) {
 		Array(n, unaligned::view<T>(data), offset, treatAsSingleElement);
 	}
 	template <typename T>
-	    requires(!std::is_trivially_copyable_v<T>)
+		requires(!std::is_trivially_copyable_v<T>)
 	void Array(concepts::TagNameOrIndex auto tag, std::span<const T> data, int /*offset*/ = 0,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		JsonBuilder node = Array(tag);
@@ -76,9 +76,8 @@ public:
 		}
 	}
 	template <typename T>
-	    requires(!std::is_trivially_copyable_v<T>)
-	void Array(std::string_view n, std::span<const T> data, int /*offset*/ = 0,
-			   TreatAsSingleElement = TreatAsSingleElement_False) {
+		requires(!std::is_trivially_copyable_v<T>)
+	void Array(std::string_view n, std::span<const T> data, int /*offset*/ = 0, TreatAsSingleElement = TreatAsSingleElement_False) {
 		JsonBuilder node = Array(n);
 		for (const auto& d : data) {
 			node.Put(TagName::Empty(), d);

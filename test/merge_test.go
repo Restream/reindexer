@@ -292,6 +292,12 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(testFullTextItemNs1))
+		require.NoError(t, DB.TruncateNamespace(testFullTextItemNs2))
+		require.NoError(t, DB.TruncateNamespace(testFullTextMergedItemNs))
+	}()
+
 	UpdateFtIndexes(t, false)
 	FillTestFullTextItems(5000)
 	CheckTestItemsMergeQueries(t)

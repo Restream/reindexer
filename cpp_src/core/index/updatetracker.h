@@ -70,13 +70,17 @@ public:
 		emplaceUpdate(k);
 	}
 
-	void commitUpdated(T& idx_map, unsigned sortedIdxCount) {
+	int64_t commitUpdated(T& idx_map, unsigned sortedIdxCount) {
+		int64_t plainDelta = 0;
 		for (const auto& valIt : updated_) {
 			auto keyIt = idx_map.find(valIt);
 			assertrx(keyIt != idx_map.end());
+			const size_t oldPlain = keyIt->second.Unsorted().PlainHeapSize();
 			keyIt->second.Unsorted().Commit(sortedIdxCount);
 			assertrx(keyIt->second.Unsorted().Size());
+			plainDelta += int64_t(keyIt->second.Unsorted().PlainHeapSize()) - int64_t(oldPlain);
 		}
+		return plainDelta;
 	}
 
 	void markDeleted(typename T::iterator& k) noexcept {

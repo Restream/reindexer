@@ -19,7 +19,6 @@ public:
 		cfg.enableNumbersSearch = true;
 		cfg.logLevel = 5;
 		cfg.mergeLimit = 20000;
-		cfg.maxStepSize = 100;
 		cfg.optimization = reindexer::FTConfig::Optimization::Memory;
 		return cfg;
 	}

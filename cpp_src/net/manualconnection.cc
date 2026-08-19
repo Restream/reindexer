@@ -82,8 +82,7 @@ Error manual_connection::with_tls(bool enable) {
 			sslCtx_ = nullptr;
 			sock_.ssl = nullptr;
 		}
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 	return {};
 }
 

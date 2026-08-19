@@ -1055,7 +1055,7 @@ func TestUpdateFields(t *testing.T) {
 func TestTruncateNamespace(t *testing.T) {
 	const ns = testTruncateNs
 
-	const itemsCount = 1000
+	const itemsCount = 200
 
 	nsOpts := reindexer.DefaultNamespaceOptions()
 

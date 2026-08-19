@@ -186,8 +186,7 @@ Error ShardingProxy::resetShardingConfigs(int64_t sourceId, const RdxContext& ct
 				return Error();
 			},
 			sourceId);
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingConfig>& config, ConfigResetFlag resetFlag,
@@ -305,8 +304,7 @@ Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode& configJSON, 
 		}
 
 		return Error();
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 Error ShardingProxy::handleNewShardingConfigLocally(const gason::JsonNode& configJSON, std::optional<int64_t> externalSourceId,
@@ -328,8 +326,7 @@ Error ShardingProxy::handleNewShardingConfigLocally(const gason::JsonNode& confi
 		}
 
 		return handleNewShardingConfigLocally<>(configJSON, externalSourceId, ctx);
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 template <typename ConfigType>
@@ -354,8 +351,7 @@ Error ShardingProxy::handleNewShardingConfigLocally(const ConfigType& rawConfig,
 		saveShardingCfgCandidateImpl(std::move(config), sourceId, ctx);
 		applyNewShardingConfig({sourceId}, ctx);
 		return Error();
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 bool ShardingProxy::needProxyWithinCluster(const RdxContext& ctx) {
@@ -432,8 +428,7 @@ Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlReque
 			default:
 				return Error(errLogic, "Unsupported sharding request command: {}", int(request.type));
 		}
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 Error ShardingProxy::SubscribeUpdates(IEventsObserver& observer, EventSubscriberConfig&& cfg) {
@@ -658,12 +653,13 @@ void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand& d
 	auto& config = lockedConfigCandidate.Config();
 
 	if (!config) {
-		if (sourceId == lockedConfigCandidate.SourceId()) {
+		const auto appliedConfig = impl_.GetShardingConfig();
+		if (sourceId == lockedConfigCandidate.SourceId() && shardingInitialized_.load(std::memory_order_acquire) && appliedConfig &&
+			appliedConfig->sourceId == sourceId) {
 			logFmt(LogInfo, "Empty sharding config candidate. Probably it was already successfully applied. Source - {}", sourceId);
 			return;
-		} else {
-			throw Error(errParams, "Attempt to apply empty sharding config candidate. Source - {}", sourceId);
 		}
+		throw Error(errParams, "Attempt to apply empty sharding config candidate. Source - {}", sourceId);
 	}
 
 	if (sourceId != lockedConfigCandidate.SourceId()) {
@@ -1341,25 +1337,13 @@ Error ShardingProxy::GetRaftInfo(cluster::RaftInfo& info, const RdxContext& ctx)
 
 template <typename ShardingRouterLock>
 bool ShardingProxy::isSharderQuery(const Query& q, const ShardingRouterLock& shLockShardingRouter) const {
-	if (isSharded(q.NsName(), shLockShardingRouter)) {
-		return true;
-	}
-	for (const auto& jq : q.GetJoinQueries()) {
-		if (isSharded(jq.NsName(), shLockShardingRouter)) {
-			return true;
+	bool sharded = false;
+	q.WalkNested(true, true, true, [&shLockShardingRouter, &sharded](const Query& query) {
+		if (!sharded && shLockShardingRouter->IsSharded(query.NsName())) {
+			sharded = true;
 		}
-	}
-	for (const auto& mq : q.GetMergeQueries()) {
-		if (isSharded(mq.NsName(), shLockShardingRouter)) {
-			return true;
-		}
-	}
-	for (const auto& sq : q.GetSubQueries()) {
-		if (isSharded(sq.NsName(), shLockShardingRouter)) {
-			return true;
-		}
-	}
-	return false;
+	});
+	return sharded;
 }
 
 template <typename ShardingRouterLock>

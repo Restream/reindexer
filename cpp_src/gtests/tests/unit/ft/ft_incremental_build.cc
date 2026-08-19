@@ -272,8 +272,6 @@ public:
 	reindexer::FTConfig CreateConfig() {
 		reindexer::FTConfig cfg(2);
 		cfg.logLevel = 5;
-		cfg.maxStepSize = 10;
-		cfg.maxRebuildSteps = GetStepsCount();
 		cfg.maxTypoLen = kMaxWordLen;
 		cfg.stopWords = {reindexer::StopWord{"no", reindexer::StopWord::Type::Morpheme}};
 		return cfg;
@@ -490,12 +488,11 @@ public:
 		}
 		FTIncrementalBuildApi::Init(ftCfg);
 
-		// Create steps config
+		const unsigned stepsCount = GetStepsCount();
 		std::vector<FTIncrementalBuildApi::StepInfo> steps;
-		steps.reserve(ftCfg.maxRebuildSteps);
+		steps.reserve(stepsCount);
 		unsigned cnt = 15;
-		EXPECT_LT(ftCfg.maxStepSize, cnt);
-		for (int i = 0; i < ftCfg.maxRebuildSteps; ++i) {
+		for (unsigned i = 0; i < stepsCount; ++i) {
 			steps.emplace_back(FTIncrementalBuildApi::StepInfo{.wordsCnt = cnt, .wordsInDoc = 3});
 			cnt += 5;
 		}
@@ -508,12 +505,11 @@ public:
 		}
 		FTIncrementalBuildApi::Init(ftCfg);
 
-		// Create steps config
+		const unsigned stepsCount = GetStepsCount();
 		std::vector<FTIncrementalBuildApi::StepInfo> steps;
-		steps.reserve(ftCfg.maxRebuildSteps);
-		unsigned cnt = 15 + 5 * ftCfg.maxRebuildSteps;
-		EXPECT_LT(ftCfg.maxStepSize, cnt);
-		for (int i = 0; i < ftCfg.maxRebuildSteps; ++i) {
+		steps.reserve(stepsCount);
+		unsigned cnt = 15 + 5 * stepsCount;
+		for (unsigned i = 0; i < stepsCount; ++i) {
 			steps.emplace_back(FTIncrementalBuildApi::StepInfo{.wordsCnt = cnt, .wordsInDoc = 3});
 			cnt -= 5;
 		}

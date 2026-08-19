@@ -249,7 +249,7 @@ void FieldEqPosCacheImpl::AddValue(Variant&& v, size_t fieldIndex, size_t index)
 		vals_.resize(fieldIndex + 1);
 	}
 
-	Resize(fieldIndex , index+1);
+	Resize(fieldIndex, index + 1);
 	cache_[vals_[fieldIndex][index]].emplace_back(std::move(v));
 }
 

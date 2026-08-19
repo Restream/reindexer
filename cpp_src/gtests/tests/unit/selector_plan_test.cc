@@ -1,4 +1,5 @@
 #include "selector_plan_test.h"
+#include "core/index/index.h"
 #include "json_helpers.h"
 
 namespace reindexer_tests {
@@ -397,6 +398,335 @@ TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "method", {"index"}));
 		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "type", {"SingleRange"}));
 	}
+}
+
+TEST_F(SelectorPlanTest, DistinctWithFilterOnUnbuiltBtreeIndex) {
+	// Filter + distinct on the same unbuilt btree field should pack into a single UnbuiltSortOrdersIndex iterator.
+	// Seed enough CondLt matches so the ordered Distinct≡Sort gate can prefer unbuilt without Limit.
+	constexpr int kExtraMatchingRows = 200;
+	std::vector<std::pair<int, int>> rows{{0, 1}, {1, -3}, {2, 10}, {3, 1}, {4, 0}, {5, 0}};
+	rows.reserve(rows.size() + kExtraMatchingRows);
+	const int distinctVals[] = {-3, 0, 1};
+	for (int i = 0; i < kExtraMatchingRows; ++i) {
+		rows.emplace_back(6 + i, distinctVals[i % 3]);
+	}
+	for (const auto& [id, data] : rows) {
+		UpsertUnbuilt(id, IndexValues{.tree1 = data});
+	}
+
+	struct [[nodiscard]] Case {
+		Query query;
+		std::vector<std::string> expectedTypes;
+		std::vector<int> expectedMatched;
+	};
+
+	// date < 10 excludes id=2; distinct(date) leaves {-3, 0, 1}, ordered by date
+	const std::vector<int> expectedDates{-3, 0, 1};
+	auto validate = [&](QueryResults& qr, const Case& tc) {
+		ASSERT_EQ(qr.Count(), expectedDates.size());
+		size_t i = 0;
+		for (auto& it : qr) {
+			auto item = it.GetItem();
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			ASSERT_LT(i, expectedDates.size());
+			EXPECT_EQ(item[kFieldTree1].As<int>(), expectedDates[i]) << "item: " << item.GetJSON();
+			++i;
+		}
+		ASSERT_EQ(i, expectedDates.size());
+
+		ASSERT_EQ(qr.GetAggregationResults().size(), 1);
+		const auto& agg = qr.GetAggregationResults()[0];
+		ASSERT_EQ(agg.GetType(), AggDistinct);
+		ASSERT_EQ(agg.GetDistinctRowCount(), expectedDates.size());
+
+		const std::string& explain = qr.GetExplainResults();
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {kFieldTree1}));
+		EXPECT_EQ(GetJsonFieldValues<std::string>(explain, "type"), tc.expectedTypes) << explain;
+		EXPECT_EQ(GetJsonFieldValues<int>(explain, "matched"), tc.expectedMatched) << explain;
+	};
+
+	const std::vector<Case> cases{
+		{.query = Query(unbuiltBtreeNs).Explain().Distinct(kFieldTree1).Where(kFieldTree1, CondLt, 10).Sort(kFieldTree1, false),
+		 .expectedTypes = {"UnbuiltSortOrdersIndex"},
+		 .expectedMatched = {3}},
+		{.query = Query(unbuiltBtreeNs).Explain().Distinct(kFieldTree1).Where(kFieldTree1, CondLt, 10),
+		 .expectedTypes = {"UnbuiltSortOrdersIndex"},
+		 .expectedMatched = {3}},
+		// id=999 is absent → NOT (id = 999) is always true (extra QueryEntry on another index for heuristics).
+		{.query = Query(unbuiltBtreeNs)
+					  .Explain()
+					  .Distinct(kFieldTree1)
+					  .Where(kFieldTree1, CondLt, 10)
+					  .Not()
+					  .Where(kFieldId, CondEq, 999)
+					  .Sort(kFieldTree1, false),
+		 .expectedTypes = {"UnbuiltSortOrdersIndex", "Comparator"},
+		 .expectedMatched = {3, 3}},
+	};
+
+	for (const Case& tc : cases) {
+		SCOPED_TRACE(tc.query.GetSQL());
+		auto qr = rt.Select(tc.query);
+		EXPECT_NO_FATAL_FAILURE(validate(qr, tc));
+	}
+
+	// With multiple conditions ReqTotal forces the normal full-pass plan.
+	{
+		const Query totalQuery = Query(unbuiltBtreeNs)
+									 .Explain()
+									 .Distinct(kFieldTree1)
+									 .Where(kFieldTree1, CondLt, 10)
+									 .Where(kFieldTree2, CondGe, 0)
+									 .ReqTotal()
+									 .Limit(20);
+		SCOPED_TRACE(totalQuery.GetSQL());
+		auto qr = rt.Select(totalQuery);
+		ASSERT_EQ(qr.Count(), expectedDates.size());
+		ASSERT_EQ(qr.TotalCount(), expectedDates.size());
+		const std::string& explain = qr.GetExplainResults();
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false})) << explain;
+		EXPECT_NE(GetJsonFieldValues<std::string>(explain, "type").front(), "UnbuiltSortOrdersIndex") << explain;
+	}
+
+	// A single unbuilt distinct iterator remains the best plan for ReqTotal, but its total must be calculated in the select loop:
+	// the iterator's exact max-iterations probe counts row IDs, not unique keys.
+	for (bool explicitSort : {false, true}) {
+		Query totalQuery = Query(unbuiltBtreeNs).Explain().Distinct(kFieldTree1).Where(kFieldTree1, CondLt, 10);
+		if (explicitSort) {
+			totalQuery.Sort(kFieldTree1, false);
+		}
+		totalQuery.ReqTotal().Limit(2);
+		SCOPED_TRACE(totalQuery.GetSQL());
+		auto qr = rt.Select(totalQuery);
+		ASSERT_EQ(qr.Count(), 2);
+		ASSERT_EQ(qr.TotalCount(), expectedDates.size());
+		const std::string& explain = qr.GetExplainResults();
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {true})) << explain;
+		EXPECT_EQ(GetJsonFieldValues<std::string>(explain, "type").front(), "UnbuiltSortOrdersIndex") << explain;
+	}
+}
+
+TEST_F(SelectorPlanTest, MultiDistinctSortHeuristics) {
+	struct [[nodiscard]] Case {
+		const char* name;
+		int hashModulo;
+		int hashEq;
+		std::pair<int, int> tree1Range;
+		bool expectUnbuilt;
+	};
+
+	const std::vector<Case> cases{
+		// Weak unordered Eq: without multi-distinct ignore AdviceSortingIndex aborts (2nd Distinct cannot be
+		// Compatible); with ignore → implicit unbuilt on tree1.
+		{.name = "weak_eq_allows_implicit_unbuilt", .hashModulo = 3, .hashEq = 1, .tree1Range = {10, 25}, .expectUnbuilt = true},
+		// Stronger Eq: ignore must not force unbuilt when IsSortOptimizationEffective rejects it.
+		{.name = "strong_eq_keeps_no_implicit_sort", .hashModulo = 10, .hashEq = 5, .tree1Range = {10, 16}, .expectUnbuilt = false},
+	};
+
+	for (const Case& tc : cases) {
+		SCOPED_TRACE(tc.name);
+		RefillUnbuilt(kNsSize, [&](int i) { return IndexValues{.tree1 = 10 + (i % 20), .tree2 = i % 7, .hash = i % tc.hashModulo}; });
+
+		const Query query = Query(unbuiltBtreeNs)
+								.Explain()
+								.Distinct(kFieldTree1)
+								.Distinct(kFieldTree2)
+								.Where(kFieldHash, CondEq, tc.hashEq)
+								.Where(kFieldTree1, CondRange, {tc.tree1Range.first, tc.tree1Range.second});
+
+		auto qr = rt.Select(query);
+		ASSERT_EQ(qr.Count(), 0);
+		ASSERT_EQ(qr.GetAggregationResults().size(), 2);
+		for (const auto& agg : qr.GetAggregationResults()) {
+			ASSERT_EQ(agg.GetType(), AggDistinct);
+		}
+
+		const std::string& explain = qr.GetExplainResults();
+		if (tc.expectUnbuilt) {
+			ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {kFieldTree1})) << explain;
+			ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {true})) << explain;
+			EXPECT_EQ(GetJsonFieldValues<std::string>(explain, "type").front(), "UnbuiltSortOrdersIndex") << explain;
+		} else {
+			ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"})) << explain;
+			ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false})) << explain;
+			EXPECT_NE(GetJsonFieldValues<std::string>(explain, "type").front(), "UnbuiltSortOrdersIndex") << explain;
+		}
+	}
+}
+
+TEST_F(SelectorPlanTest, SingleDistinctCompatibleNotBlockedByUnorderedEq) {
+	// Distinct on an ordered condition is Compatible advice; a selective hash Eq must not abort
+	// AdviceSortingIndex (unlike Distinct that cannot lead unbuilt, e.g. CondAny-only / non-ordered).
+	constexpr int kHashModulo = 3;
+	RefillUnbuilt(kNsSize, [](int i) { return IndexValues{.tree1 = 10 + (i % 20), .tree2 = i % 7, .hash = i % kHashModulo}; });
+
+	const Query query = Query(unbuiltBtreeNs)
+							.Explain()
+							.Distinct(kFieldTree1)
+							.Where(kFieldHash, CondEq, 1)
+							.Where(kFieldTree1, CondRange, {10, 25})
+							.Limit(20);
+	SCOPED_TRACE(query.GetSQL());
+	auto qr = rt.Select(query);
+	const std::string& explain = qr.GetExplainResults();
+	ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {kFieldTree1})) << explain;
+	ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {true})) << explain;
+	EXPECT_EQ(GetJsonFieldValues<std::string>(explain, "type").front(), "UnbuiltSortOrdersIndex") << explain;
+}
+
+TEST_F(SelectorPlanTest, SingleDistinctCompatibleBlockedByHighlySelectiveAlternative) {
+	constexpr int kRows = 400;
+	RefillUnbuilt(kRows, [](int i) { return IndexValues{.tree1 = i, .tree2 = i % 7, .hash = 0}; });
+
+	auto expectNoUnbuilt = [&](const Query& query, size_t expectedCount) {
+		SCOPED_TRACE(query.GetSQL());
+		auto qr = rt.Select(query);
+		ASSERT_EQ(qr.Count(), expectedCount);
+
+		const std::string& explain = qr.GetExplainResults();
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false})) << explain;
+		const auto types = GetJsonFieldValues<std::string>(explain, "type");
+		EXPECT_EQ(std::find(types.begin(), types.end(), "UnbuiltSortOrdersIndex"), types.end()) << explain;
+	};
+
+	for (const Query& query : {Query(unbuiltBtreeNs)
+								   .Explain()
+								   .Distinct(kFieldTree1)
+								   .Where(kFieldId, CondEq, kRows - 1)
+								   .Where(kFieldTree1, CondRange, {0, kRows - 1})
+								   .Limit(20),
+							   Query(unbuiltBtreeNs)
+								   .Explain()
+								   .Distinct(kFieldTree1)
+								   .Where(kFieldTree1, CondRange, {0, kRows - 1})
+								   .Where(kFieldId, CondEq, kRows - 1)
+								   .Limit(20)}) {
+		expectNoUnbuilt(query, 1);
+	}
+
+	VariantArray ids;
+	for (int i = 0; i < 15; ++i) {
+		ids.emplace_back(i);
+	}
+	const Query largeOffsetQuery = Query(unbuiltBtreeNs)
+									   .Explain()
+									   .Distinct(kFieldTree1)
+									   .Where(kFieldId, CondSet, std::move(ids))
+									   .Where(kFieldTree1, CondRange, {0, kRows - 1})
+									   .Offset(std::numeric_limits<int>::max() - 10)
+									   .Limit(20);
+	expectNoUnbuilt(largeOffsetQuery, 0);
+}
+
+TEST_F(SelectorPlanTest, AdviceSortingIndexSelectivityRanking) {
+	// Wide Distinct CondLt must not beat a narrow Compatible Range on another tree.
+	constexpr int kRows = 8000;
+	constexpr int kTree1Uniques = 80;
+	static_assert(kTree1Uniques > reindexer::kAdviceOrderedConditionProbeKeyCap);
+	constexpr int kTree2Uniques = 40;
+	RefillUnbuilt(kRows, [](int i) { return IndexValues{.tree1 = i % kTree1Uniques, .tree2 = i % kTree2Uniques, .hash = 0}; });
+
+	// tree1 CondLt spans 80 keys (>cap) -> incomplete estimate; tree2 Range {5,5} -> 1 complete key.
+	const Query query = Query(unbuiltBtreeNs)
+							.Explain()
+							.Distinct(kFieldTree1)
+							.Where(kFieldTree1, CondLt, kTree1Uniques)
+							.Where(kFieldTree2, CondRange, {5, 5})
+							.Limit(20);
+	SCOPED_TRACE(query.GetSQL());
+	auto qr = rt.Select(query);
+	const std::string& explain = qr.GetExplainResults();
+	ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {kFieldTree2})) << explain;
+	ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {true})) << explain;
+	EXPECT_EQ(GetJsonFieldValues<std::string>(explain, "type").front(), "UnbuiltSortOrdersIndex") << explain;
+}
+
+TEST_F(SelectorPlanTest, AdviceSortingIndexRanksIdsOrKeysForDistinct) {
+	constexpr int kRows = 3000;
+	RefillUnbuilt(kRows, [](int i) { return IndexValues{.tree1 = i < 1000 ? 0 : i - 999, .tree2 = i / 20, .hash = 0}; });
+
+	// tree1: 1 key / 2000 IDs; tree2: 30 keys / 600 IDs.
+	for (const auto& [query, expectedSortIndex] :
+		 {std::pair{Query(unbuiltBtreeNs).Explain().Where(kFieldTree1, CondRange, {0, 0}).Where(kFieldTree2, CondRange, {0, 29}).Limit(20),
+					kFieldTree2},
+		  std::pair{Query(unbuiltBtreeNs)
+						.Explain()
+						.Distinct(kFieldTree1)
+						.Where(kFieldTree1, CondRange, {0, 0})
+						.Where(kFieldTree2, CondRange, {0, 29})
+						.Limit(20),
+					kFieldTree1}}) {
+		SCOPED_TRACE(query.GetSQL());
+		auto qr = rt.Select(query);
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "sort_index", {expectedSortIndex}));
+	}
+}
+
+TEST_F(SelectorPlanTest, AdviceSortingIndexFallsBackToLargerIndex) {
+	constexpr int kRows = 1000;
+	RefillUnbuilt(kRows, [](int i) {
+		return IndexValues{.tree1 = i < 60 ? i : 60 + (i % 40), .tree2 = i < 600 ? i % 60 : 60 + (i % 140), .hash = 0};
+	});
+
+	// Both ranges exceed the 50-key probing cap -> incomplete estimates. tree2 has the larger Index::Size
+	// (200 unique keys vs 100), so the fallback must preserve the old larger-index preference.
+	const Query query =
+		Query(unbuiltBtreeNs).Explain().Where(kFieldTree1, CondRange, {0, 59}).Where(kFieldTree2, CondRange, {0, 59}).Limit(20);
+	SCOPED_TRACE(query.GetSQL());
+	auto qr = rt.Select(query);
+	ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "sort_index", {kFieldTree2}));
+}
+
+TEST_F(SelectorPlanTest, UnbuiltSortIndexTotalCountFastPath) {
+	// A lazy unbuilt iterator has only an O(1) planning upper bound. ReqTotal must use an explicit exact count-only probe rather than
+	// treating that bound as cardinality or forcing a payload-level full select loop.
+	constexpr int kRows = 500;
+	constexpr int kRangeLo = 10;
+	constexpr int kRangeHi = 100;
+	RefillUnbuilt(kRows, [](int i) { return IndexValues{.tree1 = i % 120, .tree2 = i % 7, .hash = i % 5}; });
+
+	const Query fullSelect = Query(unbuiltBtreeNs).Where(kFieldTree1, CondRange, {kRangeLo, kRangeHi}).Sort(kFieldTree1, false);
+	auto fullQr = rt.Select(fullSelect);
+	const int expectedTotal = fullQr.Count();
+	ASSERT_GT(expectedTotal, 0);
+
+	constexpr int kLimit = 20;
+	const Query totalQuery = Query(unbuiltBtreeNs)
+								 .Explain()
+								 .Where(kFieldTree1, CondRange, {kRangeLo, kRangeHi})
+								 .Sort(kFieldTree1, false)
+								 .ReqTotal()
+								 .Limit(kLimit);
+	SCOPED_TRACE(totalQuery.GetSQL());
+	auto totalQr = rt.Select(totalQuery);
+	EXPECT_EQ(totalQr.TotalCount(), expectedTotal);
+	EXPECT_EQ(totalQr.Count(), std::min(expectedTotal, kLimit));
+
+	const std::string& explain = totalQr.GetExplainResults();
+	ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {true})) << explain;
+	EXPECT_EQ(GetJsonFieldValues<std::string>(explain, "type").front(), "UnbuiltSortOrdersIndex") << explain;
+}
+
+TEST_F(SelectorPlanTest, UnbuiltSortIndexWithInnerJoinIteratorPlan) {
+	constexpr int kRows = 3000;
+	RefillUnbuilt(kRows, [](int i) { return IndexValues{.tree1 = i % 120, .tree2 = i % 7, .hash = i % 5}; });
+
+	const Query query = Query(unbuiltBtreeNs)
+							.Explain()
+							.Distinct(kFieldTree1)
+							.Where(kFieldTree1, CondRange, {10, 100})
+							.Sort(kFieldTree1, false)
+							.Limit(20)
+							.InnerJoin(kFieldId, kFieldId, CondEq, Query(unbuiltBtreeNs).Where(kFieldHash, CondEq, 0));
+	SCOPED_TRACE(query.GetSQL());
+	auto qr = rt.Select(query);
+	EXPECT_LE(qr.Count(), 20);
+
+	const std::string& explain = qr.GetExplainResults();
+	const auto unbuiltFlags = GetJsonFieldValues<bool>(explain, "sort_by_uncommitted_index");
+	ASSERT_FALSE(unbuiltFlags.empty()) << explain;
+	EXPECT_TRUE(unbuiltFlags.front()) << explain;
+	EXPECT_EQ(GetJsonFieldValues<std::string>(explain, "type").front(), "UnbuiltSortOrdersIndex") << explain;
 }
 
 }  // namespace reindexer_tests

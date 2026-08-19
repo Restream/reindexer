@@ -41,4 +41,3 @@ const v_string_hdr* Serializer::getPVStringPtr() {
 }
 
 }  // namespace reindexer
-

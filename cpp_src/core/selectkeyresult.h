@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include "core/id_type.h"
 #include "core/idset/idset.h"
@@ -39,7 +40,6 @@ public:
 			new (&flatIds_) FlatIdSet{.storage{}, .view = ids.Sorted(sortId), .u{}};
 		} else {
 			assertrx(!sortId);
-			assertrx_dbg(!ids.Unsorted().IsCommitted());
 			collectionType_ = Collection::TreeIdSet;
 			new (&treeIds_) TreeIdSet{.ptr = set, .u{}};
 		}
@@ -82,23 +82,39 @@ public:
 		return *this;
 	}
 
-	size_t GetMaxIterations(size_t limitIters) const noexcept {
+	MaxIterationsEstimate ProbeMaxIterations(size_t limitIters) const noexcept {
 		switch (collectionType_) {
 			case Collection::FlatIdSet:
-				return flatIds_.view.size();
+				return MaxIterationsEstimate::Exact(flatIds_.view.size());
 			case Collection::TreeIdSet:
-				return treeIds_.ptr->size();
+				return MaxIterationsEstimate::Exact(treeIds_.ptr->size());
 			case Collection::Range:
 				assertrx_dbg(range_.values.second.ToNumber() >= range_.values.first.ToNumber());
-				return range_.values.second.ToNumber() - range_.values.first.ToNumber();
-			case Collection::SingleIterator: {
-				const auto iters = idxFwdIter_->GetMaxIterations(limitIters);
-				return (iters == std::numeric_limits<size_t>::max()) ? limitIters : iters;
-			}
+				return MaxIterationsEstimate::Exact(range_.values.second.ToNumber() - range_.values.first.ToNumber());
+			case Collection::SingleIterator:
+				return idxFwdIter_->ProbeMaxIterations(limitIters);
 			case Collection::NotSet:
 			default:
 				assertrx_dbg(false);
-				return 0;
+				return MaxIterationsEstimate::Exact(0);
+		}
+	}
+
+	MaxIterationsEstimate GetPlanningEstimate() const noexcept {
+		switch (collectionType_) {
+			case Collection::FlatIdSet:
+				return MaxIterationsEstimate::Exact(flatIds_.view.size());
+			case Collection::TreeIdSet:
+				return MaxIterationsEstimate::Exact(treeIds_.ptr->size());
+			case Collection::Range:
+				assertrx_dbg(range_.values.second.ToNumber() >= range_.values.first.ToNumber());
+				return MaxIterationsEstimate::Exact(range_.values.second.ToNumber() - range_.values.first.ToNumber());
+			case Collection::SingleIterator:
+				return idxFwdIter_->GetPlanningEstimate();
+			case Collection::NotSet:
+			default:
+				assertrx_dbg(false);
+				return MaxIterationsEstimate::Exact(0);
 		}
 	}
 
@@ -152,6 +168,7 @@ public:
 
 	bool OwnsFlatIDSet() const noexcept { return collectionType_ == Collection::FlatIdSet && flatIds_.storage; }
 	IdSetCRef TryGetFlatIDSet() const noexcept { return collectionType_ == Collection::FlatIdSet ? flatIds_.view : IdSetCRef(); }
+	bool HasLinearMaxItersEstimation() const noexcept { return collectionType_ == Collection::SingleIterator; }
 
 protected:
 	enum class [[nodiscard]] Collection : uint8_t { NotSet, FlatIdSet, TreeIdSet, Range, SingleIterator };
@@ -376,6 +393,8 @@ public:
 	constexpr static size_t kMinSetsForHeapSort = 16;
 	constexpr static size_t kSelectionSortIdsCount = 500;
 	constexpr static size_t kMinSetsForGenericSort = 30;
+	// Cost estimation must never walk a lazy index beyond this many row references
+	constexpr static size_t kMaxCostProbeIterations = 200'000;
 
 	struct [[nodiscard]] MergeOptions {
 		bool genericSort;
@@ -400,19 +419,77 @@ public:
 		return std::min(genSortCost, mrgSortCost);
 	}
 
-	/// Returns total amount of rowIds in all
-	/// the SingleSelectKeyResult objects, i.e.
-	/// maximum amount of possible iterations.
-	/// @return amount of loops.
-	size_t GetMaxIterations(size_t limitIters = std::numeric_limits<size_t>::max()) const noexcept {
-		size_t cnt = 0;
-		for (const SingleSelectKeyResult& r : *this) {
-			cnt += r.GetMaxIterations(limitIters);
-			if (cnt > limitIters) {
-				return limitIters;
+	/// Converts a bounded typed probe into the single scalar.
+	/// Includes implicit limit for forward btree iterators. Usable in the most estimation cases.
+	/// AtLeast means that the actual cardinality may be anywhere up to the caller's fallback; Exact, UpperBound and Heuristic carry a
+	/// usable scalar.
+	size_t EstimateMaxIterations(size_t fallback = std::numeric_limits<size_t>::max()) const noexcept {
+		const bool HasLinearMaxItersEstimation =
+			std::ranges::any_of(*this, [](const auto& sit) { return sit.HasLinearMaxItersEstimation(); });
+		const auto estimate = ProbeMaxIterations(HasLinearMaxItersEstimation ? std::min(fallback, kMaxCostProbeIterations) : fallback);
+		switch (estimate.kind) {
+			case MaxIterationsEstimateKind::Exact:
+			case MaxIterationsEstimateKind::UpperBound:
+			case MaxIterationsEstimateKind::Heuristic:
+				return std::min(estimate.value, fallback);
+			case MaxIterationsEstimateKind::AtLeast:
+				return fallback;
+		}
+		assertrx_dbg(false);
+		return fallback;
+	}
+
+	/// Aggregated Probe with shared budget; Exact result may exceed limitIters (no implicit internal cap)
+	MaxIterationsEstimate ProbeMaxIterations(size_t limitIters) const noexcept {
+		size_t count = 0;
+		for (auto it = begin(), endIt = end(); it != endIt; ++it) {
+			const size_t remaining = count < limitIters ? limitIters - count : 0;
+			const auto estimate = it->ProbeMaxIterations(remaining);
+			count = saturatedAdd(count, estimate.value);
+			if (estimate.kind == MaxIterationsEstimateKind::Heuristic) {
+				return MaxIterationsEstimate::Heuristic(count);
+			}
+			if (!estimate.IsExact()) {
+				return MaxIterationsEstimate::AtLeast(count);
+			}
+			if (count >= limitIters && it + 1 != endIt) {
+				return MaxIterationsEstimate::AtLeast(count);
 			}
 		}
-		return cnt;
+		return MaxIterationsEstimate::Exact(count);
+	}
+
+	/// Returns estimated iterations count if it's possible without slow index scans
+	MaxIterationsEstimate GetPlanningEstimate() const noexcept {
+		size_t count = 0;
+		MaxIterationsEstimateKind kind = MaxIterationsEstimateKind::Exact;
+		for (const SingleSelectKeyResult& result : *this) {
+			const auto estimate = result.GetPlanningEstimate();
+			count = saturatedAdd(count, estimate.value);
+			if (estimate.kind == MaxIterationsEstimateKind::Heuristic) {
+				kind = MaxIterationsEstimateKind::Heuristic;
+			} else if (kind == MaxIterationsEstimateKind::Exact && !estimate.IsExact()) {
+				kind = estimate.kind;
+			}
+		}
+		return MaxIterationsEstimate{count, kind};
+	}
+
+	/// Number of explicitly packed per-key idsets (FlatIdSet / TreeIdSet), if any.
+	/// nullopt when the result contains a lazy SingleIterator (or Range / unset) — size() is not a key count there.
+	std::optional<size_t> GetPackedKeysCount() const noexcept {
+		for (const SingleSelectKeyResult& r : *this) {
+			switch (r.collectionType_) {
+				case SingleSelectKeyResult::Collection::FlatIdSet:
+				case SingleSelectKeyResult::Collection::TreeIdSet:
+					break;
+				case SingleSelectKeyResult::Collection::SingleIterator:
+				case SingleSelectKeyResult::Collection::Range:
+				case SingleSelectKeyResult::Collection::NotSet:
+					return std::nullopt;
+			}
+		}
+		return size();
 	}
 
 	/// Represents data as one sorted set.
@@ -445,6 +522,11 @@ public:
 	bool IsCached() const noexcept { return cached; }
 
 private:
+	static constexpr size_t saturatedAdd(size_t lhs, size_t rhs) noexcept {
+		constexpr size_t kMax = std::numeric_limits<size_t>::max();
+		return rhs > kMax - lhs ? kMax : lhs + rhs;
+	}
+
 	IdSetPlain::Ptr mergeGenericSort(size_t idsCount) {
 		base_idset ids;
 		size_t actualSize = 0;

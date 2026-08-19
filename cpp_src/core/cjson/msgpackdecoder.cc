@@ -373,8 +373,7 @@ Error MsgPackDecoder::Decode() noexcept {
 		}
 		CJsonBuilder cjsonBuilder(wrSer_, ObjType::TypePlain, &tm_, TagName::Empty());
 		decode(cjsonBuilder, *(data.p), TagName::Empty());
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 	return {};
 }
 

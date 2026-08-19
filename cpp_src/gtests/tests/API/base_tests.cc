@@ -8,12 +8,15 @@
 #include "core/dbconfig.h"
 #include "core/defnsconfigs.h"
 #include "core/keyvalue/variant.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/iterators.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <deque>
+#include <limits>
 #include <thread>
 #include <unordered_set>
 
@@ -1226,6 +1229,122 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	validateOrdering("valueStringUTF8", sortByUTF8StrQr, allStrValuesUTF8);
 }
 
+TEST_F(ReindexerApi, LargeNumericStrings) {
+	// Documents CollateNumeric behaviour on int64 overflow: values outside [INT64_MIN, INT64_MAX]
+	// are expected to naive-clamp to the corresponding int64 bound (same as strtoll/strntoll).
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int64", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"hash_num", "hash", "string", IndexOpts().SetCollateMode(CollateNumeric)});
+	rt.AddIndex(default_namespace, {"tree_num", "tree", "string", IndexOpts().SetCollateMode(CollateNumeric)});
+	rt.AddIndex(default_namespace, {"store_num", "-", "string", IndexOpts().SetCollateMode(CollateNumeric)});
+
+	const std::string kMinInt32 = std::to_string(std::numeric_limits<int32_t>::min());
+	const std::string kMaxInt32 = std::to_string(std::numeric_limits<int32_t>::max());
+	const std::string kMinInt64 = std::to_string(std::numeric_limits<int64_t>::min());
+	const std::string kMaxInt64 = std::to_string(std::numeric_limits<int64_t>::max());
+	const std::string kMinInt64Minus1 = "-9223372036854775809";
+	const std::string kMaxInt64Plus1 = std::to_string(uint64_t(std::numeric_limits<int64_t>::max()) + 1);
+	const std::string kMaxUint64 = std::to_string(std::numeric_limits<uint64_t>::max());
+	const std::string kMaxUint64Plus1 = "18446744073709551616";
+	// Trigger strntoll's nums >= sizeof(buf) path (buf is 24 chars including optional sign).
+	const std::string kVeryLongPositive(30, '9');
+	const std::string kVeryLongNegative = "-" + std::string(30, '9');
+
+	const std::vector<std::string> values = {kMinInt32,		 kMaxInt32,	 kMinInt64,		  kMaxInt64,		 kMinInt64Minus1,
+											 kMaxInt64Plus1, kMaxUint64, kMaxUint64Plus1, kVeryLongPositive, kVeryLongNegative};
+
+	for (int64_t i = 0; i < int64_t(values.size()); ++i) {
+		Item item(rt.NewItem(default_namespace));
+		item["id"] = i;
+		item["hash_num"] = values[i];
+		item["tree_num"] = values[i];
+		item["store_num"] = values[i];
+		rt.Upsert(default_namespace, item);
+	}
+
+	auto collect = [](reindexer::QueryResults& qr, std::string_view field) {
+		std::vector<std::string> out;
+		out.reserve(qr.Count());
+		for (auto& it : qr) {
+			Item item(it.GetItem(false));
+			out.emplace_back(item[field].As<std::string>());
+		}
+		return out;
+	};
+
+	auto expectSameSet = [](std::vector<std::string> got, std::vector<std::string> expected, std::string_view ctx) {
+		SCOPED_TRACE(ctx);
+		std::sort(got.begin(), got.end());
+		std::sort(expected.begin(), expected.end());
+		ASSERT_EQ(got, expected);
+	};
+
+	const std::vector<std::string> kClampedToMin = {kMinInt64, kMinInt64Minus1, kVeryLongNegative};
+	const std::vector<std::string> kClampedToMax = {kMaxInt64, kMaxInt64Plus1, kMaxUint64, kMaxUint64Plus1, kVeryLongPositive};
+	const std::vector<std::string> kNegative = {kMinInt32, kMinInt64, kMinInt64Minus1, kVeryLongNegative};
+	const std::vector<std::string> kPositive = {kMaxInt32, kMaxInt64, kMaxInt64Plus1, kMaxUint64, kMaxUint64Plus1, kVeryLongPositive};
+	const std::vector<std::string> kLessThanMaxInt64 = {kMinInt32, kMaxInt32, kMinInt64, kMinInt64Minus1, kVeryLongNegative};
+	const std::vector<std::string> kGreaterThanMinInt64 = {kMinInt32,  kMaxInt32,		kMaxInt64,		  kMaxInt64Plus1,
+														   kMaxUint64, kMaxUint64Plus1, kVeryLongPositive};
+	// Ascending CollateNumeric order under naive int64 clamp. Order inside an equal group is unspecified.
+	const std::vector<std::vector<std::string>> kSortGroupsAsc = {kClampedToMin, {kMinInt32}, {kMaxInt32}, kClampedToMax};
+
+	auto expectSortedByGroups = [&](std::vector<std::string> got, bool desc, std::string_view ctx) {
+		SCOPED_TRACE(ctx);
+		auto groups = kSortGroupsAsc;
+		if (desc) {
+			std::reverse(groups.begin(), groups.end());
+		}
+		size_t pos = 0;
+		for (size_t gi = 0; gi < groups.size(); ++gi) {
+			const auto& group = groups[gi];
+			ASSERT_LE(pos + group.size(), got.size()) << "group " << gi;
+			expectSameSet({got.begin() + int(pos), got.begin() + int(pos + group.size())}, group, fmt::format("sort group {}", gi));
+			pos += group.size();
+		}
+		ASSERT_EQ(pos, got.size());
+	};
+
+	const std::string_view kFields[] = {"hash_num", "tree_num", "store_num"};
+	for (const auto field : kFields) {
+		SCOPED_TRACE(field);
+
+		{
+			auto qr = rt.Select(Query(default_namespace).Where(field, CondEq, kMaxInt64));
+			expectSameSet(collect(qr, field), kClampedToMax, "CondEq max int64 (naive clamp)");
+		}
+		{
+			auto qr = rt.Select(Query(default_namespace).Where(field, CondEq, kMinInt64));
+			expectSameSet(collect(qr, field), kClampedToMin, "CondEq min int64 (naive clamp)");
+		}
+		{
+			auto qr = rt.Select(Query(default_namespace).Where(field, CondEq, kMaxInt32));
+			expectSameSet(collect(qr, field), {kMaxInt32}, "CondEq max int32");
+		}
+		{
+			auto qr = rt.Select(Query(default_namespace).Where(field, CondLt, "0"));
+			expectSameSet(collect(qr, field), kNegative, "CondLt 0");
+		}
+		{
+			auto qr = rt.Select(Query(default_namespace).Where(field, CondGt, "0"));
+			expectSameSet(collect(qr, field), kPositive, "CondGt 0");
+		}
+		{
+			auto qr = rt.Select(Query(default_namespace).Where(field, CondLt, kMaxInt64));
+			expectSameSet(collect(qr, field), kLessThanMaxInt64, "CondLt max int64");
+		}
+		{
+			auto qr = rt.Select(Query(default_namespace).Where(field, CondGt, kMinInt64));
+			expectSameSet(collect(qr, field), kGreaterThanMinInt64, "CondGt min int64");
+		}
+
+		for (const bool desc : {false, true}) {
+			auto qr = rt.Select(Query(default_namespace).Sort(field, desc));
+			expectSortedByGroups(collect(qr, field), desc, desc ? "Sort desc by groups" : "Sort asc by groups");
+		}
+	}
+}
+
 TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	constexpr std::string_view secondNamespace = "test_namespace_2";
 	std::vector<int> secondNamespacePKs;
@@ -1272,9 +1391,10 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	joinQuery.InnerJoin("fk", "pk", CondEq, std::move(querySecondNamespace));
 
 	auto queryResult = rt.Select(joinQuery);
-	for (auto it : queryResult) {
+	for (auto& it : queryResult) {
 		auto itemIt = it.GetJoined();
-		EXPECT_TRUE(itemIt.getJoinedItemsCount() > 0);
+		const auto joinedItemsCount{itemIt.GetItemsCount()};
+		EXPECT_TRUE(joinedItemsCount > 0);
 	}
 }
 
@@ -1847,6 +1967,150 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 				}
 			}
 		}
+	}
+
+	validateSuggestions("select count", {}, std::string_view{"select count"}.size() - 1);
+	validateSuggestions("SELECT COUNT", {}, std::string_view{"SELECT COUNT"}.size() - 1);
+}
+
+TEST_F(ReindexerApi, SqlSuggestionsValidateInvalidLastToken) {
+	rt.OpenNamespace(default_namespace);
+
+	struct [[nodiscard]] TestCase {
+		std::string query;
+		std::string expectedError;
+	};
+
+	std::vector<TestCase> testCases;
+	testCases.reserve(6);
+
+	// Case 1: Valid UTF-8 token, but invalid in expected FROM position
+	testCases.emplace_back("SELECT * BB", "Expected 'FROM'");
+
+	// Case 2: Invalid UTF-8 tail after FROM
+	{
+		std::string query{"SELECT\n  *\nFROM\n "};
+		query.push_back(static_cast<char>(0xFF));
+		query.push_back(static_cast<char>(0xFE));
+		testCases.emplace_back(std::move(query), "Unexpected");
+	}
+
+	// Case 3: Invalid byte in namespace position
+	{
+		std::string query{"SELECT * FROM "};
+		query.push_back(static_cast<char>(0xFF));
+		testCases.emplace_back(std::move(query), "Unexpected");
+	}
+
+	// Case 4: Invalid byte after namespace
+	{
+		std::string query{fmt::format("SELECT * FROM {} ", default_namespace)};
+		query.push_back(static_cast<char>(0xFF));
+		testCases.emplace_back(std::move(query), "Unexpected");
+	}
+
+	// Case 5: Invalid byte after WHERE condition
+	{
+		std::string query{fmt::format("SELECT * FROM {} WHERE id = ", default_namespace)};
+		query.push_back(static_cast<char>(0xFF));
+		testCases.emplace_back(std::move(query), "Expected parameter");
+	}
+
+	// Case 6: Invalid byte after ORDER BY
+	{
+		std::string query{fmt::format("SELECT * FROM {} ORDER BY ", default_namespace)};
+		query.push_back(static_cast<char>(0xFF));
+		testCases.emplace_back(std::move(query), "Expected name");
+	}
+
+	auto getSqlSuggestions = [this](const std::string& sql, size_t position) {
+		reindexer::SQLSuggestions suggestions;
+		const auto err = rt.reindexer->GetSqlSuggestions(sql, position, suggestions);
+		EXPECT_TRUE(err.ok()) << err.what();
+		return suggestions;
+	};
+
+	for (size_t i = 0; i < testCases.size(); ++i) {
+		const auto& testCase = testCases[i];
+		const size_t position = testCase.query.size() - 1;
+		const auto suggestionsAtEnd = getSqlSuggestions(testCase.query, position);
+		const auto suggestionsWithTrailingSpace = getSqlSuggestions(testCase.query + ' ', testCase.query.size());
+
+		const std::string failureContext = fmt::format("Test case {}", i + 1);
+
+		// Validate error messages
+		EXPECT_FALSE(suggestionsAtEnd.errorMessage.empty()) << failureContext;
+		EXPECT_NE(suggestionsAtEnd.errorMessage.find(testCase.expectedError), std::string::npos)
+			<< "Expected error fragment '" << testCase.expectedError << "' not found. " << failureContext;
+
+		// Validate no suggestions are returned
+		EXPECT_TRUE(suggestionsAtEnd.suggestions.empty()) << failureContext;
+		EXPECT_TRUE(suggestionsWithTrailingSpace.suggestions.empty()) << failureContext;
+
+		// Both query variants should produce identical error messages
+		EXPECT_EQ(suggestionsAtEnd.errorMessage, suggestionsWithTrailingSpace.errorMessage) << failureContext;
+
+		// Validate error ranges exist and are identical
+		EXPECT_TRUE(suggestionsAtEnd.errorRange.has_value());
+		EXPECT_TRUE(suggestionsWithTrailingSpace.errorRange.has_value());
+
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+		const auto& rangeAtEnd{suggestionsAtEnd.errorRange.value()};
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+		const auto& rangeWithTrailingSpace{suggestionsWithTrailingSpace.errorRange.value()};
+		EXPECT_EQ(rangeAtEnd.lineStart, rangeWithTrailingSpace.lineStart) << failureContext;
+		EXPECT_EQ(rangeAtEnd.columnStart, rangeWithTrailingSpace.columnStart) << failureContext;
+		EXPECT_EQ(rangeAtEnd.lineEnd, rangeWithTrailingSpace.lineEnd) << failureContext;
+		EXPECT_EQ(rangeAtEnd.columnEnd, rangeWithTrailingSpace.columnEnd) << failureContext;
+	}
+}
+
+TEST_F(ReindexerApi, SqlSuggestionsSqlParsingErrorsMatchSqlParser) {
+	const std::string_view queries[] = {
+		"A ",
+		"A",
+		"SELECT * WHERE 1 ",
+		"SELECT * WHERE 1",
+		"SELECT * S ",
+		"SELECT * S",
+		"SELECT * FROM ns FIELD ",
+		"SELECT * FROM ns FIELD",
+		"SELECT *\n П",
+		"SELECT *\n FROM ns WHERE\n 1 ",
+		"SELECT *\n FROM ns WHERE\n 1",
+		"SELECT * FROM ns WHERE 12\n34",
+		"LOCAL UPDATE ns",
+		"LOCAL\n \nUPDATE ns",
+		" A ",
+		"A",
+		"\t SELECT * WHERE 1 ",
+		"SELECT * WHERE 1",
+		"\t \nSELECT * WHERE 1 ",
+		"SELECT * WHERE 1",
+	};
+
+	for (std::string_view query : queries) {
+		const auto sqlParserRange = [query] {
+			try {
+				std::ignore = reindexer::Query::FromSQL(query);
+			} catch (const reindexer::SqlParserError& err) {
+				return err.Range();
+			}
+			throw Error(errLogic, "Expected SQL parser error");
+		}();
+
+		reindexer::SQLSuggestions suggestions;
+		const auto err = rt.reindexer->GetSqlSuggestions(query, 1, suggestions);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_FALSE(suggestions.errorMessage.empty()) << query;
+		ASSERT_TRUE(suggestions.errorRange.has_value()) << query;
+
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+		const auto suggestRange = suggestions.errorRange.value();
+		EXPECT_EQ(sqlParserRange.lineStart, suggestRange.lineStart) << query;
+		EXPECT_EQ(sqlParserRange.columnStart, suggestRange.columnStart) << query;
+		EXPECT_EQ(sqlParserRange.lineEnd, suggestRange.lineEnd) << query;
+		EXPECT_EQ(sqlParserRange.columnEnd, suggestRange.columnEnd) << query;
 	}
 }
 

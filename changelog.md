@@ -1,3 +1,49 @@
+# Version 5.16.0 (19.08.2026)
+## Core
+- [fea] Added support for [nested left/inner joins](readme.md#nested-join). **Warning:** For `builtin` builds, `Query`/`QueryResults` serialization was migrated to a new format. Updated bindings are required for `builtin` mode to work correctly. Full compatibility is preserved for `cproto`/`ucproto`
+- [fea] Improved heuristics for scan order and sort index selection when using `Distinct` under mixed read/write workloads
+- [fea] Optimized cost/iteration estimation when planning B-tree scans under mixed read/write workloads
+- [fix] Fixed `#memstats` calculation for indexes. Since `v5.15.0`, `idset_plain_size` could overflow
+- [fix] Fixed a race when cancelling background index optimization. Since `v5.15.0`, background optimization could finish in an incomplete state and cause exceptions during select queries
+- [fix] Fixed a crash on `int64` overflow for string indexes with `collate_mode: numeric`
+- [fix] Fixed a crash when a [subquery](readme.md#subqueries-nested-queries) and an [inner join](readme.md#join) were placed in the same parentheses
+- [fix] Fixed a crash in [forced sort](readme.md#forced-sort) for composite indexes
+- [fix] Improved number parsing in [UPDATE SET](readme.md#update-queries) expressions. Combinations like `9ddd` are now treated as field names, not numbers
+
+## Fulltext
+- [fea] Reworked the in-memory storage and incremental build layer for text indexes. The new implementation significantly improves index performance under mixed read/write workloads
+- [fea] Removed `max_rebuild_steps` and `max_step_size` from the text index config: the new logic is based on the share of deleted documents in the index (rebuild when 50%+ of documents are deleted)
+- [fea] Added `total_vdocs`, `removed_vdocs`, and `vdocs_compactions` fields to `#memstats` for text indexes
+- [fea] Improved variant generation for [wrong keyboard layout](fulltext.md#wrong-keyboard-layout). The new version produces fewer potentially irrelevant variants
+- [fea] Improved [term splitting](fulltext.md#base-config-parameters) (`EnableTermsSplit`). Letter/digit boundary splitting now works regardless of term length (e.g. `season1` produces the `season 1` variant)
+
+## Vector indexes
+- [fea] Added built-in [circuit breaker](float_vector.md#circuit-breaker) logic for auto-embedding. **Warning:** The circuit breaker is enabled by default and may affect previously configured embedders
+
+## Replication
+- [fix] Fixed a race between proxying logic and RAFT leader elections. Previously, this race could lead to errors like `Request was proxied to follower node`
+
+## Reindexer server
+- [fea] Improved SQL suggest generation via `/db/{database}/suggest` in some cases
+- [fea] HTTP endpoint `/db/{database}/suggest` now returns the position in characters, not bytes
+- [fix] Fixed a connection object leak when the client closed the connection immediately without sending any requests (typical for [HAProxy](https://www.haproxy.org/) keep-alive probes)
+- [fix] Fixed error reporting when trying to use protobuf with multidimensional arrays
+
+## Reindexer tool
+- [fea] Added a progress bar when creating a database dump. See [reindexer tool options](cpp_src/cmd/reindexer_tool/readme.md#usage) (`--no-progress-meter`)
+- [fea] Added CLI commands for [index management](cpp_src/cmd/reindexer_tool/readme.md#manipulate-indexes) (`\index add` / `\index update` / `\index drop`)
+- [fea] The [`output`](cpp_src/cmd/reindexer_tool/readme.md#set-output-format) option now also affects the format of aggregation results (previously always printed as a table)
+
+## Go connector
+- [fea] Removed `panic` from the public user API (except for dedicated calls like `MustCommit`, where `panic` is part of the contract)
+- [fix] Updated the [go-json](https://github.com/goccy/go-json) module. The old version had a race and could panic when working with aggregation results (on the first call)
+
+## Face
+- [fea] Added `Circuit breaker` fields to the vector index config page
+- [fea] Removed `MaxRebuildSteps` and `MaxStepSize` fields from the text index config page
+- [fea] Changed the `enable_kb_layout` field on the text index config page to support new enum values
+- [fix] Fixed the `Git documentation` link
+
 # Version 5.15.0 (09.07.2026)
 ## Core
 - [fea] Optimized ID-set intersection logic during queries. The new implementation adapts better to different ID distributions within sets

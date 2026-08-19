@@ -8,6 +8,8 @@ enum [[nodiscard]] TokenType { TokenEnd, TokenName, TokenNumber, TokenString, To
 
 class [[nodiscard]] Token {
 public:
+	using StorageT = h_vector<char, 20>;
+
 	explicit Token(TokenType type = TokenSymbol, size_t pos = 0) noexcept : type_(type), pos_(pos) {}
 	template <std::input_iterator It>
 	Token(TokenType type, It textBeg, It textEnd) : type_(type), text_(textBeg, textEnd) {}
@@ -23,7 +25,7 @@ private:
 	friend class Tokenizer;
 
 	TokenType type_ = TokenSymbol;
-	h_vector<char, 20> text_;
+	StorageT text_;
 	size_t pos_;
 };
 
@@ -79,11 +81,12 @@ public:
 	}
 	TokenizerRange Where();
 	TokenizerRange Where(const Token& token) const noexcept;
-	TokenizerRange Where(size_t start_pos, size_t last_pos) const noexcept;
 	size_t Length() const noexcept { return q_.length(); }
 	const char* Begin() const noexcept { return q_.data(); }
 
 private:
+	TokenizerRange where(size_t start_pos, size_t last_pos) const noexcept;
+
 	std::string_view q_;
 	std::string_view::const_iterator cur_;
 	size_t pos_ = 0;

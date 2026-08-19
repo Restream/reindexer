@@ -14,7 +14,7 @@ protected:
 	void StartArray() const noexcept {}
 
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(const PathFilter& filter, TagIndex, unaligned::view<T> data, unsigned /*offset*/,
 			   TreatAsSingleElement = TreatAsSingleElement_False) noexcept {
 		if (filter.ExactMatch()) {

@@ -297,25 +297,24 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 		const auto args = ret.GetArgs(2);
 		const auto rawResult = std::string_view(args[0]);
 		ResultSerializer ser(rawResult);
-		if (ser.ContainsPayloads()) {
-			ResultSerializer::QueryParams qdata;
-			ResultSerializer::ParsingData pdata;
-			auto nsPtr = getNamespace(nsName);
-			ser.GetRawQueryParams(
-				qdata,
-				[&ser, &nsPtr](int nsIdx) {
-					const uint32_t stateToken = ser.GetVarUInt();
-					const int version = ser.GetVarUInt();
-					TagsMatcher newTm;
-					newTm.deserialize(ser, version, stateToken);
-					if (nsIdx != 0) {
-						throw Error(errLogic, "Unexpected namespace index in item modification response: {}", nsIdx);
-					}
-					nsPtr->TryReplaceTagsMatcher(std::move(newTm));
-					PayloadType("tmp").clone()->deserialize(ser);
-				},
-				ResultSerializer::Options{ResultSerializer::LazyMode | ResultSerializer::ClearAggregations}, pdata);
-		}
+		ResultSerializer::QueryParams qdata;
+		ResultSerializer::ParsingData pdata;
+		const auto queryFormat = conn_.GetBindingCapabilities().GetQueryFormat();
+		auto nsPtr = getNamespace(nsName);
+		ser.GetRawQueryParams(
+			qdata,
+			[&ser, &nsPtr](int nsIdx) {
+				const uint32_t stateToken = ser.GetVarUInt();
+				const int version = ser.GetVarUInt();
+				TagsMatcher newTm;
+				newTm.deserialize(ser, version, stateToken);
+				if (nsIdx != 0) {
+					throw Error(errLogic, "Unexpected namespace index in item modification response: {}", nsIdx);
+				}
+				nsPtr->TryReplaceTagsMatcher(std::move(newTm));
+				PayloadType("tmp").clone()->deserialize(ser);
+			},
+			ResultSerializer::Options{ResultSerializer::LazyMode | ResultSerializer::ClearAggregations}, pdata, queryFormat);
 	} catch (const Error& err) {
 		return err;
 	}
@@ -398,9 +397,25 @@ static void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	}
 }
 
+Expected<BindingCapabilities> RPCClient::getRemoteCaps(const InternalRdxContext& ctx) {
+	if (auto err = Status(false, ctx); !err.ok()) {
+		return Unexpected{err};
+	}
+	return conn_.GetBindingCapabilities();
+}
+
 Error RPCClient::Delete(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	auto caps = getRemoteCaps(ctx);
+	if (!caps) {
+		return caps.error();
+	}
+
 	WrSerializer ser;
-	query.Serialize(ser);
+	try {
+		query.Serialize(ser, Normal, caps->GetQueryFormat());
+	} catch (const Error& err) {
+		return err;
+	}
 
 	CoroQueryResults::NsArray nsArray{getNamespace(query.NsName())};
 	const auto vers = getTMVersionsVec(nsArray);
@@ -422,8 +437,17 @@ Error RPCClient::Delete(const Query& query, CoroQueryResults& result, const Inte
 }
 
 Error RPCClient::Update(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	auto caps = getRemoteCaps(ctx);
+	if (!caps) {
+		return caps.error();
+	}
+
 	WrSerializer ser;
-	query.Serialize(ser);
+	try {
+		query.Serialize(ser, Normal, caps->GetQueryFormat());
+	} catch (const Error& err) {
+		return err;
+	}
 
 	CoroQueryResults::NsArray nsArray{getNamespace(query.NsName())};
 	const auto vers = getTMVersionsVec(nsArray);
@@ -465,10 +489,19 @@ Error RPCClient::ExecSQL(std::string_view querySQL, CoroQueryResults& result, co
 }
 
 Error RPCClient::selectImpl(const Query& query, CoroQueryResults& result, milliseconds netTimeout, const InternalRdxContext& ctx) {
+	auto caps = getRemoteCaps(ctx);
+	if (!caps) {
+		return caps.error();
+	}
+
 	const int flags = result.i_.fetchFlags_ ? (result.i_.fetchFlags_) : (kResultsWithPayloadTypes | kResultsCJson);
 	CoroQueryResults::NsArray nsArray;
 	WrSerializer qser;
-	query.Serialize(qser);
+	try {
+		query.Serialize(qser, Normal, caps->GetQueryFormat());
+	} catch (const Error& err) {
+		return err;
+	}
 	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	const auto vers = getTMVersionsVec(nsArray);
@@ -838,8 +871,7 @@ Error RPCClient::ShardingControlRequest(const sharding::ShardingControlRequestDa
 			}
 		}
 		return ret.Status();
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 }  // namespace client

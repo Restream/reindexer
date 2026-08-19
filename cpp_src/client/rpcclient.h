@@ -12,6 +12,7 @@
 #include "core/query/query.h"
 #include "core/shardedmeta.h"
 #include "coroutine/mutex.h"
+#include "estl/expected.h"
 #include "estl/lock.h"
 #include "net/cproto/coroclientconnection.h"
 
@@ -196,6 +197,7 @@ protected:
 	cproto::CommandParams mkCommand(cproto::CmdCode cmd, cproto::CoroClientConnection::TimePointT requiredTs,
 									const InternalRdxContext* ctx) const noexcept;
 	static cproto::CommandParams mkCommand(cproto::CmdCode cmd, milliseconds netTimeout, const InternalRdxContext* ctx) noexcept;
+	Expected<BindingCapabilities> getRemoteCaps(const InternalRdxContext& ctx);
 
 	INamespaces::PtrT namespaces_;
 	ReindexerConfig config_;

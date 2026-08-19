@@ -17,14 +17,16 @@ import (
 )
 
 type TestJoinItem struct {
-	ID        int      `reindex:"id,,pk"`
-	Name      string   `reindex:"name,tree"`
-	Location  string   `reindex:"location"`
-	Device    string   `reindex:"device"`
-	Amount    int      `reindex:"amount,tree"`
-	Price     int      `json:"price"`
-	Uuid      string   `reindex:"uuid,hash,uuid" json:"uuid"`
-	UuidArray []string `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
+	NestedPrices []*TestJoinItem `reindex:"nested_prices,,joined"`
+	ID           int             `reindex:"id,,pk"`
+	ParentID     int             `reindex:"parent_id,hash"`
+	Name         string          `reindex:"name,tree"`
+	Location     string          `reindex:"location"`
+	Device       string          `reindex:"device"`
+	Amount       int             `reindex:"amount,tree"`
+	Price        int             `json:"price"`
+	Uuid         string          `reindex:"uuid,hash,uuid" json:"uuid"`
+	UuidArray    []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
 }
 
 type TestItemWithJoinedField struct {
@@ -226,6 +228,7 @@ func FillTestJoinItems(start int, count int, ns string) {
 	for i := 0; i < count; i++ {
 		if err := tx.Upsert(&TestJoinItem{
 			ID:        i + start,
+			ParentID:  start + i%50,
 			Name:      "price_" + randString(),
 			Location:  randLocation(),
 			Device:    randDevice(),
@@ -738,6 +741,11 @@ func TestJoinModifyQueries(t *testing.T) {
 }
 
 func TestJoin(t *testing.T) {
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(testItemsForJoinNs))
+		require.NoError(t, DB.TruncateNamespace(testJoinItemsNs))
+	}()
+
 	FillTestItems(testItemsForJoinNs, 0, 10000, 20)
 	FillTestJoinItems(7000, 500, testJoinItemsNs)
 
@@ -861,6 +869,15 @@ func TestJoin(t *testing.T) {
 }
 
 func TestJoinQueryResultsOnIterator(t *testing.T) {
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(testItemsForJoinNs))
+		require.NoError(t, DB.TruncateNamespace(testJoinItemsNs))
+	}()
+
+	// Self-contained: TestJoin truncates its NS after finishing.
+	FillTestItems(testItemsForJoinNs, 0, 1000, 20)
+	FillTestJoinItems(7000, 500, testJoinItemsNs)
+
 	qjoin := DB.Query(testItemsForJoinNs).Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
 	qj1 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "ottstb").Sort("name", false)
 	qj2 := DB.Query(testJoinItemsNs).Where("DEVICE", reindexer.EQ, "android")

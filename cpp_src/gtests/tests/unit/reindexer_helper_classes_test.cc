@@ -1,10 +1,9 @@
 #include "gtest/gtest.h"
 #include "gtests/tests/gtest_cout.h"
 
-#include "estl/suffix_map.h"
+#include "estl/tokenizer.h"
 #include "fmt/format.h"
 #include "tools/enum_compare.h"
-#include "vendor/utf8cpp/utf8/core.h"
 
 namespace reindexer_tests {
 
@@ -105,55 +104,125 @@ TEST(EnumDiffClass, BaseTest) {
 	EXPECT_TRUE(diffCopy.Equal());
 }
 
-TEST(suffix_map, StoresLongWordLength) {
-	reindexer::suffix_map<char, int> suffixes;
-	const std::string longWord(300, 'a');
+namespace {
 
-	std::ignore = suffixes.insert(longWord, 42);
-	suffixes.build();
+using reindexer::GetVariantFromToken;
+using reindexer::TokenEnd;
+using reindexer::TokenName;
+using reindexer::TokenNumber;
+using reindexer::TokenSign;
+using reindexer::TokenString;
+using reindexer::TokenSymbol;
+using reindexer::Tokenizer;
 
-	ASSERT_EQ(suffixes.word_size(), 1u);
-	EXPECT_EQ(static_cast<size_t>(suffixes.word_len_at(0)), longWord.size());
-	EXPECT_EQ(std::string_view(suffixes.word_at(0), suffixes.word_len_at(0)), std::string_view(longWord));
+struct [[nodiscard]] TokenExpect {
+	reindexer::TokenType type;
+	const char* text;
+	bool expectVariantThrow = false;
+};
+
+struct [[nodiscard]] TokenizerCase {
+	const char* input;
+	Tokenizer::Flags flags;
+	std::initializer_list<TokenExpect> tokens;
+};
+
+static bool IsNumericVariant(const reindexer::Variant& v) {
+	return v.Type().EvaluateOneOf([](reindexer::KeyValueType::Int) { return true; }, [](reindexer::KeyValueType::Int64) { return true; },
+								  [](reindexer::KeyValueType::Double) { return true; }, [](reindexer::KeyValueType::Float) { return true; },
+								  [](auto) { return false; });
 }
 
-TEST(suffix_map, RejectsTooLongWord) {
-	reindexer::suffix_map<char, int> suffixes;
-	const std::string tooLongWord(static_cast<size_t>(reindexer::suffix_map<char, int>::kMaxWordLen) + 1, 'a');
-
-	EXPECT_THROW(std::ignore = suffixes.insert(tooLongWord, 42), std::length_error);
-}
-
-TEST(suffix_map, Utf8MatchesStartAndEndOnCodepointBoundaries) {
-	reindexer::suffix_map<char, int> suffixes;
-	const std::vector<std::string> words = {"она", "банана", "набат", "тонна"};
-	const std::vector<std::string> patterns = {"на", "ан", "он", "то", "нн"};
-	for (size_t i = 0; i < words.size(); ++i) {
-		std::ignore = suffixes.insert(words[i], int(i));
-	}
-	suffixes.build();
-
-	for (const auto& pattern : patterns) {
-		SCOPED_TRACE(pattern);
-		auto [begin, end] = suffixes.match_range(pattern);
-		ASSERT_NE(begin, end);
-		for (auto it = begin; it != end; ++it) {
-			const int wordIdx = it->second;
-			const char* const word = suffixes.word_at(wordIdx);
-			const size_t wordLen = suffixes.word_len_at(wordIdx);
-			const char* const match = it->first;
-			ASSERT_GE(match, word);
-			const size_t bytesBefore = match - word;
-			ASSERT_LE(bytesBefore + pattern.size(), wordLen);
-
-			const std::string_view prefix(word, bytesBefore);
-			const std::string_view matched(match, pattern.size());
-			const std::string_view suffix(match + pattern.size(), wordLen - bytesBefore - pattern.size());
-			EXPECT_TRUE(utf8::is_valid(prefix.begin(), prefix.end())) << words[wordIdx];
-			EXPECT_TRUE(utf8::is_valid(matched.begin(), matched.end())) << words[wordIdx];
-			EXPECT_TRUE(utf8::is_valid(suffix.begin(), suffix.end())) << words[wordIdx];
+static void ExpectTokenization(const TokenizerCase& testCase) {
+	SCOPED_TRACE(testCase.input);
+	Tokenizer tokenizer{testCase.input};
+	for (const auto& expected : testCase.tokens) {
+		const auto token = tokenizer.NextToken(testCase.flags);
+		EXPECT_EQ(token.Type(), expected.type) << "text='" << token.Text() << "'";
+		EXPECT_EQ(token.Text(), expected.text);
+		if (expected.type == TokenNumber) {
+			if (expected.expectVariantThrow) {
+				EXPECT_THROW(std::ignore = GetVariantFromToken(token), reindexer::Error);
+			} else {
+				EXPECT_TRUE(IsNumericVariant(GetVariantFromToken(token)))
+					<< "GetVariantFromToken returned non-numeric for '" << token.Text() << "'";
+			}
 		}
 	}
+	const auto endToken = tokenizer.NextToken(testCase.flags);
+	EXPECT_EQ(endToken.Type(), TokenEnd);
+	EXPECT_TRUE(tokenizer.End());
 }
 
+}  // namespace
+
+TEST(TokenizerBasicTokenization, DeclarativeCases) {
+	const TokenizerCase cases[]{
+		{"9d", Tokenizer::Flags::NoFlags, {{TokenName, "9d"}}},
+		{"d9", Tokenizer::Flags::NoFlags, {{TokenName, "d9"}}},
+		{"12345", Tokenizer::Flags::NoFlags, {{TokenNumber, "12345"}}},
+		{"\"12345\"", Tokenizer::Flags::NoFlags, {{TokenName, "12345"}}},
+		{"1ee5", Tokenizer::Flags::NoFlags, {{TokenName, "1ee5"}}},
+		{"1e5", Tokenizer::Flags::NoFlags, {{TokenNumber, "1e5"}}},
+		{"1E5", Tokenizer::Flags::NoFlags, {{TokenNumber, "1E5"}}},
+		{"1E5", Tokenizer::Flags::ToLower, {{TokenNumber, "1E5"}}},
+		{"1.2E-3", Tokenizer::Flags::NoFlags, {{TokenNumber, "1.2E-3"}}},
+		{"1.2", Tokenizer::Flags::NoFlags, {{TokenNumber, "1.2"}}},
+		{"1.2.3", Tokenizer::Flags::NoFlags, {{TokenName, "1.2.3"}}},
+		{"-1.2e-3", Tokenizer::Flags::NoFlags, {{TokenNumber, "-1.2e-3"}}},
+		{"e5", Tokenizer::Flags::NoFlags, {{TokenName, "e5"}}},
+		{".5", Tokenizer::Flags::NoFlags, {{TokenSymbol, "."}, {TokenNumber, "5"}}},
+		{"index+field", Tokenizer::Flags::NoFlags, {{TokenName, "index"}, {TokenSign, "+"}, {TokenName, "field"}}},
+		{"a+b", Tokenizer::Flags::NoFlags, {{TokenName, "a"}, {TokenSign, "+"}, {TokenName, "b"}}},
+		{"a+b", Tokenizer::Flags::TreatSignAsToken, {{TokenName, "a"}, {TokenSign, "+"}, {TokenName, "b"}}},
+		{"+5", Tokenizer::Flags::NoFlags, {{TokenNumber, "+5"}}},
+		{"+5", Tokenizer::Flags::TreatSignAsToken, {{TokenSign, "+"}, {TokenNumber, "5"}}},
+		{"++5", Tokenizer::Flags::NoFlags, {{TokenSign, "+"}, {TokenNumber, "+5"}}},
+		{"++5", Tokenizer::Flags::TreatSignAsToken, {{TokenSign, "+"}, {TokenSign, "+"}, {TokenNumber, "5"}}},
+		{"+-5", Tokenizer::Flags::NoFlags, {{TokenSign, "+"}, {TokenNumber, "-5"}}},
+		{"+-5", Tokenizer::Flags::TreatSignAsToken, {{TokenSign, "+"}, {TokenSign, "-"}, {TokenNumber, "5"}}},
+		{"a+5", Tokenizer::Flags::NoFlags, {{TokenName, "a"}, {TokenNumber, "+5"}}},
+		{"a+5", Tokenizer::Flags::TreatSignAsToken, {{TokenName, "a"}, {TokenSign, "+"}, {TokenNumber, "5"}}},
+		{"NS.123ABC", Tokenizer::Flags::NoFlags, {{TokenName, "NS.123ABC"}}},
+		{"NS.123ABC", Tokenizer::Flags::ToLower, {{TokenName, "ns.123abc"}}},
+		{"123abc", Tokenizer::Flags::NoFlags, {{TokenName, "123abc"}}},
+		{"+.", Tokenizer::Flags::NoFlags, {{TokenSign, "+"}, {TokenSymbol, "."}}},
+		{"- 5", Tokenizer::Flags::NoFlags, {{TokenSign, "-"}, {TokenNumber, "5"}}},
+		{"-.5", Tokenizer::Flags::NoFlags, {{TokenNumber, "-.5"}}},
+		{"1.", Tokenizer::Flags::NoFlags, {{TokenNumber, "1."}}},
+		{"123*456", Tokenizer::Flags::NoFlags, {{TokenNumber, "123"}, {TokenSymbol, "*"}, {TokenNumber, "456"}}},
+		{"*field", Tokenizer::Flags::NoFlags, {{TokenSymbol, "*"}, {TokenName, "field"}}},
+		{"+1.2.3", Tokenizer::Flags::NoFlags, {{TokenSign, "+"}, {TokenName, "1.2.3"}}},
+		{"", Tokenizer::Flags::NoFlags, {}},
+		{" ", Tokenizer::Flags::NoFlags, {}},
+		{"\t", Tokenizer::Flags::NoFlags, {}},
+		{"\n", Tokenizer::Flags::NoFlags, {}},
+		{"\tabc", Tokenizer::Flags::NoFlags, {{TokenName, "abc"}}},
+		{"\t123", Tokenizer::Flags::NoFlags, {{TokenNumber, "123"}}},
+		{"\t-.e23", Tokenizer::Flags::NoFlags, {{TokenSign, "-"}, {TokenSymbol, "."}, {TokenName, "e23"}}},
+		{"'abc'", Tokenizer::Flags::NoFlags, {{TokenString, "abc"}}},
+		// Special case: number too large for int64_t, but tokenizer treats it as a number. Not sure if it's a good idea, but that's how it
+		// works for a long time.
+		{"9999999999999999999", Tokenizer::Flags::NoFlags, {{TokenNumber, "9999999999999999999", true}}},
+		{"-0", Tokenizer::Flags::NoFlags, {{TokenNumber, "-0"}}},
+		{"..", Tokenizer::Flags::NoFlags, {{TokenSymbol, "."}, {TokenSymbol, "."}}},
+		{"1..2", Tokenizer::Flags::NoFlags, {{TokenName, "1..2"}}},
+		{"1e+", Tokenizer::Flags::NoFlags, {{TokenName, "1e"}, {TokenSign, "+"}}},
+		{"1e-", Tokenizer::Flags::NoFlags, {{TokenName, "1e"}, {TokenSign, "-"}}},
+		{".e+", Tokenizer::Flags::NoFlags, {{TokenSymbol, "."}, {TokenName, "e"}, {TokenSign, "+"}}},
+		{".e", Tokenizer::Flags::NoFlags, {{TokenSymbol, "."}, {TokenName, "e"}}},
+		{"1.2.3e4", Tokenizer::Flags::NoFlags, {{TokenName, "1.2.3e4"}}},
+		{"(a+b)",
+		 Tokenizer::Flags::NoFlags,
+		 {{TokenSymbol, "("}, {TokenName, "a"}, {TokenSign, "+"}, {TokenName, "b"}, {TokenSymbol, ")"}}},
+		{"a+-b", Tokenizer::Flags::NoFlags, {{TokenName, "a"}, {TokenSign, "+"}, {TokenSign, "-"}, {TokenName, "b"}}},
+		{"a + b", Tokenizer::Flags::NoFlags, {{TokenName, "a"}, {TokenSign, "+"}, {TokenName, "b"}}},
+		{"1+-2", Tokenizer::Flags::NoFlags, {{TokenNumber, "1"}, {TokenSign, "+"}, {TokenNumber, "-2"}}},
+		{"1 + 2", Tokenizer::Flags::NoFlags, {{TokenNumber, "1"}, {TokenSign, "+"}, {TokenNumber, "2"}}},
+	};
+
+	for (const auto& testCase : cases) {
+		ExpectTokenization(testCase);
+	}
+}
 }  // namespace reindexer_tests

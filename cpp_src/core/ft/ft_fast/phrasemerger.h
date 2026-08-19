@@ -113,11 +113,11 @@ struct [[nodiscard]] PhraseMergerDocumentData;
 // Intermediate information about document found at current phrase merge step. Used only for phrases with 2 or more terms
 template <>
 struct [[nodiscard]] PhraseMergerDocumentData<MergeData> {
-	explicit PhraseMergerDocumentData(PositionsVector&& positions, float termRank, const std::wstring&, const TermRankInfo&) noexcept
+	explicit PhraseMergerDocumentData(PositionsVector&& positions, float termRank, const std::u16string&, const TermRankInfo&) noexcept
 		: nextPhrasePositions(std::move(positions)), rank(termRank) {}
 	PhraseMergerDocumentData(PhraseMergerDocumentData&&) noexcept = default;
 
-	void AddPositions(const PositionsVector& additionalPositions, const std::wstring&, const TermRankInfo&) {
+	void AddPositions(const PositionsVector& additionalPositions, const std::u16string&, const TermRankInfo&) {
 		nextPhrasePositions.reserve(nextPhrasePositions.size() + additionalPositions.size());
 
 		for (const auto& p : additionalPositions) {
@@ -125,7 +125,7 @@ struct [[nodiscard]] PhraseMergerDocumentData<MergeData> {
 		}
 	}
 
-	int MergeWithDist(const PositionsVector& nextTermPositions, unsigned int dist, const std::wstring&, const TermRankInfo&) {
+	int MergeWithDist(const PositionsVector& nextTermPositions, unsigned int dist, const std::u16string&, const TermRankInfo&) {
 		return MergePositionsWithDist(lastPhrasePositions, nextTermPositions, dist, nextPhrasePositions, "");
 	}
 
@@ -145,7 +145,7 @@ struct [[nodiscard]] PhraseMergerDocumentData<MergeData> {
 
 template <>
 struct [[nodiscard]] PhraseMergerDocumentData<MergeDataAreas<Area>> {
-	PhraseMergerDocumentData(const PositionsVector& termPositions, float termRank, const std::wstring&, const TermRankInfo&)
+	PhraseMergerDocumentData(const PositionsVector& termPositions, float termRank, const std::u16string&, const TermRankInfo&)
 		: rank(termRank) {
 		nextPhrasePositions.reserve(termPositions.size());
 		for (const auto& p : termPositions) {
@@ -154,14 +154,14 @@ struct [[nodiscard]] PhraseMergerDocumentData<MergeDataAreas<Area>> {
 	}
 	PhraseMergerDocumentData(PhraseMergerDocumentData&&) noexcept = default;
 
-	void AddPositions(const PositionsVector& additionalPositions, const std::wstring&, const TermRankInfo&) {
+	void AddPositions(const PositionsVector& additionalPositions, const std::u16string&, const TermRankInfo&) {
 		nextPhrasePositions.reserve(nextPhrasePositions.size() + additionalPositions.size());
 		for (const auto& p : additionalPositions) {
 			nextPhrasePositions.emplace_back(p, -1);
 		}
 	}
 
-	int MergeWithDist(const PositionsVector& subtermPositions, unsigned int dist, const std::wstring&, const TermRankInfo&) {
+	int MergeWithDist(const PositionsVector& subtermPositions, unsigned int dist, const std::u16string&, const TermRankInfo&) {
 		return MergePositionsWithDist(lastPhrasePositions, subtermPositions, dist, nextPhrasePositions, "");
 	}
 
@@ -215,7 +215,7 @@ struct [[nodiscard]] PhraseMergerDocumentData<MergeDataAreas<Area>> {
 
 template <>
 struct [[nodiscard]] PhraseMergerDocumentData<MergeDataAreas<AreaDebug>> {
-	PhraseMergerDocumentData(const PositionsVector& termPositions, float termRank, const std::wstring& termPattern, TermRankInfo& termInf)
+	PhraseMergerDocumentData(const PositionsVector& termPositions, float termRank, const std::u16string& termPattern, TermRankInfo& termInf)
 		: rank(termRank) {
 		nextPhrasePositions.reserve(termPositions.size());
 		for (const auto& p : termPositions) {
@@ -225,7 +225,7 @@ struct [[nodiscard]] PhraseMergerDocumentData<MergeDataAreas<AreaDebug>> {
 	}
 	PhraseMergerDocumentData(PhraseMergerDocumentData&&) noexcept = default;
 
-	void AddPositions(const PositionsVector& additionalPositions, const std::wstring& termPattern, TermRankInfo& termInf) {
+	void AddPositions(const PositionsVector& additionalPositions, const std::u16string& termPattern, TermRankInfo& termInf) {
 		nextPhrasePositions.reserve(nextPhrasePositions.size() + additionalPositions.size());
 		utf16_to_utf8(termPattern, termInf.ftDslTerm);
 		for (const auto& p : additionalPositions) {
@@ -233,7 +233,8 @@ struct [[nodiscard]] PhraseMergerDocumentData<MergeDataAreas<AreaDebug>> {
 		}
 	}
 
-	int MergeWithDist(const PositionsVector& subtermPositions, unsigned int dist, const std::wstring& termPattern, TermRankInfo& termInf) {
+	int MergeWithDist(const PositionsVector& subtermPositions, unsigned int dist, const std::u16string& termPattern,
+					  TermRankInfo& termInf) {
 		utf16_to_utf8(termPattern, termInf.ftDslTerm);
 		const std::string infoStr = termInf.ToString();
 		return MergePositionsWithDist(lastPhrasePositions, subtermPositions, dist, nextPhrasePositions, infoStr.c_str());

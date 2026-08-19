@@ -1,10 +1,31 @@
-#include "core/ft//config/ftconfig.h"
+#include <algorithm>
+#include <string>
+#include "core/ft/config/ftconfig.h"
 #include "core/ft/ft_fast/dataholder.h"
-#include "core/ft/ft_fast/typosmap.h"
 #include "core/ft/typos.h"
 #include "tools/logger.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
+
+struct [[nodiscard]] WordTypo {
+	WordTypo() = default;
+	explicit WordTypo(WordIdType w) noexcept : word(w) {}
+	explicit WordTypo(WordIdType w, const TyposVec& p) noexcept : word(w), positions(p) { assertrx_dbg(Sorted(p)); }
+
+	static bool Sorted(const TyposVec& positions) noexcept {
+		for (size_t i = 1; i < positions.size(); ++i) {
+			if (positions[i] <= positions[i - 1]) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	WordIdType word;
+	TyposVec positions;
+};
 
 class [[nodiscard]] TyposHandler {
 public:
@@ -19,40 +40,39 @@ public:
 	}
 
 	template <class IdCont>
-	void Process(const std::wstring& pattern, float patternProc, FoundWordsProcsType& fixedVariants, const DataHolder<IdCont>& holder) {
-		std::wstring buf;
+	void Process(const std::u16string& pattern, float patternProc, FoundWordsProcsType& fixedVariants, const DataHolder<IdCont>& holder) {
+		std::u16string buf;
 
-		for (auto& step : holder.steps) {
-			struct {
-				float patternProc;
-				FoundWordsProcsType& fixedVariants;
-				const DataHolder<IdCont>& holder;
-				const DataHolder<IdCont>::CommitStep& step;
-				int matched, skipped;
-			} ctx{patternProc, fixedVariants, holder, step, 0, 0};
+		struct {
+			float patternProc;
+			FoundWordsProcsType& fixedVariants;
+			const DataHolder<IdCont>& holder;
+			int matched, skipped;
+		} ctx{patternProc, fixedVariants, holder, 0, 0};
 
-			auto callback = [&ctx, this](std::wstring_view typo, const TyposVec& positions, std::wstring_view typoPattern) {
-				size_t maxTypos = ctx.holder.cfg_->maxTypos;
+		auto callback = [&ctx, this](std::u16string_view typo, const TyposVec& positions, std::u16string_view typoPattern) {
+			size_t maxTypos = ctx.holder.cfg_->maxTypos;
 
-				const auto typoRng = ctx.step.typos_.TyposRange(TyposMap::CalcHash(typo));
-				for (auto typoIt = typoRng.first; typoIt != typoRng.second; ++typoIt) {
-					const WordTypo wordTypo = *typoIt;
+			if (const auto* typoSet = ctx.holder.Typos(typo); typoSet) {
+				const auto typoGroupIt = typoSet->find(typo);
+				if (typoGroupIt == typoSet->end()) {
+					return;
+				}
+				for (size_t typoKeyIdx = 0, typoKeysCount = TypoKeysCount(*typoGroupIt); typoKeyIdx < typoKeysCount; ++typoKeyIdx) {
+					const TypoKey typoKey = GetTypoKey(*typoGroupIt, typoKeyIdx);
+					const WordTypo wordTypo = makeWordTypo(typoKey);
 
 					if (wordTypo.positions.size() + positions.size() > maxTypos) {
 						continue;
 					}
 
-					std::string_view word = ctx.holder.GetWord(wordTypo.word);
-
-					if (!wordTypo.CheckMatch(word, typo)) {
-						continue;
-					}
+					std::u16string_view word = ctx.holder.GetWord(wordTypo.word);
 
 					if (positions.size() > wordTypo.positions.size() &&
 						(positions.size() - wordTypo.positions.size()) > int(maxExtraLetts_)) {
 						if (logLevel_ >= LogTrace) [[unlikely]] {
 							logFmt(LogInfo, fmt::runtime(" skipping typo '{}' of word '{}': to many extra letters ({})"),
-								   utf16_to_utf8(typo), word, positions.size() - wordTypo.positions.size());
+								   utf16_to_utf8(typo), utf16_to_utf8(word), positions.size() - wordTypo.positions.size());
 						}
 						++ctx.skipped;
 						continue;
@@ -61,7 +81,7 @@ public:
 						(wordTypo.positions.size() - positions.size()) > int(maxMissingLetts_)) {
 						if (logLevel_ >= LogTrace) [[unlikely]] {
 							logFmt(LogInfo, fmt::runtime(" skipping typo '{}' of word '{}': to many missing letters ({})"),
-								   utf16_to_utf8(typo), word, wordTypo.positions.size() - positions.size());
+								   utf16_to_utf8(typo), utf16_to_utf8(word), wordTypo.positions.size() - positions.size());
 						}
 						++ctx.skipped;
 						continue;
@@ -71,7 +91,7 @@ public:
 						if (!needMaxLettPermCheck || !checkMaxLettPermDist(word, wordTypo, typoPattern, positions)) {
 							if (logLevel_ >= LogTrace) [[unlikely]] {
 								logFmt(LogInfo, fmt::runtime(" skipping typo '{}' of word '{}' due to max_typos_distance settings"),
-									   utf16_to_utf8(typo), word);
+									   utf16_to_utf8(typo), utf16_to_utf8(word));
 							}
 							++ctx.skipped;
 							continue;
@@ -88,11 +108,10 @@ public:
 
 					const auto [it, emplaced] = ctx.fixedVariants.try_emplace(wordTypo.word, proc);
 					if (emplaced) {
-						const auto& wordTypoEntry = ctx.holder.GetWordEntry(wordTypo.word);
-						std::string typoUTF8 = utf16_to_utf8(typo);
+						const auto& wordTypoOccurences = ctx.holder.GetWordOccurences(wordTypo.word);
 						if (logLevel_ >= LogTrace) [[unlikely]] {
-							logFmt(LogInfo, fmt::runtime(" matched typo '{}' of word '{}', {} ids, {}%"), typoUTF8, word,
-								   wordTypoEntry.vids.size(), proc);
+							logFmt(LogInfo, fmt::runtime(" matched typo '{}' of word '{}', {} ids, {}%"), utf16_to_utf8(typo),
+								   utf16_to_utf8(word), wordTypoOccurences.size(), proc);
 						}
 						++ctx.matched;
 					} else {
@@ -100,18 +119,32 @@ public:
 						it->second = std::max(it->second, proc);
 					}
 				}
-			};
-
-			mktypos(pattern, holder.cfg_->MaxTyposInWord(), holder.cfg_->maxTypoLen, callback, buf);
-			if (holder.cfg_->logLevel >= LogInfo) [[unlikely]] {
-				logFmt(LogInfo, "Lookup typos, matched {} typos, skipped {}", ctx.matched, ctx.skipped);
 			}
+		};
+
+		mktypos(pattern, holder.cfg_->MaxTyposInWord(), holder.cfg_->maxTypoLen, callback, buf);
+		if (holder.cfg_->logLevel >= LogInfo) [[unlikely]] {
+			logFmt(LogInfo, "Lookup typos, matched {} typos, skipped {}", ctx.matched, ctx.skipped);
 		}
 	}
 
 private:
+	static WordTypo makeWordTypo(TypoKey key) noexcept {
+		const auto wordId = UnpackTypoWordId(key);
+		const auto pos0 = UnpackTypoPosition0(key);
+		const auto pos1 = UnpackTypoPosition1(key);
+		if (pos0 == kTypoMissingPosition) {
+			return WordTypo(wordId);
+		}
+		if (pos1 == kTypoMissingPosition) {
+			return WordTypo(wordId, TyposVec(pos0));
+		}
+		return WordTypo(wordId, TyposVec(pos0, pos1));
+	}
+
 	bool checkMaxTyposDist(const WordTypo& found, const TyposVec& current);
-	bool checkMaxLettPermDist(std::string_view foundWord, const WordTypo& found, std::wstring_view currentWord, const TyposVec& current);
+	bool checkMaxLettPermDist(std::u16string_view foundWord, const WordTypo& found, std::u16string_view currentWord,
+							  const TyposVec& current);
 
 	bool useMaxTypoDist_;
 	bool useMaxLettPermDist_;
@@ -120,7 +153,6 @@ private:
 	unsigned maxMissingLetts_;
 	unsigned maxExtraLetts_;
 	int logLevel_;
-	std::wstring foundWordUTF16_;
 };
 
 }  // namespace reindexer

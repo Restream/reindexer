@@ -15,16 +15,18 @@
 
 #include "core/enums.h"
 #include "core/nsselecter/distincthelpers.h"
+#include "core/nsselecter/joins/item_context.h"
 #include "core/nsselecter/joins/items_processor_mock.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/iterators.h"
+#include "core/nsselecter/joins/results.h"
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
 #include "core/reindexer.h"
 #include "core/sorting/sortexpression.h"
 #include "estl/fast_hash_set.h"
+#include "gtests/tools.h"
 #include "test_helpers.h"
 #include "tools/float_comparison.h"
-#include "tools/string_regexp_functions.h"
 
 namespace reindexer_tests {
 
@@ -211,19 +213,19 @@ protected:
 				}
 			}
 
-			const auto joined = qr[i].GetJoined();
+			auto joinedCtx = qr[i].GetJoinedContext();
+			auto& joinedIt = joinedCtx.iterator;
 			bool conditionsSatisfied =
-				checkConditions(itemr, &joined, query.Entries().cbegin(), query.Entries().cend(), joinItemsProcessors, indexesFields);
+				checkConditions(itemr, &joinedCtx, query.Entries().cbegin(), query.Entries().cend(), joinItemsProcessors, indexesFields);
 			if (!conditionsSatisfied) {
 				std::stringstream ss;
 				ss << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl;
-				if (joined.getJoinedItemsCount() > 0) {
+				const auto joinedItemsCount{joinedIt.GetItemsCount()};
+				if (joinedItemsCount > 0) {
 					ss << "Joined:" << std::endl;
-					for (int fIdx = 0, fCount = joined.getJoinedFieldsCount(); fIdx < fCount; ++fIdx) {
-						for (int j = 0, iCount = joined.at(fIdx).ItemsCount(); j < iCount; ++j) {
-							const auto nsCtxIdx = qr.GetJoinedNsCtxIndex(joined.at(fIdx)[j].Nsid());
-							ss << joined.at(fIdx).GetItem(j, qr.getPayloadType(nsCtxIdx), qr.getTagsMatcher(nsCtxIdx)).GetJSON()
-							   << std::endl;
+					for (auto fieldIt = joinedIt.Begin(); fieldIt != joinedIt.End(); ++fieldIt) {
+						for (auto it : fieldIt.ToQueryResults(joinedCtx)) {
+							ss << it.GetItem().GetJSON() << std::endl;
 						}
 					}
 				}
@@ -239,7 +241,8 @@ protected:
 
 			for (size_t j = 0; j < query.GetSortingEntries().size(); ++j) {
 				const reindexer::SortingEntry& sortingEntry(query.GetSortingEntries()[j]);
-				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinItemsProcessors);
+				const auto sortExpr = reindexer::SortExpression::Parse(
+					sortingEntry.expression, std::span<JoinItemsProcessorMock>{joinItemsProcessors.data(), joinItemsProcessors.size()});
 
 				reindexer::Variant sortedValue;
 				reindexer::CollateOpts collate;
@@ -247,12 +250,14 @@ protected:
 					sortedValue = itemr[sortingEntry.expression];
 					collate = indexesCollates[sortingEntry.expression];
 				} else if (sortExpr.ByJoinedField()) {
-					auto jItemIt = (qr.begin() + i).GetJoined();
-					EXPECT_EQ(jItemIt.getJoinedFieldsCount(), 1);
-					EXPECT_EQ(jItemIt.getJoinedItemsCount(), 1);
-					reindexer::ItemImpl joinItem(jItemIt.begin().GetItem(0, qr.getPayloadType(1), qr.getTagsMatcher(1)));
+					auto jItemItCtx = (qr.begin() + i).GetJoinedContext();
+					auto& jItemIt = jItemItCtx.iterator;
+					EXPECT_EQ(jItemIt.GetFieldsCount(), 1);
+					const auto joinedItemsCount{jItemIt.GetItemsCount()};
+					EXPECT_EQ(joinedItemsCount, 1);
+					auto joinItem = jItemIt.Begin().ToQueryResults(jItemItCtx)[0].GetItem();
 					auto fieldName = sortingEntry.expression.substr(sortingEntry.expression.find_first_of('.'));
-					sortedValue = joinItem.GetValueByJSONPath(fieldName)[0];
+					sortedValue = joinItem[fieldName];
 				} else {
 					sortedValue = reindexer::Variant{calculateSortExpression(sortExpr.cbegin(), sortExpr.cend(), itemr, qr)};
 				}
@@ -396,9 +401,9 @@ protected:
 	reindexer::fast_hash_map<std::string, InsertedItemsByPk> insertedItems_;
 
 private:
-	bool checkConditions(const reindexer::Item& item, const reindexer::joins::ItemIterator* joined,
+	bool checkConditions(const reindexer::Item& item, reindexer::joins::JoinedItemContext* joined,
 						 reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
-						 const std::vector<JoinItemsProcessorMock>& joinItemsProcessors, const IndexesData& indexesFields) {
+						 std::span<const JoinItemsProcessorMock> joinItemsProcessors, const IndexesData& indexesFields) {
 		bool result = true;
 		for (; it != to; ++it) {
 			OpType op = it->operation;
@@ -442,8 +447,7 @@ private:
 					const auto& rightIndexesFields = indexesFields_[js.RightNsName()];
 					std::optional<reindexer::LocalQueryResults> joinedQR;
 					if (joined) {
-						joinedQR = joined->at(jqe.joinIndex).ToQueryResults();
-						joinedQR->addNSContext(js.QueryResults(), 0, reindexer::lsn_t{});
+						joinedQR = joined->iterator.At(jqe.joinIndex).ToQueryResults(*joined);
 					}
 					return checkCondition(item, joinedQR, js, indexesFields, rightIndexesFields);
 				},
@@ -958,7 +962,7 @@ private:
 	}
 
 	static bool isLikeSqlPattern(const std::string& str, std::string pattern) {
-		return std::regex_match(str, std::regex{reindexer::sqlLikePattern2ECMAScript(std::move(pattern))});
+		return std::regex_match(str, std::regex{reindexer_tests_tools::sqlLikePattern2ECMAScript(std::move(pattern))});
 	}
 
 	bool checkCompositeCondition(const reindexer::Item& item, const reindexer::BetweenFieldsQueryEntry& qentry,
@@ -1033,8 +1037,8 @@ private:
 
 	static reindexer::VariantArray getJoinedField(reindexer::IdType id, const reindexer::LocalQueryResults& qr, size_t nsIdx, int index,
 												  std::string_view column) noexcept {
-		const reindexer::joins::ItemIterator itemIt{&qr.joined_[0], id};
-		const auto joinedIt = itemIt.at(nsIdx);
+		const reindexer::joins::ItemIterator itemIt{&qr.Joined()[0], id};
+		const auto joinedIt = itemIt.At(nsIdx);
 		assertrx(joinedIt.ItemsCount() == 1);
 		auto joinedItem = joinedIt.GetItem(0, qr.getPayloadType(nsIdx + 1), qr.getTagsMatcher(nsIdx + 1));
 		reindexer::VariantArray values;
@@ -1116,8 +1120,9 @@ private:
 	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
 		for (; it != end; ++it) {
 			if (it->Visit(
-					[&it] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::QueryEntriesBracket&)
-						RX_POST_LMBD_ALWAYS_INLINE { return containsJoins(it.cbegin(), it.cend()); },
+					[&it] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::QueryEntriesBracket&) RX_POST_LMBD_ALWAYS_INLINE {
+						return containsJoins(it.cbegin(), it.cend());
+					},
 					[] RX_PRE_LMBD_ALWAYS_INLINE(const reindexer::JoinQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
 					[] RX_PRE_LMBD_ALWAYS_INLINE(
 						const reindexer::concepts::OneOf<reindexer::QueryEntry, reindexer::BetweenFieldsQueryEntry, reindexer::AlwaysFalse,
@@ -1181,7 +1186,7 @@ private:
 		return it->second;
 	}
 
-	static void printFailedQueryEntries(const reindexer::QueryEntries& failedEntries, const std::vector<JoinItemsProcessorMock>& js,
+	static void printFailedQueryEntries(const reindexer::QueryEntries& failedEntries, std::span<const JoinItemsProcessorMock> js,
 										const std::vector<reindexer::Query>& subQueries) {
 		TestCout() << "Failed entries: ";
 		printQueryEntries(failedEntries.cbegin(), failedEntries.cend(), js, subQueries);
@@ -1189,7 +1194,7 @@ private:
 	}
 
 	static void printQueryEntries(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
-								  const std::vector<JoinItemsProcessorMock>& js, const std::vector<reindexer::Query>& subQueries) {
+								  std::span<const JoinItemsProcessorMock> js, const std::vector<reindexer::Query>& subQueries) {
 		TestCout() << "(";
 		for (; it != to; ++it) {
 			TestCout() << (it->operation == OpAnd ? "AND" : (it->operation == OpOr ? "OR" : "NOT"));

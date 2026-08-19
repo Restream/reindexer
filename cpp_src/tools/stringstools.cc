@@ -129,7 +129,7 @@ bool SplitOptions::ContainsDelims(std::string_view str) const {
 	return false;
 }
 
-bool SplitOptions::ContainsDelims(std::wstring_view str) const {
+bool SplitOptions::ContainsDelims(std::u16string_view str) const {
 	return std::ranges::any_of(str, [this](auto ch) { return IsWordPartDelimiter(ch); });
 }
 
@@ -191,26 +191,24 @@ void SplitOptions::SetSymbols(std::string_view extraWordSymbols, std::string_vie
 }
 
 static std::string bitmaskAsString(const std::vector<bool>& mask) {
-	std::string res;
-	std::wstring str;
+	std::u16string str;
 	for (size_t i = 0; i < mask.size(); ++i) {
 		if (mask[i]) {
-			str.push_back(wchar_t(i));
+			str.push_back(char16_t(i));
 		}
 	}
-	utf16_to_utf8(str, res);
-	return res;
+	return utf16_to_utf8(str);
 }
 
 std::string SplitOptions::GetExtraWordSymbols() const { return bitmaskAsString(extraWordSymbolsMask_); }
 std::string SplitOptions::GetWordPartDelimiters() const { return bitmaskAsString(wordPartDelimitersMask_); }
 
-std::string toLower(std::string_view src) {
+std::string ToLower(std::string_view src) {
 	std::string res;
 	res.resize(src.size() + 4);
 	auto resIt = res.begin();
 	for (auto it = src.begin(); it != src.end();) {
-		wchar_t ch = utf8::unchecked::next(it);
+		const uint32_t ch = utf8::unchecked::next(it);
 		resIt = utf8::unchecked::append(ToLower(ch), resIt);
 		if (static_cast<size_t>((resIt - res.begin()) + 4) > res.capacity()) {
 			res.reserve(res.capacity() + 4);
@@ -376,29 +374,49 @@ Variant stringToVariant(std::string_view value) {
 						   KeyValueType::FloatVector> auto) noexcept { return Variant(); });
 }
 
-void utf8_to_utf16(std::string_view src, std::wstring& dst) {
+void utf8_to_utf16(std::string_view src, std::u16string& dst) {
 	dst.resize(src.length());
-	auto end = utf8::unchecked::utf8to32(src.begin(), src.end(), dst.begin());
+	auto end = utf8::unchecked::utf8to16(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
 }
 
-void utf16_to_utf8(std::wstring_view src, std::string& dst) {
+void utf16_to_utf8(std::u16string_view src, std::string& dst) {
 	dst.resize(src.length() * 4);
-	auto end = utf8::unchecked::utf32to8(src.begin(), src.end(), dst.begin());
+	auto end = utf8::unchecked::utf16to8(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
 }
 
-std::wstring utf8_to_utf16(std::string_view src) {
-	std::wstring dst;
+std::u16string utf8_to_utf16(std::string_view src) {
+	std::u16string dst;
 	utf8_to_utf16(src, dst);
 	return dst;
 }
-std::string utf16_to_utf8(std::wstring_view src) {
+
+std::string utf16_to_utf8(std::u16string_view src) {
 	std::string dst;
 	utf16_to_utf8(src, dst);
 	return dst;
 }
-size_t utf16_to_utf8_size(std::wstring_view src) { return utf8::unchecked::utf32to8_size(src.begin(), src.end()); }
+
+size_t utf16_to_utf8_size(std::u16string_view src) {
+	size_t res = 0;
+	for (auto it = src.begin(); it != src.end(); ++it) {
+		uint32_t cp = *it;
+		if (utf8::internal::is_lead_surrogate(cp) && it + 1 != src.end()) {
+			cp = (cp << 10) + utf8::internal::mask16(*(++it)) + utf8::internal::SURROGATE_OFFSET;
+		}
+		if (cp < 0x80) {
+			res += 1;
+		} else if (cp < 0x800) {
+			res += 2;
+		} else if (cp < 0x10000) {
+			res += 3;
+		} else {
+			res += 4;
+		}
+	}
+	return res;
+}
 
 // This functions calculate how many bytes takes limit symbols in UTF8 forward
 size_t calcUtf8After(std::string_view str, size_t limit) noexcept {
@@ -568,7 +586,7 @@ void split(std::string_view str, std::string& buf, std::vector<WordWithPos>& wor
 	buf.resize(std::distance(buf.begin(), bufIt));
 }
 
-void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, const SplitOptions& options) {
+void split(std::string_view utf8Str, std::u16string& utf16str, std::vector<std::u16string>& words, const SplitOptions& options) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
@@ -728,8 +746,8 @@ ComparationResult collateCompare<CollateCustom>(std::string_view lhs, std::strin
 		auto chl = utf8::unchecked::next(itl);
 		auto chr = utf8::unchecked::next(itr);
 
-		int chlPriority = sortOrderTable.GetPriority(chl);
-		int chrPriority = sortOrderTable.GetPriority(chr);
+		int chlPriority = sortOrderTable.GetPriority(static_cast<uint16_t>(chl));
+		int chrPriority = sortOrderTable.GetPriority(static_cast<uint16_t>(chr));
 
 		if (chlPriority > chrPriority) {
 			return ComparationResult::Gt;
@@ -1031,14 +1049,13 @@ void toPrevCh(std::string_view::iterator& it, std::string_view str) {
 	}
 }
 
-template <bool isUtf8>
-Error getBytePosInMultilineString(std::string_view str, const size_t line, const size_t charPos, size_t& bytePos) {
+Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos) {
 	auto it = str.begin();
 	size_t currLine = 0, currCharPos = 0;
-	for (; it != str.end() && ((currLine != line) || (currCharPos != charPos)); toNextCh<isUtf8>(it, str)) {
+	for (; it != str.end() && !(currLine == line && currCharPos == charPos); ++it) {
 		if (*it == '\n') {
 			++currLine;
-		} else if (currLine == line) {
+		} else if (currLine == line && !utf8::internal::is_trail(*it)) {
 			++currCharPos;
 		}
 	}
@@ -1049,21 +1066,13 @@ Error getBytePosInMultilineString(std::string_view str, const size_t line, const
 	return Error(errNotValid, "Wrong cursor position: line={}, pos={}", line, charPos);
 }
 
-Error cursorPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos) {
-	try {
-		return getBytePosInMultilineString<true>(str, line, charPos, bytePos);
-	} catch (const utf8::exception&) {
-		return getBytePosInMultilineString<false>(str, line, charPos, bytePos);
-	}
-}
-
-void charMultilinePos(std::string_view str, size_t pos, size_t search_start, size_t& line, size_t& col) noexcept {
-	for (auto it = str.begin() + search_start; it != str.begin() + pos; it++) {
+void symbolMultilinePos(std::string_view str, size_t pos, size_t search_start, size_t& line, size_t& col) noexcept {
+	for (auto it = str.begin() + search_start, end = str.begin() + pos; it != end; ++it) {
 		if (*it == '\n') {
-			line++;
+			++line;
 			col = 0;
-		} else {
-			col++;
+		} else if (!utf8::internal::is_trail(*it)) {
+			++col;
 		}
 	}
 }

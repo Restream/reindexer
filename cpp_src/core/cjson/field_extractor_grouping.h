@@ -61,7 +61,7 @@ public:
 	}
 
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(concepts::TagNameOrIndex auto tag, unaligned::view<T> data, unsigned /*offset*/,
 			   TreatAsSingleElement = TreatAsSingleElement_False) {
 		auto getValue = [&data](size_t i) -> Variant { return Variant(data[i]); };
@@ -237,7 +237,7 @@ private:
 		if (!stateNew.path.empty() && checkPath(stateNew.path[0])) {
 			if (stateNew.path[0].type == PathPartType::ArrayTarget) {
 				stateNew.valuesArrayIndex = arrayIndex;
-				stateNew.values.Resize(stateNew.valuesArrayIndex+1);
+				stateNew.values.Resize(stateNew.valuesArrayIndex + 1);
 			}
 			stateNew.isPath = true;
 			stateNew.path = stateNew.path.subspan(1);

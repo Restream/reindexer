@@ -2,7 +2,6 @@
 #include "cluster/logger.h"
 #include "core/dbconfig.h"
 #include "tools/randomgenerator.h"
-#include "tools/scope_guard.h"
 
 namespace reindexer {
 namespace cluster {
@@ -56,9 +55,12 @@ std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 		const int nextLeaderId = voting_.GetDesiredLeaderId();
 		const bool isDesiredLeader = (nextLeaderId == serverId_);
 		if (!isDesiredLeader && nextLeaderId != -1) {
-			std::ignore = endElections(-1, roundBeg, RaftInfo::Role::Follower);
 			logInfo("{}: Skipping elections (desired leader id is {})", serverId_, nextLeaderId);
-			roundResult = RaftInfo::Role::Follower;
+			if (endElections(-1, roundBeg, RaftInfo::Role::Follower)) {
+				roundResult = RaftInfo::Role::Follower;
+			} else {
+				logInfo("{}: Failed to end elections with chosen role: follower (desired leader id is {})", serverId_, nextLeaderId);
+			}
 		} else {
 			int32_t term = beginElectionsTerm(nextLeaderId);
 			logInfo("{}: Starting new elections term. Term number: {}", serverId_, term);
@@ -103,12 +105,16 @@ std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 						return;
 					}
 
+					const auto voteData = voting_.GetVoteData();
 					const bool leaderIsAvailable = !isDesiredLeader && LeaderIsAvailable(ClockT::now());
-					if (leaderIsAvailable || !isConsensus(electionsStat.succeedPhase1)) {
-						logInfo("{}: Skip leaders ping. Elections are outdated. leaderIsAvailable: {}. Successful requests: {}", serverId_,
-								leaderIsAvailable ? 1 : 0, electionsStat.succeedPhase1);
+					const bool voteMoved = (voteData.leaderId != serverId_) || (voteData.term != term);
+					if (leaderIsAvailable || voteMoved || !isConsensus(electionsStat.succeedPhase1)) {
+						logInfo(
+							"{}: Skip leaders ping. Elections are outdated. leaderIsAvailable: {}. voteMoved: {}. Successful requests: {}",
+							serverId_, leaderIsAvailable ? 1 : 0, voteMoved ? 1 : 0, electionsStat.succeedPhase1);
 						return;	 // These elections are outdated
 					}
+					suggestion.leaderCommitState = LeaderCommitState::Election;
 					err = node.client.LeadersPing(suggestion);
 					if (err.ok()) {
 						++electionsStat.succeedPhase2;
@@ -119,27 +125,40 @@ std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 			}
 
 			RaftInfo::Role result = nodes_.empty() ? RaftInfo::Role::Leader : RaftInfo::Role::Follower;
+			bool leaderCommitAttempted = false;
 
 			while (wg.wait_count()) {
 				wg.wait_next();
 				if (isConsensus(electionsStat.succeedPhase2)) {
 					result = RaftInfo::Role::Leader;
+					leaderCommitAttempted = true;
 					if (endElections(term, roundBeg, result)) {
 						logInfo("{}: end elections with role: leader", serverId_);
 						roundResult = result;
-						break;
+					} else {
+						logInfo("{}: Failed to end elections with chosen role: leader", serverId_);
 					}
+					break;
 				}
 			}
 			if (!roundResult) {
 				logInfo("{}: votes stats: phase1: {}; phase2: {}; fails: {}", serverId_, electionsStat.succeedPhase1,
 						electionsStat.succeedPhase2, electionsStat.failed);
 
-				if (endElections(term, roundBeg, result)) {
-					logInfo("{}: end elections with role: {}({})", serverId_, RaftInfo::RoleToStr(result), GetLeaderId());
-					roundResult = result;
-				} else {
-					logInfo("{}: Failed to end elections with chosen role: {}", serverId_, RaftInfo::RoleToStr(result));
+				if (result == RaftInfo::Role::Leader && !leaderCommitAttempted) {
+					if (endElections(term, roundBeg, result)) {
+						logInfo("{}: end elections with role: leader", serverId_);
+						roundResult = result;
+					} else {
+						logInfo("{}: Failed to end elections with chosen role: leader", serverId_);
+					}
+				} else if (result == RaftInfo::Role::Follower) {
+					if (endElections(term, roundBeg, result)) {
+						logInfo("{}: end elections with role: {}({})", serverId_, RaftInfo::RoleToStr(result), GetLeaderId());
+						roundResult = result;
+					} else {
+						logInfo("{}: Failed to end elections with chosen role: {}", serverId_, RaftInfo::RoleToStr(result));
+					}
 				}
 			}
 		}
@@ -170,22 +189,60 @@ void RaftManager::AwaitTermination() {
 	SetTerminateFlag(false);
 }
 
-void RaftManager::VotingManager::LeadersPing(const NodeData& leader) {
+LeaderCommitState RaftManager::VotingManager::commitStateAfterAccept(int prevId, LeaderCommitState prevState, int newId,
+																	 LeaderCommitState incoming) noexcept {
+	if (!GrantsCommittedAvailability(incoming) && GrantsCommittedAvailability(prevState) && prevId == newId) {
+		return prevState;
+	}
+	return incoming;
+}
+
+void RaftManager::VotingManager::LeadersPing(const NodeData& leader, int thisServerId) {
 	lock_guard lck(mtx_);
 
-	const auto NextLeaderId = nextLeaderId_.GetNextLeaderId();
-	if (NextLeaderId >= 0 && NextLeaderId != leader.serverId) {
-		throw Error(errLogic, "This node has different desired leader: {}", NextLeaderId);
+	const auto nextLeaderId = nextLeaderId_.GetNextLeaderId();
+	if (nextLeaderId >= 0 && nextLeaderId != leader.serverId) {
+		throw Error(errLogic, "This node has different desired leader: {}", nextLeaderId);
 	}
 	if (data_.role == RaftInfo::Role::Leader) {
 		throw Error(errLogic, "This node is a leader itself");
 	}
-	if (data_.leaderId != leader.serverId && leaderIsAvailable(ClockT::now())) {
-		throw Error(errLogic, "This node has another leader: {}", data_.leaderId);
+
+	const auto now = ClockT::now();
+	const bool remoteStrong = GrantsCommittedAvailability(leader.leaderCommitState);
+	const bool localStrong = leaderIsCommittedAvailable(now);
+	const bool localAvailable = leaderIsAvailable(now);
+	const bool otherId = (data_.leaderId != leader.serverId) && (data_.leaderId >= 0);
+
+	if (!remoteStrong && leader.electionsTerm < data_.term) {
+		throw Error(errLogic, "Stale election ping: term {} < local {}", leader.electionsTerm, data_.term);
 	}
+	if (otherId) {
+		const bool blockedByLiveLease = localAvailable && (!remoteStrong || localStrong);
+		const bool blockedByForeignVote = !remoteStrong && data_.leaderId != thisServerId;
+		if (blockedByLiveLease || blockedByForeignVote) {
+			throw Error(errLogic, "This node has another leader: {}", data_.leaderId);
+		}
+	}
+
+	const auto prevId = data_.leaderId;
+	const auto prevState = data_.lastCommitState;
 	data_.leaderId = leader.serverId;
 	data_.term = leader.electionsTerm;
-	data_.lastLeaderPingTs = ClockT::now();
+	data_.lastLeaderPingTs = now;
+	data_.lastCommitState = commitStateAfterAccept(prevId, prevState, leader.serverId, leader.leaderCommitState);
+}
+
+void RaftManager::VotingManager::bindLeaderSuggestion(int adoptedId, int32_t suggestionTerm) noexcept {
+	const auto prevId = data_.leaderId;
+	const bool retainLiveLease = leaderIsAvailable(ClockT::now()) && prevId == adoptedId;
+
+	data_.term = suggestionTerm;
+	data_.leaderId = adoptedId;
+	if (!retainLiveLease) {
+		data_.lastLeaderPingTs = ClockT::time_point{};
+		data_.lastCommitState = LeaderCommitState::Election;
+	}
 }
 
 void RaftManager::VotingManager::SuggestLeader(int thisServerId, const NodeData& suggestion, NodeData& response) {
@@ -203,13 +260,11 @@ void RaftManager::VotingManager::SuggestLeader(int thisServerId, const NodeData&
 			if (nextLeaderId != -1) {
 				sId = nextLeaderId;
 			}
-			data_.term = suggestion.electionsTerm;
-			data_.leaderId = sId;
+			bindLeaderSuggestion(sId, suggestion.electionsTerm);
 			response.serverId = sId;
 			response.electionsTerm = suggestion.electionsTerm;
 		} else if (nextLeaderId != -1) {
-			data_.term = suggestion.electionsTerm;
-			data_.leaderId = nextLeaderId;
+			bindLeaderSuggestion(nextLeaderId, suggestion.electionsTerm);
 		}
 	}
 	if (nextLeaderId != -1) {
@@ -224,11 +279,26 @@ void RaftManager::VotingManager::SuggestLeader(int thisServerId, const NodeData&
 			 suggestion.serverId, suggestion.electionsTerm, response.serverId, response.electionsTerm, voteData.leaderId, voteData.term);
 }
 
-void RaftManager::VotingManager::SetDesiredLeaderId(int thisServerId, int desiredLeaderId) {
+bool RaftManager::SetDesiredLeaderId(int desiredLeaderId) { return voting_.SetDesiredLeaderId(serverId_, desiredLeaderId); }
+
+bool RaftManager::VotingManager::SetDesiredLeaderId(int thisServerId, int desiredLeaderId) {
 	lock_guard lck(mtx_);
 	logInfo("{}: Set ({}) as a desired leader", thisServerId, desiredLeaderId);
+	const bool demoteLeader = (data_.role == RaftInfo::Role::Leader) && (desiredLeaderId != thisServerId);
 	nextLeaderId_.SetNextLeaderId(desiredLeaderId);
-	data_.lastLeaderPingTs = {ClockT::time_point()};
+	data_.lastLeaderPingTs = ClockT::time_point{};
+	data_.lastCommitState = LeaderCommitState::Unspecified;
+	if (demoteLeader) {
+		// Drop VoteData Leader only; shared role stays Candidate until replicator onRoleChanged.
+		data_.role = RaftInfo::Role::Candidate;
+		logInfo("{}: Demoted VoteData Leader -> Candidate for desired leader transfer ({})", thisServerId, desiredLeaderId);
+	}
+	return demoteLeader;
+}
+
+void RaftManager::VotingManager::ClearDesiredLeaderId() noexcept {
+	lock_guard lck(mtx_);
+	nextLeaderId_.ClearNextLeaderId();
 }
 
 int RaftManager::VotingManager::GetDesiredLeaderId() noexcept {
@@ -241,9 +311,36 @@ bool RaftManager::VotingManager::LeaderIsAvailable(ClockT::time_point now) const
 	return leaderIsAvailable(now);
 }
 
+bool RaftManager::VotingManager::LeaderIsCommittedAvailable(ClockT::time_point now) const noexcept {
+	lock_guard lck(mtx_);
+	return leaderIsCommittedAvailable(now);
+}
+
 bool RaftManager::VotingManager::leaderIsAvailable(ClockT::time_point now) const noexcept {
 	const bool hasRecentLeadersPing = (now - data_.lastLeaderPingTs) < kMinLeaderAwaitInterval;
 	return hasRecentLeadersPing || (data_.role == RaftInfo::Role::Leader);
+}
+
+bool RaftManager::VotingManager::leaderIsCommittedAvailable(ClockT::time_point now) const noexcept {
+	return (data_.role == RaftInfo::Role::Leader) || (leaderIsAvailable(now) && GrantsCommittedAvailability(data_.lastCommitState));
+}
+
+bool RaftManager::VotingManager::followerReady(ClockT::time_point now, bool requireForeignLeader, int thisServerId) noexcept {
+	const int desired = nextLeaderId_.GetNextLeaderId();
+	return leaderIsCommittedAvailable(now) && (!requireForeignLeader || data_.leaderId != thisServerId) &&
+		   (desired < 0 || data_.leaderId == desired);
+}
+
+bool RaftManager::VotingManager::FollowerPublishReady(int thisServerId, ClockT::time_point now) noexcept {
+	lock_guard lck(mtx_);
+	constexpr bool requireForeignLeader = true;
+	return followerReady(now, requireForeignLeader, thisServerId);
+}
+
+bool RaftManager::VotingManager::FollowerStayReady(ClockT::time_point now) noexcept {
+	lock_guard lck(mtx_);
+	constexpr bool requireForeignLeader = false;
+	return followerReady(now, requireForeignLeader, /*thisServerId=*/-1);
 }
 
 void RaftManager::startPingRoutines() {
@@ -265,13 +362,12 @@ void RaftManager::startPingRoutines() {
 				NodeData leader;
 				leader.serverId = serverId_;
 				leader.electionsTerm = voteData.term;
+				leader.leaderCommitState = LeaderCommitState::Committed;
 #ifdef RX_ENABLE_EXTRA_CLUSTER_LOGS
-				// TODO: This temporary debgu message for tests only
 				logTrace("{} Sending ping to {}({})", serverId_, node.uid, node.serverId);
 #endif	// RX_ENABLE_EXTRA_CLUSTER_LOGS
 				err = node.client.LeadersPing(leader);
 #ifdef RX_ENABLE_EXTRA_CLUSTER_LOGS
-				// TODO: This temporary debgu message for tests only
 				logTrace("{} Ping to {}({}) was sent", serverId_, node.uid, node.serverId);
 #endif	// RX_ENABLE_EXTRA_CLUSTER_LOGS
 				const bool isNetworkError = (err.code() == errTimeout) || (err.code() == errNetwork);
@@ -296,11 +392,6 @@ void RaftManager::startPingRoutines() {
 	}
 }
 
-void RaftManager::randomizedSleep(net::ev::dynamic_loop& loop, std::chrono::milliseconds base, std::chrono::milliseconds maxDiff) {
-	const auto interval = base + std::chrono::milliseconds(tools::RandomGenerator::getu32(0, maxDiff.count()));
-	loop.sleep(interval);
-}
-
 int32_t RaftManager::beginElectionsTerm(int presetLeader) {
 	const auto [term, oldRole] = voting_.StartNewTerm(presetLeader >= 0 ? presetLeader : serverId_);
 
@@ -318,7 +409,7 @@ bool RaftManager::endElections(int32_t term, ClockT::time_point roundBeg, RaftIn
 				logTrace("{}: Elections term {} took too long. Unable to become leader", serverId_, term);
 				return false;
 			}
-			if (!voting_.TryToSetLeaderRoleInTerm(term)) {
+			if (!voting_.TryToSetLeaderRoleInTerm(term, serverId_)) {
 				return false;
 			}
 
@@ -326,14 +417,20 @@ bool RaftManager::endElections(int32_t term, ClockT::time_point roundBeg, RaftIn
 			return true;
 		}
 		case RaftInfo::Role::Follower: {
-			voting_.SetFollowerRole();
 			coroutine::wait_group wg;
 			for (auto& node : nodes_) {
 				loop_.spawn(wg, [&node]() { node.client.Stop(); });
 			}
 			wg.wait();
-			randomizedSleep(loop_, kMinLeaderAwaitInterval, kMaxLeaderAwaitDiff);
-			return LeaderIsAvailable(RaftManager::ClockT::now());
+			const auto await =
+				kMinLeaderAwaitInterval + std::chrono::milliseconds(tools::RandomGenerator::getu32(0, kMaxLeaderAwaitDiff.count()));
+			const auto pred = [this] { return voting_.FollowerPublishReady(serverId_, ClockT::now()); };
+			loop_.granular_sleep(await, kGranularSleepInterval, pred);
+			if (!pred()) {
+				return false;
+			}
+			voting_.SetFollowerRole();
+			return true;
 		}
 		case RaftInfo::Role::None:
 		case RaftInfo::Role::Candidate:
@@ -447,7 +544,7 @@ Error RaftManager::DesiredLeaderIdSender::sendDesiredServerIdToNode(size_t nodeI
 	return !err.ok() ? err : client.SetDesiredLeaderId(nextLeaderId_);
 }
 
-bool RaftManager::VotingManager::TryToSetLeaderRoleInTerm(int32_t term) noexcept {
+bool RaftManager::VotingManager::TryToSetLeaderRoleInTerm(int32_t term, int thisServerId) noexcept {
 	lock_guard lck(mtx_);
 	assertrx_dbg(term >= 0);
 
@@ -455,6 +552,8 @@ bool RaftManager::VotingManager::TryToSetLeaderRoleInTerm(int32_t term) noexcept
 		return false;
 	}
 	data_.role = RaftInfo::Role::Leader;
+	data_.leaderId = thisServerId;
+	data_.lastCommitState = LeaderCommitState::Committed;
 	return true;
 }
 
@@ -468,9 +567,19 @@ std::pair<int32_t, RaftInfo::Role> RaftManager::VotingManager::StartNewTerm(int 
 
 	const int32_t term = data_.term + 1;
 	const auto oldRole = data_.role;
+	const auto now = ClockT::now();
+	const bool wasLeader = (oldRole == RaftInfo::Role::Leader);
+	// Keep a live remote Committed lease; drop Election ping-lease (otherwise skip phase-2 with nothing to publish).
+	const bool remoteCommittedLeaseLive =
+		leaderIsCommittedAvailable(now) && data_.leaderId >= 0 && data_.leaderId != presetLeaderId && !wasLeader;
+
 	data_.term = term;
 	data_.role = RaftInfo::Role::Candidate;
-	data_.leaderId = presetLeaderId;
+	if (!remoteCommittedLeaseLive) {
+		data_.leaderId = presetLeaderId;
+		data_.lastLeaderPingTs = ClockT::time_point{};
+		data_.lastCommitState = LeaderCommitState::Unspecified;
+	}
 	return std::make_pair(term, oldRole);
 }
 

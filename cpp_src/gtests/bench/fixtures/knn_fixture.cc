@@ -37,7 +37,7 @@ static constexpr size_t kWordsInFtIndex = 1'000;
 static constexpr size_t kDimention = 32;
 static constexpr size_t kNsSize = 10'000;
 #else	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
-static constexpr size_t kDimention = 32;
+static constexpr size_t kDimention = 256;
 static constexpr size_t kNsSize = 100'000;
 #endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
 #endif	// REINDEX_WITH_TSAN

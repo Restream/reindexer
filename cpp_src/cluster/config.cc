@@ -1,8 +1,8 @@
 #include "cluster/config.h"
 
 #include "core/cjson/jsonbuilder.h"
-#include "core/defnsconfigs.h"
 #include "core/definitions/indexdef.h"
+#include "core/defnsconfigs.h"
 #include "core/type_consts.h"
 #include "gason/gason.h"
 #include "tools/catch_and_return.h"
@@ -38,6 +38,11 @@ Error NodeData::FromJSON(const gason::JsonNode& root) {
 		serverId = root["server_id"].As<int>(serverId);
 		electionsTerm = root["elections_term"].As<int>(electionsTerm);
 		dsn = DSN(root["dsn"].As<std::string>());
+		leaderCommitState = LeaderCommitState::Unspecified;
+		const auto& committedNode = root["leader_committed"];
+		if (!committedNode.isEmpty()) {
+			leaderCommitState = committedNode.As<bool>() ? LeaderCommitState::Committed : LeaderCommitState::Election;
+		}
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
@@ -50,6 +55,16 @@ void NodeData::GetJSON(JsonBuilder& jb) const {
 	jb.Put("server_id", serverId);
 	jb.Put("elections_term", electionsTerm);
 	jb.Put("dsn", dsn);
+	switch (leaderCommitState) {
+		case LeaderCommitState::Committed:
+			jb.Put("leader_committed", true);
+			break;
+		case LeaderCommitState::Election:
+			jb.Put("leader_committed", false);
+			break;
+		case LeaderCommitState::Unspecified:
+			break;
+	}
 }
 
 void NodeData::GetJSON(WrSerializer& ser) const {
@@ -262,8 +277,7 @@ Error AsyncReplConfigData::FromDefault() noexcept {
 		if (!err.ok()) {
 			return Error(ErrorCode::errInvalidDefConfigs, "Incorrect kDefAsyncReplicationConfig: {}", err.what());
 		}
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 
 	return {};
 }

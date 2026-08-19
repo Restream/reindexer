@@ -3,7 +3,7 @@
 
 namespace reindexer {
 
-void mktypos(const std::wstring& word, size_t maxTyposInWord, uint8_t maxTyposLen, const TyposCallBack& callback, std::wstring& buf) {
+void mktypos(const std::u16string& word, size_t maxTyposInWord, uint8_t maxTyposLen, const TyposCallBack& callback, std::u16string& buf) {
 	// not supported
 	if (maxTyposInWord > 2) [[unlikely]] {
 		throw Error(errLogic, "Unexpected maxTyposInWord value for mktypo(): {}", maxTyposInWord);
@@ -14,7 +14,7 @@ void mktypos(const std::wstring& word, size_t maxTyposInWord, uint8_t maxTyposLe
 		return;
 	}
 
-	std::wstring& wordWith1MissingLetter = buf;
+	std::u16string& wordWith1MissingLetter = buf;
 	wordWith1MissingLetter.assign(word.data() + 1, word.size() - 1);
 	for (uint8_t i = 0;; ++i) {
 		callback(wordWith1MissingLetter, TyposVec(i), word);
@@ -25,7 +25,7 @@ void mktypos(const std::wstring& word, size_t maxTyposInWord, uint8_t maxTyposLe
 	}
 
 	if (maxTyposInWord == 2 && word.length() > 3) {
-		std::wstring& wordWith2MissingLetters = buf;
+		std::u16string& wordWith2MissingLetters = buf;
 		for (unsigned i = 0; i + 1 < word.size(); ++i) {
 			wordWith2MissingLetters.resize(i);
 			for (unsigned j = i + 2; j < word.size(); ++j) {

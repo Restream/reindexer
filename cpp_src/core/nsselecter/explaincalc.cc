@@ -62,15 +62,13 @@ void SingleQueryExplainCalc::LogDump(int logLevel) {
 			}
 		}
 
-		if (jitemsprocessors_) {
-			for (auto& js : *jitemsprocessors_) {
-				if (js.Type() == JoinType::LeftJoin || js.Type() == JoinType::Merge) {
-					logFmt(LogInfo, "{} {}: called {}", joins::JoinTypeName(js.Type()), js.RightNsName(), js.Called());
-				} else {
-					// Using js.Matched(false), because there are no information about actual operation
-					logFmt(LogInfo, "{} {}: called {}, matched {}", joins::JoinTypeName(js.Type()), js.RightNsName(), js.Called(),
-						   js.Matched(false));
-				}
+		for (auto& js : jitemsprocessors_) {
+			if (js.Type() == JoinType::LeftJoin || js.Type() == JoinType::Merge) {
+				logFmt(LogInfo, "{} {}: called {}", joins::JoinTypeName(js.Type()), js.RightNsName(), js.Called());
+			} else {
+				// Using js.Matched(false), because there are no information about actual operation
+				logFmt(LogInfo, "{} {}: called {}, matched {}", joins::JoinTypeName(js.Type()), js.RightNsName(), js.Called(),
+					   js.Matched(false));
 			}
 		}
 	}
@@ -135,17 +133,22 @@ RX_NO_INLINE static std::string buildPreselectDescription(const joins::PreSelect
 			[&](const IdSetPlain&) -> std::string {
 				const joins::PreSelectProperties& props = *result.properties;
 				switch (result.storedValuesOptStatus) {
-					case StoredValuesOptimizationStatus::DisabledByCompositeIndex:
+					case joins::PreSelect::ValuesOptimizationStatus::DisabledByCompositeIndex:
 						return fmt::format(
 							"using preselected_rows, because joined query contains composite index condition in the ON-clause and "
 							"joined query's expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreSelect);
-					case StoredValuesOptimizationStatus::DisabledByJoinedFieldSort:
+					case joins::PreSelect::ValuesOptimizationStatus::DisabledByJoinedFieldSort:
 						return fmt::format(
 							"using preselected_rows, because sort by joined field was requested and joined query's "
 							"expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreSelect);
-					case StoredValuesOptimizationStatus::Enabled:
+					case joins::PreSelect::ValuesOptimizationStatus::DisabledByNestedJoin:
+						return fmt::format(
+							"using preselected_rows, because joined query contains nested JOIN and joined query's "
+							"expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
+							props.qresMaxIterations, props.maxIterationsIdSetPreSelect);
+					case joins::PreSelect::ValuesOptimizationStatus::Enabled:
 						return fmt::format(
 							"using preselected_rows, because joined query's expected max iterations count of {} is less than "
 							"max_iterations_idset_preresult limit of {} and larger then max copied values count of {}",
@@ -302,14 +305,12 @@ std::string SingleQueryExplainCalc::GetJSON() const {
 				selectors_->ExplainJSON(iters_, jsonSelArr, jitemsprocessors_);
 			}
 
-			if (jitemsprocessors_) {
-				// adding explain for LeftJoin-s and Merge subqueries
-				for (const joins::ItemsProcessor& js : *jitemsprocessors_) {
-					if (js.Type() == JoinType::InnerJoin || js.Type() == JoinType::OrInnerJoin) {
-						continue;
-					}
-					std::ignore = addToJSON(jsonSelArr, js);
+			// adding explain for LeftJoin-s and Merge subqueries
+			for (const joins::ItemsProcessor& js : jitemsprocessors_) {
+				if (js.Type() == JoinType::InnerJoin || js.Type() == JoinType::OrInnerJoin) {
+					continue;
 				}
+				std::ignore = addToJSON(jsonSelArr, js);
 			}
 		}
 
@@ -368,7 +369,7 @@ concept HasConditionStr = requires(T t) {
 };
 
 std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_iterator end, int iters, JsonBuilder& builder,
-												 const joins::ItemsProcessors* jitemsprocessors) {
+												 std::span<const joins::ItemsProcessor> jitemsprocessors) {
 	using namespace std::string_literals;
 	using namespace std::string_view_literals;
 
@@ -395,7 +396,7 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 					jsonSel.Put("keys"sv, siter.size());
 					jsonSel.Put("cost"sv, std::round(siter.Cost(iters)));
 				} else {
-					jsonSel.Put("items"sv, siter.GetMaxIterations(iters));
+					jsonSel.Put("items"sv, siter.EstimateMaxIterations(iters));
 				}
 				jsonSel.Put("field"sv, opName(it->operation) + siter.name);
 				if (siter.IndexNo() != IndexValueType::NotSet) {
@@ -407,9 +408,9 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				name << opName(it->operation, it == begin) << siter.name;
 			},
 			[&](const JoinSelectIterator& jiter) {
-				assertrx_throw(jitemsprocessors);
-				assertrx_throw(jiter.joinIndex < jitemsprocessors->size());
-				const std::string jName{addToJSON(builder, (*jitemsprocessors)[jiter.joinIndex], it->operation)};
+				assertrx_throw(!jitemsprocessors.empty());
+				assertrx_throw(jiter.joinIndex < jitemsprocessors.size());
+				const std::string jName{addToJSON(builder, jitemsprocessors[jiter.joinIndex], it->operation)};
 				name << opName(it->operation, it == begin) << jName;
 			},
 			[&]<concepts::OneOf<FieldsComparator, EqualPositionComparator, GroupingEqualPositionComparator, FunctionsComparator> T>(

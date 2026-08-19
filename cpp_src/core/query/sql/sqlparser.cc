@@ -8,6 +8,7 @@
 #include "core/type_consts_helpers.h"
 #include "estl/gift_str.h"
 #include "estl/tokenizer_range.h"
+#include "sqltokenmatching.h"
 #include "sqltokentype.h"
 #include "tools/stringstools.h"
 #include "vendor/double-conversion/double-conversion.h"
@@ -16,6 +17,32 @@
 namespace reindexer {
 
 using namespace std::string_view_literals;
+
+namespace {
+bool isEligibleForAutocomplete(const Token& tok, SqlTokenType tokenType) noexcept {
+	const auto text{tok.Text()};
+	if (text.empty()) {
+		return false;
+	}
+	const auto it{sqlTokenMatchings().find(tokenType)};
+	if (it == sqlTokenMatchings().end()) {
+		return tok.Type() != TokenName;
+	}
+	for (const auto& suggestion : it->second) {
+		if (checkIfStartsWith(text, suggestion)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+void validateNamespaceToken(Tokenizer& parser, const Token& tok) {
+	if (tok.Type() != TokenName) {
+		const auto range = parser.Where(tok);
+		throw SqlParserError(range, "Unexpected '{}' in query, {}", tok.Text(), range);
+	}
+}
+}  // namespace
 
 SQLParser::ErrorEOF::ErrorEOF() noexcept : Error(errLogic, "SQLParser eof is reached!") {}
 
@@ -50,7 +77,9 @@ Token SQLParser::peekSqlToken(Tokenizer& parser, SqlTokenType tokenType, bool to
 		ctx_.tokens.push_back(tokenType);
 	}
 	if (eof && ctx_.autocompleteMode) {
-		throw ErrorEOF();
+		if (!isEligibleForAutocomplete(tok, tokenType)) {
+			throw ErrorEOF();
+		}
 	}
 	return tok;
 }
@@ -255,6 +284,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 	}
 
 	auto nameWithCase = peekSqlToken(parser, NamespaceSqlToken, false);
+	validateNamespaceToken(parser, nameWithCase);
 	parser.SkipToken();
 	query_.SetNsName(nameWithCase.Text());
 	ctx_.updateLinkedNs(query_.NsName());
@@ -284,7 +314,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 			parser.SkipToken();
 			parseOrderBy(parser, query_);
 			ctx_.updateLinkedNs(query_.NsName());
-		} else if constexpr (nested == Nested::No) {
+		} else {
 			if (tok.Text() == "join"sv) {
 				parser.SkipToken();
 				parseJoin(JoinType::LeftJoin, parser);
@@ -308,17 +338,19 @@ void SQLParser::selectParse(Tokenizer& parser) {
 				auto jtype = (query_.NextOp() == OpOr) ? JoinType::OrInnerJoin : JoinType::InnerJoin;
 				query_.And();
 				parseJoin(jtype, parser);
-			} else if (tok.Text() == "merge"sv) {
+			} else if constexpr (nested == Nested::No) {
+				if (tok.Text() != "merge"sv && tok.Text() != "or"sv) {
+					break;
+				}
 				parser.SkipToken();
-				parseMerge(parser);
-			} else if (tok.Text() == "or"sv) {
-				parser.SkipToken();
-				query_.Or();
+				if (tok.Text() == "merge"sv) {
+					parseMerge(parser);
+				} else {
+					query_.Or();
+				}
 			} else {
 				break;
 			}
-		} else {
-			break;
 		}
 	} while (!parser.End());
 }
@@ -472,6 +504,7 @@ void SQLParser::deleteParse(Tokenizer& parser) {
 	}
 
 	tok = peekSqlToken(parser, NamespaceSqlToken, false);
+	validateNamespaceToken(parser, tok);
 	parser.SkipToken();
 	query_.SetNsName(tok.Text());
 	ctx_.updateLinkedNs(query_.NsName());
@@ -702,6 +735,7 @@ void SQLParser::updateParse(Tokenizer& parser) {
 	parser.SkipToken();
 
 	auto tok = peekSqlToken(parser, NamespaceSqlToken, false);
+	validateNamespaceToken(parser, tok);
 	query_.SetNsName(tok.Text());
 	ctx_.updateLinkedNs(query_.NsName());
 	parser.SkipToken();
@@ -776,6 +810,7 @@ void SQLParser::parseModifyConditions(Tokenizer& parser) {
 void SQLParser::truncateParse(Tokenizer& parser) {
 	parser.SkipToken();
 	auto tok = peekSqlToken(parser, NamespaceSqlToken, false);
+	validateNamespaceToken(parser, tok);
 	query_.SetNsName(tok.Text());
 	ctx_.updateLinkedNs(query_.NsName());
 	parser.SkipToken();
@@ -982,7 +1017,7 @@ void SQLParser::parseWhere(Tokenizer& parser, TokenizerRange whereLocation) {
 				parseDWithin(parser, nextOp);
 			} else if (iequals(tok.Text(), "knn"sv) && nextToken.Text() == "("sv) {
 				parseKnn(parser, nextOp);
-			} else if constexpr (nested == Nested::No) {
+			} else {
 				if (iequals(tok.Text(), "join"sv)) {
 					parseJoin(JoinType::LeftJoin, parser);
 				} else if (iequals(tok.Text(), "left"sv)) {
@@ -1010,8 +1045,6 @@ void SQLParser::parseWhere(Tokenizer& parser, TokenizerRange whereLocation) {
 				} else {
 					parseWhereCondition(parser, std::string{tok.Text()}, nextOp);
 				}
-			} else {
-				parseWhereCondition(parser, std::string{tok.Text()}, nextOp);
 			}
 			nextOp = OpAnd;
 		} else if (tok.Type() == TokenNumber || tok.Type() == TokenString) {
@@ -1431,6 +1464,7 @@ void SQLParser::parseJoin(JoinType type, Tokenizer& parser) {
 			throw SqlParserError(range, "Expected ')', but found '{}', {}", tok.Text(), range);
 		}
 	} else {
+		validateNamespaceToken(parser, nameWithCase);
 		jquery.SetNsName(nameWithCase.Text());
 		ctx_.updateLinkedNs(jquery.NsName());
 	}

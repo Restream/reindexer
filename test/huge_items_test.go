@@ -146,6 +146,9 @@ func buildWideItemsExpectedExplain(initialIndexes int) []expectedExplain {
 
 func TestItemsHuge(t *testing.T) {
 	t.Parallel()
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(testItemsHugeNs))
+	}()
 
 	// Fill items by cjson encoder
 	FillTestItemHuge(0, 50)

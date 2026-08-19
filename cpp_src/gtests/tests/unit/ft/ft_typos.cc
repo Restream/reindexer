@@ -47,7 +47,7 @@ TEST_P(FTTyposApi, SelectWithTypos) {
 	auto cfg = GetDefaultConfig();
 	cfg.stopWords.clear();
 	cfg.stemmers.clear();
-	cfg.enableKbLayout = false;
+	cfg.kbLayoutMode = reindexer::FTConfig::KbLayoutMode::Disable;
 	cfg.enableTranslit = false;
 	const auto kDefaultMaxTypoDist = cfg.maxTypoDistance;
 
@@ -85,6 +85,7 @@ TEST_P(FTTyposApi, SelectWithTypos) {
 	// Not less than 2
 	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}});
 	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"AC*~"}, "", {{"!ABC!", ""}});
 	CheckAllPermutations("", {"B~"}, "", {});
 	CheckAllPermutations("", {"AX~"}, "", {});
 
@@ -107,6 +108,7 @@ TEST_P(FTTyposApi, SelectWithTypos) {
 	// Not less than 2
 	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}});
 	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"AC*~"}, "", {{"!ABC!", ""}});
 	CheckAllPermutations("", {"B~"}, "", {});
 	CheckAllPermutations("", {"AX~"}, "", {});
 
@@ -131,6 +133,7 @@ TEST_P(FTTyposApi, SelectWithTypos) {
 	// Not less than 2
 	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}});
 	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"AC*~"}, "", {{"!ABC!", ""}});
 	CheckAllPermutations("", {"B~"}, "", {});
 	CheckAllPermutations("", {"AX~"}, "", {});
 

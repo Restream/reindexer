@@ -29,7 +29,7 @@ class ItemsProcessor;
 struct [[nodiscard]] JoinSelectIterator {
 	size_t joinIndex;
 	double Cost() const noexcept { return std::numeric_limits<float>::max(); }
-	void Dump(WrSerializer&, const std::vector<joins::ItemsProcessor>&) const;
+	void Dump(WrSerializer&, std::span<const joins::ItemsProcessor>) const;
 };
 
 struct [[nodiscard]] SelectIteratorsBracket : private Bracket {
@@ -82,7 +82,7 @@ private:
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx* ctx = nullptr) noexcept
-		: pt_(std::move(pt)), ctx_(ctx), maxIterations_(std::numeric_limits<int>::max()) {}
+		: pt_(std::move(pt)), ctx_(ctx), planningBudget_(std::numeric_limits<int>::max()) {}
 
 	void SortByCost(int expectedIterations);
 	bool HasIdsets() const;
@@ -148,10 +148,12 @@ public:
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SelectIterator, ComparatorsPackT> auto& comp)
 				RX_POST_LMBD_ALWAYS_INLINE { return comp.IsDistinct(); });
 	}
-	void ExplainJSON(int iters, JsonBuilder& builder, const std::vector<joins::ItemsProcessor>* js) const;
+	void ExplainJSON(int iters, JsonBuilder& builder, std::span<const joins::ItemsProcessor> js) const;
 
 	void Clear(bool preserveDistincts);
-	int GetMaxIterations() const noexcept { return maxIterations_; }
+	// Planning budget for the select loop. It is an upper bound for materialized ID sets, but may be a typed iterator's heuristic
+	// collapsed to a scalar (for example, streaming KNN). It must not be used where exact cardinality is required.
+	int GetPlanningBudget() const noexcept { return planningBudget_; }
 	std::string Dump() const;
 	void MergeRanked(RanksHolder::Ptr&, const Reranker&, const NamespaceImpl&);
 	h_vector<size_t, 8> CollectDistinctConditions() const;
@@ -168,7 +170,7 @@ private:
 	bool checkIfSatisfyAllConditions(iterator begin, iterator end, const PayloadValue&, bool* finish, IdType rowId, IdType properRowId,
 									 bool match);
 	static std::string explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder& builder,
-								   const std::vector<joins::ItemsProcessor>*);
+								   std::span<const joins::ItemsProcessor>);
 	template <bool reverse>
 	static IdType getNextItemId(const_iterator begin, const_iterator end, IdType from);
 	static bool isIdset(const_iterator it, const_iterator end);
@@ -207,11 +209,11 @@ private:
 
 	/// @return end() if empty or last opened bracket is empty
 	iterator lastAppendedOrClosed();
-	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<joins::ItemsProcessor>&, WrSerializer&);
+	static void dump(size_t level, const_iterator begin, const_iterator end, std::span<const joins::ItemsProcessor>, WrSerializer&);
 
 	PayloadType pt_;
 	SelectCtx* ctx_;
-	int maxIterations_;
+	int planningBudget_;
 	bool streamingKnnMode_ = false;
 	struct : Base {
 	} preservedDistincts_;

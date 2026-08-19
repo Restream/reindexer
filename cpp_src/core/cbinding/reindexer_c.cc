@@ -5,6 +5,7 @@
 #include "cgocancelcontextpool.h"
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsonbuilder.h"
+#include "core/queryresults/itemrefcache.h"
 #include "debug/crashqueryreporter.h"
 #include "estl/gift_str.h"
 #include "estl/syncpool.h"
@@ -112,7 +113,7 @@ struct [[nodiscard]] put_results_to_pool {
 	void operator()(QueryResultsWrapper* res) const {
 		std::unique_ptr<QueryResultsWrapper> results{res};
 		results->Clear();
-		results->proxiedRefsStorage = std::vector<QueryResults::ItemRefCache>();
+		results->proxiedRefsStorage = std::vector<ItemRefCache>();
 		if (results->ser.Cap() > kMaxPooledResultsCap) {
 			results->ser = WrResultSerializer();
 		} else {
@@ -142,7 +143,7 @@ public:
 	TmVersionsParams() = default;
 	TmVersionsParams(const int32_t* data, int count, bool allowIncomplete = false) noexcept
 		: versions_((data != nullptr && count > 0) ? std::span<const int32_t>(data, static_cast<size_t>(count))
-													: std::span<const int32_t>{}),
+												   : std::span<const int32_t>{}),
 		  allowIncomplete_(allowIncomplete) {}
 
 	bool HasData() const noexcept { return !versions_.empty(); }
@@ -155,16 +156,17 @@ private:
 };
 
 static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reindexer_resbuffer* out, int as_json = 0,
-					  TmVersionsParams tmVersions = {}) {
+					  TmVersionsParams tmVersions = {}, BindingCapabilities caps = bindingCaps.load(std::memory_order_relaxed),
+					  bool allowRawProxying = true) {
 	int flags = 0;
 	if (as_json) {
 		flags = kResultsJson;
 	} else {
-		flags = tmVersions.HasData() ? (kResultsCJson | kResultsWithItemID | kResultsWithPayloadTypes)
-									 : (kResultsCJson | kResultsWithItemID);
+		flags =
+			tmVersions.HasData() ? (kResultsCJson | kResultsWithItemID | kResultsWithPayloadTypes) : (kResultsCJson | kResultsWithItemID);
 	}
 	const bool rawResProxying =
-		result->IsRawProxiedBufferAvailable(flags) && WrResultSerializer::IsRawResultsSupported(bindingCaps.load(), *result);
+		allowRawProxying && result->IsRawProxiedBufferAvailable(flags, caps) && WrResultSerializer::IsRawResultsSupported(caps, *result);
 	std::string_view rawBufOut;
 	if (rawResProxying) {
 		result->ser.SetOpts({.flags = flags,
@@ -173,7 +175,7 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 							 .fetchLimit = INT_MAX,
 							 .withAggregations = true,
 							 .allowIncompleteTmVersions = tmVersions.AllowIncomplete()});
-		std::ignore = result->ser.PutResultsRaw(*result, &rawBufOut);
+		std::ignore = result->ser.PutResultsRaw(*result, caps, &rawBufOut);
 		out->len = rawBufOut.size() ? rawBufOut.size() : result->ser.Len();
 		out->data = rawBufOut.size() ? uintptr_t(rawBufOut.data()) : uintptr_t(result->ser.Buf());
 	} else {
@@ -187,7 +189,7 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 							 .fetchLimit = INT_MAX,
 							 .withAggregations = true,
 							 .allowIncompleteTmVersions = tmVersions.AllowIncomplete()});
-		std::ignore = result->ser.PutResults(*result, bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
+		std::ignore = result->ser.PutResults(*result, caps, &result->proxiedRefsStorage);
 		out->len = result->ser.Len();
 		out->data = uintptr_t(result->ser.Buf());
 	}
@@ -586,6 +588,10 @@ reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpt
 		if (!db) {
 			return error2c(err_not_init);
 		}
+		if (!caps.HasQueryFormatV2()) {
+			return error2c(Error(errParams, "Reindexer client binding version '%s' is outdated and does not support QueryFormatV2",
+								 str2cv(client_vers)));
+		}
 		Error err = db->rx.Connect(str2c(dsn), opts);
 		if (err.ok() && db->rx.NeedTraceActivity()) {
 			db->rx.SetActivityTracer("builtin", "");
@@ -631,32 +637,23 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 		Error err = err_not_init;
 		if (rx) {
 			err = Error(errOK);
+			BindingCapabilities caps = bindingCaps.load(std::memory_order_relaxed);
 			Serializer ser(in.data, in.len);
 			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-
-			Query q = Query::Deserialize(ser);
-			while (!ser.Eof()) {
-				const auto joinType = JoinType(ser.GetVarUInt());
-				JoinedQuery q1{joinType, Query::Deserialize(ser)};
-				if (q1.joinType == JoinType::Merge) {
-					q.Merge(std::move(q1));
-				} else {
-					q.AddJoinQuery(std::move(q1));
-				}
-			}
 
 			auto result{new_results(as_json)};
 			if (!result) {
 				return ret2c(err_too_many_queries, out);
 			}
 
+			Query q{Query::Deserialize(ser, caps.GetQueryFormat())};
 			ActiveQueryScope scope(q, QuerySelect);
 			err = rdxKeeper.db().Select(q, *result);
 			if (q.GetDebugLevel() >= LogError && err.code() != errOK) {
 				logFmt(LogError, "Query error {}", err.what());
 			}
 			if (err.ok()) {
-				results2c(std::move(result), &out, as_json, {tm_versions, tm_versions_count});
+				results2c(std::move(result), &out, as_json, {tm_versions, tm_versions_count}, caps, q.GetJoinQueries().empty());
 			} else {
 				if (result->ser.Cap() >= kWarnLargeResultsLimit) {
 					logFmt(LogWarning, "Query too large results: count={} size={},cap={}, q={}", result->Count(), result->ser.Len(),
@@ -675,10 +672,11 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 		Error res = err_not_init;
 		if (rx) {
 			res = Error(errOK);
+			BindingCapabilities caps = bindingCaps.load(std::memory_order_relaxed);
 			Serializer ser(in.data, in.len);
 			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-			Query q = Query::Deserialize(ser);
+			Query q = Query::Deserialize(ser, caps.GetQueryFormat());
 			q.type_ = QueryDelete;
 
 			auto result{new_results(false)};
@@ -692,7 +690,7 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 				logFmt(LogError, "Query error {}", res.what());
 			}
 			if (res.ok()) {
-				results2c(std::move(result), &out);
+				results2c(std::move(result), &out, 0, {nullptr, 0}, caps, q.GetJoinQueries().empty());
 			}
 		}
 		return ret2c(res, out);
@@ -707,10 +705,11 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, int32_t*
 		Error res = err_not_init;
 		if (rx) {
 			res = Error(errOK);
+			BindingCapabilities caps = bindingCaps.load(std::memory_order_relaxed);
 			Serializer ser(in.data, in.len);
 			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-			Query q = Query::Deserialize(ser);
+			Query q = Query::Deserialize(ser, caps.GetQueryFormat());
 			q.type_ = QueryUpdate;
 			auto result{new_results(false)};
 			if (!result) {
@@ -723,7 +722,7 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, int32_t*
 				logFmt(LogError, "Query error {}", res.what());
 			}
 			if (res.ok()) {
-				results2c(std::move(result), &out, 0, {tm_versions, tm_versions_count});
+				results2c(std::move(result), &out, 0, {tm_versions, tm_versions_count}, caps, q.GetJoinQueries().empty());
 			}
 		}
 		return ret2c(res, out);
@@ -742,7 +741,7 @@ reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	}
 	Serializer ser(in.data, in.len);
 	try {
-		Query q = Query::Deserialize(ser);
+		Query q = Query::Deserialize(ser, bindingCaps.load(std::memory_order_relaxed).GetQueryFormat());
 		q.type_ = QueryDelete;
 
 		Error err = trw->tr_.Modify(std::move(q));
@@ -762,7 +761,7 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	}
 	Serializer ser(in.data, in.len);
 	try {
-		Query q = Query::Deserialize(ser);
+		Query q = Query::Deserialize(ser, bindingCaps.load(std::memory_order_relaxed).GetQueryFormat());
 		q.type_ = QueryUpdate;
 
 		Error err = trw->tr_.Modify(std::move(q));

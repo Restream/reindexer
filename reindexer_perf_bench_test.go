@@ -172,20 +172,22 @@ func BenchmarkIteratorReflectJoin(b *testing.B) {
 		&benchPerfJoined{ID: 2, Name: "b"},
 		&benchPerfJoined{ID: 3, Name: "c"},
 	}
-	it := &Iterator{
-		query: &Query{db: &reindexerImpl{}},
-		nsArray: []nsArrayEntry{
-			{reindexerNamespace: &reindexerNamespace{rtype: reflect.TypeFor[benchPerfItem](), joined: map[string][]int{"joined": []int{10}}}},
-			{reindexerNamespace: &reindexerNamespace{name: "bench_joined", rtype: reflect.TypeFor[benchPerfJoined]()}},
-		},
-		joinToFields: []string{"joined"},
-		joinHandlers: []JoinHandler{nil},
+	nsArray := []nsArrayEntry{
+		{reindexerNamespace: &reindexerNamespace{rtype: reflect.TypeFor[benchPerfItem](), joined: map[string][]int{"joined": {10}}}},
+		{reindexerNamespace: &reindexerNamespace{name: "bench_joined", rtype: reflect.TypeFor[benchPerfJoined]()}},
 	}
-	it.current.joinObj = make([][]any, 1)
+	q := &Query{db: &reindexerImpl{}, joinQueries: []*Query{{}}, joinToFields: []string{"joined"}, joinHandlers: []JoinHandler{nil}}
+	it := &Iterator{
+		query:      q,
+		nsArray:    nsArray,
+		joinsTable: NewQueryJoinsTable(q, nsArray),
+	}
+	defer ReleaseJoinsTable(it.joinsTable)
+	it.current.joined = make([][]any, 1)
 
 	for b.Loop() {
 		item := &benchPerfItem{}
-		it.current.joinObj[0] = subitems
+		it.current.joined[0] = subitems
 		if err := it.join(0, 1, 0, item); err != nil {
 			b.Fatal(err)
 		}
@@ -199,21 +201,23 @@ func BenchmarkIteratorReflectJoinReuse(b *testing.B) {
 		&benchPerfJoined{ID: 2, Name: "b"},
 		&benchPerfJoined{ID: 3, Name: "c"},
 	}
-	it := &Iterator{
-		query: &Query{db: &reindexerImpl{}},
-		nsArray: []nsArrayEntry{
-			{reindexerNamespace: &reindexerNamespace{rtype: reflect.TypeFor[benchPerfItem](), joined: map[string][]int{"joined": []int{10}}}},
-			{reindexerNamespace: &reindexerNamespace{name: "bench_joined", rtype: reflect.TypeFor[benchPerfJoined]()}},
-		},
-		joinToFields: []string{"joined"},
-		joinHandlers: []JoinHandler{nil},
+	nsArray := []nsArrayEntry{
+		{reindexerNamespace: &reindexerNamespace{rtype: reflect.TypeFor[benchPerfItem](), joined: map[string][]int{"joined": {10}}}},
+		{reindexerNamespace: &reindexerNamespace{name: "bench_joined", rtype: reflect.TypeFor[benchPerfJoined]()}},
 	}
-	it.current.joinObj = make([][]any, 1)
+	q := &Query{db: &reindexerImpl{}, joinQueries: []*Query{{}}, joinToFields: []string{"joined"}, joinHandlers: []JoinHandler{nil}}
+	it := &Iterator{
+		query:      q,
+		nsArray:    nsArray,
+		joinsTable: NewQueryJoinsTable(q, nsArray),
+	}
+	defer ReleaseJoinsTable(it.joinsTable)
+	it.current.joined = make([][]any, 1)
 	item := &benchPerfItem{}
 
 	for b.Loop() {
 		item.Joined = item.Joined[:0]
-		it.current.joinObj[0] = subitems
+		it.current.joined[0] = subitems
 		if err := it.join(0, 1, 0, item); err != nil {
 			b.Fatal(err)
 		}
@@ -227,17 +231,22 @@ func BenchmarkIteratorJoinable(b *testing.B) {
 		&benchPerfJoined{ID: 2, Name: "b"},
 		&benchPerfJoined{ID: 3, Name: "c"},
 	}
-	it := &Iterator{
-		query:        &Query{db: &reindexerImpl{}},
-		nsArray:      []nsArrayEntry{{reindexerNamespace: &reindexerNamespace{rtype: reflect.TypeFor[benchPerfJoinableItem]()}}, {reindexerNamespace: &reindexerNamespace{name: "bench_joined", rtype: reflect.TypeFor[benchPerfJoined]()}}},
-		joinToFields: []string{"joined"},
-		joinHandlers: []JoinHandler{nil},
+	nsArray := []nsArrayEntry{
+		{reindexerNamespace: &reindexerNamespace{rtype: reflect.TypeFor[benchPerfJoinableItem]()}},
+		{reindexerNamespace: &reindexerNamespace{name: "bench_joined", rtype: reflect.TypeFor[benchPerfJoined]()}},
 	}
-	it.current.joinObj = make([][]any, 1)
+	q := &Query{db: &reindexerImpl{}, joinQueries: []*Query{{}}, joinToFields: []string{"joined"}, joinHandlers: []JoinHandler{nil}}
+	it := &Iterator{
+		query:      q,
+		nsArray:    nsArray,
+		joinsTable: NewQueryJoinsTable(q, nsArray),
+	}
+	defer ReleaseJoinsTable(it.joinsTable)
+	it.current.joined = make([][]any, 1)
 
 	for b.Loop() {
 		item := &benchPerfJoinableItem{}
-		it.current.joinObj[0] = subitems
+		it.current.joined[0] = subitems
 		if err := it.join(0, 1, 0, item); err != nil {
 			b.Fatal(err)
 		}
@@ -572,7 +581,7 @@ func BenchmarkResultSerializerReadExtraResults(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			ser := newSerializer(buf)
-			ser.readRawQueryParamsKeepExtras(&params)
+			ser.readRawQueryParamsKeepExtras(&params, bindings.QueryFormatV1)
 			benchPerfIntSink += params.count
 		}
 	})
@@ -583,7 +592,7 @@ func BenchmarkResultSerializerReadExtraResults(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			ser := newSerializer(buf)
-			ser.readRawQueryParamsKeepExtras(&params)
+			ser.readRawQueryParamsKeepExtras(&params, bindings.QueryFormatV1)
 			benchPerfIntSink += len(params.aggResults) + len(params.explainResults) + len(params.nsIncarnationTags)
 		}
 	})
@@ -594,7 +603,7 @@ func BenchmarkResultSerializerReadExtraResults(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			ser := newSerializer(buf)
-			ser.readRawQueryParamsKeepExtras(&params)
+			ser.readRawQueryParamsKeepExtras(&params, bindings.QueryFormatV1)
 			if params.rankFormat != nil {
 				benchPerfIntSink += int(*params.rankFormat)
 			}

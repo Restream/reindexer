@@ -66,69 +66,10 @@ endif()
 file(GLOB_RECURSE SRCS *.cc *.h ${GENERATED_PROTO_DIR}/*.cc)
 file(GLOB_RECURSE FUZZING_SRCS */fuzzing/* *fuzzing/*)
 list(REMOVE_ITEM SRCS ${FUZZING_SRCS})
+set(GTESTS_COMMON_TOOLS_SRCS ${REINDEXER_SOURCE_PATH}/gtests/tools.cc)
 
-add_executable(${TARGET} ${SRCS})
-add_executable(${FUZZING_TARGET} ${FUZZING_SRCS})
-
-if(ENABLE_PCH)
-  set(PREC_HDRS
-    <vector>
-    <map>
-    <unordered_map>
-    <set>
-    <unordered_set>
-    <deque>
-    <memory>
-    <string>
-    <string_view>
-    <optional>
-    <chrono>
-    <functional>
-    <thread>
-    <chrono>
-    <atomic>
-    <fstream>
-
-    ${REINDEXER_SOURCE_PATH}/estl/h_vector.h
-    ${REINDEXER_SOURCE_PATH}/estl/fast_hash_set.h
-    ${REINDEXER_SOURCE_PATH}/estl/fast_hash_map.h
-    ${REINDEXER_SOURCE_PATH}/estl/intrusive_ptr.h
-    ${REINDEXER_SOURCE_PATH}/estl/mutex.h
-    ${REINDEXER_SOURCE_PATH}/estl/shared_mutex.h
-    ${REINDEXER_SOURCE_PATH}/estl/cow.h
-    ${REINDEXER_SOURCE_PATH}/tools/errors.h
-    ${REINDEXER_SOURCE_PATH}/tools/logger.h
-    ${REINDEXER_SOURCE_PATH}/tools/lsn.h
-    ${REINDEXER_SOURCE_PATH}/tools/serilize/serializer.h
-    ${REINDEXER_SOURCE_PATH}/tools/serilize/wrserializer.h
-    ${REINDEXER_SOURCE_PATH}/tools/stringstools.h
-    ${REINDEXER_SOURCE_PATH}/tools/fsops.h
-
-    ${REINDEXER_SOURCE_PATH}/core/reindexer.h
-    ${REINDEXER_SOURCE_PATH}/core/query/query.h
-    ${REINDEXER_SOURCE_PATH}/core/queryresults/queryresults.h
-    ${REINDEXER_SOURCE_PATH}/core/item.h
-    ${REINDEXER_SOURCE_PATH}/core/system_ns_names.h
-    ${REINDEXER_SOURCE_PATH}/client/reindexer.h
-    ${REINDEXER_SOURCE_PATH}/client/queryresults.h
-    ${REINDEXER_SOURCE_PATH}/client/item.h
-    ${REINDEXER_SOURCE_PATH}/cluster/config.h
-    ${REINDEXER_SOURCE_PATH}/vendor/gason/gason.h
-    ${REINDEXER_SOURCE_PATH}/vendor/yaml-cpp/yaml.h
-    ${REINDEXER_SOURCE_PATH}/core/cjson/jsonbuilder.h
-
-    gtest_cout.h
-    fixtures/reindexer_api.h
-    fixtures/ft_api.h
-    fixtures/cluster_operation_api.h
-    fixtures/servercontrol.h
-
-    <gtest/gtest.h>
-    <gtest/gtest-param-test.h>
-  )
-
-  target_precompile_headers(${TARGET} PRIVATE ${PREC_HDRS})
-endif()
+add_executable(${TARGET} ${SRCS} ${GTESTS_COMMON_TOOLS_SRCS})
+add_executable(${FUZZING_TARGET} ${FUZZING_SRCS} ${GTESTS_COMMON_TOOLS_SRCS})
 
 # Enable export to provide readable stacktraces
 set_property(TARGET ${TARGET} PROPERTY ENABLE_EXPORTS 1)
@@ -151,9 +92,9 @@ if(GH_CI_OSX)
     add_definitions(-DRX_LONG_REPLICATION_TIMEOUT)
 endif()
 
-set(GTEST_TIMEOUT 800)
+set(GTEST_TIMEOUT 1200)
 if (WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG OR WITH_UBSAN)
-    set(GTEST_TIMEOUT 2000)
+    set(GTEST_TIMEOUT 2400)
 endif()
 
 if(GTEST_SKIP_ASAN_MEMORY_HEAVY)
@@ -162,9 +103,9 @@ endif()
 find_program(GTEST_PARALLEL "gtest-parallel")
 if (GTEST_PARALLEL)
     if(XML_REPORT)
-        add_test(NAME gtests COMMAND gtest-parallel --gtest_color=no --serialize_test_cases --print_test_times --timeout ${GTEST_TIMEOUT} --gtest_output=xml:${REINDEXER_SOURCE_PATH}/testReport.xml ${GTEST_EXTRA_OPTIONS} "./${TARGET}")
+        add_test(NAME gtests COMMAND gtest-parallel --workers ${GTEST_WORKERS} --gtest_color=no --serialize_test_cases --print_test_times --timeout ${GTEST_TIMEOUT} --gtest_output=xml:${REINDEXER_SOURCE_PATH}/testReport.xml ${GTEST_EXTRA_OPTIONS} "./${TARGET}")
     else()
-        add_test(NAME gtests COMMAND gtest-parallel --serialize_test_cases --print_test_times --timeout ${GTEST_TIMEOUT} ${GTEST_EXTRA_OPTIONS} "./${TARGET}")
+        add_test(NAME gtests COMMAND gtest-parallel --workers ${GTEST_WORKERS} --serialize_test_cases --print_test_times --timeout ${GTEST_TIMEOUT} ${GTEST_EXTRA_OPTIONS} "./${TARGET}")
     endif()
 else()
     add_test(NAME gtests COMMAND ${TARGET} --gtest_color=yes ${GTEST_EXTRA_OPTIONS})

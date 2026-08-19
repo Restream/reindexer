@@ -52,7 +52,8 @@ Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
 		return Error(errLogic, "Connection pointer in transaction is nullptr.");
 	}
 	WrSerializer ser;
-	query.Serialize(ser);
+	auto caps = i_.rpcClient_->conn_.GetBindingCapabilities();
+	query.Serialize(ser, Normal, caps.GetQueryFormat());
 	switch (query.type_) {
 		case QueryUpdate: {
 			return i_.rpcClient_->conn_

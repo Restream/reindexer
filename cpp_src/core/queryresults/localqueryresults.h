@@ -8,6 +8,8 @@
 #include "core/rdxcontext.h"
 #include "itemref.h"
 
+#include <memory>
+
 namespace reindexer {
 
 class Schema;
@@ -18,6 +20,7 @@ class NsContext;
 struct ResultFetchOpts;
 struct ItemImplRawData;
 class NamespaceImpl;
+struct ItemRefCache;
 
 namespace builders {
 struct CsvOrdering;
@@ -27,8 +30,9 @@ using builders::CsvOrdering;
 class FieldsFilter;
 
 namespace joins {
-class NamespaceResults;
 class ItemIterator;
+class Results;
+struct JoinedItemContext;
 }  // namespace joins
 
 /// LocalQueryResults is an interface for iterating over documents, returned by Query from Reindexer.<br>
@@ -61,7 +65,9 @@ class [[nodiscard]] LocalQueryResults {
 
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
 		Item GetItem(bool enableHold = true);
-		joins::ItemIterator GetJoined();
+		joins::ItemIterator GetJoined() const;
+		joins::JoinedItemContext GetJoinedContext(std::vector<ItemRefCache>* storage = nullptr) const;
+		size_t GetJoinedNsId() const { return qr_->GetJoinedNsCtxIndex(GetItemRef().Nsid(), 0); }
 		auto& GetItemRef() const& { return qr_->items_.GetItemRef(idx_); }
 		auto GetItemRef() const&& noexcept = delete;
 		auto& GetItemRefRanked() const& { return qr_->items_.GetItemRefRanked(idx_); }
@@ -114,7 +120,7 @@ public:
 	using ConstIterator = IteratorImpl<const LocalQueryResults>;
 	using Iterator = IteratorImpl<LocalQueryResults>;
 
-	LocalQueryResults();
+	LocalQueryResults() noexcept;
 	LocalQueryResults(const ItemRefVector::ConstIterator& b, const ItemRefVector::ConstIterator& e);
 	LocalQueryResults(const LocalQueryResults&) = delete;
 	LocalQueryResults(LocalQueryResults&&) noexcept;
@@ -135,6 +141,7 @@ public:
 	void AddItemNoHold(Item& item, lsn_t nsIncarnationTag, bool withData = false);
 	std::string Dump() const;
 	void Erase(const ItemRefVector::Iterator& begin, const ItemRefVector::Iterator& end) { items_.Erase(begin, end); }
+	void Swap(LocalQueryResults& other) noexcept;
 	size_t Count() const { return items_.Size(); }
 	size_t TotalCount() const noexcept { return totalCount; }
 	const std::string& GetExplainResults() const& noexcept { return explainResults; }
@@ -148,6 +155,10 @@ public:
 	void SetOutputShardId(int shardId) noexcept { outputShardId = shardId; }
 	CsvOrdering MakeCSVTagOrdering(unsigned limit, unsigned offset) const;
 
+	void SetJoined(const joins::Results& joined);
+	const joins::Results& Joined() const noexcept;
+	joins::Results& Joined() noexcept;
+
 	ConstIterator cbegin() const noexcept { return ConstIterator{*this, 0}; }
 	ConstIterator begin() const noexcept { return cbegin(); }
 	ConstIterator cend() const noexcept { return ConstIterator{*this, items_.Size()}; }
@@ -156,7 +167,6 @@ public:
 	Iterator begin() noexcept { return Iterator{*this, 0}; }
 	Iterator end() noexcept { return Iterator{*this, items_.Size()}; }
 
-	std::vector<joins::NamespaceResults> joined_;
 	std::vector<AggregationResult> aggregationResults;
 	int totalCount = 0;
 	bool haveRank = false;
@@ -198,7 +208,7 @@ public:
 	const ItemRefVector& Items() const& noexcept { return items_; }
 	auto Items() const&& noexcept = delete;
 	auto Items() && = delete;
-	int GetJoinedNsCtxIndex(int nsid) const noexcept;
+	int GetJoinedNsCtxIndex(int nsid, int joinedField) const noexcept;
 
 	void SaveRawData(ItemImplRawData&&);
 
@@ -214,6 +224,7 @@ public:
 	std::string explainResults;
 
 private:
+	template <typename Builder>
 	class EncoderDatasourceWithJoins;
 
 	void encodeJSON(int idx, WrSerializer& ser, ConstIterator::NsNamesCache&) const;
@@ -237,6 +248,8 @@ private:
 		StringsHolderPtr strHolder_;
 	};
 
+	std::unique_ptr<joins::Results> joined_;
+	joins::Results* joinedRef_{nullptr};
 	h_vector<NsDataHolder, 1> nsData_;
 	std::vector<key_string> stringsHolder_;
 	FloatVectorsHolderMap floatVectorsHolder_;

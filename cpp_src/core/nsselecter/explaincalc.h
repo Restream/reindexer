@@ -18,8 +18,8 @@ namespace joins {
 class ItemsProcessor;
 }
 
-typedef std::vector<joins::ItemsProcessor> ItemsProcessors;
-typedef std::vector<JoinOnInsertion> OnConditionInsertions;
+using ItemsProcessors = std::vector<joins::ItemsProcessor>;
+using OnConditionInsertions = std::vector<JoinOnInsertion>;
 
 class [[nodiscard]] SubQueryExplain {
 public:
@@ -119,7 +119,7 @@ public:
 	void PutCount(int cnt) noexcept { count_ = cnt; }
 	void PutSortIndex(std::string_view index) noexcept { sortIndex_ = index; }
 	void PutSelectors(const SelectIteratorContainer* qres) noexcept { selectors_ = qres; }
-	void PutItemsProcessors(const ItemsProcessors* jitemsprocessors) noexcept { jitemsprocessors_ = jitemsprocessors; }
+	void PutItemsProcessors(std::span<const joins::ItemsProcessor> jitemsprocessors) noexcept { jitemsprocessors_ = jitemsprocessors; }
 	void SetPreselectTime(Duration preselectTime) noexcept { basics_.preselect = preselectTime; }
 	void PutOnConditionInsertions(const OnConditionInsertions* onCondInsertions) noexcept { onInsertions_ = onCondInsertions; }
 	void SetSortOptimization(bool enable) noexcept { sortOptimization_ = enable; }
@@ -148,7 +148,7 @@ private:
 	const std::string_view nsName_;
 	std::string_view sortIndex_;
 	const SelectIteratorContainer* selectors_ = nullptr;
-	const ItemsProcessors* jitemsprocessors_ = nullptr;
+	std::span<const joins::ItemsProcessor> jitemsprocessors_;
 	const OnConditionInsertions* onInsertions_ = nullptr;  ///< Optional
 	std::vector<SubQueryExplain> subqueries_;
 

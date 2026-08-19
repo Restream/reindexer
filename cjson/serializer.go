@@ -75,6 +75,14 @@ func (s *Serializer) Append(s2 Serializer) {
 	copy(s.buf[l:], s2.buf)
 }
 
+type Query interface {
+	GetBytes(queryFormatVersion int) []byte
+}
+
+func (s *Serializer) WriteQuery(query Query, queryFormatVersion int) {
+	s.Write(query.GetBytes(queryFormatVersion))
+}
+
 func (s *Serializer) PutUInt8(v uint8) *Serializer {
 	s.writeIntBits(int64(v), unsafe.Sizeof(v))
 	return s

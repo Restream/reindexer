@@ -22,29 +22,30 @@ import (
 	"github.com/restream/reindexer/v5/cjson"
 )
 
-const defCgoLimit = 2000
-const defWatchersPoolSize = 4
-const defCtxWatchDelay = time.Millisecond * 100
+const (
+	defCgoLimit         = 2000
+	defWatchersPoolSize = 4
+	defCtxWatchDelay    = time.Millisecond * 100
+)
 
-var bufFree = newBufFreeBatcher()
+var (
+	// Separate mutexes for logger object itself and for reindexer_enable_logger call:
+	// logMtx provides safe access to the logger
+	// logEnableMtx provides atomic logic for (enable + set) and (disable + reset) procedures
+	// This logger is global to easily export it into CGO (however it may lead to some confusion if there are multiple builtin instances in the app)
+	logMtx       sync.RWMutex
+	logEnableMtx sync.Mutex
+	logger       Logger
+	emptyLogger  bindings.NullLogger
+	enableDebug  bool
+	bufPool      sync.Pool
+	bufFree      = newBufFreeBatcher()
+)
 
 // Logger interface for reindexer
 type Logger interface {
 	Printf(level int, fmt string, msg ...any)
 }
-
-// Separate mutexes for logger object itself and for reindexer_enable_logger call:
-// logMtx provides safe access to the logger
-// logEnableMtx provides atomic logic for (enable + set) and (disable + reset) procedures
-// This logger is global to easily export it into CGO (however it may lead to some confusion if there are multiple builtin instances in the app)
-var logMtx sync.RWMutex
-var logEnableMtx sync.Mutex
-var logger Logger
-var emptyLogger bindings.NullLogger
-
-var enableDebug bool
-
-var bufPool sync.Pool
 
 type Builtin struct {
 	cgoLimiter     chan struct{}
@@ -255,12 +256,17 @@ func (binding *Builtin) Init(u []url.URL, eh bindings.EventsHandler, options ...
 		WithResultsWithShardIDs(true).
 		WithQrIdleTimeouts(true).
 		WithIncarnationTags(true).
-		WithFloatRank(true)
+		WithFloatRank(true).
+		WithQueryFormatV2(true)
 	ccaps := C.BindingCapabilities{
 		caps: C.int64_t(caps.Value),
 	}
 
 	return err2go(C.reindexer_connect(binding.rx, str2c(u[0].Host+u[0].Path), opts, str2c(bindings.ReindexerVersion), ccaps))
+}
+
+func (binding *Builtin) QueryFormatVersion() int {
+	return bindings.QueryFormatV2
 }
 
 func (binding *Builtin) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, error) {

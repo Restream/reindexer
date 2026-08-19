@@ -35,10 +35,10 @@ struct [[nodiscard]] JoinQueryEntry {
 	bool operator!=(const JoinQueryEntry& other) const noexcept = default;
 
 	template <typename JS>
-	std::string Dump(const std::vector<JS>& joinItemsProcessors) const;
+	std::string Dump(std::span<JS> joinItemsProcessors) const;
 
 	template <typename JS>
-	std::string DumpOnCondition(const std::vector<JS>& joinItemsProcessors) const;
+	std::string DumpOnCondition(std::span<JS> joinItemsProcessors) const;
 
 	size_t joinIndex{std::numeric_limits<size_t>::max()};
 };
@@ -645,10 +645,10 @@ public:
 			return 0;
 		}
 		qe.ResetNeedIsNull();
-		const auto inserted =
-			tree.Emplace<QueryEntry>(pos + 1, qe.Condition() == CondAllSet ? OpAnd : OpOr, qe.FieldName(), CondEmpty, VariantArray{});
-		const OpType op = tree.GetOperation(pos);
-		tree.SetOperation(OpAnd, pos);
+		const auto cond = qe.Condition();
+		const auto inserted = tree.Emplace<QueryEntry>(pos, OpAnd, qe.FieldName(), CondEmpty, VariantArray{});
+		const OpType op = tree.GetOperation(pos + 1);
+		tree.SetOperation(cond == CondAllSet ? OpAnd : OpOr, pos + 1);
 		tree.EncloseInBracket(pos, pos + 1 + inserted, op);
 		return inserted + 1;  // +1 position for the bracket
 	}
@@ -668,7 +668,9 @@ public:
 	QueryEntries& operator=(QueryEntries&&) = default;
 
 	void ToDsl(const Query& parentQuery, JsonBuilder& builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
-	void Serialize(WrSerializer& ser, const std::vector<Query>& subQueries) const { serialize(cbegin(), cend(), ser, subQueries); }
+	void Serialize(WrSerializer& ser, const std::vector<Query>& subQueries, QueryFormat queryFormat) const {
+		serialize(cbegin(), cend(), ser, subQueries, queryFormat);
+	}
 	bool CheckIfSatisfyConditions(const ConstPayload& pl) const { return checkIfSatisfyConditions(cbegin(), cend(), pl); }
 	bool ContainsKnnCondition() const noexcept;
 	static bool CheckIfSatisfyCondition(const VariantArray& lValues, CondType, const VariantArray& rValues);
@@ -677,7 +679,7 @@ public:
 											const QueryEntries& joinedQueryEntries, size_t joinedQueryNo,
 											const std::vector<std::unique_ptr<Index>>* indexesFrom);
 	template <typename JS>
-	std::string Dump(const std::vector<JS>& joinItemsProcessors, const std::vector<Query>& subQueries) const {
+	std::string Dump(std::span<JS> joinItemsProcessors, const std::vector<Query>& subQueries) const {
 		WrSerializer ser;
 		dump(0, cbegin(), cend(), joinItemsProcessors, subQueries, ser);
 		dumpEqualPositions(0, ser, equalPositions);
@@ -688,7 +690,8 @@ public:
 
 private:
 	static void toDsl(const_iterator it, const_iterator to, const Query& parentQuery, JsonBuilder&);
-	static void serialize(const_iterator it, const_iterator to, WrSerializer&, const std::vector<Query>& subQueries);
+	static void serialize(const_iterator it, const_iterator to, WrSerializer&, const std::vector<Query>& subQueries,
+						  QueryFormat queryFormat);
 	static void serialize(CondType, const VariantArray& values, WrSerializer&);
 	static bool checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload&);
 	static bool checkIfSatisfyCondition(const QueryEntry&, const ConstPayload&);
@@ -700,7 +703,7 @@ private:
 protected:
 	static void dumpEqualPositions(size_t level, WrSerializer&, const EqualPositions_t&);
 	template <typename JS>
-	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinItemsProcessors,
+	static void dump(size_t level, const_iterator begin, const_iterator end, std::span<JS> joinItemsProcessors,
 					 const std::vector<Query>& subQueries, WrSerializer&);
 };
 

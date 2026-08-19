@@ -142,9 +142,7 @@ SearchResultQueue BruteforceSearch::SearchRange(const float* query_data, std::op
 	return topResults;
 }
 
-labeltype BruteforceSearch::label(int idx) const noexcept {
-	return reindexer::unaligned::read<labeltype>(ptrByIdx(idx) + dataSize_);
-}
+labeltype BruteforceSearch::label(int idx) const noexcept { return reindexer::unaligned::read<labeltype>(ptrByIdx(idx) + dataSize_); }
 
 char* BruteforceSearch::ptrByIdx(int idx) noexcept { return data_ + sizePerElement_ * idx; }
 const char* BruteforceSearch::ptrByIdx(int idx) const noexcept { return data_ + sizePerElement_ * idx; }

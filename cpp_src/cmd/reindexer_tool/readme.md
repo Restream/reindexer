@@ -31,6 +31,7 @@ Options
   --createdb                             Creates target database if it is missing
   --dry-run                              Validate dump file without changing target database. Applicable only with -f/--filename, incompatible with -c/--command
   --ignore-checksum-mismatch             Apply dump even if `-- __checksum` mismatches (warning is still printed)
+  --no-progress-meter                    Disable progress meter during dump and restore
   -a[Application name],
   --appname=[Application name]           Application name which will be used in login info
   --dump-mode=[DUMP_MODE]                Dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'
@@ -93,6 +94,22 @@ List available namespaces
 \namespaces drop <namespace>
 ```
 Drop namespace
+
+### Manipulate indexes
+
+*Syntax:*
+```
+\index add <namespace> <index json>
+```
+Add index to an existing namespace
+```
+\index update <namespace> <index json>
+```
+Update index in a namespace
+```
+\index drop <namespace> <index name>
+```
+Drop index from a namespace
 
 ### Working with databases
 List of available databases

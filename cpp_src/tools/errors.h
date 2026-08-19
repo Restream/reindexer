@@ -237,9 +237,7 @@ public:
 	SqlParserError(Error&& err, TokenizerRange range) noexcept : Error(std::move(err)), range_(range) {
 		assertrx_dbg(code() == errParseSQL);
 	}
-	SqlParserError(const Error& err, TokenizerRange range) noexcept : Error(err), range_(range) {
-		assertrx_dbg(code() == errParseSQL);
-	}
+	SqlParserError(const Error& err, TokenizerRange range) noexcept : Error(err), range_(range) { assertrx_dbg(code() == errParseSQL); }
 
 	const Error& AsError() const& noexcept { return *this; }
 	Error&& AsError() && noexcept { return std::move(*this); }

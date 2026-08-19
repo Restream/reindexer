@@ -610,7 +610,7 @@ func (tx *Tx) commitInternal() (count int, err error) {
 
 	rdSer := newSerializer(out.GetBuf())
 
-	rawQueryParams := rdSer.readRawQueryParams(func(nsid int) {
+	rawQueryParams := rdSer.readRawQueryParams(tx.db.queryFormatVersion(), func(nsid int) {
 		tx.ns.cjsonState.ReadPayloadType(&rdSer.Serializer, tx.db.binding, tx.ns.name)
 	})
 
@@ -620,7 +620,7 @@ func (tx *Tx) commitInternal() (count int, err error) {
 
 	count = rawQueryParams.count
 	for i := 0; i < rawQueryParams.count; i++ {
-		_ = rdSer.readRawtItemParams(rawQueryParams.shardId)
+		_ = rdSer.readRawItemParams(rawQueryParams.shardId)
 	}
 
 	return

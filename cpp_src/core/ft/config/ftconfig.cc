@@ -71,7 +71,7 @@ void FTRankingConfig::getJson(JsonBuilder& jsonBuilder) const {
 void FTConfig::Bm25Config::parse(const gason::JsonNode& node) {
 	bm25k1 = node["bm25_k1"].As<double>(bm25k1, 0.0);
 	bm25b = node["bm25_b"].As<double>(bm25b, 0.0, 1.0);
-	const std::string bm25TypeStr = toLower(node["bm25_type"].As<std::string>("rx_bm25"));
+	const std::string bm25TypeStr = ToLower(node["bm25_type"].As<std::string>("rx_bm25"));
 	if (bm25TypeStr == "rx_bm25") {
 		bm25Type = Bm25Type::rx;
 	} else if (bm25TypeStr == "bm25") {
@@ -146,10 +146,6 @@ void FTConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexF
 			maxExtraLetters = typos["max_extra_letters"].As<>(maxExtraLetters, -1, kMaxTyposInWord);
 		}
 
-		maxRebuildSteps = root["max_rebuild_steps"].As<>(maxRebuildSteps, 1, 500);
-		// Override value without error to avoid situations, where maxRebuildSteps was set on the older version with incorrect limit
-		maxRebuildSteps = std::min(uint32_t(maxRebuildSteps), kMaxStepsCount);
-		maxStepSize = root["max_step_size"].As<>(maxStepSize, 5);
 		maxAreasInDoc = root["max_areas_in_doc"].As<int>(maxAreasInDoc);
 		maxTotalAreasToCache = root["max_total_areas_to_cache"].As<int>(maxTotalAreasToCache);
 
@@ -197,7 +193,7 @@ void FTConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexF
 			}
 		}
 
-		const std::string opt = toLower(root["optimization"].As<std::string>("memory"));
+		const std::string opt = ToLower(root["optimization"].As<std::string>("memory"));
 		if (opt == "memory") {
 			optimization = Optimization::Memory;
 		} else if (opt == "cpu") {
@@ -207,7 +203,7 @@ void FTConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexF
 		}
 		enablePreselectBeforeFt = root["enable_preselect_before_ft"].As<>(enablePreselectBeforeFt);
 
-		const std::string splitterStr = toLower(root["splitter"].As<std::string>("fast"));
+		const std::string splitterStr = ToLower(root["splitter"].As<std::string>("fast"));
 		if (splitterStr == "fast") {
 			splitterType = Splitter::Fast;
 		} else if (splitterStr == "friso" || splitterStr == "mmseg_cn") {
@@ -221,7 +217,40 @@ void FTConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexF
 		enableTermsSplit = root["enable_terms_split"sv].As<>(enableTermsSplit);
 		enableTranslit = root["enable_translit"sv].As<>(enableTranslit);
 		enableNumbersSearch = root["enable_numbers_search"sv].As<>(enableNumbersSearch);
-		enableKbLayout = root["enable_kb_layout"sv].As<>(enableKbLayout);
+		{
+			const auto& kbNode = root["enable_kb_layout"sv];
+			if (!kbNode.isEmpty()) {
+				switch (kbNode.value.getTag()) {
+					case gason::JsonTag::JTRUE:
+						kbLayoutMode = KbLayoutMode::Heuristic;
+						break;
+					case gason::JsonTag::JFALSE:
+						kbLayoutMode = KbLayoutMode::Disable;
+						break;
+					case gason::JsonTag::STRING: {
+						const std::string v = ToLower(kbNode.As<std::string>());
+						if (v == "disable") {
+							kbLayoutMode = KbLayoutMode::Disable;
+						} else if (v == "enable") {
+							kbLayoutMode = KbLayoutMode::Enable;
+						} else if (v == "heuristic") {
+							kbLayoutMode = KbLayoutMode::Heuristic;
+						} else {
+							throw Error(errParseJson, "FTConfig: unknown enable_kb_layout value: {}", v);
+						}
+						break;
+					}
+					case gason::JsonTag::NUMBER:
+					case gason::JsonTag::DOUBLE:
+					case gason::JsonTag::ARRAY:
+					case gason::JsonTag::OBJECT:
+					case gason::JsonTag::JSON_NULL:
+					case gason::JsonTag::EMPTY:
+					default:
+						throw Error(errParseJson, "FTConfig: enable_kb_layout must be bool or string");
+				}
+			}
+		}
 		mergeLimit = root["merge_limit"sv].As<>(mergeLimit, kMinMergeLimitValue, kMaxMergeLimitValue);
 		logLevel = root["log_level"sv].As<>(logLevel, 0, 5);
 
@@ -317,7 +346,7 @@ void FTConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexF
 
 			for (auto& term : tb["terms"sv]) {
 				std::string termStr = term.As<std::string>();
-				std::wstring termWstr = utf8_to_utf16(termStr);
+				std::u16string termWstr = utf8_to_utf16(termStr);
 				ToLower(termWstr);
 				termStr = utf16_to_utf8(termWstr);
 				if (!splitOptions.IsWord(termStr)) {
@@ -345,7 +374,17 @@ std::string FTConfig::GetJSON(const fast_hash_map<std::string, int>& fields) con
 	jsonBuilder.Put("enable_terms_split"sv, enableTermsSplit);
 	jsonBuilder.Put("enable_translit"sv, enableTranslit);
 	jsonBuilder.Put("enable_numbers_search"sv, enableNumbersSearch);
-	jsonBuilder.Put("enable_kb_layout"sv, enableKbLayout);
+	switch (kbLayoutMode) {
+		case KbLayoutMode::Disable:
+			jsonBuilder.Put("enable_kb_layout"sv, "disable"sv);
+			break;
+		case KbLayoutMode::Enable:
+			jsonBuilder.Put("enable_kb_layout"sv, "enable"sv);
+			break;
+		case KbLayoutMode::Heuristic:
+			jsonBuilder.Put("enable_kb_layout"sv, "heuristic"sv);
+			break;
+	}
 	jsonBuilder.Put("merge_limit"sv, mergeLimit);
 	jsonBuilder.Put("log_level"sv, logLevel);
 	jsonBuilder.Put("extra_word_symbols"sv, splitOptions.GetExtraWordSymbols());
@@ -414,8 +453,6 @@ std::string FTConfig::GetJSON(const fast_hash_map<std::string, int>& fields) con
 	}
 
 	jsonBuilder.Put("max_typo_len", maxTypoLen);
-	jsonBuilder.Put("max_rebuild_steps", maxRebuildSteps);
-	jsonBuilder.Put("max_step_size", maxStepSize);
 	jsonBuilder.Put("sum_ranks_by_fields_ratio", summationRanksByFieldsRatio);
 	jsonBuilder.Put("max_areas_in_doc", maxAreasInDoc);
 	jsonBuilder.Put("max_total_areas_to_cache", maxTotalAreasToCache);

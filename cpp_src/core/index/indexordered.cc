@@ -7,6 +7,90 @@
 #include "tools/logger.h"
 
 namespace reindexer {
+namespace {
+
+enum class [[nodiscard]] OrderedRangeStatus { Ok, Empty, Unsupported };
+
+template <typename Map>
+struct [[nodiscard]] OrderedKeyRange {
+	using iterator = std::conditional_t<std::is_const_v<Map>, typename Map::const_iterator, typename Map::iterator>;
+	using ref_type = typename IndexUnordered<std::remove_const_t<Map>>::ref_type;
+
+	iterator start;
+	iterator end;
+};
+
+template <typename Map>
+std::pair<OrderedRangeStatus, OrderedKeyRange<Map>> resolveOrderedRange(Map& idx_map, CondType condition, const VariantArray& keys) {
+	using Range = OrderedKeyRange<Map>;
+	using ref_type = typename Range::ref_type;
+
+	Range range{idx_map.begin(), idx_map.end()};
+	assertrx_dbg(std::none_of(keys.begin(), keys.end(), [](const auto& k) { return k.IsNullValue(); }));
+
+	switch (condition) {
+		case CondLt:
+			range.end = idx_map.lower_bound(static_cast<ref_type>(keys[0]));
+			break;
+		case CondLe: {
+			const auto& key1 = static_cast<ref_type>(keys[0]);
+			range.end = idx_map.lower_bound(key1);
+			if (range.end != idx_map.end() && !idx_map.key_comp()(key1, range.end->first)) {
+				++range.end;
+			}
+			break;
+		}
+		case CondGt:
+			range.start = idx_map.upper_bound(static_cast<ref_type>(keys[0]));
+			break;
+		case CondGe: {
+			const auto& key1 = static_cast<ref_type>(keys[0]);
+			range.start = idx_map.find(key1);
+			if (range.start == idx_map.end()) {
+				range.start = idx_map.upper_bound(key1);
+			}
+			break;
+		}
+		case CondRange: {
+			const auto& key1 = static_cast<ref_type>(keys[0]);
+			const auto& key2 = static_cast<ref_type>(keys[1]);
+
+			range.start = idx_map.find(key1);
+			if (range.start == idx_map.end()) {
+				range.start = idx_map.upper_bound(key1);
+			}
+
+			range.end = idx_map.lower_bound(key2);
+			if (range.end != idx_map.end() && !idx_map.key_comp()(key2, range.end->first)) {
+				++range.end;
+			}
+
+			if (range.end != idx_map.end() && idx_map.key_comp()(range.end->first, key1)) {
+				return {OrderedRangeStatus::Empty, range};
+			}
+			break;
+		}
+		case CondAny:
+			break;
+		case CondEq:
+		case CondSet:
+		case CondAllSet:
+		case CondEmpty:
+		case CondLike:
+		case CondDWithin:
+		case CondKnn:
+			return {OrderedRangeStatus::Unsupported, range};
+		default:
+			throw Error(errParams, "Unknown query type {}", int(condition));
+	}
+
+	if (range.end == range.start || range.start == idx_map.end() || range.end == idx_map.begin()) {
+		return {OrderedRangeStatus::Empty, range};
+	}
+	return {OrderedRangeStatus::Ok, range};
+}
+
+}  // namespace
 
 template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant& key, IdType id, bool& clearCache) {
@@ -71,76 +155,24 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 	}
 
 	SelectKeyResult res;
-	auto startIt = this->idx_map.begin();
-	auto endIt = this->idx_map.end();
-	assertrx_dbg(std::none_of(keys.begin(), keys.end(), [](const auto& k) { return k.IsNullValue(); }));
-	switch (condition) {
-		case CondLt: {
-			endIt = this->idx_map.lower_bound(static_cast<ref_type>(keys[0]));
-			break;
-		}
-		case CondLe: {
-			const auto& key1 = static_cast<ref_type>(keys[0]);
-			endIt = this->idx_map.lower_bound(key1);
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(key1, endIt->first)) {
-				++endIt;
-			}
-			break;
-		}
-		case CondGt:
-			startIt = this->idx_map.upper_bound(static_cast<ref_type>(keys[0]));
-			break;
-		case CondGe: {
-			const auto& key1 = static_cast<ref_type>(keys[0]);
-			startIt = this->idx_map.find(key1);
-			if (startIt == this->idx_map.end()) {
-				startIt = this->idx_map.upper_bound(key1);
-			}
-			break;
-		}
-		case CondRange: {
-			const auto& key1 = static_cast<ref_type>(keys[0]);
-			const auto& key2 = static_cast<ref_type>(keys[1]);
-
-			startIt = this->idx_map.find(key1);
-			if (startIt == this->idx_map.end()) {
-				startIt = this->idx_map.upper_bound(key1);
-			}
-
-			endIt = this->idx_map.lower_bound(key2);
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(key2, endIt->first)) {
-				++endIt;
-			}
-
-			if (endIt != this->idx_map.end() && this->idx_map.key_comp()(endIt->first, key1)) {
-				return SelectKeyResults(std::move(res));
-			}
-		} break;
-		case CondAny:
-			break;
-		case CondEq:
-		case CondSet:
-		case CondAllSet:
-		case CondEmpty:
-		case CondLike:
-		case CondDWithin:
-		case CondKnn:
+	const auto [status, range] = resolveOrderedRange(this->idx_map, condition, keys);
+	switch (status) {
+		case OrderedRangeStatus::Unsupported:
 			throw Error(errParams, "Unknown query type {}", int(condition));
-	}
-
-	if (endIt == startIt || startIt == this->idx_map.end() || endIt == this->idx_map.begin()) {
-		// Empty result
-		return SelectKeyResults(std::move(res));
+		case OrderedRangeStatus::Empty:
+			return SelectKeyResults(std::move(res));
+		case OrderedRangeStatus::Ok:
+			break;
 	}
 
 	if (selectCtx.opts.unbuiltSortOrders) {
-		IndexIterator::Ptr btreeIt(make_intrusive<BtreeIndexIterator<T>>(startIt, endIt));
+		IndexIterator::Ptr btreeIt(make_intrusive<BtreeIndexIterator<T>>(range.start, range.end, selectCtx.opts.itemsCountInNamespace));
 		res.emplace_back(std::move(btreeIt));
 	} else if (sortId && this->sortId_ == sortId && !selectCtx.opts.distinct) {
-		assertrx(startIt->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).size());
-		IdType idFirst = startIt->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).front();
+		assertrx(range.start->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).size());
+		IdType idFirst = range.start->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).front();
 
-		auto backIt = endIt;
+		auto backIt = range.end;
 		--backIt;
 		assertrx(backIt->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).size());
 		IdType idLast = backIt->second.Sorted(SortedIDsCtx{this->sortId_, this->getExternalSortedIds()}).back();
@@ -148,22 +180,22 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 		res.emplace_back(idFirst, idLast.Incr());
 	} else {
 		// TODO: use count of items in ns to more clever select plan
-		const int kMaxIdsetsCount = selectCtx.opts.distinct ? IndexUnordered<T>::kMaxIdsetsForDistinct : 50;
-		int count = 0;
-		auto it = startIt;
+		const size_t kMaxIdsetsCount = selectCtx.opts.distinct ? kMaxExplicitBtreeKeyCountDistinct : kMaxExplicitBtreeKeyCount;
+		size_t count = 0;
+		auto it = range.start;
 
-		while (count < kMaxIdsetsCount && it != endIt) {
+		while (count < kMaxIdsetsCount && it != range.end) {
 			++it;
 			++count;
 		}
 
-		if (count < kMaxIdsetsCount) {
+		if (it == range.end) {
 			struct {
 				T* i_map;
 				SortType sortId;
 				typename T::iterator startIt, endIt;
-				const int count;
-			} selectorCtx = {&this->idx_map, sortId, startIt, endIt, count};
+				const size_t count;
+			} selectorCtx = {&this->idx_map, sortId, range.start, range.end, count};
 
 			auto selector = [&selectorCtx, this](SelectKeyResult& res, size_t& idsCount) {
 				idsCount = 0;
@@ -180,8 +212,8 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 			if (count > 1 && !selectCtx.opts.distinct && !selectCtx.opts.disableIdSetCache) {
 				// Using btree node pointers instead of the real values from the filter and range instead all the conditions
 				// to increase cache hits count
-				VariantArray cacheKeys = {Variant{startIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*startIt))},
-										  Variant{endIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*endIt))}};
+				VariantArray cacheKeys = {Variant{range.start == this->idx_map.end() ? int64_t(0) : int64_t(&(*range.start))},
+										  Variant{range.end == this->idx_map.end() ? int64_t(0) : int64_t(&(*range.end))}};
 				this->tryIdsetCache(cacheKeys, CondRange, sortId, std::move(selector), res);
 			} else {
 				size_t idsCount;
@@ -192,6 +224,29 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray& keys, CondType c
 		}
 	}
 	return SelectKeyResults(std::move(res));
+}
+
+template <typename T>
+Index::OrderedConditionEstimate IndexOrdered<T>::EstimateOrderedCondition(CondType cond, const VariantArray& keys, size_t cap) const {
+	if (!index::IsOrderedCondition(cond)) {
+		return Index::OrderedConditionEstimate{.keys = cap, .ids = cap, .indexSize = this->Size(), .complete = false};
+	}
+
+	const auto [status, range] = resolveOrderedRange(this->idx_map, cond, keys);
+	assertrx_dbg(status != OrderedRangeStatus::Unsupported);
+	if (status != OrderedRangeStatus::Ok) {
+		return Index::OrderedConditionEstimate{.keys = 0, .ids = 0, .indexSize = this->Size(), .complete = true};
+	}
+
+	size_t keysCount = 0;
+	size_t idsCount = 0;
+	auto it = range.start;
+	while (it != range.end && keysCount < cap) {
+		idsCount += it->second.Unsorted().Size();
+		++it;
+		++keysCount;
+	}
+	return Index::OrderedConditionEstimate{.keys = keysCount, .ids = idsCount, .indexSize = this->Size(), .complete = it == range.end};
 }
 
 template <typename T>

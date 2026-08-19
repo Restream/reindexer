@@ -24,6 +24,7 @@
 #include "rx_selector.h"
 #include "server/outputparameters.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
+#include "tools/background_thread_pool.h"
 #include "tools/catch_and_return.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
@@ -82,6 +83,7 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities,
 	  proxyCallbacks_(std::move(proxyCallbacks)),
 	  observers_(config_.dbName, *clusterManager_, config_.maxReplUpdatesSize),
 	  embeddersCache_{std::make_shared<EmbeddersCache>()} {
+	std::ignore = GetBackgroundThreadPool(config_.backgroundThreads);
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfilingConfigLoad, this));
 	configProvider_.setHandler(EmbeddersConf, std::bind(&ReindexerImpl::onEmbeddersConfigLoad, this));
 	replCfgHandlerID_ =
@@ -1743,8 +1745,7 @@ Error ReindexerImpl::tryLoadShardingConf(const RdxContext& ctx) noexcept {
 			return err;
 		}
 		return config ? Upsert(kConfigNamespace, item, ctx) : Delete(kConfigNamespace, item, ctx);
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 void ReindexerImpl::handleDropANNCacheAction(const gason::JsonNode& action, const RdxContext& ctx) {
@@ -2666,8 +2667,7 @@ Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2& s
 			auto rlck = nsLock_.RLock(rdxCtx);
 			state.clusterStatus = clusterStatus_;
 		}
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 
@@ -2678,24 +2678,21 @@ Error ReindexerImpl::SetClusterOperationStatus(std::string_view nsName, const Cl
 			return Error(err.code(), "Unable to set cluster operation status for '{}': {}", nsName, err.what());
 		}
 		getNamespace(nsName, rdxCtx)->SetClusterOperationStatus(ClusterOperationStatus(status), rdxCtx);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 
 Error ReindexerImpl::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const RdxContext& rdxCtx) noexcept {
 	try {
 		getNamespace(nsName, rdxCtx)->GetSnapshot(snapshot, opts, rdxCtx);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 
 Error ReindexerImpl::ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& rdxCtx) noexcept {
 	try {
 		getNamespace(nsName, rdxCtx)->ApplySnapshotChunk(ch, false, rdxCtx);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 
@@ -2707,24 +2704,21 @@ bool ReindexerImpl::isSystemNamespaceNameStrict(std::string_view name) noexcept 
 Error ReindexerImpl::SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response) noexcept {
 	try {
 		clusterManager_->SuggestLeader(suggestion, response);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 
 Error ReindexerImpl::LeadersPing(const cluster::NodeData& leader) noexcept {
 	try {
 		clusterManager_->LeadersPing(leader);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 
 Error ReindexerImpl::GetRaftInfo(bool allowTransitState, cluster::RaftInfo& info, const RdxContext& rdxCtx) noexcept {
 	try {
 		info = clusterManager_->GetRaftInfo(allowTransitState, rdxCtx);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 
@@ -2742,8 +2736,7 @@ Error ReindexerImpl::ClusterControlRequest(const ClusterControlRequestData& requ
 			default:
 				return Error(errParams, "Unknown cluster command request. Command type [{}].", int(request.type));
 		}
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 
@@ -2901,8 +2894,7 @@ Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, const PreRe
 				wlck.unlock();
 			},
 			ctx);
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 template <typename... Args>
@@ -2938,8 +2930,7 @@ Error ReindexerImpl::saveShardingCfgCandidate(std::string_view config, int64_t s
 		};
 
 		return shardingConfigReplAction(ctx, preReplfunc, config, sourceId);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 Error ReindexerImpl::applyShardingCfgCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {

@@ -32,9 +32,14 @@ std::shared_ptr<T> createEmbedder(std::string_view nsName, std::string_view idxN
 
 	const auto& opts = cfg.value();
 	EmbedderConfig embedderCfg{CacheTag{opts.cacheTag}, opts.fields, convert(opts.strategy)};
-	PoolConfig poolCfg{opts.pool.connections, opts.endpointUrl, opts.pool.connect_timeout_ms, opts.pool.read_timeout_ms,
-					   opts.pool.write_timeout_ms};
-	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + toLower(idxName) : toLower(opts.name);
+	PoolConfig poolCfg{opts.pool.connections,
+					   opts.endpointUrl,
+					   opts.pool.connect_timeout_ms,
+					   opts.pool.read_timeout_ms,
+					   opts.pool.write_timeout_ms,
+					   CircuitBreakerConfig{opts.pool.circuit_breaker.threshold, opts.pool.circuit_breaker.threshold_timeout_ms,
+											opts.pool.circuit_breaker.cooldown_ms}};
+	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + ToLower(idxName) : ToLower(opts.name);
 	embeddersCache->IncludeTag(opts.cacheTag);
 	return std::make_shared<T>(embedderName, idxName, std::move(embedderCfg), std::move(poolCfg), embeddersCache, enablePerfStat);
 }

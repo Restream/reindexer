@@ -5,10 +5,8 @@
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/ft_fast/frisosplitter.h"
-#include "core/ft/ft_fast/typosmap.h"
 #include "core/ft/limits.h"
 #include "estl/gift_str.h"
-#include "estl/suffix_map.h"
 #include "ft_api.h"
 #include "gtests/tests/tests_data.h"
 #include "json_helpers.h"
@@ -201,7 +199,7 @@ TEST_P(FTGenericApi, SelectWithPlus) {
 
 TEST_P(FTGenericApi, SelectWithPlusWithSingleAlternative) {
 	auto cfg = GetDefaultConfig();
-	cfg.enableKbLayout = false;
+	cfg.kbLayoutMode = reindexer::FTConfig::KbLayoutMode::Disable;
 	cfg.enableTranslit = false;
 	Init(cfg);
 
@@ -209,6 +207,30 @@ TEST_P(FTGenericApi, SelectWithPlusWithSingleAlternative) {
 
 	// FT search by single mandatory word with single alternative
 	CheckAllPermutations("", {"+монитор*"}, "", {{"!мониторы!", ""}});
+}
+
+TEST_P(FTGenericApi, SingleAffixQuerySubtermsLimit) {
+	auto cfg = GetDefaultConfig();
+	cfg.mergeLimit = 2;
+	Init(cfg);
+
+	Add("яблоко один"sv);
+	Add("яблоня два"sv);
+	Add("яблочный три"sv);
+	Add("яблочник четыре"sv);
+	Add("яблочная пятерка"sv);
+
+	CheckResults("ябл*", {{"!яблоко! один", ""}, {"!яблоня! два", ""}}, true);
+	CheckResults("*ябл*", {{"!яблоко! один", ""}, {"!яблоня! два", ""}}, true);
+
+	Init(cfg);
+	Add("аблоко один"sv);
+	Add("бблоко два"sv);
+	Add("вблоко три"sv);
+	Add("гблоко четыре"sv);
+	Add("дблоко пятерка"sv);
+
+	CheckResults("*блоко", {{"!бблоко! два", ""}, {"!дблоко! пятерка", ""}}, true);
 }
 
 TEST_P(FTGenericApi, DisableTranslitKbLayout) {
@@ -220,7 +242,7 @@ TEST_P(FTGenericApi, DisableTranslitKbLayout) {
 	CheckAllPermutations("", {"монитор"}, "", {{"!монитор!", ""}, {"!vjybnjh!", ""}, {"!monitor!", ""}});
 
 	auto cfg = GetDefaultConfig();
-	cfg.enableKbLayout = false;
+	cfg.kbLayoutMode = reindexer::FTConfig::KbLayoutMode::Disable;
 	auto err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -231,6 +253,109 @@ TEST_P(FTGenericApi, DisableTranslitKbLayout) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	CheckAllPermutations("", {"монитор"}, "", {{"!монитор!", ""}});
+}
+
+TEST_P(FTGenericApi, KbLayoutCorrectionHeuristic) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	Init(cfg);
+
+	Add("монитор один"sv);
+	Add("монитор два"sv);
+	Add("монитор три"sv);
+	Add("vjybnjh"sv);
+
+	// Without '*': kbLayout is always applied
+	CheckResults("монитор", {{"!монитор! один", ""}, {"!монитор! два", ""}, {"!монитор! три", ""}, {"!vjybnjh!", ""}}, false);
+	CheckResults("vjybnjh", {{"!vjybnjh!", ""}, {"!монитор! один", ""}, {"!монитор! два", ""}, {"!монитор! три", ""}}, false);
+
+	// Prefix with few dictionary words: kbLayout is still applied for non-short affix queries
+	CheckResults("мони*", {{"!монитор! один", ""}, {"!монитор! два", ""}, {"!монитор! три", ""}, {"!vjybnjh!", ""}}, false);
+}
+
+TEST_P(FTGenericApi, KbLayoutCorrectionHeuristicPrefixManyWords) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	cfg.enableNumbersSearch = false;
+	Init(cfg);
+
+	// >= 10 distinct words matching "мони*" → heuristic disables kbLayout
+	Add("монитор0"sv);
+	Add("монитор1"sv);
+	Add("монитор2"sv);
+	Add("монитор3"sv);
+	Add("монитор4"sv);
+	Add("монитор5"sv);
+	Add("монитор6"sv);
+	Add("монитор7"sv);
+	Add("монитор8"sv);
+	Add("монитор9"sv);
+	Add("vjybnjh"sv);
+
+	CheckResults("мони*",
+				 {{"!монитор0!", ""},
+				  {"!монитор1!", ""},
+				  {"!монитор2!", ""},
+				  {"!монитор3!", ""},
+				  {"!монитор4!", ""},
+				  {"!монитор5!", ""},
+				  {"!монитор6!", ""},
+				  {"!монитор7!", ""},
+				  {"!монитор8!", ""},
+				  {"!монитор9!", ""}},
+				 false);
+}
+
+TEST_P(FTGenericApi, KbLayoutCorrectionHeuristicPrefixManyDocs) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	cfg.enableNumbersSearch = false;
+	cfg.mergeLimit = 400;  // docs limit for heuristic = max(mergeLimit, 400) / 4 = 100
+	Init(cfg);
+
+	for (int i = 0; i < 101; ++i) {
+		Add(std::string("монитор") + std::to_string(i));
+	}
+	Add("vjybnjh"sv);
+
+	// Same dictionary word prefix, but docs exceed max(mergeLimit, 400)/4 → kbLayout disabled
+	const auto qr = SimpleSelect("мони*", false);
+	EXPECT_EQ(qr.Count(), 101);
+	for (auto it : qr) {
+		EXPECT_NE(it.GetItem(false)["ft1"].As<std::string>(), "vjybnjh");
+	}
+}
+
+TEST_P(FTGenericApi, EnableKbLayoutConfigParse) {
+	const reindexer::RHashMap<std::string, reindexer::FtIndexFieldPros> fields;
+	reindexer::FTConfig cfg(1);
+
+	cfg.parse(R"json({"enable_kb_layout":false})json", fields);
+	EXPECT_EQ(cfg.kbLayoutMode, reindexer::FTConfig::KbLayoutMode::Disable);
+
+	cfg.parse(R"json({"enable_kb_layout":true})json", fields);
+	EXPECT_EQ(cfg.kbLayoutMode, reindexer::FTConfig::KbLayoutMode::Heuristic);
+
+	cfg.parse(R"json({"enable_kb_layout":"disable"})json", fields);
+	EXPECT_EQ(cfg.kbLayoutMode, reindexer::FTConfig::KbLayoutMode::Disable);
+
+	cfg.parse(R"json({"enable_kb_layout":"enable"})json", fields);
+	EXPECT_EQ(cfg.kbLayoutMode, reindexer::FTConfig::KbLayoutMode::Enable);
+
+	cfg.parse(R"json({"enable_kb_layout":"HeUriStIc"})json", fields);
+	EXPECT_EQ(cfg.kbLayoutMode, reindexer::FTConfig::KbLayoutMode::Heuristic);
+
+	EXPECT_THROW(cfg.parse(R"json({"enable_kb_layout":"unknown"})json", fields), reindexer::Error);
+	EXPECT_THROW(cfg.parse(R"json({"enable_kb_layout":1})json", fields), reindexer::Error);
+
+	cfg.kbLayoutMode = reindexer::FTConfig::KbLayoutMode::Enable;
+	EXPECT_NE(cfg.GetJSON({}).find(R"("enable_kb_layout":"enable")"), std::string::npos);
+
+	cfg.kbLayoutMode = reindexer::FTConfig::KbLayoutMode::Disable;
+	EXPECT_NE(cfg.GetJSON({}).find(R"("enable_kb_layout":"disable")"), std::string::npos);
+
+	cfg.kbLayoutMode = reindexer::FTConfig::KbLayoutMode::Heuristic;
+	EXPECT_NE(cfg.GetJSON({}).find(R"("enable_kb_layout":"heuristic")"), std::string::npos);
 }
 
 TEST_P(FTGenericApi, SelectWithMinus) {
@@ -439,7 +564,7 @@ R"###({"ft1":"слово начало
 		//clang-format off
 		std::vector<std::string> dataCompare = {
 			R"({"ft1":"{term_rank:102.23141, term:жил, pattern:жил, bm25_norm:1.0223141, term_len_boost:1, position_rank:1, norm_dist:0, proc:100, full_match_boost:0} жил
- {term_rank:77.61731, term:жил, pattern:пил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:75.99915, full_match_boost:0}
+ {term_rank:71.489555, term:жил, pattern:пил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:69.99915, full_match_boost:0}
  {term_rank:102.12917, term:пил, pattern:пил, bm25_norm:1.0223141, term_len_boost:1, position_rank:0.999, norm_dist:0, proc:100, full_match_boost:0} пил гулял"})"};
 		//clang-format on
 		removeLineEnd(dataCompare);
@@ -824,6 +949,7 @@ TEST_P(FTGenericApi, SelectWithDistance3) {
 	check(true);
 	check(false);
 }
+
 TEST_P(FTGenericApi, SelectWithDistanceSubTerm) {
 	Init(GetDefaultConfig());
 	Add("one two empty щту two empty one ецщ"sv);
@@ -1047,34 +1173,159 @@ TEST_P(FTGenericApi, DeleteTest) {
 	// TODO: add validation
 }
 
-TEST_P(FTGenericApi, RebuildAfterDeletion) {
+TEST_P(FTGenericApi, FullRebuildWhenHalfVdocsRemoved) {
+	// commitFulltextImpl must Clear()+rebuild+cleanRemovedVdocs when removedVdocs_*2 > totalVdocs.
+	// Without that path empty vdocs stay in the array forever and incremental build never compacts them.
 	Init(GetDefaultConfig());
+	rt.EnablePerfStats(*rt.reindexer);
 
 	auto cfg = GetDefaultConfig();
-	cfg.maxStepSize = 5;
+	cfg.enableNumbersSearch = false;
 	auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	auto selectF = [this](const std::string& word) {
-		const auto q{reindexer::Query("nm1").Where("ft1", CondEq, word)};
-		return rt.Select(q);
+	auto selectByWord = [this](std::string_view word) { return rt.Select(reindexer::Query("nm1").Where("ft1", CondEq, word)); };
+	auto ftIndexingStructSize = [this]() -> size_t {
+		auto qr = rt.Select(reindexer::Query("#memstats").Where("name", CondEq, "nm1"));
+		EXPECT_EQ(qr.Count(), 1);
+		if (qr.Count() != 1) {
+			return 0;
+		}
+		const auto memstats = YAML::Load(std::string{qr.begin().GetItem(false).GetJSON()});
+		for (const auto& index : memstats["indexes"]) {
+			if (index["name"].as<std::string>() == "ft1") {
+				return index["indexing_struct_size"].as<size_t>(0);
+			}
+		}
+		ADD_FAILURE() << "ft1 index not found in #memstats";
+		return 0;
+	};
+	auto ftVdocsStat = [this](const char* stat) -> size_t {
+		auto qr = rt.Select(reindexer::Query("#memstats").Where("name", CondEq, "nm1"));
+		EXPECT_EQ(qr.Count(), 1);
+		if (qr.Count() != 1) {
+			return 0;
+		}
+		const auto memstats = YAML::Load(std::string{qr.begin().GetItem(false).GetJSON()});
+		for (const auto& index : memstats["indexes"]) {
+			if (index["name"].as<std::string>() == "ft1") {
+				return index["text_index_stats"][stat].as<size_t>(0);
+			}
+		}
+		ADD_FAILURE() << "ft1 index not found in #memstats";
+		return 0;
 	};
 
-	std::unordered_map<std::string, int> data;
-	data.insert(Add("An entity is something that exists as itself"sv));
-	data.insert(Add("In law, a legal entity is an entity that is capable of bearing legal rights"sv));
-	data.insert(Add("In politics, entity is used as term for territorial divisions of some countries"sv));
-	data.insert(Add("Юридическое лицо — организация, которая имеет обособленное имущество"sv));
-	data.insert(Add("Aftermath - the consequences or aftereffects of a significant unpleasant event"sv));
-	data.insert(Add("Food prices soared in the aftermath of the drought"sv));
-	data.insert(Add("In the aftermath of the war ..."sv));
+	constexpr int kTotalDocs = 40;
+	constexpr int kDeleteCount = 21;  // strictly more than half of 40
+	ASSERT_GT(kDeleteCount * 2, kTotalDocs);
 
-	auto res = selectF("entity");
-	ASSERT_EQ(res.Count(), 3);
+	std::vector<std::pair<int, std::string>> docs;
+	docs.reserve(kTotalDocs);
+	for (int i = 0; i < kTotalDocs; ++i) {
+		const std::string word = fmt::format("rebuildword{}", i);
+		const auto [_, id] = Add(word);
+		docs.emplace_back(id, word);
+	}
 
-	Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
-	res = selectF("entity");
-	ASSERT_EQ(res.Count(), 2);
+	// Initial fulltext build
+	ASSERT_EQ(selectByWord(docs.front().second).Count(), 1);
+	const size_t indexingSizeAfterBuild = ftIndexingStructSize();
+	ASSERT_GT(indexingSizeAfterBuild, 0);
+	const size_t vdocsCompactionsAfterBuild = ftVdocsStat("vdocs_compactions");
+
+	for (int i = 0; i < kDeleteCount; ++i) {
+		Delete(docs[i].first);
+	}
+	const size_t indexingSizeBeforeRebuild = ftIndexingStructSize();
+	const size_t totalVdocsBeforeRebuild = ftVdocsStat("total_vdocs");
+	EXPECT_EQ(ftVdocsStat("removed_vdocs"), kDeleteCount);
+
+	// Triggers commitFulltextImpl: Clear holder, cleanRemovedVdocs, full rebuild of remaining docs
+	ASSERT_EQ(selectByWord(docs[kDeleteCount].second).Count(), 1);
+
+	for (int i = 0; i < kDeleteCount; ++i) {
+		EXPECT_EQ(selectByWord(docs[i].second).Count(), 0) << docs[i].second;
+	}
+	for (int i = kDeleteCount; i < kTotalDocs; ++i) {
+		ASSERT_EQ(selectByWord(docs[i].second).Count(), 1) << docs[i].second;
+	}
+
+	const size_t indexingSizeAfterRebuild = ftIndexingStructSize();
+	EXPECT_LT(indexingSizeAfterRebuild, indexingSizeBeforeRebuild)
+		<< "Expected FT indexing struct to shrink after compacting removed vdocs (before=" << indexingSizeBeforeRebuild
+		<< ", after=" << indexingSizeAfterRebuild << ")";
+	EXPECT_EQ(ftVdocsStat("total_vdocs"), totalVdocsBeforeRebuild - kDeleteCount);
+	EXPECT_EQ(ftVdocsStat("removed_vdocs"), 0);
+	EXPECT_EQ(ftVdocsStat("vdocs_compactions"), vdocsCompactionsAfterBuild + 1);
+
+	// Incremental updates after forced rebuild must keep working
+	const std::string reusedDeletedWord = docs.front().second;
+	Add(reusedDeletedWord);
+	ASSERT_EQ(selectByWord(reusedDeletedWord).Count(), 1);
+	ASSERT_EQ(selectByWord(docs.back().second).Count(), 1);
+
+	const std::string brandNew = "rebuildword_after_compact";
+	Add(brandNew);
+	ASSERT_EQ(selectByWord(brandNew).Count(), 1);
+}
+
+TEST_P(FTGenericApi, NoFullRebuildWhenExactlyHalfVdocsRemoved) {
+	// Threshold is strict: removedVdocs_*2 > totalVdocs. Exactly half must not force Clear()+cleanRemovedVdocs.
+	Init(GetDefaultConfig());
+	rt.EnablePerfStats(*rt.reindexer);
+
+	auto cfg = GetDefaultConfig();
+	cfg.enableNumbersSearch = false;
+	auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto selectByWord = [this](std::string_view word) { return rt.Select(reindexer::Query("nm1").Where("ft1", CondEq, word)); };
+	auto ftVdocsStat = [this](const char* stat) -> size_t {
+		auto qr = rt.Select(reindexer::Query("#memstats").Where("name", CondEq, "nm1"));
+		EXPECT_EQ(qr.Count(), 1);
+		if (qr.Count() != 1) {
+			return 0;
+		}
+		const auto memstats = YAML::Load(std::string{qr.begin().GetItem(false).GetJSON()});
+		for (const auto& index : memstats["indexes"]) {
+			if (index["name"].as<std::string>() == "ft1") {
+				return index["text_index_stats"][stat].as<size_t>(0);
+			}
+		}
+		ADD_FAILURE() << "ft1 index not found in #memstats";
+		return 0;
+	};
+
+	constexpr int kTotalDocs = 20;
+	constexpr int kDeleteCount = 10;  // exactly half: 10*2 == 20, threshold not reached
+	ASSERT_EQ(kDeleteCount * 2, kTotalDocs);
+
+	std::vector<std::pair<int, std::string>> docs;
+	docs.reserve(kTotalDocs);
+	for (int i = 0; i < kTotalDocs; ++i) {
+		const std::string word = fmt::format("halfword{}", i);
+		const auto [_, id] = Add(word);
+		docs.emplace_back(id, word);
+	}
+
+	ASSERT_EQ(selectByWord(docs.front().second).Count(), 1);
+	const size_t vdocsCompactionsAfterBuild = ftVdocsStat("vdocs_compactions");
+
+	for (int i = 0; i < kDeleteCount; ++i) {
+		Delete(docs[i].first);
+	}
+	ASSERT_EQ(selectByWord(docs[kDeleteCount].second).Count(), 1);
+
+	for (int i = 0; i < kDeleteCount; ++i) {
+		EXPECT_EQ(selectByWord(docs[i].second).Count(), 0) << docs[i].second;
+	}
+	for (int i = kDeleteCount; i < kTotalDocs; ++i) {
+		ASSERT_EQ(selectByWord(docs[i].second).Count(), 1) << docs[i].second;
+	}
+
+	EXPECT_EQ(ftVdocsStat("removed_vdocs"), kDeleteCount);
+	EXPECT_EQ(ftVdocsStat("vdocs_compactions"), vdocsCompactionsAfterBuild);
 }
 
 TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
@@ -1360,85 +1611,17 @@ TEST_P(FTGenericApi, PartialMatchRank) {
 	CheckAllPermutations("@", {"ft1^1.1", "ft2^1"}, " ТНТ*", {{"", "!ТНТ!"}, {"!ТНТ4!", ""}}, true, ", ");
 }
 
-TEST_P(FTGenericApi, PartialMatchRankUsesUtf8CharLength) {
-	auto ftCfg = GetDefaultConfig();
-	ftCfg.stopWords.clear();
-	ftCfg.partialMatchDecrease = 90;
-	Init(ftCfg);
-
-	const int exactId = Add("на"sv).second;
-	const int prefixId = Add("нат"sv).second;
-	const int suffixId = Add("она"sv).second;
-	const int containsId = Add("онат"sv).second;
-
-	auto rankFor = [this](std::string_view dsl, int id) -> float {
-		auto query = reindexer::Query("nm1").Where("ft3", CondEq, std::string(dsl)).And().Where("id", CondEq, id).WithRank();
-		auto qr = rt.Select(query);
-		EXPECT_EQ(qr.Count(), 1) << dsl << "; id=" << id;
-		if (qr.Count() != 1) {
-			return 0.0f;
-		}
-		return qr.begin().GetItemRefRanked().Rank().Value();
-	};
-
-	const float exactRank = rankFor("на"sv, exactId);
-	ASSERT_GT(exactRank, 0.0f);
-
-	const float prefixRank = rankFor("на*"sv, prefixId);
-	const float suffixRank = rankFor("*на"sv, suffixId);
-	const float containsRank = rankFor("*на*"sv, containsId);
-
-	EXPECT_GT(prefixRank, exactRank * 0.6f);
-	EXPECT_GT(suffixRank, exactRank * 0.45f);
-	EXPECT_GT(suffixRank, ftCfg.rankingConfig.SuffixMin());
-	EXPECT_GT(containsRank, exactRank * 0.25f);
-	EXPECT_GT(containsRank, ftCfg.rankingConfig.SuffixMin());
-}
-
-TEST_P(FTGenericApi, PartialMatchRankMinDenominatorUsesUtf8Chars) {
-	auto ftCfg = GetDefaultConfig();
-	ftCfg.stopWords.clear();
-	ftCfg.partialMatchDecrease = 90;
-	Init(ftCfg);
-
-	const int latinExactId = Add("na"sv).second;
-	const int latinPrefixId = Add("nat"sv).second;
-	const int utf8ExactId = Add("на"sv).second;
-	const int utf8PrefixId = Add("нат"sv).second;
-
-	auto rankFor = [this](std::string_view dsl, int id) -> float {
-		auto query = reindexer::Query("nm1").Where("ft3", CondEq, std::string(dsl)).And().Where("id", CondEq, id).WithRank();
-		auto qr = rt.Select(query);
-		EXPECT_EQ(qr.Count(), 1) << dsl << "; id=" << id;
-		if (qr.Count() != 1) {
-			return 0.0f;
-		}
-		return qr.begin().GetItemRefRanked().Rank().Value();
-	};
-
-	const float latinExactRank = rankFor("na"sv, latinExactId);
-	const float latinPrefixRank = rankFor("na*"sv, latinPrefixId);
-	const float utf8ExactRank = rankFor("на"sv, utf8ExactId);
-	const float utf8PrefixRank = rankFor("на*"sv, utf8PrefixId);
-	ASSERT_GT(latinExactRank, 0.0f);
-	ASSERT_GT(utf8ExactRank, 0.0f);
-
-	const float latinPrefixRatio = latinPrefixRank / latinExactRank;
-	const float utf8PrefixRatio = utf8PrefixRank / utf8ExactRank;
-	EXPECT_NEAR(utf8PrefixRatio, latinPrefixRatio, 0.05f);
-	EXPECT_GT(utf8PrefixRatio, 0.6f);
-}
-
 TEST_P(FTGenericApi, PrefixLongUtf8Word) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.stopWords.clear();
 	Init(ftCfg);
 
+	// Build the longest UTF-8 word that is still indexed (multi-byte Cyrillic chars).
 	std::string longWord = "на";
-	for (unsigned i = 0; i < 130; ++i) {
+	while (longWord.size() + std::string_view("а").size() <= reindexer::kMaxFtWordLen) {
 		longWord += "а";
 	}
-	ASSERT_GT(longWord.size(), 255u);
+	ASSERT_EQ(longWord.size(), reindexer::kMaxFtWordLen);
 
 	Add(longWord);
 	CheckResults("на*", std::vector<std::tuple<std::string, std::string>>{{longWord, ""}}, false, false);
@@ -1447,7 +1630,7 @@ TEST_P(FTGenericApi, PrefixLongUtf8Word) {
 TEST_P(FTGenericApi, TooLongWordIsNotIndexed) {
 	Init(GetDefaultConfig());
 
-	const std::string tooLongWord(static_cast<size_t>(reindexer::suffix_map<char, int>::kMaxWordLen) + 1, 'a');
+	const std::string tooLongWord(reindexer::kMaxFtWordLen + 1, 'a');
 	Add("survivor"sv);
 	Add(tooLongWord);
 
@@ -1461,7 +1644,7 @@ TEST_P(FTGenericApi, TooLongNumericWordDoesNotCreateVirtualWords) {
 	ftCfg.enableNumbersSearch = true;
 	Init(ftCfg);
 
-	const std::string tooLongNumber(static_cast<size_t>(reindexer::suffix_map<char, int>::kMaxWordLen) + 1, '0');
+	const std::string tooLongNumber(reindexer::kMaxFtWordLen + 1, '0');
 	Add("survivor"sv);
 	Add(tooLongNumber);
 
@@ -1798,12 +1981,12 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	CheckResults("тестов~",
 				 {{"!testov!", ""},
-				  {"!Местов!", ""},
 				  {"!задача!", ""},
-				  {"!МестоД!", ""},
+				  {"!Местов!", ""},
 				  {"!ntcnjd!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"!МестоД!", ""},
 				  {"маленький !тест!", ""}},
 				 true);
 
@@ -1817,12 +2000,12 @@ TEST_P(FTGenericApi, ConfigFtProc) {
 	CheckResults("тестов~",
 				 {{"!testov!", ""},
 				  {"!задача!", ""},
-				  {"!Местов!", ""},
 				  {"!ntcnjd!", ""},
-				  {"!МестоД!", ""},
+				  {"!Местов!", ""},
 				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
 				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
-				  {"маленький !тест!", ""}},
+				  {"маленький !тест!", ""},
+				  {"!МестоД!", ""}},
 				 true);
 
 	cfg = cfgDef;
@@ -1865,49 +2048,6 @@ TEST_P(FTGenericApi, BoostingTerms) {
 
 	reindexer::Error err;
 	CheckResults("тест задание", {{"!задача!", ""}, {"некоторое !задание!", ""}, {"некоторый !тест тест!", ""}}, true);
-}
-
-TEST_P(FTGenericApi, TyposCollision) {
-	reindexer::FTConfig cfgDef = GetDefaultConfig();
-	reindexer::FTConfig cfg = cfgDef;
-	cfg.rankingConfig.SetFullMatch(100);
-	cfg.rankingConfig.SetTypo(99);
-	cfg.maxTypos = 4;
-	Init(cfg);
-
-	// aaaaaaaa and aaiotqda give typos hash collision
-	const std::string_view doc1 = "aaaaaaaaxx", doc2 = "aaiotqdaxx", term = "aaiotqda";
-
-	// Check if collisions actually exist
-	std::map<size_t, std::wstring> typos;
-	auto cbWrite = [&typos](std::wstring_view typo, const reindexer::TyposVec&, std::wstring_view) {
-		typos[reindexer::TyposMap::CalcHash(typo)] = typo;
-	};
-	std::wstring buf;
-	reindexer::mktypos(reindexer::utf8_to_utf16(doc1), cfg.maxTypos / 2, cfg.maxTypoLen, cbWrite, buf);
-
-	std::set<std::wstring> collisions;
-	auto cbRead = [&typos, &collisions](std::wstring_view typo, const reindexer::TyposVec&, std::wstring_view) {
-		const auto found = typos.find(reindexer::TyposMap::CalcHash(typo));
-		if (found != typos.end() && found->second != typo) {
-			collisions.emplace(typo);
-		}
-	};
-	reindexer::mktypos(reindexer::utf8_to_utf16(doc2), cfg.maxTypos / 2, cfg.maxTypoLen, cbRead, buf);
-	EXPECT_GT(collisions.size(), 0) << "Documents do not have collisions in typos";
-
-	unsigned termCollisions = 0;
-	auto cbTerm = [&collisions, &termCollisions](std::wstring_view typo, const reindexer::TyposVec&, std::wstring_view) {
-		termCollisions += collisions.count(std::wstring(typo));
-	};
-	reindexer::mktypos(reindexer::utf8_to_utf16(term), cfg.maxTypos / 2, cfg.maxTypoLen, cbTerm, buf);
-	EXPECT_GT(termCollisions, 0) << "Term does not produce typo with collision";
-
-	// Check if query with typo collision works properly
-	Add("nm1"sv, doc1, "");
-	Add("nm1"sv, doc2, "");
-
-	CheckResults(fmt::format("{}~", term), {{fmt::format("!{}!", doc2), ""}}, true);
 }
 
 TEST_P(FTGenericApi, InvalidDSLErrors) {
@@ -1960,6 +2100,20 @@ TEST_P(FTGenericApi, InvalidDSLErrors) {
 		rt.Select(q, qr);
 		EXPECT_EQ(qr.Count(), 0);
 	}
+}
+
+TEST_P(FTGenericApi, RankedConditionForbiddenInJoinedSubquery) {
+	using reindexer::Query;
+	using reindexer::QueryResults;
+
+	Init(GetDefaultConfig());
+	const std::string kMainNs = "nm1";
+	Add("word1 word2"sv);
+
+	QueryResults qr;
+	const auto err = rt.reindexer->Select(Query(kMainNs).InnerJoin("id", "id", CondEq, Query(kMainNs).Where("ft3", CondEq, "word2")), qr);
+	EXPECT_FALSE(err.ok());
+	EXPECT_EQ(err.whatStr(), "Ranked search (fulltext, KNN, hybrid) cannot be in joined subquery");
 }
 
 // Check ft preselect logic with joins. Joined results have to be return even after multiple queries (issue #1437)
@@ -2644,6 +2798,23 @@ TEST_P(FTGenericApi, OperatorsInExtraWordSymbols) {
 	Add("=слово"sv);
 
 	CheckResults("\\=слово\\*", {{"!=слово*!", ""}}, true);
+}
+
+TEST_P(FTGenericApi, TermsSplitWithSingleDigit) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.enableTermsSplit = true;
+	Init(ftCfg);
+
+	Add("это первый сезон шоу"sv);
+	Add("это 1 сезон шоу"sv);
+	Add("это сезон 2 шоу"sv);
+	Add("только сезон"sv);
+
+	CheckResults("первыйсезон", {{"это первый сезон шоу", ""}}, false, false);
+	CheckResults("1сезон", {{"это 1 сезон шоу", ""}}, false, false);
+	CheckResults("сезон2", {{"это сезон 2 шоу", ""}}, false, false);
+	// Two leading digits are not a single-digit exception; "1 сезон" must not match
+	CheckResults("12сезон", {}, false, false);
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi, ::testing::Values(kRxFtTestTypes), [](const auto& info) {

@@ -439,7 +439,7 @@ TEST(SelectIteratorTest, SingleRange_Reverse) {
 	auto it = std::move(harness).BuildIterator();
 
 	const bool reverse = true;
-	EXPECT_EQ(expectedRev.size(), it.GetMaxIterations());
+	EXPECT_EQ(expectedRev.size(), it.EstimateMaxIterations());
 	it.Start(reverse, maxIterations);
 	ASSERT_EQ(SelectIterator::Type::RevSingleRange, it.GetType());
 

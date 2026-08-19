@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "cluster/stats/replicationstats.h"
+#include "core/formatters/uuid_fmt.h"
 #include "replication_load_api.h"
 #include "wal/walrecord.h"
 
@@ -476,14 +477,14 @@ TEST_F(ReplicationLoadApi, DuplicatePKFollowerTest) {
 		std::string jsonChange;
 		BaseApi::ItemType item = api.NewItem("some");
 		auto json = fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", i, i + 100, std::to_string(1 + 1000),
-								reindexer_tests_tools::nilUUID);
+								reindexer_tests_tools::nilUuid());
 		err = item.FromJSON(json);
 		api.Upsert("some", item);
 		jsonChange = json;
 		int idNew = i;
 		if (ids.find(i) != ids.end()) {
 			jsonChange = fmt::format(R"json({{"id":{},"int":{},"string":"{}","uuid":"{}"}})json", kItemCount * 2 + i, i + 100,
-									 std::to_string(1 + 1000), reindexer_tests_tools::nilUUID);
+									 std::to_string(1 + 1000), reindexer_tests_tools::nilUuid());
 			idNew = kItemCount * 2 + i;
 		}
 		items.emplace(idNew, std::make_pair(json, jsonChange));

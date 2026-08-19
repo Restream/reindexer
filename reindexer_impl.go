@@ -931,7 +931,7 @@ func (db *reindexerImpl) execSQL(ctx context.Context, query string) *Iterator {
 		return errIterator(err)
 	}
 
-	iter := newIterator(ctx, db, namespace, nil, result, nsArray, nil, nil, nil)
+	iter := newIterator(ctx, db, namespace, nil, result, nsArray, nil)
 
 	return iter
 }
@@ -1023,7 +1023,7 @@ func (db *reindexerImpl) addFilterDSL(filter *dsl.Filter, q *Query, fields *map[
 	return nil
 }
 
-func (db *reindexerImpl) addJoinedDSL(joined *dsl.JoinQuery, resultField string, q *Query) error {
+func (db *reindexerImpl) addJoinedDSL(joined *dsl.JoinQuery, resultField string, q *Query, joinIDs *map[string]int) error {
 	if joined.Namespace == "" {
 		return bindings.NewError("rq: empty namespace name in joined query", ErrCodeParams)
 	}
@@ -1035,7 +1035,7 @@ func (db *reindexerImpl) addJoinedDSL(joined *dsl.JoinQuery, resultField string,
 	if joined.Sort.Field != "" {
 		jq.Sort(joined.Sort.Field, joined.Sort.Desc, joined.Sort.Values...)
 	}
-	if _, err := db.handleFiltersDSL(joined.Filters, nil, jq); err != nil {
+	if _, err := db.handleFiltersDSL(joined.Filters, joinIDs, jq); err != nil {
 		return err
 	}
 
@@ -1191,7 +1191,7 @@ func (db *reindexerImpl) handleFiltersDSL(filters []dsl.Filter, joinIDs *map[str
 
 		if filter.Joined != nil {
 			if joinIDs == nil {
-				return nil, bindings.NewError("rq: nested join quieries are not supported", ErrCodeParams)
+				return nil, bindings.NewError("rq: dsl join queries are not supported in this context", ErrCodeParams)
 			}
 			if filter.Field != "" {
 				return nil, bindings.NewError("rq: dsl filter can not contain both 'field' and 'join_query' at the same time", ErrCodeParams)
@@ -1217,7 +1217,7 @@ func (db *reindexerImpl) handleFiltersDSL(filters []dsl.Filter, joinIDs *map[str
 				joinedFieldName = fmt.Sprintf("_dsl_joined_%s", filter.Joined.Namespace)
 				(*joinIDs)[filter.Joined.Namespace] = 0
 			}
-			if err := db.addJoinedDSL(filter.Joined, joinedFieldName, q); err != nil {
+			if err := db.addJoinedDSL(filter.Joined, joinedFieldName, q, joinIDs); err != nil {
 				return nil, err
 			}
 			continue

@@ -223,8 +223,7 @@ Error Item::FromJSON(std::string_view slice, char** endp, bool pkOnly) & noexcep
 Error Item::FromCJSON(std::string_view slice, bool pkOnly) & noexcept {
 	try {
 		impl_->FromCJSON(slice, pkOnly);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 void Item::FromCJSONImpl(std::string_view slice, bool pkOnly) & { impl_->FromCJSON(slice, pkOnly); }

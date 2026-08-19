@@ -3,8 +3,8 @@
 #include <variant>
 #include "core/cjson/tagsmatcher.h"
 #include "core/definitions/indexdef.h"
-#include "core/namespace/namespacename.h"
 #include "core/definitions/namespacedef.h"
+#include "core/namespace/namespacename.h"
 #include "tools/lsn.h"
 
 namespace reindexer {

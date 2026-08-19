@@ -34,7 +34,7 @@ func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, mergeLim
 	config := reindexer.DefaultFtFastConfig()
 	config.StopWords = make([]any, 0)
 	config.Stemmers = []string{}
-	config.EnableKbLayout = false
+	config.EnableKbLayout = reindexer.KbLayoutDisable
 	config.EnableTranslit = false
 	if mergeLimit > 0 {
 		config.MergeLimit = mergeLimit

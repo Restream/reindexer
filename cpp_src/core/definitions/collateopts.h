@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/type_consts.h"
 #include "core/definitions/sortingprioritiestable.h"
+#include "core/type_consts.h"
 
 namespace reindexer {
 
@@ -15,4 +15,4 @@ struct [[nodiscard]] CollateOpts {
 	void Dump(T& os) const;
 };
 
-}
+}  // namespace reindexer

@@ -234,10 +234,10 @@ static SortExpression makeExpr(Args... args) {
 TEST(StringFunctions, SortExpressionParse) {
 	enum [[nodiscard]] Result { SUCCESS, FAIL };
 	struct [[nodiscard]] Case {
-		Case(const char* e, std::vector<JoinedNsNameMock> js, SortExpression se)
-			: expression{e}, joinItemsProcessors{std::move(js)}, expected{std::move(se)}, result{SUCCESS} {}
-		Case(const char* e, std::vector<JoinedNsNameMock> js, Result r)
-			: expression{e}, joinItemsProcessors{std::move(js)}, expected{}, result{r} {}
+		Case(const char* e, std::vector<JoinedNsNameMock>&& js, SortExpression se)
+			: expression{e}, joinItemsProcessors{js.begin(), js.end()}, expected{std::move(se)}, result{SUCCESS} {}
+		Case(const char* e, std::vector<JoinedNsNameMock>&& js, Result r)
+			: expression{e}, joinItemsProcessors{js.begin(), js.end()}, expected{}, result{r} {}
 		const char* expression;
 		std::vector<JoinedNsNameMock> joinItemsProcessors;
 		SortExpression expected;
@@ -492,12 +492,13 @@ TEST(StringFunctions, SortExpressionParse) {
 				  Open, 2, '*', "u", '+', 3, '*', "v", Close, '+', -2, '*', Open, 5, '*', "u", '-', "v", Close, '+', -3, '*', Open, 4, '*',
 				  "v", '+', "u", Close, '+', 48, '*', "u", '+', 24, '*', "v")}};
 	for (const auto& tC : testCases) {
+		std::span<const JoinedNsNameMock> itProcsView{tC.joinItemsProcessors.data(), tC.joinItemsProcessors.size()};
 		if (tC.result == FAIL) {
 			// NOLINTNEXTLINE (bugprone-unused-return-value)
-			EXPECT_THROW(auto expr = SortExpression::Parse(tC.expression, tC.joinItemsProcessors), reindexer::Error) << tC.expression;
+			EXPECT_THROW(auto expr = SortExpression::Parse(tC.expression, itProcsView), reindexer::Error) << tC.expression;
 		} else {
 			try {
-				const auto parsed = SortExpression::Parse(tC.expression, tC.joinItemsProcessors);
+				const auto parsed = SortExpression::Parse(tC.expression, itProcsView);
 				EXPECT_EQ(parsed, tC.expected) << "Parsed:\n"
 											   << parsed.Dump() << "\nExpected:\n"
 											   << tC.expected.Dump() << "\nExpression:\n"

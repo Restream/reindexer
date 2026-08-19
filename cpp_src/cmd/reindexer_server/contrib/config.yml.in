@@ -40,6 +40,10 @@ logger:
 # System options
 system:
   user: reindexer
+  # Number of threads for the process-wide background pool (fulltext and other indexes).
+  # 0 means the thread count is chosen automatically based on the number of CPU cores.
+  # max number of threads is 128.
+  background_threads: 0
   # Recommended maximum free cache size of tcmalloc memory allocator in bytes. Disabled by default (-1)
   allocator_cache_limit: -1
   # Recommended maximum cache size of tcmalloc memory allocator in relation to total reindexer allocated memory size, in units. Disabled by default (-1)

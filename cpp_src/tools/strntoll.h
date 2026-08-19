@@ -20,7 +20,7 @@ inline long long int strntoll(std::string_view str, const char** end, int base) 
 	assertrx_dbg(end);
 	const bool isNegative = beg && *beg == '-';
 	const bool hasSign = beg && (*beg == '-' || *beg == '+');
-	unsigned nums = hasSign ? 1 :0;
+	unsigned nums = hasSign ? 1 : 0;
 	for (auto it = beg + nums; it && it < strEnd; ++it) {
 		if (!isdigit(*it)) {
 			break;
@@ -42,9 +42,6 @@ inline long long int strntoll(std::string_view str, const char** end, int base) 
 	std::memcpy(buf, beg, nums);
 	buf[nums] = '\0';
 	const auto ret = std::strtoll(buf, const_cast<char**>(end), base);
-	if (ret == std::numeric_limits<long long int>::min() || ret == std::numeric_limits<long long int>::max()) {
-		return ret;
-	}
 	*end = beg + (*end - buf);
 	return ret;
 }

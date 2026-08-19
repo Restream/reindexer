@@ -123,8 +123,11 @@ Error DBManager::loadOrCreateDatabase(const std::string& dbName, bool allowDBErr
 	std::string storagePath = !config_.StoragePath.empty() ? fs::JoinPath(config_.StoragePath, dbName) : "";
 
 	logFmt(LogInfo, "Loading database {}", dbName);
-	auto db = std::make_unique<reindexer::Reindexer>(
-		reindexer::ReindexerConfig().WithClientStats(clientsStats_).WithUpdatesSize(config_.MaxUpdatesSize).WithDBName(dbName));
+	auto db = std::make_unique<reindexer::Reindexer>(reindexer::ReindexerConfig()
+														 .WithClientStats(clientsStats_)
+														 .WithUpdatesSize(config_.MaxUpdatesSize)
+														 .WithDBName(dbName)
+														 .WithBackgroundThreads(config_.BackgroundThreads));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
 	switch (storageType_) {
 		case datastorage::StorageType::LevelDB:
@@ -403,8 +406,7 @@ Error DBManager::createDefaultUsersYAML() noexcept {
 			return Error(errParams, "Unable to write default config file: {}", strerror(errno));
 		}
 		users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}, HashAlgorithm::MD5});
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return Error();
 }
 

@@ -377,6 +377,7 @@ void kernel_accumulate_block_avx512_nq1(
         res.handle(q, 0, dis0, dis1);
     }
 }
+FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 
 // general-purpose case
 FAISS_PRAGMA_IMPRECISE_FUNCTION_BEGIN
@@ -539,6 +540,7 @@ void kernel_accumulate_block_avx512_nqx(
         res.handle(q, 0, dis0, dis1);
     }
 }
+FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 
 template <int NQ, class ResultHandler, class Scaler>
 void kernel_accumulate_block(

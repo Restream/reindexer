@@ -23,12 +23,13 @@ void checkSubqueryCondition(CondType cond) {
 		throw Error{errQueryExec, "Condition {} with field and subquery", CondTypeToStr(cond)};
 	}
 }
+
 }  // namespace
 
 template <typename JS>
-std::string JoinQueryEntry::Dump(const std::vector<JS>& joinItemsProcessors) const {
+std::string JoinQueryEntry::Dump(std::span<JS> joinItemsProcessors) const {
 	WrSerializer ser;
-	const auto& js = joinItemsProcessors.at(joinIndex);
+	const auto& js = joinItemsProcessors[joinIndex];
 	const auto& q = js.JoinQuery();
 	ser << js.Type() << " (" << q.GetSQL() << ") ON ";
 	ser << '(';
@@ -44,13 +45,15 @@ std::string JoinQueryEntry::Dump(const std::vector<JS>& joinItemsProcessors) con
 	ser << ')';
 	return std::string{ser.Slice()};
 }
-template std::string JoinQueryEntry::Dump(const joins::ItemsProcessors&) const;
-template std::string JoinQueryEntry::Dump(const std::vector<JoinItemsProcessorMock>&) const;
+template std::string JoinQueryEntry::Dump(std::span<joins::ItemsProcessor>) const;
+template std::string JoinQueryEntry::Dump(std::span<const joins::ItemsProcessor>) const;
+template std::string JoinQueryEntry::Dump(std::span<JoinItemsProcessorMock>) const;
+template std::string JoinQueryEntry::Dump(std::span<const JoinItemsProcessorMock>) const;
 
 template <typename JS>
-std::string JoinQueryEntry::DumpOnCondition(const std::vector<JS>& joinItemsProcessors) const {
+std::string JoinQueryEntry::DumpOnCondition(std::span<JS> joinItemsProcessors) const {
 	WrSerializer ser;
-	const auto& js = joinItemsProcessors.at(joinIndex);
+	const auto& js = joinItemsProcessors[joinIndex];
 	const auto& q = js.JoinQuery();
 	ser << js.Type() << " ON (";
 	for (const auto& jqe : q.joinEntries_) {
@@ -63,7 +66,8 @@ std::string JoinQueryEntry::DumpOnCondition(const std::vector<JS>& joinItemsProc
 	ser << ')';
 	return std::string{ser.Slice()};
 }
-template std::string JoinQueryEntry::DumpOnCondition(const joins::ItemsProcessors&) const;
+template std::string JoinQueryEntry::DumpOnCondition(std::span<joins::ItemsProcessor>) const;
+template std::string JoinQueryEntry::DumpOnCondition(std::span<const joins::ItemsProcessor>) const;
 
 bool QueryField::operator==(const QueryField& other) const noexcept {
 	if (fieldName_ != other.fieldName_ || idxNo_ != other.idxNo_ || fieldsSet_ != other.fieldsSet_ ||
@@ -472,34 +476,35 @@ void QueryEntries::serialize(CondType cond, const VariantArray& values, WrSerial
 	}
 }
 
-void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer& ser, const std::vector<Query>& subQueries) {
+void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer& ser, const std::vector<Query>& subQueries,
+							 QueryFormat queryFormat) {
 	for (; it != to; ++it) {
 		const OpType op = it->operation;
 		it->Visit(
-			[&ser, op, &subQueries](const SubQueryEntry& sqe) {
+			[&ser, op, &subQueries, queryFormat](const SubQueryEntry& sqe) {
 				ser.PutVarUint(QuerySubQueryCondition);
 				ser.PutVarUint(op);
 				{
 					const auto sizePosSaver = ser.StartVString();
-					subQueries.at(sqe.QueryIndex()).Serialize(ser);
+					subQueries.at(sqe.QueryIndex()).Serialize(ser, Normal, queryFormat);
 				}
 				serialize(sqe.Condition(), sqe.Values(), ser);
 			},
-			[&ser, op, &subQueries](const SubQueryFieldEntry& sqe) {
+			[&ser, op, &subQueries, queryFormat](const SubQueryFieldEntry& sqe) {
 				ser.PutVarUint(QueryFieldSubQueryCondition);
 				ser.PutVarUint(op);
 				ser.PutVString(sqe.FieldName());
 				ser.PutVarUint(sqe.Condition());
 				{
 					const auto sizePosSaver = ser.StartVString();
-					subQueries.at(sqe.QueryIndex()).Serialize(ser);
+					subQueries.at(sqe.QueryIndex()).Serialize(ser, Normal, queryFormat);
 				}
 			},
-			[&ser, op, &subQueries](const SubQueryFunctionEntry& sqe) {
+			[&ser, op, &subQueries, queryFormat](const SubQueryFunctionEntry& sqe) {
 				ser.PutVarUint(QueryExpressions);
 				switch (sqe.GetSubqueryType()) {
 					case SubQueryFunctionEntry::SubQueryType::Left:
-						expressions::SubQuery(subQueries.at(sqe.QueryIndex())).Serialize(ser);
+						expressions::SubQuery(subQueries.at(sqe.QueryIndex()), queryFormat).Serialize(ser);
 						ser.PutVarUint(op);
 						ser.PutVarUint(sqe.Condition());
 						expressions::Function(sqe.FunctionVariant()).Serialize(ser);
@@ -508,7 +513,7 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 						expressions::Function(sqe.FunctionVariant()).Serialize(ser);
 						ser.PutVarUint(op);
 						ser.PutVarUint(sqe.Condition());
-						expressions::SubQuery(subQueries.at(sqe.QueryIndex())).Serialize(ser);
+						expressions::SubQuery(subQueries.at(sqe.QueryIndex()), queryFormat).Serialize(ser);
 						break;
 				}
 			},
@@ -529,7 +534,7 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 			[&](const QueryEntriesBracket&) {
 				ser.PutVarUint(QueryOpenBracket);
 				ser.PutVarUint(op);
-				serialize(it.cbegin(), it.cend(), ser, subQueries);
+				serialize(it.cbegin(), it.cend(), ser, subQueries, queryFormat);
 				ser.PutVarUint(QueryCloseBracket);
 			},
 			[&ser, op](const QueryEntry& entry) {
@@ -586,21 +591,23 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 		} else if (!result) {
 			break;
 		}
-		const bool lastResult = it->Visit(
-			[] RX_PRE_LMBD_ALWAYS_INLINE(
-				const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, JoinQueryEntry, SubQueryFunctionEntry> auto&)
-				RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; },
-			[&it, &pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket&)
-				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
-			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const QueryFunctionEntry&) -> bool { throw_as_assert; },
-			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(const BetweenFieldsQueryEntry& qe)
-				RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const MultiDistinctQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
-			[] RX_PRE_LMBD_ALWAYS_INLINE(const KnnQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; }	// TODO
-		);
+		const bool lastResult =
+			it->Visit([] RX_PRE_LMBD_ALWAYS_INLINE(
+						  const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, JoinQueryEntry, SubQueryFunctionEntry> auto&)
+						  RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; },
+					  [&it, &pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket&) RX_POST_LMBD_ALWAYS_INLINE {
+						  return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl);
+					  },
+					  [&pl] RX_PRE_LMBD_ALWAYS_INLINE(
+						  const QueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
+					  [] RX_PRE_LMBD_ALWAYS_INLINE(const QueryFunctionEntry&) -> bool { throw_as_assert; },
+					  [&pl] RX_PRE_LMBD_ALWAYS_INLINE(
+						  const BetweenFieldsQueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
+					  [] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
+					  [] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+					  [] RX_PRE_LMBD_ALWAYS_INLINE(const MultiDistinctQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+					  [] RX_PRE_LMBD_ALWAYS_INLINE(const KnnQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; }  // TODO
+			);
 		result = (lastResult != (it->operation == OpNot));
 	}
 	return result;
@@ -1190,7 +1197,7 @@ std::string SubQueryFieldEntry::Dump(const std::vector<Query>& subQueries) const
 void SubQueryFieldEntry::checkCondition(CondType cond) const { checkSubqueryCondition(cond); }
 
 template <typename JS>
-void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS>& joinItemsProcessors,
+void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, std::span<JS> joinItemsProcessors,
 						const std::vector<Query>& subQueries, WrSerializer& ser) {
 	for (const_iterator it = begin; it != end; ++it) {
 		for (size_t i = 0; i < level; ++i) {
@@ -1219,10 +1226,10 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 			[&ser](const KnnQueryEntry& qe) { ser << qe.Dump() << '\n'; });
 	}
 }
-template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<joins::ItemsProcessor>&,
-								 const std::vector<Query>&, WrSerializer&);
-template void QueryEntries::dump(size_t, const_iterator, const_iterator, const std::vector<JoinItemsProcessorMock>&,
-								 const std::vector<Query>&, WrSerializer&);
+template void QueryEntries::dump(size_t, const_iterator, const_iterator, std::span<const joins::ItemsProcessor>, const std::vector<Query>&,
+								 WrSerializer&);
+template void QueryEntries::dump(size_t, const_iterator, const_iterator, std::span<JoinItemsProcessorMock>, const std::vector<Query>&,
+								 WrSerializer&);
 
 std::string KnnQueryEntry::Dump() const {
 	using namespace std::string_literals;

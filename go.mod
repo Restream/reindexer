@@ -3,7 +3,7 @@ module github.com/restream/reindexer/v5
 go 1.24.0
 
 require (
-	github.com/goccy/go-json v0.10.6
+	github.com/goccy/go-json v0.10.7-0.20260723234319-f1e755401429
 	github.com/golang/snappy v1.0.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/iancoleman/orderedmap v0.3.0

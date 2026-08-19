@@ -11,7 +11,6 @@ template <class IndexIterator, class IdSetIterator, class IdSetIteratorRange>
 class [[nodiscard]] BtreeIndexIteratorImplBase {
 public:
 	using IndexIteratorType = IndexIterator;
-	using IdSetIteratorType = IdSetIterator;
 
 	BtreeIndexIteratorImplBase() = default;
 	// NOLINTNEXTLINE(performance-unnecessary-value-param)
@@ -32,10 +31,11 @@ public:
 		for (; iterations < limit && it != indexItEnd_; ++it) {
 			iterations += it->second.Unsorted().Size();
 		}
-		if ((nullValuesCount_ > 0) && (iterations + nullValuesCount_ < limit)) {
+		const bool fullyScanned = it == indexItEnd_;
+		if (fullyScanned) {
 			iterations += nullValuesCount_;
 		}
-		return {iterations, it == indexItEnd_};
+		return {iterations, fullyScanned};
 	}
 
 protected:
@@ -78,44 +78,33 @@ public:
 		}
 	}
 
-	std::pair<bool, IdType> Next(IdType lastVal) noexcept {
+	std::pair<bool, IdType> Next() noexcept {
 		if (this->nullValuesMode_) {
-			while (this->nullValuesIt_ != this->nullValuesRange_.end() && *this->nullValuesIt_ <= lastVal) {
-				++this->nullValuesIt_;
-			}
 			if (this->nullValuesIt_ != this->nullValuesRange_.end()) {
-				return {true, *this->nullValuesIt_};
+				return {true, *this->nullValuesIt_++};
 			}
 			this->nullValuesMode_ = false;
-			if (moveToIndexBegin()) {
-				if (this->idsetIt_ != this->idsetRange_.end()) {
-					return {true, *this->idsetIt_};
-				}
+			if (!moveToIndexBegin()) {
+				return {false, IdType::Min()};
 			}
-		} else if (this->indexIt_ != this->indexItEnd_) {
-			while (this->idsetIt_ != this->idsetRange_.end() && *this->idsetIt_ <= lastVal) {
-				++this->idsetIt_;
-			}
-			if (this->idsetIt_ != this->idsetRange_.end()) {
-				return {true, *this->idsetIt_};
-			}
+		} else if (this->indexIt_ == this->indexItEnd_) {
+			return {false, IdType::Min()};
+		} else if (this->idsetIt_ == this->idsetRange_.end()) {
 			++this->indexIt_;
-			if (moveToValidIdset()) {
-				return {true, *this->idsetIt_};
+			if (!moveToValidIdset()) {
+				return {false, IdType::Min()};
 			}
 		}
-		return {false, IdType::Zero()};
+		return {true, *this->idsetIt_++};
 	}
 
 	void SkipKey() noexcept {
 		if (this->nullValuesMode_) {
 			std::ignore = moveToIndexBegin();
 			this->nullValuesMode_ = false;
-		} else {
-			if (this->indexIt_ != this->indexItEnd_) {
-				++this->indexIt_;
-				std::ignore = moveToValidIdset();
-			}
+		} else if (this->indexIt_ != this->indexItEnd_) {
+			++this->indexIt_;
+			std::ignore = moveToValidIdset();
 		}
 	}
 
@@ -158,45 +147,35 @@ public:
 		}
 	}
 
-	std::pair<bool, IdType> Next(IdType lastVal) noexcept {
+	std::pair<bool, IdType> Next() noexcept {
 		if (this->nullValuesMode_) {
-			while (this->nullValuesIt_ != this->nullValuesRange_.end() && *this->nullValuesIt_ >= lastVal) {
-				++this->nullValuesIt_;
-			}
 			if (this->nullValuesIt_ != this->nullValuesRange_.end()) {
-				return {true, *this->nullValuesIt_};
+				return {true, *this->nullValuesIt_++};
 			}
-		} else if (this->indexIt_ != this->indexItEnd_) {
-			while (this->idsetIt_ != this->idsetRange_.end() && *this->idsetIt_ >= lastVal) {
-				++this->idsetIt_;
-			}
-			if (this->idsetIt_ != this->idsetRange_.end()) {
-				return {true, *this->idsetIt_};
-			}
-			++this->indexIt_;
-			if (moveToValidIdset()) {
-				if (this->idsetIt_ != this->idsetRange_.end()) {
-					return {true, *this->idsetIt_};
+			return {false, IdType::Max()};
+		}
+		if (this->indexIt_ != this->indexItEnd_) {
+			if (this->idsetIt_ == this->idsetRange_.end()) {
+				++this->indexIt_;
+				if (moveToValidIdset()) {
+					return {true, *this->idsetIt_++};
 				}
-			} else if (this->indexIt_ == this->indexItEnd_) {
-				if (moveToNullValuesIdSet()) {
-					if (this->nullValuesIt_ != this->nullValuesRange_.end()) {
-						return {true, *this->nullValuesIt_};
-					}
-				}
+			} else {
+				return {true, *this->idsetIt_++};
 			}
 		}
-		return {false, IdType::Zero()};
+		if (moveToNullValuesIdSet() && this->nullValuesIt_ != this->nullValuesRange_.end()) {
+			return {true, *this->nullValuesIt_++};
+		}
+		return {false, IdType::Max()};
 	}
 
 	void SkipKey() noexcept {
 		if (this->nullValuesMode_) {
 			this->nullValuesIt_ = this->nullValuesRange_.end();
-		} else {
-			if (this->indexIt_ != this->indexItEnd_) {
-				++this->indexIt_;
-				std::ignore = moveToValidIdset();
-			}
+		} else if (this->indexIt_ != this->indexItEnd_) {
+			++this->indexIt_;
+			std::ignore = moveToValidIdset();
 		}
 	}
 

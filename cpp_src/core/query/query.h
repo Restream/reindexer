@@ -935,14 +935,17 @@ public:
 	/// Serializes query data to stream.
 	/// @param ser - serializer object for write.
 	/// @param mode - serialization mode.
-	void Serialize(WrSerializer& ser, uint8_t mode = Normal) const;
+	/// @param queryFormat - query format version.
+	void Serialize(WrSerializer& ser, uint8_t mode, QueryFormat queryFormat) const;
 
 	/// Deserializes query data from stream.
 	/// @param ser - serializer object.
-	[[nodiscard]] static Query Deserialize(Serializer& ser);
+	template <typename T = Query>
+	[[nodiscard]] static T Deserialize(Serializer& ser, QueryFormat queryFormat);
 
 	void WalkNested(bool withSelf, bool withMerged, bool withSubQueries, const std::function<void(const Query& q)>& visitor) const
 		noexcept(noexcept(visitor(std::declval<Query>())));
+	[[nodiscard]] bool HasJoinQueries() const noexcept;
 
 	[[nodiscard]] bool HasLimit() const noexcept { return count_ != QueryEntry::kDefaultLimit; }
 	[[nodiscard]] bool HasOffset() const noexcept { return start_ != QueryEntry::kDefaultOffset; }
@@ -1096,6 +1099,7 @@ private:
 	void checkSetObjectValue(const Variant& value) const;
 	virtual void deserializeJoinOn(Serializer& ser);
 	void deserialize(Serializer& ser);
+	void deserialize(Serializer& ser, QueryFormat queryFormat);
 	VariantArray deserializeValues(Serializer&, CondType) const;
 	virtual void serializeJoinEntries(WrSerializer& ser) const;
 	void checkSubQueryNoData() const;
@@ -1136,6 +1140,8 @@ class [[nodiscard]] JoinedQuery final : public Query {
 public:
 	JoinedQuery(JoinType jt, const Query& q) : Query(q), joinType{jt} {}
 	JoinedQuery(JoinType jt, Query&& q) : Query(std::move(q)), joinType{jt} {}
+	JoinedQuery(JoinType jt, JoinedQuery&& jq) noexcept
+		: Query(std::move(static_cast<Query&>(jq))), joinType{jt}, joinEntries_{std::move(jq.joinEntries_)} {}
 	using Query::Query;
 	[[nodiscard]] bool operator==(const JoinedQuery& obj) const;
 	[[nodiscard]] const std::string& RightNsName() const noexcept { return NsName(); }

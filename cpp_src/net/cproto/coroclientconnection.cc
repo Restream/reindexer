@@ -22,8 +22,9 @@ constexpr size_t kWrChannelSize = 30;
 constexpr size_t kCntToSendNow = 30;
 constexpr size_t kMaxSerializedSize = 8 * 1024 * 1024;
 constexpr size_t kDataToSendNow = 8192;
-constexpr BindingCapabilities kClientCaps = BindingCapabilities(kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs |
-																kBindingCapabilityIncarnationTags | kBindingCapabilityComplexRank);
+constexpr BindingCapabilities kClientCaps =
+	BindingCapabilities(kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs | kBindingCapabilityIncarnationTags |
+						kBindingCapabilityComplexRank | kBindingCapabilityQueryFormatV2);
 
 CoroClientConnection::CoroClientConnection()
 	: rpcCalls_(kMaxParallelRPCCalls), wrCh_(kWrChannelSize), seqNums_(kMaxParallelRPCCalls), conn_(kReadBufReserveSize, false) {
@@ -323,6 +324,7 @@ void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
 		connectionStateHandler_(err);
 	}
 	rxVersion_ = std::nullopt;
+	queryFormat_ = QueryFormatV1;
 	errSyncCh_.close();
 }
 
@@ -447,6 +449,7 @@ void CoroClientConnection::readerRoutine() {
 		if (hdr.version < kCprotoMinSnappyVersion) {
 			enableCompression_ = false;
 		}
+		cprotoVersion_ = hdr.version;
 
 		buf.resize(hdr.len);
 		read = conn_.async_read(buf, size_t(hdr.len), err);
@@ -485,7 +488,10 @@ void CoroClientConnection::readerRoutine() {
 		if (hdr.cmd == kCmdLogin) {
 			if (ans.Status().ok()) {
 				if (!rxVersion_) {
-					rxVersion_ = ans.GetArgs(2)[0].As<std::string>();
+					auto args = ans.GetArgs(2);
+					rxVersion_ = args[0].As<std::string>();
+					queryFormat_ =
+						(args.size() > 2 && (int64_t(args[2]) & kBindingCapabilityQueryFormatV2)) ? QueryFormatV2 : QueryFormatV1;
 				}
 				setLoggedIn(true);
 				if (connectionStateHandler_) {

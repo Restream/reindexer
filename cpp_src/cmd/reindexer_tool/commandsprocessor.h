@@ -32,13 +32,15 @@ class [[nodiscard]] CommandsProcessor {
 public:
 	template <typename... Args>
 	CommandsProcessor(const std::string& outFileName, const std::string& inFileName, const std::vector<std::string>& selectedNamespaces,
-					  unsigned numThreads, unsigned transactionSize, Args... args)	// NOLINT(performance-unnecessary-value-param)
+					  unsigned numThreads, unsigned transactionSize, bool noProgressMeter,
+					  Args... args)	 // NOLINT(performance-unnecessary-value-param)
 		: inFileName_(inFileName),
 		  selectedNamespaces_(selectedNamespaces.begin(), selectedNamespaces.end()),
 		  output_(outFileName),
 		  db_(std::move(args)...),
 		  numThreads_(numThreads),
-		  transactionSize_(transactionSize) {}
+		  transactionSize_(transactionSize),
+		  noProgressMeter_(noProgressMeter) {}
 
 	CommandsProcessor(const CommandsProcessor&) = delete;
 	CommandsProcessor(CommandsProcessor&&) = delete;
@@ -63,6 +65,7 @@ private:
 	void commandDeleteSQL(std::string_view);
 	void commandDump(std::string_view);
 	void commandNamespaces(std::string_view);
+	void commandIndex(std::string_view);
 	void commandMeta(std::string_view);
 	void commandHelp(std::string_view);
 	void commandVersion(std::string_view);
@@ -150,6 +153,8 @@ private:
 	unsigned transactionSize_ = 0;
 	bool fromFile_ = {false};
 	bool quitCmdAccepted_ = {false};
+	bool noProgressMeter_ = {false};
+	static constexpr size_t kDumpUpdateFreq = {1000};
 
 	bool targetHasReplicationConfig_ = {false};
 	std::atomic<DumpOptions::Mode> dumpMode_ = {DumpOptions::Mode::FullNode};

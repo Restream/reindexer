@@ -58,7 +58,7 @@ func NewMockConnection(t *testing.T) *MockConnection {
 	return mock
 }
 
-func (mcf *MockConnFactory) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eh bindings.EventsHandler) (connection, string, int64, error) {
+func (mcf *MockConnFactory) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eh bindings.EventsHandler) (connection, string, int64, int, error) {
 	c, ok := mcf.expCalls["newConnection"]
 	if !ok {
 		mcf.t.Fatalf("unexpected call newConnection")
@@ -66,13 +66,14 @@ func (mcf *MockConnFactory) newConnection(ctx context.Context, params newConnPar
 	ret0, _ := c.rets[0].(connection)
 	ret1, _ := c.rets[1].(string)
 	ret2, _ := c.rets[2].(int64)
-	ret3, _ := c.rets[3].(error)
-	return ret0, ret1, ret2, ret3
+	ret3, _ := c.rets[3].(int)
+	ret4, _ := c.rets[4].(error)
+	return ret0, ret1, ret2, ret3, ret4
 }
 
 func (rec *recMockConnFactory) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner) *call {
 	c := &call{
-		method: reflect.TypeFor[func(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eh bindings.EventsHandler) (connection, string, int64, error)](),
+		method: reflect.TypeFor[func(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eh bindings.EventsHandler) (connection, string, int64, int, error)](),
 	}
 	rec.mock.expCalls["newConnection"] = c
 	return c
@@ -162,6 +163,10 @@ type call struct {
 }
 
 func (c *call) Return(rets ...any) []any {
+	if c.method == reflect.TypeFor[func(ctx context.Context, params newConnParams, loggerOwner LoggerOwner, eh bindings.EventsHandler) (connection, string, int64, int, error)]() &&
+		len(rets) == 4 {
+		rets = []any{rets[0], rets[1], rets[2], bindings.QueryFormatV1, rets[3]}
+	}
 	c.rets = rets
 	return rets
 }

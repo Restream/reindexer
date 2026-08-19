@@ -294,11 +294,11 @@ FAISS_PRAGMA_IMPRECISE_FUNCTION_END
 /// between x and yi, which is performance oriented.
 FAISS_PRAGMA_IMPRECISE_FUNCTION_BEGIN
 void fvec_L2sqr_batch_4(
-        const float* x,
-        const float* y0,
-        const float* y1,
-        const float* y2,
-        const float* y3,
+        const float* __restrict x,
+        const float* __restrict y0,
+        const float* __restrict y1,
+        const float* __restrict y2,
+        const float* __restrict y3,
         const size_t d,
         float& dis0,
         float& dis1,

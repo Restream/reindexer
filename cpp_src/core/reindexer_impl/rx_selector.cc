@@ -1,5 +1,5 @@
 #include "rx_selector.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/results.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/queryresults/context.h"
@@ -91,11 +91,11 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 
 	joins::ItemsProcessors mainJoinItemsProcessors;
 	if (thereAreJoins) {
+		const int nsid = 0;
 		const auto preselectStartTime = Explain::Clock::now();
+		result.Joined().SetJoinsTable(query);
 		mainJoinItemsProcessors =
-			joins::ItemsProcessor::BuildForQuery(query, result, locks, func, &joinQueryResultsContexts, IsModifyQuery_False, ctx);
-		result.joined_.resize(1 + query.GetMergeQueries().size());
-		result.joined_[0].SetItemsProcessorsCount(mainJoinItemsProcessors.size());
+			joins::ItemsProcessor::BuildForQuery(nsid, query, result, locks, func, joinQueryResultsContexts, IsModifyQuery_False, ctx);
 		preselectTimeTotal += Explain::Clock::now() - preselectStartTime;
 	}
 	QueryRankType commonQueryRankType{QueryRankType::NotSet};
@@ -105,7 +105,7 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 	Explain explain;
 	{
 		MainSelectCtx selCtx(query, nullptr, &result.GetFloatVectorsHolder());
-		selCtx.joinItemsProcessors = mainJoinItemsProcessors.size() ? &mainJoinItemsProcessors : nullptr;
+		selCtx.joinItemsProcessors = mainJoinItemsProcessors;
 		selCtx.joinPreSelectTimeTotal = preselectTimeTotal;
 		selCtx.contextCollectingMode = true;
 		selCtx.functions = &func;
@@ -212,10 +212,9 @@ void RxSelector::DoSelect(const Query& q, std::optional<Query>& queryCopy, Local
 			mctx.offset = commonOffset;
 			mctx.explain = &explain;
 			if (thereAreJoins) {
-				auto& mjs = mergeJoinItemsProcessors.emplace_back(
-					joins::ItemsProcessor::BuildForQuery(mQuery, result, locks, func, &joinQueryResultsContexts, IsModifyQuery_False, ctx));
-				mctx.joinItemsProcessors = mjs.size() ? &mjs : nullptr;
-				result.joined_[mctx.nsid].SetItemsProcessorsCount(mjs.size());
+				auto& mjs = mergeJoinItemsProcessors.emplace_back(joins::ItemsProcessor::BuildForQuery(
+					mctx.nsid, mQuery, result, locks, func, joinQueryResultsContexts, IsModifyQuery_False, ctx));
+				mctx.joinItemsProcessors = mjs;
 			}
 			mctx.requiresCrashTracking = true;
 			mns->Select(result, mctx, ctx);
@@ -270,21 +269,20 @@ void RxSelector::DoPreSelectForUpdateDelete(const Query& q, std::optional<Query>
 
 	joins::ItemsProcessors mainJoinItemsProcessors;
 	if (!q.GetJoinQueries().empty()) {
+		const int nsid = 0;
 		const auto preselectStartTime = Explain::Clock::now();
-		const Query& query = queryCopy.has_value() ? *queryCopy : q;
-		// Do not add contexts into QueryResults: joins in update/delete queries do not send actual data and contexts do not required
-		std::vector<QueryResultsContext>* joinQueryResultsContexts = nullptr;
+		std::vector<QueryResultsContext> joinQueryResultsContexts;
+		const Query& query{queryCopy.has_value() ? *queryCopy : q};
+		result.Joined().SetJoinsTable(query);
 		mainJoinItemsProcessors =
-			joins::ItemsProcessor::BuildForQuery(query, result, locks, func, joinQueryResultsContexts, IsModifyQuery_True, rdxCtx);
-		result.joined_.resize(1);
-		result.joined_[0].SetItemsProcessorsCount(mainJoinItemsProcessors.size());
+			joins::ItemsProcessor::BuildForQuery(nsid, query, result, locks, func, joinQueryResultsContexts, IsModifyQuery_True, rdxCtx);
 		preselectTimeTotal += Explain::Clock::now() - preselectStartTime;
 	}
 
 	Explain explain;
 	const Query& query = queryCopy.has_value() ? *queryCopy : q;
 	MainSelectCtx selCtx(query, nullptr, fvHolder);
-	selCtx.joinItemsProcessors = mainJoinItemsProcessors.size() ? &mainJoinItemsProcessors : nullptr;
+	selCtx.joinItemsProcessors = mainJoinItemsProcessors;
 	selCtx.joinPreSelectTimeTotal = preselectTimeTotal;
 	selCtx.contextCollectingMode = true;
 	selCtx.functions = &func;

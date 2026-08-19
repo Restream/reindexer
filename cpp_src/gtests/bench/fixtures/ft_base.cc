@@ -12,17 +12,17 @@ namespace reindexer_benchmarks {
 Error FullTextBase::Initialize() { return readDictFile(RX_BENCH_DICT_PATH, words1_); }
 
 std::string FullTextBase::MakeTypoWord() {
-	static const std::wstring wchars =
-		L"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
+	static const std::u16string wchars =
+		u"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
 	auto word = GetRandomUTF16WordByLength(2);
 	word[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(word.length() - 1)})] =
 		wchars.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(wchars.size() - 1)}));
-	word += L"~";
+	word += u'~';
 	return reindexer::utf16_to_utf8(word);
 }
 
-std::wstring FullTextBase::GetRandomUTF16WordByLength(size_t minLen) {
-	std::wstring word;
+std::u16string FullTextBase::GetRandomUTF16WordByLength(size_t minLen) {
+	std::u16string word;
 	for (; word.length() < minLen;) {
 		word = reindexer::utf8_to_utf16(RndWord1());
 	}
@@ -49,7 +49,7 @@ std::string FullTextBase::MakePrefixWord() {
 
 	auto pos = RndInt(2, word.length() - 2);
 	word.erase(pos, word.length() - pos);
-	word += L"*";
+	word += u'*';
 
 	return reindexer::utf16_to_utf8(word);
 }
@@ -58,7 +58,7 @@ std::string FullTextBase::MakeSuffixWord() {
 	auto word = GetRandomUTF16WordByLength(4);
 	auto cnt = RndInt(0, word.length() / 2);
 	word.erase(0, cnt);
-	word = L"*" + word;
+	word = u"*" + word;
 	return reindexer::utf16_to_utf8(word);
 }
 

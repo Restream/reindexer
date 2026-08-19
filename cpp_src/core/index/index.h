@@ -62,6 +62,12 @@ public:
 		SelectOpts opts;
 		std::optional<SelectFuncCtx> selectFuncCtx;
 	};
+	struct [[nodiscard]] OrderedConditionEstimate {
+		size_t keys;
+		size_t ids;
+		size_t indexSize;
+		bool complete;
+	};
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
 	using KeyEntryPK = reindexer::KeyEntry<IdSetUnique>;
@@ -116,6 +122,11 @@ public:
 	const PayloadType& GetPayloadType() const& { return payloadType_; }
 	const PayloadType& GetPayloadType() const&& = delete;
 	void UpdatePayloadType(PayloadType&& payloadType) { payloadType_ = std::move(payloadType); }
+	/// Estimate how many btree keys and row IDs an ordered condition would touch.
+	/// Probing is capped at `cap` keys. `indexSize` is used as a fallback for incomplete estimates.
+	virtual OrderedConditionEstimate EstimateOrderedCondition(CondType /*cond*/, const VariantArray& /*keys*/, size_t cap) const {
+		return OrderedConditionEstimate{.keys = cap, .ids = cap, .indexSize = Size(), .complete = false};
+	}
 
 	static std::unique_ptr<Index> New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields_,
 									  const NamespaceCacheConfigData& cacheCfg, size_t currentNsSize, LogCreation = LogCreation_False);
@@ -196,5 +207,12 @@ private:
 };
 
 constexpr unsigned kMaxSelectivityPercentForIdset = 30u;
+
+// Max btree keys packed as explicit idsets for non-distinct IndexOrdered::SelectKey
+constexpr size_t kMaxExplicitBtreeKeyCount = 50;
+// Max btree keys packed as explicit idsets for Distinct SelectKey
+constexpr size_t kMaxExplicitBtreeKeyCountDistinct = 500;
+// Cheap probe cap for EstimateOrderedCondition ranking (may differ from SelectKey pack caps)
+constexpr size_t kAdviceOrderedConditionProbeKeyCap = 50;
 
 }  // namespace reindexer

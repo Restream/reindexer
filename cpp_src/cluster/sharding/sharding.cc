@@ -5,6 +5,7 @@
 #include "core/item.h"
 #include "core/type_consts.h"
 #include "estl/gift_str.h"
+#include "queryshardingkeyvalidator.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -112,45 +113,15 @@ std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const 
 	bool hasShardingKeys = mainNsIsSharded && getHostIdForQuery(q, hostId, shardKey);
 	const bool mainQueryToAllShards = mainNsIsSharded && !hasShardingKeys;
 
-	for (const auto& jq : q.GetJoinQueries()) {
-		if (!keys_.IsSharded(jq.NsName())) {
-			continue;
-		}
-		if (getHostIdForQuery(jq, hostId, shardKey)) {
-			hasShardingKeys = true;
-		} else {
-			if (hasShardingKeys) {
-				throw Error(errLogic, "Join query must contain shard key");
-			}
-		}
-	}
-	for (const auto& mq : q.GetMergeQueries()) {
-		if (!keys_.IsSharded(mq.NsName())) {
-			continue;
-		}
-		if (getHostIdForQuery(mq, hostId, shardKey)) {
-			hasShardingKeys = true;
-		} else {
-			if (hasShardingKeys) {
-				throw Error(errLogic, "Merge query must contain shard key");
-			}
-		}
-	}
-	for (const auto& sq : q.GetSubQueries()) {
-		if (!keys_.IsSharded(sq.NsName())) {
-			continue;
-		}
-		if (getHostIdForQuery(sq, hostId, shardKey)) {
-			hasShardingKeys = true;
-		} else {
-			if (hasShardingKeys) {
-				throw Error(errLogic, "Subquery must contain shard key");
-			}
-		}
-	}
+	QueryShardingKeyValidator validator{keys_, hostId, shardKey, hasShardingKeys,
+										[this](const Query& query, int& currentId, Variant& currentShardKey) {
+											return this->getHostIdForQuery(query, currentId, currentShardKey);
+										}};
+	validator.Validate(q);
 	if (mainQueryToAllShards || !hasShardingKeys) {
 		if (!q.GetJoinQueries().empty() || !q.GetMergeQueries().empty() || !q.GetSubQueries().empty()) {
-			throw Error(errLogic, "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
+			const auto errorCode = q.GetMergeQueries().empty() ? errLogic : errParams;
+			throw Error(errorCode, "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
 		}
 		for (const auto& agg : q.aggregations_) {
 			if (agg.Type() == AggAvg || agg.Type() == AggFacet || agg.Type() == AggDistinct || agg.Type() == AggUnknown) {

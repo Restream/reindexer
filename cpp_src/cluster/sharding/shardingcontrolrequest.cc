@@ -22,8 +22,7 @@ static Error fromJSON(ControlDataT& shardingControl, std::span<char> json) noexc
 		auto node = parser.Parse(json);
 		shardingControl = ControlDataT(ControlCmdType(node["type"].As<int>()));
 		std::visit([&node](auto& d) { d.FromJSON(node["payload"]); }, shardingControl.data);
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 	return errOK;
 }
 

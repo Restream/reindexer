@@ -20,6 +20,7 @@ namespace reindexer {
 QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, NamespaceImpl* ns, const SelectCtx& ctx)
 	: QueryEntries(std::move(queries)),
 	  ns_(*ns),
+	  nsid_(ctx.nsid),
 	  query_{ctx.query},
 	  strictMode_(ctx.inTransaction ? StrictModeNone
 									: ((query_.GetStrictMode() == StrictModeNotSet) ? ns_.config_.strictMode : query_.GetStrictMode())),
@@ -30,9 +31,8 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, NamespaceImpl* ns, 
 	  floatVectorsHolder_(ctx.floatVectorsHolder) {
 	if (forcedSortOrder_ && (start_ > QueryEntry::kDefaultOffset || count_ < QueryEntry::kDefaultLimit)) {
 		assertrx_throw(!query_.GetSortingEntries().empty());
-		const std::vector<joins::ItemsProcessor> emptyJoinItemsProcessors;
 		const auto& sEntry = query_.GetSortingEntries()[0];
-		if (SortExpression::Parse(sEntry.expression, emptyJoinItemsProcessors).ByField()) {
+		if (SortExpression::Parse(sEntry.expression, std::span<const joins::ItemsProcessor>{}).ByField()) {
 			int indexNo = IndexValueType::NotSet;
 			std::ignore = ns_.tryGetIndexByNameOrJsonPath(sEntry.expression, indexNo);
 			if (indexNo < 0 || !ns_.indexes_[indexNo]->IsFulltext()) {
@@ -207,11 +207,14 @@ int QueryPreprocessor::calculateMaxIterations(size_t from, size_t to, int maxMax
 							index.SelectKey(qe.Values(), qe.Condition(), 0, Index::SelectContext{opts, std::nullopt}, rdxCtx);
 
 						if (auto* selRes = std::get_if<SelectKeyResultsVector>(&selIters); selRes) {
-							int res = 0;
+							size_t res = 0;
 							for (const auto& sIt : *selRes) {
-								res += sIt.GetMaxIterations();
+								res += sIt.EstimateMaxIterations(size_t(maxMaxIters) - res);
+								if (res >= size_t(maxMaxIters)) {
+									return maxMaxIters;
+								}
 							}
-							return res;
+							return int(res);
 						}
 						return maxMaxIters;
 					} else {
@@ -246,8 +249,8 @@ int QueryPreprocessor::calculateMaxIterations(size_t from, size_t to, int maxMax
 	return res;
 }
 
-void QueryPreprocessor::InsertConditionsFromJoins(joins::ItemsProcessors& js, OnConditionInsertions& explainOnInsertions, LogLevel logLevel,
-												  bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx) {
+void QueryPreprocessor::InsertConditionsFromJoins(std::span<joins::ItemsProcessor> js, OnConditionInsertions& explainOnInsertions,
+												  LogLevel logLevel, bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx) {
 	h_vector<int, 256> maxIterations(Size());
 	std::span<int> maxItersSpan(maxIterations.data(), maxIterations.size());
 	const int maxIters = calculateMaxIterations(0, Size(), ns_.itemsCount(), maxItersSpan, inTransaction, enableSortOrders, rdxCtx);
@@ -1520,12 +1523,13 @@ void QueryPreprocessor::AddDistinctEntries(const h_vector<Aggregator, 4>& aggreg
 	}
 }
 
-std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(std::string& explainStr, AggType& oAggType,
-																				NamespaceImpl& rightNs, Query joinQuery,
-																				joins::PreSelect::CPtr PreSelect,
+std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(std::string& explainStr, AggType& oAggType, Query joinQuery,
+																				joins::ItemsProcessor& joinItemsProcessor,
 																				const QueryJoinEntry& joinEntry, CondType condition,
 																				int mainQueryMaxIterations, const RdxContext& rdxCtx) {
 	int64_t limit = 0;
+	auto& rightNs = *joinItemsProcessor.RightNs();
+	joins::PreSelect::CPtr preSelect = joinItemsProcessor.PreSelectResultPtr();
 	const auto& rNsCfg = rightNs.config();
 	if (rNsCfg.maxPreselectSize == 0) {
 		limit = std::max<int64_t>(rNsCfg.minPreselectSize, rightNs.itemsCount() * rNsCfg.maxPreselectPart);
@@ -1543,8 +1547,8 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 	joinQuery.Limit(limit + kExtraLimit);
 	joinQuery.Offset(QueryEntry::kDefaultOffset);
 	joinQuery.ClearSorting();
-	if (PreSelect->sortOrder.index) {
-		joinQuery.Sort(PreSelect->sortOrder.sortingEntry.expression, *PreSelect->sortOrder.sortingEntry.desc);
+	if (preSelect->sortOrder.index) {
+		joinQuery.Sort(preSelect->sortOrder.sortingEntry.expression, *preSelect->sortOrder.sortingEntry.desc);
 	}
 
 	joinQuery.aggregations_.clear();
@@ -1576,7 +1580,9 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 
 	LocalQueryResults qr;
 	Explain explain;
-	JoinSelectCtx ctx{joinQuery, nullptr, joins::PreSelectExecuteCtx{std::move(PreSelect), mainQueryMaxIterations}, floatVectorsHolder_};
+	JoinSelectCtx ctx{joinQuery, nullptr, joins::PreSelectExecuteCtx{std::move(preSelect), mainQueryMaxIterations}, floatVectorsHolder_};
+	ctx.nsid = nsid_;
+	ctx.joinItemsProcessors = joinItemsProcessor.childItemsProcessors();
 	ctx.explain = &explain;
 	rightNs.Select(qr, ctx, rdxCtx);
 	if (ctx.preSelect.Mode() == joins::PreSelectMode::InsertionRejected || qr.Count() > size_t(limit)) {
@@ -1683,7 +1689,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 }
 
 template <typename JS>
-size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS>& joinItemsProcessors, WrSerializer& ser) const {
+size_t QueryPreprocessor::briefDump(size_t from, size_t to, std::span<JS> joinItemsProcessors, WrSerializer& ser) const {
 	size_t totalQeValues = 0;
 	for (auto it = from; it < to; it = Next(it)) {
 		if (it != from || container_[it].operation != OpAnd) {
@@ -1718,7 +1724,7 @@ size_t QueryPreprocessor::briefDump(size_t from, size_t to, const std::vector<JS
 }
 
 template <typename ExplainPolicy>
-size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to, joins::ItemsProcessors& js,
+size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to, std::span<joins::ItemsProcessor> js,
 													OnConditionInsertions& explainOnInsertions, int embracedMaxIterations,
 													h_vector<int, 256>& maxIterations, bool inTransaction, bool enableSortOrders,
 													const RdxContext& rdxCtx) {
@@ -1865,8 +1871,9 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 					CondType queryCondition{CondAny};
 					VariantArray values;
 					if (byValues) {
-						assertrx_throw(joinItemsProcessor.itemQuery_.Entries().Is<QueryEntry>(i));
-						assertrx_throw(joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(i).FieldName() ==
+						[[maybe_unused]] const size_t itemQueryEntryIdx{joinItemsProcessor.JoinEntryIndex(i)};
+						assertrx_throw(joinItemsProcessor.itemQuery_.Entries().Is<QueryEntry>(itemQueryEntryIdx));
+						assertrx_throw(joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(itemQueryEntryIdx).FieldName() ==
 									   joinEntry.RightFieldName());
 						static const CollateOpts collate;
 						const CollateOpts* collatePtr = &collate;
@@ -1891,7 +1898,8 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 							case CondLe:
 							case CondGt:
 							case CondGe: {
-								const auto& qe = joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(i);
+								const auto& qe =
+									joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(joinItemsProcessor.JoinEntryIndex(i));
 								if (qe.IsFieldIndexed() && IsFullText(joinItemsProcessor.RightNs()->indexes_[qe.IndexNo()]->Type())) {
 									skip = true;
 									explainEntry.Skipped("Skipped due to condition Lt|Le|Gt|Ge|Range with fulltext index"sv);
@@ -1914,7 +1922,8 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 							case CondEq:
 							case CondSet:
 							case CondAllSet: {
-								const auto& qe = joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(i);
+								const auto& qe =
+									joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(joinItemsProcessor.JoinEntryIndex(i));
 								if (qe.IsFieldIndexed() && IsFullText(joinItemsProcessor.RightNs()->indexes_[qe.IndexNo()]->Type())) {
 									skip = true;
 									explainEntry.Skipped("Skipped due to condition Eq|Set|AllSet with fulltext index"sv);
@@ -1938,13 +1947,10 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 							AggType selectAggType;
 							std::tie(queryCondition, values) =
 								(!std::holds_alternative<SelectIteratorContainer>(preSelect.payload)
-									 ? queryValuesFromOnCondition(explainSelect, selectAggType, *joinItemsProcessor.RightNs(),
-																  Query{joinItemsProcessor.RightNsName()},
-																  joinItemsProcessor.PreSelectResultPtr(), joinEntry, condition,
-																  embracedMaxIterations, rdxCtx)
-									 : queryValuesFromOnCondition(explainSelect, selectAggType, *joinItemsProcessor.RightNs(),
-																  joinItemsProcessor.JoinQuery(), joinItemsProcessor.PreSelectResultPtr(),
-																  joinEntry, condition, embracedMaxIterations, rdxCtx));
+									 ? queryValuesFromOnCondition(explainSelect, selectAggType, Query{joinItemsProcessor.RightNsName()},
+																  joinItemsProcessor, joinEntry, condition, embracedMaxIterations, rdxCtx)
+									 : queryValuesFromOnCondition(explainSelect, selectAggType, joinItemsProcessor.JoinQuery(),
+																  joinItemsProcessor, joinEntry, condition, embracedMaxIterations, rdxCtx));
 
 							explainEntry.ExplainSelect(std::move(explainSelect), selectAggType);
 						}
@@ -2007,7 +2013,7 @@ class [[nodiscard]] JoinOnExplainDisabled {
 public:
 	RX_ALWAYS_INLINE static JoinOnExplainDisabled AppendJoinOnExplain(OnConditionInsertions&) noexcept { return {}; }
 
-	RX_ALWAYS_INLINE void Init(const JoinQueryEntry&, const joins::ItemsProcessors&, bool) const noexcept {}
+	RX_ALWAYS_INLINE void Init(const JoinQueryEntry&, std::span<const joins::ItemsProcessor>, bool) const noexcept {}
 	template <typename CallBackT>
 	RX_ALWAYS_INLINE void Succeed(CallBackT&&) const noexcept {}
 	RX_ALWAYS_INLINE void Skipped(std::string_view) const noexcept {}
@@ -2070,7 +2076,7 @@ public:
 	}
 	~JoinOnExplainEnabled() noexcept { explainJoinOn_.totalTime_ = Explain::Clock::now() - startTime_; }
 
-	void Init(const JoinQueryEntry& jqe, const joins::ItemsProcessors& js, bool byValues) {
+	void Init(const JoinQueryEntry& jqe, std::span<const joins::ItemsProcessor> js, bool byValues) {
 		const joins::ItemsProcessor& joinItemsProcessor = js[jqe.joinIndex];
 		explainJoinOn_.rightNsName = joinItemsProcessor.RightNsName();
 		explainJoinOn_.joinCond = jqe.DumpOnCondition(js);

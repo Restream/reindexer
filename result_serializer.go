@@ -47,7 +47,7 @@ func newSerializer(buf []byte) resultSerializer {
 		Serializer: cjson.NewSerializer(buf),
 	}
 }
-func (s *resultSerializer) readRawtItemParams(shardId int) (v rawResultItemParams) {
+func (s *resultSerializer) readRawItemParams(shardId int) (v rawResultItemParams) {
 
 	if (s.flags & bindings.ResultsWithItemID) != 0 {
 		v.id = int(s.GetVarUInt())
@@ -87,15 +87,20 @@ func (s *resultSerializer) readRawtItemParams(shardId int) (v rawResultItemParam
 	return v
 }
 
-func (s *resultSerializer) readRawQueryParamsKeepExtras(v *rawResultQueryParams, updatePayloadType ...updatePayloadTypeFunc) {
-	s.readRawQueryParamsInto(v, true, updatePayloadType...)
+func (s *resultSerializer) readRawQueryParamsKeepExtras(v *rawResultQueryParams, queryFormatVersion int, updatePayloadType ...updatePayloadTypeFunc) {
+	s.readRawQueryParamsInto(v, true, queryFormatVersion, updatePayloadType...)
 }
 
-func (s *resultSerializer) readRawQueryParamsResetMissingExtras(v *rawResultQueryParams, updatePayloadType ...updatePayloadTypeFunc) {
-	s.readRawQueryParamsInto(v, false, updatePayloadType...)
+func (s *resultSerializer) readRawQueryParamsResetMissingExtras(v *rawResultQueryParams, queryFormatVersion int, updatePayloadType ...updatePayloadTypeFunc) {
+	s.readRawQueryParamsInto(v, false, queryFormatVersion, updatePayloadType...)
 }
 
-func (s *resultSerializer) readRawQueryParamsInto(v *rawResultQueryParams, keepMissingTags bool, updatePayloadType ...updatePayloadTypeFunc) {
+func (s *resultSerializer) readRawQueryParamsInto(v *rawResultQueryParams, keepMissingTags bool, queryFormatVersion int, updatePayloadType ...updatePayloadTypeFunc) {
+	if queryFormatVersion == bindings.QueryFormatV2 {
+		if format := s.GetVarUInt(); format != uint64(bindings.QueryFormatV2) {
+			panic(fmt.Sprintf("QueryResults format version='%d' is not supported", format))
+		}
+	}
 
 	v.flags = int(s.GetVarUInt())
 	v.totalcount = int(s.GetVarUInt())
@@ -118,8 +123,8 @@ func (s *resultSerializer) readRawQueryParamsInto(v *rawResultQueryParams, keepM
 	s.rankFormat = v.rankFormat
 }
 
-func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayloadTypeFunc) (v rawResultQueryParams) {
-	s.readRawQueryParamsResetMissingExtras(&v, updatePayloadType...)
+func (s *resultSerializer) readRawQueryParams(queryFormatVersion int, updatePayloadType ...updatePayloadTypeFunc) (v rawResultQueryParams) {
+	s.readRawQueryParamsResetMissingExtras(&v, queryFormatVersion, updatePayloadType...)
 	return v
 }
 

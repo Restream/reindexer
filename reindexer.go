@@ -105,18 +105,20 @@ type Error interface {
 // Point 2-dimensional point
 type Point [2]float64
 
-// Joinable is an interface for append joined items
+// Joinable is an interface for appending joined items
 type Joinable interface {
 	Join(field string, subitems []any, context any)
 }
 
-// JoinHandler it's function for handle join results.
-// Returns bool, that indicates whether automatic join strategy still needs to be applied.
-// If `useAutomaticJoinStrategy` is false - it means that JoinHandler takes full responsibility of performing join.
-// If `useAutomaticJoinStrategy` is true - it means JoinHandler will perform only part of the work, required during join, the rest will be done using automatic join strategy.
-// Automatic join strategy is defined as:
-// - use Join method to perform join (in case item implements Joinable interface)
-// - use reflection to perform join otherwise
+// JoinHandler is a function for handling join results.
+// It returns a bool that indicates whether the automatic join strategy needs to be applied.
+// When `useAutomaticJoinStrategy` is false, JoinHandler takes full responsibility for performing the join.
+// When `useAutomaticJoinStrategy` is true, JoinHandler performs only part of the work required during the join,
+// and the rest is done by the automatic join strategy.
+//
+// The automatic join strategy is defined as:
+//   - If the item implements the Joinable interface, the Join method is used to perform the join.
+//   - Otherwise, reflection is used to perform the join.
 type JoinHandler func(field string, item any, subitems []any) (useAutomaticJoinStrategy bool)
 
 type DeepCopy interface {

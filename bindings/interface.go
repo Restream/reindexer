@@ -15,6 +15,38 @@ const (
 	MultithreadingMode_MultithreadTransactions = 1
 )
 
+type EmbedderCircuitBreakerConfig struct {
+	// Consecutive failed network requests required to open the breaker.
+	// Value 0 disables the circuit breaker.
+	// Default: 16
+	Threshold *int `json:"threshold,omitempty"`
+	// Idle timeout that resets the consecutive failure counter (milliseconds). Optional
+	// Value 0 disables idle reset.
+	// Default: 15000
+	ThresholdTimeout *int `json:"threshold_timeout_ms,omitempty"`
+	// Cooldown after the breaker opens (milliseconds).
+	// Value 0 disables the circuit breaker.
+	// Default: 7500
+	Cooldown *int `json:"cooldown_ms,omitempty"`
+}
+
+// Keep in sync with EmbedderCircuitBreakerDefaults in circuitbreaker_defaults.h.
+const (
+	defaultEmbedderCircuitBreakerThreshold          = 16
+	defaultEmbedderCircuitBreakerThresholdTimeoutMs = 15000
+	defaultEmbedderCircuitBreakerCooldownMs         = 7500
+)
+
+func DefaultEmbedderCircuitBreakerConfig() *EmbedderCircuitBreakerConfig {
+	return &EmbedderCircuitBreakerConfig{
+		Threshold:        intPtr(defaultEmbedderCircuitBreakerThreshold),
+		ThresholdTimeout: intPtr(defaultEmbedderCircuitBreakerThresholdTimeoutMs),
+		Cooldown:         intPtr(defaultEmbedderCircuitBreakerCooldownMs),
+	}
+}
+
+func intPtr(v int) *int { return &v }
+
 type EmbedderConnectionPoolConfig struct {
 	// Number connections to service. Optional
 	// Values range: [1,1024]
@@ -32,6 +64,8 @@ type EmbedderConnectionPoolConfig struct {
 	// Min value: 500
 	// Default: 5000
 	WriteTimeout int `json:"write_timeout_ms,omitempty"`
+	// Optional circuit breaker for cache-miss embedding HTTP calls
+	CircuitBreaker *EmbedderCircuitBreakerConfig `json:"circuit_breaker,omitempty"`
 }
 
 func DefaultEmbedderConnectionPoolConfig() *EmbedderConnectionPoolConfig {
@@ -40,6 +74,7 @@ func DefaultEmbedderConnectionPoolConfig() *EmbedderConnectionPoolConfig {
 		ConnectTimeout: 300,
 		ReadTimeout:    5000,
 		WriteTimeout:   5000,
+		CircuitBreaker: DefaultEmbedderCircuitBreakerConfig(),
 	}
 }
 
@@ -255,6 +290,27 @@ func (bc *BindingCapabilities) WithFloatRank(value bool) *BindingCapabilities {
 	return bc
 }
 
+// Enable query serialization format V2
+func (bc *BindingCapabilities) WithQueryFormatV2(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityQueryFormatV2)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityQueryFormatV2)
+	}
+	return bc
+}
+
+func (bc BindingCapabilities) HasQueryFormatV2() bool {
+	return (bc.Value & int64(BindingCapabilityQueryFormatV2)) != 0
+}
+
+func (bc BindingCapabilities) QueryFormatVersion() int {
+	if bc.HasQueryFormatV2() {
+		return QueryFormatV2
+	}
+	return QueryFormatV1
+}
+
 // go interface to reindexer_c.h interface
 type RawBuffer interface {
 	GetBuf() []byte
@@ -321,6 +377,7 @@ type Stats struct {
 // Raw binding to reindexer
 type RawBinding interface {
 	Init(u []url.URL, eh EventsHandler, options ...any) error
+	QueryFormatVersion() int
 	Clone() RawBinding
 	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(ctx context.Context, namespace string) error

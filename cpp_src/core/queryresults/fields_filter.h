@@ -68,10 +68,8 @@ public:
 private:
 	FieldsFilter(bool allReg, bool allVec) noexcept : allRegularFields_{allReg}, allVectorFields_{allVec} {}
 
-	template <typename P,
-          typename = std::enable_if_t<!std::is_same_v<std::decay_t<P>, FieldsFilter>>>
-	FieldsFilter(P&& path)
-		: regularFields_{{std::forward<P>(path)}}, allRegularFields_{false} {}
+	template <typename P, typename = std::enable_if_t<!std::is_same_v<std::decay_t<P>, FieldsFilter>>>
+	FieldsFilter(P&& path) : regularFields_{{std::forward<P>(path)}}, allRegularFields_{false} {}
 
 	template <concepts::ConvertibleToString Str>
 	void add(const Str& field, const NamespaceImpl&);

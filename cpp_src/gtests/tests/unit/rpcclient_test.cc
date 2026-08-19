@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include "query_aggregate_strict_mode_test.h"
@@ -95,6 +96,7 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 	testTimer.set(loop);
 	const auto kMaxTime = GetMaxTimeForCoroSelectTimeout(kCorCount * kQueriesCount, kSelectDelay);
 	testTimer.start(double(kMaxTime.count()));
+	size_t established = 0;
 	for (size_t i = 0; i < kCorCount; ++i) {
 		loop.spawn([&, index = i] {
 			reindexer::client::ReindexerConfig config;
@@ -102,6 +104,14 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 			reindexer::client::CoroReindexer rx(config);
 			auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 			ASSERT_TRUE(err.ok()) << err.what();
+			// Login/caps must be exchanged before the timed Selects. Connect() is lazy, and the first
+			// Select would otherwise send Status/Ping with NetTimeout=1s; on a busy shared listener
+			// that Ping can expire without the Select ever being queued.
+			err = rx.Status();
+			ASSERT_TRUE(err.ok()) << err.what();
+			++established;
+			loop.granular_sleep(std::chrono::seconds(10), std::chrono::milliseconds{10}, [&] { return established >= kCorCount; });
+			ASSERT_GE(established, kCorCount);
 			coroutine::wait_group wg;
 			wg.add(kQueriesCount);
 			for (size_t j = 0; j < kQueriesCount; ++j) {

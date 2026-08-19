@@ -1,6 +1,5 @@
 #pragma once
 
-#include <limits.h>
 #include "btreeindexiteratorimpl.h"
 #include "core/id_type.h"
 #include "core/idset/idset.h"
@@ -11,11 +10,12 @@ namespace reindexer {
 template <class IndexMap>
 class [[nodiscard]] BtreeIndexIterator final : public IndexIterator {
 public:
-	BtreeIndexIterator(const IndexMap& idxMap, const IdSet& empty_ids) noexcept
-		: first_(idxMap.begin()), last_(idxMap.end()), nullValues_(&empty_ids) {}
-	BtreeIndexIterator(const typename IndexMap::iterator& first, const typename IndexMap::iterator& last) noexcept
-		: first_(first), last_(last), nullValues_(nullptr) {}
-	~BtreeIndexIterator() override final = default;
+	BtreeIndexIterator(const IndexMap& idxMap, const IdSet& empty_ids,
+					   size_t maxIterationsUpperBound = std::numeric_limits<size_t>::max()) noexcept
+		: first_(idxMap.begin()), last_(idxMap.end()), nullValues_(&empty_ids), maxIterationsUpperBound_(maxIterationsUpperBound) {}
+	BtreeIndexIterator(const typename IndexMap::iterator& first, const typename IndexMap::iterator& last,
+					   size_t maxIterationsUpperBound = std::numeric_limits<size_t>::max()) noexcept
+		: first_(first), last_(last), nullValues_(nullptr), maxIterationsUpperBound_(maxIterationsUpperBound) {}
 
 	void Start(bool reverse) final override {
 		if (reverse) {
@@ -26,12 +26,12 @@ public:
 		std::visit([](auto& impl) { impl.Start(); }, impl_);
 	}
 
-	bool Next() noexcept final override {
+	std::pair<bool, IdType> Next() noexcept final override {
 		if (auto* it = std::get_if<ForwardIteratorImpl>(&impl_); it) {
-			return next(it);
+			return it->Next();
 		}
 		if (auto* it = std::get_if<ReverseIteratorImpl>(&impl_); it) {
-			return next(it);
+			return it->Next();
 		}
 		std::abort();
 	}
@@ -39,65 +39,52 @@ public:
 	void ExcludeLastSet() noexcept override final {
 		if (auto* it = std::get_if<ForwardIteratorImpl>(&impl_); it) {
 			it->SkipKey();
+			return;
 		}
 		if (auto* it = std::get_if<ReverseIteratorImpl>(&impl_); it) {
 			it->SkipKey();
+			return;
 		}
 		std::abort();
 	}
 
-	size_t GetMaxIterations(size_t limitIters) noexcept override final {
-		auto limit = std::min(kMaxBTreeIterations, limitIters);
-		if (!cachedIters_.Valid(limit)) {
-			auto [iters, fullyScanned] = createReverseIterator().MaxIterations(limit);
-			if (iters >= kMaxBTreeIterations && !fullyScanned) {
-				cachedIters_ = CachedIters{std::numeric_limits<size_t>::max(), true};
-			} else if (fullyScanned || iters > cachedIters_.value || cachedIters_.value == std::numeric_limits<size_t>::max()) {
-				cachedIters_ = CachedIters{iters, fullyScanned};
+	MaxIterationsEstimate ProbeMaxIterations(size_t limitIters) noexcept override final {
+		if (!cachedIters_.Satisfies(limitIters)) {
+			auto [iters, fullyScanned] = createReverseIterator().MaxIterations(limitIters);
+			if (fullyScanned || !cachedIters_.initialized || iters > cachedIters_.value) {
+				cachedIters_ = CachedIters{iters, fullyScanned, true};
 			}
 		}
-
-		return std::min(cachedIters_.value, limitIters);
+		return cachedIters_.fullyScanned ? MaxIterationsEstimate::Exact(cachedIters_.value)
+										 : MaxIterationsEstimate::AtLeast(cachedIters_.value);
 	}
 
-	void SetMaxIterations(size_t iters) noexcept final { cachedIters_ = CachedIters{iters, true}; }
+	MaxIterationsEstimate GetPlanningEstimate() const noexcept override final {
+		return cachedIters_.fullyScanned ? MaxIterationsEstimate::Exact(cachedIters_.value)
+										 : MaxIterationsEstimate::UpperBound(maxIterationsUpperBound_);
+	}
 
-	IdType Value() const noexcept override final { return lastVal_; }
+	void SetMaxIterations(size_t iters) noexcept final {
+		cachedIters_ = CachedIters{iters, true, true};
+		maxIterationsUpperBound_ = iters;
+	}
 
 private:
 	auto createForwardIterator() {
-		lastVal_ = IdType::Min();
-		type_ = Forward;
 		if (nullValues_) {
 			return index::iterators::BtreeIndexForwardIteratorImpl<IndexMap>(first_, last_, *nullValues_);
-		} else {
-			return index::iterators::BtreeIndexForwardIteratorImpl<IndexMap>(first_, last_);
 		}
+		return index::iterators::BtreeIndexForwardIteratorImpl<IndexMap>(first_, last_);
 	}
 
 	auto createReverseIterator() {
-		lastVal_ = IdType::Max();
-		type_ = Reverse;
 		if (nullValues_) {
 			return index::iterators::BtreeIndexReverseIteratorImpl<IndexMap>(first_, last_, *nullValues_);
-		} else {
-			return index::iterators::BtreeIndexReverseIteratorImpl<IndexMap>(first_, last_);
 		}
-	}
-
-	bool next(auto* it) noexcept {
-		auto [hasValue, rowId] = it->Next(lastVal_);
-		if (hasValue) {
-			lastVal_ = rowId;
-		} else {
-			lastVal_ = (type_ == Reverse) ? IdType::Max() : IdType::Min();
-		}
-		return hasValue;
+		return index::iterators::BtreeIndexReverseIteratorImpl<IndexMap>(first_, last_);
 	}
 
 private:
-	static constexpr size_t kMaxBTreeIterations = 200'000;
-
 	using ForwardIteratorImpl = index::iterators::BtreeIndexForwardIteratorImpl<IndexMap>;
 	using ReverseIteratorImpl = index::iterators::BtreeIndexReverseIteratorImpl<IndexMap>;
 	using BtreeIndexIteratorImpl = std::variant<ForwardIteratorImpl, ReverseIteratorImpl>;
@@ -107,18 +94,14 @@ private:
 	const typename IndexMap::const_iterator last_;
 
 	const IdSet* nullValues_;
-	IdType lastVal_ = IdType::Min();
-
-	enum [[nodiscard]] Type { Empty, Reverse, Forward };
-	Type type_{Empty};
+	size_t maxIterationsUpperBound_;
 
 	struct [[nodiscard]] CachedIters {
-		bool Valid(size_t limitIters) const noexcept {
-			return fullyScanned || (limitIters <= value && value != std::numeric_limits<size_t>::max());
-		}
+		bool Satisfies(size_t limitIters) const noexcept { return fullyScanned || (initialized && limitIters <= value); }
 
-		size_t value = std::numeric_limits<size_t>::max();
+		size_t value = 0;
 		bool fullyScanned = false;
+		bool initialized = false;
 	} cachedIters_;
 };
 

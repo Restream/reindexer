@@ -12,7 +12,7 @@ constexpr static uint8_t kANNCacheFormatVersion = 3;
 
 std::string GetStorageKey(std::string_view name) noexcept {
 	std::string key(kStorageANNCachePrefix);
-	key.append(".").append(toLower(name));
+	key.append(".").append(ToLower(name));
 	return key;
 }
 

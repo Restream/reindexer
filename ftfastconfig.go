@@ -1,5 +1,11 @@
 package reindexer
 
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
 type FtFastFieldConfig struct {
 	FieldName string `json:"field_name"`
 	// boost of bm25 ranking. default value 1.
@@ -106,6 +112,40 @@ type Bm25ConfigType struct {
 	Bm25Type string `json:"bm25_type"`
 }
 
+// KbLayoutMode controls wrong keyboard layout variants processing.
+// Prefer string values: "disable", "enable", "heuristic".
+// Legacy JSON bool is accepted: false->"disable", true->"heuristic".
+type KbLayoutMode string
+
+const (
+	KbLayoutDisable   KbLayoutMode = "disable"
+	KbLayoutEnable    KbLayoutMode = "enable"
+	KbLayoutHeuristic KbLayoutMode = "heuristic"
+)
+
+func (m *KbLayoutMode) UnmarshalJSON(data []byte) error {
+	var b bool
+	if err := json.Unmarshal(data, &b); err == nil {
+		if b {
+			*m = KbLayoutHeuristic
+		} else {
+			*m = KbLayoutDisable
+		}
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch strings.ToLower(s) {
+	case string(KbLayoutDisable), string(KbLayoutEnable), string(KbLayoutHeuristic):
+		*m = KbLayoutMode(strings.ToLower(s))
+		return nil
+	default:
+		return fmt.Errorf("unknown enable_kb_layout value: %q", s)
+	}
+}
+
 // FtFastConfig configuration of FullText search index
 type FtFastConfig struct {
 	// boost of bm25 ranking. default value 1.
@@ -152,10 +192,6 @@ type FtFastConfig struct {
 	MaxTypoLen int `json:"max_typo_len"`
 	// Config for more precise typos algorithm tuning
 	TyposDetailedConfig *FtTyposDetailedConfig `json:"typos_detailed_config,omitempty"`
-	// Maximum commit steps - set it 1 for always full rebuild - it can be from 1 to 500
-	MaxRebuildSteps int `json:"max_rebuild_steps"`
-	// Maximum words in one commit - it can be from 5 to DOUBLE_MAX
-	MaxStepSize int `json:"max_step_size"`
 	// Maximum documents which will be processed in merge query results
 	// Default value is 20000. Increasing this value may refine ranking
 	// of queries with high frequency words
@@ -170,8 +206,13 @@ type FtFastConfig struct {
 	EnableTermsSplit bool `json:"enable_terms_split"`
 	// Enable translit variants processing
 	EnableTranslit bool `json:"enable_translit"`
-	// Enable wrong keyboard layout variants processing
-	EnableKbLayout bool `json:"enable_kb_layout"`
+	// Enable wrong keyboard layout variants processing.
+	// Accepted values: 'disable', 'enable', 'heuristic'.
+	// 'heuristic' mode is recommended for most cases.
+	// It will try to guess the correct keyboard layout based on the search query and preselcted results.
+	// 'disable' mode will completely disable the keyboard layout variants generation.
+	// 'enable' mode will always generate all possible keyboard layout variants.
+	EnableKbLayout KbLayoutMode `json:"enable_kb_layout"`
 	// List of objects of stop words. Words from this list will be ignored when building indexes
 	// but can be included in search results in queries such as 'word*', 'word~' etc. if for the stop-word attribute is_morpheme is true.
 	// The list item can be either a reindexer.StopWord, or string
@@ -238,15 +279,13 @@ func DefaultFtFastConfig() FtFastConfig {
 		MaxTypos:                2,
 		MaxTypoLen:              15,
 		TyposDetailedConfig:     &FtTyposDetailedConfig{MaxTypoDistance: 0, MaxSymbolPermutationDistance: 1, MaxExtraLetters: 2, MaxMissingLetters: 2},
-		MaxRebuildSteps:         50,
-		MaxStepSize:             4000,
 		MergeLimit:              20000,
 		KeepDiacritics:          []string{},
 		Stemmers:                []string{"en", "ru"},
 		EnableTermsConcat:       true,
 		EnableTermsSplit:        true,
 		EnableTranslit:          true,
-		EnableKbLayout:          true,
+		EnableKbLayout:          KbLayoutHeuristic,
 		LogLevel:                0,
 		ExtraWordSymbols:        "-/+_`'",
 		WordPartDelimiters:      "-/+_`'",

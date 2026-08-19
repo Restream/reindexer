@@ -48,6 +48,11 @@ constexpr std::string_view kConnectorPoolConnections{"connections"};
 constexpr std::string_view kConnectorPoolConnectTO{"connect_timeout_ms"};
 constexpr std::string_view kConnectorPoolReadTO{"read_timeout_ms"};
 constexpr std::string_view kConnectorPoolWriteTO{"write_timeout_ms"};
+constexpr std::string_view kCircuitBreaker{"circuit_breaker"};
+constexpr std::string_view kCircuitBreakerThreshold{"threshold"};
+constexpr std::string_view kCircuitBreakerThresholdTimeout{"threshold_timeout_ms"};
+constexpr std::string_view kCircuitBreakerCooldown{"cooldown_ms"};
+constexpr size_t kCircuitBreakerThresholdMax = 255;
 
 FloatVectorIndexOpts::EmbedderOpts::Strategy parseStrategy(std::string_view strategy, std::string_view name) {
 	if (strategy == kEmbedderStrategyAlways) {
@@ -84,6 +89,20 @@ std::string_view strategyToStr(FloatVectorIndexOpts::EmbedderOpts::Strategy stra
 	}
 }
 
+FloatVectorIndexOpts::CircuitBreakerOpts parseCircuitBreakerConfig(const gason::JsonNode& node) {
+	FloatVectorIndexOpts::CircuitBreakerOpts opts;
+	if (!node[kCircuitBreakerThreshold].isEmpty()) {
+		opts.threshold = node[kCircuitBreakerThreshold].As<size_t>();
+	}
+	if (!node[kCircuitBreakerThresholdTimeout].isEmpty()) {
+		opts.threshold_timeout_ms = node[kCircuitBreakerThresholdTimeout].As<size_t>();
+	}
+	if (!node[kCircuitBreakerCooldown].isEmpty()) {
+		opts.cooldown_ms = node[kCircuitBreakerCooldown].As<size_t>();
+	}
+	return opts;
+}
+
 FloatVectorIndexOpts::PoolOpts parsePoolConfig(const gason::JsonNode& node) {
 	FloatVectorIndexOpts::PoolOpts opts;
 	if (!node[kConnectorPoolConnections].isEmpty()) {
@@ -98,6 +117,9 @@ FloatVectorIndexOpts::PoolOpts parsePoolConfig(const gason::JsonNode& node) {
 	if (!node[kConnectorPoolWriteTO].isEmpty()) {
 		opts.write_timeout_ms = node[kConnectorPoolWriteTO].As<size_t>();
 	}
+	if (!node[kCircuitBreaker].isEmpty()) {
+		opts.circuit_breaker = parseCircuitBreakerConfig(node[kCircuitBreaker]);
+	}
 	return opts;
 }
 
@@ -105,10 +127,10 @@ FloatVectorIndexOpts::EmbedderOpts parseEmbedderConfig(const gason::JsonNode& no
 	FloatVectorIndexOpts::EmbedderOpts opts;
 	opts.endpointUrl = node[kEmbedderURL].As<std::string>();
 	if (!node[kEmbedderName].isEmpty()) {
-		opts.name = reindexer::toLower(node[kEmbedderName].As<std::string>());
+		opts.name = reindexer::ToLower(node[kEmbedderName].As<std::string>());
 	}
 	if (!node[kEmbedderCacheTag].isEmpty()) {
-		opts.cacheTag = reindexer::toLower(node[kEmbedderCacheTag].As<std::string>());
+		opts.cacheTag = reindexer::ToLower(node[kEmbedderCacheTag].As<std::string>());
 	}
 	if (name == kUpsertEmbedder) {
 		std::string field;
@@ -193,6 +215,18 @@ void validateEmbedderOpts(const FloatVectorIndexOpts::EmbedderOpts& opts, std::s
 	validateEmbedderPollTMOpt(opts.pool.connect_timeout_ms, 100, name, kConnectorPoolConnectTO);
 	validateEmbedderPollTMOpt(opts.pool.read_timeout_ms, 500, name, kConnectorPoolReadTO);
 	validateEmbedderPollTMOpt(opts.pool.write_timeout_ms, 500, name, kConnectorPoolWriteTO);
+
+	const auto& cb = opts.pool.circuit_breaker;
+	if (cb.threshold > kCircuitBreakerThresholdMax) {
+		throw reindexer::Error{errParams,
+							   "Configuration '{}:{}:{}:{}:{}' should not be more than {}",
+							   kEmbedding,
+							   name,
+							   kConnectorPool,
+							   kCircuitBreaker,
+							   kCircuitBreakerThreshold,
+							   kCircuitBreakerThresholdMax};
+	}
 }
 
 void getJsonEmbedderConfig(const FloatVectorIndexOpts::EmbedderOpts& opts, reindexer::builders::JsonBuilder& json) {
@@ -221,6 +255,13 @@ void getJsonEmbedderConfig(const FloatVectorIndexOpts::EmbedderOpts& opts, reind
 		objNodePool.Put(kConnectorPoolConnectTO, pool.connect_timeout_ms);
 		objNodePool.Put(kConnectorPoolReadTO, pool.read_timeout_ms);
 		objNodePool.Put(kConnectorPoolWriteTO, pool.write_timeout_ms);
+		{
+			const auto& cb = pool.circuit_breaker;
+			auto objNodeCb = objNodePool.Object(kCircuitBreaker);
+			objNodeCb.Put(kCircuitBreakerThreshold, cb.threshold);
+			objNodeCb.Put(kCircuitBreakerThresholdTimeout, cb.threshold_timeout_ms);
+			objNodeCb.Put(kCircuitBreakerCooldown, cb.cooldown_ms);
+		}
 	}
 }
 

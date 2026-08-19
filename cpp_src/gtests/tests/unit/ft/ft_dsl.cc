@@ -24,10 +24,10 @@ TEST_P(FTDSLParserApi, MatchSymbolTest) {
 	EXPECT_TRUE(ftdsl.NumTerms() == 2);
 	EXPECT_TRUE(ftdsl.GetTerm(0).Opts().suff);
 	EXPECT_TRUE(ftdsl.GetTerm(0).Opts().pref);
-	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"search");
+	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"search");
 	EXPECT_TRUE(!ftdsl.GetTerm(1).Opts().suff);
 	EXPECT_TRUE(ftdsl.GetTerm(1).Opts().pref);
-	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == L"this");
+	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == u"this");
 }
 
 TEST_P(FTDSLParserApi, MisspellingTest) {
@@ -37,10 +37,10 @@ TEST_P(FTDSLParserApi, MisspellingTest) {
 	ftdsl.Parse("black~ -white");
 	EXPECT_TRUE(ftdsl.NumTerms() == 2);
 	EXPECT_TRUE(ftdsl.GetTerm(0).Opts().typos);
-	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"black");
+	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"black");
 	EXPECT_TRUE(!ftdsl.GetTerm(1).Opts().typos);
 	EXPECT_TRUE(ftdsl.GetTerm(1).Opts().op == OpNot);
-	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == L"white");
+	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == u"white");
 }
 
 TEST_P(FTDSLParserApi, FieldsPartOfRequest) {
@@ -51,7 +51,7 @@ TEST_P(FTDSLParserApi, FieldsPartOfRequest) {
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 	ftdsl.Parse("@name^1.5,+title^0.5 rush");
 	EXPECT_EQ(ftdsl.NumTerms(), 1);
-	EXPECT_EQ(ftdsl.GetTerm(0).Pattern(), L"rush");
+	EXPECT_EQ(ftdsl.GetTerm(0).Pattern(), u"rush");
 	EXPECT_EQ(ftdsl.GetTerm(0).Opts().fieldsOpts.size(), 2);
 	EXPECT_TRUE(AreFloatingValuesEqual(ftdsl.GetTerm(0).Opts().fieldsOpts[0].boost, 1.5f));
 	EXPECT_FALSE(ftdsl.GetTerm(0).Opts().fieldsOpts[0].needSumRank);
@@ -65,11 +65,11 @@ TEST_P(FTDSLParserApi, TermRelevancyBoostTest) {
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 	ftdsl.Parse("+mongodb^0.5 +arangodb^0.25 +reindexer^2.5");
 	EXPECT_TRUE(ftdsl.NumTerms() == 3);
-	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"mongodb");
+	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"mongodb");
 	EXPECT_TRUE(AreFloatingValuesEqual(ftdsl.GetTerm(0).Opts().boost, 0.5f));
-	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == L"arangodb");
+	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == u"arangodb");
 	EXPECT_TRUE(AreFloatingValuesEqual(ftdsl.GetTerm(1).Opts().boost, 0.25f));
-	EXPECT_TRUE(ftdsl.GetTerm(2).Pattern() == L"reindexer");
+	EXPECT_TRUE(ftdsl.GetTerm(2).Pattern() == u"reindexer");
 	EXPECT_TRUE(AreFloatingValuesEqual(ftdsl.GetTerm(2).Opts().boost, 2.5f));
 }
 
@@ -78,6 +78,7 @@ TEST_P(FTDSLParserApi, WrongRelevancyTest) {
 	reindexer::SplitOptions opts;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 	EXPECT_THROW(ftdsl.Parse("+wrong +boost^X"), reindexer::Error);
+	EXPECT_THROW(ftdsl.Parse("+term^" + std::string(64, '1')), reindexer::Error);
 }
 
 TEST_P(FTDSLParserApi, DistanceTest) {
@@ -88,8 +89,8 @@ TEST_P(FTDSLParserApi, DistanceTest) {
 		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 		ftdsl.Parse("'long nose'~3");
 		EXPECT_TRUE(ftdsl.NumTerms() == 2);
-		EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"long");
-		EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == L"nose");
+		EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"long");
+		EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == u"nose");
 		EXPECT_TRUE(ftdsl.GetTerm(0).Opts().distance == INT_MAX);
 		EXPECT_TRUE(ftdsl.GetTerm(1).Opts().distance == 3);
 	}
@@ -98,8 +99,8 @@ TEST_P(FTDSLParserApi, DistanceTest) {
 		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 		ftdsl.Parse("'+long +nose'~3");
 		EXPECT_TRUE(ftdsl.NumTerms() == 2);
-		EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"long");
-		EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == L"nose");
+		EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"long");
+		EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == u"nose");
 		EXPECT_TRUE(ftdsl.GetTerm(0).Opts().distance == INT_MAX);
 		EXPECT_TRUE(ftdsl.GetTerm(1).Opts().distance == 3);
 	}
@@ -130,6 +131,10 @@ TEST_P(FTDSLParserApi, WrongDistanceTest) {
 		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 		EXPECT_THROW(ftdsl.Parse("'long nose'~2.89"), reindexer::Error);
 	}
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
+		EXPECT_THROW(ftdsl.Parse("'long nose'~" + std::string(32, '1')), reindexer::Error);
+	}
 }
 
 TEST_P(FTDSLParserApi, QuotesTest) {
@@ -148,13 +153,13 @@ TEST_P(FTDSLParserApi, QuotesTest) {
 		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 		ftdsl.Parse("'\\\"phrase'");
 		EXPECT_TRUE(ftdsl.NumTerms() == 1);
-		EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"\"phrase");
+		EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"\"phrase");
 	}
 	{
 		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
 		ftdsl.Parse("'\\\'phrase'");
 		EXPECT_TRUE(ftdsl.NumTerms() == 1);
-		EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"'phrase");
+		EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"'phrase");
 	}
 }
 
@@ -175,25 +180,25 @@ TEST_P(FTDSLParserApi, BinaryOperatorsTest) {
 	ftdsl.Parse("+Jack -John +Joe");
 	EXPECT_TRUE(ftdsl.NumTerms() == 3);
 	EXPECT_TRUE(ftdsl.GetTerm(0).Opts().op == OpAnd);
-	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"jack");
+	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"jack");
 	EXPECT_TRUE(ftdsl.GetTerm(1).Opts().op == OpNot);
-	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == L"john");
+	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == u"john");
 	EXPECT_TRUE(ftdsl.GetTerm(2).Opts().op == OpAnd);
-	EXPECT_TRUE(ftdsl.GetTerm(2).Pattern() == L"joe");
+	EXPECT_TRUE(ftdsl.GetTerm(2).Pattern() == u"joe");
 }
 
 TEST_P(FTDSLParserApi, EscapingCharacterTest) {
 	FTDSLQueryParams params;
 	reindexer::SplitOptions opts;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, opts);
-	ftdsl.Parse("\\-hell \\+well \\+bell");
+	ftdsl.Parse("\\-hell \\+well \\+belu");
 	EXPECT_TRUE(ftdsl.NumTerms() == 3) << ftdsl.NumTerms();
 	EXPECT_TRUE(ftdsl.GetTerm(0).Opts().op == OpOr);
-	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"-hell");
+	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"-hell");
 	EXPECT_TRUE(ftdsl.GetTerm(1).Opts().op == OpOr);
-	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == L"+well");
+	EXPECT_TRUE(ftdsl.GetTerm(1).Pattern() == u"+well");
 	EXPECT_TRUE(ftdsl.GetTerm(2).Opts().op == OpOr);
-	EXPECT_TRUE(ftdsl.GetTerm(2).Pattern() == L"+bell");
+	EXPECT_TRUE(ftdsl.GetTerm(2).Pattern() == u"+belu");
 }
 
 TEST_P(FTDSLParserApi, ExactMatchTest) {
@@ -203,7 +208,7 @@ TEST_P(FTDSLParserApi, ExactMatchTest) {
 	ftdsl.Parse("=moskva77");
 	EXPECT_TRUE(ftdsl.NumTerms() == 1);
 	EXPECT_TRUE(ftdsl.GetTerm(0).Opts().exact);
-	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == L"moskva77");
+	EXPECT_TRUE(ftdsl.GetTerm(0).Pattern() == u"moskva77");
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTDSLParserApi, ::testing::Values(kRxFtTestTypes), [](const auto& info) {

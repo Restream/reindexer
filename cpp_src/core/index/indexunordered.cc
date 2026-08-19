@@ -11,6 +11,7 @@
 #include "rtree/rtree.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
+#include "tools/scope_guard.h"
 
 namespace reindexer {
 
@@ -141,7 +142,7 @@ IndexUnordered<T>::IndexUnordered(const IndexUnordered& other, IndexCloneKind ki
 	  empty_ids_(other.empty_ids_),
 	  tracker_(other.tracker_),
 	  pkSortedIds_(kind == IndexCloneKind::Snapshot ? other.pkSortedIds_ : std::vector<std::vector<IdType>>(this->sortedIdxCount_)),
-	  pkSortedIdsSizeBytes_(kind == IndexCloneKind::Snapshot ? other.pkSortedIdsSizeBytes_.load(std::memory_order_relaxed) : 0) {}
+	  idsetPlainSizeBytes_(idsetPlainSizeBytesForClone(other, kind)) {}
 
 template <typename key_type>
 size_t heap_size(const key_type& /*kt*/) {
@@ -170,14 +171,17 @@ struct [[nodiscard]] DeepClean {
 
 template <typename T>
 void IndexUnordered<T>::addMemStat(typename T::iterator it) noexcept {
-	this->memStat_.idsetPlainSize += sizeof(typename T::value_type) + it->second.Unsorted().PlainHeapSize();
+	idsetPlainSizeBytes_.fetch_add(int64_t(sizeof(typename T::value_type) + it->second.Unsorted().PlainHeapSize()),
+								   std::memory_order_relaxed);
 	this->memStat_.idsetBTreeSize += it->second.Unsorted().BTreeHeapSize();
 	this->memStat_.dataSize += heap_size(it->first);
 }
 
 template <typename T>
 void IndexUnordered<T>::delMemStat(typename T::iterator it) noexcept {
-	this->memStat_.idsetPlainSize -= sizeof(typename T::value_type) + it->second.Unsorted().PlainHeapSize();
+	const int64_t delta = int64_t(sizeof(typename T::value_type) + it->second.Unsorted().PlainHeapSize());
+	[[maybe_unused]] const auto prev = idsetPlainSizeBytes_.fetch_sub(delta, std::memory_order_relaxed);
+	assertrx_dbg(prev >= delta);
 	this->memStat_.idsetBTreeSize -= it->second.Unsorted().BTreeHeapSize();
 	this->memStat_.dataSize -= heap_size(it->first);
 }
@@ -454,7 +458,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray& keys, CondType
 
 		case CondAny:
 			if (selectCtx.opts.distinct &&
-				this->idx_map.size() < IndexUnordered<T>::kMaxIdsetsForDistinct) {	// TODO change to more clever condition
+				size_t(this->idx_map.size()) < kMaxExplicitBtreeKeyCountDistinct) {	 // TODO change to more clever condition
 				// Get set of any keys
 				res.reserve(this->idx_map.size());
 				for (auto& keyIt : this->idx_map) {
@@ -496,19 +500,24 @@ WasCanceled IndexUnordered<T>::Commit(const index::ICancelable& cancelable) {
 
 	if (tracker_.isCompleteUpdated()) {
 		size_t handledCounter = 0;
+		int64_t plainDelta = 0;
+		const auto flushGuard =
+			MakeScopeGuard([this, &plainDelta] { idsetPlainSizeBytes_.fetch_add(plainDelta, std::memory_order_relaxed); });
 		for (auto& keyIt : this->idx_map) {
 			if (handledCounter >= index::kCancelCheckFrequency) {
 				RX_RETURN_IF_CANCELED(cancelable);
 				handledCounter = 0;
 			}
 
+			const size_t oldPlain = keyIt.second.Unsorted().PlainHeapSize();
 			keyIt.second.Unsorted().Commit(this->sortedIdxCount_);
 			assertrx(keyIt.second.Unsorted().Size());
+			plainDelta += int64_t(keyIt.second.Unsorted().PlainHeapSize()) - int64_t(oldPlain);
 
 			handledCounter += keyIt.second.Unsorted().Size();
 		}
 	} else {
-		tracker_.commitUpdated(idx_map, this->sortedIdxCount_);
+		idsetPlainSizeBytes_.fetch_add(tracker_.commitUpdated(idx_map, this->sortedIdxCount_), std::memory_order_relaxed);
 	}
 	tracker_.clear();
 	return WasCanceled_False;
@@ -534,9 +543,8 @@ WasCanceled IndexUnordered<T>::UpdateSortedIds(const index::IUpdateSortedContext
 		pkSortedIds.reserve(newSize);
 		pkSortedIds.resize(newSize);
 		pkSortedIds.shrink_to_fit();
-		int64_t additionalIdsetPlainSizeDiff = pkSortedIds.capacity() * sizeof(IdType);
-		additionalIdsetPlainSizeDiff -= oldCapacity * sizeof(IdType);
-		pkSortedIdsSizeBytes_.fetch_add(additionalIdsetPlainSizeDiff);
+		idsetPlainSizeBytes_.fetch_add(int64_t(pkSortedIds.capacity() * sizeof(IdType)) - int64_t(oldCapacity * sizeof(IdType)),
+									   std::memory_order_relaxed);
 
 		static_assert(sizeof(IdType) == sizeof(SortType));
 		for (size_t pos = 0; pos < newSize;) {
@@ -568,20 +576,29 @@ template <typename T>
 void IndexUnordered<T>::SetSortedIdxCount(unsigned sortedIdxCount) {
 	if (this->sortedIdxCount_ != sortedIdxCount) {
 		this->sortedIdxCount_ = sortedIdxCount;
+		int64_t plainDelta = 0;
+		const auto flushGuard =
+			MakeScopeGuard([this, &plainDelta] { idsetPlainSizeBytes_.fetch_add(plainDelta, std::memory_order_relaxed); });
 		for (auto& keyIt : idx_map) {
+			const size_t oldPlain = keyIt.second.Unsorted().PlainHeapSize();
 			keyIt.second.Unsorted().OnSortedIndexCountChanged(sortedIdxCount);
+			plainDelta += int64_t(keyIt.second.Unsorted().PlainHeapSize()) - int64_t(oldPlain);
 		}
 		empty_ids_.Unsorted().OnSortedIndexCountChanged(sortedIdxCount);
 
 		if constexpr (isPK) {
+			size_t oldTotalCapacity = 0;
+			for (auto& sIds : pkSortedIds_) {
+				oldTotalCapacity += sIds.capacity();
+			}
 			pkSortedIds_.resize(sortedIdxCount);
 			pkSortedIds_.shrink_to_fit();
-			size_t totalCapacity = 0;
+			size_t newTotalCapacity = 0;
 			for (auto& sIds : pkSortedIds_) {
 				sIds.resize(0);
-				totalCapacity += sIds.capacity();
+				newTotalCapacity += sIds.capacity();
 			}
-			pkSortedIdsSizeBytes_.store(totalCapacity);
+			plainDelta += int64_t(newTotalCapacity * sizeof(IdType)) - int64_t(oldTotalCapacity * sizeof(IdType));
 		}
 	}
 }
@@ -608,8 +625,9 @@ IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext& ctx) const {
 	ret.trackedUpdatesBuckets = tracker_.updatesBuckets();
 	ret.trackedUpdatesSize = tracker_.allocated();
 	ret.trackedUpdatesOverflow = tracker_.overflow();
-	assertrx_dbg(pkSortedIdsSizeBytes_.load() >= 0);
-	ret.idsetPlainSize += pkSortedIdsSizeBytes_.load();
+	const auto plainSize = idsetPlainSizeBytes_.load(std::memory_order_relaxed);
+	assertrx_dbg(plainSize >= 0);
+	ret.idsetPlainSize = size_t(plainSize);
 	return ret;
 }
 

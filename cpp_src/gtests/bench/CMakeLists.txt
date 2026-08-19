@@ -22,8 +22,9 @@ file (GLOB_RECURSE FIXT_SRCS fixtures/*)
 file (GLOB_RECURSE FT_FIXT_SRCS fixtures/ft_* fixtures/base_fixture.*)
 file (GLOB_RECURSE KNN_FIXT_SRCS fixtures/knn_* fixtures/base_fixture.* fixtures/ft_base.*)
 file (GLOB_RECURSE TOOLS_SRCS tools/*)
+set(GTESTS_COMMON_TOOLS_SRCS ${REINDEXER_SOURCE_PATH}/gtests/tools.cc)
 
-add_library(${RX_BENCH_LIB} OBJECT ${TOOLS_SRCS} ${FIXT_SRCS})
+add_library(${RX_BENCH_LIB} OBJECT ${TOOLS_SRCS} ${FIXT_SRCS} ${GTESTS_COMMON_TOOLS_SRCS})
 target_compile_definitions(${RX_BENCH_LIB} PRIVATE RX_BENCH_DICT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/dict.txt")
 
 add_executable(${TARGET} reindexer_bench.cc)
@@ -51,27 +52,6 @@ set_property(TARGET ${FT_TARGET} PROPERTY ENABLE_EXPORTS 1)
 set_property(TARGET ${FT_TARGET} PROPERTY DEFINE_SYMBOL "")
 set_property(TARGET ${KNN_TARGET} PROPERTY ENABLE_EXPORTS 1)
 set_property(TARGET ${KNN_TARGET} PROPERTY DEFINE_SYMBOL "")
-
-if(ENABLE_PCH)
-  set(PREC_HDRS
-    ${REINDEXER_SOURCE_PATH}/core/reindexer.h
-    ${REINDEXER_SOURCE_PATH}/core/query/query.h
-    ${REINDEXER_SOURCE_PATH}/core/queryresults/queryresults.h
-    ${REINDEXER_SOURCE_PATH}/core/item.h
-
-    fixtures/base_fixture.h
-
-    tools/allocs_tracker.h
-    tools/helpers.h
-    tools/reporter.h
-    tools/sequence.h
-  )
-
-  target_precompile_headers(${RX_BENCH_LIB} PRIVATE ${PREC_HDRS})
-  target_precompile_headers(${TARGET} REUSE_FROM ${RX_BENCH_LIB})
-  target_precompile_headers(${FT_TARGET} REUSE_FROM ${TARGET})
-  target_precompile_headers(${KNN_TARGET} REUSE_FROM ${TARGET})
-endif()
 
 if(BENCH_REPORT)
     message("Benchmark report flag is activated")

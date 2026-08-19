@@ -56,9 +56,9 @@ public:
 				rowIds_.pop_back();
 				if (rowIds_.empty()) {
 					dataDetached.swap(datas_);
-					datas_.clear();
-					rowIds_.shrink_to_fit();
-					wordCounts_.clear();
+					DataType().swap(datas_);
+					h_vector<IdType, 1>().swap(rowIds_);
+					h_vector<float, 3>().swap(wordCounts_);
 				} else {
 					dataDetached = datas_;
 				}
@@ -120,6 +120,11 @@ public:
 				rowIds_.pop_back();
 				std::swap(datas_[idx], datas_.back());
 				datas_.pop_back();
+				if (rowIds_.empty()) {
+					h_vector<IdType, 1>().swap(rowIds_);
+					h_vector<PayloadValue, 1>().swap(datas_);
+					h_vector<float, 3>().swap(wordCounts_);
+				}
 				return;
 			}
 		}
@@ -351,8 +356,9 @@ private:
 	std::vector<uint32_t> rowId2Vdoc_;
 	size_t vdocsHeapSize_ = 0;
 
-	uint32_t vdocsCommited_ = 0;
 	uint32_t vdocsIndexed_ = 0;
+	uint32_t removedVdocs_ = 0;
+	size_t vdocsCompactions_ = 0;
 
 	size_t stringsHeapSize_ = 0;
 

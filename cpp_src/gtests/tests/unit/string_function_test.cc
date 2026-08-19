@@ -10,6 +10,7 @@
 
 #include "core/ft/numtotext.h"
 #include "gtest/gtest.h"
+#include "gtests/tools.h"
 #include "reindexer_api.h"
 #include "tools/customlocal.h"
 #include "tools/string_regexp_functions.h"
@@ -21,8 +22,8 @@ using reindexer::IndexOpts;
 
 namespace {
 
-static const std::wstring symbols =
-	L" 	,-_!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
+static const std::u16string symbols =
+	u" 	,-_!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
 
 static std::string randString() {
 	const size_t len = rand() % 100;
@@ -30,7 +31,7 @@ static std::string randString() {
 	result.reserve(len + 1);
 	while (result.size() < len) {
 		const size_t f = rand() % symbols.size();
-		result += reindexer::utf16_to_utf8(std::wstring_view(&symbols[f], 1));
+		result += reindexer::utf16_to_utf8(std::u16string_view(&symbols[f], 1));
 	}
 	return result;
 }
@@ -49,7 +50,7 @@ static std::string randLikePattern() {
 				result += '_';
 			} else {
 				const size_t f = rand() % symbols.size();
-				result += reindexer::utf16_to_utf8(std::wstring_view(&symbols[f], 1));
+				result += reindexer::utf16_to_utf8(std::u16string_view(&symbols[f], 1));
 			}
 		}
 	}
@@ -57,10 +58,12 @@ static std::string randLikePattern() {
 }
 
 static bool isLikePattern(const std::string& str, const std::string& pattern) {
-	std::wstring wstr = reindexer::utf8_to_utf16(str);
-	reindexer::ToLower(wstr);
-	std::wstring wpattern = reindexer::utf8_to_utf16(reindexer::sqlLikePattern2ECMAScript(pattern));
-	reindexer::ToLower(wpattern);
+	std::u16string u16str = reindexer::utf8_to_utf16(str);
+	reindexer::ToLower(u16str);
+	std::u16string u16pattern = reindexer::utf8_to_utf16(reindexer_tests_tools::sqlLikePattern2ECMAScript(pattern));
+	reindexer::ToLower(u16pattern);
+	const std::wstring wstr(u16str.begin(), u16str.end());
+	const std::wstring wpattern(u16pattern.begin(), u16pattern.end());
 	return std::regex_match(wstr, std::wregex{wpattern});
 }
 
@@ -114,7 +117,7 @@ TEST(StringFunctions, IsLikeSqlPattern) {
 		}
 		EXPECT_EQ(reindexer::matchLikePattern(str, pattern), match) << "String: '" << str << "'\nPattern: '" << pattern << "'";
 
-		pattern = reindexer::makeLikePattern(str);
+		pattern = reindexer_tests_tools::makeLikePattern(str);
 		EXPECT_TRUE(reindexer::matchLikePattern(str, pattern)) << "String: '" << str << "'\nPattern: '" << pattern << "'";
 	}
 }
@@ -123,15 +126,19 @@ TEST(StringFunctions, IsLikeSqlPattern) {
 // 1. equality of character length in bytes for uppercase and lowercase letters
 
 TEST(StringFunctions, ToLowerUTF8ByteLen) {
-	for (wchar_t a = 0; a < UINT16_MAX; ++a) {
-		auto utf8ByteSize = [](wchar_t a) {
+	for (char16_t a = 0; a < UINT16_MAX; ++a) {
+		// Surrogate code units (0xD800–0xDFFF) are not valid standalone UTF-16 characters
+		if (a >= 0xD800 && a <= 0xDFFF) {
+			continue;
+		}
+		auto utf8ByteSize = [](char16_t a) {
 			std::string symUtf8;
-			std::wstring symIn;
+			std::u16string symIn;
 			symIn += a;
 			reindexer::utf16_to_utf8(symIn, symUtf8);
 			return symUtf8.size();
 		};
-		ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(reindexer::ToLower(a)));
+		ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(char16_t(reindexer::ToLower(a))));
 	}
 }
 

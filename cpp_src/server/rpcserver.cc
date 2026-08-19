@@ -17,10 +17,30 @@
 #include "tools/catch_and_return.h"
 
 namespace reindexer_server {
-using namespace std::string_view_literals;
-
+namespace {
 const size_t kMaxTxCount = 1024;
-static const reindexer::SemVersion kMinSubscriptionV4RxVersion("4.15.0");
+std::atomic<int> connCounter = {0};
+const reindexer::SemVersion kMinSubscriptionV4RxVersion("4.15.0");
+
+constexpr BindingCapabilities kServerCaps{kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs |
+										  kBindingCapabilityIncarnationTags | kBindingCapabilityComplexRank |
+										  kBindingCapabilityQueryFormatV2};
+
+h_vector<int32_t, 4> pack2vec(p_string pack) {
+	// Get array of TagsMatcher versions from serialized string
+	Serializer ser(pack.data(), pack.size());
+	h_vector<int32_t, 4> vec;
+	int cnt = ser.GetVarUInt();
+	vec.reserve(cnt);
+	for (int i = 0; i < cnt; i++) {
+		vec.emplace_back(ser.GetVarUInt());
+	}
+	return vec;
+}
+
+}  // namespace
+
+using namespace std::string_view_literals;
 
 RPCClientData::~RPCClientData() {
 	Reindexer* db = nullptr;
@@ -53,8 +73,6 @@ Error RPCServer::Ping(cproto::Context&) {
 	return {};
 }
 
-static std::atomic<int> connCounter = {0};
-
 Error RPCServer::Login(cproto::Context& ctx, p_string login, p_string password, p_string db, std::optional<bool> createDBIfMissing,
 					   std::optional<bool> checkClusterID, std::optional<int> expectedClusterID, std::optional<p_string> clientRxVersion,
 					   std::optional<p_string> appName, std::optional<int64_t> bindingCaps, std::optional<p_string> replToken) {
@@ -68,7 +86,7 @@ Error RPCServer::Login(cproto::Context& ctx, p_string login, p_string password, 
 	clientData->connID = connCounter.fetch_add(1, std::memory_order_relaxed);
 	clientData->auth = AuthContext(login.toString(), password.toString());
 	clientData->txStats = std::make_shared<reindexer::TxStats>();
-	clientData->caps = bindingCaps ? bindingCaps.value() : BindingCapabilities();
+	clientData->caps = BindingCapabilities{bindingCaps.value_or(0) & kServerCaps.caps};
 
 	auto dbName = db.toString();
 	if (checkClusterID && *checkClusterID) {
@@ -106,7 +124,7 @@ Error RPCServer::Login(cproto::Context& ctx, p_string login, p_string password, 
 	if (status.ok()) {
 		const int64_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
 		constexpr std::string_view version = REINDEX_VERSION;
-		ctx.Return({cproto::Arg(p_string(&version)), cproto::Arg(startTs)}, status);
+		ctx.Return({cproto::Arg(p_string(&version)), cproto::Arg(startTs), cproto::Arg(clientDataRef.caps.caps)}, status);
 	} else {
 		std::cerr << status.what() << std::endl;
 	}
@@ -223,8 +241,7 @@ Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults& res
 				return getDB(ctx, kRoleDBAdmin).TruncateNamespace(q.NsName());
 		}
 		return Error(errParams, "unknown query type {}", int(q.Type()));
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 void RPCServer::Logger(cproto::Context& ctx, const Error& err, const cproto::Args& ret) {
@@ -452,22 +469,20 @@ Error RPCServer::DeleteQueryTx(cproto::Context& ctx, p_string queryBin, int64_t 
 	try {
 		Transaction& tr = getTx(ctx, txID);
 		Serializer ser(queryBin.data(), queryBin.size());
-		Query query = Query::Deserialize(ser);
+		Query query = Query::Deserialize(ser, getClientDataSafe(ctx)->caps.GetQueryFormat());
 		query.type_ = QueryDelete;
 		return tr.Modify(std::move(query), ctx.call->lsn);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 Error RPCServer::UpdateQueryTx(cproto::Context& ctx, p_string queryBin, int64_t txID) noexcept {
 	try {
 		Transaction& tr = getTx(ctx, txID);
 		Serializer ser(queryBin.data(), queryBin.size());
-		Query query = Query::Deserialize(ser);
+		Query query = Query::Deserialize(ser, getClientDataSafe(ctx)->caps.GetQueryFormat());
 		query.type_ = QueryUpdate;
 		return tr.Modify(std::move(query), ctx.call->lsn);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 Error RPCServer::PutMetaTx(cproto::Context& ctx, p_string key, p_string data, int64_t txID) noexcept {
@@ -476,8 +491,7 @@ Error RPCServer::PutMetaTx(cproto::Context& ctx, p_string key, p_string data, in
 
 		Transaction& tr = getTx(ctx, txID);
 		return tr.PutMeta(key, data, ctx.call->lsn);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 Error RPCServer::SetTagsMatcherTx(cproto::Context& ctx, int64_t statetoken, int64_t version, p_string data, int64_t txID) noexcept {
@@ -489,8 +503,7 @@ Error RPCServer::SetTagsMatcherTx(cproto::Context& ctx, int64_t statetoken, int6
 		Serializer ser(data);
 		tm.deserialize(ser, int(version), int(statetoken));
 		return tr.SetTagsMatcher(std::move(tm), ctx.call->lsn);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 }
 
 Error RPCServer::CommitTx(cproto::Context& ctx, int64_t txId, std::optional<int> flagsOpts) {
@@ -521,7 +534,7 @@ Error RPCServer::CommitTx(cproto::Context& ctx, int64_t txId, std::optional<int>
 			opts = ResultFetchOpts{.flags = flags, .tmVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 		}
 		clearTx(ctx, txId);
-		return sendResults(ctx, qres, RPCQrId(), opts);
+		return sendResults(ctx, qres, RPCQrId(), opts, getClientDataSafe(ctx)->caps);
 	}
 	clearTx(ctx, txId);
 	return err;
@@ -670,28 +683,16 @@ Error RPCServer::ModifyItem(cproto::Context& ctx, p_string ns, int format, p_str
 		}
 	}
 
-	return sendResults(ctx, qres, RPCQrId(), opts);
-}
-
-static h_vector<int32_t, 4> pack2vec(p_string pack) {
-	// Get array of TagsMatcher versions from serialized string
-	Serializer ser(pack.data(), pack.size());
-	h_vector<int32_t, 4> vec;
-	int cnt = ser.GetVarUInt();
-	vec.reserve(cnt);
-	for (int i = 0; i < cnt; i++) {
-		vec.emplace_back(ser.GetVarUInt());
-	}
-	return vec;
+	return sendResults(ctx, qres, RPCQrId(), opts, getClientDataSafe(ctx)->caps);
 }
 
 Error RPCServer::DeleteQuery(cproto::Context& ctx, p_string queryBin, std::optional<int> flagsOpts,
 							 std::optional<p_string> tmVersionsPck) noexcept {
 	try {
 		Serializer ser(queryBin.data(), queryBin.size());
-		Query query = Query::Deserialize(ser);
+		const auto caps = getClientDataSafe(ctx)->caps;
+		Query query = Query::Deserialize(ser, caps.GetQueryFormat());
 		query.type_ = QueryDelete;
-
 		ActiveQueryScope scope(query, QueryDelete);
 		const int flags = flagsOpts ? flagsOpts.value() : kResultsWithItemID;
 		QueryResults qres(flags);
@@ -704,18 +705,17 @@ Error RPCServer::DeleteQuery(cproto::Context& ctx, p_string queryBin, std::optio
 			tmVersions = pack2vec(*tmVersionsPck);
 		}
 		ResultFetchOpts opts{.flags = flags, .tmVersions = tmVersions, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
-		return sendResults(ctx, qres, RPCQrId(), opts);
-	}
-	CATCH_AND_RETURN;
+		return sendResults(ctx, qres, RPCQrId(), opts, caps);
+	} CATCH_AND_RETURN;
 }
 
 Error RPCServer::UpdateQuery(cproto::Context& ctx, p_string queryBin, std::optional<int> flagsOpts,
 							 std::optional<p_string> tmVersionsPck) noexcept {
 	try {
 		Serializer ser(queryBin.data(), queryBin.size());
-		Query query = Query::Deserialize(ser);
+		const auto caps = getClientDataSafe(ctx)->caps;
+		Query query = Query::Deserialize(ser, caps.GetQueryFormat());
 		query.type_ = QueryUpdate;
-
 		ActiveQueryScope scope(query, QueryUpdate);
 		const int flags = flagsOpts ? flagsOpts.value() : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 		QueryResults qres(flags);
@@ -729,9 +729,8 @@ Error RPCServer::UpdateQuery(cproto::Context& ctx, p_string queryBin, std::optio
 			tmVersions = pack2vec(*tmVersionsPck);
 		}
 		ResultFetchOpts opts{.flags = flags, .tmVersions = tmVersions, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
-		return sendResults(ctx, qres, RPCQrId(), opts);
-	}
-	CATCH_AND_RETURN;
+		return sendResults(ctx, qres, RPCQrId(), opts, caps);
+	} CATCH_AND_RETURN;
 }
 
 Reindexer RPCServer::getDB(cproto::Context& ctx, UserRole role) {
@@ -775,16 +774,16 @@ void RPCServer::cleanupTmpNamespaces(RPCClientData& clientData, std::string_view
 	}
 }
 
-Error RPCServer::sendResults(cproto::Context& ctx, QueryResults& qres, RPCQrId id, const ResultFetchOpts& opts) {
-	auto data = getClientDataSafe(ctx);
+Error RPCServer::sendResults(cproto::Context& ctx, QueryResults& qres, RPCQrId id, const ResultFetchOpts& opts, BindingCapabilities caps,
+							 bool allowRawProxying) {
 	uint8_t serBuf[0x2000];
 	WrResultSerializer rser(serBuf, opts);
 	try {
 		bool doClose = false;
-		if (qres.IsRawProxiedBufferAvailable(opts.flags) && rser.IsRawResultsSupported(data->caps, qres)) {
-			doClose = rser.PutResultsRaw(qres);
+		if (allowRawProxying && qres.IsRawProxiedBufferAvailable(opts.flags, caps) && rser.IsRawResultsSupported(caps, qres)) {
+			doClose = rser.PutResultsRaw(qres, caps);
 		} else {
-			doClose = rser.PutResults(qres, data->caps);
+			doClose = rser.PutResults(qres, caps);
 		}
 		if (doClose && id.main >= 0) {
 			freeQueryResults(ctx, id);
@@ -1007,21 +1006,21 @@ void RPCServer::freeSnapshot(cproto::Context& ctx, int id) {
 
 Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int limit, p_string tmVersionsPck) {
 	Query query;
-	Serializer ser(queryBin);
+	Serializer ser{queryBin};
+	const auto* clientData{getClientDataSafe(ctx)};
+	const auto caps = clientData->caps;
 	try {
-		query = Query::Deserialize(ser);
+		query = Query::Deserialize(ser, caps.GetQueryFormat());
 	} catch (Error& err) {
 		return err;
 	}
-
 	ActiveQueryScope scope(query, QuerySelect);
-	const auto data = getClientDataSafe(ctx);
 	if (query.IsWALQuery()) {
-		query.Where(std::string("#slave_version"sv), CondEq, data->rxVersion.StrippedString());
+		query.Where(std::string("#slave_version"sv), CondEq, clientData->rxVersion.StrippedString());
 	}
 
 	RPCQrWatcher::Ref qres;
-	RPCQrId id{-1, data->caps.HasQrIdleTimeouts() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
+	RPCQrId id{-1, caps.HasQrIdleTimeouts() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
 	try {
 		qres = createQueryResults(ctx, id, flags);
 	} catch (Error& e) {
@@ -1036,11 +1035,13 @@ Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int 
 		freeQueryResults(ctx, id);
 		return ret;
 	}
+	(*qres).SetQuery(&query);
 	auto tmVersions = pack2vec(tmVersionsPck);
 	ResultFetchOpts opts{
 		.flags = flags, .tmVersions = tmVersions, .fetchOffset = 0, .fetchLimit = unsigned(limit), .withAggregations = true};
 
-	return sendResults(ctx, *qres, id, opts);
+	const bool allowRawProxying = query.GetJoinQueries().empty();
+	return sendResults(ctx, *qres, id, opts, caps, allowRawProxying);
 }
 
 Error RPCServer::ExecSQL(cproto::Context& ctx, p_string querySql, int flags, int limit, p_string tmVersionsPck) {
@@ -1070,7 +1071,7 @@ Error RPCServer::ExecSQL(cproto::Context& ctx, p_string querySql, int flags, int
 						 .withAggregations = true,
 						 .allowIncompleteTmVersions = true};
 
-	return sendResults(ctx, *qres, id, opts);
+	return sendResults(ctx, *qres, id, opts, data->caps);
 }
 
 Error RPCServer::FetchResults(cproto::Context& ctx, int reqId, int flags, int offset, int limit, std::optional<int64_t> qrUID) {
@@ -1088,7 +1089,7 @@ Error RPCServer::FetchResults(cproto::Context& ctx, int reqId, int flags, int of
 
 	ResultFetchOpts opts{
 		.flags = flags, .tmVersions = {}, .fetchOffset = unsigned(offset), .fetchLimit = unsigned(limit), .withAggregations = false};
-	return sendResults(ctx, *qres, id, opts);
+	return sendResults(ctx, *qres, id, opts, getClientDataSafe(ctx)->caps);
 }
 
 Error RPCServer::CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply) {
@@ -1294,8 +1295,7 @@ Error RPCServer::ShardingControlRequest(cproto::Context& ctx, p_string data) noe
 			ctx.Return({cproto::Arg(p_string(&slice))});
 		}
 		return err;
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 }
 
 Error RPCServer::LeadersPing(cproto::Context& ctx, p_string leader) {

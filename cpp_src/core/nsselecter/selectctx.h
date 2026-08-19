@@ -17,7 +17,7 @@ struct [[nodiscard]] SelectCtx {
 	explicit SelectCtx(const Query& query_, const Query* parentQuery_, FloatVectorsHolderMap* fvHolder) noexcept
 		: query(query_), offset(query.Offset()), limit(query.Limit()), parentQuery(parentQuery_), floatVectorsHolder(fvHolder) {}
 	const Query& query;
-	ItemsProcessors* joinItemsProcessors = nullptr;
+	std::span<joins::ItemsProcessor> joinItemsProcessors;
 	FtFunctionsHolder* functions = nullptr;
 	bool HasOffset() const noexcept { return offset != QueryEntry::kDefaultOffset; }
 	bool HasLimit() const noexcept { return limit != QueryEntry::kDefaultLimit; }

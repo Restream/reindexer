@@ -69,6 +69,7 @@ if (NOT WIN32)
     "core/reindexer.h" "core/type_consts.h" "core/type_formats.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/payload/payload_checksum.h"
     "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/id_type.h"
     "core/definitions/indexopts.h" "core/definitions/namespacedef.h" "core/definitions/indexdef.h" "core/definitions/quantization_config.h"
+    "core/embedding/circuitbreaker_defaults.h"
     "core/definitions/collateopts.h" "core/definitions/sortingprioritiestable.h"
     "core/rdxcontext.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
     "core/activity/activity_context.h" "core/activity/activity.h"

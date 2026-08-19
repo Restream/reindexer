@@ -18,12 +18,12 @@ class [[nodiscard]] ProxiedTransaction {
 public:
 	ProxiedTransaction(client::Transaction&& _tx, int shardId) : tx_(std::move(_tx)), shardId_(shardId), asyncData_(mtx_) {}
 
-	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn);
-	Error Modify(Query&& query, lsn_t lsn);
-	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn);
-	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
-	void Rollback(int serverId, const RdxContext& ctx);
-	Error Commit(int serverId, QueryResults& result, const RdxContext& ctx);
+	void Modify(Item&& item, ItemModifyMode mode, lsn_t lsn);
+	void Modify(Query&& query, lsn_t lsn);
+	void PutMeta(std::string_view key, std::string_view value, lsn_t lsn);
+	void SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
+	void Rollback(int serverId, const RdxContext& ctx) noexcept;
+	void Commit(int serverId, QueryResults& result, const RdxContext& ctx);
 
 private:
 	class [[nodiscard]] AsyncData {

@@ -81,7 +81,8 @@ protected:
 	Dispatcher& dispatcher_;
 	std::unique_ptr<ClientData> clientData_;
 	// leave here to prevent memory allocation
-	RPCCall call_ = {kCmdPing, 0, {}, std::chrono::milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
+	RPCCall call_ = {kCmdPing, 0,  kCprotoMinCompatVersion,		 {},   std::chrono::milliseconds(0),
+					 lsn_t(),  -1, ShardingKeyType::NotSetShard, false};
 
 	bool enableSnappy_ = false;
 	bool hasPendingData_ = false;

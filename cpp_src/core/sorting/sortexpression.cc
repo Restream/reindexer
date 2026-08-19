@@ -3,7 +3,7 @@
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joins/items_processor.h"
 #include "core/nsselecter/joins/items_processor_mock.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/iterators.h"
 #include "estl/charset.h"
 #include "reranker.h"
 #include "tools/stringstools.h"
@@ -49,12 +49,12 @@ using namespace SortExprFuncs;
 using namespace std::string_view_literals;
 
 const PayloadValue& SortExpression::getJoinedValue(IdType rowId, const joins::NamespaceResults& joinResults,
-												   const std::vector<joins::ItemsProcessor>& joinItemsProcessors, size_t nsIdx) {
+												   std::span<const joins::ItemsProcessor> joinItemsProcessors, size_t nsIdx) {
 	assertrx_throw(joinItemsProcessors.size() > nsIdx);
 	const auto& js = joinItemsProcessors[nsIdx];
 	const joins::ItemIterator jIt{&joinResults, rowId};
-	const auto jfIt = jIt.at(nsIdx);
-	if (jfIt == jIt.end() || jfIt.ItemsCount() == 0) {
+	const auto jfIt = jIt.At(nsIdx);
+	if (jfIt == jIt.End() || jfIt.ItemsCount() == 0) {
 		throw Error(errQueryExec, "Not found value joined from ns {}", js.RightNsName());
 	}
 	if (jfIt.ItemsCount() > 1) {
@@ -64,7 +64,7 @@ const PayloadValue& SortExpression::getJoinedValue(IdType rowId, const joins::Na
 }
 
 VariantArray SortExpression::GetJoinedFieldValues(IdType rowId, const joins::NamespaceResults& joinResults,
-												  const std::vector<joins::ItemsProcessor>& joinItemsProcessors, size_t nsIdx,
+												  std::span<const joins::ItemsProcessor> joinItemsProcessors, size_t nsIdx,
 												  std::string_view column, int index) {
 	const auto& js = joinItemsProcessors[nsIdx];
 	std::reference_wrapper<const PayloadType> pt =
@@ -137,7 +137,7 @@ double ProxiedDistanceFromPoint::GetValue(ConstPayload pv, TagsMatcher& tagsMatc
 }
 
 double JoinedIndex::GetValue(IdType rowId, const joins::NamespaceResults& joinResults,
-							 const std::vector<joins::ItemsProcessor>& joinItemsProcessors) const {
+							 std::span<const joins::ItemsProcessor> joinItemsProcessors) const {
 	const VariantArray values = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinItemsProcessors, nsIdx, column, index);
 	if (values.empty()) {
 		throw Error(errQueryExec, "Empty field in sort expression: {} {}", joinItemsProcessors[nsIdx].RightNsName(), column);
@@ -149,7 +149,7 @@ double JoinedIndex::GetValue(IdType rowId, const joins::NamespaceResults& joinRe
 }
 
 double DistanceJoinedIndexFromPoint::GetValue(IdType rowId, const joins::NamespaceResults& joinResults,
-											  const std::vector<joins::ItemsProcessor>& joinItemsProcessors) const {
+											  std::span<const joins::ItemsProcessor> joinItemsProcessors) const {
 	const VariantArray values = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinItemsProcessors, nsIdx, column, index);
 	return distance(static_cast<Point>(values), point);
 }
@@ -168,21 +168,21 @@ double ProxiedDistanceBetweenFields::GetValue(ConstPayload pv, TagsMatcher& tags
 
 double DistanceBetweenIndexAndJoinedIndex::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, IdType rowId,
 													const joins::NamespaceResults& joinResults,
-													const std::vector<joins::ItemsProcessor>& joinItemsProcessors) const {
+													std::span<const joins::ItemsProcessor> joinItemsProcessors) const {
 	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index, column);
 	const VariantArray values2 = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinItemsProcessors, jNsIdx, jColumn, jIndex);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
 
 double DistanceBetweenJoinedIndexes::GetValue(IdType rowId, const joins::NamespaceResults& joinResults,
-											  const std::vector<joins::ItemsProcessor>& joinItemsProcessors) const {
+											  std::span<const joins::ItemsProcessor> joinItemsProcessors) const {
 	const VariantArray values1 = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinItemsProcessors, nsIdx1, column1, index1);
 	const VariantArray values2 = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinItemsProcessors, nsIdx2, column2, index2);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
 
 double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::NamespaceResults& joinResults,
-													const std::vector<joins::ItemsProcessor>& joinItemsProcessors) const {
+													std::span<const joins::ItemsProcessor> joinItemsProcessors) const {
 	const auto& js = joinItemsProcessors[nsIdx];
 	std::reference_wrapper<const PayloadType> pt =
 		std::visit(overloaded{[](const joins::PreSelect::Values& values) noexcept { return std::cref(values.payloadType); },
@@ -213,7 +213,7 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 
 template <typename T>
 struct [[nodiscard]] ParseIndexNameResult {
-	typename std::vector<T>::const_iterator joinItemsProcessorIt;
+	typename std::span<T>::iterator joinItemsProcessorIt;
 	std::string name;
 };
 
@@ -223,11 +223,10 @@ constexpr static estl::Charset kIndexNameSyms{'a', 'b', 'c', 'd', 'e', 'f', 'g',
 											  'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+', '"'};
 
 template <typename T>
-static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std::vector<T>& joinItemsProcessors,
-											  std::string_view fullExpr) {
+static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, std::span<T> joinItemsProcessors, std::string_view fullExpr) {
 	auto pos = expr.data();
 	const auto end = expr.data() + expr.size();
-	auto joinItemsProcessorIt = joinItemsProcessors.cend();
+	auto joinItemsProcessorIt = joinItemsProcessors.end();
 	bool joinedFieldInQuotes = false;
 	size_t quotes = 0;
 	while (pos != end && *pos != '.' && kIndexNameSyms.test(*pos)) {
@@ -245,12 +244,12 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 		}
 
 		++pos;
-		joinItemsProcessorIt = std::find_if(joinItemsProcessors.cbegin(), joinItemsProcessors.cend(),
+		joinItemsProcessorIt = std::find_if(joinItemsProcessors.begin(), joinItemsProcessors.end(),
 											[namespaceName](const T& js) { return iequals(namespaceName, js.RightNsName()); });
-		if (joinItemsProcessorIt != joinItemsProcessors.cend()) {
-			if (std::find_if(joinItemsProcessorIt + 1, joinItemsProcessors.cend(), [namespaceName](const T& js) {
+		if (joinItemsProcessorIt != joinItemsProcessors.end()) {
+			if (std::find_if(joinItemsProcessorIt + 1, joinItemsProcessors.end(), [namespaceName](const T& js) {
 					return iequals(namespaceName, js.RightNsName());
-				}) != joinItemsProcessors.cend()) {
+				}) != joinItemsProcessors.end()) {
 				throwParseError(fullExpr, pos - fullExpr.data(),
 								fmt::format("Sorting by namespace which has been joined more than once: '{}'", namespaceName));
 			}
@@ -355,20 +354,20 @@ static Point parsePoint(std::string_view& expr, std::string_view funcName, std::
 }
 
 template <typename T, typename SkipSW>
-void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>& joinItemsProcessors, const std::string_view fullExpr,
+void SortExpression::parseDistance(std::string_view& expr, std::span<T> joinItemsProcessors, const std::string_view fullExpr,
 								   const ArithmeticOpType op, const bool negative, const SkipSW& skipSpaces) {
 	skipSpaces();
 	const auto parsedIndexName1 = parseIndexName(expr, joinItemsProcessors, fullExpr);
 	skipSpaces();
-	if (parsedIndexName1.joinItemsProcessorIt != joinItemsProcessors.cend()) {
+	if (parsedIndexName1.joinItemsProcessorIt != joinItemsProcessors.end()) {
 		if (expr.empty() || expr[0] != ',') {
 			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','");
 		}
 		expr.remove_prefix(1);
 		skipSpaces();
-		const size_t jNsIdx1 = static_cast<size_t>(parsedIndexName1.joinItemsProcessorIt - joinItemsProcessors.cbegin());
+		const size_t jNsIdx1 = static_cast<size_t>(parsedIndexName1.joinItemsProcessorIt - joinItemsProcessors.begin());
 		const auto parsedIndexName2 = parseIndexName(expr, joinItemsProcessors, fullExpr);
-		if (parsedIndexName2.joinItemsProcessorIt != joinItemsProcessors.cend()) {
+		if (parsedIndexName2.joinItemsProcessorIt != joinItemsProcessors.end()) {
 			if (parsedIndexName1.joinItemsProcessorIt == parsedIndexName2.joinItemsProcessorIt) {
 				if (iequals(parsedIndexName1.name, parsedIndexName2.name)) {
 					throwParseError(fullExpr, expr.data() - fullExpr.data(), "Distance between two identical indexes");
@@ -379,13 +378,13 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 				std::ignore = Append(
 					{op, negative},
 					DistanceBetweenJoinedIndexes{jNsIdx1, std::move(parsedIndexName1.name),
-												 static_cast<size_t>(parsedIndexName2.joinItemsProcessorIt - joinItemsProcessors.cbegin()),
+												 static_cast<size_t>(parsedIndexName2.joinItemsProcessorIt - joinItemsProcessors.begin()),
 												 std::move(parsedIndexName2.name)});
 			}
 		} else {
 			skipSpaces();
 			if (!expr.empty() && expr[0] == '(') {
-				const auto point = parsePoint(expr, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
+				const auto point = parsePoint(expr, ToLower(parsedIndexName2.name), fullExpr, skipSpaces);
 				std::ignore = Append({op, negative}, DistanceJoinedIndexFromPoint{jNsIdx1, std::move(parsedIndexName1.name), point});
 			} else {
 				std::ignore = Append({op, negative}, DistanceBetweenIndexAndJoinedIndex{std::move(parsedIndexName2.name), jNsIdx1,
@@ -393,7 +392,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 			}
 		}
 	} else if (!expr.empty() && expr[0] == '(') {
-		const auto point = parsePoint(expr, toLower(parsedIndexName1.name), fullExpr, skipSpaces);
+		const auto point = parsePoint(expr, ToLower(parsedIndexName1.name), fullExpr, skipSpaces);
 		skipSpaces();
 		if (expr.empty() || expr[0] != ',') {
 			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Expected ','");
@@ -405,9 +404,9 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		if (!expr.empty() && expr[0] == '(') {
 			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Allowed only one function inside ST_Geometry");
 		}
-		if (parsedIndexName2.joinItemsProcessorIt != joinItemsProcessors.cend()) {
+		if (parsedIndexName2.joinItemsProcessorIt != joinItemsProcessors.end()) {
 			std::ignore = Append({op, negative}, DistanceJoinedIndexFromPoint{static_cast<size_t>(parsedIndexName2.joinItemsProcessorIt -
-																								  joinItemsProcessors.cbegin()),
+																								  joinItemsProcessors.begin()),
 																			  std::move(parsedIndexName2.name), point});
 		} else {
 			std::ignore = Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName2.name), point});
@@ -419,16 +418,16 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		expr.remove_prefix(1);
 		skipSpaces();
 		const auto parsedIndexName2 = parseIndexName(expr, joinItemsProcessors, fullExpr);
-		if (parsedIndexName2.joinItemsProcessorIt != joinItemsProcessors.cend()) {
-			std::ignore =
-				Append({op, negative}, DistanceBetweenIndexAndJoinedIndex{
-										   std::move(parsedIndexName1.name),
-										   static_cast<size_t>(parsedIndexName2.joinItemsProcessorIt - joinItemsProcessors.cbegin()),
-										   std::move(parsedIndexName2.name)});
+		if (parsedIndexName2.joinItemsProcessorIt != joinItemsProcessors.end()) {
+			std::ignore = Append(
+				{op, negative},
+				DistanceBetweenIndexAndJoinedIndex{std::move(parsedIndexName1.name),
+												   static_cast<size_t>(parsedIndexName2.joinItemsProcessorIt - joinItemsProcessors.begin()),
+												   std::move(parsedIndexName2.name)});
 		} else {
 			skipSpaces();
 			if (!expr.empty() && expr[0] == '(') {
-				const auto point = parsePoint(expr, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
+				const auto point = parsePoint(expr, ToLower(parsedIndexName2.name), fullExpr, skipSpaces);
 				std::ignore = Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName1.name), point});
 			} else {
 				if (iequals(parsedIndexName1.name, parsedIndexName2.name)) {
@@ -443,7 +442,7 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 }
 
 template <typename T, typename SkipSW>
-void SortExpression::parseRank(std::string_view& expr, const std::vector<T>& joinItemsProcessors, const std::string_view fullExpr,
+void SortExpression::parseRank(std::string_view& expr, std::span<T> joinItemsProcessors, const std::string_view fullExpr,
 							   const ArithmeticOpType op, const bool negative, const SkipSW& skipSpaces) {
 	using namespace double_conversion;
 	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_TRAILING_JUNK |
@@ -453,7 +452,7 @@ void SortExpression::parseRank(std::string_view& expr, const std::vector<T>& joi
 	skipSpaces();
 	if (!expr.empty() && expr[0] != ')') {
 		auto rankIndexName = parseIndexName(expr, joinItemsProcessors, fullExpr);
-		if (rankIndexName.joinItemsProcessorIt != joinItemsProcessors.cend()) {
+		if (rankIndexName.joinItemsProcessorIt != joinItemsProcessors.end()) {
 			throwParseError(fullExpr, expr.data() - fullExpr.data(), "Rank by joined field '" + rankIndexName.name + '\'');
 		}
 		skipSpaces();
@@ -477,7 +476,7 @@ void SortExpression::parseRank(std::string_view& expr, const std::vector<T>& joi
 
 template <typename T>
 std::string_view SortExpression::parse(std::string_view expr, bool* containIndexOrFunction, bool* isRrf, const std::string_view fullExpr,
-									   const std::vector<T>& joinItemsProcessors) {
+									   std::span<T> joinItemsProcessors) {
 	using namespace double_conversion;
 	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_TRAILING_JUNK |
 													   StringToDoubleConverter::ALLOW_TRAILING_SPACES |
@@ -520,11 +519,11 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				CloseBracket();
 			} else if (expr[0] == '"') {
 				auto parsedIndexName = parseIndexName(expr, joinItemsProcessors, fullExpr);
-				if (parsedIndexName.joinItemsProcessorIt == joinItemsProcessors.cend()) {
+				if (parsedIndexName.joinItemsProcessorIt == joinItemsProcessors.end()) {
 					skipSpaces();
 					std::ignore = Append<SortExprFuncs::Index>({op, negative}, std::move(parsedIndexName.name));
 				} else {
-					auto dist = static_cast<size_t>(parsedIndexName.joinItemsProcessorIt - joinItemsProcessors.cbegin());
+					auto dist = static_cast<size_t>(parsedIndexName.joinItemsProcessorIt - joinItemsProcessors.begin());
 					std::ignore = Append<JoinedIndex>({op, negative}, dist, std::move(parsedIndexName.name));
 				}
 				*containIndexOrFunction = true;
@@ -536,11 +535,11 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 					expr.remove_prefix(countOfCharsParsedAsDouble);
 				} else {
 					auto parsedIndexName = parseIndexName(expr, joinItemsProcessors, fullExpr);
-					if (parsedIndexName.joinItemsProcessorIt == joinItemsProcessors.cend()) {
+					if (parsedIndexName.joinItemsProcessorIt == joinItemsProcessors.end()) {
 						skipSpaces();
 						if (!expr.empty() && expr[0] == '(') {
 							expr.remove_prefix(1);
-							const auto funcName = toLower(parsedIndexName.name);
+							const auto funcName = ToLower(parsedIndexName.name);
 							if (funcName == "rank"sv) {
 								parseRank(expr, joinItemsProcessors, fullExpr, op, negative, skipSpaces);
 							} else if (funcName == "rrf"sv) {
@@ -612,7 +611,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 						}
 					} else {
 						std::ignore = Append<JoinedIndex>(
-							{op, negative}, static_cast<size_t>(parsedIndexName.joinItemsProcessorIt - joinItemsProcessors.cbegin()),
+							{op, negative}, static_cast<size_t>(parsedIndexName.joinItemsProcessorIt - joinItemsProcessors.begin()),
 							std::move(parsedIndexName.name));
 					}
 					*containIndexOrFunction = true;
@@ -655,7 +654,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 }
 
 template <typename T>
-SortExpression SortExpression::Parse(std::string_view expression, const std::vector<T>& joinItemsProcessor) {
+SortExpression SortExpression::Parse(std::string_view expression, std::span<T> joinItemsProcessor) {
 	SortExpression result;
 	bool containIndexOrFunction = false;
 	bool isRrf = false;
@@ -673,10 +672,14 @@ SortExpression SortExpression::Parse(std::string_view expression, const std::vec
 	return result;
 }
 
-template SortExpression SortExpression::Parse(std::string_view, const std::vector<joins::ItemsProcessor>&);
-template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinItemsProcessorMock>&);
-template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedNsNameMock>&);
-template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedQuery>&);
+template SortExpression SortExpression::Parse(std::string_view, std::span<const joins::ItemsProcessor>);
+template SortExpression SortExpression::Parse(std::string_view, std::span<joins::ItemsProcessor>);
+template SortExpression SortExpression::Parse(std::string_view, std::span<const JoinItemsProcessorMock>);
+template SortExpression SortExpression::Parse(std::string_view, std::span<JoinItemsProcessorMock>);
+template SortExpression SortExpression::Parse(std::string_view, std::span<const JoinedNsNameMock>);
+template SortExpression SortExpression::Parse(std::string_view, std::span<JoinedNsNameMock>);
+template SortExpression SortExpression::Parse(std::string_view, std::span<const JoinedQuery>);
+template SortExpression SortExpression::Parse(std::string_view, std::span<JoinedQuery>);
 
 [[noreturn]] void throwDivisionByZero() { throw Error(errQueryExec, "Division by zero in sort expression"sv); }
 
@@ -688,7 +691,7 @@ static double CalcSortHash(IdType rowId, uint32_t seed, uint32_t shardIdHash) no
 }
 
 double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv,
-								 const joins::NamespaceResults* joinedResults, const std::vector<joins::ItemsProcessor>& js, RankT rank,
+								 const joins::NamespaceResults* joinedResults, std::span<const joins::ItemsProcessor> js, RankT rank,
 								 TagsMatcher& tagsMatcher, uint32_t shardIdHash) {
 	assertrx_throw(it != end);
 	assertrx_throw(it->operation.op == OpPlus);
@@ -702,8 +705,8 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 				return (b.IsAbs() && res < 0) ? -res : res;
 			},
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const Value& v) RX_POST_LMBD_ALWAYS_INLINE { return v.value; },
-			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(const SortExprFuncs::Index& i)
-				RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
+			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(
+				const SortExprFuncs::Index& i) RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
 			[rowId, joinedResults, &js] RX_PRE_LMBD_ALWAYS_INLINE(const JoinedIndex& i) RX_POST_LMBD_ALWAYS_INLINE {
 				assertrx_throw(joinedResults);
 				return i.GetValue(rowId, *joinedResults, js);
@@ -714,15 +717,15 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 				throw Error(errNotValid, "Reciprocal rank fusion (RRF) is allowed in hybrid queries only");
 			},
 			[rowId, shardIdHash] RX_PRE_LMBD_ALWAYS_INLINE(const SortExprFuncs::SortHash& sortHash)
-				RX_POST_LMBD_ALWAYS_INLINE { return CalcSortHash(rowId, sortHash.Seed(), shardIdHash); },
-			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceFromPoint& i)
-				RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
+			RX_POST_LMBD_ALWAYS_INLINE { return CalcSortHash(rowId, sortHash.Seed(), shardIdHash); },
+			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(
+				const DistanceFromPoint& i) RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
 			[rowId, joinedResults, &js] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceJoinedIndexFromPoint& i) RX_POST_LMBD_ALWAYS_INLINE {
 				assertrx_throw(joinedResults);
 				return i.GetValue(rowId, *joinedResults, js);
 			},
-			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceBetweenIndexes& i)
-				RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
+			[&pv, &tagsMatcher] RX_PRE_LMBD_ALWAYS_INLINE(
+				const DistanceBetweenIndexes& i) RX_POST_LMBD_ALWAYS_INLINE { return i.GetValue(pv, tagsMatcher); },
 			[&] RX_PRE_LMBD_ALWAYS_INLINE(const DistanceBetweenIndexAndJoinedIndex& i) RX_POST_LMBD_ALWAYS_INLINE {
 				assertrx_throw(joinedResults);
 				return i.GetValue(pv, tagsMatcher, rowId, *joinedResults, js);

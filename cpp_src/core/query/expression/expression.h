@@ -12,7 +12,7 @@ public:
 	virtual ~Expression() = default;
 
 	virtual void Serialize(WrSerializer&) const {}
-	static ExpressionValue Deserialize(Serializer&);
+	static ExpressionValue Deserialize(Serializer&, QueryFormat);
 
 	ExpressionType Type() const noexcept { return type_; }
 
@@ -62,7 +62,8 @@ private:
 
 class [[nodiscard]] SubQuery : public Expression {
 public:
-	SubQuery(const Query& subQuery) : Expression(ExpressionTypeSubQuery), subQuery_(subQuery) {}
+	SubQuery(const Query& subQuery, QueryFormat queryFormat)
+		: Expression(ExpressionTypeSubQuery), subQuery_(subQuery), queryFormat_(queryFormat) {}
 	~SubQuery() override = default;
 
 	void Serialize(WrSerializer& ser) const override;
@@ -71,6 +72,7 @@ public:
 
 private:
 	const Query& subQuery_;
+	const QueryFormat queryFormat_;
 };
 
 ExpressionType GetValueType(const ExpressionValue& value);

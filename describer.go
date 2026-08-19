@@ -107,6 +107,16 @@ type EmbedderInfo struct {
 	Status EmbedderStatus `json:"status"`
 }
 
+// TextIndexStats fulltext-specific virtual documents statistics from '#memstats'
+type TextIndexStats struct {
+	// Total number of virtual documents currently stored in the fulltext index
+	TotalVdocs int64 `json:"total_vdocs"`
+	// Number of removed virtual documents that are still kept until the next compaction
+	RemovedVdocs int64 `json:"removed_vdocs"`
+	// How many times the fulltext virtual documents storage has been compacted
+	VdocsCompactions int64 `json:"vdocs_compactions"`
+}
+
 // Operation counter and server id
 type LsnT = bindings.LsnT
 
@@ -221,6 +231,8 @@ type NamespaceMemStat struct {
 		TrackedUpdatesOverflow int64 `json:"tracked_updates_overflow"`
 		// Shows whether KNN/fulltext indexing structure is fully built. If this field is nil, index does not require any specific build steps
 		IsBuilt *bool `json:"is_built,omitempty"`
+		// Fulltext-specific virtual documents statistics. Present only for text indexes
+		TextIndexStats *TextIndexStats `json:"text_index_stats,omitempty"`
 		// Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
 		IsQuantized *bool `json:"is_quantized,omitempty"`
 		// Upsert embedder status

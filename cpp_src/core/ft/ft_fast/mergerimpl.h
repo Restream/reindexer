@@ -89,20 +89,9 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::mergePhrase(size_t phraseIdx, 
 	}
 }
 
-// idf=max(0.2, log((N-M+1)/M)/log(1+N))
-// N - document count
-// M - the number of documents in which the term was found
-// bm25= idf* T * (k1 + 1.0) / (T + k1 * (1.0 - b + b * wordsInDoc / avgDocLen)
-//  T - the number of terms in the document
-//  bm25_norm= (1.0 - weight) + b525 * boost * weight
-//  weight - fieldCfg.bm25Weight,
-//  boost - fieldCfg.bm25Boost
-//  subTermRank = opts.fieldsOpts[f].boost * termProc * bm25_norm * opts.boost * termLenBoost * positionRank
-//  positionRank - weight depending on the position of the word
-//  termLenBoost - weight depending on the length of the word
-//  termProc - weight depending on the type of subTerm
-//  docRank=summ(max(subTermRank))*255/allmax
-//  allmax=max(docRank)
+// occurrenceScore = queryBoost * subtermProc * bm25Norm * termLenBoost * positionRank  (× fieldBoost inside calcTermRank)
+// bm25: fulltext.md#basic-document-ranking-algorithms
+// Final rank pipeline: fulltext_ranking.md#how-document-rank-is-built
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 template <typename Bm25T, typename DocsStatsGetter>
@@ -323,6 +312,8 @@ void Merger<IdCont, MergeDataType, MergeOffsetT>::calcTermScores(TermResults<IdC
 	}
 }
 
+// Builds doc mask for required (+) terms and phrases before ranking.
+// See fulltext.md#binary-operators
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 void Merger<IdCont, MergeDataType, MergeOffsetT>::buildRestrictingBitmask(QueryMergeData<IdCont>& queryMergeData) {
 	restrictingMask_.resize(0);

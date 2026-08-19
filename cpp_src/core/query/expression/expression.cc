@@ -6,7 +6,7 @@
 
 namespace reindexer::expressions {
 
-ExpressionValue Expression::Deserialize(Serializer& ser) {
+ExpressionValue Expression::Deserialize(Serializer& ser, QueryFormat queryFormat) {
 	const auto type{ser.GetVarUInt()};
 	switch (type) {
 		case ExpressionTypeField: {
@@ -25,7 +25,7 @@ ExpressionValue Expression::Deserialize(Serializer& ser) {
 		}
 		case ExpressionTypeSubQuery: {
 			Serializer subQuery{ser.GetVString()};
-			return Query::Deserialize(subQuery);
+			return Query::Deserialize<Query>(subQuery, queryFormat);
 		}
 		default:
 			throw Error{errParams, "Error deserializing expression: type ({}) is not supported"};
@@ -67,7 +67,7 @@ void SubQuery::Serialize(WrSerializer& ser) const {
 	ser.PutVarUint(Type());
 	{
 		const auto sizePosSaver = ser.StartVString();
-		Get().Serialize(ser);
+		Get().Serialize(ser, Normal, queryFormat_);
 	}
 }
 

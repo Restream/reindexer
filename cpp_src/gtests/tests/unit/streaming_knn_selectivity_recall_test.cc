@@ -19,14 +19,13 @@ constexpr auto kGroupTreeInt = "group_tree_int";
 constexpr auto kGroupTreeStr = "group_tree_str";
 
 #if defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN)
-constexpr bool kIsRelease = false;
-constexpr size_t kDimension = 64;
-constexpr size_t kMaxElements = 2'000;
+#define STREAMING_KNN_IS_RELEASE 0
 #else
-constexpr bool kIsRelease = true;
-constexpr size_t kDimension = 768;
-constexpr size_t kMaxElements = 10'000;
+#define STREAMING_KNN_IS_RELEASE 1
 #endif
+constexpr bool kIsRelease = STREAMING_KNN_IS_RELEASE;
+constexpr size_t kDimension = kIsRelease ? 768 : 64;
+constexpr size_t kMaxElements = kIsRelease ? 10'000 : 2'000;
 
 constexpr size_t kTxBatchSize = 1'000;
 
@@ -413,28 +412,37 @@ protected:
 			return ScenarioResult::Failure;
 		}
 	}
+
+	void runSelectivityRecall(VectorMetric metric) {
+		const std::string nsName = std::string("fv_streaming_recall_") + std::string(VectorMetricToStr(metric));
+		setupNamespace(metric, nsName);
+		for (const auto& scenario : scenarios(metric)) {
+			ScenarioResult result = ScenarioResult::Failure;
+			for (int i = 0; i < kMaxRetries; ++i) {
+				result = runTestScenario(nsName, scenario, i);
+				if (result != ScenarioResult::Retry) {
+					break;
+				}
+			}
+			EXPECT_EQ(result, ScenarioResult::Success);
+		}
+	}
 };
 
-TEST_P(StreamingKnn, SelectivityRecallTest) try {
-	auto metric = GetParam();
-	const std::string nsName = std::string("fv_streaming_recall_") + std::string(VectorMetricToStr(metric));
-	setupNamespace(metric, nsName);
-	for (const auto& scenario : scenarios(metric)) {
-		ScenarioResult result = ScenarioResult::Failure;
-		for (int i = 0; i < kMaxRetries; ++i) {
-			result = runTestScenario(nsName, scenario, i);
-			if (result != ScenarioResult::Retry) {
-				break;
-			}
-		}
-		EXPECT_EQ(result, ScenarioResult::Success);
-	}
+#if !STREAMING_KNN_IS_RELEASE
+TEST_F(StreamingKnn, SelectivityRecallTest_RND) try {
+	const auto metric = reindexer_tests_tools::randMetric();
+	TEST_COUT << "Running test for '" << VectorMetricToStr(metric) << "'-metric" << std::endl;
+	runSelectivityRecall(metric);
 }
 CATCH_AND_ASSERT
-
-INSTANTIATE_TEST_SUITE_P(, StreamingKnn,
-						 ::testing::Values(reindexer::VectorMetric::L2, reindexer::VectorMetric::InnerProduct,
-										   reindexer::VectorMetric::Cosine),
-						 [](const auto& info) { return std::string(VectorMetricToStr(info.param)); });
+#else	// STREAMING_KNN_IS_RELEASE
+TEST_F(StreamingKnn, SelectivityRecallTest_L2) try { runSelectivityRecall(reindexer::VectorMetric::L2); }
+CATCH_AND_ASSERT
+TEST_F(StreamingKnn, SelectivityRecallTest_IP) try { runSelectivityRecall(reindexer::VectorMetric::InnerProduct); }
+CATCH_AND_ASSERT
+TEST_F(StreamingKnn, SelectivityRecallTest_Cosine) try { runSelectivityRecall(reindexer::VectorMetric::Cosine); }
+CATCH_AND_ASSERT
+#endif	// !STREAMING_KNN_IS_RELEASE
 
 }  // namespace reindexer_tests

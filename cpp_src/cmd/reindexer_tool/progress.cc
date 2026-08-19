@@ -2,18 +2,13 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <optional>
 #include <sstream>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <sys/ioctl.h>
-#include <unistd.h>
-#endif
-
+#include "tools/oscompat.h"
 #include "tools/terminalutils.h"
 
 namespace reindexer_tool {
@@ -60,7 +55,7 @@ static std::string makeProgressLine(std::string_view title, size_t current, size
 }
 
 static std::vector<std::string> makeProgressLines(std::string_view title, std::span<const ProgressInfo> progresses) {
-	constexpr size_t kMaxActiveProcesses = 3;
+	constexpr size_t kMaxActiveProcesses = 8;
 
 	size_t processed = 0;
 	size_t total = 0;
@@ -79,6 +74,7 @@ static std::vector<std::string> makeProgressLines(std::string_view title, std::s
 	if (total == 0) {
 		return {};
 	}
+	std::ranges::sort(lines);
 	lines.insert(lines.begin(), makeProgressLine(title, processed, total));
 	return lines;
 }
@@ -94,15 +90,15 @@ static std::optional<size_t> terminalWidthFromEnv() {
 	return std::nullopt;
 }
 
-static size_t terminalWidth() {
+static size_t terminalWidth(OutputStream outStream) {
 #ifdef _WIN32
 	CONSOLE_SCREEN_BUFFER_INFO info;
-	if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info)) {
+	if (GetConsoleScreenBufferInfo(GetStdHandle(outStream == OutputStream::Stdout ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE), &info)) {
 		return std::max<size_t>(1, info.srWindow.Right - info.srWindow.Left + 1);
 	}
 #else
 	winsize ws;
-	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
+	if (ioctl(outStream == OutputStream::Stdout ? STDOUT_FILENO : STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
 		return ws.ws_col;
 	}
 #endif
@@ -121,15 +117,25 @@ static std::string fitLine(std::string_view line, size_t maxWidth) {
 	return res;
 }
 
-ConsoleProgress::ConsoleProgress() noexcept
+ConsoleProgress::ConsoleProgress(OutputStream outStream, bool progressBar) noexcept
 	: lastPrint_(std::chrono::steady_clock::now() - kUpdateInterval),
-	  interactive_(!reindexer::isStdoutRedirected() && reindexer::isStdoutAnsiSupported()) {}
+	  out_(outStream == OutputStream::Stderr ? std::cerr : std::cout),
+	  interactive_(outStream == OutputStream::Stderr ? (!reindexer::isStderrRedirected() && reindexer::isStderrAnsiSupported())
+													 : (!reindexer::isStdoutRedirected() && reindexer::isStdoutAnsiSupported())),
+	  progressBar_(progressBar),
+	  outStream_(outStream) {}
 
 void ConsoleProgress::Print(std::string_view title, size_t current, size_t total) {
+	if (!progressBar_) {
+		return;
+	}
 	print(std::vector{makeProgressLine(title, current, total)});
 }
 
 void ConsoleProgress::Print(std::string_view title, std::span<const ProgressInfo> progressEntities) {
+	if (!progressBar_) {
+		return;
+	}
 	print(makeProgressLines(title, progressEntities));
 }
 
@@ -146,7 +152,7 @@ void ConsoleProgress::print(std::vector<std::string>&& lines) {
 	}
 	lastPrint_ = now;
 
-	const size_t maxLineWidth = std::max<size_t>(1, terminalWidth() - 1);
+	const size_t maxLineWidth = std::max<size_t>(1, terminalWidth(outStream_) - 1);
 	for (auto& line : lines) {
 		line = fitLine(line, maxLineWidth);
 	}
@@ -161,16 +167,16 @@ void ConsoleProgress::print(std::vector<std::string>&& lines) {
 	const size_t oldLineCount = lastLineLens_.size();
 
 	// Move the cursor to the beginning of the previously printed progress block.
-	std::cout << '\r';
+	out_ << '\r';
 	if (oldLineCount > 1) {
-		std::cout << kAnsiControlSequenceIntroducer << (oldLineCount - 1) << kAnsiCursorUp;
+		out_ << kAnsiControlSequenceIntroducer << (oldLineCount - 1) << kAnsiCursorUp;
 	}
 
 	// Rewrite actual progress lines from the top of the old block.
 	for (size_t i = 0; i < lines.size(); ++i) {
-		std::cout << kAnsiClearLine << '\r' << lines[i];
+		out_ << kAnsiClearLine << '\r' << lines[i];
 		if (i + 1 < lines.size()) {
-			std::cout << '\n';
+			out_ << '\n';
 		}
 	}
 
@@ -178,16 +184,16 @@ void ConsoleProgress::print(std::vector<std::string>&& lines) {
 		const size_t extraLines = oldLineCount - lines.size();
 		// Clear trailing lines left from the previous, longer progress block.
 		for (size_t i = 0; i < extraLines; ++i) {
-			std::cout << '\n' << kAnsiClearLine << '\r';
+			out_ << '\n' << kAnsiClearLine << '\r';
 		}
 		// Return the cursor to the end of the last currently visible progress line.
-		std::cout << kAnsiControlSequenceIntroducer << extraLines << kAnsiCursorUp;
+		out_ << kAnsiControlSequenceIntroducer << extraLines << kAnsiCursorUp;
 		if (!lines.back().empty()) {
-			std::cout << kAnsiControlSequenceIntroducer << lines.back().size() << kAnsiCursorRight;
+			out_ << kAnsiControlSequenceIntroducer << lines.back().size() << kAnsiCursorRight;
 		}
 	}
 
-	std::cout << std::flush;
+	out_ << std::flush;
 	lastLineLens_.resize(lines.size());
 	for (size_t i = 0; i < lines.size(); ++i) {
 		lastLineLens_[i] = lines[i].size();
@@ -196,13 +202,13 @@ void ConsoleProgress::print(std::vector<std::string>&& lines) {
 
 void ConsoleProgress::Done(std::string_view message) {
 	if (!interactive_) {
-		std::cout << message << std::endl;
+		out_ << message << std::endl;
 		return;
 	}
 	// To ensure that the message will be printed we set the last print time to the past
 	lastPrint_ -= kUpdateInterval;
 	print(std::vector{std::string{message}});
-	std::cout << std::endl;
+	out_ << std::endl;
 }
 
 }  // namespace reindexer_tool

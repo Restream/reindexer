@@ -655,6 +655,60 @@ func Benchmark2CondQueryLeftJoinCachedTotal(b *testing.B) {
 	}
 }
 
+func Benchmark2CondQueryLeftNestedJoin(b *testing.B) {
+	ctx := &TestJoinCtx{}
+	for b.Loop() {
+		qNested := DBD.Query("test_join_items").WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural").WhereInt("id", reindexer.LT, 7050)
+		q2 := DBD.Query("test_join_items").
+			WhereString("device", reindexer.SET, "ottstb", "smarttv", "stb").
+			WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural")
+		q2.Join(qNested, "nested_prices").On("parent_id", reindexer.EQ, "id")
+		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
+			WhereInt("genre", reindexer.EQ, 5).
+			WhereInt("year", reindexer.RANGE, 2010, 2016).
+			Join(q2, "prices").On("price_id", reindexer.SET, "id")
+		ctx.allPrices = ctx.allPrices[:0]
+		q.SetContext(ctx)
+		q.MustExec().FetchAll()
+	}
+}
+
+func Benchmark2CondQueryLeftNestedJoinTotal(b *testing.B) {
+	ctx := &TestJoinCtx{}
+	for b.Loop() {
+		qNested := DBD.Query("test_join_items").WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural").WhereInt("id", reindexer.LT, 7050)
+		q2 := DBD.Query("test_join_items").
+			WhereString("device", reindexer.SET, "ottstb", "smarttv", "stb").
+			WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural")
+		q2.Join(qNested, "nested_prices").On("parent_id", reindexer.EQ, "id")
+		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).ReqTotal().
+			WhereInt("genre", reindexer.EQ, 5).
+			WhereInt("year", reindexer.RANGE, 2010, 2016).
+			Join(q2, "prices").On("price_id", reindexer.SET, "id")
+		ctx.allPrices = ctx.allPrices[:0]
+		q.SetContext(ctx)
+		q.MustExec().FetchAll()
+	}
+}
+
+func Benchmark2CondQueryLeftNestedJoinCachedTotal(b *testing.B) {
+	ctx := &TestJoinCtx{}
+	for b.Loop() {
+		qNested := DBD.Query("test_join_items").WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural").WhereInt("id", reindexer.LT, 7050)
+		q2 := DBD.Query("test_join_items").
+			WhereString("device", reindexer.SET, "ottstb", "smarttv", "stb").
+			WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural")
+		q2.Join(qNested, "nested_prices").On("parent_id", reindexer.EQ, "id")
+		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).CachedTotal().
+			WhereInt("genre", reindexer.EQ, 5).
+			WhereInt("year", reindexer.RANGE, 2010, 2016).
+			Join(q2, "prices").On("price_id", reindexer.SET, "id")
+		ctx.allPrices = ctx.allPrices[:0]
+		q.SetContext(ctx)
+		q.MustExec().FetchAll()
+	}
+}
+
 func Benchmark2CondQueryInnerJoin(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for b.Loop() {
@@ -722,6 +776,60 @@ func Benchmark2CondQueryInnerJoinCachedTotal(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for b.Loop() {
 		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
+		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).CachedTotal().
+			WhereInt("genre", reindexer.EQ, 5).
+			WhereInt("year", reindexer.RANGE, 2010, 2016).
+			InnerJoin(q2, "prices").On("price_id", reindexer.SET, "id")
+		ctx.allPrices = ctx.allPrices[:0]
+		q.SetContext(ctx)
+		q.MustExec().FetchAll()
+	}
+}
+
+func Benchmark2CondQueryInnerNestedJoin(b *testing.B) {
+	ctx := &TestJoinCtx{}
+	for b.Loop() {
+		qNested := DBD.Query("test_join_items").WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural").WhereInt("id", reindexer.LT, 7050)
+		q2 := DBD.Query("test_join_items").
+			WhereString("device", reindexer.SET, "ottstb", "smarttv", "stb").
+			WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural")
+		q2.InnerJoin(qNested, "nested_prices").On("parent_id", reindexer.EQ, "id")
+		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).
+			WhereInt("genre", reindexer.EQ, 5).
+			WhereInt("year", reindexer.RANGE, 2010, 2016).
+			InnerJoin(q2, "prices").On("price_id", reindexer.SET, "id")
+		ctx.allPrices = ctx.allPrices[:0]
+		q.SetContext(ctx)
+		q.MustExec().FetchAll()
+	}
+}
+
+func Benchmark2CondQueryInnerNestedJoinTotal(b *testing.B) {
+	ctx := &TestJoinCtx{}
+	for b.Loop() {
+		qNested := DBD.Query("test_join_items").WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural").WhereInt("id", reindexer.LT, 7050)
+		q2 := DBD.Query("test_join_items").
+			WhereString("device", reindexer.SET, "ottstb", "smarttv", "stb").
+			WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural")
+		q2.InnerJoin(qNested, "nested_prices").On("parent_id", reindexer.EQ, "id")
+		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).ReqTotal().
+			WhereInt("genre", reindexer.EQ, 5).
+			WhereInt("year", reindexer.RANGE, 2010, 2016).
+			InnerJoin(q2, "prices").On("price_id", reindexer.SET, "id")
+		ctx.allPrices = ctx.allPrices[:0]
+		q.SetContext(ctx)
+		q.MustExec().FetchAll()
+	}
+}
+
+func Benchmark2CondQueryInnerNestedJoinCachedTotal(b *testing.B) {
+	ctx := &TestJoinCtx{}
+	for b.Loop() {
+		qNested := DBD.Query("test_join_items").WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural").WhereInt("id", reindexer.LT, 7050)
+		q2 := DBD.Query("test_join_items").
+			WhereString("device", reindexer.SET, "ottstb", "smarttv", "stb").
+			WhereString("location", reindexer.SET, "mos", "dv", "sib", "ural")
+		q2.InnerJoin(qNested, "nested_prices").On("parent_id", reindexer.EQ, "id")
 		q := DBD.Query(testBenchItemsNs).Limit(20).Sort("year", false).CachedTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).

@@ -356,8 +356,7 @@ Error Reindexer::ShutdownCluster() noexcept {
 	// No connection check required
 	try {
 		impl_->ShutdownCluster();
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 	return {};
 }
 Error Reindexer::Status() noexcept {
@@ -368,8 +367,7 @@ Error Reindexer::Version(std::string& version) const noexcept {
 	// No connection check required
 	try {
 		version = REINDEX_VERSION;
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 	return {};
 }
 

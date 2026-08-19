@@ -30,7 +30,7 @@ protected:
 		FieldsValueExtractorStrategy::StartArray();
 	}
 	template <typename T>
-	    requires std::is_trivially_copyable_v<T>
+		requires std::is_trivially_copyable_v<T>
 	void Array(const PathFilter& filter, TagIndex tagIndex, unaligned::view<T> data, unsigned offset,
 			   TreatAsSingleElement treatAsSingleElement = TreatAsSingleElement_False) {
 		FieldArrayAnalizerStrategy::Array(filter, tagIndex, data, offset, treatAsSingleElement);

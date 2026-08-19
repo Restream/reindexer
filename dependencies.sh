@@ -50,8 +50,8 @@ you can build and install openssl from source, following the instructions below:
 
 # declare dependencies arrays for systems
 osx_deps="gperftools leveldb snappy cmake git libomp"
-almalinux9_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel"
-almalinux8_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel"
+almalinux9_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel openssl-devel"
+almalinux8_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel openssl-devel"
 fedora_rpms=" gcc-c++ make cmake snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel openssl-devel"
 centos7_rpms="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git openblas-devel"
 debian_debs="build-essential g++ make cmake libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git libopenblas-pthread-dev libssl-dev"

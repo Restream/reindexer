@@ -18,7 +18,7 @@ public:
 	void FetchPreSelectResults(SelectIteratorContainer&) {}
 	void SetPreSelectValuesAfterSorting() {}
 	bool BuildPreSelect(SelectIteratorContainer&, SortingEntries&, LogLevel) { return true; }
-	bool ExecutePreSelect(int&) { return true; }
+	bool ExecutePreSelect(int) { return true; }
 	void BuildSelectIteratorsOfIndexedFields(int&, IsRanked, SelectIteratorContainer&, const RdxContext&, const FtFunction::Ptr&) {}
 
 protected:
@@ -49,12 +49,12 @@ public:
 		if (auto sortFieldEntry = selectCtx_.sortingContext.sortFieldEntryIfOrdered(); sortFieldEntry) {
 			preSelect.sortOrder = PreSelect::SortOrderContext{.index = sortFieldEntry->index, .sortingEntry = sortFieldEntry->data};
 		}
-		preSelect.properties.emplace(std::min(static_cast<int64_t>(iterators.GetMaxIterations()),
+		preSelect.properties.emplace(std::min(static_cast<int64_t>(iterators.GetPlanningBudget()),
 											  static_cast<int64_t>(NsSelecter::GetMaxScanIterations(ns_, selectCtx_.sortingContext))),
 									 ns_.config().maxIterationsIdSetPreSelect);
 		auto& preselectProps = preSelect.properties.value();
 		assertrx_throw(preselectProps.maxIterationsIdSetPreSelect > PreSelect::MaxIterationsForValuesOptimization);
-		if ((preSelect.storedValuesOptStatus == StoredValuesOptimizationStatus::Enabled) &&
+		if (preSelect.storedValuesOptStatus == PreSelect::ValuesOptimizationStatus::Enabled &&
 			preselectProps.qresMaxIterations <= PreSelect::MaxIterationsForValuesOptimization) {
 			preSelect.payload.template emplace<PreSelect::Values>(ns_.payloadType_, ns_.tagsMatcher_);
 		} else {
@@ -137,7 +137,7 @@ public:
 				   selectCtx_.preSelect.Result().payload);
 	}
 
-	RX_ALWAYS_INLINE bool ExecutePreSelect(int& maxIterations) {
+	RX_ALWAYS_INLINE bool ExecutePreSelect(int maxIterations) {
 		// Main sorting index must be the same during join preselect build and execution
 		assertrx_throw(selectCtx_.preSelect.Result().sortOrder.index == selectCtx_.sortingContext.sortIndexIfOrdered());
 		if (selectCtx_.preSelect.Mode() == PreSelectMode::ForInsertion &&
@@ -171,8 +171,8 @@ public:
 				if (iterators.GetOperation(i) == OpAnd && iterators.IsJoinIterator(i) &&
 					(iterators.Next(i) >= size || iterators.GetOperation(iterators.Next(i)) != OpOr)) {
 					const JoinSelectIterator& it = iterators.Get<JoinSelectIterator>(i);
-					assertrx_throw(selectCtx_.joinItemsProcessors && selectCtx_.joinItemsProcessors->size() > it.joinIndex);
-					ItemsProcessor& js = (*selectCtx_.joinItemsProcessors)[it.joinIndex];
+					assertrx_throw(selectCtx_.joinItemsProcessors.size() > it.joinIndex);
+					ItemsProcessor& js = selectCtx_.joinItemsProcessors[it.joinIndex];
 					js.BuildSelectIteratorsOfIndexedFields(&maxIterations, selectCtx_.sortingContext.sortId(), ftFunc, rdxCtx, iterators);
 				}
 			}

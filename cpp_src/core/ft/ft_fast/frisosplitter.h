@@ -182,11 +182,11 @@ class [[nodiscard]] FrisoTask final : public ISplitterTask {
 public:
 	void SetText(std::string_view t) noexcept override {
 		str = t;
-		words.clear();
-		wordsOffset.clear();
+		words.resize(0);
+		wordsOffset.resize(0);
 		idx = 0;
 		charCounter = 0;
-		utf8Buffer_.clear();
+		utf8Buffer_.resize(0);
 		unicode = 0;
 		pool.clear();
 		convertCounter = 0;

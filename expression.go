@@ -86,7 +86,7 @@ func (q SubQuery) Type() int {
 // Serialize writes the subquery tag and the nested query’s serialized buffer.
 func (s SubQuery) Serialize(ser *cjson.Serializer) {
 	ser.PutVarCUInt(int(s.Type()))
-	ser.PutVBytes(s.SubQuery.ser.Bytes())
+	serializeSubQuery(s.SubQuery, ser, s.SubQuery.queryFormatVersion)
 }
 
 func (f FlatArrayLen) FunctionType() int {

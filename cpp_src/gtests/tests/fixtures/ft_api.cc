@@ -51,7 +51,6 @@ reindexer::FTConfig FTApi::GetDefaultConfig(size_t fieldsCount) {
 	cfg.enableNumbersSearch = true;
 	cfg.logLevel = 5;
 	cfg.mergeLimit = 20000;
-	cfg.maxStepSize = 100;
 	cfg.optimization = GetParam();
 	return cfg;
 }

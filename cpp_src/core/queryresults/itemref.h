@@ -108,6 +108,7 @@ public:
 		assertrx(!valueInitialized_);
 		return sortExprResultsIdx_;
 	}
+	void SetNsid(uint16_t nsid) noexcept { nsid_ = nsid; }
 	void SetValue(PayloadValue&& value) noexcept {
 		assertrx(!valueInitialized_);
 		new (&value_) PayloadValue(std::move(value));
@@ -471,6 +472,7 @@ public:
 							  [b, e](RankedVec& v) { v.erase(b.Ranked(), e.Ranked()); }},
 				   variant_);
 	}
+	void Swap(ItemRefVector& other) noexcept { variant_.swap(other.variant_); }
 
 	reindexer::IsRanked IsRanked() const noexcept { return reindexer::IsRanked{std::holds_alternative<RankedVec>(variant_)}; }
 

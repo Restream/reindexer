@@ -10,15 +10,15 @@ Translit::Translit() {
 	PrepareEnglish();
 }
 
-void Translit::Transliterate(const std::wstring& data, h_vector<std::wstring, 5>& res) {
+void Translit::Transliterate(const std::u16string& data, h_vector<std::u16string, 5>& res) {
 	res.resize(0);
-	thread_local std::wstring strings[maxTranslitVariants];
+	thread_local std::u16string strings[maxTranslitVariants];
 	auto cleanup = MakeScopeGuard([] {
 		for (auto& s : strings) {
 			if (s.size() < 255) [[likely]] {
 				s.resize(0);
 			} else {
-				s = std::wstring();
+				s = std::u16string();
 			}
 		}
 	});
@@ -31,7 +31,7 @@ void Translit::Transliterate(const std::wstring& data, h_vector<std::wstring, 5>
 	}
 
 	for (size_t i = 0; i < data.length(); ++i) {
-		wchar_t symbol = data[i];
+		char16_t symbol = data[i];
 		if (symbol >= ruLettersStartUTF16 && symbol <= ruLettersStartUTF16 + ruAlphabetSize - 1) {	// russian symbol
 			for (int j = 0; j < maxTranslitVariants; ++j) {
 				assertrx_throw(symbol >= ruLettersStartUTF16 && symbol - ruLettersStartUTF16 < ruAlphabetSize);
@@ -76,7 +76,7 @@ void Translit::Transliterate(const std::wstring& data, h_vector<std::wstring, 5>
 	}
 }
 
-std::pair<uint8_t, wchar_t> Translit::GetEnglish(wchar_t symbol, size_t variant, Context& ctx) {
+std::pair<uint8_t, char16_t> Translit::GetEnglish(char16_t symbol, size_t variant, Context& ctx) {
 	assertrx_throw(symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < engAlphabetSize);
 
 	if (variant == 1 && ctx.GetCount() > 0) {
@@ -119,52 +119,52 @@ void Translit::Context::Clear() { total_count_ = 0; }
 void Translit::PrepareRussian() {
 	for (int i = 0; i < ruAlphabetSize; ++i) {
 		for (int j = 0; j < maxTranslitVariants; ++j) {
-			ru_buf_[i][j] = L"";
+			ru_buf_[i][j] = u"";
 		}
 	}
 
-	ru_buf_[0][0] = L"a";	  // а
-	ru_buf_[1][0] = L"b";	  // б
-	ru_buf_[2][0] = L"v";	  // в
-	ru_buf_[3][0] = L"g";	  // г
-	ru_buf_[4][0] = L"d";	  // д
-	ru_buf_[5][0] = L"e";	  // е
-	ru_buf_[6][0] = L"zh";	  // ж
-	ru_buf_[7][0] = L"z";	  // з
-	ru_buf_[8][0] = L"i";	  // и
-	ru_buf_[9][0] = L"y";	  // й
-	ru_buf_[9][1] = L"j";	  // й
-	ru_buf_[10][0] = L"k";	  // к
-	ru_buf_[11][0] = L"l";	  // л
-	ru_buf_[12][0] = L"m";	  // м
-	ru_buf_[13][0] = L"n";	  // н
-	ru_buf_[14][0] = L"o";	  // о
-	ru_buf_[15][0] = L"p";	  // п
-	ru_buf_[16][0] = L"r";	  // р
-	ru_buf_[17][0] = L"s";	  // с
-	ru_buf_[18][0] = L"t";	  // т
-	ru_buf_[19][0] = L"u";	  // у
-	ru_buf_[20][0] = L"f";	  // ф
-	ru_buf_[21][0] = L"kh";	  // х
-	ru_buf_[21][1] = L"h";	  // х
-	ru_buf_[21][2] = L"x";	  // х
-	ru_buf_[22][0] = L"c";	  // ц
-	ru_buf_[23][0] = L"ch";	  // ч
-	ru_buf_[24][0] = L"sh";	  // ш
-	ru_buf_[25][0] = L"shh";  // щ
-	ru_buf_[25][1] = L"w";	  // щ
-	ru_buf_[26][0] = L"jhh";  // ъ
-							  //	ru_buf_[26][1] = L"";	 //ъ
-	ru_buf_[27][0] = L"ih";	  // ы
-	ru_buf_[28][0] = L"jh";	  // ь
-	ru_buf_[28][1] = L"'";	  // ь
-	ru_buf_[29][0] = L"eh";	  // э
-	ru_buf_[29][1] = L"je";	  // э
-	ru_buf_[30][0] = L"ju";	  // ю
-	ru_buf_[30][1] = L"yu";	  // ю
-	ru_buf_[31][0] = L"ja";	  // я
-	ru_buf_[31][1] = L"ya";	  // я
-	ru_buf_[31][2] = L"q";	  // я
+	ru_buf_[0][0] = u"a";	  // а
+	ru_buf_[1][0] = u"b";	  // б
+	ru_buf_[2][0] = u"v";	  // в
+	ru_buf_[3][0] = u"g";	  // г
+	ru_buf_[4][0] = u"d";	  // д
+	ru_buf_[5][0] = u"e";	  // е
+	ru_buf_[6][0] = u"zh";	  // ж
+	ru_buf_[7][0] = u"z";	  // з
+	ru_buf_[8][0] = u"i";	  // и
+	ru_buf_[9][0] = u"y";	  // й
+	ru_buf_[9][1] = u"j";	  // й
+	ru_buf_[10][0] = u"k";	  // к
+	ru_buf_[11][0] = u"l";	  // л
+	ru_buf_[12][0] = u"m";	  // м
+	ru_buf_[13][0] = u"n";	  // н
+	ru_buf_[14][0] = u"o";	  // о
+	ru_buf_[15][0] = u"p";	  // п
+	ru_buf_[16][0] = u"r";	  // р
+	ru_buf_[17][0] = u"s";	  // с
+	ru_buf_[18][0] = u"t";	  // т
+	ru_buf_[19][0] = u"u";	  // у
+	ru_buf_[20][0] = u"f";	  // ф
+	ru_buf_[21][0] = u"kh";	  // х
+	ru_buf_[21][1] = u"h";	  // х
+	ru_buf_[21][2] = u"x";	  // х
+	ru_buf_[22][0] = u"c";	  // ц
+	ru_buf_[23][0] = u"ch";	  // ч
+	ru_buf_[24][0] = u"sh";	  // ш
+	ru_buf_[25][0] = u"shh";  // щ
+	ru_buf_[25][1] = u"w";	  // щ
+	ru_buf_[26][0] = u"jhh";  // ъ
+							  //	ru_buf_[26][1] = u"";	 //ъ
+	ru_buf_[27][0] = u"ih";	  // ы
+	ru_buf_[28][0] = u"jh";	  // ь
+	ru_buf_[28][1] = u"'";	  // ь
+	ru_buf_[29][0] = u"eh";	  // э
+	ru_buf_[29][1] = u"je";	  // э
+	ru_buf_[30][0] = u"ju";	  // ю
+	ru_buf_[30][1] = u"yu";	  // ю
+	ru_buf_[31][0] = u"ja";	  // я
+	ru_buf_[31][1] = u"ya";	  // я
+	ru_buf_[31][2] = u"q";	  // я
 
 	for (int i = 0; i < ruAlphabetSize; ++i) {
 		for (int j = 0; j < maxTranslitVariants; ++j) {
@@ -175,7 +175,7 @@ void Translit::PrepareRussian() {
 	}
 }
 
-bool Translit::CheckIsEn(wchar_t symbol) {
+bool Translit::CheckIsEn(char16_t symbol) {
 	return (symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < engAlphabetSize);
 }
 
@@ -189,36 +189,36 @@ void Translit::PrepareEnglish() {
 			size_t length = ru_buf_[i][j].size();
 
 			if (length == 1) {
-				wchar_t sym = ru_buf_[i][j][0];
+				char16_t sym = ru_buf_[i][j][0];
 
 				if (CheckIsEn(sym)) {
 					assertrx(sym != 0 && sym >= enLettersStartUTF16 && sym - enLettersStartUTF16 < engAlphabetSize);
-					en_buf_[ru_buf_[i][j][0] - enLettersStartUTF16] = wchar_t(i + ruLettersStartUTF16);
+					en_buf_[ru_buf_[i][j][0] - enLettersStartUTF16] = char16_t(i + ruLettersStartUTF16);
 				}
 
 			} else if (length == 2 && CheckIsEn(ru_buf_[i][j][0]) && CheckIsEn(ru_buf_[i][j][1])) {
-				wchar_t symFirst = ru_buf_[i][j][0];
-				wchar_t symSecond = ru_buf_[i][j][1];
+				char16_t symFirst = ru_buf_[i][j][0];
+				char16_t symSecond = ru_buf_[i][j][1];
 
 				if (CheckIsEn(symFirst) && CheckIsEn(symSecond)) {
 					assertrx(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < engAlphabetSize);
 					assertrx(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < engAlphabetSize);
 
 					en_d_buf_[ru_buf_[i][j][0] - enLettersStartUTF16][ru_buf_[i][j][1] - enLettersStartUTF16] =
-						wchar_t(i + ruLettersStartUTF16);
+						char16_t(i + ruLettersStartUTF16);
 				}
 
 			} else if (length == 3 && CheckIsEn(ru_buf_[i][j][0]) && CheckIsEn(ru_buf_[i][j][1]) && CheckIsEn(ru_buf_[i][j][2])) {
-				wchar_t symFirst = ru_buf_[i][j][0];
-				wchar_t symSecond = ru_buf_[i][j][1];
-				wchar_t symThird = ru_buf_[i][j][2];
+				char16_t symFirst = ru_buf_[i][j][0];
+				char16_t symSecond = ru_buf_[i][j][1];
+				char16_t symThird = ru_buf_[i][j][2];
 
 				if (CheckIsEn(symFirst) && CheckIsEn(symSecond) && CheckIsEn(symThird)) {
 					assertrx(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < engAlphabetSize);
 					assertrx(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < engAlphabetSize);
 					assertrx(symThird != 0 && symThird >= enLettersStartUTF16 && symThird - enLettersStartUTF16 < engAlphabetSize);
 					en_t_buf_[ru_buf_[i][j][0] - enLettersStartUTF16][ru_buf_[i][j][1] - enLettersStartUTF16]
-							 [ru_buf_[i][j][2] - enLettersStartUTF16] = wchar_t(i + ruLettersStartUTF16);
+							 [ru_buf_[i][j][2] - enLettersStartUTF16] = char16_t(i + ruLettersStartUTF16);
 				}
 			}
 		}

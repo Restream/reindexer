@@ -227,11 +227,11 @@ TEST_F(ClusterOperationExtrasApi, SynchronizationStatusOnInitialSyncTest) {
 		cluster.StopServers(0, kClusterSize);
 		constexpr size_t kRunningServerId = kClusterSize - 2;
 		ASSERT_TRUE(cluster.StartServer(kRunningServerId));
-		std::thread statThread([&cluster, &terminate]() noexcept {
+		std::thread statThread([&cluster, &terminate, kClusterSize]() noexcept {
 			while (!terminate) {
 				auto syncCount = cluster.GetSynchronizedNodesCount(kRunningServerId);
 				if (syncCount) {
-					ASSERT_GE(syncCount, 1);
+					ASSERT_LE(syncCount, kClusterSize);
 				}
 			}
 			size_t syncCount;

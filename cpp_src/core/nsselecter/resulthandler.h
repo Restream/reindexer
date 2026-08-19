@@ -1,8 +1,7 @@
 #pragma once
 
-#include "core/nsselecter/joins/items_processor.h"
 #include "core/nsselecter/joins/preselect.h"
-#include "core/nsselecter/joins/queryresults.h"
+#include "core/nsselecter/joins/results.h"
 #include "core/queryresults/localqueryresults.h"
 #include "estl/type_traits.h"
 #include "tools/logger.h"
@@ -126,15 +125,13 @@ private:
 	}
 
 	void calculateSortExpressions(Ctx& ctx, RankT rank, IdType rowId, const PayloadValue& pv, TagsMatcher& tm, const PayloadType& pt) {
-		const joins::ItemsProcessors emptyJoinItemsProcessors;
 		const auto& exprs = ctx.sortingContext.expressions;
 		auto& exprResults = ctx.sortingContext.exprResults;
 		assertrx_throw(exprs.size() == exprResults.size());
 		const ConstPayload item{pt, pv};
-		const auto& joinItemsProcessors = ctx.joinItemsProcessors ? *ctx.joinItemsProcessors : emptyJoinItemsProcessors;
-		const auto joinedResultPtr = ctx.nsid < result_.joined_.size() ? &result_.joined_[ctx.nsid] : nullptr;
+		const auto joinedResultPtr = ctx.nsid < result_.Joined().size() ? &result_.Joined()[ctx.nsid] : nullptr;
 		for (size_t i = 0; i < exprs.size(); ++i) {
-			exprResults[i].push_back(exprs[i].Calculate(rowId, item, joinedResultPtr, joinItemsProcessors, rank, tm, 0));
+			exprResults[i].emplace_back(exprs[i].Calculate(rowId, item, joinedResultPtr, ctx.joinItemsProcessors, rank, tm, 0));
 		}
 	}
 

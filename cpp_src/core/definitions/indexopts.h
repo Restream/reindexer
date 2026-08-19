@@ -3,6 +3,7 @@
 #include <optional>
 #include "core/definitions/collateopts.h"
 #include "core/definitions/quantization_config.h"
+#include "core/embedding/circuitbreaker_defaults.h"
 #include "core/enums.h"
 #include "core/type_consts_helpers.h"
 #include "estl/h_vector.h"
@@ -28,11 +29,19 @@ class [[nodiscard]] FloatVectorIndexOpts {
 	using FloatVectorDimensionInt = reindexer::FloatVectorDimension::value_type;
 
 public:
+	struct [[nodiscard]] CircuitBreakerOpts {
+		size_t threshold{EmbedderCircuitBreakerDefaults::kThreshold};
+		size_t threshold_timeout_ms{EmbedderCircuitBreakerDefaults::kThresholdTimeoutMs};
+		size_t cooldown_ms{EmbedderCircuitBreakerDefaults::kCooldownMs};
+
+		bool operator==(const CircuitBreakerOpts& o) const noexcept = default;
+	};
 	struct [[nodiscard]] PoolOpts {
 		size_t connections{10};
 		size_t connect_timeout_ms{300};
 		size_t read_timeout_ms{5'000};
 		size_t write_timeout_ms{5'000};
+		CircuitBreakerOpts circuit_breaker{};
 
 		bool operator==(const PoolOpts& o) const noexcept = default;
 	};

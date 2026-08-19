@@ -87,7 +87,7 @@ const uint32_t kMaxConcurrentQueries = 256;
 const uint32_t kMaxConcurentSnapshots = 8;
 
 const uint32_t kCprotoMagic = 0xEEDD1132;
-const uint32_t kCprotoVersion = 0x104;
+const uint32_t kCprotoVersion = 0x105;
 const uint32_t kCprotoMinCompatVersion = 0x101;
 const uint32_t kCprotoMinSnappyVersion = 0x103;
 const uint32_t kCprotoMinDedicatedThreadsVersion = 0x103;

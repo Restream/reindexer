@@ -28,6 +28,13 @@ struct [[nodiscard]] EmbedderStatus {
 	Error lastError;
 };
 
+struct [[nodiscard]] TextIndexStats {
+	void GetJSON(JsonBuilder& builder) const;
+	size_t totalVdocs = 0;
+	size_t removedVdocs = 0;
+	size_t vdocsCompactions = 0;
+};
+
 struct [[nodiscard]] IndexMemStat {
 	void GetJSON(JsonBuilder& builder) const;
 	std::string name;
@@ -44,6 +51,7 @@ struct [[nodiscard]] IndexMemStat {
 	size_t trackedUpdatesSize = 0;
 	size_t trackedUpdatesOverflow = 0;
 	std::optional<bool> isBuilt;  // KNN-indexes|fast-text indexes only
+	std::optional<TextIndexStats> textIndexStats;
 	LRUCacheMemStat idsetCache;
 	std::optional<EmbedderStatus> upsertEmbedderStatus;
 	std::optional<EmbedderStatus> queryEmbedderStatus;

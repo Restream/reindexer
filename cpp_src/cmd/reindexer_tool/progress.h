@@ -16,9 +16,11 @@ struct [[nodiscard]] ProgressInfo {
 	size_t activeWorkers = 0;
 };
 
+enum class [[nodiscard]] OutputStream { Stdout, Stderr };
+
 class [[nodiscard]] ConsoleProgress {
 public:
-	ConsoleProgress() noexcept;
+	explicit ConsoleProgress(OutputStream outStream = OutputStream::Stdout, bool progressBar = true) noexcept;
 
 	void Print(std::string_view title, size_t current, size_t total);
 	void Print(std::string_view title, std::span<const ProgressInfo> progressEntities);
@@ -31,7 +33,10 @@ private:
 
 	std::vector<size_t> lastLineLens_;
 	std::chrono::steady_clock::time_point lastPrint_;
+	std::ostream& out_;
 	bool interactive_;
+	bool progressBar_;
+	OutputStream outStream_;
 };
 
 }  // namespace reindexer_tool

@@ -90,12 +90,16 @@ public:
 	}
 
 	ProtobufBuilder ArrayNotPacked(concepts::TagNameOrIndex auto tag) {
-		assertrx_throw(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
+		if (type_ == ObjType::TypeArray || type_ == ObjType::TypeObjectArray) [[unlikely]] {
+			throw Error(errLogic, "Nested arrays are not supported in protobuf format");
+		}
 		return ProtobufBuilder(ser_, ObjType::TypeObjectArray, schema_, tm_, tagsPath_, tag);
 	}
 
 	ProtobufBuilder ArrayPacked(concepts::TagNameOrIndex auto tag) {
-		assertrx_throw(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
+		if (type_ == ObjType::TypeArray || type_ == ObjType::TypeObjectArray) [[unlikely]] {
+			throw Error(errLogic, "Nested arrays are not supported in protobuf format");
+		}
 		return ProtobufBuilder(ser_, ObjType::TypeArray, schema_, tm_, tagsPath_, tag);
 	}
 

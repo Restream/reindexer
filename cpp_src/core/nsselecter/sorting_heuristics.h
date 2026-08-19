@@ -25,8 +25,9 @@ struct [[nodiscard]] NamespaceData {
 bool IsSortOptimizationEffective(const QueryEntries& qentries, const SelectCtx& ctx, bool needCalcTotal, const NamespaceData& nsData,
 								 const RdxContext& rdxCtx);
 
-/** @brief Performs search for the isolated ordered index with highest selectivity and compatible conditions
- *  @returns Pointer to this index or nullprt
+/** @brief Performs search for the isolated ordered index with lowest estimated scan score
+ *  (capped condition key span) and compatible conditions
+ *  @returns Pointer to this index or nullptr
  */
 const Index* AdviceSortingIndex(const QueryEntries& qentries, const NamespaceData& nsData);
 

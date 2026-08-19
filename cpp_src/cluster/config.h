@@ -35,10 +35,19 @@ constexpr auto kStatusCmdTimeout = std::chrono::seconds(3);
 constexpr size_t kMaxRetriesOnRoleSwitchAwait = 50;
 constexpr auto kRoleSwitchStepTime = std::chrono::milliseconds(150);
 
+enum class [[nodiscard]] LeaderCommitState : uint8_t {
+	Unspecified,  // JSON key absent: SuggestLeader / legacy peer
+	Election,	  // phase-2 LeadersPing (leader_committed=false)
+	Committed	  // committed leader heartbeat (leader_committed=true)
+};
+
+[[nodiscard]] constexpr bool GrantsCommittedAvailability(LeaderCommitState state) noexcept { return state != LeaderCommitState::Election; }
+
 struct [[nodiscard]] NodeData {
 	int serverId = -1;
 	int electionsTerm = 0;
 	DSN dsn;
+	LeaderCommitState leaderCommitState = LeaderCommitState::Unspecified;
 
 	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& v);

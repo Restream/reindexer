@@ -5,6 +5,7 @@
 #include "events/observer.h"
 #include "iotools.h"
 #include "tools/fsops.h"
+#include "tools/hardware_concurrency.h"
 
 namespace reindexer_tool {
 
