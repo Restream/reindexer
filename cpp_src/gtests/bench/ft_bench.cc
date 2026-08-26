@@ -1,16 +1,12 @@
 #include <iostream>
 
 #include <benchmark/benchmark.h>
-#include "core/reindexer.h"
-#include "tools/fsops.h"
 #include "tools/reporter.h"
 
 #include "args/args.hpp"
 #include "ft_fixture.h"
-#include "ft_merge_limit.h"
 
-using std::shared_ptr;
-using reindexer::Reindexer;
+namespace reindexer_benchmarks {
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 const int kItemsInBenchDataset = 1'000;
@@ -20,36 +16,30 @@ const int kItemsInBenchDataset = 10'000;
 const int kItemsInBenchDataset = 100'000;
 #endif
 
-int main(int argc, char** argv) {
-	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/ft_bench_test");
-	if (reindexer::fs::RmDirAll(storagePath) < 0 && errno != ENOENT) {
-		std::cerr << "Could not clean working dir '" << storagePath << "'.";
-		std::cerr << "Reason: " << strerror(errno) << std::endl;
+int BenchMain(int argc, char** argv) {
+#ifdef HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
+	benchmark::MaybeReenterWithoutASLR(argc, argv);
+#endif	// HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
 
-		return 1;
-	}
-
-	auto DB = std::make_shared<Reindexer>();
-	auto err = DB->Connect("builtin://" + storagePath);
-	if (!err.ok()) {
-		return err.code();
-	}
+	using namespace std::string_view_literals;
+	auto DB = InitBenchDB("ft_bench_test"sv);
 
 	FullText ft(DB.get(), "fulltext", kItemsInBenchDataset);
 
-	err = ft.Initialize();
+	auto err = ft.Initialize();
 	if (!err.ok()) {
 		return err.code();
 	}
 
 	::benchmark::Initialize(&argc, argv);
-	std::optional<size_t> slowIterationCount;
-	std::optional<size_t> fastIterationCount;
+	std::optional<size_t> verySlowIterationCount, slowIterationCount, fastIterationCount;
 	if (argc > 1) {
 		try {
 			args::ArgumentParser parser("ft_bench additional args");
 			args::ValueFlag<size_t> siterCountF(parser, "SITERCOUNT", "iteration count for the slow cases", {"slow_iteration_count"},
 												args::Options::Single);
+			args::ValueFlag<size_t> vsiterCountF(parser, "VSITERCOUNT", "iteration count for the very slow cases",
+												 {"very_slow_iteration_count"}, args::Options::Single);
 			args::ValueFlag<size_t> fiterCountF(parser, "FITERCOUNT", "iteration count for the fast cases", {"fast_iteration_count"},
 												args::Options::Single);
 			parser.ParseCLI(argc, argv);
@@ -57,16 +47,20 @@ int main(int argc, char** argv) {
 				slowIterationCount = args::get(siterCountF);
 				argc--;	 // sub argument, otherwise need to rearrange the argv rows
 			}
+			if (vsiterCountF) {
+				verySlowIterationCount = args::get(vsiterCountF);
+				argc--;
+			}
 			if (fiterCountF) {
 				fastIterationCount = args::get(fiterCountF);
-				argc--;	 // sub additional argument, otherwise need to rearrange the argv rows
+				argc--;
 			}
 		} catch (const args::ParseError& e) {
 			std::cout << "argument parse error '" << e.what() << "'" << std::endl;
 			return 1;
 		}
 	}
-	ft.RegisterAllCases(fastIterationCount, slowIterationCount);
+	ft.RegisterAllCases(fastIterationCount, slowIterationCount, verySlowIterationCount);
 
 	// Disabled bench for large merge limits
 	// FullTextMergeLimit ftMergeLimit(DB.get(), "merge_limit", 100000);
@@ -77,9 +71,15 @@ int main(int argc, char** argv) {
 #ifdef _GLIBCXX_DEBUG
 	::benchmark::RunSpecifiedBenchmarks();
 #else	// #ifdef _GLIBCXX_DEBUG
-	benchmark::Reporter reporter;
+	Reporter reporter;
 	::benchmark::RunSpecifiedBenchmarks(&reporter);
 #endif	// #ifdef _GLIBCXX_DEBUG
+	::benchmark::Shutdown();
 
 	return 0;
 }
+
+}  // namespace reindexer_benchmarks
+
+// NOLINTNEXTLINE (bugprone-exception-escape) `main` is required to be in global namespace
+int main(int argc, char** argv) { return reindexer_benchmarks::BenchMain(argc, argv); }

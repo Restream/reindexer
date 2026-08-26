@@ -5,7 +5,11 @@
 #include "core/reindexer.h"
 #include "queries_verifier.h"
 
-class Fuzzing : public QueriesVerifier {
+namespace reindexer_tests {
+
+namespace fuzzing {
+
+class [[nodiscard]] Fuzzing : public QueriesVerifier {
 public:
 	void SetUp() override {
 		const auto err = rx_.Connect(dsn());
@@ -22,3 +26,7 @@ private:
 protected:
 	reindexer::Reindexer rx_;
 };
+
+}  // namespace fuzzing
+
+}  // namespace reindexer_tests

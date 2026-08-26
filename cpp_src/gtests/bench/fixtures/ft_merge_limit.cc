@@ -1,23 +1,28 @@
 #include "ft_merge_limit.h"
+#include "allocs_tracker.h"
 
-static uint8_t printFlags = benchmark::AllocsTracker::kPrintAllocs | benchmark::AllocsTracker::kPrintHold;
+#include "core/ft/config/ftconfig.h"
+
+using reindexer::IndexOpts;
+
+namespace reindexer_benchmarks {
+
+static uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
 FullTextMergeLimit::FullTextMergeLimit(Reindexer* db, const std::string& name, size_t maxItems)
 	: BaseFixture(db, name, maxItems, 1, false) {
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
 #endif
-	static reindexer::FtFastConfig ftCfg(1);
-	static IndexOpts ftIndexOpts;
-	ftCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+	static reindexer::FTConfig ftCfg(1);
+	ftCfg.optimization = reindexer::FTConfig::Optimization::Memory;
 	ftCfg.stopWords = {};
-	ftCfg.extraWordSymbols = "1234567890";
+	ftCfg.splitOptions.SetSymbols("1234567890", "");
 	ftCfg.mergeLimit = 0x1FFFFFF;
 	ftCfg.maxTypos = 0;
-	ftIndexOpts.config = ftCfg.GetJSON({});
-	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex(kFastIndexTextName_, "text", "string", ftIndexOpts);
+	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex(kIndexTextName_, "text", "string", IndexOpts().SetConfig(IndexFastFT, ftCfg.GetJSON({})));
 }
-
 void FullTextMergeLimit::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("Insert", &FullTextMergeLimit::Insert, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
@@ -66,7 +71,7 @@ std::unordered_set<int> FullTextMergeLimit::generateDistrib(int count) {
 
 reindexer::Item FullTextMergeLimit::MakeItem(benchmark::State&) {
 	auto item = db_->NewItem(nsdef_.name);
-	item.Unsafe(false);
+	std::ignore = item.Unsafe(false);
 	return item;
 }
 
@@ -82,16 +87,16 @@ void FullTextMergeLimit::Insert(State& state) {
 			indexes[m][v] = true;
 		}
 	}
-	benchmark::AllocsTracker allocsTracker(state, printFlags);
+	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		std::string phrase;
 		for (int h = 0; h < id_seq_->Count(); h++) {
 			auto item = db_->NewItem(nsdef_.name);
 			if (!item.Status().ok()) {
-				state.SkipWithError(item.Status().what().c_str());
+				state.SkipWithError(item.Status().what());
 				continue;
 			}
-			item.Unsafe(true);
+			std::ignore = item.Unsafe(true);
 			phrase.clear();
 			for (unsigned m = 0; m < indexes.size(); m++) {
 				if (indexes[m][h]) {
@@ -103,10 +108,10 @@ void FullTextMergeLimit::Insert(State& state) {
 				}
 			}
 			item["id"] = h;
-			item[kFastIndexTextName_] = phrase;
+			item[kIndexTextName_] = phrase;
 			auto err = db_->Upsert(nsdef_.name, item);
 			if (!err.ok()) {
-				state.SkipWithError(err.what().c_str());
+				state.SkipWithError(err.what());
 			}
 		}
 	}
@@ -114,30 +119,32 @@ void FullTextMergeLimit::Insert(State& state) {
 }
 
 void FullTextMergeLimit::BuildFastTextIndex(benchmark::State& state) {
-	benchmark::AllocsTracker allocsTracker(state, printFlags);
+	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, kWords_[0]).Limit(20);
+		q.Where(kIndexTextName_, CondEq, kWords_[0]).Limit(20);
 
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
 
 void FullTextMergeLimit::FastTextIndexSelect(benchmark::State& state, const std::string& qs) {
-	benchmark::AllocsTracker allocsTracker(state, printFlags);
+	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
-		q.Where(kFastIndexTextName_, CondEq, qs);
+		q.Where(kIndexTextName_, CondEq, qs);
 
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		state.SetLabel("select " + std::to_string(qres.Count()) + " documents");
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 	}
 }
+
+}  // namespace reindexer_benchmarks

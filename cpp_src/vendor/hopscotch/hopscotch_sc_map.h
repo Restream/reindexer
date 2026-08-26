@@ -520,6 +520,7 @@ public:
 	 * Other
 	 */
 	size_type overflow_size() const noexcept { return m_ht.overflow_size(); }
+	size_type allocated_mem_size() const noexcept { return m_ht.allocated_mem_size(); }
 
 	friend bool operator==(const hopscotch_sc_map& lhs, const hopscotch_sc_map& rhs) {
 		if (lhs.size() != rhs.size()) {

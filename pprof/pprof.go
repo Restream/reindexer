@@ -13,7 +13,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 	"unsafe"
 )
 
@@ -31,18 +30,7 @@ func init() {
 // The package initialization registers it as /debug/pprof/cmdline.
 func Cmdline(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintf(w, strings.Join(os.Args, "\x00"))
-}
-
-func sleep(w http.ResponseWriter, d time.Duration) {
-	var clientGone <-chan bool
-	if cn, ok := w.(http.CloseNotifier); ok {
-		clientGone = cn.CloseNotify()
-	}
-	select {
-	case <-time.After(d):
-	case <-clientGone:
-	}
+	io.WriteString(w, strings.Join(os.Args, "\x00"))
 }
 
 func ProfileHeap(w http.ResponseWriter, r *http.Request) {

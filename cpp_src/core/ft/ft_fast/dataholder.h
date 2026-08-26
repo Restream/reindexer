@@ -1,222 +1,190 @@
 #pragma once
+
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <unordered_map>
-#include "core/ft/areaholder.h"
-#include "core/ft/config/ftfastconfig.h"
-#include "core/ft/filters/itokenfilter.h"
-#include "core/ft/ft_fast/frisosplitter.h"
+#include <utility>
+#include <vector>
+#include "core/ft/config/ftconfig.h"
 #include "core/ft/ft_fast/splitter.h"
+#include "core/ft/ft_fast/suffixesholder.h"
+#include "core/ft/ft_fast/typosholder.h"
 #include "core/ft/idrelset.h"
-#include "core/ft/limits.h"
 #include "core/ft/stemmer.h"
-#include "core/ft/typos.h"
-#include "core/ft/usingcontainer.h"
-#include "core/index/ft_preselect.h"
-#include "core/index/indextext/ftkeyentry.h"
-#include "estl/flat_str_map.h"
-#include "estl/suffix_map.h"
+#include "core/ft/variants/kblayout.h"
+#include "core/ft/variants/synonyms.h"
+#include "core/ft/variants/translit.h"
+#include "estl/h_vector.h"
+#include "estl/intrusive_ptr.h"
 #include "indextexttypes.h"
+#include "tools/assertrx.h"
+#include "tools/background_thread_pool.h"
+#include "vendor/hopscotch/hopscotch_map.h"
 
 namespace reindexer {
 
-class RdxContext;
+using VDocsTexts = std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>>;
 
-// unique document in the namespace (if different rows contain the same text document, then it will correspond to one vdoc)
-struct VDocEntry {
-#ifdef REINDEX_FT_EXTRA_DEBUG
-	std::string keyDoc;
-#endif
-
-	const FtKeyEntryData* keyEntry{nullptr};
-	RVector<float, 3> wordsCount;
-	RVector<float, 3> mostFreqWordCount;
+struct [[nodiscard]] Occurence {
+	VDocIdType docId = 0;
+	uint32_t link = std::numeric_limits<uint32_t>::max();
+	PosType pos;
 };
 
-// documents for the word
-template <typename IdCont>
-class PackedWordEntry {
+class [[nodiscard]] NewWordsOccurences {
 public:
-	PackedWordEntry() noexcept = default;
-	PackedWordEntry(const PackedWordEntry&) = delete;
-	PackedWordEntry(PackedWordEntry&&) noexcept = default;
-	PackedWordEntry& operator=(const PackedWordEntry&) = delete;
-	PackedWordEntry& operator=(PackedWordEntry&&) noexcept = default;
+	static constexpr uint32_t kInvalidLink = std::numeric_limits<uint32_t>::max();
+	using WordIndices = std::pair<uint32_t, uint32_t>;
+	using words_map_t =
+		tsl::hopscotch_map<std::string, WordIndices, word_hash, word_equal, std::allocator<std::pair<std::string, WordIndices>>, 30, true>;
 
-	IdCont vids;  // IdCont - std::vector or packed_vector
-	// document offset, for the last step.
-	// Necessary for correct rebuilding of the last step
-	size_t cur_step_pos = 0;
-};
-class WordEntry {
-public:
-	WordEntry() noexcept = default;
-	WordEntry(const IdRelSet& _vids) : vids_(_vids) {}
-	WordEntry(const WordEntry&) = delete;
-	WordEntry(WordEntry&&) noexcept = default;
-	WordEntry& operator=(const WordEntry&) = delete;
-	WordEntry& operator=(WordEntry&&) noexcept = default;
+	void AddPrehashed(std::string_view word, size_t whash, VDocIdType docId, unsigned pos, unsigned field, unsigned arrayIdx);
+	void Add(std::string word, VDocIdType docId, unsigned pos, unsigned field, unsigned arrayIdx);
 
-	// Explicit copy
-	WordEntry MakeCopy() const { return WordEntry(vids_); }
-
-	IdRelSet vids_;
-};
-enum ProcessStatus { FullRebuild, RecommitLast, CreateNew };
-
-struct WordTypo {
-	WordTypo() = default;
-	explicit WordTypo(WordIdType w) noexcept : word(w) {}
-	explicit WordTypo(WordIdType w, const typos_context::TyposVec& p) noexcept : word(w), positions(p) {}
-	bool IsMultiValue() const noexcept { return multiMapFlag; }
-	void SetMultiValueFlag(bool val) noexcept { multiMapFlag = val; }
-	int32_t GetWordID() const noexcept { return word.GetID(); }
-	void SetWordID(int32_t id) noexcept { word.SetID(id); }
-
-	WordIdType word;
-	typos_context::TyposVec positions;
-	uint8_t multiMapFlag = 0;
-};
-
-static_assert(sizeof(WordTypo) <= 8, "This size is matter for overall size of the typos map");
-
-class IDataHolder {
-public:
-	struct CommitStep {
-		CommitStep() : wordOffset_(0) {}
-
-		CommitStep(const CommitStep&) = delete;
-		CommitStep& operator=(const CommitStep&) = delete;
-		CommitStep(CommitStep&& /*rhs*/) noexcept = default;
-		CommitStep& operator=(CommitStep&& /*rhs*/) = default;
-
-		// Suffix map. suffix <-> original word id
-		suffix_map<char, WordIdType> suffixes_;
-		// Typos maps. typo string <-> original word id
-		// typosHalf_ contains words with <=maxTypos/2 typos
-		flat_str_multimap<char, WordTypo> typosHalf_;
-		// typosMax_ contains words with MaxTyposInWord() typos if MaxTyposInWord() != maxTypos/2
-		flat_str_multimap<char, WordTypo> typosMax_;
-		// word offset for given step in DataHolder::words_
-		uint32_t wordOffset_;
-
-		void clear() {
-			suffixes_.clear();
-			typosHalf_.clear();
-			typosMax_.clear();
-		}
-	};
-
-	virtual ~IDataHolder() = default;
-	virtual void Process(size_t fieldSize, bool multithread) = 0;
-	virtual size_t GetMemStat() = 0;
-	virtual void Clear() = 0;
-	virtual void StartCommit(bool complete_updated) = 0;
-	intrusive_ptr<const ISplitter> GetSplitter() const noexcept { return splitter_; }
-	CommitStep& GetStep(WordIdType id) noexcept {
-		assertrx(id.b.step_num < steps.size());
-		return steps[id.b.step_num];
-	}
-	const CommitStep& GetStep(WordIdType id) const noexcept {
-		assertrx(id.b.step_num < steps.size());
-		return steps[id.b.step_num];
-	}
-	bool NeedRebuild(bool complete_updated) const noexcept {
-		return steps.empty() || complete_updated || steps.size() >= size_t(cfg_->maxRebuildSteps) ||
-			   (steps.size() == 1 && steps.front().suffixes_.word_size() < size_t(cfg_->maxStepSize));
-	}
-	bool NeedRecommitLast() const noexcept { return steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize); }
-	void SetWordsOffset(uint32_t word_offset) noexcept {
-		assertrx(!steps.empty());
-		if (status_ == CreateNew) {
-			steps.back().wordOffset_ = word_offset;
-		}
-	}
-	bool NeedClear(bool complte_updated) const noexcept { return NeedRebuild(complte_updated) || !NeedRecommitLast(); }
-	suffix_map<char, WordIdType>& GetSuffix() noexcept { return steps.back().suffixes_; }
-	flat_str_multimap<char, WordTypo>& GetTyposHalf() noexcept { return steps.back().typosHalf_; }
-	flat_str_multimap<char, WordTypo>& GetTyposMax() noexcept { return steps.back().typosMax_; }
-	WordIdType findWord(std::string_view word) const;
-	uint32_t GetSuffixWordId(WordIdType id) const noexcept { return GetSuffixWordId(id, steps.back()); }
-	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step) const noexcept {
-		assertrx(!id.IsEmpty());
-		assertrx(id.b.step_num < steps.size());
-
-		assertrx(id.b.id >= step.wordOffset_);
-		assertrx(id.b.id - step.wordOffset_ < step.suffixes_.word_size());
-		return id.b.id - step.wordOffset_;
-	}
-	uint32_t GetWordsOffset() const noexcept {
-		assertrx(!steps.empty());
-		return steps.back().wordOffset_;
-	}
-	// returns id and found or not found
-	WordIdType BuildWordId(uint32_t id) const {
-		WordIdType wId;
-		if rx_unlikely (id > kWordIdMaxIdVal) {
-			throwWordIdOverflow(id);
-		}
-		if rx_unlikely (steps.size() > kMaxStepsCount) {
-			throwStepsOverflow();
-		}
-
-		wId.b.id = id;
-		wId.b.step_num = steps.size() - 1;
-		return wId;
-	}
-	std::string Dump() const;
+	const std::vector<Occurence>& Occurences() const noexcept { return occurrences_; }
+	const words_map_t& Words() const noexcept { return words_; }
 
 private:
-	[[noreturn]] static void throwWordIdOverflow(uint32_t id);
-	[[noreturn]] void throwStepsOverflow() const;
+	void appendOccurence(VDocIdType docId, unsigned pos, unsigned field, unsigned arrayIdx, words_map_t::iterator wordIt);
 
-public:	 // TODO: #1688 Fix private class data isolation here
+	std::vector<Occurence> occurrences_;
+	words_map_t words_;
+};
+
+using NewWordsOccurencesPtr = std::shared_ptr<NewWordsOccurences>;
+
+class [[nodiscard]] IDataHolder {
+public:
+	static constexpr size_t kSuffixTreesCount = 64;
+	static constexpr size_t kSuffixTreeMask = kSuffixTreesCount - 1;
+	static constexpr size_t kTypoSetsCount = 64;
+	static constexpr size_t kTypoSetMask = kTypoSetsCount - 1;
+
+	IDataHolder() : words_(), wordsMap_(), suffixes_(kSuffixTreesCount), typos_(kTypoSetsCount) {}
+	virtual ~IDataHolder() = default;
+	virtual void Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, size_t numFields,
+						 std::vector<h_vector<float, 3>>& vdocsWordsCountsByFields, bool multithreaded) = 0;
+	virtual size_t GetMemStat() = 0;
+	virtual void Clear() = 0;
+	intrusive_ptr<const ISplitter> GetSplitter() const noexcept { return splitter_; }
+
+	static constexpr size_t kIncorrectWordOrdinal = std::numeric_limits<size_t>::max();
+	size_t FindWordOrdinal(std::string_view word) const {
+		if (auto it = wordsMap_.find(word); it != wordsMap_.end()) {
+			return it->second;
+		}
+		return kIncorrectWordOrdinal;
+	}
+	bool ContainsWord(std::string_view word) const { return FindWordOrdinal(word) != kIncorrectWordOrdinal; }
+	WordIdType GetWordIdByOrdinal(size_t ordinal) const noexcept {
+		assertrx_dbg(ordinal < wordIds_.size());
+		return wordIds_[ordinal];
+	}
+	std::u16string_view GetWord(WordIdType id) const noexcept { return words_.GetWord(id); }
+	const char16_t* GetWordData(WordIdType id) const noexcept { return words_.GetWordData(id); }
+	const char16_t* GetSuffixData(SuffixKey key) const noexcept { return words_.GetWordData(key); }
+	SuffixWordInfo ResolveSuffix(SuffixKey key) const noexcept { return words_.ResolveSuffixId(key); }
+	const SuffixTree* Suffixes(char16_t firstCh) const noexcept { return suffixes_[SuffixTreeIndex(firstCh)].get(); }
+	const TypoSet* Typos(std::u16string_view typo) const noexcept {
+		if (typo.empty()) {
+			return nullptr;
+		}
+		return typos_[TypoSetIndex(typo.front())].get();
+	}
+
+	static size_t SuffixTreeIndex(char16_t firstCh) noexcept { return size_t(firstCh) & kSuffixTreeMask; }
+	static size_t TypoSetIndex(char16_t firstCh) noexcept { return size_t(firstCh) & kTypoSetMask; }
+
+	// TODO: #1688 Fix private class data isolation here
 	// language and corresponding stemmer object
 	std::unordered_map<std::string, stemmer> stemmers_;
 
 	// translit generator for russian and english (returns word + weight)
-	ITokenFilter::Ptr translit_;
-	ITokenFilter::Ptr kbLayout_;
-	ITokenFilter::Ptr synonyms_;
+	std::unique_ptr<Translit> translit_;
+	std::unique_ptr<KbLayout> kbLayout_;
+	std::unique_ptr<Synonyms> synonyms_;
 
-	std::vector<CommitStep> steps;
-	// array of unique documents
-	std::vector<VDocEntry> vdocs_;
-	size_t cur_vdoc_pos_ = 0;
-	ProcessStatus status_{CreateNew};
-	std::vector<double> avgWordsCount_;
-	// Virtual documents, merged. Addressable by VDocIdType
-	// Temp data for build
-	std::vector<RVector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
-	std::vector<std::unique_ptr<std::string>> bufStrs_;
-	size_t vdocsOffset_{0};
-	size_t szCnt{0};
-	FtFastConfig* cfg_{nullptr};
+	TermsBoostMapT stemmedTermsBoost;
+
+	WordsStorage words_;
+	tsl::hopscotch_map<std::string, size_t, word_hash, word_equal> wordsMap_;
+	size_t wordsMapStringsHeapSize_ = 0;
+	std::vector<std::unique_ptr<SuffixTree>> suffixes_;
+	std::vector<std::unique_ptr<TypoSet>> typos_;
+	std::vector<WordIdType> wordIds_;
+	size_t wordsProcessed_ = 0;
+	bool needRebuild_ = false;
+
+	FTConfig* cfg_{nullptr};
 	// index - rowId, value vdocId (index in array vdocs_)
-	std::vector<size_t> rowId2Vdoc_;
 	intrusive_ptr<const ISplitter> splitter_;
 };
 
 template <typename IdCont>
-class DataHolder : public IDataHolder {
+class [[nodiscard]] DataHolder : public IDataHolder {
 public:
-	explicit DataHolder(FtFastConfig* c);
-	void Process(size_t fieldSize, bool multithread) final;
+	explicit DataHolder(FTConfig* c);
+	void Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, size_t numFields,
+				 std::vector<h_vector<float, 3>>& vdocsWordsCountsByFields, bool multithreaded) final;
 	size_t GetMemStat() override final;
-	void StartCommit(bool complte_updated) override final;
 	void Clear() override final;
-	std::vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
-	const std::vector<PackedWordEntry<IdCont>>& GetWords() const noexcept { return words_; }
-	PackedWordEntry<IdCont>& GetWordById(WordIdType id) noexcept {
-		assertrx(!id.IsEmpty());
-		assertrx(id.b.id < words_.size());
-		return words_[id.b.id];
+	IdCont& GetWordOccurences(WordIdType id) noexcept {
+		const size_t ordinal = words_.GetWordOrdinal(id);
+		assertrx(ordinal < wordOccurences_.size());
+		return wordOccurences_[ordinal];
 	}
-	const PackedWordEntry<IdCont>& GetWordById(WordIdType id) const noexcept {
-		assertrx(!id.IsEmpty());
-		assertrx(id.b.id < words_.size());
-		return words_[id.b.id];
+	const IdCont& GetWordOccurences(WordIdType id) const noexcept {
+		const size_t ordinal = words_.GetWordOrdinal(id);
+		assertrx(ordinal < wordOccurences_.size());
+		return wordOccurences_[ordinal];
 	}
-	std::vector<PackedWordEntry<IdCont>> words_;
+	const IdCont& GetWordOccurencesByOrdinal(size_t ordinal) const noexcept {
+		assertrx(ordinal < wordOccurences_.size());
+		return wordOccurences_[ordinal];
+	}
+
+private:
+	template <bool Multithreaded>
+	void processNewSuffixes(size_t start, size_t end);
+	template <bool Multithreaded>
+	void processNewTypos(size_t start, size_t end);
+	template <bool Multithreaded>
+	void shrinkWordOccurences();
+	void collectSuffixes(size_t start, size_t end, std::vector<std::vector<SuffixKey>>& suffixesByFirstCh) const;
+	TypoSet& getOrCreateTypoSet(char16_t firstCh);
+	bool addExactAndSingleMissingTypos(WordIdType wordId, std::u16string_view word, size_t maxTyposInWord,
+									   std::vector<std::vector<TypoKey>>& packedKeysByFirstCh);
+	void addTwoMissingTyposWithFirstMissing(WordIdType wordId, std::u16string_view word,
+											std::vector<std::vector<TypoKey>>& packedKeysByFirstCh);
+	void addTwoMissingTyposWithoutFirstMissing(WordIdType wordId, std::u16string_view word, TypoSet& typoSet);
+	void fillTypoSetShard(TypoSet& typoSet, const std::vector<TypoKey>& packedKeys, const std::vector<size_t>& wordIndexes);
+
+	static constexpr size_t kOccurenceUpdateShards = 64;
+	static constexpr size_t kOccurenceUpdateShardMask = kOccurenceUpdateShards - 1;
+
+	NewWordsOccurencesPtr buildWordsMap(VDocsTexts::iterator textsBegin, std::vector<uint32_t>::const_iterator idsBegin,
+										std::vector<h_vector<float, 3>>::iterator wordsCountsBegin, size_t numDocs, size_t numFields,
+										std::atomic<size_t>* tooLongWordsSkipped);
+	NewWordsOccurencesPtr buildWordsMap(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numFields,
+										std::vector<h_vector<float, 3>>& vdocsWordsCountsByFields,
+										std::atomic<size_t>* tooLongWordsSkipped);
+	std::vector<NewWordsOccurencesPtr> buildWordsMapParallel(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds,
+															 size_t numFields, std::vector<h_vector<float, 3>>& vdocsWordsCountsByFields,
+															 std::atomic<size_t>* tooLongWordsSkipped);
+	void updateOccurences(const NewWordsOccurencesPtr& nwo, std::vector<size_t>* updatedWordOrdinals);
+	void updateOccurencesParallel(const std::vector<NewWordsOccurencesPtr>& nwos, std::vector<size_t>* updatedWordOrdinals);
+	size_t appendOccurenceChain(const std::vector<Occurence>& occurrences, uint32_t firstIdx, IdRelSet& chain, IdCont& dst);
+	void logPotentialStopWords(std::vector<size_t>& updatedWordOrdinals, size_t numDocsTotal) const;
+
+	// Documents for each word, addressable by word ordinal.
+	std::vector<IdCont> wordOccurences_;
+	size_t wordOccurencesHeapSize_ = 0;
+	BS::thread_pool<>& threadPool_ = GetBackgroundThreadPool();
 };
 
 }  // namespace reindexer

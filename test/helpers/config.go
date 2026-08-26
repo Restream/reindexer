@@ -23,6 +23,11 @@ type ClusterNodeConfig struct {
 	ServerID int    `yaml:"server_id"`
 }
 
+type ReplicationConf struct {
+	ClusterID int `yaml:"cluster_id"`
+	ServerID  int `yaml:"server_id"`
+}
+
 func DefaultClusterConf() *ClusterConf {
 	return &ClusterConf{
 		AppName:               "test_cluster",
@@ -55,11 +60,6 @@ func (cc *ClusterConf) ToFile(path, filename string) error {
 	return nil
 }
 
-type ReplicationConf struct {
-	ClusterID int `yaml:"cluster_id"`
-	ServerID  int `yaml:"server_id"`
-}
-
 func (rc *ReplicationConf) ToFile(path, filename string) error {
 	data, err := yaml.Marshal(&rc)
 	if err != nil {
@@ -77,4 +77,12 @@ func (rc *ReplicationConf) ToFile(path, filename string) error {
 	}
 
 	return nil
+}
+
+func GetTmpDBDir() string {
+	dir := os.Getenv("REINDEXER_TEST_DB_ROOT")
+	if len(dir) != 0 {
+		return dir
+	}
+	return os.TempDir()
 }

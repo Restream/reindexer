@@ -8,10 +8,12 @@
 #include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "tools/stringstools.h"
 
+#if REINDEX_WITH_GPERFTOOLS || REINDEX_WITH_JEMALLOC
 static const std::string kProfileNamePrefix = "reindexer_server";
+#endif	// REINDEX_WITH_GPERFTOOLS || REINDEX_WITH_JEMALLOC
 
 namespace reindexer_server {
 using namespace reindexer;
@@ -56,7 +58,18 @@ int Pprof::Profile(http::Context& ctx) {
 	}
 
 	if (alloc_ext::TCMallocIsAvailable()) {
-		pprof::ProfilerStart(filePath.c_str());
+		if (std::getenv("HEAPPROFILE")) {
+			return ctx.String(http::StatusForbidden,
+							  "Environment variable HEAPPROFILE is set. Unable to use CPU profiling, when heap profiling is enabled - "
+							  "TCMalloc may deadlock");
+		}
+		if (std::getenv("TCMALLOC_SAMPLE_PARAMETER")) {
+			return ctx.String(http::StatusForbidden,
+							  "Environment variable TCMALLOC_SAMPLE_PARAMETER is set. Unable to use CPU profiling, when heap profiling is "
+							  "enabled - TCMalloc may deadlock");
+		}
+
+		std::ignore = pprof::ProfilerStart(filePath.c_str());
 	}
 	std::this_thread::sleep_for(std::chrono::seconds(seconds));
 	if (alloc_ext::TCMallocIsAvailable()) {
@@ -92,7 +105,7 @@ int Pprof::ProfileHeap(http::Context& ctx) {
 	std::string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".heapprofile");
 	const char* pfp = &filePath[0];
 
-	alloc_ext::mallctl("prof.dump", NULL, NULL, &pfp, sizeof(pfp));
+	std::ignore = alloc_ext::mallctl("prof.dump", NULL, NULL, &pfp, sizeof(pfp));
 	if (fs::ReadFile(filePath, content) < 0) {
 		return ctx.String(http::StatusNotFound, "Profile file not found");
 	}

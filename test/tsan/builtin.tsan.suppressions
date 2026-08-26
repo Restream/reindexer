@@ -1,0 +1,5 @@
+# False-positive warning in CGO interaction (issue #2031)
+race:^x_cgo_mmap$
+# The same false-positives (subset of x_cgo_mmap races)
+#race:^proccess_packed_item$
+#race:^copy_ns_schema$

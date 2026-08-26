@@ -4,13 +4,9 @@
 #include "gason/gason.h"
 
 template <>
-struct fmt::printf_formatter<gason::JsonString> {
-	template <typename ContextT>
-	constexpr auto parse(ContextT& ctx) {
-		return ctx.begin();
-	}
+struct [[nodiscard]] fmt::formatter<gason::JsonString> : public fmt::formatter<std::string_view> {
 	template <typename ContextT>
 	auto format(const gason::JsonString& s, ContextT& ctx) const {
-		return fmt::format_to(ctx.out(), "{}", std::string_view(s));
+		return fmt::formatter<std::string_view>::format(s, ctx);
 	}
 };

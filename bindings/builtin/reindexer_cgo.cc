@@ -8,7 +8,7 @@ extern "C" {
 }
 
 void reindexer_enable_go_logger() {
-	reindexer_enable_logger([](int level, char *msg) { CGoLogger((GoInt)level, GoString{msg, (GoInt)strlen(msg)}); });
+	reindexer_enable_logger([](int level, char* msg) { CGoLogger((GoInt)level, GoString{msg, (GoInt)strlen(msg)}); });
 }
 
 void reindexer_disable_go_logger() { reindexer_disable_logger(); }

@@ -1,0 +1,50 @@
+if(NOT EXISTS "@CMAKE_BINARY_DIR@/install_manifest.txt")
+  message(FATAL_ERROR "Cannot find install manifest: @CMAKE_BINARY_DIR@/install_manifest.txt")
+endif()
+
+file(READ "@CMAKE_BINARY_DIR@/install_manifest.txt" FILES)
+string(REGEX REPLACE "\n" ";" FILES "${FILES}")
+foreach(FILE ${FILES})
+  message(STATUS "Uninstalling $ENV{DESTDIR}${FILE}")
+  if(IS_SYMLINK "$ENV{DESTDIR}${FILE}" OR EXISTS "$ENV{DESTDIR}${FILE}")
+    execute_process(
+      COMMAND "@CMAKE_COMMAND@" -E remove "$ENV{DESTDIR}${FILE}"
+      OUTPUT_VARIABLE rm_out
+      RESULT_VARIABLE rm_retval
+      )
+    if(NOT "${rm_retval}" STREQUAL 0)
+      message(FATAL_ERROR "Problem when removing $ENV{DESTDIR}${FILE}")
+    endif()
+  else(IS_SYMLINK "$ENV{DESTDIR}${FILE}" OR EXISTS "$ENV{DESTDIR}${FILE}")
+    message(STATUS "File $ENV{DESTDIR}${FILE} does not exist.")
+  endif()
+endforeach()
+
+set(DIRS "")
+foreach(FILE ${FILES})
+  get_filename_component(FILE_DIRECTORY $ENV{DESTDIR}${FILE} DIRECTORY)
+  while(${FILE_DIRECTORY} MATCHES "reindexer")
+    list(APPEND DIRS ${FILE_DIRECTORY})
+    set(TMP_FILE_DIRECTORY ${FILE_DIRECTORY})
+    get_filename_component(FILE_DIRECTORY ${TMP_FILE_DIRECTORY} DIRECTORY)
+  endwhile()
+endforeach()
+
+list(SORT DIRS ORDER DESCENDING)
+list(REMOVE_DUPLICATES DIRS)
+
+foreach(DIR ${DIRS})
+  message(STATUS "Uninstalling directory: ${DIR}")
+  if(EXISTS ${DIR})
+    file(GLOB RESULT DIR)
+    list(LENGTH RESULT RES_LEN)
+    if(RES_LEN EQUAL 0)
+      file(REMOVE_RECURSE ${DIR})
+    else()
+      message(STATUS "Directory ${DIR} is not empty. Skipped.")
+    endif()
+  else()
+    message(STATUS "Directory ${DIR} does not exist.")
+  endif()
+endforeach()
+
